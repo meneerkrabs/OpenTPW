@@ -213,8 +213,10 @@ mkdir tpinc-data && unshield -d tpinc-data x '/Volumes/THEMEPARKINC/data1.cab'
 ```
 
 The files land in per-component folders; `tpinc-data/Data` is the folder the viewer needs (point
-`--game-path` at `tpinc-data`, or at the folder that holds `Data`). The language string tables are
-separate folders (`_Support_<Language>_String_Tables`) that the viewer does not use.
+`--game-path` at `tpinc-data`, or at the folder that holds `Data`). `Data/Language` holds the five languages of the CD
+(Dutch, English, French, German, Swedish): `--language Dutch` (or `OPENTPW_LANGUAGE`, or the saved choice) shows the slice's
+interface and its object names in that language ([LANGUAGES.md](LANGUAGES.md#theme-park-inc)). The separate folders
+`_Support_<Language>_String_Tables` hold only the installer's own strings and are not read.
 
 ## Read-only Theme Park Inc texture inspection
 

@@ -57,19 +57,19 @@ public sealed class ThemeParkIncHud
 		catalog = new OriginalBuildCatalog( level.Objects.Catalog );
 		hud = new UiScreen( "tpiHud" ) { Modal = false };
 		Stack.Push( hud );
-		AddLabel( "guests", () => $"Guests in park: {level.Guests?.GetStatistics().InPark ?? 0}", new UiRect( 24, 196, 900, 60 ) );
+		AddLabel( "guests", () => GuestsText(), new UiRect( 24, 196, 900, 60 ) );
 		AddLabel( "selection", () => SelectedText, new UiRect( 24, 256, 1300, 60 ) );
 		AddLabel( "message", () => messages.Count > 0 ? messages[0].Text : "", new UiRect( 24, 316, 1300, 120 ) );
 		BuildTopLine();
 		BuildWindow();
-		removeButton = ToolButton( "remove", () => "Remove", "Click park objects, queues or paths to remove them (no refund: no economy runs)",
+		removeButton = ToolButton( "remove", () => T( OpenTpwText.TpiRemove ), T( OpenTpwText.TpiRemoveHelp ),
 			() => { level.IsRemovingObjects = !level.IsRemovingObjects; if ( level.IsRemovingObjects ) DisarmBuild(); }, 1 );
 		removeButton.Selected = () => level.IsRemovingObjects;
-		ToolButton( "build", () => "Build…", "Open the world's object catalogue (free; nothing is charged)", ToggleBuildWindow, 0 );
-		ToolButton( "rotate", () => "Rotate", "Turn the next built object by 90 degrees", () => level.RotateBuild(), 2 );
-		ToolButton( "cancel", () => "Cancel", "Put away the build item, remove tool, path and queue tools", DisarmAll, 3 );
-		ToolButton( "speed", SpeedText, "Simulation speed: paused, normal, fast, fastest", CycleSpeed, 4 );
-		ToolButton( "menu", () => "Menu", "Pause menu (Esc)", OpenPauseMenu, 5 );
+		ToolButton( "build", () => T( OpenTpwText.TpiBuild ), T( OpenTpwText.TpiBuildHelp ), ToggleBuildWindow, 0 );
+		ToolButton( "rotate", () => T( OpenTpwText.TpiRotate ), T( OpenTpwText.TpiRotateHelp ), () => level.RotateBuild(), 2 );
+		ToolButton( "cancel", () => T( OpenTpwText.TpiCancel ), T( OpenTpwText.TpiCancelHelp ), DisarmAll, 3 );
+		ToolButton( "speed", SpeedText, T( OpenTpwText.TpiSpeedHelp ), CycleSpeed, 4 );
+		ToolButton( "menu", () => T( OpenTpwText.TpiMenu ), T( OpenTpwText.TpiMenuHelp ), OpenPauseMenu, 5 );
 		buildList = (UiScrollList)hud.Find( "buildList" )!;
 		// The place flow's HUD finish (Level.PlaceObject owns the build and the guest link):
 		// [BIN:STP-PPC:0x1007497C ride placement] a placed HasQueue ride enters tool mode 3, the queue tool (PATH-plan §8)
@@ -125,7 +125,7 @@ public sealed class ThemeParkIncHud
 		hud.Add( new UiLabel
 		{
 			Id = "title",
-			Text = () => "Theme Park Inc (Sim Coaster) — EXPERIMENTAL OpenTPW slice",
+			Text = () => T( OpenTpwText.TpiTitle ),
 			Font = fonts => fonts.Heading,
 			Color = UiColors.Title,
 			Bounds = new UiRect( 24, 16, 1500, 70 ),
@@ -134,7 +134,7 @@ public sealed class ThemeParkIncHud
 		hud.Add( new UiLabel
 		{
 			Id = "limits",
-			Text = () => GameEditions.Capabilities.ExperimentalNote ?? "",
+			Text = () => GameEditions.Capabilities.ExperimentalNote == null ? "" : T( OpenTpwText.TpiLimits ),
 			Font = fonts => fonts.Small,
 			Color = UiColors.Text,
 			Wrap = true,
@@ -149,7 +149,7 @@ public sealed class ThemeParkIncHud
 		hud.Add( new UiLabel
 		{
 			Id = "buildTitle",
-			Text = () => $"Build {category} — free (no Theme Park Inc economy runs)",
+			Text = () => string.Format( T( OpenTpwText.TpiBuildTitle ), CategoryText( category ) ),
 			Font = fonts => fonts.Heading,
 			Color = UiColors.Title,
 			Visible = false,
@@ -163,7 +163,7 @@ public sealed class ThemeParkIncHud
 			hud.Add( new UiButton
 			{
 				Id = $"category{choice}",
-				Text = () => $"{choice}",
+				Text = () => CategoryText( choice ),
 				Font = fonts => fonts.Menu,
 				Visible = false,
 				Selected = () => category == choice,
@@ -185,7 +185,7 @@ public sealed class ThemeParkIncHud
 		hud.Add( new UiButton
 		{
 			Id = "buildClose",
-			Text = () => "Close (Esc)",
+			Text = () => T( OpenTpwText.TpiClose ),
 			Font = fonts => fonts.Menu,
 			Visible = false,
 			Clicked = CloseBuildWindow,
@@ -218,11 +218,25 @@ public sealed class ThemeParkIncHud
 
 	private string SpeedText() => speed switch
 	{
-		GameSpeed.Paused => "Paused",
-		GameSpeed.Normal => "Speed x1",
-		GameSpeed.Fast => "Speed x2",
-		_ => "Speed x4"
+		GameSpeed.Paused => T( OpenTpwText.TpiPaused ),
+		GameSpeed.Normal => string.Format( T( OpenTpwText.TpiSpeed ), 1 ),
+		GameSpeed.Fast => string.Format( T( OpenTpwText.TpiSpeed ), 2 ),
+		_ => string.Format( T( OpenTpwText.TpiSpeed ), 4 )
 	};
+
+	/// <summary>An experimental-HUD text in the selected language (OpenTPW's own strings; docs/LANGUAGES.md, "Theme Park Inc").</summary>
+	private string T( OpenTpwText key ) => strings.Extra( key );
+
+	/// <summary>The guest counter line the smoke test also compares against.</summary>
+	internal string GuestsText() => string.Format( T( OpenTpwText.TpiGuestsInPark ), level.Guests?.GetStatistics().InPark ?? 0 );
+
+	private string CategoryText( BuildCategory choice ) => T( choice switch
+	{
+		BuildCategory.Rides => OpenTpwText.TpiCategoryRides,
+		BuildCategory.Shops => OpenTpwText.TpiCategoryShops,
+		BuildCategory.Sideshows => OpenTpwText.TpiCategorySideshows,
+		_ => OpenTpwText.TpiCategoryFeatures
+	} );
 
 	private void CycleSpeed() => speed = speed switch
 	{
@@ -235,10 +249,10 @@ public sealed class ThemeParkIncHud
 	private string ItemText( BuildItem item )
 	{
 		// [EXT:tpi-free-builds] builds are free because the slice runs no economy (an OpenTPW scope decision); no original Theme Park Inc price is claimed
-		return $"{(item.Entry != null ? ItemNameOf( item.Entry ) : item.Id)} — free";
+		return string.Format( T( OpenTpwText.TpiItemFree ), item.Entry != null ? ItemNameOf( item.Entry ) : item.Id );
 	}
 
-	private string SelectedText => selectedObject is not { IsDeleted: false } item ? "" : $"Selected: {item.Entry.DisplayName}{(item.Entry.IsFixedItem ? " (fixed item)" : "")}";
+	private string SelectedText => selectedObject is not { IsDeleted: false } item ? "" : string.Format( T( OpenTpwText.TpiSelected ), item.Entry.DisplayName ) + (item.Entry.IsFixedItem ? T( OpenTpwText.TpiFixedItem ) : "");
 
 	private void ToggleBuildWindow()
 	{
@@ -277,7 +291,7 @@ public sealed class ThemeParkIncHud
 		armedEntry = entry;
 		level.IsRemovingObjects = false;
 		CloseBuildWindow();
-		PostMessage( $"{ItemNameOf( entry )}: click the park to place it (free); the Rotate button turns it, Esc puts it away." );
+		PostMessage( string.Format( T( OpenTpwText.TpiPlaceHint ), ItemNameOf( entry ) ) );
 	}
 
 	private void DisarmBuild()
@@ -292,7 +306,7 @@ public sealed class ThemeParkIncHud
 		level.IsRemovingObjects = false;
 		level.CellTool.Cancel();
 		level.ExitCoasterTool();
-		PostMessage( "Tools put away." );
+		PostMessage( T( OpenTpwText.TpiToolsPutAway ) );
 	}
 
 	private void OpenPauseMenu()
@@ -303,7 +317,7 @@ public sealed class ThemeParkIncHud
 		menu.Add( new UiLabel
 		{
 			Id = "heading",
-			Text = () => "Theme Park Inc experimental slice",
+			Text = () => T( OpenTpwText.TpiMenuHeading ),
 			Font = fonts => fonts.Heading,
 			Color = UiColors.Title,
 			Align = UiAlign.Center,
@@ -320,13 +334,13 @@ public sealed class ThemeParkIncHud
 			Bounds = new UiRect( 344, 500, 1360, 220 ),
 			Anchor = UiAnchor.TopLeft
 		} );
-		MenuButton( menu, "resume", "Resume", () => Stack.Pop(), 760 );
+		MenuButton( menu, "resume", T( OpenTpwText.TpiResume ), () => Stack.Pop(), 760 );
 		MenuButton( menu, "pause", SpeedText, () => { speed = speed == GameSpeed.Paused ? GameSpeed.Normal : GameSpeed.Paused; }, 880 );
 		if (host.SaveLayout != null)
-			MenuButton(menu, "saveLayout", "Save layout checkpoint", () => RunLayoutAction(host.SaveLayout, "Layout saved. Loading it starts a new session; guests, script progress and clock are not saved."), 1000);
+			MenuButton(menu, "saveLayout", T( OpenTpwText.TpiSaveLayout ), () => RunLayoutAction(host.SaveLayout, T( OpenTpwText.TpiLayoutSaved )), 1000);
 		if (host.LoadLayout != null)
-			MenuButton(menu, "loadLayout", "Load layout — new session", ConfirmLayoutLoad, 1120);
-		MenuButton( menu, "quit", "Quit", host.Quit, host.SaveLayout == null && host.LoadLayout == null ? 1000 : 1240 );
+			MenuButton(menu, "loadLayout", T( OpenTpwText.TpiLoadLayout ), ConfirmLayoutLoad, 1120);
+		MenuButton( menu, "quit", T( OpenTpwText.TpiQuit ), host.Quit, host.SaveLayout == null && host.LoadLayout == null ? 1000 : 1240 );
 		menu.Back = () => Stack.Pop();
 		Stack.Push( menu );
 	}
@@ -338,7 +352,7 @@ public sealed class ThemeParkIncHud
 		catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or ArgumentException or InvalidOperationException or NotSupportedException)
 		{
 			Stack.Push(UiDialogs.Message("layoutFailed", () => error.Message,
-				(() => "Back", () => Stack.Pop())));
+				(() => T( OpenTpwText.Back ), () => Stack.Pop())));
 			return false;
 		}
 	}
@@ -346,9 +360,9 @@ public sealed class ThemeParkIncHud
 	private void ConfirmLayoutLoad()
 	{
 		Stack.Push(UiDialogs.Message("confirmLayoutLoad",
-			() => "Replace this world with the saved layout and start a NEW experimental session? Guests, ride script progress, simulation clock and audio restart. This is not a continuation or original TPI save.",
-			(() => "Load new session", () => { Stack.Pop(); retiredByLayoutLoad = RunLayoutAction(host.LoadLayout!, null); }),
-			(() => "Cancel", () => Stack.Pop())));
+			() => T( OpenTpwText.TpiConfirmLoad ),
+			(() => T( OpenTpwText.TpiLoadNew ), () => { Stack.Pop(); retiredByLayoutLoad = RunLayoutAction(host.LoadLayout!, null); }),
+			(() => T( OpenTpwText.TpiCancel ), () => Stack.Pop())));
 	}
 
 	private static UiButton MenuButton( UiScreen menu, string id, Func<string> text, Action clicked, float top ) => menu.Add( new UiButton

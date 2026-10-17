@@ -170,7 +170,7 @@ public static class SignSurfaceComposer
 		if ( index >= lines.Count || string.IsNullOrWhiteSpace( lines[index] ) )
 			return mask;
 		var slot = sign.Slots[index];
-		var font = fonts.Find( slot.FontFileName ) ?? fonts.Find( slot.FaceName );
+		var font = fonts.Find( slot.FontFileName, slot.FaceName );
 		if ( font == null )
 		{
 			diagnostics.Add( $"Sign slot {index}: font {slot.FontFileName} ('{slot.FaceName}') is not in fonts.wad; line skipped." );

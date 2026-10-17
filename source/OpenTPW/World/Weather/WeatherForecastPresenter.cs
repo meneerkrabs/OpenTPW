@@ -34,6 +34,12 @@ public sealed class WeatherForecastPresenter : Entity
 	/// <summary>The line drawn in the last overlay pass, or null (smoke instrumentation).</summary>
 	public string? DrawnBanner { get; private set; }
 
+	/// <summary>
+	/// Smoke instrumentation: the front-end smoke test reads window titles back from the screen, and the banner (a strip at the top centre)
+	/// overlaps a title in languages whose title font sits higher (the Korean Research Lab title), so the smoke turns the banner off.
+	/// </summary>
+	internal static bool BannerHidden { get; set; }
+
 	public WeatherForecastPresenter( ParkWeather weather )
 	{
 		this.weather = weather;
@@ -58,7 +64,7 @@ public sealed class WeatherForecastPresenter : Entity
 	private void DrawBanner()
 	{
 		DrawnBanner = null;
-		if ( deleted || Level.Current != Level || Level.HidesInterface || forecast.Banner is not { } text )
+		if ( deleted || BannerHidden || Level.Current != Level || Level.HidesInterface || forecast.Banner is not { } text )
 			return;
 		DrawnBanner = text;
 		// The selected language's own font, reloaded when the language changes (the chat overlay's pattern).

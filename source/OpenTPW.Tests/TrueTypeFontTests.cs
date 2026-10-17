@@ -20,6 +20,10 @@ public class TrueTypeFontTests
 		private readonly List<(ushort Advance, short Lsb)> metrics = new() { (500, 0) };
 		private readonly SortedDictionary<int, int> map = new();
 		private readonly List<(int Left, int Right, short Value)> kerning = new();
+		private readonly List<(int Language, string Name)> families = new();
+
+		/// <summary>Adds a family name (name ID 1, Windows Unicode, the given language ID) to the font's <c>name</c> table.</summary>
+		public void AddFamily( int language, string name ) => families.Add( (language, name) );
 
 		public int AddSimple( ushort advance, char? character, params (int X, int Y, bool On)[][] contours )
 		{
@@ -85,7 +89,8 @@ public class TrueTypeFontTests
 			return glyphs.Count - 1;
 		}
 
-		public byte[] Build()
+		/// <param name="fileOffset">Where this font will sit in its file: table offsets are file offsets, so a font inside a TrueType collection is built for its place.</param>
+		public byte[] Build( int fileOffset = 0 )
 		{
 			var tables = new SortedDictionary<string, byte[]>( StringComparer.Ordinal );
 			var head = new byte[54];
@@ -121,6 +126,27 @@ public class TrueTypeFontTests
 			tables["loca"] = loca;
 			tables["glyf"] = glyf.ToArray();
 			tables["cmap"] = BuildCmap();
+			if ( families.Count > 0 )
+			{
+				var strings = new List<byte>();
+				var records = new List<byte>();
+				foreach ( var (language, name) in families )
+				{
+					var encoded = System.Text.Encoding.BigEndianUnicode.GetBytes( name );
+					foreach ( var value in new[] { 3, 1, language, 1, encoded.Length, strings.Count } )
+					{
+						records.Add( (byte)(value >> 8) );
+						records.Add( (byte)value );
+					}
+					strings.AddRange( encoded );
+				}
+				var naming = new byte[6 + records.Count + strings.Count];
+				BinaryPrimitives.WriteUInt16BigEndian( naming.AsSpan( 2 ), (ushort)families.Count );
+				BinaryPrimitives.WriteUInt16BigEndian( naming.AsSpan( 4 ), (ushort)(6 + records.Count) );
+				records.CopyTo( naming, 6 );
+				strings.CopyTo( naming, 6 + records.Count );
+				tables["name"] = naming;
+			}
 			if ( kerning.Count > 0 )
 			{
 				var kern = new byte[4 + 14 + kerning.Count * 6];
@@ -141,7 +167,7 @@ public class TrueTypeFontTests
 			var directory = new byte[12 + tables.Count * 16];
 			BinaryPrimitives.WriteUInt32BigEndian( directory, 0x00010000 );
 			BinaryPrimitives.WriteUInt16BigEndian( directory.AsSpan( 4 ), (ushort)tables.Count );
-			var offset = directory.Length;
+			var offset = fileOffset + directory.Length;
 			var index = 0;
 			foreach ( var (tag, data) in tables )
 			{
@@ -184,6 +210,35 @@ public class TrueTypeFontTests
 			}
 			return table;
 		}
+	}
+
+	/// <summary>Wraps fonts built by <see cref="FontBuilder"/> in a TrueType collection (<c>ttcf</c>); each font is built for its place in the file.</summary>
+	internal static byte[] Collection( params FontBuilder[] fonts )
+	{
+		var header = 12 + fonts.Length * 4;
+		var output = new List<byte>();
+		var bodies = new List<byte[]>();
+		var position = header;
+		foreach ( var font in fonts )
+		{
+			var body = font.Build( position );
+			bodies.Add( body );
+			position += body.Length;
+		}
+		var head = new byte[header];
+		System.Text.Encoding.ASCII.GetBytes( "ttcf" ).CopyTo( head, 0 );
+		BinaryPrimitives.WriteUInt32BigEndian( head.AsSpan( 4 ), 0x00010000 );
+		BinaryPrimitives.WriteUInt32BigEndian( head.AsSpan( 8 ), (uint)fonts.Length );
+		position = header;
+		for ( var i = 0; i < fonts.Length; i++ )
+		{
+			BinaryPrimitives.WriteUInt32BigEndian( head.AsSpan( 12 + i * 4 ), (uint)position );
+			position += bodies[i].Length;
+		}
+		output.AddRange( head );
+		foreach ( var body in bodies )
+			output.AddRange( body );
+		return output.ToArray();
 	}
 
 	internal static (int, int, bool)[] Square( int x0, int y0, int x1, int y1, bool clockwise = true ) => clockwise

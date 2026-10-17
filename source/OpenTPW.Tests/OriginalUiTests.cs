@@ -691,7 +691,7 @@ public class OriginalUiTests
 	// ---- Supplementary strings and HUD stubs ----------------------------------------------
 
 	[TestMethod]
-	public void SupplementaryStringsAreTranslatedForAllSixLanguagesWithMatchingPlaceholders()
+	public void SupplementaryStringsAreTranslatedForEveryShippedLanguageWithMatchingPlaceholders()
 	{
 		CollectionAssert.AreEquivalent( GameLanguage.ShippedLanguages.ToArray(), SupplementaryStrings.SupportedLanguages.ToArray() );
 		foreach ( var key in Enum.GetValues<OpenTpwText>() )
@@ -703,7 +703,9 @@ public class OriginalUiTests
 				var text = SupplementaryStrings.Get( key, language );
 				Assert.IsFalse( string.IsNullOrWhiteSpace( text ), $"{key} {language}" );
 				CollectionAssert.AreEqual( placeholders, System.Text.RegularExpressions.Regex.Matches( text, @"\{\d\}" ).Select( match => match.Value ).OrderBy( value => value ).ToArray(), $"{key} {language}" );
-				if ( language != "English" && key is not (OpenTpwText.UpscaleLinear or OpenTpwText.UpscaleNative or OpenTpwText.OpenTpwPage or OpenTpwText.EditionThemeParkWorld) )
+				// words that are the same in the language: Spanish "Original", "(experimental)", "Incompatible"; Polish "Folder"
+				if ( language != "English" && key is not (OpenTpwText.UpscaleLinear or OpenTpwText.UpscaleNative or OpenTpwText.OpenTpwPage or OpenTpwText.EditionThemeParkWorld)
+					&& !(language == "Spanish" && key is OpenTpwText.TexturePackOriginal or OpenTpwText.EditionThemeParkInc or OpenTpwText.ModIncompatible) && !(language == "Polish" && key == OpenTpwText.ModFolderLabel) )
 					Assert.AreNotEqual( english, text, $"{key} is translated to {language}" );
 			}
 		}

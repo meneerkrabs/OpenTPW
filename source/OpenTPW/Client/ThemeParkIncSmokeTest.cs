@@ -67,9 +67,9 @@ internal sealed class ThemeParkIncSmokeTest : IDisposable
 			Require( flow.IncHud != null && flow.Hud == null && level != null, "the Theme Park Inc slice runs with its own HUD, not the Theme Park World one" );
 			Require( level!.OriginalPark != null && level.Park == null && level.IsThemeParkIncSlice, "the world loads without an economy" );
 			Require( !GameEditions.Capabilities.Economy && GameEditions.Capabilities.ExperimentalHud && !GameEditions.Capabilities.ParkSaves, "the capability policy refuses economy and saves at runtime" );
-			Require( LabelText( "title" ).Contains( "EXPERIMENTAL", StringComparison.Ordinal ), "the HUD names the experiment on screen" );
-			Require( LabelText( "limits" ) == GameEditions.Capabilities.ExperimentalNote, "the HUD's limits line is the capability policy's note" );
-			Require( Context.Batch.TextDraws.Any( draw => draw.Text.StartsWith( "Guests in park:", StringComparison.Ordinal ) ), "the guest counter is drawn" );
+			Require( LabelText( "title" ) == flow.Strings.Extra( OpenTpwText.TpiTitle ) && (GameLanguage.Current.Name != GameLanguage.DefaultLanguage || LabelText( "title" ).Contains( "EXPERIMENTAL", StringComparison.Ordinal )), "the HUD names the experiment on screen, in the selected language" );
+			Require( LabelText( "limits" ) == flow.Strings.Extra( OpenTpwText.TpiLimits ) && (GameLanguage.Current.Name != GameLanguage.DefaultLanguage || LabelText( "limits" ) == GameEditions.Capabilities.ExperimentalNote), "the HUD's limits line is the capability policy's note (in the selected language)" );
+			Require( Context.Batch.TextDraws.Any( draw => draw.Text == Hud.GuestsText() ), "the guest counter is drawn" );
 		} );
 		Do( "open the build window", () => Click( Hud.Screen, "build" ) );
 		Wait( "build window opens", 2 );
@@ -181,7 +181,7 @@ internal sealed class ThemeParkIncSmokeTest : IDisposable
 		// Guests: the counter reads the live simulation, pause freezes it, normal speed runs it again.
 		Do( "spawn guests near the ride", SpawnGuests );
 		Wait( "guests appear", 2 );
-		Do( "the counter counts them", () => Require( LabelText( "guests" ) == $"Guests in park: {Level.Guests!.GetStatistics().InPark}", "the guest counter reads the live guest simulation" ) );
+		Do( "the counter counts them", () => Require( LabelText( "guests" ) == string.Format( flow.Strings.Extra( OpenTpwText.TpiGuestsInPark ), Level.Guests!.GetStatistics().InPark ), "the guest counter reads the live guest simulation" ) );
 		Do( "the speed button runs fast", () => Click( Hud.Screen, "speed" ) );
 		Wait( "speed applies", 2 );
 		Do( "double speed runs", () => Require( Hud.TimeScale == 2 && Level.SimulationTimeScale == 2, "the speed button doubles the simulation's time scale" ) );

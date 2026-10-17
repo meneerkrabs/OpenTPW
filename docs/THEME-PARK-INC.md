@@ -41,7 +41,7 @@ TPWS container, and its balance settings grow.
 | Settings `.sam` | 418 | 369 | 369/369 |
 | Fonts `.bf4` (`F4FB`) | 32 | 180 | 180/180 |
 | Lip sync `.lip` | 641 | 1,136 | 1,136/1,136 |
-| Strings `.str` (`BFST`), `BFMU`/`BFUM` tables | 21 | 185 | same magic (not parsed in this run) |
+| Strings `.str` (`BFST`), `BFMU`/`BFUM` tables | 21 | 185 (37 in each of 5 languages) | same magic; all 185 decode with the language's `MBToUni.dat` ([LANGUAGES.md](LANGUAGES.md#theme-park-inc)) |
 | Sound banks `.sdt` | 48 | 28 | 26/28; the 2 failures are truncated music banks, see below |
 | Textures | 8,712 `.wct` | 34 `.wct` (intro only), 7,283 `.fsh`, 2,856 `.tga`, 172 `.png` | `.wct` 34/34; `.fsh` 7,283/7,283 decode to RGBA ([FSH.md](FSH.md)) |
 | Terrain/attribute maps `.map` (`TP2M`) | 5 | 4 | 4/4; the other `.map` files are sound catalogs in both games |

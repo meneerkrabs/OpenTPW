@@ -5,3 +5,11 @@
 - **Not done.** Packing into ESP/TPC banks (the sprite-set writer is separate); the generated PNGs are not committed.
 - **Polish pass.** Procedural hair, fabric and skin detail, a key/fill/rim light rig with a contrast and saturation grade tuned against the originals' pixel statistics, raised swimmers with a lighter underwater tint, lengthened limbs and exaggerated strokes with more splash, per-character details for the TPI adults (belly, moustache and stubble, bun and lipstick, perm and glasses, sideburns and bald top) and a taller KB cap. `opentpw_swim_compare.py` builds the before/after sheet.
 - **Third pass.** Painted look instead of plastic (diffuse materials, procedural painted albedo in one shared texture space, ambient occlusion, warm shadows, mild sharpen), smooth capsule limbs with joint balls and analytic normals (no more rings), per-set palette quantisation of the frames (median cut, 255 colours) with the true-colour frames kept alongside, wet hair and a higher, more rolled crawl so the back, shoulders and recovering arms read from directions 0 and 1, and `--verify` (crawl roll and head turn on all 16 sets, arm visibility masks). Heights are unchanged within 1 px (KI 33 to 32).
+
+**Proportions** (after review):
+- smaller eyes, set higher, so the forehead shows under the hair;
+- a smaller kid head;
+- a longer torso and longer legs for kids and adults;
+- shorter spikes on the spiky-haired boys.
+
+Standing heights stay within 3 px of the originals; the tables are in CONTENT-KIT.md.

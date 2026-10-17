@@ -60,11 +60,11 @@ WET_HAIR_SCALE = 0.88    # wet hair sits closer to the head
 SWIM_ARM_SCALE = 1.3
 SWIM_LEG_SCALE = 1.12
 BODIES = {
-	"kid": dict(th=0.52, tw=0.62, td=0.46, thigh=0.30, shin=0.26, arm_up=0.38, arm_low=0.34, head=1.14, limb=1.0, stoop=0.0, size=1.0),
-	"mum": dict(th=0.68, tw=0.60, td=0.44, thigh=0.56, shin=0.52, arm_up=0.52, arm_low=0.48, head=1.0, limb=0.9, stoop=0.0, size=1.2),
-	"dad": dict(th=0.82, tw=0.86, td=0.74, belly=1, thigh=0.58, shin=0.53, arm_up=0.52, arm_low=0.48, head=1.05, limb=1.15, stoop=0.0, size=1.3),
-	"granny": dict(th=0.6, tw=0.68, td=0.52, thigh=0.46, shin=0.42, arm_up=0.44, arm_low=0.40, head=1.04, limb=1.0, stoop=10.0, size=1.1),
-	"grandpa": dict(th=0.66, tw=0.62, td=0.46, thigh=0.55, shin=0.5, arm_up=0.52, arm_low=0.48, head=1.0, limb=1.0, stoop=18.0, size=1.15),
+	"kid": dict(th=0.58, tw=0.62, td=0.46, thigh=0.40, shin=0.36, arm_up=0.42, arm_low=0.37, head=1.0, limb=1.0, stoop=0.0, size=1.0),
+	"mum": dict(th=0.72, tw=0.60, td=0.44, thigh=0.66, shin=0.62, arm_up=0.52, arm_low=0.48, head=1.0, limb=0.9, stoop=0.0, size=1.2),
+	"dad": dict(th=0.86, tw=0.86, td=0.74, belly=1, thigh=0.68, shin=0.63, arm_up=0.52, arm_low=0.48, head=1.05, limb=1.15, stoop=0.0, size=1.3),
+	"granny": dict(th=0.64, tw=0.68, td=0.52, thigh=0.54, shin=0.50, arm_up=0.44, arm_low=0.40, head=1.04, limb=1.0, stoop=10.0, size=1.1),
+	"grandpa": dict(th=0.70, tw=0.62, td=0.46, thigh=0.64, shin=0.58, arm_up=0.52, arm_low=0.48, head=1.0, limb=1.0, stoop=18.0, size=1.15),
 }
 
 
@@ -79,10 +79,10 @@ def srgb(r, g, b):
 # One preset per original kid sprite set. Colours are sRGB, picked from the original's standing frames.
 PRESETS = {
 	# TPW kids
-	"BE": dict(edition="TPW", girl=False, skin=(236, 184, 158), hair=(98, 54, 24), outfit=(28, 122, 12), hair_style="spiky", spikes=11, spike_length=0.34, iris=(40, 90, 215), ears=True),
-	"BI": dict(edition="TPW", girl=False, skin=(238, 188, 162), hair=(232, 176, 46), outfit=(34, 44, 190), hair_style="spiky", spikes=12, spike_length=0.4, iris=(40, 90, 215), ears=True),
+	"BE": dict(edition="TPW", girl=False, skin=(236, 184, 158), hair=(98, 54, 24), outfit=(28, 122, 12), hair_style="spiky", spikes=11, spike_length=0.24, iris=(40, 90, 215), ears=True),
+	"BI": dict(edition="TPW", girl=False, skin=(238, 188, 162), hair=(232, 176, 46), outfit=(34, 44, 190), hair_style="spiky", spikes=12, spike_length=0.28, iris=(40, 90, 215), ears=True),
 	"CH": dict(edition="TPW", girl=True, skin=(238, 186, 160), hair=(34, 26, 26), outfit=(158, 44, 50), hair_style="pigtails", bobble=(225, 20, 20), iris=(40, 90, 215), ears=False),
-	"FR": dict(edition="TPW", girl=False, skin=(236, 184, 158), hair=(20, 16, 16), outfit=(236, 22, 16), hair_style="spiky", spikes=12, spike_length=0.36, iris=(40, 90, 215), ears=True),
+	"FR": dict(edition="TPW", girl=False, skin=(236, 184, 158), hair=(20, 16, 16), outfit=(236, 22, 16), hair_style="spiky", spikes=12, spike_length=0.25, iris=(40, 90, 215), ears=True),
 	"KI": dict(edition="TPW", girl=True, skin=(238, 188, 162), hair=(196, 78, 26), outfit=(56, 152, 52), hair_style="pigtails", topknot=True, iris=(40, 90, 215), ears=False),
 	"SA": dict(edition="TPW", girl=True, skin=(142, 94, 54), hair=(100, 66, 12), outfit=(36, 42, 104), hair_style="bob", iris=(70, 40, 20), ears=False),
 	"SU": dict(edition="TPW", girl=True, skin=(240, 190, 164), hair=(246, 216, 92), outfit=(60, 102, 204), hair_style="pigtails", bobble=(225, 20, 20), iris=(40, 90, 215), ears=False),
@@ -420,10 +420,10 @@ def build_kid(preset_name, underwater=True, tag=None, swim=False):
 	head.scale = (b["head"],) * 3
 	_mesh(kid, "sphere", "skull", (0.72, 0.7, 0.67), (0, 0, 0), m_skin, head, segments=18)
 	for s in (-1, 1):
-		_mesh(kid, "sphere", f"eyeWhite{s}", (0.215, 0.14, 0.27), (0.27 * s, 0.6, 0.02), m_white, head)
-		_mesh(kid, "sphere", f"iris{s}", (0.125, 0.09, 0.17), (0.28 * s, 0.7, 0.01), m_iris, head)
-		_mesh(kid, "sphere", f"pupil{s}", (0.06, 0.05, 0.09), (0.28 * s, 0.77, 0.01), m_dark, head, segments=8)
-		_mesh(kid, "sphere", f"brow{s}", (0.23, 0.09, 0.065), (0.27 * s, 0.58, 0.31), m_brow, head, rot=(0, math.radians(-14 * s), 0), segments=8)
+		_mesh(kid, "sphere", f"eyeWhite{s}", (0.16, 0.11, 0.2), (0.25 * s, 0.62, 0.12), m_white, head)
+		_mesh(kid, "sphere", f"iris{s}", (0.095, 0.07, 0.13), (0.26 * s, 0.7, 0.11), m_iris, head)
+		_mesh(kid, "sphere", f"pupil{s}", (0.045, 0.04, 0.07), (0.26 * s, 0.76, 0.11), m_dark, head, segments=8)
+		_mesh(kid, "sphere", f"brow{s}", (0.19, 0.08, 0.055), (0.25 * s, 0.6, 0.36), m_brow, head, rot=(0, math.radians(-14 * s), 0), segments=8)
 		if p["ears"]:
 			_mesh(kid, "sphere", f"ear{s}", (0.12, 0.17, 0.22), (0.7 * s, -0.02, -0.02), m_rosy, head, segments=8)
 	_mesh(kid, "sphere", "nose", (0.13, 0.15, 0.13), (0, 0.72, -0.2), m_rosy, head, segments=8)
@@ -502,7 +502,7 @@ def _build_hair(kid, p, head, m_hair, m_bobble, m_cap):
 	style = p["hair_style"]
 	hx, hy, hz = 0.72, 0.7, 0.67
 	if style in ("spiky", "pigtails", "curly"):
-		_mesh(kid, "sphere", "hairCap", (0.77, 0.76, 0.62), (0, -0.1, 0.22), m_hair, head, segments=16)
+		_mesh(kid, "sphere", "hairCap", (0.77, 0.76, 0.56), (0, -0.18, 0.32), m_hair, head, segments=16)
 	if style == "spiky":
 		n = p["spikes"]
 		length = p["spike_length"]
@@ -569,7 +569,7 @@ def _build_hair(kid, p, head, m_hair, m_bobble, m_cap):
 	elif style == "short":
 		_mesh(kid, "sphere", "hairCap", (0.75, 0.74, 0.6), (0, -0.1, 0.2), m_hair, head, segments=16)
 	elif style == "bun":
-		_mesh(kid, "sphere", "hairCap", (0.77, 0.76, 0.62), (0, -0.1, 0.22), m_hair, head, segments=16)
+		_mesh(kid, "sphere", "hairCap", (0.77, 0.76, 0.56), (0, -0.18, 0.32), m_hair, head, segments=16)
 		_mesh(kid, "sphere", "bun", (0.38, 0.38, 0.34), (0, -0.28, 0.82), m_hair, head, segments=12)
 		_mesh(kid, "sphere", "fringe", (0.55, 0.28, 0.18), (0, 0.5, 0.48), m_hair, head, segments=10)
 	elif style == "perm":

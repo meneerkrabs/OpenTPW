@@ -140,15 +140,19 @@ ours right) and prints heights. Standing height in pixels (direction 4), ours vs
 
 | TPW | BE | BI | CH | FR | KI | SA | SU | TA |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| ours | 34 | 34 | 31 | 34 | 32 | 30 | 31 | 32 |
+| ours | 33 | 34 | 32 | 34 | 33 | 31 | 32 | 33 |
 | original | 32 | 32 | 34 | 31 | 34 | 30 | 34 | 32 |
 
 | TPI | BD | GB | GK | KB | FA | MO | GM | GR |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| ours | 41 | 39 | 38 | 41 | 48 | 47 | 42 | 38 |
+| ours | 42 | 41 | 40 | 42 | 51 | 49 | 44 | 40 |
 | original | 40 | 41 | 38 | 43 | 50 | 48 | 42 | 38 |
 
-All within 3 pixels (most within 2); the spiky-haired boys and the TPW pigtail girls are the 3 px outliers.
+All within 3 pixels, most within 2. The proportions follow the originals more closely since October 17, 2026:
+- smaller eyes set higher in the face, with the forehead visible under the hair;
+- a smaller kid head (scale 1.0, was 1.14);
+- a longer torso and longer legs for kids and adults;
+- shorter spikes for the spiky-haired boys.
 
 ### Slots, directions and frame names
 

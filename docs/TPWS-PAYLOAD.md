@@ -61,8 +61,13 @@ TPWS and an INTS for each theme.
 These checks ran with the earlier leading-tag marker reader ("prefix" = action
 recording + World block, "SYSG" = RideSystem block). The writer-order block
 split and the thing-chain walk have not been run on this set yet.
-| Attraction records | 5 in each TPWS, one per fixed item (Bus, Seaplane, Ferry, Traffic Lights and the *601 park object); an INTS holds two attraction things (Gates, Lights) that do not decode yet (docs/SAVE-THINGS.md, "The restart saves"); all three gauges are 100 in all 35 records |
+| Attraction records | 5 in each TPWS, one per fixed item (Bus, Seaplane, Ferry, Traffic Lights and the *601 park object); an INTS holds two attraction things (Gates, Lights), which decode once the initial calendar and empty history ring are accepted (docs/SAVE-THINGS.md, "The restart saves"); all three gauges are 100 in all 35 records |
 | Economy | Bank prefix, 8 loan offers equal to the theme's `LoanInfo`, and the full challenge list of `ChallengesInThisLevel` (8–10 records); see docs/ECONOMY.md for the corrected challenge layout |
+
+Initial state of the INTS saves (an unplayed park): the macro-AI calendar is the constructor's (`0x4F7E80`: start 2000-01-01, month cache 0,
+day cache -1, rate 15000, park turn 0) and every attraction history ring is the empty ring of `0x51ADE0` (current entry -1, 30 entries, no wrap).
+The loaders (`0x4F7F30`, `0x4E2C10`) take both unchecked; `SaveWorld.Parse` and `SaveAttraction.Read` accept exactly these two states besides the played ones.
+OpenTPW's Restart Park does not reload the snapshot (SAVE-012).
 
 The balances (about 1.2 billion) come from the cheat, so money is not a reference value.
 Named saves and their autosaves decode to the same layout; only small sections differ.

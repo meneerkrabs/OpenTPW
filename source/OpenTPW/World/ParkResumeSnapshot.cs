@@ -137,6 +137,15 @@ internal sealed record ParkResumeSnapshot
 	[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 	public SmarterGuestsSaveData? SmarterGuests { get; init; }
 	/// <summary>
+	/// The enabled script mods' own state, keyed by mod id (the <c>state</c> text, the failure counters, the disabled flag and the script behaviour and API versions), or null when no script mod was
+	/// enabled: the field is then left out of the file, so a park saved without one is byte-identical to one from before script mods existed. Script mods need the guests' identity state, so a park
+	/// with this section also carries <see cref="SmarterGuests"/> (without the smarter-guests extension's rules or record). Builds from before this field reject a save that has it (the codec refuses
+	/// unknown fields), as intended; the save also records the mods in <see cref="Mods"/>, which loading needs active with the same content, and the interpreter in the same behaviour version.
+	/// </summary>
+	// [EXT:script-mods] OpenTPW's own scripted mods (TPW Script); the original game had no such state
+	[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+	public ScriptModsSaveData? ScriptMods { get; init; }
+	/// <summary>
 	/// SHA-256 manifest of the assets the park depends on: canonical expected-asset identifier → 64 lowercase hex
 	/// characters. Computed from verified catalog/game-data paths at load; a saved path is never read back.
 	/// </summary>

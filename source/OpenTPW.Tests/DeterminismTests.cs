@@ -5,6 +5,7 @@ using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using OpenTPW.Scripting;
 using static OpenTPW.Tests.RideVMTests;
 
 namespace OpenTPW.Tests;
@@ -286,6 +287,67 @@ public class DeterminismTests
 		Assert.IsInstanceOfType( park.Guests.Decisions, typeof( SmarterGuestDecisions ) );
 		park.Run( PinnedRunTicks );
 		Assert.AreEqual( SmarterGuestsFixedRunHash, park.Hash, $"0x{park.Hash:X16}" );
+	}
+
+	/// <summary>
+	/// The pinned hash of the same run with the shipped example script mod <c>opentpw.example.patient-guests</c> on (docs/SCRIPT-MODS.md): the world hash carries the mod's state, counters and flag next to the
+	/// guest identity state. CI runs it on Windows, macOS and Linux, so an equal value means the interpreter, the stateless <c>rng</c> and the hook wiring give the same park everywhere. A deliberate change
+	/// of the example, of the language, of a limit or of the hook wiring changes this value.
+	/// </summary>
+	internal const ulong ScriptModsFixedRunHash = 0xFA975EE2267EF3B6UL;
+
+	/// <summary>
+	/// The pinned hash of a run with a test mod that implements all four hooks, keeps counters in its state and draws with <c>rng</c> (the example uses neither <c>scoreAttraction</c>, <c>wanderGoal</c> nor
+	/// <c>rng</c>): the cross-platform pin of everything the example does not reach.
+	/// </summary>
+	internal const ulong ScriptModsAllHooksFixedRunHash = 0x34D604D883414DD3UL;
+
+	[TestMethod]
+	public void ScriptModsFixedRunHashIsTheSameInEveryProcess()
+	{
+		using var scope = OpenTPW.Mods.OpenTpwExtensions.Use( TempScriptMods.Example() );
+		var park = new SyntheticPark( WorldSeed.Default );
+		Assert.IsInstanceOfType( park.Guests.Decisions, typeof( ScriptGuestDecisions ) );
+		park.Run( PinnedRunTicks );
+		var stats = park.Guests.ScriptMods!.Stats().Single();
+		Assert.IsTrue( stats.Calls > 50 && stats.RuntimeErrors + stats.BudgetFailures + stats.InvalidResults == 0, $"{stats.Calls} calls" );
+		Assert.AreEqual( ScriptModsFixedRunHash, park.Hash, $"0x{park.Hash:X16}" );
+	}
+
+	[TestMethod]
+	public void ScriptModsAllHooksFixedRunHashIsTheSameInEveryProcess()
+	{
+		using var mods = new TempScriptMods().Add( "community.counter", ScriptModsSaveTests.Counter, ScriptModsSaveTests.CounterHooks );
+		using var scope = OpenTPW.Mods.OpenTpwExtensions.Use( mods.Resolve() );
+		var park = new SyntheticPark( WorldSeed.Default );
+		park.Run( PinnedRunTicks );
+		var mod = park.Guests.ScriptMods!.Mods.Single();
+		foreach ( var key in new[] { "s", "j", "l", "w" } )
+			Assert.IsTrue( mod.State.TryGet( key, out var count ) && count.AsInt > 0, $"the {key} hook ran: {ScriptState.Serialize( mod.State )}" );
+		Assert.AreEqual( 0, mod.Failures, mod.LastFailure );
+		Assert.AreEqual( ScriptModsAllHooksFixedRunHash, park.Hash, $"0x{park.Hash:X16}" );
+	}
+
+	/// <summary>A script mod that only answers <c>prev</c> leaves every guest value, and so the economy, as the off run's; only the world hash differs, by the identity and script state.</summary>
+	[TestMethod]
+	public void ScriptModsThatAnswerPrevLeaveTheSyntheticParkAsItWasOff()
+	{
+		using var mods = new TempScriptMods().Add( "community.pass", "function scoreAttraction(guest, c, prev)\n  return prev\nend\nfunction joinQueue(guest, a, prev)\n  return prev\nend\n", "scoreAttraction", "joinQueue" );
+		SyntheticPark on;
+		using ( OpenTPW.Mods.OpenTpwExtensions.Use( mods.Resolve() ) )
+			on = new SyntheticPark( WorldSeed.Default );
+		var off = new SyntheticPark( WorldSeed.Default );
+		for ( var chunk = 0; chunk < PinnedRunTicks / 1200; chunk++ )
+		{
+			off.Run( 1200 );
+			on.Run( 1200 );
+			Assert.AreEqual( off.Guests.ComputeStateHash(), on.Guests.ComputeStateHash(), $"guest state hash after {off.Ticks} ticks" );
+			Assert.AreEqual( off.Guests.RandomState, on.Guests.RandomState, $"world generator after {off.Ticks} ticks" );
+			Assert.AreEqual( ParkSaveJson( off ), ParkSaveJson( on ), $"economy after {off.Ticks} ticks" );
+		}
+		Assert.AreEqual( FixedRunHash, off.Hash );
+		Assert.AreNotEqual( off.Hash, on.Hash );
+		Assert.IsTrue( on.Guests.ScriptMods!.Stats().Single().Calls > 50 );
 	}
 
 	/// <summary>With the delegating policy the guests and the economy are the off run's, tick for tick; only the world hash differs, by the extension's state.</summary>

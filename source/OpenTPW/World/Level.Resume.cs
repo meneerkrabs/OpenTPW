@@ -60,6 +60,8 @@ public partial class Level
 			Mods = ParkResumeMods.Capture( OpenTpwExtensions.Active ),
 			// [EXT:smarter-guests] null while the extension is off for these guests, so such saves keep their bytes
 			SmarterGuests = SmarterGuestsSave.Capture( Guests ),
+			// [EXT:script-mods] null while no script mod is enabled, so such saves keep their bytes
+			ScriptMods = ScriptModsSave.Capture( Guests ),
 			AssetHashes = assets
 		};
 		ParkResumeSaveFile.ValidateSnapshot( snapshot, Objects.Catalog, Park.Economy.Settings, Park.Economy.Catalog, assets );
@@ -101,6 +103,8 @@ public partial class Level
 		Guests.RestoreSnapshot( snapshot.Guests );
 		// [EXT:smarter-guests] the extension's birth ids, keyed by the guest ids the restore just rebuilt
 		SmarterGuestsSave.Restore( Guests, snapshot.SmarterGuests );
+		// [EXT:script-mods] the script mods' state, counters and flags
+		ScriptModsSave.Restore( Guests, snapshot.ScriptMods );
 		simulationClock.RestoreSnapshot( snapshot.Clock );
 		if ( snapshot.Weather != null )
 		{

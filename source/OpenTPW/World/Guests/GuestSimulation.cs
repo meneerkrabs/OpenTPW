@@ -1,3 +1,5 @@
+using OpenTPW.Mods;
+
 namespace OpenTPW;
 
 /// <summary>Counts for overlays, logs and tests.</summary>
@@ -76,9 +78,23 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		isOpenForStep = IsOpenForStep;
 		separationForStep = SeparationForStep;
 		// [EXT:smarter-guests] the gate is read here, once; a smarter policy brings the extension's park state with it
-		this.decisions = decisions ?? ( FeatureGates.SmarterGuests ? new SmarterGuestDecisions() : OriginalGuestDecisions.Instance );
+		ScriptModRuntime? scriptMods = null;
+		this.decisions = decisions ?? DefaultPolicy( out scriptMods );
+		ScriptMods = scriptMods;
 		if ( this.decisions.UsesExtensionState )
 			SmarterGuests = new SmarterGuestsState( seed );
+	}
+
+	/// <summary>
+	/// The policy a simulation built without one takes, read once from the active mod set: the smarter-guests policy or the original, wrapped by <see cref="ScriptGuestDecisions"/> when script mods are
+	/// enabled (docs/SCRIPT-MODS.md). Without a script mod nothing is wrapped, built, saved or hashed.
+	/// </summary>
+	// [EXT:script-mods] the wrapper runs the enabled script mods' hooks over the base policy's answers
+	private static IGuestDecisions DefaultPolicy( out ScriptModRuntime? scriptMods )
+	{
+		IGuestDecisions policy = FeatureGates.SmarterGuests ? new SmarterGuestDecisions() : OriginalGuestDecisions.Instance;
+		scriptMods = ScriptModRuntime.ForActive( OpenTpwExtensions.Active );
+		return scriptMods == null ? policy : new ScriptGuestDecisions( policy, scriptMods );
 	}
 
 	private readonly IGuestDecisions decisions;
@@ -89,6 +105,10 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// <summary>The <c>opentpw.smarter-guests</c> extension's park state, null when the simulation runs the original policy (docs/SMARTER-GUESTS.md).</summary>
 	// [EXT:smarter-guests] OpenTPW's own extension state; never in the guest snapshot or the guest state hash
 	internal SmarterGuestsState? SmarterGuests { get; }
+
+	/// <summary>The enabled script mods of this simulation (their state, failure counters and disabled flags), null when none is enabled (docs/SCRIPT-MODS.md).</summary>
+	// [EXT:script-mods] OpenTPW's own scripted mods; never in the guest snapshot or the guest state hash
+	internal ScriptModRuntime? ScriptMods { get; }
 
 	public GuestPathGrid Grid { get; }
 	public GuestSettings Settings { get; }
@@ -465,6 +485,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 				throw new OverflowException( $"Guest {guest.Id} time in park exceeds the supported duration." );
 		TickCount++;
 		TimeSeconds += deltaSeconds;
+		decisions.BeginTick();
 		// [EXT:smarter-guests] the extension's first tick gives the guests that predate it their ids, in thing-list order; before any decision of the tick
 		if ( SmarterGuests is { Bootstrapped: false } smarter )
 			smarter.Bootstrap( GuestsInThingListOrder() );

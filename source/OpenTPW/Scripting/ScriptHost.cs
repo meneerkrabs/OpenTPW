@@ -87,11 +87,22 @@ public sealed class ScriptHost
 	}
 
 	/// <summary>
+	/// Makes <paramref name="state"/> the committed state without validating it again: for a caller that keeps one state for several hosts (the files of one mod) and took it from a
+	/// host's own commit or from <see cref="SetState"/>.
+	/// </summary>
+	internal void AdoptState( ScriptTable state ) => State = state ?? throw new ArgumentNullException( nameof( state ) );
+
+	/// <summary>Sets the steps left in the tick, for a caller that meters one tick budget across several hosts (the files of one mod).</summary>
+	internal void SetTickRemaining( long steps ) => tickRemaining = steps;
+
+	/// <summary>
 	/// Calls a hook. <paramref name="arguments"/> are ints, bools, strings or read-only views (<see cref="ScriptTable.ArrayView"/>,
 	/// <see cref="ScriptTable.RecordView"/>); a wrong argument count or type is a host bug and throws. Everything the script can do wrong is
 	/// returned as an outcome with <paramref name="previous"/> as the value and the state rolled back.
+	/// <paramref name="hook"/> names the function to run; <paramref name="hookName"/> is the hook it implements, which <c>rng</c> hashes
+	/// (the hook name, not the function name, so renaming a function does not change a mod's random numbers; null takes the function name).
 	/// </summary>
-	public ScriptCallResult Call( string hook, ReadOnlySpan<ScriptValue> arguments, ScriptValue previous, ScriptResultSpec expected, ScriptCallIdentity identity )
+	public ScriptCallResult Call( string hook, ReadOnlySpan<ScriptValue> arguments, ScriptValue previous, ScriptResultSpec expected, ScriptCallIdentity identity, string? hookName = null )
 	{
 		if ( expected.Kind is not (ScriptKind.Int or ScriptKind.Bool or ScriptKind.String) )
 			throw new ArgumentException( "A hook result is an int, a bool or a string; tables cannot be hook results.", nameof( expected ) );
@@ -114,7 +125,7 @@ public sealed class ScriptHost
 		var budget = Math.Min( options.StepsPerCall, tickRemaining );
 
 		var token = new object();
-		var rngIdentity = new RngIdentity( identity.ParkSeed, modHash, ScriptRng.HashText( hook ), identity.GuestBirthId, identity.ParkTurn );
+		var rngIdentity = new RngIdentity( identity.ParkSeed, modHash, ScriptRng.HashText( hookName ?? hook ), identity.GuestBirthId, identity.ParkTurn );
 
 		ScriptValue value;
 		try

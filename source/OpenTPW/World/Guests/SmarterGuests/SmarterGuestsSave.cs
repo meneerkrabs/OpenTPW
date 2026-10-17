@@ -46,14 +46,15 @@ internal static class SmarterGuestsSave
 	/// <summary>
 	/// The section's own consistency against the guests it names and the mods the save records, or null when it holds: a section exists exactly when <c>opentpw.smarter-guests</c> is recorded; the
 	/// counter starts at <see cref="SmarterGuestsState.FirstBirthId"/>; every id is non-zero, below the counter and given once, to a guest the save holds, once; and after the first tick
-	/// every guest has an id.
+	/// every guest has an id. Script mods share the section (their identity state): with <paramref name="scriptMods"/> (the save has a ScriptMods section) the section is required and the extension's
+	/// record is not.
 	/// </summary>
-	public static string? ShapeProblem( SmarterGuestsSaveData? section, IEnumerable<int>? guestIds, IReadOnlyList<ParkModRecord?>? mods )
+	public static string? ShapeProblem( SmarterGuestsSaveData? section, IEnumerable<int>? guestIds, IReadOnlyList<ParkModRecord?>? mods, bool scriptMods = false )
 	{
 		var recorded = mods?.Any( mod => mod != null && mod.Id == ExtensionId ) == true;
 		if ( section == null )
-			return recorded ? $"the save records {ExtensionId} but has no SmarterGuests section" : null;
-		if ( !recorded )
+			return recorded ? $"the save records {ExtensionId} but has no SmarterGuests section" : scriptMods ? "the save has a ScriptMods section but no SmarterGuests section" : null;
+		if ( !recorded && !scriptMods )
 			return $"the save has a SmarterGuests section but does not record {ExtensionId}";
 		return SectionProblem( section, guestIds );
 	}

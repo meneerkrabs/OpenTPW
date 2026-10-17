@@ -5,10 +5,11 @@ prefers. Scripts are written in *TPW Script*, a small deterministic language tha
 external scripting engine, and a mod can never ship native code or .NET assemblies.
 
 **Status.** The language core (lexer, parser, compiler, interpreter, `state` codec) is implemented and tested in
-`source/OpenTPW/Scripting/` (phase 2). Phase 3 adds the manifest (`scripts`, `hooks`, `scriptApi`), loading and compiling at resolve
-time, the classification as simulation-changing, "Contains scripts" on the mods screen and safe mode. **Not wired yet**: the hooks
-into the guest simulation, the `ScriptMods` park-save section, failure counters and the `WorldStateHash` change (phase 4), the browser
-check (phase 5), and `--test-mod` (phase 6). Sections below say what exists now and what is planned.
+`source/OpenTPW/Scripting/` (phase 2). Phase 3 added the manifest (`scripts`, `hooks`, `scriptApi`), loading and compiling at resolve
+time, the classification as simulation-changing, "Contains scripts" on the mods screen and safe mode. **Phase 4 (this page, as built)** wires
+the four hooks into the guest simulation through the `IGuestDecisions` seam, adds the failure counters and the disabled flag, the `ScriptMods`
+park-resume section, its part of the `WorldStateHash`, the measured budgets and the working `opentpw.example.patient-guests`. **Not yet**: the
+browser check (phase 5) and `--test-mod` (phase 6). The browser build does not embed the example, so script mods do not run there yet.
 
 ## Why our own language
 
@@ -143,10 +144,10 @@ swapped after hashing cannot run.
 
 **Budgets.**
 
-- A **step budget per call** (default 10 000) and **per tick** (default 200 000), counted in interpreter steps. One step is
+- A **step budget per call** (default 5 000) and **per tick** (default 50 000, per mod), counted in interpreter steps. One step is
   one bytecode instruction; operations that touch data charge more in proportion (string concatenation by length, table
   construction and copying by entry count). A call may use `min(per-call, left in the tick)`. The counter is checked in the
-  dispatch loop; running out gives `BudgetExhausted`. Steps depend only on the script and its inputs, so results are identical
+  dispatch loop; running out gives `BudgetExhausted`. Where the numbers come from is in [Budgets](#budgets-measured). Steps depend only on the script and its inputs, so results are identical
   on every run and platform.
 - A **call depth cap** of 32 frames, on an explicit frame array (not the C# stack), and a value stack of 4096.
 - A **memory cap** of 512 KiB per call, accounted (not measured) for strings and tables created during the call, including
@@ -173,9 +174,8 @@ later mod therefore does not undo earlier mods. The typed outcome is `ScriptCall
 from `ScriptHost.Call(hook, args, prev, spec, identity)` with `Outcome` one of `Ok`, `RuntimeError` (message and line),
 `BudgetExhausted` or `InvalidResult`.
 
-**Failure counters and the disabled flag (planned, phase 4).** Counting failures per mod and disabling a mod after N of
-them is **simulation state**: the counters and the flag are saved and hashed, because they change which hooks run. The
-language core only reports the outcome; the counting belongs to the game wiring.
+**Failure counters and the disabled flag** belong to the game wiring (`ScriptModInstance`), not to the language core, which only reports
+the outcome. They are described under [Failure counters](#failure-counters-and-the-disabled-flag).
 
 ## The `state` schema
 
@@ -213,21 +213,49 @@ equals continuing without one (tested).
 
 `(park seed, mod id, hook name, guest birth id, park turn, draw ordinal)`
 
-where the ordinal counts the `rng` calls inside this one call (0, 1, 2, ...) and the host supplies the rest. The value is a
+where the ordinal counts the `rng` calls inside this one call (0, 1, 2, ...) and the host supplies the rest. The **hook name** is hashed, not
+the name of the function that implements it (`ScriptHost.Call(function, ..., hookName)`), so renaming a function does not change a mod's numbers.
+The host takes the park seed from the guests' identity state (the saved park seed), the birth id from the guest and the turn from the park turn. The value is a
 SplitMix64-style mix of the tuple, taken modulo `n` (`ScriptRng.Draw`). Replays, save resumes and other platforms get the
 same numbers, a failed call consumes nothing, and scripts never see `WorldRng`. The exact values are pinned by a test:
 saves will depend on them.
 
-## Saves and versioning (planned, phase 4)
+## Saves and versioning
 
-- A new optional **`ScriptMods`** section in the park-resume data (null, and omitted, when no script mod is on) holds per mod
-  the canonical `state`, the failure counters, the disabled flag, and the language and behaviour version.
-- The section joins `WorldStateHash`, and `SchemaVersion` is bumped once, when the section lands. Older builds refuse saves
-  that contain the section (the codec rejects unknown properties).
-- **The behaviour version is saved.** A change to interpreter semantics or limits bumps `ScriptLimits.BehaviourVersion`; a
-  save from another version is refused with a message instead of being resumed under different rules.
-- **Ordering rule:** hooks ship only in the same PR as, or after, persistence, never before.
-- Phase 2 provides what the section needs from the language side: `ScriptState.Serialize`, `Parse` and `Validate`.
+A new optional **`ScriptMods`** section in the park-resume data (`ParkResumeSnapshot.ScriptMods`, class `ScriptModsSave`) holds, **keyed by mod id**:
+
+| Field | Meaning |
+| --- | --- |
+| `BehaviourVersion` | `ScriptLimits.BehaviourVersion` when the park was saved. |
+| `ApiVersion` | `ScriptLimits.ScriptApiVersion` when the park was saved. |
+| `State` | The mod's `state` as canonical text (`ScriptState.Serialize`). |
+| `RuntimeErrors`, `BudgetFailures`, `InvalidResults` | The failure counters. |
+| `Disabled` | The disabled flag. |
+
+- **Present exactly when a script mod is enabled** (and so recorded in `Mods`, like any simulation-changing mod); `null` and left out of the file
+  otherwise, so a park saved without script mods is **byte-identical** to one from before script mods existed. Loading checks that the section names
+  exactly the active script mods (`ScriptModsSave.ActiveProblem`, and `Restore` once more).
+- **Strict validation on load** (`ScriptModsSave.ShapeProblem`, run with the rest of the envelope's shape check, before anything is built): every
+  key is a recorded mod; both versions equal this build's; `State` parses under the `state` schema **and is in canonical form byte for byte**;
+  counters are not negative and their sum is at most 16; `Disabled` is true exactly when the sum is 16. A **version mismatch refuses** with a
+  message such as `community.x was saved under script behaviour version 1, but this build runs version 2`; no save is resumed under other rules.
+- **It joins `WorldStateHash`** (`ScriptModRuntime.AddCanonicalState`: a marker, then per mod in id order the id, both versions, the canonical
+  state, the three counters and the flag) **only while a script mod is enabled**.
+- **`SchemaVersion` stays 21** (decided like the smarter-guests section in 0b): the version marks a change of the hash for runs that already had a
+  hash; a run without script mods hashes exactly as before (the existing pins prove it), and a run with them is a different run anyway (it records
+  the mods and their content digests, and the section's own marker begins its part). Bumping it would move every pin for a feature that is off.
+- **Older builds refuse a save that has the section**: the codec rejects unknown members (`UnmappedMemberHandling.Disallow`). It also refuses the
+  `Mods` record, so the refusal is doubled. That is intended: an old build cannot run the hooks the park needs.
+- **The guests' identity state is shared.** Script mods need birth ids and a park seed for the `rng` identity, so a park with script mods also
+  carries the optional `SmarterGuests` section (`SmarterGuestsSave`: park seed, counter, birth ids). The identity state is split from the
+  smarter-guests *rules*: a script policy brings the state without any rule or without the `opentpw.smarter-guests` record, and the shape check accepts the
+  section when a `ScriptMods` section is present (`ShapeProblem( ..., scriptMods )`) and requires it then. Birth ids are allocated with no
+  random draw, so the guests behave exactly as without them (a test runs a mod that only answers `prev` and compares the guest hash with the off
+  run).
+- **The behaviour version is saved.** A change to interpreter semantics or limits bumps `ScriptLimits.BehaviourVersion`. Version 1 first reached a
+  save in phase 4, after its budgets were tuned from measurements (below), so the budgets of phases 2 and 3 (10 000 and 200 000 steps) never
+  appeared in a save and the version did not move.
+- **Ordering rule:** hooks ship only in the same PR as, or after, persistence, never before (this phase did both).
 
 ## Loading and the manifest
 
@@ -243,7 +271,7 @@ A mod's scripts are declared in its manifest ([MODS.md](MODS.md#scripts)):
   `content.scripts`, and refused without it.
 - **`hooks`** maps a hook name to the function that implements it. Only the names in `ScriptLimits.HookParameters` are accepted
   (`scoreAttraction` and `joinQueue` and `leaveQueue` with 3 parameters, `wanderGoal` with 2), anything else fails manifest parsing.
-  Hooks stay inert until phase 4. Each function must exist in exactly one of the mod's files and have the hook's parameter count.
+  Each function must exist in exactly one of the mod's files and have the hook's parameter count.
 - **Caps (resolve time).** At most 8 script files per mod (`ModManifest.MaximumScriptFiles`), 64 KiB per file (`ScriptLimits.MaxSourceBytes`)
   and 256 KiB of source in all (`ModManifest.MaximumScriptBytes`), against 20 000 files and 2 GiB for a mod in general. The token,
   nesting, function and name limits of the language apply to every file. A script file may not lie inside the mod's `overrides` or
@@ -259,8 +287,8 @@ A mod's scripts are declared in its manifest ([MODS.md](MODS.md#scripts)):
 manifest file it hashes is not byte-identical, so the file list and the hook map provably come from hashed bytes. `ModSet.Resolve` reads each script file once; the SHA-256 that goes into `ContentSha256` and the bytes that are
 compiled come from that one read, and the bytes are kept in memory. `ResolvedMod.Scripts` (a `ModScriptSet`) exposes, per file, its
 path, the retained `Source` bytes, and the `ScriptProgram` compiled from exactly those bytes, plus the `Hooks` table (file index and
-function per declared hook). **Phase 4 must run these programs (or recompile `Source`) and never read the path again**: a file changed
-after resolve then cannot run (tested). A script file larger than the per-file cap is hashed but not kept, and the mod is refused.
+function per declared hook). **The hooks run these programs and never read the path again** (`ScriptModInstance` builds its hosts from `Files[i].Program`): a file changed
+after resolve cannot run (tested in phase 3). A script file larger than the per-file cap is hashed but not kept, and the mod is refused.
 
 **Classification.** A mod with scripts changes the simulation unless every declared hook is UI-only (`ScriptLimits.UiOnlyHooks`, empty in
 v1), so in practice it always does. It is therefore in `ModSet.SimulationMods` and recorded in park saves like any simulation-changing
@@ -299,21 +327,126 @@ A script mod that breaks the start of the game must not lock the player out. The
 
 Mods without scripts are never affected by safe mode.
 
-## Hook API v1 (planned, not wired yet)
+## Hook API v1
 
-The hooks follow the real decision path in `GuestSimulation`. Candidates are addressed by **stable ids**, not array indices.
-Tie-breaking and the final selection stay with the host (`AttractionChoice`). Multiple mods chain in the resolved, saved mod
-order, each receiving the previous result as `prev`. Each hook has a typed result.
+The hooks sit on the decision seam of the guests ([SMARTER-GUESTS.md](SMARTER-GUESTS.md#architecture-in-short-as-built-in-phase-0b), `IGuestDecisions`). `ScriptGuestDecisions`
+(`World/Guests/Decisions/`) **wraps the base policy** (the faithful guests, or the smarter-guests policy when that extension is on): every decision first takes
+the base policy's answer, and a hook a mod implements then receives it as `prev` and returns the answer to use, mod after mod in the resolved, saved mod
+order, each receiving the previous result. A mod that fails returns `prev`, so it undoes neither the base policy nor the mods before it. The host keeps every
+effect and every `WorldRng` draw; a hook can only change an answer. The policy is picked once, when the guest simulation is built, from the active mod set;
+without a script mod nothing is wrapped (`ScriptMods` is null, nothing is saved or hashed).
 
-| Hook | Called | Result |
-| --- | --- | --- |
-| `scoreAttraction(guest, candidate, prev)` | per candidate, in major and minor decisions; the work counts per candidate, not per guest | int in the host's score range |
-| `joinQueue(guest, attraction, prev)` | when routing has reached the back cell | bool |
-| `leaveQueue(guest, attraction, prev)` | after the original leave tests | bool |
-| `wanderGoal(guest, prev)` | when a guest picks a wander target | int goal id |
+| Hook | Seam point | When it runs | Result |
+| --- | --- | --- | --- |
+| `scoreAttraction(guest, candidate, prev)` | `ScoreAttraction` | per candidate, in the major and the minor decision (an attraction without a back-of-queue cell is never offered); the work counts per candidate | int, 0 to 4294967295 (the host's unsigned score) |
+| `joinQueue(guest, attraction, prev)` | `DecideAdmission` | when the guest has reached the back cell and the physical checks (open, not listed, room) passed | bool, true admits |
+| `leaveQueue(guest, attraction, prev)` | `DecideQueuePatience` | after the existing leave tests, on every turn a waiting guest stays (never while called forward or in an interlude) | bool, true leaves |
+| `wanderGoal(guest, prev)` | `ChooseWanderGoal` | after the host's own destination search and its draws | int, `y * 1024 + x` of a cell inside the map |
 
-`guest`, `candidate` and `attraction` are read-only views. The exact fields, score range and call counts are fixed in phases 3
-and 4; the signatures above are a sketch.
+The booth verdict, the two comparison rules (`BeatsInMajorDecision`, `BeatsInMinorDecision`) and the use memory are not hooks in API 1; they pass through.
+Tie-breaking and the final choice stay the host's. Notes on the mapping:
+
+- **`scoreAttraction`**: `prev` is the base score as an int. The major decision compares scores as signed words (a score above 2 147 483 647 loses), the minor
+  as unsigned; both are the base policy's rules and stay.
+- **`joinQueue`**: `prev` is whether the base policy admits. If the answer equals the base policy's, the base decision stands unchanged, including *which* refusal
+  (too exciting, not exciting enough, queue too long) and so the guest's thought. A mod that flips an admission to a refusal gives *queue too long*; one that
+  flips a refusal to an admission admits (the room test was the host's, so the queue has space). Note that a guest admitted beyond the ride's `queueLimit` is dismissed
+  by the host on its next turn (*queue too long*), so admitting past the limit is useless; the example mod relaxes the excitement gate instead.
+- **`leaveQueue`**: `prev` is false in the original (its patience test cannot fire). A mod that returns true makes the host dismiss the guest with the thought *bored*
+  and the end reason *impatient*.
+- **`wanderGoal`**: `prev` is the proposed cell as `y * 1024 + x` (1024 is the largest map width, `ScriptLimits.GoalStride`). Returning `prev` keeps the proposal with its
+  sub-cell point; another cell is walked to at the middle of the cell. The goal must lie inside the map (`guest.mapWidth`, `guest.mapHeight`), else the result is
+  invalid. The cell does not have to be reachable: the host's path search decides, and a guest that finds no path is stuck for that attempt, as with a proposal.
+
+### The views
+
+Views are **plain read-only tables** built from the seam's immutable views when the hook is called: ASCII camelCase keys, values are ints, bools and (for the two history
+fields) arrays of ints. Meters are the whole number the original tests (`0` to `100`). Things have **stable ids** (a guest's thing id and birth id, an attraction's id),
+never an index into a list. A view cannot be changed or kept.
+
+- **`guest`** (all hooks): `id`, `birthId`, `type`, `happiness`, `thirst`, `hunger`, `toilet`, `nausea`, `money`, `cellX`, `cellY`, `usedHistory`, `temporaryHistory`
+  (arrays of 4 attraction ids, newest first, 0 = empty), `turn` (park turn), `raining`, `mapWidth`, `mapHeight`.
+- **`candidate` / `attraction`**: `id`, `typeId`, `kind` (0 ride, 1 shop, as `RideVisitorKind`), `hasJoinCell`, `backX`, `backY`, `entranceX`, `entranceY`, `cellModifier`,
+  `queueLength`, `queueSizeInCells`, `queueLimit`, `excitement` (live), `excitementLevel` (the type's word), `thirstEffect`, `hungerEffect`, `providesRelief`, `ageDays`,
+  `isIndoors`, `goldenTicketCost`, `upgradeCost`, `isOpen`, `isBroken`, `sameTypeAsLast`.
+- **`joinQueue`'s attraction** adds `joinDifference` (|preferred excitement minus the ride's|; the original refuses from 45), `excitementWord`, `queueCount`.
+- **`leaveQueue`'s attraction** adds `joinTurn`, `waitedTurns` (park turns since the guest joined), `position`, `queueCount`.
+
+Each table has 17 to 28 entries, far below the view caps (4096 entries, 1024-character strings).
+
+## Failure counters and the disabled flag
+
+Per mod, `ScriptModInstance` keeps three counters and a flag, **simulation state** (saved in the `ScriptMods` section, hashed), because they change which hooks run:
+
+- **`RuntimeErrors`**: the script failed (type error, overflow, division by zero, a missing key, depth, memory, an unknown function).
+- **`BudgetFailures`**: a call ran out of its per-call budget or of the tick's, or found the tick's budget already used up. Calls skipped for the rest of a tick after the
+  budget ran out are **not** counted again: an overrun costs one failure per tick, not one per skipped call, so a busy tick cannot disable a modest mod by itself.
+- **`InvalidResults`**: the result had the wrong type or lay outside the hook's range (a score above the unsigned word, a goal outside the map), or the new `state` broke the schema.
+
+Every failure rolls the call's `state` back and returns `prev`. **After 16 failures in total (`ScriptLimits.DisableAfterFailures`) the mod is disabled** for the rest of the
+park: the call that reaches 16 returns `prev`, sets the flag and writes one warning to the log naming the mod, the counters and the last failure; its hooks never run again,
+its `state` stays as it was and is still saved. The flag is saved, so a resumed park stays disabled. Reasons for 16: a mod that is wrong fails on nearly every call and is gone within a
+tick or two, while a rare edge case (an overflow in an unusual park) has a few failures to show itself in the log before the mod stops. The other mods keep running. There
+is no re-enabling in the park; start it without the mod or fix the mod and start a new park. `--guest-report --guest-mod` prints failures and the number of seeds that disabled a mod.
+
+## Budgets (measured)
+
+The budgets are in `ScriptLimits`: `DefaultStepsPerCall` 5 000 and `DefaultStepsPerTick` 50 000 (per mod, over all its calls; the tick is one `GuestSimulation` tick, 60 per second).
+They were set from measured workloads, with the guest report and its `--guest-mod` option (`--guest-scale extended`, 8 seeds, `park-scenario` and the four level parks of
+the M3 gate, so the real queues and scripts of the shipped themes). Three mods ran:
+
+- the example `opentpw.example.patient-guests` (two hooks);
+- *light*: all four hooks, `scoreAttraction` with a loop over the history, three conditions and an `rng` call;
+- *state*: all four hooks, each updating a map of per-attraction counters in `state` (the copy and re-validation of `state` is charged to the call).
+
+| Mod / park | Calls (8 seeds) | Steps per call, mean | Steps per call, max | Steps per tick, max (calls) |
+| --- | --- | --- | --- | --- |
+| example, park-scenario | 43 618 | 9.8 | 50 | 150 (13) |
+| example, jungle | 274 320 | 10.1 | 31 | 382 (32) |
+| example, hallow | 44 195 | 9.9 | 10 | 74 (8) |
+| example, fantasy | 356 353 | 10.0 | 31 | 422 (40) |
+| example, space | 331 891 | 10.0 | 28 | 456 (43) |
+| light, park-scenario | 64 971 | 35.6 | 112 | 2 142 (30) |
+| light, jungle | 341 479 | 20.1 | 120 | 2 738 (55) |
+| light, hallow | 71 056 | 21.2 | 124 | 1 018 (16) |
+| light, fantasy | 407 063 | 16.3 | 120 | 2 034 (56) |
+| light, space | 376 930 | 16.3 | 120 | 2 534 (65) |
+| state, park-scenario | 65 640 | 72.1 | 84 | 2 438 (30) |
+| state, jungle | 341 877 | 49.1 | 54 | 2 548 (52) |
+| state, hallow | 69 072 | 36.0 | 45 | 591 (16) |
+| state, fantasy | 405 095 | 50.6 | 54 | 2 813 (57) |
+| state, space | 380 973 | 50.3 | 54 | 3 188 (64) |
+
+No failure of any kind occurred. The heaviest call took 124 steps and the busiest tick 3 188 steps (64 calls); the defaults leave a factor of **40 per call and 15 per tick**
+over those. Speed: the interpreter ran 77 million steps a second in a Debug build on the development Mac (a simple arithmetic loop; release builds and the browser's AOT differ), so the per-tick
+budget is about 0.65 ms there and a mod that burns all of it every tick costs under 4% of a 16.7 ms tick, still under 15% if the browser build runs four times slower. A larger park
+raises the tick's calls roughly with its crowd, so the per-tick factor is the one to watch: a mod that is five times heavier than *light* in a park five times busier still fits.
+Because the whole of `state` is copied (on the first write of a call) and validated (on every write), a mod that writes a large `state` on every call pays about two steps per node: a call that
+writes into a 2 000-node `state` is at the call budget. Keep the state small or write it rarely.
+
+## The example mod
+
+`opentpw.example.patient-guests` (official, off by default, not in the web build) implements `joinQueue` and `leaveQueue` and keeps two counters in `state`:
+
+- `joinQueue`: a guest in a good mood (`happiness >= 50`) that the game turned away only because a ride is up to 20 points too exciting or not exciting enough
+  (`joinDifference < 65`, the game refuses from 45) joins anyway if the queue has room; it counts `tolerated`.
+- `leaveQueue`: a guest that has waited more than 600 park turns gives up (the game's own patience never fires); it counts `gaveUp`.
+
+`--guest-report --guest-scale extended --guest-mod opentpw.example.patient-guests` against the same run without it, through `--guest-compare` (3 standard errors, 8 seeds):
+
+| Scenario | Metric | Baseline | With the mod | Change | Verdict |
+| --- | --- | --- | --- | --- | --- |
+| park-scenario | `queue.boarded.rate` | 0.560 | 0.630 | +8.7 SE | improved |
+| park-scenario | `queue.rejected.rate` | 0.392 | 0.322 | -9.2 SE | improved |
+| park-scenario | `use.giniRides` | 0.197 | 0.108 | -10.6 SE | improved |
+| park-scenario | `use.giniAll` | 0.297 | 0.246 | -5.0 SE | changed |
+| level-jungle | `queue.wait.p99` | 653 | 593 | -8.3 SE | improved |
+| level-fantasy | `queue.wait.p99` | 1048 | 599 | -40.0 SE | improved |
+| level-fantasy | `queue.abandoned.rate` | 0.034 | 0.087 | +11.6 SE | changed |
+
+In the scenario the excitement refusals fall from 233 (95 too boring, 138 too scary) to 37 across the eight seeds. The long waits of the level parks are cut off by the
+600-turn patience, which is also why more guests abandon queues there. The guests' end state differs from the baseline in all 8 seeds of the scenario, of jungle and of fantasy, in 2 of 8 of space and in none of hallow (that park never
+refuses on excitement nor keeps a guest waiting 600 turns); the mod reports no failure. The same seeds give the same report.
 
 ## Safety and recovery
 
@@ -349,6 +482,18 @@ to contain a compromised host process. Concretely:
 | `ScriptHost.cs` | `Call`: transactions, typed results, `prev` semantics, the per-tick budget. |
 | `ScriptLimits.cs`, `ScriptErrors.cs` | Every limit; error types. |
 
+Phase 4 (game wiring, `source/OpenTPW/World/Guests/`):
+
+| File | Role |
+| --- | --- |
+| `Decisions/ScriptGuestDecisions.cs`, `Decisions/ScriptHookViews.cs` | The wrapping policy, the hook mapping and the script views. |
+| `ScriptMods/ScriptModRuntime.cs`, `ScriptMods/ScriptModInstance.cs` | The enabled mods in chain order; per mod the compiled programs, `state`, step meters, counters and the disabled flag. |
+| `ScriptMods/ScriptModsSave.cs` | The `ScriptMods` section: capture, strict validation, restore. |
+| `Client/GuestReport.cs` | `--guest-mod` and the per-mod step statistics. |
+
+Tests: `ScriptHooksTests` (chain, `prev`, failures, budgets, disabling, every hook's mapping, views, `rng`), `ScriptModsSaveTests` (the section, validation, restore, hash, a resumed park, the whole park
+save) and the two script pins in `DeterminismTests` (`ScriptModsFixedRunHash`, `ScriptModsAllHooksFixedRunHash`).
+
 Tests: `ScriptLanguageTests` (grammar and semantics), `ScriptSandboxTests` (escape and denial-of-service corpus, limits at
 their boundaries), `ScriptStateTests` (transactions, the canonical round trip, the schema, the RNG and a golden hash of a
 script corpus that must match on the windows, macOS and ubuntu CI runs). `Scripting/` is also part of the forbidden-API scan
@@ -360,8 +505,8 @@ in `DeterminismTests`.
 2. Language core (this folder, tests, determinism scan). **Done.** No game wiring.
 3. Manifest and loading: `content.scripts`, `hooks`, `scriptApi` ranges, the verified bytes, script limits, "contains scripts",
    safe mode, and the compile-only `opentpw.example.patient-guests`. **Done.** No hooks into the simulation.
-4. Hooks with persistence: the `IGuestDecisions` seam, the `ScriptMods` section, counters, hashing, the schema bump, the
-   `patient-guests` example and a cross-platform continuation hash. *Later.*
+4. Hooks with persistence: the `IGuestDecisions` seam, the `ScriptMods` section, counters, hashing (no schema bump, see above), the
+   `patient-guests` example and a cross-platform continuation hash. **Done.**
 5. Browser: an AOT publish-and-run check and the example mod in the browser; script mods through OPFS import once mod-system
    phase 8 exists. *Later.*
 6. Read-only event hooks, UI-only hooks, more decision points, a mod-author guide and `--test-mod`. *Later.*

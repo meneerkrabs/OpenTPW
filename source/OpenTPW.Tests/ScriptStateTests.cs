@@ -253,6 +253,6 @@ public class ScriptStateTests
 				.Append( result.Line ).Append( '|' ).Append( ScriptState.Serialize( host.State ) ).Append( '\n' );
 		}
 		var hash = Convert.ToHexString( SHA256.HashData( Encoding.UTF8.GetBytes( transcript.ToString() ) ) ).ToLowerInvariant();
-		Assert.AreEqual( "bae4dc589c975517855368a99ba71d9a571180ddbf99c98774a8492211897196", hash, transcript.ToString() );
+		Assert.AreEqual( "b8da4bc0047a77f0fe51ed32a2366eed7c6bb3de8664cb5998516b6847627b92", hash, transcript.ToString() );
 	}
 }

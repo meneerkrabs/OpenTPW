@@ -16,6 +16,12 @@ public interface IGuestDecisions
 	/// </summary>
 	bool UsesExtensionState => false;
 
+	/// <summary>
+	/// The host calls this at the start of every simulation tick (<see cref="GuestSimulation.Tick"/> and the swept tick), before any decision of the tick. The faithful and the smarter policy
+	/// hold no state and ignore it; a policy that meters work per tick (the script policy's step budget) starts its tick here. A policy that wraps another forwards it.
+	/// </summary>
+	void BeginTick() { }
+
 	/// <summary>The booth's verdict on the entrance fee (tp.exe <c>0x004FF9D0</c>); the host draws the verdict's word first and the expensive wait afterwards.</summary>
 	BoothDecision DecideBooth( in DecisionContext context, in GuestView guest, in BoothView booth );
 

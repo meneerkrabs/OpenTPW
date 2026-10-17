@@ -45,7 +45,7 @@ public sealed partial class GuestSimulation
 	public IEnumerable<Guest> SwimmersOf( int attractionId ) => guests.Where( guest => guest.InSwimSession && guest.AttractionId == attractionId );
 
 	/// <summary>[EXT:pools-swim] Whether a swimmer's position lies in the cell (the pool tool does not erase water under swimmers).</summary>
-	public bool IsSwimmerIn( int x, int y ) => guests.Any( guest => guest.IsSwimming && guest.CellX == x && guest.CellY == y );
+	public bool IsSwimmerIn( int x, int y ) => guests.Any( guest => (guest.IsSwimming || guest.InPoolActivity) && guest.CellX == x && guest.CellY == y );
 
 	/// <summary>
 	/// A guest was released from a changing room: it steps into the water at the pool-side cell and swims. False when it cannot (not a changing room, the park is closed, or no pool beside it):
@@ -80,6 +80,9 @@ public sealed partial class GuestSimulation
 		(guest.StepFromX, guest.StepFromY, guest.StepFromDistance, guest.StepTick) = (guest.X, guest.Y, guest.DistanceWalked, TickCount);
 		UpdatePresentation( guest );
 		SetSwimHeading( guest );
+		// [EXT:pools-activities] a shower comes before the water
+		if ( poolActivities.Count > 0 )
+			OfferActivitiesAtStart( guest, region );
 		return true;
 	}
 
@@ -167,6 +170,9 @@ public sealed partial class GuestSimulation
 			guest.SwimHasGoal = true;
 			return;
 		}
+		// [EXT:pools-activities] a swimmer may take an offer of a registered activity (none draws nothing)
+		if ( TryOfferActivity( guest, region ) )
+			return;
 		SwimStep( guest, region, ignoreOthers: false );
 	}
 
@@ -222,6 +228,12 @@ public sealed partial class GuestSimulation
 	/// </summary>
 	private void EndSwimAtOnce( Guest guest, IRideVisitorBridge? ride )
 	{
+		// [EXT:pools-activities] an activity in progress lets go of what it holds first
+		if ( guest.State == GuestState.PoolActivity )
+		{
+			PoolActivityById( guest.PoolActivityId )?.Abort( this, guest );
+			ClearPoolActivity( guest );
+		}
 		ClearSwim( guest );
 		guest.IsMoving = false;
 		ReturnToPath( guest, ride?.ExitCell ?? (guest.CellX, guest.CellY) );
@@ -263,6 +275,192 @@ public sealed partial class GuestSimulation
 			var dx = guest.X - fromX;
 			var dy = guest.Y - fromY;
 			guest.DistanceWalked += MathF.Sqrt( dx * dx + dy * dy );
+		}
+	}
+}
+
+// [EXT:pools-activities] The host of pool activities (docs/POOLS.md, "Activities"): the registry, the offer cadence and the state-25 turn. An empty registry, or a swimmer that is offered nothing, draws nothing and hashes nothing.
+public sealed partial class GuestSimulation
+{
+	private readonly List<IPoolActivity> poolActivities = new();
+	private readonly List<(IPoolActivity Activity, PoolActivityOffer Offer)> poolOffers = new();
+
+	/// <summary>The registered pool activities in id order.</summary>
+	public IReadOnlyList<IPoolActivity> PoolActivities => poolActivities;
+
+	/// <summary>Registers an activity (replacing one with the same id), keeping the registry in id order so offers are evaluated the same way in every run.</summary>
+	public void RegisterPoolActivity( IPoolActivity activity )
+	{
+		poolActivities.RemoveAll( other => other.Id == activity.Id );
+		poolActivities.Add( activity );
+		poolActivities.Sort( ( a, b ) => string.CompareOrdinal( a.Id, b.Id ) );
+	}
+
+	/// <summary>Empties the registry (guests still in an activity then leave the water on their next turn).</summary>
+	public void ClearPoolActivities() => poolActivities.Clear();
+
+	/// <summary>The registered activity with this id, or null.</summary>
+	public IPoolActivity? PoolActivityById( string? id ) => id == null ? null : poolActivities.FirstOrDefault( activity => activity.Id == id );
+
+	/// <summary>The activity a guest is doing, or null.</summary>
+	public IPoolActivity? PoolActivityOf( Guest guest ) => guest.State == GuestState.PoolActivity ? PoolActivityById( guest.PoolActivityId ) : null;
+
+	/// <summary>
+	/// Sets the guest at a point of the water or of the pool side (16.16 cells) at once, as a pool activity needs when the guest steps onto a ladder or lands in the water.
+	/// The guest is drawn there from this turn on, not interpolated from where it was.
+	/// </summary>
+	public void PlacePoolGuest( Guest guest, int x, int y )
+	{
+		var navigation = guest.Navigation;
+		(navigation.X, navigation.Y) = (x, y);
+		navigation.SetDestination( x, y, [] );
+		SetSwimCell( guest );
+		(guest.StepFromX, guest.StepFromY, guest.StepFromDistance, guest.StepTick) = (guest.X, guest.Y, guest.DistanceWalked, TickCount);
+		guest.IsMoving = false;
+		UpdatePresentation( guest );
+	}
+
+	/// <summary>Moves the guest to a point (16.16 cells) as one step of this turn: it is drawn walking from where it was and faces the way it went.</summary>
+	public void MovePoolGuest( Guest guest, int x, int y )
+	{
+		var navigation = guest.Navigation;
+		var (fromX, fromY, fromDistance) = (guest.X, guest.Y, guest.DistanceWalked);
+		(navigation.X, navigation.Y) = (x, y);
+		SetSwimCell( guest );
+		(guest.StepFromX, guest.StepFromY, guest.StepFromDistance, guest.StepTick) = (fromX, fromY, fromDistance, TickCount);
+		var dx = guest.X - fromX;
+		var dy = guest.Y - fromY;
+		var length = MathF.Sqrt( dx * dx + dy * dy );
+		guest.IsMoving = length > 0;
+		if ( length > 0 )
+		{
+			guest.HeadingX = dx / length;
+			guest.HeadingY = dy / length;
+			guest.DistanceWalked += length;
+		}
+	}
+
+	/// <summary>Whether a guest is in a pool activity in the cell (the pool tool does not erase water under it).</summary>
+	public bool IsPoolActivityIn( int x, int y ) => guests.Any( guest => guest.State == GuestState.PoolActivity && guest.CellX == x && guest.CellY == y );
+
+	/// <summary>Aborts the activity of every guest doing one for this target (an object was erased or demolished); each ends its session at once, as a changing room's swimmers do.</summary>
+	public void AbortPoolActivitiesOf( int targetId )
+	{
+		foreach ( var guest in guests )
+			if ( guest.State == GuestState.PoolActivity && guest.PoolActivityTarget == targetId )
+				EndSwimAtOnce( guest, FindAttraction( guest.AttractionId ) );
+	}
+
+	/// <summary>
+	/// Starts the activity for the guest, already in the swim session. The swimmer's own stream (<c>stream</c>) is passed to the activity. False when it declines: the guest is back as it was.
+	/// </summary>
+	private bool BeginPoolActivity( Guest guest, IPoolActivity activity, PoolActivityOffer offer, ref uint stream )
+	{
+		var previous = guest.State;
+		guest.State = GuestState.PoolActivity;
+		guest.PoolActivityId = activity.Id;
+		guest.PoolActivityTarget = offer.TargetId;
+		guest.PoolActivityPhase = 0;
+		guest.PoolActivityTurns = 0;
+		(guest.PoolActivityX, guest.PoolActivityY) = PoolSwimRegion.Centre( (offer.X, offer.Y) );
+		if ( activity.Start( this, guest, offer, ref stream ) )
+			return true;
+		guest.State = previous;
+		ClearPoolActivity( guest );
+		return false;
+	}
+
+	private static void ClearPoolActivity( Guest guest )
+	{
+		guest.PoolActivityId = null;
+		guest.PoolActivityTarget = guest.PoolActivityPhase = guest.PoolActivityTurns = 0;
+		guest.PoolActivityX = guest.PoolActivityY = 0;
+	}
+
+	/// <summary>The activities with a start chance (a shower) get their draw as the swim starts, in registry order; the first taken ends the offers. No draw when none has an offer.</summary>
+	private void OfferActivitiesAtStart( Guest guest, PoolSwimRegion region )
+	{
+		var stream = guest.SwimRandom;
+		foreach ( var activity in poolActivities )
+		{
+			if ( activity.StartOfferPercent <= 0 || activity.Offer( this, guest, region ) is not { } offer )
+				continue;
+			var taken = PoolSwimming.Next( ref stream ) % 100 < activity.StartOfferPercent;
+			if ( taken && BeginPoolActivity( guest, activity, offer, ref stream ) )
+				break;
+		}
+		guest.SwimRandom = stream;
+	}
+
+	/// <summary>
+	/// The offer cadence of a swimming guest: while some activity offers something, one draw of the swimmer's own stream each turn decides whether it takes an offer
+	/// (on average one every <see cref="PoolActivitySettings.OfferIntervalTurns"/> turns), and a second draw picks which. True when an activity was started.
+	/// </summary>
+	private bool TryOfferActivity( Guest guest, PoolSwimRegion region )
+	{
+		if ( poolActivities.Count == 0 || guest.SwimTurns < PoolActivitySettings.OfferMinimumTurns )
+			return false;
+		poolOffers.Clear();
+		foreach ( var activity in poolActivities )
+			if ( activity.StartOfferPercent <= 0 && activity.Offer( this, guest, region ) is { } offer )
+				poolOffers.Add( (activity, offer) );
+		if ( poolOffers.Count == 0 )
+			return false;
+		var stream = guest.SwimRandom;
+		var taken = PoolSwimming.Next( ref stream ) % PoolActivitySettings.OfferIntervalTurns == 0;
+		var started = false;
+		if ( taken )
+		{
+			var (activity, offer) = poolOffers[(int)(PoolSwimming.Next( ref stream ) % (uint)poolOffers.Count)];
+			started = BeginPoolActivity( guest, activity, offer, ref stream );
+		}
+		guest.SwimRandom = stream;
+		return started;
+	}
+
+	/// <summary>State 25: one turn of the guest's activity; it goes on, puts the guest back in the water, or ends the session.</summary>
+	private void UpdatePoolActivity( Guest guest )
+	{
+		var ride = FindAttraction( guest.AttractionId );
+		var activity = PoolActivityById( guest.PoolActivityId );
+		if ( ride == null || activity == null || SwimRegionOf( ride ) is not { } region || Payments?.ParkClosed == true )
+		{
+			EndSwimAtOnce( guest, ride );
+			return;
+		}
+		if ( !turnStarted )
+			return;
+		var stream = guest.SwimRandom;
+		var step = activity.Update( this, guest, ref stream );
+		guest.SwimRandom = stream;
+		switch ( step )
+		{
+			case PoolActivityStep.Continue:
+				return;
+			case PoolActivityStep.BackInWater:
+				PutInWater( guest, region );
+				ClearPoolActivity( guest );
+				guest.SwimHasGoal = false;
+				guest.State = GuestState.Swimming;
+				return;
+			default:
+				PutInWater( guest, region );
+				ClearPoolActivity( guest );
+				guest.State = GuestState.ClimbingOut;
+				guest.SwimTurns = ClimbOutLimitTurns;
+				(guest.SwimGoalX, guest.SwimGoalY) = PoolSwimRegion.Centre( region.Access );
+				guest.SwimHasGoal = true;
+				return;
+		}
+	}
+
+	/// <summary>An activity must leave the guest in the water; a guest it left elsewhere is set at the pool-side cell rather than swim on dry land.</summary>
+	private void PutInWater( Guest guest, PoolSwimRegion region )
+	{
+		if ( !region.IsWater( guest.Navigation.X, guest.Navigation.Y ) )
+		{
+			var (x, y) = PoolSwimRegion.Centre( region.Access );
+			PlacePoolGuest( guest, x, y );
 		}
 	}
 }

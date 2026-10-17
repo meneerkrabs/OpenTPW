@@ -79,8 +79,8 @@ public sealed partial class ParkHud
 		var values = ParkVisitorRoster.ValuesOf( guest, refreshed: true );
 		var status = strings.KidState( (int)guest.State, guest.State == GuestState.Using ? AttractionNameOf( guest.AttractionId ) : "" );
 		// [EXT:pools-swim] the swim session's states have no KIDSTATES entry; a guest aboard a changing room is changing
-		if ( guest.State is GuestState.Swimming or GuestState.ClimbingOut or GuestState.ChangingOut || level.Guests?.IsChangingIn( guest ) == true )
-			status = strings.Extra( guest.State switch { GuestState.Swimming => OpenTpwText.PoolStateSwimming, GuestState.ClimbingOut => OpenTpwText.PoolStateClimbingOut, _ => OpenTpwText.PoolStateChanging } );
+		if ( guest.State is GuestState.Swimming or GuestState.ClimbingOut or GuestState.ChangingOut or GuestState.PoolActivity || level.Guests?.IsChangingIn( guest ) == true )
+			status = strings.Extra( guest.State switch { GuestState.Swimming or GuestState.PoolActivity => OpenTpwText.PoolStateSwimming, GuestState.ClimbingOut => OpenTpwText.PoolStateClimbingOut, _ => OpenTpwText.PoolStateChanging } );
 		visitorInfoShown = new VisitorInfoValues( guest.Money, values.Hours, guest.RidesTaken, guest.ShopsVisited, guest.SideshowsVisited, guest.SideshowsWon,
 			values.HappinessGauge, status, strings.Thought( (int)guest.Thought ), guest.Thought == GuestThought.None ? -1 : (int)guest.Thought - 1 );
 	}

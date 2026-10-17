@@ -297,6 +297,24 @@ in the water of the 24-cell pool and continues with the capture phase's canonica
 in one pool, the snapshot roundtrip in each state, an older snapshot, the validator, the hash and a guest that chooses the room. `PoolsContentTests`: the reserved ids, the four catalog entries (and none with the extension off), each cabin's model, textures and script (it releases after the changing time), the visitor bridge, the pool-side cells for every rotation, the placement rule, the eight sprite sets,
 the content's size, the asset keys of a save, and the whole chain with the shipped room and script. `DeterminismTests.FixedRunWithAPoolAndAChangingRoomIsTheSameInEveryProcessAndGuestsSwim` is the pin (docs/DETERMINISM.md, "Pools").
 
+## Activities (`[EXT:pools-activities]`)
+
+An **activity** is something a swimmer does during its session besides swimming: a ladder to a diving board, a shower, a lounger, a water slide, a water attraction. Extras (P3), slides (P4) and water attractions (P5) are all `IPoolActivity`s (`source/OpenTPW/World/Pools/PoolActivities.cs`); the host is in `GuestSimulation.Swimming.cs`. Guests never reach them from the park paths (they are not attractions, `IGuestDecisions` has no entry for them): they are reachable only from the pool, as in RCT3, and they are free.
+
+**State 25, `PoolActivity`.** The guest still names its changing room as its attraction and is part of the session (`InSwimSession`), visible, drawn with the swim sprites, in no walker cell list, counted with the walkers, and not catchable. Its generic fields (`PoolActivityId`, `PoolActivityTarget`, `PoolActivityPhase`, `PoolActivityTurns`, `PoolActivityX/Y` in 16.16 cells) belong to the activity, which keeps no per-guest state of its own. They are snapshotted (optional fields, written only in state 25, so every older JSON is byte-equal), validated (an id, non-negative phase and turns, a point inside the map, none of it outside state 25) and hashed only while the guest is in state 25.
+
+**The registry** is `GuestSimulation.PoolActivities` (ordered by id; `RegisterPoolActivity`); `Level.RefreshPools` fills it from `PoolActivityRegistry.Create()` while the extension is on. A simulation with an empty registry behaves exactly as before.
+
+**The cadence.** Each turn of the water phase (`Swimming`, at least 24 turns left of the swim), the host asks every registered activity for an offer (`Offer` is pure). **With no offer nothing is drawn.** With offers, one draw of the swimmer's own stream decides (one in 45 turns on average, `PoolActivitySettings.OfferIntervalTurns`) and a second picks which offer; then `Start` is called with the stream. An activity whose `StartOfferPercent` is above 0 (the shower) is offered at the start of the session only: as the swim begins the host draws once per such activity that has an offer, and the guest does it with that chance before entering the water. A declined `Start` leaves the guest swimming.
+
+**A turn of the activity** (`Update`): `Continue` goes on; `BackInWater` puts the guest back to `Swimming` (the host sets it at the pool-side cell if the activity left it outside the water); `EndSession` sends it to climb out like a finished swim. The swim's remaining turns do not run down during an activity, so an activity must bound itself. `PlacePoolGuest` and `MovePoolGuest` set or step the guest's position for an activity.
+
+**Aborts.** `Abort` is called, and the session ends at once on the room's exit (`EndSwimAtOnce`), when the room is demolished, the pool beside it is gone, the park closes, the activity is unknown (a save made with an activity that is not registered now) or `AbortPoolActivitiesOf( targetId )` is called for its target (the object was erased). The pool tool refuses to erase a cell under a guest in an activity.
+
+**Sprites.** The swimwear slots are `PoolSwimSlots` (0 stand, 1 walk, 2 run, 3 ladder, 4 dive, 5 lying, 6 shower, 7 sliding, 8 to 10 the strokes, 11 splash-down, 12 sitting, 13 ring, 14 rope swing); the activity chooses the slot (`IPoolActivity.SpriteSlot`, default: treading water). Slots a set has no art for yet fall back to what the set has.
+
+**Tests.** `PoolsActivityHostTests` proves the host with a test-only fake activity: offer, start, continue, back in the water, end of session, declined start, the shower-like start offer, no draws and no hash change with an empty registry or an activity that offers nothing, the aborts (demolish, pool erased, park closed, target erased, unknown id), a save in the middle of an activity, the validator and the hash.
+
 ## Saves and determinism
 
 See [the save rule](#the-extension-and-the-save-rule). The pins (docs/DETERMINISM.md, "Pools"): every existing pin is unchanged with the extension on or off

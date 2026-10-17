@@ -373,7 +373,7 @@ public partial class Level
 	/// </summary>
 	internal PoolBuildResult? PoolEraseBlock( int x, int y )
 	{
-		if ( Guests?.IsSwimmerIn( x, y ) == true )
+		if ( Guests?.IsSwimmerIn( x, y ) == true || Guests?.IsPoolActivityIn( x, y ) == true )
 			return PoolBuildResult.Swimmers;
 		foreach ( var item in Objects.Objects )
 			if ( !item.IsDeleted && item.Visitors.IsChangingRoom && item.Visitors.PoolAccessCandidates.Contains( (x, y) ) )
@@ -403,9 +403,17 @@ public partial class Level
 			PoolRenderer = new PoolRenderer( Guests.Grid.Cells, Objects.Grid, PoolStyles.ForTheme( OriginalPark.LevelName ) );
 		}
 		// [EXT:pools-swim] the swimmers are drawn after the water (entities draw in the order they are made), with the swim sprites loaded beside the kid sets
+		if ( !poolActivitiesRegistered )
+		{
+			poolActivitiesRegistered = true;
+			foreach ( var activity in PoolActivityRegistry.Create() )
+				Guests.RegisterPoolActivity( activity );
+		}
 		if ( SwimmerRenderer == null && PoolRenderer != null )
 			SwimmerRenderer = CreateSwimmerRenderer( Guests, OriginalPark );
 	}
+
+	private bool poolActivitiesRegistered;
 
 	private GuestRenderer? CreateSwimmerRenderer( GuestSimulation guests, OriginalPark park )
 	{
@@ -414,12 +422,14 @@ public partial class Level
 			return null;
 		return new GuestRenderer( guests, park.Heightfield, swim )
 		{
-			Draws = guest => guest.IsSwimming,
-			SlotChooser = guest => (PoolSwimming.SpriteSlot( guest.SwimStroke ), (int)(guests.TimeSeconds * (guest.SwimStroke == 2 ? 3 : 6)) + guest.Id),
+			Draws = guest => guest.IsSwimming || guest.InPoolActivity,
+			SlotChooser = guest => guest.InPoolActivity
+				? (guests.PoolActivityOf( guest )?.SpriteSlot( guest ) ?? PoolSwimSlots.TreadWater, (int)(guests.TimeSeconds * 6) + guest.Id)
+				: (PoolSwimming.SpriteSlot( guest.SwimStroke ), (int)(guests.TimeSeconds * (guest.SwimStroke == 2 ? 3 : 6)) + guest.Id),
 			FeetChooser = guest =>
 			{
 				var feet = GuestRenderer.CellToEngine( park.Heightfield, guest.DrawX, guest.DrawY );
-				return PoolRenderer?.WaterLevelAt( guest.CellX, guest.CellY ) is { } level ? new System.Numerics.Vector3( feet.X, feet.Y, level ) : feet;
+				return guests.Grid.Cells.RawTypeAt( guest.CellX, guest.CellY ) == ParkCellTypes.PoolWater && PoolRenderer?.WaterLevelAt( guest.CellX, guest.CellY ) is { } level ? new System.Numerics.Vector3( feet.X, feet.Y, level ) : feet;
 			}
 		};
 	}

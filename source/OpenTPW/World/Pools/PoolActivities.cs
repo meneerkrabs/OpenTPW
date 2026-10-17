@@ -48,6 +48,60 @@ public interface IPoolActivity
 	/// <summary>One park turn of the activity.</summary>
 	PoolActivityStep Update( GuestSimulation simulation, Guest guest, ref uint random );
 
+	/// <summary>
+	/// The sprite slot (<see cref="PoolSwimSlots"/>) the guest is drawn with this turn. Defaults to treading water, the nearest existing slot until the art for the activity lands.
+	/// </summary>
+	int SpriteSlot( Guest guest ) => PoolSwimSlots.TreadWater;
+
+	/// <summary>
+	/// 0 for an activity offered during the swim (the host's cadence, <see cref="PoolActivitySettings.OfferIntervalTurns"/>), or 1..100: the percent chance that the guest does it as the swim starts, before it
+	/// enters the water (a shower). An activity with a start chance is offered at the start only.
+	/// </summary>
+	int StartOfferPercent => 0;
+
 	/// <summary>Ends it at once (the pool or the target is gone, the room is demolished, the park closes): the activity lets go of what it holds; the host ends the session.</summary>
 	void Abort( GuestSimulation simulation, Guest guest );
+}
+
+/// <summary>The swim-session numbers the host keeps for activities (docs/POOLS.md, "Activities"; OpenTPW's own, no original value).</summary>
+// [EXT:pools-activities] OpenTPW's own numbers; the original game has no pools
+public static class PoolActivitySettings
+{
+	/// <summary>On average one offer is taken every this many park turns while an offer exists (a draw of the swimmer's own stream each turn, only while one exists).</summary>
+	public const int OfferIntervalTurns = 45;
+	/// <summary>No offer is taken when the swim has fewer turns left than this, so the session does not end in the middle of a ladder.</summary>
+	public const int OfferMinimumTurns = 24;
+}
+
+/// <summary>The sprite slots of the swimwear sets (docs/POOLS.md, "Swimwear slots"). Slots without art in a set fall back to the nearest existing slot in the renderer.</summary>
+// [EXT:pools-render] OpenTPW's own swimmer art; the original game has no pools
+public static class PoolSwimSlots
+{
+	public const int Stand = 0;
+	public const int Walk = 1;
+	public const int Run = 2;
+	public const int LadderClimb = 3;
+	public const int Dive = 4;
+	public const int Lying = 5;
+	public const int Shower = 6;
+	public const int Sliding = 7;
+	public const int Crawl = 8;
+	public const int Breaststroke = 9;
+	public const int TreadWater = 10;
+	public const int SplashDown = 11;
+	public const int SittingInWater = 12;
+	public const int FloatingInRing = 13;
+	public const int RopeSwing = 14;
+	public const int Spare = 15;
+}
+
+/// <summary>The activities a park's swim sessions offer (<see cref="GuestSimulation.PoolActivities"/>); Level registers these while the pools extension is on.</summary>
+// [EXT:pools-activities] OpenTPW's own extension point; the original game has no pools
+public static class PoolActivityRegistry
+{
+	/// <summary>The built-in activities. Each phase of the pools work adds its own to this list; a registry holding none changes nothing.</summary>
+	public static IEnumerable<IPoolActivity> Create()
+	{
+		yield break;
+	}
 }

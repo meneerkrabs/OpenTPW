@@ -51,6 +51,12 @@ public enum GuestState : byte
 	/// <summary>Changing back inside the changing room, out of sight like a guest on a ride (OpenTPW's own state, 24); it then steps out on the changing room's path-side exit.</summary>
 	// [EXT:pools-swim] OpenTPW's own guest state; the original game has no pools
 	ChangingOut = 24,
+	/// <summary>
+	/// Doing a pool activity during the swim session (OpenTPW's own state, 25): a ladder, a diving board, a shower, a lounger, a slide or a water attraction (<see cref="IPoolActivity"/>, docs/POOLS.md,
+	/// "Activities"). The guest still names its changing room as its attraction; the activity moves it and ends with it back in the water or out of the session.
+	/// </summary>
+	// [EXT:pools-activities] OpenTPW's own guest state; the original game has no pools
+	PoolActivity = 25,
 	/// <summary>Not a KIDSTATES entry: removed from the simulation at the end of the tick.</summary>
 	Gone = 255
 }
@@ -110,7 +116,21 @@ public sealed class Guest
 	/// <summary>[EXT:pools-swim] In the water: swimming, or on the way back to the changing room's pool-side cell.</summary>
 	public bool IsSwimming => State is GuestState.Swimming or GuestState.ClimbingOut;
 	/// <summary>[EXT:pools-swim] Part of a swim session (the water or the changing back): such a guest names a changing room as its attraction and has no path cell.</summary>
-	public bool InSwimSession => State is GuestState.Swimming or GuestState.ClimbingOut or GuestState.ChangingOut;
+	public bool InSwimSession => State is GuestState.Swimming or GuestState.ClimbingOut or GuestState.ChangingOut or GuestState.PoolActivity;
+	/// <summary>[EXT:pools-activities] Doing a pool activity (state 25), drawn with the swim sprites.</summary>
+	public bool InPoolActivity => State == GuestState.PoolActivity;
+	// [EXT:pools-activities] the generic fields of a pool activity (docs/POOLS.md, "Activities"); all zero (the id null) outside state 25
+	/// <summary>The <see cref="IPoolActivity.Id"/> of the activity the guest is doing.</summary>
+	public string? PoolActivityId { get; internal set; }
+	/// <summary>The target the activity was offered for (<see cref="PoolActivityOffer.TargetId"/>: an attraction or object id, 0 for none).</summary>
+	public int PoolActivityTarget { get; internal set; }
+	/// <summary>The activity's own phase number (0 at the start).</summary>
+	public int PoolActivityPhase { get; internal set; }
+	/// <summary>Park turns left or spent in the current phase, as the activity counts them.</summary>
+	public int PoolActivityTurns { get; internal set; }
+	/// <summary>A point of the activity in 16.16 cells (the host sets the centre of the offered cell; the activity may move it anywhere inside the map).</summary>
+	public int PoolActivityX { get; internal set; }
+	public int PoolActivityY { get; internal set; }
 	// [EXT:pools-swim] the swim session (docs/POOLS.md); all zero outside it
 	/// <summary>The swimmer's heading, 0..63 (see <see cref="PoolSwimming.Direction"/>).</summary>
 	public int SwimHeading { get; internal set; }

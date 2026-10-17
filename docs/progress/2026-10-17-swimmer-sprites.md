@@ -1,0 +1,5 @@
+## Swimmer sprites for the swimming-pool mod, generated from code (October 17, 2026)
+
+- **What.** `tools/blender/opentpw_kid.py` (a parametric low-poly kid, mum, dad, granny and grandpa, one preset per original guest sprite set: the eight TPW kid sets and the eight TPI sets BD, GB, GK, KB, FA, MO, GM, GR) and `tools/blender/opentpw_swim_sprites.py` (front crawl, breaststroke and treading water, five directions, with a water-line tint, foam ring and splash droplets). All art is original and made from code; the original sprites were only used to match proportions and colours, and nothing derived from them is committed.
+- **Calibration.** `opentpw_kid_calibrate.py` renders the standing kid in the original's sprite cell and compares it with the original standing frames. Camera and lighting constants per edition (TPW 32 degrees, TPI 42 degrees) are in the script and in `docs/CONTENT-KIT.md`; standing heights are within about 3 to 5 pixels of the originals.
+- **Not done.** Packing into ESP/TPC banks (the sprite-set writer is separate); the generated PNGs are not committed.

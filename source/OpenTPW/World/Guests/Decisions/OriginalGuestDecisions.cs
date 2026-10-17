@@ -25,36 +25,20 @@ public sealed class OriginalGuestDecisions : IGuestDecisions
 		return AttractionScore.Compute( input, settings.DecisionWeights, settings.DecisionVariables );
 	}
 
-	/// <summary>The original's choice loop: each candidate scored in the host's order, the best taken (<see cref="AttractionChoice.Pick"/>).</summary>
-	public MajorDecision DecideMajor( in DecisionContext context, in GuestView guestView, IEnumerable<MajorCandidate> candidates )
+	/// <summary>The original's comparison of the choice loop: a score of 10 or more that beats the best (signed), or ties it on an odd park turn.</summary>
+	// [BIN:STP-PPC:0x100E90A8 choice loop] cmplwi 10 unsigned, cmpw signed against the best, the equal case gated by game +0x1da70c bit 0
+	public bool BeatsInMajorDecision( in DecisionContext context, in GuestView guest, uint score, uint best )
 	{
-		var scoring = context;
-		var guest = guestView;
-		IEnumerable<AttractionChoice.Candidate> Scored()
-		{
-			foreach ( var candidate in candidates )
-			{
-				var view = candidate.View;
-				yield return new AttractionChoice.Candidate( view.Id, true, view.HasJoinCell, view.HasJoinCell ? ScoreAttraction( scoring, guest, view ) : 0, candidate.Reach );
-			}
-		}
-		return new MajorDecision( AttractionChoice.Pick( Scored(), context.ParkTurn ) );
+		if ( score < AttractionScore.CandidateFloor )
+			return false;
+		var (signed, current) = (unchecked( (int)score ), unchecked( (int)best ));
+		return !(signed < current || (signed == current && (context.ParkTurn & 1) == 0));
 	}
 
-	/// <summary>The best scored window candidate: it beats the best so far (initially 0), or ties it on an odd park turn.</summary>
-	// [BIN:TPW-EXE:0x004FD570 minor decision] every candidate scored with 0x004FCC30, kept when the score beats the best (starting at 0) or ties it on an odd turn
-	public MinorDecision DecideMinor( in DecisionContext context, in GuestView guest, in AttractionView target, IReadOnlyList<AttractionView> window )
-	{
-		var best = 0;
-		uint bestScore = 0;
-		foreach ( var candidate in window )
-		{
-			var score = ScoreAttraction( context, guest, candidate );
-			if ( bestScore < score || (score == bestScore && (context.ParkTurn & 1) != 0) )
-				(best, bestScore) = (candidate.Id, score);
-		}
-		return new MinorDecision( best );
-	}
+	/// <summary>The minor decision's comparison: it beats the best so far (unsigned, initially 0), or ties it on an odd park turn.</summary>
+	// [BIN:TPW-EXE:0x004FD570 minor decision] kept when the score beats the best (starting at 0) or ties it on an odd turn
+	public bool BeatsInMinorDecision( in DecisionContext context, in GuestView guest, uint score, uint best ) =>
+		best < score || (score == best && (context.ParkTurn & 1) != 0);
 
 	/// <summary>The excitement gate, then the queue limit (the checks of <see cref="RideVisitorBridge.JoinQueue"/> after the room test).</summary>
 	public QueueAdmission DecideAdmission( in DecisionContext context, in GuestView guest, in AdmissionView admission )

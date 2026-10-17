@@ -63,8 +63,8 @@ internal static class SmarterGuestsSave
 	{
 		if ( section.Births == null )
 			return "the SmarterGuests section has no birth list";
-		if ( section.NextBirthId < SmarterGuestsState.FirstBirthId )
-			return $"the birth id counter {section.NextBirthId} is below {SmarterGuestsState.FirstBirthId}";
+		if ( section.NextBirthId < SmarterGuestsState.FirstBirthId || section.NextBirthId == ulong.MaxValue )
+			return $"the birth id counter {section.NextBirthId} is outside {SmarterGuestsState.FirstBirthId}..{ulong.MaxValue - 1}";
 		var holders = new HashSet<int>( guestIds ?? Array.Empty<int>() );
 		var seenGuests = new HashSet<int>();
 		var seenIds = new HashSet<ulong>();

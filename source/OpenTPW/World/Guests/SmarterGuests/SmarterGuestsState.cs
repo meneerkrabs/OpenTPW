@@ -23,8 +23,8 @@ public sealed class SmarterGuestsState
 	public ulong NextBirthId { get; private set; } = FirstBirthId;
 
 	/// <summary>
-	/// The extension's first tick has run: guests that existed before it (an older save, an imported original save, a park started with the extension off) have their ids. From then on every guest
-	/// has one from its creation.
+	/// The extension's first tick has run: guests that existed before it have their ids. In practice those are the guests of an imported original save (and of tests that restore a guest snapshot without
+	/// the section); a park saved by this extension carries its ids, and a park of another build is refused at load. From then on every guest has one from its creation.
 	/// </summary>
 	public bool Bootstrapped { get; private set; }
 

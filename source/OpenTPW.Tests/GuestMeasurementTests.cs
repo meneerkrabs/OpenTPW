@@ -8,6 +8,7 @@ namespace OpenTPW.Tests;
 
 /// <summary>The passive guest measurement of phase 0a (docs/SMARTER-GUESTS.md): the instrumentation, <see cref="ParkScenario"/> and the guest report.</summary>
 [TestClass]
+[DoNotParallelize]
 public class GuestMeasurementTests
 {
 	/// <summary>The guests' state hash of <see cref="ScenarioRun"/>, pinned like the other determinism pins: a change moves the baseline of docs/SMARTER-GUESTS.md.</summary>

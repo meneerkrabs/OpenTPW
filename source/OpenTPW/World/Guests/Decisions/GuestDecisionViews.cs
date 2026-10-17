@@ -7,11 +7,16 @@ namespace OpenTPW;
 /// <param name="Settings">The guest settings (peep types, weights, booth multipliers); read only.</param>
 /// <param name="ParkTurn">The park turn the decision is taken on (<see cref="GuestSimulation.ParkTurn"/>).</param>
 /// <param name="Raining">Drops are falling (the weather's current drops above 0).</param>
-public readonly record struct DecisionContext( GuestSettings Settings, long ParkTurn, bool Raining );
+/// <param name="ParkSeed">The seed a stateless trait derives from: the extension's saved park seed, else the simulation's seed.</param>
+public readonly record struct DecisionContext( GuestSettings Settings, long ParkTurn, bool Raining, ulong ParkSeed = 0 )
+{
+	/// <summary>A stateless trait of <paramref name="guest"/> (<see cref="SmarterGuestsState.Trait(ulong, ulong, int)"/>): the same for the whole visit, no random number taken.</summary>
+	public ulong Trait( in GuestView guest, int traitIndex ) => SmarterGuestsState.Trait( ParkSeed, guest.BirthId, traitIndex );
+}
 
 /// <summary>
-/// A guest as the policy sees it: a copy of the fields the decisions read, taken when the host asks. The two histories are read-only views of the guest's arrays, which the host does not
-/// touch while a policy call runs.
+/// A guest as the policy sees it: a copy of the fields the decisions read, taken when the host asks. The two histories are read-only wrappers of the guest's arrays (they cannot be cast back to an
+/// array), which the host does not touch while a policy call runs.
 /// </summary>
 /// <param name="Id">The guest's thing id.</param>
 /// <param name="BirthId">The smarter-guests extension's birth id, 0 while the guest has none (the extension is off, or its first tick has not run).</param>
@@ -28,21 +33,6 @@ public readonly record struct GuestView( int Id, ulong BirthId, int Type, float 
 public readonly record struct AttractionView( int Id, int TypeId, RideVisitorKind Kind, bool HasJoinCell, (int X, int Y) BackCell, (int X, int Y) EntranceCell, int CellModifier,
 	int QueueLength, int QueueSizeInCells, uint QueueLimit, int LiveExcitement, int StaticExcitementLevel, int ThirstEffect, int HungerEffect, bool ProvidesRelief, uint AgeDays,
 	bool IsIndoors, int GoldenTicketCost, int UpgradeCost, bool IsOpen, bool IsBrokenDown, bool SameTypeAsLastUsed );
-
-/// <summary>
-/// One candidate of a major decision, in the host's order (newest attraction first). <see cref="Reach"/> is the host's counts-test and route request: it makes the route request
-/// with its side effect on the guest's walk, so the policy calls it only for a candidate it would take, in that order (<see cref="AttractionChoice.Candidate.Passes"/>).
-/// </summary>
-public readonly record struct MajorCandidate( AttractionView View, Func<bool> Reach );
-
-/// <summary>The major decision's result: the attraction the guest goes to, 0 for none.</summary>
-public readonly record struct MajorDecision( int AttractionId )
-{
-	public static MajorDecision None => default;
-}
-
-/// <summary>The minor decision's result: the attraction that replaces the guest's target when the host's route test agrees, 0 to keep the target.</summary>
-public readonly record struct MinorDecision( int RetargetAttractionId );
 
 /// <summary>The booth's facts: the park points, the entrance fee and the draw the host took for the verdict (the park's generator is the host's).</summary>
 public readonly record struct BoothView( uint ParkPoints, uint Fee, uint Draw );

@@ -269,7 +269,9 @@ while such a mod is active, because packages record no mods yet. The asset manif
 
 ## Smarter guests and guest insights (`opentpw.smarter-guests`, `opentpw.guest-insights`)
 
-Two official extensions for the park visitors ([SMARTER-GUESTS.md](SMARTER-GUESTS.md) has the plan, the architecture and the measurement), both **off by default** and at version 1.0.0.
+Two official extensions for the park visitors ([SMARTER-GUESTS.md](SMARTER-GUESTS.md) has the plan, the architecture and the measurement), both at version 1.0.0. **Players cannot switch them on yet**:
+neither has a real feature, and a no-op version would lock saves to it. They are registered for tests and development, hidden from the Extensions and mods screen, and a `mods.json` entry or `--enable-mod` for them is ignored with a log line, until
+the first real rule ships (phase 2 for smarter guests, phase 1 for guest insights).
 
 - **`opentpw.smarter-guests`** changes the simulation (`AffectsSimulation`), so a park saved with it records it (id, version, no files) and loads only with it on, in the same version; a park saved without it
   loads only with it off. **The extension's version is the algorithm identity**: every release that changes how guests decide bumps it, and a park saved by another version is refused with
@@ -280,7 +282,7 @@ Two official extensions for the park visitors ([SMARTER-GUESTS.md](SMARTER-GUEST
 - **`opentpw.guest-insights`** only reads the park (`AffectsSimulation` false): refusal reasons and a complaints summary in the park windows, in a later phase. It is never recorded in saves, so
   it can be switched freely. `[EXT:guest-insights]`.
 
-Both appear on the Extensions and mods screen with their name and a description in the nine interface languages. Switching either on or off changes none of the pinned digests of the off path
+Their names and descriptions exist in the nine interface languages for the screen. Switching either on or off changes none of the pinned digests of the off path
 (`DeterminismTests`); with smarter guests on, `DeterminismTests.SmarterGuestsFixedRunHash` pins the world hash, which then includes the extension's state.
 
 ## The online extension (`opentpw.online`)

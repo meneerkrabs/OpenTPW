@@ -2,10 +2,11 @@ namespace OpenTPW;
 
 /// <summary>
 /// The pure decision layer of the guests (docs/SMARTER-GUESTS.md, "A pure decision layer"). The host (<see cref="GuestSimulation"/>) keeps everything with an effect: routing, queue insertion and
-/// removal, payments, statistics, thoughts, happiness changes and every <see cref="WorldRng"/> draw, each exactly once and in the original order. A policy only decides: each method takes
-/// snapshots or views and returns a typed decision, reads no generator, no clock and no simulation state of its own that the views do not carry, and changes nothing. A draw the original
-/// takes inside logic that moved here stays in the host, which passes the drawn value in (the booth's draw, <see cref="BoothView.Draw"/>) or runs the drawing procedure itself and offers the
-/// result for the policy to accept or replace (the wander goal).
+/// removal, payments, statistics, thoughts, happiness changes and every <see cref="WorldRng"/> draw, so no policy can take, skip or reorder one: the interface has no generator and no effectful callback (a
+/// policy never receives a delegate that routes, draws or edits). A policy only decides: each method takes snapshots or views and returns a typed decision or a comparison, reads no generator, no clock and no
+/// simulation state of its own that the views do not carry, and changes nothing. A draw the original takes inside logic that moved here stays in the host, which passes the drawn value in (the booth's
+/// draw, <see cref="BoothView.Draw"/>) or runs the drawing procedure itself and offers the result for the policy to accept or replace (the wander goal). The host checks every result it gets
+/// (<see cref="GuestSimulation"/> throws <see cref="InvalidOperationException"/> naming the policy for an admission, a booth verdict or a wander goal that cannot be acted on).
 /// </summary>
 public interface IGuestDecisions
 {
@@ -22,16 +23,17 @@ public interface IGuestDecisions
 	uint ScoreAttraction( in DecisionContext context, in GuestView guest, in AttractionView attraction );
 
 	/// <summary>
-	/// The major decision (<c>0xe8ff4</c>): scores the host's candidates and picks one. The candidates are enumerated lazily in the host's order; <see cref="MajorCandidate.Reach"/> is the host's
-	/// route request and may be called only for a candidate the policy would pick.
+	/// The major decision's comparison rule (<c>0xe8ff4</c>): whether a candidate with <paramref name="score"/> replaces the best so far (<paramref name="best"/>, initially 0). The original ignores a score below
+	/// <see cref="AttractionScore.CandidateFloor"/> and otherwise takes a higher score, or an equal one on an odd park turn. The **host** runs the choice loop: it enumerates the candidates in the original order,
+	/// scores each through <see cref="ScoreAttraction"/>, asks this rule, makes the route request itself (the one effect, and only for a candidate that beats the best) and keeps the result. No callback reaches the policy.
 	/// </summary>
-	MajorDecision DecideMajor( in DecisionContext context, in GuestView guest, IEnumerable<MajorCandidate> candidates );
+	bool BeatsInMajorDecision( in DecisionContext context, in GuestView guest, uint score, uint best );
 
 	/// <summary>
-	/// The minor decision while walking to a ride (<c>0x004FD570</c>): the best of the host's window candidates (rides nearer to the target's back cell than the guest, open and with room), in the
-	/// host's order. The host then tests the routes and retargets.
+	/// The minor decision's comparison rule (<c>0x004FD570</c>) over the host's window candidates, in the host's order and with the same scores: the original takes a higher score (unsigned), or an equal one on an
+	/// odd park turn. The host then tests the routes and retargets.
 	/// </summary>
-	MinorDecision DecideMinor( in DecisionContext context, in GuestView guest, in AttractionView target, IReadOnlyList<AttractionView> window );
+	bool BeatsInMinorDecision( in DecisionContext context, in GuestView guest, uint score, uint best );
 
 	/// <summary>Whether a guest at the back of a queue joins it (<c>0xeccb0</c>, after the room test): the excitement gate, then the queue limit.</summary>
 	QueueAdmission DecideAdmission( in DecisionContext context, in GuestView guest, in AdmissionView admission );

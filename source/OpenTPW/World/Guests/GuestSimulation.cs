@@ -315,6 +315,9 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	private Guest? Create()
 	{
 		// [BIN:TPW-EXE:0x004F896A thing id] the base constructor 0x004F8940 takes the thing's id from the pool (0x0050AFE0 → the allocator 0x00516270) before its first draw; a full pool logs a fatal error and gives id 0 (here: no guest)
+		// [EXT:smarter-guests] a used-up birth id counter is refused before anything is allocated or drawn, so a refused creation leaves no slot behind
+		if ( SmarterGuests is { NextBirthId: ulong.MaxValue } )
+			throw new OverflowException( "The smarter-guests birth id counter is used up; it is not wrapped." );
 		var id = things.Allocate( SaveThingModel.Guest );
 		if ( id == 0 )
 			return null;
@@ -1199,6 +1202,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	{
 		// the verdict's draw is the host's, taken first; the decision layer weighs the fee (BoothVerdict.Decide in the original)
 		var verdict = decisions.DecideBooth( ContextNow(), ViewOf( guest ), new BoothView( (uint)Math.Max( 0, ParkPoints?.Invoke() ?? 0 ), (uint)Math.Max( 0, AdmissionFee ), random.NextWord() ) ).Verdict;
+		if ( !Enum.IsDefined( verdict ) )
+			throw PolicyError( $"returned the booth verdict {(int)verdict}" );
 		if ( verdict == BoothVerdictKind.FarTooExpensive )
 		{
 			Think( guest, GuestThought.Dissatisfied );
@@ -1856,6 +1861,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		}
 		// the search and its draws were the host's; the decision layer accepts the proposal or names another goal
 		destination = decisions.ChooseWanderGoal( ContextNow(), ViewOf( guest ), destination );
+		if ( !Grid.InBounds( destination.Cell.X, destination.Cell.Y ) || destination.ByteX is < 0 or > 255 || destination.ByteY is < 0 or > 255 )
+			throw PolicyError( $"returned the wander goal ({destination.Cell.X}, {destination.Cell.Y}) with bytes ({destination.ByteX}, {destination.ByteY}), outside the map" );
 		var route = Grid.FindPath( start.X, start.Y, destination.Cell.X, destination.Cell.Y );
 		SetDestination( guest, GuestNavigation.BytePoint( destination.Cell, destination.ByteX, destination.ByteY ), route );
 		if ( guest.Navigation.Stuck )
@@ -1966,21 +1973,26 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	// [BIN:TPW-EXE:0x4ff419 major decision] once the turn is above +0x1FC + 30 the choice 0x4fcb10 runs; with no target the guest logs event 1, thinks 4, loses the small step (0x4fea70(0)) and is stamped; nothing in it tests time since a ride, and no instruction reads PeepTypes' BoredomThreshold (0x7850EC + 12 × type has no reference; excitement 0x7850E4 and cash 0x7850E8 have)
 	private IRideVisitorBridge? ChooseAttraction( Guest guest, bool setWalk = true )
 	{
+		// the host runs the choice loop: the policy scores and compares, the route request below is the host's alone (made exactly as the original makes it, for a candidate that beats the best)
 		var context = ContextNow();
 		var view = ViewOf( guest );
-		IEnumerable<MajorCandidate> Candidates()
+		uint best = 0;
+		var chosen = 0;
+		foreach ( var attraction in NewestFirst() )
 		{
-			foreach ( var attraction in NewestFirst() )
-			{
-				// [BIN:TPW-EXE:0x004FCB10 choice route] the route request 0x004FA530 to the ride's back-of-queue cell (0x004DE110) is made for every candidate that passes the counts-test and would win, and its walk stays set: the winner is the last candidate whose route was found, and a candidate whose route fails after it leaves the walk stuck (the original's SetDest failure state); the walk then runs all the way to the back cell (state 10, WALK-004)
-				// the request stays the host's: the policy scores and picks, and calls Reach only for a candidate it would take, in the original's order
-				yield return new MajorCandidate( ViewOf( attraction, guest ),
-					() => attraction.IsOpen && !attraction.IsBrokenDown && attraction.QueueLength < RideVisitorBridge.PositionsPerCell * attraction.QueueSizeInCells
-						&& (setWalk ? RouteToCell( guest, attraction.QueueCells[^1] ) : CanRouteTo( guest, attraction.QueueCells[^1] )) );
-			}
+			// an attraction without a back-of-queue cell is never a candidate
+			if ( attraction.JoinCell == null )
+				continue;
+			var score = decisions.ScoreAttraction( context, view, ViewOf( attraction, guest ) );
+			if ( !decisions.BeatsInMajorDecision( context, view, score, best ) )
+				continue;
+			// [BIN:TPW-EXE:0x004FCB10 choice route] the route request 0x004FA530 to the ride's back-of-queue cell (0x004DE110) is made for every candidate that passes the counts-test and would win, and its walk stays set: the winner is the last candidate whose route was found, and a candidate whose route fails after it leaves the walk stuck (the original's SetDest failure state); the walk then runs all the way to the back cell (state 10, WALK-004)
+			if ( !(attraction.IsOpen && !attraction.IsBrokenDown && attraction.QueueLength < RideVisitorBridge.PositionsPerCell * attraction.QueueSizeInCells
+				&& (setWalk ? RouteToCell( guest, attraction.QueueCells[^1] ) : CanRouteTo( guest, attraction.QueueCells[^1] ))) )
+				continue;
+			(best, chosen) = (score, attraction.AttractionId);
 		}
-		var id = decisions.DecideMajor( context, view, Candidates() ).AttractionId;
-		return id == 0 ? null : FindAttraction( id );
+		return chosen == 0 ? null : FindAttraction( chosen );
 	}
 
 	/// <summary>The attractions in the order the original's choice loop meets them: newest first.</summary>
@@ -2056,6 +2068,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			var admission = decisions.DecideAdmission( ContextNow(), ViewOf( guest ), new AdmissionView( ViewOf( attraction, guest ), attraction.StaticExcitementLevel,
 				attraction.JoinDifference( type.PreferredExcitement ), attraction.QueueLength, attraction.QueueLimit ) );
 			result2 = admission.Result;
+			if ( result2 is not (QueueJoinResult.Joined or QueueJoinResult.TooExciting or QueueJoinResult.NotExcitingEnough or QueueJoinResult.QueueTooLong) )
+				throw PolicyError( $"returned the admission result {result2}, which a queue join cannot end in" );
 			if ( admission.Admits )
 				attraction.AppendToQueue( guest.Id );
 		}
@@ -2132,8 +2146,11 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			return;
 		var back = target.QueueCells[^1];
 		var distance = (guest.CellX - back.X) * (guest.CellX - back.X) + (guest.CellY - back.Y) * (guest.CellY - back.Y);
-		// the window's candidates, in the original's order (x outer, y inner, newest attraction first); the policy scores them and picks the best
-		var window = new List<AttractionView>();
+		// the window's candidates in the original's order (x outer, y inner, newest attraction first), scored by the policy and compared by its rule; the host keeps the best
+		var context = ContextNow();
+		var view = ViewOf( guest );
+		IRideVisitorBridge? best = null;
+		uint bestScore = 0;
 		for ( var x = guest.CellX - 2; x < guest.CellX + 2; x++ )
 		{
 			for ( var y = guest.CellY - 2; y < guest.CellY + 2; y++ )
@@ -2145,14 +2162,13 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 					if ( candidate.EntranceCell != (x, y) || candidate.AttractionId == target.AttractionId || candidate.JoinCell == null
 						|| !candidate.IsOpen || candidate.IsBrokenDown || candidate.QueueLength >= RideVisitorBridge.PositionsPerCell * candidate.QueueSizeInCells )
 						continue;
-					window.Add( ViewOf( candidate, guest ) );
+					var score = decisions.ScoreAttraction( context, view, ViewOf( candidate, guest ) );
+					if ( decisions.BeatsInMinorDecision( context, view, score, bestScore ) )
+						(best, bestScore) = (candidate, score);
 				}
 			}
 		}
-		if ( window.Count == 0 )
-			return;
-		var retarget = decisions.DecideMinor( ContextNow(), ViewOf( guest ), ViewOf( target, guest ), window ).RetargetAttractionId;
-		if ( retarget == 0 || FindAttraction( retarget ) is not { } best )
+		if ( best == null )
 			return;
 		var toGuest = RouteLength( guest, target.EntranceCell, (guest.CellX, guest.CellY) );
 		var toBest = RouteLength( guest, target.EntranceCell, best.EntranceCell );
@@ -2615,7 +2631,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 				return;
 			}
 			// [BIN:TPW-EXE:0x004FFFF0 needs branch returns] beyond the window every path of the needs branch returns (0x00500311..0x005003A2), so the facing change below runs only within 30 turns of the last interlude
-			// [EXT:smarter-guests] the patience hook follows the leave tests on every turn the guest stays; the original policy stays
+			// [EXT:smarter-guests] the patience hook follows the leave tests on every turn the guest stays; the original policy stays. It can run on the turn a move-up has just started (the walk and the
+			// needs window share a turn, as in the original), so a policy can see a guest whose place has just changed (its QueuePosition is the old one until the walk ends); the hook is deliberately not skipped there, which keeps the original's flow
 			QueuePatienceLeaves( guest, attraction );
 			return;
 		}

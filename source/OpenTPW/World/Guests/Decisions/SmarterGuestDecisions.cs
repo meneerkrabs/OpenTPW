@@ -16,10 +16,9 @@ public sealed class SmarterGuestDecisions : IGuestDecisions
 
 	public uint ScoreAttraction( in DecisionContext context, in GuestView guest, in AttractionView attraction ) => original.ScoreAttraction( context, guest, attraction );
 
-	public MajorDecision DecideMajor( in DecisionContext context, in GuestView guest, IEnumerable<MajorCandidate> candidates ) => original.DecideMajor( context, guest, candidates );
+	public bool BeatsInMajorDecision( in DecisionContext context, in GuestView guest, uint score, uint best ) => original.BeatsInMajorDecision( context, guest, score, best );
 
-	public MinorDecision DecideMinor( in DecisionContext context, in GuestView guest, in AttractionView target, IReadOnlyList<AttractionView> window ) =>
-		original.DecideMinor( context, guest, target, window );
+	public bool BeatsInMinorDecision( in DecisionContext context, in GuestView guest, uint score, uint best ) => original.BeatsInMinorDecision( context, guest, score, best );
 
 	public QueueAdmission DecideAdmission( in DecisionContext context, in GuestView guest, in AdmissionView admission ) => original.DecideAdmission( context, guest, admission );
 

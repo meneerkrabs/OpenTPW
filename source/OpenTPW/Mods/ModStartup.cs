@@ -121,6 +121,12 @@ public static class ModStartup
 		foreach ( var id in disabled )
 			if ( OfficialExtensions.Find( id ) == null && !discovered.Any( mod => mod.Id == id ) )
 				throw new ArgumentException( $"{DisableExtensionOption} '{id}' names no OpenTPW extension or installed mod (extensions: {string.Join( ", ", OfficialExtensions.All.Select( extension => extension.Id ) )})." );
+		// an extension no player can switch on yet (it has no real feature) stays off, whatever mods.json or --enable-mod say
+		foreach ( var extension in OfficialExtensions.All.Where( extension => !extension.PlayerSelectable && settings.IsEnabled( extension.Id, false ) ) )
+		{
+			diagnostics.Add( $"Mod settings enable '{extension.Id}', which cannot be switched on yet (it ships with its first feature); ignored." );
+			settings = settings.WithEnabled( extension.Id, false );
+		}
 		foreach ( var id in settings.Enabled.Where( pair => pair.Value ).Select( pair => pair.Key ) )
 			if ( OfficialExtensions.Find( id ) == null && !discovered.Any( mod => mod.Id == id ) )
 				diagnostics.Add( $"Mod settings enable '{id}', which is not installed." );

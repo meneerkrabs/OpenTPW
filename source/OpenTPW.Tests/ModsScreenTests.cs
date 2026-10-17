@@ -223,33 +223,62 @@ public class ModsScreenTests
 	// ---- Screen ----------------------------------------------------------------------------------
 
 	[TestMethod]
-	public void TheGuestExtensionsShowTheirTranslatedNamesAndDescriptions()
+	public void TheGuestExtensionsAreNotOfferedToPlayersYet()
 	{
-		var services = Services();
+		Assert.IsFalse( OfficialExtensions.SmarterGuests.PlayerSelectable );
+		Assert.IsFalse( OfficialExtensions.GuestInsights.PlayerSelectable );
+		Assert.IsTrue( OfficialExtensions.Online.PlayerSelectable && OfficialExtensions.CrossEditionObjects.PlayerSelectable );
+		var stack = new UiScreenStack();
+		var screen = ModsScreen.Create( stack, OriginalUiTests.FakeStrings(), Services() );
+		stack.Push( screen );
+		var rows = ((UiScrollList)screen.Find( "extensions" )!).Rows();
+		CollectionAssert.AreEqual( new[] { "OpenTPW online  1.0.0", "Cross-edition objects  1.0.0" }, rows.ToArray() );
+		stack.Clear();
+	}
+
+	[TestMethod]
+	public void ASelectableGuestExtensionShowsItsTranslatedNameAndDescription()
+	{
+		// the screen is ready for the day an extension becomes selectable: the same registry entry, switched to selectable
+		var smarter = new OpenTpwExtension( "opentpw.smarter-guests", "Smarter guests", new ModVersion( 1, 0, 0 ), false, true, PlayerSelectable: true );
+		var services = new ModsServices
+		{
+			Extensions = new IOpenTpwExtension[] { OfficialExtensions.Online, smarter },
+			Discovered = () => Found(),
+			SettingsPath = Path.Combine( root, "config", "mods.json" ),
+			Active = () => ModSet.Defaults( new IOpenTpwExtension[] { OfficialExtensions.Online, smarter } ),
+			OpenTpwVersion = null,
+			Edition = () => GameEdition.ThemeParkWorld,
+		};
 		var stack = new UiScreenStack();
 		var screen = ModsScreen.Create( stack, OriginalUiTests.FakeStrings(), services );
 		stack.Push( screen );
 		var extensions = (UiScrollList)screen.Find( "extensions" )!;
-		var rows = extensions.Rows();
-		Assert.AreEqual( OfficialExtensions.All.Count, rows.Count );
-		var smarter = OfficialExtensions.All.ToList().IndexOf( OfficialExtensions.SmarterGuests );
-		var insights = OfficialExtensions.All.ToList().IndexOf( OfficialExtensions.GuestInsights );
-		Assert.AreEqual( Text( OpenTpwText.ExtensionSmarterGuestsName ) + "  1.0.0", rows[smarter] );
-		Assert.AreEqual( Text( OpenTpwText.ExtensionGuestInsightsName ) + "  1.0.0", rows[insights] );
-		Assert.AreEqual( Text( OpenTpwText.ModOff ), Trailing( screen, "extensions", smarter ), "off by default" );
-		Assert.AreEqual( Text( OpenTpwText.ModOff ), Trailing( screen, "extensions", insights ) );
-		extensions.Select( smarter );
+		Assert.AreEqual( Text( OpenTpwText.ExtensionSmarterGuestsName ) + "  1.0.0", extensions.Rows()[1] );
+		extensions.Select( 1 );
 		Pump( screen );
 		var details = Label( screen, "details" );
 		StringAssert.Contains( details, "opentpw.smarter-guests" );
 		StringAssert.Contains( details, Text( OpenTpwText.ExtensionSmarterGuestsDescription ) );
 		StringAssert.Contains( details, Text( OpenTpwText.ModAffectsSimulation ) );
-		extensions.Select( insights );
-		Pump( screen );
-		details = Label( screen, "details" );
-		StringAssert.Contains( details, Text( OpenTpwText.ExtensionGuestInsightsDescription ) );
-		StringAssert.Contains( details, Text( OpenTpwText.ModLeavesSimulation ) );
 		stack.Clear();
+	}
+
+	[TestMethod]
+	public void SettingsAndTheCommandLineCannotSwitchOnAnExtensionThatIsNotSelectable()
+	{
+		var diagnostics = new List<string>();
+		var settings = ModStartup.WithCommandLine( ModSettings.Default.WithEnabled( "opentpw.guest-insights", true ), Array.Empty<DiscoveredMod>(), new[] { "opentpw.smarter-guests" }, Array.Empty<string>() );
+		Assert.IsTrue( settings.IsEnabled( "opentpw.smarter-guests", false ), "the request itself is a valid id" );
+		var set = ModStartup.Resolve( Array.Empty<DiscoveredMod>(), settings, Array.Empty<string>(), diagnostics );
+		Assert.IsFalse( set.IsEnabled( "opentpw.smarter-guests" ) );
+		Assert.IsFalse( set.IsEnabled( "opentpw.guest-insights" ) );
+		Assert.IsTrue( diagnostics.Any( line => line.Contains( "opentpw.smarter-guests" ) && line.Contains( "ignored" ) ), string.Join( "; ", diagnostics ) );
+		Assert.IsTrue( diagnostics.Any( line => line.Contains( "opentpw.guest-insights" ) && line.Contains( "ignored" ) ) );
+		Assert.IsFalse( FeatureGates.SmarterGuests );
+		// tests and development code still switch them on directly
+		using var scope = OpenTpwExtensions.Use( SmarterGuestsTests.On() );
+		Assert.IsTrue( FeatureGates.SmarterGuests );
 	}
 
 	[TestMethod]

@@ -11,6 +11,7 @@ namespace OpenTPW.Tests;
 
 /// <summary>Reproducible runs (docs/DETERMINISM.md): world seed, per-park state, park-save streams and the canonical hash.</summary>
 [TestClass]
+[DoNotParallelize]
 public class DeterminismTests
 {
 	private const float Tick = 1f / FixedStepClock.TicksPerSecond;

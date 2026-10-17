@@ -9,31 +9,39 @@ taken: no code, no data tables, no constants. Every phase is one pull request. T
 - **Two extensions** (`OfficialExtensions`, both `DefaultEnabled: false`, version 1.0.0). `opentpw.guest-insights` is UI only (`AffectsSimulation: false`): refusal reasons and a
   complaints summary; it has no feature yet and is never recorded in saves. `opentpw.smarter-guests` is `AffectsSimulation: true`; the mod set is recorded in park saves (`ParkResumeMods`
   refuses a mismatched set), and the extension version is the algorithm identity: every behaviour-changing PR bumps it, and a park of another version is refused with a clear message
-  (`needs opentpw.smarter-guests 1.0.0, not 1.1.0`). `FeatureGates.SmarterGuests` and `FeatureGates.GuestInsights` read them; both show on the Extensions and mods screen with their name and
-  description in the nine interface languages.
+  (`needs opentpw.smarter-guests 1.0.0, not 1.1.0`). `FeatureGates.SmarterGuests` and `FeatureGates.GuestInsights` read them. **Neither can be switched on by a player yet** (`IOpenTpwExtension.PlayerSelectable` is false): a no-op
+  1.0.0 would lock saves to an extension that does nothing, and the next version bump would make them unloadable. They stay registered so tests and development code can use them
+  (`OpenTpwExtensions.Use`); the Extensions and mods screen hides them, and a `mods.json` entry or `--enable-mod` for them is ignored with a log line. They become selectable with the first real rule
+  (phase 2 for smarter guests, phase 1 for guest insights). Their names and descriptions exist in the nine interface languages for that day (the screen shows a selectable extension's, and a test pins it).
+  **Version policy:** the extension's version is the algorithm identity. A park saved by another version is refused with a clear message (`needs opentpw.smarter-guests 1.0.0, not 1.1.0`) and stays in the
+  load list marked as requiring it; a later release may offer loading an older version's park with the newer rules as an explicit "migrate" choice. Park sharing stays blocked while a simulation extension is
+  active, as for every simulation mod, until packages record mods.
 - **A pure decision layer** (`World/Guests/Decisions/`). `GuestSimulation` takes an `IGuestDecisions` at construction (null: the gate decides, read once, in the constructor and never again):
   `OriginalGuestDecisions`, a stateless pure extraction of the original, or `SmarterGuestDecisions`, which in 1.0.0 delegates every call to it. A policy gets a `DecisionContext` (settings, park
-  turn, weather) and views (`GuestView`, `AttractionView`, ...) and returns a typed decision. The host keeps every effect: routing, queue insertion and removal, payments, statistics, thoughts,
-  happiness and **every `WorldRng` draw, once and in the original order**. The seven decision points:
+  turn, weather, park seed and a `Trait` accessor) and views (`GuestView`, `AttractionView`, ...) and returns a typed decision or a comparison. The host keeps every effect: routing, queue insertion
+  and removal, payments, statistics, thoughts, happiness and every `WorldRng` draw. **By construction no policy can take, skip or reorder a draw or a route request**: the interface has no generator and
+  no delegate, the host runs every loop and calls the policy only to score or compare, and the host throws an `InvalidOperationException` naming the policy for a result it cannot act on (an admission other
+  than joined / too exciting / not exciting enough / queue too long, an undefined booth verdict, a wander goal off the map). The seven decision points:
 
   | Point | Host does | Policy decides |
   | --- | --- | --- |
   | Booth verdict | takes the verdict's draw first, then (for an expensive verdict) the wait draw; thoughts, happiness, payment | `DecideBooth( BoothView with the drawn word )` -> `BoothVerdictKind` |
-  | Major decision | builds the candidates newest first, each with its view and a `Reach` probe (counts-test plus route request, the one effect) | `DecideMajor`: scores every candidate and picks; calls `Reach` only for a candidate it would take, in the original order |
-  | Minor decision | scans the 4 x 4 window in the original order, tests the two routes, retargets | `DecideMinor( window )` -> the best candidate (or none) |
+  | Major decision | runs the choice loop newest first: asks the policy for each score, then whether it beats the best (`BeatsInMajorDecision`), and only then makes the counts-test and the route request itself, as before | `ScoreAttraction` and `BeatsInMajorDecision` (the original: floor of 10, signed, tie on an odd turn) |
+  | Minor decision | scans the 4 x 4 window in the original order, tests the two routes, retargets | `ScoreAttraction` and `BeatsInMinorDecision` (the original: unsigned, tie on an odd turn) |
   | Queue admission | the physical checks (`CheckJoinRoom`: open, not listed, room), then appends the admitted guest (`AppendToQueue`) | `DecideAdmission`: the excitement gate, then the queue limit |
-  | Queue patience (new) | calls it after the existing leave tests on every turn a waiting guest stays (never while called forward or in an interlude); a leaving guest is dismissed with the policy's thought (`QueueEndReason.Impatient`) | `DecideQueuePatience` -> stay (the original) or leave |
+  | Queue patience (new) | calls it after the existing leave tests on every turn a waiting guest stays (never while called forward or in an interlude; it can run on the turn a move-up has just started, which keeps the original's flow, and the view then still shows the old place); a leaving guest is dismissed with the policy's thought (`QueueEndReason.Impatient`) | `DecideQueuePatience` -> stay (the original) or leave |
   | Post-use memory | the use's effects | `RememberUse` -> whether the attraction enters the used history |
   | Wander goal | runs the original destination search with its path-dependent draws | `ChooseWanderGoal( proposal )` -> the goal to walk to (the original: the proposal) |
 
-  The wander's off-path search (`GuestWander.OffPath`, a start cell without links) stays host-only. The policy classes name no generator at all (a test reads the sources); the extension's
-  variation comes from `SmarterGuestsState.Trait`.
+  The wander's off-path search (`GuestWander.OffPath`, a start cell without links) stays host-only. The policy sources are checked against a list of banned APIs (hash codes, clocks, GUIDs, any random,
+  hash-set or dictionary, threads) and the policy types by reflection (sealed, no mutable field); the histories in a `GuestView` are read-only wrappers that cannot be cast back to the guest's arrays;
+  the extension's variation comes from `SmarterGuestsState.Trait`.
 - **Randomness.** Extension off: the `WorldRng` sequence is untouched (the existing pins prove it). On: the promise is deterministic replay for the same seed, set and save, not
   stream equality with the original; with the delegating policy of 1.0.0 the stream is the original's anyway. The policy itself draws nothing.
 - **Identity.** With the extension on, `Guest.BirthId` (64 bits, 0 = none) is allocated in `GuestSimulation.Create`, after the creation's draws and before the guest's first decision (the booth
-  sees it). The counter lives in `SmarterGuestsState`, beside the guest simulation, never in the guest snapshot or in `GuestSimulation.ComputeStateHash`. Guests without an id (an older save, an imported
-  original save, a park started with the extension off) get one on the extension's **first tick**, in the park's thing-list order (newest first, then any guest outside the list by id); an
-  imported guest of a running extension gets it at once. A counter at its limit is refused (`OverflowException`), never wrapped. `SmarterGuestsState.Trait( parkSeed, birthId, traitIndex )` is a stateless
+  sees it). The counter lives in `SmarterGuestsState`, beside the guest simulation, never in the guest snapshot or in `GuestSimulation.ComputeStateHash`. Guests without an id get one on the extension's **first tick**, in the park's
+  thing-list order (newest first, then any guest outside the list by id). In practice that is the guests of an imported original save (and tests that restore a guest snapshot without the section): a park
+  saved by this build with the extension on carries its ids, and a save made with it off is refused at load while it is on. An imported guest of a running extension gets its id at once. A counter at its limit is refused (`OverflowException`) before the creation takes a thing slot or a draw, never wrapped, and a save whose counter is `ulong.MaxValue` is invalid. `SmarterGuestsState.Trait( parkSeed, birthId, traitIndex )` is a stateless
   64-bit hash (SplitMix64's finalizer applied to each input); the park seed is the simulation's seed (the world seed's guest stream), kept in the state so a resume continues the same personalities.
   Nothing uses it yet beyond tests.
 - **Persistence.** `ParkResumeSnapshot.SmarterGuests` (`SmarterGuestsSaveData`: park seed, counter, first-tick flag, and each guest's birth id keyed by the guest's thing id, the identity a restore
@@ -125,7 +133,7 @@ The plan scale (2 warm-up + 10 measured days, the default) takes about 20 s with
 **Decision: two scales.** The plan scale (2 + 10 days) stays the quick default of `--guest-report`; `--guest-scale extended` (20 + 60 days) is the scale of the baseline and of every acceptance threshold on this page.
 
 With `--guest-extension smarter-guests` (repeatable; the extension's id works too) the whole run builds its simulations with the extension on (each reads the gate once, when built), the JSON gets an
-`extensions` list beside its protocol, and the table says `Extensions on: ...`. With the delegating policy of 0b the report is the default's: every seed ends in the same guest state hash and
+`extensions` list beside its protocol (always present, `[]` for the default run), and the table says `Extensions on: ...`. With the delegating policy of 0b the report is the default's: every seed ends in the same guest state hash and
 `--guest-compare off.json on.json` shows every metric `same` (a note names the two extension sets).
 
 To compare two runs: `--guest-compare baseline.json candidate.json [--guest-targets metric,metric] [--guest-compare-k 3]` prints every metric's change in standard errors with a verdict

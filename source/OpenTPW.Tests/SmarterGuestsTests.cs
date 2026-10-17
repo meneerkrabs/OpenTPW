@@ -139,19 +139,33 @@ public class SmarterGuestsTests
 		Assert.IsNull( original.SmarterGuests );
 	}
 
-	/// <summary>A policy that delegates and counts every call, to show the host takes each decision through the layer.</summary>
-	private sealed class CountingDecisions( IGuestDecisions inner ) : IGuestDecisions
+	/// <summary>A policy that delegates every call to another one; the test policies override what they watch or change.</summary>
+	private class DelegatingDecisions( IGuestDecisions inner ) : IGuestDecisions
+	{
+		public bool UsesExtensionState => inner.UsesExtensionState;
+		public virtual BoothDecision DecideBooth( in DecisionContext context, in GuestView guest, in BoothView booth ) => inner.DecideBooth( context, guest, booth );
+		public virtual uint ScoreAttraction( in DecisionContext context, in GuestView guest, in AttractionView attraction ) => inner.ScoreAttraction( context, guest, attraction );
+		public virtual bool BeatsInMajorDecision( in DecisionContext context, in GuestView guest, uint score, uint best ) => inner.BeatsInMajorDecision( context, guest, score, best );
+		public virtual bool BeatsInMinorDecision( in DecisionContext context, in GuestView guest, uint score, uint best ) => inner.BeatsInMinorDecision( context, guest, score, best );
+		public virtual QueueAdmission DecideAdmission( in DecisionContext context, in GuestView guest, in AdmissionView admission ) => inner.DecideAdmission( context, guest, admission );
+		public virtual QueuePatienceDecision DecideQueuePatience( in DecisionContext context, in GuestView guest, in QueuePatienceView queue ) => inner.DecideQueuePatience( context, guest, queue );
+		public virtual PostUseDecision RememberUse( in DecisionContext context, in GuestView guest, in AttractionView ride ) => inner.RememberUse( context, guest, ride );
+		public virtual GuestWander.Destination ChooseWanderGoal( in DecisionContext context, in GuestView guest, in GuestWander.Destination proposal ) => inner.ChooseWanderGoal( context, guest, proposal );
+	}
+
+	/// <summary>Counts every call, to show the host takes each decision through the layer.</summary>
+	private sealed class CountingDecisions( IGuestDecisions inner ) : DelegatingDecisions( inner )
 	{
 		public readonly Dictionary<string, int> Calls = new();
 		private void Count( string name ) => Calls[name] = Calls.GetValueOrDefault( name ) + 1;
-		public BoothDecision DecideBooth( in DecisionContext context, in GuestView guest, in BoothView booth ) { Count( "booth" ); return inner.DecideBooth( context, guest, booth ); }
-		public uint ScoreAttraction( in DecisionContext context, in GuestView guest, in AttractionView attraction ) { Count( "score" ); return inner.ScoreAttraction( context, guest, attraction ); }
-		public MajorDecision DecideMajor( in DecisionContext context, in GuestView guest, IEnumerable<MajorCandidate> candidates ) { Count( "major" ); return inner.DecideMajor( context, guest, candidates ); }
-		public MinorDecision DecideMinor( in DecisionContext context, in GuestView guest, in AttractionView target, IReadOnlyList<AttractionView> window ) { Count( "minor" ); return inner.DecideMinor( context, guest, target, window ); }
-		public QueueAdmission DecideAdmission( in DecisionContext context, in GuestView guest, in AdmissionView admission ) { Count( "admission" ); return inner.DecideAdmission( context, guest, admission ); }
-		public QueuePatienceDecision DecideQueuePatience( in DecisionContext context, in GuestView guest, in QueuePatienceView queue ) { Count( "patience" ); return inner.DecideQueuePatience( context, guest, queue ); }
-		public PostUseDecision RememberUse( in DecisionContext context, in GuestView guest, in AttractionView ride ) { Count( "memory" ); return inner.RememberUse( context, guest, ride ); }
-		public GuestWander.Destination ChooseWanderGoal( in DecisionContext context, in GuestView guest, in GuestWander.Destination proposal ) { Count( "wander" ); return inner.ChooseWanderGoal( context, guest, proposal ); }
+		public override BoothDecision DecideBooth( in DecisionContext context, in GuestView guest, in BoothView booth ) { Count( "booth" ); return base.DecideBooth( context, guest, booth ); }
+		public override uint ScoreAttraction( in DecisionContext context, in GuestView guest, in AttractionView attraction ) { Count( "score" ); return base.ScoreAttraction( context, guest, attraction ); }
+		public override bool BeatsInMajorDecision( in DecisionContext context, in GuestView guest, uint score, uint best ) { Count( "major" ); return base.BeatsInMajorDecision( context, guest, score, best ); }
+		public override bool BeatsInMinorDecision( in DecisionContext context, in GuestView guest, uint score, uint best ) { Count( "minor" ); return base.BeatsInMinorDecision( context, guest, score, best ); }
+		public override QueueAdmission DecideAdmission( in DecisionContext context, in GuestView guest, in AdmissionView admission ) { Count( "admission" ); return base.DecideAdmission( context, guest, admission ); }
+		public override QueuePatienceDecision DecideQueuePatience( in DecisionContext context, in GuestView guest, in QueuePatienceView queue ) { Count( "patience" ); return base.DecideQueuePatience( context, guest, queue ); }
+		public override PostUseDecision RememberUse( in DecisionContext context, in GuestView guest, in AttractionView ride ) { Count( "memory" ); return base.RememberUse( context, guest, ride ); }
+		public override GuestWander.Destination ChooseWanderGoal( in DecisionContext context, in GuestView guest, in GuestWander.Destination proposal ) { Count( "wander" ); return base.ChooseWanderGoal( context, guest, proposal ); }
 	}
 
 	[TestMethod]
@@ -164,23 +178,15 @@ public class SmarterGuestsTests
 		spied.Run( 9000 );
 		Assert.AreEqual( plain.Hash, spied.Hash, "the guests' state hash" );
 		Assert.AreEqual( plain.Guests.RandomState, spied.Guests.RandomState, "the draws, in the same order" );
-		foreach ( var point in new[] { "booth", "major", "minor", "admission", "patience", "memory", "wander" } )
+		foreach ( var point in new[] { "booth", "score", "major", "minor", "admission", "patience", "memory", "wander" } )
 			Assert.IsTrue( counting.Calls.GetValueOrDefault( point ) > 0, $"{point} was decided through the layer ({string.Join( ", ", counting.Calls )})" );
 	}
 
 	/// <summary>Lets a queued guest leave once it has waited long enough: a stand-in for the later patience rule.</summary>
-	private sealed class ImpatientDecisions( int turns ) : IGuestDecisions
+	private sealed class ImpatientDecisions( int turns ) : DelegatingDecisions( OriginalGuestDecisions.Instance )
 	{
-		private readonly IGuestDecisions inner = OriginalGuestDecisions.Instance;
-		public BoothDecision DecideBooth( in DecisionContext context, in GuestView guest, in BoothView booth ) => inner.DecideBooth( context, guest, booth );
-		public uint ScoreAttraction( in DecisionContext context, in GuestView guest, in AttractionView attraction ) => inner.ScoreAttraction( context, guest, attraction );
-		public MajorDecision DecideMajor( in DecisionContext context, in GuestView guest, IEnumerable<MajorCandidate> candidates ) => inner.DecideMajor( context, guest, candidates );
-		public MinorDecision DecideMinor( in DecisionContext context, in GuestView guest, in AttractionView target, IReadOnlyList<AttractionView> window ) => inner.DecideMinor( context, guest, target, window );
-		public QueueAdmission DecideAdmission( in DecisionContext context, in GuestView guest, in AdmissionView admission ) => inner.DecideAdmission( context, guest, admission );
-		public QueuePatienceDecision DecideQueuePatience( in DecisionContext context, in GuestView guest, in QueuePatienceView queue ) =>
+		public override QueuePatienceDecision DecideQueuePatience( in DecisionContext context, in GuestView guest, in QueuePatienceView queue ) =>
 			context.ParkTurn - queue.JoinTurn > turns ? new QueuePatienceDecision( true, GuestThought.QueueTooLong ) : QueuePatienceDecision.Stay;
-		public PostUseDecision RememberUse( in DecisionContext context, in GuestView guest, in AttractionView ride ) => inner.RememberUse( context, guest, ride );
-		public GuestWander.Destination ChooseWanderGoal( in DecisionContext context, in GuestView guest, in GuestWander.Destination proposal ) => inner.ChooseWanderGoal( context, guest, proposal );
 	}
 
 	private sealed class EndRecorder : IGuestObserver
@@ -257,18 +263,142 @@ public class SmarterGuestsTests
 		Assert.AreEqual( original.ChooseWanderGoal( context, view, proposal ), smarter.ChooseWanderGoal( context, view, proposal ) );
 		Assert.AreEqual( original.RememberUse( context, view, default ), smarter.RememberUse( context, view, default ) );
 		Assert.AreEqual( original.DecideQueuePatience( context, view, default ), smarter.DecideQueuePatience( context, view, default ) );
+		foreach ( var (score, best) in new[] { (5u, 0u), (10u, 0u), (30u, 20u), (20u, 20u), (20u, 30u), (uint.MaxValue, 5u), (5u, uint.MaxValue) } )
+		{
+			Assert.AreEqual( original.BeatsInMajorDecision( context, view, score, best ), smarter.BeatsInMajorDecision( context, view, score, best ) );
+			Assert.AreEqual( original.BeatsInMinorDecision( context, view, score, best ), smarter.BeatsInMinorDecision( context, view, score, best ) );
+		}
 	}
 
 	[TestMethod]
-	public void ThePolicyClassesTakeNoRandomNumber()
+	public void TheOriginalComparisonRulesAreTheChoiceLoopsOwn()
 	{
-		// the policy has no generator: its sources never name the world generator
-		var directory = FindDirectory( "World/Guests/Decisions" );
-		foreach ( var file in Directory.GetFiles( directory, "*.cs" ) )
+		var settings = GuestTests.CreateSettings();
+		var view = new GuestView( 7, 0, 0, 60, 10, 10, 10, 0, 100, 3, 3, Array.AsReadOnly( new int[4] ), Array.AsReadOnly( new int[4] ) );
+		var (odd, even) = (new DecisionContext( settings, 11, false ), new DecisionContext( settings, 10, false ));
+		var rules = OriginalGuestDecisions.Instance;
+		Assert.IsFalse( rules.BeatsInMajorDecision( odd, view, 9, 0 ), "below the floor of 10" );
+		Assert.IsTrue( rules.BeatsInMajorDecision( odd, view, 10, 0 ) );
+		Assert.IsTrue( rules.BeatsInMajorDecision( even, view, 11, 10 ) );
+		Assert.IsFalse( rules.BeatsInMajorDecision( even, view, 10, 10 ), "a tie on an even turn keeps the first" );
+		Assert.IsTrue( rules.BeatsInMajorDecision( odd, view, 10, 10 ), "a tie on an odd turn takes the later one" );
+		Assert.IsFalse( rules.BeatsInMajorDecision( odd, view, 10, 11 ) );
+		Assert.IsFalse( rules.BeatsInMajorDecision( odd, view, 0x8000_0000u, 5 ), "the major loop compares signed: a negative score does not beat 5" );
+		Assert.IsTrue( rules.BeatsInMinorDecision( odd, view, 0x8000_0000u, 5 ), "the minor loop compares unsigned" );
+		Assert.IsTrue( rules.BeatsInMinorDecision( odd, view, 0, 0 ), "a tie at 0 on an odd turn" );
+		Assert.IsFalse( rules.BeatsInMinorDecision( even, view, 0, 0 ) );
+		Assert.IsFalse( rules.BeatsInMinorDecision( even, view, 7, 7 ) );
+	}
+
+	[TestMethod]
+	public void NoEffectfulCallbackReachesThePolicy()
+	{
+		// no method of the interface takes a delegate and no view holds one: the host alone routes, draws and edits
+		bool IsCallback( Type type ) => typeof( Delegate ).IsAssignableFrom( type ) || type.IsGenericType && type.GetGenericTypeDefinition() == typeof( IEnumerable<> );
+		foreach ( var method in typeof( IGuestDecisions ).GetMethods() )
+			foreach ( var parameter in method.GetParameters() )
+				Assert.IsFalse( IsCallback( parameter.ParameterType.IsByRef ? parameter.ParameterType.GetElementType()! : parameter.ParameterType ), $"{method.Name}({parameter.Name})" );
+		foreach ( var type in new[] { typeof( DecisionContext ), typeof( GuestView ), typeof( AttractionView ), typeof( BoothView ), typeof( AdmissionView ), typeof( QueuePatienceView ) } )
+			foreach ( var field in type.GetFields( System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic ) )
+				Assert.IsFalse( typeof( Delegate ).IsAssignableFrom( field.FieldType ), $"{type.Name}.{field.Name}" );
+	}
+
+	/// <summary>Records what a policy can see of the histories.</summary>
+	private sealed class HistoryProbe : DelegatingDecisions
+	{
+		public bool CastableToArray;
+		public int Seen;
+		public HistoryProbe() : base( OriginalGuestDecisions.Instance ) { }
+		public override uint ScoreAttraction( in DecisionContext context, in GuestView guest, in AttractionView attraction )
 		{
-			var text = File.ReadAllText( file );
-			var code = string.Join( "\n", text.Split( '\n' ).Where( line => !line.TrimStart().StartsWith( "//" ) && !line.TrimStart().StartsWith( "///" ) ) );
-			Assert.IsFalse( code.Contains( "WorldRng" ) || code.Contains( "Random" ), $"{Path.GetFileName( file )} must not use a generator" );
+			Seen++;
+			CastableToArray |= guest.UsedHistory is int[] || guest.TemporaryHistory is int[];
+			return base.ScoreAttraction( context, guest, attraction );
+		}
+	}
+
+	[TestMethod]
+	public void TheHistoriesCannotBeCastBackToTheGuestsArrays()
+	{
+		var probe = new HistoryProbe();
+		new ParkScenario( new WorldSeed( 1 ), decisions: probe ).Run( 6000 );
+		Assert.IsTrue( probe.Seen > 0 );
+		Assert.IsFalse( probe.CastableToArray );
+	}
+
+	[TestMethod]
+	public void TheContextGivesTheSeedAndTheTraitWithoutAGenerator()
+	{
+		var settings = GuestTests.CreateSettings();
+		var context = new DecisionContext( settings, 3, false, 99 );
+		var guest = new GuestView( 1, 12, 0, 50, 0, 0, 0, 0, 10, 0, 0, Array.AsReadOnly( new int[4] ), Array.AsReadOnly( new int[4] ) );
+		Assert.AreEqual( SmarterGuestsState.Trait( 99, 12, 4 ), context.Trait( guest, 4 ) );
+		using var scope = OpenTpwExtensions.Use( On() );
+		var park = new ParkScenario( new WorldSeed( 1 ) );
+		Assert.AreEqual( park.Guests.SmarterGuests!.ParkSeed, park.Seed.GuestStream );
+	}
+
+	/// <summary>Returns what it is told for the one decision under test; everything else is the original.</summary>
+	private sealed class BadPolicy( Func<QueueAdmission>? admission = null, Func<BoothDecision>? booth = null, Func<GuestWander.Destination>? wander = null ) : DelegatingDecisions( OriginalGuestDecisions.Instance )
+	{
+		public override QueueAdmission DecideAdmission( in DecisionContext context, in GuestView guest, in AdmissionView view ) => admission?.Invoke() ?? base.DecideAdmission( context, guest, view );
+		public override BoothDecision DecideBooth( in DecisionContext context, in GuestView guest, in BoothView view ) => booth?.Invoke() ?? base.DecideBooth( context, guest, view );
+		public override GuestWander.Destination ChooseWanderGoal( in DecisionContext context, in GuestView guest, in GuestWander.Destination proposal ) => wander?.Invoke() ?? base.ChooseWanderGoal( context, guest, proposal );
+	}
+
+	[TestMethod]
+	public void TheHostRefusesAPolicyResultItCannotActOn()
+	{
+		void Refuses( BadPolicy policy )
+		{
+			var exception = Assert.ThrowsException<InvalidOperationException>( () => new ParkScenario( new WorldSeed( 1 ), decisions: policy ).Run( 9000 ) );
+			StringAssert.Contains( exception.Message, nameof( BadPolicy ) );
+		}
+		Refuses( new BadPolicy( admission: () => new QueueAdmission( QueueJoinResult.Closed ) ) );
+		Refuses( new BadPolicy( admission: () => new QueueAdmission( QueueJoinResult.NoRoom ) ) );
+		Refuses( new BadPolicy( admission: () => new QueueAdmission( QueueJoinResult.AlreadyQueued ) ) );
+		Refuses( new BadPolicy( booth: () => new BoothDecision( (BoothVerdictKind)42 ) ) );
+		Refuses( new BadPolicy( wander: () => new GuestWander.Destination( (500, 500), 10, 10 ) ) );
+		Refuses( new BadPolicy( wander: () => new GuestWander.Destination( (3, 5), 400, 10 ) ) );
+		// the three refusals a join may end in are accepted
+		foreach ( var result in new[] { QueueJoinResult.TooExciting, QueueJoinResult.NotExcitingEnough, QueueJoinResult.QueueTooLong } )
+			new ParkScenario( new WorldSeed( 1 ), decisions: new BadPolicy( admission: () => new QueueAdmission( result ) ) ).Run( 6000 );
+	}
+
+	/// <summary>APIs a decision must not touch: they differ between runs, machines or processes.</summary>
+	private static readonly string[] BannedApis =
+	{
+		"HashCode", "GetHashCode", "DateTime", "Stopwatch", "Environment.TickCount", "Guid", "Random", "WorldRng", "ScriptRandom", "HashSet", "Dictionary", "Task", "Thread", "Parallel", "Environment."
+	};
+
+	private static IEnumerable<string> CodeLines( string text ) =>
+		text.Split( '\n' ).Select( line => line.TrimStart() ).Where( line => !line.StartsWith( "//" ) );
+
+	[TestMethod]
+	public void ThePolicySourcesUseNoNondeterministicApi()
+	{
+		var files = Directory.GetFiles( FindDirectory( "World/Guests/Decisions" ), "*.cs" ).Append( Path.Combine( FindDirectory( "World/Guests/SmarterGuests" ), "SmarterGuestsState.cs" ) ).ToArray();
+		Assert.IsTrue( files.Length >= 5, "the policy sources were found" );
+		foreach ( var file in files )
+		{
+			foreach ( var api in BannedApis )
+				Assert.IsFalse( CodeLines( File.ReadAllText( file ) ).Any( line => line.Contains( api ) ), $"{Path.GetFileName( file )} must not use {api}" );
+			Assert.IsFalse( CodeLines( File.ReadAllText( file ) ).Any( line => System.Text.RegularExpressions.Regex.IsMatch( line, @"\bstatic\b(?!.*(readonly|const|\())" ) && line.Contains( ';' ) && !line.Contains( "=>" ) && !line.Contains( "{ get; }" ) ),
+				$"{Path.GetFileName( file )} must not hold a static mutable field" );
+		}
+	}
+
+	[TestMethod]
+	public void ThePolicyTypesHoldNoMutableState()
+	{
+		var flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic;
+		var types = typeof( IGuestDecisions ).Assembly.GetTypes().Where( type => typeof( IGuestDecisions ).IsAssignableFrom( type ) && !type.IsInterface ).ToArray();
+		CollectionAssert.IsSubsetOf( new[] { typeof( OriginalGuestDecisions ), typeof( SmarterGuestDecisions ) }, types );
+		foreach ( var type in types )
+		{
+			Assert.IsTrue( type.IsSealed, $"{type.Name} is sealed" );
+			foreach ( var field in type.GetFields( flags ) )
+				Assert.IsTrue( field.IsInitOnly || field.IsLiteral, $"{type.Name}.{field.Name} is mutable" );
 		}
 	}
 
@@ -283,7 +413,7 @@ public class SmarterGuestsTests
 			if ( Directory.Exists( candidate ) )
 				return candidate;
 		}
-		Assert.Inconclusive( "the source tree is not next to the tests" );
+		Assert.Fail( $"The source folder {relative} was not found above {AppContext.BaseDirectory}: the purity checks read the sources of a repository checkout." );
 		return "";
 	}
 
@@ -341,18 +471,9 @@ public class SmarterGuestsTests
 		Assert.IsTrue( seen.All( item => item.BirthId != 0 ), "the booth sees every guest with its id" );
 	}
 
-	private sealed class RecordingBoothDecisions( List<(int Id, ulong BirthId)> seen ) : IGuestDecisions
+	private sealed class RecordingBoothDecisions( List<(int Id, ulong BirthId)> seen ) : DelegatingDecisions( new SmarterGuestDecisions() )
 	{
-		private readonly IGuestDecisions inner = new SmarterGuestDecisions();
-		public bool UsesExtensionState => inner.UsesExtensionState;
-		public BoothDecision DecideBooth( in DecisionContext context, in GuestView guest, in BoothView booth ) { seen.Add( (guest.Id, guest.BirthId) ); return inner.DecideBooth( context, guest, booth ); }
-		public uint ScoreAttraction( in DecisionContext context, in GuestView guest, in AttractionView attraction ) => inner.ScoreAttraction( context, guest, attraction );
-		public MajorDecision DecideMajor( in DecisionContext context, in GuestView guest, IEnumerable<MajorCandidate> candidates ) => inner.DecideMajor( context, guest, candidates );
-		public MinorDecision DecideMinor( in DecisionContext context, in GuestView guest, in AttractionView target, IReadOnlyList<AttractionView> window ) => inner.DecideMinor( context, guest, target, window );
-		public QueueAdmission DecideAdmission( in DecisionContext context, in GuestView guest, in AdmissionView admission ) => inner.DecideAdmission( context, guest, admission );
-		public QueuePatienceDecision DecideQueuePatience( in DecisionContext context, in GuestView guest, in QueuePatienceView queue ) => inner.DecideQueuePatience( context, guest, queue );
-		public PostUseDecision RememberUse( in DecisionContext context, in GuestView guest, in AttractionView ride ) => inner.RememberUse( context, guest, ride );
-		public GuestWander.Destination ChooseWanderGoal( in DecisionContext context, in GuestView guest, in GuestWander.Destination proposal ) => inner.ChooseWanderGoal( context, guest, proposal );
+		public override BoothDecision DecideBooth( in DecisionContext context, in GuestView guest, in BoothView booth ) { seen.Add( (guest.Id, guest.BirthId) ); return base.DecideBooth( context, guest, booth ); }
 	}
 
 	[TestMethod]
@@ -398,6 +519,8 @@ public class SmarterGuestsTests
 		var park = new ParkScenario( new WorldSeed( 1 ) );
 		park.Guests.SmarterGuests!.Restore( 1, ulong.MaxValue, true );
 		Assert.ThrowsException<OverflowException>( () => park.Run( 20000 ) );
+		Assert.AreEqual( park.Guests.Guests.Count, park.Things.UsedNewestFirst().Count( slot => slot.Model == SaveThingModel.Guest ), "the refused creation took no thing slot" );
+		Assert.AreEqual( 0, park.Guests.Guests.Count, "and no guest" );
 	}
 
 	[TestMethod]
@@ -482,6 +605,7 @@ public class SmarterGuestsTests
 		StringAssert.Contains( Problem( null, 10 )!, "no SmarterGuests section" );
 		StringAssert.Contains( SmarterGuestsSave.ShapeProblem( Section( 2, true, (10, 1) ), new[] { 10 }, null )!, "does not record" );
 		StringAssert.Contains( Problem( Section( 0, false ) )!, "counter" );
+		StringAssert.Contains( Problem( Section( ulong.MaxValue, false ) )!, "counter", "a used-up counter is not a state a save can hold" );
 		StringAssert.Contains( Problem( Section( 3, true, (10, 1), (12, 2) ), 10, 11 )!, "guest 12" );
 		StringAssert.Contains( Problem( Section( 3, true, (10, 1), (10, 2) ), 10, 11 )!, "two birth ids" );
 		StringAssert.Contains( Problem( Section( 3, true, (10, 0), (11, 2) ), 10, 11 )!, "birth id 0" );

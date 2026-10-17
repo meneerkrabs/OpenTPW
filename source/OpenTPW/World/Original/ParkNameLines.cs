@@ -42,6 +42,10 @@ public sealed record ParkNameLines( string Line1, string Line2 )
 		return true;
 	}
 
+	/// <summary>The park name an original save's gate holds: its two sign lines, or null when they are empty or hold what a sign cannot (<see cref="IsValidLine"/>).</summary>
+	public static ParkNameLines? FromSavedGate( string? line1, string? line2 ) =>
+		IsValidLine( line1 ) && IsValidLine( line2 ) && (line1!.Length > 0 || line2!.Length > 0) ? new ParkNameLines( line1!, line2! ) : null;
+
 	/// <summary>Both lines valid (<see cref="IsValidLine"/>).</summary>
 	public bool IsValid => IsValidLine( Line1 ) && IsValidLine( Line2 );
 

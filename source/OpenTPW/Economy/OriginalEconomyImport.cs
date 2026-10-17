@@ -274,9 +274,10 @@ public sealed class OriginalEconomyImport
 		// [BIN:TPW-EXE:0x004DC12B walk-away load] the loader reads mNumWalkAways (+0x1A4) back with the other fields, so it is imported (ImportObjects); 0x004E1670 raises it (from 0x005006B0) and nothing else reads the field
 		evidence.Add( $"Attraction walk-away counts {string.Join( "/", save.Attractions.Select( item => item.WalkAwayCount ) )} imported (mNumWalkAways, +0x1A4)." );
 		// [BIN:TPW-EXE:0x4DB7D0 third gauge] the float at attraction +0x4C is written by the constructor (0x4DB10B), the loader (0x4DCE42) and one more store (0x4DB363) and read only by the serializer (0x4DC64F); no other load of a +0x4C field exists in the attraction code (0x4D8000..0x4E4000), the guest code or the interface, so the third gauge needs no import
-		// [APPROX:SAVE-006] a closed open word of a working attraction (mCanLoad, the park door opens it), its sign lines (OpenTPW names no attraction), a staff claim no imported job holds (an imported job's claim is taken again with its saved turn, 0x004E01F0; any other claim is dropped, and a claim lapses 100 turns after its turn unless its claimant still targets the object, 0x004E0220, ECON-022) are not imported; the raw links (mesh instance, script and track handles, flags, footprint, entrance and exit cells, upgrade parent and balloon sprite) are rebuilt by the placement, and the queue (its cells, ends and called guest) from the laid queue cells — evidence needed: the import of the open word, the sign lines and the staff claim into the restored rides' runtimes (the operating words are imported by Level.ImportOriginalRideSettings)
+		// [BIN:TPW-EXE:0x004E0E60 SetState] the open word (mCanLoad, +0x68) is the park's open state of the attraction: an idle attraction saved with it clear is closed again by the level (Level.ImportOriginalRideSettings), the others are opened by their placement; the gate's two sign lines are the park's name (Level.SavedGateName) and every other type's lines are its OBJECT_NAMES row
+		// [BIN:TPW-EXE:0x004DB7D0 attraction serializer] the mesh instance, script and track handles, flags, footprint, entrance and exit cells, upgrade parent and balloon sprite are rebuilt by the placement, and the queue (cells, ends, called guest) from the laid queue cells
 		foreach ( var item in save.Attractions )
-			evidence.Add( $"[APPROX:SAVE-006] Attraction thing {item.Id} (Info.Id {item.InfoId}) values not imported: open word {item.CanLoad}, name \"{item.NameLine1}\"/\"{item.NameLine2}\", claim by thing {item.AssignedStaffMember} on turn {item.TimeMarkedForMaintenance}, queue size {item.QueueSizeInCells} cells, first {item.FirstInQueue}, back {item.BackOfQueue}, called {item.PersonBeingLoaded}, mesh instance {item.MeshInstanceId}, flags 0x{item.Flags:X4}." );
+			evidence.Add( $"Attraction thing {item.Id} (Info.Id {item.InfoId}): open word {item.CanLoad}, name \"{item.NameLine1}\"/\"{item.NameLine2}\", queue size {item.QueueSizeInCells} cells, first {item.FirstInQueue}, back {item.BackOfQueue}, called {item.PersonBeingLoaded}, mesh instance {item.MeshInstanceId}, flags 0x{item.Flags:X4}; the open word and the gate's name are imported by the level, the queue and the raw links are rebuilt by the placement." );
 		return (objects, fixedItems, things);
 	}
 
@@ -318,6 +319,7 @@ public sealed class OriginalEconomyImport
 		var imported = 0;
 		var adjusted = new List<string>();
 		var jobs = new List<string>();
+		var resumedClaims = new HashSet<int>();
 		// a guard chases a guest the guest import restores in the park (states 6–10, GuestSimulation.ImportsOriginalState)
 		var chaseable = save.Guests.Where( guest => guest.State is >= 6 and <= 10 ).Select( guest => guest.Id ).ToHashSet();
 		foreach ( var saved in save.Staff )
@@ -364,7 +366,7 @@ public sealed class OriginalEconomyImport
 			// [BIN:TPW-EXE:0x005054D0 staff state setter] +0x200 is the turn an idle spell started (0 after any state but a patrol), which the idle states compare with IdleDuration[grade]
 			member.IdleStamp = staff.TimeStartedIdling;
 			ImportPatrolArea( saved, member, adjusted );
-			ImportJob( economy, saved, member, things, save.Attractions, chaseable, jobs );
+			ImportJob( economy, saved, member, things, save.Attractions, chaseable, jobs, resumedClaims );
 			// [BIN:TPW-EXE:0x004F8B10 person serializer] the loader routes the person again to mAccurateDestX/Y (+0x18/+0x1A, 1/256 cell) once it is read (0x004FA5F0 at 0x004F9407);
 			// the walk speeds are the person's mBaseSpeed (+0xC0), mPurposeSpeed (+0xC2, the bonus a walk to a job or a chase takes) and mPreviousSpeed (+0xC8)
 			var person = saved.Person;
@@ -384,6 +386,10 @@ public sealed class OriginalEconomyImport
 			evidence.Add( $"Staff value adjusted on import: {adjustment}." );
 		foreach ( var job in jobs )
 			evidence.Add( job );
+		// [APPROX:SAVE-006] a staff claim no imported job holds is not imported — evidence needed: a save whose attraction is claimed by a staff member with no imported job on it
+		// [BIN:TPW-EXE:0x004E0220 claim lapse] a claim taken more than 100 turns ago lapses unless its claimant still targets the object: a claim whose claimant has no imported job on the object cannot be held again
+		foreach ( var held in save.Attractions.Where( item => item.AssignedStaffMember != 0 && !resumedClaims.Contains( item.Id ) ) )
+			evidence.Add( $"[APPROX:SAVE-006] Attraction thing {held.Id} (Info.Id {held.InfoId}) claim by thing {held.AssignedStaffMember} on turn {held.TimeMarkedForMaintenance} not imported: no imported job of that member targets it." );
 		// [BIN:TPW-EXE:0x00504BDC staff constructor] mJobsDone (+0x204) is set to 0 here and otherwise touched only by the serializer (0x00504EFC, 0x005052ED): nothing reads it, so it needs no import
 		if ( imported != 0 )
 			evidence.Add( $"Staff jobs-done counts {string.Join( "/", save.Staff.Select( item => item.Staff.JobsDone ) )} need no import (nothing reads mJobsDone)." );
@@ -490,7 +496,7 @@ public sealed class OriginalEconomyImport
 	// [BIN:TPW-EXE:0x004D4460 entertainer serializer] mTimeStartedEntertaining (+0x214); [BIN:TPW-EXE:0x00502760 researcher serializer] mTimeStartedResearching (+0x214)
 	// [BIN:TPW-EXE:0x004D6000 guard serializer] mPerp (+0x212), mProsecutionTimestamp (+0x214, the chase timer the state setter 0x004D65D0 sets)
 	// [BIN:TPW-EXE:0x00506D10 rest end] mRestArea (+0x208) names the rest area only while the member walks to it (state 2) or rests in it (state 3): the rest's end clears it
-	private static void ImportJob( ParkEconomy economy, SaveStaff saved, StaffMember member, IReadOnlyDictionary<int, ParkObjectState> things, IReadOnlyList<SaveAttraction> attractions, IReadOnlySet<int> chaseable, List<string> evidence )
+	private static void ImportJob( ParkEconomy economy, SaveStaff saved, StaffMember member, IReadOnlyDictionary<int, ParkObjectState> things, IReadOnlyList<SaveAttraction> attractions, IReadOnlySet<int> chaseable, List<string> evidence, ISet<int> resumedClaims )
 	{
 		var word = saved.Staff.State;
 		var what = $"{saved.Model} thing {saved.Id}";
@@ -506,7 +512,10 @@ public sealed class OriginalEconomyImport
 		void NoteClaim( ushort thingId )
 		{
 			if ( attractions.FirstOrDefault( entry => entry.Id == thingId ) is { } held && held.AssignedStaffMember == saved.Id )
+			{
 				member.ResumeClaimTurn = Math.Min( held.TimeMarkedForMaintenance, ParkCalendar.Turn( economy.Tick ) );
+				resumedClaims.Add( held.Id );
+			}
 		}
 		string? dropped = null;
 		switch ( job )
@@ -678,9 +687,17 @@ public sealed class OriginalEconomyImport
 				current.Add( $"{category} {project.ObjectId}" );
 			else
 				refused.Add( $"{category} {project.ObjectId} level {project.UpgradeLevel}" );
-			if ( research.HighestOpenGroup( category ) != group.HighestGroup )
-				evidence.Add( $"[APPROX:SAVE-007] Research category {category}: the save's highest open group {group.HighestGroup} differs from OpenTPW's {research.HighestOpenGroup( category )}, which is kept." );
 		}
+		// [BIN:TPW-EXE:0x00504760 research group serializer] the group record's last byte is the category's highest group available, read back as it is (only the opener 0x503B80 raises it, per completed project): the saved value is the lab's, whatever the completed projects would give
+		var savedGroups = Enumerable.Range( 0, SaveResearchLab.GroupRecords ).Select( index => (int)lab.Group( index ).HighestGroup ).ToArray();
+		var recomputedGroups = Enum.GetValues<ResearchCategory>().Select( category => research.HighestOpenGroup( category ) ).ToArray();
+		if ( savedGroups.All( group => group <= ParkResearch.MaximumOpenGroup ) && savedGroups.Length == recomputedGroups.Length )
+		{
+			research.RestoreHighestGroups( savedGroups );
+			evidence.Add( $"Research highest open groups imported as saved: {string.Join( "/", savedGroups )}{(savedGroups.SequenceEqual( recomputedGroups ) ? ", the groups the researched projects give" : $" (the researched projects give {string.Join( "/", recomputedGroups )})")}." );
+		}
+		else
+			evidence.Add( $"[APPROX:SAVE-007] Research highest open groups {string.Join( "/", savedGroups )} are outside 0 to {ParkResearch.MaximumOpenGroup}: the groups the researched projects give ({string.Join( "/", recomputedGroups )}) are kept." );
 		evidence.Add( $"Research imported: {used} projects, {progress.Count} started, {completed.Count - initial} researched by the lab, effort {string.Join( "/", effort )}, work load {lab.WorkLoad}, current {(current.Count == 0 ? "none" : string.Join( ", ", current ))}." );
 		// [BIN:TPW-EXE:0x4D3AA0 object controls] the control manager's table (150 records of 32 bytes, the used ones first) is the first part of the World after its variables; a record's researched byte (+0x10) is written only by the lab's init 0x5031A0 (1 for an object without a research cost, so it starts researched) and by the research step 0x504630 when a project reaches its cost (1, with the upgrade level in +0x14), so the flags follow from the lab's projects and the objects' costs and are checked against OpenTPW's research here
 		var disagreements = new List<string>();
@@ -697,17 +714,18 @@ public sealed class OriginalEconomyImport
 			}
 			evidence.Add( $"Research object controls: {controls.Controls.Count} records, {controls.Controls.Count( control => control.Researched )} researched, {checkedControls} research items checked against OpenTPW's research, {(disagreements.Count == 0 ? "none" : string.Join( ", ", disagreements ))} disagree." );
 		}
-		// [APPROX:SAVE-007] lab projects OpenTPW does not list are dropped, a saved current project OpenTPW would not research now is not selected, and the save's highest open group is recomputed from the researched items and kept where it differs — evidence needed: the original's research table order (ECON-017), which decides what the lab lists and which project is current
+		// [APPROX:SAVE-007] a lab project of an object this install's level archives do not define (a modified save) and a saved current project OpenTPW's picker would not offer now (its group closed, its add-on target not researched) are dropped — evidence needed: a save that holds either (the 11 corpus labs hold neither: every project is a level object, in the original's scan order, ECON-017, and every saved current project is offered)
 		var dropped = new List<string>();
 		if ( unknown.Count > 0 )
-			dropped.Add( $"projects OpenTPW does not list ({string.Join( ", ", unknown )})" );
+			dropped.Add( $"projects of objects the level archives do not define ({string.Join( ", ", unknown )})" );
 		if ( refused.Count > 0 )
-			dropped.Add( $"current projects OpenTPW would not research now ({string.Join( ", ", refused )})" );
+			dropped.Add( $"current projects OpenTPW's picker would not offer now ({string.Join( ", ", refused )})" );
 		if ( disagreements.Count > 0 )
 			dropped.Add( $"object-control researched flags that disagree with OpenTPW's research ({string.Join( ", ", disagreements )})" );
 		if ( controls == null )
 			dropped.Add( "the object controls' researched flags (the save's control table does not read)" );
-		evidence.Add( $"[APPROX:SAVE-007] Research not imported: {(dropped.Count == 0 ? "nothing dropped" : string.Join( "; ", dropped ))}; the lab lists items in OpenTPW's table order (ECON-017) and the highest open group is recomputed." );
+		if ( dropped.Count > 0 )
+			evidence.Add( $"[APPROX:SAVE-007] Research not imported: {string.Join( "; ", dropped )}." );
 	}
 
 	private static void ReportNotImported( OriginalParkImport save, List<string> evidence )

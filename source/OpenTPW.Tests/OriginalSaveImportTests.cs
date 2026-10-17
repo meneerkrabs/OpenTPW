@@ -172,8 +172,11 @@ public class OriginalSaveImportTests
 		Assert.AreEqual( ParkCalendar.TickOfTurn( 648 ), researcher.HiredTick, "hired 2,430,000 park seconds after FunnyTimeStart = turn 648" );
 		Assert.AreEqual( 1, import.ImportedStaff );
 		Assert.IsFalse( import.ParkClosed );
-		foreach ( var id in new[] { "SAVE-004", "SAVE-006", "SAVE-007", "SAVE-010" } )
+		foreach ( var id in new[] { "SAVE-004", "SAVE-010" } )
 			Assert.IsTrue( import.Evidence.Any( line => line.Contains( $"[APPROX:{id}]" ) ), $"{id} is reported" );
+		Assert.IsTrue( import.Evidence.Any( line => line.StartsWith( "Research highest open groups imported as saved", StringComparison.Ordinal ) ), "the lab's highest groups are imported" );
+		Assert.IsFalse( import.Evidence.Any( line => line.Contains( "[APPROX:SAVE-006]" ) ), "no staff claim is left without its job" );
+		Assert.IsTrue( import.Evidence.Where( line => line.Contains( "[APPROX:SAVE-007]" ) ).All( line => line.Contains( "the object controls' researched flags (the save's control table does not read)" ) && !line.Contains( "projects of objects" ) ), "no lab project or current project is dropped" );
 		Assert.IsTrue( import.Evidence.Any( line => line.Contains( "0x3F416BBA" ) && line.Contains( "imported" ) ), "the generator state is named as imported" );
 		Assert.AreEqual( 0x3F416BBAu, economy.World.State, "the save's mRandomSeed is the world generator's state (tp.exe 0x00516330, saved raw by 0x00517123)" );
 		Assert.IsFalse( import.Evidence.Any( line => line.Contains( "[APPROX:SAVE-001]" ) ), "SAVE-001 is retired" );
@@ -208,12 +211,11 @@ public class OriginalSaveImportTests
 		StringAssert.Contains( challenges, "offered words " );
 		StringAssert.Contains( challenges, "no challenge code reads them" );
 		StringAssert.Contains( Line( "Challenges imported:" ), "not started" );
-		var attractions = import.Evidence.Where( line => line.StartsWith( "[APPROX:SAVE-006] Attraction thing ", StringComparison.Ordinal ) ).ToArray();
+		var attractions = import.Evidence.Where( line => line.StartsWith( "Attraction thing ", StringComparison.Ordinal ) && line.Contains( "open word ", StringComparison.Ordinal ) ).ToArray();
 		Assert.AreNotEqual( 0, attractions.Length );
 		foreach ( var line in attractions )
 		{
-			foreach ( var value in new[] { "open word ", "name \"",
-				"claim by thing ", "queue size ", "first ", "back ", "called ", "mesh instance ", "flags 0x" } )
+			foreach ( var value in new[] { "open word ", "name \"", "queue size ", "first ", "back ", "called ", "mesh instance ", "flags 0x" } )
 				StringAssert.Contains( line, value );
 		}
 		StringAssert.Contains( Line( "Attraction walk-away counts " ), "imported" );

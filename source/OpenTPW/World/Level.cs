@@ -61,7 +61,7 @@ public partial class Level : IDisposable
 	/// </summary>
 	private void SetupParkName()
 	{
-		var savedName = resumeState?.ParkName is { } saved ? new ParkNameLines( saved.Line1, saved.Line2 ) : null;
+		var savedName = resumeState?.ParkName is { } saved ? new ParkNameLines( saved.Line1, saved.Line2 ) : SavedGateName();
 		if ( OriginalPark != null )
 		{
 			try { GateSign = OriginalGateSign.TryCreate( OriginalPark, Global, savedName, reloaded: savedName != null ); }
@@ -71,6 +71,21 @@ public partial class Level : IDisposable
 			}
 		}
 		ParkName = savedName ?? GateSign?.Lines;
+	}
+
+	/// <summary>
+	/// The park name a player's own original save holds: the two sign lines of its park gate's attraction thing (<c>mParkGates</c>, name lines +0x3C8 and +0x40A), which the load's sign rebuild redraws (0x468500).
+	/// Null for any other start (the shipped Easymode seed keeps the gate's default lines in the player's language) and for lines OpenTPW's sign cannot hold.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004DB7D0 attraction serializer] the placed object's two sign lines (NameA/NameB) are part of its record; a park's name is its gate's pair (SAVE-006)
+	private ParkNameLines? SavedGateName()
+	{
+		if ( playerSavePayload == null || OriginalPark?.Save is not { } save )
+			return null;
+		var gate = save.Attractions.FirstOrDefault( attraction => attraction.Id == save.World.Variables.ParkGates );
+		if ( gate == null )
+			return null;
+		return ParkNameLines.FromSavedGate( gate.NameLine1, gate.NameLine2 );
 	}
 
 	/// <summary>
@@ -449,6 +464,7 @@ public partial class Level : IDisposable
 			ImportOriginalGuests();
 			ImportOriginalRideSettings();
 			ImportOriginalScripts();
+			ImportOriginalParticles();
 			if ( resumeState == null && !GameEditions.IsThemeParkInc && OriginalPark.Save != null && visitLayout == null )
 				ReleaseUnimportedThings();
 			if ( GameEditions.Capabilities.Staff )

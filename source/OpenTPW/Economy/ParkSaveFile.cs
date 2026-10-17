@@ -547,6 +547,9 @@ public static class ParkSaveFile
 		/// <summary>The category-4 table's order as (Info.Id, level) pairs (ECON-017); absent in older saves and while the completions give the order a restore would rebuild.</summary>
 		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 		public List<int[]>? UpgradeOrder { get; init; }
+		/// <summary>Each category's highest open group (SAVE-007) where it differs from what the completed projects give; absent in older saves and otherwise.</summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public List<int>? HighestGroups { get; init; }
 	}
 
 	public sealed class ObjectivesData
@@ -716,7 +719,8 @@ public static class ParkSaveFile
 				Effort = park.Research.Effort.ToList(),
 				Current = park.Research.CurrentEntries.Any() ? park.Research.CurrentEntries.Select( entry => new[] { (int)entry.Category, entry.InfoId, entry.Level } ).ToList() : null,
 				Workload = park.Research.Workload == Math.Clamp( park.Settings.ResearchStartingWorkLoad, 0, 100 ) ? null : park.Research.Workload,
-				UpgradeOrder = park.Research.UpgradeTableToSave?.Select( key => new[] { key.InfoId, key.Level } ).ToList()
+				UpgradeOrder = park.Research.UpgradeTableToSave?.Select( key => new[] { key.InfoId, key.Level } ).ToList(),
+				HighestGroups = park.Research.HighestGroupsToSave?.ToList()
 			},
 			Objectives = new ObjectivesData
 			{
@@ -913,7 +917,7 @@ public static class ParkSaveFile
 		if ( data.Staff.Strikes is { } strikes )
 			Require( strikes.Levels.Count == StaffStrikeBoard.Roles && strikes.Active.Count == StaffStrikeBoard.Roles && strikes.LastConsidered.Count == StaffStrikeBoard.Roles
 				&& strikes.Levels.All( level => level is >= 0 and <= 4 ), "staff strikes" );
-		Require( (data.Research.Workload == null || data.Research.Workload is >= 0 and <= 100) && (data.Research.Current == null || data.Research.Current.All( entry => entry.Length == 3 && Enum.IsDefined( (ResearchCategory)entry[0] ) )) && data.Research.Effort.Count == 5 && data.Research.Completed.All( key => key.Length == 2 ) && (data.Research.UpgradeOrder?.All( key => key is { Length: 2 } ) ?? true) && data.Research.Progress.All( entry => entry.Length == 3 && entry[2] >= 0 ), "research" );
+		Require( (data.Research.HighestGroups == null || data.Research.HighestGroups.Count == Enum.GetValues<ResearchCategory>().Length && data.Research.HighestGroups.All( group => group is >= 0 and <= ParkResearch.MaximumOpenGroup )) && (data.Research.Workload == null || data.Research.Workload is >= 0 and <= 100) && (data.Research.Current == null || data.Research.Current.All( entry => entry.Length == 3 && Enum.IsDefined( (ResearchCategory)entry[0] ) )) && data.Research.Effort.Count == 5 && data.Research.Completed.All( key => key.Length == 2 ) && (data.Research.UpgradeOrder?.All( key => key is { Length: 2 } ) ?? true) && data.Research.Progress.All( entry => entry.Length == 3 && entry[2] >= 0 ), "research" );
 		Require( data.MechanicCursor >= 0, "mechanic cursor" );
 		Require( data.PriceStatistics is null || data.PriceStatistics.All( ring => ring?.Values is not null )
 			&& ParkPriceStatistics.IsValid( data.PriceStatistics.Select( ring => new PriceStatisticRing( ring.Category, ring.Head, ring.Full, ring.Values ) ).ToList() ), "price statistics" );
@@ -1042,6 +1046,8 @@ public static class ParkSaveFile
 		park.Research.Restore( data.Research.Completed.Select( key => (key[0], key[1]) ),
 			data.Research.Progress.Select( entry => (((int)entry[0], (int)entry[1]), entry[2]) ), data.Research.Effort,
 			data.Research.Current?.Select( entry => ((ResearchCategory)entry[0], entry[1], entry[2]) ), data.Research.UpgradeOrder?.Select( key => (key[0], key[1]) ).ToList() );
+		if ( data.Research.HighestGroups is { } highestGroups )
+			park.Research.RestoreHighestGroups( highestGroups );
 		if ( data.Research.Workload is int workload )
 			park.Research.SetWorkload( workload );
 		park.Objectives.Restore( data.Objectives.NextOfferDay, data.Objectives.NextListPosition, data.Objectives.Current, data.Objectives.Declines, data.Objectives.Finished, data.Objectives.GoldenTickets,

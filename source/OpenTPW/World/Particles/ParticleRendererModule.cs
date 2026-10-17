@@ -22,6 +22,7 @@ internal static class ParticleRendererModule
 		OriginalObjectRuntime.ParticleFollower = Follow;
 		Level.ParticlesCaptured = Capture;
 		Level.ParticlesResumed = Resume;
+		Level.ParticlesImported = ImportOriginal;
 	}
 
 	private static ParticleRenderer? RendererOf( Level level ) => ParticleRenderer.For( level );
@@ -160,6 +161,26 @@ internal static class ParticleRendererModule
 			// presentation only: a saved pool the template file cannot rebuild is dropped, the park still resumes
 			Log.Warning( $"The saved particles were dropped ({exception.Message})." );
 			renderer?.Particles.Clear();
+		}
+	}
+
+	/// <summary>
+	/// The pool of an original save (tp.exe loader 0x51F7A0): the saved emitters and effectors come back with the generator and the counters, the post-load pass 0x5200B0 then hides the
+	/// screen-space emitters (the saved button sparkles), so what a loaded park shows is its world emitters (Jungle's waterfall).
+	/// </summary>
+	private static void ImportOriginal( Level level, SaveParticlesBlock block )
+	{
+		if ( global::Global.Render == null )
+			return;
+		try
+		{
+			var state = block.ToSystemState( new ParticleTemplateFile( "/Particle/Tp2.plb" ).Templates );
+			if ( state != null )
+				Resume( level, state );
+		}
+		catch ( Exception exception ) when ( exception is IOException or InvalidDataException or UnauthorizedAccessException )
+		{
+			Log.Warning( $"The saved particles were not imported ({exception.Message})." );
 		}
 	}
 

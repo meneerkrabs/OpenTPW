@@ -49,13 +49,41 @@ public class OriginalSaveCorpusTests
 
 			if ( !maps.TryGetValue( theme, out var map ) )
 				maps[theme] = map = new MapFile( new MemoryStream( OriginalParkImportTests.ReadArchiveMember( $"levels/{theme}/terrain.wad", "base.map" ) ) );
+			// The RideSystem block on its own, before any import: it must have exactly one complete parse (Parse throws on none
+			// or on several), and for every record whose object archive is known the control count the frame fixes must be the one tp.exe's
+			// type entry holds, the object's max(1, UsageInfo.NumSimultAnims) (0x4629d0 -> 0x461f10 -> type entry +0xe -> instance +0xe).
+			var standalone = SaveRideSystemBlock.Parse( payload, layout );
+			Assert.AreEqual( standalone.Used, (uint)standalone.Records.Length, name );
+			Assert.AreEqual( 0, standalone.TableControlCounts, name );
+			var catalog = ObjectCatalog.Load( theme );
+			Func<int, int?> table = infoId => catalog.Find( infoId )?.NumSimultaneousAnimations;
+			var resolved = 0;
+			foreach ( var record in standalone.Records )
+			{
+				if ( table( record.InfoId ) is { } count )
+				{
+					Assert.AreEqual( count, record.Controls.Length, $"{name}: slot {record.Slot} (Info.Id {record.InfoId}) control count" );
+					resolved++;
+				}
+				else
+				{
+					// Types the object archives do not declare (hoardings and the like) are registered with a literal count of 1
+					// (tp.exe 0x41437e and 0x43015b pass 1 as the 0x4629d0 count); no corpus record of that kind has more.
+					Assert.AreEqual( 1, record.Controls.Length, $"{name}: slot {record.Slot} (Info.Id {record.InfoId}) has no object archive" );
+				}
+			}
+			Assert.IsTrue( resolved > 0, name );
+			var pinned = SaveRideSystemBlock.Parse( payload, layout, table );
+			Assert.AreEqual( resolved, pinned.TableControlCounts, name );
+			CollectionAssert.AreEqual( standalone.Records.Select( record => (record.Slot, record.InfoId, record.Controls.Length) ).ToArray(),
+				pinned.Records.Select( record => (record.Slot, record.InfoId, record.Controls.Length) ).ToArray(), name );
+
 			var park = OriginalParkImport.Import( payload, map );
 			Assert.AreEqual( 0, park.UnresolvedObjects.Count, name );
-			// The framed RideSystem walk (SaveRideSystemBlock) runs on every save: each block walks exactly and its
-			// derived control counts are strictly minimal, with the routed records matching the placed/fixed counts.
+			// The framed RideSystem walk runs on every save: each block has one complete parse, with the routed records
+			// matching the placed/fixed counts.
 			Assert.IsNotNull( park.RideSystem, name );
-			Assert.IsTrue( park.RideSystem!.UniquelyWalked, $"{name}: every derived control count is strictly minimal" );
-			Assert.AreEqual( park.RideSystem.Used, (uint)park.RideSystem.Records.Length, name );
+			Assert.AreEqual( park.RideSystem!.Used, (uint)park.RideSystem.Records.Length, name );
 			Assert.AreEqual( park.RideSystem.Records.Count( record => record.IsPlacedObject ), park.PlacedObjects.Count, name );
 			Assert.AreEqual( park.RideSystem.Records.Count( record => record.IsFixedItem ), park.FixedItems.Count, name );
 			for ( var x = 0; x < map.CellCountX; x++ )

@@ -6,7 +6,7 @@ scan. The layout comes from the PC loader (`0x4647a0`) and writer (`0x464140`)
 in tp.exe, confirmed on real saves. Read via REA:
 
 - **Frame** (python probes + save walk over 11 corpus saves): `u32 L` (the
-  bytes after the length word), `u16 used`, `u16 free`, `u16 firstFree`;
+  bytes after the length word), `u32 used`, `u32 free`, `u32 firstFree`;
   then one slot per `used + free` in slot order. An absent slot is a single
   `0` byte (the stored `firstFree` is the first absent ordinal, `free == 0`
   implies `firstFree == used`); a present slot is byte `1` followed by a
@@ -21,15 +21,33 @@ in tp.exe, confirmed on real saves. Read via REA:
   `0x100000`; bit 4 and bits 12+ are refused), then T × 0x2C controls
   (11 u32 words in save order `[0] [1] [2] [4] [5] [6] [3] [9] [10] [11]
   [12]`, kept raw).
-- **T is not stored.** The loader takes the control count from the live
-  instance's `+0xE`, which `0x4557c0` copied from the kind table's template
-  instance; the walk therefore derives the smallest feasible T per record and
-  `UniquelyWalked` reports whether it is strictly minimal (a `t + 1` probe
-  must break the walk). Easymode: L=17,522, used=161, free=7, firstFree=90
-  (absent slots 90–96), kinds 815 × 11 / 826 × 147 / 865 × 3, T=1 everywhere
-  except slot 114 (InfoId 1303 Jungle Spray, index 4, N=31, M=12, T=3);
-  instance flags only {0, 8}; all 11 corpus saves walk uniquely. Static T
-  derivation is future work.
+- **T is not stored, and the walk no longer guesses it.** The loader takes
+  the control count from the live instance's `+0xE` (`0x464b98`), which
+  `0x4557c0` copies from the kind table's type entry; that entry is built by
+  `0x4629d0`, which passes its seventh argument to `0x461f10` as the count
+  (entry `+0xE`) and replaces 0 with 1 (`T >= 1`). The object-archive loader
+  (`0x414175`, `0x4141c7`) passes the definition's `+0x170`, the `.sam` key
+  `UsageInfo.NumSimultAnims`; other registrars pass literals (`0x41437e`,
+  `0x430130`: 1; `0x42fcbf`: 5). `SaveRideSystemBlock.Parse` therefore takes an
+  optional `max(1, NumSimultAnims)` table by Info.Id; a record the table
+  resolves has exactly that T, every other record may have any T from 1 to 64,
+  and the iterative, memoized search (explicit state/step limits, path rebuilt
+  from predecessor edges) counts **all** complete parses: exactly one is
+  accepted, none or several are refused (the earlier "smallest feasible T"
+  picked a wrong T/T+2 frame and called it unique, and recursed without bound).
+  The search and the decoder share one record predicate, node-state bit 4 is
+  refused by bit mask, counts are summed in 64 bits and bounded, and an empty
+  block is exactly its 16 bytes with first free 0 (the loader itself would
+  tolerate more). Scene records (815/865) are validated before routing (Info.Id
+  and index 1-65,535, cell in the grid, size 1-16, rotation 0/90/180/270, on the
+  raw unsigned words; checked footprint arithmetic). Easymode: L=17,522,
+  used=161, free=7, firstFree=90 (absent slots 90-96), kinds 815 x 11 / 826 x
+  147 / 865 x 3, T=1 everywhere except slot 114 (InfoId 1303 Jungle Spray,
+  index 4, N=31, M=12, T=3 = its `NumSimultAnims`); instance flags only {0, 8}.
+  All 11 corpus saves have exactly one complete parse without a table, and
+  every record whose object archive is known (5 per park save, 2 per INTS
+  save) has the table's T; the others (Info.Ids 17302-17326, in no object
+  archive) hold T=1 in the unique parse.
 - **Retired**: the `SaveObjectList` signature class ("SYSG records",
   mislabelled); TPWI's `SYSG` scan stays signature-based on its separate
   widths. The old "826 records nested inside Belly Bounce" reading is
@@ -41,8 +59,9 @@ in tp.exe, confirmed on real saves. Read via REA:
   meanings are unknown); no writer yet, the original save import stays
   read-only.
 
-Still open: static, per-kind T derivation (the kind table's template instance
-would need a traced read), the meaning of the raw control words (words 3–5
+Still open: the T of the types no object archive declares (the Info.Ids
+173xx) is the unique parse's value, not read from their registrar; the
+production import (`OriginalPark`) passes no table; the meaning of the raw control words (words 3–5
 hold run-time pointer-like values in Easymode), the two embedded header words
 `+0x2E`/`+0x32`, what node-state bit 4 would mean (never stored), and what the
 M pairs mean.

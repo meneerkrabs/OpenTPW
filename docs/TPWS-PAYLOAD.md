@@ -314,8 +314,13 @@ order: a presence byte (`1` present, `0` absent), and for a present slot its rec
 stored counts, the first absent slot must carry the stored first free slot's ordinal (the free hole the
 live instance allocator keeps; with no hole the count equals `used`, as every corpus INTS save
 holds), every presence byte must be exactly 0/1, and the node/embedded-node counts, the instance-flag
-word and the node-state words stay within the shapes below. A breaching block refuses the save instead
-of falling back to a guess.
+word and the node-state words stay within the shapes below. The counts are summed as 64-bit values and
+bounded (at most 65,535 slots, each at least one byte); a block with no slot at all is exactly its three
+zero counters (16 bytes with the length word, first free slot 0, which is what the writer emits). The
+original loader is more lenient than this reader (it takes any presence byte other than 1 as an empty
+slot, ignores bytes behind an empty frame and never compares its read position with the length); the
+reader accepts only what the writer produces. A breaching block refuses the save instead of falling back
+to a guess.
 
 One record: a 0x36-byte header, then the variable part.
 
@@ -338,20 +343,39 @@ node-state words — bits 0–3 and 5–11 map onto the flag constants 0x10, 0x2
 0x40000, 0x80000, 0x200000, 0x400000, 0x20000000, 0x80000000 and 0x100000 (writer `0x464380`,
 loader `0x464af6`; bit 4 and bits 12+ are empty in every corpus save, so the reader refuses them) — and
 then `T` animation-time controls (`SaveRideSystemControl`), 0x2C bytes each: 11 u32 words in the save's
-word order [0], [1], [2], [4], [5], [6], [3], [9], [10], [11], [12] (PC loader `0x464bb6` moves the
-seventh record word to control word 3). Word 0 is the flags word, word 1 the animation set (12 =
-none), and the rest are animation times and speed floats the loader bounds nowhere — all raw (the
+word order [0], [1], [2], [4], [5], [6], [3], [9], [10], [11], [12] (PC loader `0x464bef`-`0x464bf4`
+copies the seventh record word to control word 3). Word 0 is the flags word (the loader tests its
+bit `0x04` at `0x464bf2` and sets `0x10` at `0x464bfb`), word 1 the animation set (12 = none: `0x464bb6`
+logs when it is anything else, and `0x464cbe` sets the `0x400000` animated-instance flag when it is
+below 12), and the rest are animation times and speed floats the loader bounds nowhere — all raw (the
 corpus holds pointer-like run-time values in word 3–5 of Easymode's controls).
 
 The control count `T` is the one thing the block never stores: the loader reads it from the live
-instance at +0xe, which `0x4557c0` copies from the object type's template instance (the level kind
-table's entry at +0xd0). OpenTPW builds no live instances on import, so the walk derives each record's
-`T` as the smallest value that keeps the rest of the block walking (a shorter record leaves the next
-presence byte inside a control word, the counts or the stored length stop matching);
-`SaveRideSystemBlock.UniquelyWalked` reports whether every derived `T` is also strictly minimal
-(raising it by one breaks the walk). Easymode (every record `T=1` except slot 114's Jungle Spray with
-`T=3`) and every corpus save walk uniquely; deriving `T` statically from the level's kind table is
-future work.
+instance at +0xe (`0x464b98`), which `0x4557c0` copies with the instance's 0xfc-byte header from the
+kind table's type entry (`0x463060` finds the entry by the type index of the record's Info.Id). That
+entry is built by `0x4629d0`, which passes its seventh argument to the model builder `0x461f10` as the
+count (stored at entry +0xe) and replaces 0 with 1, so `T >= 1`. The object-archive loader
+(`0x414175`, `0x4141c7`) passes the definition's field at +0x170, which is the `.sam` key
+`UsageInfo.NumSimultAnims` (Jungle Spray declares 3 and has `T=3`; Belly Bounce declares none and has
+`T=1`); the other registrars of the table pass literals (`0x41437e` and `0x430130` pass 1, `0x42fcbf` passes
+5). OpenTPW builds no live instances on import and the save has neither value, so
+`SaveRideSystemBlock.Parse` takes an optional table (`controlCount`: `max(1, UsageInfo.NumSimultAnims)`
+by Info.Id, from `ObjectCatalog`). A record whose Info.Id the table resolves has exactly that `T`; every
+other record may have any `T` from 1 to 64, and the walk then considers **every** complete parse: an
+iterative search over (slot, read position, used count) with a saturated path count per state, explicit
+limits (1,000,000 states and 20,000,000 steps, refused beyond them) and the chosen path rebuilt from
+predecessor edges. The block is accepted only when it has exactly one complete parse; none, or more
+than one (for instance a frame that parses with `T=1` for a record and `T=3` for it), refuses the
+block. The search and the decoder share one record predicate (`TryMeasure`: header fits, instance-flag
+word within bits 0–8, bounded counts, node-state words within the writer's bits, tested as a bit mask so
+bit 4 is refused).
+
+The eleven corpus saves and Easymode each have exactly one complete parse without any table. The
+corpus holds `T=1` for every record except one `T=2` record in each of `space/Space Zone.TPWS` and
+`space/restart.INTS` and Easymode's slot 114 (`T=3`); in each park save five records (two in an INTS save)
+resolve through the object archives and match the table, and the other Info.Ids (17302, 17303, 17309,
+17319, 17320, 17323, 17326; not declared by any object archive) hold `T=1`. That those types are built
+with the literal 1 at `0x41437e` is consistent with this but not traced to these ids.
 
 | Index | Info.Id (.sam name) | X, Y | Size | Rot | Kind |
 | --- | --- | --- | --- | --- | --- |
@@ -530,7 +554,9 @@ What the import skips or only partly rebuilds, thing by thing with its construct
 
 `OriginalParkImport.Import` takes the decoded payload and the level `base.map`.
 It splits the blocks, parses the World block (rejecting any cell attribute that
-differs from the map: wrong level), reads the RideSystem records (rejecting any
+differs from the map: wrong level), reads the RideSystem records (rejecting any kind 815 or 865 record whose
+Info.Id or index is not 1–65,535, whose cell is outside the grid, whose size is not 1–16 cells or whose
+rotation is not 0/90/180/270, tested on the raw unsigned words, and any
 placed footprint outside the map or not occupied in the grid) and the typed
 things. Output: path cells, placed objects with footprints, fixed items,
 unresolved records, attractions, the bank and challenges, staff, staff HQ,
@@ -607,9 +633,11 @@ out-of-map refusal. Its two fixture tests pin real data: the Easymode empty boun
 (`OPENTPW_TPI_PATH`, labelled cross-check).
 `SaveRideSystemTests`: the Easymode record facts, the synthetic decode (presence
 bytes, headers, flag mapping, embedded pairs, node states, controls), the
-smallest-`T` walk and its minimality probe, and the refusals (presence byte,
-lie counts, `firstFree` mismatch, slot bounds, unknown flag bits, unknown
-node-state bits, truncation, unsafe `RideSystem` layouts — the length word is
+unique-parse rule (a two-parse frame is refused, a control-count table picks
+one), the 50,000-slot frame without recursion, the search budget, the `T >= 1` rule
+and the refusals (presence byte, lie counts and wrapping count sums,
+`firstFree` mismatch, empty frames with trailing bytes, slot bounds, unknown flag bits,
+node-state bits 4 and 12, truncation, unsafe `RideSystem` layouts — the length word is
 also re-proved by `TryMeasure` in `SavePayloadLayoutTests`).
 `OriginalSaveCorpusTests` runs container, block split, grid, thing chain,
 RideSystem, attraction and economy readers over the second fixture set

@@ -501,6 +501,9 @@ internal static class SaveTestPayloads
 	/// <summary>An absent slot of a RideSystem block: its presence byte.</summary>
 	public static byte[] RideSystemGap() => new byte[] { 0 };
 
+	/// <summary>The control a <see cref="RideSystemRecord"/> without an explicit list stores: no flags, the "none" animation set 12.</summary>
+	public static readonly uint[] DefaultRideSystemControl = new uint[] { 0, 12, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+
 	/// <summary>An animation time control of a RideSystem record: the record's 11 stored words in the save's word order
 	/// (see <see cref="OpenTPW.SaveRideSystemControl"/>).</summary>
 	public static uint[] RideSystemControl( params uint[] words ) => words.Length == 11 ? words
@@ -544,7 +547,8 @@ internal static class SaveTestPayloads
 		}
 		foreach ( var state in nodeStates ?? Array.Empty<uint>() )
 			writer.Write( state );
-		foreach ( var control in controls ?? Array.Empty<uint[]>() )
+		// A record always has at least one control (tp.exe 0x4629d0 replaces a count of 0 with 1), so an omitted list writes one.
+		foreach ( var control in controls ?? new[] { DefaultRideSystemControl } )
 			foreach ( var word in control )
 				writer.Write( word );
 		writer.Flush();

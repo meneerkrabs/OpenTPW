@@ -141,7 +141,7 @@ public class OriginalParkImportTests
 		var payload = CreatePayload( map, SaveTestPayloads.RideSystem( slots ) );
 		var block = SaveRideSystemBlock.Parse( payload, SavePayloadLayout.Parse( payload ) );
 		Assert.AreEqual( (8u, 0u), (block.Used, block.Free) );
-		Assert.IsTrue( block.UniquelyWalked );
+		Assert.AreEqual( 0, block.TableControlCounts );
 		CollectionAssert.AreEqual( new[] { 1, 3, 4, 5, 6, 7, 8, 2 }, block.Records.Select( item => item.Index ).ToArray() );
 		Assert.IsTrue( block.Records[0].IsFixedItem );
 		Assert.AreEqual( new SaveObject( block.Records[1].Offset, 1100, 2, 2, 3, 4, 815, 3, 0 ), block.Records[1].ToSaveObject() );
@@ -203,6 +203,46 @@ public class OriginalParkImportTests
 		StringAssert.Contains( Assert.ThrowsException<InvalidDataException>( () => OriginalParkImport.Import( payload, other ) ).Message, "another map" );
 		var unoccupied = CreatePayload( map, SaveTestPayloads.RideSystem( new[] { SaveTestPayloads.RideSystemRecord( 1100, 1, 1, 2, 2, SaveObject.PlacedObjectKind, 1 ) } ) );
 		StringAssert.Contains( Assert.ThrowsException<InvalidDataException>( () => OriginalParkImport.Import( unoccupied, map ) ).Message, "not occupied" );
+	}
+
+	[TestMethod]
+	public void RejectsSceneRecordsWithInvalidFieldsBeforeRouting()
+	{
+		// A kind-815 record of width 0 once gave an inverted footprint whose loops checked no cell, so it was added as a verified
+		// object; sizes whose endpoint arithmetic overflows behaved the same, and fixed items were not validated at all.
+		var map = CreateMap( 8, 8, ( _, _ ) => 0 );
+		void Refuse( int infoId, int x, int y, int width, int height, int kind, int index, int rotation, string reason )
+		{
+			var record = SaveTestPayloads.RideSystemRecord( infoId, x, y, width, height, kind, index, rotation );
+			var payload = CreatePayload( map, SaveTestPayloads.RideSystem( new[] { record } ) );
+			var error = Assert.ThrowsException<InvalidDataException>( () => OriginalParkImport.Import( payload, map ), reason );
+			StringAssert.Contains( error.Message, "is invalid" );
+		}
+
+		foreach ( var kind in new[] { SaveObject.PlacedObjectKind, SaveObject.FixedItemKind } )
+		{
+			Refuse( 1100, 1, 1, 0, 1, kind, 1, 0, "width 0" );
+			Refuse( 1100, 1, 1, 1, 0, kind, 1, 0, "height 0" );
+			Refuse( 1100, 1, 1, 17, 1, kind, 1, 0, "width above the footprint bound" );
+			Refuse( 1100, 1, 1, int.MinValue, 1, kind, 1, 0, "width 0x80000000 (negative as a signed word)" );
+			Refuse( 1100, int.MaxValue - 1, 1, 16, 1, kind, 1, 0, "X + width overflows" );
+			Refuse( 1100, 1, int.MaxValue - 1, 1, 16, kind, 1, 0, "Y + height overflows" );
+			Refuse( 1100, 8, 1, 1, 1, kind, 1, 0, "X outside the grid" );
+			Refuse( 1100, 1, -1, 1, 1, kind, 1, 0, "Y negative" );
+			Refuse( 1100, 1, 1, 1, 1, kind, 1, 45, "rotation not a multiple of 90" );
+			Refuse( 1100, 1, 1, 1, 1, kind, 1, 360, "rotation 360" );
+			Refuse( 0, 1, 1, 1, 1, kind, 1, 0, "Info.Id 0" );
+			Refuse( 65536, 1, 1, 1, 1, kind, 1, 0, "Info.Id above 16 bits" );
+			Refuse( 1100, 1, 1, 1, 1, kind, 0, 0, "index 0" );
+			Refuse( 1100, 1, 1, 1, 1, kind, 65536, 0, "index above 16 bits" );
+		}
+		// The footprint arithmetic itself never wraps either: unvalidated records still give no footprint.
+		Assert.IsFalse( new SaveObject( 0, 1, 1, 1, 0, 1, 815, 1, 0 ).TryGetFootprint( out _, out _, out _, out _ ) );
+		Assert.IsFalse( new SaveObject( 0, 1, int.MaxValue, 1, 2, 1, 815, 1, 0 ).TryGetFootprint( out _, out _, out _, out _ ) );
+		Assert.IsFalse( new SaveObject( 0, 1, 1, 1, int.MinValue, 1, 815, 1, 0 ).TryGetFootprint( out _, out _, out _, out _ ) );
+		// A valid record of another kind (a drawn instance) is not an object and is not validated as one.
+		var drawn = CreatePayload( map, SaveTestPayloads.RideSystem( new[] { SaveTestPayloads.RideSystemRecord( 1999, 1, 1, 0, 0, 826, 0, 45 ) } ) );
+		Assert.AreEqual( 0, OriginalParkImport.Import( drawn, map ).PlacedObjects.Count );
 	}
 
 	[TestMethod]
@@ -269,7 +309,6 @@ public class OriginalParkImportTests
 		Assert.IsNotNull( park.RideSystem );
 		Assert.AreEqual( (17522u, 161u, 7u, 90u), (park.RideSystem!.Length, park.RideSystem.Used, park.RideSystem.Free, park.RideSystem.FirstFreeSlot) );
 		Assert.AreEqual( 161, park.RideSystem.Records.Length );
-		Assert.IsTrue( park.RideSystem.UniquelyWalked );
 		Assert.AreEqual( "815:11, 826:147, 865:3", string.Join( ", ", park.RideSystem.Records.GroupBy( record => record.Kind )
 			.OrderBy( group => group.Key ).Select( group => $"{group.Key}:{group.Count()}" ) ), "the block's three kinds" );
 		var jungleSpray = park.RideSystem.Records.Single( record => record.Slot == 114 );

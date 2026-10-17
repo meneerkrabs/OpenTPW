@@ -103,6 +103,26 @@ starts a performance as script 13 + (r mod (n − 1)), or 13 for one entry (scri
 `01 05 02 28` in Hallow SPR_DR, so every entertainer performs slot 4 (GUEST-015 keeps the program's steps for SPR_DR's
 2 and 40).
 
+**Writing a sprite set** (`SpriteBankWriter`, `SpriteAnimationWriter`, `SpriteSetBuilder`). A usable set is the `.ESP` plus the bank its byte
+0x10C selects (`.FPC` when set, else `.TPC`; `GuestSpriteAtlas.LoadSets` opens exactly those). The `.FPS`/`.TPS` files the ESP names are never shipped and
+never opened, so nothing else is needed. The writers rewrite **all 75 banks (29 FPC, 46 TPC) and all 46 ESP files of `esprites.wad` byte for byte**
+(`SpriteBankWriterCorpusTests`). What is written, field by field:
+
+- *Bank*: the signature and frame count; the u32 at offset 8 (`SpriteBankFile.HeaderWord`, 0 everywhere); the palette; per frame the sizes, both
+  unit words, the origin and the RLE rows. The writer's encoding is byte-identical to the shipped corpus (not proven to be the original encoder in general): per row every run of two or more equal indices is a repeat (up to
+  127), everything between is literals (up to 127 per control byte). When that does not fit the one-byte row length, a row falls back to the smallest encoding the decoder accepts (repeats up to 128). Runs of two being repeats is what the corpus shows (3 would make files 3 to 4 % smaller
+  and not match). Frames are at most 1020 pixels wide (what `GuestSpriteAtlas`'s 1024-pixel rows hold with their padding). Rows that need more than 255 bytes even then are refused (the length prefix is one byte). The corpus never reaches 127 equal pixels or 127
+  literals in a row, so the 127 limits of the greedy path are not observed from the original; the reader accepts repeats up to 128 and literals up to 127.
+- *ESP*: the magic, the bank name (zero padded, the padding is zero in all 46), both flag bytes, the 16 slots and the 16 performance bytes.
+
+`SpriteSetBuilder` authors a set from straight RGBA frames: `AddAnimation( slot, directions x frames )` appends frames direction-major (a slot added
+as non-directional stores 0 directions), `SetPerformance` fills an entertainer entry, `Build()` returns the `.ESP` and the banks. The pixel format is paletted, so
+the builder quantises: one 255-entry palette for the whole set, alpha 0 is the transparent index 0, up to 255 distinct colours (with alpha) are stored exactly,
+more go through median cut with nearest-entry mapping. Defaults of a new set, and which are unverified in the game itself (nothing was run):
+`FullDetail` true (flag 0x10C = 1, FPC and TPC written with the same content, as every full-detail set ships both), kid flag 0, both unit words 128 (every
+shipped frame), no performance entries. Unverified against tp.exe: whether the original's loader accepts a bank with unused zero palette entries or frames wider than any shipped
+one (they decode here), and how the game blends the palette's alpha (the readers treat it as straight alpha).
+
 Kid slots (identical in all 8 sets; labels from viewing the frames, not traced):
 
 | Slot | Frames | Content | OpenTPW use |

@@ -209,10 +209,7 @@ public sealed class BalloonRenderer : Entity
 		var frame = atlas!.Frames[frameIndex];
 		var anchor = GuestRenderer.CellToEngine( field, balloon.X, balloon.Y, balloon.Lift );
 		var unit = GuestRenderer.UnitsPerPixel;
-		var x0 = frame.OriginX * unit;
-		var x1 = (frame.OriginX + frame.Width) * unit;
-		var yTop = -frame.OriginY * unit;
-		var yBottom = -(frame.OriginY + frame.Height) * unit;
+		var (x0, x1, yTop, yBottom) = frame.Extents( false, unit );
 		var u0 = frame.X / (float)atlas.Width;
 		var u1 = (frame.X + frame.Width) / (float)atlas.Width;
 		var v0 = frame.Y / (float)atlas.Height;

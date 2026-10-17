@@ -8,9 +8,10 @@ with audio, A/V sync and GPU presentation, and the start-up movie sequence
 dequantisation matrix, the transposed scan, the two transform passes and the colour tables of the PC
 movie player are reproduced, and the samples match the original routines run in the x86 oracle
 (see "The live PC decoder"). No in-game
-The triggers come from the Mac PowerPC build (see "Where the original plays
-movies"); the PC `.tgq` flow is assumed to match. The original player's end-of-movie behaviour is not
-verified. No dependency or movie data is added.
+The triggers are proven on the PC executable `tp.exe` (see "Where the original plays
+movies", "The PC build"): two start-up movies, nothing else. How the PC player ends a movie, paces it and
+puts it on the screen is read there too; what it does with the 12.9 s of `plan.tgq` audio after the last frame is not.
+No dependency or movie data is added.
 
 Code: `source/OpenTPW.Files/Formats/Video/TgqMovieFile.cs`,
 `source/OpenTPW.Files/Formats/Video/TqiDecoder.cs`,
@@ -386,7 +387,7 @@ and a hash of the presented planes (no window, GPU or audio device);
   of the last video frame and the end of the audio, holding the last frame:
   `plan.tgq` shows its final frame for ~12.9 s while its audio finishes. The
   original player's behaviour here is unknown.
-- **Presentation**: the original player's colour tables (`TqiColour`) on the CPU to RGBA, uploaded to a
+- **Presentation**: the original player's colour tables (`TqiColour`) at full 8-bit colour (`[EXT:movie-full-color]`; the original's 16-bit packing is documented below and kept as a tested helper) on the CPU to RGBA, uploaded to a
   320×352 texture and drawn with the existing fullscreen-triangle blit shader
   into a centred viewport at the original's display aspect 640:352 (the 320×352
   frames are shown at twice their width, as the original's movie box does; see
@@ -407,8 +408,8 @@ between the two reads; it saves `artifacts/native-movie-bf-*.png`.
 ## Where the original plays movies
 
 Source: static analysis of the Mac PowerPC build (`SimThemePark`, QuickTime
-`.mov` files; Ghidra, never executed). The PC `.tgq` flow is **inferred** from
-the shared game code, not proven. Addresses are function entry points of the
+`.mov` files; Ghidra, never executed) for the first part, and of the PC executable `tp.exe` for "The PC build" below, which
+confirms every trigger on the `.tgq` side. Addresses are function entry points of the
 main code fragment; nothing here is decompiled text.
 
 ### Mechanism (proven)
@@ -468,14 +469,14 @@ flag word) is set, else state 9. State 4 continues to 5, which is the logo.
   resource byte 3). **Inferred**: the settings field behind `+0x2C` is not
   identified, so whether the player can switch the intro off in a menu is
   unknown; the shipped default plays it.
-- **Movie volume** (proven): the player sets the QuickTime movie volume from a
-  global written only by `0x1009B4AC`, called from the sound-options apply
-  routine `0x10126460`: movie sound off gives 0, otherwise the Movie volume
-  percentage `p` (0…100) becomes `p × 1023 / 100`, then `× 256 / 1023`, i.e.
-  linear 0…256 (QuickTime full volume). That routine runs from the early
-  program start-up (`0x100002DC` → `0x10000D54` → `0x10125B7C`), before the
-  start-up states (the order is **inferred** from the call chain). OpenTPW maps
-  the Movie volume option (a percentage, 0…100, default 100) linearly onto 0…1.
+- **Movie volume** (proven on the PC build): the sound-options apply routine (tp.exe `0x423dd0`) passes the movie setter
+  `0x51b3c0` percent × 1023 / 100 (C division; 0 while Movie sound is off), which keeps the low ten bits in `0x802ba8`.
+  Opening a movie (`0x51b010`) and the setter's re-apply (`0x51b2bc`) call the library's volume call `0x66f520` with
+  `v × 10000 / 1023 − 10000`, which forwards to the movie's DirectSound buffer `SetVolume` (vtable `+0x3C`): attenuation
+  in hundredths of a decibel, so 100 % is unattenuated, 75 % is about −25 dB, 50 % about −50 dB and 0 % or off is
+  DirectSound's silence (−10000). OpenTPW applies exactly this curve (`MovieVolumeCurve`) to the PCM; the earlier linear
+  mapping came from the Mac build's QuickTime volume (a linear 0…256), which the PC player does not use. (The Mac
+  routine `0x10126460`, kept for reference, set that linear volume.)
 - **Picture box** (proven): the movie is placed at y = screen height × 64/480
   and sized to the screen width by screen height × 352/480, i.e. 640×352 in a
   640×480 screen, with black above and below. The `.tgq` frames are 320×352, so
@@ -486,6 +487,50 @@ flag word) is set, else state 9. State 4 continues to 5, which is the logo.
 - Corroboration from `sound.sam` (`DefaultVolume.MOVIE 100`) and the options
   string "Movie volume:" in the data directory.
 
+### The PC build (tp.exe, October 17, 2026)
+
+Static reads of the decrypted `tp.exe` (REA and byte reads, nothing executed); every address below is a `tp.exe` address.
+
+- **Only two triggers.** The nine `Data\Movies\<name>.tgq` path strings (`0x764FF4` `bf`, then `roll`, `roc`, `plan`, `mir`, `jug`,
+  `grav`, `buc`, `bub` down to `0x7650A0`) are referenced only by two routines: `0x54DF20` (the logo, `bf`) and `0x54E070`
+  (the trailer). Both start the movie through the single movie start `0x51B010` (its only callers), which calls the
+  library's open `0x66F4E0` (also its only caller). `0x54DF20` and `0x54E070` are each called once, from the main state
+  machine `0x54E360` at `0x54E478` (state 5) and `0x54E514` (state 7). No theme intro, ending, award or golden-ticket movie
+  exists in the PC build; the original has these nine movies and these two triggers. The string "MOVIE" (`0x746E20`) and the
+  directory names are unrelated (the `Movies` string at `0x747AEC` is a data-directory component).
+- **Trailer choice.** `0x54E070` calls `time` (`0x67D3F0`) and `localtime` (`0x67D8E0`), takes `tm_mday` (+0xC), makes it non-negative,
+  keeps `& 7` and indexes the jump table at `0x54E288`: 0 `bub`, 1 `buc`, 2 `grav`, 3 `jug`, 4 `mir`, 5 `plan`, 6 `roc`,
+  7 `roll`. This is the Mac table (above) exactly; `IntroPlaylist` matches it.
+- **State machine.** `0x54E360` dispatches on `[0x87906C]` through the 16-entry table `0x5503A4`; state 4 goes to 5. State 5 returns
+  without doing anything while Esc (`0x1B`), Space (`0x20`) or the mouse-button bit mask at `0xFAA5BC` (set by the UI library's button-down handler, cleared by its button-up one) reads
+  down (`GetAsyncKeyState` for the two keys, so a tap since the previous call counts too, `test ax, ax`), otherwise starts the logo and goes
+  to 6. State 6 pumps `0x51B300`; when it reports done, state 7, and when a skip input is down it stops the movie (`0x51B350`) and
+  goes to 7. State 7 is state 5 for the trailer (to 8); state 8 is state 6 (to state 1, the front-end loading). So a skip
+  input held at a state-5 or state-7 moment waits for its release, and a press while a movie plays ends only that movie: the trailer
+  needs a second press. The Mac reading above (a held input goes straight to the next state) does not hold on the PC; this is
+  what `IntroSkipGate` has implemented since UI-035.
+- **Start-up flag.** The init routine `0x54DCF0` ends by writing the state: `[0x7A1A8C] & 0x200` set gives 4 (movies), clear gives 9 (loading
+  without movies). The flag word is initialised to `0xC0E15` at `0x449E1C`, which has `0x200` set, so the movies play by default. Only the
+  presence of a configuration file named `dialog.tcf` (`0x74CE84`, read through `0x424A60`) can replace the whole word (copied from
+  `0x78D950`), and nothing writes the bit afterwards: there is no menu setting for the intro on the PC. The file's layout (`0x424560`)
+  is not read, so what it can switch is unknown; the file is not in the game's data, it belongs to the launcher.
+- **Picture box.** `0x54DFB5`…`0x54E03E` (logo) and `0x54E1DE`…`0x54E25D` (trailer) pass y = screen height × 64 / 480 and, in a
+  window, offset the box by the client area's screen origin (`ScreenToClient` through `0x6FD318` on (0, 0) for the window handle `0x7A130C`, negated: the movie is
+  placed in screen coordinates); the movie start sizes the
+  picture to the screen width (`0x7A1968`) by height × `0x160` / `0x1E0` (`0x51B0ED`, `0x51B0FC`). The screen sizes are the modes of
+  `0x449F38` (160×120, 320×240, 400×300, 512×384, 800×600, 1024×768, 1280×1024, 1600×1200). On every 4:3 mode this is the 640:352
+  aspect OpenTPW letterboxes to (`MoviePresenter.OriginalBox`, tested); at 1280×1024 the original stretches to 1280×750.
+- **Pacing and sound.** The player runs its own thread (`0x66F090`, priority 15 clock thread `0x6724A0`). With audio the clock is the movie's
+  DirectSound buffer play cursor (`GetCurrentPosition`, `0x672730`), without it a synthetic clock; the video rings 24 frame slots
+  (`0x1E8`, 16 bytes each). A movie that is playing is polled by `0x51B300` with a 10 ms `Sleep` per call. The volume is
+  a DirectSound attenuation (see "Movie volume" above and `MovieVolumeCurve`).
+- **End of a movie.** `0x51B300` reports done when the library's playing test `0x66F540` is false. With sound (the open `0x66F4E0` always
+  sets the sound flag at +0x3E0) a movie is playing until its status word (`+0x9C`) is 7, which the player thread sets in `0x66EEF0`
+  after it left its decode loop and stopped the clock thread (`0x672800`). The natural end does not call the explicit
+  stop `0x51B350`. Whether the decode loop ends at the last video frame or only after the file's last audio chunk, and so
+  whether the 12.9 s audio tail of `plan.tgq` plays out or is cut when the player releases its sound buffer, is **not established**
+  (the loop that reads chunks was not followed to its exit). OpenTPW plays the tail out.
+
 ### Not in the data directory
 
 No data file names a trigger (the 18,734 files, WAD and SDT archives, and all
@@ -493,6 +538,7 @@ English `.str` tables were searched), which is why the executable was needed.
 
 ### Wired in OpenTPW
 
+The PC build has these two triggers and no others (above), so everything the original starts a movie for is wired.
 `IntroPlaylist` / `IntroSequence`: every normal start plays `bf`, then the day
 trailer, then opens the front end. Esc, Space or a mouse button (left, right or
 middle) skips. Before each movie the PC waits until all of those are released
@@ -569,7 +615,29 @@ matrix builder 0x6710C0, block decoder 0x6747D0, transform passes 0x67673C/0x676
   (115, 113, 115) and the brightest neutral (241, 239, 241): the original never shows full white. No field leaves its
   table over the 1,060,167,680 pixels of the nine movies. A field that wraps below zero (a dark pixel with extreme
   chroma, such as Y 0 with Cr 0) would read the next table in the original, landing in another channel's bits of the
-  display format; OpenTPW draws that channel as 0. The values are the colour before the player packs it into the display surface (16-bit on the PC).
+  display format; OpenTPW draws that channel as 0. The values are the colour before the player packs it into the display surface.
+  **Packing** (read October 17, 2026): three more tables (red `0xFBA730`, green `0xFBABF8`, blue `0xFBB010`, built by
+  `0x670350` from the surface's channel bit counts and shifts, with the same brightness) turn each channel value `v` into a
+  16-bit field. The low half of an entry is the rounded field, `min((v + 2^(7−b)) >> (8−b), 2^b − 1)`; when the surface has
+  at most 16 bits per pixel the high half is the truncated field `v >> (8−b)`. The row writer `0x675D90` handles two pixels
+  per 32-bit word and takes the low half for the first (even column) and the high half for the second (odd column), so
+  even columns round and odd columns truncate. OpenTPW reproduces this for a 5-6-5 display (`TqiColour.Pack`,
+  `TqiFrame.WriteDisplayRgba32`, fields expanded back to 8 bits by bit replication) as a tested helper, but presents movies at full
+  colour by default (`[EXT:movie-full-color]`, user-approved 2026-10-17: the original packs to its 16-bit surface, which bands the
+  gradients and does not suit upscaled movies; `MoviePresenter.DisplayFormat` is null unless set).
+  **Display depth** (read): the window setup `0x44E080` passes `16 + 16 × (start-up flag 0x200000)` as the DirectDraw display depth
+  (`0x44DF20` to `SetDisplayMode` in `0x563460`), and the option routine `0x44D8F0` sets that flag from `RENDER32` (`0x7858A8`, between
+  `MIPMAP` and `TEXTURE32` in the key table at `0x7445F0`), so the Low, Medium and High presets (`RENDER32 0`) run 16 bits and only
+  an edited file or the Enhanced preset (`1`) a 32-bit display. The colour mode `0x670C20` picks the 16-bit writers (`0x671800`,
+  `0x671940`, row writers `0x67519D`/`0x675579`) for a surface of at most 16 bits and the 32-bit writers (`0x6718A0`, rows `0x67538B`/`0x675767`,
+  one pixel per word) otherwise; with 8-bit fields the same tables hold the value unchanged, so a 32-bit display shows no banding
+  (`MoviePresenter.OriginalDisplayFormat`: packed for `RENDER32` 0, unpacked for 1). A windowed start-up (flag bit 0) takes the
+  desktop format instead, which is not modelled.
+  **Replacement movies**: the only mechanism is a `.tgq` of the same name in a Movies folder of the `--cd-data` overlay (`MovieLibrary`, searched after the install's own folder, so
+  it only fills a missing movie); there is no loader for other formats or for the texture pack's recorded movies (a separate manual download). The presenter
+  sizes its texture from the file and fits it into the original box and the `[EXT:movie-letterbox]` letterbox, so a higher-resolution `.tgq` is shown at its own resolution.
+  The 5-6-5 layout is an assumption (the masks come from the DirectDraw surface; every common 16-bit display is 5-6-5);
+  the export tools (`--export-tgq-png`) keep the unpacked 8-bit values.
 
 **Verification.** The x86 oracle (docs/reverse/ORACLE.md, **X26**) runs the matrix builder for every quantiser and the
 first transform pass on 500 coefficient rows, both against Python readings of the C# rules: the matrix agrees for every
@@ -586,11 +654,10 @@ frames), so the FPU precision the game runs movies at stays an assumption.
 
 ## Remaining gates
 
-The x87 precision control the game runs movies with (53-bit assumed, see above), the display surface's bit depth and
-the player's packing into it (OpenTPW shows the 8-bit channel values), the 0x100000 open flag that would replace the
-default brightness, what the original does after the last frame (`plan.tgq` audio tail), whether the PC build uses
-the same logo-plus-day-trailer sequence and `.tgq` names, and which user-facing setting, if any, controls the
-start-up flag. None of these are verified.
+The x87 precision control the game runs movies with (53-bit assumed, see above), the display's channel layout for the original packing (read; 5-6-5
+is assumed, the masks come from the DirectDraw surface; OpenTPW presents full colour either way), the 0x100000 open flag that would replace the default brightness, what the original
+does with the audio of `plan.tgq` after its last frame (see "End of a movie"), the layout of `dialog.tcf` and what it can switch, and the
+window-mode origin correction of the picture box (a window is not an original mode). None of these are verified.
 
 ## Sources
 

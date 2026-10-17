@@ -25,6 +25,8 @@ public static class PoolExtraSettings
 
 	/// <summary>The most the swimmer's feet are raised on the board, in engine units (the board's top is 6.6 model units, 0.2 engine units each).</summary>
 	public const float BoardLift = 1.32f;
+	/// <summary>The top of the lounger's cushion above the deck, in engine units: 3.4 model units (tools/blender/opentpw_pool_extras.py, <c>add_lounger</c>: the seat cushion spans 2.6 to 3.4), 0.2 engine units each.</summary>
+	public const float LoungerBedLift = 0.68f;
 
 	/// <summary>A ladder: turns standing on the deck before jumping in, 5 to 10.</summary>
 	public const int LadderStandTurns = 5, LadderStandExtra = 6;
@@ -431,6 +433,7 @@ public sealed class LoungerActivity : IPoolActivity
 		0 => PoolSwimSlots.Crawl, 1 => PoolSwimSlots.LadderClimb, 2 => PoolSwimSlots.Lying, 3 => PoolSwimSlots.Walk, 4 => PoolSwimSlots.Dive, _ => PoolSwimSlots.SplashDown
 	};
 
-	/// <summary>As the ladder's: from the water up to the deck, lying on it, and back down with the jump.</summary>
-	public float? FeetHeight( GuestSimulation simulation, Guest guest, PoolFeetHeights heights ) => PoolExtraMotion.EdgeFeet( guest, heights );
+	/// <summary>As the ladder's: from the water up to the deck and back down with the jump, but the lie (step 2) is on the cushion, <see cref="PoolExtraSettings.LoungerBedLift"/> above the deck, where the bottom-anchored lying frames rest.</summary>
+	public float? FeetHeight( GuestSimulation simulation, Guest guest, PoolFeetHeights heights )
+		=> PoolExtraMotion.StepOf( guest ) == 2 ? heights.Deck + PoolExtraSettings.LoungerBedLift : PoolExtraMotion.EdgeFeet( guest, heights );
 }

@@ -30,7 +30,8 @@ public static class PoolMeshBuilder
 	/// <param name="ground">The ground's engine height at a point given in cell units (cell (x, y) spans x to x + 1 and y to y + 1); continuous across cell borders.</param>
 	/// <param name="origin">Engine position of grid corner (0, 0).</param>
 	/// <param name="cellSize">Engine units per cell.</param>
-	public static PoolMesh Build( IEnumerable<(int X, int Y)> cells, Func<int, int, bool> isPool, Func<float, float, float> ground, SVector2 origin, float cellSize, PoolMeshOptions? options = null )
+	/// <param name="flowAt">[EXT:pools-river] The current of a lazy river cell as a unit step, or null: the water of such a cell carries it in the x and y of its normal (the water shader scrolls the surface along it); other water has the plain up normal.</param>
+	public static PoolMesh Build( IEnumerable<(int X, int Y)> cells, Func<int, int, bool> isPool, Func<float, float, float> ground, SVector2 origin, float cellSize, PoolMeshOptions? options = null, Func<int, int, (int Dx, int Dy)?>? flowAt = null )
 	{
 		ArgumentNullException.ThrowIfNull( cells );
 		ArgumentNullException.ThrowIfNull( isPool );
@@ -75,7 +76,8 @@ public static class PoolMeshBuilder
 					}
 					SVector3 wa = Surface( u0, v0 ), wb = Surface( u1, v0 ), wc = Surface( u1, v1 ), wd = Surface( u0, v1 );
 					SVector2 Edge( float u, float v ) => new( EdgeProximity( isPool, x + u, y + v ), 0 );
-					mesh.Water.AddQuad( wa, wb, wc, wd, up, Edge( u0, v0 ), Edge( u1, v0 ), Edge( u1, v1 ), Edge( u0, v1 ) );
+					var waterNormal = flowAt?.Invoke( x, y ) is { } flow ? new SVector3( flow.Dx, flow.Dy, 1 ) : up;
+					mesh.Water.AddQuad( wa, wb, wc, wd, waterNormal, Edge( u0, v0 ), Edge( u1, v0 ), Edge( u1, v1 ), Edge( u0, v1 ) );
 					var deep = new SVector2( 1, 0 );
 					mesh.Floor.AddQuad( Bottom( u0, v0 ), Bottom( u1, v0 ), Bottom( u1, v1 ), Bottom( u0, v1 ), up, deep, deep, deep, deep );
 				}

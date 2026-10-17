@@ -5,6 +5,7 @@ using System.Linq;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using OpenTPW.Mods;
 
 namespace OpenTPW;
 
@@ -27,6 +28,11 @@ public sealed record GuestReportOptions
 	public GuestMetricsOptions Metrics { get; init; } = new();
 	/// <summary>Measure CPU and allocation per tick with the observer off and on; machine-dependent, so left out of the stable report text when false.</summary>
 	public bool Performance { get; init; } = true;
+	/// <summary>
+	/// Official extensions switched on for the whole run (<c>--guest-extension smarter-guests</c>), so a later phase's report can be compared with the default's by <c>--guest-compare</c>. Empty runs
+	/// the faithful guests. Only extensions that act on the guests are accepted; the report saves them beside, not in, its protocol.
+	/// </summary>
+	public IReadOnlyList<string> Extensions { get; init; } = Array.Empty<string>();
 }
 
 /// <param name="StateHash">The guests' state hash at the end of the run: two seeds with the same hash ran the same park (the guests' generator is reseeded with each new guest's id, so streams can merge).</param>
@@ -105,7 +111,30 @@ public static class GuestReport
 		return new SeedResult( seed, snapshot ?? throw new InvalidOperationException( "The level run ended without closing its window." ), hash );
 	}
 
+	/// <summary>The extensions a report may switch on, by their short name and by id.</summary>
+	private static readonly IReadOnlyDictionary<string, IOpenTpwExtension> ReportExtensions = new Dictionary<string, IOpenTpwExtension>( StringComparer.Ordinal )
+	{
+		["smarter-guests"] = OfficialExtensions.SmarterGuests,
+		[OfficialExtensions.SmarterGuests.Id] = OfficialExtensions.SmarterGuests,
+	};
+
+	/// <summary>The extension ids <paramref name="names"/> stand for, each once; an unknown name is refused.</summary>
+	public static IReadOnlyList<string> ResolveExtensions( IEnumerable<string> names ) =>
+		names.Select( name => ReportExtensions.TryGetValue( name, out var extension ) ? extension.Id
+			: throw new ArgumentException( $"--guest-extension '{name}' is not one a guest report can switch on (smarter-guests)." ) ).Distinct( StringComparer.Ordinal ).ToArray();
+
 	public static GuestReportResult Run( GuestReportOptions options, Action<string>? progress = null )
+	{
+		if ( options.Extensions.Count == 0 )
+			return RunSeeds( options, progress );
+		// the extensions are on for every simulation the run builds (each reads the gate once when it is built) and off again afterwards
+		var enabled = ResolveExtensions( options.Extensions ).ToDictionary( id => id, _ => true );
+		var set = ModSet.Resolve( Array.Empty<DiscoveredMod>(), new ModSettings { Enabled = enabled }, null, GameEditions.Current, OfficialExtensions.All );
+		using var scope = OpenTpwExtensions.Use( set );
+		return RunSeeds( options, progress );
+	}
+
+	private static GuestReportResult RunSeeds( GuestReportOptions options, Action<string>? progress )
 	{
 		var scenarios = new List<ScenarioReport>();
 		var skipped = new List<string>();
@@ -261,6 +290,7 @@ public static class GuestReport
 					["dearPrice"] = options.Scenario.DearPrice
 				}
 			},
+			["extensions"] = new JsonArray( options.Extensions.Select( id => (JsonNode)JsonValue.Create( id )! ).ToArray() ),
 			["scenarios"] = scenarios,
 			["skipped"] = new JsonArray( result.Skipped.Select( item => (JsonNode)JsonValue.Create( item )! ).ToArray() )
 		};
@@ -288,6 +318,8 @@ public static class GuestReport
 	{
 		var text = new StringBuilder();
 		var options = result.Options;
+		if ( options.Extensions.Count > 0 )
+			text.AppendLine( $"Extensions on: {string.Join( ", ", options.Extensions )}" );
 		text.AppendLine( $"Guest report: {options.Seeds.Count} seeds (the band is 3 standard errors of a difference of two means of that many seeds), {options.WarmupDays} warm-up days + {options.MeasuredDays} measured days ({TicksForDays( options.MeasuredDays )} ticks)" );
 		string F( double value, string format = "0.###" ) => double.IsFinite( value ) ? value.ToString( format, CultureInfo.InvariantCulture ) : "-";
 		foreach ( var scenario in result.Scenarios )
@@ -328,6 +360,21 @@ public static class GuestReport
 		return args[index + 1];
 	}
 
+	/// <summary>Every value of a repeatable option, in order.</summary>
+	private static IReadOnlyList<string> Options( string[] args, string name )
+	{
+		var values = new List<string>();
+		for ( var index = 0; index < args.Length; index++ )
+		{
+			if ( args[index] != name )
+				continue;
+			if ( index + 1 >= args.Length || args[index + 1].StartsWith( "--" ) )
+				throw new ArgumentException( $"{name} requires a value." );
+			values.Add( args[index + 1] );
+		}
+		return values;
+	}
+
 	private static int IntOption( string[] args, string name, int minimum, int fallback )
 	{
 		if ( Option( args, name ) is not { } text )
@@ -350,7 +397,8 @@ public static class GuestReport
 	/// <summary>
 	/// <c>--guest-report</c> with <c>--guest-seeds N</c> (default 8), <c>--guest-warmup-days N</c> (2), <c>--guest-days N</c> (10), <c>--guest-levels a,b|all|none</c> (all four
 	/// themes when OPENTPW_GAME_PATH or --game-path is set), <c>--guest-level-seeds N</c> (8), <c>--guest-arrivals N</c> (level parks' arrival timer, 20),
-	/// <c>--guest-report-json path</c>, <c>--guest-scale plan|extended</c> (the days above, or 20 + 60) and <c>--guest-no-perf</c>. Prints the table; 0 on success.
+	/// <c>--guest-report-json path</c>, <c>--guest-scale plan|extended</c> (the days above, or 20 + 60), <c>--guest-extension smarter-guests</c> (switch an extension on for the run, repeatable) and
+	/// <c>--guest-no-perf</c>. Prints the table; 0 on success.
 	/// </summary>
 	public static int RunCommand( string[] args )
 	{
@@ -364,7 +412,8 @@ public static class GuestReport
 			Levels = Levels( args ),
 			LevelSeeds = IntOption( args, "--guest-level-seeds", 1, 8 ),
 			LevelArrivalTimeBetween = IntOption( args, "--guest-arrivals", 1, 20 ),
-			Performance = !args.Contains( "--guest-no-perf" )
+			Performance = !args.Contains( "--guest-no-perf" ),
+			Extensions = ResolveExtensions( Options( args, "--guest-extension" ) )
 		};
 		// the level parks log their clock and script lines; the report's own output stays clean
 		var output = Console.Out;

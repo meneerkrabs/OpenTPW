@@ -63,7 +63,11 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	private readonly Dictionary<(int X, int Y), List<Guest>> occupants = new();
 	private readonly List<GuestNavigation> neighbours = new();
 
-	public GuestSimulation( GuestPathGrid grid, GuestSettings settings, ulong seed )
+	/// <param name="decisions">
+	/// The decision layer (<see cref="IGuestDecisions"/>). Null takes the policy the <c>opentpw.smarter-guests</c> extension selects, read once here: <see cref="SmarterGuestDecisions"/> with the
+	/// extension on, <see cref="OriginalGuestDecisions"/> without it. The gate is never read again.
+	/// </param>
+	public GuestSimulation( GuestPathGrid grid, GuestSettings settings, ulong seed, IGuestDecisions? decisions = null )
 	{
 		Grid = grid;
 		Settings = settings;
@@ -71,7 +75,20 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		random = new WorldRng( WorldRng.StateFromSeed( seed ) );
 		isOpenForStep = IsOpenForStep;
 		separationForStep = SeparationForStep;
+		// [EXT:smarter-guests] the gate is read here, once; a smarter policy brings the extension's park state with it
+		this.decisions = decisions ?? ( FeatureGates.SmarterGuests ? new SmarterGuestDecisions() : OriginalGuestDecisions.Instance );
+		if ( this.decisions.UsesExtensionState )
+			SmarterGuests = new SmarterGuestsState( seed );
 	}
+
+	private readonly IGuestDecisions decisions;
+
+	/// <summary>The decision layer this simulation was built with.</summary>
+	public IGuestDecisions Decisions => decisions;
+
+	/// <summary>The <c>opentpw.smarter-guests</c> extension's park state, null when the simulation runs the original policy (docs/SMARTER-GUESTS.md).</summary>
+	// [EXT:smarter-guests] OpenTPW's own extension state; never in the guest snapshot or the guest state hash
+	internal SmarterGuestsState? SmarterGuests { get; }
 
 	public GuestPathGrid Grid { get; }
 	public GuestSettings Settings { get; }
@@ -330,9 +347,23 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		guest.OffsetX = jitter.X;
 		guest.OffsetY = jitter.Y;
 		guest.BaseSpeed = baseSpeed;
+		// [EXT:smarter-guests] the birth id comes with the guest, before its first decision (the counter is the extension's, no draw)
+		if ( SmarterGuests is { } smarter )
+			guest.BirthId = smarter.AllocateBirthId();
 		guests.Add( guest );
 		byId.Add( guest.Id, guest );
 		return guest;
+	}
+
+	/// <summary>The guests in the park's thing-list order (newest first), then any guest outside the pool's list by id: the order the extension's first tick gives birth ids in.</summary>
+	private IEnumerable<Guest> GuestsInThingListOrder()
+	{
+		var seen = new HashSet<int>();
+		foreach ( var slot in things.UsedNewestFirst() )
+			if ( slot.Model == SaveThingModel.Guest && byId.TryGetValue( slot.Id, out var guest ) && seen.Add( slot.Id ) )
+				yield return guest;
+		foreach ( var guest in guests.Where( guest => !seen.Contains( guest.Id ) ).OrderBy( guest => guest.Id ).ToArray() )
+			yield return guest;
 	}
 
 	/// <summary>A stable offset inside a cell (±0.25 of a cell each way) from the guest id alone: the start point of a guest that was not made by the arrival constructor.</summary>
@@ -431,6 +462,9 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 				throw new OverflowException( $"Guest {guest.Id} time in park exceeds the supported duration." );
 		TickCount++;
 		TimeSeconds += deltaSeconds;
+		// [EXT:smarter-guests] the extension's first tick gives the guests that predate it their ids, in thing-list order; before any decision of the tick
+		if ( SmarterGuests is { Bootstrapped: false } smarter )
+			smarter.Bootstrap( GuestsInThingListOrder() );
 		staffOnMap = StaffOnMapView?.Invoke().ToArray();
 		turnStarted = ParkCalendar.Turn( TickCount + turnPhase ) != ParkCalendar.Turn( TickCount - 1 + turnPhase );
 		SyncQueues();
@@ -1163,7 +1197,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	// [BIN:TPW-EXE:0x004FF9D0 booth without closure test] the booth reads neither mParkClosed nor the bank's state: a guest that reached it while the park was open is weighed and pays even once the park has closed; the paid guest's state 3 (0x004FF7F0) then sends it home while the park is closed
 	private void PayAdmission( Guest guest )
 	{
-		var verdict = BoothVerdict.Decide( (uint)Math.Max( 0, ParkPoints?.Invoke() ?? 0 ), (uint)Math.Max( 0, AdmissionFee ), random.NextWord(), Settings );
+		// the verdict's draw is the host's, taken first; the decision layer weighs the fee (BoothVerdict.Decide in the original)
+		var verdict = decisions.DecideBooth( ContextNow(), ViewOf( guest ), new BoothView( (uint)Math.Max( 0, ParkPoints?.Invoke() ?? 0 ), (uint)Math.Max( 0, AdmissionFee ), random.NextWord() ) ).Verdict;
 		if ( verdict == BoothVerdictKind.FarTooExpensive )
 		{
 			Think( guest, GuestThought.Dissatisfied );
@@ -1819,6 +1854,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			}
 			return false;
 		}
+		// the search and its draws were the host's; the decision layer accepts the proposal or names another goal
+		destination = decisions.ChooseWanderGoal( ContextNow(), ViewOf( guest ), destination );
 		var route = Grid.FindPath( start.X, start.Y, destination.Cell.X, destination.Cell.Y );
 		SetDestination( guest, GuestNavigation.BytePoint( destination.Cell, destination.ByteX, destination.ByteY ), route );
 		if ( guest.Navigation.Stuck )
@@ -1915,15 +1952,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	{
 		if ( attraction.JoinCell == null )
 			return 0;
-		var type = Settings.Types[Math.Min( guest.Type, Settings.Types.Count - 1 )];
-		var sameType = guest.UsedHistory[0] != 0 && FindAttraction( guest.UsedHistory[0] ) is { } last && last.TypeId == attraction.TypeId;
-		var back = attraction.QueueCells[^1];
-		var modifier = Litter?.Environment.At( back.X, back.Y ).Attraction ?? 0;
-		var input = new AttractionScoreInput( guest.CellX, guest.CellY, back.X, back.Y, modifier, attraction.QueueLength, attraction.QueueSizeInCells,
-			type.PreferredExcitement, attraction.LiveExcitement, (attraction.StaticExcitementLevel & 0xFF) != 0, guest.Thirst, guest.Hunger, guest.Toilet, guest.Nausea,
-			attraction.ThirstEffect, attraction.HungerEffect, attraction.ProvidesRelief, attraction.AgeDays, WeatherDropsFalling?.Invoke() ?? false, attraction.IsIndoors,
-			attraction.GoldenTicketCost, attraction.UpgradeCost, attraction.AttractionId, sameType, guest.UsedHistory, guest.TemporaryHistory );
-		return AttractionScore.Compute( input, Settings.DecisionWeights, Settings.DecisionVariables );
+		return decisions.ScoreAttraction( ContextNow(), ViewOf( guest ), ViewOf( attraction, guest ) );
 	}
 
 	/// <summary>
@@ -1937,18 +1966,20 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	// [BIN:TPW-EXE:0x4ff419 major decision] once the turn is above +0x1FC + 30 the choice 0x4fcb10 runs; with no target the guest logs event 1, thinks 4, loses the small step (0x4fea70(0)) and is stamped; nothing in it tests time since a ride, and no instruction reads PeepTypes' BoredomThreshold (0x7850EC + 12 × type has no reference; excitement 0x7850E4 and cash 0x7850E8 have)
 	private IRideVisitorBridge? ChooseAttraction( Guest guest, bool setWalk = true )
 	{
-		IEnumerable<AttractionChoice.Candidate> Candidates()
+		var context = ContextNow();
+		var view = ViewOf( guest );
+		IEnumerable<MajorCandidate> Candidates()
 		{
 			foreach ( var attraction in NewestFirst() )
 			{
-				var canJoin = attraction.JoinCell != null;
 				// [BIN:TPW-EXE:0x004FCB10 choice route] the route request 0x004FA530 to the ride's back-of-queue cell (0x004DE110) is made for every candidate that passes the counts-test and would win, and its walk stays set: the winner is the last candidate whose route was found, and a candidate whose route fails after it leaves the walk stuck (the original's SetDest failure state); the walk then runs all the way to the back cell (state 10, WALK-004)
-				yield return new AttractionChoice.Candidate( attraction.AttractionId, true, canJoin, canJoin ? ScoreAttraction( guest, attraction ) : 0,
+				// the request stays the host's: the policy scores and picks, and calls Reach only for a candidate it would take, in the original's order
+				yield return new MajorCandidate( ViewOf( attraction, guest ),
 					() => attraction.IsOpen && !attraction.IsBrokenDown && attraction.QueueLength < RideVisitorBridge.PositionsPerCell * attraction.QueueSizeInCells
 						&& (setWalk ? RouteToCell( guest, attraction.QueueCells[^1] ) : CanRouteTo( guest, attraction.QueueCells[^1] )) );
 			}
 		}
-		var id = AttractionChoice.Pick( Candidates(), ParkTurn );
+		var id = decisions.DecideMajor( context, view, Candidates() ).AttractionId;
 		return id == 0 ? null : FindAttraction( id );
 	}
 
@@ -2018,7 +2049,16 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		(guest.PreviousCellX, guest.PreviousCellY) = (guest.CellX, guest.CellY);
 		(guest.CellX, guest.CellY) = back;
 		var type = Settings.Types[Math.Min( guest.Type, Settings.Types.Count - 1 )];
-		var result2 = attraction.JoinQueue( guest.Id, type.PreferredExcitement );
+		// the physical checks (open, not listed, room) are the bridge's; the excitement gate and the limit are the decision layer's, and the bridge appends the admitted guest
+		var result2 = attraction.CheckJoinRoom( guest.Id );
+		if ( result2 == QueueJoinResult.Joined )
+		{
+			var admission = decisions.DecideAdmission( ContextNow(), ViewOf( guest ), new AdmissionView( ViewOf( attraction, guest ), attraction.StaticExcitementLevel,
+				attraction.JoinDifference( type.PreferredExcitement ), attraction.QueueLength, attraction.QueueLimit ) );
+			result2 = admission.Result;
+			if ( admission.Admits )
+				attraction.AppendToQueue( guest.Id );
+		}
 		if ( result2 == QueueJoinResult.Joined )
 		{
 			Observer?.QueueJoined( guest, attraction );
@@ -2092,8 +2132,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			return;
 		var back = target.QueueCells[^1];
 		var distance = (guest.CellX - back.X) * (guest.CellX - back.X) + (guest.CellY - back.Y) * (guest.CellY - back.Y);
-		IRideVisitorBridge? best = null;
-		uint bestScore = 0;
+		// the window's candidates, in the original's order (x outer, y inner, newest attraction first); the policy scores them and picks the best
+		var window = new List<AttractionView>();
 		for ( var x = guest.CellX - 2; x < guest.CellX + 2; x++ )
 		{
 			for ( var y = guest.CellY - 2; y < guest.CellY + 2; y++ )
@@ -2105,13 +2145,14 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 					if ( candidate.EntranceCell != (x, y) || candidate.AttractionId == target.AttractionId || candidate.JoinCell == null
 						|| !candidate.IsOpen || candidate.IsBrokenDown || candidate.QueueLength >= RideVisitorBridge.PositionsPerCell * candidate.QueueSizeInCells )
 						continue;
-					var score = ScoreAttraction( guest, candidate );
-					if ( bestScore < score || (score == bestScore && (ParkTurn & 1) != 0) )
-						(best, bestScore) = (candidate, score);
+					window.Add( ViewOf( candidate, guest ) );
 				}
 			}
 		}
-		if ( best == null )
+		if ( window.Count == 0 )
+			return;
+		var retarget = decisions.DecideMinor( ContextNow(), ViewOf( guest ), ViewOf( target, guest ), window ).RetargetAttractionId;
+		if ( retarget == 0 || FindAttraction( retarget ) is not { } best )
 			return;
 		var toGuest = RouteLength( guest, target.EntranceCell, (guest.CellX, guest.CellY) );
 		var toBest = RouteLength( guest, target.EntranceCell, best.EntranceCell );
@@ -2567,12 +2608,15 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 				if ( attraction.ProvidesRelief )
 				{
 					Think( guest, GuestThought.NeedToilet );
+					QueuePatienceLeaves( guest, attraction );
 					return;
 				}
 				DismissFromQueue( guest, attraction, GuestThought.NeedToilet, QueueEndReason.NeedToilet );
 				return;
 			}
 			// [BIN:TPW-EXE:0x004FFFF0 needs branch returns] beyond the window every path of the needs branch returns (0x00500311..0x005003A2), so the facing change below runs only within 30 turns of the last interlude
+			// [EXT:smarter-guests] the patience hook follows the leave tests on every turn the guest stays; the original policy stays
+			QueuePatienceLeaves( guest, attraction );
 			return;
 		}
 		if ( turn > guest.QueueStandingSinceTurn + BoredomTurns )
@@ -2580,6 +2624,9 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			DismissFromQueue( guest, attraction, GuestThought.Bored, QueueEndReason.Bored );
 			return;
 		}
+		// [EXT:smarter-guests] the patience hook again, on the turns the needs window does not cover
+		if ( QueuePatienceLeaves( guest, attraction ) )
+			return;
 		// 8. A 1-in-10 facing change of −400..+399 of 2048 of a turn.
 		// [BIN:TPW-EXE:0x004FFFF0 queue facing change] one draw (0x00516330) mod 10 must be 0 (else return), then a second draw gives heading +0x1C += (r mod 800) − 400, wrapped by 0x800; OpenTPW draws both from the world generator and turns the heading vector by the same angle
 		if ( random.Next( 10 ) != 0 )
@@ -2778,7 +2825,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		}
 		Payments?.VisitFinished( ride );
 		// [BIN:STP-PPC:0x100E9FD4 used history] the end of a use (0xe9fa4) pushes the attraction's id into the used history (0xea268) before the outcome
-		PushHistory( guest.UsedHistory, ride.AttractionId );
+		if ( decisions.RememberUse( ContextNow(), ViewOf( guest ), ViewOf( ride, guest ) ).PushUsedHistory )
+			PushHistory( guest.UsedHistory, ride.AttractionId );
 		// [BIN:TPW-EXE:0x004FD9EE use fatigue] a completed use, won or lost, lowers the meter +0x1B8 by the type's UsageInfo.FatigueEffect (type +0xE8) through the clamped adder 0x004FB4F0, before the use routine; only the save reads the meter (0x004FC026)
 		guest.Energy = MeterMath.Add( guest.Energy, -(float)ride.FatigueEffect );
 		// [BIN:TPW-EXE:0x004FDA0D lost sideshow] a lost play (win byte +0x1F1 of 0) skips the use routine: "Person lost this sideshow" (0x004FDB8D) costs the medium happiness step (byte 0x0078505C) and thinks 6
@@ -3551,6 +3599,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		byId.Clear();
 		foreach ( var (guestId, guest) in restoredById )
 			byId.Add( guestId, guest );
+		// [EXT:smarter-guests] the guest snapshot holds no birth ids: the extension's state starts fresh (its first tick gives every guest an id) unless a saved section follows (SmarterGuestsSave.Restore)
+		SmarterGuests?.Restore( SmarterGuests.ParkSeed, SmarterGuestsState.FirstBirthId, false );
 		seenQueueEdits.Clear();
 		foreach ( var (attractionId, seen) in snapshot.SeenQueueEdits )
 			seenQueueEdits[attractionId] = seen;

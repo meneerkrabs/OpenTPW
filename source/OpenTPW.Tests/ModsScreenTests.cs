@@ -223,6 +223,48 @@ public class ModsScreenTests
 	// ---- Screen ----------------------------------------------------------------------------------
 
 	[TestMethod]
+	public void TheGuestExtensionsShowTheirTranslatedNamesAndDescriptions()
+	{
+		var services = Services();
+		var stack = new UiScreenStack();
+		var screen = ModsScreen.Create( stack, OriginalUiTests.FakeStrings(), services );
+		stack.Push( screen );
+		var extensions = (UiScrollList)screen.Find( "extensions" )!;
+		var rows = extensions.Rows();
+		Assert.AreEqual( OfficialExtensions.All.Count, rows.Count );
+		var smarter = OfficialExtensions.All.ToList().IndexOf( OfficialExtensions.SmarterGuests );
+		var insights = OfficialExtensions.All.ToList().IndexOf( OfficialExtensions.GuestInsights );
+		Assert.AreEqual( Text( OpenTpwText.ExtensionSmarterGuestsName ) + "  1.0.0", rows[smarter] );
+		Assert.AreEqual( Text( OpenTpwText.ExtensionGuestInsightsName ) + "  1.0.0", rows[insights] );
+		Assert.AreEqual( Text( OpenTpwText.ModOff ), Trailing( screen, "extensions", smarter ), "off by default" );
+		Assert.AreEqual( Text( OpenTpwText.ModOff ), Trailing( screen, "extensions", insights ) );
+		extensions.Select( smarter );
+		Pump( screen );
+		var details = Label( screen, "details" );
+		StringAssert.Contains( details, "opentpw.smarter-guests" );
+		StringAssert.Contains( details, Text( OpenTpwText.ExtensionSmarterGuestsDescription ) );
+		StringAssert.Contains( details, Text( OpenTpwText.ModAffectsSimulation ) );
+		extensions.Select( insights );
+		Pump( screen );
+		details = Label( screen, "details" );
+		StringAssert.Contains( details, Text( OpenTpwText.ExtensionGuestInsightsDescription ) );
+		StringAssert.Contains( details, Text( OpenTpwText.ModLeavesSimulation ) );
+		stack.Clear();
+	}
+
+	[TestMethod]
+	public void TheGuestExtensionStringsExistInAllNineLanguages()
+	{
+		foreach ( var key in new[] { OpenTpwText.ExtensionSmarterGuestsName, OpenTpwText.ExtensionSmarterGuestsDescription, OpenTpwText.ExtensionGuestInsightsName, OpenTpwText.ExtensionGuestInsightsDescription } )
+		{
+			var texts = SupplementaryStrings.SupportedLanguages.Select( language => SupplementaryStrings.Get( key, language ) ).ToList();
+			Assert.AreEqual( 9, texts.Count, $"{key}: nine languages" );
+			Assert.IsTrue( texts.All( text => !string.IsNullOrWhiteSpace( text ) ), $"{key} has a text in every language" );
+			Assert.AreEqual( 9, texts.Distinct().Count(), $"{key}: every language has its own text" );
+		}
+	}
+
+	[TestMethod]
 	public void SwitchingAnExtensionOffSavesModsJsonAndAsksForARestart()
 	{
 		var services = Services();

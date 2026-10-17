@@ -4,19 +4,44 @@ The goal is an opt-in official extension that makes park visitors decide better,
 simulation ([GUESTS.md](GUESTS.md)) stays the default: with the extension off, behaviour, determinism pins and saves do not change. OpenRCT2 is GPLv3, so only concepts are
 taken: no code, no data tables, no constants. Every phase is one pull request. This page holds the overview, the measurement that is built first, and its baseline.
 
-## Architecture in short
+## Architecture in short (as built in phase 0b)
 
-- **Two extensions.** `opentpw.guest-insights` is UI only (`AffectsSimulation: false`): refusal reasons and a complaints summary. `opentpw.smarter-guests` is
-  `DefaultEnabled: false` and `AffectsSimulation: true`; the mod set is recorded in park saves, and the extension version is the algorithm identity (every
-  behaviour-changing PR bumps it; a park of an older version is refused with a clear message).
-- **A pure decision layer.** `GuestSimulation` takes an `IGuestDecisions` (the original logic extracted as `OriginalGuestDecisions`, or `SmarterGuestDecisions`). A policy only
-  decides from an immutable snapshot; the host keeps every effect (routing, queue edits, payments, statistics, thoughts, happiness, RNG) in the original order. The gate is
-  read once when the simulation is built. Decision points: booth verdict, major decision, minor decision while walking, queue admission, queue patience (a new host hook),
-  post-use memory and wander goal.
+- **Two extensions** (`OfficialExtensions`, both `DefaultEnabled: false`, version 1.0.0). `opentpw.guest-insights` is UI only (`AffectsSimulation: false`): refusal reasons and a
+  complaints summary; it has no feature yet and is never recorded in saves. `opentpw.smarter-guests` is `AffectsSimulation: true`; the mod set is recorded in park saves (`ParkResumeMods`
+  refuses a mismatched set), and the extension version is the algorithm identity: every behaviour-changing PR bumps it, and a park of another version is refused with a clear message
+  (`needs opentpw.smarter-guests 1.0.0, not 1.1.0`). `FeatureGates.SmarterGuests` and `FeatureGates.GuestInsights` read them; both show on the Extensions and mods screen with their name and
+  description in the nine interface languages.
+- **A pure decision layer** (`World/Guests/Decisions/`). `GuestSimulation` takes an `IGuestDecisions` at construction (null: the gate decides, read once, in the constructor and never again):
+  `OriginalGuestDecisions`, a stateless pure extraction of the original, or `SmarterGuestDecisions`, which in 1.0.0 delegates every call to it. A policy gets a `DecisionContext` (settings, park
+  turn, weather) and views (`GuestView`, `AttractionView`, ...) and returns a typed decision. The host keeps every effect: routing, queue insertion and removal, payments, statistics, thoughts,
+  happiness and **every `WorldRng` draw, once and in the original order**. The seven decision points:
+
+  | Point | Host does | Policy decides |
+  | --- | --- | --- |
+  | Booth verdict | takes the verdict's draw first, then (for an expensive verdict) the wait draw; thoughts, happiness, payment | `DecideBooth( BoothView with the drawn word )` -> `BoothVerdictKind` |
+  | Major decision | builds the candidates newest first, each with its view and a `Reach` probe (counts-test plus route request, the one effect) | `DecideMajor`: scores every candidate and picks; calls `Reach` only for a candidate it would take, in the original order |
+  | Minor decision | scans the 4 x 4 window in the original order, tests the two routes, retargets | `DecideMinor( window )` -> the best candidate (or none) |
+  | Queue admission | the physical checks (`CheckJoinRoom`: open, not listed, room), then appends the admitted guest (`AppendToQueue`) | `DecideAdmission`: the excitement gate, then the queue limit |
+  | Queue patience (new) | calls it after the existing leave tests on every turn a waiting guest stays (never while called forward or in an interlude); a leaving guest is dismissed with the policy's thought (`QueueEndReason.Impatient`) | `DecideQueuePatience` -> stay (the original) or leave |
+  | Post-use memory | the use's effects | `RememberUse` -> whether the attraction enters the used history |
+  | Wander goal | runs the original destination search with its path-dependent draws | `ChooseWanderGoal( proposal )` -> the goal to walk to (the original: the proposal) |
+
+  The wander's off-path search (`GuestWander.OffPath`, a start cell without links) stays host-only. The policy classes name no generator at all (a test reads the sources); the extension's
+  variation comes from `SmarterGuestsState.Trait`.
 - **Randomness.** Extension off: the `WorldRng` sequence is untouched (the existing pins prove it). On: the promise is deterministic replay for the same seed, set and save, not
-  stream equality with the original; the policy itself draws nothing and derives variation from stateless hashes of its own identity inputs.
-- **Identity and persistence.** The extension allocates its own birth id per guest (a stateless hash of the park seed and the id gives stable traits). Its state lives in its own
-  optional park-resume section, written only when the extension is on; the guest snapshot DTO stays untouched.
+  stream equality with the original; with the delegating policy of 1.0.0 the stream is the original's anyway. The policy itself draws nothing.
+- **Identity.** With the extension on, `Guest.BirthId` (64 bits, 0 = none) is allocated in `GuestSimulation.Create`, after the creation's draws and before the guest's first decision (the booth
+  sees it). The counter lives in `SmarterGuestsState`, beside the guest simulation, never in the guest snapshot or in `GuestSimulation.ComputeStateHash`. Guests without an id (an older save, an imported
+  original save, a park started with the extension off) get one on the extension's **first tick**, in the park's thing-list order (newest first, then any guest outside the list by id); an
+  imported guest of a running extension gets it at once. A counter at its limit is refused (`OverflowException`), never wrapped. `SmarterGuestsState.Trait( parkSeed, birthId, traitIndex )` is a stateless
+  64-bit hash (SplitMix64's finalizer applied to each input); the park seed is the simulation's seed (the world seed's guest stream), kept in the state so a resume continues the same personalities.
+  Nothing uses it yet beyond tests.
+- **Persistence.** `ParkResumeSnapshot.SmarterGuests` (`SmarterGuestsSaveData`: park seed, counter, first-tick flag, and each guest's birth id keyed by the guest's thing id, the identity a restore
+  rebuilds guests by) is `null` and left out of the file while the extension is off, so every other save is byte-identical to before. It has its own capture, shape validation (a section exists exactly when
+  the extension is recorded in `Mods`; ids non-zero, below the counter, unique, naming guests the save holds; after the first tick every guest has one), restore (`SmarterGuestsSave`) and canonical
+  hash. A build from before the section refuses a save that has it (the strict codec rejects unknown members), which is intended; the save version stays 1. Later phases add their state to this section.
+- **The world hash.** `SmarterGuestsState.AddCanonicalState` joins `WorldStateHash` only while the extension is on (as the bump, tour and coaster modules do), so the off-path hash does not change and
+  `WorldStateHash.SchemaVersion` stays 21. `GuestSimulation.ComputeStateHash` and the guest snapshot never see the extension, which is why a delegating policy gives the off run's guest state exactly.
 - **Not supported at first:** online park sharing (park packages do not record simulation mods yet) and tuning by data mods (phase 7).
 
 ## Phases (one PR each)
@@ -24,7 +49,7 @@ taken: no code, no data tables, no constants. Every phase is one pull request. T
 | Phase | Content |
 | --- | --- |
 | 0a | Passive measurement: `ParkScenario`, instrumentation, `--guest-report`, this baseline and its thresholds. No extension, no behaviour change, every pin unchanged. |
-| 0b | Seam and identity: both extensions, `FeatureGates`, `IGuestDecisions` with `OriginalGuestDecisions` as a pure extraction, the birth-id section, off/on pins and a resume test. |
+| 0b | Seam and identity (built, below): both extensions, `FeatureGates`, `IGuestDecisions` with `OriginalGuestDecisions` as a pure extraction, the birth-id section, off/on pins and a resume test. |
 | 1 | Top 3 Thoughts (fidelity, independent) and `opentpw.guest-insights` refusal-reason counters. |
 | 2 | Value for money: price enters the shop and sideshow score; remember too-expensive shops; the booth weighs the fee against the park; a price sensitivity trait. |
 | 3 | Spreading: a throughput-aware queue estimate for every attraction, a stable per-guest preference per instance, hysteresis. |
@@ -98,6 +123,10 @@ abandon reasons) and, with `--guest-report-json`, the stable machine-readable re
 The plan scale (2 warm-up + 10 measured days, the default) takes about 20 s with the four level parks; `--guest-scale extended` (20 + 60 days) about 35 s.
 
 **Decision: two scales.** The plan scale (2 + 10 days) stays the quick default of `--guest-report`; `--guest-scale extended` (20 + 60 days) is the scale of the baseline and of every acceptance threshold on this page.
+
+With `--guest-extension smarter-guests` (repeatable; the extension's id works too) the whole run builds its simulations with the extension on (each reads the gate once, when built), the JSON gets an
+`extensions` list beside its protocol, and the table says `Extensions on: ...`. With the delegating policy of 0b the report is the default's: every seed ends in the same guest state hash and
+`--guest-compare off.json on.json` shows every metric `same` (a note names the two extension sets).
 
 To compare two runs: `--guest-compare baseline.json candidate.json [--guest-targets metric,metric] [--guest-compare-k 3]` prints every metric's change in standard errors with a verdict
 (`improved`, `regressed`, `changed`, `same`, `undefined`) and exits 1 on a regression, a named target that did not improve, or a non-zero `queue.superseded`.
@@ -228,3 +257,12 @@ scenario by scenario against the original policy, in the same environment and wi
 only; turning the observer on leaves the pinned fixed run's hash (`DeterminismTests.FixedRunHash`) and a scenario run's hash unchanged; `ParkScenario` is deterministic and its
 fixed-run hash is pinned (a change moves this baseline); the report JSON is stable for fixed seeds; seeds stay distinct and duplicates are flagged; `superseded` is 0 and unfinished attempts report their age; save and restore keep the tallies; the compare thresholds. The determinism guard scans the simulation folders, so `Stopwatch` lives in
 `Client/GuestReport.cs`, not beside the simulation.
+
+`SmarterGuestsTests`, `SmarterGuestsParkResumeTests` and two tests of `DeterminismTests` cover phase 0b: both extensions are registered, off by default, at version 1.0.0 and only the smarter one is
+recorded in saves; the gates follow the active set and the policy is read once when the simulation is built (`OriginalGuestDecisions` off, `SmarterGuestDecisions` on); a counting policy proves
+every decision point goes through the layer and that a delegating policy gives the same guest hash and the same `WorldRng` state; a patience policy exercises the new hook; the policy sources name no
+generator; birth ids are given at creation (the booth sees them), never repeat, are assigned in thing-list order on the first tick for guests without one, and a limit counter is refused; the trait
+hash is well mixed; the section round-trips, validates and restores into a fresh instance, and a resumed park hashes like the uninterrupted one every tick for 1,500 ticks; the level captures the section only
+while the extension is on and a mismatched set refuses the load. **Pins:** with the extension off every existing pin is unchanged; with it on `DeterminismTests.SmarterGuestsFixedRunHash` pins the
+`SyntheticPark` run's world hash (the extension's state included), while that run's guests, economy and guest snapshot are asserted equal to the off run's every 1,200 ticks and `ParkScenarioFixedRunHash`
+holds with the extension on.

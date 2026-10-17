@@ -43,6 +43,13 @@ public sealed class ModsServices
 // [EXT:mods-ui] OpenTPW's own mods screen; the original game had no mods
 public static class ModsScreen
 {
+	/// <summary>The extensions whose name and description the screen shows in the interface language.</summary>
+	private static readonly IReadOnlyDictionary<string, (OpenTpwText Name, OpenTpwText Description)> ExtensionTexts = new Dictionary<string, (OpenTpwText, OpenTpwText)>
+	{
+		[OfficialExtensions.SmarterGuests.Id] = (OpenTpwText.ExtensionSmarterGuestsName, OpenTpwText.ExtensionSmarterGuestsDescription),
+		[OfficialExtensions.GuestInsights.Id] = (OpenTpwText.ExtensionGuestInsightsName, OpenTpwText.ExtensionGuestInsightsDescription),
+	};
+
 	public static UiScreen Create( UiScreenStack stack, UiStringTable strings, ModsServices? services = null )
 	{
 		services ??= new ModsServices();
@@ -97,6 +104,8 @@ public static class ModsScreen
 			_ => OpenTpwText.ModUnusable,
 		} );
 		string VersionText( ModRow row ) => row.Version == null ? "" : "  " + row.Version;
+		// [EXT:smarter-guests] the guest extensions carry their names and descriptions in the interface languages; the others show the name the registry gives
+		string RowName( ModRow row ) => ExtensionTexts.TryGetValue( row.Id, out var texts ) && row.Extension != null ? strings.Extra( texts.Name ) : row.Name;
 
 		UiScrollList AddColumn( string id, float left, OpenTpwText title, Func<IReadOnlyList<ModRow>> source, Func<string> empty )
 		{
@@ -109,7 +118,7 @@ public static class ModsScreen
 				Bounds = Rect( left, 330, right, 770 ),
 				Anchor = UiAnchor.Center,
 				RowHeight = 64,
-				Rows = () => source().Count == 0 ? new[] { empty() } : source().Select( row => row.Name + VersionText( row ) ).ToArray(),
+				Rows = () => source().Count == 0 ? new[] { empty() } : source().Select( row => RowName( row ) + VersionText( row ) ).ToArray(),
 				Trailing = index => index < source().Count ? StatusText( source()[index].Status ) : "",
 			} );
 			return list;
@@ -142,9 +151,11 @@ public static class ModsScreen
 		{
 			if ( Shown() is not { } row )
 				return strings.Extra( OpenTpwText.ModSelectHint );
-			var lines = new List<string> { $"{row.Name} ({row.Id})" };
+			var lines = new List<string> { $"{RowName( row )} ({row.Id})" };
 			if ( row.Extension != null )
 			{
+				if ( ExtensionTexts.TryGetValue( row.Id, out var texts ) )
+					lines.Add( strings.Extra( texts.Description ) );
 				lines.Add( $"{strings.Extra( OpenTpwText.ModVersionLabel )}: {row.Version}" );
 				lines.Add( strings.Extra( OpenTpwText.ModBuiltIn ) );
 				lines.Add( strings.Extra( row.Extension.AffectsSimulation ? OpenTpwText.ModAffectsSimulation : OpenTpwText.ModLeavesSimulation ) );

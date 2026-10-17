@@ -67,6 +67,16 @@ public class GuestMeasurementTests
 		Assert.AreEqual( ScenarioFixedRunHash, hash, $"0x{hash:X16}" );
 	}
 
+	/// <summary>With <c>opentpw.smarter-guests</c> on and its policy still delegating, the scenario's guests are the pinned run's (docs/SMARTER-GUESTS.md, phase 0b).</summary>
+	[TestMethod]
+	public void ParkScenarioFixedRunHashHoldsWithTheSmarterGuestsExtensionOn()
+	{
+		using var scope = OpenTPW.Mods.OpenTpwExtensions.Use( SmarterGuestsTests.On() );
+		var park = ScenarioRun( 1, null, 12_000 );
+		Assert.IsInstanceOfType( park.Guests.Decisions, typeof( SmarterGuestDecisions ) );
+		Assert.AreEqual( ScenarioFixedRunHash, park.Hash, $"0x{park.Hash:X16}" );
+	}
+
 	[TestMethod]
 	public void TurningTheObserverOnDoesNotChangeTheHashesOfAFixedRun()
 	{

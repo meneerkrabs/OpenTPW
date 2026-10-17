@@ -28,7 +28,72 @@ public sealed partial class GuestSimulation
 		var view = new AttractionView( attraction.AttractionId, attraction.TypeId, attraction.Kind, true, back, attraction.EntranceCell, modifier, attraction.QueueLength, attraction.QueueSizeInCells,
 			attraction.QueueLimit, attraction.LiveExcitement, attraction.StaticExcitementLevel, attraction.ThirstEffect, attraction.HungerEffect, attraction.ProvidesRelief, attraction.AgeDays,
 			attraction.IsIndoors, attraction.GoldenTicketCost, attraction.UpgradeCost, attraction.IsOpen, attraction.IsBrokenDown, sameType );
-		return decisions.UsesValueForMoney ? WithPrice( view, attraction, guest ) : view;
+		if ( decisions.UsesValueForMoney )
+			view = WithPrice( view, attraction, guest );
+		return decisions.UsesSpreading ? WithSpreading( view, attraction, guest ) : view;
+	}
+
+	/// <summary>
+	/// <paramref name="view"/> with what the spreading rules read (docs/SMARTER-GUESTS.md, phase 3): the guests, other than <paramref name="guest"/>, walking to the attraction (their target, not yet in its queue) and the
+	/// attraction's observed time per guest (<see cref="RideThroughputs"/>, the cold start without a measurement). Pure: it records and changes nothing.
+	/// </summary>
+	// [EXT:smarter-guests-spread] host-computed facts for the policy; the throughput bookkeeping is the host's (NoteBoarding, ObserveThroughputs)
+	private AttractionView WithSpreading( AttractionView view, IRideVisitorBridge attraction, Guest guest )
+	{
+		if ( SmarterGuests is not { } smarter )
+			return view;
+		var reservations = ReservationsOf( attraction.AttractionId, guest );
+		var interval = smarter.Throughputs.IntervalFor( attraction.AttractionId, attraction.Kind, attraction.LiveCapacity, attraction.Speed, ParkTurn, attraction.QueueLength );
+		return view with { Reservations = reservations, TurnsPerGuest256 = interval };
+	}
+
+	/// <summary>The walkers per attraction, counted once at the start of a decision (<see cref="BeginReservations"/>); null outside one.</summary>
+	private Dictionary<int, int>? reservationCounts;
+
+	/// <summary>
+	/// Counts, once, the guests walking to each attraction, for the candidates of the decision that follows (<see cref="EndReservations"/> ends it). The candidate loops change no guest's state or target, so the count is
+	/// exactly the one a scan per candidate would give, without the scan (one pass over the guests per decision instead of one per candidate view).
+	/// </summary>
+	private void BeginReservations()
+	{
+		if ( !decisions.UsesSpreading || reservationCounts != null )
+			return;
+		reservationCounts = new Dictionary<int, int>();
+		foreach ( var other in guests )
+			if ( other.State == GuestState.GoingToRide )
+				reservationCounts[other.AttractionId] = reservationCounts.GetValueOrDefault( other.AttractionId ) + 1;
+	}
+
+	private void EndReservations() => reservationCounts = null;
+
+	/// <summary>The guests other than <paramref name="guest"/> walking to the attraction: from the decision's count, else a scan of the guests.</summary>
+	private int ReservationsOf( int attractionId, Guest guest )
+	{
+		var self = guest.State == GuestState.GoingToRide && guest.AttractionId == attractionId ? 1 : 0;
+		if ( reservationCounts != null )
+			return reservationCounts.GetValueOrDefault( attractionId ) - self;
+		var count = 0;
+		foreach ( var other in guests )
+			if ( other.State == GuestState.GoingToRide && other.AttractionId == attractionId && !ReferenceEquals( other, guest ) )
+				count++;
+		return count;
+	}
+
+	/// <summary>A guest boarded <paramref name="ride"/>: folds the gap since its previous boarding into its throughput estimate (<see cref="RideThroughputs.Boarded"/>).</summary>
+	// [EXT:smarter-guests-spread] the ride bridge reports every boarding, in the host's deterministic order, so the estimate is a function of the simulation's own events
+	private void NoteBoarding( IRideVisitorBridge ride ) =>
+		SmarterGuests?.Throughputs.Boarded( ride.AttractionId, ride.Kind, ride.LiveCapacity, ride.Speed, ParkTurn, ride.QueueLength );
+
+	/// <summary>
+	/// The turn-start look at the attractions: demand follows the queue (an open, working attraction with a queue gets an entry and a silence clock; a closed, broken or empty one loses its demand flag) and an
+	/// upgrade (a changed live capacity or speed) restarts the estimate (<see cref="RideThroughputs.Observe"/>).
+	/// </summary>
+	private void ObserveThroughputs()
+	{
+		if ( SmarterGuests is not { } smarter )
+			return;
+		foreach ( var attraction in attractions )
+			smarter.Throughputs.Observe( attraction.AttractionId, attraction.Kind, attraction.LiveCapacity, attraction.Speed, attraction.IsOpen && !attraction.IsBrokenDown, attraction.QueueLength, ParkTurn );
 	}
 
 	/// <summary>

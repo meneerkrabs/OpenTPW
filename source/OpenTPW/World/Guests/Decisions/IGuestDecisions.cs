@@ -25,6 +25,20 @@ public interface IGuestDecisions
 	bool UsesValueForMoney => false;
 
 	/// <summary>
+	/// The policy spreads guests over the attractions (docs/SMARTER-GUESTS.md, phase 3; additive): the host then tracks each attraction's throughput in the extension's state
+	/// (<see cref="SmarterGuestsState.Throughputs"/>), fills <see cref="AttractionView.Reservations"/> and <see cref="AttractionView.TurnsPerGuest256"/>, and asks <see cref="SwitchesTarget"/> in the minor decision.
+	/// A policy that ignores them leaves it false and the host does none of this, so the original path does no extra work. A policy that wraps another forwards it.
+	/// </summary>
+	bool UsesSpreading => false;
+
+	/// <summary>
+	/// The minor decision's hysteresis (additive, phase 3): whether the best window candidate (<paramref name="candidate"/>, scoring <paramref name="candidateScore"/>) replaces the target the guest is walking to
+	/// (<paramref name="target"/>, scoring <paramref name="targetScore"/> for this guest now). The host asks only a policy that <see cref="UsesSpreading"/>, after its comparison rule picked the candidate and before the
+	/// route tests. The default always switches, as the original does.
+	/// </summary>
+	bool SwitchesTarget( in DecisionContext context, in GuestView guest, in AttractionView target, uint targetScore, in AttractionView candidate, uint candidateScore ) => true;
+
+	/// <summary>
 	/// The host calls this at the start of every simulation tick (<see cref="GuestSimulation.Tick"/> and the swept tick), before any decision of the tick. The faithful and the smarter policy
 	/// hold no state and ignore it; a policy that meters work per tick (the script policy's step budget) starts its tick here. A policy that wraps another forwards it.
 	/// </summary>

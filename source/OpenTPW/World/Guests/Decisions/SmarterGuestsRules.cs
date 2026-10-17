@@ -62,4 +62,67 @@ public static class SmarterGuestsRules
 		var scaled = (ulong)(originalValue - minimum) * percent / 100UL;
 		return (uint)Math.Min( uint.MaxValue, minimum + scaled );
 	}
+
+	// [EXT:smarter-guests-spread] phase 3, spreading
+
+	/// <summary>
+	/// The expected wait, in park turns, at which the queue match reaches 0 (the match is <c>100 - 100 * wait / scale</c>, clamped to 0..100). Tuned by measurement (docs/SMARTER-GUESTS.md): the original's queue match
+	/// goes from 100 (empty) to 0 at four guests per queue cell, which for a ride that boards one guest per cycle is a wait of several cycles.
+	/// </summary>
+	public const int QueueWaitScaleTurns = 120;
+
+	/// <summary>The index of the per-guest, per-attraction preference trait (<see cref="DecisionContext.Trait"/>).</summary>
+	public const int PreferenceTrait = 1;
+
+	/// <summary>The least a guest's preference multiplies an attraction's score by, in percent.</summary>
+	public const int PreferenceMinimumPercent = 94;
+
+	/// <summary>How many distinct preferences the term gives: 94 to 106 percent.</summary>
+	public const int PreferenceValues = 13;
+
+	/// <summary>How much better, in percent of the target's score, a candidate must score for a walking guest to switch to it (the minor decision's hysteresis).</summary>
+	public const int HysteresisPercent = 20;
+
+	/// <summary>The least margin of the hysteresis, in score points, so a small score does not switch on a one-point difference.</summary>
+	public const int HysteresisMinimumPoints = 2;
+
+	/// <summary>A candidate kept at the choice floor ranks as the floor plus its own score over this: 0 to 1 for a score below 10.</summary>
+	public const uint FloorOrderDivisor = 5;
+
+	/// <summary>The guests ahead beyond which the expected wait no longer grows: far above any queue limit.</summary>
+	public const long MaximumGuestsAhead = 100_000;
+
+	/// <summary>
+	/// The expected wait of a guest who joins now, in 1/256 park turn: the guests ahead of it (the queue plus the guests walking to the attraction), each taking the attraction's observed time per guest
+	/// (<see cref="AttractionView.TurnsPerGuest256"/>, i.e. divided by its throughput). The guest itself is not counted: an empty attraction with nobody on the way is a wait of 0. Null when the view has no estimate (0).
+	/// </summary>
+	public static long? ExpectedWait256( in AttractionView attraction )
+	{
+		if ( attraction.TurnsPerGuest256 <= 0 )
+			return null;
+		// bounded before it is multiplied, so a corrupt count or interval saturates instead of wrapping
+		var ahead = Math.Min( (long)Math.Max( 0, attraction.QueueLength ) + Math.Max( 0, attraction.Reservations ), MaximumGuestsAhead );
+		return Math.Min( ahead * Math.Min( attraction.TurnsPerGuest256, RideThroughputs.MaximumInterval256 ), RideThroughputs.MaximumInterval256 * 4 );
+	}
+
+	/// <summary>The queue match (0..100) of an expected wait in 1/256 turn: 100 for no wait, falling linearly to 0 at <see cref="QueueWaitScaleTurns"/>.</summary>
+	public static uint QueueMatchOf( long wait256 ) => (uint)(100 - Math.Min( 100L, wait256 * 100 / (QueueWaitScaleTurns * 256L) ));
+
+	/// <summary>The preference of a guest for one attraction instance, in percent (94 to 106): its stateless preference trait mixed with the attraction's stable id; the same for the guest's whole visit.</summary>
+	public static int PreferencePercent( ulong trait, int attractionId ) =>
+		PreferenceMinimumPercent + (int)(SmarterGuestsState.Mix( trait ^ SmarterGuestsState.Mix( (ulong)(uint)attractionId + 0x9E3779B97F4A7C15UL ) ) % PreferenceValues);
+
+	/// <summary>A score scaled by a preference in percent (rounded down); 0 stays 0.</summary>
+	public static uint ApplyPreference( uint score, int percent ) => (uint)Math.Min( uint.MaxValue, (ulong)score * (ulong)percent / 100UL );
+
+	/// <summary>
+	/// Whether a candidate replaces the target a guest is walking to: the target scores below the choice floor (nothing to keep), or the candidate beats it by <c>max(HysteresisMinimumPoints, targetScore * HysteresisPercent / 100)</c>.
+	/// </summary>
+	public static bool BeatsTargetByMargin( uint targetScore, uint candidateScore )
+	{
+		if ( targetScore < AttractionScore.CandidateFloor )
+			return true;
+		var margin = Math.Max( (ulong)HysteresisMinimumPoints, (ulong)targetScore * HysteresisPercent / 100UL );
+		return (ulong)candidateScore >= (ulong)targetScore + margin;
+	}
 }

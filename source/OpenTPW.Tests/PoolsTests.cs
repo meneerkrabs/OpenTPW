@@ -224,14 +224,14 @@ public class PoolsTests
 		// land the park does not own
 		rig.Cells.SetFlags( 1, 1, ParkCellFlags.Unowned );
 		Assert.AreEqual( PoolBuildResult.NotOwned, Check( 1, 1 ) );
-		// paths (a fixed one too), queues, entrances, exits, objects, tracks and the fence
+		// paths (a fixed one too), queues, entrances, exits, objects, track cells and the map's water
 		rig.Cells.SetType( 2, 1, ParkCellType.Path );
 		Assert.AreEqual( PoolBuildResult.Occupied, Check( 2, 1 ), "path" );
 		rig.Cells.SetFlags( 2, 1, ParkCellFlags.NoModify );
 		Assert.AreEqual( PoolBuildResult.Occupied, Check( 2, 1 ), "fixed path" );
 		rig.Cells.SetType( 3, 1, ParkCellType.Queue );
 		Assert.AreEqual( PoolBuildResult.Occupied, Check( 3, 1 ), "queue" );
-		foreach ( var (type, column) in new (byte, int)[] { (ParkCellTypes.Entrance, 4), (ParkCellTypes.Exit, 5), (ParkCellTypes.Object, 6), (TrackCellTypes.KartOrigin, 7), (TrackCellTypes.Extension, 8), (ParkCellTypes.Hoarding, 9), (ParkCellTypes.TrackConnection, 10) } )
+		foreach ( var (type, column) in new (byte, int)[] { (ParkCellTypes.Entrance, 4), (ParkCellTypes.Exit, 5), (ParkCellTypes.Object, 6), (TrackCellTypes.KartOrigin, 7), (TrackCellTypes.Extension, 8), (ParkCellTypes.TrackConnection, 10), (ParkCellTypes.Water, 9) } )
 		{
 			rig.Cells.SetType( column, 1, type );
 			Assert.AreEqual( PoolBuildResult.Occupied, Check( column, 1 ), $"type {type}" );
@@ -494,7 +494,7 @@ public class PoolsTests
 	}
 
 	[TestMethod]
-	public void SavesWithoutPoolCellsAreByteIdenticalWithTheExtensionOnAndOff()
+	public void TheEnvelopeWithoutPoolCellsKeepsItsBytesWhateverTheCaptureSays()
 	{
 		var snapshot = ParkResumeSaveFileTests.Envelope();
 		var plain = ParkResumeSaveFile.Serialize( snapshot );
@@ -520,14 +520,6 @@ public class PoolsTests
 		}
 	}
 
-	[TestMethod]
-	public void SharingIsRefusedOnlyForParksWithPools()
-	{
-		using var scope = OpenTpwExtensions.Use( PoolsSet( true ) );
-		Assert.IsNull( ParkSharing.ModsRefusal(), "the extension alone blocks nothing" );
-		Assert.IsNull( ParkSharing.ModsRefusal( null ) );
-	}
-
 	// ---- Pinned digests ---------------------------------------------------------------------------------------
 
 	[TestMethod]
@@ -538,6 +530,8 @@ public class PoolsTests
 		{
 			var set = PoolsSet( enabled );
 			using var scope = OpenTpwExtensions.Use( set );
+			Assert.AreEqual( enabled, FeatureGates.Pools, "the run really has the extension on or off" );
+			Assert.AreEqual( enabled, set.IsEnabled( OfficialExtensions.Pools.Id ) );
 			Assert.AreEqual( "", set.Digest );
 			Assert.AreEqual( DeterminismTests.FixedRunHash, DeterminismTests.RunFixedPark(), $"fixed run, pools {enabled}" );
 			var simulation = new GuestSimulation( GuestTests.CreateCross(), GuestTests.CreateSettings(), 5 );
@@ -555,5 +549,167 @@ public class PoolsTests
 		Assert.AreEqual( hash, DeterminismTests.RunFixedParkWithPools(), "repeatable in the process" );
 		Assert.AreNotEqual( DeterminismTests.FixedRunHash, hash, "pool cells are part of the digest" );
 		Assert.AreEqual( DeterminismTests.PoolsFixedRunHash, hash, $"0x{hash:X16}" );
+	}
+
+	// ---- Walkers that leave the paths ---------------------------------------------------------------------------------
+
+	[TestMethod]
+	public void EveryWalkMaskIsBlockedFromSteppingIntoWater()
+	{
+		var map = new ParkCellMap( 20, 10 );
+		map.SetType( 3, 3, ParkCellType.Path );
+		map.SetType( 4, 3, ParkCellType.PoolWater );
+		map.SetType( 5, 5, ParkCellType.Empty );
+		map.SetType( 6, 5, ParkCellType.PoolWater );
+		for ( var mask = 0; mask <= 3; mask++ )
+		{
+			Assert.IsTrue( WalkEdges.Blocked( map, 3, 3, 1, mask ), $"mask {mask}: from the path into the water" );
+			Assert.IsTrue( WalkEdges.Blocked( map, 5, 5, 1, mask ), $"mask {mask}: from open ground into the water" );
+			Assert.IsFalse( WalkEdges.Commit( map, (3, 3), (4, 3), mask ), $"mask {mask}: the step commit refuses it too" );
+		}
+		// controls: the same steps onto open ground are what they were (walkers set down off the paths cross grass)
+		Assert.IsFalse( WalkEdges.Blocked( map, 3, 3, 2, 1 ), "mask 1 steps from a path onto grass" );
+		Assert.IsFalse( WalkEdges.Blocked( map, 5, 5, 0, 1 ), "and across grass" );
+		Assert.IsTrue( WalkEdges.Commit( map, (5, 5), (5, 4), 1 ) );
+	}
+
+	[TestMethod]
+	public void OffPathTargetsKeepOutOfTheWater()
+	{
+		var grid = new GuestPathGrid( 20, 10 );
+		(int X, int Y)? Pick( bool water )
+		{
+			var cells = grid.Cells;
+			cells.SetType( 6, 5, water ? ParkCellType.PoolWater : ParkCellType.Empty );
+			var calls = 0;
+			(int X, int Y)? routed = null;
+			// the draws ask for the cell (6, 5) from the start (5, 5): x = 5 + 6 % 11 - 5, y = 5 + 5 % 11 - 5
+			GuestWander.OffPath( grid, (5, 5), () => calls++ % 2 == 0 ? 6u : 5u, cell => { routed ??= cell; return true; } );
+			return routed;
+		}
+		Assert.AreEqual( (6, 5), Pick( water: false ), "control: the draw lands on open ground and is routed" );
+		Assert.IsNull( Pick( water: true ), "the same draws land in the water and are skipped (the draws themselves are unchanged)" );
+	}
+
+	// ---- The tool, further ---------------------------------------------------------------------------------------------------
+
+	[TestMethod]
+	public void SwitchingBetweenPaintAndEraseKeepsTheStrokesToUndo()
+	{
+		using var scope = OpenTpwExtensions.Use( PoolsSet( true ) );
+		var rig = new Rig();
+		var tool = new PoolTool( rig.Builder );
+		tool.Begin( erase: false );
+		tool.Press( 2, 2 );
+		tool.Hover( 4, 2 );
+		tool.Release();
+		Assert.AreEqual( 1, tool.StrokeCount );
+		Assert.IsTrue( tool.Begin( erase: true ), "the other row" );
+		Assert.IsTrue( tool.IsErasing );
+		Assert.AreEqual( 1, tool.StrokeCount, "the undo stack survives the switch" );
+		Assert.IsTrue( tool.Undo() );
+		Assert.AreEqual( 0, rig.Cells.CountOf( ParkCellType.PoolWater ) );
+	}
+
+	[TestMethod]
+	public void ADragThatLeavesTheViewDoesNotPaintTheCellsBetween()
+	{
+		using var scope = OpenTpwExtensions.Use( PoolsSet( true ) );
+		var rig = new Rig();
+		var tool = new PoolTool( rig.Builder );
+		tool.Begin( erase: false );
+		tool.Press( 1, 1 );
+		tool.Hover( 2, 1 );
+		tool.HoverNone();   // the pointer left the park view with the button held
+		Assert.IsFalse( tool.IsDragging );
+		Assert.AreEqual( 1, tool.StrokeCount, "the stroke so far is kept" );
+		tool.Hover( 9, 1 );  // and came back far away
+		tool.Hover( 9, 2 );
+		CollectionAssert.AreEquivalent( new[] { (1, 1), (2, 1) }, Enumerable.Range( 0, 200 ).Select( index => (X: index % 20, Y: index / 20) ).Where( cell => rig.Cells.TypeAt( cell.X, cell.Y ) == ParkCellType.PoolWater ).ToArray(),
+			"only the cells the pointer crossed" );
+	}
+
+	// ---- Money and value ---------------------------------------------------------------------------------------------------------
+
+	[TestMethod]
+	public void NothingIsRefundedThatWasNotCharged()
+	{
+		using var scope = OpenTpwExtensions.Use( PoolsSet( true ) );
+		var rig = new Rig();
+		rig.Economy!.RestoreBankWords( withdrawalsEnabled: false, lastBalance: rig.Economy.Balance, turnEnteredRed: 0 );
+		var start = rig.Economy.Balance;
+		var painted = rig.Builder.PaintCells( PoolBuilder.Rectangle( (1, 1), (3, 1) ) );
+		Assert.AreEqual( 3, painted.Cells.Count );
+		Assert.AreEqual( 0, painted.Charged, "the bank charged nothing" );
+		Assert.AreEqual( start, rig.Economy.Balance );
+		var erased = rig.Builder.EraseCells( PoolBuilder.Rectangle( (1, 1), (3, 1) ) );
+		Assert.AreEqual( 3, erased.Cells.Count );
+		Assert.AreEqual( 0, erased.Refunded, "so nothing is given back" );
+		Assert.AreEqual( start, rig.Economy.Balance, "paint and erase make no money" );
+		// with withdrawals on, the stroke records what really moved
+		rig.Economy.RestoreBankWords( withdrawalsEnabled: true, lastBalance: rig.Economy.Balance, turnEnteredRed: 0 );
+		var charged = rig.Builder.PaintCells( new[] { (5, 5) } );
+		Assert.AreEqual( 75, charged.Charged );
+		Assert.AreEqual( 75, rig.Builder.EraseCells( new[] { (5, 5) } ).Refunded );
+		Assert.AreEqual( start, rig.Economy.Balance );
+	}
+
+	[TestMethod]
+	public void APoolCellIsWorthWhatTheLandWasInTheParkValue()
+	{
+		Assert.AreEqual( ParkValueRules.CellPoints( 0, false ), ParkValueRules.CellPoints( ParkCellTypes.PoolWater, false ) );
+		Assert.AreEqual( 2, ParkValueRules.CellPoints( ParkCellTypes.PoolWater, false ) );
+		using var scope = OpenTpwExtensions.Use( PoolsSet( true ) );
+		var rig = new Rig();
+		rig.Economy!.Litter.Cells = rig.Cells;
+		var before = rig.Economy.ParkValue;
+		rig.Builder.PaintCells( PoolBuilder.Rectangle( (2, 2), (5, 4) ) );
+		Assert.AreEqual( before, rig.Economy.ParkValue, "painting water neither adds nor takes away park value" );
+	}
+
+	[TestMethod]
+	public void PoolStrokesDoNotCountAsPathChangesForTheDrawing()
+	{
+		var cells = new ParkCellMap( 20, 10 );
+		cells.SetType( 3, 3, ParkCellType.Path );
+		var other = cells.Version - cells.PoolWrites;
+		cells.SetType( 5, 5, ParkCellType.PoolWater );
+		cells.SetType( 5, 5, ParkCellType.Empty );
+		cells.SetType( 6, 6, ParkCellType.PoolWater );
+		Assert.AreEqual( other, cells.Version - cells.PoolWrites, "pool writes move the version but not the path version" );
+		cells.SetType( 7, 7, ParkCellType.Queue );
+		cells.SetFlags( 7, 7, ParkCellFlags.NoModify );
+		Assert.AreEqual( other + 2, cells.Version - cells.PoolWrites, "any other write does" );
+	}
+
+	// ---- The ground mesh's holes ------------------------------------------------------------------------------------------------------
+
+	[TestMethod]
+	public void TheGroundMeshLeavesOutRenderHolesAndTheHeightsStayWhatTheyWere()
+	{
+		var heights = new float[4 * 4];
+		for ( var index = 0; index < heights.Length; index++ )
+			heights[index] = index * 0.1f;
+		var words = Enumerable.Range( 0, 9 ).Select( index => index == 4 ? ModelHeightfield.HoleCellWord : 0x00010000u ).ToArray();
+		var field = new ModelHeightfield( 3, 3, 10, 10, 0, 0, Array.Empty<uint>(), heights, words );
+		var all = OriginalTerrain.HeightfieldCells( field, null ).ToArray();
+		Assert.AreEqual( 8, all.Length, "the original hole (the middle cell) never has a surface" );
+		var cornersBefore = Enumerable.Range( 0, 16 ).Select( index => field.GetCornerHeight( index % 4, index / 4 ) ).ToArray();
+		var sampledBefore = LandscapeSampler.Sample( 3, 3, 10, 10, field.GetCornerHeight, field.SplitsAlongAntiDiagonal, 5f, 5f );
+		var holed = OriginalTerrain.HeightfieldCells( field, ( x, y ) => (x, y) is (0, 0) or (2, 1) ).ToArray();
+		CollectionAssert.AreEqual( all.Where( cell => (cell.X, cell.Y) is not ((0, 0) or (2, 1)) ).ToArray(), holed, "exactly the render-hole cells are skipped" );
+		// the render holes change the drawn mesh and nothing else: heights, the sampler and the cell words are as before
+		CollectionAssert.AreEqual( cornersBefore, Enumerable.Range( 0, 16 ).Select( index => field.GetCornerHeight( index % 4, index / 4 ) ).ToArray() );
+		Assert.AreEqual( sampledBefore, LandscapeSampler.Sample( 3, 3, 10, 10, field.GetCornerHeight, field.SplitsAlongAntiDiagonal, 5f, 5f ) );
+		Assert.IsFalse( field.IsHole( 0, 0 ), "the heightfield's own hole bit is not touched" );
+		Assert.IsTrue( field.IsHole( 1, 1 ) );
+		// the rule that feeds it
+		var cells = new ParkCellMap( 3, 3 );
+		cells.SetType( 0, 0, ParkCellType.PoolWater );
+		Assert.IsTrue( PoolRenderHoles.IsHole( cells, 0, 0, extensionOn: true ) );
+		Assert.IsFalse( PoolRenderHoles.IsHole( cells, 0, 0, extensionOn: false ), "off: the ground is drawn whole" );
+		Assert.IsFalse( PoolRenderHoles.IsHole( cells, 1, 0, extensionOn: true ) );
+		CollectionAssert.AreEqual( all.Where( cell => (cell.X, cell.Y) != (0, 0) ).ToArray(), OriginalTerrain.HeightfieldCells( field, ( x, y ) => PoolRenderHoles.IsHole( cells, x, y, true ) ).ToArray() );
+		CollectionAssert.AreEqual( all, OriginalTerrain.HeightfieldCells( field, ( x, y ) => PoolRenderHoles.IsHole( cells, x, y, false ) ).ToArray() );
 	}
 }

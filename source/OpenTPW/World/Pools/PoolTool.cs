@@ -14,6 +14,7 @@ public sealed class PoolTool
 	private readonly PoolBuilder builder;
 	private readonly List<PoolStroke> strokes = new();
 	private readonly List<(int X, int Y)> pending = new();
+	private long pendingMoney;
 	private (int X, int Y)? last;
 
 	public PoolTool( PoolBuilder builder )
@@ -41,7 +42,7 @@ public sealed class PoolTool
 	/// <summary>Raised when the tool turns off.</summary>
 	public event Action? Ended;
 
-	/// <summary>Turns the tool on in the paint or the erase mode (a mode change keeps the undo stack). False when the extension is off.</summary>
+	/// <summary>Turns the tool on in the paint or the erase mode; a mode change while the tool is on keeps the undo stack. False when the extension is off.</summary>
 	public bool Begin( bool erase )
 	{
 		if ( !FeatureGates.Pools )
@@ -50,6 +51,7 @@ public sealed class PoolTool
 		IsErasing = erase;
 		last = null;
 		pending.Clear();
+		pendingMoney = 0;
 		LastRefusal = null;
 		return true;
 	}
@@ -68,6 +70,8 @@ public sealed class PoolTool
 	/// <summary>The pointer left the park view.</summary>
 	public void HoverNone()
 	{
+		// a drag that leaves the park view ends there: coming back with the button held does not join the two places with a line of water
+		Release();
 		HoverCell = null;
 		HoverResult = null;
 	}
@@ -81,6 +85,7 @@ public sealed class PoolTool
 			Release();
 		last = (x, y);
 		pending.Clear();
+		pendingMoney = 0;
 		LastRefusal = null;
 		return Write( x, y );
 	}
@@ -105,8 +110,8 @@ public sealed class PoolTool
 			return null;
 		var cells = pending.ToArray();
 		pending.Clear();
-		var stroke = new PoolStroke( IsErasing, cells,
-			IsErasing ? 0 : cells.Length * builder.CellCost, IsErasing && builder.Economy != null ? cells.Length * (long)ParkEconomy.PoolCellCost : 0, LastRefusal );
+		var stroke = new PoolStroke( IsErasing, cells, IsErasing ? 0 : pendingMoney, IsErasing ? -pendingMoney : 0, LastRefusal );
+		pendingMoney = 0;
 		strokes.Add( stroke );
 		if ( strokes.Count > UndoCapacity )
 			strokes.RemoveAt( 0 );
@@ -150,7 +155,10 @@ public sealed class PoolTool
 	{
 		var result = IsErasing ? builder.Erase( x, y ) : builder.Paint( x, y );
 		if ( result == PoolBuildResult.Ok )
+		{
 			pending.Add( (x, y) );
+			pendingMoney += builder.LastCharged;
+		}
 		else if ( result != PoolBuildResult.Existing )
 			LastRefusal ??= ((x, y), result);
 		return result;

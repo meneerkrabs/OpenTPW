@@ -118,7 +118,7 @@ public partial class Level
 		// the resumed tiles and boats are drawn from the first frame, as they were when the park was saved
 		UpdateTrackRendering();
 		UpdateTourRendering();
-		renderedCellVersion = Guests.Grid.Cells.Version;
+		MarkCellsRendered( Guests.Grid.Cells );
 	}
 
 	/// <summary>

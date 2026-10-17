@@ -40,23 +40,31 @@ public sealed class PoolMeshPart
 	}
 }
 
-/// <summary>The three surfaces of a pool complex, each drawn with its own material (<see cref="PoolRenderer"/>).</summary>
-public sealed record PoolMesh( PoolMeshPart Water, PoolMeshPart Coping, PoolMeshPart Walls )
+/// <summary>
+/// The surfaces of a pool complex, each drawn with its own material (<see cref="PoolRenderer"/>): the water; the coping (the deck round the water); the upper walls (from the coping down to the
+/// water line, and the skirt round the outside of the deck, in the coping's material); the lower walls (from the water line down to the floor) and the floor, drawn in the wall tiles' material
+/// and shaded by the depth their first texture coordinate carries (0 at the water line, 1 at the floor).
+/// </summary>
+public sealed record PoolMesh( PoolMeshPart Water, PoolMeshPart Coping, PoolMeshPart UpperWalls, PoolMeshPart LowerWalls, PoolMeshPart Floor )
 {
-	public bool IsEmpty => Water.Vertices.Count == 0 && Coping.Vertices.Count == 0 && Walls.Vertices.Count == 0;
-	public static PoolMesh Empty => new( new PoolMeshPart(), new PoolMeshPart(), new PoolMeshPart() );
+	/// <summary>Every part, in drawing order (opaque parts first, the water last).</summary>
+	public IEnumerable<PoolMeshPart> Parts => new[] { LowerWalls, Floor, UpperWalls, Coping, Water };
+	public bool IsEmpty => Parts.All( part => part.Vertices.Count == 0 );
+	public int TriangleCount => Parts.Sum( part => part.TriangleCount );
+	public static PoolMesh Empty => new( new PoolMeshPart(), new PoolMeshPart(), new PoolMeshPart(), new PoolMeshPart(), new PoolMeshPart() );
 }
 
 /// <summary>
-/// The measures of a pool's rim and water (docs/POOLS.md). Heights are engine units (a cell is 2 wide), the rim's width a fraction of one cell. The terrain cannot be dug, so a pool is a
-/// raised basin: the water lies <see cref="WaterLift"/> above the ground it stands on, and the coping <see cref="CopingRise"/> above the water.
+/// The measures of a pool (docs/POOLS.md). Heights are engine units (a cell is 2 wide), the rim's width a fraction of one cell. The pool is dug into the ground in the drawing only: the terrain
+/// renderer leaves the ground out under the pool cells (<see cref="PoolRenderHoles"/>) while the heightfield and the simulation keep their heights.
 /// </summary>
-/// <param name="RimWidth">Width of the coping band along a pool edge, as a fraction of a cell (0 to 0.5, exclusive).</param>
-/// <param name="WaterLift">How far the water surface lies above the ground at each cell corner. It must exceed the most the drawn ground can rise above the corner-to-corner surface inside a cell
-/// (half the corner spread, 0.125 at <see cref="PoolBuilder.MaximumCornerSpread"/>), or the land would show through the water.</param>
-/// <param name="CopingRise">How far the coping stands above the water.</param>
+/// <param name="RimWidth">Width of the coping band along a pool edge, as a fraction of a cell (0 to 0.5, exclusive): a quarter of a cell.</param>
+/// <param name="WaterDrop">How far the water surface lies below the lowest ground of the pool's connected cells.</param>
+/// <param name="Depth">How far the floor lies below the water surface.</param>
+/// <param name="CopingLift">How far the coping stands above the ground at its own point (so the deck does not sink into the grass at its edge).</param>
+/// <param name="SkirtDepth">How far the skirt round the outside of the deck reaches below the ground.</param>
 // [EXT:pools-render] OpenTPW's own measures; the original game has no pools
-public sealed record PoolMeshOptions( float RimWidth = 0.2f, float WaterLift = 0.15f, float CopingRise = 0.1f )
+public sealed record PoolMeshOptions( float RimWidth = 0.25f, float WaterDrop = 0.12f, float Depth = 1.75f, float CopingLift = 0.03f, float SkirtDepth = 0.2f )
 {
 	public static PoolMeshOptions Default { get; } = new();
 }

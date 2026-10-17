@@ -50,6 +50,8 @@ public class ShaderTests
 	[DataRow( "unlit.shader" )]
 	[DataRow( "water.shader" )]
 	[DataRow( "pool-water.shader" )]
+	[DataRow( "pool-deck.shader" )]
+	[DataRow( "pool-basin.shader" )]
 	public void NativeShadersCrossCompileToWebGl2( string shader )
 	{
 		if ( Environment.GetEnvironmentVariable( "OPENTPW_NATIVE_SHADER_TESTS" ) != "1" )

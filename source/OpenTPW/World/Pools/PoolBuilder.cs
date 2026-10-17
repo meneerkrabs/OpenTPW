@@ -18,6 +18,8 @@ public enum PoolBuildResult
 	Occupied,
 	/// <summary>The terrain rule refuses the cell (water, a hole, rock, the entrance area, the fixed walkway).</summary>
 	Terrain,
+	/// <summary>A guest or an employee stands on the cell.</summary>
+	Standing,
 	/// <summary>The ground under the cell is not level enough (<see cref="PoolBuilder.MaximumCornerSpread"/>).</summary>
 	TooSteep,
 	NotEnoughMoney,
@@ -54,28 +56,30 @@ public sealed class PoolBuilder
 
 	private readonly Func<ParkEconomy?> economy;
 	private readonly Func<int, int, bool>? isOccupied;
+	private readonly Func<int, int, bool>? isStoodOn;
 
 	/// <param name="cells">The level's cell map.</param>
 	/// <param name="economy">Reads the current economy on each call (a level replaces it when a park save loads); null for a free pool.</param>
 	/// <param name="terrain">The object build grid: its terrain rule and its corner heights.</param>
 	/// <param name="isOccupied">Objects, fixed items and other host-blocked cells.</param>
-	public PoolBuilder( ParkCellMap cells, Func<ParkEconomy?> economy, IParkGrid terrain, Func<int, int, bool>? isOccupied = null )
+	/// <param name="isStoodOn">Whether a guest or an employee stands on a cell (water is not painted under them).</param>
+	public PoolBuilder( ParkCellMap cells, Func<ParkEconomy?> economy, IParkGrid terrain, Func<int, int, bool>? isOccupied = null, Func<int, int, bool>? isStoodOn = null )
 	{
 		Cells = cells ?? throw new ArgumentNullException( nameof( cells ) );
 		this.economy = economy ?? throw new ArgumentNullException( nameof( economy ) );
 		Terrain = terrain ?? throw new ArgumentNullException( nameof( terrain ) );
 		this.isOccupied = isOccupied;
+		this.isStoodOn = isStoodOn;
 	}
 
 	public ParkCellMap Cells { get; }
 	public IParkGrid Terrain { get; }
+	/// <summary>The money the last <see cref="Paint"/> took (positive) or <see cref="Erase"/> gave back (negative), measured on the balance: 0 when nothing moved (no economy, or the bank's withdrawals are off).</summary>
+	public long LastCharged { get; private set; }
 	public ParkEconomy? Economy => economy();
 
 	/// <summary>Cost of one pool cell (<see cref="ParkEconomy.PoolCellCost"/>), or 0 without an economy.</summary>
 	public long CellCost => Economy?.CellCost( CellPurchase.Pool ) ?? 0;
-
-	/// <summary>Raised after a cell was painted or erased (the level refreshes what it draws).</summary>
-	public event Action<int, int>? CellChanged;
 
 	/// <summary>The spread of the four corner heights of cell (<paramref name="x"/>, <paramref name="y"/>): the highest minus the lowest, in engine units.</summary>
 	public static float CornerSpread( IParkGrid terrain, int x, int y )
@@ -102,6 +106,11 @@ public sealed class PoolBuilder
 			return PoolBuildResult.Occupied;
 		if ( Cells.Tracks.Get( x, y ) is { Type: not 0 } || isOccupied?.Invoke( x, y ) == true )
 			return PoolBuildResult.Occupied;
+		// a fence post (the park's boundary) stands on an empty-looking cell of the map: the land model knows it
+		if ( Cells.Land?.IsPost( x, y ) == true )
+			return PoolBuildResult.Occupied;
+		if ( isStoodOn?.Invoke( x, y ) == true )
+			return PoolBuildResult.Standing;
 		var ground = Terrain.CheckTerrain( x, y );
 		if ( ground != OriginalPlacementResult.Allowed )
 			return ground == OriginalPlacementResult.OutsideTerrain ? PoolBuildResult.OutsideTerrain : PoolBuildResult.Terrain;
@@ -129,9 +138,10 @@ public sealed class PoolBuilder
 		var park = Economy;
 		if ( park != null && !park.CanSpendCell( CellPurchase.Pool ) )
 			return PoolBuildResult.NotEnoughMoney;
+		var before = park?.Balance ?? 0;
 		Cells.SetType( x, y, ParkCellType.PoolWater );
 		park?.TrySpendCell( CellPurchase.Pool );
-		CellChanged?.Invoke( x, y );
+		LastCharged = before - (park?.Balance ?? 0);
 		return PoolBuildResult.Ok;
 	}
 
@@ -141,9 +151,10 @@ public sealed class PoolBuilder
 		var check = CheckErase( x, y );
 		if ( check != PoolBuildResult.Ok )
 			return check;
+		var before = Economy?.Balance ?? 0;
 		Cells.SetType( x, y, ParkCellType.Empty );
 		Economy?.RefundPoolCell();
-		CellChanged?.Invoke( x, y );
+		LastCharged = before - (Economy?.Balance ?? 0);
 		return PoolBuildResult.Ok;
 	}
 
@@ -163,7 +174,7 @@ public sealed class PoolBuilder
 			if ( result == PoolBuildResult.Ok )
 			{
 				painted.Add( (x, y) );
-				charged += CellCost;
+				charged += LastCharged;
 			}
 			else if ( result != PoolBuildResult.Existing )
 			{
@@ -188,12 +199,12 @@ public sealed class PoolBuilder
 			if ( result == PoolBuildResult.Ok )
 			{
 				erased.Add( (x, y) );
-				refunded += ParkEconomy.PoolCellCost;
+				refunded -= LastCharged;
 			}
 			else
 				refusal ??= ((x, y), result);
 		}
-		return new PoolStroke( true, erased, 0, Economy == null ? 0 : refunded, refusal );
+		return new PoolStroke( true, erased, 0, refunded, refusal );
 	}
 
 	/// <summary>The cells of the rectangle with the two corners, row by row (a fill for big pools).</summary>

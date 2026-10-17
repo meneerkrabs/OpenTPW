@@ -489,9 +489,17 @@ public sealed class ParkCellMap
 	/// <summary>The original cell word of (x, y): <c>y × 128 + x + 1</c>, what <c>+0x10</c> holds for an owner and what the cell lookups (0x4D0AF0, 0x532FC0) decode as <c>cell − 1</c>, <c>&amp; 0x7F</c> and <c>&gt;&gt; 7</c>.</summary>
 	public static ushort CellWord( int x, int y ) => unchecked((ushort)(y * 128 + x + 1));
 
+	/// <summary>
+	/// [EXT:pools-render] How many of the writes counted in <see cref="Version"/> were type writes that touched a pool water cell (painting or erasing one). The drawing of paths and queues
+	/// depends on <c>Version - PoolWrites</c> alone, so a stroke of pool cells does not rebuild them. Not saved and not hashed.
+	/// </summary>
+	internal int PoolWrites { get; private set; }
+
 	public void SetType( int x, int y, byte type )
 	{
 		var index = Index( x, y );
+		if ( types[index] == ParkCellTypes.PoolWater || type == ParkCellTypes.PoolWater )
+			PoolWrites++;
 		// tp.exe's cell setter 0x5346D0 returns early for the same non-zero type only: clearing always stamps.
 		var changed = types[index] != type || type == 0;
 		typeCounts[types[index]]--;

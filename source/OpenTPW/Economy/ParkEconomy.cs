@@ -2008,11 +2008,14 @@ public sealed class ParkEconomy : IParkEconomy
 	}
 
 	/// <summary>
-	/// [EXT:pools-cost] Refunds an erased pool water cell: the full <see cref="PoolCellCost"/>, as other income. A path cell refunds nothing in the original (ClearCell's path
+	/// [EXT:pools-cost] Refunds an erased pool water cell: the full <see cref="PoolCellCost"/>, as other income, or nothing while the bank's withdrawals are disabled (a debit then charges
+	/// nothing, <see cref="WithdrawalsEnabled"/>, so there is nothing to give back and paint and erase cannot make money). A path cell refunds nothing in the original (ClearCell's path
 	/// case), so this is a deliberate difference of the extension: a pool painted by mistake costs nothing once it is erased again (docs/POOLS.md). Returns the amount credited.
 	/// </summary>
 	public long RefundPoolCell()
 	{
+		if ( !WithdrawalsEnabled )
+			return 0;
 		Post( LedgerCategory.OtherIncome, PoolCellCost );
 		return PoolCellCost;
 	}

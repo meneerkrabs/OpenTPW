@@ -24,7 +24,10 @@ public sealed partial class ParkHud
 
 	private bool IsPoolRowAvailable() => FeatureGates.Pools && !level.IsReadOnlyVisit && level.PoolTool != null;
 
-	/// <summary>Starts the pool tool in the paint or erase mode after ending the other park tools; closes the window.</summary>
+	/// <summary>
+	/// Starts the pool tool in the paint or erase mode after ending the other park tools; closes the window. Choosing the other row while the tool is on switches the mode and keeps
+	/// the strokes that can be undone.
+	/// </summary>
 	private void BeginPoolTool( BuildItem item )
 	{
 		if ( !IsPoolRowAvailable() || level.PoolTool is not { } tool )
@@ -33,10 +36,13 @@ public sealed partial class ParkHud
 			GameAudio.PlayUi( GameAudio.ErrorEvent );
 			return;
 		}
-		level.EndBuildTools();
-		level.StaffPlacement?.Cancel();
-		LeaveBuildTool();
 		var erase = item.InfoId == PoolEraseRow.InfoId;
+		if ( !tool.IsActive )
+		{
+			level.EndBuildTools();
+			level.StaffPlacement?.Cancel();
+			LeaveBuildTool();
+		}
 		if ( !tool.Begin( erase ) )
 			return;
 		CloseBuyWindow();
@@ -45,7 +51,7 @@ public sealed partial class ParkHud
 
 	/// <summary>
 	/// The pool tool's HUD side: the hovered cell and its help, press and drag to write cells, right click leaves. Clicks inside the tool are captured here so
-	/// <see cref="Level"/>'s park click skips them.
+	/// <see cref="Level"/>'s park click skips them. A refused stroke says so once, when it ends.
 	/// </summary>
 	private bool UpdatePoolTool( UiContext context, UiInput input, bool inPark )
 	{
@@ -61,41 +67,41 @@ public sealed partial class ParkHud
 			tool.Undo();
 		if ( !inPark )
 		{
+			// a drag that leaves the park view ends there
+			var ended = tool.IsDragging;
 			tool.HoverNone();
-			if ( !input.LeftDown )
-				tool.Release();
+			if ( ended )
+				ReportPoolStroke( tool );
 			return false;
 		}
 		tool.Hover( cursorX, cursorY );
 		context.HoverHelp = strings.Extra( tool.IsErasing ? OpenTpwText.PoolEraseHelp : OpenTpwText.PoolPaintHelp );
 		if ( input.LeftPressed )
 		{
-			var result = tool.Press( cursorX, cursorY );
-			ReportPoolResult( result, tool );
+			refusalClick.Press();
+			tool.Press( cursorX, cursorY );
 			return toolPress = true;
 		}
 		if ( tool.IsDragging )
 		{
 			if ( input.LeftDown )
 				return toolPress = true;
-			var stroke = tool.Release();
-			if ( stroke != null )
-				GameAudio.PlayPathToolSound( GameAudio.PathLayEvent );
-			if ( tool.LastRefusal is { } refusal )
-				ReportPoolResult( refusal.Reason, tool );
+			ReportPoolStroke( tool );
 			return toolPress = true;
 		}
 		return false;
 	}
 
-	private void ReportPoolResult( PoolBuildResult? result, PoolTool tool )
+	/// <summary>Ends the stroke: the lay sound if it wrote cells, and one refusal sound and message if a cell was refused.</summary>
+	private void ReportPoolStroke( PoolTool tool )
 	{
-		if ( result is null or PoolBuildResult.Ok or PoolBuildResult.Existing )
+		var stroke = tool.Release();
+		if ( stroke is { Cells.Count: > 0 } )
+			GameAudio.PlayPathToolSound( GameAudio.PathLayEvent );
+		if ( tool.LastRefusal is not { } refusal )
 			return;
-		refusalClick.Press();
-		if ( tool.HoverCell is { } cell )
-			refusalClick.Refused( cell.X, cell.Y );
-		PostMessage( strings.Extra( result switch
+		refusalClick.Refused( refusal.Cell.X, refusal.Cell.Y );
+		PostMessage( strings.Extra( refusal.Reason switch
 		{
 			PoolBuildResult.NotEnoughMoney => OpenTpwText.NotEnoughMoney,
 			PoolBuildResult.TooSteep => OpenTpwText.PoolTooSteep,

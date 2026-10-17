@@ -64,15 +64,8 @@ public partial class Level
 		// A path cell without NoModify gives way to an object (the validator's 0x535D21 rule, the commit clearing the path), and the entrance's and exit's outside cells are
 		// validated as well (ParkObjects.CheckAccessCells): the outside cell by the path rule takes empty ground and path cells only.
 		// [BIN:TPW-EXE:0x00535D21 object over path] an object (type 4) over a type-1 cell is allowed (0x535D21 returns 0) unless the cell carries NoModify, which the validator refuses first for every object type (0x5356A6..0x5356B3); the commit clears the path (0x5290F6..0x52910C: 0x87, then 0x5367A0(0, 0))
-		Objects = new ParkObjects( catalog!, grid, Seed )
-		{
-			IsReserved = ( x, y ) => IsReservedByPrototype( x, y ) || Guests?.Grid.Cells.RawTypeAt( x, y ) is { } type
-				&& type is not (0 or (byte)ParkCellType.Path or ParkCellTypes.Object or ParkCellTypes.Entrance or ParkCellTypes.Exit),
-			IsUnowned = ( x, y ) => Guests?.Grid.Cells is { } cells && cells.InBounds( x, y ) && cells.FlagsAt( x, y ).HasFlag( ParkCellFlags.Unowned ),
-			PathAt = ( x, y ) => Guests?.Grid.Cells is { } cells ? ObjectPathAt( cells, x, y ) : null,
-			ClearPath = ( x, y ) => Paths?.Remove( x, y ),
-			PathRuleAllows = ( x, y ) => Paths?.CheckPathRule( x, y ) is { } rule ? rule is CellBuildResult.Ok or CellBuildResult.Existing : null
-		};
+		Objects = new ParkObjects( catalog!, grid, Seed );
+		ConfigureObjectHooks();
 		PrepareThings();
 		// [BIN:TPW-EXE:0x5590f7 demolish effect] the type's DestroyParticleEffect starts at the footprint before the script goes, for every removal but a park load or clear
 		Objects.ObjectRemoving += item => item.Runtime.StartObjectEffect( ObjectParticleEffect.Destroy );
@@ -317,8 +310,35 @@ public partial class Level
 			GuestPathGrid.DirectionBetween( entrance.OutsideX, entrance.OutsideY, entrance.X, entrance.Y ));
 	}
 
+	/// <summary>
+	/// Wires the object build rules to the level's cell map: the cell types that reserve a cell (everything but empty ground, path and the object types, pool water included), unowned land, path
+	/// cells and the path rule of access cells. Called once the level has its objects; tests call it on a level they assembled.
+	/// </summary>
+	internal void ConfigureObjectHooks()
+	{
+		Objects.IsReserved = ( x, y ) => IsReservedByPrototype( x, y ) || Guests?.Grid.Cells.RawTypeAt( x, y ) is { } type && ReservesCell( type );
+		Objects.IsUnowned = ( x, y ) => Guests?.Grid.Cells is { } cells && cells.InBounds( x, y ) && cells.FlagsAt( x, y ).HasFlag( ParkCellFlags.Unowned );
+		Objects.PathAt = ( x, y ) => Guests?.Grid.Cells is { } cells ? ObjectPathAt( cells, x, y ) : null;
+		Objects.ClearPath = ( x, y ) => Paths?.Remove( x, y );
+		Objects.PathRuleAllows = ( x, y ) => Paths?.CheckPathRule( x, y ) is { } rule ? rule is CellBuildResult.Ok or CellBuildResult.Existing : null;
+	}
+
+	/// <summary>Whether a cell of this type keeps objects off it: any type but empty ground, a path and the object, entrance and exit types ([EXT:pools-cell-type]: pool water is one).</summary>
+	internal static bool ReservesCell( byte type ) => type is not (0 or (byte)ParkCellType.Path or ParkCellTypes.Object or ParkCellTypes.Entrance or ParkCellTypes.Exit);
+
 	/// <summary>The headless path builder over the level's cell map (original levels; null in the generic sandbox).</summary>
 	public ParkPathBuilder? Paths { get; private set; }
+	/// <summary>
+	/// [EXT:pools-tool] Whether a guest or an employee stands on the cell (the cell their position falls in): water is not painted under them. Guests inside a ride's queue or on a ride keep
+	/// their last cell too, which is no pool cell, so only the ones in the open matter.
+	/// </summary>
+	internal bool IsStoodOn( int x, int y )
+	{
+		if ( Guests != null && Guests.Guests.Any( guest => guest.State != GuestState.Gone && guest.Cell == (x, y) ) )
+			return true;
+		return Park?.Economy.Staff.Members.Any( member => member.CellX is { } staffX && member.CellY is { } staffY && (int)MathF.Floor( (float)staffX ) == x && (int)MathF.Floor( (float)staffY ) == y ) == true;
+	}
+
 	/// <summary>[EXT:pools-tool] The headless pool builder over the level's cell map (original levels, not a read-only visit); null otherwise (docs/POOLS.md).</summary>
 	public PoolBuilder? PoolBuilder { get; private set; }
 	/// <summary>[EXT:pools-tool] The pool paint tool the park view drives while the <c>opentpw.pools</c> extension is on.</summary>
@@ -338,7 +358,7 @@ public partial class Level
 		{
 			if ( Guests.Grid.Cells.CountOf( ParkCellType.PoolWater ) == 0 )
 				return;
-			PoolRenderer = new PoolRenderer( Guests.Grid.Cells, Objects.Grid );
+			PoolRenderer = new PoolRenderer( Guests.Grid.Cells, Objects.Grid, PoolStyles.ForTheme( OriginalPark.LevelName ) );
 		}
 	}
 
@@ -396,7 +416,7 @@ public partial class Level
 		// [EXT:pools-tool] the pool builder and its paint tool share the cell map; they refuse every cell while the extension is off (FeatureGates.Pools)
 		if ( !IsReadOnlyVisit )
 		{
-			PoolBuilder = new PoolBuilder( Guests.Grid.Cells, () => Park?.Economy, Objects.Grid, IsPathBlocked );
+			PoolBuilder = new PoolBuilder( Guests.Grid.Cells, () => Park?.Economy, Objects.Grid, IsPathBlocked, IsStoodOn );
 			PoolTool = new PoolTool( PoolBuilder );
 		}
 		AreaClearTool = IsReadOnlyVisit ? null : new AreaClearTool( RemoveObjectAt, () => Guests?.Grid.Cells, RemovePathCell, TypesFootprints ? null : ( x, y ) => Objects.FindAt( x, y ) );

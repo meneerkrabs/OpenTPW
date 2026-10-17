@@ -108,7 +108,7 @@ internal static class ParkResumeMods
 			else if ( mod.ContentSha256 != record.ContentSha256 )
 				reasons.Add( $"needs {record.Id} {record.Version} with the content it was saved with (its files changed)" );
 		}
-		// a used-only extension that is on but not recorded is fine: the save has no use of it (a save with pool cells must record it, ShapeProblem)
+		// a used-only extension that is on but not recorded is fine: the save has no use of it (a save that does use it must record it: ParkResumeSaveFile.ValidateShape refuses pool cells without the record)
 		foreach ( var mod in active.SimulationMods )
 			if ( !recordedIds.Contains( mod.Id ) && !UsedOnlyExtensionIds.Contains( mod.Id ) )
 				reasons.Add( $"was saved without {mod.Id} {mod.Version}, which changes the simulation; turn it off to load this park" );

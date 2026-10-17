@@ -1,26 +1,35 @@
 namespace OpenTPW;
 
 /// <summary>
-/// The pool's textures, generated in code (docs/POOLS.md): nothing of the original game is used or shipped. Each is a square RGBA image that tiles seamlessly, so the
-/// mesh can repeat it over any number of cells. Deterministic: the same bytes every time.
+/// The pool's textures, generated in code (docs/POOLS.md): nothing of the original game is used or shipped. Each is a square RGBA image that tiles seamlessly, so the mesh can repeat it
+/// over any area. The coping and the wall are 4 x 4 slabs of 16 pixels with a one pixel joint and a slight bevel (a light edge on two sides, a shadow on the other two), drawn
+/// from a <see cref="PoolStyle"/>. Deterministic: the same bytes every time.
 /// </summary>
 // [EXT:pools-render] OpenTPW's own pool art; the original game has no pools
 public static class PoolTextures
 {
 	/// <summary>Pixels per side of every pool texture.</summary>
 	public const int Size = 64;
+	/// <summary>Pixels per side of one slab.</summary>
+	public const int SlabPixels = 16;
+	/// <summary>Slabs per side of a texture.</summary>
+	public const int SlabsPerSide = Size / SlabPixels;
 
-	/// <summary>Pixels per side of one tile of the coping and the wall (a cell shows 4 x 4 of them).</summary>
-	private const int TilePixels = 16;
+	/// <summary>The coping of <paramref name="style"/>: its pattern, joints and bevels.</summary>
+	public static byte[] Coping( PoolStyle style ) => Slabs( ( slabX, slabY, x, y ) => style.Coping switch
+	{
+		PoolCopingPattern.Planks => Plank( style, slabX, slabY, x, y ),
+		PoolCopingPattern.MossyStone => Mossy( style, slabX, slabY, x, y ),
+		PoolCopingPattern.RivetedPanels => Riveted( style, slabX, slabY, x, y ),
+		PoolCopingPattern.CandyTiles => Candy( style, slabX, slabY ),
+		_ => Speckled( style.CopingBase, slabX, slabY, x, y, 10 )
+	}, style.CopingJoint, bevel: true );
 
-	/// <summary>The coping: pale stone slabs with darker joints.</summary>
-	public static byte[] Coping() => Tiles( stone: (226, 222, 212), joint: (176, 180, 182), speckle: 10 );
-
-	/// <summary>The pool wall below the coping: light blue ceramic tiles with pale joints.</summary>
-	public static byte[] Wall() => Tiles( stone: (92, 176, 206), joint: (214, 232, 238), speckle: 6 );
+	/// <summary>The tiles of the pool wall and floor of <paramref name="style"/>.</summary>
+	public static byte[] Wall( PoolStyle style ) => Slabs( ( slabX, slabY, x, y ) => Speckled( style.Wall, slabX, slabY, x, y, 7 ), style.WallJoint, bevel: true );
 
 	/// <summary>
-	/// The water: soft caustic light, brightest in the red channel (the water shader maps that channel between its deep and its shallow blue). Built from sine waves with whole
+	/// The water: soft caustic light in the red channel (the water shader mixes its deep and shallow colours by it), the same for every style. Built from sine waves with whole
 	/// periods across the image, so its edges meet.
 	/// </summary>
 	public static byte[] Water()
@@ -46,28 +55,95 @@ public static class PoolTextures
 		return pixels;
 	}
 
-	private static byte[] Tiles( (int R, int G, int B) stone, (int R, int G, int B) joint, int speckle )
+	private static byte[] Slabs( Func<int, int, int, int, PoolColour> body, PoolColour joint, bool bevel )
 	{
 		var pixels = new byte[Size * Size * 4];
-		for ( var y = 0; y < Size; y++ )
+		for ( var py = 0; py < Size; py++ )
 		{
-			for ( var x = 0; x < Size; x++ )
+			for ( var px = 0; px < Size; px++ )
 			{
-				// a one pixel joint on the tile's left and top edges: the joint of the last tile meets the first tile's, so the image tiles
-				var onJoint = x % TilePixels == 0 || y % TilePixels == 0;
-				var colour = onJoint ? joint : stone;
-				// a fixed hash of the pixel gives each tile a slightly different shade (the same shade at (x, y) and at (x + 64, y): the hash reads the position inside the image)
-				var tile = (x / TilePixels) * 7 + (y / TilePixels) * 13;
-				var shade = onJoint ? 0 : (int)(Hash( (uint)tile ) % (uint)(2 * speckle + 1)) - speckle;
-				var offset = (y * Size + x) * 4;
-				pixels[offset] = (byte)Math.Clamp( colour.R + shade, 0, 255 );
-				pixels[offset + 1] = (byte)Math.Clamp( colour.G + shade, 0, 255 );
-				pixels[offset + 2] = (byte)Math.Clamp( colour.B + shade, 0, 255 );
+				int slabX = px / SlabPixels, slabY = py / SlabPixels, x = px % SlabPixels, y = py % SlabPixels;
+				PoolColour colour;
+				if ( x == 0 || y == 0 )
+					colour = joint;
+				else
+				{
+					colour = body( slabX, slabY, x, y );
+					if ( bevel )
+					{
+						// a slight bevel: light along the top and left edges inside the joint, shadow along the bottom and right
+						if ( x == 1 || y == 1 )
+							colour = colour.Mixed( new PoolColour( 255, 255, 255 ), 0.22f );
+						else if ( x == SlabPixels - 1 || y == SlabPixels - 1 )
+							colour = colour.Scaled( 0.72f );
+						else if ( x == SlabPixels - 2 || y == SlabPixels - 2 )
+							colour = colour.Scaled( 0.88f );
+					}
+				}
+				var offset = (py * Size + px) * 4;
+				pixels[offset] = (byte)colour.R;
+				pixels[offset + 1] = (byte)colour.G;
+				pixels[offset + 2] = (byte)colour.B;
 				pixels[offset + 3] = 255;
 			}
 		}
 		return pixels;
 	}
+
+	/// <summary>A slab shade: a fixed hash of the slab and the pixel gives each slab its own tone and the surface a little grain.</summary>
+	private static PoolColour Speckled( PoolColour colour, int slabX, int slabY, int x, int y, int amount )
+	{
+		var slab = (int)(Hash( (uint)(slabX * 7 + slabY * 13 + 1) ) % (uint)(2 * amount + 1)) - amount;
+		var grain = (int)(Hash( (uint)(((slabX * SlabPixels + x) * 73856093) ^ ((slabY * SlabPixels + y) * 19349663)) ) % 5u) - 2;
+		return Shift( colour, slab + grain );
+	}
+
+	private static PoolColour Plank( PoolStyle style, int slabX, int slabY, int x, int y )
+	{
+		// the grain runs along the slab; a plank is a whole slab with its own tone, every other row turned lighter
+		var tone = (int)(Hash( (uint)(slabX * 31 + slabY * 17 + 5) ) % 17u) - 8;
+		var line = Math.Sin( y * 1.7 + Hash( (uint)(slabX + slabY * 4 + 9) ) % 7 + x * 0.12 );
+		var colour = (slabY & 1) == 0 ? style.CopingBase : style.CopingAccent.Mixed( style.CopingBase, 0.35f );
+		return Shift( colour, tone + (int)(line * 7) );
+	}
+
+	private static PoolColour Mossy( PoolStyle style, int slabX, int slabY, int x, int y )
+	{
+		var stone = Speckled( style.CopingBase, slabX, slabY, x, y, 8 );
+		// moss collects in patches that follow a smooth field repeating across the image
+		double u = (slabX * SlabPixels + x) / (double)Size * 2 * Math.PI, v = (slabY * SlabPixels + y) / (double)Size * 2 * Math.PI;
+		var field = Math.Sin( 3 * u + Math.Sin( 2 * v ) ) * Math.Sin( 2 * v + 1 ) + 0.5 * Math.Sin( 5 * u - 4 * v );
+		var moss = (float)Math.Clamp( (field - 0.15) * 1.6, 0, 0.85 );
+		return stone.Mixed( Shift( style.CopingAccent, (int)(field * 12) ), moss );
+	}
+
+	private static PoolColour Riveted( PoolStyle style, int slabX, int slabY, int x, int y )
+	{
+		var panel = Shift( style.CopingBase, (int)(Hash( (uint)(slabX * 5 + slabY * 11) ) % 9u) - 4 + (y % 2 == 0 ? 2 : 0) );
+		foreach ( var (cx, cy) in new[] { (4, 4), (11, 4), (4, 11), (11, 11) } )
+		{
+			var distance = Math.Sqrt( (x - cx) * (x - cx) + (y - cy) * (y - cy) );
+			if ( distance <= 1.5 )
+				return x + y <= cx + cy ? style.CopingAccent : style.CopingAccent.Scaled( 0.7f );
+			if ( distance <= 2.4 )
+				return panel.Scaled( 0.6f );
+		}
+		return panel;
+	}
+
+	private static PoolColour Candy( PoolStyle style, int slabX, int slabY )
+	{
+		var white = new PoolColour( 255, 250, 252 );
+		return ((slabX + slabY) % 3) switch
+		{
+			0 => style.CopingBase,
+			1 => style.CopingAccent,
+			_ => style.CopingBase.Mixed( white, 0.55f )
+		};
+	}
+
+	private static PoolColour Shift( PoolColour colour, int amount ) =>
+		new( Math.Clamp( colour.R + amount, 0, 255 ), Math.Clamp( colour.G + amount, 0, 255 ), Math.Clamp( colour.B + amount, 0, 255 ) );
 
 	private static uint Hash( uint value )
 	{

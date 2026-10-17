@@ -92,7 +92,9 @@ this order (`Level.AdvanceSimulation`, `ParkObjects.Simulate`, `SimulationSubste
    script is linked at the list's head when it is created); a script runs its slice when
    `(script id xor pass counter) & 7 == 0`, so one slice per eight passes (248 ms), on the pass its id selects, or in every
    pass when its TURBO byte (opcode 51) is nonzero; a script's WAIT therefore wakes on the first slice after its time;
-5. on even substeps the tour cars (`0x55ABF0`, `0x54F5D7`);
+   a script whose slice is skipped still follows its attached object in a branch of its own (`0x551A1F`), which tests
+   `(script id xor pass counter) & 7` again; OpenTPW runs that follow on every tick (DET-013);
+5. on even substeps the tour cars (`0x55ABF0`, `0x54F5D7`) and the effects update `0x475360`, which OpenTPW runs per 60 Hz tick (DET-013);
 6. on every eighth substep (`0x54F668`) the park turn (the order below).
 
 The 60 Hz tick (`EXT:fixed-60hz-clock`) derives its substep from the park's own tick count: substep *n* ends in the first tick whose

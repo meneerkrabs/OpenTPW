@@ -40,8 +40,7 @@ public class ThemeParkIncSaveImportTests
 			var layout = SavePayloadLayout.ParseThemeParkInc( payload );
 			Assert.AreEqual( 48, layout[SaveBlock.Camera].Length, path );
 			Assert.ThrowsException<InvalidDataException>( () => SavePayloadLayout.Parse( payload ), path );
-			var worldBlock = layout[SaveBlock.World];
-			var grid = SaveCellGrid.ParseThemeParkInc( payload, worldBlock.Offset, worldBlock.End, map.CellCountX, map.CellCountY );
+			var grid = ThemeParkIncSaveWorld.Parse( payload, layout, map.CellCountX, map.CellCountY ).Cells;
 			var differences = from y in Enumerable.Range( 0, map.CellCountY ) from x in Enumerable.Range( 0, map.CellCountX )
 				where grid[x, y].Attributes != map.GetCellAt( x, y )
 				select (x, y, Save: grid[x, y].Attributes, Map: map.GetCellAt( x, y ));
@@ -59,9 +58,14 @@ public class ThemeParkIncSaveImportTests
 			CollectionAssert.AreEqual( new[] { 1601, 103, 104, 1705, 1706, 1709, 3708, 1707, 1710, 1702, 1701, 1700, 1750, 1798 },
 				park.FixedItems.Select( item => item.InfoId ).ToArray(), path );
 			Assert.AreEqual( 90, park.PlacedObjects.Single( item => item.Record.Index == 27 ).Record.Rotation, path );
+			// The SYSG signature scan no longer demands exactly 23 records: a damaged record header is simply not found, which the typed World reports as one more unrecorded attraction.
 			var damaged = (byte[])payload.Clone();
 			damaged[park.FixedItems[0].Offset] = 2;
-			Assert.ThrowsException<InvalidDataException>( () => OriginalParkImport.ImportThemeParkInc( damaged, map ), path );
+			var damagedPark = OriginalParkImport.ImportThemeParkInc( damaged, map );
+			Assert.AreEqual( park.FixedItems.Count - 1, damagedPark.FixedItems.Count, path );
+			CollectionAssert.AreEquivalent( new[] { 1703, park.FixedItems[0].InfoId }, damagedPark.UnrecordedThemeParkIncAttractions.Select( item => item.InfoId ).ToArray(), path );
+			CollectionAssert.AreEqual( new[] { 1703 }, park.UnrecordedThemeParkIncAttractions.Select( item => item.InfoId ).ToArray(), path );
+			Assert.AreEqual( 23, park.ThemeParkIncObjects.Count, path );
 		}
 	}
 
@@ -70,16 +74,12 @@ public class ThemeParkIncSaveImportTests
 	{
 		var payload = new byte[8 + 3 * SaveCell.ThemeParkIncRecordBytes];
 		for ( var index = 0; index < 3; index++ )
-		{
-			var offset = 8 + index * SaveCell.ThemeParkIncRecordBytes;
-			payload[offset] = 3;
-			payload[offset + 86] = 0xFF;
-			payload[offset + 87] = 0xFF;
-		}
-		var grid = SaveCellGrid.ParseThemeParkInc( payload, 8, payload.Length, 3, 1 );
+			payload[8 + index * SaveCell.ThemeParkIncRecordBytes] = 3;
+		var grid = SaveCellGrid.ParseThemeParkIncAt( payload, 8, payload.Length, 3, 1 );
 		Assert.AreEqual( 8, grid.StartOffset );
 		Assert.AreEqual( payload.Length, grid.EndOffset );
-		Assert.ThrowsException<InvalidDataException>( () => SaveCellGrid.ParseThemeParkInc( payload, 8, payload.Length - 1, 3, 1 ) );
+		Assert.ThrowsException<InvalidDataException>( () => SaveCellGrid.ParseThemeParkIncAt( payload, 8, payload.Length - 1, 3, 1 ) );
+		Assert.ThrowsException<InvalidDataException>( () => SaveCellGrid.ParseThemeParkIncAt( payload, 8, payload.Length + 0, 4, 1 ) );
 		Assert.ThrowsException<InvalidDataException>( () => SaveCellGrid.Parse( payload, payload.Length, 3, 1 ) );
 	}
 

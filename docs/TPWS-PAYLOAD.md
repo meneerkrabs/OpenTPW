@@ -36,7 +36,8 @@ Pinned hashes (SHA-256):
 
 The upstream page (`opentpw-docs` `src/formats/tpws-ints-lays.md`, read via the
 GitHub contents API) describes only the outer container: magic, copyright text,
-file type `00 01 22 19`, version, online flag, `BILZ` header and zlib stream.
+a "file type" `00 01 22 19` and a "version" (which are the end of the header block and the stamp `01 22 19 85`, see
+[SAVE-CONTAINER.md](SAVE-CONTAINER.md)), the online flag, `BILZ` header and zlib stream.
 "INTS" and "LAYS" there are **file kinds** (initial save; `upload.LAYS` online
 save), not payload sections. It documents nothing about the decoded payload.
 
@@ -51,7 +52,7 @@ TPWS and an INTS for each theme.
 
 | Check | Result on all 11 |
 | --- | --- |
-| Container | Magic 500, file type `00 01 22 19`, version 133; INTS uses the same container as TPWS |
+| Container | Magic 500, stamp `01 22 19 85`, language byte 0 to 6 (the corpus is checked for magic and stamp); INTS uses the same container as TPWS |
 | Markers | All 17, in the Easymode order. Decoded payload 1,560,526–1,579,807 bytes |
 | Untagged prefix | 1,469,256 bytes (every INTS) or 1,473,869–1,475,452 (TPWS), against 1,495,462 in Easymode: the prefix length is not fixed |
 | Cell grid | Found once, starting at 5,729 (INTS) or 6,259–6,512 (TPWS); 16,384 × 84 bytes, no extension records; +46 equals the theme's `base.map` |

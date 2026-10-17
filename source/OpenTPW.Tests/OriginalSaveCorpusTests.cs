@@ -42,7 +42,7 @@ public class OriginalSaveCorpusTests
 			var name = $"{theme}/{Path.GetFileName( path )}";
 			using var reader = new SaveReader( path );
 			var container = reader.Inspect();
-			Assert.AreEqual( (500u, (byte)133), (container.Magic, container.Version), name );
+			Assert.AreEqual( (500u, 0x01221985u, false), (container.Magic, container.Stamp, container.IsThemeParkInc), name );
 			var payload = reader.ReadFile();
 			var layout = SavePayloadLayout.Parse( payload );
 			Assert.AreEqual( 19, layout.Blocks.Count, name );

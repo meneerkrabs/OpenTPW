@@ -2,6 +2,15 @@ using System.Buffers.Binary;
 
 namespace OpenTPW;
 
+/// <summary>Which game's block readers a payload is split with (<see cref="SavePayloadLayout.Parse(ReadOnlySpan{byte}, SavePayloadProfile)"/>).</summary>
+public enum SavePayloadProfile
+{
+	/// <summary>Theme Park World / tp.exe (Mac and PC): the rules in <see cref="SaveBlockWidths"/>.</summary>
+	ThemeParkWorld,
+	/// <summary>Theme Park Inc / Game.exe: the same 17 delimiters; 45 message lists, a 48-byte camera, an empty UI block and its own World block (<see cref="ThemeParkIncSaveWorld"/>).</summary>
+	ThemeParkInc
+}
+
 /// <summary>
 /// The serialized width of each framed block of a decoded TPWS/TPWI payload, read from tp.exe's own block readers
 /// (the loader <c>0x415270</c> runs one reader per block and then compares the next four bytes with the block's tag,
@@ -27,6 +36,13 @@ namespace OpenTPW;
 /// </summary>
 public static class SaveBlockWidths
 {
+	/// <summary>Theme Park Inc's message centre keeps 45 lists where Theme Park World's keeps 29 (reader 0x437140 against 0x40fd60).</summary>
+	// [BIN:TPI-EXE:0x437140 message centre loader] u32, then 45 lists of u32 count and count u16 entries; the prebuilt's block is 476 bytes
+	public const int ThemeParkIncMessageLists = 45;
+	/// <summary>Theme Park Inc's camera adds gf_SavedRideXRotation and gf_SavedRideYRotation to the 40 bytes.</summary>
+	// [BIN:TPI-EXE:0x46a150 camera loader] 40 bytes plus two floats
+	public const int ThemeParkIncCameraBytes = 48;
+
 	public const uint ScriptsMagic = 0x53435054;
 	public const int ScriptRecordBytes = 0x118;
 	public const uint ParticlesMagic = 0x5054434c;
@@ -96,7 +112,14 @@ public static class SaveBlockWidths
 	/// Throws <see cref="InvalidDataException"/> when the bytes do not read as the block (the original loader would report the
 	/// SAD_ error, or run past the end of the save).
 	/// </summary>
-	public static bool TryMeasure( ReadOnlySpan<byte> payload, SaveBlock block, int offset, out int width )
+	public static bool TryMeasure( ReadOnlySpan<byte> payload, SaveBlock block, int offset, out int width ) =>
+		TryMeasure( payload, block, offset, out width, SavePayloadProfile.ThemeParkWorld );
+
+	/// <summary>
+	/// <see cref="TryMeasure(ReadOnlySpan{byte}, SaveBlock, int, out int)"/> under one game's reader rules: the Theme Park Inc profile has 45 message-centre lists, a 48-byte camera and an
+	/// empty UI block (its writer 0x4f8630 is a bare <c>ret</c> and its loader reads nothing); the other blocks read as in tp.exe.
+	/// </summary>
+	public static bool TryMeasure( ReadOnlySpan<byte> payload, SaveBlock block, int offset, out int width, SavePayloadProfile profile )
 	{
 		width = 0;
 		if ( offset < 0 || offset > payload.Length )
@@ -135,7 +158,7 @@ public static class SaveBlockWidths
 				break;
 			case SaveBlock.MessageCentre:
 				reader.U32();
-				for ( var list = 0; list < MessageLists; list++ )
+				for ( var list = 0; list < (profile == SavePayloadProfile.ThemeParkInc ? ThemeParkIncMessageLists : MessageLists); list++ )
 					reader.Take( reader.U32() * 2L );
 				break;
 			case SaveBlock.Clock:
@@ -201,7 +224,7 @@ public static class SaveBlockWidths
 				width = SaveRsseBlock.Parse( payload, offset ).Length;
 				return true;
 			case SaveBlock.Camera:
-				reader.Take( 40 );
+				reader.Take( profile == SavePayloadProfile.ThemeParkInc ? ThemeParkIncCameraBytes : 40 );
 				break;
 			case SaveBlock.Advisor:
 				if ( reader.U32() == AdvisorMagic )
@@ -233,7 +256,8 @@ public static class SaveBlockWidths
 				reader.Take( AdvisorScoringBytes );
 				break;
 			case SaveBlock.UI:
-				reader.Take( reader.U32() * (long)UiRecordBytes );
+				if ( profile != SavePayloadProfile.ThemeParkInc )
+					reader.Take( reader.U32() * (long)UiRecordBytes );
 				break;
 			default:
 				return false;

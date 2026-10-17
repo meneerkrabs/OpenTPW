@@ -42,7 +42,7 @@ Container SHA-256:
 Decoded payload: 1,608,309 bytes; SHA-256:
 `a3c9a28252c37ad49a8eb78e4a0c5e1d5229d01548fa35801db67015d2589173`.
 Consumer: `OriginalSaveAssetTests` / `SaveReader` / `--inspect-save`. Expected header:
-initial value 400, raw type `0x19220100`, version 133, offline 0, BILZ at `0x60d`,
+initial value 400, language 0, stamp `0x01221985`, offline 0, BILZ at `0x60d`,
 chunk size 36,930 including header, completed zlib stream without trailing data.
 Provenance: supplied ISO extraction; edition/locale/patch unknown. Optional private
 fixture under `OPENTPW_GAME_PATH`; no asset bytes stored in this repository.

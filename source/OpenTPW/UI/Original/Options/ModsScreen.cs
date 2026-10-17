@@ -15,6 +15,8 @@ public sealed class ModsServices
 	public Func<ModSet> Active { get; init; } = () => OpenTpwExtensions.Active;
 	public ModVersion? OpenTpwVersion { get; init; } = ModStartup.OpenTpwVersion();
 	public Func<GameEdition> Edition { get; init; } = () => GameEditions.Current;
+	/// <summary>Whether script mods are off in this run (safe mode, docs/SCRIPT-MODS.md).</summary>
+	public Func<bool> ScriptModsOff { get; init; } = () => ScriptSafeMode.Active;
 	/// <summary>
 	/// The browser build: no folder dialog of the game, no helper process and no thread pool. A mod input is the copy of the player's own game
 	/// files that the page keeps in memory (<see cref="BrowserModInputs"/>), chosen with the page's folder dialog.
@@ -43,6 +45,13 @@ public sealed class ModsServices
 // [EXT:mods-ui] OpenTPW's own mods screen; the original game had no mods
 public static class ModsScreen
 {
+	/// <summary>The extensions whose name and description the screen shows in the interface language.</summary>
+	private static readonly IReadOnlyDictionary<string, (OpenTpwText Name, OpenTpwText Description)> ExtensionTexts = new Dictionary<string, (OpenTpwText, OpenTpwText)>
+	{
+		[OfficialExtensions.SmarterGuests.Id] = (OpenTpwText.ExtensionSmarterGuestsName, OpenTpwText.ExtensionSmarterGuestsDescription),
+		[OfficialExtensions.GuestInsights.Id] = (OpenTpwText.ExtensionGuestInsightsName, OpenTpwText.ExtensionGuestInsightsDescription),
+	};
+
 	public static UiScreen Create( UiScreenStack stack, UiStringTable strings, ModsServices? services = null )
 	{
 		services ??= new ModsServices();
@@ -67,7 +76,7 @@ public static class ModsScreen
 			Rebuild();
 		}
 
-		var status = diagnostics.Count > 0 ? diagnostics[0] : "";
+		var status = diagnostics.Count > 0 ? diagnostics[0] : services.ScriptModsOff() ? strings.Extra( OpenTpwText.ModSafeMode ) : "";
 		var inputIndex = 0;
 		var note = "";
 		var checks = new Dictionary<string, ModInputCheck>( StringComparer.Ordinal );
@@ -94,9 +103,12 @@ public static class ModsScreen
 			ModRowStatus.Conflict => OpenTpwText.ModConflict,
 			ModRowStatus.NeedsOther => OpenTpwText.ModNeedsOther,
 			ModRowStatus.Pending => OpenTpwText.ModChecking,
+			ModRowStatus.SafeMode => OpenTpwText.ModOffSafeMode,
 			_ => OpenTpwText.ModUnusable,
 		} );
 		string VersionText( ModRow row ) => row.Version == null ? "" : "  " + row.Version;
+		// [EXT:smarter-guests] the guest extensions carry their names and descriptions in the interface languages; the others show the name the registry gives
+		string RowName( ModRow row ) => ExtensionTexts.TryGetValue( row.Id, out var texts ) && row.Extension != null ? strings.Extra( texts.Name ) : row.Name;
 
 		UiScrollList AddColumn( string id, float left, OpenTpwText title, Func<IReadOnlyList<ModRow>> source, Func<string> empty )
 		{
@@ -109,7 +121,7 @@ public static class ModsScreen
 				Bounds = Rect( left, 330, right, 770 ),
 				Anchor = UiAnchor.Center,
 				RowHeight = 64,
-				Rows = () => source().Count == 0 ? new[] { empty() } : source().Select( row => row.Name + VersionText( row ) ).ToArray(),
+				Rows = () => source().Count == 0 ? new[] { empty() } : source().Select( row => RowName( row ) + VersionText( row ) ).ToArray(),
 				Trailing = index => index < source().Count ? StatusText( source()[index].Status ) : "",
 			} );
 			return list;
@@ -142,9 +154,11 @@ public static class ModsScreen
 		{
 			if ( Shown() is not { } row )
 				return strings.Extra( OpenTpwText.ModSelectHint );
-			var lines = new List<string> { $"{row.Name} ({row.Id})" };
+			var lines = new List<string> { $"{RowName( row )} ({row.Id})" };
 			if ( row.Extension != null )
 			{
+				if ( ExtensionTexts.TryGetValue( row.Id, out var texts ) )
+					lines.Add( strings.Extra( texts.Description ) );
 				lines.Add( $"{strings.Extra( OpenTpwText.ModVersionLabel )}: {row.Version}" );
 				lines.Add( strings.Extra( OpenTpwText.ModBuiltIn ) );
 				lines.Add( strings.Extra( row.Extension.AffectsSimulation ? OpenTpwText.ModAffectsSimulation : OpenTpwText.ModLeavesSimulation ) );
@@ -159,6 +173,8 @@ public static class ModsScreen
 				lines.Add( description.Length > 160 ? description[..160] + "..." : description );
 			if ( row.Manifest != null )
 				lines.Add( $"{strings.Extra( OpenTpwText.ModDigestLabel )}: {row.Digest ?? strings.Extra( OpenTpwText.ModDigestPending )}" );
+			if ( row.Manifest?.Content.Scripts != null )
+				lines.Add( strings.Extra( OpenTpwText.ModContainsScripts ) );
 			if ( row.Manifest?.Dependencies is { Count: > 0 } dependencies )
 				lines.Add( $"{strings.Extra( OpenTpwText.ModNeedsLabel )}: {string.Join( ", ", dependencies.Select( dependency => $"{dependency.Id} {dependency.Version}" ) )}" );
 			if ( row.Directory != null )
@@ -404,15 +420,17 @@ public static class ModsScreen
 				var target = version;
 				var found = discovered;
 				var edition = services.Edition();
+				var scriptsOff = services.ScriptModsOff();
 				(ModSet? Set, string? Error, int Version) Resolve()
 				{
 					try
 					{
-						return (ModSet.Resolve( found, settings, services.OpenTpwVersion, edition, services.Extensions ), null, target);
+						return (ModSet.Resolve( found, settings, services.OpenTpwVersion, edition, services.Extensions, scriptModsOff: scriptsOff ), null, target);
 					}
-					catch ( Exception exception ) when ( exception is IOException or UnauthorizedAccessException or InvalidOperationException )
+					catch ( Exception exception )
 					{
-						return (null, exception.Message, target);
+						// any fault while resolving (a script compiler bug included) is shown as a message, never thrown out of the background task
+						return (null, exception is IOException or UnauthorizedAccessException or InvalidOperationException ? exception.Message : $"Resolving the mods failed ({exception.GetType().Name})", target);
 					}
 				}
 				// Without mod folders, and in the browser (which cannot rely on a thread pool; its shipped mods are two small files), there is little to read or hash: resolve at once.

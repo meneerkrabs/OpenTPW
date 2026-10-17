@@ -5,6 +5,7 @@ using System.Linq;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using OpenTPW.Mods;
 
 namespace OpenTPW;
 
@@ -27,10 +28,25 @@ public sealed record GuestReportOptions
 	public GuestMetricsOptions Metrics { get; init; } = new();
 	/// <summary>Measure CPU and allocation per tick with the observer off and on; machine-dependent, so left out of the stable report text when false.</summary>
 	public bool Performance { get; init; } = true;
+	/// <summary>
+	/// Official extensions switched on for the whole run (<c>--guest-extension smarter-guests</c>), so a later phase's report can be compared with the default's by <c>--guest-compare</c>. Empty runs
+	/// the faithful guests. Only extensions that act on the guests are accepted; the report saves them beside, not in, its protocol.
+	/// </summary>
+	public IReadOnlyList<string> Extensions { get; init; } = Array.Empty<string>();
+	/// <summary>
+	/// Mods switched on for the whole run (<c>--guest-mod &lt;folder or id&gt;</c>), so a script mod's effect can be compared with the baseline by <c>--guest-compare</c> and its step use measured
+	/// (docs/SCRIPT-MODS.md, "Budgets"): a mod folder, or the id of a mod shipped in the program's <c>content/mods</c> (the official example mods can only be named that way). Empty runs without
+	/// mods. A mod that cannot run is an error, not a silent baseline.
+	/// </summary>
+	public IReadOnlyList<string> Mods { get; init; } = Array.Empty<string>();
 }
 
 /// <param name="StateHash">The guests' state hash at the end of the run: two seeds with the same hash ran the same park (the guests' generator is reseeded with each new guest's id, so streams can merge).</param>
-public sealed record SeedResult( ulong Seed, GuestMetricsSnapshot Snapshot, ulong StateHash );
+/// <param name="ScriptStats">What each script mod did in this run (steps, calls, failures); empty without script mods.</param>
+public sealed record SeedResult( ulong Seed, GuestMetricsSnapshot Snapshot, ulong StateHash )
+{
+	internal IReadOnlyList<ScriptModStats> ScriptStats { get; init; } = Array.Empty<ScriptModStats>();
+}
 
 public sealed record MetricSpread( string Name, int Count, double Mean, double StandardDeviation, double Min, double Max );
 
@@ -63,7 +79,9 @@ public static class GuestReport
 	public static long TicksForDays( int days ) => ParkCalendar.TickAtDay( days );
 
 	/// <summary>Runs one synthetic park to the end of the window and returns its snapshot; <paramref name="hash"/> is the guests' state hash at the end.</summary>
-	public static GuestMetricsSnapshot RunScenario( ulong seed, GuestReportOptions options, out ulong hash )
+	public static GuestMetricsSnapshot RunScenario( ulong seed, GuestReportOptions options, out ulong hash ) => RunScenario( seed, options, out hash, out _ );
+
+	internal static GuestMetricsSnapshot RunScenario( ulong seed, GuestReportOptions options, out ulong hash, out IReadOnlyList<ScriptModStats> scriptStats )
 	{
 		var park = new ParkScenario( new WorldSeed( seed ), options.Scenario );
 		var metrics = new GuestMetrics( options.Metrics );
@@ -73,6 +91,7 @@ public static class GuestReport
 		metrics.BeginWindow();
 		park.Run( TicksForDays( options.WarmupDays + options.MeasuredDays ) - warmup );
 		hash = park.Hash;
+		scriptStats = park.Guests.ScriptMods?.Stats() ?? Array.Empty<ScriptModStats>();
 		return metrics.EndWindow();
 	}
 
@@ -81,8 +100,8 @@ public static class GuestReport
 	/// <summary>The scenario's end state of every seed, for the duplicate check.</summary>
 	private static SeedResult ScenarioSeed( ulong seed, GuestReportOptions options )
 	{
-		var snapshot = RunScenario( seed, options, out var hash );
-		return new SeedResult( seed, snapshot, hash );
+		var snapshot = RunScenario( seed, options, out var hash, out var stats );
+		return new SeedResult( seed, snapshot, hash ) { ScriptStats = stats };
 	}
 
 	/// <summary>One level park built by the level gate's builder (docs/M3-GATE.md), run for the same days.</summary>
@@ -91,6 +110,7 @@ public static class GuestReport
 		var metrics = new GuestMetrics( options.Metrics ) { AutoBeginAtTick = TicksForDays( options.WarmupDays ) };
 		GuestMetricsSnapshot? snapshot = null;
 		ulong hash = 0;
+		IReadOnlyList<ScriptModStats> stats = Array.Empty<ScriptModStats>();
 		// the window closes after the last tick and before the gate stops its objects (a stopped ride turns its queue away)
 		var gate = new M3GateOptions
 		{
@@ -99,13 +119,48 @@ public static class GuestReport
 			{
 				snapshot = metrics.EndWindow();
 				hash = guests.ComputeStateHash();
+				stats = guests.ScriptMods?.Stats() ?? Array.Empty<ScriptModStats>();
 			}
 		};
 		M3GateRun.Execute( gate, TicksForDays( options.WarmupDays + options.MeasuredDays ) );
-		return new SeedResult( seed, snapshot ?? throw new InvalidOperationException( "The level run ended without closing its window." ), hash );
+		return new SeedResult( seed, snapshot ?? throw new InvalidOperationException( "The level run ended without closing its window." ), hash ) { ScriptStats = stats };
 	}
 
+	/// <summary>The extensions a report may switch on, by their short name and by id.</summary>
+	private static readonly IReadOnlyDictionary<string, IOpenTpwExtension> ReportExtensions = new Dictionary<string, IOpenTpwExtension>( StringComparer.Ordinal )
+	{
+		["smarter-guests"] = OfficialExtensions.SmarterGuests,
+		[OfficialExtensions.SmarterGuests.Id] = OfficialExtensions.SmarterGuests,
+	};
+
+	/// <summary>The extension ids <paramref name="names"/> stand for, each once; an unknown name is refused.</summary>
+	public static IReadOnlyList<string> ResolveExtensions( IEnumerable<string> names ) =>
+		names.Select( name => ReportExtensions.TryGetValue( name, out var extension ) ? extension.Id
+			: throw new ArgumentException( $"--guest-extension '{name}' is not one a guest report can switch on (smarter-guests)." ) ).Distinct( StringComparer.Ordinal ).ToArray();
+
 	public static GuestReportResult Run( GuestReportOptions options, Action<string>? progress = null )
+	{
+		if ( options.Extensions.Count == 0 && options.Mods.Count == 0 )
+			return RunSeeds( options, progress );
+		// the extensions and mods are on for every simulation the run builds (each reads the active set once when it is built) and off again afterwards
+		var enabled = ResolveExtensions( options.Extensions ).ToDictionary( id => id, _ => true );
+		var folders = options.Mods.Where( Directory.Exists ).ToArray();
+		var ids = options.Mods.Where( value => !Directory.Exists( value ) ).ToArray();
+		var discovered = ModDiscovery.Discover( folders, Array.Empty<string>(), null, ids.Length > 0 ? AppContext.BaseDirectory : null );
+		foreach ( var mod in discovered.Where( mod => mod.IsValid && (mod.Source == ModSource.CommandLine || ids.Contains( mod.Id )) ) )
+			enabled[mod.Id] = true;
+		var unknown = ids.Where( id => !discovered.Any( mod => mod.IsValid && mod.Id == id ) ).ToArray();
+		if ( unknown.Length > 0 )
+			throw new ArgumentException( $"--guest-mod {string.Join( ", ", unknown )} is neither a mod folder nor the id of a mod shipped with OpenTPW." );
+		var set = ModSet.Resolve( discovered, new ModSettings { Enabled = enabled }, null, GameEditions.Current, OfficialExtensions.All );
+		var problems = discovered.Where( mod => !mod.IsValid ).Select( mod => $"{mod.Directory}: {mod.Error}" ).Concat( set.Refused.Select( refusal => $"{refusal.Id}: {refusal.Reason}" ) ).ToList();
+		if ( problems.Count > 0 )
+			throw new ArgumentException( $"--guest-mod cannot run: {string.Join( "; ", problems )}" );
+		using var scope = OpenTpwExtensions.Use( set );
+		return RunSeeds( options, progress );
+	}
+
+	private static GuestReportResult RunSeeds( GuestReportOptions options, Action<string>? progress )
 	{
 		var scenarios = new List<ScenarioReport>();
 		var skipped = new List<string>();
@@ -187,6 +242,8 @@ public static class GuestReport
 			var best = double.MaxValue;
 			var bytes = 0d;
 			var park = new ParkScenario( new WorldSeed( seed ), options.Scenario );
+			// [EXT:guest-insights] the figures compare the measurement collector alone, so the extension's refusal counters (on when the run asks for the extension) stay out of both sides
+			park.Guests.DisableRefusalCounters();
 			if ( observed )
 				new GuestMetrics( options.Metrics ).Attach( park.Guests );
 			park.Run( warmup );
@@ -228,6 +285,7 @@ public static class GuestReport
 				["distinctSeeds"] = scenario.DistinctSeeds,
 				["duplicateSeeds"] = new JsonArray( scenario.DuplicateSeeds.Select( pair => (JsonNode)new JsonObject { ["seed"] = pair.Seed, ["sameAs"] = pair.SameAs } ).ToArray() ),
 				["seeds"] = new JsonArray( scenario.Seeds.Select( seed => (JsonNode)new JsonObject { ["seed"] = seed.Seed, ["stateHash"] = $"{seed.StateHash:X16}", ["metrics"] = seed.Snapshot.ToJsonObject() } ).ToArray() ),
+				["scriptMods"] = ScriptModsJson( scenario ),
 				["spread"] = new JsonArray( scenario.Spread.Select( item => (JsonNode)new JsonObject
 				{
 					["metric"] = item.Name,
@@ -261,6 +319,8 @@ public static class GuestReport
 					["dearPrice"] = options.Scenario.DearPrice
 				}
 			},
+			["extensions"] = new JsonArray( options.Extensions.Select( id => (JsonNode)JsonValue.Create( id )! ).ToArray() ),
+			["mods"] = new JsonArray( options.Mods.Select( name => (JsonNode)JsonValue.Create( Path.GetFileName( name.TrimEnd( '/', '\\' ) ) )! ).ToArray() ),
 			["scenarios"] = scenarios,
 			["skipped"] = new JsonArray( result.Skipped.Select( item => (JsonNode)JsonValue.Create( item )! ).ToArray() )
 		};
@@ -279,6 +339,18 @@ public static class GuestReport
 		return root;
 	}
 
+	/// <summary>Each script mod's work over a scenario's seeds: calls and steps summed, the largest call and tick, failures summed and whether any seed disabled it.</summary>
+	internal static IReadOnlyList<ScriptModStats> ScriptTotals( ScenarioReport scenario ) =>
+		scenario.Seeds.SelectMany( seed => seed.ScriptStats ).GroupBy( item => item.Id, StringComparer.Ordinal ).OrderBy( group => group.Key, StringComparer.Ordinal )
+			.Select( group => new ScriptModStats( group.Key, group.Sum( item => item.Calls ), group.Sum( item => item.TotalSteps ), group.Max( item => item.MaxCallSteps ), group.Max( item => item.MaxTickSteps ), group.Max( item => item.MaxTickCalls ),
+				group.Sum( item => item.Ticks ), group.Sum( item => item.RuntimeErrors ), group.Sum( item => item.BudgetFailures ), group.Sum( item => item.InvalidResults ), group.Any( item => item.Disabled ), group.Sum( item => item.TicksOverBudget ) ) ).ToArray();
+
+	private static JsonNode ScriptModsJson( ScenarioReport scenario ) => new JsonArray( ScriptTotals( scenario ).Select( item => (JsonNode)new JsonObject
+	{
+		["id"] = item.Id, ["calls"] = item.Calls, ["steps"] = item.TotalSteps, ["maxCallSteps"] = item.MaxCallSteps, ["maxTickSteps"] = item.MaxTickSteps, ["maxTickCalls"] = item.MaxTickCalls, ["ticksWithCalls"] = item.Ticks,
+		["runtimeErrors"] = item.RuntimeErrors, ["budgetFailures"] = item.BudgetFailures, ["invalidResults"] = item.InvalidResults, ["ticksOverBudget"] = item.TicksOverBudget, ["disabledSeeds"] = scenario.Seeds.Count( seed => seed.ScriptStats.Any( stat => stat.Id == item.Id && stat.Disabled ) )
+	} ).ToArray() );
+
 	private static readonly JsonSerializerOptions Indented = new() { WriteIndented = true, Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
 
 	public static string ToJson( GuestReportResult result ) => ToJsonObject( result ).ToJsonString( Indented ).Replace( "\r\n", "\n" );
@@ -288,6 +360,10 @@ public static class GuestReport
 	{
 		var text = new StringBuilder();
 		var options = result.Options;
+		if ( options.Extensions.Count > 0 )
+			text.AppendLine( $"Extensions on: {string.Join( ", ", options.Extensions )}" );
+		if ( options.Mods.Count > 0 )
+			text.AppendLine( $"Mods on: {string.Join( ", ", options.Mods.Select( name => Path.GetFileName( name.TrimEnd( '/', '\\' ) ) ) )}" );
 		text.AppendLine( $"Guest report: {options.Seeds.Count} seeds (the band is 3 standard errors of a difference of two means of that many seeds), {options.WarmupDays} warm-up days + {options.MeasuredDays} measured days ({TicksForDays( options.MeasuredDays )} ticks)" );
 		string F( double value, string format = "0.###" ) => double.IsFinite( value ) ? value.ToString( format, CultureInfo.InvariantCulture ) : "-";
 		foreach ( var scenario in result.Scenarios )
@@ -304,6 +380,8 @@ public static class GuestReport
 			var abandoned = queue.SelectMany( item => item.AbandonedByReason ).GroupBy( item => item.Key ).OrderBy( group => group.Key, StringComparer.Ordinal ).Select( group => $"{group.Key} {group.Sum( item => item.Value )}" );
 			text.AppendLine( $"rejected by reason (all seeds): {string.Join( ", ", rejected )}" );
 			text.AppendLine( $"abandoned by reason (all seeds): {string.Join( ", ", abandoned )}" );
+			foreach ( var script in ScriptTotals( scenario ) )
+				text.AppendLine( $"script mod {script.Id} (all seeds): {script.Calls} calls, {script.TotalSteps} steps, at most {script.MaxCallSteps} steps per call and {script.MaxTickSteps} steps ({script.MaxTickCalls} calls) per tick, failures {script.RuntimeErrors} runtime / {script.BudgetFailures} budget / {script.InvalidResults} invalid, {script.TicksOverBudget} ticks over the tick budget, disabled in {scenario.Seeds.Count( seed => seed.ScriptStats.Any( stat => stat.Id == script.Id && stat.Disabled ) )} seeds" );
 		}
 		foreach ( var skipped in result.Skipped )
 			text.AppendLine( $"skipped: {skipped}" );
@@ -328,6 +406,21 @@ public static class GuestReport
 		return args[index + 1];
 	}
 
+	/// <summary>Every value of a repeatable option, in order.</summary>
+	private static IReadOnlyList<string> Options( string[] args, string name )
+	{
+		var values = new List<string>();
+		for ( var index = 0; index < args.Length; index++ )
+		{
+			if ( args[index] != name )
+				continue;
+			if ( index + 1 >= args.Length || args[index + 1].StartsWith( "--" ) )
+				throw new ArgumentException( $"{name} requires a value." );
+			values.Add( args[index + 1] );
+		}
+		return values;
+	}
+
 	private static int IntOption( string[] args, string name, int minimum, int fallback )
 	{
 		if ( Option( args, name ) is not { } text )
@@ -350,7 +443,8 @@ public static class GuestReport
 	/// <summary>
 	/// <c>--guest-report</c> with <c>--guest-seeds N</c> (default 8), <c>--guest-warmup-days N</c> (2), <c>--guest-days N</c> (10), <c>--guest-levels a,b|all|none</c> (all four
 	/// themes when OPENTPW_GAME_PATH or --game-path is set), <c>--guest-level-seeds N</c> (8), <c>--guest-arrivals N</c> (level parks' arrival timer, 20),
-	/// <c>--guest-report-json path</c>, <c>--guest-scale plan|extended</c> (the days above, or 20 + 60) and <c>--guest-no-perf</c>. Prints the table; 0 on success.
+	/// <c>--guest-report-json path</c>, <c>--guest-scale plan|extended</c> (the days above, or 20 + 60), <c>--guest-extension smarter-guests</c> (switch an extension on for the run, repeatable), <c>--guest-mod folder|id</c> (switch a mod on for the run: a mod folder, or the id of a mod shipped with OpenTPW such as opentpw.example.patient-guests; repeatable) and
+	/// <c>--guest-no-perf</c>. Prints the table; 0 on success.
 	/// </summary>
 	public static int RunCommand( string[] args )
 	{
@@ -364,7 +458,9 @@ public static class GuestReport
 			Levels = Levels( args ),
 			LevelSeeds = IntOption( args, "--guest-level-seeds", 1, 8 ),
 			LevelArrivalTimeBetween = IntOption( args, "--guest-arrivals", 1, 20 ),
-			Performance = !args.Contains( "--guest-no-perf" )
+			Performance = !args.Contains( "--guest-no-perf" ),
+			Extensions = ResolveExtensions( Options( args, "--guest-extension" ) ),
+			Mods = Options( args, "--guest-mod" )
 		};
 		// the level parks log their clock and script lines; the report's own output stays clean
 		var output = Console.Out;

@@ -232,6 +232,13 @@ public class GuestTests
 	private static ScriptedAttraction CreateShop( int id, (int X, int Y) cell, int excitement = 70, GuestNeeds satisfies = GuestNeeds.None ) =>
 		new( id, 1, excitement, cell, bridge => CreateShopScript( new VisitorRideScriptEffects( bridge, UnimplementedRideScriptEffects.Instance ) ), satisfies );
 
+	/// <summary>Lays the stand cell of a ride the harness registered without a placement (<see cref="ObjectAccessCells.LayStandCell"/>).</summary>
+	internal static void LayStandCell( GuestPathGrid grid, IRideVisitorBridge ride )
+	{
+		var (x, y) = GuestSimulation.StandCellOf( ride );
+		ObjectAccessCells.LayStandCell( grid.Cells, x, y );
+	}
+
 	private static void Run( GuestSimulation simulation, IReadOnlyList<ScriptedAttraction> attractions, int ticks )
 	{
 		for ( var tick = 0; tick < ticks; tick++ )
@@ -560,6 +567,7 @@ public class GuestTests
 		var drinks = CreateShop( 2, (0, 5), satisfies: GuestNeeds.Thirst );
 		Assert.AreEqual( ParkEconomy.PurchaseResult.Ok, economy.TryBuild( 1203, out var shop ) );
 		bridge.Link( drinks.Bridge.AttractionId, shop!.Id );
+		LayStandCell( simulation.Grid, drinks.Bridge );
 		simulation.Register( drinks.Bridge );
 		var thirsty = simulation.SpawnInPark( 19, 5 );
 		thirsty.Thirst = 120;
@@ -654,6 +662,7 @@ public class GuestTests
 		}
 		var thirsty = guests[0];
 		thirsty.Thirst = 90;
+		LayStandCell( simulation.Grid, drinks.Bridge );
 		simulation.Register( drinks.Bridge );
 		var served = false;
 		for ( var tick = 0; tick < 60 * 60 && !served; tick++ )

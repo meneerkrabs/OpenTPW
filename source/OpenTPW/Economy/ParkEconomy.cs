@@ -73,7 +73,7 @@ public sealed class ParkEconomy : IParkEconomy
 	/// The park's world generator (tp.exe 0x00516330): the economy's staff pool and the staff walks draw from it, and the level attaches the guests'
 	/// and the scripts' draws to the same instance (<see cref="AttachWorld"/>), as the original has one generator for everything.
 	/// </summary>
-	// [APPROX:DET-015] the staff pool's and the staff walks' draws are the world generator's, but the staff members have no person-thing constructor draws (base speed, reseed, sprite variant), and the advisor's pick and the weather stay off the stream
+	// [APPROX:DET-015] the staff pool's and the staff walks' draws are the world generator's, but the staff members have no person-thing constructor draws (base speed, reseed, sprite variant), and the weather stays off the stream ([BIN:TPW-EXE:0x59A796 advisor pick] the advisor's update takes no draw: all 351 descriptor rows are in the sequential mode 2, the mode-3 draw 0x59A7AC is unreachable)
 	public WorldRng World { get; private set; }
 
 	/// <summary>Makes <paramref name="world"/> this park's generator (the level's shared one); its state is not touched.</summary>

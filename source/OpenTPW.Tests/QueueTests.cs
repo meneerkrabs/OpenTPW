@@ -53,6 +53,13 @@ public class QueueTests
 				Assert.AreEqual( queueCells, QueuePaths.TryExtend( Grid, Ride, Enumerable.Range( 0, queueCells ).Select( index => (2, 5 - index) ) ) );
 				// The queue line ends on the path beside the back (code 8), which connects the queue.
 				QueuePaths.TryConnect( Grid, Ride );
+			// the ride's entrance cell as a placement lays it (type 9, the link byte and the queue link toward the front queue cell, ObjectAccessCells.Lay): the called guest's search walks into it
+			if ( queueCells > 0 )
+			{
+				Grid.Cells.SetType( 2, 6, ParkCellTypes.Entrance );
+				Grid.Cells.SetLinks( 2, 6, GuestPathGrid.LinkValue( 0 ) );
+				Grid.Cells.SetQueueLink( 2, 6, GuestPathGrid.LinkValue( 0 ) );
+			}
 			var settings = GuestTests.CreateSettings();
 			configure?.Invoke( settings );
 			Simulation = new GuestSimulation( Grid, settings, 7 ) { ArrivalsEnabled = false };

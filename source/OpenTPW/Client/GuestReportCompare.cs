@@ -46,6 +46,13 @@ public static class GuestReportCompare
 		var rows = new List<Row>();
 		var failed = false;
 		var notes = new StringBuilder();
+		// a report made with extensions on (--guest-extension) says so; naming both sides keeps an on/off comparison readable
+		static string Extensions( JsonObject report ) => report["extensions"] is JsonArray { Count: > 0 } list ? string.Join( ", ", list.Select( item => (string)item! ) ) : "none";
+		if ( Extensions( baseline ) != Extensions( candidate ) )
+			notes.AppendLine( $"extensions: baseline {Extensions( baseline )}, candidate {Extensions( candidate )}" );
+		static string Mods( JsonObject report ) => report["mods"] is JsonArray { Count: > 0 } list ? string.Join( ", ", list.Select( item => (string)item! ) ) : "none";
+		if ( Mods( baseline ) != Mods( candidate ) )
+			notes.AppendLine( $"mods: baseline {Mods( baseline )}, candidate {Mods( candidate )}" );
 		var candidates = candidate["scenarios"]!.AsArray().ToDictionary( item => (string)item!["name"]!, item => item!.AsObject() );
 		foreach ( var scenario in baseline["scenarios"]!.AsArray() )
 		{

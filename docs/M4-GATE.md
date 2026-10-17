@@ -24,7 +24,7 @@ inconclusive without `OPENTPW_GAME_PATH`).
 ## Running
 
 ```sh
-dotnet source/OpenTPW/bin/Release/net10.0/OpenTPW.dll --game-path '/path/to/Theme Park World' \
+dotnet source/OpenTPW/bin/Release/net11.0/OpenTPW.dll --game-path '/path/to/Theme Park World' \
   --m4-gate [--theme jungle[,hallow,space,fantasy]] [--seed N] [--window 5] [--report m4-gate.json] [--no-determinism]
 ```
 

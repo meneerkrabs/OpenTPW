@@ -168,6 +168,12 @@ public sealed class Guest
 	public bool Paid { get; internal set; }
 	/// <summary>The visitor number (guest <c>+0x1D8</c>): the park's visitor count at the guest's arrival at the entrance (<c>0x004FFB20</c>, <c>0x0051AAF0</c>), 0 until then ("New Visitor").</summary>
 	public int VisitorNumber { get; internal set; }
+	/// <summary>
+	/// The smarter-guests extension's birth id (docs/SMARTER-GUESTS.md): given at creation, before any booth decision, so traits can depend on it; 0 while the guest has none (the extension is
+	/// off, or the guest predates it and its first tick has not run). Never saved in the guest snapshot (<see cref="SmarterGuestsSave"/> keeps it) and never in the guest state hash.
+	/// </summary>
+	// [EXT:smarter-guests] OpenTPW's own identity for the extension; the original guest has only its thing id
+	public ulong BirthId { get; internal set; }
 	/// <summary>The stranded mark (tp.exe <c>+0x198</c>): the cell map's stamp counter raised by one when the wander found no way on, 0 for none; the guest does not search again until a cell edit near it stamps a block above it.</summary>
 	public int StrandedMark { get; internal set; }
 	public int LastAttractionId { get; internal set; }

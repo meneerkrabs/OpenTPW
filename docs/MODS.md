@@ -22,11 +22,11 @@ In code the system is called `OpenTPW.Mods` / "extensions"; `OpenTPW.ModKit` is 
 
 - manifests are parsed and validated, mod folders are discovered, `mods.json` is read and the run's set of extensions
   and mods is resolved once at startup;
-- the only official extension is `opentpw.online` (below);
+- the official extensions are `opentpw.online`, `opentpw.cross-edition-objects`, `opentpw.smarter-guests` and `opentpw.guest-insights` (below);
 - park saves record the mods that change the simulation and refuse a mismatched set (below);
 - the **Extensions and mods screen** (below) edits `mods.json`;
 - **content roots** are live on the desktop: an enabled mod's `overrides`, `strings` and `objects` change what the game
-  reads (see [Content](#content)). The browser build runs the same data mods shipped with the page (see
+  reads (see [Content](#content)). Script mods are loaded and compiled at resolve time but their hooks are not wired in yet. The browser build runs the same data mods shipped with the page (see
   [Mods in the browser](WEB.md#mods-in-the-browser));
 - **Theme Park Inc attractions in Theme Park World** work end to end through a data mod and the cross-edition objects
   extension: they are listed, priced, researched, bought, placed, run and saved. OpenTPW ships that mod itself,
@@ -82,7 +82,9 @@ Each mod folder holds `opentpw-mod.json`:
   "dependencies": [{ "id": "opentpw.cross-edition-objects", "version": ">=1.0.0" }],
   "after": ["community.other-rides"],
   "inputs": [{ "id": "tpi", "kind": "original-data", "edition": "theme-park-inc" }],
-  "content": { "overrides": "data/", "objects": "objects.json", "strings": "strings/" } }
+  "scriptApi": ">=1.0.0 <2.0.0",
+  "content": { "overrides": "data/", "objects": "objects.json", "strings": "strings/",
+               "scripts": { "files": ["scripts/main.tps"], "hooks": { "leaveQueue": "leaveQueue" } } } }
 ```
 
 | Field | Required | Meaning |
@@ -98,7 +100,8 @@ Each mod folder holds `opentpw-mod.json`:
 | `dependencies` | no | Up to 32 mods or extensions this mod needs, each with an optional version range (default `*`). |
 | `after` | no | Mods this one is ordered after when both are enabled; also lets its overrides win over theirs. |
 | `inputs` | no | Up to 16 folders the player supplies; `kind` is `original-data` (another original game's install). |
-| `content` | no | Mod-relative paths: `overrides` (a folder of files that replace game files), `objects` (object definitions), `strings` (a folder of string tables). See [Content](#content). |
+| `scriptApi` | with `scripts` | The script API versions the mod's scripts target (a range, below); required when `content.scripts` is present and refused otherwise. The mod is refused when this build's API version (`ScriptLimits.ScriptApiVersion`, currently `1.0.0`) is outside it. |
+| `content` | no | Mod-relative paths: `overrides` (a folder of files that replace game files), `objects` (object definitions), `strings` (a folder of string tables), `scripts` (script files and hooks). See [Content](#content). |
 
 Parsing is strict, like the online documents (`StrictJson`): unknown or duplicate fields, comments, trailing commas
 and numbers as strings are refused; the file may be at most 64 KiB; and every content path must stay inside the
@@ -231,12 +234,24 @@ In a park's asset manifest the members of a mod's archives, its own and those re
 relative to the archive's file system, so an input archive keeps its game path (`/levels/jungle/rides/bumper/...`) and
 cannot collide with the mod's own, because one theme and category never lists two archives of one name.
 
+### `scripts`
+
+`content.scripts` has `files` (1 to 8 mod-relative script files, same path rules as the other content, no duplicates) and `hooks` (1 or
+more entries from a known hook name to the function that implements it). Only the hook names of script API v1 are accepted
+(`scoreAttraction`, `joinQueue`, `leaveQueue`, `wanderGoal`); the game runs them through the guest decision seam ([SCRIPT-MODS.md](SCRIPT-MODS.md#hook-api-v1)).
+At resolve time every script file is compiled and checked against the script limits, and each hook must name a function that exactly one
+file defines, with the hook's parameter count. A compile error or a failed check refuses the mod with the file, line and message. The
+files, the caps (8 files, 256 KiB of source in all, 64 KiB each), safe mode and the rule that the executed bytes are the hashed bytes
+are in [SCRIPT-MODS.md](SCRIPT-MODS.md#loading-and-the-manifest). A mod with scripts changes the simulation (next sections), and the mods
+screen says "Contains scripts" for it. The shipped example is `opentpw.example.patient-guests` (off by default; not in the web build).
+
 ## Resolution
 
 At startup, right after the compatibility settings, OpenTPW resolves the run's set once (`ModStartup`, `ModSet.Resolve`):
 
 1. Official extensions are on or off as chosen. Enabled mods are checked: the `openTpw` range, the edition and that
-   every input has an existing folder.
+   every input has an existing folder, and the `scriptApi` range contains this build's script API version. In safe mode
+   ([SCRIPT-MODS.md](SCRIPT-MODS.md#safe-mode)) a mod with scripts is refused here without reading its files.
 2. Every dependency must be installed, enabled and within its range; a refused mod refuses the mods that need it.
 3. Two enabled mods that supply the same file (in `overrides` or `strings`, compared without case), the same object
    archive name in a theme and category, or overlapping Info.Id ranges are **both refused**; for files, unless one lists
@@ -257,7 +272,8 @@ With no mods and the default extensions nothing changes: the pinned determinism 
 
 ## Mods in park saves
 
-A mod **changes the simulation** when it adds objects (`content.objects`) or overrides a file that is not plainly
+A mod **changes the simulation** when it adds objects (`content.objects`), has scripts with a hook that is not UI-only (all v1 hooks
+change the simulation, so every mod with scripts does), or overrides a file that is not plainly
 presentation media (`.fsh`, `.tga`, `.png`, `.jpg`, `.bmp`, `.wav`, `.mp3`, `.ogg`, `.flac`, `.str`, `.bf4`, `.ttf`, `.otf`; any
 other type counts as simulation); an extension does when it declares `AffectsSimulation`. A park save records exactly
 these (`Mods`: id, version, content digest) and nothing else, so a park saved without them has no `Mods` field and keeps
@@ -266,6 +282,27 @@ extension may differ. A save that needs a mod you do not have refuses with `need
 Continue entries keep it and add "(requires mod <id> <version>)". Exporting a park to a `.tpwpark` package is refused
 while such a mod is active, because packages record no mods yet. The asset manifest keys archives of a mod `mod:<id>:/…`
 (`data:` and `bonus:` for the game data and the bonus content). Details: [DETERMINISM.md](DETERMINISM.md) "Mods".
+
+## Smarter guests and guest insights (`opentpw.smarter-guests`, `opentpw.guest-insights`)
+
+Two official extensions for the park visitors ([SMARTER-GUESTS.md](SMARTER-GUESTS.md) has the plan, the architecture and the measurement), both at version 1.0.0. **Guest insights can be switched on** (it has its first
+feature, phase 1); **smarter guests cannot yet**: it has no real rule, and a no-op version would lock saves to it. It is registered for tests and development, hidden from the Extensions and mods screen, and a `mods.json` entry or
+`--enable-mod` for it is ignored with a log line, until the first real rule ships (phase 2).
+
+- **`opentpw.smarter-guests`** changes the simulation (`AffectsSimulation`), so a park saved with it records it (id, version, no files) and loads only with it on, in the same version; a park saved without it
+  loads only with it off. **The extension's version is the algorithm identity**: every release that changes how guests decide bumps it, and a park saved by another version is refused with
+  `needs opentpw.smarter-guests <saved version>, not <current>`. In 1.0.0 the guests still decide exactly as the original (the policy delegates); what the extension adds is the seam (`IGuestDecisions`),
+  a birth id for every guest and its own park state, saved in an optional `SmarterGuests` section of the park save. A build from before that section refuses such a save. Switching it needs a
+  restart like every extension, and a save made without it is refused while it is on.
+  `FeatureGates.SmarterGuests` is read once when the guest simulation is built. `[EXT:smarter-guests]`.
+- **`opentpw.guest-insights`** only reads the park (`AffectsSimulation` false) and is listed on the Extensions and mods screen (`PlayerSelectable`). Switched on, the park information window gains a column of
+  **refusal-reason counters** in the place of the original's line-graph toggles: how many times guests turned an attraction down because it was too expensive (the price refusal at a shop or sideshow stand), the queue was too long
+  (full, or at its limit), it was too scary, too boring, or the ride was broken or closed (a queue head sent away). The counters are a passive observer of the guest simulation (`GuestRefusalCounters`), start at zero for
+  every park built or loaded, are never saved, never hashed and take no random draw, so saves, pins and replays are byte for byte those of the extension being off. Never recorded in saves, so it can be switched freely
+  (with a restart like every extension). The complaints summary is still to come. `[EXT:guest-insights]`.
+
+Their names and descriptions exist in the nine interface languages for the screen. Switching either on or off changes none of the pinned digests of the off path
+(`DeterminismTests`); with smarter guests on, `DeterminismTests.SmarterGuestsFixedRunHash` pins the world hash, which then includes the extension's state.
 
 ## The online extension (`opentpw.online`)
 

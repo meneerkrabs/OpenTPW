@@ -5,9 +5,9 @@ The bridge is built once per checkout state into a cache directory outside the c
 build (`_source_digest`). The build runs in a scratch copy of those inputs, so no bin/ or obj/ lands in
 the checkout.
 
-The bridge targets net10.0, so it needs a .NET 10 SDK. The candidates, in order: OPENTPW_ORACLE_DOTNET
+The bridge targets net11.0, so it needs a .NET 11 SDK. The candidates, in order: OPENTPW_ORACLE_DOTNET
 (set by run_evidence_checks.py from its --dotnet flag), OPENTPW_DOTNET, the project's default SDK
-location, `dotnet` on PATH. The first whose `--list-sdks` shows a 10.x SDK is used. `get()` returns
+location, `dotnet` on PATH. The first whose `--list-sdks` shows an 11.x SDK is used. `get()` returns
 None when there is none, and a bridge that fails to build or run raises `BridgeError`; either way the
 C# comparisons are skipped with the reason, and the plan comparisons still run.
 """
@@ -25,8 +25,8 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[2]
 PROJECT = Path('tools') / 'ppc-analysis' / 'oracle' / 'dotnet' / 'OracleBridge.csproj'
-DEFAULT_SDK = Path.home() / '.local' / 'share' / 'opentpw-dotnet10' / 'dotnet'
-SDK_MAJOR = 10
+DEFAULT_SDK = Path.home() / '.local' / 'share' / 'opentpw-dotnet11' / 'dotnet'
+SDK_MAJOR = 11
 # Every input of the bridge build, relative to the checkout: the bridge, the transitive ProjectReference closure of
 # source/OpenTPW, the linked test data file and the SDK pin. `_check_inputs` fails when a project reference is missing.
 INPUTS = [Path() / 'tools' / 'ppc-analysis' / 'oracle' / 'dotnet', Path() / 'source' / 'OpenTPW',
@@ -56,7 +56,7 @@ def candidates() -> list[Path]:
 
 
 def dotnet() -> Path | None:
-    """The first candidate SDK with a .NET 10 SDK, or None."""
+    """The first candidate SDK with a .NET 11 SDK, or None."""
     for sdk in candidates():
         if SDK_MAJOR in sdk_major_versions(sdk):
             return sdk

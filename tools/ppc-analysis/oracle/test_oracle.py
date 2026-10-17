@@ -1252,7 +1252,7 @@ class Oracle(unittest.TestCase):
         # sideshow, coaster or relief object) with a data level and such a thing, and with that thing removed C# agrees on all inputs.
         import dataclasses
         if self.bridge is None:
-            self.skipTest('no .NET 10 SDK')
+            self.skipTest('no .NET 11 SDK')
         for target in (targets.JOIN_DIFFERENCE_TARGET, targets.JOIN_GATE):
             [comparison] = [c for c in compare(target, self.image, DEFAULT_COUNT, keep=10**6, bridge=self.bridge)
                             if c.side == 'csharp']
@@ -2025,7 +2025,7 @@ class Oracle(unittest.TestCase):
         self.assertGreater(comparison.mismatches, 0)
 
 
-@unittest.skipUnless(ROOT and bridge_module.dotnet(), 'requires the Feral bin directory and a .NET 10 SDK')
+@unittest.skipUnless(ROOT and bridge_module.dotnet(), 'requires the Feral bin directory and a .NET 11 SDK')
 class CSharpMutation(unittest.TestCase):
     """Flipping one operand in a C# implementation on a scratch copy makes its oracle comparison fail."""
 

@@ -150,6 +150,25 @@ public class SignWaveletDecoderTests
 		Assert.IsTrue( differences < side * side / 10, $"{differences} bytes differ by one level" );
 	}
 
+	[TestMethod]
+	public void TheOpaqueAlphaPlaneDecodesToTheOriginalsRowPattern()
+	{
+		// a constant alpha of 255 (the gates, the sign boards): the low-pass quadrant holds 510 = 85 * 6. The float32 D4 taps sum to 0.7071068 in two slightly different ways (H0 + H2 and H1 + H3), so the
+		// column pass gives 254.99998 on the even rows and 255 on the odd ones and the truncation of 0x593301 keeps 254 and 255: the pattern of the original's arithmetic, not an orientation fault
+		foreach ( var side in new[] { 8, 16, 32 } )
+		{
+			var alpha = new byte[side * side];
+			for ( var row = 0; row < side / 2; row++ )
+			for ( var column = 0; column < side / 2; column++ )
+				alpha[row * side + column] = 85;
+			var payload = Payload( new byte[side * side * 3 / 2], alpha, 1, 1, 1, 6 );
+			var pixels = SignWaveletDecoder.Decode( new SignBitmap( side, side, 4, payload ) { IsWavelet = true } );
+			for ( var row = 0; row < side; row++ )
+			for ( var column = 0; column < side; column++ )
+				Assert.AreEqual( row % 2 == 0 ? 254 : 255, pixels[(row * side + column) * 4], $"alpha at ({column},{row}) of side {side}" );
+		}
+	}
+
 	private static SignBitmap SyntheticBoard( int width, int height, int seed )
 	{
 		var random = new Random( seed );

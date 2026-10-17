@@ -11,7 +11,7 @@ public static class SignWaveletDecoder
 	private const int MaximumSide = 256;
 
 	// [BIN:STP-PPC:0x100ABDAC Bitmap::load_wavelet] the engine reads four float scales, two compressed lengths and ARGB output.
-	// [APPROX:COMPAT-018] the arithmetic after the inflate step is tp.exe's, instruction for instruction at the thread's x87 precision (24 bits; the D4 coefficients at 53 bits, from a static initialiser): scale at the dequantisation, row and column inverse, colour and alpha conversion. Still open: which header float feeds which plane (the order Y, Cb, Cr, alpha is the Mac loader's; the PC caller of 0x592000 is not read), the GPU row orientation of the uploaded texture and original-platform board pixels
+	// [APPROX:COMPAT-018] the arithmetic after the inflate step is tp.exe's, instruction for instruction at the thread's x87 precision (24 bits; the D4 coefficients at 53 bits, from a static initialiser): scale at the dequantisation, row and column inverse, colour and alpha conversion. The header floats feed Y, Cb, Cr, alpha in file order (the PC board reader 0x5E7990 passes them to 0x592000, once for colour with three scales and once for alpha with the fourth). Still open: the GPU row orientation of the uploaded texture and original-platform board pixels
 	public static byte[] Decode( SignBitmap bitmap ) => Decode( bitmap, X87Precision.Bits != 24 );
 
 	/// <summary>Decodes with the arithmetic on emulated x87 registers (<paramref name="emulateRegisters"/>) or, at the thread's 24 bit precision, on float32 values, which round the same way.</summary>

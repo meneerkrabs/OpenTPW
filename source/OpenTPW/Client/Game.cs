@@ -1106,7 +1106,7 @@ internal static class Game
 		var slide = level.PoolSlides?.Find( PoolSlide.KeyOf( placed.Placement.X, placed.Placement.Y ) );
 		Log.Trace( $"--debug-slide: built the {placed.Entry.DisplayName} at {placed.Placement.X},{placed.Placement.Y} rotation {placed.Placement.Rotation} with a slide of {slide?.Pieces.Count} pieces (complete {slide?.IsComplete}, slope {slide?.SlopePermille})." );
 		// the engine point halfway along the track and the pool's side of it, for --capture-camera
-		if ( slide != null )
+		if ( slide is { IsComplete: true } )
 		{
 			var origin = level.Objects.Grid.Origin;
 			var mid = slide.PointAt( slide.Length / 2 );

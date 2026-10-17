@@ -52,6 +52,22 @@ public static class PoolSlideTowers
 	public static IReadOnlyList<(int X, int Y)> Footprint( ObjectShape shape, int anchorX, int anchorY, int rotation ) =>
 		ObjectFootprint.GetCells( shape, anchorX, anchorY, rotation ).Select( cell => (cell.X, cell.Y) ).ToList();
 
+	/// <summary>Whether a tower placed here has pool water beside the footprint on a side that is not its front (the player has turned it the wrong way, for the refusal's wording).</summary>
+	public static bool WaterBesideOtherSide( ObjectShape shape, ParkCellMap cells, int anchorX, int anchorY, int rotation )
+	{
+		var footprint = Footprint( shape, anchorX, anchorY, rotation );
+		var front = PoolSideCandidates( shape, anchorX, anchorY, rotation );
+		foreach ( var (x, y) in footprint )
+			for ( var heading = 0; heading < 4; heading++ )
+			{
+				var (dx, dy) = PoolSlide.Direction( heading );
+				var next = (X: x + dx, Y: y + dy);
+				if ( !footprint.Contains( next ) && !front.Contains( next ) && cells.InBounds( next.X, next.Y ) && cells.RawTypeAt( next.X, next.Y ) == ParkCellTypes.PoolWater )
+					return true;
+			}
+		return false;
+	}
+
 	/// <summary>The placement rule: a slide tower needs pool water beside its front. Null (no opinion) for any other object and while the extension is off.</summary>
 	public static OriginalPlacementResult? PlacementRule( ObjectCatalogEntry entry, ParkCellMap? cells, int anchorX, int anchorY, int rotation )
 	{

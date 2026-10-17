@@ -19,7 +19,7 @@ public static class PoolSlidePhases
 /// [EXT:pools-slides] Riding a water slide (docs/POOLS.md, "Water slides"), an <see cref="IPoolActivity"/>. It is offered to a swimmer whose water holds both the foot of a slide tower's stairs and the slide's
 /// splash cell. The guest swims to the foot, climbs the stairs, waits on the tower's platform in line (the slide's capacity), is launched when the track is clear, rides it by gravity, splashes down
 /// at the end and swims on. Riding is free. The activity keeps no state of its own per guest: the phase, the turn counter and the slide (the target) are the guest's generic activity fields, and the
-/// rider's place on the track is a function of its turn counter, so a save in the middle of a ride restores exactly. It draws nothing from the swimmer's stream.
+/// rider's place on the track is a function of its turn counter, so a save in the middle of a ride restores exactly. It keeps no random state of its own: the only draw it makes is the swimmers' own steering step on the way to the stairs, from the swimmer's own stream.
 /// </summary>
 // [EXT:pools-slides] OpenTPW's own water slides; the original game has no pools
 public sealed class PoolSlideActivity : IPoolActivity
@@ -79,9 +79,9 @@ public sealed class PoolSlideActivity : IPoolActivity
 			case PoolSlidePhases.Wait:
 				return usable ? Wait( simulation, guest, slide! ) : LeaveTower( simulation, guest, slide );
 			case PoolSlidePhases.Ride:
-				return slide == null ? PoolActivityStep.EndSession : Ride( simulation, guest, slide );
+				return slide is not { IsComplete: true } ? PoolActivityStep.EndSession : Ride( simulation, guest, slide );
 			default:
-				return Splash( simulation, guest, slide );
+				return slide is not { IsComplete: true } ? PoolActivityStep.EndSession : Splash( guest );
 		}
 	}
 
@@ -151,8 +151,9 @@ public sealed class PoolSlideActivity : IPoolActivity
 
 	private static PoolActivityStep Climb( GuestSimulation simulation, Guest guest, PoolSlide slide )
 	{
-		var turns = ++guest.PoolActivityTurns;
+		// the place in the line is taken from the counters as they were before this turn (see RankInLine)
 		var (spotX, spotY) = SpotOf( simulation, guest, slide );
+		var turns = ++guest.PoolActivityTurns;
 		// a straight line from the foot of the stairs (where the climb began: the activity's point) to the platform
 		var x = guest.PoolActivityX + (int)((long)(spotX - guest.PoolActivityX) * Math.Min( turns, PoolSlideSettings.ClimbTurns ) / PoolSlideSettings.ClimbTurns);
 		var y = guest.PoolActivityY + (int)((long)(spotY - guest.PoolActivityY) * Math.Min( turns, PoolSlideSettings.ClimbTurns ) / PoolSlideSettings.ClimbTurns);
@@ -167,13 +168,14 @@ public sealed class PoolSlideActivity : IPoolActivity
 
 	private static PoolActivityStep Wait( GuestSimulation simulation, Guest guest, PoolSlide slide )
 	{
-		guest.PoolActivityTurns++;
-		if ( guest.PoolActivityTurns > PoolSlideSettings.WaitLimitTurns )
+		// the rank and the spot are those of the start of this turn, whatever the order the guests are updated in
+		var rank = RankInLine( simulation, guest );
+		var (spotX, spotY) = SpotOf( simulation, guest, slide, rank );
+		if ( ++guest.PoolActivityTurns > PoolSlideSettings.WaitLimitTurns )
 			return LeaveTower( simulation, guest, slide );
-		var (spotX, spotY) = SpotOf( simulation, guest, slide );
 		simulation.MovePoolGuest( guest, spotX, spotY );
 		// the guest who has waited longest goes first, once the one before it is a cell and a half down the track
-		if ( RankInLine( simulation, guest ) == 0 && IsStartClear( simulation, slide, guest.PoolActivityTarget ) )
+		if ( rank == 0 && IsStartClear( simulation, slide, guest.PoolActivityTarget ) )
 		{
 			guest.PoolActivityPhase = PoolSlidePhases.Ride;
 			guest.PoolActivityTurns = 0;
@@ -200,7 +202,7 @@ public sealed class PoolSlideActivity : IPoolActivity
 		return PoolActivityStep.Continue;
 	}
 
-	private static PoolActivityStep Splash( GuestSimulation simulation, Guest guest, PoolSlide? slide )
+	private static PoolActivityStep Splash( Guest guest )
 	{
 		if ( ++guest.PoolActivityTurns < PoolSlideSettings.SplashTurns )
 			return PoolActivityStep.Continue;
@@ -254,7 +256,8 @@ public sealed class PoolSlideActivity : IPoolActivity
 
 	/// <summary>
 	/// The place of the guest in the line in the tower: how many guests on the stairs or the platform are ahead of it. Waiters go before climbers, the longest waiting (or the furthest up the stairs)
-	/// first, ties by guest id; no list is built.
+	/// first, ties by guest id; no list is built. The guests are updated one after the other within a turn, so a guest that has already been updated this turn (its <c>StepTick</c> is this tick, every update
+	/// moves the guest) is read with its counters as they were before the turn: the line is the same whatever the order the guests are updated in.
 	/// </summary>
 	private static int RankInLine( GuestSimulation simulation, Guest guest )
 	{
@@ -265,17 +268,20 @@ public sealed class PoolSlideActivity : IPoolActivity
 			var other = guests[index];
 			if ( other == guest || !IsOn( other, guest.PoolActivityTarget, PoolSlidePhases.Climb, PoolSlidePhases.Wait ) )
 				continue;
-			if ( other.PoolActivityPhase != guest.PoolActivityPhase ? other.PoolActivityPhase > guest.PoolActivityPhase
-				: other.PoolActivityTurns != guest.PoolActivityTurns ? other.PoolActivityTurns > guest.PoolActivityTurns : other.Id < guest.Id )
+			var (phase, turns) = (other.PoolActivityPhase, other.PoolActivityTurns);
+			if ( other.StepTick == simulation.TickCount )
+				(phase, turns) = phase == PoolSlidePhases.Wait && turns == 0 ? (PoolSlidePhases.Climb, PoolSlideSettings.ClimbTurns - 1) : (phase, turns - 1);
+			if ( phase != guest.PoolActivityPhase ? phase > guest.PoolActivityPhase : turns != guest.PoolActivityTurns ? turns > guest.PoolActivityTurns : other.Id < guest.Id )
 				rank++;
 		}
 		return rank;
 	}
 
+	private static (int X, int Y) SpotOf( GuestSimulation simulation, Guest guest, PoolSlide slide ) => SpotOf( simulation, guest, slide, RankInLine( simulation, guest ) );
+
 	/// <summary>The guest's place on the platform (16.16): the spots lie round the tower's centre, one per rank in the line.</summary>
-	private static (int X, int Y) SpotOf( GuestSimulation simulation, Guest guest, PoolSlide slide )
+	private static (int X, int Y) SpotOf( GuestSimulation simulation, Guest guest, PoolSlide slide, int rank )
 	{
-		var rank = RankInLine( simulation, guest );
 		var tower = simulation.PoolSlides!.TowerOf( slide );
 		long sumX = 0, sumY = 0;
 		var count = 0;

@@ -140,6 +140,7 @@ public sealed partial class ParkHud
 			PoolBuildResult.Swimmers => OpenTpwText.PoolSwimmersInWater,
 			PoolBuildResult.ChangingRoomAccess => OpenTpwText.PoolChangingRoomNeedsWater,
 			PoolBuildResult.SlideRiders => OpenTpwText.PoolSlideRiders,
+			PoolBuildResult.SlideWater => OpenTpwText.PoolSlideWaterNeeded,
 			_ => OpenTpwText.CannotBuildHere
 		} ) );
 	}

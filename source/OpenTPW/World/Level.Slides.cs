@@ -70,26 +70,39 @@ public partial class Level
 	}
 
 	/// <summary>The park as the slide rules see it: the cell map, the ground the pool deck follows, the water levels of the pools and the cells other things hold.</summary>
+	private PoolSlideSite? slideSiteStore;
+
+	/// <summary>
+	/// The park as the slide rules see it. One instance for the level's life, so asking for it (the activity does, per swimmer per turn) allocates nothing: its functions read the live cell map, and the water
+	/// levels are rebuilt on the first question after a pool cell was written.
+	/// </summary>
 	private PoolSlideSite? SlideSite()
 	{
 		if ( Guests == null )
 			return null;
-		var cells = Guests.Grid.Cells;
-		var terrain = Objects.Grid;
-		float Ground( float cellX, float cellY ) => terrain.GetTerrainHeight( Math.Min( cellX * LandscapeSampler.CellUnits, terrain.Width * LandscapeSampler.CellUnits - 0.001f ),
-			Math.Min( cellY * LandscapeSampler.CellUnits, terrain.Height * LandscapeSampler.CellUnits - 0.001f ) );
-		if ( slideWaterStamp != cells.PoolWrites )
+		return slideSiteStore ??= new PoolSlideSite
 		{
-			slideWaterStamp = cells.PoolWrites;
-			slideWaterLevels = PoolMeshBuilder.WaterLevels( PoolRenderer.PoolCells( cells ), Ground, PoolMeshOptions.Default );
-		}
-		return new PoolSlideSite
-		{
-			Cells = cells,
-			Ground = Ground,
-			WaterLevel = ( x, y ) => slideWaterLevels.TryGetValue( (x, y), out var level ) ? level : null,
+			Cells = Guests.Grid.Cells,
+			Ground = SlideGround,
+			WaterLevel = ( x, y ) =>
+			{
+				var cells = Guests!.Grid.Cells;
+				if ( slideWaterStamp != cells.PoolWrites )
+				{
+					slideWaterStamp = cells.PoolWrites;
+					slideWaterLevels = PoolMeshBuilder.WaterLevels( PoolRenderer.PoolCells( cells ), SlideGround, PoolMeshOptions.Default );
+				}
+				return slideWaterLevels.TryGetValue( (x, y), out var level ) ? level : null;
+			},
 			IsReserved = ( x, y ) => IsReservedByPrototype( x, y )
 		};
+	}
+
+	private float SlideGround( float cellX, float cellY )
+	{
+		var terrain = Objects.Grid;
+		return terrain.GetTerrainHeight( Math.Min( cellX * LandscapeSampler.CellUnits, terrain.Width * LandscapeSampler.CellUnits - 0.001f ),
+			Math.Min( cellY * LandscapeSampler.CellUnits, terrain.Height * LandscapeSampler.CellUnits - 0.001f ) );
 	}
 
 	/// <summary>
@@ -122,11 +135,16 @@ public partial class Level
 		return null;
 	}
 
-	/// <summary>[EXT:pools-slides] Why a pool cell cannot be erased because of a slide: it is the splash cell of a slide with riders on it, or the foot of a tower's stairs with guests on them. Null when it can go.</summary>
+	/// <summary>
+	/// [EXT:pools-slides] Why a pool cell cannot be erased because of a slide: it is the splash cell of a complete slide or a pool-side cell of a slide's tower (always: a built slide keeps its water, as a changing
+	/// room keeps its access cells), or a guest is on the slide's track or stairs in it. Null when it can go.
+	/// </summary>
 	private PoolBuildResult? SlideEraseBlock( int x, int y )
 	{
 		if ( PoolSlides == null || Guests == null )
 			return null;
+		if ( PoolSlides.NeedsWater( x, y ) )
+			return PoolBuildResult.SlideWater;
 		foreach ( var slide in PoolSlides.Slides )
 		{
 			if ( PoolSlides.TowerOf( slide ) is not { } tower )

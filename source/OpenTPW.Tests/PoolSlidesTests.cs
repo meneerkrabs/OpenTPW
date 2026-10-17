@@ -426,6 +426,77 @@ public class PoolSlidesTests
 		Assert.ThrowsException<System.IO.InvalidDataException>( () => new PoolSlideWorld( () => Site( cells ), Lookup, () => null ).RestoreSnapshot( forged ) );
 	}
 
+	[TestMethod]
+	public void ASaveLoadsWhateverTheSlidesPoolHasBecomeAndTheSlideIsMerelyUnusableUntilItsWaterIsBack()
+	{
+		using var scope = PoolsOn();
+		var slide = StandardSlide( out var cells, out var tower, out var world );
+		var saved = world.CaptureSnapshot()!;
+		PoolSlideWorld Fresh( ParkCellMap map, float level = -0.12f ) =>
+			new( () => new PoolSlideSite { Cells = map, Ground = ( _, _ ) => 0f, WaterLevel = ( x, y ) => map.RawTypeAt( x, y ) == ParkCellTypes.PoolWater ? level : null }, id => id == tower.Id ? tower : null, () => null );
+		// the splash cell drained, the foot of the stairs drained, the pool split, the water level moved out of the window: each loads, none is usable
+		foreach ( var (name, edit) in new (string, Action<ParkCellMap>)[]
+		{
+			("splash drained", map => map.SetType( 11, 10, ParkCellType.Empty )),
+			("stairs drained", map => { map.SetType( 10, 12, ParkCellType.Empty ); map.SetType( 10, 13, ParkCellType.Empty ); }),
+			("split", map => { for ( var x = 10; x < 20; x++ ) map.SetType( x, 11, ParkCellType.Empty ); })
+		} )
+		{
+			var map = new ParkCellMap( 40, 40 );
+			for ( var y = 10; y < 20; y++ )
+				for ( var x = 10; x < 20; x++ )
+					map.SetType( x, y, ParkCellTypes.PoolWater );
+			edit( map );
+			var restored = Fresh( map );
+			restored.RestoreSnapshot( saved );
+			Assert.AreEqual( 1, restored.Count, name );
+			Assert.IsFalse( restored.IsUsable( restored.Slides.Single() ), name );
+		}
+		var lowered = new ParkCellMap( 40, 40 );
+		for ( var y = 10; y < 20; y++ )
+			for ( var x = 10; x < 20; x++ )
+				lowered.SetType( x, y, ParkCellTypes.PoolWater );
+		var deep = Fresh( lowered, -3f );
+		deep.RestoreSnapshot( saved );
+		Assert.IsFalse( deep.IsUsable( deep.Slides.Single() ), "a water level far below the track's end" );
+		var level = Fresh( lowered );
+		level.RestoreSnapshot( saved );
+		Assert.IsTrue( level.IsUsable( level.Slides.Single() ), "control: the park as it was" );
+		Assert.IsNotNull( slide );
+		// structure still refuses: another profile than the tower's
+		Assert.ThrowsException<System.IO.InvalidDataException>( () => Fresh( lowered ).RestoreSnapshot( saved with { Slides = new[] { saved.Slides[0] with { Profile = 1 } } } ) );
+	}
+
+	[TestMethod]
+	public void AGuestOnASlideIsCheckedAgainstTheRestoredSlidesAndWhatNeedsAFinishedSlideRefusesAnUnfinishedOne()
+	{
+		using var scope = PoolsOn();
+		var (cells, tower) = Fixture();
+		var thing = tower with { ThingId = 700 };
+		var world = new PoolSlideWorld( () => Site( cells ), id => id == tower.Id ? thing : null, () => null );
+		Build( world, tower, StandardCells.Take( 4 ) );
+		var guests = new GuestSimulation( new GuestPathGrid( 40, 40 ), GuestTests.CreateSettings(), 1 );
+		guests.Grid.SetPath( 1, 1, true );
+		var guest = guests.SpawnInPark( 1, 1 );
+		void Set( int phase, int target = 700 ) => (guest.State, guest.PoolActivityId, guest.PoolActivityTarget, guest.PoolActivityPhase) = (GuestState.PoolActivity, PoolSlideActivity.ActivityId, target, phase);
+		Set( PoolSlidePhases.Wait );
+		world.ValidateGuests( guests.Guests );
+		Set( PoolSlidePhases.Ride );
+		Assert.ThrowsException<System.IO.InvalidDataException>( () => world.ValidateGuests( guests.Guests ), "riding an unfinished slide" );
+		Set( PoolSlidePhases.Splash );
+		Assert.ThrowsException<System.IO.InvalidDataException>( () => world.ValidateGuests( guests.Guests ) );
+		Set( 9 );
+		Assert.ThrowsException<System.IO.InvalidDataException>( () => world.ValidateGuests( guests.Guests ), "a phase that does not exist" );
+		Set( PoolSlidePhases.Climb, target: 0 );
+		Assert.ThrowsException<System.IO.InvalidDataException>( () => world.ValidateGuests( guests.Guests ), "a slide that is not there" );
+		Build( world, tower, StandardCells.Skip( 4 ) );
+		Set( PoolSlidePhases.Ride );
+		world.ValidateGuests( guests.Guests );
+		guest.State = GuestState.DoingNothing;
+		(guest.PoolActivityId, guest.PoolActivityTarget, guest.PoolActivityPhase) = (null, 0, 0);
+		world.ValidateGuests( guests.Guests );
+	}
+
 	// ---- The tool -----------------------------------------------------------------------------------------------------
 
 	private static PoolTool ToolFor( ParkCellMap cells, PoolSlideWorld world ) => new( new PoolBuilder( cells, () => null, new PoolsTests.FlatGrid( cells.Width, cells.Height ) ) ) { Slides = world };
@@ -496,6 +567,37 @@ public class PoolSlidesTests
 		// the paint and erase modes are untouched
 		Assert.IsTrue( steep.Begin( erase: false ) );
 		Assert.IsFalse( steep.IsSlide );
+	}
+
+	[TestMethod]
+	public void DraggingPastTheSplashEndsTheSlideCleanlyWithNoRefusalAndSwitchingModeKeepsThePoolSafe()
+	{
+		using var scope = PoolsOn();
+		var (cells, tower) = Fixture();
+		var world = World( cells, tower );
+		var tool = ToolFor( cells, world );
+		Assert.IsTrue( tool.BeginSlide( 8, 12 ) );
+		tool.Press( 8, 11 );
+		tool.Hover( 8, 9 );
+		tool.Hover( 11, 9 );
+		// one drag runs through the pool cell (11, 10) that ends the slide and on through (11, 11) and (11, 12)
+		tool.Hover( 11, 13 );
+		var stroke = tool.Release();
+		Assert.IsNotNull( stroke );
+		Assert.IsTrue( tool.SlideCompleted );
+		Assert.IsNull( tool.LastRefusal, "the cells past the splash are not a refusal" );
+		Assert.IsNull( tool.LastSlideRefusal );
+		Assert.AreEqual( 7, world.Find( tower.Id )!.Pieces.Count );
+		// an unfinished slide's stroke is not a pool stroke: switching to the paint mode and pressing Backspace takes no water away
+		var other = ToolFor( cells, World( cells, tower ) );
+		Assert.IsTrue( other.BeginSlide( 8, 12 ) );
+		other.Press( 8, 11 );
+		other.Hover( 8, 10 );
+		other.Release();
+		var water = cells.CountOf( ParkCellType.PoolWater );
+		Assert.IsTrue( other.Begin( erase: false ) );
+		Assert.IsFalse( other.Undo(), "nothing for the pool tool to take back" );
+		Assert.AreEqual( water, cells.CountOf( ParkCellType.PoolWater ) );
 	}
 
 	[TestMethod]

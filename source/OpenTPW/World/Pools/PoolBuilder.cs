@@ -31,6 +31,8 @@ public enum PoolBuildResult
 	ChangingRoomAccess,
 	/// <summary>[EXT:pools-slides] The cell is the splash cell of a slide with riders on it, or the foot of a tower's stairs with guests on them.</summary>
 	SlideRiders,
+	/// <summary>[EXT:pools-slides] The cell is the splash cell of a built slide or a pool-side cell of a slide tower: the slide stands on that water.</summary>
+	SlideWater,
 	/// <summary>[EXT:pools-slides] The slide tool refused the cell; <see cref="PoolTool.LastSlideRefusal"/> says why.</summary>
 	SlideRefused
 }

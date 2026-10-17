@@ -128,6 +128,7 @@ public partial class Level
 		RestoreTracksSnapshot( snapshot.Tracks );
 		// [EXT:pools-slides] the slides go back over their towers and the pool cells the layout restored
 		PoolSlides?.RestoreSnapshot( snapshot.PoolSlides );
+		PoolSlides?.ValidateGuests( Guests.Guests );
 		RestoreToursSnapshot( snapshot.Tours );
 		// the resumed tiles and boats are drawn from the first frame, as they were when the park was saved
 		UpdateTrackRendering();

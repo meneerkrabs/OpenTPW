@@ -142,7 +142,12 @@ public sealed class PoolTool
 		if ( !IsActive || last is not { } from || from == (x, y) )
 			return;
 		foreach ( var cell in PoolBuilder.DragLine( from, (x, y) ).Skip( 1 ) )
+		{
+			// [EXT:pools-slides] a slide the splash has finished takes no more cells: the rest of the drag is not a refusal
+			if ( slideTower is { } laid && Slides?.Find( PoolSlide.KeyOf( laid.X, laid.Y ) ) is { IsComplete: true } )
+				break;
 			Write( cell.X, cell.Y );
+		}
 		last = (x, y);
 	}
 
@@ -173,6 +178,12 @@ public sealed class PoolTool
 		}
 		var stroke = new PoolStroke( IsErasing, cells, IsErasing ? 0 : pendingMoney, IsErasing ? -pendingMoney : 0, LastRefusal );
 		pendingMoney = 0;
+		// [EXT:pools-slides] the pieces of a slide are taken back by Backspace in the slide mode, not by the pool strokes' undo (which would erase the pool cells of the track)
+		if ( slideTower != null )
+		{
+			LastStroke = stroke;
+			return stroke;
+		}
 		strokes.Add( stroke );
 		if ( strokes.Count > UndoCapacity )
 			strokes.RemoveAt( 0 );
@@ -233,6 +244,8 @@ public sealed class PoolTool
 	{
 		if ( slideTower is { } tower && Slides != null )
 		{
+			if ( Slides.Find( PoolSlide.KeyOf( tower.X, tower.Y ) ) is { IsComplete: true } )
+				return PoolBuildResult.Existing;
 			var slide = Slides.AddCell( tower.X, tower.Y, x, y );
 			if ( slide == PoolSlideResult.Ok )
 			{

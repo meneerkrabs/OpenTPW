@@ -153,29 +153,110 @@ public class PoolSlideLevelTests
 	}
 
 	[TestMethod]
-	public void TheSplashCellCannotBeErasedWhileRidersAreOnTheSlideNorTheFootOfTheStairsWhileGuestsClimbIt()
+	public void TheSplashCellAndTheTowersPoolSideCellsCanNeverBeErasedWhileTheSlideStandsAndNeitherCanGuestsBeUnderMined()
+	{
+		With( true, () =>
+		{
+			var tower = PoolAndTower();
+			// before the track: a tower alone protects its pool-side cells only once it carries a slide
+			Assert.AreEqual( PoolBuildResult.Ok, level.PoolBuilder!.CheckErase( 13, 18 ), "a tower without a slide keeps no water" );
+			Build( tower );
+			Assert.AreEqual( PoolBuildResult.SlideWater, level.PoolBuilder.CheckErase( 17, 18 ), "the splash cell of a built slide" );
+			Assert.AreEqual( PoolBuildResult.SlideWater, level.PoolBuilder.CheckErase( 13, 18 ), "a pool-side cell of its tower" );
+			Assert.AreEqual( PoolBuildResult.SlideWater, level.PoolBuilder.CheckErase( 14, 18 ), "the other pool-side cell: the foot of the stairs may be either" );
+			Assert.AreEqual( PoolBuildResult.Ok, level.PoolBuilder.CheckErase( 16, 12 ), "another cell of the pool can go" );
+			Assert.AreEqual( PoolBuildResult.SlideWater, level.PoolBuilder.Erase( 17, 18 ), "Erase refuses too" );
+			Assert.AreEqual( ParkCellTypes.PoolWater, Cells.RawTypeAt( 17, 18 ) );
+			// a stroke of erase over the whole pool leaves the slide's water and takes the rest; its undo paints the rest again and the slide is usable throughout
+			var stroke = level.PoolBuilder.EraseCells( PoolBuilder.Rectangle( (12, 12), (18, 18) ) );
+			Assert.IsTrue( stroke.Cells.Count > 0 && stroke.Cells.Count < 49 );
+			Assert.IsTrue( level.PoolSlides!.IsUsable( level.PoolSlides.Slides.Single() ) || Cells.RawTypeAt( 17, 18 ) == ParkCellTypes.PoolWater );
+			level.PoolBuilder.PaintCells( stroke.Cells );
+			Assert.AreEqual( 49, Cells.CountOf( ParkCellType.PoolWater ) );
+			// guests on the slide still count: the host's own rule keeps the cell of a guest in an activity
+			level.Guests!.Grid.SetPath( 21, 21, true );
+			var rider = level.Guests.SpawnInPark( 21, 21 );
+			(rider.State, rider.PoolActivityId, rider.PoolActivityTarget, rider.PoolActivityPhase) = (GuestState.PoolActivity, PoolSlideActivity.ActivityId, tower.ThingId, PoolSlidePhases.Ride);
+			Assert.AreEqual( PoolBuildResult.SlideWater, level.PoolBuilder.CheckErase( 17, 18 ) );
+			return 0;
+		} );
+	}
+
+	[TestMethod]
+	public void AnOrdinaryPoolEditThatSplitsOrDrainsTheSlidesPoolLeavesASaveThatLoadsIntoAFreshWorldAndTheSlideComesBackUnusable()
 	{
 		With( true, () =>
 		{
 			var tower = PoolAndTower();
 			var id = Build( tower );
-			Assert.AreEqual( PoolBuildResult.Ok, level.PoolBuilder!.CheckErase( 17, 18 ), "control: nobody on the slide" );
-			level.Guests!.Grid.SetPath( 21, 21, true );
-			var rider = level.Guests.SpawnInPark( 21, 21 );
-			(rider.State, rider.PoolActivityId, rider.PoolActivityTarget, rider.PoolActivityPhase) = (GuestState.PoolActivity, PoolSlideActivity.ActivityId, tower.ThingId, PoolSlidePhases.Ride);
-			Assert.AreEqual( PoolBuildResult.SlideRiders, level.PoolBuilder.CheckErase( 17, 18 ), "a rider is on the track" );
-			Assert.AreEqual( PoolBuildResult.Ok, level.PoolBuilder.CheckErase( 16, 12 ), "another cell of the pool can go" );
-			rider.PoolActivityPhase = PoolSlidePhases.Splash;
-			Assert.AreEqual( PoolBuildResult.SlideRiders, level.PoolBuilder.CheckErase( 17, 18 ), "and while it splashes" );
-			var foot = level.PoolSlides!.TowerOf( level.PoolSlides.Find( id )! )!.PoolSideCell( Cells )!.Value;
-			Assert.AreEqual( PoolBuildResult.Ok, level.PoolBuilder.CheckErase( foot.X, foot.Y ), "nobody climbs yet" );
-			rider.PoolActivityPhase = PoolSlidePhases.Climb;
-			Assert.AreEqual( PoolBuildResult.SlideRiders, level.PoolBuilder.CheckErase( foot.X, foot.Y ), "a climber needs the foot of the stairs" );
-			Assert.AreEqual( PoolBuildResult.Ok, level.PoolBuilder.CheckErase( 17, 18 ), "the climber is not on the track" );
-			rider.State = GuestState.DoingNothing;
-			Assert.AreEqual( PoolBuildResult.Ok, level.PoolBuilder.CheckErase( foot.X, foot.Y ) );
-			Assert.AreEqual( PoolBuildResult.Ok, level.PoolBuilder.Erase( 17, 18 ), "no riders: the cell goes" );
-			Assert.IsFalse( level.PoolSlides.IsUsable( level.PoolSlides.Find( id )! ), "and the slide is not usable without its landing" );
+			var slide = level.PoolSlides!.Find( id )!;
+			Assert.IsTrue( level.PoolSlides.IsUsable( slide ) );
+			// erase a whole column of the pool between the stairs (x 13 and 14) and the splash (17): the pool is two pools
+			for ( var y = 12; y <= 18; y++ )
+				Assert.AreEqual( PoolBuildResult.Ok, level.PoolBuilder!.Erase( 15, y ) );
+			Assert.IsFalse( level.PoolSlides.IsUsable( slide ), "split: the splash is in another water" );
+			var saved = level.PoolSlides.CaptureSnapshot();
+			Assert.IsNotNull( saved, "the slide is still saved" );
+			// a fresh world over a fresh cell map that holds the park's pool cells (what the save's layout restores) loads it
+			var cells = new ParkCellMap( Cells.Width, Cells.Height );
+			for ( var y = 0; y < Cells.Height; y++ )
+				for ( var x = 0; x < Cells.Width; x++ )
+					if ( Cells.RawTypeAt( x, y ) == ParkCellTypes.PoolWater )
+						cells.SetType( x, y, ParkCellTypes.PoolWater );
+			var site = new PoolSlideSite { Cells = cells, Ground = ( _, _ ) => 0f, WaterLevel = ( x, y ) => cells.RawTypeAt( x, y ) == ParkCellTypes.PoolWater ? -0.12f : null };
+			var towerBack = level.PoolSlides.TowerOf( slide )!;
+			var fresh = new PoolSlideWorld( () => site, thing => thing == id ? towerBack : null, () => null );
+			fresh.RestoreSnapshot( ParkResumeJson.Deserialize<PoolSlidesSaveData>( ParkResumeJson.Serialize( saved ) ) );
+			Assert.AreEqual( 1, fresh.Count );
+			Assert.IsFalse( fresh.IsUsable( fresh.Slides.Single() ), "it loads, unusable" );
+			// the water comes back (the player paints the column again): usable again, in the fresh world too
+			for ( var y = 12; y <= 18; y++ )
+				cells.SetType( 15, y, ParkCellTypes.PoolWater );
+			Assert.IsTrue( fresh.IsUsable( fresh.Slides.Single() ), "and with the water it is usable again" );
+			// a drained splash cell in a forged save (not reachable through the tool) loads as well
+			cells.SetType( 17, 18, ParkCellType.Empty );
+			var forged = new PoolSlideWorld( () => site, thing => thing == id ? towerBack : null, () => null );
+			forged.RestoreSnapshot( saved );
+			Assert.IsFalse( forged.IsUsable( forged.Slides.Single() ) );
+			return 0;
+		} );
+	}
+
+	[TestMethod]
+	public void TheQueueToolCannotLayCellsUnderTheTrackNorTheWaterTheSlideStandsOn()
+	{
+		With( true, () =>
+		{
+			var tower = PoolAndTower();
+			Assert.IsFalse( (bool)Call( level, "IsQueueBlocked", 16, 19 )!, "control: before the track" );
+			Build( tower );
+			Assert.IsTrue( (bool)Call( level, "IsQueueBlocked", 16, 19 )!, "no queue under the track" );
+			Assert.IsFalse( (bool)Call( level, "IsQueueBlocked", 22, 22 )!, "control: elsewhere" );
+			return 0;
+		} );
+	}
+
+	[TestMethod]
+	public void ATowerTurnedAwayFromThePoolBesideItGetsItsOwnRefusalFlag()
+	{
+		With( true, () =>
+		{
+			Assert.IsTrue( level.PoolBuilder!.PaintCells( PoolBuilder.Rectangle( (12, 12), (18, 18) ) ).Completed );
+			var tower = Tower();
+			var flags = new List<bool>();
+			for ( var rotation = 0; rotation < 360; rotation += 90 )
+				for ( var x = 8; x <= 20; x++ )
+					for ( var y = 8; y <= 22; y++ )
+					{
+						var anchor = Level.GetCentredAnchor( tower, x, y, rotation );
+						if ( level.Objects.Check( tower, anchor.X, anchor.Y, rotation ) != OriginalPlacementResult.NeedsPool )
+							continue;
+						level.PlaceObject( tower, x, y, rotation );
+						flags.Add( level.LastRefusalTowerFacesAway );
+						Assert.AreEqual( PoolSlideTowers.WaterBesideOtherSide( tower.Shape, Cells, anchor.X, anchor.Y, rotation ), level.LastRefusalTowerFacesAway );
+					}
+			Assert.IsTrue( flags.Contains( true ), "beside the pool on the wrong side" );
+			Assert.IsTrue( flags.Contains( false ), "and nowhere near it" );
 			return 0;
 		} );
 	}

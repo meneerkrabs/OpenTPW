@@ -52,9 +52,6 @@ public sealed record PoolSlidesSaveData( IReadOnlyList<PoolSlideSaveData> Slides
 // [EXT:pools-slides] OpenTPW's own slides; the original game has no pools
 public sealed class PoolSlideWorld
 {
-	/// <summary>[EXT:pools-cost] The price of one slide piece: OpenTPW's own value (the original has no slides), a little above a path cell and below a pool cell... see docs/POOLS.md.</summary>
-	public const int PieceCost = ParkEconomy.SlidePieceCost;
-
 	private readonly SortedDictionary<int, PoolSlide> slides = new();
 	private readonly Func<PoolSlideSite?> site;
 	private readonly Func<int, PoolSlideTower?> towers;
@@ -131,6 +128,23 @@ public sealed class PoolSlideWorld
 		var valid = PoolSlideRules.Validate( slide, TowerAt( slide.TowerX, slide.TowerY ), place ) == PoolSlideResult.Ok;
 		usable[slide.Id] = (Version, writes, valid);
 		return valid;
+	}
+
+	/// <summary>
+	/// Whether the pool cell must stay water because a slide needs it: the splash cell of a complete slide, and the pool-side cells of the tower of any slide (the foot of its stairs may be any of them, as a
+	/// changing room's access cells are protected). The pool tool refuses to erase them, so an ordinary edit cannot take away what a built slide stands on.
+	/// </summary>
+	public bool NeedsWater( int x, int y )
+	{
+		var list = Ordered;
+		for ( var index = 0; index < list.Count; index++ )
+		{
+			if ( list[index].IsComplete && list[index].LandingCell == (x, y) )
+				return true;
+			if ( TowerOf( list[index] ) is { } tower && tower.PoolSide.Contains( (x, y) ) )
+				return true;
+		}
+		return false;
 	}
 
 	/// <summary>The tower of a slide, as the world was given it; null when it is gone.</summary>
@@ -286,8 +300,8 @@ public sealed class PoolSlideWorld
 			slide.Pieces.Select( piece => (int)piece ).ToArray(), slide.TopHeight, slide.EndHeight ) ).ToArray() );
 
 	/// <summary>
-	/// Restores the saved slides over an empty world. Each is checked against its tower and the site with the same rules as a new one (a slide not complete is checked as far as it goes);
-	/// the first that fails throws, so a save cannot bring in a slide the rules would not have built.
+	/// Restores the saved slides over an empty world. Each is checked for its structure against its tower and the site (<see cref="PoolSlideRules.ValidateStructure"/>); the first that fails throws, so a
+	/// save cannot bring in a slide the rules would not have built. What depends on the pool is not checked: a slide whose pool was changed legally comes back unusable, and with the water it comes back to use.
 	/// </summary>
 	public void RestoreSnapshot( PoolSlidesSaveData? saved )
 	{
@@ -306,12 +320,33 @@ public sealed class PoolSlideWorld
 				throw new InvalidDataException( "The saved slides are not in tower order." );
 			previous = slide.Id;
 			var tower = TowerAt( item.TowerX, item.TowerY );
-			var result = PoolSlideRules.Validate( slide, tower, place, requireComplete: false );
+			// the structure only: whether the slide is usable now depends on its pool, which the pool tool may have changed since (docs/POOLS.md, "Saves and determinism")
+			var result = PoolSlideRules.ValidateStructure( slide, tower, place );
 			if ( result != PoolSlideResult.Ok || TouchesAnotherSlide( slide ) )
 				throw new InvalidDataException( $"The saved slide at {item.TowerX},{item.TowerY} is not valid: {(result != PoolSlideResult.Ok ? result : PoolSlideResult.Occupied)}." );
 			slides[slide.Id] = slide;
 		}
 		Version++;
+	}
+
+	/// <summary>
+	/// Checks the guests a save holds against the restored slides: a guest doing <see cref="PoolSlideActivity.ActivityId"/> is in a phase that exists, on a slide whose tower has this thing id, and on a complete
+	/// slide when it is riding or splashing. Throws <see cref="InvalidDataException"/> otherwise, so a forged save cannot send a guest down a track that is not there.
+	/// </summary>
+	public void ValidateGuests( IEnumerable<Guest> guests )
+	{
+		foreach ( var guest in guests )
+		{
+			if ( guest.State != GuestState.PoolActivity || guest.PoolActivityId != PoolSlideActivity.ActivityId )
+				continue;
+			if ( guest.PoolActivityPhase is < PoolSlidePhases.Approach or > PoolSlidePhases.Splash )
+				throw new InvalidDataException( $"Guest {guest.Id} is on a slide in phase {guest.PoolActivityPhase}, which does not exist." );
+			var slide = FindByThing( guest.PoolActivityTarget );
+			if ( slide == null )
+				throw new InvalidDataException( $"Guest {guest.Id} is on the slide of thing {guest.PoolActivityTarget}, which the park does not hold." );
+			if ( guest.PoolActivityPhase >= PoolSlidePhases.Ride && !slide.IsComplete )
+				throw new InvalidDataException( $"Guest {guest.Id} rides a slide that is not finished." );
+		}
 	}
 
 	/// <summary>Adds the slides to the canonical hash: for each slide in tower order its key, profile, start, pieces and heights. Nothing for a park without slides.</summary>

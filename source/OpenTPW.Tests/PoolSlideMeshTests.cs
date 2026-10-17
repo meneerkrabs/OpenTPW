@@ -86,6 +86,23 @@ public class PoolSlideMeshTests
 	}
 
 	[TestMethod]
+	public void TheFlumeBedIsLitFromAboveAndTheTubeFromOutside()
+	{
+		using var scope = PoolsOn();
+		var flume = Slide( PoolSlideProfile.Flume, out var cells );
+		var bed = Mesh( flume, cells ).Track;
+		var middle = bed.Vertices.Where( v => MathF.Abs( v.Position.X - (Origin.X + 8.5f * Cell) ) < 0.05f && v.Position.Z > 4f ).ToList();
+		Assert.IsTrue( middle.Count > 0 );
+		// the lowest vertices of the first straight are the bed: its normal faces up, into the pipe
+		var lowest = middle.OrderBy( v => v.Position.Z ).First();
+		Assert.IsTrue( lowest.Normal.Z > 0.5f, $"the bed's normal {lowest.Normal}" );
+		var tube = Slide( PoolSlideProfile.Tube, out var tubeCells );
+		var shell = Mesh( tube, tubeCells ).Track;
+		var low = shell.Vertices.Where( v => MathF.Abs( v.Position.X - (Origin.X + 8.5f * Cell) ) < 0.05f && v.Position.Z > 4f ).OrderBy( v => v.Position.Z ).First();
+		Assert.IsTrue( low.Normal.Z < -0.5f, $"the tube's underside faces down: {low.Normal}" );
+	}
+
+	[TestMethod]
 	public void PylonsStandOnTheGroundAndOnThePoolFloorUnderTheSplashAndTheMeshIsRepeatable()
 	{
 		using var scope = PoolsOn();

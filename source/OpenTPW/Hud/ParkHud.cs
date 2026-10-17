@@ -805,7 +805,7 @@ public sealed partial class ParkHud
 				// [EXT:pools-changing-room] a changing room that is refused for want of a pool says so
 				// [EXT:pools-slides] and so does a slide tower, in its own words
 				PostMessage( strings.Extra( !lastLevelMessage.EndsWith( $": {nameof( OriginalPlacementResult.NeedsPool )}.", StringComparison.Ordinal ) ? OpenTpwText.CannotBuildHere
-					: pendingItem?.Entry is { } refused && PoolSlideTowers.IsSlideTower( refused ) ? OpenTpwText.PoolSlideTowerNeedsPool : OpenTpwText.PoolChangingRoomNeedsPool ) );
+					: pendingItem?.Entry is { } refused && PoolSlideTowers.IsSlideTower( refused ) ? (level.LastRefusalTowerFacesAway ? OpenTpwText.PoolSlideTowerFacesAway : OpenTpwText.PoolSlideTowerNeedsPool) : OpenTpwText.PoolChangingRoomNeedsPool ) );
 				GameAudio.PlayUi( GameAudio.ErrorEvent );
 			}
 		}

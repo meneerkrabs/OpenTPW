@@ -142,14 +142,15 @@ public class PoolSlideActivityTests
 	}
 
 	[TestMethod]
-	public void TheTowerHoldsAtMostItsCapacityAndTheLongestWaitingGuestGoesFirstWithAGapBetweenRiders()
+	public void TheTowerHoldsAtMostItsCapacityAndTheLongestWaitingGuestGoesFirstWithAGapBetweenRidersAndNobodySharesASpot()
 	{
 		using var scope = PoolsOn();
-		var rig = new SlideRig( capacity: 2 );
-		var guests = Enumerable.Range( 0, 6 ).Select( _ => rig.Rig.Send() ).ToList();
+		var rig = new SlideRig( capacity: 3 );
+		var guests = Enumerable.Range( 0, 7 ).Select( _ => rig.Rig.Send() ).ToList();
 		var mostOccupied = 0;
 		var mostOnTrack = 0;
 		var launches = new List<(int Turn, int Id)>();
+		var arrived = new Dictionary<int, int>();
 		var seen = new HashSet<int>();
 		var turn = 0;
 		var minimumGap = int.MaxValue;
@@ -157,6 +158,11 @@ public class PoolSlideActivityTests
 		{
 			turn++;
 			mostOccupied = Math.Max( mostOccupied, PoolSlideActivity.Occupants( rig.Rig.Simulation, rig.Tower.ThingId ) );
+			var inTower = rig.OnSlide.Where( guest => guest.PoolActivityPhase == PoolSlidePhases.Wait ).ToList();
+			foreach ( var waiting in inTower )
+				arrived.TryAdd( waiting.Id, turn );
+			var spots = inTower.Select( guest => (guest.Navigation.X, guest.Navigation.Y) ).ToList();
+			Assert.AreEqual( spots.Count, spots.Distinct().Count(), $"turn {turn}: two waiting guests share a spot" );
 			var riders = rig.OnSlide.Where( guest => guest.PoolActivityPhase == PoolSlidePhases.Ride ).ToList();
 			mostOnTrack = Math.Max( mostOnTrack, riders.Count );
 			foreach ( var rider in riders )
@@ -166,11 +172,32 @@ public class PoolSlideActivityTests
 			for ( var index = 1; index < positions.Count; index++ )
 				minimumGap = Math.Min( minimumGap, positions[index] - positions[index - 1] );
 		} );
-		Assert.IsTrue( mostOccupied <= 2 && mostOccupied == 2, $"never more than the capacity, and it filled up ({mostOccupied})" );
-		Assert.IsTrue( launches.Count >= 4, $"{launches.Count} guests rode" );
+		Assert.AreEqual( 3, mostOccupied, "never more than the capacity, and it filled up" );
+		Assert.IsTrue( launches.Count >= 5, $"{launches.Count} guests rode" );
 		Assert.IsTrue( minimumGap >= PoolSlideSettings.Gap, $"riders on the track kept {minimumGap} apart, at least {PoolSlideSettings.Gap}" );
 		Assert.IsTrue( mostOnTrack >= 1 );
 		Assert.IsTrue( launches.Zip( launches.Skip( 1 ) ).All( pair => pair.Second.Turn > pair.First.Turn ), "one launch per turn at most" );
+		// the longest waiting goes first: the launch order is the order of arrival on the platform, ties by guest id
+		var expected = launches.OrderBy( launch => arrived[launch.Id] ).ThenBy( launch => launch.Id ).Select( launch => launch.Id ).ToList();
+		CollectionAssert.AreEqual( expected, launches.Select( launch => launch.Id ).ToList(), "longest waiting first" );
+	}
+
+	[TestMethod]
+	public void AGuestRidingAnUnfinishedSlideLeavesTheSessionWithoutACrash()
+	{
+		using var scope = PoolsOn();
+		var rig = new SlideRig( build: false );
+		foreach ( var (x, y) in SlideRig.Track.Take( 6 ) )
+			Assert.AreEqual( PoolSlideResult.Ok, rig.World.AddCell( rig.Tower.X, rig.Tower.Y, x, y ) );
+		foreach ( var phase in new[] { PoolSlidePhases.Ride, PoolSlidePhases.Splash } )
+		{
+			var guest = rig.Rig.Send();
+			rig.Rig.Until( () => guest.IsSwimming, 800 );
+			(guest.State, guest.PoolActivityId, guest.PoolActivityTarget, guest.PoolActivityPhase, guest.PoolActivityTurns) = (GuestState.PoolActivity, PoolSlideActivity.ActivityId, rig.Tower.ThingId, phase, 0);
+			(guest.PoolActivityX, guest.PoolActivityY) = PoolSwimRegion.Centre( (5, 5) );
+			rig.Rig.Turns( 3 );
+			Assert.IsFalse( guest.InPoolActivity, $"phase {phase}: out of the activity" );
+		}
 	}
 
 	[TestMethod]
@@ -245,8 +272,10 @@ public class PoolSlideActivityTests
 	{
 		using var scope = PoolsOn();
 		var rig = new SlideRig();
-		var guest = rig.Rig.Send();
-		rig.Rig.Until( () => guest.InPoolActivity && guest.PoolActivityPhase == PoolSlidePhases.Ride && guest.PoolActivityTurns >= 5, 4000 );
+		for ( var more = 0; more < 4; more++ )
+			rig.Rig.Send();
+		// a rider mid-ride and others on the stairs and the platform
+		rig.Rig.Until( () => rig.OnSlide.Any( other => other.PoolActivityPhase == PoolSlidePhases.Ride && other.PoolActivityTurns >= 5 ) && rig.OnSlide.Any( other => other.PoolActivityPhase is PoolSlidePhases.Climb or PoolSlidePhases.Wait ), 6000 );
 		var json = Encoding.UTF8.GetString( ParkResumeJson.Serialize( rig.Rig.Simulation.CaptureSnapshot() ) );
 		var snapshot = ParkResumeJson.Deserialize<GuestSimulationSnapshot>( Encoding.UTF8.GetBytes( json ) );
 		var slides = ParkResumeJson.Deserialize<PoolSlidesSaveData>( ParkResumeJson.Serialize( rig.World.CaptureSnapshot() ) );
@@ -255,15 +284,18 @@ public class PoolSlideActivityTests
 		Assert.IsTrue( copy.Rig.Simulation.ValidateSnapshot( snapshot ).IsValid, string.Join( "; ", copy.Rig.Simulation.ValidateSnapshot( snapshot ).Errors ) );
 		copy.Rig.Simulation.RestoreSnapshot( snapshot );
 		Assert.AreEqual( rig.Hash(), copy.Hash() );
-		var twin = copy.Rig.Simulation.Guests.Single();
+		Assert.IsTrue( copy.Rig.Simulation.Guests.Count >= 2 && copy.OnSlide.Any( other => other.PoolActivityPhase == PoolSlidePhases.Ride ) && copy.OnSlide.Any( other => other.PoolActivityPhase is PoolSlidePhases.Climb or PoolSlidePhases.Wait ) );
 		for ( var tick = 0; tick < 60 * 80; tick++ )
 		{
 			rig.Rig.Simulation.Tick( 1f / FixedStepClock.TicksPerSecond );
 			copy.Rig.Simulation.Tick( 1f / FixedStepClock.TicksPerSecond );
-			Assert.AreEqual( (guest.State, guest.PoolActivityPhase, guest.PoolActivityTurns, guest.Navigation.X, guest.Navigation.Y), (twin.State, twin.PoolActivityPhase, twin.PoolActivityTurns, twin.Navigation.X, twin.Navigation.Y), $"tick {tick}" );
+			foreach ( var live in rig.Rig.Simulation.Guests )
+			{
+				var twin = copy.Rig.Simulation.Guests.Single( other => other.Id == live.Id );
+				Assert.AreEqual( (live.State, live.PoolActivityPhase, live.PoolActivityTurns, live.Navigation.X, live.Navigation.Y), (twin.State, twin.PoolActivityPhase, twin.PoolActivityTurns, twin.Navigation.X, twin.Navigation.Y), $"tick {tick}, guest {live.Id}" );
+			}
 		}
 		Assert.AreEqual( rig.Hash(), copy.Hash() );
-		Assert.IsFalse( twin.InPoolActivity && twin.PoolActivityPhase == PoolSlidePhases.Ride, "it landed" );
 	}
 
 	[TestMethod]

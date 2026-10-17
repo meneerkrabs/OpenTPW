@@ -106,7 +106,9 @@ public static class PoolSlideMeshBuilder
 			for ( var i = 0; i < section.Count; i++ )
 			{
 				points[i] = centre + lateral * section[i].Lat + up * section[i].Up;
-				normals[i] = SVector3.Normalize( lateral * section[i].NormalLat + up * section[i].NormalUp );
+				// the flume is seen from above, into the pipe: its shell is lit from the inside (the bed faces up), where the tube, a closed ring, is lit from the outside
+				var facing = slide.Profile == PoolSlideProfile.Flume ? -1f : 1f;
+				normals[i] = SVector3.Normalize( (lateral * section[i].NormalLat + up * section[i].NormalUp) * facing );
 			}
 			rings.Add( (points, normals, position / (float)PoolSlide.Unit * cellSize) );
 		}

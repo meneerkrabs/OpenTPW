@@ -383,6 +383,9 @@ public partial class Level
 		return SlideEraseBlock( x, y );
 	}
 
+	/// <summary>[EXT:pools-slides] Whether the last refused placement was a slide tower beside a pool on the wrong side (the HUD's wording).</summary>
+	public bool LastRefusalTowerFacesAway { get; private set; }
+
 	/// <summary>[EXT:pools-tool] The headless pool builder over the level's cell map (original levels, not a read-only visit); null otherwise (docs/POOLS.md).</summary>
 	public PoolBuilder? PoolBuilder { get; private set; }
 	/// <summary>[EXT:pools-tool] The pool paint tool the park view drives while the <c>opentpw.pools</c> extension is on.</summary>
@@ -934,7 +937,9 @@ public partial class Level
 	// [BIN:TPW-EXE:0x5357c7 placement validator] a cell with flag 0x40 is refused for a queue as for a path or an object
 	private bool IsQueueBlocked( int x, int y ) =>
 		!QueueTerrainAllows( x, y ) || (Objects.FindAt( x, y ) != null && !QueueGivesWay( x, y )) || IsReservedByPrototype( x, y )
-		|| (Guests?.Grid.Cells is { } cells && cells.InBounds( x, y ) && cells.FlagsAt( x, y ).HasFlag( ParkCellFlags.Unowned ));
+		|| (Guests?.Grid.Cells is { } cells && cells.InBounds( x, y ) && cells.FlagsAt( x, y ).HasFlag( ParkCellFlags.Unowned ))
+		// [EXT:pools-slides] a slide's track keeps its land cells for its pylons
+		|| (Guests != null && PoolSlides?.ReservesLand( x, y, Guests.Grid.Cells ) == true);
 
 	/// <summary>The terrain rule for a queue cell; its path cells (the save's and the map start's) are the live cell map's to judge, as for objects.</summary>
 	private bool QueueTerrainAllows( int x, int y ) => Objects.Grid.CheckTerrain( x, y ) switch
@@ -1093,6 +1098,9 @@ public partial class Level
 		var result = Objects.Check( entry, anchor.X, anchor.Y, rotation );
 		if ( result != OriginalPlacementResult.Allowed )
 		{
+			// [EXT:pools-slides] a slide tower turned away from the pool beside it gets its own message
+			LastRefusalTowerFacesAway = result == OriginalPlacementResult.NeedsPool && PoolSlideTowers.IsSlideTower( entry ) && Guests?.Grid.Cells is { } placeCells
+				&& PoolSlideTowers.WaterBesideOtherSide( entry.Shape, placeCells, anchor.X, anchor.Y, rotation );
 			LastActionMessage = $"Cannot build {entry.DisplayName} here: {result}.";
 			return null;
 		}

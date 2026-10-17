@@ -122,6 +122,21 @@ public static class PoolSlideRules
 		return Clear( slide, site );
 	}
 
+	/// <summary>
+	/// What a save must hold to be loaded: the structure of the slide (a tower that is there, of the slide's profile and its height, a start beside it, cells that are owned, empty or water, and
+	/// used once). Nothing that depends on the pool (the water at the foot of the stairs and at the splash, the water level, the slope): the pool tool may change those legally, a slide whose pool changed is
+	/// merely unusable (<see cref="PoolSlideWorld.IsUsable"/>), and a state the game can be in must always load.
+	/// </summary>
+	public static PoolSlideResult ValidateStructure( PoolSlide slide, PoolSlideTower? tower, PoolSlideSite site )
+	{
+		if ( tower == null || tower.X != slide.TowerX || tower.Y != slide.TowerY || tower.Profile != slide.Profile )
+			return PoolSlideResult.NoTower;
+		var result = ValidateTrack( slide, tower, site );
+		if ( result != PoolSlideResult.Ok )
+			return result;
+		return slide.TopHeight == TopHeightOf( tower, site ) ? PoolSlideResult.Ok : PoolSlideResult.BadHeights;
+	}
+
 	/// <summary>The checks that hold for a track under construction as well: pieces, start, cells.</summary>
 	public static PoolSlideResult ValidateTrack( PoolSlide slide, PoolSlideTower tower, PoolSlideSite site )
 	{

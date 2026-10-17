@@ -117,6 +117,33 @@ public class PoolsContentTests
 	}
 
 	[TestMethod]
+	public void EveryPoolObjectInTheBuyWindowHasAPreviewModelFromItsOwnRoot()
+	{
+		using var scope = Enabled( true, FileSystem );
+		foreach ( var theme in Themes )
+		{
+			var items = Enum.GetValues<OpenTPW.Hud.BuildCategory>().SelectMany( new OpenTPW.Hud.OriginalBuildCatalog( ObjectCatalog.Load( theme ) ).GetItems )
+				.Where( item => item.Entry?.ModId == "opentpw.pools" ).ToArray();
+			Assert.IsTrue( items.Length >= 11, $"{theme}: at least the changing room, four attractions and six extras are listed ({items.Length})" );
+			foreach ( var item in items )
+			{
+				var entry = item.Entry!;
+				Assert.IsTrue( entry.IsExternal, "the pool objects come from the extension's root, not the game data" );
+				Assert.AreEqual( entry.PreviewModelPath ?? entry.ModelPath, item.PreviewModel, $"{theme}: {item.Id} has a preview model (the buy window used to leave it empty)" );
+				var unresolved = new List<string>();
+				var icon = new OpenTPW.Hud.PreviewIcon( ObjectAssets.LoadModel( entry.FileSystem, item.PreviewModel! ), name =>
+				{
+					if ( ObjectAssets.ResolveTexture( entry, name ) == null )
+						unresolved.Add( name );
+					return null;
+				} );
+				Assert.IsTrue( icon.TriangleCount > 0, $"{theme}: {item.Id}" );
+				CollectionAssert.AreEqual( Array.Empty<string>(), unresolved.Distinct().ToArray(), $"{theme}: {item.Id} finds every texture" );
+			}
+		}
+	}
+
+	[TestMethod]
 	public void EachChangingRoomsModelTexturesAndScriptLoadAndRun()
 	{
 		using var scope = Enabled( true, FileSystem );

@@ -94,7 +94,7 @@ public class OriginalUiAssetTests
 			Assert.AreEqual( entry.WhichUIType, (int)item.Category );
 			Assert.AreEqual( (long)entry.BuildCost, item.Cost );
 			Assert.AreEqual( entry.ObjectNameIndex ?? -1, item.ObjectNameIndex );
-			Assert.AreEqual( entry.IsBonus ? null : entry.PreviewModelPath ?? entry.ModelPath, item.PreviewModel );
+			Assert.AreEqual( entry.PreviewModelPath ?? entry.ModelPath, item.PreviewModel, "objects outside the game data (bonus content, mods) have their model too" );
 			Assert.IsFalse( entry.IsFixedItem || entry.IsTool || entry.Category == ObjectCategory.Upgrade );
 		}
 	}

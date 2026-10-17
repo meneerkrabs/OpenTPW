@@ -362,8 +362,8 @@ public class OriginalObject : Entity
 	/// <summary>Game-data textures go through the shared texture cache; bonus-content textures are decoded from their own root.</summary>
 	private static Texture LoadTexture( ObjectCatalogEntry entry, string name ) => TryLoadTexture( entry, name ) ?? Texture.Missing;
 
-	/// <summary>The texture of a material or frame name, or null when no searched directory has it.</summary>
-	private static Texture? TryLoadTexture( ObjectCatalogEntry entry, string name )
+	/// <summary>The texture of a material or frame name, or null when no searched directory has it (also the buy window's preview of an object outside the game data).</summary>
+	internal static Texture? TryLoadTexture( ObjectCatalogEntry entry, string name )
 	{
 		var resolved = ObjectAssets.ResolveTexture( entry, name );
 		if ( resolved == null )

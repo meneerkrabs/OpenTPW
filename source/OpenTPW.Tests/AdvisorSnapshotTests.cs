@@ -206,6 +206,13 @@ public class AdvisorSnapshotTests
 		Assert.ThrowsException<InvalidOperationException>( () => speaking.CaptureSnapshot(),
 			"a save is refused while a response is being spoken, not flagged and silently silenced" );
 
+		// a manual save does not wait for the speech (the original's Save does not): the speech is left out of the file and the loaded park is silent
+		var whileSpeaking = speaking.CaptureSnapshot( whileSpeaking: true );
+		Assert.IsFalse( whileSpeaking.SpeechWasActive );
+		var silent = new AutomaticAdvisor( new AdvisorController( Balance() ), () => 0L );
+		silent.ValidateSnapshot( whileSpeaking ); silent.RestoreSnapshot( whileSpeaking );
+		Assert.IsFalse( silent.IsSpeechActive );
+
 		var idle = new AutomaticAdvisor( new AdvisorController( Balance() ), () => 0L, speechActive: () => false );
 		Assert.IsFalse( idle.IsSpeechActive );
 		var snapshot = idle.CaptureSnapshot();

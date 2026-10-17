@@ -419,7 +419,8 @@ internal sealed class AutomaticAdvisor : IDisposable
 	/// Ends the response being spoken, silently (no slap), because the park is being left: a checkpoint of the park cannot hold the speech
 	/// (<see cref="CaptureSnapshot"/> refuses it), and the speech would end with the park anyway.
 	/// </summary>
-	// [BIN:TPW-EXE:0x005996D0 stop path] the park's stop path, run by the park state machine (0x54E360) and the level exit (0x4A9380) among its six callers, stops the speech (0x51C0E0) and kills the advisor (0x429D60): leaving a park never waits for a response to finish
+	// [BIN:TPW-EXE:0x005996D0 stop path] the stop path (run by the loader 0x414D40, the restart state 0xE of 0x54E360 and the level exit 0x4A9380) stops the speech (0x51C0E0) and kills the advisor (0x429D60) without the slap that the cut-off path 0x5994E0 plays
+	// [BIN:TPW-EXE:0x0048B9EF pause exit] Exit To Lobby (command 6, case 0x48B9EF of the handler 0x48B6A0) asks no question: it stores request 2 (0x5508B0) and the park state machine 0x54E360 saves (state 0xB, 0x5AC610) and tears down (state 0xC, which releases the sound handles through 0x51EDA0) whatever the advisor is saying
 	internal void EndSpeechForExit()
 	{
 		if ( !IsSpeechActive )
@@ -449,9 +450,10 @@ internal sealed class AutomaticAdvisor : IDisposable
 	/// The advisor's state for a park save; fails explicitly while a playback attempt is outstanding or a
 	/// response is being spoken (the speech itself has no snapshot seam, so it cannot continue after a load).
 	/// </summary>
-	public AutomaticAdvisorSnapshot CaptureSnapshot()
+	/// <param name="whileSpeaking">A manual save: the speech goes on playing and is not saved (the original's Save neither waits for it nor stops it; a loaded park starts silent).</param>
+	public AutomaticAdvisorSnapshot CaptureSnapshot( bool whileSpeaking = false )
 	{
-		if ( IsSpeechActive )
+		if ( IsSpeechActive && !whileSpeaking )
 			throw new InvalidOperationException( "Cannot capture the automatic advisor while a response is being spoken: the presentation's speech has no snapshot seam, so it cannot continue after a load." );
 		return new AutomaticAdvisorSnapshot( Controller.CaptureSnapshot(), AdvisorClock, SpeechWasActive: false );
 	}

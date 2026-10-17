@@ -50,6 +50,9 @@ public sealed record BuildItem( string Id, int InfoId, BuildCategory Category, i
 public interface IBuildCatalog
 {
 	IReadOnlyList<BuildItem> GetItems( BuildCategory category );
+
+	/// <summary>The Mystery ride tool (Info.Id 100) as a preview item: the model the buy window turns for a golden-ticket row the player has not bought yet; null when there is none.</summary>
+	BuildItem? MysteryPreview => null;
 }
 
 /// <summary>One statistic of a selected object (label from UITEXT; null value = not simulated). A gauge row (<paramref name="IsGauge"/>) is a red-to-green bar of <paramref name="Gauge"/> (0..1; null draws the empty track) instead of text.</summary>

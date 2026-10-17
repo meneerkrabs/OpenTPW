@@ -88,6 +88,12 @@ public interface IPoolActivity
 	/// </summary>
 	int StartOfferPercent => 0;
 
+	/// <summary>
+	/// Whether the guest, in this activity, is a body in the water this turn: free swimmers steer clear of it and keep <see cref="PoolSwimSettings.MinimumDistance"/> from it (docs/POOLS.md, "Activities"). True while it floats,
+	/// stands under a jet, swims to something or splashes down; false on the deck, a ladder, a board, a platform or a lounger. Default false. Pure: it reads the guest's saved fields only.
+	/// </summary>
+	bool InWater( GuestSimulation simulation, Guest guest ) => false;
+
 	/// <summary>Ends it at once (the pool or the target is gone, the room is demolished, the park closes): the activity lets go of what it holds; the host ends the session.</summary>
 	void Abort( GuestSimulation simulation, Guest guest );
 }
@@ -153,6 +159,9 @@ public static class PoolSwimSlots
 	/// point (<see cref="GuestRenderer.BottomAnchoredSlots"/>), so <see cref="IPoolActivity.FeetHeight"/> always gives where the body rests. The strokes, the splash, the spa and the ring keep their water-line
 	/// hotspot, and standing, walking and the shower their feet.
 	/// </summary>
+	/// <summary>The slots drawn turned in their own plane by the residual of the 45 degree direction snap (<see cref="GuestRenderer.RotatedSlots"/>): the flat poses only, never the upright ones.</summary>
+	public static readonly IReadOnlySet<int> Rotated = new HashSet<int> { Sliding };
+
 	public static readonly IReadOnlySet<int> BottomAnchored = new HashSet<int> { LadderClimb, Dive, Lying, Sliding, RopeSwing };
 }
 
@@ -168,6 +177,7 @@ public static class PoolActivityRegistry
 		yield return new DivingBoardActivity();
 		yield return new ShowerActivity();
 		yield return new LoungerActivity();
+		yield return new PoolSlideActivity();
 		// [EXT:pools-attractions] [EXT:pools-river] the water attractions (P5) and the lazy river
 		if ( attractions != null )
 		{

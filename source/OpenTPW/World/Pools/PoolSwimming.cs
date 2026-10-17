@@ -18,14 +18,14 @@ public static class PoolSwimSettings
 	public const int SpeedPerBaseSpeed = 90;
 	/// <summary>How far from the rim a swimmer's centre stays: the rim is a quarter of a cell and the body takes 0.12 more (16.16).</summary>
 	public const int Margin = (int)(0.37 * Fixed16.One);
-	/// <summary>Swimmers a pool takes per water cell of its region; a guest released from a changing room while the water is full leaves the room on foot, as from a ride.</summary>
-	public const int SwimmersPerWaterCell = 2;
-	/// <summary>The capacity of the smallest pools: a region of one or two cells still takes this many swimmers.</summary>
-	public const int MinimumCapacity = 4;
-	/// <summary>Swimmers closer than this steer away from each other (16.16 cells).</summary>
-	public const int AvoidRadius = Fixed16.One / 2;
-	/// <summary>Swimmers never move closer to each other than this (16.16 cells); a move that increases the distance is always allowed.</summary>
-	public const int MinimumDistance = Fixed16.One / 4;
+	/// <summary>Bodies a pool takes per water cell of its region (every body in the water counts: swimmers, floaters, guests under a jet); a guest released from a changing room while the water is full leaves the room on foot, as from a ride. One a cell, because a body keeps <see cref="MinimumDistance"/> from the next.</summary>
+	public const int SwimmersPerWaterCell = 1;
+	/// <summary>The capacity of the smallest pools: a region of one or two cells still takes this many swimmers (a strip of two cells has 1.26 cells of free length: two bodies at <see cref="MinimumDistance"/>).</summary>
+	public const int MinimumCapacity = 2;
+	/// <summary>Bodies closer than this steer away from each other (16.16 cells). A 2x swim sprite is about a cell long and 0.4 wide, so the push starts a cell and a fifth out.</summary>
+	public const int AvoidRadius = (int)(1.2 * Fixed16.One);
+	/// <summary>Bodies never move closer to each other than this (16.16 cells): 0.7 cell keeps two bodies side by side, 0.4 wide, clear on screen and leaves two in a row overlapping only at nose and tail; a move that increases the distance is always allowed.</summary>
+	public const int MinimumDistance = (int)(0.7 * Fixed16.One);
 	/// <summary>A wander goal is reached within this distance (16.16 cells).</summary>
 	public const int GoalRadius = (int)(0.3 * Fixed16.One);
 	/// <summary>Within this distance of the changing room's pool-side cell a swimmer on its way out ignores the others, so a crowd at the steps cannot block itself (16.16 cells).</summary>

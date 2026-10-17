@@ -256,6 +256,9 @@ SAVE-001 docs/DETERMINISM.md
 SAVE-003 docs/reverse/REVIEW-SAVE-2.md
 SAVE-005 docs/ECONOMY.md
 SAVE-008 docs/progress/2026-10-16-economy-and-saves-sweep.md
+SAVE-941 docs/THEME-PARK-INC.md
+SAVE-942 docs/THEME-PARK-INC.md
+SAVE-943 docs/THEME-PARK-INC.md
 SAVE-009 docs/SAVE-THINGS.md
 TOUR-001 docs/PROGRESS.md
 TOUR-002 docs/TOURS.md

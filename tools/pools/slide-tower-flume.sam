@@ -1,0 +1,38 @@
+#
+#	OpenTPW swimming pools: the water slide tower (flume profile)
+#	Every number marked "OpenTPW's own value" is a choice of this extension, not a value of the original game.
+#
+Info.Id			65100		placeholder: objects.json replaces it with the object's own id
+Info.Name		"Water Slide Tower"
+Info.IsChoosable	0		guests never choose it: slides are reachable only from the pool
+Info.HasQueue		0
+Info.WhichUIType	3		the build menu's Features tab
+
+# A 2 x 2 tower with no entrance: its stairs face the pool (the shape's top row, the local -V side), and Pools.SlideTower makes the engine look for water there.
+Info.Shape
+---
+**
+**
+---
+
+# The construction fence for 2 x 2 cells: the four corner pieces
+Info.Hoarding
+---
+F7
+LJ
+---
+
+# OpenTPW's own keys: the engine reads them to know this object carries a water slide
+Pools.SlideTower	1
+Pools.SlideProfile	0		0 an open flume, 1 a closed tube
+Pools.SlideCapacity	4		riders waiting on the platform (OpenTPW's own value)
+
+UsageInfo.ExcitementLevel		0
+UsageInfo.MinCapacity			1
+UsageInfo.MaxCapacity			4		OpenTPW's own value
+
+Upgrades[0].CostOfUpgrade		600		OpenTPW's own value
+Upgrades[0].CostOfResearch		0		An object without research cost starts researched
+Upgrades[0].InitCapacity		4		OpenTPW's own value
+Research.Group		0
+Info.PreviewAnimNum		0

@@ -5,18 +5,20 @@ namespace OpenTPW;
 /// The body is 312 bytes, plus the 19 history rings (5,263 bytes) when <see cref="HasHistory"/> is set. The fields shared with the Theme Park World attraction
 /// (<see cref="SaveAttraction"/>) keep its names; Theme Park Inc adds <see cref="RunningCost"/>, <see cref="PortionSize"/>, <see cref="GoneFirstPersonFlag"/>, the photo
 /// booth words, the prebuilt-track flags, the promotion and survey fields and the weather closure, and writes the costs, takings and customer counts as history rings
-/// instead of words (the ring names are not traced, so they stay in serializer order in <see cref="Histories"/>).
+/// instead of words (<see cref="Histories"/> keeps them in serializer order; <see cref="ThemeParkIncAttractionRing"/> names each and <see cref="HistoryRings"/> says what feeds it).
+/// The three gauge words are <see cref="UnreadGauge"/>, <see cref="LifeGauge"/> and <see cref="StateOfRepair"/>, as the loader's order +0x60, +0x58, +0x54 and the breakdown test 0x5e48df show.
 /// <see cref="Offset"/> is the body offset (after the 16-byte thing header), <see cref="Length"/> the body length.
 /// </summary>
-// [BIN:TPI-EXE:0x5dc430 attraction serializer] mAngle 4, mId 2, 8 x tv[t] 4, MeshInstanceID 4, mFlags 2, 33 x (mNameA[i] 2, mNameB[i] 2), mRideScriptHandle 4, mTrackRideHandle 4, mState 4, mTopLeft 2, mEntryPos 2, mNext 2, mAssignedStaffMember 2, mBackOfQueue 2, mCanLoad 4, mExitPos 2, mFirstInQ 2, mIsTrackRideValid 4, mUpgradeParent 2, m_runningCost 4, mNumWalkAways 4, mOperatingCapacity 1, mOperatingDuration 1, mOperatingSpeed 4, mPersonBeingLoaded 2, mCostOfGoods 4, mQualityOfGoods 4, mChanceOfWinning 4, mPricePerUse 4, mAmountOfSpecialIngredient 4, mPortionSize 4, mGoneFirstPersonFlg 1, mQueueSizeInCells 4, three unnamed 4-byte gauges, mRequestedService 4, mTimeMarkedForMaintenance 4, mUpgradeBalloonSprite 4, mUpgradeLevel 1, mPhotoBooth 2, mBooby 2, mPrebuiltTrackOpen 1, mBeenAroundAtLeastAMonth 1, mPrebuiltTrackEdited 1, mPromotedAttraction 2, mTimeOfLastSurveyReset 8, mBeenActivated 1, mHasBeenOpenedAtSomePoint 1, m_bFlashUnconnectedExit 1, mClosedDueToWeather 1, HasHistory 1, then the history object 0x5ea020 when HasHistory
-// [APPROX:SAVE-940] the three unnamed 4-byte words after mQueueSizeInCells are read as the gauges of the Theme Park World serializer (Gauge48, LifeGauge, StateOfRepair), and the 19 history rings are kept in serializer order without their meanings: the loader's log names none of them (one inline ring, then eleven through 0x5ea720 and six through 0x5eac40), and the prebuilt's rings are all empty (current entry 0 or -1, wrapped 0) — evidence needed: a Theme Park Inc save whose attractions have run, or the names of the history fields
-public sealed record ThemeParkIncAttraction(
+// [BIN:TPI-EXE:0x5dc430 attraction serializer] mAngle 4, mId 2, 8 x tv[t] 4, MeshInstanceID 4, mFlags 2, 33 x (mNameA[i] 2, mNameB[i] 2), mRideScriptHandle 4, mTrackRideHandle 4, mState 4, mTopLeft 2, mEntryPos 2, mNext 2, mAssignedStaffMember 2, mBackOfQueue 2, mCanLoad 4, mExitPos 2, mFirstInQ 2, mIsTrackRideValid 4, mUpgradeParent 2, m_runningCost 4, mNumWalkAways 4, mOperatingCapacity 1, mOperatingDuration 1, mOperatingSpeed 4, mPersonBeingLoaded 2, mCostOfGoods 4, mQualityOfGoods 4, mChanceOfWinning 4, mPricePerUse 4, mAmountOfSpecialIngredient 4, mPortionSize 4, mGoneFirstPersonFlg 1, mQueueSizeInCells 4, three gauges written as a float truncated to a byte (the log names each "pv"; members +0x60, +0x58, +0x54), mRequestedService 4, mTimeMarkedForMaintenance 4, mUpgradeBalloonSprite 4, mUpgradeLevel 1, mPhotoBooth 2, mBooby 2, mPrebuiltTrackOpen 1, mBeenAroundAtLeastAMonth 1, mPrebuiltTrackEdited 1, mPromotedAttraction 2, mTimeOfLastSurveyReset 8, mBeenActivated 1, mHasBeenOpenedAtSomePoint 1, m_bFlashUnconnectedExit 1, mClosedDueToWeather 1, HasHistory 1, then the history object 0x5ea020 when HasHistory
+// [BIN:TPI-EXE:0x5db52f attraction constructor] +0x54 (state of repair) and +0x60 start at 100.0, +0x58 (life gauge) at the info's life word or 100.0; the breakdown test 0x5e48df reads +0x58 and +0x54 as truncated bytes and a breakdown takes 5.0 off +0x58 (0x5e4940, the constant 0x93aa70), and repairs write 100.0 to +0x54 (0x5e293d, 0x5e3364, 0x5e791a), the Theme Park World order of life and repair; no float read of +0x60 exists outside the serializer (tp.exe's +0x4c is the same: set to 100.0 with the other two at 0x4db35b, read only by its serializer)
+// [APPROX:SAVE-940] the names of the history rings are descriptions of what the game adds to each ring (ThemeParkIncAttractionRing, read from the code that increments it), not names the loader's log gives: DailyRatedVisits, DailyDeclinedGuests and DailyNeedChecksFailed stand for several or only partly identified conditions (the info word +0x21c and the guest thresholds at 0xa01b1c..0xa01b44 are named by no log), and the prebuilt's rings are all empty, so no value has been seen in a save
+public sealed partial record ThemeParkIncAttraction(
 	int Offset, int Id, SaveThingBase Base, int InfoId, int Angle, SaveTimestamp Timestamp, uint MeshInstanceId, ushort Flags,
 	string NameLine1, string NameLine2, uint RideScriptHandle, uint TrackRideHandle, uint State, ushort TopLeft, ushort EntryPos, ushort Next,
 	ushort AssignedStaffMember, ushort BackOfQueue, uint CanLoad, ushort ExitPos, ushort FirstInQueue, uint IsTrackRideValid, ushort UpgradeParent,
 	int RunningCost, uint WalkAwayCount, byte OperatingCapacity, byte OperatingDuration, uint OperatingSpeed, ushort PersonBeingLoaded,
 	int CostOfGoods, int QualityOfGoods, int ChanceOfWinning, uint PricePerUse, int AmountOfSpecialIngredient, int PortionSize,
-	bool GoneFirstPersonFlag, uint QueueSizeInCells, float Gauge48, float LifeGauge, float StateOfRepair, uint RequestedService,
+	bool GoneFirstPersonFlag, uint QueueSizeInCells, float UnreadGauge, float LifeGauge, float StateOfRepair, uint RequestedService,
 	uint TimeMarkedForMaintenance, uint UpgradeBalloonSprite, byte UpgradeLevel, ushort PhotoBooth, ushort Booby, bool PrebuiltTrackOpen,
 	bool BeenAroundAtLeastAMonth, bool PrebuiltTrackEdited, ushort PromotedAttraction, long TimeOfLastSurveyReset, bool BeenActivated,
 	bool HasBeenOpenedAtSomePoint, bool FlashUnconnectedExit, bool ClosedDueToWeather, bool HasHistory,
@@ -92,8 +94,8 @@ public sealed record ThemeParkIncAttraction(
 		var queueCells = reader.U32();
 		if ( queueCells > ushort.MaxValue )
 			throw new InvalidDataException( $"Save attraction thing {id} has {queueCells} queue cells." );
-		var (gauge48, lifeGauge, repair) = (reader.F32(), reader.F32(), reader.F32());
-		if ( !IsGauge( gauge48 ) || !IsGauge( lifeGauge ) || !IsGauge( repair ) )
+		var (unreadGauge, lifeGauge, repair) = (reader.F32(), reader.F32(), reader.F32());
+		if ( !IsGauge( unreadGauge ) || !IsGauge( lifeGauge ) || !IsGauge( repair ) )
 			throw new InvalidDataException( $"Save attraction thing {id} has a gauge outside 0–{MaximumGauge}." );
 		var (requested, marked, balloon) = (reader.U32(), reader.U32(), reader.U32());
 		var level = reader.U8();
@@ -122,7 +124,7 @@ public sealed record ThemeParkIncAttraction(
 			new SaveTimestamp( (int)stamp[0], (int)stamp[1], (int)stamp[2], (int)stamp[3], (int)stamp[4], (int)stamp[5] ), meshInstance, flags,
 			Text( line1 ), Text( line2 ), scriptHandle, trackHandle, state, topLeft, entryPos, next, assigned, backOfQueue, canLoad, exitPos, firstInQueue,
 			trackValid, upgradeParent, runningCost, walkAways, capacity, duration, speed, personBeingLoaded, costOfGoods, quality, chance, price,
-			ingredient, portion, goneFirst, queueCells, gauge48, lifeGauge, repair, requested, marked, balloon, level, photoBooth, booby, prebuiltOpen,
+			ingredient, portion, goneFirst, queueCells, unreadGauge, lifeGauge, repair, requested, marked, balloon, level, photoBooth, booby, prebuiltOpen,
 			aroundMonth, prebuiltEdited, promoted, surveyReset, activated, opened, flash, closedWeather, hasHistory, histories.AsReadOnly(), length );
 	}
 

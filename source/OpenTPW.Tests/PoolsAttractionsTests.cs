@@ -742,9 +742,9 @@ public class PoolsAttractionsTests
 	public void TheRegistryHoldsTheRiverAndTheThreeAttractionsAndStaysInIdOrder()
 	{
 		var none = PoolActivityRegistry.Create().Select( activity => activity.Id ).OrderBy( id => id, StringComparer.Ordinal ).ToArray();
-		CollectionAssert.AreEqual( new[] { PoolWaterEffects.ActivityId, RiverActivity.ActivityId, "extra.board", "extra.ladder", "extra.lounger", "extra.shower" }, none, "without the sites the river, the ambient effects and the extras" );
+		CollectionAssert.AreEqual( new[] { PoolWaterEffects.ActivityId, RiverActivity.ActivityId, "extra.board", "extra.ladder", "extra.lounger", "extra.shower", "slide.ride" }, none, "without the sites the river, the ambient effects and the extras" );
 		var all = PoolActivityRegistry.Create( Sites( Rope, Jets, Spa ) ).Select( activity => activity.Id ).OrderBy( id => id, StringComparer.Ordinal ).ToArray();
-		CollectionAssert.AreEqual( new[] { "ambient.water", "attraction.jets", "attraction.river", "attraction.ropeswing", "attraction.spa", "extra.board", "extra.ladder", "extra.lounger", "extra.shower" }, all );
+		CollectionAssert.AreEqual( new[] { "ambient.water", "attraction.jets", "attraction.river", "attraction.ropeswing", "attraction.spa", "extra.board", "extra.ladder", "extra.lounger", "extra.shower", "slide.ride" }, all );
 	}
 
 	[TestMethod]

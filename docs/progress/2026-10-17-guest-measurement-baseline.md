@@ -16,3 +16,11 @@ determinism hash, every other pin and the saves are the same, and a run with the
 After merging the substep scheduler (#312): the observer hooks also cover the swept turn (`RemoveGone`, `FinishSweep`), and `DeterminismTests.FixedRunHash` (now the composed pin) is unchanged with the observer on. `ParkScenario` and the level-park runs (`M3GateOptions.SweptTurns`, set only by the report) go through the game's turn order, the substep's scripts and the swept thing sweep, so the baseline measures the guests as the game runs them. That moved `ScenarioFixedRunHash` (its ticks used to be plain `Tick` calls) and the baseline numbers slightly; both were re-measured, and the observer still leaves every hash alone.
 
 Verified with the guest, queue and determinism tests and the report run on the four themes.
+
+Review fixes: the seeds of the scenario converged (the original reseeds the generator with each guest's id, so streams merge: seeds 1 and 4 were identical from about day 40), so every seed now has its own
+ride times, the report flags seeds with the same end hash and leaves them out of the spread (8 of 8 distinct in every scenario and level park now). The level-park runs closed their window after the gate stopped its
+objects, which turned the queues away and counted as `RideClosed` rejections with no unfinished attempts; the window now closes before the teardown, so unfinished attempts and their ages show (Fantasy's p90
+wait is 787 turns once the unfinished ones are counted, against 559 for boarded ones alone). Also: a `superseded` counter (asserted 0), a restore-safe collector, departures per admission, a capacity-normalised
+Gini, thresholds in standard errors of the difference of two means (3 SE) implemented in `--guest-compare`, a turn-alignment assertion in the swept gate, recall and legacy-booth departures classified, and an
+auto-begin window that holds exactly the ticks after the mark. `ScenarioFixedRunHash` moved again with the seed-dependent ride times, and the baseline was re-measured.
+

@@ -96,6 +96,11 @@ internal static class Game
 			return;
 		}
 		// Headless guest measurement (docs/SMARTER-GUESTS.md): the synthetic scenario needs no game data, so it runs before the data is set up; level parks run after (below).
+		if ( args.Contains( "--guest-compare" ) )
+		{
+			Environment.ExitCode = GuestReportCompare.RunCommand( args );
+			return;
+		}
 		if ( args.Contains( "--guest-report" ) && !GuestReport.WantsLevels( args ) )
 		{
 			Environment.ExitCode = GuestReport.RunCommand( args );

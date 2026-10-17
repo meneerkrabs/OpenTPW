@@ -29,11 +29,16 @@ public sealed record GuestReportOptions
 	public bool Performance { get; init; } = true;
 }
 
-public sealed record SeedResult( ulong Seed, GuestMetricsSnapshot Snapshot );
+/// <param name="StateHash">The guests' state hash at the end of the run: two seeds with the same hash ran the same park (the guests' generator is reseeded with each new guest's id, so streams can merge).</param>
+public sealed record SeedResult( ulong Seed, GuestMetricsSnapshot Snapshot, ulong StateHash );
 
 public sealed record MetricSpread( string Name, int Count, double Mean, double StandardDeviation, double Min, double Max );
 
-public sealed record ScenarioReport( string Name, string Kind, IReadOnlyList<SeedResult> Seeds, IReadOnlyList<MetricSpread> Spread );
+/// <param name="DuplicateSeeds">Pairs (later seed, first seed with the same end hash); the spread is taken over the distinct seeds only.</param>
+public sealed record ScenarioReport( string Name, string Kind, IReadOnlyList<SeedResult> Seeds, IReadOnlyList<MetricSpread> Spread, IReadOnlyList<(ulong Seed, ulong SameAs)> DuplicateSeeds )
+{
+	public int DistinctSeeds => Seeds.Count - DuplicateSeeds.Count;
+}
 
 public sealed record PerformanceReport( int Ticks, double ObserverOffMicrosecondsPerTick, double ObserverOnMicrosecondsPerTick, double ObserverOffBytesPerTick, double ObserverOnBytesPerTick );
 
@@ -73,14 +78,31 @@ public static class GuestReport
 
 	public static GuestMetricsSnapshot RunScenario( ulong seed, GuestReportOptions options ) => RunScenario( seed, options, out _ );
 
+	/// <summary>The scenario's end state of every seed, for the duplicate check.</summary>
+	private static SeedResult ScenarioSeed( ulong seed, GuestReportOptions options )
+	{
+		var snapshot = RunScenario( seed, options, out var hash );
+		return new SeedResult( seed, snapshot, hash );
+	}
+
 	/// <summary>One level park built by the level gate's builder (docs/M3-GATE.md), run for the same days.</summary>
-	internal static GuestMetricsSnapshot RunLevel( string level, ulong seed, GuestReportOptions options )
+	internal static SeedResult RunLevel( string level, ulong seed, GuestReportOptions options )
 	{
 		var metrics = new GuestMetrics( options.Metrics ) { AutoBeginAtTick = TicksForDays( options.WarmupDays ) };
-		var gate = new M3GateOptions { Level = level, Seed = new WorldSeed( seed ).GuestStream, WorldSeed = new WorldSeed( seed ), DeterminismProbe = false, SweptTurns = true, ArrivalTimeBetween = options.LevelArrivalTimeBetween, GuestObserver = metrics };
-		var run = M3GateRun.Execute( gate, TicksForDays( options.WarmupDays + options.MeasuredDays ) );
-		metrics.Attach( run.Simulation );
-		return metrics.EndWindow();
+		GuestMetricsSnapshot? snapshot = null;
+		ulong hash = 0;
+		// the window closes after the last tick and before the gate stops its objects (a stopped ride turns its queue away)
+		var gate = new M3GateOptions
+		{
+			Level = level, Seed = new WorldSeed( seed ).GuestStream, WorldSeed = new WorldSeed( seed ), DeterminismProbe = false, SweptTurns = true, ArrivalTimeBetween = options.LevelArrivalTimeBetween, GuestObserver = metrics,
+			BeforeTeardown = guests =>
+			{
+				snapshot = metrics.EndWindow();
+				hash = guests.ComputeStateHash();
+			}
+		};
+		M3GateRun.Execute( gate, TicksForDays( options.WarmupDays + options.MeasuredDays ) );
+		return new SeedResult( seed, snapshot ?? throw new InvalidOperationException( "The level run ended without closing its window." ), hash );
 	}
 
 	public static GuestReportResult Run( GuestReportOptions options, Action<string>? progress = null )
@@ -91,9 +113,9 @@ public static class GuestReport
 		foreach ( var seed in options.Seeds )
 		{
 			progress?.Invoke( $"{ScenarioName} seed {seed}" );
-			seeds.Add( new SeedResult( seed, RunScenario( seed, options ) ) );
+			seeds.Add( ScenarioSeed( seed, options ) );
 		}
-		scenarios.Add( new ScenarioReport( ScenarioName, "synthetic", seeds, Spread( seeds ) ) );
+		scenarios.Add( Scenario( ScenarioName, "synthetic", seeds ) );
 		foreach ( var level in options.Levels )
 		{
 			var levelSeeds = new List<SeedResult>();
@@ -102,9 +124,9 @@ public static class GuestReport
 				foreach ( var seed in options.Seeds.Take( Math.Max( 1, options.LevelSeeds ) ) )
 				{
 					progress?.Invoke( $"level {level} seed {seed}" );
-					levelSeeds.Add( new SeedResult( seed, RunLevel( level, seed, options ) ) );
+					levelSeeds.Add( RunLevel( level, seed, options ) );
 				}
-				scenarios.Add( new ScenarioReport( $"level-{level}", "level", levelSeeds, Spread( levelSeeds ) ) );
+				scenarios.Add( Scenario( $"level-{level}", "level", levelSeeds ) );
 			}
 			catch ( Exception exception ) when ( exception is IOException or InvalidOperationException or DirectoryNotFoundException or FileNotFoundException )
 			{
@@ -112,6 +134,25 @@ public static class GuestReport
 			}
 		}
 		return new GuestReportResult( options, scenarios, options.Performance ? MeasurePerformance( options ) : null, skipped );
+	}
+
+	/// <summary>A scenario's report: seeds that ended in the same state are duplicates, flagged, and left out of the spread (they are one sample, not several).</summary>
+	private static ScenarioReport Scenario( string name, string kind, IReadOnlyList<SeedResult> seeds )
+	{
+		var first = new Dictionary<ulong, ulong>();
+		var duplicates = new List<(ulong, ulong)>();
+		var distinct = new List<SeedResult>();
+		foreach ( var seed in seeds )
+		{
+			if ( first.TryGetValue( seed.StateHash, out var same ) )
+				duplicates.Add( (seed.Seed, same) );
+			else
+			{
+				first[seed.StateHash] = seed.Seed;
+				distinct.Add( seed );
+			}
+		}
+		return new ScenarioReport( name, kind, seeds, Spread( distinct ), duplicates );
 	}
 
 	private static IReadOnlyList<MetricSpread> Spread( IReadOnlyList<SeedResult> seeds )
@@ -184,7 +225,9 @@ public static class GuestReport
 			{
 				["name"] = scenario.Name,
 				["kind"] = scenario.Kind,
-				["seeds"] = new JsonArray( scenario.Seeds.Select( seed => (JsonNode)new JsonObject { ["seed"] = seed.Seed, ["metrics"] = seed.Snapshot.ToJsonObject() } ).ToArray() ),
+				["distinctSeeds"] = scenario.DistinctSeeds,
+				["duplicateSeeds"] = new JsonArray( scenario.DuplicateSeeds.Select( pair => (JsonNode)new JsonObject { ["seed"] = pair.Seed, ["sameAs"] = pair.SameAs } ).ToArray() ),
+				["seeds"] = new JsonArray( scenario.Seeds.Select( seed => (JsonNode)new JsonObject { ["seed"] = seed.Seed, ["stateHash"] = $"{seed.StateHash:X16}", ["metrics"] = seed.Snapshot.ToJsonObject() } ).ToArray() ),
 				["spread"] = new JsonArray( scenario.Spread.Select( item => (JsonNode)new JsonObject
 				{
 					["metric"] = item.Name,
@@ -192,7 +235,8 @@ public static class GuestReport
 					["mean"] = N( item.Mean ),
 					["sd"] = N( item.StandardDeviation ),
 					["min"] = N( item.Min ),
-					["max"] = N( item.Max )
+					["max"] = N( item.Max ),
+					["band3se"] = N( GuestReportCompare.Band( item.Name, item.Mean, item.StandardDeviation, item.Count, 3 ) )
 				} ).ToArray() )
 			} );
 		}
@@ -244,15 +288,17 @@ public static class GuestReport
 	{
 		var text = new StringBuilder();
 		var options = result.Options;
-		text.AppendLine( $"Guest report: {options.Seeds.Count} seeds, {options.WarmupDays} warm-up days + {options.MeasuredDays} measured days ({TicksForDays( options.MeasuredDays )} ticks)" );
+		text.AppendLine( $"Guest report: {options.Seeds.Count} seeds (the band is 3 standard errors of a difference of two means of that many seeds), {options.WarmupDays} warm-up days + {options.MeasuredDays} measured days ({TicksForDays( options.MeasuredDays )} ticks)" );
 		string F( double value, string format = "0.###" ) => double.IsFinite( value ) ? value.ToString( format, CultureInfo.InvariantCulture ) : "-";
 		foreach ( var scenario in result.Scenarios )
 		{
 			text.AppendLine();
-			text.AppendLine( $"== {scenario.Name} ({scenario.Seeds.Count} seeds) ==" );
-			text.AppendLine( $"{"metric",-28} {"mean",12} {"sd",12} {"min",12} {"max",12}" );
+			text.AppendLine( $"== {scenario.Name} ({scenario.DistinctSeeds} distinct of {scenario.Seeds.Count} seeds) ==" );
+			foreach ( var (seed, same) in scenario.DuplicateSeeds )
+				text.AppendLine( $"WARNING: seed {seed} ended in the same state as seed {same}; it is left out of the spread" );
+			text.AppendLine( $"{"metric",-40} {"mean",12} {"sd",12} {"min",12} {"max",12} {"band 3SE",12}" );
 			foreach ( var item in scenario.Spread )
-				text.AppendLine( $"{item.Name,-28} {F( item.Mean ),12} {F( item.StandardDeviation ),12} {F( item.Min ),12} {F( item.Max ),12}" );
+				text.AppendLine( $"{item.Name,-40} {F( item.Mean ),12} {F( item.StandardDeviation ),12} {F( item.Min ),12} {F( item.Max ),12} {F( GuestReportCompare.Band( item.Name, item.Mean, item.StandardDeviation, item.Count, 3 ) ),12}" );
 			var queue = scenario.Seeds.Select( seed => seed.Snapshot.Queue ).ToList();
 			var rejected = queue.SelectMany( item => item.RejectedByReason ).GroupBy( item => item.Key ).OrderBy( group => group.Key, StringComparer.Ordinal ).Select( group => $"{group.Key} {group.Sum( item => item.Value )}" );
 			var abandoned = queue.SelectMany( item => item.AbandonedByReason ).GroupBy( item => item.Key ).OrderBy( group => group.Key, StringComparer.Ordinal ).Select( group => $"{group.Key} {group.Sum( item => item.Value )}" );

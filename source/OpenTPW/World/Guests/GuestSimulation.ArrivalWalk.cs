@@ -332,6 +332,8 @@ public sealed partial class GuestSimulation
 		}
 		guest.ExitLevel = 0;
 		guest.State = GuestState.LeavingPark;
+		// a guest saved on its way home from the booth: the booth turned it back
+		Observer?.Leaving( guest, DepartureCause.BoothRefused );
 		WalkTo( GateCell( side ) );
 	}
 }

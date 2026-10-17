@@ -12,11 +12,17 @@ public sealed record GuestMetricsOptions
 }
 
 /// <summary>The outcome mix of the queue attempts that started in the measured window, and the waits of the boarded ones (docs/SMARTER-GUESTS.md).</summary>
-public sealed record QueueOutcomeMetrics( long Attempts, long Boarded, long Abandoned, long Rejected, long Unfinished, IReadOnlyDictionary<string, long> RejectedByReason,
-	IReadOnlyDictionary<string, long> AbandonedByReason, double? WaitP50, double? WaitP90, double? WaitP99, double? MeanWait, double? MeanAbandonedWait )
+/// <param name="Unfinished">Attempts still open when the window closed (their age is in <paramref name="UnfinishedAgeP50"/> and on).</param>
+/// <param name="Superseded">Attempts that ended with no report: a guest joined again, or departed, while one was open. The simulation never does this, so it must be 0; it is counted apart so the identity below is not tautological.</param>
+/// <param name="WaitP50">Waits of the boarded attempts only; the long tail is right-censored (an attempt still open at the window's end is not in it), see <paramref name="CensoredWaitP90"/>.</param>
+/// <param name="CensoredWaitP90">Percentile over the boarded waits and the ages of the unfinished attempts together: a lower bound of the true wait percentile.</param>
+public sealed record QueueOutcomeMetrics( long Attempts, long Boarded, long Abandoned, long Rejected, long Unfinished, long Superseded, IReadOnlyDictionary<string, long> RejectedByReason,
+	IReadOnlyDictionary<string, long> AbandonedByReason, double? WaitP50, double? WaitP90, double? WaitP99, double? MeanWait, double? MeanAbandonedWait,
+	double? UnfinishedAgeP50, double? UnfinishedAgeP90, double? UnfinishedAgeMax, double? CensoredWaitP90, double? CensoredWaitP99 )
 {
-	/// <summary>The consistency the instrumentation guarantees: every attempt ended as exactly one outcome.</summary>
-	public bool IsConsistent => Attempts == Boarded + Abandoned + Rejected + Unfinished && Rejected == RejectedByReason.Values.Sum() && Abandoned == AbandonedByReason.Values.Sum();
+	/// <summary>The consistency the instrumentation guarantees: every attempt ended as exactly one outcome, and none ended unreported.</summary>
+	public bool IsConsistent => Attempts == Boarded + Abandoned + Rejected + Unfinished + Superseded && Superseded == 0
+		&& Rejected == RejectedByReason.Values.Sum() && Abandoned == AbandonedByReason.Values.Sum();
 }
 
 /// <summary>Happiness of the guests admitted in one cohort, weighted by guest time (every admitted guest-second counts, not only the survivors').</summary>
@@ -30,7 +36,7 @@ public sealed record DepartureMetrics( long Total, long Admitted, long NeverAdmi
 
 public sealed record GuestMetricsSnapshot( long Admissions, double RevenueTotal, double RevenueEntrance, double RevenuePerAdmittedGuest, QueueOutcomeMetrics Queue,
 	double? GuestTimeHappiness, double? SurvivorHappiness, IReadOnlyList<CohortMetrics> Cohorts, DepartureMetrics Departures, IReadOnlyList<AttractionUse> Attractions,
-	double GiniRides, double GiniAll, long NoChoiceEvents, long StuckGuests, double GuestSeconds, double MeanGuestsInPark, long Ticks )
+	double GiniRides, double GiniAll, double GiniRidesPerCapacity, long NoChoiceEvents, long StuckGuests, double GuestSeconds, double MeanGuestsInPark, long Ticks )
 {
 	/// <summary>The numbers the report compares across seeds and runs, in a fixed order.</summary>
 	public IReadOnlyList<(string Name, double Value)> Headline()
@@ -48,13 +54,17 @@ public sealed record GuestMetricsSnapshot( long Admissions, double RevenueTotal,
 			("queue.wait.p50", queue.WaitP50 ?? double.NaN),
 			("queue.wait.p90", queue.WaitP90 ?? double.NaN),
 			("queue.wait.p99", queue.WaitP99 ?? double.NaN),
+			("queue.wait.p90.censored", queue.CensoredWaitP90 ?? double.NaN),
+			("queue.wait.p99.censored", queue.CensoredWaitP99 ?? double.NaN),
+			("queue.superseded", queue.Superseded),
 			("happiness.guestTime", GuestTimeHappiness ?? double.NaN),
 			("happiness.survivors", SurvivorHappiness ?? double.NaN),
 			("departures.perAdmission", Admissions == 0 ? 0 : (double)Departures.Admitted / Admissions),
-			("departures.happinessZero", Departures.HappinessZero),
-			("departures.exitCounterZero", Departures.ExitCounterZero),
-			("departures.parkClosed", Departures.ParkClosed),
+			("departures.happinessZero.perAdmission", Admissions == 0 ? 0 : (double)Departures.HappinessZero / Admissions),
+			("departures.exitCounterZero.perAdmission", Admissions == 0 ? 0 : (double)Departures.ExitCounterZero / Admissions),
+			("departures.parkClosed.perAdmission", Admissions == 0 ? 0 : (double)Departures.ParkClosed / Admissions),
 			("use.giniRides", GiniRides),
+			("use.giniRidesPerCapacity", GiniRidesPerCapacity),
 			("use.giniAll", GiniAll),
 			("revenue.perAdmittedGuest", RevenuePerAdmittedGuest),
 			("guests.stuck", StuckGuests),
@@ -87,10 +97,13 @@ public sealed record GuestMetricsSnapshot( long Admissions, double RevenueTotal,
 				["abandoned"] = q.Abandoned,
 				["rejected"] = q.Rejected,
 				["unfinished"] = q.Unfinished,
+				["superseded"] = q.Superseded,
 				["rejectedByReason"] = Counts( q.RejectedByReason ),
 				["abandonedByReason"] = Counts( q.AbandonedByReason ),
 				["waitTurnsBoarded"] = new JsonObject { ["p50"] = N( q.WaitP50 ), ["p90"] = N( q.WaitP90 ), ["p99"] = N( q.WaitP99 ), ["mean"] = N( q.MeanWait ) },
-				["meanWaitTurnsAbandoned"] = N( q.MeanAbandonedWait )
+				["meanWaitTurnsAbandoned"] = N( q.MeanAbandonedWait ),
+				["unfinishedAgeTurns"] = new JsonObject { ["p50"] = N( q.UnfinishedAgeP50 ), ["p90"] = N( q.UnfinishedAgeP90 ), ["max"] = N( q.UnfinishedAgeMax ) },
+				["censoredWaitTurns"] = new JsonObject { ["p90"] = N( q.CensoredWaitP90 ), ["p99"] = N( q.CensoredWaitP99 ) }
 			},
 			["happiness"] = new JsonObject
 			{
@@ -128,6 +141,7 @@ public sealed record GuestMetricsSnapshot( long Admissions, double RevenueTotal,
 			{
 				["giniRides"] = N( GiniRides ),
 				["giniAll"] = N( GiniAll ),
+				["giniRidesPerCapacity"] = N( GiniRidesPerCapacity ),
 				["attractions"] = new JsonArray( Attractions.Select( use => (JsonNode)new JsonObject
 				{
 					["id"] = use.AttractionId,
@@ -162,10 +176,12 @@ public sealed class GuestMetrics : IGuestObserver
 	{
 		public int AttractionId;
 		public bool Counted;
+		public long JoinTurn;
 	}
 
 	private sealed class Track
 	{
+		public int GuestId;
 		public bool Admitted;
 		public int Cohort = CarryOver;
 		public Open? Attempt;
@@ -193,10 +209,11 @@ public sealed class GuestMetrics : IGuestObserver
 	private readonly Dictionary<QueueEndReason, long> rejectedBy = new(), abandonedBy = new();
 	private readonly List<double> waits = new();
 	private readonly List<double> abandonedWaits = new();
+	private readonly List<double> unfinishedAges = new();
 	private GuestSimulation? simulation;
 	private bool recording, windowDone;
 	private long windowStartTick, windowStartDay, lastTick;
-	private long attempts, boarded, abandoned, rejected, unfinished;
+	private long attempts, boarded, abandoned, rejected, unfinished, superseded;
 	private long admissions, noChoiceEvents, stuck;
 	private double revenue, entranceRevenue;
 	private double guestSeconds, happinessSeconds, guestTickSum;
@@ -231,7 +248,8 @@ public sealed class GuestMetrics : IGuestObserver
 		abandonedBy.Clear();
 		waits.Clear();
 		abandonedWaits.Clear();
-		attempts = boarded = abandoned = rejected = unfinished = 0;
+		unfinishedAges.Clear();
+		attempts = boarded = abandoned = rejected = unfinished = superseded = 0;
 		admissions = noChoiceEvents = stuck = 0;
 		revenue = entranceRevenue = 0;
 		guestSeconds = happinessSeconds = guestTickSum = 0;
@@ -254,14 +272,16 @@ public sealed class GuestMetrics : IGuestObserver
 			throw new InvalidOperationException( "No measured window is open." );
 		recording = false;
 		windowDone = true;
+		var now = simulation?.ParkTurn ?? 0;
 		foreach ( var track in tracks.Values )
 		{
 			if ( track.Attempt is { Counted: true } open )
 			{
 				unfinished++;
+				unfinishedAges.Add( now - open.JoinTurn );
 				open.Counted = false;
 			}
-			if ( !track.Stuck && track.NoChoiceSinceTurn >= 0 && ParkCalendar.Turn( lastTick ) - track.NoChoiceSinceTurn > options.NoChoiceTurns )
+			if ( !track.Stuck && track.NoChoiceSinceTurn >= 0 && now - track.NoChoiceSinceTurn > options.NoChoiceTurns )
 			{
 				track.Stuck = true;
 				stuck++;
@@ -285,22 +305,27 @@ public sealed class GuestMetrics : IGuestObserver
 			item.Value.Seconds, item.Value.Seconds > 0 ? item.Value.HappinessSeconds / item.Value.Seconds : null, item.Value.Departed,
 			item.Value.Departed > 0 ? item.Value.DepartureHappiness / item.Value.Departed : null ) ).ToList();
 		var sorted = waits.OrderBy( value => value ).ToList();
-		var queue = new QueueOutcomeMetrics( attempts, boarded, abandoned, rejected, unfinished,
+		var ages = unfinishedAges.OrderBy( value => value ).ToList();
+		var censored = waits.Concat( unfinishedAges ).OrderBy( value => value ).ToList();
+		var queue = new QueueOutcomeMetrics( attempts, boarded, abandoned, rejected, unfinished, superseded,
 			rejectedBy.ToDictionary( item => item.Key.ToString(), item => item.Value ), abandonedBy.ToDictionary( item => item.Key.ToString(), item => item.Value ),
-			Percentile( sorted, 0.5 ), Percentile( sorted, 0.9 ), Percentile( sorted, 0.99 ), waits.Count > 0 ? waits.Average() : null, abandonedWaits.Count > 0 ? abandonedWaits.Average() : null );
+			Percentile( sorted, 0.5 ), Percentile( sorted, 0.9 ), Percentile( sorted, 0.99 ), waits.Count > 0 ? waits.Average() : null, abandonedWaits.Count > 0 ? abandonedWaits.Average() : null,
+			Percentile( ages, 0.5 ), Percentile( ages, 0.9 ), ages.Count > 0 ? ages[^1] : null, Percentile( censored, 0.9 ), Percentile( censored, 0.99 ) );
 		var departureMetrics = new DepartureMetrics( departures, departedAdmitted, departures - departedAdmitted, depHappinessZero, depExitZero, depClosed, depBooth, depGuard, depOther,
 			departedAdmitted > 0 ? depHappiness / departedAdmitted : null, departedAdmitted > 0 ? depTurns / departedAdmitted : null, departedAdmitted > 0 ? depRides / departedAdmitted : null );
 		var rideUses = snapshotAttractions.Where( item => item.Kind == nameof( RideVisitorKind.Ride ) ).Select( item => (double)item.Uses ).ToList();
+		var rideUsePerCapacity = (sim?.Attractions ?? Array.Empty<IRideVisitorBridge>()).Where( item => item.Kind == RideVisitorKind.Ride )
+			.Select( item => (double)(perAttraction.GetValueOrDefault( item.AttractionId )?.Uses ?? 0) / Math.Max( 1, item.Capacity ) ).ToList();
 		return new GuestMetricsSnapshot( admissions, revenue, entranceRevenue, admissions == 0 ? 0 : revenue / admissions, queue,
 			guestSeconds > 0 ? happinessSeconds / guestSeconds : null, survivors.Count > 0 ? survivors.Average() : null, cohortList, departureMetrics, snapshotAttractions,
-			Gini( rideUses ), Gini( snapshotAttractions.Select( item => (double)item.Uses ).ToList() ), noChoiceEvents, stuck, guestSeconds,
+			Gini( rideUses ), Gini( snapshotAttractions.Select( item => (double)item.Uses ).ToList() ), Gini( rideUsePerCapacity ), noChoiceEvents, stuck, guestSeconds,
 			ticks > 0 ? guestTickSum / ticks : 0, ticks );
 	}
 
 	private Track Get( Guest guest )
 	{
 		if ( !tracks.TryGetValue( guest, out var track ) )
-			tracks[guest] = track = new Track();
+			tracks[guest] = track = new Track { GuestId = guest.Id };
 		return track;
 	}
 
@@ -311,7 +336,7 @@ public sealed class GuestMetrics : IGuestObserver
 		return value;
 	}
 
-	private long Turn => ParkCalendar.Turn( simulation?.TickCount ?? lastTick );
+	private long Turn => simulation?.ParkTurn ?? 0;
 
 	public void Admitted( Guest guest, int fee )
 	{
@@ -358,10 +383,10 @@ public sealed class GuestMetrics : IGuestObserver
 	public void QueueJoined( Guest guest, IRideVisitorBridge attraction )
 	{
 		var track = Get( guest );
-		// a join while another attempt is still open cannot happen in the simulation; close it as unfinished rather than lose it
+		// a join while another attempt is still open cannot happen in the simulation; it is counted apart (the tests assert 0) rather than as an outcome
 		if ( track.Attempt is { Counted: true } )
-			unfinished++;
-		track.Attempt = new Open { AttractionId = attraction.AttractionId, Counted = recording };
+			superseded++;
+		track.Attempt = new Open { AttractionId = attraction.AttractionId, Counted = recording, JoinTurn = Turn };
 		if ( !recording )
 			return;
 		attempts++;
@@ -432,12 +457,29 @@ public sealed class GuestMetrics : IGuestObserver
 
 	public void Leaving( Guest guest, DepartureCause cause ) => Get( guest ).LastCause = cause;
 
+	public void Recalled( Guest guest ) => Get( guest ).LastCause = DepartureCause.None;
+
+	/// <summary>
+	/// A restored snapshot made every guest a new object. What the collector holds per guest (admission cohort, open queue attempt, last leaving cause, no-choice streak) is carried over by
+	/// guest id, so a save and a restore inside a window leave the tallies as they were; a guest the collector never saw starts fresh (admitted when its snapshot says it paid).
+	/// </summary>
+	public void Restored( GuestSimulation sim )
+	{
+		simulation ??= sim;
+		var byId = new Dictionary<int, Track>();
+		foreach ( var track in tracks.Values )
+			byId[track.GuestId] = track;
+		tracks.Clear();
+		foreach ( var guest in sim.Guests )
+			tracks[guest] = byId.TryGetValue( guest.Id, out var carried ) ? carried : new Track { GuestId = guest.Id, Admitted = guest.Paid };
+	}
+
 	public void Departed( Guest guest )
 	{
 		if ( !tracks.Remove( guest, out var track ) )
 			track = new Track();
 		if ( track.Attempt is { Counted: true } )
-			unfinished++;
+			superseded++;
 		if ( !recording )
 			return;
 		departures++;
@@ -470,7 +512,11 @@ public sealed class GuestMetrics : IGuestObserver
 		simulation ??= sim;
 		lastTick = sim.TickCount;
 		if ( !recording && !windowDone && AutoBeginAtTick is { } begin && lastTick >= begin )
+		{
+			// the window opens after the tick that reached the mark, so it holds exactly the ticks that follow it
 			BeginWindow();
+			return;
+		}
 		if ( !recording )
 			return;
 		ticks++;

@@ -43,6 +43,8 @@ public sealed record M3GateOptions
 	public bool SweptTurns { get; init; }
 	/// <summary>A passive measurement view set on the run's guests before the first tick (the guest report, docs/SMARTER-GUESTS.md); null for the gate's own runs.</summary>
 	public IGuestObserver? GuestObserver { get; init; }
+	/// <summary>Called with the run's guests after the last tick and before the objects are stopped: stopping a ride turns its queue away, which a measurement must not count.</summary>
+	public Action<GuestSimulation>? BeforeTeardown { get; init; }
 }
 
 public sealed record M3GateReport( M3GateOptions Options, JsonObject TimeMapping, IReadOnlyList<M3GateRow> Rows, double WallSeconds )
@@ -941,6 +943,9 @@ internal sealed class M3GateRun
 			runtime.FixedTick();
 			return;
 		}
+		// Level aligns the guests' turns to the economy's before it decides (Guests.AlignTurns); the gate's park starts both at tick 0, so they must already agree, and a drift is a fault, not a reason to run a plain tick
+		if ( guests.NextTickStartsTurn != economy.NextTickStartsTurn )
+			throw new InvalidOperationException( $"The guests' and the economy's park turns are not aligned at tick {guests.TickCount + 1} (swept turns need one clock)." );
 		var swept = guests.NextTickStartsTurn && economy.NextTickStartsTurn;
 		if ( swept )
 			guests.BeginSweepTick( Tick );
@@ -1301,6 +1306,7 @@ internal sealed class M3GateRun
 		AddScriptRow( faults, halted );
 		AddStaffRow( repairs, repairsNeeded, wagesEvents, wagesPaid, litterPeak, litterDropped, litterCleaned,
 			repairWindow, repairOverdue, maxRepairTicks, pendingRepairs.Count, litterNotCleaned );
+		options.BeforeTeardown?.Invoke( guests );
 		foreach ( var item in fixedItems )
 			item.Stop();
 		foreach ( var item in placed )

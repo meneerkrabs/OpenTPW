@@ -11,7 +11,7 @@ namespace OpenTPW.Tests;
 public class GuestMeasurementTests
 {
 	/// <summary>The guests' state hash of <see cref="ScenarioRun"/>, pinned like the other determinism pins: a change moves the baseline of docs/SMARTER-GUESTS.md.</summary>
-	private const ulong ScenarioFixedRunHash = 0xEB32FB89F86B1110UL;
+	private const ulong ScenarioFixedRunHash = 0xF430B24D6D6B950EUL;
 
 	private static ParkScenario ScenarioRun( ulong seed, IGuestObserver? observer = null, int ticks = 6000 )
 	{
@@ -105,7 +105,8 @@ public class GuestMeasurementTests
 			var snapshot = metrics.EndWindow();
 			var queue = snapshot.Queue;
 			Assert.IsTrue( queue.Attempts > 100, $"seed {seed}: {queue.Attempts} attempts" );
-			Assert.AreEqual( queue.Attempts, queue.Boarded + queue.Abandoned + queue.Rejected + queue.Unfinished, $"seed {seed}" );
+			Assert.AreEqual( 0, queue.Superseded, $"seed {seed}: no attempt ends unreported" );
+			Assert.AreEqual( queue.Attempts, queue.Boarded + queue.Abandoned + queue.Rejected + queue.Unfinished + queue.Superseded, $"seed {seed}" );
 			Assert.IsTrue( queue.IsConsistent );
 			Assert.IsTrue( queue.Boarded > 0 && queue.Rejected > 0 && queue.Abandoned > 0 && queue.Unfinished > 0, $"seed {seed}: every outcome occurs in a long run" );
 			Assert.AreEqual( queue.Attempts, snapshot.Attractions.Sum( item => item.Attempts ) );
@@ -120,13 +121,18 @@ public class GuestMeasurementTests
 	[TestMethod]
 	public void TheScenarioExercisesEveryRefusalReasonOfItsKind()
 	{
-		var park = new ParkScenario( new WorldSeed( 1 ) );
-		var metrics = new GuestMetrics();
-		metrics.Attach( park.Guests );
-		park.Run( GuestReport.TicksForDays( 6 ) );
-		metrics.BeginWindow();
-		park.Run( GuestReport.TicksForDays( 60 ) );
-		var reasons = metrics.EndWindow().Queue.RejectedByReason;
+		var reasons = new Dictionary<string, long>();
+		foreach ( var seed in new ulong[] { 1, 2, 3, 4 } )
+		{
+			var park = new ParkScenario( new WorldSeed( seed ) );
+			var metrics = new GuestMetrics();
+			metrics.Attach( park.Guests );
+			park.Run( GuestReport.TicksForDays( 6 ) );
+			metrics.BeginWindow();
+			park.Run( GuestReport.TicksForDays( 60 ) );
+			foreach ( var (reason, count) in metrics.EndWindow().Queue.RejectedByReason )
+				reasons[reason] = reasons.GetValueOrDefault( reason ) + count;
+		}
 		foreach ( var reason in new[] { QueueEndReason.Full, QueueEndReason.Price, QueueEndReason.TooScary, QueueEndReason.TooBoring } )
 			Assert.IsTrue( reasons.GetValueOrDefault( reason.ToString() ) > 0, $"{reason} occurs" );
 	}
@@ -160,6 +166,79 @@ public class GuestMeasurementTests
 		Assert.AreEqual( 1, queue.RejectedByReason[nameof( QueueEndReason.Full )] );
 		Assert.AreEqual( 1, queue.RejectedByReason[nameof( QueueEndReason.Price )] );
 		_ = simulation;
+	}
+
+	[TestMethod]
+	public void AnAttemptThatEndsUnreportedIsCountedApartAndBreaksTheConsistencyCheck()
+	{
+		var ride = new RideVisitorBridge( 1, "ride", RideVisitorKind.Ride, 1, 70, 30 );
+		var metrics = new GuestMetrics();
+		metrics.BeginWindow();
+		var guest = new Guest( 1, 0 );
+		metrics.QueueJoined( guest, ride );
+		metrics.QueueJoined( guest, ride );   // joined again with the first attempt still open
+		var other = new Guest( 2, 0 );
+		metrics.QueueJoined( other, ride );
+		metrics.Departed( other );            // departed with an attempt open
+		var queue = metrics.EndWindow().Queue;
+		Assert.AreEqual( 2, queue.Superseded );
+		Assert.AreEqual( 1, queue.Unfinished );
+		Assert.IsFalse( queue.IsConsistent, "a superseded attempt is never consistent" );
+	}
+
+	[TestMethod]
+	public void UnfinishedAttemptsReportTheirAgeAndTheCensoredWaitsIncludeThem()
+	{
+		var park = new ParkScenario( new WorldSeed( 2 ) );
+		var metrics = new GuestMetrics();
+		metrics.Attach( park.Guests );
+		park.Run( GuestReport.TicksForDays( 6 ) );
+		metrics.BeginWindow();
+		park.Run( GuestReport.TicksForDays( 40 ) );
+		var queue = metrics.EndWindow().Queue;
+		Assert.IsTrue( queue.Unfinished > 0 && queue.UnfinishedAgeMax is >= 0 );
+		Assert.IsTrue( queue.CensoredWaitP99 >= queue.WaitP99, "the unfinished ages can only raise the wait percentiles" );
+	}
+
+	[TestMethod]
+	public void SeedsStayDistinctOverTheExtendedWindowAndDuplicatesAreFlagged()
+	{
+		foreach ( var days in new[] { 40, 80 } )
+		{
+			var hashes = Enumerable.Range( 1, 8 ).Select( seed => ScenarioRun( (ulong)seed, null, (int)GuestReport.TicksForDays( days ) ).Hash ).ToList();
+			Assert.AreEqual( 8, hashes.Distinct().Count(), $"8 distinct runs after {days} days" );
+		}
+		var result = GuestReport.Run( SmallReport() with { Seeds = new ulong[] { 1, 2, 1 } } );
+		var scenario = result.Scenarios.Single();
+		Assert.AreEqual( 2, scenario.DistinctSeeds );
+		Assert.AreEqual( 1, scenario.DuplicateSeeds.Count, "the seed given twice ran the same park twice" );
+		Assert.IsTrue( scenario.Spread.All( item => item.Count <= 2 ), "the spread is over the distinct seeds" );
+		StringAssert.Contains( GuestReport.ToTable( result ), "WARNING: seed 1 ended in the same state as seed 1" );
+		StringAssert.Contains( GuestReport.ToJson( result ), "\"duplicateSeeds\"" );
+	}
+
+	[TestMethod]
+	public void ASaveAndRestoreInsideTheWindowKeepsTheTalliesWhole()
+	{
+		var plain = new ParkScenario( new WorldSeed( 3 ) );
+		var plainMetrics = new GuestMetrics();
+		plainMetrics.Attach( plain.Guests );
+		var restored = new ParkScenario( new WorldSeed( 3 ) );
+		var restoredMetrics = new GuestMetrics();
+		restoredMetrics.Attach( restored.Guests );
+		foreach ( var (park, metrics) in new[] { (plain, plainMetrics), (restored, restoredMetrics) } )
+		{
+			park.Run( GuestReport.TicksForDays( 6 ) );
+			metrics.BeginWindow();
+			park.Run( GuestReport.TicksForDays( 12 ) );
+		}
+		restored.Guests.RestoreSnapshot( restored.Guests.CaptureSnapshot() );
+		plain.Run( GuestReport.TicksForDays( 12 ) );
+		restored.Run( GuestReport.TicksForDays( 12 ) );
+		Assert.AreEqual( plain.Hash, restored.Hash, "the restore changes nothing the scenario holds" );
+		var (a, b) = (plainMetrics.EndWindow(), restoredMetrics.EndWindow());
+		Assert.IsTrue( b.Queue.IsConsistent );
+		Assert.AreEqual( a.ToJsonObject().ToJsonString(), b.ToJsonObject().ToJsonString(), "the same attempts, departures and happiness as without the restore" );
 	}
 
 	[TestMethod]
@@ -225,6 +304,64 @@ public class GuestMeasurementTests
 	}
 
 	[TestMethod]
+	public void TheWindowOfAnAutoBeginHoldsExactlyTheTicksAfterTheMark()
+	{
+		var park = new ParkScenario( new WorldSeed( 1 ) );
+		var metrics = new GuestMetrics { AutoBeginAtTick = 500 };
+		metrics.Attach( park.Guests );
+		park.Run( 1500 );
+		Assert.AreEqual( 1000, metrics.EndWindow().Ticks );
+	}
+
+	[TestMethod]
+	public void ARecalledGuestLosesItsAnnouncedDeparture()
+	{
+		var metrics = new GuestMetrics();
+		metrics.BeginWindow();
+		var guest = new Guest( 1, 0 );
+		metrics.Leaving( guest, DepartureCause.HappinessZero );
+		metrics.Recalled( guest );
+		metrics.Departed( guest );
+		Assert.AreEqual( 1, metrics.EndWindow().Departures.Other, "the later departure is classed on its own cause, here none" );
+	}
+
+	[TestMethod]
+	public void CapacityNormalisedGiniIsReportedBesideTheRawOne()
+	{
+		var snapshot = GuestReport.RunScenario( 1, new GuestReportOptions { WarmupDays = 6, MeasuredDays = 30 } );
+		Assert.IsTrue( snapshot.GiniRides > 0 && snapshot.GiniRidesPerCapacity >= 0 );
+		Assert.IsTrue( JsonNode.Parse( snapshot.ToJsonObject().ToJsonString() )!["use"]!.AsObject().ContainsKey( "giniRidesPerCapacity" ) );
+	}
+
+	[TestMethod]
+	public void ComparingReportsFlagsRegressionsAndMissedTargetsInStandardErrors()
+	{
+		var baseline = JsonNode.Parse( GuestReport.ToJson( GuestReport.Run( new GuestReportOptions { Seeds = Enumerable.Range( 1, 8 ).Select( seed => (ulong)seed ).ToArray(), WarmupDays = 4, MeasuredDays = 30, Performance = false } ) ) )!.AsObject();
+		var same = GuestReportCompare.Compare( baseline, baseline, new[] { "queue.wait.p90" } );
+		Assert.IsTrue( same.Rows.All( row => row.Verdict is "same" or "undefined" ), "a report against itself changes nothing" );
+		Assert.IsTrue( same.Failed, "a named target that did not improve fails" );
+		Assert.IsFalse( GuestReportCompare.Compare( baseline, baseline, Array.Empty<string>() ).Failed );
+		// a candidate whose p90 wait fell by far more than the band and whose boarded share fell too
+		var candidate = JsonNode.Parse( baseline.ToJsonString() )!.AsObject();
+		foreach ( var item in candidate["scenarios"]![0]!["spread"]!.AsArray() )
+		{
+			var metric = (string)item!["metric"]!;
+			if ( metric == "queue.wait.p90" )
+				item["mean"] = (double)item["mean"]! * 0.05;
+			if ( metric == "queue.boarded.rate" )
+				item["mean"] = (double)item["mean"]! * 0.5;
+		}
+		var result = GuestReportCompare.Compare( baseline, candidate, new[] { "queue.wait.p90" } );
+		Assert.AreEqual( "improved", result.Rows.Single( row => row.Metric == "queue.wait.p90" ).Verdict );
+		Assert.AreEqual( "regressed", result.Rows.Single( row => row.Metric == "queue.boarded.rate" ).Verdict );
+		Assert.IsTrue( result.Failed );
+		// the band: 3 standard errors of a difference of 8 and 8 seeds = 3 · unit · sqrt(2/8); a spread of 0 still has the floor
+		Assert.AreEqual( 3 * 2.0 * 0.5, GuestReportCompare.Band( "queue.wait.p90", 100, 2, 8, 3 ), 1e-9 );
+		Assert.AreEqual( 3 * 1.0 * 0.5, GuestReportCompare.Band( "queue.wait.p90", 0, 0, 8, 3 ), 1e-9, "a zero mean and spread use the absolute floor" );
+		Assert.IsTrue( double.IsNaN( GuestReportCompare.Band( "queue.wait.p90", 1, 1, 0, 3 ) ) );
+	}
+
+	[TestMethod]
 	public void GuestsWithNoChoiceForLongAreCountedOnce()
 	{
 		var metrics = new GuestMetrics( new GuestMetricsOptions { NoChoiceTurns = 0 } );
@@ -266,5 +403,42 @@ public class GuestMeasurementTests
 		Assert.IsNotNull( result.Performance );
 		Assert.IsTrue( result.Performance.ObserverOffMicrosecondsPerTick > 0 && result.Performance.ObserverOnBytesPerTick >= 0 );
 		Assert.IsTrue( JsonNode.Parse( GuestReport.ToJson( result ) )!.AsObject().ContainsKey( "performance" ) );
+	}
+}
+
+/// <summary>The instrumentation on the level gate's parks (needs the game's data): the real objects, queues and scripts.</summary>
+[TestClass]
+public class GuestMeasurementAssetTests
+{
+	[TestInitialize]
+	public void Init()
+	{
+		Log = new();
+		var gamePath = Environment.GetEnvironmentVariable( "OPENTPW_GAME_PATH" );
+		if ( string.IsNullOrWhiteSpace( gamePath ) || !System.IO.Directory.Exists( gamePath ) )
+			Assert.Inconclusive( "Set OPENTPW_GAME_PATH for the original level objects and balance files." );
+		var dataPath = System.IO.Directory.EnumerateDirectories( gamePath ).FirstOrDefault( path => string.Equals( System.IO.Path.GetFileName( path ), "data", StringComparison.OrdinalIgnoreCase ) ) ?? gamePath;
+		if ( !System.IO.File.Exists( System.IO.Path.Combine( dataPath, "levels", "Standard.sam" ) ) )
+			Assert.Inconclusive( "OPENTPW_GAME_PATH lacks levels/Standard.sam." );
+		FileSystem = new BaseFileSystem( dataPath );
+		FileSystem.RegisterArchiveHandler<WadArchive>( ".wad" );
+	}
+
+	[TestMethod]
+	public void LevelParkAttemptsAreConsistentAndTheObserverLeavesTheHashAlone()
+	{
+		var options = new GuestReportOptions { WarmupDays = 2, MeasuredDays = 30, LevelArrivalTimeBetween = 5 };
+		foreach ( var level in new[] { "jungle", "hallow", "fantasy", "space" } )
+		{
+			var observed = GuestReport.RunLevel( level, 1, options );
+			var queue = observed.Snapshot.Queue;
+			Assert.IsTrue( queue.Attempts > 20, $"{level}: {queue.Attempts} attempts" );
+			Assert.IsTrue( queue.IsConsistent, $"{level}: attempts {queue.Attempts} = {queue.Boarded} + {queue.Abandoned} + {queue.Rejected} + {queue.Unfinished}, superseded {queue.Superseded}" );
+			ulong plainHash = 0;
+			var gate = new M3GateOptions { Level = level, Seed = new WorldSeed( 1 ).GuestStream, WorldSeed = new WorldSeed( 1 ), DeterminismProbe = false, SweptTurns = true, ArrivalTimeBetween = 5, BeforeTeardown = guests => plainHash = guests.ComputeStateHash() };
+			M3GateRun.Execute( gate, GuestReport.TicksForDays( options.WarmupDays + options.MeasuredDays ) );
+			Assert.IsTrue( queue.Unfinished > 0, $"{level}: guests are still queued when the window closes" );
+			Assert.AreEqual( plainHash, observed.StateHash, $"{level}: the observer leaves the guests' state hash alone" );
+		}
 	}
 }

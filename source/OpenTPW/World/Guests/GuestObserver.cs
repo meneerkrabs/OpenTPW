@@ -85,7 +85,7 @@ public interface IGuestObserver
 	/// <summary>A guest passed the join test and entered the queue (a queue attempt that is still open).</summary>
 	void QueueJoined( Guest guest, IRideVisitorBridge attraction );
 
-	/// <summary>A queued guest boarded: <paramref name="waitTurns"/> park turns from joining, or -1 when the guest's join was not seen (a resumed save).</summary>
+	/// <summary>A queued guest boarded: <paramref name="waitTurns"/> park turns from joining (the join turn is saved with the guest), or -1 for a guest that boards with no recorded join.</summary>
 	void QueueBoarded( Guest guest, IRideVisitorBridge attraction, long waitTurns );
 
 	/// <summary>A queued guest left the queue without boarding, after <paramref name="waitTurns"/> park turns.</summary>
@@ -100,6 +100,19 @@ public interface IGuestObserver
 	/// <summary>A guest is about to be removed from the park (the last step of leaving).</summary>
 	void Departed( Guest guest );
 
-	/// <summary>One fixed tick of the simulation is over; the guests are in their end-of-tick state.</summary>
+	/// <summary>
+	/// A leaving guest turned back (the state-18 recall): the departure it announced did not happen.
+	/// </summary>
+	void Recalled( Guest guest );
+
+	/// <summary>
+	/// The simulation restored a snapshot: every guest is a new object (same ids), so an observer that keeps per-guest state must carry it over by id or drop it.
+	/// </summary>
+	void Restored( GuestSimulation simulation );
+
+	/// <summary>
+	/// The guests' update of one fixed tick is over (the arrival update, and in a swept turn the host's admission, destroys and arrival update, may follow). It is the sampling point of
+	/// the guest-time tallies.
+	/// </summary>
 	void Ticked( GuestSimulation simulation, float deltaSeconds );
 }

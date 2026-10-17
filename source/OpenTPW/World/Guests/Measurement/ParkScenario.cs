@@ -81,6 +81,13 @@ public sealed class ParkScenario
 	/// <summary>Fixed ticks run so far.</summary>
 	public long Ticks => Guests.TickCount;
 
+	/// <summary>
+	/// A hold-time offset of -200 to +199 ms that differs for every seed (97 is coprime with 400) and is the same for every attraction of the park. The guests' generator is reseeded with
+	/// each new guest's id (tp.exe 0x004FB19E), so the streams of two seeds merge into one after a while and their runs become identical; parks that differ in their ride times cannot merge,
+	/// and the load stays the same on average.
+	/// </summary>
+	public static int HoldJitterMilliseconds( WorldSeed seed ) => (int)(seed.Value * 97 % 400) - 200;
+
 	/// <summary>The street and the three branches, each an arm of 4 cells above and below the street; the attractions stand on the arm ends.</summary>
 	private static GuestPathGrid BuildGrid()
 	{
@@ -114,7 +121,7 @@ public sealed class ParkScenario
 			bridge.ThirstEffect = satisfies.HasFlag( GuestNeeds.Thirst ) ? 50 : 0;
 			bridge.HungerEffect = satisfies.HasFlag( GuestNeeds.Hunger ) ? 50 : 0;
 		}
-		var script = ScenarioScripts.VisitorScript( new VisitorRideScriptEffects( bridge, UnimplementedRideScriptEffects.Instance ), Scripts, holdMilliseconds, 3 + attractions.Count );
+		var script = ScenarioScripts.VisitorScript( new VisitorRideScriptEffects( bridge, UnimplementedRideScriptEffects.Instance ), Scripts, holdMilliseconds + HoldJitterMilliseconds( Seed ), 3 + attractions.Count );
 		bridge.Attach( script, () => true );
 		Guests.Register( bridge );
 		attractions.Add( new ScenarioAttraction( bridge, script, role ) );

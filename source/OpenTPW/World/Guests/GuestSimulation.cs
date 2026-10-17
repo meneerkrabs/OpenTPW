@@ -737,6 +737,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 				guest.Navigation.Mask = 0;
 				guest.ExitSide = null;
 				guest.State = GuestState.DoingNothing;
+				Observer?.Recalled( guest );
 			}
 		}
 		if ( InPark( guest ) )
@@ -3569,6 +3570,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		ArrivalsEnabled = snapshot.ArrivalsEnabled;
 		seenGridVersion = snapshot.SeenGridVersion;
 		RebuildOccupants();
+		Observer?.Restored( this );
 	}
 
 	/// <summary>

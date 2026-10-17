@@ -131,11 +131,13 @@ public sealed partial class GuestSimulation
 	/// The queue patience hook (docs/SMARTER-GUESTS.md): runs after the existing leave tests of a waiting guest, on a turn the guest stays, never while it is called forward or in an
 	/// interlude. True when the policy lets the guest leave; the host then dismisses it with the policy's thought. The original policy always stays, so this changes nothing and takes no draw.
 	/// </summary>
-	private bool QueuePatienceLeaves( Guest guest, IRideVisitorBridge attraction )
+	private bool QueuePatienceLeaves( Guest guest, IRideVisitorBridge attraction, int position )
 	{
-		var look = decisions.AlternativeLookAfterTurns;
-		var alternative = look >= 0 && guest.QueueJoinTurn >= 0 && ParkTurn - guest.QueueJoinTurn >= look ? BestAlternativeWait256( guest, attraction.AttractionId ) : -1;
-		var decision = decisions.DecideQueuePatience( ContextNow(), ViewOf( guest ), new QueuePatienceView( ViewOf( attraction, guest ), guest.QueueJoinTurn, guest.QueuePosition, attraction.QueueLength, alternative ) );
+		var (context, view) = (ContextNow(), ViewOf( guest ));
+		// the alternatives are scanned only for a guest that is not at the front and has waited long enough for the policy's own give-up test to start
+		var look = decisions.AlternativeLookAfterTurns( context, view );
+		var alternative = look >= 0 && position > 0 && guest.QueueJoinTurn >= 0 && ParkTurn - guest.QueueJoinTurn >= look ? BestAlternativeWait256( guest, attraction.AttractionId ) : -1;
+		var decision = decisions.DecideQueuePatience( context, view, new QueuePatienceView( ViewOf( attraction, guest ), guest.QueueJoinTurn, position, attraction.QueueLength, alternative ) );
 		if ( !decision.Leave )
 			return false;
 		DismissFromQueue( guest, attraction, decision.Thought, QueueEndReason.Impatient );
@@ -143,8 +145,9 @@ public sealed partial class GuestSimulation
 	}
 
 	/// <summary>
-	/// The shortest expected wait, in 1/256 park turn, that <paramref name="guest"/> would have at another open, working ride that it could join now (open, with room, its excitement word and join difference admitted):
-	/// the same estimate the spreading rules use. -1 when there is no such ride or no estimate. Pure: it records and changes nothing.
+	/// The shortest expected wait, in 1/256 park turn, that <paramref name="guest"/> would have at another ride it could actually choose and join: open, working, with room, its excitement word and join difference admitted
+	/// and, as the choice would have it, not in its used or temporary history, not of the type it rode last and of an excitement it likes (<see cref="SmarterGuestsRules.IsUnusedAdmissibleRide"/>). The same estimate the spreading
+	/// rules use. -1 when there is no such ride or no estimate. Pure: it records and changes nothing.
 	/// </summary>
 	// [EXT:smarter-guests-patience] a guest gives up on a queue only for a ride it could join with a clearly shorter wait; a park with one ride has nowhere else to go
 	private long BestAlternativeWait256( Guest guest, int excludeAttractionId )
@@ -152,6 +155,7 @@ public sealed partial class GuestSimulation
 		if ( SmarterGuests == null )
 			return -1;
 		var type = Settings.Types[Math.Min( guest.Type, Settings.Types.Count - 1 )];
+		var (context, guestView) = (ContextNow(), ViewOf( guest ));
 		var counted = reservationCounts == null;
 		BeginReservations();
 		try
@@ -162,7 +166,8 @@ public sealed partial class GuestSimulation
 				if ( other.AttractionId == excludeAttractionId || other.Kind != RideVisitorKind.Ride || other.JoinCell == null || !other.IsOpen || other.IsBrokenDown
 					|| other.QueueLength >= other.QueueLimit || QueueJoinRules.Refusal( other.StaticExcitementLevel, other.JoinDifference( type.PreferredExcitement ) ) != null )
 					continue;
-				if ( SmarterGuestsRules.ExpectedWait256( WithSpreading( ViewOf( other, guest ), other, guest ) ) is { } wait && (best < 0 || wait < best) )
+				var view = WithSpreading( ViewOf( other, guest ), other, guest );
+				if ( SmarterGuestsRules.IsUnusedAdmissibleRide( context, guestView, view ) && SmarterGuestsRules.ExpectedWait256( view ) is { } wait && (best < 0 || wait < best) )
 					best = wait;
 			}
 			return best;

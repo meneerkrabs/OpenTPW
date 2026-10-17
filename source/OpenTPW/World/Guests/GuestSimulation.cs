@@ -2196,7 +2196,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		var result2 = attraction.CheckJoinRoom( guest.Id );
 		if ( result2 == QueueJoinResult.Joined )
 		{
-			var alternative = decisions.AlternativeLookAfterTurns >= 0 ? BestAlternativeWait256( guest, attraction.AttractionId ) : -1;
+			var alternative = decisions.AlternativeLookAfterTurns( ContextNow(), ViewOf( guest ) ) >= 0 ? BestAlternativeWait256( guest, attraction.AttractionId ) : -1;
 			var admission = decisions.DecideAdmission( ContextNow(), ViewOf( guest ), new AdmissionView( ViewOf( attraction, guest ), attraction.StaticExcitementLevel,
 				attraction.JoinDifference( type.PreferredExcitement ), attraction.QueueLength, attraction.QueueLimit, alternative ) );
 			result2 = admission.Result;
@@ -2782,7 +2782,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 				if ( attraction.ProvidesRelief )
 				{
 					Think( guest, GuestThought.NeedToilet );
-					QueuePatienceLeaves( guest, attraction );
+					QueuePatienceLeaves( guest, attraction, position );
 					return;
 				}
 				DismissFromQueue( guest, attraction, GuestThought.NeedToilet, QueueEndReason.NeedToilet );
@@ -2791,7 +2791,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			// [BIN:TPW-EXE:0x004FFFF0 needs branch returns] beyond the window every path of the needs branch returns (0x00500311..0x005003A2), so the facing change below runs only within 30 turns of the last interlude
 			// [EXT:smarter-guests] the patience hook follows the leave tests on every turn the guest stays; the original policy stays. It can run on the turn a move-up has just started (the walk and the
 			// needs window share a turn, as in the original), so a policy can see a guest whose place has just changed (its QueuePosition is the old one until the walk ends); the hook is deliberately not skipped there, which keeps the original's flow
-			QueuePatienceLeaves( guest, attraction );
+			QueuePatienceLeaves( guest, attraction, position );
 			return;
 		}
 		if ( turn > guest.QueueStandingSinceTurn + BoredomTurns )
@@ -2800,7 +2800,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			return;
 		}
 		// [EXT:smarter-guests] the patience hook again, on the turns the needs window does not cover
-		if ( QueuePatienceLeaves( guest, attraction ) )
+		if ( QueuePatienceLeaves( guest, attraction, position ) )
 			return;
 		// 8. A 1-in-10 facing change of −400..+399 of 2048 of a turn.
 		// [BIN:TPW-EXE:0x004FFFF0 queue facing change] one draw (0x00516330) mod 10 must be 0 (else return), then a second draw gives heading +0x1C += (r mod 800) − 400, wrapped by 0x800; OpenTPW draws both from the world generator and turns the heading vector by the same angle

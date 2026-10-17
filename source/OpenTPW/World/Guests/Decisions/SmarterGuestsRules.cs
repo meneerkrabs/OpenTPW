@@ -155,6 +155,15 @@ public static class SmarterGuestsRules
 	/// <summary>The patience rules concern rides only: a shop, sideshow or toilet is a service the guest wants for a reason no other attraction answers, and the alternatives the rules weigh are rides.</summary>
 	public static bool Concerns( in AttractionView attraction ) => attraction.Kind == RideVisitorKind.Ride;
 
+	/// <summary>A ride that is in neither of the guest's histories, is not of the type it used last and whose excitement the admission gate would let it through to: a ride the guest could choose next.</summary>
+	public static bool IsUnusedAdmissibleRide( in DecisionContext context, in GuestView guest, in AttractionView attraction )
+	{
+		if ( attraction.Kind != RideVisitorKind.Ride || attraction.SameTypeAsLastUsed || guest.UsedHistory.Contains( attraction.Id ) || guest.TemporaryHistory.Contains( attraction.Id ) )
+			return false;
+		var type = context.Settings.Types[Math.Min( guest.Type, context.Settings.Types.Count - 1 )];
+		return AttractionScore.ExcitementMatch( type.PreferredExcitement, attraction.LiveExcitement ) > 10;
+	}
+
 	/// <summary>Whether the expected wait of a guest joining the back of this queue is above its patience (no estimate: it is not).</summary>
 	public static bool WaitExceedsPatience( in AttractionView attraction, long bestAlternative256, int patiencePercent ) =>
 		ExpectedWait256( attraction ) is { } wait && wait > PatienceTurns256( JoinPatienceTurns, patiencePercent ) && IsClearlyShorter( bestAlternative256, wait );
@@ -165,8 +174,6 @@ public static class SmarterGuestsRules
 	/// <summary>How much of the wait here another ride's wait may be, in percent, for it to count as a reason to leave or not to join.</summary>
 	public const int AlternativePercent = 80;
 
-	/// <summary>The park turns a guest has to have waited before the host looks at the alternatives for it (the smallest give-up is 70 percent of 120, 84 turns).</summary>
-	public const int AlternativeLookAfterTurns = 80;
 
 	/// <summary>Whether a guest that has waited <paramref name="waitedTurns"/> park turns in a queue, at <paramref name="position"/> (0 is the front), gives up.</summary>
 	public static bool GivesUp( long waitedTurns, in AttractionView attraction, int position, long bestAlternative256, int patiencePercent ) =>

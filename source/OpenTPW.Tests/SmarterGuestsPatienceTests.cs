@@ -78,15 +78,18 @@ public class SmarterGuestsPatienceTests
 	}
 
 	[TestMethod]
-	public void ThePatienceBandMovesTheLimitAndTheWalkersCountAsGuestsAhead()
+	public void ThePatienceBandMovesTheLimitAndWalkersOnTheirWayDoNotCountAsGuestsAhead()
 	{
-		var queue = Ride( queue: 3, reservations: 1, interval: 30 * 256 ); // 4 guests ahead: 120 turns
-		var patient = Guest( GuestWithPatience( 130 ) ); // 117 turns: still refused
+		var patient = Guest( GuestWithPatience( 130 ) ); // 117 turns
 		var impatient = Guest( GuestWithPatience( 70 ) ); // 63 turns
-		var calm = Ride( queue: 3, interval: 30 * 256 ); // 90 turns: the middle guest accepts, the impatient does not
-		Assert.IsFalse( Smarter.DecideAdmission( Context(), patient, Admission( queue, 0 ) ).Admits );
-		Assert.IsFalse( Smarter.DecideAdmission( Context(), impatient, Admission( calm, 0 ) ).Admits );
+		var calm = Ride( queue: 3, interval: 30 * 256 ); // 3 guests ahead: 90 turns
+		Assert.IsFalse( Smarter.DecideAdmission( Context(), impatient, Admission( calm, 0 ) ).Admits, "the impatient guest's limit is 63 turns" );
 		Assert.IsTrue( Smarter.DecideAdmission( Context(), patient, Admission( calm, 0 ) ).Admits );
+		Assert.IsFalse( Smarter.DecideAdmission( Context(), patient, Admission( Ride( queue: 4, interval: 30 * 256 ), 0 ) ).Admits, "4 ahead is 120 turns, above 117" );
+		// the guest stands on the queue's last cell when it is admitted: guests still walking to the ride will stand behind it, so they add nothing to its wait
+		var walkers = Ride( queue: 3, reservations: 5, interval: 30 * 256 );
+		Assert.IsTrue( Smarter.DecideAdmission( Context(), patient, Admission( walkers, 0 ) ).Admits, "5 walkers behind the guest do not lengthen its wait" );
+		Assert.AreEqual( Smarter.DecideAdmission( Context(), impatient, Admission( calm, 0 ) ), Smarter.DecideAdmission( Context(), impatient, Admission( walkers, 0 ) ) );
 	}
 
 	[TestMethod]
@@ -141,7 +144,10 @@ public class SmarterGuestsPatienceTests
 		Assert.IsFalse( Smarter.DecideQueuePatience( Context( 90 ), patient, Queue( ride, 0, 8, 0 ) ).Leave );
 		Assert.IsFalse( Smarter.DecideQueuePatience( Context( 156 ), patient, Queue( ride, 0, 8, 0 ) ).Leave, "130 percent of 120 is 156 turns" );
 		Assert.IsTrue( Smarter.DecideQueuePatience( Context( 157 ), patient, Queue( ride, 0, 8, 0 ) ).Leave );
-		Assert.IsTrue( SmarterGuestsRules.AlternativeLookAfterTurns <= 84, "the host looks before the earliest possible give-up" );
+		// the host scans the park's rides for a guest only from its own give-up turn: 84 to 156 turns across the band
+		Assert.AreEqual( 84, Smarter.AlternativeLookAfterTurns( Context(), impatient ) );
+		Assert.AreEqual( 156, Smarter.AlternativeLookAfterTurns( Context(), patient ) );
+		Assert.AreEqual( -1, ((IGuestDecisions)OriginalGuestDecisions.Instance).AlternativeLookAfterTurns( Context(), patient ) );
 	}
 
 	// ---- The host -----------------------------------------------------------------------------
@@ -149,20 +155,20 @@ public class SmarterGuestsPatienceTests
 	private sealed class Spy : SmarterGuestsTests.DelegatingDecisions
 	{
 		private readonly int look;
-		public readonly List<(long Alternative, GuestState State, bool Interlude, bool Called)> Patience = new();
-		public readonly List<long> Admissions = new();
-		public Spy( int look ) : base( new SmarterGuestDecisions() ) => this.look = look;
+		public readonly List<(long Alternative, GuestState State, bool Interlude, bool Called, int Position)> Patience = new();
+		public readonly List<(long Alternative, int Ride, int[] Histories)> Admissions = new();
 		public Func<int, Guest?> Find = _ => null;
-		public override int AlternativeLookAfterTurns => look;
+		public Spy( int look ) : base( new SmarterGuestDecisions() ) => this.look = look;
+		public override int AlternativeLookAfterTurns( in DecisionContext context, in GuestView guest ) => look;
 		public override QueueAdmission DecideAdmission( in DecisionContext context, in GuestView guest, in AdmissionView admission )
 		{
-			Admissions.Add( admission.BestAlternativeWait256 );
+			Admissions.Add( (admission.BestAlternativeWait256, admission.Attraction.Id, guest.UsedHistory.Concat( guest.TemporaryHistory ).Where( id => id != 0 ).ToArray()) );
 			return base.DecideAdmission( context, guest, admission );
 		}
 		public override QueuePatienceDecision DecideQueuePatience( in DecisionContext context, in GuestView guest, in QueuePatienceView queue )
 		{
 			var host = Find( guest.Id );
-			Patience.Add( (queue.BestAlternativeWait256, host?.State ?? GuestState.Gone, host?.InQueueInterlude ?? false, host?.QueueCalled ?? false) );
+			Patience.Add( (queue.BestAlternativeWait256, host?.State ?? GuestState.Gone, host?.InQueueInterlude ?? false, host?.QueueCalled ?? false, queue.Position) );
 			return base.DecideQueuePatience( context, guest, queue );
 		}
 	}
@@ -171,11 +177,12 @@ public class SmarterGuestsPatienceTests
 	{
 		public readonly List<(QueueEndReason Reason, int Attraction, bool BelowLimit)> Rejected = new();
 		public readonly List<(QueueEndReason Reason, int Attraction, long Waited)> Ends = new();
+		public int Boarded;
 		public void Admitted( Guest guest, int fee ) { }
 		public void Spent( Guest guest, int amount, int attractionId ) { }
 		public void QueueRejected( Guest guest, IRideVisitorBridge attraction, QueueEndReason reason ) => Rejected.Add( (reason, attraction.AttractionId, attraction.QueueLength < attraction.QueueLimit) );
 		public void QueueJoined( Guest guest, IRideVisitorBridge attraction ) { }
-		public void QueueBoarded( Guest guest, IRideVisitorBridge attraction, long waitTurns ) { }
+		public void QueueBoarded( Guest guest, IRideVisitorBridge attraction, long waitTurns ) => Boarded++;
 		public void QueueEnded( Guest guest, int attractionId, QueueEndReason reason, long waitTurns ) => Ends.Add( (reason, attractionId, waitTurns) );
 		public void Decided( Guest guest, bool chose ) { }
 		public void Leaving( Guest guest, DepartureCause cause ) { }
@@ -185,6 +192,27 @@ public class SmarterGuestsPatienceTests
 		public void Ticked( GuestSimulation simulation, float deltaSeconds ) { }
 	}
 
+	/// <summary>The smarter policy with the original's score: guests choose as the original's do (the expected wait does not steer them), so the slow ride gets its queue and the patience rules are the only thing that judges it.</summary>
+	private sealed class OriginalChoice() : SmarterGuestsTests.DelegatingDecisions( new SmarterGuestDecisions() )
+	{
+		public override uint ScoreAttraction( in DecisionContext context, in GuestView guest, in AttractionView attraction ) => OriginalGuestDecisions.Instance.ScoreAttraction( context, guest, attraction );
+	}
+
+	private static (ParkScenario Park, Recorder Recorder) Run( ParkScenarioOptions options, ulong seed, int ticks, IGuestDecisions? decisions = null )
+	{
+		var recorder = new Recorder();
+		var park = new ParkScenario( new WorldSeed( seed ), options, decisions ?? new SmarterGuestDecisions() );
+		park.Guests.Observer = recorder;
+		park.Run( ticks );
+		return (park, recorder);
+	}
+
+	private static string Describe( Recorder recorder ) =>
+		"ends " + string.Join( ",", recorder.Ends.GroupBy( end => end.Reason ).Select( group => $"{group.Key}:{group.Count()}/{group.Max( end => end.Waited )}" ) )
+		+ ", rejected " + string.Join( ",", recorder.Rejected.GroupBy( reject => reject.Reason ).Select( group => $"{group.Key}:{group.Count()}" ) ) + $", boarded {recorder.Boarded}";
+
+	private static HashSet<int> RideIds( ParkScenario park ) => park.Guests.Attractions.Where( attraction => attraction.Kind == RideVisitorKind.Ride ).Select( attraction => attraction.AttractionId ).ToHashSet();
+
 	[TestMethod]
 	public void TheHostAsksForAlternativesOnlyWhenThePolicyWantsThemAndNeverWhileCalledOrInAnInterlude()
 	{
@@ -192,54 +220,95 @@ public class SmarterGuestsPatienceTests
 		var park = new ParkScenario( new WorldSeed( 1 ), decisions: spy );
 		spy.Find = id => park.Guests.Guests.FirstOrDefault( guest => guest.Id == id );
 		park.Run( 12_000 );
-		Assert.IsTrue( spy.Admissions.Count > 20 && spy.Admissions.Any( wait => wait >= 0 ), "an admission with other rides in the park sees the best of them" );
+		Assert.IsTrue( spy.Admissions.Count > 20 && spy.Admissions.Any( admission => admission.Alternative >= 0 ), "an admission with other rides in the park sees the best of them" );
 		Assert.IsTrue( spy.Patience.Count > 50 && spy.Patience.Any( call => call.Alternative >= 0 ) );
-		Assert.IsTrue( spy.Patience.All( call => call.State is GuestState.Queueing or GuestState.MovingUpQueue && !call.Interlude && !call.Called ), string.Join( ", ", spy.Patience.GroupBy( call => (call.State, call.Interlude, call.Called) ).Select( g => $"{g.Key}:{g.Count()}" ) ) + " the hook runs for a waiting guest only, never called forward or in an interlude" );
+		Assert.IsTrue( spy.Patience.All( call => call.State is GuestState.Queueing or GuestState.MovingUpQueue && !call.Interlude && !call.Called ),
+			"the hook runs for a waiting guest only, never called forward or in an interlude (the turn a move-up starts is the original flow's and counts as waiting)" );
+		Assert.IsTrue( spy.Patience.Where( call => call.Position == 0 ).Any() && spy.Patience.Where( call => call.Position == 0 ).All( call => call.Alternative == -1 ), "nothing is scanned for the guest at the front" );
 
 		var silent = new Spy( -1 );
 		var plain = new ParkScenario( new WorldSeed( 1 ), decisions: silent );
 		plain.Run( 6_000 );
-		Assert.IsTrue( silent.Admissions.Count > 0 && silent.Admissions.All( wait => wait == -1 ), "a policy that does not ask is given -1: the original path does no extra work" );
-		Assert.IsTrue( silent.Patience.All( call => call.Alternative == -1 ) );
+		Assert.IsTrue( silent.Admissions.Count > 0 && silent.Admissions.All( admission => admission.Alternative == -1 ), "a policy that does not ask is given -1: the original path does no extra work" );
+		Assert.IsTrue( silent.Patience.Count > 0 && silent.Patience.All( call => call.Alternative == -1 ) );
 	}
 
 	[TestMethod]
-	public void ARefusalIsAQueueLimitRefusalAndAGiveUpAnImpatientExitOnRidesOnly()
+	public void AnAlternativeIsARideTheGuestCouldChooseNotOneItUsedOrJustWasRefusedAt()
 	{
-		using var scope = OpenTPW.Mods.OpenTpwExtensions.Use( SmarterGuestsTests.On() );
-		var recorder = new Recorder();
-		var park = new ParkScenario( new WorldSeed( 1 ) );
-		park.Guests.Observer = recorder;
-		park.Run( 40_000 );
-		Assert.IsInstanceOfType( park.Guests.Decisions, typeof( SmarterGuestDecisions ) );
-		Assert.IsTrue( recorder.Rejected.Any( reject => reject.Reason == QueueEndReason.QueueLimit && reject.BelowLimit ), "a guest turned away by its patience while the queue had room: rule 1 acted" );
-		var rides = park.Guests.Attractions.Where( attraction => attraction.Kind == RideVisitorKind.Ride ).Select( attraction => attraction.AttractionId ).ToHashSet();
-		Assert.IsTrue( recorder.Rejected.Where( reject => reject.BelowLimit && reject.Reason == QueueEndReason.QueueLimit ).All( reject => rides.Contains( reject.Attraction ) ), "never a shop or the toilet" );
-		Assert.IsTrue( recorder.Ends.Where( end => end.Reason == QueueEndReason.Impatient ).All( end => rides.Contains( end.Attraction ) && end.Waited > 84 ), "a give-up is a ride's, after the shortest patience" );
-	}
-
-	[TestMethod]
-	public void ASingleRideParkNeverTurnsAnyoneAwayByPatience()
-	{
-		// the level parks have one ride: with nowhere else to go, patience does nothing and the queue behaves as the earlier phases' (the measurement's level rows)
 		var spy = new Spy( 0 );
-		var options = new ParkScenarioOptions();
-		var park = new ParkScenario( new WorldSeed( 2 ), options, spy );
-		var rides = park.Guests.Attractions.Where( attraction => attraction.Kind == RideVisitorKind.Ride ).ToList();
-		Assert.IsTrue( rides.Count > 1, "the scenario has several rides: the single-ride case is the rule-level test below" );
-		var guest = Guest( GuestWithPatience( 70 ) );
-		Assert.IsTrue( Smarter.DecideAdmission( Context(), guest, Admission( Ride( queue: 19, interval: 30 * 256 ), -1 ) ).Admits );
-		Assert.IsFalse( Smarter.DecideQueuePatience( Context( 5_000 ), guest, Queue( Ride( queue: 19, interval: 30 * 256 ), 0, 15, -1 ) ).Leave );
+		var park = new ParkScenario( new WorldSeed( 3 ), decisions: spy );
+		park.Run( 20_000 );
+		var rides = RideIds( park );
+		var seen = spy.Admissions.Where( admission => admission.Alternative >= 0 ).ToList();
+		Assert.IsTrue( seen.Count > 10, "alternatives were found" );
+		Assert.IsTrue( seen.All( admission => rides.Any( ride => ride != admission.Ride && !admission.Histories.Contains( ride ) ) ), "an alternative exists only while some other ride is in neither of the guest's histories" );
+		Assert.IsTrue( spy.Admissions.Any( admission => admission.Alternative == -1 && rides.Where( ride => ride != admission.Ride ).All( admission.Histories.Contains ) ), "a guest that has been to every other ride has no alternative" );
+	}
+
+	[TestMethod]
+	public void ARideTheGuestCouldChooseIsNewToItOfAnotherTypeAndOfAnExcitementItLikes()
+	{
+		var guest = Guest();
+		var ride = Ride( interval: 30 * 256 );
+		Assert.IsTrue( SmarterGuestsRules.IsUnusedAdmissibleRide( Context(), guest, ride ) );
+		Assert.IsFalse( SmarterGuestsRules.IsUnusedAdmissibleRide( Context(), guest, Ride( kind: RideVisitorKind.Shop ) ), "a shop is not a ride" );
+		Assert.IsFalse( SmarterGuestsRules.IsUnusedAdmissibleRide( Context(), guest, ride with { SameTypeAsLastUsed = true } ), "the type it rode last" );
+		var used = new int[4];
+		used[1] = ride.Id;
+		Assert.IsFalse( SmarterGuestsRules.IsUnusedAdmissibleRide( Context(), guest with { UsedHistory = Array.AsReadOnly( used ) }, ride ), "in the used history" );
+		Assert.IsFalse( SmarterGuestsRules.IsUnusedAdmissibleRide( Context(), guest with { TemporaryHistory = Array.AsReadOnly( used ) }, ride ), "refused lately" );
+	}
+
+	[TestMethod]
+	public void ASlowRideRefusesGuestsWhoHaveAQuickerOneAndNeverAServiceOrTheLastRide()
+	{
+		var (park, recorder) = Run( new ParkScenarioOptions { TwinAHoldMilliseconds = 30_000, ArrivalTimeBetween = 6 }, 1, 40_000, new OriginalChoice() );
+		var rides = RideIds( park );
+		var patience = recorder.Rejected.Where( reject => reject.Reason == QueueEndReason.QueueLimit && reject.BelowLimit ).ToList();
+		Assert.IsTrue( patience.Count > 0, "a guest was turned away by its patience while the queue had room: rule 1 acted" );
+		Assert.IsTrue( patience.All( reject => rides.Contains( reject.Attraction ) ), "only rides" );
+	}
+
+	[TestMethod]
+	public void AGuestWaitingTooLongForASlowRideGivesUpWhenAQuickerOneExists()
+	{
+		var (park, recorder) = Run( new ParkScenarioOptions { TwinAHoldMilliseconds = 30_000, ArrivalTimeBetween = 6 }, 2, 60_000, new OriginalChoice() );
+		var rides = RideIds( park );
+		var gaveUp = recorder.Ends.Where( end => end.Reason == QueueEndReason.Impatient ).ToList();
+		Assert.IsTrue( gaveUp.Count > 0, Describe( recorder ) );
+		Assert.IsTrue( gaveUp.All( end => rides.Contains( end.Attraction ) && end.Waited > 84 ), "a give-up is a ride's, after the earliest patience" );
+		Assert.IsTrue( QueueEndReasons.IsAbandonment( QueueEndReason.Impatient ) );
+	}
+
+	[TestMethod]
+	public void ASingleRideParkNeverTurnsAnyoneAwayByPatienceNorLetsAnyoneGiveUp()
+	{
+		// the level parks have one ride: with nowhere else to go the rules do nothing, even for a ride far slower than the park needs
+		var (park, recorder) = Run( new ParkScenarioOptions { SingleRide = true, TwinAHoldMilliseconds = 30_000, ArrivalTimeBetween = 6 }, 1, 60_000, new OriginalChoice() );
+		Assert.AreEqual( 1, RideIds( park ).Count, "one ride" );
+		Assert.IsTrue( recorder.Boarded > 5, "the ride boards guests" );
+		Assert.IsFalse( recorder.Rejected.Any( reject => reject.Reason == QueueEndReason.QueueLimit && reject.BelowLimit ), "no refusal while the queue has room" );
+		Assert.IsFalse( recorder.Ends.Any( end => end.Reason == QueueEndReason.Impatient ), "no give-up" );
+		Assert.IsTrue( recorder.Ends.Any( end => end.Waited > 84 ), Describe( recorder ) );
 	}
 
 	[TestMethod]
 	public void ThePatiencePolicyIsStatelessAndTheOffPathIsTheOriginalsWithNoAlternativeLook()
 	{
-		Assert.AreEqual( -1, ((IGuestDecisions)OriginalGuestDecisions.Instance).AlternativeLookAfterTurns );
-		Assert.AreEqual( SmarterGuestsRules.AlternativeLookAfterTurns, ((IGuestDecisions)Smarter).AlternativeLookAfterTurns );
 		Assert.AreEqual( QueuePatienceDecision.Stay, OriginalGuestDecisions.Instance.DecideQueuePatience( Context( 99_999 ), Guest(), Queue( Ride( queue: 9 ), 0, 8, 0 ) ) );
 		var admission = Admission( Ride( queue: 19 ), 0 );
 		Assert.AreEqual( OriginalGuestDecisions.Instance.DecideAdmission( Context(), Guest(), admission ), new SmarterGuestDecisions().DecideAdmission( Context(), Guest(), admission with { BestAlternativeWait256 = -1 } ) );
 		Assert.AreEqual( 0, typeof( SmarterGuestDecisions ).GetFields( System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public ).Count( field => !field.IsInitOnly ), "no mutable field" );
+	}
+
+	[TestMethod]
+	public void TheMoveUpTurnAsksWithTheCurrentPlace()
+	{
+		var guest = Guest( GuestWithPatience( 100 ) );
+		var ride = Ride( queue: 6, interval: 20 * 256 );
+		// 121 turns waited at place 5: leaves; the same guest one place from the front (it has just moved up) has little left to wait and stays
+		Assert.IsTrue( Smarter.DecideQueuePatience( Context( 121 ), guest, Queue( ride, 0, 5, 10 * 256 ) ).Leave );
+		Assert.IsFalse( Smarter.DecideQueuePatience( Context( 121 ), guest, Queue( ride, 0, 1, 18 * 256 ) ).Leave );
 	}
 }

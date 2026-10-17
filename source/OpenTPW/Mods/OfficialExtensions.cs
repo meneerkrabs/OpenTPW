@@ -15,10 +15,15 @@ public interface IOpenTpwExtension
 	bool DefaultEnabled { get; }
 	/// <summary>Whether the extension changes the park simulation; such extensions are recorded in park saves (a later phase).</summary>
 	bool AffectsSimulation { get; }
+	/// <summary>
+	/// Whether a player can switch the extension on (the Extensions and mods screen lists it; <c>mods.json</c> and <c>--enable-mod</c> are honoured). An extension that is registered but not selectable
+	/// exists for tests and development (<see cref="OpenTpwExtensions.Use"/>) until its first real feature ships, so no save gets locked to a version that does nothing.
+	/// </summary>
+	bool PlayerSelectable => true;
 }
 
 /// <summary>A compiled-in extension described by its fields.</summary>
-public sealed record OpenTpwExtension( string Id, string Name, ModVersion Version, bool DefaultEnabled, bool AffectsSimulation ) : IOpenTpwExtension;
+public sealed record OpenTpwExtension( string Id, string Name, ModVersion Version, bool DefaultEnabled, bool AffectsSimulation, bool PlayerSelectable = true ) : IOpenTpwExtension;
 
 /// <summary>Every official extension compiled into this build (docs/MODS.md).</summary>
 // [EXT:mods] OpenTPW's own extension registry; the original game had none
@@ -48,8 +53,23 @@ public static class OfficialExtensions
 	// [EXT:pools-extension] OpenTPW's own extension; the original game has no pools
 	public static IOpenTpwExtension Pools { get; } = new OpenTpwExtension( "opentpw.pools", "Pools", new ModVersion( 1, 0, 0 ), DefaultEnabled: false, AffectsSimulation: true );
 
+	/// <summary>
+	/// The guest insights extension (docs/SMARTER-GUESTS.md): reserved for phase 1's guest counters in the park windows. It only reads the simulation, so it is not recorded in park saves. It has no feature
+	/// yet, so players cannot switch it on until phase 1 ships (<see cref="IOpenTpwExtension.PlayerSelectable"/>).
+	/// </summary>
+	// [EXT:guest-insights] OpenTPW's own extension; the original game has no such counters
+	public static IOpenTpwExtension GuestInsights { get; } = new OpenTpwExtension( "opentpw.guest-insights", "Guest insights", new ModVersion( 1, 0, 0 ), DefaultEnabled: false, AffectsSimulation: false, PlayerSelectable: false );
+
+	/// <summary>
+	/// The smarter guests extension (docs/SMARTER-GUESTS.md): guests that decide better, through the pure decision layer (<see cref="IGuestDecisions"/>). Off by default; it changes the simulation,
+	/// so park saves record it, and its version is the algorithm identity: every behaviour-changing release bumps it, and a park of another version is refused. Version 1.0.0 has the seam and
+	/// the guests' identity only: the guests still behave as the original, so players cannot switch it on until the first real rule ships in phase 2 (<see cref="IOpenTpwExtension.PlayerSelectable"/>).
+	/// </summary>
+	// [EXT:smarter-guests] OpenTPW's own extension; the original game's guests are the faithful default
+	public static IOpenTpwExtension SmarterGuests { get; } = new OpenTpwExtension( "opentpw.smarter-guests", "Smarter guests", new ModVersion( 1, 0, 0 ), DefaultEnabled: false, AffectsSimulation: true, PlayerSelectable: false );
+
 	/// <summary>All official extensions, in declaration order.</summary>
-	public static IReadOnlyList<IOpenTpwExtension> All { get; } = new[] { Online, CrossEditionObjects, Pools };
+	public static IReadOnlyList<IOpenTpwExtension> All { get; } = new[] { Online, CrossEditionObjects, SmarterGuests, GuestInsights, Pools };
 
 	public static IOpenTpwExtension? Find( string id ) => All.FirstOrDefault( extension => extension.Id == id );
 }

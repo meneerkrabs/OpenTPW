@@ -284,6 +284,9 @@ internal static class ParkResumeSaveFile
 		if ( snapshot.Layout?.Cells?.Cells?.Any( cell => cell?.Type == ParkCellTypes.PoolWater ) == true
 			&& snapshot.Mods?.Any( mod => mod?.Id == OfficialExtensions.Pools.Id ) != true )
 			Require( false, $"the layout has pool cells but the save does not record {OfficialExtensions.Pools.Id}" );
+		// [EXT:smarter-guests] the extension's section: present exactly when the extension is recorded, with ids that fit the guests the save holds
+		if ( SmarterGuestsSave.ShapeProblem( snapshot.SmarterGuests, snapshot.Guests?.Guests?.Select( guest => guest.Id ), snapshot.Mods ) is { } smarterProblem )
+			Require( false, smarterProblem );
 
 		// Layout: the pure identity and allocator rules (catalog resolution is ValidateSnapshot's).
 		var layout = snapshot.Layout!;

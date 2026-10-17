@@ -45,14 +45,14 @@ public sealed class ParkScenario
 
 	private readonly List<ScenarioAttraction> attractions = new();
 
-	public ParkScenario( WorldSeed seed, ParkScenarioOptions? options = null )
+	public ParkScenario( WorldSeed seed, ParkScenarioOptions? options = null, IGuestDecisions? decisions = null )
 	{
 		options ??= new ParkScenarioOptions();
 		Seed = seed;
 		Options = options;
 		Grid = BuildGrid();
 		Settings = CreateSettings( options );
-		Guests = new GuestSimulation( Grid, Settings, seed.GuestStream );
+		Guests = new GuestSimulation( Grid, Settings, seed.GuestStream, decisions );
 		// the park's one thing pool as Level builds it: the world's ten singletons, then the gate and the lights (things 1 to 12), so the first guest is thing 13
 		Things = new ThingPool();
 		Things.AllocateWorldSetup();
@@ -124,6 +124,9 @@ public sealed class ParkScenario
 		var script = ScenarioScripts.VisitorScript( new VisitorRideScriptEffects( bridge, UnimplementedRideScriptEffects.Instance ), Scripts, holdMilliseconds + HoldJitterMilliseconds( Seed ), 3 + attractions.Count );
 		bridge.Attach( script, () => true );
 		Guests.Register( bridge );
+		// the scenario registers its attractions without a placement, so it lays the cell a called guest's search walks into (state 13) as a build lays an entrance
+		var (standX, standY) = GuestSimulation.StandCellOf( bridge );
+		ObjectAccessCells.LayStandCell( Grid.Cells, standX, standY );
 		attractions.Add( new ScenarioAttraction( bridge, script, role ) );
 	}
 

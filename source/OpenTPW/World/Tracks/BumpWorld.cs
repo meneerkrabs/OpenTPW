@@ -236,6 +236,19 @@ public sealed class BumpWorld
 			AdvanceClock( deltaSeconds );
 	}
 
+	/// <summary>
+	/// The module tick of one world substep (the substep scheduler, <see cref="SimulationSubstep"/>): one tick, exactly, in the substep that is due, as the original's main loop calls it (0x54F55F). The clock's remainder
+	/// is then only the render interpolation: the time since the last substep.
+	/// </summary>
+	internal void StepSubstep()
+	{
+		if ( controllers.Count > 0 )
+			Tick();
+	}
+
+	/// <summary>The time since the last module tick, for the renderer's interpolation (<see cref="BumpController.TickSeconds"/> is the most).</summary>
+	internal void PresentAt( double secondsSinceStep ) => tickRemainder = Math.Clamp( secondsSinceStep, 0, BumpController.TickSeconds - 1e-6 );
+
 	private void AdvanceClock( double deltaSeconds )
 	{
 		if ( !double.IsFinite( deltaSeconds ) || deltaSeconds <= 0 )

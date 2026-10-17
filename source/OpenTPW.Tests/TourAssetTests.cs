@@ -133,6 +133,41 @@ public class TourAssetTests
 		}
 	}
 
+	/// <summary>
+	/// The substep scheduler gives the tour cars their step on the even substeps only, after the script pass (tp.exe 0x54F5D7), once per 62 ms: about 16 steps a second, never in a tick that
+	/// starts no even substep, and the renderers' interpolation time stays inside one step.
+	/// </summary>
+	[TestMethod]
+	public void TheTourCarsStepOnEvenSubstepsOnly()
+	{
+		var entry = ObjectCatalog.Load( "jungle" ).Get( 1170 );
+		var world = new RideScriptWorld( 3 );
+		var runtime = new OriginalObjectRuntime( entry, world, seed: 5, open: true );
+		long previous = 0;
+		var steps = 0L;
+		const int ticks = 20 * 60;
+		for ( long tick = 0; tick < ticks; tick++ )
+		{
+			var substep = SimulationSubstep.ForTick( tick, running: true );
+			if ( substep.Due )
+				world.RunPass( SimulationSubstep.Milliseconds );
+			runtime.Simulate( Tick, substep );
+			if ( runtime.Tour is not { } tour )
+				continue;
+			// the controller is created by the script's TOUR 1 during a pass, and the step of that same substep may already follow
+			if ( tour.TickCount != previous )
+			{
+				Assert.IsTrue( substep.TourDue, $"tick {tick}: a tour step outside an even substep" );
+				steps += tour.TickCount - previous;
+				previous = tour.TickCount;
+			}
+			Assert.IsTrue( tour.TickRemainder >= 0 && tour.TickRemainder < TourController.TickSeconds, $"tick {tick}: the interpolation time {tour.TickRemainder}" );
+		}
+		Assert.IsTrue( steps > 15 * 15, $"{steps} steps in 20 s, about 16 a second once the controller exists" );
+		Assert.IsTrue( steps <= ticks * 1000L / (2 * 1860) + 1, "no more than one step per even substep" );
+		runtime.Stop();
+	}
+
 	/// <summary>The TOUR commands of a running ride reach its controller: creation by TOUR 1 (and its first car), nothing unimplemented.</summary>
 	[TestMethod]
 	public void TheScriptsCreateTheirControllerAndOpenTheRide()

@@ -120,6 +120,7 @@ public class PathAssetTests
 		shop.Attach( script, () => true );
 		var simulation = new GuestSimulation( grid, settings, 11 ) { ArrivalsEnabled = false };
 		simulation.Register( shop );
+		GuestTests.LayStandCell( grid, shop );
 		for ( var index = 0; index < 6; index++ )
 		{
 			var guest = simulation.SpawnInPark( entrance.X, entrance.Y );

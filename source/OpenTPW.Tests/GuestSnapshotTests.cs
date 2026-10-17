@@ -72,6 +72,10 @@ public class GuestSnapshotTests
 			bridge.Attach( script, () => true );
 			Assert.AreEqual( queueCells, QueuePaths.TryExtend( Grid, bridge, Enumerable.Range( 0, queueCells ).Select( index => (front.X, front.Y - index) ) ) );
 			QueuePaths.TryConnect( Grid, bridge );
+			// the entrance cell as a placement lays it (type 9, the link byte and the queue link toward the front queue cell): the called guest's search walks into it
+			Grid.Cells.SetType( front.X, front.Y + 1, ParkCellTypes.Entrance );
+			Grid.Cells.SetLinks( front.X, front.Y + 1, GuestPathGrid.LinkValue( 0 ) );
+			Grid.Cells.SetQueueLink( front.X, front.Y + 1, GuestPathGrid.LinkValue( 0 ) );
 			Simulation.Register( bridge );
 			Rides.Add( (bridge, script) );
 			script.Advance( Tick );
@@ -370,6 +374,9 @@ public class GuestSnapshotTests
 		public int CalledGuest => 0;
 		public bool TryJoinQueue( int guestId ) => false;
 		public QueueJoinResult JoinQueue( int guestId, int? preferredExcitement = null ) => QueueJoinResult.Closed;
+		public QueueJoinResult CheckJoinRoom( int guestId ) => QueueJoinResult.Closed;
+		public void AppendToQueue( int guestId ) { }
+		public int JoinDifference( int preferredExcitement ) => 0;
 		public int GetQueuePosition( int guestId ) => -1;
 		public bool LeaveQueue( int guestId ) => false;
 		public bool RecomputeQueue( GuestPathGrid grid ) => false;

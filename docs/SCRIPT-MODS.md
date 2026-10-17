@@ -5,10 +5,10 @@ prefers. Scripts are written in *TPW Script*, a small deterministic language tha
 external scripting engine, and a mod can never ship native code or .NET assemblies.
 
 **Status.** The language core (lexer, parser, compiler, interpreter, `state` codec) is implemented and tested in
-`source/OpenTPW/Scripting/` (phase 2). Everything that connects it to the game is **not wired yet**: manifest `scripts`
-and `hooks` (phase 3), the hooks into the guest simulation, the `ScriptMods` park-save section, failure counters and the
-`WorldStateHash` change (phase 4), the browser check (phase 5), and safe mode and `--test-mod` (phases 3 and 6). Sections
-below say what exists now and what is planned.
+`source/OpenTPW/Scripting/` (phase 2). Phase 3 adds the manifest (`scripts`, `hooks`, `scriptApi`), loading and compiling at resolve
+time, the classification as simulation-changing, "Contains scripts" on the mods screen and safe mode. **Not wired yet**: the hooks
+into the guest simulation, the `ScriptMods` park-save section, failure counters and the `WorldStateHash` change (phase 4), the browser
+check (phase 5), and `--test-mod` (phase 6). Sections below say what exists now and what is planned.
 
 ## Why our own language
 
@@ -229,6 +229,76 @@ saves will depend on them.
 - **Ordering rule:** hooks ship only in the same PR as, or after, persistence, never before.
 - Phase 2 provides what the section needs from the language side: `ScriptState.Serialize`, `Parse` and `Validate`.
 
+## Loading and the manifest
+
+A mod's scripts are declared in its manifest ([MODS.md](MODS.md#scripts)):
+
+```json
+{ "scriptApi": ">=1.0.0 <2.0.0",
+  "content": { "scripts": { "files": ["scripts/main.tps"], "hooks": { "leaveQueue": "leaveQueue", "joinQueue": "joinQueue" } } } }
+```
+
+- **`scriptApi`** is a version range in the usual mod syntax, checked against `ScriptLimits.ScriptApiVersion` (`1.0.0`, next to
+  `BehaviourVersion`). Mods target the API, not the interpreter. A mismatch refuses the mod as incompatible. It is required with
+  `content.scripts`, and refused without it.
+- **`hooks`** maps a hook name to the function that implements it. Only the names in `ScriptLimits.HookParameters` are accepted
+  (`scoreAttraction` and `joinQueue` and `leaveQueue` with 3 parameters, `wanderGoal` with 2), anything else fails manifest parsing.
+  Hooks stay inert until phase 4. Each function must exist in exactly one of the mod's files and have the hook's parameter count.
+- **Caps (resolve time).** At most 8 script files per mod (`ModManifest.MaximumScriptFiles`), 64 KiB per file (`ScriptLimits.MaxSourceBytes`)
+  and 256 KiB of source in all (`ModManifest.MaximumScriptBytes`), against 20 000 files and 2 GiB for a mod in general. The token,
+  nesting, function and name limits of the language apply to every file. A script file may not lie inside the mod's `overrides` or
+  `strings` folder or be the objects file. These loading caps are not interpreter semantics, so they do not change `BehaviourVersion`.
+- **A script over its cap is refused from its file size, before it is read or hashed.**
+- **Any failure of the compiler on a file refuses the mod** (kind `Script`, message `could not be compiled (<exception type>)`) rather than
+  failing the start; the mods screen's background resolve does the same.
+- **A compile error refuses the mod** (kind `Script`): the reason names the file, the line and the message, for example
+  `script 'scripts/main.tps' line 4: ...`, and the mods screen shows it as the reason. Several script files are separate programs;
+  functions are not shared between them.
+
+**Executed bytes.** The manifest bytes parsed at discovery are kept (`DiscoveredMod.ManifestBytes`), and resolving refuses the mod if the
+manifest file it hashes is not byte-identical, so the file list and the hook map provably come from hashed bytes. `ModSet.Resolve` reads each script file once; the SHA-256 that goes into `ContentSha256` and the bytes that are
+compiled come from that one read, and the bytes are kept in memory. `ResolvedMod.Scripts` (a `ModScriptSet`) exposes, per file, its
+path, the retained `Source` bytes, and the `ScriptProgram` compiled from exactly those bytes, plus the `Hooks` table (file index and
+function per declared hook). **Phase 4 must run these programs (or recompile `Source`) and never read the path again**: a file changed
+after resolve then cannot run (tested). A script file larger than the per-file cap is hashed but not kept, and the mod is refused.
+
+**Classification.** A mod with scripts changes the simulation unless every declared hook is UI-only (`ScriptLimits.UiOnlyHooks`, empty in
+v1), so in practice it always does. It is therefore in `ModSet.SimulationMods` and recorded in park saves like any simulation-changing
+mod (`ParkResumeMods`): loading a save needs the same mod, version and content digest.
+
+**Mods screen.** A mod with scripts shows "Contains scripts" in its details (nine languages). A refused script mod shows the compile
+error or other reason in the "Why not" line.
+
+## Safe mode
+
+A script mod that breaks the start of the game must not lock the player out. The desktop startup keeps a **crash marker**,
+`script-mods-starting.marker` in the configuration folder (next to `mods.json`). It holds the writing process's id and start time.
+
+- **Written** by `ModStartup.Initialize` as soon as the mod folders and the player's choices are known, **before any script is read,
+  hashed or compiled**, when at least one enabled mod declares scripts (its manifest says so) and the run is not a smoke test or a
+  safe-mode run. It is written for every kind of run that gets that far, headless commands included. If no accepted script mod is left
+  after resolving (all refused), it is removed again at once.
+- **Removed only on success**: after `ScriptSafeMode.CleanStartSeconds` (15) seconds of running frames, counted from the first frame
+  (a slow load does not count), or by `ScriptSafeMode.CleanShutdown()` when `Game.Run` returned normally (headless commands that
+  return normally). Nothing clears it from a process-exit handler, and an exception that `Program.Main` catches is a failed start: it
+  leaves the marker. Only the run that wrote a marker removes it. Phase 4 may move the clean point to after the first park load.
+- **If it is present at the next start and its process is gone**, that start did not finish (a crash, a hang, a compiler fault or an
+  exception): this run starts in safe mode. Every script mod is refused (kind `SafeMode`) **without being read, hashed or compiled**,
+  a warning goes to the log, and the mods screen shows a notice and the status "Off (safe mode)". The marker is deleted as soon as it
+  has been seen, so only that one run is affected. Switch the mod off on the mods screen to fix it for good.
+- **A marker whose process is still running** (same id and start time) belongs to another instance that is still starting: it is not a
+  crash, it is left alone, and the second instance starts normally without writing its own.
+- **A stale marker with no enabled script mod** (the mod was removed or switched off since) is deleted quietly, with no warning and no
+  notice.
+- **`--safe-mode`** does the same on demand, without needing a marker. Smoke tests ignore the marker (they neither read nor write it) but
+  honour the flag.
+- **Parked saves.** A park saved with a script mod needs it; in safe mode the load refuses with
+  `needs <id> <version>, which is off in safe mode`, so the reason is clear.
+- **Browser:** safe mode is a no-op. There is no marker file, no community mods yet, and the example script mod is **not embedded in
+  the web build** until the AOT check of script mods (phase 5), so the browser cannot run script mods at all yet.
+
+Mods without scripts are never affected by safe mode.
+
 ## Hook API v1 (planned, not wired yet)
 
 The hooks follow the real decision path in `GuestSimulation`. Candidates are addressed by **stable ids**, not array indices.
@@ -245,12 +315,12 @@ order, each receiving the previous result as `prev`. Each hook has a typed resul
 `guest`, `candidate` and `attraction` are read-only views. The exact fields, score range and call counts are fixed in phases 3
 and 4; the signatures above are a sketch.
 
-## Safety and recovery (planned)
+## Safety and recovery
 
-- The mods screen shows **"contains scripts"** for such mods. Mods only come from folders the player chose, never from the
+- The mods screen shows **"Contains scripts"** for such mods (phase 3). Mods only come from folders the player chose, never from the
   network or from a save.
-- A startup crash marker offers **safe mode**: the game starts with script mods off, without parsing their scripts.
-- `--test-mod <dir>` runs a mod's hooks headless on a representative scenario and reports steps, failures and budget use.
+- A startup crash marker and `--safe-mode` start the game with script mods off, without parsing their scripts (phase 3, above).
+- Planned: `--test-mod <dir>` runs a mod's hooks headless on a representative scenario and reports steps, failures and budget use.
 
 ## Security notes
 
@@ -289,7 +359,7 @@ in `DeterminismTests`.
 1. Docs: this page and the rewritten rule in [MODS.md](MODS.md). **Done.**
 2. Language core (this folder, tests, determinism scan). **Done.** No game wiring.
 3. Manifest and loading: `content.scripts`, `hooks`, `scriptApi` ranges, the verified bytes, script limits, "contains scripts",
-   safe mode. *Later.*
+   safe mode, and the compile-only `opentpw.example.patient-guests`. **Done.** No hooks into the simulation.
 4. Hooks with persistence: the `IGuestDecisions` seam, the `ScriptMods` section, counters, hashing, the schema bump, the
    `patient-guests` example and a cross-platform continuation hash. *Later.*
 5. Browser: an AOT publish-and-run check and the example mod in the browser; script mods through OPFS import once mod-system

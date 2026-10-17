@@ -72,10 +72,11 @@ implementation against those inputs, not equivalence to an executed PC game.
 - Flags: Zero = result 0, Sign = result negative. COPY updates them from the
   copied value; WAIT, ENDSLICE and KILLOBJ preserve them. `BRANCH_PV` is
   **strictly** positive (Sign and Zero clear).
-- Scheduling: each `Advance(delta)` — one `FixedStepClock` tick (60 Hz) in the
-  game — adds `delta` to the script clock and runs one slice (**the cadence is
-  an assumption**: the original runs a script's slice only on the passes its
-  TURBO byte and id select, tp.exe `0x5516E1`, not yet modelled). The slice
+- Scheduling: in a park the substep scheduler runs the scripts (`RideScriptWorld.RunPass`, one pass per 31 ms substep of the
+  park's tick count, DETERMINISM.md "The substep scheduler"): every script's clock gains 31 ms, newest script first, and a script
+  runs a slice only when `(id xor pass counter) & 7 == 0` or its TURBO byte is nonzero (tp.exe `0x5516E1`), so an ordinary script
+  gets a slice every 248 ms. A standalone VM (tests, tools) keeps `Advance(delta)`: it adds `delta` to the script clock and runs one
+  slice per call, as every script did before the scheduler. The slice
   itself follows tp.exe ([below](#original-interpreter-internals)): the
   header's time slice (50 in every script) is a counter that falls by one per
   instruction outside a critical section; `CRIT_LOCK` stops the counting,
@@ -85,8 +86,8 @@ implementation against those inputs, not equivalence to an executed PC game.
   100,000 instructions faults (`[EXT:crit-slice-guard]`: the original would hang).
 - Time unit is the millisecond (**inferred**: `WAIT 500…5300` around ride
   animations, `GETTIME; ADD VAR_STARTNOW 10000` passenger time-outs, animation
-  durations fed into `WAIT`). Waits resume on the first tick at or after the
-  wake time, so they are quantised to 1/60 s. `GETTIME` reads the park's shared
+  durations fed into `WAIT`). Waits resume on the first slice at or after the
+  wake time: in a park the slice of an ordinary script comes every 248 ms (the scheduler above), a standalone VM's every 1/60 s tick. `GETTIME` reads the park's shared
   scheduler clock (`RideScriptWorld.ClockMilliseconds`), as the original reads
   `0x10e844` on the global r30 (0xaf55c, 0xaf6d8) without subtracting a creation
   timestamp; a script created later starts at the clock's current value. The
@@ -395,12 +396,12 @@ The unit tests are `RideVMInternalsTests`.
   `CRIT_LOCK`" gates (`RideVisitorBridge.PresentForBoarding`, `HostStep`) had no
   original counterpart and are gone. Whether a slice runs at all in a pass is
   decided before: a script with a nonzero TURBO byte always runs, any other only
-  when `(script +8 xor pass counter) & 7` is 0 (`0x5516E1`..`0x5516F6`); that
-  cadence is not modelled yet.
+  when `(script +8 xor pass counter) & 7` is 0 (`0x5516E1`..`0x5516F6`); the
+  park's substep scheduler models it (`RideVM.StepSubstep`).
 - **TURBO** (opcode 51, `0x5542B9`) stores the low byte of the raw operand word
   (not resolved: a variable operand stores its index byte, `0xFFFF` stores
   `0xFF`) at script +0xB8 and does nothing else. `RideVM.TurboByte` holds it
-  for the later cadence change; it is part of the VM snapshot and, once nonzero,
+  for the cadence of the substep scheduler; it is part of the VM snapshot and, once nonzero,
   of the canonical hash.
 - **Heap and stack.** Each script owns one array of header-stack-size words
   (+0x20, size +0x54, zero-filled here). `JSR` (`0x5539A9`), `RETURN`
@@ -453,9 +454,9 @@ The unit tests are `RideVMInternalsTests`.
 
 ## Not original behaviour yet
 
-- Slice cadence (one slice per 60 Hz tick: the original runs a script's slice
-  only on the passes its TURBO byte and script id select, tp.exe `0x5516E1`) and
-  the millisecond unit of WAIT are not original; the slice budget, the critical
+- The millisecond unit of WAIT is not original; the slice cadence is (the park's
+  substep scheduler, above); a standalone VM without a park runs a slice per
+  `Advance` call. The slice budget, the critical
   flag, HUSH/HOP, JSR/RETURN/PUSH/POP, the limbo table and TURBO's byte are
   ([below](#original-interpreter-internals)).
 - The ride lights (82–85, tp.exe `0x555C7A`–`0x555D9A`), `EVENT_EXT`

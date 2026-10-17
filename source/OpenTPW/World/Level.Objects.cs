@@ -137,6 +137,9 @@ public partial class Level
 				// an imported park's entrance and exit cells carry the link byte its save holds, as the original's load reads it (a resumed park's cells come from its own snapshot)
 				if ( resumeState == null && visitLayout == null && OriginalPark?.Save is { } save )
 					cells.TakeSavedAccessLinks( item.Cells, OwnerWord( item ), save.Cells );
+				// a park resumed from an OpenTPW save made before that import gets the byte its entrance and exit cells lack, from the writers the placement uses
+				else if ( resumeState != null )
+					ObjectAccessCells.RepairMissingLinks( cells, item.AccessPoints, item.Entry.HasQueue, new LinkEffects( RefreshTile ) );
 			}
 		}
 		if ( typesFootprints )

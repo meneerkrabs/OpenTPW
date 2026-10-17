@@ -162,7 +162,7 @@ Measures the guests' behaviour passively (docs/SMARTER-GUESTS.md): eight fixed s
 themes' level parks, each with a warm-up and a measured window in in-game days. It prints a short table (outcome mix of the queue attempts, waits over boarded attempts, cohort
 happiness, departures by predicate, the use Gini, revenue per guest, stuck guests, CPU and allocation per tick) and writes the stable JSON report. It opens no window and changes no
 simulation state. `--guest-seeds`, `--guest-warmup-days`, `--guest-days`, `--guest-levels`, `--guest-level-seeds`, `--guest-arrivals` and `--guest-no-perf` set the scale. See
-[SMARTER-GUESTS.md](SMARTER-GUESTS.md). `--guest-compare baseline.json candidate.json [--guest-targets metric,metric]` compares two reports
+[SMARTER-GUESTS.md](SMARTER-GUESTS.md). `--guest-extension smarter-guests` (with `--guest-report`: build the run with the extension on, so `--guest-compare` can set it against the default), `--guest-compare baseline.json candidate.json [--guest-targets metric,metric]` compares two reports
 in standard errors of the seed spread and exits 1 on a regression or a target that did not improve.
 
 ## Headless M4 attraction and script gate

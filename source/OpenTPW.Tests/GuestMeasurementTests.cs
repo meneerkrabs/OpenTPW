@@ -8,10 +8,11 @@ namespace OpenTPW.Tests;
 
 /// <summary>The passive guest measurement of phase 0a (docs/SMARTER-GUESTS.md): the instrumentation, <see cref="ParkScenario"/> and the guest report.</summary>
 [TestClass]
+[DoNotParallelize]
 public class GuestMeasurementTests
 {
 	/// <summary>The guests' state hash of <see cref="ScenarioRun"/>, pinned like the other determinism pins: a change moves the baseline of docs/SMARTER-GUESTS.md.</summary>
-	private const ulong ScenarioFixedRunHash = 0xF430B24D6D6B950EUL;
+	private const ulong ScenarioFixedRunHash = 0xBD62B929BDB55659UL;
 
 	private static ParkScenario ScenarioRun( ulong seed, IGuestObserver? observer = null, int ticks = 6000 )
 	{
@@ -65,6 +66,16 @@ public class GuestMeasurementTests
 	{
 		var hash = ScenarioRun( 1, null, 12_000 ).Hash;
 		Assert.AreEqual( ScenarioFixedRunHash, hash, $"0x{hash:X16}" );
+	}
+
+	/// <summary>With <c>opentpw.smarter-guests</c> on and its policy still delegating, the scenario's guests are the pinned run's (docs/SMARTER-GUESTS.md, phase 0b).</summary>
+	[TestMethod]
+	public void ParkScenarioFixedRunHashHoldsWithTheSmarterGuestsExtensionOn()
+	{
+		using var scope = OpenTPW.Mods.OpenTpwExtensions.Use( SmarterGuestsTests.On() );
+		var park = ScenarioRun( 1, null, 12_000 );
+		Assert.IsInstanceOfType( park.Guests.Decisions, typeof( SmarterGuestDecisions ) );
+		Assert.AreEqual( ScenarioFixedRunHash, park.Hash, $"0x{park.Hash:X16}" );
 	}
 
 	[TestMethod]

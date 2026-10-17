@@ -210,6 +210,15 @@ public interface IRideVisitorBridge
 	/// excitement gate (<see cref="QueueJoinRules"/>); null skips the gate.
 	/// </summary>
 	QueueJoinResult JoinQueue( int guestId, int? preferredExcitement = null );
+	/// <summary>
+	/// The joining checks of <see cref="JoinQueue"/> that belong to the attraction: open, not listed, room. <see cref="QueueJoinResult.Joined"/> means they hold and nothing was changed; the excitement gate
+	/// and the queue limit are the guests' decision layer's (<see cref="IGuestDecisions.DecideAdmission"/>), and <see cref="AppendToQueue"/> then joins the guest.
+	/// </summary>
+	QueueJoinResult CheckJoinRoom( int guestId );
+	/// <summary>Appends a guest <see cref="CheckJoinRoom"/> let through at the tail of the queue.</summary>
+	void AppendToQueue( int guestId );
+	/// <summary><c>0xe9a84</c>: the difference between the live excitement and a guest's preferred one, the join gate's input.</summary>
+	int JoinDifference( int preferredExcitement );
 	/// <summary>0-based position in the queue, or −1.</summary>
 	int GetQueuePosition( int guestId );
 	bool LeaveQueue( int guestId );

@@ -13,5 +13,5 @@ are saved, and are drawn as a basin dug into the ground with a tiled deck, in th
   1.75 below a level water surface, a quarter-cell deck with joints and a bevel, and translucent water that is lighter at the edge and uses two scrolling layers. The deck is opaque and lit and fogged like the park.
 - **Styles.** One table (`PoolStyles`) with a row per theme (jungle planks and lagoon water, hallow mossy stone and murky glowing water, space riveted metal and glowing cyan water, fantasy candy tiles and lilac water);
   the style follows the level's theme, other worlds get the generic one. Textures are generated in code.
-- **Pins.** Every existing pin is unchanged with the extension on or off; the fixed synthetic run with 17 pool cells is pinned as `0xC53F22BFFA12A843`.
+- **Pins.** Every existing pin is unchanged with the extension on or off; the fixed synthetic run with 17 pool cells is pinned as `0x4EEF5812C3D8023D`.
 - **Not done:** swimmers, changing rooms, extras and slides (P2 to P5); pools on the park map.

@@ -99,7 +99,8 @@ internal static class ParkResumeMods
 		{
 			recordedIds.Add( record.Id );
 			if ( !active.IsEnabled( record.Id ) )
-				reasons.Add( $"needs {record.Id} {record.Version}" );
+				reasons.Add( $"needs {record.Id} {record.Version}"
+					+ (active.Refused.Any( refusal => refusal.Id == record.Id && refusal.Kind == ModRefusalKind.SafeMode ) ? ", which is off in safe mode (script mods are off for this run; start again without --safe-mode)" : "" ) );
 			else if ( !current.TryGetValue( record.Id, out var mod ) )
 				// enabled, but now judged presentation-only: its files changed
 				reasons.Add( $"needs {record.Id} {record.Version} with the content it was saved with" );

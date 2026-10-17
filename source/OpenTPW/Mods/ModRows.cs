@@ -17,6 +17,8 @@ public enum ModRowStatus
 	NeedsOther,
 	/// <summary>Switched on, and the screen is still resolving what that means.</summary>
 	Pending,
+	/// <summary>Switched on, but its scripts are off for this run (safe mode).</summary>
+	SafeMode,
 	/// <summary>Cannot be used at all: an invalid or shadowed mod folder, or unreadable files.</summary>
 	Unusable,
 }
@@ -41,7 +43,7 @@ public static class ModRows
 	{
 		var rows = new List<ModRow>();
 		// An extension is never refused, so its row follows the pending choice at once.
-		foreach ( var extension in extensions )
+		foreach ( var extension in extensions.Where( extension => extension.PlayerSelectable ) )
 		{
 			var enabled = pending.IsEnabled( extension.Id, extension.DefaultEnabled );
 			rows.Add( new ModRow( extension.Id, extension.Name, extension.Version, true, enabled,
@@ -81,6 +83,7 @@ public static class ModRows
 						ModRefusalKind.MissingInput => ModRowStatus.MissingInput,
 						ModRefusalKind.Conflict => ModRowStatus.Conflict,
 						ModRefusalKind.Dependency => ModRowStatus.NeedsOther,
+						ModRefusalKind.SafeMode => ModRowStatus.SafeMode,
 						_ => ModRowStatus.Unusable,
 					};
 				}

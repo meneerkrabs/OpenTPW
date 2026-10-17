@@ -100,6 +100,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		ownsThings = false;
 	}
 	public IReadOnlyList<Guest> Guests => guests;
+	/// <summary>True when the guests take their ids from a host's thing pool (<see cref="AttachThings"/>), so the host's thing sweep can visit them.</summary>
+	public bool SharesThings => !ownsThings;
 	public IReadOnlyList<IRideVisitorBridge> Attractions => attractions;
 	public long TickCount { get; private set; }
 	/// <summary>The park turn (248 ms of the fixed clock, <see cref="ParkCalendar.Turn"/>); queue waits and delays count these.</summary>
@@ -369,6 +371,28 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 
 	public void Tick( float deltaSeconds )
 	{
+		BeginTick( deltaSeconds );
+		UpdateArrivals( deltaSeconds );
+		if ( turnStarted )
+		{
+			RebuildOccupants();
+		}
+		// [APPROX:DET-014] without a host thing sweep (a simulation of its own, the ticks between park turns) the guests' draws interleave in this list order, not the original's newest-first thing sweep (DET-013), and the draws of the won sideshow's tail (0x004FE8D9) and the balloon model's recreation (0x0050205F) are not taken
+		for ( var index = 0; index < guests.Count; index++ )
+			UpdateGuest( guests[index], deltaSeconds );
+		for ( var index = guests.Count - 1; index >= 0; index-- )
+		{
+			if ( guests[index].State != GuestState.Gone )
+				continue;
+			RemoveGone( guests[index] );
+		}
+		if ( ownsThings )
+			things.DestroyQueued();
+	}
+
+	/// <summary>The start of every tick: the checks, the tick counters, the turn flag and the queue sync.</summary>
+	private void BeginTick( float deltaSeconds )
+	{
 		if ( !float.IsFinite( deltaSeconds ) || deltaSeconds < 0 || deltaSeconds > Guest.MaximumTimeInParkSeconds )
 			throw new ArgumentOutOfRangeException( nameof( deltaSeconds ) );
 		// Preflight the display counter before mutating the simulation, rather than wrapping or inventing a duration.
@@ -380,27 +404,63 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		staffOnMap = StaffOnMapView?.Invoke().ToArray();
 		turnStarted = ParkCalendar.Turn( TickCount ) != ParkCalendar.Turn( TickCount - 1 );
 		SyncQueues();
-		UpdateArrivals( deltaSeconds );
-		if ( turnStarted )
-		{
-			RebuildOccupants();
-		}
-		// [APPROX:DET-014] the guests' draws interleave in this id order, not the original's newest-first thing sweep after the vehicle update (DET-013), and the draws of the won sideshow's tail (0x004FE8D9) and the balloon model's recreation (0x0050205F) are not taken
-		for ( var index = 0; index < guests.Count; index++ )
-			UpdateGuest( guests[index], deltaSeconds );
-		for ( var index = guests.Count - 1; index >= 0; index-- )
-		{
-			if ( guests[index].State != GuestState.Gone )
-				continue;
-			// [BIN:TPW-EXE:0x0050B780 destroy request] a leaving guest asks for its destruction (0x0050B780 → 0x00516310); the id is freed at the park turn's end (0x00516641)
-			things.QueueDestroy( guests[index].Id );
-			byId.Remove( guests[index].Id );
-			guests.RemoveAt( index );
-			Departed++;
-		}
-		if ( ownsThings )
-			things.DestroyQueued();
 	}
+
+	/// <summary>A gone guest leaves the simulation: it asks for its destruction and its slot is freed at the park turn's end.</summary>
+	private void RemoveGone( Guest guest )
+	{
+		// [BIN:TPW-EXE:0x0050B780 destroy request] a leaving guest asks for its destruction (0x0050B780 → 0x00516310); the id is freed at the park turn's end (0x00516641)
+		things.QueueDestroy( guest.Id );
+		byId.Remove( guest.Id );
+		guests.Remove( guest );
+		Departed++;
+	}
+
+	/// <summary>True when the next <see cref="Tick"/> starts a park turn.</summary>
+	public bool NextTickStartsTurn => ParkCalendar.Turn( TickCount + 1 ) != ParkCalendar.Turn( TickCount );
+
+	private readonly HashSet<int> sweptGuests = new();
+	private float sweepDelta;
+
+	/// <summary>
+	/// The start of a tick that begins a park turn the host sweeps thing by thing: everything <see cref="Tick"/> does except the arrival update, the guests' updates and their removal,
+	/// which the host calls (<see cref="SweepGuest"/>, <see cref="FinishSweep"/>, <see cref="UpdateTurnEndArrivals"/>) at the places the original's turn takes them.
+	/// </summary>
+	public void BeginSweepTick( float deltaSeconds )
+	{
+		if ( !NextTickStartsTurn )
+			throw new InvalidOperationException( "A swept tick starts a park turn." );
+		BeginTick( deltaSeconds );
+		RebuildOccupants();
+		sweptGuests.Clear();
+		sweepDelta = deltaSeconds;
+	}
+
+	/// <summary>
+	/// One guest's update in the thing sweep (0x00501650, then 0x005019F0 for the thing); a guest that leaves asks for its destruction at once, as the original's does in its own update.
+	/// False for an id that is no guest in the park.
+	/// </summary>
+	public bool SweepGuest( int id )
+	{
+		if ( !byId.TryGetValue( id, out var guest ) || !sweptGuests.Add( id ) )
+			return false;
+		UpdateGuest( guest, sweepDelta );
+		if ( guest.State == GuestState.Gone )
+			RemoveGone( guest );
+		return true;
+	}
+
+	/// <summary>Updates the guests the sweep did not reach (one outside the pool's list, a headless scene's), in list order, then forgets the sweep.</summary>
+	public void FinishSweep()
+	{
+		foreach ( var guest in guests.ToArray() )
+			if ( !things.IsQueued( guest.Id ) )
+				SweepGuest( guest.Id );
+		sweptGuests.Clear();
+	}
+
+	/// <summary>The arrival update at the world turn's tail (0x004CF3E0 through 0x004D7B20, after the destroys of the turn): a group starts, a guest steps off the vehicle.</summary>
+	public void UpdateTurnEndArrivals() => UpdateArrivals( sweepDelta );
 
 	/// <summary>
 	/// The original's arrivals: when more than <see cref="GuestSettings.ArrivalTimeBetween"/> timer units (four park turns each)

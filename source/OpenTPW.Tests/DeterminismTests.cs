@@ -31,8 +31,6 @@ public class DeterminismTests
 		{
 			Seed = seed;
 			Economy = EconomyTestData.Park( seed: seed.EconomyStream );
-			// Fastest speed so the staff pool (economy stream) draws within the run.
-			Economy.Speed = GameSpeed.Fastest;
 			Guests = new GuestSimulation( GuestTests.CreateCross(), GuestTests.CreateSettings(), seed.GuestStream );
 			// the park's one thing pool as Level builds it: the world's ten singletons, then the gates and the lights (things 1 to 12), so the first guest is thing 13 (WALK-010)
 			Things = new ThingPool();
@@ -81,18 +79,46 @@ public class DeterminismTests
 		{
 			for ( var tick = 0; tick < ticks; tick++ )
 			{
-				Guests.Tick( Tick );
-				// the park turn's end frees the things that asked for their destruction (Level.AdvanceSimulation)
-				Things.DestroyQueued();
+				// Level.AdvanceSimulation's order: the tick that starts a park turn runs the substep's scripts and then the economy's turn, whose thing sweep updates the guests, the economy's things,
+				// the shop's ride update, the turn's destroys and the arrivals (tp.exe 0x0054F4BF, 0x00516380); the ticks between turns update the guests first and free nothing
+				var swept = Guests.NextTickStartsTurn && Economy.NextTickStartsTurn;
+				if ( swept )
+					Guests.BeginSweepTick( Tick );
+				else
+					Guests.Tick( Tick );
+				shop.DefersAdmission = swept;
 				shop.HostStep();
 				shopScript.Advance( Tick );
 				foreach ( var script in dice )
 					script.Advance( Tick );
-				// The fixture runs the economy at its Fastest speed, four ticks to a step (the staff pool draws within the run).
-				Economy.Advance( (int)Economy.Speed );
+				Economy.ThingSweep = swept ? new HarnessSweep( this ) : null;
+				try
+				{
+					Economy.AdvanceFixedTick();
+				}
+				finally
+				{
+					Economy.ThingSweep = null;
+				}
 				// Both halves of a save/load run reach this tick, so the script stream is consumed after a load.
 				if ( ++Ticks == HalfRun * 3 / 2 )
 					AddDice();
+			}
+		}
+
+		/// <summary>The park turn of Level's sweep with what this fixture holds: the guests by the pool's list, the economy's own things, the shop and the turn's end.</summary>
+		private sealed class HarnessSweep( SyntheticPark park ) : IThingSweep
+		{
+			public void Run( ParkEconomy economy, long turn, bool lost )
+			{
+				foreach ( var slot in park.Things.Capture() )
+					if ( !park.Things.IsQueued( slot.Id ) )
+						park.Guests.SweepGuest( slot.Id );
+				park.Guests.FinishSweep();
+				economy.UpdateThings( turn );
+				park.shop.UpdateAdmission();
+				park.Things.DestroyQueued();
+				park.Guests.UpdateTurnEndArrivals();
 			}
 		}
 
@@ -193,15 +219,18 @@ public class DeterminismTests
 	public void HashOfAFixedRunIsTheSameInEveryProcess()
 	{
 		var park = new SyntheticPark( WorldSeed.Default );
-		park.Run( 3600 );
+		park.Run( PinnedRunTicks );
 		Assert.AreEqual( FixedRunHash, park.Hash, $"0x{park.Hash:X16}" );
 	}
+
+	/// <summary>The ticks of the pinned run: 14,400 ticks are 968 park turns, 42 days of the park's calendar, so the run crosses a month end.</summary>
+	internal const int PinnedRunTicks = 14400;
 
 	/// <summary>The hash of <see cref="HashOfAFixedRunIsTheSameInEveryProcess"/>'s run, for tests that repeat it under other conditions.</summary>
 	internal static ulong RunFixedPark()
 	{
 		var park = new SyntheticPark( WorldSeed.Default );
-		park.Run( 3600 );
+		park.Run( PinnedRunTicks );
 		return park.Hash;
 	}
 
@@ -223,7 +252,7 @@ public class DeterminismTests
 			Assert.AreEqual( online, FeatureGates.Online );
 			Assert.AreEqual( "", set.Digest, "no files-based mods" );
 			var park = new SyntheticPark( WorldSeed.Default );
-			park.Run( 3600 );
+			park.Run( PinnedRunTicks );
 			Assert.AreEqual( FixedRunHash, park.Hash, $"0x{park.Hash:X16}" );
 			var simulation = new GuestSimulation( GuestTests.CreateCross(), GuestTests.CreateSettings(), 5 );
 			for ( var tick = 0; tick < 120 * 60; tick++ )

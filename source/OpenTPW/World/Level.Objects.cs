@@ -402,7 +402,7 @@ public partial class Level
 				return;
 			PoolRenderer = new PoolRenderer( Guests.Grid.Cells, Objects.Grid, PoolStyles.ForTheme( OriginalPark.LevelName ) );
 		}
-		// [EXT:pools-swim] the swimmers are drawn after the water (entities draw in the order they are made), with the swim sprites loaded beside the kid sets
+		// [EXT:pools-swim] the swimmers are drawn after the water (entities draw in the order they are made), with the swim sprites loaded at level setup
 		// the sets are looked for once per level: a missing or broken folder is one warning, not a scan every frame
 		if ( SwimmerRenderer == null && PoolRenderer != null && !swimSpritesTried )
 		{
@@ -412,10 +412,12 @@ public partial class Level
 	}
 
 	private bool swimSpritesTried;
+	/// <summary>[EXT:pools-swim] The swim sets, loaded when the level's guests are set up while the extension is on (null otherwise).</summary>
+	private List<GuestSpriteAtlas>? swimSpriteSets;
 
 	private GuestRenderer? CreateSwimmerRenderer( GuestSimulation guests, OriginalPark park )
 	{
-		var swim = PoolSwimSprites.Load();
+		var swim = swimSpriteSets ?? PoolSwimSprites.Load();
 		if ( swim.Count == 0 )
 		{
 			// without swim sprites the swimmers are drawn by the normal guest renderer with their kid sprite (Level.cs: Draws), standing in the water

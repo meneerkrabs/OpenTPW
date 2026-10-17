@@ -63,7 +63,7 @@ public class SpriteSetBuilderTests
 			var frame = bank.Frames[index];
 			var source = expected[index];
 			Assert.AreEqual( (source.Width, source.Height, source.OriginX, source.OriginY), (frame.Width, frame.Height, frame.OriginX, frame.OriginY) );
-			Assert.AreEqual( (128, 128), (frame.UnknownA, frame.UnknownB) );
+			Assert.AreEqual( (128, 128), (frame.PixelsPerUnitX, frame.PixelsPerUnitY) );
 			var decoded = new byte[frame.Width * frame.Height * 4];
 			bank.DecodeRgba( frame, decoded, frame.Width * 4, 0, 0 );
 			CollectionAssert.AreEqual( source.Rgba, decoded, $"frame {index} pixels" );

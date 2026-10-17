@@ -15,6 +15,8 @@ public class DeterminismTests
 {
 	private const float Tick = 1f / FixedStepClock.TicksPerSecond;
 	private const int HalfRun = 6000;
+	/// <summary>Six calendar months of park turns (183 days of 23.04 turns, 14.88 ticks each).</summary>
+	private const int SixMonthTicks = 62700;
 
 	/// <summary>
 	/// Economy, guests, a shop script and an unseeded RAND script wired like Level: guests pay into the
@@ -226,6 +228,36 @@ public class DeterminismTests
 	/// <summary>The ticks of the pinned run: 14,400 ticks are 968 park turns, 42 days of the park's calendar, so the run crosses a month end.</summary>
 	internal const int PinnedRunTicks = 14400;
 
+	/// <summary>
+	/// Six game months of the swept park turn: guests keep arriving, paying and leaving, the pool holds exactly the living guests after each turn's end, nothing waits for a destroy once a
+	/// turn has ended, and the park is not lost.
+	/// </summary>
+	[TestMethod]
+	public void SixGameMonthsOfSweptTurnsKeepTheThingsAndTheEconomyConsistent()
+	{
+		var park = new SyntheticPark( WorldSeed.Default );
+		var turn = park.Economy.Turn;
+		var turnsSwept = 0;
+		var peak = 0;
+		for ( var tick = 0; tick < SixMonthTicks; tick++ )
+		{
+			park.Run( 1 );
+			peak = Math.Max( peak, park.Guests.Guests.Count );
+			if ( park.Economy.Turn == turn )
+				continue;
+			turn = park.Economy.Turn;
+			turnsSwept++;
+			Assert.AreEqual( 0, park.Things.QueuedCount, $"turn {turn}: the turn's end carried out every destroy" );
+			CollectionAssert.AreEquivalent( park.Guests.Guests.Select( guest => guest.Id ).ToArray(), park.Things.UsedNewestFirst().Where( slot => slot.Model == SaveThingModel.Guest ).Select( slot => slot.Id ).ToArray(),
+				$"turn {turn}: the pool's guest slots are the living guests" );
+		}
+		Assert.IsTrue( park.Economy.Date.Month >= 6 || park.Economy.Date.Year > 2000, $"six game months passed ({park.Economy.Date})" );
+		Assert.IsTrue( turnsSwept > 1200, $"{turnsSwept} turns" );
+		Assert.IsTrue( park.Guests.Admissions > 100 && park.Guests.Departed > 20, $"{park.Guests.Admissions} admitted, {park.Guests.Departed} left" );
+		Assert.IsTrue( peak < 400, $"the crowd stays bounded ({peak})" );
+		Assert.IsFalse( park.Economy.IsBankrupt );
+	}
+
 	/// <summary>The hash of <see cref="HashOfAFixedRunIsTheSameInEveryProcess"/>'s run, for tests that repeat it under other conditions.</summary>
 	internal static ulong RunFixedPark()
 	{
@@ -235,7 +267,7 @@ public class DeterminismTests
 	}
 
 	/// <summary>The pinned hash of <see cref="HashOfAFixedRunIsTheSameInEveryProcess"/>'s run (docs/DETERMINISM.md).</summary>
-	internal const ulong FixedRunHash = 0x3DA16AED71E2F1E4UL;
+	internal const ulong FixedRunHash = 0x0960BD53946D24D5UL;
 
 	/// <summary>
 	/// Switching only the <c>opentpw.online</c> extension (docs/MODS.md) leaves the pinned digests unchanged: this fixed run,

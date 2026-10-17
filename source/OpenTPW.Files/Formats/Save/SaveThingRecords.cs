@@ -449,6 +449,40 @@ public sealed record SaveBank( int Id, SaveThingBase Base, SaveBankRecord Accoun
 		}
 		return new SaveBank( thing.Id, thingBase, account, loans );
 	}
+
+	/// <summary>
+	/// The body bytes the bank's serializer writes (the twin of <see cref="Read"/>): the base thing, the seven bank words and the eight 32-byte loan records, each field in its stored width.
+	/// </summary>
+	// [BIN:TPW-EXE:0x4cf920 bank serializer] base (0xfa808), then the account words (admission fee, balance, batch balance, withdrawals enabled, last balance, turn entered red, profit this year), then the eight loan records (available, amount, APR, months, monthly repayment, bought, months repaid, lender)
+	public byte[] ToBody()
+	{
+		if ( Loans.Count != LoanRecords )
+			throw new InvalidOperationException( $"A bank holds {LoanRecords} loan offers." );
+		var writer = new SaveByteWriter();
+		writer.U16( Base.X );
+		writer.U16( Base.Y );
+		writer.U16( Base.MapChild );
+		writer.U16( Base.MapParent );
+		writer.I32( Account.AdmissionFee );
+		writer.I32( Account.Balance );
+		writer.I32( Account.BatchBalance );
+		writer.U32( Account.WithdrawalsEnabled ? 1u : 0u );
+		writer.I32( Account.LastBalance );
+		writer.U32( Account.TurnEnteredRed );
+		writer.I32( Account.ProfitThisYear );
+		foreach ( var loan in Loans )
+		{
+			writer.U32( loan.Available ? 1u : 0u );
+			writer.I32( loan.Amount );
+			writer.I32( loan.AprPercent );
+			writer.I32( loan.Months );
+			writer.I32( loan.MonthlyRepayment );
+			writer.U32( loan.Bought ? 1u : 0u );
+			writer.I32( loan.MonthsRepaid );
+			writer.I32( loan.LenderNameIndex );
+		}
+		return writer.ToArray();
+	}
 }
 
 /// <summary>

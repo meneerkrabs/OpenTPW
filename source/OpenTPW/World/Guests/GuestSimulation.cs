@@ -314,6 +314,9 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			var cell = guest.State == GuestState.Using ? attraction.ExitCell : guest.IsInQueue ? JoinCellOf( attraction ) : (guest.CellX, guest.CellY);
 			if ( guest.State != GuestState.Using && guest.IsInQueue )
 				guest.Happiness = MeterMath.Add( guest.Happiness, -(float)(Settings.MediumHappinessChange & 0xFF) );
+			// [BIN:TPW-EXE:0x4fb3f5 rider voice] a guest in state 16 (on the ride) whose ride is removed gets its model back and plays cat_kids 0x80, whatever its thing id
+			if ( guest.State == GuestState.Using )
+				Voiced?.Invoke( guest, RideRemovedVoiceEvent );
 			NoteQueueEnd( guest, attraction.AttractionId, QueueEndReason.AttractionRemoved );
 			attraction.LeaveQueue( guest.Id );
 			ClearQueueState( guest );
@@ -878,7 +881,12 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			// [BIN:TPW-EXE:0x00501919 thought pick] outside states 16 and 17 and on a park cell (0x004FA990), a world draw modulo 10 of 0 runs the pick 0x004FC8A0 (the draw is the park's one generator's, taken whenever the condition holds)
 			if ( random.NextWord() % GuestThoughts.PickOdds == 0
 				&& GuestThoughts.Pick( guest.Hunger, guest.Thirst, guest.Toilet, guest.Nausea, guest.Happiness, () => MessyShare( guest ) ) is { } thought )
+			{
 				Think( guest, thought );
+				// [BIN:TPW-EXE:0x4fca3e thought voice] the pick's tail plays a voice for the thoughts 4, 12, 13 and 15 on one thing id in sixteen: the need-toilet thought (4) is cat_kids 0x85 (0x4fca6f; 12 is 0x7E, 13 is 0x7F, 15 is 0x85, none of which this pick returns)
+				if ( thought == GuestThought.NeedToilet && VoiceGate( guest ) )
+					Voiced?.Invoke( guest, ToiletThoughtVoiceEvent );
+			}
 			// [BIN:TPW-EXE:0x00501932 balloon life] then +0x214 loses 1 when it is above 0, and at 0 the balloon goes (0x004FE950)
 			if ( guest.BalloonLife > 0 && --guest.BalloonLife == 0 )
 				guest.HasBalloon = false;
@@ -1529,6 +1537,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 				StartActivity( guest, GuestActivity.Vomiting );
 				DropLitter( guest, LitterType.Vomit );
 				guest.Nausea = 0;
+				// [BIN:TPW-EXE:0x4fed86 vomit voice] after the litter (0x4d93b0 with 7) and the guest event 0x12 the state-6 routine plays cat_kids 0xCC at the guest, every time
+				Voiced?.Invoke( guest, VomitVoiceEvent );
 				break;
 			case GuestDecision.Outcome.ToBin:
 				break;
@@ -1692,6 +1702,9 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// <summary>An activity (<c>0x004FC800</c>): stamps +0x208 with the turn and holds the guest in state 8 for ten park turns.</summary>
 	private void StartActivity( Guest guest, GuestActivity activity )
 	{
+		// [BIN:TPW-EXE:0x4fc83a activity voice] the activity start plays cat_kids 0x7E for activity 4 (the "can't decide" pause) on one thing id in sixteen
+		if ( activity == GuestActivity.CantDecide && VoiceGate( guest ) )
+			Voiced?.Invoke( guest, CantDecideVoiceEvent );
 		guest.Activity = activity;
 		guest.InterludeTurn = ParkTurn;
 	}
@@ -1823,6 +1836,12 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 
 	/// <summary>The <c>cat_kids</c> event of a guest dismissed from a queue: the sound <c>0x0050133D</c> plays for one thing id in eight (0x80).</summary>
 	public const uint DismissalVoiceEvent = 0x80;
+
+	/// <summary>The <c>cat_kids</c> events of the guests' other voices (tp.exe <c>0x004FAA00</c>, each with the address of its call): a ride demolished under its rider (0x80, <c>0x4fb3f5</c>), the till of a price paid (0xD0, <c>0x4fe1cb</c>), a drink (0x83) or a meal (0x84) taken (<c>0x4fe312</c>, <c>0x4fe321</c>), a toilet thought (0x85), a "can't decide" pause (0x7E) and a vomit (0xCC, <c>0x4fed86</c>).</summary>
+	public const uint RideRemovedVoiceEvent = 0x80, TillVoiceEvent = 0xD0, DrinkVoiceEvent = 0x83, MealVoiceEvent = 0x84, ToiletThoughtVoiceEvent = 0x85, CantDecideVoiceEvent = 0x7E, VomitVoiceEvent = 0xCC;
+
+	/// <summary>Whether a guest's voice that tp.exe gates by the thing id plays: the thing id's low nibble is 0, one guest in sixteen (<c>0x50b350</c> reads the id's word, <c>test byte [eax], 0xf</c>).</summary>
+	private static bool VoiceGate( Guest guest ) => (guest.Id & 0xF) == 0;
 
 	/// <summary>Litter of <paramref name="type"/> on the guest's cell (lost when the cell already holds some).</summary>
 	private void DropLitter( Guest guest, LitterType type ) => Litter?.Drop( guest.CellX, guest.CellY, type );
@@ -3007,6 +3026,9 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			case RideVisitorKind.Shop: guest.ShopsVisited++; break;
 			case RideVisitorKind.Sideshow: guest.SideshowsVisited++; break;
 		}
+		// [BIN:TPW-EXE:0x4fe1cb till] the use routine's price step (0x4fe1a0, before the lost-sideshow test) takes the object's current price when it is not 0 and plays cat_kids 0xD0 at the guest
+		if ( ride.Price != 0 )
+			Voiced?.Invoke( guest, TillVoiceEvent );
 		Payments?.VisitFinished( ride );
 		// [BIN:STP-PPC:0x100E9FD4 used history] the end of a use (0xe9fa4) pushes the attraction's id into the used history (0xea268) before the outcome
 		if ( decisions.RememberUse( ContextNow(), ViewOf( guest ), ViewOf( ride, guest ) ).PushUsedHistory )
@@ -3082,6 +3104,9 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		var effects = UseEffects.Apply( new GuestMeters( guest.Happiness, guest.Thirst, guest.Hunger, guest.Toilet, guest.Nausea ),
 			ride.ThirstEffect, ride.HungerEffect, ride.VomitEffect, ride.HappinessEffect );
 		(guest.Happiness, guest.Thirst, guest.Hunger, _, guest.Nausea) = effects;
+		// [BIN:TPW-EXE:0x4fe303 drink or meal voice] after the thirst and hunger meters the use routine compares the type's thirst effect (+0x144) with its hunger effect (+0x148): the larger thirst plays cat_kids 0x83, the larger hunger 0x84, equal ones nothing
+		if ( ride.ThirstEffect != ride.HungerEffect )
+			Voiced?.Invoke( guest, ride.ThirstEffect > ride.HungerEffect ? DrinkVoiceEvent : MealVoiceEvent );
 		// [BIN:TPW-EXE:0x004FE1E0 litter meter] after the happiness effect the type's LitterEffect (+0x154) is added to the litter meter +0x1B4, clamped to 0..100 ("Litter gone up by %d, is now %d")
 		guest.Litter = MeterMath.Add( guest.Litter, ride.LitterEffect );
 		var amount = ride.IngredientAmount & 0xFF;

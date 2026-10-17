@@ -321,7 +321,7 @@ one in every traced body). The six formerly closure-derived widths (411, 233, 76
 Guests, staff and gardeners are absent from the prebuilt, so their layouts rest on the load routines and an emulation of them
 and not on a saved byte (the remainder of SAVE-944). They have never been checked against a real save, and a layout mistake now refuses the whole save where the old search for the next header recovered. `tools/tpi-layouts/` reproduces the widths and offsets from your own `Game.exe`.
 The block must in every case read exactly to its delimiter.
-Typed fields that are inferred rather than traced are SAVE-940 to SAVE-944 in the [register](FIDELITY-REGISTER.md).
+Typed fields that are inferred rather than traced are SAVE-940 and SAVE-944 in the [register](FIDELITY-REGISTER.md).
 
 ### Thing bodies
 
@@ -354,7 +354,7 @@ calendar (100 ns since 1601-01-01). Tp.exe's weather serializer (`0x512010`) is 
 
 ### Field meanings (the attraction history, the control record, the calendar, the special rides)
 
-Read October 17, 2026 from the loaders and from the code that uses each field (no-CD `Game.exe`, instruction level; nothing was run). The prebuilt holds no ring value and no guest, so none of this was seen in a save.
+Read October 17, 2026 from the loaders and from the code that uses each field (no-CD `Game.exe`, instruction level; nothing was run). The prebuilt holds no ring value and no guest, so none of this was seen in a save. SAVE-941, SAVE-942 and SAVE-943 are retired by this reading; SAVE-940 and SAVE-944 are narrowed.
 
 **Attraction history (SAVE-940).** The attraction's history object (`0x5ea020`, 0x14c8 bytes, built by `0x5e9dc0`) holds 19 rings. A ring is `mTemp`, the running value that the game's code adds to, then `mData[n]`, `mCurrentEntry`, `mNumEntries` and `mWrappedAround`; the constructor
 sets the entry count to the capacity, which is why every saved ring stores its full capacity. The calendar step `0x6083d0` compares the game date with `mDayAtLastUpdate`/`mMonthAtLastUpdate`
@@ -383,12 +383,12 @@ The game reads a ring back with `0x5eb090` (the entry `n` periods ago is `curren
 Theme Park World's third gauge at +0x4c is the same), the life gauge (`+0x58`, the second word of the breakdown test `0x5e48df`; a breakdown takes 5.0 off it) and the state of repair (`+0x54`, which repairs set to 100.0). Each is saved as a float truncated to a byte. The ring names are our descriptions
 of what feeds each ring, not names from the game (rings 4, 9 and 10 are the least certain); the original's log names only the ring members.
 
-**Control record (SAVE-941).** The control manager (`0x5cf9b0`) copies 150 records of 0x24 bytes. The constructor of a record (`0x5cff00`) fills it from the object's info: the id (a 16-bit word), three info words at +4, +8 and +0xc (the first is the object's price, which a sale at `0x5de85e` takes a percentage of), `researched` at +0x10 (the info's research cost is 0), the research level at +0x14 (0), the number of
+**Control record.** The control manager (`0x5cf9b0`) copies 150 records of 0x24 bytes. The constructor of a record (`0x5cff00`) fills it from the object's info: the id (a 16-bit word), three info words at +4, +8 and +0xc (the first is the object's price, which a sale at `0x5de85e` takes a percentage of), `researched` at +0x10 (the info's research cost is 0), the research level at +0x14 (0), the number of
 things of the type that are built at +0x18 (0, incremented when a thing is made and decremented when it is destroyed), the game tick of the first build at +0x1c (-1 until then; Theme Park World starts at 0) and, new in Theme Park Inc, a counter at +0x20 (0) that the placement step `0x667cb0` increments each time the player places an object, and which numbers the copies ("name 2", "name 3").
 
-**Calendar and arrivals (SAVE-942).** The calendar serializer (`0x607f70`) saves `mFunnyTimeStart`, `mSessionStart` (8 bytes each), `mYearAtLastUpdate`, `mMonthAtLastUpdate` (zero-based), `mDayAtLastUpdate` and `mFunnySecsPerRealSec`, the order the reader uses. The arrivals (`0x5bc670`, 18 bytes) are `mArrivalRate`, `mTimeSig` (4 bytes), `mTargetVehicleCapacity`, `mPeopleOnBus`, `mOffloading` (1) and `mGatesOpen` (1).
+**Calendar and arrivals.** The calendar serializer (`0x607f70`) saves `mFunnyTimeStart`, `mSessionStart` (8 bytes each), `mYearAtLastUpdate`, `mMonthAtLastUpdate` (zero-based), `mDayAtLastUpdate` and `mFunnySecsPerRealSec`, the order the reader uses. The arrivals (`0x5bc670`, 18 bytes) are `mArrivalRate`, `mTimeSig` (4 bytes), `mTargetVehicleCapacity`, `mPeopleOnBus`, `mOffloading` (1) and `mGatesOpen` (1).
 
-**Special rides (SAVE-943).** The loader `0x6244b0` reads `mNumSpecialRides` straight into the global `0xaa071c` and then loops by that global, so the loop runs the saved count. The table it fills (`0xaa0330`, records of 0xf4 bytes) has room for four records: the count global itself lies inside the fifth record's memory, so a larger count would overwrite it while being read. A record is a 16-bit `SpecialRideThingId`
+**Special rides.** The loader `0x6244b0` reads `mNumSpecialRides` straight into the global `0xaa071c` and then loops by that global, so the loop runs the saved count. The table it fills (`0xaa0330`, records of 0xf4 bytes) has room for four records: the count global itself lies inside the fifth record's memory, so a larger count would overwrite it while being read. A record is a 16-bit `SpecialRideThingId`
 and 20 slots of a 16-bit `AllSpecialRidesThingId`, a 32-bit `AllSpecialRidesAbility` and a 32-bit `AllSpecialRidesType`.
 
 ## Theme Park Inc front end

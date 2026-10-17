@@ -119,7 +119,7 @@ public sealed class PoolSlideActivity : IPoolActivity
 	}
 
 	/// <summary>How far above the track the sprite's feet are drawn, engine units: the rider lies in the flume.</summary>
-	private const float RiderLift = 0.15f;
+	private const float RiderLift = 0.3f;
 
 	private static PoolActivityStep Approach( GuestSimulation simulation, Guest guest, PoolSlide? slide, bool usable, ref uint random )
 	{

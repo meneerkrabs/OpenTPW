@@ -26,6 +26,8 @@ public class MoviePlaybackTests
 	}
 
 	// One 16x16 intra frame whose six blocks are DC size 0 + end of block: Y "100"+"10" x4, C "00"+"10" x2.
+	internal static byte[] SyntheticFrame() => Frame();
+
 	private static byte[] Frame()
 	{
 		var bits = string.Concat( Enumerable.Repeat( "10010", 4 ) ) + "0010" + "0010";

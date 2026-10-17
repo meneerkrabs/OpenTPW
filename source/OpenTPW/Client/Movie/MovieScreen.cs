@@ -11,7 +11,7 @@ internal sealed class MovieScreen : IIntroMovie
 	private bool lastMouseDown = true;
 	private readonly bool handleSkipInput;
 
-	/// <param name="gain">Linear audio volume 0..1 (the Movie volume option).</param>
+	/// <param name="gain">Audio amplitude factor 0..1 (the Movie volume option through <see cref="MovieVolumeCurve"/>).</param>
 	/// <param name="handleSkipInput">False when the owner decides when to skip (the startup intro).</param>
 	public MovieScreen( TgqMovieFile movie, bool withAudio, float gain = 1f, bool handleSkipInput = true )
 	{

@@ -360,7 +360,7 @@ public class PoolsContentTests
 		using var scope = Enabled( true, FileSystem );
 		var catalog = ObjectCatalog.Load( "jungle" );
 		var current = ParkResumeAssetManifest.Capture( catalog, "jungle", easy: false );
-		var roomKeys = current.Keys.Where( key => key.StartsWith( "mod:opentpw.pools:", StringComparison.Ordinal ) ).ToArray();
+		var roomKeys = current.Keys.Where( key => key.StartsWith( "mod:opentpw.pools:", StringComparison.Ordinal ) && key.Contains( "/jungle/cabin/", StringComparison.Ordinal ) ).ToArray();
 		var withRoom = WithRoomsPlaced( ParkResumeSaveFileTests.Envelope(), current, 65500 );
 		ParkResumeSaveFile.RequireAssets( withRoom, catalog, current );
 		// a save that places the room but holds none of its keys is refused: the park provides them

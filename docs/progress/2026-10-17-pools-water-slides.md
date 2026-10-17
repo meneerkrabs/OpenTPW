@@ -1,0 +1,7 @@
+## Pools P4: water slides (October 17, 2026)
+
+Water slides for the `opentpw.pools` extension ([POOLS.md](../POOLS.md#water-slides-phase-p4-extpools-slides), [TRACKS.md](../TRACKS.md#slides-open-tracks-ending-in-a-pool)): reachable only from the pool, free to ride, ending in the pool.
+
+- **Slide towers** (Info.Ids 65100 to 65107, an open-flume and a closed-tube tower per theme, made with the content kit) placed with water beside their stairs; the track is laid cell by cell (straights, quarter turns, a splash piece over the tower's own pool) at 90 per piece, through a new slide mode of the pool tool and a "Water slide track" row; the gated open-track rule (start at a tower, end in water, slope 0.2 to 0.8, ground clearance) leaves every closed-circuit track rule untouched and writes no cell.
+- **`slide.ride`** is an `IPoolActivity`: swim to the foot of the stairs, climb, wait in line on the platform (capacity 4), ride by gravity (integer physics, the rider's place a function of one turn counter), splash down, swim on. It draws nothing from the swimmer's stream. Demolishing the tower ends every ride on it; the pool tool refuses to erase the splash cell under riders.
+- Generated track and pylons (`PoolSlideMeshBuilder`) with per-theme colours from `PoolStyles`; an optional `PoolSlides` save part (absent without slides, so other saves keep their bytes); a new determinism pin (`PoolsSlidesFixedRunHash`); capture options `--debug-slide` and `--debug-pool-at`.

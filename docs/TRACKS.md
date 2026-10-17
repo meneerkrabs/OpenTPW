@@ -386,6 +386,21 @@ does with them (`TPW-EXE`):
 Not traced: where a ride's add-ons are offered and sold (the object window code around `0x481BC0..0x486D90` reads an add-on's ride through `0x4E2710`). Not built: the sections'
 run counters and values, the dummies' show and hide, the Teleport's vehicle hook and the walk after a placement.
 
+## Slides: open tracks ending in a pool
+
+The water slides of the pools extension ([POOLS.md](POOLS.md#water-slides-phase-p4-extpools-slides)) are the one track in the game that is **not a closed circuit**, so they do not use this page's machinery: no station, no `TrackCellLayer` records, no `TrackCircuitWalker` walk, no `BumpController`, no boats. The rule of a closed loop from the station back to the station (the circuit walk above) still holds, unchanged and ungated, for every kart, water and bumper track; the slide rule is a separate gated rule in `PoolSlideRules`, active only while `FeatureGates.Pools` is on, and it never reads or writes the track layer (`PoolSlidesTests.TheRulesAreOffWithTheExtensionOffAndEveryOtherTrackKeepsItsClosedCircuitRule`).
+
+| | Kart and water tracks | Slides |
+| --- | --- | --- |
+| start | the station's open end | a **slide tower** on land beside a pool: any side of its footprint but the stairs' side |
+| end | back at the station (a closed loop) | a **splash piece over pool water** of the pool the tower faces; the track is open |
+| tile | 2 x 2 cells, the original's piece meshes | one cell per piece (`Straight`, `Left`, `Right`, `Splash`), a mesh swept in code |
+| cells | types 11, 12, 13, 16, 18 in the track layer | none written; land cells reserved through the path and object hooks, water cells stay water |
+| validity | the circuit walk reaches the start | `PoolSlideRules.Validate`: start, cells, splash, heights, slope 0.2 to 0.8, ground clearance |
+| vehicles | boats and karts with the traced integer physics | no vehicle: a rider runs by gravity (speed from the slope), one body per rider |
+
+The slide's pieces are chosen from the cell sequence, as the kart and water pieces are chosen from the arm masks (a straight, or a turn toward the next cell; the last cell is the splash); a slide has no crossings, tees, bridges or add-ons.
+
 ## Open points
 
 - Jumps and tunnels (TRACK-008: the add-ons' placement is built headless; their offer and sale, section values and the teleport hook are not, see "Add-ons"), the edit

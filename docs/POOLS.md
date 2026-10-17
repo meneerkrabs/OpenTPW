@@ -21,7 +21,8 @@ entrance, guests choose it like an attraction, change, swim freely through the c
 | `[EXT:pools-changing-room]` | the changing room object and its placement rule |
 | `[EXT:pools-swim]` | the swim session: guest states, steering, the numbers, saves |
 | `[EXT:pools-content]` | the extension's own shipped content (`content/pools`) |
-| `[EXT:debug-pool]`, `[EXT:debug-swimmers]` | the smoke-only options that build a pool, a room and swimmers for captures |
+| `[EXT:pools-slides]` | water slides: the tower, the track, the rules, the ride and the activity |
+| `[EXT:debug-pool]`, `[EXT:debug-swimmers]`, `[EXT:debug-slide]` | the smoke-only options that build a pool, a room, swimmers and a slide for captures |
 
 ## The extension and the save rule
 
@@ -317,6 +318,64 @@ An **activity** is something a swimmer does during its session besides swimming:
 
 **Tests.** `PoolsActivityHostTests` proves the host with a test-only fake activity: offer, start, continue, back in the water, end of session, declined start, the shower-like start offer, no draws and no hash change with an empty registry or an activity that offers nothing, the aborts (demolish, pool erased, park closed, target erased, unknown id), a save in the middle of an activity, the validator and the hash.
 
+## Water slides (phase P4, `[EXT:pools-slides]`)
+
+Water slides are modelled on the pool slides of Roller Coaster Tycoon 3 Soaked!: built like coasters, **reachable only from the pool, free to ride, and ending in the pool**. They are an `IPoolActivity` (`slide.ride`) of the swim session, so no guest ever reaches one from the paths and `IGuestDecisions` has no entry for them.
+Code: `source/OpenTPW/World/Pools/Slides/`, `Level.Slides.cs`, `GuestSimulation.Slides.cs`; the track rule is also described in [TRACKS.md](TRACKS.md#slides-open-tracks-ending-in-a-pool).
+
+**The least invasive build.** A slide is **not** a kart or water track and not a coaster: those need a station object, a closed circuit and a controller (`BumpController`, `TrackCircuitWalker`), none of which a slide has. The slides share the *vocabulary* of the track system (a track of one-cell pieces: straight, bends, an end piece; the cell-by-cell tool; the piece price; the pylons) and nothing of its code, so every other track type keeps its closed-circuit rule untouched
+(`PoolSlidesTests.TheRulesAreOffWithTheExtensionOffAndEveryOtherTrackKeepsItsClosedCircuitRule`; the files of the track code are untouched) and a slide writes **no cell** of the map: its land cells are reserved through the existing hooks (`Level.IsPathBlocked` for the path, pool, staff and track tools, `ParkObjects.IsReserved` for objects) and its water cells stay pool water.
+
+### The tower (`PoolSlideTowers`)
+
+A **slide tower** is an object of the Features tab (Info.Ids **65100 to 65103**, the open-flume tower of jungle, hallow, space and fantasy, and **65104 to 65107**, the closed-tube tower), a 2 x 2 platform with a staircase (`tools/blender/opentpw_slide_tower.py`, then `opentpw-kit object`). Its `.sam` carries OpenTPW's own keys `Pools.SlideTower 1`, `Pools.SlideProfile` (0 flume, 1 tube) and `Pools.SlideCapacity` (4);
+it has no entrance, `Info.IsChoosable 0` and costs **600**. Like the changing room it is placed with **water beside its front**: the stairs face the pool, on the shape's top row (the local -V side at rotation 0), and the cells beyond that face (two for the 2 x 2 tower) are its **pool-side cells** (`PoolSlideTowers.PlacementRule`, `OriginalPlacementResult.NeedsPool`; the refusal message is the changing room's "must stand beside a pool", a known wording gap). The first pool-side cell that holds water now is the **foot of the stairs**. The platform's top is exactly
+five engine units above the highest ground of the footprint (`PoolSlideTowers.TopHeight`; 25 model units in the model), where the track starts and the waiting riders stand. Capacity: how many riders wait on the platform (a tower's `Pools.SlideCapacity`, 4).
+
+### The track (`PoolSlide`, `PoolSlideRules`, `PoolSlideWorld`)
+
+- **Pieces**, one per cell, in riding order: `Straight`, `Left`, `Right` (quarter turns of radius half a cell) and the last, **`Splash`**, a chute from the cell's edge to its middle, which lies over **pool water**. Lengths in 1/1024 cell: 1024, 804, 512. Up to 24 pieces. A helix is not built (a 2 x 2 piece with its own geometry; see "Not done yet").
+- **One constant slope.** The track runs from the tower's top down to **0.2 engine units above the water** at the splash, in a straight line over its length. A short slide is steep and a long one gentle, so there are no height controls: the player lays the plan. The slope (drop over run, both in engine units) must be **0.2 to 0.8**, about 11 to 39 degrees: with the 5 unit tower that is **3 to 12 cells** of track; shorter is refused as too steep, longer as too gentle.
+- **The open-track rule** (the rule that replaces the closed circuit, gated to slides): the first piece lies beside the tower on any side but the stairs' (`PoolSlideTower.StartOptions`) and the track leaves the footprint outwards; every piece's cell is empty ground or pool water, owned, not the tower's and not used twice; the last piece is the splash over a pool cell **of the pool the tower faces** (the splash cell is in the water connected to the foot of the stairs); the track clears the ground under every piece by 0.15 (`PoolSlideRules.Clearance`, measured at the piece's exit against the highest ground corner, or the water); the recorded heights are the tower's top and the pool's water (the end may stand up to 1.5 above it, as the pool's level can drop when cells are added). The reasons are `PoolSlideResult`s, each with its test.
+- **The builder** (`PoolSlideWorld.AddCell`) lays the track one cell at a time: the first cell is a start cell, each next cell is a neighbour of the end, not behind it, and the previous piece becomes a straight or a turn towards it; a pool cell ends the slide with the splash piece. Pieces cost **90** each (`ParkEconomy.SlidePieceCost`, `CellPurchase.SlidePiece`, OpenTPW's own value; riding is free) and are refunded in full when taken back or when the tower is demolished. The world is also the store the activity, the renderer and the saves read.
+- **The tool.** The slide tool is a third mode of the pool tool (`PoolTool.BeginSlide`), so the cursor, the blueprint markers, Escape and right click are the pool tool's: placing a tower starts it at once (`ParkHud.OnObjectPlaced`), and a new row in the Miscellaneous list, "Water slide track" (id -5, price 90), continues the first unfinished slide. Press and drag over the cells beside the track's end; a pool cell ends the slide and the tool; **Backspace takes back one piece**. A refusal says why in the message line (too steep: make it longer; too gentle: shorten it; would touch the ground; continue beside the end; must end over the tower's own pool; start beside the tower), in the nine languages the extension's texts have. `PoolSlideRoutes.Find` (shortest valid route by iterative deepening) is a test and capture aid, not a player feature.
+
+### The ride (`PoolSlideRide`, `PoolSlideSettings`; every number OpenTPW's own)
+
+One rider at a time per position; there are no cars. Every rider runs the same integer physics along the track: each park turn **speed += slope-per-mille x 100 / 1000 - speed / 8**, at least 24, from a launch speed of 64 (1/1024 cell per turn), so the speed settles at about **eight times the pull**: 0.6 cells a turn on the steepest slide (0.8), 0.15 on the gentlest (0.2). Because the physics depends only on the slide, a rider's place is a **pure function of the turns since its launch** (`PoolSlide.PositionAtTurn`, a table built once), and a rider saves nothing but that counter. The standard 7-piece, 6-cell slide takes 25 park turns (about 6 seconds). The next rider leaves when the one before is **1.5 cells** down the track.
+
+### The activity (`PoolSlideActivity`, `slide.ride`)
+
+- **Offer:** the swimmer's water holds both the foot of a usable slide's stairs and its splash cell, and the tower has room (guests on their way, on the stairs and waiting count: the capacity). A slide is *usable* while it is complete and valid for its tower and pool now (`PoolSlideWorld.IsUsable`, kept until the slides or the pool cells change). The slide with the fewest occupants wins, ties by tower order. `Offer` is pure and draws nothing.
+- **Phases** (`PoolSlidePhases`, in `PoolActivityPhase`; `PoolActivityTurns` counts within a phase): 0 swim to the foot of the stairs with the swimmers' own steering, crowd ignored (at most 160 turns, else back in the water); 1 climb the stairs, 12 turns on a straight line from the foot to the guest's place on the platform, the feet rising to the top; 2 wait on the platform in line, the guest who has waited longest first (ties by id), and launch when it is first and the start is clear; 3 ride (the turns since the launch); 4 splash for 4 turns at the splash cell, a little off its middle by the guest's id, then `BackInWater`. A guest leaves the tower after 240 turns of waiting.
+- **Randomness:** none. The activity draws nothing from the swimmer's stream (the host's cadence does, as for every activity), and the slide world has no random state.
+- **Sprites and heights:** slots 3 (ladder climb), 0 (stand), 7 (sliding) and 11 (splash-down) of the swimwear table (`PoolSwimSlots`); until the hi-res art lands, `GuestSpriteAtlas` falls back to the nearest slot the set has (tread water, breaststroke, crawl). The riders' feet follow `IPoolActivity.FeetHeight`: the water at the foot of the stairs rising to the platform, the track's height with 0.15 of lift on the ride.
+- **Edge cases:** a tower demolished mid-ride takes its slide with it (the pieces refunded) and ends every activity on it at once (`GuestSimulation.AbortPoolActivitiesOf`), and the host ends their sessions at once on the changing room's exit; a slide whose pool or foot cell was erased while guests are only on their way or waiting sends them back into the water at the foot of the stairs (the session ends where there is no water). **The pool tool refuses to erase the splash cell while a guest is on the track or splashing, and the foot of the stairs while a guest climbs or waits** (`PoolBuildResult.SlideRiders`, "A slide has guests on it here"); a slide without its splash water is unusable and nobody is offered it.
+
+### Art
+
+The tower is a Blender-made model (the kit's `object`, `tools/pools/build-content.sh` step 2b) in the changing room's four themed textures, a finial telling the profiles apart (a pennant on the flume's tower, a wide cap on the tube's). **The track and the pylons are generated in code**, not rigid kit models, because the track must follow any slope and turn: `PoolSlideMeshBuilder` sweeps the profile along `PoolSlide.PointAt`, an open half pipe with lips for the flume and a ring with a slit along its top for the tube (so the riders stay visible in it), with a square pylon under every piece (on the ground, or on the pool floor under the splash chute). The textures are generated per style (`PoolSlideTextures`, from `PoolStyles`: the flume takes the style's bright shallow-water colour, the tube the coping's colours), drawn with the pool deck's shader (`pool-deck.shader`, so the browser build has nothing new) by `PoolSlideRenderer`, which the level makes with the pool renderer so the riders and swimmers draw after it.
+
+### Saves and determinism
+
+`ParkResumeSnapshot.PoolSlides` (`PoolSlidesSaveData`: tower, profile, start, heading, pieces and the two heights per slide, in tower order) is written only when the park has a slide, so every other park saves the same bytes. It is shape-checked on load (`PoolSlideSaves.ShapeProblem`: bounds, order, known pieces, the extension recorded) and restored over the towers with the **same rules as a new slide** (`PoolSlideWorld.RestoreSnapshot`). The guests' activity fields are the host's (ride position = the turn counter). The canonical hash covers the slides only when there are any (`PoolSlideWorld.AddCanonicalState`, from `GuestSimulation.AddCanonicalState`). New pin: `PoolSlideActivityTests.PoolsSlidesFixedRunHash` (docs/DETERMINISM.md, "Pools").
+
+### Tests
+
+`PoolSlidesTests`: geometry (cells, lengths, continuity, quarter circles, heights), every rule's reason, the builder, refunds and money, the land reservation, usability, the ride physics (monotone, repeatable, speed from slope), saves, the hash, the route search and the tool's slide mode. `PoolSlideActivityTests` (the swim session's real rig and ride script): the whole ride phase by phase with the track positions and feet heights, offers, the capacity, the order and the gap, demolition in every phase, an unusable slide, a save in the middle of a ride that continues with the same hash, no draws and no hash change without slides, and the pin. `PoolSlideLevelTests` (a real `Level`): placement, registration, the reservations, demolition, the erase refusals, the resume capture. `PoolSlideContentTests`: the eight towers, their models, scripts and placement. `PoolSlideMeshTests`: the shell, the pylons and the textures.
+
+### Checking it on screen
+
+`--debug-slide flume|tube` (smoke-only, `[EXT:debug-slide]`; it needs `--debug-pool` and the extension) builds the theme's tower of that profile beside the pool through the level's own placement (charged; the rule needs the pool at its front), finds the shortest valid route with `PoolSlideRoutes` and lays it piece by piece through the slide world; the log prints the engine points of the track's middle and splash for `--capture-camera`. `--debug-pool-at N` builds the pool at frame N instead of 59 frames before the capture, so swimmers have time to climb and ride:
+
+```sh
+bash scripts/run.sh --game-path '/path/to/Theme Park World' --load-original-level jungle --enable-mod opentpw.pools \
+  --debug-pool 0,0,7,6 --debug-swimmers 14 --debug-slide flume --debug-pool-at 100 --silent \
+  --capture-world slide.png --capture-frames 1500 --capture-sequence 60,6 --capture-camera 51,-12,70,-90
+```
+
+The images are `reports/pools-p4-*.png` and a short clip `reports/pools-p4-slide.gif`. The art was judged on these captures only.
+
 ## Saves and determinism
 
 See [the save rule](#the-extension-and-the-save-rule). The pins (docs/DETERMINISM.md, "Pools"): every existing pin is unchanged with the extension on or off
@@ -331,7 +390,7 @@ The extension's version stays 1.0.0: phase P1 was not released, a P1 park holds 
 - **Diving, climbing out at ladders,** the wave machine and the rest of the extras: P3 and later. Swimmers enter and leave only at the room's pool-side cell.
 - **Water quality, lifeguards and a handyman for the pool:** not done.
 - **Pool objects and extras** (ladders, diving boards, showers, loungers, lamps, lifeguard chair, wave machine, spa): P3.
-- **Water slides** on the track system, and attractions that end in a pool: P4 and P5.
+- **Water slides:** see [Water slides](#water-slides-phase-p4-extpools-slides) for what is built. Not done: a helix and other piece shapes (the pieces are straights, quarter turns and the splash), a slide tower on sloping ground (the platform is five units above the highest corner, so the model's feet may float on a slope), slide tours or a coaster-style camera, a separate Thrill rating for slides, exporting parks with slides, the hi-res riders' art (the sliding and splash-down slots fall back to the strokes until it lands), the refusal wording of a tower placed away from a pool (it reads "a changing room must stand beside a pool"). Attractions that end in a pool: P5.
 - Depth levels (each cell has one depth), diagonal or curved edges (the tiling is square), digging the terrain, a pool-deck cell type, pool water on the Theme Park Inc layout, exporting parks with pools as packages.
 - Name and description rows for the Extensions and mods screen are not translated: the screen shows the extension's English name.
 - Pool cells are not drawn on the park map (the minimap), where they show as open ground.

@@ -597,6 +597,8 @@ Retired (wave 3): `APPROX:QUEUE-021` (where the queue tool goes on after the cli
 
 Split (wave 3): `APPROX:WALK-007` keeps the stamp of the queue recompute after a path over a queue end and a queue cell clear (the owner word); the route walk restored from an OpenTPW save made before the original walk, which ends where the guest stands instead of replanning, is the design choice `EXT:legacy-save-route-walk`.
 
+Design choice (wave 4): the conversion of a guest on an arrival lane in an OpenTPW save of schema 8 or older (the lane has no counterpart in tp.exe, whose guests walk the cell map from their creation) is `EXT:legacy-save-arrival-lane`: the guest stays where it stands on the map and takes the state its lane position stood for, with no world draw; a schema 9 save with a lane is refused.
+
 Retired (wave 3): `APPROX:ARRIVAL-005` (the first purchase of an imported object: the world loader reads the object-control table `0x4d3aa0` before the saved things, every record's `+0x1c` comes back verbatim and a constructed object stamps the turn into a record only while it is 0, `0x4db690`; `OriginalEconomyImport.ImportFirstPurchases` restores the saved turns before the objects are registered).
 
 An isolated [GuestOriginalRules helper](../tools/ppc-analysis/lanes/guests/rules/README.md)

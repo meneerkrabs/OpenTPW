@@ -287,7 +287,7 @@ public sealed partial class GuestSimulation
 	/// the crossing cell, the wait there, the walk to the booth, the booth and the walk to the entrance, or on its way home from the booth the walk to its side's gate cell
 	/// (state 18, mask 1, no recall: the lane walk never recalled) and a guest waiting at the bus stop in state 21. No draw is taken: the routes end at the guest's own sub-cell point.
 	/// </summary>
-	// (a design choice awaiting the user's approval as an EXT label, legacy-save-arrival-lane) a lane position has no counterpart in the original, whose guests walk the cell map from their creation (0x004FB201); the conversion keeps a guest of an OpenTPW save made before the arrival walk where it stands and gives it the state its lane position stood for
+	// [EXT:legacy-save-arrival-lane] a lane position has no counterpart in the original, whose guests walk the cell map from their creation (0x004FB201); the conversion keeps a guest of an OpenTPW save made before the arrival walk where it stands and gives it the state its lane position stood for, instead of dropping the guest or redrawing its walk
 	private void ConvertLegacyLane( Guest guest )
 	{
 		var lane = guest.Lane!;
@@ -313,6 +313,8 @@ public sealed partial class GuestSimulation
 					WalkTo( BoothCell( side ) );
 					break;
 				case GuestState.EnteringPark:
+					// the lane walk to the entrance came after the booth took the fee, so the guest has paid (a closed park turning it back must not charge it again)
+					guest.Paid = true;
 					WalkTo( ParkEntranceCell( side ) );
 					break;
 				default:

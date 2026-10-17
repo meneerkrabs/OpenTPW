@@ -326,6 +326,7 @@ public class ArrivalWalkTests
 			Assert.AreEqual( expected, guest.State, $"{state}" );
 			Assert.IsTrue( guest.Lane == null && guest.OnGrid && !guest.Navigation.OffGrid, $"{state}: on the cell map" );
 			Assert.IsTrue( resumed.ValidateSnapshot( resumed.CaptureSnapshot() ).IsValid );
+			Assert.AreEqual( state == GuestState.EnteringPark, guest.Paid, $"{state}: only the walk to the entrance came after the booth took the fee" );
 			if ( reversed && state != GuestState.WaitingToGoHome )
 				Assert.AreEqual( (1, 0), (guest.Navigation.Mask, guest.ExitLevel), $"{state}: the way home with the leaving mask and no recall" );
 			Turns( resumed, 800 );

@@ -14,15 +14,18 @@ public sealed class OriginalGuestDecisions : IGuestDecisions
 		new( BoothVerdict.Decide( booth.ParkPoints, booth.Fee, booth.Draw, context.Settings ) );
 
 	/// <summary>The attraction score of the original (<see cref="AttractionScore.Compute"/>).</summary>
-	public uint ScoreAttraction( in DecisionContext context, in GuestView guest, in AttractionView attraction )
+	public uint ScoreAttraction( in DecisionContext context, in GuestView guest, in AttractionView attraction ) =>
+		AttractionScore.Compute( ScoreInputOf( context, guest, attraction ), context.Settings.DecisionWeights, context.Settings.DecisionVariables );
+
+	/// <summary>What the original's score reads for this guest and attraction; the smarter policy scores the same input with its own queue match.</summary>
+	internal static AttractionScoreInput ScoreInputOf( in DecisionContext context, in GuestView guest, in AttractionView attraction, uint? queueMatchOverride = null)
 	{
 		var settings = context.Settings;
 		var type = settings.Types[Math.Min( guest.Type, settings.Types.Count - 1 )];
-		var input = new AttractionScoreInput( guest.CellX, guest.CellY, attraction.BackCell.X, attraction.BackCell.Y, attraction.CellModifier, attraction.QueueLength, attraction.QueueSizeInCells,
+		return new AttractionScoreInput( guest.CellX, guest.CellY, attraction.BackCell.X, attraction.BackCell.Y, attraction.CellModifier, attraction.QueueLength, attraction.QueueSizeInCells,
 			type.PreferredExcitement, attraction.LiveExcitement, (attraction.StaticExcitementLevel & 0xFF) != 0, guest.Thirst, guest.Hunger, guest.Toilet, guest.Nausea,
 			attraction.ThirstEffect, attraction.HungerEffect, attraction.ProvidesRelief, attraction.AgeDays, context.Raining, attraction.IsIndoors,
-			attraction.GoldenTicketCost, attraction.UpgradeCost, attraction.Id, attraction.SameTypeAsLastUsed, guest.UsedHistory, guest.TemporaryHistory );
-		return AttractionScore.Compute( input, settings.DecisionWeights, settings.DecisionVariables );
+			attraction.GoldenTicketCost, attraction.UpgradeCost, attraction.Id, attraction.SameTypeAsLastUsed, guest.UsedHistory, guest.TemporaryHistory, queueMatchOverride );
 	}
 
 	/// <summary>The original's comparison of the choice loop: a score of 10 or more that beats the best (signed), or ties it on an odd park turn.</summary>

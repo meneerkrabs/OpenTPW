@@ -305,7 +305,7 @@ internal static class ParkResumeSaveFile
 			&& snapshot.Mods?.Any( mod => mod?.Id == OfficialExtensions.Pools.Id ) != true )
 			Require( false, $"the layout has pool cells but the save does not record {OfficialExtensions.Pools.Id}" );
 		// [EXT:smarter-guests] the extension's section: present exactly when the extension is recorded, with ids that fit the guests the save holds
-		if ( SmarterGuestsSave.ShapeProblem( snapshot.SmarterGuests, snapshot.Guests?.Guests?.Select( guest => guest.Id ), snapshot.Mods, snapshot.ScriptMods != null ) is { } smarterProblem )
+		if ( SmarterGuestsSave.ShapeProblem( snapshot.SmarterGuests, snapshot.Guests?.Guests?.Select( guest => guest.Id ), snapshot.Mods, snapshot.ScriptMods != null, snapshot.Guests?.Attractions?.Select( attraction => attraction.AttractionId ) ) is { } smarterProblem )
 			Require( false, smarterProblem );
 		// [EXT:script-mods] the script mods' section: every key a recorded mod, the versions this build runs, canonical state and counters that agree with the disabled flag; it needs the identity section above
 		if ( ScriptModsSave.ShapeProblem( snapshot.ScriptMods, snapshot.Mods ) is { } scriptProblem )

@@ -471,7 +471,7 @@ record; the M4 gate and browser digests read the same code paths and are checked
 
 The `opentpw.pools` extension ([POOLS.md](POOLS.md), `[EXT:pools-save]`) adds the pool water cell type (`ParkCellTypes.PoolWater`, 0x40). Pool cells are ordinary non-empty cells of the cell map, so they join
 the canonical hash through `ParkCellMap.AddCanonicalState` with no schema change (the schema stays 21), and a park without any keeps every pin: `PoolsTests.TogglingThePoolsExtensionKeepsEveryExistingPinWithoutPoolCells`
-runs the pinned fixed run (`FixedRunHash`) and the guest-pathing run with the extension on and off (asserting the gate really differs) and gets the same digests. The extension is recorded in a park save **only while the park
+runs the pinned fixed run (`FixedRunHash`; the default extension set now includes pools, so every test that builds no explicit set runs with pools on and the pins prove the no-pools guarantee) and the guest-pathing run with the extension on and off (asserting the gate really differs) and gets the same digests. The extension is recorded in a park save **only while the park
 has pool cells** (`ParkResumeMods.UsedOnlyExtensionIds`); a park without them saves with no `Mods` field and the same bytes whether the extension is on or off (`PoolsLevelTests.RealCapturesWithoutPoolCellsAreByteIdenticalWithTheExtensionOnAndOff`,
 two real `Level.CaptureResumeSnapshot` captures).
 

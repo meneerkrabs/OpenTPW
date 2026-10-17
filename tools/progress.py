@@ -206,7 +206,7 @@ def migrate(root: Path, old: str) -> list[Path]:
         planned.append((path, block.strip() + "\n"))
     for path, text in planned:
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(text, encoding="utf-8")
+        path.write_text(text, encoding="utf-8", newline="\n")
     return [path for path, _ in planned]
 
 
@@ -239,7 +239,7 @@ def main() -> int:
     log = assemble(args.root)
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)
-        args.output.write_text(log, encoding="utf-8")
+        args.output.write_text(log, encoding="utf-8", newline="\n")
         print(f"Wrote {args.output}.")
     else:
         sys.stdout.write(log)

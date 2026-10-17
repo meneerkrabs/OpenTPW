@@ -20,8 +20,8 @@ Code: `source/OpenTPW/VM/` (`RideVM`, `Operand`, `Instruction`, `RideOpcodes`,
 
 | | Opcodes | Corpus instructions |
 | --- | ---: | ---: |
-| Implemented (VM does the whole job) | 41 | 8,049 |
-| Hooked (VM handles operands/flags/waits; game effect → `IRideScriptEffects`) | 43 | 3,866 |
+| Implemented (VM does the whole job) | 44 | 8,052 |
+| Hooked (VM handles operands/flags/waits; game effect → `IRideScriptEffects`) | 40 | 3,863 |
 | Unknown (no handler) | 0 | 0 |
 | **Corpus total** | **84** | **11,915** |
 
@@ -429,6 +429,14 @@ The unit tests are `RideVMInternalsTests`.
   now comes from the `VAR_LETMEON` protocol (`HostStep` marks the called guest
   aboard when the script consumed `VAR_LETMEON`) and `WALKON`, and HOP hands back
   the ids the script itself pushed.
+- **Walk float** (opcodes 79-81, `WALKST_FLOAT` `0x555B72`, `WALKFLOATSTAT` `0x555BD8`, `WALKFLOATSTOP` `0x555C11`): the script's own state at +0x80 (start on the 32-bit clock),
+  +0x84 (duration, 0 = no float) and the words at +0x88 and +0x8A. `WALKST_FLOAT seconds a b` (all three resolved) stores the clock, `seconds x 1000` (a wrapping 32-bit product) and the low
+  words of `a` and `b` (the swing of the floating body, read by the render pass `0x5581D4` only); `WALKFLOATSTAT dest` puts the duration word in the flags and a variable destination;
+  the walk update of the main loop (`0x558051`..`0x558077`) clears the word once the clock is unsigned past start + duration, which the VM applies when the script looks;
+  `WALKFLOATSTOP` with a duration set turns the time spent into thousandths (`(clock x 1000 - start x 1000) / duration`, 32-bit unsigned), moves the start back from now by that
+  share and sets the duration to 1000, so the word stays set for the remaining thousandths of a second; with none set it does nothing (no flags). ZeroG (`WALKST_FLOAT VAR_DURATION 1000 1000`, then
+  `WALKFLOATSTAT 0; BRANCH_NZ` around `WAITANIM 5`) therefore floats for `VAR_DURATION` seconds, where the effect hook used to answer 0 and ended its float at once. The state is saved with the VM
+  (`WalkFloatStart`, `WalkFloatDuration`, `WalkFloatWords`, optional) and hashed only once a float has started. Tests: `RideVMInternalsTests`.
 - **Limbo table** (opcodes 58-62). A per-script table of header-limbo-size
   `{value, expiry}` slots (+0x24, zeroed) and an occupied count (+0x60), kept
   by the VM and part of its snapshot. `LIMBO v s` (`0x554DE5`): the first slot
@@ -463,9 +471,8 @@ The unit tests are `RideVMInternalsTests`.
   (`0x552707`) and `GETCUSTPTCLCODE` (`0x5563D5`) are game effects the VM does
   not implement; no script of either corpus uses them.
 - Visitor opcodes work for every placed original object (its `RideVisitorBridge`);
-  walks along ride nodes are instantaneous, riders are not drawn, and
-  TOUR/BUMP/COAST guest handling and WALKST_FLOAT/WALKFLOATSTAT/WALKFLOATSTOP
-  are unimplemented.
+  riders are not drawn walking along the ride nodes (the walk table and its times are the original's, [TOURS.md](TOURS.md), TOUR-011), and
+  TOUR/BUMP/COAST guest handling is unimplemented. WALKST_FLOAT, WALKFLOATSTAT and WALKFLOATSTOP are the script's own state in the original and in the VM.
 - Animation playback only through the objects' effects (OBJECTS.md; rigid node
   tracks, vertex animation not decoded); EVENT types 3-9 and REPAIREFFECT play
   their original sounds (the category routes are traced, AUDIO.md); repair hide (0)
@@ -615,9 +622,9 @@ handler attributes diverge.
 | 76 | `WALKON` | 47 | hooked | docs (`visitor u1 u2 u3 u4 action u5`, WALK_ACTION_* in ScriptDefs); passed through |
 | 77 | `WALKOFF` | 53 | hooked | unknown upstream (`visitor`); passed through |
 | 78 | `WALKGET` | 43 | hooked | unknown upstream (`dest`); corpus `WALKGET VAR_LETMEOFF; BRANCH_Z wait` → dest + flags |
-| 79 | `WALKST_FLOAT` | 1 | hooked | unknown upstream; 1 corpus use (ZeroG); passed through |
-| 80 | `WALKFLOATSTAT` | 1 | hooked | unknown upstream; corpus `WALKFLOATSTAT 0; BRANCH_NZ` → dest + flags |
-| 81 | `WALKFLOATSTOP` | 1 | hooked | unknown upstream; 1 corpus use; passed through |
+| 79 | `WALKST_FLOAT` | 1 | implemented | TPW-EXE 0x555B72 (`seconds a b`, resolved): starts the script's float: start = clock, duration = seconds x 1000 ms, a and b kept as words (the body's swing, render only); no effect; 1 corpus use (ZeroG: `WALKST_FLOAT VAR_DURATION 1000 1000`) |
+| 80 | `WALKFLOATSTAT` | 1 | implemented | TPW-EXE 0x555BD8: the float's duration word (0 once start + duration has passed) into the flags and a variable destination; ZeroG loops `WALKFLOATSTAT 0; BRANCH_NZ` for VAR_DURATION seconds |
+| 81 | `WALKFLOATSTOP` | 1 | implemented | TPW-EXE 0x555C11: with a float running, start = clock - the share spent (thousandths of the duration) and duration = 1000 (the float settles over the rest); no operands, no flags, no effect |
 | 82 | `ENABLELIGHT` | 0 | unknown | no corpus use; not implemented (executing it faults the script) |
 | 83 | `DISABLELIGHT` | 0 | unknown | no corpus use; not implemented (executing it faults the script) |
 | 84 | `SETLIGHT` | 0 | unknown | no corpus use; not implemented (executing it faults the script) |

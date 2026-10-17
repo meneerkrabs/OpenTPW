@@ -81,14 +81,17 @@ public static partial class OpcodeHandlers
 		[OpcodeHandler( Opcode.WALKGET, RideOpcodeStatus.Hooked, "unknown upstream (`dest`); corpus `WALKGET VAR_LETMEOFF; BRANCH_Z wait` → dest + flags" )]
 		public static void WalkGet( RideVM vm, Operand dest ) => EffectResult( vm, Opcode.WALKGET, dest, dest );
 
-		[OpcodeHandler( Opcode.WALKST_FLOAT, RideOpcodeStatus.Hooked, "unknown upstream; 1 corpus use (ZeroG); passed through" )]
-		public static void WalkStartFloat( RideVM vm, Operand a, Operand b, Operand c ) => vm.Effect( Opcode.WALKST_FLOAT, new[] { a, b, c } );
+		// [BIN:TPW-EXE:0x555B72 WALKST_FLOAT] three resolved operands, no effect: 0x557160 stores the clock at +0x80, the first operand x 1000 at +0x84 and the low words of the other two at +0x88 and +0x8A (the swing of the floating body, which only the render pass 0x5581D4 reads)
+		[OpcodeHandler( Opcode.WALKST_FLOAT, RideOpcodeStatus.Implemented, "TPW-EXE 0x555B72 (`seconds a b`, resolved): starts the script's float: start = clock, duration = seconds x 1000 ms, a and b kept as words (the body's swing, render only); no effect; 1 corpus use (ZeroG: `WALKST_FLOAT VAR_DURATION 1000 1000`)" )]
+		public static void WalkStartFloat( RideVM vm, Operand seconds, Operand a, Operand b ) => vm.StartWalkFloat( seconds.Value, a.Value, b.Value );
 
-		[OpcodeHandler( Opcode.WALKFLOATSTAT, RideOpcodeStatus.Hooked, "unknown upstream; corpus `WALKFLOATSTAT 0; BRANCH_NZ` → dest + flags" )]
-		public static void WalkFloatStat( RideVM vm, Operand dest ) => EffectResult( vm, Opcode.WALKFLOATSTAT, dest, dest );
+		// [BIN:TPW-EXE:0x555BD8 WALKFLOATSTAT] the flag word takes the duration word (+0x84) and a variable destination is written; the render pass clears the word once the clock is past start + duration (0x558051..0x558077)
+		[OpcodeHandler( Opcode.WALKFLOATSTAT, RideOpcodeStatus.Implemented, "TPW-EXE 0x555BD8: the float's duration word (0 once start + duration has passed) into the flags and a variable destination; ZeroG loops `WALKFLOATSTAT 0; BRANCH_NZ` for VAR_DURATION seconds" )]
+		public static void WalkFloatStat( RideVM vm, Operand dest ) => WriteResult( vm, dest, vm.WalkFloatDurationNow() );
 
-		[OpcodeHandler( Opcode.WALKFLOATSTOP, RideOpcodeStatus.Hooked, "unknown upstream; 1 corpus use; passed through" )]
-		public static void WalkFloatStop( RideVM vm ) => vm.Effect( Opcode.WALKFLOATSTOP, Array.Empty<Operand>() );
+		// [BIN:TPW-EXE:0x555C11 WALKFLOATSTOP] with a duration set: the share spent in thousandths moves the start back from now and the duration becomes 1000; without one nothing happens (no flags)
+		[OpcodeHandler( Opcode.WALKFLOATSTOP, RideOpcodeStatus.Implemented, "TPW-EXE 0x555C11: with a float running, start = clock - the share spent (thousandths of the duration) and duration = 1000 (the float settles over the rest); no operands, no flags, no effect" )]
+		public static void WalkFloatStop( RideVM vm ) => vm.StopWalkFloat();
 	}
 
 	/// <summary>

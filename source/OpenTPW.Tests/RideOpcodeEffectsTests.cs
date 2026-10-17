@@ -262,23 +262,23 @@ public class RideOpcodeEffectsTests
 	}
 
 	[TestMethod]
-	public void WalkOnAndFloatOpcodesPassOperandsAndFloatStatQueries()
+	public void WalkOnPassesItsOperandsAndTheFloatOpcodesAreTheScriptsOwn()
 	{
+		// WALKON reaches the effects (the bridge owns the walk table); WALKST_FLOAT, WALKFLOATSTAT and WALKFLOATSTOP are the script's own state (tp.exe 0x555B72, 0x555BD8, 0x555C11), so the effects never see them
 		var effects = new RecordingEffects { Result = call => call.Opcode switch { Opcode.WALKFLOATSTAT => 4, _ => 0 } };
 		var vm = Load( new Asm()
 			.I( Opcode.WALKON, V( 0 ), 1, 2, 3, 4, 5, 6 )
 			.I( Opcode.WALKST_FLOAT, 9, 8, 7 )
-			.I( Opcode.WALKFLOATSTOP )
 			.I( Opcode.WALKFLOATSTAT, V( 1 ) )
 			.I( Opcode.BRANCH_PV, "floating" )
 			.I( Opcode.COPY, V( 2 ), 0 ).I( Opcode.BRANCH, "idle" )
 			.Label( "floating" ).I( Opcode.COPY, V( 2 ), 1 )
-			.Label( "idle" ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "idle" ), effects );
+			.Label( "idle" ).I( Opcode.WALKFLOATSTOP ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "idle" ), effects );
 		vm.Variables[0] = 44;
 		Run( vm, 1 );
-		Assert.AreEqual( 4, vm.Variables[1], "WALKFLOATSTAT writes its result to the destination" );
-		Assert.AreEqual( 1, vm.Variables[2], "WALKFLOATSTAT sets the flags from its result" );
-		CollectionAssert.AreEqual( new[] { "WALKON 44 1 2 3 4 5 6", "WALKST_FLOAT 9 8 7", "WALKFLOATSTOP", "WALKFLOATSTAT 0" }, effects.Calls );
+		Assert.AreEqual( 9000, vm.Variables[1], "WALKFLOATSTAT writes the float's duration, seconds x 1000, not an effect's result" );
+		Assert.AreEqual( 1, vm.Variables[2], "WALKFLOATSTAT sets the flags from the duration" );
+		CollectionAssert.AreEqual( new[] { "WALKON 44 1 2 3 4 5 6" }, effects.Calls );
 		Assert.AreEqual( RideVMState.Running, vm.State );
 	}
 

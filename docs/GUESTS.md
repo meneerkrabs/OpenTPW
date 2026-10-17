@@ -712,8 +712,8 @@ Visitor opcodes (all operate on the guests the script holds; semantics inferred)
 | ADDHEAD / DELHEAD | the ride's head table (`RideHeadSpace`): a free slot takes the visitor, DELHEAD frees it; the head is drawn by `RideHeadRenderer` (below) | Mac `0x100B0E9C` / `0x100B0F90` |
 
 `TOUR/BUMP/COAST` (ride-type controllers with their own guest handling, e.g.
-`COAST 3 VAR_LETMEOFF`), `WALKST_FLOAT`, `WALKFLOATSTAT`, `WALKFLOATSTOP` stay
-unimplemented. A rider on a ride is not drawn as a guest (`RideHandlesSprite 1`);
+`COAST 3 VAR_LETMEOFF`) stay unimplemented. `WALKST_FLOAT`, `WALKFLOATSTAT` and
+`WALKFLOATSTOP` are the script's own float state, which the VM keeps (RSE-VM.md). A rider on a ride is not drawn as a guest (`RideHandlesSprite 1`);
 on a ride whose script runs ADDHEAD the rider's head is drawn at the head's node
 instead (see "Riders' heads"). Riders on the other rides stay hidden: the original
 places them through the model and seat attachment is not implemented.

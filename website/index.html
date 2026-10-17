@@ -23,6 +23,7 @@
 		<a class="brand" href="/"><img src="logo.svg" alt="" width="40" height="40"><span>Open<b>TPW</b></span></a>
 		<nav aria-label="Main">
 			<a href="#park">The game</a>
+			<a href="#mods">Mods</a>
 			<a href="#status">Status</a>
 			<a href="#download">Download</a>
 			<a href="#online">Online</a>
@@ -115,6 +116,34 @@
 		<p class="caption light">Rendered by OpenTPW from the original game data, with the optional enhanced texture pack.</p>
 	</div>
 	<svg class="wave" viewBox="0 0 1440 80" preserveAspectRatio="none" aria-hidden="true"><path d="M0 40 C120 10 240 70 360 40 S600 10 720 40 960 70 1080 40 1320 10 1440 40 V80 H0Z"/></svg>
+</section>
+
+<section id="mods" class="paper">
+	<div class="wrap">
+		<h2 class="section-title"><span class="sticker yellow">Make it yours</span>Extensions and mods</h2>
+		<p class="lead">OpenTPW can be extended without touching the engine. Official extensions are OpenTPW&#x27;s own features that you can switch off; mods are folders you add yourself. Both are managed on the <strong>Extensions and mods</strong> screen in the options, and a change applies at the next start. <a href="docs/MODS.html">How it works</a></p>
+		<div class="status-grid">
+			<div class="status-card works">
+				<h3>Pools, on by default</h3>
+				<ul>
+					<li>Paint pool water of any shape on your park, and build water slides and pool attractions: rope swing, jets, spa, wave machine and a lazy river.</li>
+					<li>Guests change in a changing room and really swim, with their own hi-res (2x) sprites and swim animations.</li>
+					<li>Everything comes with its own textures, objects and art, made for OpenTPW; nothing is taken from the original game.</li>
+					<li>Not for you? Switch it off on the Extensions and mods screen. It is not available in Theme Park Inc runs, and parks without water save exactly as before. <a href="docs/POOLS.html">Details</a></li>
+				</ul>
+			</div>
+			<div class="status-card works">
+				<h3>Mods you can write</h3>
+				<ul>
+					<li>Data mods replace game files, string tables and objects. They are off until you switch them on. <a href="docs/MODS.html">Details</a></li>
+					<li>Script mods change guest decisions in <strong>TPW Script</strong>, a small language of our own. It is not Lua, and mods never run native code, so the simulation stays deterministic and saves resume exactly. <a href="docs/SCRIPT-MODS.html">Details</a></li>
+					<li>Optional texture packs are built on your own computer from your own copy of the game; OpenTPW distributes none. <a href="docs/TEXTURE-PACKS.html">Details</a></li>
+					<li>Parks remember the mods they were saved with and refuse to load without them.</li>
+				</ul>
+			</div>
+		</div>
+		<p class="note-later"><strong>Not yet:</strong> script mods run on the desktop but not in the browser, and community mods cannot be added in the browser. <a href="docs/MODDING-GUIDE.html">Start with the modding guide</a>.</p>
+	</div>
 </section>
 
 <section id="status" class="paper">

@@ -171,6 +171,35 @@ The [format backlog](https://opentpw.io/docs/FORMAT-BACKLOG.html) lists each for
 File format notes are also available on the [OpenTPW formats](https://opentpw.gu3.me/formats/)
 website, a work in progress from the original project.
 
+## Extensions and mods
+
+OpenTPW has two kinds of add-ons, both switched on and off on **Options > OpenTPW > Extensions and mods**
+(changes apply at the next start; [extensions and mods](https://opentpw.io/docs/MODS.html)):
+
+- **Official extensions** are OpenTPW features that live in this repository and can be switched off. They are
+  OpenTPW's own, not original behaviour, and are labelled `[EXT]` in the code. Online play, the restored advisor lines and pools are on by default.
+- **Community mods** are folders with an `opentpw-mod.json` manifest, off until you switch them on. A mod can replace
+  game files (overrides), replace string tables (strings), add objects and carry scripts.
+
+**Pools are on by default.** The pools extension lets you paint pool water of any shape on the park, build water
+slides and pool attractions (rope swing, jets, spa, wave machine, lazy river), and guests change in a changing room and really swim. It comes with
+its own content, made for OpenTPW and containing nothing from the original: textures, changing-room objects, and hi-res (2x) visitor sprites with their own swim
+animations for swimmers. The same switchable **Pool guest art** extension (also on by default) draws land guests with OpenTPW's own 2x sprites too; off, they are the original guests. Switch pools off on
+the Extensions and mods screen or with `--disable-extension opentpw.pools`. It is not available in Theme Park Inc runs, and a park saves its pool
+record only when it has pool water, so a park without water is unchanged ([pools](https://opentpw.io/docs/POOLS.html)).
+
+- **Texture packs** are optional: you build a world-texture pack from your own copy of the game on the desktop, and OpenTPW
+  distributes none ([texture packs](https://opentpw.io/docs/TEXTURE-PACKS.html)).
+- **Data mods** use `overrides` (replace any game file), `strings` and `objects`. They work on the desktop and, for the mods shipped with the page, in the browser. OpenTPW ships one,
+  Theme Park Inc rides in Theme Park World, which needs your own copy of Theme Park Inc and is off by default.
+- **Script mods** are written in TPW Script, OpenTPW's own small language, and can change guest decisions such as which ride a guest prefers or when it gives up a queue.
+  It is not Lua, and mods never load native code, because the simulation must stay deterministic, saves must resume exactly, and the browser build is compiled ahead of time and
+  cannot load code. The four guest hooks work on the desktop; the browser does not run script mods yet ([script mods](https://opentpw.io/docs/SCRIPT-MODS.html)).
+- A park save records the mods that change the simulation and refuses to load without them.
+
+To make a mod, start with the [modding guide](https://opentpw.io/docs/MODDING-GUIDE.html): folder layout, a minimal manifest, where to put the folder on
+Windows, macOS and Linux, and examples.
+
 ## Research on the original game
 
 Game rules count as original only with evidence: the original data files, the manual, or static

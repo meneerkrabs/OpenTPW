@@ -69,6 +69,8 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	public string Name { get; }
 	public RideVisitorKind Kind { get; }
 	public int Capacity { get; private set; }
+	/// <summary>The capacity the ride runs with now: the script's <c>VAR_CAPACITY</c> (which the ride settings change), else the catalogue capacity.</summary>
+	public int LiveCapacity => Get( RideVariables.VAR_CAPACITY ) is var live and > 0 ? live : Capacity;
 	// Catalogue fallback only: existing occupied rider/head tables are never resized or cleared.
 	internal void SetCatalogueFallbackCapacity( int capacity ) => Capacity = Math.Max( 1, capacity );
 	/// <summary>The excitement shown to the HUD and used by the attraction score: the coaster's guest value when there is a source, else the .sam level.</summary>
@@ -162,6 +164,12 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	/// <summary>Walkable path cell the queue falls back to when the entrance's outside cell is neither a queue nor a path cell.</summary>
 	public (int X, int Y) EntranceCell { get; set; }
 	public (int X, int Y) ExitCell { get; set; }
+	/// <summary>[EXT:pools-swim] The object is a changing room (<c>Pools.ChangingRoom</c>); set when the level creates the bridge.</summary>
+	public bool IsChangingRoom { get; set; }
+	/// <summary>[EXT:pools-swim] Set by the runtime when it stops (demolition) before it releases the guests, so a changing room's guests do not start a swim; not saved (a stopped runtime restores stopped).</summary>
+	public bool IsStopped { get; set; }
+	/// <summary>[EXT:pools-swim] The cells beyond the back of a changing room; set when the level registers it (geometry only: whether one is a pool cell is read when a guest swims).</summary>
+	public IReadOnlyList<(int X, int Y)> PoolAccessCandidates { get; set; } = Array.Empty<(int X, int Y)>();
 	public (float X, float Y) EntryCellStandPos { get; set; } = (0.5f, 0.5f);
 	public int Rotation { get; set; }
 	public bool HasCells { get; set; }

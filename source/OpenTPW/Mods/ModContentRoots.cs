@@ -108,6 +108,9 @@ public static class ModContentRoots
 				roots.Add( Root( (mod.Id, mod.ContentSha256, input.Key + "|" + directory), () => new CatalogContentRoot( ContentRoot.Mod( mod.Id ), directory, input.ToList(), edition ) ) );
 			}
 		}
+		// [EXT:pools-content] the pools extension's own objects (the changing rooms) follow the mods' as a root of the id opentpw.pools while the extension is on
+		if ( PoolContent.CatalogRoot( set ) is { } pools )
+			roots.Add( pools );
 		return roots;
 	}
 

@@ -4,7 +4,8 @@ An official extension (docs/MODS.md), **off by default**, in which the player pa
 pool tiles of Roller Coaster Tycoon 3 Soaked! (ideas only; no asset of that game or of Theme Park World is used or shipped). The original Theme Park World has no pools: everything
 here is OpenTPW's own and carries `[EXT:pools-*]` labels in the code and in this page.
 
-This is **phase P1**: the cell type, the paint tool, pricing, saves and rendering. There are **no guests in the water yet** (see [Not done yet](#not-done-yet)).
+**Phase P1** is the cell type, the paint tool, pricing, saves and rendering. **Phase P2** (below, [Changing rooms and swimming](#changing-rooms-and-swimming-phase-p2)) lets guests really swim: a changing room is the pool complex's
+entrance, guests choose it like an attraction, change, swim freely through the connected pool cells with whole-body swim sprites, climb out, change back and return to the path. What is not done is in [Not done yet](#not-done-yet).
 
 | Label | What |
 | --- | --- |
@@ -16,7 +17,11 @@ This is **phase P1**: the cell type, the paint tool, pricing, saves and renderin
 | `[EXT:pools-cost]` | the price and the refund |
 | `[EXT:pools-save]` | saves, validators and the pins |
 | `[EXT:pools-ui]` | the buy-list rows, the hover help and messages |
-| `[EXT:pools-render]` | the mesh, the textures and the water shader |
+| `[EXT:pools-render]` | the mesh, the textures and the water shader; the swimmers' sprites |
+| `[EXT:pools-changing-room]` | the changing room object and its placement rule |
+| `[EXT:pools-swim]` | the swim session: guest states, steering, the numbers, saves |
+| `[EXT:pools-content]` | the extension's own shipped content (`content/pools`) |
+| `[EXT:debug-pool]`, `[EXT:debug-swimmers]` | the smoke-only options that build a pool, a room and swimmers for captures |
 
 ## The extension and the save rule
 
@@ -27,7 +32,7 @@ This is **phase P1**: the cell type, the paint tool, pricing, saves and renderin
 (`ModSet.SimulationMods`), so the extension is one of `ParkResumeMods.UsedOnlyExtensionIds`: `ParkResumeMods.Capture(active, inUse)` leaves it out unless `inUse` names it, and
 `Level.CaptureResumeSnapshot` passes `ParkResumeMods.InUse(cells)`, which names it when the cell map holds a `PoolWater` cell. So:
 
-- a park **without** pool cells saves **byte-identically** with the extension on or off (no `Mods` field; `PoolsLevelTests.RealCapturesWithoutPoolCellsAreByteIdenticalWithTheExtensionOnAndOff`
+- a park **without** pool cells (and without a changing room) saves **byte-identically** with the extension on or off (no `Mods` field; `PoolsLevelTests.RealCapturesWithoutPoolCellsAreByteIdenticalWithTheExtensionOnAndOff`
   compares two real `Level.CaptureResumeSnapshot` captures). A park whose last pool cell was erased records nothing either, but its other bytes are not those of a park that never had water: the cell map keeps
   the block stamps and the version of the writes;
 - a park **with** pool cells records `opentpw.pools 1.0.0` (the digest of no bytes, like every extension) and loads only with the extension on: with it off the load refuses with
@@ -36,6 +41,11 @@ This is **phase P1**: the cell type, the paint tool, pricing, saves and renderin
 - two guards stop a save from hiding its water: the layout validator refuses a pool cell while the extension is off (`cell (x, y) is a pool cell, which needs the opentpw.pools extension`),
   and the shape check refuses pool cells in a save that does not record the extension;
 - exporting a park as a `.tpwpark` package is refused only while the park has pool cells (`ParkSharing.ModsRefusal(level)`), because packages record no mods yet.
+
+**The asset manifest holds only what the park places.** A save's `AssetHashes` hold, and a load requires, the `mod:opentpw.pools:` keys of the extension objects the park has **placed** (a changing room; none for a park of pool cells only),
+`ParkResumeMods.AssetsForUse`. The keys of unplaced extension objects are ignored in both directions, so a pool save made before the room existed still loads, and adding objects to the extension (more rooms, extras, slides) never invalidates an older
+save. A placed object keeps the exact-hash check: **changing the files of an object a save places changes that save; adding objects does not** (`PoolsContentTests`: a pool save without the room's keys loads, a placed room requires its keys,
+a placed room with another hash is refused).
 
 A used-only record was feasible because `ParkResumeMods.Capture` sees the live cell map; nothing else had to give way.
 
@@ -176,19 +186,149 @@ Second check (October 17, 2026; all four parks, `--debug-pool default`, camera `
 ground with a visible inner wall, a tiled floor seen through the translucent water, lighter water at the edge, the coping a quarter of a cell wide with joints, and each theme's own look (wooden coping and
 lagoon water in the jungle, mossy dark stone and murky purple water in hallow (made purpler after the first look, October 17, 2026), riveted metal and bright cyan water in space, candy tiles and lilac water in fantasy). The images are `reports/pools-p1-<theme>-top.png` and `-angle.png`.
 
+## Changing rooms and swimming (phase P2)
+
+### The changing room (`[EXT:pools-changing-room]`)
+
+A **changing room** is an object of the Features tab, available only while the extension is on: a 2 x 2 cabin whose entrance (the lower left cell of the shape `**` / `2*`, facing the path like a toilet's) is on the path side and
+whose back, opposite the entrance, touches the pool. It is a facility like a toilet (a feature that guests choose, `Info.IsChoosable 1`, no queue, a stand cell in front of the entrance), but it gives no relief. Its `.sam` carries OpenTPW's own key
+`Pools.ChangingRoom 1`, which the engine reads (`PoolChangingRooms.IsChangingRoom`; `RideVisitorBridge.IsChangingRoom` is set only while the extension is on).
+
+- **Placement rule.** At least one of the **pool-side cells** must hold pool water: the cells beyond the back of the cabin, that is for every footprint cell whose neighbour opposite the entrance's outward direction is not part of the
+  footprint, that neighbour (two cells for the 2 x 2 cabin, in all four rotations, `PoolChangingRooms.AccessCandidates`). The rule is the extra `ParkObjects.PlacementRule`, the level wires `PoolChangingRooms.PlacementRule` into it
+  (`Level.ConfigureObjectHooks`); a refusal is `OriginalPlacementResult.NeedsPool`, which the HUD words as "A changing room must stand beside a pool". Objects over water were already refused (P1), so the cabin itself stands on dry land.
+  The first of the back cells that holds water *now* is the room's **pool-side cell** (`GuestSimulation.PoolAccessOf`), where swimmers step in and out; the **pool region** is the 4-connected pool cells connected to it
+  (`PoolSwimRegion`, rebuilt when a pool cell is written, `ParkCellMap.PoolWrites`). Two rooms on one pool share the water.
+- **Never a research item.** The room is on offer from the start, whenever the extension is on. `content/pools/objects.json` declares `"research": false` ([MODS.md](MODS.md#objects)), so the room (and every later object of the file)
+  is in no research table, never in a save's research set, does not count in the group percentages and `OpenGroups`, and does not hold back the golden ticket for "everything researched and built". A park without a pool or a room has the same research
+  tables, completed set and saved research bytes with the extension on or off (`PoolsResearchTests`), and a park saved with the extension on and no pool loads with it off (and the other way round).
+- **Erasing.** The pool tool refuses to erase a pool cell with a swimmer in it (`PoolBuildResult.Swimmers`) and any pool cell on the back of a changing room (`PoolBuildResult.ChangingRoomAccess`): the room needs its pool, and a save that holds a
+  room records the extension even when its pool cells are gone (`ParkResumeMods.InUse(cells, poolsObjects)`).
+- **Price and capacity.** Build cost 400, capacity 2, `UsageInfo.InitPricePerUse 5`, excitement 30; all are OpenTPW's own values. The park economy charges a feature nothing per use (as a toilet is free, `GuestEconomyBridge.TryPayVisit`
+  books a price for shops and sideshows only), so the 5 is read only by the standalone guest simulation; swimming is free in a park, like the pools of Roller Coaster Tycoon 3.
+- **The script** (`tools/pools/cabin.rse`) is the kit's placeholder pool script without heads: guests aboard are hidden (a guest in a room is "changing in"), the fill loop waits 1.5 s for the next guest and the room then holds them 3 s (`WAIT 3000`) before it releases
+  them one by one, 4.5 s for a lone guest.
+- **Info.Ids.** OpenTPW reserves 65000 to 65535 (pool extras 65000 to 65099, water slides 65100 to 65199, water attractions 65200 to 65299, changing rooms 65500 to 65519, the rest spare) (`PoolContent.FirstReservedId`, `LastReservedId`; inside the 5000 to 65535 range of the object ids) for the objects of the pools extension; the four themes' rooms are 65500 (jungle), 65501 (hallow),
+  65502 (space) and 65503 (fantasy).
+
+### Choosing to swim
+
+The changing room is an attraction for the normal attraction choice, so **no new decision point and no change of `IGuestDecisions`** was needed. A guest scores it with the one score of every attraction (`ScoreAttraction`: distance, queue length, excitement against its
+taste, the needs and the rest); the default policy picks it like a ride, and so does any other policy that scores attractions. `PoolsSwimSessionTests.ACheerfulGuestChoosesTheChangingRoomLikeAnyAttractionAndSwims` has a guest choose, queue, change and swim with nothing forced,
+and in the fixed run with a room (below) guests choose it in a park that also has a shop. A swim-appeal term (warmer months more, rain less) is **not** part of P2: it would be an extension rule inside the host and is left for a later phase. A guest in a swim session makes
+no attraction choices (only a state-6 guest decides), so the room stays an ordinary attraction for the decision layer; the views of `GuestDecisionViews` did not change.
+
+### The swim session (`[EXT:pools-swim]`)
+
+Host-side simulation in `GuestSimulation.Swimming.cs` and `PoolSwimming.cs`, gated by the room: a park without one reaches none of it, draws nothing from the world generator and hashes nothing extra.
+
+| State | Value | What |
+| --- | --- | --- |
+| changing in | 16 (`Using`) | aboard the room, hidden: the script holds the guest for the changing time. **Deviation from the brief:** not a new enum value, because the guest is aboard the room's script exactly like a toilet visitor and a second state would duplicate every `Using` check (bridge membership, saves, demolition) for no difference in behaviour. `GuestSimulation.IsChangingIn(guest)` tells it, and the visitor window shows "Changing" |
+| `Swimming` | 22 | in the water: a sub-cell position (16.16 cells), a heading of 64, a speed, a goal and its own random stream; drawn with the swim sprites |
+| `ClimbingOut` | 23 | swimming back to the pool-side cell (still drawn in the water) |
+| `ChangingOut` | 24 | hidden in the room, 12 park turns (about 3 s) |
+
+When the script releases a guest from a changing room (`OnVisitorReleased`), everything else of a release still happens (the visit counts, the used history, the visit's effects) and the guest steps into the water at the pool-side cell instead of walking on. **If it cannot** (no
+pool beside the room any more, or the park is closed) it walks on as any released guest. After `ChangingOut` it is put on the room's path-side exit through the existing `ReturnToPath` with the release's `ExitingRide` hold and decides again like any guest.
+
+**Steering** (`PoolSwimming.Step`, integers only, 64 headings with a fixed table, 16.16 positions): a swimmer swims to a goal point drawn in the region (a random cell, a random point in it), picks another when it is within 0.3 cell, turns at most 2 steps (11.25 degrees) per park turn towards its
+wish, which is the unit step to the goal plus a push away from every swimmer within 0.5 cell, and drifts a little (a heading step one turn in eight). It keeps to the water: the **free water** of a cell is the part 0.37 cell from the sides without a pool neighbour (the rim is a quarter of a cell and the body takes 0.12) and outside the corner
+square of an inner corner (`PoolSwimRegion.IsWater`); when the point ahead is not free water it tries the headings either side in turn and, boxed in, stands and picks a new goal. It never moves nearer than 0.25 cell to another swimmer (a move that increases the distance is always allowed, so swimmers who start on one point swim apart). On the way out the crowd within 0.7 cell of the steps is
+ignored so nobody blocks the steps. Speed is the guest's base speed (60 to 140) times 90 in 16.16 cells per park turn: 0.08 to 0.19 cells a turn, about 0.33 to 0.78 cells a second (a park turn is 0.248 s).
+
+**Randomness.** One draw of the world generator seeds the swimmer's own xorshift32 stream when the swim starts (`BeginSwim`, only for a guest released from a room); every later choice (the length, the stroke, the heading, the goals, the drift) comes from that stream, saved with the guest. A park
+without a changing room takes no draw, and one with a room perturbs the other guests only by that one draw per swim.
+
+**Numbers** (`PoolSwimSettings`, all OpenTPW's own, none measured):
+
+| What | Value |
+| --- | --- |
+| swim length | 160 to 279 park turns (40 to 70 seconds), drawn at the start |
+| stroke | front crawl 50 %, breaststroke 30 %, treading water 20 % (sprite slots 8, 9, 10) |
+| climbing out | ends within 0.3 cell of the steps; at most 160 turns, then the guest is put in the room |
+| changing back | 12 park turns |
+| happiness | +12 (meter 0 to 100) when the guest is back in the room |
+| other meters | unchanged by the swim (hunger, thirst, toilet and the rest run as in every state); the brief allowed "a little" relief and none is given |
+
+**What else knows the new states.**
+
+- *Catchable:* `IGuardGuests.IsCatchable` is unchanged, so a guard cannot catch a swimmer (it keeps to the water cells, and walkers are kept out of pool cells since P1); a guest in the room is hidden and out of `AnyGuestWithin` and `WalkersOn`.
+- *Activity counts* (`GetStatistics`): `Swimming` and `ClimbingOut` count as walking, `ChangingOut` counts with the riders (indoors).
+- *Leaving the park:* only a guest that decides (state 6) goes home, so a swimmer finishes its session first (40 to 70 seconds), then decides; `PoolsSwimSessionTests.AGuestWhoWantsToLeaveFinishesItsSwimFirstAndThenGoesHome`.
+- *Park close:* a closed park ends the swim at once (`Payments.ParkClosed`: the swimmers swim to the steps, change and leave), and a guest released from a room while the park is closed does not swim.
+- *Demolishing the room*: the runtime marks the room's visitors stopped (`IRideVisitorBridge.IsStopped`) before it releases the guests aboard, so a guest changing inside steps out on the exit like a rider of any attraction and starts no swim (no world draw) and takes no second treatment from `Unregister`;
+  swimmers, climbers and guests changing back are then set down on the room's exit cell by `Unregister`, deciding again, with the small happiness loss riders get (`PoolsLevelTests.DemolishingAChangingRoomThroughTheLevelStartsNoSwimForTheGuestsChangingInside` goes through `ParkObjects.Remove`).
+- *Pool capacity:* a pool takes at most **2 swimmers per water cell of its region, at least 4** (`PoolSwimSettings.SwimmersPerWaterCell`, `MinimumCapacity`, `PoolSwimRegion.Capacity`), whichever room they came from. `BeginSwim` checks it: a guest released while the water is full leaves the room the normal way (exit, `ExitingRide`, deciding again), takes no draw and keeps the visit.
+- *The pool is split* (a cell in the middle erased): the region is rebuilt around the room's pool-side cell. A swimmer left in a part that no longer belongs to the region is put back at the middle of its cell when that cell is still in the region, else at the pool-side cell (`SwimStep`); this is kept on purpose, no swimmer is lost and none ends up on the deck.
+- *Census:* a guest in a swim session counts as in the park wherever the cell test would leave it out (`ParkGate.CountCensus`: the rating's visitor term, the gate that closes only on an empty park, the end of a strike; `GuestSimulation.IsCountedInPark`: the thoughts ranking, the balloon and costume shares). The thought pick and the leaving recall keep the cell test: a swimmer neither thinks nor leaves. With the extension off nothing changes.
+- *The pool is gone* (every cell of the region erased, or the room's back cells no longer water): the session ends at once on the room's exit; *the water shrinks* under a swimmer: it is put back in the water within a turn.
+- *Staff:* a staff member cannot be put down in the pool (`StaffPlacementRules.IsDropCellType` knows only grass, path, queue and queue end); the strike and escort walks never enter pool cells (P1).
+- *Walkers' lists:* a swimmer is in no cell list that walkers separate by (`GuestSimulation.Occupy`).
+- *Balloons:* the balloon is put away for the whole session (state 16 does it already) and comes back on stepping out.
+
+**Saves.** `GuestSnapshot` has optional fields `SwimHeading`, `SwimTurns`, `SwimStroke`, `SwimGoalX`, `SwimGoalY`, `SwimHasGoal`, `SwimRandom`, written only inside a session (the JSON ignores default values), so older saves load with no swimmers and a park without swimmers saves the same bytes. The validators accept the three
+new states for a guest bound to an attraction, require a changing room for them and refuse swim fields outside a session. The canonical hash adds the swim fields only for a guest in a session (`GuestSimulation.AddCanonicalState`). The validators also bound `SwimTurns` per state (a swim by its longest, 279; the climb out by `ClimbOutLimitTurns`, 160; changing back by 12; at least 1) and refuse a session bound to an attraction that is no changing room. The asset manifest holds the extension's own files
+(`mod:opentpw.pools:` keys) only for the objects the park places (see [the save rule](#the-extension-and-the-save-rule)): the catalog lists every room whenever the extension is on, and the manifest would otherwise make every park with the extension on refuse to save.
+
+### Rendering
+
+`PoolSwimSprites` loads the eight swim sets from `content/pools/esprites/Swim` beside the game's kid atlases: set n belongs to guests of type n (both lists are in name order). `Level.SwimmerRenderer` is a second `GuestRenderer` over them (`Draws` the swimming guests, `SlotChooser`
+picks slot 8, 9 or 10 and a frame from the clock at 6 frames a second, 3 for treading water, `FeetChooser` puts the hotspot, the torso at the water line, on the water surface of the cell's group, `PoolRenderer.WaterLevelAt`). It is made right after the pool renderer, so it draws after the water, and the water writes no depth
+(`MaterialFlags.DisableDepthWrite`), so the lower half of a sprite, tinted blue by the art, shows through the surface; the opaque floor and walls still hide what is behind them. The kids' and the costume renderers skip swimmers. A swimmer in a costume swims in the swim sprites (the costume is kept for later). Guests changing are hidden like riders. The swim sets are looked for once per level (`Level.RefreshPools`); if there are none (the folder is missing or broken) one warning is logged and the swimmers are drawn by the normal guest renderer with their kid sprite (standing, not swimming), which is why `Level.GuestRenderer` skips swimmers only while the swimmer renderer exists. Picking
+a swimmer works like any visitor's (`Level.PickVisitor`).
+
+### Content (`[EXT:pools-content]`)
+
+The extension ships `content/pools` (copied next to the program with the rest of `content/`, embedded in the browser build by `OpenTPW.Web.csproj`): `objects.json` and four object archives (a cabin per theme: `cabin.MD2`, a few 64 or 128 pixel TGA textures, `Cabin.sam`, `Cabin.RSE`), and `esprites/Swim/SPR_xx.ESP` + `.TPC` for the eight Theme Park World kid sets. About 0.9 MB in
+all. The catalog reads `objects.json` as a content root of the id `opentpw.pools` (`PoolContent.CatalogRoot`, from `ModContentRoots.CatalogRoots` while the extension is on): the objects are listed in the theme catalogs, priced, bought, placed, run and saved like a mod's, and a park save names their files as `mod:opentpw.pools:/...`. No
+data-only mod is involved and nothing has to be enabled besides the extension. **Everything is our own art, generated from code and committed** because CI has no Blender: `tools/pools/build-content.sh` (Blender 5.x, the .NET SDK and python3; about 3 minutes) rebuilds all of it from `tools/blender/opentpw_changing_room.py` (the cabins: one low-poly model with a front and a back door, themed
+textures: planks and thatch, mossy stone, riveted metal with a cyan strip, pastel candy), `tools/pools/cabin.sam`, `tools/pools/cabin.rse`, the swimmer generator `tools/blender/opentpw_guest_sprites.py --part swim` and `tools/pools/pack_swim_sets.py` (which packs them with `opentpw-kit sprites`, `detailFlag` 0, so only the `.TPC` bank is written). Nothing from the original game
+is used or committed; [CONTENT-KIT.md](CONTENT-KIT.md) describes the tools.
+
+### Checking it on screen
+
+`--debug-swimmers N` (smoke-only, `[EXT:debug-swimmers]`; it needs `--debug-pool` and the extension) builds the theme's changing room beside the painted pool through the level's own placement (it is charged, and the rule needs the pool at its back; `Level.BuildChangingRoomBeside`), opens the park door and starts N guests in the water at
+random points. `--debug-pool-offset dx,dy` moves the place the pool shape is searched from the camera target by whole cells, to frame the room:
+
+```sh
+bash scripts/run.sh --game-path '/path/to/Theme Park World' --load-original-level jungle --enable-mod opentpw.pools \
+  --debug-pool default --debug-swimmers 8 --debug-pool-offset 3,0 --silent --capture-world pool.png --capture-frames 400 --capture-camera -29.5,-50.6,45,-90
+```
+
+First on-screen check (October 17, 2026; all four parks, eight swimmers each, camera `x,y,45,-90` and `x,y,45,-150`; 3024 x 1686 captures, shown at 1600 wide): the swimmers swim in all directions with different strokes (arms out of the water, the foam ring, the lower body tinted), keep inside the coping, and the
+cabin stands beside the pool with its themed textures. The images are `reports/pools-p2-<theme>-top.png` and `-angle.png` and a short clip `reports/pools-p2-swimming.gif` (`--capture-sequence 40,4`). The art was judged on these captures only, not against a capture of the original game (which has no pools).
+
+The save roundtrip in the middle of a swim is also checked natively: `OPENTPW_SMOKE_POOLS=1 bash scripts/run.sh ... --enable-mod opentpw.pools --park-resume-smoke capture ...` then `restore` (`ParkResumeSmokeTest.Pools.cs`) paints a pool, builds a room, puts three guests in the water at the save, and the restore phase finds the room and the swimmers
+in the water of the 24-cell pool and continues with the capture phase's canonical hashes.
+
+### Tests
+
+`PoolSwimmingTests` (the pure part): the heading table and the random stream, the region and the free water (rim, body, inner corner), steering in four shapes for thousands of turns (always in the water, a wander that reaches every cell, a turn at the rim, avoidance and the minimum distance, two swimmers on one point, determinism, boxed in).
+`PoolsSwimSessionTests` (a real `GuestSimulation` with a real ride script): the access cell and the region, the whole session (queue, change, swim in the water only, climb out, change back, path), the happiness, several swimmers, the walkers' lists, the catchable list and the counts, demolition at each stage, a closed park, the pool erased or shrunk, the pool tool's refusal, a guest who wants to leave, staff, the balloon, two rooms
+in one pool, the snapshot roundtrip in each state, an older snapshot, the validator, the hash and a guest that chooses the room. `PoolsContentTests`: the reserved ids, the four catalog entries (and none with the extension off), each cabin's model, textures and script (it releases after the changing time), the visitor bridge, the pool-side cells for every rotation, the placement rule, the eight sprite sets,
+the content's size, the asset keys of a save, and the whole chain with the shipped room and script. `DeterminismTests.FixedRunWithAPoolAndAChangingRoomIsTheSameInEveryProcessAndGuestsSwim` is the pin (docs/DETERMINISM.md, "Pools").
+
 ## Saves and determinism
 
 See [the save rule](#the-extension-and-the-save-rule). The pins (docs/DETERMINISM.md, "Pools"): every existing pin is unchanged with the extension on or off
-(`PoolsTests.TogglingThePoolsExtensionKeepsEveryExistingPinWithoutPoolCells`), and the fixed synthetic run on a cross park with 17 pool cells painted through the builder has its own pin,
-`DeterminismTests.PoolsFixedRunHash`.
+(`PoolsTests.TogglingThePoolsExtensionKeepsEveryExistingPinWithoutPoolCells`), the fixed synthetic run on a cross park with 17 pool cells painted through the builder has its own pin,
+`DeterminismTests.PoolsFixedRunHash` (a park with pools and no changing room behaves exactly as in P1: the pin did not move), and the same run with a pool and a changing room in which guests swim has `DeterminismTests.PoolsChangingRoomFixedRunHash`.
+The extension's version stays 1.0.0: phase P1 was not released, a P1 park holds no room and behaves the same under P2, and a P2 park with a room does not load in a P1 build (the object is unknown there).
 
 ## Not done yet
 
-- **Guests in the water.** Pool cells are obstacles: guests walk around them. Swimming, changing rooms, swimwear sprites and the guest decision seam are phase P2.
+- **Swimwear on the deck:** guests walk the path in their normal sprites; only the swimmers have swim sprites (the changing room hides the change). The sprites of the standing, walking and sitting swimwear guests, and the swimmers for the Theme Park Inc sets and the costume sets (a costumed guest swims in its kid set), are not made.
+- **A swim-appeal term** (warmer months more, rain less) and any new decision point for `IGuestDecisions`: not needed for P2, nothing was added.
+- **Diving, climbing out at ladders,** the wave machine and the rest of the extras: P3 and later. Swimmers enter and leave only at the room's pool-side cell.
+- **Water quality, lifeguards and a handyman for the pool:** not done.
 - **Pool objects and extras** (ladders, diving boards, showers, loungers, lamps, lifeguard chair, wave machine, spa): P3.
 - **Water slides** on the track system, and attractions that end in a pool: P4 and P5.
 - Depth levels (each cell has one depth), diagonal or curved edges (the tiling is square), digging the terrain, a pool-deck cell type, pool water on the Theme Park Inc layout, exporting parks with pools as packages.
 - Name and description rows for the Extensions and mods screen are not translated: the screen shows the extension's English name.
 - Pool cells are not drawn on the park map (the minimap), where they show as open ground.
+- The changing room's `UsageInfo.InitPricePerUse` is not charged in a park (the economy charges features nothing); no swimming fee exists yet.
+- The cabin, the swimmers and the pool were looked at in captures only; whether tp.exe accepts the authored MD2, RSE and sprite files is unknown (the original was not run), see [CONTENT-KIT.md](CONTENT-KIT.md#what-is-unverified).
+- A swimmer's sprite is drawn on the water of its cell's group; the sprite's feet part is below the surface and shows through the (translucent) water, which is what the art's tint is for. A swimmer next to the near coping can be hidden behind it, as a person behind a wall would be.
 - The path tool does not refuse fence posts (see the placement rules); neither does the area clear touch pool cells.
 - `content/shaders/web/pool-*.json` are checked by `WebShaderTests` only with `OPENTPW_NATIVE_SHADER_TESTS=1` and native SPIR-V libraries that match the host; CI does not run it for any web shader.

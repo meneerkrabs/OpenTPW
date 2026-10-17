@@ -142,7 +142,7 @@ public sealed class GuestEconomyBridge : IGuestPayments, IParkGuestStatistics, I
 		int inPark = 0, count = 0;
 		foreach ( var guest in Guests.Guests )
 		{
-			if ( !Guests.IsOnParkCell( guest ) )
+			if ( !Guests.IsCountedInPark( guest ) )
 				continue;
 			inPark++;
 			if ( holds( guest ) )

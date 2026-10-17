@@ -33,8 +33,8 @@ public static class ParkSharing
 	// [EXT:mods] OpenTPW's own mod system; the original game had no mods
 	public static string? ModsRefusal( Level? level = null )
 	{
-		// [EXT:pools-save] opentpw.pools counts only while the park has pool cells, as a save records it (ParkResumeMods.Capture)
-		var inUse = ParkResumeMods.InUse( level?.Guests?.Grid.Cells );
+		// [EXT:pools-save] opentpw.pools counts only while the park has pool cells or a changing room, as a save records it (ParkResumeMods.Capture)
+		var inUse = ParkResumeMods.InUse( level?.Guests?.Grid.Cells, level?.Objects?.Objects.Any( item => !item.IsDeleted && ParkResumeMods.IsPoolsObject( item.Entry ) ) == true );
 		var mods = OpenTPW.Mods.OpenTpwExtensions.Active.SimulationMods.Where( mod => !ParkResumeMods.UsedOnlyExtensionIds.Contains( mod.Id ) || inUse.Contains( mod.Id ) ).ToArray();
 		return mods.Length == 0 ? null
 			: $"This park records mods ({string.Join( ", ", mods.Select( mod => $"{mod.Id} {mod.Version}" ) )}) and cannot be exported yet; turn them off to share a park without mods.";

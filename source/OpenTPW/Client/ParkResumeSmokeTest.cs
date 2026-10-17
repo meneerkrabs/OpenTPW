@@ -276,6 +276,7 @@ internal sealed partial class ParkResumeSmokeTest : IDisposable
 		VerifyWaterRestored();
 		VerifyTourRestored();
 		VerifyBumperRestored();
+		VerifyPoolsRestored();
 		if ( PrototypeVariant )
 		{
 			var totem = level.PlacedRide;
@@ -575,6 +576,9 @@ internal sealed partial class ParkResumeSmokeTest : IDisposable
 	/// <summary>Captures the whole park and hashes every section plus the composite; one sample per recorded tick.</summary>
 	private SmokeSample CaptureSample( long tick )
 	{
+		// [EXT:pools-save] a save holds the pools extension's own objects only while the park uses the extension: the manifest taken before the pools variant built its room has none, so it is taken again once the room stands
+		if ( verifiedAssets != null && PoolsVariant && PoolRoom() != null && !verifiedAssets.Keys.Any( key => key.StartsWith( "mod:opentpw.pools:", StringComparison.Ordinal ) ) )
+			verifiedAssets = null;
 		if ( verifiedAssets == null )
 		{
 			// The first capture computes the trusted manifest itself; every later one reuses it verbatim, so a

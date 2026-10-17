@@ -356,7 +356,8 @@ public sealed class ObjectCatalog
 		IReadOnlyList<CatalogContentRoot> roots;
 		lock ( cache )
 			roots = modRoots;
-		var key = $"{BonusDataRoot}|{theme}|{easy}|{(GameLanguage.IsSelected ? GameLanguage.Current.Name : "")}|{OpenTpwExtensions.Active.Digest}";
+		// [EXT:pools-content] the pools extension's own objects are no mod, so the mods digest in the key does not tell whether they are listed: the key does
+		var key = $"{BonusDataRoot}|{theme}|{easy}|{(GameLanguage.IsSelected ? GameLanguage.Current.Name : "")}|{OpenTpwExtensions.Active.Digest}|{(roots.Any( root => root.ModId == OfficialExtensions.Pools.Id ) ? "pools" : "")}";
 		ObjectCatalog? cached;
 		lock ( cache )
 			cache.GetValue( fileSystem, _ => new Dictionary<string, ObjectCatalog>( StringComparer.OrdinalIgnoreCase ) ).TryGetValue( key, out cached );

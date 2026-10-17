@@ -510,6 +510,9 @@ internal static class Game
 					Log.Warning( "--debug-pool: the opentpw.pools extension is off (use --enable-mod opentpw.pools) or the camera target is off the grid." );
 					return;
 				}
+				// [EXT:debug-pool] --debug-pool-offset dx,dy moves the place the shape is looked for from the camera target by whole cells (so a capture can frame a changing room beside the pool)
+				if ( GetOption( args, "--debug-pool-offset", "dx,dy cells" )?.Split( ',' ) is { Length: 2 } offsetParts && int.TryParse( offsetParts[0], System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var offsetX ) && int.TryParse( offsetParts[1], System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var offsetY ) )
+					(cellX, cellY) = (cellX + offsetX, cellY + offsetY);
 				for ( var radius = 0; radius < 40; radius++ )
 					for ( var dx = -radius; dx <= radius; dx++ )
 						for ( var dy = -radius; dy <= radius; dy++ )
@@ -526,6 +529,10 @@ internal static class Game
 							var centreX = grid.X + (originX + shape.Average( cell => cell.X ) + 0.5f) * ObjectPlacement.CellSize;
 							var centreY = grid.Y + (originY + shape.Average( cell => cell.Y ) + 0.5f) * ObjectPlacement.CellSize;
 							Log.Trace( FormattableString.Invariant( $"--debug-pool: painted {stroke.Cells.Count} cells at {originX},{originY} (engine centre {centreX:0.#},{centreY:0.#}), charged {stroke.Charged}, refusal {stroke.FirstRefusal?.Reason.ToString() ?? "none"}." ) );
+							// [EXT:debug-swimmers] smoke-only: --debug-swimmers N builds a changing room beside the pool (through the level's own placement, which charges it and needs the pool at its back) and
+							// puts N guests into the water at once, so a capture shows swimmers (docs/POOLS.md)
+							if ( GetOption( args, "--debug-swimmers", "guests to put into the pool" ) is { } swimText && int.TryParse( swimText, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var swimmerCount ) )
+								PlaceDebugChangingRoom( level, shape.Select( cell => (X: originX + cell.X, Y: originY + cell.Y) ).ToArray(), swimmerCount );
 							return;
 						}
 				Log.Warning( "--debug-pool: no place near the camera target takes the whole shape." );
@@ -1063,6 +1070,22 @@ internal static class Game
 		var level = GetOption( args, "--load-original-level", "a Theme Park Inc world such as 'arabian'" );
 		Log.Warning( $"Theme Park Inc data detected ({(edition.Evidence == GameEditionEvidence.StandardSamHash ? "retail Standard.sam" : "folder structure")}): experimental slice {(level == null ? "front end (the Personnel File)" : $"for '{level}'")}. "
 			+ GameEditions.SliceNotice );
+	}
+
+	/// <summary>[EXT:debug-swimmers] Builds a changing room beside the pool cells <paramref name="pool"/> (<see cref="Level.BuildChangingRoomBeside"/>) and starts <paramref name="swimmers"/> guests in its water.</summary>
+	private static void PlaceDebugChangingRoom( Level level, IReadOnlyList<(int X, int Y)> pool, int swimmers )
+	{
+		if ( level.BuildChangingRoomBeside( pool ) is not { } placed || level.Guests == null )
+		{
+			Log.Warning( "--debug-swimmers: no changing room could be built beside the pool (the opentpw.pools extension must be on, and the theme must list one)." );
+			return;
+		}
+		// a closed park lets nobody swim (and sends swimmers out of the water): the capture's park door is opened as the player's button would
+		level.Park?.Economy.OpenPark();
+		var started = level.Guests.DebugStartSwimmers( placed.Visitors, swimmers );
+		Log.Trace( $"--debug-swimmers: built the {placed.Entry.DisplayName} at {placed.Placement.X},{placed.Placement.Y} rotation {placed.Placement.Rotation}; {started} of {swimmers} guests swim." );
+		if ( started == 0 )
+			Log.Warning( $"--debug-swimmers: no guest swims: changing room {placed.Visitors.IsChangingRoom}, pool-side cells {string.Join( " ", placed.Visitors.PoolAccessCandidates )}, access {level.Guests.PoolAccessOf( placed.Visitors )}, region {level.Guests.SwimRegionOf( placed.Visitors )?.Cells.Count}, park closed {level.Park?.Economy.IsParkOpen == false}, registered {placed.Visitors.HasCells}." );
 	}
 
 	private static string? GetOption( string[] args, string name, string description )

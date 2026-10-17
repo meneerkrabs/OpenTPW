@@ -3,7 +3,7 @@ namespace OpenTPW;
 /// <summary>
 /// The person block shared by guests and staff (390 bytes; tp.exe person serializer <c>0x004F8B10</c>, docs/TPWS-PAYLOAD.md):
 /// the base thing (<c>0x0050B090</c>), the sprite (<c>0x004D3EE0</c>: <c>mSpriteScript</c>, <c>mNextAnim</c>, <c>mNextServiceInterval</c>),
-/// the person scalars, the 177-byte navigation state (<c>0x0050D150</c>, kept raw in <see cref="Navigation"/>) and the thought block
+/// the person scalars, the 177-byte navigation state (<c>0x0050D150</c>, kept raw in <see cref="Navigation"/> and decoded by <see cref="NavigationState"/>) and the thought block
 /// (<c>0x0050BAD0</c>). Positions (<see cref="SaveThingBase.X"/>, <see cref="AccurateDestX"/>) are in 1/256 cell; the loader re-plans the walk
 /// to (<see cref="AccurateDestX"/>, <see cref="AccurateDestY"/>) once the person is read (<c>0x004FA5F0</c> at <c>0x004F9407</c>).
 /// </summary>
@@ -16,6 +16,9 @@ public sealed record SavePerson(
 {
 	public const int NavigationBytes = 177;
 	public const int EventHistoryEntries = 32;
+
+	/// <summary>The navigation bytes decoded (<see cref="SaveNavigation"/>).</summary>
+	public SaveNavigation NavigationState => SaveNavigation.Read( Navigation );
 
 	internal static SavePerson Read( ref SaveFieldReader reader )
 	{

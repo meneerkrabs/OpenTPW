@@ -94,41 +94,80 @@ public class TpiRidesWiringTests
 	// ---- The example mod -------------------------------------------------------------------------------------
 
 	[TestMethod]
-	public void TheExampleModIsTwoSmallValidFilesWithoutAnyInstallData()
+	public void TheShippedModIsTwoSmallValidFilesWithoutAnyInstallData()
 	{
-		var folder = TpiRidesFixture.Write( root );
+		var folder = TpiRidesFixture.ShippedFolder;
 		CollectionAssert.AreEquivalent( new[] { "objects.json", "opentpw-mod.json" }, Directory.GetFiles( folder ).Select( Path.GetFileName ).ToArray() );
-		Assert.IsTrue( Directory.GetFiles( folder, "*", SearchOption.AllDirectories ).All( file => new FileInfo( file ).Length < 4096 ), "text only, no install data" );
+		Assert.AreEqual( 0, Directory.GetDirectories( folder ).Length );
+		Assert.IsTrue( Directory.GetFiles( folder, "*", SearchOption.AllDirectories ).All( file => new FileInfo( file ).Length < 64 * 1024 ), "text only, no install data" );
 		var file = ModObjectsFile.Parse( File.ReadAllBytes( Path.Combine( folder, "objects.json" ) ), new[] { "tpi" } );
 		Assert.AreEqual( TpiRidesFixture.Items.Count, file.Objects.Count );
 		Assert.IsTrue( file.Objects.All( definition => definition.Input == "tpi" && definition.InfoId >= file.FirstId && definition.InfoId <= file.LastId ) );
+		Assert.IsTrue( file.Objects.All( definition => definition.Archive.StartsWith( "levels/", StringComparison.Ordinal ) && TpiRidesFixture.WorldThemes[definition.Archive.Split( '/' )[1]] == definition.Theme ), "each archive joins the theme of its world" );
 		Assert.AreEqual( "Turban-Huepfer", file.Objects[0].Names["German"] );
 		Assert.IsNull( CrossEditionObjects.RangeProblem( file.FirstId, file.LastId ) );
 		var manifest = ModManifest.Parse( File.ReadAllBytes( Path.Combine( folder, ModManifest.FileName ) ) );
+		Assert.AreEqual( TpiRidesFixture.Id, manifest.Id );
+		Assert.AreEqual( ModCategory.Official, manifest.Category );
+		Assert.AreEqual( GameEdition.ThemeParkWorld, manifest.Edition );
 		Assert.AreEqual( "opentpw.cross-edition-objects", manifest.Dependencies.Single().Id );
 		Assert.AreEqual( "theme-park-inc", manifest.Inputs.Single().Edition );
-		// with an input folder (any folder: the objects are read when the catalogue loads) the mod resolves; without its extension it is refused with the reason
-		var input = Directory.CreateDirectory( Path.Combine( root, "any", "Data" ) ).Parent!.FullName;
-		var on = TpiRidesFixture.Resolve( folder, TpiRidesFixture.Settings( input ) );
-		Assert.AreEqual( 0, on.Refused.Count, string.Join( ";", on.Refused.Select( refusal => refusal.Reason ) ) );
-		var off = TpiRidesFixture.Resolve( folder, new ModSettings { Enabled = new Dictionary<string, bool> { [TpiRidesFixture.Id] = true }, Inputs = TpiRidesFixture.Settings( input ).Inputs } );
-		StringAssert.Contains( off.Refused.Single().Reason, "opentpw.cross-edition-objects" );
+		Assert.AreEqual( "tpi", manifest.Inputs.Single().Id );
 	}
 
 	[TestMethod]
-	public void TheSmokeScriptWritesTheSameExampleModAsTheTests()
+	public void TheShippedModIsFoundAsProgramContentAndIsOffByDefault()
 	{
-		var directory = new DirectoryInfo( AppContext.BaseDirectory );
-		while ( directory != null && !File.Exists( Path.Combine( directory.FullName, "scripts", "smoke-tpi-rides.sh" ) ) )
-			directory = directory.Parent;
-		if ( directory == null )
+		var found = TpiRidesFixture.Discover().Single( mod => mod.Id == TpiRidesFixture.Id );
+		Assert.IsTrue( found.IsValid, found.Error );
+		Assert.AreEqual( ModSource.Program, found.Source );
+		// off by default: without a saved choice it is not part of the run, and nothing else needs it
+		var plain = ModSet.Resolve( TpiRidesFixture.Discover().ToList(), ModSettings.Default, null, GameEdition.ThemeParkWorld, OfficialExtensions.All );
+		Assert.AreEqual( 0, plain.Mods.Count );
+		Assert.AreEqual( 0, plain.Refused.Count );
+		Assert.IsFalse( plain.IsEnabled( OfficialExtensions.CrossEditionObjects.Id ), "the extension is off by default too" );
+		var row = ModRows.Build( TpiRidesFixture.Discover(), ModSettings.Default, plain, OfficialExtensions.All ).Single( candidate => candidate.Id == TpiRidesFixture.Id );
+		Assert.AreEqual( ModRowStatus.Off, row.Status );
+		Assert.IsFalse( row.Enabled );
+		// the same id from a mod folder of the player is refused: opentpw. ids come only from content shipped with OpenTPW
+		var custom = Path.Combine( root, "custom", TpiRidesFixture.Id );
+		Directory.CreateDirectory( custom );
+		File.Copy( Path.Combine( TpiRidesFixture.ShippedFolder, ModManifest.FileName ), Path.Combine( custom, ModManifest.FileName ) );
+		var refused = ModDiscovery.Discover( new[] { custom }, Array.Empty<string>(), null, null ).Single();
+		Assert.IsFalse( refused.IsValid );
+		StringAssert.Contains( refused.Error, "reserved for content shipped with OpenTPW" );
+	}
+
+	[TestMethod]
+	public void TheShippedModResolvesWithItsExtensionAndAnInputFolderAndNeedsBoth()
+	{
+		var input = Directory.CreateDirectory( Path.Combine( root, "any", "Data" ) ).Parent!.FullName;
+		var on = TpiRidesFixture.Resolve( TpiRidesFixture.Settings( input ) );
+		Assert.AreEqual( 0, on.Refused.Count, string.Join( ";", on.Refused.Select( refusal => refusal.Reason ) ) );
+		Assert.AreEqual( TpiRidesFixture.Id, on.Mods.Single().Id );
+		// without its extension it is refused with the reason; without an input folder too
+		var off = TpiRidesFixture.Resolve( new ModSettings { Enabled = new Dictionary<string, bool> { [TpiRidesFixture.Id] = true }, Inputs = TpiRidesFixture.Settings( input ).Inputs } );
+		StringAssert.Contains( off.Refused.Single().Reason, "opentpw.cross-edition-objects" );
+		var noInput = TpiRidesFixture.Resolve( new ModSettings { Enabled = TpiRidesFixture.Settings( input ).Enabled } );
+		Assert.AreEqual( ModRefusalKind.MissingInput, noInput.Refused.Single( refusal => refusal.Id == TpiRidesFixture.Id ).Kind );
+		// it adds objects, so it is recorded in park saves
+		Assert.AreEqual( 1, on.SimulationMods.Count( mod => mod.Id == TpiRidesFixture.Id ) );
+	}
+
+	[TestMethod]
+	public void TheSmokeScriptRunsTheShippedModInsteadOfWritingACopy()
+	{
+		var repository = TpiRidesFixture.RepositoryFolder();
+		if ( repository == null )
 			Assert.Inconclusive( "The repository's scripts folder is not beside the test binaries." );
 		// a Windows checkout may turn the script into CRLF (scripts/*.sh is pinned to LF in .gitattributes, but the test does not depend on it)
-		var script = File.ReadAllText( Path.Combine( directory!.FullName, "scripts", "smoke-tpi-rides.sh" ) ).Replace( "\r\n", "\n" );
-		var documents = System.Text.RegularExpressions.Regex.Matches( script, "<<'JSON'\n(.*?)\nJSON", System.Text.RegularExpressions.RegexOptions.Singleline ).Select( match => match.Groups[1].Value ).ToArray();
-		Assert.AreEqual( 2, documents.Length );
-		Assert.IsTrue( System.Text.Json.Nodes.JsonNode.DeepEquals( System.Text.Json.Nodes.JsonNode.Parse( TpiRidesFixture.Manifest ), System.Text.Json.Nodes.JsonNode.Parse( documents[0] ) ), "the manifests differ" );
-		Assert.IsTrue( System.Text.Json.Nodes.JsonNode.DeepEquals( System.Text.Json.Nodes.JsonNode.Parse( TpiRidesFixture.ObjectsJson( TpiRidesFixture.Items ) ), System.Text.Json.Nodes.JsonNode.Parse( documents[1] ) ), "the objects differ" );
+		var script = File.ReadAllText( Path.Combine( repository!, "..", "..", "..", "scripts", "smoke-tpi-rides.sh" ) ).Replace( "\r\n", "\n" );
+		Assert.IsTrue( script.Contains( "--enable-mod opentpw.tpi-rides" ), "the script enables the shipped mod" );
+		Assert.IsTrue( script.Contains( "opentpw.tpi-rides:tpi=" ), "the script chooses the input" );
+		Assert.IsFalse( script.Contains( "<<'JSON'" ), "the script uses the shipped files, not a second copy" );
+		// the files the build ships (content/** is copied to the output and to the release) are the ones the tests read
+		CollectionAssert.AreEqual( File.ReadAllBytes( Path.Combine( repository, "objects.json" ) ), File.ReadAllBytes( Path.Combine( TpiRidesFixture.ShippedFolder, "objects.json" ) ) );
+		CollectionAssert.AreEqual( File.ReadAllBytes( Path.Combine( repository, ModManifest.FileName ) ), File.ReadAllBytes( Path.Combine( TpiRidesFixture.ShippedFolder, ModManifest.FileName ) ) );
 	}
 
 	[TestMethod]
@@ -156,21 +195,20 @@ public class TpiRidesWiringTests
 	[TestMethod]
 	public void TheCommandLineEnablesModsAndChoosesInputsForOneRun()
 	{
-		var folder = TpiRidesFixture.Write( root );
-		var discovered = ModDiscovery.Discover( new[] { folder }, Array.Empty<string>(), null, null );
+		var discovered = TpiRidesFixture.Discover();
 		var saved = ModSettings.Default;
-		var settings = ModStartup.WithCommandLine( saved, discovered, new[] { "opentpw.cross-edition-objects", "community.tpi-rides" }, new[] { "community.tpi-rides:tpi=/games/Theme Park Inc" } );
+		var settings = ModStartup.WithCommandLine( saved, discovered, new[] { "opentpw.cross-edition-objects", "opentpw.tpi-rides" }, new[] { "opentpw.tpi-rides:tpi=/games/Theme Park Inc" } );
 		Assert.IsTrue( settings.IsEnabled( "opentpw.cross-edition-objects", false ) );
-		Assert.IsTrue( settings.IsEnabled( "community.tpi-rides", false ) );
-		Assert.AreEqual( "/games/Theme Park Inc", settings.InputPath( "community.tpi-rides", "tpi" ) );
+		Assert.IsTrue( settings.IsEnabled( "opentpw.tpi-rides", false ) );
+		Assert.AreEqual( "/games/Theme Park Inc", settings.InputPath( "opentpw.tpi-rides", "tpi" ) );
 		Assert.AreEqual( 0, saved.Enabled.Count, "the saved choices are not changed" );
-		var set = ModStartup.Resolve( discovered, settings with { Inputs = new Dictionary<string, IReadOnlyDictionary<string, string>> { ["community.tpi-rides"] = new Dictionary<string, string> { ["tpi"] = root } } }, Array.Empty<string>(), new List<string>() );
+		var set = ModStartup.Resolve( discovered, settings with { Inputs = new Dictionary<string, IReadOnlyDictionary<string, string>> { ["opentpw.tpi-rides"] = new Dictionary<string, string> { ["tpi"] = root } } }, Array.Empty<string>(), new List<string>() );
 		Assert.IsTrue( set.IsEnabled( "opentpw.cross-edition-objects" ), "the extension is on for the run" );
 		Assert.ThrowsException<ArgumentException>( () => ModStartup.WithCommandLine( saved, discovered, new[] { "community.unknown" }, Array.Empty<string>() ) );
-		foreach ( var bad in new[] { "tpi=/x", "community.tpi-rides:tpi", "community.tpi-rides:=/x", "community.tpi-rides:tpi=", "Not A Mod:tpi=/x" } )
+		foreach ( var bad in new[] { "tpi=/x", "opentpw.tpi-rides:tpi", "opentpw.tpi-rides:=/x", "opentpw.tpi-rides:tpi=", "Not A Mod:tpi=/x" } )
 			StringAssert.Contains( Assert.ThrowsException<ArgumentException>( () => ModStartup.WithCommandLine( saved, discovered, Array.Empty<string>(), new[] { bad } ) ).Message, "--mod-input" );
-		var splitsOnTheFirstEquals = ModStartup.WithCommandLine( saved, discovered, Array.Empty<string>(), new[] { "community.tpi-rides:tpi=/games/a=b" } );
-		Assert.AreEqual( "/games/a=b", splitsOnTheFirstEquals.InputPath( "community.tpi-rides", "tpi" ) );
+		var splitsOnTheFirstEquals = ModStartup.WithCommandLine( saved, discovered, Array.Empty<string>(), new[] { "opentpw.tpi-rides:tpi=/games/a=b" } );
+		Assert.AreEqual( "/games/a=b", splitsOnTheFirstEquals.InputPath( "opentpw.tpi-rides", "tpi" ) );
 	}
 
 	// ---- Loading ---------------------------------------------------------------------------------------------

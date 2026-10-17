@@ -1130,7 +1130,15 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 				MarkBoarded( guest );
 				// [APPROX:TOUR-011] WALKON boards the rider at once; the original's WALKON also holds the rider for ftol(distance between nodes u1 and u2) x 100 ms (100 ms for 0; the start node is of class 0x80 for the head action 4; the walk table entry's times at +0x8 and +0xC, 0x00556F40), but what reads the entry's end time and moves its state to 4 (WALKGET's state, 0x00557110) is not read; WALKOFF's action 2 effect is WalkOffEffect
 				// [BIN:TPW-EXE:0x00556F40 WALKON slot] the walk table entry keeps the operands in order: start node u1, end node u2, u3 and u4 (the nodes WALKOFF walks between), the walk action
-				if ( WalkNodeDistance != null && onRide.Contains( guest ) )
+				var headAction = call.Argument( 5 ) == 4;
+				if ( headAction && Heads != null && onRide.Contains( guest ) )
+				{
+					// [BIN:TPW-EXE:0x00557D80 WALKON head action] the head action 4 hangs the rider's head on head id u2 (the second node operand: Firepit, Inca Totem, Aztec Mayhem, Hover Bot Havoc and Rock 'n Roll count it up with VAR_ONRIDE) once the walk-on ends, and the body is not drawn while it is up; WALKOFF takes the head down. The walk slot keeps the action so WALKOFF knows to do it
+					// [APPROX:TOUR-011] the head hangs at once, without the walk-on time and the walking body before it
+					Heads.Hang( call.Argument( 2 ), guest );
+					walkSlots[guest] = (call.Argument( 3 ), call.Argument( 4 ), call.Argument( 5 ));
+				}
+				else if ( WalkNodeDistance != null && onRide.Contains( guest ) )
 					walkSlots[guest] = (call.Argument( 3 ), call.Argument( 4 ), call.Argument( 5 ));
 				return true;
 			}
@@ -1141,12 +1149,18 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 				{
 					walkingOff.Enqueue( guest );
 					var duration = WalkOffMilliseconds;
-					if ( WalkNodeDistance != null && walkSlots.Remove( guest, out var slot ) )
+					if ( walkSlots.Remove( guest, out var slot ) )
 					{
-						if ( WalkNodeDistance( slot.Mode, slot.From, slot.To ) is { } distance )
-							duration = WalkOffDuration( distance );
-						if ( slot.Mode == 2 )
-							WalkOffEffect?.Invoke( slot.From );
+						// [BIN:TPW-EXE:0x005571A0 WALKOFF head action] a rider walked on with the head action 4 has its head taken down (0x0044B4C0)
+						if ( slot.Mode == 4 )
+							Heads?.Remove( guest );
+						if ( WalkNodeDistance != null )
+						{
+							if ( WalkNodeDistance( slot.Mode, slot.From, slot.To ) is { } distance )
+								duration = WalkOffDuration( distance );
+							if ( slot.Mode == 2 )
+								WalkOffEffect?.Invoke( slot.From );
+						}
 					}
 					walkingOffReady.Enqueue( now + duration );
 				}

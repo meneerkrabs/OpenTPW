@@ -48,6 +48,8 @@
 	<ItemGroup>
 		<EmbeddedResource Include="../../content/shaders/**/*" LogicalName="content/shaders/%(RecursiveDir)%(Filename)%(Extension)" />
 		<EmbeddedResource Include="../../content/data/**/*" LogicalName="content/data/%(RecursiveDir)%(Filename)%(Extension)" />
+		<!-- The data mods OpenTPW ships (docs/MODS.md): text only (manifest and objects.json), found by the mod discovery below the program folder like on the desktop. -->
+		<EmbeddedResource Include="../../content/mods/**/*" LogicalName="content/mods/%(RecursiveDir)%(Filename)%(Extension)" />
 		<!-- The HD interface art (docs/TEXTURE-PACKS.md) is NOT embedded as the PNGs here: the browser ships the
 		     predecoded RGBA siblings staged by the PredecodeHeroArt target below instead (~+1.7 MB for skipping
 		     PNG decode on a first menu open; UiImages/Texture load them through PredecodedUiArt). Desktop builds

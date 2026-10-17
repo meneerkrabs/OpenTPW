@@ -28,9 +28,17 @@ internal sealed class DesktopSetupSelection( SetupSettings saved )
 	public bool CanStart => Report is { IsUsable: true } && Enum.IsDefined( Edition )
 		&& (Edition == GameEdition.ThemeParkWorld || World != null && GameEditions.IsViewableLevel( World ) && Report.Worlds.Contains( World, StringComparer.OrdinalIgnoreCase ));
 
+	/// <summary>True when <paramref name="args"/> ask for the Theme Park Inc Personnel File (<c>--front-end</c>, no world) and this selection is usable Theme Park Inc data: no world is needed then.</summary>
+	public bool CanLaunch( string[] args ) => CanStart || IsPersonnelFileLaunch( args ) && Report is { IsUsable: true };
+
+	private bool IsPersonnelFileLaunch( string[] args ) => Edition == GameEdition.ThemeParkInc && args.Contains( "--front-end" ) && !args.Contains( "--load-original-level" );
+
 	// [EXT:tpi-viewer] an experimental Theme Park Inc choice starts that world through the viewer slice
 	public string[] LaunchArguments( string[] args )
 	{
+		// [EXT:tpi-front-end-phase1] --front-end on a remembered Theme Park Inc install opens its Personnel File: the zone is chosen there, so none is added
+		if ( IsPersonnelFileLaunch( args ) && Report is { IsUsable: true } )
+			return args.Where( argument => argument != "--setup" ).ToArray();
 		if ( !CanStart ) throw new InvalidOperationException( "Choose matching game files and an available world." );
 		var launch = args.Where( argument => argument != "--setup" ).ToArray();
 		if ( Edition == GameEdition.ThemeParkWorld ) return launch;
@@ -55,7 +63,8 @@ internal sealed class DesktopSetupSelection( SetupSettings saved )
 
 	public static bool CanUseRememberedEdition( string[] args, string? commandLine, string? environment ) =>
 		GamePathResolution.IsInteractive( args ) && string.IsNullOrWhiteSpace( commandLine ) && string.IsNullOrWhiteSpace( environment )
-		&& !HasExplicitMode( args );
+		// --front-end alone is no tool mode for the remembered edition: Theme Park World's start is the front end anyway, and a remembered Theme Park Inc install opens its Personnel File
+		&& !HasExplicitMode( args.Where( argument => argument != "--front-end" ).ToArray() );
 
 	/// <summary>
 	/// The wizard opens on request only (<c>--setup</c>); an ordinary start uses the saved choice and the wizard appears

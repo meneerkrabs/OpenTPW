@@ -81,6 +81,11 @@ public sealed record EditionCapabilities
 	public required bool Advisor { get; init; }
 	/// <summary>The original-style front end (lobby and menus).</summary>
 	public required bool FrontEnd { get; init; }
+	/// <summary>
+	/// The Theme Park Inc Personnel File start screen (<c>ThemeParkIncFrontEnd</c>): drawn from Theme Park Inc's own <c>ui.wad</c> models and strings,
+	/// with one OpenTPW player; it replaces the up-front zone choice. Independent of <see cref="FrontEnd"/>, which is Theme Park World's lobby.
+	/// </summary>
+	public required bool PersonnelFileFrontEnd { get; init; }
 	/// <summary>Writing and resuming OpenTPW park saves of this edition's parks.</summary>
 	public required bool ParkSaves { get; init; }
 	/// <summary>Sharing: exporting, importing and visiting parks of this edition online.</summary>
@@ -101,6 +106,7 @@ public sealed record EditionCapabilities
 		Staff = true,
 		Advisor = true,
 		FrontEnd = true,
+		PersonnelFileFrontEnd = false,
 		ParkSaves = true,
 		Sharing = true,
 		ExperimentalNote = null
@@ -125,11 +131,13 @@ public sealed record EditionCapabilities
 		Staff = false,
 		Advisor = false,
 		FrontEnd = false,
+		// [EXT:tpi-front-end-phase1] the slice starts at an OpenTPW Personnel File screen (docs/THEME-PARK-INC.md); Theme Park World's lobby front end stays refused
+		PersonnelFileFrontEnd = true,
 		ParkSaves = false,
 		Sharing = false,
 		ExperimentalNote = "experimental Theme Park Inc slice: money only (cash, loans, build and running costs, calendar); "
 			+ "no staff, research, challenges, advisor, missions, Global Master Save, "
-			+ "COS files, park saves or sharing, and no Theme Park Inc interface; "
+			+ "COS files, park saves or sharing, and no Theme Park Inc in-game interface (only its Personnel File start screen); "
 			+ "none of it is checked against the original game"
 	};
 }
@@ -261,9 +269,26 @@ public static class GameEditions
 	};
 
 	/// <summary>
+	/// The only options a Theme Park Inc front-end start accepts: the front-end switch and the options that pick the files, the language, the display
+	/// and the sound. Any other option (a tool mode, a capture, an export, a smoke test) keeps its refusal on Theme Park Inc data.
+	/// </summary>
+	private static readonly string[] FrontEndStartOptions =
+	{
+		"--front-end", "--game-path", "--language", "--language-data", "--cd-data", "--bonus-data", "--mute", "--silent", "--no-intro", "--no-advisor",
+		"--no-autorun", "--no-vsync", "--offscreen", "--no-offscreen", "--frame-stats", "--no-determinism",
+		// the display options of DisplaySettings.ApplyCommandLine
+		"--resolution", "--windowed", "--fullscreen", "--fullscreen-exclusive", "--upscale", "--render-scale", "--ui-scale"
+	};
+
+	/// <summary>True when <paramref name="args"/> start the Personnel File: no world and no option outside <see cref="FrontEndStartOptions"/>.</summary>
+	private static bool IsFrontEndStart( string[] args ) =>
+		!args.Contains( "--load-original-level" ) && args.Where( argument => argument.StartsWith( "--" ) ).All( argument => FrontEndStartOptions.Contains( argument ) );
+
+	/// <summary>
 	/// Why a start on Theme Park Inc data is refused, or null when it is the experimental slice (<c>--load-original-level</c> with a
 	/// Theme Park Inc world and none of the options that need a playable Theme Park World game or a refused save or
-	/// sharing format) or a read-only inspection.
+	/// sharing format), the slice's Personnel File front end (no world, only the options of <see cref="FrontEndStartOptions"/>; while
+	/// <see cref="EditionCapabilities.PersonnelFileFrontEnd"/> is on) or a read-only inspection.
 	/// </summary>
 	public static string? ViewerRefusal( string[] args )
 	{
@@ -275,8 +300,10 @@ public static class GameEditions
 		var unsupported = ViewerIncompatibleOptions.FirstOrDefault( args.Contains );
 		if ( level != null && IsViewableLevel( level ) && unsupported == null )
 			return null;
+		if ( level == null && Capabilities.PersonnelFileFrontEnd && IsFrontEndStart( args ) )
+			return null;
 		return "The game folder holds Theme Park Inc (Sim Coaster) data, which OpenTPW does not play. "
-			+ "The experimental slice opens it: add --load-original-level arabian, science or water"
+			+ "The experimental slice opens it: start without options or with --front-end for the Personnel File, or add --load-original-level arabian, science or water"
 			+ (unsupported != null ? $" and drop {unsupported} (it needs a Theme Park World park)" : "")
 			+ " (docs/THEME-PARK-INC.md). For the supported game, choose Theme Park World files.";
 	}
@@ -284,5 +311,5 @@ public static class GameEditions
 	/// <summary>One line for the start-up log: what the slice is and that it is not checked against the original game.</summary>
 	// [EXT:tpi-capability-gates] the slice's stated limits are OpenTPW's honest capability gates (a scope decision), not traced Theme Park Inc behaviour
 	public static string SliceNotice => "experimental Theme Park Inc slice: world, building, guests and money only; "
-		+ "no staff, research, challenges, advisor, missions, Global Master Save, COS or Theme Park Inc interface; original behaviour is not verified.";
+		+ "no staff, research, challenges, advisor, missions, Global Master Save, COS or Theme Park Inc in-game interface; original behaviour is not verified.";
 }

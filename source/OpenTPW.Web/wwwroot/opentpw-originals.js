@@ -31,10 +31,11 @@ async function locate(directory, relative, create) {
 
 /**
  * Opens the kept files below `root` (navigator.storage.getDirectory() in the page; any object with the same methods in tests).
- * `digest` hashes a file's bytes for the manifest.
+ * `digest` hashes a file's bytes for the manifest. `name` is the store's own directory: the Theme Park World files use the default, and the
+ * files of another original game that a mod reads (opentpw-inputs.js) a second one, so two installs never share a manifest.
  */
-export async function openOriginalStore(root, { digest = sha256 } = {}) {
-	const directory = await root.getDirectoryHandle(DIRECTORY, { create: true });
+export async function openOriginalStore(root, { digest = sha256, name = DIRECTORY } = {}) {
+	const directory = await root.getDirectoryHandle(name, { create: true });
 	let manifest = null;
 	try {
 		const file = await (await directory.getFileHandle(MANIFEST)).getFile();

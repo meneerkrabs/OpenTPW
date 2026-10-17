@@ -258,11 +258,14 @@ public class OriginalObject : Entity
 	internal CoasterStationLayout? ComputeCoasterStationLayout() => CoasterStationLayout.FromModel( Runtime.Model, NodeTransforms, Placement );
 
 	/// <summary>One fixed simulation tick.</summary>
-	public void Simulate( double deltaSeconds )
+	public void Simulate( double deltaSeconds ) => Simulate( deltaSeconds, null );
+
+	/// <summary>One fixed simulation tick of the park's substep scheduler (<see cref="ParkObjects.Simulate(double, SimulationSubstep, OriginalObject?)"/>).</summary>
+	internal void Simulate( double deltaSeconds, SimulationSubstep? substep )
 	{
 		if ( deleted )
 			return;
-		Runtime.Simulate( deltaSeconds );
+		Runtime.Simulate( deltaSeconds, substep );
 		UpdateTransforms();
 	}
 

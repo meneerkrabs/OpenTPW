@@ -95,6 +95,17 @@ internal static class Game
 			TpiMissionInspection.Run( args[missionIndex + 1] );
 			return;
 		}
+		// Headless guest measurement (docs/SMARTER-GUESTS.md): the synthetic scenario needs no game data, so it runs before the data is set up; level parks run after (below).
+		if ( args.Contains( "--guest-compare" ) )
+		{
+			Environment.ExitCode = GuestReportCompare.RunCommand( args );
+			return;
+		}
+		if ( args.Contains( "--guest-report" ) && !GuestReport.WantsLevels( args ) )
+		{
+			Environment.ExitCode = GuestReport.RunCommand( args );
+			return;
+		}
 		var pathIndex = Array.IndexOf( args, "--game-path" );
 		string? commandLinePath = null;
 		if ( pathIndex >= 0 )
@@ -234,6 +245,12 @@ internal static class Game
 			Environment.ExitCode = M3Gate.RunCommand( args );
 			return;
 		}
+		// Headless guest report with level parks (docs/SMARTER-GUESTS.md): no window, renderer or audio.
+		if ( args.Contains( "--guest-report" ) )
+		{
+			Environment.ExitCode = GuestReport.RunCommand( args );
+			return;
+		}
 		// Headless M4 attraction/script gate (docs/M4-GATE.md): no window, renderer or audio.
 		if ( args.Contains( "--m4-gate" ) )
 		{
@@ -266,6 +283,9 @@ internal static class Game
 		if ( visit != null )
 			Log.Trace( ParkSharing.Describe( visit ) );
 		Render = DisplayStartup.CreateRenderer( args );
+		// [EXT:script-mods] the crash marker was written at startup; it is removed after 15 seconds of frames (docs/SCRIPT-MODS.md)
+		if ( OpenTPW.Mods.ScriptSafeMode.Current is { } scriptStartMarker )
+			Render.OnUpdate += scriptStartMarker.Update;
 		if ( movieName != null )
 		{
 			MovieCommands.Play( dataDirectory, movieName, !args.Contains( "--mute" ), args.Contains( "--smoke-test" ) );
@@ -316,10 +336,11 @@ internal static class Game
 		if ( sliceSmoke && !GameEditions.IsThemeParkInc )
 			throw new ArgumentException( "--tpi-smoke-test drives the experimental Theme Park Inc slice: start it with --load-original-level and Theme Park Inc data (docs/THEME-PARK-INC.md)." );
 		// [EXT:autorun] The CD's launcher window comes first when its Autorun folder is available (docs/AUTORUN.md).
-		var autorun = startsFrontEnd && capturePath == null ? CreateAutorun( args, bonusSettings, dataDirectory ) : null;
+		var autorun = startsFrontEnd && capturePath == null && !GameEditions.IsThemeParkInc ? CreateAutorun( args, bonusSettings, dataDirectory ) : null;
 		// The original plays its start-up movies before the front end on every start (docs/TGQ-MOVIES.md); after
 		// the launcher's Play when it is shown. Smoke tests, --capture-world and --no-intro / OPENTPW_NO_INTRO go straight to the front end.
-		var playIntro = IntroPlaylist.ShouldPlay( startsFrontEnd, smoke, args, Environment.GetEnvironmentVariable( "OPENTPW_NO_INTRO" ) );
+		// [EXT:tpi-front-end-phase1] the Theme Park Inc Personnel File plays no start-up movies yet
+		var playIntro = !GameEditions.IsThemeParkInc && IntroPlaylist.ShouldPlay( startsFrontEnd, smoke, args, Environment.GetEnvironmentVariable( "OPENTPW_NO_INTRO" ) );
 		Func<IDisposable>? startIntro = playIntro ? () => StartIntro( flow, args, dataDirectory ) : null;
 		if ( autorun == null && !playIntro )
 		{
@@ -594,6 +615,13 @@ internal static class Game
 				Render.Run();
 				return;
 			}
+			if ( GameEditions.IsThemeParkInc )
+			{
+				// [EXT:tpi-front-end-phase1] a Theme Park Inc start without a world opens its Personnel File (docs/THEME-PARK-INC.md)
+				flow.ShowThemeParkIncFrontEnd();
+				Render.Run();
+				return;
+			}
 			flow.ShowFrontEnd();
 			if ( smoke )
 			{
@@ -804,11 +832,11 @@ internal static class Game
 			if ( !string.IsNullOrWhiteSpace( selection.Path ) )
 			{
 				var check = InstallationDiscovery.InspectAsync( selection.Path, GameEdition.ThemeParkInc ).GetAwaiter().GetResult();
-				if ( check.Reports.FirstOrDefault() is { } report && selection.AcceptInspection( selection.Revision, report ) && selection.CanStart )
+				if ( check.Reports.FirstOrDefault() is { } report && selection.AcceptInspection( selection.Revision, report ) && selection.CanLaunch( args ) )
 				{
 					args = selection.LaunchArguments( args );
 					Settings.Default.GamePath = selection.Path;
-					Log?.Trace( $"Game folder: {selection.Path} (saved Theme Park Inc world {selection.World})." );
+					Log?.Trace( $"Game folder: {selection.Path} (saved Theme Park Inc {(args.Contains( "--front-end" ) ? "install, Personnel File" : $"world {selection.World}")})." );
 					return args;
 				}
 			}
@@ -985,7 +1013,7 @@ internal static class Game
 		if ( GameEditions.ViewerRefusal( args ) is { } refusal )
 			throw new ArgumentException( refusal );
 		var level = GetOption( args, "--load-original-level", "a Theme Park Inc world such as 'arabian'" );
-		Log.Warning( $"Theme Park Inc data detected ({(edition.Evidence == GameEditionEvidence.StandardSamHash ? "retail Standard.sam" : "folder structure")}): experimental slice for '{level}'. "
+		Log.Warning( $"Theme Park Inc data detected ({(edition.Evidence == GameEditionEvidence.StandardSamHash ? "retail Standard.sam" : "folder structure")}): experimental slice {(level == null ? "front end (the Personnel File)" : $"for '{level}'")}. "
 			+ GameEditions.SliceNotice );
 	}
 

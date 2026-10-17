@@ -280,6 +280,7 @@ public class GuestAssetTests
 		vm[RideVariables.VAR_RIDECLOSED] = 0;
 		bridge.Attach( vm, () => vm[RideVariables.VAR_RIDECLOSED] == 0 );
 		simulation.Register( bridge );
+		GuestTests.LayStandCell( simulation.Grid, bridge );
 		// sixteen guests on the paths round the entrance (eight cells, two each): which of them choose the ride at once follows the world generator's draws, and a full load of six needs a crowd
 		foreach ( var cell in new[] { (39, 22), (39, 23), (40, 21), (41, 21), (39, 24), (42, 21), (39, 25), (43, 21), (39, 22), (39, 23), (40, 21), (41, 21), (39, 24), (42, 21), (39, 25), (43, 21) } )
 			simulation.SpawnInPark( cell.Item1, cell.Item2 );
@@ -498,6 +499,7 @@ public class GuestAssetTests
 		simulation.Register( ride );
 		Assert.AreEqual( 4, QueuePaths.TryExtend( grid, ride, queue ) );
 		QueuePaths.TryConnect( grid, ride );
+		GuestTests.LayStandCell( grid, ride );
 		CollectionAssert.AreEqual( queue, ride.QueueCells.ToArray() );
 		Assert.AreEqual( site.Path, ride.JoinCell );
 		Assert.AreEqual( 16, ride.MaximumQueueLength, "min(21, 4 × 4 cells)" );

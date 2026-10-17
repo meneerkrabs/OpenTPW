@@ -112,7 +112,10 @@ dotnet run --project tools/AssemblySurface -- path/to/OpenTPW.dll Veldrid
 The setup screen also offers an explicit **experimental Theme Park Inc** start in Arabian,
 Science or Water. Choose the extracted installation folder containing `Data`, then choose
 the theme before importing or pressing Play. That theme's complete browser-supported file
-set is copied at startup. The existing edition detector checks its identity or structure,
+set is copied at startup. (The desktop build can open a Personnel File start screen instead of asking for the
+zone: with `--front-end`, or a plain start with an explicit Theme Park Inc folder; the setup wizard still asks for a zone. See [THEME-PARK-INC.md](THEME-PARK-INC.md#theme-park-inc-front-end); the browser keeps
+this up-front choice in phase 1, because the on-demand copy of a zone's files chosen later is
+built for Theme Park World's lobby only.) The existing edition detector checks its identity or structure,
 and an edition/theme mismatch refuses before renderer creation. Before deferral,
 the complete source list retains the native detector's actual theme-directory witnesses.
 A structural Theme Park Inc list refuses the default Theme Park World choice immediately.
@@ -161,8 +164,11 @@ A game folder copied from the CD keeps the other languages beside `Data`
 (`Dutch/data/Language/Dutch`, `Dutch/Meshes/Dutch`, likewise Italian, Polish). For every
 top-level folder that holds its own `data/Language/<same name>` (detected by structure, not a
 fixed list) the page copies those two trees at once: about 1 to 3 MB per language, so the
-Options -> OpenTPW -> Language toggle can list and switch them. Polish is not offered because
-its character table is not decoded (docs/LANGUAGES.md).
+Options -> OpenTPW -> Language toggle can list and switch them. Polish is offered now that its two-byte
+character table is read (docs/LANGUAGES.md). The Spanish and Korean CDs keep their language in their own
+complete `Data` folder (a `Spanish` or `Korean` folder beside it): a copy of such a CD as the game folder has
+that language already; their use as an overlay beside an installed game, and the browser cost of the Korean fonts
+(32 files of 0.5 to 1.8 MB each), are not measured in the browser build.
 
 The advisor's voice is copied when the language is chosen, like a theme folder: the language's
 `data/global/speech` (`speechHD.SDT`, 27.5 MB on the real Dutch folder, and `lips.WAD`) and each
@@ -240,6 +246,59 @@ make that path unavailable until it is kept again, rather than expose new bytes 
 persisted hash. Initial lazy writes retain their existing checkpoint schedule. Failed manifest
 flushes remain retryable. [Cache recovery checks](BROWSER-ORIGINAL-CACHE-RECOVERY.md) use synthetic
 storage; they do not establish atomic multi-file OPFS transactions or real-browser behavior.
+
+### Mods in the browser
+
+The browser runs the same data mods as the desktop (docs/MODS.md; never code). The mods OpenTPW ships (`content/mods/`, today
+`opentpw.tpi-rides`, the Theme Park Inc rides mod) are embedded in the page like the other content: `OpenTPW.Web.csproj` adds
+`content/mods/**` as resources, `Program.WriteContent` writes them below the program folder at start, and `ModStartup.InitializeBrowser`
+runs the usual discovery over that folder (`ModSource.Program`, the only source of `opentpw.` ids) before it resolves the set with the
+choices of `/config/mods.json`. The browser has no folders for community mods. The mods are off until switched on, exactly as on the desktop.
+
+- **Settings.** `/config/mods.json` is one of the files the page keeps (the `/config` folder is mirrored into IndexedDB every five seconds
+  and when the page is hidden, and put back before the game starts), so the choices of the **Extensions and mods** screen
+  (Options > OpenTPW) survive a reload. Changes apply at the next start, which in the browser means a reload.
+- **The `tpi` input.** A mod input is a folder of the player's own files on the desktop. The browser holds the files of one original game
+  beside the Theme Park World files in `/game`: the page copies them into the runtime's memory below `/inputs/theme-park-inc/Data/...`
+  (`Program.AddInputFile`, validated by `BrowserModInputs`: only `Data/...` paths without `..`, at most 20000 files and 256 MB) and a mod's
+  `original-data` input with `"edition": "theme-park-inc"` is satisfied by that tree when `mods.json` names no other folder. Every mod
+  that asks for Theme Park Inc data shares that one copy, and the check of the folder is the desktop's (`GameEditions.Detect`: the known
+  `Standard.sam` or the folder structure). Theme Park World data cannot be a mod input in the browser (it is already the game), and a typed
+  folder path means nothing there.
+- **Choosing the folder.** The setup page has a second folder button, *Theme Park Inc files for mods*, before or after the Theme Park World
+  folder (`opentpw-inputs.js`). It takes the install or its `Data` folder and copies only what the mod reads: the object archives of the
+  three worlds (`rides`, `shops`, `sideshow`, `features`, `upgrades` and `facilities`), `sharetex.wad` and `ssharete.wad`, the worlds' `Sound`
+  folders, `global/sound`, `Ver.txt` and `levels/Standard.sam` (the identity of the install), 324 files and 74 MB of the retail install's 400
+  MB; music, terrain, speech, movies and the interface stay where they are. A folder is accepted only as a complete Theme Park Inc install: `Ver.txt`, per world a
+  ride archive and the shared textures, and the global sounds must be there. Theme Park World data, a mixed folder, or a folder that lacks any
+  of that is refused with a message; the game repeats the check on the copy (`BrowserModInputs.Publish`, with `GameEditions.Detect`). The Extensions and mods screen's **Change...** button opens the same dialog from inside the game (the page clicks its hidden file input; browsers
+  only open the dialog shortly after a player's click, which has not been tried against a real dialog). While the game runs the copy is
+  slow (about four files a second in the interpreter build, because the busy page serves each file between frames), so the setup page is the
+  better place; the copy goes to a staging tree and becomes the live one (with a completion marker) only when every file is in and the check
+  passed, so a mod never sees a half-copied install; a failed or refused copy removes the staged and live trees, **Play** waits for a
+  copy in progress, and every outcome, refusals included, tells the game's screen exactly once. A copy that an active mod already reads is never replaced during a run: the screen says to reload the page first
+  (`BrowserModInputs.LockInUse`), since the catalogs read their archives lazily.
+- **Storage.** With *Keep the game files in this browser* on (the default, and when the browser has writable OPFS), the chosen files are kept in a
+  second origin-private store, `opentpw-input-theme-park-inc`, with its own manifest (`openOriginalStore(root, { name })`): the Theme Park World
+  files and the Theme Park Inc files never share a manifest, so choosing a Theme Park Inc folder never clears the kept Theme Park World
+  files and the other way round. A later visit restores the complete set into memory before the mods are resolved: every file must be listed as kept and
+  match its stored SHA-256 before anything is copied, and a store that is incomplete, has an invalid manifest or fails a check is cleared
+  (never half used, and no longer shown as kept), so **Play** starts the mod without asking for either folder again. The Theme Park World and Theme
+  Park Inc stores together hold about 100 MB for the start files plus what the parks read, and 74 MB are in the runtime's memory for the visit.
+  With *no*, or a browser that cannot keep files, the Theme Park Inc folder must be chosen on the setup page every visit before the game starts.
+  The setup page's *Remove* deletes the kept Theme Park Inc files (and, before the game starts, the copy in memory); *Remove kept files* removes
+  only the Theme Park World files.
+- **Limits.** One Theme Park Inc copy per browser origin; one tab keeps files (the same Web Lock as for the game files); the Theme Park Inc
+  files count against the browser's storage quota; memory-limited devices pay for the 74 MB twice while the files are copied. The copied files are
+  the retail install's: another edition of Theme Park Inc data would need its own allowlist (`opentpw-inputs.js`).
+
+`tools/test_web_inputs.mjs` covers the page side with synthetic files and a fake origin-private file system (what is chosen, replacing an
+install, keeping, restoring a complete set only); `ModsInBrowserTests` (desktop test run of the shared game code) covers discovery of
+the shipped mod, the defaults and the lock of the browser inputs, and the Extensions and mods screen in browser mode with the page played by the test.
+Checked once by hand in Chrome (DevTools, synthetic folder objects instead of the dialog) against a published interpreter build served from a local server: the Theme Park Inc files copied from the
+real install (324 files, 74 MB) before and during the game, kept and restored after a reload, the mod listed and saved by the screen (`mods.json`
+with `/inputs/theme-park-inc`), and the Jungle park's buy list showing the mod's Arabian objects (18 rides, 7 shops, 6 sideshows, 13 features) with the mod on.
+The real folder dialog, the screen's drawing and gameplay with the mod's objects placed were not checked in the browser.
 
 ### Saves and settings
 

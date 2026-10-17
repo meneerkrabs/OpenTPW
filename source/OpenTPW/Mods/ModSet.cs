@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using OpenTPW.Scripting;
 
 namespace OpenTPW.Mods;
 
@@ -19,6 +20,28 @@ public sealed record ResolvedMod( ModManifest Manifest, string Directory, ModSou
 	public ModObjectsFile? Objects { get; init; }
 	/// <summary>The data folder of each input the mod's objects read from, by input id (the folder the player chose, or its Data folder).</summary>
 	public IReadOnlyDictionary<string, string> InputDirectories { get; init; } = new Dictionary<string, string>();
+	/// <summary>
+	/// The mod's scripts: the exact bytes that went into <see cref="ContentSha256"/>, compiled at resolve time (docs/SCRIPT-MODS.md), or null
+	/// when the mod has none. Whatever runs a script must use these retained bytes or their compiled programs, never read the path again.
+	/// </summary>
+	public ModScriptSet? Scripts { get; init; }
+}
+
+/// <summary>One script file of a mod: its mod-relative path, the bytes that were hashed, and the program compiled from exactly those bytes.</summary>
+public sealed record ModScriptFile( string Path, ReadOnlyMemory<byte> Source, ScriptProgram Program );
+
+/// <summary>The retained and compiled scripts of one resolved mod, in the manifest's file order, with the file each hook's function lives in.</summary>
+public sealed class ModScriptSet
+{
+	internal ModScriptSet( IReadOnlyList<ModScriptFile> files, IReadOnlyDictionary<string, (int File, string Function)> hooks )
+	{
+		Files = files;
+		Hooks = hooks;
+	}
+
+	public IReadOnlyList<ModScriptFile> Files { get; }
+	/// <summary>Per declared hook: the index into <see cref="Files"/> and the function name.</summary>
+	public IReadOnlyDictionary<string, (int File, string Function)> Hooks { get; }
 }
 
 /// <summary>Why a mod cannot run, in terms the mods screen can word in every language ([EXT:mods-ui]).</summary>
@@ -34,6 +57,10 @@ public enum ModRefusalKind
 	Conflict,
 	/// <summary>A dependency is missing, disabled, refused, out of range, or part of a cycle.</summary>
 	Dependency,
+	/// <summary>A script does not compile, breaks a script limit, or a hook names no suitable function.</summary>
+	Script,
+	/// <summary>Script mods are off for this run: safe mode (<c>--safe-mode</c> or a startup crash marker).</summary>
+	SafeMode,
 }
 
 /// <summary>
@@ -105,12 +132,12 @@ public sealed class ModSet
 	/// <summary>
 	/// Whether a mod changes the park simulation, judged from its manifest and files: it adds objects
 	/// (<c>content.objects</c>), or it overrides a file that is not plainly presentation media (textures, sounds, text
-	/// and fonts: <see cref="IsPresentationFile"/>). Unknown file types count as simulation, the safe side: such a
+	/// and fonts: <see cref="IsPresentationFile"/>), or it has scripts with a hook that can change the simulation (every v1 hook can). Unknown file types count as simulation, the safe side: such a
 	/// mod is recorded in park saves.
 	/// </summary>
 	public static bool AffectsSimulation( ModManifest manifest, IEnumerable<string> files )
 	{
-		if ( manifest.Content.Objects != null )
+		if ( manifest.Content.Objects != null || manifest.Content.Scripts is { AffectsSimulation: true } )
 			return true;
 		if ( manifest.Content.Overrides == null )
 			return false;
@@ -131,7 +158,7 @@ public sealed class ModSet
 		Resolve( Array.Empty<DiscoveredMod>(), ModSettings.Default, null, GameEdition.ThemeParkWorld, extensions );
 
 	public static ModSet Resolve( IReadOnlyList<DiscoveredMod> discovered, ModSettings settings, ModVersion? openTpwVersion, GameEdition edition,
-		IReadOnlyList<IOpenTpwExtension> extensions, IReadOnlyCollection<string>? disabled = null )
+		IReadOnlyList<IOpenTpwExtension> extensions, IReadOnlyCollection<string>? disabled = null, bool scriptModsOff = false )
 	{
 		disabled ??= Array.Empty<string>();
 		var refused = new List<ModRefusal>();
@@ -162,14 +189,21 @@ public sealed class ModSet
 			node.Enabled = !disabled.Contains( manifest.Id ) && settings.IsEnabled( manifest.Id, false );
 			if ( node.Enabled && Incompatibility( manifest, settings, openTpwVersion, edition ) is { } reason )
 				Refuse( node, reason.Text, refused, reason.Kind );
+			// safe mode: a script mod is not read, hashed or compiled at all
+			if ( node.Enabled && scriptModsOff && manifest.Content.Scripts != null )
+				Refuse( node, "contains scripts, which are switched off for this run (safe mode)", refused, ModRefusalKind.SafeMode );
 			if ( !node.Enabled )
 				continue;
-			var (files, error) = ReadFiles( mod.Directory );
+			var (files, retained, error, errorKind) = ReadFilesRetaining( mod.Directory, (manifest.Content.Scripts?.Files ?? Array.Empty<string>()).Append( ModManifest.FileName ) );
 			if ( error != null )
-				Refuse( node, error, refused );
+				Refuse( node, error, refused, errorKind );
+			// the manifest that was parsed at discovery must be the manifest that was hashed, so the files and hooks come from hashed bytes
+			else if ( mod.ManifestBytes != null && !(retained.TryGetValue( FoldKey( ModManifest.FileName ), out var hashedManifest ) && hashedManifest != null && hashedManifest.AsSpan().SequenceEqual( mod.ManifestBytes )) )
+				Refuse( node, $"{ModManifest.FileName} changed after it was read; start again", refused );
 			else
 			{
 				node.Files = files;
+				node.RetainedSources = retained;
 				if ( ValidateContent( node, settings, edition ) is { } contentError )
 					Refuse( node, contentError.Text, refused, contentError.Kind );
 			}
@@ -206,7 +240,7 @@ public sealed class ModSet
 		var mods = order.Where( node => node.Discovered != null )
 			.Select( node => new ResolvedMod( node.Manifest!, node.Discovered!.Directory, node.Discovered.Source, ContentDigest( node.Files! ),
 				AffectsSimulation( node.Manifest!, node.Files!.Select( file => file.Path ) ) )
-				{ Files = node.Files!, Objects = node.Objects, InputDirectories = node.InputDirectories } ).ToList();
+				{ Files = node.Files!, Objects = node.Objects, InputDirectories = node.InputDirectories, Scripts = node.Scripts } ).ToList();
 		return new ModSet( resolvedExtensions, mods, order.Select( node => node.Id ).ToList(), refused );
 	}
 
@@ -230,6 +264,20 @@ public sealed class ModSet
 	/// </summary>
 	public static (IReadOnlyList<(string Path, string Sha256)>? Files, string? Error) ReadFiles( string directory )
 	{
+		var (files, _, error, _) = ReadFilesRetaining( directory, null );
+		return (files, error);
+	}
+
+	/// <summary>
+	/// <see cref="ReadFiles"/> that also keeps the bytes of the listed files (script files, by case- and normalization-folded path): each is read once,
+	/// and the digest and the retained bytes come from that one read. A listed file larger than <see cref="ScriptLimits.MaxSourceBytes"/> is hashed but
+	/// not kept (its entry is null), so a hostile file cannot fill memory; the caller refuses it.
+	/// </summary>
+	internal static (IReadOnlyList<(string Path, string Sha256)>? Files, IReadOnlyDictionary<string, byte[]?> Retained, string? Error, ModRefusalKind ErrorKind) ReadFilesRetaining(
+		string directory, IEnumerable<string>? retainPaths )
+	{
+		var retain = new HashSet<string>( (retainPaths ?? Array.Empty<string>()).Select( FoldKey ), StringComparer.Ordinal );
+		var retained = new Dictionary<string, byte[]?>( StringComparer.Ordinal );
 		var files = new List<(string, string)>();
 		var names = new Dictionary<string, string>( StringComparer.Ordinal );
 		long bytes = 0;
@@ -240,17 +288,17 @@ public sealed class ModSet
 			while ( pending.TryPop( out var current ) )
 			{
 				if ( current.Depth > MaximumDepth )
-					return (null, $"folders are nested deeper than {MaximumDepth} levels");
+					return (null, retained, $"folders are nested deeper than {MaximumDepth} levels", ModRefusalKind.Other);
 				foreach ( var entry in new DirectoryInfo( current.Path ).EnumerateFileSystemInfos() )
 				{
 					var name = entry.Name.Normalize( NormalizationForm.FormC );
 					var relative = current.Relative.Length == 0 ? name : current.Relative + "/" + name;
 					if ( entry.LinkTarget != null || entry.Attributes.HasFlag( FileAttributes.ReparsePoint ) )
-						return (null, $"'{relative}' is a symbolic link or reparse point; mods may not contain links");
+						return (null, retained, $"'{relative}' is a symbolic link or reparse point; mods may not contain links", ModRefusalKind.Other);
 					if ( entry is FileInfo && IsIgnoredFile( name ) )
 						continue;
 					if ( names.TryGetValue( FoldKey( relative ), out var other ) )
-						return (null, $"'{relative}' and '{other}' differ only by case or Unicode normalization");
+						return (null, retained, $"'{relative}' and '{other}' differ only by case or Unicode normalization", ModRefusalKind.Other);
 					names.Add( FoldKey( relative ), relative );
 					if ( entry is DirectoryInfo )
 					{
@@ -258,21 +306,55 @@ public sealed class ModSet
 						continue;
 					}
 					if ( ModFiles.NotRegularFile( entry.FullName ) is { } reason )
-						return (null, $"'{relative}' {reason}");
+						return (null, retained, $"'{relative}' {reason}", ModRefusalKind.Other);
 					var file = (FileInfo)entry;
+					// a script file over the cap is refused here, before it is read or hashed
+					if ( retain.Contains( FoldKey( relative ) ) && relative != ModManifest.FileName && file.Length > ScriptLimits.MaxSourceBytes )
+						return (null, retained, $"script '{relative}' is larger than {ScriptLimits.MaxSourceBytes} bytes", ModRefusalKind.Script);
 					bytes += file.Length;
 					if ( files.Count >= MaximumFilesPerMod || bytes > MaximumBytesPerMod )
-						return (null, $"the mod has more than {MaximumFilesPerMod} files or {MaximumBytesPerMod} bytes");
+						return (null, retained, $"the mod has more than {MaximumFilesPerMod} files or {MaximumBytesPerMod} bytes", ModRefusalKind.Other);
 					using var stream = file.OpenRead();
-					files.Add( (relative, Convert.ToHexString( SHA256.HashData( stream ) ).ToLowerInvariant()) );
+					if ( retain.Contains( FoldKey( relative ) ) )
+					{
+						var (hash, kept) = HashAndKeep( stream, ScriptLimits.MaxSourceBytes );
+						retained[FoldKey( relative )] = kept;
+						files.Add( (relative, hash) );
+					}
+					else
+						files.Add( (relative, Convert.ToHexString( SHA256.HashData( stream ) ).ToLowerInvariant() ) );
 				}
 			}
 		}
 		catch ( Exception exception ) when ( exception is IOException or UnauthorizedAccessException )
 		{
-			return (null, $"its files could not be read ({exception.Message})");
+			return (null, retained, $"its files could not be read ({exception.Message})", ModRefusalKind.Other);
 		}
-		return (files, null);
+		return (files, retained, null, ModRefusalKind.Other);
+	}
+
+	/// <summary>Reads a stream once: its SHA-256 and, when it is at most <paramref name="limit"/> bytes, the bytes themselves (else null).</summary>
+	private static (string Sha256, byte[]? Bytes) HashAndKeep( Stream stream, int limit )
+	{
+		using var hash = IncrementalHash.CreateHash( HashAlgorithmName.SHA256 );
+		using var kept = new MemoryStream();
+		var buffer = new byte[16 * 1024];
+		var keep = true;
+		int read;
+		while ( (read = stream.Read( buffer, 0, buffer.Length )) > 0 )
+		{
+			hash.AppendData( buffer, 0, read );
+			if ( !keep )
+				continue;
+			if ( kept.Length + read > limit )
+			{
+				keep = false;
+				kept.SetLength( 0 );
+			}
+			else
+				kept.Write( buffer, 0, read );
+		}
+		return (Convert.ToHexString( hash.GetHashAndReset() ).ToLowerInvariant(), keep ? kept.ToArray() : null);
 	}
 
 	/// <summary>Files that operating systems leave in folders: <c>.DS_Store</c>, AppleDouble <c>._*</c>, <c>Thumbs.db</c> and <c>desktop.ini</c>.</summary>
@@ -281,12 +363,14 @@ public sealed class ModSet
 		|| name.Equals( "Thumbs.db", StringComparison.OrdinalIgnoreCase ) || name.Equals( "desktop.ini", StringComparison.OrdinalIgnoreCase );
 
 	/// <summary>The key two paths share when a case-insensitive or normalizing file system would treat them as one.</summary>
-	private static string FoldKey( string path ) => path.Normalize( NormalizationForm.FormC ).ToLowerInvariant();
+	private static string FoldKey( string path ) => ModManifest.FoldKey( path );
 
 	private static (string Text, ModRefusalKind Kind)? Incompatibility( ModManifest manifest, ModSettings settings, ModVersion? openTpwVersion, GameEdition edition )
 	{
 		if ( manifest.OpenTpw != null && openTpwVersion is { } version && !manifest.OpenTpw.Contains( version ) )
 			return ($"needs OpenTPW {manifest.OpenTpw}, not {version}", ModRefusalKind.Incompatible);
+		if ( manifest.ScriptApi != null && !manifest.ScriptApi.Contains( ModVersion.Parse( ScriptLimits.ScriptApiVersion ) ) )
+			return ($"needs script API {manifest.ScriptApi}, not {ScriptLimits.ScriptApiVersion}", ModRefusalKind.Incompatible);
 		if ( manifest.Edition is { } wanted && wanted != edition )
 			return ($"is for {ModManifest.EditionToken( wanted )}, not {ModManifest.EditionToken( edition )}", ModRefusalKind.Incompatible);
 		foreach ( var input in manifest.Inputs )
@@ -319,6 +403,8 @@ public sealed class ModSet
 					return ($"'{path}' is not a string table: files below '{strings}' must be <Language>/<NAME>.str", ModRefusalKind.Other);
 			}
 		}
+		if ( manifest.Content.Scripts is { } scripts && CompileScripts( node, scripts ) is { } scriptError )
+			return (scriptError, ModRefusalKind.Script);
 		if ( manifest.Content.Objects is not { } objects )
 			return null;
 		if ( edition != GameEdition.ThemeParkWorld )
@@ -343,6 +429,63 @@ public sealed class ModSet
 				return ($"its objects read from the input '{inputId}', but '{folder}' is neither a Data folder nor an install holding one", ModRefusalKind.MissingInput);
 			node.InputDirectories[inputId!] = data;
 		}
+		return null;
+	}
+
+	/// <summary>
+	/// Checks and compiles a mod's scripts from the bytes <see cref="ReadFilesRetaining"/> kept (never the path again): every listed file exists,
+	/// stays out of the other content folders, is within the per-file and the total size caps and compiles; each hook names a function that
+	/// exists in exactly one file with the hook's parameter count. Returns the refusal reason, or null with <see cref="Node.Scripts"/> set.
+	/// </summary>
+	private static string? CompileScripts( Node node, ModScripts scripts )
+	{
+		var manifest = node.Manifest!;
+		var compiled = new List<ModScriptFile>();
+		long total = 0;
+		foreach ( var listed in scripts.Files )
+		{
+			var path = node.Files!.Select( entry => entry.Path ).FirstOrDefault( candidate => FoldKey( candidate ) == FoldKey( listed ) );
+			if ( path == null )
+				return $"script file '{listed}' is not a file of the mod";
+			foreach ( var other in new[] { manifest.Content.Overrides, manifest.Content.Strings } )
+				if ( other != null && FoldKey( path ).StartsWith( FoldKey( other ) + "/", StringComparison.Ordinal ) )
+					return $"script file '{path}' is inside the content folder '{other}'";
+			if ( manifest.Content.Objects != null && FoldKey( path ) == FoldKey( manifest.Content.Objects ) )
+				return $"script file '{path}' is also the objects file";
+			if ( !node.RetainedSources!.TryGetValue( FoldKey( path ), out var bytes ) || bytes == null )
+				return $"script '{path}' is larger than {ScriptLimits.MaxSourceBytes} bytes";
+			total += bytes.Length;
+			if ( total > ModManifest.MaximumScriptBytes )
+				return $"the scripts are larger than {ModManifest.MaximumScriptBytes} bytes together";
+			try
+			{
+				compiled.Add( new ModScriptFile( path, bytes, ScriptProgram.Compile( bytes ) ) );
+			}
+			catch ( ScriptCompileException exception )
+			{
+				return $"script '{path}' line {exception.Line}: {exception.Detail}";
+			}
+			catch ( Exception exception )
+			{
+				// a compiler fault on a pathological file must refuse the mod, not the start
+				return $"script '{path}' could not be compiled ({exception.GetType().Name})";
+			}
+		}
+		var hooks = new Dictionary<string, (int File, string Function)>( StringComparer.Ordinal );
+		foreach ( var (hook, function) in scripts.Hooks.OrderBy( pair => pair.Key, StringComparer.Ordinal ) )
+		{
+			var owners = Enumerable.Range( 0, compiled.Count ).Where( index => compiled[index].Program.HasFunction( function ) ).ToList();
+			if ( owners.Count == 0 )
+				return $"hook '{hook}' names the function '{function}', which no script defines";
+			if ( owners.Count > 1 )
+				return $"hook '{hook}' names the function '{function}', which more than one script defines";
+			var expected = ScriptLimits.HookParameters[hook];
+			var actual = compiled[owners[0]].Program.ParameterCount( function );
+			if ( actual != expected )
+				return $"hook '{hook}' needs a function with {expected} parameters, but '{function}' has {actual}";
+			hooks[hook] = (owners[0], function);
+		}
+		node.Scripts = new ModScriptSet( compiled, hooks );
 		return null;
 	}
 
@@ -486,6 +629,8 @@ public sealed class ModSet
 		public bool Enabled { get; set; }
 		public IReadOnlyList<(string Path, string Sha256)>? Files { get; set; }
 		public ModObjectsFile? Objects { get; set; }
+		public IReadOnlyDictionary<string, byte[]?>? RetainedSources { get; set; }
+		public ModScriptSet? Scripts { get; set; }
 		public Dictionary<string, string> InputDirectories { get; } = new( StringComparer.Ordinal );
 	}
 }

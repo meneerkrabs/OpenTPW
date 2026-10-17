@@ -157,6 +157,9 @@ public static class UiImages
 		}
 	}
 
+	/// <summary>Forgets the cached directory listings (tests that switch the data folder).</summary>
+	internal static void ResetListings() => listings.Clear();
+
 	/// <summary>
 	/// Resolves a model material name (e.g. <c>b_okay</c>) to a file in <paramref name="directory"/>
 	/// (default <c>/ui/textures</c>), case-insensitively; null when the original has no such texture.

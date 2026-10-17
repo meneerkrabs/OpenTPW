@@ -100,8 +100,8 @@ or full gameplay and does not download proprietary game files.
 
 The choices themselves live in `<config>/mods.json`; see [MODS.md](MODS.md). Changes apply at the next start.
 
-`OPENTPW_TPI_PATH=/path/to/Theme\ Park\ Inc bash scripts/smoke-tpi-rides.sh '/path/to/Theme Park World'` runs the native smokes with the example Theme Park Inc rides mod
-([MODS.md](MODS.md#making-a-theme-park-inc-rides-mod)); it needs a window, so not while the screen is locked.
+`OPENTPW_TPI_PATH=/path/to/Theme\ Park\ Inc bash scripts/smoke-tpi-rides.sh '/path/to/Theme Park World'` runs the native smokes with the shipped Theme Park Inc rides mod (`opentpw.tpi-rides`)
+([MODS.md](MODS.md#the-shipped-theme-park-inc-rides-mod)); it needs a window, so not while the screen is locked.
 
 ## Diagnostic model inspection
 
@@ -152,6 +152,19 @@ and a handyman), runs 30 simulated minutes as fast as possible and prints one pa
 invariant. Exit code: 1 when any row fails, 2 when no row fails but at least
 one is unresolved, 0 only when every row passes. M3 is accepted only at exit code 0. See [M3-GATE.md](M3-GATE.md).
 
+## Headless guest report
+
+```sh
+dotnet source/OpenTPW/bin/Debug/net11.0/OpenTPW.dll --guest-report [--guest-scale plan|extended] [--guest-report-json guests.json]
+```
+
+Measures the guests' behaviour passively (docs/SMARTER-GUESTS.md): eight fixed seeds of the synthetic park scenario and, when `OPENTPW_GAME_PATH` or `--game-path` is set, the four
+themes' level parks, each with a warm-up and a measured window in in-game days. It prints a short table (outcome mix of the queue attempts, waits over boarded attempts, cohort
+happiness, departures by predicate, the use Gini, revenue per guest, stuck guests, CPU and allocation per tick) and writes the stable JSON report. It opens no window and changes no
+simulation state. `--guest-seeds`, `--guest-warmup-days`, `--guest-days`, `--guest-levels`, `--guest-level-seeds`, `--guest-arrivals` and `--guest-no-perf` set the scale. See
+[SMARTER-GUESTS.md](SMARTER-GUESTS.md). `--guest-extension smarter-guests` (with `--guest-report`: build the run with the extension on, so `--guest-compare` can set it against the default), `--guest-mod folder|id` (with `--guest-report`: switch a mod on for the run, a mod folder or the id of a mod shipped with OpenTPW such as `opentpw.example.patient-guests`; repeatable; the table and the JSON then list each script mod's calls, steps and failures), `--guest-compare baseline.json candidate.json [--guest-targets metric,metric]` compares two reports
+in standard errors of the seed spread and exits 1 on a regression or a target that did not improve.
+
 ## Headless M4 attraction and script gate
 
 ```sh
@@ -194,9 +207,11 @@ charged at Theme Park Inc's own prices (the money runs; see [the economy](THEME-
 the simulation. `--capture-world out.png --capture-frames 300` writes a screenshot. The folder must
 hold Theme Park Inc's `Data` folder (an installation, or the cabinets extracted as below); it is
 detected by its retail `levels/Standard.sam` or by `Ver.txt` beside the Theme Park Inc theme folders.
-Theme Park Inc data given to any other start (no `--load-original-level`, a Theme Park World level,
-`--sandbox`, `--front-end`, `--smoke-test`, `--park-resume-smoke`, `--export-park`, `--import-park`,
-`--visit-park`) is refused with a message that points here. Current desktop packages can use the explicit world command above. The new desktop edition
+Without a world (`--front-end`, or no mode option at all) the same data opens the slice's
+[Personnel File start screen](THEME-PARK-INC.md#theme-park-inc-front-end): Enter Game starts science, and a zone
+chooser offers Polar Zone and Arabian Nights. Theme Park Inc data given to any other start (a Theme Park World level,
+`--sandbox`, `--smoke-test`, `--park-resume-smoke`, `--export-park`, `--import-park`,
+`--visit-park`, `--front-end` together with a world) is refused with a message that points here. Current desktop packages can use the explicit world command above. The new desktop edition
 chooser is reviewed in PR #146 for a future release; the browser already offers explicit experimental
 TPI world selection. See the [static TPI launch guide](https://opentpw.io/theme-park-inc.html) for
 build availability, setup steps and limitations. Adding
@@ -213,8 +228,10 @@ mkdir tpinc-data && unshield -d tpinc-data x '/Volumes/THEMEPARKINC/data1.cab'
 ```
 
 The files land in per-component folders; `tpinc-data/Data` is the folder the viewer needs (point
-`--game-path` at `tpinc-data`, or at the folder that holds `Data`). The language string tables are
-separate folders (`_Support_<Language>_String_Tables`) that the viewer does not use.
+`--game-path` at `tpinc-data`, or at the folder that holds `Data`). `Data/Language` holds the five languages of the CD
+(Dutch, English, French, German, Swedish): `--language Dutch` (or `OPENTPW_LANGUAGE`, or the saved choice) shows the slice's
+interface and its object names in that language ([LANGUAGES.md](LANGUAGES.md#theme-park-inc)). The separate folders
+`_Support_<Language>_String_Tables` hold only the installer's own strings and are not read.
 
 ## Read-only Theme Park Inc texture inspection
 

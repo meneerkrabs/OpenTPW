@@ -126,14 +126,13 @@ async function page(theme, active = false) {
 		AddFile(path, bytes) { calls.push(['file', path]); files.set(path, bytes[0]); },
 		LevelLoaded(value) { calls.push(['ready', value]); },
 		StartExperimental(origin, value) { calls.push(['experimental', value]); }, Start() { calls.push(['lobby']); },
-		ReadFile() { throw new Error('no saved language'); }, ClarityDistribution() { return '{"packManifest":{}}'; },
-		InstallClarity() {}, Frame() { return false; },
+		ReadFile() { throw new Error('no saved language'); }, Frame() { return false; },
 	};
 	const store = { manifest: null, bytes: { stored: 0 }, begin() { calls.push(['cache-begin']); }, async flush() {} };
 	const environment = {
 		dotnet: { async create() { return { setModuleImports() {}, async getAssemblyExports() { return { OpenTPW: { Program: program } }; },
 			getConfig() { return { mainAssemblyName: 'synthetic' }; }, async runMain() {} }; } },
-		webgl: {}, audio: {}, storage: { async restore() {}, async sync() {} }, createTextureDownloads() { return {}; },
+		webgl: {}, audio: {}, storage: { async restore() {}, async sync() {} },
 		originals: { supported() { return true; }, MODES: ['lazy', 'all', 'off'], async openOriginalStore() { return store; } },
 		...startup, inputs, document: { getElementById: element, addEventListener() {} },
 		location: { search: '', hostname: 'test.invalid', origin: 'https://test.invalid' },

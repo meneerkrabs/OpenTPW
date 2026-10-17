@@ -1,25 +1,23 @@
-# Texture packs (Clarity, Enhanced and Original)
+# Texture packs (Enhanced, Detailed and Original)
 
-October 11, 2026. Status: **OpenTPW extension (`[EXT:texture-pack]`), Original world textures and Enhanced HUD/icons by default.**
-The world-texture options offer **Original** (the game's own textures), **Enhanced (Clarity)** (`clarity-enhanced`),
-**Enhanced (legacy)** (the previous `enhanced` choice), and other installed packs. An explicit saved
-choice is preserved. A fresh installation uses Original world textures plus the HD HUD and menu
-icons included with OpenTPW. This interface art needs no download. Downloading a world-texture pack
-requires explicitly selecting Enhanced in the options.
-Clarity uses its own replacements, including interface art; a missing replacement falls back to the
-shipped HD interface icons or the original world texture. The separate **HUD and icons** option
-selects Enhanced or Original interface art. To reproduce every original texture, choose Original for
-both world textures and HUD/icons. Original HUD/icons excludes pack UI replacements even while
-Enhanced (Clarity) world textures remain selected.
+October 17, 2026. Status: **OpenTPW extension (`[EXT:texture-pack]`), Original world textures and Enhanced HUD/icons by default.**
 
-## Clarity and bundled packs
+> **Clarity removed (October 17, 2026).** The curated Clarity pack (`clarity-enhanced`) and everything that offered,
+> downloaded, verified or preferred it were removed from OpenTPW on the project owner's decision. That covers its
+> distribution manifest and checksum, the in-game download screen, the browser's lazy texture delivery, the packaging and
+> publishing tools and the publish workflow. A saved `clarity-enhanced` choice reads as Original (see "Setting and
+> migration"). Clarity was the only downloadable pack, so OpenTPW has no pack download system any more: packs are
+> built locally or installed by hand.
 
-The Clarity pack's October 11 manifest lists 4,245 replacements, including 453 interface textures.
-It records a Real-ESRGAN base with self-hosted Clarity detail (`juggernaut_reborn` and
-`control_v11f1e_sd15_tile`), followed by palette correction. It uses mixed sizes: the base is 4×,
-refined world textures 8×, and refined sprite atlases 4×. OpenTPW reads each PNG's actual dimensions;
-the manifest's `Scale: 4` does not mean every image is 4×. The pack also records nine movies; movie
-replacement is separate from the texture loader described here.
+The world-texture options offer **Original** (the game's own textures), **Enhanced** (the `enhanced` pack, the
+default name of the local builder), **Detailed**, and other installed packs. An explicit saved choice is preserved.
+A fresh installation uses Original world textures plus the HD HUD and menu icons included with OpenTPW. This
+interface art needs no download. Enhanced is always listed; without a local `enhanced` pack it means the shipped
+interface art only. The separate **HUD and icons** option selects Enhanced or Original interface art. To reproduce
+every original texture, choose Original for both world textures and HUD/icons. Original HUD/icons excludes pack UI
+replacements even while a world pack is selected.
+
+## Packs
 
 For a named pack, OpenTPW checks these locations in order:
 
@@ -28,18 +26,16 @@ For a named pack, OpenTPW checks these locations in order:
 
 Each pack needs a supported `pack.json` and a `textures` directory. An invalid local manifest is
 reported and a valid bundle of the same name is tried. The options list usable packs from both
-locations once, with Clarity, Enhanced and Detailed first. If Clarity is unavailable, the game reports
-the missing pack and continues with original world textures; the independent HUD choice determines
+locations once, with Enhanced and Detailed first, then the others alphabetically. If a selected pack is unavailable,
+the game reports the missing pack and continues with original world textures; the independent HUD choice determines
 whether its icons come from shipped HD art or the original game.
 
 Desktop publishing already copies `content/**/*`, so a pack staged in the second location travels
 with the executable and works offline. This runtime support does not fetch packs or include their
-binary content by itself. The web build must separately supply the same files to its virtual file
-system; desktop content copying does not automatically bundle the pack in the browser.
+binary content by itself. The browser build has no local packs: it supplies only the shipped HD interface art.
 
-With Enhanced HUD/icons enabled, Clarity's interface replacements take precedence over shipped hero art. Enhanced and other older
-choices retain their existing priority: shipped hero icons, then the selected pack. An explicit
-`OPENTPW_TEXTURE_PACK=<pack>/textures` override pins that directory and takes precedence over both
+With Enhanced HUD/icons enabled, named packs use the priority shipped hero icons first, then the selected pack. An
+explicit `OPENTPW_TEXTURE_PACK=<pack>/textures` override pins that directory and takes precedence over both
 the saved choice and shipped icons.
 
 ## Shipped interface art
@@ -50,8 +46,7 @@ categories (rides, shops, shows, features), door, enter-park, erase, OK, exit, r
 arrows and the slider ball, with their pressed, highlighted and disabled states, and the golden ticket
 and golden key counters at the top right. With Enhanced they
 replace the original interface art before its pack is consulted (`TexturePack.Find`) when Enhanced
-HUD/icons is enabled. The same shipped icons work with Original world textures. With Clarity
-they provide fallback icons wherever that pack has no replacement.
+HUD/icons is enabled. The same shipped icons work with Original world textures.
 
 Provenance: on October 10, 2026 each base icon was cut out of the original texture at its alpha mask,
 enlarged, and redrawn by Google Gemini's image model in the Gemini web app with a fixed prompt per icon
@@ -83,7 +78,7 @@ becomes 512×512).
 
 ## Variants
 
-Besides Clarity, the local builder offers two world-texture variants. Each is a separate pack under
+The local builder offers two world-texture variants. Each is a separate pack under
 `<config>/texture-packs/`, beside `graphics.json`; `OPENTPW_CONFIG_DIR` can override the config
 directory. You can build either or both and switch between them in the options.
 
@@ -118,9 +113,8 @@ You supply the models; OpenTPW ships and downloads none of them.
 ## Building a pack
 
 The local builder makes a pack on the player's machine from their own installation. Its default
-name remains `enhanced`, so a normal build does not overwrite the curated Clarity choice. Building
-does not upload the resulting pack. Distribution of pack images is a separate project-owner decision;
-runtime pack support does not grant rights to the original assets or the models used to create them.
+name is `enhanced`. Building does not upload the resulting pack. OpenTPW distributes no pack images (since Clarity was
+removed); runtime pack support does not grant rights to the original assets or the models used to create them.
 
 1. Get `realesrgan-ncnn-vulkan` for your platform (the macOS build is universal and runs on Apple
    silicon through MoltenVK). Unpack it with its `models` folder next to the executable. For the
@@ -149,20 +143,27 @@ runtime pack support does not grant rights to the original assets or the models 
    it warns when the models differ). All of these act per pack name. The game lists packs under the
    config directory and bundled content; a pack built elsewhere is used with `OPENTPW_TEXTURE_PACK=<dir>/textures`, which pins
    the pack and overrides the setting.
-3. Choose **Game Options -> OpenTPW -> Enhanced textures** (Original, Enhanced (Clarity), Enhanced (legacy), then Detailed and any other
-   installed pack) and press OK. The textures are swapped in the running game behind a loading bar; no
-   restart is needed. Enhanced (legacy) is always offered: without a local `enhanced` pack it means the shipped
+3. Choose **Game Options -> OpenTPW -> Enhanced textures** (Original, Enhanced, then Detailed and any other
+   installed pack) and press OK. The textures are swapped in the running game in the background; no
+   restart is needed. Enhanced is always offered: without a local `enhanced` pack it means the shipped
    interface art only.
 
 ### Setting and migration
 
 `graphics.json` stores the choice as `"TexturePack": "<name>"`. `""` is Original (the default when the
-key is missing or null), `"clarity-enhanced"` is Enhanced (Clarity), `"enhanced"` is the earlier
-Enhanced choice, `"detailed"` is Detailed, and other names select the corresponding local or
-bundled pack. Files from earlier
+key is missing or null), `"enhanced"` is Enhanced, `"detailed"` is Detailed, and other names select the
+corresponding local or bundled pack. Files from earlier
 versions with `"EnhancedTextures": true` are read as `"TexturePack": "enhanced"`, `false` as Original;
 the old key is dropped the next time the settings are saved. Smoke tests always run on the originals. If both keys exist the new one
 wins. Names must be plain directory names (letters, digits, `-`, `_`, `.`).
+
+**Clarity migration.** A saved `"TexturePack": "clarity-enhanced"` (any case) reads as `""` (Original world
+textures). `GraphicsSettings.Load` logs "The 'clarity-enhanced' texture pack was removed; using the original world
+textures." once and writes the migrated file back, so later starts are silent. The interface choice is untouched: a
+Clarity player without an explicit `EnhancedInterface` keeps the shipped HD HUD. A player-local copy under
+`<config>/texture-packs/clarity-enhanced` is not removed and gets no special handling: if it holds a valid
+`pack.json` and `textures` directory it is listed like any other installed pack (labelled "clarity-enhanced") and
+can be selected again by hand.
 
 `"EnhancedInterface": true` selects HD HUD/icons and `false` selects original interface textures,
 independently of `TexturePack`. Fresh settings use `true`. Older files containing an explicit
@@ -171,11 +172,8 @@ by inferring `EnhancedInterface: false`; an explicit new flag always wins. Earli
 infer `true`. The inferred choice is written when graphics settings are next saved. Native smoke
 tests set both world and interface choices to Original for original-pixel checks.
 
-`TexturePack.DefaultName` names the preferred Enhanced pack (`clarity-enhanced`); it is not the
-startup graphics choice. Reading settings, finding installed packs, and activating local files do
-not download content. Downloads belong to the explicit options action; a saved enhanced choice
-can use already-installed replacements on subsequent starts without requesting a startup download.
-Changing only HUD/icons uses the local texture-reload callback and never requests a world pack.
+Reading settings, finding installed packs, and activating local files never touch the network. Changing only
+HUD/icons uses the local texture-reload callback and never requests a world pack.
 
 ### Pre-pass
 

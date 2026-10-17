@@ -28,7 +28,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends python3 && rm -
 COPY content/shaders/ content/shaders/
 COPY content/data/ content/data/
 COPY content/hero-art/ content/hero-art/
-COPY content/texture-packs/clarity-enhanced/ content/texture-packs/clarity-enhanced/
 # The shipped data mods and the pools extension: embedded in the page (objects.json, the sprite manifest), and the pools sprite sets are published as static files (pools-sprites/).
 COPY content/mods/ content/mods/
 COPY content/pools/ content/pools/

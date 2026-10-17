@@ -51,6 +51,7 @@ internal sealed partial class GameFlow
 			{
 				candidateAdvisor.AttachLevel( candidate );
 				candidateAdvisor.CaptionSink = candidateHud.PostAdvisorCaption;
+				candidateAdvisor.PlayerKeys = PlayerKeys;
 				candidateAdvisor.RestoreSnapshot( snapshot.Advisor! );
 			}
 			RequireProgressSaved();

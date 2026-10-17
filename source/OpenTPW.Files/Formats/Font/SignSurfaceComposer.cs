@@ -36,7 +36,7 @@ public static class SignSurfaceComposer
 		var surface = new byte[Width * SurfaceHeight * 4];
 		if ( sign.ExtraImage is { } board )
 		{
-			// [APPROX:COMPAT-018] GPU row orientation follows the decoded native container but awaits independent original-platform pixel parity. The PC reader's BILZ chunk tag is compared at 0x6193D0 (the inflate step); the inverse transform after it is read (D4 coefficients computed at start-up 0x591600..0x591690, 1-D inverse 0x592C50, YCbCr conversion 0x5935A0 in SignWaveletDecoder.ColourByte); open: the header scale position in 0x592E60, the alpha conversion and the x87 precision control at the conversion
+			// [APPROX:COMPAT-018] GPU row orientation follows the decoded native container but awaits independent original-platform pixel parity. The PC reader's BILZ chunk tag is compared at 0x6193D0 (the inflate step); the transform after it (dequantisation scale, D4 coefficients 0x591600..0x591690, inverses 0x592C50 / 0x5933A0 / 0x592E60, conversions 0x5935A0 and 0x593301) is SignWaveletDecoder, at the thread's x87 precision; open: the header-to-plane scale order of the PC loader, the GPU row orientation and board pixels
 			var pixels = board.IsWavelet ? SignWaveletDecoder.Decode( board ) : board.Payload;
 			if ( board.Width != Width || board.Height != Height || board.BytesPerPixel != 4 || pixels.Length != Width * Height * 4 )
 				throw new InvalidDataException( "Sign board dimensions or pixel format do not match the native destination." );

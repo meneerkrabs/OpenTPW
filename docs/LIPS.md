@@ -588,9 +588,8 @@ Imported parks saved open are opened during level construction, before the
 advisor attaches, so that load-time opening raises no event; a park started without
 a save stays closed until the player opens it (tp.exe `0x51562d`).
 
-Contextual help ("Contextual help" below) adds 81 help messages (of the 82 descriptors with the help score; 291 names the absent response 551) and eight HUD windows' producers. The producer of every one of the 351 messages (scan, event, help or none), its inputs and its OpenTPW status are in docs/reverse/ADVISOR-SCAN.md and `content/data/advisor-producers.toml`. Not wired: the 135 computed
-score producers and the
-background score scan, research/staff/prank/ride/challenge messages (the challenge warning, advice 271, is wired), slaps, the tool-start help and the recovered
+Contextual help ("Contextual help" below) adds 81 help messages (of the 82 descriptors with the help score; 291 names the absent response 551) and eight HUD windows' producers. The producer of every one of the 351 messages (scan, event, help or none), its inputs and its OpenTPW status are in docs/reverse/ADVISOR-SCAN.md and `content/data/advisor-producers.toml`. The background score scan is wired (`AdvisorScan`, docs/reverse/ADVISOR-SCAN.md "The scan"): once per park turn it scores one scanned descriptor and queues what is above the minimum; the money batch is its first producer (advice 100-105 and 107, ported from `0x59E8D0`-`0x59EB80`; 102 and 101 in the full simulation only), and the golden-ticket advice 234-237 is defined. Not wired: the other 127 computed
+score producers, research/staff/prank/ride/challenge messages that are not listed above (the challenge warning, advice 271, is wired), slaps, the tool-start help and the recovered
 `OriginalAdvisorLipDriver` timing (it needs the original pause-aware advisor
 clock, which OpenTPW does not reconstruct). The bankruptcy producer is the bank's monthly guard (`0x4D0370`, `ParkEventKind.BankruptcyMessage`). Read-only visits of
 shared parks (online extension) and the generic sandbox (`--sandbox`, plain

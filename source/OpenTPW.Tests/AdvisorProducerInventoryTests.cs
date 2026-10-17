@@ -199,9 +199,14 @@ public class AdvisorProducerInventoryTests
 			Assert.IsTrue( defined.Contains( row.Message ), $"message {row.Message} is wired but AdvisorTables does not define it" );
 			if ( row.Kind == "help" )
 				Assert.IsTrue( windowHelp.Contains( row.Message ), $"help message {row.Message} is wired but no window or tool of AdvisorUiHelp posts it" );
+			else if ( row.Kind == "scan" )
+				Assert.IsTrue( AdvisorScanCallbacks.Implemented.ContainsKey( AdvisorDescriptorTable.Rows[row.Message].Callback ), $"scan message {row.Message} is wired but its callback is not ported" );
 			else
 				Assert.AreEqual( "event", row.Kind, $"message {row.Message}" );
 		}
+		// and a ported scan callback makes its message wired
+		foreach ( var scanned in AdvisorDescriptorTable.Rows.Where( descriptor => AdvisorScanCallbacks.Implemented.ContainsKey( descriptor.Callback ) ) )
+			Assert.AreEqual( "wired", messages[scanned.MessageId].Status, $"message {scanned.MessageId}'s callback is ported" );
 		// and the other way: what OpenTPW posts is wired in the inventory
 		foreach ( var id in windowHelp )
 			Assert.AreEqual( "wired", messages[id].Status, $"help message {id} is posted by OpenTPW" );
@@ -216,17 +221,19 @@ public class AdvisorProducerInventoryTests
 	}
 
 	[TestMethod]
-	public void GlobalTicketAdviceIsPostedButNotDefined()
+	public void GlobalTicketAdviceIsPostedAndDefined()
 	{
-		// AutomaticAdvisor.GlobalTicketMovedMessage posts 234-237, but AdvisorTables has no definition, so Controller.Advise returns null:
-		// the inventory keeps them "ready" until the four EventScoreKeys rows exist (docs/reverse/ADVISOR-SCAN.md).
+		// AutomaticAdvisor.GlobalTicketMovedMessage posts 234-237 and AdvisorTables defines them (the four EventScoreKeys rows), so they are wired.
 		var (_, messages) = Inventory();
 		var defined = AdvisorTables.AllMessages.Select( message => message.MessageId ).ToHashSet();
 		var posted = new[] { GoldenTicketKind.CoasterHeight, GoldenTicketKind.GokartExcitement, GoldenTicketKind.WaterLength, GoldenTicketKind.BigPark }
 			.Select( kind => AutomaticAdvisor.GlobalTicketMovedMessage( kind )!.Value ).ToArray();
 		CollectionAssert.AreEqual( new[] { 234, 235, 236, 237 }, posted );
 		foreach ( var id in posted )
-			Assert.AreEqual( defined.Contains( id ), messages[id].Status == "wired", $"message {id}: wired exactly when AdvisorTables defines it" );
+		{
+			Assert.IsTrue( defined.Contains( id ), $"message {id} is defined" );
+			Assert.AreEqual( "wired", messages[id].Status, $"message {id}: wired because AdvisorTables defines it" );
+		}
 	}
 
 	[TestMethod]

@@ -20,18 +20,14 @@ namespace OpenTPW.Tests;
 public class GuestSnapshotJsonContinuationTests
 {
 	/// <summary>
-	/// The guest snapshot carries no script clocks (the script slice owns them), but limbo and bounce deadlines are
-	/// absolute script-clock milliseconds. A restored park's scripts must therefore resume at the saving park's
-	/// clock before the guest restore can continue identically — this helper parks a fresh script in a WAIT until
-	/// exactly that time and then advances it the same number of ticks, without executing a single slice. It stands
-	/// in for the script slice's own snapshot until that lands.
+	/// Applies the saving script's own state (<see cref="RideVM.CaptureSnapshot"/> through the file codec) to a fresh script of the same code: the limbo
+	/// table, the heap, the clocks and the variables are script state now, not bridge state.
 	/// </summary>
-	private static void FastForwardScriptClock( RideVM script, double targetMilliseconds, float tick )
+	private static void RestoreScriptState( RideVM script, RideVM saved )
 	{
-		script.WaitFor( targetMilliseconds );
-		while ( script.TimeMilliseconds < targetMilliseconds - tick * 500 )
-			script.Advance( tick );
-		Assert.AreEqual( targetMilliseconds, script.TimeMilliseconds, 1e-6, "the parked script reached the saving script's clock exactly" );
+		var loaded = ParkResumeJson.Deserialize<RideVMSnapshot>( ParkResumeJson.Serialize( saved.CaptureSnapshot() ) );
+		loaded.ValidateSnapshot();
+		script.RestoreSnapshot( loaded );
 	}
 
 	/// <summary>Restores the script-side protocol variables a bridge snapshot describes (the script slice owns
@@ -274,26 +270,26 @@ public class GuestSnapshotJsonContinuationTests
 		var park = new GuestSnapshotTests.Rig( LimboBounceScript );
 		var tick = GuestSnapshotTests.RunUntil( park, rig => rig.Simulation.TickCount >= 4200, 0, 4201 );
 		// Long limbo holds keep both tables' front filled; the 6 s bounce holds churn through the continuation.
-		bool Occupied( GuestSnapshotTests.Rig rig ) => rig.Rides.All( ride => ride.Bridge.CaptureSnapshot().Limbo.Length > 0 )
+		bool Occupied( GuestSnapshotTests.Rig rig ) => rig.Rides.All( ride => ride.Script.LimboCount > 0 )
 			&& rig.Rides.Sum( ride => ride.Bridge.Riders.Count ) >= 3
 			&& rig.Rides.Any( ride => ride.Bridge.CaptureSnapshot().Bounce.Any( slot => slot.Guest != 0 ) );
 		// The original walk (WALK-004) reaches the three-way coincidence at tick 46,575 of this harness.
 		tick = GuestSnapshotTests.RunUntil( park, Occupied, tick, 60000 );
 		Assert.IsTrue( Occupied( park ), $"the harness reached rides with limbo and bounce occupancy (tick {tick})" );
-		foreach ( var (bridge, _) in park.Rides )
-			Assert.IsTrue( bridge.CaptureSnapshot().Limbo.Length > 0, $"{bridge.Name} holds limbo guests at the save" );
+		foreach ( var (bridge, script) in park.Rides )
+			Assert.IsTrue( script.LimboCount > 0, $"{bridge.Name} holds limbo guests at the save" );
 
 		var snapshot = park.Simulation.CaptureSnapshot();
 		var loaded = ParkResumeJson.Deserialize<GuestSimulationSnapshot>( ParkResumeJson.Serialize( snapshot ) );
-		foreach ( var attraction in loaded.Attractions )
-			Assert.IsTrue( attraction.Limbo.Length > 0, $"attraction {attraction.AttractionId} limbo tuples survived the codec occupied" );
+		foreach ( var (_, script) in park.Rides )
+			Assert.IsTrue( ParkResumeJson.Deserialize<RideVMSnapshot>( ParkResumeJson.Serialize( script.CaptureSnapshot() ) ).LimboValues!.Any( value => value != 0 ), "the script's limbo slots survived the codec occupied" );
 		Assert.IsTrue( loaded.Attractions.Any( attraction => attraction.Bounce.Any( slot => slot.Guest != 0 ) ),
 			"at least one ride's bounce slots survived the codec occupied" );
 
 		// The resumed park's scripts must resume at the saving scripts' clocks: the deadlines are absolute milliseconds.
 		var resumed = new GuestSnapshotTests.Rig( LimboBounceScript );
 		foreach ( var (savedRide, resumedRide) in park.Rides.Zip( resumed.Rides ) )
-			FastForwardScriptClock( resumedRide.Script, savedRide.Script.TimeMilliseconds, GuestSnapshotTests.Tick );
+			RestoreScriptState( resumedRide.Script, savedRide.Script );
 		resumed.Simulation.RestoreSnapshot( loaded );
 		RestoreProtocolVariables( loaded, resumed, park );
 		Assert.AreEqual( GuestSnapshotTests.CanonicalHash( park ), GuestSnapshotTests.CanonicalHash( resumed ), "the limbo park restored from the file hashes the same" );
@@ -417,27 +413,31 @@ public class GuestSnapshotJsonContinuationTests
 		Command( script, 1, 12, 9 );
 		Command( script, 4, 13, 2 );
 		Command( script, 4, 14, 9 );
-		CollectionAssert.AreEqual( new[] { 11, 12, 13, 14 }, bridge.Riders.ToArray(), "LIMBO and BOUNCE board their guests" );
+		// LIMBO is a pure script-table operation (TPW-EXE 0x554DE5): it boards nobody, only BOUNCE (a bridge opcode) does
+		CollectionAssert.AreEqual( new[] { 13, 14 }, bridge.Riders.ToArray(), "BOUNCE boards its guests" );
 		var captured = bridge.CaptureSnapshot();
-		var limboDeadline = captured.Limbo[0].Until;
+		Assert.AreEqual( 0, captured.Limbo.Length, "the bridge keeps no limbo table" );
+		var limboDeadline = (double)script.GetLimboSlot( 0 ).Expiry;
 		var bounceStart = captured.Bounce[0].Start;
 		var bounceDeadline = captured.Bounce[0].Until;
-		Assert.AreEqual( 11, captured.Limbo[0].Guest );
-		Assert.AreEqual( 12, captured.Limbo[1].Guest );
+		Assert.AreEqual( 11, script.GetLimboSlot( 0 ).Value );
+		Assert.AreEqual( 12, script.GetLimboSlot( 1 ).Value );
 		Assert.AreEqual( 13, captured.Bounce[0].Guest );
 		Assert.AreEqual( 14, captured.Bounce[1].Guest );
-		Assert.IsTrue( limboDeadline - script.TimeMilliseconds is > 1900 and < 2100, $"LIMBO 2 s holds about two seconds (deadline {limboDeadline} at {script.TimeMilliseconds})" );
+		Assert.IsTrue( limboDeadline - script.SchedulerMilliseconds is > 1900 and < 2100, $"LIMBO 2 s holds about two seconds (deadline {limboDeadline} at {script.SchedulerMilliseconds})" );
 		Assert.IsTrue( bounceDeadline - bounceStart is > 1900 and < 2100, "BOUNCE 2 s holds about two seconds" );
 
 		// The codec roundtrip, then a second bridge whose script resumes at the same clock (the script slice's job).
 		var loaded = ParkResumeJson.Deserialize<RideVisitorBridgeSnapshot>( ParkResumeJson.Serialize( captured ) );
 		var (restored, restoredScript) = DispatchRig( 31 );
 		restored.RestoreSnapshot( loaded );
-		FastForwardScriptClock( restoredScript, script.TimeMilliseconds, GuestSnapshotTests.Tick );
+		RestoreScriptState( restoredScript, script );
+		Assert.AreEqual( 11, restoredScript.GetLimboSlot( 0 ).Value, "the restored script holds the same limbo slots" );
 		CollectionAssert.AreEqual( bridge.Queue.ToArray(), restored.Queue.ToArray() );
 		CollectionAssert.AreEqual( bridge.Riders.ToArray(), restored.Riders.ToArray() );
 		var restoredCaptured = restored.CaptureSnapshot();
-		CollectionAssert.AreEqual( captured.Limbo, restoredCaptured.Limbo, "the restored limbo deadlines match exactly" );
+		Assert.AreEqual( script.GetLimboSlot( 0 ), restoredScript.GetLimboSlot( 0 ), "the restored limbo deadlines match exactly" );
+		Assert.AreEqual( script.GetLimboSlot( 1 ), restoredScript.GetLimboSlot( 1 ) );
 		CollectionAssert.AreEqual( captured.Bounce, restoredCaptured.Bounce, "the restored bounce slot table matches exactly" );
 		Assert.AreEqual( 0, RideVisitorBridge.ValidateSnapshot( restoredCaptured ).Count, "the restored bridge's own snapshot is valid" );
 
@@ -450,7 +450,7 @@ public class GuestSnapshotJsonContinuationTests
 		Assert.AreEqual( 0, Command( restoredScript, 5, 0 ) );
 
 		// Past the 2 s deadline, inside the release window: guest 11 (FIFO) and slot-0 guest 13 (index order) go.
-		while ( !(Math.Floor( script.TimeMilliseconds ) > Math.Floor( limboDeadline ) + 16
+		while ( !(Math.Floor( script.SchedulerMilliseconds ) > Math.Floor( limboDeadline ) + 16
 			&& Math.Floor( script.TimeMilliseconds ) > Math.Floor( bounceDeadline )
 			&& InUnbounceWindow( bounceStart, script.TimeMilliseconds )) )
 		{
@@ -472,11 +472,11 @@ public class GuestSnapshotJsonContinuationTests
 		Assert.AreEqual( 14, Command( script, 6, 0 ), "FORCEUNBOUNCE takes the remaining slot" );
 		Assert.AreEqual( 14, Command( restoredScript, 6, 0 ) );
 
-		// A released guest walks off: WALKOFF enqueues it (argument unchanged), WALKGET returns it FIFO.
-		Assert.AreEqual( 12, Command( script, 8, 12 ), "WALKOFF leaves the argument register unchanged" );
-		Assert.AreEqual( 12, Command( restoredScript, 8, 12 ) );
-		Assert.AreEqual( 12, Command( script, 7, 0 ), "WALKGET returned the walked-off guest" );
-		Assert.AreEqual( 12, Command( restoredScript, 7, 0 ) );
+		// A boarded guest walks off: WALKOFF enqueues it (argument unchanged), WALKGET returns it FIFO. Guest 14 is still aboard from its BOUNCE (limbo boards nobody).
+		Assert.AreEqual( 14, Command( script, 8, 14 ), "WALKOFF leaves the argument register unchanged" );
+		Assert.AreEqual( 14, Command( restoredScript, 8, 14 ) );
+		Assert.AreEqual( 14, Command( script, 7, 0 ), "WALKGET returned the walked-off guest" );
+		Assert.AreEqual( 14, Command( restoredScript, 7, 0 ) );
 
 		// Slot geometry through the codec: fill all three slots, free the first, and a new BOUNCE must refill the
 		// freed interior slot (index order) while trailing free slots are trimmed away.

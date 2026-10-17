@@ -39,9 +39,10 @@ public class SaveBlockWidthsTests
 		var block = Join( Words( SaveBlockWidths.ScriptsMagic, 0x118, 5, 7, 1, 0, 1, 0 ), new byte[2 * 0x118] );
 		Assert.AreEqual( 12 + 5 * 4 + 2 * 0x118, Measure( SaveBlock.Scripts, block ) );
 		Assert.AreEqual( 12 + 5 * 4, Measure( SaveBlock.Scripts, Words( SaveBlockWidths.ScriptsMagic, 0x118, 5, 7, 0, 0, 0, 0 ) ), "slot 0 alone has no record" );
-		// Without the magic or the 0x118 record size the loader reads two words and keeps its defaults.
-		Assert.AreEqual( 8, Measure( SaveBlock.Scripts, Words( 1, 0x118, 5 ) ) );
-		Assert.AreEqual( 8, Measure( SaveBlock.Scripts, Words( SaveBlockWidths.ScriptsMagic, 0x117, 5 ) ) );
+		// Without the magic or the 0x118 record size the original fails the whole load ("Restore scripts FAILED").
+		Rejects( SaveBlock.Scripts, Words( 1, 0x118, 5 ), "Restore scripts FAILED" );
+		Rejects( SaveBlock.Scripts, Words( SaveBlockWidths.ScriptsMagic, 0x117, 5 ), "Restore scripts FAILED" );
+		Rejects( SaveBlock.Scripts, Words( SaveBlockWidths.ScriptsMagic, 0x119, 5 ), "Restore scripts FAILED" );
 		Rejects( SaveBlock.Scripts, Words( SaveBlockWidths.ScriptsMagic, 0x118, 2, 0, 1 ), "truncated" );
 	}
 
@@ -52,7 +53,11 @@ public class SaveBlockWidthsTests
 		Assert.AreEqual( 8 + tables.Length + 4 + 6, Measure( SaveBlock.Particles, Join( Words( SaveBlockWidths.ParticlesMagic, 1 ), tables, Words( 6 ), new byte[6] ) ) );
 		Assert.AreEqual( 8, Measure( SaveBlock.Particles, Words( SaveBlockWidths.ParticlesMagic, 0 ) ), "switched off" );
 		Assert.AreEqual( 4, Measure( SaveBlock.Particles, Words( 1, 1, 0x9e68 ) ), "no particle magic" );
-		Assert.AreEqual( 12, Measure( SaveBlock.Particles, Words( SaveBlockWidths.ParticlesMagic, 1, 0x9e67 ) ), "wrong table size" );
+		Rejects( SaveBlock.Particles, Words( SaveBlockWidths.ParticlesMagic, 1, 0x9e67 ), "globals table" );
+		var wrongField = Join( Words( SaveBlockWidths.ParticlesMagic, 1, SaveBlockWidths.ParticleHeaderBytes ), new byte[SaveBlockWidths.ParticleHeaderBytes], Words( SaveBlockWidths.ParticleFieldBytes + 1 ) );
+		Rejects( SaveBlock.Particles, wrongField, "stores a 35681-byte table" );
+		// The game's save call always writes a pool length of 0; the loader would still read a counted pool.
+		Assert.AreEqual( 8 + tables.Length + 4, Measure( SaveBlock.Particles, Join( Words( SaveBlockWidths.ParticlesMagic, 1 ), tables, Words( 0 ) ) ) );
 		Rejects( SaveBlock.Particles, Join( Words( SaveBlockWidths.ParticlesMagic, 1 ), tables, Words( 9 ), new byte[3] ), "truncated" );
 	}
 
@@ -114,15 +119,12 @@ public class SaveBlockWidthsTests
 	}
 
 	[TestMethod]
-	public void RsseReadsItsRecordsBuffersAndObjectLists()
+	public void RsseWidthFollowsTheTypedReader()
 	{
-		static byte[] Buffer( uint length, int unit = 1 ) => Join( Words( length ), new byte[length * unit] );
-		var record = Join( new byte[8], Buffer( 4 ), Buffer( 0 ), Buffer( 8 ), Buffer( 2 ), Buffer( 12 ), Buffer( 16 ), Buffer( 2, 32 ), Buffer( 0 ), Buffer( 4 ),
-			Words( SaveBlockWidths.RsseObjectsMagic, 3, 5 ), new byte[15] );
-		var block = Join( Words( SaveBlockWidths.RsseMagic, 6 ), new byte[6], Words( 0, 0, 0, 0, 0, 2, 8 ), record, record );
+		var block = SaveRsseTests.Block( SaveRsseTests.Record(), SaveRsseTests.Record( objects: 2 ) );
 		Assert.AreEqual( block.Length, Measure( SaveBlock.Rsse, block ) );
-		Assert.AreEqual( 36, Measure( SaveBlock.Rsse, Words( SaveBlockWidths.RsseMagic, 0, 0, 0, 0, 0, 0, 0, 0 ) ) );
-		Assert.AreEqual( 4, Measure( SaveBlock.Rsse, Words( 1, 0 ) ), "no RSSE magic" );
+		Assert.AreEqual( SaveRsseTests.Block().Length, Measure( SaveBlock.Rsse, SaveRsseTests.Block() ) );
+		Assert.AreEqual( 4, Measure( SaveBlock.Rsse, Words( 1, 0 ) ), "no RSSE magic: only the tag is consumed (not verified against the loader)" );
 		var badList = block.ToArray();
 		badList[block.AsSpan().IndexOf( Words( SaveBlockWidths.RsseObjectsMagic ) )] ^= 0xFF;
 		Rejects( SaveBlock.Rsse, badList, "'OBJ '" );

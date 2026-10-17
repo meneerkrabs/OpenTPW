@@ -46,6 +46,15 @@ internal static partial class PlayerTicketFile
 		public required int ExtraKeys { get; init; }
 		public required int SpentTickets { get; init; }
 		public required List<TicketData> Earned { get; init; }
+		/// <summary>Optional: the park holding each global ticket and its record (absent in files written before it existed, which load with unknown holders).</summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public List<HolderData>? GlobalHolders { get; init; }
+	}
+	private sealed record HolderData
+	{
+		public required GoldenTicketKind Kind { get; init; }
+		public required string Theme { get; init; }
+		public required long Record { get; init; }
 	}
 	private sealed record TicketData
 	{
@@ -57,7 +66,8 @@ internal static partial class PlayerTicketFile
 	{
 		var copy = PlayerTicketLedger.Restore( snapshot ).Capture();
 		return JsonSerializer.SerializeToUtf8Bytes( new Data { Format = FormatName, Version = 1, Mode = copy.Mode, ExtraKeys = copy.ExtraKeys,
-			SpentTickets = copy.SpentTickets, Earned = copy.Earned.Select( item => new TicketData { Theme = item.Theme, Kind = item.Kind } ).ToList() }, Context.Data );
+			SpentTickets = copy.SpentTickets, Earned = copy.Earned.Select( item => new TicketData { Theme = item.Theme, Kind = item.Kind } ).ToList(),
+			GlobalHolders = copy.Holders?.Select( item => new HolderData { Kind = item.Kind, Theme = item.Theme, Record = item.Record } ).ToList() }, Context.Data );
 	}
 
 	public static PlayerTicketLedger Deserialize( ReadOnlySpan<byte> bytes )
@@ -66,10 +76,11 @@ internal static partial class PlayerTicketFile
 		Data? data;
 		try { data = JsonSerializer.Deserialize( bytes, Context.Data ); }
 		catch ( JsonException exception ) { throw new InvalidDataException( "Malformed own player progress.", exception ); }
-		if ( data == null || data.Format != FormatName || data.Version != 1 || data.Earned == null || data.Earned.Count > PlayerTicketLedger.MaximumIdentities || data.Earned.Any( item => item == null ) )
+		if ( data == null || data.Format != FormatName || data.Version != 1 || data.Earned == null || data.Earned.Count > PlayerTicketLedger.MaximumIdentities || data.Earned.Any( item => item == null ) || data.GlobalHolders?.Count > 4 )
 			throw new InvalidDataException( "Invalid own player progress envelope." );
 		return PlayerTicketLedger.Restore( new( data.Mode, data.ExtraKeys, data.SpentTickets,
-			data.Earned.Select( item => new EarnedTicketIdentity( item.Theme, item.Kind ) ).ToArray() ) );
+			data.Earned.Select( item => new EarnedTicketIdentity( item.Theme, item.Kind ) ).ToArray(),
+			data.GlobalHolders?.Select( item => item == null ? throw new InvalidDataException( "Invalid own player progress envelope." ) : new GlobalTicketHolder( item.Kind, item.Theme, item.Record ) ).ToArray() ) );
 	}
 
 	public static void Save( string path, PlayerTicketSnapshot snapshot )

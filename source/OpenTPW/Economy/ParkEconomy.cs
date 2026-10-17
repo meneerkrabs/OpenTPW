@@ -741,6 +741,9 @@ public sealed class ParkEconomy : IParkEconomy
 	{
 		foreach ( var ticket in Objectives.CheckGoldenTickets( Counters, guestStatistics, Research, Ledger.ProfitThisYear, monthlyAdmissions, DroppedAdmissions, ParkCalendar.Seconds( Tick ), CoveredCells(), SecurityCoveragePercent() ) )
 			Raise( ParkEventKind.GoldenTicketWon, (int)ticket, 0, 0, ticket.ToString() );
+		// [BIN:TPW-EXE:0x004D5270 global ticket moved] result 4 of 0x5AF940 logs "Global ticket award moved here" (0x75A71C, a debug log) and queues the advice 0xEA + type (234 + type: coaster height, go-kart excitement, water length, big park) through 0x59B590
+		foreach ( var ticket in Objectives.LastMovedTickets )
+			Raise( ParkEventKind.GlobalTicketMoved, (int)ticket, 0, 0, ticket.ToString() );
 	}
 
 	/// <summary>Advances to the start of the calendar day <paramref name="days"/> days after the current one.</summary>

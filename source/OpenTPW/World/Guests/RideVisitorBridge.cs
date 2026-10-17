@@ -1412,7 +1412,7 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	/// <summary>
 	/// UNBOUNCE (<c>0xae020</c>, BOARD-plan §5): the first occupied slot whose deadline has passed (deadline &lt; now,
 	/// strict) inside the first 200 ms of each second since the guest bounced, trunc(((now − start) mod 1000) / 200) == 0
-	/// with a C remainder and 32-bit times in whole milliseconds. FORCEUNBOUNCE takes the first occupied slot. The slot
+	/// with a C remainder and 32-bit times in whole milliseconds. FORCEUNBOUNCE takes the first occupied slot inside that window whatever its deadline. The slot
 	/// is cleared in place, so a later BOUNCE fills it first.
 	/// </summary>
 	// [BIN:STP-PPC:0x100AE020 UNBOUNCE] slots in index order; release needs deadline < now (cmpw, 0x100AE088) and ((now − start) mod 1000) / 200 == 0 (0x100AE040..0x100AE0B0)
@@ -1425,7 +1425,8 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 			if ( guest == 0 )
 				continue;
 			var elapsed = unchecked( (int)(clock - (long)Math.Floor( start )) );
-			if ( force || ((long)Math.Floor( until ) < clock && elapsed % 1000 / 200 == 0) )
+			// [BIN:TPW-EXE:0x005558B7 FORCEUNBOUNCE window] FORCEUNBOUNCE (0x00555842) drops only the deadline test of UNBOUNCE (0x005557A3, deadline below the clock, signed, at 0x00555811): the 200 ms window of each second since the bounce (the remainder of elapsed / 1000 divided by 200 is 0) still decides
+			if ( elapsed % 1000 / 200 == 0 && (force || (long)Math.Floor( until ) < clock) )
 			{
 				FreeBounceSlot( list, index );
 				return guest;

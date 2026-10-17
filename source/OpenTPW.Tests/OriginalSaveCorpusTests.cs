@@ -51,6 +51,13 @@ public class OriginalSaveCorpusTests
 				maps[theme] = map = new MapFile( new MemoryStream( OriginalParkImportTests.ReadArchiveMember( $"levels/{theme}/terrain.wad", "base.map" ) ) );
 			var park = OriginalParkImport.Import( payload, map );
 			Assert.AreEqual( 0, park.UnresolvedObjects.Count, name );
+			// The framed RideSystem walk (SaveRideSystemBlock) runs on every save: each block walks exactly and its
+			// derived control counts are strictly minimal, with the routed records matching the placed/fixed counts.
+			Assert.IsNotNull( park.RideSystem, name );
+			Assert.IsTrue( park.RideSystem!.UniquelyWalked, $"{name}: every derived control count is strictly minimal" );
+			Assert.AreEqual( park.RideSystem.Used, (uint)park.RideSystem.Records.Length, name );
+			Assert.AreEqual( park.RideSystem.Records.Count( record => record.IsPlacedObject ), park.PlacedObjects.Count, name );
+			Assert.AreEqual( park.RideSystem.Records.Count( record => record.IsFixedItem ), park.FixedItems.Count, name );
 			for ( var x = 0; x < map.CellCountX; x++ )
 				for ( var y = 0; y < map.CellCountY; y++ )
 					if ( map.GetFlagsAt( x, y ).HasFlag( MapCellFlags.InitialPath ) )

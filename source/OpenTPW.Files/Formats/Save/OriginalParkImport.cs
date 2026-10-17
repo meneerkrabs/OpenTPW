@@ -23,7 +23,7 @@ public sealed class OriginalParkImport
 	private OriginalParkImport( MapFile map, SavePayloadLayout layout, SaveWorld world, IReadOnlyList<(int X, int Y)> pathCells,
 		IReadOnlyList<ImportedParkObject> placedObjects, IReadOnlyList<SaveObject> fixedItems, IReadOnlyList<SaveObject> unresolvedObjects,
 		IReadOnlyList<SaveAttraction> attractions, SaveEconomyRecords economy, IReadOnlyList<SaveStaff> staff, IReadOnlyList<SaveGuest> guests, SaveStaffHq? staffHq,
-		SaveAdvisorController? advisor, SaveResearchLab? researchLab, SaveCoasterBlock coasters )
+		SaveAdvisorController? advisor, SaveResearchLab? researchLab, SaveCoasterBlock coasters, SaveRideSystemBlock? rideSystem )
 		: this( map, layout, world.Cells, pathCells, placedObjects, fixedItems, unresolvedObjects )
 	{
 		this.world = world;
@@ -35,6 +35,7 @@ public sealed class OriginalParkImport
 		Advisor = advisor;
 		ResearchLab = researchLab;
 		CoasterBlock = coasters;
+		RideSystem = rideSystem;
 		var objectsByCell = placedObjects.Select( item => item.Record ).Concat( unresolvedObjects ).Concat( fixedItems )
 			.ToLookup( record => (record.X, record.Y) );
 		var attractionsByCell = attractions.ToLookup( attraction => (attraction.CellX, attraction.CellY) );
@@ -101,6 +102,19 @@ public sealed class OriginalParkImport
 	/// Theme Park Inc viewer, whose coaster semantics are separate (no Theme Park Inc coaster chunk is inferred).
 	/// </summary>
 	public SaveCoasterBlock? CoasterBlock { get; }
+	/// <summary>
+	/// The parsed RideSystem block (writer 0x464140, loader 0x4647a0): its used/free slot counts, first free slot
+	/// and the framed walk's typed records (scene-mesh instances of kinds 815/826/865 with their embedded nodes,
+	/// node states and animation time controls). Null for the Theme Park Inc viewer, whose RideSystem bytes carry
+	/// a separate SYSG record shape.
+	/// </summary>
+	/// <remarks>
+	/// The animation control count of a record is not stored in the save; the original loader reads it from the
+	/// live instance (which 0x4557c0 fills from the object type's template). The walk derives each count as the
+	/// smallest value that keeps the block walking, and <see cref="SaveRideSystemBlock.UniquelyWalked"/> reports
+	/// whether every derived count is strictly minimal.
+	/// </remarks>
+	public SaveRideSystemBlock? RideSystem { get; }
 	/// <summary>The clock, vanilla-time, game-system, cheat, advisor-scoring, camera and UI-count blocks of a Theme Park World save, read for the import report; null for Theme Park Inc.</summary>
 	public SaveRuntimeBlocks? RuntimeBlocks { get; private init; }
 	/// <summary>Original TPW track sections joined to scene records and matching attraction things.
@@ -202,29 +216,36 @@ public sealed class OriginalParkImport
 		var placed = new List<ImportedParkObject>();
 		var fixedItems = new List<SaveObject>();
 		var unresolved = new List<SaveObject>();
-		foreach ( var record in SaveObjectList.Parse( payload.Span, layout, map.CellCountX, map.CellCountY ) )
+		// The RideSystem block is framed: the walk is the original writer's (u32 length, used/free/first-free
+		// counts, then one presence byte per slot), and its records carry kinds 815, 826 and 865 of which only
+		// 815 and 865 name scene-mesh objects; the others (drawn instance kinds) are skipped.
+		var rideSystem = SaveRideSystemBlock.Parse( payload.Span, layout );
+		foreach ( var record in rideSystem.Records )
 		{
-			if ( record.IsFixedItem )
+			if ( record.IsPlacedObject )
 			{
-				fixedItems.Add( record );
-				continue;
-			}
-			if ( !record.TryGetFootprint( out var minX, out var minY, out var maxX, out var maxY ) )
-			{
-				unresolved.Add( record );
-				continue;
-			}
-			if ( minX < 0 || minY < 0 || maxX >= map.CellCountX || maxY >= map.CellCountY )
-				throw new InvalidDataException( $"Save object {record.Index} (Info.Id {record.InfoId}) footprint lies outside the map." );
-			for ( var y = minY; y <= maxY; y++ )
-			{
-				for ( var x = minX; x <= maxX; x++ )
+				var saveObject = record.ToSaveObject();
+				if ( !saveObject.TryGetFootprint( out var minX, out var minY, out var maxX, out var maxY ) )
 				{
-					if ( !cells[x, y].IsOccupied )
-						throw new InvalidDataException( $"Save object {record.Index} (Info.Id {record.InfoId}) footprint cell ({x}, {y}) is not occupied in the cell grid." );
+					unresolved.Add( saveObject );
+					continue;
 				}
+				if ( minX < 0 || minY < 0 || maxX >= map.CellCountX || maxY >= map.CellCountY )
+					throw new InvalidDataException( $"Save object {saveObject.Index} (Info.Id {saveObject.InfoId}) footprint lies outside the map." );
+				for ( var y = minY; y <= maxY; y++ )
+				{
+					for ( var x = minX; x <= maxX; x++ )
+					{
+						if ( !cells[x, y].IsOccupied )
+							throw new InvalidDataException( $"Save object {saveObject.Index} (Info.Id {saveObject.InfoId}) footprint cell ({x}, {y}) is not occupied in the cell grid." );
+					}
+				}
+				placed.Add( new ImportedParkObject( saveObject, minX, minY, maxX, maxY ) );
 			}
-			placed.Add( new ImportedParkObject( record, minX, minY, maxX, maxY ) );
+			else if ( record.IsFixedItem )
+			{
+				fixedItems.Add( record.ToSaveObject() );
+			}
 		}
 		var span = payload.Span;
 		var staff = world.Things.Where( thing => thing.Model is >= SaveThingModel.Mechanic and <= SaveThingModel.Researcher ).ToList()
@@ -245,7 +266,7 @@ public sealed class OriginalParkImport
 		var clockBlock = layout[SaveBlock.Clock];
 		var savedClock = clockBlock.Length == SavePayloadLayout.FixedBlockBytes[SaveBlock.Clock] ? System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian( span.Slice( clockBlock.Offset + 4, 4 ) ) : (uint?)null;
 		return new OriginalParkImport( map, layout, world, paths.AsReadOnly(), placed.AsReadOnly(), fixedItems.AsReadOnly(), unresolved.AsReadOnly(),
-			attractions, SaveEconomyRecords.Parse( span, world ), staff.AsReadOnly(), guests.AsReadOnly(), hq, advisor, lab, coasters )
+			attractions, SaveEconomyRecords.Parse( span, world ), staff.AsReadOnly(), guests.AsReadOnly(), hq, advisor, lab, coasters, rideSystem )
 		{
 			RuntimeBlocks = SaveRuntimeBlocks.Read( span, layout ),
 			SavedAdvisorClockMilliseconds = savedClock,

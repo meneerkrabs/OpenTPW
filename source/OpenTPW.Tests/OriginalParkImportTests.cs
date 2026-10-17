@@ -38,19 +38,8 @@ public class OriginalParkImportTests
 		return output.ToArray();
 	}
 
-	private static byte[] CreateObjectRecord( int infoId, int x, int y, int width, int height, int kind, int index, int rotation )
-	{
-		var record = new byte[60];
-		record[0] = 1;
-		var values = new[] { infoId, x, y, width, height, kind, index };
-		for ( var field = 0; field < values.Length; field++ )
-			BinaryPrimitives.WriteInt32LittleEndian( record.AsSpan( 1 + field * 4 ), values[field] );
-		BinaryPrimitives.WriteUInt16LittleEndian( record.AsSpan( 39 ), (ushort)rotation );
-		return record;
-	}
-
-	/// <summary>A complete synthetic save on <paramref name="map"/> whose RideSystem block carries <paramref name="rideSystem"/>.</summary>
-	private static byte[] CreatePayload( MapFile map, byte[] rideSystem, Func<int, int, byte[]>? cell = null ) =>
+	/// <summary>A complete synthetic save on <paramref name="map"/> whose framed RideSystem block carries <paramref name="rideSystem"/>.</summary>
+	private static byte[] CreatePayload( MapFile map, byte[]? rideSystem = null, Func<int, int, byte[]>? cell = null ) =>
 		SaveTestPayloads.Payload( SaveTestPayloads.World( SaveTestPayloads.ParkVariables(), SaveTestPayloads.Grid( map, cell ), SaveTestPayloads.Things( SaveTestPayloads.ParkThings() ) ), rideSystem );
 
 	internal static MapFile CreateMap( int countX, int countY, Func<int, int, byte> value )
@@ -133,30 +122,33 @@ public class OriginalParkImportTests
 	}
 
 	[TestMethod]
-	public void ScansObjectRecordsAndAppliesOnlyVerifiedFootprintRules()
+	public void WalksRideSystemRecordsAndAppliesOnlyVerifiedFootprintRules()
 	{
 		var map = CreateMap( 8, 8, ( _, _ ) => 0 );
-		var sysg = new[]
+		var slots = new[]
 		{
-			new byte[] { 1, 2, 3 },
-			CreateObjectRecord( 1601, 1, 1, 6, 3, SaveObject.FixedItemKind, 1, 0 ),
-			CreateObjectRecord( 1100, 2, 2, 3, 4, SaveObject.PlacedObjectKind, 3, 0 ),
-			CreateObjectRecord( 1411, 5, 6, 2, 2, SaveObject.PlacedObjectKind, 4, 90 ),
-			CreateObjectRecord( 1402, 7, 7, 1, 1, SaveObject.PlacedObjectKind, 5, 270 ),
-			CreateObjectRecord( 1999, 1, 1, 3, 2, SaveObject.PlacedObjectKind, 6, 90 ),
-			CreateObjectRecord( 1999, 1, 1, 1, 1, 816, 7, 0 ),
-			CreateObjectRecord( 1999, 8, 1, 1, 1, SaveObject.PlacedObjectKind, 8, 0 ),
-			CreateObjectRecord( 1999, 1, 1, 1, 1, SaveObject.PlacedObjectKind, 2, 0 ),
-		}.SelectMany( bytes => bytes ).ToArray();
-		var payload = CreatePayload( map, sysg );
-		var objects = SaveObjectList.Parse( payload, SavePayloadLayout.Parse( payload ), 8, 8 );
-		CollectionAssert.AreEqual( new[] { 1, 3, 4, 5, 6 }, objects.Select( item => item.Index ).ToArray() );
-		Assert.IsTrue( objects[0].IsFixedItem );
-		Assert.AreEqual( new SaveObject( objects[1].Offset, 1100, 2, 2, 3, 4, 815, 3, 0 ), objects[1] );
-		AssertFootprint( objects[1], 2, 2, 4, 5 );
-		AssertFootprint( objects[2], 5, 5, 6, 6 );
-		AssertFootprint( objects[3], 7, 7, 7, 7 );
-		Assert.IsFalse( objects[4].TryGetFootprint( out _, out _, out _, out _ ) );
+			SaveTestPayloads.RideSystemRecord( 1601, 1, 1, 6, 3, SaveObject.FixedItemKind, 1 ),
+			SaveTestPayloads.RideSystemRecord( 1100, 2, 2, 3, 4, SaveObject.PlacedObjectKind, 3 ),
+			SaveTestPayloads.RideSystemRecord( 1411, 5, 6, 2, 2, SaveObject.PlacedObjectKind, 4, rotation: 90 ),
+			SaveTestPayloads.RideSystemRecord( 1402, 7, 7, 1, 1, SaveObject.PlacedObjectKind, 5, rotation: 270 ),
+			SaveTestPayloads.RideSystemRecord( 1999, 1, 1, 3, 2, SaveObject.PlacedObjectKind, 6, rotation: 90 ),
+			// The drawn-instance kind 816 is decoded with every other record (the writer stores the same slot shape).
+			SaveTestPayloads.RideSystemRecord( 1999, 1, 1, 1, 1, 816, 7, instanceFlags: 8 ),
+			SaveTestPayloads.RideSystemRecord( 1999, 8, 1, 1, 1, SaveObject.PlacedObjectKind, 8 ),
+			// In the framed walk the slot order decides; the recorded indices need not increase.
+			SaveTestPayloads.RideSystemRecord( 1999, 1, 1, 1, 1, SaveObject.PlacedObjectKind, 2 ),
+		};
+		var payload = CreatePayload( map, SaveTestPayloads.RideSystem( slots ) );
+		var block = SaveRideSystemBlock.Parse( payload, SavePayloadLayout.Parse( payload ) );
+		Assert.AreEqual( (8u, 0u), (block.Used, block.Free) );
+		Assert.IsTrue( block.UniquelyWalked );
+		CollectionAssert.AreEqual( new[] { 1, 3, 4, 5, 6, 7, 8, 2 }, block.Records.Select( item => item.Index ).ToArray() );
+		Assert.IsTrue( block.Records[0].IsFixedItem );
+		Assert.AreEqual( new SaveObject( block.Records[1].Offset, 1100, 2, 2, 3, 4, 815, 3, 0 ), block.Records[1].ToSaveObject() );
+		AssertFootprint( block.Records[1].ToSaveObject(), 2, 2, 4, 5 );
+		AssertFootprint( block.Records[2].ToSaveObject(), 5, 5, 6, 6 );
+		AssertFootprint( block.Records[3].ToSaveObject(), 7, 7, 7, 7 );
+		Assert.IsFalse( block.Records[4].ToSaveObject().TryGetFootprint( out _, out _, out _, out _ ) );
 	}
 
 	[TestMethod]
@@ -183,10 +175,13 @@ public class OriginalParkImportTests
 	{
 		var map = CreateMap( 6, 6, ( x, y ) => (byte)(x == 0 ? 1 : x == 1 && y == 1 ? 8 : 0) );
 		var occupied = new HashSet<(int, int)> { (3, 3), (4, 3), (3, 2), (4, 2), (5, 5) };
-		var sysg = CreateObjectRecord( 1411, 3, 3, 2, 2, SaveObject.PlacedObjectKind, 1, 90 )
-			.Concat( CreateObjectRecord( 1603, 4, 4, 1, 1, SaveObject.FixedItemKind, 2, 0 ) )
-			.Concat( CreateObjectRecord( 1100, 5, 5, 1, 2, SaveObject.PlacedObjectKind, 3, 90 ) ).ToArray();
-		var park = OriginalParkImport.Import( CreatePayload( map, sysg, ( x, y ) => CreateCellRecord( map.GetCellAt( x, y ), path: (x, y) is (1, 1) or (2, 1), occupied: occupied.Contains( (x, y) ) ) ), map );
+		var rideSystem = SaveTestPayloads.RideSystem( new[]
+		{
+			SaveTestPayloads.RideSystemRecord( 1411, 3, 3, 2, 2, SaveObject.PlacedObjectKind, 1, rotation: 90 ),
+			SaveTestPayloads.RideSystemRecord( 1603, 4, 4, 1, 1, SaveObject.FixedItemKind, 2 ),
+			SaveTestPayloads.RideSystemRecord( 1100, 5, 5, 1, 2, SaveObject.PlacedObjectKind, 3, rotation: 90 ),
+		} );
+		var park = OriginalParkImport.Import( CreatePayload( map, rideSystem, ( x, y ) => CreateCellRecord( map.GetCellAt( x, y ), path: (x, y) is (1, 1) or (2, 1), occupied: occupied.Contains( (x, y) ) ) ), map );
 		CollectionAssert.AreEqual( new[] { (1, 1), (2, 1) }, park.PathCells.ToArray() );
 		Assert.AreEqual( 1, park.PlacedObjects.Count );
 		Assert.AreEqual( (3, 2, 4, 3), (park.PlacedObjects[0].MinX, park.PlacedObjects[0].MinY, park.PlacedObjects[0].MaxX, park.PlacedObjects[0].MaxY) );
@@ -194,6 +189,8 @@ public class OriginalParkImportTests
 		Assert.IsFalse( park.IsOccupiedByObject( 5, 5 ) );
 		Assert.AreEqual( 1603, park.FixedItems.Single().InfoId );
 		Assert.AreEqual( 1100, park.UnresolvedObjects.Single().InfoId );
+		Assert.IsNotNull( park.RideSystem );
+		Assert.AreEqual( 3u, park.RideSystem.Used );
 	}
 
 	[TestMethod]
@@ -201,10 +198,10 @@ public class OriginalParkImportTests
 	{
 		var map = CreateMap( 4, 4, ( x, _ ) => (byte)(x == 0 ? 1 : 0) );
 		var other = CreateMap( 4, 4, ( x, _ ) => (byte)(x == 3 ? 1 : 0) );
-		var payload = CreatePayload( map, Array.Empty<byte>() );
+		var payload = CreatePayload( map );
 		Assert.AreEqual( 0, OriginalParkImport.Import( payload, map ).PathCells.Count );
 		StringAssert.Contains( Assert.ThrowsException<InvalidDataException>( () => OriginalParkImport.Import( payload, other ) ).Message, "another map" );
-		var unoccupied = CreatePayload( map, CreateObjectRecord( 1100, 1, 1, 2, 2, SaveObject.PlacedObjectKind, 1, 0 ) );
+		var unoccupied = CreatePayload( map, SaveTestPayloads.RideSystem( new[] { SaveTestPayloads.RideSystemRecord( 1100, 1, 1, 2, 2, SaveObject.PlacedObjectKind, 1 ) } ) );
 		StringAssert.Contains( Assert.ThrowsException<InvalidDataException>( () => OriginalParkImport.Import( unoccupied, map ) ).Message, "not occupied" );
 	}
 
@@ -267,6 +264,16 @@ public class OriginalParkImportTests
 		CollectionAssert.AreEqual( new[] { (1601, 45, 16, 1), (1603, 48, 17, 2), (1600, 48, 17, 15) },
 			park.FixedItems.Select( item => (item.InfoId, item.X, item.Y, item.Index) ).ToArray() );
 		Assert.AreEqual( 0, park.UnresolvedObjects.Count );
+		// The framed RideSystem walk (SaveRideSystemBlock): 161 used slots of 168, the seven free holes 90–96 behind the
+		// stored first free slot 90, kinds 815/826/865, and slot 114's record (Jungle Spray) with its derived control count 3.
+		Assert.IsNotNull( park.RideSystem );
+		Assert.AreEqual( (17522u, 161u, 7u, 90u), (park.RideSystem!.Length, park.RideSystem.Used, park.RideSystem.Free, park.RideSystem.FirstFreeSlot) );
+		Assert.AreEqual( 161, park.RideSystem.Records.Length );
+		Assert.IsTrue( park.RideSystem.UniquelyWalked );
+		Assert.AreEqual( "815:11, 826:147, 865:3", string.Join( ", ", park.RideSystem.Records.GroupBy( record => record.Kind )
+			.OrderBy( group => group.Key ).Select( group => $"{group.Key}:{group.Count()}" ) ), "the block's three kinds" );
+		var jungleSpray = park.RideSystem.Records.Single( record => record.Slot == 114 );
+		Assert.AreEqual( (1303, 4, 31, 12, 3), (jungleSpray.InfoId, jungleSpray.Index, jungleSpray.NodeCount, jungleSpray.EmbeddedCount, jungleSpray.Controls.Length) );
 		Assert.IsTrue( park.PlacedObjects.All( item => Cells( item ).All( cell => map.GetFlagsAt( cell.X, cell.Y ) == MapCellFlags.None ) ) );
 		Assert.IsTrue( park.PlacedObjects.All( item => Cells( item ).All( cell => !isPath.Contains( cell ) ) ) );
 	}

@@ -73,7 +73,7 @@ The decoded payload's writer-order block split (17 trailing delimiters), the
 World block (variables, calendar, per-cell grid, thing list closed at the `WRLD`
 delimiter), the typed things and the RideSystem object records are documented in
 TPWS-PAYLOAD.md and reverse/SAVE-plan.md (`SavePayloadLayout`, `SaveWorld`,
-`SaveThingChain`, `SaveCellGrid`, `SaveObjectList`, read-only
+`SaveThingChain`, `SaveCellGrid`, `SaveRideSystemBlock`, read-only
 `OriginalParkImport`). The Coasters block (between the stored `EMAK`/`SAOC`
 delimiters) has a bounded structural reader (`SaveCoasterBlock`; TPWS-PAYLOAD.md
 "Coasters block"): header, auxiliary links, sections and links are typed, the

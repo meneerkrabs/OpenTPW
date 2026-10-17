@@ -55,7 +55,7 @@ public class OriginalCoasterSaveTests
 	}
 
 	private static byte[] Payload( byte[] coasters, byte[]? world = null ) =>
-		SaveTestPayloads.Payload( world ?? new byte[8], rideSystem: new byte[6],
+		SaveTestPayloads.Payload( world ?? new byte[8],
 			blocks: new Dictionary<SaveBlock, byte[]> { [SaveBlock.Coasters] = coasters } );
 
 	private static SaveCoasterBlock Parse( byte[] coasters, int countX = 128, int countY = 128, Func<ushort, SaveCoasterTrainLayout?>? trainLayouts = null )
@@ -202,16 +202,6 @@ public class OriginalCoasterSaveTests
 		StringAssert.Contains( error.Message, "no coaster but 20 bytes" );
 	}
 
-	private static byte[] RideSystemRecord( int infoId, int x, int y, int kind, int index )
-	{
-		var record = new byte[60];
-		record[0] = 1;
-		var values = new[] { infoId, x, y, 1, 1, kind, index };
-		for ( var field = 0; field < values.Length; field++ )
-			BinaryPrimitives.WriteInt32LittleEndian( record.AsSpan( 1 + field * 4 ), values[field] );
-		return record;
-	}
-
 	/// <summary>A 3×3 synthetic park (Belly Bounce 1100 at (1, 1), the gates 1601 at (0, 0)) with the given coaster body.</summary>
 	private static OriginalParkImport Park( byte[]? coasters = null, bool matchingAttractionId = true, bool duplicateMatches = false,
 		Func<int, SaveCoasterTrainLayout?>? coasterTrains = null, uint rideMeshInstance = 110 )
@@ -244,9 +234,14 @@ public class OriginalCoasterSaveTests
 				PositionX = 384, PositionY = 384, InfoId = 1100, Repair = 100, LifeGauge = 100
 			} )) );
 		var grid = SaveTestPayloads.Grid( map, ( x, y ) => OriginalParkImportTests.CreateCellRecord( 0, occupied: (x, y) == (1, 1) ) );
-		var rideSystem = RideSystemRecord( 1601, 0, 0, SaveObject.FixedItemKind, 1 ).Concat( RideSystemRecord( 1100, 1, 1, SaveObject.PlacedObjectKind, 2 ) ).ToArray();
+		var slots = new List<byte[]>
+		{
+			SaveTestPayloads.RideSystemRecord( 1601, 0, 0, 1, 1, SaveObject.FixedItemKind, 1 ),
+			SaveTestPayloads.RideSystemRecord( 1100, 1, 1, 1, 1, SaveObject.PlacedObjectKind, 2 ),
+		};
 		if ( duplicateMatches )
-			rideSystem = rideSystem.Concat( RideSystemRecord( 1100, 1, 1, SaveObject.PlacedObjectKind, 3 ) ).ToArray();
+			slots.Add( SaveTestPayloads.RideSystemRecord( 1100, 1, 1, 1, 1, SaveObject.PlacedObjectKind, 3 ) );
+		var rideSystem = SaveTestPayloads.RideSystem( slots );
 		var payload = SaveTestPayloads.Payload( SaveTestPayloads.World( SaveTestPayloads.ParkVariables(), grid, SaveTestPayloads.Things( things ) ), rideSystem,
 			coasters == null ? null : new Dictionary<SaveBlock, byte[]> { [SaveBlock.Coasters] = coasters } );
 		return OriginalParkImport.Import( payload, map, coasterTrains );

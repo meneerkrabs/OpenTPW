@@ -5,7 +5,7 @@ Evidence date: October 10, 2026. Read-only analysis of the decoded BILZ payload
 the 17 trailing delimiters; the World block is parsed through its labelled
 variables, the **per-cell grid** and the **thing list**, which must close exactly
 at the World delimiter; the **placed-object records** of the RideSystem block are
-found by signature. The traced block and thing layout is
+walked by their frame (`SaveRideSystemBlock`). The traced block and thing layout is
 [reverse/SAVE-plan.md](reverse/SAVE-plan.md). A read-only importer
 (`OriginalParkImport`, then `OriginalEconomyImport` for the economy) uses these
 parts. This is not save writing. The layout was found on one fixture (Easymode);
@@ -284,19 +284,60 @@ a ride in use, would turn the state of repair into the oracle for ECON-023.
 
 RideSystem `kind` values 815 and 865 are engine mesh-instance types: the Mac code passes them to the mesh creator
 (`0x10059f00`, from `0x100dc350`), and the attraction record links to its mesh through `MeshInstanceID`. The
-RideSystem block therefore describes scene meshes rather than game-object state. Kind 826 appears in four functions
-(`0x1006e3d4`, `0x1006e630`, `0x1006e8bc`, `0x1006eb84`) that have not been read yet; its records sit nested
-inside the Belly Bounce RideSystem record, on the queue cells.
+RideSystem block therefore describes scene meshes rather than game-object state. Kind 826 appears in four Mac
+functions (`0x1006e3d4`, `0x1006e630`, `0x1006e8bc`, `0x1006eb84`) that have not been read yet; its records are
+separate slots of the block, not nested inside the Belly Bounce record (that reading was a signature-scan
+artifact).
 
-## RideSystem placed-object records
+## RideSystem placed-object records (`SaveRideSystemBlock`)
 
-The RideSystem block (writer `0x5ae70`, the bytes before the `RSYS` delimiter;
-earlier called "SYSG") contains variable-length records that begin with `u8 1` followed by
-`u32` Info.Id, X, Y, width, height, kind, index; a `u16` rotation in degrees sits
-38 bytes after the Info.Id. `SaveObjectList` finds them by signature (valid
-coordinates, 1–16 cell size, kind 815/865, rotation multiple of 90, increasing
-index); the importer then cross-checks footprints against grid occupancy. The
-Info.Id matches the `Info.Id` in the object's `.sam`:
+The RideSystem block (its bytes lie before the `RSYS` delimiter; earlier called "SYSG") is
+framed: PC writer `0x464140`, PC loader `0x4647a0` (the Mac reader is the plan's `0x5b898`).
+After the u32 length word — which names the block's remaining bytes — come
+u32 `used`, u32 `free` and u32 `first free slot`, then one slot per used + free in slot
+order: a presence byte (`1` present, `0` absent), and for a present slot its record.
+`SaveRideSystemBlock.Parse` walks the slots exactly: the walk must end on the stored length with the
+stored counts, the first absent slot must carry the stored first free slot's ordinal (the free hole the
+live instance allocator keeps; with no hole the count equals `used`, as every corpus INTS save
+holds), every presence byte must be exactly 0/1, and the node/embedded-node counts, the instance-flag
+word and the node-state words stay within the shapes below. A breaching block refuses the save instead
+of falling back to a guess.
+
+One record: a 0x36-byte header, then the variable part.
+
+| Offset | Size | Content |
+| --- | --- | --- |
+| +0x00 | u32 | Info.Id; matches the `Info.Id` in the object's `.sam` |
+| +0x04/+0x08 | u32 | X, Y |
+| +0x0C/+0x10 | u32 | width, height in cells |
+| +0x14 | u32 | kind (815 placed object, 826 scenery, 865 fixed item) |
+| +0x18 | u32 | index (slot 5 is absent in Easymode) |
+| +0x1C | u32 | packed instance flags: the writer (`0x4641c4`) maps the live flags 0x20, 0x40, 0x80, 0x100, 0x200, 0x400, 0x800, 0x40000 and 0x8000000 onto bits 0–8 and never stores higher bits (Easymode holds only 0 and 8) |
+| +0x20 | u16 | raw (the live instance's +0xc word) |
+| +0x22 | u32 | raw (the live instance's +0xb8 word) |
+| +0x26 | u32 | rotation in degrees |
+| +0x2A/+0x2C | u16 | node-state count / embedded-node count |
+| +0x2E/+0x32 | u32 | two embedded words, kept raw |
+
+The variable part holds embeddedCount × 8 bytes of embedded nodes, nodeCount × 4 bytes of packed
+node-state words — bits 0–3 and 5–11 map onto the flag constants 0x10, 0x20, 0x8000, 0x10000, (empty),
+0x40000, 0x80000, 0x200000, 0x400000, 0x20000000, 0x80000000 and 0x100000 (writer `0x464380`,
+loader `0x464af6`; bit 4 and bits 12+ are empty in every corpus save, so the reader refuses them) — and
+then `T` animation-time controls (`SaveRideSystemControl`), 0x2C bytes each: 11 u32 words in the save's
+word order [0], [1], [2], [4], [5], [6], [3], [9], [10], [11], [12] (PC loader `0x464bb6` moves the
+seventh record word to control word 3). Word 0 is the flags word, word 1 the animation set (12 =
+none), and the rest are animation times and speed floats the loader bounds nowhere — all raw (the
+corpus holds pointer-like run-time values in word 3–5 of Easymode's controls).
+
+The control count `T` is the one thing the block never stores: the loader reads it from the live
+instance at +0xe, which `0x4557c0` copies from the object type's template instance (the level kind
+table's entry at +0xd0). OpenTPW builds no live instances on import, so the walk derives each record's
+`T` as the smallest value that keeps the rest of the block walking (a shorter record leaves the next
+presence byte inside a control word, the counts or the stored length stop matching);
+`SaveRideSystemBlock.UniquelyWalked` reports whether every derived `T` is also strictly minimal
+(raising it by one breaks the walk). Easymode (every record `T=1` except slot 114's Jungle Spray with
+`T=3`) and every corpus save walk uniquely; deriving `T` statically from the level's kind table is
+future work.
 
 | Index | Info.Id (.sam name) | X, Y | Size | Rot | Kind |
 | --- | --- | --- | --- | --- | --- |
@@ -502,7 +543,8 @@ invariants rather than offsets: the chain closes at `WRLD`, every model occurs,
 singletons once, one attraction per RideSystem record, staff and role heads
 agree, and the calendar caches equal the date of the saved turn.
 `OriginalParkImportTests`: synthetic grids (extensions, X-fastest order,
-missing/truncated/ambiguous runs), RideSystem scanning and footprint rules,
+missing/truncated/ambiguous runs), the RideSystem framed walk and footprint
+routing rules,
 wrong-map and unoccupied-footprint rejection; the private fixture pins the grid
 range, 78 path cells, the connection-bit property, the 11 placed objects and 3
 fixed items, and rejection against `terrain.map`. `OriginalSaveImportTests`: the
@@ -519,6 +561,12 @@ refusal and the layout's empty-block rule, plus the park import with its cell jo
 out-of-map refusal. Its two fixture tests pin real data: the Easymode empty boundary by SHA-256
 (`OPENTPW_GAME_PATH`) and the Theme Park Inc prebuilt body under the shared contract
 (`OPENTPW_TPI_PATH`, labelled cross-check).
+`SaveRideSystemTests`: the Easymode record facts, the synthetic decode (presence
+bytes, headers, flag mapping, embedded pairs, node states, controls), the
+smallest-`T` walk and its minimality probe, and the refusals (presence byte,
+lie counts, `firstFree` mismatch, slot bounds, unknown flag bits, unknown
+node-state bits, truncation, unsafe `RideSystem` layouts — the length word is
+also re-proved by `TryMeasure` in `SavePayloadLayoutTests`).
 `OriginalSaveCorpusTests` runs container, block split, grid, thing chain,
 RideSystem, attraction and economy readers over the second fixture set
 (inconclusive without `OPENTPW_TPWS_SAVES`; not run for SAVE-I); since the coaster slice
@@ -535,7 +583,8 @@ RideSystem, attraction and economy readers over the second fixture set
   `+0x38`, `+0x64`, `+0x68` (SAVE-920 to SAVE-923); the train layout is decoded from the loader and the saver but
   no Theme Park World save with a coaster exists to check it on real bytes.
 - The control manager and the macro AI before the calendar (their widths are traced, their bodies are not), the guest, analyser and weather bodies, record
-  fields marked raw above, the extension data, RideSystem record bodies/lengths, RSSE object bodies and every
+  fields marked raw above, the extension data, the RideSystem control and embedded words and the remaining
+  node-state flag meanings (the record frame, header and lengths are decoded), RSSE object bodies and every
   other block.
 - Saves with known ride wear to confirm the attraction gauges against the original wear rule.
 - Money/time/guest state needs known-state reference saves before import.

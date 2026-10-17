@@ -39,3 +39,37 @@ public class PoolSwimSlotFallbackTests
 		}
 	}
 }
+
+/// <summary>The renderer asks <see cref="GuestSpriteAtlas.UsableSlot"/> for the slot an activity wishes: a slot without art draws as treading water.</summary>
+[TestClass]
+[DoNotParallelize]
+public class PoolSwimUsableSlotTests
+{
+	[TestMethod]
+	public void ASlotWithoutArtIsDrawnAsTreadingWaterAndASlotWithArtStays()
+	{
+		for ( var directory = new DirectoryInfo( AppContext.BaseDirectory ); directory != null; directory = directory.Parent )
+			if ( File.Exists( Path.Combine( directory.FullName, "content", "pools", "objects.json" ) ) && Directory.Exists( Path.Combine( directory.FullName, "tools", "pools" ) ) )
+			{
+				PoolContent.DirectoryOverride = Path.Combine( directory.FullName, "content", "pools" );
+				break;
+			}
+		try
+		{
+			foreach ( var set in PoolSwimSprites.Load() )
+			{
+				Assert.IsTrue( set.HasArt( 10 ), $"{set.Name} has the treading-water art" );
+				for ( var slot = 0; slot < set.Animations.Animations.Count; slot++ )
+				{
+					var usable = set.UsableSlot( slot );
+					Assert.IsTrue( set.HasArt( usable ), $"{set.Name} slot {slot} is drawn with art" );
+					Assert.AreEqual( set.HasArt( slot ) ? slot : 10, usable, $"{set.Name} slot {slot}" );
+				}
+			}
+		}
+		finally
+		{
+			PoolContent.DirectoryOverride = null;
+		}
+	}
+}

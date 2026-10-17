@@ -33,7 +33,7 @@ public static class ThemeParkIncSaveObjectList
 			var index = U32( data, offset + 29 );
 			var rotation = BinaryPrimitives.ReadUInt16LittleEndian( data[(offset + 43)..] );
 			if ( id == 0 || id > ushort.MaxValue || x >= (uint)countX || y >= (uint)countY
-				|| width == 0 || width > SaveObjectList.MaximumFootprint || height == 0 || height > SaveObjectList.MaximumFootprint
+				|| width == 0 || width > SaveObject.MaximumFootprint || height == 0 || height > SaveObject.MaximumFootprint
 				|| (kind != SaveObject.FixedItemKind && kind != SaveObject.PlacedObjectKind)
 				|| index <= (uint)lastIndex || index > ushort.MaxValue || rotation % 90 != 0 || rotation >= 360 )
 				continue;

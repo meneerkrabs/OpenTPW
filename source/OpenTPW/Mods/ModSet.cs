@@ -194,9 +194,12 @@ public sealed class ModSet
 				Refuse( node, "contains scripts, which are switched off for this run (safe mode)", refused, ModRefusalKind.SafeMode );
 			if ( !node.Enabled )
 				continue;
-			var (files, retained, error) = ReadFilesRetaining( mod.Directory, manifest.Content.Scripts?.Files );
+			var (files, retained, error, errorKind) = ReadFilesRetaining( mod.Directory, (manifest.Content.Scripts?.Files ?? Array.Empty<string>()).Append( ModManifest.FileName ) );
 			if ( error != null )
-				Refuse( node, error, refused );
+				Refuse( node, error, refused, errorKind );
+			// the manifest that was parsed at discovery must be the manifest that was hashed, so the files and hooks come from hashed bytes
+			else if ( mod.ManifestBytes != null && !(retained.TryGetValue( FoldKey( ModManifest.FileName ), out var hashedManifest ) && hashedManifest != null && hashedManifest.AsSpan().SequenceEqual( mod.ManifestBytes )) )
+				Refuse( node, $"{ModManifest.FileName} changed after it was read; start again", refused );
 			else
 			{
 				node.Files = files;
@@ -261,7 +264,7 @@ public sealed class ModSet
 	/// </summary>
 	public static (IReadOnlyList<(string Path, string Sha256)>? Files, string? Error) ReadFiles( string directory )
 	{
-		var (files, _, error) = ReadFilesRetaining( directory, null );
+		var (files, _, error, _) = ReadFilesRetaining( directory, null );
 		return (files, error);
 	}
 
@@ -270,7 +273,7 @@ public sealed class ModSet
 	/// and the digest and the retained bytes come from that one read. A listed file larger than <see cref="ScriptLimits.MaxSourceBytes"/> is hashed but
 	/// not kept (its entry is null), so a hostile file cannot fill memory; the caller refuses it.
 	/// </summary>
-	internal static (IReadOnlyList<(string Path, string Sha256)>? Files, IReadOnlyDictionary<string, byte[]?> Retained, string? Error) ReadFilesRetaining(
+	internal static (IReadOnlyList<(string Path, string Sha256)>? Files, IReadOnlyDictionary<string, byte[]?> Retained, string? Error, ModRefusalKind ErrorKind) ReadFilesRetaining(
 		string directory, IEnumerable<string>? retainPaths )
 	{
 		var retain = new HashSet<string>( (retainPaths ?? Array.Empty<string>()).Select( FoldKey ), StringComparer.Ordinal );
@@ -285,17 +288,17 @@ public sealed class ModSet
 			while ( pending.TryPop( out var current ) )
 			{
 				if ( current.Depth > MaximumDepth )
-					return (null, retained, $"folders are nested deeper than {MaximumDepth} levels");
+					return (null, retained, $"folders are nested deeper than {MaximumDepth} levels", ModRefusalKind.Other);
 				foreach ( var entry in new DirectoryInfo( current.Path ).EnumerateFileSystemInfos() )
 				{
 					var name = entry.Name.Normalize( NormalizationForm.FormC );
 					var relative = current.Relative.Length == 0 ? name : current.Relative + "/" + name;
 					if ( entry.LinkTarget != null || entry.Attributes.HasFlag( FileAttributes.ReparsePoint ) )
-						return (null, retained, $"'{relative}' is a symbolic link or reparse point; mods may not contain links");
+						return (null, retained, $"'{relative}' is a symbolic link or reparse point; mods may not contain links", ModRefusalKind.Other);
 					if ( entry is FileInfo && IsIgnoredFile( name ) )
 						continue;
 					if ( names.TryGetValue( FoldKey( relative ), out var other ) )
-						return (null, retained, $"'{relative}' and '{other}' differ only by case or Unicode normalization");
+						return (null, retained, $"'{relative}' and '{other}' differ only by case or Unicode normalization", ModRefusalKind.Other);
 					names.Add( FoldKey( relative ), relative );
 					if ( entry is DirectoryInfo )
 					{
@@ -303,11 +306,14 @@ public sealed class ModSet
 						continue;
 					}
 					if ( ModFiles.NotRegularFile( entry.FullName ) is { } reason )
-						return (null, retained, $"'{relative}' {reason}");
+						return (null, retained, $"'{relative}' {reason}", ModRefusalKind.Other);
 					var file = (FileInfo)entry;
+					// a script file over the cap is refused here, before it is read or hashed
+					if ( retain.Contains( FoldKey( relative ) ) && relative != ModManifest.FileName && file.Length > ScriptLimits.MaxSourceBytes )
+						return (null, retained, $"script '{relative}' is larger than {ScriptLimits.MaxSourceBytes} bytes", ModRefusalKind.Script);
 					bytes += file.Length;
 					if ( files.Count >= MaximumFilesPerMod || bytes > MaximumBytesPerMod )
-						return (null, retained, $"the mod has more than {MaximumFilesPerMod} files or {MaximumBytesPerMod} bytes");
+						return (null, retained, $"the mod has more than {MaximumFilesPerMod} files or {MaximumBytesPerMod} bytes", ModRefusalKind.Other);
 					using var stream = file.OpenRead();
 					if ( retain.Contains( FoldKey( relative ) ) )
 					{
@@ -322,9 +328,9 @@ public sealed class ModSet
 		}
 		catch ( Exception exception ) when ( exception is IOException or UnauthorizedAccessException )
 		{
-			return (null, retained, $"its files could not be read ({exception.Message})");
+			return (null, retained, $"its files could not be read ({exception.Message})", ModRefusalKind.Other);
 		}
-		return (files, retained, null);
+		return (files, retained, null, ModRefusalKind.Other);
 	}
 
 	/// <summary>Reads a stream once: its SHA-256 and, when it is at most <paramref name="limit"/> bytes, the bytes themselves (else null).</summary>
@@ -357,7 +363,7 @@ public sealed class ModSet
 		|| name.Equals( "Thumbs.db", StringComparison.OrdinalIgnoreCase ) || name.Equals( "desktop.ini", StringComparison.OrdinalIgnoreCase );
 
 	/// <summary>The key two paths share when a case-insensitive or normalizing file system would treat them as one.</summary>
-	private static string FoldKey( string path ) => path.Normalize( NormalizationForm.FormC ).ToLowerInvariant();
+	private static string FoldKey( string path ) => ModManifest.FoldKey( path );
 
 	private static (string Text, ModRefusalKind Kind)? Incompatibility( ModManifest manifest, ModSettings settings, ModVersion? openTpwVersion, GameEdition edition )
 	{
@@ -458,6 +464,11 @@ public sealed class ModSet
 			catch ( ScriptCompileException exception )
 			{
 				return $"script '{path}' line {exception.Line}: {exception.Detail}";
+			}
+			catch ( Exception exception )
+			{
+				// a compiler fault on a pathological file must refuse the mod, not the start
+				return $"script '{path}' could not be compiled ({exception.GetType().Name})";
 			}
 		}
 		var hooks = new Dictionary<string, (int File, string Function)>( StringComparer.Ordinal );

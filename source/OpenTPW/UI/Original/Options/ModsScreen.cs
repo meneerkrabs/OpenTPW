@@ -96,6 +96,7 @@ public static class ModsScreen
 			ModRowStatus.Conflict => OpenTpwText.ModConflict,
 			ModRowStatus.NeedsOther => OpenTpwText.ModNeedsOther,
 			ModRowStatus.Pending => OpenTpwText.ModChecking,
+			ModRowStatus.SafeMode => OpenTpwText.ModOffSafeMode,
 			_ => OpenTpwText.ModUnusable,
 		} );
 		string VersionText( ModRow row ) => row.Version == null ? "" : "  " + row.Version;
@@ -415,9 +416,10 @@ public static class ModsScreen
 					{
 						return (ModSet.Resolve( found, settings, services.OpenTpwVersion, edition, services.Extensions, scriptModsOff: scriptsOff ), null, target);
 					}
-					catch ( Exception exception ) when ( exception is IOException or UnauthorizedAccessException or InvalidOperationException )
+					catch ( Exception exception )
 					{
-						return (null, exception.Message, target);
+						// any fault while resolving (a script compiler bug included) is shown as a message, never thrown out of the background task
+						return (null, exception is IOException or UnauthorizedAccessException or InvalidOperationException ? exception.Message : $"Resolving the mods failed ({exception.GetType().Name})", target);
 					}
 				}
 				// Without mod folders, and in the browser (which cannot rely on a thread pool; its shipped mods are two small files), there is little to read or hash: resolve at once.

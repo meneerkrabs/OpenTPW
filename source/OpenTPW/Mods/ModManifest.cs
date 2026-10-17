@@ -200,7 +200,7 @@ public sealed record ModManifest
 		foreach ( var file in Bounded( document.Files, MaximumScriptFiles, "content.scripts.files" ) )
 		{
 			var path = NormalizeRelativePath( file ?? throw Invalid( "'content.scripts.files' has a null entry" ), "content.scripts.files entry" );
-			if ( files.Any( existing => string.Equals( existing.Normalize( System.Text.NormalizationForm.FormC ), path.Normalize( System.Text.NormalizationForm.FormC ), StringComparison.OrdinalIgnoreCase ) ) )
+			if ( files.Any( existing => FoldKey( existing ) == FoldKey( path ) ) )
 				throw Invalid( $"script file '{path}' is listed more than once" );
 			files.Add( path );
 		}
@@ -219,6 +219,9 @@ public sealed record ModManifest
 			throw Invalid( "'content.scripts.hooks' needs at least one hook" );
 		return new ModScripts( files, hooks );
 	}
+
+	/// <summary>The key two paths share when a case-insensitive or normalizing file system would treat them as one (the folding <see cref="ModSet"/> uses for every path).</summary>
+	internal static string FoldKey( string path ) => path.Normalize( System.Text.NormalizationForm.FormC ).ToLowerInvariant();
 
 	private static bool IsScriptName( string name ) => !char.IsAsciiDigit( name[0] ) && name.All( c => char.IsAsciiLetterOrDigit( c ) || c == '_' );
 

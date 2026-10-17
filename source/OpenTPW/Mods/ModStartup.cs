@@ -52,17 +52,24 @@ public static class ModStartup
 		var smokeTest = args.Contains( "--smoke-test" );
 		var configDirectory = Path.GetDirectoryName( DisplaySettings.GetDefaultPath() )!;
 		var diagnostics = new List<string>();
-		// [EXT:script-mods] --safe-mode or a marker of an unfinished start switches the script mods off for this run (docs/SCRIPT-MODS.md)
-		var safeMode = ScriptSafeMode.Enter( args, configDirectory, smokeTest );
-		if ( ScriptSafeMode.Reason is { } reason )
-			warning( reason );
 		var settings = smokeTest ? ModSettings.Default : ModSettings.Load( ModSettings.GetDefaultPath(), diagnostics );
 		var discovered = ModDiscovery.Discover( Values( args, ModDirOption, "a mod folder containing " + ModManifest.FileName ),
 			ModDiscovery.SplitEnvironment( modDirsEnvironment ),
 			smokeTest ? null : configDirectory, programDirectory );
 		settings = WithCommandLine( settings, discovered, Values( args, EnableModOption, "an extension or mod id such as opentpw.cross-edition-objects" ),
 			Values( args, ModInputOption, "<mod id>:<input id>=<folder>" ) );
-		var set = Resolve( discovered, settings, Values( args, DisableExtensionOption, "an extension or mod id such as opentpw.online" ), diagnostics, safeMode );
+		var disabledIds = Values( args, DisableExtensionOption, "an extension or mod id such as opentpw.online" );
+		// [EXT:script-mods] --safe-mode or a marker of an unfinished start switches the script mods off for this run; otherwise the marker is
+		// written now, before any script is read or compiled (the manifests are known, docs/SCRIPT-MODS.md)
+		var scriptMods = discovered.Any( mod => mod.IsValid && mod.Manifest!.Content.Scripts != null && !disabledIds.Contains( mod.Id ) && settings.IsEnabled( mod.Id, false ) );
+		var safeMode = ScriptSafeMode.Enter( args, configDirectory, smokeTest, scriptMods );
+		if ( ScriptSafeMode.Reason is { } reason )
+			warning( reason );
+		ScriptSafeMode.Begin( scriptMods, configDirectory, smokeTest );
+		var set = Resolve( discovered, settings, disabledIds, diagnostics, safeMode );
+		// nothing with scripts survived the checks (refused, missing inputs): there is nothing to guard
+		if ( !set.Mods.Any( mod => mod.Scripts != null ) )
+			ScriptSafeMode.Current?.Clear();
 		Report( set, diagnostics, trace, warning );
 		OpenTpwExtensions.Activate( set );
 		Discovered = discovered;

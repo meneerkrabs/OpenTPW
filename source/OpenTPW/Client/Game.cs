@@ -265,10 +265,9 @@ internal static class Game
 		var visit = visitPath == null ? null : ParkSharing.PrepareVisit( OpenTPW.Online.Packages.ParkPackage.Load( visitPath ) );
 		if ( visit != null )
 			Log.Trace( ParkSharing.Describe( visit ) );
-		// [EXT:script-mods] the crash marker of a start with script mods: written before the first frame, removed after a clean start (docs/SCRIPT-MODS.md)
-		var scriptStartMarker = OpenTPW.Mods.ScriptSafeMode.Begin( OpenTPW.Mods.OpenTpwExtensions.Active, Path.GetDirectoryName( DisplaySettings.GetDefaultPath() )!, args.Contains( "--smoke-test" ) );
 		Render = DisplayStartup.CreateRenderer( args );
-		if ( scriptStartMarker != null )
+		// [EXT:script-mods] the crash marker was written at startup; it is removed after 15 seconds of frames (docs/SCRIPT-MODS.md)
+		if ( OpenTPW.Mods.ScriptSafeMode.Current is { } scriptStartMarker )
 			Render.OnUpdate += scriptStartMarker.Update;
 		if ( movieName != null )
 		{

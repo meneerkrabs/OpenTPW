@@ -248,11 +248,15 @@ A mod's scripts are declared in its manifest ([MODS.md](MODS.md#scripts)):
   and 256 KiB of source in all (`ModManifest.MaximumScriptBytes`), against 20 000 files and 2 GiB for a mod in general. The token,
   nesting, function and name limits of the language apply to every file. A script file may not lie inside the mod's `overrides` or
   `strings` folder or be the objects file. These loading caps are not interpreter semantics, so they do not change `BehaviourVersion`.
+- **A script over its cap is refused from its file size, before it is read or hashed.**
+- **Any failure of the compiler on a file refuses the mod** (kind `Script`, message `could not be compiled (<exception type>)`) rather than
+  failing the start; the mods screen's background resolve does the same.
 - **A compile error refuses the mod** (kind `Script`): the reason names the file, the line and the message, for example
   `script 'scripts/main.tps' line 4: ...`, and the mods screen shows it as the reason. Several script files are separate programs;
   functions are not shared between them.
 
-**Executed bytes.** `ModSet.Resolve` reads each script file once; the SHA-256 that goes into `ContentSha256` and the bytes that are
+**Executed bytes.** The manifest bytes parsed at discovery are kept (`DiscoveredMod.ManifestBytes`), and resolving refuses the mod if the
+manifest file it hashes is not byte-identical, so the file list and the hook map provably come from hashed bytes. `ModSet.Resolve` reads each script file once; the SHA-256 that goes into `ContentSha256` and the bytes that are
 compiled come from that one read, and the bytes are kept in memory. `ResolvedMod.Scripts` (a `ModScriptSet`) exposes, per file, its
 path, the retained `Source` bytes, and the `ScriptProgram` compiled from exactly those bytes, plus the `Hooks` table (file index and
 function per declared hook). **Phase 4 must run these programs (or recompile `Source`) and never read the path again**: a file changed
@@ -268,19 +272,30 @@ error or other reason in the "Why not" line.
 ## Safe mode
 
 A script mod that breaks the start of the game must not lock the player out. The desktop startup keeps a **crash marker**,
-`script-mods-starting.marker` in the configuration folder (next to `mods.json`):
+`script-mods-starting.marker` in the configuration folder (next to `mods.json`). It holds the writing process's id and start time.
 
-- **Written** by `Game.Run` right before the renderer is created (before the first frame), only when at least one script mod is enabled
-  and accepted, and not in a smoke test or a safe-mode run.
-- **Removed** after `ScriptSafeMode.CleanStartSeconds` (15) seconds of running frames, or at a normal process exit (including headless
-  commands that return early). Phase 4 may move this point to after the first park load.
-- **If it is present at the next start**, that start did not finish: this run starts in safe mode. Every script mod is refused (kind
-  `SafeMode`) **without being read, hashed or compiled**, a warning goes to the log, and the mods screen shows a notice. The marker is
-  deleted as soon as it has been seen, so only that one run is affected. Switch the mod off on the mods screen to fix it for good.
+- **Written** by `ModStartup.Initialize` as soon as the mod folders and the player's choices are known, **before any script is read,
+  hashed or compiled**, when at least one enabled mod declares scripts (its manifest says so) and the run is not a smoke test or a
+  safe-mode run. It is written for every kind of run that gets that far, headless commands included. If no accepted script mod is left
+  after resolving (all refused), it is removed again at once.
+- **Removed only on success**: after `ScriptSafeMode.CleanStartSeconds` (15) seconds of running frames, counted from the first frame
+  (a slow load does not count), or by `ScriptSafeMode.CleanShutdown()` when `Game.Run` returned normally (headless commands that
+  return normally). Nothing clears it from a process-exit handler, and an exception that `Program.Main` catches is a failed start: it
+  leaves the marker. Only the run that wrote a marker removes it. Phase 4 may move the clean point to after the first park load.
+- **If it is present at the next start and its process is gone**, that start did not finish (a crash, a hang, a compiler fault or an
+  exception): this run starts in safe mode. Every script mod is refused (kind `SafeMode`) **without being read, hashed or compiled**,
+  a warning goes to the log, and the mods screen shows a notice and the status "Off (safe mode)". The marker is deleted as soon as it
+  has been seen, so only that one run is affected. Switch the mod off on the mods screen to fix it for good.
+- **A marker whose process is still running** (same id and start time) belongs to another instance that is still starting: it is not a
+  crash, it is left alone, and the second instance starts normally without writing its own.
+- **A stale marker with no enabled script mod** (the mod was removed or switched off since) is deleted quietly, with no warning and no
+  notice.
 - **`--safe-mode`** does the same on demand, without needing a marker. Smoke tests ignore the marker (they neither read nor write it) but
   honour the flag.
-- **Browser:** safe mode is a no-op. There is no marker file, no community mods yet, and the only script mod is the shipped example, off
-  by default. Revisit with the OPFS mod import (phase 5).
+- **Parked saves.** A park saved with a script mod needs it; in safe mode the load refuses with
+  `needs <id> <version>, which is off in safe mode`, so the reason is clear.
+- **Browser:** safe mode is a no-op. There is no marker file, no community mods yet, and the example script mod is **not embedded in
+  the web build** until the AOT check of script mods (phase 5), so the browser cannot run script mods at all yet.
 
 Mods without scripts are never affected by safe mode.
 

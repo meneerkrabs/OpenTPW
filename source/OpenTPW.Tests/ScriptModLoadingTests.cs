@@ -28,6 +28,7 @@ public class ScriptModLoadingTests
 	public void Cleanup()
 	{
 		ScriptSafeMode.Enter( Array.Empty<string>(), Path.Combine( root, "reset" ), smokeTest: true );
+		ScriptSafeMode.Begin( false, Path.Combine( root, "reset" ), smokeTest: true );
 		Directory.Delete( root, true );
 	}
 
@@ -219,47 +220,166 @@ public class ScriptModLoadingTests
 		Assert.AreEqual( 1, Resolve( Mod( "community.plain", "", ("a.txt", "x") ), scriptsOff: true ).Mods.Count );
 	}
 
+	private static readonly Func<int, DateTime?> NoProcess = _ => null;
+
 	[TestMethod]
 	public void AMarkerLeftByAnUnfinishedStartSwitchesScriptModsOffOnceAndIsRemoved()
 	{
 		var config = Path.Combine( root, "config" );
-		var set = Resolve( Mod( "community.ok" ) );
-		var marker = ScriptSafeMode.Begin( set, config, smokeTest: false );
-		Assert.IsNotNull( marker );
-		Assert.IsTrue( File.Exists( ScriptSafeMode.MarkerPath( config ) ), "written before the first frame" );
+		Assert.IsNotNull( ScriptSafeMode.Begin( true, config, smokeTest: false ) );
+		Assert.IsTrue( File.Exists( ScriptSafeMode.MarkerPath( config ) ), "written before any script is read" );
 
-		// the process died before the marker was removed: the next start is in safe mode, and sees the marker only once
-		Assert.IsTrue( ScriptSafeMode.Enter( Array.Empty<string>(), config, smokeTest: false ) );
+		// the process died before the marker was removed (its process is gone): the next start is in safe mode, and sees the marker only once
+		Assert.IsTrue( ScriptSafeMode.Enter( Array.Empty<string>(), config, smokeTest: false, processStart: NoProcess ) );
 		StringAssert.Contains( ScriptSafeMode.Reason!, "did not finish" );
 		Assert.IsFalse( File.Exists( ScriptSafeMode.MarkerPath( config ) ) );
-		Assert.IsNull( ScriptSafeMode.Begin( set, config, smokeTest: false ), "no new marker in a safe run" );
+		Assert.IsNull( ScriptSafeMode.Begin( true, config, smokeTest: false ), "no new marker in a safe run" );
 		Assert.IsFalse( ScriptSafeMode.Enter( Array.Empty<string>(), config, smokeTest: false ) );
 		Assert.IsNull( ScriptSafeMode.Reason );
 	}
 
 	[TestMethod]
-	public void TheMarkerIsRemovedAfterACleanStartAndNeverWrittenWithoutScriptMods()
+	public void AThrownExceptionKeepsTheMarkerAndOnlyANormalReturnClearsIt()
 	{
 		var config = Path.Combine( root, "config" );
-		var now = 0.0;
-		var set = Resolve( Mod( "community.ok" ) );
-		var marker = ScriptSafeMode.Begin( set, config, smokeTest: false, () => now )!;
-		now = ScriptSafeMode.CleanStartSeconds - 1;
+		var marker = ScriptSafeMode.Begin( true, config, smokeTest: false )!;
+		try { throw new InvalidOperationException( "the renderer failed" ); }
+		catch ( InvalidOperationException ) { /* Program.Main catches and returns 1: not a clean start */ }
+		Assert.IsTrue( File.Exists( ScriptSafeMode.MarkerPath( config ) ), "a failed start keeps the marker" );
+		Assert.IsFalse( marker.Cleared );
+		ScriptSafeMode.CleanShutdown();
+		Assert.IsFalse( File.Exists( ScriptSafeMode.MarkerPath( config ) ) );
+		var source = File.ReadAllText( Path.Combine( ScriptSafeModeSourceFolder(), "ScriptSafeMode.cs" ) );
+		Assert.IsFalse( source.Contains( "ProcessExit" ), "nothing clears the marker from a process-exit handler" );
+	}
+
+	private static string ScriptSafeModeSourceFolder()
+	{
+		var directory = new DirectoryInfo( AppContext.BaseDirectory );
+		while ( directory != null && !File.Exists( Path.Combine( directory.FullName, "source", "OpenTPW", "OpenTPW.csproj" ) ) )
+			directory = directory.Parent;
+		return Path.Combine( directory!.FullName, "source", "OpenTPW", "Mods" );
+	}
+
+	[TestMethod]
+	public void AMarkerOfARunningInstanceIsLeftAloneAndNotACrash()
+	{
+		var config = Path.Combine( root, "config" );
+		var first = ScriptSafeMode.Begin( true, config, smokeTest: false )!;
+		var path = ScriptSafeMode.MarkerPath( config );
+		var content = File.ReadAllText( path );
+		StringAssert.Contains( content, "pid " );
+		// this very process wrote it and is still running: a second instance starts normally and keeps it
+		Assert.IsFalse( ScriptSafeMode.Enter( Array.Empty<string>(), config, smokeTest: false ) );
+		Assert.AreEqual( content, File.ReadAllText( path ) );
+		Assert.IsNull( ScriptSafeMode.Begin( true, config, smokeTest: false ), "the second instance does not take over the marker" );
+		// and when the first one finishes it removes its own marker only
+		first.Clear();
+		Assert.IsFalse( File.Exists( path ) );
+		File.WriteAllText( path, "another instance\n" );
+		var late = ScriptSafeMode.Begin( true, Path.Combine( root, "other" ), smokeTest: false )!;
+		File.WriteAllText( ScriptSafeMode.MarkerPath( Path.Combine( root, "other" ) ), "someone else's\n" );
+		late.Clear();
+		Assert.IsTrue( File.Exists( ScriptSafeMode.MarkerPath( Path.Combine( root, "other" ) ) ), "a marker that is not ours stays" );
+	}
+
+	[TestMethod]
+	public void AStaleMarkerWithoutAnEnabledScriptModIsRemovedQuietly()
+	{
+		var config = Path.Combine( root, "config" );
+		Directory.CreateDirectory( config );
+		File.WriteAllText( ScriptSafeMode.MarkerPath( config ), "script mods are starting\npid 1\nstarted 1\n" );
+		Assert.IsFalse( ScriptSafeMode.Enter( Array.Empty<string>(), config, smokeTest: false, scriptModsEnabled: false, processStart: NoProcess ) );
+		Assert.IsNull( ScriptSafeMode.Reason, "no warning and no notice" );
+		Assert.IsFalse( File.Exists( ScriptSafeMode.MarkerPath( config ) ) );
+		Assert.IsNull( ScriptSafeMode.Begin( false, config, smokeTest: false ), "no script mods, no marker" );
+	}
+
+	[TestMethod]
+	public void TheMarkerIsRemovedAfterACleanStartCountedFromTheFirstFrame()
+	{
+		var config = Path.Combine( root, "config" );
+		var now = 100.0;
+		var marker = ScriptSafeMode.Begin( true, config, smokeTest: false, () => now )!;
+		now = 500; // a slow load before the first frame does not count
 		marker.Update();
 		Assert.IsTrue( File.Exists( ScriptSafeMode.MarkerPath( config ) ) );
-		now = ScriptSafeMode.CleanStartSeconds;
+		now = 500 + ScriptSafeMode.CleanStartSeconds - 1;
+		marker.Update();
+		Assert.IsTrue( File.Exists( ScriptSafeMode.MarkerPath( config ) ) );
+		now = 500 + ScriptSafeMode.CleanStartSeconds;
 		marker.Update();
 		Assert.IsFalse( File.Exists( ScriptSafeMode.MarkerPath( config ) ) );
 		Assert.IsTrue( marker.Cleared );
 		marker.Clear();
 
-		Assert.IsNull( ScriptSafeMode.Begin( ModSet.Defaults( OfficialExtensions.All ), config, smokeTest: false ), "no script mods, no marker" );
-		Assert.IsNull( ScriptSafeMode.Begin( set, config, smokeTest: true ), "smoke tests leave the real marker alone" );
+		Assert.IsNull( ScriptSafeMode.Begin( true, config, smokeTest: true ), "smoke tests leave the real marker alone" );
 		Assert.IsFalse( File.Exists( ScriptSafeMode.MarkerPath( config ) ) );
-		// and a smoke test does not read it either
 		File.WriteAllText( ScriptSafeMode.MarkerPath( config ), "x" );
 		Assert.IsFalse( ScriptSafeMode.Enter( Array.Empty<string>(), config, smokeTest: true ) );
 		Assert.IsTrue( File.Exists( ScriptSafeMode.MarkerPath( config ) ) );
+	}
+
+	// ---- Robustness of loading ----------------------------------------------------------------------
+
+	[TestMethod]
+	public void AnOversizedScriptIsRefusedBeforeItIsReadAndAnyCompilerFaultIsARefusal()
+	{
+		var big = Resolve( Mod( "community.huge", ScriptsJson, ("main.tps", "-- " + new string( 'x', ScriptLimits.MaxSourceBytes ) + "\n") ) );
+		Assert.AreEqual( ModRefusalKind.Script, big.Refused.Single().Kind );
+		StringAssert.Contains( Refusal( big ), $"script 'main.tps' is larger than {ScriptLimits.MaxSourceBytes} bytes" );
+		// a script that nests far too deep is a refusal, not an exception out of the start
+		var nested = Resolve( Mod( "community.deep", ScriptsJson, ("main.tps", "function leaveQueue(a, b, c)\n  return " + new string( '(', 5000 ) + "1" + new string( ')', 5000 ) + "\nend\n") ) );
+		Assert.AreEqual( ModRefusalKind.Script, nested.Refused.Single().Kind );
+	}
+
+	[TestMethod]
+	public void TheManifestThatWasParsedIsTheManifestThatWasHashed()
+	{
+		var directory = Mod( "community.swap" );
+		var found = ModDiscovery.Discover( new[] { directory }, Array.Empty<string>(), null, null );
+		CollectionAssert.AreEqual( File.ReadAllBytes( Path.Combine( directory, ModManifest.FileName ) ), found.Single().ManifestBytes );
+		// another hook map is written between discovery and resolve
+		File.WriteAllText( Path.Combine( directory, ModManifest.FileName ), File.ReadAllText( Path.Combine( directory, ModManifest.FileName ) ).Replace( "leaveQueue\": \"leaveQueue", "joinQueue\": \"leaveQueue" ) );
+		var set = ModSet.Resolve( found, new ModSettings { Enabled = new Dictionary<string, bool> { ["community.swap"] = true } }, null, GameEdition.ThemeParkWorld, OfficialExtensions.All );
+		Assert.AreEqual( 0, set.Mods.Count );
+		StringAssert.Contains( Refusal( set ), "changed after it was read" );
+	}
+
+	[TestMethod]
+	public void ScriptPathsFoldLikeEveryOtherModPath()
+	{
+		// a path that differs only in case from the file on disk resolves, and the manifest's own duplicate check folds the same way
+		var set = Resolve( Mod( "community.fold", ScriptsJson.Replace( "main.tps", "MAIN.tps" ) ) );
+		Assert.AreEqual( 0, set.Refused.Count, Refusal( set ) );
+		Assert.AreEqual( "main.tps", set.Mods.Single().Scripts!.Files.Single().Path );
+		AssertInvalid( ScriptsJson.Replace( "\"main.tps\"", "\"\u00e9.tps\", \"e\u0301.tps\"" ), "listed more than once" );
+		Assert.AreEqual( ModManifest.FoldKey( "A\u00c9.TPS" ), ModManifest.FoldKey( "ae\u0301.tps" ) );
+	}
+
+	[TestMethod]
+	public void SafeModeHasItsOwnRowStatusAndASaveSaysWhichModSafeModeSwitchedOff()
+	{
+		var directory = Mod( "community.rowsafe" );
+		var found = ModDiscovery.Discover( new[] { directory }, Array.Empty<string>(), null, null );
+		var settings = new ModSettings { Enabled = new Dictionary<string, bool> { ["community.rowsafe"] = true } };
+		var normal = ModSet.Resolve( found, settings, null, GameEdition.ThemeParkWorld, OfficialExtensions.All );
+		var safe = ModSet.Resolve( found, settings, null, GameEdition.ThemeParkWorld, OfficialExtensions.All, null, scriptModsOff: true );
+		Assert.AreEqual( ModRowStatus.SafeMode, ModRows.Build( found, settings, safe, OfficialExtensions.All ).Single( row => row.Id == "community.rowsafe" ).Status );
+		Assert.AreEqual( ModRowStatus.On, ModRows.Build( found, settings, normal, OfficialExtensions.All ).Single( row => row.Id == "community.rowsafe" ).Status );
+		Assert.AreEqual( "Off (safe mode)", OriginalUiTests.FakeStrings().Extra( OpenTpwText.ModOffSafeMode ) );
+		var saved = ParkResumeMods.Capture( normal );
+		var reason = ParkResumeMods.Unmet( saved, safe ).Single();
+		StringAssert.Contains( reason, "needs community.rowsafe 1.0.0" );
+		StringAssert.Contains( reason, "safe mode" );
+		StringAssert.DoesNotMatch( ParkResumeMods.Unmet( saved, ModSet.Defaults( OfficialExtensions.All ) ).Single(), new System.Text.RegularExpressions.Regex( "safe mode" ) );
+	}
+
+	[TestMethod]
+	public void TheExampleScriptModIsNotEmbeddedInTheWebBuild()
+	{
+		var project = File.ReadAllText( Path.Combine( ScriptSafeModeSourceFolder(), "..", "..", "OpenTPW.Web", "OpenTPW.Web.csproj" ) );
+		StringAssert.Contains( project, "Exclude=\"../../content/mods/opentpw.example.*/**/*\"" );
 	}
 
 	[TestMethod]

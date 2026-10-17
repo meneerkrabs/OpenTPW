@@ -141,6 +141,14 @@ public sealed class GuestSpriteAtlas
 	// [DATA:esprites.wad/Generic/Thoughts/SPR_TB.ESP+TPC,SPR_TC.ESP+TPC] TB: 16 bubbles, slot n is frame n; TC: 10 frames, its slots 0-9 show frames 0, 1, 8, 9, 7, 2, 3, 4, 5, 6 (the staff's bubbles, a thumb up and four arrows)
 	public static List<GuestSpriteAtlas> LoadThoughts() => LoadSets( "/esprites/Generic/Thoughts", "thoughts" );
 
+	/// <summary>Loads the litter set (<c>esprites/Generic/Litter/SPR_LI</c>, sprite category 11), or none.</summary>
+	// [DATA:esprites.wad/Generic/Litter/SPR_LI.ESP+TPC] 8 frames, no directions: slots 0-4 the ordinary kinds (frames 0-4), slot 5 frame 5 the fallback, slot 6 frame 7 and slot 7 frame 6 (the 34 x 21 puddle) the two special kinds
+	public static List<GuestSpriteAtlas> LoadLitter() => LoadSets( "/esprites/Generic/Litter", "litter" );
+
+	/// <summary>Loads the special-effect set (<c>esprites/Generic/SpecialFX/SPR_SF</c>, sprite category 12: the upgrade balloon), or none.</summary>
+	// [DATA:esprites.wad/Generic/SpecialFX/SPR_SF.ESP+TPC] one 32 x 39 frame (slot 0) whose hotspot lies 85 pixels below its top edge: a blue balloon with a yellow up arrow
+	public static List<GuestSpriteAtlas> LoadSpecialEffects() => LoadSets( "/esprites/Generic/SpecialFX", "specialfx" );
+
 	/// <summary>Each set's ESP chooses its bank (<see cref="SpriteAnimationFile.BankExtension"/>): the FPC when it has one at full detail, else the TPC.</summary>
 	internal static List<GuestSpriteAtlas> LoadSets( string directory, string packFolder, string packRoot = "generic" )
 	{

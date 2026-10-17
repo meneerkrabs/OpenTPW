@@ -137,6 +137,10 @@ public partial class Level : IDisposable
 	public BalloonRenderer? BalloonRenderer { get; private set; }
 	/// <summary>Draws the guests' and the staff's thought bubbles.</summary>
 	public ThoughtRenderer? ThoughtRenderer { get; private set; }
+	/// <summary>The litter sprites lying on the park's cells (null without a park economy).</summary>
+	public LitterRenderer? LitterRenderer { get; private set; }
+	/// <summary>The balloons over rides whose upgrade has just been installed (null without a park economy).</summary>
+	public UpgradeBalloonRenderer? UpgradeBalloons { get; private set; }
 	/// <summary>The default world seed (<see cref="WorldSeed.DefaultValue"/>); with it the guest stream keeps its old seed.</summary>
 	public const ulong GuestSeed = WorldSeed.DefaultValue;
 	/// <summary>The one seed every simulation random stream of this level derives from (docs/DETERMINISM.md).</summary>
@@ -441,7 +445,12 @@ public partial class Level : IDisposable
 			using var connectProfile = LoadProfile.Measure( "staff-gate-economy" );
 			ConnectObjectsToEconomy();
 			if ( Park != null )
+			{
 				litterEffects = new ParkLitterEffects( Park.Economy.Litter, ParticleRendererModule.AdvisorPool );
+				// the economy that owns the litter is replaced by a load, so the renderer asks for it again every frame
+				LitterRenderer = new LitterRenderer( OriginalPark!.Heightfield, () => Park?.Economy.Litter, GuestSpriteAtlas.LoadLitter() );
+				UpgradeBalloons = new UpgradeBalloonRenderer( OriginalPark.Heightfield, GuestSpriteAtlas.LoadSpecialEffects() );
+			}
 			ImportOriginalGuests();
 			ImportOriginalRideSettings();
 			if ( resumeState == null && !GameEditions.IsThemeParkInc && OriginalPark.Save != null && visitLayout == null )
@@ -580,9 +589,30 @@ public partial class Level : IDisposable
 				ApplyCompletedCatalogueTier( item.InstanceId );
 				// [BIN:TPW-EXE:0x55A100 upgrade effect] the type's UpgradeParticleEffect starts when the upgrade is installed (0x4df8f0)
 				AttractionRuntimeOf( item.InstanceId )?.StartObjectEffect( ObjectParticleEffect.Upgrade );
+				HangUpgradeBalloon( item.InstanceId, (int)item.Amount );
 				OpenAfterRepair( item.InstanceId );
 			}
 		};
+	}
+
+	/// <summary>
+	/// An installed upgrade replaces the ride's balloon sprite: level 1 or 2 hangs a new one over the ride's front cell, level 3 none (tp.exe 0x4DF8F0, <see cref="UpgradeBalloonRenderer"/>).
+	/// </summary>
+	private void HangUpgradeBalloon( int instance, int level )
+	{
+		if ( UpgradeBalloons == null )
+			return;
+		OriginalObject? placed = null;
+		foreach ( var (item, linked) in economyInstances )
+			if ( linked == instance )
+				placed = item;
+		var visitors = placed?.Runtime.Visitors;
+		if ( placed == null || visitors is not { HasCells: true } )
+		{
+			UpgradeBalloons.Completed( instance, 0, (0, 0), () => false );
+			return;
+		}
+		UpgradeBalloons.Completed( instance, level, visitors.QueueFrontCell ?? visitors.EntranceCell, () => !placed.IsDeleted );
 	}
 
 	/// <summary>The park door over the current economy; rebuilt by <see cref="LoadPark"/>, which replaces the economy.</summary>
@@ -985,6 +1015,7 @@ public partial class Level : IDisposable
 				Things.QueueDestroy( id );
 		}
 		StaffPlacement?.Abandon();
+		UpgradeBalloons?.Clear();
 		// the patrol tool's employee id belongs to the replaced economy
 		PatrolTool?.Cancel();
 		BuyLandTool?.Cancel();

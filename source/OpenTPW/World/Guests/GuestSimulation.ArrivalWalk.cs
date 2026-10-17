@@ -200,7 +200,7 @@ public sealed partial class GuestSimulation
 				guest.BoothWait--;
 				return;
 			}
-			SendHome( guest );
+			SendHome( guest, DepartureCause.ParkClosed );
 			return;
 		}
 		if ( !guest.Paid )
@@ -260,7 +260,7 @@ public sealed partial class GuestSimulation
 	/// (<c>0x004D86D0</c>) and the route request to its centre is state 18's walk, with the exit counter 0 (no recall).
 	/// </summary>
 	// [BIN:TPW-EXE:0x004FF9D0 home from the booth] +0x188 = 1, R & 1 → 0x004D86D0, 0x004FA530 (its result is not read), SetState(0x12) and +0x1BC = 0; the happiness-0 branch of the expensive verdict (0x004FFA9D) takes SetState(0x12) and +0x1BC = 0 alone, without a mask or a route
-	private void SendHome( Guest guest )
+	private void SendHome( Guest guest, DepartureCause cause )
 	{
 		guest.Navigation.Mask = 1;
 		var side = (int)(random.NextWord() & 1);
@@ -269,14 +269,15 @@ public sealed partial class GuestSimulation
 			RouteToCell( guest, gate );
 			guest.ExitSide = side;
 		}
-		BeginLeaving( guest );
+		BeginLeaving( guest, cause );
 	}
 
 	/// <summary>SetState(0x12) with the exit counter zeroed (<c>+0x1BC</c>): state 18's recall needs a counter above 0, so a guest sent home is not recalled.</summary>
-	private void BeginLeaving( Guest guest )
+	private void BeginLeaving( Guest guest, DepartureCause cause )
 	{
 		guest.ExitLevel = 0;
 		guest.State = GuestState.LeavingPark;
+		Observer?.Leaving( guest, cause );
 	}
 
 	/// <summary>The park's visitor count (game <c>+0x1DA714</c>), raised by every guest numbered at the entrance (<c>0x0051AAF0</c>).</summary>

@@ -34,6 +34,10 @@ public sealed record M3GateOptions
 	/// </summary>
 	// [EXT:mods] OpenTPW's own mod system; the original game had no mods
 	public Func<ObjectCatalogEntry, bool>? AttractionFilter { get; init; }
+	/// <summary>The park's world seed (every random stream); null keeps the economy's default seed, so only <see cref="Seed"/> moves the guests' stream as before. The guest report sets it to vary the whole park.</summary>
+	public WorldSeed? WorldSeed { get; init; }
+	/// <summary>A passive measurement view set on the run's guests before the first tick (the guest report, docs/SMARTER-GUESTS.md); null for the gate's own runs.</summary>
+	public IGuestObserver? GuestObserver { get; init; }
 }
 
 public sealed record M3GateReport( M3GateOptions Options, JsonObject TimeMapping, IReadOnlyList<M3GateRow> Rows, double WallSeconds )
@@ -277,6 +281,8 @@ internal sealed class M3GateRun
 	private M3GateRun( M3GateOptions options ) => this.options = options;
 
 	public IReadOnlyList<M3GateRow> Rows => rows;
+	/// <summary>The run's guests, after <see cref="Execute"/> (the guest report reads their attractions).</summary>
+	internal GuestSimulation Simulation => guests;
 	public ulong GuestHash { get; private set; }
 	public ulong GateHash { get; private set; }
 	public List<ulong> MinuteHashes { get; } = new();
@@ -297,7 +303,7 @@ internal sealed class M3GateRun
 	private void Build()
 	{
 		park = OriginalPark.Load( options.Level, readShippedSave: ParkStart.ReadsShippedSave( ParkStartKind.FullSimulation ) );
-		runtime = ParkEconomyRuntime.ForOriginalLevel( park, ParkStartKind.FullSimulation );
+		runtime = ParkEconomyRuntime.ForOriginalLevel( park, ParkStartKind.FullSimulation, options.WorldSeed );
 		economy = runtime.Economy;
 		catalog = ObjectCatalog.Load( options.Level, economy.Settings.IsEasy );
 		buildGrid = new OriginalParkGrid( park );
@@ -305,7 +311,7 @@ internal sealed class M3GateRun
 		var guestSettings = GuestSettings.Load( options.Level );
 		if ( options.ArrivalTimeBetween is int interval )
 			guestSettings.ArrivalTimeBetween = interval;
-		guests = new GuestSimulation( grid, guestSettings, options.Seed );
+		guests = new GuestSimulation( grid, guestSettings, options.Seed ) { Observer = options.GuestObserver };
 		var openingBalance = economy.Balance;
 		BuildEntrance();
 		runtime.AttachGuests( guests );

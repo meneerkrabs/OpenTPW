@@ -200,15 +200,15 @@ public class ThemeParkIncSaveWorldTests
 			Assert.AreEqual( ThemeParkIncWidthSource.Reader, thing.Width, model.ToString() );
 			Assert.AreEqual( width, thing.BodyLength, model.ToString() );
 		}
-		// raw bodies with the prebuilt's widths
+		// the traced layouts (not the prebuilt's widths) size these bodies, and they are typed
 		foreach ( var (model, width) in new[] { (ThemeParkIncThingModel.StaffHq, 411), (ThemeParkIncThingModel.AdvisorController, 233), (ThemeParkIncThingModel.ParkAnalyser, 76_617),
 			(ThemeParkIncThingModel.ResearchLab, 8_414), (ThemeParkIncThingModel.Weather, 104), (ThemeParkIncThingModel.ChallengeSystem, 1_287) } )
 		{
 			var thing = world.OfModel( model ).Single();
-			Assert.AreEqual( ThemeParkIncWidthSource.ClosureDerived, thing.Width, model.ToString() );
-			Assert.IsFalse( thing.MarkerBounded, model.ToString() );
+			Assert.AreEqual( ThemeParkIncWidthSource.Reader, thing.Width, model.ToString() );
 			Assert.AreEqual( width, thing.BodyLength, model.ToString() );
 			Assert.AreEqual( width, world.BodyOf( thing ).Length, model.ToString() );
+			Assert.AreEqual( width, ThemeParkIncBodyLayout.For( model )!.Measure( payload, thing.BodyOffset ), model.ToString() );
 		}
 		Assert.AreEqual( 6, world.SmallThings.Count );
 		Assert.AreEqual( (int)world.Variables.BankAccount, world.Bank!.Id );
@@ -297,36 +297,19 @@ public class ThemeParkIncSaveWorldTests
 		Assert.ThrowsException<ArgumentException>( () => ThemeParkIncSaveWorld.Parse( payload.AsMemory( 1 ), layout, 128, 128 ) );
 	}
 
-	[TestMethod]
-	public void MarkerBoundedBodyMayHoldMarkerLookalikes()
-	{
-		// a raw body that holds the bytes of a thing header whose model has no tag, or the bytes LDMT alone, is still bounded by the real next header
-		var payload = Prebuilt();
-		var world = World( payload );
-		var analyser = world.OfModel( ThemeParkIncThingModel.ParkAnalyser ).Single();
-		var body = analyser.BodyOffset + 100;
-		BitConverter.GetBytes( 7u ).CopyTo( payload, body );
-		BitConverter.GetBytes( 99u ).CopyTo( payload, body + 4 );
-		Encoding.ASCII.GetBytes( "LDMT" ).CopyTo( payload, body + 8 );
-		Encoding.ASCII.GetBytes( "XXXX" ).CopyTo( payload, body + 12 );
-		Encoding.ASCII.GetBytes( "LDMT" ).CopyTo( payload, body + 300 );
-		var damaged = World( payload );
-		Assert.AreEqual( analyser.BodyLength, damaged.OfModel( ThemeParkIncThingModel.ParkAnalyser ).Single().BodyLength );
-		Assert.AreEqual( world.Things.Count, damaged.Things.Count );
-	}
-
 	/// <summary>
-	/// A complete, valid-looking thing header planted inside an opaque body (each closure-derived body in turn, the weather's among them) must not split the body: the widths are
-	/// the prebuilt's and the real next header has to follow them, so no shorter body, extra thing or renumbered successor can be fabricated.
+	/// A complete, valid-looking thing header planted inside each traced body (the six formerly opaque models among them) is data: the width comes from the layout, so no shorter
+	/// body, extra thing or renumbered successor can be fabricated, and the following header must be where the layout says.
 	/// </summary>
 	[TestMethod]
-	public void HeaderLookalikeInsideOpaqueBodyDoesNotFabricateThings()
+	public void HeaderLookalikeInsideTracedBodyIsData()
 	{
 		var original = Prebuilt();
 		var world = World( original );
-		var opaque = world.Things.Where( item => item.Width == ThemeParkIncWidthSource.ClosureDerived && item.NextId != 0 ).ToList();
-		Assert.IsTrue( opaque.Any( item => item.Model == ThemeParkIncThingModel.Weather ) );
-		foreach ( var thing in opaque )
+		var traced = world.Things.Where( item => ThemeParkIncBodyLayout.For( item.Model ) != null ).ToList();
+		Assert.IsTrue( traced.Any( item => item.Model == ThemeParkIncThingModel.Weather ) );
+		Assert.AreEqual( 6, traced.Count );
+		foreach ( var thing in traced )
 		{
 			var payload = (byte[])original.Clone();
 			var plant = thing.BodyOffset + 8;
@@ -339,7 +322,7 @@ public class ThemeParkIncSaveWorldTests
 			Assert.IsFalse( parsed.OfModel( ThemeParkIncThingModel.Gardener ).Any(), thing.Model.ToString() );
 			CollectionAssert.AreEqual( world.Things.Select( item => (item.Id, item.BodyLength) ).ToArray(), parsed.Things.Select( item => (item.Id, item.BodyLength) ).ToArray(), thing.Model.ToString() );
 		}
-		// a body that is not followed by a header at its fixed width is refused, not re-segmented
+		// a body that is not followed by a header at its traced width is refused, not re-segmented
 		var weather = world.OfModel( ThemeParkIncThingModel.Weather ).Single();
 		var shifted = (byte[])original.Clone();
 		shifted[weather.End + 9] ^= 0xFF;

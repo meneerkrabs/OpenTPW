@@ -304,17 +304,52 @@ prebuilt).
 | 3 attraction | `OBJE` | 312 bytes, plus 5,263 of history when its flag byte (the last of the 312) is 1: 13 rings of 30 and 6 rings of 144 | typed (`ThemeParkIncAttraction`, including the history rings); 24 in the prebuilt |
 | 16 bank | `BANK` | 292 (the TPW bank) | typed (`SaveBank`) |
 | 10 mechanic HQ, 12 tag system, 17 UI receiver, 21 `OBJH`, 22 `CUTS`, 23 `TRNR` | | 10, 12, 8, 14, 10, 8 | exact; base plus raw tail (`ThemeParkIncSmallThing`) |
-| 9 staff HQ, 11 advisor controller, 13 park analyser, 14 research lab, 15 weather, 19 challenge system | | 411, 233, 76,617, 8,414, 104, 1,287 | raw; these widths are the prebuilt's, not traced from the serializers (closure-derived), and the header that must follow checks them |
-| 1 guest, 4 to 8 staff, 20 gardener | | none in the prebuilt | raw; no width, the body ends at the first following header that reads (heuristic) |
+| 9 staff HQ | `STAF` | 411 | typed (`ThemeParkIncStaffHq`), load `0x6326b0` |
+| 11 advisor controller | `ADVI` | 233 | typed (`ThemeParkIncAdvisorController`), load `0x7177f0` |
+| 13 park analyser | `PARK` | 63,177 plus the rings' entries (76,617 in the prebuilt) | typed (`ThemeParkIncParkAnalyser`), load `0x5ace30` |
+| 14 research lab | `LABR` | 8,414 | typed (`ThemeParkIncResearchLab`), load `0x61bce0` |
+| 15 weather | `WEAT` | 104 | typed (`ThemeParkIncWeather`), load `0x641510` |
+| 19 challenge system | `CHHQ` | 1,287 | typed (`ThemeParkIncChallengeSystem`), load `0x5c7c70` |
+| 1 guest | `PERS` | 619 | `ThemeParkIncPerson`; none in the prebuilt, load `0x60d260` |
+| 4 to 8 staff, 20 gardener | `MECH`, `HAND`, `ENTR`, `GUAR`, `RESE`, `GARD` | 684 to 696 plus 4 per saved ring entry (six rings of at most 30) | `ThemeParkIncPerson`; none in the prebuilt, role loads `0x5d9e40`, `0x5d4ba0`, `0x5d1600`, `0x5d3500`, `0x61b3c0`, `0x5d2510` over the staff base `0x6267c0` |
 
 Models 0, 2 and 18 have no serializer (the jump table `0x64d7e0` sends 18 to the challenge case too, but only 19 is witnessed) and are
-rejected. The widths of the staff HQ, advisor, analyser, lab, weather and challenge things are therefore **not** traced
-reader widths, and guests, staff and gardeners (absent from the prebuilt) are found by searching for the next header that reads
-(or, for the last thing, the `ENOD` whose special-rides tail is followed by the `WRLD` delimiter). A complete header
-lookalike inside such a search-bounded body would fabricate a shorter body and an extra thing that still closes at the delimiter and passes
-the variable checks; a uniqueness check cannot catch it, because a raw body can always absorb the thing after it. This is SAVE-944.
+rejected. Every other model's width is its own reader's (`ThemeParkIncBodyLayout`); no width is a constant taken from the
+prebuilt and none is found by searching for the next header, so a complete header lookalike inside any body is data (tests plant
+one in every traced body). The six formerly closure-derived widths (411, 233, 76,617, 8,414, 104 and 1,287) are reproduced by the layouts.
+Guests, staff and gardeners are absent from the prebuilt, so their layouts rest on the load routines and an emulation of them
+and not on a saved byte (the remainder of SAVE-944).
 The block must in every case read exactly to its delimiter.
 Typed fields that are inferred rather than traced are SAVE-940 to SAVE-944 in the [register](FIDELITY-REGISTER.md).
+
+### Thing bodies
+
+Traced October 17, 2026 from the no-CD `Game.exe` (SHA-256 `77ea0c41410aad7c94a5eda658e31cb4ac05f7253aaf6746ad5e8a90afbd967a`), then checked by emulating each load routine on streams of chosen content. The World loader `0x64bc00`
+reads a thing header (`u32 next`, `u32 model`, `LDMT`, the tag), checks the tag, and dispatches `cmp eax(model - 1), 0x16; jmp [eax*4 + 0x64d7e0]` (`0x64c771`). Each case allocates the
+object (guest `0x2f0` bytes, staff `0x5d8` to `0x5e0`, staff HQ `0x1ac`, advisor `0x118`, analyser `0x22878`, lab `0x2508`, weather `0x80`, challenge system `0x5d8`),
+constructs it, sets the thing id and calls the class's load virtual with `(stream, 0 = load, version 1, id)`; the same routine saves when the flag is non-zero. Its reads go through the
+stream helper `0x7cc930` (`(stream, destination, size, &read)`) and the field-name helper `0x441da0`, so every member has a size and a name from the routine itself. The version check of
+each routine accepts 0 and 1; the loader passes 1. No read is conditional on stream data except the history ring counts.
+
+| Part | Where | Layout |
+| --- | --- | --- |
+| thing base | `0x637230` | `mX`, `mY`, `mMapChild`, `mMapParent`, 2 bytes each |
+| history ring | `0x62f2b0` (staff), `0x5ba4d6` and others (analyser) | `u32 mCurrentEntry`, `u32 mNumEntries`, `u8 mWrappedAround`, `mTemp` (the element width), then `mNumEntries` entries; the array holds a fixed capacity (30, 3, 144, 50, 5 or 51), and the entry after the last slot would overwrite the ring's own counters in memory |
+| person | `0x609170` | the thing base, sprite script, accurate destination, speeds, path-following state (`pos`, `vel`, a five-entry subpath buffer), sprite, 32-entry event history, thoughts: 396 bytes |
+| guest | `0x60d260` | the person, then arrival, balloon, umbrella, cash, seven `pv` stats, the visit counters, queue state, prank, food/drink/bought/won/rides stats: 619 bytes, no ring |
+| staff base | `0x6267c0` | the person, salary, two `pv` stats, jobs done, `mName[33]` (UTF-16), rest area, states, `mTimeHired` (8 bytes), experience, abilities, tick counters, wage demand, six history rings, patrol rectangle (`m_sx` to `m_ey`) |
+| mechanic / handyman / entertainer / guard / researcher / gardener | role loads | the staff base, then 8 / 12 / 6 / 14 / 2 / 8 role bytes ending in the role's `mNext` link |
+| staff HQ | `0x6326b0` | base, `mForceStrike`, `mStaffMemberPickedUp`, 6 strike levels of 12, the training budget (`0x6394d0`: 6 budgets and `mHaveEverTrained`), 20 staff slots of 12, 15 trained-staff words |
+| advisor controller | `0x7177f0` | base, `mTimeSig`, `mSoundId`, 8 message records of 21 bytes (`0x71af30`), queue position, last action, the current message, tutorial flag, playing message, delayed message, 3 panel flags, delay ticks |
+| park analyser | `0x5ace30` | base, the grid sizes, 1,024 cells of 61 bytes (a 4-word rectangle and nine value pairs), 4 rings of 3 `u16`, 6 totals, 21 rings of 144 words, rings of 50 and 5 words, 22 rings of 51 bytes, and the park statistics |
+| research lab | `0x61bce0` | base, 256 projects of 32 bytes (`0x61f670`), 7 groups of 13 (`0x6202c0`), counters, 20 staff pairs, 2 consultants |
+| weather | `0x641510` | base, 2 spells of 17 bytes (`0x643100`), rain, lightning and wind state |
+| challenge system | `0x5c7c70` | base, 10 challenge records of 125 bytes (`0x5c2320`), the next-challenge delay (8), the switch (1), 10 actual-thing ids |
+
+The prebuilt's park analyser has all its rings full (3, 144, 50, 5 and 50 entries, 76,617 bytes) and its first rings are consistent with a 32 x 32 grid of 4-square cells; its research lab holds
+50 projects (the other slots are uninitialized `0xCD`). A saved ring count above the capacity is refused: the original would read on into the ring's own counters. The words are typed by
+width only (the loaders copy each member, so a signedness or float type is not visible), the 12-byte vectors and the 12-byte strike levels and staff slots stay raw, and the 8-byte times follow the
+calendar (100 ns since 1601-01-01). Tp.exe's weather serializer (`0x512010`) is the same class with a different field list (91 bytes, no wind), so the layouts are not shared between the games.
 
 ## Theme Park Inc front end
 

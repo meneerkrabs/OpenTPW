@@ -32,28 +32,24 @@ public enum ThemeParkIncThingModel
 	Trnr = 23
 }
 
-/// <summary>Where a thing body's width comes from.</summary>
+/// <summary>
+/// Where a thing body's width comes from. Every model's width is now its own reader's: the attraction (flag byte and history), the fixed-width small things and bank, and the
+/// traced layouts of the guests, staff, gardener, staff HQ, advisor controller, park analyser, research lab, weather and challenge system (<see cref="ThemeParkIncBodyLayout"/>).
+/// </summary>
 public enum ThemeParkIncWidthSource
 {
-	/// <summary>The thing's reader: the attraction (flag byte and history) and the fixed-width small things and bank.</summary>
-	Reader,
-	/// <summary>A constant taken from the one witnessed save (the staff HQ, advisor controller, park analyser, research lab, weather and challenge system), not from a traced reader; the header that must follow the body checks it.</summary>
-	ClosureDerived,
-	/// <summary>No width at all (guests, staff, gardener): the body ends at the first following thing header that reads, a heuristic.</summary>
-	MarkerSearch
+	/// <summary>The thing's reader: a traced layout or a fixed record, never a constant taken from a save and never a search for the next header.</summary>
+	Reader
 }
 
 /// <summary>
 /// One thing of the World thing list: <c>u32 next used ID, u32 model, 'LDMT', model tag</c> (the 16-byte header at <see cref="Offset"/>), then <see cref="BodyLength"/> body
 /// bytes from <see cref="BodyOffset"/>. <see cref="Id"/> is the previous record's next ID (the first is <c>Used Thing Head</c>). <see cref="Width"/> says how the body width was
-/// obtained; only <see cref="ThemeParkIncWidthSource.Reader"/> widths are traced, and bodies that are not typed are kept raw.
+/// obtained (always the model's reader); the bodies of models without a typed record are kept raw.
 /// </summary>
 public readonly record struct ThemeParkIncThing( int Id, ThemeParkIncThingModel Model, int NextId, int Offset, int BodyOffset, int BodyLength, ThemeParkIncWidthSource Width )
 {
 	public int End => BodyOffset + BodyLength;
-
-	/// <summary>Whether the width was found by searching for the next thing header (<see cref="ThemeParkIncWidthSource.MarkerSearch"/>).</summary>
-	public bool MarkerBounded => Width == ThemeParkIncWidthSource.MarkerSearch;
 }
 
 /// <summary>
@@ -208,17 +204,16 @@ public sealed record ThemeParkIncSmallThing( int Id, ThemeParkIncThingModel Mode
 /// (<see cref="ThemeParkIncCalendar"/>, 32) and the arrivals (18, raw);</item>
 /// <item>the map (loader 0x5d6d40): for each of 0x4000 cells a status byte, then the 56-byte map cell when bit 0 is set, the 31-byte track cell when bit 1 is set and the
 /// 10-byte effects record when bit 2 is set (the Theme Park World rule with a 52-byte map cell; <see cref="SaveCellGrid.ParseThemeParkIncAt"/>);</item>
-/// <item><c>Used Thing Head</c> and the marker <c>EATC</c>, then each thing as <c>u32 next, u32 model, 'LDMT', model tag, body</c>, ending with <c>ENOD</c>: attractions
-/// (<see cref="ThemeParkIncAttraction"/>), the bank (<see cref="SaveBank"/>) and the small things have traced reader widths (<see cref="ThemeParkIncWidthSource.Reader"/>); the staff HQ, advisor controller, park analyser, research lab, weather and challenge
-/// system have the prebuilt's widths (<see cref="ThemeParkIncWidthSource.ClosureDerived"/>, kept raw), and guests, staff and gardeners have none, so their bodies end at the first
-/// following thing header that reads (<see cref="ThemeParkIncWidthSource.MarkerSearch"/>, a heuristic a header lookalike inside such a body can fool: a segmentation
-/// is not proof of the original's widths, only of a chain that closes at the <c>WRLD</c> delimiter);</item>
+/// <item><c>Used Thing Head</c> and the marker <c>EATC</c>, then each thing as <c>u32 next, u32 model, 'LDMT', model tag, body</c>, ending with <c>ENOD</c>. Every body has a
+/// traced width (<see cref="ThemeParkIncWidthSource.Reader"/>): the attraction (<see cref="ThemeParkIncAttraction"/>), the bank (<see cref="SaveBank"/>) and the small things by
+/// their readers, and the guests, staff, gardener, staff HQ, advisor controller, park analyser, research lab, weather and challenge system by the layouts of
+/// <see cref="ThemeParkIncBodyLayout"/> (history rings are sized by their saved counts). No width is searched for, so a thing header planted inside a body is data;</item>
 /// <item>the special rides (new, 0x6244b0): <c>u32 count</c>, then count records of 202 bytes (<see cref="ThemeParkIncSpecialRide"/>).</item>
 /// </list>
 /// </summary>
 // [BIN:TPI-EXE:0x64bc00 World loader] variables 0x64bc00, control manager 0x5cf9b0, macro AI (staff pool 0x6308a0, calendar, arrivals), map 0x5d6d40, "Used Thing Head" and the things through the jump table 0x64d7e0, special rides 0x6244b0
 // [APPROX:SAVE-943] the special rides' count is taken as the saved word: the loader 0x6244b0 loops by a live global rather than the saved count, so a save whose count differs from the live global (the prebuilt's is 4) reads differently there — evidence needed: the global's value and writer at the loader's loop
-// [APPROX:SAVE-944] the models 4-9, 11, 13, 14, 15, 19 and 20 and the guests are kept raw: the staff HQ, advisor controller, park analyser, research lab, weather and challenge system take the prebuilt's body widths (checked by the header that must follow), and guests, staff and gardeners, absent from the prebuilt, end at the first following thing header that reads, so a complete header lookalike inside one of those bodies is not detected — evidence needed: the field lists of those models' serializers and a Theme Park Inc save with guests, staff or a gardener
+// [APPROX:SAVE-944] the guests, staff and gardeners have layouts traced from their load routines (and emulated), but no Theme Park Inc save holds one: their widths and fields are unwitnessed, and a word is not typed beyond its width
 public sealed class ThemeParkIncSaveWorld
 {
 	public const int MaximumThings = ushort.MaxValue;
@@ -234,7 +229,6 @@ public sealed class ThemeParkIncSaveWorld
 	private static ReadOnlySpan<byte> ThingMarker => "LDMT"u8;
 	private static ReadOnlySpan<byte> ListMarker => "EATC"u8;
 	private static ReadOnlySpan<byte> EndMarker => "ENOD"u8;
-	private static ReadOnlySpan<byte> WorldDelimiter => "DLRW"u8;
 
 	/// <summary>The stream tag of each model's thing header (as stored: the loader's constants byte-reversed).</summary>
 	// [BIN:TPI-EXE:0x64d7e0 thing loader jump table] each case compares the 4 bytes after 'LDMT' with its tag: models 1 SREP, 3 EJBO, 4 HCEM, 5 DNAH, 6 RTNE, 7 RAUG, 8 ESER, 9 FATS, 10 QHEM, 11 IVDA, 12 SGAT, 13 KRAP, 14 BALR, 15 TAEW, 16 KNAB, 17 SMIU, 19 QHHC, 20 DRAG, 21 HJBO, 22 STUC, 23 RNRT
@@ -257,20 +251,12 @@ public sealed class ThemeParkIncSaveWorld
 		[ThemeParkIncThingModel.Objh] = 14, [ThemeParkIncThingModel.Cuts] = 10, [ThemeParkIncThingModel.Trnr] = 8, [ThemeParkIncThingModel.Bank] = SaveBank.Bytes,
 	};
 
-	/// <summary>Body widths of the models that have no traced reader here, taken from the prebuilt and checked by the thing header (or <c>ENOD</c>) that must follow.</summary>
-	// [APPROX:SAVE-944] widths of the staff HQ, advisor controller, park analyser, research lab, weather and challenge system are the prebuilt's, not read from their serializers (the Theme Park World ones are fixed too, but differ here)
-	public static IReadOnlyDictionary<ThemeParkIncThingModel, int> ClosureDerivedBodyBytes { get; } = new Dictionary<ThemeParkIncThingModel, int>
-	{
-		[ThemeParkIncThingModel.StaffHq] = 411, [ThemeParkIncThingModel.AdvisorController] = 233, [ThemeParkIncThingModel.ParkAnalyser] = 76_617,
-		[ThemeParkIncThingModel.ResearchLab] = 8_414, [ThemeParkIncThingModel.Weather] = 104, [ThemeParkIncThingModel.ChallengeSystem] = 1_287,
-	};
-
 	private readonly ReadOnlyMemory<byte> payload;
 
 	private ThemeParkIncSaveWorld( ReadOnlyMemory<byte> payload, SavePayloadBlock block, ThemeParkIncWorldVariables variables, ThemeParkIncObjectControls controls,
 		ThemeParkIncStaffPool staffPool, ThemeParkIncCalendar calendar, int arrivalOffset, byte[] arrivals, SaveCellGrid cells, uint head, int thingListOffset,
 		IReadOnlyList<ThemeParkIncThing> things, int specialRidesOffset, IReadOnlyList<ThemeParkIncSpecialRide> specialRides, IReadOnlyList<ThemeParkIncAttraction> attractions,
-		SaveBank? bank, IReadOnlyList<ThemeParkIncSmallThing> smallThings )
+		SaveBank? bank, IReadOnlyList<ThemeParkIncSmallThing> smallThings, ThemeParkIncTracedThings traced )
 	{
 		this.payload = payload;
 		Block = block;
@@ -289,6 +275,13 @@ public sealed class ThemeParkIncSaveWorld
 		Attractions = attractions;
 		Bank = bank;
 		SmallThings = smallThings;
+		People = traced.People;
+		StaffHq = traced.StaffHq;
+		AdvisorController = traced.AdvisorController;
+		ParkAnalyser = traced.ParkAnalyser;
+		ResearchLab = traced.ResearchLab;
+		Weather = traced.Weather;
+		ChallengeSystem = traced.ChallengeSystem;
 	}
 
 	public SavePayloadBlock Block { get; }
@@ -314,6 +307,14 @@ public sealed class ThemeParkIncSaveWorld
 	/// <summary>The bank (model 16, decoded by <see cref="SaveBank"/>); null when the list has none.</summary>
 	public SaveBank? Bank { get; }
 	public IReadOnlyList<ThemeParkIncSmallThing> SmallThings { get; }
+	/// <summary>The guests, staff and gardeners in list order (models 1, 4 to 8 and 20); none is in the prebuilt, so these are read through layouts that no save has witnessed.</summary>
+	public IReadOnlyList<ThemeParkIncPerson> People { get; }
+	public ThemeParkIncStaffHq? StaffHq { get; }
+	public ThemeParkIncAdvisorController? AdvisorController { get; }
+	public ThemeParkIncParkAnalyser? ParkAnalyser { get; }
+	public ThemeParkIncResearchLab? ResearchLab { get; }
+	public ThemeParkIncWeather? Weather { get; }
+	public ThemeParkIncChallengeSystem? ChallengeSystem { get; }
 
 	public IEnumerable<ThemeParkIncThing> OfModel( ThemeParkIncThingModel model ) => Things.Where( thing => thing.Model == model );
 
@@ -328,7 +329,7 @@ public sealed class ThemeParkIncSaveWorld
 	/// <summary>The attraction thing with this id; null when there is none.</summary>
 	public ThemeParkIncAttraction? FindAttraction( int id ) => Attractions.FirstOrDefault( attraction => attraction.Id == id );
 
-	/// <summary>The body bytes of <paramref name="thing"/> (after its 16-byte header), raw for the marker-bounded models.</summary>
+	/// <summary>The body bytes of <paramref name="thing"/> (after its 16-byte header).</summary>
 	public ReadOnlyMemory<byte> BodyOf( ThemeParkIncThing thing ) => payload.Slice( thing.BodyOffset, thing.BodyLength );
 
 	/// <summary>
@@ -378,6 +379,7 @@ public sealed class ThemeParkIncSaveWorld
 		var things = new List<ThemeParkIncThing>( walked.Things.Count );
 		var attractions = new List<ThemeParkIncAttraction>();
 		var smallThings = new List<ThemeParkIncSmallThing>();
+		var traced = new ThemeParkIncTracedThings();
 		SaveBank? bank = null;
 		foreach ( var frame in walked.Things )
 		{
@@ -392,7 +394,9 @@ public sealed class ThemeParkIncSaveWorld
 					throw new InvalidDataException( "The save Theme Park Inc World holds more than one bank." );
 				bank = SaveBank.Read( bounded, new SaveThing( thing.Id, SaveThingModel.Bank, thing.NextId, thing.Offset, thing.BodyOffset, thing.BodyLength ) );
 			}
-			else if ( thing.Width == ThemeParkIncWidthSource.Reader )
+			else if ( ThemeParkIncBodyLayout.For( thing.Model ) != null )
+				traced.Add( thing, new ThemeParkIncBody( thing.Model, payload.Slice( thing.BodyOffset, thing.BodyLength ) ) );
+			else
 			{
 				var reader = new SaveFieldReader( bounded, thing.BodyOffset, $"{thing.Model} thing {thing.Id}" );
 				var thingBase = reader.Base();
@@ -406,7 +410,7 @@ public sealed class ThemeParkIncSaveWorld
 			specials.Add( new ThemeParkIncSpecialRide( recordOffset, BinaryPrimitives.ReadUInt16LittleEndian( span[recordOffset..] ), span.Slice( recordOffset + 2, 200 ).ToArray() ) );
 		}
 		var world = new ThemeParkIncSaveWorld( payload, block, variables, controls, staffPool, calendar, walked.ArrivalOffset, span.Slice( walked.ArrivalOffset, ArrivalBytes ).ToArray(), cells,
-			walked.Head, walked.ThingListOffset, things.AsReadOnly(), walked.SpecialOffset, specials.AsReadOnly(), attractions.AsReadOnly(), bank, smallThings.AsReadOnly() );
+			walked.Head, walked.ThingListOffset, things.AsReadOnly(), walked.SpecialOffset, specials.AsReadOnly(), attractions.AsReadOnly(), bank, smallThings.AsReadOnly(), traced );
 		foreach ( var (name, id, model) in variables.ThingReferences() )
 		{
 			if ( id == 0 )
@@ -489,24 +493,26 @@ public sealed class ThemeParkIncSaveWorld
 			var (next, model) = ReadHeader( payload, offset, current );
 			var body = offset + ThingHeaderBytes;
 			int length;
-			var source = ThemeParkIncWidthSource.Reader;
 			if ( model == ThemeParkIncThingModel.Attraction )
 				length = ThemeParkIncAttraction.MeasureBody( payload, body, (int)current );
 			else if ( ExactBodyBytes.TryGetValue( model, out var exact ) )
 				length = exact;
-			else if ( ClosureDerivedBodyBytes.TryGetValue( model, out var derived ) )
+			else if ( ThemeParkIncBodyLayout.For( model ) is { } layout )
 			{
-				length = derived;
-				source = ThemeParkIncWidthSource.ClosureDerived;
+				try
+				{
+					length = layout.Measure( payload, body );
+				}
+				catch ( InvalidDataException exception )
+				{
+					throw new InvalidDataException( $"Save Theme Park Inc thing {current} ({model}): {exception.Message}", exception );
+				}
 			}
 			else
-			{
-				source = ThemeParkIncWidthSource.MarkerSearch;
-				length = (next != 0 ? NextHeaderAt( payload, body ) : EndMarkerAt( payload, body )) - body;
-			}
+				throw new InvalidDataException( $"Save Theme Park Inc thing {current} has model {model}, which has no body reader." );
 			if ( payload.Length - body < length )
 				throw new InvalidDataException( $"Save Theme Park Inc thing {current} ({model}) body of {length} bytes at offset {body} crosses the end of the data." );
-			things.Add( new ThemeParkIncThing( (int)current, model, (int)next, offset, body, length, source ) );
+			things.Add( new ThemeParkIncThing( (int)current, model, (int)next, offset, body, length, ThemeParkIncWidthSource.Reader ) );
 			offset = body + length;
 			if ( next == 0 )
 				break;
@@ -531,49 +537,5 @@ public sealed class ThemeParkIncSaveWorld
 		if ( !payload.Slice( offset + 12, 4 ).SequenceEqual( System.Text.Encoding.ASCII.GetBytes( tag ) ) )
 			throw new InvalidDataException( $"Save Theme Park Inc thing {id} at offset {offset} (model {rawModel}) lacks its {tag} tag." );
 		return (next, (ThemeParkIncThingModel)rawModel);
-	}
-
-	/// <summary>
-	/// The start of the thing header after a marker-bounded body that starts at <paramref name="body"/>: the first <c>LDMT</c> marker, 8 bytes in, of a header that reads
-	/// (a model with a serializer and its tag).
-	/// </summary>
-	private static int NextHeaderAt( ReadOnlySpan<byte> payload, int body )
-	{
-		for ( var from = body; ; )
-		{
-			var found = from <= payload.Length ? payload[from..].IndexOf( ThingMarker ) : -1;
-			if ( found < 0 )
-				throw new InvalidDataException( $"Save Theme Park Inc thing body at offset {body} is not followed by another thing header." );
-			var marker = from + found;
-			from = marker + 1;
-			var header = marker - 8;
-			if ( header < body || payload.Length - header < ThingHeaderBytes )
-				continue;
-			var rawModel = BinaryPrimitives.ReadUInt32LittleEndian( payload[(header + 4)..] );
-			if ( rawModel <= int.MaxValue && Tags.TryGetValue( (ThemeParkIncThingModel)rawModel, out var tag )
-				&& payload.Slice( header + 12, 4 ).SequenceEqual( System.Text.Encoding.ASCII.GetBytes( tag ) ) )
-				return header;
-		}
-	}
-
-	/// <summary>
-	/// The offset of the <c>ENOD</c> marker that closes the list after a marker-bounded last body that starts at <paramref name="body"/>: the first one whose special-rides tail fits
-	/// and is followed by the <c>WRLD</c> delimiter.
-	/// </summary>
-	private static int EndMarkerAt( ReadOnlySpan<byte> payload, int body )
-	{
-		for ( var from = body; ; )
-		{
-			var found = from <= payload.Length ? payload[from..].IndexOf( EndMarker ) : -1;
-			if ( found < 0 )
-				throw new InvalidDataException( $"Save Theme Park Inc last thing body at offset {body} is not followed by the ENOD marker and a special-rides tail." );
-			var marker = from + found;
-			from = marker + 1;
-			if ( payload.Length - marker < 8 )
-				continue;
-			var end = TailEnd( payload, marker + 4 );
-			if ( end >= 0 && payload.Length - end >= 4 && payload.Slice( end, 4 ).SequenceEqual( WorldDelimiter ) )
-				return marker;
-		}
 	}
 }

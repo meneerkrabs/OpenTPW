@@ -81,7 +81,7 @@ internal static class Game
 			using var reader = new SaveReader( args[saveIndex + 1] );
 			var header = reader.Inspect();
 			var payload = reader.ReadFile();
-			Console.WriteLine( $"Offline container: magic 0x{header.Magic:X8}; file type 0x{header.FileType:X8}; version {header.Version}; BILZ chunk {header.CompressedChunkLength} bytes; decoded {payload.Length} bytes." );
+			Console.WriteLine( $"Offline container: magic 0x{header.Magic:X8}; language {header.Language}; stamp 0x{header.Stamp:X8}; {(header.IsThemeParkInc ? $"version block {header.VersionText?.TrimEnd( '\r', '\n' ) ?? "(none)"}" : "no version block")}; BILZ chunk {header.CompressedChunkLength} bytes; decoded {payload.Length} bytes." );
 			Console.WriteLine( $"Container SHA-256: {Convert.ToHexString( System.Security.Cryptography.SHA256.HashData( reader.buffer ) )}" );
 			Console.WriteLine( $"Decoded SHA-256: {Convert.ToHexString( System.Security.Cryptography.SHA256.HashData( payload ) )}" );
 			Console.WriteLine( "Read-only container decoding only: original park payload semantics and gameplay import remain unverified." );

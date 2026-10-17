@@ -606,7 +606,7 @@ public class RideVMSnapshotTests
 		StringAssert.Contains( Throws( snapshot with { Scripts = null! } ).Message, "no script array" );
 		StringAssert.Contains( Throws( snapshot with { Scripts = new RideVMSnapshot[] { null! } } ).Message, "entry 0 is null" );
 		static InvalidDataException ThrowsScript( RideVMSnapshot corrupt ) => Assert.ThrowsException<InvalidDataException>( corrupt.ValidateSnapshot );
-		StringAssert.Contains( ThrowsScript( script with { CallStack = null! } ).Message, "null array" );
+		StringAssert.Contains( ThrowsScript( script with { Stack = null, CallStack = null } ).Message, "null array" );
 		StringAssert.Contains( ThrowsScript( script with { Variables = null! } ).Message, "null array" );
 		StringAssert.Contains( ThrowsScript( script with { RandomState = null! } ).Message, "null array" );
 		StringAssert.Contains( ThrowsScript( script with { UnimplementedEffects = null! } ).Message, "null array" );

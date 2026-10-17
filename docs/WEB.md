@@ -121,8 +121,8 @@ cache manifest when their media payload is excluded; they stay unread, unstored 
 unhashed. Secondary planning and cache reopening retain those full-source witnesses. No Theme Park World lobby
 is opened for Theme Park Inc. The browser calls the same `GameFlow.StartLevel` route as
 desktop `--load-original-level`, including its existing shipped-layout eligibility.
-The experimental HUD and capability policy stay unchanged: free building and guests, no
-economy, staff, research, missions, original game save writing, tickets or sharing. OpenTPW's own
+The experimental HUD and capability policy are the desktop slice's: building, guests and money (cash, loans, costs), no
+staff, research, challenges, missions, original game save writing, tickets or sharing. OpenTPW's own
 layout checkpoint is separate from an original game save.
 
 A failed setup import does not mark the selected theme loaded. Before a retry, only the

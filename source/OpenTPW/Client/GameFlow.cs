@@ -445,6 +445,7 @@ internal sealed partial class GameFlow : IDisposable
 		WindowOpened = window => Advisor?.OnWindowOpened( window ),
 		WindowClosed = window => Advisor?.OnWindowClosed( window ),
 		HelpPosted = message => Advisor?.PostHelp( message ),
+		RestoredHelp = message => Advisor?.PostHelp( message ),
 		HelpWithdrawn = message => Advisor?.WithdrawHelp( message ),
 		ModeChanged = () => Advisor?.OnModeChanged(),
 		AdvisorSaysStaffMessages = () => Advisor != null,
@@ -1039,6 +1040,7 @@ internal sealed partial class GameFlow : IDisposable
 		Level = () => Level,
 		Visit = visit => QueueProgressLevel( visit.Level, () => StartLevel( visit.Level, original: !visit.IsSandbox, developerPanels: false, visit: visit, overFrames: true ) ),
 		Globe = () => Globe,
+		Advise = message => Advisor?.OnOnlineScreenOpened( message ),
 	} );
 
 	public void Dispose()

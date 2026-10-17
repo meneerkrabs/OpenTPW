@@ -68,8 +68,17 @@ public static class OfficialExtensions
 	// [EXT:smarter-guests] OpenTPW's own extension; the original game's guests are the faithful default
 	public static IOpenTpwExtension SmarterGuests { get; } = new OpenTpwExtension( "opentpw.smarter-guests", "Smarter guests", new ModVersion( 1, 2, 0 ), DefaultEnabled: false, AffectsSimulation: true, PlayerSelectable: false );
 
+	/// <summary>
+	/// The restored advice extension (docs/MODS.md, docs/reverse/ADVISOR-SCAN.md "Restored advice"): triggers for advisor messages that exist in the shipped data (speech recorded, often captioned)
+	/// but that tp.exe v2.0 never plays, because their score callback is the constant-zero stub or nothing posts them. On by default and it never changes the park simulation: the advisor is
+	/// outside the world state hash (<see cref="WorldStateHash"/>), the extension only reads park state and posts advice, and a save made with or without it loads with or without it
+	/// (<see cref="AdvisorController.AdvisorControllerSnapshot"/> has the same shape and every descriptor exists in both cases), so it is not recorded in park saves.
+	/// </summary>
+	// [EXT:restored-advice] OpenTPW's own extension; the original game never says these lines
+	public static IOpenTpwExtension RestoredAdvice { get; } = new OpenTpwExtension( "opentpw.restored-advice", "Restored advice", new ModVersion( 1, 0, 0 ), DefaultEnabled: true, AffectsSimulation: false, PlayerSelectable: true );
+
 	/// <summary>All official extensions, in declaration order.</summary>
-	public static IReadOnlyList<IOpenTpwExtension> All { get; } = new[] { Online, CrossEditionObjects, SmarterGuests, GuestInsights, Pools };
+	public static IReadOnlyList<IOpenTpwExtension> All { get; } = new[] { Online, CrossEditionObjects, SmarterGuests, GuestInsights, Pools, RestoredAdvice };
 
 	public static IOpenTpwExtension? Find( string id ) => All.FirstOrDefault( extension => extension.Id == id );
 }

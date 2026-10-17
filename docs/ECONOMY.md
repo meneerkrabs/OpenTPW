@@ -359,7 +359,7 @@ paths, a theme/difficulty mismatch and inconsistent values (ids, ranges, ledger 
 Litter is saved by cell (`Litter`: cell, type, the claiming handyman and the claim's turn). A save from before litter by cell carries
 a park-wide `LitterScaled` count instead: it has no cells to land on, so it is accepted, logged and dropped (the park loads clean),
 and it is written as 0.
-Original TPWS/TPWI files are never written.
+The running game never writes original TPWS/TPWI files; the library writer (`OriginalParkExport`, TPWS-PAYLOAD.md) is not reachable from it.
 
 ## Approximation register
 

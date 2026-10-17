@@ -532,7 +532,7 @@ The Coasters block is the body between the stored `EMAK` (the Camera delimiter `
 stored `SAOC` (`COAS`): the original loader checks the preceding integer `0x4b414d45`, runs the coaster loader
 `0x39f98`, then checks `0x434f4153` (docs/reverse/PPC-rides.md, "Original TPW coaster save/load contract").
 The saver `0x394b8` writes the same shape. Like every delimiter this one is trailing: the block's bytes lie
-before `SAOC`. The reader is read-only; no original coaster chunk is written.
+before `SAOC`. The reader is read-only; OpenTPW builds no coaster chunk (the writer carries a template's bytes verbatim).
 
 ```
 u32 coaster count          (linked-list count)

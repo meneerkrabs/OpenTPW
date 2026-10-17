@@ -2,7 +2,6 @@ import { dotnet } from './_framework/dotnet.js';
 import * as webgl from './opentpw-gl.js';
 import * as audio from './opentpw-audio.js';
 import * as storage from './opentpw-storage.js';
-import { createTextureDownloads } from './opentpw-textures.js';
 import * as originals from './opentpw-originals.js';
 import { plan, importStartup, startSelected } from './opentpw-startup.js';
 import * as inputs from './opentpw-inputs.js';
@@ -13,7 +12,7 @@ const status = document.getElementById('status');
 const runtime = await dotnet.create();
 const { setModuleImports, getAssemblyExports, getConfig, runMain } = runtime;
 setModuleImports('opentpw-gl', webgl);
-setModuleImports('opentpw-page', { requestLevel, requestLanguage, requestTexture, chooseInput });
+setModuleImports('opentpw-page', { requestLevel, requestLanguage, chooseInput });
 setModuleImports('opentpw-audio', audio);
 const program = (await getAssemblyExports(getConfig().mainAssemblyName)).OpenTPW.Program;
 // runMain keeps the runtime alive after Main returns, so the exports stay callable.
@@ -44,28 +43,14 @@ if (perf)
 let levelSources = [];
 let speechSources = new Map();
 let languageLoadingText = '';
-let textureDownloads;
 let gameRunning = false;
 let parkLoadingText = '';
-let textureLoading = false;
 let inputLoadingText = '';
 
 function updateLoading() {
 	const loading = document.getElementById('loading');
-	loading.hidden = !parkLoadingText && !languageLoadingText && !inputLoadingText && !textureLoading;
-	loading.textContent = parkLoadingText || languageLoadingText || inputLoadingText || 'Enhancing textures…';
-}
-
-// Called from TexturePack.Find. Requests are deduplicated and bounded; the original draws while
-// a replacement downloads, then the next render frame refreshes only that image.
-function requestTexture(path) {
-	textureDownloads?.request(path);
-}
-
-async function writeTexture(path, bytes) {
-	while (gameRunning && program.ClarityEnabled() && !program.TextureDownloadCapacity(bytes.length))
-		await new Promise(requestAnimationFrame);
-	return gameRunning && program.ClarityEnabled() && program.AddTextureFile(path, bytes);
+	loading.hidden = !parkLoadingText && !languageLoadingText && !inputLoadingText;
+	loading.textContent = parkLoadingText || languageLoadingText || inputLoadingText;
 }
 
 async function copyFiles(sources, progress, copied) {
@@ -616,16 +601,6 @@ async function start(theme) {
 		for (const [path, text] of Object.entries(seed))
 			if (perfSeedPaths.has(path) && typeof text === 'string')
 				program.RestoreFile(path, new TextEncoder().encode(text));
-	}
-	try {
-		const distribution = JSON.parse(program.ClarityDistribution());
-		textureDownloads = createTextureDownloads({
-			distribution, writeFile: writeTexture, enabled: () => gameRunning && program.ClarityEnabled(),
-			changed: state => { textureLoading = state.active + state.queued > 0; updateLoading(); },
-		});
-		program.InstallClarity(JSON.stringify(distribution.packManifest));
-	} catch (error) {
-		console.warn('Clarity could not be prepared; the game will use its original world textures', error);
 	}
 	await new Promise(requestAnimationFrame);
 	try {

@@ -30,16 +30,6 @@ public sealed class TexturePackSwitch : ITexturePackSwitch
 	/// <summary>Raised on the render thread once all textures are swapped; holders of their own GPU copies (UI images, guest sprite atlases) reload here.</summary>
 	public static event Action? PackChanged;
 
-	/// <summary>Specific replacement game paths became available; GPU holders invalidate only their matching images.</summary>
-	public static event Action<IReadOnlyList<string>>? FilesAvailable;
-
-	/// <summary>Announces a batch of downloaded replacements on the render thread, without reloading the whole pack.</summary>
-	public static void NotifyFilesAvailable( IReadOnlyList<string> paths )
-	{
-		if ( paths.Count > 0 )
-			FilesAvailable?.Invoke( paths );
-	}
-
 	private readonly List<(string Path, TextureFlags Flags)> targets;
 	private readonly BlockingCollection<Loaded> queue = new( 12 );
 	private readonly CancellationTokenSource cancel = new();

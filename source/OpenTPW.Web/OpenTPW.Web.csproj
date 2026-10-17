@@ -56,8 +56,6 @@
 		     predecoded RGBA siblings staged by the PredecodeHeroArt target below instead (~+1.7 MB for skipping
 		     PNG decode on a first menu open; UiImages/Texture load them through PredecodedUiArt). Desktop builds
 		     keep the PNGs, and the two representations never coexist in one build. -->
-		<!-- The pinned index is small; PNGs arrive on demand from the texture CDN. -->
-		<EmbeddedResource Include="../../content/texture-packs/clarity-enhanced/distribution.json" LogicalName="content/texture-packs/clarity-enhanced/distribution.json" Condition="Exists('../../content/texture-packs/clarity-enhanced/distribution.json')" />
 	</ItemGroup>
 
 	<!-- Stages the predecoded hero art the browser embeds instead of content/hero-art's PNGs. The generator

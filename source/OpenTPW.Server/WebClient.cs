@@ -68,7 +68,7 @@ public static partial class WebClient
 				{
 					var host = http.Request.Host.Value;
 					http.Response.Headers.ContentSecurityPolicy = "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; "
-						+ $"connect-src 'self' ws://{host} wss://{host} https://cdn.jsdelivr.net https://opentpw-textures.pages.dev; img-src 'self' data: blob:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'";
+						+ $"connect-src 'self' ws://{host} wss://{host}; img-src 'self' data: blob:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'";
 				}
 			}
 		} );

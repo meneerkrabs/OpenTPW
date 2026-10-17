@@ -28,7 +28,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends python3 && rm -
 COPY content/shaders/ content/shaders/
 COPY content/data/ content/data/
 COPY content/hero-art/ content/hero-art/
-COPY content/texture-packs/clarity-enhanced/ content/texture-packs/clarity-enhanced/
 COPY source/ source/
 COPY tools/hero-art/ tools/hero-art/
 RUN dotnet publish source/OpenTPW.Web/OpenTPW.Web.csproj -c Release -p:RunAOTCompilation="$WEB_AOT" -o /web --nologo -p:SourceRevisionId="$BUILD_REVISION"

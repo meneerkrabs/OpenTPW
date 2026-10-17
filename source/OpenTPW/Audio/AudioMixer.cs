@@ -201,6 +201,12 @@ public sealed class AudioMixer : IDisposable
 	/// <summary>Speech volume share applied to music and effects while a speech voice plays (0–1).</summary>
 	public float DuckingLevel { get; set; } = 1;
 
+	/// <summary>
+	/// The music duck request word a ride script's DIPMUSIC sets (<see cref="GameAudio.SetMusicDuck"/>): while it is non-zero the music channel is silent.
+	/// </summary>
+	// [BIN:TPW-EXE:0x51BE5A music duck] the sound service (0x51BD70, applied from the main loop whenever one of its settings changed) compares the 16-bit request 0x803AD0 with 0: non-zero sends the music channel's volume as 0 (0x51BE62-0x51BE7E, or 0x51BDC2-0x51BDEC while speech ducks the others), zero sends the option volume 0x803AC0 (scaled by the speech duck 0x785914 percent in the ducking branch); the other three channels are not touched
+	public ushort MusicDuckRequest { get; set; }
+
 	public IReadOnlyList<AudioVoice> Voices => voices;
 
 	/// <summary>Output frames the listener has been given (the device's played frames, or the wall clock without a device).</summary>
@@ -280,6 +286,8 @@ public sealed class AudioMixer : IDisposable
 			if ( voice.StartOutputFrame < 0 )
 				voice.StartOutputFrame = mixedFrames + offset;
 			var gain = channelGains[(int)voice.Channel];
+			if ( voice.Channel == AudioChannel.Music && MusicDuckRequest != 0 )
+				gain = 0;
 			// [BIN:STP-PPC:0x100BB18C speech ducking] while speech plays, Music = settings+0x20 × duck / 100 and User2 = settings+0x1C × duck / 100 (TbSysCommand::SetMusicVolume / SetUser2Volume); +0x1C is fed from the SFX slider (profile +0x10, PC serializer 0x423E90), so the ducked second volume is the effects channel; master and speech stay
 			if ( speaking && voice.Channel != AudioChannel.Speech )
 				gain *= DuckingLevel;

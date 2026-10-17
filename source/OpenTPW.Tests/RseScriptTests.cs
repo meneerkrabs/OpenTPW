@@ -120,9 +120,9 @@ public class RseScriptTests
 		// opcodes whose handlers were read in the Mac build (GETANIM, FLUSHANIM_CH, WAITANIM_CH, TRIGWAITANIM_CH) and
 		// WAITABS/MULT (Theme Park Inc only), ADDOBJ_EXT (read in tp.exe, 0x5520E8) and SETLV/DBGMSG/PUSH/POP (tp.exe 0x551E19, 0x554243,
 		// 0x553C1E, 0x553CBA); END (tp.exe 0x5567B1); none of the 6 other unused names.
-		var unhandled = new[] { "EVENT_EXT", "ENABLELIGHT", "DISABLELIGHT", "SETLIGHT", "COLOURLIGHT", "GETCUSTPTCLCODE" };
-		CollectionAssert.AreEquivalent( unhandled, Enum.GetValues<Opcode>().Where( x => !RideScriptAnalysis.HandledOpcodes.Contains( x ) ).Select( x => x.ToString() ).ToArray() );
-		Assert.AreEqual( 100, RideScriptAnalysis.HandledOpcodes.Count );
+		// EVENT_EXT (0x552707), the four ride-light opcodes (0x555C7A..0x555D9A) and GETCUSTPTCLCODE (0x5563D5) followed: every named opcode has a handler
+		Assert.AreEqual( 0, Enum.GetValues<Opcode>().Count( x => !RideScriptAnalysis.HandledOpcodes.Contains( x ) ) );
+		Assert.AreEqual( 106, RideScriptAnalysis.HandledOpcodes.Count );
 		foreach ( var (opcode, definition) in RideOpcodes.Definitions )
 			if ( RideScriptAnalysis.DocumentedOperandCounts.TryGetValue( opcode, out var documented ) )
 				Assert.AreEqual( documented, definition.OperandCount, opcode.ToString() );
@@ -307,7 +307,8 @@ public class RseScriptTests
 		Assert.AreEqual( 163, inventory.EventOperands.Count );
 		Assert.AreEqual( 0, inventory.UsedWithoutHandler.Count() );
 		// WAITABS and MULT gained handlers for the Theme Park Inc corpus; no Theme Park World script contains them.
-		CollectionAssert.AreEquivalent( new[] { Opcode.ADDOBJ_EXT, Opcode.SETVARINPARENT, Opcode.YEAR, Opcode.MONTH, Opcode.DAY, Opcode.GETANIM, Opcode.FLUSHANIM_CH, Opcode.WAITANIM_CH, Opcode.TRIGWAITANIM_CH, Opcode.WAITABS, Opcode.MULT, Opcode.SETLV, Opcode.DBGMSG, Opcode.PUSH, Opcode.POP, Opcode.END }, inventory.HandlerWithoutCorpusUse.ToArray() );
+		CollectionAssert.AreEquivalent( new[] { Opcode.ADDOBJ_EXT, Opcode.SETVARINPARENT, Opcode.YEAR, Opcode.MONTH, Opcode.DAY, Opcode.GETANIM, Opcode.FLUSHANIM_CH, Opcode.WAITANIM_CH, Opcode.TRIGWAITANIM_CH, Opcode.WAITABS, Opcode.MULT, Opcode.SETLV, Opcode.DBGMSG, Opcode.PUSH, Opcode.POP, Opcode.END,
+			Opcode.EVENT_EXT, Opcode.ENABLELIGHT, Opcode.DISABLELIGHT, Opcode.SETLIGHT, Opcode.COLOURLIGHT, Opcode.GETCUSTPTCLCODE }, inventory.HandlerWithoutCorpusUse.ToArray() );
 		var dump = Environment.GetEnvironmentVariable( "OPENTPW_RSE_INVENTORY_OUT" );
 		if ( !string.IsNullOrEmpty( dump ) )
 			File.WriteAllText( dump, inventory.Format() );

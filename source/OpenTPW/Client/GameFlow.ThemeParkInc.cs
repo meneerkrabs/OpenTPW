@@ -57,5 +57,6 @@ internal sealed partial class GameFlow
 		level.SimulationTimeScale = hud.TimeScale;
 		level.Update();
 		GameAudio.Update( level.Guests?.GetStatistics().InPark ?? 0 );
+		ReverbSelector.Update( level.RideView?.Ride );
 	}
 }

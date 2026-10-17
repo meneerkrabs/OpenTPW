@@ -116,6 +116,12 @@ public sealed record RideVMSnapshot
 	public int LimboCount { get; init; }
 	/// <summary>The TURBO byte (script +0xB8), 0..255.</summary>
 	public int TurboByte { get; init; }
+	/// <summary>The DIPMUSIC byte (script +0xB9), 0..255; snapshots from before it was kept read 0.</summary>
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault )]
+	public int MusicDuckByte { get; init; }
+	/// <summary>The SETREVERB level (script +0xD8); snapshots from before it was kept read 0.</summary>
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault )]
+	public int ReverbLevel { get; init; }
 	/// <summary>WALKST_FLOAT's start on the 32-bit clock (script +0x80); null while the script has not started a float.</summary>
 	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
 	public int? WalkFloatStart { get; init; }
@@ -251,6 +257,8 @@ public sealed record RideVMSnapshot
 			throw new InvalidDataException( $"Script {ScriptId} limbo table has {LimboValues.Length} slots, above the limit." );
 		if ( TurboByte is < 0 or > 255 )
 			throw new InvalidDataException( $"Script {ScriptId} TURBO byte {TurboByte} is outside [0, 255]." );
+		if ( MusicDuckByte is < 0 or > 255 )
+			throw new InvalidDataException( $"Script {ScriptId} DIPMUSIC byte {MusicDuckByte} is outside [0, 255]." );
 		if ( Variables.Length > RideScriptFile.MaximumVariables )
 			throw new InvalidDataException( $"Script {ScriptId} has {Variables.Length} variables, above the limit." );
 		if ( ( Flags & ~RideVM.VMFlags.All ) != 0 )

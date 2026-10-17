@@ -607,7 +607,7 @@ public sealed partial class OriginalObjectRuntime
 /// <see cref="RideVisitorBridge"/> (guests slice). EVENT and REPAIREFFECT play their original sounds (their other
 /// effects stay unimplemented). TPW YEAR/MONTH/DAY/HOUR/MIN/SEC sample host civil time.
 /// Everything else (objects/particles, the ride-type controllers TOUR/BUMP,
-/// screams, reverb) stays an unimplemented effect.
+/// screams, the ride lights) stays an unimplemented effect. DIPMUSIC sets the sound service's music duck request; SETREVERB's level is read by <see cref="ReverbSelector"/>.
 /// </summary>
 public sealed class OriginalObjectEffects : IRideScriptEffects, IRideAnimationQuery, IRideCanonicalEffects
 {
@@ -780,8 +780,9 @@ public sealed class OriginalObjectEffects : IRideScriptEffects, IRideAnimationQu
 			ride.KillParticleObjects(call.Argument(0));
 			return UnimplementedRideScriptEffects.Instance.Perform( call );
 		}
-		if ( call.Opcode == Opcode.EVENT )
+		if ( call.Opcode is Opcode.EVENT or Opcode.EVENT_EXT )
 		{
+			// [BIN:TPW-EXE:0x552707 EVENT_EXT] the same dispatcher 0x5573D0 with the fourth operand as the control; only the particle types act on it, the sound types ignore it
 			if (call.Argument(0) is 1 or 2) ride.ObserveParticleEvent(call);
 			// [BIN:STP-PPC:0x100AE930 RSE EVENT effect switch] the type operand selects the sound category (3 level rides, 4 level ambient, 5 global rides, 6 global kids, 7 global staff, 8 global ambient, 9 global UI) and the id operand the event, submitted at the object's position
 			// [BIN:TPW-EXE:0x5575c7 EVENT sound] the key operand (the 2nd) picks the anchor (a model node, or the footprint middle for a negative key; an unknown key plays nothing) and the 3rd is the event id, for every sound type 3-9
@@ -798,6 +799,14 @@ public sealed class OriginalObjectEffects : IRideScriptEffects, IRideAnimationQu
 			if (voice is { Loops: true }) ownedEventLoops.Add(voice);
 			return UnimplementedRideScriptEffects.Instance.Perform( call );
 		}
+		if ( call.Opcode == Opcode.DIPMUSIC )
+		{
+			// [BIN:TPW-EXE:0x51E710 music duck request] the low word of the operand is the global request the sound service reads (a non-zero word silences the music channel)
+			GameAudio.SetMusicDuck( unchecked((ushort)call.Argument( 0 )) );
+			return 0;
+		}
+		if ( call.Opcode == Opcode.SETREVERB )
+			return 0; // the VM keeps the level (+0xD8); ReverbSelector reads it each frame
 		if ( call.Opcode == Opcode.REPAIREFFECT )
 		{
 			// [BIN:TPW-EXE:0x5562C5 REPAIREFFECT] a non-zero value plays the global cat_rides sounds 111 and 211 at the object's position (0x5562CD..0x556351); the value 0 jumps to 0x55635F and plays the band one-shot (cat_kids 75 family, 0x551320). The Mac handler (0x100B1E34) has the same two blocks, the pair first and the band sound at 0x100B1F78; the earlier port gave them the opposite values

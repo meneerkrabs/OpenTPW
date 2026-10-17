@@ -1020,12 +1020,6 @@ public class RideVMTests
 	[TestMethod]
 	public void UnknownOpcodesAndRunningOffTheEndStopTheScript()
 	{
-		// the ride lights are game effects (TPW-EXE 0x555C7A..0x555D9A) that this VM does not implement yet
-		var unknown = Load( new Asm().I( Opcode.ENABLELIGHT, 1 ) );
-		Run( unknown, 1 );
-		Assert.AreEqual( RideVMState.Faulted, unknown.State );
-		StringAssert.Contains( unknown.FaultMessage, "ENABLELIGHT" );
-
 		var end = Load( new Asm().I( Opcode.NOP ) );
 		Run( end, 2 );
 		Assert.AreEqual( RideVMState.Halted, end.State );

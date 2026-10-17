@@ -6,7 +6,7 @@ OpenTPW has two kinds of add-ons, both labelled `[EXT:mods]` in the source (`sou
   `[EXT]`/`[APPROX]` labels. They are compiled in, ship no files and can be switched off. Their ids start with
   `opentpw.`.
 - **Mods** are folders of data with an `opentpw-mod.json` manifest. Community mods use ids that start with
-  `community.`; `opentpw.` ids are reserved for data-only content shipped with OpenTPW.
+  `community.`; `opentpw.` ids are reserved for data-only content shipped with OpenTPW. The pools extension's own content is a catalog root of the id `opentpw.pools` (`content/pools`, Info.Ids 65500 to 65519 reserved; [POOLS.md](POOLS.md#content-extpools-content)), listed only while that extension is on.
 
 Mods are **data, plus sandboxed TPW Script**. A mod may ship data files as before, and (from the scripting phases on, see
 [SCRIPT-MODS.md](SCRIPT-MODS.md)) scripts in *TPW Script*, a small deterministic language with its own interpreter inside
@@ -217,6 +217,11 @@ New objects made from scratch (models, textures, scripts) are authored with the 
 - `archive`: the archive's path without `.wad` (a plain folder works too), in the mod's folder, or, with `input`, in the
   data folder of that input (the folder the player chose in `mods.json`, or the `Data` folder inside it). The path may
   not leave its folder (the rules of the manifest's content paths).
+- `research` (optional, a top-level field of the file, default `true`): `false` makes every object of the file available from the start while its mod is on. Such objects are never research projects: they are in no research table, never in a
+  save's research set, do not count in the group percentages and do not hold back the golden ticket for "everything researched and built". The official pools extension's `objects.json` sets it (its changing rooms), so a park that
+  uses none of them has the same research tables and saved bytes with the extension on or off. Community mods leave it out and are researched like the game's own objects.
+- The asset hashes of a save: a save of a park that places an object of the official pools extension holds that object's files (`mod:opentpw.pools:` keys) and a load requires them to hash the same; the files of objects the park does not place
+  are ignored in both directions. Changing the files of a placed object changes the saves that place it; adding objects to the extension does not ([POOLS.md](POOLS.md#the-extension-and-the-save-rule)).
 - `theme`: `jungle`, `hallow`, `space` or `fantasy`. `category`: `rides`, `shops`, `sideshow`, `features` or `upgrades`.
 - `names`: the object's name per language; the selected language, then English, then the archive's `.sam` name.
 - The archive must hold one `.sam` with an `Info.Id` and the main model, like the game's own. The category defaults

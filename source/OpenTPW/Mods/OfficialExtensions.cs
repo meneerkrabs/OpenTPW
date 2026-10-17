@@ -47,7 +47,7 @@ public static class OfficialExtensions
 	/// <summary>
 	/// The pools extension (docs/POOLS.md): the player paints pool water cells of any size and shape, which are drawn with an animated surface and
 	/// auto-joined edges, cost money per cell and are saved. Off by default because it adds a cell type to the park simulation. A park save records
-	/// the extension only while the park has pool cells, so a park without any saves byte-identically whether the extension is on or off
+	/// the extension only while the park has pool cells or a changing room, so a park without either saves byte-identically whether the extension is on or off
 	/// (<c>ParkResumeMods.UsedOnlyExtensionIds</c>).
 	/// </summary>
 	// [EXT:pools-extension] OpenTPW's own extension; the original game has no pools

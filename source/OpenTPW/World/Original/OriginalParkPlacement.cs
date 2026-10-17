@@ -15,7 +15,9 @@ public enum OriginalPlacementResult
 	/// <summary>The park does not own the cell (map flag 0x40; Buy Land adds land).</summary>
 	NotOwned,
 	/// <summary>An entrance's or exit's outside cell refuses the access the original lays there (tp.exe <c>0x528A70</c>).</summary>
-	AccessBlocked
+	AccessBlocked,
+	/// <summary>[EXT:pools-changing-room] A changing room needs pool water beside its back (docs/POOLS.md).</summary>
+	NeedsPool
 }
 
 /// <summary>

@@ -23,7 +23,7 @@ internal static class ParkResumeMods
 	public const int MaximumRecords = 256;
 
 	/// <summary>
-	/// [EXT:pools-extension] The extensions a save records only while the park actually uses them: <c>opentpw.pools</c>, recorded when the park has pool cells. A park
+	/// [EXT:pools-extension] The extensions a save records only while the park actually uses them: <c>opentpw.pools</c>, recorded when the park has pool cells or a changing room. A park
 	/// that does not use one saves byte-identically whether it is on or off, and loads whether it is on or off (docs/POOLS.md, docs/MODS.md).
 	/// </summary>
 	public static IReadOnlySet<string> UsedOnlyExtensionIds { get; } = new HashSet<string>( StringComparer.Ordinal ) { OfficialExtensions.Pools.Id };
@@ -41,9 +41,33 @@ internal static class ParkResumeMods
 		return recorded.Select( mod => new ParkModRecord( mod.Id, mod.Version.ToString(), mod.ContentSha256 ) ).ToArray();
 	}
 
-	/// <summary>[EXT:pools-extension] The used-only extensions a park uses: <c>opentpw.pools</c> when <paramref name="cells"/> holds a pool cell.</summary>
-	public static IReadOnlySet<string> InUse( ParkCellMap? cells ) =>
-		cells != null && cells.CountOf( ParkCellType.PoolWater ) > 0 ? new HashSet<string>( StringComparer.Ordinal ) { OfficialExtensions.Pools.Id } : new HashSet<string>( StringComparer.Ordinal );
+	/// <summary>
+	/// [EXT:pools-extension] The used-only extensions a park uses: <c>opentpw.pools</c> when <paramref name="cells"/> holds a pool cell, or when the park holds one of the extension's own objects
+	/// (<paramref name="poolsObjects"/>: a changing room, whose asset keys name the extension and whose swimmers the save holds).
+	/// </summary>
+	public static IReadOnlySet<string> InUse( ParkCellMap? cells, bool poolsObjects = false ) =>
+		poolsObjects || (cells != null && cells.CountOf( ParkCellType.PoolWater ) > 0) ? new HashSet<string>( StringComparer.Ordinal ) { OfficialExtensions.Pools.Id } : new HashSet<string>( StringComparer.Ordinal );
+
+	/// <summary>
+	/// [EXT:pools-extension] The asset manifest as a save holds it: the catalog lists every object of the extension (<c>mod:opentpw.pools:</c> keys) whenever the extension is on, but a save holds, and a load requires,
+	/// only the keys of the extension objects the park has PLACED (<paramref name="placedPoolsObjects"/>: the changing rooms; none for a park of pool cells only). A park without any is the same bytes with the
+	/// extension on or off and loads with it on or off; an extension object that is not placed is ignored in both directions, so adding objects to the extension (more changing rooms, extras, slides) never
+	/// invalidates an older save. A placed object keeps the exact-hash check: changing its files changes the saves that place it.
+	/// </summary>
+	public static IReadOnlyDictionary<string, string> AssetsForUse( IReadOnlyDictionary<string, string> assets, IEnumerable<ObjectCatalogEntry> placedPoolsObjects )
+	{
+		ArgumentNullException.ThrowIfNull( assets );
+		ArgumentNullException.ThrowIfNull( placedPoolsObjects );
+		var prefix = ContentRoot.Mod( OfficialExtensions.Pools.Id ).KeyPrefix;
+		if ( !assets.Keys.Any( key => key.StartsWith( prefix, StringComparison.Ordinal ) ) )
+			return assets;
+		var placed = placedPoolsObjects.Where( IsPoolsObject ).Select( entry => entry.Root.KeyPrefix + entry.ArchivePath.TrimEnd( '/' ) + "/" ).Distinct( StringComparer.Ordinal ).ToArray();
+		return assets.Where( pair => !pair.Key.StartsWith( prefix, StringComparison.Ordinal ) || placed.Any( archive => pair.Key.StartsWith( archive, StringComparison.Ordinal ) ) )
+			.ToDictionary( pair => pair.Key, pair => pair.Value, StringComparer.Ordinal );
+	}
+
+	/// <summary>[EXT:pools-extension] Whether a placed object is one of the pools extension's own (a changing room).</summary>
+	public static bool IsPoolsObject( ObjectCatalogEntry entry ) => entry.ModId == OfficialExtensions.Pools.Id;
 
 	/// <summary>
 	/// The recorded mods' own consistency, with no active set: a bounded count, valid and distinct ids, versions and

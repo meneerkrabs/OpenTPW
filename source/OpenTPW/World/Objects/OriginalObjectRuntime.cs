@@ -287,6 +287,7 @@ public sealed partial class OriginalObjectRuntime
 		eventSoundSpace = null;
 		ClearParticleRequests();
 		effects.StopSounds();
+		Visitors.IsStopped = true;
 		Visitors.ReleaseAll();
 		if ( Coaster != null )
 		{
@@ -399,6 +400,7 @@ public sealed partial class OriginalObjectRuntime
 			// snapshot does not contain it), the visitors and animator are cleared.
 			stopped = true;
 			effects.StopSounds();
+			Visitors.IsStopped = true;
 			Visitors.ReleaseAll();
 			if ( Coaster != null )
 			{
@@ -499,7 +501,9 @@ public sealed partial class OriginalObjectRuntime
 			// [DATA:<object>.sam:UsageInfo.InitCostOfGoods/InitPricePerUse/InitChanceOfLoosing] the sideshow words of the join excitement (0xdff70); the level mirrors the live economy values over them
 			Sideshow = new SideshowTerms( settings.GetInt( "UsageInfo.InitCostOfGoods" ), settings.GetInt( "UsageInfo.InitPricePerUse" ), settings.GetInt( "UsageInfo.InitChanceOfLoosing" ) ),
 			// [DATA:<object>.sam:UsageInfo.EntryCellStandPosX/Y] the jungle Rides.sam default is (0.5, 0.5); 0xde1d8 checks the range [0, 1] (a value outside it keeps the default here)
-			EntryCellStandPos = (StandFraction( settings, "UsageInfo.EntryCellStandPosX" ), StandFraction( settings, "UsageInfo.EntryCellStandPosY" ))
+			EntryCellStandPos = (StandFraction( settings, "UsageInfo.EntryCellStandPosX" ), StandFraction( settings, "UsageInfo.EntryCellStandPosY" )),
+			// [EXT:pools-changing-room] OpenTPW's own key: the object is a pool complex's changing room (docs/POOLS.md)
+			IsChangingRoom = FeatureGates.Pools && PoolChangingRooms.IsChangingRoom( entry )
 		};
 	}
 

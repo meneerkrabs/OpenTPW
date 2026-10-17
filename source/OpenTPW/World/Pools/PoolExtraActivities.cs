@@ -130,7 +130,9 @@ internal static class PoolExtraMotion
 		switch ( step )
 		{
 			case 3:
-				if ( StepToward( simulation, guest, Along( land, side, PoolExtraSettings.RimDistance ), PoolExtraSettings.WalkSpeed ) )
+				// at the rim: wait (up to LandingWaitTurns, counted in the turns of this step) while another body is in the water where the jump lands
+				if ( StepToward( simulation, guest, Along( land, side, PoolExtraSettings.RimDistance ), PoolExtraSettings.WalkSpeed )
+					&& (guest.PoolActivityTurns++ >= PoolAttractionSettings.LandingWaitTurns || !PoolActivityHelpers.LandingBusy( simulation, guest, Entry( land, side ) )) )
 					SetStep( guest, 4 );
 				break;
 			case 4:
@@ -203,6 +205,9 @@ public sealed class LadderActivity : IPoolActivity
 
 	public void Abort( GuestSimulation simulation, Guest guest ) { }
 
+	/// <summary>A body in the water while swimming to the ladder (0), jumping in (4) and splashing (5).</summary>
+	public bool InWater( GuestSimulation simulation, Guest guest ) => PoolExtraMotion.StepOf( guest ) is 0 or 4 or 5;
+
 	public int SpriteSlot( Guest guest ) => PoolExtraMotion.StepOf( guest ) switch
 	{
 		0 => PoolSwimSlots.Crawl, 1 => PoolSwimSlots.LadderClimb, 2 => PoolSwimSlots.Stand, 3 => PoolSwimSlots.Walk, 4 => PoolSwimSlots.Dive, _ => PoolSwimSlots.SplashDown
@@ -258,11 +263,13 @@ public sealed class DivingBoardActivity : IPoolActivity
 				break;
 			case 2:
 				if ( PoolExtraMotion.StepToward( simulation, guest, PoolExtraMotion.Along( land, side, PoolExtraSettings.BoardEnd ), PoolExtraSettings.WalkSpeed ) )
-					PoolExtraMotion.SetStep( guest, 3, PoolExtraSettings.BoardPauseTurns );
+					PoolExtraMotion.SetStep( guest, 3, PoolExtraSettings.BoardPauseTurns + PoolAttractionSettings.LandingWaitTurns );
 				break;
 			case 3:
+				// the pause is the turns above LandingWaitTurns; then the diver waits (up to LandingWaitTurns more) while another body is in the water at the landing
 				PoolExtraMotion.Face( guest, side );
-				if ( --guest.PoolActivityTurns <= 0 )
+				if ( --guest.PoolActivityTurns <= PoolAttractionSettings.LandingWaitTurns
+					&& (guest.PoolActivityTurns <= 0 || !PoolActivityHelpers.LandingBusy( simulation, guest, PoolExtraMotion.Along( land, side, PoolExtraSettings.BoardLanding ) )) )
 					PoolExtraMotion.SetStep( guest, 4 );
 				break;
 			case 4:
@@ -281,6 +288,9 @@ public sealed class DivingBoardActivity : IPoolActivity
 	}
 
 	public void Abort( GuestSimulation simulation, Guest guest ) { }
+
+	/// <summary>A body in the water while swimming to the foot of the board (0), diving (4) and splashing (5); the board's guests are above the water.</summary>
+	public bool InWater( GuestSimulation simulation, Guest guest ) => PoolExtraMotion.StepOf( guest ) is 0 or 4 or 5;
 
 	public int SpriteSlot( Guest guest ) => PoolExtraMotion.StepOf( guest ) switch
 	{
@@ -427,6 +437,9 @@ public sealed class LoungerActivity : IPoolActivity
 	}
 
 	public void Abort( GuestSimulation simulation, Guest guest ) { }
+
+	/// <summary>A body in the water while swimming to the lounger (0), jumping in (4) and splashing (5).</summary>
+	public bool InWater( GuestSimulation simulation, Guest guest ) => PoolExtraMotion.StepOf( guest ) is 0 or 4 or 5;
 
 	public int SpriteSlot( Guest guest ) => PoolExtraMotion.StepOf( guest ) switch
 	{

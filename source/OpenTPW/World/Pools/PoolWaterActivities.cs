@@ -18,6 +18,12 @@ public static class PoolAttractionSettings
 	public const int SwingReach = Fixed16.One / 2;
 	/// <summary>The happiness a rope swing adds when it ends (meter 0 to 100).</summary>
 	public const float SwingHappiness = 6f;
+	/// <summary>A landing waits at the top (the rope swing's platform, the diving board's end, the rim of a ladder) while another body is in the water within this distance of the landing point (0.7 cell, 16.16).</summary>
+	public const int LandingZoneRadius = (int)(0.7 * Fixed16.One);
+	/// <summary>The most park turns a landing waits for its zone to be free (40 turns, 10 seconds) before it goes anyway, so a zone nobody leaves cannot hold a guest for ever.</summary>
+	public const int LandingWaitTurns = 40;
+	/// <summary>The jets: where a guest stands under one, from the middle of the water-side cell (0.42 cell, 16.16): three spots a third of a circle apart are 0.73 cell from each other.</summary>
+	public const int JetSpotRadius = (int)(0.42 * Fixed16.One);
 	/// <summary>The jets: swimmers under one at a time.</summary>
 	public const int JetCapacity = 3;
 	/// <summary>The jets: the shortest stay under a jet, in turns (15 seconds), plus a draw below <see cref="JetExtraTurns"/>.</summary>
@@ -100,7 +106,8 @@ internal static class PoolActivityHelpers
 	}
 
 	/// <summary>
-	/// One swimming step of the guest towards a point (16.16) with the swimmer's own steering, ignoring the crowd (the guest is on its way to something that is its own). True once it is within the goal radius.
+	/// One swimming step of the guest towards a point (16.16) with the swimmer's own steering, keeping its distance from the other bodies in the water until it is within <see cref="PoolSwimSettings.CrowdedRadius"/> of the goal (so a crowd at
+	/// the target cannot block it). True once it is within the goal radius.
 	/// Draws from <paramref name="random"/> only.
 	/// </summary>
 	public static bool Approach( GuestSimulation simulation, Guest guest, PoolSwimRegion region, (int X, int Y) goal, ref uint random )
@@ -109,12 +116,17 @@ internal static class PoolActivityHelpers
 		if ( Fixed16.Octile( goal.X - navigation.X, goal.Y - navigation.Y ) < PoolSwimSettings.GoalRadius )
 			return true;
 		var body = new PoolSwimBody { X = navigation.X, Y = navigation.Y, Heading = guest.SwimHeading, GoalX = goal.X, GoalY = goal.Y, HasGoal = true, Random = random };
-		PoolSwimming.Step( region, ref body, ReadOnlySpan<(int X, int Y)>.Empty, guest.BaseSpeed * PoolSwimSettings.SpeedPerBaseSpeed, ignoreOthers: true );
+		var near = Fixed16.Octile( goal.X - navigation.X, goal.Y - navigation.Y ) < PoolSwimSettings.CrowdedRadius;
+		PoolSwimming.Step( region, ref body, near ? ReadOnlySpan<(int X, int Y)>.Empty : simulation.WaterBodyPoints( region, guest, navigation.X, navigation.Y ), guest.BaseSpeed * PoolSwimSettings.SpeedPerBaseSpeed, ignoreOthers: near );
 		random = body.Random;
 		guest.SwimHeading = body.Heading;
 		simulation.MovePoolGuest( guest, body.X, body.Y );
 		return Fixed16.Octile( goal.X - body.X, goal.Y - body.Y ) < PoolSwimSettings.GoalRadius;
 	}
+
+	/// <summary>Whether another body is in the water within <see cref="PoolAttractionSettings.LandingZoneRadius"/> of a landing point (16.16): a landing waits while it is.</summary>
+	public static bool LandingBusy( GuestSimulation simulation, Guest guest, (int X, int Y) point ) =>
+		RegionOf( simulation, guest ) is { } region && simulation.IsWaterBodyNear( region, guest, point.X, point.Y, PoolAttractionSettings.LandingZoneRadius );
 
 	public static void Gain( Guest guest, float amount ) => guest.Happiness = MeterMath.Add( guest.Happiness, amount );
 
@@ -176,7 +188,9 @@ public sealed class RopeSwingActivity : IPoolActivity
 				}
 				return PoolActivityStep.Continue;
 			case 1:
-				if ( guest.PoolActivityTurns >= PoolAttractionSettings.SwingClimbTurns )
+				// at the top: wait (up to LandingWaitTurns) while a body is in the water at the landing point
+				if ( guest.PoolActivityTurns >= PoolAttractionSettings.SwingClimbTurns
+					&& (guest.PoolActivityTurns >= PoolAttractionSettings.SwingClimbTurns + PoolAttractionSettings.LandingWaitTurns || !PoolActivityHelpers.LandingBusy( simulation, guest, Landing( region, platform, steps ) )) )
 				{
 					guest.PoolActivityPhase = 2;
 					guest.PoolActivityTurns = 0;
@@ -219,6 +233,9 @@ public sealed class RopeSwingActivity : IPoolActivity
 		_ => PoolSwimSlots.SplashDown
 	};
 
+	/// <summary>A body in the water while swimming to the steps (phase 0) and after the landing (phase 3); on the platform and in the air it is not.</summary>
+	public bool InWater( GuestSimulation simulation, Guest guest ) => guest.PoolActivityPhase is 0 or 3;
+
 	/// <summary>The guest stands on the platform while climbing (rising), swings down from it, and lands on the water.</summary>
 	public float? FeetHeight( GuestSimulation simulation, Guest guest, PoolFeetHeights heights )
 	{
@@ -226,7 +243,7 @@ public sealed class RopeSwingActivity : IPoolActivity
 		return guest.PoolActivityPhase switch
 		{
 			// up the ladder from the deck to the platform
-			1 => heights.Deck + PoolAttractionSettings.SwingPlatformHeight * guest.PoolActivityTurns / PoolAttractionSettings.SwingClimbTurns,
+			1 => heights.Deck + PoolAttractionSettings.SwingPlatformHeight * Math.Min( guest.PoolActivityTurns, PoolAttractionSettings.SwingClimbTurns ) / PoolAttractionSettings.SwingClimbTurns,
 			// down from the platform to the water in an arc, then the splash at the water's surface
 			2 => platform + (heights.Water - platform) * guest.PoolActivityTurns / PoolAttractionSettings.SwingTurns + 0.25f * MathF.Sin( MathF.PI * guest.PoolActivityTurns / PoolAttractionSettings.SwingTurns ),
 			3 => heights.Water,
@@ -258,8 +275,59 @@ public sealed class JetsActivity : IPoolActivity
 		return chosen != null ? new PoolActivityOffer( chosen.ObjectId, chosen.Access.X, chosen.Access.Y ) : null;
 	}
 
-	public bool Start( GuestSimulation simulation, Guest guest, PoolActivityOffer offer, ref uint random ) =>
-		sites.Find( offer.TargetId ) != null && PoolActivityHelpers.Starting( simulation, guest, Id, offer.TargetId ) < PoolAttractionSettings.JetCapacity;
+	/// <summary>
+	/// The guest takes the first spot under the jet that is free water and at least <see cref="PoolSwimSettings.MinimumDistance"/> from the spots of the guests already at this jet, and keeps it in its <see cref="Guest.PoolActivityX"/>,
+	/// <see cref="Guest.PoolActivityY"/> for the whole activity; with no such spot the jet is full and the guest swims on.
+	/// </summary>
+	public bool Start( GuestSimulation simulation, Guest guest, PoolActivityOffer offer, ref uint random )
+	{
+		if ( sites.Find( offer.TargetId ) is not { } site || PoolActivityHelpers.RegionOf( simulation, guest ) is not { } region || PoolActivityHelpers.Starting( simulation, guest, Id, offer.TargetId ) >= PoolAttractionSettings.JetCapacity )
+			return false;
+		foreach ( var spot in Spots( site ) )
+		{
+			if ( !region.IsWater( spot.X, spot.Y ) )
+				continue;
+			var free = true;
+			foreach ( var other in simulation.Guests )
+				if ( other != guest && other.State == GuestState.PoolActivity && other.PoolActivityTarget == offer.TargetId && other.PoolActivityId == Id
+					&& Fixed16.Length( other.PoolActivityX - spot.X, other.PoolActivityY - spot.Y ) < PoolSwimSettings.MinimumDistance )
+				{
+					free = false;
+					break;
+				}
+			if ( !free )
+				continue;
+			(guest.PoolActivityX, guest.PoolActivityY) = spot;
+			return true;
+		}
+		// no free spot: undo the count of this start
+		PoolActivityHelpers.Left( simulation, Id, offer.TargetId );
+		return false;
+	}
+
+	/// <summary>
+	/// The candidate spots under a jet, in the order they are taken: three a third of a circle apart (<see cref="PoolAttractionSettings.JetSpotRadius"/> from the middle of the water-side cell), three between those,
+	/// then two wider rings of sixteen (the spray reaches a cell and more), then the middle. A spot beside the rim is not free water, so the next one is taken.
+	/// </summary>
+	private static IEnumerable<(int X, int Y)> Spots( PoolAttractionSite site )
+	{
+		var (cx, cy) = PoolSwimRegion.Centre( site.Access );
+		foreach ( var heading in new[] { 0, 21, 43, 11, 32, 54 } )
+		{
+			var (dx, dy) = PoolSwimming.Direction( heading );
+			yield return (cx + Fixed16.Mul( dx, PoolAttractionSettings.JetSpotRadius ), cy + Fixed16.Mul( dy, PoolAttractionSettings.JetSpotRadius ));
+		}
+		foreach ( var radius in new[] { PoolAttractionSettings.JetSpotRadius * 2, PoolAttractionSettings.JetSpotRadius * 3 } )
+			for ( var heading = 0; heading < PoolSwimSettings.Headings; heading += 4 )
+			{
+				var (dx, dy) = PoolSwimming.Direction( heading );
+				yield return (cx + Fixed16.Mul( dx, radius ), cy + Fixed16.Mul( dy, radius ));
+			}
+		yield return (cx, cy);
+	}
+
+	/// <summary>A body in the water at every phase: swimming to the jet and standing under it.</summary>
+	public bool InWater( GuestSimulation simulation, Guest guest ) => true;
 
 	public PoolActivityStep Update( GuestSimulation simulation, Guest guest, ref uint random )
 	{
@@ -279,8 +347,10 @@ public sealed class JetsActivity : IPoolActivity
 			guest.PoolActivityTurns++;
 			if ( guest.PoolActivityTurns > PoolAttractionSettings.MaximumApproachTurns )
 				return PoolActivityStep.BackInWater;
-			if ( PoolActivityHelpers.Approach( simulation, guest, region, Spot( region, site, guest ), ref random ) )
+			if ( PoolActivityHelpers.Approach( simulation, guest, region, (guest.PoolActivityX, guest.PoolActivityY), ref random ) )
 			{
+				// it steps onto its spot, so the guests under the jet stand a minimum distance apart
+				simulation.MovePoolGuest( guest, guest.PoolActivityX, guest.PoolActivityY );
 				// two draws of the swimmer's own stream: how long, and treading or sitting
 				guest.PoolActivityTurns = PoolAttractionSettings.JetMinimumTurns + (int)(PoolSwimming.Next( ref random ) % PoolAttractionSettings.JetExtraTurns);
 				guest.PoolActivityPhase = (PoolSwimming.Next( ref random ) & 1) == 0 ? 1 : 2;
@@ -293,15 +363,6 @@ public sealed class JetsActivity : IPoolActivity
 			return PoolActivityStep.Continue;
 		PoolActivityHelpers.Gain( guest, PoolAttractionSettings.JetHappiness );
 		return PoolActivityStep.BackInWater;
-	}
-
-	/// <summary>Where a guest stands under the jet: the middle of the water-side cell, shifted a little by the guest's id so up to three do not stand on one point; the middle when that is not free water.</summary>
-	private static (int X, int Y) Spot( PoolSwimRegion region, PoolAttractionSite site, Guest guest )
-	{
-		var (cx, cy) = PoolSwimRegion.Centre( site.Access );
-		var (dx, dy) = PoolSwimming.Direction( (guest.Id % PoolAttractionSettings.JetCapacity) * 21 );
-		var spot = (X: cx + (dx >> 2), Y: cy + (dy >> 2));
-		return region.IsWater( spot.X, spot.Y ) ? spot : (cx, cy);
 	}
 
 	public int SpriteSlot( Guest guest ) => guest.PoolActivityPhase == 2 ? PoolSwimSlots.SittingInWater : guest.PoolActivityPhase == 1 ? PoolSwimSlots.TreadWater : PoolSwimSlots.Crawl;
@@ -398,6 +459,9 @@ public sealed class SpaActivity : IPoolActivity
 		}
 	}
 
+	/// <summary>A body in the water only while swimming to the spa (phase 0); seated, the guest is in the tub.</summary>
+	public bool InWater( GuestSimulation simulation, Guest guest ) => guest.PoolActivityPhase == 0;
+
 	public int SpriteSlot( Guest guest ) => guest.PoolActivityPhase == 1 ? PoolSwimSlots.SittingInWater : PoolSwimSlots.Crawl;
 
 	/// <summary>A seated guest sits in the water of the tub: a little above the ground of the tile.</summary>
@@ -453,11 +517,43 @@ public sealed class RiverActivity : IPoolActivity
 			PoolActivityHelpers.Gain( guest, PoolRiverSettings.HappinessGain );
 			return PoolActivityStep.BackInWater;
 		}
+		// a floater keeps its gap along the lane: with another body in the water ahead of it within FloatGap (a floater, or a swimmer in the lane) it only drifts, and it stands when that one is closer than FloatMinimumGap
+		var (fromX, fromY) = (navigation.X, navigation.Y);
+		var blocker = Blocker( simulation, guest, region, fromX, fromY, x - fromX, y - fromY );
+		if ( blocker < PoolRiverSettings.FloatGap )
+		{
+			x = fromX;
+			y = fromY;
+			if ( blocker >= PoolRiverSettings.FloatMinimumGap )
+				PoolRiverMap.Of( simulation.Grid.Cells ).Float( ref x, ref y, PoolRiverSettings.DriftSpeed );
+			else
+				return PoolActivityStep.Continue;
+		}
 		// the float never leaves free water: a step that would (a lane the rim narrows) is not taken this turn
 		if ( region.IsWater( x, y ) )
 			simulation.MovePoolGuest( guest, x, y );
 		return PoolActivityStep.Continue;
 	}
+
+	/// <summary>The distance (16.16) to the nearest other body in the water ahead of the guest (a floater or a swimmer in the lane) within <see cref="PoolRiverSettings.FloatGap"/> (ahead: on the side of the step the guest is about to take), or <see cref="int.MaxValue"/> when there is none.</summary>
+	private static int Blocker( GuestSimulation simulation, Guest guest, PoolSwimRegion region, int x, int y, int stepX, int stepY )
+	{
+		var nearest = int.MaxValue;
+		var bodies = simulation.WaterBodiesNear( region, guest, x, y, PoolRiverSettings.FloatGap );
+		foreach ( var other in bodies )
+		{
+			long offsetX = other.Navigation.X - x, offsetY = other.Navigation.Y - y;
+			if ( offsetX * stepX + offsetY * stepY <= 0 )
+				continue;
+			var distance = Fixed16.Length( (int)offsetX, (int)offsetY );
+			if ( distance < nearest )
+				nearest = distance;
+		}
+		return nearest;
+	}
+
+	/// <summary>A floater is always a body in the water.</summary>
+	public bool InWater( GuestSimulation simulation, Guest guest ) => true;
 
 	public int SpriteSlot( Guest guest ) => PoolSwimSlots.FloatingInRing;
 

@@ -484,8 +484,10 @@ internal static class Game
 			var riverShape = rectangles.Where( ( _, index ) => riverRectangles[index] ).SelectMany( r => Enumerable.Range( 0, r[2] ).SelectMany( dx => Enumerable.Range( 0, r[3] ).Select( dy => (X: r[0] + dx, Y: r[1] + dy) ) ) ).ToHashSet();
 			var poolCamera = GetOption( args, "--capture-camera", "x,y,height,yaw" )?.Split( ',' ).Select( value => float.Parse( value, System.Globalization.CultureInfo.InvariantCulture ) ).ToArray();
 			var poolFrames = 0;
-			var poolFrame = GetOption( args, "--capture-frames", "a frame count" ) is { } poolFrameText && int.TryParse( poolFrameText, out var poolParsed ) && poolParsed > 60 ? poolParsed - 59 : 40;
-			// [EXT:debug-pool] --debug-pool-at N builds the pool (and what follows it) at frame N instead of 59 frames before the capture, so swimmers and riders have time to act
+			// [EXT:debug-pool] --debug-pool-lead N: the frames between painting the pool and the capture (default 59), so a capture can show swimmers after they have swum for a while (docs/POOLS.md)
+			var poolLead = GetOption( args, "--debug-pool-lead", "frames between the pool and the capture" ) is { } leadText && int.TryParse( leadText, out var parsedLead ) && parsedLead > 59 ? parsedLead : 59;
+			var poolFrame = GetOption( args, "--capture-frames", "a frame count" ) is { } poolFrameText && int.TryParse( poolFrameText, out var poolParsed ) && poolParsed > poolLead + 1 ? poolParsed - poolLead : 40;
+			// [EXT:debug-pool] --debug-pool-at N builds the pool (and what follows it) at frame N instead of the lead before the capture, so swimmers and riders have time to act
 			if ( GetOption( args, "--debug-pool-at", "a frame count" ) is { } poolAtText && int.TryParse( poolAtText, out var poolAt ) && poolAt > 0 )
 				poolFrame = poolAt;
 			Render.PostUpdate += PaintDebugPool;
@@ -573,7 +575,7 @@ internal static class Game
 		}
 		// [EXT:debug-guest-looks] for captures: dresses the park's guests as they appear, so captures can show the balloons and costumes
 		// without waiting for shop visits: every guest with an even id gets a balloon of the longest life, every third a costume, each once, and every
-		// fourth shows a thought bubble again whenever its last one went.
+		// fourth shows a thought bubble again whenever its last one went, and every fifth drops a litter item (kinds 1-8 in turn) on its cell.
 		// The balloon still runs down, rides still put it away and the renderers draw them as for a bought one.
 		if ( args.Contains( "--debug-guest-looks" ) )
 		{
@@ -601,6 +603,9 @@ internal static class Game
 						(guest.HasBalloon, guest.BalloonLife) = (true, GuestAppearance.MaximumBalloonLife);
 					if ( guest.Id % 3 == 0 )
 						guest.InCostume = true;
+					// every fifth guest litters the cell it stands on, one kind after the other (the drop takes its draws from the park's generator: a capture aid, not a run to compare)
+					if ( guest.Id % 5 == 0 && flow.Level.Park?.Economy.Litter is { } litter )
+						litter.Drop( (int)guest.X, (int)guest.Y, (LitterType)(1 + guest.Id / 5 % 8) );
 				}
 			};
 		}

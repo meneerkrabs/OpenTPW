@@ -117,13 +117,22 @@ public sealed class OriginalBuildCatalog : IBuildCatalog
 	public OriginalBuildCatalog( ObjectCatalog catalog )
 	{
 		// [BIN:STP-PPC:0x10059F00 mesh instance flag 0x400] the buy-window preview (0x10162584 -> 0x10139084 -> 0x1005C35C) instances the p<name> preview mesh when it loaded and the object's main mesh otherwise, so objects without a P model show their main model
-		categories = catalog.Buildable.OrderBy( entry => entry.InfoId ).Select( entry => new BuildItem(
-			$"{entry.Theme}/{entry.InfoId}", entry.InfoId, (BuildCategory)entry.WhichUIType, entry.ObjectNameIndex ?? -1,
-			entry.BuildCost, entry.IsExternal ? null : entry.PreviewModelPath ?? entry.ModelPath,
-			ObjectAssets.TextureDirectories( entry ).Where( location => location.FileSystem == FileSystem ).Select( location => location.Directory ).ToArray(),
-			entry.Settings.Has( "UsageInfo.ExcitementLevel" ) ? entry.Settings.GetInt( "UsageInfo.ExcitementLevel" ) : null, entry ) )
+		categories = catalog.Buildable.OrderBy( entry => entry.InfoId ).Select( Item )
 			.GroupBy( item => item.Category ).ToDictionary( group => group.Key, group => group.ToArray() );
+		MysteryPreview = catalog.Find( MysteryRideInfoId ) is { } mystery ? Item( mystery ) : null;
 	}
+
+	/// <summary>Info.Id of the Mystery ride tool (<c>rides/mystery</c>), whose model the buy window shows for an unbought golden-ticket row.</summary>
+	// [BIN:TPW-EXE:0x4ab1b0 buy preview] a row whose type has GoldenTicketCost (+0xc4) above 0 and is not in the bought-with-tickets set (0x4d4b70) takes the branch of the negative row ids: the preview object (0x486410) is the record of type 0x64 = 100 (0x412e90), as the land rows -1 and -2 take types 101 and 102
+	public const int MysteryRideInfoId = 100;
+
+	public BuildItem? MysteryPreview { get; }
+
+	private static BuildItem Item( ObjectCatalogEntry entry ) => new(
+		$"{entry.Theme}/{entry.InfoId}", entry.InfoId, (BuildCategory)entry.WhichUIType, entry.ObjectNameIndex ?? -1,
+		entry.BuildCost, entry.IsExternal ? null : entry.PreviewModelPath ?? entry.ModelPath,
+		ObjectAssets.TextureDirectories( entry ).Where( location => location.FileSystem == FileSystem ).Select( location => location.Directory ).ToArray(),
+		entry.Settings.Has( "UsageInfo.ExcitementLevel" ) ? entry.Settings.GetInt( "UsageInfo.ExcitementLevel" ) : null, entry );
 
 	public IReadOnlyList<BuildItem> GetItems( BuildCategory category ) =>
 		categories.TryGetValue( category, out var items ) ? items : Array.Empty<BuildItem>();

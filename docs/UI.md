@@ -210,8 +210,12 @@ screens, options), `FrontEnd/`, `Hud/`, `World/Lobby/LobbyScene.cs`,
 Button labels shrink to fit their button (`UiTextFit`, `[EXT:fit-button-text]`). The candidates are the
 role's font and the smaller sizes of the same BF4 family (`MENUBIG` → `MENUMED` → `MENUSMALL`, `TITLE…`,
 `SESH…`, `GAME12AA` → `GAME10AA` → `GAME8AA`, `GAMEBOLD12` → `GAMEBOLD10`), each at every whole text
-scale up to the current one so glyphs stay pixel-exact; the largest that fits wins. Only when none fits
-is the label wrapped in the smallest size.
+scale up to the current one so glyphs stay pixel-exact; the largest that fits wins. When the family has no
+size that fits, the body fonts smaller than its last size (`GAME12AA`/`GAME10AA`/`GAME8AA`) join the list. Only
+when none fits on one line is the label wrapped at its spaces, in the largest size whose lines keep every word
+whole and fit the box height (`UiTextFit.ChooseWrapped`); a box too small even for that shows the smallest size
+on one line, centred. Earlier the wrapped fallback broke words between characters in a box of a few pixels
+(one letter per line on the online screens' 83 and 154 unit buttons).
 
 Fitting uses the drawn pixels, not the BF4 line box: glyph offsets put ink above and below the line box,
 so a label measured by its line box could hang out of the button. Horizontally the label's own ink is

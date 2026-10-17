@@ -12,6 +12,12 @@ public static class PoolRiverSettings
 	public const int FlowSpeed = Fixed16.One / 14;
 	/// <summary>How much of its offset from the middle of the lane a floater loses each turn: 1/8, so a floater that enters a corner is turned in about a cell.</summary>
 	public const int CentringShift = 3;
+	/// <summary>A floater does not advance at the current's speed while another body in the water (a floater, or a swimmer in the lane) is ahead of it within this distance (0.8 cell, 16.16): it only drifts.</summary>
+	public const int FloatGap = (int)(0.8 * Fixed16.One);
+	/// <summary>The drift of a floater that has another body ahead within <see cref="FloatGap"/>: a quarter of the current's speed, so a full ring still turns.</summary>
+	public const int DriftSpeed = FlowSpeed / 4;
+	/// <summary>A floater with another body ahead closer than this (0.6 cell, 16.16) stands still until the gap opens; a ring never packs that tight, as the pool takes a body a cell.</summary>
+	public const int FloatMinimumGap = (int)(0.6 * Fixed16.One);
 	/// <summary>The shortest float, in park turns: 120 turns, about 30 seconds.</summary>
 	public const int MinimumTurns = 120;
 	/// <summary>A float lasts <see cref="MinimumTurns"/> plus a draw below this: up to 120 more turns.</summary>

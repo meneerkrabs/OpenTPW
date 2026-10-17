@@ -8,7 +8,7 @@ public enum UiAlign { Left, Center, Right }
 /// <summary>Everything a screen needs to lay out and draw one frame.</summary>
 public sealed class UiContext
 {
-	private readonly Dictionary<(FontAtlas, string, int), TextLayoutResult> layouts = new();
+	private readonly Dictionary<(FontAtlas, string, int, int), TextLayoutResult> layouts = new();
 
 	public UiContext( UiStringTable strings, UiFonts fonts, UiModels models )
 	{
@@ -34,14 +34,15 @@ public sealed class UiContext
 	public bool PopupHelp { get; set; } = true;
 	public Func<string, string?> ResolveTexture { get; set; } = name => UiImages.Resolve( name );
 
-	public TextLayoutResult Layout( FontAtlas font, string text, int maximumWidthPixels = 0 )
+	public TextLayoutResult Layout( FontAtlas font, string text, int maximumWidthPixels = 0, int? textScale = null )
 	{
-		var key = (font, text, maximumWidthPixels);
+		var scale = Math.Max( 1, textScale ?? Canvas.TextScale );
+		var key = (font, text, maximumWidthPixels, scale);
 		if ( !layouts.TryGetValue( key, out var layout ) )
 		{
 			if ( layouts.Count > 2048 )
 				layouts.Clear();
-			layout = TextLayout.Create( font, text, maximumWidthPixels > 0 ? Math.Max( 1, maximumWidthPixels / Canvas.TextScale ) : 0 );
+			layout = TextLayout.Create( font, text, maximumWidthPixels > 0 ? Math.Max( 1, maximumWidthPixels / scale ) : 0 );
 			layouts[key] = layout;
 		}
 		return layout;
@@ -59,8 +60,8 @@ public sealed class UiContext
 	{
 		if ( string.IsNullOrEmpty( text ) )
 			return;
-		var scale = wrap ? Canvas.TextScale : textScale ?? Canvas.TextScale;
-		var layout = Layout( font, text, wrap ? (int)rect.Width : 0 );
+		var scale = textScale ?? Canvas.TextScale;
+		var layout = Layout( font, text, wrap ? (int)rect.Width : 0, scale );
 		var textAlignment = align switch { UiAlign.Center => TextAlignment.Center, UiAlign.Right => TextAlignment.Right, _ => TextAlignment.Left };
 		int ix, iy;
 		var width = layout.Width * scale;
@@ -108,11 +109,30 @@ public sealed class UiContext
 			return;
 		var candidates = new List<FontAtlas> { font };
 		candidates.AddRange( Fonts.Smaller( font ) );
+		// [EXT:fit-button-text] a label that fits no size of its own family goes on to the body fonts, smaller than the last size tried, so a small icon button
+		// (a bulk-mark or close button) still shows its whole text; the original's buttons carry art, not these labels
+		foreach ( var body in new[] { Fonts.Label, Fonts.Small }.Where( body => body.LineHeight < candidates[^1].LineHeight && !candidates.Contains( body ) ).OrderByDescending( body => body.LineHeight ) )
+			candidates.Add( body );
 		var boxes = candidates.Select( candidate => InkBox( candidate, text, shadow ) ).ToArray();
 		var fit = UiTextFit.Choose( Canvas.TextScale, boxes.Select( box => (box.Right - box.Left, box.Bottom - box.Top) ).ToArray(), rect.Width, rect.Height );
 		if ( fit.Wrap )
 		{
-			DrawText( candidates[fit.Index], text, rect, color, align, true, shadow, originalPlacement: false );
+			// [EXT:fit-button-text] before any word is cut between characters, the label is wrapped at its spaces in the largest size whose lines all fit the box
+			var words = text.Split( new[] { ' ', '\t', '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries );
+			var wrapped = UiTextFit.ChooseWrapped( Canvas.TextScale, candidates.Count, ( index, scale ) =>
+			{
+				var available = (int)(rect.Width / scale);
+				var layout = Layout( candidates[index], text, (int)rect.Width, scale );
+				var wordsWhole = words.All( word => Layout( candidates[index], word ).Width <= available );
+				return (wordsWhole, layout.Height, layout.LineCount);
+			}, rect.Height );
+			if ( wrapped is { } choice )
+			{
+				DrawText( candidates[choice.Index], text, rect, color, align, true, shadow, choice.Scale, originalPlacement: false );
+				return;
+			}
+			// No size fits even wrapped (a box of a few pixels): the smallest size on one line, centred, as the original's unwrapped control text is.
+			DrawTextAt( candidates[^1], 1, text, rect, color, align, shadow );
 			return;
 		}
 		DrawTextAt( candidates[fit.Index], fit.Scale, text, rect, color, align, shadow );

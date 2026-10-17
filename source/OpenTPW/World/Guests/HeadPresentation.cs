@@ -18,7 +18,8 @@ public readonly record struct HeadPlacement( bool Visible, System.Numerics.Vecto
 /// (MD2 axes, Y up, row vectors) and the camera position in the same world space.
 /// </summary>
 // [BIN:STP-PPC:0x1019B6F8 head draw] hide when the node has flag 0x8000 (frame -1); with flag 0x400 matrix rows 0 and 2 are negated; the position is exactly the node's world translation (no offset); the camera is expressed in the node's frame (general inverse, times the camera matrix), normalised, and binned to the nearest of 7 elevation rows (30 degree steps from the local +Y pole) by 8 azimuths (45 degree steps); frame = 8 * row + column with the column forced to 0 at rows 0 and 6; roll = atan2(-m10, m11) of the remaining rotation / 2 pi; scale property 0.685 (default 1.0); no animation
-// [APPROX:HEADS-004] the reference of the roll (the original turns the sprite by the angle between the chosen frame's pre-rendered up direction and the view, 0x44B8xx-0x44B9xx with 0x46F150, 0x46FBB0 and 0x46F200; OpenTPW uses the node matrix in world axes) is not ported; how scale 1.0 maps to world units and the depth handling are untraced
+// [BIN:TPW-EXE:0x0044B9FC head sprite registers] the PC routine sets the sprite's frame register 0xD to 8 x row + column, register 9 to the roll in turns (0x46F200 = atan2(-m10, m11), times 0x006FE2CC = 1 / 2 pi) and register 8, the scale, to 0x0074CED0 = 0.685; the script's flags 0x3000080 rotate the quad (0x00589388) and draw it as a camera-facing sprite at the node's position
+// [APPROX:HEADS-004] OpenTPW takes the roll from the node matrix in world axes; the PC routine builds the chosen frame's own reference basis from its row and column (0x44B6EF..0x44B96C) and multiplies it in before 0x46F200, which is not compared instruction by instruction
 public static class HeadPresentation
 {
 	public const uint HiddenFlag = 0x8000;

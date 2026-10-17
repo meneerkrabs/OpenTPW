@@ -23,6 +23,7 @@ vertex {
     } vs_out;
 
     layout(location = 5) out flat int outTexIndex;
+    layout(location = 6) out flat float outAlpha;
 
     void main() {
         vec4 pos = g_oUbo.g_mModel * vec4(position, 1.0);
@@ -30,6 +31,8 @@ vertex {
         vs_out.vViewPosition = vec3(g_oUbo.g_mView * pos);
         gl_Position = g_oUbo.g_mProj * g_oUbo.g_mView * pos;
         outTexIndex = texIndex;
+        // the flags word carries the sprite's alpha byte (the original's register 7, the burst's fade); 0 means opaque
+        outAlpha = matFlags == 0u ? 1.0 : float(matFlags & 255u) / 255.0;
     }
 }
 
@@ -40,6 +43,7 @@ fragment {
     } vs_out;
 
     layout(location = 5) in flat int texIndex;
+    layout(location = 6) in flat float spriteAlpha;
 
     layout(location = 0) out vec4 fragColor;
 
@@ -82,6 +86,6 @@ fragment {
 
         float viewSpaceDepth = length( vs_out.vViewPosition );
         float fogFactor = clamp( exp( viewSpaceDepth * 0.01 ) * 0.025, 0, 1 );
-        fragColor = vec4( mix( color.rgb, g_oUbo.g_vFogColor, fogFactor ), 1.0 );
+        fragColor = vec4( mix( color.rgb, g_oUbo.g_vFogColor, fogFactor ), spriteAlpha );
     }
 }

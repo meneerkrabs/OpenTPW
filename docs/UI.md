@@ -286,7 +286,7 @@ both pages; Cancel/Escape there discards everything.
 The enhanced-textures row (`enhancedTextures`, `[EXT:texture-pack]`) cycles "Original" (the game's own textures),
 "Enhanced" (the default: the HD interface art shipped in `content/hero-art` plus the local `enhanced` pack
 when one is built), then every other installed texture pack (a directory under `<config>/texture-packs` with a
-valid `pack.json`; see TEXTURE-PACKS.md): `detailed` is labelled "Detailed" (translated in all six languages),
+valid `pack.json`; see TEXTURE-PACKS.md): `detailed` is labelled "Detailed" (translated in all nine languages),
 other pack names are shown as they are. Its popup help explains the choice and that switching runs in the
 background. The choice is applied on OK, without a restart and without a loading screen: the options close
 and the game loop swaps the textures of the running game in place while the player keeps playing; a
@@ -296,7 +296,7 @@ restart notice appears for a texture pack.
 
 A park chosen in the front end, loaded or visited is built over several frames while the lobby (or
 the park being left) keeps drawing and playing, and input waits (`[EXT:park-build-over-frames]`,
-BROWSER-PERFORMANCE.md). The same kind of line shows "Building the park..." (in all six languages)
+BROWSER-PERFORMANCE.md). The same kind of line shows "Building the park..." (in all nine languages)
 with the construction's progress.
 
 OK saves `save/opentpw-options.json`. Size/window-mode changes use
@@ -562,7 +562,7 @@ glyph in all 14 UI fonts of each language.
   disposing a consumed tap cannot cancel a later tap of the same key.
 - Pause menu (Escape): a frameless list of cyan text lines (white while focused), each as wide and high as its text in
   the menu font plus the original's margins and stacked from the top (`0x492f60`, UI-013), in the original order: Load (3), Save (4),
-  Restart Park (10; only for an Instant Action park of a theme, `[EXT:pause-menu-restart]`), Publish Park (5; the online publish flow), Options
+  Restart Park (10; reloads the snapshot taken when the park started or was loaded, `SAVE-012`, `[EXT:restart-snapshot-per-start]`; offered in every original park of a theme but the read-only visit, Full Simulation included, as `0x48c150` lists it for every game type but the visit, and the player-wide ticket ledger is kept), Publish Park (5; the online publish flow), Options
   (6), Go Online (1, `[EXT:pause-menu-go-online]`), Resume Game (7), Exit To Lobby (12), Quit Game (8, confirmation 9). Confirmations are the window of table `0x7583e8` with the tick and X buttons stacked at its right (UI-013). Save writes the owning
   game flow's park save (the own-format world save for sandbox and front-end
   started original-level parks; a read-only visit has no Save entry).
@@ -803,6 +803,7 @@ is unchanged.
 | `list-row-pitch` | `APPROX:UI-044` | The buy, loans and load-park lists use a fixed pitch of 41.4 units; the original's pitch (34 to 42 units) follows font slot 7's line height and the screen height, which OpenTPW's resolution-independent output sizes cannot copy. |
 | `online-globe-audio` | `APPROX:UI-942` | The online globe's music and ambience (`cat_globallobbysfx` 2 and 3) replace the lobby's, which OpenTPW stops while the globe is up and restarts after it. The globe belongs to the online extension. |
 | `visitor-info-window` | `APPROX:UI-091` (part) | The visitor info window that Ctrl+V tests is not ported; a click on an All Visitors row or a visitor picked in the park stands in for opening it. |
+| `restart-snapshot-per-start` | `APPROX:SAVE-012` (part) | Restart Park returns to the park being played: OpenTPW retakes its restart snapshot at every park start and load (`GameFlow.TakeRestartSnapshot`). The original's writer 0x550B30 opens `restart.INTS` for reading (0x550C0F) and saves only when that fails (0x550C14), and nothing deletes the file between parks, so it keeps the first park of a theme folder as the restart point forever. User-approved EXT, 2026-10-17. |
 
 Data-backed (tagged `[DATA]`): the 2048×1536 canvas and authored rectangles of
 placed models (`ui.wad` roots/bounds), button state frames and texture order, V

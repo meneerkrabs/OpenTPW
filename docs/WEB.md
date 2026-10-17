@@ -158,8 +158,11 @@ A game folder copied from the CD keeps the other languages beside `Data`
 (`Dutch/data/Language/Dutch`, `Dutch/Meshes/Dutch`, likewise Italian, Polish). For every
 top-level folder that holds its own `data/Language/<same name>` (detected by structure, not a
 fixed list) the page copies those two trees at once: about 1 to 3 MB per language, so the
-Options -> OpenTPW -> Language toggle can list and switch them. Polish is not offered because
-its character table is not decoded (docs/LANGUAGES.md).
+Options -> OpenTPW -> Language toggle can list and switch them. Polish is offered now that its two-byte
+character table is read (docs/LANGUAGES.md). The Spanish and Korean CDs keep their language in their own
+complete `Data` folder (a `Spanish` or `Korean` folder beside it): a copy of such a CD as the game folder has
+that language already; their use as an overlay beside an installed game, and the browser cost of the Korean fonts
+(32 files of 0.5 to 1.8 MB each), are not measured in the browser build.
 
 The advisor's voice is copied when the language is chosen, like a theme folder: the language's
 `data/global/speech` (`speechHD.SDT`, 27.5 MB on the real Dutch folder, and `lips.WAD`) and each

@@ -141,8 +141,14 @@ public sealed class UiFonts
 		Menu = Load( menu );
 		Label = Load( label );
 		Small = Load( small );
-		Cash = Load( cash );
+		// [EXT:ui-font-korean-bold] the Korean CD's language folder has no GAMEBOLD9/10/12 (nor MATISSE18/36): the bold game font falls back to the
+		// language's regular label font, the same size, instead of failing the screen
+		try { Cash = Load( cash ); }
+		catch ( Exception exception ) when ( exception is IOException or InvalidDataException or KeyNotFoundException ) { Cash = Load( label ); }
 		Heading = Load( heading );
+		// [EXT:ui-font-korean-heading] the Korean CD's SESH fonts draw only Latin letters (229 glyphs), so a heading in Hangul gives way to the label font
+		if ( DrawnGlyphs( Heading ) * 2 < DrawnGlyphs( Small ) )
+			Heading = Label;
 		// [EXT:ui-font-tier-by-scale] the shipped CASHSMALL/CASHMED/CASHBIG fonts for the bank balance (the HUD builder's cash font slot 1; the original's banks 0-3 hold CASHSMALL/CASHMED/CASHBIG/CASHBIG, 0x419710)
 		var balance = tier switch { UiFontTier.Small => "CASHSMALL", UiFontTier.Big => "CASHBIG", _ => "CASHMED" };
 		try { Balance = Load( balance ); }
@@ -153,7 +159,13 @@ public sealed class UiFonts
 		var date = tier switch { UiFontTier.Small => "DATETINY", UiFontTier.Big => "DATEMED", _ => "DATESMALL" };
 		try { Date = Load( date ); }
 		catch ( Exception exception ) when ( exception is IOException or InvalidDataException or KeyNotFoundException ) { Date = Small; }
+		// [EXT:ui-font-korean-date] the Korean CD's DATE fonts draw only the Latin, Greek and Cyrillic glyphs (356 of their 17,270 records have a bitmap),
+		// so a date written in Hangul would be blank: a date font that draws fewer than half of what the regular label font draws gives way to it
+		if ( DrawnGlyphs( Date ) * 2 < DrawnGlyphs( Small ) )
+			Date = Small;
 	}
+
+	private static int DrawnGlyphs( FontAtlas font ) => font.Glyphs.Values.Count( glyph => glyph.Width > 0 && glyph.Height > 0 );
 
 	// Shipped BF4 families from largest to smallest; used to shrink text that does not fit (UiTextFit).
 	private static readonly string[][] Families =

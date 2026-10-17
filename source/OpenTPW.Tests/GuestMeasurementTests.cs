@@ -69,10 +69,10 @@ public class GuestMeasurementTests
 	}
 
 	/// <summary>
-	/// The scenario's guests with <c>opentpw.smarter-guests</c> 1.2.0 on (docs/SMARTER-GUESTS.md, phases 2 and 3). The scenario's dear shop (value for money) and its four rides (the queue estimate, the preference and the
+	/// The scenario's guests with <c>opentpw.smarter-guests</c> 1.3.0 on (docs/SMARTER-GUESTS.md, phases 2 to 4). The scenario's dear shop (value for money) and its four rides (the queue estimate, the preference, the queue patience and the
 	/// hysteresis) are where the rules act, so unlike the synthetic park's pin this one moves with the rules: it is the on-path pin of the behaviour. A deliberate change of a rule constant changes this value (and bumps the extension's version).
 	/// </summary>
-	private const ulong ScenarioSmarterFixedRunHash = 0xC0344925E23A32C1UL;
+	private const ulong ScenarioSmarterFixedRunHash = 0x83140C77CD575BE1UL;
 
 	[TestMethod]
 	public void ParkScenarioFixedRunHashWithTheSmarterGuestsExtensionOnIsPinned()

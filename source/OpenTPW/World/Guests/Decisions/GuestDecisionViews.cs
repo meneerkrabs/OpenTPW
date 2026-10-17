@@ -73,7 +73,11 @@ public readonly record struct PriceStallDecision( bool GoHome, GuestThought Thou
 /// The facts of a join at the back of a queue after the host's physical checks (open, not listed, room): the type's excitement word, the host's join difference, the queue's count and its
 /// limit.
 /// </summary>
-public readonly record struct AdmissionView( AttractionView Attraction, int ExcitementLevelWord, int JoinDifference, int QueueCount, uint QueueLimit );
+/// <param name="BestAlternativeWait256">
+/// The shortest expected wait, in 1/256 park turn, this guest would have at another open, working ride that its excitement gate would let it join and that has room (<see cref="SmarterGuestsRules.ExpectedWait256"/>), or -1 when there is none
+/// or the host was not asked (<see cref="IGuestDecisions.AlternativeLookAfterTurns"/>). Additive, phase 4.
+/// </param>
+public readonly record struct AdmissionView( AttractionView Attraction, int ExcitementLevelWord, int JoinDifference, int QueueCount, uint QueueLimit, long BestAlternativeWait256 = -1 );
 
 /// <summary>The join's result: <see cref="QueueJoinResult.Joined"/>, or the refusal (too exciting, not exciting enough, queue too long).</summary>
 public readonly record struct QueueAdmission( QueueJoinResult Result )
@@ -86,7 +90,8 @@ public readonly record struct QueueAdmission( QueueJoinResult Result )
 /// A queued guest on a turn the existing leave tests let it stay: when it joined, its place and the queue it waits in. Never offered while the guest is being called forward or is in an
 /// interlude.
 /// </summary>
-public readonly record struct QueuePatienceView( AttractionView Attraction, long JoinTurn, int Position, int QueueCount );
+/// <param name="BestAlternativeWait256">The same as <see cref="AdmissionView.BestAlternativeWait256"/>, for a guest that has waited at least <see cref="IGuestDecisions.AlternativeLookAfterTurns"/> turns; -1 otherwise.</param>
+public readonly record struct QueuePatienceView( AttractionView Attraction, long JoinTurn, int Position, int QueueCount, long BestAlternativeWait256 = -1 );
 
 /// <summary>A guest's patience verdict: stay, or leave the queue with a thought (the host dismisses it and takes the happiness cost).</summary>
 public readonly record struct QueuePatienceDecision( bool Leave, GuestThought Thought = GuestThought.None )

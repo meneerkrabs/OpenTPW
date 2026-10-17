@@ -2196,8 +2196,9 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		var result2 = attraction.CheckJoinRoom( guest.Id );
 		if ( result2 == QueueJoinResult.Joined )
 		{
+			var alternative = decisions.AlternativeLookAfterTurns >= 0 ? BestAlternativeWait256( guest, attraction.AttractionId ) : -1;
 			var admission = decisions.DecideAdmission( ContextNow(), ViewOf( guest ), new AdmissionView( ViewOf( attraction, guest ), attraction.StaticExcitementLevel,
-				attraction.JoinDifference( type.PreferredExcitement ), attraction.QueueLength, attraction.QueueLimit ) );
+				attraction.JoinDifference( type.PreferredExcitement ), attraction.QueueLength, attraction.QueueLimit, alternative ) );
 			result2 = admission.Result;
 			if ( result2 is not (QueueJoinResult.Joined or QueueJoinResult.TooExciting or QueueJoinResult.NotExcitingEnough or QueueJoinResult.QueueTooLong) )
 				throw PolicyError( $"returned the admission result {result2}, which a queue join cannot end in" );

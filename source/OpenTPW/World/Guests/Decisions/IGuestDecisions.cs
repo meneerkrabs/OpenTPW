@@ -32,6 +32,12 @@ public interface IGuestDecisions
 	bool UsesSpreading => false;
 
 	/// <summary>
+	/// The queue patience rules look at the alternatives (additive, phase 4): -1 (the default) means the host does not look. Otherwise the host fills <see cref="AdmissionView.BestAlternativeWait256"/> at every admission and
+	/// <see cref="QueuePatienceView.BestAlternativeWait256"/> once the guest has waited at least this many park turns. Needs <see cref="UsesSpreading"/> (the estimates). A policy that wraps another forwards it.
+	/// </summary>
+	int AlternativeLookAfterTurns => -1;
+
+	/// <summary>
 	/// The minor decision's hysteresis (additive, phase 3): whether the best window candidate (<paramref name="candidate"/>, scoring <paramref name="candidateScore"/>) replaces the target the guest is walking to
 	/// (<paramref name="target"/>, scoring <paramref name="targetScore"/> for this guest now). The host asks only a policy that <see cref="UsesSpreading"/>, after its comparison rule picked the candidate and before the
 	/// route tests. The default always switches, as the original does.

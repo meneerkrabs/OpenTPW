@@ -125,4 +125,51 @@ public static class SmarterGuestsRules
 		var margin = Math.Max( (ulong)HysteresisMinimumPoints, (ulong)targetScore * HysteresisPercent / 100UL );
 		return (ulong)candidateScore >= (ulong)targetScore + margin;
 	}
+
+	// [EXT:smarter-guests-patience] phase 4, queue patience
+
+	/// <summary>The index of the patience trait (<see cref="DecisionContext.Trait"/>).</summary>
+	public const int PatienceTrait = 2;
+
+	/// <summary>
+	/// The expected wait, in park turns, a guest of average patience accepts when it joins a queue. Derived from the measured baseline (docs/SMARTER-GUESTS.md, phase 4), not from the original's boredom threshold
+	/// (whose unit is not proven and whose test cannot fire): the original guests' boarded waits in the scenario have a p90 of 73 and a p99 of 108 turns, so 90 is a wait the original park gives to its unluckiest tenth of guests.
+	/// </summary>
+	public const int JoinPatienceTurns = 90;
+
+	/// <summary>The total time, in park turns from joining, an average guest waits before it gives up. Above <see cref="JoinPatienceTurns"/> and above the baseline's p99 of 108, so the rule only touches waits the original does not produce.</summary>
+	public const int GiveUpTurns = 120;
+
+	/// <summary>The least a guest's patience is, in percent of the base: 70 to 130 percent.</summary>
+	public const int PatienceMinimumPercent = 70;
+
+	/// <summary>How many distinct patience values the trait gives: 70 to 130 percent.</summary>
+	public const int PatienceValues = 61;
+
+	/// <summary>The patience of a guest, in percent of the base (70 to 130), from its stateless trait word; the same for the whole visit.</summary>
+	public static int PatiencePercent( ulong trait ) => PatienceMinimumPercent + (int)(trait % PatienceValues);
+
+	/// <summary>A base number of park turns scaled by a patience percentage, in 1/256 turn (the unit of <see cref="ExpectedWait256"/>).</summary>
+	public static long PatienceTurns256( int baseTurns, int patiencePercent ) => (long)baseTurns * patiencePercent * 256L / 100L;
+
+	/// <summary>The patience rules concern rides only: a shop, sideshow or toilet is a service the guest wants for a reason no other attraction answers, and the alternatives the rules weigh are rides.</summary>
+	public static bool Concerns( in AttractionView attraction ) => attraction.Kind == RideVisitorKind.Ride;
+
+	/// <summary>Whether the expected wait of a guest joining the back of this queue is above its patience (no estimate: it is not).</summary>
+	public static bool WaitExceedsPatience( in AttractionView attraction, long bestAlternative256, int patiencePercent ) =>
+		ExpectedWait256( attraction ) is { } wait && wait > PatienceTurns256( JoinPatienceTurns, patiencePercent ) && IsClearlyShorter( bestAlternative256, wait );
+
+	/// <summary>Whether another ride's wait is clearly shorter: it exists (not -1) and is at most <see cref="AlternativePercent"/> percent of <paramref name="wait256"/>.</summary>
+	public static bool IsClearlyShorter( long bestAlternative256, long wait256 ) => bestAlternative256 >= 0 && bestAlternative256 * 100 <= wait256 * AlternativePercent;
+
+	/// <summary>How much of the wait here another ride's wait may be, in percent, for it to count as a reason to leave or not to join.</summary>
+	public const int AlternativePercent = 80;
+
+	/// <summary>The park turns a guest has to have waited before the host looks at the alternatives for it (the smallest give-up is 70 percent of 120, 84 turns).</summary>
+	public const int AlternativeLookAfterTurns = 80;
+
+	/// <summary>Whether a guest that has waited <paramref name="waitedTurns"/> park turns in a queue, at <paramref name="position"/> (0 is the front), gives up.</summary>
+	public static bool GivesUp( long waitedTurns, in AttractionView attraction, int position, long bestAlternative256, int patiencePercent ) =>
+		position > 0 && waitedTurns * 256L > PatienceTurns256( GiveUpTurns, patiencePercent )
+		&& attraction.TurnsPerGuest256 > 0 && IsClearlyShorter( bestAlternative256, position * Math.Min( attraction.TurnsPerGuest256, RideThroughputs.MaximumInterval256 ) );
 }

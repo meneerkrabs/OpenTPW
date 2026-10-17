@@ -57,8 +57,14 @@ yet; the accompanying TGA files make every texture viewable without it.
   `sgstrtst`, `sgfortun` (names from the archives; the executable also names `ratrace`).
 - Each theme has two terrains (`terrain/terrain_1`, `terrain/terrain_2`) and two park sound banks:
   the PS2 splits each theme into two parks.
-- Ride signs are pre-rendered textures (`<ride>/sign/_name1.ssh`, `_name2.ssh`) instead of text drawn
-  with TrueType fonts at run time.
+- Ride sign text is baked per language into `<ride>/textures/sign_{eng,fre,ger,jpn,jap}.ssh` instead of
+  being drawn with TrueType fonts at run time: 509 files, nearly all 128x64, type 0x85 (some 0x84).
+  The PAL executable `SLES_500.32` holds the selector strings `sign_ENG/FRE/GER/ITA/SPA/DUT/SWE/JPN`
+  (file offsets 0x261510..0x261580). The 234 files under `sign/` (233 of them 16x128) are not text: they
+  are material and paint strips, the counterpart of the PC relief strips. One exception,
+  `FANTASY/Rides/acorn/Sign/acorn1_fre.ssh`, is a 256x128 baked French sign. The baked art is authored
+  separately from the PC runtime compositor (different fonts and layout, half the resolution, a lossy GM
+  block format), so it is no pixel oracle for the PC sign pipeline (COMPAT-003 glyph coverage).
 - Several rides that are official bonus objects on the PC (e.g. Dizzy Dinos, Manic Mechanic, Devil,
   G-Force, Whirlwind) are part of the PS2 game.
 

@@ -484,8 +484,10 @@ internal static class Game
 			var riverShape = rectangles.Where( ( _, index ) => riverRectangles[index] ).SelectMany( r => Enumerable.Range( 0, r[2] ).SelectMany( dx => Enumerable.Range( 0, r[3] ).Select( dy => (X: r[0] + dx, Y: r[1] + dy) ) ) ).ToHashSet();
 			var poolCamera = GetOption( args, "--capture-camera", "x,y,height,yaw" )?.Split( ',' ).Select( value => float.Parse( value, System.Globalization.CultureInfo.InvariantCulture ) ).ToArray();
 			var poolFrames = 0;
-			var poolFrame = GetOption( args, "--capture-frames", "a frame count" ) is { } poolFrameText && int.TryParse( poolFrameText, out var poolParsed ) && poolParsed > 60 ? poolParsed - 59 : 40;
-			// [EXT:debug-pool] --debug-pool-at N builds the pool (and what follows it) at frame N instead of 59 frames before the capture, so swimmers and riders have time to act
+			// [EXT:debug-pool] --debug-pool-lead N: the frames between painting the pool and the capture (default 59), so a capture can show swimmers after they have swum for a while (docs/POOLS.md)
+			var poolLead = GetOption( args, "--debug-pool-lead", "frames between the pool and the capture" ) is { } leadText && int.TryParse( leadText, out var parsedLead ) && parsedLead > 59 ? parsedLead : 59;
+			var poolFrame = GetOption( args, "--capture-frames", "a frame count" ) is { } poolFrameText && int.TryParse( poolFrameText, out var poolParsed ) && poolParsed > poolLead + 1 ? poolParsed - poolLead : 40;
+			// [EXT:debug-pool] --debug-pool-at N builds the pool (and what follows it) at frame N instead of the lead before the capture, so swimmers and riders have time to act
 			if ( GetOption( args, "--debug-pool-at", "a frame count" ) is { } poolAtText && int.TryParse( poolAtText, out var poolAt ) && poolAt > 0 )
 				poolFrame = poolAt;
 			Render.PostUpdate += PaintDebugPool;

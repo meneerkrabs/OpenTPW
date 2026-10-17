@@ -44,14 +44,101 @@ public sealed partial class GuestSimulation
 	/// </summary>
 	public IEnumerable<Guest> SwimmersOf( int attractionId ) => guests.Where( guest => guest.InSwimSession && guest.AttractionId == attractionId );
 
-	/// <summary>[EXT:pools-swim] How many swimmers (swimming or climbing out) are in the water of <paramref name="region"/>, whichever changing room they came from.</summary>
+	/// <summary>[EXT:pools-swim] How many bodies (swimmers, floaters, guests under a jet: <see cref="IsWaterBody"/>) are in the water of <paramref name="region"/>, whichever changing room they came from.</summary>
 	private int SwimmerCountIn( PoolSwimRegion region )
 	{
 		var count = 0;
 		foreach ( var guest in guests )
-			if ( guest.IsSwimming && region.Contains( guest.CellX, guest.CellY ) )
+			if ( IsWaterBody( guest, region ) )
 				count++;
 		return count;
+	}
+
+	/// <summary>
+	/// [EXT:pools-swim] Whether a guest is a body in the water of the region now: swimming or climbing out there, or in a state-25 activity whose <see cref="IPoolActivity.InWater"/> says so (a river floater, a
+	/// guest under a jet, a landing). These are the obstacles free swimmers keep their distance from (docs/POOLS.md, "Activities").
+	/// </summary>
+	internal bool IsWaterBody( Guest guest, PoolSwimRegion region )
+	{
+		if ( !region.Contains( guest.CellX, guest.CellY ) )
+			return false;
+		return guest.IsSwimming || (guest.State == GuestState.PoolActivity && PoolActivityOf( guest )?.InWater( this, guest ) == true);
+	}
+
+	// A cell-bucketed lookup of the guests that are, or may become within the tick, bodies in the water: states 22, 23 and 25, in buckets of 2 x 2 cells by their cell at the start of the tick (rebuilt once
+	// per tick on the first query, in guest list order, so the order is deterministic). A body moves less than a cell a turn, so a query that reads the 3 x 3 buckets around its point finds every body within
+	// 1.2 cells; the live state and position are tested at the query.
+	private readonly Dictionary<(int X, int Y), List<Guest>> waterBuckets = new();
+	private readonly Stack<List<Guest>> waterBucketPool = new();
+	private readonly List<Guest> waterNear = new();
+	private long waterBucketTick = -1;
+
+	private void EnsureWaterBuckets()
+	{
+		if ( waterBucketTick == TickCount )
+			return;
+		waterBucketTick = TickCount;
+		foreach ( var list in waterBuckets.Values )
+		{
+			list.Clear();
+			waterBucketPool.Push( list );
+		}
+		waterBuckets.Clear();
+		foreach ( var guest in guests )
+			if ( guest.State is GuestState.Swimming or GuestState.ClimbingOut or GuestState.PoolActivity )
+				AddToWaterBuckets( guest );
+	}
+
+	private void AddToWaterBuckets( Guest guest )
+	{
+		var key = (guest.CellX >> 1, guest.CellY >> 1);
+		if ( !waterBuckets.TryGetValue( key, out var list ) )
+			waterBuckets[key] = list = waterBucketPool.Count > 0 ? waterBucketPool.Pop() : new List<Guest>();
+		list.Add( guest );
+	}
+
+	/// <summary>
+	/// [EXT:pools-swim] Collects into <paramref name="into"/> the bodies in the water of the region (<see cref="IsWaterBody"/>) other than <paramref name="except"/> whose point is within <paramref name="radius"/> (16.16 cells, at most
+	/// 1.2 cells) of (<paramref name="x"/>, <paramref name="y"/>) in both axes. Read-only, no random numbers.
+	/// </summary>
+	internal void GatherWaterBodies( PoolSwimRegion region, Guest? except, int x, int y, int radius, List<Guest> into )
+	{
+		into.Clear();
+		EnsureWaterBuckets();
+		int bx = (x >> 16) >> 1, by = (y >> 16) >> 1;
+		for ( var dy = -1; dy <= 1; dy++ )
+			for ( var dx = -1; dx <= 1; dx++ )
+				if ( waterBuckets.TryGetValue( (bx + dx, by + dy), out var list ) )
+					foreach ( var other in list )
+						if ( other != except && Math.Abs( other.Navigation.X - x ) < radius && Math.Abs( other.Navigation.Y - y ) < radius && IsWaterBody( other, region ) )
+							into.Add( other );
+	}
+
+	/// <summary>[EXT:pools-swim] The bodies in the water within <paramref name="radius"/> (in both axes) of a point, other than <paramref name="except"/>. The list is valid until the next query.</summary>
+	internal IReadOnlyList<Guest> WaterBodiesNear( PoolSwimRegion region, Guest? except, int x, int y, int radius )
+	{
+		GatherWaterBodies( region, except, x, y, radius, waterNear );
+		return waterNear;
+	}
+
+	/// <summary>[EXT:pools-swim] The points of the bodies near a point, for <see cref="PoolSwimming.Step"/>: within <see cref="PoolSwimSettings.AvoidRadius"/> in both axes. The span is valid until the next call.</summary>
+	internal ReadOnlySpan<(int X, int Y)> WaterBodyPoints( PoolSwimRegion region, Guest? except, int x, int y )
+	{
+		GatherWaterBodies( region, except, x, y, PoolSwimSettings.AvoidRadius, waterNear );
+		swimOthers.Clear();
+		foreach ( var other in waterNear )
+			swimOthers.Add( (other.Navigation.X, other.Navigation.Y) );
+		return System.Runtime.InteropServices.CollectionsMarshal.AsSpan( swimOthers );
+	}
+
+	/// <summary>[EXT:pools-swim] Whether another body is in the water within <paramref name="radius"/> (16.16 cells, at most 1 cell) of the point: an activity waits for its landing zone to be free by it.</summary>
+	public bool IsWaterBodyNear( PoolSwimRegion region, Guest? except, int x, int y, int radius )
+	{
+		GatherWaterBodies( region, except, x, y, radius, waterNear );
+		foreach ( var other in waterNear )
+			if ( Fixed16.Length( other.Navigation.X - x, other.Navigation.Y - y ) < radius )
+				return true;
+		return false;
 	}
 
 	/// <summary>[EXT:pools-swim] Whether a swimmer's position lies in the cell (the pool tool does not erase water under swimmers).</summary>
@@ -94,6 +181,9 @@ public sealed partial class GuestSimulation
 		(guest.StepFromX, guest.StepFromY, guest.StepFromDistance, guest.StepTick) = (guest.X, guest.Y, guest.DistanceWalked, TickCount);
 		UpdatePresentation( guest );
 		SetSwimHeading( guest );
+		// a body of this tick for the swimmers after it
+		if ( waterBucketTick == TickCount )
+			AddToWaterBuckets( guest );
 		// [EXT:pools-activities] a shower comes before the water
 		if ( poolActivities.Count > 0 )
 			OfferActivitiesAtStart( guest, region );
@@ -272,18 +362,14 @@ public sealed partial class GuestSimulation
 			var cell = region.Contains( navigation.X >> 16, navigation.Y >> 16 ) ? (navigation.X >> 16, navigation.Y >> 16) : region.Access;
 			(navigation.X, navigation.Y) = PoolSwimRegion.Centre( cell );
 		}
-		swimOthers.Clear();
-		if ( !ignoreOthers )
-			foreach ( var other in guests )
-				// every swimmer in the same water, whichever changing room it came from (two rooms may share one pool)
-				if ( other != guest && other.IsSwimming && region.Contains( other.CellX, other.CellY ) )
-					swimOthers.Add( (other.Navigation.X, other.Navigation.Y) );
+		// every body in the same water, whichever changing room it came from (two rooms may share one pool), and every guest of an activity that is in the water
+		var others = ignoreOthers ? ReadOnlySpan<(int X, int Y)>.Empty : WaterBodyPoints( region, guest, navigation.X, navigation.Y );
 		var body = new PoolSwimBody
 		{
 			X = navigation.X, Y = navigation.Y, Heading = guest.SwimHeading, GoalX = guest.SwimGoalX, GoalY = guest.SwimGoalY, HasGoal = guest.SwimHasGoal, Random = guest.SwimRandom
 		};
 		var (fromX, fromY, fromDistance) = (guest.X, guest.Y, guest.DistanceWalked);
-		var moved = PoolSwimming.Step( region, ref body, System.Runtime.InteropServices.CollectionsMarshal.AsSpan( swimOthers ), guest.BaseSpeed * PoolSwimSettings.SpeedPerBaseSpeed, ignoreOthers );
+		var moved = PoolSwimming.Step( region, ref body, others, guest.BaseSpeed * PoolSwimSettings.SpeedPerBaseSpeed, ignoreOthers );
 		(navigation.X, navigation.Y) = (body.X, body.Y);
 		(guest.SwimHeading, guest.SwimGoalX, guest.SwimGoalY, guest.SwimHasGoal, guest.SwimRandom) = (body.Heading, body.GoalX, body.GoalY, body.HasGoal, body.Random);
 		SetSwimCell( guest );

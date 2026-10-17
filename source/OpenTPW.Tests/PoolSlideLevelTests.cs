@@ -72,8 +72,11 @@ public class PoolSlideLevelTests
 	private OriginalObject PoolAndTower()
 	{
 		Assert.IsTrue( level.PoolBuilder!.PaintCells( PoolBuilder.Rectangle( (12, 12), (18, 18) ) ).Completed );
+		// a real park gives every object a thing id (the guests on its slide hold it as their target)
+		level.Objects.Things ??= new ThingPool();
 		var placed = level.Objects.TryPlace( Tower(), 13, 19, 0, out _ );
 		Assert.IsNotNull( placed, "a tower beside the pool" );
+		Assert.AreNotEqual( 0, placed!.ThingId );
 		Cells.WriteFootprint( placed!.Cells );
 		return placed;
 	}
@@ -139,7 +142,7 @@ public class PoolSlideLevelTests
 			var guest = level.Guests.SpawnInPark( 20, 20 );
 			guest.State = GuestState.PoolActivity;
 			guest.PoolActivityId = PoolSlideActivity.ActivityId;
-			guest.PoolActivityTarget = id;
+			guest.PoolActivityTarget = tower.ThingId;
 			guest.PoolActivityPhase = PoolSlidePhases.Ride;
 			level.Objects.Remove( tower );
 			Assert.IsNull( level.PoolSlides!.Find( id ), "the slide went with its tower" );
@@ -159,7 +162,7 @@ public class PoolSlideLevelTests
 			Assert.AreEqual( PoolBuildResult.Ok, level.PoolBuilder!.CheckErase( 17, 18 ), "control: nobody on the slide" );
 			level.Guests!.Grid.SetPath( 21, 21, true );
 			var rider = level.Guests.SpawnInPark( 21, 21 );
-			(rider.State, rider.PoolActivityId, rider.PoolActivityTarget, rider.PoolActivityPhase) = (GuestState.PoolActivity, PoolSlideActivity.ActivityId, id, PoolSlidePhases.Ride);
+			(rider.State, rider.PoolActivityId, rider.PoolActivityTarget, rider.PoolActivityPhase) = (GuestState.PoolActivity, PoolSlideActivity.ActivityId, tower.ThingId, PoolSlidePhases.Ride);
 			Assert.AreEqual( PoolBuildResult.SlideRiders, level.PoolBuilder.CheckErase( 17, 18 ), "a rider is on the track" );
 			Assert.AreEqual( PoolBuildResult.Ok, level.PoolBuilder.CheckErase( 16, 12 ), "another cell of the pool can go" );
 			rider.PoolActivityPhase = PoolSlidePhases.Splash;

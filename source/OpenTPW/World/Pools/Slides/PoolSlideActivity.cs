@@ -99,7 +99,7 @@ public sealed class PoolSlideActivity : IPoolActivity
 		_ => PoolSwimSlots.SplashDown
 	};
 
-	public float? FeetHeight( GuestSimulation simulation, Guest guest, float defaultHeight )
+	public float? FeetHeight( GuestSimulation simulation, Guest guest, PoolFeetHeights heights )
 	{
 		if ( simulation.PoolSlides?.FindByThing( guest.PoolActivityTarget ) is not { } slide )
 			return null;
@@ -107,11 +107,8 @@ public sealed class PoolSlideActivity : IPoolActivity
 		switch ( guest.PoolActivityPhase )
 		{
 			case PoolSlidePhases.Climb:
-			{
-				// from the water at the foot of the stairs to the platform
-				var foot = simulation.PoolSlides.WaterLevelAt( guest.PoolActivityX >> 16, guest.PoolActivityY >> 16 ) ?? defaultHeight;
-				return foot + (top - foot) * Math.Min( guest.PoolActivityTurns, PoolSlideSettings.ClimbTurns ) / PoolSlideSettings.ClimbTurns;
-			}
+				// from the water surface at the foot of the stairs up to the platform
+				return heights.Water + (top - heights.Water) * Math.Min( guest.PoolActivityTurns, PoolSlideSettings.ClimbTurns ) / PoolSlideSettings.ClimbTurns;
 			case PoolSlidePhases.Wait:
 				return top;
 			case PoolSlidePhases.Ride:

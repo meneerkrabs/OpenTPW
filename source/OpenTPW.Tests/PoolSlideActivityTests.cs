@@ -74,7 +74,7 @@ public class PoolSlideActivityTests
 			if ( phases[^1] != guest.PoolActivityPhase )
 				phases.Add( guest.PoolActivityPhase );
 			slots.Add( rig.Activity.SpriteSlot( guest ) );
-			var feet = rig.Activity.FeetHeight( rig.Rig.Simulation, guest, -0.12f );
+			var feet = rig.Activity.FeetHeight( rig.Rig.Simulation, guest, new PoolFeetHeights( -0.12f, -0.12f, 0f ) );
 			switch ( guest.PoolActivityPhase )
 			{
 				case PoolSlidePhases.Approach:
@@ -195,6 +195,29 @@ public class PoolSlideActivityTests
 	}
 
 	[TestMethod]
+	public void WhenTheParkClosesARiderOnTheTrackIsPutInTheWaterAtTheStepsAndClimbsOut()
+	{
+		using var scope = PoolsOn();
+		foreach ( var phase in new[] { PoolSlidePhases.Wait, PoolSlidePhases.Ride } )
+		{
+			var rig = new SlideRig();
+			var payments = new QueueTests.ClosedPayments();
+			rig.Rig.Simulation.Payments = payments;
+			var guest = rig.Rig.Send();
+			rig.Rig.Until( () => guest.InPoolActivity && guest.PoolActivityPhase == phase && (phase != PoolSlidePhases.Ride || guest.PoolActivityTurns >= 3), 4000 );
+			payments.Closed = true;
+			rig.Rig.Turns( 2 );
+			Assert.IsFalse( guest.InPoolActivity, $"phase {phase}: the activity is let go" );
+			Assert.IsNull( guest.PoolActivityId );
+			Assert.IsTrue( guest.State is GuestState.ClimbingOut or GuestState.ChangingOut or GuestState.ExitingRide or GuestState.DoingNothing, $"{guest.State}" );
+			if ( guest.IsSwimming )
+				Assert.IsTrue( rig.Rig.Region.IsWater( guest.Navigation.X, guest.Navigation.Y ), "in the water, not in the air" );
+			rig.Rig.Turns( 400 );
+			Assert.IsFalse( guest.InSwimSession, "the session ends" );
+		}
+	}
+
+	[TestMethod]
 	public void ASlideThatStopsBeingUsableLeavesWaitingGuestsInTheWaterAndEndsASessionOnlyWhenThereIsNoWater()
 	{
 		using var scope = PoolsOn();
@@ -288,7 +311,7 @@ public class PoolSlideActivityTests
 	}
 
 	/// <summary>[EXT:pools-slides] The pinned hash of <see cref="RunFixedSlides"/> (docs/DETERMINISM.md, "Pools").</summary>
-	internal const ulong PoolsSlidesFixedRunHash = 0x91710DEE845F2503UL;
+	internal const ulong PoolsSlidesFixedRunHash = 0x8FDB7A3F30ACC019UL;
 
 	[TestMethod]
 	public void FixedRunWithASlideIsTheSameInEveryProcessAndGuestsRideIt()

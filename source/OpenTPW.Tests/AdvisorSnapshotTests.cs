@@ -185,6 +185,19 @@ public class AdvisorSnapshotTests
 	}
 
 	[TestMethod]
+	public void EndingTheSpeechForAnExitLetsTheSnapshotThroughAndLeavesAnIdleAdvisorAlone()
+	{
+		var speaking = true; var ended = 0;
+		var advisor = new AutomaticAdvisor( new AdvisorController( Balance() ), () => 0L, speechActive: () => speaking, endSpeech: () => { ended++; speaking = false; } );
+		Assert.ThrowsException<InvalidOperationException>( () => advisor.CaptureSnapshot() );
+		advisor.EndSpeechForExit();
+		Assert.AreEqual( 1, ended ); Assert.IsFalse( advisor.IsSpeechActive );
+		Assert.IsFalse( advisor.CaptureSnapshot().SpeechWasActive, "the snapshot after the exit's cut-off is the idle advisor's" );
+		advisor.EndSpeechForExit();
+		Assert.AreEqual( 1, ended, "nothing is ended while nothing is spoken" );
+	}
+
+	[TestMethod]
 	public void ActiveSpeechIsRefusedInsteadOfFlagged()
 	{
 		// The presentation's speech has no snapshot seam, so the tests substitute a controllable speech state.

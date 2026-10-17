@@ -176,6 +176,17 @@ public class AutomaticCheckpointIngressTests
 		Pending( flow ); Assert.AreEqual( 0, resumed ); Assert.IsFalse( File.Exists( Path.Combine( root, PlayerTicketFile.FileName ) ) && change != "profile" );
 	}
 	[TestMethod]
+	public void ExitDuringTheAdvisorsSpeechEndsItAndCheckpointsInsteadOfShowingTheFailureDialog()
+	{
+		var w = ExitWorld(); var speaking = true;
+		var advisor = new AutomaticAdvisor( new AdvisorController( AdvisorSnapshotTests.Balance() ), () => 0L, speechActive: () => speaking, endSpeech: () => speaking = false );
+		Set( advisor, "level", w.Level ); Set( w.Flow, "<Advisor>k__BackingField", advisor );
+		var captures = 0; var retired = 0; w.Flow.AutomaticCaptureOverride = _ => { captures++; advisor.CaptureSnapshot(); return Snapshot(); }; w.Flow.AutomaticRetireOverride = _ => retired++;
+		Exit( w ); Pending( w.Flow );
+		Assert.AreEqual( 1, captures ); Assert.AreEqual( 1, retired ); Assert.IsFalse( speaking, "the welcome speech was ended by the exit" );
+		Assert.AreNotEqual( "automaticFailed", w.Hud.Stack.Top!.Name );
+	}
+	[TestMethod]
 	public void CurrentExitConsumesOnePendingAttemptAndHeldPointerDoesNotActivate()
 	{
 		var w = ExitWorld(); var captures = 0; var retired = 0; w.Flow.AutomaticCaptureOverride = _ => { captures++; return Snapshot(); }; w.Flow.AutomaticRetireOverride = _ => retired++; var point = w.Hud.Stack.Top!.Find( "ExitToLobby" )!.ScreenRect( context.Canvas ).Center; w.Hud.Stack.Update( context, new( point, true, false, false, false, UiKeys.None ) ); Pending( w.Flow ); Assert.AreEqual( 0, captures ); Exit( w ); Exit( w ); Pending( w.Flow ); Assert.AreEqual( 1, captures ); Assert.AreEqual( 1, retired );

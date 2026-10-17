@@ -19,6 +19,8 @@ internal sealed class AutomaticAdvisor : IDisposable
 	// The slap's one-of-three choice: a local presentation stub (the original's CRT rand()), never a world or guest stream.
 	private readonly Func<int> slapDraw;
 	private readonly Action<uint> playSlap;
+	// Tests substitute how a speech is ended (they control the speech state); null kills the presentation.
+	private readonly Action? endSpeech;
 	private Advisor? presentation;
 	private bool presentationFailed;
 	private Level? level;
@@ -38,9 +40,11 @@ internal sealed class AutomaticAdvisor : IDisposable
 	/// <param name="speechActive">The speech state (tests substitute a controllable one for the presentation); null reads the presentation.</param>
 	/// <param name="slapDraw">The draw that picks the cut-off slap (tests supply a fixed one); null uses a local unseeded generator.</param>
 	/// <param name="playSlap">Plays the slap's sound id (tests record it); null plays it through <see cref="GameAudio.PlaySpeechEffect"/>.</param>
-	internal AutomaticAdvisor( AdvisorController controller, Func<long> milliseconds, Func<bool>? speechActive = null, Func<int>? slapDraw = null, Action<uint>? playSlap = null )
+	/// <param name="endSpeech">Ends an active speech (tests flip their speech state); null kills the presentation.</param>
+	internal AutomaticAdvisor( AdvisorController controller, Func<long> milliseconds, Func<bool>? speechActive = null, Func<int>? slapDraw = null, Action<uint>? playSlap = null, Action? endSpeech = null )
 	{
 		Controller = controller;
+		this.endSpeech = endSpeech;
 		clock = new PausableClock( milliseconds );
 		this.speechActive = speechActive;
 		var random = slapDraw == null ? new Random() : null;
@@ -410,6 +414,18 @@ internal sealed class AutomaticAdvisor : IDisposable
 
 	/// <summary>The advisor image rendered this frame, or null while the advisor is silent.</summary>
 	public Veldrid.Texture? Image { get; private set; }
+
+	/// <summary>
+	/// Ends the response being spoken, silently (no slap), because the park is being left: a checkpoint of the park cannot hold the speech
+	/// (<see cref="CaptureSnapshot"/> refuses it), and the speech would end with the park anyway.
+	/// </summary>
+	// [BIN:TPW-EXE:0x005996D0 stop path] the park's stop path, run by the park state machine (0x54E360) and the level exit (0x4A9380) among its six callers, stops the speech (0x51C0E0) and kills the advisor (0x429D60): leaving a park never waits for a response to finish
+	internal void EndSpeechForExit()
+	{
+		if ( !IsSpeechActive )
+			return;
+		if ( endSpeech != null ) endSpeech(); else presentation?.Kill();
+	}
 
 	/// <summary>
 	/// Whether a response is being spoken right now. Active speech cannot be captured in this scope — the

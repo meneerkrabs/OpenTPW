@@ -33,7 +33,7 @@ original save) is put back to Idle by `StaffPlacement.Reconcile`.
 
 Staff are sprites (`esprites.wad`), not MD2 models: Generic\Handymen `SPR_HA`; Generic\Mechanics `SPR_FA`, `SPR_OM`; Generic\Guards `SPR_GU`;
 Generic\Researchers `SPR_RE`; entertainers per theme (Jungle DI, EX, NA; Fantasy FL, GN, LA; Hallow DR, FK, HU; Space MO, SM, SP). The bank is
-the candidate's drawn variant (`0x541f70`: the first draw of the candidate constructor, mod the role's loaded banks), kept with the candidate and the hired member, saved as an optional field and imported from an original save's pool sub-type; a member without one derives it as `(NameIndex + Id)` modulo the folder's banks (GUEST-014).
+the candidate's drawn variant (`0x541f70`), or for a member without one `(NameIndex + Id)` modulo the folder's banks (GUEST-014).
 Clips are the scripts of the table 0x75a418 decoded in `StaffScripts` (`StaffAnimation.cs`): stand slot 0, walk slot 1 (the patrol walk shows each frame twice), run slot 2, work slot 4 (the sweep shows
 each of 4 frames twice, repair is an 8-frame loop, research loops 4 frames and four steps of frame 0), strike slot 5 (4 frames and six steps of frame 0, looping), the dangling cursor
 sprite slot 6 frames 0-3, the guard's catch then carry slots 7 and 8. Resting members have no sprite. Entertainer performances play the bank's performance program (intro and hold: GUEST-015). The sprite clock is

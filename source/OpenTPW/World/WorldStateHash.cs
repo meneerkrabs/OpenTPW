@@ -110,15 +110,7 @@ public static class WorldStateHash
 			// the analyser's caches are saved for an exact continuation but are a reading aid, not park state: they stay out of the digest
 			var node = JsonSerializer.SerializeToNode( ParkSaveFile.Capture( economy ) );
 			if ( node is JsonObject root )
-			{
 				root.Remove( nameof( ParkSaveFile.Data.AnalyserCaches ) );
-				// a staff member's or candidate's sprite variant (tp.exe +0x20 and +9) picks the bank it is drawn with and nothing the simulation reads: it stays out of the digest, which keeps every pin
-				if ( root[nameof( ParkSaveFile.Data.Staff )] is JsonObject staff )
-					foreach ( var list in new[] { staff[nameof( ParkSaveFile.StaffData.Members )], staff[nameof( ParkSaveFile.StaffData.Candidates )] } )
-						if ( list is JsonArray entries )
-							foreach ( var entry in entries.OfType<JsonObject>() )
-								entry.Remove( "Variant" );
-			}
 			hash.Add( Canonical( node ) );
 		}
 		// [EXT:smarter-guests] the identity state joins the hash only while the extension or a script mod is on, so every park without it keeps its pins and SchemaVersion

@@ -182,4 +182,17 @@ public class WalkTableTests
 		Assert.IsTrue( effects[0].Time >= 1000 && effects[0].Time < 1100, $"at the end of the walk on, got {effects[0].Time}" );
 		Assert.AreEqual( 0, RunHeadWalk( 1, 10f, null ).OnEffects.Count, "only action 2 creates it" );
 	}
+
+	[TestMethod]
+	public void BounceSetsTheFlagsToOneWhileTheTableHasRoomAndToZeroWhenItIsFull()
+	{
+		// the test header declares 3 bounce entries; tp.exe 0x555780 / 0x555795 put 1 or 0 in the flag word
+		var (_, vm) = Run( asm =>
+		{
+			for ( var index = 0; index < 4; index++ )
+				asm.I( Opcode.BOUNCE, index + 1, 5 ).I( Opcode.BRANCH_Z, $"zero{index}" ).I( Opcode.COPY, V( index ), 1 ).I( Opcode.BRANCH, $"next{index}" )
+					.Label( $"zero{index}" ).I( Opcode.COPY, V( index ), 2 ).Label( $"next{index}" );
+		}, ticks: 2 );
+		CollectionAssert.AreEqual( new[] { 1, 1, 1, 2 }, new[] { vm.Variables[0], vm.Variables[1], vm.Variables[2], vm.Variables[3] } );
+	}
 }

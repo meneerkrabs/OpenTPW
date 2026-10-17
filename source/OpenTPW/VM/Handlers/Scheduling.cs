@@ -55,8 +55,14 @@ public static partial class OpcodeHandlers
 			}
 		}
 
-		[OpcodeHandler( Opcode.GETTIME, RideOpcodeStatus.Implemented, "STP-PPC 0xaf6d8: the shared scheduler clock's 32-bit millisecond word, stored unchanged (no creation timestamp subtracted)" )]
-		public static void GetTime( RideVM vm, Operand dest ) => dest.Value = unchecked((int)vm.ClockMilliseconds32);
+		[OpcodeHandler( Opcode.GETTIME, RideOpcodeStatus.Implemented, "TPW-EXE 0x551F1E (`dest`, raw): the clock 0x785970 (0x402D70), in milliseconds, stored unchanged into the flags and a variable destination; STP-PPC 0xaf6d8: the shared scheduler clock's 32-bit millisecond word (no creation timestamp subtracted)" )]
+		public static void GetTime( RideVM vm, Operand dest )
+		{
+			// [BIN:TPW-EXE:0x554B0F result tail] GETTIME ends in the shared tail that puts the value in the flag word (+0x48) and then, for a variable destination, in the variable
+			var clock = unchecked((int)vm.ClockMilliseconds32);
+			vm.SetFlags( clock );
+			dest.Value = clock;
+		}
 
 		[OpcodeHandler( Opcode.SETTIMER, RideOpcodeStatus.Implemented, "corpus: `SETTIMER 10000 … GETTIMER x; BRANCH_Z start` replaces the GETTIME time-out idiom; countdown in ms" )]
 		public static void SetTimer( RideVM vm, Operand time ) => vm.SetTimer( time.Value );

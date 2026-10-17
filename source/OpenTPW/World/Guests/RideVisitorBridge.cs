@@ -1345,8 +1345,9 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 				MarkBoarded( guest );
 				// [BIN:TPW-EXE:0x00555753 BOUNCE deadline] the deadline is the clock plus the second operand x 1000 ms (a wrapping 32-bit product), whatever its value: a duration of 0 is a deadline that has already passed. The four shipped scripts pass VAR_DURATION, which ride init sets above 0 (WalkNodeCorpusTests)
 				var seconds = call.Argument( 1 );
+				// [BIN:TPW-EXE:0x00555780 BOUNCE result] the flag word takes 1 when an entry was free and 0 with a full table
 				if ( onRide.Contains( guest ) && !bouncing.Any( entry => entry.Guest == guest ) )
-					TakeBounceSlot( bouncing, call.VM.Script.BounceSize, guest, now + seconds * 1000.0, now );
+					result = TakeBounceSlot( bouncing, call.VM.Script.BounceSize, guest, now + seconds * 1000.0, now ) ? 1 : 0;
 				return true;
 			}
 			case Opcode.UNBOUNCE:

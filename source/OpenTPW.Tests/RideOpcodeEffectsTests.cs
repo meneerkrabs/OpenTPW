@@ -102,6 +102,40 @@ public class RideOpcodeEffectsTests
 	/// waits max(unsigned(ret − 300), 300) and zeroes the deadline, so a later WAIT4ANIM continues at once.
 	/// </summary>
 	[TestMethod]
+	public void TheTriggerFamilySetsTheFlagsFromItsOutValueAndWaitAnimKeepsThem()
+	{
+		// tp.exe keeps the adjusted result max(ret - 300, 300) in the flag word (+0x48) and writes the out operand from it (0x552972, 0x55299A, 0x552F96, 0x5531B0, 0x552D5C, 0x553644); WAITANIM does not touch it
+		foreach ( var (opcode, operands) in new (Opcode, object[])[]
+		{
+			(Opcode.TRIGANIM, new object[] { 5, 0, V( 0 ) }), (Opcode.TRIGANIMSPEED, new object[] { 5, 0, V( 0 ), 1000 }), (Opcode.TRIGANIM_CH, new object[] { 5, 0, V( 0 ), 1 })
+		} )
+		{
+			var effects = new RecordingEffects { Result = call => call.Opcode == opcode ? 1000 : 0 };
+			var asm = new Asm().I( Opcode.TEST, V( 3 ) ).I( opcode, operands ).I( Opcode.ENDSLICE ).Label( "idle" ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "idle" );
+			var vm = Load( asm, effects );
+			Run( vm, 1 );
+			Assert.AreEqual( 700, vm.Variables[0], $"{opcode}: out" );
+			Assert.AreEqual( RideVM.VMFlags.None, vm.Flags, $"{opcode}: the positive out value cleared the Zero flag the TEST set" );
+		}
+		var waited = new RecordingEffects { Result = call => call.Opcode == Opcode.WAITANIM ? 900 : 0 };
+		var keep = Load( new Asm().I( Opcode.TEST, V( 3 ) ).I( Opcode.WAITANIM, 6, 0 ).Label( "idle" ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "idle" ), waited );
+		Run( keep, 1 );
+		Assert.AreEqual( RideVM.VMFlags.Zero, keep.Flags, "WAITANIM keeps the flags" );
+	}
+
+	[TestMethod]
+	public void GetTimeSetsTheFlagsFromTheClockAndAVariableDestinationTakesIt()
+	{
+		// tp.exe 0x554B0F: the shared result tail writes the flag word, then a variable destination
+		var vm = Load( new Asm().I( Opcode.GETTIME, V( 0 ) ).I( Opcode.COPY, V( 1 ), 7 ).I( Opcode.WAIT, 100 ).I( Opcode.GETTIME, 0 ).Label( "idle" ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "idle" ), new RecordingEffects() );
+		vm.Variables[1] = 0;
+		Run( vm, 1 );
+		Assert.AreEqual( 7, vm.Variables[1], "the COPY ran after the first GETTIME" );
+		Run( vm, 20 );
+		Assert.AreEqual( RideVM.VMFlags.None, vm.Flags, "a literal destination only sets the flags: the clock is above 0 after the wait" );
+	}
+
+	[TestMethod]
 	public void PlainAnimationTriggersSetTheDeadlineThatWait4AnimWaitsFor()
 	{
 		var effects = new RecordingEffects { Result = call => call.Opcode switch { Opcode.TRIGANIM => 1000, Opcode.WAITANIM => 900, _ => 0 } };
@@ -241,7 +275,8 @@ public class RideOpcodeEffectsTests
 	[TestMethod]
 	public void BounceOpcodesPassTheirOperandsAndBouncingQueries()
 	{
-		var effects = new RecordingEffects { Result = call => call.Opcode switch { Opcode.BOUNCING => -3, _ => 0 } };
+		// tp.exe: BOUNCE sets the flags to 1 or 0, UNBOUNCE and FORCEUNBOUNCE put the visitor they hand back in the flags and their raw destination (0x555780, 0x5558E6, 0x555902), BOUNCING the count
+		var effects = new RecordingEffects { Result = call => call.Opcode switch { Opcode.BOUNCING => -3, Opcode.UNBOUNCE or Opcode.FORCEUNBOUNCE => 44, _ => 0 } };
 		var vm = Load( new Asm()
 			.I( Opcode.BOUNCESETNODE, 12 )
 			.I( Opcode.BOUNCESETBASE, V( 0 ) )

@@ -550,27 +550,27 @@ handler attributes diverge.
 | 4 | `SETLV` | 0 | implemented | TPW-EXE 0x551E19: sets the flags from the raw operand word (not resolved: a variable operand counts as its tag word, a literal as its unsigned 16 bits); no corpus use |
 | 5 | `SUB` | 74 | implemented | docs (sets flags); corpus: operand order is `SUB dest a b` → dest = a − b |
 | 6 | `ENDSLICE` | 396 | implemented | name; corpus: sits in idle loops (`ENDSLICE; TEST VAR_RIDECLOSED; BRANCH_NZ`), so it yields until the next slice; flags survive it |
-| 7 | `GETTIME` | 172 | implemented | STP-PPC 0xaf6d8: the shared scheduler clock's 32-bit millisecond word, stored unchanged (no creation timestamp subtracted) |
-| 8 | `ADDOBJ` | 644 | hooked | docs (`type parameter id slot`) |
-| 9 | `ADDOBJ_EXT` | 0 | hooked | TPW-EXE 0x5520E8 (`type key effect control slot`): ADDOBJ with the control operand; no corpus use |
-| 10 | `KILLOBJ` | 235 | hooked | docs (`slot`); does not touch flags (`ADD VAR_COUNT 0xFFFF; KILLOBJ 200; BRANCH_PV`) |
-| 11 | `FADEOBJ` | 113 | hooked | docs (`slot`) |
-| 12 | `SETOBJPARAM` | 20 | hooked | docs (`slot parameter value`) |
-| 13 | `EVENT` | 527 | hooked | docs (`type unknown event`); event names are theme-dependent and not assigned |
+| 7 | `GETTIME` | 172 | implemented | TPW-EXE 0x551F1E (`dest`, raw): the clock 0x785970 (0x402D70), in milliseconds, stored unchanged into the flags and a variable destination; STP-PPC 0xaf6d8: the shared scheduler clock's 32-bit millisecond word (no creation timestamp subtracted) |
+| 8 | `ADDOBJ` | 644 | hooked | TPW-EXE 0x551F5F (`type key id slot`, each resolved: a variable's value or the literal sign-extended from 16 bits): one 0x1C-byte record on the script's object list (+0xB0, newest first) keyed by the slot; the dispatcher 0x5573D0(type, key, id, control 1000) via 0x557970 gives its handle, a zero handle frees the record again; types 1-2 are particle effects, 3-9 sounds by category, 10 the object type's own list; a negative key (the corpus's 0xFFFF) is the footprint middle |
+| 9 | `ADDOBJ_EXT` | 0 | hooked | TPW-EXE 0x5520E8 (`type key id control slot`, each resolved): ADDOBJ with the control operand in place of 1000; no corpus use |
+| 10 | `KILLOBJ` | 235 | hooked | TPW-EXE 0x5522C5 (`slot`, resolved): every record with the slot ends and is freed: types 1-2 through 0x51FF70(handle, -2), 3-10 through 0x51C2C0, any other type logs; flags untouched (`ADD VAR_COUNT 0xFFFF; KILLOBJ 200; BRANCH_PV`) |
+| 11 | `FADEOBJ` | 113 | hooked | TPW-EXE 0x5523D0 (`slot`, resolved): as KILLOBJ, but types 3-10 end through 0x51C300 (types 1-2 take the same 0x51FF70(handle, -2)); flags untouched |
+| 12 | `SETOBJPARAM` | 20 | hooked | TPW-EXE 0x5524D9 (`slot param value`, each resolved): for every record with the slot, types 3-10 call 0x51BC40(handle, param, value) and keep the handle it returns, types 1-2 do nothing; the corpus sets param 20 to 0 or 75 on slot 1 |
+| 13 | `EVENT` | 527 | hooked | TPW-EXE 0x552615 (`type key id`, each resolved): the dispatcher 0x5573D0(type, key, id, control 1000), its handle dropped; types 1-2 are particle effects (PARTICLES.md), 3-9 sounds by category (AUDIO.md), 10 the object type's own list (0x557686); the corpus uses types 1-6 and key 0xFFFF (-1, the footprint middle) 341 times |
 | 14 | `EVENT_EXT` | 0 | unknown | no corpus use; not implemented (executing it faults the script) |
-| 15 | `FLUSHANIM` | 17 | hooked | STP-PPC 0xafa68 → 0xa6c90: clears only channel 0's deferred clip; the playing clip and the WAIT4ANIM deadline stay |
-| 16 | `TRIGANIM` | 74 | hooked | STP-PPC 0xafa94: trigger channel 0, flags 0; out = max(ret − 300, 300); WAIT4ANIM deadline = now + out / script speed; LOOPANIM token reset |
-| 17 | `WAITANIM` | 547 | hooked | STP-PPC 0xafbbc: trigger channel 0, flags 0; waits max(unsigned(ret − 300) / script speed, 300) (a clip under 300 ms saturates to INT32_MAX ms) on a u32 deadline; zeroes the WAIT4ANIM deadline; LOOPANIM token reset |
-| 18 | `LOOPANIM` | 210 | hooked | STP-PPC 0xafd00: no-op while token anim + (sub << 16) equals script +168; else loops on channel 0 (flags 1), stores the token, zeroes the WAIT4ANIM deadline |
-| 19 | `TRIGWAITANIM` | 133 | hooked | STP-PPC 0xafd94: as TRIGANIM, then re-executes until channel 0's AnimID equals the triggered one (+188 = id + 1), yielding while it differs |
-| 20 | `GETANIM` | 0 | hooked | STP-PPC 0xaff3c: channel 0's AnimID (12 = none), −1 once its non-looping clip ended (channel flag 0x4); result sets flags |
-| 21 | `TRIGANIMSPEED` | 4 | hooked | STP-PPC 0xaffc4: trigger channel 0 at script speed × operand / 1000; out = max(ret − 300, 300); deadline = now + out × 1000 / operand (signed divw); LOOPANIM token reset |
-| 22 | `FLUSHANIM_CH` | 0 | hooked | STP-PPC 0xb00f4 → 0xa6c90: clears only the operand channel's deferred clip |
-| 23 | `TRIGANIM_CH` | 63 | hooked | STP-PPC 0xb013c: as TRIGANIM on channel operand 4 (Totem `TRIGANIM_CH 5 1 0 1`); leaves the LOOPANIM token |
-| 24 | `WAITANIM_CH` | 0 | hooked | STP-PPC 0xb0268, PC 0x55320A (same arithmetic): as WAITANIM on channel operand 3 without the speed division or fctiwz: unsigned max(ret − 300, 300) added to the clock as a wrapping u32 (0xb035c), so a clip under 300 ms gives a deadline in the past and the script continues next slice; zeroes the deadline |
-| 25 | `LOOPANIM_CH` | 1 | hooked | STP-PPC 0xb037c: loops on channel operand 3 (flags 1) on every call, no token check; zeroes the deadline |
-| 26 | `TRIGWAITANIM_CH` | 0 | hooked | STP-PPC 0xb0404: as TRIGWAITANIM on channel operand 4; leaves the LOOPANIM token |
-| 27 | `GETANIM_CH` | 15 | hooked | STP-PPC 0xb05b8: `GETANIM_CH dest channel`: the channel's AnimID, −1 once ended; result sets flags (corpus `GETANIM_CH 0 n; BRANCH_PV x; BRANCH_Z x`) |
+| 15 | `FLUSHANIM` | 17 | hooked | TPW-EXE 0x552861 (no operands); STP-PPC 0xafa68 → 0xa6c90: clears only channel 0's deferred clip; the playing clip and the WAIT4ANIM deadline stay |
+| 16 | `TRIGANIM` | 74 | hooked | TPW-EXE 0x552875 (`anim variant out`: two resolved, the third raw, written when it is a variable); STP-PPC 0xafa94: trigger channel 0, flags 0; out = max(ret - 300, 300); WAIT4ANIM deadline = now + out / script speed; LOOPANIM token reset |
+| 17 | `WAITANIM` | 547 | hooked | TPW-EXE 0x5529BC (`anim variant`, resolved); STP-PPC 0xafbbc: trigger channel 0, flags 0; waits max(unsigned(ret - 300) / script speed, 300) (a clip under 300 ms saturates to INT32_MAX ms) on a u32 deadline; zeroes the WAIT4ANIM deadline; LOOPANIM token reset |
+| 18 | `LOOPANIM` | 210 | hooked | TPW-EXE 0x552B2F (`anim variant`, resolved); STP-PPC 0xafd00: no-op while token anim + (sub << 16) equals script +168; else loops on channel 0 (flags 1), stores the token, zeroes the WAIT4ANIM deadline |
+| 19 | `TRIGWAITANIM` | 133 | hooked | TPW-EXE 0x552C1A (`anim variant out`, as TRIGANIM); STP-PPC 0xafd94: as TRIGANIM, then re-executes until channel 0's AnimID equals the triggered one (+188 = id + 1), yielding while it differs |
+| 20 | `GETANIM` | 0 | hooked | TPW-EXE 0x552DB4 (`dest`, raw); STP-PPC 0xaff3c: channel 0's AnimID (12 = none), -1 once its non-looping clip ended (channel flag 0x4); result sets flags |
+| 21 | `TRIGANIMSPEED` | 4 | hooked | TPW-EXE 0x552E3A (`anim variant out speed`: three resolved, the third raw); STP-PPC 0xaffc4: trigger channel 0 at script speed x operand / 1000; out = max(ret - 300, 300); deadline = now + out x 1000 / operand (signed divw); LOOPANIM token reset |
+| 22 | `FLUSHANIM_CH` | 0 | hooked | TPW-EXE 0x553000 (`channel`, resolved); STP-PPC 0xb00f4 → 0xa6c90: clears only the operand channel's deferred clip |
+| 23 | `TRIGANIM_CH` | 63 | hooked | TPW-EXE 0x55306E (`anim variant out channel`); STP-PPC 0xb013c: as TRIGANIM on channel operand 4 (Totem `TRIGANIM_CH 5 1 0 1`); leaves the LOOPANIM token |
+| 24 | `WAITANIM_CH` | 0 | hooked | TPW-EXE 0x55320A (`anim variant channel`), STP-PPC 0xb0268 (same arithmetic): as WAITANIM on channel operand 3 without the speed division or fctiwz: unsigned max(ret - 300, 300) added to the clock as a wrapping u32 (0xb035c), so a clip under 300 ms gives a deadline in the past and the script continues next slice; zeroes the deadline |
+| 25 | `LOOPANIM_CH` | 1 | hooked | TPW-EXE 0x553399 (`anim variant channel`); STP-PPC 0xb037c: loops on channel operand 3 (flags 1) on every call, no token check; zeroes the deadline |
+| 26 | `TRIGWAITANIM_CH` | 0 | hooked | TPW-EXE 0x553494 (`anim variant out channel`); STP-PPC 0xb0404: as TRIGWAITANIM on channel operand 4; leaves the LOOPANIM token |
+| 27 | `GETANIM_CH` | 15 | hooked | TPW-EXE 0x5536AE (`dest channel`: the first raw, the second resolved); STP-PPC 0xb05b8: the channel's AnimID, -1 once ended; result sets flags (corpus `GETANIM_CH 0 n; BRANCH_PV x; BRANCH_Z x`) |
 | 28 | `RAND` | 56 | implemented | Mac-static: signed raw bound word, inclusive nonnegative maximum, sets flags; host PRNG remains unqualified |
 | 29 | `JSR` | 70 | implemented | docs; TPW-EXE 0x5539A9: the return address goes onto the script's shared stack/heap array (header stack size, top-down); a full array still jumps, without pushing; corpus: every script using JSR declares stack ≥ 3 |
 | 30 | `RETURN` | 33 | implemented | docs; TPW-EXE 0x553A32: pops the shared array LIFO; only an address-tagged word is jumped to; an empty stack kills the script |
@@ -589,18 +589,18 @@ handler attributes diverge.
 | 43 | `HOP` | 39 | implemented | TPW-EXE 0x553DAA: pops the newest heap value (LIFO) into the flags and a variable destination; an empty heap does nothing (`HUSH VAR_LETMEON … HOP VAR_TEMP2; WALKOFF VAR_TEMP2`) |
 | 44 | `WAIT` | 458 | implemented | STP-PPC 0xb0658: milliseconds divided by the script speed (0.5 + SPEED/100), truncated; flags survive it (`WAIT 300; BRANCH_NZ`) |
 | 45 | `WAITABS` | 0 | implemented | tp.exe 0x553828 and STP-PPC 0xb0710: despite the name the first encounter stores the 32-bit clock + operand (no WAIT speed division) in the shared deadline word and yields; later encounters wait while the clock is unsigned-below it; a wrapped deadline is already past and a deadline of exactly 0 arms again (Theme Park Inc corpus: 34 uses, literals 1..10000) |
-| 46 | `WAIT4ANIM` | 170 | hooked | STP-PPC 0xb07a0: deadline 0 continues; otherwise blocks while now < deadline (re-executing), then clears it |
+| 46 | `WAIT4ANIM` | 170 | hooked | TPW-EXE 0x5538EB (no operands); STP-PPC 0xb07a0: deadline 0 continues; otherwise blocks while now < deadline (re-executing), then clears it |
 | 47 | `ADD` | 541 | implemented | docs (dest += value, sets flags); corpus: 115 branches consume ADD flags, e.g. `ADD VAR_SPACELEFT 0xFFFF; BRANCH_Z` |
 | 48 | `MULT` | 0 | implemented | TPW-EXE 0x553eb9: dest-first, a × b by imul (32-bit wrap), result in the flag word and a variable destination; Theme Park Inc corpus: `MULT VAR_TIMER VAR_TIMEOUT VAR_SCALE` |
 | 49 | `DIV` | 4 | implemented | corpus: `DIV dest a b`; Mac-static: signed truncation, zero divisor returns 0; signed overflow retains VM wrap policy |
 | 50 | `MOD` | 5 | implemented | corpus: `MOD dest a b`; Mac-static: signed remainder, zero divisor returns 0; signed overflow retains VM zero policy |
 | 51 | `TURBO` | 20 | implemented | TPW-EXE 0x5542B9: stores the low byte of the raw operand word in the script's TURBO byte (a variable operand stores its index byte); nothing else |
 | 52 | `END` | 0 | unknown | no corpus use; not implemented (executing it faults the script) |
-| 53 | `TOUR` | 76 | hooked | Mac-static command roles: mutators preserve flags; supported queries set flags/output; required-variable gates skip invalid calls |
-| 54 | `BUMP` | 199 | hooked | Mac-static command roles: mutators preserve flags; queries set flags/output; duration commands set flags from original input |
-| 55 | `COAST` | 144 | hooked | Mac-static: commands 1/4/5/6/8 preserve flags; 2/3 set flags and optional output; 7 is a no-op |
-| 56 | `ADDHEAD` | 31 | hooked | docs (`visitor`) |
-| 57 | `DELHEAD` | 31 | hooked | docs (`visitor`) |
+| 53 | `TOUR` | 76 | hooked | TPW-EXE 0x5542FE (`command parameter`: the command is the raw word, 1-18 through the table 0x5569D0, others log): the 43 command shapes of TOUR, BUMP and COAST (flags written or kept, a variable destination written or required, the resolved parameter passed or dropped) were read from the PC handlers and equal the Mac-static command roles: mutators preserve flags; supported queries set flags/output; required-variable gates skip invalid calls |
+| 54 | `BUMP` | 199 | hooked | TPW-EXE 0x5546F5 (`command parameter`, commands 1-17 through the table 0x556A18; 15 logs): shapes equal the Mac-static command roles (see TOUR): mutators preserve flags; queries set flags/output; commands 13 and 14 set the flags from their own parameter |
+| 55 | `COAST` | 144 | hooked | TPW-EXE 0x554A5A (`command parameter`, commands 1-8 through the table 0x556A5C): shapes equal the Mac-static command roles (see TOUR): commands 1/4/5/6/8 preserve flags; 2/3 set flags and an optional variable output; 7 does nothing |
+| 56 | `ADDHEAD` | 31 | hooked | TPW-EXE 0x554C3E (`visitor`, resolved): needs the script's head table (+0x30, size at +0x4C; none for child and sound scripts) with a free entry, draws entries with the world generator (0x554CB5) until it hits a free one, stores the visitor, finds the head dummy (class 0x80, number entry + 1, 0x44B220) and hangs the head there (0x44B410); no result |
+| 57 | `DELHEAD` | 31 | hooked | TPW-EXE 0x554D26 (`visitor`, resolved): finds the visitor in the head table, takes its head down (0x44B4C0, dummy of class 0x80 numbered entry + 1) and frees the entry; no table or no such visitor: nothing |
 | 58 | `LIMBO` | 24 | implemented | TPW-EXE 0x554DE5 (`value seconds`): the first free slot of the script's limbo table (header limbo size) takes the value and expiry now + seconds * 1000; result 1 (flags), 0 when the table is full |
 | 59 | `UNLIMBO` | 24 | implemented | TPW-EXE 0x554EF0: releases the first occupied slot whose expiry is strictly past into the flags and a variable destination, else 0 (`UNLIMBO VAR_LETMEOFF; BRANCH_Z`) |
 | 60 | `FORCEUNLIMBO` | 23 | implemented | TPW-EXE 0x554F74: variable destination only (anything else does nothing at all); releases the first occupied slot whatever its expiry, else 0 (`FORCEUNLIMBO VAR_LETMEOFF; BRANCH_NZ loop`) |
@@ -609,19 +609,19 @@ handler attributes diverge.
 | 63 | `SPAWNCHILD` | 20 | implemented | docs (one child); corpus: all 20 names resolve to an RSE in the same WAD; the child runs after its parent each tick |
 | 64 | `SPAWNSOUND` | 28 | implemented | docs; corpus: always `EventMap.rse`, which only fills VAR_EVT0…9/VAR_PAR0 and idles; runs in its own slot (bumper.RSE has both). What the engine reads from it is not implemented |
 | 65 | `REMOVECHILD` | 4 | implemented | docs |
-| 66 | `SETVARINCHILD` | 7 | implemented | docs (`variable value`) |
-| 67 | `GETVARINCHILD` | 9 | implemented | docs (`dest variable`) |
-| 68 | `SETVARINPARENT` | 0 | implemented | docs only (no corpus use); mirror of SETVARINCHILD |
-| 69 | `GETVARINPARENT` | 10 | implemented | docs (`dest variable`) |
-| 70 | `BOUNCESETNODE` | 1 | hooked | unknown upstream; passed through |
-| 71 | `BOUNCESETBASE` | 4 | hooked | unknown upstream; passed through |
-| 72 | `BOUNCE` | 4 | hooked | unknown upstream (`visitor unknown`); passed through |
-| 73 | `UNBOUNCE` | 4 | hooked | unknown upstream (`visitor`); passed through |
-| 74 | `FORCEUNBOUNCE` | 8 | hooked | unknown upstream (`visitor`); passed through |
-| 75 | `BOUNCING` | 25 | hooked | unknown upstream; corpus `BOUNCING VAR_RUNNING; BRANCH_Z` → dest + flags |
-| 76 | `WALKON` | 47 | hooked | docs (`visitor u1 u2 u3 u4 action u5`, WALK_ACTION_* in ScriptDefs); passed through |
-| 77 | `WALKOFF` | 53 | hooked | unknown upstream (`visitor`); passed through |
-| 78 | `WALKGET` | 43 | hooked | unknown upstream (`dest`); corpus `WALKGET VAR_LETMEOFF; BRANCH_Z wait` → dest + flags |
+| 66 | `SETVARINCHILD` | 7 | implemented | TPW-EXE 0x555282 (`variable value`, resolved): writes the child's variable (the script id at +0xC; none, or an index at or above its variable count: nothing, no flags) and sets the flags to the value |
+| 67 | `GETVARINCHILD` | 9 | implemented | TPW-EXE 0x555349 (`dest variable`: the destination raw, the variable resolved): reads the child's variable into the flags and a variable destination (a literal destination, no child or an index at or above its variable count: nothing, no flags) |
+| 68 | `SETVARINPARENT` | 0 | implemented | TPW-EXE 0x555402 (`variable value`, resolved): SETVARINCHILD for the parent (the script id at +0x10); no corpus use |
+| 69 | `GETVARINPARENT` | 10 | implemented | TPW-EXE 0x5554F2 (`dest variable`): GETVARINCHILD for the parent (the script id at +0x10) |
+| 70 | `BOUNCESETNODE` | 1 | hooked | TPW-EXE 0x5555D9 (`node`, raw): stores the raw operand word at +0x70, the base of the node number each BOUNCE entry records (+0x70 + entry index); only the render pass reads the nodes: no effect on the simulation |
+| 71 | `BOUNCESETBASE` | 4 | hooked | TPW-EXE 0x555618 (`base`): only a variable operand does anything (its value's low 16 bits go to +0x6E, a literal is ignored); read by the render pass only: no effect on the simulation |
+| 72 | `BOUNCE` | 4 | hooked | TPW-EXE 0x555674 (`visitor seconds`, resolved): the first free entry (visitor word 0) of the script's bounce table (+0x28, 16-byte entries, header bounce size at +0x64) takes the visitor, the node +0x70 + index, the deadline clock + seconds x 1000 and the start clock; the count at +0x6C goes up; result 1 in the flags, 0 with a full table (nothing stored); STP-PPC 0xadf40 |
+| 73 | `UNBOUNCE` | 4 | hooked | TPW-EXE 0x5557A3 (`dest`, raw): the first entry whose deadline is below the clock (signed) and whose time since the bounce is inside the first 200 ms of a second (the remainder of elapsed / 1000, divided by 200, is 0) is freed (count - 1) and its visitor goes to the flags and a variable destination; none: 0; STP-PPC 0xae020 |
+| 74 | `FORCEUNBOUNCE` | 8 | hooked | TPW-EXE 0x555842 (`dest`, raw): UNBOUNCE without the deadline test: the first entry inside the 200 ms window of its second is freed and handed back, none: 0 |
+| 75 | `BOUNCING` | 25 | hooked | TPW-EXE 0x555910 (`dest`, raw): the count at +0x6C (a signed word) into the flags and a variable destination (corpus `BOUNCING VAR_RUNNING; BRANCH_Z`) |
+| 76 | `WALKON` | 47 | hooked | TPW-EXE 0x555963 (`visitor u1 u2 u3 u4 action u5`, each resolved): the walk table entry of 0x556F40 (first free of the header walk size; state 1 for ftol(distance u1 to u2) x 100 ms; the main loop's walk update 0x557D80 moves it on: state 2 hangs a head action 4 head on head id u2 and, for action 2, creates effect 0x13 at u2); u5 bit 0 takes the walking body's height from the nodes (all 47 uses: 1); see TOURS.md |
+| 77 | `WALKOFF` | 53 | hooked | TPW-EXE 0x555B0C (`visitor`, resolved) → 0x5571A0: finds the visitor's entry (none: logs) and sets state 3 with the end now + ftol(distance u3 to u4) x 100 ms; a head up (head action 4, state 2) comes down; action 2 creates effect 0x13 at u3 |
+| 78 | `WALKGET` | 43 | hooked | TPW-EXE 0x555B34 (`dest`, raw) → 0x557110: the first entry of the table in state 4 gives its visitor and is freed; the visitor goes to the flags and a variable destination, 0 when none (corpus `WALKGET VAR_LETMEOFF; BRANCH_Z wait`) |
 | 79 | `WALKST_FLOAT` | 1 | implemented | TPW-EXE 0x555B72 (`seconds a b`, resolved): starts the script's float: start = clock, duration = seconds x 1000 ms, a and b kept as words (the body's swing, render only); no effect; 1 corpus use (ZeroG: `WALKST_FLOAT VAR_DURATION 1000 1000`) |
 | 80 | `WALKFLOATSTAT` | 1 | implemented | TPW-EXE 0x555BD8: the float's duration word (0 once start + duration has passed) into the flags and a variable destination; ZeroG loops `WALKFLOATSTAT 0; BRANCH_NZ` for VAR_DURATION seconds |
 | 81 | `WALKFLOATSTOP` | 1 | implemented | TPW-EXE 0x555C11: with a float running, start = clock - the share spent (thousandths of the duration) and duration = 1000 (the float settles over the rest); no operands, no flags, no effect |
@@ -629,14 +629,14 @@ handler attributes diverge.
 | 83 | `DISABLELIGHT` | 0 | unknown | no corpus use; not implemented (executing it faults the script) |
 | 84 | `SETLIGHT` | 0 | unknown | no corpus use; not implemented (executing it faults the script) |
 | 85 | `COLOURLIGHT` | 0 | unknown | no corpus use; not implemented (executing it faults the script) |
-| 86 | `STARTSCREAM` | 40 | hooked | docs (`visitor unknown`) |
-| 87 | `STOPSCREAM` | 80 | hooked | docs |
-| 88 | `SINGLESCREAM` | 46 | hooked | docs (`visitor unknown`) |
-| 89 | `SCREAMLEVEL` | 81 | hooked | docs (0–100) |
-| 90 | `FINDSCRIPTRAND` | 5 | implemented | docs (`name dest`); corpus: `FINDSCRIPTRAND "Zob Upgrade" VAR_SCRIPTID; BRANCH_Z none` → dest = random live script with that NAME or 0, sets flags |
-| 91 | `GETREMOTEVAR` | 2 | implemented | corpus: `GETREMOTEVAR 0 VAR_SCRIPTID 0; BRANCH_Z` → `dest script variable`, sets flags; mirror of SETREMOTEVAR; a missing script reads 0 |
-| 92 | `SETREMOTEVAR` | 10 | implemented | docs (`script variable value`); bus.RSE writes to the FINDSCRIPTRAND result without checking it, so a missing script (ID 0) is ignored |
-| 93 | `REPAIREFFECT` | 140 | hooked | docs (0 hide / 1 show) |
+| 86 | `STARTSCREAM` | 40 | hooked | TPW-EXE 0x555E5E (`band level`, resolved): 0x551130(handle +0xD0, band, level, script speed word, object position in whole units) gives the handle (kept at +0xD0 and in the flags); band 0 plays nothing, a start while a handle is held is refused; all 40 corpus uses pass VAR_ONRIDE as the band |
+| 87 | `STOPSCREAM` | 80 | hooked | TPW-EXE 0x555EF7 (no operands): with a handle (+0xD0) calls 0x51C300(handle), then clears the handle |
+| 88 | `SINGLESCREAM` | 46 | hooked | TPW-EXE 0x555F1B (`band level`, resolved): a one-shot at the object's position (0x556AF0): level below 0 (the corpus's 0xFFFF, 44 of 46 uses) calls 0x551560, else 0x551320(band, level, script speed word); no handle kept |
+| 89 | `SCREAMLEVEL` | 81 | hooked | TPW-EXE 0x555FDA (`level`, resolved): 0x551290(handle +0xD0, level, script speed word) sets the held voice's parameter 6 to clamp((level + speed) / 2, 0, 100), truncating toward zero, and does nothing without a handle (built; 10-100 occur) |
+| 90 | `FINDSCRIPTRAND` | 5 | implemented | TPW-EXE 0x55601A (`name dest`: a string operand, the destination raw): a random live script with that NAME (one world draw when any matches) gives its id to the flags and a variable destination; with no match the flags are 0 and the destination keeps its value (corpus: `FINDSCRIPTRAND "Zob Upgrade" VAR_SCRIPTID; BRANCH_Z none`) |
+| 91 | `GETREMOTEVAR` | 2 | implemented | TPW-EXE 0x55617F (`dest script variable`: the destination raw, the others resolved): the flags are cleared, then the other script's variable goes to the flags and a variable destination; an unknown script id or an index outside its variables leaves the destination as it was (corpus: `GETREMOTEVAR 0 VAR_SCRIPTID 0; BRANCH_Z`) |
+| 92 | `SETREMOTEVAR` | 10 | implemented | TPW-EXE 0x556216 (`script variable value`, resolved): writes the other script's variable and sets the flags to the value; an unknown script id (bus.RSE writes to the FINDSCRIPTRAND result without checking it) or an index outside its variables does nothing |
+| 93 | `REPAIREFFECT` | 140 | hooked | TPW-EXE 0x5562A6 (`on`, resolved): 0x556DE0(on) switches the type's repair effect (non-zero starts it, 0 ends it); then, from the compare at 0x5562C5, a non-zero value plays events 0x6F and 0xD3 of the global ride category at the object and 0 jumps to 0x55635F: with more than five variables 0x551320(variable 5, 1, 1, position), a band one-shot (silent for band 0) |
 | 94 | `GETCUSTPTCLCODE` | 0 | unknown | no corpus use; not implemented (executing it faults the script) |
 | 95 | `SETTIMER` | 40 | implemented | corpus: `SETTIMER 10000 … GETTIMER x; BRANCH_Z start` replaces the GETTIME time-out idiom; countdown in ms |
 | 96 | `GETTIMER` | 21 | implemented | corpus: `GETTIMER 0; BRANCH_NZ skip` staggers unloading; dest = remaining ms (≥ 0), sets flags |
@@ -646,8 +646,8 @@ handler attributes diverge.
 | 100 | `HOUR` | 1 | hooked | host-local civil hour: tp.exe 0x5566AC calls time/localtime and stores tm_hour in the result register; a variable operand receives it, a literal only sets the flags; the TPW runtime samples host time (PPC-clock.md) |
 | 101 | `MIN` | 1 | hooked | host-local civil minute (tm_min), as HOUR: tp.exe 0x5566FF calls time/localtime and stores tm_min in the result register; corpus `MIN 0; BRANCH_NZ` uses a literal dest for flags only |
 | 102 | `SEC` | 1 | hooked | host-local civil second (tm_sec), as HOUR: tp.exe 0x55674E calls time/localtime and stores tm_sec in the result register; corpus `SEC 0; BRANCH_NZ` |
-| 103 | `SETREVERB` | 21 | hooked | docs (0–10) |
-| 104 | `DIPMUSIC` | 8 | hooked | docs (0/1) |
+| 103 | `SETREVERB` | 21 | hooked | TPW-EXE 0x55649C (`level`, resolved): stores the word at +0xD8 and does nothing else in the handler (no reader inside the script module); the corpus uses 0, 1, 3, 8 and 9 |
+| 104 | `DIPMUSIC` | 8 | hooked | TPW-EXE 0x5564C0 (`on`, resolved): stores the low byte at +0xB9 and calls 0x51E710(on), which writes the global request word 0x803AD0 (and 0x803AC8 = 1) that the sound service reads to set one channel volume to 0 while it is non-zero (0x51BE5A..0x51BE9B); the script's end writes 0 again when the byte was set (0x558513); End.RSE and Gates.RSE, value 1 |
 | 105 | `SPARK` | 1 | implemented | TPW-EXE 0x5564ED (`a b c d`, resolved): stores a and b as words at +0xDC and +0xDE, looks the two key nodes (class 0x100) up and logs them; c and d are dropped; nothing reads the words, so no game effect (1 corpus use, Plasma) |
 
 Sources: OpenTPW docs (`src/formats/rsse.md`, `rsse-vm.md`,

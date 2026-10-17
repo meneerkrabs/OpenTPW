@@ -58,6 +58,8 @@ public class ScriptSandboxTests
 			Assert.AreEqual( expected, result.Outcome, $"{name}: {result.Message}" );
 			StringAssert.Contains( result.Message!.ToLowerInvariant(), message, name );
 			Assert.AreEqual( Previous, result.Value.AsInt, $"{name}: failure returns prev" );
+			if ( expected == ScriptOutcome.BudgetExhausted )
+				Assert.IsTrue( result.Line >= 1, $"{name}: the budget failure names a line, whichever charge ran out" );
 			Assert.AreEqual( before, ScriptState.Serialize( host.State ), $"{name}: state rolled back" );
 			Assert.IsTrue( result.Steps <= ScriptLimits.DefaultStepsPerCall + 1, $"{name}: {result.Steps} steps" );
 			// The host stays usable after any failure.
@@ -445,5 +447,134 @@ public class ScriptSandboxTests
 		}
 		StringAssert.Contains( Assert.ThrowsException<ScriptCompileException>( () => Compile( Map( ScriptLimits.MaxTableEntries + 1 ) ) ).Detail, "too many table entries" );
 		StringAssert.Contains( Assert.ThrowsException<ScriptCompileException>( () => Compile( Array( ScriptLimits.MaxTableEntries + 1 ) ) ).Detail, "too many table entries" );
+	}
+
+	private static readonly ScriptHostOptions Wide = new() { StepsPerCall = 1_000_000, StepsPerTick = 100_000_000 };
+
+	/// <summary>H1: a commit that fails validation is not free (4,095 strings of 1,024 characters used to cost nothing beyond the script's own steps).</summary>
+	[TestMethod]
+	public void FailedCommitValidationIsChargedForTheWorkDone()
+	{
+		var text = new string( 'x', ScriptLimits.MaxStringLength );
+		var elements = string.Join( ", ", Enumerable.Repeat( "s", ScriptLimits.MaxStateNodes - 1 ) );
+		var exploit = $"local s = \"{text}\"\nfunction f() state.a = {{ {elements} }} return 0 end";
+		var baseline = $"local s = \"{text}\"\nfunction f() local a = {{ {elements} }} return 0 end";
+		var host = Host( exploit, Wide );
+		var result = Call( host, "f" );
+		var script = Call( Host( baseline, Wide ), "f" ).Steps;
+		Assert.AreEqual( ScriptOutcome.InvalidResult, result.Outcome, result.Message );
+		StringAssert.Contains( result.Message, "larger" );
+		// The walk stops after about 64 strings (64K characters), each costing 1 + 1024/16 steps; it is charged, and bounded.
+		Assert.IsTrue( result.Steps >= script + 3000, $"commit work charged: {result.Steps} vs {script}" );
+		Assert.IsTrue( result.Steps <= script + 6000, $"commit work bounded: {result.Steps} vs {script}" );
+		Assert.AreEqual( Wide.StepsPerTick - result.Steps, host.TickStepsRemaining, "and charged to the tick as well" );
+		Assert.AreEqual( "{}", ScriptState.Serialize( host.State ) );
+	}
+
+	/// <summary>H1: the charge at a failed or successful commit is the same for a state rebuilt by a save round trip (different dictionary insertion order).</summary>
+	[TestMethod]
+	public void CommitChargesSurviveASaveRoundTrip()
+	{
+		const string source = """
+			function big()
+				local s = 'x'
+				for i = 1, 10 do s = s .. s end
+				return s
+			end
+			function init()
+				local s = big()
+				for i = 60, 1, -1 do state['k' .. i] = s end
+				return 1
+			end
+			function grow()
+				local s = big()
+				state.z3 = s
+				state.z2 = s
+				state.z1 = s
+				state.a0 = s
+				return 1
+			end
+			function touch()
+				state.k7 = 'y'
+				return 1
+			end
+			""";
+		var original = Host( source, Wide );
+		Assert.AreEqual( ScriptOutcome.Ok, Call( original, "init" ).Outcome );
+		var resumed = Host( source, Wide, ScriptState.Parse( ScriptState.Serialize( original.State ) ) );
+		foreach ( var hook in new[] { "grow", "touch" } )
+		{
+			var a = Call( original, hook );
+			var b = Call( resumed, hook );
+			Assert.AreEqual( a.Outcome, b.Outcome, hook );
+			Assert.AreEqual( a.Steps, b.Steps, $"{hook}: the same steps with and without a save round trip" );
+			Assert.AreEqual( a.Message, b.Message, hook );
+		}
+		Assert.AreEqual( ScriptOutcome.Ok, Call( Host( source, Wide, resumed.State ), "grow" ).Outcome, "after touch shrank k7 the same growth fits" );
+	}
+
+	/// <summary>L1: the budget is checked while the commit runs, also on success.</summary>
+	[TestMethod]
+	public void TheBudgetIsCheckedWhileCommitting()
+	{
+		const string source = "function main() state.a = {} for i = 1, 2000 do push(state.a, i) end return 1 end";
+		var steps = Call( Host( source, Wide ), "main" ).Steps;
+		var limit = steps - 500; // runs out during the walk or the write, not in the script
+		var host = Host( source, new ScriptHostOptions { StepsPerCall = limit } );
+		var result = Call( host, "main" );
+		Assert.AreEqual( ScriptOutcome.BudgetExhausted, result.Outcome );
+		Assert.AreEqual( limit + 1, result.Steps, "work stops at the budget, it does not run to the end first" );
+		Assert.AreEqual( "{}", ScriptState.Serialize( host.State ) );
+	}
+
+	/// <summary>L2: the byte limit is checked after every token, so 4,000 large integers cannot build more than about 64K characters.</summary>
+	[TestMethod]
+	public void TheWriterStopsAtTheByteLimitAfterEveryToken()
+	{
+		const string source = "function main() local big = 1000000000000000000 state.a = {} local a = state.a for i = 1, 4000 do push(a, big + i) end return 1 end";
+		var steps = Call( Host( "function main() local big = 1000000000000000000 local st = {} st.a = {} local a = st.a for i = 1, 4000 do push(a, big + i) end return 1 end", Wide ), "main" ).Steps;
+		var result = Call( Host( source, Wide ), "main" );
+		Assert.AreEqual( ScriptOutcome.InvalidResult, result.Outcome, result.Message );
+		StringAssert.Contains( result.Message, "larger" );
+		// Walk: one step per node (4,002). Write: one step per 16 characters up to the limit (4,096). Writing 4,000 integers in full would cost about 5,400.
+		Assert.IsTrue( result.Steps - steps <= 4002 + 4096 + 64, $"{result.Steps - steps}" );
+	}
+
+	/// <summary>L3: hook results are an int, a bool or a string; a table result cannot be asked for, and a diagnostic string is bounded.</summary>
+	[TestMethod]
+	public void TablesAreNotHookResults()
+	{
+		var host = Host( "function main() return state end" );
+		Assert.ThrowsException<ArgumentException>( () => host.Call( "main", ReadOnlySpan<ScriptValue>.Empty, 0, new ScriptResultSpec( ScriptKind.Table ), Identity ) );
+		Assert.ThrowsException<ArgumentException>( () => host.Call( "main", ReadOnlySpan<ScriptValue>.Empty, 0, new ScriptResultSpec( ScriptKind.Unit ), Identity ) );
+		var wrong = Call( host, "main" );
+		Assert.AreEqual( ScriptOutcome.InvalidResult, wrong.Outcome );
+		StringAssert.Contains( wrong.Message, "must return int, not table" );
+		Assert.AreEqual( "table[0]", ScriptValue.FromTable( ScriptState.Empty() ).ToString() );
+		// A shared subtree returned as a result is not expanded by anything.
+		var dag = Call( Host( "function main() local t = 'x' for i = 1, 30 do t = { t, t } end return t end", Wide ), "main" );
+		Assert.AreEqual( ScriptOutcome.InvalidResult, dag.Outcome );
+		Assert.IsTrue( dag.Message!.Length < 200 );
+	}
+
+	/// <summary>L4: an invalid key is an error for every kind of table, empty or not.</summary>
+	[TestMethod]
+	public void HasTreatsInvalidKeysTheSameForEveryTable()
+	{
+		Assert.AreEqual( ScriptOutcome.RuntimeError, Outcome( "return has({}, '') and 1 or 0" ) );
+		Assert.AreEqual( ScriptOutcome.RuntimeError, Outcome( "local b = has({}, '') return 1" ) );
+		Assert.AreEqual( ScriptOutcome.RuntimeError, Outcome( "local b = has({ a = 1 }, '') return 1" ) );
+		Assert.AreEqual( ScriptOutcome.RuntimeError, Outcome( "local b = has({}, '\u00e9') return 1" ) );
+		Assert.AreEqual( ScriptOutcome.RuntimeError, Outcome( "local b = has({}, true) return 1" ) );
+		Assert.AreEqual( 1, Eval( "if not has({}, 'ok') and not has({}, 3) and has({ ok = 1 }, 'ok') then return 1 end return 0" ) );
+	}
+
+	/// <summary>L6: running out of steps in a charge (here a concatenation) still names the line.</summary>
+	[TestMethod]
+	public void BudgetExhaustionInAChargeNamesTheLine()
+	{
+		var result = Run( "function main()\n  local s = 'x'\n  for i = 1, 10 do s = s .. s end\n  for i = 1, 5000 do\n    local t = s .. ''\n  end\n  return 1\nend" );
+		Assert.AreEqual( ScriptOutcome.BudgetExhausted, result.Outcome );
+		Assert.AreEqual( 5, result.Line );
 	}
 }

@@ -4,7 +4,7 @@ using System.Text;
 namespace OpenTPW.Scripting;
 
 /// <summary>
-/// The <c>state</c> schema (docs/SCRIPT-MODS.md): the root is a map; values are integers, strings (NFC), booleans, arrays and string-keyed
+/// The <c>state</c> schema (docs/SCRIPT-MODS.md): the root is a map; values are integers, strings (opaque UTF-16), booleans, arrays and string-keyed
 /// maps. No null, no cycles, no host views. Limits on depth, node count, key length and serialised bytes. The canonical serialisation is
 /// compact JSON with ordinal-sorted keys, so equal states give equal bytes on every platform. This phase has the codec and the validator;
 /// wiring them into park saves comes with the hooks.
@@ -15,14 +15,14 @@ public static class ScriptState
 	public static ScriptTable Empty() => new( null );
 
 	/// <summary>Checks the whole schema (including the byte limit) of <paramref name="root"/>. Throws <see cref="ScriptStateException"/>.</summary>
-	public static void Validate( ScriptTable root ) => Check( root, out _, out _ );
+	public static void Validate( ScriptTable root ) => Check( root, null );
 
 	/// <summary>The canonical serialisation of a valid state. Does not validate; use <see cref="Validate"/> first.</summary>
 	public static string Serialize( ScriptTable root )
 	{
-		var builder = new StringBuilder();
-		Write( builder, root, 0 );
-		return builder.ToString();
+		var writer = new Writer( ScriptLimits.MaxStateBytes, null );
+		writer.Table( root, 1 );
+		return writer.Text;
 	}
 
 	/// <summary>Parses and validates a canonical or hand-written JSON state. Throws <see cref="ScriptStateException"/> for anything outside the schema.</summary>
@@ -38,9 +38,9 @@ public static class ScriptState
 
 	internal static string Quote( string value )
 	{
-		var builder = new StringBuilder();
-		WriteString( builder, value, 0 );
-		return builder.ToString();
+		var writer = new Writer( 0, null );
+		writer.String( value );
+		return writer.Text;
 	}
 
 	/// <summary>
@@ -78,145 +78,207 @@ public static class ScriptState
 	}
 
 	/// <summary>
-	/// Validates the tree and reports its size (nodes visited and characters of the canonical form) so a commit can charge it to the call.
-	/// The work is bounded by the limits themselves: a table may appear only once (no shared subtrees, so no expansion and no cycles), the
-	/// walk stops at the node limit, and the serialisation stops as soon as it passes the byte limit.
+	/// Validates the tree. With a <paramref name="meter"/> (a commit), every step of the work is charged to the call as it happens: one step per
+	/// node, one more per 16 characters of string content, and one per 16 characters written, so the cost is paid on success and on failure alike
+	/// and the budget is checked while the work runs. The work is bounded by the limits themselves: a table may appear only once (no shared
+	/// subtrees, so no expansion and no cycles), the walk stops at the node limit and at 64 KiB of string content, and the serialisation stops as soon
+	/// as the canonical form passes the byte limit. Maps are visited in sorted key order, so the charge at a failure does not depend on how the
+	/// dictionary was built (a save round trip rebuilds maps in another insertion order).
 	/// </summary>
-	internal static void Check( ScriptTable root, out int nodes, out int characters )
+	internal static void Check( ScriptTable root, ScriptInterpreter? meter )
 	{
 		if ( root.ReadOnly )
 			throw new ScriptStateException( "state cannot be a host view" );
 		if ( root.Kind == ScriptTableKind.Array )
 			throw new ScriptStateException( "the root of state must be a map" );
-		var count = 0;
-		var seen = new HashSet<ScriptTable>( ReferenceEqualityComparer.Instance );
-		CheckTable( root, 1, ref count, seen );
-		var builder = new StringBuilder();
-		Write( builder, root, ScriptLimits.MaxStateBytes );
-		if ( Encoding.UTF8.GetByteCount( builder.ToString() ) > ScriptLimits.MaxStateBytes )
+		new Walk( meter ).Table( root, 1 );
+		var writer = new Writer( ScriptLimits.MaxStateBytes, meter );
+		writer.Table( root, 1 );
+		if ( Encoding.UTF8.GetByteCount( writer.Text ) > ScriptLimits.MaxStateBytes )
 			throw new ScriptStateException( $"state is larger than {ScriptLimits.MaxStateBytes} bytes" );
-		nodes = count;
-		characters = builder.Length;
 	}
 
-	private static void CheckTable( ScriptTable table, int depth, ref int nodes, HashSet<ScriptTable> seen )
+	private sealed class Walk
 	{
-		if ( depth > ScriptLimits.MaxStateDepth )
-			throw new ScriptStateException( $"state is nested deeper than {ScriptLimits.MaxStateDepth} levels" );
-		CountNode( ref nodes );
-		if ( table.ReadOnly )
-			throw new ScriptStateException( "state cannot hold a host view" );
-		if ( !seen.Add( table ) )
-			throw new ScriptStateException( "a table appears more than once in state (shared and cyclic tables are not allowed; copy it instead)" );
-		if ( table.Items != null )
+		private readonly ScriptInterpreter? meter;
+		private readonly HashSet<ScriptTable> seen = new( ReferenceEqualityComparer.Instance );
+		private int nodes;
+		private long characters;
+
+		public Walk( ScriptInterpreter? meter ) { this.meter = meter; }
+
+		private void Charge( long steps, long bytes ) => meter?.ChargeCommit( steps, bytes );
+
+		private void Node()
 		{
-			foreach ( var value in table.Items )
-				CheckValue( value, depth, ref nodes, seen );
+			if ( ++nodes > ScriptLimits.MaxStateNodes )
+				throw new ScriptStateException( $"state has more than {ScriptLimits.MaxStateNodes} values" );
+			Charge( 1, 0 );
 		}
-		else if ( table.Entries != null )
+
+		private void Text( string text )
 		{
-			foreach ( var (key, value) in table.Entries )
+			characters += text.Length;
+			if ( characters > ScriptLimits.MaxStateBytes )
+				throw new ScriptStateException( $"state is larger than {ScriptLimits.MaxStateBytes} bytes" );
+			Charge( text.Length / 16, 0 );
+		}
+
+		public void Table( ScriptTable table, int depth )
+		{
+			if ( depth > ScriptLimits.MaxStateDepth )
+				throw new ScriptStateException( $"state is nested deeper than {ScriptLimits.MaxStateDepth} levels" );
+			Node();
+			if ( table.ReadOnly )
+				throw new ScriptStateException( "state cannot hold a host view" );
+			if ( !seen.Add( table ) )
+				throw new ScriptStateException( "a table appears more than once in state (shared and cyclic tables are not allowed; copy it instead)" );
+			Charge( 0, 32 );
+			if ( table.Items != null )
 			{
-				if ( !IsValidKey( key ) )
-					throw new ScriptStateException( $"a key must be 1 to {ScriptLimits.MaxStateKeyLength} printable ASCII characters" );
-				CheckValue( value, depth, ref nodes, seen );
+				foreach ( var value in table.Items )
+					Value( value, depth );
+			}
+			else if ( table.Entries != null )
+			{
+				foreach ( var key in table.SortedKeys() )
+				{
+					if ( !IsValidKey( key ) )
+						throw new ScriptStateException( $"a key must be 1 to {ScriptLimits.MaxStateKeyLength} printable ASCII characters" );
+					Text( key );
+					Value( table.Entries[key], depth );
+				}
 			}
 		}
-	}
 
-	private static void CountNode( ref int nodes )
-	{
-		if ( ++nodes > ScriptLimits.MaxStateNodes )
-			throw new ScriptStateException( $"state has more than {ScriptLimits.MaxStateNodes} values" );
-	}
-
-	private static void CheckValue( ScriptValue value, int depth, ref int nodes, HashSet<ScriptTable> seen )
-	{
-		switch ( value.Kind )
+		private void Value( ScriptValue value, int depth )
 		{
-			case ScriptKind.Int:
-			case ScriptKind.Bool:
-				CountNode( ref nodes );
-				break;
-			case ScriptKind.String:
-				CountNode( ref nodes );
-				RequireString( value.RawString );
-				break;
-			case ScriptKind.Table:
-				CheckTable( value.RawTable, depth + 1, ref nodes, seen );
-				break;
-			default:
-				throw new ScriptStateException( "state cannot hold a missing value" );
+			switch ( value.Kind )
+			{
+				case ScriptKind.Int:
+				case ScriptKind.Bool:
+					Node();
+					break;
+				case ScriptKind.String:
+					Node();
+					RequireString( value.RawString );
+					Text( value.RawString );
+					break;
+				case ScriptKind.Table:
+					Table( value.RawTable, depth + 1 );
+					break;
+				default:
+					throw new ScriptStateException( "state cannot hold a missing value" );
+			}
 		}
 	}
 
 	// ----- canonical serialisation -----
 
-	private static void Write( StringBuilder builder, ScriptTable table, int limit )
+	/// <summary>Writes the canonical form, checking the size limit (and charging the meter) after every token, and refusing nesting past the depth limit.</summary>
+	private sealed class Writer
 	{
-		switch ( table.Kind )
-		{
-			case ScriptTableKind.Array:
-				builder.Append( '[' );
-				for ( int i = 0; i < table.Items!.Count; i++ )
-				{
-					if ( i > 0 )
-						builder.Append( ',' );
-					WriteValue( builder, table.Items[i], limit );
-				}
-				builder.Append( ']' );
-				break;
-			case ScriptTableKind.Map:
-				builder.Append( '{' );
-				var first = true;
-				foreach ( var key in table.SortedKeys() )
-				{
-					if ( !first )
-						builder.Append( ',' );
-					first = false;
-					WriteString( builder, key, limit );
-					builder.Append( ':' );
-					WriteValue( builder, table.Entries![key], limit );
-				}
-				builder.Append( '}' );
-				break;
-			default:
-				builder.Append( "{}" );
-				break;
-		}
-	}
+		private readonly StringBuilder builder = new();
+		private readonly int limit;
+		private readonly ScriptInterpreter? meter;
+		private int charged;
 
-	private static void WriteValue( StringBuilder builder, ScriptValue value, int limit )
-	{
-		switch ( value.Kind )
+		public Writer( int limit, ScriptInterpreter? meter )
 		{
-			case ScriptKind.Int: builder.Append( value.RawInt.ToString( CultureInfo.InvariantCulture ) ); break;
-			case ScriptKind.Bool: builder.Append( value.AsBool ? "true" : "false" ); break;
-			case ScriptKind.String: WriteString( builder, value.RawString, limit ); break;
-			case ScriptKind.Table: Write( builder, value.RawTable, limit ); break;
-			default: throw new ScriptStateException( "state cannot hold a missing value" );
+			this.limit = limit;
+			this.meter = meter;
 		}
-	}
 
-	private static void WriteString( StringBuilder builder, string value, int limit )
-	{
-		builder.Append( '"' );
-		foreach ( var c in value )
+		public string Text => builder.ToString();
+
+		private void Tick()
 		{
-			switch ( c )
+			if ( limit > 0 && builder.Length > limit )
+				throw new ScriptStateException( $"state is larger than {ScriptLimits.MaxStateBytes} bytes" );
+			if ( meter == null )
+				return;
+			var chunks = (builder.Length - charged) / 16;
+			if ( chunks > 0 )
 			{
-				case '"': builder.Append( "\\\"" ); break;
-				case '\\': builder.Append( "\\\\" ); break;
-				case < ' ':
-				case '\u007f':
-					builder.Append( "\\u" ).Append( ((int)c).ToString( "x4", CultureInfo.InvariantCulture ) );
-					break;
-				default: builder.Append( c ); break;
+				charged += chunks * 16;
+				meter.ChargeCommit( chunks, chunks * 32L );
 			}
 		}
-		builder.Append( '"' );
-		if ( limit > 0 && builder.Length > limit )
-			throw new ScriptStateException( $"state is larger than {ScriptLimits.MaxStateBytes} bytes" );
+
+		private void Put( char c )
+		{
+			builder.Append( c );
+			Tick();
+		}
+
+		public void Table( ScriptTable table, int depth )
+		{
+			if ( depth > ScriptLimits.MaxStateDepth )
+				throw new ScriptStateException( $"state is nested deeper than {ScriptLimits.MaxStateDepth} levels (or contains a cycle)" );
+			switch ( table.Kind )
+			{
+				case ScriptTableKind.Array:
+					Put( '[' );
+					for ( int i = 0; i < table.Items!.Count; i++ )
+					{
+						if ( i > 0 )
+							Put( ',' );
+						Value( table.Items[i], depth );
+					}
+					Put( ']' );
+					break;
+				case ScriptTableKind.Map:
+					Put( '{' );
+					var first = true;
+					foreach ( var key in table.SortedKeys() )
+					{
+						if ( !first )
+							Put( ',' );
+						first = false;
+						String( key );
+						Put( ':' );
+						Value( table.Entries![key], depth );
+					}
+					Put( '}' );
+					break;
+				default:
+					builder.Append( "{}" );
+					Tick();
+					break;
+			}
+		}
+
+		private void Value( ScriptValue value, int depth )
+		{
+			switch ( value.Kind )
+			{
+				case ScriptKind.Int: builder.Append( value.RawInt.ToString( CultureInfo.InvariantCulture ) ); Tick(); break;
+				case ScriptKind.Bool: builder.Append( value.AsBool ? "true" : "false" ); Tick(); break;
+				case ScriptKind.String: String( value.RawString ); break;
+				case ScriptKind.Table: Table( value.RawTable, depth + 1 ); break;
+				default: throw new ScriptStateException( "state cannot hold a missing value" );
+			}
+		}
+
+		public void String( string value )
+		{
+			builder.Append( '"' );
+			foreach ( var c in value )
+			{
+				switch ( c )
+				{
+					case '"': builder.Append( "\\\"" ); break;
+					case '\\': builder.Append( "\\\\" ); break;
+					case < ' ':
+					case '\u007f':
+						builder.Append( "\\u" ).Append( ((int)c).ToString( "x4", CultureInfo.InvariantCulture ) );
+						break;
+					default: builder.Append( c ); break;
+				}
+			}
+			builder.Append( '"' );
+			Tick();
+		}
 	}
 
 	// ----- parsing -----

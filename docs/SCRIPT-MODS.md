@@ -160,9 +160,11 @@ for it, and one that does pays in proportion to the entries it copies. Committed
 a free snapshot. Only a call that returns normally **and** has a valid result commits:
 
 1. the result has the hook's declared type and range (`ScriptResultSpec`), otherwise `InvalidResult`;
-2. the new `state` passes the schema (below), otherwise `InvalidResult`. Validating and measuring it is charged to the same
-   step and memory meters (nodes, plus the characters of its canonical form), so a call can run out of budget while
-   committing, which fails it like any other budget exhaustion;
+2. the new `state` passes the schema (below), otherwise `InvalidResult`. Validating it is charged to the same step and
+   memory meters **as the work happens, on every path**: one step per node, one per 16 characters of string content and one per
+   16 characters written. The budget is checked while it runs, so a call can run out of steps while committing (it fails like
+   any other budget exhaustion), and a commit that fails validation still pays for the work it did. Maps are visited in sorted
+   key order, so the charge does not depend on how a dictionary was built and is identical after a save round trip;
 3. then the new state replaces the old one. A call that changed no table, or never touched `state`, keeps the same state object.
 
 **Failure.** A runtime error, budget exhaustion or invalid result rolls `state` back and the call returns the `prev` value
@@ -192,8 +194,10 @@ language core only reports the outcome; the counting belongs to the game wiring.
 | Nodes (every table and every value) | 4096 |
 | Canonical size | 64 KiB of UTF-8 |
 
-Validation walks the tree once, stops at the node limit, and stops serialising as soon as the canonical form passes the byte
-limit, so it never builds more than about 64 KiB of text whatever a script did.
+Validation walks the tree once and stops at the node limit and at 64 KiB of string content (keys and values together). It
+then serialises, checking the byte limit after every token, so it never builds more than about 64 KiB of text. The walk visits
+at most 4096 nodes, and each costs steps as above; the 64 KiB bound is on the serialised text, not on the walk.
+Hook results are an int, a bool or a string (`ScriptResultSpec` with a table or no kind is refused); a table can never be a result.
 
 **Canonical serialisation.** `ScriptState.Serialize` writes compact JSON with maps in ordinal key order, integers in plain
 decimal, and strings with only `"`, `\` and the control characters (and DEL) escaped as `\uXXXX`; other characters are written as they are. Equal states give equal bytes

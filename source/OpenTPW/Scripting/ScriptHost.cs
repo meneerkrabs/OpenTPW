@@ -93,6 +93,8 @@ public sealed class ScriptHost
 	/// </summary>
 	public ScriptCallResult Call( string hook, ReadOnlySpan<ScriptValue> arguments, ScriptValue previous, ScriptResultSpec expected, ScriptCallIdentity identity )
 	{
+		if ( expected.Kind is not (ScriptKind.Int or ScriptKind.Bool or ScriptKind.String) )
+			throw new ArgumentException( "A hook result is an int, a bool or a string; tables cannot be hook results.", nameof( expected ) );
 		if ( !program.TryGetFunction( hook, out var index ) )
 			return new ScriptCallResult( previous, ScriptOutcome.RuntimeError, $"hook '{hook}' is not defined", 0, 0 );
 		if ( arguments.Length != program.Functions[index].ParameterCount )
@@ -149,13 +151,16 @@ public sealed class ScriptHost
 			var before = interpreter.Steps;
 			try
 			{
-				ScriptState.Check( root, out var nodes, out var characters );
-				interpreter.ChargeCommit( nodes + characters / 16, 2L * characters );
+				ScriptState.Check( root, interpreter );
 			}
 			catch ( ScriptStateException e ) { return Fail( previous, ScriptOutcome.InvalidResult, $"state: {e.Message}", 0 ); }
-			catch ( ScriptBudgetException e ) { return Fail( previous, ScriptOutcome.BudgetExhausted, e.Message, e.Line, interpreter.Steps - before ); }
-			catch ( ScriptRuntimeException e ) { return Fail( previous, ScriptOutcome.RuntimeError, e.Message, e.Line, interpreter.Steps - before ); }
-			tickRemaining -= interpreter.Steps - before;
+			catch ( ScriptBudgetException e ) { return Fail( previous, ScriptOutcome.BudgetExhausted, e.Message, e.Line ); }
+			catch ( ScriptRuntimeException e ) { return Fail( previous, ScriptOutcome.RuntimeError, e.Message, e.Line ); }
+			finally
+			{
+				// The commit work is charged as it happens, so it is paid on every path, including a failed validation.
+				tickRemaining -= interpreter.Steps - before;
+			}
 			State = root;
 		}
 		var steps = interpreter.Steps;
@@ -163,9 +168,8 @@ public sealed class ScriptHost
 		return new ScriptCallResult( value, ScriptOutcome.Ok, null, 0, steps );
 	}
 
-	private ScriptCallResult Fail( ScriptValue previous, ScriptOutcome outcome, string message, int line, long extraSteps = 0 )
+	private ScriptCallResult Fail( ScriptValue previous, ScriptOutcome outcome, string message, int line )
 	{
-		tickRemaining -= extraSteps;
 		var steps = interpreter.Steps;
 		interpreter.Reset();
 		return new ScriptCallResult( previous, outcome, message, line, steps );

@@ -53,7 +53,7 @@ public readonly struct ScriptValue
 		ScriptKind.Int => bits.ToString( System.Globalization.CultureInfo.InvariantCulture ),
 		ScriptKind.Bool => bits != 0 ? "true" : "false",
 		ScriptKind.String => ScriptState.Quote( (string)reference! ),
-		_ => ScriptState.Serialize( (ScriptTable)reference! )
+		_ => $"table[{((ScriptTable)reference!).Count}]"
 	};
 
 	internal static string KindName( ScriptKind kind ) => kind switch

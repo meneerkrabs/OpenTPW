@@ -288,6 +288,10 @@ internal sealed class ScriptInterpreter
 		{
 			throw new ScriptRuntimeException( e.Message, fn.Lines[Math.Max( pc - 1, 0 )] );
 		}
+		catch ( ScriptBudgetException e ) when ( e.Line == 0 )
+		{
+			throw new ScriptBudgetException( fn.Lines[Math.Max( pc - 1, 0 )] );
+		}
 		catch ( OverflowException )
 		{
 			throw new ScriptRuntimeException( "integer overflow", fn.Lines[Math.Max( pc - 1, 0 )] );
@@ -412,7 +416,10 @@ internal sealed class ScriptInterpreter
 				{
 					value = Adopt( value, out var cloned );
 					if ( cloned )
+					{
+						Writable( table );
 						table.Items[index] = value;
+					}
 				}
 				return value;
 			}
@@ -425,7 +432,10 @@ internal sealed class ScriptInterpreter
 				{
 					value = Adopt( value, out var cloned );
 					if ( cloned )
+					{
+						Writable( table );
 						table.Entries[name] = value;
+					}
 				}
 				return value;
 			}
@@ -559,6 +569,10 @@ internal sealed class ScriptInterpreter
 					case ScriptTableKind.Map:
 						return table.Entries!.ContainsKey( MapKey( key ) );
 					default:
+						if ( key.Kind == ScriptKind.String )
+							MapKey( key ); // an invalid key is an error for every kind of table
+						else if ( key.Kind != ScriptKind.Int )
+							throw Fail( $"a table key must be an int or a string, found {ScriptValue.KindName( key.Kind )}" );
 						return false;
 				}
 			}

@@ -27,6 +27,10 @@ internal sealed class AutomaticAdvisor : IDisposable
 	private ParkEconomyRuntime? park;
 	private GuestSimulation? guests;
 	private StaffWorldSimulation? staffWorld;
+	// The park turn the scan last ran for; not saved (a loaded or attached advisor takes the turn of its first update as the start).
+	private uint? lastScanTurn;
+	/// <summary>The most scan calls one update makes after the park advanced several turns (a fast game speed); the cursor, not a backlog, is what matters.</summary>
+	internal const uint MaximumScansPerUpdate = 32;
 
 	private AutomaticAdvisor( AdvisorController controller ) : this( controller, StopwatchSource() ) { }
 
@@ -88,6 +92,7 @@ internal sealed class AutomaticAdvisor : IDisposable
 	{
 		DetachLevel();
 		level = started;
+		lastScanTurn = null;
 		park = started.Park;
 		if ( park != null )
 		{
@@ -135,6 +140,7 @@ internal sealed class AutomaticAdvisor : IDisposable
 				Controller.Withdraw( message, AdvisorClock );
 		park = null;
 		level = null;
+		lastScanTurn = null;
 		CaptionSink = null;
 		presentation?.Kill();
 	}
@@ -350,6 +356,9 @@ internal sealed class AutomaticAdvisor : IDisposable
 		clock.SetPaused( gamePaused );
 		if ( level == null )
 			return;
+		// [BIN:TPW-EXE:0x0059A550 advisor update] the update scans first (0x59C680) and queues what passes, then serves the queue, whether or not the advisor is heard
+		if ( park != null )
+			ScanTurns( new EconomyMoneyState( park.Economy ), GameTick, GameType, TutorialEnabled, gamePaused );
 		// [BIN:STP-PPC:0x10006BB4 advisor response player] options byte +0x34 clear: the player returns 0 (0x10006BC0) before saying anything
 		// [BIN:STP-PPC:0x1000BBF0 controller playback wrapper] and the wrapper still succeeds, so the advice is picked, consumed and recorded silently with span 0
 		// [BIN:STP-PPC:0x10129308 options serializer] the object at TOC −0x763C is the options object; its +0x34 is saved as "AdvisorOn" (0x1012653C)
@@ -365,6 +374,35 @@ internal sealed class AutomaticAdvisor : IDisposable
 		}
 		presentation?.Update();
 		Controller.Update( () => AdvisorClock, () => GameTick, Play );
+	}
+
+	/// <summary>
+	/// The scan the advisor's update runs once per park turn (the original's thing update, which runs once per world turn, calls it once): one scan call per turn that has
+	/// passed since the last update, at most <see cref="MaximumScansPerUpdate"/>. A paused game, or no turn passed, scans nothing; the first call only takes the turn as its start.
+	/// </summary>
+	/// <returns>The scan calls made.</returns>
+	// [APPROX:ADVISOR-017] the advisor runs once per frame here, the original once per world turn: the scan is tied to the park's turn counter so its pace does not follow the frame rate, and a loaded or attached advisor starts counting at its first update
+	internal int ScanTurns( IAdvisorMoneyState? money, uint turn, int gameType, bool tutorialEnabled, bool paused )
+	{
+		if ( paused )
+			return 0;
+		if ( lastScanTurn is not { } previous )
+		{
+			lastScanTurn = turn;
+			return 0;
+		}
+		var passed = unchecked( turn - previous );
+		lastScanTurn = turn;
+		if ( passed == 0 || passed > int.MaxValue )
+			return 0;
+		var calls = (int)Math.Min( passed, MaximumScansPerUpdate );
+		for ( var call = 0; call < calls; call++ )
+		{
+			var outcome = Controller.ScanOnce( money, turn, gameType, tutorialEnabled );
+			if ( outcome is { Posted: { } posted, Admission: { } admission } )
+				Log.Trace( $"Advisor scan of row {outcome.ScoredRow}: advice {posted.MessageId} score {posted.Score} {admission.Eligibility}{(admission.Stored ? $" in slot {admission.Slot}" : admission.Acknowledged ? ", queue full" : "")}." );
+		}
+		return calls;
 	}
 
 	/// <summary>
@@ -482,6 +520,7 @@ internal sealed class AutomaticAdvisor : IDisposable
 	{
 		ValidateSnapshot( snapshot );
 		Controller.RestoreSnapshot( snapshot.Controller );
+		lastScanTurn = null;
 		// The rebase, not an offset on the source: the destination's own elapsed time (construction, pause
 		// screens) must not shift the saved reservations.
 		clock.RestoreMilliseconds( snapshot.AdvisorClockMilliseconds );

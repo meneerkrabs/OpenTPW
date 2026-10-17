@@ -147,7 +147,8 @@ subtracts nothing (`0x5e1cc0`). PDF identity: SHA-256
 | `GoldenTicketLocal.Visitors/PeopleInPark/Happiness/AtLeastThisManyHappyPeople/ProfitYear/RecentVisitors/RecentVisitorMonths` | jungle 100/200/75/150/15,000/350/6; space 3000/350/85/150/30,000/500/6 | Per-theme ticket thresholds; award texts TAG_SYSTEM 180–185 | data |
 | `GoldenTicketGlobal.CoasterHeight/GokartExcitement/WaterLength/MinCellsOwned/MinCellsCovered` | 105/90/50/3000/2000 | TAG_SYSTEM 186–191 (coaster, go-kart, water ride, big park, cameras, all land) | data; big park ↔ MinCellsOwned and cameras ↔ MinCellsCovered inferred |
 | `Tickets.CanEarnTicketsInTheme`, `Tickets.CanSpendTicketsInTheme`, `Keys.CostToEnter` | 1, 1, jungle 1 / hallow 1 / fantasy 3 / space 5 | Lobby: keys needed to enter (UIHELPTEXT 338) | data; key earning manual-confirmed, initial key/entry persistence approx |
-| Advisor `GT*`, `GoldTicketNearTo*` (the near-ticket hints scale the threshold, e.g. profit 0.9 × `ProfitYear`), `Wealth*`, `InTheRed*`, `WagesHigh.*`, `Bankrupted.Score` | | Advisor message scores | unused (advisor slice) |
+| Advisor `Wealth*`, `TakeLoan.Score`, `InTheRed*`, `WagesHigh.*`, `AwardMoved.Score`, `Bankrupted.Score` | | Advisor message scores and thresholds (`AdvisorScanCallbacks`; ADVISOR-SCAN.md "Money") | used by the advisor scan |
+| Advisor `GT*`, `GoldTicketNearTo*` (the near-ticket hints scale the threshold, e.g. profit 0.9 × `ProfitYear`) | | Advisor message scores | unused (advisor slice) |
 
 The bankruptcy rule is the bank's month routine (tp.exe `0x4d0370`), not a setting. A debit (`0x4d01f0`) that takes the
 balance from 0 or more below 0 stamps the park turn (+0x120); every debit stores the new balance as the last balance (+0x11C),
@@ -159,7 +160,7 @@ command 2; the park-closed word keeps its value. From then on the per-turn thing
 challenge system, the guests and staff walks), while the turn counter, the calendar, the bank's month, the staff pool and the
 golden-ticket checks go on. TAG_SYSTEM entries 123–127 ("If you stay in the red for six months you will be made bankrupt",
 ..., "the banks have closed your park") are the captions of the advisor's money messages 102 to 106: the advice 106 of this message shows entry 127 in the
-message tube (`0x59b620`, docs/LIPS.md "Captions"), the warnings 102 to 105 have no producer yet (ADVISOR-009), and the main loop silences the music and the crowd in state 4
+message tube (`0x59b620`, docs/LIPS.md "Captions"), the warnings 102 to 105 are produced by the advisor's scan from the bank (`AdvisorScanCallbacks`: 102 while a loan can be taken, 103 to 105 with none and below 3, 3 or 4, exactly 5 months in the red), and the main loop silences the music and the crowd in state 4
 (`0x54f86d`); the panel with the tick button (`0x48ac40`) is open (ECON-030). With the withdrawals flag (+0x114) clear, debits,
 instalments and payoffs charge nothing; it is imported from original saves and set in all shipped ones, and only the online layout replay clears it (`0x404140`, set again at its end), so a single-player park keeps it. Ledger categories come from UITEXT 164–169 and 356–360.
 

@@ -2,7 +2,7 @@
 
 Usage:
   Blender -b --factory-startup --python tools/blender/opentpw_swim_sprites.py -- --out /tmp/swimart [--edition TPW|TPI] \
-      [--sets BE,CH] [--binary-alpha] [--overview-dir /path/to/reports]
+      [--sets BE,CH] [--binary-alpha] [--overview-dir /path/to/reports] [--no-quantise] [--dither 0.03] [--verify]
 
 Per set it writes ``<out>/<edition>/<SET>/<slot>_d<direction>_f<frame>.png`` (RGBA; 64 x 48 for the TPW sets, 80 x 64 for
 the TPI sets, which are rendered larger), where the slot is
@@ -13,7 +13,11 @@ direction-major per slot, so the sprite index of a frame is ``direction * frames
 
 The sprite origin (the hotspot) is the edition's ``swim_origin`` pixel of every frame (TPW (32, 27), TPI (40, 36)): the centre of the swimmer's torso, at
 the water line. Everything below the water line is tinted blue and partly transparent (the sprite is drawn over the
-pool's water); ``--binary-alpha`` makes every pixel fully opaque or fully transparent instead, for palette sprite sets.
+pool's water); ``--binary-alpha`` makes every pixel fully opaque or fully transparent instead, for palette sprite sets. The frames of a
+set are quantised to one shared 255-colour palette (weighted median cut over RGBA, like SpriteSetBuilder, optionally with
+an ordered ``--dither``), as a sprite bank stores them, and that is what the sheets and GIFs show; the unquantised
+frames are kept in ``<SET>/truecolor/`` (``--no-quantise`` writes only those). ``--verify`` checks the crawl's roll and
+head turn numerically and the back-view visibility of the arms (see ``verify_crawl`` and ``visibility_check``).
 It also writes a contact sheet and an animated GIF per set (on a flat pool-blue background, for looking at), and with
 ``--overview-dir`` the combined overview GIF and contact sheet of all sets.
 """
@@ -24,6 +28,7 @@ import sys
 
 import bpy
 import bmesh
+import mathutils
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -58,13 +63,13 @@ def _interp(keys, phase):
 def crawl_pose(f, n=8):
 	ph = f / n
 	tau = 2 * math.pi
-	pose = {"root": (0, 0, 0.1 + 0.06 * math.sin(tau * 2 * ph)), "pitch": -80, "roll": -30 * math.sin(tau * ph),
+	pose = {"root": (0, 0, 0.2 + 0.06 * math.sin(tau * 2 * ph)), "pitch": -78, "roll": -44 * math.sin(tau * ph),
 		"head_yaw": -55 * max(0.0, math.sin(tau * (ph + 0.12))), "head_pitch": 18, "arm": {}, "elbow": {}, "leg": {}, "knee": {}, "ankle": {}}
 	for s in (-1, 1):
 		psi = (ph + (0.0 if s < 0 else 0.5)) % 1.0
 		swing = 180 - 360 * psi
 		recover = psi >= 0.5
-		abd = 8 + (46 * math.sin(math.pi * (psi - 0.5) / 0.5) if recover else 0)
+		abd = 10 + (66 * math.sin(math.pi * (psi - 0.5) / 0.5) if recover else 0)
 		flex = (-8 - 30 * math.sin(math.pi * psi / 0.5)) if not recover else (-14 - 80 * math.sin(math.pi * (psi - 0.5) / 0.5))
 		pose["arm"][s] = (swing, abd)
 		pose["elbow"][s] = flex
@@ -215,16 +220,105 @@ def make_gif(frames, path, fps, workdir):
 
 def parse():
 	a = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
-	o = dict(out="/tmp/swimart", sets=None, binary=False, overview=None, edition="TPW")
+	o = dict(out="/tmp/swimart", sets=None, binary=False, overview=None, edition="TPW", quantise=True, dither=None, verify=False)
 	i = 0
 	while i < len(a):
 		if a[i] == "--out": o["out"] = a[i + 1]; i += 2
 		elif a[i] == "--sets": o["sets"] = a[i + 1].split(","); i += 2
 		elif a[i] == "--edition": o["edition"] = a[i + 1]; i += 2
+		elif a[i] == "--no-quantise": o["quantise"] = False; i += 1
+		elif a[i] == "--dither": o["dither"] = float(a[i + 1]); i += 2
+		elif a[i] == "--verify": o["verify"] = True; i += 1
 		elif a[i] == "--binary-alpha": o["binary"] = True; i += 1
 		elif a[i] == "--overview-dir": o["overview"] = a[i + 1]; i += 2
 		else: raise SystemExit(f"unknown argument {a[i]}")
 	return o
+
+
+def verify_crawl(kid):
+	"""Per frame of the crawl: the recovering arm must be on the side whose shoulder is rolled up, and the face must be turned towards that side when the head is turned. Returns (frames checked, roll
+	ok, head ok)."""
+	n = SLOTS["A"][1]
+	checked = roll_ok = head_ok = 0
+	for f in range(n):
+		K.apply_pose(kid, crawl_pose(f, n))
+		rec = 1 if f / n < 0.5 else -1      # the arm in its recovery half (see crawl_pose)
+		checked += 1
+		sz = {s: kid.pivots[f"shoulder{s}"].matrix_world.translation.z for s in (-1, 1)}
+		roll_ok += sz[rec] >= sz[-rec] - 0.02          # equal at the frames where the roll passes through zero
+		fwd = kid.pivots["head"].matrix_world.to_3x3() @ mathutils.Vector((0, 1, 0))
+		turned = abs(fwd.x) > 0.25
+		side = kid.pivots[f"shoulder{rec}"].matrix_world.translation.x
+		head_ok += (not turned) or fwd.x * side > 0
+	return checked, roll_ok, head_ok
+
+
+def _mask_material(name, above, below):
+	m = bpy.data.materials.new(name)
+	m.use_nodes = True
+	nt = m.node_tree
+	for n in list(nt.nodes):
+		nt.nodes.remove(n)
+	out = nt.nodes.new("ShaderNodeOutputMaterial")
+	em = nt.nodes.new("ShaderNodeEmission")
+	geo = nt.nodes.new("ShaderNodeNewGeometry")
+	sep = nt.nodes.new("ShaderNodeSeparateXYZ")
+	gt = nt.nodes.new("ShaderNodeMath")
+	gt.operation = "GREATER_THAN"
+	gt.inputs[1].default_value = 0.02
+	mix = nt.nodes.new("ShaderNodeMix")
+	mix.data_type = "RGBA"
+	mix.inputs[6].default_value = (*below, 1)
+	mix.inputs[7].default_value = (*above, 1)
+	nt.links.new(geo.outputs["Position"], sep.inputs[0])
+	nt.links.new(sep.outputs["Z"], gt.inputs[0])
+	nt.links.new(gt.outputs[0], mix.inputs[0])
+	nt.links.new(mix.outputs[2], em.inputs["Color"])
+	nt.links.new(em.outputs[0], out.inputs["Surface"])
+	m.surface_render_method = "DITHERED"
+	return m
+
+
+def visibility_check(st, names, rings):
+	"""Renders colour-coded masks (arms red, shoulder balls blue, the rest grey; bright when above the water) of the crawl
+	from directions 0 and 1 and counts, per frame, the visible arm and shoulder pixels (at sprite size). The acceptance
+	rule: arms or shoulders visible (arm >= 6 px or shoulder >= 4 px above the water) in at least half of the frames."""
+	arm_m, sh_m, other = _mask_material("mArm", (1, 0, 0), (0.25, 0, 0)), _mask_material("mSh", (0, 0, 1), (0, 0, 0.25)), _mask_material("mOther", (0.2, 0.2, 0.2), (0.2, 0.2, 0.2))
+	for r in rings:
+		r.hide_render = True
+	n = SLOTS["A"][1]
+	results = {}
+	tmp = f"/tmp/swimart-mask-{os.getpid()}.png"
+	for name in names:
+		kid = K.build_kid(name, underwater=False, swim=True)
+		for o in kid.objects:
+			if o.type == "MESH":
+				o.data.materials.clear()
+				kind = other
+				if o.name.startswith(("upperArm", "foreArm", "hand")):
+					kind = arm_m
+				elif o.name.startswith("shoulderBall"):
+					kind = sh_m
+				o.data.materials.append(kind)
+		for d in (0, 1):
+			ok_arm = ok_any = 0
+			arm_px = []
+			for f in range(n):
+				K.apply_pose(kid, crawl_pose(f, n))
+				K.aim_camera(st, d)
+				st.scene.render.filepath = tmp
+				bpy.ops.render.render(write_still=True)
+				hi = K._read_png(tmp)
+				red = ((hi[..., 0] > 0.9) & (hi[..., 1] < 0.15) & (hi[..., 2] < 0.15) & (hi[..., 3] > 0.5)).sum() / K.SUPERSAMPLE ** 2
+				blue = ((hi[..., 2] > 0.9) & (hi[..., 0] < 0.15) & (hi[..., 1] < 0.15) & (hi[..., 3] > 0.5)).sum() / K.SUPERSAMPLE ** 2
+				arm_px.append(int(round(red)))
+				ok_arm += red >= 6
+				ok_any += (red >= 6) or (blue >= 4)
+			results[(name, d)] = (ok_arm, ok_any, arm_px)
+		K.clear_kid(kid)
+	for r in rings:
+		r.hide_render = False
+	return results
 
 
 def main():
@@ -243,7 +337,16 @@ def main():
 	m_drop = K._emissive("drop", (0.86, 0.95, 1.0, 1.0), 0.9)
 	rings = (make_ring("ringInner", m_foam), make_ring("ringOuter", m_foam2))
 	frames = {}   # (set, slot, direction, frame) -> array
-	tmp = os.path.join(o["out"], "tmp.png")
+	tmp = os.path.join(o["out"], f"tmp-{os.getpid()}.png")
+	if o["verify"]:
+		for name in o["sets"]:
+			kid = K.build_kid(name, underwater=True, swim=True)
+			c, r, h = verify_crawl(kid)
+			print(f"verify {name}: recovering frames {c}, roll ok {r}/{c}, head turn ok {h}/{c}", flush=True)
+			K.clear_kid(kid)
+		for (name, d), (ok_arm, ok_any, px) in visibility_check(st, o["sets"], rings).items():
+			print(f"visible {name} d{d}: arm >= 6 px in {ok_arm}/8 frames, arm or shoulder in {ok_any}/8 (arm px {px})", flush=True)
+		return
 	for name in o["sets"]:
 		kid = K.build_kid(name, underwater=True, swim=True)
 		sd = os.path.join(o["out"], tag, name)
@@ -258,10 +361,19 @@ def main():
 					K.aim_camera(st, d)
 					a = K.render_frame(st, tmp, binary_alpha=o["binary"])
 					frames[(name, slot, d, f)] = a
-					K.write_png(a, os.path.join(sd, f"{slot}_d{d}_f{f}.png"))
+					if not o["quantise"]:
+						K.write_png(a, os.path.join(sd, f"{slot}_d{d}_f{f}.png"))
 				for dr in drops:
 					bpy.data.objects.remove(dr, do_unlink=True)
 		K.clear_kid(kid)
+		if o["quantise"]:
+			keys = sorted(k for k in frames if k[0] == name)
+			q, _ = K.quantise_set([frames[k] for k in keys], dither=o["dither"])
+			os.makedirs(os.path.join(sd, "truecolor"), exist_ok=True)
+			for k, a in zip(keys, q):
+				K.write_png(frames[k], os.path.join(sd, "truecolor", f"{k[1]}_d{k[2]}_f{k[3]}.png"))
+				K.write_png(a, os.path.join(sd, f"{k[1]}_d{k[2]}_f{k[3]}.png"))
+				frames[k] = a
 		# Contact sheet: three blocks (slots), each 5 direction rows by up to 8 frame columns.
 		cells = []
 		for slot, (anim, n) in SLOTS.items():
@@ -275,6 +387,11 @@ def main():
 			gif.append(grid(cs, DIRECTIONS, 3))
 		make_gif(gif, os.path.join(o["out"], tag, f"{name}-swim.gif"), 8, os.path.join(o["out"], "gifwork"))
 		print("done", name, flush=True)
+	if full:   # crawl check: per set the crawl from the front (direction 4) and from the back (direction 0), 8 frames each
+		cells = []
+		for name in all_sets:
+			cells += [frames[(name, "A", 4, f)] for f in range(8)] + [frames[(name, "A", 0, f)] for f in range(8)]
+		K.write_png(grid(cells, 16, 2), os.path.join(o["out"], f"crawl-check-{tag}.png"))
 	if full:
 		overview = []
 		for t in range(8):

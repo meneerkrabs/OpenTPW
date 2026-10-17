@@ -29,19 +29,25 @@ EDITIONS = {
 	"TPI": dict(elevation=42.0, ppu=12.8, cell=(64, 80), feet=(32, 70), swim_canvas=(80, 64), swim_origin=(40, 36)),
 }
 SUPERSAMPLE = 6              # the frame is rendered this many times larger and box-filtered down
-OUTLINE_DARKEN = 0.58        # colour factor of the silhouette's outermost pixels (the originals have dark edges)
+SHARPEN = 0.2                # unsharp-mask weight after the downsample (the originals are crisp)
+QUANTISE_COLOURS = 255       # the sprite banks' palette size (index 0 is transparent)
+DITHER = 0.0                 # ordered-dither amplitude (fraction of full range) applied before palette mapping
+OUTLINE_DARKEN = 0.7        # colour factor of the silhouette's outermost pixels (the originals have dark edges)
 # Three suns parented to the camera: a warm key from above and the upper left, a cool fill from the right and a rim
 # from behind and above (it only catches edges, which gives the bright rim of the originals).
+LIGHT_SHADOWS = False
 SUN_ENERGY = 6.0
 SUN_ROTATION_DEG = (-48.0, -22.0, 0.0)
 FILL_ENERGY = 0.5
 FILL_ROTATION_DEG = (-20.0, 55.0, 0.0)
-RIM_ENERGY = 2.4
+RIM_ENERGY = 2.0
 RIM_ROTATION_DEG = (-28.0, 180.0 - 18.0, 0.0)
 WORLD_COLOUR = (0.78, 0.82, 0.95)
-WORLD_STRENGTH = 0.26
-GRADE_SATURATION = 1.15      # post-process grade towards the originals' saturated palette
-GRADE_CONTRAST = 1.25
+WORLD_STRENGTH = 0.34
+AO_FLOOR = 0.8              # how dark creases get
+GRADE_SATURATION = 1.0      # post-process grade towards the originals' saturated palette
+GRADE_CONTRAST = 1.2
+SHADOW_TINT = (0.07, 0.0, 0.02)
 WATER_TINT = (0.66, 0.9, 1.0)            # multiplied into submerged colours
 WATER_BLUE = (0.16, 0.58, 0.95)          # mixed into submerged colours
 WATER_MIX = 0.3
@@ -49,6 +55,8 @@ SUBMERGED_ALPHA = 0.74
 
 # Body proportions (Blender units). The kid's head is about 40 % of the sprite's height; the adults are taller with
 # longer limbs and a smaller head. ``th``/``tw``/``td`` are the torso's half height, half width and half depth.
+WET_HAIR_DARKEN = 0.72
+WET_HAIR_SCALE = 0.88    # wet hair sits closer to the head
 SWIM_ARM_SCALE = 1.3
 SWIM_LEG_SCALE = 1.12
 BODIES = {
@@ -105,76 +113,103 @@ class Kid:
 		self.ends = {}
 
 
-def _variation(nt, kind):
-	"""A grey 0..1 pattern socket for a material kind: hair strands, fabric weave and folds, or skin mottling."""
+def _noise(nt, tc, scale, detail=4.0, rough=0.55):
+	n = nt.nodes.new("ShaderNodeTexNoise")
+	n.inputs["Scale"].default_value = scale
+	n.inputs["Detail"].default_value = detail
+	n.inputs["Roughness"].default_value = rough
+	nt.links.new(tc.outputs["Object"], n.inputs["Vector"])
+	return n.outputs["Fac"]
+
+
+def _ramp(nt, socket, lo, hi):
+	r = nt.nodes.new("ShaderNodeValToRGB")
+	r.color_ramp.elements[0].color = (lo, lo, lo, 1)
+	r.color_ramp.elements[1].color = (hi, hi, hi, 1)
+	nt.links.new(socket, r.inputs[0])
+	return r.outputs[0]
+
+
+def _mul(nt, a, b):
+	m = nt.nodes.new("ShaderNodeMix")
+	m.data_type = "RGBA"
+	m.blend_type = "MULTIPLY"
+	m.inputs[0].default_value = 1.0
+	for idx, v in ((6, a), (7, b)):
+		if isinstance(v, tuple):
+			m.inputs[idx].default_value = v
+		else:
+			nt.links.new(v, m.inputs[idx])
+	return m.outputs[2]
+
+
+def _painted_albedo(nt, base, kind, texobj=None):
+	"""The base colour times a painted variation: brush-stroke value variation, a warm/cool tint wander and, for hair
+	and fabric, strands or folds. Returns a colour socket (or the constant when the kind has no pattern)."""
+	if kind == "plain":
+		return base
 	tc = nt.nodes.new("ShaderNodeTexCoord")
+	if texobj is not None:
+		tc.object = texobj   # one shared texture space for the whole figure, so segments agree where they meet
 	if kind == "hair":
 		wave = nt.nodes.new("ShaderNodeTexWave")
 		wave.wave_type = "BANDS"
 		wave.bands_direction = "Z"
-		wave.inputs["Scale"].default_value = 7.0
-		wave.inputs["Distortion"].default_value = 6.0
+		wave.inputs["Scale"].default_value = 8.0
+		wave.inputs["Distortion"].default_value = 7.0
 		wave.inputs["Detail"].default_value = 3.0
-		nz = nt.nodes.new("ShaderNodeTexNoise")
-		nz.inputs["Scale"].default_value = 9.0
-		nz.inputs["Detail"].default_value = 4.0
 		nt.links.new(tc.outputs["Object"], wave.inputs["Vector"])
-		nt.links.new(tc.outputs["Object"], nz.inputs["Vector"])
-		mix = nt.nodes.new("ShaderNodeMath")
-		mix.operation = "ADD"
-		mix.inputs[1].default_value = 0.0
-		nt.links.new(wave.outputs["Fac"], mix.inputs[0])
-		mul = nt.nodes.new("ShaderNodeMath")
-		mul.operation = "MULTIPLY"
-		nt.links.new(mix.outputs[0], mul.inputs[0])
-		nt.links.new(nz.outputs["Fac"], mul.inputs[1])
-		return mul.outputs[0], (0.38, 1.0)
-	if kind == "fabric":
+		strokes = _ramp(nt, wave.outputs["Fac"], 0.5, 1.12)
+		patch = _ramp(nt, _noise(nt, tc, 5.0, 3.0), 0.72, 1.0)
+		var = _mul(nt, strokes, patch)
+	elif kind == "fabric":
 		wave = nt.nodes.new("ShaderNodeTexWave")
 		wave.wave_type = "BANDS"
 		wave.bands_direction = "Y"
-		wave.inputs["Scale"].default_value = 6.0
-		wave.inputs["Distortion"].default_value = 2.5
-		wave.inputs["Detail"].default_value = 1.0
+		wave.inputs["Scale"].default_value = 5.0
+		wave.inputs["Distortion"].default_value = 3.0
+		wave.inputs["Detail"].default_value = 2.0
 		nt.links.new(tc.outputs["Object"], wave.inputs["Vector"])
-		return wave.outputs["Fac"], (0.66, 1.0)
-	nz = nt.nodes.new("ShaderNodeTexNoise")
-	nz.inputs["Scale"].default_value = 5.0
-	nz.inputs["Detail"].default_value = 3.0
-	nt.links.new(tc.outputs["Object"], nz.inputs["Vector"])
-	return nz.outputs["Fac"], (0.93, 1.0)
+		folds = _ramp(nt, wave.outputs["Fac"], 0.7, 1.08)
+		patch = _ramp(nt, _noise(nt, tc, 6.0, 4.0), 0.82, 1.05)
+		var = _mul(nt, folds, patch)
+	else:  # skin and other painted surfaces: dabs of slightly different value
+		# Isotropic noise only: cell patterns (Voronoi) stretch into rings on thin limbs.
+		dabs = _ramp(nt, _noise(nt, tc, 7.0, 3.0, 0.5), 0.93, 1.05)
+		patch = _ramp(nt, _noise(nt, tc, 3.0, 2.0), 0.92, 1.03)
+		var = _mul(nt, dabs, patch)
+	out = _mul(nt, base, var)
+	# A slow warm/cool wander of the hue, like paint mixed on the palette.
+	wander = nt.nodes.new("ShaderNodeMix")
+	wander.data_type = "RGBA"
+	wander.inputs[0].default_value = 0.0
+	nt.links.new(_ramp(nt, _noise(nt, tc, 2.5, 2.0), 0.0, 0.3), wander.inputs[0])
+	nt.links.new(out, wander.inputs[6])
+	wander.inputs[7].default_value = (1.0, 0.78, 0.62, 1.0) if kind in ("skin", "plain") else (0.85, 0.85, 1.0, 1.0)
+	wmul = nt.nodes.new("ShaderNodeMix")
+	wmul.data_type = "RGBA"
+	wmul.blend_type = "MULTIPLY"
+	wmul.inputs[0].default_value = 0.18
+	nt.links.new(out, wmul.inputs[6])
+	nt.links.new(wander.outputs[2], wmul.inputs[7])
+	return wmul.outputs[2]
 
 
-def _principled(name, colour, underwater, rough=0.65, kind="plain", spec=0.3):
+def _principled(name, colour, underwater, rough=0.65, kind="plain", spec=0.3, painted=True, texobj=None):
+	"""A material. ``painted`` builds the pre-render look (a diffuse shading ramp with warm shadows, ambient occlusion
+	and no specular, over a painted albedo); otherwise a plain glossy Principled BSDF (eyes)."""
 	m = bpy.data.materials.new(name)
 	m.use_nodes = True
 	nt = m.node_tree
+	out_node = nt.nodes["Material Output"]
 	b = nt.nodes["Principled BSDF"]
 	b.inputs["Roughness"].default_value = rough
 	for key in ("Specular IOR Level", "Specular"):
 		if key in b.inputs:
 			b.inputs[key].default_value = spec
 	base = colour
-	base_socket = None
-	if kind != "plain":
-		pat, (lo, hi) = _variation(nt, kind)
-		ramp = nt.nodes.new("ShaderNodeValToRGB")
-		ramp.color_ramp.elements[0].color = (lo, lo, lo, 1)
-		ramp.color_ramp.elements[1].color = (hi, hi, hi, 1)
-		nt.links.new(pat, ramp.inputs[0])
-		tex = nt.nodes.new("ShaderNodeMix")
-		tex.data_type = "RGBA"
-		tex.blend_type = "MULTIPLY"
-		tex.inputs[0].default_value = 1.0
-		tex.inputs[6].default_value = base
-		nt.links.new(ramp.outputs[0], tex.inputs[7])
-		base_socket = tex.outputs[2]
-		if kind in ("hair", "fabric"):
-			bump = nt.nodes.new("ShaderNodeBump")
-			bump.inputs["Strength"].default_value = 0.5 if kind == "hair" else 0.08
-			bump.inputs["Distance"].default_value = 0.05
-			nt.links.new(pat, bump.inputs["Height"])
-			nt.links.new(bump.outputs["Normal"], b.inputs["Normal"])
+	albedo = _painted_albedo(nt, base, kind, texobj) if painted else base
+	under = None
 	if underwater:
 		m.surface_render_method = "DITHERED"
 		geo = nt.nodes.new("ShaderNodeNewGeometry")
@@ -184,37 +219,53 @@ def _principled(name, colour, underwater, rough=0.65, kind="plain", spec=0.3):
 		under.inputs[1].default_value = 0.0
 		nt.links.new(geo.outputs["Position"], sep.inputs[0])
 		nt.links.new(sep.outputs["Z"], under.inputs[0])
-		mul = nt.nodes.new("ShaderNodeMix")
-		mul.data_type = "RGBA"
-		mul.blend_type = "MULTIPLY"
-		mul.inputs[0].default_value = 1.0
-		mul.inputs[6].default_value = base
-		if base_socket is not None:
-			nt.links.new(base_socket, mul.inputs[6])
-		mul.inputs[7].default_value = (*WATER_TINT, 1.0)
+		tinted = _mul(nt, albedo, (*WATER_TINT, 1.0))
 		blue = nt.nodes.new("ShaderNodeMix")
 		blue.data_type = "RGBA"
 		blue.inputs[0].default_value = WATER_MIX
-		nt.links.new(mul.outputs[2], blue.inputs[6])
+		nt.links.new(tinted, blue.inputs[6])
 		blue.inputs[7].default_value = (*WATER_BLUE, 1.0)
 		final = nt.nodes.new("ShaderNodeMix")
 		final.data_type = "RGBA"
-		final.inputs[6].default_value = base
-		if base_socket is not None:
-			nt.links.new(base_socket, final.inputs[6])
+		if isinstance(albedo, tuple):
+			final.inputs[6].default_value = albedo
+		else:
+			nt.links.new(albedo, final.inputs[6])
 		nt.links.new(blue.outputs[2], final.inputs[7])
 		nt.links.new(under.outputs[0], final.inputs[0])
-		nt.links.new(final.outputs[2], b.inputs["Base Color"])
+		albedo = final.outputs[2]
+	alpha = None
+	if under is not None:
 		alpha = nt.nodes.new("ShaderNodeMath")
 		alpha.operation = "MULTIPLY_ADD"
 		alpha.inputs[1].default_value = -(1.0 - SUBMERGED_ALPHA)
 		alpha.inputs[2].default_value = 1.0
 		nt.links.new(under.outputs[0], alpha.inputs[0])
+	if not painted:
+		if isinstance(albedo, tuple):
+			b.inputs["Base Color"].default_value = albedo
+		else:
+			nt.links.new(albedo, b.inputs["Base Color"])
+		if alpha is not None:
+			nt.links.new(alpha.outputs[0], b.inputs["Alpha"])
+		return m
+	# Painted shading: a purely diffuse Principled BSDF (no specular) whose albedo is darkened in creases by ambient
+	# occlusion; the warm shadow tint is applied in ``grade``.
+	try:
+		ao = nt.nodes.new("ShaderNodeAmbientOcclusion")
+		ao.inputs["Distance"].default_value = 0.45
+		ao.samples = 8
+		aomix = nt.nodes.new("ShaderNodeMix")
+		aomix.data_type = "RGBA"
+		aomix.inputs[6].default_value = (AO_FLOOR, AO_FLOOR * 0.92, AO_FLOOR * 0.9, 1)
+		aomix.inputs[7].default_value = (1, 1, 1, 1)
+		nt.links.new(ao.outputs["AO"], aomix.inputs[0])
+		albedo = _mul(nt, albedo, aomix.outputs[2])
+	except Exception:
+		pass
+	nt.links.new(albedo, b.inputs["Base Color"])
+	if alpha is not None:
 		nt.links.new(alpha.outputs[0], b.inputs["Alpha"])
-	elif base_socket is not None:
-		nt.links.new(base_socket, b.inputs["Base Color"])
-	else:
-		b.inputs["Base Color"].default_value = base
 	return m
 
 
@@ -278,16 +329,38 @@ def _mesh(kid, kind, name, size, loc, material, parent, rot=(0, 0, 0), smooth=Tr
 
 
 def _limb(kid, name, a, b, r1, r2, material, parent):
-	"""A tapered limb segment from point a (radius r1) to b (radius r2), in the parent's space."""
+	"""A smooth tapered limb segment from point a (radius r1) to b (radius r2), in the parent's space: a capsule made
+	from a UV sphere whose two halves are pulled apart (one smooth surface, so no stripes where cones would meet)."""
 	a, b = mathutils.Vector(a), mathutils.Vector(b)
 	d = b - a
-	bpy.ops.mesh.primitive_cone_add(vertices=10, radius1=r1, radius2=r2, depth=1)
+	length = d.length
+	bpy.ops.mesh.primitive_uv_sphere_add(segments=20, ring_count=13, radius=1)
 	o = bpy.context.active_object
 	o.name = name
-	o.scale = (1, 1, d.length)
-	o.location = (a + b) / 2
+	dome = 0.5   # shallow end caps, so two segments meeting at a joint do not pinch into a chain of balls
+	top = max(length - r2 * dome, r1 * dome + 0.001)
+	for v in o.data.vertices:
+		x, y, z = v.co
+		if z > 0:
+			v.co = (x * r2, y * r2, top + z * r2 * dome)
+		else:
+			v.co = (x * r1, y * r1, r1 * dome + z * r1 * dome)
+	o.location = a
 	o.rotation_euler = d.to_track_quat("Z", "Y").to_euler()
 	bpy.ops.object.shade_smooth()
+	# Analytic normals: the long band between the two caps otherwise shades as a ramp, which reads as rings on the limb.
+	normals = []
+	for v in o.data.vertices:
+		x, y, z = v.co
+		if z >= top:
+			n = (x / (r2 * r2), y / (r2 * r2), (z - top) / (r2 * dome) ** 2)
+		else:
+			n = (x / (r1 * r1), y / (r1 * r1), (z - r1 * dome) / (r1 * dome) ** 2)
+		normals.append(mathutils.Vector(n).normalized())
+	try:
+		o.data.normals_split_custom_set_from_vertices([tuple(n) for n in normals])
+	except Exception:
+		pass
 	o.data.materials.append(material)
 	o.parent = parent
 	kid.objects.append(o)
@@ -312,20 +385,23 @@ def build_kid(preset_name, underwater=True, tag=None, swim=False):
 	hip_z = -(th - 0.1)
 	kid.torso_to_feet = -hip_z + b["thigh"] + b["shin"] + 0.14
 	skin, hair = srgb(*p["skin"]), srgb(*p["hair"])
+	if swim:   # wet hair is darker
+		hair = tuple(c * WET_HAIR_DARKEN for c in hair[:3]) + (1.0,)
 	outfit = srgb(*p["outfit"])
-	mat = lambda n, c, r=0.65, kind="plain", spec=0.3: _principled(f"{tag}_{n}", c, underwater, r, kind, spec)
-	m_skin, m_hair, m_suit = mat("skin", skin, 0.42, "skin", 0.55), mat("hair", hair, 0.5, "hair", 0.4), mat("suit", outfit, 0.8, "fabric", 0.08)
-	m_white = mat("white", srgb(248, 248, 248), 0.25, spec=0.8)
-	m_iris = mat("iris", srgb(*p["iris"]), 0.2, spec=0.8)
-	m_dark = mat("dark", srgb(20, 12, 12), 0.3, spec=0.8)
+	root = _pivot(kid, "root", (0, 0, 0))
+	lay = _pivot(kid, "lay", (0, 0, 0), root)          # pitches the whole body from standing to lying
+	roll = _pivot(kid, "roll", (0, 0, 0), lay)         # rolls about the body's long axis
+	mat = lambda n, c, r=0.9, kind="plain", spec=0.04: _principled(f"{tag}_{n}", c, underwater, r, kind, spec, texobj=roll)
+	m_skin, m_hair, m_suit = mat("skin", skin, 0.9, "skin"), mat("hair", hair, 0.9, "hair"), mat("suit", outfit, 0.9, "fabric")
+	gloss = lambda n, c: _principled(f"{tag}_{n}", c, underwater, 0.2, "plain", 0.8, painted=False)
+	m_white, m_iris, m_dark = gloss("white", srgb(248, 248, 248)), gloss("iris", srgb(*p["iris"])), gloss("dark", srgb(20, 12, 12))
+	rosy = tuple(a * 0.78 + b * 0.22 for a, b in zip(skin[:3], srgb(255, 90, 90)[:3])) + (1.0,)
+	m_rosy = mat("rosy", rosy, 0.9, "skin", 0.0)
 	m_mouth = mat("mouth", srgb(*p.get("lips", (200, 70, 85) if p["girl"] else (170, 60, 55))), 0.35, spec=0.6)
 	m_brow = mat("brow", tuple(c * 0.55 for c in hair[:3]) + (1.0,), 0.4)
 	m_blush = mat("blush", tuple(a * 0.62 + b * 0.38 for a, b in zip(skin[:3], srgb(255, 110, 110)[:3])) + (1.0,), 0.5)
 	m_lip = mat("nose", tuple(min(1.0, c * 1.05) for c in skin[:3]) + (1.0,), 0.6)
 
-	root = _pivot(kid, "root", (0, 0, 0))
-	lay = _pivot(kid, "lay", (0, 0, 0), root)          # pitches the whole body from standing to lying
-	roll = _pivot(kid, "roll", (0, 0, 0), lay)         # rolls about the body's long axis
 	waist = hip_z + 0.2
 	up = _pivot(kid, "upper", (0, 0, waist), roll)     # the upper body, which bends forward for a stooped standing pose
 	uz = lambda z: z - waist                           # a z measured from the torso centre, relative to ``upper``
@@ -349,8 +425,8 @@ def build_kid(preset_name, underwater=True, tag=None, swim=False):
 		_mesh(kid, "sphere", f"pupil{s}", (0.06, 0.05, 0.09), (0.28 * s, 0.77, 0.01), m_dark, head, segments=8)
 		_mesh(kid, "sphere", f"brow{s}", (0.23, 0.09, 0.065), (0.27 * s, 0.58, 0.31), m_brow, head, rot=(0, math.radians(-14 * s), 0), segments=8)
 		if p["ears"]:
-			_mesh(kid, "sphere", f"ear{s}", (0.12, 0.17, 0.22), (0.7 * s, -0.02, -0.02), m_skin, head, segments=8)
-	_mesh(kid, "sphere", "nose", (0.13, 0.15, 0.13), (0, 0.72, -0.2), m_lip, head, segments=8)
+			_mesh(kid, "sphere", f"ear{s}", (0.12, 0.17, 0.22), (0.7 * s, -0.02, -0.02), m_rosy, head, segments=8)
+	_mesh(kid, "sphere", "nose", (0.13, 0.15, 0.13), (0, 0.72, -0.2), m_rosy, head, segments=8)
 	if p.get("stubble"):
 		m_stub = mat("stubble", tuple(a * 0.72 + b * 0.28 for a, b in zip(skin[:3], hair[:3])) + (1.0,), 0.7, "skin", 0.1)
 		_mesh(kid, "sphere", "stubble", (0.735, 0.69, 0.36), (0, 0.0, -0.34), m_stub, head, segments=14)
@@ -366,7 +442,10 @@ def build_kid(preset_name, underwater=True, tag=None, swim=False):
 		_mesh(kid, "cylinder", "bridge", (0.03, 0.03, 0.07), (0, 0.78, 0.04), m_dark, head, rot=(0, math.radians(90), 0), segments=6)
 	if b.get("belly"):
 		_mesh(kid, "sphere", "belly", (tw * 0.82, td * 0.9, 0.5), (0, td * 0.5, uz(-0.12)), torso_mat, up)
-	_build_hair(kid, p, head, m_hair, mat("bobble", srgb(*p.get("bobble", (225, 20, 20)))), mat("cap", srgb(*p.get("cap", (255, 255, 255))), 0.4))
+	first = len(kid.objects)
+	_build_hair(kid, p, head, m_hair, mat("bobble", srgb(*p.get("bobble", (225, 20, 20)))), mat("cap", srgb(*p.get("cap", (255, 255, 255))), 0.9))
+	if swim:
+		_wet_hair(kid.objects[first:])
 	# Arms: shoulder (abduction, then swing), elbow, hand.
 	au, al = b["arm_up"], b["arm_low"]
 	for s in (-1, 1):
@@ -375,8 +454,9 @@ def build_kid(preset_name, underwater=True, tag=None, swim=False):
 		_mesh(kid, "sphere", f"shoulderBall{s}", (0.22 * limb,) * 3, (0, 0, 0), m_skin, sw)
 		_limb(kid, f"upperArm{s}", (0, 0, 0), (0, 0, -au), 0.22 * limb, 0.19 * limb, m_skin, sw)
 		el = _pivot(kid, f"elbow{s}", (0, 0, -au), sw)
+		_mesh(kid, "sphere", f"elbowBall{s}", (0.19 * limb,) * 3, (0, 0, 0), m_skin, el)
 		_limb(kid, f"foreArm{s}", (0, 0, 0), (0, 0, -al), 0.19 * limb, 0.17 * limb, m_skin, el)
-		_mesh(kid, "sphere", f"hand{s}", (0.23 * limb, 0.22 * limb, 0.23 * limb), (0, 0, -al - 0.08), m_skin, el)
+		_mesh(kid, "sphere", f"hand{s}", (0.23 * limb, 0.22 * limb, 0.23 * limb), (0, 0, -al - 0.08), m_rosy, el)
 		kid.ends[f"hand{s}"] = _pivot(kid, f"handEnd{s}", (0, 0, -al - 0.12), el)
 	# Legs: hip (abduction, swing), knee, ankle and a bare foot.
 	t, sn = b["thigh"], b["shin"]
@@ -387,11 +467,35 @@ def build_kid(preset_name, underwater=True, tag=None, swim=False):
 		if not p["girl"]:
 			_limb(kid, f"trunkLeg{s}", (0, 0, 0.1), (0, 0, -t * 0.85), 0.31 * limb, 0.3 * limb, m_suit, sw)
 		kn = _pivot(kid, f"knee{s}", (0, 0, -t), sw)
+		_mesh(kid, "sphere", f"kneeBall{s}", (0.23 * limb,) * 3, (0, 0, 0), m_skin, kn)
 		_limb(kid, f"shin{s}", (0, 0, 0), (0, 0, -sn), 0.23 * limb, 0.2 * limb, m_skin, kn)
 		an = _pivot(kid, f"ankle{s}", (0, 0, -sn - 0.02), kn)
-		_mesh(kid, "sphere", f"foot{s}", (0.26 * limb, 0.42 * limb, 0.18 * limb), (0, 0.12, -0.08), m_skin, an)
+		_mesh(kid, "sphere", f"foot{s}", (0.26 * limb, 0.42 * limb, 0.18 * limb), (0, 0.12, -0.08), m_rosy, an)
 		kid.ends[f"foot{s}"] = _pivot(kid, f"footEnd{s}", (0, 0.05, -0.14), an)
 	return kid
+
+
+def _wet_hair(objs):
+	"""Flattens hair for swimming: spikes and tufts shrink to stubs, curls and caps sit closer to the head, pigtails hang."""
+	for o in objs:
+		n = o.name
+		if n.startswith(("spike", "fringe", "tuft", "topknot", "sideburn")) and o.type == "MESH" and n.startswith(("spike", "tuft", "topknot")):
+			o.scale = o.scale * 0.4
+		elif n.startswith("tail") and "_" in n:
+			j = int(n.split("_")[1])
+			o.location = (o.location.x * 0.9, o.location.y, o.location.z - 0.3 * j)
+			o.scale = o.scale * 0.92
+		elif n.startswith("bobble"):
+			o.location = (o.location.x * 0.9, o.location.y, o.location.z - 0.1)
+		elif n.startswith("curl"):
+			o.location = o.location * 0.9
+			o.scale = o.scale * 0.8
+		elif n.startswith(("hairCap", "bobCap", "swimCap", "bobBack")):
+			o.scale = o.scale * WET_HAIR_SCALE
+			o.location = o.location * WET_HAIR_SCALE
+		elif n.startswith("bun"):
+			o.scale = o.scale * 0.7
+			o.location = o.location * 0.85
 
 
 def _build_hair(kid, p, head, m_hair, m_bobble, m_cap):
@@ -573,6 +677,7 @@ def setup_scene(canvas, origin, edition="TPW"):
 		light.data.energy = energy
 		light.data.color = colour
 		light.data.angle = math.radians(angle)
+		light.data.use_shadow = LIGHT_SHADOWS      # shadow-map banding showed as rings on thin limbs
 		light.parent = st.cam
 		light.rotation_euler = tuple(math.radians(a) for a in rot)
 		scene.collection.objects.link(light)
@@ -610,12 +715,27 @@ def downsample(a, factor):
 	return np.dstack([rgb, cov])
 
 
+def sharpen(a, amount=None):
+	"""A mild unsharp mask on the colour (3 x 3 box blur subtracted), restoring pixel crispness after the downsample."""
+	amount = SHARPEN if amount is None else amount
+	if amount <= 0:
+		return a
+	rgb = a[..., :3]
+	pad = np.pad(rgb, ((1, 1), (1, 1), (0, 0)), mode="edge")
+	blur = sum(pad[dy:dy + rgb.shape[0], dx:dx + rgb.shape[1]] for dy in range(3) for dx in range(3)) / 9.0
+	out = a.copy()
+	out[..., :3] = np.clip(rgb + (rgb - blur) * amount * 2.0, 0.0, 1.0)
+	return out
+
+
 def grade(a):
 	"""Saturation and contrast grade (about the mid grey), applied to the colour only."""
 	rgb = a[..., :3]
 	grey = (rgb * np.array([0.299, 0.587, 0.114], np.float32)).sum(-1, keepdims=True)
 	rgb = grey + (rgb - grey) * GRADE_SATURATION
 	rgb = 0.45 + (rgb - 0.45) * GRADE_CONTRAST
+	shadow = np.clip(1.0 - grey * 1.7, 0.0, 1.0) ** 1.3          # shadows lean warm, like painted pre-renders
+	rgb = rgb + shadow * np.array(SHADOW_TINT, np.float32)
 	out = a.copy()
 	out[..., :3] = np.clip(rgb, 0.0, 1.0)
 	return out
@@ -638,6 +758,7 @@ def render_frame(st, path, binary_alpha=False):
 	bpy.ops.render.render(write_still=True)
 	hi = _read_png(path)
 	lo = downsample(hi, SUPERSAMPLE)
+	lo = sharpen(lo)
 	lo = grade(lo)
 	lo = outline(lo)
 	if binary_alpha:
@@ -665,3 +786,67 @@ def clear_kid(kid):
 	for o in kid.objects:
 		if o.name in bpy.data.objects:
 			bpy.data.objects.remove(o, do_unlink=True)
+
+
+# ---- Palette quantisation ----------------------------------------------------------------------------------------
+
+_BAYER4 = (np.array([[0, 8, 2, 10], [12, 4, 14, 6], [3, 11, 1, 9], [15, 7, 13, 5]], np.float32) + 0.5) / 16.0 - 0.5
+
+
+def _median_cut(colours, counts, target):
+	"""Weighted median cut over RGBA like SpriteSetBuilder: repeatedly split the box with the most pixels along its widest
+	channel at the weighted median; each entry is the rounded weighted mean of its box."""
+	boxes = [np.arange(len(colours))]
+	while len(boxes) < target:
+		best, best_count = -1, -1
+		for i, box in enumerate(boxes):
+			if len(box) > 1:
+				c = counts[box].sum()
+				if c > best_count:
+					best, best_count = i, c
+		if best < 0:
+			break
+		box = boxes.pop(best)
+		cols = colours[box].astype(np.int32)
+		axis = int(np.argmax(cols.max(0) - cols.min(0)))
+		order = box[np.argsort(colours[box][:, axis], kind="stable")]
+		cum = np.cumsum(counts[order])
+		cut = int(np.searchsorted(cum, cum[-1] / 2.0)) + 1
+		cut = min(max(cut, 1), len(order) - 1)
+		boxes += [order[:cut], order[cut:]]
+	entries = []
+	for box in boxes:
+		w = counts[box].astype(np.float64)
+		entries.append(np.rint((colours[box] * w[:, None]).sum(0) / w.sum()))
+	return np.array(entries, np.uint8)
+
+
+def quantise_set(frames, colours=None, dither=None):
+	"""Quantises the RGBA frames of one sprite set to one shared palette of ``colours`` entries (fully transparent pixels
+	stay transparent), the way the sprite banks store them. ``dither`` adds a 4 x 4 ordered dither to the colour before the
+	nearest-entry lookup. Returns (frames, palette)."""
+	colours = QUANTISE_COLOURS if colours is None else colours
+	dither = DITHER if dither is None else dither
+	px8 = [np.rint(f * 255).astype(np.uint8) for f in frames]
+	opaque = np.concatenate([f[f[..., 3] > 0] for f in px8])
+	keys = (opaque[:, 0].astype(np.uint32) << 24) | (opaque[:, 1].astype(np.uint32) << 16) | (opaque[:, 2].astype(np.uint32) << 8) | opaque[:, 3]
+	uniq, counts = np.unique(keys, return_counts=True)
+	uc = np.stack([(uniq >> 24) & 255, (uniq >> 16) & 255, (uniq >> 8) & 255, uniq & 255], axis=1).astype(np.uint8)
+	palette = uc if len(uc) <= colours else _median_cut(uc, counts, colours)
+	pal = palette.astype(np.float32)
+	out = []
+	for f in px8:
+		h, w, _ = f.shape
+		g = f.copy()
+		ys, xs = np.nonzero(f[..., 3] > 0)
+		src = f[ys, xs].astype(np.float32)
+		if dither > 0:
+			src[:, :3] += _BAYER4[ys % 4, xs % 4][:, None] * dither * 255.0
+		best = np.empty(len(src), np.int64)
+		for a0 in range(0, len(src), 8192):
+			chunk = src[a0:a0 + 8192]
+			d = ((chunk[:, None, :] - pal[None, :, :]) ** 2).sum(-1)
+			best[a0:a0 + 8192] = d.argmin(1)
+		g[ys, xs] = palette[best]
+		out.append(g.astype(np.float32) / 255.0)
+	return out, palette

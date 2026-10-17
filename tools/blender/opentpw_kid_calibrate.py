@@ -2,11 +2,12 @@
 reference sheet of the original standing frames (viewed locally, never committed).
 
 Usage:
-  Blender -b --factory-startup --python tools/blender/opentpw_kid_calibrate.py -- --out /tmp/swimart [--reference all_stand.png] [--sets BE,CH] [--edition TPW|TPI] [--copy-to reports/swimmers-calibration-tpw.png]
+  Blender -b --factory-startup --python tools/blender/opentpw_kid_calibrate.py -- --out /tmp/swimart [--reference all_stand.png] [--sets BE,CH] [--edition TPW|TPI] [--copy-to reports/swimmers-calibration-tpw.png] [--no-quantise] [--dither 0.03]
 
 The reference is an enlarged sheet on a flat background (``--zoom``, default 4; TPI sheets are 3x): the edition's sets as
 columns (TPW: BE, BI, CH, FR, KI, SA, SU, TA; TPI: BD, GB, GK, KB, FA, MO, GM, GR), rows = directions 0..4, each cell the
-edition's sprite cell (TPW 48x56, TPI 64x80). Without ``--reference`` only our own sheet is written. The pixel heights it prints are
+edition's sprite cell (TPW 48x56, TPI 64x80). Ours are quantised to one 255-colour palette per set (the way a sprite bank
+stores them) unless ``--no-quantise`` is given, so the comparison shows what the game would draw. Without ``--reference`` only our own sheet is written. The pixel heights it prints are
 the calibration numbers recorded in docs/CONTENT-KIT.md.
 """
 import os
@@ -21,7 +22,7 @@ BACKGROUND = (120, 170, 110)
 
 def args():
 	a = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
-	o = dict(out="/tmp/swimart", reference=None, sets=None, edition="TPW", zoom=4, copy_to=None)
+	o = dict(out="/tmp/swimart", reference=None, sets=None, edition="TPW", zoom=4, copy_to=None, quantise=True, dither=None)
 	i = 0
 	while i < len(a):
 		if a[i] == "--out": o["out"] = a[i + 1]; i += 2
@@ -30,6 +31,8 @@ def args():
 		elif a[i] == "--edition": o["edition"] = a[i + 1]; i += 2
 		elif a[i] == "--zoom": o["zoom"] = int(a[i + 1]); i += 2
 		elif a[i] == "--copy-to": o["copy_to"] = a[i + 1]; i += 2
+		elif a[i] == "--no-quantise": o["quantise"] = False; i += 1
+		elif a[i] == "--dither": o["dither"] = float(a[i + 1]); i += 2
 		else: raise SystemExit(f"unknown argument {a[i]}")
 	return o
 
@@ -57,7 +60,11 @@ def main():
 		K.apply_pose(kid, K.standing_pose(kid))
 		for d in range(5):
 			K.aim_camera(st, d)
-			ours[(name, d)] = K.render_frame(st, os.path.join(o["out"], "tmp.png"), binary_alpha=True)
+			ours[(name, d)] = K.render_frame(st, os.path.join(o["out"], f"tmp-{os.getpid()}.png"), binary_alpha=True)
+		if o["quantise"]:
+			q, _ = K.quantise_set([ours[(name, d)] for d in range(5)], dither=o["dither"])
+			for d in range(5):
+				ours[(name, d)] = q[d]
 		K.clear_kid(kid)
 	cols = len(o["sets"])
 	sheet = np.zeros((5 * CELL[1], cols * CELL[0], 3), np.float32)
@@ -93,6 +100,9 @@ def main():
 	path = os.path.join(o["out"], f"compare-stand-{o['edition'].lower()}.png")
 	K.write_png(rgba, path)
 	print("wrote", path)
+	tmp = os.path.join(o["out"], f"tmp-{os.getpid()}.png")
+	if os.path.exists(tmp):
+		os.remove(tmp)
 	if o["copy_to"]:
 		import shutil
 		shutil.copy(path, o["copy_to"])

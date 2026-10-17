@@ -27,15 +27,15 @@ public class RseScriptTests
 		Op | 31, Branch | 0
 	};
 
-	internal static byte[] CreateScript( uint[] words, string[] strings, string[] variables, int? declaredVariables = null, uint? declaredWords = null )
+	internal static byte[] CreateScript( uint[] words, string[] strings, string[] variables, int? declaredVariables = null, uint? declaredWords = null, int stack = 4, int limbo = 2 )
 	{
 		var output = new MemoryStream();
 		var writer = new BinaryWriter( output );
 		writer.Write( new byte[] { (byte)'R', (byte)'S', (byte)'S', (byte)'E', (byte)'Q', 0x0F, 0x01, 0x00 } );
 		writer.Write( declaredVariables ?? variables.Length );
-		writer.Write( 4 ); // stack
+		writer.Write( stack ); // stack
 		writer.Write( 50 ); // time slice
-		writer.Write( 2 ); // limbo
+		writer.Write( limbo ); // limbo
 		writer.Write( 3 ); // bounce
 		writer.Write( 5 ); // walk
 		writer.Write( "Pad Pad Pad Pad "u8.ToArray() );
@@ -118,11 +118,11 @@ public class RseScriptTests
 	{
 		// Every opcode the corpus uses, plus SETVARINPARENT/YEAR/MONTH/DAY (documented, unused), the four animation
 		// opcodes whose handlers were read in the Mac build (GETANIM, FLUSHANIM_CH, WAITANIM_CH, TRIGWAITANIM_CH) and
-		// WAITABS/MULT (Theme Park Inc only) and ADDOBJ_EXT (read in tp.exe, 0x5520E8); none of the 11 other unused names.
-		var unhandled = new[] { "SETLV", "EVENT_EXT", "DBGMSG",
-			"PUSH", "POP", "END", "ENABLELIGHT", "DISABLELIGHT", "SETLIGHT", "COLOURLIGHT", "GETCUSTPTCLCODE" };
+		// WAITABS/MULT (Theme Park Inc only), ADDOBJ_EXT (read in tp.exe, 0x5520E8) and SETLV/DBGMSG/PUSH/POP (tp.exe 0x551E19, 0x554243,
+		// 0x553C1E, 0x553CBA); none of the 7 other unused names.
+		var unhandled = new[] { "EVENT_EXT", "END", "ENABLELIGHT", "DISABLELIGHT", "SETLIGHT", "COLOURLIGHT", "GETCUSTPTCLCODE" };
 		CollectionAssert.AreEquivalent( unhandled, Enum.GetValues<Opcode>().Where( x => !RideScriptAnalysis.HandledOpcodes.Contains( x ) ).Select( x => x.ToString() ).ToArray() );
-		Assert.AreEqual( 95, RideScriptAnalysis.HandledOpcodes.Count );
+		Assert.AreEqual( 99, RideScriptAnalysis.HandledOpcodes.Count );
 		foreach ( var (opcode, definition) in RideOpcodes.Definitions )
 			if ( RideScriptAnalysis.DocumentedOperandCounts.TryGetValue( opcode, out var documented ) )
 				Assert.AreEqual( documented, definition.OperandCount, opcode.ToString() );
@@ -307,7 +307,7 @@ public class RseScriptTests
 		Assert.AreEqual( 163, inventory.EventOperands.Count );
 		Assert.AreEqual( 0, inventory.UsedWithoutHandler.Count() );
 		// WAITABS and MULT gained handlers for the Theme Park Inc corpus; no Theme Park World script contains them.
-		CollectionAssert.AreEquivalent( new[] { Opcode.ADDOBJ_EXT, Opcode.SETVARINPARENT, Opcode.YEAR, Opcode.MONTH, Opcode.DAY, Opcode.GETANIM, Opcode.FLUSHANIM_CH, Opcode.WAITANIM_CH, Opcode.TRIGWAITANIM_CH, Opcode.WAITABS, Opcode.MULT }, inventory.HandlerWithoutCorpusUse.ToArray() );
+		CollectionAssert.AreEquivalent( new[] { Opcode.ADDOBJ_EXT, Opcode.SETVARINPARENT, Opcode.YEAR, Opcode.MONTH, Opcode.DAY, Opcode.GETANIM, Opcode.FLUSHANIM_CH, Opcode.WAITANIM_CH, Opcode.TRIGWAITANIM_CH, Opcode.WAITABS, Opcode.MULT, Opcode.SETLV, Opcode.DBGMSG, Opcode.PUSH, Opcode.POP }, inventory.HandlerWithoutCorpusUse.ToArray() );
 		var dump = Environment.GetEnvironmentVariable( "OPENTPW_RSE_INVENTORY_OUT" );
 		if ( !string.IsNullOrEmpty( dump ) )
 			File.WriteAllText( dump, inventory.Format() );

@@ -8,11 +8,17 @@ public static partial class OpcodeHandlers
 	/// </summary>
 	public static class Scheduling
 	{
-		[OpcodeHandler( Opcode.CRIT_LOCK, RideOpcodeStatus.Implemented, "docs (locks the ride); VM: the slice budget cannot preempt inside CRIT_LOCK…CRIT_UNLOCK, hosts must not change visitor variables while `InCriticalSection`" )]
+		// [BIN:TPW-EXE:0x551D44 CRIT_LOCK] sets the global critical flag (0x87919C) to 1; the only reader is the slice loop (0x551724), which stops counting instructions against the slice budget while the flag is set; nothing in the host or the game reads it
+		[OpcodeHandler( Opcode.CRIT_LOCK, RideOpcodeStatus.Implemented, "TPW-EXE 0x551D44: sets the critical flag, which only stops instructions counting against the slice budget (the flag is cleared at every slice start; no host or game code reads it)" )]
 		public static void CritLock( RideVM vm ) => vm.InCriticalSection = true;
 
-		[OpcodeHandler( Opcode.CRIT_UNLOCK, RideOpcodeStatus.Implemented, "undocumented upstream; corpus: closes every CRIT_LOCK section (240 uses, 0 operands)" )]
-		public static void CritUnlock( RideVM vm ) => vm.InCriticalSection = false;
+		// [BIN:TPW-EXE:0x551D59 CRIT_UNLOCK] clears the flag and sets the slice counter (+0x98) to 0, so it always ends the slice
+		[OpcodeHandler( Opcode.CRIT_UNLOCK, RideOpcodeStatus.Implemented, "TPW-EXE 0x551D59: clears the critical flag and ends the slice (240 corpus uses, 0 operands)" )]
+		public static void CritUnlock( RideVM vm )
+		{
+			vm.InCriticalSection = false;
+			vm.EndSlice();
+		}
 
 		[OpcodeHandler( Opcode.ENDSLICE, RideOpcodeStatus.Implemented, "name; corpus: sits in idle loops (`ENDSLICE; TEST VAR_RIDECLOSED; BRANCH_NZ`), so it yields until the next slice; flags survive it" )]
 		public static void EndSlice( RideVM vm ) => vm.EndSlice();

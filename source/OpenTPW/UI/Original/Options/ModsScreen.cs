@@ -15,6 +15,8 @@ public sealed class ModsServices
 	public Func<ModSet> Active { get; init; } = () => OpenTpwExtensions.Active;
 	public ModVersion? OpenTpwVersion { get; init; } = ModStartup.OpenTpwVersion();
 	public Func<GameEdition> Edition { get; init; } = () => GameEditions.Current;
+	/// <summary>Whether script mods are off in this run (safe mode, docs/SCRIPT-MODS.md).</summary>
+	public Func<bool> ScriptModsOff { get; init; } = () => ScriptSafeMode.Active;
 	/// <summary>
 	/// The browser build: no folder dialog of the game, no helper process and no thread pool. A mod input is the copy of the player's own game
 	/// files that the page keeps in memory (<see cref="BrowserModInputs"/>), chosen with the page's folder dialog.
@@ -67,7 +69,7 @@ public static class ModsScreen
 			Rebuild();
 		}
 
-		var status = diagnostics.Count > 0 ? diagnostics[0] : "";
+		var status = diagnostics.Count > 0 ? diagnostics[0] : services.ScriptModsOff() ? strings.Extra( OpenTpwText.ModSafeMode ) : "";
 		var inputIndex = 0;
 		var note = "";
 		var checks = new Dictionary<string, ModInputCheck>( StringComparer.Ordinal );
@@ -159,6 +161,8 @@ public static class ModsScreen
 				lines.Add( description.Length > 160 ? description[..160] + "..." : description );
 			if ( row.Manifest != null )
 				lines.Add( $"{strings.Extra( OpenTpwText.ModDigestLabel )}: {row.Digest ?? strings.Extra( OpenTpwText.ModDigestPending )}" );
+			if ( row.Manifest?.Content.Scripts != null )
+				lines.Add( strings.Extra( OpenTpwText.ModContainsScripts ) );
 			if ( row.Manifest?.Dependencies is { Count: > 0 } dependencies )
 				lines.Add( $"{strings.Extra( OpenTpwText.ModNeedsLabel )}: {string.Join( ", ", dependencies.Select( dependency => $"{dependency.Id} {dependency.Version}" ) )}" );
 			if ( row.Directory != null )
@@ -404,11 +408,12 @@ public static class ModsScreen
 				var target = version;
 				var found = discovered;
 				var edition = services.Edition();
+				var scriptsOff = services.ScriptModsOff();
 				(ModSet? Set, string? Error, int Version) Resolve()
 				{
 					try
 					{
-						return (ModSet.Resolve( found, settings, services.OpenTpwVersion, edition, services.Extensions ), null, target);
+						return (ModSet.Resolve( found, settings, services.OpenTpwVersion, edition, services.Extensions, scriptModsOff: scriptsOff ), null, target);
 					}
 					catch ( Exception exception ) when ( exception is IOException or UnauthorizedAccessException or InvalidOperationException )
 					{

@@ -56,6 +56,7 @@ public partial class Level
 		PatrolTool?.Cancel();
 		BuyLandTool?.Cancel();
 		AreaClearTool?.Cancel();
+		PoolTool?.Cancel();
 		CellTool.Cancel();
 		ExitCoasterTool();
 		BuildEntry = null;

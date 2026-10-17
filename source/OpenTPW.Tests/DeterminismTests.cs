@@ -29,11 +29,13 @@ public class DeterminismTests
 		private readonly RideVM shopScript;
 		private readonly List<RideVM> dice = new();
 
-		public SyntheticPark( WorldSeed seed, IGuestObserver? observer = null )
+		public SyntheticPark( WorldSeed seed, IGuestObserver? observer = null, Action<ParkCellMap>? prepareCells = null )
 		{
 			Seed = seed;
 			Economy = EconomyTestData.Park( seed: seed.EconomyStream );
 			Guests = new GuestSimulation( GuestTests.CreateCross(), GuestTests.CreateSettings(), seed.GuestStream ) { Observer = observer };
+			// [EXT:pools-save] a fixture that lays cells of its own before the first tick (the pool pin)
+			prepareCells?.Invoke( Guests.Grid.Cells );
 			// the park's one thing pool as Level builds it: the world's ten singletons, then the gates and the lights (things 1 to 12), so the first guest is thing 13 (WALK-010)
 			Things = new ThingPool();
 			Things.AllocateWorldSetup();
@@ -265,6 +267,26 @@ public class DeterminismTests
 		park.Run( PinnedRunTicks );
 		return park.Hash;
 	}
+
+	/// <summary>
+	/// [EXT:pools-save] The fixed run of <see cref="HashOfAFixedRunIsTheSameInEveryProcess"/> on a cross park that also has pool cells, painted through the pool builder with
+	/// the extension on: a 4 x 2 block and a 3 x 3 block clear of the paths and the shop (docs/POOLS.md, docs/DETERMINISM.md).
+	/// </summary>
+	internal static ulong RunFixedParkWithPools()
+	{
+		using var scope = OpenTPW.Mods.OpenTpwExtensions.Use( PoolsTests.PoolsSet( true ) );
+		var park = new SyntheticPark( WorldSeed.Default, null, cells =>
+		{
+			var builder = new PoolBuilder( cells, () => null, new PoolsTests.FlatGrid( cells.Width, cells.Height ) );
+			Assert.IsTrue( builder.PaintCells( PoolBuilder.Rectangle( (12, 7), (15, 8) ).Concat( PoolBuilder.Rectangle( (2, 1), (4, 3) ) ) ).Completed );
+			Assert.AreEqual( 17, cells.CountOf( ParkCellType.PoolWater ) );
+		} );
+		park.Run( PinnedRunTicks );
+		return park.Hash;
+	}
+
+	/// <summary>[EXT:pools-save] The pinned hash of <see cref="RunFixedParkWithPools"/> (docs/DETERMINISM.md, "Pools").</summary>
+	internal const ulong PoolsFixedRunHash = 0x51B905DC5CF06BC6UL;
 
 	/// <summary>The pinned hash of <see cref="HashOfAFixedRunIsTheSameInEveryProcess"/>'s run (docs/DETERMINISM.md).</summary>
 	internal const ulong FixedRunHash = 0xE48128553808938BUL;

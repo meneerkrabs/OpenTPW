@@ -20,6 +20,11 @@ public static class FeatureGates
 	/// </summary>
 	public static bool CrossEditionObjects => OpenTpwExtensions.IsEnabled( OfficialExtensions.CrossEditionObjects );
 
+	/// <summary>
+	/// [EXT:pools-extension] The <c>opentpw.pools</c> extension is on for this run: the pool paint tool, its buy-list rows and the pool cell type are available (docs/POOLS.md).
+	/// </summary>
+	public static bool Pools => OpenTpwExtensions.IsEnabled( OfficialExtensions.Pools );
+
 	/// <summary>Exporting, importing, visiting and postcards: the edition supports sharing and the online extension is on.</summary>
 	public static bool Sharing => GameEditions.Capabilities.Sharing && Online;
 

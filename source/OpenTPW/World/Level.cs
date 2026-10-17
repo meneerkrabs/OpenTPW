@@ -26,6 +26,7 @@ public partial class Level : IDisposable
 				PatrolTool?.Cancel();
 				BuyLandTool?.Cancel();
 				AreaClearTool?.Cancel();
+				PoolTool?.Cancel();
 			}
 			isPlacing = value;
 		}
@@ -778,6 +779,7 @@ public partial class Level : IDisposable
 		UpdateWorldInput( Input.Mouse.Left, UiCapturesMouse || ImGuiNET.ImGui.GetIO().WantCaptureMouse,
 			Input.Mouse.Position, new Vector2( Screen.Size.X, Screen.Size.Y ), Input.ModifierMaskDown );
 		RefreshRenderedCells();
+		RefreshPools();
 		AdvanceSimulation( Time.Delta * SimulationTimeScale );
 		foreach ( var entity in Entity.All.ToArray() )
 			entity.Update();
@@ -953,6 +955,7 @@ public partial class Level : IDisposable
 		PatrolTool?.Cancel();
 		BuyLandTool?.Cancel();
 		AreaClearTool?.Cancel();
+		PoolTool?.Cancel();
 		AttachStaffWorld();
 		AttachCoasterChallenges();
 		// The gate holds the economy it was built over; the load replaced it.

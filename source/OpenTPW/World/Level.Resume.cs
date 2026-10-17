@@ -56,8 +56,8 @@ public partial class Level
 			Tours = CaptureToursSnapshot(),
 			Prototype = prototype,
 			Particles = ParticlesCaptured?.Invoke( this ),
-			// [EXT:mods] null unless a simulation-changing extension or mod is active, so unmodded saves keep their bytes
-			Mods = ParkResumeMods.Capture( OpenTpwExtensions.Active ),
+			// [EXT:mods] null unless a simulation-changing extension or mod is active, so unmodded saves keep their bytes; [EXT:pools-save] opentpw.pools is recorded only while the park has pool cells
+			Mods = ParkResumeMods.Capture( OpenTpwExtensions.Active, ParkResumeMods.InUse( Guests.Grid.Cells ) ),
 			AssetHashes = assets
 		};
 		ParkResumeSaveFile.ValidateSnapshot( snapshot, Objects.Catalog, Park.Economy.Settings, Park.Economy.Catalog, assets );

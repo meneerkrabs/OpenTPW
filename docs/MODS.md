@@ -22,7 +22,8 @@ In code the system is called `OpenTPW.Mods` / "extensions"; `OpenTPW.ModKit` is 
 
 - manifests are parsed and validated, mod folders are discovered, `mods.json` is read and the run's set of extensions
   and mods is resolved once at startup;
-- the only official extension is `opentpw.online` (below);
+- the official extensions are `opentpw.online` and `opentpw.cross-edition-objects` (below) and `opentpw.pools`, off by default, in which the player paints
+  pool water cells (see [POOLS.md](POOLS.md)); a park save records `opentpw.pools` only when the park has pool cells;
 - park saves record the mods that change the simulation and refuse a mismatched set (below);
 - the **Extensions and mods screen** (below) edits `mods.json`;
 - **content roots** are live on the desktop: an enabled mod's `overrides`, `strings` and `objects` change what the game
@@ -264,7 +265,8 @@ these (`Mods`: id, version, content digest) and nothing else, so a park saved wi
 its bytes. Loading it needs the same mods, versions and content, in the same order; presentation-only mods and the online
 extension may differ. A save that needs a mod you do not have refuses with `needs <id> <version>`; the load list and the
 Continue entries keep it and add "(requires mod <id> <version>)". Exporting a park to a `.tpwpark` package is refused
-while such a mod is active, because packages record no mods yet. The asset manifest keys archives of a mod `mod:<id>:/…`
+while such a mod is active, because packages record no mods yet. One extension is recorded **only while the park uses it**: `opentpw.pools` (listed in `ParkResumeMods.UsedOnlyExtensionIds`), so a park
+without pool cells saves, loads and exports identically with it on or off ([POOLS.md](POOLS.md)). The asset manifest keys archives of a mod `mod:<id>:/…`
 (`data:` and `bonus:` for the game data and the bonus content). Details: [DETERMINISM.md](DETERMINISM.md) "Mods".
 
 ## The online extension (`opentpw.online`)

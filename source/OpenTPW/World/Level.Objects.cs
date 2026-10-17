@@ -319,6 +319,29 @@ public partial class Level
 
 	/// <summary>The headless path builder over the level's cell map (original levels; null in the generic sandbox).</summary>
 	public ParkPathBuilder? Paths { get; private set; }
+	/// <summary>[EXT:pools-tool] The headless pool builder over the level's cell map (original levels, not a read-only visit); null otherwise (docs/POOLS.md).</summary>
+	public PoolBuilder? PoolBuilder { get; private set; }
+	/// <summary>[EXT:pools-tool] The pool paint tool the park view drives while the <c>opentpw.pools</c> extension is on.</summary>
+	public PoolTool? PoolTool { get; private set; }
+	/// <summary>[EXT:pools-render] Draws the park's pool cells; created when the first pool cell exists.</summary>
+	public PoolRenderer? PoolRenderer { get; private set; }
+
+	/// <summary>
+	/// [EXT:pools-render] Keeps the pool drawing in step with the cell map: the renderer appears with the first pool cell (a painted one or a resumed save's) and rebuilds
+	/// its mesh whenever the set of pool cells changes. Runs every frame; costs nothing while the park has no pool cell.
+	/// </summary>
+	internal void RefreshPools()
+	{
+		if ( Guests == null || OriginalPark == null || !FeatureGates.Pools )
+			return;
+		if ( PoolRenderer == null )
+		{
+			if ( Guests.Grid.Cells.CountOf( ParkCellType.PoolWater ) == 0 )
+				return;
+			PoolRenderer = new PoolRenderer( Guests.Grid.Cells, Objects.Grid );
+		}
+	}
+
 	/// <summary>The path tiles' texture rolls (presentation; <see cref="PathTileVariants"/>).</summary>
 	public PathTileVariants PathVariants { get; } = new();
 
@@ -370,6 +393,12 @@ public partial class Level
 			ObjectGivesWay = ( x, y ) => Objects.GivesWay( x, y, ParkObjects.PathOverwritePriority ),
 			DemolishObject = DemolishObjectAt
 		};
+		// [EXT:pools-tool] the pool builder and its paint tool share the cell map; they refuse every cell while the extension is off (FeatureGates.Pools)
+		if ( !IsReadOnlyVisit )
+		{
+			PoolBuilder = new PoolBuilder( Guests.Grid.Cells, () => Park?.Economy, Objects.Grid, IsPathBlocked );
+			PoolTool = new PoolTool( PoolBuilder );
+		}
 		AreaClearTool = IsReadOnlyVisit ? null : new AreaClearTool( RemoveObjectAt, () => Guests?.Grid.Cells, RemovePathCell, TypesFootprints ? null : ( x, y ) => Objects.FindAt( x, y ) );
 	}
 

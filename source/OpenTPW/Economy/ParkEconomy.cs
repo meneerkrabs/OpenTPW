@@ -7,7 +7,9 @@ public enum CellPurchase
 	Queue,
 	KartTrack,
 	WaterTrack,
-	Land
+	Land,
+	/// <summary>[EXT:pools-cost] One pool water cell of the <c>opentpw.pools</c> extension (<see cref="ParkEconomy.PoolCellCost"/>).</summary>
+	Pool
 }
 
 /// <summary>
@@ -1887,6 +1889,13 @@ public sealed class ParkEconomy : IParkEconomy
 		return PurchaseResult.Ok;
 	}
 
+	/// <summary>
+	/// [EXT:pools-cost] The price of one pool water cell: 75, the figure of Roller Coaster Tycoon 3 Soaked!'s pool tiles. The original's balance files have no pool price, so it is a
+	/// constant of the extension rather than a <c>Costs.*</c> value (docs/POOLS.md).
+	/// </summary>
+	// [EXT:pools-cost] OpenTPW's own price; the original game has no pools
+	public const int PoolCellCost = 75;
+
 	public long CellCost( CellPurchase kind ) => kind switch
 	{
 		CellPurchase.Path => Settings.Costs.PathCell,
@@ -1894,6 +1903,7 @@ public sealed class ParkEconomy : IParkEconomy
 		CellPurchase.KartTrack => Settings.Costs.KartTrackCell,
 		CellPurchase.WaterTrack => Settings.Costs.WaterTrackCell,
 		CellPurchase.Land => Settings.Costs.MapCell,
+		CellPurchase.Pool => PoolCellCost,
 		_ => throw new ArgumentOutOfRangeException( nameof( kind ) )
 	};
 
@@ -1995,6 +2005,16 @@ public sealed class ParkEconomy : IParkEconomy
 		Post( LedgerCategory.OtherIncome, amount );
 		if ( stationInstanceId is int instance && objects.TryGetValue( instance, out var station ) )
 			station.TotalSpent = Math.Max( 0, station.TotalSpent - amount );
+	}
+
+	/// <summary>
+	/// [EXT:pools-cost] Refunds an erased pool water cell: the full <see cref="PoolCellCost"/>, as other income. A path cell refunds nothing in the original (ClearCell's path
+	/// case), so this is a deliberate difference of the extension: a pool painted by mistake costs nothing once it is erased again (docs/POOLS.md). Returns the amount credited.
+	/// </summary>
+	public long RefundPoolCell()
+	{
+		Post( LedgerCategory.OtherIncome, PoolCellCost );
+		return PoolCellCost;
 	}
 
 	/// <summary>

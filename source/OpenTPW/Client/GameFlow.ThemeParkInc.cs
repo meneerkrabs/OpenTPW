@@ -1,3 +1,4 @@
+using OpenTPW.FrontEnd;
 using OpenTPW.UI.Original;
 
 namespace OpenTPW;
@@ -13,6 +14,25 @@ internal sealed partial class GameFlow
 {
 	/// <summary>The experimental HUD of the running Theme Park Inc level (null outside the slice).</summary>
 	public ThemeParkIncHud? IncHud { get; private set; }
+
+	/// <summary>The Theme Park Inc Personnel File start screen (null outside it).</summary>
+	public ThemeParkIncFrontEnd? IncFrontEnd { get; private set; }
+
+	/// <summary>
+	/// Shows the Theme Park Inc Personnel File (docs/THEME-PARK-INC.md): Enter Game starts the slice in the chosen zone, Quit Game closes the window.
+	/// The zone's files are waited for (<see cref="LevelDataReady"/>) as for any queued level.
+	/// </summary>
+	// [EXT:tpi-front-end-phase1] an OpenTPW start screen over the traced Personnel File layout, not a reproduction of Theme Park Inc's front end
+	public void ShowThemeParkIncFrontEnd()
+	{
+		TearDown();
+		IncFrontEnd = new ThemeParkIncFrontEnd( Strings, new ThemeParkIncFrontEndHost
+		{
+			EnterWorld = zone => QueueLevel( zone, () => StartLevel( zone, original: true, developerPanels: false ) ),
+			Quit = Quit
+		}, UiFonts.CachedLoader( GameLanguage.Current ) );
+		Log.Trace( "Theme Park Inc front end: the Personnel File (experimental slice; Enter Game starts the chosen zone)." );
+	}
 
 	/// <summary>Starts the experimental HUD over a Theme Park Inc level (called from StartLevel, after TearDown).</summary>
 	private ThemeParkIncHud CreateThemeParkIncHud( Level level ) => new( level, Strings, new ThemeParkIncHudHost

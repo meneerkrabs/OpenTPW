@@ -47,17 +47,6 @@ public class OriginalSaveImportTests
 		return body;
 	}
 
-	private static byte[] RideSystemRecord( int infoId, int x, int y, int kind, int index, int width = 1, int height = 1, int rotation = 0 )
-	{
-		var record = new byte[60];
-		record[0] = 1;
-		var values = new[] { infoId, x, y, width, height, kind, index };
-		for ( var field = 0; field < values.Length; field++ )
-			BinaryPrimitives.WriteInt32LittleEndian( record.AsSpan( 1 + field * 4 ), values[field] );
-		BinaryPrimitives.WriteUInt16LittleEndian( record.AsSpan( 1 + 38 ), (ushort)rotation );
-		return record;
-	}
-
 	/// <summary>
 	/// A 3×3 park: Belly Bounce at (1, 1), the gates as a fixed item, a researcher, bank and challenges from <paramref name="settings"/>.
 	/// <paramref name="unverifiedFootprint"/> records Belly Bounce as 2×1 turned 90°, a footprint without a verified rule.
@@ -78,7 +67,11 @@ public class OriginalSaveImportTests
 		things.Insert( 2, (11, (uint)SaveThingModel.Attraction, SaveTestPayloads.Attraction( new SaveTestPayloads.AttractionFields { PositionX = 128, PositionY = 128, Angle = 0, InfoId = 1601, Price = 0, Level = 0, Repair = 100, LifeGauge = 100 } )) );
 		things.InsertRange( 0, extraThings ?? Array.Empty<(uint, uint, byte[])>() );
 		var grid = SaveTestPayloads.Grid( map, ( x, y ) => OriginalParkImportTests.CreateCellRecord( 0, occupied: (x, y) == (1, 1) ) );
-		var rideSystem = RideSystemRecord( 1601, 0, 0, SaveObject.FixedItemKind, 1 ).Concat( RideSystemRecord( 1100, 1, 1, SaveObject.PlacedObjectKind, 2, width: unverifiedFootprint ? 2 : 1, rotation: unverifiedFootprint ? 90 : 0 ) ).ToArray();
+		var rideSystem = SaveTestPayloads.RideSystem( new[]
+		{
+			SaveTestPayloads.RideSystemRecord( 1601, 0, 0, 1, 1, SaveObject.FixedItemKind, 1 ),
+			SaveTestPayloads.RideSystemRecord( 1100, 1, 1, unverifiedFootprint ? 2 : 1, 1, SaveObject.PlacedObjectKind, 2, rotation: unverifiedFootprint ? 90 : 0 ),
+		} );
 		var payload = SaveTestPayloads.Payload( SaveTestPayloads.World( SaveTestPayloads.ParkVariables( parkClosed: parkClosed ), grid, SaveTestPayloads.Things( things ), opaque: staffPool ), rideSystem );
 		return OriginalParkImport.Import( payload, map );
 	}

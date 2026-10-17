@@ -152,6 +152,46 @@ public class DesktopEditionStarterTests
 	}
 
 	[TestMethod]
+	public void FrontEndWithSavedTpiOpensThePersonnelFileWithoutAWorld()
+	{
+		// [EXT:tpi-front-end-phase1] the route a real start takes: resolver, then the edition check of Game.Main (ViewerRefusal under the selected edition)
+		foreach ( var savedWorld in new[] { "science", null } )
+			WithFolder( true, root => WithConfig( root, _ => new SetupSettings( "tpw", null, SelectedEdition: GameEdition.ThemeParkInc, ThemeParkIncPath: root, ThemeParkIncWorld: savedWorld ).Save( SetupSettings.GetDefaultPath() ), resolve =>
+			{
+				var (args, wizards) = resolve( new[] { "--front-end", "--windowed", "--resolution", "1280x720", "--no-autorun" } );
+				Assert.AreEqual( 0, wizards );
+				CollectionAssert.AreEqual( new[] { "--front-end", "--windowed", "--resolution", "1280x720", "--no-autorun" }, args, "no world is added" );
+				Assert.AreEqual( root, Settings.Default.GamePath );
+				GameEditions.Select( GameEdition.ThemeParkInc );
+				try { Assert.IsNull( GameEditions.ViewerRefusal( args! ), "the edition check lets the Personnel File through" ); }
+				finally { GameEditions.Select( GameEdition.ThemeParkWorld ); }
+			} ) );
+	}
+
+	[TestMethod]
+	public void FrontEndWithAWorldStillCannotCombineAndPlainSavedStartKeepsItsWorld()
+	{
+		WithFolder( true, root => WithConfig( root, _ => new SetupSettings( "tpw", null, SelectedEdition: GameEdition.ThemeParkInc, ThemeParkIncPath: root, ThemeParkIncWorld: "science" ).Save( SetupSettings.GetDefaultPath() ), resolve =>
+		{
+			CollectionAssert.AreEqual( new[] { "--load-original-level", "science" }, resolve( Array.Empty<string>() ).Args );
+			// an explicit world is no remembered start; the edition check of Game.Main refuses it together with --front-end
+			var combined = new[] { "--front-end", "--load-original-level", "science" };
+			GameEditions.Select( GameEdition.ThemeParkInc );
+			try { Assert.IsNotNull( GameEditions.ViewerRefusal( combined ) ); }
+			finally { GameEditions.Select( GameEdition.ThemeParkWorld ); }
+			Assert.ThrowsException<ArgumentException>( () => resolve( new[] { "--front-end", "--setup" } ), "setup cannot replace an explicit tool start" );
+		} ) );
+	}
+
+	[TestMethod]
+	public void FrontEndIsNoExplicitModeForTheRememberedEditionButOtherModesStillAre()
+	{
+		Assert.IsTrue( DesktopSetupSelection.CanUseRememberedEdition( new[] { "--front-end", "--windowed" }, null, null ) );
+		Assert.IsFalse( DesktopSetupSelection.CanUseRememberedEdition( new[] { "--front-end", "--sandbox" }, null, null ) );
+		Assert.IsFalse( DesktopSetupSelection.CanUseRememberedEdition( new[] { "--front-end" }, "path", null ), "an explicit path still wins" );
+	}
+
+	[TestMethod]
 	public void FirstStartWithNoUsableFolderOpensWizard()
 	{
 		WithFolder( false, root => WithConfig( root, _ => { }, resolve =>

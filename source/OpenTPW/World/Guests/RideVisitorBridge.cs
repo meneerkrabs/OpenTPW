@@ -902,6 +902,30 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 			Release( off );
 		}
 
+		if ( DefersAdmission )
+			return;
+		UpdateAdmission();
+	}
+
+	/// <summary>
+	/// True while the host runs the ride update of a park turn from the thing sweep (<see cref="UpdateAdmission"/>): <see cref="HostStep"/> then does the per-tick protocol only. Not saved;
+	/// the host sets it for the ticks that start a swept turn.
+	/// </summary>
+	public bool DefersAdmission { get; set; }
+
+	/// <summary>
+	/// The ride update of a park turn (tp.exe 0x004E0E00, called from the thing sweep after the object's wear and breakdown update 0x004E0B90): once per turn it dismisses the head of a
+	/// closed or broken ride's queue and runs the admission. <see cref="HostStep"/> calls it itself unless <see cref="DefersAdmission"/>.
+	/// </summary>
+	public void UpdateAdmission()
+	{
+		if ( vm == null )
+			return;
+		if ( vm.State != RideVMState.Running && vm.State != RideVMState.Waiting )
+		{
+			ReleaseAll();
+			return;
+		}
 		// [BIN:TPW-EXE:0x00516380 park turn walk] the park update runs once per park turn (the main loop calls it when its 31 ms substep counter & 7 == 0, 0x0054F668) and dispatches every live-list thing whose pointer is set and whose byte +3 is 0 (0x005163F0..0x005163F7, no type, state or id test; the whole walk is skipped while world mode +0x1DA738 is 4, the turn still counting, 0x00516395, DET-plan §2.1) to 0x0050B360: a ride (type 3) runs 0x004E0B90, then the state dispatch 0x004E0E00, whose state 0 runs the admission 0x004E1220 once (0x004E14E0); a guest (type 1) runs 0x00501650, then 0x005019F0, whose state 11 is 0x004FFFF0; OpenTPW's lastAdmissionTurn and LastQueueUpdateTurn guards give the same once-per-turn cadence
 		var turn = Host?.ParkTurn ?? -1;
 		if ( turn >= 0 && turn == lastAdmissionTurn )
@@ -1106,7 +1130,15 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 				MarkBoarded( guest );
 				// [APPROX:TOUR-011] WALKON boards the rider at once; the original's WALKON also holds the rider for ftol(distance between nodes u1 and u2) x 100 ms (100 ms for 0; the start node is of class 0x80 for the head action 4; the walk table entry's times at +0x8 and +0xC, 0x00556F40), but what reads the entry's end time and moves its state to 4 (WALKGET's state, 0x00557110) is not read; WALKOFF's action 2 effect is WalkOffEffect
 				// [BIN:TPW-EXE:0x00556F40 WALKON slot] the walk table entry keeps the operands in order: start node u1, end node u2, u3 and u4 (the nodes WALKOFF walks between), the walk action
-				if ( WalkNodeDistance != null && onRide.Contains( guest ) )
+				var headAction = call.Argument( 5 ) == 4;
+				if ( headAction && Heads != null && onRide.Contains( guest ) )
+				{
+					// [BIN:TPW-EXE:0x00557D80 WALKON head action] the head action 4 hangs the rider's head on head id u2 (the second node operand: Firepit, Inca Totem, Aztec Mayhem, Hover Bot Havoc and Rock 'n Roll count it up with VAR_ONRIDE) once the walk-on ends, and the body is not drawn while it is up; WALKOFF takes the head down. The walk slot keeps the action so WALKOFF knows to do it
+					// [APPROX:TOUR-011] the head hangs at once, without the walk-on time and the walking body before it
+					Heads.Hang( call.Argument( 2 ), guest );
+					walkSlots[guest] = (call.Argument( 3 ), call.Argument( 4 ), call.Argument( 5 ));
+				}
+				else if ( WalkNodeDistance != null && onRide.Contains( guest ) )
 					walkSlots[guest] = (call.Argument( 3 ), call.Argument( 4 ), call.Argument( 5 ));
 				return true;
 			}
@@ -1117,12 +1149,18 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 				{
 					walkingOff.Enqueue( guest );
 					var duration = WalkOffMilliseconds;
-					if ( WalkNodeDistance != null && walkSlots.Remove( guest, out var slot ) )
+					if ( walkSlots.Remove( guest, out var slot ) )
 					{
-						if ( WalkNodeDistance( slot.Mode, slot.From, slot.To ) is { } distance )
-							duration = WalkOffDuration( distance );
-						if ( slot.Mode == 2 )
-							WalkOffEffect?.Invoke( slot.From );
+						// [BIN:TPW-EXE:0x005571A0 WALKOFF head action] a rider walked on with the head action 4 has its head taken down (0x0044B4C0)
+						if ( slot.Mode == 4 )
+							Heads?.Remove( guest );
+						if ( WalkNodeDistance != null )
+						{
+							if ( WalkNodeDistance( slot.Mode, slot.From, slot.To ) is { } distance )
+								duration = WalkOffDuration( distance );
+							if ( slot.Mode == 2 )
+								WalkOffEffect?.Invoke( slot.From );
+						}
 					}
 					walkingOffReady.Enqueue( now + duration );
 				}

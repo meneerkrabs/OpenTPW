@@ -103,6 +103,26 @@ starts a performance as script 13 + (r mod (n − 1)), or 13 for one entry (scri
 `01 05 02 28` in Hallow SPR_DR, so every entertainer performs slot 4 (GUEST-015 keeps the program's steps for SPR_DR's
 2 and 40).
 
+**Writing a sprite set** (`SpriteBankWriter`, `SpriteAnimationWriter`, `SpriteSetBuilder`). A usable set is the `.ESP` plus the bank its byte
+0x10C selects (`.FPC` when set, else `.TPC`; `GuestSpriteAtlas.LoadSets` opens exactly those). The `.FPS`/`.TPS` files the ESP names are never shipped and
+never opened, so nothing else is needed. The writers rewrite **all 75 banks (29 FPC, 46 TPC) and all 46 ESP files of `esprites.wad` byte for byte**
+(`SpriteBankWriterCorpusTests`). What is written, field by field:
+
+- *Bank*: the signature and frame count; the u32 at offset 8 (`SpriteBankFile.HeaderWord`, 0 everywhere); the palette; per frame the sizes, both
+  unit words, the origin and the RLE rows. The writer's encoding is byte-identical to the shipped corpus (not proven to be the original encoder in general): per row every run of two or more equal indices is a repeat (up to
+  127), everything between is literals (up to 127 per control byte). When that does not fit the one-byte row length, a row falls back to the smallest encoding the decoder accepts (repeats up to 128). Runs of two being repeats is what the corpus shows (3 would make files 3 to 4 % smaller
+  and not match). Frames are at most 1020 pixels wide (what `GuestSpriteAtlas`'s 1024-pixel rows hold with their padding). Rows that need more than 255 bytes even then are refused (the length prefix is one byte). The corpus never reaches 127 equal pixels or 127
+  literals in a row, so the 127 limits of the greedy path are not observed from the original; the reader accepts repeats up to 128 and literals up to 127.
+- *ESP*: the magic, the bank name (zero padded, the padding is zero in all 46), both flag bytes, the 16 slots and the 16 performance bytes.
+
+`SpriteSetBuilder` authors a set from straight RGBA frames: `AddAnimation( slot, directions x frames )` appends frames direction-major (a slot added
+as non-directional stores 0 directions), `SetPerformance` fills an entertainer entry, `Build()` returns the `.ESP` and the banks. The pixel format is paletted, so
+the builder quantises: one 255-entry palette for the whole set, alpha 0 is the transparent index 0, up to 255 distinct colours (with alpha) are stored exactly,
+more go through median cut with nearest-entry mapping. Defaults of a new set, and which are unverified in the game itself (nothing was run):
+`FullDetail` true (flag 0x10C = 1, FPC and TPC written with the same content, as every full-detail set ships both), kid flag 0, both unit words 128 (every
+shipped frame), no performance entries. Unverified against tp.exe: whether the original's loader accepts a bank with unused zero palette entries or frames wider than any shipped
+one (they decode here), and how the game blends the palette's alpha (the readers treat it as straight alpha).
+
 Kid slots (identical in all 8 sets; labels from viewing the frames, not traced):
 
 | Slot | Frames | Content | OpenTPW use |
@@ -341,7 +361,7 @@ Every thing of the park takes its id from **one pool of 10239 slots** (tp.exe's 
 `Level.Things` is the one pool of a park. A guest's id (`Guest.Id`) is its thing id: the needs phase (`0x501676`), the reseed of the world generator when the guest is made (`0x4FB19E`), the prank flag
 (`0x4FB114`), the advisor's prank line (`0x59B060`), the queue edit's anger (`0x501496`, id modulo 3), the dismissal's voice (`0x50133D`, low three bits 0) and the booth walk's speed term (`0x4FF776`, low two bits 0) read it.
 
-- **Allocation.** The free list starts ascending (slot 1 first); the allocator takes its head and the new thing becomes the newest of the used list (the original's thing sweep walks that list newest first). A full pool logs a
+- **Allocation.** The free list starts ascending (slot 1 first); the allocator takes its head and the new thing becomes the newest of the used list (the original's thing sweep walks that list newest first, and so does OpenTPW's park turn: see "The park turn's order" in [DETERMINISM.md](DETERMINISM.md)). A full pool logs a
   fatal error and gives id 0 (OpenTPW refuses to build the thing).
 - **Free.** A destroy request (`0x50B780` → `0x516310`) puts the id at the head of a queue; the park turn's end takes the head again and again (`0x516641`), so a turn's requests are carried out last first, and each slot goes to the
   head of the free list (`0x516200`): the next thing built takes the slot freed last, which is the request made first. Guests ask for it when they leave, objects when they are demolished or sold, staff when they are dismissed.
@@ -591,7 +611,7 @@ Traced from the Feral Mac binary ([WALK-plan.md](reverse/WALK-plan.md) §11, WAL
 | WALK-003 | Separation's neighbours are the guests outside rides and shops, then the staff on the cell; the original (tp.exe `0x5102f0`, at most five neighbours) visits each cell's things in the order they were head-inserted on cell entry (`0x50b6a0` via `0x4d91f0`), keeps class-1 guests in any state and also the online avatar (class 18); the position (`+4/+6` = navigation position >> 8, `0x4fa2a0`) matches. The per-turn rebuilt cell lists themselves are `[EXT:guest-cell-lists]` | Where the thing position of a guest on a ride, held by a guard or leaving lies |
 | WALK-005 | The edge test `0x4d8750` (`WalkEdges`) reads only the cell map: no object on a target cell blocks (`0x5363f0`, `0x53ad20`), no ride thing decides a mask-2 step into a type-9 cell (`0x42a440`, `0x4dd4e0`), the underground link byte `+0x22` is not kept, and the types are those OpenTPW's map holds (map init `0x536490`'s 0, 1, 2, 7 and `0x1e`, and the path, queue, entrance, exit, object and track cells its tools write) | Object and thing references in the cell map |
 | WALK-007 | The queue recompute's own stamp of its back cell (`0x4de1f0`, `0x4d8c50` then `0x4d8c60`) is made after the queue tool's edits but not after a path laid over a queue end or a cell clear of a queue cell (`0x5346d0` and `0x5367a0` reach the owning ride through the cell's owner word `+0x10`, which OpenTPW's cells do not keep); the block stamps of every cell type change (`0x4d8c60`) and the walk's comparison (`0x50ed6c`) are ported | The owner word of queue cells |
-| WALK-010 | Thing ids are slots of one pool of 10239 for every kind of thing, taken in the order the park builds them (see "Thing ids"); but the pool holds only what OpenTPW builds (the End finale object, the online persons and the developer prototype ride take no slot; a saved thing of an imported original save that OpenTPW does not rebuild holds a placeholder slot that nothing simulates or frees), the destroy requests of a turn come in OpenTPW's update order, and the guests' histories, queues and the economy hold the script world's attraction ids rather than the objects' thing ids | What else the original builds over a session; the order of its destroy requests (DET-013) |
+| WALK-010 | Thing ids are slots of one pool of 10239 for every kind of thing, taken in the order the park builds them (see "Thing ids"); but the pool holds only what OpenTPW builds (the End finale object, the online persons and the developer prototype ride take no slot; a saved thing of an imported original save that OpenTPW does not rebuild holds a placeholder slot that nothing simulates or frees), and the guests' histories, queues and the economy hold the script world's attraction ids rather than the objects' thing ids | What else the original builds over a session |
 
 Retired: `APPROX:WALK-008` (the arrival chain, states 0 to 5: tp.exe `0x4fb201`, `0x4ff520`, `0x4ff730`, `0x4ff7f0`, `0x4ffb20`, walked over the cell map like every other guest walk) and `APPROX:GUEST-012` (the state-18 recall for every leaving guest: the booth refusal and a closed park's state 3 enter state 18 with the counter zeroed, `0x4ff9d0`, `0x4ff7f0`). `APPROX:WALK-002` (avoid_walls' corner blocks and the position's cell: tp.exe `0x50e4a0` with the ray test `0x50cc20`, ported for walks on the park's cells). `APPROX:WALK-004` (the whole-walk destinations: state 6's choice requests one route to the ride's back cell, `0x4fcb10` through `0x4fa530`, and its leaving gate one route to the gate's crossing cell, `0x4d86d0`; the states then only step the walk, `0x4ffbc0`, `0x500a50`). `APPROX:WALK-009` (the progress measure `0x50fd40` over the whole route's length, reset at every set-up `0x50f8e0`).
 
@@ -950,7 +970,8 @@ Approximations ([HEADS register](https://opentpw.io/docs/FIDELITY-REGISTER.html)
 
 Not done in OpenTPW: heads of riders on coaster and tour cars. The cars carry head records (above) and the PC executable keeps them as
 records with a handle and no head table (maexah `saves.md`, "A head on a node"); the Mac code that places a car's rider is not
-traced yet. Root scripts without `ADDHEAD` do not enable this renderer; this does not establish that the original cannot show heads through vehicle/controller paths. Native head atlas reload and repeated park entry/exit checks cover Asset.All removal and scheduled GPU texture/material/shader disposal.
+traced yet. Rides that run no `ADDHEAD` can still show their riders' heads through WALKON's head action 4 (The Firepit, Inca Totem, Aztec Mayhem, Hover Bot Havoc, Rock 'n Roll): the rider's head hangs on head id u2 (the second node operand, a rider counter in these scripts) and WALKOFF takes it down (tp.exe `0x00557D80` walk state 1 to 2 calls the hang `0x0044B410`; `0x005571A0` calls `0x0044B4C0`). `RideVisitorBridge` hangs it through `RideHeadSpace.Hang` at once, without the walk-on time and the walking body ([APPROX:TOUR-011]); the walk slot keeps the action so the head comes down at WALKOFF and a park save keeps both.
+Other root scripts without `ADDHEAD` and without that action do not enable this renderer; this does not establish that the original cannot show heads through vehicle/controller paths. Native head atlas reload and repeated park entry/exit checks cover Asset.All removal and scheduled GPU texture/material/shader disposal.
 
 ## Tests and evidence
 

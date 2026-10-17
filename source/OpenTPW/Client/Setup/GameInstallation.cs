@@ -6,6 +6,8 @@ public sealed record InstallationReport( string Path, string? DataDirectory, IRe
 	/// <summary>The folder has the data OpenTPW needs; <see cref="Warnings"/> may still list missing optional parts.</summary>
 	public bool IsUsable => Problems.Count == 0;
 	public GameEdition? SelectedEdition { get; init; }
+	/// <summary>The language of a single-language CD (the Spanish CD, the Korean Slim Pack CD) the folder is, from <see cref="GameEditions.DetectCdLanguage"/>; null for an installation or a CD with several languages.</summary>
+	public string? CdLanguage { get; init; }
 	public IReadOnlyList<string> Worlds { get; init; } = Array.Empty<string>();
 }
 
@@ -102,7 +104,7 @@ public static class GameInstallation
 		if ( !IsWritable( root ) )
 			warnings.Add( "This folder is read-only (for example a mounted CD); saved parks go to the OpenTPW settings folder instead." );
 
-		return new( root, dataDirectory, languages, problems, warnings ) { SelectedEdition = edition, Worlds = worlds };
+		return new( root, dataDirectory, languages, problems, warnings ) { SelectedEdition = edition, Worlds = worlds, CdLanguage = GameEditions.DetectCdLanguage( dataDirectory ).Language };
 	}
 
 	private static bool LooksLikeDataFolder( string directory ) =>

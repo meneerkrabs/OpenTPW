@@ -1,0 +1,10 @@
+## The smarter-guests baseline is re-measured after the stand-cell and substep merges (October 17, 2026)
+
+The baseline in [SMARTER-GUESTS.md](../SMARTER-GUESTS.md) was measured before #325 (old saves' access links, WALK-006 retired, `ParkScenario` lays its stand cells) and #326 (the substep scheduler). It is re-measured on current main with `--guest-report --guest-scale extended` (eight scenario seeds and the four level parks, with game data); the doc's tables, outcome mixes, instrumentation cost and a new "What moved" section are updated. No code, test constant or threshold changed: the thresholds are computed from the report by `GuestReportCompare`, and `ScenarioFixedRunHash` was already re-pinned by #325. No committed baseline JSON exists.
+
+- **#326 moved nothing.** The report was run on the commit before and on #326: every spread and all 40 end hashes are identical, because the report's parks do not exercise what the new scheduler changes.
+- **#325 moved the numbers, inside the seed noise for the scenario.** A refused stand-point search now dismisses the guest as tp.exe does, and the scenario's attractions have entrance cells. Scenario boarded share 0.560 to 0.544, rejected 0.392 to 0.410, departures per admission 0.562 to 0.599, guest-time happiness 48.5 to 49.0, censored wait p90 79.1 to 73.4, stuck guests 0.6 to 1.25 (max 3), all inside the new 3 SE bands.
+- **Level parks.** Boarded share Jungle 0.219 to 0.254, Fantasy 0.433 to 0.454, Space 0.398 to 0.481 (its `QueueLimit` rejections fall from 1,283 to 892), Halloween 0.712 to 0.684; waits fall in the three busy parks and stuck-guest counts stay within their spread.
+- **No regression found.** No unused ride, no growth in stuck guests beyond the seed spread, no collapse of the boarded share; all 5 x 8 seeds still end in distinct hashes and `queue.superseded` is 0.
+
+Checks: filtered GuestMeasurement, Determinism and Queue tests, `tools/progress.py --check`, `tools/fidelity_register.py --check` and the PPC evidence checks.

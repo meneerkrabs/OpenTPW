@@ -81,6 +81,7 @@ public sealed class CoasterRenderer : Entity
 	private readonly Func<CoasterRide, ObjectCatalogEntry?> entryOf;
 	private readonly Func<CoasterRide, CoasterPreview?> previewOf;
 	private readonly Func<CoasterRide, int> attractionOf;
+	private readonly Func<uint>? sceneMilliseconds;
 	private readonly List<RideView> views = new();
 	private readonly Dictionary<ObjectCatalogEntry, CoasterAssets> assets = new();
 	private bool deleted;
@@ -90,9 +91,11 @@ public sealed class CoasterRenderer : Entity
 	/// <param name="scale">Engine units per original world unit (0.2).</param>
 	/// <param name="entryOf">The catalogue entry (archive) of a coaster's station, or null when it has none.</param>
 	/// <param name="previewOf">The build cursor of the coaster the tool edits, or null.</param>
+	/// <param name="sceneMilliseconds">The scene's rate-scaled clock in whole milliseconds (<see cref="SceneClock"/>); the scrolling textures follow it, so they run at the game speed and stand still while paused. Null reads the real frame time.</param>
 	/// <param name="attractionOf">The attraction id of a coaster's station (0 when it has none), which the riders' heads are matched against.</param>
-	public CoasterRenderer( Func<IReadOnlyList<CoasterRide>> coasters, Func<SVector2> origin, float scale, Func<CoasterRide, ObjectCatalogEntry?> entryOf, Func<CoasterRide, CoasterPreview?> previewOf, Func<CoasterRide, int> attractionOf )
+	public CoasterRenderer( Func<IReadOnlyList<CoasterRide>> coasters, Func<SVector2> origin, float scale, Func<CoasterRide, ObjectCatalogEntry?> entryOf, Func<CoasterRide, CoasterPreview?> previewOf, Func<CoasterRide, int> attractionOf, Func<uint>? sceneMilliseconds = null )
 	{
+		this.sceneMilliseconds = sceneMilliseconds;
 		this.attractionOf = attractionOf;
 		this.coasters = coasters;
 		this.origin = origin;
@@ -251,6 +254,7 @@ public sealed class CoasterRenderer : Entity
 		private Vertex[] scrollVertices = Array.Empty<Vertex>();
 		private float[] scrollBase = Array.Empty<float>();
 		private float scrollPhase;
+		private uint lastSceneMilliseconds;
 		private float[] scrollU = Array.Empty<float>();
 		private int trackTriangles;
 		private int pylonTriangles;
@@ -262,6 +266,7 @@ public sealed class CoasterRenderer : Entity
 			this.owner = owner;
 			Ride = ride;
 			this.assets = assets;
+			lastSceneMilliseconds = owner.sceneMilliseconds?.Invoke() ?? 0;
 			ride.TrackChanged += OnTrackChanged;
 		}
 
@@ -449,7 +454,15 @@ public sealed class CoasterRenderer : Entity
 		{
 			if ( scrollModel == null )
 				return;
-			scrollPhase = AdvanceScroll( scrollPhase, Ride.PowerFactor, Time.Delta );
+			// [BIN:TPW-EXE:0x435adf scroll clock] the gap is on the scaled clock (0x4709e0 with argument 0 reads 0x7b496c, the unscaled 0x7b4974 only for a non-zero one): whole milliseconds since the controller's last tick (+0x138, stored again at the end of each tick), times the power factor, times 0.001
+			var gapSeconds = Time.Delta;
+			if ( owner.sceneMilliseconds is { } clock )
+			{
+				var now = clock();
+				gapSeconds = unchecked( now - lastSceneMilliseconds ) * 0.001f;
+				lastSceneMilliseconds = now;
+			}
+			scrollPhase = AdvanceScroll( scrollPhase, Ride.PowerFactor, gapSeconds );
 			for ( var index = 0; index < scrollVertices.Length; index++ )
 				scrollVertices[index].TexCoords = new SVector2( scrollU[index], scrollBase[index] - scrollPhase );
 			scrollModel.UpdateVertices( scrollVertices );

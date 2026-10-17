@@ -310,19 +310,19 @@ public sealed class Sky : IDisposable
 	// [DATA:levels/<theme>/sky/*.tga] the three files have a descriptor without the top-origin bit; sky_cyl.tga's haze (alpha 24) is its last stored rows and the cylinder's top ring reads v 0.99 and 0.49, so the engine reads rows in file order and the haze joins the cloud layer at the top
 	private static SVector2 Upload( SVector2 engine ) => new( engine.X, 1f - engine.Y );
 
-	/// <summary>Moves the scroll along once per rendered frame.</summary>
-	private void Advance()
+	/// <summary>Moves the scroll along once per rendered frame by the scene clock's frame time (<see cref="SceneClock.CappedFrameSeconds"/>: the park's game speed, zero while paused).</summary>
+	private void Advance( float frameSeconds )
 	{
 		var frame = global::Global.Render.FrameNumber;
 		if ( frame == lastFrame )
 			return;
 		lastFrame = frame;
 		for ( var layer = 0; layer < MaximumLayers; layer++ )
-			(offsetU[layer], offsetV[layer]) = Scroll( layer, offsetU[layer], offsetV[layer], Time.Delta );
+			(offsetU[layer], offsetV[layer]) = Scroll( layer, offsetU[layer], offsetV[layer], frameSeconds );
 	}
 
 	/// <summary>Draws the sky behind everything else of the world pass: no depth test or write, centred on the camera.</summary>
-	public void Draw()
+	public void Draw( float frameSeconds )
 	{
 		if ( disposed || global::Global.Render == null )
 			return;
@@ -330,7 +330,7 @@ public sealed class Sky : IDisposable
 		var layers = Math.Min( CompatibilityRuntime.RenderQuality.SkyLayers, MaximumLayers );
 		if ( layers <= 0 )
 			return;
-		Advance();
+		Advance( frameSeconds );
 
 		vertices.Clear();
 		for ( var layer = 0; layer < layers; layer++ )

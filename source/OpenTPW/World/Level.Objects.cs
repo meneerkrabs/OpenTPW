@@ -548,6 +548,8 @@ public partial class Level
 			SlotChooser = guest => guest.InPoolActivity
 				? (guests.PoolActivityOf( guest )?.SpriteSlot( guest ) ?? PoolSwimSlots.TreadWater, (int)(guests.TimeSeconds * 6) + guest.Id)
 				: (PoolSwimming.SpriteSlot( guest.SwimStroke ), (int)(guests.TimeSeconds * (guest.SwimStroke == 2 ? 3 : 6)) + guest.Id),
+			// [EXT:pools-slides] a rider lying in a flume is drawn pulled towards the camera by the trough's depth, so the curved bed does not cut its lower body (presentation only)
+			DepthPullChooser = guest => PoolSlideActivity.DepthPull( guests, guest ),
 			FeetChooser = guest =>
 			{
 				var feet = GuestRenderer.CellToEngine( park.Heightfield, guest.DrawX, guest.DrawY );

@@ -263,6 +263,14 @@ public sealed class PoolSlideActivity : IPoolActivity
 		return false;
 	}
 
+	/// <summary>How far a rider in the open flume is drawn towards the camera, engine units: a little more than the flume's depth (<see cref="PoolSlideMeshBuilder.FlumeRadius"/>), so the bed cannot cut the camera-facing quad.</summary>
+	public const float FlumeDepthPull = 0.5f;
+
+	/// <summary>The depth pull of the swimmers' renderer for this guest: <see cref="FlumeDepthPull"/> for a rider on a flume, 0 for everyone else. Presentation only.</summary>
+	public static float DepthPull( GuestSimulation simulation, Guest guest ) =>
+		guest.State == GuestState.PoolActivity && guest.PoolActivityPhase == PoolSlidePhases.Ride && guest.PoolActivityId == ActivityId
+		&& simulation.PoolSlides?.FindByThing( guest.PoolActivityTarget ) is { Profile: PoolSlideProfile.Flume } ? FlumeDepthPull : 0f;
+
 	/// <summary>
 	/// Whether the guest is a rider inside a closed tube: it is not drawn there (as on a real enclosed slide) but on the platform before the launch and in the water after the splash. Presentation only.
 	/// </summary>

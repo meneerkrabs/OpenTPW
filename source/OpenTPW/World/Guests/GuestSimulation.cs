@@ -1110,7 +1110,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 
 	/// <summary>
 	/// A cell is walkable for a route walk (<see cref="GuestNavigation.Step(int, int, Func{int, int, bool}, Func{GuestNavigation, (int X, int Y)}?)"/>,
-	/// WALK-006) when it is on its current walk: the route cells and, for a queue walk, the queue's next cells ahead of the destination and
+	/// <c>[EXT:legacy-save-route-walk]</c>) when it is on its current walk: the route cells and, for a queue walk, the queue's next cells ahead of the destination and
 	/// behind the start. A walk of the original kind asks <see cref="WalkEdges"/> instead.
 	/// </summary>
 	private bool IsOpenForStep( int x, int y ) => stepping!.IsOnWalk( x, y );
@@ -1184,7 +1184,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// a route search from the guest's cell with its walk mask), and <paramref name="cells"/> (from the guest's own cell on) and
 	/// <paramref name="alsoOpen"/> are bookkeeping for the M3 gate; off the grid (a guest of an old save's arrival lane) the guest walks the cells themselves.
 	/// </summary>
-	private bool SetDestination( Guest guest, (int X, int Y) target, List<(int X, int Y)> cells, List<(int X, int Y)>? alsoOpen = null, bool routeWalkIfRefused = false )
+	private bool SetDestination( Guest guest, (int X, int Y) target, List<(int X, int Y)> cells, List<(int X, int Y)>? alsoOpen = null )
 	{
 		var navigation = guest.Navigation;
 		var route = new List<(int X, int Y)>( cells.Count + 1 ) { navigation.Cell };
@@ -1199,12 +1199,6 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		else
 		{
 			found = navigation.Navigate( Grid.Cells, target.X, target.Y, route, alsoOpen );
-			// [APPROX:WALK-006] a refused search keeps the route walk of the ride's cells for the last walk into the entrance cell (see UpdateStanding): only the entrance cells of a park resumed from a save made before the import took the saved link byte refuse it
-			if ( !found && routeWalkIfRefused )
-			{
-				navigation.SetDestination( target.X, target.Y, route, alsoOpen );
-				found = true;
-			}
 		}
 		guest.HasWaypoint = true;
 		return found;
@@ -1749,7 +1743,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		foreach ( var guest in guests )
 		{
 			// A walk of the original kind notices a changed block itself (the stamp reroute of follow_path, ParkCellMap.BlockStamp).
-			// [EXT:legacy-save-route-walk] a route walk restored from an OpenTPW save made before the original walk (WALK-006) has no original follow_path behind it, so a grid edit that takes a cell or link of its route ends it where the guest stands instead of replanning; the original has no such walks, and OpenTPW cannot rebuild the walk state such a save never held
+			// [EXT:legacy-save-route-walk] a route walk restored from an OpenTPW save made before the original walk has no original follow_path behind it, so a grid edit that takes a cell or link of its route ends it where the guest stands instead of replanning; the original has no such walks, and OpenTPW cannot rebuild the walk state such a save never held
 			// [APPROX:WALK-007] the queue recompute's own stamp of its back cell (tp.exe 0x4de1f0: the counter raised by 0x4d8c50 and written into the back cell's block by 0x4d8c60) is made after the queue tool's edits, but not yet after a path laid over a queue end or a cell clear of a queue cell (0x5346d0, 0x5367a0 call 0x4de1f0 on the owning ride, found through the cell's owner word +0x10, which OpenTPW's cells do not keep); the block stamps of every cell type change (0x4d8c60 from 0x5346d0, 0x5348d0, 0x538fc0) and the walk's comparison (0x50ed6c, a search in mode 1) are ported — still open: the 0x4de1f0 stamp after a path over a queue end and a queue cell clear (the owner word)
 			if ( guest.State is not (GuestState.WalkingAround or GuestState.ThrowingAwayLitter) || !guest.HasWaypoint || guest.Navigation.Original
 				|| RouteAheadHolds( guest.Navigation ) )
@@ -2371,7 +2365,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		guest.QueueTargetX = target.X / (float)Fixed16.One;
 		guest.QueueTargetY = target.Y / (float)Fixed16.One;
 		// [BIN:TPW-EXE:0x004D8750 queue walk] a queue walk is the search and edge-test walk of every guest (Navigate): the edge test opens a step between queue cells, and between the join path and the back cell, through the link bytes the queue tool wrote (QueuePaths); the last walk into the ride's entrance cell is the same walk (the stand point, state 13)
-		return SetDestination( guest, target, route, alsoOpen, routeWalkIfRefused: toEntrance );
+		return SetDestination( guest, target, route, alsoOpen );
 	}
 
 	/// <summary>The ride's entrance cell: the front queue cell's neighbour towards the ride.</summary>
@@ -2590,8 +2584,13 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		{
 			guest.QueueCalled = false;
 			// [BIN:TPW-EXE:0x004FFFF0 called forward] the call (flag +0x1F8, the ride's called guest 0x004E0AA0) asks the generic route 0x004FA5F0 to the stand point 0x004DEDF0(0) (the entry cell +0x36 of the ride); a route makes state 13 ("being loaded to ride"), none logs "the player has removed the path from under me and I can no longer get into object" and releases the called slot (0x004E0AC0), unlinks the guest (0x004DDD20) and dismisses it (0x005012F0) through the exit 0x005004AA, with no thought
-			// where the search cannot enter the entrance cell (a park resumed from a save made before the import took the saved link byte holds none on it toward the path outside, so the edge test 0x4D8750 refuses the step) the guest keeps OpenTPW's route walk into it instead of the original's dismissal (WALK-006, SetDestination)
-			SetQueueDestination( guest, attraction, 0, StandPoint( attraction ), toEntrance: true );
+			// [BIN:TPW-EXE:0x004FFFF0 refused stand-point route] a refused search is the original's own failure ("the player has removed the path from under me and I can no longer get into object"): the called slot is released, the guest unlinked and dismissed with no thought (DismissFromQueue), as a refused queue walk is; a park resumed from an old OpenTPW save has the entrance's link byte repaired at load ([EXT:legacy-save-access-links], ObjectAccessCells.RepairMissingLinks)
+			if ( !SetQueueDestination( guest, attraction, 0, StandPoint( attraction ), toEntrance: true ) )
+			{
+				Log?.Warning( "The player has removed the path from under me and I can no longer get into object" );
+				DismissFromQueue( guest, attraction, GuestThought.None, QueueEndReason.NoPlace );
+				return;
+			}
 			guest.State = GuestState.Boarding;
 			return;
 		}

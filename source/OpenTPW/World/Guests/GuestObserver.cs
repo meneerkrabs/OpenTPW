@@ -38,13 +38,15 @@ public enum QueueEndReason
 	/// <summary>The toilet meter rose above the leave level while queueing for something that is not a toilet.</summary>
 	NeedToilet,
 	/// <summary>The boredom test of the queue (the original's unreachable one).</summary>
-	Bored
+	Bored,
+	/// <summary>The smarter-guests extension's queue patience ran out (<see cref="IGuestDecisions.DecideQueuePatience"/>); never in the original.</summary>
+	Impatient
 }
 
 public static class QueueEndReasons
 {
 	/// <summary>True for the reasons where the guest left of its own accord; the others are rejections.</summary>
-	public static bool IsAbandonment( QueueEndReason reason ) => reason is QueueEndReason.Unhappy or QueueEndReason.NeedToilet or QueueEndReason.Bored;
+	public static bool IsAbandonment( QueueEndReason reason ) => reason is QueueEndReason.Unhappy or QueueEndReason.NeedToilet or QueueEndReason.Bored or QueueEndReason.Impatient;
 }
 
 /// <summary>

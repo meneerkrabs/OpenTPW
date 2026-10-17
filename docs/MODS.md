@@ -22,7 +22,7 @@ In code the system is called `OpenTPW.Mods` / "extensions"; `OpenTPW.ModKit` is 
 
 - manifests are parsed and validated, mod folders are discovered, `mods.json` is read and the run's set of extensions
   and mods is resolved once at startup;
-- the only official extension is `opentpw.online` (below);
+- the official extensions are `opentpw.online`, `opentpw.cross-edition-objects`, `opentpw.smarter-guests` and `opentpw.guest-insights` (below);
 - park saves record the mods that change the simulation and refuse a mismatched set (below);
 - the **Extensions and mods screen** (below) edits `mods.json`;
 - **content roots** are live on the desktop: an enabled mod's `overrides`, `strings` and `objects` change what the game
@@ -282,6 +282,24 @@ extension may differ. A save that needs a mod you do not have refuses with `need
 Continue entries keep it and add "(requires mod <id> <version>)". Exporting a park to a `.tpwpark` package is refused
 while such a mod is active, because packages record no mods yet. The asset manifest keys archives of a mod `mod:<id>:/…`
 (`data:` and `bonus:` for the game data and the bonus content). Details: [DETERMINISM.md](DETERMINISM.md) "Mods".
+
+## Smarter guests and guest insights (`opentpw.smarter-guests`, `opentpw.guest-insights`)
+
+Two official extensions for the park visitors ([SMARTER-GUESTS.md](SMARTER-GUESTS.md) has the plan, the architecture and the measurement), both at version 1.0.0. **Players cannot switch them on yet**:
+neither has a real feature, and a no-op version would lock saves to it. They are registered for tests and development, hidden from the Extensions and mods screen, and a `mods.json` entry or `--enable-mod` for them is ignored with a log line, until
+the first real rule ships (phase 2 for smarter guests, phase 1 for guest insights).
+
+- **`opentpw.smarter-guests`** changes the simulation (`AffectsSimulation`), so a park saved with it records it (id, version, no files) and loads only with it on, in the same version; a park saved without it
+  loads only with it off. **The extension's version is the algorithm identity**: every release that changes how guests decide bumps it, and a park saved by another version is refused with
+  `needs opentpw.smarter-guests <saved version>, not <current>`. In 1.0.0 the guests still decide exactly as the original (the policy delegates); what the extension adds is the seam (`IGuestDecisions`),
+  a birth id for every guest and its own park state, saved in an optional `SmarterGuests` section of the park save. A build from before that section refuses such a save. Switching it needs a
+  restart like every extension, and a save made without it is refused while it is on.
+  `FeatureGates.SmarterGuests` is read once when the guest simulation is built. `[EXT:smarter-guests]`.
+- **`opentpw.guest-insights`** only reads the park (`AffectsSimulation` false): refusal reasons and a complaints summary in the park windows, in a later phase. It is never recorded in saves, so
+  it can be switched freely. `[EXT:guest-insights]`.
+
+Their names and descriptions exist in the nine interface languages for the screen. Switching either on or off changes none of the pinned digests of the off path
+(`DeterminismTests`); with smarter guests on, `DeterminismTests.SmarterGuestsFixedRunHash` pins the world hash, which then includes the extension's state.
 
 ## The online extension (`opentpw.online`)
 

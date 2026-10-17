@@ -280,6 +280,9 @@ internal static class ParkResumeSaveFile
 		// [EXT:mods] the recorded mods: bounded, valid ids and digests, and every mod: asset key names a recorded mod
 		if ( ParkResumeMods.ShapeProblem( snapshot.Mods, snapshot.AssetHashes ) is { } modProblem )
 			Require( false, modProblem );
+		// [EXT:smarter-guests] the extension's section: present exactly when the extension is recorded, with ids that fit the guests the save holds
+		if ( SmarterGuestsSave.ShapeProblem( snapshot.SmarterGuests, snapshot.Guests?.Guests?.Select( guest => guest.Id ), snapshot.Mods ) is { } smarterProblem )
+			Require( false, smarterProblem );
 
 		// Layout: the pure identity and allocator rules (catalog resolution is ValidateSnapshot's).
 		var layout = snapshot.Layout!;

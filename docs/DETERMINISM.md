@@ -445,6 +445,11 @@ digests, and every `mod:<id>:` key of the asset manifest must name a recorded mo
 save that has it (the codec refuses unknown members), which is intended. `ParkSharing.ExportLevel` refuses to export while a
 simulation-changing mod is active, because a park package records none yet.
 
+The smarter-guests extension (`opentpw.smarter-guests`, [SMARTER-GUESTS.md](SMARTER-GUESTS.md)) keeps its own state (park seed, birth-id counter, each guest's birth id) apart from the guest snapshot and
+from `GuestSimulation.ComputeStateHash`; it joins `WorldStateHash` only while the extension is on, so the off-path hash and `SchemaVersion` (21) do not change, and it is saved in the optional
+`ParkResumeSnapshot.SmarterGuests` section (null and omitted while off). The gate is read once when the guest simulation is built. With the delegating policy of version 1.0.0 the guests and
+the `WorldRng` stream equal the off run's tick for tick; `DeterminismTests.SmarterGuestsFixedRunHash` pins the on run's world hash.
+
 A run with a mod that brings Theme Park Inc rides is as deterministic as any other: the M3 gate with such a ride as its attraction gives the same guest and state hashes in two runs
 (`TpiRidesEndToEndTests`, over the install named by `OPENTPW_TPI_PATH`), and the extension is recorded in the save, so a park saved with it loads only with it.
 

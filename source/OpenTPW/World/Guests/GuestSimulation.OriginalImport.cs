@@ -145,6 +145,9 @@ public sealed partial class GuestSimulation
 			var navigation = guest.Navigation;
 			(navigation.X, navigation.Y) = (position.X << 8, position.Y << 8);
 			navigation.SetDestination( navigation.X, navigation.Y, [] );
+			// [EXT:smarter-guests] an imported guest of a running extension gets its id at once; before the first tick the extension's first tick gives it
+			if ( SmarterGuests is { Bootstrapped: true } smarter )
+				guest.BirthId = smarter.AllocateBirthId();
 			guests.Add( guest );
 			byId.Add( guest.Id, guest );
 			if ( inPark )

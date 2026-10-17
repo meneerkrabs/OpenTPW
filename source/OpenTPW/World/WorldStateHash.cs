@@ -113,6 +113,9 @@ public static class WorldStateHash
 				root.Remove( nameof( ParkSaveFile.Data.AnalyserCaches ) );
 			hash.Add( Canonical( node ) );
 		}
+		// [EXT:smarter-guests] the extension's own state joins the hash only while the extension is on, so every park without it keeps its pins and SchemaVersion
+		if ( sources.Guests?.SmarterGuests is { } smarter )
+			smarter.AddCanonicalState( hash, sources.Guests.Guests );
 		return hash.Value;
 	}
 

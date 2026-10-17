@@ -43,7 +43,7 @@ public static class ModRows
 	{
 		var rows = new List<ModRow>();
 		// An extension is never refused, so its row follows the pending choice at once.
-		foreach ( var extension in extensions )
+		foreach ( var extension in extensions.Where( extension => extension.PlayerSelectable ) )
 		{
 			var enabled = pending.IsEnabled( extension.Id, extension.DefaultEnabled );
 			rows.Add( new ModRow( extension.Id, extension.Name, extension.Version, true, enabled,

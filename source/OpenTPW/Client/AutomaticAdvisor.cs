@@ -25,6 +25,8 @@ internal sealed class AutomaticAdvisor : IDisposable
 	private bool presentationFailed;
 	private Level? level;
 	private ParkEconomyRuntime? park;
+	/// <summary>The park turn of the newest object construction and of the newest hire (tp.exe park words <c>+0x21C30</c> and <c>+0x21C38</c>): advisor state, outside the economy and its hashes.</summary>
+	private long objectStampTurn, hireStampTurn;
 	private GuestSimulation? guests;
 	private StaffWorldSimulation? staffWorld;
 	// The park turn the scan last ran for; not saved (a loaded or attached advisor takes the turn of its first update as the start).
@@ -98,6 +100,8 @@ internal sealed class AutomaticAdvisor : IDisposable
 		{
 			park.EventRaised += OnParkEvent;
 			park.Economy.Objectives.TimeShort += OnChallengeTimeShort;
+			// [BIN:TPW-EXE:0x004C58C0 park init] the analyser stamps the object and hire words with the current time (0x4C5CAF, 0x4C5CDE); a loaded park's snapshot or save then replaces them
+			(objectStampTurn, hireStampTurn) = EconomyParkState.NewestStamps( park.Economy );
 		}
 		guests = started.Guests;
 		if ( guests != null )
@@ -145,17 +149,34 @@ internal sealed class AutomaticAdvisor : IDisposable
 		presentation?.Kill();
 	}
 
-	private void OnParkEvent( ParkEvent item )
+	/// <summary>An economy without a level (tests of the event mapping): its events are answered like a level's park's.</summary>
+	private ParkEconomy? detachedEconomy;
+	private ParkEconomy? CurrentEconomy => park?.Economy ?? detachedEconomy;
+
+	/// <summary>Follows an economy's events without a level, as <see cref="AttachLevel"/> follows its park's: for tests of the event mapping.</summary>
+	internal void AttachEconomy( ParkEconomy economy )
+	{
+		detachedEconomy = economy;
+		economy.EventRaised += OnParkEvent;
+		(objectStampTurn, hireStampTurn) = EconomyParkState.NewestStamps( economy );
+	}
+
+	internal void OnParkEvent( ParkEvent item )
 	{
 		// [BIN:TPW-EXE:0x004D0370 bankruptcy event] at the bank's month-end message (type 0xC via 0x4D02D0): balance < 0, previous balance (+0x11C) < 0 and __alldiv(0x4F88B0(world+0x2A0, turn entered red +0x120), 0x1792F8648000 = 2.592e13) >= 6 (0x4D053B–0x4D054F) post event 2 every month while that holds, through 0x40F630(2); the turn entered red is set when the balance first goes below zero (0x4D041A–0x4D0432); it does not close the park
 		// [BIN:TPW-EXE:0x004F88B0 park time] the term is (park turn − stamp) as an unsigned 32-bit count × the calendar rate (+0x1C of world+0x2A0, 15000) / 4 × 10^7, the park time in 100 ns units; 0x004D04D9–0x004D04F2 take 0 months unless the balance (+0xC) and mLastBalance (+0x11C) are both below 0 (ParkEconomy.MonthsSinceEnteringRed, raised as ParkEventKind.BankruptcyMessage)
 		if ( item.Kind == ParkEventKind.BankruptcyMessage )
 			Raise( AdvisorGameEvent.Bankrupted );
+		// [BIN:TPW-EXE:0x004DB7A3 object stamp] every object construction and every staff init (0x504C65) rewrites the park's stamp with the current time (mLastObjectBuilt, mLastStaffHired)
+		if ( item.Kind == ParkEventKind.ObjectBuilt )
+			objectStampTurn = ParkCalendar.Turn( item.Tick );
+		if ( item.Kind == ParkEventKind.StaffHired )
+			hireStampTurn = ParkCalendar.Turn( item.Tick );
 		// [BIN:TPW-EXE:0x004DF8BE ride breakdown imminent] the wear step queues the advice 0x42 as a ride's condition crosses below 10 percent (not in game type 1, which never wears)
 		if ( item.Kind == ParkEventKind.RideBreakdownImminent )
 			PostEventAdvice( AdvisorRideEvents.BreakdownImminentMessage, "a ride about to break down" );
-		// [BIN:TPW-EXE:0x004DADC0 breakdown handler] a ride that breaks down: the advice of the mechanics' state (68, 69), or 258 for a condemned ride
-		if ( item.Kind == ParkEventKind.RideBrokeDown && park != null && park.Economy.TryGetObject( item.InstanceId, out var broken ) && AdvisorRideEvents.ForBreakdown( park.Economy, broken ) is { } breakdownAdvice )
+		// [BIN:TPW-EXE:0x004E0FA0 broken state entered] the handler 0x4DADC0 runs on the message of type 7 that case 1 of 0x4E0E60 builds (0x40F380) when the ride update has read the script's VAR_BROKEN, not at the earlier breakdown request (0x4E0B90); a condemned ride sends type 8 (0x40F3D0): the advice of the mechanics' state (68, 69), or 258
+		if ( item.Kind == ParkEventKind.RideEnteredBrokenState && CurrentEconomy is { } economy && economy.TryGetObject( item.InstanceId, out var broken ) && AdvisorRideEvents.ForBreakdown( economy, broken ) is { } breakdownAdvice )
 			PostEventAdvice( breakdownAdvice, $"ride {item.InstanceId} breaking down" );
 		// [BIN:TPW-EXE:0x00509031 staff messages] the staff manager's month routine sends the staff info message (type 0x17, kind and role) that 0x59AFC0 turns into the advice 33-57; the kind and role are those of the strike message, whose text the advisor's caption then posts
 		if ( item.Kind == ParkEventKind.StaffStrikeMessage )
@@ -204,7 +225,7 @@ internal sealed class AutomaticAdvisor : IDisposable
 	/// <summary>Advice posted by game code (the original builds the record through 0x59B590 with the descriptor's score and queues it through 0x59A940).</summary>
 	internal void PostEventAdvice( int message, string source )
 	{
-		if ( level == null )
+		if ( level == null && detachedEconomy == null )
 			return;
 		var admission = Controller.Advise( message, GameTick, GameType, TutorialEnabled );
 		Log.Trace( $"Advisor advice for {source}: message {message} {(admission is { } result ? $"{result.Eligibility}{(result.Stored ? $" in slot {result.Slot}" : result.Acknowledged ? ", queue full" : "")}" : "not posted (game mode)")}." );
@@ -384,7 +405,7 @@ internal sealed class AutomaticAdvisor : IDisposable
 
 	/// <summary>The scan of one update for a park: its turn, game type and the tutorial option, halted while paused or while the park is lost.</summary>
 	internal int ScanPark( ParkEconomy economy, bool gamePaused ) =>
-		ScanTurns( new EconomyMoneyState( economy ), unchecked( (uint)economy.Turn ), economy.Mode == ParkGameMode.InstantAction ? 2 : 0, TutorialEnabled, gamePaused || economy.IsBankrupt, new EconomyParkState( economy ) );
+		ScanTurns( new EconomyMoneyState( economy ), unchecked( (uint)economy.Turn ), economy.Mode == ParkGameMode.InstantAction ? 2 : 0, TutorialEnabled, gamePaused || economy.IsBankrupt, new EconomyParkState( economy, objectStampTurn, hireStampTurn ) );
 
 	/// <summary>
 	/// The scan the advisor's update runs once per park turn (the original calls 0x59A550 once per turn from the thing loop): one scan call per turn that has
@@ -490,7 +511,7 @@ internal sealed class AutomaticAdvisor : IDisposable
 	/// cannot resume — is rejected by validation instead of silently restoring a silent advisor. The
 	/// process-local presentation-failure flag and the pause state are re-established, not saved.
 	/// </summary>
-	internal sealed record AutomaticAdvisorSnapshot( AdvisorController.AdvisorControllerSnapshot Controller, uint AdvisorClockMilliseconds, bool SpeechWasActive );
+	internal sealed record AutomaticAdvisorSnapshot( AdvisorController.AdvisorControllerSnapshot Controller, uint AdvisorClockMilliseconds, bool SpeechWasActive, long? ObjectStampTurn = null, long? HireStampTurn = null );
 
 	/// <summary>
 	/// The advisor's state for a park save; fails explicitly while a playback attempt is outstanding or a
@@ -501,7 +522,7 @@ internal sealed class AutomaticAdvisor : IDisposable
 	{
 		if ( IsSpeechActive && !whileSpeaking )
 			throw new InvalidOperationException( "Cannot capture the automatic advisor while a response is being spoken: the presentation's speech has no snapshot seam, so it cannot continue after a load." );
-		return new AutomaticAdvisorSnapshot( Controller.CaptureSnapshot(), AdvisorClock, SpeechWasActive: false );
+		return new AutomaticAdvisorSnapshot( Controller.CaptureSnapshot(), AdvisorClock, SpeechWasActive: false, objectStampTurn, hireStampTurn );
 	}
 
 	/// <summary>
@@ -529,6 +550,9 @@ internal sealed class AutomaticAdvisor : IDisposable
 		ValidateSnapshot( snapshot );
 		Controller.RestoreSnapshot( snapshot.Controller );
 		lastScanTurn = null;
+		// a snapshot from before the stamps were kept leaves the ones derived at attach
+		objectStampTurn = snapshot.ObjectStampTurn ?? objectStampTurn;
+		hireStampTurn = snapshot.HireStampTurn ?? hireStampTurn;
 		// The rebase, not an offset on the source: the destination's own elapsed time (construction, pause
 		// screens) must not shift the saved reservations.
 		clock.RestoreMilliseconds( snapshot.AdvisorClockMilliseconds );

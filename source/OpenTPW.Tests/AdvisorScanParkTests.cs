@@ -741,9 +741,7 @@ public class AdvisorScanParkTests
 		Assert.AreEqual( (ride.Id, 7), (imminent[0].InstanceId, (int)imminent[0].Amount) );
 		EconomyTestData.AdvanceToTurn( park, 25 * ParkEconomy.WearInterval );
 		Assert.AreEqual( 1, events.Count( item => item.Kind == ParkEventKind.RideBreakdownImminent ), "once: the next step starts below the line" );
-		var advisor = new AdvisorController( Balance() );
-		Assert.IsNotNull( advisor.Advise( AdvisorRideEvents.BreakdownImminentMessage, 100, 0, true ), "advice 66 reaches the queue" );
-		Assert.AreEqual( 100, advisor.Balance.ScoreOf( 66 ), "with RidesBreakdownImminent.Score" );
+		Assert.AreEqual( 100, new AdvisorController( Balance() ).Balance.ScoreOf( 66 ), "with RidesBreakdownImminent.Score" );
 	}
 
 	[TestMethod]
@@ -770,8 +768,116 @@ public class AdvisorScanParkTests
 		Assert.AreEqual( 69, AdvisorRideEvents.ForBreakdown( park, ride ) );
 		ride.LifeGauge = 0.5;
 		Assert.AreEqual( 258, AdvisorRideEvents.ForBreakdown( park, ride ), "a life gauge byte of 0 is a condemned ride" );
-		var advisor = new AdvisorController( Balance() );
-		Assert.IsNotNull( advisor.Advise( 258, 100, 0, true ) );
-		Assert.AreEqual( 100, advisor.Balance.ScoreOf( 258 ) );
+		Assert.AreEqual( 100, new AdvisorController( Balance() ).Balance.ScoreOf( 258 ) );
+	}
+
+	// ------------------------------------------------------------------ the event mapping of AutomaticAdvisor
+
+	private static IReadOnlyList<int> Pending( AutomaticAdvisor advisor ) =>
+		advisor.Controller.CaptureSnapshot().Queue.Slots.Where( slot => slot != null ).Select( slot => slot!.MessageId ).ToArray();
+
+	private static (ParkEconomy Park, AutomaticAdvisor Advisor) Attached()
+	{
+		var park = EconomyTestData.Park();
+		var advisor = new AutomaticAdvisor( new AdvisorController( Balance() ), () => 0 );
+		advisor.AttachEconomy( park );
+		return (park, advisor);
+	}
+
+	/// <summary>A script-hosted ride worn down to its breakdown request (the wear of 3.875 per step breaks it at the 26th step), not yet in its broken state.</summary>
+	private static ParkObjectState WornToTheRequest( ParkEconomy park, List<ParkEvent> events )
+	{
+		var rides = new EconomyTestData.RideOperations();
+		park.RideOperations = rides;
+		park.EventRaised += events.Add;
+		var ride = park.RegisterExisting( 1100 );
+		ride.ScriptHosted = true;
+		park.ObserveScriptState( ride, false );
+		rides.Set( ride.Id, new RideOperation( true, 5, 50 ) );
+		EconomyTestData.AdvanceToTurn( park, 26 * ParkEconomy.WearInterval );
+		return ride;
+	}
+
+	[TestMethod]
+	public void TheAdvisorAnswersTheImminentBreakdownEventWithAdvice66()
+	{
+		var (park, advisor) = Attached();
+		var events = new List<ParkEvent>();
+		WornToTheRequest( park, events );
+		Assert.IsTrue( events.Any( item => item.Kind == ParkEventKind.RideBreakdownImminent ) );
+		CollectionAssert.Contains( Pending( advisor ).ToList(), 66, "the event reaches the controller's queue through the advisor's own mapping" );
+	}
+
+	[TestMethod]
+	public void TheBreakdownAdviceWaitsForTheBrokenStateAndReadsTheMechanicsThen()
+	{
+		// tp.exe answers the type 7 message of the state change (0x4E0FA0), not the request (0x4E0B90): a mechanic who rests at the request and is free when the script reports VAR_BROKEN says nothing
+		var (park, advisor) = Attached();
+		var events = new List<ParkEvent>();
+		var ride = WornToTheRequest( park, events );
+		var mechanic = EconomyTestData.HireBest( park, StaffType.Mechanic );
+		mechanic.State = StaffState.Resting;
+		Assert.AreEqual( 1, events.Count( item => item.Kind == ParkEventKind.RideBrokeDown ), "the request was raised" );
+		Assert.AreEqual( 0, events.Count( item => item.Kind == ParkEventKind.RideEnteredBrokenState ), "the ride has not entered its broken state yet" );
+		Assert.IsFalse( Pending( advisor ).Contains( 69 ) || Pending( advisor ).Contains( 68 ), "nothing is said at the request" );
+		mechanic.State = StaffState.Patrolling;
+		park.ObserveScriptState( ride, true );
+		Assert.AreEqual( 1, events.Count( item => item.Kind == ParkEventKind.RideEnteredBrokenState ) );
+		Assert.IsFalse( Pending( advisor ).Contains( 69 ), "the mechanic is free when the ride breaks: tp.exe says nothing" );
+	}
+
+	[TestMethod]
+	public void ABusyMechanicAtTheBrokenStateGivesAdvice69AndNoMechanicAdvice68()
+	{
+		var (park, advisor) = Attached();
+		var events = new List<ParkEvent>();
+		var ride = WornToTheRequest( park, events );
+		park.ObserveScriptState( ride, true );
+		CollectionAssert.Contains( Pending( advisor ).ToList(), 68, "no mechanic is hired" );
+		var (busyPark, busyAdvisor) = Attached();
+		var busyRide = WornToTheRequest( busyPark, new List<ParkEvent>() );
+		EconomyTestData.HireBest( busyPark, StaffType.Mechanic ).State = StaffState.Resting;
+		busyPark.ObserveScriptState( busyRide, true );
+		CollectionAssert.Contains( Pending( busyAdvisor ).ToList(), 69, "the only mechanic rests" );
+		Assert.IsFalse( Pending( busyAdvisor ).Contains( 68 ) );
+	}
+
+	[TestMethod]
+	public void ACondemnedRideGivesAdvice258AndAHeadlessBreakdownEntersItsStateAtOnce()
+	{
+		var (park, advisor) = Attached();
+		var events = new List<ParkEvent>();
+		var ride = WornToTheRequest( park, events );
+		ride.LifeGauge = 0.5;
+		park.ObserveScriptState( ride, true );
+		CollectionAssert.Contains( Pending( advisor ).ToList(), 258 );
+		Assert.IsFalse( Pending( advisor ).Contains( 68 ), "a condemned ride sends the other message" );
+		// an economy-only ride (no script) enters the broken state in the step that requests it
+		var headless = EconomyTestData.Park();
+		var raised = new List<ParkEvent>();
+		var operations = new EconomyTestData.RideOperations();
+		headless.RideOperations = operations;
+		headless.EventRaised += raised.Add;
+		var plain = headless.RegisterExisting( 1100 );
+		operations.Set( plain.Id, new RideOperation( true, 5, 50 ) );
+		EconomyTestData.AdvanceToTurn( headless, 26 * ParkEconomy.WearInterval );
+		Assert.IsTrue( plain.IsBrokenDown );
+		Assert.AreEqual( 1, raised.Count( item => item.Kind == ParkEventKind.RideEnteredBrokenState ) );
+	}
+
+	[TestMethod]
+	public void TheStampsFollowBuildsAndHiresAndRideThroughTheSnapshot()
+	{
+		var (park, advisor) = Attached();
+		EconomyTestData.AdvanceToTurn( park, 2304 );
+		park.TryBuild( 1100, out _ );
+		EconomyTestData.AdvanceToTurn( park, 2880 );
+		var state = new EconomyParkState( park, 2304, 0 );
+		Assert.AreEqual( 25, state.DaysSinceObjectStamp );
+		var snapshot = advisor.CaptureSnapshot();
+		Assert.AreEqual( 2304, snapshot.ObjectStampTurn, "the build event moved the advisor's stamp" );
+		var restored = new AutomaticAdvisor( new AdvisorController( Balance() ), () => 0 );
+		restored.RestoreSnapshot( snapshot );
+		Assert.AreEqual( snapshot.ObjectStampTurn, restored.CaptureSnapshot().ObjectStampTurn );
 	}
 }

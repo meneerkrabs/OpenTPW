@@ -837,7 +837,10 @@ public sealed class ParkEconomy : IParkEconomy
 				if ( item.ScriptHosted )
 					WriteScript( item, RideVariables.VAR_BREAKSTAT, 1 );
 				else
+				{
 					item.IsBrokenDown = true;
+					Raise( ParkEventKind.RideEnteredBrokenState, 0, item.Id, item.InfoId );
+				}
 				Raise( ParkEventKind.RideBrokeDown, 0, item.Id, item.InfoId );
 			}
 		}
@@ -871,7 +874,10 @@ public sealed class ParkEconomy : IParkEconomy
 	internal void ObserveScriptState( ParkObjectState item, bool inBrokenState )
 	{
 		if ( inBrokenState && item.ScriptStateBroken == false )
+		{
 			item.IsBrokenDown = true;
+			Raise( ParkEventKind.RideEnteredBrokenState, 0, item.Id, item.InfoId );
+		}
 		item.ScriptStateBroken = inBrokenState;
 	}
 

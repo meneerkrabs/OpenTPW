@@ -52,13 +52,28 @@ internal interface IAdvisorParkState
 
 /// <summary>
 /// The park statistics of the advisor's park callbacks, computed from the economy without changing it. The helpers that the original caches (<c>0x004C81B0</c>'s block counts, the toilet count)
-/// are recounted here: a cache hit would only return a count older than four turns' map changes, and the advisor writes none of the caches.
+/// are recounted here and not written: the advisor's own calls do write them (<c>0x4C8D16</c>-<c>0x4C8D1D</c> for the blocks, <c>0x4C9F63</c>-<c>0x4C9F70</c> for the toilets), but <c>0x4C8C40</c> has the single caller <c>0x4C81B0</c>,
+/// used only by the two advisor callbacks with age 0, and nothing else reads the toilet cache, so a fresh count gives what the original's callbacks see.
 /// </summary>
 internal sealed class EconomyParkState : IAdvisorParkState
 {
 	private readonly ParkEconomy economy;
+	private readonly long? objectStampTurn, hireStampTurn;
 
-	public EconomyParkState( ParkEconomy economy ) => this.economy = economy ?? throw new ArgumentNullException( nameof( economy ) );
+	/// <param name="economy">The park.</param>
+	/// <param name="objectStampTurn">The park turn of the newest object construction (<c>mLastObjectBuilt</c>), the advisor's own record; null derives it from the standing objects.</param>
+	/// <param name="hireStampTurn">The park turn of the newest hire (<c>mLastStaffHired</c>); null derives it from the employed staff.</param>
+	public EconomyParkState( ParkEconomy economy, long? objectStampTurn = null, long? hireStampTurn = null )
+	{
+		this.economy = economy ?? throw new ArgumentNullException( nameof( economy ) );
+		this.objectStampTurn = objectStampTurn;
+		this.hireStampTurn = hireStampTurn;
+	}
+
+	/// <summary>The stamps a park without a record of them has: the newest standing object's and employed member's turn (0 without any), where the original keeps the stamp after a demolition or a quit.</summary>
+	public static (long ObjectTurn, long HireTurn) NewestStamps( ParkEconomy economy ) => (
+		economy.Objects.Select( item => ParkCalendar.Turn( item.BuiltTick ) ).DefaultIfEmpty( 0 ).Max(),
+		economy.Staff.Members.Select( member => ParkCalendar.Turn( member.HiredTick ) ).DefaultIfEmpty( 0 ).Max() );
 
 	// [BIN:TPW-EXE:0x004C9050 park open] the closed flag of the world (0x51A280, +0x1DA710) clear
 	public bool ParkOpen => economy.IsParkOpen;
@@ -66,15 +81,13 @@ internal sealed class EconomyParkState : IAdvisorParkState
 	// [BIN:TPW-EXE:0x004C9960 staff count] the things of the models 4 to 8 whose model equals the argument and whose flag byte +3 is 0; StaffType is the order handyman, mechanic, entertainer, guard, researcher the original numbers 5, 4, 6, 7, 8
 	public int StaffCount( StaffType type ) => economy.Staff.OfType( type ).Count();
 
-	// [BIN:TPW-EXE:0x004C7680 object stamp] every object construction (0x4DB090, its last call 0x4DB7A3) overwrites the park stamp +0x21C30 with the park time, so the stamp is the time of the newest construction, not the first; the constructor of the park thing leaves it 0 (0x4C5B84)
-	// [APPROX:ADVISOR-009] the newest standing object's build time stands in for the stamp (a demolished newest object leaves the original's stamp where it was)
-	public int DaysSinceObjectStamp => DaysSince( economy.Objects.Select( item => ParkCalendar.Turn( item.BuiltTick ) ).DefaultIfEmpty( 0 ).Max() );
+	// [BIN:TPW-EXE:0x004C7680 object stamp] every object construction (0x4DB090, its last call 0x4DB7A3) overwrites the park's mLastObjectBuilt (+0x21C30, saved at 0x4C6B9A) with the park time, so it is the newest construction, not the first; the park init 0x4C58C0 stamps it with the current time (0x4C5CAF) after zeroing it (0x4C5B84)
+	public int DaysSinceObjectStamp => DaysSince( objectStampTurn ?? NewestStamps( economy ).ObjectTurn );
 
-	// [BIN:TPW-EXE:0x004C76D0 hire stamp] every staff thing init (0x504B90, at 0x504C65) overwrites the park stamp +0x21C38 with the park time: the newest hire
-	// [APPROX:ADVISOR-009] the newest employed member's hire time stands in for the stamp (a member who left leaves the original's stamp where it was)
-	public int DaysSinceHireStamp => DaysSince( economy.Staff.Members.Select( member => ParkCalendar.Turn( member.HiredTick ) ).DefaultIfEmpty( 0 ).Max() );
+	// [BIN:TPW-EXE:0x004C76D0 hire stamp] every staff thing init (0x504B90, at 0x504C65) overwrites mLastStaffHired (+0x21C38, saved at 0x4C6BC4) with the park time: the newest hire; the park init stamps it too (0x4C5CDE)
+	public int DaysSinceHireStamp => DaysSince( hireStampTurn ?? NewestStamps( economy ).HireTurn );
 
-	// [BIN:TPW-EXE:0x004C9070 days since a stamp] (0x4F8690 park time now − stamp) divided by 864,000,000,000 (100 ns per day) with __alldiv; a stamp of 0 gives the days since the start
+	// [BIN:TPW-EXE:0x004C9070 days since a stamp] (0x4F8690 park time now − stamp, both from the calendar base) divided by 864,000,000,000 (100 ns per day) with __alldiv
 	private int DaysSince( long stampTurn ) => (int)(Math.Max( 0, economy.Turn - stampTurn ) * ParkCalendar.SecondsPerTurn / ParkCalendar.SecondsPerDay);
 
 	// [BIN:TPW-EXE:0x0059DB04 days since start] 0x4F8800 (world + 0x2A0) divided by 0xC92A69C000 with __alldiv

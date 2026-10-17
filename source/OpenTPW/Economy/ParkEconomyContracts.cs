@@ -85,7 +85,13 @@ public enum ParkEventKind
 	/// A wear step took a ride's condition below 10 percent (tp.exe <c>0x004DF670</c>, which then queues the advisor's advice 66): <see cref="ParkEvent.InstanceId"/> the ride,
 	/// <see cref="ParkEvent.Amount"/> its state of repair.
 	/// </summary>
-	RideBreakdownImminent
+	RideBreakdownImminent,
+	/// <summary>
+	/// The ride entered its broken state (state 1, or state 4 when its life gauge byte is 0): the moment the ride update (tp.exe <c>0x004E14E0</c>) has read the script's VAR_BROKEN and its
+	/// state change (<c>0x004E0E60</c>) sends the breakdown message the advisor answers, unlike <see cref="RideBrokeDown"/>, which is the earlier breakdown request.
+	/// <see cref="ParkEvent.InstanceId"/> the ride.
+	/// </summary>
+	RideEnteredBrokenState
 }
 
 /// <summary>

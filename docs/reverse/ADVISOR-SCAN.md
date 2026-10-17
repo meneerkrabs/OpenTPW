@@ -190,7 +190,7 @@ to it (the advisor stays outside the world hash). 31 callbacks: rides 5, 6, 7, 6
 | Helper | OpenTPW | Reading |
 | --- | --- | --- |
 | `0x4C9960` | `ParkStaff.OfType(role).Count()` | things of the models 4 to 8 equal to the argument with flag byte `+3` clear |
-| `0x4C9070`, `0x4C90D0` | newest `ParkObjectState.BuiltTick`, newest `StaffMember.HiredTick` | days = (park time - stamp) / one day; a stamp of 0 gives the days since the start (approximation: ADVISOR-009, the original keeps the stamp after a demolition or a quit) |
+| `0x4C9070`, `0x4C90D0` | the advisor's own record of the turn of the newest object construction and newest hire (`mLastObjectBuilt`, `mLastStaffHired`), kept from the `ObjectBuilt` and `StaffHired` events, stamped at park init like `0x4C58C0` (`0x4C5CAF`, `0x4C5CDE`) and saved in the advisor snapshot | days = (park time - stamp, both from the calendar base) / one day; outside the economy and its hashes. A loaded or original-save park derives them at attach from its newest standing object and employed member, since the save's park words are not parsed (ADVISOR-009) |
 | `0x4CA450`, `0x4CA510`, `0x4CA570`, `0x4CA5D0` | catalog types by `RatingType` (`+0x4AC`) that are available (`+0x10` of the object control: outside the research tables, or researched) | rides skip the types with a golden ticket cost (`+0xC4`) at flag 0, the others do not test it |
 | `0x4CA7B0(kind, flag)` | catalog types with `Counters[Built]` above 0 | the control's built count (`+0x18`) is never lowered: a sold ride still counts as built |
 | `0x4CA8E0`, `0x4CA9B0` | standing objects of the kind (a ride also by upgrade level), the closed ones | closed is the open word `+0x68` clear: the player's close, and the broken, upgrading and condemned states clear it (`0x4E0FD8`, `0x4E10DC`, case 4 of `0x4E0E60`) |
@@ -202,15 +202,15 @@ to it (the advisor stays outside the world hash). 31 callbacks: rides 5, 6, 7, 6
 
 What reading the bytes corrected from the first mapping above (the tables carry the corrected formulas):
 
-- The two stamps are the **newest** construction and hire, not the first (`0x4DB090` and `0x504B90` rewrite them every time); the days-since tests use them as they are.
+- The two stamps are the **newest** construction and hire, not the first (`0x4DB090` and `0x504B90` rewrite them every time), and the park init stamps them with the current time; the days-since tests use them as they are.
 - 73, 77 and 81 ask for the **previous** kind's built types (rides for the shops, shops for the sideshows, sideshows for the features), and 62 counts the ride types with the ticket items.
-- 74 pushes kind 1 for both counts where 78 pushes sideshows and rides, so shops x ratio can never exceed shops: with the shipped ratio 0.15 the line never passes.
+- 74 pushes kind 1 for both counts where 78 pushes sideshows and rides, so shops x ratio exceeds shops only for a ratio above 1: with the shipped ratio 0.15 the line never passes.
 - 82 has no ride test: park open, no toilet, the needy share. 145 lets a mean equal to the threshold pass (`fcompp`, mask 0x41). 259 tests the park open, 260-262 do not.
 - 85 computes `0x4CCA40` and discards it (`fstp st(0)`, then `xor eax, eax`): the line never passes, so it is "wired" as a port of a callback that returns 0.
 - 8 passes only up to `LitterPointCutoffHigh`, 9 from `LitterPointCutoffLow` of its own group; 86-89 use the points of bands 1, 1, 3, 4 and the thresholds 1-3, 2-4, 3, 4.
 
 Event posts: **66** is raised by the wear step (`ParkEconomy.Wear`, `ParkEventKind.RideBreakdownImminent`) when the new condition byte is below 10 and the byte plus the step's wear is not
-(`0x4DF670` posts message 0x42 at `0x4DF8BE`). **68, 69, 258** are decided on `ParkEventKind.RideBrokeDown` by `AdvisorRideEvents.ForBreakdown`: a ride whose life gauge byte is 0 is condemned
+(`0x4DF670` posts message 0x42 at `0x4DF8BE`). **68, 69, 258** are decided on `ParkEventKind.RideEnteredBrokenState` (raised when the ride actually enters its broken state: the type 7 message of case 1 of `0x4E0E60`, `0x4E0FA0`, sent after the script reports VAR_BROKEN; type 8 for a condemned ride, `0x40F3D0`; not at the earlier request `0x4E0B90` that raises `RideBrokeDown`) by `AdvisorRideEvents.ForBreakdown`: a ride whose life gauge byte is 0 is condemned
 (258, the message of type 8); otherwise the handler `0x4DADC0` posts 68 without a mechanic and 69 when every mechanic is busy with another ride, resting or on strike (display state 3 or 4 of
 `0x5064F0`, which is `StaffState`); a mechanic already on this ride or a free one posts nothing there (70 is the dispatch's, `0x4DA6C5`). Their scores are the words `+0x248`, `+0x24C`,
 `+0x250` and `+0x578` (`RideCondemned.Score`, added to `EventScoreKeys`).
@@ -246,7 +246,7 @@ events) and `AdvisorProducerInventoryTests` (every ported callback is "wired"). 
 | 70 | wired | mechanic dispatch 0x4DA5B0 (0x4DA6C5) and 0x4DADC0 (0x4DAF7E): a mechanic takes the broken ride | a mechanic is on the way | 74 |
 | 71 | wired | cb 0x59DCA0 | shops available, days since first object >= DaysForObjects, shops built >= MoreShopsThan, built types x 100 / available < PoorerThan: flat Score | 75 |
 | 73 | wired | cb 0x59DDE0 | ride types built, days since the object stamp >= DaysForObjects, no shop type built: Score + days since the start x AdditionalPerDay | 77 |
-| 74 | wired | cb 0x59DE80 | shop types built, days since the object stamp >= DaysForObjects, the shop types counted a second time (the original pushes kind 1 again where 0x59E110 pushes rides) x PerRideRatio above the first count, balance > WealthMoreThan: flat Score; never passes for a ratio below 1 | 78 |
+| 74 | wired | cb 0x59DE80 | shop types built, days since the object stamp >= DaysForObjects, the shop types counted a second time (the original pushes kind 1 again where 0x59E110 pushes rides) x PerRideRatio above the first count, balance > WealthMoreThan: flat Score; passes only for a ratio above 1 | 78 |
 | 75 | wired | cb 0x59DF30 | sideshows available, days since first object >= DaysForObjects, sideshows built >= MoreSideshowsThan, built types x 100 / available < PoorerThan: flat Score | 79 |
 | 77 | wired | cb 0x59E070 | shop types built (the previous kind, not rides), days since the object stamp >= DaysForObjects, no sideshow type built: Score + days since the start x AdditionalPerDay | 81 |
 | 78 | wired | cb 0x59E110 | sideshow types built, days since the object stamp >= DaysForObjects, ride types built x PerRideRatio above the sideshows, balance > WealthMoreThan: flat Score | 82 |

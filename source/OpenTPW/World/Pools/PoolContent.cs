@@ -17,9 +17,12 @@ public static class PoolContent
 	/// <summary>The folder name below <c>content/</c>.</summary>
 	public const string FolderName = "pools";
 	/// <summary>The first Info.Id OpenTPW reserves for its official extensions' objects (above every id of the original games, inside the 16-bit id of their saves).</summary>
-	public const int FirstReservedId = 65500;
-	/// <summary>The last Info.Id of the reservation: 65500 to 65519 belong to the pools extension, the rest is for later extensions.</summary>
-	public const int LastReservedId = 65519;
+	public const int FirstReservedId = 65000;
+	/// <summary>
+	/// The last Info.Id of the reservation: 65000 to 65535 belong to the pools extension. The pool extras take 65000 to 65099, the water slides
+	/// 65100 to 65199, the water attractions 65200 to 65299 and the changing rooms 65500 to 65519; the rest is spare (docs/POOLS.md).
+	/// </summary>
+	public const int LastReservedId = 65535;
 
 	/// <summary>Where the content is found: tests may point it elsewhere (null: <c>content/pools</c> below the program folder).</summary>
 	internal static string? DirectoryOverride { get; set; }

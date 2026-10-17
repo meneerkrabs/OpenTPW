@@ -200,7 +200,7 @@ whose back, opposite the entrance, touches the pool. It is a facility like a toi
   books a price for shops and sideshows only), so the 5 is read only by the standalone guest simulation; swimming is free in a park, like the pools of Roller Coaster Tycoon 3.
 - **The script** (`tools/pools/cabin.rse`) is the kit's placeholder pool script without heads: guests aboard are hidden (a guest in a room is "changing in"), the fill loop waits 1.5 s for the next guest and the room then holds them 3 s (`WAIT 3000`) before it releases
   them one by one, 4.5 s for a lone guest.
-- **Info.Ids.** OpenTPW reserves 65500 to 65519 (`PoolContent.FirstReservedId`, `LastReservedId`; inside the 5000 to 65535 range of the object ids) for the objects of the pools extension; the four themes' rooms are 65500 (jungle), 65501 (hallow),
+- **Info.Ids.** OpenTPW reserves 65000 to 65535 (pool extras 65000 to 65099, water slides 65100 to 65199, water attractions 65200 to 65299, changing rooms 65500 to 65519, the rest spare) (`PoolContent.FirstReservedId`, `LastReservedId`; inside the 5000 to 65535 range of the object ids) for the objects of the pools extension; the four themes' rooms are 65500 (jungle), 65501 (hallow),
   65502 (space) and 65503 (fantasy).
 
 ### Choosing to swim

@@ -35,8 +35,16 @@ internal sealed partial class SandboxSmokeTest
 			foreach ( var (dx, dy) in GuestPathGrid.Directions )
 			{
 				var last = (cell.X + dx * SmokePathLength, cell.Y + dy * SmokePathLength);
-				if ( Enumerable.Range( 0, SmokePathLength + 1 ).All( step => level.Paths.CheckCell( cell.X + dx * step, cell.Y + dy * step ) == CellBuildResult.Ok )
-					&& Clickable( cell, out _ ) && Clickable( last, out _ ) )
+				if ( !Enumerable.Range( 0, SmokePathLength + 1 ).All( step => level.Paths.CheckCell( cell.X + dx * step, cell.Y + dy * step ) == CellBuildResult.Ok ) )
+					continue;
+				// a player scrolls to free land: the original park's camera is not over free land at Home, so look at the line's middle first
+				if ( level.OriginalPark != null && Camera.Mode is ParkCameraMode parkCamera && !(Clickable( cell, out _ ) && Clickable( last, out _ )) )
+				{
+					var middle = OriginalParkPlacement.GetCellCenter( level.OriginalPark.Heightfield, cell.X + dx * SmokePathLength / 2, cell.Y + dy * SmokePathLength / 2 );
+					parkCamera.SetPose( new Vector3( middle.X, middle.Y, 0 ), parkCamera.Height, parkCamera.Yaw );
+					Camera.Update();
+				}
+				if ( Clickable( cell, out _ ) && Clickable( last, out _ ) )
 				{
 					(start, end) = (cell, last);
 					break;

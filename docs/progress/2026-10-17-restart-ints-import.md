@@ -10,6 +10,8 @@
   calendar as the park's start (park turn 0, no mismatch note) and `DailyRing` already took head -1 as an empty ring.
 - **Result.** All eleven original saves pass `OriginalSaveCorpusTests` (the INTS ones now also assert the initial calendar, turn 0, no placed objects and empty rings); two synthetic tests pin the
   two states and their boundaries.
-- **Restart path (SAVE-012).** On the Mac the loader writes `restart.INTS` right after a park load (state 15, `0x1c37b4`) and state 14 reloads it. tp.exe keeps the ".INTS" and "restart" names (`0x747A20`,
-  `0x747A6C`) only as unreferenced static strings, and its save loader `0x414D40` and level start `0x407E00` take a file name from the command line only, so the player-visible restart of the
-  Windows build is not traced. OpenTPW's Restart Park starts a fresh park from the level and balance; it is registered as SAVE-012 rather than wired to the snapshot.
+- **Restart path (SAVE-012).** The Mac writes `restart.INTS` right after a park load (state 15, `0x1c37b4`) and reloads it in state 14. tp.exe does the same under the same state numbers, in the park state machine
+  `0x54E360`: state 15 writes it through `0x550B30` right after the level start `0x407E00` (which first loads a quick save through `0x5AC5D0` when `0x788160` is set), and a restart request (code 1, stored by `0x5508B0`
+  from the confirm dialog callback `0x48B620`) takes state 10 to 13 and 14, where `0x5996D0(1)` runs and `0x5AC5F0` loads the file through `0x414D40`. The ".INTS" and "restart" strings (`0x747A20`, `0x747A6C`)
+  are copied into per-unit static strings (the globals `0xF7ADF8` and `0x878A68`) that these routines read. The snapshot is the park as play began, so a restart of a resumed park returns to the loaded state.
+  OpenTPW's Restart Park (new Instant Action parks only) rebuilds the park from the level and balance; it is registered as SAVE-012 rather than wired to the snapshot.

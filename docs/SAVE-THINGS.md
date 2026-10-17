@@ -71,8 +71,8 @@ None of the eleven saves holds a coaster: every Coasters block is the empty boun
 
 The four `restart.INTS` files are initial saves: no guest, no staff, two attraction things (Gates 11, Lights 12) and the ten singletons, so the next id is 13. They read through `OriginalParkImport.Import` since the importer accepts the two initial states the original builds: the macro-AI calendar of the constructor `0x4F7E80` (start 2000-01-01, month cache 0, day cache -1,
 rate 15000, `SaveCalendar.IsInitial`) and the empty history ring of `0x51ADE0` (current entry 0xFFFFFFFF, 30 entries, no wrap, `SaveAttraction.EmptyRingHead`). The loaders `0x4F7F30` and `0x4E2C10` take both unchecked, so
-nothing looser is accepted than what the constructors write. What the original's restart does with the file is not traced: the Mac writes it after a park load (state 15) and reloads it in state 14, tp.exe keeps the
-names only as unreferenced static strings, and OpenTPW's Restart Park starts a fresh park instead (`SAVE-012`).
+nothing looser is accepted than what the constructors write. The original's restart reloads the file: the Mac writes it after a park load (state 15) and reloads it in state 14, and tp.exe's park state machine `0x54E360` does the same
+(state 15 writes it through `0x550B30`, a restart request takes state 10 to 13 and 14, which loads it through `0x5AC5F0` and `0x414D40`). OpenTPW's Restart Park starts a fresh park instead (`SAVE-012`).
 
 ## IDs that are still needed
 

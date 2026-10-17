@@ -97,20 +97,26 @@ public sealed partial class ParkHud
 	private void ReportInterfaceMode()
 	{
 		var mode = InterfaceMode();
+		var restoredTip = 0;
 		if ( reportedMode != null && reportedMode != mode )
 		{
 			host?.ModeChanged?.Invoke();
 			// [BIN:TPW-EXE:0x0052F4B0 queue tool start] SetMode(3) (and the variant 0x52F580, 0x52F7B2) posts 0xCB (203) after the withdrawal, for every way into the queue tool
 			if ( mode == $"cell/{CellToolMode.Queue}" )
 				(toolHelp ??= new()).Add( (AdvisorToolHelp.QueueTool, mode) );
+			// [EXT:restored-advice-tutorial] a blueprint to place (202, rotate it with the comma and full stop keys) and the roller coaster tool (204, build track rides), after the original's own help of the mode: the advisor posts them only while the extension is on
+			restoredTip = mode == "build" ? RestoredAdvice.RotateBlueprintHelp : mode == "coaster" ? RestoredAdvice.TrackRideHelp : 0;
 		}
 		reportedMode = mode;
-		if ( toolHelp is not { Count: > 0 } )
-			return;
-		foreach ( var (message, postedIn) in toolHelp )
-			if ( postedIn == mode )
-				host?.HelpPosted?.Invoke( message );
-		toolHelp.Clear();
+		if ( toolHelp is { Count: > 0 } )
+		{
+			foreach ( var (message, postedIn) in toolHelp )
+				if ( postedIn == mode )
+					host?.HelpPosted?.Invoke( message );
+			toolHelp.Clear();
+		}
+		if ( restoredTip != 0 )
+			host?.RestoredHelp?.Invoke( restoredTip );
 	}
 
 	/// <summary>The clicks of the path and queue tool since its last first click (the original's counter 0x8186DC); the third later click posts help.</summary>

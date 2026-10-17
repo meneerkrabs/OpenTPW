@@ -178,7 +178,7 @@ public sealed class OriginalTerrain : Entity
 		var vertices = new List<Vertex>();
 		var indices = new List<uint>();
 		foreach ( var (x, y, modelSlot) in HeightfieldCells( Park.Heightfield, RenderHoleSource ) )
-			AddCell( vertices, indices, Park.Heightfield, x, y, slotIndices[modelSlot], PathTiles.Identity, 0 );
+			AddCell( vertices, indices, Park.Heightfield, x, y, slotIndices[modelSlot], PathTiles.Identity, 0, Park.Heightfield.GetCellWord( x, y ) );
 		return new Model( vertices.ToArray(), indices.ToArray(), material );
 	}
 
@@ -375,10 +375,15 @@ public sealed class OriginalTerrain : Entity
 	private static readonly uint[] DiagonalTriangles = { 0, 2, 3, 3, 1, 0 };
 	private static readonly uint[] AntiDiagonalTriangles = { 0, 2, 1, 1, 2, 3 };
 
-	private static void AddCell( List<Vertex> vertices, List<uint> indices, ModelHeightfield field, int x, int y, int slot, int rotation, float lift )
+	private static void AddCell( List<Vertex> vertices, List<uint> indices, ModelHeightfield field, int x, int y, int slot, int rotation, float lift, uint groundWord = 0 )
 	{
 		var start = (uint)vertices.Count;
-		var corners = new[] { (x, y, 0f, 0f), (x + 1, y, 1f, 0f), (x, y + 1, 0f, 1f), (x + 1, y + 1, 1f, 1f) };
+		// the ground texture's turn and mirror from the cell word (TerrainCellTexture); the path overlays carry no cell word and keep the path tile's own turn
+		var (u0, v0) = TerrainCellTexture.Coordinate( TerrainCellTexture.Cell00, groundWord );
+		var (u1, v1) = TerrainCellTexture.Coordinate( TerrainCellTexture.Cell10, groundWord );
+		var (u2, v2) = TerrainCellTexture.Coordinate( TerrainCellTexture.Cell01, groundWord );
+		var (u3, v3) = TerrainCellTexture.Coordinate( TerrainCellTexture.Cell11, groundWord );
+		var corners = new[] { (x, y, u0, v0), (x + 1, y, u1, v1), (x, y + 1, u2, v2), (x + 1, y + 1, u3, v3) };
 		if ( rotation != PathTiles.Identity )
 			corners = corners.Select( corner => (corner.Item1, corner.Item2, PathTiles.TextureCoordinates( corner.Item3, corner.Item4, rotation )) )
 				.Select( corner => (corner.Item1, corner.Item2, corner.Item3.U, corner.Item3.V) ).ToArray();

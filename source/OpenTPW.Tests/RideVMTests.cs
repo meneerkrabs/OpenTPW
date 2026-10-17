@@ -955,9 +955,41 @@ public class RideVMTests
 		var missing = Load( new Asm().I( Opcode.SPAWNCHILD, S( 0 ) ), new RideVMOptions(), null, "child.rse" );
 		Run( missing, 1 );
 		Assert.AreEqual( RideVMState.Faulted, missing.State );
+		// tp.exe 0x5554F2: a script without a parent (the id at +0x10 is 0) leaves the handler at once; nothing faults
 		var orphan = Load( new Asm().I( Opcode.GETVARINPARENT, V( 0 ), 1 ) );
 		Run( orphan, 1 );
-		Assert.AreEqual( RideVMState.Faulted, orphan.State );
+		Assert.AreEqual( RideVMState.Halted, orphan.State );
+	}
+
+	[TestMethod]
+	public void VariableAccessAcrossScriptsFollowsTheOriginalsFlagsAndSilentFailures()
+	{
+		var world = new RideScriptWorld();
+		var other = Load( new Asm().Label( "idle" ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "idle" ), new RideVMOptions { World = world } );
+		other.Variables[1] = 9;
+		// Strings: "Nothing" at 0. V0 holds the other script's id, V1 the destination, V2 a stale value.
+		var vm = Load( new Asm()
+			.I( Opcode.TEST, V( 3 ) )                                                // Zero flag
+			.I( Opcode.GETREMOTEVAR, V( 1 ), V( 0 ), 1 )                             // 9 into V1 and the flags
+			.I( Opcode.COPY, V( 3 ), 4 )                                             // V3 = 4 (flags: positive)
+			.I( Opcode.GETREMOTEVAR, V( 2 ), 77, 0 )                                 // no script 77: flags cleared (Zero), V2 untouched
+			.I( Opcode.COPY, V( 3 ), V( 3 ) ).I( Opcode.GETREMOTEVAR, V( 2 ), V( 0 ), 40 ) // index outside its variables: Zero again, V2 untouched
+			.I( Opcode.SETREMOTEVAR, V( 0 ), 40, 5 )                                 // outside: nothing, no flags
+			.I( Opcode.FINDSCRIPTRAND, S( 0 ), V( 2 ) )                              // no script named Nothing: flags 0, V2 untouched
+			.Label( "idle" ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "idle" ), new RideVMOptions { World = world, Seed = 1 }, null, "Nothing" );
+		vm.Variables[0] = other.ScriptId;
+		vm.Variables[2] = 123;
+		Run( vm, 1 );
+		Assert.AreEqual( 9, vm.Variables[1] );
+		Assert.AreEqual( 123, vm.Variables[2], "a failed read or search leaves the destination as it was" );
+		Assert.AreEqual( RideVM.VMFlags.Zero, vm.Flags, "the failed FINDSCRIPTRAND ended with its flags cleared" );
+		Assert.AreEqual( 0, other.Variables[0], "an index outside the other script writes nothing" );
+
+		var write = Load( new Asm().I( Opcode.TEST, V( 3 ) ).I( Opcode.SETREMOTEVAR, V( 0 ), 1, 5 ).Label( "idle" ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "idle" ), new RideVMOptions { World = world, Seed = 1 } );
+		write.Variables[0] = other.ScriptId;
+		Run( write, 1 );
+		Assert.AreEqual( 5, other.Variables[1] );
+		Assert.AreEqual( RideVM.VMFlags.None, write.Flags, "SETREMOTEVAR sets the flags to the value written (tp.exe 0x55627E)" );
 	}
 
 	[TestMethod]
@@ -1008,8 +1040,8 @@ public class RideVMTests
 		var histogram = RseScriptTests.CorpusHistogram.Split( ',' ).Select( x => x.Split( ':' ) ).ToDictionary( x => ushort.Parse( x[0] ), x => int.Parse( x[1] ) );
 		Assert.IsTrue( histogram.Keys.All( x => RideOpcodes.GetStatus( (Opcode)x ) != RideOpcodeStatus.Unknown ), "every corpus opcode has a handler" );
 		var corpusStatuses = histogram.Keys.GroupBy( x => RideOpcodes.GetStatus( (Opcode)x ) ).ToDictionary( x => x.Key, x => (Opcodes: x.Count(), Instructions: x.Sum( y => histogram[y] )) );
-		Assert.AreEqual( (41, 8049), corpusStatuses[RideOpcodeStatus.Implemented] );
-		Assert.AreEqual( (43, 3866), corpusStatuses[RideOpcodeStatus.Hooked] );
+		Assert.AreEqual( (45, 8053), corpusStatuses[RideOpcodeStatus.Implemented] );
+		Assert.AreEqual( (39, 3862), corpusStatuses[RideOpcodeStatus.Hooked] );
 
 		var directory = new DirectoryInfo( AppContext.BaseDirectory );
 		while ( directory != null && !File.Exists( Path.Combine( directory.FullName, "docs", "RSE-VM.md" ) ) )

@@ -38,7 +38,7 @@ public partial class Level
 		coasterSite = CoasterSite.FromGrid( Objects.Grid );
 		coasterRenderer = new CoasterRenderer( () => Coasters, () => Objects.Grid.Origin, ObjectPlacement.ModelScale, CoasterEntry,
 			ride => CoasterToolStation?.Runtime.Coaster == ride ? DemoPreview ?? CoasterPreview : null,
-			ride => CoasterStation( ride )?.Runtime.AttractionId ?? 0 );
+			ride => CoasterStation( ride )?.Runtime.AttractionId ?? 0, () => SceneClock.Milliseconds );
 	}
 
 	/// <summary>The riders of the coasters as head sources, hung from the head sockets of the car models.</summary>

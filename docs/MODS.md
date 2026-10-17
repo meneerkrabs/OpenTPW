@@ -8,9 +8,13 @@ OpenTPW has two kinds of add-ons, both labelled `[EXT:mods]` in the source (`sou
 - **Mods** are folders of data with an `opentpw-mod.json` manifest. Community mods use ids that start with
   `community.`; `opentpw.` ids are reserved for data-only content shipped with OpenTPW.
 
-Mods are **data only**. OpenTPW never loads assemblies or other code from a mod: .NET has no in-process security
-boundary, the browser build is trimmed and compiled ahead of time, and third-party code would break the save and
-determinism guarantees. Engine features a mod needs become official extensions instead.
+Mods are **data, plus sandboxed TPW Script**. A mod may ship data files as before, and (from the scripting phases on, see
+[SCRIPT-MODS.md](SCRIPT-MODS.md)) scripts in *TPW Script*, a small deterministic language with its own interpreter inside
+OpenTPW. OpenTPW **never loads native code or assemblies from a mod**: .NET has no in-process security boundary, the browser
+build is trimmed and compiled ahead of time (so there is nothing to load), and third-party code would break the save and
+determinism guarantees. A script cannot reach files, the network, the clock or any host object: it only sees what a hook
+passes it, under a step budget, and it can only change the simulation through a typed hook result. Engine features a mod
+needs that scripts cannot express become official extensions instead.
 
 In code the system is called `OpenTPW.Mods` / "extensions"; `OpenTPW.ModKit` is the unrelated asset editor.
 

@@ -278,9 +278,6 @@ public static class ParkSaveFile
 		public int ThingId { get; init; }
 		public required StaffType Type { get; init; }
 		public required int NameIndex { get; init; }
-		/// <summary>The member's sprite bank index in its role's folder (<see cref="StaffMember.Variant"/>); absent in saves from before it was kept and for an original save's member.</summary>
-		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
-		public int? Variant { get; init; }
 		/// <summary>A name kept from an original save (<see cref="StaffMember.Name"/>); absent for a member named by its name index.</summary>
 		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 		public string? Name { get; init; }
@@ -687,7 +684,6 @@ public static class ParkSaveFile
 					ThingId = member.ThingId,
 					Type = member.Type,
 					NameIndex = member.NameIndex,
-					Variant = member.Variant,
 					Name = member.Name,
 					ResumeDestination = member.ResumeDestination is { } resume ? new[] { resume.X, resume.Y } : null,
 					ResumeClaimTurn = member.ResumeClaimTurn,
@@ -1018,7 +1014,6 @@ public static class ParkSaveFile
 			ThingId = member.ThingId,
 			Type = member.Type,
 			NameIndex = member.NameIndex,
-			Variant = member.Variant is { } variant && variant >= 0 && variant < StaffSpriteRules.LoadedBanks( member.Type ) ? variant : null,
 			Name = member.Name,
 			ResumeDestination = member.ResumeDestination is [var resumeX, var resumeY] ? (resumeX, resumeY) : null,
 			ResumeClaimTurn = member.ResumeClaimTurn,

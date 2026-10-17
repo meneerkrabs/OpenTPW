@@ -201,24 +201,4 @@ public class StaffSpriteTests
 		CollectionAssert.AreEqual( new[] { 2, 3, 4, 5, 6, 7 }, dr.Skip( 50 ).Take( 6 ).ToArray(), "the next pass starts at the intro frame again" );
 		Assert.AreEqual( 0, StaffScripts.PerformanceFrame( 0, 0, 0, 5 ) );
 	}
-
-	[TestMethod]
-	public void ACandidatesSpriteVariantIsDrawnAtItsCreationAndKeptThroughHiringAndSaving()
-	{
-		var park = EconomyTestData.Park();
-		foreach ( var candidate in park.Staff.Candidates )
-			Assert.IsTrue( candidate.Variant is { } variant && variant >= 0 && variant < StaffSpriteRules.LoadedBanks( candidate.Type ), $"{candidate.Type}: a bank of the role's loaded banks" );
-		Assert.IsTrue( park.Staff.Candidates.Where( candidate => candidate.Type == StaffType.Entertainer ).Select( candidate => candidate.Variant ).Distinct().Count() > 1, "the three entertainer banks are all drawn from" );
-		Assert.IsTrue( park.Staff.Candidates.Where( candidate => candidate.Type == StaffType.Handyman ).All( candidate => candidate.Variant == 0 ), "one handyman bank" );
-		var hired = park.Hire( park.Staff.Candidates.First( candidate => candidate.Type == StaffType.Entertainer ).Id );
-		Assert.IsNotNull( hired.Variant );
-		Assert.AreEqual( hired.Variant, hired.SpriteKey );
-		var restored = ParkSaveFile.Restore( ParkSaveFile.Capture( park ), park.Settings, park.Catalog );
-		Assert.AreEqual( hired.Variant, restored.Staff.Members.Single( member => member.Id == hired.Id ).Variant, "the member's bank is saved" );
-		Assert.IsTrue( park.Staff.Candidates.Zip( restored.Staff.Candidates ).All( pair => pair.First.Variant == pair.Second.Variant ), "the pool's variants are saved" );
-		// a save from before the variant was kept reads as none, and the bank derives from the name and id as before
-		var legacy = new StaffMember { Id = 5, Type = StaffType.Mechanic, NameIndex = 3, Grade = 0 };
-		Assert.IsNull( legacy.Variant );
-		Assert.AreEqual( StaffSpriteRules.VariantKey( 3, 5 ), legacy.SpriteKey );
-	}
 }

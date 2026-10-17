@@ -32,7 +32,7 @@ dotnet publish source/OpenTPW.Web/OpenTPW.Web.csproj -c Release -p:RunAOTCompila
 
 The browser build can also run on CoreCLR instead of Mono (`-p:UseMonoRuntime=false`, .NET 11 only, no workload
 needed). It works, with the same texture and simulation hashes, but .NET 11 runs it in the CoreCLR interpreter only and it is
-about 10 to 15 times slower than the Mono AOT build, so it is an opt-in experiment and not what the published page uses
+roughly 10 to 30 times slower than the Mono AOT build, so it is an opt-in experiment and not what the published page uses
 (docs/BROWSER-PERFORMANCE.md, "CoreCLR on WebAssembly"). Delete `source/OpenTPW.Web/obj` and `bin` when switching between
 runtimes, or the next publish fails to link.
 

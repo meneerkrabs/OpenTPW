@@ -1,4 +1,4 @@
-## The browser game runs on CoreCLR WebAssembly in .NET 11, but only about 10 to 15 times slower than Mono AOT, so Mono stays the default (October 17, 2026)
+## The browser game runs on CoreCLR WebAssembly in .NET 11, but only roughly 10 to 30 times slower than Mono AOT, so Mono stays the default (October 17, 2026)
 
 `dotnet publish -p:UseMonoRuntime=false` (.NET 11 RC2) produces a browser build that boots, reaches the lobby in 8.7 s,
 opens Jungle and gives the same texture hash `1CC5AEB033691043` and simulation hash `0B45FAA2ED526C78` as the Mono builds.

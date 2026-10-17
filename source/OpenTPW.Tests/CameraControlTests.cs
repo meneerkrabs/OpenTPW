@@ -69,6 +69,16 @@ public class CameraControlTests
 		Assert.AreEqual( right.Target, large.Target );
 	}
 
+	/// <summary>[BIN:TPW-EXE:0x42aab0 locate jump] every locate and map jump of the original moves only the target (the zoom and yaw arguments are null), so no focus changes the zoom or the yaw and the original has no view-cycle button.</summary>
+	[TestMethod]
+	public void FocusMovesOnlyTheTargetAndLeavesZoomAndYaw()
+	{
+		var camera = Camera(); camera.SetPose( Vector3.Zero, 90, 33 );
+		var height = camera.Height; var yaw = camera.Yaw;
+		camera.Focus( new Vector3( 10, -20, 5 ) );
+		Assert.AreEqual( new Vector3( 10, -20, 0 ), camera.Target ); Assert.AreEqual( height, camera.Height ); Assert.AreEqual( yaw, camera.Yaw );
+	}
+
 	[TestMethod]
 	public void RotationZoomHomeFocusAndDeltaAreBounded()
 	{
@@ -82,9 +92,6 @@ public class CameraControlTests
 		camera.Update( Frame() with { Wheel = -20 }, Options() ); Assert.AreEqual( 130f, camera.Height, "and at 130" );
 		camera.Focus( new Vector3( 999, -999, 7 ) ); Assert.AreEqual( new Vector3( 32, -32, 0 ), camera.Target );
 		camera.Update( Frame() with { Home = true }, Options() ); Assert.AreEqual( Vector3.Zero, camera.Target ); Assert.AreEqual( 110f, camera.Height ); Assert.AreEqual( -90f, camera.Yaw );
-		Assert.AreEqual( ParkCameraView.Close, camera.CycleView() ); Assert.AreEqual( 70f, camera.Height );
-		Assert.AreEqual( ParkCameraView.Overview, camera.CycleView() ); Assert.AreEqual( 130f, camera.Height );
-		Assert.AreEqual( ParkCameraView.Standard, camera.CycleView() );
 		camera.Update( Frame() with { Forward = 1, DeltaSeconds = float.NaN }, Options() ); Assert.AreEqual( Vector3.Zero, camera.Target );
 	}
 }

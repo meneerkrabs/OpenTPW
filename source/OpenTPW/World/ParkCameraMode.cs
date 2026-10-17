@@ -37,7 +37,6 @@ public class ParkCameraMode : CameraMode
 	/// <summary>The yaw of the Home pose: the original's yaw 0 looks along +Y (its +z), so the eye sits to the -Y side of the target.</summary>
 	public const float HomeYaw = -90f;
 	private float smoothedGround;
-	public ParkCameraView View { get; private set; }
 	private bool dragging;
 	private bool middleTurning, middleWasDown;
 	private readonly ReferenceFrameClock turnFrames = new();
@@ -83,15 +82,6 @@ public class ParkCameraMode : CameraMode
 		UpdateTransform();
 	}
 
-	public ParkCameraView CycleView()
-	{
-		View = (ParkCameraView)(((int)View + 1) % 3);
-		// [EXT:camera-view-cycle] the view button's three zoom stops are OpenTPW's: the near end, Home's value and the far end of the original's zoom range
-		Height = View switch { ParkCameraView.Close => MinimumHeight, ParkCameraView.Overview => MaximumHeight, _ => HomeHeight };
-		UpdateTransform();
-		return View;
-	}
-
 	public override void Update()
 	{
 		var io = ImGuiNET.ImGui.GetIO();
@@ -128,7 +118,7 @@ public class ParkCameraMode : CameraMode
 		var keyboard = !input.CaptureKeyboard && !input.TextEntry;
 		if ( keyboard )
 		{
-			if ( input.Home ) { Yaw = HomeYaw; Height = HomeHeight; View = ParkCameraView.Standard; Focus( InitialTarget ); }
+			if ( input.Home ) { Yaw = HomeYaw; Height = HomeHeight; Focus( InitialTarget ); }
 			var rotation = options.Rotation == RotationMode.Smooth
 				? ((input.RotateRight ? 1 : 0) - (input.RotateLeft ? 1 : 0)) * RotationSpeed * dt
 				: ((input.RotateRightPressed ? 1 : 0) - (input.RotateLeftPressed ? 1 : 0)) * 90;

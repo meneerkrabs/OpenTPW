@@ -122,23 +122,147 @@ public class ScriptHooksTests
 
 	// ---- Budgets and the disabled flag --------------------------------------------------------
 
+	private const string Busy = "function scoreAttraction(guest, c, prev)\n  local s = 0\n  for i = 1, 20 do\n    s = s + i\n  end\n  return prev + s\nend\n";
+
 	[TestMethod]
-	public void ARunOutOfTickBudgetIsOneFailureForTheTickAndTheNextTickStartsAfresh()
+	public void ARunOutOfTickBudgetIsNoFailureAndCountsOncePerTickAndTheNextTickStartsAfresh()
 	{
-		mods.Add( "community.busy", "function scoreAttraction(guest, c, prev)\n  local s = 0\n  for i = 1, 20 do\n    s = s + i\n  end\n  return prev + s\nend\n", "scoreAttraction" );
+		mods.Add( "community.busy", Busy, "scoreAttraction" );
 		var policy = Policy( mods.Resolve(), new ScriptHostOptions { StepsPerCall = 1000, StepsPerTick = 300 } );
 		var (context, guest, attraction) = (Context(), Guest(), Attraction());
 		var basis = Basis( context, guest, attraction );
 		var results = Enumerable.Range( 0, 12 ).Select( _ => policy.ScoreAttraction( context, guest, attraction ) ).ToArray();
 		var mod = policy.Runtime.Mods[0];
 		Assert.IsTrue( results[0] == basis + 210 && results[^1] == basis, $"the first calls ran, the last found the budget gone ({string.Join( ",", results )})" );
-		Assert.AreEqual( 1, mod.BudgetFailures, "one failure for the tick, however many calls were skipped" );
+		Assert.AreEqual( 1, mod.TicksOverBudget, "one overrun for the tick, however many calls were skipped" );
+		Assert.AreEqual( 0, mod.Failures, "an overrun is not a failure" );
 		policy.BeginTick();
 		Assert.AreEqual( basis + 210, policy.ScoreAttraction( context, guest, attraction ), "a new tick has its full budget" );
 		for ( var call = 0; call < 12; call++ )
 			policy.ScoreAttraction( context, guest, attraction );
-		Assert.AreEqual( 2, mod.BudgetFailures );
+		Assert.AreEqual( 2, mod.TicksOverBudget );
 		Assert.IsFalse( mod.Disabled );
+	}
+
+	[TestMethod]
+	public void BusyTicksNeverDisableAModHoweverManyThereAre()
+	{
+		mods.Add( "community.busy", Busy, "scoreAttraction" );
+		var policy = Policy( mods.Resolve(), new ScriptHostOptions { StepsPerCall = 1000, StepsPerTick = 300 } );
+		var (context, guest, attraction) = (Context(), Guest(), Attraction());
+		for ( var tick = 0; tick < 100; tick++ )
+		{
+			policy.BeginTick();
+			for ( var call = 0; call < 8; call++ )
+				policy.ScoreAttraction( context, guest, attraction );
+		}
+		var mod = policy.Runtime.Mods[0];
+		Assert.AreEqual( 100, mod.TicksOverBudget );
+		Assert.AreEqual( 0, mod.Failures );
+		Assert.IsFalse( mod.Disabled );
+		Assert.IsTrue( policy.Runtime.Runs( ScriptHooks.ScoreAttraction ) );
+	}
+
+	[TestMethod]
+	public void AnOverrunInsideTheCallBudgetStillFailsTheCall()
+	{
+		mods.Add( "community.loop", "function scoreAttraction(guest, c, prev)\n  while true do\n  end\n  return 1\nend\n", "scoreAttraction" );
+		var policy = Policy( mods.Resolve(), new ScriptHostOptions { StepsPerCall = 1000, StepsPerTick = 50_000 } );
+		policy.ScoreAttraction( Context(), Guest(), Attraction() );
+		var mod = policy.Runtime.Mods[0];
+		Assert.AreEqual( (0, 1, 0), (mod.RuntimeErrors, mod.BudgetFailures, mod.InvalidResults) );
+		Assert.AreEqual( 0, mod.TicksOverBudget );
+	}
+
+	[TestMethod]
+	public void ADecisionIsAdmittedOrSkippedAsAWholeSoItsScoresAreNeverMixed()
+	{
+		mods.Add( "community.busy", Busy, "scoreAttraction" );
+		var policy = Policy( mods.Resolve(), new ScriptHostOptions { StepsPerCall = 1000, StepsPerTick = 300 } );
+		var (context, guest) = (Context(), Guest());
+		var candidates = Enumerable.Range( 1, 9 ).Select( id => Attraction( id: id ) ).ToArray();
+		uint[] Decide()
+		{
+			policy.BeginDecision();
+			try { return candidates.Select( candidate => policy.ScoreAttraction( context, guest, candidate ) ).ToArray(); }
+			finally { policy.EndDecision(); }
+		}
+		var basis = candidates.Select( candidate => Basis( context, guest, candidate ) ).ToArray();
+		var first = Decide();
+		CollectionAssert.AreEqual( basis.Select( score => score + 210 ).ToArray(), first, "all nine candidates have the mod's score although the tick budget (300) holds three calls" );
+		var mod = policy.Runtime.Mods[0];
+		Assert.AreEqual( 0, mod.TicksOverBudget );
+		CollectionAssert.AreEqual( basis, Decide(), "the budget is gone, so the next decision is the base policy's for every candidate" );
+		Assert.AreEqual( 1, mod.TicksOverBudget );
+		Decide();
+		Assert.AreEqual( 1, mod.TicksOverBudget, "once per tick" );
+		policy.BeginTick();
+		CollectionAssert.AreEqual( first, Decide(), "a new tick admits the mod again" );
+		Assert.AreEqual( 0, mod.Failures );
+	}
+
+	[TestMethod]
+	public void TheHostBracketsEveryCandidateLoopAsOneDecision()
+	{
+		var spy = new SpyDecisions();
+		var park = new ParkScenario( new WorldSeed( 1 ), null, spy );
+		park.Run( GuestReport.TicksForDays( 30 ) );
+		Assert.IsTrue( spy.Decisions > 5 && spy.Scores > 20, $"{spy.Decisions} decisions, {spy.Scores} scores" );
+		Assert.AreEqual( 0, spy.Violations, "every score came between a BeginDecision and its EndDecision" );
+		Assert.IsFalse( spy.Open );
+	}
+
+	private sealed class SpyDecisions : IGuestDecisions
+	{
+		private readonly IGuestDecisions inner = OriginalGuestDecisions.Instance;
+		public int Decisions, Scores, Violations;
+		public bool Open;
+		public void BeginDecision() { Open = true; Decisions++; }
+		public void EndDecision() => Open = false;
+		public uint ScoreAttraction( in DecisionContext context, in GuestView guest, in AttractionView attraction ) { Scores++; Violations += Open ? 0 : 1; return inner.ScoreAttraction( context, guest, attraction ); }
+		public BoothDecision DecideBooth( in DecisionContext context, in GuestView guest, in BoothView booth ) => inner.DecideBooth( context, guest, booth );
+		public bool BeatsInMajorDecision( in DecisionContext context, in GuestView guest, uint score, uint best ) => inner.BeatsInMajorDecision( context, guest, score, best );
+		public bool BeatsInMinorDecision( in DecisionContext context, in GuestView guest, uint score, uint best ) => inner.BeatsInMinorDecision( context, guest, score, best );
+		public QueueAdmission DecideAdmission( in DecisionContext context, in GuestView guest, in AdmissionView admission ) => inner.DecideAdmission( context, guest, admission );
+		public QueuePatienceDecision DecideQueuePatience( in DecisionContext context, in GuestView guest, in QueuePatienceView queue ) => inner.DecideQueuePatience( context, guest, queue );
+		public PostUseDecision RememberUse( in DecisionContext context, in GuestView guest, in AttractionView ride ) => inner.RememberUse( context, guest, ride );
+		public GuestWander.Destination ChooseWanderGoal( in DecisionContext context, in GuestView guest, in GuestWander.Destination proposal ) => inner.ChooseWanderGoal( context, guest, proposal );
+	}
+
+	[TestMethod]
+	public void ACrowdedParkNeverDisablesTheStateMod()
+	{
+		// the scenario scaled up: a group every few turns, so far more guests decide at once than in the report's calibration (about 30 to 90 guests)
+		const string State = "function bump(kind, id)\n  local key = kind .. '-' .. id\n  if has(state, key) then\n    state[key] = state[key] + 1\n  else\n    state[key] = 1\n  end\nend\nfunction scoreAttraction(guest, c, prev)\n  bump('s', c.id)\n  return prev\nend\n";
+		using var scope = OpenTpwExtensions.Use( mods.Add( "community.state", State, "scoreAttraction" ).Resolve() );
+		var park = new ParkScenario( new WorldSeed( 1 ), new ParkScenarioOptions { ArrivalTimeBetween = 1, AdmissionFee = 0 } );
+		var peak = 0;
+		for ( var chunk = 0; chunk < 40; chunk++ )
+		{
+			park.Run( 343 );
+			peak = Math.Max( peak, park.Guests.Guests.Count );
+		}
+		var mod = park.Guests.ScriptMods!.Mods[0];
+		var stats = mod.Stats();
+		Assert.IsTrue( peak > 150, $"a crowd of {peak}" );
+		Assert.AreEqual( 0, mod.Failures, mod.LastFailure );
+		Assert.IsFalse( mod.Disabled );
+		Assert.IsTrue( stats.MaxTickSteps < ScriptLimits.DefaultStepsPerTick, $"busiest tick {stats.MaxTickSteps} steps, {stats.MaxTickCalls} calls" );
+	}
+
+	[TestMethod]
+	public void AScriptPolicyPassedExplicitlyIsSavedAndHashedLikeOneChosenByTheModSet()
+	{
+		var runtime = new ScriptModRuntime( mods.Add( "community.a", Plus5, "scoreAttraction" ).Resolve().Mods );
+		var policy = new ScriptGuestDecisions( OriginalGuestDecisions.Instance, runtime );
+		var park = new ParkScenario( new WorldSeed( 1 ), null, policy );
+		Assert.AreSame( runtime, park.Guests.ScriptMods );
+		Assert.IsNotNull( park.Guests.SmarterGuests );
+		park.Run( GuestReport.TicksForDays( 20 ) );
+		Assert.IsNotNull( ScriptModsSave.Capture( park.Guests ) );
+		var before = WorldStateHash.Compute( new WorldStateSources { Seed = new WorldSeed( 1 ), Guests = park.Guests } );
+		runtime.Mods[0].Restore( runtime.Mods[0].State, 0, 0, 0, false, 5 );
+		Assert.AreNotEqual( before, WorldStateHash.Compute( new WorldStateSources { Seed = new WorldSeed( 1 ), Guests = park.Guests } ), "the explicit policy's state is hashed (ticks over budget included)" );
 	}
 
 	[TestMethod]

@@ -229,7 +229,8 @@ A new optional **`ScriptMods`** section in the park-resume data (`ParkResumeSnap
 | `BehaviourVersion` | `ScriptLimits.BehaviourVersion` when the park was saved. |
 | `ApiVersion` | `ScriptLimits.ScriptApiVersion` when the park was saved. |
 | `State` | The mod's `state` as canonical text (`ScriptState.Serialize`). |
-| `RuntimeErrors`, `BudgetFailures`, `InvalidResults` | The failure counters. |
+| `RuntimeErrors`, `BudgetFailures`, `InvalidResults` | The failure counters (they count toward disabling). |
+| `TicksOverBudget` | Ticks in which the mod used up its per-tick budget (diagnostic; not a failure). |
 | `Disabled` | The disabled flag. |
 
 - **Present exactly when a script mod is enabled** (and so recorded in `Mods`, like any simulation-changing mod); `null` and left out of the file
@@ -237,7 +238,7 @@ A new optional **`ScriptMods`** section in the park-resume data (`ParkResumeSnap
   exactly the active script mods (`ScriptModsSave.ActiveProblem`, and `Restore` once more).
 - **Strict validation on load** (`ScriptModsSave.ShapeProblem`, run with the rest of the envelope's shape check, before anything is built): every
   key is a recorded mod; both versions equal this build's; `State` parses under the `state` schema **and is in canonical form byte for byte**;
-  counters are not negative and their sum is at most 16; `Disabled` is true exactly when the sum is 16. A **version mismatch refuses** with a
+  counters are not negative and the three failure counters sum to at most 16 (`TicksOverBudget` is unbounded); `Disabled` is true exactly when the sum is 16. A **version mismatch refuses** with a
   message such as `community.x was saved under script behaviour version 1, but this build runs version 2`; no save is resumed under other rules.
 - **It joins `WorldStateHash`** (`ScriptModRuntime.AddCanonicalState`: a marker, then per mod in id order the id, both versions, the canonical
   state, the three counters and the flag) **only while a script mod is enabled**.
@@ -366,7 +367,7 @@ never an index into a list. A view cannot be changed or kept.
 
 - **`guest`** (all hooks): `id`, `birthId`, `type`, `happiness`, `thirst`, `hunger`, `toilet`, `nausea`, `money`, `cellX`, `cellY`, `usedHistory`, `temporaryHistory`
   (arrays of 4 attraction ids, newest first, 0 = empty), `turn` (park turn), `raining`, `mapWidth`, `mapHeight`.
-- **`candidate` / `attraction`**: `id`, `typeId`, `kind` (0 ride, 1 shop, as `RideVisitorKind`), `hasJoinCell`, `backX`, `backY`, `entranceX`, `entranceY`, `cellModifier`,
+- **`candidate` / `attraction`**: `id`, `typeId`, `kind` (as `RideVisitorKind`: 0 ride, 1 shop, 2 sideshow, 3 facility), `hasJoinCell`, `backX`, `backY`, `entranceX`, `entranceY`, `cellModifier`,
   `queueLength`, `queueSizeInCells`, `queueLimit`, `excitement` (live), `excitementLevel` (the type's word), `thirstEffect`, `hungerEffect`, `providesRelief`, `ageDays`,
   `isIndoors`, `goldenTicketCost`, `upgradeCost`, `isOpen`, `isBroken`, `sameTypeAsLast`.
 - **`joinQueue`'s attraction** adds `joinDifference` (|preferred excitement minus the ride's|; the original refuses from 45), `excitementWord`, `queueCount`.
@@ -376,12 +377,20 @@ Each table has 17 to 28 entries, far below the view caps (4096 entries, 1024-cha
 
 ## Failure counters and the disabled flag
 
-Per mod, `ScriptModInstance` keeps three counters and a flag, **simulation state** (saved in the `ScriptMods` section, hashed), because they change which hooks run:
+Per mod, `ScriptModInstance` keeps three failure counters, a ticks-over-budget counter and a flag, **simulation state** (saved in the `ScriptMods` section, hashed), because they change which hooks run:
 
 - **`RuntimeErrors`**: the script failed (type error, overflow, division by zero, a missing key, depth, memory, an unknown function).
-- **`BudgetFailures`**: a call ran out of its per-call budget or of the tick's, or found the tick's budget already used up. Calls skipped for the rest of a tick after the
-  budget ran out are **not** counted again: an overrun costs one failure per tick, not one per skipped call, so a busy tick cannot disable a modest mod by itself.
+- **`BudgetFailures`**: a call ran out of its **own** per-call budget.
 - **`InvalidResults`**: the result had the wrong type or lay outside the hook's range (a score above the unsigned word, a goal outside the map), or the new `state` broke the schema.
+- **`TicksOverBudget`** is **not a failure** and never counts toward disabling. A tick in which the mod has used up its per-tick budget counts once, however many calls it skips; the counter is saved and
+  hashed, and the log gets a warning for the first overrun and then every 600th. See the rule below.
+
+**The tick budget and a decision.** The tick budget protects frame time; it must not punish a mod for a busy park (a park holds up to 1000 guests, and the calls of a tick grow with guests times attractions) and must not
+mix two scales of score in one comparison. So: outside a candidate loop (`joinQueue`, `leaveQueue`, `wanderGoal`, a single score) a call needs budget left in the tick; a call cut short by what is left of the tick
+rolls back its `state`, answers `prev` and is an overrun, no failure; later calls of the tick answer `prev` without running. A `scoreAttraction` candidate loop is **one decision**: the host brackets it
+(`IGuestDecisions.BeginDecision` / `EndDecision`), and at its start each mod is either admitted for **all** candidates or skipped for **all** (and then every candidate has the previous result, so the scores
+of one decision never mix the mod's scale with the base policy's). An admitted decision runs against the per-call budget only; the tick meter is charged and may go below zero, so the next decision of the tick is
+skipped. One decision costs at most candidates times 5 000 steps. A call inside an admitted decision that fails on its own (error, invalid result, own budget) still counts as a failure and answers `prev` for that candidate only.
 
 Every failure rolls the call's `state` back and returns `prev`. **After 16 failures in total (`ScriptLimits.DisableAfterFailures`) the mod is disabled** for the rest of the
 park: the call that reaches 16 returns `prev`, sets the flag and writes one warning to the log naming the mod, the counters and the last failure; its hooks never run again,
@@ -419,8 +428,12 @@ the M3 gate, so the real queues and scripts of the shipped themes). Three mods r
 
 No failure of any kind occurred. The heaviest call took 124 steps and the busiest tick 3 188 steps (64 calls); the defaults leave a factor of **40 per call and 15 per tick**
 over those. Speed: the interpreter ran 77 million steps a second in a Debug build on the development Mac (a simple arithmetic loop; release builds and the browser's AOT differ), so the per-tick
-budget is about 0.65 ms there and a mod that burns all of it every tick costs under 4% of a 16.7 ms tick, still under 15% if the browser build runs four times slower. A larger park
-raises the tick's calls roughly with its crowd, so the per-tick factor is the one to watch: a mod that is five times heavier than *light* in a park five times busier still fits.
+budget is about 0.65 ms there: **per mod**, a mod that burns all of it every tick costs under 4% of a 16.7 ms tick (under 15% if the browser build runs four times slower). That counts interpreter steps only; building the
+views for each call and the host's path search (`FindPath`) that a `wanderGoal` can force by naming a far cell are unmetered host work, outside the budget. A larger park
+raises the tick's calls roughly with guests times attractions, so the per-tick budget is the one to watch. The calibration parks above hold about 30 to 90 guests and 4 to 7 attractions. Scaled up (`ParkScenario` with a
+group every turn, test `ACrowdedParkNeverDisablesTheStateMod`) the scenario peaked at 271 guests and the *state* mod's busiest tick took 2 352 steps (49 calls), under the budget; projecting to the 1000-guest cap with
+20 attractions (about 10 times the calls) gives 25 000 to 35 000 steps for that mod, and a mod five times heavier than *state* in such a park would overrun the tick. That is allowed to happen: the mod is then skipped for the rest of
+the tick (the base policy answers) and `TicksOverBudget` grows, but it is never disabled for it.
 Because the whole of `state` is copied (on the first write of a call) and validated (on every write), a mod that writes a large `state` on every call pays about two steps per node: a call that
 writes into a 2 000-node `state` is at the call budget. Keep the state small or write it rarely.
 

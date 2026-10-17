@@ -18,7 +18,7 @@ internal enum ScriptFailureKind
 /// <param name="MaxTickSteps">The most steps the mod took in one tick.</param>
 /// <param name="MaxTickCalls">The most calls the mod ran in one tick.</param>
 /// <param name="Ticks">Ticks in which the mod ran at least one call.</param>
-internal sealed record ScriptModStats( string Id, long Calls, long TotalSteps, long MaxCallSteps, long MaxTickSteps, long MaxTickCalls, long Ticks, long RuntimeErrors, long BudgetFailures, long InvalidResults, bool Disabled );
+internal sealed record ScriptModStats( string Id, long Calls, long TotalSteps, long MaxCallSteps, long MaxTickSteps, long MaxTickCalls, long Ticks, long RuntimeErrors, long BudgetFailures, long InvalidResults, bool Disabled, long TicksOverBudget = 0 );
 
 /// <summary>
 /// One script mod inside one guest simulation (docs/SCRIPT-MODS.md): its compiled programs, its <c>state</c>, its step meters, its failure counters and its disabled flag. The state, the counters and the
@@ -31,7 +31,8 @@ internal sealed class ScriptModInstance
 	private readonly IReadOnlyDictionary<string, (int File, string Function)> hooks;
 	private readonly ScriptHostOptions options;
 	private long tickRemaining;
-	private bool tickFailureCounted;
+	private bool tickOverCounted;
+	private bool inDecision, decisionSkipped;
 
 	// measurement
 	private long calls, totalSteps, maxCallSteps, maxTickSteps, maxTickCalls, tickCount, tickSteps, tickCalls;
@@ -56,6 +57,12 @@ internal sealed class ScriptModInstance
 	public long BudgetFailures { get; private set; }
 	public long InvalidResults { get; private set; }
 
+	/// <summary>
+	/// Ticks in which the mod used up its per-tick step budget. Not a failure and not counted toward disabling (a busy park raises the calls of a tick without the mod being wrong); saved and hashed
+	/// for diagnostics, and logged.
+	/// </summary>
+	public long TicksOverBudget { get; private set; }
+
 	/// <summary>All failures together: the number <see cref="ScriptLimits.DisableAfterFailures"/> is compared with.</summary>
 	public long Failures => RuntimeErrors + BudgetFailures + InvalidResults;
 
@@ -79,10 +86,40 @@ internal sealed class ScriptModInstance
 		tickSteps = 0;
 		tickCalls = 0;
 		tickRemaining = options.StepsPerTick;
-		tickFailureCounted = false;
+		tickOverCounted = false;
 	}
 
-	public ScriptModStats Stats() => new( Id, calls, totalSteps, maxCallSteps, Math.Max( maxTickSteps, tickSteps ), Math.Max( maxTickCalls, tickCalls ), tickCount + (tickSteps > 0 ? 1 : 0), RuntimeErrors, BudgetFailures, InvalidResults, Disabled );
+	public ScriptModStats Stats() => new( Id, calls, totalSteps, maxCallSteps, Math.Max( maxTickSteps, tickSteps ), Math.Max( maxTickCalls, tickCalls ), tickCount + (tickSteps > 0 ? 1 : 0), RuntimeErrors, BudgetFailures, InvalidResults, Disabled, TicksOverBudget );
+
+	/// <summary>
+	/// A candidate loop starts (<see cref="IGuestDecisions.BeginDecision"/>). The tick budget gates the whole decision: with none left the mod is skipped for every candidate (one overrun for the tick),
+	/// otherwise every candidate runs against its per-call budget alone, so the decision's scores all come from this mod or none do. The tick meter is still charged and may go below zero.
+	/// </summary>
+	public void BeginDecision( string hook )
+	{
+		inDecision = false;
+		decisionSkipped = false;
+		if ( Disabled || !hooks.ContainsKey( hook ) )
+			return;
+		inDecision = true;
+		if ( tickRemaining <= 0 )
+		{
+			decisionSkipped = true;
+			NoteOverrun();
+		}
+	}
+
+	public void EndDecision() => (inDecision, decisionSkipped) = (false, false);
+
+	private void NoteOverrun()
+	{
+		if ( tickOverCounted )
+			return;
+		tickOverCounted = true;
+		TicksOverBudget++;
+		if ( TicksOverBudget == 1 || TicksOverBudget % 600 == 0 )
+			Log?.Warning( $"Script mod {Id} used up its step budget for the tick ({options.StepsPerTick} steps); its remaining calls that tick answer prev. Ticks over budget so far: {TicksOverBudget}." );
+	}
 
 	/// <summary>
 	/// Runs <paramref name="hook"/> of this mod and returns its result, or <paramref name="previous"/> when the mod is disabled, has no such hook or the call fails in any way. A failure rolls the
@@ -93,20 +130,20 @@ internal sealed class ScriptModInstance
 	{
 		if ( Disabled || !hooks.TryGetValue( hook, out var target ) )
 			return previous;
-		// a call that finds the tick's budget already used up does not run; it is one failure for the tick, not one per skipped call
-		if ( tickRemaining <= 0 )
+		// outside a decision a call needs the tick's budget; inside one the decision was admitted (or skipped) as a whole at its start
+		if ( inDecision ? decisionSkipped : tickRemaining <= 0 )
 		{
-			if ( !tickFailureCounted )
-				Fail( ScriptFailureKind.Budget, hook, "the tick step budget is used up" );
-			tickFailureCounted = true;
+			if ( !inDecision )
+				NoteOverrun();
 			return previous;
 		}
 		var host = hosts[target.File];
 		var before = State;
+		var tickLimited = !inDecision && tickRemaining < options.StepsPerCall;
 		host.AdoptState( before );
-		host.SetTickRemaining( tickRemaining );
+		host.SetTickRemaining( inDecision ? long.MaxValue / 4 : tickRemaining );
 		var result = host.Call( target.Function, arguments, previous, expected, identity, hook );
-		tickRemaining = host.TickStepsRemaining;
+		tickRemaining -= result.Steps;
 		tickSteps += result.Steps;
 		totalSteps += result.Steps;
 		maxCallSteps = Math.Max( maxCallSteps, result.Steps );
@@ -124,14 +161,18 @@ internal sealed class ScriptModInstance
 			return result.Value;
 		}
 		State = before;
+		// a call stopped by what was left of the tick, not by its own budget, is a tick overrun and no failure of the mod
+		if ( result.Outcome == ScriptOutcome.BudgetExhausted && tickLimited )
+		{
+			NoteOverrun();
+			return previous;
+		}
 		var kind = result.Outcome switch
 		{
 			ScriptOutcome.BudgetExhausted => ScriptFailureKind.Budget,
 			ScriptOutcome.InvalidResult => ScriptFailureKind.InvalidResult,
 			_ => ScriptFailureKind.RuntimeError
 		};
-		if ( kind == ScriptFailureKind.Budget && tickRemaining <= 0 )
-			tickFailureCounted = true;
 		Fail( kind, hook, result.Line > 0 ? $"line {result.Line}: {result.Message}" : result.Message ?? "failed" );
 		return previous;
 	}
@@ -153,19 +194,21 @@ internal sealed class ScriptModInstance
 	}
 
 	/// <summary>Puts a saved state, counters and flag back (<see cref="ScriptModsSave.Restore"/>, after its validation).</summary>
-	internal void Restore( ScriptTable state, long runtimeErrors, long budgetFailures, long invalidResults, bool disabled )
+	internal void Restore( ScriptTable state, long runtimeErrors, long budgetFailures, long invalidResults, bool disabled, long ticksOverBudget = 0 )
 	{
 		State = state;
 		RuntimeErrors = runtimeErrors;
 		BudgetFailures = budgetFailures;
 		InvalidResults = invalidResults;
 		Disabled = disabled;
+		TicksOverBudget = ticksOverBudget;
 		LastFailure = null;
 		tickRemaining = options.StepsPerTick;
-		tickFailureCounted = false;
+		tickOverCounted = false;
+		(inDecision, decisionSkipped) = (false, false);
 	}
 
-	/// <summary>This mod's part of <see cref="WorldStateHash"/>: the id, the versions, the canonical state, the counters and the flag.</summary>
+	/// <summary>This mod's part of <see cref="WorldStateHash"/>: the id, the versions, the canonical state, the counters (failures and ticks over budget) and the flag.</summary>
 	internal void AddCanonicalState( StateHasher hash )
 	{
 		hash.Add( Id );
@@ -176,5 +219,6 @@ internal sealed class ScriptModInstance
 		hash.Add( BudgetFailures );
 		hash.Add( InvalidResults );
 		hash.Add( Disabled );
+		hash.Add( TicksOverBudget );
 	}
 }

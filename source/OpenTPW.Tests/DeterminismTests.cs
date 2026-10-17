@@ -294,13 +294,13 @@ public class DeterminismTests
 	/// guest identity state. CI runs it on Windows, macOS and Linux, so an equal value means the interpreter, the stateless <c>rng</c> and the hook wiring give the same park everywhere. A deliberate change
 	/// of the example, of the language, of a limit or of the hook wiring changes this value.
 	/// </summary>
-	internal const ulong ScriptModsFixedRunHash = 0xFA975EE2267EF3B6UL;
+	internal const ulong ScriptModsFixedRunHash = 0xD7388BB84BBA0676UL;
 
 	/// <summary>
 	/// The pinned hash of a run with a test mod that implements all four hooks, keeps counters in its state and draws with <c>rng</c> (the example uses neither <c>scoreAttraction</c>, <c>wanderGoal</c> nor
 	/// <c>rng</c>): the cross-platform pin of everything the example does not reach.
 	/// </summary>
-	internal const ulong ScriptModsAllHooksFixedRunHash = 0x34D604D883414DD3UL;
+	internal const ulong ScriptModsAllHooksFixedRunHash = 0xC3190E46B1E70633UL;
 
 	[TestMethod]
 	public void ScriptModsFixedRunHashIsTheSameInEveryProcess()

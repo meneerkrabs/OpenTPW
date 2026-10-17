@@ -96,6 +96,8 @@ public class ScriptModsSaveTests
 		StringAssert.Contains( Problem( good with { State = "{\"a\":1.5}" } )!, "invalid" );
 		StringAssert.Contains( Problem( good with { State = null! } )!, "no state" );
 		StringAssert.Contains( Problem( good with { RuntimeErrors = -1 } )!, "negative" );
+		StringAssert.Contains( Problem( good with { TicksOverBudget = -1 } )!, "negative" );
+		Assert.IsNull( Problem( good with { TicksOverBudget = 5000 } ), "ticks over budget are no failures and not bounded by the disable limit" );
 		StringAssert.Contains( Problem( good with { RuntimeErrors = 3, Disabled = true } )!, "disabled with only 3" );
 		StringAssert.Contains( Problem( good with { RuntimeErrors = 16 } )!, "is not disabled" );
 		StringAssert.Contains( Problem( good with { RuntimeErrors = 10, BudgetFailures = 10, Disabled = true } )!, "above the limit" );
@@ -162,7 +164,7 @@ public class ScriptModsSaveTests
 	public void ActiveProblemNamesTheMismatchBetweenTheSectionAndTheActiveMods()
 	{
 		var set = CounterSet();
-		var entry = new ScriptModSaveData { BehaviourVersion = 1, ApiVersion = ScriptLimits.ScriptApiVersion, State = "{}", RuntimeErrors = 0, BudgetFailures = 0, InvalidResults = 0, Disabled = false };
+		var entry = new ScriptModSaveData { BehaviourVersion = 1, ApiVersion = ScriptLimits.ScriptApiVersion, State = "{}", RuntimeErrors = 0, BudgetFailures = 0, InvalidResults = 0, Disabled = false, TicksOverBudget = 0 };
 		Assert.IsNull( ScriptModsSave.ActiveProblem( new ScriptModsSaveData { Mods = new Dictionary<string, ScriptModSaveData> { ["community.counter"] = entry } }, set ) );
 		StringAssert.Contains( ScriptModsSave.ActiveProblem( null, set )!, "no ScriptMods section" );
 		StringAssert.Contains( ScriptModsSave.ActiveProblem( new ScriptModsSaveData { Mods = new Dictionary<string, ScriptModSaveData> { ["community.x"] = entry } }, set )!, "community.x" );
@@ -197,6 +199,8 @@ public class ScriptModsSaveTests
 		Assert.AreNotEqual( withError, Hash( on.Guests ), "so is which counter" );
 		mod.Restore( mod.State, 0, 0, 0, false );
 		Assert.AreEqual( before, Hash( on.Guests ), "back to the start" );
+		mod.Restore( mod.State, 0, 0, 0, false, 3 );
+		Assert.AreNotEqual( before, Hash( on.Guests ), "ticks over budget" );
 		mod.Restore( mod.State, 0, 0, 16, true );
 		Assert.AreNotEqual( before, Hash( on.Guests ), "the disabled flag" );
 		mod.Restore( ScriptState.Parse( "{\"s\":1}" ), 0, 0, 0, false );

@@ -341,12 +341,12 @@ public static class GuestReport
 	internal static IReadOnlyList<ScriptModStats> ScriptTotals( ScenarioReport scenario ) =>
 		scenario.Seeds.SelectMany( seed => seed.ScriptStats ).GroupBy( item => item.Id, StringComparer.Ordinal ).OrderBy( group => group.Key, StringComparer.Ordinal )
 			.Select( group => new ScriptModStats( group.Key, group.Sum( item => item.Calls ), group.Sum( item => item.TotalSteps ), group.Max( item => item.MaxCallSteps ), group.Max( item => item.MaxTickSteps ), group.Max( item => item.MaxTickCalls ),
-				group.Sum( item => item.Ticks ), group.Sum( item => item.RuntimeErrors ), group.Sum( item => item.BudgetFailures ), group.Sum( item => item.InvalidResults ), group.Any( item => item.Disabled ) ) ).ToArray();
+				group.Sum( item => item.Ticks ), group.Sum( item => item.RuntimeErrors ), group.Sum( item => item.BudgetFailures ), group.Sum( item => item.InvalidResults ), group.Any( item => item.Disabled ), group.Sum( item => item.TicksOverBudget ) ) ).ToArray();
 
 	private static JsonNode ScriptModsJson( ScenarioReport scenario ) => new JsonArray( ScriptTotals( scenario ).Select( item => (JsonNode)new JsonObject
 	{
 		["id"] = item.Id, ["calls"] = item.Calls, ["steps"] = item.TotalSteps, ["maxCallSteps"] = item.MaxCallSteps, ["maxTickSteps"] = item.MaxTickSteps, ["maxTickCalls"] = item.MaxTickCalls, ["ticksWithCalls"] = item.Ticks,
-		["runtimeErrors"] = item.RuntimeErrors, ["budgetFailures"] = item.BudgetFailures, ["invalidResults"] = item.InvalidResults, ["disabledSeeds"] = scenario.Seeds.Count( seed => seed.ScriptStats.Any( stat => stat.Id == item.Id && stat.Disabled ) )
+		["runtimeErrors"] = item.RuntimeErrors, ["budgetFailures"] = item.BudgetFailures, ["invalidResults"] = item.InvalidResults, ["ticksOverBudget"] = item.TicksOverBudget, ["disabledSeeds"] = scenario.Seeds.Count( seed => seed.ScriptStats.Any( stat => stat.Id == item.Id && stat.Disabled ) )
 	} ).ToArray() );
 
 	private static readonly JsonSerializerOptions Indented = new() { WriteIndented = true, Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
@@ -379,7 +379,7 @@ public static class GuestReport
 			text.AppendLine( $"rejected by reason (all seeds): {string.Join( ", ", rejected )}" );
 			text.AppendLine( $"abandoned by reason (all seeds): {string.Join( ", ", abandoned )}" );
 			foreach ( var script in ScriptTotals( scenario ) )
-				text.AppendLine( $"script mod {script.Id} (all seeds): {script.Calls} calls, {script.TotalSteps} steps, at most {script.MaxCallSteps} steps per call and {script.MaxTickSteps} steps ({script.MaxTickCalls} calls) per tick, failures {script.RuntimeErrors} runtime / {script.BudgetFailures} budget / {script.InvalidResults} invalid, disabled in {scenario.Seeds.Count( seed => seed.ScriptStats.Any( stat => stat.Id == script.Id && stat.Disabled ) )} seeds" );
+				text.AppendLine( $"script mod {script.Id} (all seeds): {script.Calls} calls, {script.TotalSteps} steps, at most {script.MaxCallSteps} steps per call and {script.MaxTickSteps} steps ({script.MaxTickCalls} calls) per tick, failures {script.RuntimeErrors} runtime / {script.BudgetFailures} budget / {script.InvalidResults} invalid, {script.TicksOverBudget} ticks over the tick budget, disabled in {scenario.Seeds.Count( seed => seed.ScriptStats.Any( stat => stat.Id == script.Id && stat.Disabled ) )} seeds" );
 		}
 		foreach ( var skipped in result.Skipped )
 			text.AppendLine( $"skipped: {skipped}" );

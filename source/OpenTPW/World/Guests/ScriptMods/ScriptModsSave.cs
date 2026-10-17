@@ -16,6 +16,8 @@ internal sealed record ScriptModSaveData
 	public required long BudgetFailures { get; init; }
 	public required long InvalidResults { get; init; }
 	public required bool Disabled { get; init; }
+	/// <summary>Ticks in which the mod used up its per-tick budget (diagnostic; not a failure).</summary>
+	public required long TicksOverBudget { get; init; }
 }
 
 /// <summary>The park-resume section of the script mods (<see cref="ParkResumeSnapshot.ScriptMods"/>), keyed by mod id.</summary>
@@ -51,7 +53,8 @@ internal static class ScriptModsSave
 				RuntimeErrors = mod.RuntimeErrors,
 				BudgetFailures = mod.BudgetFailures,
 				InvalidResults = mod.InvalidResults,
-				Disabled = mod.Disabled
+				Disabled = mod.Disabled,
+				TicksOverBudget = mod.TicksOverBudget
 			} );
 		return new ScriptModsSaveData { Mods = mods };
 	}
@@ -98,8 +101,8 @@ internal static class ScriptModsSave
 			return $"{id} was saved under script behaviour version {entry.BehaviourVersion}, but this build runs version {ScriptLimits.BehaviourVersion}";
 		if ( entry.ApiVersion != ScriptLimits.ScriptApiVersion )
 			return $"{id} was saved under script API {entry.ApiVersion}, but this build runs {ScriptLimits.ScriptApiVersion}";
-		if ( entry.RuntimeErrors < 0 || entry.BudgetFailures < 0 || entry.InvalidResults < 0 )
-			return $"{id} has a negative failure counter";
+		if ( entry.RuntimeErrors < 0 || entry.BudgetFailures < 0 || entry.InvalidResults < 0 || entry.TicksOverBudget < 0 )
+			return $"{id} has a negative counter";
 		var total = (decimal)entry.RuntimeErrors + entry.BudgetFailures + entry.InvalidResults;
 		// a mod is disabled by the call that reaches the limit, so it is disabled exactly when the counters reach it, and no counter passes it
 		if ( total > ScriptLimits.DisableAfterFailures )
@@ -148,7 +151,7 @@ internal static class ScriptModsSave
 		foreach ( var mod in runtime.Mods )
 		{
 			var entry = section.Mods[mod.Id];
-			mod.Restore( ScriptState.Parse( entry.State ), entry.RuntimeErrors, entry.BudgetFailures, entry.InvalidResults, entry.Disabled );
+			mod.Restore( ScriptState.Parse( entry.State ), entry.RuntimeErrors, entry.BudgetFailures, entry.InvalidResults, entry.Disabled, entry.TicksOverBudget );
 		}
 	}
 }

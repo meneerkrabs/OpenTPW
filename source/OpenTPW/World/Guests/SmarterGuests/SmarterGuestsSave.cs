@@ -97,7 +97,7 @@ internal static class SmarterGuestsSave
 		if ( section == null )
 			return;
 		if ( guests.SmarterGuests is not { } state )
-			throw new InvalidDataException( $"The saved park has {ExtensionId} state, but the extension is not active." );
+			throw new InvalidDataException( $"The saved park has guest identity state ({ExtensionId} or script mods), but neither is active." );
 		if ( SectionProblem( section, guests.Guests.Select( guest => guest.Id ) ) is { } problem )
 			throw new InvalidDataException( $"The saved smarter-guests state is inconsistent: {problem}." );
 		foreach ( var guest in guests.Guests )

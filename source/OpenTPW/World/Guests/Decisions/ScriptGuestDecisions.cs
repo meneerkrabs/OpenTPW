@@ -42,6 +42,18 @@ internal sealed class ScriptGuestDecisions : IGuestDecisions
 		Runtime.BeginTick();
 	}
 
+	public void BeginDecision()
+	{
+		inner.BeginDecision();
+		Runtime.BeginDecision( ScriptHooks.ScoreAttraction );
+	}
+
+	public void EndDecision()
+	{
+		Runtime.EndDecision();
+		inner.EndDecision();
+	}
+
 	private static ScriptCallIdentity IdentityOf( in DecisionContext context, in GuestView guest ) =>
 		new( unchecked( (long)context.ParkSeed ), unchecked( (long)guest.BirthId ), context.ParkTurn );
 

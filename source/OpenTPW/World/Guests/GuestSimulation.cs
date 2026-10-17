@@ -78,9 +78,9 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		isOpenForStep = IsOpenForStep;
 		separationForStep = SeparationForStep;
 		// [EXT:smarter-guests] the gate is read here, once; a smarter policy brings the extension's park state with it
-		ScriptModRuntime? scriptMods = null;
-		this.decisions = decisions ?? DefaultPolicy( out scriptMods );
-		ScriptMods = scriptMods;
+		this.decisions = decisions ?? DefaultPolicy();
+		// the script mods are those of the policy that runs them, however it was chosen, so what runs is what is saved and hashed
+		ScriptMods = (this.decisions as ScriptGuestDecisions)?.Runtime;
 		if ( this.decisions.UsesExtensionState )
 			SmarterGuests = new SmarterGuestsState( seed );
 	}
@@ -90,11 +90,10 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// enabled (docs/SCRIPT-MODS.md). Without a script mod nothing is wrapped, built, saved or hashed.
 	/// </summary>
 	// [EXT:script-mods] the wrapper runs the enabled script mods' hooks over the base policy's answers
-	private static IGuestDecisions DefaultPolicy( out ScriptModRuntime? scriptMods )
+	private static IGuestDecisions DefaultPolicy()
 	{
 		IGuestDecisions policy = FeatureGates.SmarterGuests ? new SmarterGuestDecisions() : OriginalGuestDecisions.Instance;
-		scriptMods = ScriptModRuntime.ForActive( OpenTpwExtensions.Active );
-		return scriptMods == null ? policy : new ScriptGuestDecisions( policy, scriptMods );
+		return ScriptModRuntime.ForActive( OpenTpwExtensions.Active ) is { } scriptMods ? new ScriptGuestDecisions( policy, scriptMods ) : policy;
 	}
 
 	private readonly IGuestDecisions decisions;
@@ -1999,6 +1998,10 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		var view = ViewOf( guest );
 		uint best = 0;
 		var chosen = 0;
+		// the whole loop is one decision: a policy that meters work (the script mods) treats its candidates as a unit
+		decisions.BeginDecision();
+		try
+		{
 		foreach ( var attraction in NewestFirst() )
 		{
 			// an attraction without a back-of-queue cell is never a candidate
@@ -2012,6 +2015,11 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 				&& (setWalk ? RouteToCell( guest, attraction.QueueCells[^1] ) : CanRouteTo( guest, attraction.QueueCells[^1] ))) )
 				continue;
 			(best, chosen) = (score, attraction.AttractionId);
+		}
+		}
+		finally
+		{
+			decisions.EndDecision();
 		}
 		return chosen == 0 ? null : FindAttraction( chosen );
 	}
@@ -2172,6 +2180,9 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		var view = ViewOf( guest );
 		IRideVisitorBridge? best = null;
 		uint bestScore = 0;
+		decisions.BeginDecision();
+		try
+		{
 		for ( var x = guest.CellX - 2; x < guest.CellX + 2; x++ )
 		{
 			for ( var y = guest.CellY - 2; y < guest.CellY + 2; y++ )
@@ -2188,6 +2199,11 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 						(best, bestScore) = (candidate, score);
 				}
 			}
+		}
+		}
+		finally
+		{
+			decisions.EndDecision();
 		}
 		if ( best == null )
 			return;

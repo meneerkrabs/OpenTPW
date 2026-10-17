@@ -36,6 +36,19 @@ internal sealed class ScriptModRuntime
 			mod.BeginTick();
 	}
 
+	/// <summary>A candidate loop of <paramref name="hook"/> starts: each mod that implements it is admitted or skipped for the whole decision.</summary>
+	public void BeginDecision( string hook )
+	{
+		foreach ( var mod in Mods )
+			mod.BeginDecision( hook );
+	}
+
+	public void EndDecision()
+	{
+		foreach ( var mod in Mods )
+			mod.EndDecision();
+	}
+
 	/// <summary>Whether any enabled mod still implements <paramref name="hook"/> (a disabled one does not count).</summary>
 	public bool Runs( string hook )
 	{

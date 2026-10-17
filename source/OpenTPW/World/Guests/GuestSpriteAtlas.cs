@@ -1,7 +1,34 @@
 namespace OpenTPW;
 
-/// <summary>A frame's place in a <see cref="GuestSpriteAtlas"/> plus its hotspot offsets in source pixels.</summary>
-public readonly record struct GuestAtlasFrame( int X, int Y, int Width, int Height, int OriginX, int OriginY );
+/// <summary>
+/// A frame's place in a <see cref="GuestSpriteAtlas"/> plus its hotspot offsets in source pixels and the frame's two pixels-per-unit fields
+/// (<see cref="SpriteFrame.PixelsPerUnitX"/>, <see cref="SpriteFrame.PixelsPerUnitY"/>; 128 in every shipped frame).
+/// </summary>
+public readonly record struct GuestAtlasFrame( int X, int Y, int Width, int Height, int OriginX, int OriginY, ushort PixelsPerUnitX = GuestAtlasFrame.ReferencePixelsPerUnit, ushort PixelsPerUnitY = GuestAtlasFrame.ReferencePixelsPerUnit )
+{
+	/// <summary>The pixels per unit the world scale <see cref="GuestRenderer.UnitsPerPixel"/> is calibrated for: every shipped frame has it.</summary>
+	public const ushort ReferencePixelsPerUnit = 128;
+
+	/// <summary>Horizontal factor on the world size of a pixel: 128 / A (1 when the field is 0, which no shipped frame has; [EXT:zero-pixels-per-unit] the original would divide by it).</summary>
+	public float ScaleX => PixelsPerUnitX == 0 ? 1f : ReferencePixelsPerUnit / (float)PixelsPerUnitX;
+	/// <summary>Vertical factor on the world size of a pixel: 128 / B (1 when the field is 0).</summary>
+	public float ScaleY => PixelsPerUnitY == 0 ? 1f : ReferencePixelsPerUnit / (float)PixelsPerUnitY;
+
+	/// <summary>
+	/// The quad's extents in world units across and up the camera plane from the hotspot. [BIN:TPW-EXE:0x005890E0 sprite placement] the original spans
+	/// <c>originX / A · scale</c> to <c>(width + originX) / A · scale</c> (Y likewise with B), so a pixel is <paramref name="unitsPerPixel"/> · 128 / A wide
+	/// and · 128 / B tall; with A = B = 128 the factors are exactly 1 and the result is the fixed-scale quad bit for bit.
+	/// </summary>
+	/// <param name="mirror">The frame is drawn mirrored: its horizontal span is reflected about the hotspot.</param>
+	/// <param name="unitsPerPixel">World size of a pixel at 128 pixels per unit (times the sprite's own scale where it has one).</param>
+	public (float X0, float X1, float Top, float Bottom) Extents( bool mirror, float unitsPerPixel )
+	{
+		var left = mirror ? -(OriginX + Width) : OriginX;
+		var unitX = unitsPerPixel * ScaleX;
+		var unitY = unitsPerPixel * ScaleY;
+		return (left * unitX, (left + Width) * unitX, -OriginY * unitY, -(OriginY + Height) * unitY);
+	}
+}
 
 /// <summary>
 /// One original kid sprite set (<c>esprites.wad/Generic/Kids/SPR_xx.FPC</c> + <c>.ESP</c>) packed into an
@@ -16,18 +43,54 @@ public sealed class GuestSpriteAtlas
 	public const int WalkSlot = 1;
 	public const int RunSlot = 2;
 	public const int WaitSlot = 14;
+	/// <summary>The width every shipped set is packed into.</summary>
 	public const int AtlasWidth = 1024;
+	/// <summary>The height up to which a set stays in a narrower atlas; a taller one doubles the width (to <see cref="MaximumWidth"/>) first. 2048 is also the size WebGL2 guarantees.</summary>
+	public const int MaximumHeight = 2048;
+	/// <summary>The widest and tallest atlas: a set that does not fit 4096 by 4096 is refused (<see cref="InvalidDataException"/>). A frame is at most <see cref="SpriteBankFile.MaximumDimension"/> wide, so the width always grows to fit it.</summary>
+	public const int MaximumWidth = 4096;
+	/// <summary>Pixels between frames (and the atlas edge): 2, or 4 for frames drawn at more than 128 pixels per unit, whose mip levels would otherwise bleed one frame into the next.</summary>
 	private const int Padding = 2;
+	private const int HighResolutionPadding = 4;
 
 	public string Name { get; }
 	public SpriteAnimationFile Animations { get; }
 	public GuestAtlasFrame[] Frames { get; }
 	public int Width { get; }
 	public int Height { get; }
-	/// <summary>RGBA8, row-major.</summary>
-	public byte[] Pixels { get; }
+	private readonly SpriteBankFile bank;
+	private readonly object pixelsGate = new();
+	private byte[]? pixels;
+	/// <summary>
+	/// RGBA8, row-major. Decoded from the bank on first use and kept until <see cref="ReleasePixels"/>: a renderer drops it after the GPU upload (the bank keeps one byte per
+	/// pixel instead of four), and a texture-pack reload decodes it again.
+	/// </summary>
+	public byte[] Pixels
+	{
+		get
+		{
+			lock ( pixelsGate )
+			{
+				if ( pixels == null )
+				{
+					var decoded = new byte[Width * Height * 4];
+					for ( var index = 0; index < bank.Frames.Count; index++ )
+						bank.DecodeRgba( bank.Frames[index], decoded, Width * 4, Frames[index].X, Frames[index].Y );
+					pixels = decoded;
+				}
+				return pixels;
+			}
+		}
+	}
 	/// <summary>Key of this atlas in the optional texture pack (docs/TEXTURE-PACKS.md); not a file in the game data.</summary>
 	public string PackKey { get; }
+
+	/// <summary>Forgets the decoded <see cref="Pixels"/> (they are decoded again on the next use).</summary>
+	public void ReleasePixels()
+	{
+		lock ( pixelsGate )
+			pixels = null;
+	}
 
 	/// <param name="packFolder">Folder of the set under <c>esprites/&lt;packRoot&gt;</c> for the texture pack key (<c>kids</c>, <c>kidsheads</c>, <c>costumes</c>, ...).</param>
 	/// <param name="packRoot">The <c>esprites</c> folder the set lives in: <c>generic</c>, or a theme for the costumes.</param>
@@ -35,32 +98,47 @@ public sealed class GuestSpriteAtlas
 	{
 		Name = name;
 		Animations = animations;
+		this.bank = bank;
 		PackKey = $"esprites/{packRoot.ToLowerInvariant()}/{packFolder}/{name.ToLowerInvariant()}.atlas";
 		Frames = new GuestAtlasFrame[bank.Frames.Count];
-		var x = Padding;
-		var y = Padding;
+		var padding = bank.Frames.Any( frame => frame.PixelsPerUnitX > GuestAtlasFrame.ReferencePixelsPerUnit || frame.PixelsPerUnitY > GuestAtlasFrame.ReferencePixelsPerUnit ) ? HighResolutionPadding : Padding;
+		// Every shipped set fits 1024 pixels across and at most 2048 down; a set drawn at twice the size or more is packed into a wider atlas rather than a very tall one,
+		// and a frame wider than the atlas row makes the atlas wider too.
+		var width = AtlasWidth;
+		var widest = bank.Frames.Count == 0 ? 0 : bank.Frames.Max( frame => frame.Width );
+		while ( width < widest + 2 * padding && width < MaximumWidth )
+			width *= 2;
+		int needed;
+		while ( (needed = Pack( bank, Frames, width, padding )) > MaximumHeight && width < MaximumWidth )
+			width *= 2;
+		if ( needed > MaximumWidth || width < widest + 2 * padding )
+			throw new InvalidDataException( $"Sprite set {name} does not fit a {MaximumWidth} x {MaximumWidth} atlas ({widest} px wide frames, {needed} rows at {width} across)." );
+		Width = width;
+		Height = 1;
+		while ( Height < needed )
+			Height *= 2;
+	}
+
+	/// <summary>Places the frames in rows of <paramref name="width"/> pixels and returns the height the rows need; fills <paramref name="frames"/>.</summary>
+	private static int Pack( SpriteBankFile bank, GuestAtlasFrame[] frames, int width, int padding )
+	{
+		var x = padding;
+		var y = padding;
 		var rowHeight = 0;
 		for ( var index = 0; index < bank.Frames.Count; index++ )
 		{
 			var frame = bank.Frames[index];
-			if ( x + frame.Width + Padding > AtlasWidth )
+			if ( x + frame.Width + padding > width )
 			{
-				x = Padding;
-				y += rowHeight + Padding;
+				x = padding;
+				y += rowHeight + padding;
 				rowHeight = 0;
 			}
-			Frames[index] = new GuestAtlasFrame( x, y, frame.Width, frame.Height, frame.OriginX, frame.OriginY );
-			x += frame.Width + Padding;
+			frames[index] = new GuestAtlasFrame( x, y, frame.Width, frame.Height, frame.OriginX, frame.OriginY, frame.PixelsPerUnitX, frame.PixelsPerUnitY );
+			x += frame.Width + padding;
 			rowHeight = Math.Max( rowHeight, frame.Height );
 		}
-		Width = AtlasWidth;
-		var needed = y + rowHeight + Padding;
-		Height = 1;
-		while ( Height < needed )
-			Height *= 2;
-		Pixels = new byte[Width * Height * 4];
-		for ( var index = 0; index < bank.Frames.Count; index++ )
-			bank.DecodeRgba( bank.Frames[index], Pixels, Width * 4, Frames[index].X, Frames[index].Y );
+		return y + rowHeight + padding;
 	}
 
 	/// <summary>Atlas frame for an animation slot, a sprite direction (0–4) and a step; falls back to slot 0.</summary>
@@ -164,7 +242,14 @@ public sealed class GuestSpriteAtlas
 			if ( bank == null )
 				continue;
 			using var bankStream = FileSystem.OpenRead( $"{directory}/{bank}" );
-			sets.Add( new GuestSpriteAtlas( stem, new SpriteBankFile( bankStream ), animations, packFolder, packRoot ) );
+			try
+			{
+				sets.Add( new GuestSpriteAtlas( stem, new SpriteBankFile( bankStream ), animations, packFolder, packRoot ) );
+			}
+			catch ( InvalidDataException exception ) when ( exception.Message.StartsWith( "Sprite set ", StringComparison.Ordinal ) )
+			{
+				Log?.Warning( $"The sprite set {stem} in {directory} is skipped: {exception.Message}" );
+			}
 		}
 		return sets;
 	}

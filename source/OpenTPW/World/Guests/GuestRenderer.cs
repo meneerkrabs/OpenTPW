@@ -12,7 +12,7 @@ namespace OpenTPW;
 /// </summary>
 public sealed class GuestRenderer : Entity
 {
-	/// <summary>Engine units per sprite pixel (kids ≈ 42 px tall ≈ 0.95 cell). Approximation; the original zoom mapping is unknown.</summary>
+	/// <summary>Engine units per sprite pixel of a frame with 128 pixels per unit (kids ≈ 42 px tall ≈ 0.95 cell); a frame with other pixels-per-unit fields is scaled by 128 / A across and 128 / B down (<see cref="GuestAtlasFrame.ScaleX"/>). Approximation; the original zoom mapping is unknown.</summary>
 	public const float UnitsPerPixel = 0.045f;
 	/// <summary>Walk-cycle frames per cell walked (8 frames per 0.8 cells). Approximation.</summary>
 	public const float WalkFramesPerCell = 10f;
@@ -36,6 +36,12 @@ public sealed class GuestRenderer : Entity
 	public Func<Guest, SVector3>? FeetChooser { get; init; }
 	/// <summary>[EXT:pools-render] Whether a slot the chosen set has no art for is drawn as the nearest swim slot (<see cref="GuestSpriteAtlas.UsableSlot"/>); the swimmers' renderer only, so any other chooser keeps the stand-slot fallback.</summary>
 	public bool SwimSlotFallback { get; init; }
+	/// <summary>
+	/// [EXT:pools-render] The slots whose frames are drawn with their bottom edge at the guest's point instead of their hotspot (the swimmers' renderer: the swimwear slots whose hotspot is the centre of the
+	/// torso, <see cref="PoolSwimSlots.BottomAnchored"/>), so a pool activity's <see cref="IPoolActivity.FeetHeight"/> is where the body rests: the feet on a rung, the back on a slide or a lounger. Null for the
+	/// kids and the costumes, whose hotspot is the feet.
+	/// </summary>
+	public IReadOnlySet<int>? BottomAnchoredSlots { get; init; }
 	/// <summary>Guests drawn in the last frame.</summary>
 	public int DrawnGuests { get; private set; }
 
@@ -123,7 +129,9 @@ public sealed class GuestRenderer : Entity
 				Log.Warning( $"Texture pack atlas {file} could not be read ({exception.Message}); using the original sprites." );
 			}
 		}
-		return new Texture( atlas.Pixels, atlas.Width, atlas.Height );
+		var texture = new Texture( atlas.Pixels, atlas.Width, atlas.Height );
+		atlas.ReleasePixels();   // uploaded: the bank keeps the picture at a quarter of the size, and a texture-pack reload decodes it again
+		return texture;
 	}
 
 	/// <summary>Engine position of a point in game-cell coordinates, on the cell's ground triangle (<see cref="ModelHeightfield.GetHeight"/>; holes keep their corner heights).</summary>
@@ -138,6 +146,12 @@ public sealed class GuestRenderer : Entity
 
 	/// <summary>Atlas, frame and mirroring for a guest seen with the given camera axes (engine space).</summary>
 	public (int Atlas, int Frame, bool Mirror) SelectSprite( Guest guest, SVector3 cameraRight, SVector3 cameraForward )
+	{
+		var (atlas, frame, mirror, _, _) = SelectSpriteAndSlot( guest, cameraRight, cameraForward );
+		return (atlas, frame, mirror);
+	}
+
+	private (int Atlas, int Frame, bool Mirror, int Slot, int Direction) SelectSpriteAndSlot( Guest guest, SVector3 cameraRight, SVector3 cameraForward )
 	{
 		var atlasIndex = guest.Type % atlases.Count;
 		var atlas = atlases[atlasIndex];
@@ -164,8 +178,36 @@ public sealed class GuestRenderer : Entity
 			step = 0;
 		}
 		step %= atlas.FramesPerDirection( slot );
-		return (atlasIndex, atlas.GetFrame( slot, direction, step ), mirror);
+		return (atlasIndex, atlas.GetFrame( slot, direction, step ), mirror, slot, direction);
 	}
+
+	private readonly Dictionary<(int Atlas, int Slot, int Direction), float> anchorLifts = new();
+
+	/// <summary>
+	/// The engine units the frames of one animation (atlas, slot, direction) are raised along the camera's up axis so their bottom edge, not their hotspot, sits on the guest's point (<see cref="BottomAnchoredSlots"/>);
+	/// 0 for any other slot. One lift for the whole animation, the largest over its frames (<see cref="AnchorLift(IReadOnlySet{int}?, int, IEnumerable{GuestAtlasFrame})"/>), so the sprite does not jump between frames
+	/// whose bodies hang different rows below the hotspot. Cached per animation. Presentation only.
+	/// </summary>
+	internal float AnchorLift( int atlasIndex, int slot, int direction )
+	{
+		if ( BottomAnchoredSlots?.Contains( slot ) != true )
+			return 0f;
+		if ( !anchorLifts.TryGetValue( (atlasIndex, slot, direction), out var lift ) )
+		{
+			var atlas = atlases[atlasIndex];
+			lift = AnchorLift( BottomAnchoredSlots, slot, Enumerable.Range( 0, Math.Max( 1, atlas.FramesPerDirection( slot ) ) ).Select( step => atlas.Frames[atlas.GetFrame( slot, direction, step )] ) );
+			anchorLifts[(atlasIndex, slot, direction)] = lift;
+		}
+		return lift;
+	}
+
+	/// <summary>The lift of one frame: the rows below its hotspot, in engine units (see <see cref="AnchorLift(int, int, int)"/>); 0 for a slot that is not bottom-anchored.</summary>
+	internal static float AnchorLift( IReadOnlySet<int>? bottomAnchored, int slot, GuestAtlasFrame frame ) =>
+		bottomAnchored?.Contains( slot ) == true ? Math.Max( 0, frame.OriginY + frame.Height ) * UnitsPerPixel * frame.ScaleY : 0f;
+
+	/// <summary>The lift of an animation: the largest <see cref="AnchorLift(IReadOnlySet{int}?, int, GuestAtlasFrame)"/> over its frames.</summary>
+	internal static float AnchorLift( IReadOnlySet<int>? bottomAnchored, int slot, IEnumerable<GuestAtlasFrame> animation ) =>
+		animation.Select( frame => AnchorLift( bottomAnchored, slot, frame ) ).DefaultIfEmpty( 0f ).Max();
 
 	/// <summary>Picks the current visible in-park sprite without touching render resources or simulation state.</summary>
 	internal Guest? PickVisitor(SVector2 mouse, SVector2 viewport, System.Numerics.Matrix4x4 view, System.Numerics.Matrix4x4 projection) =>
@@ -186,9 +228,10 @@ public sealed class GuestRenderer : Entity
 			if (!guest.IsVisible || Draws?.Invoke(guest) == false || !simulation.IsInPark(guest) || !float.IsFinite(guest.DrawX) || !float.IsFinite(guest.DrawY) ||
 				!float.IsFinite(guest.HeadingX) || !float.IsFinite(guest.HeadingY) || !float.IsFinite(guest.DrawDistanceWalked) || guest.Type < 0)
 				continue;
-			var (atlasIndex, frameIndex, mirror) = SelectSprite(guest, right, forward);
-			var feet = FeetChooser?.Invoke( guest ) ?? CellToEngine(field, guest.DrawX, guest.DrawY);
-			if (!Hud.GuestWorldPicker.TryHit(feet, atlases[atlasIndex].Frames[frameIndex], mirror, view, projection, viewport, mouse, out var hit))
+			var (atlasIndex, frameIndex, mirror, slot, direction) = SelectSpriteAndSlot(guest, right, forward);
+			var frame = atlases[atlasIndex].Frames[frameIndex];
+			var feet = (FeetChooser?.Invoke( guest ) ?? CellToEngine(field, guest.DrawX, guest.DrawY)) + new SVector3(view.M12, view.M22, view.M32) * AnchorLift(atlasIndex, slot, direction);
+			if (!Hud.GuestWorldPicker.TryHit(feet, frame, mirror, view, projection, viewport, mouse, out var hit))
 				continue;
 			if (hit < best || (hit == best && (picked == null || guest.Id < picked.Id)))
 			{
@@ -217,15 +260,11 @@ public sealed class GuestRenderer : Entity
 		{
 			if ( !guest.IsVisible || Draws?.Invoke( guest ) == false )
 				continue;
-			var (atlasIndex, frameIndex, mirror) = SelectSprite( guest, right, forward );
+			var (atlasIndex, frameIndex, mirror, slot, direction) = SelectSpriteAndSlot( guest, right, forward );
 			var atlas = atlases[atlasIndex];
 			var frame = atlas.Frames[frameIndex];
-			var feet = FeetChooser?.Invoke( guest ) ?? CellToEngine( field, guest.DrawX, guest.DrawY );
-			var left = mirror ? -(frame.OriginX + frame.Width) : frame.OriginX;
-			var x0 = left * UnitsPerPixel;
-			var x1 = (left + frame.Width) * UnitsPerPixel;
-			var yTop = -frame.OriginY * UnitsPerPixel;
-			var yBottom = -(frame.OriginY + frame.Height) * UnitsPerPixel;
+			var feet = (FeetChooser?.Invoke( guest ) ?? CellToEngine( field, guest.DrawX, guest.DrawY )) + up * AnchorLift( atlasIndex, slot, direction );
+			var (x0, x1, yTop, yBottom) = frame.Extents( mirror, UnitsPerPixel );
 			var u0 = frame.X / (float)atlas.Width;
 			var u1 = (frame.X + frame.Width) / (float)atlas.Width;
 			if ( mirror )

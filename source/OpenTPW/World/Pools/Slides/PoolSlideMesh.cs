@@ -13,7 +13,7 @@ public sealed record PoolSlideMesh( PoolMeshPart Track, PoolMeshPart Pylons )
 
 /// <summary>
 /// The geometry of water slides (docs/POOLS.md, "Water slides"), CPU-only and deterministic: the track's centreline (<see cref="PoolSlide.PointAt"/>) swept with the profile's cross-section, and a pylon
-/// under every piece. The open flume is a half pipe with a lip along both edges; the tube is a ring with a slit along its top, so riders stay visible in it. The cross-sections follow the track's
+/// under every piece. The open flume is a half pipe with a lip along both edges; the tube is a ring with a wide slit along its top, so riders stay visible in it. The cross-sections follow the track's
 /// slope and turns exactly, which is why the slides are generated here rather than made of rigid models. Heights are engine units, a cell is <c>cellSize</c> wide.
 /// </summary>
 // [EXT:pools-render] OpenTPW's own slide rendering; the original game has no pools
@@ -51,10 +51,10 @@ public static class PoolSlideMeshBuilder
 		else
 		{
 			var r = TubeRadius;
-			// the ring without a 70 degree slit on the top: from 125 degrees round through the bottom to 415 (55) degrees
+			// the ring without a 140 degree slit on the top (wide enough that the bottom anchored rider, whose back rests on the bed, shows in the camera's oblique view): from 160 degrees round through the bottom to 380 (20) degrees
 			for ( var step = 0; step <= 20; step++ )
 			{
-				var angle = (125 + 290.0 * step / 20) * Math.PI / 180;
+				var angle = (160 + 220.0 * step / 20) * Math.PI / 180;
 				points.Add( ((float)(r * Math.Cos( angle )), (float)(r + r * Math.Sin( angle )), (float)Math.Cos( angle ), (float)Math.Sin( angle )) );
 			}
 		}

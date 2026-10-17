@@ -5,9 +5,10 @@ namespace OpenTPW.UI.Original;
 
 /// <summary>
 /// One sprite frame for a <see cref="UiSpriteFigure"/>: the atlas texture, the frame's rectangle in it (pixels), its hotspot offset (the frame's
-/// top-left corner relative to the figure's feet, pixels) and whether it is drawn mirrored.
+/// top-left corner relative to the figure's feet, pixels), whether it is drawn mirrored and the factors on the size of a pixel across and down (128 / A and 128 / B of the
+/// frame's pixels-per-unit fields, <see cref="GuestAtlasFrame.ScaleX"/>; 1 for every shipped frame).
 /// </summary>
-public readonly record struct UiSpriteFrame( Veldrid.Texture Texture, int AtlasWidth, int AtlasHeight, int X, int Y, int Width, int Height, int OriginX, int OriginY, bool Mirror );
+public readonly record struct UiSpriteFrame( Veldrid.Texture Texture, int AtlasWidth, int AtlasHeight, int X, int Y, int Width, int Height, int OriginX, int OriginY, bool Mirror, float ScaleX = 1f, float ScaleY = 1f );
 
 /// <summary>
 /// A sprite figure standing in a control's rectangle: its feet at the rectangle's horizontal centre, a quarter of the rectangle's height above its
@@ -29,7 +30,9 @@ public sealed class UiSpriteFigure : UiElement
 	public static (UiRect Rect, NVector2 Uv0, NVector2 Uv1) Layout( UiSpriteFrame frame, NVector2 feet, float pixel )
 	{
 		var left = frame.Mirror ? -(frame.OriginX + frame.Width) : frame.OriginX;
-		var rect = new UiRect( feet.X + left * pixel, feet.Y + frame.OriginY * pixel, frame.Width * pixel, frame.Height * pixel );
+		var pixelX = pixel * frame.ScaleX;
+		var pixelY = pixel * frame.ScaleY;
+		var rect = new UiRect( feet.X + left * pixelX, feet.Y + frame.OriginY * pixelY, frame.Width * pixelX, frame.Height * pixelY );
 		var u0 = frame.X / (float)frame.AtlasWidth;
 		var u1 = (frame.X + frame.Width) / (float)frame.AtlasWidth;
 		if ( frame.Mirror )

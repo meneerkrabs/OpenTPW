@@ -112,14 +112,17 @@ public sealed class PoolSlideActivity : IPoolActivity
 			case PoolSlidePhases.Wait:
 				return top;
 			case PoolSlidePhases.Ride:
-				return slide.HeightAt( slide.PositionAtTurn( guest.PoolActivityTurns ) ) / (float)PoolSlide.HeightUnit + RiderLift;
+				return slide.HeightAt( slide.PositionAtTurn( guest.PoolActivityTurns ) ) / (float)PoolSlide.HeightUnit + (slide.Profile == PoolSlideProfile.Tube ? TubeRiderLift : RiderLift);
 			default:
 				return null;
 		}
 	}
 
-	/// <summary>How far above the track the sprite's feet are drawn, engine units: the rider lies in the flume.</summary>
-	private const float RiderLift = 0.3f;
+	/// <summary>How far above the track the rider is drawn, engine units: the sliding slot is bottom anchored, so its back rests on the track bed.</summary>
+	private const float RiderLift = 0.0f;
+
+	/// <summary>The tube's riders ride a little off the bed (the tube is a ring one body wide), so the head and shoulders show through the slit from the game camera.</summary>
+	private const float TubeRiderLift = 0.25f;
 
 	private static PoolActivityStep Approach( GuestSimulation simulation, Guest guest, PoolSlide? slide, bool usable, ref uint random )
 	{

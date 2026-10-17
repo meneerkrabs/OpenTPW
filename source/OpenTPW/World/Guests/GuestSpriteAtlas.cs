@@ -223,11 +223,12 @@ public sealed class GuestSpriteAtlas
 	}
 
 	/// <summary>
-	/// How many sectors the camera's yaw turns the sprites: the original takes <c>trunc((yaw - pi / 8) / 2 pi * 8)</c> (<c>0x00542010</c>, constants <c>0x00700E74</c>, <c>0x00700E78</c>, <c>0x00700E7C</c>), which
-	/// truncates towards zero, so every yaw from 0 to 67.5 degrees is sector 0 and only the 22.5 degrees below a full turn are the last, and keeps <c>8 - (n &amp; 7)</c>.
+	/// How many sectors the camera's yaw turns the sprites: the original takes <c>trunc((yaw + pi / 8) / 2 pi * 8)</c> (<c>0x00542010</c>: the yaw minus the constant <c>0x00700E74</c>, which is -pi / 8; then the factors <c>0x00700E78</c>,
+	/// <c>0x00700E7C</c>) and keeps <c>8 - (n &amp; 7)</c>. The park camera's yaw is wrapped to 0 to 2 pi first, so the term is never negative and the truncation is a floor: the sectors are centred on the 45 degree steps of the yaw.
+	/// Only another camera's yaw (negative, from the arc tangent) is truncated towards zero, which makes -67.5 to -22.5 degrees sector 0.
 	/// </summary>
-	// [BIN:TPW-EXE:0x00542010 camera sector] ftol((yaw - 0.3926991) * 0.1591549 * 8.0) & 7 subtracted from 8; the draw adds the heading sector and keeps the low three bits
-	public static int CameraSector( float yaw ) => 8 - ((int)((yaw - 0.3926991f) * 0.1591549f * 8f) & 7);
+	// [BIN:TPW-EXE:0x00542010 camera sector] ftol((yaw - (-0.3926991)) * 0.1591549 * 8.0) & 7 subtracted from 8 (FSUB m32 at 0x0054219E, bytes D8 25 74 0E 70 00); the draw adds the heading sector and keeps the low three bits
+	public static int CameraSector( float yaw ) => 8 - ((int)((yaw + 0.3926991f) * 0.1591549f * 8f) & 7);
 
 	/// <summary>
 	/// The direction and mirroring of a sprite the way the original's sprite pass picks them: the heading sector plus the camera sector, modulo 8, and for a slot with fewer directions than 8 the sectors beyond the

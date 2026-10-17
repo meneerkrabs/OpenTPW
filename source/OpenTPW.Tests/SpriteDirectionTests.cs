@@ -37,20 +37,30 @@ public class SpriteDirectionTests
 
 	[DataTestMethod]
 	[DataRow( 0f, 8 )]       // the home view: no turn
-	[DataRow( 30f, 8 )]      // the truncation keeps every yaw from 0 to 67.5 degrees in the first sector
-	[DataRow( 45f, 8 )]
-	[DataRow( 67f, 8 )]
-	[DataRow( 68f, 7 )]      // one sector from 67.5 degrees
-	[DataRow( 90f, 7 )]
-	[DataRow( 112f, 7 )]
-	[DataRow( 113f, 6 )]
-	[DataRow( 180f, 5 )]
-	[DataRow( 337f, 2 )]
-	[DataRow( 338f, 1 )]     // the last 22.5 degrees below a full turn are the last sector
-	[DataRow( 359f, 1 )]
-	public void CameraSectorsTruncateTheYaw( float degrees, int sector )
+	[DataRow( 22f, 8 )]      // the sectors are centred on the 45 degree steps of the yaw
+	[DataRow( 23f, 7 )]
+	[DataRow( 45f, 7 )]
+	[DataRow( 67f, 7 )]
+	[DataRow( 68f, 6 )]
+	[DataRow( 90f, 6 )]
+	[DataRow( 180f, 4 )]
+	[DataRow( 292f, 2 )]
+	[DataRow( 293f, 1 )]
+	[DataRow( 337f, 1 )]
+	[DataRow( 338f, 8 )]     // back to the first sector below a full turn
+	[DataRow( 359f, 8 )]
+	public void CameraSectorsAreCentredOnTheYawSteps( float degrees, int sector )
 	{
 		Assert.AreEqual( sector, GuestSpriteAtlas.CameraSector( degrees * Degrees ) );
+	}
+
+	[TestMethod]
+	public void AnotherCamerasNegativeYawIsTruncatedTowardsZero()
+	{
+		// the walk and ride cameras keep the arc tangent (-180 to 180 degrees): the term (yaw + 22.5) / 45 between -1 and 0 truncates to 0
+		Assert.AreEqual( 8, GuestSpriteAtlas.CameraSector( -30f * Degrees ) );
+		Assert.AreEqual( 8, GuestSpriteAtlas.CameraSector( -60f * Degrees ) );
+		Assert.AreEqual( 1, GuestSpriteAtlas.CameraSector( -68f * Degrees ) );
 	}
 
 	[TestMethod]
@@ -76,13 +86,32 @@ public class SpriteDirectionTests
 	}
 
 	[TestMethod]
-	public void ARotatedCameraStillShowsTheSpritesAsAtYawZeroUpToSixtySevenAndAHalfDegrees()
+	public void ARotatedCameraTurnsTheSpritesWithTheWorld()
 	{
-		// the reported difference: at a yaw of 45 degrees a walker along +Y was drawn from three quarters (exact: 45 degrees from the view), the original shows the back
-		Assert.AreEqual( (0, false), GuestSpriteAtlas.SelectOriginalDirection( 0f, 1f, 45f * Degrees, 5 ) );
-		Assert.AreEqual( (2, false), GuestSpriteAtlas.SelectOriginalDirection( 1f, 0f, 45f * Degrees, 5 ) );
-		// from 67.5 degrees on the camera turns the sprites a sector at a time, and a quarter turn leaves them 45 degrees off the exact angle
-		Assert.AreEqual( (1, true), GuestSpriteAtlas.SelectOriginalDirection( 0f, 1f, 90f * Degrees, 5 ) );
+		// camera yaw 45 degrees looks towards +X and +Y: a walker along +Y moves up and to the left on the screen (the away-left frame, mirrored), a walker along +X up and to the right
+		Assert.AreEqual( (1, true), GuestSpriteAtlas.SelectOriginalDirection( 0f, 1f, 45f * Degrees, 5 ) );
+		Assert.AreEqual( (1, false), GuestSpriteAtlas.SelectOriginalDirection( 1f, 0f, 45f * Degrees, 5 ) );
+		// a quarter turn: the walker along +X now walks straight away from the camera, the one along +Y goes left
+		Assert.AreEqual( (0, false), GuestSpriteAtlas.SelectOriginalDirection( 1f, 0f, 90f * Degrees, 5 ) );
+		Assert.AreEqual( (2, true), GuestSpriteAtlas.SelectOriginalDirection( 0f, 1f, 90f * Degrees, 5 ) );
+	}
+
+	[TestMethod]
+	public void OnTheYawStepsTheSectorRuleAgreesWithTheExactCameraRelativeAngle()
+	{
+		// at a multiple of 45 degrees heading and yaw are both on their sector centres, so quantising them separately equals quantising the camera-relative angle: figures never walk backwards on the screen
+		for ( var step = 0; step < 8; step++ )
+		{
+			var yaw = step * MathF.PI / 4;
+			var (rightX, rightY, forwardX, forwardY) = (MathF.Cos( yaw ), -MathF.Sin( yaw ), MathF.Sin( yaw ), MathF.Cos( yaw ));
+			for ( var sector = 0; sector < 8; sector++ )
+			{
+				var angle = sector * MathF.PI / 4;
+				var (x, y) = (MathF.Sin( angle ), MathF.Cos( angle ));
+				var exact = GuestSpriteAtlas.SelectDirection( x * rightX + y * rightY, x * forwardX + y * forwardY );
+				Assert.AreEqual( exact, GuestSpriteAtlas.SelectOriginalDirection( x, y, yaw, 5 ), $"yaw {step * 45}, heading sector {sector}" );
+			}
+		}
 	}
 
 	[TestMethod]

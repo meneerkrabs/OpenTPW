@@ -8,13 +8,15 @@ OpenTPW has two kinds of add-ons, both labelled `[EXT:mods]` in the source (`sou
 - **Mods** are folders of data with an `opentpw-mod.json` manifest. Community mods use ids that start with
   `community.`; `opentpw.` ids are reserved for data-only content shipped with OpenTPW. The pools extension's own content is a catalog root of the id `opentpw.pools` (`content/pools`, Info.Ids 65500 to 65519 reserved; [POOLS.md](POOLS.md#content-extpools-content)), listed only while that extension is on.
 
-Mods are **data, plus sandboxed TPW Script**. A mod may ship data files as before, and (from the scripting phases on, see
-[SCRIPT-MODS.md](SCRIPT-MODS.md)) scripts in *TPW Script*, a small deterministic language with its own interpreter inside
+Mods are **data, plus sandboxed TPW Script**. A mod may ship data files, and scripts (see
+[SCRIPT-MODS.md](SCRIPT-MODS.md)) in *TPW Script*, a small deterministic language with its own interpreter inside
 OpenTPW. OpenTPW **never loads native code or assemblies from a mod**: .NET has no in-process security boundary, the browser
 build is trimmed and compiled ahead of time (so there is nothing to load), and third-party code would break the save and
 determinism guarantees. A script cannot reach files, the network, the clock or any host object: it only sees what a hook
 passes it, under a step budget, and it can only change the simulation through a typed hook result. Engine features a mod
 needs that scripts cannot express become official extensions instead.
+
+New to modding? Start with the [modding guide](MODDING-GUIDE.md): folder layout, a minimal manifest, where to put a mod, and examples.
 
 In code the system is called `OpenTPW.Mods` / "extensions"; `OpenTPW.ModKit` is the unrelated asset editor.
 
@@ -27,8 +29,8 @@ In code the system is called `OpenTPW.Mods` / "extensions"; `OpenTPW.ModKit` is 
 - park saves record the mods that change the simulation and refuse a mismatched set (below);
 - the **Extensions and mods screen** (below) edits `mods.json`;
 - **content roots** are live on the desktop: an enabled mod's `overrides`, `strings` and `objects` change what the game
-  reads (see [Content](#content)). Script mods are loaded and compiled at resolve time but their hooks are not wired in yet. The browser build runs the same data mods shipped with the page (see
-  [Mods in the browser](WEB.md#mods-in-the-browser));
+  reads (see [Content](#content)). **Script mods run on the desktop**: their four hooks are wired into the guest simulation (script mods phase 4, [SCRIPT-MODS.md](SCRIPT-MODS.md)), and the shipped example `opentpw.example.patient-guests` works. The browser build runs the same data mods shipped with the page (see
+  [Mods in the browser](WEB.md#mods-in-the-browser)) but does not run script mods yet (the AOT check, phase 5, is still to do);
 - **Theme Park Inc attractions in Theme Park World** work end to end through a data mod and the cross-edition objects
   extension: they are listed, priced, researched, bought, placed, run and saved. OpenTPW ships that mod itself,
   `opentpw.tpi-rides`, off by default, on the desktop and in the browser (see

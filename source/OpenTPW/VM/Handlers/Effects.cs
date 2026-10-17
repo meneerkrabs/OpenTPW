@@ -31,11 +31,22 @@ public static partial class OpcodeHandlers
 		[OpcodeHandler( Opcode.EVENT, RideOpcodeStatus.Hooked, "TPW-EXE 0x552615 (`type key id`, each resolved): the dispatcher 0x5573D0(type, key, id, control 1000), its handle dropped; types 1-2 are particle effects (PARTICLES.md), 3-9 sounds by category (AUDIO.md), 10 the object type's own list (0x557686); the corpus uses types 1-6 and key 0xFFFF (-1, the footprint middle) 341 times" )]
 		public static void Event( RideVM vm, Operand type, Operand unknown, Operand id ) => vm.Effect( Opcode.EVENT, new[] { type, unknown, id } );
 
-		[OpcodeHandler( Opcode.SETREVERB, RideOpcodeStatus.Hooked, "TPW-EXE 0x55649C (`level`, resolved): stores the word at +0xD8 and does nothing else in the handler (no reader inside the script module); the corpus uses 0, 1, 3, 8 and 9" )]
-		public static void SetReverb( RideVM vm, Operand level ) => vm.Effect( Opcode.SETREVERB, new[] { level } );
+		[OpcodeHandler( Opcode.EVENT_EXT, RideOpcodeStatus.Hooked, "TPW-EXE 0x552707 (`type key id control`, each resolved): EVENT with the control operand in place of 1000 (the dispatcher 0x5573D0 applies a control other than 1000 to a particle effect of types 1-2 through 0x51FFD0; the sound types ignore it); no corpus use" )]
+		public static void EventExt( RideVM vm, Operand type, Operand unknown, Operand id, Operand control ) => vm.Effect( Opcode.EVENT_EXT, new[] { type, unknown, id, control } );
 
-		[OpcodeHandler( Opcode.DIPMUSIC, RideOpcodeStatus.Hooked, "TPW-EXE 0x5564C0 (`on`, resolved): stores the low byte at +0xB9 and calls 0x51E710(on), which writes the global request word 0x803AD0 (and 0x803AC8 = 1) that the sound service reads to set one channel volume to 0 while it is non-zero (0x51BE5A..0x51BE9B); the script's end writes 0 again when the byte was set (0x558513); End.RSE and Gates.RSE, value 1" )]
-		public static void DipMusic( RideVM vm, Operand value ) => vm.Effect( Opcode.DIPMUSIC, new[] { value } );
+		[OpcodeHandler( Opcode.SETREVERB, RideOpcodeStatus.Hooked, "TPW-EXE 0x55649C (`level`, resolved): stores the operand as a dword at +0xD8 and nothing else; the reader is the main loop's 0x55A470, which sets the sound service's reverb preset (0x51C8D0, an index into SndReverb.map) from the root script of the ride being ridden whose level is not 0 (built: ReverbSelector; the DSP is AUDIO-039); the corpus uses 0, 1, 3, 8 and 9" )]
+		public static void SetReverb( RideVM vm, Operand level )
+		{
+			vm.ReverbLevel = level.Value;
+			vm.Effect( Opcode.SETREVERB, new[] { level } );
+		}
+
+		[OpcodeHandler( Opcode.DIPMUSIC, RideOpcodeStatus.Hooked, "TPW-EXE 0x5564C0 (`on`, resolved): stores the low byte at +0xB9 and calls 0x51E710(on), which writes the global duck request word 0x803AD0 (and the sound service's dirty flag 0x803AC8); the sound service (0x51BD70, from the main loop) then sets the music channel's volume to 0 while the word is non-zero (0x51BE5A..0x51BE9B, 0x51BDC2..0x51BDEC; built: AudioMixer.MusicDuckRequest); the script's destruction writes 0 again when the byte was set (0x558513); End.RSE and Gates.RSE use it (8 uses)" )]
+		public static void DipMusic( RideVM vm, Operand value )
+		{
+			vm.MusicDuckByte = value.Value & 0xFF;
+			vm.Effect( Opcode.DIPMUSIC, new[] { value } );
+		}
 
 		[OpcodeHandler( Opcode.SCREAMLEVEL, RideOpcodeStatus.Hooked, "TPW-EXE 0x555FDA (`level`, resolved): 0x551290(handle +0xD0, level, script speed word) sets the held voice's parameter 6 to clamp((level + speed) / 2, 0, 100), truncating toward zero, and does nothing without a handle (built; 10-100 occur)" )]
 		public static void ScreamLevel( RideVM vm, Operand level ) => vm.Effect( Opcode.SCREAMLEVEL, new[] { level } );
@@ -55,6 +66,27 @@ public static partial class OpcodeHandlers
 		// [BIN:TPW-EXE:0x5564ED SPARK] four resolved operands: the first two are stored as words at +0xDC and +0xDE, the key nodes they name (class 0x100, 0x556B90) are looked up and logged (0x5DA3C0); the third and fourth are read and dropped. Nothing reads the two words (the other +0xDC and +0xDE readers belong to the tour and bump controllers), so the opcode has no effect
 		[OpcodeHandler( Opcode.SPARK, RideOpcodeStatus.Implemented, "TPW-EXE 0x5564ED (`a b c d`, resolved): stores a and b as words at +0xDC and +0xDE, looks the two key nodes (class 0x100) up and logs them; c and d are dropped; nothing reads the words, so no game effect (1 corpus use, Plasma)" )]
 		public static void Spark( RideVM vm, Operand a, Operand b, Operand c, Operand d ) { }
+
+		// [APPROX:RIDES-046] the ride lights have no target in OpenTPW: no model has a light dummy (class 0x20000) and no scene draws dynamic lights, so the effect is an unimplemented one (counted and logged once, the script goes on)
+		[OpcodeHandler( Opcode.ENABLELIGHT, RideOpcodeStatus.Hooked, "TPW-EXE 0x555C7A (`light`, resolved): looks the light dummy (class 0x20000, number `light`) up in the object's model (0x44B220), takes its light record (0x4587B0) and clears the record's off flag 0x10000000 (0x458910); flags untouched; no corpus use, no light in any shipped model (RIDES-046)" )]
+		public static void EnableLight( RideVM vm, Operand light ) => vm.Effect( Opcode.ENABLELIGHT, new[] { light } );
+
+		[OpcodeHandler( Opcode.DISABLELIGHT, RideOpcodeStatus.Hooked, "TPW-EXE 0x555CCD (`light`, resolved): as ENABLELIGHT but sets the record's off flag 0x10000000 (0x458940); flags untouched; no corpus use (RIDES-046)" )]
+		public static void DisableLight( RideVM vm, Operand light ) => vm.Effect( Opcode.DISABLELIGHT, new[] { light } );
+
+		[OpcodeHandler( Opcode.SETLIGHT, RideOpcodeStatus.Hooked, "TPW-EXE 0x555D20 (`light level`, resolved): the light record's colour becomes the light's base colour times level x 0.01 (0x4587E0: red, green and blue, alpha 1.0, and the packed ARGB word); flags untouched; no corpus use (RIDES-046)" )]
+		public static void SetLight( RideVM vm, Operand light, Operand level ) => vm.Effect( Opcode.SETLIGHT, new[] { light, level } );
+
+		[OpcodeHandler( Opcode.COLOURLIGHT, RideOpcodeStatus.Hooked, "TPW-EXE 0x555D9A (`light red green blue`, resolved): each channel times 0.01 becomes the light record's colour (alpha 1.0, packed ARGB word with each channel times 255 truncated, 0x458890); flags untouched; no corpus use (RIDES-046)" )]
+		public static void ColourLight( RideVM vm, Operand light, Operand red, Operand green, Operand blue ) => vm.Effect( Opcode.COLOURLIGHT, new[] { light, red, green, blue } );
+
+		// [BIN:TPW-EXE:0x5563D5 GETCUSTPTCLCODE] reads its destination raw, resolves the second operand and drops it, then stores the constant 0 (the interpreter's zero register) in the result word and the variable destination; the object type's custom particle code (0x4145E0 reads another field, the sound list EVENT type 10 uses) is not consulted
+		[OpcodeHandler( Opcode.GETCUSTPTCLCODE, RideOpcodeStatus.Implemented, "TPW-EXE 0x5563D5 (`dest in`): the second operand is resolved and dropped, the result is the constant 0 in the flags and a variable destination (a stub in the original); no corpus use" )]
+		public static void GetCustomParticleCode( RideVM vm, Operand dest, Operand input )
+		{
+			vm.SetFlags( 0 );
+			dest.Value = 0;
+		}
 
 		[OpcodeHandler( Opcode.TURBO, RideOpcodeStatus.Implemented, "TPW-EXE 0x5542B9: stores the low byte of the raw operand word in the script's TURBO byte (a variable operand stores its index byte); nothing else" )]
 		public static void Turbo( RideVM vm, Operand value ) => vm.TurboByte = value.Raw & 0xFF;

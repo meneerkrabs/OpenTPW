@@ -26,14 +26,14 @@ Code: `source/OpenTPW/VM/` (`RideVM`, `Operand`, `Instruction`, `RideOpcodes`,
 | Unknown (no handler) | 0 | 0 |
 | **Corpus total** | **84** | **11,915** |
 
-Of the 22 named opcodes the TPW corpus never uses, 11 have handlers: 4 from the
+Of the 22 named opcodes the TPW corpus never uses, all 22 have handlers: 4 from the
 upstream docs alone (`SETVARINPARENT`, `YEAR`, `MONTH`, `DAY`),
 `WAITABS`/`MULT` for the Theme Park Inc corpus
-([below](#theme-park-inc-gap-opcodes)) and `PUSH`, `POP`, `SETLV`, `DBGMSG` and `END`,
-read from tp.exe ([below](#original-interpreter-internals)); the other 11 (the ride
-lights, `EVENT_EXT`, `GETCUSTPTCLCODE` and others) stay unknown and fault the
-script if executed. Operand counts of every handler equal the upstream signature
-counts and the corpus counts (`CRIT_UNLOCK`: 0).
+([below](#theme-park-inc-gap-opcodes)), `PUSH`, `POP`, `SETLV`, `DBGMSG` and `END`,
+read from tp.exe ([below](#original-interpreter-internals)), and `EVENT_EXT`, the four
+ride-light opcodes and `GETCUSTPTCLCODE`, read from tp.exe for script mods ([below](#event_ext-the-ride-lights-and-getcustptclcode)).
+Only a number outside the opcode table faults the script. Operand counts of every handler equal the upstream signature
+counts (`SETLIGHT`, which the upstream notes give one operand, reads two in tp.exe) and the corpus counts (`CRIT_UNLOCK`: 0).
 
 "Implemented" means the VM handles the operation; much of its behavior still
 comes from upstream notes and corpus control flow. COPY, zero-divisor DIV/MOD,
@@ -296,13 +296,13 @@ corpus constraints are `RideOperandCorpusTests`.
 
 | Family | Opcodes (handler) | Operands | What the handler does |
 | --- | --- | --- | --- |
-| Objects and sounds by key | ADDOBJ (`0x551F5F`), ADDOBJ_EXT (`0x5520E8`), EVENT (`0x552615`), EVENT_EXT (`0x552707`, no handler here) | `type key id slot` R R R R; EXT forms `type key id control (slot)` | The dispatcher `0x5573D0(script, type, key, id, control)` (control 1000 unless an EXT form gives it): types 1-2 particle effects (PARTICLES.md), 3-9 sounds of the category the type names (AUDIO.md), 10 the object type's own list (`0x557686`, no shipped script); a type outside 1-10 logs. Key -1 (a negative key) is the footprint middle, a number a model dummy. ADDOBJ keeps a 0x1C-byte record on the list at +0xB0 (type, handle, key, node of class 0x100 for types 1-2 and 0x200 above, slot) and frees it when the handle is 0 |
+| Objects and sounds by key | ADDOBJ (`0x551F5F`), ADDOBJ_EXT (`0x5520E8`), EVENT (`0x552615`), EVENT_EXT (`0x552707`) | `type key id slot` R R R R; EXT forms `type key id control (slot)` | The dispatcher `0x5573D0(script, type, key, id, control)` (control 1000 unless an EXT form gives it): types 1-2 particle effects (PARTICLES.md), 3-9 sounds of the category the type names (AUDIO.md), 10 the object type's own list (`0x557686`, no shipped script); a type outside 1-10 logs. Key -1 (a negative key) is the footprint middle, a number a model dummy. ADDOBJ keeps a 0x1C-byte record on the list at +0xB0 (type, handle, key, node of class 0x100 for types 1-2 and 0x200 above, slot) and frees it when the handle is 0 |
 | Ending a record | KILLOBJ (`0x5522C5`), FADEOBJ (`0x5523D0`), SETOBJPARAM (`0x5524D9`) | `slot` R; `slot param value` R R R | Every record with the slot: KILLOBJ ends types 1-2 with `0x51FF70(handle, -2)` and 3-10 with `0x51C2C0`, FADEOBJ types 3-10 with `0x51C300`, both free the record; SETOBJPARAM calls `0x51BC40(handle, param, value)` for types 3-10 and keeps the new handle. None sets flags |
 | Animation | TRIGANIM `0x552875`, WAITANIM `0x5529BC`, LOOPANIM `0x552B2F`, TRIGWAITANIM `0x552C1A`, GETANIM `0x552DB4`, TRIGANIMSPEED `0x552E3A`, FLUSHANIM(_CH) `0x552861`/`0x553000`, TRIGANIM_CH `0x55306E`, WAITANIM_CH `0x55320A`, LOOPANIM_CH `0x553399`, TRIGWAITANIM_CH `0x553494`, GETANIM_CH `0x5536AE`, WAIT4ANIM `0x5538EB` | `anim variant` R R (+ `out` W for TRIG*, + `channel` R for the _CH forms, + `speed` R for TRIGANIMSPEED); GETANIM(_CH) `dest` W (+ channel R) | The Mac-read arithmetic (below) with the PC operand kinds; the trigger family also puts its out value in the flag word |
 | Visitors, walks | WALKON `0x555963`, WALKOFF `0x555B0C`, WALKGET `0x555B34` | `visitor u1 u2 u3 u4 action u5` R x7; `visitor` R; `dest` W | The script's walk table (TOURS.md): first free entry of the header walk size, states 1-4, WALKGET hands out the first entry in state 4. The shipped WALKON operands: the rider a variable, `action` 1, 2, 4, 5 or 6 (only 2 and 4 act), `u5` always 1 (bit 0: the body's height from the nodes) |
 | Visitors, bounce and float | BOUNCESETNODE `0x5555D9`, BOUNCESETBASE `0x555618`, BOUNCE `0x555674`, UNBOUNCE `0x5557A3`, FORCEUNBOUNCE `0x555842`, BOUNCING `0x555910`; WALKST_FLOAT `0x555B72`, WALKFLOATSTAT `0x555BD8`, WALKFLOATSTOP `0x555C11` | `node` W; `base` W; `visitor seconds` R R; `dest` W x3; `seconds a b` R R R; `dest` W | The script's own bounce table (16-byte entries at +0x28: visitor, node, deadline, start) and float words (+0x80, +0x84, +0x88, +0x8A); UNBOUNCE and FORCEUNBOUNCE release only inside the first 200 ms of a second since the bounce, UNBOUNCE also needs the deadline below the clock; the node and base words only feed the render pass |
 | Heads | ADDHEAD `0x554C3E`, DELHEAD `0x554D26` | `visitor` R | The script's head table (+0x30): a random free entry (world generator `0x516330`), the head dummy (class 0x80, number entry + 1), `0x44B410` hangs and `0x44B4C0` takes down; child and sound scripts have no table |
-| Screams and atmosphere | STARTSCREAM `0x555E5E`, STOPSCREAM `0x555EF7`, SINGLESCREAM `0x555F1B`, SCREAMLEVEL `0x555FDA`, REPAIREFFECT `0x5562A6`, SETREVERB `0x55649C`, DIPMUSIC `0x5564C0`, SPARK `0x5564ED` | `band level` R R; none; `band level` R R; `level` R; `on` R; `level` R; `on` R; `a b c d` R x4 | Scream handle at +0xD0 (`0x551130`, `0x551290`, `0x551320`, `0x551560`; the band is the script's own rider count, `level` 10 to 100, -1 for a one-shot that picks by band alone); REPAIREFFECT switches the type's repair effect (`0x556DE0`) and plays events 111 and 211 for a non-zero value, the band one-shot for 0; SETREVERB stores a word (+0xD8); DIPMUSIC writes the global duck request (`0x51E710`); SPARK only logs |
+| Screams and atmosphere | STARTSCREAM `0x555E5E`, STOPSCREAM `0x555EF7`, SINGLESCREAM `0x555F1B`, SCREAMLEVEL `0x555FDA`, REPAIREFFECT `0x5562A6`, SETREVERB `0x55649C`, DIPMUSIC `0x5564C0`, SPARK `0x5564ED` | `band level` R R; none; `band level` R R; `level` R; `on` R; `level` R; `on` R; `a b c d` R x4 | Scream handle at +0xD0 (`0x551130`, `0x551290`, `0x551320`, `0x551560`; the band is the script's own rider count, `level` 10 to 100, -1 for a one-shot that picks by band alone); REPAIREFFECT switches the type's repair effect (`0x556DE0`) and plays events 111 and 211 for a non-zero value, the band one-shot for 0; SETREVERB stores a dword (+0xD8) that the main loop reads ([below](#dipmusic-and-setreverb-the-sound-service-readers)); DIPMUSIC stores a byte (+0xB9) and writes the global duck request (`0x51E710`); SPARK only logs |
 | Controllers | TOUR `0x5542FE`, BUMP `0x5546F5`, COAST `0x554A5A` | `command` W (the raw word, a literal) and `parameter` | Commands 1-18, 1-17 and 1-8 through the tables `0x5569D0`, `0x556A18` and `0x556A5C` (other words log). The 43 shapes (resolved or raw parameter, a variable destination written or required, flags written or kept) equal the Mac-static roles: TOUR 6, 7 and 13 and BUMP 15 log and do nothing |
 | Time | WAIT `0x553783`, WAITABS `0x553828`, SETTIMER `0x55641B`, GETTIMER `0x55644D`, GETTIME `0x551F1E`, LIMBO `0x554DE5` | `ms` R; `ms` R; `ms` R; `dest` W; `dest` W; `value seconds` R R | One clock in milliseconds ([above](#execution-model)); WAIT divides by the script speed, the others do not |
 
@@ -310,8 +310,44 @@ What the shipped corpus does with them is pinned in `RideOperandCorpusTests`: th
 literal 0, the query destinations are variables (or literal 0 / 10000 where only the flags matter), BOUNCE always passes VAR_LETMEON and VAR_DURATION, REPAIREFFECT is 0 or 1, SETREVERB 0 to 10 (0, 1, 3, 8, 9 occur),
 DIPMUSIC only 1 (End.RSE and Gates.RSE), SCREAMLEVEL 10 to 100, the scream band a variable (VAR_ONRIDE in 81 of 86 uses) and SPARK has one use.
 
-Still unread or not modelled: the object type's own list (type 10, `0x557686`), what reads the SETREVERB word (+0xD8), the ride lights (`0x555C7A`..`0x555D9A`), EVENT_EXT, GETCUSTPTCLCODE, the sound service's use of the
-duck request (DIPMUSIC: `0x51BDC4`..`0x51BE9B` sets one channel volume to 0 while it is non-zero; not built), and the walking body's drawing (TOUR-011).
+Still unread or not modelled: the object type's own list (type 10, `0x557686`) and the walking body's drawing (TOUR-011). SETREVERB's reader and DIPMUSIC's sound-service reader are
+built ([below](#dipmusic-and-setreverb-the-sound-service-readers)).
+
+## DIPMUSIC and SETREVERB: the sound-service readers
+
+Both opcodes only store a value in the script; the effect is in the sound service, read in tp.exe.
+
+**DIPMUSIC** (`0x5564C0`) stores the low byte of its resolved operand at +0xB9 and passes the whole operand to `0x51E710`, which keeps its low word as the global duck request (`0x803AD0`)
+and marks the sound service's settings changed (`0x803AC8`). The service (`0x51BD70`, run from the main loop and the start-up) then sends four channel settings to the mixer in a fixed order: for the
+channel `0x700B88` (the one the second options slider, the music slider, feeds: `0x1D4DA` calls `0x51BB80`, which sets `0x803AC0`, and start-up passes the music default `0x78592C`) it sends
+0 while the request word is non-zero (`0x51BE5A`, or `0x51BDC2` in the branch where speech lowers the others) and the music volume otherwise; the effects (`0x803ABC`), speech (`0x803AC4`) and the constant-100 setting (`0x803AB8`, `0x51BB60(100)` at start-up) are
+not touched. That channel `0x700B88` is the music one is medium confidence: it rests on the options order (effects, music, speech, as the sliders `0x1D4D8`, `0x1D4DA`, `0x1D4DC` and the defaults `0x785928`..`0x785930` follow) and on the opcode's own name. The script's destruction (`0x558500`, `0x558513`) writes the request 0 again when its byte is set, whatever other scripts asked for. `End.RSE` and `Gates.RSE` use it, each at the start of
+the end-of-park sequence (8 uses, operand 1, never cleared by the script itself).
+
+OpenTPW: `RideVM.MusicDuckByte` (saved with the script, not hashed), `GameAudio.SetMusicDuck` and `AudioMixer.MusicDuckRequest` (the music channel's gain is 0 while it is non-zero; its voices keep playing, as the original's keep running at volume 0).
+The request word is presentation state: it is not saved and not part of any digest; a resumed park asks for it again from the script's byte, and `GameAudio.LeavePark` clears it (the park's scripts are destroyed). `Gates.RSE` runs in OpenTPW (the gate is created with every
+park), so its end-of-park command 2 now silences the park music; `End.RSE` is still not created (`APPROX:RIDES-019`).
+
+**SETREVERB** (`0x55649C`) stores its operand as a dword at +0xD8. The reader is `0x55A470`, called by the main loop (`0x54E360`): with the ride camera on a ride (`0x42A4E0`: camera byte `0x790AB0` bit 4,
+the ridden object `0x790A44`) it walks the script list for the ride's script with no parent and a non-zero +0xD8; a level of 0 or more goes to `0x51C8D0`, a negative one does nothing; with no such script, or outside
+the ride camera, the default `0x78578C` (0) goes to `0x51C8D0`. That call holds the preset (`0x803AB4`, -1 at start) and, only when it changes, sends it to the mixer, which looks up the `SndReverb.map` record
+(`0x6C5D20` loads it; `0x6C6000` fetches it, refusing an absent entry) and hands it to the audio device as an EAX 2.0 listener property set (`0x6C46B0`, DSPROPSETID_EAX20_ListenerProperties, property 1, 0x38 bytes) or to
+the second backend's vtable slot `0x50` (QMixer.dll exports `QSWaveMixSetReverb*`). The shipped levels are 0, 1, 3, 8 and 9 (`SndReverb.map` holds 15 of 32 entries: records 1 to 8 and 11 to 14 are identical, 0 differs from them in two words, 9 and 10 are their own).
+
+OpenTPW: `RideVM.ReverbLevel`, `ReverbSelector` (called each park frame with the ride view's ride, like the main loop), `GameAudio.SelectReverb`/`ReverbPreset` (sent only on change) and `SndReverbMap` (the file's format). The reverb itself
+is not mixed (`APPROX:AUDIO-039`): the DSP is the EAX hardware's or QMixer's.
+
+## EVENT_EXT, the ride lights and GETCUSTPTCLCODE
+
+None of them occurs in a shipped script, but a script mod can use them (the ScriptMods docs), and a fault would stop the mod's script.
+
+- **EVENT_EXT** (`0x552707`, `type key id control`) is EVENT with the fourth operand as the dispatcher's control instead of 1000; the dispatcher applies a control other than 1000 to a particle effect of types 1-2 (`0x51FFD0`)
+  and ignores it for the sounds. Built on the EVENT path: the particle request carries the control, the sounds play as for EVENT.
+- **ENABLELIGHT / DISABLELIGHT** (`0x555C7A`, `0x555CCD`, `light`) look the model's light dummy up (class `0x20000`, number `light`, `0x44B220`), take its light record (`0x4587B0`) and clear/set its off flag `0x10000000`. **SETLIGHT**
+  (`0x555D20`, `light level`, two operands) sets the record's colour to the base colour times `level x 0.01` (`0x4587E0`); **COLOURLIGHT** (`0x555D9A`, `light red green blue`) sets it from the three operands times 0.01 (`0x458890`); both also
+  store the packed ARGB word at +0x54. None of the four touches the flags. They are real effects, but no model of the game has a light dummy (a census of the 274 object models of the four themes finds none with class `0x20000`) and OpenTPW
+  draws no per-object dynamic lights, so they are hooked opcodes whose effect is an unimplemented one (counted and logged once, the script goes on): `APPROX:RIDES-046`.
+- **GETCUSTPTCLCODE** (`0x5563D5`, `dest in`) resolves its second operand, drops it and stores the constant 0 in the result word and a variable destination: a stub in the original, built as such.
 
 ## Corpus run (`RideVMCorpusTests`)
 
@@ -488,11 +524,7 @@ The unit tests are `RideVMInternalsTests`.
   the host releases that guest); it no longer holds a limbo list, does not
   board on `LIMBO`, and its snapshot's `Hopped`/`Limbo` arrays are always empty
   (kept for the file format; limbo state of older saves is dropped).
-- Not implemented, tp.exe addresses noted: the ride lights (`ENABLELIGHT`
-  `0x555C7A`, `DISABLELIGHT` `0x555CCD`, `SETLIGHT` `0x555D20`, `COLOURLIGHT`
-  `0x555D9A`; `SETLIGHT` reads two operands, the upstream notes say one),
-  `EVENT_EXT` (`0x552707`) and `GETCUSTPTCLCODE` (`0x5563D5`) are game effects
-  with no use in either corpus.
+- `EVENT_EXT`, the ride lights and `GETCUSTPTCLCODE` follow tp.exe ([below](#event_ext-the-ride-lights-and-getcustptclcode)); no script of either corpus uses them.
 
 ## Not original behaviour yet
 
@@ -501,9 +533,7 @@ The unit tests are `RideVMInternalsTests`.
   `Advance` call. The slice budget, the critical
   flag, HUSH/HOP, JSR/RETURN/PUSH/POP, the limbo table and TURBO's byte are
   ([below](#original-interpreter-internals)).
-- The ride lights (82–85, tp.exe `0x555C7A`–`0x555D9A`), `EVENT_EXT`
-  (`0x552707`) and `GETCUSTPTCLCODE` (`0x5563D5`) are game effects the VM does
-  not implement; no script of either corpus uses them.
+- The ride lights (82–85, tp.exe `0x555C7A`–`0x555D9A`) have no light system to act on in OpenTPW (`APPROX:RIDES-046`); they are unimplemented effects that do not fault.
 - Visitor opcodes work for every placed original object (its `RideVisitorBridge`);
   riders are not drawn walking along the ride nodes (the walk table and its times are the original's, [TOURS.md](TOURS.md), TOUR-011), and
   TOUR/BUMP/COAST guest handling is unimplemented. WALKST_FLOAT, WALKFLOATSTAT and WALKFLOATSTOP are the script's own state in the original and in the VM.
@@ -590,7 +620,7 @@ handler attributes diverge.
 | 11 | `FADEOBJ` | 113 | hooked | TPW-EXE 0x5523D0 (`slot`, resolved): as KILLOBJ, but types 3-10 end through 0x51C300 (types 1-2 take the same 0x51FF70(handle, -2)); flags untouched |
 | 12 | `SETOBJPARAM` | 20 | hooked | TPW-EXE 0x5524D9 (`slot param value`, each resolved): for every record with the slot, types 3-10 call 0x51BC40(handle, param, value) and keep the handle it returns, types 1-2 do nothing; the corpus sets param 20 to 0 or 75 on slot 1 |
 | 13 | `EVENT` | 527 | hooked | TPW-EXE 0x552615 (`type key id`, each resolved): the dispatcher 0x5573D0(type, key, id, control 1000), its handle dropped; types 1-2 are particle effects (PARTICLES.md), 3-9 sounds by category (AUDIO.md), 10 the object type's own list (0x557686); the corpus uses types 1-6 and key 0xFFFF (-1, the footprint middle) 341 times |
-| 14 | `EVENT_EXT` | 0 | unknown | no corpus use; not implemented (executing it faults the script) |
+| 14 | `EVENT_EXT` | 0 | hooked | TPW-EXE 0x552707 (`type key id control`, each resolved): EVENT with the control operand in place of 1000 (the dispatcher 0x5573D0 applies a control other than 1000 to a particle effect of types 1-2 through 0x51FFD0; the sound types ignore it); no corpus use |
 | 15 | `FLUSHANIM` | 17 | hooked | TPW-EXE 0x552861 (no operands); STP-PPC 0xafa68 → 0xa6c90: clears only channel 0's deferred clip; the playing clip and the WAIT4ANIM deadline stay |
 | 16 | `TRIGANIM` | 74 | hooked | TPW-EXE 0x552875 (`anim variant out`: two resolved, the third raw, written when it is a variable); STP-PPC 0xafa94: trigger channel 0, flags 0; out = max(ret - 300, 300); WAIT4ANIM deadline = now + out / script speed; LOOPANIM token reset |
 | 17 | `WAITANIM` | 547 | hooked | TPW-EXE 0x5529BC (`anim variant`, resolved); STP-PPC 0xafbbc: trigger channel 0, flags 0; waits max(unsigned(ret - 300) / script speed, 300) (a clip under 300 ms saturates to INT32_MAX ms) on a u32 deadline; zeroes the WAIT4ANIM deadline; LOOPANIM token reset |
@@ -658,10 +688,10 @@ handler attributes diverge.
 | 79 | `WALKST_FLOAT` | 1 | implemented | TPW-EXE 0x555B72 (`seconds a b`, resolved): starts the script's float: start = clock, duration = seconds x 1000 ms, a and b kept as words (the body's swing, render only); no effect; 1 corpus use (ZeroG: `WALKST_FLOAT VAR_DURATION 1000 1000`) |
 | 80 | `WALKFLOATSTAT` | 1 | implemented | TPW-EXE 0x555BD8: the float's duration word (0 once start + duration has passed) into the flags and a variable destination; ZeroG loops `WALKFLOATSTAT 0; BRANCH_NZ` for VAR_DURATION seconds |
 | 81 | `WALKFLOATSTOP` | 1 | implemented | TPW-EXE 0x555C11: with a float running, start = clock - the share spent (thousandths of the duration) and duration = 1000 (the float settles over the rest); no operands, no flags, no effect |
-| 82 | `ENABLELIGHT` | 0 | unknown | no corpus use; not implemented (executing it faults the script) |
-| 83 | `DISABLELIGHT` | 0 | unknown | no corpus use; not implemented (executing it faults the script) |
-| 84 | `SETLIGHT` | 0 | unknown | no corpus use; not implemented (executing it faults the script) |
-| 85 | `COLOURLIGHT` | 0 | unknown | no corpus use; not implemented (executing it faults the script) |
+| 82 | `ENABLELIGHT` | 0 | hooked | TPW-EXE 0x555C7A (`light`, resolved): looks the light dummy (class 0x20000, number `light`) up in the object's model (0x44B220), takes its light record (0x4587B0) and clears the record's off flag 0x10000000 (0x458910); flags untouched; no corpus use, no light in any shipped model (RIDES-046) |
+| 83 | `DISABLELIGHT` | 0 | hooked | TPW-EXE 0x555CCD (`light`, resolved): as ENABLELIGHT but sets the record's off flag 0x10000000 (0x458940); flags untouched; no corpus use (RIDES-046) |
+| 84 | `SETLIGHT` | 0 | hooked | TPW-EXE 0x555D20 (`light level`, resolved): the light record's colour becomes the light's base colour times level x 0.01 (0x4587E0: red, green and blue, alpha 1.0, and the packed ARGB word); flags untouched; no corpus use (RIDES-046) |
+| 85 | `COLOURLIGHT` | 0 | hooked | TPW-EXE 0x555D9A (`light red green blue`, resolved): each channel times 0.01 becomes the light record's colour (alpha 1.0, packed ARGB word with each channel times 255 truncated, 0x458890); flags untouched; no corpus use (RIDES-046) |
 | 86 | `STARTSCREAM` | 40 | hooked | TPW-EXE 0x555E5E (`band level`, resolved): 0x551130(handle +0xD0, band, level, script speed word, object position in whole units) gives the handle (kept at +0xD0 and in the flags); band 0 plays nothing, a start while a handle is held is refused; all 40 corpus uses pass VAR_ONRIDE as the band |
 | 87 | `STOPSCREAM` | 80 | hooked | TPW-EXE 0x555EF7 (no operands): with a handle (+0xD0) calls 0x51C300(handle), then clears the handle |
 | 88 | `SINGLESCREAM` | 46 | hooked | TPW-EXE 0x555F1B (`band level`, resolved): a one-shot at the object's position (0x556AF0): level below 0 (the corpus's 0xFFFF, 44 of 46 uses) calls 0x551560, else 0x551320(band, level, script speed word); no handle kept |
@@ -670,7 +700,7 @@ handler attributes diverge.
 | 91 | `GETREMOTEVAR` | 2 | implemented | TPW-EXE 0x55617F (`dest script variable`: the destination raw, the others resolved): the flags are cleared, then the other script's variable goes to the flags and a variable destination; an unknown script id or an index outside its variables leaves the destination as it was (corpus: `GETREMOTEVAR 0 VAR_SCRIPTID 0; BRANCH_Z`) |
 | 92 | `SETREMOTEVAR` | 10 | implemented | TPW-EXE 0x556216 (`script variable value`, resolved): writes the other script's variable and sets the flags to the value; an unknown script id (bus.RSE writes to the FINDSCRIPTRAND result without checking it) or an index outside its variables does nothing |
 | 93 | `REPAIREFFECT` | 140 | hooked | TPW-EXE 0x5562A6 (`on`, resolved): 0x556DE0(on) switches the type's repair effect (non-zero starts it, 0 ends it); then, from the compare at 0x5562C5, a non-zero value plays events 0x6F and 0xD3 of the global ride category at the object and 0 jumps to 0x55635F: with more than five variables 0x551320(variable 5, 1, 1, position), a band one-shot (silent for band 0) |
-| 94 | `GETCUSTPTCLCODE` | 0 | unknown | no corpus use; not implemented (executing it faults the script) |
+| 94 | `GETCUSTPTCLCODE` | 0 | implemented | TPW-EXE 0x5563D5 (`dest in`): the second operand is resolved and dropped, the result is the constant 0 in the flags and a variable destination (a stub in the original); no corpus use |
 | 95 | `SETTIMER` | 40 | implemented | corpus: `SETTIMER 10000 … GETTIMER x; BRANCH_Z start` replaces the GETTIME time-out idiom; countdown in ms |
 | 96 | `GETTIMER` | 21 | implemented | corpus: `GETTIMER 0; BRANCH_NZ skip` staggers unloading; dest = remaining ms (≥ 0), sets flags |
 | 97 | `YEAR` | 0 | hooked | host-local civil year minus 1900 (tm_year; tp.exe 0x5565B2 and PPC-clock.md); TPW runtime samples host time |
@@ -679,8 +709,8 @@ handler attributes diverge.
 | 100 | `HOUR` | 1 | hooked | host-local civil hour: tp.exe 0x5566AC calls time/localtime and stores tm_hour in the result register; a variable operand receives it, a literal only sets the flags; the TPW runtime samples host time (PPC-clock.md) |
 | 101 | `MIN` | 1 | hooked | host-local civil minute (tm_min), as HOUR: tp.exe 0x5566FF calls time/localtime and stores tm_min in the result register; corpus `MIN 0; BRANCH_NZ` uses a literal dest for flags only |
 | 102 | `SEC` | 1 | hooked | host-local civil second (tm_sec), as HOUR: tp.exe 0x55674E calls time/localtime and stores tm_sec in the result register; corpus `SEC 0; BRANCH_NZ` |
-| 103 | `SETREVERB` | 21 | hooked | TPW-EXE 0x55649C (`level`, resolved): stores the word at +0xD8 and does nothing else in the handler (no reader inside the script module); the corpus uses 0, 1, 3, 8 and 9 |
-| 104 | `DIPMUSIC` | 8 | hooked | TPW-EXE 0x5564C0 (`on`, resolved): stores the low byte at +0xB9 and calls 0x51E710(on), which writes the global request word 0x803AD0 (and 0x803AC8 = 1) that the sound service reads to set one channel volume to 0 while it is non-zero (0x51BE5A..0x51BE9B); the script's end writes 0 again when the byte was set (0x558513); End.RSE and Gates.RSE, value 1 |
+| 103 | `SETREVERB` | 21 | hooked | TPW-EXE 0x55649C (`level`, resolved): stores the operand as a dword at +0xD8 and nothing else; the reader is the main loop's 0x55A470, which sets the sound service's reverb preset (0x51C8D0, an index into SndReverb.map) from the root script of the ride being ridden whose level is not 0 (built: ReverbSelector; the DSP is AUDIO-039); the corpus uses 0, 1, 3, 8 and 9 |
+| 104 | `DIPMUSIC` | 8 | hooked | TPW-EXE 0x5564C0 (`on`, resolved): stores the low byte at +0xB9 and calls 0x51E710(on), which writes the global duck request word 0x803AD0 (and the sound service's dirty flag 0x803AC8); the sound service (0x51BD70, from the main loop) then sets the music channel's volume to 0 while the word is non-zero (0x51BE5A..0x51BE9B, 0x51BDC2..0x51BDEC; built: AudioMixer.MusicDuckRequest); the script's destruction writes 0 again when the byte was set (0x558513); End.RSE and Gates.RSE use it (8 uses) |
 | 105 | `SPARK` | 1 | implemented | TPW-EXE 0x5564ED (`a b c d`, resolved): stores a and b as words at +0xDC and +0xDE, looks the two key nodes (class 0x100) up and logs them; c and d are dropped; nothing reads the words, so no game effect (1 corpus use, Plasma) |
 
 Sources: OpenTPW docs (`src/formats/rsse.md`, `rsse-vm.md`,

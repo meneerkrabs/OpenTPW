@@ -90,9 +90,11 @@ public sealed partial class OriginalObjectRuntime
 	// [APPROX:PTCL-908] EVENT 1/2, ADDOBJ and ADDOBJ_EXT 1/2, the stinkbomb litter's effect (ParkLitterEffects) and the per-type object effects (OriginalObjectRuntime.ObjectEffects.cs) start particles; a refusal (unresolved key, scoped effect, a type-2 effect with a negative key, headless runtime) starts nothing; the latest attempt stays as owner-local diagnostics, cleared on Stop, while the effect lives in the level's ParticleSystem (docs/PARTICLES.md)
 	internal void ObserveParticleEvent(RideEffectCall call)
 	{
-		if (stopped || call.Opcode != Opcode.EVENT || call.Argument(0) is not (1 or 2)) return;
-		LastParticleEventAttempt = PrepareParticle(call.VM.ScriptId, call.Argument(0), call.Argument(1), call.Argument(2), 1000);
-		// [BIN:TPW-EXE:0x552615 RSE EVENT] fire and forget: dispatcher 0x5573D0 with control 1000, the handle is discarded and the effect does not follow the node
+		if (stopped || call.Opcode is not (Opcode.EVENT or Opcode.EVENT_EXT) || call.Argument(0) is not (1 or 2)) return;
+		// [BIN:TPW-EXE:0x552707 EVENT_EXT] opcode 14: type, key, effect and control (an immediate is a signed word, a variable its whole value); the dispatcher sets a control other than 1000 on the emitter (0x51FFD0)
+		var control = call.Opcode == Opcode.EVENT_EXT && call.OperandCount > 3 ? Word(call, 3) : 1000;
+		LastParticleEventAttempt = PrepareParticle(call.VM.ScriptId, call.Argument(0), call.Argument(1), call.Argument(2), control);
+		// [BIN:TPW-EXE:0x552615 RSE EVENT] fire and forget: dispatcher 0x5573D0 with control 1000 (EVENT_EXT: its operand), the handle is discarded and the effect does not follow the node
 		if (LastParticleEventAttempt is { Request: { } request })
 			ParticleRequested?.Invoke(request);
 	}

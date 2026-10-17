@@ -127,6 +127,14 @@ public sealed class RideVM
 	// [BIN:TPW-EXE:0x5542B9 TURBO] stores cl (the low byte of the unresolved operand word, a variable operand stores its index byte) at +0xB8; the pass at 0x5516E1 reads the byte (nonzero = the script runs its slice on every pass, zero = only on the passes selected by +8 xor the pass counter & 7)
 	public int TurboByte { get; internal set; }
 
+	/// <summary>The script's DIPMUSIC byte (script +0xB9): the low byte of DIPMUSIC's operand; 0 at creation. A script that ends with it set clears the music duck request again (<see cref="Stop"/>).</summary>
+	// [BIN:TPW-EXE:0x5564C0 DIPMUSIC] stores the low byte of the resolved operand at +0xB9, then passes the whole operand to 0x51E710, which keeps its low word as the global duck request (0x803AD0); the script destructor (0x558513) calls 0x51E710(0) when the byte is set, whatever other scripts requested
+	public int MusicDuckByte { get; internal set; }
+
+	/// <summary>The script's SETREVERB level (script +0xD8): the whole resolved operand; 0 at creation, which the reverb reader treats as "not set".</summary>
+	// [BIN:TPW-EXE:0x55649C SETREVERB] stores the resolved operand as a dword at +0xD8 and nothing else; the reader is the main loop's 0x55A470 (ReverbSelector)
+	public int ReverbLevel { get; internal set; }
+
 	/// <summary>Occupied limbo slots (script +0x60).</summary>
 	public int LimboCount => limboCount;
 
@@ -370,11 +378,21 @@ public sealed class RideVM
 		State = RideVMState.Halted;
 	}
 
+	/// <summary>Sends the music duck request word to the host's sound service (the original's 0x51E710): a presentation effect, never part of the simulation.</summary>
+	internal void RequestMusicDuck( int word ) =>
+		Effect( Opcode.DIPMUSIC, new[] { new Operand( this, new RideScriptOperand( RideScriptOperandKind.Literal, unchecked((ushort)word) ), -1 ) } );
+
 	/// <summary>Stops this script and its children and removes them from the world.</summary>
 	public void Stop()
 	{
 		RemoveChild();
 		RemoveSoundChild();
+		// [BIN:TPW-EXE:0x558513 script destructor] a script whose DIPMUSIC byte is set writes the duck request 0 when it is destroyed
+		if ( MusicDuckByte != 0 )
+		{
+			MusicDuckByte = 0;
+			RequestMusicDuck( 0 );
+		}
 		World.Unregister( this );
 		if ( State != RideVMState.Faulted )
 			State = RideVMState.Halted;
@@ -420,6 +438,8 @@ public sealed class RideVM
 			LimboExpiries = (int[])limboExpiries.Clone(),
 			LimboCount = limboCount,
 			TurboByte = TurboByte,
+			MusicDuckByte = MusicDuckByte,
+			ReverbLevel = ReverbLevel,
 			Variables = (int[])Variables.Clone(),
 			Flags = Flags,
 			SliceBudget = SliceBudget,
@@ -484,6 +504,11 @@ public sealed class RideVM
 		}
 		limboCount = snapshot.LimboCount;
 		TurboByte = snapshot.TurboByte;
+		ReverbLevel = snapshot.ReverbLevel;
+		// a resumed park hears the duck its script asked for (the request word is not saved; the script's byte is, and the request was the operand, 1 in every shipped script)
+		MusicDuckByte = snapshot.MusicDuckByte;
+		if ( MusicDuckByte != 0 )
+			RequestMusicDuck( MusicDuckByte );
 		Array.Copy( snapshot.Variables, Variables, Variables.Length );
 		Flags = snapshot.Flags;
 		InCriticalSection = snapshot.InCriticalSection;

@@ -74,7 +74,7 @@ public static class RideScriptAnalysis
 	/// <summary>
 	/// Operand counts taken from the signature lines of the upstream OpenTPW docs
 	/// (rsse-vm-instructions.md). Absent keys are undocumented (CRIT_UNLOCK).
-	/// Many documented signatures are themselves labelled "Unknown" upstream.
+	/// Many documented signatures are themselves labelled "Unknown" upstream. SETLIGHT is the one count corrected from tp.exe (0x555D20 resolves two operands, the upstream notes list one).
 	/// </summary>
 	public static IReadOnlyDictionary<Opcode, int> DocumentedOperandCounts { get; } = new Dictionary<Opcode, int>
 	{
@@ -94,7 +94,7 @@ public static class RideScriptAnalysis
 		[Opcode.SETVARINPARENT] = 2, [Opcode.GETVARINPARENT] = 2, [Opcode.BOUNCESETNODE] = 1, [Opcode.BOUNCESETBASE] = 1,
 		[Opcode.BOUNCE] = 2, [Opcode.UNBOUNCE] = 1, [Opcode.FORCEUNBOUNCE] = 1, [Opcode.BOUNCING] = 1, [Opcode.WALKON] = 7,
 		[Opcode.WALKOFF] = 1, [Opcode.WALKGET] = 1, [Opcode.WALKST_FLOAT] = 3, [Opcode.WALKFLOATSTAT] = 1, [Opcode.WALKFLOATSTOP] = 0,
-		[Opcode.ENABLELIGHT] = 1, [Opcode.DISABLELIGHT] = 1, [Opcode.SETLIGHT] = 1, [Opcode.COLOURLIGHT] = 4, [Opcode.STARTSCREAM] = 2,
+		[Opcode.ENABLELIGHT] = 1, [Opcode.DISABLELIGHT] = 1, [Opcode.SETLIGHT] = 2, [Opcode.COLOURLIGHT] = 4, [Opcode.STARTSCREAM] = 2,
 		[Opcode.STOPSCREAM] = 0, [Opcode.SINGLESCREAM] = 2, [Opcode.SCREAMLEVEL] = 1, [Opcode.FINDSCRIPTRAND] = 2,
 		[Opcode.GETREMOTEVAR] = 3, [Opcode.SETREMOTEVAR] = 3, [Opcode.REPAIREFFECT] = 1, [Opcode.GETCUSTPTCLCODE] = 2,
 		[Opcode.SETTIMER] = 1, [Opcode.GETTIMER] = 1, [Opcode.YEAR] = 1, [Opcode.MONTH] = 1, [Opcode.DAY] = 1, [Opcode.HOUR] = 1,

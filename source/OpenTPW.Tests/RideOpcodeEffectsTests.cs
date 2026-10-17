@@ -375,4 +375,138 @@ public class RideOpcodeEffectsTests
 		CollectionAssert.AreEqual( new[] { "HOUR 0", "MIN 0", "SEC 0" }, effects.Calls );
 		Assert.AreEqual( RideVMState.Running, vm.State );
 	}
+
+	// ---- EVENT_EXT, the ride lights, GETCUSTPTCLCODE, DIPMUSIC and SETREVERB (tp.exe 0x552707, 0x555C7A..0x555D9A, 0x5563D5, 0x5564C0, 0x55649C) ----
+
+	[TestMethod]
+	public void EventExtPassesItsControlOperandLikeEvent()
+	{
+		var effects = new RecordingEffects();
+		var vm = Load( new Asm()
+			.I( Opcode.EVENT_EXT, 1, 2, 3, 1500 )
+			.I( Opcode.EVENT_EXT, V( 0 ), 0xFFFF, V( 1 ), V( 2 ) )
+			.Label( "idle" ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "idle" ), effects );
+		vm.Variables[0] = 4;
+		vm.Variables[1] = 9;
+		vm.Variables[2] = 250;
+		Run( vm, 1 );
+		CollectionAssert.AreEqual( new[] { "EVENT_EXT 1 2 3 1500", "EVENT_EXT 4 -1 9 250" }, effects.Calls );
+		Assert.AreEqual( RideVMState.Running, vm.State );
+	}
+
+	[TestMethod]
+	public void RideLightOpcodesPassTheirOperandsAndLeaveTheFlagsAlone()
+	{
+		var effects = new RecordingEffects();
+		var vm = Load( new Asm()
+			.I( Opcode.TEST, V( 1 ) )
+			.I( Opcode.ENABLELIGHT, 2 )
+			.I( Opcode.DISABLELIGHT, V( 0 ) )
+			.I( Opcode.SETLIGHT, 3, 50 )
+			.I( Opcode.COLOURLIGHT, 4, 100, V( 0 ), 0 )
+			.I( Opcode.BRANCH_NV, "negative" )
+			.I( Opcode.COPY, V( 2 ), 0 ).I( Opcode.BRANCH, "idle" )
+			.Label( "negative" ).I( Opcode.COPY, V( 2 ), 1 )
+			.Label( "idle" ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "idle" ), effects );
+		vm.Variables[0] = 25;
+		vm.Variables[1] = -5;
+		Run( vm, 1 );
+		CollectionAssert.AreEqual( new[] { "ENABLELIGHT 2", "DISABLELIGHT 25", "SETLIGHT 3 50", "COLOURLIGHT 4 100 25 0" }, effects.Calls );
+		Assert.AreEqual( 1, vm.Variables[2], "the light opcodes leave the flags of the TEST alone" );
+		Assert.AreEqual( RideVMState.Running, vm.State );
+	}
+
+	/// <summary>A script (a mod's, since no shipped script uses the lights) that switches lights and sets a custom particle code must not fault where the host has no light system.</summary>
+	[TestMethod]
+	public void ARideLightOpcodeIsASafeNoOpWhereTheHostHasNoLightSystem()
+	{
+		var vm = new RideVM( new RideScriptFile( new MemoryStream( new Asm()
+			.I( Opcode.ENABLELIGHT, 1 )
+			.I( Opcode.SETLIGHT, 1, 75 )
+			.I( Opcode.COLOURLIGHT, 1, 100, 50, 25 )
+			.I( Opcode.DISABLELIGHT, 1 )
+			.I( Opcode.EVENT_EXT, 3, 1, 5, 800 )
+			.I( Opcode.COPY, V( 2 ), 7 )
+			.Label( "idle" ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "idle" ).Build( Vars ) ) ), new RideVMOptions { Seed = 1 } );
+		Run( vm, 2 );
+		Assert.AreEqual( RideVMState.Running, vm.State, vm.FaultMessage );
+		Assert.AreEqual( 7, vm.Variables[2], "the script went on past the light opcodes" );
+		foreach ( var opcode in new[] { Opcode.ENABLELIGHT, Opcode.SETLIGHT, Opcode.COLOURLIGHT, Opcode.DISABLELIGHT, Opcode.EVENT_EXT } )
+			Assert.AreEqual( 1, vm.UnimplementedEffects.GetValueOrDefault( opcode ), opcode.ToString() );
+	}
+
+	[TestMethod]
+	public void GetCustomParticleCodeStoresZeroInItsDestinationAndTheFlags()
+	{
+		var effects = new RecordingEffects();
+		var vm = Load( new Asm()
+			.I( Opcode.GETCUSTPTCLCODE, V( 0 ), 3 )
+			.I( Opcode.BRANCH_Z, "zero" )
+			.I( Opcode.COPY, V( 2 ), 1 ).I( Opcode.BRANCH, "next" )
+			.Label( "zero" ).I( Opcode.COPY, V( 2 ), 2 )
+			.Label( "next" ).I( Opcode.GETCUSTPTCLCODE, 0, V( 1 ) )
+			.Label( "idle" ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "idle" ), effects );
+		vm.Variables[0] = 99;
+		vm.Variables[1] = 5;
+		Run( vm, 1 );
+		Assert.AreEqual( 0, vm.Variables[0], "the stub of tp.exe 0x5563D5 returns 0" );
+		Assert.AreEqual( 2, vm.Variables[2], "and sets the zero flag" );
+		Assert.AreEqual( 5, vm.Variables[1], "a literal destination writes nothing" );
+		Assert.AreEqual( 0, effects.Calls.Count, "no game effect" );
+		Assert.AreEqual( RideVMState.Running, vm.State );
+	}
+
+	[TestMethod]
+	public void DipMusicKeepsItsByteAndTheScriptEndClearsTheRequest()
+	{
+		var effects = new RecordingEffects();
+		var vm = Load( new Asm().I( Opcode.DIPMUSIC, 1 ).Label( "idle" ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "idle" ), effects );
+		Run( vm, 1 );
+		Assert.AreEqual( 1, vm.MusicDuckByte, "+0xB9" );
+		CollectionAssert.AreEqual( new[] { "DIPMUSIC 1" }, effects.Calls );
+		vm.Stop();
+		Assert.AreEqual( 0, vm.MusicDuckByte );
+		CollectionAssert.AreEqual( new[] { "DIPMUSIC 1", "DIPMUSIC 0" }, effects.Calls, "the destructor writes the request 0 (tp.exe 0x558513)" );
+		vm.Stop();
+		Assert.AreEqual( 2, effects.Calls.Count, "a second stop has nothing to clear" );
+
+		var quiet = new RecordingEffects();
+		var off = Load( new Asm().I( Opcode.DIPMUSIC, 0 ).Label( "idle" ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "idle" ), quiet );
+		Run( off, 1 );
+		off.Stop();
+		CollectionAssert.AreEqual( new[] { "DIPMUSIC 0" }, quiet.Calls, "a script that never set the byte clears nothing" );
+
+		// the byte is the operand's low byte while the request keeps its low word: 256 requests a duck the script's end does not clear
+		var wide = new RecordingEffects();
+		var wideVm = Load( new Asm().I( Opcode.DIPMUSIC, V( 0 ) ).Label( "idle" ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "idle" ), wide );
+		wideVm.Variables[0] = 256;
+		Run( wideVm, 1 );
+		Assert.AreEqual( 0, wideVm.MusicDuckByte );
+		wideVm.Stop();
+		CollectionAssert.AreEqual( new[] { "DIPMUSIC 256" }, wide.Calls );
+	}
+
+	[TestMethod]
+	public void SetReverbKeepsTheLevelAndTheTwoStatesSurviveTheSnapshot()
+	{
+		var effects = new RecordingEffects();
+		var program = new Asm().I( Opcode.SETREVERB, V( 0 ) ).I( Opcode.DIPMUSIC, 1 ).Label( "idle" ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "idle" );
+		var vm = Load( program, effects );
+		vm.Variables[0] = 8;
+		Run( vm, 1 );
+		Assert.AreEqual( 8, vm.ReverbLevel, "+0xD8, the whole operand" );
+		Assert.AreEqual( 0, Load( new Asm().I( Opcode.ENDSLICE ), effects ).ReverbLevel, "zero at creation" );
+
+		var snapshot = ParkResumeJson.Deserialize<RideVMSnapshot>( ParkResumeJson.Serialize( vm.CaptureSnapshot() ) );
+		snapshot.ValidateSnapshot();
+		Assert.AreEqual( 8, snapshot.ReverbLevel );
+		Assert.AreEqual( 1, snapshot.MusicDuckByte );
+		var resumed = new RecordingEffects();
+		var restored = Load( program, resumed );
+		restored.RestoreSnapshot( snapshot );
+		Assert.AreEqual( 8, restored.ReverbLevel );
+		Assert.AreEqual( 1, restored.MusicDuckByte );
+		CollectionAssert.AreEqual( new[] { "DIPMUSIC 1" }, resumed.Calls, "a resumed park hears the duck again" );
+		Assert.ThrowsException<InvalidDataException>( () => ( snapshot with { MusicDuckByte = 300 } ).ValidateSnapshot() );
+	}
 }

@@ -324,7 +324,7 @@ public class RideVMCorpusTests
 			CollectionAssert.AreEqual( new[] { 0, 1, 0 }, running );
 			Assert.AreEqual( 5, runtime.AnimationsPlayed, "WAITANIM 0, three TRIGANIM_CH and TRIGANIM 5 all found their clips" );
 			Assert.AreEqual( 0, runtime.UnresolvedAnimations.Count );
-			CollectionAssert.AreEquivalent( new[] { Opcode.ADDOBJ, Opcode.EVENT, Opcode.KILLOBJ, Opcode.SETREVERB, Opcode.SINGLESCREAM }, vm.UnimplementedEffects.Keys.ToArray() );
+			CollectionAssert.AreEquivalent( new[] { Opcode.ADDOBJ, Opcode.EVENT, Opcode.KILLOBJ, Opcode.SINGLESCREAM }, vm.UnimplementedEffects.Keys.ToArray() );
 
 			// Closed, the same object plays its opening clip and then idles in its ENDSLICE loop: VAR_RUNNING stays 0.
 			var closed = new OriginalObjectRuntime( entry, seed: 1234, open: true );

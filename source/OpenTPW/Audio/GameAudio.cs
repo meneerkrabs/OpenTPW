@@ -212,6 +212,8 @@ public static class GameAudio
 		// Clock seed like the original's start-up seeding (tp.exe 0x72e09c, QueryPerformanceCounter); it only colours front-end sounds, since EnterPark reseeds from the park's world seed ([EXT:sound-chooser-seed]).
 		events = new SoundEventSystem( mixer, (uint)Environment.TickCount );
 		mixer.DuckingLevel = ReadDuckingLevel() / 100f;
+		mixer.MusicDuckRequest = MusicDuckRequest;
+		ResetReverb();
 		// [BIN:STP-PPC:0x100BC6F0 sound manager] global categories registered at sound-manager offsets 12 (cat_ui), 20 (cat_speech), 0 (cat_ambient), 8 (cat_rides), 4 (cat_kids), 16 (cat_staff)
 		Ui = SoundCategory.TryLoad( FileSystem, "/global/sound", "cat_ui" );
 		Speech = SoundCategory.TryLoad( FileSystem, "/global/Speech", "cat_speech" );
@@ -267,8 +269,56 @@ public static class GameAudio
 		Log.Trace( $"Sound: {level} music {(music == null ? "not available" : $"{music.Event.Sounds.Count} sections")}, {LevelRides?.Catalog.Events.Count ?? 0} level ride events, {LevelAmbient?.Catalog.Events.Count ?? 0} level ambient events." );
 	}
 
+	/// <summary>
+	/// The music duck request word (the original's 0x803AD0): a ride script's DIPMUSIC sets it, and while it is non-zero the music channel is silent
+	/// (<see cref="AudioMixer.MusicDuckRequest"/>). The scripts that set it write 0 again when they end.
+	/// </summary>
+	public static ushort MusicDuckRequest { get; private set; }
+
+	/// <summary>Sets the music duck request (tp.exe <c>0x51E710</c>). Presentation only: it is neither saved nor part of any state digest.</summary>
+	public static void SetMusicDuck( ushort request )
+	{
+		MusicDuckRequest = request;
+		if ( AudioMixer.Current is { } mixer )
+			mixer.MusicDuckRequest = request;
+	}
+
+	/// <summary>The reverb preset the sound service holds (the original's 0x803AB4); -1 until the first <see cref="SelectReverb"/>.</summary>
+	public static int ReverbPreset { get; private set; } = -1;
+
+	/// <summary>The presets of <c>SndReverb.map</c>, when the host loaded the file from the game folder (it is not part of the mounted data); no mixer consumes them yet (AUDIO-039).</summary>
+	public static SndReverbMap? ReverbMap { get; set; }
+
+	/// <summary>The record of the held preset, when the map has one (the original refuses a preset the map lacks).</summary>
+	public static IReadOnlyList<uint>? ReverbRecord => ReverbMap?.Record( ReverbPreset );
+
+	/// <summary>Counts the presets sent to the reverb device (the original sends one only when the preset changes).</summary>
+	public static int ReverbChanges { get; private set; }
+
+	/// <summary>
+	/// Holds a reverb preset (tp.exe <c>0x51C8D0</c>): a preset other than the held one is sent to the reverb device, the same one again is not.
+	/// </summary>
+	// [BIN:TPW-EXE:0x51C8D0 reverb preset] when the sound service is up and the preset differs from the held one (0x803AB4, -1 at start, 0 once the service started with sound on) the held one is replaced and the preset sent as a mixer command (0x700B30 → 0x6C6000, which fetches the SndReverb.map record and refuses an absent one)
+	// [APPROX:AUDIO-039] the held preset and its record are kept, but no reverb is mixed: the original hands the record to the audio device's EAX 2.0 listener property set or to QMixer.dll's software reverb, neither of which OpenTPW reproduces
+	public static void SelectReverb( int preset )
+	{
+		if ( preset == ReverbPreset )
+			return;
+		ReverbPreset = preset;
+		ReverbChanges++;
+	}
+
+	/// <summary>Forgets the held preset (a new sound service starts at -1).</summary>
+	public static void ResetReverb()
+	{
+		ReverbPreset = -1;
+		ReverbChanges = 0;
+	}
+
 	public static void LeavePark()
 	{
+		// the park's scripts are destroyed with it, and each writes the duck request 0 (tp.exe 0x558513); the reverb returns to the default at the next frame outside a ride
+		SetMusicDuck( 0 );
 		var (leftMusic, leftSpeech, leftAmbient, leftRides) = (LevelMusic, LevelSpeech, LevelAmbient, LevelRides);
 		music?.Stop();
 		music = null;

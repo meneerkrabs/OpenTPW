@@ -61,9 +61,9 @@ end
 | --- | --- |
 | int | 64-bit signed. The only number type. |
 | bool | `true`, `false`. |
-| string | Immutable, at most 1024 UTF-16 characters, compared ordinally. Literals use `"..."` or `'...'` with `\n \t \r \\ \" \'`. |
+| string | Immutable, at most 1024 UTF-16 characters, an opaque sequence compared ordinally (no Unicode normalisation anywhere). Literals use `"..."` or `'...'` with `\n \t \r \\ \" \'`. |
 | table | An array (1-based) **or** a map with string keys, never both. Plain data: tables of ints, bools, strings and tables. |
-| host view | A read-only table a hook receives (for example a guest or an attraction). It cannot be changed or stored. |
+| host view | A read-only table a hook receives (for example a guest or an attraction), with the same entry, key and string limits as any table. It cannot be changed or stored. |
 
 There is no `nil` and no unit value you can keep: a function without `return` value can only be called as a statement.
 
@@ -135,7 +135,7 @@ The numbers below are in `ScriptLimits`; they are part of the language version (
 | Locals per function | 64 |
 | String literal length, any string | 1024 characters |
 | Name length | 64 |
-| Table constructor entries / entries per table | 4096 |
+| Entries per table (constructors, host views and runtime growth alike) | 4096 |
 
 **The executed bytes are the hashed bytes.** `ScriptProgram.Compile(bytes)` hashes the byte span (SHA-256, lowercase hex),
 then decodes and compiles that same span. Hosts keep the compiled program in memory and never re-read the path, so a file
@@ -150,16 +150,20 @@ swapped after hashing cannot run.
   on every run and platform.
 - A **call depth cap** of 32 frames, on an explicit frame array (not the C# stack), and a value stack of 4096.
 - A **memory cap** of 512 KiB per call, accounted (not measured) for strings and tables created during the call, including
-  copies made on first write to `state`.
+  the copies of `state` described below and the commit's validation.
 - No wall clock and no thread is involved; there is no timeout watchdog because none is needed.
 
-**Transactional `state`.** A call works on a copy-on-write view of `state`: the root is copied, and each nested table is
-copied the first time a script reads it through a writable path. Committed data is never modified, so the previous state is
+**Transactional `state`.** A call works on a copy-on-write view of `state`. Nothing is copied until the script first
+touches `state`; then the root is copied, and each nested table the first time it is read through a writable path. Every copy
+is charged to the call's step and memory meters inside the failure boundary, so a call that never touches `state` pays nothing
+for it, and one that does pays in proportion to the entries it copies. Committed data is never modified, so the previous state is
 a free snapshot. Only a call that returns normally **and** has a valid result commits:
 
 1. the result has the hook's declared type and range (`ScriptResultSpec`), otherwise `InvalidResult`;
-2. the new `state` passes the schema (below), otherwise `InvalidResult`;
-3. then the new state replaces the old one. A call that changed nothing keeps the same state object.
+2. the new `state` passes the schema (below), otherwise `InvalidResult`. Validating and measuring it is charged to the same
+   step and memory meters (nodes, plus the characters of its canonical form), so a call can run out of budget while
+   committing, which fails it like any other budget exhaustion;
+3. then the new state replaces the old one. A call that changed no table, or never touched `state`, keeps the same state object.
 
 **Failure.** A runtime error, budget exhaustion or invalid result rolls `state` back and the call returns the `prev` value
 the caller passed in: the previous mod's result in the chain, or the game's own rule, **not** the original rule. A failing
@@ -176,8 +180,11 @@ language core only reports the outcome; the counting belongs to the game wiring.
 `state` is the one mutable global. Its root is a map; everything inside is plain data:
 
 - integers, strings, booleans, arrays and string-keyed maps; no null, no floats, no host views;
-- **no cycles** (a cycle is rejected as "nested too deep"), and the depth, node and byte limits below;
-- strings are **NFC-normalised** and contain no unpaired surrogates; keys are 1 to 64 characters and NFC too.
+- **no shared tables and no cycles**: a table may appear only once in `state` (to store the same data twice, copy it); this
+  also rules out expanding shared subtrees, so validation work is bounded by the limits below;
+- strings are at most 1024 UTF-16 characters with no unpaired surrogate, and are never normalised;
+- map keys are 1 to 64 **printable ASCII** characters (0x20 to 0x7E). A longer or non-ASCII key is a runtime error in a script,
+  and an `ArgumentException` for a host view.
 
 | Limit | Value |
 | --- | --- |
@@ -185,14 +192,14 @@ language core only reports the outcome; the counting belongs to the game wiring.
 | Nodes (every table and every value) | 4096 |
 | Canonical size | 64 KiB of UTF-8 |
 
-Tables reachable from several places are counted and written once per place. Scripts may build state with new strings that
-are not NFC; the commit normalises them in place before validating.
+Validation walks the tree once, stops at the node limit, and stops serialising as soon as the canonical form passes the byte
+limit, so it never builds more than about 64 KiB of text whatever a script did.
 
 **Canonical serialisation.** `ScriptState.Serialize` writes compact JSON with maps in ordinal key order, integers in plain
-decimal, and strings with only `"`, `\` and the control characters (and DEL) escaped as `\uXXXX`. Equal states give equal bytes
+decimal, and strings with only `"`, `\` and the control characters (and DEL) escaped as `\uXXXX`; other characters are written as they are. Equal states give equal bytes
 on every platform, which is what the save hash needs. `ScriptState.Parse` accepts ordinary JSON whitespace and any key
 order, refuses everything outside the schema (null, floats, exponents, `-0`, leading zeros, duplicate keys, an array root,
-non-NFC strings, any limit exceeded) and validates. `Serialize(Parse(x))` is a fixed point. An empty map and an empty
+a non-ASCII or over-long key, any limit exceeded) and validates. `Serialize(Parse(x))` is a fixed point. An empty map and an empty
 untouched table both serialise as `{}` and an emptied array as `[]`, and the interpreter's behaviour after a save round trip
 equals continuing without one (tested).
 

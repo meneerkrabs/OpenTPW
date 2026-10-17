@@ -103,6 +103,8 @@ public sealed class ScriptHost
 				throw new ArgumentException( "A hook argument cannot be a missing value." );
 			if ( argument.Kind == ScriptKind.Table && !argument.AsTable.ReadOnly )
 				throw new ArgumentException( "A table argument must be a read-only view." );
+			if ( argument.Kind == ScriptKind.String && argument.AsString.Length > ScriptLimits.MaxStringLength )
+				throw new ArgumentException( $"A string argument is at most {ScriptLimits.MaxStringLength} characters." );
 		}
 
 		if ( tickRemaining <= 0 )
@@ -110,13 +112,12 @@ public sealed class ScriptHost
 		var budget = Math.Min( options.StepsPerCall, tickRemaining );
 
 		var token = new object();
-		var root = State.CloneShallow( token );
 		var rngIdentity = new RngIdentity( identity.ParkSeed, modHash, ScriptRng.HashText( hook ), identity.GuestBirthId, identity.ParkTurn );
 
 		ScriptValue value;
 		try
 		{
-			value = interpreter.Execute( index, arguments, root, token, budget, rngIdentity );
+			value = interpreter.Execute( index, arguments, State, token, budget, rngIdentity );
 		}
 		catch ( ScriptBudgetException e )
 		{
@@ -136,23 +137,35 @@ public sealed class ScriptHost
 			tickRemaining -= interpreter.Steps;
 		}
 
-		var steps = interpreter.Steps;
 		var problem = CheckResult( value, expected );
 		if ( problem != null )
 			return Fail( previous, ScriptOutcome.InvalidResult, problem, 0 );
 
-		if ( interpreter.Mutations > 0 )
+		// The state is committed only if the script touched it and changed a table. Validating it costs steps and memory like any other
+		// work of the call, so it is charged to the same meters and can fail the call the same way.
+		var root = interpreter.Root;
+		if ( root != null && interpreter.Mutations > 0 )
 		{
-			try { ScriptState.Check( root, token, true ); }
+			var before = interpreter.Steps;
+			try
+			{
+				ScriptState.Check( root, out var nodes, out var characters );
+				interpreter.ChargeCommit( nodes + characters / 16, 2L * characters );
+			}
 			catch ( ScriptStateException e ) { return Fail( previous, ScriptOutcome.InvalidResult, $"state: {e.Message}", 0 ); }
+			catch ( ScriptBudgetException e ) { return Fail( previous, ScriptOutcome.BudgetExhausted, e.Message, e.Line, interpreter.Steps - before ); }
+			catch ( ScriptRuntimeException e ) { return Fail( previous, ScriptOutcome.RuntimeError, e.Message, e.Line, interpreter.Steps - before ); }
+			tickRemaining -= interpreter.Steps - before;
 			State = root;
 		}
+		var steps = interpreter.Steps;
 		interpreter.Reset();
 		return new ScriptCallResult( value, ScriptOutcome.Ok, null, 0, steps );
 	}
 
-	private ScriptCallResult Fail( ScriptValue previous, ScriptOutcome outcome, string message, int line )
+	private ScriptCallResult Fail( ScriptValue previous, ScriptOutcome outcome, string message, int line, long extraSteps = 0 )
 	{
+		tickRemaining -= extraSteps;
 		var steps = interpreter.Steps;
 		interpreter.Reset();
 		return new ScriptCallResult( previous, outcome, message, line, steps );
@@ -164,6 +177,8 @@ public sealed class ScriptHost
 			return "the hook returned no value";
 		if ( value.Kind != expected.Kind )
 			return $"the hook must return {ScriptValue.KindName( expected.Kind )}, not {ScriptValue.KindName( value.Kind )}";
+		if ( value.Kind == ScriptKind.String && value.AsString.Length > ScriptLimits.MaxStringLength )
+			return $"the result is a string longer than {ScriptLimits.MaxStringLength} characters";
 		if ( value.Kind == ScriptKind.Int && (value.AsInt < expected.Min || value.AsInt > expected.Max) )
 			return $"the result {value.AsInt} is outside {expected.Min}..{expected.Max}";
 		return null;

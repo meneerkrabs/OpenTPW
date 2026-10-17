@@ -732,15 +732,19 @@ internal sealed class ScriptCompiler
 		Emit( Op.Call, -1, arguments );
 	}
 
+	/// <summary>
+	/// A table constructor builds the table one entry at a time (<c>NewTable</c>, then <c>TableAppend</c> or <c>TableField</c> per entry), so
+	/// the value stack stays shallow however many entries there are; the limit is <see cref="ScriptLimits.MaxTableEntries"/>.
+	/// </summary>
 	private void ParseTableConstructor()
 	{
 		Next();
 		Enter();
+		Emit( Op.NewTable );
 		var count = 0;
 		if ( Peek.Kind == Tok.RBrace )
 		{
 			Next();
-			Emit( Op.NewArray, 0 );
 			Leave();
 			return;
 		}
@@ -758,11 +762,10 @@ internal sealed class ScriptCompiler
 				Expect( Tok.Assign, "'='" );
 				EmitConst( ScriptValue.FromString( key.Text ) );
 				ParseExpr();
+				Emit( Op.TableField );
 				CheckEntryCount( ++count );
 			}
 			while ( Accept( Tok.Comma ) );
-			Expect( Tok.RBrace, "'}'" );
-			Emit( Op.NewMap, count );
 		}
 		else
 		{
@@ -771,12 +774,12 @@ internal sealed class ScriptCompiler
 				if ( Peek.Kind == Tok.RBrace )
 					break;
 				ParseExpr();
+				Emit( Op.TableAppend );
 				CheckEntryCount( ++count );
 			}
 			while ( Accept( Tok.Comma ) );
-			Expect( Tok.RBrace, "'}'" );
-			Emit( Op.NewArray, count );
 		}
+		Expect( Tok.RBrace, "'}'" );
 		Leave();
 	}
 

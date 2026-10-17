@@ -146,7 +146,7 @@ internal static class ScriptLexer
 						throw new ScriptCompileException( $"string literal too long (limit {ScriptLimits.MaxStringLength})", line, col );
 				}
 				var value = builder.ToString();
-				try { ScriptState.RequireString( value ); value = ScriptState.Nfc( value ); }
+				try { ScriptState.RequireString( value ); }
 				catch ( ScriptStateException e ) { throw new ScriptCompileException( e.Message, line, col ); }
 				Add( Tok.String, value, 0, start );
 				continue;

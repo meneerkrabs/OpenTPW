@@ -8,7 +8,7 @@ internal enum Op : byte
 	Const, Local, SetLocal, State, Index, SetIndex, Pop, CheckValue, CheckBool,
 	Not, Neg, Add, Sub, Mul, IDiv, Mod, Eq, Ne, Lt, Le, Gt, Ge, Concat,
 	Jmp, JmpFalse, JmpFalseKeep, JmpTrueKeep,
-	Call, CallHost, Ret, RetUnit, NewArray, NewMap, ForPrep, ForTest, ForNext
+	Call, CallHost, Ret, RetUnit, NewTable, TableAppend, TableField, ForPrep, ForTest, ForNext
 }
 
 internal readonly record struct Instr( Op Op, int A, int B );

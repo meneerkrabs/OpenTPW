@@ -102,7 +102,9 @@ public sealed class ScriptTable
 		foreach ( var value in values )
 		{
 			RequireView( value );
-			(table.Items ??= new()).Add( value );
+			if ( (table.Items ??= new()).Count >= ScriptLimits.MaxTableEntries )
+				throw new ArgumentException( $"A view holds at most {ScriptLimits.MaxTableEntries} entries." );
+			table.Items.Add( value );
 		}
 		if ( table.Items != null )
 			table.Kind = ScriptTableKind.Array;
@@ -117,6 +119,8 @@ public sealed class ScriptTable
 		{
 			ScriptState.RequireKey( key );
 			RequireView( value );
+			if ( table.Entries != null && table.Entries.Count >= ScriptLimits.MaxTableEntries )
+				throw new ArgumentException( $"A view holds at most {ScriptLimits.MaxTableEntries} entries." );
 			if ( !(table.Entries ??= new( StringComparer.Ordinal )).TryAdd( key, value ) )
 				throw new ArgumentException( $"Duplicate field '{key}'." );
 		}
@@ -129,8 +133,8 @@ public sealed class ScriptTable
 	{
 		if ( value.Kind == ScriptKind.Unit )
 			throw new ArgumentException( "A view cannot hold a missing value." );
-		if ( value.Kind == ScriptKind.String )
-			ScriptState.RequireString( value.RawString );
+		if ( value.Kind == ScriptKind.String && value.RawString.Length > ScriptLimits.MaxStringLength )
+			throw new ArgumentException( $"A string longer than {ScriptLimits.MaxStringLength} characters cannot be passed to a script." );
 		if ( value.Kind == ScriptKind.Table && !value.RawTable.ReadOnly )
 			throw new ArgumentException( "A nested table of a view must be a read-only view." );
 	}

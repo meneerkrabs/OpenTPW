@@ -25,7 +25,8 @@ internal sealed class ScriptInterpreter
 	private int highWater;
 
 	private object token = null!;
-	private ScriptTable state = null!;
+	private ScriptTable committed = null!;
+	private ScriptTable? root;
 	private long stepLimit;
 	private long memory;
 	private long drawOrdinal;
@@ -37,19 +38,42 @@ internal sealed class ScriptInterpreter
 	/// <summary>Table mutations in the last call; 0 means the state cannot have changed and need not be re-validated.</summary>
 	public int Mutations { get; private set; }
 
+	/// <summary>The call's private copy of the state, made the first time the script touches <c>state</c> (null if it never did).</summary>
+	public ScriptTable? Root => root;
+
+	/// <summary>Charges work done after the script finished (commit validation) to this call's step and memory meters.</summary>
+	public void ChargeCommit( long steps, long bytes )
+	{
+		ChargeSteps( steps );
+		Alloc( bytes );
+	}
+
+	private ScriptTable StateRoot()
+	{
+		if ( root == null )
+		{
+			Alloc( 64 + 24L * committed.Count );
+			ChargeSteps( committed.Count );
+			root = committed.CloneShallow( token );
+		}
+		return root;
+	}
+
 	public ScriptInterpreter( ScriptProgram program ) { this.program = program; }
 
 	public void Reset()
 	{
 		Array.Clear( stack, 0, Math.Min( highWater + 1, stack.Length ) );
 		highWater = 0;
-		state = null!;
+		committed = null!;
+		root = null;
 		token = null!;
 	}
 
-	public ScriptValue Execute( int function, ReadOnlySpan<ScriptValue> arguments, ScriptTable stateRoot, object callToken, long budget, RngIdentity identity )
+	public ScriptValue Execute( int function, ReadOnlySpan<ScriptValue> arguments, ScriptTable committedState, object callToken, long budget, RngIdentity identity )
 	{
-		state = stateRoot;
+		committed = committedState;
+		root = null;
 		token = callToken;
 		stepLimit = budget;
 		Steps = 0;
@@ -79,7 +103,7 @@ internal sealed class ScriptInterpreter
 					case Op.Const: Push( ref sp, consts[ins.A] ); break;
 					case Op.Local: Push( ref sp, stack[bp + ins.A] ); break;
 					case Op.SetLocal: stack[bp + ins.A] = stack[--sp]; break;
-					case Op.State: Push( ref sp, ScriptValue.FromTable( state ) ); break;
+					case Op.State: Push( ref sp, ScriptValue.FromTable( StateRoot() ) ); break;
 					case Op.Pop: sp--; break;
 					case Op.CheckValue:
 						if ( stack[sp - 1].Kind == ScriptKind.Unit )
@@ -191,29 +215,35 @@ internal sealed class ScriptInterpreter
 						break;
 					}
 
-					case Op.NewArray:
+					case Op.NewTable:
+						Push( ref sp, ScriptValue.FromTable( NewTable( 0 ) ) );
+						break;
+					case Op.TableAppend:
 					{
-						sp -= ins.A;
-						var table = NewTable( ins.A );
-						if ( ins.A > 0 )
+						sp--;
+						var table = stack[sp - 1].RawTable;
+						RequireRoom( table.Count );
+						Alloc( 24 );
+						if ( table.Kind == ScriptTableKind.Empty )
 						{
 							table.Kind = ScriptTableKind.Array;
-							table.Items = new List<ScriptValue>( ins.A );
-							for ( int i = 0; i < ins.A; i++ )
-								table.Items.Add( Storable( stack[sp + i] ) );
+							table.Items = new List<ScriptValue>();
 						}
-						Push( ref sp, ScriptValue.FromTable( table ) );
+						table.Items!.Add( Storable( stack[sp] ) );
 						break;
 					}
-					case Op.NewMap:
+					case Op.TableField:
 					{
-						sp -= ins.A * 2;
-						var table = NewTable( ins.A );
-						table.Kind = ScriptTableKind.Map;
-						table.Entries = new Dictionary<string, ScriptValue>( ins.A, StringComparer.Ordinal );
-						for ( int i = 0; i < ins.A; i++ )
-							table.Entries[stack[sp + i * 2].RawString] = Storable( stack[sp + i * 2 + 1] );
-						Push( ref sp, ScriptValue.FromTable( table ) );
+						sp -= 2;
+						var table = stack[sp - 1].RawTable;
+						RequireRoom( table.Count );
+						Alloc( 24 );
+						if ( table.Kind == ScriptTableKind.Empty )
+						{
+							table.Kind = ScriptTableKind.Map;
+							table.Entries = new Dictionary<string, ScriptValue>( StringComparer.Ordinal );
+						}
+						table.Entries![stack[sp].RawString] = Storable( stack[sp + 1] );
 						break;
 					}
 
@@ -300,6 +330,8 @@ internal sealed class ScriptInterpreter
 
 	private ScriptTable NewTable( int entries )
 	{
+		if ( entries > ScriptLimits.MaxTableEntries )
+			throw Fail( $"a table holds at most {ScriptLimits.MaxTableEntries} entries" );
 		Alloc( 64 + 24L * entries );
 		ChargeSteps( entries );
 		return new ScriptTable( token );
@@ -411,11 +443,15 @@ internal sealed class ScriptInterpreter
 		return (int)key.RawInt - 1;
 	}
 
+	/// <summary>Map keys are 1 to 64 printable ASCII characters. The length test comes first, so a key check costs at most 64 characters.</summary>
 	private static string MapKey( in ScriptValue key )
 	{
 		if ( key.Kind != ScriptKind.String )
 			throw Fail( $"a map key must be a string, found {ScriptValue.KindName( key.Kind )}" );
-		return ScriptState.Nfc( key.RawString );
+		var name = key.RawString;
+		if ( !ScriptState.IsValidKey( name ) )
+			throw Fail( $"a key must be 1 to {ScriptLimits.MaxStateKeyLength} printable ASCII characters" );
+		return name;
 	}
 
 	private void SetIndex( in ScriptValue target, in ScriptValue key, ScriptValue value )
@@ -464,8 +500,6 @@ internal sealed class ScriptInterpreter
 			if ( key.Kind != ScriptKind.String )
 				throw Fail( "a map cannot take an int key (a table is an array or a map, never both)" );
 			var name = MapKey( key );
-			if ( name.Length == 0 || name.Length > ScriptLimits.MaxStateKeyLength )
-				throw Fail( $"a key must be 1 to {ScriptLimits.MaxStateKeyLength} characters" );
 			var entries = table.Entries!;
 			if ( !entries.ContainsKey( name ) )
 			{

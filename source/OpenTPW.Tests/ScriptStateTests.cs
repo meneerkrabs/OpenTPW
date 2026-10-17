@@ -144,7 +144,7 @@ public class ScriptStateTests
 		{
 			"[]", "[1]", "1", "\"x\"", "null", "{\"a\":null}", "{\"a\":1.5}", "{\"a\":1e3}", "{\"a\":01}", "{\"a\":-0}", "{\"a\":+1}", "{\"a\":9223372036854775808}",
 			"{\"a\":1,\"a\":2}", "{\"a\":1,}", "{\"a\":[1,]}", "{a:1}", "{\"a\":1} x", "{\"a\":\"\\q\"}", "{\"a\":\"\\ud800\"}", "{\"a\":\"abc", "{\"a\":nul}", "{\"\":1}",
-			"{\"" + new string( 'k', 65 ) + "\":1}", "{\"a\":\"" + new string( 'x', 1025 ) + "\"}", "{\"a\":\"e\u0301\"}", "{\"e\u0301\":1}", "",
+			"{\"" + new string( 'k', 65 ) + "\":1}", "{\"a\":\"" + new string( 'x', 1025 ) + "\"}", "{\"e\u0301\":1}", "",
 			string.Concat( Enumerable.Repeat( "{\"a\":", 20 ) ) + "1" + string.Concat( Enumerable.Repeat( "}", 20 ) ),
 			"{\"a\":[" + string.Join( ",", Enumerable.Range( 0, 5000 ) ) + "]}"
 		};
@@ -166,15 +166,14 @@ public class ScriptStateTests
 	}
 
 	[TestMethod]
-	public void StateStringsAreNfcNormalisedOnCommit()
+	public void StateStringsAreOpaque()
 	{
-		// "e" followed by a combining acute accent, built at run time so that it is not already normalised.
-		var host = Host( "function main() local s = 'e' .. '\u0301' state.s = s state.k = {} state.k[s] = 1 return len(s) end" );
-		var result = Call( host, "main" );
-		Assert.AreEqual( 2, result.Value.AsInt, "inside the call the string is what it was built as" );
-		Assert.AreEqual( "{\"k\":{\"\u00e9\":1},\"s\":\"\u00e9\"}", ScriptState.Serialize( host.State ).Replace( "\\u00e9", "\u00e9" ) );
-		Assert.IsTrue( ScriptState.Serialize( host.State ).Contains( "\u00e9" ) );
-		Assert.AreEqual( 1, Call( Host( "function main() return len(state.s) end", null, host.State ), "main" ).Value.AsInt );
+		// "e" followed by a combining acute accent stays two characters, in the call and in the state, and is not normalised on a round trip.
+		var host = Host( "function main() local s = 'e' .. '\u0301' state.s = s return len(s) end" );
+		Assert.AreEqual( 2, Call( host, "main" ).Value.AsInt );
+		Assert.AreEqual( "{\"s\":\"e\u0301\"}", ScriptState.Serialize( host.State ) );
+		Assert.AreEqual( "{\"s\":\"e\u0301\"}", ScriptState.Serialize( ScriptState.Parse( ScriptState.Serialize( host.State ) ) ) );
+		Assert.AreEqual( 2, Call( Host( "function main() return len(state.s) end", null, host.State ), "main" ).Value.AsInt );
 	}
 
 	[TestMethod]
@@ -237,7 +236,7 @@ public class ScriptStateTests
 		("budget", "function main(a) local n = a while true do n = n + 1 end return n end", "main", new long[] { 1 }),
 		("div zero", "function main(a) return 10 // (a - a) end", "main", new long[] { 3 }),
 		("depth", "function f(n) return f(n + 1) end\nfunction main(a) return f(a) end", "main", new long[] { 0 }),
-		("nfc", "function main(a) state.s = 'e' .. '\u0301' .. 'a\u030a' return len(state.s) end", "main", new long[] { 0 }),
+		("opaque unicode", "function main(a) state.s = 'e' .. '\u0301' .. 'a\u030a' return len(state.s) end", "main", new long[] { 0 }),
 		("sorted keys", "function main(a) state.m = { zeta = 1, alpha = 2, mid = 3 } state.m.beta = 4 local k = keys(state.m) return len(k) end", "main", new long[] { 0 }),
 		("bad result", "function main(a) return 'text' end", "main", new long[] { 0 }),
 	};
@@ -254,6 +253,6 @@ public class ScriptStateTests
 				.Append( result.Line ).Append( '|' ).Append( ScriptState.Serialize( host.State ) ).Append( '\n' );
 		}
 		var hash = Convert.ToHexString( SHA256.HashData( Encoding.UTF8.GetBytes( transcript.ToString() ) ) ).ToLowerInvariant();
-		Assert.AreEqual( "1998e037943dc0cfea8786de9a50540b3ed4da7cc05b81d883981c4f9cc9521b", hash, transcript.ToString() );
+		Assert.AreEqual( "bae4dc589c975517855368a99ba71d9a571180ddbf99c98774a8492211897196", hash, transcript.ToString() );
 	}
 }

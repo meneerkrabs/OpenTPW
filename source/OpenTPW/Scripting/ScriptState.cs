@@ -15,13 +15,13 @@ public static class ScriptState
 	public static ScriptTable Empty() => new( null );
 
 	/// <summary>Checks the whole schema (including the byte limit) of <paramref name="root"/>. Throws <see cref="ScriptStateException"/>.</summary>
-	public static void Validate( ScriptTable root ) => Check( root, null, false );
+	public static void Validate( ScriptTable root ) => Check( root, out _, out _ );
 
 	/// <summary>The canonical serialisation of a valid state. Does not validate; use <see cref="Validate"/> first.</summary>
 	public static string Serialize( ScriptTable root )
 	{
 		var builder = new StringBuilder();
-		Write( builder, root );
+		Write( builder, root, 0 );
 		return builder.ToString();
 	}
 
@@ -39,18 +39,14 @@ public static class ScriptState
 	internal static string Quote( string value )
 	{
 		var builder = new StringBuilder();
-		WriteString( builder, value );
+		WriteString( builder, value, 0 );
 		return builder.ToString();
 	}
 
-	internal static string Nfc( string value )
-	{
-		foreach ( var c in value )
-			if ( c >= 0x80 )
-				return value.Normalize( NormalizationForm.FormC );
-		return value;
-	}
-
+	/// <summary>
+	/// Strings are opaque UTF-16 text: compared ordinally, never normalised, so no operation can make one longer than it was.
+	/// A string is at most <see cref="ScriptLimits.MaxStringLength"/> characters and has no unpaired surrogate (it must survive UTF-8).
+	/// </summary>
 	internal static void RequireString( string value )
 	{
 		if ( value.Length > ScriptLimits.MaxStringLength )
@@ -64,99 +60,90 @@ public static class ScriptState
 		}
 	}
 
+	/// <summary>A map key: 1 to 64 printable ASCII characters (0x20 to 0x7E).</summary>
+	internal static bool IsValidKey( string key )
+	{
+		if ( key.Length == 0 || key.Length > ScriptLimits.MaxStateKeyLength )
+			return false;
+		foreach ( var c in key )
+			if ( c < ' ' || c > '~' )
+				return false;
+		return true;
+	}
+
 	internal static void RequireKey( string key )
 	{
-		RequireString( key );
-		if ( key.Length == 0 || key.Length > ScriptLimits.MaxStateKeyLength )
-			throw new ArgumentException( $"A key must be 1 to {ScriptLimits.MaxStateKeyLength} characters." );
-		if ( Nfc( key ) != key )
-			throw new ArgumentException( "A key must be NFC-normalised." );
+		if ( !IsValidKey( key ) )
+			throw new ArgumentException( $"A key must be 1 to {ScriptLimits.MaxStateKeyLength} printable ASCII characters." );
 	}
 
 	/// <summary>
-	/// Validates the tree. With <paramref name="owner"/> set (a commit), the strings of tables owned by that call are normalised to NFC in place;
-	/// shared tables were normalised when they were committed. Otherwise any non-NFC string is an error.
+	/// Validates the tree and reports its size (nodes visited and characters of the canonical form) so a commit can charge it to the call.
+	/// The work is bounded by the limits themselves: a table may appear only once (no shared subtrees, so no expansion and no cycles), the
+	/// walk stops at the node limit, and the serialisation stops as soon as it passes the byte limit.
 	/// </summary>
-	internal static void Check( ScriptTable root, object? owner, bool normalise )
+	internal static void Check( ScriptTable root, out int nodes, out int characters )
 	{
 		if ( root.ReadOnly )
 			throw new ScriptStateException( "state cannot be a host view" );
 		if ( root.Kind == ScriptTableKind.Array )
 			throw new ScriptStateException( "the root of state must be a map" );
-		var nodes = 0;
-		CheckTable( root, 1, ref nodes, owner, normalise );
+		var count = 0;
+		var seen = new HashSet<ScriptTable>( ReferenceEqualityComparer.Instance );
+		CheckTable( root, 1, ref count, seen );
 		var builder = new StringBuilder();
-		Write( builder, root );
-		var bytes = Encoding.UTF8.GetByteCount( builder.ToString() );
-		if ( bytes > ScriptLimits.MaxStateBytes )
+		Write( builder, root, ScriptLimits.MaxStateBytes );
+		if ( Encoding.UTF8.GetByteCount( builder.ToString() ) > ScriptLimits.MaxStateBytes )
 			throw new ScriptStateException( $"state is larger than {ScriptLimits.MaxStateBytes} bytes" );
+		nodes = count;
+		characters = builder.Length;
 	}
 
-	private static void CheckTable( ScriptTable table, int depth, ref int nodes, object? owner, bool normalise )
+	private static void CheckTable( ScriptTable table, int depth, ref int nodes, HashSet<ScriptTable> seen )
 	{
 		if ( depth > ScriptLimits.MaxStateDepth )
-			throw new ScriptStateException( $"state is nested deeper than {ScriptLimits.MaxStateDepth} levels (or contains a cycle)" );
-		if ( ++nodes > ScriptLimits.MaxStateNodes )
-			throw new ScriptStateException( $"state has more than {ScriptLimits.MaxStateNodes} values" );
+			throw new ScriptStateException( $"state is nested deeper than {ScriptLimits.MaxStateDepth} levels" );
+		CountNode( ref nodes );
 		if ( table.ReadOnly )
 			throw new ScriptStateException( "state cannot hold a host view" );
-		var mine = normalise && ReferenceEquals( table.Owner, owner );
+		if ( !seen.Add( table ) )
+			throw new ScriptStateException( "a table appears more than once in state (shared and cyclic tables are not allowed; copy it instead)" );
 		if ( table.Items != null )
 		{
-			for ( int i = 0; i < table.Items.Count; i++ )
-			{
-				CheckValue( table.Items[i], depth, ref nodes, owner, normalise, mine, out var replaced );
-				if ( mine && replaced != null )
-					table.Items[i] = replaced.Value;
-			}
+			foreach ( var value in table.Items )
+				CheckValue( value, depth, ref nodes, seen );
 		}
 		else if ( table.Entries != null )
 		{
-			List<(string Key, ScriptValue Value)>? fixes = null;
 			foreach ( var (key, value) in table.Entries )
 			{
-				if ( key.Length == 0 || key.Length > ScriptLimits.MaxStateKeyLength )
-					throw new ScriptStateException( $"a key must be 1 to {ScriptLimits.MaxStateKeyLength} characters" );
-				RequireString( key );
-				if ( Nfc( key ) != key )
-					throw new ScriptStateException( "a key is not NFC-normalised" );
-				CheckValue( value, depth, ref nodes, owner, normalise, mine, out var replaced );
-				if ( mine && replaced != null )
-					(fixes ??= new()).Add( (key, replaced.Value) );
+				if ( !IsValidKey( key ) )
+					throw new ScriptStateException( $"a key must be 1 to {ScriptLimits.MaxStateKeyLength} printable ASCII characters" );
+				CheckValue( value, depth, ref nodes, seen );
 			}
-			if ( fixes != null )
-				foreach ( var (key, value) in fixes )
-					table.Entries[key] = value;
 		}
 	}
 
-	private static void CheckValue( ScriptValue value, int depth, ref int nodes, object? owner, bool normalise, bool mine, out ScriptValue? replaced )
+	private static void CountNode( ref int nodes )
 	{
-		replaced = null;
+		if ( ++nodes > ScriptLimits.MaxStateNodes )
+			throw new ScriptStateException( $"state has more than {ScriptLimits.MaxStateNodes} values" );
+	}
+
+	private static void CheckValue( ScriptValue value, int depth, ref int nodes, HashSet<ScriptTable> seen )
+	{
 		switch ( value.Kind )
 		{
 			case ScriptKind.Int:
 			case ScriptKind.Bool:
-				if ( ++nodes > ScriptLimits.MaxStateNodes )
-					throw new ScriptStateException( $"state has more than {ScriptLimits.MaxStateNodes} values" );
+				CountNode( ref nodes );
 				break;
 			case ScriptKind.String:
-				if ( ++nodes > ScriptLimits.MaxStateNodes )
-					throw new ScriptStateException( $"state has more than {ScriptLimits.MaxStateNodes} values" );
-				var text = value.RawString;
-				RequireString( text );
-				var normal = Nfc( text );
-				if ( normal != text )
-				{
-					if ( !mine )
-						throw new ScriptStateException( "a string is not NFC-normalised" );
-					if ( normal.Length > ScriptLimits.MaxStringLength )
-						throw new ScriptStateException( $"string longer than {ScriptLimits.MaxStringLength} characters" );
-					replaced = ScriptValue.FromString( normal );
-				}
+				CountNode( ref nodes );
+				RequireString( value.RawString );
 				break;
 			case ScriptKind.Table:
-				CheckTable( value.RawTable, depth + 1, ref nodes, owner, normalise );
+				CheckTable( value.RawTable, depth + 1, ref nodes, seen );
 				break;
 			default:
 				throw new ScriptStateException( "state cannot hold a missing value" );
@@ -165,7 +152,7 @@ public static class ScriptState
 
 	// ----- canonical serialisation -----
 
-	private static void Write( StringBuilder builder, ScriptTable table )
+	private static void Write( StringBuilder builder, ScriptTable table, int limit )
 	{
 		switch ( table.Kind )
 		{
@@ -175,7 +162,7 @@ public static class ScriptState
 				{
 					if ( i > 0 )
 						builder.Append( ',' );
-					WriteValue( builder, table.Items[i] );
+					WriteValue( builder, table.Items[i], limit );
 				}
 				builder.Append( ']' );
 				break;
@@ -187,9 +174,9 @@ public static class ScriptState
 					if ( !first )
 						builder.Append( ',' );
 					first = false;
-					WriteString( builder, key );
+					WriteString( builder, key, limit );
 					builder.Append( ':' );
-					WriteValue( builder, table.Entries![key] );
+					WriteValue( builder, table.Entries![key], limit );
 				}
 				builder.Append( '}' );
 				break;
@@ -199,19 +186,19 @@ public static class ScriptState
 		}
 	}
 
-	private static void WriteValue( StringBuilder builder, ScriptValue value )
+	private static void WriteValue( StringBuilder builder, ScriptValue value, int limit )
 	{
 		switch ( value.Kind )
 		{
 			case ScriptKind.Int: builder.Append( value.RawInt.ToString( CultureInfo.InvariantCulture ) ); break;
 			case ScriptKind.Bool: builder.Append( value.AsBool ? "true" : "false" ); break;
-			case ScriptKind.String: WriteString( builder, value.RawString ); break;
-			case ScriptKind.Table: Write( builder, value.RawTable ); break;
+			case ScriptKind.String: WriteString( builder, value.RawString, limit ); break;
+			case ScriptKind.Table: Write( builder, value.RawTable, limit ); break;
 			default: throw new ScriptStateException( "state cannot hold a missing value" );
 		}
 	}
 
-	private static void WriteString( StringBuilder builder, string value )
+	private static void WriteString( StringBuilder builder, string value, int limit )
 	{
 		builder.Append( '"' );
 		foreach ( var c in value )
@@ -228,6 +215,8 @@ public static class ScriptState
 			}
 		}
 		builder.Append( '"' );
+		if ( limit > 0 && builder.Length > limit )
+			throw new ScriptStateException( $"state is larger than {ScriptLimits.MaxStateBytes} bytes" );
 	}
 
 	// ----- parsing -----
@@ -294,6 +283,8 @@ public static class ScriptState
 				if ( open == '{' )
 				{
 					key = ParseString();
+					if ( !IsValidKey( key ) )
+						throw Fail( "a key must be 1 to 64 printable ASCII characters" );
 					SkipSpace();
 					if ( pos >= text.Length || text[pos++] != ':' )
 						throw Fail( "expected ':'" );

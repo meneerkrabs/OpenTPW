@@ -201,11 +201,13 @@ public class ScriptSandboxTests
 		var options = new ScriptHostOptions { StepsPerCall = 100_000_000, StepsPerTick = 100_000_000 };
 		var cases = new[]
 		{
-			( Main( "state.me = state return 1" ), "deeper" ),
+			( Main( "state.me = state return 1" ), "more than once" ),
 			( Main( "local t = state for i = 1, 40 do t.n = {} t = t.n end return 1" ), "deeper" ),
 			( Main( "state.a = {} for i = 1, 3000 do push(state.a, i) end state.b = {} for i = 1, 3000 do push(state.b, i) end return 1" ), "values" ),
 			( Main( "local s = 'x' for i = 1, 10 do s = s .. s end state.a = {} for i = 1, 70 do push(state.a, s) end return 1" ), "larger" ),
-			( Main( "state.a = {} state.a.x = 1 state.b = state.a state.c = state.a return 1" ), null ),
+			( Main( "state.a = {} state.a.x = 1 state.b = state.a return 1" ), "more than once" ),
+			( Main( "local t = {} state.a = t state.b = { t } return 1" ), "more than once" ),
+			( Main( "local s = 'x' state.a = { s, s } state.b = {} state.c = 1 return 1" ), null ),
 		};
 		foreach ( var (source, message) in cases )
 		{
@@ -214,7 +216,7 @@ public class ScriptSandboxTests
 			if ( message == null )
 			{
 				Assert.AreEqual( ScriptOutcome.Ok, result.Outcome, result.Message );
-				Assert.AreEqual( "{\"a\":{\"x\":1},\"b\":{\"x\":1},\"c\":{\"x\":1}}", ScriptState.Serialize( host.State ), "shared tables serialise as copies" );
+				Assert.AreEqual( "{\"a\":[\"x\",\"x\"],\"b\":{},\"c\":1}", ScriptState.Serialize( host.State ), "equal strings and scalars may repeat; only tables may not" );
 				continue;
 			}
 			Assert.AreEqual( ScriptOutcome.InvalidResult, result.Outcome, source );
@@ -324,5 +326,124 @@ public class ScriptSandboxTests
 		host.BeginTick();
 		Assert.AreEqual( ScriptOutcome.Ok, Call( host, "main" ).Outcome );
 		Assert.AreEqual( 2500 - outcomes[0].Steps, host.TickStepsRemaining );
+	}
+
+	private const string NewlineKiloString = "local s = '\\n' for i = 1, 10 do s = s .. s end\n";
+
+	/// <summary>Finding 1: validation must not allocate outside the cap (a shared subtree used to expand to about 12.6M characters).</summary>
+	[TestMethod]
+	public void CommitValidationCannotBeBlownUpBySharedSubtrees()
+	{
+		var host = Host( $"function main()\n{NewlineKiloString}local t = s for i = 1, 11 do t = {{ t, t }} end state.x = t return 1\nend" );
+		var result = Call( host, "main" );
+		Assert.AreEqual( ScriptOutcome.InvalidResult, result.Outcome, result.Message );
+		StringAssert.Contains( result.Message, "more than once" );
+		Assert.AreEqual( "{}", ScriptState.Serialize( host.State ) );
+
+		// Many distinct big strings: the node and depth checks pass, the serialisation stops at the byte limit without building it.
+		var wide = Host( $"function main()\n{NewlineKiloString}state.a = {{}} for i = 1, 4000 do push(state.a, s) end return 1\nend",
+			new ScriptHostOptions { StepsPerCall = 100_000_000, StepsPerTick = 100_000_000 } );
+		var big = Call( wide, "main" );
+		Assert.AreEqual( ScriptOutcome.InvalidResult, big.Outcome, big.Message );
+		StringAssert.Contains( big.Message, "larger" );
+	}
+
+	[TestMethod]
+	public void CommitValidationIsChargedToTheCallBudget()
+	{
+		const string source = "function main() state.a = {} for i = 1, 200 do push(state.a, i) end return 1 end";
+		var steps = Call( Host( source, new ScriptHostOptions { StepsPerCall = 1_000_000 } ), "main" ).Steps;
+		var exact = Call( Host( source, new ScriptHostOptions { StepsPerCall = steps } ), "main" );
+		Assert.AreEqual( ScriptOutcome.Ok, exact.Outcome, exact.Message );
+		var short1 = Host( source, new ScriptHostOptions { StepsPerCall = steps - 1 } );
+		var failed = Call( short1, "main" );
+		Assert.AreEqual( ScriptOutcome.BudgetExhausted, failed.Outcome );
+		Assert.AreEqual( "{}", ScriptState.Serialize( short1.State ), "a call that runs out while committing does not commit" );
+		// Without the commit the same loop is cheaper by at least the number of nodes written.
+		var uncommitted = Call( Host( "function main() local a = {} for i = 1, 200 do push(a, i) end return 1 end" ), "main" ).Steps;
+		Assert.IsTrue( steps >= uncommitted + 200, $"{steps} vs {uncommitted}" );
+	}
+
+	/// <summary>Finding 2: a call that does not touch <c>state</c> must not pay for copying it.</summary>
+	[TestMethod]
+	public void TheStateIsCopiedLazilyAndMetered()
+	{
+		var json = "{" + string.Join( ",", Enumerable.Range( 0, ScriptLimits.MaxStateNodes - 1 ).Select( i => $"\"k{i}\":{i}" ) ) + "}";
+		var big = ScriptState.Parse( json );
+		var host = Host( "function none() return 1 end\nfunction read() return state.k5 end\nfunction write() state.k5 = 9 return 1 end", null, big );
+		Assert.AreEqual( 2, Call( host, "none" ).Steps, "return 1 is two instructions; nothing is copied" );
+		var read = Call( host, "read" );
+		Assert.AreEqual( 5, read.Value.AsInt );
+		Assert.IsTrue( read.Steps >= ScriptLimits.MaxStateNodes - 1, $"touching state pays for the copy: {read.Steps}" );
+		Assert.AreSame( big, host.State, "a read does not replace the state" );
+		var tiny = Host( "function read() return state.k5 end", new ScriptHostOptions { StepsPerCall = 100 }, big );
+		Assert.AreEqual( ScriptOutcome.BudgetExhausted, Call( tiny, "read" ).Outcome, "the copy is inside the failure boundary" );
+		Assert.AreEqual( ScriptOutcome.Ok, Call( Host( "function write() state.k5 = 9 return 1 end", new ScriptHostOptions { StepsPerCall = 100_000 }, big ), "write" ).Outcome );
+	}
+
+	/// <summary>Finding 3: key checks cost a bounded amount, however long the string.</summary>
+	[TestMethod]
+	public void MapKeyChecksAreBounded()
+	{
+		var host = Host( "function main() local m = { a = 1 } local s = 'e' for i = 1, 10 do s = s .. s end local b = has(m, s) return 1 end" );
+		var result = Call( host, "main" );
+		Assert.AreEqual( ScriptOutcome.RuntimeError, result.Outcome );
+		Assert.IsTrue( result.Steps < 400, $"{result.Steps}" );
+		foreach ( var key in new[] { "e\u0301", "\u00e9", "tab\t" } )
+			Assert.AreEqual( ScriptOutcome.RuntimeError, Call( Host( $"function main() local m = {{ a = 1 }} return has(m, '{key}') end" ), "main" ).Outcome, key );
+	}
+
+	/// <summary>Finding 4: strings are opaque, so nothing can lengthen one (NFC used to double 1,024 x U+0344).</summary>
+	[TestMethod]
+	public void StringsAreNeverNormalisedOrLengthened()
+	{
+		var literal = new string( '\u0344', ScriptLimits.MaxStringLength );
+		var host = Host( $"function main() state.s = '{literal}' return len(state.s) end" );
+		var result = Call( host, "main" );
+		Assert.AreEqual( ScriptOutcome.Ok, result.Outcome, result.Message );
+		Assert.AreEqual( ScriptLimits.MaxStringLength, result.Value.AsInt );
+		Assert.AreEqual( $"{{\"s\":\"{literal}\"}}", ScriptState.Serialize( host.State ), "stored exactly as written" );
+		Assert.AreEqual( 2, Run( "function main() return len('e' .. '\u0301') end" ).Value.AsInt, "a decomposed pair stays two units" );
+		Assert.AreEqual( 0, Run( "function main() if 'e\u0301' == '\u00e9' then return 1 end return 0 end" ).Value.AsInt, "comparison is ordinal" );
+		Assert.ThrowsException<ScriptCompileException>( () => Compile( $"function main() return '{literal}x' end" ) );
+		Assert.ThrowsException<ArgumentException>( () => ScriptTable.ArrayView( new ScriptValue[] { new string( 'x', ScriptLimits.MaxStringLength + 1 ) } ) );
+		Assert.ThrowsException<ArgumentException>( () => Call( Host( "function main(s) return 1 end" ), "main", new string( 'x', ScriptLimits.MaxStringLength + 1 ) ) );
+		Assert.ThrowsException<ArgumentException>( () => ScriptTable.RecordView( new[] { new KeyValuePair<string, ScriptValue>( "\u00e9", 1 ) } ) );
+		Assert.ThrowsException<ArgumentException>( () => ScriptTable.RecordView( new[] { new KeyValuePair<string, ScriptValue>( "", 1 ) } ) );
+	}
+
+	/// <summary>Finding 5: host views obey the entry cap.</summary>
+	[TestMethod]
+	public void HostViewsObeyTheEntryCap()
+	{
+		var max = ScriptLimits.MaxTableEntries;
+		var ok = ScriptTable.ArrayView( Enumerable.Range( 0, max ).Select( i => (ScriptValue)i ) );
+		Assert.AreEqual( max, ok.Count );
+		Assert.ThrowsException<ArgumentException>( () => ScriptTable.ArrayView( Enumerable.Range( 0, max + 1 ).Select( i => (ScriptValue)i ) ) );
+		ScriptTable.RecordView( Enumerable.Range( 0, max ).Select( i => new KeyValuePair<string, ScriptValue>( "f" + i, i ) ) );
+		Assert.ThrowsException<ArgumentException>( () => ScriptTable.RecordView( Enumerable.Range( 0, max + 1 ).Select( i => new KeyValuePair<string, ScriptValue>( "f" + i, i ) ) ) );
+		var options = new ScriptHostOptions { StepsPerCall = 1_000_000 };
+		var keys = Call( Host( "function main(v) return len(keys(v)) end", options ), "main", ScriptTable.RecordView( Enumerable.Range( 0, max ).Select( i => new KeyValuePair<string, ScriptValue>( "f" + i, i ) ) ) );
+		Assert.AreEqual( max, keys.Value.AsInt, keys.Message );
+	}
+
+	/// <summary>Finding 6: constructors reach the documented entry limit (they used to overflow the value stack near 2,000 entries).</summary>
+	[TestMethod]
+	public void TableConstructorsReachTheEntryLimit()
+	{
+		var options = new ScriptHostOptions { StepsPerCall = 1_000_000 };
+		string Map( int n ) => "function main() local m = { " + string.Join( ", ", Enumerable.Range( 0, n ).Select( i => $"f{i} = {i}" ) ) + " } return len(m) + m.f" + ( n - 1 ) + " end";
+		string Array( int n ) => "function main() local a = { " + string.Join( ", ", Enumerable.Range( 0, n ).Select( i => i.ToString() ) ) + " } return len(a) + a[" + n + "] end";
+		foreach ( var n in new[] { 2049, ScriptLimits.MaxTableEntries } )
+		{
+			var map = Call( Host( Map( n ), options ), "main" );
+			Assert.AreEqual( ScriptOutcome.Ok, map.Outcome, $"{n} fields: {map.Message}" );
+			Assert.AreEqual( 2L * n - 1, map.Value.AsInt );
+			var array = Call( Host( Array( n ), options ), "main" );
+			Assert.AreEqual( ScriptOutcome.Ok, array.Outcome, $"{n} elements: {array.Message}" );
+			Assert.AreEqual( 2L * n - 1, array.Value.AsInt );
+		}
+		StringAssert.Contains( Assert.ThrowsException<ScriptCompileException>( () => Compile( Map( ScriptLimits.MaxTableEntries + 1 ) ) ).Detail, "too many table entries" );
+		StringAssert.Contains( Assert.ThrowsException<ScriptCompileException>( () => Compile( Array( ScriptLimits.MaxTableEntries + 1 ) ) ).Detail, "too many table entries" );
 	}
 }

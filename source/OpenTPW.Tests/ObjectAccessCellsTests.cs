@@ -59,11 +59,12 @@ public class ObjectAccessCellsTests
 	{
 		public readonly ParkCellMap Cells = new( ParkPlacement.TileCount, ParkPlacement.TileCount );
 		public readonly ParkObjects Objects;
+		public readonly ObjectCatalog Catalog;
 		public bool Laying;
 
 		public Rig( params ObjectCatalogEntry[] entries )
 		{
-			var catalog = (ObjectCatalog)Activator.CreateInstance( typeof( ObjectCatalog ), BindingFlags.NonPublic | BindingFlags.Instance, null, new object[] { "jungle", entries }, null )!;
+			var catalog = Catalog = (ObjectCatalog)Activator.CreateInstance( typeof( ObjectCatalog ), BindingFlags.NonPublic | BindingFlags.Instance, null, new object[] { "jungle", entries }, null )!;
 			Objects = new ParkObjects( catalog, new SandboxParkGrid() )
 			{
 				IsReserved = ( x, y ) => Cells.RawTypeAt( x, y ) is var type && type is not (0 or (byte)ParkCellType.Path or ParkCellTypes.Object or ParkCellTypes.Entrance or ParkCellTypes.Exit),
@@ -322,4 +323,187 @@ public class ObjectAccessCellsTests
 		Assert.IsNotNull( rig.Place( ride, 4, 5 ) );
 		Assert.AreEqual( (byte)ParkCellType.Queue, cells.RawTypeAt( 5, 4 ) );
 	}
+
+	/// <summary>The cells of an old OpenTPW save: the same park with every entrance and exit cell's link byte (map cell +0x0C) zero, the queue link and the outside cells as they were saved.</summary>
+	private static ParkCellMap OldSave( Rig rig, params OriginalObject[] items )
+	{
+		var snapshot = ParkLayoutSnapshot.CaptureSnapshot( rig.Cells, rig.Objects );
+		var access = items.SelectMany( item => item.Cells ).Where( cell => cell.Cell.CellType is ObjectShapeSymbols.TypeEntrance or ObjectShapeSymbols.TypeExit ).Select( cell => (cell.X, cell.Y) ).ToHashSet();
+		var stripped = snapshot with { Cells = snapshot.Cells with { Cells = snapshot.Cells.Cells.Select( cell => access.Contains( (cell.X, cell.Y) ) ? cell with { Links = 0 } : cell ).ToList() } };
+		var old = ParkLayoutSnapshot.RestoreCellMap( stripped );
+		foreach ( var (x, y) in access )
+			Assert.AreEqual( 0, old.LinksAt( x, y ), $"the old save holds no link byte on ({x}, {y})" );
+		return old;
+	}
+
+	private static byte[] Links( ParkCellMap cells ) => Enumerable.Range( 0, cells.Width * cells.Height ).Select( index => cells.LinksAt( index % cells.Width, index / cells.Width ) ).ToArray();
+
+	[TestMethod]
+	public void TheLinkBytesAnOldSaveLacksAreLaidAsAPlacementLaysThem()
+	{
+		var ride = Entry( 1100, 5, true, "*2S" );
+		var shop = Entry( 1203, 5, false, "*2S" );
+		var rig = new Rig( ride, shop );
+		var rideItem = rig.Place( ride, 4, 5 )!;
+		var shopItem = rig.Place( shop, 10, 12 )!;
+		var placed = Links( rig.Cells );
+		Assert.IsTrue( new[] { (5, 5), (6, 5), (11, 12) }.All( cell => rig.Cells.LinksAt( cell.Item1, cell.Item2 ) != 0 ), "a placement lays the byte on the queue ride's entrance and exit and the shop's entrance (a shop's exit gets no outside cell)" );
+
+		var old = OldSave( rig, rideItem, shopItem );
+		var events = new List<(int, int)>();
+		var repaired = 0;
+		foreach ( var item in new[] { rideItem, shopItem } )
+			repaired += ObjectAccessCells.RepairMissingLinks( old, item.AccessPoints, item.Entry.HasQueue, new LinkEffects( ( x, y ) => events.Add( (x, y) ) ) );
+		Assert.AreEqual( 3, repaired );
+		CollectionAssert.AreEqual( placed, Links( old ), "after the repair every link byte equals what a fresh placement lays" );
+		Assert.IsTrue( events.Count > 0, "the repair refreshes tiles as the placement does" );
+	}
+
+	[TestMethod]
+	public void ACellThatHoldsALinkByteIsLeftAlone()
+	{
+		var ride = Entry( 1100, 5, true, "*2S" );
+		var rig = new Rig( ride );
+		var item = rig.Place( ride, 4, 5 )!;
+		var before = Links( rig.Cells );
+		var version = rig.Cells.Version;
+		Assert.AreEqual( 0, ObjectAccessCells.RepairMissingLinks( rig.Cells, item.AccessPoints, item.Entry.HasQueue ) );
+		CollectionAssert.AreEqual( before, Links( rig.Cells ) );
+		Assert.AreEqual( version, rig.Cells.Version, "a save that already holds the bytes is not written to" );
+
+		var old = OldSave( rig, item );
+		Assert.AreEqual( 2, ObjectAccessCells.RepairMissingLinks( old, item.AccessPoints, item.Entry.HasQueue ) );
+		Assert.AreEqual( 0, ObjectAccessCells.RepairMissingLinks( old, item.AccessPoints, item.Entry.HasQueue ), "a second repair finds nothing missing" );
+	}
+
+	[TestMethod]
+	public void AnOutsideCellThePlayerRemovedLeavesTheEntranceUnlinked()
+	{
+		var ride = Entry( 1100, 5, true, "*2S" );
+		var rig = new Rig( ride );
+		var item = rig.Place( ride, 4, 5 )!;
+		var old = OldSave( rig, item );
+		old.SetType( 5, 4, ParkCellType.Empty );
+		old.SetLinks( 5, 4, 0 );
+		Assert.AreEqual( 1, ObjectAccessCells.RepairMissingLinks( old, item.AccessPoints, item.Entry.HasQueue ), "only the exit, whose outside path cell is still there" );
+		Assert.AreEqual( 0, old.LinksAt( 5, 5 ), "no queue cell outside the entrance to link to" );
+	}
+	/// <summary>
+	/// The whole repair through a real resume: a park with a queue ride and a shop is captured, its entrance and exit link bytes are stripped as a save made before the import took them
+	/// holds them, the layout goes through the save codec, and <c>Level.ConnectObjectsToGuests</c> (the resume branch of Level.Objects.cs) repairs the bytes; a guest called from the queue
+	/// then walks into the entrance cell through the search, and the same resume of an unstripped save writes nothing.
+	/// </summary>
+	[TestMethod]
+	public void AnOldSaveResumedThroughTheLevelIsRepairedAndACalledGuestWalksIn()
+	{
+		var ride = Entry( 1100, 5, true, "*2S" );
+		var shop = Entry( 1203, 5, false, "*2S" );
+		var rig = new Rig( ride, shop );
+		var rideItem = rig.Place( ride, 4, 5 )!;
+		var shopItem = rig.Place( shop, 10, 12 )!;
+		// the player's path network: a row above the queue (joined to its back cell the way the queue tool does)
+		var grid = new GuestPathGrid( rig.Cells );
+		for ( var x = 0; x <= 12; x++ )
+			grid.SetPath( x, 3, true );
+		var queued = new RideVisitorBridge( 99, "joiner", RideVisitorKind.Ride, 5, 55, 30 ) { EntranceCell = (5, 3), QueueFrontCell = (5, 4), QueueEntranceDirection = 2 };
+		Assert.IsTrue( QueuePaths.TryConnect( grid, queued ), "the queue's back cell is joined to the path row" );
+		var placed = Links( rig.Cells );
+		var placedTypes = Enumerable.Range( 0, rig.Cells.Width * rig.Cells.Height ).Select( index => rig.Cells.RawTypeAt( index % rig.Cells.Width, index / rig.Cells.Width ) ).ToArray();
+
+		var layout = ParkLayoutSnapshot.CaptureSnapshot( rig.Cells, rig.Objects );
+		var access = new[] { rideItem, shopItem }.SelectMany( item => item.Cells ).Where( cell => cell.Cell.CellType is ObjectShapeSymbols.TypeEntrance or ObjectShapeSymbols.TypeExit ).Select( cell => (cell.X, cell.Y) ).ToHashSet();
+		Assert.AreEqual( 4, access.Count, "the ride and the shop each have an entrance and an exit cell; the shop exit holds no byte after the placement" );
+		var oldLayout = layout with { Cells = layout.Cells with { Cells = layout.Cells.Cells.Select( cell => access.Contains( (cell.X, cell.Y) ) ? cell with { Links = 0 } : cell ).ToList() } };
+		oldLayout = ParkResumeJson.Deserialize<ParkLayoutSnapshot.Data>( ParkResumeJson.Serialize( oldLayout ) );
+
+		LevelResumed Resume( ParkLayoutSnapshot.Data saved )
+		{
+			var cells = ParkLayoutSnapshot.RestoreCellMap( saved );
+			var objects = new ParkObjects( rig.Catalog, new SandboxParkGrid() );
+			ParkLayoutSnapshot.RestoreObjects( saved, objects );
+			var simulation = new GuestSimulation( new GuestPathGrid( cells ), GuestTests.CreateSettings(), 7 ) { ArrivalsEnabled = false };
+			var level = (Level)System.Runtime.CompilerServices.RuntimeHelpers.GetUninitializedObject( typeof( Level ) );
+			const BindingFlags Private = BindingFlags.Instance | BindingFlags.NonPublic;
+			typeof( Level ).GetField( "<Objects>k__BackingField", Private )!.SetValue( level, objects );
+			typeof( Level ).GetField( "<Guests>k__BackingField", Private )!.SetValue( level, simulation );
+			typeof( Level ).GetField( "<PathVariants>k__BackingField", Private )!.SetValue( level, new PathTileVariants() );
+			typeof( Level ).GetField( "resumeState", Private )!.SetValue( level, System.Runtime.CompilerServices.RuntimeHelpers.GetUninitializedObject( typeof( ParkResumeSnapshot ) ) );
+			typeof( Level ).GetMethod( "ConnectObjectsToGuests", Private )!.Invoke( level, null );
+			return new LevelResumed( level, cells, simulation, objects );
+		}
+
+		// a save that holds the bytes: the resume writes nothing
+		var intact = ParkResumeJson.Deserialize<ParkLayoutSnapshot.Data>( ParkResumeJson.Serialize( layout ) );
+		var untouched = Resume( intact );
+		CollectionAssert.AreEqual( placed, Links( untouched.Cells ), "a save that holds the bytes keeps them" );
+
+		var cellsBefore = ParkLayoutSnapshot.RestoreCellMap( oldLayout );
+		foreach ( var (x, y) in access )
+			Assert.AreEqual( 0, cellsBefore.LinksAt( x, y ), $"the old save holds no link byte on ({x}, {y})" );
+		var resumed = Resume( oldLayout );
+		CollectionAssert.AreEqual( placed, Links( resumed.Cells ), "the resume repairs every byte to what the placement laid" );
+		CollectionAssert.AreEqual( placedTypes, Enumerable.Range( 0, resumed.Cells.Width * resumed.Cells.Height ).Select( index => resumed.Cells.RawTypeAt( index % resumed.Cells.Width, index / resumed.Cells.Width ) ).ToArray(), "no cell type changes" );
+
+		// a guest called from the queue walks into the entrance cell through the search and edge-test walk, and is not dismissed
+		var restoredRide = resumed.Objects.Objects.Single( item => item.Entry.HasQueue );
+		var bridge = restoredRide.Runtime.Visitors;
+		var script = GuestTests.CreateShopScript( new VisitorRideScriptEffects( bridge, UnimplementedRideScriptEffects.Instance ) );
+		bridge.Attach( script, () => true );
+		bridge.Parameters = new QueueParameters( true, false, false, 130, 60, 60, 5, 30 );
+		bridge.RecomputeQueue( resumed.Simulation.Grid );
+		var tick = 1f / FixedStepClock.TicksPerSecond;
+		script.Advance( tick );
+		var guest = resumed.Simulation.SpawnInPark( 0, 3 );
+		guest.AttractionId = bridge.AttractionId;
+		guest.State = GuestState.GoingToRide;
+		guest.Happiness = 60;
+		var walkedIn = false;
+		for ( var turn = 0; turn < 3000 && guest.RidesTaken == 0; turn++ )
+		{
+			resumed.Simulation.Tick( tick );
+			bridge.HostStep();
+			script.Advance( tick );
+			walkedIn |= guest.State == GuestState.Boarding && guest.HasWaypoint && guest.Navigation.Original;
+		}
+		Assert.IsTrue( walkedIn, "the called guest walked the search into the repaired entrance cell" );
+		Assert.AreEqual( 1, guest.RidesTaken, $"the guest rode ({guest.State})" );
+	}
+
+	[TestMethod]
+	public void TheStandCellOfAHarnessRideIsLaidAsAPlacementLaysItAndTakenBackWhole()
+	{
+		var queue = new Rig( Entry( 1100, 5, true, "*2S" ) );
+		var path = new Rig( Entry( 1203, 5, false, "*2S" ) );
+		// the cell a placement lays beside a queue cell (a queue ride) and beside a path cell (a shop) is what the stand cell takes
+		foreach ( var (rig, hasQueue) in new[] { (queue, true), (path, false) } )
+		{
+			var entry = rig.Catalog.Entries.Single();
+			var placed = rig.Place( entry, 4, 5 )!;
+			var expectedLinks = rig.Cells.LinksAt( 5, 5 );
+			var expectedQueueLink = rig.Cells.QueueLinkAt( 5, 5 );
+			var outside = placed.AccessPoints.Single( point => point.Kind == ObjectCellKind.Entrance );
+			rig.Cells.SetType( 5, 5, ParkCellType.Empty );
+			rig.Cells.SetLinks( 5, 5, 0 );
+			var before = Links( rig.Cells );
+			var beforeTypes = Enumerable.Range( 0, rig.Cells.Width * rig.Cells.Height ).Select( index => rig.Cells.RawTypeAt( index % rig.Cells.Width, index / rig.Cells.Width ) ).ToArray();
+			Assert.IsTrue( ObjectAccessCells.LayStandCell( rig.Cells, 5, 5 ), hasQueue ? "beside the queue cell" : "beside the path cell" );
+			Assert.AreEqual( ParkCellTypes.Entrance, rig.Cells.RawTypeAt( 5, 5 ) );
+			if ( hasQueue )
+			{
+				Assert.AreEqual( expectedLinks, rig.Cells.LinksAt( 5, 5 ), "the link byte a placement lays toward the queue cell" );
+				Assert.AreEqual( expectedQueueLink, rig.Cells.QueueLinkAt( 5, 5 ) );
+			}
+			Assert.IsFalse( ObjectAccessCells.LayStandCell( rig.Cells, 5, 5 ), "a typed cell is left as it is" );
+			ObjectAccessCells.ClearStandCell( rig.Cells, 5, 5 );
+			Assert.AreEqual( 0, rig.Cells.RawTypeAt( 5, 5 ) );
+			Assert.AreEqual( 0, rig.Cells.LinksAt( 5, 4 ) & 0x10, "the cell outside loses its link to the cleared cell, as the cell clear unlinks (0x5367A0)" );
+			var after = Links( rig.Cells );
+			before[4 * rig.Cells.Width + 5] = (byte)(before[4 * rig.Cells.Width + 5] & ~0x10);
+			CollectionAssert.AreEqual( before, after, "taking the cell back unlinks only its neighbour" );
+			CollectionAssert.AreEqual( beforeTypes, Enumerable.Range( 0, rig.Cells.Width * rig.Cells.Height ).Select( index => rig.Cells.RawTypeAt( index % rig.Cells.Width, index / rig.Cells.Width ) ).ToArray() );
+			Assert.IsNotNull( outside );
+		}
+	}
+
+	private sealed record LevelResumed( Level Level, ParkCellMap Cells, GuestSimulation Simulation, ParkObjects Objects );
 }

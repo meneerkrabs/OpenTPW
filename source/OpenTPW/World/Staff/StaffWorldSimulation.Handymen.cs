@@ -399,6 +399,9 @@ public sealed partial class StaffWorldSimulation
 		}
 		if ( GuestWander.Pick( grid, cell, () => Draw( economy ), keepToArea ? InArea : null, out var areaBlocked ) is { } destination )
 			return Route( member, destination.Cell, destination.ByteX, destination.ByteY );
+		// [BIN:TPW-EXE:0x004F9490 start without links] the search is the guests' and it serves the staff alike: a start cell with no link (a member left standing where an object's placement took the path away, as a pool's changing room does) takes the off-path search after the step-count draw Pick has just made, which walks him out to the nearest path cell a route reaches (GuestSimulation.Wander does the same for a guest)
+		if ( !grid.IsWalkable( cell.X, cell.Y ) && !grid.IsQueue( cell.X, cell.Y ) && (grid.Cells.LinksAt( cell.X, cell.Y ) & 0x55) == 0 )
+			return GuestWander.OffPath( grid, cell, () => Draw( economy ), target => Route( member, target, GuestWander.CentreByte, GuestWander.CentreByte ) );
 		return areaBlocked && EnterPatrolArea( economy, member );
 	}
 

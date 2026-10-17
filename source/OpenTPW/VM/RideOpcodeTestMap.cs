@@ -104,6 +104,7 @@ public static class RideOpcodeTestMap
 		(Opcode.SETREVERB, "RideOpcodeEffectsTests.AtmosphereOpcodesPassTheirValues", false),
 		(Opcode.DIPMUSIC, "RideOpcodeEffectsTests.AtmosphereOpcodesPassTheirValues", false),
 		(Opcode.SPARK, "RideOpcodeEffectsTests.AtmosphereOpcodesPassTheirValues", false),
+		(Opcode.WALKON, "GuestTests.ALimboListOfASaveFromBeforeTheScriptTableMovesIntoTheScriptWithItsDeadline", true),
 		(Opcode.WALKOFF, "GuestTests.LimboOpcodesHoldGuestsForTheirDurationInSeconds", true),
 		(Opcode.WALKGET, "GuestTests.LimboOpcodesHoldGuestsForTheirDurationInSeconds", true),
 	};

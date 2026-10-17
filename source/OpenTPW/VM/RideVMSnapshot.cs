@@ -156,7 +156,7 @@ public sealed record RideVMSnapshot
 	/// The shared array, pointer and heap count a restore applies for a script whose header stack size is <paramref name="capacity"/>:
 	/// the stored array, or the old call stack laid out top-down. Throws <see cref="InvalidDataException"/> when the stored data does not fit.
 	/// </summary>
-	internal int[] ResolveStack( int capacity, out int stackPointer, out int heapCount )
+	internal int[] ResolveStack( int capacity, int instructionCount, Func<int, int> wordOffsetOf, out int stackPointer, out int heapCount )
 	{
 		if ( Stack != null )
 		{
@@ -170,7 +170,12 @@ public sealed record RideVMSnapshot
 			throw new InvalidDataException( $"script {ScriptId} declares stack size {capacity}, the snapshot stores {CallStack?.Length ?? 0} return addresses." );
 		var array = new int[capacity];
 		for ( var depth = 0; depth < CallStack.Length; depth++ )
-			array[capacity - 1 - depth] = CallStack[depth] | 0x20000000;
+		{
+			if ( CallStack[depth] < 0 || CallStack[depth] > instructionCount )
+				throw new InvalidDataException( $"script {ScriptId} return address {CallStack[depth]} is outside [0, {instructionCount}]." );
+			// the old stack held instruction indices; the array holds the original's code-word offsets
+			array[capacity - 1 - depth] = wordOffsetOf( CallStack[depth] ) | 0x20000000;
+		}
 		stackPointer = capacity - 1 - CallStack.Length;
 		heapCount = 0;
 		return array;

@@ -422,7 +422,7 @@ public sealed class RideVM
 		ArgumentNullException.ThrowIfNull( snapshot );
 		if ( snapshot.Variables.Length != Variables.Length )
 			throw new InvalidDataException( $"script '{ScriptName}' ({SourceName}) has {Variables.Length} variables, the snapshot stores {snapshot.Variables.Length}." );
-		var restoredStack = snapshot.ResolveStack( stack.Length, out var restoredPointer, out var restoredHeapCount );
+		var restoredStack = snapshot.ResolveStack( stack.Length, instructions.Length, WordOffsetOf, out var restoredPointer, out var restoredHeapCount );
 		if ( snapshot.LimboValues != null && (snapshot.LimboValues.Length != limboValues.Length || snapshot.LimboExpiries?.Length != limboValues.Length) )
 			throw new InvalidDataException( $"script '{ScriptName}' declares limbo size {limboValues.Length}, the snapshot stores {snapshot.LimboValues.Length} slots." );
 		if ( snapshot.LimboValues == null && snapshot.LimboCount != 0 )
@@ -522,12 +522,12 @@ public sealed class RideVM
 	/// <summary>
 	/// JSR: the return address goes onto the shared array at the stack pointer, which then falls; the jump is taken either way.
 	/// </summary>
-	// [BIN:TPW-EXE:0x5539A9 JSR] stores (pc after the operand | 0x20000000) at heap[+0x40] and decrements +0x40 only while 0 <= +0x40 < size; otherwise the assert (0x5DA3C0 is a bare ret) does nothing and the jump to the operand still runs (0x553A0A..0x553A24), so a full stack jumps without pushing and a later RETURN comes back to an older address
+	// [BIN:TPW-EXE:0x5539A9 JSR] stores (pc after the operand | 0x20000000; the pc +0x3C is a code-word index, so the stored word is the word offset of the next instruction) at heap[+0x40] and decrements +0x40 only while 0 <= +0x40 < size; otherwise the assert (0x5DA3C0 is a bare ret) does nothing and the jump to the operand still runs (0x553A0A..0x553A24), so a full stack jumps without pushing and a later RETURN comes back to an older address
 	internal void PushReturn( Operand location )
 	{
 		var target = location.RequireBranchTarget();
 		if ( stackPointer >= 0 && stackPointer < stack.Length )
-			stack[stackPointer--] = ProgramCounter | ReturnAddressTag;
+			stack[stackPointer--] = WordOffsetOf( ProgramCounter ) | ReturnAddressTag;
 		ProgramCounter = target;
 	}
 
@@ -541,8 +541,17 @@ public sealed class RideVM
 			throw new RideScriptException( "RETURN without JSR" );
 		var word = stack[++stackPointer];
 		if ( (word & unchecked( (int)0xFF000000 )) == ReturnAddressTag )
-			ProgramCounter = word ^ ReturnAddressTag;
+		{
+			var target = word ^ ReturnAddressTag;
+			var index = target == Script.CodeWordCount ? instructions.Length : Script.GetInstructionIndexAtWord( target );
+			if ( index < 0 )
+				throw new RideScriptException( $"RETURN to code word {target}, which does not start an instruction" );
+			ProgramCounter = index;
+		}
 	}
+
+	/// <summary>The code-word offset of instruction <paramref name="index"/> (the original's pc), the code-word count past the last instruction.</summary>
+	internal int WordOffsetOf( int index ) => index >= 0 && index < instructions.Length ? instructions[index].WordOffset : Script.CodeWordCount;
 
 	/// <summary>
 	/// PUSH: stores the value at the stack pointer and lowers it; true when stored. A full stack kills the script and still sets the result register.
@@ -578,6 +587,36 @@ public sealed class RideVM
 			return;
 		stack[heapCount++] = value;
 		SetFlags( value );
+	}
+
+	/// <summary>
+	/// Seeds the heap of a script restored from a save that predates the heap with the values its bridge held for it (legacy migration), given in the order HOP is to return them (the first ends on top), without touching the flags;
+	/// returns how many fit (the heap only grows into the room the call region leaves). Does nothing unless heap and limbo table are empty.
+	/// </summary>
+	internal int SeedLegacyHeap( IReadOnlyList<int> nextFirst )
+	{
+		if ( heapCount != 0 )
+			return 0;
+		var room = Math.Max( 0, stackPointer + 1 );
+		var count = Math.Min( room, nextFirst.Count );
+		for ( var index = count - 1; index >= 0; index-- )
+			stack[heapCount++] = nextFirst[index];
+		return count;
+	}
+
+	/// <summary>Fills the limbo table of a script restored from a save that predates it (legacy migration): the first slots take the entries; returns how many fit. Does nothing unless the table is empty.</summary>
+	internal int SeedLegacyLimbo( IReadOnlyList<(int Value, int Expiry)> entries )
+	{
+		if ( limboCount != 0 || limboValues.Any( value => value != 0 ) )
+			return 0;
+		var count = Math.Min( limboValues.Length, entries.Count );
+		for ( var index = 0; index < count; index++ )
+		{
+			limboValues[index] = entries[index].Value;
+			limboExpiries[index] = entries[index].Expiry;
+		}
+		limboCount = count;
+		return count;
 	}
 
 	/// <summary>HOP: takes the newest heap value (LIFO); false when the heap is empty (nothing changes).</summary>
@@ -741,7 +780,7 @@ public sealed class RideVM
 		var depth = CallDepth;
 		hash.Add( depth );
 		for ( var index = stackPointer + 1; depth > 0 && index < stack.Length; index++ )
-			hash.Add( stack[index] & ~ReturnAddressTag );
+			hash.Add( stack[index] );
 		if ( heapCount != 0 )
 		{
 			hash.Add( heapCount );

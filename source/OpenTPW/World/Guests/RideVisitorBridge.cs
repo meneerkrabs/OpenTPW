@@ -309,6 +309,7 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		WalkingOff = walkingOff.ToArray(),
 		WalkingOffReady = WalkOffMilliseconds > 0 ? walkingOffReady.ToArray() : null,
 		WalkSlots = walkSlots.Count > 0 ? walkSlots.OrderBy( pair => pair.Key ).Select( pair => (pair.Key, pair.Value.From, pair.Value.To, pair.Value.Mode) ).ToArray() : null,
+		VmOwnsHeapAndLimbo = true,
 		Hopped = Array.Empty<int>(),
 		Limbo = Array.Empty<(int Guest, double Until)>(),
 		Bounce = bouncing.ToArray(),
@@ -504,6 +505,49 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		LastAdmissionCheck = snapshot.LastAdmissionCheck;
 		BoardedTotal = snapshot.BoardedTotal;
 		ReleasedTotal = snapshot.ReleasedTotal;
+		legacyLeftovers.Clear();
+		if ( !snapshot.VmOwnsHeapAndLimbo )
+			MigrateLegacyScriptState( snapshot );
+	}
+
+	private readonly List<int> legacyLeftovers = new();
+
+	/// <summary>
+	/// A save written before HUSH/HOP and the limbo table moved into the script VM keeps them here: the riders HOP had not returned yet (boarded order, not in the hopped set) and the limbo list with
+	/// its script-clock deadlines. The restored script has neither, so they are moved over: the heap takes the riders so that HOP returns them in the order the old HOP did (first boarded on top), the
+	/// limbo table takes the limbo list with its deadlines on the scheduler clock. Riders held by the bounce table or the limbo table are not seeded. A rider that finds no room in the heap of a script
+	/// that issues HOP is released at the first host step (its VAR_ONRIDE share is given back), so nobody stays aboard unreachable.
+	/// </summary>
+	private void MigrateLegacyScriptState( RideVisitorBridgeSnapshot snapshot )
+	{
+		if ( vm == null )
+			return;
+		var limboEntries = snapshot.Limbo.Take( vm.LimboCapacity )
+			.Select( entry => (Value: entry.Guest, Expiry: unchecked( (int)(uint)(ulong)Math.Max( 0, vm.ClockOriginMilliseconds + entry.Until ) )) ).ToArray();
+		vm.SeedLegacyLimbo( limboEntries );
+		var held = limboEntries.Select( entry => entry.Value ).Concat( snapshot.Bounce.Where( slot => slot.Guest != 0 ).Select( slot => slot.Guest ) ).ToHashSet();
+		var hopped = snapshot.Hopped.ToHashSet();
+		var desired = onRide.Where( guest => !hopped.Contains( guest ) && !held.Contains( guest ) && !walkingOff.Contains( guest ) ).ToList();
+		var seeded = vm.SeedLegacyHeap( desired );
+		if ( seeded < desired.Count && vm.Script.Instructions.Any( instruction => instruction.Opcode == (ushort)Opcode.HOP ) )
+			legacyLeftovers.AddRange( desired.Skip( seeded ) );
+	}
+
+	private void ReleaseLegacyLeftovers()
+	{
+		if ( legacyLeftovers.Count == 0 )
+			return;
+		var guests = legacyLeftovers.ToArray();
+		legacyLeftovers.Clear();
+		foreach ( var guest in guests )
+		{
+			if ( !onRide.Contains( guest ) )
+				continue;
+			Release( guest );
+			var onRideVariable = vm?.GetVariableIndex( nameof( RideVariables.VAR_ONRIDE ) ) ?? -1;
+			if ( onRideVariable >= 0 && vm!.Variables[onRideVariable] > 0 )
+				vm.Variables[onRideVariable]--;
+		}
 	}
 
 	// ---- Queue geometry ----------------------------------------------------------------------
@@ -845,16 +889,18 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 			ReleaseAll();
 			return;
 		}
+		ReleaseLegacyLeftovers();
+
+		// State 14 (0xe05c8): the guest stays in the list until the script has consumed VAR_LETMEON. Boarding comes first: a script may take a guest and hand it to VAR_LETMEOFF within one slice.
+		if ( called != 0 && letMeOnWritten && Get( RideVariables.VAR_LETMEON ) != called )
+			MarkBoarded( called );
+
 		var off = Get( RideVariables.VAR_LETMEOFF );
 		if ( off != 0 )
 		{
 			Set( RideVariables.VAR_LETMEOFF, 0 );
 			Release( off );
 		}
-
-		// State 14 (0xe05c8): the guest stays in the list until the script has consumed VAR_LETMEON.
-		if ( called != 0 && letMeOnWritten && Get( RideVariables.VAR_LETMEON ) != called )
-			MarkBoarded( called );
 
 		// [BIN:TPW-EXE:0x00516380 park turn walk] the park update runs once per park turn (the main loop calls it when its 31 ms substep counter & 7 == 0, 0x0054F668) and dispatches every live-list thing whose pointer is set and whose byte +3 is 0 (0x005163F0..0x005163F7, no type, state or id test; the whole walk is skipped while world mode +0x1DA738 is 4, the turn still counting, 0x00516395, DET-plan §2.1) to 0x0050B360: a ride (type 3) runs 0x004E0B90, then the state dispatch 0x004E0E00, whose state 0 runs the admission 0x004E1220 once (0x004E14E0); a guest (type 1) runs 0x00501650, then 0x005019F0, whose state 11 is 0x004FFFF0; OpenTPW's lastAdmissionTurn and LastQueueUpdateTurn guards give the same once-per-turn cadence
 		var turn = Host?.ParkTurn ?? -1;

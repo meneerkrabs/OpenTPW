@@ -191,14 +191,14 @@ public class RideVMInternalsTests
 	[TestMethod]
 	public void AHopThatReachesTheCallRegionReadsTheTaggedReturnAddress()
 	{
-		// Size 1: HUSH takes index 0, JSR overwrites it with its return address (instruction 2 | 0x20000000), HOP then pops that word.
+		// Size 1: HUSH takes index 0, JSR overwrites it with its return address (code word 4 | 0x20000000), HOP then pops that word.
 		var vm = Load( new Asm().WithHeader( 1, 2 )
 			.I( Opcode.HUSH, 3 )
 			.I( Opcode.JSR, "routine" )
 			.Label( "idle" ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "idle" )
 			.Label( "routine" ).I( Opcode.HOP, V( 0 ) ).I( Opcode.HOP, V( 1 ) ).I( Opcode.RETURN ) );
 		Run( vm, 1 );
-		Assert.AreEqual( 0x20000002, vm.Variables[0] );
+		Assert.AreEqual( 0x20000004, vm.Variables[0], "the stored word is the code-word offset of the next instruction (HUSH 3 and JSR take two words each), tagged" );
 		Assert.AreEqual( 0, vm.Variables[1], "the second HOP found the heap empty and left V1" );
 		Assert.AreEqual( RideVMState.Running, vm.State );
 	}
@@ -461,7 +461,7 @@ public class RideVMInternalsTests
 		Assert.AreEqual( 1, restored.CallDepth );
 		Assert.AreEqual( 0, restored.HeapCount );
 		Assert.AreEqual( 0, restored.LimboCount );
-		Assert.AreEqual( 0x20000006, restored.GetStackSlot( restored.StackCapacity - 1 ), "the return address went to the top of the array, tagged" );
+		Assert.AreEqual( 0x2000000C, restored.GetStackSlot( restored.StackCapacity - 1 ), "the old instruction index 6 went to the top of the array as its code-word offset 12, tagged" );
 	}
 
 	[TestMethod]
@@ -477,6 +477,37 @@ public class RideVMInternalsTests
 		Assert.ThrowsException<InvalidDataException>( () => ( snapshot with { Stack = null, CallStack = null } ).ValidateSnapshot() );
 		var other = new RideVM( new RideScriptFile( new MemoryStream( new Asm().WithHeader( 2, 2 ).I( Opcode.ENDSLICE ).Build( Names ) ) ), new RideVMOptions { Seed = 1 } );
 		Assert.ThrowsException<InvalidDataException>( () => other.RestoreSnapshot( snapshot ), "a stack array of another size does not fit" );
+	}
+
+	[TestMethod]
+	public void ReturnWordsAreCodeWordOffsetsAndMapBackToInstructions()
+	{
+		// JSR at code words 0-1, ADD V0 at 2-4: the return word is 2 | 0x20000000; a POP reads it and a PUSH of it makes RETURN jump back to the ADD.
+		var vm = Load( new Asm()
+			.I( Opcode.JSR, "routine" )
+			.I( Opcode.ADD, V( 0 ), 1 )
+			.Label( "idle" ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "idle" )
+			.Label( "routine" ).I( Opcode.POP, V( 1 ) ).I( Opcode.PUSH, V( 1 ) ).I( Opcode.RETURN ) );
+		Run( vm, 1 );
+		Assert.AreEqual( 0x20000002, vm.Variables[1] );
+		Assert.AreEqual( 1, vm.Variables[0], "RETURN mapped the word back to the ADD instruction" );
+		var bad = Load( new Asm().I( Opcode.JSR, "routine" ).Label( "idle" ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "idle" )
+			.Label( "routine" ).I( Opcode.POP, V( 1 ) ).I( Opcode.ADD, V( 1 ), 2 ).I( Opcode.PUSH, V( 1 ) ).I( Opcode.RETURN ) );
+		Run( bad, 1 );
+		Assert.AreEqual( RideVMState.Faulted, bad.State, "a return word that is not the start of an instruction faults" );
+	}
+
+	[TestMethod]
+	public void TheHashSeesEveryRawStackWord()
+	{
+		// PUSH 5 and PUSH 0x20000005 differ only in the return tag bit; they must not hash alike.
+		var plain = Load( new Asm().I( Opcode.PUSH, V( 0 ) ).I( Opcode.COPY, V( 0 ), 7 ).I( Opcode.ENDSLICE ) );
+		plain.Variables[0] = 5;
+		var tagged = Load( new Asm().I( Opcode.PUSH, V( 0 ) ).I( Opcode.COPY, V( 0 ), 7 ).I( Opcode.ENDSLICE ) );
+		tagged.Variables[0] = 0x20000005;
+		Run( plain, 1 );
+		Run( tagged, 1 );
+		Assert.AreNotEqual( Hash( plain ), Hash( tagged ) );
 	}
 
 	[TestMethod]

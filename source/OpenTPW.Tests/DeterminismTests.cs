@@ -206,7 +206,7 @@ public class DeterminismTests
 	}
 
 	/// <summary>The pinned hash of <see cref="HashOfAFixedRunIsTheSameInEveryProcess"/>'s run (docs/DETERMINISM.md).</summary>
-	internal const ulong FixedRunHash = 0x1B77FB29EC69D815UL;
+	internal const ulong FixedRunHash = 0xA1A7D52EB51607D4UL;
 
 	/// <summary>
 	/// Switching only the <c>opentpw.online</c> extension (docs/MODS.md) leaves the pinned digests unchanged: this fixed run,

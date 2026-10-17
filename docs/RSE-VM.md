@@ -408,7 +408,7 @@ The unit tests are `RideVMInternalsTests`.
   (pointer +0x40, starts at size - 1, falls on push); `HUSH` (`0x553D25`) and
   `HOP` (`0x553DAA`) use it from the bottom (count +0x44, starts at 0). Nothing
   checks the two ends against each other. A return address is stored as
-  `pc | 0x20000000`; `RETURN` jumps only to a word with that tag and otherwise
+  `pc | 0x20000000` where the pc is a code-word offset (the VM maps it back to an instruction on `RETURN` and faults on a word that starts none); `RETURN` jumps only to a word with that tag and otherwise
   continues at the next instruction. The original's asserts are a bare `ret`
   (`0x5DA3C0`): a full `JSR` jumps without pushing (the VM no longer faults
   there); a full `PUSH`, an empty `POP` and an empty `RETURN` set the pc to

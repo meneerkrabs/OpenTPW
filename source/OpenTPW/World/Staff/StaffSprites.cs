@@ -1,7 +1,9 @@
 namespace OpenTPW;
 
 /// <summary>One staff animation: the original script number (<see cref="StaffScripts"/>) and the ESP slot it shows; the frames and their order come from the script.</summary>
-public readonly record struct StaffClip( int Script, int Slot );
+/// <param name="Intro">An entertainer's performance program register 0x11 (the entry's third byte): frames 0 to Intro play once when the performance starts.</param>
+/// <param name="Hold">The program's register 0x12 (the fourth byte): after the frames of each pass frame 0 holds Hold + 1 steps.</param>
+public readonly record struct StaffClip( int Script, int Slot, int Intro = 0, int Hold = 0 );
 
 /// <summary>The sprite banks of one role in a theme: a folder of <c>esprites.wad</c> and the banks the variant picks from.</summary>
 public sealed record StaffBankSet( string Folder, IReadOnlyList<string> Banks );
@@ -136,7 +138,7 @@ public static class StaffSpriteRules
 			return new StaffClip( 13, DefaultPerformanceSlot );
 		var entry = count == 1 ? 0 : (int)((uint)seed % (uint)(count - 1));
 		var slot = performances[Math.Min( entry, performances.Count - 1 )].Slot;
-		return new StaffClip( 13 + entry, slot is >= 0 and < SpriteAnimationFile.SlotCount ? slot : DefaultPerformanceSlot );
+		return new StaffClip( 13 + entry, slot is >= 0 and < SpriteAnimationFile.SlotCount ? slot : DefaultPerformanceSlot, performances[Math.Min( entry, performances.Count - 1 )].Intro, performances[Math.Min( entry, performances.Count - 1 )].Hold );
 	}
 
 	/// <summary>The hire window's figure: the walk slot (ESP slot 1), frames 0..7 in turn, looping.</summary>
@@ -171,7 +173,7 @@ public static class StaffSpriteRules
 		if ( StaffScripts.At( clip.Script, steps ) is { } shown )
 			return shown;
 		var count = clip.Slot >= 0 && clip.Slot < animations.Count && !animations[clip.Slot].IsEmpty ? animations[clip.Slot].FramesPerDirection : 1;
-		return (clip.Slot, Math.Max( 0, steps ) % Math.Max( 1, count ));
+		return (clip.Slot, StaffScripts.PerformanceFrame( clip.Intro, clip.Hold, count, steps ));
 	}
 }
 

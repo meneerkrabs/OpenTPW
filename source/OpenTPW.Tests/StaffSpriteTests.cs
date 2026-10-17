@@ -187,4 +187,18 @@ public class StaffSpriteTests
 		// steps per cell: a turn is 248 ms, so a walk shows 248 / 30 = 8.3 steps for 0.4 cell: about 20 a cell; a run about 10
 		Assert.AreEqual( 20f, 0.248f / (SpritePlayer.IntervalFor( 26214f, run: false ) / 1000f) / 0.4f, 1f );
 	}
+
+	[TestMethod]
+	public void APerformanceProgramPlaysItsIntroOnceThenLoopsTheFramesAndTheHold()
+	{
+		int[] Frames( int intro, int hold, int count, int steps ) => Enumerable.Range( 0, steps ).Select( step => StaffScripts.PerformanceFrame( intro, hold, count, step ) ).ToArray();
+		CollectionAssert.AreEqual( new[] { 0, 1, 2, 3, 0, 1, 2, 3 }, Frames( 0, 0, 4, 8 ), "every shipped entry but one: the slot's frames, looping" );
+		// Hallow SPR_DR: intro 2, hold 40 on an 8-frame slot: frames 0-2 once, then 2-7 and 41 steps of frame 0, round and round
+		var dr = Frames( 2, 40, 8, 3 + 47 + 7 );
+		CollectionAssert.AreEqual( new[] { 0, 1, 2 }, dr.Take( 3 ).ToArray() );
+		CollectionAssert.AreEqual( new[] { 2, 3, 4, 5, 6, 7 }, dr.Skip( 3 ).Take( 6 ).ToArray() );
+		Assert.IsTrue( dr.Skip( 9 ).Take( 41 ).All( frame => frame == 0 ), "41 steps of frame 0 (the register runs 0 to 40 inclusive)" );
+		CollectionAssert.AreEqual( new[] { 2, 3, 4, 5, 6, 7 }, dr.Skip( 50 ).Take( 6 ).ToArray(), "the next pass starts at the intro frame again" );
+		Assert.AreEqual( 0, StaffScripts.PerformanceFrame( 0, 0, 0, 5 ) );
+	}
 }

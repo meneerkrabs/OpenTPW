@@ -36,6 +36,28 @@ public static class StaffScripts
 	/// <summary>The script with that number, or null for one this table does not hold (the entertainers' performance scripts, which follow the bank).</summary>
 	public static StaffScript? Get( int script ) => Table.GetValueOrDefault( script );
 
+	/// <summary>
+	/// The frame an entertainer's performance program (program 0 of the table 0x0074F7C8, the only one any shipped entry uses) shows at its <paramref name="step"/>-th step on a slot of
+	/// <paramref name="frames"/> frames: frames 0 to <paramref name="intro"/> once when it starts (only when the intro is above 0), then forever the frames from <paramref name="intro"/> to the last and,
+	/// when <paramref name="hold"/> is above 0, frame 0 for hold + 1 steps.
+	/// </summary>
+	// [BIN:TPW-EXE:0x0074F638 performance program 0] SET flags 0x1200, SET frame register 0xD = 0; IF reg 0x11 > 0 (OP50 0x00476050 op 7 against 0): do { SLOTREG 0xD; reg 0xD += 1 } while reg 0xD <= reg 0x11 (OP3D0 0x004763D0 op 3: register against register) ENDIF (0x004762F0); loop (0x0074F5B0): reg 0xD = reg 0x11, do { SLOTREG 0xD; reg 0xD += 1 } while reg 0xD != reg 0xE (op 1; register 0xE is the slot's frames per direction, 0x00540C60); IF reg 0x12 > 0: reg 0 = 0, do { FRAME 0; reg 0 += 1 } while reg 0 <= reg 0x12 ENDIF; back to the loop
+	public static int PerformanceFrame( int intro, int hold, int frames, int step )
+	{
+		if ( step < 0 || frames <= 0 )
+			return 0;
+		if ( intro > 0 )
+		{
+			if ( step <= intro )
+				return step;
+			step -= intro + 1;
+		}
+		var pass = Math.Max( 1, frames - Math.Clamp( intro, 0, frames - 1 ) ) + (hold > 0 ? hold + 1 : 0);
+		var inPass = step % pass;
+		var start = Math.Clamp( intro, 0, frames - 1 );
+		return inPass < frames - start ? start + inPass : 0;
+	}
+
 	/// <summary>The slot and frame the script shows at its <paramref name="step"/>-th step (0-based), following a script that hands over to another.</summary>
 	public static (int Slot, int Frame)? At( int script, int step )
 	{

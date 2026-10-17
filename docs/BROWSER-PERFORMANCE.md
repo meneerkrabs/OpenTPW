@@ -105,6 +105,30 @@ judged against the size of the original game the player supplies anyway) is met,
 published page (the server image, `source/OpenTPW.Server/Dockerfile`) is compiled ahead of time.
 A local `dotnet publish` stays an interpreter build without a workload (docs/WEB.md).
 
+## CoreCLR on WebAssembly (17 October)
+
+.NET 11 can run the browser build on CoreCLR (`dotnet publish -p:UseMonoRuntime=false`) instead of Mono. It starts and plays,
+and the texture hash `1CC5AEB033691043` and the simulation hash `0B45FAA2ED526C78` match the Mono builds, but it is far slower
+than Mono AOT, so Mono stays the default and CoreCLR is an opt-in. Medians of 3 runs, .NET 11 RC2 (11.0.100-rc.2.26504.105),
+Chrome 155 on an Apple M5:
+
+| Measure | Mono AOT | Mono interpreter | CoreCLR (interpreter) |
+| --- | --- | --- | --- |
+| Bundle, Brotli / raw | 19.9 MB / 69.0 MB | 13.3 MB / 29.2 MB | 13.8 MB / 30.9 MB |
+| First frame / lobby | 2376 / 2399 ms | 3323 / 3323 ms | 8657 / 8816 ms |
+| Jungle ready | 10206 ms | 13085 ms | 98368 ms |
+| Jungle steady: main thread busy / p95 frame | 9.8 % / 1.6 ms | 23.8 % / 4.4 ms | 100 % / 69.6 ms (7.9 fps) |
+| Texture decode (1698 textures) | 555 ms | 2443 ms | 16985 ms |
+| 3000-tick run | 202 ms | 355 ms | 3093 ms |
+
+Why: in .NET 11 CoreCLR on WebAssembly executes managed code with its interpreter. Ahead-of-time (ReadyToRun through crossgen2)
+for browser-wasm only arrived in dotnet/runtime#133378 (merged 17 September 2026, milestone 12.0.0); the RC2 SDK stops
+`PublishReadyToRun` with NETSDK1095 and its runtime pack carries no prebuilt `native/r2r` images, so even the framework is
+interpreted. The runtime's own performance work is tracked in dotnet/runtime#124218. The earlier "never reaches the first
+frame" finding came from the measuring harness waiting at the Game Mode screen, not from the runtime. The rule for switching
+the published page (it must be at least as fast as Mono AOT in time to playable and in frame or simulation speed) is not met,
+so it stays on Mono; revisit when the SDK ships ReadyToRun for browser-wasm (.NET 12).
+
 ## Frame cap (13 October)
 
 The frame rate limit on the OpenTPW options page (`DisplaySettings.FrameCap`: off by default, 30

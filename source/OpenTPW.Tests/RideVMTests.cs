@@ -1008,8 +1008,8 @@ public class RideVMTests
 		var histogram = RseScriptTests.CorpusHistogram.Split( ',' ).Select( x => x.Split( ':' ) ).ToDictionary( x => ushort.Parse( x[0] ), x => int.Parse( x[1] ) );
 		Assert.IsTrue( histogram.Keys.All( x => RideOpcodes.GetStatus( (Opcode)x ) != RideOpcodeStatus.Unknown ), "every corpus opcode has a handler" );
 		var corpusStatuses = histogram.Keys.GroupBy( x => RideOpcodes.GetStatus( (Opcode)x ) ).ToDictionary( x => x.Key, x => (Opcodes: x.Count(), Instructions: x.Sum( y => histogram[y] )) );
-		Assert.AreEqual( (44, 8052), corpusStatuses[RideOpcodeStatus.Implemented] );
-		Assert.AreEqual( (40, 3863), corpusStatuses[RideOpcodeStatus.Hooked] );
+		Assert.AreEqual( (45, 8053), corpusStatuses[RideOpcodeStatus.Implemented] );
+		Assert.AreEqual( (39, 3862), corpusStatuses[RideOpcodeStatus.Hooked] );
 
 		var directory = new DirectoryInfo( AppContext.BaseDirectory );
 		while ( directory != null && !File.Exists( Path.Combine( directory.FullName, "docs", "RSE-VM.md" ) ) )

@@ -315,7 +315,7 @@ public class RideOpcodeEffectsTests
 		vm.Variables[1] = 2;
 		Run( vm, 1 );
 		Assert.AreEqual( 1, vm.Variables[2] );
-		CollectionAssert.AreEqual( new[] { "SETREVERB 7", "DIPMUSIC 1", "REPAIREFFECT 0", "SPARK 2 5 6 7" }, effects.Calls );
+		CollectionAssert.AreEqual( new[] { "SETREVERB 7", "DIPMUSIC 1", "REPAIREFFECT 0" }, effects.Calls, "SPARK has no effect in tp.exe (0x5564ED) and is not passed on" );
 		Assert.AreEqual( RideVMState.Running, vm.State );
 	}
 

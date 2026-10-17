@@ -20,8 +20,8 @@ Code: `source/OpenTPW/VM/` (`RideVM`, `Operand`, `Instruction`, `RideOpcodes`,
 
 | | Opcodes | Corpus instructions |
 | --- | ---: | ---: |
-| Implemented (VM does the whole job) | 44 | 8,052 |
-| Hooked (VM handles operands/flags/waits; game effect → `IRideScriptEffects`) | 40 | 3,863 |
+| Implemented (VM does the whole job) | 45 | 8,053 |
+| Hooked (VM handles operands/flags/waits; game effect → `IRideScriptEffects`) | 39 | 3,862 |
 | Unknown (no handler) | 0 | 0 |
 | **Corpus total** | **84** | **11,915** |
 
@@ -475,9 +475,9 @@ The unit tests are `RideVMInternalsTests`.
   TOUR/BUMP/COAST guest handling is unimplemented. WALKST_FLOAT, WALKFLOATSTAT and WALKFLOATSTOP are the script's own state in the original and in the VM.
 - Animation playback only through the objects' effects (OBJECTS.md; rigid node
   tracks, vertex animation not decoded); EVENT types 3-9 and REPAIREFFECT play
-  their original sounds (the category routes are traced, AUDIO.md); repair hide (0)
-  uses the same sampled placed sound-space origin and owned-loop cleanup as EVENT
-  types 3–9, while show keeps its qualified flat family 75 path. Types
+  their original sounds (the category routes are traced, AUDIO.md); the pair a non-zero
+  REPAIREFFECT plays uses the same sampled placed sound-space origin and owned-loop cleanup as EVENT
+  types 3–9, and the value 0 plays the band one-shot of the cat_kids 75 family. Types
   1/2 create particles in the original and remain unimplemented here; type 0
   is unsupported, not a positioned sound loop. No objects/particles, no ride-type
   controllers (TOUR/BUMP/COAST), no light opcodes. TPW YEAR/MONTH/DAY/HOUR/MIN/SEC
@@ -648,7 +648,7 @@ handler attributes diverge.
 | 102 | `SEC` | 1 | hooked | host-local civil second (tm_sec), as HOUR: tp.exe 0x55674E calls time/localtime and stores tm_sec in the result register; corpus `SEC 0; BRANCH_NZ` |
 | 103 | `SETREVERB` | 21 | hooked | docs (0–10) |
 | 104 | `DIPMUSIC` | 8 | hooked | docs (0/1) |
-| 105 | `SPARK` | 1 | hooked | unknown upstream; 1 corpus use (Plasma); passed through |
+| 105 | `SPARK` | 1 | implemented | TPW-EXE 0x5564ED (`a b c d`, resolved): stores a and b as words at +0xDC and +0xDE, looks the two key nodes (class 0x100) up and logs them; c and d are dropped; nothing reads the words, so no game effect (1 corpus use, Plasma) |
 
 Sources: OpenTPW docs (`src/formats/rsse.md`, `rsse-vm.md`,
 `rsse-vm-instructions.md`), the repository's `ScriptDefs`/`RideVariables`

@@ -52,8 +52,9 @@ public static partial class OpcodeHandlers
 		[OpcodeHandler( Opcode.REPAIREFFECT, RideOpcodeStatus.Hooked, "docs (0 hide / 1 show)" )]
 		public static void RepairEffect( RideVM vm, Operand value ) => vm.Effect( Opcode.REPAIREFFECT, new[] { value } );
 
-		[OpcodeHandler( Opcode.SPARK, RideOpcodeStatus.Hooked, "unknown upstream; 1 corpus use (Plasma); passed through" )]
-		public static void Spark( RideVM vm, Operand a, Operand b, Operand c, Operand d ) => vm.Effect( Opcode.SPARK, new[] { a, b, c, d } );
+		// [BIN:TPW-EXE:0x5564ED SPARK] four resolved operands: the first two are stored as words at +0xDC and +0xDE, the key nodes they name (class 0x100, 0x556B90) are looked up and logged (0x5DA3C0); the third and fourth are read and dropped. Nothing reads the two words (the other +0xDC and +0xDE readers belong to the tour and bump controllers), so the opcode has no effect
+		[OpcodeHandler( Opcode.SPARK, RideOpcodeStatus.Implemented, "TPW-EXE 0x5564ED (`a b c d`, resolved): stores a and b as words at +0xDC and +0xDE, looks the two key nodes (class 0x100) up and logs them; c and d are dropped; nothing reads the words, so no game effect (1 corpus use, Plasma)" )]
+		public static void Spark( RideVM vm, Operand a, Operand b, Operand c, Operand d ) { }
 
 		[OpcodeHandler( Opcode.TURBO, RideOpcodeStatus.Implemented, "TPW-EXE 0x5542B9: stores the low byte of the raw operand word in the script's TURBO byte (a variable operand stores its index byte); nothing else" )]
 		public static void Turbo( RideVM vm, Operand value ) => vm.TurboByte = value.Raw & 0xFF;

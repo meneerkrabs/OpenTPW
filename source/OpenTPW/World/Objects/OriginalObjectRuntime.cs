@@ -759,6 +759,16 @@ public sealed class OriginalObjectEffects : IRideScriptEffects, IRideAnimationQu
 			GameAudio.SingleScream( call.Argument( 0 ), (short)call.Argument( 1 ), ride.ReadFootprintMiddle(), call.VM.SpeedBias );
 			return UnimplementedRideScriptEffects.Instance.Perform( call );
 		}
+		if ( call.Opcode == Opcode.SCREAMLEVEL )
+		{
+			// [BIN:TPW-EXE:0x555FDA SCREAMLEVEL] one resolved operand: 0x551290(the script's scream handle (+0xD0), level, the script speed word) does nothing without a handle and otherwise sets the held voice's parameter 6 (the one the chain's links are matched against, as at STARTSCREAM) to clamp((level + speed) / 2, 0, 100), truncating toward zero (0x5512A0..0x5512B7); the script keeps the handle the call returns. A script without a held scream is untouched
+			if ( screamChain is { IsStopped: false } held )
+			{
+				held.Parameter = GameAudio.ScreamParameter( call.Argument( 0 ), call.VM.SpeedBias );
+				(HeldScreamLevel, HeldScreamSpeed) = (call.Argument( 0 ), call.VM.SpeedBias);
+			}
+			return 0;
+		}
 		// ADDOBJ and ADDOBJ_EXT type 1/2 start particle effects that KILLOBJ ends (docs/PARTICLES.md); the other object types stay unimplemented effects
 		if ( call.Opcode is Opcode.ADDOBJ or Opcode.ADDOBJ_EXT )
 		{
@@ -790,7 +800,7 @@ public sealed class OriginalObjectEffects : IRideScriptEffects, IRideAnimationQu
 		}
 		if ( call.Opcode == Opcode.REPAIREFFECT )
 		{
-			// [BIN:STP-PPC:0x100B1E34 REPAIREFFECT] showing (value 1) starts a cat_kids repair sound (0x100ACC24, event 75 for the traced call); hiding (value 0) plays cat_rides 111 and 211 (0x100B1EC0/0x100B1F00) at the object's position
+			// [BIN:TPW-EXE:0x5562C5 REPAIREFFECT] a non-zero value plays the global cat_rides sounds 111 and 211 at the object's position (0x5562CD..0x556351); the value 0 jumps to 0x55635F and plays the band one-shot (cat_kids 75 family, 0x551320). The Mac handler (0x100B1E34) has the same two blocks, the pair first and the band sound at 0x100B1F78; the earlier port gave them the opposite values
 			var show = call.Argument( 0 );
 			// [BIN:TPW-EXE:0x5562bd REPAIREFFECT] the type's repair particle effect is switched before the sounds (0x556DE0)
 			ride.SetRepairParticle( show != 0 );

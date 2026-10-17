@@ -315,20 +315,6 @@ internal static class Game
 			ParkResumeSmokeTest.Run( flow, parkResumePhase, parkResumeFile, parkResumeEvidence );
 			return;
 		}
-		// [EXT:texture-pack] A pinned Clarity download is offered only after an explicit choice in Options.
-		// Startup never requests it, including a saved Clarity choice whose files are absent; smoke/captures stay offline.
-		if ( !smoke && capturePath == null && !GameEditions.IsThemeParkInc )
-		{
-			void ApplyPack( string name, bool? enhancedInterface )
-			{
-				if ( IGraphicsSettings.Instance is { } graphics )
-					graphics.Apply( graphics.Current with { TexturePackName = name, EnhancedInterface = enhancedInterface ?? graphics.Current.EnhancedInterface } );
-				var diagnostics = new List<string>();
-				TexturePackSwitch.Begin( name, diagnostics, enhancedInterface: enhancedInterface ?? IGraphicsSettings.Instance?.Current.EnhancedInterface );
-				foreach ( var diagnostic in diagnostics ) Log.Warning( $"Texture pack: {diagnostic}" );
-			}
-			flow.PrepareTexturePack = ( stack, name ) => OpenTPW.UI.Original.TexturePackDownloadScreen.TryShow( stack, flow.Strings, name, ApplyPack );
-		}
 		var startsFrontEnd = visit == null && originalLevelIndex < 0 && !args.Contains( "--advisor-say" ) && !args.Contains( "--advisor-response" ) && !args.Contains( "--sandbox" ) && (!smoke || args.Contains( "--front-end" ));
 		// [EXT:tpi-viewer] the experimental Theme Park Inc slice's own native smoke test: injected HUD input
 		// drives the real user flow (docs/THEME-PARK-INC.md); it needs the slice, not a Theme Park World park.

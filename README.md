@@ -33,8 +33,7 @@ For Theme Park Inc / Sim Coaster, use the [static launch and installation guide]
 OpenTPW runs Theme Park World on modern systems with a new engine. It reads the data of your own
 copy of the original game. The engine does not ship the original executable or a playable set of
 game files, and nothing from your installation is uploaded when you play in the browser. Releases
-include redrawn HD interface art; the optional Clarity pack supplies enhanced replacements as a
-separate download ([Legal](#legal)).
+include redrawn HD interface art ([Legal](#legal)).
 
 **To run OpenTPW you need a full, legal copy of the original game** (an installation or the CD).
 
@@ -124,12 +123,9 @@ What works today, with your own original game data:
   the community ([compatibility](https://opentpw.io/docs/COMPATIBILITY.html)).
 - **Enhanced HUD and optional textures:** fresh settings use **Original world textures** plus the
   **Enhanced HUD and icons included with OpenTPW**. The interface needs no download and has its own
-  Original/Enhanced toggle. Choosing **Enhanced (Clarity)** in the options explicitly starts the
-  optional world-texture download (about 3.6 GiB for the full pack on desktop); switching textures
-  takes effect without a restart. Desktop installs verified GitHub Release archives; the browser
-  downloads needed PNGs lazily through jsDelivr from bounded GitHub packages, with a Cloudflare
-  fallback and SHA-256 checks. Existing explicit choices are preserved. You can also build a local
-  pack from your own copy ([texture packs](https://opentpw.io/docs/TEXTURE-PACKS.html)).
+  Original/Enhanced toggle. You can build an optional world-texture pack from your own copy on the
+  desktop and switch to it in the options without a restart
+  ([texture packs](https://opentpw.io/docs/TEXTURE-PACKS.html)). OpenTPW distributes no texture pack.
 - **Extras:** viewing and exporting the PlayStation 2 disc data (`--export-ps2`, [PS2](https://opentpw.io/docs/PS2.html)).
 
 Not done yet: the jumps and tunnels of the water and go-kart rides (the water rides and the go-karts of all four themes build, run and save their original tracks,
@@ -232,10 +228,8 @@ OpenTPW is not affiliated with or endorsed by Electronic Arts or Bullfrog Produc
 World and Sim Theme Park are trademarks of their respective owners. OpenTPW contains no original
 executable code or playable original-game installation; you need your own legal copy of the game
 to play. The bundled HD HUD and menu art in `content/hero-art` is AI recreation of the original
-icons, made with Google Gemini and fitted to the original layout. The optional Clarity download
-contains AI-upscaled and refined replacements derived from original textures; it is distributed
-separately from the engine and is not required to play. Local pack-building tools remain available
-([texture packs](https://opentpw.io/docs/TEXTURE-PACKS.html)). The engine's MIT licence does not grant rights to the
+icons, made with Google Gemini and fitted to the original layout. Local pack-building tools
+remain available ([texture packs](https://opentpw.io/docs/TEXTURE-PACKS.html)). The engine's MIT licence does not grant rights to the
 original game assets or trademarks.
 
 ## License

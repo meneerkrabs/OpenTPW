@@ -98,20 +98,30 @@ bobbles, bob, curly, swim cap, short, bun, perm, balding):
 | TPI adults | FA (dad), MO (mum), GM (granny), GR (grandpa) |
 
 Swimwear is the set's main outfit colour: trunks for boys and men (a girl's or woman's swimsuit covers the torso). Hats
-and the dad's camera are left out; GK and KB wear swim caps in their cap colours.
+and the dad's camera are left out; GK and KB wear swim caps in their cap colours (KB's is taller, with brown hair showing
+at the fringe and the nape).
+
+Surface detail is procedural (no image textures): hair has a strand pattern (distorted wave bands times noise, with a
+bump for glints), the swimwear a faint weave pattern, skin a slight mottling and a specular highlight, plus cheek blush,
+darker eyebrows and lips. Characters: FA has a round belly, a moustache and stubble; MO a bun and red lipstick; GM a
+grey curly perm and round glasses; GR white sideburns, a bald top, a white moustache and a slight stoop (standing pose
+only; swimmers lie flat).
 
 ### Camera and lighting (calibrated against the original standing frames)
 
-Orthographic camera, render 6 times larger and box-filter down (premultiplied), then darken the silhouette's outermost
-pixels by a factor 0.58 (the originals have dark edges). The sun is parented to the camera (from above and the upper
-left, energy 3.4, 18 degrees angular size) plus a world ambient of 0.55. Directions 0 to 4 put the camera at azimuth
+Orthographic camera, render 6 times larger and box-filter down (premultiplied), grade (saturation 1.15, contrast 1.25
+about 0.45), then darken the silhouette's outermost pixels by a factor 0.58 (the originals have dark edges). Three suns are
+parented to the camera: a warm key from above and the upper left (energy 6.0), a cool fill from the right (0.5) and a rim
+from behind and above (2.4, it only catches edges), plus a world ambient of 0.26. Calibrating the contrast against the
+originals' pixels: the original standing frames have a luminance spread of about 40 to 70 and 10th to 90th percentiles of
+roughly 10 to 200; ours now sit at about 35 to 65 and 15 to 190. Directions 0 to 4 put the camera at azimuth
 `-45 * direction` (0 looks at the kid's back, 2 sees it facing screen right, 4 facing the camera); the game mirrors the
 rest.
 
 | Constant | TPW | TPI |
 | --- | --- | --- |
 | Camera elevation | 32 degrees | 42 degrees (the TPI sprites are rendered from a steeper camera) |
-| Pixels per unit | 9.7 | 12.8 |
+| Pixels per unit | 9.5 | 12.8 |
 | Original cell / standing hotspot | 48 x 56, feet at (24, 53) | 64 x 80, feet at (32, 70) |
 | Swim frame canvas / hotspot | 64 x 48, (32, 27) | 80 x 64, (40, 36) |
 
@@ -121,16 +131,16 @@ ours right) and prints heights. Standing height in pixels (direction 4), ours vs
 
 | TPW | BE | BI | CH | FR | KI | SA | SU | TA |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| ours | 35 | 36 | 30 | 36 | 33 | 31 | 30 | 34 |
+| ours | 34 | 34 | 31 | 34 | 33 | 30 | 31 | 32 |
 | original | 32 | 32 | 34 | 31 | 34 | 30 | 34 | 32 |
 
 | TPI | BD | GB | GK | KB | FA | MO | GM | GR |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| ours | 42 | 39 | 38 | 38 | 47 | 47 | 42 | 35 |
+| ours | 41 | 39 | 38 | 41 | 48 | 47 | 42 | 38 |
 | original | 40 | 41 | 38 | 43 | 50 | 48 | 42 | 38 |
 
-The spiky-haired boys come out about 3 pixels taller than the originals and the pigtail girls 4 pixels shorter; the
-originals' hair volume differs from ours, and the match is within the spread between the original sets themselves.
+All within 3 pixels (most within 2); the spiky-haired boys are the 3 px outliers because the spikes are kept long enough
+to read as spiky.
 
 ### Slots, directions and frame names
 
@@ -147,12 +157,18 @@ Files: `<out>/<edition>/<SET>/<slot>_d<direction>_f<frame>.png`, RGBA.
 ### Water line and hotspot
 
 The water surface is the plane z = 0. Every material tints what is below it (multiply by a blue, mix 34 % water blue) and
-renders it at 80 % opacity, so the part of the sprite under the water takes on the pool's colour. A light foam ring (an
-inner and an outer, fainter ring) lies on the surface around the torso, and a few droplets are placed at a hand or foot on
-the frames where it leaves or enters the water. `--binary-alpha` makes every pixel fully opaque or fully transparent
+renders it at 74 % opacity, so the part of the sprite under the water takes on the pool's colour (a light blue tint,
+so submerged legs still read as a shape). The swimmer's body is raised so the back and shoulders are at the surface, and
+the limbs are lengthened by a cartoon factor (arms 1.3, legs 1.12, `swim=True` in `build_kid`) with exaggerated strokes so
+arms leaving the water and kicks read at 1x. A light foam ring (an inner and an outer, fainter ring) lies on the surface
+around the torso, and droplets (seven per hand or foot) are placed on the frames where it crosses the surface or moves
+fast near it. In the crawl the head turns to the side of the recovering arm and the body rolls that shoulder up. `--binary-alpha` makes every pixel fully opaque or fully transparent
 (alpha threshold 0.4) for palette sprite sets, which cannot hold partial transparency; the water tint stays, and the foam
 ring becomes opaque.
 
 The hotspot (sprite origin) of every swim frame is the `swim_origin` pixel: the centre of the torso at the water line,
 so placing the sprite at a guest's position puts the body on the surface there. The frames are not trimmed. Packing them
 into ESP/TPC banks goes through the sprite-set writer, which is separate from this generator.
+
+`tools/blender/opentpw_swim_compare.py` builds a before/after sheet of two renders (for reviewing a change to the
+generator): per set a 1x and a 4x band with old | new for the crawl from two directions and treading water.

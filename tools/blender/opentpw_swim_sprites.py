@@ -58,19 +58,19 @@ def _interp(keys, phase):
 def crawl_pose(f, n=8):
 	ph = f / n
 	tau = 2 * math.pi
-	pose = {"root": (0, 0, -0.1 + 0.05 * math.sin(tau * 2 * ph)), "pitch": -86, "roll": 26 * math.sin(tau * ph),
+	pose = {"root": (0, 0, 0.1 + 0.06 * math.sin(tau * 2 * ph)), "pitch": -80, "roll": -30 * math.sin(tau * ph),
 		"head_yaw": -55 * max(0.0, math.sin(tau * (ph + 0.12))), "head_pitch": 18, "arm": {}, "elbow": {}, "leg": {}, "knee": {}, "ankle": {}}
 	for s in (-1, 1):
 		psi = (ph + (0.0 if s < 0 else 0.5)) % 1.0
 		swing = 180 - 360 * psi
 		recover = psi >= 0.5
-		abd = 10 + (26 * math.sin(math.pi * (psi - 0.5) / 0.5) if recover else 0)
-		flex = (-8 - 22 * math.sin(math.pi * psi / 0.5)) if not recover else (-12 - 70 * math.sin(math.pi * (psi - 0.5) / 0.5))
+		abd = 8 + (46 * math.sin(math.pi * (psi - 0.5) / 0.5) if recover else 0)
+		flex = (-8 - 30 * math.sin(math.pi * psi / 0.5)) if not recover else (-14 - 80 * math.sin(math.pi * (psi - 0.5) / 0.5))
 		pose["arm"][s] = (swing, abd)
 		pose["elbow"][s] = flex
 		kick = tau * (2 * ph + (0.0 if s < 0 else 0.5))
-		pose["leg"][s] = (24 * math.sin(kick), 3)
-		pose["knee"][s] = 14 + 14 * math.sin(kick - 0.9)
+		pose["leg"][s] = (-6 + 36 * math.sin(kick), 4)
+		pose["knee"][s] = 18 + 18 * math.sin(kick - 0.9)
 		pose["ankle"][s] = -75
 	return pose
 
@@ -78,14 +78,14 @@ def crawl_pose(f, n=8):
 # Breaststroke key poses: glide, out-sweep, pull, hands to chest, draw the legs up, kick, glide. Arms are (swing,
 # abduction, elbow), legs (swing, abduction, knee).
 _BREAST = [
-	(0.000, dict(a=172, ab=6, e=0, l=0, lab=4, k=0, hp=22, z=-0.12, pitch=-87)),
-	(0.125, dict(a=150, ab=40, e=-6, l=0, lab=4, k=6, hp=32, z=-0.1, pitch=-85)),
-	(0.250, dict(a=118, ab=64, e=-26, l=8, lab=6, k=22, hp=55, z=0.0, pitch=-78)),
-	(0.375, dict(a=96, ab=40, e=-72, l=30, lab=14, k=70, hp=58, z=0.02, pitch=-78)),
-	(0.500, dict(a=130, ab=14, e=-92, l=48, lab=30, k=100, hp=40, z=-0.06, pitch=-84)),
-	(0.625, dict(a=158, ab=8, e=-45, l=30, lab=42, k=60, hp=30, z=-0.1, pitch=-86)),
-	(0.750, dict(a=172, ab=6, e=-8, l=6, lab=22, k=14, hp=24, z=-0.12, pitch=-88)),
-	(0.875, dict(a=176, ab=5, e=0, l=0, lab=6, k=2, hp=22, z=-0.12, pitch=-88)),
+	(0.000, dict(a=172, ab=6, e=0, l=0, lab=4, k=0, hp=22, z=-0.02, pitch=-87)),
+	(0.125, dict(a=150, ab=40, e=-6, l=0, lab=4, k=6, hp=32, z=0.00, pitch=-85)),
+	(0.250, dict(a=118, ab=64, e=-26, l=8, lab=6, k=22, hp=55, z=0.10, pitch=-78)),
+	(0.375, dict(a=96, ab=40, e=-72, l=30, lab=14, k=70, hp=58, z=0.12, pitch=-78)),
+	(0.500, dict(a=130, ab=14, e=-92, l=48, lab=30, k=100, hp=40, z=0.04, pitch=-84)),
+	(0.625, dict(a=158, ab=8, e=-45, l=30, lab=42, k=60, hp=30, z=0.00, pitch=-86)),
+	(0.750, dict(a=172, ab=6, e=-8, l=6, lab=22, k=14, hp=24, z=-0.02, pitch=-88)),
+	(0.875, dict(a=176, ab=5, e=0, l=0, lab=6, k=2, hp=22, z=-0.02, pitch=-88)),
 ]
 
 
@@ -104,13 +104,13 @@ def breast_pose(f, n=8):
 def tread_pose(f, n=4):
 	ph = f / n
 	tau = 2 * math.pi
-	pose = {"root": (0, 0, -0.12 + 0.05 * math.sin(tau * ph)), "pitch": -4, "head_pitch": 2, "head_yaw": 8 * math.sin(tau * ph),
+	pose = {"root": (0, 0, -0.04 + 0.05 * math.sin(tau * ph)), "pitch": -4, "head_pitch": 2, "head_yaw": 8 * math.sin(tau * ph),
 		"arm": {}, "elbow": {}, "leg": {}, "knee": {}, "ankle": {}}
 	for s in (-1, 1):
 		sc = tau * (ph + (0.0 if s < 0 else 0.5))
-		pose["arm"][s] = (28 * math.sin(sc), 66 + 6 * math.cos(sc))
-		pose["elbow"][s] = -34 - 16 * math.cos(sc)
-		pose["leg"][s] = (32 * math.sin(sc + 1.2), 12)
+		pose["arm"][s] = (34 * math.sin(sc), 62 + 10 * math.cos(sc))
+		pose["elbow"][s] = -50 - 24 * math.cos(sc)
+		pose["leg"][s] = (40 * math.sin(sc + 1.2), 14)
 		pose["knee"][s] = 48 + 30 * math.sin(sc)
 		pose["ankle"][s] = 0
 	return pose
@@ -166,14 +166,15 @@ def spawn_droplets(kid, pose_fn, f, n, material, slot_seed):
 	drops = []
 	for ni, (name, (p0, p1, p2)) in enumerate(sorted(heights.items())):
 		crossing = (p0.z < 0.05) != (p2.z < 0.05)
-		if not crossing or abs(p1.z) > 0.6:
+		speed = abs(p2.z - p0.z) / 2
+		if not ((crossing and abs(p1.z) < 0.9) or (speed > 0.3 and -0.2 < p1.z < 0.8)):
 			continue
-		for k in range(4):
-			ox = ((k * 3 + ni + slot_seed) % 5 - 2) * 0.13
-			oy = ((k * 5 + ni * 2 + slot_seed) % 5 - 2) * 0.11
-			oz = 0.22 + 0.2 * ((k * 7 + ni) % 4)
+		for k in range(7):
+			ox = ((k * 3 + ni + slot_seed) % 5 - 2) * 0.17
+			oy = ((k * 5 + ni * 2 + slot_seed) % 5 - 2) * 0.15
+			oz = 0.25 + 0.22 * ((k * 7 + ni) % 4)
 			c = (p1.x + ox, p1.y + oy, max(0.1, p1.z) + oz)
-			bpy.ops.mesh.primitive_ico_sphere_add(subdivisions=1, radius=0.085 - 0.012 * (k % 2), location=c)
+			bpy.ops.mesh.primitive_ico_sphere_add(subdivisions=1, radius=0.12 - 0.02 * (k % 3), location=c)
 			o = bpy.context.active_object
 			o.data.materials.append(material)
 			drops.append(o)
@@ -244,7 +245,7 @@ def main():
 	frames = {}   # (set, slot, direction, frame) -> array
 	tmp = os.path.join(o["out"], "tmp.png")
 	for name in o["sets"]:
-		kid = K.build_kid(name, underwater=True)
+		kid = K.build_kid(name, underwater=True, swim=True)
 		sd = os.path.join(o["out"], tag, name)
 		os.makedirs(sd, exist_ok=True)
 		for slot, (anim, n) in SLOTS.items():

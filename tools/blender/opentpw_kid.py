@@ -25,28 +25,38 @@ import numpy as np
 # pixels per Blender unit), ``cell`` the original's sprite cell and ``feet`` where the standing hotspot lands in it;
 # ``swim_canvas``/``swim_origin`` are the (larger) canvas and hotspot of our swimmer frames.
 EDITIONS = {
-	"TPW": dict(elevation=32.0, ppu=9.7, cell=(48, 56), feet=(24, 53), swim_canvas=(64, 48), swim_origin=(32, 27)),
+	"TPW": dict(elevation=32.0, ppu=9.5, cell=(48, 56), feet=(24, 53), swim_canvas=(64, 48), swim_origin=(32, 27)),
 	"TPI": dict(elevation=42.0, ppu=12.8, cell=(64, 80), feet=(32, 70), swim_canvas=(80, 64), swim_origin=(40, 36)),
 }
 SUPERSAMPLE = 6              # the frame is rendered this many times larger and box-filtered down
 OUTLINE_DARKEN = 0.58        # colour factor of the silhouette's outermost pixels (the originals have dark edges)
-SUN_ENERGY = 3.4
-SUN_ROTATION_DEG = (-48.0, -22.0, 0.0)   # relative to the camera: from above and the upper left
-WORLD_COLOUR = (0.78, 0.8, 0.9)
-WORLD_STRENGTH = 0.55
-WATER_TINT = (0.42, 0.78, 1.0)           # multiplied into submerged colours
-WATER_BLUE = (0.08, 0.42, 0.85)          # mixed into submerged colours
-WATER_MIX = 0.34
-SUBMERGED_ALPHA = 0.8
+# Three suns parented to the camera: a warm key from above and the upper left, a cool fill from the right and a rim
+# from behind and above (it only catches edges, which gives the bright rim of the originals).
+SUN_ENERGY = 6.0
+SUN_ROTATION_DEG = (-48.0, -22.0, 0.0)
+FILL_ENERGY = 0.5
+FILL_ROTATION_DEG = (-20.0, 55.0, 0.0)
+RIM_ENERGY = 2.4
+RIM_ROTATION_DEG = (-28.0, 180.0 - 18.0, 0.0)
+WORLD_COLOUR = (0.78, 0.82, 0.95)
+WORLD_STRENGTH = 0.26
+GRADE_SATURATION = 1.15      # post-process grade towards the originals' saturated palette
+GRADE_CONTRAST = 1.25
+WATER_TINT = (0.66, 0.9, 1.0)            # multiplied into submerged colours
+WATER_BLUE = (0.16, 0.58, 0.95)          # mixed into submerged colours
+WATER_MIX = 0.3
+SUBMERGED_ALPHA = 0.74
 
 # Body proportions (Blender units). The kid's head is about 40 % of the sprite's height; the adults are taller with
 # longer limbs and a smaller head. ``th``/``tw``/``td`` are the torso's half height, half width and half depth.
+SWIM_ARM_SCALE = 1.3
+SWIM_LEG_SCALE = 1.12
 BODIES = {
 	"kid": dict(th=0.52, tw=0.62, td=0.46, thigh=0.30, shin=0.26, arm_up=0.38, arm_low=0.34, head=1.14, limb=1.0, stoop=0.0, size=1.0),
 	"mum": dict(th=0.68, tw=0.60, td=0.44, thigh=0.56, shin=0.52, arm_up=0.52, arm_low=0.48, head=1.0, limb=0.9, stoop=0.0, size=1.2),
-	"dad": dict(th=0.78, tw=0.86, td=0.74, thigh=0.56, shin=0.50, arm_up=0.52, arm_low=0.48, head=1.05, limb=1.15, stoop=0.0, size=1.3),
+	"dad": dict(th=0.82, tw=0.86, td=0.74, belly=1, thigh=0.58, shin=0.53, arm_up=0.52, arm_low=0.48, head=1.05, limb=1.15, stoop=0.0, size=1.3),
 	"granny": dict(th=0.6, tw=0.68, td=0.52, thigh=0.46, shin=0.42, arm_up=0.44, arm_low=0.40, head=1.04, limb=1.0, stoop=10.0, size=1.1),
-	"grandpa": dict(th=0.64, tw=0.62, td=0.46, thigh=0.50, shin=0.46, arm_up=0.52, arm_low=0.48, head=1.0, limb=1.0, stoop=22.0, size=1.15),
+	"grandpa": dict(th=0.66, tw=0.62, td=0.46, thigh=0.55, shin=0.5, arm_up=0.52, arm_low=0.48, head=1.0, limb=1.0, stoop=18.0, size=1.15),
 }
 
 
@@ -61,24 +71,24 @@ def srgb(r, g, b):
 # One preset per original kid sprite set. Colours are sRGB, picked from the original's standing frames.
 PRESETS = {
 	# TPW kids
-	"BE": dict(edition="TPW", girl=False, skin=(224, 160, 130), hair=(98, 54, 24), outfit=(28, 122, 12), hair_style="spiky", spikes=11, spike_length=0.4, iris=(40, 90, 215), ears=True),
-	"BI": dict(edition="TPW", girl=False, skin=(226, 166, 138), hair=(232, 176, 46), outfit=(34, 44, 190), hair_style="spiky", spikes=12, spike_length=0.5, iris=(40, 90, 215), ears=True),
-	"CH": dict(edition="TPW", girl=True, skin=(226, 164, 136), hair=(34, 26, 26), outfit=(158, 44, 50), hair_style="pigtails", bobble=(225, 20, 20), iris=(40, 90, 215), ears=False),
-	"FR": dict(edition="TPW", girl=False, skin=(224, 160, 130), hair=(20, 16, 16), outfit=(236, 22, 16), hair_style="spiky", spikes=12, spike_length=0.46, iris=(40, 90, 215), ears=True),
-	"KI": dict(edition="TPW", girl=True, skin=(226, 166, 138), hair=(196, 78, 26), outfit=(56, 152, 52), hair_style="pigtails", topknot=True, iris=(40, 90, 215), ears=False),
+	"BE": dict(edition="TPW", girl=False, skin=(236, 184, 158), hair=(98, 54, 24), outfit=(28, 122, 12), hair_style="spiky", spikes=11, spike_length=0.34, iris=(40, 90, 215), ears=True),
+	"BI": dict(edition="TPW", girl=False, skin=(238, 188, 162), hair=(232, 176, 46), outfit=(34, 44, 190), hair_style="spiky", spikes=12, spike_length=0.4, iris=(40, 90, 215), ears=True),
+	"CH": dict(edition="TPW", girl=True, skin=(238, 186, 160), hair=(34, 26, 26), outfit=(158, 44, 50), hair_style="pigtails", bobble=(225, 20, 20), iris=(40, 90, 215), ears=False),
+	"FR": dict(edition="TPW", girl=False, skin=(236, 184, 158), hair=(20, 16, 16), outfit=(236, 22, 16), hair_style="spiky", spikes=12, spike_length=0.36, iris=(40, 90, 215), ears=True),
+	"KI": dict(edition="TPW", girl=True, skin=(238, 188, 162), hair=(196, 78, 26), outfit=(56, 152, 52), hair_style="pigtails", topknot=True, iris=(40, 90, 215), ears=False),
 	"SA": dict(edition="TPW", girl=True, skin=(142, 94, 54), hair=(100, 66, 12), outfit=(36, 42, 104), hair_style="bob", iris=(70, 40, 20), ears=False),
-	"SU": dict(edition="TPW", girl=True, skin=(230, 170, 140), hair=(246, 216, 92), outfit=(60, 102, 204), hair_style="pigtails", bobble=(225, 20, 20), iris=(40, 90, 215), ears=False),
+	"SU": dict(edition="TPW", girl=True, skin=(240, 190, 164), hair=(246, 216, 92), outfit=(60, 102, 204), hair_style="pigtails", bobble=(225, 20, 20), iris=(40, 90, 215), ears=False),
 	"TA": dict(edition="TPW", girl=False, skin=(148, 94, 66), hair=(44, 48, 46), outfit=(196, 18, 18), hair_style="curly", iris=(60, 35, 20), ears=True),
 	# TPI kids
 	"BD": dict(edition="TPI", girl=False, skin=(160, 104, 70), hair=(66, 66, 66), outfit=(196, 18, 18), hair_style="curly", iris=(60, 35, 20), ears=True),
-	"GB": dict(edition="TPI", girl=True, skin=(226, 164, 136), hair=(30, 24, 24), outfit=(168, 44, 60), hair_style="pigtails", bobble=(225, 20, 20), iris=(40, 90, 215), ears=False),
-	"GK": dict(edition="TPI", girl=True, skin=(226, 164, 136), hair=(222, 192, 108), outfit=(226, 110, 156), hair_style="cap", cap=(232, 118, 160), tail=True, iris=(40, 90, 215), ears=False),
-	"KB": dict(edition="TPI", girl=False, skin=(226, 164, 136), hair=(92, 52, 26), outfit=(50, 100, 160), hair_style="cap", cap=(240, 192, 40), fringe=True, iris=(40, 90, 215), ears=True),
+	"GB": dict(edition="TPI", girl=True, skin=(238, 186, 160), hair=(30, 24, 24), outfit=(168, 44, 60), hair_style="pigtails", bobble=(225, 20, 20), iris=(40, 90, 215), ears=False),
+	"GK": dict(edition="TPI", girl=True, skin=(238, 186, 160), hair=(222, 192, 108), outfit=(226, 110, 156), hair_style="cap", cap=(232, 118, 160), cap_up=0.0, tail=True, iris=(40, 90, 215), ears=False),
+	"KB": dict(edition="TPI", girl=False, skin=(238, 186, 160), hair=(92, 52, 26), outfit=(50, 100, 160), hair_style="cap", cap=(240, 192, 40), fringe=True, cap_up=0.18, iris=(40, 90, 215), ears=True),
 	# TPI parents and grandparents (no hats or camera: swim caps or bare heads)
-	"FA": dict(edition="TPI", body="dad", girl=False, skin=(214, 158, 128), hair=(112, 88, 56), outfit=(228, 186, 44), hair_style="short", mustache=True, iris=(60, 80, 160), ears=True),
-	"MO": dict(edition="TPI", body="mum", girl=True, skin=(224, 170, 140), hair=(214, 182, 120), outfit=(166, 42, 92), hair_style="bun", iris=(40, 90, 215), ears=False),
-	"GM": dict(edition="TPI", body="granny", girl=True, skin=(226, 176, 150), hair=(176, 176, 186), outfit=(232, 124, 152), hair_style="perm", iris=(40, 90, 215), ears=False),
-	"GR": dict(edition="TPI", body="grandpa", girl=False, skin=(214, 162, 136), hair=(228, 228, 230), outfit=(100, 64, 42), hair_style="balding", iris=(70, 90, 160), ears=True),
+	"FA": dict(edition="TPI", body="dad", girl=False, skin=(228, 172, 144), hair=(112, 88, 56), outfit=(228, 186, 44), hair_style="short", mustache="hair", stubble=True, iris=(60, 80, 160), ears=True),
+	"MO": dict(edition="TPI", body="mum", girl=True, skin=(236, 184, 158), hair=(214, 182, 120), outfit=(166, 42, 92), lips=(214, 28, 72), hair_style="bun", iris=(40, 90, 215), ears=False),
+	"GM": dict(edition="TPI", body="granny", girl=True, skin=(238, 190, 166), hair=(176, 176, 186), outfit=(232, 124, 152), glasses=True, hair_style="perm", iris=(40, 90, 215), ears=False),
+	"GR": dict(edition="TPI", body="grandpa", girl=False, skin=(228, 178, 152), hair=(228, 228, 230), outfit=(100, 64, 42), hair_style="balding", mustache="hair", iris=(70, 90, 160), ears=True),
 }
 SET_NAMES = [n for n, q in PRESETS.items() if q['edition'] == 'TPW']   # the TPW kid sets (the default edition)
 
@@ -95,7 +105,47 @@ class Kid:
 		self.ends = {}
 
 
-def _principled(name, colour, underwater, rough=0.65):
+def _variation(nt, kind):
+	"""A grey 0..1 pattern socket for a material kind: hair strands, fabric weave and folds, or skin mottling."""
+	tc = nt.nodes.new("ShaderNodeTexCoord")
+	if kind == "hair":
+		wave = nt.nodes.new("ShaderNodeTexWave")
+		wave.wave_type = "BANDS"
+		wave.bands_direction = "Z"
+		wave.inputs["Scale"].default_value = 7.0
+		wave.inputs["Distortion"].default_value = 6.0
+		wave.inputs["Detail"].default_value = 3.0
+		nz = nt.nodes.new("ShaderNodeTexNoise")
+		nz.inputs["Scale"].default_value = 9.0
+		nz.inputs["Detail"].default_value = 4.0
+		nt.links.new(tc.outputs["Object"], wave.inputs["Vector"])
+		nt.links.new(tc.outputs["Object"], nz.inputs["Vector"])
+		mix = nt.nodes.new("ShaderNodeMath")
+		mix.operation = "ADD"
+		mix.inputs[1].default_value = 0.0
+		nt.links.new(wave.outputs["Fac"], mix.inputs[0])
+		mul = nt.nodes.new("ShaderNodeMath")
+		mul.operation = "MULTIPLY"
+		nt.links.new(mix.outputs[0], mul.inputs[0])
+		nt.links.new(nz.outputs["Fac"], mul.inputs[1])
+		return mul.outputs[0], (0.38, 1.0)
+	if kind == "fabric":
+		wave = nt.nodes.new("ShaderNodeTexWave")
+		wave.wave_type = "BANDS"
+		wave.bands_direction = "Y"
+		wave.inputs["Scale"].default_value = 6.0
+		wave.inputs["Distortion"].default_value = 2.5
+		wave.inputs["Detail"].default_value = 1.0
+		nt.links.new(tc.outputs["Object"], wave.inputs["Vector"])
+		return wave.outputs["Fac"], (0.66, 1.0)
+	nz = nt.nodes.new("ShaderNodeTexNoise")
+	nz.inputs["Scale"].default_value = 5.0
+	nz.inputs["Detail"].default_value = 3.0
+	nt.links.new(tc.outputs["Object"], nz.inputs["Vector"])
+	return nz.outputs["Fac"], (0.93, 1.0)
+
+
+def _principled(name, colour, underwater, rough=0.65, kind="plain", spec=0.3):
 	m = bpy.data.materials.new(name)
 	m.use_nodes = True
 	nt = m.node_tree
@@ -103,8 +153,28 @@ def _principled(name, colour, underwater, rough=0.65):
 	b.inputs["Roughness"].default_value = rough
 	for key in ("Specular IOR Level", "Specular"):
 		if key in b.inputs:
-			b.inputs[key].default_value = 0.25
+			b.inputs[key].default_value = spec
 	base = colour
+	base_socket = None
+	if kind != "plain":
+		pat, (lo, hi) = _variation(nt, kind)
+		ramp = nt.nodes.new("ShaderNodeValToRGB")
+		ramp.color_ramp.elements[0].color = (lo, lo, lo, 1)
+		ramp.color_ramp.elements[1].color = (hi, hi, hi, 1)
+		nt.links.new(pat, ramp.inputs[0])
+		tex = nt.nodes.new("ShaderNodeMix")
+		tex.data_type = "RGBA"
+		tex.blend_type = "MULTIPLY"
+		tex.inputs[0].default_value = 1.0
+		tex.inputs[6].default_value = base
+		nt.links.new(ramp.outputs[0], tex.inputs[7])
+		base_socket = tex.outputs[2]
+		if kind in ("hair", "fabric"):
+			bump = nt.nodes.new("ShaderNodeBump")
+			bump.inputs["Strength"].default_value = 0.5 if kind == "hair" else 0.08
+			bump.inputs["Distance"].default_value = 0.05
+			nt.links.new(pat, bump.inputs["Height"])
+			nt.links.new(bump.outputs["Normal"], b.inputs["Normal"])
 	if underwater:
 		m.surface_render_method = "DITHERED"
 		geo = nt.nodes.new("ShaderNodeNewGeometry")
@@ -119,6 +189,8 @@ def _principled(name, colour, underwater, rough=0.65):
 		mul.blend_type = "MULTIPLY"
 		mul.inputs[0].default_value = 1.0
 		mul.inputs[6].default_value = base
+		if base_socket is not None:
+			nt.links.new(base_socket, mul.inputs[6])
 		mul.inputs[7].default_value = (*WATER_TINT, 1.0)
 		blue = nt.nodes.new("ShaderNodeMix")
 		blue.data_type = "RGBA"
@@ -128,6 +200,8 @@ def _principled(name, colour, underwater, rough=0.65):
 		final = nt.nodes.new("ShaderNodeMix")
 		final.data_type = "RGBA"
 		final.inputs[6].default_value = base
+		if base_socket is not None:
+			nt.links.new(base_socket, final.inputs[6])
 		nt.links.new(blue.outputs[2], final.inputs[7])
 		nt.links.new(under.outputs[0], final.inputs[0])
 		nt.links.new(final.outputs[2], b.inputs["Base Color"])
@@ -137,6 +211,8 @@ def _principled(name, colour, underwater, rough=0.65):
 		alpha.inputs[2].default_value = 1.0
 		nt.links.new(under.outputs[0], alpha.inputs[0])
 		nt.links.new(alpha.outputs[0], b.inputs["Alpha"])
+	elif base_socket is not None:
+		nt.links.new(base_socket, b.inputs["Base Color"])
 	else:
 		b.inputs["Base Color"].default_value = base
 	return m
@@ -184,6 +260,8 @@ def _mesh(kid, kind, name, size, loc, material, parent, rot=(0, 0, 0), smooth=Tr
 		bpy.ops.mesh.primitive_uv_sphere_add(segments=segments, ring_count=max(6, segments // 2), radius=1)
 	elif kind == "cone":
 		bpy.ops.mesh.primitive_cone_add(vertices=8, radius1=1, radius2=0, depth=2)
+	elif kind == "torus":
+		bpy.ops.mesh.primitive_torus_add(major_segments=18, minor_segments=6, major_radius=1, minor_radius=0.16)
 	else:
 		bpy.ops.mesh.primitive_cylinder_add(vertices=12, radius=1, depth=2)
 	o = bpy.context.active_object
@@ -216,10 +294,16 @@ def _limb(kid, name, a, b, r1, r2, material, parent):
 	return o
 
 
-def build_kid(preset_name, underwater=True, tag=None):
-	"""Builds the rig for one preset and returns a Kid. ``underwater`` adds the submerged tint to every material."""
+def build_kid(preset_name, underwater=True, tag=None, swim=False):
+	"""Builds the rig for one preset and returns a Kid. ``underwater`` adds the submerged tint to every material;
+	``swim`` lengthens the limbs a little (a cartoon exaggeration so strokes read at sprite size)."""
 	p = PRESETS[preset_name]
-	b = BODIES[p.get("body", "kid")]
+	b = dict(BODIES[p.get("body", "kid")])
+	if swim:
+		b["arm_up"] *= SWIM_ARM_SCALE
+		b["arm_low"] *= SWIM_ARM_SCALE
+		b["thigh"] *= SWIM_LEG_SCALE
+		b["shin"] *= SWIM_LEG_SCALE
 	tag = tag or preset_name
 	kid = Kid()
 	kid.size = b["size"]
@@ -229,12 +313,14 @@ def build_kid(preset_name, underwater=True, tag=None):
 	kid.torso_to_feet = -hip_z + b["thigh"] + b["shin"] + 0.14
 	skin, hair = srgb(*p["skin"]), srgb(*p["hair"])
 	outfit = srgb(*p["outfit"])
-	mat = lambda n, c, r=0.65: _principled(f"{tag}_{n}", c, underwater, r)
-	m_skin, m_hair, m_suit = mat("skin", skin, 0.6), mat("hair", hair, 0.55), mat("suit", outfit, 0.5)
-	m_white = mat("white", srgb(248, 248, 248), 0.4)
-	m_iris = mat("iris", srgb(*p["iris"]), 0.3)
-	m_dark = mat("dark", srgb(20, 12, 12), 0.5)
-	m_mouth = mat("mouth", srgb(150, 40, 40), 0.5)
+	mat = lambda n, c, r=0.65, kind="plain", spec=0.3: _principled(f"{tag}_{n}", c, underwater, r, kind, spec)
+	m_skin, m_hair, m_suit = mat("skin", skin, 0.42, "skin", 0.55), mat("hair", hair, 0.5, "hair", 0.4), mat("suit", outfit, 0.8, "fabric", 0.08)
+	m_white = mat("white", srgb(248, 248, 248), 0.25, spec=0.8)
+	m_iris = mat("iris", srgb(*p["iris"]), 0.2, spec=0.8)
+	m_dark = mat("dark", srgb(20, 12, 12), 0.3, spec=0.8)
+	m_mouth = mat("mouth", srgb(*p.get("lips", (200, 70, 85) if p["girl"] else (170, 60, 55))), 0.35, spec=0.6)
+	m_brow = mat("brow", tuple(c * 0.55 for c in hair[:3]) + (1.0,), 0.4)
+	m_blush = mat("blush", tuple(a * 0.62 + b * 0.38 for a, b in zip(skin[:3], srgb(255, 110, 110)[:3])) + (1.0,), 0.5)
 	m_lip = mat("nose", tuple(min(1.0, c * 1.05) for c in skin[:3]) + (1.0,), 0.6)
 
 	root = _pivot(kid, "root", (0, 0, 0))
@@ -261,13 +347,25 @@ def build_kid(preset_name, underwater=True, tag=None):
 		_mesh(kid, "sphere", f"eyeWhite{s}", (0.215, 0.14, 0.27), (0.27 * s, 0.6, 0.02), m_white, head)
 		_mesh(kid, "sphere", f"iris{s}", (0.125, 0.09, 0.17), (0.28 * s, 0.7, 0.01), m_iris, head)
 		_mesh(kid, "sphere", f"pupil{s}", (0.06, 0.05, 0.09), (0.28 * s, 0.77, 0.01), m_dark, head, segments=8)
-		_mesh(kid, "sphere", f"brow{s}", (0.2, 0.08, 0.05), (0.27 * s, 0.57, 0.3), m_hair, head, rot=(0, math.radians(-14 * s), 0), segments=8)
+		_mesh(kid, "sphere", f"brow{s}", (0.23, 0.09, 0.065), (0.27 * s, 0.58, 0.31), m_brow, head, rot=(0, math.radians(-14 * s), 0), segments=8)
 		if p["ears"]:
 			_mesh(kid, "sphere", f"ear{s}", (0.12, 0.17, 0.22), (0.7 * s, -0.02, -0.02), m_skin, head, segments=8)
 	_mesh(kid, "sphere", "nose", (0.13, 0.15, 0.13), (0, 0.72, -0.2), m_lip, head, segments=8)
-	_mesh(kid, "sphere", "mouth", (0.17, 0.07, 0.06), (0, 0.66, -0.4), m_mouth, head, segments=8)
+	if p.get("stubble"):
+		m_stub = mat("stubble", tuple(a * 0.72 + b * 0.28 for a, b in zip(skin[:3], hair[:3])) + (1.0,), 0.7, "skin", 0.1)
+		_mesh(kid, "sphere", "stubble", (0.735, 0.69, 0.36), (0, 0.0, -0.34), m_stub, head, segments=14)
+	lip = p.get("lips")
+	_mesh(kid, "sphere", "mouth", (0.2, 0.08, 0.07) if lip else (0.17, 0.07, 0.06), (0, 0.67, -0.4), m_mouth, head, segments=8)
+	for s in (-1, 1):
+		_mesh(kid, "sphere", f"blush{s}", (0.17, 0.07, 0.1), (0.46 * s, 0.5, -0.2), m_blush, head, rot=(0, math.radians(-30 * s), 0), segments=8)
 	if p.get("mustache"):
-		_mesh(kid, "sphere", "mustache", (0.3, 0.1, 0.07), (0, 0.66, -0.3), m_hair, head, segments=8)
+		_mesh(kid, "sphere", "mustache", (0.32, 0.1, 0.08), (0, 0.67, -0.29), m_hair if p.get("mustache") == "hair" else m_brow, head, segments=8)
+	if p.get("glasses"):
+		for s in (-1, 1):
+			_mesh(kid, "torus", f"glass{s}", (0.22, 0.22, 0.22), (0.27 * s, 0.76, 0.02), m_dark, head, rot=(math.radians(90), 0, 0), segments=8)
+		_mesh(kid, "cylinder", "bridge", (0.03, 0.03, 0.07), (0, 0.78, 0.04), m_dark, head, rot=(0, math.radians(90), 0), segments=6)
+	if b.get("belly"):
+		_mesh(kid, "sphere", "belly", (tw * 0.82, td * 0.9, 0.5), (0, td * 0.5, uz(-0.12)), torso_mat, up)
 	_build_hair(kid, p, head, m_hair, mat("bobble", srgb(*p.get("bobble", (225, 20, 20)))), mat("cap", srgb(*p.get("cap", (255, 255, 255))), 0.4))
 	# Arms: shoulder (abduction, then swing), elbow, hand.
 	au, al = b["arm_up"], b["arm_low"]
@@ -323,11 +421,11 @@ def _build_hair(kid, p, head, m_hair, m_bobble, m_cap):
 		_limb(kid, "fringe1", (0.15, 0.55, 0.5), (0.42, 0.85, 0.6), 0.2, 0.02, m_hair, head)
 	elif style == "pigtails":
 		for s in (-1, 1):
-			chain = [((0.68 * s, -0.04, 0.3), 0.3), ((0.95 * s, -0.05, 0.26), 0.28), ((1.12 * s, -0.05, 0.42), 0.22), ((1.18 * s, -0.05, 0.62), 0.13)]
+			chain = [((0.68 * s, -0.04, 0.34), 0.3), ((0.96 * s, -0.05, 0.4), 0.28), ((1.1 * s, -0.05, 0.7), 0.23), ((1.1 * s, -0.05, 1.0), 0.14)]
 			for j, (loc, r) in enumerate(chain):
 				_mesh(kid, "sphere", f"tail{s}_{j}", (r, r, r * 1.15), loc, m_hair, head, segments=10)
 			if p.get("bobble"):
-				_mesh(kid, "sphere", f"bobble{s}", (0.14, 0.14, 0.14), (0.8 * s, -0.04, 0.27), m_bobble, head, segments=8)
+				_mesh(kid, "sphere", f"bobble{s}", (0.14, 0.14, 0.14), (0.8 * s, -0.04, 0.3), m_bobble, head, segments=8)
 		# Fringe and a little top curl so it does not look bald from the front.
 		_mesh(kid, "sphere", "fringe", (0.55, 0.3, 0.2), (0, 0.52, 0.5), m_hair, head, segments=10)
 		if p.get("topknot"):
@@ -350,12 +448,14 @@ def _build_hair(kid, p, head, m_hair, m_bobble, m_cap):
 				continue
 			if y > 0.55 and z < 0.7:
 				continue
-			pos = (x * 0.8, y * 0.8 - 0.08, z * 0.72 + 0.22)
-			_mesh(kid, "sphere", f"curl{k}", (0.23, 0.23, 0.23), pos, m_hair, head, segments=8)
+			pos = (x * 0.78, y * 0.78 - 0.08, z * 0.64 + 0.2)
+			_mesh(kid, "sphere", f"curl{k}", (0.22, 0.22, 0.22), pos, m_hair, head, segments=8)
 			k += 1
 	elif style == "cap":
 		# A swim cap hugging the head, with optional fringe and ponytail peeking out.
-		_mesh(kid, "sphere", "swimCap", (0.78, 0.77, 0.66), (0, -0.08, 0.2), m_cap, head, segments=16)
+		_mesh(kid, "sphere", "swimCap", (0.78, 0.77, 0.66 + p.get("cap_up", 0.16)), (0, -0.08, 0.2 + p.get("cap_up", 0.16) * 0.6), m_cap, head, segments=16)
+		if p.get("fringe"):
+			_mesh(kid, "sphere", "napeHair", (0.62, 0.35, 0.3), (0, -0.55, -0.22), m_hair, head, segments=10)
 		if p.get("fringe"):
 			_mesh(kid, "sphere", "fringe", (0.45, 0.2, 0.12), (0, 0.6, 0.38), m_hair, head, segments=10)
 			_limb(kid, "tuft", (0.1, 0.5, 0.5), (0.35, 0.8, 0.45), 0.14, 0.02, m_hair, head)
@@ -376,7 +476,7 @@ def _build_hair(kid, p, head, m_hair, m_bobble, m_cap):
 		# White hair at the sides and back only, bare on top.
 		for s in (-1, 1):
 			_mesh(kid, "sphere", f"side{s}", (0.22, 0.42, 0.34), (0.68 * s, -0.12, 0.06), m_hair, head, segments=10)
-			_mesh(kid, "sphere", f"tuft{s}", (0.2, 0.2, 0.2), (0.62 * s, -0.1, 0.52), m_hair, head, segments=8)
+			_mesh(kid, "sphere", f"sideburn{s}", (0.14, 0.24, 0.3), (0.66 * s, 0.18, -0.26), m_hair, head, segments=8)
 		_mesh(kid, "sphere", "back", (0.6, 0.3, 0.34), (0, -0.55, 0.0), m_hair, head, segments=10)
 		_mesh(kid, "sphere", "brow", (0.5, 0.18, 0.08), (0, 0.55, 0.32), m_hair, head, segments=8)
 	else:
@@ -467,12 +567,15 @@ def setup_scene(canvas, origin, edition="TPW"):
 	st.cam.data.shift_y = (origin[1] - canvas[1] / 2) / m
 	scene.collection.objects.link(st.cam)
 	scene.camera = st.cam
-	st.sun = bpy.data.objects.new("sun", bpy.data.lights.new("sun", "SUN"))
-	st.sun.data.energy = SUN_ENERGY
-	st.sun.data.angle = math.radians(18)
-	st.sun.parent = st.cam
-	st.sun.rotation_euler = tuple(math.radians(a) for a in SUN_ROTATION_DEG)
-	scene.collection.objects.link(st.sun)
+	for lname, energy, rot, colour, angle in (("sun", SUN_ENERGY, SUN_ROTATION_DEG, (1.0, 0.96, 0.88), 12),
+			("fill", FILL_ENERGY, FILL_ROTATION_DEG, (0.75, 0.85, 1.0), 40), ("rim", RIM_ENERGY, RIM_ROTATION_DEG, (1.0, 1.0, 1.0), 8)):
+		light = bpy.data.objects.new(lname, bpy.data.lights.new(lname, "SUN"))
+		light.data.energy = energy
+		light.data.color = colour
+		light.data.angle = math.radians(angle)
+		light.parent = st.cam
+		light.rotation_euler = tuple(math.radians(a) for a in rot)
+		scene.collection.objects.link(light)
 	return st
 
 
@@ -507,6 +610,17 @@ def downsample(a, factor):
 	return np.dstack([rgb, cov])
 
 
+def grade(a):
+	"""Saturation and contrast grade (about the mid grey), applied to the colour only."""
+	rgb = a[..., :3]
+	grey = (rgb * np.array([0.299, 0.587, 0.114], np.float32)).sum(-1, keepdims=True)
+	rgb = grey + (rgb - grey) * GRADE_SATURATION
+	rgb = 0.45 + (rgb - 0.45) * GRADE_CONTRAST
+	out = a.copy()
+	out[..., :3] = np.clip(rgb, 0.0, 1.0)
+	return out
+
+
 def outline(a, threshold=0.4, factor=OUTLINE_DARKEN):
 	"""Darkens the silhouette's outermost pixels, which is what gives the original sprites their dark edges."""
 	solid = a[..., 3] >= threshold
@@ -524,6 +638,7 @@ def render_frame(st, path, binary_alpha=False):
 	bpy.ops.render.render(write_still=True)
 	hi = _read_png(path)
 	lo = downsample(hi, SUPERSAMPLE)
+	lo = grade(lo)
 	lo = outline(lo)
 	if binary_alpha:
 		lo[..., 3] = (lo[..., 3] >= 0.4).astype(np.float32)

@@ -156,4 +156,82 @@ public class SpriteSetBuilderTests
 		var builder = new SpriteSetBuilder( "SPR_WW" ).AddAnimation( 0, new[] { new[] { new SpriteRgbaFrame( 1000, 1, rgba, 0, 0 ) } } );
 		Assert.ThrowsException<InvalidDataException>( () => builder.Build() );
 	}
+
+	/// <summary>Encodes a one-row frame, checks it reads back and returns the row's encoded length.</summary>
+	private static int RoundtripRow( byte[] row )
+	{
+		var frame = new SpriteFrame( row.Length, 1, 0, 0, 128, 128, row );
+		var bytes = SpriteBankWriter.Write( new byte[SpriteBankFile.PaletteEntries * 4], new[] { frame } );
+		var bank = new SpriteBankFile( new MemoryStream( bytes ) );
+		CollectionAssert.AreEqual( row, bank.Frames[0].Indices );
+		return bytes[SpriteBankFile.HeaderBytes + SpriteBankFile.PaletteEntries * 4 + SpriteBankFile.FrameHeaderBytes];
+	}
+
+	[TestMethod]
+	public void ARepeatOf128PlusAlternatingPixelsFitsInExactly255Bytes()
+	{
+		var row = new byte[128 + 251];
+		Array.Fill( row, (byte)1, 0, 128 );
+		for ( var i = 128; i < row.Length; i++ )
+			row[i] = (byte)(2 + i % 2);
+		Assert.AreEqual( 255, RoundtripRow( row ) );
+	}
+
+	[TestMethod]
+	public void GreedyTwoRunsThatOverflowFallBackToLiterals()
+	{
+		var row = new byte[192];
+		for ( var i = 0; i < 64; i++ )
+		{
+			row[i * 3] = 1;
+			row[i * 3 + 1] = 2;
+			row[i * 3 + 2] = 2;
+		}
+		Assert.IsTrue( RoundtripRow( row ) <= 255 );
+	}
+
+	[TestMethod]
+	public void ARowWithNoEncodingUnder256BytesIsRejected()
+	{
+		var row = new byte[254];
+		for ( var i = 0; i < row.Length; i++ )
+			row[i] = (byte)(i % 2);
+		// 254 alternating pixels: 2 literal controls + 254 bytes + row length = 256 content bytes.
+		Assert.ThrowsException<InvalidDataException>( () => SpriteBankWriter.EncodeRows( row, row.Length, 1 ) );
+	}
+
+	[TestMethod]
+	public void ShippedStyleRowsKeepTheGreedyEncoding()
+	{
+		// A run of two is a repeat: 1 1 2 -> R2:1 L1:2.
+		var encoded = SpriteBankWriter.EncodeRows( new byte[] { 1, 1, 2 }, 3, 1 );
+		CollectionAssert.AreEqual( new byte[] { 4, 0xFE, 1, 1, 2 }, encoded );
+	}
+
+	[TestMethod]
+	public void PerformanceEntriesAreContiguousAndPlayPopulatedSlots()
+	{
+		var frame = Frame( 4, 4, 1, 2, 3, 0, 0 );
+		var builder = new SpriteSetBuilder( "SPR_PP" ).AddAnimation( 4, new[] { new[] { frame } } );
+		Assert.ThrowsException<ArgumentException>( () => builder.SetPerformance( 1, 0, 4 ) );
+		Assert.ThrowsException<ArgumentException>( () => builder.SetPerformance( 0, 0, 16 ) );
+		Assert.ThrowsException<ArgumentException>( () => builder.SetPerformance( 0, 0, 5 ) );
+		builder.SetPerformance( 0, 0, 4 );
+		Assert.ThrowsException<ArgumentException>( () => builder.SetPerformance( 0, 0, 4 ) );
+	}
+
+	[TestMethod]
+	public void AFailedAddAnimationChangesNothingAndWideFramesAreRejected()
+	{
+		var good = Frame( 4, 4, 1, 2, 3, 0, 0 );
+		var bad = new SpriteRgbaFrame( 4, 4, new byte[3], 0, 0 );
+		var builder = new SpriteSetBuilder( "SPR_AA" );
+		Assert.ThrowsException<ArgumentException>( () => builder.AddAnimation( 0, new[] { new[] { good, bad } } ) );
+		Assert.AreEqual( 0, builder.FrameCount );
+		builder.AddAnimation( 0, new[] { new[] { good } } );
+		var wide = new SpriteRgbaFrame( 1021, 1, new byte[1021 * 4], 0, 0 );
+		Assert.ThrowsException<ArgumentException>( () => builder.AddAnimation( 1, new[] { new[] { wide } } ) );
+		Assert.AreEqual( 1, builder.FrameCount );
+		Assert.ThrowsException<ArgumentException>( () => SpriteBankWriter.Write( new byte[SpriteBankFile.PaletteEntries * 4], new[] { new SpriteFrame( -1, -1, 0, 0, 128, 128, new byte[1] ) } ) );
+	}
 }

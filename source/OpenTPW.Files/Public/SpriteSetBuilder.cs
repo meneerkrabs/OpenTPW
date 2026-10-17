@@ -46,6 +46,13 @@ public sealed class SpriteSetBuilder
 	private readonly List<SpriteRgbaFrame> frames = new();
 	private readonly SpriteAnimation[] slots = new SpriteAnimation[SpriteAnimationFile.SlotCount];
 	private readonly byte[] performanceBytes = new byte[16];
+	private int performanceCount;
+	private long pixels;
+
+	/// <summary>Widest frame <see cref="GuestSpriteAtlas"/> can place: its 1024-pixel atlas rows minus the 2-pixel padding on both sides.</summary>
+	public const int MaximumFrameWidth = 1020;
+	/// <summary>Total pixels of all frames in a set (bounds the palette histogram and the quantiser's work).</summary>
+	public const long MaximumPixels = 1L << 28;
 
 	public SpriteSetBuilder( string name )
 	{
@@ -89,29 +96,39 @@ public sealed class SpriteSetBuilder
 		var first = frames.Count;
 		if ( first + directions.Count * perDirection > SpriteBankFile.MaximumFrames )
 			throw new ArgumentException( $"A bank holds at most {SpriteBankFile.MaximumFrames} frames." );
+		var added = new List<SpriteRgbaFrame>( directions.Count * perDirection );
+		long addedPixels = 0;
 		foreach ( var direction in directions )
 			foreach ( var frame in direction )
 			{
-				if ( frame.Width is <= 0 or > SpriteBankFile.MaximumDimension || frame.Height is <= 0 or > SpriteBankFile.MaximumDimension )
-					throw new ArgumentException( $"Frames are 1 to {SpriteBankFile.MaximumDimension} pixels wide and high." );
+				if ( frame.Width is <= 0 or > MaximumFrameWidth || frame.Height is <= 0 or > SpriteBankFile.MaximumDimension )
+					throw new ArgumentException( $"Frames are 1 to {MaximumFrameWidth} pixels wide and 1 to {SpriteBankFile.MaximumDimension} high." );
 				if ( frame.Rgba.Length != frame.Width * frame.Height * 4 )
 					throw new ArgumentException( "A frame's RGBA data must be width x height x 4 bytes." );
-				frames.Add( frame );
+				addedPixels += (long)frame.Width * frame.Height;
+				added.Add( frame );
 			}
+		if ( pixels + addedPixels > MaximumPixels )
+			throw new ArgumentException( $"A set holds at most {MaximumPixels} pixels in total." );
+		frames.AddRange( added );
+		pixels += addedPixels;
 		slots[slot] = new SpriteAnimation( slot, first, perDirection, directional ? directions.Count : 0 );
 		return this;
 	}
 
 	/// <summary>
 	/// Sets an entertainer performance entry (<see cref="SpriteAnimationFile.Performances"/>): program, slot, and the program's two registers.
-	/// The shipped entertainers all use program 0 on slot 4 with registers 0 and 0 (Hallow SPR_DR: 2 and 40). Entries must be set in order from 0.
+	/// The shipped entertainers all use program 0 on slot 4 with registers 0 and 0 (Hallow SPR_DR: 2 and 40). Entries must be set in order from 0, on a slot added before.
 	/// </summary>
 	public SpriteSetBuilder SetPerformance( int entry, int program, int slot, int intro = 0, int hold = 0 )
 	{
-		if ( entry is < 0 or > 3 )
-			throw new ArgumentOutOfRangeException( nameof( entry ) );
-		if ( program is < 0 or > 254 || slot is < 0 or > 254 || intro is < 0 or > 255 || hold is < 0 or > 255 )
+		if ( entry != performanceCount || entry > 3 )
+			throw new ArgumentException( $"Performance entries are set in order from 0 (next is {performanceCount}, at most 3).", nameof( entry ) );
+		if ( slot < 0 || slot >= SpriteAnimationFile.SlotCount || slots[slot].IsEmpty )
+			throw new ArgumentException( "A performance plays an animation slot (0 to 15) that has been added.", nameof( slot ) );
+		if ( program is < 0 or > 254 || intro is < 0 or > 255 || hold is < 0 or > 255 )
 			throw new ArgumentOutOfRangeException( nameof( program ), "Program and slot are stored plus one in a byte." );
+		performanceCount++;
 		performanceBytes[entry * 4] = (byte)(program + 1);
 		performanceBytes[entry * 4 + 1] = (byte)(slot + 1);
 		performanceBytes[entry * 4 + 2] = (byte)intro;
@@ -136,14 +153,14 @@ public sealed class SpriteSetBuilder
 	/// <summary>Builds the shared 255-entry BGRA palette and the paletted frames (index 0 transparent).</summary>
 	internal static (byte[] Palette, SpriteFrame[] Frames) Quantise( IReadOnlyList<SpriteRgbaFrame> source )
 	{
-		var histogram = new Dictionary<uint, int>();
+		var histogram = new Dictionary<uint, long>();
 		foreach ( var frame in source )
 			for ( var i = 0; i < frame.Rgba.Length; i += 4 )
 			{
 				if ( frame.Rgba[i + 3] == 0 )
 					continue;
 				var key = Pack( frame.Rgba[i], frame.Rgba[i + 1], frame.Rgba[i + 2], frame.Rgba[i + 3] );
-				histogram[key] = histogram.GetValueOrDefault( key ) + 1;
+				histogram[key] = checked( histogram.GetValueOrDefault( key ) + 1 );
 			}
 
 		var colours = histogram.Count <= SpriteBankFile.PaletteEntries
@@ -204,16 +221,16 @@ public sealed class SpriteSetBuilder
 	}
 
 	/// <summary>Median cut over distinct colours weighted by pixel count: split the box with the most pixels along its widest channel at the weighted median.</summary>
-	private static List<uint> MedianCut( Dictionary<uint, int> histogram, int target )
+	private static List<uint> MedianCut( Dictionary<uint, long> histogram, int target )
 	{
-		var boxes = new List<List<KeyValuePair<uint, int>>> { histogram.OrderBy( x => x.Key ).ToList() };
+		var boxes = new List<List<KeyValuePair<uint, long>>> { histogram.OrderBy( x => x.Key ).ToList() };
 		while ( boxes.Count < target )
 		{
 			var index = -1;
 			long most = 0;
 			for ( var i = 0; i < boxes.Count; i++ )
 			{
-				var weight = boxes[i].Count < 2 ? 0 : boxes[i].Sum( x => (long)x.Value );
+				var weight = boxes[i].Count < 2 ? 0 : boxes[i].Sum( x => x.Value );
 				if ( weight > most )
 				{
 					most = weight;
@@ -253,11 +270,11 @@ public sealed class SpriteSetBuilder
 		var result = new List<uint>();
 		foreach ( var box in boxes )
 		{
-			var total = box.Sum( x => (long)x.Value );
+			var total = box.Sum( x => x.Value );
 			uint packed = 0;
 			for ( var shift = 0; shift < 32; shift += 8 )
 			{
-				var sum = box.Sum( x => ((x.Key >> shift) & 255) * (long)x.Value );
+				var sum = box.Sum( x => ((x.Key >> shift) & 255) * x.Value );
 				packed |= (uint)((sum + total / 2) / total) << shift;
 			}
 			result.Add( packed );

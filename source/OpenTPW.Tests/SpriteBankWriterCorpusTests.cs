@@ -14,9 +14,25 @@ namespace OpenTPW.Tests;
 [DoNotParallelize]
 public class SpriteBankWriterCorpusTests
 {
+	private BaseFileSystem? previousFileSystem;
+	private Logger? previousLog;
+	private bool initialized;
+
+	[TestCleanup]
+	public void Cleanup()
+	{
+		if ( !initialized )
+			return;
+		FileSystem = previousFileSystem!;
+		Log = previousLog!;
+	}
+
 	[TestInitialize]
 	public void Init()
 	{
+		previousFileSystem = FileSystem;
+		previousLog = Log;
+		initialized = true;
 		Log = new();
 		var gamePath = Environment.GetEnvironmentVariable( "OPENTPW_GAME_PATH" );
 		if ( string.IsNullOrWhiteSpace( gamePath ) || !Directory.Exists( gamePath ) )

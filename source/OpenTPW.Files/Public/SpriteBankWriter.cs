@@ -32,9 +32,9 @@ public static class SpriteBankWriter
 		Span<byte> frameHeader = stackalloc byte[SpriteBankFile.FrameHeaderBytes];
 		foreach ( var frame in frames )
 		{
-			if ( frame.Width > SpriteBankFile.MaximumDimension || frame.Height > SpriteBankFile.MaximumDimension )
-				throw new ArgumentException( $"Sprite frames are at most {SpriteBankFile.MaximumDimension} pixels wide and high." );
-			if ( frame.Indices.Length != frame.Width * frame.Height )
+			if ( frame.Width is < 0 or > SpriteBankFile.MaximumDimension || frame.Height is < 0 or > SpriteBankFile.MaximumDimension )
+				throw new ArgumentException( $"Sprite frames are 0 to {SpriteBankFile.MaximumDimension} pixels wide and high." );
+			if ( frame.Indices.Length != checked( frame.Width * frame.Height ) )
 				throw new ArgumentException( "A frame's indices must be width x height." );
 			var rows = EncodeRows( frame.Indices, frame.Width, frame.Height );
 			BinaryPrimitives.WriteInt32LittleEndian( frameHeader, rows.Length );
@@ -53,6 +53,8 @@ public static class SpriteBankWriter
 	/// <summary>RLE rows: per row a length byte, then repeats (−n, value) and literals (n, bytes...).</summary>
 	public static byte[] EncodeRows( byte[] indices, int width, int height )
 	{
+		if ( width < 0 || height < 0 || indices.Length != checked( width * height ) )
+			throw new ArgumentException( "The indices must be width x height." );
 		var output = new List<byte>( indices.Length );
 		var row = new List<byte>( width + 8 );
 		for ( var y = 0; y < height; y++ )
@@ -90,10 +92,62 @@ public static class SpriteBankWriter
 			}
 			FlushLiteral( width );
 			if ( row.Count > MaximumEncodedRow )
-				throw new InvalidDataException( $"Sprite row {y} encodes to {row.Count} bytes; a row holds at most {MaximumEncodedRow}." );
+			{
+				// The shipped encoder's choices do not fit a one-byte row length: take the smallest encoding the decoder accepts.
+				row.Clear();
+				row.AddRange( EncodeRowSmallest( span.Span ) );
+				if ( row.Count > MaximumEncodedRow )
+					throw new InvalidDataException( $"Sprite row {y} needs at least {row.Count} bytes; a row holds at most {MaximumEncodedRow}." );
+			}
 			output.Add( (byte)row.Count );
 			output.AddRange( row );
 		}
 		return output.ToArray();
+	}
+
+	/// <summary>Longest repeat the decoder accepts (control −128); the greedy encoder stops at <see cref="MaximumRun"/> like the shipped files.</summary>
+	public const int MaximumRepeat = 128;
+
+	/// <summary>Smallest valid encoding of one row (dynamic programming over repeats of 2 to 128 and literals of 1 to 127).</summary>
+	internal static byte[] EncodeRowSmallest( ReadOnlySpan<byte> row )
+	{
+		var width = row.Length;
+		var cost = new int[width + 1];
+		var choice = new int[width + 1]; // positive: literal length; negative: repeat length
+		for ( var i = width - 1; i >= 0; i-- )
+		{
+			cost[i] = int.MaxValue;
+			for ( var k = 1; k <= Math.Min( MaximumRun, width - i ); k++ )
+				if ( 1 + k + cost[i + k] < cost[i] )
+				{
+					cost[i] = 1 + k + cost[i + k];
+					choice[i] = k;
+				}
+			for ( var k = 2; k <= Math.Min( MaximumRepeat, width - i ) && row[i + k - 1] == row[i]; k++ )
+				if ( 2 + cost[i + k] < cost[i] )
+				{
+					cost[i] = 2 + cost[i + k];
+					choice[i] = -k;
+				}
+		}
+		var result = new List<byte>( cost[0] );
+		for ( var i = 0; i < width; )
+		{
+			var c = choice[i];
+			if ( c < 0 )
+			{
+				result.Add( unchecked( (byte)c ) );
+				result.Add( row[i] );
+				i -= c;
+			}
+			else
+			{
+				result.Add( (byte)c );
+				for ( var j = 0; j < c; j++ )
+					result.Add( row[i + j] );
+				i += c;
+			}
+		}
+		return result.ToArray();
 	}
 }

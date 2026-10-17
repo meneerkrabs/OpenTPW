@@ -16,8 +16,8 @@ if ! command -v "$dotnet_command" >/dev/null 2>&1 && [[ ! -x "$dotnet_command" ]
     printf '%s\n' 'The explicit DOTNET executable is unavailable.' >&2
     exit 1
   fi
-  if [[ "$runtime" != osx-x64 && -x "$HOME/.local/share/opentpw-dotnet10/dotnet" ]]; then
-    dotnet_command="$HOME/.local/share/opentpw-dotnet10/dotnet"
+  if [[ "$runtime" != osx-x64 && -x "$HOME/.local/share/opentpw-dotnet11/dotnet" ]]; then
+    dotnet_command="$HOME/.local/share/opentpw-dotnet11/dotnet"
   elif [[ "$runtime" == osx-x64 && -x "$HOME/.local/share/opentpw-dotnet-x64/dotnet" ]]; then
     dotnet_command="$HOME/.local/share/opentpw-dotnet-x64/dotnet"
   elif [[ -x "$HOME/.local/share/opentpw-dotnet/dotnet" ]]; then

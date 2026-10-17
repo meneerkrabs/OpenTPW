@@ -438,7 +438,7 @@ in the material's native texture binding, reads different GPU pixels, and
 checks held selections allocate zero bytes and reuse their resource sets.
 It also checks object deletion retires the owned materials. This is binding
 and texture-readback evidence, not a framebuffer comparison or original-game
-parity. On macOS invoke the public test method from a temporary `net10.0`
+parity. On macOS invoke the public test method from a temporary `net11.0`
 console harness referencing `OpenTPW.Tests.csproj`, on the main thread, with
 `OPENTPW_TEXTURE_FRAME_GPU=1` and `OPENTPW_GAME_PATH` set; MSTest's pool thread
 cannot create a Cocoa window. Native SDL2, cimgui and veldrid-spirv libraries

@@ -40,7 +40,7 @@ names those items in its not-run reason. Failures are classified as restore (NU1
 pack not in the cache and not downloadable), missing runtime, SDK too old, or incompatible
 reference. Passing harnesses are self-consistency checks only, not evidence of
 original runtime behavior. --dotnet is also offered to the oracle's C# bridge as
-OPENTPW_ORACLE_DOTNET (stripped otherwise); the bridge uses it when it has a .NET 10 SDK and
+OPENTPW_ORACLE_DOTNET (stripped otherwise); the bridge uses it when it has a .NET 11 SDK and
 otherwise falls back to its own SDK search (oracle/bridge.py), building in a scratch copy as well.
 """
 from __future__ import annotations

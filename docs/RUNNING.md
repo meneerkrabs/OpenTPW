@@ -155,7 +155,7 @@ one is unresolved, 0 only when every row passes. M3 is accepted only at exit cod
 ## Headless guest report
 
 ```sh
-dotnet source/OpenTPW/bin/Debug/net10.0/OpenTPW.dll --guest-report [--guest-scale plan|extended] [--guest-report-json guests.json]
+dotnet source/OpenTPW/bin/Debug/net11.0/OpenTPW.dll --guest-report [--guest-scale plan|extended] [--guest-report-json guests.json]
 ```
 
 Measures the guests' behaviour passively (docs/SMARTER-GUESTS.md): eight fixed seeds of the synthetic park scenario and, when `OPENTPW_GAME_PATH` or `--game-path` is set, the four

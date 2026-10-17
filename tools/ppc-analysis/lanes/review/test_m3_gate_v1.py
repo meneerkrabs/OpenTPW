@@ -9,8 +9,8 @@ writes ``Environment.ExitCode``.
 Mutation tests are slow and run only with ``OPENTPW_M3_MUTATE=1`` and ``OPENTPW_GAME_PATH``. They extract the
 tree of the commit under test (``OPENTPW_M3_SUBJECT``, default ``HEAD``; the review ran them on f6ad99f) with
 ``git archive`` into a temporary folder (not a worktree), add fault-injection hooks to
-``M3Gate.cs`` (selected by the ``M3GATE_MUTATION`` environment variable at run time), build it once with the .NET 10
-SDK (``OPENTPW_DOTNET``, default ``~/.local/share/opentpw-dotnet10/dotnet``) and run ``--m3-gate`` once per fault.
+``M3Gate.cs`` (selected by the ``M3GATE_MUTATION`` environment variable at run time), build it once with the .NET 11
+SDK (``OPENTPW_DOTNET``, default ``~/.local/share/opentpw-dotnet11/dotnet``) and run ``--m3-gate`` once per fault.
 Each test states which row must flip. Some tests pin rows that do *not* flip, because that is the finding.
 GATE-FIX made the gate stricter; the expectations it changed are marked "GATE-FIX" below (build.paths fails,
 staff.work is per staff type, rides.scripts-run fails on a halted script, unresolved rows exit 2).
@@ -308,13 +308,13 @@ def instrument(text: str) -> str:
     return text
 
 
-DOTNET = os.environ.get('OPENTPW_DOTNET', str(Path.home() / '.local/share/opentpw-dotnet10/dotnet'))
+DOTNET = os.environ.get('OPENTPW_DOTNET', str(Path.home() / '.local/share/opentpw-dotnet11/dotnet'))
 GAME = os.environ.get('OPENTPW_GAME_PATH', '')
 MUTATE = os.environ.get('OPENTPW_M3_MUTATE') == '1'
 
 
 @unittest.skipUnless(MUTATE and GAME and Path(GAME).is_dir() and Path(DOTNET).exists() and has_commit(MUTATION_SUBJECT),
-                     'set OPENTPW_M3_MUTATE=1, OPENTPW_GAME_PATH and a .NET 10 SDK (OPENTPW_DOTNET)')
+                     'set OPENTPW_M3_MUTATE=1, OPENTPW_GAME_PATH and a .NET 11 SDK (OPENTPW_DOTNET)')
 class Mutations(unittest.TestCase):
     results: dict[str, dict] = {}
 
@@ -335,7 +335,7 @@ class Mutations(unittest.TestCase):
                                    capture_output=True, text=True)
         if build.returncode != 0:
             raise AssertionError(build.stdout[-4000:])
-        cls.dll = cls.tmp / 'source/OpenTPW/bin/Release/net10.0/OpenTPW.dll'
+        cls.dll = cls.tmp / 'source/OpenTPW/bin/Release/net11.0/OpenTPW.dll'
 
     @classmethod
     def tearDownClass(cls):

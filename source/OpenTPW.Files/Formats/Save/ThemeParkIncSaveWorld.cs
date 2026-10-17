@@ -259,7 +259,7 @@ public sealed record ThemeParkIncSmallThing( int Id, ThemeParkIncThingModel Mode
 /// </summary>
 // [BIN:TPI-EXE:0x64bc00 World loader] variables 0x64bc00, control manager 0x5cf9b0, macro AI (staff pool 0x6308a0, calendar, arrivals), map 0x5d6d40, "Used Thing Head" and the things through the jump table 0x64d7e0, special rides 0x6244b0
 // [BIN:TPI-EXE:0x6244b0 special rides loader] mNumSpecialRides is read into the global 0xaa071c and the loop runs by that global, so by the saved count (a count of 0 or below reads none); the table it fills (0xaa0330, 0xf4 bytes per record) holds four records before its own count word (inside the fifth record), so a larger count is refused here: the original would overwrite the count while reading
-// [APPROX:SAVE-944] the guests, staff and gardeners have layouts traced from their load routines (and emulated), but no Theme Park Inc save holds one: their widths and fields are unwitnessed, and a word is not typed beyond its width
+// [APPROX:SAVE-944] the guests, staff and gardeners have layouts traced from their load routines (and emulated), but no Theme Park Inc save holds one: their widths and fields are unwitnessed, and a word is not typed beyond its width except the meters and the weather floats of ThemeParkIncThingBodies.cs
 public sealed class ThemeParkIncSaveWorld
 {
 	public const int MaximumThings = ushort.MaxValue;

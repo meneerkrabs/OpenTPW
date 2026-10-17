@@ -391,6 +391,12 @@ things of the type that are built at +0x18 (0, incremented when a thing is made 
 **Special rides.** The loader `0x6244b0` reads `mNumSpecialRides` straight into the global `0xaa071c` and then loops by that global, so the loop runs the saved count. The table it fills (`0xaa0330`, records of 0xf4 bytes) has room for four records: the count global itself lies inside the fifth record's memory, so a larger count would overwrite it while being read. A record is a 16-bit `SpecialRideThingId`
 and 20 slots of a 16-bit `AllSpecialRidesThingId`, a 32-bit `AllSpecialRidesAbility` and a 32-bit `AllSpecialRidesType`.
 
+**Guest and staff meters, weather (SAVE-944).** A guest's seven `pv` words are single-precision meters between 0 and 100, saved as floats truncated to a byte (the loader reads the float straight back). By their offsets in the 0x2f0-byte guest:
+`0x1bc` happiness, `0x1c8` thirst, `0x1cc` hunger, `0x1d0` toilet, `0x1d4` illness, `0x1d8` litter and `0x1dc`, which only an attraction's info word `+0x198` lowers and for which no meaning was found. The needs step `0x619c0e` raises toilet by 1.0 and hunger and thirst by 2.0 every 16th tick, the cell's environment words add to illness
+and hunger, a meter at exactly 100 costs 1.0 happiness (the Theme Park World rule, `NeedsUpdate`), and the outcome step `0x612740` adds the attraction's info effects (`ThirstEffect` at +0x200 to `ToiletEffect` at +0x214) to the meters. `mCash` (`+0x1c0`) and `mCashSpent` (`+0x1c4`) move together at the payment `0x6125b0`.
+A staff member's three `pv` words (`+0x230`, `+0x234`, `+0x238`) are floats too: the energy, happiness and motivation meters the three strike keys (`EnergyPercentToStrike`, `HappyPercentToStrike`, `MotivationPercentToStrike`) test; `+0x234` is the one the wage code moves and the strike test `0x62d01e` reads, which points at happiness, but the assignment of the other two is open.
+The weather's `mWindDir` (starts at 90.0) and `mWindForce` (0.5) are floats and `mLastLightningLocation` is a float vector (x, y, z) that the thunder countdown converts to integers when it reaches 0 (`0x6423fb`). The rest of the bodies keep their stored widths: the loaders copy each member, so a signedness or an enumeration is visible only where a user of the member was read.
+
 ## Theme Park Inc front end
 
 Phase 1 builds the start screen only: the Personnel File.

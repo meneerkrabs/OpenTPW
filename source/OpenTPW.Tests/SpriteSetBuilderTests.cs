@@ -86,9 +86,10 @@ public class SpriteSetBuilderTests
 		var previous = FileSystem;
 		try
 		{
-			set.WriteTo( folder );
+			set.WriteTo( Path.Combine( folder, "Kids" ) );
 			FileSystem = new BaseFileSystem( folder );
-			var atlases = GuestSpriteAtlas.LoadSets( "/", "kids" );
+			// A sub-folder like the game's Generic/Kids: LoadSets joins "<directory>/<file>", and "//file" is not a valid path on Windows.
+			var atlases = GuestSpriteAtlas.LoadSets( "/Kids", "kids" );
 			Assert.AreEqual( 1, atlases.Count );
 			var atlas = atlases[0];
 			Assert.AreEqual( "SPR_ZZ", atlas.Name );

@@ -234,4 +234,5 @@ original game assets or trademarks.
 
 ## License
 
-MIT; see [LICENSE.md](LICENSE.md).
+MIT; see [LICENSE.md](LICENSE.md). `source/OpenTPW.Files/Formats/Compression/ClassicZlibDeflater.cs` is a port of zlib 1.1.3's deflate
+and keeps zlib's copyright and license notice in its header.

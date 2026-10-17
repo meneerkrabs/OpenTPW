@@ -38,7 +38,7 @@ MD2, MAP, RSE, TPWI, LIP, MTR and TGQ have bounded readers (FORMAT-BACKLOG.md).
 All 274 original objects and optional bonus objects enter the catalog; guests use
 rides/shops/sideshows/toilets through the visitor bridge. The economy and HUD share
 purchase/sale ownership. Missing vertex animation, sounds/particles and the
-kart and tour controllers remain explicit gaps ([OBJECTS.md](OBJECTS.md)); water rides run their track controller ([TRACKS.md](TRACKS.md)).
+tour controllers remain an explicit gap ([OBJECTS.md](OBJECTS.md)); water rides and go-karts run their track controllers, with jumps and tunnels still missing ([TRACKS.md](TRACKS.md)).
 
 The verified [Patch 2](PATCH-2.md) data copy is a separate reference baseline;
 28 physical Data differences and 24 WAD member differences are known. Static

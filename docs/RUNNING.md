@@ -211,8 +211,7 @@ Without a world (`--front-end`, or no mode option at all) the same data opens th
 [Personnel File start screen](THEME-PARK-INC.md#theme-park-inc-front-end): Enter Game starts science, and a zone
 chooser offers Polar Zone and Arabian Nights. Theme Park Inc data given to any other start (a Theme Park World level,
 `--sandbox`, `--smoke-test`, `--park-resume-smoke`, `--export-park`, `--import-park`,
-`--visit-park`, `--front-end` together with a world) is refused with a message that points here. Current desktop packages can use the explicit world command above. The new desktop edition
-chooser is reviewed in PR #146 for a future release; the browser already offers explicit experimental
+`--visit-park`, `--front-end` together with a world) is refused with a message that points here. The explicit world command above works in every package; the desktop edition chooser (`--setup`) has been part of the releases since v0.8.0, and the browser offers explicit experimental
 TPI world selection. See the [static TPI launch guide](https://opentpw.io/theme-park-inc.html) for
 build availability, setup steps and limitations. Adding
 `--tpi-smoke-test` (best on `science`) drives the slice's whole HUD user flow with injected input —

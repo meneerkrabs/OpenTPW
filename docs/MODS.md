@@ -27,7 +27,7 @@ In code the system is called `OpenTPW.Mods` / "extensions"; `OpenTPW.ModKit` is 
 - park saves record the mods that change the simulation and refuse a mismatched set (below);
 - the **Extensions and mods screen** (below) edits `mods.json`;
 - **content roots** are live on the desktop: an enabled mod's `overrides`, `strings` and `objects` change what the game
-  reads (see [Content](#content)). Script mods are loaded and compiled at resolve time but their hooks are not wired in yet. The browser build runs the same data mods shipped with the page (see
+  reads (see [Content](#content)). Script mods are loaded and compiled at resolve time, and on the desktop their four guest-decision hooks run in the simulation ([SCRIPT-MODS.md](SCRIPT-MODS.md#hook-api-v1)); the browser does not run script mods yet (the example mod is not embedded and the browser has no folders for community mods). The browser build runs the same data mods shipped with the page (see
   [Mods in the browser](WEB.md#mods-in-the-browser));
 - **Theme Park Inc attractions in Theme Park World** work end to end through a data mod and the cross-edition objects
   extension: they are listed, priced, researched, bought, placed, run and saved. OpenTPW ships that mod itself,
@@ -36,6 +36,46 @@ In code the system is called `OpenTPW.Mods` / "extensions"; `OpenTPW.ModKit` is 
   [Making a Theme Park Inc rides mod](#making-a-theme-park-inc-rides-mod)).
 
 Changes to `mods.json` apply at the next start; nothing is swapped while the game runs.
+
+## Defaults of the official extensions
+
+| Extension | On by default | Selectable | Changes the simulation | What it is |
+| --- | --- | --- | --- | --- |
+| `opentpw.online` | yes | yes | no | [Online play](ONLINE.md); no network request until the player acts |
+| `opentpw.pools` | **yes** | yes | yes (recorded in a save only while the park has pool cells or a changing room) | [Swimming pools](POOLS.md); not in a Theme Park Inc run |
+| `opentpw.pools-guest-art` | yes | yes | no | OpenTPW's own 2x kid and head sprites for land guests while pools is on; switch it off for the original guests |
+| `opentpw.restored-advice` | yes | yes | no | advisor lines in the shipped data that the original never plays |
+| `opentpw.guest-insights` | no | yes | no | refusal counters in the park information window |
+| `opentpw.cross-edition-objects` | no | yes | yes | engine support for mods that bring Theme Park Inc attractions into Theme Park World |
+| `opentpw.smarter-guests` | no | **no, not yet** | yes | guests that decide better; selectable once its rule set is complete |
+
+Mods are off until switched on. Switch an extension off (or a mod on) for one run with `--disable-extension <id>` and `--enable-mod <id>`, or
+permanently on the Extensions and mods screen or in `mods.json` ([below](#settings-modsjson)).
+
+## Quick start: your first data mod
+
+A data mod is a folder. This one replaces one text of the English interface; any other `strings`, `overrides` or `objects` content works the same way (see [Content](#content)).
+
+1. Find the configuration folder: `OPENTPW_CONFIG_DIR` if set, otherwise `~/Library/Application Support/OpenTPW` on macOS, `~/.config/OpenTPW` on Linux
+   (`XDG_CONFIG_HOME` is honoured) and `%APPDATA%\OpenTPW` on Windows ([SETUP.md](SETUP.md)). Create `mods/community.my-first-mod/` inside it. The folder
+   must be named after the mod's id. (For a one-off test, `--mod-dir <folder>` takes any folder name.)
+2. Put `opentpw-mod.json` in it:
+
+   ```json
+   { "schema": 1, "id": "community.my-first-mod", "name": "My first mod", "version": "1.0.0",
+     "category": "community", "author": "You", "description": "Replaces one interface text.",
+     "content": { "strings": "strings/" } }
+   ```
+
+3. Add `strings/English/UITEXT.str` (or the table you want to change): a copy of the original table with your edit. A table must have the same
+   layout as the original's, and it replaces that language's table completely ([`strings`](#strings)). For other kinds of change, use
+   `"overrides": "data/"` with loose files at their data-relative paths ([`overrides`](#overrides)) or `"objects": "objects.json"` ([`objects`](#objects)).
+4. Start OpenTPW (a mod folder is read at start), open Options > OpenTPW > **Extensions and mods**, select the mod in the **Community mods** column and switch it on
+   (`b_on`), press OK and restart. A mod that is refused shows its status and reason (see the table above) and the startup log names it.
+
+To use a script mod, the shipped example works the same way: `opentpw.example.patient-guests` is listed in the **Community mods** column of a desktop
+build (it lives in `content/mods/` and is off by default). Switch it on, restart, and happy guests join rides they would refuse and give up very long queues
+([SCRIPT-MODS.md](SCRIPT-MODS.md#the-example-mod)). Alternatively run once with `--enable-mod opentpw.example.patient-guests`. It is not in the browser build.
 
 ## The Extensions and mods screen
 
@@ -67,7 +107,7 @@ Standard.sam)", "This folder holds Theme Park World data, not Theme Park Inc", "
 the wrong edition is not saved. Saved folders go to `inputs` in `mods.json`.
 
 **OK** writes `mods.json` (only when a choice changed) and shows a restart notice; **Cancel** and Escape discard the edits.
-Nothing is applied while the game runs. The texts are in the nine languages (`OpenTpwText`, `SupplementaryStrings`). In the
+Nothing is applied while the game runs. The screen's own texts are in the nine languages (`OpenTpwText`, `SupplementaryStrings`). The name and description of four extensions (smarter guests, guest insights, pool guest art, restored advice) are translated too; the other extensions (online, cross-edition objects, pools) and every mod show the name and description from their code or manifest, which are English. In the
 browser build the community list holds the mods shipped with the page, and an input is the copy of your own game files that the
 page keeps in the browser: **Change...** opens the browser's folder dialog (a typed path or **Remove** would mean nothing there), and
 the copy is replaced only before a mod reads it (see [Mods in the browser](WEB.md#mods-in-the-browser)).
@@ -78,7 +118,7 @@ Each mod folder holds `opentpw-mod.json`:
 
 ```json
 { "schema": 1, "id": "community.tpi-rides", "name": "Theme Park Inc rides", "version": "1.0.0",
-  "category": "community", "openTpw": ">=0.9.0 <0.10.0", "edition": "theme-park-world",
+  "category": "community", "openTpw": ">=0.8.0", "edition": "theme-park-world",
   "author": "Ann", "description": "Optional, up to 1000 characters.",
   "dependencies": [{ "id": "opentpw.cross-edition-objects", "version": ">=1.0.0" }],
   "after": ["community.other-rides"],
@@ -111,9 +151,11 @@ mod's folder (no `..`, no absolute paths, no drive letters or `:`, no empty or `
 ### Version ranges
 
 A range is one or more space-separated comparators that must all hold: `>=`, `>`, `<=`, `<` and `=` followed by a
-version (a bare version means `=`), or `*` alone for any version. For example `>=0.9.0 <0.10.0`.
+version (a bare version means `=`), or `*` alone for any version. For example `>=0.8.0 <1.0.0`.
 
-Release builds check `openTpw` against their version. A development build without a version (the SDK default
+Release builds check `openTpw` against their version (`ModStartup.OpenTpwVersion`, the assembly's informational version, for example `0.8.13`):
+a mod whose range does not contain it is refused as incompatible. Use a range that includes the releases you tested, such as `>=0.8.0`;
+a range that starts above the current release refuses the mod on every build released so far. A development build without a version (the SDK default
 1.0.0) does not check `openTpw` ranges.
 
 ## Discovery

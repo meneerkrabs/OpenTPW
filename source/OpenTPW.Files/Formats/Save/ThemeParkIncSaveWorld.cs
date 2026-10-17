@@ -100,11 +100,21 @@ public sealed record ThemeParkIncWorldVariables(
 		reader.U16(), reader.U16() );
 }
 
-/// <summary>One object control (control manager 0x5cf9b0, 36 bytes): the words keep their offsets; the one added to the Theme Park World record (32 bytes) is taken to be the last.</summary>
-// [APPROX:SAVE-941] the 36-byte control record is read as the Theme Park World one (id, cost, +8, +0xC, researched at +0x10, then +0x14, +0x18, +0x1C) plus a word at +0x20: the loader writes the record as one 0x24-byte block, so the new field's place follows the struct layout, which the save cannot show; the prebuilt's +0x1C reads -1 (unset) or a small index and +0x20 repeats +0x18 — evidence needed: the control struct's field list from the constructor or the research code
-public readonly record struct ThemeParkIncObjectControl( int Index, int Id, uint Word4, uint Word8, uint WordC, bool Researched, uint Word14, uint Word18, uint Word1C, uint Word20 )
+/// <summary>
+/// One object control (control manager 0x5cf9b0, 36 bytes), as the record constructor 0x5cff00 fills it from the object's info and the game updates it: <see cref="Price"/> is a copy of
+/// the info's price word (+0x2ac), <see cref="InfoWord8"/> and <see cref="InfoWordC"/> copy the info words +0x198 and +0x23c, <see cref="Researched"/> is true when the info's research
+/// cost (+0x270) is 0 or the research has been done, <see cref="ResearchLevel"/> the level the research reached, <see cref="BuiltCount"/> the number of things of the type that exist,
+/// <see cref="FirstBuiltTick"/> the game tick of the first build (-1 until one is built; Theme Park World's record starts at 0) and <see cref="PlacementCount"/> the number of times the
+/// player has placed the object (the word Theme Park Inc adds to the 32-byte Theme Park World record), which numbers the copies.
+/// </summary>
+// [BIN:TPI-EXE:0x5cff00 control constructor] the record is the info id (u16), +4 = info +0x2ac, +8 = info +0x198, +0xc = info +0x23c, +0x10 = (info +0x270 == 0), +0x14 = 0, +0x18 = 0, +0x1c = -1, +0x20 = 0: the same fields as tp.exe's constructor 0x4d3e4f, whose +0x1c starts at 0, plus +0x20
+// [BIN:TPI-EXE:0x5dba8a built count] +0x18 is incremented when an attraction is made and +0x1c set from the game tick (the word at game +0x1eab40) while it is -1; the destroy step 0x5de7b4 decrements +0x18
+// [BIN:TPI-EXE:0x668144 placement] +0x20 is incremented by the placement step 0x667cb0 and, from the second copy on, the placed object is labelled "<name> <count>"
+public readonly record struct ThemeParkIncObjectControl( int Index, int Id, int Price, uint InfoWord8, uint InfoWordC, bool Researched, uint ResearchLevel, int BuiltCount, int FirstBuiltTick, int PlacementCount )
 {
 	public const int Bytes = 36;
+	/// <summary>The two bytes after the 16-bit id: padding of a record the game copies as raw memory (0 in the prebuilt).</summary>
+	public ushort IdPadding { get; init; }
 }
 
 /// <summary>The control manager's table (0x5cf9b0): 150 records of 36 bytes, <c>u32 mNumObjectControls</c> (the used records come first) and <c>u16 mPreviousSearchKey</c>.</summary>
@@ -126,10 +136,11 @@ public sealed record ThemeParkIncObjectControls( int Offset, IReadOnlyList<Theme
 		for ( var index = 0; index < count; index++ )
 		{
 			var record = new SaveFieldReader( payload, offset + index * ThemeParkIncObjectControl.Bytes, "Theme Park Inc object control" );
-			var (id, word4, word8, wordC, researched) = (record.U32(), record.U32(), record.U32(), record.U32(), record.U32());
-			if ( id == 0 || id > ushort.MaxValue || researched > 1 )
+			// the id is a 16-bit word; the two bytes after it are padding of a record that is copied as raw memory, so they are not checked
+			var (id, padding, price, word8, wordC, researched) = (record.U16(), record.U16(), record.I32(), record.U32(), record.U32(), record.U32());
+			if ( id == 0 || researched > 1 )
 				throw new InvalidDataException( $"Save Theme Park Inc object control {index} has id {id} and researched word {researched}." );
-			controls.Add( new ThemeParkIncObjectControl( index, (int)id, word4, word8, wordC, researched != 0, record.U32(), record.U32(), record.U32(), record.U32() ) );
+			controls.Add( new ThemeParkIncObjectControl( index, id, price, word8, wordC, researched != 0, record.U32(), record.I32(), record.I32(), record.I32() ) { IdPadding = padding } );
 		}
 		return new ThemeParkIncObjectControls( offset, controls.AsReadOnly(), key );
 	}
@@ -179,18 +190,53 @@ public sealed record ThemeParkIncStaffPool( int Offset, IReadOnlyList<ThemeParkI
 
 /// <summary>
 /// The macro-AI calendar (32 bytes): the Theme Park World calendar (<see cref="SaveCalendar"/>) with <see cref="YearAtLastUpdate"/> between the session start and the month.
-/// The time stamps count 100 ns since 1601-01-01; the month is zero-based.
+/// The time stamps count 100 ns since 1601-01-01; the month is zero-based. The last three are the date the calendar step 0x6083d0 compared the game date with at its last run:
+/// a different day sends the new-day message (11) and a different month the new-month message (12) to the things.
 /// </summary>
-// [APPROX:SAVE-942] the calendar's field order is read from the prebuilt's bytes (two 8-byte stamps, then 2000, 0, 4, 15000), not from the serializer's field log
+// [BIN:TPI-EXE:0x607f70 calendar serializer] the field log names, in the order both directions use: mFunnyTimeStart (8), mSessionStart (8), mYearAtLastUpdate (4, object +0x18), mMonthAtLastUpdate (4, +0x10), mDayAtLastUpdate (4, +0x14), mFunnySecsPerRealSec (4); the macro AI calls it at 0x5d653d between its base 0x6308a0 and the arrivals
+// [BIN:TPI-EXE:0x6083d0 calendar step] the month is the zero-based struct field (month - 1) and the day is compared with +0x14, the month with +0x10, then all three are stored back (0x6086ed)
 public readonly record struct ThemeParkIncCalendar( int Offset, long FunnyTimeStart, long SessionStart, int YearAtLastUpdate, int MonthAtLastUpdate, int DayAtLastUpdate, int FunnySecsPerRealSec )
 {
 	public const int Bytes = 32;
 }
 
-/// <summary>One special-ride record of the World's tail (0x6244b0): a u16 and 20 slots of 10 bytes, kept raw.</summary>
+/// <summary>
+/// The macro-AI arrivals (18 bytes): the arrival rate, the time signature (a 4-byte time object), the vehicle capacity the arrival aims for, the people on the bus, and whether the
+/// bus is offloading and whether the gates are open.
+/// </summary>
+// [BIN:TPI-EXE:0x5bc670 arrivals serializer] mArrivalRate (4), mTimeSig (4, through 0x448c80), mTargetVehicleCapacity (4), mPeopleOnBus (4), mOffloading (1), mGatesOpen (1); the prebuilt reads 0, 0, 5, 0, 0, 1
+public readonly record struct ThemeParkIncArrivals( int Offset, uint ArrivalRate, uint TimeSig, uint TargetVehicleCapacity, uint PeopleOnBus, bool Offloading, bool GatesOpen )
+{
+	public const int Bytes = 18;
+
+	internal static ThemeParkIncArrivals Read( ReadOnlySpan<byte> payload, int offset )
+	{
+		var reader = new SaveFieldReader( payload[..(offset + Bytes)], offset, "Theme Park Inc World arrivals" );
+		return new ThemeParkIncArrivals( offset, reader.U32(), reader.U32(), reader.U32(), reader.U32(), reader.U8() != 0, reader.U8() != 0 );
+	}
+}
+
+/// <summary>One slot of a special ride (10 bytes saved of the 12 in memory): the thing id, an ability and a type; the record builder 0x623dc0 fills the unused slots with type 7, ability 0 and thing id 0.</summary>
+// [BIN:TPI-EXE:0x6244b0 special rides loader] per slot AllSpecialRidesThingId (u16), AllSpecialRidesAbility (u32), AllSpecialRidesType (u32); [BIN:TPI-EXE:0x623e82 unused slot] the builder's unused slots are type 7, ability 0, thing id 0
+public readonly record struct ThemeParkIncSpecialRideSlot( ushort ThingId, uint Ability, uint Type )
+{
+	public const int Bytes = 10;
+	public const uint UnusedType = 7;
+	public bool IsUsed => Type != UnusedType;
+}
+
+/// <summary>One special-ride record of the World's tail (0x6244b0): the <c>SpecialRideThingId</c> and 20 slots of <see cref="ThemeParkIncSpecialRideSlot"/>; <see cref="Slots"/> keeps the 200 raw bytes.</summary>
 public sealed record ThemeParkIncSpecialRide( int Offset, ushort Id, byte[] Slots )
 {
-	public const int Bytes = 2 + 20 * 10;
+	public const int SlotCount = 20;
+	public const int Bytes = 2 + SlotCount * ThemeParkIncSpecialRideSlot.Bytes;
+
+	/// <summary>The 20 slots in file order.</summary>
+	public IReadOnlyList<ThemeParkIncSpecialRideSlot> Entries { get; } = Enumerable.Range( 0, SlotCount ).Select( index =>
+	{
+		var at = index * ThemeParkIncSpecialRideSlot.Bytes;
+		return new ThemeParkIncSpecialRideSlot( BinaryPrimitives.ReadUInt16LittleEndian( Slots.AsSpan( at ) ), BinaryPrimitives.ReadUInt32LittleEndian( Slots.AsSpan( at + 2 ) ), BinaryPrimitives.ReadUInt32LittleEndian( Slots.AsSpan( at + 6 ) ) );
+	} ).ToArray();
 }
 
 /// <summary>A small fixed-width thing: its base and the bytes after it (mechanic HQ, tag system, UI receiver, OBJH, CUTS, TRNR).</summary>
@@ -212,14 +258,15 @@ public sealed record ThemeParkIncSmallThing( int Id, ThemeParkIncThingModel Mode
 /// </list>
 /// </summary>
 // [BIN:TPI-EXE:0x64bc00 World loader] variables 0x64bc00, control manager 0x5cf9b0, macro AI (staff pool 0x6308a0, calendar, arrivals), map 0x5d6d40, "Used Thing Head" and the things through the jump table 0x64d7e0, special rides 0x6244b0
-// [APPROX:SAVE-943] the special rides' count is taken as the saved word: the loader 0x6244b0 loops by a live global rather than the saved count, so a save whose count differs from the live global (the prebuilt's is 4) reads differently there — evidence needed: the global's value and writer at the loader's loop
-// [APPROX:SAVE-944] the guests, staff and gardeners have layouts traced from their load routines (and emulated), but no Theme Park Inc save holds one: their widths and fields are unwitnessed, and a word is not typed beyond its width
+// [BIN:TPI-EXE:0x6244b0 special rides loader] mNumSpecialRides is read into the global 0xaa071c and the loop runs by that global, so by the saved count (a count of 0 or below reads none); the table it fills (0xaa0330, 0xf4 bytes per record) holds four records before its own count word (inside the fifth record), so a larger count is refused here: the original would overwrite the count while reading
+// [APPROX:SAVE-944] the guests, staff and gardeners have layouts traced from their load routines (and emulated), but no Theme Park Inc save holds one: their widths and fields are unwitnessed, and a word is not typed beyond its width except the meters and the weather floats of ThemeParkIncThingBodies.cs
 public sealed class ThemeParkIncSaveWorld
 {
 	public const int MaximumThings = ushort.MaxValue;
 	public const int ThingHeaderBytes = 16;
-	public const int MaximumSpecialRides = 1024;
-	public const int ArrivalBytes = 18;
+	/// <summary>The special-rides table of the game holds four records; the count word lies inside the fifth (loader 0x6244b0, global 0xaa071c).</summary>
+	public const int MaximumSpecialRides = 4;
+	public const int ArrivalBytes = ThemeParkIncArrivals.Bytes;
 	public const int Version = 3;
 	/// <summary>The map loop of the loader runs a fixed 0x4000 times, so the map must be 128 × 128.</summary>
 	public const int MapCells = SaveBlockWidths.WorldCells;
@@ -292,8 +339,10 @@ public sealed class ThemeParkIncSaveWorld
 	public ThemeParkIncStaffPool StaffPool { get; }
 	public ThemeParkIncCalendar Calendar { get; }
 	public int ArrivalOffset { get; }
-	/// <summary>The 18 raw arrival bytes at <see cref="ArrivalOffset"/> (field meanings not traced).</summary>
+	/// <summary>The 18 raw arrival bytes at <see cref="ArrivalOffset"/>; <see cref="ArrivalState"/> has them typed.</summary>
 	public byte[] Arrivals { get; }
+	/// <summary>The arrivals typed (0x5bc670).</summary>
+	public ThemeParkIncArrivals ArrivalState => ThemeParkIncArrivals.Read( Arrivals, 0 ) with { Offset = ArrivalOffset };
 	public SaveCellGrid Cells { get; }
 	public uint UsedThingHead { get; }
 	/// <summary>Where <c>Used Thing Head</c> sits (the grid ends there).</summary>

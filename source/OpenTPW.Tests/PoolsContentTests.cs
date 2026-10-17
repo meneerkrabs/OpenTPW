@@ -64,7 +64,7 @@ public class PoolsContentTests
 	{
 		var file = ModObjectsFile.Load( Path.Combine( PoolContent.Directory!, "objects.json" ), Array.Empty<string>() );
 		Assert.AreEqual( (PoolContent.FirstReservedId, PoolContent.LastReservedId), (file.FirstId, file.LastId), "the file reserves exactly the extension's range" );
-		Assert.AreEqual( 4 + 24 + 16, file.Objects.Count, "four changing rooms, six extras for each of the four themes and four water attractions for each" );
+		Assert.AreEqual( 4 + 24 + 16 + 8, file.Objects.Count, "four changing rooms, six extras for each of the four themes, four water attractions for each and two slide towers for each" );
 		var rooms = file.Objects.Where( item => item.InfoId >= 65500 ).ToArray();
 		CollectionAssert.AreEqual( Themes, rooms.Select( item => item.Theme ).ToArray() );
 		CollectionAssert.AreEqual( new[] { 65500, 65501, 65502, 65503 }, rooms.Select( item => item.InfoId ).ToArray() );
@@ -74,8 +74,8 @@ public class PoolsContentTests
 		Assert.IsTrue( file.Objects.All( item => item.Category == ObjectCategory.Feature && item.Input == null ) );
 		Assert.IsTrue( file.Objects.All( item => item.InfoId is >= PoolContent.FirstReservedId and <= PoolContent.LastReservedId ) );
 		Assert.IsTrue( PoolContent.FirstReservedId >= CrossEditionObjects.FirstReservableId && PoolContent.LastReservedId <= CrossEditionObjects.LastReservableId );
-		Assert.AreEqual( 9, file.Objects[0].Names.Count, "a name for each of the nine languages" );
-		Assert.AreEqual( "Changing Room", file.Objects[0].Names["English"] );
+		Assert.AreEqual( 9, rooms[0].Names.Count, "a name for each of the nine languages" );
+		Assert.AreEqual( "Changing Room", rooms[0].Names["English"] );
 	}
 
 	[TestMethod]
@@ -426,7 +426,7 @@ public class PoolsContentTests
 		var folder = PoolContent.Directory!;
 		var files = Directory.EnumerateFiles( folder, "*", SearchOption.AllDirectories ).ToArray();
 		var sprites = files.Where( file => file.Replace( '\\', '/' ).Contains( "/esprites/" ) ).ToArray();
-		Assert.IsTrue( files.Except( sprites ).Sum( file => new FileInfo( file ).Length ) < 2_000_000, "the objects and the sprite manifest (what the browser build embeds) stay small" );
+		Assert.IsTrue( files.Except( sprites ).Sum( file => new FileInfo( file ).Length ) < 2_600_000, "the objects (with the slide towers) and the sprite manifest (what the browser build embeds) stay small" );
 		Assert.IsTrue( sprites.Sum( file => new FileInfo( file ).Length ) < 9_500_000, "the 2x sprite sets (shipped on the desktop, fetched on demand in the browser) have a budget too: the kids ship only the slots that are drawn" );
 		Assert.IsFalse( files.Any( file => file.EndsWith( ".wad", StringComparison.OrdinalIgnoreCase ) || file.EndsWith( ".wct", StringComparison.OrdinalIgnoreCase ) ), "no original archive or texture format file" );
 		Assert.IsTrue( files.All( file => Path.GetFileName( file ).Length <= 24 ) );

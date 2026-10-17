@@ -101,8 +101,9 @@ public class AdvisorTests
 		// 7 (no face test before the submit's transform) and 10 (the game's mouth runs on the advisor clock; the tools' audio clock is an extension) in the read-audio round;
 		// 27 (the slap on cut-off and the F1 replay) in the advisor presentation round;
 		// 20 (event 2 is the bank's monthly message, 0x4D0370) in the economy rules round;
-		// 6 (a clip the archive lacks: the start 0x472F60 clears the animation of the model, which keeps its rest pose) and 22 (all 351 descriptors of table 0x76E300 are bound, so an original save's controller is imported whole) in the audio-fx sweep.
-		var retired = new[] { 1, 2, 3, 4, 6, 7, 8, 10, 11, 13, 14, 15, 16, 18, 19, 20, 21, 22, 23, 24, 27 };
+		// 6 (a clip the archive lacks: the start 0x472F60 clears the animation of the model, which keeps its rest pose) and 22 (all 351 descriptors of table 0x76E300 are bound, so an original save's controller is imported whole) in the audio-fx sweep;
+		// 26 (the node bits: every clip end clears all of them, 0x472310 with the advisor's model flag 8, so no state persists between clips or responses) in the lip round.
+		var retired = new[] { 1, 2, 3, 4, 6, 7, 8, 10, 11, 13, 14, 15, 16, 18, 19, 20, 21, 22, 23, 24, 26, 27 };
 		CollectionAssert.AreEqual( Enumerable.Range( 1, 27 ).Except( retired ).Select( index => $"ADVISOR-{index:000}" ).ToArray(), Advisor.Approximations.Select( entry => entry.Id ).ToArray() );
 	}
 
@@ -240,8 +241,13 @@ public class AdvisorTests
 			"the level advisors' texture-coordinate tracks" );
 	}
 
+	/// <summary>
+	/// A clip start hides only its own node list (every other node is shown: the previous clip's end cleared them all, 0x472310 with the
+	/// advisor's model flag 8), so the ticket advice shows the held ticket in clips 17 and 18, the clip's toggles do the rest, and the
+	/// close-ups hide the body and the bug head.
+	/// </summary>
 	[TestMethod]
-	public void TheTicketCloseUpShowsTheTicketTheClipBeforeToggledOnAndHidesTheBugHead()
+	public void EachClipStartsFromAnAllShownModelAndHidesOnlyItsOwnNodeList()
 	{
 		using var assets = new OriginalAssets();
 		const string archive = "/levels/fantasy/advisor";
@@ -254,18 +260,32 @@ public class AdvisorTests
 		var sequence = AdvisorSequences.Build( 29, 1500, durations, () => 0 );
 		CollectionAssert.AreEqual( new[] { 17, 17, 17, 17, 18, 19, 20 }, sequence.Clips.ToArray() );
 		int Node( string name ) => model.Meshes.Single( mesh => mesh.Name == name ).NodeIndex;
-		HashSet<int> At( int index ) => AdvisorAccessories.SequenceHiddenNodes( map, sequence, durations, ClipOf, AdvisorCostume.None, AdvisorThemeCostume.None, index );
+		HashSet<int> At( int index ) => AdvisorAccessories.SequenceHiddenNodes( map, sequence, ClipOf, AdvisorCostume.None, AdvisorThemeCostume.None, index );
+
+		var holding = At( 0 );
+		Assert.IsFalse( holding.Contains( Node( "Ticket" ) ), "clip 17's list leaves the ticket the advisor holds" );
+		Assert.IsTrue( holding.Contains( Node( "Ticket2" ) ) && holding.Contains( Node( "Fantasy Helm" ) ), "and hides the second ticket and the helmet" );
+		Assert.IsFalse( holding.Contains( Node( "Body" ) ) || holding.Contains( Node( AdvisorAccessories.BugHead ) ), "the advisor itself shows in clip 17" );
 
 		var ticketClip = At( 4 );
-		Assert.IsTrue( ticketClip.Contains( Node( "Ticket2" ) ), "clip 18 starts with the ticket hidden" );
+		Assert.IsFalse( ticketClip.Contains( Node( "Ticket2" ) ), "clip 18's list does not name the second ticket" );
+		AdvisorAccessories.ApplyToggles( map, ticketClip, ClipOf( 18 ), 0 );
+		Assert.IsTrue( ticketClip.Contains( Node( "Ticket2" ) ), "its toggle at tick 0 hides the second ticket" );
 		AdvisorAccessories.ApplyToggles( map, ticketClip, ClipOf( 18 ), 40 );
 		Assert.IsFalse( ticketClip.Contains( Node( "Ticket2" ) ), "and shows it from tick 38" );
+		Assert.IsTrue( ticketClip.Contains( Node( "Ticket" ) ), "while the held ticket goes at tick 38" );
+
 		var closeUp = At( 5 );
-		Assert.IsFalse( closeUp.Contains( Node( "Ticket2" ) ), "clip 19's list leaves the ticket clip 18 showed" );
+		Assert.IsFalse( closeUp.Contains( Node( "Ticket2" ) ), "clip 19's list leaves the second ticket" );
 		foreach ( var name in new[] { "Body", "Right Eye", "Right hand", AdvisorAccessories.BugHead } )
 			Assert.IsTrue( closeUp.Contains( Node( name ) ), $"the close-up hides {name}" );
-		Assert.IsTrue( At( 6 ).Contains( Node( "Ticket2" ) ), "clip 19's toggle hides the ticket at tick 39, before clip 20 starts" );
-		Assert.IsFalse( At( 0 ).Contains( Node( "Body" ) ) || At( 0 ).Contains( Node( AdvisorAccessories.BugHead ) ), "the advisor itself shows in clip 17" );
+		AdvisorAccessories.ApplyToggles( map, closeUp, ClipOf( 19 ), 40 );
+		Assert.IsTrue( closeUp.Contains( Node( "Ticket2" ) ), "clip 19's toggle hides it at tick 39" );
+
+		var last = At( 6 );
+		Assert.IsFalse( last.Contains( Node( "Ticket2" ) ), "clip 20 starts with it shown again: nothing of clip 19 survives its end" );
+		AdvisorAccessories.ApplyToggles( map, last, ClipOf( 20 ), 61 );
+		Assert.IsTrue( last.Contains( Node( "Ticket2" ) ), "and its own toggle hides it at tick 60" );
 	}
 
 	/// <summary>The clip lengths of the original's advisor clips come from trailer word 2 (0x474070): the global advisor's and a level advisor's.</summary>

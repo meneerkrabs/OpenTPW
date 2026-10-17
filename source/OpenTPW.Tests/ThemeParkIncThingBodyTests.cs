@@ -404,6 +404,63 @@ public class ThemeParkIncThingBodyTests
 
 	// ------------------------------------------------------------------ the thing chain (the prebuilt with synthetic things added)
 
+	/// <summary>The guest's seven meters are single-precision floats at the offsets the needs step 0x619c0e and the outcome step 0x612740 use (SAVE-944).</summary>
+	[TestMethod]
+	public void GuestMetersAreFloatsAtTheirNeedsStepOffsets()
+	{
+		var body = Body( ThemeParkIncThingModel.Guest );
+		var values = new Dictionary<string, float>
+		{
+			["pv_0x1bc"] = 61f, ["pv_0x1c8"] = 12f, ["pv_0x1cc"] = 34f, ["pv_0x1d0"] = 56f, ["pv_0x1d4"] = 78f, ["pv_0x1d8"] = 90f, ["pv_0x1dc"] = 3f,
+		};
+		foreach ( var (path, value) in values )
+			Patch( body, ThemeParkIncThingModel.Guest, path, BitConverter.SingleToUInt32Bits( value ) );
+		var guest = ThemeParkIncPerson.Read( 13, ThemeParkIncThingModel.Guest, new ThemeParkIncBody( ThemeParkIncThingModel.Guest, body ) );
+		var meters = guest.GuestMeters!.Value;
+		Assert.AreEqual( 61f, meters.Happiness );
+		Assert.AreEqual( 12f, meters.Thirst );
+		Assert.AreEqual( 34f, meters.Hunger );
+		Assert.AreEqual( 56f, meters.Toilet );
+		Assert.AreEqual( 78f, meters.Illness );
+		Assert.AreEqual( 90f, meters.Litter );
+		Assert.AreEqual( 3f, meters.Meter1DC );
+		Assert.IsNull( guest.StaffMeters );
+		// the member offsets in the guest object: the layout's own names carry them, and the seven meters sit in the 0x1bc..0x1dc block of the 0x2f0-byte guest
+		CollectionAssert.AreEquivalent( new[] { "pv_0x1bc", "pv_0x1c8", "pv_0x1cc", "pv_0x1d0", "pv_0x1d4", "pv_0x1d8", "pv_0x1dc" }, values.Keys.ToArray() );
+		foreach ( var path in values.Keys )
+			Assert.AreEqual( 4, guest.Body.Field( path ).Size, path );
+	}
+
+	[TestMethod]
+	public void StaffMetersAreThreeFloatsAndGuestsHaveNone()
+	{
+		var body = Body( ThemeParkIncThingModel.Mechanic );
+		Patch( body, ThemeParkIncThingModel.Mechanic, "pv_0x230", BitConverter.SingleToUInt32Bits( 70f ) );
+		Patch( body, ThemeParkIncThingModel.Mechanic, "pv_0x234", BitConverter.SingleToUInt32Bits( 45f ) );
+		Patch( body, ThemeParkIncThingModel.Mechanic, "pv_0x238", BitConverter.SingleToUInt32Bits( 12f ) );
+		var staff = ThemeParkIncPerson.Read( 12, ThemeParkIncThingModel.Mechanic, new ThemeParkIncBody( ThemeParkIncThingModel.Mechanic, body ) );
+		Assert.AreEqual( new ThemeParkIncStaffMeters( 70f, 45f, 12f ), staff.StaffMeters );
+		Assert.IsNull( staff.GuestMeters );
+	}
+
+	/// <summary>The weather's wind is two floats (90.0 and 0.5 at construction) and the last lightning a float vector (0x64149b, 0x6423fb).</summary>
+	[TestMethod]
+	public void WeatherWindAndLightningAreFloats()
+	{
+		var body = Body( ThemeParkIncThingModel.Weather );
+		Patch( body, ThemeParkIncThingModel.Weather, "mWindDir", BitConverter.SingleToUInt32Bits( 90f ) );
+		Patch( body, ThemeParkIncThingModel.Weather, "mWindForce", BitConverter.SingleToUInt32Bits( 0.5f ) );
+		var location = new ThemeParkIncBody( ThemeParkIncThingModel.Weather, body ).Field( "mLastLightningLocation" );
+		Assert.AreEqual( 12, location.Size );
+		BitConverter.TryWriteBytes( body.AsSpan( location.Offset ), 10.5f );
+		BitConverter.TryWriteBytes( body.AsSpan( location.Offset + 4 ), 3f );
+		BitConverter.TryWriteBytes( body.AsSpan( location.Offset + 8 ), -7.25f );
+		var weather = ThemeParkIncWeather.Read( 3, new ThemeParkIncBody( ThemeParkIncThingModel.Weather, body ) );
+		Assert.AreEqual( 90f, weather.WindDirection );
+		Assert.AreEqual( 0.5f, weather.WindStrength );
+		Assert.AreEqual( (10.5f, 3f, -7.25f), weather.LastLightning );
+	}
+
 	private static byte[]? prebuilt;
 
 	private static byte[] Prebuilt()

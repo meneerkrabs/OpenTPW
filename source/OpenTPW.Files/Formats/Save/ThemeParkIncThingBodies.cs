@@ -42,6 +42,18 @@ public sealed record ThemeParkIncWeather(
 	uint WindForce,
 	bool Overridden )
 {
+	/// <summary>The wind direction in degrees: <c>mWindDir</c> is a float (the constructor 0x64149b sets 90.0).</summary>
+	// [BIN:TPI-EXE:0x6414a2 weather constructor] +0x74 (mWindDir) starts at 90.0 and +0x78 (mWindForce) at 0.5, both single-precision floats that the weather step 0x642cb0 and 0x642d3b write with fstp
+	public float WindDirection => BitConverter.UInt32BitsToSingle( WindDir );
+
+	/// <summary>The wind force: <c>mWindForce</c> is a float (0.5 at construction).</summary>
+	public float WindStrength => BitConverter.UInt32BitsToSingle( WindForce );
+
+	/// <summary>The place of the last lightning strike: three floats (x, y, z) that the thunder countdown (<c>mThunderCountdown</c>, decremented by the step 0x6423f2) converts to integers at 0 to start the strike effect (0x6423fb).</summary>
+	// [BIN:TPI-EXE:0x6423fb lightning location] fld [esi+0x64], [esi+0x60], [esi+0x5c] then the float-to-integer conversion 0x86fab0 for each, passed to the effect call 0x402dab
+	public (float X, float Y, float Z) LastLightning => (
+		BitConverter.ToSingle( LastLightningLocation, 0 ), BitConverter.ToSingle( LastLightningLocation, 4 ), BitConverter.ToSingle( LastLightningLocation, 8 ) );
+
 	internal static ThemeParkIncWeather Read( int id, ThemeParkIncBody body )
 	{
 		var p = string.Empty;
@@ -434,6 +446,21 @@ public sealed record ThemeParkIncParkAnalyser(
 }
 
 /// <summary>
+/// The seven single-precision meters of a guest (the loader's log names each <c>pv</c>; the layout names them by the member offset). The game keeps each between 0 and 100 and saves it as
+/// a float truncated to a byte. <see cref="Meter1DC"/> is the seventh: nothing but the attraction's info word +0x198 (which a visit takes off) writes it, and no meaning for it was found.
+/// </summary>
+// [BIN:TPI-EXE:0x619c0e guest needs step] every 16th game tick the toilet meter (+0x1d0) rises by 1.0 and the hunger (+0x1cc) and thirst (+0x1c8) meters by 2.0; the cell's environment words add to illness (+0x1d4, cell word 2) and hunger (cell word 4); a meter at exactly 100 costs 1.0 happiness (0x619d73); the toilet meter above 80 costs happiness too (0x619dc4)
+// [BIN:TPI-EXE:0x612740 guest outcome] the attraction's info effects (keys ThirstEffect .. ToiletEffect at info +0x200, +0x204, +0x208 VomitEffect, +0x20c HappinessEffect, +0x210 LitterEffect, +0x214 ToiletEffect) add to illness (+0x1d4), happiness (+0x1bc), litter (+0x1d8) and toilet (+0x1d0), each clamped to 0..100; the shop types add the salt and fat effects to thirst (+0x1c8) and a drink to the toilet meter; the payment 0x6125b0 takes the price from mCash (+0x1c0) and adds it to mCashSpent (+0x1c4)
+public readonly record struct ThemeParkIncGuestMeters( float Happiness, float Thirst, float Hunger, float Toilet, float Illness, float Litter, float Meter1DC );
+
+/// <summary>
+/// The three single-precision meters of a staff member (the log names each <c>pv</c>): energy, happiness and motivation, the three the strike keys <c>EnergyPercentToStrike</c>,
+/// <c>HappyPercentToStrike</c> and <c>MotivationPercentToStrike</c> are about. Each is kept between 0 and 100 and saved as a float truncated to a byte. Which member is which is not settled:
+/// <see cref="Meter234"/> is the one the wage code (0x62cecb, 0x62cfa2) moves and the strike test (0x62d01e) compares with a threshold, which points at happiness.
+/// </summary>
+public readonly record struct ThemeParkIncStaffMeters( float Meter230, float Meter234, float Meter238 );
+
+/// <summary>
 /// A guest, staff member or gardener thing (models 1, 4 to 8 and 20): the body read through its traced layout. None of these is in the prebuilt save, so the layouts rest on the
 /// load routines and an emulation of them, not on a witnessed save. The staff share the person block with the guests (sprite, walking state, thoughts) and add the staff block with
 /// six history rings; the guest adds the guest block. Everything beyond the helpers below is reachable by path through <see cref="Body"/>.
@@ -446,6 +473,14 @@ public sealed record ThemeParkIncPerson( int Id, ThemeParkIncThingModel Model, S
 	public uint SpriteId => Body.U32( "mSpriteID" );
 
 	public bool IsStaff => Model is >= ThemeParkIncThingModel.Mechanic and <= ThemeParkIncThingModel.Researcher or ThemeParkIncThingModel.Gardener;
+
+	/// <summary>A guest's seven meters; null for staff.</summary>
+	public ThemeParkIncGuestMeters? GuestMeters => Model == ThemeParkIncThingModel.Guest
+		? new ThemeParkIncGuestMeters( Body.F32( "pv_0x1bc" ), Body.F32( "pv_0x1c8" ), Body.F32( "pv_0x1cc" ), Body.F32( "pv_0x1d0" ), Body.F32( "pv_0x1d4" ), Body.F32( "pv_0x1d8" ), Body.F32( "pv_0x1dc" ) )
+		: null;
+
+	/// <summary>A staff member's three meters; null for a guest.</summary>
+	public ThemeParkIncStaffMeters? StaffMeters => IsStaff ? new ThemeParkIncStaffMeters( Body.F32( "pv_0x230" ), Body.F32( "pv_0x234" ), Body.F32( "pv_0x238" ) ) : null;
 
 	/// <summary>A guest's cash (<c>mCash</c>); null for staff.</summary>
 	public uint? Cash => Model == ThemeParkIncThingModel.Guest ? Body.U32( "mCash" ) : null;

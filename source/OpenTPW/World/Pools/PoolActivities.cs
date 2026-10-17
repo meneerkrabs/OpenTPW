@@ -153,6 +153,9 @@ public static class PoolSwimSlots
 	/// point (<see cref="GuestRenderer.BottomAnchoredSlots"/>), so <see cref="IPoolActivity.FeetHeight"/> always gives where the body rests. The strokes, the splash, the spa and the ring keep their water-line
 	/// hotspot, and standing, walking and the shower their feet.
 	/// </summary>
+	/// <summary>The slots drawn turned in their own plane by the residual of the 45 degree direction snap (<see cref="GuestRenderer.RotatedSlots"/>): the flat poses only, never the upright ones.</summary>
+	public static readonly IReadOnlySet<int> Rotated = new HashSet<int> { Sliding };
+
 	public static readonly IReadOnlySet<int> BottomAnchored = new HashSet<int> { LadderClimb, Dive, Lying, Sliding, RopeSwing };
 }
 
@@ -168,6 +171,7 @@ public static class PoolActivityRegistry
 		yield return new DivingBoardActivity();
 		yield return new ShowerActivity();
 		yield return new LoungerActivity();
+		yield return new PoolSlideActivity();
 		// [EXT:pools-attractions] [EXT:pools-river] the water attractions (P5) and the lazy river
 		if ( attractions != null )
 		{

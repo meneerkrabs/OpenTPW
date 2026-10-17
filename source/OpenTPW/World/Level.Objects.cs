@@ -545,6 +545,7 @@ public partial class Level
 			Draws = guest => (guest.IsSwimming || guest.InPoolActivity) && !PoolSlideActivity.IsInsideTube( guests, guest ),
 			SwimSlotFallback = true,
 			BottomAnchoredSlots = PoolSwimSlots.BottomAnchored,
+			RotatedSlots = PoolSwimSlots.Rotated,
 			SlotChooser = guest => guest.InPoolActivity
 				? (guests.PoolActivityOf( guest )?.SpriteSlot( guest ) ?? PoolSwimSlots.TreadWater, (int)(guests.TimeSeconds * 6) + guest.Id)
 				: (PoolSwimming.SpriteSlot( guest.SwimStroke ), (int)(guests.TimeSeconds * (guest.SwimStroke == 2 ? 3 : 6)) + guest.Id),

@@ -465,7 +465,7 @@ cameras, fireworks) are not modelled yet (GUEST-006).
 
 ### Thoughts
 
-Read in full in tp.exe (GUEST-006). A guest's thought (the visitor window's line and the park's most common thought) is set by the thought
+Read in full in tp.exe (GUEST-006). A guest's thought (the visitor window's line and the park information window's Top 3 Thoughts) is set by the thought
 object `0x50be80`, which 22 places call:
 
 - **The needs phase** (`0x501650`), outside states 16 and 17 and on a park cell, picks on one phase in ten (`0x4fc8a0`): hunger and thirst
@@ -490,6 +490,17 @@ are gone; the original never thinks those two. Not yet: "Angry" for a failing co
 the toilet, litter, a question mark, ...) and `SPR_TC`'s ten (a thumb up for "Pleased" and the staff's own: a pink smile and frown, a
 sleeping face for "tired", a protest sign for "strike", a question mark). Each thought's bubble script picks its slot (`0x74f190` on); the
 bubble hangs 2.5 units above its thinker (`0x4fa030`) with the sprite's own offset, up and to the right of the head.
+
+#### Top 3 Thoughts (park information window)
+
+Traced in tp.exe (the builder `0x4A52A0`, the window procedure `0x4A4830`, the refresh `0x4A4AB0`, the ranking `0x4C8430`). The window shows **three `ti_hungry` icons and no text**:
+
+- **What is counted:** the thought id (the first dword of the guest's thought object, `+0x30`) of every guest (thing type 1) standing on a park cell (`0x4FA990`: cell types 0, 1, 3, 9 and 10, whatever its state; a guest in the booth queue or on the road home does not count), into 23 counters for ids 0 to 22. **The count of id 0 (no thought) is then discarded** (`0x4C84D7` writes 0 to counts[0] right after the counting loop), so the guests without a thought never take a slot.
+- **Ranking:** three slots start as the ids 0, 1 and 2. Each id from 3 to 22, in order, finds the slot with the lowest count (the largest difference, signed, strictly above 0; the first slot among equal lows) and takes it if its own count is strictly higher. So an equal count never replaces a slot (the lower id keeps it on a tie), and **the slots are not sorted by count**. A slot whose count is 0 is written as 0x17 (nothing). The three slots are the result in slot order.
+- **Icons:** slot 0 goes to the rightmost icon (`0x4A68D4`), slot 1 to the middle (`0x4A68D3`), slot 2 to the leftmost (`0x4A68D2`). An id of 1 to 22 sets the icon's frame to the id less 1; 0 and 0x17 hide the icon ; an icon the update hides (`0x65D9DD(0)`) is never shown again while the window stays open, as nothing in `0x4A4AB0` or the window procedure calls the show form (not fully settled, `APPROX:UI-914`).
+- **Hover text:** each icon's handler `0x4A4700` answers message 0xC with the THOUGHTS.str entry of the icon's frame plus 1 (table `0x78BA9C`, as the visitor window reads it); OpenTPW shows the shown thought's text (the icon class's frame getter is a stub returning 0, so the original may name thought 1 for every icon; `APPROX:UI-914`).
+- **Cadence:** the builder arms timer `0x80083` at 1000 ms and runs the update once as it builds; every timer message re-reads the counts, the happiness levels and the thoughts. There are no strings: the title is UITEXT `0x9C` ("Top 3 Thoughts") and the frame's help id is 186.
+- **In OpenTPW:** `TopThoughtRanking.Rank` (pure) and `GuestSimulation.GetTopThoughts()` (a read of the guests on park cells); `ParkHud.OpenParkInfoWindow` draws the frame of the original table `0x7537D0` (`OriginalLayoutTables.ParkInfoWindow`) and refreshes it every second. This replaces `GuestStatistics.CommonThought`, a most-common-thought guess no code read, which the original never computes. Staff thoughts (18 to 22) live on staff things, which this census never reaches. The window's line graph, counts frame, happiness levels and navigation buttons are not built (`APPROX:UI-914`).
 
 ### The environment grid
 

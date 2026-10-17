@@ -54,11 +54,12 @@ public static class OfficialExtensions
 	public static IOpenTpwExtension Pools { get; } = new OpenTpwExtension( "opentpw.pools", "Pools", new ModVersion( 1, 0, 0 ), DefaultEnabled: false, AffectsSimulation: true );
 
 	/// <summary>
-	/// The guest insights extension (docs/SMARTER-GUESTS.md): reserved for phase 1's guest counters in the park windows. It only reads the simulation, so it is not recorded in park saves. It has no feature
-	/// yet, so players cannot switch it on until phase 1 ships (<see cref="IOpenTpwExtension.PlayerSelectable"/>).
+	/// The guest insights extension (docs/SMARTER-GUESTS.md): the refusal-reason counters (too expensive, queue too long, too scary, too boring, ride broken or closed) in the park information window (phase 1).
+	/// It only reads the simulation (<see cref="GuestRefusalCounters"/>, a passive observer), so it is not recorded in park saves and a player may switch it on freely
+	/// (<see cref="IOpenTpwExtension.PlayerSelectable"/>).
 	/// </summary>
 	// [EXT:guest-insights] OpenTPW's own extension; the original game has no such counters
-	public static IOpenTpwExtension GuestInsights { get; } = new OpenTpwExtension( "opentpw.guest-insights", "Guest insights", new ModVersion( 1, 0, 0 ), DefaultEnabled: false, AffectsSimulation: false, PlayerSelectable: false );
+	public static IOpenTpwExtension GuestInsights { get; } = new OpenTpwExtension( "opentpw.guest-insights", "Guest insights", new ModVersion( 1, 0, 0 ), DefaultEnabled: false, AffectsSimulation: false, PlayerSelectable: true );
 
 	/// <summary>
 	/// The smarter guests extension (docs/SMARTER-GUESTS.md): guests that decide better, through the pure decision layer (<see cref="IGuestDecisions"/>). Off by default; it changes the simulation,

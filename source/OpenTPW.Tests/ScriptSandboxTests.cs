@@ -1,0 +1,328 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+using Microsoft.VisualStudio.TestTools.UnitTesting;
+using OpenTPW.Scripting;
+using static OpenTPW.Tests.ScriptTestSupport;
+
+namespace OpenTPW.Tests;
+
+/// <summary>The escape and denial-of-service corpus of TPW Script: nothing here may crash, hang or change the state (docs/SCRIPT-MODS.md).</summary>
+[TestClass]
+public class ScriptSandboxTests
+{
+	private static string Main( string body ) => $"function main()\n{body}\nend";
+
+	/// <summary>Scripts that must run and fail with a given outcome.</summary>
+	private static readonly (string Name, string Source, ScriptOutcome Outcome, string Message)[] RunCorpus =
+	{
+		("infinite while", Main( "while true do end return 1" ), ScriptOutcome.BudgetExhausted, "budget"),
+		("infinite while with work", Main( "local i = 0 while true do i = i + 1 end return i" ), ScriptOutcome.BudgetExhausted, "budget"),
+		("huge for", Main( "local n = 0 for i = 1, 9223372036854775807 do n = n + 1 end return n" ), ScriptOutcome.BudgetExhausted, "budget"),
+		("nested loops", Main( "local n = 0 for i = 1, 100000 do for j = 1, 100000 do n = n + 1 end end return n" ), ScriptOutcome.BudgetExhausted, "budget"),
+		("unbounded recursion", "function f(n) return f(n + 1) end\nfunction main() return f(0) end", ScriptOutcome.RuntimeError, "depth"),
+		("mutual recursion", "function a(n) return b(n) end\nfunction b(n) return a(n) end\nfunction main() return a(0) end", ScriptOutcome.RuntimeError, "depth"),
+		("recursion with big frames", "function f(n) local a = 1 local b = 2 local c = 3 return f(n) + a + b + c end\nfunction main() return f(0) end", ScriptOutcome.RuntimeError, "depth"),
+		("recursive loop bomb", "function f() local n = 0 while true do n = f() end return n end\nfunction main() return f() end", ScriptOutcome.RuntimeError, "depth"),
+		("doubling string", Main( "local s = 'x' for i = 1, 100 do s = s .. s end return len(s)" ), ScriptOutcome.RuntimeError, "string longer"),
+		("string just over the cap", Main( "local s = 'x' for i = 1, 10 do s = s .. s end return len(s .. 'y')" ), ScriptOutcome.RuntimeError, "string longer"),
+		("many big concatenations", Main( "local s = 'x' for i = 1, 10 do s = s .. s end local n = 0 for i = 1, 5000 do local t = s .. '' n = n + 1 end return n" ), ScriptOutcome.BudgetExhausted, "budget"),
+		("table push flood", Main( "local t = {} for i = 1, 100000 do push(t, i) end return len(t)" ), ScriptOutcome.BudgetExhausted, "budget"),
+		("map key flood", Main( "local m = {} for i = 1, 100000 do m['k' .. i] = i end return 1" ), ScriptOutcome.BudgetExhausted, "budget"),
+		("add overflow", Main( "return 9223372036854775807 + 1" ), ScriptOutcome.RuntimeError, "overflow"),
+		("sub overflow", Main( "return -9223372036854775807 - 2" ), ScriptOutcome.RuntimeError, "overflow"),
+		("mul overflow", Main( "local x = 4611686018427387904 return x * 2" ), ScriptOutcome.RuntimeError, "overflow"),
+		("neg overflow", Main( "local x = -9223372036854775807 - 1 return -x" ), ScriptOutcome.RuntimeError, "overflow"),
+		("pow2 loop overflow", Main( "local x = 1 for i = 1, 100 do x = x * 2 end return x" ), ScriptOutcome.RuntimeError, "overflow"),
+		("div by zero", Main( "return 5 // 0" ), ScriptOutcome.RuntimeError, "division by zero"),
+		("mod by zero", Main( "return 5 % 0" ), ScriptOutcome.RuntimeError, "division by zero"),
+		("min // -1", Main( "local x = -9223372036854775807 - 1 return x // -1" ), ScriptOutcome.RuntimeError, "overflow"),
+		("rng zero", Main( "return rng(0)" ), ScriptOutcome.RuntimeError, "rng"),
+		("rng negative", Main( "return rng(-5)" ), ScriptOutcome.RuntimeError, "rng"),
+		("index a number", Main( "local x = 5 return x.y" ), ScriptOutcome.RuntimeError, "cannot index"),
+		("index a string", Main( "local x = 'abc' return x[1]" ), ScriptOutcome.RuntimeError, "cannot index"),
+		("call result misuse", "function f() end\nfunction main() return f() + 1 end", ScriptOutcome.RuntimeError, "no value"),
+		("key too long", Main( "local m = {} m['" + new string( 'k', 65 ) + "'] = 1 return 1" ), ScriptOutcome.RuntimeError, "key"),
+		("empty key", Main( "local m = {} m[''] = 1 return 1" ), ScriptOutcome.RuntimeError, "key"),
+	};
+
+	[TestMethod]
+	public void EscapeAndDenialOfServiceCorpus()
+	{
+		foreach ( var (name, source, expected, message) in RunCorpus )
+		{
+			var host = Host( source );
+			var before = ScriptState.Serialize( host.State );
+			var result = Call( host, "main" );
+			Assert.AreEqual( expected, result.Outcome, $"{name}: {result.Message}" );
+			StringAssert.Contains( result.Message!.ToLowerInvariant(), message, name );
+			Assert.AreEqual( Previous, result.Value.AsInt, $"{name}: failure returns prev" );
+			Assert.AreEqual( before, ScriptState.Serialize( host.State ), $"{name}: state rolled back" );
+			Assert.IsTrue( result.Steps <= ScriptLimits.DefaultStepsPerCall + 1, $"{name}: {result.Steps} steps" );
+			// The host stays usable after any failure.
+			Assert.AreEqual( 5, Call( Host( "function main() return 5 end" ), "main" ).Value.AsInt, name );
+		}
+	}
+
+	private static string Repeat( string text, int count ) => string.Concat( Enumerable.Repeat( text, count ) );
+
+	/// <summary>Sources that must be refused at compile time, with the position where they go wrong.</summary>
+	private static readonly (string Name, string Source, string Message)[] CompileCorpus =
+	{
+		("deep parentheses", Main( "return " + Repeat( "(", 200 ) + "1" + Repeat( ")", 200 ) ), "nesting"),
+		("deep unary", Main( "return " + Repeat( "not ", 200 ) + "true" ), "nesting"),
+		("deep negation", Main( "return " + Repeat( "- ", 200 ) + "1" ), "nesting"),
+		("deep ifs", Main( Repeat( "if true then ", 200 ) + Repeat( "end ", 200 ) + "return 1" ), "nesting"),
+		("deep loops", Main( Repeat( "while true do ", 200 ) + Repeat( "end ", 200 ) ), "nesting"),
+		("deep tables", Main( "local t = " + Repeat( "{", 200 ) + Repeat( "}", 200 ) + " return 1" ), "nesting"),
+		("deep concat", Main( "return " + Repeat( "'a' .. ", 200 ) + "'b'" ), "nesting"),
+		("deep calls", Main( "return " + Repeat( "abs(", 200 ) + "1" + Repeat( ")", 200 ) ), "nesting"),
+		("too many tokens", Main( "return 1" + Repeat( "+1", 12000 ) ), "too many tokens"),
+		("too many functions", string.Concat( Enumerable.Range( 0, 65 ).Select( i => $"function f{i}() end\n" ) ), "too many functions"),
+		("too many parameters", "function f(a,b,c,d,e,f2,g,h,i) end", "too many parameters"),
+		("too many locals", Main( string.Concat( Enumerable.Range( 0, 70 ).Select( i => $"local v{i} = {i}\n" ) ) ), "too many local"),
+		("string literal too long", Main( "local s = '" + new string( 'x', 2000 ) + "'" ), "string literal too long"),
+		("name too long", $"function {new string( 'a', 100 )}() end", "name too long"),
+		("integer too large", Main( "return 9223372036854775808" ), "too large"),
+		("three decimals", Main( "return fx(1.234)" ), "2 decimals"),
+		("bare fixed literal", Main( "return 1.5" ), "fx("),
+		("fx of expression", Main( "local a = 1 return fx(a)" ), "number literal"),
+		("hex literal", Main( "return 0x10" ), "malformed"),
+		("float exponent", Main( "return 1e5" ), "malformed"),
+		("slash", Main( "return 4 / 2" ), "'/' is not supported"),
+		("length operator", Main( "local t = {1} return #t" ), "len("),
+		("method call", Main( "local s = 'a' return s:len()" ), "':'"),
+		("varargs", "function f(...) end", "varargs"),
+		("nil", Main( "local x = nil" ), "no nil"),
+		("goto", Main( "goto done" ), "goto"),
+		("repeat", Main( "repeat until true" ), "repeat"),
+		("generic for", Main( "for k, v in pairs(state) do end" ), "pairs"),
+		("pairs is not a function", Main( "local n = len(pairs(state)) return n" ), "unknown function 'pairs'"),
+		("unknown function", Main( "return mystery(1)" ), "unknown function"),
+		("unknown global read", Main( "return counter" ), "unknown name"),
+		("wrong arity user", "function f(a) return a end\nfunction main() return f(1, 2) end", "takes 1"),
+		("wrong arity host", Main( "return min(1)" ), "takes 2"),
+		("nested function", Main( "function inner() return 1 end return 1" ), "nested function"),
+		("function value", Main( "local f = function() return 1 end return f()" ), "function values"),
+		("closure capture attempt", "function make() local n = 0 function inc() n = n + 1 end return 1 end", "nested function"),
+		("other functions locals", "function a() local x = 1 return x end\nfunction b() return x end", "unknown name 'x'"),
+		("function as value", "function f() return 1 end\nfunction main() local g = f return g end", "is a function, not a value"),
+		("host function as value", Main( "local g = min return 1" ), "is a function, not a value"),
+		("function as argument", "function f() return 1 end\nfunction main() return abs(f) end", "is a function, not a value"),
+		("global assignment", Main( "counter = 1 return counter" ), "not a local variable"),
+		("assign to constant", "local limit = 5\nfunction main() limit = 6 return limit end", "constant"),
+		("assign to function", "function f() end\nfunction main() f = 1 end", "function"),
+		("assign to state", Main( "state = {}" ), "state itself"),
+		("shadowing a host function", Main( "local min = 1 return min" ), "reserved"),
+		("function named like a host function", "function max() return 1 end", "reserved"),
+		("function named state", "function state() return 1 end", "reserved"),
+		("duplicate function", "function f() end\nfunction f() end", "already defined"),
+		("duplicate constant", "local a = 1\nlocal a = 2", "already defined"),
+		("top level assignment", "counter = 0\nfunction main() return counter end", "top level"),
+		("top level call", "print(1)\nfunction main() return 1 end", "top level"),
+		("top level expression constant", "local a = 1 + 1\nfunction main() return a end", "top level"),
+		("top level table constant", "local t = {}\nfunction main() return 1 end", "literal"),
+		("top level if", "if true then end", "top level"),
+		("top level return", "return 1", "top level"),
+		("top level local without value", "local a\nfunction main() return 1 end", "'='"),
+		("local without value", Main( "local a return 1" ), "no nil"),
+		("return not last", Main( "return 1 local x = 2" ), "last statement"),
+		("break outside loop", Main( "break" ), "outside a loop"),
+		("missing end", "function main() return 1", "'end'"),
+		("unterminated string", Main( "return 'abc" ), "unterminated"),
+		("unterminated comment", "--[[ never closed\nfunction main() end", "unterminated"),
+		("unknown escape", Main( "return '\\q'" ), "unknown escape"),
+		("stray character", Main( "return 1 @ 2" ), "unexpected character"),
+		("duplicate map field", Main( "local t = { a = 1, a = 2 } return 1" ), "duplicate field"),
+		("call statement indexed", "function f() return {} end\nfunction main() f().x = 1 end", "statement"),
+		("expression statement", Main( "1 + 2" ), "unexpected"),
+		("bare name statement", Main( "state" ), "assignment or a call"),
+		("assignment target not assignable", Main( "len(state) = 1" ), "statement"),
+	};
+
+	[TestMethod]
+	public void CompileTimeCorpus()
+	{
+		foreach ( var (name, source, message) in CompileCorpus )
+		{
+			var error = Assert.ThrowsException<ScriptCompileException>( () => Compile( source ), name );
+			StringAssert.Contains( error.Detail, message, $"{name}: {error.Message}" );
+			Assert.IsTrue( error.Line >= 1 && error.Column >= 1, name );
+		}
+	}
+
+	[TestMethod]
+	public void StaticLimitsAreExactAtTheBoundary()
+	{
+		// Source size: exactly the cap passes the size check, one byte more does not.
+		var padding = new string( ' ', ScriptLimits.MaxSourceBytes - "function main() return 1 end".Length );
+		Compile( "function main() return 1 end" + padding );
+		var big = Assert.ThrowsException<ScriptCompileException>( () => Compile( "function main() return 1 end" + padding + " " ) );
+		StringAssert.Contains( big.Detail, "source too large" );
+
+		// Tokens: a body with exactly MaxTokens tokens compiles, one more does not.
+		// function main ( ) return 1 {+1} end = 6 + 1 + 2n + ... count them by building up to the cap.
+		var overhead = 7; // function, main, (, ), return, 1, end
+		var pairs = (ScriptLimits.MaxTokens - overhead) / 2;
+		Compile( "function main() return 1" + Repeat( "+1", pairs ) + " end" );
+		Assert.ThrowsException<ScriptCompileException>( () => Compile( "function main() return 1" + Repeat( "+1", pairs + 1 ) + " end" ) );
+
+		// Nesting: 31 nested ifs (plus the function body and the expression) pass, 40 do not.
+		Compile( Main( Repeat( "if true then ", 20 ) + Repeat( "end ", 20 ) ) );
+		Assert.ThrowsException<ScriptCompileException>( () => Compile( Main( Repeat( "if true then ", 40 ) + Repeat( "end ", 40 ) ) ) );
+
+		// Functions: exactly MaxFunctions pass.
+		Compile( string.Concat( Enumerable.Range( 0, ScriptLimits.MaxFunctions ).Select( i => $"function f{i}() end\n" ) ) );
+	}
+
+	[TestMethod]
+	public void MemoryCapStopsAllocationEvenWithAHugeStepBudget()
+	{
+		var options = new ScriptHostOptions { StepsPerCall = 100_000_000, StepsPerTick = 100_000_000 };
+		var result = Call( Host( Main( "local s = 'x' for i = 1, 10 do s = s .. s end local n = 0 for i = 1, 5000 do local t = s .. '' n = n + 1 end return n" ), options ), "main" );
+		Assert.AreEqual( ScriptOutcome.RuntimeError, result.Outcome );
+		StringAssert.Contains( result.Message, "memory" );
+		foreach ( var body in new[]
+		{
+			"local t = {} for i = 1, 4000 do push(t, { 1, 2, 3, 4, 5, 6, 7, 8 }) end return len(t)",
+			"local m = {} for i = 1, 3000 do m['k' .. i] = i end local n = 0 for i = 1, 100 do n = n + len(keys(m)) end return n"
+		} )
+		{
+			var flood = Call( Host( Main( body ), options ), "main" );
+			Assert.AreEqual( ScriptOutcome.RuntimeError, flood.Outcome, body );
+			StringAssert.Contains( flood.Message, "memory", body );
+		}
+	}
+
+	[TestMethod]
+	public void StateLimitsAreEnforcedWhenACallCommits()
+	{
+		var options = new ScriptHostOptions { StepsPerCall = 100_000_000, StepsPerTick = 100_000_000 };
+		var cases = new[]
+		{
+			( Main( "state.me = state return 1" ), "deeper" ),
+			( Main( "local t = state for i = 1, 40 do t.n = {} t = t.n end return 1" ), "deeper" ),
+			( Main( "state.a = {} for i = 1, 3000 do push(state.a, i) end state.b = {} for i = 1, 3000 do push(state.b, i) end return 1" ), "values" ),
+			( Main( "local s = 'x' for i = 1, 10 do s = s .. s end state.a = {} for i = 1, 70 do push(state.a, s) end return 1" ), "larger" ),
+			( Main( "state.a = {} state.a.x = 1 state.b = state.a state.c = state.a return 1" ), null ),
+		};
+		foreach ( var (source, message) in cases )
+		{
+			var host = Host( source, options );
+			var result = Call( host, "main" );
+			if ( message == null )
+			{
+				Assert.AreEqual( ScriptOutcome.Ok, result.Outcome, result.Message );
+				Assert.AreEqual( "{\"a\":{\"x\":1},\"b\":{\"x\":1},\"c\":{\"x\":1}}", ScriptState.Serialize( host.State ), "shared tables serialise as copies" );
+				continue;
+			}
+			Assert.AreEqual( ScriptOutcome.InvalidResult, result.Outcome, source );
+			StringAssert.Contains( result.Message, message, source );
+			Assert.AreEqual( "{}", ScriptState.Serialize( host.State ) );
+			Assert.AreEqual( Previous, result.Value.AsInt );
+		}
+	}
+
+	[TestMethod]
+	public void TableEntryCapStopsFloodsEvenWithAHugeStepBudget()
+	{
+		var options = new ScriptHostOptions { StepsPerCall = 100_000_000, StepsPerTick = 100_000_000 };
+		foreach ( var body in new[] { "local t = {} for i = 1, 100000 do push(t, i) end return len(t)", "local m = {} for i = 1, 100000 do m['k' .. i] = i end return 1" } )
+		{
+			var result = Call( Host( Main( body ), options ), "main" );
+			Assert.AreEqual( ScriptOutcome.RuntimeError, result.Outcome, body );
+			StringAssert.Contains( result.Message, "entries", body );
+		}
+	}
+
+	[TestMethod]
+	public void RecursionWithinTheDepthCapWorks()
+	{
+		var source = "function down(n) if n == 0 then return 0 end return 1 + down(n - 1) end\nfunction main(n) return down(n) end";
+		Assert.AreEqual( ScriptLimits.MaxCallDepth - 2, Run( source, ScriptLimits.MaxCallDepth - 2 ).Value.AsInt );
+		Assert.AreEqual( ScriptOutcome.RuntimeError, Run( source, ScriptLimits.MaxCallDepth + 5 ).Outcome );
+	}
+
+	[TestMethod]
+	public void HostViewsCannotBeChangedOrStored()
+	{
+		var view = ScriptValue.FromTable( ScriptTable.RecordView( new[]
+		{
+			new KeyValuePair<string, ScriptValue>( "x", 1 ),
+			new KeyValuePair<string, ScriptValue>( "list", ScriptTable.ArrayView( new ScriptValue[] { 1, 2 } ) )
+		} ) );
+		var writes = new[]
+		{
+			"v.x = 2", "v.y = 2", "v.list[1] = 9", "push(v.list, 3)", "pop(v.list)", "del(v, 'x')", "state.copy = v", "state.copy = v.list",
+			"local t = { v }", "local t = { a = v }", "push(state.items, v)", "local t = {} t[1] = v"
+		};
+		foreach ( var write in writes )
+		{
+			var host = Host( $"function main(v)\nstate.items = {{}}\n{write}\nreturn 1\nend" );
+			var result = Call( host, "main", view );
+			Assert.AreEqual( ScriptOutcome.RuntimeError, result.Outcome, $"{write}: {result.Message}" );
+			Assert.AreEqual( "{}", ScriptState.Serialize( host.State ), write );
+		}
+		// Reading and copying scalars is fine.
+		var ok = Call( Host( "function main(v) state.x = v.x + v.list[2] return state.x end" ), "main", view );
+		Assert.AreEqual( 3, ok.Value.AsInt );
+	}
+
+	[TestMethod]
+	public void ScriptsHaveNoAmbientCapabilities()
+	{
+		// Every capability a script might reach for is an unknown name at compile time, so nothing exists to be called.
+		foreach ( var name in new[] { "print", "io", "os", "require", "load", "loadstring", "dofile", "debug", "string", "math", "table", "pcall", "error", "assert",
+			"setmetatable", "getmetatable", "rawget", "coroutine", "collectgarbage", "_G", "_ENV", "tostring", "tonumber", "type", "select", "next", "ipairs", "pairs" } )
+		{
+			Assert.ThrowsException<ScriptCompileException>( () => Compile( Main( $"return {name}( 1 )" ) ), name );
+			Assert.ThrowsException<ScriptCompileException>( () => Compile( Main( $"local x = {name} return 1" ) ), name );
+		}
+	}
+
+	[TestMethod]
+	public void BudgetResultsAreIdenticalAcrossRuns()
+	{
+		const string source = """
+			function work(n)
+				local s = 0
+				for i = 1, n do s = s + i * i % 7 end
+				return s
+			end
+			function main(n) state.last = work(n) return state.last end
+			function spin() while true do end return 1 end
+			""";
+		long? steps = null;
+		for ( int i = 0; i < 5; i++ )
+		{
+			var result = Call( Host( source ), "main", 50 );
+			Assert.AreEqual( ScriptOutcome.Ok, result.Outcome );
+			steps ??= result.Steps;
+			Assert.AreEqual( steps, result.Steps );
+		}
+		var counts = Enumerable.Range( 0, 5 ).Select( _ => Call( Host( source ), "spin" ) ).ToList();
+		Assert.IsTrue( counts.All( c => c.Outcome == ScriptOutcome.BudgetExhausted && c.Steps == ScriptLimits.DefaultStepsPerCall + 1 && c.Line == counts[0].Line ) );
+
+		// The budget is a number of steps, and a bigger one lets the same call finish.
+		var small = new ScriptHostOptions { StepsPerCall = steps!.Value - 1 };
+		Assert.AreEqual( ScriptOutcome.BudgetExhausted, Call( Host( source, small ), "main", 50 ).Outcome );
+		var exact = new ScriptHostOptions { StepsPerCall = steps.Value };
+		Assert.AreEqual( ScriptOutcome.Ok, Call( Host( source, exact ), "main", 50 ).Outcome );
+	}
+
+	[TestMethod]
+	public void TickBudgetIsSharedByTheCallsOfATick()
+	{
+		var options = new ScriptHostOptions { StepsPerCall = 1000, StepsPerTick = 2500 };
+		var host = Host( "function main() local n = 0 for i = 1, 100 do n = n + 1 end return n end", options );
+		var outcomes = Enumerable.Range( 0, 10 ).Select( _ => Call( host, "main" ) ).ToList();
+		var okCount = outcomes.Count( o => o.Outcome == ScriptOutcome.Ok );
+		Assert.IsTrue( okCount > 0 && okCount < 10, $"{okCount} calls fit the tick" );
+		Assert.IsTrue( outcomes.Skip( okCount ).All( o => o.Outcome == ScriptOutcome.BudgetExhausted ), "once the tick is spent every call is refused" );
+		Assert.AreEqual( Previous, outcomes[^1].Value.AsInt );
+		host.BeginTick();
+		Assert.AreEqual( ScriptOutcome.Ok, Call( host, "main" ).Outcome );
+		Assert.AreEqual( 2500 - outcomes[0].Steps, host.TickStepsRemaining );
+	}
+}

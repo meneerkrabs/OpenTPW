@@ -377,7 +377,7 @@ public class DeterminismTests
 		if ( root == null )
 			Assert.Inconclusive( "Repository sources are not next to the test binaries." );
 		var source = Path.Combine( root.FullName, "source", "OpenTPW" );
-		var folders = new[] { "VM", "Economy", Path.Combine( "World", "Guests" ), Path.Combine( "World", "Objects" ), Path.Combine( "World", "Coasters" ) };
+		var folders = new[] { "VM", "Scripting", "Economy", Path.Combine( "World", "Guests" ), Path.Combine( "World", "Objects" ), Path.Combine( "World", "Coasters" ) };
 		var world = Directory.EnumerateFiles( Path.Combine( source, "World" ), "*.cs", SearchOption.TopDirectoryOnly )
 			.Where( path => !PresentationWorldFiles.Contains( Path.GetFileName( path ) ) ).ToList();
 		CollectionAssert.IsSubsetOf( new[] { "Level.cs", "Level.Objects.cs", "FixedStepClock.cs", "PrototypeRide.cs", "Ride.cs" }, world.Select( Path.GetFileName ).ToArray() );

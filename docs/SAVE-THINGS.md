@@ -11,13 +11,15 @@ persons) is refused by the saver, so neither appears in a save.
 
 ## Saves counted
 
-Only one original save ships with the game: `Data/levels/jungle/Easymode.TPWI` (42 things, ids 1 to 42, none free, so the original's load hands out id 43 next; `OriginalThingSlotsTests` pins this). The
-Theme Park Inc `prebuilt.TPWS` does not decode its World state (`ImportThemeParkInc`). The eleven private saves of the second fixture set (docs/TPWS-PAYLOAD.md) were not available to this inventory (their
-thing chain was never walked); by that page they hold five attraction records each (Bus, Seaplane, Ferry, Traffic Lights, the `*601` park object, all fixed items) and, in the TPWS, the same singleton classes.
-`OriginalSaveCorpusTests` (`OPENTPW_TPWS_SAVES`) covers them when the folder is set. The counts below are Easymode's, from the economy and guest import evidence.
+Twelve original saves were walked: the shipped `Data/levels/jungle/Easymode.TPWI` and the eleven private saves of the second fixture set (docs/TPWS-PAYLOAD.md; never committed, read through `OPENTPW_TPWS_SAVES`).
+The Theme Park Inc `prebuilt.TPWS` does not decode its World state (`ImportThemeParkInc`).
+
+- **Easymode** (42 things, ids 1 to 42, none free, so the original's load hands out id 43 next; `OriginalThingSlotsTests` pins this). The counts in the first table below are Easymode's.
+- **The eleven private saves** (seven `.TPWS`, four `restart.INTS`; per-save table below). Every park is empty (no placed objects, no staff, no coaster), so they add only the five fixed items, the guests the
+  cheat parks keep and, in one theme, a guest in a state the import drops. `OriginalSaveCorpusTests` (`OPENTPW_TPWS_SAVES`) reads them; the four `.INTS` do not pass the corpus test yet (see "The restart saves").
 
 On Easymode every saved guest, object and staff member is rebuilt, so no placeholder is held there; a placeholder appears for a guest in a state the import drops (SAVE-002), an object that does not resolve
-and a staff member nobody employs, which `OriginalThingSlotsTests` exercises on the Easymode chain.
+and a staff member nobody employs, which `OriginalThingSlotsTests` exercises on the Easymode chain. Of the eleven private saves only `fantasy/Wonder Land.TPWS` and `fantasy/autosave.TPWS` hold one (guest 39, state 20).
 
 ## Inventory (Easymode)
 
@@ -40,6 +42,36 @@ and a staff member nobody employs, which `OriginalThingSlotsTests` exercises on 
 
 Things that are not saved things (the engine dumps of the Scripts, Particles, MessageCentre, TrackRides, FlyingRides, Rsse and Sound blocks, `[EXT:original-engine-state-dumps]`; the Clock, Camera,
 GameSystem and other runtime blocks, `SAVE-010`) are outside this inventory.
+
+## Inventory (the eleven private saves)
+
+Counted by reading the thing chain (`SaveWorld.Things`), the attraction and guest records and the Coasters block, and by running `GuestSimulation.ImportOriginal` over the saved guests; whether OpenTPW rebuilds an
+attraction is judged from the object catalog (every fixed item below resolves to a non-tool catalog entry, so `ParkObjects.ImportOriginal` places it and keeps its thing id). A named save and its autosave hold the same things.
+Every save also holds the ten world singletons (ids 1 to 10: StaffHq 1, MechanicHq 2, AdvisorController 3, TagSystem 4, ParkAnalyser 5, ResearchLab 6, Weather 7, Bank 8, UIMsgReceiver 9, ChallengeSystem 10) with the
+same gaps as Easymode's table above, and no staff member (models 4 to 8: none in any of the eleven).
+
+| Save (theme folder) | Attraction things (id: Info.Id) | Guest things (id, person type, state) | Not rebuilt by the import | Next ids after the import |
+| --- | --- | --- | --- | --- |
+| `fantasy/Wonder Land.TPWS`, `fantasy/autosave.TPWS` | 11: 4601 Gates, 12: 4603 Lights, 17: 4600 Bus, 19: 4604 Ferry, 22: 4602 Plane | 39 (type 5, state 20) | guest 39 (state 20 is not one the import takes: SAVE-002), kept as a placeholder | 13, 14, 15 |
+| `hallow/Halloween World.TPWS`, `hallow/autosave.TPWS` | 11: 2601 Gates, 12: 2603 Lights, 20: 2600 Bus, 23: 2604 Ferry, 26: 2602 Plane | 25 (3, state 3), 28 (3, 3), 30 (4, 3), 31 (0, 3) | none; the four guests are imported leaving (state 18, the park is closed) | 13, 14, 15 |
+| `jungle/Lost Kingdom.TPWS`, `jungle/autosave.TPWS` | 11: 1601 Gates, 12: 1603 Lights, 24: 1600 Bus, 28: 1602 Seaplane, 29: 1604 Ferry | 27 (0, state 3), 37 (1, 3), 38 (5, 3), 39 (5, 3) | none; the four guests are imported leaving | 13, 14, 15 |
+| `space/Space Zone.TPWS` (no autosave) | 11: 3601 Gates, 12: 3603 Lights, 20: 3600 Bus, 24: 3602 Plane, 26: 3604 Ferry | 21 (1, state 3), 27 (6, 3), 34 (6, 3), 36 (2, 3) | none; the four guests are imported leaving | 13, 14, 15 |
+| `fantasy`, `hallow`, `jungle`, `space` `restart.INTS` (four saves) | 11: Gates (`*601`), 12: Lights (`*603`), with `*` = 4 fantasy, 2 hallow, 1 jungle, 3 space | none | the chain cannot be imported yet (see below); by its things nothing would be dropped | 13, 14, 15 |
+
+Per class over the seven TPWS saves: Attraction (model 3) 5 each (35 things, all fixed items: no placed object, no Info.Id outside `*600` to `*604` of the save's theme); Guest (model 1) 1 in the fantasy saves and 4 in
+the others (22 things over the seven saves; person types 0 to 6, states 3 and 20); Staff (models 4 to 8) none; no coaster, no track ride; the ten singletons as listed.
+Two Info.Ids are new against Easymode: the Seaplane (`*602`, Plane in the fantasy, hallow and space catalogs) and the Ferry (`*604`); the importer keeps their thing ids like the Bus's. Not run: a full `Level` load of
+any of these saves (the smokes load only Easymode), so "rebuilt" for the fixed items rests on the catalog lookup and the guest simulation, not on a finished level.
+
+### Coasters
+
+None of the eleven saves holds a coaster: every Coasters block is the empty boundary (count 0, globals 0, 0, 1, 16 bytes), so no train and no car, and none of them has a track ride or flying ride (the TrackRides block is the 44 bytes and the FlyingRides block the 452 bytes of Easymode's empty ones in all eleven). The coaster saves SAVE-920 to SAVE-923 wait for are therefore still missing: a save made after building a coaster (stations, track and train) is needed.
+
+### The restart saves
+
+The four `restart.INTS` files are initial saves: no guest, no staff, two attraction things (Gates 11, Lights 12) and the ten singletons, so the next id is 13. They do not read through `OriginalParkImport.Import` today, for two
+reasons that are not caused by the thing pool: the macro-AI calendar before the map reads as rate 15000, month 0, day -1, which the World reader refuses as not a calendar (`SaveWorld.Parse`), and an attraction's history ring
+carries the current entry 0xFFFFFFFF (nothing written yet) where the reader accepts 0 to 31 only (`SaveAttraction.ReadHistory`). Both look like the initial state of an unplayed park; no register ID covers them yet.
 
 ## IDs that are still needed
 

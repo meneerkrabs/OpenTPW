@@ -59,20 +59,20 @@ public sealed class TrueTypeFont
 	public IReadOnlyCollection<int> CodePoints => characterMap.Keys;
 	public int KerningPairCount => kerning.Count;
 
-	private TrueTypeFont( byte[] data, string sourceName )
+	private TrueTypeFont( byte[] data, string sourceName, int directoryOffset = 0 )
 	{
 		this.data = data;
 		SourceName = sourceName;
-		if ( data.Length < 12 )
+		if ( data.Length < directoryOffset + 12 )
 			throw new InvalidDataException( "TrueType data is shorter than its table directory." );
-		var version = U32( 0 );
+		var version = U32( directoryOffset );
 		if ( version != 0x00010000 && version != 0x74727565 )
 			throw new InvalidDataException( $"Not a TrueType outline font (sfnt version 0x{version:X8})." );
-		var tableCount = U16( 4 );
-		Require( 12, tableCount * 16 );
+		var tableCount = U16( directoryOffset + 4 );
+		Require( directoryOffset + 12, tableCount * 16 );
 		for ( var i = 0; i < tableCount; i++ )
 		{
-			var record = 12 + i * 16;
+			var record = directoryOffset + 12 + i * 16;
 			var tag = Encoding.ASCII.GetString( data, record, 4 );
 			var offset = (int)Math.Min( U32( record + 8 ), int.MaxValue );
 			var length = (int)Math.Min( U32( record + 12 ), int.MaxValue );
@@ -157,6 +157,38 @@ public sealed class TrueTypeFont
 			throw new InvalidDataException( "TrueType data exceeds the size limit." );
 		return new TrueTypeFont( data, sourceName );
 	}
+
+	/// <summary>True for a TrueType collection (<c>.ttc</c>, magic <c>ttcf</c>) such as the Korean CD's <c>gulim.ttc</c>.</summary>
+	public static bool IsCollection( byte[] data ) => data.Length >= 12 && data[0] == 't' && data[1] == 't' && data[2] == 'c' && data[3] == 'f';
+
+	/// <summary>
+	/// Parses every font of a TrueType collection (the Korean CD's <c>gulim.ttc</c> holds Gulim, GulimChe, Dotum and DotumChe), in
+	/// directory order. The fonts share the file's bytes; the table offsets of a member are file offsets, as in a plain font.
+	/// A member that cannot be read is skipped, and the collection fails only when none can be read.
+	/// </summary>
+	public static IReadOnlyList<TrueTypeFont> ParseCollection( byte[] data, string sourceName = "" )
+	{
+		ArgumentNullException.ThrowIfNull( data );
+		if ( data.Length > MaximumFileBytes )
+			throw new InvalidDataException( "TrueType data exceeds the size limit." );
+		if ( !IsCollection( data ) )
+			return new[] { new TrueTypeFont( data, sourceName ) };
+		var count = (int)Math.Min( BinaryPrimitives.ReadUInt32BigEndian( data.AsSpan( 8, 4 ) ), 64u );
+		if ( data.Length < 12 + count * 4 )
+			throw new InvalidDataException( "TrueType collection header is truncated." );
+		var fonts = new List<TrueTypeFont>();
+		string? failure = null;
+		for ( var i = 0; i < count; i++ )
+		{
+			var offset = (int)Math.Min( BinaryPrimitives.ReadUInt32BigEndian( data.AsSpan( 12 + i * 4, 4 ) ), int.MaxValue );
+			try { fonts.Add( new TrueTypeFont( data, sourceName, offset ) ); }
+			catch ( InvalidDataException exception ) { failure = exception.Message; }
+		}
+		return fonts.Count > 0 ? fonts : throw new InvalidDataException( $"TrueType collection has no readable font: {failure}" );
+	}
+
+	/// <summary>Every family name the font's <c>name</c> table holds (all languages), such as "Gulim" and the Korean "굴림".</summary>
+	public IReadOnlyList<string> FamilyNames { get; private set; } = Array.Empty<string>();
 
 	public bool HasTable( string tag ) => tables.ContainsKey( tag );
 
@@ -482,6 +514,7 @@ public sealed class TrueTypeFont
 		var count = U16( name.Offset + 2 );
 		var storage = name.Offset + U16( name.Offset + 4 );
 		var found = new Dictionary<int, (int Priority, string Value)>();
+		var families = new List<string>();
 		for ( var i = 0; i < count; i++ )
 		{
 			var record = name.Offset + 6 + i * 12;
@@ -507,9 +540,12 @@ public sealed class TrueTypeFont
 				value = Encoding.Latin1.GetString( data, offset, length );
 				priority = 2;
 			}
+			if ( value != null && nameId == 1 && value.TrimEnd( '\0' ) is { Length: > 0 } familyName && !families.Contains( familyName ) )
+				families.Add( familyName );
 			if ( value != null && (!found.TryGetValue( nameId, out var existing ) || priority < existing.Priority) )
 				found[nameId] = (priority, value.TrimEnd( '\0' ));
 		}
+		FamilyNames = families;
 		FamilyName = found.TryGetValue( 1, out var family ) ? family.Value : "";
 		SubfamilyName = found.TryGetValue( 2, out var subfamily ) ? subfamily.Value : "";
 		FullName = found.TryGetValue( 4, out var full ) ? full.Value : FamilyName;

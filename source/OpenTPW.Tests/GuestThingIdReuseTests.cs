@@ -83,6 +83,9 @@ public class GuestThingIdReuseTests
 		Assert.IsTrue( park.Simulation.ValidateSnapshot( snapshot ).IsValid );
 		var resumed = new GuestSnapshotTests.Rig();
 		resumed.Simulation.RestoreSnapshot( snapshot );
+		// The script variable the script slice's snapshot restores: VAR_LETMEON still holds a presented guest.
+		foreach ( var attraction in snapshot.Attractions )
+			resumed.Rides.Single( ride => ride.Bridge.AttractionId == attraction.AttractionId ).Script[RideVariables.VAR_LETMEON] = attraction.LetMeOnWritten ? attraction.CalledGuest : 0;
 		var resumedTick = tick;
 		for ( var step = 0; step < 600; step++ )
 		{

@@ -45,7 +45,8 @@ internal sealed partial class GameFlow
 	/// level start 0x407E00 (which loads the quick save when 0x788160 is set) and never after a restart's own reload.
 	/// </summary>
 	// [BIN:TPW-EXE:0x54f3f7 restart snapshot] state 15 calls 0x550B30 once per park start or load: it builds <save>\restart.INTS from the folder global 0x878F18, the name "restart" (0x878A68) and the extension ".INTS" (0x877F38), and saves the park through 0x5AC630 with the save extension 0xF7ADF8 (writer 0x5ac780, the loader's twin)
-	// [APPROX:SAVE-012] the original opens the file for reading first (0x550c0f, mode 0x80000000) and saves only when that fails (0x550c14); nothing deletes or replaces it between parks (only the whole player folder is removed, 0x5C5250 from 0x5C7F40), so the original keeps the first snapshot of a theme folder; OpenTPW rewrites its snapshot at every start and load instead
+	// [EXT:restart-snapshot-per-start] OpenTPW retakes the snapshot at every park start and load, so Restart Park returns to the park being played (user-approved 2026-10-17); the original opens restart.INTS for reading first (0x550c0f, mode 0x80000000) and saves only when that fails (0x550c14), and nothing deletes it between parks, so it keeps the first park of a theme folder as the restart point forever
+	// [APPROX:SAVE-012] the snapshot is OpenTPW's park-resume file (opentpw-<theme>-restart.json), not the original's <save>\restart.INTS written through 0x550B30 and loaded by 0x414D40
 	internal void TakeRestartSnapshot( Level level, IReadOnlyDictionary<string, string>? verifiedAssets = null )
 	{
 		if ( !TakesRestartSnapshot( level ) )

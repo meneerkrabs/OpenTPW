@@ -1,5 +1,5 @@
 #
-#	OpenTPW swimming pools: a raised octagonal hot tub with eight seats, one cell.
+#	OpenTPW swimming pools: a raised octagonal hot tub with one seat in the middle, one cell.
 #	Every number marked "OpenTPW's own value" is a choice of this extension, not a value of the original game.
 #
 Info.Id			65500		placeholder: objects.json replaces it with the object's own id

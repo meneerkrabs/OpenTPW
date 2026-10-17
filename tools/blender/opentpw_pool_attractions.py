@@ -12,7 +12,7 @@ Footprints (Blender X/Y range 0..10 per cell, seen from above exactly as the Inf
 	ropeswing    *    one cell,   two posts and an arm that reaches over the water, a rope with a handle hangs from it
 	jets         *    one cell,   a pedestal with an angled nozzle
 	wavemachine  **   two cells,  a housing with a grille and a paddle
-	spa          *    one cell,   an octagonal tub with eight seats and a water disc
+	spa          *    one cell,   an octagonal tub with a water surface just below the rim (one seat, in the middle)
 
 The water side of ropeswing, jets and wavemachine is Blender +Y (the shape's north, like the changing room's pool-side back); the spa has no water side.
 The arm of the rope swing and the paddle of the wave machine reach up to 8 units beyond the +Y edge of the footprint. Every object stands on a one-unit
@@ -246,16 +246,21 @@ def add_wavemachine(b, theme):
 		b.box("light", (9.0, 1.2, 10.5), (11.0, 8.0, 10.9), skip=("-z",))                    # a light strip along the roof
 
 
+# The spa's basin, in Blender units (a cell is 10, an engine unit 5). Measured against the sitting swimwear sprite (slot 12, tools/blender/opentpw_guest_sprites.py): below the rim the sprite is up to 0.729
+# engine units (3.65 units) wide each side of its hotspot, so a guest fits the basin only at its middle: one seat. The inner wall's apothem (the distance of its flat sides, 4.0 * cos 22.5 = 3.70) must stay
+# above that, and the water must stand just below the rim so the guest sits in it (the sprite's hotspot is the torso at the water line). OpenTPW's own values; the test PoolsSpaGeometryTests reads them back
+# from the shipped models.
+SPA_OUTER = 4.7                                                                   # circumradius of the wall's outside
+SPA_INNER = 4.0                                                                   # circumradius of the wall's inside (the basin)
+SPA_RIM = 5.6                                                                     # top of the wall
+SPA_WATER = 5.2                                                                   # the water surface
+
+
 def add_spa(b, theme):
 	base_slab(b, 10.0)
 	phase = 22.5                                                                      # flat sides face the compass directions
-	b.ring("wood", "trim", 5.0, 5.0, 4.7, 3.7, SLAB, 5.6, phase=phase, inner_material="trim")
-	b.ring("trim", "trim", 5.0, 5.0, 3.7, 2.5, SLAB, 4.8, phase=phase)                # the bench ring
-	for i in range(8):                                                                # eight seats: a divider between each pair
-		angle = math.radians(phase + 45.0 * i)
-		cx, cy = 5.0 + 3.1 * math.cos(angle), 5.0 + 3.1 * math.sin(angle)
-		b.prism("wood", cx, cy, 0.45, 4.8, 5.4, sides=4, phase=45.0 + math.degrees(angle))
-	b.poly("water", [(5.0 + 2.5 * math.cos(math.radians(phase + 45.0 * i)), 5.0 + 2.5 * math.sin(math.radians(phase + 45.0 * i)), 4.3) for i in range(8)])
+	b.ring("wood", "trim", 5.0, 5.0, SPA_OUTER, SPA_INNER, SLAB, SPA_RIM, phase=phase, inner_material="trim")
+	b.poly("water", [(5.0 + SPA_INNER * math.cos(math.radians(phase + 45.0 * i)), 5.0 + SPA_INNER * math.sin(math.radians(phase + 45.0 * i)), SPA_WATER) for i in range(8)])
 	# the theme prop in the corner outside the tub: a torch, crystal, antenna or lollipop
 	px, py = 1.3, 1.3
 	b.box("trim", (px - 0.3, py - 0.3, SLAB), (px + 0.3, py + 0.3, 5.0), skip=("-z",))

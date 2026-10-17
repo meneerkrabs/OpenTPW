@@ -552,18 +552,20 @@ public class PoolsAttractionsTests
 	// ---- The spa -----------------------------------------------------------------------------------------------------
 
 	[TestMethod]
-	public void TheEightSeatsOfTheSpaAreEightDistinctPointsOnItsTile()
+	public void TheSeatsOfTheSpaAreDistinctPointsOnItsTile()
 	{
 		var middle = Spa.CentreFixed;
 		Assert.AreEqual( (4 * 65536 + 32768, 6 * 65536 + 32768), middle );
+		// the one seat of the tub is its middle (the sitting sprite is as wide as the basin; PoolsSpaGeometryTests)
+		Assert.AreEqual( 1, PoolAttractionSettings.SpaSeats );
 		var seats = Enumerable.Range( 0, PoolAttractionSettings.SpaSeats ).Select( index => SpaActivity.Seat( middle, index ) ).ToArray();
-		Assert.AreEqual( 8, seats.Distinct().Count() );
+		Assert.AreEqual( PoolAttractionSettings.SpaSeats, seats.Distinct().Count() );
 		Assert.IsTrue( seats.All( seat => seat.X >> 16 == 4 && seat.Y >> 16 == 6 ), "all on the one tile" );
 		Assert.AreEqual( (middle.X + PoolAttractionSettings.SpaSeatRadius, middle.Y), seats[0], "seat 0 to the east" );
 	}
 
 	[TestMethod]
-	public void EightGuestsSitInTheSpaAtOnceAndTheNinthSwimsOn()
+	public void OneGuestSitsInTheSpaAtATimeAndTheOthersSwimOn()
 	{
 		var rig = new Rig( capacity: 10 );
 		rig.Simulation.RegisterPoolActivity( new SpaActivity( Sites( Spa ) ) );
@@ -585,7 +587,7 @@ public class PoolsAttractionsTests
 			return Done( guests, joined );
 		}, 12000 );
 		Assert.IsTrue( most <= PoolAttractionSettings.SpaSeats, $"{most} in the spa at most" );
-		Assert.IsTrue( seatsSeen.Count >= 3, $"{seatsSeen.Count} different seats were taken" );
+		Assert.AreEqual( PoolAttractionSettings.SpaSeats, seatsSeen.Count, "the one seat was taken, by one guest after the other" );
 	}
 
 	[TestMethod]

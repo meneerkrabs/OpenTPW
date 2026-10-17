@@ -3,7 +3,7 @@ using Veldrid;
 namespace OpenTPW;
 
 /// <summary>
-/// Uploads decoded movie frames to a GPU texture (the original player's colour tables on the CPU, <see cref="TqiColour"/>) and draws them
+/// Uploads decoded movie frames to a GPU texture (the original player's colour tables and 16-bit packing on the CPU, <see cref="TqiColour"/>) and draws them
 /// at the original's display aspect (letter/pillarboxed) with the fullscreen-triangle blit shader.
 /// </summary>
 internal sealed class MoviePresenter : IDisposable
@@ -54,12 +54,20 @@ internal sealed class MoviePresenter : IDisposable
 	/// <summary>RGBA of the last uploaded frame (CPU copy, used for readback checks).</summary>
 	public ReadOnlySpan<byte> Pixels => rgba;
 	public bool HasFrame { get; private set; }
+	/// <summary>
+	/// The display packing the frames go through before they are shown: the PC player writes 16-bit pixels, so each channel is
+	/// reduced to these bit depths (5-6-5 assumed). Null shows the colour tables' 8-bit values unpacked.
+	/// </summary>
+	public TqiDisplayFormat? DisplayFormat { get; init; } = TqiDisplayFormat.Rgb565;
 
 	public void Upload( TqiFrame frame )
 	{
 		if ( frame.Width != Width || frame.Height != Height )
 			throw new ArgumentException( "Movie frame size changed.", nameof( frame ) );
-		frame.WriteRgba32( rgba );
+		if ( DisplayFormat is { } format )
+			frame.WriteDisplayRgba32( rgba, format );
+		else
+			frame.WriteRgba32( rgba );
 		Device.UpdateTexture( texture, rgba, 0, 0, 0, (uint)Width, (uint)Height, 1, 0, 0 );
 		HasFrame = true;
 	}

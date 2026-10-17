@@ -386,7 +386,7 @@ and a hash of the presented planes (no window, GPU or audio device);
   of the last video frame and the end of the audio, holding the last frame:
   `plan.tgq` shows its final frame for ~12.9 s while its audio finishes. The
   original player's behaviour here is unknown.
-- **Presentation**: the original player's colour tables (`TqiColour`) on the CPU to RGBA, uploaded to a
+- **Presentation**: the original player's colour tables (`TqiColour`) and its 16-bit 5-6-5 packing on the CPU to RGBA, uploaded to a
   320×352 texture and drawn with the existing fullscreen-triangle blit shader
   into a centred viewport at the original's display aspect 640:352 (the 320×352
   frames are shown at twice their width, as the original's movie box does; see
@@ -569,7 +569,16 @@ matrix builder 0x6710C0, block decoder 0x6747D0, transform passes 0x67673C/0x676
   (115, 113, 115) and the brightest neutral (241, 239, 241): the original never shows full white. No field leaves its
   table over the 1,060,167,680 pixels of the nine movies. A field that wraps below zero (a dark pixel with extreme
   chroma, such as Y 0 with Cr 0) would read the next table in the original, landing in another channel's bits of the
-  display format; OpenTPW draws that channel as 0. The values are the colour before the player packs it into the display surface (16-bit on the PC).
+  display format; OpenTPW draws that channel as 0. The values are the colour before the player packs it into the display surface.
+  **Packing** (read October 17, 2026): three more tables (red `0xFBA730`, green `0xFBABF8`, blue `0xFBB010`, built by
+  `0x670350` from the surface's channel bit counts and shifts, with the same brightness) turn each channel value `v` into a
+  16-bit field. The low half of an entry is the rounded field, `min((v + 2^(7−b)) >> (8−b), 2^b − 1)`; when the surface has
+  at most 16 bits per pixel the high half is the truncated field `v >> (8−b)`. The row writer `0x675D90` handles two pixels
+  per 32-bit word and takes the low half for the first (even column) and the high half for the second (odd column), so
+  even columns round and odd columns truncate. OpenTPW does the same for a 5-6-5 display (`TqiColour.Pack`,
+  `TqiFrame.WriteDisplayRgba32`) and expands the fields back to 8 bits by bit replication for its 32-bit texture.
+  The 5-6-5 layout is an assumption (the masks come from the DirectDraw surface; every common 16-bit display is 5-6-5);
+  the export tools (`--export-tgq-png`) keep the unpacked 8-bit values.
 
 **Verification.** The x86 oracle (docs/reverse/ORACLE.md, **X26**) runs the matrix builder for every quantiser and the
 first transform pass on 500 coefficient rows, both against Python readings of the C# rules: the matrix agrees for every

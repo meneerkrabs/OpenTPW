@@ -169,10 +169,9 @@ public sealed class StaffRenderer : Entity
 
 	private static (int Frame, bool Mirror) FrameFor( GuestSpriteAtlas atlas, int slot, int step, float headingX, float headingY, SVector3 cameraRight, SVector3 cameraForward )
 	{
-		var rightFlat = SVector2.Normalize( new SVector2( cameraRight.X, cameraRight.Y ) + new SVector2( 1e-6f, 0 ) );
-		var forwardFlat = SVector2.Normalize( new SVector2( cameraForward.X, cameraForward.Y ) + new SVector2( 0, 1e-6f ) );
-		var heading = new SVector2( headingX, headingY );
-		var (direction, mirror) = GuestSpriteAtlas.SelectDirection( SVector2.Dot( heading, rightFlat ), SVector2.Dot( heading, forwardFlat ) );
+		// [BIN:TPW-EXE:0x00542010 direction] staff go through the same sprite pass as the guests: the heading sector plus the camera's yaw sector picks the direction; no pitch is read (GuestSpriteAtlas.SelectOriginalDirection)
+		var yaw = GuestSpriteAtlas.CameraYaw( cameraRight, cameraForward, Camera.Mode is ParkCameraMode );
+		var (direction, mirror) = GuestSpriteAtlas.SelectOriginalDirection( headingX, headingY, yaw, atlas.DirectionsOf( slot ) );
 		return (atlas.GetFrame( slot, direction, step % atlas.FramesPerDirection( slot ) ), mirror);
 	}
 

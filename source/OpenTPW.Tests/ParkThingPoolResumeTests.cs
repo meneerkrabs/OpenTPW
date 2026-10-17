@@ -55,6 +55,22 @@ public class ParkThingPoolResumeTests
 	}
 
 	[TestMethod]
+	public void APlaceholderSlotOfAnImportedSaveHoldsASlotNothingNames()
+	{
+		var snapshot = WithPool( out var pool );
+		var gone = snapshot.Guests.Guests[0].Id;
+		var held = snapshot with
+		{
+			Things = snapshot.Things! with { Held = new[] { gone } },
+			Guests = snapshot.Guests with { Guests = snapshot.Guests.Guests.Skip( 1 ).ToArray() }
+		};
+		ParkResumeSaveFile.ValidateShape( held );
+		StringAssert.Contains( Assert.ThrowsException<InvalidDataException>( () => ParkResumeSaveFile.ValidateShape( snapshot with { Things = snapshot.Things with { Held = new[] { gone } } } ) ).Message, "placeholder slot of the thing pool is named" );
+		StringAssert.Contains( Assert.ThrowsException<InvalidDataException>( () => ParkResumeSaveFile.ValidateShape( held with { Things = held.Things! with { Held = new[] { 9000 } } } ) ).Message, "placeholder" );
+		Assert.IsNotNull( pool );
+	}
+
+	[TestMethod]
 	public void ASaveFromBeforeThePoolNamesNoSlot()
 	{
 		var snapshot = ParkResumeSaveFileTests.Envelope();

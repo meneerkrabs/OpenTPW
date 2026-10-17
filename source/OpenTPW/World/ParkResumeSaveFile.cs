@@ -600,7 +600,10 @@ internal static class ParkResumeSaveFile
 			foreach ( var guest in snapshot.Guests.Guests! )
 				Names( guest!.Id, SaveThingModel.Guest, $"guest {guest.Id}" );
 		Require( !named.Overlaps( pending ), "a thing waiting for its destruction is named by a thing" );
-		var held = snapshot.Things.Used.Count( slot => slot.Model is 1 or 3 or (>= 4 and <= 8) && !pending.Contains( slot.Id ) );
+		// a placeholder slot (a thing of an imported original save that OpenTPW does not rebuild) is named by no thing either
+		var placeholders = (snapshot.Things.Held ?? Array.Empty<int>()).ToHashSet();
+		Require( !named.Overlaps( placeholders ), "a placeholder slot of the thing pool is named by a thing" );
+		var held = snapshot.Things.Used.Count( slot => slot.Model is 1 or 3 or (>= 4 and <= 8) && !pending.Contains( slot.Id ) && !placeholders.Contains( slot.Id ) );
 		Require( held == named.Count || snapshot.Guests.SchemaVersion < GuestSimulationSnapshot.ThingPoolSchemaVersion, "the thing pool holds a guest, attraction or staff slot no thing names" );
 	}
 

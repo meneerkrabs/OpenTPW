@@ -108,13 +108,16 @@ public class AudioSpatialTests
 			ParkCameraMode.TargetExtent = 100;
 			ParkCameraMode.InitialTarget = Vector3.Zero;
 			var camera = new ParkCameraMode();
-			camera.SetPose( new Vector3( 10, 20, 0 ), 20, 0 );
-			Assert.AreEqual( new Vector3( 100, 50, 100 ), AudioListener.Position, "eye/target midpoint in original sound units" );
+			// zoom 70: pitch 45 degrees, eye 9.8995 engine units out and up (70 x cos/sin 45 x 0.2)
+			camera.SetPose( new Vector3( 10, 20, 0 ), 70, 0 );
+			Assert.AreEqual( 74.7487f, AudioListener.Position.X, 0.01f, "eye/target midpoint in original sound units" );
+			Assert.AreEqual( 24.7487f, AudioListener.Position.Y, 0.01f );
+			Assert.AreEqual( 100f, AudioListener.Position.Z, 0.01f );
 			Assert.AreEqual( -1f, AudioListener.Forward.X, 0.001f );
 			Assert.AreEqual( 0f, AudioListener.Forward.Z, 0.001f );
-			camera.SetPose( new Vector3( 20, 30, 0 ), 20, 90 );
+			camera.SetPose( new Vector3( 20, 30, 0 ), 70, 90 );
 			Assert.AreEqual( 100f, AudioListener.Position.X, 0.001f );
-			Assert.AreEqual( 200f, AudioListener.Position.Z, 0.001f );
+			Assert.AreEqual( 174.7487f, AudioListener.Position.Z, 0.01f );
 			Assert.AreEqual( -1f, AudioListener.Forward.Z, 0.001f );
 		}
 		finally { ParkCameraMode.TargetExtent = extent; ParkCameraMode.InitialTarget = target; }

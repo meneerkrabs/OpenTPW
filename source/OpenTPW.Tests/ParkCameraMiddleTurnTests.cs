@@ -30,11 +30,11 @@ public class ParkCameraMiddleTurnTests
 		var camera = Camera();
 		camera.Update( Frame( 700 ), Options() );
 		var expected = -0.2f * 180f / MathF.PI;
-		Assert.AreEqual( -135f + expected, camera.Yaw, 1e-3f, "right of the centre lowers OpenTPW's yaw, as the Left arrow (key 6) raises the original's" );
+		Assert.AreEqual( -90f + expected, camera.Yaw, 1e-3f, "right of the centre lowers OpenTPW's yaw, as the Left arrow (key 6) raises the original's" );
 		camera.Update( Frame( 700 ), Options() );
-		Assert.AreEqual( -135f + 2 * expected, camera.Yaw, 1e-3f );
+		Assert.AreEqual( -90f + 2 * expected, camera.Yaw, 1e-3f );
 		camera.Update( Frame( 300 ), Options() );
-		Assert.AreEqual( -135f + expected, camera.Yaw, 1e-3f, "left of the centre turns back" );
+		Assert.AreEqual( -90f + expected, camera.Yaw, 1e-3f, "left of the centre turns back" );
 	}
 
 	[TestMethod]
@@ -50,7 +50,7 @@ public class ParkCameraMiddleTurnTests
 		var blocked = Camera();
 		blocked.Update( Frame( 800 ) with { CaptureMouse = true }, Options() );
 		blocked.Update( Frame( 800 ), Options() );
-		Assert.AreEqual( -135f, blocked.Yaw, "a press the UI took is not a camera press, and holding on does not start it" );
+		Assert.AreEqual( -90f, blocked.Yaw, "a press the UI took is not a camera press, and holding on does not start it" );
 	}
 
 	[TestMethod]

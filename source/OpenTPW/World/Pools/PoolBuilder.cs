@@ -29,6 +29,8 @@ public enum PoolBuildResult
 	Swimmers,
 	/// <summary>[EXT:pools-changing-room] Erasing a pool cell beside the back of a changing room: the room needs its pool.</summary>
 	ChangingRoomAccess,
+	/// <summary>[EXT:pools-extras] Erasing a pool cell beside a ladder, board, lounger, lamp or underwater light: the extra needs its water.</summary>
+	ExtraNeedsWater,
 	/// <summary>[EXT:pools-attractions] Erasing the last pool cell on the water side of a rope swing, jets, wave machine or spa: the attraction needs its pool.</summary>
 	AttractionAccess,
 	/// <summary>[EXT:pools-river] The river option on a pool cell that was not a river cell: its flag is set, nothing is charged (the cell is paid for already). Not a refusal.</summary>

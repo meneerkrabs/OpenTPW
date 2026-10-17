@@ -3,12 +3,13 @@
 #
 #   1. Blender builds the changing room cabin for each theme      tools/blender/opentpw_changing_room.py   -> <work>/glb/<theme>.glb
 #   2. opentpw-kit object turns each glb into an object archive   tools/pools/cabin.sam, cabin.rse        -> content/pools/objects/<theme>/cabin/
+#   2b. the pool extras (ladder, diving board, shower, lounger, lamp, underwater light) the same way    tools/blender/opentpw_pool_extras.py, tools/pools/extra-*.sam, extra.rse -> content/pools/objects/<theme>/<extra>/
 #   3. Blender renders the eight kid swimmer sets (TPW kids)      tools/blender/opentpw_guest_sprites.py   -> <work>/guests/tpw/Kids/<SET>/
 #   4. pack_swim_sets.py packs them with opentpw-kit sprites      tools/pools/pack_swim_sets.py            -> content/pools/esprites/Swim/SPR_xx.ESP/.TPC
 #   5. Blender builds the water attractions (rope swing, jets,    tools/blender/opentpw_pool_attractions.py -> <work>/attractions/<kind>_<theme>.glb
 #      wave machine, spa) for each theme, the kit makes archives  tools/pools/<kind>.sam, attraction.rse    -> content/pools/objects/<theme>/<kind>/
 #
-# Takes about 3 minutes on an Apple-silicon Mac, nearly all of it step 3 (the 800 swim frames; steps 1, 2 and 4 are a few seconds each,
+# Takes about 3.5 minutes on an Apple-silicon Mac, nearly all of it step 3 (the 800 swim frames; steps 1, 2 and 4 are a few seconds each,
 # plus the first kit build). Idempotent: the outputs are replaced, never appended to. Needs Blender 5.x, the .NET SDK and python3.
 #
 # Environment:
@@ -43,6 +44,17 @@ echo "== 2. object archives"
 for theme in "${themes[@]}"; do
 	kit object --glb "$work/glb/$theme.glb" --name cabin --out "content/pools/objects/$theme/cabin" \
 		--sam tools/pools/cabin.sam --script tools/pools/cabin.rse --force
+done
+
+echo "== 2b. pool extras"
+rm -rf "$work/extras"
+"$blender" -b --factory-startup --python tools/blender/opentpw_pool_extras.py -- --out "$work/extras" --preview "$work/extra-previews" > "$work/extras.log" 2>&1 \
+	|| { tail -30 "$work/extras.log"; exit 1; }
+for theme in "${themes[@]}"; do
+	for extra in ladder board shower lounger lamp light; do
+		kit object --glb "$work/extras/$theme-$extra.glb" --name "$extra" --out "content/pools/objects/$theme/$extra" \
+			--sam "tools/pools/extra-$extra.sam" --script tools/pools/extra.rse --force
+	done
 done
 
 echo "== 3. swim sprites"

@@ -165,6 +165,35 @@ public sealed class ParkEconomy : IParkEconomy
 		return unchecked( (int)offer.Amount ) <= unchecked( NetWorth( 20 ) - remaining );
 	}
 
+	/// <summary>
+	/// Whether the bank has an offer the park could take now (tp.exe <c>0x004D0810</c>, the advisor's "a loan can still be taken"): walking the eight offers in order,
+	/// the first one that is not bought and passes the credit test of <see cref="PassesCreditTest"/>.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004D0810 loan available] for each offer index 0..7 it runs the credit test 0x004D06B0 (which also rewrites the stored test word +0x14) and returns 1 at the first offer whose bought flag (+0x28) is clear and whose test passed
+	// OpenTPW reads the net worth as the credit test does (the cached value while its age is at most 20, else counted fresh) without writing the cache, and leaves the stored tests alone (the advisor is presentation, not simulation state): the loan list rebuilds every offer's test before it shows anything, so the stored word is never read stale
+	internal bool CanTakeAnyLoan()
+	{
+		var remaining = 0;
+		foreach ( var loan in loans )
+			remaining = unchecked( remaining + (loan.Months - loan.MonthsRepaid) * (int)loan.MonthlyRepayment );
+		var worth = PeekNetWorth( 20 );
+		return Settings.Loans.OrderBy( offer => offer.Index )
+			.Any( offer => !takenOffers.Contains( offer.Index ) && unchecked( (int)offer.Amount ) <= unchecked( worth - remaining ) );
+	}
+
+	/// <summary>
+	/// The bank's eight loan records as the advisor's money callbacks read them (tp.exe <c>0x004D0690</c>, <c>0x004D0A00</c>, <c>0x004D09A0</c>, <c>0x004D0970</c>): slot <c>i</c> is offer <c>i</c>,
+	/// bought when a loan of that offer is outstanding.
+	/// </summary>
+	internal AdvisorLoanSlot[] LoanSlots()
+	{
+		var slots = new AdvisorLoanSlot[AdvisorLoanSlot.Count];
+		foreach ( var loan in loans )
+			if ( loan.OfferIndex is >= 0 and < AdvisorLoanSlot.Count )
+				slots[loan.OfferIndex] = new AdvisorLoanSlot( true, loan.Months, loan.MonthsRepaid, unchecked( (int)loan.MonthlyRepayment ) );
+		return slots;
+	}
+
 	internal IEnumerable<int> ObjectInstanceIds() => objects.Keys;
 
 	public bool TryGetObject( int instanceId, out ParkObjectState state ) => objects.TryGetValue( instanceId, out state! );
@@ -1378,6 +1407,15 @@ public sealed class ParkEconomy : IParkEconomy
 			netWorthCached = true;
 		}
 		return netWorthValue;
+	}
+
+	/// <summary>
+	/// <see cref="NetWorth"/> without writing the cache: the cached value while its age is at most <paramref name="maximumAge"/>, else a fresh count that is not stamped.
+	/// </summary>
+	internal int PeekNetWorth( uint maximumAge )
+	{
+		var age = unchecked( (uint)(Turn >> 2) - (uint)(netWorthStamp >> 2) );
+		return netWorthCached && age <= maximumAge ? netWorthValue : ComputeNetWorth();
 	}
 
 	/// <summary>The net worth cache (the park save), null until a read has counted it.</summary>

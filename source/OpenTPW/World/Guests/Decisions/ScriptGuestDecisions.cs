@@ -38,6 +38,11 @@ internal sealed class ScriptGuestDecisions : IGuestDecisions
 
 	public bool UsesValueForMoney => inner.UsesValueForMoney;
 
+	public bool UsesSpreading => inner.UsesSpreading;
+
+	public bool SwitchesTarget( in DecisionContext context, in GuestView guest, in AttractionView target, uint targetScore, in AttractionView candidate, uint candidateScore ) =>
+		inner.SwitchesTarget( context, guest, target, targetScore, candidate, candidateScore );
+
 	public bool PriceTurnedAway( in DecisionContext context, in GuestView guest, in AttractionView attraction ) => inner.PriceTurnedAway( context, guest, attraction );
 
 	public PriceStallDecision DecidePriceStall( in DecisionContext context, in GuestView guest, int consecutive ) => inner.DecidePriceStall( context, guest, consecutive );

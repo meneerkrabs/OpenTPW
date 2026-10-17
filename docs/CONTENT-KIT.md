@@ -252,7 +252,7 @@ checked); and a sideshow-category object has no headless park test (the gate pla
 
 ## Content shipped with the game: pools
 
-The official `opentpw.pools` extension ships its changing rooms and swim sprites as committed generated files in `content/pools` (our own art, nothing from the original game). `tools/pools/build-content.sh` regenerates them (Blender 5.x, the .NET SDK, python3; about 3 minutes; env `KIT_ARTIFACTS`, `WORK`, `FORCE_SPRITES`): the cabin model comes from `tools/blender/opentpw_changing_room.py` through `GltfModelConverter` and `opentpw-kit object` with `tools/pools/cabin.sam` and `cabin.rse`, the swimmers from `opentpw_guest_sprites.py --part swim` packed by `tools/pools/pack_swim_sets.py` through `opentpw-kit sprites`. See [POOLS.md](POOLS.md#content-extpools-content).
+The official `opentpw.pools` extension ships its changing rooms and swim sprites as committed generated files in `content/pools` (our own art, nothing from the original game). `tools/pools/build-content.sh` regenerates them (Blender 5.x, the .NET SDK, python3; about 3 minutes; env `KIT_ARTIFACTS`, `WORK`, `FORCE_SPRITES`): the cabin model comes from `tools/blender/opentpw_changing_room.py` through `GltfModelConverter` and `opentpw-kit object` with `tools/pools/cabin.sam` and `cabin.rse`, the swimmers from `opentpw_guest_sprites.py --part swim` packed by `tools/pools/pack_swim_sets.py` through `opentpw-kit sprites`. The pool extras (ladder, diving board, shower, lounger, lamp, underwater light) are built the same way from `tools/blender/opentpw_pool_extras.py` with `tools/pools/extra-*.sam` and `extra.rse` (step 2b). See [POOLS.md](POOLS.md#content-extpools-content) and [Extras](POOLS.md#extras-phase-p3-extpools-extras).
 
 ## What is unverified
 

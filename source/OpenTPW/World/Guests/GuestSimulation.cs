@@ -306,6 +306,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	{
 		if ( !attractions.Remove( attraction ) )
 			return;
+		SmarterGuests?.Throughputs.Remove( attraction.AttractionId );
 		foreach ( var guest in guests )
 		{
 			if ( guest.AttractionId != attraction.AttractionId || attraction.AttractionId == 0 )
@@ -527,6 +528,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			smarter.Bootstrap( GuestsInThingListOrder() );
 		staffOnMap = StaffOnMapView?.Invoke().ToArray();
 		turnStarted = ParkCalendar.Turn( TickCount + turnPhase ) != ParkCalendar.Turn( TickCount - 1 + turnPhase );
+		if ( turnStarted && decisions.UsesSpreading )
+			ObserveThroughputs();
 		SyncQueues();
 	}
 
@@ -2086,6 +2089,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		choiceEmptiedByPrice = false;
 		// the whole loop is one decision: a policy that meters work (the script mods) treats its candidates as a unit
 		decisions.BeginDecision();
+		BeginReservations();
 		try
 		{
 		foreach ( var attraction in NewestFirst() )
@@ -2111,9 +2115,16 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		finally
 		{
 			decisions.EndDecision();
+			EndReservations();
 		}
 		return chosen == 0 ? null : FindAttraction( chosen );
 	}
+
+	/// <summary>Minor decisions in which the policy's hysteresis (<see cref="IGuestDecisions.SwitchesTarget"/>) kept the guest on its target although a better-scoring candidate was in reach (tests and the report; not saved or hashed).</summary>
+	internal long TargetsKept { get; private set; }
+
+	/// <summary>Minor decisions the hysteresis let through to the route tests (the guest may still stay if the routes say so).</summary>
+	internal long TargetsSwitched { get; private set; }
 
 	/// <summary>Set by the last <see cref="ChooseAttraction"/>: a candidate was left out on price (<see cref="IGuestDecisions.PriceTurnedAway"/>); with no choice, the decision was price-emptied.</summary>
 	private bool choiceEmptiedByPrice;
@@ -2274,7 +2285,9 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		var view = ViewOf( guest );
 		IRideVisitorBridge? best = null;
 		uint bestScore = 0;
+		var keeps = false;
 		decisions.BeginDecision();
+		BeginReservations();
 		try
 		{
 		for ( var x = guest.CellX - 2; x < guest.CellX + 2; x++ )
@@ -2294,12 +2307,23 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 				}
 			}
 		}
+		// [EXT:smarter-guests-spread] hysteresis: the target is scored once, with the same policy and inside the same metered decision, and kept unless the best candidate beats it by the policy's margin
+		if ( best != null && decisions.UsesSpreading )
+		{
+			var targetView = ViewOf( target, guest );
+			keeps = !decisions.SwitchesTarget( context, view, targetView, decisions.ScoreAttraction( context, view, targetView ), ViewOf( best, guest ), bestScore );
+			if ( keeps )
+				TargetsKept++;
+			else
+				TargetsSwitched++;
+		}
 		}
 		finally
 		{
 			decisions.EndDecision();
+			EndReservations();
 		}
-		if ( best == null )
+		if ( best == null || keeps )
 			return;
 		var toGuest = RouteLength( guest, target.EntranceCell, (guest.CellX, guest.CellY) );
 		var toBest = RouteLength( guest, target.EntranceCell, best.EntranceCell );
@@ -2935,6 +2959,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			QueueWaitCompleted?.Invoke( guest, ride, guest.LastQueueWaitTurns );
 		}
 		Observer?.QueueBoarded( guest, ride, guest.QueueJoinTurn >= 0 ? ParkTurn - guest.QueueJoinTurn : -1 );
+		if ( decisions.UsesSpreading )
+			NoteBoarding( ride );
 		ClearQueueState( guest );
 		guest.State = GuestState.Using;
 		// [BIN:TPW-EXE:0x00502156 state 16 entry] the balloon's model is destroyed (0x00475550) and +0x210 cleared; its life +0x214 stays; the thought bubble goes (0x0050C0D0)
@@ -3782,6 +3808,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// </summary>
 	public void RestoreSnapshot( GuestSimulationSnapshot snapshot )
 	{
+		poolActivityVersion++;
 		var validation = ValidateSnapshot( snapshot );
 		if ( !validation.IsValid )
 			throw new InvalidDataException( "The guest snapshot does not restore: " + string.Join( " ", validation.Errors ) );

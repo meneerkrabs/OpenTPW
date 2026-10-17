@@ -797,7 +797,8 @@ public sealed partial class ParkHud
 				// [APPROX:AUDIO-009] within the build tools' code (0x524960-0x535100, which plays only 0xAF, 0x65, 0xCE, 0x8B, 0x97-0x99 and 0x90) no refusal sound exists, and none of the 82 call sites of the sound entry 0x51bfc0 lies between 0x535100 and 0x5471cd, where the refusal stages 0x535670 and 0x536100 are; the callees of those stages were not each traced for a sound
 				// [EXT:pools-changing-room] a changing room that is refused for want of a pool says so
 				PostMessage( strings.Extra( lastLevelMessage.EndsWith( $": {nameof( OriginalPlacementResult.NeedsPool )}.", StringComparison.Ordinal ) ? OpenTpwText.PoolChangingRoomNeedsPool
-					: lastLevelMessage.EndsWith( $": {nameof( OriginalPlacementResult.NeedsPoolEdge )}.", StringComparison.Ordinal ) ? OpenTpwText.PoolAttractionNeedsPool : OpenTpwText.CannotBuildHere ) );
+					: lastLevelMessage.EndsWith( $": {nameof( OriginalPlacementResult.NeedsPoolWater )}.", StringComparison.Ordinal ) ? OpenTpwText.PoolAttractionNeedsPool
+					: lastLevelMessage.EndsWith( $": {nameof( OriginalPlacementResult.NeedsPoolEdge )}.", StringComparison.Ordinal ) ? OpenTpwText.PoolExtraNeedsEdge : OpenTpwText.CannotBuildHere ) );
 				GameAudio.PlayUi( GameAudio.ErrorEvent );
 			}
 		}

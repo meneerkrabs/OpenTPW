@@ -56,6 +56,17 @@ which mean *wrap*: on the Direct3D path either bit sets render-key bit 0x400000 
 stage decoder 0x567620 sets `D3DTSS_ADDRESS` to WRAP with a linear `MINFILTER` for that bit, else CLAMP with a point
 `MINFILTER` (0x5678CF, 0x567912); the address state covers both axes, so either bit wraps U and V (the software
 texel path insets only the flagged axis, 0x590422/0x59043B). They select no blend, alpha or depth state.
+OpenTPW draws each slot that way (`TextureSlotAddressing`): ObjectAssets, the terrain scenery and the lobby models mark
+every corner of a non-wrapping slot with OpenTPW's vertex bit 0x80000000 (the slot flags never use bit 31), and the
+object and advisor shaders clamp those corners. The address mode lives with the vertex, not the texture, so one image
+shared through the texture cache by a wrapping and a clamping slot draws correctly in both. The browser has only 16
+texture units, so the clamp is an emulation on the material's wrapping sampler (`[EXT:md2-clamp-in-shader]`): the
+coordinates stay half a texel of the coarsest selectable mip inside the edges and `textureGrad` keeps the unclamped
+derivatives (the mip's real size, so odd sizes do not bleed), which is exact at the finest mip and widens the edge texel
+slightly in coarser ones, by about one screen pixel at most when mipmaps are off. A clamped slot keeps
+the graphics preset's filter instead of the original's point `MINFILTER` (COMPAT-010). In the corpus 2,457 of the
+7,282 slots wrap; 67,039 of their corners lie outside 0..1 and no corner of a clamped slot does, so clamping changes
+no tiled texture, only how a clamped slot's edge texels filter (no bleed from the opposite edge).
 **0x80** is a procedural texture (not in the corpus). **0x1** and **0x2** have no reader: the runtime model generator
 writes them (0x42539E: 0x1 always, 0x2 from its descriptor), and a scan of every load of the slot record (+0x50), the
 material pointer (+0x6C) and every bit test of 1, 2 or 3 in 0x440000–0x5A0000 finds none. Transparency in the
@@ -630,7 +641,6 @@ count and offset fields, but that does not verify the rest of its layout.
 Next: the object-list replay without a bind (RIDES-032), and game-speed scaling
 of the scene clock; the
 texture slot's current frame is read by the draw (`0x580530`) and the per-slot bind (`0x57A420`) only while the ANIMATINGTEXTURES option is on (RIDES-035 retired; MD2-900..902 stay);
-object textures sampled with the slot's wrap (0x10/0x20) or clamp instead of OpenTPW's mirrored repeat (COMPAT-010);
 the heightfield's texture turn and mirror in the terrain renderer. CPU parsing and sandbox playback do not qualify original
 rendering or animation behavior.
 

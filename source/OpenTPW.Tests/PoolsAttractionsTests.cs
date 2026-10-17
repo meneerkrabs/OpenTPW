@@ -742,9 +742,9 @@ public class PoolsAttractionsTests
 	public void TheRegistryHoldsTheRiverAndTheThreeAttractionsAndStaysInIdOrder()
 	{
 		var none = PoolActivityRegistry.Create().Select( activity => activity.Id ).OrderBy( id => id, StringComparer.Ordinal ).ToArray();
-		CollectionAssert.AreEqual( new[] { PoolWaterEffects.ActivityId, RiverActivity.ActivityId }, none, "without the sites only the river and the ambient effects" );
+		CollectionAssert.AreEqual( new[] { PoolWaterEffects.ActivityId, RiverActivity.ActivityId, "extra.board", "extra.ladder", "extra.lounger", "extra.shower" }, none, "without the sites the river, the ambient effects and the extras" );
 		var all = PoolActivityRegistry.Create( Sites( Rope, Jets, Spa ) ).Select( activity => activity.Id ).OrderBy( id => id, StringComparer.Ordinal ).ToArray();
-		CollectionAssert.AreEqual( new[] { "ambient.water", "attraction.jets", "attraction.river", "attraction.ropeswing", "attraction.spa" }, all );
+		CollectionAssert.AreEqual( new[] { "ambient.water", "attraction.jets", "attraction.river", "attraction.ropeswing", "attraction.spa", "extra.board", "extra.ladder", "extra.lounger", "extra.shower" }, all );
 	}
 
 	[TestMethod]
@@ -1062,7 +1062,7 @@ public class PoolsAttractionsContentTests
 				Assert.AreEqual( "mod:opentpw.pools:", entry.Root.KeyPrefix, label );
 				Assert.AreEqual( side == "*" ? 4 : 1, PoolAttractions.WaterSides( entry ).Count, label );
 				Assert.IsNotNull( entry.ScriptPath, label );
-				Assert.AreEqual( 5, catalog.Entries.Count( item => item.ModId == "opentpw.pools" ), $"{Themes[theme]}: the cabin and the four attractions" );
+				Assert.AreEqual( 4, catalog.Entries.Count( item => item.ModId == "opentpw.pools" && PoolAttractions.KindOf( item ) != PoolAttractionKind.None ), $"{Themes[theme]}: four attractions" );
 			}
 		}
 	}
@@ -1121,7 +1121,7 @@ public class PoolsAttractionsContentTests
 		var wave = ObjectCatalog.Load( "space" ).Get( 65210 );
 		var cabin = ObjectCatalog.Load( "jungle" ).Get( 65500 );
 		var cells = new ParkCellMap( 32, 32 );
-		Assert.AreEqual( OriginalPlacementResult.NeedsPoolEdge, PoolAttractions.PlacementRule( rope, cells, 10, 10, 0 ), "no water: refused" );
+		Assert.AreEqual( OriginalPlacementResult.NeedsPoolWater, PoolAttractions.PlacementRule( rope, cells, 10, 10, 0 ), "no water: refused" );
 		Assert.IsNull( PoolAttractions.PlacementRule( cabin, cells, 10, 10, 0 ), "the changing room has its own rule" );
 		// the water side of the unrotated object is north, then west, south and east as it turns
 		var sides = new Dictionary<int, (int X, int Y)> { [0] = (10, 9), [90] = (9, 10), [180] = (10, 11), [270] = (11, 10) };
@@ -1131,12 +1131,12 @@ public class PoolsAttractionsContentTests
 			map.SetType( water.X, water.Y, ParkCellTypes.PoolWater );
 			Assert.IsNull( PoolAttractions.PlacementRule( rope, map, 10, 10, rotation ), $"rotation {rotation}: water on its side" );
 			foreach ( var other in sides.Where( pair => pair.Key != rotation ) )
-				Assert.AreEqual( OriginalPlacementResult.NeedsPoolEdge, PoolAttractions.PlacementRule( rope, WaterAt( other.Value ), 10, 10, rotation ), $"rotation {rotation}: water on another side does not do" );
+				Assert.AreEqual( OriginalPlacementResult.NeedsPoolWater, PoolAttractions.PlacementRule( rope, WaterAt( other.Value ), 10, 10, rotation ), $"rotation {rotation}: water on another side does not do" );
 			Assert.IsNull( PoolAttractions.PlacementRule( spa, map, 10, 10, rotation ), $"a spa takes water on any side ({rotation})" );
 		}
 		// the 2 x 1 wave machine: water in front of either of its cells
 		Assert.IsNull( PoolAttractions.PlacementRule( wave, WaterAt( (11, 9) ), 10, 10, 0 ) );
-		Assert.AreEqual( OriginalPlacementResult.NeedsPoolEdge, PoolAttractions.PlacementRule( wave, WaterAt( (12, 9) ), 10, 10, 0 ) );
+		Assert.AreEqual( OriginalPlacementResult.NeedsPoolWater, PoolAttractions.PlacementRule( wave, WaterAt( (12, 9) ), 10, 10, 0 ) );
 		using ( OpenTpwExtensions.Use( PoolsTests.PoolsSet( false ) ) )
 			Assert.IsNull( PoolAttractions.PlacementRule( rope, cells, 10, 10, 0 ), "no opinion with the extension off" );
 		Assert.IsNull( PoolAttractions.PlacementRule( rope, null, 10, 10, 0 ), "nor without a cell map" );
@@ -1209,12 +1209,12 @@ public class PoolsAttractionsLevelTests
 			Assert.AreEqual( PoolAttractionKind.RopeSwing, PoolAttractions.KindOf( swing ) );
 			Assert.IsNotNull( level.Objects.PlacementRule );
 			Assert.IsNotNull( level.Guests );
-			Assert.AreEqual( OriginalPlacementResult.NeedsPoolEdge, PoolAttractions.PlacementRule( swing, level.Guests!.Grid.Cells, 20, 20, 0 ) );
-			Assert.AreEqual( OriginalPlacementResult.NeedsPoolEdge, level.Objects.PlacementRule!( swing, 20, 20, 0 ) );
-			Assert.AreEqual( OriginalPlacementResult.NeedsPoolEdge, level.Objects.Check( swing, 20, 20, 0 ), "no water beside it" );
+			Assert.AreEqual( OriginalPlacementResult.NeedsPoolWater, PoolAttractions.PlacementRule( swing, level.Guests!.Grid.Cells, 20, 20, 0 ) );
+			Assert.AreEqual( OriginalPlacementResult.NeedsPoolWater, level.Objects.PlacementRule!( swing, 20, 20, 0 ) );
+			Assert.AreEqual( OriginalPlacementResult.NeedsPoolWater, level.Objects.Check( swing, 20, 20, 0 ), "no water beside it" );
 			Assert.AreEqual( PoolBuildResult.Ok, level.PoolBuilder!.Paint( 20, 19 ) );
 			Assert.AreEqual( OriginalPlacementResult.Allowed, level.Objects.Check( swing, 20, 20, 0 ), "water to its north" );
-			Assert.AreEqual( OriginalPlacementResult.NeedsPoolEdge, level.Objects.Check( swing, 20, 20, 180 ), "turned round, its side faces dry land" );
+			Assert.AreEqual( OriginalPlacementResult.NeedsPoolWater, level.Objects.Check( swing, 20, 20, 180 ), "turned round, its side faces dry land" );
 			var attractionsBefore = level.Guests!.Attractions.Count;
 			var placed = level.Objects.TryPlace( swing, 20, 20, 0, out _ );
 			Assert.IsNotNull( placed );

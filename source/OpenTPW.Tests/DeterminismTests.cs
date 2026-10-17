@@ -353,6 +353,57 @@ public class DeterminismTests
 		Assert.AreEqual( PoolsChangingRoomFixedRunHash, hash, $"0x{hash:X16} ({swims} swims, {most} at once, {admissions} admitted)" );
 	}
 
+	/// <summary>
+	/// [EXT:pools-extras] The same run as <see cref="RunFixedParkWithPoolsAndAChangingRoom"/> with the four pool activities registered and extras placed around the pool (x 3 to 8, y 8 to 9): a ladder at (4, 7) and a diving board at (7, 7)
+	/// facing south, a shower at (4, 6) beside the room and a two-seat lounger at (4, 10) and (5, 10) facing north (docs/POOLS.md, "Extras"). Returns the hash and how many guests did each activity (seen at one-second chunks).
+	/// </summary>
+	internal static (ulong Hash, IReadOnlyDictionary<string, int> Activities, int Swims) RunFixedParkWithPoolExtras()
+	{
+		using var scope = OpenTPW.Mods.OpenTpwExtensions.Use( PoolsTests.PoolsSet( true ) );
+		var park = new SyntheticPark( WorldSeed.Default, null, cells =>
+		{
+			var builder = new PoolBuilder( cells, () => null, new PoolsTests.FlatGrid( cells.Width, cells.Height ) );
+			Assert.IsTrue( builder.PaintCells( PoolBuilder.Rectangle( (3, 8), (8, 9) ) ).Completed );
+		}, changingRoom: true );
+		foreach ( var activity in PoolActivityRegistry.Create() )
+			park.Guests.RegisterPoolActivity( activity );
+		var sites = new[]
+		{
+			new PoolExtraSite( 9001, PoolExtraKind.Ladder, 0, new[] { (4, 7) } ),
+			new PoolExtraSite( 9002, PoolExtraKind.DivingBoard, 0, new[] { (7, 7) } ),
+			new PoolExtraSite( 9003, PoolExtraKind.Shower, 0, new[] { (4, 6) } ),
+			new PoolExtraSite( 9004, PoolExtraKind.Lounger, 180, new[] { (5, 10), (4, 10) } )
+		};
+		park.Guests.PoolExtraSites = () => sites;
+		var seen = new Dictionary<string, HashSet<int>>();
+		for ( var chunk = 0; chunk < PinnedRunTicks / 60; chunk++ )
+		{
+			park.Run( 60 );
+			foreach ( var guest in park.Guests.Guests.Where( guest => guest.InPoolActivity ) )
+			{
+				if ( !seen.TryGetValue( guest.PoolActivityId!, out var ids ) )
+					seen[guest.PoolActivityId!] = ids = new HashSet<int>();
+				ids.Add( guest.Id );
+			}
+		}
+		return (park.Hash, seen.OrderBy( pair => pair.Key, StringComparer.Ordinal ).ToDictionary( pair => pair.Key, pair => pair.Value.Count ), park.Room!.ReleasedTotal);
+	}
+
+	/// <summary>[EXT:pools-extras] The pinned hash of <see cref="RunFixedParkWithPoolExtras"/> (docs/DETERMINISM.md, "Pools").</summary>
+	internal const ulong PoolExtrasFixedRunHash = 0x0C35A6A0F10D914EUL;
+
+	[TestMethod]
+	public void FixedRunWithPoolExtrasIsTheSameInEveryProcessAndGuestsUseThem()
+	{
+		var (hash, activities, swims) = RunFixedParkWithPoolExtras();
+		var summary = string.Join( ", ", activities.Select( pair => $"{pair.Key} {pair.Value}" ) );
+		Assert.IsTrue( swims >= 5, $"the room was used {swims} times" );
+		Assert.IsTrue( activities.Count >= 3, $"swimmers used the extras: {summary}" );
+		Assert.AreEqual( hash, RunFixedParkWithPoolExtras().Hash, "repeatable in the process" );
+		Assert.AreNotEqual( PoolsChangingRoomFixedRunHash, hash, "the extras change the run" );
+		Assert.AreEqual( PoolExtrasFixedRunHash, hash, $"0x{hash:X16} ({swims} swims; {summary})" );
+	}
+
 	[TestMethod]
 	public void FixedRunWithAPoolAndAChangingRoomIsUnchangedByTheFullActivityRegistryWithNothingToOffer()
 	{
@@ -430,10 +481,12 @@ public class DeterminismTests
 	internal const ulong FixedRunHash = 0xA91A607272718E93UL;
 
 	/// <summary>
-	/// The pinned hash of the same run with <c>opentpw.smarter-guests</c> on (docs/SMARTER-GUESTS.md): the smarter rules (1.1.0) never act in this run, whose one drinks shop is cheap enough that no guest is refused, so everything but the extension's own state (its seed,
-	/// counter and birth ids, which join the world hash only while it is on) is the off run's and the value did not move from 1.0.0. The scenario's pin (GuestMeasurementTests) is where the rules act. A deliberate change of the extension's state or of a rule that acts here changes this value.
+	/// The pinned hash of the same run with <c>opentpw.smarter-guests</c> on (docs/SMARTER-GUESTS.md): in this run, whose one drinks shop is cheap enough that no guest is refused and which has no second attraction to choose
+	/// between, the smarter rules (1.2.0) change no guest: <see cref="GuestSimulation.ComputeStateHash"/> equals the off run's. What moved from 1.1.0's value is the extension's own state, which joins the world hash: the
+	/// shop's throughput estimate (phase 3: its average, samples and silence clock) next to the birth ids. The scenario's pin (GuestMeasurementTests) is where the rules act. A deliberate change of the
+	/// extension's state, of the rules or of a constant changes this value (and bumps the extension's version).
 	/// </summary>
-	internal const ulong SmarterGuestsFixedRunHash = 0xCB2F2ECD287ED83FUL;
+	internal const ulong SmarterGuestsFixedRunHash = 0xC8534726E08D0EC2UL;
 
 	[TestMethod]
 	public void SmarterGuestsFixedRunHashIsTheSameInEveryProcess()

@@ -123,7 +123,7 @@ public static class PoolAttractions
 		foreach ( var (x, y) in AccessCandidates( entry, anchorX, anchorY, rotation ) )
 			if ( cells.InBounds( x, y ) && cells.RawTypeAt( x, y ) == ParkCellTypes.PoolWater )
 				return null;
-		return OriginalPlacementResult.NeedsPoolEdge;
+		return OriginalPlacementResult.NeedsPoolWater;
 	}
 }
 

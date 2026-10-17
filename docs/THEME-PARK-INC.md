@@ -188,19 +188,83 @@ No original executable was run to establish a broader TPI save schema.
 
 | Field used | Observation and use |
 | --- | --- |
-| Container | Magic 500; 24 bytes inserted after magic (`01 13 00 00 00`, `Version: Beta_21` and terminator); file type at `0x61c`, version 133 at `0x620`, offline flag at `0x621`, `BILZ` at `0x625`, zlib at `0x641`. The existing bounded zlib reader applies after shifting these offsets. |
-| Decoded payload | 1,692,641 bytes; all 17 writer-order trailing delimiters occur once. The World block ends at `DLRW` offset 1,571,677. The Camera block is 48 bytes (TPW saves use 40), so it has a separate TPI layout parser. |
-| Cell grid | One 128×128 X-fastest run at offsets 7,116–1,449,038. Type 3 records are 88 bytes; 13 type 7 records add 10 bytes. `FF FF` closes each base record at +86/+87. MAP attributes remain at +46; path flag bit 0 at +13, connections +8, path texture +17, turn +21 and occupancy +12 match the TPW positions. The save yields 76 path cells. |
+| Container | Magic 500; the 24-byte version block after the magic (`01 13 00 00 00`, `Version: Beta_21\r\n` and its NUL); language byte at `0x1c`, stamp `01 22 19 85` at `0x61d`, online word at `0x621`, `BILZ` at `0x625`, zlib at `0x641`. The bounded zlib reader applies after shifting these offsets; see [SAVE-CONTAINER.md](SAVE-CONTAINER.md#theme-park-inc-version-block). |
+| Decoded payload | 1,692,641 bytes; all 17 writer-order trailing delimiters occur once. The World block ends at `DLRW` offset 1,571,677. The blocks are split by their readers' widths under the Theme Park Inc profile (45 message lists, a 48-byte camera, an empty UI block), see [the save layout](#theme-park-inc-park-save-layout). |
+| Cell grid | One 128×128 X-fastest run at offsets 7,116–1,449,038, read by the map loader's status-byte rule (below): every cell has status 3 (88 bytes) or, for 13 cells, 7 (98 bytes with the 10-byte effects record); `FF FF` closes each base record at +86/+87. MAP attributes remain at +46; path flag bit 0 at +13, connections +8, path texture +17, turn +21 and occupancy +12 match the TPW positions. The save yields 76 path cells. |
 | `SYSG` objects | A candidate begins with byte `1`, then an opaque `u32`, followed by little-endian `u32` Info.Id at +5, X +9, Y +13, width +17, height +21, kind +25 and index +29; rotation is `u16` at +43. The bounded signature scan finds 23 records: 9 kind 815 objects and 14 kind 865 fixed/scene records. |
 | Catalogue and placement | All nine kind 815 IDs resolve in science: eight rectangular footprints are occupied in the grid and one (`1101`, 4×5 at 42,26) has two unoccupied corner cells (42,30 and 45,30), so its footprint remains unresolved while the object is rendered at its saved anchor. Of the 14 fixed/scene records, nine IDs resolve; five zero-coordinate IDs (`1702`, `1701`, `1700`, `1750`, `1798`) have no object archive and are not rendered. One resolved record is a tool, leaving 17 objects rendered in the native viewer. |
 | Entrance | Saved `1601` Gates at (46,17), and `103` Lobby plus `104` atmdesk at (46,16), all rotation 0. TPI fixed models use local coordinates, so the viewer applies these saved anchors and rotations. There is no Bus record in this save. Eleven other fixed/scene records use (0,0); their thing records hold the default position (128, 128) and angle 0 for the six with an archive (real positions for the five without one), and how the original places their local-coordinate models at that anchor remains an approximation (RIDES-040). |
 
-The importer is read-only. It requires this observed 23-record SYSG profile so a damaged or
-different save cannot quietly produce a partial park. It uses the same exact map-attribute check
+The importer is read-only. The World block is read into typed records
+(`ThemeParkIncSaveWorld`) and must consume exactly to its delimiter; each SYSG record found by
+the signature scan must then name exactly one attraction thing of that World by mesh instance id
+(the record's `u32` at +1, the thing's `MeshInstanceID`), Info.Id and, for a placed object, cell, so a damaged or
+different save cannot quietly produce a partial park. This replaced the former requirement of
+exactly 23 records with 14 fixed items. The join runs both ways: every record must name one attraction,
+no attraction may be named by two records, and every attraction must have a record except the lake
+obstacle `1703` (whose RideSystem entry is not an 815/865 scene record; it is the only entry of
+`UnrecordedThemeParkIncAttractions`). A damaged or duplicated record therefore still fails the import. It uses the same exact map-attribute check
 as TPW but the TPI record widths and SYSG header are separate, leaving TPW save reading unchanged. A 300-frame native
 science capture draws the paths and park objects; it does not prove their appearance against the
 original game. Economy, ride state, guests, opaque cell data and unrecognised scene records are
 not restored.
+
+### Theme Park Inc park save layout
+
+Static reading of the no-CD `Game.exe` (save `0x43ee20`, header writer `0x440a20`, loader `0x43f370`),
+checked against the one park save that exists, `prebuilt.TPWS` (decoded 1,692,641 bytes). Container
+fields: [SAVE-CONTAINER.md](SAVE-CONTAINER.md). The payload loader (`0x43fad0`, writer `0x441060`)
+uses the same 17 delimiters in the same order as `tp.exe` (`0x415270`), so `SavePayloadLayout.Parse(payload,
+SavePayloadProfile.ThemeParkInc)` splits it by the blocks' own reader widths; only a Coasters block with a
+coaster is still found by its delimiter (SAVE-011). `ParseThemeParkInc` is that call.
+
+| Block | Prebuilt bytes | Reader rule (Theme Park Inc against Theme Park World) |
+| --- | ---: | --- |
+| ActionRecording | 563 | `u32` published flag, `u32` size, bytes (same) |
+| World | 1,571,114 | `ThemeParkIncSaveWorld`, below |
+| Scripts | 412 | `SCPT` block, `0x118`-byte records (same; loader `0x4e4410`) |
+| Particles | 76,252 | same (loader `0x658810`) |
+| MessageCentre | 476 | 45 lists of `u32 count, count × u16` (TPW 29; loader `0x437140`) |
+| Clock / VanillaTime / GameSystem | 8 / 4 / 36 | same (`0x41b890`, `0x41bec0`, `0x6a2390`) |
+| RideSystem | 13,154 | `u32` length and that many bytes (same; its records have an extra `u32` before Info.Id, `0x4c5770`) |
+| TrackRides / FlyingRides | 180 / 452 | same (`0x6921a0`, `0x6b6720`) |
+| RSSE | 26,446 | same; the records end in `OBJ ` (`0x6afd90`) |
+| Camera | 48 | 40 bytes plus `gf_SavedRideXRotation` and `gf_SavedRideYRotation` (`0x46a150`) |
+| Coasters | 1,226 | the TPW layout: one coaster, one section, 30 train slots of one car (30 × 38 bytes), `SaveCoasterBlock.ParseBlock` consumes it exactly (`0x4782e0`) |
+| Advisor / Sound | 392 / 1,804 | same (`0x717460`, `0x652e60`) |
+| Cheat / AdvisorScoring | 2 / 4 | same (`0x423c40`, `0x71c300`) |
+| UI | 0 | the writer (`0x4f8630`) is a bare `ret` and the loader reads nothing: nothing may follow the `ADSC` delimiter |
+
+**World block** (loader `0x64bc00`, 1,571,114 bytes, consumed exactly): variables (version 3,
+70 bytes: the TPW version 2's 64 plus `mLobby`, `mCurrentObstacle` and `mFirstGardener`), the control
+manager (`0x5cf9b0`: 150 records of 36 bytes, `u32` count, `u16` search key, 5,406 bytes), the staff pool
+(`0x6308a0`: 32 candidates of 31 bytes (`0x62f980`: type, name, salary, agency, sub-type, valid, on-pointer, time
+stamp, timeout, experience), six role pairs of count and stop flag, time stamp and flag, 1,027 bytes), the
+calendar (32 bytes: the TPW calendar with `mYearAtLastUpdate`), the arrivals (18 bytes, raw), the map and the thing list.
+
+The map (`0x5d6d40`) is the TPW rule with a wider cell: for each of the fixed `0x4000` cells a status byte,
+then the 56-byte map cell (TPW 52, `mIsObstacle` added) when bit 0 is set, the 31-byte track cell when bit 1 is set and the
+10-byte effects record when bit 2 is set. The prebuilt's grid is at 7,116 to 1,449,038. The thing list is `u32 head`, the marker `EATC`, then per
+thing `u32 next, u32 model, 'LDMT'`, the model's 4-byte tag and the body, and ends with `ENOD`, followed by the new special
+rides (`0x6244b0`: `u32 count`, then count records of a `u16` and 20 slots of 10 bytes, 4 = 812 bytes in the
+prebuilt).
+
+| Model | Tag | Body | In `ThemeParkIncSaveWorld` |
+| --- | --- | --- | --- |
+| 3 attraction | `OBJE` | 312 bytes, plus 5,263 of history when its flag byte (the last of the 312) is 1: 13 rings of 30 and 6 rings of 144 | typed (`ThemeParkIncAttraction`, including the history rings); 24 in the prebuilt |
+| 16 bank | `BANK` | 292 (the TPW bank) | typed (`SaveBank`) |
+| 10 mechanic HQ, 12 tag system, 17 UI receiver, 21 `OBJH`, 22 `CUTS`, 23 `TRNR` | | 10, 12, 8, 14, 10, 8 | exact; base plus raw tail (`ThemeParkIncSmallThing`) |
+| 9 staff HQ, 11 advisor controller, 13 park analyser, 14 research lab, 15 weather, 19 challenge system | | 411, 233, 76,617, 8,414, 104, 1,287 | raw; these widths are the prebuilt's, not traced from the serializers (closure-derived), and the header that must follow checks them |
+| 1 guest, 4 to 8 staff, 20 gardener | | none in the prebuilt | raw; no width, the body ends at the first following header that reads (heuristic) |
+
+Models 0, 2 and 18 have no serializer (the jump table `0x64d7e0` sends 18 to the challenge case too, but only 19 is witnessed) and are
+rejected. The widths of the staff HQ, advisor, analyser, lab, weather and challenge things are therefore **not** traced
+reader widths, and guests, staff and gardeners (absent from the prebuilt) are found by searching for the next header that reads
+(or, for the last thing, the `ENOD` whose special-rides tail is followed by the `WRLD` delimiter). A complete header
+lookalike inside such a search-bounded body would fabricate a shorter body and an extra thing that still closes at the delimiter and passes
+the variable checks; a uniqueness check cannot catch it, because a raw body can always absorb the thing after it. This is SAVE-944.
+The block must in every case read exactly to its delimiter.
+Typed fields that are inferred rather than traced are SAVE-940 to SAVE-944 in the [register](FIDELITY-REGISTER.md).
 
 ## Ride-script VM: shared formats and opcode lineage
 
@@ -245,8 +309,8 @@ the semantics of the TPW corpus.
   32-bit (2,974) or 16-bit (1) palette. Most are 32×32, 64×64 or 128×128. `.wct`
   remains only in `levels/wIntro`. `FshFile` decodes all of them; see [FSH.md](FSH.md).
 - **Saves.** `prebuilt.TPWS` starts with magic 500 (TPWS), like TPW saves, but then
-  inserts `01 13 00 00 00` and the ASCII string `Version: Beta_21` before the
-  UTF-16 `THE SAVE GAME DATA…` banner. Its BILZ chunk and decoded payload retain
+  carries the Theme Park Inc version block (`01 13 00 00 00` and the string `Version: Beta_21\r\n`) before the
+  language byte and the UTF-16 `THE SAVE GAME DATA…` banner. Its BILZ chunk and decoded payload retain
   the familiar trailing delimiters, but the Camera block, cell and SYSG records have the distinct widths
   documented [above](#prebuilt-science-save). The reader accepts this observed
   offline profile only; it does not write TPI saves.

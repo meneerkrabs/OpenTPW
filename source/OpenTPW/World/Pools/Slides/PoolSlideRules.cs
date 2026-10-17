@@ -66,8 +66,8 @@ public static class PoolSlideRules
 	public const int MaximumSlope = 800;
 	/// <summary>The gentlest slope in thousandths: 0.2, about 11 degrees; below it a rider would barely move.</summary>
 	public const int MinimumSlope = 200;
-	/// <summary>The track's height above the ground or the water under it, engine units, over land and over the pool.</summary>
-	public const float Clearance = 0.5f;
+	/// <summary>The least height of a piece's lowest point above the ground, or the water, under its cell, engine units: the track never cuts the ground (it comes down to the pool's edge at its end).</summary>
+	public const float Clearance = 0.15f;
 	/// <summary>How far above the water the track ends, engine units: the riders drop into the pool from there.</summary>
 	public const float SplashHeight = 0.2f;
 	/// <summary>The most the splash end may stand above the water, engine units (the pool's level may drop under a built slide).</summary>

@@ -29,10 +29,10 @@ public sealed class SmarterGuestsState
 	public bool Bootstrapped { get; private set; }
 
 	/// <summary>
-	/// The "too expensive" memory of the value-for-money rule (<see cref="PriceMemory"/>): empty unless the smarter rules run. The host writes and reads it; it is saved in the extension's section and
+	/// The runs of price-emptied decisions of the value-for-money rule (<see cref="PriceStalls"/>): empty unless the smarter rules run. The host writes and reads it; it is saved in the extension's section and
 	/// joins the world hash only while it holds an entry, so a park that only has the guest identity (script mods) hashes as it did.
 	/// </summary>
-	public PriceMemory Memory { get; } = new();
+	public PriceStalls Stalls { get; } = new();
 
 	/// <summary>Gives the next birth id. A counter at its limit is refused, never wrapped: ids are never reused, so a wrap would give two guests one personality.</summary>
 	public ulong AllocateBirthId()
@@ -62,8 +62,8 @@ public sealed class SmarterGuestsState
 		ParkSeed = parkSeed;
 		NextBirthId = nextBirthId;
 		Bootstrapped = bootstrapped;
-		// a restore from a section loads the memory afterwards (SmarterGuestsSave.Restore); any other restore starts without one
-		Memory.Clear();
+		// a restore from a section loads the runs afterwards (SmarterGuestsSave.Restore); any other restore starts without any
+		Stalls.Clear();
 	}
 
 	/// <summary>
@@ -89,10 +89,10 @@ public sealed class SmarterGuestsState
 		return value ^ (value >> 31);
 	}
 
-	/// <summary>Mixed into the hash before the price memory's entries (the ASCII "PMEM").</summary>
-	internal const long MemoryHashMarker = 0x504D454DL;
+	/// <summary>Mixed into the hash before the price stalls (the ASCII "PSTL").</summary>
+	internal const long StallsHashMarker = 0x5053544CL;
 
-	/// <summary>The extension's part of <see cref="WorldStateHash"/>: the seed, the counter, the first-tick flag, the guests' ids in id order and, while there are any, the price memory in its canonical order.</summary>
+	/// <summary>The extension's part of <see cref="WorldStateHash"/>: the seed, the counter, the first-tick flag, the guests' ids in id order and, while there are any, the runs of price-emptied decisions in birth-id order.</summary>
 	internal void AddCanonicalState( StateHasher hash, IReadOnlyList<Guest> guests )
 	{
 		hash.Add( HashMarker );
@@ -106,15 +106,14 @@ public sealed class SmarterGuestsState
 			hash.Add( guest.Id );
 			hash.Add( guest.BirthId );
 		}
-		if ( Memory.Count == 0 )
+		if ( Stalls.Count == 0 )
 			return;
-		hash.Add( MemoryHashMarker );
-		hash.Add( Memory.Count );
-		foreach ( var entry in Memory.Entries )
+		hash.Add( StallsHashMarker );
+		hash.Add( Stalls.Count );
+		foreach ( var entry in Stalls.Entries )
 		{
 			hash.Add( entry.BirthId );
-			hash.Add( entry.AttractionId );
-			hash.Add( entry.ExpiresTurn );
+			hash.Add( entry.Count );
 		}
 	}
 }

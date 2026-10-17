@@ -7,11 +7,11 @@ namespace OpenTPW;
 // [EXT:smarter-guests-value] phase 2, value for money
 public static class SmarterGuestsRules
 {
-	/// <summary>How long a guest remembers a price refusal at an attraction: 2 in-game days of 23 park turns.</summary>
-	public const int RefusalMemoryTurns = 46;
-
-	/// <summary>The most refusals one guest remembers at a time; a newer one pushes out the one that ends soonest.</summary>
-	public const int MaxRefusalsPerGuest = 4;
+	/// <summary>
+	/// How many price-emptied decisions in a row send a guest home: its price rule turned away the stands it wanted, and it found nothing else, this many times. The guest goes home with the "too expensive"
+	/// thought (the original's thought 6) instead of wandering and trying again. Tuned by measurement (docs/SMARTER-GUESTS.md): 1 gives the fewest stuck guests and the shortest waits of 1, 2, 3 and 5.
+	/// </summary>
+	public const int StallsBeforeGoingHome = 1;
 
 	/// <summary>The index of the price sensitivity trait (<see cref="DecisionContext.Trait"/>).</summary>
 	public const int PriceSensitivityTrait = 0;
@@ -22,14 +22,14 @@ public static class SmarterGuestsRules
 	/// <summary>How many distinct sensitivities the trait gives: 90 to 110 percent.</summary>
 	public const int SensitivityValues = 21;
 
-	/// <summary>The booth's value of a park with no open attraction, in percent of the rating-based part of the park value.</summary>
-	public const int BoothVarietyBasePercent = 85;
+	/// <summary>The booth's value of a park with no open ride or sideshow, in percent of the rating-based part of the park value: the original's, so the rule never judges a park harsher than the original does.</summary>
+	public const int BoothVarietyBasePercent = 100;
 
-	/// <summary>What each open attraction adds to the booth's percentage.</summary>
-	public const int BoothVarietyStepPercent = 5;
+	/// <summary>What each open ride or sideshow adds to the booth's percentage.</summary>
+	public const int BoothVarietyStepPercent = 3;
 
-	/// <summary>The open attractions beyond which the booth sees no more variety: 85 + 6 × 5 = 115 percent at most.</summary>
-	public const int BoothVarietyCap = 6;
+	/// <summary>The open rides and sideshows beyond which the booth sees no more variety: 100 + 5 × 3 = 115 percent at most.</summary>
+	public const int BoothVarietyCap = 5;
 
 	/// <summary>The price sensitivity of a guest, in percent, from its stateless trait word: 90 to 110, the same for the guest's whole visit.</summary>
 	public static int SensitivityPercent( ulong trait ) => SensitivityMinimumPercent + (int)(trait % SensitivityValues);
@@ -50,8 +50,8 @@ public static class SmarterGuestsRules
 
 	/// <summary>
 	/// The park value the booth weighs the fee against: the original's value (<see cref="BoothVerdict.ParkValue"/>) with its rating part (the value above the minimum entry fee) scaled by the number of open
-	/// attractions: <c>BoothVarietyBasePercent + BoothVarietyStepPercent × min(open, BoothVarietyCap)</c> percent, 85 to 115. A park with no rating keeps the original value; a park of few
-	/// attractions is judged a little harsher and one of many a little kinder.
+	/// rides and sideshows: <c>BoothVarietyBasePercent + BoothVarietyStepPercent × min(open, BoothVarietyCap)</c> percent, 100 to 115. A park with no rating, or with none open, keeps the original value; a park of
+	/// many rides is judged a little kinder, never harsher.
 	/// </summary>
 	public static uint BoothParkValue( uint originalValue, int openAttractions, GuestSettings settings )
 	{

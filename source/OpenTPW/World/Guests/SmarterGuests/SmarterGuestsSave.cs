@@ -18,11 +18,11 @@ internal sealed record SmarterGuestsSaveData
 	/// <summary>One entry per guest that has an id, in guest-id order.</summary>
 	public required IReadOnlyList<SmarterGuestBirth> Births { get; init; }
 	/// <summary>
-	/// The value-for-money rule's price memory (<see cref="PriceMemory"/>), in canonical order (birth id, then attraction id); absent from the file while empty, which keeps the section of a park without
-	/// refusals (and every script-mod-only park) as it was.
+	/// The value-for-money rule's runs of price-emptied decisions (<see cref="PriceStalls"/>), in birth-id order; absent from the file while there are none, which keeps the section of a park without any
+	/// (and every script-mod-only park) as it was.
 	/// </summary>
 	[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
-	public IReadOnlyList<PriceRefusal>? Refusals { get; init; }
+	public IReadOnlyList<PriceStall>? Stalls { get; init; }
 }
 
 /// <summary>
@@ -47,7 +47,7 @@ internal static class SmarterGuestsSave
 			NextBirthId = state.NextBirthId,
 			Bootstrapped = state.Bootstrapped,
 			Births = guests.Guests.Where( guest => guest.BirthId != 0 ).OrderBy( guest => guest.Id ).Select( guest => new SmarterGuestBirth( guest.Id, guest.BirthId ) ).ToArray(),
-			Refusals = state.Memory.Count == 0 ? null : state.Memory.Entries.ToArray()
+			Stalls = state.Stalls.Count == 0 ? null : state.Stalls.Entries.ToArray()
 		};
 	}
 
@@ -68,7 +68,7 @@ internal static class SmarterGuestsSave
 	}
 
 	/// <summary>The section's consistency with the guests it names, apart from the mod record (<see cref="ShapeProblem"/>).</summary>
-	public static string? SectionProblem( SmarterGuestsSaveData section, IEnumerable<int>? guestIds, long? parkTurn = null )
+	public static string? SectionProblem( SmarterGuestsSaveData section, IEnumerable<int>? guestIds )
 	{
 		if ( section.Births == null )
 			return "the SmarterGuests section has no birth list";
@@ -92,41 +92,30 @@ internal static class SmarterGuestsSave
 		}
 		if ( section.Bootstrapped && seenGuests.Count != holders.Count )
 			return $"the extension has run, but only {seenGuests.Count} of {holders.Count} guests have a birth id";
-		return RefusalsProblem( section.Refusals, seenIds, parkTurn );
+		return StallsProblem( section.Stalls, seenIds );
 	}
 
 	/// <summary>
-	/// The price memory's consistency: entries of guests the section gives a birth id (<paramref name="births"/>), attraction ids in the thing pool's range, strictly ascending by (birth id, attraction id),
-	/// at most <see cref="SmarterGuestsRules.MaxRefusalsPerGuest"/> per guest and an expiry that is positive and, when the park turn is known, no further ahead than the memory lasts.
+	/// The price stalls' consistency: runs of guests the section gives a birth id (<paramref name="births"/>), strictly ascending by birth id (so each guest once), each below
+	/// from 1 to <see cref="PriceStalls.MaximumRun"/>.
 	/// </summary>
-	private static string? RefusalsProblem( IReadOnlyList<PriceRefusal>? refusals, HashSet<ulong> births, long? parkTurn )
+	private static string? StallsProblem( IReadOnlyList<PriceStall>? stalls, HashSet<ulong> births )
 	{
-		if ( refusals == null )
+		if ( stalls == null )
 			return null;
-		PriceRefusal? previous = null;
-		var perGuest = 0;
-		foreach ( var entry in refusals )
+		ulong? previous = null;
+		foreach ( var entry in stalls )
 		{
 			if ( !births.Contains( entry.BirthId ) )
-				return $"the price memory names birth id {entry.BirthId}, whom the section does not hold";
-			if ( entry.AttractionId is < 1 or > MaximumAttractionId )
-				return $"the price memory of birth id {entry.BirthId} names attraction {entry.AttractionId}, outside 1..{MaximumAttractionId}";
-			if ( entry.ExpiresTurn < 1 )
-				return $"the price memory of birth id {entry.BirthId} expires on turn {entry.ExpiresTurn}, before turn 1";
-			if ( parkTurn is { } turn && entry.ExpiresTurn > turn + SmarterGuestsRules.RefusalMemoryTurns )
-				return $"the price memory of birth id {entry.BirthId} expires on turn {entry.ExpiresTurn}, more than {SmarterGuestsRules.RefusalMemoryTurns} turns after turn {turn}";
-			if ( previous is { } last && (entry.BirthId < last.BirthId || (entry.BirthId == last.BirthId && entry.AttractionId <= last.AttractionId)) )
-				return "the price memory is not in strictly ascending (birth id, attraction id) order";
-			perGuest = previous is { } before && before.BirthId == entry.BirthId ? perGuest + 1 : 1;
-			if ( perGuest > SmarterGuestsRules.MaxRefusalsPerGuest )
-				return $"birth id {entry.BirthId} remembers more than {SmarterGuestsRules.MaxRefusalsPerGuest} refusals";
-			previous = entry;
+				return $"the price stalls name birth id {entry.BirthId}, whom the section does not hold";
+			if ( entry.Count < 1 || entry.Count > PriceStalls.MaximumRun )
+				return $"birth id {entry.BirthId} has a run of {entry.Count} price-emptied decisions, outside 1..{PriceStalls.MaximumRun}";
+			if ( previous is { } last && entry.BirthId <= last )
+				return "the price stalls are not in strictly ascending birth id order";
+			previous = entry.BirthId;
 		}
 		return null;
 	}
-
-	/// <summary>The most thing ids a park can hold (the original's pool: 10239 slots), so no attraction id is larger.</summary>
-	private const int MaximumAttractionId = 10239;
 
 	/// <summary>
 	/// Puts the section's state and ids into <paramref name="guests"/>, whose guests were restored from the same save. A null section leaves a fresh state: its first tick gives every guest its id.
@@ -139,7 +128,7 @@ internal static class SmarterGuestsSave
 			return;
 		if ( guests.SmarterGuests is not { } state )
 			throw new InvalidDataException( $"The saved park has guest identity state ({ExtensionId} or script mods), but neither is active." );
-		if ( SectionProblem( section, guests.Guests.Select( guest => guest.Id ), guests.ParkTurn ) is { } problem )
+		if ( SectionProblem( section, guests.Guests.Select( guest => guest.Id ) ) is { } problem )
 			throw new InvalidDataException( $"The saved smarter-guests state is inconsistent: {problem}." );
 		foreach ( var guest in guests.Guests )
 			guest.BirthId = 0;
@@ -147,7 +136,7 @@ internal static class SmarterGuestsSave
 		foreach ( var birth in section.Births )
 			byId[birth.GuestId].BirthId = birth.BirthId;
 		state.Restore( section.ParkSeed, section.NextBirthId, section.Bootstrapped );
-		if ( section.Refusals is { Count: > 0 } refusals )
-			state.Memory.Load( refusals );
+		if ( section.Stalls is { Count: > 0 } stalls )
+			state.Stalls.Load( stalls );
 	}
 }

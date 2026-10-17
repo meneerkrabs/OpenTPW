@@ -72,7 +72,7 @@ public class GuestMeasurementTests
 	/// The scenario's guests with <c>opentpw.smarter-guests</c> 1.1.0 on (docs/SMARTER-GUESTS.md, phase 2). The scenario's dear shop is where the rule acts, so unlike the synthetic park's pin this one moves with the
 	/// rules: it is the on-path pin of the behaviour. A deliberate change of a rule constant changes this value (and bumps the extension's version).
 	/// </summary>
-	private const ulong ScenarioSmarterFixedRunHash = 0xDB81E0A9B39513E1UL;
+	private const ulong ScenarioSmarterFixedRunHash = 0x5680EC44DBB01974UL;
 
 	[TestMethod]
 	public void ParkScenarioFixedRunHashWithTheSmarterGuestsExtensionOnIsPinned()

@@ -9,7 +9,7 @@ using OpenTPW.Mods;
 namespace OpenTPW.Tests;
 
 /// <summary>
-/// Phase 2 of the smarter-guests plan (docs/SMARTER-GUESTS.md): value for money. The rules in isolation, the host's price facts, the price memory with its expiry, its save section and its validation, and
+/// Phase 2 of the smarter-guests plan (docs/SMARTER-GUESTS.md): value for money. The rules in isolation, the host's price facts, the run of price-emptied decisions with its save section and validation, the guest that goes home, and
 /// the off path. The measured effect is in the page's tables and in the compare test of <see cref="SmarterGuestsTests"/>.
 /// </summary>
 [TestClass]
@@ -21,8 +21,8 @@ public class SmarterGuestsValueTests
 	private static GuestView Guest( ulong birthId = 11, int money = 500, float happiness = 60, float thirst = 90 ) =>
 		new( 7, birthId, 0, happiness, thirst, 10, 10, 0, money, 3, 3, Array.AsReadOnly( new int[4] ), Array.AsReadOnly( new int[4] ) );
 
-	private static AttractionView Stand( RideVisitorKind kind = RideVisitorKind.Shop, int price = 100, uint willingness = 300, bool refused = false ) =>
-		new( 5, 1, kind, true, (3, 4), (3, 5), 0, 0, 4, 20, 50, 0, 80, 0, false, 30, false, 0, 0, true, false, false, price, willingness, refused );
+	private static AttractionView Stand( RideVisitorKind kind = RideVisitorKind.Shop, int price = 100, uint willingness = 300 ) =>
+		new( 5, 1, kind, true, (3, 4), (3, 5), 0, 0, 4, 20, 50, 0, 80, 0, false, 30, false, 0, 0, true, false, false, price, willingness );
 
 	// ---- The rules in isolation ---------------------------------------------------------------
 
@@ -79,11 +79,19 @@ public class SmarterGuestsValueTests
 		Assert.AreEqual( baseScore, smarter.ScoreAttraction( context, guest, affordable ), "a stand the guest can pay for scores as the original scores it" );
 		Assert.AreEqual( 0u, smarter.ScoreAttraction( context, guest, Stand( price: 400, willingness: 300 ) ), "above the willingness: refused at the stand, so skipped" );
 		Assert.AreEqual( 0u, smarter.ScoreAttraction( context, Guest( money: 50 ), affordable ), "above the purse" );
-		Assert.AreEqual( 0u, smarter.ScoreAttraction( context, guest, Stand( refused: true ) ), "remembered refusal" );
 		Assert.AreEqual( 0u, smarter.ScoreAttraction( context, guest, Stand( RideVisitorKind.Sideshow, 400, 300 ) ), "a sideshow too" );
-		foreach ( var kind in new[] { RideVisitorKind.Ride } )
-			Assert.AreEqual( original.ScoreAttraction( context, guest, Stand( kind, 400, 300, refused: true ) ), smarter.ScoreAttraction( context, guest, Stand( kind, 400, 300, refused: true ) ), "rides cost nothing per use: no price rule" );
-		Assert.AreEqual( original.ScoreAttraction( context, guest, Stand( price: 0, willingness: 0, refused: true ) ), smarter.ScoreAttraction( context, guest, Stand( price: 0, willingness: 0, refused: true ) ), "a free stand is never refused" );
+		Assert.AreEqual( original.ScoreAttraction( context, guest, Stand( RideVisitorKind.Ride, 400, 300 ) ), smarter.ScoreAttraction( context, guest, Stand( RideVisitorKind.Ride, 400, 300 ) ), "rides cost nothing per use: no price rule" );
+		Assert.AreEqual( original.ScoreAttraction( context, guest, Stand( price: 0, willingness: 0 ) ), smarter.ScoreAttraction( context, guest, Stand( price: 0, willingness: 0 ) ), "a free stand is never refused" );
+		// PriceTurnedAway: only a stand the rule zeroed that the original would have chosen
+		Assert.IsTrue( smarter.PriceTurnedAway( context, guest, Stand( price: 400, willingness: 300 ) ) );
+		Assert.IsFalse( smarter.PriceTurnedAway( context, guest, affordable ) );
+		Assert.IsFalse( smarter.PriceTurnedAway( context, guest, Stand( RideVisitorKind.Ride, 400, 300 ) ) );
+		Assert.IsFalse( smarter.PriceTurnedAway( context, guest, default ) );
+		Assert.IsFalse( ((IGuestDecisions)original).PriceTurnedAway( context, guest, Stand( price: 400, willingness: 300 ) ), "the original never turns a stand away" );
+		Assert.IsFalse( ((IGuestDecisions)original).DecidePriceStall( context, guest, 99 ).GoHome );
+		Assert.IsFalse( smarter.DecidePriceStall( context, guest, 0 ).GoHome );
+		Assert.IsTrue( smarter.DecidePriceStall( context, guest, SmarterGuestsRules.StallsBeforeGoingHome ).GoHome );
+		Assert.AreEqual( GuestThought.Dissatisfied, smarter.DecidePriceStall( context, guest, SmarterGuestsRules.StallsBeforeGoingHome ).Thought, "the original's thought 6" );
 		// the trait scales the willingness: across many guests the same borderline stand is skipped by some and visited by others
 		var borderline = Stand( price: 100, willingness: 100 );
 		var outcomes = Enumerable.Range( 1, 400 ).Select( id => smarter.ScoreAttraction( context, Guest( (ulong)id ), borderline ) != 0 ).ToArray();
@@ -91,22 +99,22 @@ public class SmarterGuestsValueTests
 	}
 
 	[TestMethod]
-	public void TheBoothScalesOnlyTheRatingPartOfThePark()
+	public void TheBoothScalesOnlyTheRatingPartOfTheParkAndNeverBelowTheOriginal()
 	{
 		var minimum = (uint)Settings.MinimumEntryFee;
-		Assert.AreEqual( minimum, SmarterGuestsRules.BoothParkValue( minimum, 0, Settings ), "no rating: the original value" );
-		Assert.AreEqual( 0u, SmarterGuestsRules.BoothParkValue( 0, 6, Settings ), "below the minimum entry fee: untouched" );
+		Assert.AreEqual( minimum, SmarterGuestsRules.BoothParkValue( minimum, 5, Settings ), "no rating: the original value" );
+		Assert.AreEqual( 0u, SmarterGuestsRules.BoothParkValue( 0, 5, Settings ), "below the minimum entry fee: untouched" );
 		var value = minimum + 1000;
-		Assert.AreEqual( minimum + 850, SmarterGuestsRules.BoothParkValue( value, 0, Settings ), "85 percent with no open attraction" );
-		Assert.AreEqual( minimum + 1000, SmarterGuestsRules.BoothParkValue( value, 3, Settings ), "neutral at three" );
-		Assert.AreEqual( minimum + 1150, SmarterGuestsRules.BoothParkValue( value, 6, Settings ), "115 percent at six" );
-		Assert.AreEqual( SmarterGuestsRules.BoothParkValue( value, 6, Settings ), SmarterGuestsRules.BoothParkValue( value, 60, Settings ), "no more variety beyond six" );
-		Assert.AreEqual( SmarterGuestsRules.BoothParkValue( value, 0, Settings ), SmarterGuestsRules.BoothParkValue( value, -4, Settings ) );
-		Assert.AreEqual( uint.MaxValue, SmarterGuestsRules.BoothParkValue( uint.MaxValue, 6, Settings ), "no overflow" );
+		Assert.AreEqual( value, SmarterGuestsRules.BoothParkValue( value, 0, Settings ), "no open ride or sideshow: the original value, never harsher" );
+		Assert.AreEqual( value, SmarterGuestsRules.BoothParkValue( value, -4, Settings ) );
+		Assert.AreEqual( minimum + 1030, SmarterGuestsRules.BoothParkValue( value, 1, Settings ), "3 percent kinder per open ride or sideshow" );
+		Assert.AreEqual( minimum + 1150, SmarterGuestsRules.BoothParkValue( value, 5, Settings ), "115 percent at five" );
+		Assert.AreEqual( SmarterGuestsRules.BoothParkValue( value, 5, Settings ), SmarterGuestsRules.BoothParkValue( value, 60, Settings ), "no more variety beyond five" );
+		Assert.AreEqual( uint.MaxValue, SmarterGuestsRules.BoothParkValue( uint.MaxValue, 5, Settings ), "no overflow" );
 	}
 
 	[TestMethod]
-	public void TheBoothNeverGetsHarsherWithMoreOpenAttractionsAndMovesSomeVerdicts()
+	public void TheBoothNeverGetsHarsherThanTheOriginalAndMovesSomeVerdicts()
 	{
 		static int Harshness( BoothVerdictKind verdict ) => verdict switch { BoothVerdictKind.FarTooExpensive => 3, BoothVerdictKind.Expensive => 2, BoothVerdictKind.Fair => 1, _ => 0 };
 		var smarter = new SmarterGuestDecisions();
@@ -117,137 +125,136 @@ public class SmarterGuestsValueTests
 			foreach ( var draw in new[] { 0u, 7u, 99u } )
 				for ( uint fee = 0; fee <= 1200; fee += 3 )
 				{
-					var few = smarter.DecideBooth( context, guest, new BoothView( points, fee, draw, 0 ) ).Verdict;
-					var many = smarter.DecideBooth( context, guest, new BoothView( points, fee, draw, 6 ) ).Verdict;
-					Assert.IsTrue( Harshness( many ) <= Harshness( few ), $"points {points}, fee {fee}, draw {draw}: {few} with none open, {many} with six" );
-					moved += few != many ? 1 : 0;
-					Assert.AreEqual( OriginalGuestDecisions.Instance.DecideBooth( context, guest, new BoothView( points, fee, draw ) ).Verdict,
-						smarter.DecideBooth( context, guest, new BoothView( points, fee, draw, 3 ) ).Verdict, "three open attractions are neutral" );
+					var original = OriginalGuestDecisions.Instance.DecideBooth( context, guest, new BoothView( points, fee, draw ) ).Verdict;
+					Assert.AreEqual( original, smarter.DecideBooth( context, guest, new BoothView( points, fee, draw, 0 ) ).Verdict, "no open ride or sideshow is the original's verdict" );
+					var previous = Harshness( original );
+					for ( var open = 1; open <= 6; open++ )
+					{
+						var verdict = smarter.DecideBooth( context, guest, new BoothView( points, fee, draw, open ) ).Verdict;
+						Assert.IsTrue( Harshness( verdict ) <= previous, $"points {points}, fee {fee}, draw {draw}: {open} open is harsher than {open - 1}" );
+						previous = Harshness( verdict );
+					}
+					moved += original != smarter.DecideBooth( context, guest, new BoothView( points, fee, draw, 5 ) ).Verdict ? 1 : 0;
 				}
-		Assert.IsTrue( moved > 20, $"{moved} verdicts move with the park's variety" );
+		Assert.IsTrue( moved > 20, $"{moved} verdicts move with the park's rides" );
 	}
 
-	// ---- The memory ---------------------------------------------------------------------------
+	// ---- The run of price-emptied decisions ---------------------------------------------------
 
 	[TestMethod]
-	public void ARefusalIsRememberedUntilItsTurnAndThenForgotten()
+	public void ARunCountsPerGuestEndsOnReset()
 	{
-		var memory = new PriceMemory();
-		memory.Remember( 5, 40, 100 );
-		Assert.IsTrue( memory.Refused( 5, 40, 99 ) );
-		Assert.IsFalse( memory.Refused( 5, 40, 100 ), "the memory holds while the turn is below the expiry" );
-		Assert.IsFalse( memory.Refused( 5, 41, 50 ), "another attraction" );
-		Assert.IsFalse( memory.Refused( 6, 40, 50 ), "another guest" );
-		Assert.IsFalse( memory.Refused( 0, 40, 50 ), "a guest without a birth id remembers nothing" );
-		memory.Remember( 0, 40, 100 );
-		Assert.AreEqual( 1, memory.Count );
-		memory.Remember( 5, 40, 90 );
-		Assert.IsTrue( memory.Refused( 5, 40, 99 ), "an earlier expiry never shortens a memory" );
-		memory.Remember( 5, 40, 150 );
-		Assert.AreEqual( 1, memory.Count, "the same refusal again extends the memory" );
-		Assert.IsTrue( memory.Refused( 5, 40, 149 ) );
-		memory.Prune( 149 );
-		Assert.AreEqual( 1, memory.Count );
-		memory.Prune( 150 );
-		Assert.AreEqual( 0, memory.Count, "pruned on the expiry turn" );
+		var stalls = new PriceStalls();
+		Assert.AreEqual( 1, stalls.Increment( 9 ) );
+		Assert.AreEqual( 2, stalls.Increment( 9 ) );
+		Assert.AreEqual( 1, stalls.Increment( 3 ) );
+		Assert.AreEqual( 1, stalls.Increment( 0 ), "a guest without a birth id has no run" );
+		Assert.AreEqual( 2, stalls.Count );
+		CollectionAssert.AreEqual( new[] { new PriceStall( 3, 1 ), new PriceStall( 9, 2 ) }, stalls.Entries.ToArray(), "birth-id order" );
+		Assert.AreEqual( 2, stalls.Of( 9 ) );
+		Assert.AreEqual( 0, stalls.Of( 4 ) );
+		stalls.Reset( 9 );
+		stalls.Reset( 77 );
+		Assert.AreEqual( 0, stalls.Of( 9 ) );
+		Assert.AreEqual( 1, stalls.Count );
+		for ( var i = 0; i < 1000; i++ )
+			stalls.Increment( 3 );
+		Assert.AreEqual( PriceStalls.MaximumRun, stalls.Of( 3 ), "a run saturates" );
+		stalls.Clear();
+		Assert.AreEqual( 0, stalls.Count );
 	}
 
-	[TestMethod]
-	public void TheMemoryIsBoundedPerGuestKeepsCanonicalOrderAndForgetsADepartedGuest()
+	/// <summary>The shipped rules, but a guest goes home only after three price-emptied decisions in a row: exercises the counter the shipped limit of 1 never keeps.</summary>
+	private sealed class ThreeStallsDecisions : SmarterGuestsTests.DelegatingDecisions
 	{
-		var memory = new PriceMemory();
-		foreach ( var (guest, attraction, expires) in new[] { (9UL, 30, 100L), (3UL, 31, 100), (9UL, 20, 90), (3UL, 11, 100), (9UL, 25, 110), (9UL, 26, 120), (9UL, 27, 130) } )
-			memory.Remember( guest, attraction, expires );
-		CollectionAssert.AreEqual( memory.Entries.OrderBy( entry => entry.BirthId ).ThenBy( entry => entry.AttractionId ).ToArray(), memory.Entries.ToArray(), "canonical order" );
-		var nine = memory.Entries.Where( entry => entry.BirthId == 9 ).ToArray();
-		Assert.AreEqual( SmarterGuestsRules.MaxRefusalsPerGuest, nine.Length, "at most four per guest" );
-		Assert.IsFalse( nine.Any( entry => entry.AttractionId == 20 ), "the refusal that ended soonest went first" );
-		Assert.AreEqual( 2, memory.Entries.Count( entry => entry.BirthId == 3 ) );
-		memory.Forget( 9 );
-		Assert.IsTrue( memory.Entries.All( entry => entry.BirthId == 3 ) );
-		memory.Forget( 77 );
-		Assert.AreEqual( 2, memory.Count );
-		memory.Clear();
-		Assert.AreEqual( 0, memory.Count );
-	}
-
-	/// <summary>Skips a stand the guest remembers a refusal at, and does nothing else: the memory alone, with the stand-point test as the only teacher.</summary>
-	private sealed class MemoryOnlyDecisions : SmarterGuestsTests.DelegatingDecisions
-	{
-		public MemoryOnlyDecisions() : base( OriginalGuestDecisions.Instance ) { }
-		public override bool UsesExtensionState => true;
-		public override bool UsesValueForMoney => true;
-		public readonly List<AttractionView> Stands = new();
-		public override uint ScoreAttraction( in DecisionContext context, in GuestView guest, in AttractionView attraction )
+		public ThreeStallsDecisions() : base( new SmarterGuestDecisions() ) { }
+		public int Asked, WentHome;
+		public int MostSeen;
+		public override PriceStallDecision DecidePriceStall( in DecisionContext context, in GuestView guest, int consecutive )
 		{
-			if ( attraction.Kind == RideVisitorKind.Shop && attraction.Price != 0 )
-				Stands.Add( attraction );
-			return attraction.RecentlyRefused ? 0 : base.ScoreAttraction( context, guest, attraction );
+			Asked++;
+			MostSeen = Math.Max( MostSeen, consecutive );
+			var decision = consecutive >= 3 ? new PriceStallDecision( true, GuestThought.Dissatisfied ) : PriceStallDecision.Stay;
+			WentHome += decision.GoHome ? 1 : 0;
+			return decision;
 		}
+		public override bool PriceTurnedAway( in DecisionContext context, in GuestView guest, in AttractionView attraction ) => ((IGuestDecisions)new SmarterGuestDecisions()).PriceTurnedAway( context, guest, attraction );
+	}
+
+	private sealed class LeavingRecorder : IGuestObserver
+	{
+		public int Without;
+		public void Admitted( Guest guest, int fee ) { }
+		public void Spent( Guest guest, int amount, int attractionId ) { }
+		public void QueueRejected( Guest guest, IRideVisitorBridge attraction, QueueEndReason reason ) { }
+		public void QueueJoined( Guest guest, IRideVisitorBridge attraction ) { }
+		public void QueueBoarded( Guest guest, IRideVisitorBridge attraction, long waitTurns ) { }
+		public void QueueEnded( Guest guest, int attractionId, QueueEndReason reason, long waitTurns ) { }
+		public void Decided( Guest guest, bool chose ) { }
+		public void Leaving( Guest guest, DepartureCause cause ) => Without += cause == DepartureCause.None ? 1 : 0;
+		public void Departed( Guest guest ) { }
+		public void Recalled( Guest guest ) { }
+		public void Restored( GuestSimulation simulation ) { }
+		public void Ticked( GuestSimulation simulation, float deltaSeconds ) { }
 	}
 
 	[TestMethod]
-	public void TheHostRemembersWhereAGuestWasRefusedForTheTurnsTheRuleSetsAndForgetsItAfterwards()
+	public void AGuestWhosePriceRuleEmptiesItsChoiceEnoughTimesInARowGoesHome()
 	{
-		var policy = new MemoryOnlyDecisions();
+		var policy = new ThreeStallsDecisions();
 		var park = new ParkScenario( new WorldSeed( 1 ), decisions: policy );
 		var state = park.Guests.SmarterGuests!;
-		var dear = park.Attractions.Single( item => item.Role == "shop-dear" ).Bridge.AttractionId;
-		PriceRefusal? first = null;
-		long rememberedAt = 0;
-		for ( var tick = 0; tick < 40_000 && first == null; tick++ )
+		var recorder = new LeavingRecorder();
+		park.Guests.Observer = recorder;
+		var most = 0;
+		for ( var tick = 0; tick < 40_000; tick++ )
 		{
 			park.Run( 1 );
-			if ( state.Memory.Count > 0 )
-			{
-				first = state.Memory.Entries[0];
-				rememberedAt = park.Guests.ParkTurn;
-			}
+			if ( tick % 20 != 0 )
+				continue;
+			most = Math.Max( most, state.Stalls.Count );
+			var births = park.Guests.Guests.Select( guest => guest.BirthId ).ToHashSet();
+			Assert.IsTrue( state.Stalls.Entries.All( entry => births.Contains( entry.BirthId ) ), $"tick {tick}: a run of a guest who left" );
+			Assert.IsTrue( state.Stalls.Entries.All( entry => entry.Count is >= 1 and < 3 ), $"tick {tick}: {string.Join( ", ", state.Stalls.Entries )}" );
 		}
-		Assert.IsNotNull( first, "a guest was refused at the dear shop and the host remembered it" );
-		var entry = first.Value;
-		Assert.AreEqual( dear, entry.AttractionId, "the dear shop refuses; the cheap one does not" );
-		Assert.IsTrue( entry.ExpiresTurn is > 0 && entry.ExpiresTurn - rememberedAt <= SmarterGuestsRules.RefusalMemoryTurns && entry.ExpiresTurn > rememberedAt, $"expires on {entry.ExpiresTurn}, remembered on turn {rememberedAt}" );
-		Assert.IsTrue( park.Guests.Guests.Any( guest => guest.BirthId == entry.BirthId ), "the memory is of a guest in the park" );
-		// while it holds, the policy is told, with the same stand every time
-		var seenRefused = false;
-		var sawStandAfterExpiry = false;
-		while ( park.Guests.ParkTurn < entry.ExpiresTurn + 2 )
-		{
-			policy.Stands.Clear();
-			park.Run( 1 );
-			var guest = park.Guests.Guests.SingleOrDefault( item => item.BirthId == entry.BirthId );
-			if ( guest == null )
-				break;
-			seenRefused |= park.Guests.ParkTurn < entry.ExpiresTurn && policy.Stands.Any( stand => stand.Id == dear && stand.RecentlyRefused );
-			if ( park.Guests.ParkTurn >= entry.ExpiresTurn )
-				sawStandAfterExpiry |= policy.Stands.Any( stand => stand.Id == dear );
-			if ( park.Guests.ParkTurn >= entry.ExpiresTurn )
-				Assert.IsFalse( state.Memory.Entries.Any( other => other == entry ), "the entry is gone once its turn has come" );
-		}
-		Assert.IsFalse( state.Memory.Entries.Any( other => other == entry ), "the entry is gone once its turn has come" );
-		Assert.IsTrue( seenRefused || park.Guests.Guests.All( guest => guest.BirthId != entry.BirthId ), "the memory reached the policy while it held" );
-		_ = sawStandAfterExpiry;
+		Assert.IsTrue( most > 0 && policy.MostSeen >= 3, $"runs were counted (most seen {policy.MostSeen})" );
+		Assert.IsTrue( policy.WentHome > 0 && recorder.Without >= policy.WentHome, $"{policy.WentHome} guests went home, {recorder.Without} leaving reports without a predicate" );
 	}
 
 	[TestMethod]
-	public void TheMemoryNeverHoldsMoreThanTheGuestsInTheParkCanCarry()
+	public void TheShippedRuleSendsAGuestHomeAtOnceAndKeepsNoRun()
 	{
-		var park = new ParkScenario( new WorldSeed( 3 ), decisions: new MemoryOnlyDecisions() );
-		var state = park.Guests.SmarterGuests!;
-		var most = 0;
-		for ( var tick = 0; tick < 60_000; tick++ )
-		{
-			park.Run( 1 );
-			if ( tick % 40 != 0 )
-				continue;
-			most = Math.Max( most, state.Memory.Count );
-			var births = park.Guests.Guests.Select( guest => guest.BirthId ).ToHashSet();
-			Assert.IsTrue( state.Memory.Entries.All( entry => births.Contains( entry.BirthId ) ), $"tick {tick}: an entry of a guest who left" );
-			Assert.IsTrue( state.Memory.Count <= SmarterGuestsRules.MaxRefusalsPerGuest * park.Guests.Guests.Count );
-			Assert.IsTrue( state.Memory.Entries.All( entry => entry.ExpiresTurn > park.Guests.ParkTurn ), $"tick {tick}: an expired entry stayed" );
-		}
-		Assert.IsTrue( most > 0, "the memory was used" );
+		Assert.AreEqual( 1, SmarterGuestsRules.StallsBeforeGoingHome );
+		var recorder = new LeavingRecorder();
+		var plainRecorder = new LeavingRecorder();
+		var plain = new ParkScenario( new WorldSeed( 1 ) );
+		plain.Guests.Observer = plainRecorder;
+		plain.Run( 30_000 );
+		using var scope = OpenTpwExtensions.Use( SmarterGuestsTests.On() );
+		var park = new ParkScenario( new WorldSeed( 1 ) );
+		park.Guests.Observer = recorder;
+		park.Run( 30_000 );
+		Assert.IsTrue( recorder.Without > plainRecorder.Without + 5, $"{recorder.Without} guests left over prices, against {plainRecorder.Without}" );
+		Assert.AreEqual( 0, park.Guests.SmarterGuests!.Stalls.Count, "with a limit of one nothing stays counted" );
+	}
+
+	[TestMethod]
+	public void AParkWithARatingMovesTheBoothOfTheScenarioAndNothingElseDoesWithoutOne()
+	{
+		var options = new ParkScenarioOptions { ParkPoints = 400, AdmissionFee = 120 };
+		var plain = new ParkScenario( new WorldSeed( 1 ), options );
+		plain.Run( 12_000 );
+		var identity = new ParkScenario( new WorldSeed( 1 ), options, new SmarterGuestsTests.IdentityOnlyDecisions() );
+		identity.Run( 12_000 );
+		Assert.AreEqual( plain.Hash, identity.Hash, "the identity state alone changes no guest" );
+		var spy = new ViewSpy( asks: true, state: true );
+		var counted = new ParkScenario( new WorldSeed( 1 ), options, spy );
+		counted.Run( 12_000 );
+		Assert.IsTrue( spy.Booths.Count > 3 && spy.Booths.All( booth => booth.ParkPoints == 400 && booth.OpenAttractions == 4 ), "the host passes the rating and the four rides" );
+		using var scope = OpenTpwExtensions.Use( SmarterGuestsTests.On() );
+		var smarter = new ParkScenario( new WorldSeed( 1 ), options );
+		smarter.Run( 12_000 );
+		Assert.AreNotEqual( plain.Hash, smarter.Hash );
 	}
 
 	// ---- The host's facts and the off path ----------------------------------------------------
@@ -273,13 +280,13 @@ public class SmarterGuestsValueTests
 	}
 
 	[TestMethod]
-	public void TheOffPathFillsNoPriceFactCountsNoAttractionAndKeepsNoMemory()
+	public void TheOffPathFillsNoPriceFactCountsNoAttractionAndKeepsNoState()
 	{
 		var spy = new ViewSpy( asks: false );
 		var park = new ParkScenario( new WorldSeed( 1 ), decisions: spy );
 		park.Run( 15_000 );
 		Assert.IsTrue( spy.Views.Count > 100 && spy.Booths.Count > 5, "the policy was asked" );
-		Assert.IsTrue( spy.Views.All( view => view.Price == 0 && view.Willingness == 0 && !view.RecentlyRefused ), "no price fact for a policy that does not ask" );
+		Assert.IsTrue( spy.Views.All( view => view.Price == 0 && view.Willingness == 0 ), "no price fact for a policy that does not ask" );
 		Assert.IsTrue( spy.Booths.All( booth => booth.OpenAttractions == 0 ), "no count either" );
 		Assert.IsNull( park.Guests.SmarterGuests );
 		var plain = new ParkScenario( new WorldSeed( 1 ) );
@@ -294,7 +301,7 @@ public class SmarterGuestsValueTests
 		var counts = new List<int>();
 		var hashes = new List<ulong>();
 		ViewSpy? asked = null;
-		foreach (var asks in new[] { false, true })
+		foreach ( var asks in new[] { false, true } )
 		{
 			var spy = new ViewSpy( asks );
 			var payments = new CountingPayments();
@@ -317,7 +324,7 @@ public class SmarterGuestsValueTests
 		Assert.IsTrue( shops.Any( view => view.Price == 220 ) && shops.Any( view => view.Price == 30 ), "the priced stands carry their price" );
 		Assert.IsTrue( shops.Where( view => view.Price != 0 ).All( view => view.Willingness > 0 ), "and the guest's willingness" );
 		Assert.IsTrue( views.Where( view => view.Kind == RideVisitorKind.Ride ).All( view => view.Price == 0 && view.Willingness == 0 ), "rides cost nothing per use" );
-		Assert.IsTrue( asked.Booths.All( booth => booth.OpenAttractions == 7 ), "the scenario's seven attractions are open" );
+		Assert.IsTrue( asked.Booths.All( booth => booth.OpenAttractions == 4 ), "the scenario's four rides are open; its shops and toilet are not counted" );
 	}
 
 	[TestMethod]
@@ -361,91 +368,107 @@ public class SmarterGuestsValueTests
 
 	// ---- The section --------------------------------------------------------------------------
 
-	private static ParkScenario ParkWithMemory( out SmarterGuestsSaveData section )
+	private static ParkScenario ParkWithStalls( out SmarterGuestsSaveData section )
 	{
-		var park = new ParkScenario( new WorldSeed( 1 ), decisions: new MemoryOnlyDecisions() );
+		var park = new ParkScenario( new WorldSeed( 1 ), decisions: new ThreeStallsDecisions() );
 		park.Run( 5000 );
 		var state = park.Guests.SmarterGuests!;
-		var guests = park.Guests.Guests.Where( guest => guest.BirthId != 0 ).Take( 3 ).ToArray();
+		var guests = park.Guests.Guests.Where( guest => guest.BirthId != 0 ).OrderBy( guest => guest.BirthId ).Take( 3 ).ToArray();
 		Assert.AreEqual( 3, guests.Length );
-		state.Memory.Clear();
-		state.Memory.Remember( guests[0].BirthId, 8, park.Guests.ParkTurn + 30 );
-		state.Memory.Remember( guests[0].BirthId, 9, park.Guests.ParkTurn + 40 );
-		state.Memory.Remember( guests[2].BirthId, 8, park.Guests.ParkTurn + 12 );
+		state.Stalls.Clear();
+		state.Stalls.Increment( guests[0].BirthId );
+		state.Stalls.Increment( guests[0].BirthId );
+		state.Stalls.Increment( guests[2].BirthId );
 		section = SmarterGuestsSave.Capture( park.Guests )!;
 		return park;
 	}
 
 	private static string Json( SmarterGuestsSaveData section ) => Encoding.UTF8.GetString( ParkResumeJson.Serialize( section ) );
 
-	[TestMethod]
-	public void ThePriceMemoryRoundTripsThroughTheSectionAndIsHashed()
-	{
-		var park = ParkWithMemory( out var section );
-		Assert.AreEqual( 3, section.Refusals!.Count );
-		var again = ParkResumeJson.Deserialize<SmarterGuestsSaveData>( ParkResumeJson.Serialize( section ) );
-		CollectionAssert.AreEqual( section.Refusals.ToArray(), again.Refusals!.ToArray() );
-		Assert.IsNull( SmarterGuestsSave.SectionProblem( again, park.Guests.Guests.Select( guest => guest.Id ), park.Guests.ParkTurn ) );
+	private static ulong Hash( ParkScenario scenario ) => WorldStateHash.Compute( new WorldStateSources { Seed = scenario.Seed, Guests = scenario.Guests } );
 
-		var rebuilt = new ParkScenario( park.Seed, decisions: new MemoryOnlyDecisions() );
+	[TestMethod]
+	public void ThePriceStallsRoundTripThroughTheSectionAndAreHashed()
+	{
+		var park = ParkWithStalls( out var section );
+		Assert.AreEqual( 2, section.Stalls!.Count );
+		var again = ParkResumeJson.Deserialize<SmarterGuestsSaveData>( ParkResumeJson.Serialize( section ) );
+		CollectionAssert.AreEqual( section.Stalls.ToArray(), again.Stalls!.ToArray() );
+		Assert.IsNull( SmarterGuestsSave.SectionProblem( again, park.Guests.Guests.Select( guest => guest.Id ) ) );
+		var rebuilt = new ParkScenario( park.Seed, decisions: new ThreeStallsDecisions() );
 		rebuilt.Things.RestoreSnapshot( park.Things.CaptureSnapshot() );
 		rebuilt.Guests.RestoreSnapshot( park.Guests.CaptureSnapshot() );
-		Assert.AreEqual( 0, rebuilt.Guests.SmarterGuests!.Memory.Count, "a restore from the guest snapshot alone starts without a memory" );
+		Assert.AreEqual( 0, rebuilt.Guests.SmarterGuests!.Stalls.Count, "a restore from the guest snapshot alone starts without runs" );
 		SmarterGuestsSave.Restore( rebuilt.Guests, again );
-		CollectionAssert.AreEqual( park.Guests.SmarterGuests!.Memory.Entries.ToArray(), rebuilt.Guests.SmarterGuests.Memory.Entries.ToArray() );
+		CollectionAssert.AreEqual( park.Guests.SmarterGuests!.Stalls.Entries.ToArray(), rebuilt.Guests.SmarterGuests.Stalls.Entries.ToArray() );
 		Assert.AreEqual( Json( section ), Json( SmarterGuestsSave.Capture( rebuilt.Guests )! ), "capturing the restored park gives the same section" );
-		ulong Hash( ParkScenario scenario ) => WorldStateHash.Compute( new WorldStateSources { Seed = scenario.Seed, Guests = scenario.Guests } );
 		Assert.AreEqual( Hash( park ), Hash( rebuilt ), "the restored park hashes like the saved one" );
 		var before = Hash( park );
-		park.Guests.SmarterGuests.Memory.Remember( section.Refusals[0].BirthId, 77, park.Guests.ParkTurn + 5 );
-		Assert.AreNotEqual( before, Hash( park ), "the memory is part of the world hash" );
-		park.Guests.SmarterGuests.Memory.Forget( section.Refusals[0].BirthId );
-		Assert.AreNotEqual( before, Hash( park ) );
+		park.Guests.SmarterGuests.Stalls.Increment( section.Stalls[0].BirthId );
+		Assert.AreNotEqual( before, Hash( park ), "the runs are part of the world hash" );
 	}
 
 	[TestMethod]
-	public void AnEmptyMemoryLeavesTheSectionAndTheHashAsTheyWere()
+	public void NoRunsLeaveTheSectionAndTheHashAsTheyWere()
 	{
 		var park = new ParkScenario( new WorldSeed( 1 ), decisions: new SmarterGuestsTests.IdentityOnlyDecisions() );
 		park.Run( 4000 );
 		var section = SmarterGuestsSave.Capture( park.Guests )!;
-		Assert.IsNull( section.Refusals );
-		Assert.IsFalse( Json( section ).Contains( "Refusals" ), "no member while there is nothing to remember" );
-		Assert.IsNull( SmarterGuestsSave.SectionProblem( section with { Refusals = Array.Empty<PriceRefusal>() }, park.Guests.Guests.Select( guest => guest.Id ) ), "an empty list is also fine" );
-		// a section from before the memory (no member at all) is read as an empty memory
-		Assert.IsNull( ParkResumeJson.Deserialize<SmarterGuestsSaveData>( Encoding.UTF8.GetBytes( Json( section ) ) ).Refusals );
+		Assert.IsNull( section.Stalls );
+		Assert.IsFalse( Json( section ).Contains( "Stalls" ), "no member while there is nothing counted" );
+		Assert.IsNull( SmarterGuestsSave.SectionProblem( section with { Stalls = Array.Empty<PriceStall>() }, park.Guests.Guests.Select( guest => guest.Id ) ), "an empty list is also fine" );
+		Assert.IsNull( ParkResumeJson.Deserialize<SmarterGuestsSaveData>( Encoding.UTF8.GetBytes( Json( section ) ) ).Stalls, "a section from before the runs reads as none" );
 	}
 
 	[TestMethod]
-	public void TheMemoryIsValidatedStrictly()
+	public void TheRunsAreValidatedStrictly()
 	{
-		var park = ParkWithMemory( out var section );
+		var park = ParkWithStalls( out var section );
 		var ids = park.Guests.Guests.Select( guest => guest.Id ).ToArray();
-		var turn = park.Guests.ParkTurn;
-		var good = section.Refusals!.ToArray();
-		var first = good[0];
-		string? Problem( params PriceRefusal[] refusals ) => SmarterGuestsSave.SectionProblem( section with { Refusals = refusals }, ids, turn );
+		var good = section.Stalls!.ToArray();
+		string? Problem( params PriceStall[] stalls ) => SmarterGuestsSave.SectionProblem( section with { Stalls = stalls }, ids );
 		Assert.IsNull( Problem( good ) );
 		StringAssert.Contains( Problem( good[0] with { BirthId = 987654 } )!, "whom the section does not hold" );
-		StringAssert.Contains( Problem( first with { AttractionId = 0 } )!, "outside 1..10239" );
-		StringAssert.Contains( Problem( first with { AttractionId = 10240 } )!, "outside 1..10239" );
-		StringAssert.Contains( Problem( first with { ExpiresTurn = 0 } )!, "before turn 1" );
-		StringAssert.Contains( Problem( first with { ExpiresTurn = turn + SmarterGuestsRules.RefusalMemoryTurns + 1 } )!, "turns after turn" );
-		Assert.IsNull( Problem( first with { ExpiresTurn = turn + SmarterGuestsRules.RefusalMemoryTurns } ), "the longest a memory can last" );
+		StringAssert.Contains( Problem( good[0] with { Count = 0 } )!, "outside 1..255" );
+		StringAssert.Contains( Problem( good[0] with { Count = 256 } )!, "outside 1..255" );
+		Assert.IsNull( Problem( good[0] with { Count = 255 } ) );
 		StringAssert.Contains( Problem( good[1], good[0] )!, "strictly ascending", "out of order" );
-		StringAssert.Contains( Problem( good[0], good[0] )!, "strictly ascending", "a duplicate" );
-		// more than four for one guest, in canonical order
-		var many = Enumerable.Range(1, SmarterGuestsRules.MaxRefusalsPerGuest + 1).Select( attraction => new PriceRefusal( first.BirthId, attraction, turn + 10 ) ).ToArray();
-		StringAssert.Contains( Problem( many )!, "more than 4 refusals" );
-		Assert.IsNull( Problem( many.Take( SmarterGuestsRules.MaxRefusalsPerGuest ).ToArray() ) );
-		// a restore applies the same checks, and the strict codec refuses an unknown member
-		var restoreInto = new ParkScenario( park.Seed, decisions: new MemoryOnlyDecisions() );
+		StringAssert.Contains( Problem( good[0], good[0] )!, "strictly ascending", "a guest twice" );
+		var restoreInto = new ParkScenario( park.Seed, decisions: new ThreeStallsDecisions() );
 		restoreInto.Things.RestoreSnapshot( park.Things.CaptureSnapshot() );
 		restoreInto.Guests.RestoreSnapshot( park.Guests.CaptureSnapshot() );
-		var bad = Assert.ThrowsException<InvalidDataException>( () => SmarterGuestsSave.Restore( restoreInto.Guests, section with { Refusals = [first with { ExpiresTurn = turn + 500 }] } ) );
+		var bad = Assert.ThrowsException<InvalidDataException>( () => SmarterGuestsSave.Restore( restoreInto.Guests, section with { Stalls = [good[0] with { Count = 0 }] } ) );
 		StringAssert.Contains( bad.Message, "inconsistent" );
-		Assert.AreEqual( 0, restoreInto.Guests.SmarterGuests!.Memory.Count, "a refused section changes nothing" );
-		var withExtra = Json( section ).Replace( "\"AttractionId\"", "\"Extra\":1,\"AttractionId\"" );
+		Assert.AreEqual( 0, restoreInto.Guests.SmarterGuests!.Stalls.Count, "a refused section changes nothing" );
+		var withExtra = Json( section ).Replace( "\"Count\"", "\"Extra\":1,\"Count\"" );
 		Assert.ThrowsException<System.Text.Json.JsonException>( () => ParkResumeJson.Deserialize<SmarterGuestsSaveData>( Encoding.UTF8.GetBytes( withExtra ) ) );
+	}
+
+	/// <summary>The section, the first-tick bootstrap and the world hash on the shipped policy, which the identity-only policy of the other tests stands in for where they compare guests to the off run.</summary>
+	[TestMethod]
+	public void TheSectionTheBootstrapAndTheHashHoldOnTheShippedPolicyToo()
+	{
+		using var scope = OpenTpwExtensions.Use( SmarterGuestsTests.On() );
+		var park = new ParkScenario( new WorldSeed( 1 ) );
+		Assert.IsInstanceOfType( park.Guests.Decisions, typeof( SmarterGuestDecisions ) );
+		park.Run( 9000 );
+		Assert.IsTrue( park.Guests.Guests.Count > 3 && park.Guests.Guests.All( guest => guest.BirthId != 0 ) );
+		var section = SmarterGuestsSave.Capture( park.Guests )!;
+		Assert.IsNull( SmarterGuestsSave.SectionProblem( section, park.Guests.Guests.Select( guest => guest.Id ) ) );
+		var fresh = SmarterGuestsTests.Fresh( park );
+		SmarterGuestsSave.Restore( fresh.Guests, ParkResumeJson.Deserialize<SmarterGuestsSaveData>( ParkResumeJson.Serialize( section ) ) );
+		Assert.AreEqual( Hash( park ), Hash( fresh ), "the restored park hashes like the saved one" );
+		Assert.AreEqual( Json( section ), Json( SmarterGuestsSave.Capture( fresh.Guests )! ) );
+		// a restore from the guest snapshot alone has no ids: the first tick gives them in thing-list order, the same twice
+		ulong[] Bootstrapped()
+		{
+			var again = SmarterGuestsTests.Fresh( park );
+			Assert.IsTrue( again.Guests.Guests.All( guest => guest.BirthId == 0 ) );
+			again.Run( 1 );
+			Assert.IsTrue( again.Guests.SmarterGuests!.Bootstrapped && again.Guests.Guests.All( guest => guest.BirthId != 0 ) );
+			return again.Guests.Guests.OrderBy( guest => guest.Id ).Select( guest => guest.BirthId ).ToArray();
+		}
+		CollectionAssert.AreEqual( Bootstrapped(), Bootstrapped() );
+		Assert.AreNotEqual( Hash( park ), WorldStateHash.Compute( new WorldStateSources { Seed = park.Seed, Guests = new ParkScenario( park.Seed ).Guests } ) );
 	}
 }

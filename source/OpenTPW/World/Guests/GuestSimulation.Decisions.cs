@@ -33,8 +33,7 @@ public sealed partial class GuestSimulation
 
 	/// <summary>
 	/// <paramref name="view"/> with what the value-for-money rule reads (docs/SMARTER-GUESTS.md, phase 2): for a shop or sideshow with a price, the price, the guest's willingness to pay right now (the stand-point
-	/// test's word, <see cref="QueueJoinRules.WillingnessToPay"/>, computed here without recording a statistic: <see cref="TooExpensive"/> stays the only place that does) and whether the guest remembers a refusal
-	/// there. Rides and free stands carry nothing.
+	/// test's word, <see cref="QueueJoinRules.WillingnessToPay"/>, computed here without recording a statistic: <see cref="TooExpensive"/> stays the only place that does)  Rides and free stands carry nothing.
 	/// </summary>
 	// [EXT:smarter-guests-value] host-computed facts for the policy; the stand-point test and its statistics are unchanged
 	private AttractionView WithPrice( AttractionView view, IRideVisitorBridge attraction, Guest guest )
@@ -45,18 +44,20 @@ public sealed partial class GuestSimulation
 		if ( terms.Price == 0 )
 			return view;
 		var willingness = QueueJoinRules.WillingnessToPay( terms, guest.Happiness, guest.Thirst, guest.Hunger, guest.Nausea );
-		var refused = SmarterGuests is { } smarter && smarter.Memory.Refused( guest.BirthId, attraction.AttractionId, ParkTurn );
-		return view with { Price = terms.Price, Willingness = willingness, RecentlyRefused = refused };
+		return view with { Price = terms.Price, Willingness = willingness };
 	}
 
-	/// <summary>The attractions that are open and not broken and have a join cell: the park's variety as the smarter booth counts it. Zero without asking (the original ignores it).</summary>
+	/// <summary>
+	/// The rides and sideshows that are open, not broken and have a join cell: the park's variety as the smarter booth counts it (shops and toilets are services, not draws). Zero without asking (the original
+	/// ignores it), and zero for a park with none open, which the booth rule reads as its least favourable 85 percent.
+	/// </summary>
 	private int OpenAttractionCount()
 	{
 		if ( !decisions.UsesValueForMoney )
 			return 0;
 		var count = 0;
 		foreach ( var attraction in attractions )
-			if ( attraction.JoinCell != null && attraction.IsOpen && !attraction.IsBrokenDown )
+			if ( attraction.Kind is RideVisitorKind.Ride or RideVisitorKind.Sideshow && attraction.JoinCell != null && attraction.IsOpen && !attraction.IsBrokenDown )
 				count++;
 		return count;
 	}

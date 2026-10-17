@@ -38,6 +38,10 @@ internal sealed class ScriptGuestDecisions : IGuestDecisions
 
 	public bool UsesValueForMoney => inner.UsesValueForMoney;
 
+	public bool PriceTurnedAway( in DecisionContext context, in GuestView guest, in AttractionView attraction ) => inner.PriceTurnedAway( context, guest, attraction );
+
+	public PriceStallDecision DecidePriceStall( in DecisionContext context, in GuestView guest, int consecutive ) => inner.DecidePriceStall( context, guest, consecutive );
+
 	public void BeginTick()
 	{
 		inner.BeginTick();

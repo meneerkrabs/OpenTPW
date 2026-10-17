@@ -144,6 +144,8 @@ public class SmarterGuestsTests
 	{
 		public virtual bool UsesExtensionState => inner.UsesExtensionState;
 		public virtual bool UsesValueForMoney => inner.UsesValueForMoney;
+		public virtual bool PriceTurnedAway( in DecisionContext context, in GuestView guest, in AttractionView attraction ) => inner.PriceTurnedAway( context, guest, attraction );
+		public virtual PriceStallDecision DecidePriceStall( in DecisionContext context, in GuestView guest, int consecutive ) => inner.DecidePriceStall( context, guest, consecutive );
 		public virtual BoothDecision DecideBooth( in DecisionContext context, in GuestView guest, in BoothView booth ) => inner.DecideBooth( context, guest, booth );
 		public virtual uint ScoreAttraction( in DecisionContext context, in GuestView guest, in AttractionView attraction ) => inner.ScoreAttraction( context, guest, attraction );
 		public virtual bool BeatsInMajorDecision( in DecisionContext context, in GuestView guest, uint score, uint best ) => inner.BeatsInMajorDecision( context, guest, score, best );
@@ -256,8 +258,8 @@ public class SmarterGuestsTests
 		var view = new GuestView( 7, 3, 1, 40, 80, 20, 10, 0, 100, 3, 3, new int[4], new int[4] );
 		var smarter = new SmarterGuestDecisions();
 		var original = OriginalGuestDecisions.Instance;
-		// three open attractions are the booth's neutral 100 percent (85 + 3 x 5), so the verdict is the original's; an unpriced attraction scores as the original scores it
-		var booth = new BoothView( 500, 80, 11, 3 );
+		// no open ride or sideshow is the booth's 100 percent, so the verdict is the original's; an unpriced attraction scores as the original scores it
+		var booth = new BoothView( 500, 80, 11, 0 );
 		Assert.AreEqual( original.DecideBooth( context, view, booth ), smarter.DecideBooth( context, view, booth ) );
 		Assert.AreEqual( original.ScoreAttraction( context, view, default ), smarter.ScoreAttraction( context, view, default ) );
 		var admission = new AdmissionView( default, 50, 46, 3, 100 );
@@ -750,17 +752,16 @@ public class SmarterGuestsTests
 		var tick = GuestSnapshotTests.RunUntil( park, rig => rig.Simulation.TickCount >= 4200, 0, 4201 );
 		tick = GuestSnapshotTests.RunUntil( park, GuestSnapshotTests.RichMoment, tick, 9000 );
 		Assert.IsTrue( GuestSnapshotTests.RichMoment( park ) );
-		// the value-for-money memory travels with the section: two guests remember a refusal that expires within the continuation below (a park turn is about 15 ticks)
-		var remembering = park.Simulation.Guests.Where( guest => guest.BirthId != 0 ).Take( 2 ).ToArray();
-		Assert.AreEqual( 2, remembering.Length );
-		var rides = park.Rides.Select( ride => ride.Bridge.AttractionId ).ToArray();
-		park.Simulation.SmarterGuests!.Memory.Remember( remembering[0].BirthId, rides[0], park.Simulation.ParkTurn + 20 );
-		park.Simulation.SmarterGuests.Memory.Remember( remembering[0].BirthId, rides[^1], park.Simulation.ParkTurn + SmarterGuestsRules.RefusalMemoryTurns );
-		park.Simulation.SmarterGuests.Memory.Remember( remembering[1].BirthId, rides[0], park.Simulation.ParkTurn + 3 );
+		// the value-for-money runs travel with the section: two guests have a run of price-emptied decisions (it ends when a guest chooses something or leaves)
+		var counting = park.Simulation.Guests.Where( guest => guest.BirthId != 0 ).OrderBy( guest => guest.BirthId ).Take( 2 ).ToArray();
+		Assert.AreEqual( 2, counting.Length );
+		park.Simulation.SmarterGuests!.Stalls.Increment( counting[0].BirthId );
+		park.Simulation.SmarterGuests.Stalls.Increment( counting[0].BirthId );
+		park.Simulation.SmarterGuests.Stalls.Increment( counting[1].BirthId );
 		var snapshot = park.Simulation.CaptureSnapshot();
 		var section = ParkResumeJson.Deserialize<SmarterGuestsSaveData>( ParkResumeJson.Serialize( SmarterGuestsSave.Capture( park.Simulation )! ) );
 		Assert.IsTrue( section.Births.Count > 3 );
-		Assert.AreEqual( 3, section.Refusals!.Count, "the memory is in the section" );
+		Assert.AreEqual( 2, section.Stalls!.Count, "the runs are in the section" );
 
 		var resumed = new GuestSnapshotTests.Rig();
 		resumed.Simulation.RestoreSnapshot( snapshot );
@@ -781,8 +782,7 @@ public class SmarterGuestsTests
 			Assert.AreEqual( Hash( park ), Hash( resumed ), $"the parks diverged at tick {tick}" );
 		}
 		Assert.AreEqual( park.Simulation.SmarterGuests!.NextBirthId, resumed.Simulation.SmarterGuests!.NextBirthId );
-		CollectionAssert.AreEqual( park.Simulation.SmarterGuests.Memory.Entries.ToArray(), resumed.Simulation.SmarterGuests.Memory.Entries.ToArray(), "the memory continued the same, expiries included" );
-		Assert.IsTrue( park.Simulation.SmarterGuests.Memory.Count < 3, "the short memories expired during the continuation" );
+		CollectionAssert.AreEqual( park.Simulation.SmarterGuests.Stalls.Entries.ToArray(), resumed.Simulation.SmarterGuests.Stalls.Entries.ToArray(), "the runs continued the same" );
 		Assert.IsTrue( park.Simulation.SmarterGuests.NextBirthId > section.NextBirthId, "guests were born after the save point" );
 	}
 

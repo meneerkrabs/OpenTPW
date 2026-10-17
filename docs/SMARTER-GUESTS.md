@@ -66,7 +66,7 @@ taken: no code, no data tables, no constants. Every phase is one pull request. T
 | 0a | Passive measurement: `ParkScenario`, instrumentation, `--guest-report`, this baseline and its thresholds. No extension, no behaviour change, every pin unchanged. |
 | 0b | Seam and identity (built, below): both extensions, `FeatureGates`, `IGuestDecisions` with `OriginalGuestDecisions` as a pure extraction, the birth-id section, off/on pins and a resume test. |
 | 1 | Top 3 Thoughts (fidelity, built: [below](#phase-1-top-3-thoughts-and-the-refusal-counters)) and `opentpw.guest-insights` refusal-reason counters (built, selectable). |
-| 2 | Value for money (built, version 1.1.0: [below](#phase-2-value-for-money)): price enters the shop and sideshow choice; a memory of price refusals; the booth weighs the fee against the park; a price sensitivity trait. |
+| 2 | Value for money (built, version 1.1.0: [below](#phase-2-value-for-money)): price enters the shop and sideshow choice; a guest that price keeps from every stand goes home; the booth weighs the fee against the park; a price sensitivity trait. |
 | 3 | Spreading: a throughput-aware queue estimate for every attraction, a stable per-guest preference per instance, hysteresis. |
 | 4 | Queue patience as a new rule: expected wait against a trait-scaled patience; leaving gives a thought and a small happiness cost. |
 | 5 | Planning needs: a shop or toilet first when a meter will cross its threshold, a detour bonus, no high-excitement ride right after eating. |
@@ -90,31 +90,33 @@ state hash, random state and guest snapshot are those of a run with it off (test
 ## Phase 2: Value for money
 
 Version 1.1.0 of `opentpw.smarter-guests`. In TPW price plays no part in the choice: a guest walks to a shop or sideshow, queues, and is turned away at the stand point when the price is above its willingness to pay or its money
-(`GuestSimulation.TooExpensive`, which also records the economy's price statistics). The original guest then loses happiness twice (the refusal and the dismissal) and chooses again. Rides cost nothing per use, so nothing below touches them. All four rules are
-`[EXT:smarter-guests-value]`, live only in `SmarterGuestDecisions` / `SmarterGuestsRules` and are gated by the extension; with it off the host does no extra work and every pin is unchanged.
+(`GuestSimulation.TooExpensive`, which also records the economy's price statistics). The original guest then loses happiness twice (the refusal and the dismissal), chooses again, and in the end leaves by the happiness byte. Rides cost nothing per use, so nothing below touches them.
+All rules are `[EXT:smarter-guests-value]`, live only in `SmarterGuestDecisions` / `SmarterGuestsRules` and are gated by the extension; with it off the host does no extra work and every pin is unchanged.
 
-**What the host adds (the policy stays pure).** A policy that returns `UsesValueForMoney` (the smarter one; script mods forward their base's answer) gets, for each shop or sideshow with a price above 0 in a candidate view: `Price`, `Willingness`
-(`QueueJoinRules.WillingnessToPay` with this guest's meters, the same word the stand-point test uses, computed as a pure function: it records no statistic) and `RecentlyRefused` (the extension's memory). The booth view gets `OpenAttractions`,
-the number of attractions with a join cell that are open and not broken. The stand-point test is untouched and still records its statistic exactly once per test (a test runs the scenario with and without the facts asked for and compares the counts and the hash).
+**What the host adds (the policy stays pure).** A policy that returns `UsesValueForMoney` (the smarter one; script mods forward their base's answer) gets, for each shop or sideshow with a price above 0 in a candidate view: `Price` and `Willingness`
+(`QueueJoinRules.WillingnessToPay` with this guest's meters, the same word the stand-point test uses, computed as a pure function: it records no statistic). The booth view gets `OpenAttractions`, the number of **rides and sideshows** that are open, not broken and
+have a join cell (shops and toilets are services, not draws; a park with none open reads 0). The stand-point test is untouched and still records its statistic exactly once per test (a test runs the scenario with and without the facts asked for and compares the counts and the hash).
+Two additive members of `IGuestDecisions` (with default implementations, so a policy that ignores them, including the original and every script policy, is unchanged) serve rule 2: `PriceTurnedAway` and `DecidePriceStall` (returning `PriceStallDecision`).
 
 **1. Price in the choice.** `ScoreAttraction` returns the original score, except 0 for a priced shop or sideshow the guest expects to refuse, which is below the choice floor of 10 and so never chosen. The guest expects a refusal by the stand's own rule
 (`price > willingness` or `price > money`, unsigned) with the willingness divided by its sensitivity (rule 4). The minor decision (a walking guest looking for something nearer) is the original's: a zero score can still tie the initial 0 on an odd park
 turn. Overriding that (a zero never wins) was measured and made Halloween worse (guest-time happiness -4.6 SE, revenue per admitted guest -15 SE) by removing a quirk that happens to help there, so it is not part of the rule.
 
-**2. The "too expensive" memory.** When the host refuses a guest at a stand for its price, `SmarterGuestsState.Memory` (`PriceMemory`) remembers that attraction instance for that guest for `RefusalMemoryTurns` = 46 park turns (2 in-game days), at most
-`MaxRefusalsPerGuest` = 4 per guest (a newer one pushes out the one that ends soonest). The host reads it into `RecentlyRefused`; the smarter score is 0 while it holds. It is keyed by birth id, pruned once per park turn, and a departing guest's entries go with it,
-so it is bounded by 4 x the guests in the park. It is saved in the `SmarterGuests` section as `Refusals` (absent while empty, in canonical order), checked strictly on load (entries only for birth ids the section holds, attraction ids in 1..10239, an expiry of at least 1 and
-at most 46 turns past the saved park turn, strictly ascending (birth id, attraction id), at most 4 per guest) and joins `WorldStateHash` only while it holds an entry. On its own (rule 1 off) the memory removes 6% of the scenario's price rejections (717 against 761 over the eight seeds), and with rule 1 on it covers the case the prediction misses (for instance a willingness that falls while the guest queues). It is the first user of the section.
+**2. A guest that price keeps from every stand goes home.** Rule 1 alone has a flaw an independent review found: where the original guest walks to the dear shop, is refused (two medium happiness steps) and soon leaves, the rule-1 guest finds *no choice*, which costs one small step, and then wanders and tries again
+every ~30 turns. The review counted over 8 seeds: "can't decide" outcomes rose from 59 to 1,150, and in 81% of them a stand scoring at least 10 had been zeroed by rule 1. That loop is what `guests.stuck` counts (1.25 to 19.75), and the extra guests in the park are its symptom, not a longer healthy stay.
+The host now flags a major decision as **price-emptied** when it chose nothing and the policy says (`PriceTurnedAway`) that it left out a stand (open, working, with room) that the original would have let the guest choose. It counts a run of such decisions per guest in `SmarterGuestsState.Stalls` (`PriceStalls`, keyed by birth id, reset when the guest chooses something, goes home or leaves), asks the policy (`DecidePriceStall`) and,
+when the answer is "go home", walks the guest to the gate as the leaving test does (with the decision's own draw, state "leaving the park", reported as a leaving without a predicate) with thought 6, the original's "too expensive" thought (`Dissatisfied`, the thought of the stand refusal and of the booth's far-too-expensive verdict; no other original thought fits better). The shipped limit is `StallsBeforeGoingHome` = 1 (see the sweep below).
+The runs are saved in the `SmarterGuests` section as `Stalls` (absent while there are none, birth-id order), checked strictly on load (birth ids the section holds, strictly ascending, 1 to 255, a run saturates at 255), and join `WorldStateHash` only while there is one. With a limit of 1 nothing stays counted in practice; the counter is exercised by a test policy with a limit of 3.
+The earlier "too expensive" memory of a refused stand was **removed**: with rule 1 on, a refused guest has already lost happiness, so its willingness is below the price and the prediction (the same function as the stand-point test) already skips the stand; switching the memory off gave identical state hashes in every measured park, so it never acted.
 
 **3. The booth.** The original verdict is the fee against `GP = points / (N + R % (N / 2 + 1)) + base` (the park rating is `ParkPoints`; `BoothVerdict`). The smarter booth keeps that, the host's draws and the original bands, and scales only the **rating part**
-of the value (`GP - base`, the minimum entry fee being the base) by the park's variety: `85 + 5 x min(open attractions, 6)` percent, so 85% with no open attraction, 100% (neutral) with three and 115% from six on. A park with no rating, or a fee and value at the minimum, is
-the original's verdict. The formula is conservative by design (at most +-15%) and a test shows the verdict never gets harsher with more open attractions and does move for some fees. In the measured parks it changes no verdict that matters: the level parks' runs
-are identical to the default's, and the scenario has no park rating. The rule is therefore proven by its tests (the verdict never gets harsher with more open attractions, three open attractions are neutral, some verdicts do move) rather than by the measurement.
+of the value (`GP - base`, the minimum entry fee being the base) by the park's variety: `100 + 3 x min(open rides and sideshows, 5)` percent, so the original value with none open, 109% with three and 115% from five on. A park with no rating, or a fee and value at the minimum, is the original's verdict.
+It is never harsher than the original: a first version with `85 + 5 x min(open, 6)` percent was measured and made the level parks worse (one ride gave 90%, more expensive verdicts, guest-time happiness -9 to -15 SE in Jungle, Fantasy and Space), so the rule only rewards variety. The scenario has no park rating (its booth reads 0 points), so the report cannot exercise it: it is validated by unit tests (never harsher with more open rides, the original's verdict with none open, some verdicts move) and by a test on a scenario variant with a rating (`ParkScenarioOptions.ParkPoints`, not part of the report), which shows the booth sees the rating and the four rides and that the guests differ from the original's. In the level parks it changed no verdict (their runs are identical to the default's).
 
 **4. Price sensitivity.** `DecisionContext.Trait( guest, 0 )` (a stateless hash of the park seed and the birth id, so stable for the guest's whole visit) gives a sensitivity of 90 to 110 percent (`90 + trait % 21`). A guest judges a stand by `willingness x 100 / sensitivity`: a
-sensitive guest (110) expects to pay 10% less than the stand would accept and skips borderline stands, a relaxed one (90) expects 11% more and tries them (and may be refused at the stand: the stand-point test stays the host's). The band is narrow on purpose.
+sensitive guest (110) expects to pay about 9% less than the stand would accept and skips borderline stands, a relaxed one (90) expects 11% more and tries them (and may be refused at the stand: the stand-point test stays the host's). The band is narrow on purpose.
 
-**Constants** (all in `SmarterGuestsRules`, all OpenTPW's own, none from another game): memory 46 turns, 4 per guest; sensitivity 90 to 110; booth 85 + 5 x min(open, 6) percent.
+**Constants** (all in `SmarterGuestsRules`, all OpenTPW's own): go home after 1 price-emptied decision; sensitivity 90 to 110; booth 100 + 3 x min(open rides and sideshows, 5) percent.
 
 ### Measured effect
 
@@ -124,42 +126,52 @@ sensitive guest (110) expects to pay 10% less than the stand would accept and sk
 
 | Metric | Default | Smarter 1.1.0 | SE | Verdict |
 | --- | ---: | ---: | ---: | --- |
-| Queue attempts (`queue.attempts`) | 341.500 ± 22.916 | 386.875 ± 16.915 | 4.5 | changed |
-| Boarded / attempts (`queue.boarded.rate`) | 0.544 ± 0.020 | 0.661 ± 0.027 | 9.9 | improved |
-| Rejected / attempts (`queue.rejected.rate`) | 0.410 ± 0.019 | 0.300 ± 0.032 | -8.4 | improved |
-| Price rejections / attempts (`queue.rejected.price.rate`) | 0.280 ± 0.026 | 0.016 ± 0.006 | -27.7 | improved |
-| Abandoned / attempts (`queue.abandoned.rate`) | 0.026 ± 0.008 | 0.009 ± 0.005 | -4.8 | changed |
-| Wait p50, turns (`queue.wait.p50`) | 11.625 ± 2.066 | 16.500 ± 2.138 | 4.6 | regressed |
-| Wait p90, censored (`queue.wait.p90.censored`) | 73.375 ± 7.090 | 103.250 ± 2.252 | 11.4 | regressed |
-| Wait p99, censored (`queue.wait.p99.censored`) | 108.125 ± 4.643 | 121.000 ± 5.292 | 5.2 | regressed |
-| Happiness, guest-time weighted (`happiness.guestTime`) | 49.007 ± 3.130 | 59.919 ± 1.424 | 9.0 | improved |
-| Happiness of the guests still inside (`happiness.survivors`) | 48.217 ± 4.606 | 57.106 ± 2.172 | 4.9 | improved |
-| Departures per admission (`departures.perAdmission`) | 0.599 ± 0.051 | 0.234 ± 0.044 | -15.4 | improved |
-| Happiness-0 departures per admission (`departures.happinessZero.perAdmission`) | 0.528 ± 0.047 | 0.137 ± 0.026 | -20.5 | improved |
-| Use Gini over the rides (`use.giniRides`) | 0.198 ± 0.037 | 0.130 ± 0.024 | -4.4 | improved |
-| Revenue per admitted guest (`revenue.perAdmittedGuest`) | 82.062 ± 8.502 | 99.883 ± 9.358 | 4.0 | improved |
+| Queue attempts (`queue.attempts`) | 341.500 ± 22.916 | 337.875 ± 11.205 | -0.4 | same |
+| Boarded / attempts (`queue.boarded.rate`) | 0.544 ± 0.020 | 0.717 ± 0.015 | 19.6 | improved |
+| Rejected / attempts (`queue.rejected.rate`) | 0.410 ± 0.019 | 0.245 ± 0.015 | -18.8 | improved |
+| Price rejections / attempts (`queue.rejected.price.rate`) | 0.280 ± 0.026 | 0.024 ± 0.007 | -26.7 | improved |
+| Abandoned / attempts (`queue.abandoned.rate`) | 0.026 ± 0.008 | 0.009 ± 0.004 | -5.1 | changed |
+| Wait p50, turns (`queue.wait.p50`) | 11.625 ± 2.066 | 17.000 ± 1.690 | 5.7 | regressed |
+| Wait p90, censored (`queue.wait.p90.censored`) | 73.375 ± 7.090 | 101.000 ± 6.525 | 8.1 | regressed |
+| Wait p99, censored (`queue.wait.p99.censored`) | 108.125 ± 4.643 | 123.875 ± 16.013 | 2.7 | same |
+| Happiness, guest-time weighted (`happiness.guestTime`) | 49.007 ± 3.130 | 62.836 ± 1.114 | 11.8 | improved |
+| Happiness of the guests still inside (`happiness.survivors`) | 48.217 ± 4.606 | 62.867 ± 2.922 | 7.6 | improved |
+| Departures per admission (`departures.perAdmission`) | 0.599 ± 0.051 | 0.506 ± 0.064 | -3.2 | improved |
+| Happiness-0 departures per admission (`departures.happinessZero.perAdmission`) | 0.528 ± 0.047 | 0.084 ± 0.014 | -25.5 | improved |
+| Use Gini over the rides (`use.giniRides`) | 0.198 ± 0.037 | 0.132 ± 0.025 | -4.2 | improved |
+| Revenue per admitted guest (`revenue.perAdmittedGuest`) | 82.062 ± 8.502 | 94.238 ± 12.138 | 2.3 | same |
 | Admissions (`admissions`) | 63.875 ± 0.354 | 64.000 ± 0.000 | 0.4 | same |
-| Guests with no choice for over 50 turns (`guests.stuck`) | 1.250 ± 1.035 | 19.750 ± 3.284 | 15.2 | regressed |
-| Guests in the park (mean) (`guests.meanInPark`) | 32.840 ± 1.877 | 43.104 ± 1.119 | 13.3 | changed |
+| Guests with no choice for over 50 turns (`guests.stuck`) | 1.250 ± 1.035 | 5.250 ± 2.315 | 4.5 | regressed |
+| Guests in the park (mean) (`guests.meanInPark`) | 32.840 ± 1.877 | 36.473 ± 1.262 | 4.5 | changed |
 
-Price rejections fall from 761 to 50 over the eight seeds (-93%). The four level parks (Jungle, Halloween, Fantasy, Space) are **bit-identical** to the default: every seed ends in the same guest state hash and every metric is equal. They have no price rejections at all
-(`rejected by reason` holds `Full` and `QueueLimit` only; their shops are priced so that nobody is turned away), so rule 1 and the memory have nothing to act on, and in these runs the booth rule moved no verdict (a moved verdict would change a happiness or an admission and so the hash). The phase's
-target therefore improves where it can (the scenario, -27.7 SE on the price share) and is undefined elsewhere; `--guest-compare` prints the level parks' targets as "did not improve (0.0)" and exits 1.
+Price rejections fall from 761 to 65 over the eight seeds. The four level parks (Jungle, Halloween, Fantasy, Space) are **bit-identical** to the default: every seed ends in the same guest state hash and every metric is equal. They have no price rejections at all
+(`rejected by reason` holds `Full` and `QueueLimit` only; their shops are priced so that nobody is turned away), so rules 1 and 2 have nothing to act on, and the booth rule moved no verdict there. `--guest-compare` therefore prints the level parks' phase targets as "did not improve (0.0)" and exits 1.
 
-**Verdict, honestly.** The rule meets what it was built for and the three guard metrics of this phase: price rejections -27.7 SE, guest-time happiness +9.0 SE, revenue per admitted guest +4.0 SE, admissions unchanged (0.4 SE), no level park moves. It does **not** pass
-every guard of the page's "No regression elsewhere" list in the scenario: the queue waits (p50 +4.6 SE, censored p90 +11.4, p99 +5.2) and the stuck-guest count (1.25 to 19.75, +15.2 SE) regress. Both are consequences of the same fact: in the default the dear shop is a
-permanent thing to do, and a guest sent away from it loses two happiness steps and reaches the happiness-0 exit (0.528 departures per admission, 0.137 now); with the rule guests stay in the park longer (43 guests in the park instead of 33, 0.234 departures per admission instead of 0.599),
-queue at the rides for longer, and a guest with nothing left it can afford, like and has not just used finds no choice (a stuck guest wanders; its decision costs only the small step of the no-target branch). Neither is a defect of the rule that its constants could remove: the wait is what the spreading rules of phase 3 are for, and the stuck count is the metric's reading of "nothing worth doing" rather than a pathology (the park does not empty and `queue.superseded` is 0).
-Nothing was tuned to pass: the constants above were fixed before measuring and not changed afterwards.
+**Limit K, by measurement.** The same run for each limit (scenario; the level parks are identical to the default for every K; the K = 2, 3 and 5 rows were measured before the booth change, which the scenario's booth, with no rating, does not see):
 
-CPU: 1.31 us per tick for the default and 1.83 us for the rule on the scenario's first seed (machine under load, noisy), but with 43 instead of 33 guests in the park; per guest-tick that is +7%, and the allocation per guest-tick is lower (17.7 B against 18.7 B).
+| Limit K | Price share | Happiness (SE) | Revenue (SE) | Wait p90 censored (SE) | Wait p99 censored (SE) | Stuck guests (SE) | Guests in park |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| none (rule 1 alone) | 0.016 | 59.92 (+9.0) | 99.9 (+4.0) | 103.3 (+11.4) | 121.0 (+5.2) | 19.75 (+15.2) | 43.1 |
+| 1 | 0.024 | 62.84 (11.8) | 94.24 (2.3) | 101.00 (8.1) | 123.88 (2.7) | 5.25 (4.5) | 36.5 |
+| 2 | 0.015 | 62.63 (10.7) | 96.68 (3.5) | 104.00 (10.5) | 123.50 (4.0) | 13.75 (11.1) | 38.7 |
+| 3 | 0.015 | 61.84 (10.6) | 99.20 (3.8) | 105.62 (11.1) | 126.25 (4.4) | 18.62 (12.5) | 41.0 |
+| 5 | 0.020 | 61.02 (9.9) | 98.77 (3.5) | 103.00 (10.2) | 122.38 (3.5) | 20.50 (10.8) | 42.0 |
+
+K = 1 is the best on every guard that fails: the fewest stuck guests (5.25, against 18.6 to 20.5 for rule 1 alone, K = 3 and K = 5), the smallest wait regression and the guests-in-park count nearest the default, with the largest happiness gain (+11.8 SE); its cost is revenue per admitted guest, +2.3 SE ("same", still above the default) instead of +3.5 to +4.0 SE. A longer run only brings the rule-1 loop back.
+
+**Verdict, honestly.** Passing at 3 SE on the scenario: price rejections (-26.7 SE), guest-time happiness (+11.8), the survivors' happiness (+7.6), departures per admission and happiness-0 departures (-3.2, -25.5), the use Gini (-4.2), admissions (0.4), revenue per admitted guest (+2.3, not a regression), wait p99 (+2.7) and every level park. **Still failing** on the scenario: the wait p50 (11.6 to 17.0 turns, +5.7 SE), the wait p90 (73 to 101 turns, +8.1 SE) and the stuck-guest count (1.25 to 5.25, +4.5 SE; at most about 5 guests in a seed).
+- *Waits.* In the default, 28% of all queue attempts end at the dear shop's stand and never join a ride queue. They now go to the four rides (boarded share 0.544 to 0.717), which have a capacity of one guest each, so the ride queues are longer. Every variant tried (rule 1 alone, a fallback to a below-floor attraction, a heavier cost for the price-emptied decision, going home after K = 1 to 5) lands on a p90 of 101 to 108 turns, the queue limit, so this is the load the scenario puts on its rides, not an effect of the loop; the spreading rules of phase 3 are the answer.
+- *Stuck guests.* A price-emptied guest now leaves at once, so the remaining ones (5 against 1.25) are decisions that find nothing for other reasons; they last longer than before because the dear shop no longer fills the guest's time. This is not analysed further here.
+- Nothing else was tuned; the constants were chosen by the sweep above and the booth change by the level-park run.
+
+CPU: 1.31 us per tick for the default and 1.42 us for the rules on the scenario's first seed (machine under load, noisy; ratio 1.08, limit 1.10) with 36.5 against 32.8 guests in the park; allocation 615 B against 612 B per tick.
 
 ### Version history of `opentpw.smarter-guests`
 
 | Version | Phase | Behaviour |
 | --- | --- | --- |
 | 1.0.0 | 0b | The seam and the guests' identity (birth ids, park seed, the `SmarterGuests` section). Every decision delegates to the original. |
-| 1.1.0 | 2 | Value for money: price in the shop and sideshow choice, the price-refusal memory (`Refusals` in the section), the booth's variety scaling and the price sensitivity trait. A 1.0.0 park is refused (`needs opentpw.smarter-guests 1.0.0, not 1.1.0`). |
+| 1.1.0 | 2 | Value for money: price in the shop and sideshow choice, a guest that price keeps from every stand goes home (`Stalls` in the section), the booth's variety scaling and the price sensitivity trait. A 1.0.0 park is refused (`needs opentpw.smarter-guests 1.0.0, not 1.1.0`). |
 
 The extension stays not player-selectable (`PlayerSelectable: false`): it is exposed once the rule set (phases 2 to 6) is complete, so a player does not meet a save break with every phase.
 
@@ -386,4 +398,4 @@ while the extension is on and a mismatched set refuses the load. **Pins:** with 
 `SyntheticPark` run's world hash (the extension's state included), while that run's guests, economy and guest snapshot are asserted equal to the off run's every 1,200 ticks and `ParkScenarioFixedRunHash`
 `ParkScenarioFixedRunHash` is the off path's.
 
-**Phase 2 tests.** `SmarterGuestsValueTests` covers the rules in isolation (the sensitivity band, the prediction against the stand-point test, the zeroed score, the booth's scaling and monotonicity), the memory (expiry on its turn, extension, the per-guest bound, canonical order, forgetting a departed guest, never more entries than guests can carry, never an expired entry), the host's facts (none and no memory off; the stand-point statistic recorded the same number of times with the facts asked for, and the same hash), the section (round trip, empty memory omitted, strict validation, a refused restore changes nothing) and the off path. `SmarterGuestsTests` keeps the identity tests on an identity-only policy (what 1.0.0 was), extends the resume test with remembered refusals that expire during the continuation, and holds the compare test (price rejections improve beyond 3 SE; happiness, revenue per admitted guest and admissions do not regress). **Pins in phase 2:** the off-path pins are unchanged, `DeterminismTests.SmarterGuestsFixedRunHash` did not move (the synthetic park has one cheap shop that never turns a guest away, so the rules never act there; see [DETERMINISM.md](DETERMINISM.md)), and `GuestMeasurementTests` pins the scenario with the extension on (`ScenarioSmarterFixedRunHash`), where the rules do act. The script-mod pins run over the original policy and are unchanged.
+**Phase 2 tests.** `SmarterGuestsValueTests` covers the rules in isolation (the sensitivity band, the prediction against the stand-point test, the zeroed score, `PriceTurnedAway`, the booth's scaling, its monotonicity and that it is never harsher than the original), the run counter (`PriceStalls`), the guest that goes home (a policy with a limit of 3 keeps and bounds the runs; the shipped limit of 1 sends guests home at once and keeps none), the host's facts (none and no state off; the stand-point statistic recorded the same number of times with the facts asked for, and the same hash), the section (round trip, empty omitted, strict validation, a refused restore changes nothing), the scenario variant with a park rating, and the section, the first-tick bootstrap and the world hash on the shipped policy. `SmarterGuestsTests` keeps the identity tests on an identity-only policy (what 1.0.0 was) where they compare guests with the off run, extends the resume test with runs that continue equal, and holds the compare test (price rejections improve beyond 3 SE; happiness, revenue per admitted guest and admissions do not regress). **Pins in phase 2:** the off-path pins are unchanged, `DeterminismTests.SmarterGuestsFixedRunHash` did not move (the synthetic park has one cheap shop that never turns a guest away, so the rules never act there; see [DETERMINISM.md](DETERMINISM.md)), and `GuestMeasurementTests` pins the scenario with the extension on (`ScenarioSmarterFixedRunHash`), where the rules do act. The script-mod pins run over the original policy and are unchanged.

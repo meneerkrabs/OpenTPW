@@ -40,19 +40,26 @@ public readonly record struct GuestView( int Id, ulong BirthId, int Type, float 
 /// What this guest is willing to pay for it right now (<see cref="QueueJoinRules.WillingnessToPay"/> with the guest's meters: the stand-point test's own word, computed without recording any statistic). 0 when
 /// <paramref name="Price"/> is 0 or the host was not asked.
 /// </param>
-/// <param name="RecentlyRefused">The guest was refused at this attraction for its price not long ago and the extension's memory still holds it (<see cref="PriceMemory"/>).</param>
 public readonly record struct AttractionView( int Id, int TypeId, RideVisitorKind Kind, bool HasJoinCell, (int X, int Y) BackCell, (int X, int Y) EntranceCell, int CellModifier,
 	int QueueLength, int QueueSizeInCells, uint QueueLimit, int LiveExcitement, int StaticExcitementLevel, int ThirstEffect, int HungerEffect, bool ProvidesRelief, uint AgeDays,
-	bool IsIndoors, int GoldenTicketCost, int UpgradeCost, bool IsOpen, bool IsBrokenDown, bool SameTypeAsLastUsed, int Price = 0, uint Willingness = 0, bool RecentlyRefused = false );
+	bool IsIndoors, int GoldenTicketCost, int UpgradeCost, bool IsOpen, bool IsBrokenDown, bool SameTypeAsLastUsed, int Price = 0, uint Willingness = 0 );
 
 /// <summary>
 /// The booth's facts: the park points (the park's rating), the entrance fee, the draw the host took for the verdict (the park's generator is the host's) and, for a policy that asks for it
-/// (<see cref="IGuestDecisions.UsesValueForMoney"/>), the number of attractions that are open and not broken.
+/// (<see cref="IGuestDecisions.UsesValueForMoney"/>), the number of rides and sideshows that are open and not broken (shops and toilets are not variety).
 /// </summary>
 public readonly record struct BoothView( uint ParkPoints, uint Fee, uint Draw, int OpenAttractions = 0 );
 
 /// <summary>The booth's verdict on the entrance fee.</summary>
 public readonly record struct BoothDecision( BoothVerdictKind Verdict );
+
+/// <summary>
+/// A guest's verdict after a decision that its price rule emptied (<see cref="IGuestDecisions.DecidePriceStall"/>): stay in the park, or go home with a thought (the host walks it to the gate and thinks the thought).
+/// </summary>
+public readonly record struct PriceStallDecision( bool GoHome, GuestThought Thought = GuestThought.None )
+{
+	public static PriceStallDecision Stay => default;
+}
 
 /// <summary>
 /// The facts of a join at the back of a queue after the host's physical checks (open, not listed, room): the type's excitement word, the host's join difference, the queue's count and its

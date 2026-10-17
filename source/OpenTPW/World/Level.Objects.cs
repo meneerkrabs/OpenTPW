@@ -461,15 +461,28 @@ public partial class Level
 				return;
 			PoolRenderer = new PoolRenderer( Guests.Grid.Cells, Objects.Grid, PoolStyles.ForTheme( OriginalPark.LevelName ) );
 		}
-		// [EXT:pools-swim] the swimmers are drawn after the water (entities draw in the order they are made), with the swim sprites loaded beside the kid sets
+		// [EXT:pools-swim] the swimmers are drawn after the water (entities draw in the order they are made), with the swim sprites loaded at level setup
 		// the sets are looked for once per level: a missing or broken folder is one warning, not a scan every frame
-		if ( SwimmerRenderer == null && PoolRenderer != null && !swimSpritesTried )
+		switch ( NextSwimSpriteStep( SwimmerRenderer != null, swimSpritesTried, PoolRenderer != null, PoolSpriteDelivery.IsPending( PoolSpriteDelivery.SwimGroup ) ) )
 		{
-			swimSpritesTried = true;
-			SwimmerRenderer = CreateSwimmerRenderer( Guests, OriginalPark );
+			case SwimSpriteStep.Wait:
+				// browser: the swim sets are still being downloaded, so the swimmers use the kid sprite for now and the renderer is made the frame the last file is in (or the one failed line of CreateSwimmerRenderer)
+				PoolSpriteDelivery.Ready( PoolSpriteDelivery.SwimGroup, "swimmers use the kid sprite until they arrive" );
+				break;
+			case SwimSpriteStep.Create:
+				swimSpritesTried = true;
+				SwimmerRenderer = CreateSwimmerRenderer( Guests, OriginalPark );
+				break;
 		}
 		RefreshPoolEffects();
 	}
+
+	/// <summary>What <see cref="RefreshPools"/> does about the swimmers' renderer this frame.</summary>
+	internal enum SwimSpriteStep { Done, Wait, Create }
+
+	/// <summary>The renderer is made once, after the water exists and once the swim sets are not pending any more (complete, failed or never delivered); until then the swimmers use the kid sprite.</summary>
+	internal static SwimSpriteStep NextSwimSpriteStep( bool hasSwimmerRenderer, bool tried, bool hasPoolRenderer, bool setsPending )
+		=> hasSwimmerRenderer || tried || !hasPoolRenderer ? SwimSpriteStep.Done : setsPending ? SwimSpriteStep.Wait : SwimSpriteStep.Create;
 
 	/// <summary>[EXT:pools-activities] Registers the pool activities with the simulation while the extension is on and lets it read the placed extras; called once when the level's guests are made, so no path runs with an empty registry.</summary>
 	internal void RegisterPoolActivities()
@@ -488,12 +501,28 @@ public partial class Level
 	}
 
 	private bool swimSpritesTried;
+	private bool swimSpritesPreloaded;
+	/// <summary>[EXT:pools-swim] The swim sets decoded ahead on a worker (desktop only; null until <see cref="PreloadSwimSprites"/> ran).</summary>
+	private List<GuestSpriteAtlas>? swimSpriteSets;
+
+	/// <summary>
+	/// [EXT:pools-swim] Loads the swim sets and decodes them on a worker so that the first pool frame does not stall: at level setup for a park with pool water, else when the first pool cell is painted. Once per level; with the
+	/// extension off, or in the browser (<see cref="PoolSpriteDelivery.Delivered"/>: single-threaded, and the files may not be there yet) it does nothing, and the swimmer renderer loads and decodes when it is created.
+	/// </summary>
+	internal void PreloadSwimSprites()
+	{
+		if ( swimSpritesPreloaded || !FeatureGates.Pools || PoolSpriteDelivery.Delivered )
+			return;
+		swimSpritesPreloaded = true;
+		var sets = swimSpriteSets = PoolSwimSprites.Load();
+		System.Threading.Tasks.Task.Run( () => { foreach ( var atlas in sets ) _ = atlas.Pixels; } );
+	}
 	private List<PoolExtraSite>? poolExtraSites;
 	private long poolExtraSitesTurn = -1;
 
 	private GuestRenderer? CreateSwimmerRenderer( GuestSimulation guests, OriginalPark park )
 	{
-		var swim = PoolSwimSprites.Load();
+		var swim = swimSpriteSets is { Count: > 0 } ? swimSpriteSets : PoolSwimSprites.Load();
 		if ( swim.Count == 0 )
 		{
 			// without swim sprites the swimmers are drawn by the normal guest renderer with their kid sprite (Level.cs: Draws), standing in the water
@@ -504,6 +533,7 @@ public partial class Level
 		{
 			Draws = guest => guest.IsSwimming || guest.InPoolActivity,
 			SwimSlotFallback = true,
+			BottomAnchoredSlots = PoolSwimSlots.BottomAnchored,
 			SlotChooser = guest => guest.InPoolActivity
 				? (guests.PoolActivityOf( guest )?.SpriteSlot( guest ) ?? PoolSwimSlots.TreadWater, (int)(guests.TimeSeconds * 6) + guest.Id)
 				: (PoolSwimming.SpriteSlot( guest.SwimStroke ), (int)(guests.TimeSeconds * (guest.SwimStroke == 2 ? 3 : 6)) + guest.Id),
@@ -578,6 +608,7 @@ public partial class Level
 		{
 			PoolBuilder = new PoolBuilder( Guests.Grid.Cells, () => Park?.Economy, Objects.Grid, IsPathBlocked, IsStoodOn, PoolEraseBlock );
 			PoolTool = new PoolTool( PoolBuilder );
+			PoolBuilder.Painted += PreloadSwimSprites;
 		}
 		AreaClearTool = IsReadOnlyVisit ? null : new AreaClearTool( RemoveObjectAt, () => Guests?.Grid.Cells, RemovePathCell, TypesFootprints ? null : ( x, y ) => Objects.FindAt( x, y ) );
 	}

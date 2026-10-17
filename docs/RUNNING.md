@@ -190,7 +190,7 @@ bash scripts/run.sh --game-path '/path/to/Theme Park Inc' --load-original-level 
 Runs a Theme Park Inc world (`arabian`, `science` or `water`) as the experimental playable slice: the
 world in 3D with the park camera, an OpenTPW text HUD (build window, remove/rotate tools, speed
 control, pause menu on Esc) and guests under the ported Theme Park World guest rules — building is
-free because the slice runs no economy, staff, advisor, saves or Theme Park Inc interface. P pauses
+charged at Theme Park Inc's own prices (the money runs; see [the economy](THEME-PARK-INC.md#theme-park-inc-economy-money-only)), and the slice runs no staff, research, challenges, advisor, saves or Theme Park Inc interface. P pauses
 the simulation. `--capture-world out.png --capture-frames 300` writes a screenshot. The folder must
 hold Theme Park Inc's `Data` folder (an installation, or the cabinets extracted as below); it is
 detected by its retail `levels/Standard.sam` or by `Ver.txt` beside the Theme Park Inc theme folders.

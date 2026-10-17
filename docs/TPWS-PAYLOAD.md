@@ -36,7 +36,8 @@ Pinned hashes (SHA-256):
 
 The upstream page (`opentpw-docs` `src/formats/tpws-ints-lays.md`, read via the
 GitHub contents API) describes only the outer container: magic, copyright text,
-file type `00 01 22 19`, version, online flag, `BILZ` header and zlib stream.
+a "file type" `00 01 22 19` and a "version" (which are the end of the header block and the stamp `01 22 19 85`, see
+[SAVE-CONTAINER.md](SAVE-CONTAINER.md)), the online flag, `BILZ` header and zlib stream.
 "INTS" and "LAYS" there are **file kinds** (initial save; `upload.LAYS` online
 save), not payload sections. It documents nothing about the decoded payload.
 
@@ -51,7 +52,7 @@ TPWS and an INTS for each theme.
 
 | Check | Result on all 11 |
 | --- | --- |
-| Container | Magic 500, file type `00 01 22 19`, version 133; INTS uses the same container as TPWS |
+| Container | Magic 500, stamp `01 22 19 85`, language byte 0 to 6 (the corpus is checked for magic and stamp); INTS uses the same container as TPWS |
 | Markers | All 17, in the Easymode order. Decoded payload 1,560,526–1,579,807 bytes |
 | Untagged prefix | 1,469,256 bytes (every INTS) or 1,473,869–1,475,452 (TPWS), against 1,495,462 in Easymode: the prefix length is not fixed |
 | Cell grid | Found once, starting at 5,729 (INTS) or 6,259–6,512 (TPWS); 16,384 × 84 bytes, no extension records; +46 equals the theme's `base.map` |
@@ -67,7 +68,7 @@ split and the thing-chain walk have not been run on this set yet.
 Initial state of the INTS saves (an unplayed park): the macro-AI calendar is the constructor's (`0x4F7E80`: start 2000-01-01, month cache 0,
 day cache -1, rate 15000, park turn 0) and every attraction history ring is the empty ring of `0x51ADE0` (current entry -1, 30 entries, no wrap).
 The loaders (`0x4F7F30`, `0x4E2C10`) take both unchecked; `SaveWorld.Parse` and `SaveAttraction.Read` accept exactly these two states besides the played ones.
-OpenTPW's Restart Park does not reload the snapshot (SAVE-012).
+OpenTPW's Restart Park reloads its own snapshot of the same moment, not these files (SAVE-012).
 
 The balances (about 1.2 billion) come from the cheat, so money is not a reference value.
 Named saves and their autosaves decode to the same layout; only small sections differ.

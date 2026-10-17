@@ -20,8 +20,8 @@ public class SaveReaderTests
 		var compressedBytes = compressed.Length > 0 ? compressed.ToArray() : Convert.FromHexString( "789C030000000001" );
 		var container = new byte[0x629 + compressedBytes.Length];
 		BinaryPrimitives.WriteUInt32LittleEndian( container, magic );
-		BinaryPrimitives.WriteUInt32LittleEndian( container.AsSpan( 0x604 ), 0x19220100 );
-		container[0x608] = 133;
+		// u32 stamp, htonl(0x01221985), at 0x605; the byte before it is the last byte of the 0x100-byte header
+		BinaryPrimitives.WriteUInt32BigEndian( container.AsSpan( 0x605 ), 0x01221985 );
 		Encoding.ASCII.GetBytes( "BILZ" ).CopyTo( container, 0x60d );
 		BinaryPrimitives.WriteUInt32LittleEndian( container.AsSpan( 0x611 ), (uint)payload.Length );
 		BinaryPrimitives.WriteUInt32LittleEndian( container.AsSpan( 0x615 ), (uint)(28 + compressedBytes.Length) );
@@ -45,9 +45,120 @@ public class SaveReaderTests
 	{
 		var payload = Encoding.ASCII.GetBytes( "extended park" );
 		using var reader = new SaveReader( new MemoryStream( CreateExtendedContainer( payload ) ) );
-		Assert.AreEqual( new SaveContainerInfo( 500, 0x19220100, 133, payload.Length, reader.buffer.Length - 0x625 ), reader.Inspect() );
+		Assert.AreEqual( new SaveContainerInfo( 500, 0, 0x01221985, payload.Length, reader.buffer.Length - 0x625, 24, "Version: Beta_21\r\n" ), reader.Inspect() );
 		CollectionAssert.AreEqual( payload, reader.ReadFile() );
 		CollectionAssert.AreEqual( payload, reader.ReadFile() );
+	}
+
+	/// <summary>A Theme Park Inc container: <paramref name="block"/> (the version block bytes) sits between the magic and the language byte.</summary>
+	private static byte[] InsertVersionBlock( byte[] legacy, byte[] block )
+	{
+		var result = new byte[legacy.Length + block.Length];
+		legacy.AsSpan( 0, 4 ).CopyTo( result );
+		block.CopyTo( result, 4 );
+		legacy.AsSpan( 4 ).CopyTo( result.AsSpan( 4 + block.Length ) );
+		return result;
+	}
+
+	private static byte[] VersionBlock( string text )
+	{
+		var bytes = Encoding.ASCII.GetBytes( text + "\0" );
+		var block = new byte[5 + bytes.Length];
+		block[0] = 1;
+		BinaryPrimitives.WriteUInt32LittleEndian( block.AsSpan( 1 ), (uint)bytes.Length );
+		bytes.CopyTo( block, 5 );
+		return block;
+	}
+
+	[TestMethod]
+	public void KeepsAnyVersionStringOfTheThemeParkIncVersionBlock()
+	{
+		// The Theme Park Inc loader rejects a string other than its Ver.txt line (error 9); the container reader only records it.
+		var payload = Encoding.ASCII.GetBytes( "park" );
+		foreach ( var text in new[] { "Version: Beta_21\r\n", "Version: Beta_22\r\n", "x\n", "Retail 1.0" } )
+		{
+			var legacy = CreateContainer( payload );
+			legacy[4] = 3;
+			using var reader = new SaveReader( new MemoryStream( InsertVersionBlock( legacy, VersionBlock( text ) ) ) );
+			var info = reader.Inspect();
+			Assert.AreEqual( text, info.VersionText );
+			Assert.AreEqual( 5 + text.Length + 1, info.VersionBlockBytes );
+			Assert.IsTrue( info.IsThemeParkInc );
+			Assert.AreEqual( (byte)3, info.Language );
+			CollectionAssert.AreEqual( payload, reader.ReadFile() );
+		}
+	}
+
+	[TestMethod]
+	public void ReadsThemeParkIncContainerWithoutVersionString()
+	{
+		var payload = Encoding.ASCII.GetBytes( "no version" );
+		var legacy = CreateContainer( payload );
+		legacy[4] = 2;
+		using var reader = new SaveReader( new MemoryStream( InsertVersionBlock( legacy, new byte[] { 0 } ) ) );
+		var info = reader.Inspect();
+		Assert.AreEqual( 1, info.VersionBlockBytes );
+		Assert.IsNull( info.VersionText );
+		Assert.IsTrue( info.IsThemeParkInc );
+		Assert.AreEqual( (byte)2, info.Language );
+		CollectionAssert.AreEqual( payload, reader.ReadFile() );
+	}
+
+	[TestMethod]
+	public void SpanishThemeParkWorldContainerIsNotTakenForThemeParkInc()
+	{
+		// Language 1 (Spanish) is the byte a Theme Park Inc container uses as its has-version flag.
+		var payload = Encoding.ASCII.GetBytes( "spanish park" );
+		foreach ( var banner in new[] { "", "Theme Park World", "Version: Beta_21\r\n", "\u0013" } )
+		{
+			var container = CreateContainer( payload );
+			container[4] = 1;
+			for ( var index = 0; index < banner.Length; index++ )
+				BinaryPrimitives.WriteUInt16LittleEndian( container.AsSpan( 5 + index * 2 ), banner[index] );
+			using var reader = new SaveReader( new MemoryStream( container ) );
+			var info = reader.Inspect();
+			Assert.IsFalse( info.IsThemeParkInc, banner );
+			Assert.AreEqual( (byte)1, info.Language, banner );
+			Assert.AreEqual( 0, info.VersionBlockBytes, banner );
+			Assert.IsNull( info.VersionText, banner );
+			Assert.AreEqual( banner, reader.InspectHeader().Banner );
+			CollectionAssert.AreEqual( payload, reader.ReadFile(), banner );
+		}
+	}
+
+	[TestMethod]
+	public void ReadsLanguageBannerAndRequiredContentBitmap()
+	{
+		var container = CreateContainer( new byte[] { 1 } );
+		container[4] = 6;
+		container[0x505] = 0xA5;
+		container[0x505 + 31] = 0x5A;
+		container[0x505 + 32] = 0xFF;
+		using var reader = new SaveReader( new MemoryStream( container ) );
+		Assert.AreEqual( (byte)6, reader.Inspect().Language );
+		var header = reader.InspectHeader();
+		Assert.AreEqual( 32, header.RequiredContent.Length );
+		Assert.AreEqual( 0xA5, header.RequiredContent[0] );
+		Assert.AreEqual( 0x5A, header.RequiredContent[31] );
+		Assert.AreEqual( 0u, header.OnlineFlag );
+	}
+
+	[TestMethod]
+	public void RejectsLanguageStampAndWholeOnlineWord()
+	{
+		var container = CreateContainer( new byte[] { 1 } );
+		container[4] = 7;
+		using ( var reader = new SaveReader( new MemoryStream( container ) ) )
+			Assert.ThrowsException<InvalidDataException>( () => reader.Inspect() );
+		container[4] = 0;
+		container[0x605] ^= 1;
+		using ( var reader = new SaveReader( new MemoryStream( container ) ) )
+			Assert.ThrowsException<InvalidDataException>( () => reader.Inspect() );
+		container[0x605] ^= 1;
+		// The online word is a u32: any nonzero byte of it is an online save.
+		container[0x60c] = 1;
+		using ( var reader = new SaveReader( new MemoryStream( container ) ) )
+			Assert.ThrowsException<NotSupportedException>( () => reader.Inspect() );
 	}
 
 	[DataTestMethod]
@@ -145,8 +256,9 @@ public class SaveReaderTests
 		using var reader = new SaveReader( new MemoryStream( CreateContainer( Array.Empty<byte>(), 400 ) ) );
 		var header = reader.Inspect();
 		Assert.AreEqual( 400u, header.Magic );
-		Assert.AreEqual( 0x19220100u, header.FileType );
-		Assert.AreEqual( (byte)133, header.Version );
+		Assert.AreEqual( 0x01221985u, header.Stamp );
+		Assert.AreEqual( (byte)0, header.Language );
+		Assert.IsFalse( header.IsThemeParkInc );
 		Assert.AreEqual( 0, header.DecodedLength );
 		Assert.AreEqual( 0, reader.ReadFile().Length );
 	}

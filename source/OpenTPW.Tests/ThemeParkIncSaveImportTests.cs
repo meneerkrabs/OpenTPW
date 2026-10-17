@@ -40,8 +40,7 @@ public class ThemeParkIncSaveImportTests
 			var layout = SavePayloadLayout.ParseThemeParkInc( payload );
 			Assert.AreEqual( 48, layout[SaveBlock.Camera].Length, path );
 			Assert.ThrowsException<InvalidDataException>( () => SavePayloadLayout.Parse( payload ), path );
-			var worldBlock = layout[SaveBlock.World];
-			var grid = SaveCellGrid.ParseThemeParkInc( payload, worldBlock.Offset, worldBlock.End, map.CellCountX, map.CellCountY );
+			var grid = ThemeParkIncSaveWorld.Parse( payload, layout, map.CellCountX, map.CellCountY ).Cells;
 			var differences = from y in Enumerable.Range( 0, map.CellCountY ) from x in Enumerable.Range( 0, map.CellCountX )
 				where grid[x, y].Attributes != map.GetCellAt( x, y )
 				select (x, y, Save: grid[x, y].Attributes, Map: map.GetCellAt( x, y ));
@@ -59,9 +58,22 @@ public class ThemeParkIncSaveImportTests
 			CollectionAssert.AreEqual( new[] { 1601, 103, 104, 1705, 1706, 1709, 3708, 1707, 1710, 1702, 1701, 1700, 1750, 1798 },
 				park.FixedItems.Select( item => item.InfoId ).ToArray(), path );
 			Assert.AreEqual( 90, park.PlacedObjects.Single( item => item.Record.Index == 27 ).Record.Rotation, path );
-			var damaged = (byte[])payload.Clone();
-			damaged[park.FixedItems[0].Offset] = 2;
-			Assert.ThrowsException<InvalidDataException>( () => OriginalParkImport.ImportThemeParkInc( damaged, map ), path );
+			// Only the lake (1703) may lack a scene record: a damaged record header is not found by the scan, and the attraction left without a record fails the import.
+			CollectionAssert.AreEqual( new[] { 1703 }, park.UnrecordedThemeParkIncAttractions.Select( item => item.InfoId ).ToArray(), path );
+			Assert.AreEqual( 23, park.ThemeParkIncObjects.Count, path );
+			foreach ( var record in park.FixedItems.Concat( park.PlacedObjects.Select( item => item.Record ) ).Concat( park.UnresolvedObjects ) )
+			{
+				var broken = (byte[])payload.Clone();
+				broken[record.Offset] = 2;
+				Assert.ThrowsException<InvalidDataException>( () => OriginalParkImport.ImportThemeParkInc( broken, map ), $"{path}: record {record.Index}" );
+			}
+			// two records naming one attraction (same mesh and Info.Id, different index) would render it twice: refused
+			var duplicated = (byte[])payload.Clone();
+			var (first, second) = (park.FixedItems[0], park.FixedItems[1]);
+			Array.Copy( payload, first.Offset, duplicated, second.Offset, ThemeParkIncSaveObjectList.RecordHeaderBytes );
+			BitConverter.GetBytes( (uint)second.Index ).CopyTo( duplicated, second.Offset + 29 );
+			var error = Assert.ThrowsException<InvalidDataException>( () => OriginalParkImport.ImportThemeParkInc( duplicated, map ), path );
+			StringAssert.Contains( error.Message, "already names", path );
 		}
 	}
 
@@ -70,16 +82,12 @@ public class ThemeParkIncSaveImportTests
 	{
 		var payload = new byte[8 + 3 * SaveCell.ThemeParkIncRecordBytes];
 		for ( var index = 0; index < 3; index++ )
-		{
-			var offset = 8 + index * SaveCell.ThemeParkIncRecordBytes;
-			payload[offset] = 3;
-			payload[offset + 86] = 0xFF;
-			payload[offset + 87] = 0xFF;
-		}
-		var grid = SaveCellGrid.ParseThemeParkInc( payload, 8, payload.Length, 3, 1 );
+			payload[8 + index * SaveCell.ThemeParkIncRecordBytes] = 3;
+		var grid = SaveCellGrid.ParseThemeParkIncAt( payload, 8, payload.Length, 3, 1 );
 		Assert.AreEqual( 8, grid.StartOffset );
 		Assert.AreEqual( payload.Length, grid.EndOffset );
-		Assert.ThrowsException<InvalidDataException>( () => SaveCellGrid.ParseThemeParkInc( payload, 8, payload.Length - 1, 3, 1 ) );
+		Assert.ThrowsException<InvalidDataException>( () => SaveCellGrid.ParseThemeParkIncAt( payload, 8, payload.Length - 1, 3, 1 ) );
+		Assert.ThrowsException<InvalidDataException>( () => SaveCellGrid.ParseThemeParkIncAt( payload, 8, payload.Length + 0, 4, 1 ) );
 		Assert.ThrowsException<InvalidDataException>( () => SaveCellGrid.Parse( payload, payload.Length, 3, 1 ) );
 	}
 

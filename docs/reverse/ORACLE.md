@@ -2407,6 +2407,5 @@ corner of the motion's quadrant whose diagonal cell cuts it. The steering sums t
 (rounding towards −∞) and divide (towards 0); a failed search leaves the walk arrived and stuck, and a stamp change in a waypoint's block
 makes the walk search again. A reading that ignores the walk's mask differs on 226 edge inputs and 220 searches.
 
-**Fixed in C#.** Guests walking the park's cells use this walk (WALK-002 and WALK-009 retired; WALK-004 .. WALK-008 narrowed). Its
-limits: the oracle maps hold no objects or things (WALK-005), separation runs without neighbours here (WALK-003), and a walk into an entrance cell of a park resumed from an old save (no link byte)
-and walks from older saves keep the route walk (WALK-006).
+**Fixed in C#.** Guests walking the park's cells use this walk (WALK-002 and WALK-009 retired; WALK-004 .. WALK-008 narrowed, WALK-006 later retired). Its
+limits: the oracle maps hold no objects or things (WALK-005), separation runs without neighbours here (WALK-003), and a park resumed from an old save has the link byte of its entrance and exit cells laid at load (`[EXT:legacy-save-access-links]`; WALK-006 retired), so a refused stand-point search is the original's dismissal; walks restored from older saves keep the route walk (`[EXT:legacy-save-route-walk]`).

@@ -124,6 +124,9 @@ public sealed class ParkScenario
 		var script = ScenarioScripts.VisitorScript( new VisitorRideScriptEffects( bridge, UnimplementedRideScriptEffects.Instance ), Scripts, holdMilliseconds + HoldJitterMilliseconds( Seed ), 3 + attractions.Count );
 		bridge.Attach( script, () => true );
 		Guests.Register( bridge );
+		// the scenario registers its attractions without a placement, so it lays the cell a called guest's search walks into (state 13) as a build lays an entrance
+		var (standX, standY) = GuestSimulation.StandCellOf( bridge );
+		ObjectAccessCells.LayStandCell( Grid.Cells, standX, standY );
 		attractions.Add( new ScenarioAttraction( bridge, script, role ) );
 	}
 

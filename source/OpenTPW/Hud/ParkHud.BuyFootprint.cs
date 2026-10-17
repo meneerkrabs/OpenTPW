@@ -44,7 +44,7 @@ public sealed partial class ParkHud
 
 		public override void Draw( UiContext context, bool focused, bool pressed )
 		{
-			if ( owner.buy.SelectedItem?.Entry?.Shape is not { } shape )
+			if ( owner.BuyPreviewItem?.Entry?.Shape is not { } shape )
 				return;
 			var rect = ScreenRect( context.Canvas );
 			var width = (int)rect.Width;

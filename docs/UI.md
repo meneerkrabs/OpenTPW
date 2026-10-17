@@ -198,7 +198,7 @@ screens, options), `FrontEnd/`, `Hud/`, `World/Lobby/LobbyScene.cs`,
   show the park's name and, right-aligned, the save file's local date and time (`0x49ec80`, UITEXT `0x1c0`; UI-013). The wheel scrolls; Left/Right selects and keeps that row
   visible. A first click selects, Enter, a second click or the localized Load Park button activates that exact
   entry; Back closes without loading. Reopening starts with fresh entries and selection. The Load Park text button,
-  at the place of the name field the original hides when loading, is OpenTPW's (`[EXT:load-chooser]`).
+  at the place of the name field the original hides when loading, is OpenTPW's (`[EXT:load-chooser]`). Because that button acts on the selection, the list does not select on hover or load on one click as the original's does (attribute 0x81: `0x6656a0`, `0x6655a2`); that flow is `[EXT:load-list-select-then-load]`, user-approved on 2026-10-17 (`APPROX:UI-108` is retired).
   `LoadChooserScrollTests` and `LoadDialogTableTests` cover actual chooser and HUD pause input, beyond-twelve
   selection, 0/1/8/9/13/17 boundaries, entry metadata, cancellation, fresh state and the table layout.
   Quit asks with the original confirmation (9).
@@ -422,7 +422,7 @@ glyph in all 14 UI fonts of each language.
   `b_up`/`b_down` and the `b_scroller` ball on the `!slider` track (shown only while the list has more items than rows, tp.exe
   `0x664495`; the ball's top runs from the track's top to a ball above its bottom in whole units, `0x66b088`), and `b_exit` (help 2, also Escape and right click).
   `b_allstaff` (help 153) opens the staff window. The list has the three table columns: name,
-  price (the economy catalogue price) and a third column holding a tick box, ticked when the park owns one (UI-050). Click a row to select it
+  price (the economy catalogue price) and a third column holding a tick box, ticked when the park owns one (UI-050). Moving the pointer over a row selects it (the list has attribute 0x91, which includes 0x80: `0x6656a0` -> `0x66552e` -> `0x66525c`, the same selection as a click or an arrow key); the stats frame follows at once and the preview, footprint and name after the selection has rested for 500 ms (`0x4ac42e`, `0x1f4`), and the selection stays on the last hovered row when the pointer leaves the list (`0x665c35` handles no leave message). A left click selects the row and posts the list's message 0x400, which buys (`0x6655a2`, `0x4ac4f9`); a right click is ignored by the window and backs out. The loans list (attribute 0x91) selects on hover the same way; the Load Park list (attribute 0x81, which includes 0x80) selects on hover and loads on a single click in the original, but keeps its click-to-select behaviour here (`[EXT:load-list-select-then-load]`). Click a row to select it
   and show its preview (the original `P<name>.MD2` or the main model, CPU projection with the original's 45° tilt, 0.4 rad/s turn and fit, UI-026), name and stats; click the selected row again,
   press Enter or double-click it to buy: the window closes and placement starts (`Level.PlaceObject` checks the footprint and
   charges through `ParkEconomy.TryBuild` exactly once). The table has no OK button, so that is OpenTPW's choice. Unresearched

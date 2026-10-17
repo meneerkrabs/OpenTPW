@@ -301,6 +301,9 @@ public sealed record RideScriptWorldSnapshot
 	public required int NextScriptId { get; init; }
 	/// <summary>Next attraction id the allocator will hand out.</summary>
 	public required int NextAttractionId { get; init; }
+	/// <summary>The script pass counter (<see cref="RideScriptWorld.PassCounter"/>); a snapshot written before the substep scheduler holds none and the counter restarts at 0.</summary>
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
+	public long? PassCounter { get; init; }
 	/// <summary>Every live script, ordered by id.</summary>
 	public required IReadOnlyList<RideVMSnapshot> Scripts { get; init; }
 
@@ -320,6 +323,8 @@ public sealed record RideScriptWorldSnapshot
 			throw new InvalidDataException( "The world snapshot carries no script array." );
 		if ( !double.IsFinite( ClockMilliseconds ) || ClockMilliseconds < 0 )
 			throw new InvalidDataException( $"World clock {ClockMilliseconds} is not finite and non-negative." );
+		if ( PassCounter is < 0 )
+			throw new InvalidDataException( $"World pass counter {PassCounter} is negative." );
 		if ( NextScriptId < 1 || NextAttractionId < 1 )
 			throw new InvalidDataException( $"World allocators ({NextScriptId}, {NextAttractionId}) are not positive." );
 		var byId = new Dictionary<int, RideVMSnapshot>();

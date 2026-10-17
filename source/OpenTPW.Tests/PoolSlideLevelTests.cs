@@ -214,6 +214,23 @@ public class PoolSlideLevelTests
 	}
 
 	[TestMethod]
+	public void AParkWithoutSlidesIsByteAndHashIdenticalWithTheExtensionOnAndOff()
+	{
+		var off = With( false, () => (ParkResumeSaveFile.Serialize( Capture() ), level.ComputeStateHash()) );
+		var on = With( true, () => (ParkResumeSaveFile.Serialize( Capture() ), level.ComputeStateHash()) );
+		CollectionAssert.AreEqual( off.Item1, on.Item1, "the same bytes: the slide world adds no part and the extension no record" );
+		Assert.AreEqual( off.Item2, on.Item2, "and the same canonical hash" );
+		Assert.IsFalse( Encoding.UTF8.GetString( on.Item1 ).Contains( "PoolSlides", StringComparison.Ordinal ) );
+		// even a park with pool cells and a changing room-less pool but no slide saves no slides part
+		With( true, () =>
+		{
+			level.PoolBuilder!.PaintCells( PoolBuilder.Rectangle( (12, 12), (14, 13) ) );
+			Assert.IsNull( Capture().PoolSlides );
+			return 0;
+		} );
+	}
+
+	[TestMethod]
 	public void WithTheExtensionOffATowerHasNoRuleAndNoSlideCanBeBuilt()
 	{
 		var tower = Tower();

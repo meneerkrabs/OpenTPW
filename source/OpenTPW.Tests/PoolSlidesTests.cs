@@ -217,7 +217,8 @@ public class PoolSlidesTests
 	{
 		var (cells, tower) = Fixture();
 		var good = Make( tower, cells, StandardCells );
-		Assert.AreEqual( PoolSlideResult.ExtensionOff, Check( good, tower, cells ) );
+		using ( OpenTPW.Mods.OpenTpwExtensions.Use( PoolsTests.PoolsSet( false ) ) )
+			Assert.AreEqual( PoolSlideResult.ExtensionOff, Check( good, tower, cells ) );
 		using var scope = PoolsOn();
 		Assert.AreEqual( PoolSlideResult.Ok, Check( good, tower, cells ) );
 		// a slide writes nothing to the cell map and nothing to the track layer: the closed-circuit rule and the layer are the rides'
@@ -503,7 +504,8 @@ public class PoolSlidesTests
 		var (cells, tower) = Fixture();
 		var world = World( cells, tower );
 		var tool = ToolFor( cells, world );
-		Assert.IsFalse( tool.BeginSlide( 8, 12 ), "the extension is off" );
+		using ( OpenTPW.Mods.OpenTpwExtensions.Use( PoolsTests.PoolsSet( false ) ) )
+			Assert.IsFalse( tool.BeginSlide( 8, 12 ), "the extension is off" );
 		using var scope = PoolsOn();
 		var poor = EconomyTestData.Park( initialCash: 100 );
 		var broke = new PoolSlideWorld( () => Site( cells ), id => id == tower.Id ? tower : null, () => poor );
@@ -522,7 +524,8 @@ public class PoolSlidesTests
 	public void TheRouteSearchFindsTheShortestValidSlideAndTheWorldBuildsIt()
 	{
 		var (cells, tower) = Fixture();
-		Assert.IsNull( PoolSlideRoutes.Find( tower, Site( cells ) ), "the extension is off" );
+		using ( OpenTPW.Mods.OpenTpwExtensions.Use( PoolsTests.PoolsSet( false ) ) )
+			Assert.IsNull( PoolSlideRoutes.Find( tower, Site( cells ) ), "the extension is off" );
 		using var scope = PoolsOn();
 		var route = PoolSlideRoutes.Find( tower, Site( cells ) );
 		Assert.IsNotNull( route );

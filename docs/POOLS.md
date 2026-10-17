@@ -389,7 +389,9 @@ bash scripts/run.sh --game-path '/path/to/Theme Park World' --load-original-leve
   --capture-world slide.png --capture-frames 1500 --capture-sequence 60,6 --capture-camera 51,-12,70,-90
 ```
 
-The images are `reports/pools-p4-*.png` and a short clip `reports/pools-p4-slide.gif`. The art was judged on these captures only.
+First on-screen check (October 17, 2026; Jungle with a flume tower, Fantasy with a tube tower, a 7 x 6 pool, 14 swimmers, 3024 x 1686 captures shown at 1600 wide, the camera at 51,-12,70,-90 with `--debug-pool-offset 2,-3` for the track and without it for the splash, and 31,-32,70,-90 in Fantasy): the swimmers swim to the foot of the stairs, climb, wait on the platform, ride down the flume (riders drawn lying in it, one behind the other at the gap), and splash down in the pool; the tower stands with its stairs facing the pool and the track leaves it from the side. The images are `reports/pools-p4-jungle-flume.png` (tower, track and a rider), `reports/pools-p4-jungle-splash.png` (riders landing), `reports/pools-p4-fantasy-tube.png` (the tube slide with its pastel tower) and a short clip `reports/pools-p4-slide.gif` (`--capture-sequence 60,6`). The art was judged on these captures only, not against a capture of the original game (which has no pools). The riders are drawn with the crawl slot until the swimwear art for slots 7 and 11 lands.
+
+The save roundtrip in the middle of an activity is also checked natively: `OPENTPW_SMOKE_POOLS=slide` (both phases, with `--enable-mod opentpw.pools`) adds a slide tower and its slide to the resume fixture and saves while guests are on the stairs; the restore phase finds the slide complete and usable over its tower with the guests on it and continues with the capture phase's canonical hashes (`ParkResumeSmokeTest.Pools.cs`).
 
 ## Saves and determinism
 

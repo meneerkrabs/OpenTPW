@@ -112,6 +112,7 @@ internal sealed record ParkResumeSnapshot
 	/// [EXT:pools-slides] The park's water slides (<c>opentpw.pools</c>), or null when it held none: each slide's tower, profile, start, pieces and heights (docs/POOLS.md, "Water slides"). Left out of the
 	/// file when null, so a park without slides saves the same bytes as before.
 	/// </summary>
+	[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 	public PoolSlidesSaveData? PoolSlides { get; init; }
 	/// <summary>
 	/// The developer prototype Totem, or null when the park had none: where it stands, its runtime and script state

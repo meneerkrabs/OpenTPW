@@ -38,7 +38,7 @@ The remainder of this document describes Theme Park World continuation saves.
 OpenTPW saves parks in its **own world-save format** (`"Format": "opentpw-world"`, version 1): one
 file holds the whole running park, and Load resumes it where it left off. This is separate from the
 original game's save format — original `TPWS`/`TPWI` files stay read-only imports
-([TPWS-PAYLOAD.md](TPWS-PAYLOAD.md)), OpenTPW never writes them, and an own-format save is not an
+([TPWS-PAYLOAD.md](TPWS-PAYLOAD.md)): nothing in the running game writes them (a library writer exists, `OriginalParkExport`, and no menu or command reaches it), and an own-format save is not an
 original-format save. What saves today is the fixed-ride Theme Park World park: paths, queues,
 placed objects with their scripts and animations, guests, staff, money and world state. The limits
 are listed below.

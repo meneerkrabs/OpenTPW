@@ -5,17 +5,25 @@ namespace OpenTPW;
 /// seven needs floats are written as their truncated low byte (the writer's <c>__ftol</c>, as for staff) and land at guest <c>+0x19C</c> (happiness),
 /// <c>+0x1A8</c> (hunger), <c>+0x1B4</c> (litter), <c>+0x1A4</c> (thirst), <c>+0x1B8</c> (the unnamed meter), <c>+0x1AC</c> (toilet) and <c>+0x1B0</c>
 /// (illness). Thing ids (<see cref="MajorDest"/>, <see cref="PreviousRides"/>, <see cref="QNext"/>, ...) name things of the same save.
+/// Guest-object offsets (the order of the serializer's address operands): <c>+0x1A0</c> cash, <c>+0x1BC</c> exit level, <c>+0x1C0</c> prankery index, <c>+0x1C4</c> rides, <c>+0x1C8</c> shops,
+/// <c>+0x1CC</c> sideshows, <c>+0x1D0</c> sideshows won, <c>+0x1D4</c> arrival date, <c>+0x1D8</c> arrival index, <c>+0x1DC</c> major destination, <c>+0x1DE</c> saved major destination,
+/// <c>+0x1E0</c>/<c>+0x1E8</c> the ride histories, <c>+0x1F0</c> person type, <c>+0x1F1</c> queue position, <c>+0x1F4</c> queue move delay, <c>+0x1F8</c> been admitted, <c>+0x1FC</c> idle stamp,
+/// <c>+0x200</c> opening wait, <c>+0x204</c> paid admission, <c>+0x208</c> spot animation stamp, <c>+0x210</c> balloon script, <c>+0x214</c> balloon life, <c>+0x218</c>/<c>+0x21C</c> last position,
+/// <c>+0x220</c> state, <c>+0x224</c> saved state, <c>+0x228</c>/<c>+0x22A</c> queue next/previous. The guest constructor <c>0x4FAEC0</c> zeroes the links, admission flag, destinations and last position
+/// and sets state and saved state to the same value (6 in every saved guest).
 /// </summary>
 public sealed record SaveGuest( int Id, SavePerson Person )
 {
 	public uint ArrivalDate { get; init; }
 	public uint ArrivalIndex { get; init; }
 	public uint BalloonScript { get; init; }
+	/// <summary><c>mBeenAdmitted</c> (+0x1F8): 1 once the attraction named by <see cref="MajorDest"/> admitted the guest (<c>OnAdmittance</c>, <c>0x5012B0</c>); the dismissal <c>0x5012F0</c> clears it together with the queue links, the destination and the queue position.</summary>
 	public uint BeenAdmitted { get; init; }
 	public int Cash { get; init; }
 	public int ExitLevel { get; init; }
 	public float Happiness { get; init; }
 	public float Hunger { get; init; }
+	/// <summary><c>mLastPosX</c>/<c>Y</c> (+0x218/+0x21C): the balloon sprite's previous position; <c>0x4FE900</c> moves the balloon script (+0x210) from it to the new point and stores that point. 0 for a guest with no balloon.</summary>
 	public uint LastPosX { get; init; }
 	public uint LastPosY { get; init; }
 	public float Litter { get; init; }
@@ -32,13 +40,16 @@ public sealed record SaveGuest( int Id, SavePerson Person )
 	public IReadOnlyList<ushort> PreviousRides { get; init; } = Array.Empty<ushort>();
 	/// <summary><c>mPreviousTemporaryRides[i]</c> (guest <c>+0x1E8</c>), newest first.</summary>
 	public IReadOnlyList<ushort> PreviousTemporaryRides { get; init; } = Array.Empty<ushort>();
+	/// <summary><c>mQNext</c> (+0x228) and <see cref="QPrev"/> (+0x22A): the thing ids of the next and previous guest of the attraction queue the guest stands in (a doubly linked list; 0 ends it and means "not queued").</summary>
 	public ushort QNext { get; init; }
 	public ushort QPrev { get; init; }
 	public uint QueueMoveDelay { get; init; }
 	public byte QueuePos { get; init; }
 	public int RemainingBalloonLife { get; init; }
 	public ushort SavedMajorDest { get; init; }
+	/// <summary><c>mSavedState</c> (+0x224): the state to resume after a spot animation. <c>0x4FC800</c> copies the current state here, stamps <see cref="TimeOfLastSpotAnim"/> with the world tick and enters state 8 (<c>0x501DB0</c>).</summary>
 	public uint SavedState { get; init; }
+	/// <summary><c>mState</c> (+0x220): 0 to 21, the states of the guest state setter <c>0x501DB0</c> (it rejects anything above 0x15).</summary>
 	public uint State { get; init; }
 	public float Thirst { get; init; }
 	public uint TimeOfLastSpotAnim { get; init; }
@@ -50,6 +61,14 @@ public sealed record SaveGuest( int Id, SavePerson Person )
 	public const int GuestBytes = 135;
 	public const int HistorySlots = 4;
 	public const float MaximumNeed = 255f;
+	/// <summary>The highest state the guest state setter <c>0x501DB0</c> accepts (<c>cmp eax, 0x15; ja</c>).</summary>
+	public const uint MaximumState = 21;
+
+	/// <summary>The admission flag (<see cref="BeenAdmitted"/>) as a boolean.</summary>
+	public bool Admitted => BeenAdmitted != 0;
+
+	/// <summary>True when the guest stands in an attraction queue chain (a link or a queue position is set).</summary>
+	public bool InQueueChain => QNext != 0 || QPrev != 0 || QueuePos != 0;
 
 	public static SaveGuest Read( ReadOnlySpan<byte> payload, SaveThing thing )
 	{
@@ -78,6 +97,10 @@ public sealed record SaveGuest( int Id, SavePerson Person )
 		};
 		if ( reader.Position != thing.End )
 			throw new InvalidDataException( $"Save guest thing {thing.Id} body is {thing.BodyLength} bytes; the guest serializer reads {reader.Position - thing.BodyOffset}." );
+		if ( guest.State > MaximumState || guest.SavedState > MaximumState )
+			throw new InvalidDataException( $"Save guest thing {thing.Id} has state {guest.State} and saved state {guest.SavedState}; the state setter 0x501DB0 takes 0 to {MaximumState}." );
+		if ( guest.BeenAdmitted > 1 )
+			throw new InvalidDataException( $"Save guest thing {thing.Id} has an admission flag of {guest.BeenAdmitted}; 0x5012B0 and 0x5012F0 write only 1 and 0." );
 		foreach ( var need in new[] { guest.Happiness, guest.Hunger, guest.Litter, guest.Thirst, guest.Meter1B8, guest.Toilet, guest.Illness } )
 			if ( !float.IsFinite( need ) || need < 0f || need > MaximumNeed )
 				throw new InvalidDataException( $"Save guest thing {thing.Id} has a need {need} outside 0–{MaximumNeed}." );

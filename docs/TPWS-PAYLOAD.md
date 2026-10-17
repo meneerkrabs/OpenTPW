@@ -222,6 +222,27 @@ seven meters are written as their truncated low byte. Easymode's 13 guests are a
 in: 5 going to the ticket booth (state 2), 1 paid and waiting for the gate (3) and 7 entering the
 park (5), each with 300–750 cash, happiness 50 and one a balloon prankster (102).
 
+Offsets and meanings that tp.exe's code shows (round 5): the guest-object offsets of the fields are `+0x1A0` cash, `+0x1BC` exit level, `+0x1C0` prankery index, `+0x1C4`/`+0x1C8`/`+0x1CC`/`+0x1D0` the
+ride, shop, sideshow and win counts, `+0x1D4` arrival date, `+0x1D8` arrival index, `+0x1DC` major destination, `+0x1DE` saved major destination, `+0x1E0`/`+0x1E8` the ride histories, `+0x1F0` person type,
+`+0x1F1` queue position, `+0x1F4` queue move delay, `+0x1F8` been admitted, `+0x1FC` idle stamp, `+0x200` opening wait, `+0x204` paid admission, `+0x208` spot animation stamp, `+0x210` balloon script,
+`+0x214` balloon life, `+0x218`/`+0x21C` last position, `+0x220` state, `+0x224` saved state, `+0x228`/`+0x22A` queue next and previous. The constructor `0x4FAEC0` zeroes the links, flag, destinations and
+last position and starts state and saved state at the same value (6 in every saved guest).
+
+- `mBeenAdmitted` is 1 after `OnAdmittance` (`0x5012B0`, log "Person %d: OnAdmittance (I think I'm on object %d)"); the dismissal `0x5012F0` ("dismissed from queue on ride %d") logs event type 6 with the major
+  destination, clears the links, the flag, the destination and the queue position, and returns the guest to state 6. `SaveGuest` refuses any other flag value.
+- `mQNext`/`mQPrev` are the thing ids of the neighbours in the attraction's queue (0 ends the chain; the unlink code `0x501971` rewrites both neighbours).
+- `mSavedState` is the state to resume after a spot animation: `0x4FC800` copies the state into it, stamps `mTimeOfLastSpotAnim` (+0x208) with the world tick and enters state 8 through the state setter
+  `0x501DB0`, which accepts 0 to 21 only (`SaveGuest.MaximumState`; the reader refuses more).
+- `mLastPosX`/`mLastPosY` are the balloon sprite's previous position: `0x4FE900` moves the balloon script (+0x210) from them to the new point and stores it (0 without a balloon).
+- The person's event ring (thought object at person `+0x30`: `mLastThought`, 32 slots from `+0x34`, the bubble script `+0xB4`, the head `mActionHistIndex` `+0xB8`, `mTimeBubbleShown` `+0xBC`): each slot is two
+  words, event type then value (the constructor `0x50BA80` clears them as words at +4+4i and +6+4i; `SavePerson.ThoughtEvents`, `SaveThoughtEvent`). `AddEvent(type, value)` (`0x50C100`) writes the slot at
+  the head, advances it with `(head + 1) & 0x1F` and skips a pair equal to the previous slot (head − 1, wrapped). Its only callers (28 sites in `0x4F`–`0x53`, none elsewhere in the code section) pass types 1 to
+  0x19, so the reader refuses a head above 31 or a type above 0x19. The type numbers have no names in the code; the only non-empty ring in the corpus is the fantasy state-20 guest (head 1, slot 0 = type
+  0x13, value 0, written at `0x502312`). The ring is not imported (SAVE-002).
+- Nothing else is non-default beyond the arrival phase: all 35 corpus guests (Easymode 13, the seven private `.TPWS` 22) are unnumbered (`mArrivalIndex` 0), unqueued, never admitted and
+  hold saved state 6; `EveryGuestBodyOfEverySaveIsConsumedExactly` reads every one to the last byte. The queue, admission, balloon-position and ring-wrap fields therefore rest on the code, not on a
+  saved guest in a queue, and a save of a park with guests in queues and on rides would test them.
+
 ### Cell grid (verified structure)
 
 Each record is 84 bytes: type byte at +0 (3 or 7), opaque fields, the **MAP

@@ -254,6 +254,6 @@ public class ParkCameraMode : CameraMode
 	internal void UpdateAudioListener()
 	{
 		GameAudio.UpdateListener( GameAudio.ListenerPlace( Position.GetSystemVector3(), Target.GetSystemVector3(), eyeMode: false ),
-			(Target - Position).GetSystemVector3(), Level.Current?.OriginalPark?.Heightfield );
+			(Target - Position).GetSystemVector3(), Level.Current?.OriginalPark?.Heightfield, Rotation.Up.GetSystemVector3() );
 	}
 }

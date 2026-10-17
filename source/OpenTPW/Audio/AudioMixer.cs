@@ -110,11 +110,12 @@ public sealed class AudioVoice
 		{
 			var (distanceGain, pan) = AudioListener.Placement( place, Range );
 			// [EXT:inaudible-loop-advance] inaudible positioned voices advance silently; loops remain available when the listener returns, without recreating the event
-			// [BIN:QMIXER-DLL:0x18005730 pan law] the software channel stage sets the DirectSound pan to 44.444 x azimuth (degrees, atan2(x, z) of the listener-relative position, 0x18009dc0) hundredths of a dB, mirrored behind the listener (|azimuth| > 90 -> 180 - |azimuth|, so within +-4000), and the volume (0x1800ca40) to 2000 log10(gain) hundredths of a dB (0x18005830); the opposite channel is 10^(-|pan|/2000) of the level
-			// [APPROX:AUDIO-018] constant-power pan by the source's bearing against the listener — a channel with a DirectSound 3D buffer (mode 0x2000000, 0x18005915-0x18005927) hands the position to DirectSound3D, whose law is the operating system's; whether the original's positioned voices have that buffer, or which mode a voice gets, is not read
-			var angle = (pan + 1) * MathF.PI / 4;
-			leftScale = distanceGain * MathF.Cos( angle );
-			rightScale = distanceGain * MathF.Sin( angle );
+			// [BIN:QMIXER-DLL:0x18005830 volume and pan] tp.exe gives every voice the channel mode 0x1000000 (the software stage: 0x6bc61b ORs 1 into the request flags of every started sample, 0x6d23ab turns that into 0x1000000), whose buffer has no DirectSound 3D object (0x2000000 only): SetVolume(2000 log10(gain) hundredths of a decibel, 0x1800ca40) and, for a mono wave only (0x18005982 tests the wave format table 0x1803c6b4, 1 = mono), SetPan(44.444 x azimuth, mirrored behind the listener, 0x18005730)
+			// [APPROX:AUDIO-018] the pan takes the azimuth in the listener's camera basis; the voices placed flat with the any-distance flag (speech, music, most UI sounds) keep both channels at the voice's gain, as the unpositioned original submit leaves them, though the original hands them (0,1,0) through SetPosition (0x6bc51d, 0x6d2640) and how QMixer places such a source is not read
+			var levelled = AudioListener.DecibelGain( AudioListener.GainHundredthsOfDecibel( distanceGain ) );
+			(leftScale, rightScale) = channels == 1 ? AudioListener.PanGains( pan ) : (1f, 1f);
+			leftScale *= levelled;
+			rightScale *= levelled;
 		}
 		for ( var frame = 0; frame < frames; frame++ )
 		{

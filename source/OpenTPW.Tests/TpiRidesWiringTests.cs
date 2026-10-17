@@ -188,7 +188,8 @@ public class TpiRidesWiringTests
 		StringAssert.StartsWith( elsewhere.Single().Directory, Path.GetFullPath( other ) );
 	}
 
-	private static IReadOnlyList<CatalogContentRoot> CatalogRoots( ModSet set ) => ModContentRoots.CatalogRoots( set );
+	// the pools extension (on by default) adds a root of its own; these tests are about the mods' roots
+	private static IReadOnlyList<CatalogContentRoot> CatalogRoots( ModSet set ) => ModContentRoots.CatalogRoots( set ).Where( contentRoot => contentRoot.ModId != OfficialExtensions.Pools.Id ).ToList();
 
 	// ---- Command line ----------------------------------------------------------------------------------------
 
@@ -273,7 +274,8 @@ public class TpiRidesWiringTests
 		using ( ModContentRoots.Use( Resolve( Install(), extension: true ), FileSystem ) )
 		{
 			var catalog = EconomyObjectCatalog.Load( "jungle", false );
-			CollectionAssert.AreEqual( new[] { 1110, 40001 }, catalog.Objects.Select( info => info.InfoId ).ToArray(), "after the game's own objects" );
+			// the pools extension (on by default) lists its own rooms (Info.Ids 65000 and up) in the same catalog
+			CollectionAssert.AreEqual( new[] { 1110, 40001 }, catalog.Objects.Select( info => info.InfoId ).Where( id => id < PoolContent.FirstReservedId ).ToArray(), "after the game's own objects" );
 			var info = catalog[40001];
 			Assert.AreEqual( 700, info.PurchaseCost );
 			Assert.AreEqual( "Gadget Ride", info.Name );

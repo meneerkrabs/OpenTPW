@@ -108,8 +108,8 @@ public sealed class StaffPlacement
 	/// <summary>Key of the sprite bank of the person in the tool (<see cref="StaffSpriteRules.VariantKey"/>).</summary>
 	public int ToolVariantKey => Kind switch
 	{
-		StaffToolKind.Place when Candidate is { } candidate => StaffSpriteRules.VariantKey( candidate.NameIndex, candidate.Id ),
-		StaffToolKind.Carry when Carried is { } member => StaffSpriteRules.VariantKey( member.NameIndex, member.Id ),
+		StaffToolKind.Place when Candidate is { } candidate => StaffSpriteRules.KeyOf( candidate ),
+		StaffToolKind.Carry when Carried is { } member => StaffSpriteRules.KeyOf( member ),
 		_ => 0
 	};
 

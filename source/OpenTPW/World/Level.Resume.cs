@@ -9,6 +9,8 @@ public partial class Level
 
 	/// <summary>Rebuilds the saved particle pool in a resumed park (set by the particle renderer module; null in headless hosts).</summary>
 	internal static Action<Level, ParticleSystemState>? ParticlesResumed { get; set; }
+	/// <summary>Set by the particle module: gives the level the pool of an original save's Particles block (the state's emitters and effectors, the post-load pass applied).</summary>
+	internal static Action<Level, SaveParticlesBlock>? ParticlesImported { get; set; }
 
 	/// <summary>Captures a writable fixed-ride park between simulation ticks, including its direct instance links.</summary>
 	internal ParkResumeSnapshot CaptureResumeSnapshot( AutomaticAdvisor? advisor, string displayName,

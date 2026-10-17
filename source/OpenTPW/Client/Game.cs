@@ -513,7 +513,7 @@ internal static class Game
 				var searchY = poolCamera != null ? poolCamera[1] : park.Target.Y;
 				if ( level.PoolBuilder is not { } builder || !level.TryGetGridCell( searchX, searchY, out var cellX, out var cellY ) )
 				{
-					Log.Warning( "--debug-pool: the opentpw.pools extension is off (use --enable-mod opentpw.pools) or the camera target is off the grid." );
+					Log.Warning( "--debug-pool: the opentpw.pools extension is off (it is on by default; check mods.json and --disable-extension), this is a Theme Park Inc run, or the camera target is off the grid." );
 					return;
 				}
 				// [EXT:debug-pool] --debug-pool-offset dx,dy moves the place the shape is looked for from the camera target by whole cells (so a capture can frame a changing room beside the pool)
@@ -706,7 +706,7 @@ internal static class Game
 		var level = visit != null
 			? flow.StartLevel( visit.Level, original: !visit.IsSandbox, developerPanels: true, visit: visit )
 			: originalLevelIndex >= 0
-			? flow.StartLevel( args[originalLevelIndex + 1], original: true, developerPanels: !GameEditions.IsThemeParkInc )
+			? flow.StartLevel( args[originalLevelIndex + 1], original: true, developerPanels: !GameEditions.IsThemeParkInc, playerSave: ReadPlayerSave( args ) )
 			: flow.StartLevel( "jungle", original: false, developerPanels: true );
 
 		if ( sliceSmoke )
@@ -1132,6 +1132,18 @@ internal static class Game
 			var mid = slide.PointAt( slide.Length / 2 );
 			Log.Trace( FormattableString.Invariant( $"--debug-slide: the middle of the track is at engine {origin.X + mid.X / 1024f * ObjectPlacement.CellSize:0.#},{origin.Y + mid.Y / 1024f * ObjectPlacement.CellSize:0.#}; the splash at engine {origin.X + (slide.LandingPoint!.Value.X / 1024f) * ObjectPlacement.CellSize:0.#},{origin.Y + (slide.LandingPoint!.Value.Y / 1024f) * ObjectPlacement.CellSize:0.#}." ) );
 		}
+	}
+
+	/// <summary>
+	/// <c>--original-save &lt;file&gt;</c> with <c>--load-original-level</c>: the decoded payload of a player's own original park save (an <c>autosave.TPWS</c>, a named park or a <c>restart.INTS</c>) of that level, which the park starts from
+	/// instead of the shipped Easymode save; null without the option.
+	/// </summary>
+	private static ReadOnlyMemory<byte>? ReadPlayerSave( string[] args )
+	{
+		if ( GetOption( args, "--original-save", "an original park save file (.TPWS or .INTS)" ) is not { } path )
+			return null;
+		using var reader = new SaveReader( path );
+		return reader.ReadFile();
 	}
 
 	private static string? GetOption( string[] args, string name, string description )

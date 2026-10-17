@@ -96,9 +96,12 @@ public sealed class ParkEconomyRuntime
 	/// when the start imports it.
 	/// </summary>
 	/// <param name="seed">The park's world seed; the economy stream is <see cref="WorldSeed.EconomyStream"/> (1 for the default seed).</param>
-	public static ParkEconomyRuntime ForOriginalLevel( OriginalPark park, ParkStartKind kind = ParkStartKind.OriginalSaveReference, WorldSeed? seed = null )
+	/// <param name="playerSave">The park starts from a player's own save (<see cref="Level"/>'s <c>playerSave</c>): Full Simulation rules, and the balance layer the save was made with (the standard one, else the easy one when the save's loan table matches only that).</param>
+	public static ParkEconomyRuntime ForOriginalLevel( OriginalPark park, ParkStartKind kind = ParkStartKind.OriginalSaveReference, WorldSeed? seed = null, bool playerSave = false )
 	{
 		ArgumentNullException.ThrowIfNull( park );
+		if ( playerSave )
+			return ForPlayerSave( park, seed );
 		if ( park.Save != null && !ParkStart.ReadsShippedSave( kind ) )
 			throw new ArgumentException( $"A {kind} start does not use the shipped save; load the level without it.", nameof( park ) );
 		EconomyApproximations.LogOnce();
@@ -111,6 +114,33 @@ public sealed class ParkEconomyRuntime
 		foreach ( var line in import?.Evidence ?? Array.Empty<string>() )
 			Log.Trace( $"Park economy import: {line}" );
 		return new ParkEconomyRuntime( economy, import ) { Start = start };
+	}
+
+	private static ParkEconomyRuntime ForPlayerSave( OriginalPark park, WorldSeed? seed )
+	{
+		if ( park.Save == null )
+			throw new ArgumentException( "A player-save start needs the save.", nameof( park ) );
+		EconomyApproximations.LogOnce();
+		InvalidDataException? standardMismatch = null;
+		foreach ( var easy in BalanceSettings.HasEasyLayer( park.LevelName ) ? new[] { false, true } : new[] { false } )
+		{
+			var economy = ParkEconomy.CreateForTheme( park.LevelName, easy, ParkGameMode.FullSimulation, (seed ?? WorldSeed.Default).EconomyStream );
+			OriginalEconomyImport import;
+			try
+			{
+				import = OriginalEconomyImport.Apply( economy, park );
+			}
+			catch ( InvalidDataException exception ) when ( !easy && BalanceSettings.HasEasyLayer( park.LevelName ) )
+			{
+				standardMismatch = exception;
+				continue;
+			}
+			Log.Trace( $"Park economy: player save, Full Simulation rules; {park.LevelName} {(easy ? "easy" : "standard")} balance{(standardMismatch == null ? "" : $" (the standard one did not match: {standardMismatch.Message})")}; cash ${economy.Balance}, entrance fee ${economy.EntranceFee}, {economy.Research.Items.Count} research items." );
+			foreach ( var line in import.Evidence )
+				Log.Trace( $"Park economy import: {line}" );
+			return new ParkEconomyRuntime( economy, import ) { Start = new ParkStart( ParkStartKind.OriginalSaveReference, ParkGameMode.FullSimulation, easy, ImportShippedSave: true ) };
+		}
+		throw new InvalidDataException( "The save matches neither balance layer." );
 	}
 
 	/// <summary>

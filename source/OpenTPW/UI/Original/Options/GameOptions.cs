@@ -34,7 +34,7 @@ public sealed class GameOptions
 	public int VolumeFormat { get; set; } = PercentVolumeFormat;
 
 	// [BIN:TPW-EXE:sound.sam DefaultVolume] defaults SFX 75, Music 60, Speech 75, Movie 100 (percent). The globals holding them are medium confidence.
-	// The movie volume is scaled by 1023 / 100 for the movie device.
+	// The movie volume is scaled by 1023 / 100 for the movie device and plays as DirectSound attenuation (see MovieVolumeCurve).
 	// [BIN:TPW-EXE:0x4a4490 volume sliders] the options volume sliders get SetRange(0,100) (0x66b47d: min 0, max 100), an integer value and line and page steps of 1 (slider constructor 0x66ad77/0x66adc9), so OpenTPW's 1 % steps over 0..100 are the original's granularity.
 	public int SoundEffectsVolume { get; set; } = 75;
 	public int MusicVolume { get; set; } = 60;
@@ -67,7 +67,8 @@ public sealed class GameOptions
 	[JsonIgnore] public float SoundEffectsGain => Gain( SoundEffectsVolume, SoundEffectsOn );
 	[JsonIgnore] public float MusicGain => Gain( MusicVolume, MusicOn );
 	[JsonIgnore] public float SpeechGain => Gain( SpeechVolume, SpeechOn );
-	[JsonIgnore] public float MovieGain => Gain( MovieVolume, MovieOn );
+	/// <summary>The movie amplitude: the PC player's DirectSound decibel curve (<see cref="MovieVolumeCurve"/>), not a linear gain.</summary>
+	[JsonIgnore] public float MovieGain => MovieVolumeCurve.Gain( MovieVolume, MovieOn );
 
 	/// <summary>An independent copy (the options screen restores it on Cancel).</summary>
 	public GameOptions Clone() => (GameOptions)MemberwiseClone();

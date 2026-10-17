@@ -58,6 +58,8 @@ public sealed class StaffMember
 	public int PhaseId => ThingId != 0 ? ThingId : Id;
 	public required StaffType Type { get; init; }
 	public required int NameIndex { get; init; }
+	/// <summary>The sprite variant the member was hired with (the candidate's, tp.exe member +0x20); -1 for a member of an original save (the save holds none) or of an older park save, whose bank derives from its name and id.</summary>
+	public int Variant { get; init; } = -1;
 	/// <summary>
 	/// The member's own name, stored inline in an original save (the staff suffix's <c>mName[i]</c>, +0x1A0, which the employee panels show); null
 	/// for a member hired in OpenTPW, whose name is <see cref="NameIndex"/> in the role's name table.
@@ -159,7 +161,8 @@ public sealed class StaffMember
 }
 
 /// <summary>A job applicant in the hiring pool; leaves the pool at <see cref="ExpiresTick"/>.</summary>
-public sealed record StaffCandidate( int Id, StaffType Type, int NameIndex, int Grade, long ExpiresTick );
+/// <param name="Variant">The sprite variant (tp.exe candidate +9, <c>StaffSpriteRules.BankIndex</c> picks the bank): drawn when the candidate is made, or the saved sub-type of an original save's pool; -1 for a candidate of a save from before the variant was kept, whose bank derives from its name and id.</param>
+public sealed record StaffCandidate( int Id, StaffType Type, int NameIndex, int Grade, long ExpiresTick, int Variant = -1 );
 
 /// <summary>
 /// Hiring pool, employees, wages and training. Data-driven values: pool sizes, grade chances,
@@ -333,8 +336,8 @@ public sealed class ParkStaff
 	private StaffCandidate CreateCandidate( StaffRoleSettings role, WorldRng random, long tick )
 	{
 		// [BIN:TPW-EXE:0x0050761C staff candidate draws] the constructor 0x00507600 draws, in order: the sprite variant (0x00541F70: (R >> 2) mod the role category's bank count, candidate +9), one draw it discards (0x0050762D), the grade (0x00507638), the name (0x00507580) and the timeout
-		// [APPROX:GUEST-014] the variant's draw is made in its place but its value is not kept: the sprite bank still derives from the name index and id
-		random.NextWord();
+		// [BIN:TPW-EXE:0x00541F70 sprite variant] (draw >> 2) mod the role category's loaded bank count (StaffSprites.Banks), kept as the candidate's variant and handed on to the member it becomes (Hire)
+		var variantDraw = random.NextWord();
 		random.NextWord();
 		// [BIN:STP-PPC:0x100F5B64 staff candidate] grade = (AvgGradeOf* + random % 3 - 1) & 0xFF, stored as 4 when above 4 (so -1 wraps to 4); ChanceToGetGreat* is never read
 		var raw = (role.AverageGrade + random.Next( 3 ) - 1) & 0xFF;
@@ -351,8 +354,11 @@ public sealed class ParkStaff
 		while ( NameTaken( role.Type, name ) && draws < MaximumNameDraws );
 		// [BIN:TPW-EXE:0x507600 staff candidate] the timeout (+0x10) is StaffTimeoutTime + R % (StaffTimeoutTime >> 1)
 		var timeout = settings.StaffTimeoutTime + (settings.StaffTimeoutTime >> 1 > 0 ? random.Next( settings.StaffTimeoutTime >> 1 ) : 0);
-		return new StaffCandidate( NextId++, role.Type, name, grade, TickAfterUnits( tick, timeout ) );
+		return new StaffCandidate( NextId++, role.Type, name, grade, TickAfterUnits( tick, timeout ), VariantFrom( role.Type, variantDraw ) );
 	}
+
+	/// <summary>The sprite variant a draw gives a role: (draw &gt;&gt; 2) mod the loaded bank count of the role's category, -1 when the level has no bank for it.</summary>
+	private int VariantFrom( StaffType type, uint draw ) => StaffSpriteRules.Banks( type, settings.Theme )?.Banks.Count is > 0 and var count ? (int)((draw >> 2) % (uint)count) : -1;
 
 	/// <summary>Whether a pool candidate or an employee of the role already has the name (tp.exe <c>0x005083F0</c>).</summary>
 	private bool NameTaken( StaffType type, int nameIndex ) =>
@@ -371,7 +377,7 @@ public sealed class ParkStaff
 		if ( things != null && thingId == 0 )
 			throw new InvalidOperationException( $"The thing pool is full ({ThingPool.Capacity} things); no staff member can be placed." );
 		candidates.Remove( candidate );
-		var member = new StaffMember { Id = candidate.Id, ThingId = thingId, Type = candidate.Type, NameIndex = candidate.NameIndex, Grade = candidate.Grade, HiredTick = tick };
+		var member = new StaffMember { Id = candidate.Id, ThingId = thingId, Type = candidate.Type, NameIndex = candidate.NameIndex, Grade = candidate.Grade, HiredTick = tick, Variant = candidate.Variant };
 		members.Add( member );
 		return member;
 	}
@@ -469,12 +475,16 @@ public sealed class ParkStaff
 	/// Replaces the pool with an original save's candidates (role, name index, grade, the turn it was made and its timeout in units of four turns) and
 	/// sets the next refill from the turn of the pool's last one; each candidate leaves on the first turn past its timeout.
 	/// </summary>
-	internal void RestoreOriginalPool( IEnumerable<(StaffType Type, int NameIndex, int Grade, long MadeTurn, long Timeout)> saved, long lastRefillTurn )
+	internal void RestoreOriginalPool( IEnumerable<(StaffType Type, int NameIndex, int Grade, long MadeTurn, long Timeout, int SubType)> saved, long lastRefillTurn )
 	{
 		candidates.Clear();
 		PendingPlacementId = 0;
-		foreach ( var (type, name, grade, made, timeout) in saved.Take( PoolSlots ) )
-			candidates.Add( new StaffCandidate( AllocateId(), type, name, grade, TickAfterUnits( ParkCalendar.TickOfTurn( made ), timeout ) ) );
+		foreach ( var (type, name, grade, made, timeout, subType) in saved.Take( PoolSlots ) )
+		{
+			// [BIN:TPW-EXE:0x00507600 staff candidate] the sub-type (+9) is the sprite variant the placement object takes when the candidate is picked up (0x507BF0); one past the role's banks is no variant this install can draw
+			var banks = StaffSpriteRules.Banks( type, settings.Theme )?.Banks.Count ?? 0;
+			candidates.Add( new StaffCandidate( AllocateId(), type, name, grade, TickAfterUnits( ParkCalendar.TickOfTurn( made ), timeout ), subType >= 0 && subType < banks ? subType : -1 ) );
+		}
 		NextPoolUpdateTick = TickAfterUnits( ParkCalendar.TickOfTurn( lastRefillTurn ), settings.TimeBetweenStaffUpdates );
 	}
 

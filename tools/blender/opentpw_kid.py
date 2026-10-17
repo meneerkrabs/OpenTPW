@@ -24,9 +24,14 @@ import numpy as np
 # ``elevation`` is the camera elevation above the ground plane in degrees, ``ppu`` the orthographic scale (sprite
 # pixels per Blender unit), ``cell`` the original's sprite cell and ``feet`` where the standing hotspot lands in it;
 # ``swim_canvas``/``swim_origin`` are the (larger) canvas and hotspot of our swimmer frames.
+# The sprite banks come in two detail levels: the game draws the full-detail ``.FPC`` of the guest sets, which is 1.25 times
+# the size of the low-detail ``.TPC`` the calibration was first done against (kid standing frames 40-42 px against 32-37). ``ppu``
+# is the FPC scale used for all output; ``ppu_tpc`` (= ppu / 1.25) is the TPC scale of the calibration comparison; ``cell`` and
+# ``feet`` describe that TPC reference sheet, ``swim_canvas``/``swim_origin`` our FPC-scale swimmer frames.
+FPC_SCALE = 1.25
 EDITIONS = {
-	"TPW": dict(elevation=32.0, ppu=9.5, cell=(48, 56), feet=(24, 53), swim_canvas=(64, 48), swim_origin=(32, 27)),
-	"TPI": dict(elevation=42.0, ppu=12.8, cell=(64, 80), feet=(32, 70), swim_canvas=(80, 64), swim_origin=(40, 36)),
+	"TPW": dict(elevation=32.0, ppu=11.875, ppu_tpc=9.5, cell=(48, 56), feet=(24, 53), swim_canvas=(80, 60), swim_origin=(40, 34)),
+	"TPI": dict(elevation=34.0, ppu=14.3, ppu_tpc=11.44, cell=(64, 80), feet=(32, 70), swim_canvas=(100, 80), swim_origin=(50, 45)),
 }
 SUPERSAMPLE = 6              # the frame is rendered this many times larger and box-filtered down
 SHARPEN = 0.2                # unsharp-mask weight after the downsample (the originals are crisp)
@@ -62,8 +67,8 @@ SWIM_LEG_SCALE = 1.12
 BODIES = {
 	"kid": dict(th=0.58, tw=0.62, td=0.46, thigh=0.40, shin=0.36, arm_up=0.42, arm_low=0.37, head=1.0, limb=1.0, stoop=0.0, size=1.0),
 	"mum": dict(th=0.72, tw=0.60, td=0.44, thigh=0.66, shin=0.62, arm_up=0.52, arm_low=0.48, head=1.0, limb=0.9, stoop=0.0, size=1.2),
-	"dad": dict(th=0.86, tw=0.86, td=0.74, belly=1, thigh=0.68, shin=0.63, arm_up=0.52, arm_low=0.48, head=1.05, limb=1.15, stoop=0.0, size=1.3),
-	"granny": dict(th=0.64, tw=0.68, td=0.52, thigh=0.54, shin=0.50, arm_up=0.44, arm_low=0.40, head=1.04, limb=1.0, stoop=10.0, size=1.1),
+	"dad": dict(th=0.86, tw=0.8, td=0.7, belly=1, thigh=0.68, shin=0.63, arm_up=0.52, arm_low=0.48, head=1.05, limb=1.15, stoop=0.0, size=1.3),
+	"granny": dict(th=0.64, tw=0.63, td=0.5, thigh=0.54, shin=0.50, arm_up=0.44, arm_low=0.40, head=1.04, limb=1.0, stoop=10.0, size=1.1),
 	"grandpa": dict(th=0.70, tw=0.62, td=0.46, thigh=0.64, shin=0.58, arm_up=0.52, arm_low=0.48, head=1.0, limb=1.0, stoop=18.0, size=1.15),
 }
 
@@ -98,6 +103,29 @@ PRESETS = {
 	"GM": dict(edition="TPI", body="granny", girl=True, skin=(238, 190, 166), hair=(176, 176, 186), outfit=(232, 124, 152), glasses=True, hair_style="perm", iris=(40, 90, 215), ears=False),
 	"GR": dict(edition="TPI", body="grandpa", girl=False, skin=(228, 178, 152), hair=(228, 228, 230), outfit=(100, 64, 42), hair_style="balding", mustache="hair", iris=(70, 90, 160), ears=True),
 }
+# The land outfits (sRGB), after the originals' standing sprites. ``top``: style (jacket, shirt, dress, cardigan, suit) and
+# colour; ``sleeves``: long, short or none, in ``sleeve`` colour when different; ``bottom``: trousers, shorts, skirt or
+# dungarees (dungarees add a bib) and colour; ``socks``; ``shoes``: (upper, sole); ``hat``: cap or safari with colour;
+# ``camera``: the dad's camera on a strap. ``build_kid(outfit="clothes")`` builds these; ``outfit="swim"`` the swimwear.
+CLOTHES = {
+	"BE": dict(top=("jacket", (28, 122, 12)), sleeves="long", bottom=("shorts", (24, 30, 130)), socks=(240, 240, 240), shoes=((40, 52, 190), (245, 245, 245))),
+	"BI": dict(top=("jacket", (34, 44, 190)), sleeves="long", bottom=("shorts", (30, 62, 44)), socks=(240, 240, 240), shoes=((236, 236, 240), (70, 90, 70))),
+	"CH": dict(top=("dress", (158, 44, 50)), sleeves="short", sleeve=(240, 238, 238), bottom=("skirt", (158, 44, 50)), shoes=((40, 60, 190), (232, 232, 232))),
+	"FR": dict(top=("jacket", (236, 22, 16)), sleeves="long", bottom=("shorts", (30, 34, 120)), socks=(240, 240, 240), shoes=((40, 52, 190), (245, 245, 245))),
+	"KI": dict(top=("dress", (56, 152, 52)), sleeves="short", sleeve=(232, 240, 232), bottom=("skirt", (56, 152, 52)), shoes=((118, 178, 222), (245, 245, 245))),
+	"SA": dict(top=("dress", (36, 42, 104)), sleeves="long", bottom=("skirt", (36, 42, 104)), socks=(240, 240, 240), shoes=((236, 236, 236), (190, 190, 190))),
+	"SU": dict(top=("shirt", (242, 242, 242)), sleeves="short", bottom=("dungarees", (60, 102, 204)), shoes=((226, 122, 30), (245, 245, 245))),
+	"TA": dict(top=("shirt", (196, 18, 18)), sleeves="short", bottom=("trousers", (62, 92, 150)), shoes=((200, 30, 30), (245, 245, 245))),
+	"BD": dict(top=("shirt", (196, 18, 18)), sleeves="short", bottom=("trousers", (62, 92, 150)), shoes=((200, 30, 40), (245, 245, 245))),
+	"GB": dict(top=("dress", (168, 44, 60)), sleeves="short", sleeve=(240, 238, 238), bottom=("skirt", (168, 44, 60)), shoes=((40, 60, 190), (240, 240, 240))),
+	"GK": dict(top=("shirt", (246, 246, 246)), sleeves="short", bottom=("trousers", (125, 125, 62)), shoes=((226, 110, 156), (245, 245, 245)), hat=("cap", (232, 118, 160))),
+	"KB": dict(top=("shirt", (176, 62, 124)), sleeves="short", bottom=("dungarees", (50, 100, 160)), shoes=((112, 72, 42), (236, 226, 200)), hat=("cap", (240, 192, 40))),
+	"FA": dict(top=("shirt", (228, 186, 44)), sleeves="short", bottom=("shorts", (180, 160, 112)), socks=(240, 240, 240), shoes=((228, 186, 44), (120, 100, 60)), hat=("safari", (152, 126, 84)), camera=True),
+	"MO": dict(top=("shirt", (166, 42, 92)), sleeves="short", bottom=("trousers", (30, 40, 110)), shoes=((160, 30, 80), (245, 245, 245))),
+	"GM": dict(top=("cardigan", (232, 124, 152)), sleeves="long", bottom=("skirt", (130, 170, 240)), skirt_len=0.8, shoes=((150, 100, 70), (232, 232, 232))),
+	"GR": dict(top=("suit", (100, 64, 42)), sleeves="long", bottom=("trousers", (52, 26, 22)), shoes=((40, 25, 20), (26, 16, 12))),
+}
+
 SET_NAMES = [n for n, q in PRESETS.items() if q['edition'] == 'TPW']   # the TPW kid sets (the default edition)
 
 
@@ -252,6 +280,8 @@ def _principled(name, colour, underwater, rough=0.65, kind="plain", spec=0.3, pa
 	# Painted shading: a purely diffuse Principled BSDF (no specular) whose albedo is darkened in creases by ambient
 	# occlusion; the warm shadow tint is applied in ``grade``.
 	try:
+		if kind == "hair":
+			raise RuntimeError("hair takes no occlusion: its clumps would read as dark dots")
 		ao = nt.nodes.new("ShaderNodeAmbientOcclusion")
 		ao.inputs["Distance"].default_value = 0.45
 		ao.samples = 8
@@ -367,10 +397,12 @@ def _limb(kid, name, a, b, r1, r2, material, parent):
 	return o
 
 
-def build_kid(preset_name, underwater=True, tag=None, swim=False):
+def build_kid(preset_name, underwater=True, tag=None, swim=False, outfit="swim"):
 	"""Builds the rig for one preset and returns a Kid. ``underwater`` adds the submerged tint to every material;
-	``swim`` lengthens the limbs a little (a cartoon exaggeration so strokes read at sprite size)."""
+	``swim`` lengthens the limbs a little (a cartoon exaggeration so strokes read at sprite size). ``outfit`` is "swim" (trunks,
+	swimsuit) or "clothes" (the land outfit of ``CLOTHES``, with the hat or camera)."""
 	p = PRESETS[preset_name]
+	cl = CLOTHES[preset_name] if outfit == "clothes" else None
 	b = dict(BODIES[p.get("body", "kid")])
 	if swim:
 		b["arm_up"] *= SWIM_ARM_SCALE
@@ -384,6 +416,7 @@ def build_kid(preset_name, underwater=True, tag=None, swim=False):
 	th, tw, td, limb = b["th"], b["tw"], b["td"], b["limb"]
 	hip_z = -(th - 0.1)
 	kid.torso_to_feet = -hip_z + b["thigh"] + b["shin"] + 0.14
+	kid.hip_z, kid.leg_t, kid.leg_s = hip_z, b["thigh"], b["shin"]
 	skin, hair = srgb(*p["skin"]), srgb(*p["hair"])
 	if swim:   # wet hair is darker
 		hair = tuple(c * WET_HAIR_DARKEN for c in hair[:3]) + (1.0,)
@@ -402,16 +435,30 @@ def build_kid(preset_name, underwater=True, tag=None, swim=False):
 	m_blush = mat("blush", tuple(a * 0.62 + b * 0.38 for a, b in zip(skin[:3], srgb(255, 110, 110)[:3])) + (1.0,), 0.5)
 	m_lip = mat("nose", tuple(min(1.0, c * 1.05) for c in skin[:3]) + (1.0,), 0.6)
 
+	m_top = m_sleeve = m_bot = m_shoe = m_sole = m_sock = None
+	if cl:
+		fab = lambda n, rgb: mat(n, srgb(*rgb), 0.9, "fabric")
+		m_top = fab("top", cl["top"][1])
+		m_sleeve = fab("sleeve", cl["sleeve"]) if "sleeve" in cl else m_top
+		m_bot = fab("bottom", cl["bottom"][1]) if cl.get("bottom") else None
+		m_shoe, m_sole = mat("shoe", srgb(*cl["shoes"][0]), 0.8, "plain"), mat("sole", srgb(*cl["shoes"][1]), 0.8, "plain")
+		m_sock = fab("sock", cl["socks"]) if cl.get("socks") else None
 	waist = hip_z + 0.2
 	up = _pivot(kid, "upper", (0, 0, waist), roll)     # the upper body, which bends forward for a stooped standing pose
 	uz = lambda z: z - waist                           # a z measured from the torso centre, relative to ``upper``
 	# Torso: for boys skin with trunks, for girls a swimsuit in the outfit colour.
 	torso_mat = m_suit if p["girl"] else m_skin
-	_mesh(kid, "sphere", "torso", (tw, td, th), (0, 0, uz(0.0)), torso_mat, up)
-	if p["girl"]:
-		_mesh(kid, "sphere", "suitHips", (tw * 0.88, td * 0.93, 0.3), (0, 0, hip_z + 0.08), m_suit, roll)
+	if cl:
+		torso_mat = m_top
+		grow = 1.1 if cl["top"][0] in ("jacket", "suit", "cardigan") else 1.04
+		_mesh(kid, "sphere", "torso", (tw * grow, td * grow, th * 1.02), (0, 0, uz(0.0)), torso_mat, up)
+		_mesh(kid, "sphere", "hem", (tw * grow * 0.95, td * grow * 0.97, 0.3), (0, 0, uz(hip_z + 0.1)), m_bot or torso_mat, up)
 	else:
-		_mesh(kid, "sphere", "trunks", (tw * 1.03, td * 1.04, 0.3), (0, 0, uz(hip_z + 0.12)), m_suit, up)
+		_mesh(kid, "sphere", "torso", (tw, td, th), (0, 0, uz(0.0)), torso_mat, up)
+		if p["girl"]:
+			_mesh(kid, "sphere", "suitHips", (tw * 0.88, td * 0.93, 0.3), (0, 0, hip_z + 0.08), m_suit, roll)
+		else:
+			_mesh(kid, "sphere", "trunks", (tw * 1.03, td * 1.04, 0.3), (0, 0, uz(hip_z + 0.12)), m_suit, up)
 	# Head: big, on the shoulders (no real neck).
 	neck = _pivot(kid, "neck", (0, 0.0, uz(th - 0.12)), up)    # yaw: turning the head
 	nod = _pivot(kid, "nod", (0, 0, 0), neck)                  # pitch: looking up and down
@@ -451,11 +498,15 @@ def build_kid(preset_name, underwater=True, tag=None, swim=False):
 	for s in (-1, 1):
 		sh = _pivot(kid, f"shoulder{s}", ((tw + 0.02) * s, 0, uz(th - 0.24)), up)
 		sw = _pivot(kid, f"swing{s}", (0, 0, 0), sh)
-		_mesh(kid, "sphere", f"shoulderBall{s}", (0.22 * limb,) * 3, (0, 0, 0), m_skin, sw)
-		_limb(kid, f"upperArm{s}", (0, 0, 0), (0, 0, -au), 0.22 * limb, 0.19 * limb, m_skin, sw)
+		_mesh(kid, "sphere", f"shoulderBall{s}", (0.22 * limb * (1.12 if cl and cl.get("sleeves") else 1.0),) * 3, (0, 0, 0), m_sleeve if cl and cl.get("sleeves") else m_skin, sw)
+		sleeve_kind = cl.get("sleeves") if cl else None
+		m_up = m_sleeve if sleeve_kind in ("long", "short") else m_skin
+		m_fo = m_sleeve if sleeve_kind == "long" else m_skin
+		fat = 1.12 if sleeve_kind else 1.0
+		_limb(kid, f"upperArm{s}", (0, 0, 0), (0, 0, -au), 0.22 * limb * fat, 0.19 * limb * fat, m_up, sw)
 		el = _pivot(kid, f"elbow{s}", (0, 0, -au), sw)
-		_mesh(kid, "sphere", f"elbowBall{s}", (0.19 * limb,) * 3, (0, 0, 0), m_skin, el)
-		_limb(kid, f"foreArm{s}", (0, 0, 0), (0, 0, -al), 0.19 * limb, 0.17 * limb, m_skin, el)
+		_mesh(kid, "sphere", f"elbowBall{s}", (0.19 * limb * fat,) * 3, (0, 0, 0), m_fo if sleeve_kind == "long" else m_up, el)
+		_limb(kid, f"foreArm{s}", (0, 0, 0), (0, 0, -al), 0.19 * limb * (fat if sleeve_kind == "long" else 1.0), 0.17 * limb * (fat if sleeve_kind == "long" else 1.0), m_fo, el)
 		_mesh(kid, "sphere", f"hand{s}", (0.23 * limb, 0.22 * limb, 0.23 * limb), (0, 0, -al - 0.08), m_rosy, el)
 		kid.ends[f"hand{s}"] = _pivot(kid, f"handEnd{s}", (0, 0, -al - 0.12), el)
 	# Legs: hip (abduction, swing), knee, ankle and a bare foot.
@@ -463,16 +514,64 @@ def build_kid(preset_name, underwater=True, tag=None, swim=False):
 	for s in (-1, 1):
 		hp = _pivot(kid, f"hip{s}", ((0.3 + 0.1 * (limb - 1)) * s * (tw / 0.62) ** 0.5, 0, hip_z), roll)
 		sw = _pivot(kid, f"legSwing{s}", (0, 0, 0), hp)
-		_limb(kid, f"thigh{s}", (0, 0, 0), (0, 0, -t), 0.28 * limb, 0.23 * limb, m_skin, sw)
-		if not p["girl"]:
+		bot = cl["bottom"][0] if cl and cl.get("bottom") else None
+		trousers = bot in ("trousers", "dungarees")
+		m_th = m_bot if bot in ("trousers", "dungarees", "shorts") else m_skin
+		m_sh = m_bot if trousers else m_skin
+		lfat = 1.07 if trousers else (1.1 if bot == "shorts" else 1.0)
+		_limb(kid, f"thigh{s}", (0, 0, 0), (0, 0, -t), 0.28 * limb * lfat, 0.23 * limb * lfat, m_th, sw)
+		if not cl and not p["girl"]:
 			_limb(kid, f"trunkLeg{s}", (0, 0, 0.1), (0, 0, -t * 0.85), 0.31 * limb, 0.3 * limb, m_suit, sw)
 		kn = _pivot(kid, f"knee{s}", (0, 0, -t), sw)
-		_mesh(kid, "sphere", f"kneeBall{s}", (0.23 * limb,) * 3, (0, 0, 0), m_skin, kn)
-		_limb(kid, f"shin{s}", (0, 0, 0), (0, 0, -sn), 0.23 * limb, 0.2 * limb, m_skin, kn)
+		_mesh(kid, "sphere", f"kneeBall{s}", (0.23 * limb * (lfat if trousers else 1.0),) * 3, (0, 0, 0), m_sh, kn)
+		_limb(kid, f"shin{s}", (0, 0, 0), (0, 0, -sn), 0.23 * limb * (lfat if trousers else 1.0), 0.2 * limb * (lfat if trousers else 1.0), m_sh, kn)
+		if cl and m_sock is not None and not trousers:
+			_limb(kid, f"sock{s}", (0, 0, -sn * 0.42), (0, 0, -sn), 0.215 * limb, 0.205 * limb, m_sock, kn)
 		an = _pivot(kid, f"ankle{s}", (0, 0, -sn - 0.02), kn)
-		_mesh(kid, "sphere", f"foot{s}", (0.26 * limb, 0.42 * limb, 0.18 * limb), (0, 0.12, -0.08), m_rosy, an)
+		if cl:
+			_mesh(kid, "sphere", f"foot{s}", (0.24 * limb, 0.4 * limb, 0.15 * limb), (0, 0.11, 0.0), m_shoe, an)
+			_mesh(kid, "sphere", f"sole{s}", (0.25 * limb, 0.42 * limb, 0.055 * limb), (0, 0.11, -0.08), m_sole, an)
+		else:
+			_mesh(kid, "sphere", f"foot{s}", (0.26 * limb, 0.42 * limb, 0.18 * limb), (0, 0.12, -0.08), m_rosy, an)
 		kid.ends[f"foot{s}"] = _pivot(kid, f"footEnd{s}", (0, 0.05, -0.14), an)
+	if cl:
+		_build_clothes_extras(kid, p, cl, b, dict(th=th, tw=tw, td=td, hip_z=hip_z, uz=uz, up=up, roll=roll, head=head, m_top=m_top, m_bot=m_bot, m_sleeve=m_sleeve, m_dark=m_dark, mat=mat))
 	return kid
+
+
+def _build_clothes_extras(kid, p, cl, b, c):
+	"""Skirt, bib, hat and camera of the land outfits (the rest is material and thickness changes in ``build_kid``)."""
+	th, tw, td, hip_z, uz, up, roll, head = c["th"], c["tw"], c["td"], c["hip_z"], c["uz"], c["up"], c["roll"], c["head"]
+	bottom = cl.get("bottom")
+	if bottom and bottom[0] == "skirt":
+		length = cl.get("skirt_len", 0.5)
+		waist_z = hip_z + 0.25
+		bpy.ops.mesh.primitive_cone_add(vertices=28, radius1=tw * 1.32, radius2=tw * 0.95, depth=length)
+		o = bpy.context.active_object
+		o.name = "skirt"
+		o.location = (0, 0, waist_z - length / 2)
+		bpy.ops.object.shade_smooth()
+		o.data.materials.append(c["m_bot"])
+		o.parent = roll
+		kid.objects.append(o)
+	if bottom and bottom[0] == "dungarees":
+		_mesh(kid, "sphere", "bib", (tw * 0.6, 0.13, 0.4), (0, td * 0.9, uz(0.1)), c["m_bot"], up)
+		for s in (-1, 1):
+			_limb(kid, f"strap{s}", (0.3 * s, td * 0.78, uz(0.42)), (0.34 * s, td * 0.2, uz(th - 0.02)), 0.07, 0.07, c["m_bot"], up)
+	hat = cl.get("hat")
+	if hat:
+		m_hat = c["mat"]("hat", srgb(*hat[1]), 0.9, "fabric")
+		if hat[0] == "cap":
+			_mesh(kid, "sphere", "brim", (0.5, 0.62, 0.07), (0, 0.66, 0.34), m_hat, head, rot=(math.radians(-12), 0, 0), segments=14)
+		else:  # safari hat: a crown, a wide brim and a darker band
+			_mesh(kid, "sphere", "crown", (0.78, 0.76, 0.5), (0, -0.02, 0.54), m_hat, head, segments=16)
+			_mesh(kid, "sphere", "hatBrim", (1.1, 1.08, 0.08), (0, 0.02, 0.4), m_hat, head, rot=(math.radians(-6), 0, 0), segments=18)
+			_mesh(kid, "cylinder", "hatBand", (0.77, 0.75, 0.07), (0, -0.02, 0.46), c["m_dark"], head, segments=18)
+	if cl.get("camera"):
+		_mesh(kid, "cylinder", "camBody", (0.26, 0.15, 0.17), (0.18, td * 1.05 + 0.15, uz(0.05)), c["m_dark"], up, rot=(math.radians(90), 0, 0), segments=10)
+		_mesh(kid, "cylinder", "camLens", (0.1, 0.1, 0.1), (0.18, td * 1.05 + 0.3, uz(0.05)), c["m_dark"], up, rot=(math.radians(90), 0, 0), segments=10)
+		for s in (-1, 1):
+			_limb(kid, f"strapCam{s}", (0.34 * s, td * 0.7, uz(th - 0.1)), (0.18 + 0.04 * s, td * 1.05 + 0.1, uz(0.12)), 0.035, 0.035, c["m_dark"], up)
 
 
 def _wet_hair(objs):
@@ -490,7 +589,7 @@ def _wet_hair(objs):
 		elif n.startswith("curl"):
 			o.location = o.location * 0.9
 			o.scale = o.scale * 0.8
-		elif n.startswith(("hairCap", "bobCap", "swimCap", "bobBack")):
+		elif n.startswith(("hairCap", "bobCap", "swimCap", "bobBack", "hairBack")):
 			o.scale = o.scale * WET_HAIR_SCALE
 			o.location = o.location * WET_HAIR_SCALE
 		elif n.startswith("bun"):
@@ -501,6 +600,9 @@ def _wet_hair(objs):
 def _build_hair(kid, p, head, m_hair, m_bobble, m_cap):
 	style = p["hair_style"]
 	hx, hy, hz = 0.72, 0.7, 0.67
+	if style in ("spiky", "pigtails", "curly", "short", "bun", "perm"):
+		# The hair also covers the back of the head, which shows when the head tilts forward.
+		_mesh(kid, "sphere", "hairBack", (0.7, 0.46, 0.56), (0, -0.4, -0.04), m_hair, head, segments=14)
 	if style in ("spiky", "pigtails", "curly"):
 		_mesh(kid, "sphere", "hairCap", (0.77, 0.76, 0.56), (0, -0.18, 0.32), m_hair, head, segments=16)
 	if style == "spiky":
@@ -525,11 +627,11 @@ def _build_hair(kid, p, head, m_hair, m_bobble, m_cap):
 		_limb(kid, "fringe1", (0.15, 0.55, 0.5), (0.42, 0.85, 0.6), 0.2, 0.02, m_hair, head)
 	elif style == "pigtails":
 		for s in (-1, 1):
-			chain = [((0.68 * s, -0.04, 0.34), 0.3), ((0.96 * s, -0.05, 0.4), 0.28), ((1.1 * s, -0.05, 0.7), 0.23), ((1.1 * s, -0.05, 1.0), 0.14)]
+			chain = [((0.64 * s, -0.04, 0.34), 0.29), ((0.86 * s, -0.05, 0.4), 0.26), ((0.97 * s, -0.05, 0.68), 0.21), ((0.97 * s, -0.05, 0.98), 0.13)]
 			for j, (loc, r) in enumerate(chain):
 				_mesh(kid, "sphere", f"tail{s}_{j}", (r, r, r * 1.15), loc, m_hair, head, segments=10)
 			if p.get("bobble"):
-				_mesh(kid, "sphere", f"bobble{s}", (0.14, 0.14, 0.14), (0.8 * s, -0.04, 0.3), m_bobble, head, segments=8)
+				_mesh(kid, "sphere", f"bobble{s}", (0.14, 0.14, 0.14), (0.74 * s, -0.04, 0.3), m_bobble, head, segments=8)
 		# Fringe and a little top curl so it does not look bald from the front.
 		_mesh(kid, "sphere", "fringe", (0.55, 0.3, 0.2), (0, 0.52, 0.5), m_hair, head, segments=10)
 		if p.get("topknot"):
@@ -627,7 +729,7 @@ class Stage:
 	pass
 
 
-def setup_scene(canvas, origin, edition="TPW"):
+def setup_scene(canvas, origin, edition="TPW", detail="fpc"):
 	"""Configures render settings, lights and an orthographic camera. ``canvas`` is the sprite size in pixels and
 	``origin`` the pixel (from the top left) where the world origin lands."""
 	scene = bpy.context.scene
@@ -635,7 +737,8 @@ def setup_scene(canvas, origin, edition="TPW"):
 		bpy.data.objects.remove(o, do_unlink=True)
 	st = Stage()
 	st.scene, st.canvas, st.origin = scene, canvas, origin
-	st.elevation, st.ppu = EDITIONS[edition]["elevation"], EDITIONS[edition]["ppu"]
+	st.elevation = EDITIONS[edition]["elevation"]
+	st.ppu = EDITIONS[edition]["ppu" if detail == "fpc" else "ppu_tpc"]
 	for engine in ("BLENDER_EEVEE", "BLENDER_EEVEE_NEXT"):
 		try:
 			scene.render.engine = engine

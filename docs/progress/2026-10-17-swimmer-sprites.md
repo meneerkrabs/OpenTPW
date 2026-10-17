@@ -13,3 +13,4 @@
 - shorter spikes on the spiky-haired boys.
 
 Standing heights stay within 3 px of the originals; the tables are in CONTENT-KIT.md.
+- **Full guest sets.** `opentpw_guest_sprites.py` renders replacement sets for every guest of both editions (TPW kids; TPI kids, parents, grandparents): clothed outfits (`CLOTHES`, a preset switch), every original animation slot with its original number, frame count and directions (poses in `opentpw_guest_anims.py`), the swim slots 8 to 10, and the 7 x 8 rider head sets, as quantised PNGs plus a `set.json` with hotspot origins for the packer. Frames are rendered at the full-detail (FPC) scale, 1.25 times the TPC reference scale. A throwaway check packed all 32 sets with `SpriteSetBuilder` and read them back (slot tables match the originals). Shipping path: `data/esprites/Generic/<Folder>/SPR_xx.*` in a mod's `overrides`.

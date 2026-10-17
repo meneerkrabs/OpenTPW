@@ -129,26 +129,32 @@ rest.
 
 | Constant | TPW | TPI |
 | --- | --- | --- |
-| Camera elevation | 32 degrees | 42 degrees (the TPI sprites are rendered from a steeper camera) |
-| Pixels per unit | 9.5 | 12.8 |
-| Original cell / standing hotspot | 48 x 56, feet at (24, 53) | 64 x 80, feet at (32, 70) |
-| Swim frame canvas / hotspot | 64 x 48, (32, 27) | 80 x 64, (40, 36) |
+| Camera elevation | 32 degrees | 34 degrees (re-measured against the FPC frames: 25 degrees matched widths and heights best, 42 the look of hats and shoulders, so a compromise) |
+| Pixels per unit (full detail, `.FPC`, what the game draws) | 11.875 | 14.3 |
+| Pixels per unit (low detail, `.TPC`, the calibration reference) | 9.5 | 11.44 |
+| Calibration reference cell / standing hotspot | 48 x 56, feet at (24, 53) | 64 x 80, feet at (32, 70) |
+| Swim frame canvas / hotspot | 80 x 60, (40, 34) | 100 x 80, (50, 45) |
+
+The guest sets ship their art twice: a low-detail `.TPC` bank and the full-detail `.FPC` bank the game opens (ESP byte 0x10C,
+[GUESTS.md](GUESTS.md)). The FPC frames are 1.25 times the size of the TPC ones (a kid stands 40 to 42 px tall in the FPC, 32 to
+37 in the TPC). The reference sheets the calibration was done against came from the TPC (`ppu_tpc`); every sprite the generators
+write is rendered at the FPC scale (`ppu`, 1.25 times larger), and `opentpw_kid_calibrate.py` keeps comparing at the TPC scale.
 
 `tools/blender/opentpw_kid_calibrate.py` renders the standing kid in the original's cell for every set and, given a
 reference sheet of the original standing frames (viewed locally only), writes a side-by-side comparison (original left,
-ours right) and prints heights. Standing height in pixels (direction 4), ours vs original:
+ours right) and prints heights. Standing height in pixels (direction 4), ours vs original, at the TPC scale of the reference sheets (the FPC-scale sets of the next section are 1.25 times larger):
 
 | TPW | BE | BI | CH | FR | KI | SA | SU | TA |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| ours | 33 | 34 | 32 | 34 | 33 | 31 | 32 | 33 |
+| ours | 32 | 33 | 31 | 33 | 32 | 30 | 31 | 32 |
 | original | 32 | 32 | 34 | 31 | 34 | 30 | 34 | 32 |
 
 | TPI | BD | GB | GK | KB | FA | MO | GM | GR |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| ours | 42 | 41 | 40 | 42 | 51 | 49 | 44 | 40 |
+| ours | 38 | 37 | 36 | 39 | 49 | 47 | 41 | 37 |
 | original | 40 | 41 | 38 | 43 | 50 | 48 | 42 | 38 |
 
-All within 3 pixels, most within 2. The proportions follow the originals more closely since October 17, 2026:
+All within 3 pixels for TPW and within 4 for TPI (the TPI kids come out a little short), most within 2. The proportions follow the originals more closely since October 17, 2026:
 - smaller eyes set higher in the face, with the forehead visible under the hair;
 - a smaller kid head (scale 1.0, was 1.14);
 - a longer torso and longer legs for kids and adults;
@@ -193,3 +199,109 @@ into ESP/TPC banks goes through the sprite-set writer, which is separate from th
 
 `tools/blender/opentpw_swim_compare.py` builds a before/after sheet of two renders (for reviewing a change to the
 generator): per set a 1x and a 4x band with old | new for the crawl from two directions and treading water.
+
+## Guest sprite sets
+
+For the swimming-pool mod every guest is drawn in our own style, not only the swimmers. The mod's `overrides` folder replaces any
+game file by its data-relative path, WAD members included ([MODS.md](MODS.md#overrides)), and `GuestSpriteAtlas` reads the guest
+sets as `/esprites/Generic/<Folder>/<NAME>.ESP` plus the bank its ESP selects, so a replacement set ships at the original paths:
+
+```
+data/esprites/Generic/Kids/SPR_BE.ESP        .FPC   .TPC        (TPW kids; TPI: SPR_BD, SPR_GB, SPR_GK, SPR_KB)
+data/esprites/Generic/Parents/SPR_FA.ESP     .FPC   .TPC        (TPI: SPR_FA, SPR_MO)
+data/esprites/Generic/Grandparents/SPR_GM.ESP .FPC  .TPC        (TPI: SPR_GM, SPR_GR)
+data/esprites/Generic/Kidsheads/SPR_BE.ESP   .TPC               (the head sets ship a .TPC only; also Parentsheads, Grandparentsheads)
+```
+
+The path is the WAD member path below `esprites` with the archive's name dropped, compared without case (the TPI members
+`Kidsheads/Spr_bd` and `Spr_gb` have lower-case names). Directory listings stay the game's, which is how `LoadSets` finds the sets: an
+override can replace the members of an existing set but not add a new set, so a replacement keeps the original set names, and
+an ESP replaces the whole animation table (that is where our extra slots live).
+
+### Generating the sets
+
+```sh
+B=/Applications/Blender.app/Contents/MacOS/Blender
+$B -b --factory-startup --python tools/blender/opentpw_guest_sprites.py -- --out /tmp/swimart/guests --edition TPW
+$B -b --factory-startup --python tools/blender/opentpw_guest_sprites.py -- --out /tmp/swimart/guests --edition TPI
+# options: --sets BE,CH   --part land,swim,heads   --slots walk,run   --outfit clothes|swim   --no-quantise   --dither 0.05
+```
+
+Per set a folder `<out>/<edition>/<Folder>/<SET>/` with `slot<NN>_d<d>_f<f>.png` (RGBA, trimmed to the frame's content, the whole
+set quantised to one 255-colour palette, median cut as `SpriteSetBuilder` does) and a `set.json` for the packer (the content-kit
+`sprites` command packs it with `SpriteSetBuilder`; nothing here writes ESP or bank files):
+
+```json
+{ "name": "SPR_BE", "set": "BE", "edition": "TPW", "folder": "Generic/Kids", "fullDetail": true, "kidFlag": 0, "colours": 255,
+  "slots": [ { "slot": 1, "name": "walk", "source": "land", "directions": 5, "framesPerDirection": 8,
+               "frames": [ [ { "file": "slot01_d0_f0.png", "originX": -13, "originY": -39, "width": 22, "height": 40 }, "..." ], "..." ] } ] }
+```
+
+`name` is the set's member name; `fullDetail` is the ESP byte 0x10C (true: the game opens the `.FPC`, and both banks are written with the
+same content, as the shipped full-detail sets do; false for the heads); `kidFlag` is ESP byte 0x10D (1 for the girls); `frames` are
+listed direction-major, as the bank stores them. Heads have `source` `heads`, one slot 0 of 7 directions (elevation rows) by 8 frames
+(azimuths).
+
+### Hotspot rule
+
+`originX`/`originY` follow the reader (`SpriteFrame.OriginX/OriginY`): the offset of the frame's top-left pixel from the hotspot, the
+quad spanning `originX` to `originX + width` (and likewise vertically) in 1/128 units. The hotspot of a standing, walking, running
+or gesturing guest is on the floor between the feet; ours is the world origin pixel of the render, moved one pixel lower
+(`LAND_HOTSPOT_DROP`), because our soles reach 1 to 2 pixels lower than the originals' (the originals' soles end 1 to 2 pixels below
+the hotspot). A swimmer's hotspot is the centre of the torso at the water line (slots 8 to 10), a head's the centre of the skull. All of
+a set's frames of one slot share one hotspot, so the guest does not jump between frames. Frame content against the originals' FPC
+frames (ours / original, in pixels; `top`/`bottom` are `originY` and `originY + height`):
+
+| Set | Slot | Width | Height | Top | Bottom |
+| --- | --- | --- | --- | --- | --- |
+
+
+### Slots
+
+The original slots keep their numbers, frame counts and directions (5 directions: 0 away from the camera, 2 facing screen right, 4
+facing the camera; the game mirrors 5 to 7). The meaning of each slot was identified by looking at the original frames:
+
+| Slot | Meaning | Frames per direction | Sets |
+| --- | --- | --- | --- |
+| 0 | stand | 1 | all |
+| 1 | walk | 8 | all |
+| 2 | run | 8 | TPW kids, TPI kids |
+| 4 | gesture A: turn and point, spread the arms, bow | 4 | all |
+| 6 | gesture B: a hand to the chin (thinking), tilt the head, nod | 4 | all |
+| 11 | stumble, hunching over a hand on the stomach (sick) | 4 | TPW kids |
+| 12 | cheer: arms up, a hop, down | 4 | all |
+| 14 | wait with the hands on the hips | 2 | TPW kids |
+| 15 | TPI idle: one arm points out and sweeps | 4 | TPI kids and adults |
+| 8 | **new** swim: front crawl | 8 | all |
+| 9 | **new** swim: breaststroke | 8 | all |
+| 10 | **new** swim: treading water | 4 | all |
+
+The TPI adults have no run slot, as in the originals. Slots 8 to 10 are free in every original table (TPW kids use 0, 1, 2, 4, 6, 11, 12, 14;
+TPI kids 0, 1, 2, 4, 6, 12, 15; TPI adults 0, 1, 4, 6, 12, 15), the pose generators are `tools/blender/opentpw_guest_anims.py` (land)
+and the swim poses of `opentpw_swim_sprites.py`. The motions were recreated from the originals' frames (stride width and arm swing of
+the walk and run, the arm arcs of the gestures, the hunch of the stumble, the raised arms of the cheer); the timing is a plain
+even sampling of each loop and the poses are not frame-for-frame copies.
+
+### Outfits
+
+`build_kid(preset, outfit="clothes")` builds the land outfit of `CLOTHES` (jacket, dress, shirt, cardigan or suit; sleeves; shorts,
+trousers, skirt or dungarees; socks; shoes; the TPI caps, the dad's safari hat and camera), after the originals' standing sprites;
+`outfit="swim"` the swimwear. The generator uses the clothes for the land slots and the swimwear for the swim slots, and
+`--outfit swim` (or the preset switch in `build_kid`) draws swimwear on land too, for a mod that wants it everywhere.
+
+### Head sets
+
+`Generic/Kidsheads`, `Parentsheads` and `Grandparentsheads` hold one slot 0 of 7 elevation rows by 8 azimuths, direction-major
+(frame = 8 * row + column), drawn on riders of `ADDHEAD` rides ([GUESTS.md](GUESTS.md#riders-heads)). The camera sits at row * 30
+degrees from the head's up pole and column * 45 degrees from its front, column 2 seeing the head's left side (face to the left in the
+picture), which is how the original frames are arranged; at the poles the picture's up follows the azimuth. Dry hair, hats on. A head is
+rendered at 1 / 0.685 of the body's pixel scale (the game draws a head sprite at 0.685 of the body's scale) times 0.9, so the frames are
+25 to 42 px wide like the originals' (25 to 40). The shipped TPW sets store 55 or 56 frames (one set 64); ours store 56.
+
+### Not reproduced well
+
+- Faces do not change: the originals' cheer, stumble and sick frames show different mouths and eyes; ours keep one face.
+- The hands cannot reach the hips (the elbow only bends in the arm's plane), so slot 14 and the stumble approximate them.
+- Slots 4 and 6 of the originals have a few extra poses (a head shake, a shrug) that are folded into the four we make.
+- Our lighting is baked from one fixed direction, so the mirrored half of the directions is lit from the other side, as in the originals.
+- The shipped heads' hotspots sit about 5 pixels lower than ours; the head frames' sizes are matched, their placement is not.

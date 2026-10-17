@@ -13,14 +13,17 @@ public enum ThemeParkIncBodySegmentKind
 	/// <summary>A group of segments read once (an embedded record).</summary>
 	Group,
 	/// <summary>A history ring: <c>u32 mCurrentEntry, u32 mNumEntries, u8 mWrappedAround, mTemp</c>, then <c>mNumEntries</c> entries of the element size.</summary>
-	Ring
+	Ring,
+	/// <summary>A counted list: a <c>u32</c> count (named by <see cref="ThemeParkIncBodySegment.CountName"/>) and then that many records. The loader compares the count signed, so a count of 0 or below reads no record.</summary>
+	Table
 }
 
 /// <summary>One segment of a thing body layout. <see cref="Size"/> is a field's width or a ring's element width; <see cref="Capacity"/> a ring's in-memory capacity.</summary>
 public sealed class ThemeParkIncBodySegment
 {
-	internal ThemeParkIncBodySegment( ThemeParkIncBodySegmentKind kind, string name, int size, int count, int capacity, IReadOnlyList<ThemeParkIncBodySegment> children )
+	internal ThemeParkIncBodySegment( ThemeParkIncBodySegmentKind kind, string name, int size, int count, int capacity, IReadOnlyList<ThemeParkIncBodySegment> children, string countName = "" )
 	{
+		CountName = countName;
 		Kind = kind;
 		Name = name;
 		Size = size;
@@ -30,6 +33,8 @@ public sealed class ThemeParkIncBodySegment
 	}
 
 	public ThemeParkIncBodySegmentKind Kind { get; }
+	/// <summary>For a table, the name of its count word.</summary>
+	public string CountName { get; }
 	/// <summary>The member name from the original's serializer (its field log); <c>_</c> for the unnamed element of an array.</summary>
 	public string Name { get; }
 	public int Size { get; }
@@ -49,8 +54,8 @@ public readonly record struct ThemeParkIncBodyField( string Path, int Offset, in
 /// </summary>
 // [BIN:TPI-EXE:0x64c771 thing dispatch] cmp eax(model - 1), 0x16; jmp [eax*4 + 0x64d7e0]. Per case: allocate, construct, set the thing id, then call the class load with (stream, 0 = load, version 1, id); the same routine also saves.
 // [BIN:TPI-EXE:0x637230 thing base load] mX, mY, mMapChild, mMapParent (2 bytes each) start every body.
-// [BIN:TPI-EXE:0x62f2b0 history ring] mCurrentEntry 4, mNumEntries 4, mWrappedAround 1, mTemp (the element size) and then mNumEntries elements read one by one into the ring's array in the object; the array holds Capacity elements, and the (Capacity + 1)th entry would overwrite mCurrentEntry in memory, so a count above the capacity is not a ring the original could have written
-// [APPROX:SAVE-944] the guest, staff and gardener layouts are read from their load routines and an emulation of them, not from any save; a word is typed by width only; a ring count above the in-memory capacity is refused where the original would overrun the ring
+// [BIN:TPI-EXE:0x62f2b0 history ring] mCurrentEntry 4, mNumEntries 4, mWrappedAround 1, mTemp (the element size) and then mNumEntries elements read one by one into the ring's array in the object; the array holds Capacity elements (the byte ring's constructor 0x5bbcbc makes 50; the 51st slot is alignment padding), and the entries after the last slot would overwrite the ring's own counters in memory, so a count above the capacity is not a ring the original could have written. The original compares the count signed (jle/jl 0x62f5e5), so a count of 0x80000000 or more reads no entry there, while this reader refuses it
+// [APPROX:SAVE-944] the guest, staff and gardener layouts are read from their load routines and an emulation of them, not from any save; a word is typed by width only; a ring count above the capacity (the byte ring holds 50) or with the sign bit set is refused where the original reads on or reads none; never checked against a real save
 public sealed partial class ThemeParkIncBodyLayout
 {
 	/// <summary>The bytes before a ring's mTemp: mCurrentEntry, mNumEntries and mWrappedAround.</summary>
@@ -70,7 +75,7 @@ public sealed partial class ThemeParkIncBodyLayout
 	public IReadOnlyList<ThemeParkIncBodySegment> Segments { get; }
 	/// <summary>The width when every ring is empty.</summary>
 	public int MinimumBytes { get; }
-	/// <summary>The width when every ring is full.</summary>
+	/// <summary>The width when every ring is full (saturated at <see cref="int.MaxValue"/> for a body with a counted list, which has no bound).</summary>
 	public int MaximumBytes { get; }
 
 	/// <summary>The layouts of the models with a traced variable or fixed record body (the guests, staff, gardener, staff HQ, advisor controller, park analyser, research lab, weather and challenge system).</summary>
@@ -115,6 +120,14 @@ public sealed partial class ThemeParkIncBodyLayout
 				case ThemeParkIncBodySegmentKind.Group:
 					position = Skip( payload, position, segment.Children );
 					break;
+				case ThemeParkIncBodySegmentKind.Table:
+				{
+					position = Advance( payload, position, 4 );
+					var records = BinaryPrimitives.ReadInt32LittleEndian( payload[(position - 4)..] );
+					for ( var index = 0; index < records; index++ )
+						position = Skip( payload, position, segment.Children );
+					break;
+				}
 				default:
 					position = Advance( payload, position, RingHeaderBytes + segment.Size, segment, out var count );
 					position = Advance( payload, position, checked( (int)count * segment.Size ) );
@@ -158,6 +171,15 @@ public sealed partial class ThemeParkIncBodyLayout
 				case ThemeParkIncBodySegmentKind.Group:
 					position = Collect( body, position, segment.Children, $"{prefix}{segment.Name}.", fields );
 					break;
+				case ThemeParkIncBodySegmentKind.Table:
+				{
+					fields.Add( new ThemeParkIncBodyField( prefix + segment.CountName, position, 4 ) );
+					position = Advance( body, position, 4 );
+					var records = BinaryPrimitives.ReadInt32LittleEndian( body[(position - 4)..] );
+					for ( var index = 0; index < records; index++ )
+						position = Collect( body, position, segment.Children, $"{prefix}{segment.Name}[{index}].", fields );
+					break;
+				}
 				default:
 				{
 					var head = segment.Name == "_" ? prefix : prefix + segment.Name + ".";
@@ -179,18 +201,19 @@ public sealed partial class ThemeParkIncBodyLayout
 
 	private static int Bound( IReadOnlyList<ThemeParkIncBodySegment> segments, bool full )
 	{
-		var total = 0;
+		long total = 0;
 		foreach ( var segment in segments )
 		{
 			total += segment.Kind switch
 			{
-				ThemeParkIncBodySegmentKind.Field => segment.Size,
+				ThemeParkIncBodySegmentKind.Field => (long)segment.Size,
 				ThemeParkIncBodySegmentKind.Repeat => segment.Count * Bound( segment.Children, full ),
 				ThemeParkIncBodySegmentKind.Group => Bound( segment.Children, full ),
+				ThemeParkIncBodySegmentKind.Table => 4L + (full ? int.MaxValue : 0),
 				_ => RingHeaderBytes + segment.Size + (full ? segment.Capacity * segment.Size : 0),
 			};
 		}
-		return total;
+		return (int)Math.Min( total, int.MaxValue );
 	}
 
 	private static IReadOnlyDictionary<ThemeParkIncThingModel, ThemeParkIncBodyLayout> Build()
@@ -215,17 +238,18 @@ public sealed partial class ThemeParkIncBodyLayout
 		Add( ThemeParkIncThingModel.Weather, "weather", WeatherBody );
 		Add( ThemeParkIncThingModel.ChallengeSystem, "challenge system", ChallengeBody );
 		Add( ThemeParkIncThingModel.Gardener, "gardener", GardenerBody );
+		Add( ThemeParkIncThingModel.TagSystem, "tag system", TagSystemBody );
 		return layouts;
 	}
 
 	/// <summary>
 	/// Parses the layout text: one segment per line, <c>size name</c> for a field, <c>rep count name</c> (closed by <c>end</c>) for an array, <c>group name</c> (closed by <c>end</c>) for an
-	/// embedded record, <c>ring elementSize capacity name</c> for a history ring and <c>use fragment</c> to include a shared part. The name <c>_</c> is the unnamed element of an array of one field.
+	/// embedded record, <c>table countName recordName</c> (closed by <c>end</c>) for a counted list, <c>ring elementSize capacity name</c> for a history ring and <c>use fragment</c> to include a shared part. The name <c>_</c> is the unnamed element of an array of one field.
 	/// </summary>
 	internal static IReadOnlyList<ThemeParkIncBodySegment> Parse( string text, IReadOnlyDictionary<string, string> fragments )
 	{
 		var root = new List<ThemeParkIncBodySegment>();
-		var open = new Stack<(List<ThemeParkIncBodySegment> Items, ThemeParkIncBodySegmentKind Kind, string Name, int Count)>();
+		var open = new Stack<(List<ThemeParkIncBodySegment> Items, ThemeParkIncBodySegmentKind Kind, string Name, int Count, string CountName)>();
 		var current = root;
 		foreach ( var raw in text.Split( '\n', StringSplitOptions.RemoveEmptyEntries ) )
 		{
@@ -240,14 +264,18 @@ public sealed partial class ThemeParkIncBodyLayout
 					break;
 				case "end":
 				{
-					var (parent, kind, name, count) = open.Pop();
-					parent.Add( new ThemeParkIncBodySegment( kind, name, 0, count, 0, current.AsReadOnly() ) );
+					var (parent, kind, name, count, countName) = open.Pop();
+					parent.Add( new ThemeParkIncBodySegment( kind, name, 0, count, 0, current.AsReadOnly(), countName ) );
 					current = parent;
 					break;
 				}
 				case "rep":
 				case "group":
-					open.Push( (current, token[0] == "rep" ? ThemeParkIncBodySegmentKind.Repeat : ThemeParkIncBodySegmentKind.Group, token[^1], token[0] == "rep" ? int.Parse( token[1] ) : 1) );
+					open.Push( (current, token[0] == "rep" ? ThemeParkIncBodySegmentKind.Repeat : ThemeParkIncBodySegmentKind.Group, token[^1], token[0] == "rep" ? int.Parse( token[1] ) : 1, string.Empty) );
+					current = new List<ThemeParkIncBodySegment>();
+					break;
+				case "table":
+					open.Push( (current, ThemeParkIncBodySegmentKind.Table, token[2], 0, token[1]) );
 					current = new List<ThemeParkIncBodySegment>();
 					break;
 				case "ring":

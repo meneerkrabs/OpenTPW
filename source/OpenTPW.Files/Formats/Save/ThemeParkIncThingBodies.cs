@@ -355,6 +355,17 @@ public sealed record ThemeParkIncChallengeSystem(
 }
 
 
+/// <summary>One saved mail message of the tag system (a 0xe2c-byte record, load 0x6355d0): the 3,624 bytes before the flag are kept raw (texts and time stamps copied into the message object), then the flag byte the saver counts.</summary>
+public sealed record ThemeParkIncMailMessage( byte[] Message, byte Flag );
+
+/// <summary>The tag system thing (model 12, load 0x6355d0): the thing base, <c>numtags</c> and that many mail messages. 12 bytes with no message, as in the prebuilt.</summary>
+public sealed record ThemeParkIncTagSystem( int Id, SaveThingBase Base, IReadOnlyList<ThemeParkIncMailMessage> Messages )
+{
+	internal static ThemeParkIncTagSystem Read( int id, ThemeParkIncBody body ) => new(
+		id, new( body.U16( "mX" ), body.U16( "mY" ), body.U16( "mMapChild" ), body.U16( "mMapParent" ) ),
+		Enumerable.Range( 0, (int)Math.Max( 0, (int)body.U32( "numtags" ) ) ).Select( index => new ThemeParkIncMailMessage( body.Raw( $"MailMessage[{index}].mMessage" ).ToArray(), body.U8( $"MailMessage[{index}].mFlag" ) ) ).ToArray() );
+}
+
 /// <summary>One value and its worked-out flag in the park analyser (<c>mVal</c>, <c>mWorkedOut</c>).</summary>
 public readonly record struct ThemeParkIncAnalyserValue( uint Value, bool WorkedOut );
 
@@ -470,6 +481,7 @@ internal sealed class ThemeParkIncTracedThings
 	public ThemeParkIncResearchLab? ResearchLab { get; private set; }
 	public ThemeParkIncWeather? Weather { get; private set; }
 	public ThemeParkIncChallengeSystem? ChallengeSystem { get; private set; }
+	public ThemeParkIncTagSystem? TagSystem { get; private set; }
 
 	public void Add( ThemeParkIncThing thing, ThemeParkIncBody body )
 	{
@@ -492,6 +504,9 @@ internal sealed class ThemeParkIncTracedThings
 				break;
 			case ThemeParkIncThingModel.ChallengeSystem:
 				ChallengeSystem = Single( ChallengeSystem, ThemeParkIncChallengeSystem.Read( thing.Id, body ), thing );
+				break;
+			case ThemeParkIncThingModel.TagSystem:
+				TagSystem = Single( TagSystem, ThemeParkIncTagSystem.Read( thing.Id, body ), thing );
 				break;
 			default:
 				people.Add( ThemeParkIncPerson.Read( thing.Id, thing.Model, body ) );

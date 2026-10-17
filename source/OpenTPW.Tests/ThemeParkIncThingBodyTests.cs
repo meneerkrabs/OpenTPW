@@ -8,6 +8,8 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 namespace OpenTPW.Tests;
 
 /// <summary>
+/// Note: <c>Body()</c> builds bodies from the layouts themselves, so most checks here are consistency checks; the hard-coded widths and offsets were obtained from the original load routines
+/// by the emulation harness in tools/tpi-layouts (it needs your own Game.exe), which also verifies the layout text itself (verify.py).
 /// The traced thing-body layouts of Theme Park Inc (guests, staff, gardener, staff HQ, advisor controller, park analyser, research lab, weather, challenge system): synthetic bodies
 /// made from the layouts, damage to them, the widths the load routines of Game.exe consume (checked by emulating the routines with chosen ring counts), and the prebuilt's six
 /// formerly closure-derived bodies. Only the prebuilt and the thing-chain tests need OPENTPW_TPI_PATH; none of the guest, staff and gardener bodies is in any save.
@@ -20,7 +22,7 @@ public class ThemeParkIncThingBodyTests
 	{
 		ThemeParkIncThingModel.Guest, ThemeParkIncThingModel.Mechanic, ThemeParkIncThingModel.Handyman, ThemeParkIncThingModel.Entertainer, ThemeParkIncThingModel.Guard,
 		ThemeParkIncThingModel.Researcher, ThemeParkIncThingModel.Gardener, ThemeParkIncThingModel.StaffHq, ThemeParkIncThingModel.AdvisorController,
-		ThemeParkIncThingModel.ParkAnalyser, ThemeParkIncThingModel.ResearchLab, ThemeParkIncThingModel.Weather, ThemeParkIncThingModel.ChallengeSystem,
+		ThemeParkIncThingModel.ParkAnalyser, ThemeParkIncThingModel.ResearchLab, ThemeParkIncThingModel.Weather, ThemeParkIncThingModel.ChallengeSystem, ThemeParkIncThingModel.TagSystem,
 	};
 
 	private static readonly ThemeParkIncThingModel[] StaffModels =
@@ -60,6 +62,15 @@ public class ThemeParkIncThingBodyTests
 					case ThemeParkIncBodySegmentKind.Group:
 						Write( segment.Children );
 						break;
+					case ThemeParkIncBodySegmentKind.Table:
+					{
+						var records = ring < ringCounts.Length ? ringCounts[ring] : 0;
+						ring++;
+						output.AddRange( BitConverter.GetBytes( (uint)records ) );
+						for ( var index = 0; index < records; index++ )
+							Write( segment.Children );
+						break;
+					}
 					default:
 					{
 						var count = ring < ringCounts.Length ? ringCounts[ring] : 0;
@@ -99,7 +110,7 @@ public class ThemeParkIncThingBodyTests
 
 	/// <summary>
 	/// Widths with every ring empty and full, which Game.exe's load routines consume: the guest and the staff HQ, advisor, lab, weather and challenge bodies have no ring; the staff
-	/// have six rings of 30 four-byte entries; the analyser has 4 of 3 words (2 bytes), 21 of 144 and one each of 50 and 5 words (4 bytes) and 22 of 51 bytes. Each pair was
+	/// have six rings of 30 four-byte entries; the analyser has 4 of 3 words (2 bytes), 21 of 144 and one each of 50 and 5 words (4 bytes) and 22 of 50 bytes. Each pair was
 	/// obtained by running the routine on a stream whose ring counts were all 0 and all at capacity.
 	/// </summary>
 	[TestMethod]
@@ -116,10 +127,11 @@ public class ThemeParkIncThingBodyTests
 			[ThemeParkIncThingModel.Gardener] = (690, 1_410),
 			[ThemeParkIncThingModel.StaffHq] = (411, 411),
 			[ThemeParkIncThingModel.AdvisorController] = (233, 233),
-			[ThemeParkIncThingModel.ParkAnalyser] = (63_177, 76_639),
+			[ThemeParkIncThingModel.ParkAnalyser] = (63_177, 76_617),
 			[ThemeParkIncThingModel.ResearchLab] = (8_414, 8_414),
 			[ThemeParkIncThingModel.Weather] = (104, 104),
 			[ThemeParkIncThingModel.ChallengeSystem] = (1_287, 1_287),
+			[ThemeParkIncThingModel.TagSystem] = (12, int.MaxValue),
 		};
 		CollectionAssert.AreEquivalent( Models, ThemeParkIncBodyLayout.All.Keys.ToArray() );
 		foreach ( var model in Models )
@@ -133,16 +145,17 @@ public class ThemeParkIncThingBodyTests
 		Assert.AreEqual( 6, RingCount( ThemeParkIncThingModel.Mechanic ) );
 		Assert.AreEqual( 49, RingCount( ThemeParkIncThingModel.ParkAnalyser ) );
 		Assert.AreEqual( 0, RingCount( ThemeParkIncThingModel.Guest ) );
+		Assert.AreEqual( 0, RingCount( ThemeParkIncThingModel.TagSystem ) );
 		Assert.IsNull( ThemeParkIncBodyLayout.For( ThemeParkIncThingModel.Attraction ) );
 		Assert.IsNull( ThemeParkIncBodyLayout.For( ThemeParkIncThingModel.Bank ) );
 	}
 
-	/// <summary>Widths for chosen ring counts, each also produced by running the load routine in an emulator on a stream with those counts (rings in the order they are read).</summary>
+	/// <summary>Widths for chosen ring counts (and tag counts), each also produced by running the load routine in an emulator on a stream with those counts (rings in the order they are read; tools/tpi-layouts reproduces them).</summary>
 	[TestMethod]
 	public void WidthsFollowTheRingCountsAsTheEmulatedRoutinesDo()
 	{
 		var analyserPrebuilt = new[] { 3, 3, 3, 3 }.Concat( Enumerable.Repeat( 144, 21 ) ).Concat( new[] { 50, 5 } ).Concat( Enumerable.Repeat( 50, 22 ) ).ToArray();
-		var analyserFull = new[] { 0, 0, 0, 0 }.Concat( Enumerable.Repeat( 144, 21 ) ).Concat( new[] { 50, 5 } ).Concat( Enumerable.Repeat( 51, 22 ) ).ToArray();
+		var analyserFull = new[] { 0, 0, 0, 0 }.Concat( Enumerable.Repeat( 144, 21 ) ).Concat( new[] { 50, 5 } ).Concat( Enumerable.Repeat( 50, 22 ) ).ToArray();
 		var vectors = new (ThemeParkIncThingModel Model, int[] Counts, int Width)[]
 		{
 			(ThemeParkIncThingModel.Mechanic, new[] { 3, 0, 30, 1, 0, 7 }, 854),
@@ -152,7 +165,11 @@ public class ThemeParkIncThingBodyTests
 			(ThemeParkIncThingModel.Entertainer, new[] { 5, 4, 3, 2, 1, 0 }, 748),
 			(ThemeParkIncThingModel.Gardener, new[] { 30, 0, 0, 0, 0, 29 }, 926),
 			(ThemeParkIncThingModel.ParkAnalyser, analyserPrebuilt, 76_617),
-			(ThemeParkIncThingModel.ParkAnalyser, analyserFull, 76_615),
+			(ThemeParkIncThingModel.ParkAnalyser, analyserFull, 76_593),
+			(ThemeParkIncThingModel.TagSystem, new[] { 0 }, 12),
+			(ThemeParkIncThingModel.TagSystem, new[] { 1 }, 3_640),
+			(ThemeParkIncThingModel.TagSystem, new[] { 2 }, 7_268),
+			(ThemeParkIncThingModel.TagSystem, new[] { 3 }, 10_896),
 			(ThemeParkIncThingModel.ParkAnalyser, new[] { 1, 2, 3, 0 }, 63_189),
 		};
 		foreach ( var (model, counts, width) in vectors )
@@ -173,7 +190,7 @@ public class ThemeParkIncThingBodyTests
 	{
 		foreach ( var model in Models )
 		{
-			var counts = Enumerable.Range( 0, 49 ).Select( ring => (ring * 7) % 4 ).ToArray();
+			var counts = Enumerable.Range( 0, 49 ).Select( ring => (ring * 7 + 1) % 4 ).ToArray();
 			var body = Body( model, counts );
 			var typed = new ThemeParkIncBody( model, body );
 			var position = 0;
@@ -217,6 +234,11 @@ public class ThemeParkIncThingBodyTests
 		Offsets( ThemeParkIncThingModel.AdvisorController, ("mTimeSig", 8, 4), ("mSoundId", 12, 4), ("mQueue[0].mThingId", 16, 2), ("mQueue[7].mScoreOverridden", 183, 1), ("mNextAvailableQueuePos", 184, 4),
 			("mCurrent.mThingId", 196, 2), ("mCurrent.mScoreOverridden", 216, 1), ("mRequestedLastTutorial", 217, 1), ("mMessagePlaying", 218, 4), ("m_msgDelayedMessage", 222, 4),
 			("mPanelUpFlg", 226, 1), ("m_lAdvisorDelayTicks", 229, 4) );
+		Offsets( ThemeParkIncThingModel.TagSystem, ("numtags", 8, 4) );
+		var tags = new ThemeParkIncBody( ThemeParkIncThingModel.TagSystem, Body( ThemeParkIncThingModel.TagSystem, 2 ) );
+		Assert.AreEqual( 12 + 2 * 3628, tags.Length );
+		foreach ( var (path, offset, size) in new[] { ("MailMessage[0].mMessage", 12, 3624), ("MailMessage[0].mFlag", 12 + 3624, 1), ("MailMessage[0].mPadding", 12 + 3625, 3), ("MailMessage[1].mMessage", 12 + 3628, 3624), ("MailMessage[1].mFlag", 12 + 3628 + 3624, 1) } )
+			Assert.AreEqual( (offset, size), (tags.Field( path ).Offset, tags.Field( path ).Size), path );
 		Offsets( ThemeParkIncThingModel.Weather, ("mSpell[0].mMonth", 8, 4), ("mSpell[1].mType", 38, 4), ("mQuality", 42, 4), ("mLightning", 58, 1), ("mLastLightningLocation", 71, 12), ("mWindDir", 95, 4), ("mOverridden", 103, 1) );
 		Offsets( ThemeParkIncThingModel.ChallengeSystem, ("mChallenges[0].mType", 8, 4), ("mChallenges[0].mOfferTime", 72, 8), ("mChallenges[1].mType", 133, 4), ("mChallenges[9].mSentTimeWarning", 1257, 1),
 			("mNextChallengeDelayTime", 1258, 8), ("mSystemSwitchedOn", 1266, 1), ("mActualThing[9]", 1285, 2) );
@@ -369,6 +391,12 @@ public class ThemeParkIncThingBodyTests
 		Assert.ThrowsException<InvalidDataException>( () => mechanic.Measure( over, 0 ) );
 		var overBytes = Body( ThemeParkIncThingModel.ParkAnalyser, Enumerable.Repeat( 0, 4 + 21 + 2 ).Concat( new[] { 52 } ).ToArray() );
 		Assert.ThrowsException<InvalidDataException>( () => ThemeParkIncBodyLayout.For( ThemeParkIncThingModel.ParkAnalyser )!.Measure( overBytes, 0 ) );
+		// the byte ring holds 50 (constructor 0x5bbcbc); 51 is only the original's overrun limit, and a count with the sign bit set (read as zero entries there) is refused too
+		var fiftyOne = Body( ThemeParkIncThingModel.ParkAnalyser, Enumerable.Repeat( 0, 4 + 21 + 2 ).Concat( new[] { 51 } ).ToArray() );
+		Assert.ThrowsException<InvalidDataException>( () => ThemeParkIncBodyLayout.For( ThemeParkIncThingModel.ParkAnalyser )!.Measure( fiftyOne, 0 ) );
+		var signed = Body( ThemeParkIncThingModel.Mechanic );
+		BitConverter.GetBytes( 0x80000000u ).CopyTo( signed, new ThemeParkIncBody( ThemeParkIncThingModel.Mechanic, signed ).Field( "mHistory[0].mNumEntries" ).Offset );
+		Assert.ThrowsException<InvalidDataException>( () => mechanic.Measure( signed, 0 ) );
 		Assert.ThrowsException<ArgumentException>( () => new ThemeParkIncBody( ThemeParkIncThingModel.Bank, new byte[292] ) );
 		Assert.ThrowsException<KeyNotFoundException>( () => new ThemeParkIncBody( ThemeParkIncThingModel.Weather, Body( ThemeParkIncThingModel.Weather ) ).Field( "mNothing" ) );
 		Assert.ThrowsException<InvalidDataException>( () => new ThemeParkIncBody( ThemeParkIncThingModel.Weather, Body( ThemeParkIncThingModel.Weather ) ).U16( "mQuality" ) );
@@ -416,6 +444,49 @@ public class ThemeParkIncThingBodyTests
 		return result;
 	}
 
+	/// <summary>The payload with the body of <paramref name="thing"/> replaced (its header and the things around it are kept).</summary>
+	private static byte[] ReplaceBody( byte[] payload, ThemeParkIncThing thing, byte[] body ) =>
+		payload.Take( thing.BodyOffset ).Concat( body ).Concat( payload.Skip( thing.End ) ).ToArray();
+
+	/// <summary>The tag system has a counted list (<c>numtags</c> records of 0xe2c bytes, load 0x6355d0): its 12 bytes in the prebuilt are the case of no message only.</summary>
+	[TestMethod]
+	public void TagSystemWidthFollowsNumtags()
+	{
+		var original = Prebuilt();
+		var baseline = World( original );
+		var tag = baseline.OfModel( ThemeParkIncThingModel.TagSystem ).Single();
+		Assert.AreEqual( 12, tag.BodyLength );
+		Assert.AreEqual( 0, baseline.TagSystem!.Messages.Count );
+		var body = Body( ThemeParkIncThingModel.TagSystem, 3 );
+		Assert.AreEqual( 12 + 3 * 0xE2C, body.Length );
+		Patch( body, ThemeParkIncThingModel.TagSystem, "MailMessage[1].mFlag", 7 );
+		Patch( body, ThemeParkIncThingModel.TagSystem, "MailMessage[2].mFlag", 1 );
+		var payload = ReplaceBody( original, tag, body );
+		var world = World( payload );
+		Assert.AreEqual( baseline.Things.Count, world.Things.Count );
+		var resized = world.Find( tag.Id )!.Value;
+		Assert.AreEqual( body.Length, resized.BodyLength );
+		Assert.AreEqual( tag.Offset, resized.Offset );
+		// every other thing keeps its width and follows at its shifted place
+		CollectionAssert.AreEqual( baseline.Things.Select( item => (item.Id, item.Model) ).ToArray(), world.Things.Select( item => (item.Id, item.Model) ).ToArray() );
+		CollectionAssert.AreEqual( baseline.Things.Where( item => item.Id != tag.Id ).Select( item => item.BodyLength ).ToArray(), world.Things.Where( item => item.Id != tag.Id ).Select( item => item.BodyLength ).ToArray() );
+		var typed = world.TagSystem!;
+		Assert.AreEqual( 3, typed.Messages.Count );
+		CollectionAssert.AreEqual( new byte[] { 0, 7, 1 }.Select( ( value, index ) => index == 0 ? typed.Messages[0].Flag : value ).ToArray(), typed.Messages.Select( message => message.Flag ).ToArray() );
+		Assert.AreEqual( 3624, typed.Messages[0].Message.Length );
+		Assert.IsTrue( ThemeParkIncSaveWorld.TryMeasure( payload, SavePayloadLayout.ParseThemeParkInc( payload )[SaveBlock.World].Offset, out _ ) );
+
+		// numtags above the bytes that follow cannot be measured; the loader reads a count of 0 or below (signed) as no message
+		var lying = (byte[])original.Clone();
+		BitConverter.GetBytes( 5u ).CopyTo( lying, tag.BodyOffset + 8 );
+		Assert.ThrowsException<InvalidDataException>( () => World( lying ) );
+		var negative = (byte[])original.Clone();
+		BitConverter.GetBytes( 0xFFFFFFFFu ).CopyTo( negative, tag.BodyOffset + 8 );
+		Assert.AreEqual( 12, World( negative ).Find( tag.Id )!.Value.BodyLength );
+		// a message cut short
+		Assert.ThrowsException<InvalidDataException>( () => World( ReplaceBody( original, tag, body.Take( body.Length - 1 ).ToArray() ) ) );
+	}
+
 	[TestMethod]
 	public void GuestsStaffAndGardenersAreSizedByTheirLayoutsInTheThingChain()
 	{
@@ -457,7 +528,7 @@ public class ThemeParkIncThingBodyTests
 	private static int PlainWindow( ThemeParkIncThingModel model, byte[] body )
 	{
 		var typed = new ThemeParkIncBody( model, body );
-		var counters = typed.Fields.Where( field => field.Path.EndsWith( "mNumEntries", StringComparison.Ordinal ) ).ToList();
+		var counters = typed.Fields.Where( field => field.Path.EndsWith( "mNumEntries", StringComparison.Ordinal ) || field.Path == "numtags" ).ToList();
 		return typed.Fields.Where( field => field.Offset >= 16 && field.Offset + 16 <= body.Length ).First( field =>
 			!counters.Any( counter => counter.Offset < field.Offset + 16 && counter.Offset + 4 > field.Offset ) ).Offset;
 	}
@@ -485,13 +556,21 @@ public class ThemeParkIncThingBodyTests
 			var thing = baseline.OfModel( model ).Single();
 			var payload = (byte[])original.Clone();
 			var body = baseline.BodyOf( thing ).ToArray();
+			var expectedLength = thing.BodyLength;
+			if ( body.Length < 32 )
+			{
+				// the tag system's 12 bytes hold no message: give it two so there is a window of data
+				body = Body( model, 2 );
+				payload = ReplaceBody( payload, thing, body );
+				expectedLength = body.Length;
+			}
 			Plant( payload, thing.BodyOffset + PlainWindow( model, body ) );
 			var parsed = World( payload );
-			CollectionAssert.AreEqual( baseline.Things.Select( item => (item.Id, item.Model, item.BodyLength) ).ToArray(), parsed.Things.Select( item => (item.Id, item.Model, item.BodyLength) ).ToArray(), model.ToString() );
+			CollectionAssert.AreEqual( baseline.Things.Select( item => (item.Id, item.Model, item.Id == thing.Id ? expectedLength : item.BodyLength) ).ToArray(), parsed.Things.Select( item => (item.Id, item.Model, item.BodyLength) ).ToArray(), model.ToString() );
 			Assert.IsFalse( parsed.OfModel( ThemeParkIncThingModel.Gardener ).Any(), model.ToString() );
 			inPlace++;
 		}
-		Assert.AreEqual( 6, inPlace );
+		Assert.AreEqual( 7, inPlace );
 
 		foreach ( var model in Models.Where( model => !baseline.OfModel( model ).Any() ) )
 		{

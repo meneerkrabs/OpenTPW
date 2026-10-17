@@ -303,7 +303,8 @@ prebuilt).
 | --- | --- | --- | --- |
 | 3 attraction | `OBJE` | 312 bytes, plus 5,263 of history when its flag byte (the last of the 312) is 1: 13 rings of 30 and 6 rings of 144 | typed (`ThemeParkIncAttraction`, including the history rings); 24 in the prebuilt |
 | 16 bank | `BANK` | 292 (the TPW bank) | typed (`SaveBank`) |
-| 10 mechanic HQ, 12 tag system, 17 UI receiver, 21 `OBJH`, 22 `CUTS`, 23 `TRNR` | | 10, 12, 8, 14, 10, 8 | exact; base plus raw tail (`ThemeParkIncSmallThing`) |
+| 10 mechanic HQ, 17 UI receiver, 21 `OBJH`, 22 `CUTS`, 23 `TRNR` | | 10, 8, 14, 10, 8 | exact; base plus raw tail (`ThemeParkIncSmallThing`). Each load routine (`0x5da990`, `0x63a1a0`, `0x5f03c0`, `0x5d0160`, `0x637230`) was also run in the emulator: none reads a count, so the width is fixed (the loops near them run after the reads) |
+| 12 tag system | `SGAT` | 12 plus 3,628 per message | typed (`ThemeParkIncTagSystem`), load `0x6355d0`: the thing base, `u32 numtags` (`0x6357bd`) and `numtags` mail messages of `0xe2c` bytes (`0x635821`; kept as 3,624 raw bytes and the flag byte at +`0xe28`). The loader compares the count signed, so a count of 0 or below reads none (this reader reads none for a negative count too); 12 bytes only when there is no message, as in the prebuilt |
 | 9 staff HQ | `STAF` | 411 | typed (`ThemeParkIncStaffHq`), load `0x6326b0` |
 | 11 advisor controller | `ADVI` | 233 | typed (`ThemeParkIncAdvisorController`), load `0x7177f0` |
 | 13 park analyser | `PARK` | 63,177 plus the rings' entries (76,617 in the prebuilt) | typed (`ThemeParkIncParkAnalyser`), load `0x5ace30` |
@@ -318,7 +319,7 @@ rejected. Every other model's width is its own reader's (`ThemeParkIncBodyLayout
 prebuilt and none is found by searching for the next header, so a complete header lookalike inside any body is data (tests plant
 one in every traced body). The six formerly closure-derived widths (411, 233, 76,617, 8,414, 104 and 1,287) are reproduced by the layouts.
 Guests, staff and gardeners are absent from the prebuilt, so their layouts rest on the load routines and an emulation of them
-and not on a saved byte (the remainder of SAVE-944).
+and not on a saved byte (the remainder of SAVE-944). They have never been checked against a real save, and a layout mistake now refuses the whole save where the old search for the next header recovered. `tools/tpi-layouts/` reproduces the widths and offsets from your own `Game.exe`.
 The block must in every case read exactly to its delimiter.
 Typed fields that are inferred rather than traced are SAVE-940 to SAVE-944 in the [register](FIDELITY-REGISTER.md).
 
@@ -333,21 +334,21 @@ each routine accepts 0 and 1; the loader passes 1. No read is conditional on str
 
 | Part | Where | Layout |
 | --- | --- | --- |
-| thing base | `0x637230` | `mX`, `mY`, `mMapChild`, `mMapParent`, 2 bytes each |
-| history ring | `0x62f2b0` (staff), `0x5ba4d6` and others (analyser) | `u32 mCurrentEntry`, `u32 mNumEntries`, `u8 mWrappedAround`, `mTemp` (the element width), then `mNumEntries` entries; the array holds a fixed capacity (30, 3, 144, 50, 5 or 51), and the entry after the last slot would overwrite the ring's own counters in memory |
+| thing base | `0x637230` | `mX`, `mY`, `mMapChild`, `mMapParent`, 2 bytes each. Addresses below that call the stream helper `0x7cc930` are the **load** branch (the World loader passes flag 0 and reads); `0x7cc960` is the save branch and is not used here |
+| history ring | `0x62f2b0` (staff), `0x5ba4d6` and others (analyser) | `u32 mCurrentEntry`, `u32 mNumEntries`, `u8 mWrappedAround`, `mTemp` (the element width), then `mNumEntries` entries; the array holds a fixed capacity (30, 3, 144, 50 or 5), and the entry after the last slot would overwrite the ring's own counters in memory |
 | person | `0x609170` | the thing base, sprite script, accurate destination, speeds, path-following state (`pos`, `vel`, a five-entry subpath buffer), sprite, 32-entry event history, thoughts: 396 bytes |
 | guest | `0x60d260` | the person, then arrival, balloon, umbrella, cash, seven `pv` stats, the visit counters, queue state, prank, food/drink/bought/won/rides stats: 619 bytes, no ring |
 | staff base | `0x6267c0` | the person, salary, two `pv` stats, jobs done, `mName[33]` (UTF-16), rest area, states, `mTimeHired` (8 bytes), experience, abilities, tick counters, wage demand, six history rings, patrol rectangle (`m_sx` to `m_ey`) |
 | mechanic / handyman / entertainer / guard / researcher / gardener | role loads | the staff base, then 8 / 12 / 6 / 14 / 2 / 8 role bytes ending in the role's `mNext` link |
 | staff HQ | `0x6326b0` | base, `mForceStrike`, `mStaffMemberPickedUp`, 6 strike levels of 12, the training budget (`0x6394d0`: 6 budgets and `mHaveEverTrained`), 20 staff slots of 12, 15 trained-staff words |
 | advisor controller | `0x7177f0` | base, `mTimeSig`, `mSoundId`, 8 message records of 21 bytes (`0x71af30`), queue position, last action, the current message, tutorial flag, playing message, delayed message, 3 panel flags, delay ticks |
-| park analyser | `0x5ace30` | base, the grid sizes, 1,024 cells of 61 bytes (a 4-word rectangle and nine value pairs), 4 rings of 3 `u16`, 6 totals, 21 rings of 144 words, rings of 50 and 5 words, 22 rings of 51 bytes, and the park statistics |
+| park analyser | `0x5ace30` | base, the grid sizes, 1,024 cells of 61 bytes (a 4-word rectangle and nine value pairs), 4 rings of 3 `u16`, 6 totals, 21 rings of 144 words, rings of 50 and 5 words, 22 rings of 50 bytes, and the park statistics |
 | research lab | `0x61bce0` | base, 256 projects of 32 bytes (`0x61f670`), 7 groups of 13 (`0x6202c0`), counters, 20 staff pairs, 2 consultants |
 | weather | `0x641510` | base, 2 spells of 17 bytes (`0x643100`), rain, lightning and wind state |
 | challenge system | `0x5c7c70` | base, 10 challenge records of 125 bytes (`0x5c2320`), the next-challenge delay (8), the switch (1), 10 actual-thing ids |
 
 The prebuilt's park analyser has all its rings full (3, 144, 50, 5 and 50 entries, 76,617 bytes) and its first rings are consistent with a 32 x 32 grid of 4-square cells; its research lab holds
-50 projects (the other slots are uninitialized `0xCD`). A saved ring count above the capacity is refused: the original would read on into the ring's own counters. The words are typed by
+50 projects (the other slots are uninitialized `0xCD`). A saved ring count above the capacity is refused: the original would read on into the ring's own counters (above 50 for the byte ring, and 51 is the largest count it reads without overrunning the padding). The words are typed by
 width only (the loaders copy each member, so a signedness or float type is not visible), the 12-byte vectors and the 12-byte strike levels and staff slots stay raw, and the 8-byte times follow the
 calendar (100 ns since 1601-01-01). Tp.exe's weather serializer (`0x512010`) is the same class with a different field list (91 bytes, no wind), so the layouts are not shared between the games.
 

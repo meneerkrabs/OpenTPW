@@ -299,7 +299,7 @@ public sealed partial class ThemeParkIncBodyLayout
 		4 m_lAdvisorDelayTicks
 		""";
 
-	// [BIN:TPI-EXE:0x5ace30 park analyser load] case 13 at 0x64cf8e (thunk 0x40978c, object 0x22878 bytes): thing base, the map grid sizes, 1024 grid cells (a rectangle and nine value pairs), then history rings (four of 3 u16, 21 of 144 u32, one of 50, one of 5 and 22 of 51 bytes) and six totals, ending with the park statistics. 63,177 bytes with empty rings, 76,617 in the prebuilt
+	// [BIN:TPI-EXE:0x5ace30 park analyser load] case 13 at 0x64cf8e (thunk 0x40978c, object 0x22878 bytes): thing base, the map grid sizes, 1024 grid cells (a rectangle and nine value pairs), then history rings (four of 3 u16, 21 of 144 u32, one of 50, one of 5 and 22 of 50 bytes) and six totals, ending with the park statistics. 63,177 bytes with empty rings, 76,617 in the prebuilt
 	private const string AnalyserBody = """
 		2 mX
 		2 mY
@@ -337,7 +337,7 @@ public sealed partial class ThemeParkIncBodyLayout
 		ring 4 50 ring50
 		ring 4 5 ring5
 		rep 22 mByteRings
-		  ring 1 51 _
+		  ring 1 50 _
 		end
 		4 mMisbehavingKids
 		4 mMisbehavingKidsThatGotAwayWithIt
@@ -478,6 +478,19 @@ public sealed partial class ThemeParkIncBodyLayout
 		1 mSystemSwitchedOn
 		rep 10 mActualThing
 		  2 _
+		end
+		""";
+
+	// [BIN:TPI-EXE:0x6355d0 tag system load] case 12 at 0x64cf1d (thunk 0x405f29, object 0x830 bytes): thing base, a u32 numtags (0x6357bd) and numtags MailMessage records of 0xe2c bytes (0x635821); the loader copies a record's fields into a mail message object, of which the byte at +0xe28 (the loop at 0x635653 counts the ones where it is 0 when saving) is the only member the routine tests. 12 bytes when numtags is 0, as in the prebuilt
+	private const string TagSystemBody = """
+		2 mX
+		2 mY
+		2 mMapChild
+		2 mMapParent
+		table numtags MailMessage
+		  3624 mMessage
+		  1 mFlag
+		  3 mPadding
 		end
 		""";
 }

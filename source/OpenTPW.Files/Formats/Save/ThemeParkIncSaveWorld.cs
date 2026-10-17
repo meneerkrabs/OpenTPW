@@ -244,10 +244,10 @@ public sealed class ThemeParkIncSaveWorld
 	};
 
 	/// <summary>Body widths of the models whose reader width is exact (the attraction's depends on its history flag).</summary>
-	// [BIN:TPI-EXE:0x64d7e0 thing loader] mechanic HQ 10, tag system 12, UI receiver 8, OBJH 14, CUTS 10 and TRNR 8 bytes after their headers (the prebuilt's thing bodies), the bank 292 like Theme Park World's
+	// [BIN:TPI-EXE:0x64d7e0 thing loader] mechanic HQ 10 (base and mNextObject), UI receiver 8 (the thing base alone, load 0x63a1a0), OBJH 14 (base, mCutsceneObject, mCutsceneState; load 0x5f03c0), CUTS 10 (base and animThing; load 0x5d0160) and TRNR 8 (the thing base, 0x637230) bytes after their headers, each also run in an emulation of its load routine with single-member fuzzing (no read depends on stream data; the loops near those routines run after the reads), the bank 292 like Theme Park World's. The tag system has a counted list and is a layout (ThemeParkIncBodyLayout)
 	public static IReadOnlyDictionary<ThemeParkIncThingModel, int> ExactBodyBytes { get; } = new Dictionary<ThemeParkIncThingModel, int>
 	{
-		[ThemeParkIncThingModel.MechanicHq] = 10, [ThemeParkIncThingModel.TagSystem] = 12, [ThemeParkIncThingModel.UIMsgReceiver] = 8,
+		[ThemeParkIncThingModel.MechanicHq] = 10, [ThemeParkIncThingModel.UIMsgReceiver] = 8,
 		[ThemeParkIncThingModel.Objh] = 14, [ThemeParkIncThingModel.Cuts] = 10, [ThemeParkIncThingModel.Trnr] = 8, [ThemeParkIncThingModel.Bank] = SaveBank.Bytes,
 	};
 
@@ -282,6 +282,7 @@ public sealed class ThemeParkIncSaveWorld
 		ResearchLab = traced.ResearchLab;
 		Weather = traced.Weather;
 		ChallengeSystem = traced.ChallengeSystem;
+		TagSystem = traced.TagSystem;
 	}
 
 	public SavePayloadBlock Block { get; }
@@ -315,6 +316,7 @@ public sealed class ThemeParkIncSaveWorld
 	public ThemeParkIncResearchLab? ResearchLab { get; }
 	public ThemeParkIncWeather? Weather { get; }
 	public ThemeParkIncChallengeSystem? ChallengeSystem { get; }
+	public ThemeParkIncTagSystem? TagSystem { get; }
 
 	public IEnumerable<ThemeParkIncThing> OfModel( ThemeParkIncThingModel model ) => Things.Where( thing => thing.Model == model );
 

@@ -210,7 +210,7 @@ public class ThemeParkIncSaveWorldTests
 			Assert.AreEqual( width, world.BodyOf( thing ).Length, model.ToString() );
 			Assert.AreEqual( width, ThemeParkIncBodyLayout.For( model )!.Measure( payload, thing.BodyOffset ), model.ToString() );
 		}
-		Assert.AreEqual( 6, world.SmallThings.Count );
+		Assert.AreEqual( 5, world.SmallThings.Count );
 		Assert.AreEqual( (int)world.Variables.BankAccount, world.Bank!.Id );
 		Assert.AreEqual( SaveBank.LoanRecords, world.Bank.Loans.Count );
 		Assert.IsFalse( world.OfModel( ThemeParkIncThingModel.Guest ).Any() );
@@ -306,7 +306,7 @@ public class ThemeParkIncSaveWorldTests
 	{
 		var original = Prebuilt();
 		var world = World( original );
-		var traced = world.Things.Where( item => ThemeParkIncBodyLayout.For( item.Model ) != null ).ToList();
+		var traced = world.Things.Where( item => ThemeParkIncBodyLayout.For( item.Model ) != null && item.Model != ThemeParkIncThingModel.TagSystem ).ToList();
 		Assert.IsTrue( traced.Any( item => item.Model == ThemeParkIncThingModel.Weather ) );
 		Assert.AreEqual( 6, traced.Count );
 		foreach ( var thing in traced )

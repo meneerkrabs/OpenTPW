@@ -164,6 +164,8 @@ public interface IRideVisitorBridge
 	int QualityOfGoods => GuestAppearance.BuiltQualityOfGoods;
 	/// <summary>Walkable path cell where guests join the queue.</summary>
 	(int X, int Y) EntranceCell { get; }
+	/// <summary>The entrance's outside cell (the original front cell), or null to use <see cref="EntranceCell"/>.</summary>
+	(int X, int Y)? QueueFrontCell => null;
 	/// <summary>Walkable path cell where released guests reappear.</summary>
 	(int X, int Y) ExitCell { get; }
 	/// <summary>.sam <c>UsageInfo.EntryCellStandPosX/Y</c>: where in its entrance cell a called guest stands (0..1 per axis).</summary>

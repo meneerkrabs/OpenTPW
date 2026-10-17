@@ -16,7 +16,8 @@ namespace OpenTPW;
 /// For each string (at offset)
 ///   1 byte  - Unknown, always 0x01
 ///   3 bytes - String length, little-endian 24-bit (two shipped UITEXT.str entries exceed 255)
-///   n bytes - Each character, a 1-based index into the language's BFMU table (MBToUni.dat)
+///   n bytes - Each character: a 1-based index into the language's BFMU table (MBToUni.dat), or, in the two-byte tables
+///             (Polish, Korean), a lead byte and a trail byte for the characters beyond the single-byte range (see BFMUReader); n counts bytes
 ///   Padding to a multiple of four bytes, then further chunks with the same 4-byte header: 1 another text run,
 ///   2 a parameter (the 24-bit field is the parameter's type, no payload), 0 the end of the record
 /// </remarks>
@@ -46,7 +47,6 @@ internal sealed class BFSTReader
 		if ( stringCount < 0 || HeaderLength + (long)stringCount * 4 > buffer.Length )
 			throw new InvalidDataException( $"String table declares {stringCount} strings, which do not fit the file." );
 
-		var characters = table.Characters;
 		var output = new string[stringCount];
 		var templates = new StringTemplate[stringCount];
 		var starts = Enumerable.Range( 0, stringCount ).Select( i => HeaderLength + (long)BinaryPrimitives.ReadInt32LittleEndian( buffer.AsSpan( HeaderLength + i * 4, 4 ) ) )
@@ -68,20 +68,40 @@ internal sealed class BFSTReader
 				throw new InvalidDataException( $"String {i} length {length} runs past the end of the file." );
 
 			builder.Clear();
-			for ( var j = 0; j < length; j++ )
+			for ( var j = 0; j < length; )
 			{
-				var index = buffer[position + j];
-				if ( index < 1 || index > characters.Count )
-					throw new InvalidDataException( $"String {i} character byte {index} is outside the {characters.Count}-entry BFMU table." );
-				builder.Append( characters[index - 1] );
+				try
+				{
+					j += table.Decode( buffer.AsSpan( (int)position, length ), j, out var character );
+					builder.Append( character );
+				}
+				catch ( InvalidDataException exception )
+				{
+					throw new InvalidDataException( $"String {i}: {exception.Message}" );
+				}
 			}
 
 			output[i] = builder.ToString();
 			var next = Array.BinarySearch( starts, position - 4 ) is var at and >= 0 && at + 1 < starts.Length ? starts[at + 1] : buffer.Length;
-			templates[i] = ReadTemplate( output[i], position + length, next, characters );
+			templates[i] = ReadTemplate( output[i], position + length, next );
 		}
 
 		return (output, templates);
+	}
+
+	private bool TryDecode( int start, int length, int offset, out char character, out int taken )
+	{
+		try
+		{
+			taken = table.Decode( buffer.AsSpan( start, length ), offset, out character );
+			return true;
+		}
+		catch ( InvalidDataException )
+		{
+			character = default;
+			taken = 0;
+			return false;
+		}
 	}
 
 	/// <summary>
@@ -89,7 +109,7 @@ internal sealed class BFSTReader
 	/// does not fit before the next record or has another type ends the record, so a table without such chunks reads exactly as before.
 	/// </summary>
 	// [BIN:TPW-EXE:0x6acd60 string format] the formatter fills a UITEXT record's parameter chunks (type 2) with the caller's typed values (the 'MRAV' argument records)
-	private StringTemplate ReadTemplate( string first, long position, long end, IReadOnlyList<char> characters )
+	private StringTemplate ReadTemplate( string first, long position, long end )
 	{
 		var parts = new List<StringTemplatePart> { new( first, -1 ) };
 		var builder = new StringBuilder();
@@ -109,12 +129,12 @@ internal sealed class BFSTReader
 			if ( type != 1 || position + field > end )
 				break;
 			builder.Clear();
-			for ( var j = 0; j < field; j++ )
+			for ( var j = 0; j < field; )
 			{
-				var index = buffer[position + j];
-				if ( index < 1 || index > characters.Count )
+				if ( !TryDecode( (int)position, field, j, out var character, out var taken ) )
 					return new StringTemplate( parts );
-				builder.Append( characters[index - 1] );
+				builder.Append( character );
+				j += taken;
 			}
 			parts.Add( new( builder.ToString(), -1 ) );
 			position += field;

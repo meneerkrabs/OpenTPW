@@ -72,10 +72,14 @@ public class LanguageTests
 		CreateLanguage( "Data", "English" );
 		CreateLanguage( Path.Combine( "Danish", "data" ), "danish", "xyz" );
 		var polish = CreateLanguage( Path.Combine( "Polish", "data" ), "Polish" );
+		// A table whose header describes more characters than the file holds is not readable, whatever its layout.
 		File.WriteAllBytes( Path.Combine( polish, "MBToUni.dat" ), new byte[] { (byte)'B', (byte)'F', (byte)'M', (byte)'U', 1, 0, 0xFF, 0x4B, 0x2A, 0 } );
 		var data = Path.Combine( root, "Data" );
 		CollectionAssert.AreEqual( new[] { "English", "Danish", "Polish" }, GameLanguage.FindLanguages( data, root ).ToArray() );
 		CollectionAssert.AreEqual( new[] { "English", "Danish" }, GameLanguage.Readable( data, root ).ToArray() );
+		// With its two-byte table in the folder (1 lead byte, 3 trail bytes on it: 254 + 3 characters) Polish is chosen like the others.
+		File.WriteAllBytes( Path.Combine( polish, "MBToUni.dat" ), MultiByteLanguageTests.TwoByteTable( 1, 3, out _ ) );
+		CollectionAssert.AreEqual( new[] { "English", "Danish", "Polish" }, GameLanguage.Readable( data, root ).ToArray() );
 		Assert.AreEqual( "xyz", GameLanguage.Resolve( data, "Danish", root ).LoadStrings( "UITEXT.str" )[0] );
 	}
 
@@ -253,7 +257,13 @@ public class LanguageTests
 	// holding the CD's <Lang>/data and <Lang>/Meshes trees for Danish, French, German, Swedish
 	// from the European CD and Dutch from the Benelux CD).
 
-	public static IEnumerable<object[]> ShippedLanguages => GameLanguage.ShippedLanguages.Select( name => new object[] { name } );
+	/// <summary>
+	/// The six languages of the European and Benelux CDs, which the data tests below pin from <c>OPENTPW_GAME_PATH</c> and <c>OPENTPW_LANGUAGE_DATA</c>;
+	/// Spanish, Korean and Polish have their own tests (<c>OPENTPW_ES_PATH</c>, <c>OPENTPW_KR_PATH</c>, <c>OPENTPW_PL_PATH</c>, <see cref="NewLanguageDataTests"/>).
+	/// </summary>
+	public static readonly string[] EuropeanLanguages = { "English", "Danish", "Dutch", "French", "German", "Swedish" };
+
+	public static IEnumerable<object[]> ShippedLanguages => EuropeanLanguages.Select( name => new object[] { name } );
 
 	internal static GameLanguage OriginalLanguagePublic( string name ) => OriginalLanguage( name );
 

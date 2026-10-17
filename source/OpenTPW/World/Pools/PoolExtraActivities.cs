@@ -19,20 +19,20 @@ public static class PoolExtraSettings
 	/// <summary>The rim of the pool: half a cell from the middle of the land cell.</summary>
 	public const int RimDistance = Fixed16.One / 2;
 	/// <summary>
-	/// The foot of a ladder, where a swimmer starts and ends the climb: 0.8 cell from the middle of the land cell. Measured on the ladder model (content/pools/objects/*/ladder, tools/blender/opentpw_pool_extras.py
-	/// <c>add_ladder</c>; 10 model units a cell, the model's Z is the cell's depth, 0 the back, 10 the cell's edge): the rails and the three rungs lie at Z 10.85 to 11.15, i.e. 0.6 cell from the middle, over the
-	/// coping. The coping is the outer quarter of the pool cell (<c>PoolMeshOptions.RimWidth</c>), so the water's edge, the top of the wall, is 0.75 cell from the middle; the foot is 0.05 cell off that wall and
-	/// 0.2 cell (0.4 engine units) in front of the rungs, as close as a billboard in the water gets. The offer still asks for free water at <see cref="EntryDistance"/> (swimmers keep 0.37 cell from the pool's edge).
+	/// The foot of a ladder, where a swimmer starts and ends the climb: 0.78 cell from the middle of the land cell, exactly at the ladder's rails and rungs. Measured on the ladder model (content/pools/objects/*/ladder,
+	/// tools/blender/opentpw_pool_extras.py <c>add_ladder</c>; 10 model units a cell, the model's Z is the cell's depth, 0 the back, 10 the cell's edge): the coping is the outer quarter of the pool cell
+	/// (<c>PoolMeshOptions.RimWidth</c>), so the top of the wall, where the water starts, is 0.75 cell from the middle; the rails curve over the coping and go down along the wall at Z 12.6 to 13.0
+	/// (0.78 cell, 0.1 unit off the wall) to 4.2 units below the deck, with five rungs 1.7 units apart (Y 3.4 down to -3.4, the water 0.6 below the deck). The offer still asks for free water at
+	/// <see cref="EntryDistance"/> (swimmers keep 0.37 cell from the pool's edge).
 	/// </summary>
-	public const int LadderFootDistance = 52429;
+	public const int LadderFootDistance = 51118;
 	/// <summary>
-	/// Where a ladder's climber stands after stepping over the rim: 0.25 cell from the middle of the land cell (Z 7.5), a little inside the cell and just behind the posts (Z 8.4), which are 3.6 model
-	/// units apart, so the guest passes between them. The step over the coping from the foot is 0.55 cell, about six turns at <see cref="WalkSpeed"/>.
+	/// Where a ladder's climber stands after stepping over the rim: 0.25 cell from the middle of the land cell (Z 7.5), a little inside the cell, well behind the rails posts (Y 11.3, over the coping). The step over the coping from the foot is 0.53 cell, about five turns at <see cref="WalkSpeed"/>.
 	/// </summary>
 	public const int LadderDeckDistance = 16384;
 	/// <summary>
 	/// The turns of the vertical climb (8, 2 seconds). The guest stays at the foot; the drawn feet rise from the water to the deck, a distance of <c>PoolMeshOptions.WaterDrop</c> (0.12 engine units, 0.6 model
-	/// units) on flat ground, i.e. about 0.015 engine units a turn (0.06 a second). The ladder model has three rungs 1.5 model units apart, so a rung every three turns.
+	/// units) on flat ground, i.e. about 0.015 engine units a turn (0.06 a second). The ladder model has five rungs 1.7 model units (0.34 engine units) apart.
 	/// </summary>
 	public const int ClimbTurns = 8;
 	/// <summary>The end of the diving board: 1.6 cells from the middle of its cell.</summary>

@@ -174,7 +174,14 @@ public sealed partial class ParkHud
 
 	/// <summary>The name a buy list row shows and sorts by: UITEXT 137 for a row that costs golden tickets, else the type's name.</summary>
 	// [BIN:TPW-EXE:0x4ab034 buy list row] a type with GoldenTicketCost (+0xc4) above 0 that 0x4d4b70 (the player's bought-with-tickets set) does not hold gets the name 0x485b00(0x89) = UITEXT 137 and the value -cost; any other row its type's name and its price (+4)
-	public string ListName( BuildItem item ) => !IsLandRow( item ) && Status.TicketCostOf( item ) != null ? strings[UIStrings.MysteryRide] : ItemName( item );
+	public string ListName( BuildItem item ) => IsMysteryRow( item ) ? strings[UIStrings.MysteryRide] : ItemName( item );
+
+	/// <summary>Whether <paramref name="item"/> is a golden-ticket row the player has not bought yet: the list, the title and the preview show it as the Mystery ride.</summary>
+	public bool IsMysteryRow( BuildItem item ) => !IsLandRow( item ) && Status.TicketCostOf( item ) != null;
+
+	/// <summary>The item whose model the preview frame turns: the Mystery ride for an unbought golden-ticket row, so the surprise stays hidden, else the previewed item.</summary>
+	// [BIN:TPW-EXE:0x4ab1b0 buy preview] for such a row the preview is the type-100 object, the footprint control 0x1eb is only cleared (0x5f9a80 with colour 0) and the name control 0x1ec gets UITEXT 0x89 (0x485b00); the stats frame (0x4abb00) has no such test and shows the ride's own values
+	public BuildItem? BuyPreviewModelItem => BuyPreviewItem is { } item && IsMysteryRow( item ) ? Catalog.MysteryPreview : BuyPreviewItem;
 
 	/// <summary>The price cell of a buy list row.</summary>
 	// [BIN:TPW-EXE:0x490650 buy price cell] a negative value (the ticket rows) is formatted with UITEXT 0x1c7 (OpenTPW 454, "%d gt") on its magnitude, a positive one with 0x1c1 "$ " (a magnitude above 0xeeeeeee uses the offset special cases 0x1c1/0x1c2 of the same routine)
@@ -251,7 +258,7 @@ public sealed partial class ParkHud
 		// [DATA:Mac buy table 0x4cd94:492] item name line at the top of the preview frame
 		screen.Add( new UiLabel
 		{
-			Id = "itemName", Text = () => BuyPreviewItem == null ? "" : ItemName( BuyPreviewItem ), Font = fonts => fonts.Label, Color = UiColors.Text,
+			Id = "itemName", Text = () => BuyPreviewItem == null ? "" : ListName( BuyPreviewItem ), Font = fonts => fonts.Label, Color = UiColors.Text,
 			Align = UiAlign.Center, Fit = true, Bounds = Rect( 437, 198, 797, 243 ), Anchor = UiAnchor.Center
 		} );
 		// [DATA:Mac buy table 0x4cd94:490] preview content region (437,202)-(797,565)
@@ -333,7 +340,7 @@ public sealed partial class ParkHud
 
 		public override void Draw( UiContext context, bool focused, bool pressed )
 		{
-			if ( owner.BuyPreviewItem is not { } item )
+			if ( owner.BuyPreviewModelItem is not { } item )
 				return;
 			// [BIN:TPW-EXE:0x468e50 buy preview turn] each update adds the clock's elapsed milliseconds (0x785970, 0x4031e0) x 0.0004 to the preview's angle (+0x48), and a
 			// new preview keeps the angle modulo 2 pi (0x468e2f), so the turn runs on across selections, as a clock-derived angle does

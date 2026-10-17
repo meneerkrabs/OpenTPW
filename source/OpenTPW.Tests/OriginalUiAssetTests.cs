@@ -370,6 +370,35 @@ public class OriginalUiAssetTests
 	}
 
 	/// <summary>
+	/// The buy window shows an unbought golden-ticket row as the Mystery ride (tp.exe 0x4ab1b0 previews type 100): every theme's catalogue
+	/// offers that tool as a preview item, with a model that draws with every texture resolved.
+	/// </summary>
+	[DataTestMethod]
+	[DataRow( "jungle" )]
+	[DataRow( "hallow" )]
+	[DataRow( "fantasy" )]
+	[DataRow( "space" )]
+	public void EveryThemeHasTheMysteryRidePreviewForTicketRows( string theme )
+	{
+		var original = ObjectCatalog.Load( theme );
+		var mystery = new OriginalBuildCatalog( original ).MysteryPreview;
+		Assert.IsNotNull( mystery, theme );
+		Assert.AreEqual( OriginalBuildCatalog.MysteryRideInfoId, mystery.InfoId );
+		Assert.IsTrue( mystery.Entry!.IsTool, "the Mystery ride is a tool, not a listed object" );
+		var unresolved = new List<string>();
+		var icon = new PreviewIcon( new ModelFile( mystery.PreviewModel! ), name =>
+		{
+			if ( ObjectAssets.ResolveTexture( mystery.Entry, name ) == null )
+				unresolved.Add( name );
+			return null;
+		} );
+		CollectionAssert.AreEqual( Array.Empty<string>(), unresolved.Distinct().ToArray() );
+		var batch = new UiBatch();
+		icon.Draw( batch, new UiRect( 0, 0, 100, 100 ), 0.5f );
+		Assert.IsTrue( batch.Draws.Count > 0, "the Mystery model draws" );
+	}
+
+	/// <summary>
 	/// Jungle rides without a P model (bouncy, bumper, incagod, monkey, mystery, tourride, volcano) fall back to their main
 	/// model, as the original buy window does, and that model draws inside its slot with every texture resolved.
 	/// </summary>

@@ -551,9 +551,26 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			Click( hud.Stack.Top!, "close" );
 		} );
 		Wait( "map window closes", 3 );
-		Do( "buy after map", () =>
+		// [BIN:TPW-EXE:0x751720 camera panel] the camera button slides out a panel with only the camcorder and postcard buttons (no view-cycle button)
+		Do( "camera button", () =>
 		{
 			Require( !flow.Hud!.MapWindowOpen && flow.Hud.Stack.Top?.Name == "hud", "map close returns to the HUD" );
+			Click( flow.Hud.Screen, "camera" );
+		} );
+		WaitForLoad( "camera panel slides out", () => flow.Hud!.CameraPanelOpen && flow.Hud.CameraSlide.Step == ArmSlide.Steps );
+		Do( "camera panel", () =>
+		{
+			var hud = flow.Hud!;
+			foreach ( var id in new[] { "cameraPanel", "cameraCamcorder", "cameraPostcard" } )
+				Require( hud.Screen.Find( id ) is { Visible: true }, $"the camera panel shows '{id}'" );
+			Require( hud.Screen.Find( "cameraViews" ) == null, "the camera panel has no view-cycle button" );
+			CaptureFrame( "camera-panel.png" );
+			Click( hud.Screen, "camera" );
+		} );
+		WaitForLoad( "camera panel slides in", () => !flow.Hud!.CameraPanelOpen && flow.Hud.CameraSlide.Step == 0 );
+		Do( "buy after map", () =>
+		{
+			Require( flow.Hud!.Stack.Top?.Name == "hud", "the HUD is back after the camera panel" );
 			Click( flow.Hud.Screen, "finance" );
 		} );
 		Wait( "finance window opens", 3 );

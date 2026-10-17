@@ -1,5 +1,7 @@
 # Positioned repair-hide audio review
 
+> **Correction (October 17, 2026):** this review names the value 0 "hide" and gives it the 111/211 pair. tp.exe's REPAIREFFECT handler sends the value 0 to the band sound (`je 0x55635F` at `0x5562C5`) and every non-zero value to the 111/211 pair, so the pair is the non-zero path; the positioned-origin, ownership and capture rules below hold for the pair under that polarity. See [AUDIO.md](AUDIO.md), "Placed repair sounds".
+
 Reviewed `8cbd3559032586113eff1660d3ac57f62c4f67de` against
 `7ebd3121e18c1c52fdce48324f5945ea0718e813`. No production correction was required.
 

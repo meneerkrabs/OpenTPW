@@ -123,7 +123,7 @@ mesh and ground heights follow it); **0x8/0x10/0x20** turn the ground texture by
 corner steps and **0x40** mirrors it first (0x56F4F0; set 0x8 on 3, 0x10 on 17, 0x20 on 284 cells,
 0x40 on about 95 %); 0x80/0x100/0x200/0x400/0x800 are runtime bits never stored (overlay placed,
 dirty, footprint scan, darkened land outside the park, bent cell). The high 16 bits index the model's
-textures (0x56F443). The texture turn and mirror are not drawn yet. Node types (mesh 0x1/0x401/0x2 empty; dummy 0x200/0x208/0x300/0x600)
+textures (0x56F443). The terrain renderer applies the turn and mirror (`TerrainCellTexture`): 0x56F4F0 permutes the corner array 0,1,2,3 (the cell's corners (x, z), (x, z + 1), (x + 1, z + 1), (x + 1, z) take the texture corners (0,0), (0,1), (1,1), (1,0) through it): 0x40 swaps entries 1 and 3, then 0x8 makes it 3,0,1,2, else 0x10 2,3,0,1, else 0x20 1,2,3,0, the same in both of the renderer's vertex orders (0x56F670). Node types (mesh 0x1/0x401/0x2 empty; dummy 0x200/0x208/0x300/0x600)
 are not interpreted.
 
 ### Node transform space
@@ -454,8 +454,7 @@ console harness referencing `OpenTPW.Tests.csproj`, on the main thread, with
 `OPENTPW_TEXTURE_FRAME_GPU=1` and `OPENTPW_GAME_PATH` set; MSTest's pool thread
 cannot create a Cocoa window. Native SDL2, cimgui and veldrid-spirv libraries
 must be available beside the harness. No original assets or native binaries
-are committed. Not played: the group-0
-culling boxes (OpenTPW does not cull per mesh). `LobbyIsland` (not instantiated by the game yet) uses the composed
+are committed. Per-mesh culling: the draw walk 0x57A530 skips a node's mesh when the view test 0x561A30 finds all eight corners of the mesh record's box (+0x78, from the file or sampled from group 0) outside one clip plane; the box is first widened by half its extent on every side. OpenTPW culls each mesh part with its exact vertex bounds (`ModelEntity`, `Frustum`), a tighter test of the same kind; all 4,909 static meshes of the corpus have every vertex inside their stored box (`Md2MeshBoundsCorpusTests`), so no mesh the original draws is culled here (animated boxes: the group-0 note above). `LobbyIsland` (not instantiated by the game yet) uses the composed
 hierarchy, swaps normal axes like positions, and renders untextured materials
 white instead of requesting `lobby/terrain/textures/.wct`.
 
@@ -638,10 +637,9 @@ count and offset fields, but that does not verify the rest of its layout.
 
 ## Remaining gates and sources
 
-Next: the object-list replay without a bind (RIDES-032), and game-speed scaling
-of the scene clock; the
+Next: the object-list replay without a bind (RIDES-032). The scene clock follows the game speed: the scaled clock 0x7b496c (timer 0x785970 through 0x402d70: real gap times the rate 0.25..2 by the keys 0x40c3b0/0x40c3c0/0x40c3d0, frozen by the pause 0x4092a0/0x409300 together with the unscaled clock 0x7b4974) drives the ride channels, the weather, the sky scroll (0x585F10, frame time 0x57FF60) and the coasters' scrolling textures (0x435adf, 0x4709e0 with argument 0); `SceneClock` plays it for the sky and the scrolling textures; the advisor's channels stay on the unscaled clock. The
 texture slot's current frame is read by the draw (`0x580530`) and the per-slot bind (`0x57A420`) only while the ANIMATINGTEXTURES option is on (RIDES-035 retired; MD2-900..902 stay);
-the heightfield's texture turn and mirror in the terrain renderer. CPU parsing and sandbox playback do not qualify original
+CPU parsing and sandbox playback do not qualify original
 rendering or animation behavior.
 
 Sources: upstream OpenTPW docs page is a TODO stub

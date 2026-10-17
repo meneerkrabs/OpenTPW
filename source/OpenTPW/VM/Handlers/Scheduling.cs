@@ -20,6 +20,10 @@ public static partial class OpcodeHandlers
 			vm.EndSlice();
 		}
 
+		// [BIN:TPW-EXE:0x5567B1 END] sets the program counter to -10000 (the register the dispatcher keeps at 0xFFFFD8F0) and nothing else; the pass loop ends on an invalid counter (0x551719) and the script is destroyed at the end of the pass, so END ends the script cleanly where an invalid word faults it
+		[OpcodeHandler( Opcode.END, RideOpcodeStatus.Implemented, "TPW-EXE 0x5567B1 (no operands): sets the program counter to -10000, which ends the slice and the script (destroyed at the end of the pass); no corpus use" )]
+		public static void End( RideVM vm ) => vm.EndScript();
+
 		[OpcodeHandler( Opcode.ENDSLICE, RideOpcodeStatus.Implemented, "name; corpus: sits in idle loops (`ENDSLICE; TEST VAR_RIDECLOSED; BRANCH_NZ`), so it yields until the next slice; flags survive it" )]
 		public static void EndSlice( RideVM vm ) => vm.EndSlice();
 
@@ -55,8 +59,14 @@ public static partial class OpcodeHandlers
 			}
 		}
 
-		[OpcodeHandler( Opcode.GETTIME, RideOpcodeStatus.Implemented, "STP-PPC 0xaf6d8: the shared scheduler clock's 32-bit millisecond word, stored unchanged (no creation timestamp subtracted)" )]
-		public static void GetTime( RideVM vm, Operand dest ) => dest.Value = unchecked((int)vm.ClockMilliseconds32);
+		[OpcodeHandler( Opcode.GETTIME, RideOpcodeStatus.Implemented, "TPW-EXE 0x551F1E (`dest`, raw): the clock 0x785970 (0x402D70), in milliseconds, stored unchanged into the flags and a variable destination; STP-PPC 0xaf6d8: the shared scheduler clock's 32-bit millisecond word (no creation timestamp subtracted)" )]
+		public static void GetTime( RideVM vm, Operand dest )
+		{
+			// [BIN:TPW-EXE:0x554B0F result tail] GETTIME ends in the shared tail that puts the value in the flag word (+0x48) and then, for a variable destination, in the variable
+			var clock = unchecked((int)vm.ClockMilliseconds32);
+			vm.SetFlags( clock );
+			dest.Value = clock;
+		}
 
 		[OpcodeHandler( Opcode.SETTIMER, RideOpcodeStatus.Implemented, "corpus: `SETTIMER 10000 … GETTIMER x; BRANCH_Z start` replaces the GETTIME time-out idiom; countdown in ms" )]
 		public static void SetTimer( RideVM vm, Operand time ) => vm.SetTimer( time.Value );

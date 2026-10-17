@@ -116,6 +116,15 @@ public sealed record RideVMSnapshot
 	public int LimboCount { get; init; }
 	/// <summary>The TURBO byte (script +0xB8), 0..255.</summary>
 	public int TurboByte { get; init; }
+	/// <summary>WALKST_FLOAT's start on the 32-bit clock (script +0x80); null while the script has not started a float.</summary>
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
+	public int? WalkFloatStart { get; init; }
+	/// <summary>The float's duration in milliseconds (script +0x84); null or 0 when no float runs.</summary>
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
+	public int? WalkFloatDuration { get; init; }
+	/// <summary>The float's two words (script +0x88 low half, +0x8A high half); null when both are 0.</summary>
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
+	public int? WalkFloatWords { get; init; }
 	public required int[] Variables { get; init; }
 	public required RideVM.VMFlags Flags { get; init; }
 	public required int SliceBudget { get; init; }

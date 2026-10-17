@@ -34,6 +34,13 @@ public sealed class GuestRenderer : Entity
 	public Func<Guest, (int Slot, int Step)?>? SlotChooser { get; init; }
 	/// <summary>[EXT:pools-swim] Where a guest's hotspot lies in the engine instead of on the ground (the swimmers' renderer: on the water); null for the kids and the costumes.</summary>
 	public Func<Guest, SVector3>? FeetChooser { get; init; }
+
+	/// <summary>
+	/// Opt-in, presentation only: how far, in engine units, a guest's quad is moved towards the camera along its view axis (the screen position stays the same, perspective apart). The quad is a camera-facing
+	/// plane of one depth, so a guest lying in a trough (a water slide's flume) is cut by the curved bed in front of it; pulling the quad forward by about the trough's depth stops that. 0 or null for every guest
+	/// that does not need it.
+	/// </summary>
+	public Func<Guest, float>? DepthPullChooser { get; init; }
 	/// <summary>[EXT:pools-render] Whether a slot the chosen set has no art for is drawn as the nearest swim slot (<see cref="GuestSpriteAtlas.UsableSlot"/>); the swimmers' renderer only, so any other chooser keeps the stand-slot fallback.</summary>
 	public bool SwimSlotFallback { get; init; }
 	/// <summary>
@@ -229,7 +236,7 @@ public sealed class GuestRenderer : Entity
 				continue;
 			var (atlasIndex, frameIndex, mirror, slot, direction) = SelectSpriteAndSlot(guest, right, forward);
 			var frame = atlases[atlasIndex].Frames[frameIndex];
-			var feet = (FeetChooser?.Invoke( guest ) ?? CellToEngine(field, guest.DrawX, guest.DrawY)) + new SVector3(view.M12, view.M22, view.M32) * AnchorLift(atlasIndex, slot, direction);
+			var feet = (FeetChooser?.Invoke( guest ) ?? CellToEngine(field, guest.DrawX, guest.DrawY)) + new SVector3(view.M12, view.M22, view.M32) * AnchorLift(atlasIndex, slot, direction) - forward * (DepthPullChooser?.Invoke(guest) ?? 0f);
 			if (!Hud.GuestWorldPicker.TryHit(feet, frame, mirror, view, projection, viewport, mouse, out var hit))
 				continue;
 			if (hit < best || (hit == best && (picked == null || guest.Id < picked.Id)))
@@ -262,7 +269,7 @@ public sealed class GuestRenderer : Entity
 			var (atlasIndex, frameIndex, mirror, slot, direction) = SelectSpriteAndSlot( guest, right, forward );
 			var atlas = atlases[atlasIndex];
 			var frame = atlas.Frames[frameIndex];
-			var feet = (FeetChooser?.Invoke( guest ) ?? CellToEngine( field, guest.DrawX, guest.DrawY )) + up * AnchorLift( atlasIndex, slot, direction );
+			var feet = (FeetChooser?.Invoke( guest ) ?? CellToEngine( field, guest.DrawX, guest.DrawY )) + up * AnchorLift( atlasIndex, slot, direction ) - forward * (DepthPullChooser?.Invoke( guest ) ?? 0f);
 			var (x0, x1, yTop, yBottom) = frame.Extents( mirror, UnitsPerPixel );
 			var u0 = frame.X / (float)atlas.Width;
 			var u1 = (frame.X + frame.Width) / (float)atlas.Width;

@@ -478,6 +478,9 @@ internal static class ParkResumeSaveFile
 		ValidateCoasters( snapshot );
 		ValidateTracks( snapshot );
 		ValidateTours( snapshot );
+		// [EXT:pools-slides] the slides part: shape only (the rules need the towers, which the level checks while it restores)
+		if ( PoolSlideSaves.ShapeProblem( snapshot.PoolSlides, snapshot.Mods ) is { } slideProblem )
+			Require( false, slideProblem );
 
 		// Clock: the clock's own pure validator, on a fresh instance it never mutates.
 		new FixedStepClock().ValidateSnapshot( snapshot.Clock! );

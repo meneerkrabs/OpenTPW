@@ -168,6 +168,7 @@ public static class PoolActivityRegistry
 		yield return new DivingBoardActivity();
 		yield return new ShowerActivity();
 		yield return new LoungerActivity();
+		yield return new PoolSlideActivity();
 		// [EXT:pools-attractions] [EXT:pools-river] the water attractions (P5) and the lazy river
 		if ( attractions != null )
 		{

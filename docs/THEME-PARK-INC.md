@@ -212,7 +212,7 @@ The object catalogue adds the keys only Theme Park Inc's type record has: `Info.
 | object purchase, upgrade purchase | `0x5DBE3C`, `0x5E2A99` | `0x4DB090`, `0x4AF4E9` | the build charges `Upgrades[0].CostOfUpgrade`; the upgrade needs a mechanic, so it stays refused (`NeedsStaff`) |
 | scrap value | `0x5E7890`, percentage `0x5E75F0` | `0x4E2400`, `0x4E2290` | by year of age, 100 % if unused within 30 days, plus a condemned object (state 4) refunds nothing; the thing-flag branch is left out (ECON-061) |
 | running costs | month message `0x5DEFFF` | none | each object pays its current level's `Upgrades[n].RunningCost` every month, nothing in ride state 1 or 4 (ECON-060) |
-| arrival group | `0x5BCD60` (words `0x00A02240`..`0x00A02250`) | `0x4CF5B0` | `GuestSimulation.ArrivalGroupSize` with `Arrival.*PercentageModifier`, single-precision 0.01 (oracle X7); no Theme Park Inc weather runs, so the percentage is always 100 (ARRIVAL-008) |
+| arrival group | `0x5BCD60` (words `0x00A02240`..`0x00A02250`) | `0x4CF5B0` | `GuestSimulation.ArrivalGroupSize` with `Arrival.*PercentageModifier`, single-precision 0.01 (oracle X7); OpenTPW runs no Theme Park Inc weather (the original simulates one: thunder countdown and wind, see the weather body below), so the percentage is always 100 (ARRIVAL-008) |
 
 **What runs.** Starting cash and admission fee; the build, path, queue and kart/water track charges (a refused purchase says why); scrap refunds when an object
 is removed; the loans; the bankruptcy after six months in the red (the arrival stops, building is refused); the calendar and each

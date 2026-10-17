@@ -27,6 +27,7 @@ ARRIVAL-005 docs/GUESTS.md
 ARRIVAL-007 docs/progress/2026-10-15-arrival-and-save-rules-settled-against-tp-exe.md
 AUDIO-002 docs/AUDIO.md
 AUDIO-008 docs/AUDIO.md
+AUDIO-009 docs/AUDIO.md
 AUDIO-011 docs/AUDIO.md
 AUDIO-015 docs/PROGRESS.md
 AUDIO-017 docs/AUDIO.md
@@ -343,6 +344,6 @@ VM-902 docs/DETERMINISM.md
 WALK-001 docs/progress/2026-10-16-ride-shop-and-sideshow-settings.md
 WALK-002 docs/GUESTS.md
 WALK-004 docs/GUESTS.md
+WALK-006 docs/GUESTS.md
 WALK-008 docs/GUESTS.md
 WALK-009 docs/GUESTS.md
-WALK-006 docs/GUESTS.md

@@ -9,8 +9,7 @@ ambients (scape.omp) play with the mixer's distance law, ride screams play, the 
 walking and idle voices play, the path tool's laying and refused clicks play, a queue joining a path
 plays `cat_ui` 139, Backspace over a path cell (and, as an extension, a queue cell) plays `cat_ui` 95 as it removes the cell, and opening a
 visitor's details plays the visitor click (`cat_kids` 129). Still silent: the second source of 139 (a
-laid path cell linking to a queue) and the lobby's global effects
-(see "Traced but not triggered"). No original data is in the repository.
+laid path cell linking to a queue) and the events listed in "Event coverage (round 7)". No original data is in the repository.
 
 The integration regressions force a rainy storm, pass its rain level and due thunder
 through the live audio callbacks, and assert nonzero decoded PCM. They also exercise
@@ -410,8 +409,37 @@ Traced in the binary but not triggered yet:
   interaction.
 * `cat_ui` 0xBD: a control whose construction style (`+0x48`, the base window constructor `0x65bcad`'s second
   argument) has bit `0x10` plays 0xBD instead of 0x1F (`0x4857cb`; the Mac's "bits outside 24-26" is a
-  big-endian rendering of the same test); which original controls are created with it is not traced, so
-  no OpenTPW control plays it (AUDIO-004).
+  big-endian rendering of the same test). The creation sites are the list row templates and the table
+  builder's type 3 controls (AUDIO-004); whether a press on them sends the activate message `0x100` is not
+  read (the senders at `0x658683`, `0x65f5dc`, `0x65f623`, `0x6691eb` and `0x66fa2c` were located, not read),
+  so no OpenTPW control plays it.
+
+### Event coverage (round 7)
+
+Wired in round 7, each from the instruction that submits it (the tags sit at the code): the upgrade sound
+`cat_rides` 0xB8 (`0x55a2e5`), the placement cues `cat_ui` 0x8D-0x90 and the demolition cues 0x96-0x99 by
+footprint size (`0x528e30`, `0x5285a2`; the demolition's place is (width x 10, 0, height x 10), a quirk kept),
+the message tube's posted (0x1E, `0x48edb4`) and clicked (0xC0, `0x48e043`) sounds, the postcard 0x95 (`0x4a9380`),
+the research window's two hums 0x9A/0x9B and the effort slider 0x9C with its parameters (`0x4aa4f5`, `0x4a97ad`,
+`0x4a9a53`), the stop-guard cue, and the guests' till (0xD0), drink (0x83), meal (0x84), toilet thought (0x85), pause (0x7E),
+vomit (0xCC) and ride-removed (0x80) voices (`0x4fe1cb`, `0x4fe303`, `0x4fca3e`, `0x4fc83a`, `0x4fed86`, `0x4fb3f5`).
+The staff's walking and idle voices were already wired. Script-driven events (the ride scripts' sound
+instructions) play through the ride script system. Still not played: the unmapped UI events 0xC1 and 0xCE,
+the advisor's 0xC5/0xC6 (advisor-owned), the track tool's sounds, and events whose only callers are in systems OpenTPW
+does not have (slap, the second source of 139).
+
+## QMixer.dll (original mixer, static)
+
+`tp.exe` reaches the mixer through an adapter (`0x6d2100`-`0x6d2d80`, vtable `0x711920`) over the `QSWaveMix*` API.
+[BIN:QMIXER-DLL:0x18005830] Every voice runs in the software channel stage (mode `0x1000000`); the volume
+table is at `0x782e40` in `tp.exe`, the pool holds 12 voices (5 in the other mode). Volume and pan laws and the
+distance law are in the AUDIO-018 row and the AUDIO-033 note above and are implemented by `AudioListener` and
+`AudioMixer` (`AudioMixerLawTests`). Not read: reverb application, the `SetPosition` integer message for flat
+voices, and ducking beyond the speech duck of `sound.sam`.
+
+AUDIO-009 is retired: the build tools never refuse with a sound (`0x524960`-`0x535100`, and none of the sound entry's
+call sites lies in the refusal stages `0x535670`/`0x536100`); OpenTPW's own "Cannot build" cue stays the extension
+`[EXT:cannot-build-sound]`.
 
 ## Lobby effects
 
@@ -612,7 +640,6 @@ implemented yet.
 | --- | --- | --- |
 | AUDIO-003 | The pitch is applied: every sample playback draws a step `min + r % (max - min)` from the signed range of its sound (after the volume draw, from the shared chooser) and plays at ratio 1 for step 0, otherwise 2^(sign x (\|step\| + 1) / 96) (tp.exe `0x6bc170`, mixer wrapper `0x6d2820`, float tables `0x782f40`/`0x783540`); 141 playbacks in the original's video sit on exactly the six ratios of the range 0..6. A parameter-bound pitch slot is applied to every playback (sentences, one-shots and chains) through its placeholder table (`0x6bbf60`, `0x6bc040`, `0x6bc170`). The fixed-pitch flag (`0x10000`, `0x6bc484`) is unreachable: nothing in the library sets it and the events' flags are 16-bit. The delay of every sample start is drawn after the volume and the pitch (`min + r % (max - min)`, `0x6bc2d0`, stored at `+0x3c` by `0x6bc4fa`): a chain waits it between children (milliseconds, video 2026-10-15), any other voice keeps its place in the voice pool until its sample's nominal end plus 250 ms plus the delay (`0x6bc01b`, `0x6bcb60`, the tick `0x6b62b0`; events flagged `0x4` or `0x8` are exempt, `0x6bbe90`). Not applied: reverb (`SndReverb.map`, loaded at `0x6c5d20`; `tp.exe` imports none of QMixer's reverb calls); position is applied only by the positioned playback path | How `SndReverb.map` is applied |
 | AUDIO-004 | `0xBD` plays for a control whose construction style (`+0x48`, `0x65bcad` arg 2, the factory `0x65dd7b` arg 2) has bit `0x10` (`0x4857cb`). The creation sites with that bit are read: type 1 and type 9 children of the row templates `0x4938c0` (visitors list), `0x4944d0` (attractions lists), `0x496cea`/`0x496cff` and `0x4b4c70`, and the table builder's type 3 controls (styles `0x10`/`0x11`, `0x6604a1`, `0x66051a`, `0x6610b6`, `0x661144`), which builder case 9 (`0x65fd58`) makes inside list containers of types 4 and 7: the lists' sliders (the Type 3 nodes of OpenTPW's visitor and attraction list nodes); the traced button-like sites (types 1 and 2 with styles `0`, `1`, `0x21`) play `0x1F`. No OpenTPW control plays `0xBD` | Whether a press on a list slider or on a row's children sends the activate message `0x100` (the slider and row classes' procedures) |
-| AUDIO-009 | Within the build tools' code (`0x524960`-`0x535100`, whose 13 call sites of the sound entry `0x51bfc0` play only `0xAF`, `0x65` twice, `0xCE`, `0x8B` five times, the erase's size cues `0x96`-`0x99` and the placement's size cues `0x8D`-`0x90`) no refusal sound exists, and `tp.exe` plays `0x1D` at exactly two sites (`0x487b51` in the park click handler `0x4879d0`, a cost above the money, and the helper `0x486ae0` of the hire window `0x4af480`); OpenTPW's own "Cannot build" sound is the extension `[EXT:cannot-build-sound]` Every call site of the sound entry `0x51bfc0` (82) is listed; none lies between `0x535100` and `0x5471cd`, where the refusal stages `0x535670` and `0x536100` are | Whether a callee of those stages plays a sound (not each traced) |
 | AUDIO-018 | A positioned **mono** voice follows QMixer.dll's software channel stage, which `tp.exe` selects for every voice: the request flag 1 is ORed in unconditionally (`0x6bc61b`, after both the flat and the positioned branch of the sample start `0x6bc410`), so `0x6d23ab`-`0x6d23bb` hands `QSWaveMixConfigureChannel` the mode `0x1000000`, whose buffers have no DirectSound 3D object (that is mode `0x2000000`, `0x18005056`, `0x18005915`). The offset to the source is rotated into the listener's basis (the camera matrix rows `0x7909b0` front and `0x7909a0` up through `0x51c1d0`; QMixer normalises both, right = up × front, up' = front × right, `0x1800ce70`, `0x1800cf10`), the azimuth is `atan2(x, z)` in degrees (`0x18009dc0` → `0x1800cb10`, `fpatan` at `0x1800c7b0`), the DirectSound pan is 44.444 hundredths of a dB per degree, mirrored behind the listener so it stays within ±4000 (`0x18005730`), the gain becomes 2000·log10(gain) hundredths of a dB rounded (`0x1800ca40`; 1 → 0, 0 or less → −10000), and `0x18005830` calls SetVolume (`+0x3c`) and SetPan (`+0x40`) only when the wave format table `0x1803c6b4` says one channel (`0x18005982`; the table is {0,1,1,1,2,2,2,4,4,4} by format index, with the bits per sample {0,8,16,32,8,16,32,8,16,32} at `0x1803c6dc`): the louder channel keeps the level, the other is 10^(−\|pan\|/2000) of it (at 90° 0.01), so the centre is not 3 dB down (`AudioListener.DirectSoundPan`, `PanGains`, `Azimuth`; the park, free-walk and ride cameras pass their up vector so the pitch counts) | The axis mapping of the camera rows into QMixer (the tp.exe adapters `0x6d2aec` and `0x6d2c68` swap two components by the driver's byte +8, not read) and how QMixer places the flat voices that `tp.exe` positions at (0,1,0) (`0x6bc51d`; `SetPosition` `0x6d2640` against `SetSourcePosition`; QMixer's `SetPosition` message 6 reads integers, `0x18007abd`): flat voices keep both channels at the voice's gain |
 | AUDIO-900 | The rain is one camera-following wrapping drop field of straight falling streaks, its count the simulated current drops, its parallax the original's absolute `-factor x camera position` on a 1/16384 grid (`0x57efd0`, `0x580013`-`0x5800b7`), its states decoded (`0x567620`: rain and bolts `0x200D52`, snow `0x556`, alpha test at 0x10/255); the factor 0.3 (`0x58000b`) applies in the free-walk and ride cameras (the listener's mapping of camera-state bits `0x16`) | What bits `0x2`, `0x4` and `0x10` of `0x790ab0` select in the original (which views): `0x42AB20` toggles `0x2` and `0x4` from input events 2 and 4, `0x576a00` turns any of them into render flag `0x100` of `0x8bd508`, nothing sets `0x10` alone |
 | AUDIO-901 | Snow is the jitter version (((rand & 31) - 16) / 2048 a frame on every axis), the only one the PC draws (the swirl flag `0x8bcbc8` bit `0x100` is never set), each flake one triangle over its atlas quadrant (`0x57f490`), its depth moved by the original's w term 0.1501; the depth-buffer value (z + 0.1) / (z + 0.1501) is not written (`[EXT:snow-depth-value]`: the precompiled browser shader has no clip-space vertex path) | The space of the flake's z + 0.1 and fourth word z + 0.1501 (camera or clip); whether the base half-width h x `0x8bcbcc` (height / width) equals OpenTPW's h under its aspect-correct projection |

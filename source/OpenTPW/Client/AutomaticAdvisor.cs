@@ -152,10 +152,16 @@ internal sealed class AutomaticAdvisor : IDisposable
 		}
 		if ( item.Kind == ParkEventKind.ResearchGroupOpened && NewResearchGroupMessage( (ResearchCategory)item.Amount ) is { } groupAdvice )
 			PostEventAdvice( groupAdvice, $"a new {(ResearchCategory)item.Amount} research group" );
+		if ( item.Kind == ParkEventKind.GlobalTicketMoved && GlobalTicketMovedMessage( (GoldenTicketKind)item.Amount ) is { } movedAdvice )
+			PostEventAdvice( movedAdvice, $"the {(GoldenTicketKind)item.Amount} ticket moved here" );
 		// [BIN:TPW-EXE:0x00503E8E all research done] 0x167 (167) is posted in Instant Action (the game-type word 0xFB3B7C is 2) without further test; in the full simulation only when the player's ledger has the flag +0xB9 of every park (0x5B0C40), which OpenTPW's ledger lacks
 		if ( item.Kind == ParkEventKind.ResearchAllDone && GameType == 2 )
 			PostEventAdvice( 167, "all research done" );
 	}
+
+	/// <summary>The advice of a global ticket that moved to this park (0x4D5270 case 4 of 0x5AF940: 0xEA + type, one response each, responses 474 to 477; none for another kind).</summary>
+	// [BIN:TPW-EXE:0x004D5270 global ticket moved] the type 0..3 (coaster height, go-kart excitement, water length, big park) picks 0xEA, 0xEB, 0xEC or 0xED, built through 0x59B590
+	internal static int? GlobalTicketMovedMessage( GoldenTicketKind kind ) => kind is >= GoldenTicketKind.CoasterHeight and <= GoldenTicketKind.BigPark ? 234 + (kind - GoldenTicketKind.CoasterHeight) : null;
 
 	/// <summary>The advice of each research category's completion (0x59B060, message type 0x11: ride 93, add-on 94, shop 95, sideshow 96, feature 97).</summary>
 	// [BIN:TPW-EXE:0x0059B0E6 research done] the category in the message's +0xC picks the advice: 0 queues 0x5D, 1 0x5F, 2 0x60, 3 0x61 and 4 0x5E; the project's category is the object's own, or 4 for an upgrade level

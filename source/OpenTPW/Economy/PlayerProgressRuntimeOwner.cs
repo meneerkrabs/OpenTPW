@@ -11,6 +11,7 @@ internal sealed class PlayerProgressRuntimeOwner : IDisposable
 	private ParkEconomy observed;
 	private string digest;
 	private bool disposed;
+	private readonly Func<GoldenTicketKind, long, GlobalTicketOutcome> authority;
 	public PlayerTicketLedger Ledger { get; }
 	public bool Dirty { get; private set; }
 	public string? Error { get; private set; }
@@ -21,6 +22,7 @@ internal sealed class PlayerProgressRuntimeOwner : IDisposable
 	public PlayerProgressRuntimeOwner( string path, string theme, PlayerTicketFile.ReadState state, ParkEconomyRuntime runtime, Func<bool> active, Action<string> report )
 	{
 		this.path = path; this.theme = theme; this.runtime = runtime; this.active = active; this.report = report;
+		authority = Authority;
 		Ledger = state.Ledger; digest = state.Digest; observed = runtime.Economy;
 		Reconcile();
 		TryFlush();
@@ -31,14 +33,26 @@ internal sealed class PlayerProgressRuntimeOwner : IDisposable
 	{
 		if ( Eligible && Ledger.Reconcile( theme, runtime.Economy.Objectives.GoldenTickets ) != 0 ) Dirty = true;
 		observed = runtime.Economy;
+		runtime.Economy.Objectives.GlobalTicketAuthority = authority;
+	}
+
+	/// <summary>The player-wide holder rule of the four global tickets (tp.exe 0x5AF940); a park outside this player's progress keeps its own set.</summary>
+	private GlobalTicketOutcome Authority( GoldenTicketKind kind, long record )
+	{
+		if ( !Eligible ) return GlobalTicketOutcome.Unmanaged;
+		var before = Ledger.HolderOf( kind );
+		var outcome = Ledger.RecordGlobal( theme, kind, record );
+		if ( outcome != GlobalTicketOutcome.None || before != Ledger.HolderOf( kind ) ) Dirty = true;
+		return outcome;
 	}
 
 	private void OnEvent( ParkEvent item )
 	{
-		if ( !Eligible || item.Kind != ParkEventKind.GoldenTicketWon || item.Amount < 0 || item.Amount > int.MaxValue ) return;
+		if ( !Eligible || item.Kind is not (ParkEventKind.GoldenTicketWon or ParkEventKind.GlobalTicketMoved) || item.Amount < 0 || item.Amount > int.MaxValue ) return;
 		var kind = (GoldenTicketKind)item.Amount;
 		if ( !Enum.IsDefined( kind ) || !runtime.Economy.Objectives.GoldenTickets.Contains( kind ) ) return;
-		if ( Ledger.RecordEarned( theme, kind ) ) { Dirty = true; TryFlush(); }
+		if ( Ledger.RecordEarned( theme, kind ) ) Dirty = true;
+		if ( Dirty ) TryFlush();
 	}
 
 	public void Pump()
@@ -74,6 +88,7 @@ internal sealed class PlayerProgressRuntimeOwner : IDisposable
 		if ( disposed ) return;
 		disposed = true;
 		runtime.EventRaised -= OnEvent;
+		if ( runtime.Economy.Objectives.GlobalTicketAuthority == authority ) runtime.Economy.Objectives.GlobalTicketAuthority = null;
 	}
 }
 

@@ -65,6 +65,19 @@ public enum GoldenTicketKind
 	AllLandOwned
 }
 
+/// <summary>What the player-wide ticket authority decides for a global ticket whose condition holds.</summary>
+public enum GlobalTicketOutcome
+{
+	/// <summary>No authority decides (no player ledger attached): the park keeps its own set.</summary>
+	Unmanaged,
+	/// <summary>The park holds it already or another park keeps it with a record at least as good: nothing happens.</summary>
+	None,
+	/// <summary>Nobody has earned it yet: the park earns it.</summary>
+	Awarded,
+	/// <summary>Another park held it with a lower record: it moves here and the advisor says so.</summary>
+	Moved
+}
+
 /// <summary>
 /// Challenges (<c>Challenges.sam</c> + <c>ChallengesInThisLevel</c> + <c>Challenges.*</c> timing) and
 /// golden tickets. Data-driven: definitions, level order, prizes, target times/values/objects,
@@ -425,10 +438,20 @@ public sealed class ParkObjectives
 			+ (IsSupportedType( definition.Type ) ? "" : " [progress not measurable yet]");
 	}
 
+	/// <summary>The player-wide authority over the four global tickets (the application's ticket ledger), or null while none is attached.</summary>
+	internal Func<GoldenTicketKind, long, GlobalTicketOutcome>? GlobalTicketAuthority { get; set; }
+
+	private IReadOnlyList<GoldenTicketKind> lastMovedTickets = Array.Empty<GoldenTicketKind>();
+
+	/// <summary>The global tickets the last <see cref="CheckGoldenTickets"/> took over from another park.</summary>
+	public IReadOnlyList<GoldenTicketKind> LastMovedTickets => lastMovedTickets;
+
 	/// <summary>Golden ticket check (every 100 park turns in Full Simulation, <see cref="ParkEconomy.RunsGoldenTicketCheck"/>); returns newly won tickets. <paramref name="coveredCells"/> is the big park's cell count (<see cref="ParkEconomy.CoveredCells"/>); null without a cell map.</summary>
 	public IReadOnlyList<GoldenTicketKind> CheckGoldenTickets( ParkCounters counters, IParkGuestStatistics guests, ParkResearch research, long profitThisYear, IReadOnlyList<long> monthlyAdmissions, long droppedAdmissions = 0, long parkSeconds = long.MaxValue, long? coveredCells = null, int? securityCoveragePercent = null )
 	{
 		var won = new List<GoldenTicketKind>();
+		var moved = new List<GoldenTicketKind>();
+		lastMovedTickets = moved;
 		if ( !settings.CanEarnTickets )
 			return won;
 		var rules = settings.GoldenTickets;
@@ -455,11 +478,30 @@ public sealed class ParkObjectives
 		Check( GoldenTicketKind.AllResearchedAndBuilt, allBuilt );
 		Check( GoldenTicketKind.ProfitYear, profitThisYear > rules.ProfitYear );
 		Check( GoldenTicketKind.RecentVisitors, recent > rules.RecentVisitors && ageMonths > recentMonths );
-		Check( GoldenTicketKind.CoasterHeight, MaxRecord( ParkRecordKind.CoasterHeight ) > rules.CoasterHeight );
-		Check( GoldenTicketKind.GokartExcitement, MaxRecord( ParkRecordKind.GokartExcitement ) > rules.GokartExcitement );
-		Check( GoldenTicketKind.WaterLength, MaxRecord( ParkRecordKind.WaterLength ) > rules.WaterLength );
+		// [BIN:TPW-EXE:0x005AF940 global ticket holder] a global ticket is held by one park at a time: the first win sets the player-wide flag (+0x18 + type) and this park's held byte (+6 + type) and record (+0xC + 4 x type); with the flag set and this park not holding it, the first park in the player's list that holds it with a record below this park's record loses its held byte and this park takes it (result 4, no change to any count, which counts the four flags once plus the locals of every park); a park that holds it, or no better record, returns 0
+		void CheckGlobal( GoldenTicketKind kind, long record, long threshold )
+		{
+			if ( record <= threshold )
+				return;
+			switch ( GlobalTicketAuthority?.Invoke( kind, record ) ?? GlobalTicketOutcome.Unmanaged )
+			{
+				case GlobalTicketOutcome.Unmanaged:
+				case GlobalTicketOutcome.Awarded:
+					if ( tickets.Add( kind ) )
+						won.Add( kind );
+					break;
+				case GlobalTicketOutcome.Moved:
+					tickets.Add( kind );
+					moved.Add( kind );
+					break;
+			}
+		}
+		CheckGlobal( GoldenTicketKind.CoasterHeight, MaxRecord( ParkRecordKind.CoasterHeight ), rules.CoasterHeight );
+		CheckGlobal( GoldenTicketKind.GokartExcitement, MaxRecord( ParkRecordKind.GokartExcitement ), rules.GokartExcitement );
+		CheckGlobal( GoldenTicketKind.WaterLength, MaxRecord( ParkRecordKind.WaterLength ), rules.WaterLength );
 		// [BIN:TPW-EXE:0x004D4E50 global golden tickets] the four global tickets are tested in index order against the GoldenTicketGlobal words (0x7857AC, B0, B4, BC), each strictly greater: coaster height, go-kart excitement, water length and, index 3, the big park, whose count (0x004CD7F0) goes over all 128 x 128 cells of type 9, 10, 4 or 21 or under a structure of 0x005363F0 and is compared with GoldenTicketGlobal.MinCellsCovered (0x7857BC, the fifth key of the table 0x73FC70); MinCellsOwned (0x7857B8) is never read
-		Check( GoldenTicketKind.BigPark, coveredCells > rules.MinCellsCovered );
+		if ( coveredCells is { } covered )
+			CheckGlobal( GoldenTicketKind.BigPark, covered, rules.MinCellsCovered );
 		// [BIN:TPW-EXE:0x004D4A00 secret golden ticket] after the local and global checks, a park without the secret ticket (0x005AF800) whose camera coverage (0x004CD720) is exactly 100 awards it (0x005AFB00, 0x004D5870, index 0); no other caller of those two exists, so there is no all-land ticket
 		Check( GoldenTicketKind.CamerasEverywhere, securityCoveragePercent == 100 );
 		return won;

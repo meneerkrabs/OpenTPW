@@ -12,3 +12,8 @@ chain with typed attractions including their history rings, the bank and the sma
 consumes exactly to its delimiter. The science prebuilt import uses it: scene records are joined to attractions by mesh
 instance id and Info.Id, replacing the exact-23-records requirement. Raw and inferred parts are SAVE-940 to SAVE-944.
 Docs: SAVE-CONTAINER.md, THEME-PARK-INC.md, TPWS-PAYLOAD.md, FORMAT-BACKLOG.md.
+
+Review follow-up: the import refuses a save whose scene record is damaged or duplicated (only the lake obstacle `1703` may lack one,
+and no attraction may be named by two records). The staff HQ, advisor, park analyser, research lab, weather and challenge things take
+the prebuilt's widths, checked by the following header, so a header lookalike inside them cannot fabricate things; guests, staff and
+gardeners (absent from the prebuilt) still end at the first following header that reads, which is a heuristic (SAVE-944).

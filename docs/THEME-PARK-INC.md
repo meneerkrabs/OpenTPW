@@ -200,9 +200,10 @@ The importer is read-only. The World block is read into typed records
 the signature scan must then name exactly one attraction thing of that World by mesh instance id
 (the record's `u32` at +1, the thing's `MeshInstanceID`), Info.Id and, for a placed object, cell, so a damaged or
 different save cannot quietly produce a partial park. This replaced the former requirement of
-exactly 23 records with 14 fixed items: a record lost to damage is now reported through
-`UnrecordedThemeParkIncAttractions` (the prebuilt has one, the lake obstacle `1703`, whose RideSystem
-entry is not an 815/865 scene record) instead of failing the import. It uses the same exact map-attribute check
+exactly 23 records with 14 fixed items. The join runs both ways: every record must name one attraction,
+no attraction may be named by two records, and every attraction must have a record except the lake
+obstacle `1703` (whose RideSystem entry is not an 815/865 scene record; it is the only entry of
+`UnrecordedThemeParkIncAttractions`). A damaged or duplicated record therefore still fails the import. It uses the same exact map-attribute check
 as TPW but the TPI record widths and SYSG header are separate, leaving TPW save reading unchanged. A 300-frame native
 science capture draws the paths and park objects; it does not prove their appearance against the
 original game. Economy, ride state, guests, opaque cell data and unrecognised scene records are
@@ -253,12 +254,16 @@ prebuilt).
 | 3 attraction | `OBJE` | 312 bytes, plus 5,263 of history when its flag byte (the last of the 312) is 1: 13 rings of 30 and 6 rings of 144 | typed (`ThemeParkIncAttraction`, including the history rings); 24 in the prebuilt |
 | 16 bank | `BANK` | 292 (the TPW bank) | typed (`SaveBank`) |
 | 10 mechanic HQ, 12 tag system, 17 UI receiver, 21 `OBJH`, 22 `CUTS`, 23 `TRNR` | | 10, 12, 8, 14, 10, 8 | exact; base plus raw tail (`ThemeParkIncSmallThing`) |
-| 9 staff HQ, 11 advisor controller, 13 park analyser, 14 research lab, 15 weather, 19 challenge system | | 411, 233, 76,617, 8,414, 104, 1,287 | raw, bounded by the next thing's header (marker-bounded) |
-| 1 guest, 4 to 8 staff, 20 gardener | | none in the prebuilt | raw, marker-bounded |
+| 9 staff HQ, 11 advisor controller, 13 park analyser, 14 research lab, 15 weather, 19 challenge system | | 411, 233, 76,617, 8,414, 104, 1,287 | raw; these widths are the prebuilt's, not traced from the serializers (closure-derived), and the header that must follow checks them |
+| 1 guest, 4 to 8 staff, 20 gardener | | none in the prebuilt | raw; no width, the body ends at the first following header that reads (heuristic) |
 
 Models 0, 2 and 18 have no serializer (the jump table `0x64d7e0` sends 18 to the challenge case too, but only 19 is witnessed) and are
-rejected. A marker-bounded body ends at the first following `LDMT` whose header names a model with its own tag, or, for the last thing, at
-the `ENOD` whose special-rides tail is followed by the `WRLD` delimiter; the whole block must then read exactly to that delimiter.
+rejected. The widths of the staff HQ, advisor, analyser, lab, weather and challenge things are therefore **not** traced
+reader widths, and guests, staff and gardeners (absent from the prebuilt) are found by searching for the next header that reads
+(or, for the last thing, the `ENOD` whose special-rides tail is followed by the `WRLD` delimiter). A complete header
+lookalike inside such a search-bounded body would fabricate a shorter body and an extra thing that still closes at the delimiter and passes
+the variable checks; a uniqueness check cannot catch it, because a raw body can always absorb the thing after it. This is SAVE-944.
+The block must in every case read exactly to its delimiter.
 Typed fields that are inferred rather than traced are SAVE-940 to SAVE-944 in the [register](FIDELITY-REGISTER.md).
 
 ## Ride-script VM: shared formats and opcode lineage

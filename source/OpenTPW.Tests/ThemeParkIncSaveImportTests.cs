@@ -58,14 +58,22 @@ public class ThemeParkIncSaveImportTests
 			CollectionAssert.AreEqual( new[] { 1601, 103, 104, 1705, 1706, 1709, 3708, 1707, 1710, 1702, 1701, 1700, 1750, 1798 },
 				park.FixedItems.Select( item => item.InfoId ).ToArray(), path );
 			Assert.AreEqual( 90, park.PlacedObjects.Single( item => item.Record.Index == 27 ).Record.Rotation, path );
-			// The SYSG signature scan no longer demands exactly 23 records: a damaged record header is simply not found, which the typed World reports as one more unrecorded attraction.
-			var damaged = (byte[])payload.Clone();
-			damaged[park.FixedItems[0].Offset] = 2;
-			var damagedPark = OriginalParkImport.ImportThemeParkInc( damaged, map );
-			Assert.AreEqual( park.FixedItems.Count - 1, damagedPark.FixedItems.Count, path );
-			CollectionAssert.AreEquivalent( new[] { 1703, park.FixedItems[0].InfoId }, damagedPark.UnrecordedThemeParkIncAttractions.Select( item => item.InfoId ).ToArray(), path );
+			// Only the lake (1703) may lack a scene record: a damaged record header is not found by the scan, and the attraction left without a record fails the import.
 			CollectionAssert.AreEqual( new[] { 1703 }, park.UnrecordedThemeParkIncAttractions.Select( item => item.InfoId ).ToArray(), path );
 			Assert.AreEqual( 23, park.ThemeParkIncObjects.Count, path );
+			foreach ( var record in park.FixedItems.Concat( park.PlacedObjects.Select( item => item.Record ) ).Concat( park.UnresolvedObjects ) )
+			{
+				var broken = (byte[])payload.Clone();
+				broken[record.Offset] = 2;
+				Assert.ThrowsException<InvalidDataException>( () => OriginalParkImport.ImportThemeParkInc( broken, map ), $"{path}: record {record.Index}" );
+			}
+			// two records naming one attraction (same mesh and Info.Id, different index) would render it twice: refused
+			var duplicated = (byte[])payload.Clone();
+			var (first, second) = (park.FixedItems[0], park.FixedItems[1]);
+			Array.Copy( payload, first.Offset, duplicated, second.Offset, ThemeParkIncSaveObjectList.RecordHeaderBytes );
+			BitConverter.GetBytes( (uint)second.Index ).CopyTo( duplicated, second.Offset + 29 );
+			var error = Assert.ThrowsException<InvalidDataException>( () => OriginalParkImport.ImportThemeParkInc( duplicated, map ), path );
+			StringAssert.Contains( error.Message, "already names", path );
 		}
 	}
 

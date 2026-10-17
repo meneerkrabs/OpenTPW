@@ -80,8 +80,7 @@ public sealed class OriginalParkImport
 	/// <summary>The Theme Park Inc scene records joined to their attraction things (empty for a Theme Park World save).</summary>
 	public IReadOnlyList<ImportedThemeParkIncObject> ThemeParkIncObjects { get; private init; } = Array.Empty<ImportedThemeParkIncObject>();
 	/// <summary>
-	/// The Theme Park Inc attraction things no scene record names: the signature scan of the RideSystem block saw no record for their mesh instance. The prebuilt has one,
-	/// the lake mission obstacle (Info.Id 1703), whose RideSystem entry is not a 815/865 scene record.
+	/// The Theme Park Inc attraction things no scene record names. Only the lake mission obstacle (Info.Id 1703) may be one; the import throws for any other.
 	/// </summary>
 	public IReadOnlyList<ThemeParkIncAttraction> UnrecordedThemeParkIncAttractions { get; private init; } = Array.Empty<ThemeParkIncAttraction>();
 
@@ -284,6 +283,9 @@ public sealed class OriginalParkImport
 	/// no attraction thing.
 	/// </summary>
 	// [DATA:PreBuilt/prebuilt.TPWS:SYSG] the RideSystem block's scene records are still found by signature (its record walk is not decoded); each must name exactly one attraction thing of the typed World, which replaces the former requirement of exactly 23 records with 14 fixed items
+	/// <summary>The Info.Ids of attraction things that may have no scene record: the lake mission obstacle, whose RideSystem entry is not an 815/865 scene record.</summary>
+	private static readonly HashSet<int> UnrecordedAttractionInfoIds = new() { 1703 };
+
 	public static OriginalParkImport ImportThemeParkInc( ReadOnlyMemory<byte> payload, MapFile map )
 	{
 		ArgumentNullException.ThrowIfNull( map );
@@ -307,6 +309,7 @@ public sealed class OriginalParkImport
 		var fixedItems = new List<SaveObject>();
 		var unresolved = new List<SaveObject>();
 		var joined = new List<ImportedThemeParkIncObject>();
+		var named = new HashSet<int>();
 		var span = payload.Span;
 		foreach ( var record in ThemeParkIncSaveObjectList.Parse( span, layout, map.CellCountX, map.CellCountY ) )
 		{
@@ -316,6 +319,8 @@ public sealed class OriginalParkImport
 				&& (record.IsFixedItem || attraction.CellX == record.X && attraction.CellY == record.Y) ).Take( 2 ).ToList();
 			if ( matches.Count != 1 )
 				throw new InvalidDataException( $"Theme Park Inc scene record {record.Index} (mesh {mesh}, Info.Id {record.InfoId}) matches {matches.Count} attraction things; expected one." );
+			if ( !named.Add( matches[0].Id ) )
+				throw new InvalidDataException( $"Theme Park Inc scene record {record.Index} (mesh {mesh}, Info.Id {record.InfoId}) names attraction thing {matches[0].Id}, which another scene record already names." );
 			joined.Add( new ImportedThemeParkIncObject( record, matches[0] ) );
 			if ( record.IsFixedItem )
 			{
@@ -337,12 +342,16 @@ public sealed class OriginalParkImport
 			else
 				unresolved.Add( record );
 		}
-		var named = joined.Select( item => item.Attraction.Id ).ToHashSet();
+		var unrecorded = tpiWorld.Attractions.Where( attraction => !named.Contains( attraction.Id ) ).ToList();
+		// [DATA:PreBuilt/prebuilt.TPWS:SYSG] the lake obstacle (Info.Id 1703) is the one attraction the prebuilt's scene records do not name; any other attraction without a record means the signature scan lost a damaged record, so the save is refused
+		foreach ( var attraction in unrecorded )
+			if ( !UnrecordedAttractionInfoIds.Contains( attraction.InfoId ) )
+				throw new InvalidDataException( $"Theme Park Inc attraction thing {attraction.Id} (Info.Id {attraction.InfoId}, mesh {attraction.MeshInstanceId}) has no scene record; the RideSystem record for it is damaged or missing." );
 		return new OriginalParkImport( map, layout, cells, paths.AsReadOnly(), placed.AsReadOnly(), fixedItems.AsReadOnly(), unresolved.AsReadOnly() )
 		{
 			ThemeParkIncWorld = tpiWorld,
 			ThemeParkIncObjects = joined.AsReadOnly(),
-			UnrecordedThemeParkIncAttractions = tpiWorld.Attractions.Where( attraction => !named.Contains( attraction.Id ) ).ToList().AsReadOnly(),
+			UnrecordedThemeParkIncAttractions = unrecorded.AsReadOnly(),
 		};
 	}
 }

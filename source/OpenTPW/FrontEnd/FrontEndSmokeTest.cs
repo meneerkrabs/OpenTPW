@@ -84,6 +84,7 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 		flow.OnlineFolders = new OnlineFolders( Path.Combine( temporaryDirectory, "online" ) );
 		// Read back the composed output (world after scaling + UI at drawable pixels).
 		global::Global.Render.CaptureOutput = true;
+		WeatherForecastPresenter.BannerHidden = true;
 		Plan();
 	}
 

@@ -1,0 +1,3 @@
+## Front-end smoke completion line names start and end language (October 17, 2026)
+
+The native front-end smoke ended with "passed in <language>", which printed a different language than `--language` (Dutch gave Italian, English gave Dutch). That is not an off-by-one in `GameLanguage` or the options list: the smoke deliberately picks a language in the park (`PlanLanguageInPark`), which applies once the park is left, so the run ends in the next language of the options list. The install carries Dutch, English, Italian and Polish folders and the list is alphabetical, which matches the printed names. The completion line now prints both the starting and the ending language.

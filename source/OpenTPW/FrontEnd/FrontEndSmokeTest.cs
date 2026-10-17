@@ -49,6 +49,7 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 	private int frame;
 	private int waitUntil;
 	private bool completed;
+	private string? startLanguage;
 	private long builtCost;
 	private bool totemLockedAtStart;
 	private long soldFor;
@@ -460,6 +461,7 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 		Wait( "mods cancel", 3 );
 		Do( "mods closed", () => Require( flow.Menu!.Stack.Top?.Name != "mods", "cancel leaves the mods screen" ) );
 		PlanTexturePackSwitch();
+		startLanguage = GameLanguage.Current.Name;
 		PlanLanguageSwitch();
 		Do( "open lobby menu", () => flow.Menu!.ShowMenu() );
 		Wait( "lobby menu opens", 2 );
@@ -1591,7 +1593,7 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 		Log.Trace( $"Instant Action jungle: {level.Park.Import!.ImportedObjects} seed objects, {economy.Staff.Members.Count} staff, research advanced {start} -> {economy.Date}; loans, research effort and upgrades refused." );
 		Device.WaitForIdle();
 		completed = true;
-		Log.Trace( $"Native front-end smoke test passed in {GameLanguage.Current.Name} at {Screen.PixelSize.X}x{Screen.PixelSize.Y} px, UI scale {Context.Canvas.TextScale}: {frame} frames ({speechFrames} of them waiting for advisor speech, {loadFrames} for asynchronous loading), lobby + menu readback, mouse/keyboard navigation, options cancel, original jungle via game mode, HUD money/date readback, finance/loans/research window captures and title readback, two distinct catalogue objects bought exactly once through the park economy, info arm, economy pause, sale, overlap refusal, open/close, Escape out of the queue tool, pause menu, exit to lobby, read-only visit build/open/delete/save guards, Instant Action return and Load Park reference start, Instant Action seed with imported bank, turn and staff, research and gates. Overview windows: visitors listed, scrolled, sorted and located; attractions listed, selected, activated and a fixture sold; the developer prototype listed once, activated and removed through its own seam with the selection healed; the window keys V and B pressed through Input.Pressed; the visit's attractions listed, sorted and its delete refused." );
+		Log.Trace( $"Native front-end smoke test passed starting in {startLanguage ?? GameLanguage.Current.Name} and ending in {GameLanguage.Current.Name} (the park language choice applies after the park) at {Screen.PixelSize.X}x{Screen.PixelSize.Y} px, UI scale {Context.Canvas.TextScale}: {frame} frames ({speechFrames} of them waiting for advisor speech, {loadFrames} for asynchronous loading), lobby + menu readback, mouse/keyboard navigation, options cancel, original jungle via game mode, HUD money/date readback, finance/loans/research window captures and title readback, two distinct catalogue objects bought exactly once through the park economy, info arm, economy pause, sale, overlap refusal, open/close, Escape out of the queue tool, pause menu, exit to lobby, read-only visit build/open/delete/save guards, Instant Action return and Load Park reference start, Instant Action seed with imported bank, turn and staff, research and gates. Overview windows: visitors listed, scrolled, sorted and located; attractions listed, selected, activated and a fixture sold; the developer prototype listed once, activated and removed through its own seam with the selection healed; the window keys V and B pressed through Input.Pressed; the visit's attractions listed, sorted and its delete refused." );
 		GameFlow.Quit();
 	}
 

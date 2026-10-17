@@ -142,15 +142,20 @@ internal sealed partial class SandboxSmokeTest
 	/// <summary>
 	/// With a mod that adds objects (docs/MODS.md, <c>scripts/smoke-tpi-rides.sh</c>) the smoke also builds up to four of them through the park economy
 	/// and the normal placement path, opens them, and requires them to be drawn, linked to the economy and the guests and, with the checks that follow
-	/// for every placed object, to run their scripts without faults. Without such a mod nothing is placed and nothing changes.
+	/// for every placed object, to run their scripts without faults. Without such a mod nothing is placed and nothing changes. The pools extension's objects
+	/// (on by default) are left out: they need pool water beside them, which an original level does not have, and the pools smokes build them with their pool.
 	/// </summary>
+	/// <summary>A mod object this smoke builds: any mod's or extension's object except the pools extension's, which needs a pool (docs/POOLS.md).</summary>
+	// [EXT:pools-extension] the pools objects are on by default and have their own smokes (OPENTPW_SMOKE_POOLS)
+	private static bool IsSmokeModObject( ObjectCatalogEntry entry ) => entry.ModId != null && entry.ModId != OpenTPW.Mods.OfficialExtensions.Pools.Id;
+
 	// [EXT:mods] OpenTPW's own mod system; the original game had no mods
 	private void PlaceModObjects( ParkEconomy? economy, int siteX, int siteY )
 	{
-		var candidates = level.Objects.Catalog.Buildable.Where( entry => entry.ModId != null && entry.ScriptPath != null
+		var candidates = level.Objects.Catalog.Buildable.Where( entry => IsSmokeModObject( entry ) && entry.ScriptPath != null
 			&& (economy == null || economy.Research.IsAvailable( entry.InfoId ) && economy.Catalog.TryGet( entry.InfoId, out _ )) )
 			.OrderBy( entry => entry.Category ).ThenBy( entry => entry.InfoId ).Take( 4 ).ToArray();
-		var any = level.Objects.Catalog.Entries.Any( entry => entry.ModId != null );
+		var any = level.Objects.Catalog.Entries.Any( IsSmokeModObject );
 		if ( !any )
 			return;
 		Require( candidates.Length > 0, "a mod's objects are buildable in the original level (enable the mod, its extension and its input)" );

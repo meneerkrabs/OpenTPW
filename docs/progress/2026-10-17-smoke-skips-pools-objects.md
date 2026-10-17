@@ -1,0 +1,5 @@
+## Original-level smoke leaves the pools objects out (October 17, 2026)
+
+With the pools extension on by default (#361), the jungle original-level smoke (`--load-original-level jungle --smoke-test`) tried to build the pools extension's objects as the "mod objects" it places in an original level. A ladder needs pool water beside it, which an original level does not have, so the smoke failed with "find a site for the mod's Ladder" on main. `SandboxSmokeTest.PlaceModObjects` now leaves the pools extension's objects out (`IsSmokeModObject`); the pools smokes (`OPENTPW_SMOKE_POOLS`) build them with their pool. The TPI rides mod and any other mod's objects are still built and checked as before.
+
+The same default made three Theme Park Inc rides end-to-end tests (they need `OPENTPW_TPI_PATH`, so CI skips them) count the pools extension's objects as the TPI mod's: `TpiRidesEndToEndTests` now counts the mod's own entries by its id, leaves the pools extension's objects and reserved ids (65000–65535) out of the "nothing without the mod" check, and checks the save shape on the manifest as a save holds it (`ParkResumeMods.AssetsForUse`, no pools objects placed).

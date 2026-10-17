@@ -57,3 +57,25 @@ are refused even when the supplied theme is valid for that forged result. Exact
 names apply to decoded JSON strings: legitimate Unicode escapes for the same
 known name remain accepted and serialize back to the unchanged canonical tokens
 for both modes and all twelve kinds.
+
+## Global ticket holder (tp.exe 0x5AF940)
+
+A global ticket (CoasterHeight, GokartExcitement, WaterLength, BigPark) is held by one park
+at a time. The first win sets the player-wide flag and the winning park's held byte and
+record; afterwards a park that does not hold it takes it from the park that does when its
+record is higher than the holder's (result 4 of `0x5AF940`). The old park loses only its
+held byte: the player-wide count (`0x5AF4A0`, the four flags once plus the locals of every
+park) does not change, so no park's ticket total or key count moves. What the player sees is
+one advisor line, message `0xEA + type` (234 to 237, one response each, responses 474 to
+477), queued by `0x4D5270`, plus a debug log line "Global ticket award moved here"
+(`0x75A71C`). Nothing is shown on the old park, and no other code reads the held bytes.
+
+The ledger keeps the holder per global (`GlobalHolders` in the progress file: kind, theme,
+record), optional and validated: a holder must be a global kind that is earned, a canonical
+theme and a record of at least 0, at most one per kind. A file without the field loads with
+unknown holders, and the first park that reports a global it has earned adopts the holder
+(record 0). `PlayerProgressRuntimeOwner` attaches the ledger to the park's objectives while
+it is eligible, so a park without a holder role does not earn the ticket a second time, a park
+with a better record takes it (`ParkEventKind.GlobalTicketMoved`, advisor message 234 + type),
+and a lower or equal record changes nothing. Without an eligible owner (Instant Action, no
+progress file) the park keeps its own set as before.

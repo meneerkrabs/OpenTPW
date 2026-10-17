@@ -136,6 +136,19 @@ public sealed class RideHeadSpace
 		return slot;
 	}
 
+	/// <summary>
+	/// WALKON with the head action 4: the visitor's head hangs on head id <paramref name="id"/>, not on a drawn slot. Returns false when the model has no such id in its run from 1
+	/// (the original's lookup then returns -1 and hangs nothing). A head already on that id is replaced.
+	/// </summary>
+	// [BIN:TPW-EXE:0x00557D80 WALKON walk state 1 -> 2] when the walk-on is over and the action is 4, the head record of head id u2 (lookup 0x0044B220 with class 0x80) gets the visitor's head (0x0044B410); WALKOFF takes it down again (0x0044B4C0, 0x005571A0)
+	public bool Hang( int id, int visitor )
+	{
+		if ( visitor == 0 || id < 1 || id > visitors.Length )
+			return false;
+		visitors[id - 1] = visitor;
+		return true;
+	}
+
 	/// <summary>labs(worldRand() >>> 1) % length: one draw of the world generator (a seeded head space makes a signed 32-bit value from two draws of its own generator).</summary>
 	private int DrawSlot()
 	{

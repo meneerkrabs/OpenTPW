@@ -104,6 +104,57 @@ public class RideHeadsCorpusTests
 		Assert.AreEqual( 16, drawable["Eruption"] );
 	}
 
+	/// <summary>
+	/// The rides that show their riders through WALKON's head action 4 (no ADDHEAD): each has a head table, and the head id operand of that WALKON
+	/// (a counter variable, or Inca Totem's) reaches a node of the model, so the rider's head can be drawn.
+	/// </summary>
+	[TestMethod]
+	public void RidesThatWalkRidersOnWithTheHeadActionHaveHeadTables()
+	{
+		var rides = Scripted().Where( x => x.Adds == 0 && new RideScriptFile( x.Entry.FileSystem.OpenRead( x.Entry.ScriptPath! ) ).Instructions
+			.Any( i => i.Opcode == (ushort)Opcode.WALKON && i.Operands.Count > 5 && i.Operands[5].Kind == RideScriptOperandKind.Literal && i.Operands[5].Value == 4 ) )
+			.Select( x => $"{x.Theme}/{x.Entry.DisplayName}" ).OrderBy( x => x ).ToArray();
+		CollectionAssert.AreEqual( new[] { "hallow/The Firepit", "jungle/Aztec Mayhem", "jungle/Inca Totem", "space/Hover Bot Havoc", "space/Rock 'n Roll" }, rides );
+		foreach ( var ride in Scripted().Where( x => rides.Contains( $"{x.Theme}/{x.Entry.DisplayName}" ) ) )
+		{
+			Assert.IsNotNull( ride.Space, ride.Entry.DisplayName );
+			Assert.IsTrue( Enumerable.Range( 0, ride.Space!.Count ).All( slot => ride.Space.NodeAt( slot ) >= 0 ), ride.Entry.DisplayName );
+		}
+	}
+
+	/// <summary>
+	/// The shipped scripts of the five head-action rides, run with real riders: heads go up on the ride's head nodes (they were missing, the riders vanished on board)
+	/// and come down again when the ride unloads.
+	/// </summary>
+	[TestMethod]
+	public void HeadActionRidesShowTheirRidersAndTakeThemDown()
+	{
+		foreach ( var (theme, name) in new[] { ("hallow", "The Firepit"), ("jungle", "Inca Totem"), ("jungle", "Aztec Mayhem"), ("space", "Hover Bot Havoc"), ("space", "Rock 'n Roll") } )
+		{
+			var entry = ObjectCatalog.Load( theme ).Entries.Single( x => x.DisplayName == name );
+			var runtime = new OriginalObjectRuntime( entry, seed: 3, open: true );
+			var visitors = runtime.Visitors;
+			var guests = Enumerable.Range( 1, 12 ).ToArray();
+			foreach ( var guest in guests )
+				visitors.TryJoinQueue( guest );
+			var maximumHung = 0;
+			var hungAtEnd = -1;
+			for ( var tick = 0; tick < 240 * 60; tick++ )
+			{
+				runtime.Simulate( 1f / FixedStepClock.TicksPerSecond );
+				var hung = visitors.HungHeads().ToArray();
+				Assert.AreEqual( hung.Length, hung.Select( head => head.Visitor ).Distinct().Count(), $"{name}: one head per rider" );
+				maximumHung = Math.Max( maximumHung, hung.Length );
+				hungAtEnd = hung.Length;
+			}
+			Assert.AreNotEqual( RideVMState.Faulted, runtime.Script!.State, $"{name}: {runtime.Script.FaultMessage}" );
+			Assert.IsTrue( visitors.BoardedTotal > 0, $"{name}: riders boarded" );
+			Assert.IsTrue( maximumHung > 0, $"{name}: a rider's head was hung ({visitors.BoardedTotal} boarded)" );
+			Assert.IsTrue( hungAtEnd <= maximumHung );
+			runtime.Stop();
+		}
+	}
+
 	/// <summary>Every head record of every ride and car model has the matrix flag 0x30 and a node inside the model, and the first record of an id wins.</summary>
 	[TestMethod]
 	public void EveryHeadRecordHasAMatrixAndAValidNode()

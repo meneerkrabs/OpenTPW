@@ -946,7 +946,8 @@ Approximations ([HEADS register](https://opentpw.io/docs/FIDELITY-REGISTER.html)
 
 Not done in OpenTPW: heads of riders on coaster and tour cars. The cars carry head records (above) and the PC executable keeps them as
 records with a handle and no head table (maexah `saves.md`, "A head on a node"); the Mac code that places a car's rider is not
-traced yet. Root scripts without `ADDHEAD` do not enable this renderer; this does not establish that the original cannot show heads through vehicle/controller paths. Native head atlas reload and repeated park entry/exit checks cover Asset.All removal and scheduled GPU texture/material/shader disposal.
+traced yet. Rides that run no `ADDHEAD` can still show their riders' heads through WALKON's head action 4 (The Firepit, Inca Totem, Aztec Mayhem, Hover Bot Havoc, Rock 'n Roll): the rider's head hangs on head id u2 (the second node operand, a rider counter in these scripts) and WALKOFF takes it down (tp.exe `0x00557D80` walk state 1 to 2 calls the hang `0x0044B410`; `0x005571A0` calls `0x0044B4C0`). `RideVisitorBridge` hangs it through `RideHeadSpace.Hang` at once, without the walk-on time and the walking body ([APPROX:TOUR-011]); the walk slot keeps the action so the head comes down at WALKOFF and a park save keeps both.
+Other root scripts without `ADDHEAD` and without that action do not enable this renderer; this does not establish that the original cannot show heads through vehicle/controller paths. Native head atlas reload and repeated park entry/exit checks cover Asset.All removal and scheduled GPU texture/material/shader disposal.
 
 ## Tests and evidence
 

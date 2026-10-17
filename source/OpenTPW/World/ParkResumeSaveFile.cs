@@ -122,6 +122,9 @@ internal static class ParkResumeSaveFile
 		ValidateShape( snapshot );
 		// [EXT:mods] the mods the park was saved with must be the ones that are active, before anything else is judged (docs/MODS.md)
 		ParkResumeMods.Require( snapshot.Mods, activeMods ?? OpenTpwExtensions.Active );
+		// [EXT:script-mods] the section exists exactly when a script mod is active (and so recorded), and names exactly those mods
+		if ( ScriptModsSave.ActiveProblem( snapshot.ScriptMods, activeMods ?? OpenTpwExtensions.Active ) is { } scriptMismatch )
+			throw new InvalidDataException( $"World save is inconsistent: {scriptMismatch}." );
 		void Require( bool condition, string message )
 		{
 			if ( !condition )
@@ -280,6 +283,13 @@ internal static class ParkResumeSaveFile
 		// [EXT:mods] the recorded mods: bounded, valid ids and digests, and every mod: asset key names a recorded mod
 		if ( ParkResumeMods.ShapeProblem( snapshot.Mods, snapshot.AssetHashes ) is { } modProblem )
 			Require( false, modProblem );
+		// [EXT:smarter-guests] the extension's section: present exactly when the extension is recorded, with ids that fit the guests the save holds
+		if ( SmarterGuestsSave.ShapeProblem( snapshot.SmarterGuests, snapshot.Guests?.Guests?.Select( guest => guest.Id ), snapshot.Mods, snapshot.ScriptMods != null ) is { } smarterProblem )
+			Require( false, smarterProblem );
+		// [EXT:script-mods] the script mods' section: every key a recorded mod, the versions this build runs, canonical state and counters that agree with the disabled flag; it needs the identity section above
+		if ( ScriptModsSave.ShapeProblem( snapshot.ScriptMods, snapshot.Mods ) is { } scriptProblem )
+			Require( false, scriptProblem );
+		Require( snapshot.ScriptMods == null || snapshot.SmarterGuests != null, "the save has script mod state but no guest identity state (the SmarterGuests section)" );
 
 		// Layout: the pure identity and allocator rules (catalog resolution is ValidateSnapshot's).
 		var layout = snapshot.Layout!;

@@ -71,6 +71,13 @@ public static class ContentSoundRoots
 		}
 	}
 
+	/// <summary>Whether <paramref name="fileSystem"/> is the registered Data folder of another original game (a mod's Theme Park Inc input with the cross-edition extension on).</summary>
+	internal static bool IsRegistered( BaseFileSystem fileSystem )
+	{
+		lock ( roots )
+			return roots.ContainsKey( fileSystem );
+	}
+
 	public static void Clear()
 	{
 		lock ( roots )

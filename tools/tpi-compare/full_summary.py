@@ -65,7 +65,7 @@ def intersection(before, after):
 
 
 def opcode_schema(source_root):
-    enum_path = source_root / 'source/OpenTPW/VM/Opcode.cs'
+    enum_path = source_root / 'source/OpenTPW.Files/Public/Opcode.cs'
     names = {int(value): name for name, value in re.findall(r'\b(\w+)\s*=\s*(\d+)', enum_path.read_text())}
     statuses = {}
     source_hashes = {str(enum_path.relative_to(source_root)): hashlib.sha256(enum_path.read_bytes()).hexdigest()}

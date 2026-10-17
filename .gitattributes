@@ -3,3 +3,6 @@ tools/fidelity_retired.txt merge=union
 
 # Shell scripts run under bash on every platform and a test parses this one: keep LF in a Windows checkout.
 scripts/*.sh text eol=lf
+
+# The shipped mods' identity (docs/MODS.md) is a hash of their bytes: keep LF in a Windows checkout so a park saved from one package loads in another.
+content/mods/** text eol=lf

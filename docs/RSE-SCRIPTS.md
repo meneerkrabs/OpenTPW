@@ -135,3 +135,74 @@ Sources: OpenTPW docs (`src/formats/rsse.md`, `rsse-vm.md`,
 `rsse-vm-instructions.md`, commit `34f357fabc8a6aa064c76260c714dca8b875b148`),
 this repository's earlier MIT `RideScriptFile` reader (git `8637b3f^`), and the
 local original files. No original binary was executed.
+
+## Text form and assembler
+
+October 17, 2026. The game ships no readable script source (no `.rss`-style files anywhere in the data, only the
+308 compiled `.RSE` members), so the text form below is OpenTPW's own, designed for authoring original ride scripts
+(phase 0 of the content pipeline) and for reading the corpus. Code: `RideScriptDisassembler` (file to text) and
+`RideScriptAssembler` (text to bytes) in `source/OpenTPW.Files/Public/RideScriptText.cs`.
+
+**Opcode names.** The names are the `Opcode` enum, which now lives in `OpenTPW.Files`
+(`source/OpenTPW.Files/Public/Opcode.cs`, same namespace) so the assembler and `RideVM`/`RideOpcodes` share one
+table; `RideScriptOpcodeNames` wraps it (case-insensitive parse, `OP_n` for numbers without a name).
+`RseAssemblerTests` checks that every enum member and every VM handler round-trips through the name table.
+
+### Syntax
+
+```
+; comment to the end of the line
+.stack 8                  ; header: .stack .timeslice .limbo .bounce .walk (int32, decimal or 0x hex, each at most once)
+.timeslice 50
+.limbo 2
+.var VAR_VISITOR          ; variables, in table order: operand index = declaration order
+.var "odd name"           ; names that are not identifiers are quoted
+	NAME "Pool Ride"      ; one instruction per line: OPCODE operand...
+loop:                     ; label: the code-word index of the next instruction
+	ADDHEAD VAR_VISITOR
+	WAIT 500
+	DELHEAD VAR_VISITOR
+	WAIT 0x01F4
+	BRANCH @loop
+```
+
+Operands (the flag half of the code word in parentheses):
+
+| Written | Kind | Notes |
+| --- | --- | --- |
+| `500`, `0x01F4`, `-1` | literal (`0x0000`) | 16 bits; `-32768..-1` is two's complement. Signedness in the VM is unverified, so the disassembler prints values of `0x8000` and above in hex. |
+| `NAME` | variable (`0x4000`) | an identifier declared with `.var`; `$n` selects variable *n* and is used for duplicate or non-identifier names |
+| `@loop` | branch (`0x2000`) | label; the target must be an instruction (a label at the end of the code cannot be branched to) |
+| `"text"` | string (`0x1000`) | escapes `\" \\ \n \t \xHH`; Latin-1 only; the operand is the byte offset in the blob |
+
+Labels (`name:`) may share a line with an instruction. The disassembler names labels `L<word>` and emits only
+those that are branch targets. Opcode arity is **not** checked by the assembler (the file format is
+self-delimiting); `RideVM` rejects a wrong count when it loads the script.
+
+**String table.** By default the assembler stores each distinct string once, in order of first reference. A
+script whose blob differs (unreferenced strings, a different order, duplicates) writes the whole blob as `.string
+"text"` lines before the code; then `"text"` selects the first entry with that text and `#n` selects entry *n*
+(needed for a duplicate). The disassembler emits `.string` lines only when the blob is not the default layout.
+
+**Header and defaults.** The 48-byte header holds the magic (constant), the variable count (the number of `.var`
+lines), the five sizes, and constant padding; nothing else is variable. A freshly authored script gets
+`.timeslice 50` (verified: all 308 members), `.stack 20`, `.limbo 0`, `.bounce 0`, `.walk 0`. Only the time slice
+is verified; the others are authoring choices from the corpus distribution (253 members declare stack 0, 20 is
+the most common non-zero; limbo 0 in 284, bounce 0 in 304, walk 0 in 271). Set the sizes your opcodes need
+(`JSR` needs stack, `LIMBO` limbo slots, `BOUNCE` bounce, `WALKON` walk).
+
+**Errors.** Assembly errors are `RideScriptAssemblyException` with `Line` and `Column` (1-based) and the message
+`line L, column C: ...`: unknown opcode or directive, undeclared variable, undefined or duplicate label, label
+without instruction, bad string escape, unterminated string, literal out of range, string beyond offset 65535,
+too many code words or variables. The result is finally parsed by `RideScriptFile`; a rejection there is reported
+without a position.
+
+### Roundtrip proof
+
+`RseAssemblerTests.CorpusRoundtripsByteForByte` disassembles all 308 corpus members (both themes' WADs),
+assembles the text and requires byte-identical output (string blob layout and order, variable table, header,
+padding), and that disassembling the result gives the same text again. Result: 308 of 308, no exceptions; 4
+members need explicit `.string` tables. The corpus test is skipped without `OPENTPW_GAME_PATH`; the authoring
+tests (a hand-written ride loop with `ADDHEAD`/`DELHEAD` around waits, labels and strings that assembles, reads
+back and runs in `RideVM`) and the error-position tests need no game data. What is **not** proven: that an
+authored script behaves like an original ride in the game (only that `RideVM` runs it), and the header defaults.

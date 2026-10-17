@@ -5,16 +5,20 @@ using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using OpenTPW.Scripting;
 using static OpenTPW.Tests.RideVMTests;
 
 namespace OpenTPW.Tests;
 
 /// <summary>Reproducible runs (docs/DETERMINISM.md): world seed, per-park state, park-save streams and the canonical hash.</summary>
 [TestClass]
+[DoNotParallelize]
 public class DeterminismTests
 {
 	private const float Tick = 1f / FixedStepClock.TicksPerSecond;
 	private const int HalfRun = 6000;
+	/// <summary>Six calendar months of park turns (183 days of 23.04 turns, 14.88 ticks each).</summary>
+	private const int SixMonthTicks = 62700;
 
 	/// <summary>
 	/// Economy, guests, a shop script and an unseeded RAND script wired like Level: guests pay into the
@@ -27,13 +31,11 @@ public class DeterminismTests
 		private readonly RideVM shopScript;
 		private readonly List<RideVM> dice = new();
 
-		public SyntheticPark( WorldSeed seed )
+		public SyntheticPark( WorldSeed seed, IGuestObserver? observer = null )
 		{
 			Seed = seed;
 			Economy = EconomyTestData.Park( seed: seed.EconomyStream );
-			// Fastest speed so the staff pool (economy stream) draws within the run.
-			Economy.Speed = GameSpeed.Fastest;
-			Guests = new GuestSimulation( GuestTests.CreateCross(), GuestTests.CreateSettings(), seed.GuestStream );
+			Guests = new GuestSimulation( GuestTests.CreateCross(), GuestTests.CreateSettings(), seed.GuestStream ) { Observer = observer };
 			// the park's one thing pool as Level builds it: the world's ten singletons, then the gates and the lights (things 1 to 12), so the first guest is thing 13 (WALK-010)
 			Things = new ThingPool();
 			Things.AllocateWorldSetup();
@@ -81,18 +83,47 @@ public class DeterminismTests
 		{
 			for ( var tick = 0; tick < ticks; tick++ )
 			{
-				Guests.Tick( Tick );
-				// the park turn's end frees the things that asked for their destruction (Level.AdvanceSimulation)
-				Things.DestroyQueued();
+				// Level.AdvanceSimulation's order: the tick that starts a park turn runs the substep's scripts and then the economy's turn, whose thing sweep updates the guests, the economy's things,
+				// the shop's ride update, the turn's destroys and the arrivals (tp.exe 0x0054F4BF, 0x00516380); the ticks between turns update the guests first and free nothing
+				var swept = Guests.NextTickStartsTurn && Economy.NextTickStartsTurn;
+				// the substep of this tick (tp.exe 0x54F4BF): the script pass runs every script newest first on its own cadence (0x54F56B, 0x5516B0), before the objects' own ticks
+				var substep = SimulationSubstep.ForTick( Economy.Tick, Economy.Speed != GameSpeed.Paused );
+				if ( swept )
+					Guests.BeginSweepTick( Tick );
+				else
+					Guests.Tick( Tick );
+				shop.DefersAdmission = swept;
+				if ( substep.Due )
+					Scripts.RunPass( SimulationSubstep.Milliseconds );
 				shop.HostStep();
-				shopScript.Advance( Tick );
-				foreach ( var script in dice )
-					script.Advance( Tick );
-				// The fixture runs the economy at its Fastest speed, four ticks to a step (the staff pool draws within the run).
-				Economy.Advance( (int)Economy.Speed );
+				Economy.ThingSweep = swept ? new HarnessSweep( this ) : null;
+				try
+				{
+					Economy.AdvanceFixedTick();
+				}
+				finally
+				{
+					Economy.ThingSweep = null;
+				}
 				// Both halves of a save/load run reach this tick, so the script stream is consumed after a load.
 				if ( ++Ticks == HalfRun * 3 / 2 )
 					AddDice();
+			}
+		}
+
+		/// <summary>The park turn of Level's sweep with what this fixture holds: the guests by the pool's list, the economy's own things, the shop and the turn's end.</summary>
+		private sealed class HarnessSweep( SyntheticPark park ) : IThingSweep
+		{
+			public void Run( ParkEconomy economy, long turn, bool lost )
+			{
+				foreach ( var slot in park.Things.Capture() )
+					if ( !park.Things.IsQueued( slot.Id ) )
+						park.Guests.SweepGuest( slot.Id );
+				park.Guests.FinishSweep();
+				economy.UpdateThings( turn );
+				park.shop.UpdateAdmission();
+				park.Things.DestroyQueued();
+				park.Guests.UpdateTurnEndArrivals();
 			}
 		}
 
@@ -193,20 +224,158 @@ public class DeterminismTests
 	public void HashOfAFixedRunIsTheSameInEveryProcess()
 	{
 		var park = new SyntheticPark( WorldSeed.Default );
-		park.Run( 3600 );
+		park.Run( PinnedRunTicks );
 		Assert.AreEqual( FixedRunHash, park.Hash, $"0x{park.Hash:X16}" );
 	}
 
-	/// <summary>The hash of <see cref="HashOfAFixedRunIsTheSameInEveryProcess"/>'s run, for tests that repeat it under other conditions.</summary>
-	internal static ulong RunFixedPark()
+	/// <summary>The ticks of the pinned run: 14,400 ticks are 968 park turns, 42 days of the park's calendar, so the run crosses a month end.</summary>
+	internal const int PinnedRunTicks = 14400;
+
+	/// <summary>
+	/// Six game months of the swept park turn: guests keep arriving, paying and leaving, the pool holds exactly the living guests after each turn's end, nothing waits for a destroy once a
+	/// turn has ended, and the park is not lost.
+	/// </summary>
+	[TestMethod]
+	public void SixGameMonthsOfSweptTurnsKeepTheThingsAndTheEconomyConsistent()
 	{
 		var park = new SyntheticPark( WorldSeed.Default );
-		park.Run( 3600 );
+		var turn = park.Economy.Turn;
+		var turnsSwept = 0;
+		var peak = 0;
+		for ( var tick = 0; tick < SixMonthTicks; tick++ )
+		{
+			park.Run( 1 );
+			peak = Math.Max( peak, park.Guests.Guests.Count );
+			if ( park.Economy.Turn == turn )
+				continue;
+			turn = park.Economy.Turn;
+			turnsSwept++;
+			Assert.AreEqual( 0, park.Things.QueuedCount, $"turn {turn}: the turn's end carried out every destroy" );
+			CollectionAssert.AreEquivalent( park.Guests.Guests.Select( guest => guest.Id ).ToArray(), park.Things.UsedNewestFirst().Where( slot => slot.Model == SaveThingModel.Guest ).Select( slot => slot.Id ).ToArray(),
+				$"turn {turn}: the pool's guest slots are the living guests" );
+		}
+		Assert.IsTrue( park.Economy.Date.Month >= 6 || park.Economy.Date.Year > 2000, $"six game months passed ({park.Economy.Date})" );
+		Assert.IsTrue( turnsSwept > 1200, $"{turnsSwept} turns" );
+		Assert.IsTrue( park.Guests.Admissions > 100 && park.Guests.Departed > 20, $"{park.Guests.Admissions} admitted, {park.Guests.Departed} left" );
+		Assert.IsTrue( peak < 400, $"the crowd stays bounded ({peak})" );
+		Assert.IsFalse( park.Economy.IsBankrupt );
+	}
+
+	/// <summary>The hash of <see cref="HashOfAFixedRunIsTheSameInEveryProcess"/>'s run, for tests that repeat it under other conditions.</summary>
+	internal static ulong RunFixedPark( IGuestObserver? observer = null )
+	{
+		var park = new SyntheticPark( WorldSeed.Default, observer );
+		park.Run( PinnedRunTicks );
 		return park.Hash;
 	}
 
 	/// <summary>The pinned hash of <see cref="HashOfAFixedRunIsTheSameInEveryProcess"/>'s run (docs/DETERMINISM.md).</summary>
-	internal const ulong FixedRunHash = 0x7A199E7425A19C8BUL;
+	internal const ulong FixedRunHash = 0xA91A607272718E93UL;
+
+	/// <summary>
+	/// The pinned hash of the same run with <c>opentpw.smarter-guests</c> on (docs/SMARTER-GUESTS.md): the policy still delegates to the original, so everything but the extension's own state (its seed,
+	/// counter and birth ids, which join the world hash only while it is on) is the off run's. A deliberate change of the extension's state or of its policy changes this value.
+	/// </summary>
+	internal const ulong SmarterGuestsFixedRunHash = 0xCB2F2ECD287ED83FUL;
+
+	[TestMethod]
+	public void SmarterGuestsFixedRunHashIsTheSameInEveryProcess()
+	{
+		using var scope = OpenTPW.Mods.OpenTpwExtensions.Use( SmarterGuestsTests.On() );
+		Assert.IsTrue( FeatureGates.SmarterGuests );
+		var park = new SyntheticPark( WorldSeed.Default );
+		Assert.IsInstanceOfType( park.Guests.Decisions, typeof( SmarterGuestDecisions ) );
+		park.Run( PinnedRunTicks );
+		Assert.AreEqual( SmarterGuestsFixedRunHash, park.Hash, $"0x{park.Hash:X16}" );
+	}
+
+	/// <summary>
+	/// The pinned hash of the same run with the shipped example script mod <c>opentpw.example.patient-guests</c> on (docs/SCRIPT-MODS.md): the world hash carries the mod's state, counters and flag next to the
+	/// guest identity state. CI runs it on Windows, macOS and Linux, so an equal value means the interpreter, the stateless <c>rng</c> and the hook wiring give the same park everywhere. A deliberate change
+	/// of the example, of the language, of a limit or of the hook wiring changes this value.
+	/// </summary>
+	internal const ulong ScriptModsFixedRunHash = 0xD7388BB84BBA0676UL;
+
+	/// <summary>
+	/// The pinned hash of a run with a test mod that implements all four hooks, keeps counters in its state and draws with <c>rng</c> (the example uses neither <c>scoreAttraction</c>, <c>wanderGoal</c> nor
+	/// <c>rng</c>): the cross-platform pin of everything the example does not reach.
+	/// </summary>
+	internal const ulong ScriptModsAllHooksFixedRunHash = 0xC3190E46B1E70633UL;
+
+	[TestMethod]
+	public void ScriptModsFixedRunHashIsTheSameInEveryProcess()
+	{
+		using var scope = OpenTPW.Mods.OpenTpwExtensions.Use( TempScriptMods.Example() );
+		var park = new SyntheticPark( WorldSeed.Default );
+		Assert.IsInstanceOfType( park.Guests.Decisions, typeof( ScriptGuestDecisions ) );
+		park.Run( PinnedRunTicks );
+		var stats = park.Guests.ScriptMods!.Stats().Single();
+		Assert.IsTrue( stats.Calls > 50 && stats.RuntimeErrors + stats.BudgetFailures + stats.InvalidResults == 0, $"{stats.Calls} calls" );
+		Assert.AreEqual( ScriptModsFixedRunHash, park.Hash, $"0x{park.Hash:X16}" );
+	}
+
+	[TestMethod]
+	public void ScriptModsAllHooksFixedRunHashIsTheSameInEveryProcess()
+	{
+		using var mods = new TempScriptMods().Add( "community.counter", ScriptModsSaveTests.Counter, ScriptModsSaveTests.CounterHooks );
+		using var scope = OpenTPW.Mods.OpenTpwExtensions.Use( mods.Resolve() );
+		var park = new SyntheticPark( WorldSeed.Default );
+		park.Run( PinnedRunTicks );
+		var mod = park.Guests.ScriptMods!.Mods.Single();
+		foreach ( var key in new[] { "s", "j", "l", "w" } )
+			Assert.IsTrue( mod.State.TryGet( key, out var count ) && count.AsInt > 0, $"the {key} hook ran: {ScriptState.Serialize( mod.State )}" );
+		Assert.AreEqual( 0, mod.Failures, mod.LastFailure );
+		Assert.AreEqual( ScriptModsAllHooksFixedRunHash, park.Hash, $"0x{park.Hash:X16}" );
+	}
+
+	/// <summary>A script mod that only answers <c>prev</c> leaves every guest value, and so the economy, as the off run's; only the world hash differs, by the identity and script state.</summary>
+	[TestMethod]
+	public void ScriptModsThatAnswerPrevLeaveTheSyntheticParkAsItWasOff()
+	{
+		using var mods = new TempScriptMods().Add( "community.pass", "function scoreAttraction(guest, c, prev)\n  return prev\nend\nfunction joinQueue(guest, a, prev)\n  return prev\nend\n", "scoreAttraction", "joinQueue" );
+		SyntheticPark on;
+		using ( OpenTPW.Mods.OpenTpwExtensions.Use( mods.Resolve() ) )
+			on = new SyntheticPark( WorldSeed.Default );
+		var off = new SyntheticPark( WorldSeed.Default );
+		for ( var chunk = 0; chunk < PinnedRunTicks / 1200; chunk++ )
+		{
+			off.Run( 1200 );
+			on.Run( 1200 );
+			Assert.AreEqual( off.Guests.ComputeStateHash(), on.Guests.ComputeStateHash(), $"guest state hash after {off.Ticks} ticks" );
+			Assert.AreEqual( off.Guests.RandomState, on.Guests.RandomState, $"world generator after {off.Ticks} ticks" );
+			Assert.AreEqual( ParkSaveJson( off ), ParkSaveJson( on ), $"economy after {off.Ticks} ticks" );
+		}
+		Assert.AreEqual( FixedRunHash, off.Hash );
+		Assert.AreNotEqual( off.Hash, on.Hash );
+		Assert.IsTrue( on.Guests.ScriptMods!.Stats().Single().Calls > 50 );
+	}
+
+	/// <summary>With the delegating policy the guests and the economy are the off run's, tick for tick; only the world hash differs, by the extension's state.</summary>
+	[TestMethod]
+	public void SmarterGuestsOnWithTheDelegatingPolicyLeavesEveryGuestVisibleValueAsItWasOff()
+	{
+		var off = new SyntheticPark( WorldSeed.Default );
+		SyntheticPark on;
+		using ( OpenTPW.Mods.OpenTpwExtensions.Use( SmarterGuestsTests.On() ) )
+			on = new SyntheticPark( WorldSeed.Default );
+		for ( var chunk = 0; chunk < PinnedRunTicks / 1200; chunk++ )
+		{
+			off.Run( 1200 );
+			on.Run( 1200 );
+			Assert.AreEqual( off.Guests.ComputeStateHash(), on.Guests.ComputeStateHash(), $"guest state hash after {off.Ticks} ticks" );
+			Assert.AreEqual( off.Guests.RandomState, on.Guests.RandomState, $"world generator after {off.Ticks} ticks" );
+			CollectionAssert.AreEqual( off.Guests.Guests.Select( guest => (guest.Id, guest.State, guest.X, guest.Y, guest.Happiness, guest.QueuePosition, guest.AttractionId) ).ToArray(),
+				on.Guests.Guests.Select( guest => (guest.Id, guest.State, guest.X, guest.Y, guest.Happiness, guest.QueuePosition, guest.AttractionId) ).ToArray(), $"guests after {off.Ticks} ticks" );
+			Assert.AreEqual( System.Text.Json.JsonSerializer.Serialize( off.Guests.CaptureSnapshot() ), System.Text.Json.JsonSerializer.Serialize( on.Guests.CaptureSnapshot() ), $"guest snapshot after {off.Ticks} ticks" );
+			Assert.AreEqual( ParkSaveJson( off ), ParkSaveJson( on ), $"economy after {off.Ticks} ticks" );
+		}
+		Assert.AreEqual( FixedRunHash, off.Hash );
+		Assert.AreNotEqual( off.Hash, on.Hash, "the world hash carries the extension's state" );
+		Assert.IsNotNull( on.Guests.SmarterGuests );
+		Assert.IsNull( off.Guests.SmarterGuests );
+	}
+
+	private static string ParkSaveJson( SyntheticPark park ) => System.Text.Json.JsonSerializer.Serialize( ParkSaveFile.Capture( park.Economy ) );
 
 	/// <summary>
 	/// Switching only the <c>opentpw.online</c> extension (docs/MODS.md) leaves the pinned digests unchanged: this fixed run,
@@ -223,7 +392,7 @@ public class DeterminismTests
 			Assert.AreEqual( online, FeatureGates.Online );
 			Assert.AreEqual( "", set.Digest, "no files-based mods" );
 			var park = new SyntheticPark( WorldSeed.Default );
-			park.Run( 3600 );
+			park.Run( PinnedRunTicks );
 			Assert.AreEqual( FixedRunHash, park.Hash, $"0x{park.Hash:X16}" );
 			var simulation = new GuestSimulation( GuestTests.CreateCross(), GuestTests.CreateSettings(), 5 );
 			for ( var tick = 0; tick < 120 * 60; tick++ )
@@ -377,7 +546,7 @@ public class DeterminismTests
 		if ( root == null )
 			Assert.Inconclusive( "Repository sources are not next to the test binaries." );
 		var source = Path.Combine( root.FullName, "source", "OpenTPW" );
-		var folders = new[] { "VM", "Economy", Path.Combine( "World", "Guests" ), Path.Combine( "World", "Objects" ), Path.Combine( "World", "Coasters" ) };
+		var folders = new[] { "VM", "Scripting", "Economy", Path.Combine( "World", "Guests" ), Path.Combine( "World", "Objects" ), Path.Combine( "World", "Coasters" ) };
 		var world = Directory.EnumerateFiles( Path.Combine( source, "World" ), "*.cs", SearchOption.TopDirectoryOnly )
 			.Where( path => !PresentationWorldFiles.Contains( Path.GetFileName( path ) ) ).ToList();
 		CollectionAssert.IsSubsetOf( new[] { "Level.cs", "Level.Objects.cs", "FixedStepClock.cs", "PrototypeRide.cs", "Ride.cs" }, world.Select( Path.GetFileName ).ToArray() );

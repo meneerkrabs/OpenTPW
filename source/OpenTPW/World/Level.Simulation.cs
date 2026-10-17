@@ -6,26 +6,211 @@ public partial class Level
 	internal void AdvanceSimulation( double elapsedSeconds ) => simulationClock.Advance( elapsedSeconds, deltaTime =>
 	{
 		SyncObjectEconomy();
+		// the substep this tick stands in (the park's own tick before the economy advances it): none while the park is paused
+		var substep = SimulationSubstep.ForTick( Park?.Economy.Tick ?? simulationClock.TickCount, Park == null || Park.Economy.Speed != GameSpeed.Paused );
 		// [BIN:TPW-EXE:0x00516380 world update] a lost park (world state 4, ParkEconomy.IsBankrupt) runs no thing updates: the guests and the staff walks stop, the ride scripts (the RSSE tick) go on
 		var lost = Park?.Economy.IsBankrupt == true;
-		if ( !lost )
-			Guests?.Tick( deltaTime );
-		PlacedRide?.Simulate( deltaTime );
-		Objects.Simulate( deltaTime );
-		Park?.FixedTick();
-		// [EXT:tpi-viewer] Theme Park Inc's weather is not traced (its states and keys differ from the Theme Park World weather this class ports), so a Theme Park Inc park has none
-		if ( Park != null && Guests != null && !Park.Economy.Rules.ThemeParkInc )
+		// A park whose guests take their ids from the level's thing pool runs its turns as the original does (0x00516380): the tick that starts a turn runs the substep's ride scripts, then the sweep over the
+		// pool newest first, the gate retry, the turn's destroys and the arrival update. Without a park or its guests in the pool, in a lost park or where the economy and the guests count turns apart (a paused
+		// economy) the turn is not swept: the things update in the order of the ticks between turns, and the destroys are freed at the end of each tick.
+		var pooled = Park != null && Guests is { SharesThings: true };
+		// the guests' tick count starts at 0 where the economy of an original save starts at its turn: both cut the ticks into the same turns
+		if ( pooled && Park!.Economy.Speed != GameSpeed.Paused )
+			Guests!.AlignTurns( Park.Economy.Tick );
+		var guestsTurn = pooled && Guests!.NextTickStartsTurn;
+		var economyTurn = pooled && Park!.Economy.NextTickStartsTurn;
+		// [BIN:TPW-EXE:0x0051643B lost park turn] a lost park (world state 4) still runs the turn: its counter, the gate retry, the destroys and the world tail with the arrival update (0x4D7B20); only the thing walk is skipped
+		var sweeping = guestsTurn && economyTurn;
+		if ( sweeping )
+			SimulateSweptTurn( deltaTime, substep );
+		else
 		{
-			Weather ??= new ParkWeather( Park.Economy.Settings.Standard, Seed.WeatherStream, Guests.Grid.Cells.Width, Guests.Grid.Cells.Height );
-			Weather.AdvanceTo( Park.Economy.Tick );
+			if ( !lost )
+				Guests?.Tick( deltaTime );
+			Objects.Simulate( deltaTime, substep, PlacedRide );
+			Park?.FixedTick();
+			if ( !lost )
+				AdvanceWeather();
+			// The deferred gate-close retry follows the thing sweep (Mac 0x10536c).
+			Gate?.Tick();
 		}
-		// The deferred gate-close retry follows the thing sweep (Mac 0x10536c).
-		Gate?.Tick();
 		if ( !lost )
 			StaffWorld?.Tick( deltaTime );
 		UpdateTrackRendering( deltaTime );
 		UpdateTourRendering( deltaTime );
-		// [BIN:TPW-EXE:0x00516641 turn's end] the park turn ends by freeing the things that asked for their destruction, last request first (0x00516310, 0x00516200)
-		Things.DestroyQueued();
+		// [BIN:TPW-EXE:0x00516641 turn's end] the park turn ends by freeing the things that asked for their destruction, last request first (0x00516310, 0x00516200); a swept turn has done it already, and a park whose
+		// things share the level's pool frees them only at a turn: the substeps between turns leave the requests waiting
+		if ( !sweeping && (!pooled || guestsTurn || economyTurn) )
+			Things.DestroyQueued();
 	} );
+
+	/// <summary>The weather's step: the thing sweep's weather update (0x00512880), and on every other tick the first call that starts it.</summary>
+	private void AdvanceWeather()
+	{
+		// [EXT:tpi-viewer] Theme Park Inc's weather is not traced (its states and keys differ from the Theme Park World weather this class ports), so a Theme Park Inc park has none
+		if ( Park == null || Guests == null || Park.Economy.Rules.ThemeParkInc )
+			return;
+		Weather ??= new ParkWeather( Park.Economy.Settings.Standard, Seed.WeatherStream, Guests.Grid.Cells.Width, Guests.Grid.Cells.Height );
+		Weather.AdvanceTo( Park.Economy.Tick );
+	}
+
+	/// <summary>
+	/// One tick that starts a park turn, in the order of the original's substep and turn (main loop 0x0054E360 case 10, the world update 0x00516380): the guests' tick counters, the ride scripts and
+	/// the bump module of the substep, then the economy's turn, whose thing sweep (<see cref="LevelThingSweep"/>) updates every thing newest first.
+	/// </summary>
+	// [BIN:TPW-EXE:0x0054F4F2 world substep] each 31 ms substep runs 0x520130, the bump module 0x546C80 (0x54F55F) and the RSSE tick 0x5516B0 (0x54F56B); every eighth substep (0x54F668) then calls the park turn (0x54F7BB)
+	private void SimulateSweptTurn( float deltaTime, SimulationSubstep substep )
+	{
+		Guests!.BeginSweepTick( deltaTime );
+		var items = Objects.Objects.Concat( PlacedRide is { IsDeleted: false } prototype ? new OriginalObject[] { prototype } : [] ).ToArray();
+		foreach ( var item in items )
+			item.Visitors.DefersAdmission = true;
+		try
+		{
+			Objects.Simulate( deltaTime, substep, PlacedRide );
+		}
+		finally
+		{
+			foreach ( var item in items )
+				item.Visitors.DefersAdmission = false;
+		}
+		Park!.Economy.ThingSweep = new LevelThingSweep( this );
+		try
+		{
+			Park.FixedTick();
+		}
+		finally
+		{
+			Park.Economy.ThingSweep = null;
+		}
+	}
+
+	/// <summary>
+	/// The original's park turn after its counter has advanced (0x00516380): the sweep over the thing pool newest first (0x0050B360 by thing type: a guest, an attraction, a staff member, the weather, the
+	/// challenge system), the gate retry, the turn's deferred destroys and the arrival update (0x004D7B20), before the economy's calendar tail.
+	/// </summary>
+	private sealed class LevelThingSweep( Level level ) : IThingSweep
+	{
+		public void Run( ParkEconomy economy, long turn, bool lost ) => level.RunThingSweep( economy, turn, lost );
+	}
+
+	private void RunThingSweep( ParkEconomy economy, long turn, bool lost )
+	{
+		var guests = Guests!;
+		if ( !lost )
+		{
+			var world = economy.StaffWorld;
+			var restArea = economy.HasRestArea;
+			var members = economy.Staff.Members.Where( member => member.ThingId != 0 ).GroupBy( member => member.ThingId ).ToDictionary( group => group.Key, group => group.First() );
+			var swept = new HashSet<StaffMember>();
+			var attractions = SweepableObjects();
+			var visited = new HashSet<OriginalObject>();
+			var visitedStates = new HashSet<int>();
+			var weatherDone = false;
+			var challengesDone = false;
+			world?.BeginStaffTurn( economy, turn );
+			// [BIN:TPW-EXE:0x00516380 thing sweep] the walk starts at the used list's head (0x7CF56C), the thing built last, and takes each slot's older link after the update (0x516413..0x516431); the things built during the walk
+			// are newer than the position it has reached and are not visited, so a snapshot of the list is the same walk; a thing that asked to be destroyed (byte +3) is skipped (0x5163F2..0x5163F7)
+			foreach ( var slot in Things.Capture() )
+			{
+				if ( Things.IsQueued( slot.Id ) )
+					continue;
+				if ( guests.SweepGuest( slot.Id ) )
+					continue;
+				if ( members.TryGetValue( slot.Id, out var member ) )
+				{
+					if ( swept.Add( member ) )
+						SweepStaffMember( economy, world, member, turn, restArea );
+					continue;
+				}
+				if ( attractions.TryGetValue( slot.Id, out var item ) )
+				{
+					if ( visited.Add( item ) )
+						SweepAttraction( economy, item, turn, visitedStates );
+					continue;
+				}
+				switch ( slot.Model )
+				{
+					// [BIN:TPW-EXE:0x0050B360 thing update] type 0xF is the weather's update 0x00512880, type 0x13 the challenge system's 0x004D1E90
+					case SaveThingModel.Weather when !weatherDone:
+						weatherDone = true;
+						AdvanceWeather();
+						break;
+					case SaveThingModel.ChallengeSystem when !challengesDone:
+						challengesDone = true;
+						economy.UpdateChallenges( turn );
+						break;
+				}
+			}
+			// what has no slot in the pool (a headless scene's guests, a thing the pool does not hold) is updated after the sweep, in list order
+			guests.FinishSweep();
+			foreach ( var member in economy.Staff.Members.ToList() )
+				if ( swept.Add( member ) )
+					SweepStaffMember( economy, world, member, turn, restArea );
+			foreach ( var item in SweepableObjects( withoutSlot: true ).Values )
+				if ( visited.Add( item ) )
+					SweepAttraction( economy, item, turn, visitedStates );
+			foreach ( var instance in economy.ObjectInstanceIds().ToList() )
+				if ( !visitedStates.Contains( instance ) && economy.TryGetObject( instance, out var state ) )
+					economy.UpdateRide( state, turn );
+			if ( !weatherDone )
+				AdvanceWeather();
+			if ( !challengesDone )
+				economy.UpdateChallenges( turn );
+			if ( world != null )
+				world.EndStaffTurn( economy, turn );
+			else
+				economy.DispatchHandymen();
+		}
+		// [BIN:TPW-EXE:0x0051643B gate retry] every 30th turn the park's gate thing is asked to close a closed, empty park (the walk above has ended, 0x516442..0x516641)
+		Gate?.Tick();
+		// [BIN:TPW-EXE:0x00516641 deferred destroy] the turn's destroy requests are carried out last request first once the walk and the gate retry are over (0x516641..0x516691)
+		Things.DestroyQueued();
+		// [BIN:TPW-EXE:0x00516695 world turn tail] 0x004D7B20 then runs the arrival update (0x004CF3E0), the staff pool (0x005084F0), the calendar (0x004F8260) and every 100th turn the golden ticket step (0x004D4A00)
+		// [BIN:TPW-EXE:0x004D7B20 world tail] runs in every world state: the arrival update has no lost-park test of its own (0x4CF3E0 reads the vehicle and the group only), so a lost park still sends its bus and steps guests off
+		guests.UpdateTurnEndArrivals();
+	}
+
+	/// <summary>One staff member's thing update of the sweep: its research (a researcher's pre-update, every 20th turn), its vitals and job timer, and the world's state machine.</summary>
+	private static void SweepStaffMember( ParkEconomy economy, IStaffWorld? world, StaffMember member, long turn, bool restArea )
+	{
+		// [BIN:TPW-EXE:0x00502960 researcher update] the research comes first in the researcher's update, on every 20th turn (0x14)
+		if ( member.Type == StaffType.Researcher && turn % ParkResearch.TurnsPerResearch == 0 )
+			economy.ResearchBy( member );
+		economy.UpdateStaffVitals( member, restArea );
+		economy.CountDownJob( member );
+		world?.UpdateStaffMember( economy, member, turn );
+	}
+
+	/// <summary>One object's thing update of the sweep: the economy's wear and breakdown step (0x004E0B90), then the ride update's admission (0x004E0E00).</summary>
+	private void SweepAttraction( ParkEconomy economy, OriginalObject item, long turn, HashSet<int> visitedStates )
+	{
+		if ( ObjectInstanceOf( item ) is { } instance && economy.TryGetObject( instance, out var state ) )
+		{
+			visitedStates.Add( instance );
+			economy.UpdateRide( state, turn );
+		}
+		item.Visitors.UpdateAdmission();
+	}
+
+	/// <summary>The park's objects by thing id (those that hold a slot of the pool), or the ones without a slot; a deleted object is not swept.</summary>
+	private Dictionary<int, OriginalObject> SweepableObjects( bool withoutSlot = false )
+	{
+		var result = new Dictionary<int, OriginalObject>();
+		var counter = 0;
+		foreach ( var item in Objects.Objects.Concat( PlacedRide is { IsDeleted: false } prototype ? new OriginalObject[] { prototype } : [] ) )
+		{
+			if ( item.IsDeleted )
+				continue;
+			var slotted = item.ThingId != 0 && Things.IsUsed( item.ThingId );
+			if ( slotted == withoutSlot )
+				continue;
+			result[withoutSlot ? --counter : item.ThingId] = item;
+		}
+		return result;
+	}
+
+	/// <summary>The economy instance an object is linked to, the prototype's included; null for an object the economy does not hold.</summary>
+	private int? ObjectInstanceOf( OriginalObject item ) =>
+		economyInstances.TryGetValue( item, out var instance ) ? instance : ReferenceEquals( item, PlacedRide ) ? prototypeInstance : null;
 }

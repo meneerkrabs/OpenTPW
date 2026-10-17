@@ -329,6 +329,7 @@ UI-103 docs/UI.md
 UI-104 docs/UI.md
 UI-105 docs/UI.md
 UI-106 docs/progress/2026-10-16-research-bars.md
+UI-108 docs/UI.md
 UI-902 docs/PROGRESS.md
 UI-903 docs/PROGRESS.md
 UI-906 docs/PROGRESS.md
@@ -344,3 +345,4 @@ WALK-002 docs/GUESTS.md
 WALK-004 docs/GUESTS.md
 WALK-008 docs/GUESTS.md
 WALK-009 docs/GUESTS.md
+WALK-006 docs/GUESTS.md

@@ -260,6 +260,23 @@ public sealed class RideVM
 		StopChildrenIfFaulted();
 	}
 
+	/// <summary>
+	/// One substep of the park's script pass for this script alone (the loop body of tp.exe <c>0x005516B0</c>): the shared script clock gains the substep, and the slice runs only on the passes the script's
+	/// TURBO byte and id select. Children are scripts of their own in the pass (<see cref="RideScriptWorld.RunPass"/>), so none is advanced from here.
+	/// </summary>
+	// [BIN:TPW-EXE:0x005516E1 slice cadence] a script whose TURBO byte (+0xB8) is nonzero runs its slice in every pass, any other only when ((script id +8) xor the pass counter 0x8791A4) has its low three bits clear: one slice per eight passes, which pass by id
+	internal void StepSubstep( double substepMilliseconds, long pass )
+	{
+		if ( State != RideVMState.Faulted )
+		{
+			TimeMilliseconds += substepMilliseconds;
+			World.ObserveClock( SchedulerMilliseconds );
+			if ( TurboByte != 0 || ((ScriptId ^ (int)pass) & 7) == 0 )
+				RunSlice();
+		}
+		StopChildrenIfFaulted();
+	}
+
 	private bool StopChildrenIfFaulted()
 	{
 		// Managed host containment also covers a descendant callback faulting its parent.

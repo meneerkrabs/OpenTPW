@@ -41,7 +41,7 @@ Jump table `0x005569D0`, command − 1 indexes it; the first argument of every h
 ## Cars, boarding, end of a run (Q3)
 
 The per-tick state machine is `[BIN:TPW-EXE:0x0055ABF0]`, called from `0x0054F5EF` on **every second** world step: the world loop (`0x0054E360`) advances its clock by 31 ms and counts the
-steps (`[0x00877D34]`, raised at `0x0054F4D3`), and the tour tick sits behind `test al, 1` on that counter (`0x0054F5D7`), so it runs once per 62 ms. The draw divides the time since that tick by the
+steps (`[0x00877D34]`, raised at `0x0054F4D3`), and the tour tick sits behind `test al, 1` on that counter (`0x0054F5D7`), so it runs once per 62 ms; OpenTPW runs it in the park's substep scheduler on the even passes (`SimulationSubstep`, DETERMINISM.md "The substep scheduler"), after the script pass and not from the objects' own tick. The draw divides the time since that tick by the
 same 62 ms (`0x00700F90` is 1/62), and TOUR 8's `operand x 1000 / 64` ticks are about `operand` seconds at that rate. `TourController.TickSeconds` is 0.062. Car states: 1 docked (loading, or unloading when its
 rider count is negative), 2 take-off, 3 tour, 4 return, 5 staging (fixed approach), 6 approach, 7 landing, 8 patrol, 9 leaving. A new car appears outside the flight area and
 circles the station (state 8) until the landing slot (+0x2C) is free. The first car of a ride is created docked and sets the ready flag.
@@ -85,7 +85,7 @@ whose number matches (class 0x80 for the head action 4), u4 one of class 0x800 (
 saved part) and the ride runtime measures the model's dummies (`OriginalObjectRuntime.WalkNodeDistance`). The Star and Tweety Tours' slots lie 10 model units apart (the Cosmic Cruiser's
 10.03, the Tweety Tours' exactly 10), so both ride 1000 ms, as before (`TourAssetTests.TheTourWalkOffsSpanTheModelsSlotNodes`, `WalkOffTimingTests`). TOUR-007 retired. The beam effect of action 2 at WALKOFF
 is built (`RideVisitorBridge.WalkOffEffect`: effect `0x13` at the slot's start node, class `0x800`, each coordinate truncated to whole units and shifted left by 10, `0x00521E60` at `0x005572EB`; the handle is not kept). WALKON's own walk-on
-time (`ftol(distance between u1 and u2) x 100`, stored by 0x00556F40 at +0x0C) is not modelled, because what reads it and moves the entry to state 4 is not read: riders board at once (TOUR-011).
+time (`ftol(distance between u1 and u2) x 100`, stored by 0x00556F40 at +0x0C) is read by the walk update `0x00557D80` (state 1): it moves the walking body along its nodes and, at the end, moves the entry to state 2 (a head action 4 hangs the head then). It gates only the body and the head, not the script (the state 4 WALKGET hands out comes from WALKOFF's walk), and is not modelled: riders board at once and a head action 4 head hangs at once (TOUR-011).
 
 ## Pose sines (TOUR-008 narrowed)
 

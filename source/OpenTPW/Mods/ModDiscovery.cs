@@ -14,7 +14,7 @@ public enum ModSource
 }
 
 /// <summary>A mod folder found at startup: its manifest, or the reason it was refused.</summary>
-public sealed record DiscoveredMod( string Id, string Directory, ModSource Source, ModManifest? Manifest, string? Error )
+public sealed record DiscoveredMod( string Id, string Directory, ModSource Source, ModManifest? Manifest, string? Error, byte[]? ManifestBytes = null )
 {
 	public bool IsValid => Manifest != null && Error == null;
 }
@@ -23,7 +23,7 @@ public sealed record DiscoveredMod( string Id, string Directory, ModSource Sourc
 /// Finds files-based mods (docs/MODS.md): <c>--mod-dir</c>, then <c>OPENTPW_MOD_DIRS</c>, then
 /// <c>&lt;config&gt;/mods/&lt;id&gt;/</c>, then <c>&lt;program&gt;/content/mods/&lt;id&gt;/</c>. The first folder with an id
 /// wins; later folders with the same id are reported as shadowed. Nothing is loaded or executed: discovery only reads
-/// manifests. The browser build has no files-based mods yet.
+/// manifests. The browser build discovers only the program folder: the mods shipped with the page are embedded and written below it at start (docs/WEB.md).
 /// </summary>
 // [EXT:mods] OpenTPW's own mod system; the original game had no mods
 public static class ModDiscovery
@@ -121,18 +121,21 @@ public static class ModDiscovery
 		if ( !Directory.Exists( folder ) )
 			return new DiscoveredMod( name, folder, source, null, "the folder does not exist" );
 		ModManifest manifest;
+		byte[] manifestBytes;
 		try
 		{
-			manifest = ModManifest.Load( Path.Combine( folder, ModManifest.FileName ) );
+			// the bytes are kept: resolving checks that the file it hashes is the one that was parsed here
+			manifestBytes = ModFiles.ReadBounded( Path.Combine( folder, ModManifest.FileName ), ModManifest.MaximumBytes, ModManifest.FileName );
+			manifest = ModManifest.Parse( manifestBytes );
 		}
 		catch ( Exception exception ) when ( exception is IOException or InvalidDataException or UnauthorizedAccessException or ArgumentException )
 		{
 			return new DiscoveredMod( name, folder, source, null, exception.Message );
 		}
 		if ( requireFolderName && name != manifest.Id )
-			return new DiscoveredMod( manifest.Id, folder, source, manifest, $"the folder must be named after its id '{manifest.Id}'" );
+			return new DiscoveredMod( manifest.Id, folder, source, manifest, $"the folder must be named after its id '{manifest.Id}'", manifestBytes );
 		if ( manifest.Category == ModCategory.Official && source != ModSource.Program )
-			return new DiscoveredMod( manifest.Id, folder, source, manifest, $"'{ModManifest.OfficialPrefix}' ids are reserved for content shipped with OpenTPW" );
-		return new DiscoveredMod( manifest.Id, folder, source, manifest, null );
+			return new DiscoveredMod( manifest.Id, folder, source, manifest, $"'{ModManifest.OfficialPrefix}' ids are reserved for content shipped with OpenTPW", manifestBytes );
+		return new DiscoveredMod( manifest.Id, folder, source, manifest, null, manifestBytes );
 	}
 }

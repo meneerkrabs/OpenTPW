@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using OpenTPW.Online.Packages;
+using OpenTPW.Scripting;
 
 namespace OpenTPW.Mods;
 
@@ -13,7 +14,14 @@ public sealed record ModDependency( string Id, ModVersionRange Version );
 public sealed record ModInput( string Id, string Kind, string? Edition );
 
 /// <summary>The mod-relative content paths (docs/MODS.md): <see cref="ModContentRoots"/> installs them at startup.</summary>
-public sealed record ModContent( string? Overrides, string? Objects, string? Strings );
+public sealed record ModContent( string? Overrides, string? Objects, string? Strings, ModScripts? Scripts = null );
+
+/// <summary>The scripts of a mod (<c>content.scripts</c>, docs/SCRIPT-MODS.md): script files in load order, and the function each hook calls.</summary>
+public sealed record ModScripts( IReadOnlyList<string> Files, IReadOnlyDictionary<string, string> Hooks )
+{
+	/// <summary>Whether any declared hook can change the simulation: every v1 hook does, so a mod with scripts always counts as simulation-changing.</summary>
+	public bool AffectsSimulation => Hooks.Keys.Any( hook => !ScriptLimits.UiOnlyHooks.Contains( hook ) );
+}
 
 /// <summary>
 /// A parsed and validated <c>opentpw-mod.json</c> (docs/MODS.md). Parsing is strict in the <see cref="StrictJson"/> style:
@@ -32,6 +40,10 @@ public sealed record ModManifest
 	public const int MaximumPathLength = 240;
 	public const int MaximumDependencies = 32;
 	public const int MaximumInputs = 16;
+	/// <summary>Most script files of one mod. Far below <see cref="ModSet.MaximumFilesPerMod"/>: scripts are small decision rules.</summary>
+	public const int MaximumScriptFiles = 8;
+	/// <summary>Most source bytes of all script files of one mod together (each file also stays within <see cref="ScriptLimits.MaxSourceBytes"/>), against the 2 GiB of <see cref="ModSet.MaximumBytesPerMod"/>.</summary>
+	public const int MaximumScriptBytes = 256 * 1024;
 
 	public const string OfficialPrefix = "opentpw.";
 	public const string CommunityPrefix = "community.";
@@ -47,6 +59,8 @@ public sealed record ModManifest
 	public required ModVersion Version { get; init; }
 	public required ModCategory Category { get; init; }
 	public ModVersionRange? OpenTpw { get; init; }
+	/// <summary>The script API versions the mod's scripts target (<see cref="ScriptLimits.ScriptApiVersion"/>); present exactly when the mod has scripts.</summary>
+	public ModVersionRange? ScriptApi { get; init; }
 	/// <summary>The edition the mod is for (<see cref="GameEdition"/>), or null for any.</summary>
 	public GameEdition? Edition { get; init; }
 	public string? Author { get; init; }
@@ -95,6 +109,10 @@ public sealed record ModManifest
 		if ( document.OpenTpw != null && !ModVersionRange.TryParse( document.OpenTpw, out openTpw ) )
 			throw Invalid( $"'openTpw' '{document.OpenTpw}' is not a version range such as >=0.9.0 <0.10.0" );
 
+		ModVersionRange? scriptApi = null;
+		if ( document.ScriptApi != null && !ModVersionRange.TryParse( document.ScriptApi, out scriptApi ) )
+			throw Invalid( $"'scriptApi' '{document.ScriptApi}' is not a version range such as >=1.0.0 <2.0.0" );
+
 		var dependencies = new List<ModDependency>();
 		foreach ( var dependency in Bounded( document.Dependencies, MaximumDependencies, "dependencies" ) )
 		{
@@ -132,6 +150,9 @@ public sealed record ModManifest
 		}
 
 		var content = document.Content ?? new ContentDocument();
+		var scripts = ParseScripts( content.Scripts );
+		if ( (scripts != null) != (scriptApi != null) )
+			throw Invalid( scripts != null ? "'scriptApi' is required when 'content.scripts' is present" : "'scriptApi' is only for mods with 'content.scripts'" );
 		return new ModManifest
 		{
 			Id = id,
@@ -139,13 +160,14 @@ public sealed record ModManifest
 			Version = version,
 			Category = category,
 			OpenTpw = openTpw,
+			ScriptApi = scriptApi,
 			Edition = document.Edition == null ? null : ParseEdition( document.Edition, "'edition'" ),
 			Author = Text( document.Author, MaximumNameLength, "author", required: false, allowNewline: false ),
 			Description = Text( document.Description, MaximumDescriptionLength, "description", required: false, allowNewline: true ),
 			Dependencies = dependencies,
 			After = after,
 			Inputs = inputs,
-			Content = new ModContent( ContentPath( content.Overrides, "content.overrides" ), ContentPath( content.Objects, "content.objects" ), ContentPath( content.Strings, "content.strings" ) ),
+			Content = new ModContent( ContentPath( content.Overrides, "content.overrides" ), ContentPath( content.Objects, "content.objects" ), ContentPath( content.Strings, "content.strings" ), scripts ),
 		};
 	}
 
@@ -169,6 +191,39 @@ public sealed record ModManifest
 			throw Invalid( $"{what} '{path}' has a name that ends in '.' or a space, or is reserved (CON, NUL, …)" );
 		return normalized;
 	}
+
+	private static ModScripts? ParseScripts( ScriptsDocument? document )
+	{
+		if ( document == null )
+			return null;
+		var files = new List<string>();
+		foreach ( var file in Bounded( document.Files, MaximumScriptFiles, "content.scripts.files" ) )
+		{
+			var path = NormalizeRelativePath( file ?? throw Invalid( "'content.scripts.files' has a null entry" ), "content.scripts.files entry" );
+			if ( files.Any( existing => FoldKey( existing ) == FoldKey( path ) ) )
+				throw Invalid( $"script file '{path}' is listed more than once" );
+			files.Add( path );
+		}
+		if ( files.Count == 0 )
+			throw Invalid( "'content.scripts.files' needs at least one script file" );
+		var hooks = new Dictionary<string, string>( StringComparer.Ordinal );
+		foreach ( var (hook, function) in document.Hooks ?? new() )
+		{
+			if ( !ScriptLimits.HookParameters.ContainsKey( hook ) )
+				throw Invalid( $"unknown script hook '{hook}' (known: {string.Join( ", ", ScriptLimits.HookParameters.Keys )})" );
+			if ( function == null || function.Length is 0 or > ScriptLimits.MaxNameLength || !IsScriptName( function ) )
+				throw Invalid( $"hook '{hook}' must name a script function (ASCII letters, digits and '_', at most {ScriptLimits.MaxNameLength} characters)" );
+			hooks.Add( hook, function );
+		}
+		if ( hooks.Count == 0 )
+			throw Invalid( "'content.scripts.hooks' needs at least one hook" );
+		return new ModScripts( files, hooks );
+	}
+
+	/// <summary>The key two paths share when a case-insensitive or normalizing file system would treat them as one (the folding <see cref="ModSet"/> uses for every path).</summary>
+	internal static string FoldKey( string path ) => path.Normalize( System.Text.NormalizationForm.FormC ).ToLowerInvariant();
+
+	private static bool IsScriptName( string name ) => !char.IsAsciiDigit( name[0] ) && name.All( c => char.IsAsciiLetterOrDigit( c ) || c == '_' );
 
 	private static string? ContentPath( string? path, string what ) => path == null ? null : NormalizeRelativePath( path, what );
 
@@ -211,6 +266,7 @@ public sealed record ModManifest
 		public string? Version { get; init; }
 		public string? Category { get; init; }
 		public string? OpenTpw { get; init; }
+		public string? ScriptApi { get; init; }
 		public string? Edition { get; init; }
 		public string? Author { get; init; }
 		public string? Description { get; init; }
@@ -238,5 +294,12 @@ public sealed record ModManifest
 		public string? Overrides { get; init; }
 		public string? Objects { get; init; }
 		public string? Strings { get; init; }
+		public ScriptsDocument? Scripts { get; init; }
+	}
+
+	private sealed class ScriptsDocument
+	{
+		public List<string?>? Files { get; init; }
+		public Dictionary<string, string?>? Hooks { get; init; }
 	}
 }

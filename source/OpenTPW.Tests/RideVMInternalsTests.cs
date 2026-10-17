@@ -526,4 +526,77 @@ public class RideVMInternalsTests
 		Run( turbo, 1 );
 		Assert.AreNotEqual( Hash( plain ), Hash( turbo ) );
 	}
+
+	/// <summary>The float state of WALKST_FLOAT, WALKFLOATSTAT and WALKFLOATSTOP (tp.exe 0x555B72, 0x555BD8, 0x555C11, the frame update's clearing at 0x558051..0x558077).</summary>
+	[TestMethod]
+	public void TheWalkFloatRunsForTheSecondsOfWalkStFloatAndStopsReportingAfterThem()
+	{
+		// ZeroG: `WALKST_FLOAT VAR_DURATION 1000 1000`, then a loop over `WALKFLOATSTAT 0; BRANCH_NZ` with a wait in it; V1 counts the passes
+		var vm = Load( new Asm()
+			.I( Opcode.WALKST_FLOAT, 3, 1000, 1000 )
+			.Label( "loop" ).I( Opcode.ADD, V( 1 ), 1 ).I( Opcode.WAIT, 250 ).I( Opcode.WALKFLOATSTAT, 0 ).I( Opcode.BRANCH_NZ, "loop" )
+			.I( Opcode.COPY, V( 0 ), 1 ).Label( "idle" ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "idle" ) );
+		Run( vm, 60 );
+		Assert.AreEqual( 0, vm.Variables[0], "the float is still running one second in" );
+		Run( vm, 60 * 4 );
+		Assert.AreEqual( 1, vm.Variables[0], "the loop ended after the three seconds" );
+		Assert.IsTrue( vm.Variables[1] is >= 12 and <= 14, $"about 12 passes of 250 ms, got {vm.Variables[1]}" );
+		Assert.AreEqual( (0, 0), (vm.WalkFloat.Duration, 0), "the duration word was cleared" );
+	}
+
+	[TestMethod]
+	public void WalkFloatStatSetsTheFlagsAndAVariableDestinationTakesTheDuration()
+	{
+		var vm = Load( new Asm().I( Opcode.WALKFLOATSTAT, V( 0 ) ).I( Opcode.WALKST_FLOAT, 2, 5, 6 ).I( Opcode.WALKFLOATSTAT, V( 1 ) ).I( Opcode.WALKFLOATSTAT, 0 ).Label( "idle" ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "idle" ) );
+		Run( vm, 1 );
+		Assert.AreEqual( 0, vm.Variables[0], "no float yet" );
+		Assert.AreEqual( 2000, vm.Variables[1] );
+		Assert.AreEqual( 0, (int)(vm.Flags & RideVM.VMFlags.Zero), "a literal destination only sets the flags (the duration is not zero)" );
+		Assert.AreEqual( (0u, 2000, 5 | (6 << 16)), vm.WalkFloat with { Start = 0 }, "the two operands are kept as words" );
+	}
+
+	[TestMethod]
+	public void WalkFloatStopTurnsTheTimeSpentIntoAThousandthShareAndLeavesOneSecondToSettle()
+	{
+		// 4 s float, stopped after 1 s: spent = 250 thousandths, so the start moves back 250 ms from now and the duration becomes 1000: the word stays set for the remaining 750 ms
+		var vm = Load( new Asm().I( Opcode.WALKST_FLOAT, 4, 0, 0 ).I( Opcode.WAIT, 1000 ).I( Opcode.WALKFLOATSTOP ).I( Opcode.WALKFLOATSTAT, V( 0 ) ).I( Opcode.WAIT, 500 ).I( Opcode.WALKFLOATSTAT, V( 1 ) )
+			.I( Opcode.WAIT, 500 ).I( Opcode.WALKFLOATSTAT, V( 2 ) ).Label( "idle" ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "idle" ) );
+		Run( vm, 60 * 3 );
+		Assert.AreEqual( 1000, vm.Variables[0], "after the stop the duration word is 1000" );
+		Assert.AreEqual( 1000, vm.Variables[1], "still set 500 ms later" );
+		Assert.AreEqual( 0, vm.Variables[2], "gone 1000 ms after the stop minus the share already spent" );
+	}
+
+	[TestMethod]
+	public void WalkFloatStopWithoutAFloatDoesNothingAndTheStateRoundTripsThroughASnapshot()
+	{
+		var vm = Load( new Asm().I( Opcode.TEST, V( 0 ) ).I( Opcode.WALKFLOATSTOP ).Label( "idle" ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "idle" ) );
+		Run( vm, 1 );
+		Assert.AreEqual( RideVM.VMFlags.Zero, vm.Flags, "no flags" );
+		Assert.AreEqual( (0u, 0, 0), vm.WalkFloat );
+		var floating = Load( new Asm().I( Opcode.WALKST_FLOAT, 7, 11, 13 ).Label( "idle" ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "idle" ) );
+		Run( floating, 2 );
+		var snapshot = floating.CaptureSnapshot();
+		Assert.AreEqual( 7000, snapshot.WalkFloatDuration );
+		var other = Load( new Asm().I( Opcode.WALKST_FLOAT, 7, 11, 13 ).Label( "idle" ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "idle" ) );
+		other.RestoreSnapshot( ParkResumeJson.Deserialize<RideVMSnapshot>( ParkResumeJson.Serialize( snapshot ) ) );
+		Assert.AreEqual( floating.WalkFloat, other.WalkFloat );
+		var (hashA, hashB) = (new StateHasher(), new StateHasher());
+		floating.AddCanonicalState( hashA );
+		other.AddCanonicalState( hashB );
+		Assert.AreEqual( hashA.Value, hashB.Value );
+		Assert.IsFalse( System.Text.Encoding.UTF8.GetString( ParkResumeJson.Serialize( vm.CaptureSnapshot() ) ).Contains( "WalkFloat" ), "a script without a float writes no member" );
+	}
+
+	[TestMethod]
+	public void EndSetsTheProgramCounterToMinusTenThousandAndEndsTheScriptWithoutAFault()
+	{
+		// tp.exe 0x5567B1: mov [esi + 0x3c], 0xFFFFD8F0 and nothing else
+		var vm = Load( new Asm().I( Opcode.COPY, V( 0 ), 1 ).I( Opcode.END ).I( Opcode.COPY, V( 1 ), 1 ) );
+		Run( vm, 3 );
+		Assert.AreEqual( RideVMState.Halted, vm.State );
+		Assert.IsNull( vm.FaultMessage );
+		Assert.AreEqual( (1, 0), (vm.Variables[0], vm.Variables[1]), "nothing after END runs" );
+		Assert.AreEqual( -10000, vm.ProgramCounter );
+	}
 }

@@ -328,7 +328,7 @@ public class GuestSnapshotJsonContinuationTests
 
 	/// <summary>A one-command-per-tick dispatcher over the bridge's public effect opcodes: LIMBO/BOUNCE take the
 	/// argument and duration registers, UNLIMBO/FORCEUNLIMBO/UNBOUNCE/FORCEUNBOUNCE/WALKGET write their guest into
-	/// the argument register, WALKOFF enqueues it. Any other command value walks off the argument guest.</summary>
+	/// the argument register, command 8 is WALKOFF, and any other command value is WALKON (the walk table's entry that WALKOFF and WALKGET need, tp.exe 0x00556F40).</summary>
 	private static RideVM DispatchScript( IRideScriptEffects effects )
 	{
 		var cmd = V( CmdVar );
@@ -346,7 +346,8 @@ public class GuestSnapshotJsonContinuationTests
 			.I( Opcode.SUB, scratch, cmd, 5 ).I( Opcode.TEST, scratch ).I( Opcode.BRANCH_Z, "c5" )
 			.I( Opcode.SUB, scratch, cmd, 6 ).I( Opcode.TEST, scratch ).I( Opcode.BRANCH_Z, "c6" )
 			.I( Opcode.SUB, scratch, cmd, 7 ).I( Opcode.TEST, scratch ).I( Opcode.BRANCH_Z, "c7" )
-			.I( Opcode.BRANCH, "c8" )
+			.I( Opcode.SUB, scratch, cmd, 8 ).I( Opcode.TEST, scratch ).I( Opcode.BRANCH_Z, "c8" )
+			.I( Opcode.BRANCH, "c9" )
 			.Label( "c1" ).I( Opcode.LIMBO, arg, dur ).I( Opcode.COPY, cmd, 0 ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "loop" )
 			.Label( "c2" ).I( Opcode.UNLIMBO, arg ).I( Opcode.COPY, cmd, 0 ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "loop" )
 			.Label( "c3" ).I( Opcode.FORCEUNLIMBO, arg ).I( Opcode.COPY, cmd, 0 ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "loop" )
@@ -355,6 +356,7 @@ public class GuestSnapshotJsonContinuationTests
 			.Label( "c6" ).I( Opcode.FORCEUNBOUNCE, arg ).I( Opcode.COPY, cmd, 0 ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "loop" )
 			.Label( "c7" ).I( Opcode.WALKGET, arg ).I( Opcode.COPY, cmd, 0 ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "loop" )
 			.Label( "c8" ).I( Opcode.WALKOFF, arg ).I( Opcode.COPY, cmd, 0 ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "loop" )
+			.Label( "c9" ).I( Opcode.WALKON, arg, 0, 0, 0, 0, 0, 0 ).I( Opcode.COPY, cmd, 0 ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "loop" )
 			.Label( "idle" )
 			.I( Opcode.ENDSLICE )
 			.I( Opcode.BRANCH, "loop" )
@@ -473,6 +475,8 @@ public class GuestSnapshotJsonContinuationTests
 		Assert.AreEqual( 14, Command( restoredScript, 6, 0 ) );
 
 		// A boarded guest walks off: WALKOFF enqueues it (argument unchanged), WALKGET returns it FIFO. Guest 14 is still aboard from its BOUNCE (limbo boards nobody).
+		Assert.AreEqual( 14, Command( script, 9, 14 ), "WALKON leaves the argument register unchanged" );
+		Assert.AreEqual( 14, Command( restoredScript, 9, 14 ) );
 		Assert.AreEqual( 14, Command( script, 8, 14 ), "WALKOFF leaves the argument register unchanged" );
 		Assert.AreEqual( 14, Command( restoredScript, 8, 14 ) );
 		Assert.AreEqual( 14, Command( script, 7, 0 ), "WALKGET returned the walked-off guest" );

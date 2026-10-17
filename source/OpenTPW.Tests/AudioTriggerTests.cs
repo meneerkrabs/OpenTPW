@@ -145,7 +145,7 @@ public class AudioTriggerTests
 		Assert.IsNotNull( ambient.Catalog.Find( 0x20 ), "the thunder one-shot" );
 		var rides = SoundCategory.TryLoad( fileSystem, "/global/sound", "cat_rides" );
 		Assert.IsNotNull( rides );
-		foreach ( var eventId in new[] { GameAudio.RepairStopEvent, GameAudio.RepairStopSecondEvent } )
+		foreach ( var eventId in new[] { GameAudio.RepairFirstEvent, GameAudio.RepairSecondEvent } )
 			Assert.IsNotNull( rides.Catalog.Find( eventId ), $"cat_rides event {eventId}" );
 		var staff = SoundCategory.TryLoad( fileSystem, "/global/sound", "cat_staff" );
 		Assert.IsNotNull( staff );
@@ -223,8 +223,8 @@ public class AudioTriggerTests
 		Assert.IsTrue( rides.Catalog.Events.Count > 0, "ride events for RSE EVENT type 3" );
 		var globalRides = SoundCategory.TryLoad( fileSystem, "/global/sound", "cat_rides" );
 		Assert.IsNotNull( globalRides );
-		Assert.IsNotNull( system.Play( globalRides, GameAudio.RepairStopEvent, AudioChannel.Effects ), "the repair-finished sound decodes" );
-		Assert.IsNotNull( system.Play( globalRides, GameAudio.RepairStopSecondEvent, AudioChannel.Effects ) );
+		Assert.IsNotNull( system.Play( globalRides, GameAudio.RepairFirstEvent, AudioChannel.Effects ), "the repair-finished sound decodes" );
+		Assert.IsNotNull( system.Play( globalRides, GameAudio.RepairSecondEvent, AudioChannel.Effects ) );
 	}
 
 	/// <summary>

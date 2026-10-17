@@ -31,7 +31,7 @@ public class RepairHideAudioTests
 		BinaryPrimitives.WriteUInt32LittleEndian( model.AsSpan( 0x268 ), 0 ); BinaryPrimitives.WriteUInt32LittleEndian( model.AsSpan( 0x78 ), 0x264 );
 		foreach ( var offset in new[] { 0x38, 0x3a, 0x3c, 0x3e, 0x4a } ) BinaryPrimitives.WriteUInt16LittleEndian( model.AsSpan( offset ), 0 );
 		File.WriteAllBytes( Path.Combine( root, "model.MD2" ), model );
-		File.WriteAllBytes( Path.Combine( root, "script.RSE" ), new RideVMTests.Asm().I( Opcode.CMP, 1, 2 ).I( Opcode.REPAIREFFECT, 0 ).I( Opcode.ENDSLICE ).Build( Enum.GetNames<RideVariables>() ) );
+		File.WriteAllBytes( Path.Combine( root, "script.RSE" ), new RideVMTests.Asm().I( Opcode.CMP, 1, 2 ).I( Opcode.REPAIREFFECT, 1 ).I( Opcode.ENDSLICE ).Build( Enum.GetNames<RideVariables>() ) );
 		entry = new ObjectCatalogEntry( "jungle", ObjectCategory.Ride, "/synthetic", new ObjectSettings( new[] { new ObjectSettingsFile( "Info.Id 1100\n", "synthetic.sam" ) } ),
 			new ObjectShape( new[] { "*" } ), "/model.MD2", null, "/script.RSE", Array.Empty<string>(), Array.Empty<ObjectAnimationFile>(), Array.Empty<string>(), Array.Empty<string>(), new BaseFileSystem( root ), null );
 		mixer = new AudioMixer( null ); system = new SoundEventSystem( mixer, 7 ); var category = Empty<SoundCategory>(); var catalog = Empty<SoundCatalog>();
@@ -50,7 +50,7 @@ public class RepairHideAudioTests
 		mixer.Dispose(); foreach ( var pair in oldAudio ) pair.Key.SetValue( null, pair.Value ); oldAudio.Clear(); Directory.Delete( root, true );
 		typeof( AudioListener ).GetMethod( "RestoreCaptured", BindingFlags.NonPublic | BindingFlags.Static )!.Invoke( null, new object[] { oldPosition, oldForward } );
 	}
-	private void Repair( OriginalObjectRuntime owner, int show = 0, int band = 1 )
+	private void Repair( OriginalObjectRuntime owner, int show = 1, int band = 1 )
 	{
 		using var data = new MemoryStream( new RideVMTests.Asm().I( Opcode.CMP, 1, 2 ).I( Opcode.REPAIREFFECT, show ).I( Opcode.ENDSLICE ).Build( Enum.GetNames<RideVariables>() ) );
 		var vm = new RideVM( data, new RideVMOptions { Effects = owner.Script!.Effects } ); vm.Variables[5] = band; vm.Advance( FixedStepClock.TickDuration );
@@ -104,11 +104,19 @@ public class RepairHideAudioTests
 	[DataRow( 2 )]
 	[DataRow( -1 )]
 	[DataRow( int.MaxValue )]
-	public void EveryNonzeroShowPlaysFamily75AtTheObjectWithoutLoopOwnership( int show )
+	public void EveryNonzeroValuePlaysThePairAtTheObjectAndOwnsItsLoops( int show )
 	{
-		// [BIN:TPW-EXE:0x55635f] the repair-start sound is submitted at the object's position (0x556a80), as the hide pair is
+		// [BIN:TPW-EXE:0x5562C5] only the value 0 jumps away (je 0x55635F): every other value takes the sounds 0x6F and 0xD3 at the object's position (0x556A80)
 		var owner = new OriginalObjectRuntime( entry ); var calls = 0; var place = new Vector3( 4, 5, 6 ); Bind( owner, () => { calls++; return place; } );
-		Repair( owner, show ); var voice = mixer.Voices.Single(); Assert.AreEqual( place, voice.Position ); Assert.IsFalse( voice.Loops ); Assert.AreEqual( 1, calls ); Assert.IsNotNull( owner.CaptureSnapshot() );
+		Repair( owner, show ); Assert.AreEqual( 2, mixer.Voices.Count ); Assert.IsTrue( mixer.Voices.All( voice => voice.Position == place && voice.Loops ) ); Assert.AreEqual( 1, calls );
+		Assert.ThrowsException<NotSupportedException>( () => owner.CaptureSnapshot() ); owner.Stop(); Assert.IsTrue( mixer.Voices.All( voice => voice.IsFinished ) );
+	}
+	[TestMethod]
+	public void TheValueZeroPlaysTheBandFamilyAtTheObjectWithoutLoopOwnership()
+	{
+		// [BIN:TPW-EXE:0x55635F] the value 0 submits the cat_kids one-shot of its band at the object's position (0x556A80), as the pair does for the other values
+		var owner = new OriginalObjectRuntime( entry ); var calls = 0; var place = new Vector3( 4, 5, 6 ); Bind( owner, () => { calls++; return place; } );
+		Repair( owner, 0 ); var voice = mixer.Voices.Single(); Assert.AreEqual( place, voice.Position ); Assert.IsFalse( voice.Loops ); Assert.AreEqual( 1, calls ); Assert.IsNotNull( owner.CaptureSnapshot() );
 		using var reference = new AudioMixer( null ); reference.Play( Pcm( 3000 ), AudioChannel.Effects, 1, position: place, range: 100 ); CollectionAssert.AreEqual( reference.Mix( 1 ), mixer.Mix( 1 ) );
 		owner.Stop(); Assert.IsFalse( voice.IsFinished ); mixer.Mix( 4 ); Assert.IsTrue( voice.IsFinished );
 	}
@@ -122,11 +130,11 @@ public class RepairHideAudioTests
 	[DataRow( 7, 5 )]
 	[DataRow( 8, 6 )]
 	[DataRow( 100, 6 )]
-	public void TheRepairFamilyFollowsTheScriptsVariableSlot5( int band, int expectedBank )
+	public void TheBandFamilyFollowsTheScriptsVariableSlot5( int band, int expectedBank )
 	{
 		// [BIN:TPW-EXE:0x551320] band 0 is silent, 1 picks event 75, 2-3 (and negative) 79, 4-7 83 and 8 up 87; the band is [[vm+0x1c]+0x14], variable slot 5 (0x55637a)
 		var owner = new OriginalObjectRuntime( entry ); var place = new Vector3( 4, 5, 6 ); Bind( owner, () => place );
-		Repair( owner, 1, band );
+		Repair( owner, 0, band );
 		if ( expectedBank == 0 ) { Assert.AreEqual( 0, mixer.Voices.Count ); return; }
 		Assert.AreEqual( 1, mixer.Voices.Count );
 		using var reference = new AudioMixer( null ); reference.Play( Pcm( (short)(expectedBank * 1000) ), AudioChannel.Effects, 1, position: place, range: 100 );
@@ -147,7 +155,7 @@ public class RepairHideAudioTests
 	public void OneShotsAndMissingAudioRemainCaptureEligibleAndPublicHideApiStaysFlat()
 	{
 		// events 111 and 211 carry flag 0x8: a flat one-shot loops as a positioned one does ([BIN:TPW-EXE:0x6bc621])
-		GameAudio.PlayRepairEffect( 0 ); Assert.AreEqual( 2, mixer.Voices.Count ); Assert.IsTrue( mixer.Voices.All( voice => voice.Position == null && voice.Loops ) );
+		GameAudio.PlayRepairEffect( 1 ); Assert.AreEqual( 2, mixer.Voices.Count ); Assert.IsTrue( mixer.Voices.All( voice => voice.Position == null && voice.Loops ) );
 		foreach ( var voice in mixer.Voices.ToArray() ) voice.Stop();
 		mixer.Mix( 4 ); typeof( GameAudio ).GetField( "events", BindingFlags.Static | BindingFlags.NonPublic )!.SetValue( null, null );
 		var placed = new OriginalObject( entry, new ObjectPlacement( 1, 2, 0, System.Numerics.Vector2.Zero, 0 ) ); placed.Runtime.Simulate( FixedStepClock.TickDuration ); Assert.AreEqual( 0, mixer.Voices.Count ); Assert.IsNotNull( placed.Runtime.CaptureSnapshot() );
@@ -224,7 +232,7 @@ public class RepairHideAudioTests
 	public void ActualChildHideInheritsPlacedOriginAndObjectLoopOwnership()
 	{
 		File.WriteAllBytes( Path.Combine( root, "script.RSE" ), new RideVMTests.Asm().I( Opcode.ENDSLICE ).Build( Enum.GetNames<RideVariables>() ) );
-		File.WriteAllBytes( Path.Combine( root, "child.RSE" ), new RideVMTests.Asm().I( Opcode.REPAIREFFECT, 0 ).I( Opcode.ENDSLICE ).Build( Enum.GetNames<RideVariables>() ) );
+		File.WriteAllBytes( Path.Combine( root, "child.RSE" ), new RideVMTests.Asm().I( Opcode.REPAIREFFECT, 1 ).I( Opcode.ENDSLICE ).Build( Enum.GetNames<RideVariables>() ) );
 		var childEntry = new ObjectCatalogEntry( entry.Theme, entry.Category, entry.ArchivePath, entry.Settings, entry.Shape, entry.ModelPath, null, entry.ScriptPath, new[] { "/child.RSE" }, entry.Animations, entry.AuxiliaryModels, entry.Models, entry.FileSystem, null );
 		var placed = new OriginalObject( childEntry, new ObjectPlacement( 1, 2, 0, System.Numerics.Vector2.Zero, 0 ) );
 		placed.Script!.SpawnChild( "child.RSE", sound: false ); placed.Runtime.Simulate( FixedStepClock.TickDuration );

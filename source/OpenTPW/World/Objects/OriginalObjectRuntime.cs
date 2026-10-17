@@ -95,11 +95,14 @@ public sealed partial class OriginalObjectRuntime
 			Visitors.Attach( Script, () => !stopped && IsOpen, () => (Coaster?.AcceptsGuests ?? true) && (Bump?.IsTrackValid ?? true),
 				() => !(Coaster?.AcceptsGuests ?? true) || Bump is { IsWater: false, IsTrackValid: false } );
 			// [BIN:TPW-EXE:0x005571A0 WALKOFF] the walk takes ftol(the distance between the walker's two slot nodes) x 100 ms (100 ms for 0): the slot's start node (u3, class 0x800, or 0x80 for the head action 4) and end node (u4, class 0x800) are looked up in the ride model (0x0044B220: the first dummy whose class mask matches and whose number equals) and measured at the time of the WALKOFF (0x00556B90 reads the live node); the Star and Tweety Tours slots span 10 model units (1000 ms)
+			// [BIN:TPW-EXE:0x00556F40 WALKON] the walk-on's nodes are looked up in the ride model the same way (the first node of class 0x800, the second of class 0x80 for the head action 4, else 0x800), for every object that walks riders
+			Visitors.WalkNodeDistance = WalkNodeDistance;
+			Visitors.WalkNodeClassDistance = WalkNodeDistance;
 			if ( UsesTour )
 			{
 				Visitors.WalkOffMilliseconds = 1000;
-				Visitors.WalkNodeDistance = WalkNodeDistance;
 				Visitors.WalkOffEffect = StartWalkOffEffect;
+				Visitors.WalkOnEffect = StartWalkOffEffect;
 			}
 		}
 	}
@@ -126,10 +129,13 @@ public sealed partial class OriginalObjectRuntime
 	/// The distance in model units between a WALKON slot's two nodes at the current pose: the start node of class 0x80 (the head action 4) or 0x800 and the end node of class 0x800, each the first
 	/// dummy of the model whose class mask matches and whose number equals (0x0044B220); null when either is missing.
 	/// </summary>
-	internal float? WalkNodeDistance( int action, int fromNumber, int toNumber )
+	internal float? WalkNodeDistance( int action, int fromNumber, int toNumber ) => WalkNodeDistance( action == 4 ? 0x80 : 0x800, fromNumber, 0x800, toNumber );
+
+	/// <summary>The distance between the first dummy of class <paramref name="fromMask"/> numbered <paramref name="fromNumber"/> and the first of class <paramref name="toMask"/> numbered <paramref name="toNumber"/> at the current pose; null when either is missing.</summary>
+	internal float? WalkNodeDistance( int fromMask, int fromNumber, int toMask, int toNumber )
 	{
-		var from = FindDummyNode( action == 4 ? 0x80 : 0x800, fromNumber );
-		var to = FindDummyNode( 0x800, toNumber );
+		var from = FindDummyNode( fromMask, fromNumber );
+		var to = FindDummyNode( toMask, toNumber );
 		if ( from == null || to == null )
 			return null;
 		var transforms = Animator.NodeTransforms;
@@ -753,6 +759,16 @@ public sealed class OriginalObjectEffects : IRideScriptEffects, IRideAnimationQu
 			GameAudio.SingleScream( call.Argument( 0 ), (short)call.Argument( 1 ), ride.ReadFootprintMiddle(), call.VM.SpeedBias );
 			return UnimplementedRideScriptEffects.Instance.Perform( call );
 		}
+		if ( call.Opcode == Opcode.SCREAMLEVEL )
+		{
+			// [BIN:TPW-EXE:0x555FDA SCREAMLEVEL] one resolved operand: 0x551290(the script's scream handle (+0xD0), level, the script speed word) does nothing without a handle and otherwise sets the held voice's parameter 6 (the one the chain's links are matched against, as at STARTSCREAM) to clamp((level + speed) / 2, 0, 100), truncating toward zero (0x5512A0..0x5512B7); the script keeps the handle the call returns. A script without a held scream is untouched
+			if ( screamChain is { IsStopped: false } held )
+			{
+				held.Parameter = GameAudio.ScreamParameter( call.Argument( 0 ), call.VM.SpeedBias );
+				(HeldScreamLevel, HeldScreamSpeed) = (call.Argument( 0 ), call.VM.SpeedBias);
+			}
+			return 0;
+		}
 		// ADDOBJ and ADDOBJ_EXT type 1/2 start particle effects that KILLOBJ ends (docs/PARTICLES.md); the other object types stay unimplemented effects
 		if ( call.Opcode is Opcode.ADDOBJ or Opcode.ADDOBJ_EXT )
 		{
@@ -784,7 +800,7 @@ public sealed class OriginalObjectEffects : IRideScriptEffects, IRideAnimationQu
 		}
 		if ( call.Opcode == Opcode.REPAIREFFECT )
 		{
-			// [BIN:STP-PPC:0x100B1E34 REPAIREFFECT] showing (value 1) starts a cat_kids repair sound (0x100ACC24, event 75 for the traced call); hiding (value 0) plays cat_rides 111 and 211 (0x100B1EC0/0x100B1F00) at the object's position
+			// [BIN:TPW-EXE:0x5562C5 REPAIREFFECT] a non-zero value plays the global cat_rides sounds 111 and 211 at the object's position (0x5562CD..0x556351); the value 0 jumps to 0x55635F and plays the band one-shot (cat_kids 75 family, 0x551320). The Mac handler (0x100B1E34) has the same two blocks, the pair first and the band sound at 0x100B1F78; the earlier port gave them the opposite values
 			var show = call.Argument( 0 );
 			// [BIN:TPW-EXE:0x5562bd REPAIREFFECT] the type's repair particle effect is switched before the sounds (0x556DE0)
 			ride.SetRepairParticle( show != 0 );

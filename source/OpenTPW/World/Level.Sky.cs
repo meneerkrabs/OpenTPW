@@ -24,7 +24,7 @@ public partial class Level
 			skyLoaded = true;
 			sky = Sky.TryCreate( LevelName );
 		}
-		sky?.Draw();
+		sky?.Draw( SceneClock.CappedFrameSeconds );
 	}
 
 	private void DisposeSky()

@@ -77,15 +77,19 @@ parts: a save without them restores with zero stale words. No schema version mov
 
 TOUR 1 (`0x005542FE`) reads the pad node live (`0x0044B220`, class 0x800 number 99, then `0x004386D0`) and the instance angle `+0x10` (`0x00554385`). `+0x10` is the build angle the constructor stores in degrees (`0x004DB0CD`, handed over by the placement `0x00529E10`) and, for a saved ride, the save's `mAngle`, which the attraction reader (`0x004DB7D0`) loads straight into `+0x10`: the placement rotation is the angle either way. All four tour scripts run TOUR 1 before any clip is triggered (`WAITANIM 0 0` on an idle channel, then `TOUR 1`), so the live node is the model's rest pose; `TourAssetTests.TheLaunchPadIsReadBeforeAnyClipPlays` pins that. TOUR-003 retired.
 
-## Walk-off time (TOUR-007 retired)
+## The walk table and the walk-off time (TOUR-007 retired, TOUR-011 narrowed)
 
-WALKON (`0x00556F40`) stores its walker's slot in the ride's walk table: the operands in order are the visitor, nodes u1 and u2 (the walk on), nodes u3 and u4 and the walk action. WALKOFF
-(`0x005571A0`) finds the slot by visitor and takes `ftol(the distance between node u3 and node u4) x 100` ms (100 ms for 0) before WALKGET hands the walker out; u3 is the first dummy of class 0x800
-whose number matches (class 0x80 for the head action 4), u4 one of class 0x800 (`0x0044B220`), both read live (`0x00556B90`). `RideVisitorBridge` keeps the slot per rider (`WalkSlots`, an optional
-saved part) and the ride runtime measures the model's dummies (`OriginalObjectRuntime.WalkNodeDistance`). The Star and Tweety Tours' slots lie 10 model units apart (the Cosmic Cruiser's
-10.03, the Tweety Tours' exactly 10), so both ride 1000 ms, as before (`TourAssetTests.TheTourWalkOffsSpanTheModelsSlotNodes`, `WalkOffTimingTests`). TOUR-007 retired. The beam effect of action 2 at WALKOFF
-is built (`RideVisitorBridge.WalkOffEffect`: effect `0x13` at the slot's start node, class `0x800`, each coordinate truncated to whole units and shifted left by 10, `0x00521E60` at `0x005572EB`; the handle is not kept). WALKON's own walk-on
-time (`ftol(distance between u1 and u2) x 100`, stored by 0x00556F40 at +0x0C) is read by the walk update `0x00557D80` (state 1): it moves the walking body along its nodes and, at the end, moves the entry to state 2 (a head action 4 hangs the head then). It gates only the body and the head, not the script (the state 4 WALKGET hands out comes from WALKOFF's walk), and is not modelled: riders board at once and a head action 4 head hangs at once (TOUR-011).
+The script's walk table (header walk size entries of 0x20 bytes) is the original's, in `RideVisitorBridge`. WALKON (`0x00556F40`) takes the first free entry and stores its seven operands (the visitor,
+nodes u1 and u2 for the walk on, nodes u3 and u4 for the walk off, the walk action and a last word), state 1, the start now and the end now + `ftol(distance(u1, u2)) x 100` ms (100 ms for 0; u1
+is the first dummy of class 0x800 whose number matches, u2 one of class 0x80 for the head action 4, else 0x800, `0x0044B220`, both read live through `0x00556B90`); a full table logs and stores nothing. The walk update
+of the main loop pass (`0x00557AB0`, called at `0x0054FA08` of `0x0054E360`, once per rendered frame after the park's substeps, then `0x00557D80`) moves state 1 to state 2 once the end has passed: the head action 4 hangs the rider's head on head id u2 (`0x0044B410`) and
+action 2 creates effect `0x13` at u2. WALKOFF (`0x005571A0`) finds the entry by visitor (none: it logs and does nothing) and, whatever its state, sets state 3, the start now and the end now +
+`ftol(distance(u3, u4)) x 100` ms (u3 of class 0x80 for the head action 4, else 0x800, u4 of class 0x800); action 2 creates effect `0x13` at u3 and a head action 4 head that is up (state 2) comes down (`0x0044B4C0`). The update moves state 3 to
+state 4 at the end, and WALKGET (`0x00557110`) hands out the first entry of the table in state 4 and frees it. The ride runtime measures the model's dummies for every object that walks riders
+(`OriginalObjectRuntime.WalkNodeDistance`; every literal node pair of the 47 shipped WALKON instructions exists in its model, `WalkNodeCorpusTests`), so a ride's riders now leave after the measured walk (a few hundred milliseconds to two seconds) and not at once; the Star and Tweety
+Tours' slots lie 10 model units apart, so both still ride 1000 ms (`TourAssetTests.TheTourWalkOffsSpanTheModelsSlotNodes`, `WalkOffTimingTests`, `WalkTableTests`). The slot order, a WALKOFF restart in any state, the table size and the unknown rider are tested in `WalkTableTests`. The bridge saves the table entry by entry
+(`WalkTable`, optional; a save from before restores its on-board riders and walkers into the table). Left under TOUR-011: the walking body is not drawn between the nodes, the update runs in the ride's host step where the original runs it once per rendered frame, and a node missing from the model takes
+no walk-on time and the ride's default walk-off time (the original logs and keeps its stack words).
 
 ## Pose sines (TOUR-008 narrowed)
 

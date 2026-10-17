@@ -118,6 +118,41 @@ each finding is tied to a named function; nothing was executed and no code is co
   generic path, plus no-blend and textured variants. Only the 8888 path has been read so
   far; the 16-bit paths, which the Mac build most likely used, still need the same check.
 
+## PC text library: placement and blitting (tp.exe)
+
+October 17, 2026. Static analysis of tp.exe (`[BIN:TPW-EXE:...]`), the PC twin of the Mac library above. Nothing was executed.
+
+- **Glyph position.** The common draw routine (`0x6b4aa0`) places a glyph bitmap at pen + (signed byte at record +0x14, signed byte at +0x15)
+  with the pen y at the line's top, clips it to the surface (`0x6b5340`) and draws nothing for character 0x20 (advance only). This
+  confirms OpenTPW's reading (offsets relative to the line top, advance as pen step); line height is the font's vertical spacing (`0x6ae930`
+  stores it at +0xbc), and no kerning pass exists.
+- **Block and line placement** (`0x6aeb10`, `0x6ae550`; `TextPlacement`). The text block is lines x line height tall and the widest
+  line wide (a line's width is its advance sum without the spaces dropped where it wrapped, `0x6aec80`). Vertically it is centred as
+  `(bottom - top - block height) / 2 + top` in signed division, also when it is taller than the box, or bottom aligned as
+  `bottom - block height`; horizontally the block is centred as `(right - left - block width) / 2 + left` or right aligned. Inside
+  the block every line moves by `(block width - line width) >> 1` (centred) or by the whole difference (right aligned). OpenTPW's
+  `UiContext.DrawText` follows this since the October 17, 2026 round; before, a centred or right aligned multi-line text kept
+  all lines left aligned inside the block, and a block taller than its box was put at the box's top.
+- **Measure** (`0x4929f0` through `0x6ae1c0`). It returns the block box described above (OpenTPW's layout width and height); with its wrap flag
+  clear the layout box is 0x4000 wide so nothing wraps. A language flag (`0x41a850`, object `0x78b530`) swaps left and right alignment
+  (`0x4925a0`, `0x4929f0`), and `0x6ae410` finds Hebrew letters (U+05B1..U+05EA) for a right-to-left line pass (`0x6ae4b0`); no shipped
+  language here uses either.
+- **Two-byte text** (`0x6ae930`). A byte below the table's lead threshold (table byte 8) is glyph index byte - 1; a lead byte at or above it
+  takes the next byte as well: index = threshold + (lead - 1 - threshold) * 255 + (trail - 1). The index feeds the glyph metrics and
+  the table of code points (`+0xc`), whose entry is the character the line breaker classifies (`0x6aeab0`).
+- **Surface and blend.** A text control draws into a bitmap in the display mode's pixel format (`0x4925d0`: bit depth and channel
+  masks from the 32-byte mode record at `0x8bd558`; `0x48f830` clears it to zero, draws once with colour white (255,255,255,255) unless the
+  control keeps the font's colours, then sends the bitmap through the sprite pass). The renderer classes at vtable `0x70a188` onwards
+  hold one blitter per pixel format. The 5-5-5 blitter (`0x6b0760`) blends per channel as `dst + ((src - dst) * c) / 15` with signed
+  division on 5-bit channels and keeps the destination's alpha bit: no gamma. It differs from the Mac 8888 path above, whose unsigned
+  arithmetic wraps. White on the cleared bitmap gives grey levels with alpha bit 0, so how coverage turns into screen alpha depends on
+  the sprite draw's state (`UI-007`, `UI-037`); the 565, 8888 and 4444 blitters and that state are not yet read.
+- **Control text box** (`0x48f830`). Horizontal alignment byte +0xd8 (0 left, 1 centre, 2 right) and vertical byte +0xd9 (0 top, 1 centre, 2 bottom;
+  constructor default centre) select the library's modes; margins +0xde and +0xe0 are in 2048 x 1536 units scaled by the screen
+  size words `0xfaa5c4` and `0xfaa5c0`; without the wrap byte (+0xda) the box is 0x4000 wide. The bitmap's quad is placed in canvas
+  units as `pixel * 2048 / screen width` (`0x48fbbd..0x48fc08`), so original text positions are integers in the original screen mode's pixels.
+  OpenTPW's controls use their table rectangles without these margins (no control builder's margin values were traced).
+
 ## Remaining gates and sources
 
 Next: use fonts in actual original UI screens/dialogs; compare captures of actual

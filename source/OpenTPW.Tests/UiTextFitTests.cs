@@ -31,4 +31,21 @@ public class UiTextFitTests
 	public void PrefersTheLargerFontAtALowerScaleOverTheSmallestAtThatScale() =>
 		Assert.AreEqual( new UiTextFit.Choice( 0, 1, false ), UiTextFit.Choose( 2, new[] { (156, 39), (123, 30) }, 320, 58 ),
 			"a 39-pixel font at scale 1 beats the 30-pixel font at scale 1" );
+
+	[TestMethod]
+	public void WrapsAtSpacesInTheLargestSizeThatKeepsEveryWordWhole()
+	{
+		// candidate 0 breaks a word, candidate 1 wraps into three lines of 12 pixels in a 40-pixel box
+		var choice = UiTextFit.ChooseWrapped( 1, 3, ( index, scale ) => index switch { 0 => (false, 60, 5), 1 => (true, 36, 3), _ => (true, 24, 3) }, 40 );
+		Assert.AreEqual( new UiTextFit.Choice( 1, 1, true ), choice );
+	}
+
+	[TestMethod]
+	public void WrappedLabelTakesTheNextSizeWhenTheLinesAreTooTall() =>
+		Assert.AreEqual( new UiTextFit.Choice( 1, 1, true ),
+			UiTextFit.ChooseWrapped( 1, 2, ( index, scale ) => index == 0 ? (true, 60, 4) : (true, 32, 4), 40 ) );
+
+	[TestMethod]
+	public void NoWrappedFitMeansNull() =>
+		Assert.IsNull( UiTextFit.ChooseWrapped( 2, 2, ( index, scale ) => (false, 10, 3), 100 ) );
 }

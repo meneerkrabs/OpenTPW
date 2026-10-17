@@ -31,4 +31,21 @@ public static class UiTextFit
 
 	private static bool Fits( (int Width, int Height) size, int scale, float maximumWidth, float maximumHeight ) =>
 		size.Width * scale <= maximumWidth && size.Height * scale <= maximumHeight;
+
+	/// <summary>
+	/// The largest candidate and whole scale at which the label, wrapped at its spaces, keeps every word whole and fits the box height
+	/// (highest scale first, then the earlier candidate); null when none does. <paramref name="measure"/> gives, for a candidate and a scale,
+	/// whether every word fits the box width alone, the height of the wrapped block (unscaled pixels) and its line count.
+	/// </summary>
+	public static Choice? ChooseWrapped( int textScale, int candidates, Func<int, int, (bool WordsWhole, int Height, int Lines)> measure, float maximumHeight )
+	{
+		for ( var scale = Math.Max( 1, textScale ); scale >= 1; scale-- )
+			for ( var index = 0; index < candidates; index++ )
+			{
+				var (wordsWhole, height, _) = measure( index, scale );
+				if ( wordsWhole && height * scale <= maximumHeight )
+					return new Choice( index, scale, true );
+			}
+		return null;
+	}
 }

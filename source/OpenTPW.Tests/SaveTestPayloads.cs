@@ -283,6 +283,17 @@ internal static class SaveTestPayloads
 		public uint PaidAdmission { get; init; } = 1;
 		public uint ParkOpeningWaitingTime { get; init; }
 		public uint ArrivalIndex { get; init; }
+		public uint BeenAdmitted { get; init; }
+		public uint SavedState { get; init; } = 6;
+		public ushort QNext { get; init; }
+		public ushort QPrev { get; init; }
+		public byte QueuePos { get; init; }
+		public uint LastPosX { get; init; }
+		public uint LastPosY { get; init; }
+		public ushort SavedMajorDest { get; init; }
+		/// <summary>The event ring head (person +0xB8) and the ring's slots (type low word, value high word); the thought block ends the person block.</summary>
+		public uint ActionHistIndex { get; init; }
+		public uint[]? Events { get; init; }
 	}
 
 	/// <summary>A guest body (525 bytes): the person block, then the guest fields in the serializer's order.</summary>
@@ -300,17 +311,22 @@ internal static class SaveTestPayloads
 		BinaryPrimitives.WriteUInt32LittleEndian( person.AsSpan( 29 ), fields.EspSprite );
 		// the navigation block (177 bytes) follows mLastRecordedMapId at 33; mPreviousSpeed comes after it
 		BinaryPrimitives.WriteUInt32LittleEndian( person.AsSpan( 35 + 177 ), fields.PreviousSpeed );
+		// the thought block (0x50BAD0) closes the person block: head, 32 ring slots, mLastThought, mThoughtScript, mTimeBubbleShown
+		var thought = SaveThingChain.PersonBytes - (4 + 4 * 32 + 12);
+		BinaryPrimitives.WriteUInt32LittleEndian( person.AsSpan( thought ), fields.ActionHistIndex );
+		for ( var slot = 0; slot < (fields.Events?.Length ?? 0); slot++ )
+			BinaryPrimitives.WriteUInt32LittleEndian( person.AsSpan( thought + 4 + 4 * slot ), fields.Events![slot] );
 		writer.Write( person );
 		writer.Write( fields.ArrivalDate ); // mArrivalDate
 		writer.Write( fields.ArrivalIndex ); // mArrivalIndex (+0x1D8, the visitor number)
 		writer.Write( fields.BalloonScript );
-		writer.Write( 0u ); // mBeenAdmitted
+		writer.Write( fields.BeenAdmitted ); // mBeenAdmitted
 		writer.Write( fields.Cash );
 		writer.Write( fields.ExitLevel );
 		writer.Write( fields.Happiness );
 		writer.Write( fields.Hunger );
-		writer.Write( 0u );
-		writer.Write( 0u );
+		writer.Write( fields.LastPosX );
+		writer.Write( fields.LastPosY );
 		writer.Write( fields.Litter );
 		writer.Write( fields.MajorDest );
 		writer.Write( fields.NumRides );
@@ -326,13 +342,13 @@ internal static class SaveTestPayloads
 			writer.Write( fields.PreviousRides[slot] );
 			writer.Write( fields.PreviousTemporaryRides[slot] );
 		}
-		writer.Write( (ushort)0 );
-		writer.Write( (ushort)0 );
+		writer.Write( fields.QNext );
+		writer.Write( fields.QPrev );
 		writer.Write( fields.QueueMoveDelay );
-		writer.Write( (byte)0 );
+		writer.Write( fields.QueuePos );
 		writer.Write( fields.BalloonLife );
-		writer.Write( (ushort)0 );
-		writer.Write( 6u ); // mSavedState
+		writer.Write( fields.SavedMajorDest );
+		writer.Write( fields.SavedState ); // mSavedState
 		writer.Write( fields.State );
 		writer.Write( fields.Thirst );
 		writer.Write( fields.TimeOfLastSpotAnim );

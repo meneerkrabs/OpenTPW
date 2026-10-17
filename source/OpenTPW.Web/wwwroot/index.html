@@ -34,9 +34,14 @@
 			</select>
 			<button id="forget" type="button" class="secondary" hidden>Remove kept files</button>
 		</p>
+		<p id="inputRow">Theme Park Inc files for mods (optional, for the Theme Park Inc rides mod): <span id="inputStatus">None chosen.</span><br>
+			<button id="inputChoose" type="button" class="secondary">Choose Theme Park Inc folder</button>
+			<button id="inputRemove" type="button" class="secondary" hidden>Remove</button>
+			<br><span class="note">Only the attractions, shared textures and sounds are copied (about 80 MB); they stay in this browser. Then switch the mod on under Options &rarr; OpenTPW &rarr; Extensions and mods.</span></p>
 		<p id="status">Starting…</p>
 	</div>
 </div>
+<input type="file" id="inputFolder" webkitdirectory directory multiple hidden>
 <script type="module" src="main.js"></script>
 </body>
 </html>

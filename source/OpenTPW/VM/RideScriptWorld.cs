@@ -63,7 +63,7 @@ public sealed class RideScriptWorld
 	/// The world generator (tp.exe <c>0x00516330</c>) the scripts without an explicit seed draw their RAND and FINDSCRIPTRAND from, and the bump, tour and
 	/// head-space draws take theirs from: the park's one stream, shared with the guests, the staff and the economy (<see cref="AttachWorld"/>).
 	/// </summary>
-	// [APPROX:DET-013] the scripts', rides' and heads' draws are the world generator's, with the original's projections, but taken in OpenTPW's update order, not the original's substep scheduler and newest-first thing sweep
+	// [APPROX:DET-013] the scripts', rides' and heads' draws are the world generator's, with the original's projections, but taken in the original's order within a park turn (the substep's scripts, then the newest-first thing sweep) but on OpenTPW's per-tick cadence between turns, not the original's substep scheduler (a script slice per eight substeps)
 	public WorldRng World => world;
 
 	/// <summary>Makes <paramref name="generator"/> this world's generator (the level's shared one); its state is not touched.</summary>

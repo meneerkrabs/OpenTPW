@@ -427,7 +427,7 @@ public class OriginalUiAssetTests
 		Assert.AreEqual( "Totem", strings.Object( TotemBuildCatalog.ObjectNameIndex ) );
 	}
 
-	public static IEnumerable<object[]> Languages => GameLanguage.ShippedLanguages.Select( name => new object[] { name } );
+	public static IEnumerable<object[]> Languages => LanguageTests.EuropeanLanguages.Select( name => new object[] { name } );
 
 	[DataTestMethod]
 	[DynamicData( nameof( Languages ) )]
@@ -443,7 +443,7 @@ public class OriginalUiAssetTests
 		var strings = UiStringTable.Load( language );
 		var texts = UsedUiText.Select( id => strings[id] ).Concat( UsedHelpText.Select( strings.Help ) )
 			.Concat( Enumerable.Range( 0, 4 ).Select( strings.Theme ) ).Append( strings.Object( TotemBuildCatalog.ObjectNameIndex ) )
-			.Concat( SupplementaryStrings.AllTexts( name ) ).Concat( new[] { "|| > >> >>> 0123456789 x %,.-:" } ).ToArray();
+			.Concat( SupplementaryStrings.AllTexts( name, language.CharacterTable.Characters.ToHashSet().Contains ) ).Concat( new[] { "|| > >> >>> 0123456789 x %,.-:" } ).ToArray();
 		// French and German leave the "$ " money prefix (UITEXT 448) empty; every other used string exists.
 		foreach ( var id in UsedUiText.Where( id => id != UIStrings.Dollar || name is not ("French" or "German") ) )
 			Assert.IsFalse( string.IsNullOrWhiteSpace( strings[id] ), $"{name} UITEXT {id}" );

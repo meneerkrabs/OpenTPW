@@ -112,7 +112,8 @@ public class RideMeshConversionTests
 		Assert.AreEqual( new Vector3( 0, 1, 0 ), vertices[0].Normal );
 		Assert.AreEqual( mesh.TexCoords[1], vertices[1].TexCoords );
 		Assert.AreEqual( 0, vertices[1].TexIndex );
-		Assert.AreEqual( 7u, vertices[1].MatFlags );
+		// Slot flags 7 carry neither wrap bit (0x10/0x20), so the corner is marked as clamped (TextureSlotAddressing).
+		Assert.AreEqual( 7u | TextureSlotAddressing.ClampFlag, vertices[1].MatFlags );
 		Assert.IsTrue( PrototypeRide.IsCarriage( "TP_CART\0" ) );
 		Assert.IsFalse( PrototypeRide.IsCarriage( "tp_pole\0" ) );
 		Assert.IsFalse( PrototypeRide.IsCarriage( "tp_carttop" ) );

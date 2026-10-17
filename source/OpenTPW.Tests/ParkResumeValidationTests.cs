@@ -159,7 +159,7 @@ public class ParkResumeValidationTests
 		Rejects( snapshot with { Guests = snapshot.Guests with { Guests = new[] { first, first } } }, "appears more than once" );
 		Rejects( snapshot with { Guests = snapshot.Guests with { Guests = new[] { first with { Id = ThingPool.Capacity + 1 } } } }, "not a slot of the thing pool" );
 		Rejects( snapshot with { Guests = snapshot.Guests with { Guests = new[] { first with { State = GuestState.Gone } } } }, "already gone" );
-		Rejects( snapshot with { Guests = snapshot.Guests with { Guests = new[] { first with { State = (GuestState)25 } } } }, "is not a guest state" );
+		Rejects( snapshot with { Guests = snapshot.Guests with { Guests = new[] { first with { State = (GuestState)26 } } } }, "is not a guest state" );
 		Rejects( snapshot with { Guests = snapshot.Guests with { Guests = new[] { first with { BaseSpeed = 200 } } } }, "base speed" );
 		Rejects( snapshot with { Guests = snapshot.Guests with { Guests = new[] { first with { CellX = 500 } } } }, "cell (500" );
 

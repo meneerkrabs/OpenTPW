@@ -64,9 +64,11 @@ public class PoolsContentTests
 	{
 		var file = ModObjectsFile.Load( Path.Combine( PoolContent.Directory!, "objects.json" ), Array.Empty<string>() );
 		Assert.AreEqual( (PoolContent.FirstReservedId, PoolContent.LastReservedId), (file.FirstId, file.LastId), "the file reserves exactly the extension's range" );
-		Assert.AreEqual( 4, file.Objects.Count );
-		CollectionAssert.AreEqual( Themes, file.Objects.Select( item => item.Theme ).ToArray() );
-		CollectionAssert.AreEqual( new[] { 65500, 65501, 65502, 65503 }, file.Objects.Select( item => item.InfoId ).ToArray() );
+		Assert.AreEqual( 4 + 24, file.Objects.Count, "four changing rooms and, appended after them, six extras for each of the four themes" );
+		var rooms = file.Objects.Where( item => item.InfoId >= 65500 ).ToArray();
+		CollectionAssert.AreEqual( Themes, rooms.Select( item => item.Theme ).ToArray() );
+		CollectionAssert.AreEqual( new[] { 65500, 65501, 65502, 65503 }, rooms.Select( item => item.InfoId ).ToArray() );
+		CollectionAssert.AreEqual( Enumerable.Range( 0, 24 ).Select( index => 65000 + index / 6 * 10 + index % 6 ).ToArray(), file.Objects.Where( item => item.InfoId < 65100 ).Select( item => item.InfoId ).ToArray(), "the extras take 65000 to 65099, six a theme" );
 		Assert.IsTrue( file.Objects.All( item => item.Category == ObjectCategory.Feature && item.Input == null ) );
 		Assert.IsTrue( file.Objects.All( item => item.InfoId is >= PoolContent.FirstReservedId and <= PoolContent.LastReservedId ) );
 		Assert.IsTrue( PoolContent.FirstReservedId >= CrossEditionObjects.FirstReservableId && PoolContent.LastReservedId <= CrossEditionObjects.LastReservableId );
@@ -96,7 +98,8 @@ public class PoolsContentTests
 				Assert.AreEqual( 2, entry.InitialCapacity );
 				Assert.AreEqual( 5, entry.Economy.PricePerUse );
 				Assert.IsNotNull( entry.ScriptPath );
-				Assert.AreEqual( 1, ObjectCatalog.Load( Themes[index] ).Entries.Count( item => item.ModId == "opentpw.pools" ), "one room per theme" );
+				Assert.AreEqual( 1, ObjectCatalog.Load( Themes[index] ).Entries.Count( item => item.ModId == "opentpw.pools" && PoolChangingRooms.IsChangingRoom( item ) ), "one room per theme" );
+				Assert.AreEqual( 6, ObjectCatalog.Load( Themes[index] ).Entries.Count( item => item.ModId == "opentpw.pools" && PoolExtras.KindOf( item ) != PoolExtraKind.None ), "and six extras" );
 			}
 			Assert.IsNull( ObjectCatalog.Load( "jungle" ).Find( 65501 ), "the hallow room is not a jungle object" );
 		}
@@ -357,7 +360,7 @@ public class PoolsContentTests
 		using var scope = Enabled( true, FileSystem );
 		var catalog = ObjectCatalog.Load( "jungle" );
 		var current = ParkResumeAssetManifest.Capture( catalog, "jungle", easy: false );
-		var roomKeys = current.Keys.Where( key => key.StartsWith( "mod:opentpw.pools:", StringComparison.Ordinal ) ).ToArray();
+		var roomKeys = current.Keys.Where( key => key.StartsWith( "mod:opentpw.pools:", StringComparison.Ordinal ) && key.Contains( "/jungle/cabin/", StringComparison.Ordinal ) ).ToArray();
 		var withRoom = WithRoomsPlaced( ParkResumeSaveFileTests.Envelope(), current, 65500 );
 		ParkResumeSaveFile.RequireAssets( withRoom, catalog, current );
 		// a save that places the room but holds none of its keys is refused: the park provides them

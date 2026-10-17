@@ -1003,6 +1003,9 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			case GuestState.ChangingOut:
 				UpdateChangingOut( guest );
 				break;
+			case GuestState.PoolActivity:
+				UpdatePoolActivity( guest );
+				break;
 			case GuestState.HeldByGuard:
 				// [BIN:TPW-EXE:0x00501C94 state 17] a held guest waits while a guard in state 18 (0x004D6350) has it as its target (+0x212); otherwise it is destroyed (0x0050B780)
 				if ( turnStarted && IsEscorted?.Invoke( guest.Id ) != true )
@@ -3180,7 +3183,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 				case GuestState.Queueing or GuestState.MovingUpQueue or GuestState.WaitingToBoard or GuestState.Boarding: queueing++; break;
 				case GuestState.Using: onRides++; break;
 				// [EXT:pools-swim] a swimmer is out walking about the park's pool (counted with the walkers); a guest changing back is indoors like a rider
-				case GuestState.Swimming or GuestState.ClimbingOut: walking++; break;
+				case GuestState.Swimming or GuestState.ClimbingOut or GuestState.PoolActivity: walking++; break;
 				case GuestState.ChangingOut: onRides++; break;
 				case GuestState.CrossingRoad or GuestState.CrossingRoadToPark or GuestState.GoingToTicketBooth or GuestState.WaitingAtBooth or GuestState.AtTicketBooth: arriving++; break;
 				case GuestState.LeavingPark or GuestState.CrossingRoadHome or GuestState.WalkingToVehicle or GuestState.WaitingToGoHome: leaving++; break;
@@ -3308,6 +3311,12 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			SwimGoalY = guest.SwimGoalY,
 			SwimHasGoal = guest.SwimHasGoal,
 			SwimRandom = guest.SwimRandom,
+			PoolActivityId = guest.PoolActivityId,
+			PoolActivityTarget = guest.PoolActivityTarget,
+			PoolActivityPhase = guest.PoolActivityPhase,
+			PoolActivityTurns = guest.PoolActivityTurns,
+			PoolActivityX = guest.PoolActivityX,
+			PoolActivityY = guest.PoolActivityY,
 			InterludeTurn = guest.InterludeTurn,
 			InQueueInterlude = guest.InQueueInterlude,
 			Activity = guest.Activity,
@@ -3615,7 +3624,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			if ( guest.StrandedMark < 0 )
 				Error( $"Guest {guest.Id} StrandedMark {guest.StrandedMark} is negative." );
 			// [EXT:pools-swim] a swim session names the changing room it started at and holds its own state; a guest outside one holds none of it
-			var swimming = guest.State is GuestState.Swimming or GuestState.ClimbingOut or GuestState.ChangingOut;
+			var swimming = guest.State is GuestState.Swimming or GuestState.ClimbingOut or GuestState.ChangingOut or GuestState.PoolActivity;
 			if ( swimming && guest.AttractionId == 0 )
 				Error( $"Guest {guest.Id} is in state {guest.State} without a changing room." );
 			if ( guest.SwimHeading is < 0 or >= PoolSwimSettings.Headings || guest.SwimStroke is < 0 or >= PoolSwimSettings.Strokes || guest.SwimTurns < 0 )
@@ -3625,7 +3634,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			{
 				var maximumTurns = guest.State switch
 				{
-					GuestState.Swimming => PoolSwimSettings.MinimumTurns + PoolSwimSettings.ExtraTurns - 1,
+					// swim turns are frozen during an activity (state 25), so it holds the swim's own range
+					GuestState.Swimming or GuestState.PoolActivity => PoolSwimSettings.MinimumTurns + PoolSwimSettings.ExtraTurns - 1,
 					GuestState.ClimbingOut => ClimbOutLimitTurns,
 					_ => PoolSwimSettings.ChangeOutTurns
 				};
@@ -3638,6 +3648,16 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 				Error( $"Guest {guest.Id} holds swim fields outside a swim session (state {guest.State})." );
 			if ( swimming && guest.SwimHasGoal && (!Grid.InBounds( guest.SwimGoalX >> 16, guest.SwimGoalY >> 16 )) )
 				Error( $"Guest {guest.Id} swim goal ({guest.SwimGoalX >> 16}, {guest.SwimGoalY >> 16}) is outside the map." );
+			// [EXT:pools-activities] an activity is held in state 25 only; the registry need not hold its id (an activity this build does not register: the guest then ends its session on the room's exit at its next turn)
+			if ( guest.State == GuestState.PoolActivity )
+			{
+				if ( string.IsNullOrEmpty( guest.PoolActivityId ) )
+					Error( $"Guest {guest.Id} is in a pool activity without its id." );
+				if ( guest.PoolActivityPhase < 0 || guest.PoolActivityTurns < 0 || guest.PoolActivityTurns > PoolActivitySettings.MaximumTurns || !Grid.InBounds( guest.PoolActivityX >> 16, guest.PoolActivityY >> 16 ) )
+					Error( $"Guest {guest.Id} pool activity phase {guest.PoolActivityPhase}, turns {guest.PoolActivityTurns} or point ({guest.PoolActivityX >> 16}, {guest.PoolActivityY >> 16}) is out of range." );
+			}
+			else if ( guest.PoolActivityId != null || guest.PoolActivityTarget != 0 || guest.PoolActivityPhase != 0 || guest.PoolActivityTurns != 0 || guest.PoolActivityX != 0 || guest.PoolActivityY != 0 )
+				Error( $"Guest {guest.Id} holds pool activity fields outside state 25 (state {guest.State})." );
 			// the word +0x200 keeps the gate's wait (0x00501E6E) after the guest has walked on, so every state may hold up to its largest value
 			if ( guest.BoothWait < 0 || guest.BoothWait > GateWaitMaximum )
 				Error( $"Guest {guest.Id} BoothWait {guest.BoothWait} is outside 0..{GateWaitMaximum}." );
@@ -3711,7 +3731,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			{
 				if ( !snapshotIds.Contains( guest.AttractionId ) )
 					Error( $"Guest {guest.Id} names attraction {guest.AttractionId}, which is not registered." );
-				else if ( !inQueue && guest.State is not (GuestState.GoingToRide or GuestState.Using or GuestState.Swimming or GuestState.ClimbingOut or GuestState.ChangingOut) )
+				else if ( !inQueue && guest.State is not (GuestState.GoingToRide or GuestState.Using or GuestState.Swimming or GuestState.ClimbingOut or GuestState.ChangingOut or GuestState.PoolActivity) )
 					Error( $"Guest {guest.Id} is in state {guest.State} while bound to attraction {guest.AttractionId}." );
 			}
 			else if ( guest.State == GuestState.GoingToRide )
@@ -3788,6 +3808,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// </summary>
 	public void RestoreSnapshot( GuestSimulationSnapshot snapshot )
 	{
+		poolActivityVersion++;
 		var validation = ValidateSnapshot( snapshot );
 		if ( !validation.IsValid )
 			throw new InvalidDataException( "The guest snapshot does not restore: " + string.Join( " ", validation.Errors ) );
@@ -3927,6 +3948,12 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		guest.SwimGoalY = snapshot.SwimGoalY;
 		guest.SwimHasGoal = snapshot.SwimHasGoal;
 		guest.SwimRandom = snapshot.SwimRandom;
+		guest.PoolActivityId = snapshot.PoolActivityId;
+		guest.PoolActivityTarget = snapshot.PoolActivityTarget;
+		guest.PoolActivityPhase = snapshot.PoolActivityPhase;
+		guest.PoolActivityTurns = snapshot.PoolActivityTurns;
+		guest.PoolActivityX = snapshot.PoolActivityX;
+		guest.PoolActivityY = snapshot.PoolActivityY;
 		guest.InterludeTurn = snapshot.InterludeTurn;
 		guest.InQueueInterlude = snapshot.InQueueInterlude;
 		guest.Activity = snapshot.Activity;
@@ -4099,6 +4126,17 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 				hash.Add( guest.SwimGoalY );
 				hash.Add( guest.SwimHasGoal );
 				hash.Add( (long)guest.SwimRandom );
+			}
+			// [EXT:pools-activities] the activity joins the digest only while a guest does one (every swim without activities keeps its pins)
+			if ( guest.State == GuestState.PoolActivity )
+			{
+				hash.Add( 0x41435456L );
+				hash.Add( guest.PoolActivityId ?? "" );
+				hash.Add( guest.PoolActivityTarget );
+				hash.Add( guest.PoolActivityPhase );
+				hash.Add( guest.PoolActivityTurns );
+				hash.Add( guest.PoolActivityX );
+				hash.Add( guest.PoolActivityY );
 			}
 			hash.Add( guest.InterludeTurn );
 			hash.Add( guest.InQueueInterlude );

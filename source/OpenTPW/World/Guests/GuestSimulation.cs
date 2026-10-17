@@ -220,7 +220,25 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	{
 		get => observer;
 		// [EXT:guest-insights] with the extension on, the refusal counters keep the slot's first place and a measurement collector shares it
-		set => observer = RefusalCounters == null ? value : value == null || ReferenceEquals( value, RefusalCounters ) ? RefusalCounters : new GuestObserverChain( RefusalCounters, value );
+		set
+		{
+			if ( ReferenceEquals( value, observer ) )
+				return;
+			observer = RefusalCounters == null ? value
+				: value == null || ReferenceEquals( value, RefusalCounters ) ? RefusalCounters
+				: value is GuestObserverChain chain && ReferenceEquals( chain.First, RefusalCounters ) ? chain
+				: new GuestObserverChain( RefusalCounters, value );
+		}
+	}
+
+	/// <summary>Takes the refusal counters off the observer slot, leaving any collector there (the guest report's timing runs, so its figures do not include the extension's counters).</summary>
+	internal void DisableRefusalCounters()
+	{
+		var counters = RefusalCounters;
+		if ( counters == null )
+			return;
+		RefusalCounters = null;
+		observer = ReferenceEquals( observer, counters ) ? null : observer is GuestObserverChain chain && ReferenceEquals( chain.First, counters ) ? chain.Second : observer;
 	}
 
 	private IGuestObserver? observer;
@@ -229,7 +247,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// The refusal-reason counters of the <c>opentpw.guest-insights</c> extension, or null while it is off. The gate is read once, when the simulation is built; the counters are a passive
 	/// observer (never saved, never hashed, no draw) that a loaded park starts again from zero.
 	/// </summary>
-	public GuestRefusalCounters? RefusalCounters { get; }
+	public GuestRefusalCounters? RefusalCounters { get; private set; }
 	public int Departed { get; private set; }
 	/// <summary>Raised when a guest pays (guest, amount, attraction id or 0 for admission).</summary>
 	public event Action<Guest, int, int>? MoneySpent;

@@ -69,15 +69,13 @@ public class TopThoughtsTests
 	}
 
 	[TestMethod]
-	public void GuestsWithNoThoughtCountAndTakeASlotThatShowsNothing()
+	public void TheCountOfNoThoughtIsDiscardedSoThoseGuestsNeverTakeASlot()
 	{
-		// thought 0 is counted like any other: 100 guests without a thought keep slot 0, which draws no icon
-		var top = Rank( Repeat( GuestThought.None, 100 ).Append( GuestThought.Hungry ).ToArray() );
-		Assert.AreEqual( 0, top.First );
-		Assert.IsNull( top.ThoughtAt( 0 ), "no icon for the crowd without a thought" );
-		Assert.AreEqual( -1, top.FrameAt( 0 ) );
-		Assert.AreEqual( (GuestThought.Hungry, 0), (top.ThoughtAt( 1 ), top.FrameAt( 1 )) );
-		Assert.AreEqual( TopThoughtRanking.NoThought, top.Third, "slot 2 holds thought 2 with a count of 0" );
+		// 0x4C84D7 writes 0 to counts[0] after counting: 50 guests without a thought are as good as none
+		var top = Rank( Repeat( GuestThought.None, 50 ).Concat( Repeat( GuestThought.Hungry, 2 ) ).Append( GuestThought.Thirsty ).Append( GuestThought.Scared ).ToArray() );
+		Assert.AreEqual( (GuestThought.Scared, GuestThought.Hungry, GuestThought.Thirsty), (top.ThoughtAt( 0 ), top.ThoughtAt( 1 ), top.ThoughtAt( 2 )) );
+		Assert.AreEqual( (14, 0, 1), (top.FrameAt( 0 ), top.FrameAt( 1 ), top.FrameAt( 2 )) );
+		Assert.AreEqual( new TopThoughts( TopThoughtRanking.NoThought, TopThoughtRanking.NoThought, TopThoughtRanking.NoThought ), Rank( Repeat( GuestThought.None, 100 ).ToArray() ), "only guests without a thought: three empty slots" );
 	}
 
 	[TestMethod]
@@ -152,6 +150,25 @@ public class TopThoughtsTests
 		Assert.AreEqual( 1f, ParkHud.ParkInfoRefreshSeconds );
 	}
 
+	[TestMethod]
+	public void AnIconHiddenByAnEmptySlotStaysHiddenAndTheHoverTextIsTheThoughtsString()
+	{
+		var hud = VisitorWorldSelectionTests.Fixture( out var simulation, out _ );
+		SetGuests( simulation );
+		hud.OpenParkInfoWindow();
+		Assert.IsTrue( Enumerable.Range( 0, 3 ).All( slot => hud.ParkInfoIconFrame( slot ) == -1 ), "an empty park shows no icon" );
+		SetGuests( simulation, new Guest( 1, 0 ) { State = GuestState.WalkingAround, Thought = GuestThought.Thirsty } );
+		var screen = hud.Stack.Top!;
+		screen.Update( Context( 1f ), UiInput.Idle( new System.Numerics.Vector2( -1 ) ) );
+		Assert.AreEqual( GuestThought.Thirsty, hud.ParkInfoTopThoughts.ThoughtAt( 2 ), "the ranking moved on" );
+		Assert.AreEqual( -1, hud.ParkInfoIconFrame( 2 ), "but the original never shows a hidden icon again while the window is open (0x65D9DD(1) is not called)" );
+		Assert.IsNull( screen.Find( "thought2" )!.CurrentHelp );
+		hud.Stack.Pop();
+		hud.OpenParkInfoWindow();
+		Assert.AreEqual( 1, hud.ParkInfoIconFrame( 2 ), "a new window shows it" );
+		Assert.AreEqual( OriginalUiTests.FakeStrings().Thought( (int)GuestThought.Thirsty ), hud.Stack.Top!.Find( "thought2" )!.CurrentHelp, "the hover text is the THOUGHTS.str entry of the frame plus 1" );
+	}
+
 	// ---- The guest-insights counters -------------------------------------------------------------
 
 	private static ModSet InsightsOn() => ModSet.Resolve( Array.Empty<DiscoveredMod>(),
@@ -219,6 +236,25 @@ public class TopThoughtsTests
 		Assert.IsInstanceOfType( simulation.Observer, typeof( GuestObserverChain ) );
 		simulation.Observer = null;
 		Assert.AreSame( simulation.RefusalCounters, simulation.Observer, "clearing the collector leaves the counters" );
+	}
+
+	[TestMethod]
+	public void AssigningTheObserverAgainDoesNotChainTheCountersTwice()
+	{
+		using var scope = OpenTpwExtensions.Use( InsightsOn() );
+		var simulation = new GuestSimulation( GuestTests.CreateCross(), GuestTests.CreateSettings(), 5 ) { Observer = new GuestMetrics() };
+		var chain = simulation.Observer;
+		simulation.Observer = simulation.Observer;
+		Assert.AreSame( chain, simulation.Observer );
+		simulation.Observer = chain;
+		Assert.AreSame( chain, simulation.Observer );
+		var counters = simulation.RefusalCounters!;
+		simulation.Observer = counters;
+		Assert.AreSame( counters, simulation.Observer );
+		simulation.Observer = new GuestMetrics();
+		simulation.DisableRefusalCounters();
+		Assert.IsNull( simulation.RefusalCounters );
+		Assert.IsInstanceOfType( simulation.Observer, typeof( GuestMetrics ), "the collector stays when the counters are taken off" );
 	}
 
 	[TestMethod]

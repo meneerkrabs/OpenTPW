@@ -216,6 +216,8 @@ public static class GuestReport
 			var best = double.MaxValue;
 			var bytes = 0d;
 			var park = new ParkScenario( new WorldSeed( seed ), options.Scenario );
+			// [EXT:guest-insights] the figures compare the measurement collector alone, so the extension's refusal counters (on when the run asks for the extension) stay out of both sides
+			park.Guests.DisableRefusalCounters();
 			if ( observed )
 				new GuestMetrics( options.Metrics ).Attach( park.Guests );
 			park.Run( warmup );

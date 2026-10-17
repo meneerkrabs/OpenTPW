@@ -72,6 +72,12 @@ public sealed class GuestObserverChain : IGuestObserver
 {
 	private readonly IGuestObserver first, second;
 
+	/// <summary>The observer that gets each event first.</summary>
+	public IGuestObserver First => first;
+
+	/// <summary>The observer that gets each event second.</summary>
+	public IGuestObserver Second => second;
+
 	public GuestObserverChain( IGuestObserver first, IGuestObserver second ) => (this.first, this.second) = (first, second);
 
 	public void Admitted( Guest guest, int fee ) { first.Admitted( guest, fee ); second.Admitted( guest, fee ); }

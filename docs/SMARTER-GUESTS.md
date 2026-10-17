@@ -70,7 +70,7 @@ taken: no code, no data tables, no constants. Every phase is one pull request. T
 ## Phase 1: Top 3 Thoughts and the refusal counters
 
 **Top 3 Thoughts (fidelity).** Re-validated in tp.exe: the original park information window (builder `0x4A52A0`, table `0x7537D0`) shows the three most common guest thoughts as three icons of the `ti_hungry` model, ranked by `0x4C8430`
-(counts of the thought ids 0 to 22 over the guests on park cells; three slots start as 0, 1 and 2 and take each larger id by the largest count difference, ties keep the lower id, slots unsorted, a zero count shows nothing) and refreshed by a one-second timer.
+(counts of the thought ids 0 to 22 over the guests on park cells, the count of id 0 discarded; three slots start as 0, 1 and 2 and take each larger id by the largest count difference, ties keep the lower id, slots unsorted, a zero count shows nothing) and refreshed by a one-second timer.
 The full rule, the layout and the order of the icons are in [GUESTS.md](GUESTS.md) "Top 3 Thoughts". It is not a "most common thought" statistic: `GuestStatistics.CommonThought` was removed. Not built from the window: the line graph and toggles,
 the counts frame, the happiness levels and the three navigation buttons (`APPROX:UI-914`).
 

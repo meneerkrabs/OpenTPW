@@ -13,6 +13,11 @@ public sealed partial class ParkHud
 
 	private TopThoughts parkInfoTop;
 	private float parkInfoAge;
+	// [BIN:TPW-EXE:0x004A4AB0 hidden icons stay hidden] a slot with no icon calls 0x65D9DD(0), which clears bit 0 of the control's +0x48; a slot with one only sets the frame (vtable +0x1C, 0x661525, which forwards message 0x80 to the
+	// control's two model objects and writes no flag), and neither 0x4A4AB0 nor the window procedure calls 0x65D9DD(1), so a hidden icon stays hidden while the window is open
+	// [APPROX:UI-914] the port follows that reading (an icon hidden by an empty slot stays hidden until the window is reopened); the model objects' handler of message 0x80 was not read, so a show there is not ruled out
+	private bool[]? parkInfoIcons;
+	private bool[] parkInfoIconHidden => parkInfoIcons ??= new bool[3];
 	private UiScreen? parkInfoScreen;
 
 	/// <summary>Whether the park information window is open.</summary>
@@ -20,6 +25,9 @@ public sealed partial class ParkHud
 
 	/// <summary>The Top 3 Thoughts as the window last refreshed them.</summary>
 	public TopThoughts ParkInfoTopThoughts => parkInfoTop;
+
+	/// <summary>The <c>ti_hungry</c> frame the icon of <paramref name="slot"/> shows, or -1 while it draws nothing (empty, or hidden earlier and never shown again).</summary>
+	public int ParkInfoIconFrame( int slot ) => parkInfoIconHidden[slot] ? -1 : parkInfoTop.FrameAt( slot );
 
 	/// <summary>Reads the Top 3 Thoughts again, as the window's one-second timer does.</summary>
 	// [BIN:TPW-EXE:0x004A4AB0 thoughts refresh] 0x4C8430 fills three bytes from the guests now; the icons take them as a whole, so the three always belong to one reading
@@ -29,6 +37,9 @@ public sealed partial class ParkHud
 		// A read-only visit never has the owner's guests: the published statistics carry no thoughts, so the icons stay empty
 		// [EXT:ONLINE-074] the park information window of a visit shows the published figures only, and no thoughts
 		parkInfoTop = level.PublishedParkStats == null && level.Guests is { } guests ? guests.GetTopThoughts() : new TopThoughts( TopThoughtRanking.NoThought, TopThoughtRanking.NoThought, TopThoughtRanking.NoThought );
+		for ( var slot = 0; slot < parkInfoIconHidden.Length; slot++ )
+			if ( parkInfoTop.FrameAt( slot ) < 0 )
+				parkInfoIconHidden[slot] = true;
 	}
 
 	/// <summary>The park information window: the original's Top 3 Thoughts frame and a live park summary using existing simulation values; a read-only visit shows the published statistics.</summary>
@@ -118,11 +129,15 @@ public sealed partial class ParkHud
 		{
 			var icon = table.Control( control );
 			var shown = slot;
-			screen.Add( new FrameIcon { Id = $"thought{slot}", Model = icon.Model!, Frame = () => parkInfoTop.FrameAt( shown ), Bounds = icon.Rect, Anchor = UiAnchor.Center } );
+			// [BIN:TPW-EXE:0x004A4700 icon hover] message 0xC reads the icon's frame (vtable +0x20), adds 1 and takes that entry of the THOUGHTS.str table 0x78BA9C (0x6ACE60) as its text; the visitor window reads the same table (0x4B7572)
+			// [APPROX:UI-914] the text follows the frame shown; the icon class's frame getter (0x661596, vtable 0x7059F0 slot 8) is a stub that returns 0, so the original may name thought 1 for every icon
+			screen.Add( new FrameIcon { Id = $"thought{slot}", Model = icon.Model!, Frame = () => ParkInfoIconFrame( shown ),
+				HelpSource = () => ParkInfoIconFrame( shown ) is var frame and >= 0 ? strings.Thought( frame + 1 ) : null, Bounds = icon.Rect, Anchor = UiAnchor.Center } );
 		}
 		var okay = table.Model( "b_okay" );
 		screen.Add( new UiButton { Id = "close", Model = okay.Model, Help = strings.Help( okay.Help ), Clicked = ClosePark, Bounds = okay.Rect, Anchor = UiAnchor.Center } );
 		screen.Back = ClosePark;
+		Array.Clear( parkInfoIconHidden );
 		RefreshParkInfo();
 		parkInfoScreen = screen;
 		Stack.Push( screen );

@@ -572,6 +572,9 @@ public static class ParkSaveFile
 		/// <summary>The object each challenge's slot carries (<see cref="ParkObjectives.CarriedThings"/>); absent in older saves and while none.</summary>
 		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 		public Dictionary<int, int>? CarriedThings { get; init; }
+		/// <summary>The challenge slots an original save loaded in place of the level's own (SAVE-005), each as key, type, follow-up type, time, value, object, object 2, staff type, prize, check at end only, independent (the last two 0 or 1); absent while the park plays the level's challenges.</summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public List<int[]>? AdoptedChallenges { get; init; }
 	}
 
 	/// <param name="world">The level's other random streams (<see cref="Level.CaptureRandomState"/>); null saves the economy alone.</param>
@@ -734,7 +737,9 @@ public static class ParkSaveFile
 				GoldenTickets = park.Objectives.GoldenTickets.OrderBy( kind => kind ).ToList(),
 				SwitchedOn = park.Objectives.SwitchedOn ? true : null,
 				ActualThing = park.Objectives.ActualThing,
-				CarriedThings = park.Objectives.CarriedThings.Count == 0 ? null : new Dictionary<int, int>( park.Objectives.CarriedThings )
+				CarriedThings = park.Objectives.CarriedThings.Count == 0 ? null : new Dictionary<int, int>( park.Objectives.CarriedThings ),
+				AdoptedChallenges = park.Settings.AdoptedChallenges?.Select( definition => new[] { definition.Index, definition.Type, definition.FollowupType, definition.TargetTime, definition.TargetValue, definition.TargetObject,
+					definition.TargetObject2, definition.TargetStaffType, definition.Prize, definition.CheckAtEndOnly ? 1 : 0, definition.Independent ? 1 : 0 } ).ToList()
 			},
 			Counters = new Dictionary<string, long>( park.Counters.Values ),
 			MechanicCursor = park.MechanicCursor,
@@ -917,6 +922,7 @@ public static class ParkSaveFile
 		if ( data.Staff.Strikes is { } strikes )
 			Require( strikes.Levels.Count == StaffStrikeBoard.Roles && strikes.Active.Count == StaffStrikeBoard.Roles && strikes.LastConsidered.Count == StaffStrikeBoard.Roles
 				&& strikes.Levels.All( level => level is >= 0 and <= 4 ), "staff strikes" );
+		Require( data.Objectives.AdoptedChallenges == null || data.Objectives.AdoptedChallenges.All( entry => entry.Length == 11 && entry[0] >= 0 && entry[9] is 0 or 1 && entry[10] is 0 or 1 ) && data.Objectives.AdoptedChallenges.Select( entry => entry[0] ).Distinct().Count() == data.Objectives.AdoptedChallenges.Count, "adopted challenge slots" );
 		Require( (data.Research.HighestGroups == null || data.Research.HighestGroups.Count == Enum.GetValues<ResearchCategory>().Length && data.Research.HighestGroups.All( group => group is >= 0 and <= ParkResearch.MaximumOpenGroup )) && (data.Research.Workload == null || data.Research.Workload is >= 0 and <= 100) && (data.Research.Current == null || data.Research.Current.All( entry => entry.Length == 3 && Enum.IsDefined( (ResearchCategory)entry[0] ) )) && data.Research.Effort.Count == 5 && data.Research.Completed.All( key => key.Length == 2 ) && (data.Research.UpgradeOrder?.All( key => key is { Length: 2 } ) ?? true) && data.Research.Progress.All( entry => entry.Length == 3 && entry[2] >= 0 ), "research" );
 		Require( data.MechanicCursor >= 0, "mechanic cursor" );
 		Require( data.PriceStatistics is null || data.PriceStatistics.All( ring => ring?.Values is not null )
@@ -941,6 +947,8 @@ public static class ParkSaveFile
 		ArgumentNullException.ThrowIfNull( data );
 		if ( !string.Equals( settings.Theme, data.Theme, StringComparison.OrdinalIgnoreCase ) || settings.IsEasy != data.Easy )
 			throw new InvalidDataException( $"Park save is for {data.Theme}{(data.Easy ? " (easy)" : "")}, not {settings.Theme}{(settings.IsEasy ? " (easy)" : "")}." );
+		if ( data.Objectives.AdoptedChallenges is { } adopted )
+			settings.RestoreAdoptedChallenges( adopted.Select( entry => new ChallengeDefinition( entry[0], entry[1], entry[2], entry[3], entry[4], entry[5], entry[6], entry[7], entry[8], entry[9] != 0, entry[10] != 0 ) ).ToList() );
 		var park = new ParkEconomy( settings, catalog, data.Mode, 0 );
 		// [EXT:legacy-generator-state] a save from before the world generator was ported has no state for it: it starts from the saved world seed (or from the old economy stream's state when the save has no world section), deterministically
 		park.World.Restore( data.WorldGenerator ?? (data.World is { } legacyWorld ? new WorldSeed( legacyWorld.Seed ).GeneratorState : WorldRng.StateFromSeed( data.RandomState )) );

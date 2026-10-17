@@ -422,8 +422,44 @@ public class OriginalSaveImportTests
 		var imported = new ParkEconomy( positive, EconomyTestData.Catalog(), ParkGameMode.FullSimulation, 1 );
 		OriginalEconomyImport.Apply( imported, offByOne );
 		Assert.AreEqual( LoanMath.MonthlyRepayment( positive.Loans[2].Amount, 10, positive.Loans[2].Months ) + 1, imported.Loans.Single().MonthlyRepayment, "the stored M is kept" );
+	}
+
+	/// <summary>
+	/// The save's 20 slots are the park's challenges with their own definitions (tp.exe challenge slot serializer 0x4d0f90): a slot the level's Challenges.sam does not define the same way is a
+	/// challenge of its own, the park's saves keep it and an unchanged slot keeps the level's key (SAVE-005).
+	/// </summary>
+	[TestMethod]
+	public void ASlotThatDiffersFromTheLevelsChallengeIsAdoptedAsSaved()
+	{
+		var level = Settings();
+		var save = Park( level );
+		var evidence = new List<string>();
+		OriginalEconomyImport.Verify( level, save.Economy, evidence );
+		Assert.IsNull( level.AdoptedChallenges, "slots equal to the level's challenges adopt nothing" );
 		var otherChallenges = EconomyTestData.Settings( apr: 0, extra: ExtraLoans + "ChallengesInThisLevel[1].ChallengeType 8\n" );
-		Assert.ThrowsException<InvalidDataException>( () => OriginalEconomyImport.Verify( otherChallenges, save.Economy, new List<string>() ) );
+		var report = new List<string>();
+		OriginalEconomyImport.Verify( otherChallenges, save.Economy, report );
+		var adopted = otherChallenges.AdoptedChallenges;
+		Assert.IsNotNull( adopted, string.Join( "; ", report ) );
+		Assert.AreEqual( save.Economy.Challenges.Count, adopted!.Count );
+		Assert.IsTrue( report.Any( line => line.StartsWith( "Challenge slots adopted from the save", StringComparison.Ordinal ) ) );
+		for ( var index = 0; index < adopted.Count; index++ )
+		{
+			var slot = save.Economy.Challenges[index];
+			Assert.AreEqual( (slot.Type, slot.TargetTime, slot.TargetValue, slot.Prize, slot.FollowupType), (adopted[index].Type, adopted[index].TargetTime, adopted[index].TargetValue, adopted[index].Prize, adopted[index].FollowupType) );
+			Assert.AreSame( adopted[index], otherChallenges.Challenges[otherChallenges.ChallengesInThisLevel[index]] );
+		}
+		// the park imports its challenge state over the saved definitions, and its own save carries them
+		var economy = new ParkEconomy( otherChallenges, EconomyTestData.Catalog(), ParkGameMode.FullSimulation, 1 );
+		var import = OriginalEconomyImport.Apply( economy, save );
+		Assert.IsFalse( import.Evidence.Any( line => line.Contains( "[APPROX:SAVE-005]" ) ) );
+		Assert.IsTrue( import.Evidence.Any( line => line.StartsWith( "Challenges imported:", StringComparison.Ordinal ) ) );
+		var data = ParkSaveFile.Deserialize( System.Text.Encoding.UTF8.GetBytes( ParkSaveFile.Serialize( economy ) ) );
+		Assert.IsNotNull( data.Objectives.AdoptedChallenges );
+		var fresh = EconomyTestData.Settings( apr: 0, extra: ExtraLoans + "ChallengesInThisLevel[1].ChallengeType 8\n" );
+		var restored = ParkSaveFile.Restore( data, fresh, EconomyTestData.Catalog() );
+		CollectionAssert.AreEqual( otherChallenges.ChallengesInThisLevel.ToArray(), restored.Settings.ChallengesInThisLevel.ToArray(), "a resumed park plays the same challenges" );
+		CollectionAssert.AreEqual( adopted.ToArray(), restored.Settings.AdoptedChallenges!.ToArray() );
 	}
 
 	private static byte[] Mutate( byte[] body, int offset, int value )

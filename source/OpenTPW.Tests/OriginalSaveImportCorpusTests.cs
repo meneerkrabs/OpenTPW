@@ -65,4 +65,15 @@ public class OriginalSaveImportCorpusTests
 			Assert.IsFalse( import.Evidence.Any( line => line.Contains( "[APPROX:SAVE-007]", StringComparison.Ordinal ) ), $"{name}: no project or current project is dropped" );
 		} );
 	}
+
+	[TestMethod]
+	public void EverySavesChallengeSlotsAreTheLevelsAndAdoptNothing()
+	{
+		ForEachSave( ( name, save, economy, import ) =>
+		{
+			Assert.IsNull( economy.Settings.AdoptedChallenges, name );
+			Assert.IsFalse( import.Evidence.Any( line => line.Contains( "[APPROX:SAVE-005]", StringComparison.Ordinal ) ), name );
+			Assert.IsTrue( import.Evidence.Any( line => line.Contains( "challenge records equal Challenges[", StringComparison.Ordinal ) ), name );
+		} );
+	}
 }

@@ -158,20 +158,20 @@ public sealed class OriginalEconomyImport
 		evidence.Add( $"{records.Loans.Count} loan offers match LoanInfo amounts, APR, terms and lenders." );
 		if ( matchedRepayments != 0 )
 			evidence.Add( $"{matchedRepayments} monthly repayments equal trunc(P x pow(1 + APR/100, N/24) / N)." );
+		// [BIN:TPW-EXE:0x4d0f90 challenge slot serializer] the save holds the 20 challenge slots with their own definitions (type, time, value, objects, staff type, prize, follow-up type and the two flags), and a load takes them as they are:
+		// a slot that differs from the level's own challenge (a modified save, another count) is a challenge of its own in this park
 		var level = settings.ChallengesInThisLevel;
-		if ( records.Challenges.Count != level.Count )
-			throw new InvalidDataException( $"The save has {records.Challenges.Count} challenges; ChallengesInThisLevel lists {level.Count}." );
-		for ( var index = 0; index < level.Count; index++ )
+		var different = records.Challenges.Count != level.Count || records.Challenges.Where( ( saved, index ) => !settings.Challenges.TryGetValue( level[index], out var definition ) || saved.Type != definition.Type || saved.TargetTime != definition.TargetTime
+			|| saved.TargetValue != definition.TargetValue || saved.TargetObject != definition.TargetObject || saved.TargetObject2 != definition.TargetObject2 || saved.TargetStaffType != definition.TargetStaffType || saved.Prize != definition.Prize
+			|| saved.FollowupType != definition.FollowupType || saved.CheckAtEndOnly != definition.CheckAtEndOnly || saved.Independent != definition.Independent ).Any();
+		if ( !different )
 		{
-			var saved = records.Challenges[index];
-			if ( !settings.Challenges.TryGetValue( level[index], out var definition ) )
-				throw new InvalidDataException( $"ChallengesInThisLevel[{index}] = {level[index]} is not defined." );
-			if ( saved.Type != definition.Type || saved.TargetTime != definition.TargetTime || saved.TargetValue != definition.TargetValue || saved.TargetObject != definition.TargetObject
-				|| saved.TargetObject2 != definition.TargetObject2 || saved.TargetStaffType != definition.TargetStaffType || saved.Prize != definition.Prize
-				|| saved.FollowupType != definition.FollowupType || saved.CheckAtEndOnly != definition.CheckAtEndOnly || saved.Independent != definition.Independent )
-				throw new InvalidDataException( $"Save challenge {index} (type {saved.Type}, prize {saved.Prize}) differs from Challenges[{definition.Index}]." );
+			evidence.Add( $"{level.Count} challenge records equal Challenges[{string.Join( ", ", level )}] in ChallengesInThisLevel order." );
+			return;
 		}
-		evidence.Add( $"{level.Count} challenge records equal Challenges[{string.Join( ", ", level )}] in ChallengesInThisLevel order." );
+		settings.AdoptChallenges( records.Challenges.Select( ( saved, index ) => new ChallengeDefinition( index, saved.Type, saved.FollowupType, saved.TargetTime, saved.TargetValue, saved.TargetObject, saved.TargetObject2,
+			saved.TargetStaffType, saved.Prize, saved.CheckAtEndOnly, saved.Independent ) ).ToList() );
+		evidence.Add( $"Challenge slots adopted from the save: its {records.Challenges.Count} slots differ from the level's {level.Count} challenges Challenges[{string.Join( ", ", level )}], so the park plays the saved definitions (keys {string.Join( ", ", settings.ChallengesInThisLevel )})." );
 	}
 
 	private static void ImportBank( ParkEconomy economy, SaveBank bank, List<string> evidence )
@@ -580,7 +580,7 @@ public sealed class OriginalEconomyImport
 
 	/// <summary>
 	/// The challenge system: the slots' won and declined counts, whether the system has started offering, a running or offered challenge and the
-	/// time of the next event. Slot k is the level's k-th challenge (<c>ChallengesInThisLevel</c>); a save whose slots do not match it keeps the new park's state.
+	/// time of the next event. Slot k is the park's k-th challenge: the level's own (<c>ChallengesInThisLevel</c>) or, where the slot differs, the saved definition (<see cref="Verify"/> adopts it, SAVE-005).
 	/// </summary>
 	// [BIN:TPW-EXE:0x4d2320 challenge system serializer] after the 20 slots: mCurrentChallenge (+0x3cc, −1 none), mNextChallengeEventTime (+0x3d0, an absolute 100 ns stamp), mSystemSwitchedOn (+0x3d8), mChallengeOn (+0x3d9, accepted and running), mWaitingForReply (+0x3da, an offer is open), mValue (+0x3dc), mActualThing (+0x3e0)
 	// [BIN:TPW-EXE:0x4d1e90 daily challenges] before the switch is on, the first offer comes once the park's elapsed day (0x4f8800 / 864e9) reaches DaysUntilFirstChallenge while the park is open (0x4c9050), and the switch is set; then an idle system offers when the clock passes the next event time, and a running challenge ends at its deadline, which the accept (0x4d2df0) stores in the same word
@@ -589,13 +589,7 @@ public sealed class OriginalEconomyImport
 		var settings = economy.Settings;
 		var level = settings.ChallengesInThisLevel;
 		var slots = system.Challenges;
-		var matches = slots.Count == level.Count && slots.Select( ( slot, index ) => settings.Challenges.TryGetValue( level[index], out var definition ) && definition.Type == slot.Type ).All( match => match );
-		if ( !matches )
-		{
-			// [APPROX:SAVE-005] a save whose slots do not match the level's challenges keeps the new park's challenge state, where the original loads the 20 slots as saved (their own definitions included) — evidence needed: challenge definitions taken from the saved slots instead of the level's settings
-			evidence.Add( $"[APPROX:SAVE-005] Challenge state not imported: the save's {slots.Count} slots do not match the level's {level.Count} challenges (the original loads whatever the slots hold); the first offer is due on day {economy.Objectives.NextOfferDay}." );
-			return;
-		}
+		// the slots are the park's challenges (Verify adopted them where they differ from the level's own): slot k is level[k]
 		// a stamp before the calendar start (or a wild one) is cut to the range a park save accepts
 		long Seconds( long stamp ) => Math.Clamp( (stamp - calendarStart) / OriginalEconomyImport.TimeStampUnitsPerSecond, 0, ParkSaveFile.MaximumParkSeconds );
 		long Day( long stamp ) => Seconds( stamp ) / ParkCalendar.SecondsPerDay;

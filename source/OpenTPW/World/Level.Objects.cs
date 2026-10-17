@@ -1338,7 +1338,7 @@ public partial class Level
 				continue;
 			var taken = runtime.RestoreOriginalSettingWords( attraction.OperatingSpeed, attraction.OperatingCapacity, attraction.OperatingDuration );
 			// [BIN:TPW-EXE:0x004E0E60 SetState] the open word (mCanLoad, +0x68) is cleared by states 1, 2 and 4 (their import closes the ride already) and by the player's close or a maintenance call; an idle attraction saved with it clear stays closed until the door opens the park
-			if ( attraction.CanLoad == 0 && Park!.Economy.TryGetObject( instance, out var objectState ) && ParkEconomy.ObjectState( objectState ) == RideObjectStates.Idle && runtime.IsOpen )
+			if ( Park!.Economy.TryGetObject( instance, out var objectState ) && RideOpening.ClosedByImportedOpenWord( attraction.CanLoad, ParkEconomy.ObjectState( objectState ) ) && runtime.IsOpen )
 			{
 				runtime.Close();
 				SyncOpenState( runtime );

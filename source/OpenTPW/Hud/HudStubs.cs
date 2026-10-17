@@ -130,7 +130,7 @@ public sealed class OriginalBuildCatalog : IBuildCatalog
 
 	private static BuildItem Item( ObjectCatalogEntry entry ) => new(
 		$"{entry.Theme}/{entry.InfoId}", entry.InfoId, (BuildCategory)entry.WhichUIType, entry.ObjectNameIndex ?? -1,
-		entry.BuildCost, entry.IsExternal ? null : entry.PreviewModelPath ?? entry.ModelPath,
+		entry.BuildCost, entry.PreviewModelPath ?? entry.ModelPath,
 		ObjectAssets.TextureDirectories( entry ).Where( location => location.FileSystem == FileSystem ).Select( location => location.Directory ).ToArray(),
 		entry.Settings.Has( "UsageInfo.ExcitementLevel" ) ? entry.Settings.GetInt( "UsageInfo.ExcitementLevel" ) : null, entry );
 

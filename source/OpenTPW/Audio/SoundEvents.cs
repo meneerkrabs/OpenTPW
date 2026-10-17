@@ -572,7 +572,7 @@ public sealed class SoundEventSystem
 		var index = PickSample( sound.Samples, -1, avoidRepeat: false );
 		if ( index < 0 || Decode( category, sound.Samples[index] ) is not { } audio )
 			return null;
-		// [APPROX:AUDIO-003] the pitch and the delay are applied (Pitch, AudioVoice.SetPitch, DelaySeconds, ExpiryFrame); reverb (SndReverb.map, loaded at 0x6c5d20) is not applied, chain delays are milliseconds (video, 2026-10-15)
+		// [APPROX:AUDIO-003] the pitch and the delay are applied (Pitch, AudioVoice.SetPitch, DelaySeconds, ExpiryFrame); reverb (SndReverb.map, loaded at 0x6c5d20; the preset selection is built, the DSP is AUDIO-039) is not applied, chain delays are milliseconds (video, 2026-10-15)
 		// [BIN:TPW-EXE:0x6bc4e7 sample setup] the fixed (flat) branch and the positioned branch both reach the loop test 0x6bc621: a placeholder with flag 0x8 (+0x30 bit 4) loops its sample (0x6c5110, 9999 times), so a flat one-shot loops exactly as a positioned one does
 		// [EXT:inaudible-loop-advance] a loop whose source is inaudible is assumed to keep advancing silently and resume when the listener returns; the early exit 0x6bcb60 -> 0x6bc643 is the expiry test, which a loop (voice flags 6) is exempt from
 		// [BIN:TPW-EXE:0x006BBF60 placeholder setup] every placeholder class (vtables 0x70a338, 0x70a3e8, 0x70a440, 0x70a498, 0x70a7e0, 0x70a878, 0x70a8d0) sets up at +0x10 with 0x6BBF60 and queries at +0x40 with 0x6BC040: a one-shot whose event has a code or whose sound has a selector gets a table, and a bound volume or pitch reads its slot (0 with no parameter call)

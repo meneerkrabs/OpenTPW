@@ -610,6 +610,7 @@ internal sealed partial class GameFlow : IDisposable
 			Advisor?.Update( Hud.Paused );
 			var parkLost = Level.Park?.Economy.IsBankrupt == true;
 			GameAudio.Update( Level.Guests?.GetStatistics().InPark, parkLost );
+			ReverbSelector.Update( Level.RideView?.Ride );
 			// The game timer the steps follow stands still while the park is paused, as the advisor's clock does.
 			var crowdLevel = Level;
 			GameAudio.UpdateCrowd( Hud.Paused ? 0 : Time.Delta * 1000.0, () => GuestsNearCamera( crowdLevel ), parkLost );

@@ -1175,15 +1175,34 @@ public sealed partial class ParkHud
 		return name => ObjectSigns.IsSignSlot( name ) && ObjectSigns.Get( entry )?.TextureFor( name ) is { } texture ? UiTexture.Of( texture.NativeTexture ) : null;
 	}
 
+	/// <summary>
+	/// Textures the preview takes as run-time textures: the sign faces, and for an object outside the game data (a mod's, the pools extension's, bonus content)
+	/// the textures of its own archive, decoded from its root as the park draws it (<see cref="OriginalObject.TryLoadTexture"/>); a name found in the game data
+	/// is left to the path resolver.
+	/// </summary>
+	private static Func<string, UiTexture?>? RuntimeTexture( BuildItem item )
+	{
+		var sign = SignTexture( item );
+		if ( item.Entry is not { IsExternal: true } entry )
+			return sign;
+		return name => sign?.Invoke( name )
+			?? (ObjectAssets.ResolveTexture( entry, name ) is { } resolved && resolved.FileSystem != FileSystem && OriginalObject.TryLoadTexture( entry, name ) is { } texture
+				? UiTexture.Of( texture.NativeTexture ) : null);
+	}
+
+	/// <summary>The item's preview model, read from the root its object comes from: the game data, or a mod or bonus root.</summary>
+	private static ModelFile LoadPreviewModel( BuildItem item, string path ) =>
+		item.Entry is { IsExternal: true } entry ? ObjectAssets.LoadModel( entry.FileSystem, path ) : ObjectAssets.LoadModel( path );
+
 	internal PreviewIcon? GetIcon( BuildItem item )
 	{
 		if ( icons.TryGetValue( item.Id, out var icon ) )
 			return icon;
 		try
 		{
-			icon = item.PreviewModel == null ? null : new PreviewIcon( ObjectAssets.LoadModel( item.PreviewModel ),
+			icon = item.PreviewModel == null ? null : new PreviewIcon( LoadPreviewModel( item, item.PreviewModel ),
 				name => item.TextureDirectories.Select( directory => UiImages.Resolve( name, directory ) ).FirstOrDefault( path => path != null ),
-				SignTexture( item ) );
+				RuntimeTexture( item ) );
 		}
 		catch ( Exception exception ) when ( exception is IOException or InvalidDataException or NotSupportedException or InvalidOperationException )
 		{

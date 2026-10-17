@@ -18,7 +18,7 @@ namespace OpenTPW;
 /// visitors (select, wheel, sort, Enter-locate) and the All Attractions window selects, activates and
 /// sells a placed fixture with its confirmation; the sandbox developer Totem is placed beside the
 /// catalogue objects, listed as one more ride, activated like any row and removed through the
-/// prototype removal. The window keys V and B are pressed as real one-frame keyboard taps
+/// prototype removal. The window keys (V and B in English, the language's KEYBOARD.str letters otherwise) are pressed as real one-frame keyboard taps
 /// (<see cref="Input.InjectKeyDown"/>) so they run through the same dispatch and gates as a keyboard.
 /// The game exits to the lobby, then loads a read-only
 /// visit and checks build/open/delete/save mutation boundaries (the attractions window opens through
@@ -49,6 +49,7 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 	private int frame;
 	private int waitUntil;
 	private bool completed;
+	private string? startLanguage;
 	private long builtCost;
 	private bool totemLockedAtStart;
 	private long soldFor;
@@ -460,6 +461,7 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 		Wait( "mods cancel", 3 );
 		Do( "mods closed", () => Require( flow.Menu!.Stack.Top?.Name != "mods", "cancel leaves the mods screen" ) );
 		PlanTexturePackSwitch();
+		startLanguage = GameLanguage.Current.Name;
 		PlanLanguageSwitch();
 		Do( "open lobby menu", () => flow.Menu!.ShowMenu() );
 		Wait( "lobby menu opens", 2 );
@@ -1174,7 +1176,7 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 		Do( "prototype ride view owns keyboard", () =>
 		{
 			Require( flow.Level!.EnterRideView( reviewedPrototype! ), "the live prototype can enter its ride view" );
-			Input.InjectKeyDown( Key.V, Key.B );
+			Input.InjectKeyDown( Input.ChordKey( InputButton.AllVisitors ), Input.ChordKey( InputButton.BuyAttractions ) );
 		} );
 		Wait( "ride-view window key frame", 2 );
 		Do( "ride view blocks window keys", () =>
@@ -1196,7 +1198,7 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			Click( hud.Stack.Top!, "deleteAttraction" );
 		} );
 		Wait( "prototype delete confirmation", 3 );
-		Do( "window keys during prototype confirmation", () => Input.InjectKeyDown( Key.V, Key.B ) );
+		Do( "window keys during prototype confirmation", () => Input.InjectKeyDown( Input.ChordKey( InputButton.AllVisitors ), Input.ChordKey( InputButton.BuyAttractions ) ) );
 		Wait( "confirmation owns keyboard", 2 );
 		Do( "confirmation blocks window keys", () =>
 			Require( flow.Hud!.Stack.Top?.Name == "confirmDeleteAttraction" && !flow.Hud.VisitorWindowOpen,
@@ -1230,23 +1232,24 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 		Wait( "attractions closes after the prototype", 3 );
 		Do( "buy window closes after attractions", () => Click( flow.Hud!.Stack.Top!, "exit" ) );
 		Wait( "buy closed before Escape", 3 );
-		// The window keys through the real dispatch: Input.InjectKeyDown queues a physical key, the frame's
+		// The window keys are the language's KEYBOARD.str letters (Input.ChordKey: Dutch All Visitors is B, Buy is K, All Attractions is V), not English V and B.
+		// They go through the real dispatch: Input.InjectKeyDown queues a physical key, the frame's
 		// button rebuild consumes it and the HUD shortcut handler sees Input.Pressed exactly once per tap
 		// (the same path a real keyboard takes; a Wait between taps gives the one-frame release).
-		Do( "press the All Visitors key", () => Input.InjectKeyDown( Key.V ) );
+		Do( "press the All Visitors key", () => Input.InjectKeyDown( Input.ChordKey( InputButton.AllVisitors ) ) );
 		Wait( "visitors key frame", 2 );
 		Do( "the visitors key opens the window", () =>
 			Require( flow.Hud!.VisitorWindowOpen && flow.Hud.Stack.Top?.Name == "visitors",
 				"the injected V opens the All Visitors window through Input.Pressed" ) );
-		Do( "press the All Visitors key again", () => Input.InjectKeyDown( Key.V ) );
+		Do( "press the All Visitors key again", () => Input.InjectKeyDown( Input.ChordKey( InputButton.AllVisitors ) ) );
 		Wait( "visitors key frame again", 2 );
 		Do( "the visitors key closes the window", () =>
 			Require( !flow.Hud!.VisitorWindowOpen, "a second V toggles the window closed" ) );
-		Do( "press the Buy Attractions key", () => Input.InjectKeyDown( Key.B ) );
+		Do( "press the Buy Attractions key", () => Input.InjectKeyDown( Input.ChordKey( InputButton.BuyAttractions ) ) );
 		Wait( "buy key frame", 2 );
 		Do( "the buy key opens the window", () =>
 			Require( flow.Hud!.BuyWindowOpen, "the injected B opens the buy window through Input.Pressed" ) );
-		Do( "press the Buy Attractions key again", () => Input.InjectKeyDown( Key.B ) );
+		Do( "press the Buy Attractions key again", () => Input.InjectKeyDown( Input.ChordKey( InputButton.BuyAttractions ) ) );
 		Wait( "buy key frame again", 2 );
 		Do( "the buy key closes the window", () =>
 			Require( !flow.Hud!.BuyWindowOpen, "a second B toggles the buy window closed" ) );
@@ -1275,7 +1278,7 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 		{
 			pausedTick = flow.Level!.Park?.Economy.Tick;
 			pausedSpeed = flow.Hud!.Status.Speed;
-			Input.InjectKeyDown( Key.V, Key.B );
+			Input.InjectKeyDown( Input.ChordKey( InputButton.AllVisitors ), Input.ChordKey( InputButton.BuyAttractions ) );
 		} );
 		Wait( "pause owns keyboard", 2 );
 		Do( "pause blocks window keys", () =>
@@ -1591,7 +1594,7 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 		Log.Trace( $"Instant Action jungle: {level.Park.Import!.ImportedObjects} seed objects, {economy.Staff.Members.Count} staff, research advanced {start} -> {economy.Date}; loans, research effort and upgrades refused." );
 		Device.WaitForIdle();
 		completed = true;
-		Log.Trace( $"Native front-end smoke test passed in {GameLanguage.Current.Name} at {Screen.PixelSize.X}x{Screen.PixelSize.Y} px, UI scale {Context.Canvas.TextScale}: {frame} frames ({speechFrames} of them waiting for advisor speech, {loadFrames} for asynchronous loading), lobby + menu readback, mouse/keyboard navigation, options cancel, original jungle via game mode, HUD money/date readback, finance/loans/research window captures and title readback, two distinct catalogue objects bought exactly once through the park economy, info arm, economy pause, sale, overlap refusal, open/close, Escape out of the queue tool, pause menu, exit to lobby, read-only visit build/open/delete/save guards, Instant Action return and Load Park reference start, Instant Action seed with imported bank, turn and staff, research and gates. Overview windows: visitors listed, scrolled, sorted and located; attractions listed, selected, activated and a fixture sold; the developer prototype listed once, activated and removed through its own seam with the selection healed; the window keys V and B pressed through Input.Pressed; the visit's attractions listed, sorted and its delete refused." );
+		Log.Trace( $"Native front-end smoke test passed starting in {startLanguage ?? GameLanguage.Current.Name} and ending in {GameLanguage.Current.Name} (the park language choice applies after the park) at {Screen.PixelSize.X}x{Screen.PixelSize.Y} px, UI scale {Context.Canvas.TextScale}: {frame} frames ({speechFrames} of them waiting for advisor speech, {loadFrames} for asynchronous loading), lobby + menu readback, mouse/keyboard navigation, options cancel, original jungle via game mode, HUD money/date readback, finance/loans/research window captures and title readback, two distinct catalogue objects bought exactly once through the park economy, info arm, economy pause, sale, overlap refusal, open/close, Escape out of the queue tool, pause menu, exit to lobby, read-only visit build/open/delete/save guards, Instant Action return and Load Park reference start, Instant Action seed with imported bank, turn and staff, research and gates. Overview windows: visitors listed, scrolled, sorted and located; attractions listed, selected, activated and a fixture sold; the developer prototype listed once, activated and removed through its own seam with the selection healed; the window keys V and B pressed through Input.Pressed; the visit's attractions listed, sorted and its delete refused." );
 		GameFlow.Quit();
 	}
 

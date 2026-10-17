@@ -3,11 +3,14 @@ using System.Numerics;
 namespace OpenTPW;
 
 /// <summary>
-/// The x87 precision control (bits 8-9 of the control word) the sign generator's floating-point code runs at: 24, 53 or 64
+/// The x87 precision control (bits 8-9 of the control word) the sign generator's and the wavelet decoder's floating-point code runs at: 24, 53 or 64
 /// mantissa bits. tp.exe's thread runs at 24: the CRT start-up sets 53 (0x6804D0, <c>_controlfp(_PC_53, _MCW_PC)</c>), then
 /// DirectDraw <c>SetCooperativeLevel</c> with DDSCL_FPUSETUP (0x563914: 0x851, 0x563B92: 0x808) makes the shipped DirectX 6.1
 /// <c>D3DIM.DLL</c> CreateDevice set single precision and leave it (CW 0x007F), and the only later control-word writer, the
-/// render function 0x576EC0, restores the word it found.
+/// render function 0x576EC0, restores the word it found. The wavelet codec (0x564B20) is registered by the engine init 0x572780, which
+/// runs after the display init and the Direct3D device start (0x5836D0 -> 0x572C40 -> 0x573080) in 0x44DF20, and the sign generator builds its own decoder
+/// object (0x5EBFC0) later still, so every wavelet decode runs at 24 bits; only the D4 coefficient initialisers (0x591600..0x591690, in the CRT's C++ initialiser
+/// table) run earlier, at 53.
 /// </summary>
 // [BIN:TPW-EXE:0x00576EC0 control word] the only code that rewrites the x87 control word besides the CRT and rounding-mode wrappers (_ftol 0x67A830 saves and restores the word): 0x591220 forces PC=24 and returns the old word, 0x591240 restores it (0x591250 would restore it with PC=64, only when bit 1 of [0x8BD508] is set, which no instruction sets); the sign generator is not reached from that function
 // [BIN:D3DIM-DLL:0x56664F87 CreateDevice FPU setup] with the DDSCL_FPUSETUP flag (DDRAW-DLL 0xBAABE771 maps 0x800 to local flag 0x8000) a class-2 device sets CW = (CW & 0xFCFF | 0x3F) & 0xF3FF and does not restore it; the class is chosen at 0x56664DD8..0x56664EEA: a HAL device is class 2 only when the driver reports DrawPrimitives2 (the callbacks at global +0x638, field +0x14), else class 1 or 0 (CW untouched, the CRT's 53 bits; ForceDouble, default on, only raises PC to 53 inside D3D calls); every other device is class 2 unless the registry values DisableDP or DisableDP2 under HKLM\\Software\\Microsoft\\Direct3D are set; tp.exe names only the HAL device GUID (no reference to the RGB or MMX GUIDs), so on a driver without DrawPrimitives2 the original would have run at 53 bits

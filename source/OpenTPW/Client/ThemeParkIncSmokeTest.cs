@@ -80,7 +80,7 @@ internal sealed class ThemeParkIncSmokeTest : IDisposable
 		{
 			Require( Level.BuildEntry == armedEntry && armedEntry != null, "activating the row arms the item's placement" );
 			Require( Hud.Screen.Find( "buildList" )!.Visible == false, "arming closes the build window" );
-			Require( Hud.Messages.Any( message => message.Contains( "click the park to place", StringComparison.Ordinal ) ), "the HUD says how to place" );
+			Require( Hud.Messages.Any( message => FitsTemplate( message, OpenTpwText.TpiPlaceHint ) ), "the HUD says how to place" );
 		} );
 		for ( var turn = 1; turn <= 4; turn++ )
 		{
@@ -325,7 +325,16 @@ internal sealed class ThemeParkIncSmokeTest : IDisposable
 	{
 		var camera = Camera.Mode as ParkCameraMode;
 		Require( camera != null, "the slice runs the park camera" );
-		camera!.Focus( OriginalParkPlacement.GetCellCenter( Level.OriginalPark!.Heightfield, site.X, site.Y ) );
+		var focus = OriginalParkPlacement.GetCellCenter( Level.OriginalPark!.Heightfield, site.X, site.Y );
+		if ( armedEntry!.HasQueue )
+		{
+			// Centre between the site and the end of its queue line: a site near the map edge puts the queue's end off the bottom of the
+			// screen when the camera is centred on the site alone.
+			var (dx, dy) = (entrance.OutsideX - entrance.X, entrance.OutsideY - entrance.Y);
+			var end = OriginalParkPlacement.GetCellCenter( Level.OriginalPark!.Heightfield, entrance.OutsideX + dx * SmokeQueueLength, entrance.OutsideY + dy * SmokeQueueLength );
+			focus = (focus + end) / 2;
+		}
+		camera!.Focus( focus );
 	}
 
 	private void SpawnGuests()
@@ -342,6 +351,10 @@ internal sealed class ThemeParkIncSmokeTest : IDisposable
 		Level.Guests.SpawnInPark( near[0].X, near[0].Y );
 		Level.Guests.SpawnInPark( near[1].X, near[1].Y );
 	}
+
+	/// <summary>Whether a HUD message is the selected language's text for <paramref name="key"/> with its {0}, {1} ... filled in.</summary>
+	private bool FitsTemplate( string message, OpenTpwText key ) =>
+		System.Text.RegularExpressions.Regex.IsMatch( message, "^" + System.Text.RegularExpressions.Regex.Replace( System.Text.RegularExpressions.Regex.Escape( flow.Strings.Extra( key ) ), @"\\\{\d+\}", ".+" ) + "$", System.Text.RegularExpressions.RegexOptions.Singleline );
 
 	private bool Clickable( (int X, int Y) cell, out System.Numerics.Vector2 point )
 	{

@@ -99,6 +99,9 @@ public class MultiByteLanguageTests
 		var tooManyLeads = TwoByteTable( 3, 5, out _ );
 		tooManyLeads[6] = 2;
 		Assert.ThrowsException<InvalidDataException>( () => Read( tooManyLeads ) );
+		var notTopBytes = TwoByteTable( 3, 5, out _ );
+		notTopBytes[6] = 0xFE;
+		Assert.ThrowsException<InvalidDataException>( () => Read( notTopBytes ), "tp.exe assumes the lead bytes are the top byte values (last byte 0xFF)" );
 	}
 
 	[TestMethod]

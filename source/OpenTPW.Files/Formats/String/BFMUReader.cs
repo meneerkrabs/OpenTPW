@@ -22,7 +22,10 @@ namespace OpenTPW;
 /// </remarks>
 // [DATA:Language/Polish/MBToUni.dat, Language/korean/MBToUni.dat] the lead/trail layout is confirmed by every string table of both languages
 // decoding without an unknown code, and by UniToMB.dat, whose entries hold the same (lead, trail) pair for each Unicode code point;
-// tp.exe 0x6adac7 reads this header (it accepts the magic BFMU and BFMH); its size arithmetic was not traced further
+// [BIN:TPW-EXE:0x6ada90 character table header] the loader accepts the magic BFMU and BFMH (0x6adac6) and derives the single-byte count 255 - leads (0xFF is assumed for the last byte) and the table size
+// as 255 * (last - 1 + 0x101) - 254 * (255 - leads) + last trails, in 16-bit arithmetic; the string decoder 0x6adc80 maps a byte below the first lead to index byte - 1 and a lead L plus trail T to the same
+// 255 * (L - 1 + 0x101) - 254 * (255 - leads) + T (0-based, mod 65536), which equals this class's 1-based (first lead - 1) + (L - first lead) * 255 + T minus one. tp.exe's size is one below the
+// character count (its range check rejects the table's final entry, U+0001 here) and it does not reject trail byte 0 (which wraps to the previous lead's trail 255); this reader keeps the whole table and rejects trail 0
 public sealed class BFMUReader : BaseFormat
 {
 	private char[] characters = Array.Empty<char>();
@@ -77,7 +80,8 @@ public sealed class BFMUReader : BaseFormat
 		{
 			var last = data[6];
 			var lastTrails = data[7];
-			if ( leads > 255 || last > 255 || leads > last || lastTrails < 1 )
+			// tp.exe assumes 0xFF for the last byte (the lead bytes are the top byte values): a table that says otherwise is not read
+			if ( leads > 255 || last != 255 || lastTrails < 1 )
 				throw new InvalidDataException( $"Character table declares {leads} lead bytes ending at byte {last} with {lastTrails} trail bytes." );
 			singles = last - leads;
 			count = singles + (leads - 1) * 255 + lastTrails;

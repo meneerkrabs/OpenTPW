@@ -175,9 +175,12 @@ bytes, and the ASCII letters and most punctuation sit behind the lead byte; in t
 a few symbols and the full-width characters, and the lead bytes cover hanja, KS X 1001 symbols, Hangul (11,172 syllables
 from U+D7A3 down) and the ASCII letters (`A` is index 17,225). `UniToMB.dat` agrees: its entries hold the code as the lead byte
 (low byte) and trail byte (high byte) for every two-byte character, which cross-checks the layout for all 17,270 Korean entries
-(`TheKoreanTableIsTheSixtySevenLeadByteLayout`). tp.exe reads this header at `0x6adac7`, where it checks the magic `BFMU` (and
-`BFMH`); its size arithmetic was not traced further, so the layout rests on the data (every string table of both languages
-decodes without an unknown code). Korean text decodes to 697 distinct Hangul syllables; Polish to its 16 letters.
+(`TheKoreanTableIsTheSixtySevenLeadByteLayout`). tp.exe's loader (`0x6ada90`, magic check `BFMU`/`BFMH` at `0x6adac6`) derives the
+single-byte count as `255 - leads` and the table size as `255 * (last - 1 + 0x101) - 254 * (255 - leads) + last trails` in 16-bit arithmetic; its string
+decoder (`0x6adc80`) maps a byte below the first lead to `byte - 1` and a lead `L` plus trail `T` to `255 * (L - 1 + 0x101) - 254 * (255 - leads) + T` (zero-based, modulo 65536),
+which is this layout's `(first lead - 1) + (L - first lead) * 255 + T` minus one, so the formula agrees with the original on the Polish and Korean tables. Two small differences:
+tp.exe's size is one below the character count (its range check rejects the table's last entry, U+0001 in both tables) and it does not reject trail byte 0;
+OpenTPW keeps every entry and rejects trail 0. The data agrees (every string table of both languages decodes without an unknown code). Korean text decodes to 697 distinct Hangul syllables; Polish to its 16 letters.
 
 ## Languages added from the Spanish, Korean and Polish CDs
 

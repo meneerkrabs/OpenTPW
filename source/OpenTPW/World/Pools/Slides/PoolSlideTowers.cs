@@ -64,8 +64,11 @@ public static class PoolSlideTowers
 	}
 }
 
-/// <summary>A placed tower as the slide rules see it: its anchor (the slide's key), its footprint, its pool-side candidates, its profile and its capacity.</summary>
-public sealed record PoolSlideTower( int X, int Y, IReadOnlyList<(int X, int Y)> Footprint, IReadOnlyList<(int X, int Y)> PoolSide, PoolSlideProfile Profile, int Capacity )
+/// <summary>
+/// A placed tower as the slide rules see it: its anchor (the slide's key), its footprint, its pool-side candidates, its profile, its capacity and its thing id (the <see cref="Guest.PoolActivityTarget"/> of the guests on its slide,
+/// the id of the object that provides the activity).
+/// </summary>
+public sealed record PoolSlideTower( int X, int Y, IReadOnlyList<(int X, int Y)> Footprint, IReadOnlyList<(int X, int Y)> PoolSide, PoolSlideProfile Profile, int Capacity, int ThingId = 0 )
 {
 	/// <summary>The id of the slide this tower carries (<see cref="PoolSlide.KeyOf"/>).</summary>
 	public int Id => PoolSlide.KeyOf( X, Y );

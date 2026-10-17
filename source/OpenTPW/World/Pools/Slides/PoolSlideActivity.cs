@@ -34,28 +34,31 @@ public sealed class PoolSlideActivity : IPoolActivity
 
 	public PoolActivityOffer? Offer( GuestSimulation simulation, Guest guest, PoolSwimRegion region )
 	{
+		// asked per swimmer per turn: no allocation, and the guests are scanned only for a slide that is usable in this water
 		if ( simulation.PoolSlides is not { Count: > 0 } world )
 			return null;
 		PoolActivityOffer? best = null;
 		var bestOccupied = int.MaxValue;
-		foreach ( var slide in world.Slides )
+		var slides = world.Ordered;
+		for ( var index = 0; index < slides.Count; index++ )
 		{
+			var slide = slides[index];
 			if ( !world.IsUsable( slide ) || world.TowerOf( slide ) is not { } tower || tower.PoolSideCell( simulation.Grid.Cells ) is not { } foot )
 				continue;
 			var landing = slide.LandingCell!.Value;
 			if ( !region.Contains( foot.X, foot.Y ) || !region.Contains( landing.X, landing.Y ) )
 				continue;
-			var occupied = Occupants( simulation, slide.Id );
+			var occupied = Occupants( simulation, tower.ThingId );
 			if ( occupied >= tower.Capacity || occupied >= bestOccupied )
 				continue;
-			(best, bestOccupied) = (new PoolActivityOffer( slide.Id, foot.X, foot.Y ), occupied);
+			(best, bestOccupied) = (new PoolActivityOffer( tower.ThingId, foot.X, foot.Y ), occupied);
 		}
 		return best;
 	}
 
 	public bool Start( GuestSimulation simulation, Guest guest, PoolActivityOffer offer, ref uint random )
 	{
-		if ( simulation.PoolSlides?.Find( offer.TargetId ) is not { } slide || !simulation.PoolSlides.IsUsable( slide ) )
+		if ( simulation.PoolSlides?.FindByThing( offer.TargetId ) is not { } slide || !simulation.PoolSlides.IsUsable( slide ) )
 			return false;
 		guest.PoolActivityPhase = PoolSlidePhases.Approach;
 		guest.PoolActivityTurns = 0;
@@ -65,7 +68,7 @@ public sealed class PoolSlideActivity : IPoolActivity
 	public PoolActivityStep Update( GuestSimulation simulation, Guest guest, ref uint random )
 	{
 		var world = simulation.PoolSlides;
-		var slide = world?.Find( guest.PoolActivityTarget );
+		var slide = world?.FindByThing( guest.PoolActivityTarget );
 		var usable = slide != null && world!.IsUsable( slide );
 		switch ( guest.PoolActivityPhase )
 		{
@@ -98,7 +101,7 @@ public sealed class PoolSlideActivity : IPoolActivity
 
 	public float? FeetHeight( GuestSimulation simulation, Guest guest, float defaultHeight )
 	{
-		if ( simulation.PoolSlides?.Find( guest.PoolActivityTarget ) is not { } slide )
+		if ( simulation.PoolSlides?.FindByThing( guest.PoolActivityTarget ) is not { } slide )
 			return null;
 		var top = slide.TopHeight / (float)PoolSlide.HeightUnit;
 		switch ( guest.PoolActivityPhase )
@@ -173,7 +176,7 @@ public sealed class PoolSlideActivity : IPoolActivity
 		var (spotX, spotY) = SpotOf( simulation, guest, slide );
 		simulation.MovePoolGuest( guest, spotX, spotY );
 		// the guest who has waited longest goes first, once the one before it is a cell and a half down the track
-		if ( IsFirstInLine( simulation, guest ) && IsStartClear( simulation, slide ) )
+		if ( RankInLine( simulation, guest ) == 0 && IsStartClear( simulation, slide, guest.PoolActivityTarget ) )
 		{
 			guest.PoolActivityPhase = PoolSlidePhases.Ride;
 			guest.PoolActivityTurns = 0;
@@ -223,44 +226,70 @@ public sealed class PoolSlideActivity : IPoolActivity
 		simulation.PlacePoolGuest( guest, point.X * 64, point.Y * 64 );
 	}
 
-	/// <summary>The guests on a slide in the given phases, in no order.</summary>
-	private static IEnumerable<Guest> On( GuestSimulation simulation, int slideId, int lowest, int highest ) =>
-		simulation.Guests.Where( guest => guest.State == GuestState.PoolActivity && guest.PoolActivityTarget == slideId && guest.PoolActivityId == ActivityId
-			&& guest.PoolActivityPhase >= lowest && guest.PoolActivityPhase <= highest );
+	private static bool IsOn( Guest guest, int thingId, int lowest, int highest ) =>
+		guest.State == GuestState.PoolActivity && guest.PoolActivityTarget == thingId && guest.PoolActivityPhase >= lowest && guest.PoolActivityPhase <= highest && guest.PoolActivityId == ActivityId;
 
-	/// <summary>How many guests are on their way to, on the stairs of, or waiting in the slide's tower (the tower's capacity counts them all).</summary>
-	public static int Occupants( GuestSimulation simulation, int slideId ) => On( simulation, slideId, PoolSlidePhases.Approach, PoolSlidePhases.Wait ).Count();
+	private static bool Any( GuestSimulation simulation, int thingId, int lowest, int highest )
+	{
+		var guests = simulation.Guests;
+		for ( var index = 0; index < guests.Count; index++ )
+			if ( IsOn( guests[index], thingId, lowest, highest ) )
+				return true;
+		return false;
+	}
+
+	/// <summary>How many guests are on their way to, on the stairs of, or waiting in the tower with this thing id (the tower's capacity counts them all).</summary>
+	public static int Occupants( GuestSimulation simulation, int thingId )
+	{
+		var count = 0;
+		var guests = simulation.Guests;
+		for ( var index = 0; index < guests.Count; index++ )
+			if ( IsOn( guests[index], thingId, PoolSlidePhases.Approach, PoolSlidePhases.Wait ) )
+				count++;
+		return count;
+	}
 
 	/// <summary>Whether any guest is on the track or splashing down at the end: the slide's landing cell and its track are busy.</summary>
-	public static bool HasRiders( GuestSimulation simulation, int slideId ) => On( simulation, slideId, PoolSlidePhases.Ride, PoolSlidePhases.Splash ).Any();
+	public static bool HasRiders( GuestSimulation simulation, int thingId ) => Any( simulation, thingId, PoolSlidePhases.Ride, PoolSlidePhases.Splash );
 
 	/// <summary>Whether any guest is on the stairs or the platform of the tower (the stairs' foot cell must stay water).</summary>
-	public static bool HasClimbers( GuestSimulation simulation, int slideId ) => On( simulation, slideId, PoolSlidePhases.Climb, PoolSlidePhases.Wait ).Any();
+	public static bool HasClimbers( GuestSimulation simulation, int thingId ) => Any( simulation, thingId, PoolSlidePhases.Climb, PoolSlidePhases.Wait );
 
-	/// <summary>The line in the tower: waiters in the order they will go (the longest waiting first, ties by guest id), then the climbers (the furthest up first).</summary>
-	private static List<Guest> Line( GuestSimulation simulation, int slideId ) =>
-		On( simulation, slideId, PoolSlidePhases.Climb, PoolSlidePhases.Wait )
-			.OrderByDescending( guest => guest.PoolActivityPhase ).ThenByDescending( guest => guest.PoolActivityTurns ).ThenBy( guest => guest.Id ).ToList();
-
-	private static bool IsFirstInLine( GuestSimulation simulation, Guest guest )
+	/// <summary>
+	/// The place of the guest in the line in the tower: how many guests on the stairs or the platform are ahead of it. Waiters go before climbers, the longest waiting (or the furthest up the stairs)
+	/// first, ties by guest id; no list is built.
+	/// </summary>
+	private static int RankInLine( GuestSimulation simulation, Guest guest )
 	{
-		var line = Line( simulation, guest.PoolActivityTarget );
-		return line.Count > 0 && line[0] == guest;
+		var rank = 0;
+		var guests = simulation.Guests;
+		for ( var index = 0; index < guests.Count; index++ )
+		{
+			var other = guests[index];
+			if ( other == guest || !IsOn( other, guest.PoolActivityTarget, PoolSlidePhases.Climb, PoolSlidePhases.Wait ) )
+				continue;
+			if ( other.PoolActivityPhase != guest.PoolActivityPhase ? other.PoolActivityPhase > guest.PoolActivityPhase
+				: other.PoolActivityTurns != guest.PoolActivityTurns ? other.PoolActivityTurns > guest.PoolActivityTurns : other.Id < guest.Id )
+				rank++;
+		}
+		return rank;
 	}
 
 	/// <summary>The guest's place on the platform (16.16): the spots lie round the tower's centre, one per rank in the line.</summary>
 	private static (int X, int Y) SpotOf( GuestSimulation simulation, Guest guest, PoolSlide slide )
 	{
-		var rank = Math.Max( 0, Line( simulation, slide.Id ).IndexOf( guest ) );
+		var rank = RankInLine( simulation, guest );
 		var tower = simulation.PoolSlides!.TowerOf( slide );
 		long sumX = 0, sumY = 0;
 		var count = 0;
-		foreach ( var (x, y) in tower?.Footprint ?? Array.Empty<(int X, int Y)>() )
-		{
-			sumX += PoolSwimRegion.Centre( (x, y) ).X;
-			sumY += PoolSwimRegion.Centre( (x, y) ).Y;
-			count++;
-		}
+		if ( tower != null )
+			foreach ( var (x, y) in tower.Footprint )
+			{
+				var centre = PoolSwimRegion.Centre( (x, y) );
+				sumX += centre.X;
+				sumY += centre.Y;
+				count++;
+			}
 		if ( count == 0 )
 			return (guest.PoolActivityX, guest.PoolActivityY);
 		var ring = rank / 4;
@@ -270,6 +299,12 @@ public sealed class PoolSlideActivity : IPoolActivity
 	}
 
 	/// <summary>Whether the start of the track is free: no rider is less than <see cref="PoolSlideSettings.Gap"/> down it.</summary>
-	private static bool IsStartClear( GuestSimulation simulation, PoolSlide slide ) =>
-		!On( simulation, slide.Id, PoolSlidePhases.Ride, PoolSlidePhases.Ride ).Any( rider => slide.PositionAtTurn( rider.PoolActivityTurns ) < PoolSlideSettings.Gap );
+	private static bool IsStartClear( GuestSimulation simulation, PoolSlide slide, int thingId )
+	{
+		var guests = simulation.Guests;
+		for ( var index = 0; index < guests.Count; index++ )
+			if ( IsOn( guests[index], thingId, PoolSlidePhases.Ride, PoolSlidePhases.Ride ) && slide.PositionAtTurn( guests[index].PoolActivityTurns ) < PoolSlideSettings.Gap )
+				return false;
+		return true;
+	}
 }

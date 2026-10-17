@@ -73,6 +73,38 @@ public sealed class PoolSlideWorld
 	public long LastCharged { get; private set; }
 	/// <summary>The slides in tower order (the order of their ids).</summary>
 	public IEnumerable<PoolSlide> Slides => slides.Values;
+
+	private PoolSlide[] ordered = Array.Empty<PoolSlide>();
+	private int orderedVersion = -1;
+
+	/// <summary>The slides in tower order as an array that is rebuilt only when the slides change, for callers that ask every turn and must not allocate.</summary>
+	public IReadOnlyList<PoolSlide> Ordered
+	{
+		get
+		{
+			if ( orderedVersion != Version )
+			{
+				ordered = slides.Values.ToArray();
+				orderedVersion = Version;
+			}
+			return ordered;
+		}
+	}
+
+	/// <summary>The slide of the tower with this thing id (the target the guests on it hold), or null.</summary>
+	public PoolSlide? FindByThing( int thingId )
+	{
+		if ( thingId == 0 )
+			return null;
+		var list = Ordered;
+		for ( var index = 0; index < list.Count; index++ )
+			if ( TowerOf( list[index] ) is { } tower && tower.ThingId == thingId )
+				return list[index];
+		return null;
+	}
+
+	/// <summary>Invalidates what the world has remembered about its slides (a tower was placed or removed): the next question is answered afresh.</summary>
+	public void Touch() => Version++;
 	public int Count => slides.Count;
 
 	public PoolSlide? Find( int id ) => slides.TryGetValue( id, out var slide ) ? slide : null;

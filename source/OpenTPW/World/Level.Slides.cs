@@ -51,7 +51,9 @@ public partial class Level
 			return;
 		var (x, y, rotation) = (item.Placement.X, item.Placement.Y, item.Placement.Rotation);
 		slideTowers[PoolSlide.KeyOf( x, y )] = new PoolSlideTower( x, y, PoolSlideTowers.Footprint( item.Entry.Shape, x, y, rotation ),
-			PoolSlideTowers.PoolSideCandidates( item.Entry.Shape, x, y, rotation ), PoolSlideTowers.ProfileOf( item.Entry ), PoolSlideTowers.CapacityOf( item.Entry ) );
+			PoolSlideTowers.PoolSideCandidates( item.Entry.Shape, x, y, rotation ), PoolSlideTowers.ProfileOf( item.Entry ), PoolSlideTowers.CapacityOf( item.Entry ), item.ThingId );
+		// what the world remembers of its slides' usability depends on the towers
+		PoolSlides?.Touch();
 	}
 
 	private void UnregisterSlideTower( OriginalObject item )
@@ -62,8 +64,9 @@ public partial class Level
 		if ( !slideTowers.Remove( id ) )
 			return;
 		// the riders and the queue on it end their session at once, then the track goes (and is refunded)
-		Guests?.AbortPoolActivitiesOf( id );
+		Guests?.AbortPoolActivitiesOf( item.ThingId );
 		PoolSlides?.Remove( item.Placement.X, item.Placement.Y );
+		PoolSlides?.Touch();
 	}
 
 	/// <summary>The park as the slide rules see it: the cell map, the ground the pool deck follows, the water levels of the pools and the cells other things hold.</summary>
@@ -126,9 +129,11 @@ public partial class Level
 			return null;
 		foreach ( var slide in PoolSlides.Slides )
 		{
-			if ( slide.LandingCell == (x, y) && PoolSlideActivity.HasRiders( Guests, slide.Id ) )
+			if ( PoolSlides.TowerOf( slide ) is not { } tower )
+				continue;
+			if ( slide.LandingCell == (x, y) && PoolSlideActivity.HasRiders( Guests, tower.ThingId ) )
 				return PoolBuildResult.SlideRiders;
-			if ( PoolSlides.TowerOf( slide ) is { } tower && tower.PoolSideCell( Guests.Grid.Cells ) == (x, y) && PoolSlideActivity.HasClimbers( Guests, slide.Id ) )
+			if ( tower.PoolSideCell( Guests.Grid.Cells ) == (x, y) && PoolSlideActivity.HasClimbers( Guests, tower.ThingId ) )
 				return PoolBuildResult.SlideRiders;
 		}
 		return null;

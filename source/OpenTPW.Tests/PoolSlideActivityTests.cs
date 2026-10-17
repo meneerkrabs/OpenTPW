@@ -26,7 +26,7 @@ public class PoolSlideActivityTests
 		public SlideRig( int capacity = 4, bool build = true, Rig? rig = null )
 		{
 			Rig = rig ?? new Rig();
-			Tower = new PoolSlideTower( 3, 5, new[] { (3, 5), (4, 5), (3, 6), (4, 6) }, new[] { (5, 5), (5, 6) }, PoolSlideProfile.Flume, capacity );
+			Tower = new PoolSlideTower( 3, 5, new[] { (3, 5), (4, 5), (3, 6), (4, 6) }, new[] { (5, 5), (5, 6) }, PoolSlideProfile.Flume, capacity, ThingId: 700 );
 			var cells = Rig.Cells;
 			World = new PoolSlideWorld( () => new PoolSlideSite
 			{
@@ -40,7 +40,7 @@ public class PoolSlideActivityTests
 		}
 
 		public PoolSlide Slide => World.Find( Tower.Id )!;
-		public IEnumerable<Guest> OnSlide => Rig.Simulation.Guests.Where( guest => guest.InPoolActivity && guest.PoolActivityTarget == Tower.Id );
+		public IEnumerable<Guest> OnSlide => Rig.Simulation.Guests.Where( guest => guest.InPoolActivity && guest.PoolActivityTarget == Tower.ThingId );
 		public ulong Hash()
 		{
 			var hasher = new StateHasher();
@@ -59,7 +59,7 @@ public class PoolSlideActivityTests
 		var guest = rig.Rig.Send();
 		rig.Rig.Until( () => guest.State == GuestState.PoolActivity, 3000 );
 		Assert.AreEqual( PoolSlideActivity.ActivityId, guest.PoolActivityId );
-		Assert.AreEqual( rig.Tower.Id, guest.PoolActivityTarget );
+		Assert.AreEqual( rig.Tower.ThingId, guest.PoolActivityTarget, "the target is the tower's thing id" );
 		Assert.AreEqual( (5, 5), (guest.PoolActivityX >> 16, guest.PoolActivityY >> 16), "offered at the foot of the stairs" );
 		var phases = new List<int> { guest.PoolActivityPhase };
 		var slots = new HashSet<int>();
@@ -128,7 +128,7 @@ public class PoolSlideActivityTests
 		Assert.IsNull( empty.Activity.Offer( empty.Rig.Simulation, guest, region ), "a track with an open end" );
 		empty.World.AddCell( empty.Tower.X, empty.Tower.Y, 6, 3 );
 		var offer = empty.Activity.Offer( empty.Rig.Simulation, guest, region );
-		Assert.AreEqual( new PoolActivityOffer( empty.Tower.Id, 5, 5 ), offer );
+		Assert.AreEqual( new PoolActivityOffer( empty.Tower.ThingId, 5, 5 ), offer );
 		empty.Rig.Cells.SetType( 6, 3, ParkCellType.Empty );
 		Assert.IsNull( empty.Activity.Offer( empty.Rig.Simulation, guest, region ), "the splash cell is no longer water" );
 		empty.Rig.Cells.SetType( 6, 3, ParkCellTypes.PoolWater );
@@ -156,7 +156,7 @@ public class PoolSlideActivityTests
 		rig.Rig.Turns( 2400, () =>
 		{
 			turn++;
-			mostOccupied = Math.Max( mostOccupied, PoolSlideActivity.Occupants( rig.Rig.Simulation, rig.Tower.Id ) );
+			mostOccupied = Math.Max( mostOccupied, PoolSlideActivity.Occupants( rig.Rig.Simulation, rig.Tower.ThingId ) );
 			var riders = rig.OnSlide.Where( guest => guest.PoolActivityPhase == PoolSlidePhases.Ride ).ToList();
 			mostOnTrack = Math.Max( mostOnTrack, riders.Count );
 			foreach ( var rider in riders )
@@ -183,7 +183,7 @@ public class PoolSlideActivityTests
 			var guest = rig.Rig.Send();
 			rig.Rig.Until( () => guest.InPoolActivity && guest.PoolActivityPhase == phase, 4000 );
 			var wasRiding = guest.PoolActivityPhase == PoolSlidePhases.Ride;
-			rig.Rig.Simulation.AbortPoolActivitiesOf( rig.Tower.Id );
+			rig.Rig.Simulation.AbortPoolActivitiesOf( rig.Tower.ThingId );
 			Assert.IsTrue( rig.World.Remove( rig.Tower.X, rig.Tower.Y ) );
 			rig.Rig.Turns( 2 );
 			Assert.IsFalse( guest.InPoolActivity, $"phase {phase}: the activity is over ({wasRiding})" );
@@ -276,7 +276,7 @@ public class PoolSlideActivityTests
 			{
 				foreach ( var rider in rig.OnSlide.Where( guest => guest.PoolActivityPhase == PoolSlidePhases.Ride ) )
 					rides.Add( rider.Id );
-				waiting = Math.Max( waiting, PoolSlideActivity.Occupants( rig.Rig.Simulation, rig.Tower.Id ) );
+				waiting = Math.Max( waiting, PoolSlideActivity.Occupants( rig.Rig.Simulation, rig.Tower.ThingId ) );
 			} );
 		}
 		rig.Rig.Turns( 1800, () =>

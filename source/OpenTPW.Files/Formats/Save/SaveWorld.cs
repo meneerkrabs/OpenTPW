@@ -143,6 +143,22 @@ public sealed record SaveStaffPool( int Offset, IReadOnlyList<SaveStaffCandidate
 public readonly record struct SaveCalendar( int Offset, long FunnyTimeStart, long SessionStart, int MonthAtLastUpdate, int DayAtLastUpdate, int FunnySecsPerRealSec )
 {
 	public const int Bytes = 28;
+	/// <summary>The rate (<c>mFunnySecsPerRealSec</c>) of every calendar, played or not.</summary>
+	public const int InitialRate = 15_000;
+	/// <summary><c>mFunnyTimeStart</c> of a new calendar: 2000-01-01 00:00:00 as 100 ns ticks since 1601-01-01.</summary>
+	public const long InitialFunnyTimeStart = 125_911_584_000_000_000;
+	/// <summary>The day cache (<c>mDayAtLastUpdate</c>) of a calendar that has not updated yet.</summary>
+	public const int InitialDay = -1;
+
+	/// <summary>
+	/// True for the calendar the macro-AI constructor builds and nothing has updated yet: the start of the park (2000-01-01), month cache 0, day cache -1, rate 15000.
+	/// The session start is the wall clock of the moment the park was made, so any value is allowed.
+	/// </summary>
+	// [BIN:TPW-EXE:0x4F7E80 calendar constructor] +0 and +8 time stamps 0 then set from 2000-01-01 (0x5FC5C0) and the local time; +0x10 month 0, +0x14 day 0xFFFFFFFF, +0x18 0, +0x1C rate 15000; the loader 0x4F7F30 takes the fields back unchecked
+	public bool IsInitial => FunnyTimeStart == InitialFunnyTimeStart && MonthAtLastUpdate == 0 && DayAtLastUpdate == InitialDay && FunnySecsPerRealSec == InitialRate;
+
+	/// <summary>True for a calendar a park has updated: a positive rate, a month 0–11 and a day 1–31 (the caches the updates write).</summary>
+	public bool IsUpdated => FunnySecsPerRealSec > 0 && MonthAtLastUpdate is >= 0 and <= 11 && DayAtLastUpdate is >= 1 and <= 31;
 }
 
 /// <summary>
@@ -252,7 +268,8 @@ public sealed class SaveWorld
 			throw new InvalidDataException( "Save World map starts before the macro-AI calendar and arrivals could end." );
 		var calendarReader = new SaveFieldReader( span[..arrival], calendarOffset, "World calendar" );
 		var calendar = new SaveCalendar( calendarOffset, calendarReader.I64(), calendarReader.I64(), calendarReader.I32(), calendarReader.I32(), calendarReader.I32() );
-		if ( calendar.FunnySecsPerRealSec <= 0 || calendar.MonthAtLastUpdate is < 0 or > 11 || calendar.DayAtLastUpdate is < 1 or > 31 )
+		// an unplayed park (the restart snapshot, restart.INTS) keeps the constructor's calendar; every other calendar has been updated
+		if ( !calendar.IsUpdated && !calendar.IsInitial )
 			throw new InvalidDataException( $"Save World calendar before the map is not a calendar (rate {calendar.FunnySecsPerRealSec}, month {calendar.MonthAtLastUpdate}, day {calendar.DayAtLastUpdate})." );
 		var (head, things) = SaveThingChain.Walk( span, cells.EndOffset, block.End );
 		var world = new SaveWorld( block, variables, block.Offset, calendar, arrival, span.Slice( arrival, ArrivalBytes ).ToArray(), cells, head, things,

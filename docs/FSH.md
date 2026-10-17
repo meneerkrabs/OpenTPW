@@ -104,16 +104,21 @@ All values are little-endian unless stated otherwise.
 
 - `APPROX:COMPAT-014` retired: `0x24` palettes store no alpha and decode fully opaque (4,308 images), with no colour key
   or transparent index. The Theme Park Inc executable's palette converter (`Game.exe` `0x6B7000`) reads three bytes R, G, B per
-  `0x24` entry and stores alpha `0xFF` (`0x6B7211`); its alpha scan (`0x6B73F0`) gives such a palette a surface without an alpha
-  mask (`0x6B746F`, `0x6B74C0`), and the pixel loops (`0x6B76BD` on) copy the table entry of every index without a transparent
+  `0x24` entry and stores alpha `0xFF` (`0x6B7211`); its alpha scan (`0x6B73A0`) returns 0 for such a palette, a surface without an alpha
+  mask, and the pixel loops (`0x6B76BD` on) copy the table entry of every index without a transparent
   index. The four 32-bit thumbnails above (alpha 0) and the opaque `0x24` copy of a texture whose `0x2A` copy is fully
   transparent (e.g. `fruitb.wad` `grape.fsh`) are data the loader does not look at.
 - `[EXT:fsh-0x2d-palette]` (formerly `APPROX:COMPAT-015`, retired) The single `0x2D` palette (water `snowtrac.wad` `icewall1.fsh`) is read as A1R5G5B5 with bit 15
   meaning opaque: OpenTPW's own choice, as there is no original reading to match. The colour order is supported only by the mean-colour match above; the alpha bit has no effect on this
   file. The Theme Park Inc executable's palette converter (`Game.exe` `0x6B7000`) handles only the codes `0x24` and `0x2A`
-  (`cmp` at `0x6B70FB` and `0x6B7108`) and returns at `0x6B72D6` for any other code with its 256-entry table unwritten, so the
-  executable has no reading of a `0x2D` palette to match (its alpha scan `0x6B73F0` would read such a palette as 32-bit
-  entries).
+  (`cmp` at `0x6B70FB` and `0x6B7108`) and returns at `0x6B72D6` for any other code (`0x22` included) with its 256-entry
+  table unwritten. That table is a stack buffer of the fill routine `0x6B75D0` (`sub esp, 0x404` at `0x6B75D8`) that nothing
+  before the converter writes, so the pixel loops copy whatever it held: the original's colours for this file are undefined,
+  and there is no reading of a `0x2D` palette to match. Its alpha scan `0x6B73A0` (the live one, through `0x40A11E`, called by
+  `0x6C0AA8` and `0x7B1748`; the copy `0x6B73F0` is unreferenced) reads the first entry as a u32, `0xAB1D90CD`, whose top byte
+  is below `0xF0`, so it marks `icewall1` as an alpha texture. The loader always takes the palette as the first record after
+  the image (`0x6B7684`), which holds for every file in the corpus. A `0x2A` palette whose alphas are all `0xF0` or more is
+  classed as opaque by that scan; OpenTPW keeps its alpha values.
 
 ## Reader
 

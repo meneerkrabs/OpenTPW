@@ -562,7 +562,7 @@ glyph in all 14 UI fonts of each language.
   disposing a consumed tap cannot cancel a later tap of the same key.
 - Pause menu (Escape): a frameless list of cyan text lines (white while focused), each as wide and high as its text in
   the menu font plus the original's margins and stacked from the top (`0x492f60`, UI-013), in the original order: Load (3), Save (4),
-  Restart Park (10; only for an Instant Action park of a theme, `[EXT:pause-menu-restart]`), Publish Park (5; the online publish flow), Options
+  Restart Park (10; reloads the snapshot taken when the park started or was loaded, `SAVE-012`; only for an Instant Action park or a loaded park of a theme, `[EXT:pause-menu-restart]`), Publish Park (5; the online publish flow), Options
   (6), Go Online (1, `[EXT:pause-menu-go-online]`), Resume Game (7), Exit To Lobby (12), Quit Game (8, confirmation 9). Confirmations are the window of table `0x7583e8` with the tick and X buttons stacked at its right (UI-013). Save writes the owning
   game flow's park save (the own-format world save for sandbox and front-end
   started original-level parks; a read-only visit has no Save entry).

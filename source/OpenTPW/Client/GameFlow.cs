@@ -412,6 +412,7 @@ internal sealed partial class GameFlow : IDisposable
 			Log.Trace( dropped );
 		}
 		AttachProgress( level );
+		if ( original && visit == null ) TakeRestartSnapshot( level );
 		return level;
 	}
 
@@ -435,9 +436,8 @@ internal sealed partial class GameFlow : IDisposable
 		CreateOptions = CreateOptions,
 		CreateLoad = stack => FrontEndMenu.CreateLoadScreen( stack, Strings, FindLoadEntries(), entry => QueueProgressLevel( entry.Level, () => LoadPark( entry, overFrames: true ) ) ),
 		GoOnline = WhenOnline( ShowOnline ),
-		// [APPROX:SAVE-012] the restart rebuilds the park from the level and balance instead of reloading the original's restart.INTS snapshot
-		// [EXT:pause-menu-restart] Restart Park restarts an Instant Action park of a theme (no progress is spent); a Full Simulation park would pay its theme's entry cost again, which is not traced, so its entry stays disabled
-		RestartPark = AutomaticEligible( level ) && level.Park is { Start.Kind: ParkStartKind.InstantAction } ? () => RequestParkStart( level.LevelName, GameMode.InstantAction ) : null,
+		// [EXT:pause-menu-restart] Restart Park reloads the restart snapshot of an Instant Action park or of a park that was loaded; a Full Simulation park's progress ledger is OpenTPW's own, so its entry stays disabled
+		RestartPark = RestartEligible( level ) ? () => RestartCurrentPark( level ) : null,
 		PublishPark = WhenOnline( stack => CreateOnlineScreens( stack ).ShowPublish() ),
 		ListSorts = listSorts,
 		OptionsChanged = () => { if ( PersistSettings ) GameOptions.Current.Save( OptionsPath ); },

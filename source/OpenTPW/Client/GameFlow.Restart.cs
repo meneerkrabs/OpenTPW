@@ -1,0 +1,108 @@
+using OpenTPW.FrontEnd;
+using OpenTPW.UI.Original;
+
+namespace OpenTPW;
+
+internal sealed partial class GameFlow
+{
+	/// <summary>
+	/// The restart snapshot's file of a theme in the save folder, the place the original keeps restart.INTS: one per theme folder
+	/// (the four private saves of a player hold one restart.INTS beside each theme's park saves, docs/TPWS-PAYLOAD.md).
+	/// </summary>
+	// the semantics are the original's; the file is OpenTPW's own park-resume format instead of INTS (the PR asks whether that is an EXT)
+	internal static string RestartSnapshotFileName( string theme ) => $"opentpw-{theme}-restart.json";
+
+	/// <summary>Test seam: captures the restart snapshot instead of reading the live level.</summary>
+	internal Func<Level, ParkResumeSnapshot>? RestartCaptureOverride { get; set; }
+
+	/// <summary>Test seam: receives the snapshot a restart reloads instead of rebuilding the park.</summary>
+	internal Action<ParkResumeSnapshot>? RestartResumeOverride { get; set; }
+
+	private string RestartSnapshotPath( Level level ) => SaveFileSystem.GetAbsolutePath( RestartSnapshotFileName( level.LevelName ) );
+
+	/// <summary>
+	/// True for the parks that take a restart snapshot. The original's state 15 writes it for every game type except 1, the online
+	/// visit (the word 0xFB3B7C, the same GameType the visit paths set through 0x550CA0); a sandbox, the generic viewer and
+	/// the Theme Park Inc slice are not original parks.
+	/// </summary>
+	// [BIN:TPW-EXE:0x54f3e6 restart snapshot game type] state 15 compares the GameType word 0xFB3B7C with 1 (cmp ecx, ebx at 0x54f3ee, sete) and calls the snapshot writer 0x550B30 only when it differs, then moves to state 10 (0x54f3fc)
+	internal static bool TakesRestartSnapshot( Level level ) => GameEditions.Current == GameEdition.ThemeParkWorld && !level.IsReadOnlyVisit &&
+		!level.IsThemeParkIncSlice && level.OriginalPark != null && level.Guests != null && level.Park != null;
+
+	/// <summary>
+	/// Whether the pause menu offers Restart Park for this park. A reload does not pay a Full Simulation park's entry cost again, but
+	/// OpenTPW keeps that park's progress with the player's ledger, which a reload would not undo, so those parks stay without the entry.
+	/// </summary>
+	// [EXT:pause-menu-restart] Restart Park reloads the restart snapshot of an Instant Action park or of a park that was loaded; a Full Simulation park's progress ledger is OpenTPW's own, so its entry stays disabled
+	internal static bool RestartEligible( Level level ) => TakesRestartSnapshot( level ) && GameEditions.Capabilities.ParkSaves &&
+		level.Park is { Start.Kind: ParkStartKind.InstantAction or ParkStartKind.OriginalSaveReference } && ObjectCatalog.Themes.Contains( level.LevelName, StringComparer.Ordinal );
+
+	/// <summary>
+	/// Writes the restart snapshot of a park that has just started or just been loaded: the original takes it in state 15, right after the
+	/// level start 0x407E00 (which loads the quick save when 0x788160 is set) and never after a restart's own reload.
+	/// </summary>
+	// [BIN:TPW-EXE:0x54f3f7 restart snapshot] state 15 calls 0x550B30 once per park start or load: it builds <save>\restart.INTS from the folder global 0x878F18, the name "restart" (0x878A68) and the extension ".INTS" (0x877F38), and saves the park through 0x5AC630 with the save extension 0xF7ADF8 (writer 0x5ac780, the loader's twin)
+	// [APPROX:SAVE-012] the original opens the file for reading first (0x550c0f, mode 0x80000000) and saves only when that fails (0x550c14); no deleter of restart.INTS was found, so OpenTPW rewrites the snapshot at every start and load instead of keeping the first one written
+	internal void TakeRestartSnapshot( Level level )
+	{
+		if ( !TakesRestartSnapshot( level ) )
+			return;
+		var started = System.Diagnostics.Stopwatch.GetTimestamp();
+		try
+		{
+			using ( LoadProfile.Measure( "restart-snapshot" ) )
+			{
+				var snapshot = RestartCaptureOverride != null ? RestartCaptureOverride( level ) :
+					level.CaptureResumeSnapshot( Advisor?.IsAttached == true ? Advisor : null, level.LevelName );
+				ParkResumeSaveFile.Save( RestartSnapshotPath( level ), snapshot );
+			}
+			Log.Trace( $"Restart snapshot of the {level.LevelName} park written in {System.Diagnostics.Stopwatch.GetElapsedTime( started ).TotalMilliseconds:0} ms." );
+		}
+		catch ( Exception error ) when ( error is IOException or InvalidDataException or UnauthorizedAccessException or InvalidOperationException
+			or NotSupportedException or ArgumentException )
+		{
+			// a park that cannot be captured must not leave an earlier park's snapshot behind to be restarted into
+			Log.Warning( $"Restart snapshot not written ({error.Message}); Restart Park falls back to a new park start." );
+			try { File.Delete( RestartSnapshotPath( level ) ); }
+			catch ( Exception deleteError ) when ( deleteError is IOException or UnauthorizedAccessException ) { }
+		}
+	}
+
+	/// <summary>
+	/// The pause menu's Restart Park (after its confirmation): the request code 1 of the dialog callback 0x48B620 (stored by 0x5508B0)
+	/// takes state 10 to 13 and 14, which tears the park down (0x5996D0(1)) and reloads the restart snapshot (0x5AC5F0 through the
+	/// loader 0x414D40). The reload returns to state 10 itself, so it takes no new snapshot.
+	/// </summary>
+	// [BIN:TPW-EXE:0x54fe23 restart request] request 1 sets state 13 (0x54fe23); state 13 (0x550359) runs 0x5996D0(1), loads <save>\restart through 0x5AC5F0 (name 0x878A68) and returns to state 10 (0x550371) with the request cleared (0x55037b); no state-15 write follows
+	internal void RestartCurrentPark( Level level )
+	{
+		if ( BuildingPark || ProgressCaptured() || !ReferenceEquals( Level, level ) || !TakesRestartSnapshot( level ) )
+			return;
+		ParkResumeSnapshot? snapshot = null;
+		try
+		{
+			snapshot = ParkResumeSaveFile.Load( RestartSnapshotPath( level ) );
+			if ( !string.Equals( snapshot.Theme, level.LevelName, StringComparison.Ordinal ) )
+				throw new InvalidDataException( "The restart snapshot belongs to another theme." );
+			// a snapshot taken with the advisor attached cannot resume once the player has switched the advisor off
+			if ( snapshot.Advisor != null && !AutomaticAdvisorEnabled )
+				snapshot = snapshot with { Advisor = null };
+			if ( RestartResumeOverride != null ) RestartResumeOverride( snapshot );
+			else ResumePark( snapshot, restart: true );
+		}
+		catch ( Exception error ) when ( error is IOException or InvalidDataException or UnauthorizedAccessException or System.Text.Json.JsonException
+			or ArgumentException or InvalidOperationException or NotSupportedException )
+		{
+			Log.Warning( $"Restart snapshot cannot be loaded: {error.Message}" );
+			// without a snapshot an Instant Action park still restarts from the level, as before
+			if ( snapshot == null && level.Park is { Start.Kind: ParkStartKind.InstantAction } )
+			{
+				RequestParkStart( level.LevelName, GameMode.InstantAction );
+				return;
+			}
+			var stack = Hud?.Stack ?? Menu?.Stack;
+			stack?.Push( UiDialogs.Message( "loadFailed", () => error.Message,
+				(() => Strings.Extra( OpenTpwText.Back ), () => stack.Pop()) ) );
+		}
+	}
+}

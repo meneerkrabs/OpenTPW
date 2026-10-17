@@ -119,6 +119,24 @@ public sealed record GuestSnapshot
 	/// <summary>The swimmer's own random stream (<see cref="Guest.SwimRandom"/>).</summary>
 	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault )]
 	public uint SwimRandom { get; init; }
+	// [EXT:pools-activities] the pool activity of a swim session (docs/POOLS.md, "Activities"); absent (zero) outside state 25 and in saves made before it
+	/// <summary>The id of the activity (<see cref="Guest.PoolActivityId"/>).</summary>
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault )]
+	public string? PoolActivityId { get; init; }
+	/// <summary>The offered target (<see cref="Guest.PoolActivityTarget"/>).</summary>
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault )]
+	public int PoolActivityTarget { get; init; }
+	/// <summary>The activity's phase (<see cref="Guest.PoolActivityPhase"/>).</summary>
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault )]
+	public int PoolActivityPhase { get; init; }
+	/// <summary>The activity's turn count (<see cref="Guest.PoolActivityTurns"/>).</summary>
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault )]
+	public int PoolActivityTurns { get; init; }
+	/// <summary>The activity's point in 16.16 cells (<see cref="Guest.PoolActivityX"/>, <see cref="Guest.PoolActivityY"/>).</summary>
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault )]
+	public int PoolActivityX { get; init; }
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault )]
+	public int PoolActivityY { get; init; }
 	public required long InterludeTurn { get; init; }
 	public required bool InQueueInterlude { get; init; }
 	/// <summary>The state-6 activity (the original's state 8), <see cref="GuestActivity.None"/> when there is none. Absent in saves

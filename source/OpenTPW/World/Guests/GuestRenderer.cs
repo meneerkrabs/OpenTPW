@@ -34,6 +34,8 @@ public sealed class GuestRenderer : Entity
 	public Func<Guest, (int Slot, int Step)?>? SlotChooser { get; init; }
 	/// <summary>[EXT:pools-swim] Where a guest's hotspot lies in the engine instead of on the ground (the swimmers' renderer: on the water); null for the kids and the costumes.</summary>
 	public Func<Guest, SVector3>? FeetChooser { get; init; }
+	/// <summary>[EXT:pools-render] Whether a slot the chosen set has no art for is drawn as the nearest swim slot (<see cref="GuestSpriteAtlas.UsableSlot"/>); the swimmers' renderer only, so any other chooser keeps the stand-slot fallback.</summary>
+	public bool SwimSlotFallback { get; init; }
 	/// <summary>Guests drawn in the last frame.</summary>
 	public int DrawnGuests { get; private set; }
 
@@ -145,7 +147,7 @@ public sealed class GuestRenderer : Entity
 		var (direction, mirror) = GuestSpriteAtlas.SelectDirection( SVector2.Dot( heading, rightFlat ), SVector2.Dot( heading, forwardFlat ) );
 		int slot, step;
 		if ( SlotChooser?.Invoke( guest ) is { } chosen )
-			(slot, step) = chosen;
+			(slot, step) = (SwimSlotFallback ? atlas.UsableSlot( chosen.Slot ) : chosen.Slot, chosen.Step);
 		else if ( guest.IsMoving )
 		{
 			slot = GuestSpriteAtlas.WalkSlot;

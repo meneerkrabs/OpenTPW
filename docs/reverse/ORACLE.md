@@ -1163,9 +1163,12 @@ change detection and the real-time rate of the turn counter. Four targets now ru
    `YearEnded` of `ParkEconomy.Advance`) agree with the messages on every turn, including 31 January → 1 February, the leap day, the end of
    2100's February and the year change (all three at turn 8,433). The one difference is the start: the constructor `0xe3c90` stores
    month 0, day -1 and year 0, so the **first update of a new calendar posts a day and a year message** (and a month message outside
-   January) whatever the date, 503 of 503 constructed inputs. A loaded save keeps the calendar's stored fields, so only a new park shows it, and
-   its effect there is a day message and a year message at the first turn; the bank's year handler resets a profit that is 0 anyway. OpenTPW starts
-   synchronised and does not post them (the text of ECON-001 says so); what the day listeners would do with a first message is unknown.
+   January) whatever the date, 503 of 503 constructed inputs. A loaded park save keeps the calendar's stored date, so a new park shows it (and, below, a loaded
+   restart save), and its effect on a new park is a day message and a year message at the first turn; the bank's year handler resets a profit that is 0 anyway. OpenTPW starts
+   synchronised and does not post them (`APPROX:ECON-063`); what the day listeners would do with a first message is unknown. On PC (tp.exe)
+   the world init `0x5156A0` syncs the month and year caches to turn 0 (`0x4D7AF0` → `0x4F85A0`) but leaves the day at -1, so a new park's
+   first update posts a day message only; the loader `0x4F7F30` restores the saved caches, and the restart saves (`restart.INTS`), written
+   before the first update, keep day -1, so their first update after a load posts the day message too.
 3. **`0x1c22b0..0x1c24d0`, how real time becomes park turns** (`park-turn-cadence`). The world callback keeps a scheduled time and samples the scheduler clock
    `0x10e844` (executed down to the library clock `LbTime_GetClock`, a millisecond counter). The scheduler adds each raw gap times its scale
    (`+24`, 1.0 from the constructor `0x127c08`) to a binary64 accumulator with one fused multiply-add and truncates it (`0x127cd0`,

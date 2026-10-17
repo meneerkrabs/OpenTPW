@@ -173,6 +173,10 @@ public sealed partial class GuestSimulation
 		// [EXT:pools-activities] a swimmer may take an offer of a registered activity (none draws nothing)
 		if ( TryOfferActivity( guest, region ) )
 			return;
+		// [EXT:pools-activities] the ambient effects of the registered activities (a wave, a jet) act on a swimmer that took no offer
+		foreach ( var activity in poolActivities )
+			if ( activity is IPoolAmbient ambient )
+				ambient.Ambient( this, guest, region );
 		SwimStep( guest, region, ignoreOthers: false );
 	}
 
@@ -339,6 +343,13 @@ public sealed partial class GuestSimulation
 			guest.DistanceWalked += length;
 		}
 	}
+
+	/// <summary>
+	/// The engine height of a swimmer's feet: <paramref name="defaultHeight"/> (the water surface on a pool cell, else the terrain) unless the guest's activity says otherwise
+	/// (<see cref="IPoolActivity.FeetHeight"/>). Presentation only.
+	/// </summary>
+	public float PoolFeetHeight( Guest guest, float defaultHeight ) =>
+		guest.State == GuestState.PoolActivity && PoolActivityOf( guest )?.FeetHeight( this, guest, defaultHeight ) is { } height ? height : defaultHeight;
 
 	/// <summary>Whether a guest is in a pool activity in the cell (the pool tool does not erase water under it).</summary>
 	public bool IsPoolActivityIn( int x, int y ) => guests.Any( guest => guest.State == GuestState.PoolActivity && guest.CellX == x && guest.CellY == y );

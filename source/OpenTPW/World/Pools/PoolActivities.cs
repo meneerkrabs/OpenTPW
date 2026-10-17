@@ -12,6 +12,19 @@ public enum PoolActivityStep
 }
 
 /// <summary>
+/// [EXT:pools-activities] Something that acts on the free swimmers of a pool each park turn without being offered: the push of a wave machine, the spray of a jet. A registered
+/// <see cref="IPoolActivity"/> may implement it too. The host calls <see cref="Ambient"/> once per park turn for each swimmer in state 22 (<see cref="GuestState.Swimming"/>) that took no
+/// offer that turn, before its stroke. It must not draw from any random stream: its effects are deterministic from the turn and the swimmer's cell (and it keeps no per-guest state of its own;
+/// what it changes lives in the guest's saved fields).
+/// </summary>
+// [EXT:pools-activities] OpenTPW's own extension point; the original game has no pools
+public interface IPoolAmbient
+{
+	/// <summary>One park turn of the effect on one free swimmer of the region.</summary>
+	void Ambient( GuestSimulation simulation, Guest guest, PoolSwimRegion region );
+}
+
+/// <summary>
 /// One usable instance of an activity offered to a swimmer: the attraction or object that provides it (0 for none, such as a spot of water), and the cell
 /// where the swimmer leaves the water for it (or does it).
 /// </summary>
@@ -53,7 +66,10 @@ public interface IPoolActivity
 	/// </summary>
 	int SpriteSlot( Guest guest ) => PoolSwimSlots.TreadWater;
 
-	/// <summary>The engine height of the guest's feet while it does the activity, or null for the default (<paramref name="defaultHeight"/>: the water surface or the terrain under the guest).</summary>
+	/// <summary>
+	/// The engine height of the guest's feet this frame, or null for the default. The default, passed in as <paramref name="defaultHeight"/>, is the water surface on a pool cell, otherwise the terrain.
+	/// Presentation only: it is never read by the simulation. A slide returns its track height; a ladder, a board or a swing returns <paramref name="defaultHeight"/> plus its lift.
+	/// </summary>
 	float? FeetHeight( GuestSimulation simulation, Guest guest, float defaultHeight ) => null;
 
 	/// <summary>

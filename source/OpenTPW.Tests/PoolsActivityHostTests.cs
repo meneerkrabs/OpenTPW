@@ -275,3 +275,84 @@ public class PoolsActivityHostTests
 		Assert.IsFalse( json.Contains( "PoolActivity", StringComparison.Ordinal ), "absent outside state 25, so every older JSON equals this one's" );
 	}
 }
+
+/// <summary>The ambient effects and the drawn height of activities (docs/POOLS.md, "Activities").</summary>
+[TestClass]
+public class PoolsActivityAmbientTests
+{
+	/// <summary>An ambient effect that counts its calls per guest and adds a happiness point of its own.</summary>
+	private sealed class AmbientFake : IPoolActivity, IPoolAmbient
+	{
+		public string Id => "test.ambient";
+		public readonly Dictionary<int, int> Calls = new();
+		public readonly List<GuestState> States = new();
+		public float? Height;
+		public PoolActivityOffer? Offer( GuestSimulation simulation, Guest guest, PoolSwimRegion region ) => null;
+		public bool Start( GuestSimulation simulation, Guest guest, PoolActivityOffer offer, ref uint random ) => false;
+		public PoolActivityStep Update( GuestSimulation simulation, Guest guest, ref uint random ) => PoolActivityStep.Continue;
+		public void Abort( GuestSimulation simulation, Guest guest ) { }
+		public float? FeetHeight( GuestSimulation simulation, Guest guest, float defaultHeight ) => Height is { } lift ? defaultHeight + lift : null;
+		public void Ambient( GuestSimulation simulation, Guest guest, PoolSwimRegion region )
+		{
+			Calls[guest.Id] = Calls.GetValueOrDefault( guest.Id ) + 1;
+			States.Add( guest.State );
+		}
+	}
+
+	[TestMethod]
+	public void AnAmbientEffectActsOncePerTurnOnFreeSwimmersOnly()
+	{
+		var rig = new Rig();
+		var ambient = new AmbientFake();
+		var fake = new PoolsActivityHostTests.Fake();
+		rig.Simulation.RegisterPoolActivity( ambient );
+		rig.Simulation.RegisterPoolActivity( fake );
+		var guest = rig.Send();
+		var swimTurns = 0;
+		var activityTurns = 0;
+		rig.Until( () =>
+		{
+			if ( guest.State == GuestState.Swimming )
+				swimTurns++;
+			if ( guest.State == GuestState.PoolActivity )
+				activityTurns++;
+			return !guest.InSwimSession && swimTurns > 0;
+		}, 2500 );
+		Assert.IsTrue( ambient.States.All( state => state == GuestState.Swimming ), "never while in an activity, climbing out or changing back" );
+		Assert.IsTrue( ambient.Calls.GetValueOrDefault( guest.Id ) is var calls && calls > 100 && calls <= swimTurns, $"{calls} calls in {swimTurns} swimming turns (a turn that took an offer has none)" );
+		Assert.IsTrue( activityTurns > 0, "and the swimmer did take an offer" );
+	}
+
+	[TestMethod]
+	public void WithoutAmbientActivitiesNothingChanges()
+	{
+		ulong Run( bool withInertAmbient )
+		{
+			var rig = new Rig();
+			if ( withInertAmbient )
+				rig.Simulation.RegisterPoolActivity( new AmbientFake() );
+			var guest = rig.Send();
+			rig.Turns( 600 );
+			var hasher = new StateHasher();
+			rig.Simulation.AddCanonicalState( hasher );
+			return hasher.Value ^ guest.SwimRandom;
+		}
+		Assert.AreEqual( Run( false ), Run( true ), "an effect that changes nothing changes no hash and draws nothing" );
+	}
+
+	[TestMethod]
+	public void AnActivityCanSetTheDrawnHeightOfItsGuestOnly()
+	{
+		var rig = new Rig();
+		var fake = new AmbientFake { Height = 6f };
+		rig.Simulation.RegisterPoolActivity( fake );
+		var guest = rig.Send();
+		rig.Until( () => guest.State == GuestState.Swimming, 400 );
+		Assert.AreEqual( 2.5f, rig.Simulation.PoolFeetHeight( guest, 2.5f ), "a free swimmer is drawn at the default height" );
+		(guest.State, guest.PoolActivityId) = (GuestState.PoolActivity, "test.ambient");
+		Assert.AreEqual( 8.5f, rig.Simulation.PoolFeetHeight( guest, 2.5f ), "in an activity the activity's height wins" );
+		fake.Height = null;
+		Assert.AreEqual( 2.5f, rig.Simulation.PoolFeetHeight( guest, 2.5f ), "null keeps the default" );
+		(guest.State, guest.PoolActivityId) = (GuestState.Swimming, null);
+	}
+}

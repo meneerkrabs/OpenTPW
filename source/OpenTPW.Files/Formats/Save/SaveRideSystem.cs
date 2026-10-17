@@ -144,13 +144,9 @@ public sealed record SaveRideSystemBlock(
 	public const int RecordHeaderBytes = 0x36;
 	/// <summary>Bytes of one saved animation time control (11 u32 words).</summary>
 	public const int ControlBytes = 0x2C;
-	public const int MaximumNodeCount = 0x400;
-	public const int MaximumEmbeddedNodes = 0x400;
 	/// <summary>The most slots a block may list. The records' index words and the instance table are 16-bit sized
 	/// (an upper bound for resource use, not a limit read from tp.exe).</summary>
 	public const int MaximumSlots = 0xFFFF;
-	/// <summary>The most controls a record may have (an upper bound for resource use; the game's own objects declare 1 to 4).</summary>
-	public const int MaximumControls = 64;
 	/// <summary>Search budget: the most candidate transitions the control-count search examines before it refuses the block.</summary>
 	public const int MaximumSearchWork = 20_000_000;
 	/// <summary>Search budget: the most distinct (slot, position, used) states the search keeps before it refuses the block.</summary>
@@ -304,12 +300,12 @@ public sealed record SaveRideSystemBlock(
 						work += recordBytes / 4;
 						var maximum = (data.Length - after) / ControlBytes;
 						var first = 1;
-						var last = Math.Min( maximum, MaximumControls );
+						var last = maximum;
 						// Controls of a record the table resolves: exactly the table's count.
 						var infoId = BinaryPrimitives.ReadUInt32LittleEndian( data[(position + 1)..] );
 						if ( table != null && infoId <= int.MaxValue && table( (int)infoId ) is { } pinned )
 							first = last = Math.Max( 1, pinned );
-						if ( last > maximum || last > MaximumControls )
+						if ( last > maximum )
 							continue;
 						for ( var controls = first; controls <= last; controls++ )
 						{
@@ -400,11 +396,7 @@ public sealed record SaveRideSystemBlock(
 		}
 		var nodeCount = BinaryPrimitives.ReadUInt16LittleEndian( data[(header + 0x2A)..] );
 		var embeddedCount = BinaryPrimitives.ReadUInt16LittleEndian( data[(header + 0x2C)..] );
-		if ( nodeCount > MaximumNodeCount || embeddedCount > MaximumEmbeddedNodes )
-		{
-			error = $"it lists {nodeCount} nodes and {embeddedCount} embedded nodes, above the {MaximumNodeCount}/{MaximumEmbeddedNodes} bounds";
-			return false;
-		}
+		// The counts are u16 fields; no bound narrower than that is applied, because a record excluded by a smaller cap could hide a second complete parse.
 		bytes = RecordHeaderBytes + embeddedCount * 8 + nodeCount * 4;
 		if ( header + bytes > data.Length )
 		{

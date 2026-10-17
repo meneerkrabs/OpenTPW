@@ -78,6 +78,11 @@ public class OriginalSaveCorpusTests
 			CollectionAssert.AreEqual( standalone.Records.Select( record => (record.Slot, record.InfoId, record.Controls.Length) ).ToArray(),
 				pinned.Records.Select( record => (record.Slot, record.InfoId, record.Controls.Length) ).ToArray(), name );
 
+			// The production import (OriginalPark) supplies the object catalogue's control counts itself.
+			var production = OriginalPark.ImportOriginalSave( theme, payload, map );
+			Assert.AreEqual( resolved, production.RideSystem!.TableControlCounts, $"{name}: production control-count table" );
+			CollectionAssert.AreEqual( standalone.Records.Select( record => (record.Slot, record.InfoId, record.Controls.Length) ).ToArray(),
+				production.RideSystem.Records.Select( record => (record.Slot, record.InfoId, record.Controls.Length) ).ToArray(), name );
 			var park = OriginalParkImport.Import( payload, map );
 			Assert.AreEqual( 0, park.UnresolvedObjects.Count, name );
 			// The framed RideSystem walk runs on every save: each block has one complete parse, with the routed records

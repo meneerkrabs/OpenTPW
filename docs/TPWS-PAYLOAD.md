@@ -315,7 +315,7 @@ stored counts, the first absent slot must carry the stored first free slot's ord
 live instance allocator keeps; with no hole the count equals `used`, as every corpus INTS save
 holds), every presence byte must be exactly 0/1, and the node/embedded-node counts, the instance-flag
 word and the node-state words stay within the shapes below. The counts are summed as 64-bit values and
-bounded (at most 65,535 slots, each at least one byte); a block with no slot at all is exactly its three
+bounded (at most 65,535 slots, each at least one byte; the per-record node, embedded-node and control counts have no cap beyond their u16 fields and the block's bytes); a block with no slot at all is exactly its three
 zero counters (16 bytes with the length word, first free slot 0, which is what the writer emits). The
 original loader is more lenient than this reader (it takes any presence byte other than 1 as an empty
 slot, ignores bytes behind an empty frame and never compares its read position with the length); the
@@ -360,8 +360,8 @@ count (stored at entry +0xe) and replaces 0 with 1, so `T >= 1`. The object-arch
 `T=1`); the other registrars of the table pass literals (`0x41437e` and `0x430130` pass 1, `0x42fcbf` passes
 5). OpenTPW builds no live instances on import and the save has neither value, so
 `SaveRideSystemBlock.Parse` takes an optional table (`controlCount`: `max(1, UsageInfo.NumSimultAnims)`
-by Info.Id, from `ObjectCatalog`). A record whose Info.Id the table resolves has exactly that `T`; every
-other record may have any `T` from 1 to 64, and the walk then considers **every** complete parse: an
+by Info.Id, from `ObjectCatalog`); `OriginalPark` supplies it on every import, read lazily from the theme's catalogue. A record whose Info.Id the table resolves has exactly that `T`; every
+other record may have any `T` of at least 1 that fits the block (no cap: a cap would hide a second complete parse, so only the work and state budgets can refuse a block), and the walk then considers **every** complete parse: an
 iterative search over (slot, read position, used count) with a saturated path count per state, explicit
 limits (1,000,000 states and 20,000,000 steps, refused beyond them) and the chosen path rebuilt from
 predecessor edges. The block is accepted only when it has exactly one complete parse; none, or more

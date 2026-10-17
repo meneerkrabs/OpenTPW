@@ -143,6 +143,41 @@ public class SaveRideSystemTests
 	}
 
 	[TestMethod]
+	public void NoCountCapHidesASecondCompleteParse()
+	{
+		// A 3,074-byte frame with two complete parses: record A with one control then a 66-control record, or record A with
+		// 65 controls then the two-control record hidden at offset 2,816 of the second slot. A cap of 64 controls excluded both.
+		var inner = SaveTestPayloads.RideSystemRecord( 1102, 3, 3, 1, 1, SaveObject.PlacedObjectKind, 3,
+			controls: new[] { SaveTestPayloads.DefaultRideSystemControl, SaveTestPayloads.DefaultRideSystemControl } );
+		var outer = SaveTestPayloads.RideSystemRecord( 1101, 2, 2, 1, 1, SaveObject.PlacedObjectKind, 2,
+			controls: Enumerable.Repeat( SaveTestPayloads.DefaultRideSystemControl, 66 ).ToArray() );
+		inner.CopyTo( outer, 64 * 44 );
+		var rideSystem = SaveTestPayloads.RideSystem( new[] { SaveTestPayloads.RideSystemRecord( 1100, 1, 1, 1, 1, SaveObject.PlacedObjectKind, 1 ), outer } );
+		Assert.AreEqual( 3074, rideSystem.Length, "the frame bytes with the length word and counters" );
+		var payload = SaveTestPayloads.Payload( World(), rideSystem );
+		var layout = SavePayloadLayout.Parse( payload );
+		StringAssert.Contains( Assert.ThrowsException<InvalidDataException>( () => SaveRideSystemBlock.Parse( payload, layout ) ).Message, "more than one way" );
+		var big = SaveRideSystemBlock.Parse( payload, layout, infoId => infoId switch { 1100 => 1, 1101 => 66, _ => null } );
+		Assert.AreEqual( (1, 66), (big.Records[0].Controls.Length, big.Records[1].Controls.Length) );
+		var hidden = SaveRideSystemBlock.Parse( payload, layout, infoId => infoId switch { 1100 => 65, 1102 => 2, _ => null } );
+		Assert.AreEqual( (65, 2), (hidden.Records[0].Controls.Length, hidden.Records[1].Controls.Length) );
+	}
+
+	[TestMethod]
+	public void CountsAboveTheOldCapsWalkWhenTheyFit()
+	{
+		var states = Enumerable.Repeat( 0u, 2_000 ).ToArray();
+		var embedded = Enumerable.Repeat( (0u, 0u), 1_500 ).ToArray();
+		var payload = SaveTestPayloads.Payload( World(), SaveTestPayloads.RideSystem( new[]
+		{
+			SaveTestPayloads.RideSystemRecord( 1100, 1, 1, 1, 1, SaveObject.PlacedObjectKind, 1, nodeStates: states, embeddedNodes: embedded,
+				controls: Enumerable.Repeat( SaveTestPayloads.DefaultRideSystemControl, 65 ).ToArray() ),
+		} ) );
+		var record = SaveRideSystemBlock.Parse( payload, SavePayloadLayout.Parse( payload ) ).Records.Single();
+		Assert.AreEqual( (2_000, 1_500, 65), (record.NodeCount, record.EmbeddedCount, record.Controls.Length) );
+	}
+
+	[TestMethod]
 	public void ATableOfControlCountsPicksTheParseItNames()
 	{
 		var payload = SaveTestPayloads.Payload( World(), AmbiguousBlock() );

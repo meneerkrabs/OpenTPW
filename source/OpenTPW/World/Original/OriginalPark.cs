@@ -82,7 +82,7 @@ public sealed class OriginalPark
 			using var stream = FileSystem.OpenRead( $"{saveDirectory}/{Path.GetFileName( savePath )}" );
 			using var reader = new SaveReader( stream );
 			var payload = reader.ReadFile();
-			save = tpiPrebuilt ? OriginalParkImport.ImportThemeParkInc( payload, map ) : OriginalParkImport.Import( payload, map, infoId => CoasterTrainLayout( levelName, infoId ) );
+			save = tpiPrebuilt ? OriginalParkImport.ImportThemeParkInc( payload, map ) : ImportOriginalSave( levelName, payload, map );
 			foreach ( var item in save.PlacedObjects.Select( item => item.Record ).Concat( save.FixedItems ).Concat( save.UnresolvedObjects ) )
 			{
 				// [DATA:PreBuilt/prebuilt.TPWS:SYSG] Five science scene records have no archive and use the sentinel cell (0, 0).
@@ -94,6 +94,18 @@ public sealed class OriginalPark
 			}
 		}
 		yield return new OriginalPark( levelName, map, model, lake, save, catalog );
+	}
+
+	/// <summary>
+	/// Imports a Theme Park World save of <paramref name="levelName"/> with the resolvers the game's data gives the reader: the coaster train
+	/// layouts and each object's animation control count, <c>max(1, UsageInfo.NumSimultAnims)</c> of its .sam (the count tp.exe's type entry
+	/// holds, 0x4629d0), which the RideSystem block does not store. The object catalogue is read once, on the first record that asks.
+	/// </summary>
+	internal static OriginalParkImport ImportOriginalSave( string levelName, ReadOnlyMemory<byte> payload, MapFile map )
+	{
+		var objects = new Lazy<ObjectCatalog>( () => ObjectCatalog.Load( levelName ) );
+		return OriginalParkImport.Import( payload, map, infoId => CoasterTrainLayout( levelName, infoId ),
+			infoId => objects.Value.Find( infoId )?.NumSimultaneousAnimations );
 	}
 
 	/// <summary>

@@ -30,7 +30,8 @@ in tp.exe, confirmed on real saves. Read via REA:
   `UsageInfo.NumSimultAnims`; other registrars pass literals (`0x41437e`,
   `0x430130`: 1; `0x42fcbf`: 5). `SaveRideSystemBlock.Parse` therefore takes an
   optional `max(1, NumSimultAnims)` table by Info.Id; a record the table
-  resolves has exactly that T, every other record may have any T from 1 to 64,
+  resolves has exactly that T, every other record may have any T of at least 1 that fits (no cap, so a
+  cap cannot hide a second parse; the work/state budgets fail closed),
   and the iterative, memoized search (explicit state/step limits, path rebuilt
   from predecessor edges) counts **all** complete parses: exactly one is
   accepted, none or several are refused (the earlier "smallest feasible T"
@@ -59,9 +60,12 @@ in tp.exe, confirmed on real saves. Read via REA:
   meanings are unknown); no writer yet, the original save import stays
   read-only.
 
+`OriginalPark.ImportOriginalSave` passes the theme catalogue's counts on every
+production import (lazily, on the first record), and the corpus test runs it
+over all 11 saves.
+
 Still open: the T of the types no object archive declares (the Info.Ids
-173xx) is the unique parse's value, not read from their registrar; the
-production import (`OriginalPark`) passes no table; the meaning of the raw control words (words 3–5
+173xx) is the unique parse's value, not read from their registrar; the meaning of the raw control words (words 3–5
 hold run-time pointer-like values in Easymode), the two embedded header words
 `+0x2E`/`+0x32`, what node-state bit 4 would mean (never stored), and what the
 M pairs mean.

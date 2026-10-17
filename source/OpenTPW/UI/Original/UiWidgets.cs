@@ -55,22 +55,40 @@ public sealed class UiContext
 	}
 
 	/// <summary>Draws text inside <paramref name="rect"/> as tp.exe's text library places it: the block aligned horizontally, each line aligned inside the block, the block centred vertically.</summary>
-	public void DrawText( FontAtlas font, string text, UiRect rect, RgbaByte color, UiAlign align = UiAlign.Left, bool wrap = false, bool shadow = true, int? textScale = null )
+	public void DrawText( FontAtlas font, string text, UiRect rect, RgbaByte color, UiAlign align = UiAlign.Left, bool wrap = false, bool shadow = true, int? textScale = null, bool originalPlacement = true )
 	{
 		if ( string.IsNullOrEmpty( text ) )
 			return;
 		var scale = wrap ? Canvas.TextScale : textScale ?? Canvas.TextScale;
 		var layout = Layout( font, text, wrap ? (int)rect.Width : 0 );
 		var textAlignment = align switch { UiAlign.Center => TextAlignment.Center, UiAlign.Right => TextAlignment.Right, _ => TextAlignment.Left };
-		// [BIN:TPW-EXE:0x6ae550 line offset] a centred or right aligned multi-line text moves each line inside the widest one
-		layout = layout.AlignLines( textAlignment );
+		int ix, iy;
 		var width = layout.Width * scale;
 		var height = layout.Height * scale;
-		// [BIN:TPW-EXE:0x6aeb10 block box] whole-pixel block placement; a block taller than the box is still centred (cut off at both ends by the control's bitmap in the original)
-		var left = (int)MathF.Round( rect.X );
-		var top = (int)MathF.Round( rect.Y );
-		var ix = TextPlacement.BlockLeft( textAlignment, left, (int)MathF.Round( rect.Right ), width );
-		var iy = TextPlacement.BlockTopCentered( top, (int)MathF.Round( rect.Bottom ), height );
+		if ( originalPlacement )
+		{
+			// [BIN:TPW-EXE:0x6ae550 line offset] a centred or right aligned multi-line text moves each line inside the widest one
+			layout = layout.AlignLines( textAlignment );
+			// [BIN:TPW-EXE:0x6aeb10 block box] whole-pixel block placement; a block taller than the box is still centred (the original's control bitmap cuts it off at both ends; OpenTPW does not clip)
+			var left = (int)MathF.Round( rect.X );
+			var top = (int)MathF.Round( rect.Y );
+			ix = TextPlacement.BlockLeft( textAlignment, left, (int)MathF.Round( rect.Right ), width );
+			iy = TextPlacement.BlockTopCentered( top, (int)MathF.Round( rect.Bottom ), height );
+		}
+		else
+		{
+			// [EXT:fit-button-text] the wrapped fallback of a button label that fits at no size keeps its own placement (block aligned in the box, lines left aligned in it,
+			// an overflowing block hangs from the box top), so the approved fitting does not move with the text library's rules
+			var x = align switch
+			{
+				UiAlign.Center => rect.X + (rect.Width - width) / 2,
+				UiAlign.Right => rect.Right - width,
+				_ => rect.X
+			};
+			var y = height <= rect.Height ? rect.Y + (rect.Height - height) / 2 : rect.Y;
+			ix = (int)MathF.Round( x );
+			iy = (int)MathF.Round( y );
+		}
 		// [APPROX:UI-007] drop shadow one text pixel down-right; the original's control text renderer (0x48f830) draws each string once, without a shadow, and the glyph draw entry 0x6ae0f0 is reached only through the text box routine 0x492750 (single call per caller; BF4 glyphs hold coverage only) — evidence needed: the sprite draw of a text control's bitmap (0x48f410 → 0x588c20 is only the release of the control's sprite quads, and the text control's vtable 0x6ff350 has no draw slot of its own (slot 2 is a bare return), so the control's sprite quads are drawn by the engine's sprite pass, where no reader of the colour at +0x78 was found) and what in the capture looks like a shadow
 		if ( shadow )
 			Batch.AddText( font, layout, ix + scale, iy + scale, UiColors.Shadow, scale );
@@ -94,7 +112,7 @@ public sealed class UiContext
 		var fit = UiTextFit.Choose( Canvas.TextScale, boxes.Select( box => (box.Right - box.Left, box.Bottom - box.Top) ).ToArray(), rect.Width, rect.Height );
 		if ( fit.Wrap )
 		{
-			DrawText( candidates[fit.Index], text, rect, color, align, true, shadow );
+			DrawText( candidates[fit.Index], text, rect, color, align, true, shadow, originalPlacement: false );
 			return;
 		}
 		DrawTextAt( candidates[fit.Index], fit.Scale, text, rect, color, align, shadow );

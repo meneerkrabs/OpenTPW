@@ -74,4 +74,29 @@ public class WalkNodeCorpusTests
 		Assert.IsTrue( checkedWalkers > 30, $"the corpus has more than 30 WALKON instructions, got {checkedWalkers}" );
 		Assert.AreEqual( 0, missing.Count, string.Join( "; ", missing ) );
 	}
+
+	/// <summary>
+	/// BOUNCE (tp.exe 0x00555674) stores its deadline as the clock plus its second operand x 1000 ms with no default. The four shipped scripts that BOUNCE pass VAR_DURATION, which ride init sets from
+	/// the settings' InitDuration, so a placed ride's duration is above 0 and the operand never needs a default.
+	/// </summary>
+	[TestMethod]
+	public void EveryShippedBounceRideStartsWithADurationAboveZero()
+	{
+		var bouncers = 0;
+		foreach ( var theme in new[] { "jungle", "hallow", "space", "fantasy" } )
+			foreach ( var entry in ObjectCatalog.Load( theme ).Entries.Where( x => x.ScriptPath != null && x.ModelPath != null ).OrderBy( x => x.InfoId ) )
+			{
+				var script = new RideScriptFile( entry.FileSystem.OpenRead( entry.ScriptPath! ) );
+				if ( !script.Instructions.Any( x => x.Opcode == (ushort)Opcode.BOUNCE ) )
+					continue;
+				bouncers++;
+				var bounce = script.Instructions.First( x => x.Opcode == (ushort)Opcode.BOUNCE );
+				Assert.AreEqual( RideScriptOperandKind.Variable, bounce.Operands[1].Kind, $"{entry.DisplayName}: the duration operand is a variable" );
+				Assert.AreEqual( "VAR_DURATION", script.VariableNames[(int)bounce.Operands[1].Value], entry.DisplayName );
+				var runtime = new OriginalObjectRuntime( entry, new RideScriptWorld(), 1 );
+				Assert.IsTrue( runtime.Script!.Variables[(int)RideVariables.VAR_DURATION] > 0, $"{entry.DisplayName}: VAR_DURATION {runtime.Script.Variables[(int)RideVariables.VAR_DURATION]}" );
+				runtime.Stop();
+			}
+		Assert.AreEqual( 4, bouncers, "Bouncy (jungle, space), Brain Buster and Jelly" );
+	}
 }

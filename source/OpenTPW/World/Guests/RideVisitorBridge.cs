@@ -16,8 +16,6 @@ namespace OpenTPW;
 /// </summary>
 public sealed class RideVisitorBridge : IRideVisitorBridge
 {
-	/// <summary>BOUNCE with a zero duration (VAR_DURATION has no source yet) keeps a guest this long. Approximation.</summary>
-	public const double DefaultBounceSeconds = 10;
 	/// <summary>Guests per queue cell (positions 0..3 along the cell).</summary>
 	// [BIN:STP-PPC:0x100DDD2C queue coordinates] four positions per queue cell; the walk subtracts 4 per followed link
 	public const int PositionsPerCell = 4;
@@ -1345,7 +1343,8 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 			{
 				var guest = call.Argument( 0 );
 				MarkBoarded( guest );
-				var seconds = call.Argument( 1 ) > 0 ? call.Argument( 1 ) : DefaultBounceSeconds;
+				// [BIN:TPW-EXE:0x00555753 BOUNCE deadline] the deadline is the clock plus the second operand x 1000 ms (a wrapping 32-bit product), whatever its value: a duration of 0 is a deadline that has already passed. The four shipped scripts pass VAR_DURATION, which ride init sets above 0 (WalkNodeCorpusTests)
+				var seconds = call.Argument( 1 );
 				if ( onRide.Contains( guest ) && !bouncing.Any( entry => entry.Guest == guest ) )
 					TakeBounceSlot( bouncing, call.VM.Script.BounceSize, guest, now + seconds * 1000.0, now );
 				return true;

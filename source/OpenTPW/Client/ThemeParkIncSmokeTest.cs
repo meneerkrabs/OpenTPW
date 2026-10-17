@@ -9,7 +9,7 @@ namespace OpenTPW;
 /// rotate cycle, the place click through <see cref="Level.UpdateWorldInput"/>, the queue tool a placed HasQueue
 /// ride switches to, Escape's ordering (tool → armed item → window → pause menu), the speed control including
 /// pause freezing the guests, the remove tool and the pause menu's Quit — and checks the capability gates hold in
-/// the running game (no economy, no Theme Park World HUD, the experiment banner drawn). macOS TCC blocks
+/// the running game (the money economy only, no Theme Park World HUD, the experiment banner drawn). macOS TCC blocks
 /// synthetic OS input, so clicks and keys are injected as <see cref="GameFlow.InjectedInput"/> frames, like the
 /// front-end smoke test; the one input injection cannot reach (the world click reads the real mouse) goes through
 /// Level's own world-input path, like the sandbox smoke test. Best run on `science`, the world with prebuilt paths.
@@ -43,6 +43,7 @@ internal sealed class ThemeParkIncSmokeTest : IDisposable
 	private System.Numerics.Vector2 sitePoint;
 	private System.Numerics.Vector2 endPoint;
 	private int objectsBefore;
+	private long cashBeforePlace;
 	private (int X, int Y)[] pausedCells = Array.Empty<(int, int)>();
 	private int resumedAt;
 
@@ -65,8 +66,9 @@ internal sealed class ThemeParkIncSmokeTest : IDisposable
 		{
 			var level = flow.Level;
 			Require( flow.IncHud != null && flow.Hud == null && level != null, "the Theme Park Inc slice runs with its own HUD, not the Theme Park World one" );
-			Require( level!.OriginalPark != null && level.Park == null && level.IsThemeParkIncSlice, "the world loads without an economy" );
-			Require( !GameEditions.Capabilities.Economy && GameEditions.Capabilities.ExperimentalHud && !GameEditions.Capabilities.ParkSaves, "the capability policy refuses economy and saves at runtime" );
+			Require( level!.OriginalPark != null && level.Park is { Economy.Rules.ThemeParkInc: true } && level.IsThemeParkIncSlice, "the world loads with the Theme Park Inc money economy" );
+			Require( GameEditions.Capabilities.Money && !GameEditions.Capabilities.Staff && !GameEditions.Capabilities.Research && !GameEditions.Capabilities.Challenges && GameEditions.Capabilities.ExperimentalHud && !GameEditions.Capabilities.ParkSaves, "the capability policy runs the money and refuses staff, research, challenges and saves at runtime" );
+			Require( Context.Batch.TextDraws.Any( draw => draw.Text.StartsWith( "Cash $", StringComparison.Ordinal ) ), "the money line is drawn" );
 			Require( LabelText( "title" ).Contains( "EXPERIMENTAL", StringComparison.Ordinal ), "the HUD names the experiment on screen" );
 			Require( LabelText( "limits" ) == GameEditions.Capabilities.ExperimentalNote, "the HUD's limits line is the capability policy's note" );
 			Require( Context.Batch.TextDraws.Any( draw => draw.Text.StartsWith( "Guests in park:", StringComparison.Ordinal ) ), "the guest counter is drawn" );
@@ -114,6 +116,7 @@ internal sealed class ThemeParkIncSmokeTest : IDisposable
 		} );
 		Do( "place through the world click", () =>
 		{
+			cashBeforePlace = Level.Park!.Economy.Balance;
 			var viewport = Viewport;
 			Level.UpdateWorldInput( false, false, sitePoint, viewport );
 			Level.UpdateWorldInput( true, false, sitePoint, viewport );
@@ -125,7 +128,8 @@ internal sealed class ThemeParkIncSmokeTest : IDisposable
 			Require( placed?.Entry == armedEntry && Level.Objects.Objects.Count == objectsBefore + 1, "the world click places the armed item" );
 			Require( Level.LastActionMessage.StartsWith( "Built", StringComparison.Ordinal ) && Hud.Messages.Any( message => message.StartsWith( "Built", StringComparison.Ordinal ) ),
 				"the level and the HUD both report the build" );
-			Require( Level.Park == null, "nothing was charged: the slice runs no economy" );
+			Require( Level.Park is { } park && park.Economy.Catalog.TryGet( armedEntry!.InfoId, out var priced ) && priced.PurchaseCost > 0
+				&& cashBeforePlace - park.Economy.Balance == priced.PurchaseCost, $"Level.PlaceObject debited exactly the purchase price once ({cashBeforePlace} -> {Level.Park?.Economy.Balance})" );
 			queueToolOn = armedEntry!.HasQueue;
 			if ( queueToolOn )
 				Require( Level.CellTool.IsActive && Level.CellTool.Mode == CellToolMode.Queue && Level.CellTool.Start == (entrance.OutsideX, entrance.OutsideY),

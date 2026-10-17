@@ -23,6 +23,8 @@ public sealed class ParkEconomyRuntime
 	public OriginalEconomyImport? Import { get; }
 	/// <summary>How the park was started (mode, balance layer, shipped-save import).</summary>
 	public ParkStart Start { get; private init; }
+	/// <summary>The park opens when its guests attach, instead of waiting for the player's gate command (<see cref="ForThemeParkIncLevel"/>).</summary>
+	public bool StartsOpen { get; private init; }
 	/// <summary>Guest payments and statistics, once <see cref="AttachGuests"/> ran.</summary>
 	public GuestEconomyBridge? Guests { get; private set; }
 
@@ -48,7 +50,13 @@ public sealed class ParkEconomyRuntime
 		AttachLitter( guests );
 		// [BIN:TPW-EXE:0x51562d world constructor] a new world writes mParkClosed (+0x1da710) = 1; only the gate command 0x519ef0 (the entrance-price window's button
 		// 0x498c60, the keys 0x40c3f0 / 0x40c410, the online park creation 0x516700) opens it, and a park loaded from a file takes the flag from it (reader 0x5179c0)
-		if ( Import is { ParkClosed: true } )
+		// [EXT:tpi-park-open] the Theme Park Inc slice has no gate control and no entrance-price window, so its park opens at once; its own initial state is not traced
+		if ( StartsOpen )
+		{
+			Economy.OpenPark();
+			Log.Trace( "Park economy: the Theme Park Inc park opens at the start." );
+		}
+		else if ( Import is { ParkClosed: true } )
 			Log.Trace( "Park economy: the imported park is closed, as saved." );
 		else if ( Import == null )
 			Log.Trace( "Park economy: a new park starts closed until the player opens it." );
@@ -105,6 +113,27 @@ public sealed class ParkEconomyRuntime
 		return new ParkEconomyRuntime( economy, import ) { Start = start };
 	}
 
+	/// <summary>
+	/// Creates the money economy of a Theme Park Inc <paramref name="park"/> (<see cref="EconomyRules.ThemeParkIncMoney"/>): Theme Park Inc's own settings and
+	/// object catalogue, no shipped-save import (its prebuilt save's economy is not traced), no staff, research or challenges. The prebuilt save's objects
+	/// register uncharged, like an imported park's.
+	/// </summary>
+	public static ParkEconomyRuntime ForThemeParkIncLevel( OriginalPark park, WorldSeed? seed = null )
+	{
+		ArgumentNullException.ThrowIfNull( park );
+		EconomyApproximations.LogOnce();
+		var settings = BalanceSettings.LoadThemeParkInc( park.LevelName );
+		var catalog = EconomyObjectCatalog.Load( park.LevelName, easy: false );
+		var economy = new ParkEconomy( settings, catalog, ParkGameMode.FullSimulation, (seed ?? WorldSeed.Default).EconomyStream, EconomyRules.ThemeParkIncMoney );
+		Log.Trace( $"Park economy: Theme Park Inc money rules; {park.LevelName} balance from {string.Join( ", ", settings.Standard.Sources )}; "
+			+ $"cash ${economy.Balance}, entrance fee ${economy.EntranceFee}, {economy.Catalog.Objects.Count} catalogue objects, no staff, research or challenges." );
+		return new ParkEconomyRuntime( economy, import: null )
+		{
+			Start = new ParkStart( ParkStartKind.FullSimulation, ParkGameMode.FullSimulation, EasyBalance: false, ImportShippedSave: false ),
+			StartsOpen = true
+		};
+	}
+
 	/// <summary>Wraps a separately validated and restored economy without importing or opening a shipped park.</summary>
 	internal static ParkEconomyRuntime ForResume( ParkEconomy economy, ParkStartKind originalStart )
 	{
@@ -135,6 +164,7 @@ public sealed class ParkEconomyRuntime
 			case ParkEventKind.MonthEnded:
 			case ParkEventKind.YearEnded:
 			case ParkEventKind.WagesPaid:
+			case ParkEventKind.RunningCostsPaid:
 			case ParkEventKind.Bankrupt:
 			case ParkEventKind.ItemResearched:
 			case ParkEventKind.ChallengeOffered:
@@ -183,7 +213,8 @@ public sealed class ParkEconomyRuntime
 	private void AttachLitter( GuestSimulation guests )
 	{
 		Economy.Litter.Cells = guests.Grid.Cells;
-		Economy.Litter.Disabled = guests.OnlineVisit;
+		// [EXT:tpi-no-maintenance-wear] a park without staff drops no litter either: no handyman would ever sweep it
+		Economy.Litter.Disabled = guests.OnlineVisit || !Economy.Rules.Staff;
 		Economy.OnlineVisit = guests.OnlineVisit;
 	}
 }

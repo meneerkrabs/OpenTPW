@@ -35,12 +35,14 @@ public sealed class ParkEconomy : IParkEconomy
 	private readonly List<long> monthlyAdmissions = new();
 	private IParkGuestStatistics guestStatistics = NoGuestStatistics.Instance;
 
-	public ParkEconomy( BalanceSettings settings, IEconomyObjectCatalog catalog, ParkGameMode mode, ulong seed )
+	/// <param name="rules">Which systems run and whose money rules apply; null is the whole Theme Park World economy (<see cref="EconomyRules.Full"/>).</param>
+	public ParkEconomy( BalanceSettings settings, IEconomyObjectCatalog catalog, ParkGameMode mode, ulong seed, EconomyRules? rules = null )
 	{
 		Settings = settings ?? throw new ArgumentNullException( nameof( settings ) );
 		Catalog = catalog ?? throw new ArgumentNullException( nameof( catalog ) );
 		Mode = mode;
-		Features = ParkModeFeatures.For( mode );
+		Rules = rules ?? EconomyRules.Full;
+		Features = Rules.Narrow( ParkModeFeatures.For( mode ) );
 		World = new WorldRng( WorldRng.StateFromSeed( seed ) );
 		Ledger = new ParkLedger( settings.InitialCash );
 		Staff = new ParkStaff( settings );
@@ -49,7 +51,9 @@ public sealed class ParkEconomy : IParkEconomy
 		EntranceFee = settings.InitialAdmissionFee;
 		Litter.Environment.Effects = RegionEffect.Load( settings.Standard );
 		Litter.World = () => World;
-		Staff.CreateInitialPool( World, 0 );
+		// a park without staff has no pool: the world generator is not drawn from for candidates (the settings hold no staff keys then)
+		if ( Rules.Staff )
+			Staff.CreateInitialPool( World, 0 );
 		// [BIN:TPW-EXE:0x004CF7C0 bank constructor] each offer's stored test (+0x14) starts as amount (+0x18) < 10001 (unsigned)
 		foreach ( var offer in settings.Loans )
 			loanAvailable[offer.Index] = unchecked( (uint)(int)offer.Amount ) < 10001;
@@ -63,6 +67,8 @@ public sealed class ParkEconomy : IParkEconomy
 	public IEconomyObjectCatalog Catalog { get; }
 	public ParkGameMode Mode { get; }
 	public ParkModeFeatures Features { get; }
+	/// <summary>Which systems this economy runs and whose money rules apply.</summary>
+	public EconomyRules Rules { get; }
 	/// <summary>
 	/// The park's world generator (tp.exe 0x00516330): the economy's staff pool and the staff walks draw from it, and the level attaches the guests'
 	/// and the scripts' draws to the same instance (<see cref="AttachWorld"/>), as the original has one generator for everything.
@@ -295,7 +301,7 @@ public sealed class ParkEconomy : IParkEconomy
 		if ( changes.HasFlag( CalendarChange.Year ) )
 			Ledger.StartYear();
 		// [BIN:STP-PPC:0x100D67F0 world update] after the calendar update (whose messages the bank, the staff and the other listeners handle at once) the golden-ticket checks (0x100D31D0, 0x100D34C0, 0x100D35B4) run when the turn counter is a multiple of 100, and only in Full Simulation (game type 0)
-		if ( RunsGoldenTicketCheck( turn, Mode ) )
+		if ( Features.GoldenTickets && RunsGoldenTicketCheck( turn, Mode ) )
 			CheckGoldenTickets();
 		// [BIN:TPW-EXE:0x0054F82D crowd read] after the substep that ran the world update, when the step counter 0x00877D34 (0 when the loop starts, +1 per 31 ms substep, a park turn every 8th) has its low five bits clear,
 		// i.e. after every fourth turn counted from the turn the counter started at, the main loop reads the crowd (0x004C81E0 → 0x004C7FA0 with age 0): the cached census is counted again whenever (turn >> 2) moved
@@ -335,6 +341,9 @@ public sealed class ParkEconomy : IParkEconomy
 	/// <summary>The economy's part of the original's per-turn thing loop: staff, mechanics' jobs, research and the ride update.</summary>
 	internal void UpdateThings( long turn )
 	{
+		// [EXT:tpi-money-only] a park without staff runs none of this: the staff, the research lab, the challenge system and the ride update (whose wear and breakdowns only a mechanic repairs) are refused with the staff, research and challenges
+		if ( !Rules.Staff )
+			return;
 		UpdateStaffVitals();
 		foreach ( var member in Staff.Members )
 			CountDownJob( member );
@@ -755,6 +764,8 @@ public sealed class ParkEconomy : IParkEconomy
 	private void UpdateHour()
 	{
 		// [BIN:TPW-EXE:0x005084F0 staff pool update] the staff manager's update runs from the world turn's tail (0x004D7B20), in every world state
+		if ( !Rules.Staff )
+			return;
 		Staff.UpdatePool( World, Tick );
 		// the dispatch belongs to the mechanics' and rides' thing updates, which a lost park no longer runs
 		if ( !IsBankrupt )
@@ -1034,6 +1045,9 @@ public sealed class ParkEconomy : IParkEconomy
 	{
 		if ( !objects.TryGetValue( instanceId, out var item ) || !Catalog.TryGet( item.InfoId, out var info ) || !info.ProvidesRelief )
 			return false;
+		// [EXT:tpi-no-maintenance-wear] without staff nobody cleans a toilet (the handymen are refused), so a use wears none: the gauge stays full and the toilet stays usable (see also the ride wear in UpdateThings and the litter in ParkEconomyRuntime.AttachLitter)
+		if ( !Rules.Staff )
+			return false;
 		if ( OnlineVisit )
 		{
 			// [BIN:TPW-EXE:0x004E2478 toilet wear, game type 1] the branch for the online game type (SetGameType 1 at the online entries 0x4C0830 and 0x5E2700; the word 0xFB3B7C is the game-type object) wears nothing; a relief object whose gauge byte is below 25 is cleaned at once: row 6 off and row 1 on at its cell (0x4D8460, 0x4D8440), script variable 8 = 0 (0x55A0B0), gauge 100.0, the claim (+0x5E) and the call (+0x64) cleared (0x4E251F..0x4E252A)
@@ -1146,13 +1160,14 @@ public sealed class ParkEconomy : IParkEconomy
 			Post( LedgerCategory.OtherIncome, BatchCredit );
 			BatchCredit = 0;
 		}
-		var wages = Staff.TotalMonthlyWages;
+		var wages = Rules.Staff ? Staff.TotalMonthlyWages : 0;
 		if ( wages > 0 )
 		{
 			Post( LedgerCategory.StaffCosts, wages );
 			Raise( ParkEventKind.WagesPaid, wages, 0, 0, $"{Staff.Members.Count} staff" );
 		}
-		var training = Staff.Train();
+		PayRunningCosts();
+		var training = Rules.Staff ? Staff.Train() : 0;
 		if ( training > 0 )
 		{
 			// [BIN:TPW-EXE:0x00505A10 staff training] the training is a debit (0x004D01F0, money out) added to its own analyser word +0x1FA40, which no finance row shows;
@@ -1160,7 +1175,8 @@ public sealed class ParkEconomy : IParkEconomy
 			Post( LedgerCategory.OtherCosts, training );
 			Raise( ParkEventKind.TrainingPaid, training );
 		}
-		ConsiderStrikes();
+		if ( Rules.Staff )
+			ConsiderStrikes();
 		// [BIN:STP-PPC:0x100CC21C loan instalment] each bought loan, in offer-index order, pays exactly M and counts one more month repaid; it ends after N months (ORACLE F13)
 		// [BIN:TPW-EXE:0x4d0370 bank month] the instalment is deducted only with mWithdrawalsEnabled (+0x114) set, as a debit that keeps mLastBalance and the
 		// turn-entered-red stamp; the year profit then gains back the principal share either way, so with the flag clear the instalment raises the profit by it
@@ -1228,6 +1244,45 @@ public sealed class ParkEconomy : IParkEconomy
 	}
 
 	/// <summary>
+	/// Theme Park Inc's monthly running costs: every object is charged its current level's <c>Upgrades[n].RunningCost</c>, nothing in ride state 1 (broken down) or 4
+	/// (condemned). Theme Park World has no such cost. Each object is one debit that also enters its cost statistics (the month's cost, the 30-day cost ring and the total profit).
+	/// </summary>
+	// [BIN:TPI-EXE:0x005DEFFF monthly object cost] the object's month message (type 0xC) takes 0 in state 1 or 4, else the type record's running cost (thing +0x84, the current level's Upgrades[n].RunningCost) plus the amount its statistics block accumulated (+0x938), writes the sum into the cost rings (+0xDD8, +0xB88), rolls them, and debits the bank (0x5C07B0, the twin of tp.exe 0x4D01F0), adding the sum to the game's money-out word (+0x20F28)
+	// [APPROX:ECON-060] only the running cost is charged: the accumulator +0x938 the statistics block adds to it is not traced (what writes it, and whether the cost of goods and prizes OpenTPW books at once (TryBuy, PlaySideshow) are debited there at the month's end instead), and Theme Park Inc's statistics are monthly rings (+0xB88 costs, +0x1028 profit, rolled by the same message) where OpenTPW's are the daily 30-day rings of Theme Park World (ECON-057), so the cost enters today's slot of the daily ring, and the order of this debit against the bank's own month handler (the batch credit, the loan instalments) is not read, so it runs after the wages' place and before the loans — evidence needed: the writers of the statistics word +0x938 and the listener order of the month message
+	private void PayRunningCosts()
+	{
+		if ( !Rules.ThemeParkInc )
+			return;
+		long total = 0;
+		var charged = 0;
+		foreach ( var item in objects.Values )
+		{
+			var cost = RunningCost( item );
+			if ( cost == 0 )
+				continue;
+			Post( LedgerCategory.OtherCosts, cost );
+			item.CostsThisMonth += cost;
+			// the month message also writes the sum into the object's cost statistics and its profit (0x5DF070..0x5DF0A4: costs +0xB88, profit = takings +0x6E8 - costs)
+			item.CostsRing.Today += unchecked( (int)cost );
+			item.TotalProfit -= cost;
+			total += cost;
+			charged++;
+		}
+		if ( total != 0 )
+			Raise( ParkEventKind.RunningCostsPaid, total, 0, charged, $"{charged} objects" );
+	}
+
+	/// <summary>The object's monthly running cost now: 0 broken down or condemned, else its current level's <see cref="UpgradeLevelInfo.RunningCost"/>.</summary>
+	public long RunningCost( ParkObjectState item )
+	{
+		if ( !Rules.ThemeParkInc || !Catalog.TryGet( item.InfoId, out var info ) || info.Upgrades.Count == 0 )
+			return 0;
+		if ( ObjectState( item ) is RideObjectStates.BrokenDown or RideObjectStates.Condemned )
+			return 0;
+		return info.Upgrades[Math.Min( item.Level, info.Upgrades.Count - 1 )].RunningCost;
+	}
+
+	/// <summary>
 	/// The bank's handler of its own message type 2 (tp.exe <c>0x004D02D0</c>): once, when the world is not yet in state 4 and no winning sequence
 	/// shows, the park is lost (<c>0x005168F0</c>). The park-closed word is not written; the host requests a breakdown of every attraction and gives the
 	/// gate its end-of-park command on <see cref="ParkEventKind.Bankrupt"/>.
@@ -1277,6 +1332,10 @@ public sealed class ParkEconomy : IParkEconomy
 	public int ScrapPercent( ParkObjectState item )
 	{
 		if ( !Catalog.TryGet( item.InfoId, out var info ) || info.Upgrades.Count == 0 )
+			return 0;
+		// [BIN:TPI-EXE:0x005E765B scrap percentage] Theme Park Inc's percentage routine 0x005E75F0 refuses a condemned object (state +0xA0 = 4) any refund before it reaches the year rule it shares with tp.exe 0x004E2290
+		// [APPROX:ECON-061] the routine's first branch (thing flag +0x43 bit 0x10, which gives 100, 67, 34 or 0 percent from a count read through a script-side lookup) is left out: what sets the flag and what the count is are not traced, so such an object takes the year rule — evidence needed: the writer of flag +0x43 and the lookup behind 0x40AE89 / 0x4078BA
+		if ( Rules.ThemeParkInc && ObjectState( item ) == RideObjectStates.Condemned )
 			return 0;
 		var level = Math.Min( item.Level, info.Upgrades.Count - 1 );
 		var age = ParkCalendar.Seconds( Tick ) - ParkCalendar.Seconds( item.BuiltTick );
@@ -1576,7 +1635,11 @@ public sealed class ParkEconomy : IParkEconomy
 		NotAvailableInInstantAction,
 		AlreadyFullyUpgraded,
 		UpgradeInProgress,
-		MissingTargetRide
+		MissingTargetRide,
+		/// <summary>The park runs no staff, and an upgrade is installed by a mechanic (Theme Park Inc's money slice).</summary>
+		NeedsStaff,
+		/// <summary>The park has no land for sale (Theme Park Inc has no Buy Land, though <c>Costs.MapCell</c> is in its data).</summary>
+		NoLandForSale
 	}
 
 	/// <summary>
@@ -1616,7 +1679,8 @@ public sealed class ParkEconomy : IParkEconomy
 			return PurchaseResult.UnknownObject;
 		if ( !moving && !info.IsBuyable )
 			return PurchaseResult.NotBuyable;
-		if ( !moving && !Research.IsAvailable( infoId ) )
+		// [EXT:tpi-no-research] without research (refused for Theme Park Inc) every buyable object is on offer, as the experimental build list has always offered the whole catalogue
+		if ( !moving && Rules.Research && !Research.IsAvailable( infoId ) )
 			return PurchaseResult.NotResearched;
 		if ( info.Kind == ParkObjectKind.Upgrade && !objects.Values.Any( item => item.InfoId == info.AddOnTargetId ) )
 			return PurchaseResult.MissingTargetRide;
@@ -1801,7 +1865,7 @@ public sealed class ParkEconomy : IParkEconomy
 			return PurchaseResult.Bankrupt;
 		// [BIN:STP-PPC:0x10165A0C upgrade list] game type 2 (Instant Action) lists no upgrades and shows UITEXT 27 instead
 		if ( !Features.Upgrades )
-			return PurchaseResult.NotAvailableInInstantAction;
+			return Rules.Staff ? PurchaseResult.NotAvailableInInstantAction : PurchaseResult.NeedsStaff;
 		var item = RequireObject( instanceId );
 		if ( !Catalog.TryGet( item.InfoId, out var info ) || item.Kind != ParkObjectKind.Ride )
 			return PurchaseResult.NotBuyable;
@@ -1839,6 +1903,8 @@ public sealed class ParkEconomy : IParkEconomy
 		ArgumentOutOfRangeException.ThrowIfNegative( count );
 		if ( IsBankrupt )
 			return PurchaseResult.Bankrupt;
+		if ( kind == CellPurchase.Land && Rules.ThemeParkInc )
+			return PurchaseResult.NoLandForSale;
 		var cost = CellCost( kind ) * count;
 		if ( cost > Balance )
 			return PurchaseResult.NotEnoughMoney;
@@ -1855,6 +1921,9 @@ public sealed class ParkEconomy : IParkEconomy
 	public void ChargeLand( long cost, int cells )
 	{
 		ArgumentOutOfRangeException.ThrowIfNegative( cells );
+		// [BIN:TPI-EXE:0x004289AC cost setter] Costs.MapCell is in Theme Park Inc's data and set (equal to tp.exe 0x00408192) but no reader of it was found: there is no Buy Land (moderate confidence; the park boundary is the mission's BoundaryClicks)
+		if ( Rules.ThemeParkInc )
+			throw new InvalidOperationException( "Theme Park Inc has no Buy Land." );
 		// Costs.MapCell cannot be negative (the balance load refuses it, 0x00401D7C), so the total is never income.
 		Post( LedgerCategory.OtherCosts, cost );
 		Raise( ParkEventKind.CellsBought, cost, 0, (int)CellPurchase.Land, $"{cells} {CellPurchase.Land} cells" );
@@ -2023,8 +2092,16 @@ public sealed class ParkEconomy : IParkEconomy
 
 	// ---------------------------------------------------------------- staff and research
 
+	/// <summary>Refuses a staff, research or challenge operation in a park that runs none (<see cref="EconomyRules"/>).</summary>
+	private void RequireSystem( bool runs, string system )
+	{
+		if ( !runs )
+			throw new InvalidOperationException( $"This park runs no {system}: they are refused for Theme Park Inc (docs/THEME-PARK-INC.md)." );
+	}
+
 	public StaffMember Hire( int candidateId )
 	{
+		RequireSystem( Rules.Staff, "staff" );
 		if ( IsBankrupt )
 			throw new InvalidOperationException( "A bankrupt park cannot hire staff." );
 		var member = Staff.Hire( candidateId, Tick );
@@ -2040,6 +2117,7 @@ public sealed class ParkEconomy : IParkEconomy
 	// [BIN:STP-PPC:0x100F33EC dismissal] the dismissal routine (the UI's dismiss button, UI-MAP) debits the wage 0xf46bc with Spend 0xcbfdc, as the monthly handler 0xf3364 does, and adds it to the staff wages statistic +0x1F7F0; the bank has no affordability check
 	public void Fire( int staffId )
 	{
+		RequireSystem( Rules.Staff, "staff" );
 		var member = Staff.Fire( staffId );
 		member.AwaitingJobArrival = false;
 		if ( objects.TryGetValue( member.AssignedInstanceId, out var item ) && item.MechanicId == member.Id )
@@ -2064,11 +2142,16 @@ public sealed class ParkEconomy : IParkEconomy
 		Raise( ParkEventKind.StaffFired, wage, member.Id, (int)member.Type );
 	}
 
-	public void SetTrainingBudget( StaffType type, long monthlyBudget ) => Staff.SetTrainingBudget( type, monthlyBudget );
+	public void SetTrainingBudget( StaffType type, long monthlyBudget )
+	{
+		RequireSystem( Rules.Staff, "staff" );
+		Staff.SetTrainingBudget( type, monthlyBudget );
+	}
 
 	/// <summary>Research lab effort; refused in Instant Action, whose research panel does not open (UITEXT 467).</summary>
 	public void SetResearchEffort( ResearchCategory category, int effort )
 	{
+		RequireSystem( Rules.Research, "research" );
 		if ( !Features.ResearchPanel )
 			throw new InvalidOperationException( "Research is automatic in Instant Action: the research lab cannot be changed." );
 		Research.SetEffort( category, effort );
@@ -2076,6 +2159,7 @@ public sealed class ParkEconomy : IParkEconomy
 
 	public void AcceptChallenge()
 	{
+		RequireSystem( Rules.Challenges, "challenges" );
 		var definition = Objectives.CurrentDefinition ?? throw new InvalidOperationException( "No challenge is offered." );
 		Objectives.AcceptAt( ParkCalendar.Seconds( Tick ), MeasureChallenge( definition ) );
 		Raise( ParkEventKind.ChallengeAccepted, definition.Prize, 0, definition.Index );
@@ -2083,6 +2167,7 @@ public sealed class ParkEconomy : IParkEconomy
 
 	public void DeclineChallenge()
 	{
+		RequireSystem( Rules.Challenges, "challenges" );
 		var definition = Objectives.CurrentDefinition;
 		var index = Objectives.DeclineAt( ParkCalendar.Seconds( Tick ) );
 		// [BIN:TPW-EXE:0x4d2ec0 challenge declined] a declined challenge whose mIndependent (+0x1d) is clear, a follow-up, credits half its prize (+0x14 / 2,

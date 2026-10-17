@@ -10,7 +10,8 @@ public partial class Level
 
 	internal ThemeParkIncLayoutCheckpoint CaptureThemeParkIncLayout(DateTimeOffset savedUtc)
 	{
-		if (!IsThemeParkIncSlice || IsReadOnlyVisit || Guests == null || Park != null)
+		// the checkpoint holds the layout only: cash, the calendar and the loans start fresh in the new session, like guests and script progress
+		if (!IsThemeParkIncSlice || IsReadOnlyVisit || Guests == null)
 			throw new NotSupportedException("Only the writable experimental TPI slice can capture a layout checkpoint.");
 		if (PlacedRide != null || Objects.Objects.Any(item => item.Runtime.Coaster != null))
 			throw new NotSupportedException("Prototype and coaster layouts cannot be saved as a TPI layout checkpoint.");

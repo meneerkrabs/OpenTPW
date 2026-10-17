@@ -44,7 +44,8 @@ public partial class Level
 	/// <summary>The weather's step: the thing sweep's weather update (0x00512880), and on every other tick the first call that starts it.</summary>
 	private void AdvanceWeather()
 	{
-		if ( Park == null || Guests == null )
+		// [EXT:tpi-viewer] Theme Park Inc's weather is not traced (its states and keys differ from the Theme Park World weather this class ports), so a Theme Park Inc park has none
+		if ( Park == null || Guests == null || Park.Economy.Rules.ThemeParkInc )
 			return;
 		Weather ??= new ParkWeather( Park.Economy.Settings.Standard, Seed.WeatherStream, Guests.Grid.Cells.Width, Guests.Grid.Cells.Height );
 		Weather.AdvanceTo( Park.Economy.Tick );

@@ -406,6 +406,25 @@ public class PoolSlidesTests
 		Assert.IsNotNull( good );
 	}
 
+	[TestMethod]
+	public void TwoSlidesNeverShareACell()
+	{
+		using var scope = PoolsOn();
+		var (cells, tower) = Fixture();
+		// a second tower north of the first slide: its pool-side cell is given directly, as the fixture's pool is what the rules need; its start cell (8, 9) is a cell of the first slide
+		var second = new PoolSlideTower( 8, 7, new[] { (8, 7), (9, 7), (8, 8), (9, 8) }, new[] { (10, 10) }, PoolSlideProfile.Tube, 4 );
+		PoolSlideTower? Lookup( int id ) => id == tower.Id ? tower : id == second.Id ? second : null;
+		var world = new PoolSlideWorld( () => Site( cells ), Lookup, () => null );
+		Build( world, tower, StandardCells );
+		Assert.AreEqual( PoolSlideResult.Occupied, world.AddCell( 8, 7, 8, 9 ), "a cell of the other slide" );
+		Assert.AreEqual( PoolSlideResult.Ok, world.AddCell( 8, 7, 7, 8 ), "control: a free start cell" );
+		Assert.AreEqual( 2, world.Count );
+		// a save that holds two slides over one cell is refused
+		var saved = world.CaptureSnapshot()!;
+		var forged = saved with { Slides = saved.Slides.Select( item => item.TowerX == 8 && item.TowerY == 7 ? item with { StartX = 8, StartY = 9, StartHeading = 1 } : item ).ToArray() };
+		Assert.ThrowsException<System.IO.InvalidDataException>( () => new PoolSlideWorld( () => Site( cells ), Lookup, () => null ).RestoreSnapshot( forged ) );
+	}
+
 	// ---- The tool -----------------------------------------------------------------------------------------------------
 
 	private static PoolTool ToolFor( ParkCellMap cells, PoolSlideWorld world ) => new( new PoolBuilder( cells, () => null, new PoolsTests.FlatGrid( cells.Width, cells.Height ) ) ) { Slides = world };

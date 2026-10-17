@@ -8,7 +8,10 @@ namespace OpenTPW;
 internal sealed partial class ParkResumeSmokeTest
 {
 	/// <summary>Both phases must agree: <c>OPENTPW_SMOKE_POOLS=1</c> adds a pool, a changing room and swimmers.</summary>
-	internal static bool PoolsVariant => Environment.GetEnvironmentVariable( "OPENTPW_SMOKE_POOLS" ) is "1" or "true";
+	internal static bool PoolsVariant => Environment.GetEnvironmentVariable( "OPENTPW_SMOKE_POOLS" ) is "1" or "true" or "slide";
+
+	/// <summary>[EXT:pools-slides] <c>OPENTPW_SMOKE_POOLS=slide</c> (both phases) also builds a slide tower and its slide and saves while a guest climbs, waits on or rides it.</summary>
+	internal static bool SlideVariant => Environment.GetEnvironmentVariable( "OPENTPW_SMOKE_POOLS" ) is "slide";
 
 	private OriginalObject? PoolRoom() => level.Objects.Objects.FirstOrDefault( item => !item.IsDeleted && item.Visitors.IsChangingRoom );
 
@@ -29,6 +32,9 @@ internal sealed partial class ParkResumeSmokeTest
 			Require( started == 3, "three guests swim in the room's pool" );
 			return false;
 		}
+		// [EXT:pools-slides] the slide variant saves while a guest is on the stairs, on the platform or on the track
+		if ( SlideVariant )
+			return level.Guests!.Guests.Any( guest => guest.InPoolActivity && guest.PoolActivityId == PoolSlideActivity.ActivityId && guest.PoolActivityPhase >= PoolSlidePhases.Climb );
 		return level.Guests!.Guests.Count( guest => guest.IsSwimming ) >= 2;
 	}
 
@@ -55,6 +61,12 @@ internal sealed partial class ParkResumeSmokeTest
 		var room = level.BuildChangingRoomBeside( cells );
 		Require( room != null, "build a changing room beside the pool through the level's placement" );
 		Log.Trace( $"Park-resume fixture: pool of {cells.Length} cells at {origin}, {room!.Entry.DisplayName} #{room.Visitors.AttractionId} at {room.Placement.X},{room.Placement.Y}." );
+		if ( SlideVariant )
+		{
+			var tower = level.BuildSlideBeside( cells, PoolSlideProfile.Flume );
+			Require( tower != null, "build a slide tower and its slide beside the pool through the level's placement" );
+			Log.Trace( $"Park-resume fixture: {tower!.Entry.DisplayName} at {tower.Placement.X},{tower.Placement.Y} with a slide of {level.PoolSlides!.Slides.Single().Pieces.Count} pieces." );
+		}
 	}
 
 	/// <summary>The restore phase's proof that the pool, the room and the swimmers came back: the cells, the room's flags and the guests in the water.</summary>
@@ -73,5 +85,15 @@ internal sealed partial class ParkResumeSmokeTest
 		Require( swimmers.Where( guest => guest.IsSwimming ).All( guest => region!.IsWater( guest.Navigation.X, guest.Navigation.Y ) ), "every resumed swimmer is in the water" );
 		Require( swimmers.All( guest => guest.AttractionId == room.Visitors.AttractionId ), "and names its changing room" );
 		Log.Trace( $"Park-resume restore: the changing room came back with {swimmers.Count} swimmer(s) in its {region!.Cells.Count}-cell pool." );
+		if ( !SlideVariant )
+			return;
+		// [EXT:pools-slides] the slide, its tower and the guests on it came back
+		var slides = level.PoolSlides;
+		Require( slides is { Count: 1 }, "the resumed park holds its slide" );
+		var slide = slides!.Slides.Single();
+		Require( slide.IsComplete && slides.IsUsable( slide ) && slides.TowerOf( slide ) != null, "the slide is complete and usable over its tower" );
+		var riders = level.Guests.Guests.Where( guest => guest.InPoolActivity && guest.PoolActivityId == PoolSlideActivity.ActivityId ).ToList();
+		Require( riders.Count >= 1 && riders.All( guest => guest.PoolActivityTarget == slide.Id ), "the resumed park holds the guest(s) on its slide" );
+		Log.Trace( $"Park-resume restore: the slide of {slide.Pieces.Count} pieces came back with {riders.Count} guest(s) on it (phases {string.Join( ",", riders.Select( guest => guest.PoolActivityPhase ) )})." );
 	}
 }

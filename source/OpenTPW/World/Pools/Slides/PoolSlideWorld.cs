@@ -181,9 +181,14 @@ public sealed class PoolSlideWorld
 		var result = PoolSlideRules.Validate( made, tower, place, requireComplete: false );
 		if ( result != PoolSlideResult.Ok )
 			return result;
+		if ( TouchesAnotherSlide( made ) )
+			return PoolSlideResult.Occupied;
 		candidate = made;
 		return PoolSlideResult.Ok;
 	}
+
+	/// <summary>Whether any cell of the slide is also a cell of another tower's slide (two slides never share a pylon).</summary>
+	private bool TouchesAnotherSlide( PoolSlide slide ) => slides.Values.Any( other => other.Id != slide.Id && slide.Cells.Any( cell => other.Covers( cell.X, cell.Y ) ) );
 
 	/// <summary>The piece that turns a track heading <paramref name="heading"/> towards a step (<paramref name="dx"/>, <paramref name="dy"/>), or null for a step behind it or not to a neighbour.</summary>
 	private static PoolSlidePiece? TurnTo( int heading, int dx, int dy )
@@ -270,8 +275,8 @@ public sealed class PoolSlideWorld
 			previous = slide.Id;
 			var tower = TowerAt( item.TowerX, item.TowerY );
 			var result = PoolSlideRules.Validate( slide, tower, place, requireComplete: false );
-			if ( result != PoolSlideResult.Ok )
-				throw new InvalidDataException( $"The saved slide at {item.TowerX},{item.TowerY} is not valid: {result}." );
+			if ( result != PoolSlideResult.Ok || TouchesAnotherSlide( slide ) )
+				throw new InvalidDataException( $"The saved slide at {item.TowerX},{item.TowerY} is not valid: {(result != PoolSlideResult.Ok ? result : PoolSlideResult.Occupied)}." );
 			slides[slide.Id] = slide;
 		}
 		Version++;

@@ -9,7 +9,7 @@ using static OpenTPW.Tests.RideVMTests;
 namespace OpenTPW.Tests;
 
 /// <summary>
-/// The pools extension's shipped content (docs/POOLS.md, "Content"): <c>content/pools</c> holds the changing rooms and the swim sprite sets, made by <c>tools/pools/build-content.sh</c>. These tests load
+/// The pools extension's shipped content (docs/POOLS.md, "Content"): <c>content/pools</c> holds the changing rooms and the sprite sets, made by <c>tools/pools/build-content.sh</c>. These tests load
 /// the committed files through the game's own pipelines (mod roots, the object catalog, the sprite readers, the ride script VM) without any original game data.
 /// </summary>
 [TestClass]
@@ -253,27 +253,155 @@ public class PoolsContentTests
 	// ---- The swimmers' sprites -----------------------------------------------------------------------------------------
 
 	[TestMethod]
-	public void TheSwimSpriteSetsOfTheEightKidSetsHoldTheThreeStrokes()
+	public void TheSwimSpriteSetsOfTheEightKidSetsHoldTheWholeSwimwearTableAtTwiceTheSize()
 	{
 		var sets = PoolSwimSprites.Load();
 		CollectionAssert.AreEqual( new[] { "SPR_BE", "SPR_BI", "SPR_CH", "SPR_FR", "SPR_KI", "SPR_SA", "SPR_SU", "SPR_TA" }, sets.Select( set => set.Name ).ToArray(), "one per kid set, in the kids' name order, so set n is for guests of type n" );
+		var total = PoolSwimSlots.FramesPerDirection.Sum() * 5;
 		foreach ( var set in sets )
 		{
-			Assert.AreEqual( 8, set.FramesPerDirection( 8 ), $"{set.Name}: front crawl" );
-			Assert.AreEqual( 8, set.FramesPerDirection( 9 ), $"{set.Name}: breaststroke" );
-			Assert.AreEqual( 4, set.FramesPerDirection( 10 ), $"{set.Name}: treading water" );
-			Assert.AreEqual( 8 * 5 + 8 * 5 + 4 * 5, set.Frames.Length, $"{set.Name}: 100 frames, five directions each" );
-			foreach ( var (slot, count) in new[] { (8, 8), (9, 8), (10, 4) } )
-				for ( var direction = 0; direction < 5; direction++ )
+			Assert.AreEqual( total, set.Frames.Length, $"{set.Name}: 14 slots, five directions each" );
+			for ( var slot = 0; slot < PoolSwimSlots.FramesPerDirection.Count; slot++ )
+			{
+				var count = PoolSwimSlots.FramesPerDirection[slot];
+				Assert.AreEqual( count == 0 ? 1 : count, set.FramesPerDirection( slot ), $"{set.Name} slot {slot}" );
+				Assert.AreEqual( count == 0, set.Animations.Animations[slot].IsEmpty, $"{set.Name} slot {slot} is {(count == 0 ? "empty (run, spare)" : "filled")}" );
+				for ( var direction = 0; direction < (count == 0 ? 0 : 5); direction++ )
 					for ( var step = 0; step < count; step++ )
 					{
 						var frame = set.Frames[set.GetFrame( slot, direction, step )];
-						Assert.IsTrue( frame.Width > 8 && frame.Height > 6 && frame.Width < 80 && frame.Height < 64, $"{set.Name} slot {slot} d{direction} f{step}: {frame.Width} x {frame.Height}" );
-						Assert.IsTrue( frame.OriginX < 0 && frame.OriginX + frame.Width > 0 && frame.OriginY < 0 && frame.OriginY + frame.Height > 0, "the hotspot (the torso at the water line) lies inside the frame" );
+						// drawn at 256 pixels per unit: twice the pixels of a 1x frame (a standing frame is 20 to 27 x 38 to 43 px at 1x), at most 192 x 192 at 2x
+						Assert.AreEqual( (256, 256), (frame.PixelsPerUnitX, frame.PixelsPerUnitY), $"{set.Name} slot {slot}" );
+						Assert.IsTrue( frame.Width > 8 && frame.Height > 6 && frame.Width <= 192 && frame.Height <= 192, $"{set.Name} slot {slot} d{direction} f{step}: {frame.Width} x {frame.Height}" );
+						Assert.IsTrue( frame.OriginX <= 0 && frame.OriginX + frame.Width >= 0 && frame.OriginY < 0 && frame.OriginY + frame.Height >= -4, $"{set.Name} slot {slot} d{direction} f{step}: the hotspot (the feet: within two 1x pixels of the lowest sole in a stride; or the torso) lies in the frame ({frame.OriginX}, {frame.OriginY}, {frame.Width} x {frame.Height})" );
 					}
+			}
 			// every frame draws something (an opaque pixel)
 			Assert.IsTrue( set.Frames.All( frame => HasPixel( set, frame ) ), set.Name );
+			Assert.IsTrue( set.Width >= 1024 && set.Height >= 1 && set.Frames.All( frame => frame.X + frame.Width <= set.Width && frame.Y + frame.Height <= set.Height ), $"{set.Name}: {set.Width} x {set.Height}" );
 		}
+	}
+
+	[TestMethod]
+	public void TheStandingAndWalkingSwimwearFramesKeepTheWorldSizeOfTheOnesTheyStandBesides()
+	{
+		// At 256 pixels per unit a 2x frame is drawn at half the world size per pixel: a standing frame is as tall in the world as a 1x kid (about 40 px at 128).
+		foreach ( var set in PoolSwimSprites.Load() )
+		{
+			var stand = set.Frames[set.GetFrame( PoolSwimSlots.Stand, 4, 0 )];
+			var world = stand.Height * stand.ScaleY;
+			Assert.IsTrue( world is > 30 and < 48, $"{set.Name}: standing frame {stand.Height} px at {stand.PixelsPerUnitY} per unit is {world} 1x pixels tall" );
+		}
+	}
+
+	/// <summary>A one-frame stand-in for a set of the game (only its name matters to the replacement rule).</summary>
+	private static GuestSpriteAtlas GameSet( string name )
+	{
+		var set = new SpriteSetBuilder( "SPR_ZZ" ) { FullDetail = false }
+			.AddAnimation( 0, new[] { new[] { new SpriteRgbaFrame( 1, 1, new byte[] { 1, 2, 3, 255 }, 0, 0 ) } } ).Build();
+		return new GuestSpriteAtlas( name, new SpriteBankFile( new MemoryStream( set.Files[".TPC"] ) ), new SpriteAnimationFile( new MemoryStream( set.Files[".ESP"] ) ) );
+	}
+
+	private static List<GuestSpriteAtlas> GameKids( params string[] names ) => names.Select( GameSet ).ToList();
+	private static readonly string[] TpwKidNames = { "SPR_BE", "SPR_BI", "SPR_CH", "SPR_FR", "SPR_KI", "SPR_SA", "SPR_SU", "SPR_TA" };
+
+	[TestMethod]
+	public void TheShippedKidAndHeadSetsReplaceTheGameOnesOnlyWhileTheExtensionIsOn()
+	{
+		using ( OpenTpwExtensions.Use( PoolsTests.PoolsSet( false ) ) )
+			Assert.IsNull( PoolGuestSprites.LoadReplacement( GameKids( TpwKidNames ) ), "off: the game's own kid and head sets are used" );
+		using var scope = OpenTpwExtensions.Use( PoolsTests.PoolsSet( true ) );
+		var replacement = PoolGuestSprites.LoadReplacement( GameKids( TpwKidNames ) )!;
+		Assert.IsNotNull( replacement );
+		CollectionAssert.AreEqual( TpwKidNames, replacement.Kids.Select( set => set.Name ).ToArray(), "one set per kid type, in the game's name order" );
+		foreach ( var set in replacement.Kids )
+		{
+			// only the slots the land renderers draw ship (0 stand, 1 walk, 14 wait; the others, 2, 4, 6, 11 and 12, are empty and fall back to standing), 5 directions, 2x
+			Assert.AreEqual( (1 + 8 + 2) * 5, set.Frames.Length, set.Name );
+			foreach ( var (slot, count) in new[] { (0, 1), (1, 8), (14, 2) } )
+				Assert.AreEqual( (count, 5), (set.Animations.Animations[slot].FramesPerDirection, set.Animations.Animations[slot].Directions), $"{set.Name} slot {slot}" );
+			foreach ( var slot in new[] { 2, 4, 6, 11, 12, 15 } )
+				Assert.IsTrue( set.Animations.Animations[slot].IsEmpty, $"{set.Name} slot {slot} is not shipped" );
+			Assert.AreEqual( set.GetFrame( 0, 2, 0 ), set.GetFrame( 12, 2, 0 ), "an empty slot draws the standing frame" );
+			Assert.IsTrue( set.Frames.All( frame => frame.PixelsPerUnitX == 256 && frame.PixelsPerUnitY == 256 ), set.Name );
+			Assert.IsTrue( set.Frames.All( frame => HasPixel( set, frame ) ), set.Name );
+			var walk = set.Frames[set.GetFrame( GuestSpriteAtlas.WalkSlot, 2, 0 )];
+			Assert.IsTrue( walk.OriginY < 0 && -walk.OriginY <= walk.Height && -walk.OriginY >= walk.Height - 12, $"{set.Name}: the hotspot is at the feet" );
+		}
+		CollectionAssert.AreEqual( TpwKidNames, replacement.Heads.Select( set => set.Name ).ToArray() );
+		foreach ( var set in replacement.Heads )
+		{
+			Assert.AreEqual( (8, 7), (set.Animations.Animations[0].FramesPerDirection, set.Animations.Animations[0].Directions), $"{set.Name}: 8 azimuths by 7 elevation rows" );
+			Assert.AreEqual( 56, set.Frames.Length, set.Name );
+			Assert.IsTrue( set.Frames.All( frame => frame.PixelsPerUnitX == 256 && HasPixel( set, frame ) ), set.Name );
+		}
+	}
+
+	[TestMethod]
+	public void TheLandGuestsSwitchIsItsOwnPresentationOnlyExtensionOnByDefault()
+	{
+		Assert.IsTrue( OfficialExtensions.PoolGuestArt.DefaultEnabled && !OfficialExtensions.PoolGuestArt.AffectsSimulation && OfficialExtensions.PoolGuestArt.PlayerSelectable );
+		var off = ModSet.Resolve( Array.Empty<DiscoveredMod>(), new ModSettings { Enabled = new Dictionary<string, bool> { [OfficialExtensions.Pools.Id] = true, [OfficialExtensions.PoolGuestArt.Id] = false } }, null, GameEdition.ThemeParkWorld, OfficialExtensions.All );
+		using var scope = OpenTpwExtensions.Use( off );
+		Assert.IsTrue( FeatureGates.Pools && !FeatureGates.PoolGuestArt );
+		Assert.IsNull( PoolGuestSprites.LoadReplacement( GameKids( TpwKidNames ) ), "the original guests on land; swimmers use the swim sets whatever this says (PoolSwimSprites)" );
+		Assert.AreEqual( 8, PoolSwimSprites.Load().Count );
+	}
+
+	[TestMethod]
+	public void TheShippedAtlasSizesArePinnedSoTheMemoryFiguresInTheDocsCannotDrift()
+	{
+		static string Sizes( IEnumerable<GuestSpriteAtlas> sets ) => string.Join( " ", sets.Select( set => $"{set.Width}x{set.Height}" ) );
+		var replacement = PoolGuestSprites.LoadReplacement( GameKids( TpwKidNames ) );
+		using var scope = OpenTpwExtensions.Use( PoolsTests.PoolsSet( true ) );
+		replacement = PoolGuestSprites.LoadReplacement( GameKids( TpwKidNames ) )!;
+		var swim = PoolSwimSprites.Load();
+		var kids = Sizes( replacement.Kids );
+		var heads = Sizes( replacement.Heads );
+		var swimSizes = Sizes( swim );
+		long Bytes( IEnumerable<GuestSpriteAtlas> sets ) => sets.Sum( set => (long)set.Width * set.Height * 4 );
+		Assert.AreEqual( "1024x512 1024x512 1024x512 1024x512 1024x512 1024x256 1024x512 1024x512", kids );
+		Assert.AreEqual( "1024x256 1024x256 1024x512 1024x256 1024x512 1024x256 1024x512 1024x256", heads );
+		Assert.AreEqual( "1024x2048 1024x2048 1024x2048 1024x2048 1024x2048 1024x2048 1024x2048 1024x2048", swimSizes );
+		const long MiB = 1024 * 1024;
+		Assert.AreEqual( (15 * MiB, 11 * MiB, 64 * MiB), (Bytes( replacement.Kids ), Bytes( replacement.Heads ), Bytes( swim )), "RGBA8 bytes of the kid, head and swim atlases (docs/POOLS.md): 90 MiB, about 120 MiB on the GPU with mip levels" );
+	}
+
+	[TestMethod]
+	public void AThemeParkIncGameAnIncompleteReplacementAndAMissingFolderLeaveTheGameSets()
+	{
+		using var scope = OpenTpwExtensions.Use( PoolsTests.PoolsSet( true ) );
+		Assert.IsNull( PoolGuestSprites.LoadReplacement( GameKids( "SPR_BD", "SPR_GB", "SPR_GK", "SPR_KB" ) ), "a Theme Park Inc park has four kid sets of other names: the Theme Park World sets must not replace them (Type % 8)" );
+		Assert.IsNull( PoolGuestSprites.LoadReplacement( GameKids() ), "no game kid sets, nothing to replace" );
+		var folder = Path.Combine( root, "pools" );
+		var source = PoolContent.Directory!;
+		void CopySet( string kind, string name )
+		{
+			Directory.CreateDirectory( Path.Combine( folder, "esprites", "Generic", kind ) );
+			foreach ( var extension in new[] { ".ESP", ".TPC" } )
+				File.Copy( Path.Combine( source, "esprites", "Generic", kind, name + extension ), Path.Combine( folder, "esprites", "Generic", kind, name + extension ), true );
+		}
+		PoolContent.DirectoryOverride = folder;
+		foreach ( var name in TpwKidNames )
+			CopySet( "Kids", name );
+		Assert.IsNull( PoolGuestSprites.LoadReplacement( GameKids( TpwKidNames ) ), "the kids are complete but there are no heads: both or neither" );
+		CopySet( "Kidsheads", "SPR_BE" );
+		Assert.IsNull( PoolGuestSprites.LoadReplacement( GameKids( TpwKidNames ) ), "one head set of eight" );
+		foreach ( var name in TpwKidNames )
+			CopySet( "Kidsheads", name );
+		Assert.IsNotNull( PoolGuestSprites.LoadReplacement( GameKids( TpwKidNames ) ), "both complete" );
+		File.Delete( Path.Combine( folder, "esprites", "Generic", "Kids", "SPR_TA.TPC" ) );
+		Assert.IsNull( PoolGuestSprites.LoadReplacement( GameKids( TpwKidNames ) ), "seven kid sets of eight" );
+		PoolContent.DirectoryOverride = Path.Combine( root, "nowhere" );
+		Assert.IsNull( PoolGuestSprites.LoadReplacement( GameKids( TpwKidNames ) ) );
+	}
+
+	[TestMethod]
+	public void TheWebProjectDoesNotEmbedTheSpriteSets()
+	{
+		var project = Path.Combine( RepositoryFolder(), "..", "..", "source", "OpenTPW.Web", "OpenTPW.Web.csproj" );
+		var embed = System.Xml.Linq.XDocument.Load( project ).Descendants( "EmbeddedResource" ).Single( item => ( (string?)item.Attribute( "Include" ) ?? "" ).Contains( "content/pools" ) );
+		Assert.AreEqual( "../../content/pools/esprites/**/*", (string?)embed.Attribute( "Exclude" ), "the 2x guest sets (about 9 MB) stay out of the browser build: the guests keep the game's art there" );
 	}
 
 	private static bool HasPixel( GuestSpriteAtlas set, GuestAtlasFrame frame )
@@ -290,7 +418,9 @@ public class PoolsContentTests
 	{
 		var folder = PoolContent.Directory!;
 		var files = Directory.EnumerateFiles( folder, "*", SearchOption.AllDirectories ).ToArray();
-		Assert.IsTrue( files.Sum( file => new FileInfo( file ).Length ) < 1_500_000, "small enough for the browser build" );
+		var sprites = files.Where( file => file.Replace( '\\', '/' ).Contains( "/esprites/" ) ).ToArray();
+		Assert.IsTrue( files.Except( sprites ).Sum( file => new FileInfo( file ).Length ) < 1_500_000, "the objects (what the browser build embeds) stay small" );
+		Assert.IsTrue( sprites.Sum( file => new FileInfo( file ).Length ) < 9_500_000, "the 2x sprite sets (desktop only) have a budget too: the kids ship only the slots that are drawn" );
 		Assert.IsFalse( files.Any( file => file.EndsWith( ".wad", StringComparison.OrdinalIgnoreCase ) || file.EndsWith( ".wct", StringComparison.OrdinalIgnoreCase ) ), "no original archive or texture format file" );
 		Assert.IsTrue( files.All( file => Path.GetFileName( file ).Length <= 24 ) );
 		// the swim sets carry no full-detail bank: only the .TPC is read (docs/CONTENT-KIT.md)

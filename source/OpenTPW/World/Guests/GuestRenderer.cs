@@ -12,7 +12,7 @@ namespace OpenTPW;
 /// </summary>
 public sealed class GuestRenderer : Entity
 {
-	/// <summary>Engine units per sprite pixel (kids ≈ 42 px tall ≈ 0.95 cell). Approximation; the original zoom mapping is unknown.</summary>
+	/// <summary>Engine units per sprite pixel of a frame with 128 pixels per unit (kids ≈ 42 px tall ≈ 0.95 cell); a frame with other pixels-per-unit fields is scaled by 128 / A across and 128 / B down (<see cref="GuestAtlasFrame.ScaleX"/>). Approximation; the original zoom mapping is unknown.</summary>
 	public const float UnitsPerPixel = 0.045f;
 	/// <summary>Walk-cycle frames per cell walked (8 frames per 0.8 cells). Approximation.</summary>
 	public const float WalkFramesPerCell = 10f;
@@ -121,7 +121,9 @@ public sealed class GuestRenderer : Entity
 				Log.Warning( $"Texture pack atlas {file} could not be read ({exception.Message}); using the original sprites." );
 			}
 		}
-		return new Texture( atlas.Pixels, atlas.Width, atlas.Height );
+		var texture = new Texture( atlas.Pixels, atlas.Width, atlas.Height );
+		atlas.ReleasePixels();   // uploaded: the bank keeps the picture at a quarter of the size, and a texture-pack reload decodes it again
+		return texture;
 	}
 
 	/// <summary>Engine position of a point in game-cell coordinates, on the cell's ground triangle (<see cref="ModelHeightfield.GetHeight"/>; holes keep their corner heights).</summary>
@@ -219,11 +221,7 @@ public sealed class GuestRenderer : Entity
 			var atlas = atlases[atlasIndex];
 			var frame = atlas.Frames[frameIndex];
 			var feet = FeetChooser?.Invoke( guest ) ?? CellToEngine( field, guest.DrawX, guest.DrawY );
-			var left = mirror ? -(frame.OriginX + frame.Width) : frame.OriginX;
-			var x0 = left * UnitsPerPixel;
-			var x1 = (left + frame.Width) * UnitsPerPixel;
-			var yTop = -frame.OriginY * UnitsPerPixel;
-			var yBottom = -(frame.OriginY + frame.Height) * UnitsPerPixel;
+			var (x0, x1, yTop, yBottom) = frame.Extents( mirror, UnitsPerPixel );
 			var u0 = frame.X / (float)atlas.Width;
 			var u1 = (frame.X + frame.Width) / (float)atlas.Width;
 			if ( mirror )

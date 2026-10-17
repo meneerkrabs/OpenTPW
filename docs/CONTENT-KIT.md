@@ -205,7 +205,7 @@ A set folder holds `slot<NN>_d<direction>_f<frame>.png` (RGBA; NN is the animati
   "performances": [ { "program": 0, "slot": 4, "intro": 0, "hold": 0 } ] }
 ```
 
-`name` is the set's stem (1 to 7 letters, digits or underscores, such as `SPR_BE`; `--name` may supply it when the file does not). `detailFlag` is ESP byte 0x10C: 1 writes `.FPC` and `.TPC` with the same content, as every shipped
+`pixelsPerUnit` (default 128, 1 to 65535) is written to both pixels-per-unit words of every frame; a set drawn at twice the pixel size has 256 (see "Resolution" under Guest sprite sets). `name` is the set's stem (1 to 7 letters, digits or underscores, such as `SPR_BE`; `--name` may supply it when the file does not). `detailFlag` is ESP byte 0x10C: 1 writes `.FPC` and `.TPC` with the same content, as every shipped
 full-detail set ships both, 0 only the `.TPC`, as the head sets do (default 1); `kidFlag` is byte 0x10D (default 0). `slots` lists every slot the set has, with its directions (the shipped kid sets have 5, the head sets 7;
 0 means a slot without directions, as in the balloons and thoughts, whose files are `d0` only) and frames per direction; slots keep their numbers and frames are stored slot by slot, direction-major, as the
 shipped sets are. `originX`/`originY` are the offset of the frame's top-left corner from the hotspot (`SpriteFrame.OriginX`/`OriginY`; negative when the hotspot lies inside the frame), per frame under `frames` (the key is the
@@ -252,7 +252,7 @@ checked); and a sideshow-category object has no headless park test (the gate pla
 
 ## Content shipped with the game: pools
 
-The official `opentpw.pools` extension ships its changing rooms and swim sprites as committed generated files in `content/pools` (our own art, nothing from the original game). `tools/pools/build-content.sh` regenerates them (Blender 5.x, the .NET SDK, python3; about 3 minutes; env `KIT_ARTIFACTS`, `WORK`, `FORCE_SPRITES`): the cabin model comes from `tools/blender/opentpw_changing_room.py` through `GltfModelConverter` and `opentpw-kit object` with `tools/pools/cabin.sam` and `cabin.rse`, the swimmers from `opentpw_guest_sprites.py --part swim` packed by `tools/pools/pack_swim_sets.py` through `opentpw-kit sprites`. See [POOLS.md](POOLS.md#content-extpools-content).
+The official `opentpw.pools` extension ships its changing rooms and swim sprites as committed generated files in `content/pools` (our own art, nothing from the original game). `tools/pools/build-content.sh` regenerates them (Blender 5.x, the .NET SDK, python3; about 30 minutes, nearly all of it the sprite renders; the kid sets keep only slots 0, 1 and 14, the ones the land renderers draw; env `KIT_ARTIFACTS`, `WORK`, `FORCE_SPRITES`): the cabin model comes from `tools/blender/opentpw_changing_room.py` through `GltfModelConverter` and `opentpw-kit object` with `tools/pools/cabin.sam` and `cabin.rse`, the guests from `opentpw_guest_sprites.py --scale 2 --part pool` (the swimwear sets, `content/pools/esprites/Swim`) and `--part land,heads` (the clothes sets and heads that replace the game's while the extension is on, `esprites/Generic/Kids` and `Kidsheads`), packed by `tools/pools/pack_sprite_sets.py` through `opentpw-kit sprites`. All of it is drawn at 2x (8.84 MB of sprites). See [POOLS.md](POOLS.md#content-extpools-content).
 
 ## What is unverified
 
@@ -445,6 +445,35 @@ set quantised to one 255-colour palette, median cut as `SpriteSetBuilder` does) 
 same content, as the shipped full-detail sets do; false for the heads); `kidFlag` is ESP byte 0x10D (1 for the girls); `frames` are
 listed direction-major, as the bank stores them. Heads have `source` `heads`, one slot 0 of 7 directions (elevation rows) by 8 frames
 (azimuths).
+
+### Resolution
+
+`--scale N` renders every frame at N times the pixel size: canvas, hotspot offsets and pixels per Blender unit are N times larger (`setup_scene(..., scale=N)`), the supersampling drops from 6 to 4 at 2x (the frame is rendered 8 times its pixel size), and `set.json` gets `"pixelsPerUnit": 128 * N`. The packer (`opentpw-kit sprites`, `pixelsPerUnit` of its `set.json`) writes that into every frame's two pixels-per-unit words, and the game scales a quad by 128 / the word ([GUESTS.md](GUESTS.md#pixels-per-unit-and-resolution)), so a 2x frame is drawn at the world size of the 1x frame it replaces with twice the detail. Hotspot offsets are in the set's own pixels (a 1x offset of -39 is -78 at 2x), and `LAND_HOTSPOT_DROP` is 1 px at 1x, 2 at 2x.
+
+Quantisation at 2x (one 255-colour palette per set, as at 1x): measured on all 175 frames of TA, the mean largest-channel error of the quantised frames against the unquantised ones is 2.9 of 255 and 2.6 % of the pixels are off by more than 16, with no visible banding beyond what the unquantised render already has. A light ordered dither (`--dither 0.03` or 0.06) raises the error to 4.0 or 5.7 and shows only as grain, so none is used. Sizes: a TPW kid set in clothes is 0.46 MB with every slot (175 frames; the shipped 55-frame version with slots 0, 1 and 14 is 0.15 MB), its heads 0.13 MB (56), a swimwear set 0.82 MB (295), all `.TPC` only; the 24 shipped sets are 8.84 MB. `tools/blender/opentpw_guest_hires_compare.py --compare` draws 1x against 2x (`reports/guests-hires-compare.png`) and `--sheet` a contact sheet of any generated set.
+
+### Swimwear slots
+
+`--part pool` renders `opentpw_pool_poses.POOL_SLOTS` into `<out>/<edition>/Pool/<SET>/`: the swimwear table of the pools mod (the `PoolSwimSlots` constants), five directions each. Dry slots use swimwear and dry hair; the water slots (8 to 13) the wet kid, with the water's tint and translucency below the water line, foam rings and droplets.
+
+| Slot | Meaning | Frames | Hotspot |
+| --- | --- | --- | --- |
+| 0 | stand on the deck | 1 | feet on the floor |
+| 1 | walk on the deck | 8 | feet |
+| 2 | run (unused, empty) | | |
+| 3 | climb a ladder, facing it, hands reaching for rungs, knees coming up | 4 | torso centre |
+| 4 | dive or jump: crouch, leap, arc, head-first entry (upside down) | 4 | torso centre |
+| 5 | lying on the back, head away from the heading (lounger) | 2 | torso centre |
+| 6 | standing under a shower, hands in the hair, falling drops | 4 | feet |
+| 7 | sliding on the back, feet first, arms up then crossed | 2 | torso centre |
+| 8, 9, 10 | crawl, breaststroke, treading water (as before) | 8, 8, 4 | torso at the water line |
+| 11 | splash-down: the body sinks from the shins to the shoulders, a crown of drops, growing rings | 4 | torso at the water line |
+| 12 | sitting in the water (spa), knees up, an arm on the rim, then waving | 2 | torso at the water line |
+| 13 | floating in an inflatable ring (own colour per kid), paddling and bobbing | 4 | torso at the water line |
+| 14 | swinging on a rope, hands overhead: legs forward, down, trailing, down | 4 | torso centre |
+| 15 | spare, empty | | |
+
+Slots whose hotspot is the torso centre may point up or down the frame (the dive ends upside down), so the generator renders them on a larger canvas (96 x 96 px at 1x for TPW). The engine places the torso centre on the path of the ladder, dive, slide or rope; the lying hotspot is the centre of the body on the lounger.
 
 ### Hotspot rule
 

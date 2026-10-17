@@ -24,10 +24,6 @@ public class ParkCameraMode : CameraMode
 	public const float ZoomSpeed = 0.05f * 1000f;
 	/// <summary>The zoom change of one wheel notch (message 0x1000D, <c>0x42a760</c>).</summary>
 	public const float WheelStep = 10f;
-	/// <summary>Whether the original's flag 0x200 range (zoom 40..300, 0x74c9d8 and 0x74c9dc) replaces 70..130; nothing in the original's code that was read sets it, the native smoke tests use it to see more of the park.</summary>
-	public bool ExtendedZoomRange { get; set; }
-	private float ZoomMinimum => ExtendedZoomRange ? 40f : MinimumHeight;
-	private float ZoomMaximum => ExtendedZoomRange ? 300f : MaximumHeight;
 	public bool UiCapturesKeyboard { get; set; }
 	public bool ModalOpen { get; set; }
 	public Vector3 Target { get; private set; }
@@ -68,7 +64,7 @@ public class ParkCameraMode : CameraMode
 	/// <summary>Places the camera at a fixed pose (screenshots): ground target, height and yaw in degrees.</summary>
 	public void SetPose( Vector3 target, float height, float yaw )
 	{
-		Height = float.IsFinite( height ) ? Math.Clamp( height, ZoomMinimum, ZoomMaximum ) : Height;
+		Height = float.IsFinite( height ) ? Math.Clamp( height, MinimumHeight, MaximumHeight ) : Height;
 		Yaw = float.IsFinite( yaw ) ? yaw % 360 : Yaw;
 		Focus( target );
 		smoothedGround = GroundAtTarget();
@@ -137,7 +133,7 @@ public class ParkCameraMode : CameraMode
 				? ((input.RotateRight ? 1 : 0) - (input.RotateLeft ? 1 : 0)) * RotationSpeed * dt
 				: ((input.RotateRightPressed ? 1 : 0) - (input.RotateLeftPressed ? 1 : 0)) * 90;
 			Yaw = (Yaw + rotation) % 360;
-			Height = Math.Clamp( Height - input.Zoom * ZoomSpeed * dt, ZoomMinimum, ZoomMaximum );
+			Height = Math.Clamp( Height - input.Zoom * ZoomSpeed * dt, MinimumHeight, MaximumHeight );
 		}
 		Yaw = (Yaw + MiddleTurn( input, dt )) % 360;
 		var radians = Yaw.DegreesToRadians();
@@ -147,7 +143,7 @@ public class ParkCameraMode : CameraMode
 		var mouse = !input.CaptureMouse && !input.TextEntry;
 		if ( mouse )
 		{
-			Height = Math.Clamp( Height - input.Wheel * WheelStep, ZoomMinimum, ZoomMaximum );
+			Height = Math.Clamp( Height - input.Wheel * WheelStep, MinimumHeight, MaximumHeight );
 			if ( options.Scroll == ScrollMode.Pushscroll )
 			{
 				x += Edge( input.MousePosition.X, input.LogicalSize.X );

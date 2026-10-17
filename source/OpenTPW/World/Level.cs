@@ -324,7 +324,7 @@ public partial class Level : IDisposable
 			PlacedRide.Start();
 	}
 
-	/// <summary>The centre of the park's paths, where the native smoke tests aim the camera (<c>[EXT:smoke-camera-focus]</c>).</summary>
+	/// <summary>The centre of the park's paths, where the native smoke tests aim the camera (a pose inside the original's zoom range, which a player can reach by scrolling).</summary>
 	internal Vector3 PathFocus { get; private set; }
 
 	private IEnumerable<float> SetupEntities()
@@ -359,7 +359,7 @@ public partial class Level : IDisposable
 			// [BIN:TPW-EXE:0x42a990 home target] the camera starts, and the Home key returns, at the target (475, 0, 175) in original units, the middle of the entrance cells (47, 17) and (48, 17) that every level's Standard.sam names (FixedItemInfo.EntranceA/BPos); a saved park's own camera (the KAME block: 0x42cdc0 writes the zoom, yaw, flags and target) is not imported (docs/reverse/SAVE-plan.md), so every park starts at Home
 			var home = OriginalParkPlacement.ToEngine( field, new System.Numerics.Vector3( ParkCameraMode.HomeTargetX, 0, ParkCameraMode.HomeTargetZ ) );
 			ParkCameraMode.InitialTarget = new Vector3( home.X, home.Y, 0 );
-			// [EXT:smoke-camera-focus] the native smoke tests look for free owned sites in the middle of the screen, which the original's Home view (the entrance forecourt) rarely has; they move the camera to the imported paths' centre (or the initial path's, or the terrain centre) with this
+			// the native smoke tests look for free owned sites in the middle of the screen, which the original's Home view (the entrance forecourt) rarely has; they scroll to the imported paths' centre (or the initial path's, or the terrain centre) with this
 			var paths = save?.PathCells.ToList() ?? Enumerable.Range( 0, field.CellCountX * field.CellCountZ )
 				.Select( index => (X: index % field.CellCountX, Y: index / field.CellCountX) )
 				.Where( cell => OriginalPark.Map.GetFlagsAt( cell.X, cell.Y ).HasFlag( MapCellFlags.InitialPath ) ).ToList();

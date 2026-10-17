@@ -8,7 +8,7 @@ The park view now uses tp.exe's camera instead of OpenTPW's own tuned pose (UI-1
   Wheel steps are 10, the zoom keys 0.05 a millisecond, the rotate keys 0.002 radians a millisecond, and the pan speed the original's
   settled 0.02 x sqrt(zoom) a millisecond. The camera panel's view button cycles 70, 110 and 130.
 - **Projection** (`0x578be0`, `0x56b790`): one projection for the park, ride and walk views. The visible half height at unit depth is
-  0.5 x tan(45 degrees) = 0.5 (the pick frustum; the matrix itself has tangent 1) and the width follows the window (0.75 aspect at 4:3). A
+  0.5 x tan(45 degrees) = 0.5 (the pick frustum; the matrix of `0x578BE0` has tangent 1, but `0x5781D0` multiplies the view-projection by a screen matrix of 2 x the aspect word and -2, which halves the visible range) and the width follows the window (0.75 aspect at 4:3). A
   native capture of Lost Kingdom at the Home pose matches the PC video's first park frame (gate, booths and path edges within a few pixels
   at 1024 x 768); wider windows keep the height and show more width.
 - **Still open under UI-107:** the fog range (the video shows no fog at the top of the Home view, which a 135-150 range would fog), the

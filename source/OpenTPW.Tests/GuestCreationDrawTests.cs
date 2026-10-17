@@ -33,9 +33,13 @@ public class GuestCreationDrawTests
 
 		Assert.AreEqual( speed, guest.BaseSpeed );
 		Assert.AreEqual( (start.Type, start.Money, start.ExitLevel), (guest.Type, guest.Money, (int)guest.ExitLevel) );
-		Assert.AreEqual( side == 0 ? settings.ArrivalLaneA : settings.ArrivalLaneB, guest.Lane, "R & 1 picks the entrance" );
-		Assert.AreEqual( sideways / 256f - 0.5f, guest.OffsetX, "the sideways byte of the entrance point" );
-		Assert.AreEqual( 0xC8 / 256f - 0.5f, guest.OffsetY, "the other byte is 0xC8" );
+		// 0x004CF720: the guest is made at the centre of the bus stop B cell (no vehicle at work: the bus's); 0x004D8710: R & 1 picks the crossing cell, the X of side A's or side B's
+		// with side A's row, and the walk there (0x004FA5F0) ends at the sideways byte and 0xC8
+		Assert.IsNull( guest.Lane );
+		Assert.AreEqual( GuestNavigation.Centre( settings.ArrivalLaneB![0] ), (guest.Navigation.X, guest.Navigation.Y), "made at the bus stop B cell's centre" );
+		var crossing = (X: (side == 0 ? settings.ArrivalLaneA! : settings.ArrivalLaneB!)[1].X, Y: settings.ArrivalLaneA![1].Y);
+		Assert.AreEqual( GuestNavigation.BytePoint( crossing, (int)sideways, 0xC8 ), (guest.Navigation.TargetX, guest.Navigation.TargetY ), "R & 1 picks the crossing cell, the sideways byte and 0xC8 the point" );
+		Assert.AreEqual( GuestState.CrossingRoad, guest.State, "a route to it makes state 0" );
 		Assert.AreEqual( mirror.State, simulation.World.State, "no other draw" );
 	}
 

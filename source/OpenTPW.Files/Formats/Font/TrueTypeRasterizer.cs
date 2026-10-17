@@ -22,16 +22,36 @@ public sealed record CoverageBitmap( int Width, int Height, int OriginX, int Ori
 	}
 }
 
+/// <summary>How a rasterized pixel's coverage is measured.</summary>
+public enum CoverageModel
+{
+	/// <summary>
+	/// The GDI ANTIALIASED_QUALITY model (<see cref="TrueTypeRasterizer.GdiOversampling"/>): 4x4 point samples per pixel, so a pixel
+	/// takes one of 17 levels (0..16), written as <c>(level * 255 + 8) / 16</c>. No hinting, no gamma.
+	/// </summary>
+	GdiGray4,
+	/// <summary>Resolution independent linear coverage: 16 sub-scanlines with exact fractional span ends, no quantisation.</summary>
+	Linear
+}
+
 /// <summary>
-/// Scanline rasterizer for TrueType outlines: quadratic contours are flattened to lines, every pixel
-/// row is sampled with <see cref="SubScanlines"/> horizontal sub-scanlines, spans are filled with the
-/// non-zero winding rule, and span ends contribute exact fractional horizontal coverage. The result
-/// is deterministic (plain IEEE float/double arithmetic, fixed sampling) so its hashes can be pinned.
-/// No hinting and no gamma: coverage is linear.
+/// Scanline rasterizer for TrueType outlines: quadratic contours are flattened to lines, spans are filled with the
+/// non-zero winding rule and measured per <see cref="CoverageModel"/>. The default model is the documented GDI grayscale
+/// smoothing (<see cref="CoverageModel.GdiGray4"/>); <see cref="CoverageModel.Linear"/> keeps the exact linear coverage.
+/// The result is deterministic (plain IEEE float/double arithmetic, fixed sampling) so its hashes can be pinned.
 /// </summary>
+/// <remarks>
+/// The GDI model, from the sources in docs/COMPATIBILITY.md (COMPAT-003): GetGlyphOutline documents the grayscale bitmaps as
+/// GGO_GRAY2/4/8 = 5/17/65 levels (n x n oversampling, levels 0..n*n), and Microsoft's typography notes describe smoothing as
+/// grid-fit, overscale, downsample; the 17-level, 4x4 form is the one used here. Hinting is NOT applied (the repository has no TrueType
+/// bytecode interpreter; the 17 shipped fonts carry hinting programs and no <c>gasp</c> table). The level to byte mapping,
+/// the sample positions and the absence of gamma are the model's own and are not verified against a GDI capture.
+/// </remarks>
 public static class TrueTypeRasterizer
 {
-	// [EXT:sign-text-antialias] 16 sub-scanlines of unhinted linear coverage are an OpenTPW design choice: GDI ANTIALIASED_QUALITY is an OS rasterizer with no portable equivalent, and this one is deterministic and resolution independent
+	/// <summary>Oversampling per axis of the GDI grayscale model (the GGO_GRAY4 form: 4 x 4 samples, 17 levels).</summary>
+	public const int GdiOversampling = 4;
+	/// <summary>Sub-scanlines per pixel row of the <see cref="CoverageModel.Linear"/> model.</summary>
 	public const int SubScanlines = 16;
 	public const int MaximumDimension = 8192;
 	private const double FlatnessPixels = 0.05;
@@ -50,8 +70,14 @@ public static class TrueTypeRasterizer
 		Rasterize( placed, scale, scale );
 
 	/// <summary>As <see cref="Rasterize(IEnumerable{ValueTuple{IReadOnlyList{IReadOnlyList{TrueTypePoint}}, float}}, float)"/> with separate horizontal and vertical scales (GDI-style condensed/expanded text).</summary>
-	public static CoverageBitmap Rasterize( IEnumerable<(IReadOnlyList<IReadOnlyList<TrueTypePoint>> Outline, float PenX)> placed, float scaleX, float scaleY )
+	public static CoverageBitmap Rasterize( IEnumerable<(IReadOnlyList<IReadOnlyList<TrueTypePoint>> Outline, float PenX)> placed, float scaleX, float scaleY ) =>
+		Rasterize( placed, scaleX, scaleY, CoverageModel.GdiGray4 );
+
+	/// <summary>As the overload without a model, measuring coverage with <paramref name="model"/>.</summary>
+	public static CoverageBitmap Rasterize( IEnumerable<(IReadOnlyList<IReadOnlyList<TrueTypePoint>> Outline, float PenX)> placed, float scaleX, float scaleY, CoverageModel model )
 	{
+		var gdi = model == CoverageModel.GdiGray4;
+		var samplesPerRow = gdi ? GdiOversampling : SubScanlines;
 		if ( !(scaleX > 0) || !float.IsFinite( scaleX ) || !(scaleY > 0) || !float.IsFinite( scaleY ) )
 			throw new ArgumentOutOfRangeException( nameof( scaleX ), "Scales must be positive." );
 		var scale = scaleY;
@@ -110,9 +136,9 @@ public static class TrueTypeRasterizer
 			activeCount = kept;
 			while ( nextCandidate < sorted.Length && tops[nextCandidate] < row + 1 )
 				active[activeCount++] = nextCandidate++;
-			for ( var sub = 0; sub < SubScanlines; sub++ )
+			for ( var sub = 0; sub < samplesPerRow; sub++ )
 			{
-				var y = row + (sub + 0.5) / SubScanlines;
+				var y = row + (sub + 0.5) / samplesPerRow;
 				crossings.Clear();
 				for ( var i = 0; i < activeCount; i++ )
 				{
@@ -136,16 +162,43 @@ public static class TrueTypeRasterizer
 				{
 					winding += crossings[i].Winding;
 					if ( winding != 0 )
-						AddSpan( accumulator, crossings[i].X, crossings[i + 1].X, width );
+					{
+						if ( gdi )
+							AddSamples( accumulator, crossings[i].X, crossings[i + 1].X, width );
+						else
+							AddSpan( accumulator, crossings[i].X, crossings[i + 1].X, width );
+					}
 				}
 			}
 			for ( var x = 0; x < width; x++ )
 			{
+				if ( gdi )
+				{
+					// [APPROX:COMPAT-003] level 0..16 -> byte as (level * 255 + 8) / 16: the level count is documented (GGO_GRAY4), the palette mapping of the 8-bit DIB is not verified
+					var level = (int)Math.Clamp( accumulator[x], 0, GdiOversampling * GdiOversampling );
+					coverage[row * width + x] = (byte)((level * 255 + 8) / (GdiOversampling * GdiOversampling));
+					continue;
+				}
 				var value = accumulator[x] / SubScanlines;
 				coverage[row * width + x] = (byte)Math.Round( Math.Clamp( value, 0, 1 ) * 255, MidpointRounding.AwayFromZero );
 			}
 		}
 		return new CoverageBitmap( width, height, (int)-minX, (int)-minY, coverage );
+	}
+
+	/// <summary>Counts the 4 horizontal sample points per pixel (at (k + 0.5) / 4) inside the half-open span [x0, x1).</summary>
+	private static void AddSamples( double[] accumulator, double x0, double x1, int width )
+	{
+		x0 = Math.Clamp( x0, 0, width );
+		x1 = Math.Clamp( x1, 0, width );
+		var first = (int)Math.Ceiling( x0 * GdiOversampling - 0.5 );
+		var end = (int)Math.Ceiling( x1 * GdiOversampling - 0.5 );
+		for ( var pixel = first / GdiOversampling; first < end; pixel++ )
+		{
+			var stop = Math.Min( end, (pixel + 1) * GdiOversampling );
+			accumulator[pixel] += stop - first;
+			first = stop;
+		}
 	}
 
 	private static void AddSpan( double[] accumulator, double x0, double x1, int width )

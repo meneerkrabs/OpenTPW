@@ -78,7 +78,9 @@ public class GuestSnapshotJsonContinuationTests
 			Assert.AreEqual( expected.StateTimer, actual.StateTimer );
 			Assert.AreEqual( expected.Boost, actual.Boost );
 		}
-		Assert.IsTrue( loaded.Guests.Any( guest => guest.Lane is { Length: >= 2 } ), "the snapshot holds arrival-lane walkers" );
+		Assert.IsTrue( loaded.Guests.All( guest => guest.Lane == null ), "no guest of the current schema walks an arrival lane" );
+		Assert.IsTrue( loaded.Guests.Any( guest => guest.State is GuestState.CrossingRoad or GuestState.CrossingRoadToPark or GuestState.GoingToTicketBooth or GuestState.WaitingAtBooth
+			or GuestState.AtTicketBooth or GuestState.EnteringPark ), "the snapshot holds guests of the arrival walk" );
 		CollectionAssert.AreEqual( snapshot.SeenQueueEdits, loaded.SeenQueueEdits, "the seen queue-edit tuples survive the codec" );
 		for ( var index = 0; index < snapshot.Attractions.Length; index++ )
 		{
@@ -130,7 +132,8 @@ public class GuestSnapshotJsonContinuationTests
 	public void ASchemaOneSnapshotWithoutHistoriesStillRestoresWithTheFractionalExitValue()
 	{
 		var park = new GuestSnapshotTests.Rig();
-		GuestSnapshotTests.RunUntil( park, rig => rig.Simulation.TickCount >= 4200, 0, 4201 );
+		// early enough that no guest has left yet: a schema-1 save counts its guests, so their ids ascend (a later park reuses the slots of the guests that went home)
+		GuestSnapshotTests.RunUntil( park, rig => rig.Simulation.TickCount >= 2400, 0, 2401 );
 		var snapshot = park.Simulation.CaptureSnapshot();
 		Assert.AreEqual( GuestSimulationSnapshot.CurrentSchemaVersion, snapshot.SchemaVersion );
 		Assert.IsTrue( snapshot.Guests.Any( guest => guest.UsedHistory is { Length: Guest.HistorySlots } ), "the current schema writes the histories" );

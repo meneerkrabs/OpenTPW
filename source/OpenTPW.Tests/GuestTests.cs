@@ -164,8 +164,10 @@ public class GuestTests
 	internal static GuestSettings CreateSettings() => new()
 	{
 		Types = new() { new GuestType( 70, 300, 30 ), new GuestType( 40, 600, 40 ) },
-		ArrivalLaneA = new[] { (0, 0), (2, 0), (2, 2), (2, 4), (0, 5) },
-		ArrivalLaneB = new[] { (19, 0), (17, 0), (17, 2), (17, 4), (19, 5) },
+		// both lanes lie in the cross's upper left quarter, clear of its path row and column (a walker leaves a path cell for plain ground only with the leaving mask); the bus stop
+		// has the two rows above it that the stop cells of tp.exe's 0x00500AD0 need, and each entrance is a cell of the path row
+		ArrivalLaneA = new[] { (1, 2), (3, 2), (3, 3), (3, 4), (3, 5) },
+		ArrivalLaneB = new[] { (8, 2), (6, 2), (6, 3), (6, 4), (6, 5) },
 		// A group every five timer units (about 5 s); with no park points the group is 1.2 × NewParkBonus 20 / 6 = 4 guests.
 		ArrivalTimeBetween = 5,
 		AdmissionFee = 20

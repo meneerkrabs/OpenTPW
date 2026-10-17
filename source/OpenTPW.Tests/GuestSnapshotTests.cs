@@ -43,8 +43,9 @@ public class GuestSnapshotTests
 			for ( var x = 0; x < 20; x++ )
 				Grid.SetPath( x, 0, true );
 			var settings = GuestTests.CreateSettings();
-			settings.ArrivalLaneA = new[] { (0, 3), (2, 3), (5, 3), (8, 3), (10, 0) };
-			settings.ArrivalLaneB = new[] { (19, 3), (17, 3), (14, 3), (12, 3), (9, 0) };
+			// the lanes run along row 8, clear of the rides' queue columns (x = 2 and x = 17) that the cell map's edge test would not let a walker cross
+			settings.ArrivalLaneA = new[] { (0, 8), (4, 8), (6, 8), (8, 8), (10, 0) };
+			settings.ArrivalLaneB = new[] { (19, 8), (15, 8), (13, 8), (12, 8), (9, 0) };
 			// Accelerated harness: a group about every dozen park turns (the default points rule gives four guests),
 			// short visits so guests cycle out again, and a cap the park never reaches.
 			settings.ArrivalTimeBetween = 2;
@@ -291,7 +292,7 @@ public class GuestSnapshotTests
 			( "already gone", WithGuest( 0, guest => guest with { State = GuestState.Gone } ) ),
 			( "ride-walk count past its reset", WithGuest( 0, guest => guest with { RideWalkCount = 12 } ) ),
 			( "negative booth wait", WithGuest( 0, guest => guest with { BoothWait = -1 } ) ),
-			( "booth wait beyond the longest verdict wait", WithGuest( 0, guest => guest with { BoothWait = 101 } ) ),
+			( "booth wait beyond the longest gate wait", WithGuest( 0, guest => guest with { BoothWait = GuestSimulation.GateWaitMaximum + 1 } ) ),
 			( "route cell outside the map", WithGuest( 0, guest => guest with { Navigation = guest.Navigation with { Route = new[] { (99, 99) }.Concat( guest.Navigation.Route.Skip( 1 ) ).ToArray() } } ) ),
 			( "queueing guest no longer held", WithGuest( queuedIndex, guest => guest with { State = GuestState.WalkingAround } ) ),
 			( "attraction reference not registered", WithGuest( boundIndex, guest => guest with { State = GuestState.GoingToRide, AttractionId = 42 } ) ),

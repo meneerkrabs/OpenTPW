@@ -49,7 +49,7 @@ public class SavePayloadLayoutTests
 		StringAssert.Contains( Assert.ThrowsException<InvalidDataException>( () => SavePayloadLayout.Parse( missing ) ).Message, "missing the RSYS delimiter" );
 		var swapped = SavePayloadLayout.Delimiters.ToList();
 		(swapped[1], swapped[2]) = (swapped[2], swapped[1]);
-		StringAssert.Contains( Assert.ThrowsException<InvalidDataException>( () => SavePayloadLayout.Parse( SaveTestPayloads.Payload( world, tags: swapped ) ) ).Message, "SAD_Scripts" );
+		StringAssert.Contains( Assert.ThrowsException<InvalidDataException>( () => SavePayloadLayout.Parse( SaveTestPayloads.Payload( world, tags: swapped ) ) ).Message, "Scripts" ); // the Scripts reader now refuses the Particles bytes itself
 		// A Coasters block with a coaster is located by its delimiter, so a copy of the COAS bytes that leaves a valid rest is a second split.
 		var baseline = SaveTestPayloads.Payload( world );
 		var tail = baseline[SavePayloadLayout.Parse( baseline )[SaveBlock.Advisor].Offset..];

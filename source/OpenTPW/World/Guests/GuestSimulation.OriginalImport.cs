@@ -23,12 +23,14 @@ public sealed partial class GuestSimulation
 	// mLastPosX/Y, the litter byte (+0x1B4), mMajorDest (+0x1DC), the ride, shop, sideshow and win counts, mPaidAdmission, mParkOpeningWaitingTime (+0x200), mPersonType (+0x1F0), mPrankeryIndex (+0x1C0),
 	// mPreviousRides[i] / mPreviousTemporaryRides[i] interleaved (+0x1E0 / +0x1E8), mQNext, mQPrev, mQueueMoveDelay (+0x1F4), mQueuePos (+0x1F1), mRemainingBalloonLife (+0x214), mSavedMajorDest,
 	// mSavedState (+0x224), mState (+0x220), the thirst byte (+0x1A4), mTimeOfLastSpotAnim (+0x208), mTimeStartedIdling (+0x1FC), and the bytes of +0x1B8, toilet (+0x1AC) and illness (+0x1B0)
-	internal IReadOnlyList<string> ImportOriginal( IReadOnlyList<SaveGuest> saved, long parkTurn, Func<int, int> attraction, Func<int, int> bin )
+	internal IReadOnlyList<string> ImportOriginal( IReadOnlyList<SaveGuest> saved, long parkTurn, Func<int, int> attraction, Func<int, int> bin, uint visitorsToDate = 0 )
 	{
 		ArgumentNullException.ThrowIfNull( saved );
 		if ( guests.Count != 0 )
 			throw new InvalidOperationException( "Original guests are imported into an empty guest simulation only." );
 		var evidence = new List<string>();
+		// [BIN:TPW-EXE:0x00516C80 world variables] mNumberOfVisitorsToDate (+0x1DA714) is the park's visitor count, which 0x0051AAF0 counts up for each guest that walks into the park
+		VisitorCount = (int)Math.Min( visitorsToDate, int.MaxValue );
 		var adjusted = new List<string>();
 		var dropped = new List<string>();
 		var states = new List<string>();
@@ -64,8 +66,7 @@ public sealed partial class GuestSimulation
 				ReleaseDroppedThing( save.Id );
 				continue;
 			}
-			var lane = inPark ? null : NearestLane( cell );
-			if ( !inPark && lane == null )
+			if ( !inPark && !HasArrivalLane )
 			{
 				dropped.Add( $"{what} (state {save.State}, no arrival lane)" );
 				ReleaseDroppedThing( save.Id );
@@ -114,6 +115,8 @@ public sealed partial class GuestSimulation
 			guest.Boost = person.AdjustorSpeed;
 			var smoothed = BitConverter.Int32BitsToSingle( unchecked( (int)person.PreviousSpeed ) );
 			guest.SmoothedSpeed = float.IsFinite( smoothed ) && smoothed >= 0 ? smoothed : 0;
+			// [BIN:TPW-EXE:0x004FB530 visitor number] mArrivalIndex (+0x1D8) is the number 0x0051AAF0 gave the guest at the entrance (0 for one not yet numbered)
+			guest.VisitorNumber = (int)Math.Min( save.ArrivalIndex, int.MaxValue );
 			guest.QueueMoveDelay = (int)Math.Min( save.QueueMoveDelay, int.MaxValue );
 			guest.RidesTaken = (int)Math.Min( save.NumRides, int.MaxValue );
 			// [BIN:TPW-EXE:0x4FB530 guest serializer] mNumShops (+0x1C8), mNumSideshows (+0x1CC) and mNumSideshowsWon (+0x1D0) follow mNumRides as saved
@@ -152,7 +155,7 @@ public sealed partial class GuestSimulation
 					guest.TimeInParkSeconds = ((parkTurn - save.ArrivalDate) * ParkCalendar.TurnMilliseconds + 0.5) / 1000.0; // half a millisecond keeps the roster's floor(seconds × 1000 / 248) at the exact turn count
 			}
 			else
-				ImportOnLane( guest, save.State, save.PaidAdmission != 0, lane!, cell, adjusted );
+				ImportOnMap( guest, save, cell, destination, adjusted );
 			(guest.StepFromX, guest.StepFromY, guest.StepFromDistance, guest.StepTick) = (guest.X, guest.Y, guest.DistanceWalked, TickCount);
 			UpdatePresentation( guest );
 			Occupy( guest );
@@ -161,27 +164,11 @@ public sealed partial class GuestSimulation
 		evidence.Add( $"Guests imported: {guests.Count} of {saved.Count} ({(states.Count == 0 ? "none" : string.Join( ", ", states ))}, saved state → state)." );
 		foreach ( var line in adjusted )
 			evidence.Add( $"Guest value adjusted on import: {line}." );
-		// [APPROX:SAVE-002] a saved guest in a queue or boarding (states 11–14), leaving a ride (15), using an attraction (16) or held by a guard (17) is not imported, nor is a park guest off the paths (a guard chasing one gives the chase up); an imported guest in an activity (state 8) decides again at once, one waiting at the booth (4) waits OpenTPW's booth time rather than its saved wait (+0x200), a paid guest waiting for the gate (3) walks in at once (GUEST-011), an arriving or departing guest walks OpenTPW's nearest arrival lane from where it stands, a turn stamp before the save's turn counts from the import, and the arrival index, the admission flags, the event ring and the queue links are not imported — evidence needed: an OpenTPW queue and rider restore for original guests, the booth's and gate's waits in OpenTPW's arrival model
+		// [APPROX:SAVE-002] a saved guest in a queue or boarding (states 11–14), leaving a ride (15), using an attraction (16) or held by a guard (17) is not imported, nor is a park guest off the paths (a guard chasing one gives the chase up); an imported guest in an activity (state 8) decides again at once, one at the booth (4) that was not yet weighed waits OpenTPW's booth time (ARRIVAL-006), a turn stamp before the save's turn counts from the import, and the admission flags, the event ring and the queue links are not imported — evidence needed: an OpenTPW queue and rider restore for original guests
 		if ( dropped.Count > 0 )
 			evidence.Add( $"[APPROX:SAVE-002] Guests not imported: {string.Join( ", ", dropped )}." );
-		evidence.Add( $"[APPROX:SAVE-002] Guest values not imported: arrival indices {string.Join( "/", saved.Select( item => item.ArrivalIndex ) )}, waits {string.Join( "/", saved.Select( item => item.ParkOpeningWaitingTime ) )}, paid {string.Join( "/", saved.Select( item => item.PaidAdmission ) )}, queue links {string.Join( "/", saved.Select( item => $"{item.QPrev}-{item.QNext}@{item.QueuePos}" ) )}, saved states {string.Join( "/", saved.Select( item => item.SavedState ) )}." );
+		evidence.Add( $"[APPROX:SAVE-002] Guest values not imported: queue links {string.Join( "/", saved.Select( item => $"{item.QPrev}-{item.QNext}@{item.QueuePos}" ) )}, saved states {string.Join( "/", saved.Select( item => item.SavedState ) )}." );
 		return evidence;
-	}
-
-	/// <summary>The valid arrival lane with a cell nearest <paramref name="cell"/> (squared distance, lane A on a tie); null without one.</summary>
-	private (int X, int Y)[]? NearestLane( (int X, int Y) cell )
-	{
-		(int X, int Y)[]? best = null;
-		var bestDistance = long.MaxValue;
-		foreach ( var lane in new[] { ValidLane( Settings.ArrivalLaneA ), ValidLane( Settings.ArrivalLaneB ) } )
-		{
-			if ( lane == null )
-				continue;
-			var distance = lane.Min( point => (long)(point.X - cell.X) * (point.X - cell.X) + (long)(point.Y - cell.Y) * (point.Y - cell.Y) );
-			if ( distance < bestDistance )
-				(best, bestDistance) = (lane, distance);
-		}
-		return best;
 	}
 
 	/// <summary>A guest in the park: decide (6, 8), wander on (7), walk on to its bin (9) or its ride (10), or leave (18).</summary>
@@ -238,55 +225,63 @@ public sealed partial class GuestSimulation
 			things.Hold( id );
 	}
 
-	/// <summary>A guest on its way in or out: it walks on along the lane, from the point its state has reached.</summary>
-	// [BIN:TPW-EXE:0x004FF7D9 booth arrival] state 3 is a guest at the booth while the park is closed (unpaid) or one that has paid (+0x204 = 1, 0x004FF9D0) and waits for the gate: a closed park sends it home once +0x200 has counted down
-	private void ImportOnLane( Guest guest, uint state, bool paid, (int X, int Y)[] lane, (int X, int Y) cell, List<string> adjusted )
+	/// <summary>A guest on its way in or out of the park, in the state it was saved in: the arrival walk's states 0 to 5, state 18 off the paths and the gate's states 19 and 21 stand on the cell map as they did.</summary>
+	// [BIN:TPW-EXE:0x004FB530 arrival states] mState (+0x220) is kept as it was saved, with the walk's accurate destination (+0x18, +0x1A, routed again as the loader does, 0x004FA5F0) in the walking states 0, 2, 5 and 18, mPaidAdmission (+0x204) and the wait mParkOpeningWaitingTime (+0x200) in states 3 and 4; the walk mask +0x188 is 1 for a guest on its way home
+	private void ImportOnMap( Guest guest, SaveGuest save, (int X, int Y) cell, (int X, int Y) destination, List<string> adjusted )
 	{
-		guest.OnGrid = false;
-		guest.Navigation.OffGrid = true;
-		guest.Lane = lane;
+		guest.OnGrid = true;
+		guest.Lane = null;
+		guest.Navigation.OffGrid = false;
 		(guest.CellX, guest.CellY) = cell;
-		var booth = lane.Length - 2;
-		switch ( state )
+		var target = (X: destination.X >> 8, Y: destination.Y >> 8);
+		void WalkOn()
+		{
+			if ( Grid.InBounds( target.X, target.Y ) )
+				RouteToPoint( guest, (target.X, target.Y), destination.X & 0xFF, destination.Y & 0xFF );
+		}
+		switch ( save.State )
 		{
 			case 0:
-				(guest.LaneIndex, guest.State) = (1, GuestState.CrossingRoad);
+				guest.State = GuestState.CrossingRoad;
+				WalkOn();
 				break;
 			case 1:
-				(guest.LaneIndex, guest.State) = (Math.Min( 2, booth ), GuestState.CrossingRoadToPark);
+				guest.State = GuestState.CrossingRoadToPark;
 				break;
 			case 2:
-				(guest.LaneIndex, guest.State) = (booth, GuestState.GoingToTicketBooth);
+				guest.State = GuestState.GoingToTicketBooth;
+				WalkOn();
+				break;
+			case 3:
+				guest.State = GuestState.WaitingAtBooth;
+				guest.Paid = save.PaidAdmission != 0;
+				guest.BoothWait = (int)Math.Min( save.ParkOpeningWaitingTime, GateWaitMaximum );
 				break;
 			case 4:
-				(guest.LaneIndex, guest.State, guest.StateTimer) = (Math.Max( 0, booth ), GuestState.AtTicketBooth, TicketBoothSeconds);
-				return;
-			case 3 when !paid:
-				// OpenTPW sends a guest that reaches the booth of a closed park home at once
-				adjusted.Add( $"guest {guest.Id} state 3 (unpaid, at the booth of a closed park) imported leaving (state 18)" );
-				guest.LaneReversed = true;
-				(guest.LaneIndex, guest.State) = (Math.Max( 0, booth - 1 ), booth - 1 <= 1 ? GuestState.CrossingRoadHome : GuestState.LeavingPark);
+				guest.State = GuestState.AtTicketBooth;
+				guest.Paid = save.PaidAdmission != 0;
+				// an expensive verdict's wait is kept; a guest that has not been weighed yet waits OpenTPW's booth time (ARRIVAL-006)
+				guest.BoothWait = (int)Math.Min( save.ParkOpeningWaitingTime, 2 * BoothVerdict.ExpensiveWaitBase );
+				guest.StateTimer = guest.BoothWait == 0 ? TicketBoothSeconds : 0;
 				break;
-			case 3 or 5:
-				if ( state == 3 )
-					adjusted.Add( $"guest {guest.Id} state 3 (paid, waiting for the gate) imported entering the park (state 5)" );
-				(guest.LaneIndex, guest.State) = (lane.Length - 1, GuestState.EnteringPark);
+			case 5:
+				guest.State = GuestState.EnteringPark;
+				WalkOn();
 				break;
 			case 18:
-				guest.LaneReversed = true;
-				(guest.LaneIndex, guest.State) = (Math.Max( 2, booth - 1 ), GuestState.LeavingPark);
+				guest.State = GuestState.LeavingPark;
+				guest.Navigation.Mask = 1;
+				WalkOn();
 				break;
 			case 19:
-				guest.LaneReversed = true;
-				(guest.LaneIndex, guest.State) = (1, GuestState.CrossingRoadHome);
+				guest.State = GuestState.CrossingRoadHome;
+				guest.Navigation.Mask = 1;
 				break;
 			default:
-				guest.LaneReversed = true;
-				(guest.LaneIndex, guest.State, guest.StateTimer) = (0, GuestState.WaitingToGoHome, WaitForBusSeconds);
-				return;
+				guest.State = GuestState.WaitingToGoHome;
+				guest.Navigation.Mask = 1;
+				guest.StateTimer = WaitForBusSeconds;
+				break;
 		}
-		// a lane shorter than OpenTPW's five points ([bus stop, two crossing points, booth, entrance]) keeps every index on it
-		guest.LaneIndex = Math.Clamp( guest.LaneIndex, 0, lane.Length - 1 );
-		SetLaneWaypoint( guest );
 	}
 }

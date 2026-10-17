@@ -62,9 +62,10 @@ public class GuestTimeInParkTests
 	{
 		var park = Park( int.MaxValue );
 		var guest = park.SpawnArrival()!;
-		for ( var i = 0; i < 20000 && guest.State is not (GuestState.CrossingRoadHome or GuestState.WaitingToGoHome or GuestState.Gone); i++ ) Steps( park, 1 );
+		for ( var i = 0; i < 20000 && guest.State is not (GuestState.LeavingPark or GuestState.CrossingRoadHome or GuestState.WaitingToGoHome or GuestState.Gone); i++ ) Steps( park, 1 );
 		Assert.AreEqual( 0L, park.Admissions );
-		Assert.IsTrue( guest.LaneReversed, "the booth must refuse and turn this guest home" );
+		Assert.AreEqual( GuestState.LeavingPark, guest.State, "the booth must refuse and turn this guest home" );
+		Assert.AreEqual( 0, guest.ExitLevel, "state 18 with the exit counter zeroed" );
 		Assert.IsTrue( guest.TimeInParkSeconds > 0 );
 	}
 

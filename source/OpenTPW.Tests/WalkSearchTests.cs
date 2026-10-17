@@ -419,7 +419,7 @@ public class WalkSearchTests
 	{
 		var simulation = new GuestSimulation( GuestTests.CreateCross(), GuestTests.CreateSettings(), 5 );
 		var snapshot = simulation.CaptureSnapshot();
-		for ( var tick = 0; tick < 60 * 60 && !(snapshot.Guests.Any( guest => guest.Navigation.OriginalWalk != null ) && snapshot.Guests.Any( guest => guest.Navigation.OriginalWalk == null && !guest.Navigation.OffGrid )); tick++ )
+		for ( var tick = 0; tick < 60 * 60 && !snapshot.Guests.Any( guest => guest.Navigation.OriginalWalk != null ); tick++ )
 		{
 			simulation.Tick( GuestSnapshotTests.Tick );
 			if ( tick % 5 == 0 )
@@ -434,19 +434,17 @@ public class WalkSearchTests
 		var tooFar = simulation.ValidateSnapshot( With( navigation => navigation.OriginalWalk is { } walk
 			? navigation with { OriginalWalk = walk with { Progress = Fixed16.One + 1 } } : null ) );
 		Assert.IsTrue( tooFar.Errors.Any( error => error.Contains( "progress" ) && error.Contains( "above ONE" ) ), string.Join( "; ", tooFar.Errors ) );
-		// A route walk (an older save's walk) must buffer its route from the cursor.
-		var route = With( navigation => navigation.OriginalWalk != null || navigation.OffGrid ? null : navigation with
+		// A route walk (an older save's walk) must buffer its route from the cursor: one guest's walk is made an old route walk here.
+		var oldWalker = snapshot.Guests.First( guest => guest.Navigation.OriginalWalk != null ).Id;
+		GuestSimulationSnapshot AsRouteWalk( (int X, int Y)[] waypoints ) => snapshot with
 		{
-			Route = [(10, 5), (11, 5)], Cursor = 0, Count = 2, Index = 0,
-			Waypoints = [(10, 5), (12, 5), (0, 0), (0, 0), (0, 0)]
-		} );
-		var mismatch = simulation.ValidateSnapshot( route );
-		Assert.IsTrue( mismatch.Errors.Any( error => error.Contains( "do not match its route" ) ), string.Join( "; ", mismatch.Errors ) );
-		var matching = route with
-		{
-			Guests = route.Guests.Select( guest => guest.Navigation.OriginalWalk == null && !guest.Navigation.OffGrid
-				? guest with { Navigation = guest.Navigation with { Waypoints = [(10, 5), (11, 5), (0, 0), (0, 0), (0, 0)] } } : guest ).ToArray()
+			Guests = snapshot.Guests.Select( guest => guest.Id == oldWalker ? guest with
+			{
+				Navigation = guest.Navigation with { OriginalWalk = null, Route = [(10, 5), (11, 5)], Cursor = 0, Count = 2, Index = 0, Waypoints = waypoints }
+			} : guest ).ToArray()
 		};
-		Assert.IsFalse( simulation.ValidateSnapshot( matching ).Errors.Any( error => error.Contains( "do not match its route" ) ) );
+		var mismatch = simulation.ValidateSnapshot( AsRouteWalk( [(10, 5), (12, 5), (0, 0), (0, 0), (0, 0)] ) );
+		Assert.IsTrue( mismatch.Errors.Any( error => error.Contains( "do not match its route" ) ), string.Join( "; ", mismatch.Errors ) );
+		Assert.IsFalse( simulation.ValidateSnapshot( AsRouteWalk( [(10, 5), (11, 5), (0, 0), (0, 0), (0, 0)] ) ).Errors.Any( error => error.Contains( "do not match its route" ) ) );
 	}
 }

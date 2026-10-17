@@ -226,7 +226,7 @@ class StaticRound3(unittest.TestCase):
 
 
 @unittest.skipUnless(v1.MUTATE and v1.GAME and Path(v1.GAME).is_dir() and Path(v1.DOTNET).exists() and v1.has_commit(SUBJECT),
-                     'set OPENTPW_M3_MUTATE=1, OPENTPW_GAME_PATH and a .NET 10 SDK (OPENTPW_DOTNET)')
+                     'set OPENTPW_M3_MUTATE=1, OPENTPW_GAME_PATH and a .NET 11 SDK (OPENTPW_DOTNET)')
 class MutationsRound3(v1.Mutations):
     results: dict[str, dict] = {}
 

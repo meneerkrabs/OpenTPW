@@ -81,7 +81,7 @@ def _csharp(target: Target, side: str, mapping, inputs, originals, enabled: bool
         return Comparison(target.key, side, skipped='no C# implementation on main; see notes for the hook')
     bridge = bridge or bridge_module.get()
     if bridge is None:
-        return Comparison(target.key, side, skipped='no .NET 10 SDK (OPENTPW_ORACLE_DOTNET, OPENTPW_DOTNET, default, PATH)')
+        return Comparison(target.key, side, skipped='no .NET 11 SDK (OPENTPW_ORACLE_DOTNET, OPENTPW_DOTNET, default, PATH)')
     request, response = mapping or target.csharp[1:]
     try:
         if name not in bridge.capabilities():

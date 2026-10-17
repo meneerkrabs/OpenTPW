@@ -13,11 +13,12 @@ public partial class Level
 		// economy) the turn is not swept: the things update in the order of the ticks between turns, and the destroys are freed at the end of each tick.
 		var pooled = Park != null && Guests is { SharesThings: true };
 		// the guests' tick count starts at 0 where the economy of an original save starts at its turn: both cut the ticks into the same turns
-		if ( pooled && !lost && Park!.Economy.Speed != GameSpeed.Paused )
+		if ( pooled && Park!.Economy.Speed != GameSpeed.Paused )
 			Guests!.AlignTurns( Park.Economy.Tick );
 		var guestsTurn = pooled && Guests!.NextTickStartsTurn;
 		var economyTurn = pooled && Park!.Economy.NextTickStartsTurn;
-		var sweeping = !lost && guestsTurn && economyTurn;
+		// [BIN:TPW-EXE:0x0051643B lost park turn] a lost park (world state 4) still runs the turn: its counter, the gate retry, the destroys and the world tail with the arrival update (0x4D7B20); only the thing walk is skipped
+		var sweeping = guestsTurn && economyTurn;
 		if ( sweeping )
 			SimulateSweptTurn( deltaTime );
 		else
@@ -27,7 +28,8 @@ public partial class Level
 			PlacedRide?.Simulate( deltaTime );
 			Objects.Simulate( deltaTime );
 			Park?.FixedTick();
-			AdvanceWeather();
+			if ( !lost )
+				AdvanceWeather();
 			// The deferred gate-close retry follows the thing sweep (Mac 0x10536c).
 			Gate?.Tick();
 		}
@@ -81,7 +83,6 @@ public partial class Level
 		{
 			Park.Economy.ThingSweep = null;
 		}
-		AdvanceWeather();
 	}
 
 	/// <summary>
@@ -166,8 +167,8 @@ public partial class Level
 		// [BIN:TPW-EXE:0x00516641 deferred destroy] the turn's destroy requests are carried out last request first once the walk and the gate retry are over (0x516641..0x516691)
 		Things.DestroyQueued();
 		// [BIN:TPW-EXE:0x00516695 world turn tail] 0x004D7B20 then runs the arrival update (0x004CF3E0), the staff pool (0x005084F0), the calendar (0x004F8260) and every 100th turn the golden ticket step (0x004D4A00)
-		if ( !lost )
-			guests.UpdateTurnEndArrivals();
+		// [BIN:TPW-EXE:0x004D7B20 world tail] runs in every world state: the arrival update has no lost-park test of its own (0x4CF3E0 reads the vehicle and the group only), so a lost park still sends its bus and steps guests off
+		guests.UpdateTurnEndArrivals();
 	}
 
 	/// <summary>One staff member's thing update of the sweep: its research (a researcher's pre-update, every 20th turn), its vitals and job timer, and the world's state machine.</summary>

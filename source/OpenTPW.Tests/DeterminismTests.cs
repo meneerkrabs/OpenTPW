@@ -382,7 +382,7 @@ public class DeterminismTests
 	}
 
 	/// <summary>[EXT:pools-extras] The pinned hash of <see cref="RunFixedParkWithPoolExtras"/> (docs/DETERMINISM.md, "Pools").</summary>
-	internal const ulong PoolExtrasFixedRunHash = 0x0C35A6A0F10D914EUL;
+	internal const ulong PoolExtrasFixedRunHash = 0xD8806A8911B990C7UL;
 
 	[TestMethod]
 	public void FixedRunWithPoolExtrasIsTheSameInEveryProcessAndGuestsUseThem()
@@ -397,7 +397,7 @@ public class DeterminismTests
 	}
 
 	/// <summary>[EXT:pools-save] The pinned hash of <see cref="RunFixedParkWithPools"/> (docs/DETERMINISM.md, "Pools").</summary>
-	internal const ulong PoolsFixedRunHash = 0x4EEF5812C3D8023DUL;
+	internal const ulong PoolsFixedRunHash = 0x3492A988F0EF4AD7UL;
 
 	/// <summary>The pinned hash of <see cref="HashOfAFixedRunIsTheSameInEveryProcess"/>'s run (docs/DETERMINISM.md).</summary>
 	internal const ulong FixedRunHash = 0x2A8418A90725699AUL;

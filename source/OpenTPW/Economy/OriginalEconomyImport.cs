@@ -412,11 +412,11 @@ public sealed class OriginalEconomyImport
 			}
 			economy.Staff.Strikes.Restore( levels, active, turns );
 			evidence.Add( $"Staff HQ imported: training budgets {string.Join( ", ", hq.TrainingBudgets )} (handyman, mechanic, entertainer, guard, researcher), strike levels {string.Join( "/", levels )}, active {string.Join( "/", active.Select( flag => flag ? 1 : 0 ) )}, last considered on turns {string.Join( "/", turns )}." );
-			// [APPROX:SAVE-009] a member saved in state 7 (picked up) with the staff HQ's picked-up id (+0x60) naming him is imported idle (StaffPlacement.Reconcile): the original's only reader of the id is the drop 0x509AF0 from the carry tool's exit 0x46CC40, which also clears it, and no carry tool exists after a load, so the original keeps such a member in state 7 for good (the pick-up guard 0x505BD0 refuses state 7) — evidence needed: none (read); whether OpenTPW keeps its kinder reconciliation or reproduces the limbo is the user's decision
+			// [EXT:staff-pickup-reconcile] a member saved in state 7 (picked up) with the staff HQ's picked-up id (+0x60) naming him is imported idle (StaffPlacement.Reconcile) instead of reproducing the original's limbo (its only reader of the id is the drop 0x509AF0 from the carry tool's exit 0x46CC40, which also clears it, and no carry tool exists after a load, so the original keeps him in state 7 for good, the pick-up guard 0x505BD0 refusing state 7, loader 0x508BB0): a member nobody can ever move again would be a defect, user-approved 2026-10-17
 			// [BIN:TPW-EXE:0x5089C0 staff HQ constructor] the force strike (+0x64) is written only by the HQ constructor (0) and the save loader 0x508BB0, so the month gate 0x508E70 and the grievance 0x509360 see 0 in play as OpenTPW does; the trained byte (mHaveEverTrained, training +0x14) is only cleared (0x50C620) and serialized (0x50C640), never read
 			evidence.Add( $"Staff HQ values read, nothing to import: force strike {hq.ForceStrike}, trained {hq.Trained} (no reader after the load)." );
 			if ( hq.PickedUp != 0 )
-				evidence.Add( $"[APPROX:SAVE-009] Staff HQ thing {hq.Id} saved member {hq.PickedUp} as picked up: he is imported idle, where the original keeps him in state 7 for good (no carry tool exists after a load to drop him)." );
+				evidence.Add( $"[EXT:staff-pickup-reconcile] Staff HQ thing {hq.Id} saved member {hq.PickedUp} as picked up: he is imported idle, where the original keeps him in state 7 for good (no carry tool exists after a load to drop him)." );
 		}
 		else
 			evidence.Add( "The save has no staff HQ thing; OpenTPW's training budgets start at 0." );

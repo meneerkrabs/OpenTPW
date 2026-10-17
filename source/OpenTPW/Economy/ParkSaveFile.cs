@@ -889,7 +889,7 @@ public static class ParkSaveFile
 		{
 			Require( member.Id > 0 && member.Id < data.Staff.NextId && staffIds.Add( member.Id ), $"staff id {member.Id}" );
 			Require( member.ThingId is >= 0 and <= ThingPool.Capacity && (member.ThingId == 0 || staffThingIds.Add( member.ThingId )), $"staff {member.Id} thing id {member.ThingId}" );
-			Require( Enum.IsDefined( member.Type ) && member.Grade is >= 0 and < BalanceSettings.GradeCount && member.TrainingPoints is >= 0 and < ParkStaff.TrainingPointsPerGrade, $"staff {member.Id}" );
+			Require( Enum.IsDefined( member.Type ) && member.Grade is >= 0 and < BalanceSettings.GradeCount && member.TrainingPoints is >= 0 and < ParkStaff.TrainingPointsPerGrade && member.Variant is null or >= 0, $"staff {member.Id}" );
 			Require( member.Happiness is >= 0f and <= StaffVitals.Maximum && member.Energy is >= 0f and <= StaffVitals.Maximum, $"staff {member.Id} vitals" );
 			Require( member.Name is null || (member.Name.Length is > 0 and <= StaffMember.MaximumNameLength && !member.Name.Contains( '\0' )), $"staff {member.Id} name" );
 			Require( member.ResumeDestination is null || member.ResumeDestination is [>= 0 and < ParkLitter.MapSize * 256, >= 0 and < ParkLitter.MapSize * 256], $"staff {member.Id} resume destination" );
@@ -921,7 +921,7 @@ public static class ParkSaveFile
 			Require( member.CellX.HasValue == member.CellY.HasValue && (!member.CellX.HasValue || (float.IsFinite( member.CellX.Value ) && float.IsFinite( member.CellY!.Value ))) && double.IsFinite( member.TravelSeconds ) && member.TravelSeconds >= 0 && member.TravelSeconds < StaffWorldSimulation.SecondsPerCell, $"staff {member.Id} position" );
 		}
 		foreach ( var candidate in data.Staff.Candidates )
-			Require( candidate.Id > 0 && candidate.Id < data.Staff.NextId && staffIds.Add( candidate.Id ) && candidate.Grade is >= 0 and < BalanceSettings.GradeCount, $"candidate {candidate.Id}" );
+			Require( candidate.Id > 0 && candidate.Id < data.Staff.NextId && staffIds.Add( candidate.Id ) && candidate.Grade is >= 0 and < BalanceSettings.GradeCount && candidate.Variant >= -1, $"candidate {candidate.Id}" );
 		Require( data.Staff.TrainingBudgets.Count == BalanceSettings.StaffTypeCount && data.Staff.TrainingBudgets.All( value => value >= 0 ), "training budgets" );
 		if ( data.Staff.Strikes is { } strikes )
 			Require( strikes.Levels.Count == StaffStrikeBoard.Roles && strikes.Active.Count == StaffStrikeBoard.Roles && strikes.LastConsidered.Count == StaffStrikeBoard.Roles

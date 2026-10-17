@@ -307,7 +307,7 @@ public class OriginalSaveImportTests
 		var line = import.Evidence.Single( line => line.StartsWith( "Staff HQ values read, nothing to import:", StringComparison.Ordinal ) );
 		StringAssert.Contains( import.Evidence.Single( line => line.StartsWith( "Staff HQ imported:", StringComparison.Ordinal ) ), "training budgets 0, 250, 0, 0, 0 (handyman, mechanic" );
 		StringAssert.Contains( line, "force strike 1, trained 1" );
-		Assert.IsFalse( import.Evidence.Any( entry => entry.Contains( "[APPROX:SAVE-009]" ) ), "nobody was saved as picked up" );
+		Assert.IsFalse( import.Evidence.Any( entry => entry.Contains( "[EXT:staff-pickup-reconcile]" ) ), "nobody was saved as picked up" );
 		Assert.AreEqual( 250, economy.Staff.GetTrainingBudget( StaffType.Mechanic ), "budget word 1 is the mechanics' (tp.exe 0x50c800)" );
 		Assert.IsTrue( Enum.GetValues<StaffType>().Where( type => type != StaffType.Mechanic ).All( type => economy.Staff.GetTrainingBudget( type ) == 0 ) );
 

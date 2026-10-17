@@ -13,8 +13,8 @@ public static class PoolSwimSprites
 	/// <summary>The folder of the swim sets below the pools content.</summary>
 	public static string? Directory => PoolContent.Directory is { } folder ? Path.Combine( folder, "esprites", "Swim" ) : null;
 
-	/// <summary>Loads every swim set (sorted by name), or none when the folder or the content is missing.</summary>
-	public static List<GuestSpriteAtlas> Load() => PoolGuestSprites.LoadFolder( Directory, "swim" );
+	/// <summary>Loads every swim set (sorted by name), or none when the folder or the content is missing (in the browser also while the files are still being downloaded, <see cref="PoolSpriteDelivery"/>).</summary>
+	public static List<GuestSpriteAtlas> Load() => PoolSpriteDelivery.IsComplete( PoolSpriteDelivery.SwimGroup ) ? PoolGuestSprites.LoadFolder( Directory, "swim" ) : new List<GuestSpriteAtlas>();
 }
 
 /// <summary>

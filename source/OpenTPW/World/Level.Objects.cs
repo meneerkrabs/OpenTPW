@@ -406,6 +406,12 @@ public partial class Level
 		// the sets are looked for once per level: a missing or broken folder is one warning, not a scan every frame
 		if ( SwimmerRenderer == null && PoolRenderer != null && !swimSpritesTried )
 		{
+			// browser: the swim sets are still being downloaded, so the swimmers use the kid sprite for now and the renderer is made the frame the last file is in (or the one failed line below)
+			if ( PoolSpriteDelivery.IsPending( PoolSpriteDelivery.SwimGroup ) )
+			{
+				PoolSpriteDelivery.Ready( PoolSpriteDelivery.SwimGroup, "swimmers use the kid sprite until they arrive" );
+				return;
+			}
 			swimSpritesTried = true;
 			SwimmerRenderer = CreateSwimmerRenderer( Guests, OriginalPark );
 		}
@@ -417,7 +423,13 @@ public partial class Level
 
 	private GuestRenderer? CreateSwimmerRenderer( GuestSimulation guests, OriginalPark park )
 	{
-		var swim = swimSpriteSets ?? PoolSwimSprites.Load();
+		var swim = swimSpriteSets is { Count: > 0 } ? swimSpriteSets : PoolSwimSprites.Load();
+		if ( !ReferenceEquals( swim, swimSpriteSets ) && swim.Count > 0 )
+		{
+			// loaded late (they were downloaded after the level was set up): decode on a worker like the level setup does
+			var late = swim;
+			System.Threading.Tasks.Task.Run( () => { foreach ( var atlas in late ) _ = atlas.Pixels; } );
+		}
 		if ( swim.Count == 0 )
 		{
 			// without swim sprites the swimmers are drawn by the normal guest renderer with their kid sprite (Level.cs: Draws), standing in the water

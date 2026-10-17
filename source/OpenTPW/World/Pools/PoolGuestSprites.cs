@@ -4,7 +4,7 @@ namespace OpenTPW;
 /// The pools extension's own guest sprite sets (<c>content/pools/esprites/Generic/Kids</c> and <c>Kidsheads</c>, docs/POOLS.md): the eight Theme Park World kid sets and their heads redrawn at twice
 /// the pixel size (pixels per unit 256, so a guest keeps its world size with twice the detail). While the pools extension and the guest art extension (<see cref="FeatureGates.PoolGuestArt"/>) are on they replace the game's kid and kid-head atlases in a park, together: both folders
 /// must hold exactly the eight sets, else the game's own are used. They also stay out of a park whose game kid sets are not the Theme Park World ones (Theme Park Inc has four, SPR_BD, SPR_GB, SPR_GK
-/// and SPR_KB, so a <c>Type % 8</c> mapping would be wrong), and out of the browser build, which does not embed them.
+/// and SPR_KB, so a <c>Type % 8</c> mapping would be wrong), and out of a browser park that loads before they are downloaded (<see cref="PoolSpriteDelivery"/>: the browser build does not embed them).
 /// <para>
 /// Known limitation: the sets are read from the extension's folder with System.IO, not through the game's virtual file system, so an <c>overrides</c> mod of <c>/esprites/Generic/Kids*</c> and a texture
 /// pack's upscaled kid atlases (found under another key, <c>esprites/pools/kids/...</c>) do not apply to them while the extension is on.
@@ -32,6 +32,9 @@ public static class PoolGuestSprites
 	public static Replacement? LoadReplacement( IReadOnlyList<GuestSpriteAtlas> gameKids )
 	{
 		if ( !FeatureGates.Pools || !FeatureGates.PoolGuestArt || !Matches( gameKids ) )
+			return null;
+		// in the browser the sets are fetched in the background (PoolSpriteDelivery): a park that loads before every file is in keeps the game's guests
+		if ( !PoolSpriteDelivery.Ready( PoolSpriteDelivery.LandGroup, "this park keeps the game's own guests" ) )
 			return null;
 		var kids = LoadFolder( KidsDirectory, "kids" );
 		var heads = LoadFolder( KidHeadsDirectory, "kidsheads" );

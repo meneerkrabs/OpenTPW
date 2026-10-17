@@ -66,4 +66,7 @@ python3 -I tools/pools/pack_sprite_sets.py --kind pool --frames "$work/guests" -
 python3 -I tools/pools/pack_sprite_sets.py --kind kids --slots 0,1,14 --frames "$work/guests" --out content/pools/esprites/Generic/Kids --stage "$work/stage/kids" --kit "$kit_command"
 python3 -I tools/pools/pack_sprite_sets.py --kind heads --frames "$work/guests" --out content/pools/esprites/Generic/Kidsheads --stage "$work/stage/heads" --kit "$kit_command"
 
+echo "== 5. pin the sprite files for the browser delivery"
+python3 -I tools/pools/sprite_manifest.py --write
+
 echo "done: content/pools"

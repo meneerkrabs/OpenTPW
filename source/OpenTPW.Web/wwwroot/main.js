@@ -6,6 +6,7 @@ import { createTextureDownloads } from './opentpw-textures.js';
 import * as originals from './opentpw-originals.js';
 import { plan, importStartup, startSelected } from './opentpw-startup.js';
 import * as inputs from './opentpw-inputs.js';
+import { parseManifest, planSprites, fetchSprites } from './opentpw-pool-sprites.js';
 
 // The game in the browser (docs/WEB.md): the player's own files go into the runtime's memory, then
 // the front end runs in the canvas, one Program.Frame per animation frame.
@@ -25,7 +26,7 @@ status.textContent = 'Ready.';
 // before the game starts (music muted, a frame cap). Only on a loopback address, where the harness serves the page: a link to the public page
 // cannot use them to write into a player's saved files. Without ?perf nothing here runs.
 const perfQuery = new URLSearchParams(location.search);
-const perfSeedPaths = new Set(['/save/opentpw-options.json', '/config/display.json']);
+const perfSeedPaths = new Set(['/save/opentpw-options.json', '/config/display.json', '/config/mods.json']);
 const loopback = ['127.0.0.1', 'localhost', '[::1]'].includes(location.hostname);
 const perf = loopback && perfQuery.get('perf') === '1' ? {
 	program,
@@ -596,6 +597,22 @@ if (served) {
 	}]));
 }
 
+// The pools extension's sprite sets (docs/POOLS.md, "Browser delivery"): fetched in the background once the game runs and its extensions are known,
+// never blocking the menu. A park that loads first keeps the fallbacks; the swimmers pick their sets up mid-level.
+async function fetchPoolSprites() {
+	try {
+		if (!program.PoolsEnabled()) return;
+		const manifest = program.PoolSpriteManifest();
+		if (!manifest) return;
+		const files = planSprites(parseManifest(manifest), { pools: true, guestArt: program.PoolGuestArtEnabled() });
+		if (files.length && !await fetchSprites({ files, store: (path, bytes) => gameRunning && program.AddPoolSpriteFile(path, bytes) }))
+			program.PoolSpritesFailed();
+	} catch (error) {
+		console.warn('Pools sprites unavailable; swimmers and land guests keep their fallbacks:', error?.message ?? error);
+		try { program.PoolSpritesFailed(); } catch { /* the game is gone */ }
+	}
+}
+
 async function start(theme) {
 	status.textContent = 'Starting the game…';
 	try {
@@ -632,6 +649,7 @@ async function start(theme) {
 		document.getElementById('setup').hidden = true;
 		gameRunning = true;
 		startSelected(program, location.origin, theme);
+		fetchPoolSprites();
 		openKeeping();
 		// Keep saves and settings: every few seconds, and when the page is hidden or closed.
 		const keep = () => storage.sync(program).catch(error => console.warn('Saving to this browser failed', error));

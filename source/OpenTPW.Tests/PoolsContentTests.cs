@@ -302,8 +302,8 @@ public class PoolsContentTests
 		return new GuestSpriteAtlas( name, new SpriteBankFile( new MemoryStream( set.Files[".TPC"] ) ), new SpriteAnimationFile( new MemoryStream( set.Files[".ESP"] ) ) );
 	}
 
-	private static List<GuestSpriteAtlas> GameKids( params string[] names ) => names.Select( GameSet ).ToList();
-	private static readonly string[] TpwKidNames = { "SPR_BE", "SPR_BI", "SPR_CH", "SPR_FR", "SPR_KI", "SPR_SA", "SPR_SU", "SPR_TA" };
+	internal static List<GuestSpriteAtlas> GameKids( params string[] names ) => names.Select( GameSet ).ToList();
+	internal static readonly string[] TpwKidNames = { "SPR_BE", "SPR_BI", "SPR_CH", "SPR_FR", "SPR_KI", "SPR_SA", "SPR_SU", "SPR_TA" };
 
 	[TestMethod]
 	public void TheShippedKidAndHeadSetsReplaceTheGameOnesOnlyWhileTheExtensionIsOn()

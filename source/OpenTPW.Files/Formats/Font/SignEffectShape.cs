@@ -37,9 +37,11 @@ public static class SignEffectShape
 		var next = new byte[coverage.Length];
 		for ( uint step = 0; step < iterations; step++ )
 		{
-			var t = (double)step / iterations;
-			var u = 1.0 - t;
-			var level = unchecked( (byte)(int)(256.0 * (2.0 * u * u * u - 3.0 * (u * u))) );
+			// [BIN:TPW-EXE:0x005EB319 level arithmetic] N is stored as a float (FILD qword, FSTP float), t = FILD(i) / N (FDIV float), u = 1.0 - t, then u³ = u * (u * u), 2u³ - 3u² (FMUL 3.0, FADD st0,st0, FSUBP), times 256.0 and _ftol
+			var u = Ext.One - Ext.FromInt( step ) / Ext.FromInt( iterations ).AsFloat();
+			var u2 = u * u;
+			var cubed = u * u2;
+			var level = unchecked( (byte)((cubed + cubed - u2 * Ext.FromFloat( 3f )) * Ext.FromFloat( 256f )).Truncate() );
 			if ( !Erode( ink, next, shape, width, height, level ) )
 				break;
 			(ink, next) = (next, ink);
@@ -89,32 +91,25 @@ public static class SignEffectShape
 	/// <c>exp(-0.5 (dx² + dy²) / sigma²) / (2 pi sigma²)</c> divided by the sum of all taps; row-major.
 	/// </summary>
 	// [BIN:TPW-EXE:0x005EB3E0 shape kernel] n = 3 - _ftol(sigma * -2.5) (0x702F38); tap (a, b) = 2^(log2(e) * ((a - c)² + (b - c)²) * -0.5 / sigma²) / (sigma² * 6.2831853) stored as double, then every tap divided by their sum; c = (n - 1) / 2
-	public static double[] Kernel( float sigma, out int size )
+	public static double[] Kernel( float sigma, out int size ) => Array.ConvertAll( KernelTaps( sigma, out size ), tap => tap.ToDouble() );
+
+	private static Ext[] KernelTaps( float sigma, out int size )
 	{
 		var s = (double)sigma;
 		if ( !double.IsFinite( s ) || Math.Abs( s ) > MaximumSigma )
 			throw new NotSupportedException( "Sign shape blur parameter is not supported by the compositor." );
-		size = 3 - (int)Math.Truncate( s * -2.5 );
+		size = 3 - (int)(Ext.FromFloat( sigma ) * Ext.FromDouble( -2.5 )).Truncate();
 		if ( size <= 0 )
 		{
 			size = 0;
-			return Array.Empty<double>();
+			return Array.Empty<Ext>();
 		}
 		var centre = (size - 1) / 2;
-		var squared = s * s;
-		var taps = new double[size * size];
-		var sum = 0.0;
+		var distances = new int[size * size];
 		for ( var a = 0; a < size; a++ )
 		for ( var b = 0; b < size; b++ )
-		{
-			var distance = (a - centre) * (a - centre) + (b - centre) * (b - centre);
-			var tap = Math.Exp( distance * -0.5 / squared ) / (squared * 6.2831853);
-			sum += tap;
-			taps[a * size + b] = tap;
-		}
-		for ( var i = 0; i < taps.Length; i++ )
-			taps[i] /= sum;
-		return taps;
+			distances[a * size + b] = (a - centre) * (a - centre) + (b - centre) * (b - centre);
+		return Ext.GaussianTaps( sigma, distances );
 	}
 
 	/// <summary>
@@ -125,7 +120,7 @@ public static class SignEffectShape
 	// [BIN:TPW-EXE:0x005EB5D3..0x005EB6EC shape convolution] the rows of the window come from a ring: the rows up to the current one are copies taken before they were written (the first row repeated above the top), the rows below point into the live shape (clamped to the last row); a column index is clamped to 0..w-1 (0x5EB688); taps are summed from 0.0 in row-major kernel order and truncated with _ftol (0x5EB6E3), stored as the low byte, only for pixels whose coverage byte is not 0
 	public static void Blur( byte[] shape, byte[] coverage, int width, int height, float sigma )
 	{
-		var kernel = Kernel( sigma, out var size );
+		var kernel = KernelTaps( sigma, out var size );
 		var centre = (size - 1) / 2;
 		var rowsBelow = (size + 2) / 2 - 1;
 		var original = (byte[])shape.Clone();
@@ -134,7 +129,7 @@ public static class SignEffectShape
 		{
 			if ( coverage[y * width + x] == 0 )
 				continue;
-			var sum = 0.0;
+			var sum = Ext.Zero;
 			var tap = 0;
 			for ( var ky = -centre; ky <= rowsBelow; ky++ )
 			{
@@ -142,9 +137,9 @@ public static class SignEffectShape
 				// rows after the current one are live: they differ from the original only on the last row, where the clamp lands on the row being written
 				var source = ky > 0 ? shape : original;
 				for ( var kx = -centre; kx <= rowsBelow; kx++ )
-					sum += source[row * width + Math.Clamp( x + kx, 0, width - 1 )] * kernel[tap++];
+					sum += Ext.FromInt( source[row * width + Math.Clamp( x + kx, 0, width - 1 )] ) * kernel[tap++];
 			}
-			shape[y * width + x] = unchecked( (byte)(long)sum );
+			shape[y * width + x] = unchecked( (byte)sum.Truncate() );
 		}
 	}
 }

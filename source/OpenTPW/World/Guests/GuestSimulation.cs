@@ -104,8 +104,22 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	public bool SharesThings => !ownsThings;
 	public IReadOnlyList<IRideVisitorBridge> Attractions => attractions;
 	public long TickCount { get; private set; }
-	/// <summary>The park turn (248 ms of the fixed clock, <see cref="ParkCalendar.Turn"/>); queue waits and delays count these.</summary>
-	public long ParkTurn => ParkCalendar.Turn( TickCount );
+	/// <summary>The park turn (248 ms of the fixed clock, <see cref="ParkCalendar.Turn"/>), counted from the guests' own start; queue waits and delays count these.</summary>
+	public long ParkTurn => ParkCalendar.Turn( TickCount + turnPhase ) - ParkCalendar.Turn( turnPhase );
+
+	// the ticks the economy's clock was ahead of the guests' when the host aligned them: an economy that starts at an original save's turn has run that many ticks before the first guest tick
+	private long turnPhase;
+
+	/// <summary>
+	/// Puts the guests' turn boundaries on the economy's: the guests' tick count started at 0 where an economy that begins at an original save's turn started at that turn's tick, so the two
+	/// clocks cut the ticks into turns at different places (a tick apart in two of five turns) and one park turn could not be swept as a whole. The guests' <see cref="ParkTurn"/> still counts
+	/// from their own start. Nothing changes while both start together.
+	/// </summary>
+	public void AlignTurns( long economyTick )
+	{
+		if ( economyTick >= TickCount )
+			turnPhase = economyTick - TickCount;
+	}
 	public double TimeSeconds { get; private set; }
 	public bool ArrivalsEnabled { get; set; } = true;
 	/// <summary>
@@ -402,7 +416,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		TickCount++;
 		TimeSeconds += deltaSeconds;
 		staffOnMap = StaffOnMapView?.Invoke().ToArray();
-		turnStarted = ParkCalendar.Turn( TickCount ) != ParkCalendar.Turn( TickCount - 1 );
+		turnStarted = ParkCalendar.Turn( TickCount + turnPhase ) != ParkCalendar.Turn( TickCount - 1 + turnPhase );
 		SyncQueues();
 	}
 
@@ -417,7 +431,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	}
 
 	/// <summary>True when the next <see cref="Tick"/> starts a park turn.</summary>
-	public bool NextTickStartsTurn => ParkCalendar.Turn( TickCount + 1 ) != ParkCalendar.Turn( TickCount );
+	public bool NextTickStartsTurn => ParkCalendar.Turn( TickCount + 1 + turnPhase ) != ParkCalendar.Turn( TickCount + turnPhase );
 
 	private readonly HashSet<int> sweptGuests = new();
 	private float sweepDelta;
@@ -516,7 +530,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	// restarts the timer (0x0041A960), clears the active byte and dispatches with 0; the status 6 branch (0x004CF475) is unreachable, 0x0051A690 turning 6 into -1
 	// [BIN:TPW-EXE:0x004CF4B6 pick-up] then, when a leaving guest waits at the stop (0x0051A9D0), status -1 or 0, or 2 with the group exactly 0 (test at
 	// 0x004CF4E1), dispatches with 0; with none waiting, status 4 does
-	// [APPROX:ARRIVAL-001] a cell's thing list is OpenTPW's occupant list (WALK-003); this update runs before the turn's guest updates, the original's after its thing sweep (the end of 0x516380); an imported original save starts with no vehicle at work — evidence needed: the saved word +0x1DA72A and the places the world variables keep the vehicle handles
+	// [APPROX:ARRIVAL-001] a cell's thing list is OpenTPW's occupant list (WALK-003); a swept turn runs this update after the thing sweep and the turn's destroys, as the original does (the end of 0x516380, Level.RunThingSweep); an imported original save starts with no vehicle at work — evidence needed: the saved word +0x1DA72A and the places the world variables keep the vehicle handles
 	private void UpdateArrivalVehicle()
 	{
 		var turn = ArrivalClock?.Invoke() ?? ParkTurn;

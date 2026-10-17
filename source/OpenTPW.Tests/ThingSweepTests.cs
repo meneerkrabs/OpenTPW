@@ -28,10 +28,12 @@ public class ThingSweepTests
 
 	private sealed record Scene( Level Level, ParkEconomy Economy, GuestSimulation Guests, ThingPool Pool, RecordingWorld World, StaffMember First, StaffMember Second, Guest Early, Guest Late );
 
-	private static Scene CreateScene( StaffType firstType = StaffType.Handyman )
+	private static Scene CreateScene( StaffType firstType = StaffType.Handyman, long startTurn = 0 )
 	{
 		Log ??= new();
 		var economy = EconomyTestData.Park();
+		if ( startTurn != 0 )
+			economy.StartAtOriginalTurn( startTurn );
 		var guests = new GuestSimulation( GuestTests.CreateCross(), GuestTests.CreateSettings(), 1 );
 		var pool = new ThingPool();
 		pool.AllocateWorldSetup();
@@ -193,5 +195,24 @@ public class ThingSweepTests
 		scene.Guests.FinishSweep();
 		scene.Pool.DestroyQueued();
 		Assert.IsFalse( scene.Pool.IsUsed( scene.Early.Id ) );
+	}
+
+	/// <summary>
+	/// A park that starts at an original save's turn (the jungle's is 755) has run that many ticks of the economy's clock before its first guest tick, so the two count the ticks into turns a tick
+	/// apart in some turns: the guests' turn boundaries are put on the economy's, and every turn of the economy is one sweep.
+	/// </summary>
+	[TestMethod]
+	public void AParkThatStartsAtAnOriginalTurnSweepsOnceForEveryTurn()
+	{
+		var scene = CreateScene( startTurn: 755 );
+		Assert.AreEqual( 755, scene.Economy.Turn );
+		var startTurn = scene.Economy.Turn;
+		for ( var tick = 0; tick < 60 * 62; tick++ )
+		{
+			scene.Level.AdvanceSimulation( FixedStepClock.TickDuration );
+			Assert.AreEqual( scene.Economy.Turn - startTurn, scene.World.Begins, $"tick {tick}: one sweep for each turn of the economy" );
+			Assert.AreEqual( scene.Economy.Turn - startTurn, scene.Guests.ParkTurn, $"tick {tick}: the guests count the turns from their own start" );
+		}
+		Assert.IsTrue( scene.World.Begins >= 240, "about 250 turns ran" );
 	}
 }

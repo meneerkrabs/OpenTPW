@@ -67,7 +67,7 @@ public sealed class ParkEconomy : IParkEconomy
 	/// The park's world generator (tp.exe 0x00516330): the economy's staff pool and the staff walks draw from it, and the level attaches the guests'
 	/// and the scripts' draws to the same instance (<see cref="AttachWorld"/>), as the original has one generator for everything.
 	/// </summary>
-	// [APPROX:DET-015] the staff pool's and the staff walks' draws are the world generator's, but the staff members have no person-thing constructor draws (base speed, reseed, sprite variant), the month end is not ordered against the thing sweep, and the advisor's pick and the weather stay off the stream
+	// [APPROX:DET-015] the staff pool's and the staff walks' draws are the world generator's, but the staff members have no person-thing constructor draws (base speed, reseed, sprite variant), and the advisor's pick and the weather stay off the stream
 	public WorldRng World { get; private set; }
 
 	/// <summary>Makes <paramref name="world"/> this park's generator (the level's shared one); its state is not touched.</summary>
@@ -275,7 +275,7 @@ public sealed class ParkEconomy : IParkEconomy
 		crowdPhaseTurn ??= previousTurn;
 		// [BIN:TPW-EXE:0x00516380 world update] the thing loop (staff, rides, guests, the challenge system: 0x0050B360 by thing type) runs only while the world state (+0x1DA738) is not 4;
 		// the turn counter before it and the calendar, staff pool, bank and golden-ticket step after it (0x004D7B20) run in every state
-		// [APPROX:DET-013] without a host sweep (the headless economy of tests and tools) the thing update runs in a fixed order of its own, staff, research, rides, challenges, where the original visits one list newest first
+		// [EXT:headless-economy] without a host sweep (the headless economy of tests and tools, which has no thing pool of guests, rides and staff to visit) the thing update runs in a fixed order of its own, staff, research, rides, challenges, where a level's park turn visits one list newest first (IThingSweep)
 		if ( ThingSweep != null )
 			ThingSweep.Run( this, turn, IsBankrupt );
 		else if ( !IsBankrupt )

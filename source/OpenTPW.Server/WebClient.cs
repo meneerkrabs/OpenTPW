@@ -14,6 +14,9 @@ public static partial class WebClient
 	[GeneratedRegex( @"\.[a-z0-9]{10}\.[a-z]+$" )]
 	private static partial Regex Fingerprinted();
 
+	/// <summary>The extensions of the pools sprite files the page fetches; unknown types are not served, so each needs a mapping.</summary>
+	public static readonly string[] PoolSpriteExtensions = { ".esp", ".tpc" };
+
 	/// <summary>
 	/// Serves <paramref name="directory"/> (the published <c>wwwroot</c> of OpenTPW.Web) at the site
 	/// root. Runs before the API's rate limiter: one page load fetches over a hundred files.
@@ -27,6 +30,9 @@ public static partial class WebClient
 		var types = new FileExtensionContentTypeProvider();
 		types.Mappings[".wasm"] = "application/wasm";
 		types.Mappings[".dat"] = "application/octet-stream";
+		// The pools extension's sprite files (pools-sprites/, docs/POOLS.md): every extension of content/pools/esprites.manifest.json
+		foreach ( var extension in PoolSpriteExtensions )
+			types.Mappings[extension] = "application/octet-stream";
 
 		// The publish step stores a Brotli copy beside each file; send it to browsers that accept it.
 		app.Use( async ( context, next ) =>

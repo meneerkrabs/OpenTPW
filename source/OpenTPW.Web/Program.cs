@@ -58,7 +58,9 @@ public static partial class Program
 	[JSExport]
 	public static void AddFile( string relativePath, byte[] contents )
 	{
-		var path = Path.Combine( GameRoot, relativePath.TrimStart( '/' ) );
+		var path = Path.GetFullPath( Path.Combine( GameRoot, relativePath.TrimStart( '/' ) ) );
+		if ( !path.StartsWith( GameRoot + "/", StringComparison.Ordinal ) )
+			throw new ArgumentException( $"'{relativePath}' is outside the game folder." );
 		Directory.CreateDirectory( Path.GetDirectoryName( path )! );
 		File.WriteAllBytes( path, contents );
 		// A theme folder copied while the game runs: the game data's remembered lookups may name it missing.
@@ -112,6 +114,8 @@ public static partial class Program
 		if ( renderer != null || flow != null )
 			throw new InvalidOperationException( "The game has already started loading. Reload the page before starting again." );
 		WriteContent();
+		// [EXT:pools-render] the pools sprite sets are not embedded: the page fetches them after the start (PoolSpriteDelivery) and the level setup uses a set only when it is complete
+		PoolSpriteDelivery.Delivered = true;
 		var dataDirectory = GameLanguage.FindEntry( GameRoot, "data", true )
 			?? throw new DirectoryNotFoundException( "No Data folder among the chosen files." );
 		// [EXT:tpi-viewer] explicit Theme Park Inc starts reuse the experimental slice and retain all capability refusals.
@@ -211,6 +215,31 @@ public static partial class Program
 
 	[JSExport]
 	public static byte[] ReadFile( string path ) => File.ReadAllBytes( path );
+
+	/// <summary>The pinned list (path, size, SHA-256) of the pools extension's sprite files, which the page may fetch; empty when the build has none (docs/POOLS.md, "Browser delivery").</summary>
+	[JSExport]
+	public static string PoolSpriteManifest() => PoolSpriteDelivery.ManifestText() ?? "";
+
+	/// <summary>Whether the pools extension is on in this run (known once the game has started): the swim sets are then needed.</summary>
+	[JSExport]
+	public static bool PoolsEnabled() => FeatureGates.Pools;
+
+	/// <summary>Whether the pool guest art extension is on as well: the land guest sets are then needed.</summary>
+	[JSExport]
+	public static bool PoolGuestArtEnabled() => FeatureGates.Pools && FeatureGates.PoolGuestArt;
+
+	/// <summary>Keeps one fetched sprite file when its path, size and SHA-256 are the pinned ones; anything else is refused (returns false) and stored nowhere.</summary>
+	[JSExport]
+	public static bool AddPoolSpriteFile( string relativePath, byte[] contents )
+		=> FeatureGates.Pools && PoolSpriteDelivery.Store( relativePath, contents );
+
+	/// <summary>The page gave up fetching the sprite files (offline, not found, a wrong file): the swimmers and the land guests keep their fallbacks.</summary>
+	[JSExport]
+	public static void PoolSpritesFailed()
+	{
+		PoolSpriteDelivery.MarkFailed( PoolSpriteDelivery.SwimGroup );
+		PoolSpriteDelivery.MarkFailed( PoolSpriteDelivery.LandGroup );
+	}
 
 	/// <summary>Whether the speech files of <paramref name="language"/> are in memory; asks the page for them the first time.</summary>
 	private static bool LanguageDataReady( string language )

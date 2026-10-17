@@ -19,7 +19,9 @@ public enum OriginalPlacementResult
 	/// <summary>[EXT:pools-changing-room] A changing room needs pool water beside its back (docs/POOLS.md).</summary>
 	NeedsPool,
 	/// <summary>[EXT:pools-extras] A pool extra needs its spot: a straight pool edge, a changing room beside it, or water beside it (docs/POOLS.md, "Extras").</summary>
-	NeedsPoolEdge
+	NeedsPoolEdge,
+	/// <summary>[EXT:pools-attractions] A water attraction (rope swing, jets, wave machine, spa) needs pool water on its water side (docs/POOLS.md).</summary>
+	NeedsPoolWater
 }
 
 /// <summary>

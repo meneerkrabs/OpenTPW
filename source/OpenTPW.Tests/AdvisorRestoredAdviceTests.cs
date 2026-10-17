@@ -184,7 +184,7 @@ public class AdvisorRestoredAdviceTests
 	{
 		var posted = new List<int>();
 		for ( var step = 0; step < steps; step++ )
-			if ( controller.ScanOnce( money, tick, gameType, tutorial, state ).Posted is { } advice )
+			if ( controller.ScanOnce( money, tick, gameType, tutorial, restored: state ).Posted is { } advice )
 				posted.Add( advice.MessageId );
 		return posted;
 	}
@@ -464,6 +464,8 @@ public class AdvisorRestoredAdviceTests
 			var controller = Controller();
 			var state = new State();
 			scenario( state );
+			if ( message == 83 )
+				controller.Queue.Restore( new AdvisorPendingAdvice?[AdvisorScoreQueue.Capacity], new Dictionary<int, AdvisorMessageHistory> { [82] = new AdvisorMessageHistory( 4, 0, true, 0 ) } );
 			var driver = Driver( controller );
 			for ( var step = 0; step < 4; step++ )
 				driver.Poll( state );
@@ -475,6 +477,23 @@ public class AdvisorRestoredAdviceTests
 		PollScenarios[318]( all );
 		Driver( one ).Poll( all );
 		Assert.IsTrue( Pending( one ).Count <= 1 );
+	}
+
+	[TestMethod]
+	public void NoToiletsEscalatesTheScansLineAndNeverRepeatsIt()
+	{
+		var state = new State();
+		PollScenarios[83]( state );
+		var controller = Controller();
+		var driver = Driver( controller );
+		for ( var step = 0; step < 4; step++ )
+			driver.Poll( state );
+		Assert.IsFalse( Pending( controller ).Contains( 83 ), "82 has not been said: the scan's own line comes first" );
+		controller.Queue.Restore( new AdvisorPendingAdvice?[AdvisorScoreQueue.Capacity], new Dictionary<int, AdvisorMessageHistory> { [82] = new AdvisorMessageHistory( 4, 0, true, 0 ) } );
+		for ( var step = 0; step < 4; step++ )
+			driver.Poll( state );
+		Assert.IsTrue( Pending( controller ).Contains( 83 ), "after 82, still no toilet" );
+		Assert.IsFalse( RestoredAdvice.IsRestored( 67 ), "67 stays with the ported 66" );
 	}
 
 	[TestMethod]

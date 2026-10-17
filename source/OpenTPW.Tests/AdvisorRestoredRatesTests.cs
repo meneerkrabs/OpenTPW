@@ -35,7 +35,7 @@ public class AdvisorRestoredRatesTests
 		var rows = AdvisorDescriptorTable.Rows;
 		for ( tick = 1; tick <= turns; tick++ )
 		{
-			controller.ScanOnce( money, tick, 0, true, state );
+			controller.ScanOnce( money, tick, 0, true, restored: state );
 			driver.Poll( state );
 			if ( arrivals )
 				driver.ObserveVehicle( tick % 240 < 100 ? ArrivalVehicleKind.Bus : -1 );

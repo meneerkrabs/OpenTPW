@@ -17,9 +17,9 @@ internal enum RestoredTrigger
 /// One message the extension restores. <see cref="ScoreKey"/> is the <c>Advisor.sam</c> key of the score the message's own descriptor callback reads (the callbacks of the
 /// unused rows are getters of one key each); a message whose callback is the constant-zero stub has none, and <see cref="ExtScore"/> is the extension's own choice
 /// (<c>[EXT:restored-advice-topic]</c>, documented in docs/reverse/ADVISOR-SCAN.md). <see cref="RepeatGroups"/> is the extension's own repeat rule on top of the descriptor group's (0: none, <see cref="RestoredAdvice.Once"/>:
-/// once per park, else groups of four turns before the message may be said again): a condition that holds for a long time must not be said every two minutes.
+/// once per park, else groups of four turns before the message may be said again; <see cref="AfterMessage"/>: the message is only said after that original line has been, as the follow-up of it): a condition that holds for a long time must not be said every two minutes.
 /// </summary>
-internal sealed record RestoredAdviceEntry( int MessageId, string Topic, RestoredTrigger Trigger, string? ScoreKey, int ExtScore, string Reason, int RepeatGroups = 0 )
+internal sealed record RestoredAdviceEntry( int MessageId, string Topic, RestoredTrigger Trigger, string? ScoreKey, int ExtScore, string Reason, int RepeatGroups = 0, int AfterMessage = 0 )
 {
 	/// <summary>The fidelity label of the trigger.</summary>
 	public string Label => $"[EXT:restored-advice-{Topic}]";
@@ -140,7 +140,7 @@ internal static class RestoredAdvice
 	public const int PublishHelp = 328, ParkDetailsHelp = 329, OtherParksHelp = 331, FindPlayerHelp = 332, OutboxHelp = 333, WorldHelp = 334;
 
 	private static RestoredAdviceEntry Scan( int message, string topic, string? key, int ext, string reason, int repeat = LongRepeatGroups ) => new( message, topic, RestoredTrigger.Scan, key, ext, reason, repeat );
-	private static RestoredAdviceEntry Poll( int message, string topic, string? key, int ext, string reason, int repeat = LongRepeatGroups ) => new( message, topic, RestoredTrigger.Poll, key, ext, reason, repeat );
+	private static RestoredAdviceEntry Poll( int message, string topic, string? key, int ext, string reason, int repeat = LongRepeatGroups, int after = 0 ) => new( message, topic, RestoredTrigger.Poll, key, ext, reason, repeat, after );
 	private static RestoredAdviceEntry Event( int message, string topic, string? key, int ext, string reason, int repeat = 0 ) => new( message, topic, RestoredTrigger.Event, key, ext, reason, repeat );
 	private static RestoredAdviceEntry Help( int message, string topic, string reason ) => new( message, topic, RestoredTrigger.Help, AdvisorTables.HelpScoreKey, 0, reason );
 
@@ -167,7 +167,7 @@ internal static class RestoredAdvice
 		Scan( 349, "stranded", "RideExitBlocked.Score", 0, "guests are aboard a broken-down ride (the new riders-stuck tracking)", ModerateRepeatGroups ),
 		Scan( 350, "stranded", "RideCondemned.Score", 0, "guests are aboard a condemned ride (the new riders-stuck tracking)", ModerateRepeatGroups ),
 		// ---- the rows nothing posts and the scan skips (the poll) ----
-		Poll( 83, "toilets", "FeaturesNoToilets.Score", 0, "no toilet is built and more than twice FeaturesNoToilets.MorePeopleThanThisNeeding guests have a toilet need above NeedingMoreThan" ),
+		Poll( 83, "toilets", "FeaturesNoToilets.Score", 0, "the escalation of the scan\'s 82 (no toilet, the needy share above MorePeopleThanThisNeeding percent): said only after 82 has been, when still no toilet is built and more than twice MorePeopleThanThisNeeding guests have a toilet need above NeedingMoreThan", LongRepeatGroups, 82 ),
 		Poll( 84, "toilets", "FeaturesFarToToilets.Score", 0, $"toilets exist but more than FeaturesNoToilets.MorePeopleThanThisNeeding needy guests are {FarToiletCells} cells or more from the nearest one" ),
 		Poll( 277, "tickets", null, ProfitHintScore, $"the year's profit is {ProfitHintPercent} percent or more of the profit ticket's threshold, below the near-ticket multiplier, and the ticket is not won" ),
 		Poll( 318, "tickets", "GoldTicketNearToXProfit.Score", 0, "the year's profit is at or above GoldTicketNearToXProfit.ProfitMultiplier x the profit ticket's threshold and the ticket is not won" ),
@@ -237,7 +237,12 @@ internal static class RestoredAdvice
 	/// </summary>
 	public static bool RepeatAllows( AdvisorScoreQueue queue, int messageId, uint liveGameTick )
 	{
-		if ( Find( messageId ) is not { RepeatGroups: not 0 } entry )
+		if ( Find( messageId ) is not { } entry || entry is { RepeatGroups: 0, AfterMessage: 0 } )
+			return true;
+		// a follow-up is said only once the original line it follows has been said (and so never repeats it)
+		if ( entry.AfterMessage != 0 && !queue.GetHistory( entry.AfterMessage ).HasBeenPlayed )
+			return false;
+		if ( entry.RepeatGroups == 0 )
 			return true;
 		var history = queue.GetHistory( messageId );
 		if ( entry.RepeatGroups == Once )

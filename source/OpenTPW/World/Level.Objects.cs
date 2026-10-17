@@ -139,7 +139,12 @@ public partial class Level
 		{
 			var cells = Guests.Grid.Cells;
 			foreach ( var item in Objects.Objects )
+			{
 				cells.WriteFootprint( item.Cells, OwnerWord( item ), item.Placement.Rotation );
+				// an imported park's entrance and exit cells carry the link byte its save holds, as the original's load reads it (a resumed park's cells come from its own snapshot)
+				if ( resumeState == null && visitLayout == null && OriginalPark?.Save is { } save )
+					cells.TakeSavedAccessLinks( item.Cells, OwnerWord( item ), save.Cells );
+			}
 		}
 		if ( typesFootprints )
 		{

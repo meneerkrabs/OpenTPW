@@ -684,6 +684,8 @@ public class ContentKitTests
 		QueuePaths.TryConnect( grid, ride );
 		var simulation = new GuestSimulation( grid, GuestTests.CreateSettings(), 7 ) { ArrivalsEnabled = false };
 		simulation.Register( ride );
+		// a ride registered without a placement lays its stand cell as the placement would (main's fc22b597, ObjectAccessCells.LayStandCell)
+		GuestTests.LayStandCell( simulation.Grid, ride );
 		script.Advance( tick );
 
 		var guest = simulation.SpawnInPark( 2, 0 );

@@ -75,7 +75,7 @@ internal sealed partial class GameFlow
 			}
 			AttachProgress( candidate );
 			// a load takes the restart snapshot like the original's state 15; a restart's own reload does not
-			if ( !restart ) TakeRestartSnapshot( candidate );
+			if ( !restart ) TakeRestartSnapshot( candidate, assets ); // the manifest was hashed for the validation above; hashing it again is most of the snapshot's cost
 			Log.Trace( $"Resumed {snapshot.Theme} park: {candidate.Objects.Objects.Count} objects, {candidate.Guests!.Guests.Count} guests." );
 			return candidate;
 		}

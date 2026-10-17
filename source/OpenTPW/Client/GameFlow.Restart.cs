@@ -9,7 +9,7 @@ internal sealed partial class GameFlow
 	/// The restart snapshot's file of a theme in the save folder, the place the original keeps restart.INTS: one per theme folder
 	/// (the four private saves of a player hold one restart.INTS beside each theme's park saves, docs/TPWS-PAYLOAD.md).
 	/// </summary>
-	// the semantics are the original's; the file is OpenTPW's own park-resume format instead of INTS (the PR asks whether that is an EXT)
+	// the semantics are the original's; the file is OpenTPW's own park-resume format instead of INTS (no EXT label, by the user's decision)
 	internal static string RestartSnapshotFileName( string theme ) => $"opentpw-{theme}-restart.json";
 
 	/// <summary>Test seam: captures the restart snapshot instead of reading the live level.</summary>
@@ -30,20 +30,23 @@ internal sealed partial class GameFlow
 		!level.IsThemeParkIncSlice && level.OriginalPark != null && level.Guests != null && level.Park != null;
 
 	/// <summary>
-	/// Whether the pause menu offers Restart Park for this park. A reload does not pay a Full Simulation park's entry cost again, but
-	/// OpenTPW keeps that park's progress with the player's ledger, which a reload would not undo, so those parks stay without the entry.
+	/// Whether the pause menu offers Restart Park for this park: every park that takes a restart snapshot, Full Simulation included. The
+	/// original's normal pause menu (0x48C150) lists the entry (text 10, command 3) for every game type except the online visit, whose
+	/// menu is another branch without it (GameType 1), and nothing disables it by mode.
 	/// </summary>
-	// [EXT:pause-menu-restart] Restart Park reloads the restart snapshot of an Instant Action park or of a park that was loaded; a Full Simulation park's progress ledger is OpenTPW's own, so its entry stays disabled
+	// [BIN:TPW-EXE:0x48c150 pause menu restart entry] the builder adds the Restart Park line (text 10, command 3) in the branch taken whenever GameType 0xFB3B7C is not 1 (the visit's own menu has no such line) and the game-mode word +0x1da738 is not 4 (that menu has its own Restart line, command 0x17, whose confirm callback 0x48B620 sets the same request); no mode test guards it, and the command's confirm callback 0x48B5B0 stores request 1 (0x5508b0) like 0x48B620
+	// the progress ledger of a Full Simulation park is player-wide in the original too (the ticket object 0xF7C58C is created while the park is set up (state 9) and freed at the park exit (state 12) and with the player slot, 0x5C7F40 and 0x5C8650, and the loader 0x414D40 and the teardown 0x5996D0 never reference it), so the restart states 13 and 14 leave it alone: the reload keeps it, as OpenTPW's ledger file survives a restart (RestartCurrentPark neither reads nor writes it)
 	internal static bool RestartEligible( Level level ) => TakesRestartSnapshot( level ) && GameEditions.Capabilities.ParkSaves &&
-		level.Park is { Start.Kind: ParkStartKind.InstantAction or ParkStartKind.OriginalSaveReference } && ObjectCatalog.Themes.Contains( level.LevelName, StringComparer.Ordinal );
+		level.Park is { Start.Kind: ParkStartKind.InstantAction or ParkStartKind.FullSimulation or ParkStartKind.OriginalSaveReference } &&
+		ObjectCatalog.Themes.Contains( level.LevelName, StringComparer.Ordinal );
 
 	/// <summary>
 	/// Writes the restart snapshot of a park that has just started or just been loaded: the original takes it in state 15, right after the
 	/// level start 0x407E00 (which loads the quick save when 0x788160 is set) and never after a restart's own reload.
 	/// </summary>
 	// [BIN:TPW-EXE:0x54f3f7 restart snapshot] state 15 calls 0x550B30 once per park start or load: it builds <save>\restart.INTS from the folder global 0x878F18, the name "restart" (0x878A68) and the extension ".INTS" (0x877F38), and saves the park through 0x5AC630 with the save extension 0xF7ADF8 (writer 0x5ac780, the loader's twin)
-	// [APPROX:SAVE-012] the original opens the file for reading first (0x550c0f, mode 0x80000000) and saves only when that fails (0x550c14); no deleter of restart.INTS was found, so OpenTPW rewrites the snapshot at every start and load instead of keeping the first one written
-	internal void TakeRestartSnapshot( Level level )
+	// [APPROX:SAVE-012] the original opens the file for reading first (0x550c0f, mode 0x80000000) and saves only when that fails (0x550c14); nothing deletes or replaces it between parks (only the whole player folder is removed, 0x5C5250 from 0x5C7F40), so the original keeps the first snapshot of a theme folder; OpenTPW rewrites its snapshot at every start and load instead
+	internal void TakeRestartSnapshot( Level level, IReadOnlyDictionary<string, string>? verifiedAssets = null )
 	{
 		if ( !TakesRestartSnapshot( level ) )
 			return;
@@ -53,7 +56,7 @@ internal sealed partial class GameFlow
 			using ( LoadProfile.Measure( "restart-snapshot" ) )
 			{
 				var snapshot = RestartCaptureOverride != null ? RestartCaptureOverride( level ) :
-					level.CaptureResumeSnapshot( Advisor?.IsAttached == true ? Advisor : null, level.LevelName );
+					level.CaptureResumeSnapshot( Advisor?.IsAttached == true ? Advisor : null, level.LevelName, verifiedAssets );
 				ParkResumeSaveFile.Save( RestartSnapshotPath( level ), snapshot );
 			}
 			Log.Trace( $"Restart snapshot of the {level.LevelName} park written in {System.Diagnostics.Stopwatch.GetElapsedTime( started ).TotalMilliseconds:0} ms." );
@@ -70,10 +73,10 @@ internal sealed partial class GameFlow
 
 	/// <summary>
 	/// The pause menu's Restart Park (after its confirmation): the request code 1 of the dialog callback 0x48B620 (stored by 0x5508B0)
-	/// takes state 10 to 13 and 14, which tears the park down (0x5996D0(1)) and reloads the restart snapshot (0x5AC5F0 through the
+	/// takes state 10 to 13 and 14 (13 only advances; 14 does the work), which tears the park down (0x5996D0(1)) and reloads the restart snapshot (0x5AC5F0 through the
 	/// loader 0x414D40). The reload returns to state 10 itself, so it takes no new snapshot.
 	/// </summary>
-	// [BIN:TPW-EXE:0x54fe23 restart request] request 1 sets state 13 (0x54fe23); state 13 (0x550359) runs 0x5996D0(1), loads <save>\restart through 0x5AC5F0 (name 0x878A68) and returns to state 10 (0x550371) with the request cleared (0x55037b); no state-15 write follows
+	// [BIN:TPW-EXE:0x54fe23 restart request] request 1 sets state 13 (0x54fe23), which only advances to state 14; state 14 (the code at 0x55035a) runs 0x5996D0(1), loads <save>\restart through 0x5AC5F0 (name 0x878A68) and returns to state 10 (0x550371) with the request cleared (0x55037b); no state-15 write follows
 	internal void RestartCurrentPark( Level level )
 	{
 		if ( BuildingPark || ProgressCaptured() || !ReferenceEquals( Level, level ) || !TakesRestartSnapshot( level ) )

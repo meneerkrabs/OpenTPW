@@ -436,7 +436,7 @@ internal sealed partial class GameFlow : IDisposable
 		CreateOptions = CreateOptions,
 		CreateLoad = stack => FrontEndMenu.CreateLoadScreen( stack, Strings, FindLoadEntries(), entry => QueueProgressLevel( entry.Level, () => LoadPark( entry, overFrames: true ) ) ),
 		GoOnline = WhenOnline( ShowOnline ),
-		// [EXT:pause-menu-restart] Restart Park reloads the restart snapshot of an Instant Action park or of a park that was loaded; a Full Simulation park's progress ledger is OpenTPW's own, so its entry stays disabled
+		// Restart Park reloads the restart snapshot in every original park but the read-only visit (the original's pause menu 0x48C150 lists the entry for every game type except the online visit)
 		RestartPark = RestartEligible( level ) ? () => RestartCurrentPark( level ) : null,
 		PublishPark = WhenOnline( stack => CreateOnlineScreens( stack ).ShowPublish() ),
 		ListSorts = listSorts,

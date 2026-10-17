@@ -139,12 +139,40 @@ public class RestartParkSnapshotTests
 		Assert.AreEqual( 0, resumes );
 	}
 
-	[DataTestMethod, DataRow( ParkStartKind.InstantAction, true ), DataRow( ParkStartKind.OriginalSaveReference, true ), DataRow( ParkStartKind.FullSimulation, false )]
-	public void OnlyParksWithoutAProgressLedgerOfferRestart( ParkStartKind kind, bool offered )
+	// the original's pause menu builder 0x48c150 lists Restart Park for every game type but the online visit
+	[DataTestMethod, DataRow( ParkStartKind.InstantAction ), DataRow( ParkStartKind.OriginalSaveReference ), DataRow( ParkStartKind.FullSimulation )]
+	public void EveryOriginalParkOffersRestart( ParkStartKind kind )
 	{
 		var level = Live( kind );
 		Assert.IsTrue( GameFlow.TakesRestartSnapshot( level ), "every original park takes the snapshot" );
-		Assert.AreEqual( offered, GameFlow.RestartEligible( level ) );
+		Assert.IsTrue( GameFlow.RestartEligible( level ) );
+		Set( level, "<Visit>k__BackingField", RuntimeHelpers.GetUninitializedObject( typeof( ParkVisitInfo ) ) );
+		Assert.IsFalse( GameFlow.RestartEligible( level ), "the online visit has no Restart Park line" );
+	}
+
+	[TestMethod]
+	public void AFullSimulationRestartKeepsThePlayerWideTicketLedger()
+	{
+		var ledgerPath = SaveFileSystem.GetAbsolutePath( PlayerTicketFile.FileName );
+		var ledger = new PlayerTicketLedger();
+		PlayerTicketFile.Save( ledgerPath, ledger.Capture() with { ExtraKeys = 1 } );
+		var level = Live( ParkStartKind.FullSimulation ); var flow = Flow( level );
+		flow.RestartCaptureOverride = _ => Snapshot( "start" ); flow.TakeRestartSnapshot( level );
+		// the park earns a ticket after its start; the ledger file records it
+		var earned = PlayerTicketFile.ReadIfPresent( ledgerPath )!.Ledger;
+		Assert.IsTrue( earned.RecordEarned( "jungle", GoldenTicketKind.Visitors ) );
+		PlayerTicketFile.Save( ledgerPath, earned.Capture() );
+		var before = File.ReadAllBytes( ledgerPath );
+		ParkResumeSnapshot? resumed = null; flow.RestartResumeOverride = snapshot => resumed = snapshot;
+		flow.RestartCurrentPark( level );
+		Assert.AreEqual( "start", resumed?.DisplayName, "a Full Simulation park restarts to its snapshot" );
+		CollectionAssert.AreEqual( before, File.ReadAllBytes( ledgerPath ), "the restart neither reads nor rewrites the ledger" );
+		// the restarted park starts without the ticket again; attaching the ledger to it keeps what the player earned
+		using var owner = new PlayerProgressRuntimeOwner( ledgerPath, "jungle", PlayerTicketFile.ReadIfPresent( ledgerPath )!,
+			ParkEconomyRuntime.ForResume( EconomyTestData.Park(), ParkStartKind.FullSimulation ), () => true, _ => Assert.Fail() );
+		Assert.IsTrue( owner.TryFlush() );
+		var kept = PlayerTicketFile.LoadIfPresent( ledgerPath )!;
+		Assert.AreEqual( 1, kept.EarnedTickets ); Assert.AreEqual( 1, kept.ExtraKeys );
 	}
 
 	[TestMethod]

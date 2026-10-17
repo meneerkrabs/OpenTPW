@@ -107,6 +107,7 @@ public sealed partial class ParkHud
 			PoolBuildResult.TooSteep => OpenTpwText.PoolTooSteep,
 			PoolBuildResult.Swimmers => OpenTpwText.PoolSwimmersInWater,
 			PoolBuildResult.ChangingRoomAccess => OpenTpwText.PoolChangingRoomNeedsWater,
+			PoolBuildResult.SlideRiders => OpenTpwText.PoolSlideRiders,
 			_ => OpenTpwText.CannotBuildHere
 		} ) );
 	}

@@ -324,13 +324,14 @@ public partial class Level
 	/// </summary>
 	internal void ConfigureObjectHooks()
 	{
-		Objects.IsReserved = ( x, y ) => IsReservedByPrototype( x, y ) || Guests?.Grid.Cells.RawTypeAt( x, y ) is { } type && ReservesCell( type );
+		Objects.IsReserved = ( x, y ) => IsReservedByPrototype( x, y ) || Guests?.Grid.Cells.RawTypeAt( x, y ) is { } type && ReservesCell( type ) || (Guests != null && PoolSlides?.ReservesLand( x, y, Guests.Grid.Cells ) == true);
 		Objects.IsUnowned = ( x, y ) => Guests?.Grid.Cells is { } cells && cells.InBounds( x, y ) && cells.FlagsAt( x, y ).HasFlag( ParkCellFlags.Unowned );
 		Objects.PathAt = ( x, y ) => Guests?.Grid.Cells is { } cells ? ObjectPathAt( cells, x, y ) : null;
 		Objects.ClearPath = ( x, y ) => Paths?.Remove( x, y );
 		Objects.PathRuleAllows = ( x, y ) => Paths?.CheckPathRule( x, y ) is { } rule ? rule is CellBuildResult.Ok or CellBuildResult.Existing : null;
 		// [EXT:pools-changing-room] a changing room needs pool water beside its back
-		Objects.PlacementRule = ( entry, x, y, rotation ) => PoolChangingRooms.PlacementRule( entry, Guests?.Grid.Cells, x, y, rotation );
+		// [EXT:pools-slides] a slide tower needs pool water beside its front
+		Objects.PlacementRule = ( entry, x, y, rotation ) => PoolChangingRooms.PlacementRule( entry, Guests?.Grid.Cells, x, y, rotation ) ?? PoolSlideTowers.PlacementRule( entry, Guests?.Grid.Cells, x, y, rotation );
 	}
 
 	/// <summary>Whether a cell of this type keeps objects off it: any type but empty ground, a path and the object, entrance and exit types ([EXT:pools-cell-type]: pool water is one).</summary>
@@ -378,7 +379,8 @@ public partial class Level
 		foreach ( var item in Objects.Objects )
 			if ( !item.IsDeleted && item.Visitors.IsChangingRoom && item.Visitors.PoolAccessCandidates.Contains( (x, y) ) )
 				return PoolBuildResult.ChangingRoomAccess;
-		return null;
+		// [EXT:pools-slides] riders on a slide keep its splash cell, and climbers the foot of its stairs
+		return SlideEraseBlock( x, y );
 	}
 
 	/// <summary>[EXT:pools-tool] The headless pool builder over the level's cell map (original levels, not a read-only visit); null otherwise (docs/POOLS.md).</summary>
@@ -429,7 +431,9 @@ public partial class Level
 			FeetChooser = guest =>
 			{
 				var feet = GuestRenderer.CellToEngine( park.Heightfield, guest.DrawX, guest.DrawY );
-				return guests.Grid.Cells.RawTypeAt( guest.CellX, guest.CellY ) == ParkCellTypes.PoolWater && PoolRenderer?.WaterLevelAt( guest.CellX, guest.CellY ) is { } level ? new System.Numerics.Vector3( feet.X, feet.Y, level ) : feet;
+				feet = guests.Grid.Cells.RawTypeAt( guest.CellX, guest.CellY ) == ParkCellTypes.PoolWater && PoolRenderer?.WaterLevelAt( guest.CellX, guest.CellY ) is { } level ? new System.Numerics.Vector3( feet.X, feet.Y, level ) : feet;
+				// [EXT:pools-activities] an activity may lift the feet (stairs, a slide, a board)
+				return guest.InPoolActivity && guests.PoolActivityOf( guest )?.FeetHeight( guests, guest, feet.Z ) is { } lifted ? new System.Numerics.Vector3( feet.X, feet.Y, lifted ) : feet;
 			}
 		};
 	}
@@ -491,12 +495,13 @@ public partial class Level
 			PoolBuilder = new PoolBuilder( Guests.Grid.Cells, () => Park?.Economy, Objects.Grid, IsPathBlocked, IsStoodOn, PoolEraseBlock );
 			PoolTool = new PoolTool( PoolBuilder );
 		}
+		SetupPoolSlides();
 		AreaClearTool = IsReadOnlyVisit ? null : new AreaClearTool( RemoveObjectAt, () => Guests?.Grid.Cells, RemovePathCell, TypesFootprints ? null : ( x, y ) => Objects.FindAt( x, y ) );
 	}
 
 	// Objects, fixed items (the gate and entrance included) and the sandbox Totem block paths like their original cell types do; an object of a lower
 	// overwrite priority than the path's gives way instead (ParkPathBuilder.ObjectGivesWay).
-	private bool IsPathBlocked( int x, int y ) => Objects.FindAt( x, y ) != null || IsReservedByPrototype( x, y );
+	private bool IsPathBlocked( int x, int y ) => Objects.FindAt( x, y ) != null || IsReservedByPrototype( x, y ) || (Guests != null && PoolSlides?.ReservesLand( x, y, Guests.Grid.Cells ) == true);
 
 	/// <summary>How the cell map holds a path for the object build rule: none, a plain path (cleared by the placement) or a NoModify one (refused).</summary>
 	internal static ObjectPathCell? ObjectPathAt( ParkCellMap cells, int x, int y )

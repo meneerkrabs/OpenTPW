@@ -127,6 +127,7 @@ public enum OpenTpwText
 	PoolStateChanging,
 	PoolSwimmersInWater,
 	PoolChangingRoomNeedsWater,
+	PoolSlideRiders,
 	PoolChangingRoomNeedsPool,
 	WeatherThunderstorms,
 	WeatherThunderAndLightning,
@@ -489,6 +490,8 @@ public static class SupplementaryStrings
 		[OpenTpwText.PoolStateChanging] = new[] { "Changing", "Skifter tøj", "Kleedt zich om", "Se change", "Zieht sich um", "옷을 갈아입는 중", "Przebiera się", "Cambiándose", "Byter om" },
 		[OpenTpwText.PoolSwimmersInWater] = new[] { "Swimmers are in the water here", "Der er svømmere i vandet her", "Er zwemmers in het water hier", "Des nageurs sont dans l'eau ici", "Hier sind Schwimmer im Wasser", "이곳 물속에 수영하는 사람이 있습니다", "W wodzie są pływacy", "Hay nadadores en el agua aquí", "Det finns simmare i vattnet här" },
 		[OpenTpwText.PoolChangingRoomNeedsWater] = new[] { "A changing room needs this pool water", "Et omklædningsrum har brug for dette poolvand", "Een kleedkamer heeft dit zwembadwater nodig", "Un vestiaire a besoin de cette eau de piscine", "Eine Umkleide braucht dieses Poolwasser", "탈의실에 이 수영장 물이 필요합니다", "Przebieralnia potrzebuje tej wody basenowej", "Un vestuario necesita esta agua de piscina", "Ett omklädningsrum behöver det här poolvattnet" },
+		// [EXT:pools-slides] a splash cell with riders on it, or the foot of a tower's stairs with guests on them, cannot be erased
+		[OpenTpwText.PoolSlideRiders] = new[] { "A slide has guests on it here", "En vandrutsjebane har gæster på sig her", "Er zijn gasten op een glijbaan hier", "Des clients sont sur un toboggan ici", "Hier sind Gäste auf einer Rutsche", "여기 물 미끄럼틀에 손님이 있습니다", "Na zjeżdżalni są tu goście", "Hay clientes en un tobogán aquí", "Det finns gäster på en rutschkana här" },
 		[OpenTpwText.PoolChangingRoomNeedsPool] = new[] { "A changing room must stand beside a pool", "Et omklædningsrum skal ligge ved siden af en pool", "Een kleedkamer moet naast een zwembad staan", "Un vestiaire doit se trouver à côté d'une piscine", "Eine Umkleide muss neben einem Pool stehen", "탈의실은 수영장 옆에 있어야 합니다", "Przebieralnia musi stać obok basenu", "Un vestuario debe estar junto a una piscina", "Ett omklädningsrum måste ligga bredvid en pool" },
 		[OpenTpwText.NotAvailable] = new[] { "Not available yet", "Endnu ikke tilgængelig", "Nog niet beschikbaar", "Pas encore disponible", "Noch nicht verfügbar", "아직 이용할 수 없음", "Jeszcze niedostępne", "Aún no disponible", "Inte tillgänglig ännu" },
 		// [EXT:forecast-wording] the weather forecast's own words (no weather text exists in the shipped string tables); {0} is the kind, {1} when it comes

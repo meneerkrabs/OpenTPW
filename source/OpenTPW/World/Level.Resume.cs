@@ -55,6 +55,7 @@ public partial class Level
 			Advisor = advisor?.CaptureSnapshot(),
 			Coasters = CaptureCoastersSnapshot(),
 			Tracks = CaptureTracksSnapshot(),
+			PoolSlides = PoolSlides?.CaptureSnapshot(),
 			Tours = CaptureToursSnapshot(),
 			Prototype = prototype,
 			Particles = ParticlesCaptured?.Invoke( this ),
@@ -124,6 +125,8 @@ public partial class Level
 		// node), and this restores the saved tracks, controller state, trains and riders over them.
 		RestoreCoastersSnapshot( snapshot.Coasters );
 		RestoreTracksSnapshot( snapshot.Tracks );
+		// [EXT:pools-slides] the slides go back over their towers and the pool cells the layout restored
+		PoolSlides?.RestoreSnapshot( snapshot.PoolSlides );
 		RestoreToursSnapshot( snapshot.Tours );
 		// the resumed tiles and boats are drawn from the first frame, as they were when the park was saved
 		UpdateTrackRendering();

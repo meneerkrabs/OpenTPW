@@ -53,6 +53,9 @@ public interface IPoolActivity
 	/// </summary>
 	int SpriteSlot( Guest guest ) => PoolSwimSlots.TreadWater;
 
+	/// <summary>The engine height of the guest's feet while it does the activity, or null for the default (<paramref name="defaultHeight"/>: the water surface or the terrain under the guest).</summary>
+	float? FeetHeight( GuestSimulation simulation, Guest guest, float defaultHeight ) => null;
+
 	/// <summary>
 	/// 0 for an activity offered during the swim (the host's cadence, <see cref="PoolActivitySettings.OfferIntervalTurns"/>), or 1..100: the percent chance that the guest does it as the swim starts, before it
 	/// enters the water (a shower). An activity with a start chance is offered at the start only.
@@ -102,6 +105,6 @@ public static class PoolActivityRegistry
 	/// <summary>The built-in activities. Each phase of the pools work adds its own to this list; a registry holding none changes nothing.</summary>
 	public static IEnumerable<IPoolActivity> Create()
 	{
-		yield break;
+		yield return new PoolSlideActivity();
 	}
 }

@@ -4114,6 +4114,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			else
 				hash.Add( attraction.QueueLength );
 		}
+		// [EXT:pools-slides] the park's water slides join the digest only when there are any (every park without slides keeps its pins)
+		PoolSlides?.AddCanonicalState( hash );
 	}
 
 	/// <summary>FNV-1a over guest gameplay state, the RNG and counters; display-only TimeInParkSeconds is excluded.</summary>

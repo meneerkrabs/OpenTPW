@@ -9,7 +9,9 @@ public enum CellPurchase
 	WaterTrack,
 	Land,
 	/// <summary>[EXT:pools-cost] One pool water cell of the <c>opentpw.pools</c> extension (<see cref="ParkEconomy.PoolCellCost"/>).</summary>
-	Pool
+	Pool,
+	/// <summary>[EXT:pools-cost] One piece of a water slide of the <c>opentpw.pools</c> extension (<see cref="ParkEconomy.SlidePieceCost"/>).</summary>
+	SlidePiece
 }
 
 /// <summary>
@@ -1896,6 +1898,13 @@ public sealed class ParkEconomy : IParkEconomy
 	// [EXT:pools-cost] OpenTPW's own price; the original game has no pools
 	public const int PoolCellCost = 75;
 
+	/// <summary>
+	/// [EXT:pools-cost] The price of one piece of a water slide: 90. The original's balance files have no slide price, so it is a constant of the extension (docs/POOLS.md, "Water slides");
+	/// a slide of ten pieces costs 900 on top of its tower, the price of a modest ride. Riding is free.
+	/// </summary>
+	// [EXT:pools-cost] OpenTPW's own price; the original game has no pools
+	public const int SlidePieceCost = 90;
+
 	public long CellCost( CellPurchase kind ) => kind switch
 	{
 		CellPurchase.Path => Settings.Costs.PathCell,
@@ -1904,6 +1913,7 @@ public sealed class ParkEconomy : IParkEconomy
 		CellPurchase.WaterTrack => Settings.Costs.WaterTrackCell,
 		CellPurchase.Land => Settings.Costs.MapCell,
 		CellPurchase.Pool => PoolCellCost,
+		CellPurchase.SlidePiece => SlidePieceCost,
 		_ => throw new ArgumentOutOfRangeException( nameof( kind ) )
 	};
 
@@ -2018,6 +2028,15 @@ public sealed class ParkEconomy : IParkEconomy
 			return 0;
 		Post( LedgerCategory.OtherIncome, PoolCellCost );
 		return PoolCellCost;
+	}
+
+	/// <summary>[EXT:pools-cost] Refunds one removed slide piece in full, as an erased pool cell is (nothing while withdrawals are disabled). Returns the amount credited.</summary>
+	public long RefundSlidePiece()
+	{
+		if ( !WithdrawalsEnabled )
+			return 0;
+		Post( LedgerCategory.OtherIncome, SlidePieceCost );
+		return SlidePieceCost;
 	}
 
 	/// <summary>

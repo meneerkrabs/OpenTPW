@@ -558,6 +558,10 @@ public sealed class UiSlider : UiElement, IUiDragTarget
 	public Func<int> Steps { get; set; } = () => 2;
 	public Func<int> Value { get; set; } = () => 0;
 	public Action<int>? Changed { get; set; }
+	/// <summary>The thumb was pressed (an original-class slider, <see cref="Truncates"/>): the original's slider posts 0x801 to its owner with the value.</summary>
+	public Action<int>? Grabbed { get; set; }
+	/// <summary>The thumb was let go (0x802).</summary>
+	public Action? Released { get; set; }
 	/// <summary>Truncate a drag position to its value instead of taking the nearest value (the original's slider class, used by the research effort sliders).</summary>
 	// [BIN:TPW-EXE:0x66afc9 slider drag] value = min + trunc((thumbLeft - trackLeft) * (max - min) / (trackWidth - thumbWidth)); the research effort sliders 0xd2d0b..0xd2d0f are this class with SetRange(0,100) (0x4aa6bd..0x4aa725)
 	public bool Truncates { get; set; }
@@ -617,6 +621,7 @@ public sealed class UiSlider : UiElement, IUiDragTarget
 		{
 			pressMode = PressMode.Grab;
 			grabOffset = x - (knob.X + knob.Width / 2);
+			Grabbed?.Invoke( Value() );
 		}
 		else
 		{
@@ -624,6 +629,13 @@ public sealed class UiSlider : UiElement, IUiDragTarget
 			var steps = Math.Max( 2, Steps() );
 			Set( Math.Clamp( Value() + (x < knob.Right ? -Page : Page), 0, steps - 1 ) );
 		}
+	}
+
+	void IUiDragTarget.DragEnd( UiCanvas canvas, NVector2 point )
+	{
+		if ( pressMode == PressMode.Grab )
+			Released?.Invoke();
+		pressMode = PressMode.None;
 	}
 
 	void IUiDragTarget.DragTo( UiCanvas canvas, NVector2 point )

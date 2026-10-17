@@ -19,6 +19,14 @@ public sealed partial class ParkHud
 	/// <summary>The advisor help the open message panel carries (0x11C, 284).</summary>
 	public const int MessagePanelHelp = 284;
 
+	/// <summary>The <c>cat_ui</c> sound a new tube icon plays (0x1E).</summary>
+	// [BIN:TPW-EXE:0x48edb4 message posted] the tube's add routine 0x48eb20 plays cat_ui 0x1E flat (0x51bfc0 with no place) when it creates a new icon (after bumping the icon count 0x7ca09c)
+	public const uint MessagePostedEvent = 0x1E;
+
+	/// <summary>The <c>cat_ui</c> sound a left click on a tube icon plays (0xC0).</summary>
+	// [BIN:TPW-EXE:0x48e043 tube icon click] the icon's procedure plays cat_ui 0xC0 (the helper 0x485aa0, flat) on a button-0 click, before it opens the message (0x48d9c0) or closes the open one (0x4a25f0)
+	public const uint MessageClickedEvent = 0xC0;
+
 	// The tube sits left of the HUD panel above its top edge, in the BottomLeft-anchored authored coordinates of the main panel; read off the 720p frames (video 15:20 and 12:00).
 	private static readonly UiRect TubeBase = Rect( 69, 850, 157, 985 );
 	private const float TubeStep = 77f;
@@ -57,6 +65,7 @@ public sealed partial class ParkHud
 		pendingActions ??= new List<GameMessageAction[]>();
 		pendingMessages.Add( text );
 		pendingActions.Add( actions.Take( MessageActionIds.Length ).ToArray() );
+		GameAudio.PlayUi( MessagePostedEvent );
 		while ( pendingMessages.Count > MessageTubeCapacity )
 		{
 			pendingMessages.RemoveAt( 0 );
@@ -69,6 +78,7 @@ public sealed partial class ParkHud
 	{
 		if ( pendingMessages == null || index < 0 || index >= pendingMessages.Count )
 			return false;
+		GameAudio.PlayUi( MessageClickedEvent );
 		// the panel comes out where the info arm is, so opening a message puts the arm away: the opened message is always visible, and one read there is not lost
 		if ( InfoArmOpen )
 			SetInfoArm( false );

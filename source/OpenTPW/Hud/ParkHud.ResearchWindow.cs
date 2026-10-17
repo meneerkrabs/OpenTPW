@@ -49,6 +49,7 @@ public sealed partial class ParkHud
 		researchScreen.Focus( researchScreen.Find( "exit" ) );
 		// [BIN:TPW-EXE:0x4a1737 drawer open] opening the map/research drawer (message 0xA) plays cat_ui event 0x1C (the drawer's research button help is 'Click for research (R)')
 		GameAudio.PlayUi( GameAudio.DrawerOpenEvent );
+		StartResearchSounds();
 	}
 
 	public void CloseResearchWindow()
@@ -59,9 +60,66 @@ public sealed partial class ParkHud
 			Stack.Pop();
 		if ( Stack.Top == researchScreen )
 			Stack.Pop();
+		StopResearchSounds();
 		// [BIN:TPW-EXE:0x4a186f drawer close] a close plays cat_ui 0x1C when it starts and 0xC2 when the slide finishes (0x4a1947); OpenTPW has no slide, so both play at once
 		// [EXT:drawer-window] the research screen is a window that opens and closes at once where the original slides a drawer out of the main panel (docs/AUDIO.md; UI register)
 		GameAudio.PlayDrawerClose();
+	}
+
+	/// <summary>The two <c>cat_ui</c> loops the open research window plays (154 and 155) and the sentence an effort slider plays while it is held (156).</summary>
+	public const uint ResearchHumEvent = 154, ResearchSecondHumEvent = 155, ResearchSliderEvent = 156;
+	private SoundSentence? researchHum, researchSecondHum, researchSliderSound;
+
+	/// <summary>The loops start with the window; they keep running until it closes.</summary>
+	// [BIN:TPW-EXE:0x4aa4f5 research window sounds] building the window (0x4aa480, after the money, instant-research and panel checks) starts cat_ui 0x9A and 0x9B through the play helper 0x485aa0 and keeps both handles (0x7cc1d0, 0x7cc1cc); its destroy message 0x14 stops them with 0x51c2c0 (0x4a96b0)
+	private void StartResearchSounds()
+	{
+		StopResearchSounds();
+		researchHum = GameAudio.StartUiSentence( ResearchHumEvent );
+		researchSecondHum = GameAudio.StartUiSentence( ResearchSecondHumEvent );
+	}
+
+	private void StopResearchSounds()
+	{
+		researchHum?.Stop();
+		researchSecondHum?.Stop();
+		researchSliderSound?.Stop();
+		researchHum = researchSecondHum = researchSliderSound = null;
+	}
+
+	/// <summary>The workload knob's value as the hum's parameter: the clamped knob value times 100 over 1024, truncated toward zero.</summary>
+	// [BIN:TPW-EXE:0x4a97ad workload knob sound] the master slider's change (message 0x800 from 0xd2d10, after the limit clamp) sets parameters 0xC and 0xD of both loops to value * 100 / 1024 (the signed shift of 0x4a98d5-0x4a98dd) through 0x51bc40
+	internal static int ResearchHumParameter( int knobValue ) => knobValue * 100 / 1024;
+
+	private void SetResearchHum( int knobValue )
+	{
+		var parameter = ResearchHumParameter( knobValue );
+		foreach ( var sentence in new[] { researchHum, researchSecondHum } )
+		{
+			sentence?.SetParameter( 0xC, parameter );
+			sentence?.SetParameter( 0xD, parameter );
+		}
+	}
+
+	/// <summary>An effort slider's thumb was pressed: its sentence starts with the slider's value as parameters 0xB and 0xA.</summary>
+	// [BIN:TPW-EXE:0x4a9a53 effort slider sound] message 0x801 from a slider other than the master starts cat_ui 0x9C (0x4a9b87, the helper keeps the handle at 0x7cc1d4) and sets its parameters 0xB and 0xA to the value; 0x800 sets them again as the value changes (0x4a9a2c); 0x802 stops the sentence (0x4a9a5c) and clears the handle
+	private void StartResearchSlider( int value )
+	{
+		researchSliderSound?.Stop();
+		researchSliderSound = GameAudio.StartUiSentence( ResearchSliderEvent );
+		SetResearchSlider( value );
+	}
+
+	private void SetResearchSlider( int value )
+	{
+		researchSliderSound?.SetParameter( 0xB, value );
+		researchSliderSound?.SetParameter( 0xA, value );
+	}
+
+	private void StopResearchSlider()
+	{
+		researchSliderSound?.Stop();
+		researchSliderSound = null;
 	}
 
 	private string ResearchItemName( ResearchCategory category )
@@ -185,7 +243,8 @@ public sealed partial class ParkHud
 			screen.Add( new UiSlider { Id = $"effort{index}", Track = cells.Track,
 				KnobSize = new NVector2( cells.Knob.Width, cells.Knob.Height ), KnobTop = cells.Knob.Y,
 				Steps = () => 101, Truncates = true, Value = () => ResearchEconomy?.Research.Effort[(int)category] ?? 0,
-				Changed = value => SetResearchEffort( category, value ),
+				Changed = value => { SetResearchEffort( category, value ); SetResearchSlider( value ); },
+				Grabbed = StartResearchSlider, Released = StopResearchSlider,
 				Bounds = slider, Anchor = UiAnchor.Center } );
 		}
 		// [DATA:Mac research table 0x4c652:-1] b_okay exits; help 1.
@@ -324,7 +383,9 @@ public sealed partial class ParkHud
 				lastPointerY = y;
 				y = centre;
 			}
-			TrySetResearchWorkload( owner.ResearchEconomy, owner.level.IsReadOnlyVisit, WorkloadFromKnob( KnobValueAt( y ), owner.WorkloadLimit() ) );
+			var limit = owner.WorkloadLimit();
+			if ( TrySetResearchWorkload( owner.ResearchEconomy, owner.level.IsReadOnlyVisit, WorkloadFromKnob( KnobValueAt( y ), limit ) ) )
+				owner.SetResearchHum( Math.Clamp( KnobValueAt( y ), 0, Math.Min( Math.Max( limit, 0 ), WorkloadKnobRange ) ) );
 		}
 		public override void Draw( UiContext context, bool focused, bool pressed )
 		{

@@ -1030,8 +1030,13 @@ internal sealed partial class GameFlow : IDisposable
 	{
 		if ( !FeatureGates.Sharing )
 			throw new NotSupportedException( FeatureGates.Online ? "Postcards are unavailable for this edition's experimental slice." : FeatureGates.OnlineDisabledMessage + "." );
+		// [BIN:TPW-EXE:0x4a9380 postcard] the postcard button (100 of the camera panel, 0x498ad0) and Ctrl+P (0x481500) run 0x4a9380, which plays cat_ui 0x95 flat before it builds the composer
+		GameAudio.PlayUi( PostcardEvent );
 		CreateOnlineScreens( stack ).ShowSendPostcard();
 	}
+
+	/// <summary>The <c>cat_ui</c> sound the postcard composer opens with (0x95).</summary>
+	public const uint PostcardEvent = 0x95;
 
 	private UI.OnlineScreens CreateOnlineScreens( UiScreenStack stack ) => new( stack, Strings, Context.Models, new UI.OnlineHost
 	{

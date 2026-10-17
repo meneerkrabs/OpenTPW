@@ -701,6 +701,9 @@ public sealed partial class ParkHud
 		UpdateEconomyElements();
 		UpdateCameraPanel( context.Delta );
 		UpdateMessageTube( context.Delta );
+		// the research window's loops end with the window, however it left the stack
+		if ( researchHum != null && !ResearchWindowOpen )
+			StopResearchSounds();
 		UpdateLocatorPanels();
 		SampleHappiness( context.Delta );
 		var paused = Paused;

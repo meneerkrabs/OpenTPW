@@ -588,7 +588,7 @@ Imported parks saved open are opened during level construction, before the
 advisor attaches, so that load-time opening raises no event; a park started without
 a save stays closed until the player opens it (tp.exe `0x51562d`).
 
-Contextual help ("Contextual help" below) adds 81 help messages and eight HUD windows' producers. Not wired: the 135 computed
+Contextual help ("Contextual help" below) adds 81 help messages (of the 82 descriptors with the help score; 291 names the absent response 551) and eight HUD windows' producers. The producer of every one of the 351 messages (scan, event, help or none), its inputs and its OpenTPW status are in docs/reverse/ADVISOR-SCAN.md and `content/data/advisor-producers.toml`. Not wired: the 135 computed
 score producers and the
 background score scan, research/staff/prank/ride/challenge messages (the challenge warning, advice 271, is wired), slaps, the tool-start help and the recovered
 `OriginalAdvisorLipDriver` timing (it needs the original pause-aware advisor

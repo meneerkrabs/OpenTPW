@@ -468,14 +468,14 @@ flag word) is set, else state 9. State 4 continues to 5, which is the logo.
   resource byte 3). **Inferred**: the settings field behind `+0x2C` is not
   identified, so whether the player can switch the intro off in a menu is
   unknown; the shipped default plays it.
-- **Movie volume** (proven): the player sets the QuickTime movie volume from a
-  global written only by `0x1009B4AC`, called from the sound-options apply
-  routine `0x10126460`: movie sound off gives 0, otherwise the Movie volume
-  percentage `p` (0…100) becomes `p × 1023 / 100`, then `× 256 / 1023`, i.e.
-  linear 0…256 (QuickTime full volume). That routine runs from the early
-  program start-up (`0x100002DC` → `0x10000D54` → `0x10125B7C`), before the
-  start-up states (the order is **inferred** from the call chain). OpenTPW maps
-  the Movie volume option (a percentage, 0…100, default 100) linearly onto 0…1.
+- **Movie volume** (proven on the PC build): the sound-options apply routine (tp.exe `0x423dd0`) passes the movie setter
+  `0x51b3c0` percent × 1023 / 100 (C division; 0 while Movie sound is off), which keeps the low ten bits in `0x802ba8`.
+  Opening a movie (`0x51b010`) and the setter's re-apply (`0x51b2bc`) call the library's volume call `0x66f520` with
+  `v × 10000 / 1023 − 10000`, which forwards to the movie's DirectSound buffer `SetVolume` (vtable `+0x3C`): attenuation
+  in hundredths of a decibel, so 100 % is unattenuated, 75 % is about −25 dB, 50 % about −50 dB and 0 % or off is
+  DirectSound's silence (−10000). OpenTPW applies exactly this curve (`MovieVolumeCurve`) to the PCM; the earlier linear
+  mapping came from the Mac build's QuickTime volume (a linear 0…256), which the PC player does not use. (The Mac
+  routine `0x10126460`, kept for reference, set that linear volume.)
 - **Picture box** (proven): the movie is placed at y = screen height × 64/480
   and sized to the screen width by screen height × 352/480, i.e. 640×352 in a
   640×480 screen, with black above and below. The `.tgq` frames are 320×352, so

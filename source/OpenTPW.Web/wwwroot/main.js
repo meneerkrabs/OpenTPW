@@ -130,6 +130,8 @@ if (keepLock) {
 // The input's files are in the runtime (copied this visit or restored); mods read them from the next start on.
 let inputLoaded = false;
 let inputBusy = false;
+// The import in progress: the game never starts (and never resolves its mods) before it has finished, so it cannot read a half-copied install.
+let inputImport = Promise.resolve();
 let keepFailed = false;
 // Files are kept in the background, one after another, so copying into the game never waits for the disk; at most this many
 // bytes wait to be written (the 'all' mode reads a whole folder, faster than it can be written).
@@ -506,7 +508,7 @@ updateSetup();
 const inputFolder = document.getElementById('inputFolder');
 const inputStatus = document.getElementById('inputStatus');
 function updateInput() {
-	const kept = inputStore?.manifest && Object.keys(inputStore.manifest.files).length > 0 && keepMode !== 'off';
+	const kept = inputs.keptComplete(inputStore) && keepMode !== 'off';
 	document.getElementById('inputRow').hidden = gameRunning;
 	document.getElementById('inputChoose').disabled = inputBusy;
 	document.getElementById('inputRemove').hidden = !(inputLoaded || kept);
@@ -519,7 +521,9 @@ function updateInput() {
 }
 // Called by the game (the Extensions and mods screen) and by the setup button: opens the folder dialog.
 function chooseInput() {
-	if (!inputBusy)
+	if (inputBusy)
+		program.InputChanged('The Theme Park Inc files are still being copied.');
+	else
 		inputFolder.click();
 }
 document.getElementById('inputChoose').addEventListener('click', chooseInput);
@@ -528,8 +532,11 @@ inputFolder.addEventListener('cancel', () => program.InputChanged(''));
 inputFolder.addEventListener('change', async event => {
 	const files = [...event.target.files];
 	event.target.value = '';
-	if (files.length === 0 || inputBusy)
+	// Every outcome tells the game exactly once (importFolder does for a chosen folder), so its screen never waits for ever.
+	if (files.length === 0)
 		return program.InputChanged('');
+	if (inputBusy)
+		return program.InputChanged('The Theme Park Inc files are still being copied.');
 	inputBusy = true;
 	let failure = '';
 	const report = text => {
@@ -538,14 +545,19 @@ inputFolder.addEventListener('change', async event => {
 		updateLoading();
 	};
 	updateInput();
+	const sources = files.map(file => [file.webkitRelativePath.split('/').slice(1).join('/'), () => file.arrayBuffer(), file.size]);
+	let finished;
+	inputImport = new Promise(resolve => finished = resolve);
 	try {
-		const planned = inputs.planInput(files.map(file => [file.webkitRelativePath.split('/').slice(1).join('/'), () => file.arrayBuffer(), file.size]));
-		const result = await inputs.importInput(program, planned, { store: keepMode !== 'off' && !keepFailed ? inputStore : null, progress: report });
+		const result = await inputs.importFolder(program, sources, { store: keepMode !== 'off' && !keepFailed ? inputStore : null, progress: report });
 		inputLoaded = true;
 		console.info(`Theme Park Inc files for mods: ${result.count} files, ${(result.bytes / 1048576).toFixed(0)} MB, ${result.kept ? 'kept' : 'not kept'}`);
 	} catch (error) {
 		console.warn('The Theme Park Inc files could not be used', error);
 		failure = error.message;
+		// a failed copy removed the earlier one too (before the game runs; a running game keeps what its mods read)
+		if (!gameRunning)
+			inputLoaded = false;
 	} finally {
 		inputBusy = false;
 		inputLoadingText = '';
@@ -553,6 +565,7 @@ inputFolder.addEventListener('change', async event => {
 		updateInput();
 		if (failure)
 			inputStatus.textContent = failure;
+		finished();
 	}
 });
 document.getElementById('inputRemove').addEventListener('click', async () => {
@@ -560,7 +573,7 @@ document.getElementById('inputRemove').addEventListener('click', async () => {
 		return;
 	await inputStore?.clear();
 	try {
-		program.BeginInput(inputs.EDITION);
+		program.AbortInput(inputs.EDITION);
 		inputLoaded = false;
 	} catch (error) {
 		console.warn(error);
@@ -591,10 +604,12 @@ async function start(theme) {
 		console.warn('Saved games could not be read from this browser', error);
 	}
 	await loadSavedLanguage();
+	await inputImport;
 	// The kept Theme Park Inc files (when the player chose a folder in an earlier visit) are back in memory before the mods are resolved.
 	if (!inputLoaded && inputStore && keepMode !== 'off') {
 		status.textContent = 'Restoring the Theme Park Inc files for mods…';
 		inputLoaded = await inputs.restoreInput(program, inputStore) > 0;
+		updateInput();
 	}
 	if (perf && perfQuery.get('perfSeed')) {
 		const seed = JSON.parse(atob(perfQuery.get('perfSeed')));

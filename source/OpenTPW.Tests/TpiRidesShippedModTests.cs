@@ -54,6 +54,33 @@ public class TpiRidesShippedModTests
 		Assert.IsTrue( items.Count > 100, "the shipped mod lists the install's archives, not just a few" );
 	}
 
+	/// <summary>
+	/// The mod's identity in park saves is a hash of its files' bytes, so the shipped files are pinned: any change (a new archive, a renamed object, a
+	/// different line ending after a checkout) fails here and must be a deliberate new version. Always on, without any install.
+	/// </summary>
+	private const string GoldenDigest = "e6f0a719c5d75cd23630dade1b4f9e5f92c3952eed1ade8cf11f97506bd06d4c";
+
+	[TestMethod]
+	public void TheShippedModHasLfLineEndingsAndAFixedContentDigest()
+	{
+		foreach ( var file in Directory.GetFiles( TpiRidesFixture.ShippedFolder ) )
+			Assert.IsFalse( File.ReadAllBytes( file ).Contains( (byte)'\r' ), $"{Path.GetFileName( file )} has a CR: a Windows checkout would change the mod's digest" );
+		if ( TpiRidesFixture.RepositoryFolder() is { } repository )
+		{
+			var attributes = File.ReadAllText( Path.Combine( repository, "..", "..", "..", ".gitattributes" ) ).Replace( "\r\n", "\n" );
+			Assert.IsTrue( attributes.Contains( "content/mods/** text eol=lf" ), ".gitattributes pins LF for the shipped mods" );
+		}
+		var input = Directory.CreateDirectory( Path.Combine( root, "any", "Data" ) ).Parent!.FullName;
+		var set = TpiRidesFixture.Resolve( TpiRidesFixture.Settings( input ) );
+		Assert.AreEqual( 0, set.Refused.Count, string.Join( "; ", set.Refused.Select( refusal => refusal.Reason ) ) );
+		Assert.AreEqual( GoldenDigest, set.Mods.Single().ContentSha256, "the shipped mod's files changed: update the golden digest and the mod's version together" );
+		// the same files with CRLF would be another mod
+		var crlf = Directory.CreateDirectory( Path.Combine( root, "crlf", "content", "mods", TpiRidesFixture.Id ) );
+		foreach ( var file in Directory.GetFiles( TpiRidesFixture.ShippedFolder ) )
+			File.WriteAllText( Path.Combine( crlf.FullName, Path.GetFileName( file ) ), File.ReadAllText( file ).Replace( "\n", "\r\n" ) );
+		Assert.AreNotEqual( GoldenDigest, TpiRidesFixture.Resolve( TpiRidesFixture.Settings( input ), Path.Combine( root, "crlf" ) ).Mods.Single().ContentSha256 );
+	}
+
 	[TestMethod]
 	public void TheShippedObjectsListExactlyTheArchivesTheInstallLoads()
 	{

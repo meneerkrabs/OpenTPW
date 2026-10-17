@@ -20,6 +20,10 @@ content, off by default, and it works in the browser build too.
   (`BrowserModInputs`): the setup page's *Theme Park Inc files for mods* button (and **Change...** in the screen) copies only what the mod reads (324 files,
   74 MB of 400 MB) into memory and into a second origin-private store, so the Theme Park World and Theme Park Inc files coexist, each with its own
   manifest, and a later visit restores them before the mods are resolved. A copy an active mod reads is not replaced during a run.
+- **Review fixes**: the browser copy is staged and published only when complete and recognised (`BrowserModInputs.Publish`: file count,
+  `GameEditions.Detect`, `Ver.txt`, per world a ride archive and shared textures, the global sounds), Play waits for an import, a failed copy removes
+  both trees, every outcome (a refused folder too) reports one result so the screen never stays disabled, a restore verifies every SHA-256 and clears
+  an incomplete store, `.gitattributes` pins LF for `content/mods/**` and a golden content digest pins the shipped files.
 - **Tests**: `TpiRidesWiringTests`, `TpiRidesShippedModTests`, `ModsInBrowserTests` (browser discovery, defaults, the lock and the screen with the page played
   by the test), `tools/test_web_inputs.mjs` (page side: what is chosen, replacing, keeping, restoring a complete set only; added to CI). Checked by
   hand in Chrome against a published interpreter build with the real install: copy before and during the game, restore after a reload, the saved

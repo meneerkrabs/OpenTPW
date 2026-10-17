@@ -52,6 +52,14 @@ public static partial class Program
 	public static void AddInputFile( string edition, string relativePath, byte[] contents )
 		=> OpenTPW.Mods.BrowserModInputs.AddFile( edition, relativePath, contents );
 
+	/// <summary>Finishes the import: checks it is complete and Theme Park Inc data, then makes it the live copy mods read.</summary>
+	[JSExport]
+	public static void PublishInput( string edition, int fileCount ) => OpenTPW.Mods.BrowserModInputs.Publish( edition, fileCount );
+
+	/// <summary>Gives up an import: nothing half-copied stays behind.</summary>
+	[JSExport]
+	public static void AbortInput( string edition ) => OpenTPW.Mods.BrowserModInputs.Abort( edition );
+
 	/// <summary>The page finished a mod input import or restore (an empty message), or gave up (why). The Extensions and mods screen refreshes.</summary>
 	[JSExport]
 	public static void InputChanged( string message ) => OpenTPW.Mods.BrowserModInputs.Changed( message );

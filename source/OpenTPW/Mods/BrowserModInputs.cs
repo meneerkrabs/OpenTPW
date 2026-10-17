@@ -41,8 +41,17 @@ public static class BrowserModInputs
 	/// <summary>The editions the browser can hold a tree for.</summary>
 	public static bool IsSupported( string? edition ) => edition == ThemeParkInc;
 
-	/// <summary>The tree of an edition, or null for an edition the browser cannot hold.</summary>
+	/// <summary>The marker a finished import leaves in the live tree: a tree without it is never read.</summary>
+	public const string CompleteMarker = ".opentpw-complete";
+
+	/// <summary>The live tree of an edition (what mods read), or null for an edition the browser cannot hold. It exists only after <see cref="Publish"/>.</summary>
 	public static string? FolderFor( string? edition ) => IsSupported( edition ) ? Path.Combine( RootDirectory, edition! ) : null;
+
+	/// <summary>Where an import copies to until it is complete and recognised; never read by a mod.</summary>
+	private static string StagingFor( string edition ) => Path.Combine( RootDirectory, ".staging", edition );
+
+	/// <summary>Whether an edition's live tree is a finished import (its marker is there).</summary>
+	public static bool IsComplete( string edition ) => FolderFor( edition ) is { } folder && File.Exists( Path.Combine( folder, CompleteMarker ) );
 
 	/// <summary>The tree that satisfies an input: an <c>original-data</c> input that names a supported edition.</summary>
 	public static string? FolderFor( ModInput input ) => input.Kind == "original-data" ? FolderFor( input.Edition ) : null;
@@ -55,7 +64,7 @@ public static class BrowserModInputs
 	{
 		foreach ( var mod in discovered.Where( mod => mod.IsValid ) )
 			foreach ( var input in mod.Manifest!.Inputs )
-				if ( FolderFor( input ) is { } folder && settings.InputPath( mod.Id, input.Id ) == null && Directory.Exists( folder ) )
+				if ( FolderFor( input ) is { } folder && settings.InputPath( mod.Id, input.Id ) == null && Directory.Exists( folder ) && File.Exists( Path.Combine( folder, CompleteMarker ) ) )
 					settings = settings.WithInput( mod.Id, input.Id, folder );
 		return settings;
 	}
@@ -79,7 +88,10 @@ public static class BrowserModInputs
 	/// <summary>Whether an edition's tree is read by an active mod, and so cannot be replaced until the page is reloaded.</summary>
 	public static bool IsLocked { get { lock ( gate ) return locked; } }
 
-	/// <summary>Empties an edition's tree before a new import (a replaced install must never mix with the old files). Refused while the tree is in use.</summary>
+	/// <summary>
+	/// Starts an import: removes the live tree and any earlier staging (a replaced install must never mix with the old files, and a half-done import
+	/// must never be read), then opens an empty staging tree. Refused while an active mod reads the live tree.
+	/// </summary>
 	public static void Begin( string edition )
 	{
 		var folder = FolderFor( edition ) ?? throw new ArgumentException( $"The browser cannot hold '{edition}' data for mods." );
@@ -87,33 +99,102 @@ public static class BrowserModInputs
 		{
 			if ( locked )
 				throw new InvalidOperationException( "The Theme Park Inc files are in use by a mod of this visit. Reload the page to choose another folder." );
-			if ( Directory.Exists( folder ) )
-				Directory.Delete( folder, true );
+			DeleteTrees( edition );
 			totals[edition] = (0, 0);
-			Directory.CreateDirectory( folder );
+			Directory.CreateDirectory( StagingFor( edition ) );
+		}
+	}
+
+	private static void DeleteTrees( string edition )
+	{
+		foreach ( var tree in new[] { FolderFor( edition )!, StagingFor( edition ) } )
+			if ( Directory.Exists( tree ) )
+				Directory.Delete( tree, true );
+		var staging = Path.Combine( RootDirectory, ".staging" );
+		if ( Directory.Exists( staging ) && !Directory.EnumerateFileSystemEntries( staging ).Any() )
+			Directory.Delete( staging );
+	}
+
+	/// <summary>Gives up an import: the staging and the live tree are removed (nothing is left half-copied). A tree an active mod reads is left alone.</summary>
+	public static void Abort( string edition )
+	{
+		if ( !IsSupported( edition ) )
+			return;
+		lock ( gate )
+		{
+			if ( locked )
+				return;
+			DeleteTrees( edition );
+			totals[edition] = (0, 0);
 		}
 	}
 
 	/// <summary>
-	/// Stores one file below an edition's tree, as <c>Data/...</c>. The path must stay inside the tree (no empty, '.' or '..' components, no
+	/// Stores one file below an edition's staging tree, as <c>Data/...</c>. The path must stay inside the tree (no empty, '.' or '..' components, no
 	/// backslashes), and the tree is bounded in files and bytes.
 	/// </summary>
 	public static void AddFile( string edition, string relativePath, byte[] contents )
 	{
-		var folder = FolderFor( edition ) ?? throw new ArgumentException( $"The browser cannot hold '{edition}' data for mods." );
+		_ = FolderFor( edition ) ?? throw new ArgumentException( $"The browser cannot hold '{edition}' data for mods." );
 		var path = ValidatePath( relativePath );
 		lock ( gate )
 		{
 			if ( locked )
 				throw new InvalidOperationException( "The Theme Park Inc files are in use by a mod of this visit." );
+			var staging = StagingFor( edition );
+			if ( !Directory.Exists( staging ) )
+				throw new InvalidOperationException( "No import is open: the page must begin one first." );
 			var (files, bytes) = totals.GetValueOrDefault( edition );
 			if ( files + 1 > MaximumFiles || bytes + contents.Length > MaximumBytes )
 				throw new InvalidDataException( $"Too many files for a mod input (at most {MaximumFiles} files and {MaximumBytes / (1024 * 1024)} MB)." );
-			var target = Path.Combine( folder, path );
+			var target = Path.Combine( staging, path );
 			Directory.CreateDirectory( Path.GetDirectoryName( target )! );
 			File.WriteAllBytes( target, contents );
 			totals[edition] = (files + 1, bytes + contents.Length);
 		}
+	}
+
+	/// <summary>
+	/// Finishes an import: the staging must hold exactly <paramref name="expectedFiles"/> files, be recognised as Theme Park Inc data by the game's own
+	/// detection (<see cref="GameEditions.Detect"/>) and hold the minimum a mod reads (per world a ride archive and the shared textures, and the global
+	/// sounds). Only then is the tree marked complete and made live; otherwise it throws and the page aborts.
+	/// </summary>
+	public static void Publish( string edition, int expectedFiles )
+	{
+		var live = FolderFor( edition ) ?? throw new ArgumentException( $"The browser cannot hold '{edition}' data for mods." );
+		lock ( gate )
+		{
+			if ( locked )
+				throw new InvalidOperationException( "The Theme Park Inc files are in use by a mod of this visit." );
+			var staging = StagingFor( edition );
+			var (files, _) = totals.GetValueOrDefault( edition );
+			if ( !Directory.Exists( staging ) || files != expectedFiles || files == 0 )
+				throw new InvalidDataException( $"The copy is incomplete ({files} of {expectedFiles} files)." );
+			var data = Path.Combine( staging, "Data" );
+			if ( !Directory.Exists( data ) || GameEditions.Detect( data ).Edition != GameEdition.ThemeParkInc )
+				throw new InvalidDataException( "The files copied are not recognised as Theme Park Inc data." );
+			if ( MissingMinimum( data ) is { } missing )
+				throw new InvalidDataException( $"The Theme Park Inc files are incomplete: {missing} is missing." );
+			File.WriteAllText( Path.Combine( staging, CompleteMarker ), files.ToString() );
+			if ( Directory.Exists( live ) )
+				Directory.Delete( live, true );
+			Directory.Move( staging, live );
+		}
+	}
+
+	/// <summary>The first file group a Theme Park Inc rides mod needs that the tree lacks, or null.</summary>
+	internal static string? MissingMinimum( string data )
+	{
+		var paths = Directory.EnumerateFiles( data, "*", SearchOption.AllDirectories )
+			.Select( file => Path.GetRelativePath( data, file ).Replace( '\\', '/' ).ToLowerInvariant() ).ToList();
+		foreach ( var world in GameEditions.ThemeParkIncWorlds )
+		{
+			if ( !paths.Any( path => path.StartsWith( $"levels/{world}/rides/", StringComparison.Ordinal ) ) )
+				return $"the {world} ride archives";
+			if ( !paths.Contains( $"levels/{world}/sharetex.wad" ) )
+				return $"{world}'s shared textures";
+		}
+		return paths.Any( path => path.StartsWith( "global/sound/", StringComparison.Ordinal ) ) ? null : "the global sounds";
 	}
 
 	/// <summary>The path as stored: '/' components below the tree, starting at <c>Data</c>.</summary>

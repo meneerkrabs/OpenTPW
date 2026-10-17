@@ -257,17 +257,21 @@ choices of `/config/mods.json`. The browser has no folders for community mods. T
   folder (`opentpw-inputs.js`). It takes the install or its `Data` folder and copies only what the mod reads: the object archives of the
   three worlds (`rides`, `shops`, `sideshow`, `features`, `upgrades` and `facilities`), `sharetex.wad` and `ssharete.wad`, the worlds' `Sound`
   folders, `global/sound`, `Ver.txt` and `levels/Standard.sam` (the identity of the install), 324 files and 74 MB of the retail install's 400
-  MB; music, terrain, speech, movies and the interface stay where they are. A folder with Theme Park World data, or none, is refused with a
-  message. The Extensions and mods screen's **Change...** button opens the same dialog from inside the game (the page clicks its hidden file input; browsers
+  MB; music, terrain, speech, movies and the interface stay where they are. A folder is accepted only as a complete Theme Park Inc install: `Ver.txt`, per world a
+  ride archive and the shared textures, and the global sounds must be there. Theme Park World data, a mixed folder, or a folder that lacks any
+  of that is refused with a message; the game repeats the check on the copy (`BrowserModInputs.Publish`, with `GameEditions.Detect`). The Extensions and mods screen's **Change...** button opens the same dialog from inside the game (the page clicks its hidden file input; browsers
   only open the dialog shortly after a player's click, which has not been tried against a real dialog). While the game runs the copy is
   slow (about four files a second in the interpreter build, because the busy page serves each file between frames), so the setup page is the
-  better place; a copy that an active mod already reads is never replaced during a run: the screen says to reload the page first
+  better place; the copy goes to a staging tree and becomes the live one (with a completion marker) only when every file is in and the check
+  passed, so a mod never sees a half-copied install; a failed or refused copy removes the staged and live trees, **Play** waits for a
+  copy in progress, and every outcome, refusals included, tells the game's screen exactly once. A copy that an active mod already reads is never replaced during a run: the screen says to reload the page first
   (`BrowserModInputs.LockInUse`), since the catalogs read their archives lazily.
 - **Storage.** With *Keep the game files in this browser* on (the default, and when the browser has writable OPFS), the chosen files are kept in a
   second origin-private store, `opentpw-input-theme-park-inc`, with its own manifest (`openOriginalStore(root, { name })`): the Theme Park World
   files and the Theme Park Inc files never share a manifest, so choosing a Theme Park Inc folder never clears the kept Theme Park World
-  files and the other way round. A later visit restores the complete set into memory before the mods are resolved (a store with a file
-  missing is cleared instead of half used), so **Play** starts the mod without asking for either folder again. The Theme Park World and Theme
+  files and the other way round. A later visit restores the complete set into memory before the mods are resolved: every file must be listed as kept and
+  match its stored SHA-256 before anything is copied, and a store that is incomplete, has an invalid manifest or fails a check is cleared
+  (never half used, and no longer shown as kept), so **Play** starts the mod without asking for either folder again. The Theme Park World and Theme
   Park Inc stores together hold about 100 MB for the start files plus what the parks read, and 74 MB are in the runtime's memory for the visit.
   With *no*, or a browser that cannot keep files, the Theme Park Inc folder must be chosen on the setup page every visit before the game starts.
   The setup page's *Remove* deletes the kept Theme Park Inc files (and, before the game starts, the copy in memory); *Remove kept files* removes

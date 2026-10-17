@@ -353,7 +353,10 @@ input, `tpi`, with `"edition": "theme-park-inc"`. Nothing is on by default: not 
   run from 40001 inside the reserved range 40000 to 40499; the first four (Turban Bounce, Giant Robot Swing, the litter bin and Desert Drinks)
   keep their ids, and a new archive takes the next free one. The English names are "Turban Bounce" and its three siblings, and "<World> <archive
   name>" for the rest (for example "Arabian apcoast"): they are derived from the install's own file names, never copied from its text.
-- **Where it comes from.** The tests read these files themselves (`TpiRidesFixture`), so the shipped mod and the tests cannot drift.
+- **Where it comes from.** The tests read these files themselves (`TpiRidesFixture`), so the shipped mod and the tests cannot drift. Without
+  any install, `TheShippedModHasLfLineEndingsAndAFixedContentDigest` pins the mod's content digest to a golden value, so any change to the
+  files is deliberate (a new digest and a new mod version together). A park save records that digest, so the files must be the same bytes on every
+  platform: `.gitattributes` pins `content/mods/** text eol=lf`, and the test refuses a CR. With the install,
   `TpiRidesShippedModTests` compares the list with the archives your install really loads, and with `OPENTPW_WRITE_TPI_RIDES=1` rewrites
   `objects.json` from it (existing ids stay, new archives are appended). Run it with `OPENTPW_GAME_PATH` and `OPENTPW_TPI_PATH` set.
 - **Turning it on, desktop.** Open Options > OpenTPW > **Extensions and mods**, switch on *Cross-edition objects* and *Theme Park Inc rides*,

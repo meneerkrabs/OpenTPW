@@ -43,14 +43,20 @@ public class ModsInBrowserTests
 		Directory.Delete( root, true );
 	}
 
-	private static readonly string[] Data = { "Data/Ver.txt", "Data/levels/arabian/rides/x/x.sam" };
+	/// <summary>The least a Theme Park Inc copy holds for the mod: the identity file, per world a ride archive and the shared textures, the global sounds.</summary>
+	private static readonly string[] Data =
+	{
+		"Data/Ver.txt", "Data/levels/arabian/rides/x/x.sam", "Data/levels/science/rides/y/y.sam", "Data/levels/water/rides/z/z.sam",
+		"Data/levels/arabian/Sharetex.wad", "Data/levels/science/sharetex.wad", "Data/levels/water/sharetex.wad", "Data/global/sound/cat.sdt",
+	};
 
-	/// <summary>What the page does after the player chose a Theme Park Inc folder: empties the tree, copies the files, reports success.</summary>
+	/// <summary>What the page does after the player chose a Theme Park Inc folder: stages the files, publishes the copy, reports success.</summary>
 	private static void PageCopies( params string[] files )
 	{
 		BrowserModInputs.Begin( BrowserModInputs.ThemeParkInc );
 		foreach ( var file in files )
 			BrowserModInputs.AddFile( BrowserModInputs.ThemeParkInc, file, new byte[] { 1, 2, 3 } );
+		BrowserModInputs.Publish( BrowserModInputs.ThemeParkInc, files.Length );
 		BrowserModInputs.Changed( "" );
 	}
 
@@ -63,7 +69,8 @@ public class ModsInBrowserTests
 	{
 		BrowserModInputs.Begin( "theme-park-inc" );
 		BrowserModInputs.AddFile( "theme-park-inc", "Data/levels/science/rides/robot.wad", new byte[] { 7 } );
-		Assert.AreEqual( 1, File.ReadAllBytes( Path.Combine( BrowserModInputs.RootDirectory, "theme-park-inc", "Data", "levels", "science", "rides", "robot.wad" ) ).Length );
+		Assert.AreEqual( 1, File.ReadAllBytes( Path.Combine( BrowserModInputs.RootDirectory, ".staging", "theme-park-inc", "Data", "levels", "science", "rides", "robot.wad" ) ).Length, "files are staged, not live" );
+		Assert.IsFalse( Directory.Exists( Path.Combine( BrowserModInputs.RootDirectory, "theme-park-inc" ) ) );
 		foreach ( var bad in new[] { "", "Data", "data/Ver.txt", "Data/../x", "Data/./x", "/Data/x", "Data//x", "Data\\x", "../Data/x", "Other/x", "Data/c:/x", new string( 'a', 300 ), "Data/a\nb" } )
 			Assert.ThrowsException<ArgumentException>( () => BrowserModInputs.AddFile( "theme-park-inc", bad, new byte[] { 1 } ), $"'{bad}'" );
 		Assert.ThrowsException<ArgumentException>( () => BrowserModInputs.AddFile( "theme-park-world", "Data/x", new byte[] { 1 } ) );
@@ -77,16 +84,68 @@ public class ModsInBrowserTests
 	[TestMethod]
 	public void ANewImportReplacesTheTreeAndTheCountsStayBounded()
 	{
-		PageCopies( "Data/Ver.txt", "Data/old.txt" );
-		Assert.AreEqual( 2, BrowserModInputs.Count( "theme-park-inc" ).Files );
-		PageCopies( "Data/Ver.txt" );
-		Assert.AreEqual( 1, BrowserModInputs.Count( "theme-park-inc" ).Files );
+		PageCopies( Data.Append( "Data/old.txt" ).ToArray() );
+		Assert.AreEqual( Data.Length + 1, BrowserModInputs.Count( "theme-park-inc" ).Files );
+		PageCopies( Data );
+		Assert.AreEqual( Data.Length, BrowserModInputs.Count( "theme-park-inc" ).Files );
 		Assert.IsFalse( File.Exists( Path.Combine( BrowserModInputs.RootDirectory, "theme-park-inc", "Data", "old.txt" ) ), "two installs never mix" );
 		Assert.AreEqual( 2, BrowserModInputs.Revision );
 		BrowserModInputs.Changed( "that went wrong" );
 		Assert.AreEqual( "that went wrong", BrowserModInputs.Message );
 		BrowserModInputs.Changed( "" );
 		Assert.IsNull( BrowserModInputs.Message );
+	}
+
+	[TestMethod]
+	public void AHalfCopiedTreeIsNeverLiveAndAFailedImportLeavesNothing()
+	{
+		var folder = BrowserModInputs.FolderFor( "theme-park-inc" )!;
+		PageCopies( Data );
+		Assert.IsTrue( BrowserModInputs.IsComplete( "theme-park-inc" ) );
+		// a new import takes the live copy away at once and stages beside it: until it is published nothing is live, and the defaults see nothing
+		BrowserModInputs.Begin( "theme-park-inc" );
+		BrowserModInputs.AddFile( "theme-park-inc", Data[0], new byte[] { 1 } );
+		Assert.IsFalse( Directory.Exists( folder ), "the partial copy is not at the live path" );
+		Assert.IsFalse( BrowserModInputs.IsComplete( "theme-park-inc" ) );
+		var discovered = TpiRidesFixture.Discover( ProgramFolder() );
+		Assert.IsNull( BrowserModInputs.WithDefaults( ModSettings.Default, discovered ).InputPath( TpiRidesFixture.Id, "tpi" ) );
+		// publishing too early is refused and changes nothing
+		var early = Assert.ThrowsException<InvalidDataException>( () => BrowserModInputs.Publish( "theme-park-inc", Data.Length ) );
+		StringAssert.Contains( early.Message, "incomplete" );
+		Assert.IsFalse( Directory.Exists( folder ) );
+		BrowserModInputs.Abort( "theme-park-inc" );
+		Assert.IsFalse( Directory.Exists( Path.Combine( BrowserModInputs.RootDirectory, ".staging" ) ) || Directory.Exists( folder ), "an aborted import leaves neither tree" );
+		Assert.ThrowsException<InvalidOperationException>( () => BrowserModInputs.AddFile( "theme-park-inc", Data[0], new byte[] { 1 } ), "no import is open" );
+	}
+
+	[TestMethod]
+	public void OnlyACompleteThemeParkIncCopyIsPublished()
+	{
+		void Publishes( string[] files, string problem )
+		{
+			BrowserModInputs.Begin( "theme-park-inc" );
+			foreach ( var file in files )
+				BrowserModInputs.AddFile( "theme-park-inc", file, new byte[] { 1 } );
+			var exception = Assert.ThrowsException<InvalidDataException>( () => BrowserModInputs.Publish( "theme-park-inc", files.Length ) );
+			StringAssert.Contains( exception.Message, problem );
+			Assert.IsFalse( BrowserModInputs.IsComplete( "theme-park-inc" ) );
+			BrowserModInputs.Abort( "theme-park-inc" );
+		}
+		// not Theme Park Inc data at all, or Theme Park World's
+		Publishes( new[] { "Data/ui.wad" }, "not recognised" );
+		Publishes( Data.Append( "Data/levels/jungle/terrain.wad" ).ToArray(), "not recognised" );
+		// recognised by structure, but short of what the mod reads
+		Publishes( new[] { "Data/Ver.txt", "Data/levels/arabian/rides/x/x.sam" }, "arabian's shared textures" );
+		Publishes( Data.Where( file => !file.Contains( "water/sharetex" ) ).ToArray(), "water's shared textures" );
+		Publishes( Data.Where( file => !file.Contains( "global/sound" ) ).ToArray(), "global sounds" );
+		// the right count with the wrong files, and a count that does not match what arrived
+		BrowserModInputs.Begin( "theme-park-inc" );
+		BrowserModInputs.AddFile( "theme-park-inc", "Data/Ver.txt", new byte[] { 1 } );
+		Assert.ThrowsException<InvalidDataException>( () => BrowserModInputs.Publish( "theme-park-inc", 2 ) );
+		BrowserModInputs.Abort( "theme-park-inc" );
+		PageCopies( Data );
+		Assert.IsTrue( File.Exists( Path.Combine( BrowserModInputs.FolderFor( "theme-park-inc" )!, BrowserModInputs.CompleteMarker ) ) );
+		Assert.IsFalse( Directory.Exists( Path.Combine( BrowserModInputs.RootDirectory, ".staging", "theme-park-inc" ) ) );
 	}
 
 	[TestMethod]

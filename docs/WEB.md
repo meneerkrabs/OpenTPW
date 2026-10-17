@@ -30,11 +30,12 @@ dotnet workload install wasm-tools
 dotnet publish source/OpenTPW.Web/OpenTPW.Web.csproj -c Release -p:RunAOTCompilation=true -o out/web
 ```
 
-The browser build can also run on CoreCLR instead of Mono (`-p:UseMonoRuntime=false`, .NET 11 only, no workload
-needed). It works, with the same texture and simulation hashes, but .NET 11 runs it in the CoreCLR interpreter only and it is
-roughly 10 to 30 times slower than the Mono AOT build, so it is an opt-in experiment and not what the published page uses
-(docs/BROWSER-PERFORMANCE.md, "CoreCLR on WebAssembly"). Delete `source/OpenTPW.Web/obj` and `bin` when switching between
-runtimes, or the next publish fails to link.
+The browser build can also run on CoreCLR instead of Mono (`-p:UseMonoRuntime=false`, .NET 11 only, no workload needed). It
+works, with the same texture and simulation hashes, but in .NET 11 it is interpreter-only and roughly 10 to 30 times slower than
+the Mono AOT build. `node tools/web-coreclr/r2r.mjs` compiles a finished CoreCLR publish ahead of time with crossgen2 (about 38 fps
+instead of 8 in Jungle, a 150 MB download after decompression); it is still about 2 to 7 times slower than Mono AOT. Both are opt-in
+experiments, not what the published page uses (docs/BROWSER-PERFORMANCE.md, "CoreCLR on WebAssembly"). Delete
+`source/OpenTPW.Web/obj` and `bin` when switching between runtimes, or the next publish fails to link.
 
 An OpenTPW server can serve the published `wwwroot` itself, beside its API
 (`OpenTPW:WebClientDirectory`, docs/SERVER.md). The page then offers its own address as the

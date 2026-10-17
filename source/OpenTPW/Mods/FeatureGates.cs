@@ -38,6 +38,12 @@ public static class FeatureGates
 	/// <summary>The <c>opentpw.guest-insights</c> extension is on for this run: refusal reasons and the complaints summary in the park windows (docs/SMARTER-GUESTS.md).</summary>
 	public static bool GuestInsights => OpenTpwExtensions.IsEnabled( OfficialExtensions.GuestInsights );
 
+	/// <summary>
+	/// [EXT:restored-advice] The <c>opentpw.restored-advice</c> extension is on for this run (on by default): the advisor says the lines tp.exe v2.0 never plays (docs/reverse/ADVISOR-SCAN.md, "Restored advice").
+	/// It only reads park state and posts advice, so it is not a simulation extension.
+	/// </summary>
+	public static bool RestoredAdvice => OpenTpwExtensions.IsEnabled( OfficialExtensions.RestoredAdvice );
+
 	/// <summary>Exporting, importing, visiting and postcards: the edition supports sharing and the online extension is on.</summary>
 	public static bool Sharing => GameEditions.Capabilities.Sharing && Online;
 

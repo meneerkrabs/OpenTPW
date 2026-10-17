@@ -26,6 +26,8 @@ public partial class ParkHud
 			return;
 		CamcorderArmed = true;
 		PostMessage( strings.Extra( OpenTpwText.CamcorderArmed ) );
+		// [EXT:restored-advice-tutorial] 306 (the camcorder mode explained): the advisor posts it only while the extension is on, once (the tutorial group)
+		host?.RestoredHelp?.Invoke( RestoredAdvice.CamcorderHelp );
 	}
 
 	private bool UpdateCamcorder( UiInput input, System.Numerics.Vector2 viewport, bool blocked )

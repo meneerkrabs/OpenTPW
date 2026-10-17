@@ -483,6 +483,72 @@ form of lines that are otherwise speech only, e.g. the price lines: 96 (food sho
 (100 / 101); the patrol lines 24-32 (18-21, 23, 24, 26, 27); the congratulations 160-166, 172-173 and 177-179 (144-150, 156, 157, 161-163).
 Whether the spoken clip says the same words is not verifiable without the audio.
 
+## Restored advice (the `opentpw.restored-advice` extension)
+
+Of the 105 messages tp.exe v2.0 never says (the status "none" rows), the official extension `opentpw.restored-advice` (version 1.0.0, **on by default**, listed on the Extensions and mods screen) restores **55**: it gives them a trigger and posts
+them through the advisor's own queue. The producer map keeps the original's status for them (the rows stay `none`, `scan-zero` or `unused`); each restored row carries an extra `restored = "<topic>"` field in `content/data/advisor-producers.toml`, and
+`RestoredAdvice.Entries` (`source/OpenTPW/World/RestoredAdvice.cs`) is the one list of them, kept equal to the inventory by `AdvisorProducerInventoryTests`. Every trigger is labelled `[EXT:restored-advice-<topic>]` at its site. Messages are
+referred to by id only: the captions, the `Advisor.sam` values and the speech transcripts are game content and are not in the repository.
+
+**Why it is safe to be on by default.** `AffectsSimulation` is false: the extension only reads park state (`ParkRestoredAdviceState`) and posts advice. The advisor is outside the world state hash (ADVISOR-017, `WorldStateHash` has no advisor member), nothing the
+extension does writes the economy, the guests or the cell map, and its few bookkeeping values (the poll's place, the vehicle last seen, the follow-up count) live in memory and are never saved. A park save records no mod for it, so `ParkResumeMods` (active = recorded)
+accepts every save made with or without it. The advisor state a save carries (`AdvisorControllerSnapshot`: pending records, history, the action reservation, the scan cursor) has the same shape either way, and all 351 descriptors exist whether the extension is on or off, so a
+save with a restored message pending or said loads with the extension off, and a save from before it loads with it on. The scan cursor walks the same rows with or without it (a row's restored callback only changes what that one row scores).
+`AdvisorRestoredAdviceTests` checks both directions, the hash with the extension on and off, and the mod records.
+
+**How it plugs in** (a few touch points, so the scan driver stays the original's):
+- *Scan-zero rows.* `AdvisorScan.ScoreOf` asks `RestoredAdviceScan.CallbackFor(message)` for a row whose callback is `0x5D60C0`; the hook answers only while the extension is on, and `AdvisorScanContext.Restored` is the read-only park view (null while off, so every restored callback scores 0).
+- *Rows nothing posts.* `RestoredAdviceDriver.Poll` evaluates one state-driven rule (`RestoredAdviceScan.PollRules`) with every scan call, in message order, and posts it above `MinScoreForConsideration` through `AdvisorController.AdviseRestored`.
+- *Events.* `RestoredAdviceDriver.OnParkEvent`, `ObserveVehicle` and `OnlineScreen` post the lines of tickets, upgrades, challenges, arriving vehicles and the online screens; the HUD's windows, tools and the message tube post the tutorial lines through `HudHost.RestoredHelp` and the window map `RestoredAdvice.WindowHelp`.
+- Every post is admitted by the queue like any other advice: tutorial option (group 1), once-only, slap limit, pending-duplicate limit, repeat interval, the descriptor's game mode, and `MinScoreForConsideration` on selection. With the advisor option off the response still plays silently and its caption still goes to the tube (parameterised captions are not posted, as for every other advice).
+
+**Repeat rules (no nagging).** The descriptor group's repeat interval (120 groups of four turns for group 0, about two minutes) is not enough for a condition that stays true, so the extension adds its own, `RestoredAdviceEntry.RepeatGroups`, read from the advisor's own history (which a save already carries, so nothing new is saved and a save loads the same with the extension on or off): the congratulations (151-154, 160) and the arrivals (137-139, one per vehicle kind, told when the kind changes from the one last seen, not at every group) are said **once per park**; the persistent lines (24, 25, 58, 59, 65, 83, 84, 173, 265, 277, 318, 347, 348) wait **5400 groups** (about 1.5 real hours at normal speed); the stranded riders (349, 350) and the upgrade lines (130-132) wait 900 groups. The
+restored own scores are low (30 to 50, the two security lines capped at 60) so the originals (50 to 110, help 1000) keep priority; keys the original callbacks name keep their values (65, 265 and 349 still repeat only after their interval). `AdvisorRestoredRatesTests` plays an hour (14516 turns at 248 ms) of a park whose conditions all hold: **before 144 restored lines against 24 original ones, after 4 against 24**; a park with no guard or camera heard 25 **24 times an hour before and once after**, the original's 102 unchanged at 24.
+
+**Scores.** The message's own key where its descriptor callback is a getter of one (the unused rows 84, 99, 130-132, 137-139, 143, 218-233, 318-320 and the stub rows whose siblings name the key: 24/25 `StaffGuardCoverage`, 65 `RidesNoUpgrades`, 265 `RideExitBlocked`, 349/350 the
+stranded-people and condemned keys); else the extension's own constant, documented where it is declared (`RestoredAdvice.QueueScore`, `FameScore`, ... `[EXT:restored-advice-<topic>]`). The restored keys are optional: a settings file without one leaves its message silent. The shipped file has them all (checked by `EveryRestoredMessageHasItsKeysAndItsGroupInTheShippedAdvisorSettings`).
+
+### What is restored
+
+| Group | Messages | Trigger |
+| --- | --- | --- |
+| Restorable with existing triggers (36) | 58, 59 | an open ride's queue holds 30 guests or more (59: three such rides, or half of the open rides, at least two; 59's speech sample is a silent stub, its caption plays); only the stronger line of the pair is posted |
+| | 65 | after `RidesNoUpgrades` months: a researched upgrade is on offer and none has ever been bought |
+| | 83, 84 | after 82 has been said, still no toilet and over twice `MorePeopleThanThisNeeding` guests with a toilet need above `NeedingMoreThan`; toilets exist but more than `MorePeopleThanThisNeeding` needy guests are 24 or more cells from the nearest |
+| | 99, 164, 165, 218, 219, 223, 224, 228, 229 | a golden ticket is won: the player-wide key count (the ledger's `PlayerTicketLedger.Keys`, which the HUD shows) tells whether it earned a key. No key, or no ledger, says 99; the key that opens Wonderland (3rd) or Space Zone (5th) says 165 or 164 (`Keys.CostToEnter` 3 and 5); another key says the ticket's criterion line (218 local, 223 global, 228 secret, the response is the ticket's own caption) and the twin 219/224/229 once the first has been said |
+| | 230-233 | the park earns a global ticket nobody held (coaster height, go-kart excitement, water length, big park): the award line |
+| | 319, 320 | a challenge is met and a follow-up is offered (double or nothing); the second in a row |
+| | 130, 131, 132 | an upgrade is bought with no mechanic hired, or while the mechanics strike; an upgrade is researched with no mechanic hired |
+| | 137, 138, 139 | the bus, the seaplane or the Ferry starts an arrival group (`GuestSimulation.ArrivalVehicle` changing) |
+| | 151, 152, 153, 154 | the park's best coaster height, go-kart excitement or water length record is 75 percent of its golden ticket's threshold (152: the park holds the coaster height ticket) |
+| | 160 | retail shops sold 30 items or more in this and the last month, as many as half the visitors of those months |
+| | 173 | free owned cells are under 8 percent of the owned terrain cells (the Buy Land hint) |
+| | 277, 318 | the year's profit is 50 percent of the profit ticket's threshold (277), or `GoldTicketNearToXProfit.ProfitMultiplier` times it (318, the key the original's own getter reads), and the ticket is not won |
+| | 347, 348 | the balance is still in the black but under twice (347), or under (348, with a loan available) the monthly staff wages; only the stronger of the pair |
+| New tracking (5) | 24, 25 | security cover below, after `StaffSetGuardArea` months: the cover row's own gates (at least `AtLeastThisMany` guards, one with a patrol area) and 9 percent or more of the path cells uncovered (24); no guard and no camera in a park of 30 path cells (25); both scores capped at 60 |
+| | 265 | a ride's exit has no path (below) |
+| | 349, 350 | guests aboard a broken-down ride (349), or a condemned one (350) |
+| Tutorial leftovers (8) | 196, 211 | the training budget window and the ride upgrade window open (screens `staffCosts`, `rideUpgrade`) |
+| | 202, 204 | a blueprint is chosen to place; the roller coaster tool starts |
+| | 283, 306, 322, 344 | a park starts with the pop-up help off; the camcorder is armed; the first message reaches the tube; the first challenge is offered |
+| Online and postcards (6) | 328, 329, 331, 332, 333, 334 | the Publish Park, park details, other parks, Find Parks, unsent postcards (outbox) and online world screens open (the online extension's own screens, also over a park through Go Online) |
+
+### The new tracking
+
+- **Security cover (24, 25).** What the original's coverage counter is: `0x004CD340` first clears word `+0x3C` of every 0x44-byte cell record, then for each staff thing of the requested role (thing model 4 mechanic, 5 handyman, 6 entertainer, 7 guard, 8 researcher) whose patrol area is set (`0x506EB0`, rectangle `0x506E70`) writes the
+  constant 1 to `+0x3C` of every cell in its rectangle; `0x004CD500(role, mode)` then returns the covered share (`+0x3C` above 0, times 100 over the count) of the cells that the mode's cell-type tests select (four lists, `0x4CD708`). It is a **flag per role, not a count**, and no camera enters it: the camera ticket reads another measure (`0x004CD720`,
+  the environment security word, which OpenTPW has as `ParkEconomy.SecurityCoveragePercent`). Only the coverage callbacks of the mechanics, handymen and entertainers (19, 21, 27) call `0x004CD500`; the guard's (24) is the stub, so the original never measured guard cover. The restored cover joins both measures over the **path and queue cells** (where guests walk): covered when the cell has a
+  security level (a camera's or a standing guard's `RegionFX` row) or lies inside the patrol rectangle of a guard who has one. Read-only, computed per call (`ParkRestoredAdviceState.SecurityCoverage`).
+- **Blocked exit (265).** The placement lays the exit's outside cell as a path (`ObjectAccessCells.Lay`); a remove tool may take it (EXT:removable-access-cells). A ride with registered cells whose exit (its first exit, else its entrance) does not resolve for the guests is blocked: the outside cell is no path or queue cell and the level's nearby-path fallback finds none (`Level.WalkableNear`, the rule of `Level.ResolveVisitorCells`; `ParkRestoredAdviceState.ExitBlocked`).
+- **Riders stuck (349, 350).** The ride's state (`ParkEconomy.ObjectState`: 1 broken down, 4 condemned) with the guests aboard (`RideVisitorBridge.RidersOnBoard` or its rider list, the larger).
+
+### Skipped, and why
+
+- **Silent stubs and placeholders**: 162, 163, 166, 186, 187, 190, 194 (stub samples, nothing to say or show) and 210, 267-269, 290, 312, 313, 324-327, 335 (the `z_error` placeholder sample 638), 291 (names response 551, which has no row).
+- **Speech-only duplicates**: 161 and 321 repeat the key line of the ticket messages (every ticket kind has a criterion line); 180-183 are the welcome speech of the level bank that message 0 already says at level start.
+- **No input to trigger from**: 90 (leaving guests with low energy, no such leaving rule), 155 (kart speed record, caption only and no speed measure), 67 (the ride-name variant of 66, which batch 2 posts), 168 (a surprise animation OpenTPW does not model), 266 and 296 (the Home key hint needs a lost-camera detector), 288 and 338-343 (the track editor's pylon, pivot and winch buttons are not in OpenTPW's coaster panel), 330 and 336 (chat-park details and back in the own lobby), 142 (new downloads on the original web site), 143 (a text message from the web site: saying it as the news screen opens is redundant and the news has no other event), 174-179 and 310 (the lobby and new-player tutorial: the front end has no advisor).
+- Overlaps with batch 2 (82 and 66 are ported): 83 is the **escalation** of 82, said only after 82 has been said (`RestoredAdviceEntry.AfterMessage`) while there is still no toilet and over twice `MorePeopleThanThisNeeding` guests need one, so it never repeats 82; 67 stays skipped, 66 says the breakdown warning.
+
 ## Confidence and open points
 
 - Every address and callback was read from the bytes of `tp.exe`; the polarity of the gates (a jump over a `ret 0` or into it) was checked against the

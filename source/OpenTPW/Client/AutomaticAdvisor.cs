@@ -9,7 +9,7 @@ namespace OpenTPW;
 /// update per frame and says the chosen response through <see cref="Advisor.SayResponse"/>.
 /// See docs/LIPS.md, "Automatic advice".
 /// </summary>
-internal sealed class AutomaticAdvisor : IDisposable
+internal sealed partial class AutomaticAdvisor : IDisposable
 {
 	// [BIN:TPW-EXE:0x00402D63 clock offset] the clock's offset word starts at 0 and is rewritten only by the savegame load (0x415140 → 0x402E80 → 0x403160: the saved advisor clock minus the live clock); pause is 0x4092A0 and resume 0x409300
 	// [APPROX:ADVISOR-017] the clock starts at 0 for a new park, carries the saved word on an original-save import (AttachLevel), is sampled once per frame and stands still while the pause menu is open; the original stands still whenever 0x4092A0 pauses the timer: 0x46B74C in the main window procedure 0x46B600 (WM_ACTIVATEAPP deactivation, unless 0xF82884), 0x47F26C in the message box builder 0x47F020, 0x49EFB0 (load window), 0x49F280 (save window), 0x48C87E (the Escape menu 0x48C830, opened by VK_ESCAPE at 0x4A2933 and 0x4BE537: OpenTPW's pause menu) and 0x4A3A6C (the Game Options dialog 0x4A3A30, title 0x1D4D4, opened from that menu's items 0x48B977 and 0x48BF28) are identified, and 0x4092A0 acts only while the pause object's enable word (0x786BA4) is 1 and clears it — evidence needed: the screens of the callers 0x4A93D7 (0x4A9380, the level exit path: it sets 0x7CC150 to 3) and 0x5F0B7F (0x5F0B40, a modal with controls 0x990-0x995)
@@ -122,6 +122,7 @@ internal sealed class AutomaticAdvisor : IDisposable
 		// [BIN:STP-PPC:0x101C2108 main loop] CMsgEvent 10 (history reset of variant, played flag and slaps) followed by CMsgEvent 0 at 0x101C2174
 		Raise( AdvisorGameEvent.ResetForEasyMode );
 		Raise( AdvisorGameEvent.LevelStarted );
+		RestoredAttached();
 	}
 
 	// [BIN:TPW-EXE:0x005996D0 stop path] "Kill advisor" (0x429D60) hides the model; the stop path has six callers, level exit among them
@@ -140,8 +141,12 @@ internal sealed class AutomaticAdvisor : IDisposable
 		staffWorld = null;
 		// Help still pending or speaking belongs to the windows of this park, which close without reporting.
 		if ( level != null )
+		{
 			foreach ( var message in AdvisorUiHelp.AllWindowMessages )
 				Controller.Withdraw( message, AdvisorClock );
+			WithdrawRestoredWindowHelp();
+		}
+		RestoredDetached();
 		park = null;
 		level = null;
 		lastScanTurn = null;
@@ -194,6 +199,7 @@ internal sealed class AutomaticAdvisor : IDisposable
 		// [BIN:TPW-EXE:0x00503E8E all research done] 0x167 (167) is posted in Instant Action (the game-type word 0xFB3B7C is 2) without further test; in the full simulation only when the player's ledger has the flag +0xB9 of every park (0x5B0C40), which OpenTPW's ledger lacks
 		if ( item.Kind == ParkEventKind.ResearchAllDone && GameType == 2 )
 			PostEventAdvice( 167, "all research done" );
+		RestoredOnParkEvent( item );
 	}
 
 	/// <summary>The advice of a global ticket that moved to this park (0x4D5270 case 4 of 0x5AF940: 0xEA + type, one response each, responses 474 to 477; none for another kind).</summary>
@@ -294,12 +300,15 @@ internal sealed class AutomaticAdvisor : IDisposable
 			OnModeChanged();
 		if ( AdvisorUiHelp.MessageFor( window ) is { } message )
 			PostHelp( message, $"window {window}" );
+		else if ( TryRestoredWindowHelp( window, out var restored ) )
+			PostHelp( restored, $"window {window}" );
 	}
 
 	/// <summary>Posts help <paramref name="message"/> as a window builder does through 0x486B00, without an interface mode change.</summary>
 	public void PostHelp( int message, string source = "the HUD" )
 	{
-		if ( level == null )
+		// [EXT:restored-advice] a help message the extension restores is posted only while it is on (the HUD posts them unconditionally)
+		if ( level == null || (RestoredAdvice.IsRestored( message ) && !RestoredAdvice.Enabled) )
 			return;
 		var admission = Controller.Advise( message, GameTick, GameType, TutorialEnabled );
 		Log.Trace( $"Advisor help for {source}: message {message} {(admission is { } result ? $"{result.Eligibility}{(result.Stored ? $" in slot {result.Slot}" : result.Acknowledged ? ", queue full" : "")}" : "not posted (game mode)")}." );
@@ -314,6 +323,8 @@ internal sealed class AutomaticAdvisor : IDisposable
 	{
 		foreach ( var message in AdvisorUiHelp.WithdrawnWith( window ) )
 			WithdrawHelp( message, $"window {window}" );
+		if ( RestoredAdvice.WindowHelp.TryGetValue( window, out var restored ) )
+			WithdrawHelp( restored, $"window {window}" );
 	}
 
 	/// <summary>Withdraws help <paramref name="message"/> as a close handler does through 0x486B40.</summary>
@@ -331,7 +342,7 @@ internal sealed class AutomaticAdvisor : IDisposable
 	// [BIN:TPW-EXE:0x0052F200 interface mode change] a changed mode withdraws the ten tool and mode help messages (AdvisorUiHelp.ModeHelpMessages)
 	public void OnModeChanged()
 	{
-		if ( level != null && Controller.WithdrawModeHelp( AdvisorClock ) )
+		if ( level != null && (Controller.WithdrawModeHelp( AdvisorClock ) | WithdrawRestoredModeHelp()) )
 			CutOffSpeech();
 	}
 
@@ -404,8 +415,12 @@ internal sealed class AutomaticAdvisor : IDisposable
 	}
 
 	/// <summary>The scan of one update for a park: its turn, game type and the tutorial option, halted while paused or while the park is lost.</summary>
-	internal int ScanPark( ParkEconomy economy, bool gamePaused ) =>
-		ScanTurns( new EconomyMoneyState( economy ), unchecked( (uint)economy.Turn ), economy.Mode == ParkGameMode.InstantAction ? 2 : 0, TutorialEnabled, gamePaused || economy.IsBankrupt, new EconomyParkState( economy, objectStampTurn, hireStampTurn ) );
+	internal int ScanPark( ParkEconomy economy, bool gamePaused )
+	{
+		// [EXT:restored-advice] the extension's park view (null while it is off) and its per-frame observations
+		RestoredObserve();
+		return ScanTurns( new EconomyMoneyState( economy ), unchecked( (uint)economy.Turn ), economy.Mode == ParkGameMode.InstantAction ? 2 : 0, TutorialEnabled, gamePaused || economy.IsBankrupt, new EconomyParkState( economy, objectStampTurn, hireStampTurn ), RestoredState( economy ) );
+	}
 
 	/// <summary>
 	/// The scan the advisor's update runs once per park turn (the original calls 0x59A550 once per turn from the thing loop): one scan call per turn that has
@@ -414,7 +429,7 @@ internal sealed class AutomaticAdvisor : IDisposable
 	/// </summary>
 	/// <returns>The scan calls made.</returns>
 	// [APPROX:ADVISOR-017] the queue is served once per frame here but once per turn in tp.exe (the end of 0x59A550); the scan itself is exact: once per park turn
-	internal int ScanTurns( IAdvisorMoneyState? money, uint turn, int gameType, bool tutorialEnabled, bool halted, IAdvisorParkState? park = null )
+	internal int ScanTurns( IAdvisorMoneyState? money, uint turn, int gameType, bool tutorialEnabled, bool halted, IAdvisorParkState? park = null, IRestoredAdviceState? restored = null )
 	{
 		var previousTurn = lastScanTurn;
 		lastScanTurn = turn;
@@ -427,10 +442,13 @@ internal sealed class AutomaticAdvisor : IDisposable
 		var calls = (int)Math.Min( passed, MaximumScansPerUpdate );
 		for ( var call = 0; call < calls; call++ )
 		{
-			var outcome = Controller.ScanOnce( money, turn, gameType, tutorialEnabled, park );
+			var outcome = Controller.ScanOnce( money, turn, gameType, tutorialEnabled, park, restored );
 			if ( outcome is { Posted: { } posted, Admission: { } admission } )
 				Log.Trace( $"Advisor scan of row {outcome.ScoredRow}: advice {posted.MessageId} score {posted.Score} {admission.Eligibility}{(admission.Stored ? $" in slot {admission.Slot}" : admission.Acknowledged ? ", queue full" : "")}." );
 		}
+		// [EXT:restored-advice] one poll step for every scan call
+		if ( restored != null )
+			RestoredPoll( restored, calls );
 		return calls;
 	}
 

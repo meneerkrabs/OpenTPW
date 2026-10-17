@@ -75,7 +75,7 @@ internal static class AdvisorTables
 	public static int PrankAdvice( int pranksterId ) => FirstPrankMessage + (int)((uint)(ushort)pranksterId % 3);
 
 	/// <summary>The Advisor.sam key of the score every help message carries.</summary>
-	// [BIN:TPW-EXE:0x0059E8C0 help score] the score callback of the 82 help descriptors returns the balance field at +0x328, the Advisor.sam key HelpMessage.Score (1000 shipped)
+	// [BIN:TPW-EXE:0x0059E8C0 help score] the score callback of the 82 help descriptors returns the balance field at +0x328, the Advisor.sam key HelpMessage.Score (1000 shipped); 81 of them are bound here (HelpMessages): message 291 names the absent response 551, so advisor-help-messages.toml leaves it out (docs/reverse/ADVISOR-SCAN.md)
 	// [BIN:TPW-EXE:0x0072E124 advisor.sam schema] the schema's int fields laid out in order from +0x18 (GeneralAdvisor +0x18/+0x1C/+0x20, read at 0x59B6C3 as +0x20) put HelpMessage.Score at +0x328 and HelpMessage.ContextHelpScore at +0x32C once the 4-byte gap after the MessageGroups array is counted, which the accessors confirm: four Score getters at +0x31C..+0x328 (0x59E890..0x59E8C0, GeneralWonGoldenTicket, AwardGiven, AwardMoved, HelpMessage) and the money test 0x59E8E6 against +0x330 (WealthHigh.MoreMoneyThan)
 	public const string HelpScoreKey = "HelpMessage.Score";
 	/// <summary>The Advisor.sam key of the score F1 gives the replayed last tutorial advice (<see cref="AdvisorController.ReplayLastTutorial"/>).</summary>

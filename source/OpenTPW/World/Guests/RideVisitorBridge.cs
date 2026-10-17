@@ -69,6 +69,8 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	public string Name { get; }
 	public RideVisitorKind Kind { get; }
 	public int Capacity { get; private set; }
+	/// <summary>The capacity the ride runs with now: the script's <c>VAR_CAPACITY</c> (which the ride settings change), else the catalogue capacity.</summary>
+	public int LiveCapacity => Get( RideVariables.VAR_CAPACITY ) is var live and > 0 ? live : Capacity;
 	// Catalogue fallback only: existing occupied rider/head tables are never resized or cleared.
 	internal void SetCatalogueFallbackCapacity( int capacity ) => Capacity = Math.Max( 1, capacity );
 	/// <summary>The excitement shown to the HUD and used by the attraction score: the coaster's guest value when there is a source, else the .sam level.</summary>

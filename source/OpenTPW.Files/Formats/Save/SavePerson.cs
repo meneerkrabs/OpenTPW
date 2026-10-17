@@ -16,6 +16,27 @@ public sealed record SavePerson(
 {
 	public const int NavigationBytes = 177;
 	public const int EventHistoryEntries = 32;
+	/// <summary>The highest event type any caller of <c>AddEvent</c> (<c>0x0050C100</c>) passes (the callers push 1 to 0x19).</summary>
+	public const int MaximumEventType = 0x19;
+
+	/// <summary>
+	/// The event ring decoded: slot <c>i</c> of <see cref="EventHistory"/> is two words, the event type (low) and its value (high), as the thought object's
+	/// constructor <c>0x0050BA80</c> clears them (word +4+4i and word +6+4i). <c>AddEvent(type, value)</c> (<c>0x0050C100</c>) writes slot <see cref="ActionHistIndex"/>,
+	/// advances the head with <c>(head + 1) &amp; 0x1F</c> and skips the write when the previous slot (head − 1, wrapped) already holds the same pair. An empty slot is (0, 0).
+	/// </summary>
+	public IReadOnlyList<SaveThoughtEvent> ThoughtEvents => EventHistory.Select( word => new SaveThoughtEvent( (ushort)(word & 0xFFFF), (ushort)(word >> 16) ) ).ToArray();
+
+	/// <summary>The recorded events, newest first: from the slot before the head back round the ring, without the empty slots.</summary>
+	public IEnumerable<SaveThoughtEvent> RecentEvents()
+	{
+		var events = ThoughtEvents;
+		for ( var back = 1; back <= EventHistoryEntries; back++ )
+		{
+			var slot = events[(int)((ActionHistIndex + EventHistoryEntries - back) % EventHistoryEntries)];
+			if ( !slot.IsEmpty )
+				yield return slot;
+		}
+	}
 
 	/// <summary>The navigation bytes decoded (<see cref="SaveNavigation"/>).</summary>
 	public SaveNavigation NavigationState => SaveNavigation.Read( Navigation );
@@ -34,6 +55,11 @@ public sealed record SavePerson(
 		var events = new uint[EventHistoryEntries];
 		for ( var index = 0; index < events.Length; index++ )
 			events[index] = reader.U32();
+		if ( histIndex >= EventHistoryEntries )
+			throw new InvalidDataException( $"Save {reader.What} has an event ring head {histIndex}; the ring of 0x50C100 wraps at {EventHistoryEntries}." );
+		foreach ( var word in events )
+			if ( (word & 0xFFFF) > MaximumEventType )
+				throw new InvalidDataException( $"Save {reader.What} has an event of type {word & 0xFFFF}; AddEvent (0x50C100) is only called with 1 to {MaximumEventType}." );
 		var person = new SavePerson( thingBase, script, anim, service, destX, destY, adjustor, baseSpeed, count, esp, mapId, navigation, previousSpeed,
 			previousX, previousY, stranded, purpose, setDest, angle, spriteId, underRide, histIndex, events, reader.U32(), reader.U32(), reader.U32() );
 		if ( reader.Position - start != SaveThingChain.PersonBytes )
@@ -53,4 +79,10 @@ public sealed record SavePerson(
 		var reader = new SaveFieldReader( bytes, 0, what );
 		return Read( ref reader );
 	}
+}
+
+/// <summary>One slot of a person's event ring (<see cref="SavePerson.ThoughtEvents"/>): the type and value words <c>AddEvent</c> (<c>0x0050C100</c>) stores. Type 6 with the major destination logs a dismissal (<c>0x0050132C</c>).</summary>
+public readonly record struct SaveThoughtEvent( ushort Type, ushort Value )
+{
+	public bool IsEmpty => Type == 0 && Value == 0;
 }

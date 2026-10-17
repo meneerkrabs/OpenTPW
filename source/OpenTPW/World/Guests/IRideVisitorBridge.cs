@@ -108,6 +108,8 @@ public interface IRideVisitorBridge
 	/// <summary>The coaster or track refuses guests (<c>0x00441970</c>, the track word): a queued guest leaves with thought 13 (state 11, <c>0x004FFFF0</c>).</summary>
 	bool TrackRefusesGuests => false;
 	int Capacity { get; }
+	/// <summary>The capacity the attraction runs with now (a ride's settings change it); the throughput estimate of the smarter guests restarts when it changes. Hosts without a live value report <see cref="Capacity"/>.</summary>
+	int LiveCapacity => Capacity;
 	/// <summary>.sam <c>UsageInfo.ExcitementLevel</c> (0–100).</summary>
 	int ExcitementLevel { get; }
 	/// <summary>.sam <c>Info.AttractionValue</c>.</summary>

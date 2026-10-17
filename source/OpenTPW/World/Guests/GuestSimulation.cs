@@ -1016,10 +1016,9 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// <summary>
 	/// Starts a walk to <paramref name="target"/>. On the park's cells this is the original's SetDest (<see cref="GuestNavigation.Navigate"/>:
 	/// a route search from the guest's cell with its walk mask), and <paramref name="cells"/> (from the guest's own cell on) and
-	/// <paramref name="alsoOpen"/> are bookkeeping for the M3 gate; off the grid (the arrival lanes) and for a queue walk
-	/// (<paramref name="alongCells"/>) the guest walks the cells themselves.
+	/// <paramref name="alsoOpen"/> are bookkeeping for the M3 gate; off the grid (a guest of an old save's arrival lane) the guest walks the cells themselves.
 	/// </summary>
-	private bool SetDestination( Guest guest, (int X, int Y) target, List<(int X, int Y)> cells, List<(int X, int Y)>? alsoOpen = null, bool alongCells = false )
+	private bool SetDestination( Guest guest, (int X, int Y) target, List<(int X, int Y)> cells, List<(int X, int Y)>? alsoOpen = null, bool routeWalkIfRefused = false )
 	{
 		var navigation = guest.Navigation;
 		var route = new List<(int X, int Y)>( cells.Count + 1 ) { navigation.Cell };
@@ -1029,10 +1028,18 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 				route.Add( cell );
 		}
 		var found = true;
-		if ( navigation.OffGrid || alongCells )
+		if ( navigation.OffGrid )
 			navigation.SetDestination( target.X, target.Y, route, alsoOpen );
 		else
+		{
 			found = navigation.Navigate( Grid.Cells, target.X, target.Y, route, alsoOpen );
+			// [APPROX:WALK-006] a refused search keeps the route walk of the ride's cells for the last walk into the entrance cell (see UpdateStanding)
+			if ( !found && routeWalkIfRefused )
+			{
+				navigation.SetDestination( target.X, target.Y, route, alsoOpen );
+				found = true;
+			}
+		}
 		guest.HasWaypoint = true;
 		return found;
 	}
@@ -2136,14 +2143,20 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		guest.QueueTargetIndex = index;
 		guest.QueueTargetX = target.X / (float)Fixed16.One;
 		guest.QueueTargetY = target.Y / (float)Fixed16.One;
-		// [BIN:TPW-EXE:0x004D8750 queue walk] a queue walk is the search and edge-test walk of every guest (Navigate): the edge test opens a step between queue cells, and between the join path and the back cell, through the link bytes the queue tool wrote (QueuePaths); the walk into the ride's entrance cell stays a route walk (WALK-006)
-		return SetDestination( guest, target, route, alsoOpen, alongCells: toEntrance );
+		// [BIN:TPW-EXE:0x004D8750 queue walk] a queue walk is the search and edge-test walk of every guest (Navigate): the edge test opens a step between queue cells, and between the join path and the back cell, through the link bytes the queue tool wrote (QueuePaths); the last walk into the ride's entrance cell is the same walk (the stand point, state 13)
+		return SetDestination( guest, target, route, alsoOpen, routeWalkIfRefused: toEntrance );
 	}
 
 	/// <summary>The ride's entrance cell: the front queue cell's neighbour towards the ride.</summary>
-	private static (int X, int Y) EntranceCellOf( IRideVisitorBridge attraction )
+	private static (int X, int Y) EntranceCellOf( IRideVisitorBridge attraction ) => StandCellOf( attraction );
+
+	/// <summary>The cell a called guest's stand point lies in (the ride's entrance cell; the fallback front cell itself once the queue's outside cell was removed).</summary>
+	internal static (int X, int Y) StandCellOf( IRideVisitorBridge attraction )
 	{
 		var front = attraction.QueueCells[0];
+		// [EXT:removable-access-cells] a queue whose outside cell was removed falls back to the nearest path cell as its one-cell front (RideVisitorBridge.RecomputeQueue): guests stand in that path cell itself, where the original's entrance cell (type 9, always the object's own cell, 0x4DE040) is never edited away
+		if ( attraction.QueueFrontCell is { } outside && front != outside )
+			return front;
 		var (dx, dy) = GuestPathGrid.Directions[attraction.DirectionTowardsFront( 0 )];
 		return (front.X + dx, front.Y + dy);
 	}
@@ -2349,6 +2362,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		if ( guest.QueuePosition == 0 && guest.QueueCalled && attraction.CalledGuest == guest.Id )
 		{
 			guest.QueueCalled = false;
+			// [BIN:TPW-EXE:0x004FFFF0 called forward] the call (flag +0x1F8, the ride's called guest 0x004E0AA0) asks the generic route 0x004FA5F0 to the stand point 0x004DEDF0(0) (the entry cell +0x36 of the ride); a route makes state 13 ("being loaded to ride"), none logs "the player has removed the path from under me and I can no longer get into object" and releases the called slot (0x004E0AC0), unlinks the guest (0x004DDD20) and dismisses it (0x005012F0) through the exit 0x005004AA, with no thought
+			// where the search cannot enter the entrance cell (OpenTPW's imported and restored rides have no link byte on it toward the path outside, so the edge test 0x4D8750 refuses the step) the guest keeps OpenTPW's route walk into it instead of the original's dismissal (WALK-006, SetDestination)
 			SetQueueDestination( guest, attraction, 0, StandPoint( attraction ), toEntrance: true );
 			guest.State = GuestState.Boarding;
 			return;

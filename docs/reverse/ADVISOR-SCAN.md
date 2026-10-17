@@ -18,8 +18,8 @@ values are game data: the inventory stores the `TAG_SYSTEM.str` entry numbers an
 
 | Status | Messages | Meaning |
 | --- | ---: | --- |
-| wired | 98 | OpenTPW produces the message today |
-| ready | 135 | every input exists in OpenTPW (the inventory names the class or field); only the producer is missing |
+| wired | 133 | OpenTPW produces the message today |
+| ready | 100 | every input exists in OpenTPW (the inventory names the class or field); only the producer is missing |
 | blocked | 13 | an input is missing or approximated |
 | none | 105 | nothing to produce: 21 are scored by the scan but their callback is the constant-zero stub, 84 have no producer in `tp.exe` at all |
 
@@ -34,24 +34,25 @@ values are game data: the inventory stores the `TAG_SYSTEM.str` entry numbers an
 | Batch | wired | ready | blocked | none | Total |
 | --- | ---: | ---: | ---: | ---: | ---: |
 | Money | 8 | 0 | 0 | 0 | 8 |
-| Cleanliness | 0 | 8 | 0 | 0 | 8 |
-| Rides, shops, sideshows and features | 1 | 21 | 0 | 0 | 22 |
+| Cleanliness | 8 | 0 | 0 | 0 | 8 |
+| Rides, shops, sideshows and features | 22 | 0 | 0 | 0 | 22 |
 | Queues and prices | 0 | 22 | 1 | 0 | 23 |
-| Guest mood and thoughts | 3 | 6 | 2 | 0 | 11 |
+| Guest mood and thoughts | 9 | 0 | 2 | 0 | 11 |
 | Staff | 25 | 38 | 6 | 0 | 69 |
 | Research | 10 | 9 | 0 | 0 | 19 |
 | Weather | 0 | 0 | 0 | 0 | 0 |
 | Challenges and golden tickets | 5 | 24 | 0 | 0 | 29 |
 | Tutorial and help | 43 | 2 | 3 | 37 | 85 |
 | Other | 3 | 5 | 1 | 68 | 77 |
-| Total | 98 | 135 | 13 | 105 | 351 |
+| Total | 133 | 100 | 13 | 105 | 351 |
 
 Weather has no message: no score callback reads weather or season state, no poster is a weather event, and no `TAG_SYSTEM.str` caption
-of the advisor mentions rain, storm or snow. The "about 91" messages with a producer: **98** produce advice today: 49 posted by game code (0, 323, 106, 128, 129, 33-57, 70, 93-97,
-125-127, 133-136, 167, 234-237, 271), 42 help messages of windows and tools OpenTPW has, and 7 scored by the ported scan (the money batch: 100-105 and 107).
+of the advisor mentions rain, storm or snow. The "about 91" messages with a producer: **133** produce advice today: 53 posted by game code (0, 323, 106, 128, 129, 33-57, 66, 68-70, 93-97,
+125-127, 133-136, 167, 234-237, 258, 271), 42 help messages of windows and tools OpenTPW has, and 38 scored by the ported scan (the money batch: 100-105 and 107, and the 31 park
+callbacks of the rides, cleanliness and guest mood batches: 3-10, 60, 62, 71, 73-75, 77-79, 81, 82, 85-89, 145, 158, 159 and 259-262).
 `AutomaticAdvisor.GlobalTicketMovedMessage` posts 234-237 when a global golden ticket moves here, and `AdvisorTables` now defines them (the four rows
-`(234-237, "AwardMoved.Score")` in `EventScoreKeys`; their group 2 controls are read when the settings file has them). 66, 68 and 69 are defined in `AdvisorTables` without
-a poster (status ready).
+`(234-237, "AwardMoved.Score")` in `EventScoreKeys`; their group 2 controls are read when the settings file has them). 66, 68, 69 and 258 are posted by the ride events
+(`AdvisorRideEvents`, see "Park callbacks").
 
 ## The scan
 
@@ -114,7 +115,7 @@ Confidence: high = whole body read, medium = shape read and role inferred from t
 | `0x4C81E0` | "busy points": guests in the park / 2, capped at 100 | high |
 | `0x4C81B0` | developed cells (the 1024 map blocks via `0x4C8C40`) | medium |
 | `0x4C9050` | the park is open (`0x51A280` clear) | high |
-| `0x4C9070` / `0x4C90D0` | days since the first-object stamp `+0x21C30` (written by `0x4DB090`) / first-hire stamp `+0x21C38` (`0x504B90`) | high |
+| `0x4C9070` / `0x4C90D0` | days since the object stamp `+0x21C30` (rewritten by every object construction, `0x4DB090` calling `0x4C7680`: the newest, not the first) / the hire stamp `+0x21C38` (rewritten by every staff thing init, `0x504B90` calling `0x4C76D0`) | high |
 | `0x4C91C0` | guests in state 3 (paid, waiting at the gate) at the two ticket-booth cells | medium |
 | `0x4C9290` / `0x4C9340` / `0x4C93F0` | guests in the park whose toilet (`+0x1AC`) / hunger (`+0x1A8`) / thirst (`+0x1A4`) byte is **strictly above** the argument | high |
 | `0x4C94A0(flag)` | the park counters `+0x21BFC` (flag 0) / `+0x21C00` (flag 1): pranks and escaped pranksters | medium |
@@ -150,10 +151,10 @@ response is speech only. Texts are paraphrased.
 | Satisfaction is poor (same five shops) | 243-247 (responses 483-487, speech only) | scan, `0x59FD90`-`0x59FF50`, same scan over the satisfaction ring | ready |
 | Ticket price too high / too cheap | 91 / 92 (caption 94 / 95) | scan, `0x59E730` / `0x59E790`: the category-0 price ring holds 50 values and its mean satisfaction is below `TicketSatisfactionUnder` / above `TicketSatisfactionOver` | ready (`ParkPriceStatistics` exists; check that the booth records category 0) |
 | Queues are too long | 58 (caption 63: bored in long queues) and 59 (caption 64: reduce ride duration) | the scan reaches them but both callbacks are `0x5D60C0` (constant 0) and nothing posts them: **dead in v2.0**. The only queue line that can play is 113 (a queue not connected to a path, caption 134, `0x59EF60`, blocked: `queueLinks`) | none / blocked |
-| The park is dirty | 8, 9, 10 (captions 14, 15, 16) for litter without enough handymen; 86-89 (captions 89-92) for dirty toilets | scan, `0x59CB40`, `0x59CBB0`, `0x59CC20` (litter points, developed cells per handyman) and `0x59E450`-`0x59E680` (mean toilet filth in four bands, with and without cleaners) | ready |
-| Guests' thoughts | 3 thirsty (caption 9), 4 hungry (10), 82 no toilets (86), 141 too scared (159), 14 entertainers needed (20), 145 visitors happy (no caption) | scan; the advisor reads the guests' **need meters** (thirst, hunger, toilet, happiness bytes), not the thought ids of `THOUGHTS.str` (those feed the park window's Top 3 Thoughts only) | ready (141 blocked: `rideFear`) |
+| The park is dirty | 8, 9, 10 (captions 14, 15, 16) for litter without enough handymen; 86-89 (captions 89-92) for dirty toilets | scan, `0x59CB40`, `0x59CBB0`, `0x59CC20` (litter points, developed cells per handyman) and `0x59E450`-`0x59E680` (mean toilet filth in four bands, with and without cleaners) | wired |
+| Guests' thoughts | 3 thirsty (caption 9), 4 hungry (10), 82 no toilets (86), 141 too scared (159), 14 entertainers needed (20), 145 visitors happy (no caption) | scan; the advisor reads the guests' **need meters** (thirst, hunger, toilet, happiness bytes), not the thought ids of `THOUGHTS.str` (those feed the park window's Top 3 Thoughts only) | wired (141 blocked: `rideFear`) |
 | Money warnings 102-105 | 102 take a loan (caption 123), 103 six-months warning (124), 104 three months (125), 105 five months (126); 106 bankruptcy (127) | scan `0x59E9B0`, `0x59E9F0`, `0x59EA70`, `0x59EAF0`: balance < 0; 102 needs a loan available; 103-105 need **no** loan available and read the months in the red (`0x4D0260` / 30 days): 103 below 3, 104 3 or 4, 105 exactly 5. 106 is game event 2 (`0x4D0370`) | wired |
-| Broken rides | 5 worn rides and no mechanic (caption 11), 6 broken rides and no mechanic (12), 7 too few mechanics (13); 66 breakdown imminent (71), 68 no mechanic (72), 69 mechanics busy (73), 70 mechanic on the way (74); 258 ride condemned; 259 too many rides closed | scan `0x59CA30`/`0x59CA80`/`0x59CAC0`/`0x5A02F0`; posts `0x4DF8C0` (condition crosses below 10 percent in the wear step `0x4DF670`) and `0x4DADC0` (the breakdown handler: 68 when no mechanic is hired, 70 when one takes it, 69 when all are busy); condemn message type 8 (`0x59B448`) | ready (70 wired) |
+| Broken rides | 5 worn rides and no mechanic (caption 11), 6 broken rides and no mechanic (12), 7 too few mechanics (13); 66 breakdown imminent (71), 68 no mechanic (72), 69 mechanics busy (73), 70 mechanic on the way (74); 258 ride condemned; 259 too many rides closed | scan `0x59CA30`/`0x59CA80`/`0x59CAC0`/`0x5A02F0`; posts `0x4DF8C0` (condition crosses below 10 percent in the wear step `0x4DF670`) and `0x4DADC0` (the breakdown handler: 68 when no mechanic is hired, 70 when one takes it, 69 when all are busy); condemn message type 8 (`0x59B448`) | wired |
 
 ## Money
 
@@ -180,45 +181,82 @@ the full simulation only, the others in both game types.
 
 Two reading choices keep the advisor from changing simulation state: the loan availability peeks the net worth as `0x4D06B0` reads it (`0x4C7DB0(20)`: the cached value while its age is at most 20, else a fresh count that is not stamped) and does not store the offers' credit tests (the original's `0x4D06B0` rewrites word `+0x14` of each offer it tests, which the loan list rebuilds before it reads), so the scan never writes to the economy. In a park in the red with staff and no income the wages line 107 (90) outranks the early warnings 103/104 (75, 50) once three months have passed, so those are served after it; 105 (110) outranks it.
 
+## Park callbacks (rides, cleanliness, guest mood)
+
+Ported by `AdvisorParkCallbacks` (`source/OpenTPW/World/AdvisorScanPark.cs`) over `IAdvisorParkState`; `EconomyParkState` computes the statistics from the economy without writing
+to it (the advisor stays outside the world hash). 31 callbacks: rides 5, 6, 7, 60, 62, 71, 73, 74, 75, 77, 78, 79, 81, 85, 259-261; cleanliness 8, 9, 10, 86-89, 262; guest mood 3, 4, 82, 145,
+158, 159. The thresholds are words of the `Advisor.sam` object (`AdvisorScan.ParameterKeys`); a key the file lacks leaves its callback at 0, as without a park.
+
+| Helper | OpenTPW | Reading |
+| --- | --- | --- |
+| `0x4C9960` | `ParkStaff.OfType(role).Count()` | things of the models 4 to 8 equal to the argument with flag byte `+3` clear |
+| `0x4C9070`, `0x4C90D0` | the advisor's own record of the turn of the newest object construction and newest hire (`mLastObjectBuilt`, `mLastStaffHired`), kept from the `ObjectBuilt` and `StaffHired` events, stamped at park init like `0x4C58C0` (`0x4C5CAF`, `0x4C5CDE`) and saved in the advisor snapshot | days = (park time - stamp, both from the calendar base) / one day; outside the economy and its hashes. A loaded or original-save park derives them at attach from its newest standing object and employed member, since the save's park words are not parsed (ADVISOR-009) |
+| `0x4CA450`, `0x4CA510`, `0x4CA570`, `0x4CA5D0` | catalog types by `RatingType` (`+0x4AC`) that are available (`+0x10` of the object control: outside the research tables, or researched) | rides skip the types with a golden ticket cost (`+0xC4`) at flag 0, the others do not test it |
+| `0x4CA7B0(kind, flag)` | catalog types with `Counters[Built]` above 0 | the control's built count (`+0x18`) is never lowered: a sold ride still counts as built |
+| `0x4CA8E0`, `0x4CA9B0` | standing objects of the kind (a ride also by upgrade level), the closed ones | closed is the open word `+0x68` clear: the player's close, and the broken, upgrading and condemned states clear it (`0x4E0FD8`, `0x4E10DC`, case 4 of `0x4E0E60`) |
+| `0x4CA310`, `0x4CA3A0` | rides in state 1; rides whose condition byte (`+0x44`, `Repair`) is below the percent or in state 1 | a condemned ride (state 4) is neither |
+| `0x4CCDF0` | littered cells x 100 / (path, queue and entrance cells, types 1, 3, 9, plus littered ones off them) over the 128 x 128 map | a per-cell scan, not the 4 x 4 block caches |
+| `0x4C81B0` | cells of the types 1, 3, 4, 9, 10 | the block caches (`0x4C8C40`, age 0) are recounted |
+| `0x4C9EE0`, `0x4C9F90`, `0x4CA160`, `0x4CA220` | toilets (`ProvidesRelief`), closed ones, the integer mean of 100 - condition byte; the worst toilet's handle is not 0 exactly when a toilet exists | the callbacks 86-89 also store that handle in the object (`+4`), presentation only |
+| `0x4C9130`, `0x4C93F0`, `0x4C9340`, `0x4C9290`, `0x4C9530`, `0x4C95D0`, `0x4C7BB0` | `IParkGuestStatistics.GuestCensus`, `CountGuestsNeeding`, `GuestsWithBalloons`, `GuestsInCostume`, `CensusHappiness` | guests on a cell the predicate `0x4FA990` accepts; the meter byte is compared unsigned with the argument's low byte; the mean is the single of the integer sum over the count |
+
+What reading the bytes corrected from the first mapping above (the tables carry the corrected formulas):
+
+- The two stamps are the **newest** construction and hire, not the first (`0x4DB090` and `0x504B90` rewrite them every time), and the park init stamps them with the current time; the days-since tests use them as they are.
+- 73, 77 and 81 ask for the **previous** kind's built types (rides for the shops, shops for the sideshows, sideshows for the features), and 62 counts the ride types with the ticket items.
+- 74 pushes kind 1 for both counts where 78 pushes sideshows and rides, so shops x ratio exceeds shops only for a ratio above 1: with the shipped ratio 0.15 the line never passes.
+- 82 has no ride test: park open, no toilet, the needy share. 145 lets a mean equal to the threshold pass (`fcompp`, mask 0x41). 259 tests the park open, 260-262 do not.
+- 85 computes `0x4CCA40` and discards it (`fstp st(0)`, then `xor eax, eax`): the line never passes, so it is "wired" as a port of a callback that returns 0.
+- 8 passes only up to `LitterPointCutoffHigh`, 9 from `LitterPointCutoffLow` of its own group; 86-89 use the points of bands 1, 1, 3, 4 and the thresholds 1-3, 2-4, 3, 4.
+
+Event posts: **66** is raised by the wear step (`ParkEconomy.Wear`, `ParkEventKind.RideBreakdownImminent`) when the new condition byte is below 10 and the byte plus the step's wear is not
+(`0x4DF670` posts message 0x42 at `0x4DF8BE`). **68, 69, 258** are decided on `ParkEventKind.RideEnteredBrokenState` (raised when the ride actually enters its broken state: the type 7 message of case 1 of `0x4E0E60`, `0x4E0FA0`, sent after the script reports VAR_BROKEN; type 8 for a condemned ride, `0x40F3D0`; not at the earlier request `0x4E0B90` that raises `RideBrokeDown`) by `AdvisorRideEvents.ForBreakdown`: a ride whose life gauge byte is 0 is condemned
+(258, the message of type 8); otherwise the handler `0x4DADC0` posts 68 without a mechanic and 69 when every mechanic is busy with another ride, resting or on strike (display state 3 or 4 of
+`0x5064F0`, which is `StaffState`); a mechanic already on this ride or a free one posts nothing there (70 is the dispatch's, `0x4DA6C5`). Their scores are the words `+0x248`, `+0x24C`,
+`+0x250` and `+0x578` (`RideCondemned.Score`, added to `EventScoreKeys`).
+
+Tests: `AdvisorScanParkTests` (each callback at its thresholds over hand-built states, the real queue through a whole scan pass, the statistics over a real `ParkEconomy`, the guest bridge, the ride
+events) and `AdvisorProducerInventoryTests` (every ported callback is "wired"). 117 scanned callbacks remain unported (21 constant-zero stubs, 96 computed).
+
 ## Cleanliness
 
 | Msg | Status | Producer | Condition and score | TAG_SYSTEM caption |
 | ---: | --- | --- | --- | --- |
-| 8 | ready | cb 0x59CB40 | park open and no handyman: litter points (0x4CCDF0) at most LitterPointCutoffHigh; score = litter x ScorePerLitterPoint - LitterPointCutoffLow | 14 |
-| 9 | ready | cb 0x59CBB0 | park open and no handyman: litter points >= StaffHireHandymen2.LitterPointCutoffLow; score = litter x ScorePerLitterPoint - cutoff | 15 |
-| 10 | ready | cb 0x59CC20 | park open with at least one handyman: developed cells (0x4C81B0) >= MinCellsForConsideration; (cells - handymen x IdealDevelopedCellsPerHandyman) x ScorePerExtra10Cells | 16 |
-| 86 | ready | cb 0x59E450 | park open, no handyman, a toilet exists: mean toilet filth (0x4CA160 = 100 - condition) between FeaturesDirtyToilets1 and 3 FilthierThan: filth x PointsPerFilthPct | 89 |
-| 87 | ready | cb 0x59E510 | park open, a handyman exists: mean filth between DirtyToilets2 and 4 FilthierThan: filth x PointsPerFilthPct | 90 |
-| 88 | ready | cb 0x59E5D0 | park open, no handyman: mean filth >= FeaturesDirtyToilets3.FilthierThan: filth x its PointsPerFilthPct | 91 |
-| 89 | ready | cb 0x59E680 | park open, a handyman exists: mean filth >= FeaturesDirtyToilets4.FilthierThan: filth x its PointsPerFilthPct | 92 |
-| 262 | ready | cb 0x5A0430 | toilets closed (0x4C9F90) x 100 / toilets > MoreThanThisPercentClosed: flat ToiletsClosed.Score | speech only |
+| 8 | wired | cb 0x59CB40 | park open and no handyman: litter points (0x4CCDF0) at most LitterPointCutoffHigh; score = litter x ScorePerLitterPoint - LitterPointCutoffLow | 14 |
+| 9 | wired | cb 0x59CBB0 | park open and no handyman: litter points >= StaffHireHandymen2.LitterPointCutoffLow; score = litter x ScorePerLitterPoint - cutoff | 15 |
+| 10 | wired | cb 0x59CC20 | park open with at least one handyman: developed cells (0x4C81B0) >= MinCellsForConsideration; (cells - handymen x IdealDevelopedCellsPerHandyman) x ScorePerExtra10Cells | 16 |
+| 86 | wired | cb 0x59E450 | park open, no handyman, a toilet exists: mean toilet filth (0x4CA160 = 100 - condition) between FeaturesDirtyToilets1 and 3 FilthierThan: filth x PointsPerFilthPct | 89 |
+| 87 | wired | cb 0x59E510 | park open, a handyman exists: mean filth between DirtyToilets2 and 4 FilthierThan: filth x PointsPerFilthPct | 90 |
+| 88 | wired | cb 0x59E5D0 | park open, no handyman: mean filth >= FeaturesDirtyToilets3.FilthierThan: filth x its PointsPerFilthPct | 91 |
+| 89 | wired | cb 0x59E680 | park open, a handyman exists: mean filth >= FeaturesDirtyToilets4.FilthierThan: filth x its PointsPerFilthPct | 92 |
+| 262 | wired | cb 0x5A0430 | toilets closed (0x4C9F90) x 100 / toilets > MoreThanThisPercentClosed: flat ToiletsClosed.Score | speech only |
 
 ## Rides, shops, sideshows and features
 
 | Msg | Status | Producer | Condition and score | TAG_SYSTEM caption |
 | ---: | --- | --- | --- | --- |
-| 5 | ready | cb 0x59CA30 | no mechanic hired (0x4C9960 type 4); else rides that are broken or below StaffHireMechanics1.PoorerStateThan percent condition (0x4CA3A0) x ScorePerWornRide | 11 |
-| 6 | ready | cb 0x59CA80 | no mechanic hired; broken-down rides (state 1, 0x4CA310) x StaffHireMechanics2.ScorePerBrokenRide | 12 |
-| 7 | ready | cb 0x59CAC0 | days since the first hire (0x4C90D0, park +0x21C38) >= WaitingTimes.DaysForStaff; max(0, rides (0x4CA8E0 kind 0) - mechanics x IdealNumberOfRidesPerMechanic) x ScorePerExtraRide | 13 |
-| 60 | ready | cb 0x59D990 | ride types available, days since first object >= DaysForObjects, rides >= MoreRidesThan, built types x 100 / available types < PoorerThan: flat RidesPoorSelection.Score | 65 |
-| 62 | ready | cb 0x59DAD0 | no ride built: RidesBuildRides.Score + days since the start x AdditionalPerDay | 67 |
-| 66 | ready | ride wear step 0x4DF670 (0x4DF8C0): condition (+0x44) crosses below 10 percent (float 0x7005A0) in a step | condition before the step >= 10 and after < 10 percent, not in game mode 1; flat RidesBreakdownImminent.Score | 71 |
-| 68 | ready | ride-breakdown message handler 0x4DADC0 (type 7), jump to 0x4DAFF6 from 0x4DAE68 | a ride breaks down and no mechanic is hired | 72 |
-| 69 | ready | 0x4DADC0 (0x4DAFF6): every mechanic is busy with another ride | a ride breaks down and no mechanic is free | 73 |
+| 5 | wired | cb 0x59CA30 | no mechanic hired (0x4C9960 type 4); else rides that are broken or below StaffHireMechanics1.PoorerStateThan percent condition (0x4CA3A0) x ScorePerWornRide | 11 |
+| 6 | wired | cb 0x59CA80 | no mechanic hired; broken-down rides (state 1, 0x4CA310) x StaffHireMechanics2.ScorePerBrokenRide | 12 |
+| 7 | wired | cb 0x59CAC0 | days since the hire stamp (0x4C90D0; the stamp is rewritten at every staff thing init, so it is the newest hire) >= WaitingTimes.DaysForStaff; max(0, rides (0x4CA8E0 kind 0) - mechanics x IdealNumberOfRidesPerMechanic) x ScorePerExtraRide | 13 |
+| 60 | wired | cb 0x59D990 | ride types available (0x4CA450 without ticket items), days since the object stamp (0x4C9070; the newest construction) >= DaysForObjects, rides >= MoreRidesThan, built types x 100 / available types (unsigned) < PoorerThan: flat RidesPoorSelection.Score | 65 |
+| 62 | wired | cb 0x59DAD0 | no ride type ever built (0x4CA7B0 kind 0, ticket items counted): RidesBuildRides.Score + days since the start x AdditionalPerDay | 67 |
+| 66 | wired | ride wear step 0x4DF670 (0x4DF8C0): condition (+0x44) crosses below 10 percent (float 0x7005A0) in a step | the wear step takes the condition byte below 10 and the byte plus the step's wear is not below 10: flat RidesBreakdownImminent.Score (game types 0 and 2) | 71 |
+| 68 | wired | ride-breakdown message handler 0x4DADC0 (type 7), jump to 0x4DAFF6 from 0x4DAE68 | a ride breaks down and no mechanic is hired | 72 |
+| 69 | wired | 0x4DADC0 (0x4DAFF6): every mechanic is busy with another ride | a ride breaks down and no mechanic is free | 73 |
 | 70 | wired | mechanic dispatch 0x4DA5B0 (0x4DA6C5) and 0x4DADC0 (0x4DAF7E): a mechanic takes the broken ride | a mechanic is on the way | 74 |
-| 71 | ready | cb 0x59DCA0 | shops available, days since first object >= DaysForObjects, shops built >= MoreShopsThan, built types x 100 / available < PoorerThan: flat Score | 75 |
-| 73 | ready | cb 0x59DDE0 | rides exist, none of the shops built (days since first object >= DaysForObjects): Score + days x AdditionalPerDay | 77 |
-| 74 | ready | cb 0x59DE80 | rides exist, built shops < rides x PerRideRatio, balance > WealthMoreThan: flat Score | 78 |
-| 75 | ready | cb 0x59DF30 | sideshows available, days since first object >= DaysForObjects, sideshows built >= MoreSideshowsThan, built types x 100 / available < PoorerThan: flat Score | 79 |
-| 77 | ready | cb 0x59E070 | rides exist, none of the sideshows built (days since first object >= DaysForObjects): Score + days x AdditionalPerDay | 81 |
-| 78 | ready | cb 0x59E110 | rides exist, built sideshows < rides x PerRideRatio, balance > WealthMoreThan: flat Score | 82 |
-| 79 | ready | cb 0x59E1C0 | features available, days since first object >= DaysForObjects, features built >= MoreFeaturesThan, built types x 100 / available < PoorerThan: flat Score | 83 |
-| 81 | ready | cb 0x59E2E0 | rides exist, none of the features built (days since first object >= DaysForObjects): Score + days x AdditionalPerDay | 85 |
-| 85 | ready | cb 0x59E420 | park open: mean of a per-toilet figure (0x4CCA40 over 0x4DDF40, unresolved) is returned as the score without an Advisor.sam key | 88 |
-| 258 | ready | CMsgRideCondemned (type 8); 0x59B060 posts 258 (0x59B448) | a ride is condemned (state 4) | speech only |
-| 259 | ready | cb 0x5A02F0 | rides >= AtLeastThisManyRides and closed rides (0x4CA9B0) x 100 / rides > MoreThanThisPercentClosed: flat RidesClosed.Score | speech only |
-| 260 | ready | cb 0x5A0370 | shops closed x 100 / shops > MoreThanThisPercentClosed: flat ShopsClosed.Score | speech only |
-| 261 | ready | cb 0x5A03D0 | sideshows closed x 100 / sideshows > MoreThanThisPercentClosed: flat SideshowsClosed.Score | speech only |
+| 71 | wired | cb 0x59DCA0 | shops available, days since first object >= DaysForObjects, shops built >= MoreShopsThan, built types x 100 / available < PoorerThan: flat Score | 75 |
+| 73 | wired | cb 0x59DDE0 | ride types built, days since the object stamp >= DaysForObjects, no shop type built: Score + days since the start x AdditionalPerDay | 77 |
+| 74 | wired | cb 0x59DE80 | shop types built, days since the object stamp >= DaysForObjects, the shop types counted a second time (the original pushes kind 1 again where 0x59E110 pushes rides) x PerRideRatio above the first count, balance > WealthMoreThan: flat Score; passes only for a ratio above 1 | 78 |
+| 75 | wired | cb 0x59DF30 | sideshows available, days since first object >= DaysForObjects, sideshows built >= MoreSideshowsThan, built types x 100 / available < PoorerThan: flat Score | 79 |
+| 77 | wired | cb 0x59E070 | shop types built (the previous kind, not rides), days since the object stamp >= DaysForObjects, no sideshow type built: Score + days since the start x AdditionalPerDay | 81 |
+| 78 | wired | cb 0x59E110 | sideshow types built, days since the object stamp >= DaysForObjects, ride types built x PerRideRatio above the sideshows, balance > WealthMoreThan: flat Score | 82 |
+| 79 | wired | cb 0x59E1C0 | features available, days since first object >= DaysForObjects, features built >= MoreFeaturesThan, built types x 100 / available < PoorerThan: flat Score | 83 |
+| 81 | wired | cb 0x59E2E0 | sideshow types built (the previous kind), days since the object stamp >= DaysForObjects, no feature type built: Score + days since the start x AdditionalPerDay | 85 |
+| 85 | wired | cb 0x59E420 | park open: the per-toilet statistic 0x4CCA40 is computed and discarded (fstp st(0)); every path returns 0, so the line never passes | 88 |
+| 258 | wired | CMsgRideCondemned (type 8); 0x59B060 posts 258 (0x59B448) | a ride is condemned (state 4) | speech only |
+| 259 | wired | cb 0x5A02F0 | park open; rides >= AtLeastThisManyRides and closed rides (0x4CA9B0) x 100 / rides > MoreThanThisPercentClosed: flat RidesClosed.Score | speech only |
+| 260 | wired | cb 0x5A0370 | shops closed x 100 / shops > MoreThanThisPercentClosed: flat ShopsClosed.Score | speech only |
+| 261 | wired | cb 0x5A03D0 | sideshows closed x 100 / sideshows > MoreThanThisPercentClosed: flat SideshowsClosed.Score | speech only |
 
 ## Queues and prices
 
@@ -252,16 +290,16 @@ Two reading choices keep the advisor from changing simulation state: the loan av
 
 | Msg | Status | Producer | Condition and score | TAG_SYSTEM caption |
 | ---: | --- | --- | --- | --- |
-| 3 | ready | cb 0x59C9D0 | guests whose thirst is above VisitorsThirsty.ThirstierThan (0x4C93F0, strictly greater, truncated byte; the shipped threshold 99 makes only a thirst of 100 count) x ScorePerThirstyPerson | 9 |
-| 4 | ready | cb 0x59CA00 | guests whose hunger is above VisitorsHungry.HungrierThan (0x4C9340, same rule as 3) x ScorePerHungryPerson | 10 |
-| 82 | ready | cb 0x59E380 | rides exist, no toilet built: guests needing the toilet above NeedingMoreThan (0x4C9290) x 100 / guests in park > MorePeopleThanThisNeeding: flat Score | 86 |
+| 3 | wired | cb 0x59C9D0 | guests whose thirst is above VisitorsThirsty.ThirstierThan (0x4C93F0, strictly greater, truncated byte; the shipped threshold 99 makes only a thirst of 100 count) x ScorePerThirstyPerson | 9 |
+| 4 | wired | cb 0x59CA00 | guests whose hunger is above VisitorsHungry.HungrierThan (0x4C9340, same rule as 3) x ScorePerHungryPerson | 10 |
+| 82 | wired | cb 0x59E380 | park open and no toilet built: guests needing the toilet above NeedingMoreThan (0x4C9290) x 100 / guests in the park (0x4C9130, signed) > MorePeopleThanThisNeeding: flat Score (no ride test) | 86 |
 | 125 | wired | prank message (type 0xE, sender 0x4FF2EA); 0x59B060 case at 0x59B3C6 posts 125 | kind word 2 -> 127, 1 -> 126, 0 -> 125 (prankster id modulo 3) | 146 |
 | 126 | wired | prank message type 0xE; 0x59B060 case at 0x59B348 | kind word 1 | 147 |
 | 127 | wired | prank message type 0xE; 0x59B060 case at 0x59B2CA | kind word 2 | 148 |
 | 141 | blocked | cb 0x59F4F0 | rides >= MinimumRides and the average ride fear (0x4CCBF0, cached for a second) > AverageScarierThan: flat VisitorsTooScared.Score | 159 |
-| 145 | ready | cb 0x59F5E0 | guests >= MinimumVisitors and average happiness (0x4C7BB0) > HappierThan: flat CongratVisitorsHappy.Score | speech only |
-| 158 | ready | cb 0x59F940 | guests holding a balloon (0x4C9530, +0x210 nonzero) > CongratBalloons.MoreThan: flat Score | 174 |
-| 159 | ready | cb 0x59F970 | guests in costume (0x4C95D0, +0x24 == 2) > CongratCostumes.MoreThan: flat Score | 175 |
+| 145 | wired | cb 0x59F5E0 | guests in the park >= MinimumVisitors and the mean happiness (0x4C7BB0) >= HappierThan (equality passes): flat CongratVisitorsHappy.Score | speech only |
+| 158 | wired | cb 0x59F940 | guests holding a balloon (0x4C9530, +0x210 nonzero) > CongratBalloons.MoreThan: flat Score | 174 |
+| 159 | wired | cb 0x59F970 | guests in costume (0x4C95D0, +0x24 == 2) > CongratCostumes.MoreThan: flat Score | 175 |
 | 264 | blocked | cb 0x5A04F0 | pranksters (0x4C94A0 arg 0) > MorePrankstersThan: flat LotsOfPranks.Score | speech only |
 
 ## Staff
@@ -448,8 +486,7 @@ Whether the spoken clip says the same words is not verifiable without the audio.
 ## Confidence and open points
 
 - Every address and callback was read from the bytes of `tp.exe`; the polarity of the gates (a jump over a `ret 0` or into it) was checked against the
-  captions. Formulas are readings of the instruction sequence; the exact per-shop value of `0x4CAAE0`-`0x4CC090`, the per-toilet mean of `0x4CCA40`,
-  the litter points `0x4CCDF0` (a scaled density) and the coverage `0x4CD500` still need a line-by-line port from the bytes before they are implemented.
+  captions. Formulas are readings of the instruction sequence; the exact per-shop value of `0x4CAAE0`-`0x4CC090`, the coverage `0x4CD500` still needs a line-by-line port from the bytes before it is implemented (`0x4CCA40` is computed and discarded by 85; the litter points `0x4CCDF0` and the other helpers below are ported).
 - The poster search lists every caller of `0x59B590`, `0x59A940`, `0x486B00` and the seven bus message types the controller registers
   (5, 8, 14, 17, 19, 23, 25 - `0x59B060` dispatch table). The constant-id scan inside the posting functions agrees; an id computed at run time
   from a table would not show up, so "no producer" means "no producer found".
@@ -461,9 +498,9 @@ Whether the spoken clip says the same words is not verifiable without the audio.
 
 1. **The scan driver** (no message by itself): the cursor, the mode selector, one callback per advisor update, the eligibility that `AdvisorController.Advise` already has.
 2. **Money** (102, 103, 104, 105, then 100, 101, 107): the most visible warnings, all inputs exist and the numbers are small.
-3. **Rides and breakdowns** (5, 6, 7, 66, 68, 69, 258-261): `ParkObjectState` carries the condition, closed and broken flags; 70 is already wired.
-4. **Cleanliness** (8, 9, 10, 86-89, 262): litter and toilet gauges exist; port the litter points first.
-5. **Guest mood** (3, 4, 82, 145, 158, 159): needs the census members on `IParkGuestStatistics`.
+3. **Rides and breakdowns** (5, 6, 7, 60, 62, 66, 68, 69, 71, 73-75, 77-79, 81, 85, 258-261): done (see "Park callbacks"); 70 was already wired.
+4. **Cleanliness** (8, 9, 10, 86-89, 262): done.
+5. **Guest mood** (3, 4, 82, 145, 158, 159): done (the census members are on `IParkGuestStatistics`); 141 and 264 stay blocked.
 6. **Staff** (11, 13, 14, 18, 20, 23, 26, 28-32, 108-123, 144, 146-150, 169-172) and **research** (15-17, 61, 63, 64, 72, 76, 80).
 7. **Prices** (91, 92, then 238-257): the price ring exists; the shop value and satisfaction scans need the line-by-line port.
 8. **Challenges and golden tickets** (270, 272, 273, 215-229, 311, 315, 274-281, 314-318).

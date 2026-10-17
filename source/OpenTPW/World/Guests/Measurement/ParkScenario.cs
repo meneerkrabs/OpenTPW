@@ -62,10 +62,13 @@ public sealed class ParkScenario
 		Things.Allocate( SaveThingModel.Attraction );
 		Guests.AttachThings( Things );
 		Scripts = new RideScriptWorld( seed.ScriptStream );
-		AddAttraction( "twin-a", RideVisitorKind.Ride, (10, 1), 60, 6000, GuestNeeds.None, 0 );
-		AddAttraction( "twin-b", RideVisitorKind.Ride, (10, 9), 60, 6000, GuestNeeds.None, 0 );
-		AddAttraction( "thrill", RideVisitorKind.Ride, (12, 1), 95, 9000, GuestNeeds.None, 0 );
-		AddAttraction( "calm", RideVisitorKind.Ride, (12, 9), 20, 3000, GuestNeeds.None, 0 );
+		AddAttraction( "twin-a", RideVisitorKind.Ride, (10, 1), 60, options.TwinAHoldMilliseconds, GuestNeeds.None, 0 );
+		if ( !options.SingleRide )
+		{
+			AddAttraction( "twin-b", RideVisitorKind.Ride, (10, 9), 60, 6000, GuestNeeds.None, 0 );
+			AddAttraction( "thrill", RideVisitorKind.Ride, (12, 1), 95, 9000, GuestNeeds.None, 0 );
+			AddAttraction( "calm", RideVisitorKind.Ride, (12, 9), 20, 3000, GuestNeeds.None, 0 );
+		}
 		AddAttraction( "shop-cheap", RideVisitorKind.Shop, (14, 1), 60, 1000, GuestNeeds.Thirst, options.CheapPrice );
 		AddAttraction( "shop-dear", RideVisitorKind.Shop, (14, 9), 60, 1000, GuestNeeds.Thirst, options.DearPrice );
 		AddAttraction( "toilet", RideVisitorKind.Shop, (ToiletColumn, StreetRow), 0, 1500, GuestNeeds.Toilet, 0 );
@@ -179,6 +182,10 @@ public sealed record ParkScenarioOptions
 	public int DearPrice { get; init; } = 220;
 	/// <summary>The park's attraction points (its rating) for the booth and the arrivals; 0, the default, is a park with no rating (the report's scenario). A variant with a rating exercises the smarter booth.</summary>
 	public int ParkPoints { get; init; }
+	/// <summary>The hold time of the ride "twin-a", in milliseconds (6,000 by default; the wait opcode takes 16 bits, so 32,767 at most); a long one makes a queue that waits far longer than its twin's (tests of the queue patience rules).</summary>
+	public int TwinAHoldMilliseconds { get; init; } = 6000;
+	/// <summary>A park with one ride only ("twin-a", no other ride), like the level parks: nothing for a guest to go to instead (tests of the queue patience rules). Off by default.</summary>
+	public bool SingleRide { get; init; }
 }
 
 /// <summary>The visitor script every scenario attraction runs: take a guest (VAR_LETMEON), hold it for the ride time, hand it back (VAR_LETMEOFF), the corpus shop protocol.</summary>

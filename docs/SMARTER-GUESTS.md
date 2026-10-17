@@ -17,7 +17,7 @@ taken: no code, no data tables, no constants. Every phase is one pull request. T
   load list marked as requiring it; a later release may offer loading an older version's park with the newer rules as an explicit "migrate" choice. Park sharing stays blocked while a simulation extension is
   active, as for every simulation mod, until packages record mods.
 - **A pure decision layer** (`World/Guests/Decisions/`). `GuestSimulation` takes an `IGuestDecisions` at construction (null: the gate decides, read once, in the constructor and never again):
-  `OriginalGuestDecisions`, a stateless pure extraction of the original, or `SmarterGuestDecisions`, which delegated every call to it in 1.0.0 and has had its first rules since 1.1.0 (phase 2) and its spreading rules since 1.2.0 (phase 3). A policy gets a `DecisionContext` (settings, park
+  `OriginalGuestDecisions`, a stateless pure extraction of the original, or `SmarterGuestDecisions`, which delegated every call to it in 1.0.0 and has had its first rules since 1.1.0 (phase 2) and its spreading rules since 1.2.0 (phase 3) and its queue patience rules since 1.3.0 (phase 4). A policy gets a `DecisionContext` (settings, park
   turn, weather, park seed and a `Trait` accessor) and views (`GuestView`, `AttractionView`, ...) and returns a typed decision or a comparison. The host keeps every effect: routing, queue insertion
   and removal, payments, statistics, thoughts, happiness and every `WorldRng` draw. **By construction no policy can take, skip or reorder a draw or a route request**: the interface has no generator and
   no delegate, the host runs every loop and calls the policy only to score or compare, and the host throws an `InvalidOperationException` naming the policy for a result it cannot act on (an admission other
@@ -68,7 +68,7 @@ taken: no code, no data tables, no constants. Every phase is one pull request. T
 | 1 | Top 3 Thoughts (fidelity, built: [below](#phase-1-top-3-thoughts-and-the-refusal-counters)) and `opentpw.guest-insights` refusal-reason counters (built, selectable). |
 | 2 | Value for money (built, version 1.1.0: [below](#phase-2-value-for-money)): price enters the shop and sideshow choice; a guest that price keeps from every stand goes home; the booth weighs the fee against the park; a price sensitivity trait. |
 | 3 | Spreading (built, version 1.2.0: [below](#phase-3-spreading)): an expected-wait queue term for every attraction from a persisted, per-attraction throughput estimate; a stable per-guest preference per attraction instance; hysteresis between rides in the minor decision. |
-| 4 | Queue patience as a new rule: expected wait against a trait-scaled patience; leaving gives a thought and a small happiness cost. |
+| 4 | Queue patience (built, version 1.3.0: [below](#phase-4-queue-patience)): a guest does not join a queue whose expected wait exceeds its patience, and gives up after waiting too long, when another ride it could choose would be clearly quicker. Measured honestly it acts rarely and does not meet the wait targets. |
 | 5 | Planning needs: a shop or toilet first when a meter will cross its threshold, a detour bonus, no high-excitement ride right after eating. |
 | 6 | Clean and quiet paths: wander goals weighted by litter and crowding, with thoughts. |
 | 7 | Tuning by data mods (optional). |
@@ -173,6 +173,7 @@ CPU: 1.31 us per tick for the default and 1.42 us for the rules on the scenario'
 | 1.0.0 | 0b | The seam and the guests' identity (birth ids, park seed, the `SmarterGuests` section). Every decision delegates to the original. |
 | 1.1.0 | 2 | Value for money: price in the shop and sideshow choice, a guest that price keeps from every stand goes home (`Stalls` in the section), the booth's variety scaling and the price sensitivity trait. A 1.0.0 park is refused (`needs opentpw.smarter-guests 1.0.0, not 1.1.0`). |
 | 1.2.0 | 3 | Spreading: the expected-wait queue term for every attraction (`Throughputs` in the section), the 94 to 106 percent preference and the ride-to-ride hysteresis. A 1.1.0 park is refused (`needs opentpw.smarter-guests 1.1.0, not 1.2.0`). |
+| 1.3.0 | 4 | Queue patience: no join when the expected wait (the queue ahead) exceeds the guest's patience, and a give-up after waiting too long, each only when another ride the guest could choose is clearly quicker (a 70 to 130 percent patience trait, stateless: no new saved state). It acts rarely and does not meet the wait targets (see phase 4). A 1.2.0 park is refused (`needs opentpw.smarter-guests 1.2.0, not 1.3.0`). |
 
 The extension stays not player-selectable (`PlayerSelectable: false`): it is exposed once the rule set (phases 2 to 6) is complete, so a player does not meet a save break with every phase.
 
@@ -283,6 +284,86 @@ A multiplicative variant that keeps the original's near-only queue match and sca
 - *The stuck guests, corrected.* The first version of this page blamed guests that had used all four rides lately. An independent review logged 64 stuck guests at the moment each passed 50 turns without a choice: none had four rides in its history (44 had two, 18 one, 2 none; the two shops usually fill two of the four slots), and in 62 of 64 every attraction, **including rides never used**, scored below the floor of 10 under both the original rules and the policy (an unused ride scores 1 to 8 from its distance and excitement).
   The fix is cheap and was measured: a ride the guest has not used or turned away from lately, of another type than the last, and one the admission gate would admit by excitement, is kept at the floor (rule 1). Scenario stuck guests fall from 4.5 (the same build without the fallback) to 1.25, the median wait is unchanged (13.5) and the censored p90 moves from 91.5 to 96.1; the level parks, with one ride, do not change. It lives here because it is the same floor rule; the guest that is truly done with the park (every ride used, nothing needed) is still the business of phase 5 or a satisfied-guest rule. It moves the on-path behaviour, not the version (1.2.0 is unreleased).
 - CPU and allocation: 609 to about 650 bytes per tick on the scenario (+6%); the walkers per attraction are counted once per decision, not once per candidate view. Microseconds per tick 1.8 to 3.2 for both runs on a machine under load, which is the noise.
+
+## Phase 4: Queue patience
+
+Version 1.3.0 of `opentpw.smarter-guests`. In the original a queued guest leaves only by its own tests (happiness below 10, a toilet need above 80, the queue limit); the 100-turn boredom branch of `GuestSimulation` is unreachable (`QUEUE-plan` section 5.3: `+508 >= +520` always holds there), so TPW has no time limit that can fire and no guest judges a queue before joining. Phase 3 keeps every candidate at the choice floor on purpose, so a long wait never makes a guest give up. This phase adds two rules for that. Both are `[EXT:smarter-guests-patience]`, live only in `SmarterGuestDecisions` / `SmarterGuestsRules`, and cost nothing with the extension off.
+
+**Plain summary of the result.** With the rules built correctly (below) they act rarely: in `park-scenario` about two guests per seed are turned away and nobody gives up in 8 extended seeds, so **the censored p90 and p99 wait do not move toward the default's** (93 and 116 turns against the default's 73 and 108; 1.2.0 has 96 and 117). The phase 4 wait targets are **not met**, at any setting tried. An earlier build of this phase did cut the p90 to 43 and the p99 to 81 turns, but that was an artifact: it counted guests still walking to the ride as ahead of a guest that was already standing at the back, and it let a guest be refused for a ride that no other ride could replace, so it refused guests whose real wait was fine and the guests rode less (details under "What the first build got wrong"). Phase 4 as shipped is a small safety net, not a wait reduction: a queue wait cut by refusals is a cut by having guests ride less, and the guarded metric below says so.
+
+**The base is measured, not borrowed.** `BoredomThreshold` is not used: its unit is unproven and its test cannot fire. The base is the original's own wait in the scenario baseline: boarded waits of p90 73 and p99 108 turns ([baseline](#park-scenario-extended-scale-20--60-days)). The join patience is **90 turns** (between p90 and p99) and the give-up patience **120 turns** (above the baseline's p99). Both are scaled by a stateless per-guest trait, `PatienceTrait` (`Trait( guest, 2 )`, a hash of the park seed and the birth id, the same for the whole visit): **70 to 130 percent**. Being a trait, patience needs no saved state.
+
+**What the host adds (additive; the policy stays pure).** `IGuestDecisions.AlternativeLookAfterTurns( context, guest )` (default -1, forwarded by `ScriptGuestDecisions`) asks the host for the best alternative: `AdmissionView.BestAlternativeWait256` at every admission and `QueuePatienceView.BestAlternativeWait256` for a guest **not at the front** once it has waited the returned number of turns (the smarter policy returns the guest's own give-up turn, 84 to 156, so the scan of the park's rides is not paid before it can matter). It is the shortest phase 3 expected wait, in 1/256 turn, over the **other rides the guest could actually choose next**: open, working, with room, admitted by its excitement gate, **and not in its used or temporary history, not of the type it rode last and of an excitement it likes** (`SmarterGuestsRules.IsUnusedAdmissibleRide`, the criteria of phase 3's floor rule), or -1 for none. The scan (`GuestSimulation.BestAlternativeWait256`) is pure: no draw, no state. `QueuePatienceView.Position` is the guest's **current** place (after a move-up the new one; scripts' `leaveQueue` sees the same).
+
+**1. Do not join.** `DecideAdmission` runs the original gates first (excitement, queue limit). A guest that passes them is refused when it is at a **ride** whose expected wait is above `90 x patience` turns **and** another ride it could choose has a wait of at most 80 percent of it. At admission the guest already stands on the queue's last cell, so **only the queue ahead counts**: guests still walking to the ride will stand behind it (`Reservations` is set to 0). The refusal is `QueueTooLong`, so the host's existing path applies: the "queue too long" thought (16), `QueueEndReason.QueueLimit` (counted as a refusal, in the insights' "queue too long" counter), the refused ride pushed into the temporary history and the guest's next choice is the host's. No happiness is lost, as in the original refusal.
+
+**2. Give up.** `DecideQueuePatience` runs after the existing leave tests, on a turn the guest stays, never while it is called forward and never in an interlude (the host's call sites; it can run on the turn a move-up starts, which keeps the original's flow, with the new place in the view). A guest **not at the front** leaves when it has waited longer than `120 x patience` turns from `QueueJoinTurn` **and** another ride it could choose has a wait of at most 80 percent of its own remaining wait (`position x time per guest`). It thinks "queue too long" (16, the nearest original thought for "waited too long") and is dismissed by the host's existing path with `QueueEndReason.Impatient` (counted as abandoned): the original dismissal's medium happiness step is the cost, and the guest chooses again at once. The hook is still called for a guest at the front (script mods' `leaveQueue` sees it, as before); the host scans nothing for it and the smarter policy declines.
+
+**Does rule 2 earn its place?** In the 8 extended seeds of `park-scenario` it fires **0 times** (4 times with a give-up of 50 turns; waits of the scenario's four rides stop near 117 turns, below the 84 to 156 turns of the band for any guest with a clearly quicker ride), and the level parks have no alternative at all. It is kept as insurance for a park with many rides and one badly slow one, where the guests of the slow queue otherwise wait for ever for a ride far slower than the rest; a test builds exactly that (a ride of 120 turns a guest next to quick ones) and checks that it fires. It costs nothing where it does not apply.
+
+**Only rides, only with somewhere better to go.** Shops, sideshows and toilets are services a guest wants for its own reason, and the alternatives are rides, so neither rule concerns them. A park with one ride (the four level parks) has nothing to go to: the rules never act, and every seed of Jungle, Halloween, Fantasy and Space ends in the same state hash as under 1.2.0.
+
+**Interactions.**
+- *Phase 3 spreading (hysteresis).* The rules never change a walking guest's target. A refused guest has the ride in its temporary history and chooses by the expected-wait score, which already prefers the quicker ride that made the refusal. Restricting the alternative to rides the guest could choose is what keeps refusal chains short: the first build refused 34 percent of its refusals again (54 at the same ride, one guest 12 times in a row) because it counted rides the guest would never pick next.
+- *Phase 2 (go home when price empties every choice).* Independent: a patience refusal is a queue refusal at a ride, not a price-emptied decision (`PriceTurnedAway` looks only at priced stands), and a patience exit is a queue exit, not a stall: the stall counter and the go-home rule do not move.
+- *The existing leave tests* run first and win: a guest below happiness 10, with a toilet need or beyond the queue limit leaves for its own reason; the patience hook never runs for it. A broken or closed ride dismisses its head and keeps the rest waiting as before.
+
+### Measured effect (phase 4)
+
+`--guest-report --guest-scale extended --guest-extension smarter-guests` against the default and against 1.2.0 (the same build with both rules switched off), 8 seeds per scenario, `--guest-compare` with 3 standard errors, release build. The new guarded metric, **guest seconds per ride boarding** (`use.guestSecondsPerRide`: the window's guest time over the boardings of rides in it, the pooled form of "time between a guest's boardings"; down is good, and `--guest-compare` flags a regression), is there because the queue wait is measured over the boardings that happened: a wait cut bought with refusals leaves it unchanged or lower while guests ride less.
+
+`park-scenario` (mean ± σ over the 8 seeds):
+
+| Metric | Default | 1.2.0 | 1.3.0 | vs default (SE, verdict) | vs 1.2.0 (SE, verdict) |
+| --- | ---: | ---: | ---: | --- | --- |
+| Queue attempts | 341.500 ± 22.916 | 387.375 ± 14.609 | 394.000 ± 18.307 | 5.1 changed | 0.8 same |
+| Boarded / attempts | 0.544 ± 0.020 | 0.755 ± 0.020 | 0.745 ± 0.022 | 19.2 improved | -1.0 same |
+| Rejected / attempts | 0.410 ± 0.019 | 0.208 ± 0.020 | 0.219 ± 0.022 | -18.4 improved | 1.0 same |
+| Abandoned / attempts | 0.026 ± 0.008 | 0.008 ± 0.004 | 0.010 ± 0.003 | -5.0 changed | 1.1 same |
+| Price rejections / attempts | 0.280 ± 0.026 | 0.027 ± 0.006 | 0.025 ± 0.005 | -27.0 improved | -0.8 same |
+| Wait p50, turns | 11.625 ± 2.066 | 13.500 ± 1.690 | 13.500 ± 2.204 | 1.8 same | 0.0 same |
+| Wait p90, censored | 73.375 ± 7.090 | 96.125 ± 3.227 | 93.125 ± 2.532 | 7.4 regressed | -2.1 same |
+| Wait p99, censored | 108.125 ± 4.643 | 117.000 ± 3.665 | 116.250 ± 2.550 | 4.3 regressed | -0.5 same |
+| Guest seconds per ride boarding (`use.guestSecondsPerRide`) | 97.478 ± 3.531 | 91.157 ± 3.279 | 91.825 ± 2.833 | -3.5 improved | 0.4 same |
+| Happiness, guest-time weighted | 49.007 ± 3.130 | 63.260 ± 1.160 | 63.812 ± 1.070 | 12.7 improved | 1.0 same |
+| Happiness of the guests still inside | 48.217 ± 4.606 | 64.323 ± 3.247 | 65.133 ± 3.087 | 8.6 improved | 0.5 same |
+| Departures per admission | 0.599 ± 0.051 | 0.413 ± 0.031 | 0.405 ± 0.033 | -9.1 improved | -0.5 same |
+| Happiness-0 departures per admission | 0.528 ± 0.047 | 0.100 ± 0.024 | 0.096 ± 0.020 | -23.9 improved | -0.4 same |
+| Use Gini over the rides | 0.198 ± 0.037 | 0.106 ± 0.015 | 0.107 ± 0.010 | -6.8 improved | 0.2 same |
+| Revenue per admitted guest | 82.062 ± 8.502 | 103.801 ± 8.311 | 107.961 ± 7.397 | 6.5 improved | 1.1 same |
+| Guests with no choice for over 50 turns | 1.250 ± 1.035 | 1.250 ± 1.488 | 1.375 ± 1.061 | 0.2 same | 0.2 same |
+| Guests in the park (mean) | 32.840 ± 1.877 | 40.726 ± 0.880 | 40.803 ± 0.843 | 10.9 changed | 0.2 same |
+| Admissions | 63.875 ± 0.354 | 63.875 ± 0.354 | 63.875 ± 0.354 | 0.0 same | 0.0 same |
+
+1.3.0 is **the same as 1.2.0 within the noise on every metric** (the censored p90 is 2.1 SE lower, "same"), and its two wait targets fail against the default (+7.4 and +4.3 SE; the same as 1.2.0 failed them). Phase 2 and 3's gains hold: happiness +12.7 SE, revenue per admitted guest +6.5, price rejections -27.0, the use Gini -6.8, departures per admission -9.1. Boardings per seed are 293 (1.2.0: 293, default 186), and 16 refusals by patience happen in all 8 seeds together. Only 2 of the 8 seeds end in a different state hash from 1.2.0. `--guest-compare` against the default exits 1 because of the wait targets; against 1.2.0 it exits 0.
+
+**Level parks.** Every seed of the four level parks ends in the same state hash as under 1.2.0, so every metric equals the 1.2.0 run (and the phase 3 table above): one ride, no alternative, no rule acts. Against the default the only regression is the one phase 3 already had (Space's median wait 33.0 to 35.3).
+
+**What the first build got wrong** (found by an independent review, kept here so the next phase does not repeat it). The first 1.3.0 build counted the walkers (`Reservations`) as ahead of a guest that was already on the back cell, and scanned every open ride as an alternative. It measured p90 43 and p99 81 turns, "both targets pass", with a boarded share of 0.583 and 266 boardings a seed (1.2.0: 293). Those wait numbers were not a better queue: refused guests re-attempted (attempts 457 against 387), 34 percent of refusals were followed by another, and by the guest's own clock the build was worse: **104.2 guest seconds per ride against 1.2.0's 91.2** (the metric above, added because of this), a mean time from a refusal to the next boarding longer than the p99 wait. With walkers set to 0 alone the effect nearly vanished (p90 91, p99 117, boarded share 0.741). The fix is the two corrections above (queue ahead only; alternatives the guest could choose).
+
+**Tuning (after the fixes).** Every row is the same 8 seeds. Scenario censored p90 / p99 (default 73 / 108, 1.2.0 96 / 117), boardings per seed, patience refusals and give-ups (totals over the 8 seeds; the scenario has no other `QueueLimit` rejection under these rules):
+
+| Variant (join / give-up / alternative share) | p90 / p99 | Boardings | Refusals / give-ups | Guest s per ride |
+| --- | ---: | ---: | ---: | ---: |
+| 1.2.0 (rules off) | 96 / 117 | 292.5 | 0 / 0 | 91.2 |
+| 90 / 120 / 80 (shipped) | 93 / 116 | 293.1 | 16 / 0 | 91.8 |
+| 60 / 120 / 80 | 94 / 118 | 291.9 | 21 / 0 | 91.3 |
+| 45 / 120 / 80 | 95 / 119 | 293.5 | 24 / 0 | 90.2 |
+| 30 / 120 / 80 | 95 / 120 | 293.4 | 22 / 0 | 90.1 |
+| 45 / 120 / 100 | 96 / 116 | 290.4 | 70 / 0 | 92.1 |
+| 30 / 120 / 100 (also 20 and 10 / 120 / 100) | 96 / 116 | 289.4 | 74 / 0 | 91.7 |
+| 20 / 120 / 150 | 88 / 116 | 290.8 | 182 / 0 | 93.3 |
+| 60 / 90 / 80 and 60 / 70 / 80 | 94 / 118 | 291.9 | 21 / 0 | 91.3 |
+| 60 / 60 / 100 | 94 / 118 | 292.0 | 47 / 0 | 91.6 |
+| 60 / 50 / 100 | 94 / 118 | 289.2 | 53 / 4 | 91.4 |
+
+No setting meets the targets (the best p90 is 88, at 20 / 120 / 150, which also refuses a guest for a ride only 1.5 times slower than the best: about 23 refusals a seed, guest seconds per ride 93.3). A lower join limit changes nothing: guests that have a clearly quicker, choosable ride rarely stand in a queue beyond 30 turns, and the tail of the scenario's waits (90 to 117 turns) belongs to guests whose rides all have the same queue. The shipped values are the baseline-derived ones; lowering them gains nothing and tighter ones only add refusals.
+
+**Constants** (all in `SmarterGuestsRules`, all OpenTPW's own): join patience 90 turns; give-up 120 turns; patience trait 70 to 130 percent; alternative at most 80 percent of the wait.
+
+**Cost.** The scan runs at an admission and, for a guest not at the front, from its own give-up turn (84 to 156 turns of waiting) on every update, over the park's rides (a view per ride, the host's pure estimate). `--guest-compare` reports the whole extension at 1.25 of the default's CPU per tick on this noisy machine (limit 1.10), of which phase 4's share was not isolated; the gate and the position-0 skip are what keep the scan off the common path.
+
+**Phase 4 tests.** `SmarterGuestsPatienceTests` covers the band, the base, rule 1 (refusal with a clearly quicker alternative as `QueueTooLong`, none without one or with an alternative that is no quicker, **walkers behind the guest not counted**, the band moving the limit, the original's gates first, services and a missing estimate untouched), rule 2 (the turn it fires on, the thought, none for the front of the queue, without an alternative or a join turn, for a shop, sideshow or toilet, or when the remaining wait is short, the band moving the turn, the current place), the host (alternatives asked only when the policy wants them and only from the guest's give-up turn, nothing scanned at the front, the hook only ever running for a waiting guest, never called forward or in an interlude, an alternative being a ride the guest could choose, `IsUnusedAdmissibleRide`'s exclusions), and three constructed parks that use `ParkScenarioOptions.TwinAHoldMilliseconds` and `SingleRide` with the original's choice so queues form: a slow ride refuses guests who have a quicker one (non-empty, rides only), the same park makes a guest give up (non-empty, `Impatient`, after 84 turns), and a one-ride park, whose guests do wait longer than the patience, sees neither. `GuestMeasurementTests.GuestTimePerRideBoardingIsAGuardedHeadlineMetric` covers the new metric and its direction. There is no new saved state, so the save and resume tests are the phase 3 ones (their version strings are 1.3.0): a 1.2.0 park is refused with the usual message. The off path is unchanged: every existing pin holds.
 
 ## Measurement
 
@@ -478,13 +559,13 @@ scenario by scenario against the original policy, in the same environment and wi
   | --- | --- |
   | 2 value for money | Price rejections as a share of attempts (`queue.rejected.price.rate`, down), `happiness.guestTime` (up) |
   | 3 spreading | `use.giniRides` or `use.giniRidesPerCapacity` (down) and `queue.wait.p90.censored` (down), on `park-scenario` only (the level parks have one ride) |
-  | 4 queue patience | `queue.wait.p99.censored` (down) and `queue.wait.p90.censored` (down) |
+  | 4 queue patience | `queue.wait.p99.censored` (down) and `queue.wait.p90.censored` (down), **with `use.guestSecondsPerRide` guarded**: a wait gain that costs guest time per ride is a regression. Phase 4 did not meet this target (see its section) |
   | 5 planning needs | `departures.happinessZero.perAdmission` (down) and `happiness.guestTime` (up) |
   | 6 clean and quiet paths | `happiness.guestTime` (up) |
 
 - **No regression elsewhere:** every other metric with a direction must not move the wrong way by more than 3 standard errors. Up is good for `queue.boarded.rate`, `happiness.guestTime`,
   `happiness.survivors` and `revenue.perAdmittedGuest`; down is good for `queue.rejected.rate`, `queue.rejected.price.rate`, the `queue.wait.*` rows (boarded and censored), `departures.perAdmission`,
-  `departures.happinessZero.perAdmission`, `use.giniRides`, `use.giniRidesPerCapacity` and `guests.stuck`. The others (`admissions`, `queue.attempts`, the abandoned and unfinished rates, the exit-counter
+  `departures.happinessZero.perAdmission`, `use.giniRides`, `use.giniRidesPerCapacity`, `use.guestSecondsPerRide` and `guests.stuck`. The others (`admissions`, `queue.attempts`, the abandoned and unfinished rates, the exit-counter
   and park-closed departures, `use.giniAll`, `guests.meanInPark`) are reported as `changed` or `same` without a verdict; a rule may raise `queue.abandoned.rate` only when its own target is the patience rule.
 - **No pathology:** `queue.superseded` is 0 (a non-zero count fails the comparison), no oscillation (a guest's target changing back and forth), no empty park (`guests.meanInPark` not far below the baseline) and no stuck guests
   (`guests.stuck` not worse beyond the band).

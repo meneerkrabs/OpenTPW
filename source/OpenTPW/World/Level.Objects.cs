@@ -170,6 +170,15 @@ public partial class Level
 			RegisterObjectWithGuests( item );
 		Objects.ObjectPlaced += RegisterObjectWithGuests;
 		Objects.ObjectRemoved += item => Guests?.Unregister( item.Visitors );
+		// [EXT:pools-attractions] the water attractions are derived from the placed objects; a new wave machine gives its pool the default wave settings
+		Objects.ObjectPlaced += _ => PoolSites.Invalidate();
+		Objects.ObjectRemoved += item =>
+		{
+			// whoever is on a removed rope swing, under removed jets or in a removed spa leaves the water at once, as the swimmers of a demolished changing room do
+			if ( PoolAttractions.KindOf( item.Entry ) != PoolAttractionKind.None && item.ThingId != 0 )
+				Guests?.AbortPoolActivitiesOf( item.ThingId );
+			PoolSites.Invalidate();
+		};
 		// A ride with queue cells takes them with it: the refunds are settled while the cells are laid, the cells go once its guests are set down
 		Objects.ObjectRemoving += SettleDemolishedQueue;
 		Objects.ObjectRemoved += ClearDemolishedQueue;
@@ -339,7 +348,9 @@ public partial class Level
 		};
 		Objects.ObjectPlaced += _ => poolExtraSites = null;
 		Objects.ObjectRemoved += _ => poolExtraSites = null;
-		Objects.PlacementRule = ( entry, x, y, rotation ) => PoolChangingRooms.PlacementRule( entry, Guests?.Grid.Cells, x, y, rotation ) ?? PoolExtras.PlacementRule( entry, Guests?.Grid.Cells, Objects, x, y, rotation );
+		Objects.PlacementRule = ( entry, x, y, rotation ) => PoolChangingRooms.PlacementRule( entry, Guests?.Grid.Cells, x, y, rotation ) ?? PoolExtras.PlacementRule( entry, Guests?.Grid.Cells, Objects, x, y, rotation )
+			// [EXT:pools-attractions] a rope swing, jets, wave machine or spa needs pool water on its water side
+			?? PoolAttractions.PlacementRule( entry, Guests?.Grid.Cells, x, y, rotation );
 	}
 
 	/// <summary>Whether a cell of this type keeps objects off it: any type but empty ground, a path and the object, entrance and exit types ([EXT:pools-cell-type]: pool water is one).</summary>
@@ -420,6 +431,12 @@ public partial class Level
 		// [EXT:pools-extras] the water a ladder, board, lounger, lamp or light stands beside stays
 		if ( PoolExtras.NeedsWater( PoolExtras.Sites( Objects ), x, y ) )
 			return PoolBuildResult.ExtraNeedsWater;
+		// [EXT:pools-attractions] the last water cell of a water attraction's water side stays, and so does its current access cell while somebody is using it
+		if ( PoolSites.IsAccessCell( x, y ) )
+			return PoolBuildResult.AttractionAccess;
+		foreach ( var site in PoolSites.All )
+			if ( site.Access == (x, y) && Guests?.Guests.Any( guest => guest.InPoolActivity && guest.PoolActivityTarget == site.ObjectId ) == true )
+				return PoolBuildResult.Swimmers;
 		return null;
 	}
 
@@ -457,6 +474,7 @@ public partial class Level
 				SwimmerRenderer = CreateSwimmerRenderer( Guests, OriginalPark );
 				break;
 		}
+		RefreshPoolEffects();
 	}
 
 	/// <summary>What <see cref="RefreshPools"/> does about the swimmers' renderer this frame.</summary>
@@ -478,7 +496,7 @@ public partial class Level
 				(poolExtraSites, poolExtraSitesTurn) = (PoolExtras.Sites( Objects ), Guests.ParkTurn);
 			return poolExtraSites;
 		};
-		foreach ( var activity in PoolActivityRegistry.Create() )
+		foreach ( var activity in PoolActivityRegistry.Create( PoolSites ) )
 			Guests.RegisterPoolActivity( activity );
 	}
 
@@ -523,8 +541,9 @@ public partial class Level
 			{
 				var feet = GuestRenderer.CellToEngine( park.Heightfield, guest.DrawX, guest.DrawY );
 				var height = guests.Grid.Cells.RawTypeAt( guest.CellX, guest.CellY ) == ParkCellTypes.PoolWater && PoolRenderer?.WaterLevelAt( guest.CellX, guest.CellY ) is { } level ? level : feet.Z;
+				// [EXT:pools-waves] a swimmer bobs on the waves of its pool (the drawn height only; presentation only)
 				if ( !guest.InPoolActivity )
-					return new System.Numerics.Vector3( feet.X, feet.Y, height );
+					return new System.Numerics.Vector3( feet.X, feet.Y, height + PoolWaterEffects.Bob( guests, guest, PoolSites ) );
 				// [EXT:pools-activities] an activity may raise or set the drawn height (a board, a slide, a ladder between the water and the deck); presentation only
 				var region = guests.SwimRoomOf( guest ) is { } room ? guests.SwimRegionOf( room ) : null;
 				var water = region != null && PoolRenderer?.WaterLevelAt( region.Access.X, region.Access.Y ) is { } surface ? surface : height;

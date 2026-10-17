@@ -95,6 +95,17 @@ internal static class Game
 			TpiMissionInspection.Run( args[missionIndex + 1] );
 			return;
 		}
+		// Headless guest measurement (docs/SMARTER-GUESTS.md): the synthetic scenario needs no game data, so it runs before the data is set up; level parks run after (below).
+		if ( args.Contains( "--guest-compare" ) )
+		{
+			Environment.ExitCode = GuestReportCompare.RunCommand( args );
+			return;
+		}
+		if ( args.Contains( "--guest-report" ) && !GuestReport.WantsLevels( args ) )
+		{
+			Environment.ExitCode = GuestReport.RunCommand( args );
+			return;
+		}
 		var pathIndex = Array.IndexOf( args, "--game-path" );
 		string? commandLinePath = null;
 		if ( pathIndex >= 0 )
@@ -232,6 +243,12 @@ internal static class Game
 		if ( args.Contains( "--m3-gate" ) )
 		{
 			Environment.ExitCode = M3Gate.RunCommand( args );
+			return;
+		}
+		// Headless guest report with level parks (docs/SMARTER-GUESTS.md): no window, renderer or audio.
+		if ( args.Contains( "--guest-report" ) )
+		{
+			Environment.ExitCode = GuestReport.RunCommand( args );
 			return;
 		}
 		// Headless M4 attraction/script gate (docs/M4-GATE.md): no window, renderer or audio.

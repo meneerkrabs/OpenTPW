@@ -32,7 +32,7 @@ public static class StaffSpriteRules
 	// [BIN:TPW-EXE:0x5054D0 staff state 6] state 6 has no StaffJob, so no clip plays it in OpenTPW: SetState 0x5054D0 case 6 stamps the idle clock (+0x200) and plays script 0x14 (slot 3, one frame), and ModelState 0x5056E0 returns the member to state 0 after 3 x the role's rate (table 0x785330)
 	// [BIN:TPW-EXE:0x5054D0 staff state 6] nothing in tp.exe writes 6: the SetState call sites pass 0, 1, 2, 3, 4, 5 or 7 or a role setter's parameter (0x4D46D0, 0x4D65D0, 0x4D7330, 0x4DA370, 0x502C20), whose callers pass 0, 1, 8-0xD, 0xF, 0x10, 0x12 or 0x13; the other stores of the state word +0x19C are those setters', the constructor's 0 (0x5185D8) and the entertainer's 0, 1 and 0xE; only the staff serializer 0x504DE0 can restore a 6 from a save, so the clip stays for a loaded save
 	public static readonly StaffClip State6 = new( 0x14, 3 );
-	/// <summary>Script 0x15: the dangling person of the hire and carry tools, slot 6 frames 0-3 looping; the frames come from the bank's .TPC, as the .FPC holds 2 x 2 pixel placeholders there.</summary>
+	/// <summary>Script 0x15: the dangling person of the hire and carry tools, slot 6 frames 0-3 looping; direction 4's frames come from the bank's .TPC, as the .FPC holds 2 x 2 pixel placeholders there.</summary>
 	public static readonly StaffClip Dangle = new( 0x15, 6 );
 	/// <summary>Script 0x16: a guard catching (slot 7 once) and then carrying the kid (slot 8 looping).</summary>
 	public static readonly StaffClip CatchAndCarry = new( 0x16, 7 );
@@ -212,8 +212,8 @@ public sealed class StaffSpriteSet
 		{
 			if ( StaffSpriteRules.Banks( type, level ) is not { } set )
 				continue;
-			// [BIN:TPW-EXE:0x0046C730 staff tool enter] the hire and carry tools' sprite is script 0x15 (0x0074ED98, slot 6 frames 0-3 looping) of the role's sprite type (0x00475A10: mechanics 6, handymen 5, entertainers 4, guards 7, researchers 8; table 0x00763F88) with the candidate's variant (+0x11): the person's own bank, from its .tpc (GUEST-022)
-			var banks = GuestSpriteAtlas.LoadSets( set.Folder, $"staff-{type.ToString().ToLowerInvariant()}", lowDetailSlot: StaffSpriteRules.Dangle.Slot );
+			// [BIN:TPW-EXE:0x0046C730 staff tool enter] the hire and carry tools' sprite is script 0x15 (0x0074ED98, slot 6 frames 0-3 looping) of the role's sprite type (0x00475A10: mechanics 6, handymen 5, entertainers 4, guards 7, researchers 8; table 0x00763F88) with the candidate's variant (+0x11): the person's own bank, from its .tpc (GUEST-022); the tool frame 0x0046C480 always draws direction 4, so only those four frames are taken
+			var banks = GuestSpriteAtlas.LoadSets( set.Folder, $"staff-{type.ToString().ToLowerInvariant()}", lowDetailFrames: (StaffSpriteRules.Dangle.Slot, StaffRenderer.DangleDirection) );
 			ranges[(int)type] = (atlases.Count, banks.Count);
 			atlases.AddRange( banks );
 		}

@@ -5,7 +5,8 @@ namespace OpenTPW;
 /// <summary>
 /// Staff placement check of the native smoke test (docs/STAFF-PLACEMENT.md): a handyman is hired through the staff window, placed with a click on the
 /// park view, drawn (GPU readback with and without the staff renderer around its feet), picked up through the window's pick-up button and dropped on another
-/// cell, all through <see cref="OpenTPW.Hud.ParkHud.Update"/> at projected cell centres.
+/// cell, all through <see cref="OpenTPW.Hud.ParkHud.Update"/> at projected cell centres; while each tool runs the pointer also visits three nearby points and the
+/// dangling person has to hang at the ground point under each one.
 /// </summary>
 internal sealed partial class SandboxSmokeTest
 {
@@ -15,7 +16,7 @@ internal sealed partial class SandboxSmokeTest
 	private System.Numerics.Vector2 staffPointA, staffPointB;
 	private StaffMember? smokeHandyman;
 	private byte[]? staffVisiblePixels;
-	private int staffProbe, staffCandidateId, staffEmployed;
+	private int staffProbe, staffCandidateId, staffEmployed, staffProbeInjected, staffProbeLastFrame = -1;
 	private readonly List<(float X, float Y)> staffDangleSeen = new();
 
 	/// <summary>Three pointer positions a few pixels apart (inside one cell or across two): the dangling sprite has to follow each one, not stay at a cell centre.</summary>
@@ -27,14 +28,19 @@ internal sealed partial class SandboxSmokeTest
 	};
 
 	/// <summary>
-	/// One probe of the sprite-follows-the-pointer check: the pointer sits at the probe point for a few frames; then the sprite has to hang at the ground point under it
+	/// One probe of the sprite-follows-the-pointer check: the pointer sits at the probe point for three frames in a row; then the sprite has to hang at the ground point under it
 	/// and the hire window must not cover the park. False while the probe is still waiting; true when all probes have passed.
 	/// </summary>
 	private bool ProbeDangle( System.Numerics.Vector2 origin, System.Numerics.Vector2 viewport, StaffRenderer renderer, string tool )
 	{
-		if ( frame < staffStageFrame + 3 )
+		// the injected pointer lasts one frame: a frame this update skips (the ride-head readback returns early) hands the HUD the real pointer, so the count starts again
+		if ( frame != staffProbeLastFrame + 1 )
+			staffProbeInjected = 0;
+		staffProbeLastFrame = frame;
+		if ( staffProbeInjected < 3 )
 		{
 			injectInput?.Invoke( UiInput.Idle( StaffProbePoint( origin, staffProbe ) ) );
+			staffProbeInjected++;
 			return false;
 		}
 		var point = StaffProbePoint( origin, staffProbe );
@@ -53,6 +59,7 @@ internal sealed partial class SandboxSmokeTest
 		if ( staffProbe < 3 )
 		{
 			injectInput?.Invoke( UiInput.Idle( StaffProbePoint( origin, staffProbe ) ) );
+			staffProbeInjected = 1;
 			return false;
 		}
 		Require( staffDangleSeen.Distinct().Count() == 3, $"the {tool} sprite moved with the pointer on every probe, not snapped to one spot" );
@@ -115,8 +122,7 @@ internal sealed partial class SandboxSmokeTest
 				// before the click: the hired handyman hangs at the pointer (probes), and nothing covers the park
 				staffStage = 8;
 				staffStageFrame = frame;
-				staffProbe = 0;
-				injectInput?.Invoke( UiInput.Idle( staffPointA ) );
+				staffProbe = staffProbeInjected = 0;
 				break;
 			}
 			case 8:
@@ -124,6 +130,7 @@ internal sealed partial class SandboxSmokeTest
 				if ( !ProbeDangle( staffPointA, viewport, renderer, "Place" ) )
 					return;
 				hud.Update( hudContext, UiInput.Idle( staffPointA ) );
+				Require( placement.Kind == StaffToolKind.Place && placement.HoverCell == staffCellA && placement.HoverValid, $"the Place tool is still armed over its cell after the probes ({placement.Kind}, {placement.HoverCell})" );
 				Press( staffPointA );
 				var candidateId = staffCandidateId;
 				Require( !placement.IsActive && economy.Staff.Members.Count == staffEmployed + 1, "a click on a valid cell hires and places" );
@@ -193,7 +200,7 @@ internal sealed partial class SandboxSmokeTest
 				Require( placement.HoverCell == staffCellB && placement.HoverValid, "the Carry tool follows the hovered cell" );
 				staffStage = 9;
 				staffStageFrame = frame;
-				staffProbe = 0;
+				staffProbe = staffProbeInjected = 0;
 				break;
 			case 9:
 				if ( !ProbeDangle( staffPointB, viewport, renderer, "Carry" ) )
@@ -211,6 +218,7 @@ internal sealed partial class SandboxSmokeTest
 				break;
 			case 5:
 				hud.Update( hudContext, UiInput.Idle( staffPointB ) );
+				Require( placement.Kind == StaffToolKind.Carry && placement.HoverCell == staffCellB && placement.HoverValid, $"the Carry tool is still armed over the drop cell after the probes ({placement.Kind}, {placement.HoverCell})" );
 				Press( staffPointB );
 				Require( !placement.IsActive && StaffPlacementRules.CellOf( smokeHandyman! ) == staffCellB && smokeHandyman!.State == StaffState.Idle && smokeHandyman.Navigation == null,
 					"a click on another valid cell drops the handyman there" );

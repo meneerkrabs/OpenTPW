@@ -145,18 +145,33 @@ public sealed class PoolRiverMap
 	/// <summary>The flow direction of a river cell as a unit step ((1, 0) east, (0, 1) south, ...), or null when the cell is no river cell.</summary>
 	public (int Dx, int Dy)? FlowAt( int x, int y ) => NextCell( x, y ) is { } next ? (next.X - x, next.Y - y) : null;
 
+	/// <summary>The cell the current brings a swimmer in (x, y) from: the previous cell of its ring, or null when the cell is no river cell.</summary>
+	public (int X, int Y)? PreviousCell( int x, int y )
+	{
+		if ( !positions.TryGetValue( (x, y), out var position ) )
+			return null;
+		var cells = rings[position.Ring].Cells;
+		return cells[(position.Index + cells.Count - 1) % cells.Count];
+	}
+
 	/// <summary>
-	/// One park turn of a floater at (<paramref name="x"/>, <paramref name="y"/>) (16.16 cells) in a river cell: it drifts <paramref name="speed"/> along the cell's flow and loses 1/8 of its offset from
-	/// the middle of the lane, so it follows the ring round its corners. Returns false (and leaves the point) when the point is in no river cell. Integers only.
+	/// One park turn of a floater at (<paramref name="x"/>, <paramref name="y"/>) (16.16 cells) in a river cell. It keeps the direction it came in by until it reaches the middle of the cell, then turns into
+	/// the cell's own flow, so at a bend it follows the middle lines of the lane (which are free water in every cell of a ring, inner corners included) instead of cutting the corner; across the direction
+	/// of travel it loses an eighth of its offset from the middle of the lane each turn. Returns false (and leaves the point) when the point is in no river cell. Integers only.
 	/// </summary>
 	public bool Float( ref int x, ref int y, int speed )
 	{
-		if ( FlowAt( x >> 16, y >> 16 ) is not { } flow )
+		var cell = (X: x >> 16, Y: y >> 16);
+		if ( FlowAt( cell.X, cell.Y ) is not { } flow || PreviousCell( cell.X, cell.Y ) is not { } previous )
 			return false;
-		var (centreX, centreY) = PoolSwimRegion.Centre( (x >> 16, y >> 16) );
-		// along the flow: the speed; across it: part of the offset from the middle of the cell
-		var newX = x + flow.Dx * speed + (flow.Dx == 0 ? (centreX - x) >> PoolRiverSettings.CentringShift : 0);
-		var newY = y + flow.Dy * speed + (flow.Dy == 0 ? (centreY - y) >> PoolRiverSettings.CentringShift : 0);
+		var incoming = (Dx: cell.X - previous.X, Dy: cell.Y - previous.Y);
+		var (centreX, centreY) = PoolSwimRegion.Centre( cell );
+		// how far before the middle of the cell, along the way in, the floater still is (positive: not there yet)
+		var before = -((x - centreX) * incoming.Dx + (y - centreY) * incoming.Dy);
+		var (dx, dy) = incoming != flow && before > 0 ? incoming : flow;
+		var step = dx == incoming.Dx && dy == incoming.Dy && incoming != flow ? Math.Min( speed, before ) : speed;
+		var newX = x + dx * step + (dx == 0 ? (centreX - x) >> PoolRiverSettings.CentringShift : 0);
+		var newY = y + dy * step + (dy == 0 ? (centreY - y) >> PoolRiverSettings.CentringShift : 0);
 		(x, y) = (newX, newY);
 		return true;
 	}

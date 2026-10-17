@@ -74,13 +74,13 @@ public sealed class PoolSprayRenderer : Entity
 	private const int VerticesPerQuad = 6;
 	private readonly Func<IEnumerable<PoolSpraySource>> sources;
 	private readonly Func<double> seconds;
-	private readonly Vertex[] vertices = new Vertex[PoolSpray.Droplets * 16 * VerticesPerQuad];
+	private readonly Vertex[] vertices = new Vertex[PoolSpray.Droplets * 64 * VerticesPerQuad];
 	private Texture? white;
 	private Material<ObjectUniformBuffer>? material;
 	private DeviceBuffer? vertexBuffer;
 	private bool deleted;
 
-	/// <summary>Droplets drawn in the last frame (smoke instrumentation).</summary>
+	/// <summary>Droplets drawn in the last frame (smoke instrumentation); the buffer holds the sprays of 64 jets, any more are not drawn.</summary>
 	public int DrawnDroplets { get; private set; }
 
 	public PoolSprayRenderer( Func<IEnumerable<PoolSpraySource>> sources, Func<double> seconds )

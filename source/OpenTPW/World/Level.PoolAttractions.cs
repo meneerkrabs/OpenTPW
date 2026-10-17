@@ -20,6 +20,7 @@ public partial class Level
 			return;
 		var guests = Guests;
 		PoolRenderer.Turn ??= () => PoolWaterEffects.SmoothTurn( guests );
+		PoolRenderer.Sites ??= PoolSites;
 		if ( PoolSprayRenderer == null && PoolSites.All.Any( site => site.Kind == PoolAttractionKind.Jets ) )
 			PoolSprayRenderer = new PoolSprayRenderer( PoolSpraySources, () => guests.TimeSeconds );
 	}
@@ -48,10 +49,11 @@ public partial class Level
 	public PoolWaveSettings? CyclePoolWaves( OriginalObject item )
 	{
 		if ( !FeatureGates.Pools || Guests?.Grid.Cells is not { } cells || PoolAttractions.KindOf( item.Entry ) != PoolAttractionKind.WaveMachine
-			|| PoolSites.Find( item.ThingId ) is not { } site || PoolSwimRegion.Build( cells, site.Access ) is not { } region )
+			|| PoolSites.Find( item.ThingId ) is not { } site )
 			return null;
-		var next = PoolWaveSettings.NextPreset( PoolWaveSettings.Read( cells, region ) );
-		PoolWaveSettings.Write( cells, region, next );
+		// the settings are the machine's own, in the flags of its access cell; a machine whose cell holds none runs the default, so the first click moves on from it
+		var next = PoolWaveSettings.NextPreset( PoolWaveSettings.At( cells, site.Access ) );
+		PoolWaveSettings.SetAt( cells, site.Access, next );
 		return next;
 	}
 

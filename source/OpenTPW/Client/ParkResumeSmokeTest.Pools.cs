@@ -79,7 +79,7 @@ internal sealed partial class ParkResumeSmokeTest
 		Require( swimmers.All( guest => guest.AttractionId == room.Visitors.AttractionId ), "and names its changing room" );
 		// [EXT:pools-river] [EXT:pools-waves] [EXT:pools-attractions] the ring is derived again from the saved flags, the pool kept its wave settings, and the water attractions are placed objects again
 		Require( PoolRiverMap.Of( cells ).Rings.Count == 1 && PoolRiverMap.Of( cells ).Rings[0].Cells.Count == 16, "the resumed park holds its lazy river ring of 16 cells" );
-		var waves = PoolWaveSettings.Read( cells, region );
+		var waves = level.PoolSites.All.Where( site => site.Kind == PoolAttractionKind.WaveMachine ).Select( site => (PoolWaveSettings?)PoolWaveSettings.At( cells, site.Access ) ).FirstOrDefault();
 		Require( waves != null || !level.Objects.Objects.Any( item => !item.IsDeleted && PoolAttractions.KindOf( item.Entry ) == PoolAttractionKind.WaveMachine ), "the resumed pool holds its wave settings (a wave machine stands beside it)" );
 		var kinds = level.Objects.Objects.Where( item => !item.IsDeleted ).Select( item => PoolAttractions.KindOf( item.Entry ) ).Where( kind => kind != PoolAttractionKind.None ).Distinct().Count();
 		Require( kinds >= 1 && level.PoolSites.All.Count == kinds, $"the resumed park holds its water attractions beside the water ({kinds} kinds, {level.PoolSites.All.Count} sites)" );

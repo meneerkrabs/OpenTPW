@@ -171,7 +171,7 @@ public partial class Level
 		Objects.ObjectPlaced += RegisterObjectWithGuests;
 		Objects.ObjectRemoved += item => Guests?.Unregister( item.Visitors );
 		// [EXT:pools-attractions] the water attractions are derived from the placed objects; a new wave machine gives its pool the default wave settings
-		Objects.ObjectPlaced += item => { PoolSites.Invalidate(); PoolAttractions.OnPlaced( item, Guests?.Grid.Cells ); };
+		Objects.ObjectPlaced += _ => PoolSites.Invalidate();
 		Objects.ObjectRemoved += item =>
 		{
 			// whoever is on a removed rope swing, under removed jets or in a removed spa leaves the water at once, as the swimmers of a demolished changing room do
@@ -389,8 +389,13 @@ public partial class Level
 		foreach ( var item in Objects.Objects )
 			if ( !item.IsDeleted && item.Visitors.IsChangingRoom && item.Visitors.PoolAccessCandidates.Contains( (x, y) ) )
 				return PoolBuildResult.ChangingRoomAccess;
-		// [EXT:pools-attractions] the last water cell of a water attraction's water side stays
-		return PoolSites.IsAccessCell( x, y ) ? PoolBuildResult.AttractionAccess : null;
+		// [EXT:pools-attractions] the last water cell of a water attraction's water side stays, and so does its current access cell while somebody is using it
+		if ( PoolSites.IsAccessCell( x, y ) )
+			return PoolBuildResult.AttractionAccess;
+		foreach ( var site in PoolSites.All )
+			if ( site.Access == (x, y) && Guests?.Guests.Any( guest => guest.InPoolActivity && guest.PoolActivityTarget == site.ObjectId ) == true )
+				return PoolBuildResult.Swimmers;
+		return null;
 	}
 
 	/// <summary>[EXT:pools-tool] The headless pool builder over the level's cell map (original levels, not a read-only visit); null otherwise (docs/POOLS.md).</summary>
@@ -456,7 +461,7 @@ public partial class Level
 				var height = guests.Grid.Cells.RawTypeAt( guest.CellX, guest.CellY ) == ParkCellTypes.PoolWater && PoolRenderer?.WaterLevelAt( guest.CellX, guest.CellY ) is { } level ? level : feet.Z;
 				// [EXT:pools-waves] a swimmer bobs on the waves of its pool (the drawn height only; presentation only)
 				if ( !guest.InPoolActivity )
-					return new System.Numerics.Vector3( feet.X, feet.Y, height + PoolWaterEffects.Bob( guests, guest ) );
+					return new System.Numerics.Vector3( feet.X, feet.Y, height + PoolWaterEffects.Bob( guests, guest, PoolSites ) );
 				// [EXT:pools-activities] an activity may raise or set the drawn height (a board, a slide, a ladder between the water and the deck); presentation only
 				var region = guests.SwimRoomOf( guest ) is { } room ? guests.SwimRegionOf( room ) : null;
 				var water = region != null && PoolRenderer?.WaterLevelAt( region.Access.X, region.Access.Y ) is { } surface ? surface : height;

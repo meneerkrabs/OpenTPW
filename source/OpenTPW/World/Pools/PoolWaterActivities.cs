@@ -47,22 +47,56 @@ public static class PoolAttractionSettings
 internal static class PoolActivityHelpers
 {
 	/// <summary>The swim region of the guest's changing room, or null when the room or its pool is gone.</summary>
-	public static PoolSwimRegion? RegionOf( GuestSimulation simulation, Guest guest )
+	public static PoolSwimRegion? RegionOf( GuestSimulation simulation, Guest guest ) =>
+		simulation.SwimRoomOf( guest ) is { } ride ? simulation.SwimRegionOf( ride ) : null;
+
+	private sealed class OccupancyCache
 	{
-		foreach ( var ride in simulation.Attractions )
-			if ( ride.AttractionId == guest.AttractionId )
-				return simulation.SwimRegionOf( ride );
-		return null;
+		public long Tick = -1;
+		public readonly Dictionary<(string Activity, int Target), int> Counts = new();
 	}
 
-	/// <summary>How many guests are doing this activity for this target now.</summary>
-	public static int Occupancy( GuestSimulation simulation, string activityId, int targetId )
+	private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<GuestSimulation, OccupancyCache> occupancies = new();
+
+	private static OccupancyCache OccupancyOf( GuestSimulation simulation )
 	{
-		var count = 0;
+		var occupancy = occupancies.GetOrCreateValue( simulation );
+		// rebuilt once per tick; within a tick the activities keep it exact themselves (Started, Left)
+		if ( occupancy.Tick != simulation.TickCount )
+		{
+			occupancy.Tick = simulation.TickCount;
+			occupancy.Counts.Clear();
+			foreach ( var other in simulation.Guests )
+				if ( other.State == GuestState.PoolActivity && other.PoolActivityId is { } id )
+					occupancy.Counts[(id, other.PoolActivityTarget)] = occupancy.Counts.GetValueOrDefault( (id, other.PoolActivityTarget) ) + 1;
+		}
+		return occupancy;
+	}
+
+	/// <summary>How many guests are doing this activity for this target now (counted once per tick, not per swimmer and offer).</summary>
+	public static int Occupancy( GuestSimulation simulation, string activityId, int targetId ) =>
+		OccupancyOf( simulation ).Counts.GetValueOrDefault( (activityId, targetId) );
+
+	/// <summary>
+	/// A guest is starting the activity for the target (the host has set its state): the exact number of others doing it, by one scan (starts are rare, offers are not), and the tick's count set to that plus the
+	/// guest so the swimmers after it this tick see it.
+	/// </summary>
+	public static int Starting( GuestSimulation simulation, Guest guest, string activityId, int targetId )
+	{
+		var others = 0;
 		foreach ( var other in simulation.Guests )
-			if ( other.State == GuestState.PoolActivity && other.PoolActivityTarget == targetId && other.PoolActivityId == activityId )
-				count++;
-		return count;
+			if ( other != guest && other.State == GuestState.PoolActivity && other.PoolActivityTarget == targetId && other.PoolActivityId == activityId )
+				others++;
+		OccupancyOf( simulation ).Counts[(activityId, targetId)] = others + 1;
+		return others;
+	}
+
+	/// <summary>A guest left the activity this tick (back in the water, session over, aborted).</summary>
+	public static void Left( GuestSimulation simulation, string activityId, int targetId )
+	{
+		var occupancy = OccupancyOf( simulation );
+		if ( occupancy.Counts.TryGetValue( (activityId, targetId), out var count ) )
+			occupancy.Counts[(activityId, targetId)] = Math.Max( 0, count - 1 );
 	}
 
 	/// <summary>
@@ -110,9 +144,19 @@ public sealed class RopeSwingActivity : IPoolActivity
 		return chosen != null ? new PoolActivityOffer( chosen.ObjectId, chosen.Access.X, chosen.Access.Y ) : null;
 	}
 
-	public bool Start( GuestSimulation simulation, Guest guest, PoolActivityOffer offer, ref uint random ) => sites.Find( offer.TargetId ) != null && PoolActivityHelpers.Occupancy( simulation, Id, offer.TargetId ) == 1;
+	public bool Start( GuestSimulation simulation, Guest guest, PoolActivityOffer offer, ref uint random ) =>
+		sites.Find( offer.TargetId ) != null && PoolActivityHelpers.Starting( simulation, guest, Id, offer.TargetId ) == 0;
 
 	public PoolActivityStep Update( GuestSimulation simulation, Guest guest, ref uint random )
+	{
+		var target = guest.PoolActivityTarget;
+		var step = UpdateCore( simulation, guest, ref random );
+		if ( step != PoolActivityStep.Continue )
+			PoolActivityHelpers.Left( simulation, Id, target );
+		return step;
+	}
+
+	private PoolActivityStep UpdateCore( GuestSimulation simulation, Guest guest, ref uint random )
 	{
 		if ( sites.Find( guest.PoolActivityTarget ) is not { } site || PoolActivityHelpers.RegionOf( simulation, guest ) is not { } region )
 			return PoolActivityStep.BackInWater;
@@ -190,10 +234,7 @@ public sealed class RopeSwingActivity : IPoolActivity
 		};
 	}
 
-	public void Abort( GuestSimulation simulation, Guest guest )
-	{
-		// nothing is held: the platform and the rope belong to the object, which is not told who is on it
-	}
+	public void Abort( GuestSimulation simulation, Guest guest ) => PoolActivityHelpers.Left( simulation, Id, guest.PoolActivityTarget );
 }
 
 /// <summary>
@@ -218,9 +259,18 @@ public sealed class JetsActivity : IPoolActivity
 	}
 
 	public bool Start( GuestSimulation simulation, Guest guest, PoolActivityOffer offer, ref uint random ) =>
-		sites.Find( offer.TargetId ) != null && PoolActivityHelpers.Occupancy( simulation, Id, offer.TargetId ) <= PoolAttractionSettings.JetCapacity;
+		sites.Find( offer.TargetId ) != null && PoolActivityHelpers.Starting( simulation, guest, Id, offer.TargetId ) < PoolAttractionSettings.JetCapacity;
 
 	public PoolActivityStep Update( GuestSimulation simulation, Guest guest, ref uint random )
+	{
+		var target = guest.PoolActivityTarget;
+		var step = UpdateCore( simulation, guest, ref random );
+		if ( step != PoolActivityStep.Continue )
+			PoolActivityHelpers.Left( simulation, Id, target );
+		return step;
+	}
+
+	private PoolActivityStep UpdateCore( GuestSimulation simulation, Guest guest, ref uint random )
 	{
 		if ( sites.Find( guest.PoolActivityTarget ) is not { } site || PoolActivityHelpers.RegionOf( simulation, guest ) is not { } region )
 			return PoolActivityStep.BackInWater;
@@ -256,9 +306,7 @@ public sealed class JetsActivity : IPoolActivity
 
 	public int SpriteSlot( Guest guest ) => guest.PoolActivityPhase == 2 ? PoolSwimSlots.SittingInWater : guest.PoolActivityPhase == 1 ? PoolSwimSlots.TreadWater : PoolSwimSlots.Crawl;
 
-	public void Abort( GuestSimulation simulation, Guest guest )
-	{
-	}
+	public void Abort( GuestSimulation simulation, Guest guest ) => PoolActivityHelpers.Left( simulation, Id, guest.PoolActivityTarget );
 }
 
 /// <summary>
@@ -301,12 +349,22 @@ public sealed class SpaActivity : IPoolActivity
 				&& (other.PoolActivityX, other.PoolActivityY) == seat ) )
 				continue;
 			(guest.PoolActivityX, guest.PoolActivityY) = seat;
+			PoolActivityHelpers.Starting( simulation, guest, Id, offer.TargetId );
 			return true;
 		}
 		return false;
 	}
 
 	public PoolActivityStep Update( GuestSimulation simulation, Guest guest, ref uint random )
+	{
+		var target = guest.PoolActivityTarget;
+		var step = UpdateCore( simulation, guest, ref random );
+		if ( step != PoolActivityStep.Continue )
+			PoolActivityHelpers.Left( simulation, Id, target );
+		return step;
+	}
+
+	private PoolActivityStep UpdateCore( GuestSimulation simulation, Guest guest, ref uint random )
 	{
 		if ( sites.Find( guest.PoolActivityTarget ) is not { } site || PoolActivityHelpers.RegionOf( simulation, guest ) is not { } region )
 			return PoolActivityStep.BackInWater;
@@ -334,8 +392,7 @@ public sealed class SpaActivity : IPoolActivity
 				}
 				return PoolActivityStep.Continue;
 			default:
-				PoolActivityHelpers.Gain( guest, guest.PoolActivityTurns == 0 ? PoolAttractionSettings.SpaHappiness : 0f );
-				guest.PoolActivityTurns++;
+				PoolActivityHelpers.Gain( guest, PoolAttractionSettings.SpaHappiness );
 				simulation.PlacePoolGuest( guest, steps.X, steps.Y );
 				return PoolActivityStep.BackInWater;
 		}
@@ -346,9 +403,7 @@ public sealed class SpaActivity : IPoolActivity
 	/// <summary>A seated guest sits in the water of the tub: a little above the ground of the tile.</summary>
 	public float? FeetHeight( GuestSimulation simulation, Guest guest, PoolFeetHeights heights ) => guest.PoolActivityPhase == 1 ? heights.Deck + 0.35f : null;
 
-	public void Abort( GuestSimulation simulation, Guest guest )
-	{
-	}
+	public void Abort( GuestSimulation simulation, Guest guest ) => PoolActivityHelpers.Left( simulation, Id, guest.PoolActivityTarget );
 }
 
 /// <summary>
@@ -377,22 +432,34 @@ public sealed class RiverActivity : IPoolActivity
 
 	public PoolActivityStep Update( GuestSimulation simulation, Guest guest, ref uint random )
 	{
+		var target = guest.PoolActivityTarget;
+		var step = UpdateCore( simulation, guest, ref random );
+		if ( step != PoolActivityStep.Continue )
+			PoolActivityHelpers.Left( simulation, Id, target );
+		return step;
+	}
+
+	private PoolActivityStep UpdateCore( GuestSimulation simulation, Guest guest, ref uint random )
+	{
 		if ( PoolActivityHelpers.RegionOf( simulation, guest ) is not { } region )
 			return PoolActivityStep.BackInWater;
 		var navigation = guest.Navigation;
 		int x = navigation.X, y = navigation.Y;
-		if ( --guest.PoolActivityTurns <= 0 || !PoolRiverMap.Of( simulation.Grid.Cells ).Float( ref x, ref y, PoolRiverSettings.FlowSpeed ) || !region.IsWater( x, y ) )
+		// a ring broken under the floater lets it go, unpaid; only a float that ran its turns is paid
+		if ( !PoolRiverMap.Of( simulation.Grid.Cells ).Float( ref x, ref y, PoolRiverSettings.FlowSpeed ) )
+			return PoolActivityStep.BackInWater;
+		if ( --guest.PoolActivityTurns <= 0 )
 		{
 			PoolActivityHelpers.Gain( guest, PoolRiverSettings.HappinessGain );
 			return PoolActivityStep.BackInWater;
 		}
-		simulation.MovePoolGuest( guest, x, y );
+		// the float never leaves free water: a step that would (a lane the rim narrows) is not taken this turn
+		if ( region.IsWater( x, y ) )
+			simulation.MovePoolGuest( guest, x, y );
 		return PoolActivityStep.Continue;
 	}
 
 	public int SpriteSlot( Guest guest ) => PoolSwimSlots.FloatingInRing;
 
-	public void Abort( GuestSimulation simulation, Guest guest )
-	{
-	}
+	public void Abort( GuestSimulation simulation, Guest guest ) => PoolActivityHelpers.Left( simulation, Id, guest.PoolActivityTarget );
 }

@@ -17,7 +17,7 @@ public sealed class PoolWaterEffects : IPoolActivity, IPoolAmbient
 
 	private sealed class WaveCache
 	{
-		public int Writes = -1;
+		public int Writes = -1, SitesVersion = -1;
 		public PoolWaveSettings? Settings;
 	}
 
@@ -35,14 +35,21 @@ public sealed class PoolWaterEffects : IPoolActivity, IPoolAmbient
 	{
 	}
 
-	/// <summary>The wave settings of a swim region, read from its cells once per change of the pool cells (<see cref="ParkCellMap.PoolWrites"/>), or null when the pool has none.</summary>
-	public static PoolWaveSettings? WavesOf( ParkCellMap cells, PoolSwimRegion region )
+	/// <summary>
+	/// The settings the waves of a swim region run with (<see cref="PoolWaveSettings.ActiveIn"/>: its wave machine whose settings are on, and none without a machine), cached per region until a pool cell or an object
+	/// changes. Null when the pool has no waves.
+	/// </summary>
+	public static PoolWaveSettings? WavesOf( PoolAttractionSites? sites, ParkCellMap cells, PoolSwimRegion region )
 	{
+		if ( sites == null )
+			return null;
 		var cache = caches.GetOrCreateValue( region );
-		if ( cache.Writes != cells.PoolWrites )
+		var version = sites.All.Count >= 0 ? sites.Version : 0;
+		if ( cache.Writes != cells.PoolWrites || cache.SitesVersion != version )
 		{
-			cache.Settings = PoolWaveSettings.Read( cells, region );
+			cache.Settings = PoolWaveSettings.ActiveIn( sites, cells, region );
 			cache.Writes = cells.PoolWrites;
+			cache.SitesVersion = sites.Version;
 		}
 		return cache.Settings;
 	}
@@ -50,7 +57,7 @@ public sealed class PoolWaterEffects : IPoolActivity, IPoolAmbient
 	public void Ambient( GuestSimulation simulation, Guest guest, PoolSwimRegion region )
 	{
 		var turn = simulation.ParkTurn;
-		if ( WavesOf( simulation.Grid.Cells, region ) is { } waves && PoolWaves.HappinessGain( waves, turn ) is var gain and > 0f )
+		if ( WavesOf( sites, simulation.Grid.Cells, region ) is { } waves && PoolWaves.HappinessGain( waves, turn ) is var gain and > 0f )
 			guest.Happiness = MeterMath.Add( guest.Happiness, gain );
 		if ( sites != null && turn % PoolAttractionSettings.SprayPeriodTurns == 0 && InSpray( sites, region, guest.CellX, guest.CellY ) )
 			guest.Happiness = MeterMath.Add( guest.Happiness, PoolAttractionSettings.SprayHappiness );
@@ -59,9 +66,13 @@ public sealed class PoolWaterEffects : IPoolActivity, IPoolAmbient
 	/// <summary>Whether a cell is in the spray of a water jet of the region: within <see cref="PoolAttractionSettings.SprayRadius"/> cells (Chebyshev) of its water-side cell.</summary>
 	public static bool InSpray( PoolAttractionSites sites, PoolSwimRegion region, int x, int y )
 	{
-		foreach ( var jet in sites.In( region, PoolAttractionKind.Jets ) )
-			if ( Math.Max( Math.Abs( x - jet.Access.X ), Math.Abs( y - jet.Access.Y ) ) <= PoolAttractionSettings.SprayRadius )
+		var all = sites.All;
+		for ( var i = 0; i < all.Count; i++ )
+		{
+			var jet = all[i];
+			if ( jet.Kind == PoolAttractionKind.Jets && region.Contains( jet.Access.X, jet.Access.Y ) && Math.Max( Math.Abs( x - jet.Access.X ), Math.Abs( y - jet.Access.Y ) ) <= PoolAttractionSettings.SprayRadius )
 				return true;
+		}
 		return false;
 	}
 
@@ -69,9 +80,9 @@ public sealed class PoolWaterEffects : IPoolActivity, IPoolAmbient
 	/// The drawn-height offset of a swimmer on the waves of its pool, in engine units: a smooth sine at the exact time of the frame (presentation only, so it may use floating point and the wall-clock fraction of the
 	/// turn), with the strength of the turn's envelope. Zero when the swimmer's pool has no waves or they rest.
 	/// </summary>
-	public static float Bob( GuestSimulation simulation, Guest guest )
+	public static float Bob( GuestSimulation simulation, Guest guest, PoolAttractionSites? sites )
 	{
-		if ( !guest.IsSwimming || PoolActivityHelpers.RegionOf( simulation, guest ) is not { } region || WavesOf( simulation.Grid.Cells, region ) is not { } waves )
+		if ( !guest.IsSwimming || PoolActivityHelpers.RegionOf( simulation, guest ) is not { } region || WavesOf( sites, simulation.Grid.Cells, region ) is not { } waves )
 			return 0f;
 		return PoolWaves.SmoothBob( waves, SmoothTurn( simulation ), guest.DrawX, guest.DrawY );
 	}

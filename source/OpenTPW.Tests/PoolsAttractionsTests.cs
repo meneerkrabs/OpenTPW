@@ -84,25 +84,38 @@ public class PoolsAttractionsTests
 		Assert.IsNull( PoolWaveSettings.FromFlags( ParkCellFlags.None ), "no height stored: no settings" );
 		Assert.IsNull( PoolWaveSettings.FromFlags( ParkCellFlags.PoolRiver ), "the river bit is none of them" );
 		var rig = new Rig();
-		var region = rig.Region;
-		Assert.IsNull( PoolWaveSettings.Read( rig.Cells, region ) );
-		PoolWaveSettings.Write( rig.Cells, region, PoolWaveSettings.Default );
-		Assert.AreEqual( PoolWaveSettings.Default, PoolWaveSettings.Read( rig.Cells, region ) );
-		Assert.AreEqual( 1, region.Cells.Count( cell => PoolWaveSettings.Has( rig.Cells.FlagsAt( cell.X, cell.Y ) ) ), "stored once, on the region's first cell" );
-		PoolWaveSettings.Write( rig.Cells, region, new PoolWaveSettings( false, 3, 0 ) );
-		Assert.AreEqual( new PoolWaveSettings( false, 3, 0 ), PoolWaveSettings.Read( rig.Cells, region ) );
-		Assert.AreEqual( 1, region.Cells.Count( cell => PoolWaveSettings.Has( rig.Cells.FlagsAt( cell.X, cell.Y ) ) ) );
+		var access = (6, 5);
+		Assert.AreEqual( PoolWaveSettings.Default, PoolWaveSettings.At( rig.Cells, access ), "a cell that holds none gives the default" );
+		PoolWaveSettings.SetAt( rig.Cells, access, new PoolWaveSettings( false, 3, 0 ) );
+		Assert.AreEqual( new PoolWaveSettings( false, 3, 0 ), PoolWaveSettings.At( rig.Cells, access ) );
+		Assert.AreEqual( 1, rig.Region.Cells.Count( cell => PoolWaveSettings.Has( rig.Cells.FlagsAt( cell.X, cell.Y ) ) ), "stored on that cell alone" );
+		rig.Cells.SetFlags( 6, 5, rig.Cells.FlagsAt( 6, 5 ) | ParkCellFlags.PoolRiver );
+		PoolWaveSettings.SetAt( rig.Cells, access, new PoolWaveSettings( true, 1, 2 ) );
+		Assert.IsTrue( rig.Cells.FlagsAt( 6, 5 ).HasFlag( ParkCellFlags.PoolRiver ), "the other flags stay" );
+		Assert.AreEqual( new PoolWaveSettings( true, 1, 2 ), PoolWaveSettings.At( rig.Cells, access ) );
 	}
 
 	[TestMethod]
-	public void ErasingTheCellThatHoldsTheWaveSettingsMovesThemToANeighbour()
+	public void ThePoolsWavesAreItsWaveMachinesAndNeverOutliveThem()
 	{
 		var rig = new Rig();
-		PoolWaveSettings.Write( rig.Cells, rig.Region, new PoolWaveSettings( true, 3, 2 ) );
-		var first = rig.Region.Cells[0];
-		PoolWaveSettings.MoveFromErased( rig.Cells, first.X, first.Y );
-		Assert.IsFalse( PoolWaveSettings.Has( rig.Cells.FlagsAt( first.X, first.Y ) ) );
-		Assert.AreEqual( new PoolWaveSettings( true, 3, 2 ), PoolWaveSettings.Read( rig.Cells, rig.Region ), "the pool keeps its settings" );
+		var machineA = new PoolAttractionSite( 20, PoolAttractionKind.WaveMachine, new[] { (4, 5) }, (5, 5) );
+		var machineB = new PoolAttractionSite( 10, PoolAttractionKind.WaveMachine, new[] { (11, 5) }, (10, 5) );
+		var list = new List<PoolAttractionSite>();
+		var sites = new PoolAttractionSites( () => list.ToArray() );
+		PoolWaveSettings.SetAt( rig.Cells, (5, 5), new PoolWaveSettings( true, 3, 0 ) );    // bits on a cell with no machine
+		Assert.IsNull( PoolWaveSettings.ActiveIn( sites, rig.Cells, rig.Region ), "no machine: no waves, whatever the cells hold" );
+		list.Add( machineA );
+		Assert.AreEqual( new PoolWaveSettings( true, 3, 0 ), PoolWaveSettings.ActiveIn( sites, rig.Cells, rig.Region ) );
+		list.Add( machineB );
+		Assert.AreEqual( PoolWaveSettings.Default, PoolWaveSettings.ActiveIn( sites, rig.Cells, rig.Region ), "two machines: the lowest object id, here the one with no stored settings (the default)" );
+		PoolWaveSettings.SetAt( rig.Cells, (10, 5), new PoolWaveSettings( false, 2, 1 ) );
+		Assert.AreEqual( new PoolWaveSettings( true, 3, 0 ), PoolWaveSettings.ActiveIn( sites, rig.Cells, rig.Region ), "the lowest id is off: the next one that is on" );
+		list.Clear();
+		Assert.IsNull( PoolWaveSettings.ActiveIn( sites, rig.Cells, rig.Region ), "the machines are gone: the waves are gone with them, and a new one starts from its own cell" );
+		var far = new PoolAttractionSite( 5, PoolAttractionKind.WaveMachine, new[] { (30, 30) }, (31, 30) );
+		list.Add( far );
+		Assert.IsNull( PoolWaveSettings.ActiveIn( sites, rig.Cells, rig.Region ), "a machine of another pool gives this one nothing" );
 	}
 
 	[TestMethod]
@@ -114,29 +127,28 @@ public class PoolsAttractionsTests
 			var cycle = PoolWaves.CycleTurns( settings );
 			Assert.AreEqual( PoolWaves.RunTurns + PoolWaves.RestTurns[interval], cycle );
 			Assert.IsTrue( Enumerable.Range( 0, PoolWaves.RunTurns ).All( turn => PoolWaves.IsRunning( settings, turn ) && PoolWaves.IsRunning( settings, turn + cycle ) ), "the run, every cycle" );
-			Assert.IsTrue( Enumerable.Range( PoolWaves.RunTurns, PoolWaves.RestTurns[interval] ).All( turn => !PoolWaves.IsRunning( settings, turn ) && PoolWaves.Wave( settings, turn, 3 << 16, 4 << 16 ) == 0 ), "the rest: flat water" );
+			Assert.IsTrue( Enumerable.Range( PoolWaves.RunTurns, PoolWaves.RestTurns[interval] ).All( turn => !PoolWaves.IsRunning( settings, turn ) && PoolWaves.Envelope( settings, turn ) == 0 && PoolWaves.SmoothWave( settings, turn + 0.5, 3f, 4f ) == 0f ), "the rest: flat water" );
 			Assert.AreEqual( 0, PoolWaves.Envelope( settings, PoolWaves.RunTurns ) );
 			Assert.AreEqual( 64, PoolWaves.Envelope( settings, PoolWaves.RunTurns / 2 ), "full swell in the middle of the run" );
 			Assert.IsTrue( PoolWaves.Envelope( settings, 0 ) < 16 && PoolWaves.Envelope( settings, PoolWaves.RunTurns - 1 ) < 16, "swelling in and out" );
 		}
 		var off = new PoolWaveSettings( false, 3, 0 );
 		Assert.IsFalse( PoolWaves.IsRunning( off, 10 ) );
-		Assert.AreEqual( 0f, PoolWaves.Bob( off, 10, 1 << 16, 1 << 16 ) );
+		Assert.AreEqual( 0f, PoolWaves.SmoothBob( off, 10.5, 1f, 1f ) );
 		Assert.AreEqual( 0f, PoolWaves.HappinessGain( off, 48 ) );
-		var settingsHigh = new PoolWaveSettings( true, 3, 1 );
-		var low = new PoolWaveSettings( true, 1, 1 );
+		var high = new PoolWaveSettings( true, 3, 1 );
 		var seen = new HashSet<int>();
-		for ( var turn = 0; turn < PoolWaves.RunTurns; turn++ )
+		for ( var step = 0; step < PoolWaves.RunTurns * 4; step++ )
 		{
-			var wave = PoolWaves.Wave( settingsHigh, turn, 5 << 16, 5 << 16 );
-			Assert.AreEqual( wave, PoolWaves.Wave( settingsHigh, turn, 5 << 16, 5 << 16 ), "pure" );
-			Assert.IsTrue( wave is >= -64 and <= 64 );
-			Assert.IsTrue( Math.Abs( PoolWaves.Bob( settingsHigh, turn, 5 << 16, 5 << 16 ) ) <= PoolWaves.BobHeights[2] + 1e-6f );
-			Assert.IsTrue( Math.Abs( PoolWaves.Surface( low, turn, 5 << 16, 5 << 16 ) ) <= PoolWaves.SurfaceHeights[0] + 1e-6f );
-			seen.Add( wave );
+			var turn = step / 4.0;
+			var wave = PoolWaves.SmoothWave( high, turn, 5f, 5f );
+			Assert.AreEqual( wave, PoolWaves.SmoothWave( high, turn, 5f, 5f ), "pure" );
+			Assert.IsTrue( wave is >= -1f and <= 1f );
+			Assert.IsTrue( Math.Abs( PoolWaves.SmoothBob( high, turn, 5f, 5f ) ) <= PoolWaves.BobHeights[2] + 1e-6f );
+			seen.Add( (int)Math.Round( wave * 64 ) );
 		}
 		Assert.IsTrue( seen.Count > 30 && seen.Min() < -40 && seen.Max() > 40, $"the wave swings both ways ({seen.Count} values)" );
-		Assert.AreNotEqual( PoolWaves.Wave( settingsHigh, 60, 5 << 16, 5 << 16 ), PoolWaves.Wave( settingsHigh, 60, 8 << 16, 5 << 16 ), "the front travels: two points differ in phase" );
+		Assert.AreNotEqual( PoolWaves.SmoothWave( high, 60.0, 5f, 5f ), PoolWaves.SmoothWave( high, 60.0, 8f, 5f ), "the front travels: two points differ in phase" );
 	}
 
 	[TestMethod]
@@ -195,14 +207,14 @@ public class PoolsAttractionsTests
 		for ( var step = 0; step < rivers.Rings[0].Cells.Count; step++ )
 			cell = rivers.NextCell( cell.X, cell.Y )!.Value;
 		Assert.AreEqual( (4, 4), cell, "a lap is as long as the ring" );
-		// an L-shaped ring (a ring need not be a rectangle)
+		// a badly drawn L (one cell touches three others) is no ring; the true L-shaped lanes are in TheFloaterFollowsEveryShapeOfLane
 		var l = new ParkCellMap( 32, 32 );
 		foreach ( var (x, y) in new[] { (2, 2), (3, 2), (4, 2), (4, 3), (4, 4), (3, 4), (3, 5), (2, 5), (2, 4), (2, 3) } )
 		{
 			l.SetType( x, y, ParkCellTypes.PoolWater );
 			l.SetFlags( x, y, ParkCellFlags.PoolRiver );
 		}
-		Assert.AreEqual( 0, PoolRiverMap.Build( l ).Rings.Count, "(3, 4) touches (2, 4) and (4, 4) and (3, 5): three neighbours, so it is no lane" );
+		Assert.AreEqual( 0, PoolRiverMap.Build( l ).Rings.Count );
 		var u = RingMap( 3, 3, 6, 6 );
 		Assert.AreEqual( 1, PoolRiverMap.Build( u ).Rings.Count );
 	}
@@ -251,6 +263,87 @@ public class PoolsAttractionsTests
 		Assert.AreEqual( 0, broken.Rings.Count, "a gap in the ring: no river" );
 		cells.SetFlags( 6, 4, ParkCellFlags.PoolRiver );
 		Assert.AreEqual( 1, PoolRiverMap.Of( cells ).Rings.Count );
+	}
+
+	/// <summary>A pool that is only a lane one cell wide round the cells of an island of land (the pool cells are the lane and nothing else), every cell flagged.</summary>
+	private static ParkCellMap LaneAround( IEnumerable<(int X, int Y)> island )
+	{
+		var land = island.ToHashSet();
+		var cells = new ParkCellMap( 32, 32 );
+		foreach ( var (x, y) in land.SelectMany( cell => Enumerable.Range( -1, 3 ).SelectMany( dx => Enumerable.Range( -1, 3 ).Select( dy => (X: cell.X + dx, Y: cell.Y + dy) ) ) ).Distinct().Where( cell => !land.Contains( cell ) ) )
+		{
+			cells.SetType( x, y, ParkCellTypes.PoolWater );
+			cells.SetFlags( x, y, ParkCellFlags.PoolRiver );
+		}
+		return cells;
+	}
+
+	private static IEnumerable<(int X, int Y)> Block( int x0, int y0, int x1, int y1 ) =>
+		Enumerable.Range( y0, y1 - y0 + 1 ).SelectMany( y => Enumerable.Range( x0, x1 - x0 + 1 ).Select( x => (X: x, Y: y) ) );
+
+	[TestMethod]
+	public void TheFloaterFollowsEveryShapeOfLaneRoundItsBendsWithoutEverLeavingFreeWater()
+	{
+		var islands = new Dictionary<string, (int X, int Y)[]>
+		{
+			["a channel round a 3 x 2 island"] = Block( 6, 6, 8, 7 ).ToArray(),
+			["a channel round one cell"] = new[] { (6, 6) },
+			["a lane round an L-shaped island"] = new[] { (5, 5), (6, 5), (7, 5), (5, 6), (5, 7) },
+			["a lane round a T-shaped island"] = Block( 5, 5, 9, 5 ).Concat( new[] { (7, 6), (7, 7) } ).ToArray()
+		};
+		foreach ( var (name, island) in islands )
+		{
+			var cells = LaneAround( island );
+			var rivers = PoolRiverMap.Of( cells );
+			Assert.AreEqual( 1, rivers.Rings.Count, name );
+			var ring = rivers.Rings[0].Cells;
+			var region = PoolSwimRegion.Build( cells, ring[0] )!;
+			Assert.AreEqual( ring.Count, region.Cells.Count, $"{name}: the pool is the lane alone" );
+			foreach ( var start in new[] { 0, ring.Count / 3, 2 * ring.Count / 3 } )
+			{
+				var (x, y) = PoolSwimRegion.Centre( ring[start] );
+				var seen = new HashSet<(int X, int Y)>();
+				var turns = 0;
+				// two laps of the ring at the current's speed: the float must stay in the lane and in free water at every turn
+				var limit = 2 * ring.Count * Fixed16.One / PoolRiverSettings.FlowSpeed + 50;
+				while ( turns < limit && seen.Count < ring.Count + 1 )
+				{
+					Assert.IsTrue( rivers.Float( ref x, ref y, PoolRiverSettings.FlowSpeed ), $"{name} start {start} turn {turns}" );
+					turns++;
+					Assert.IsTrue( rivers.IsRiver( x >> 16, y >> 16 ), $"{name} start {start} turn {turns}: ({x / 65536.0:F2}, {y / 65536.0:F2}) in the lane" );
+					Assert.IsTrue( region.IsWater( x, y ), $"{name} start {start} turn {turns}: ({x / 65536.0:F2}, {y / 65536.0:F2}) is free water" );
+					seen.Add( (x >> 16, y >> 16) );
+				}
+				Assert.AreEqual( ring.Count, seen.Count, $"{name} start {start}: every cell of the lane was passed" );
+			}
+		}
+	}
+
+	[TestMethod]
+	public void AFloatInAChannelRoundLandRunsItsFullTurnsAndIsPaidOnlyThen()
+	{
+		foreach ( var island in new[] { Block( 6, 6, 9, 8 ).ToArray(), new (int X, int Y)[] { (5, 5), (6, 5), (7, 5), (5, 6), (5, 7) } } )
+		{
+			var rig = new Rig( capacity: 12 );
+			// the swim rig's pool is replaced by the lane: erase it and lay the channel next to the changing room's access cell
+			foreach ( var cell in rig.Region.Cells )
+				rig.Cells.SetType( cell.X, cell.Y, (byte)0 );
+			var cells = LaneAround( island.Select( cell => (cell.X, cell.Y - 2) ) );
+			foreach ( var (x, y) in Block( 0, 0, 19, 9 ).Where( cell => cells.RawTypeAt( cell.X, cell.Y ) == ParkCellTypes.PoolWater ) )
+			{
+				rig.Cells.SetType( x, y, ParkCellTypes.PoolWater );
+				rig.Cells.SetFlags( x, y, ParkCellFlags.PoolRiver );
+			}
+			// the access cell the room's candidates name must be water: the lane's first cell
+			rig.Ride.PoolAccessCandidates = new[] { PoolRiverMap.Of( rig.Cells ).Rings[0].Cells[0] };
+			rig.Simulation.RegisterPoolActivity( new RiverActivity() );
+			var guest = SendAndWaitForAFloater( rig );
+			var planned = guest.PoolActivityTurns;
+			var before = guest.Happiness;
+			var turns = rig.Until( () => guest.State != GuestState.PoolActivity, 400 );
+			Assert.AreEqual( planned, turns, 2, "it floated its drawn turns, not until the first bend" );
+			Assert.AreEqual( PoolRiverSettings.HappinessGain, guest.Happiness - before, 0.01f );
+		}
 	}
 
 	[TestMethod]
@@ -593,7 +686,8 @@ public class PoolsAttractionsTests
 	public void NoRiverNoOfferAndNoDrawFromTheSwimmersStream()
 	{
 		var plain = new Rig();
-		plain.Simulation.RegisterPoolActivity( new RiverActivity() );
+		foreach ( var activity in PoolActivityRegistry.Create( Sites() ) )
+			plain.Simulation.RegisterPoolActivity( activity );
 		var bare = new Rig();
 		var a = plain.Send();
 		var b = bare.Send();
@@ -633,10 +727,12 @@ public class PoolsAttractionsTests
 	{
 		var rig = RiverRig();
 		var guest = SendAndWaitForAFloater( rig );
+		var before = guest.Happiness;
 		foreach ( var (x, y) in new[] { (7, 3), (8, 3), (9, 3), (6, 3), (5, 3), (5, 4), (5, 5) } )
 			rig.Cells.SetFlags( x, y, ParkCellFlags.None );
 		rig.Turns( 3 );
 		Assert.AreEqual( GuestState.Swimming, guest.State, "the ring is gone: the current lets go" );
+		Assert.AreEqual( before, guest.Happiness, 0.001f, "and a float that did not run its turns is not paid" );
 		Assert.IsTrue( rig.Region.IsWater( guest.Navigation.X, guest.Navigation.Y ) );
 	}
 
@@ -712,19 +808,17 @@ public class PoolsAttractionsTests
 	}
 
 	[TestMethod]
-	public void ErasingACellTakesItsRiverFlagWithItAndKeepsTheWavesOfItsPool()
+	public void ErasingACellTakesItsRiverFlagAndItsWaveSettingsWithIt()
 	{
 		using var scope = OpenTpwExtensions.Use( PoolsTests.PoolsSet( true ) );
 		var cells = new ParkCellMap( 32, 32 );
 		var builder = Builder( cells, out _ );
 		Assert.IsTrue( builder.PaintCells( PoolBuilder.Rectangle( (3, 3), (6, 4) ), river: true ).Completed );
 		Assert.AreEqual( ParkCellFlags.PoolRiver, cells.FlagsAt( 3, 3 ) );
-		var region = PoolSwimRegion.Build( cells, (3, 3) )!;
-		PoolWaveSettings.Write( cells, region, new PoolWaveSettings( true, 2, 0 ) );
+		PoolWaveSettings.SetAt( cells, (3, 3), new PoolWaveSettings( true, 2, 0 ) );
 		Assert.IsTrue( cells.FlagsAt( 3, 3 ).HasFlag( ParkCellFlags.PoolWavesOn ) && cells.FlagsAt( 3, 3 ).HasFlag( ParkCellFlags.PoolRiver ) );
 		Assert.AreEqual( PoolBuildResult.Ok, builder.Erase( 3, 3 ) );
 		Assert.AreEqual( ParkCellFlags.None, cells.FlagsAt( 3, 3 ), "an erased cell keeps no flag" );
-		Assert.AreEqual( new PoolWaveSettings( true, 2, 0 ), PoolWaveSettings.Read( cells, PoolSwimRegion.Build( cells, (4, 3) )! ), "the pool kept its waves" );
 		// painted again, the cell starts clean
 		Assert.AreEqual( PoolBuildResult.Ok, builder.Paint( 3, 3 ) );
 		Assert.AreEqual( ParkCellFlags.None, cells.FlagsAt( 3, 3 ) );
@@ -735,13 +829,13 @@ public class PoolsAttractionsTests
 	{
 		using var scope = OpenTpwExtensions.Use( PoolsTests.PoolsSet( true ) );
 		var cells = RingMap( 4, 4, 9, 7 );
-		PoolWaveSettings.Write( cells, PoolSwimRegion.Build( cells, (4, 4) )!, new PoolWaveSettings( false, 3, 2 ) );
+		PoolWaveSettings.SetAt( cells, (4, 4), new PoolWaveSettings( false, 3, 2 ) );
 		var layout = ParkLayoutSnapshot.CaptureSnapshot( cells, new ParkObjects( null!, new SandboxParkGrid(), WorldSeed.Default ) );
 		var json = ParkResumeJson.Serialize( layout );
 		var loaded = ParkResumeJson.Deserialize<ParkLayoutSnapshot.Data>( json );
 		var again = ParkLayoutSnapshot.RestoreCellMap( loaded );
 		Assert.AreEqual( 1, PoolRiverMap.Of( again ).Rings.Count, "the ring is derived again from the saved flags" );
-		Assert.AreEqual( new PoolWaveSettings( false, 3, 2 ), PoolWaveSettings.Read( again, PoolSwimRegion.Build( again, (4, 4) )! ) );
+		Assert.AreEqual( new PoolWaveSettings( false, 3, 2 ), PoolWaveSettings.At( again, (4, 4) ) );
 		CollectionAssert.AreEqual( json, ParkResumeJson.Serialize( ParkLayoutSnapshot.CaptureSnapshot( again, new ParkObjects( null!, new SandboxParkGrid(), WorldSeed.Default ) ) ), "byte-stable" );
 		ParkLayoutSnapshot.Data Forge( Func<ParkLayoutSnapshot.CellData, ParkLayoutSnapshot.CellData> edit ) =>
 			loaded with { Cells = loaded.Cells with { Cells = loaded.Cells.Cells.Select( ( cell, index ) => index == 0 ? edit( cell ) : cell ).ToList() } };
@@ -803,12 +897,20 @@ public class PoolsAttractionsTests
 
 	// ---- The ambient effects -------------------------------------------------------------------------------------------
 
+	private static PoolAttractionSites EffectSites = null!;
+
 	private static (Rig Rig, Guest Guest) EffectsRig( PoolWaveSettings? waves, params PoolAttractionSite[] sites )
 	{
 		var rig = new Rig();
-		rig.Simulation.RegisterPoolActivity( new PoolWaterEffects( Sites( sites ) ) );
+		var all = sites.ToList();
+		// the waves are a wave machine's: one stands at the pool's north edge, with the settings in its access cell
 		if ( waves is { } settings )
-			PoolWaveSettings.Write( rig.Cells, rig.Region, settings );
+		{
+			all.Add( new PoolAttractionSite( 7000, PoolAttractionKind.WaveMachine, new[] { (6, 2) }, (6, 3) ) );
+			PoolWaveSettings.SetAt( rig.Cells, (6, 3), settings );
+		}
+		EffectSites = Sites( all.ToArray() );
+		rig.Simulation.RegisterPoolActivity( new PoolWaterEffects( EffectSites ) );
 		return (rig, rig.Send( happiness: 10 ));
 	}
 
@@ -874,20 +976,20 @@ public class PoolsAttractionsTests
 		// asking for the bob reads the park turn and the presentation clock and changes nothing the simulation hashes
 		var hash = HashOf( rig );
 		for ( var i = 0; i < 5; i++ )
-			_ = PoolWaterEffects.Bob( rig.Simulation, guest );
+			_ = PoolWaterEffects.Bob( rig.Simulation, guest, EffectSites );
 		Assert.AreEqual( hash, HashOf( rig ) );
 		var bobs = new List<float>();
 		for ( var i = 0; i < 20; i++ )
 		{
-			bobs.Add( PoolWaterEffects.Bob( rig.Simulation, guest ) );
+			bobs.Add( PoolWaterEffects.Bob( rig.Simulation, guest, EffectSites ) );
 			rig.Simulation.Tick( 1f / FixedStepClock.TicksPerSecond );
 		}
 		Assert.IsTrue( bobs.Max() > 0.01f || bobs.Min() < -0.01f, $"it bobs ({bobs.Min():F3} to {bobs.Max():F3})" );
 		Assert.IsTrue( bobs.All( bob => Math.Abs( bob ) <= PoolWaves.BobHeights[2] + 1e-5f ) );
 		var (still, sitter) = EffectsRig( null );
 		still.Until( () => sitter.IsSwimming, 400 );
-		Assert.AreEqual( 0f, PoolWaterEffects.Bob( still.Simulation, sitter ), "a pool without waves" );
-		Assert.AreEqual( 0f, PoolWaterEffects.Bob( rig.Simulation, new Guest( 999, 0 ) ), "a guest who is not swimming" );
+		Assert.AreEqual( 0f, PoolWaterEffects.Bob( still.Simulation, sitter, EffectSites ), "a pool without waves" );
+		Assert.AreEqual( 0f, PoolWaterEffects.Bob( rig.Simulation, new Guest( 999, 0 ), EffectSites ), "a guest who is not swimming" );
 	}
 }
 
@@ -1070,6 +1172,7 @@ public class PoolsAttractionsLevelTests
 		typeof( Level ).GetMethod( "SetupStaff", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic )!.Invoke( world.Level, null );
 		typeof( Level ).GetMethod( "SetupParkGate", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic )!.Invoke( world.Level, null );
 		(level, one) = (world.Level, world.One);
+		level.Objects.Things ??= new ThingPool();
 		typeof( Level ).GetMethod( "SetupPaths", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic )!.Invoke( level, null );
 		level.ConfigureObjectHooks();
 		typeof( Level ).GetMethod( "ConnectObjectsToGuests", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic )!.Invoke( level, null );
@@ -1146,20 +1249,26 @@ public class PoolsAttractionsLevelTests
 	}
 
 	[TestMethod]
-	public void AWaveMachineGivesItsPoolTheDefaultWavesOnceAndLeavesThePlayersSettingsAlone()
+	public void AWaveMachineRunsTheDefaultWavesUntilTheClickAndTheWavesGoWithTheMachine()
 	{
 		var wave = Entry( 1303, "wavemachine", "N", "**" );
 		With( () =>
 		{
 			level.PoolBuilder!.PaintCells( PoolBuilder.Rectangle( (4, 22), (9, 24) ) );
 			var region = PoolSwimRegion.Build( Cells, (4, 22) )!;
-			Assert.IsNull( PoolWaveSettings.Read( Cells, region ) );
+			Assert.IsNull( PoolWaveSettings.ActiveIn( level.PoolSites, Cells, region ), "no machine, no waves" );
 			var placed = level.Objects.TryPlace( wave, 5, 25, 0, out _ );
 			Assert.IsNotNull( placed );
-			Assert.AreEqual( PoolWaveSettings.Default, PoolWaveSettings.Read( Cells, region ), "a new machine switches its pool's waves on" );
-			PoolWaveSettings.Write( Cells, region, new PoolWaveSettings( false, 1, 2 ) );
-			Assert.IsNotNull( level.Objects.TryPlace( Entry( 1304, "wavemachine", "N", "**" ), 7, 25, 0, out _ ) );
-			Assert.AreEqual( new PoolWaveSettings( false, 1, 2 ), PoolWaveSettings.Read( Cells, region ), "a second machine keeps what the player set" );
+			Assert.AreEqual( PoolWaveSettings.Default, PoolWaveSettings.ActiveIn( level.PoolSites, Cells, region ), "a new machine runs the default at once" );
+			Assert.AreEqual( 0, region.Cells.Count( cell => PoolWaveSettings.Has( Cells.FlagsAt( cell.X, cell.Y ) ) ), "and wrote nothing to the cells" );
+			level.CyclePoolWaves( placed! );
+			Assert.AreEqual( new PoolWaveSettings( true, 3, 0 ), PoolWaveSettings.ActiveIn( level.PoolSites, Cells, region ) );
+			typeof( Level ).GetField( "demolishedQueues", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic )!.SetValue( level, new HashSet<OriginalObject>() );
+			Assert.IsTrue( level.Objects.Remove( placed! ) );
+			Assert.IsNull( PoolWaveSettings.ActiveIn( level.PoolSites, Cells, region ), "the machine is gone: the pool has no waves" );
+			var again = level.Objects.TryPlace( wave, 5, 25, 0, out _ );
+			Assert.AreEqual( new PoolWaveSettings( true, 3, 0 ), PoolWaveSettings.ActiveIn( level.PoolSites, Cells, region ), "the settings of the access cell are the cell's, and a machine standing there again takes them up; erasing the cell is what clears them" );
+			Assert.IsNotNull( again );
 			return 0;
 		} );
 	}
@@ -1175,11 +1284,11 @@ public class PoolsAttractionsLevelTests
 			var machine = level.Objects.TryPlace( wave, 5, 15, 0, out _ )!;
 			var rope = level.Objects.TryPlace( swing, 8, 15, 0, out _ )!;
 			var region = PoolSwimRegion.Build( Cells, (4, 12) )!;
-			Assert.AreEqual( PoolWaveSettings.Default, PoolWaveSettings.Read( Cells, region ) );
+			Assert.AreEqual( PoolWaveSettings.Default, PoolWaveSettings.ActiveIn( level.PoolSites, Cells, region ) );
 			Assert.AreEqual( new PoolWaveSettings( true, 3, 0 ), level.CyclePoolWaves( machine ) );
 			Assert.AreEqual( new PoolWaveSettings( true, 1, 2 ), level.CyclePoolWaves( machine ) );
 			Assert.AreEqual( new PoolWaveSettings( false, 2, 1 ), level.CyclePoolWaves( machine ) );
-			Assert.AreEqual( new PoolWaveSettings( false, 2, 1 ), PoolWaveSettings.Read( Cells, region ), "the pool holds what the click set" );
+			Assert.IsNull( PoolWaveSettings.ActiveIn( level.PoolSites, Cells, region ), "off: no waves" );
 			Assert.AreEqual( PoolWaveSettings.Default, level.CyclePoolWaves( machine ) );
 			Assert.IsNull( level.CyclePoolWaves( rope ), "a rope swing has no waves" );
 			return 0;
@@ -1188,7 +1297,55 @@ public class PoolsAttractionsLevelTests
 	}
 
 	[TestMethod]
-	public void RemovingAnAttractionSendsItsUsersOutOfTheWaterAndForgetsTheSite()
+	public void TheSpaCellIsKeptWhileUsedAndRemovingTheSpaSendsItsGuestOut()
+	{
+		var spa = Entry( 1308, "spa", "*", "*" );
+		With( () =>
+		{
+			level.PoolBuilder!.PaintCells( PoolBuilder.Rectangle( (12, 12), (15, 14) ).Where( cell => cell != (15, 13) ) );
+			var placed = level.Objects.TryPlace( spa, 15, 13, 0, out _ )!;
+			var site = level.PoolSites.All.Single();
+			Assert.AreEqual( (15, 12), site.Access, "the first side with water: north" );
+			// a guest sitting in it (the host's own fields; the activity is the real one)
+			level.Guests!.Grid.SetPath( 6, 6, true );
+			var guest = level.Guests.SpawnInPark( 6, 6 );
+			guest.State = GuestState.PoolActivity;
+			guest.PoolActivityId = SpaActivity.ActivityId;
+			guest.PoolActivityTarget = site.ObjectId;
+			Assert.AreEqual( PoolBuildResult.Swimmers, level.PoolBuilder.CheckErase( 15, 12 ), "the access cell is kept while somebody is using the spa" );
+			Assert.AreEqual( PoolBuildResult.Ok, level.PoolBuilder.CheckErase( 12, 12 ), "any other cell goes" );
+			// removing the spa ends the session of whoever is in it at once
+			typeof( Level ).GetField( "demolishedQueues", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic )!.SetValue( level, new HashSet<OriginalObject>() );
+			Assert.IsTrue( level.Objects.Remove( placed ) );
+			Assert.AreNotEqual( GuestState.PoolActivity, guest.State, "the guest left the activity with its object" );
+			Assert.IsNull( guest.PoolActivityId );
+			return 0;
+		} );
+	}
+
+	[TestMethod]
+	public void APoolIsNotPaintedOnACellThatCarriesAFlagOfTheOriginalAndForgedPoolFlagsOnDryCellsAreRefused()
+	{
+		With( () =>
+		{
+			Cells.SetFlags( 30, 30, ParkCellFlags.EntranceArea );
+			Assert.AreEqual( PoolBuildResult.Occupied, level.PoolBuilder!.Check( 30, 30 ), "the entrance complex's flag is not silently cleared" );
+			Cells.SetFlags( 31, 30, ParkCellFlags.NoModify );
+			Assert.AreEqual( PoolBuildResult.Occupied, level.PoolBuilder.Check( 31, 30 ) );
+			Assert.AreEqual( PoolBuildResult.Ok, level.PoolBuilder.Check( 28, 30 ), "control: a plain cell" );
+			var layout = ParkLayoutSnapshot.CaptureSnapshot( Cells, level.Objects );
+			var dry = new ParkLayoutSnapshot.CellData { X = 28, Y = 28, Type = ParkCellTypes.Object, Flags = (ushort)ParkCellFlags.PoolRiver, Placements = 0, Links = 0, QueueLink = 0 };
+			var forged = layout with { Cells = layout.Cells with { Cells = layout.Cells.Cells.Append( dry ).ToList() } };
+			StringAssert.Contains( Assert.ThrowsException<InvalidDataException>( () => ParkLayoutSnapshot.RestoreCellMap( forged ) ).Message, "no pool cell" );
+			var wavy = dry with { Flags = (ushort)(ParkCellFlags.PoolWavesOn | (ParkCellFlags)0x0100) };
+			var forged2 = layout with { Cells = layout.Cells with { Cells = layout.Cells.Cells.Append( wavy ).ToList() } };
+			Assert.ThrowsException<InvalidDataException>( () => ParkLayoutSnapshot.RestoreCellMap( forged2 ) );
+			return 0;
+		} );
+	}
+
+	[TestMethod]
+	public void RemovingAnAttractionForgetsItsSite()
 	{
 		var spa = Entry( 1305, "spa", "*", "*" );
 		With( () =>

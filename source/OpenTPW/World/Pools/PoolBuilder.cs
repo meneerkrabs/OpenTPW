@@ -116,6 +116,9 @@ public sealed class PoolBuilder
 		var old = Cells.RawTypeAt( x, y );
 		if ( old == ParkCellTypes.PoolWater )
 			return PoolBuildResult.Existing;
+		// a cell that carries a flag of the original (the entrance complex's, a fixed path's, an add-on's) keeps it: the pool would have to change the park's semantics to take the cell, and a save's pool cells hold no such flag
+		if ( (Cells.FlagsAt( x, y ) & (ParkCellFlags.EntranceArea | ParkCellFlags.MapBit04 | ParkCellFlags.NoModify | ParkCellFlags.AddOn)) != 0 )
+			return PoolBuildResult.Occupied;
 		// anything else on the cell refuses it: paths (fixed ones included), queues, objects' cells, entrances and exits, track cells, the fence
 		if ( !ParkCellMap.CanChangeCellType( old, ParkCellTypes.PoolWater, lastCell: false ) )
 			return PoolBuildResult.Occupied;
@@ -180,10 +183,10 @@ public sealed class PoolBuilder
 		if ( check != PoolBuildResult.Ok )
 			return check;
 		var before = Economy?.Balance ?? 0;
-		// [EXT:pools-river] [EXT:pools-waves] the cell takes its river flag away, and its pool keeps the wave settings it held
-		PoolWaveSettings.MoveFromErased( Cells, x, y );
-		if ( Cells.FlagsAt( x, y ).HasFlag( ParkCellFlags.PoolRiver ) )
-			Cells.SetFlags( x, y, Cells.FlagsAt( x, y ) & ~ParkCellFlags.PoolRiver );
+		// [EXT:pools-river] [EXT:pools-waves] the cell takes its river flag and a wave machine's settings away: an empty cell carries no pool flag (the saves refuse one)
+		var poolFlags = ParkCellFlags.PoolRiver | ParkCellFlags.PoolWaveBits;
+		if ( (Cells.FlagsAt( x, y ) & poolFlags) != 0 )
+			Cells.SetFlags( x, y, Cells.FlagsAt( x, y ) & ~poolFlags );
 		Cells.SetType( x, y, ParkCellType.Empty );
 		Economy?.RefundPoolCell();
 		LastCharged = before - (Economy?.Balance ?? 0);

@@ -68,7 +68,7 @@ public sealed class PoolRenderer : Entity
 	private readonly PoolWaveSettings?[] waveSettings = new PoolWaveSettings?[WaveSlots];
 	private readonly List<Texture> textures = new();
 	private readonly List<Material> materials = new();
-	private int seenVersion = -1;
+	private int seenVersion = -1, seenSitesVersion = -1;
 	private ulong seenSignature;
 	private bool deleted;
 
@@ -76,6 +76,8 @@ public sealed class PoolRenderer : Entity
 	public const int WaveSlots = 4;
 	/// <summary>[EXT:pools-waves] The park turn with a fraction, for the frame (set by the level; null draws flat water). Presentation only.</summary>
 	public Func<double>? Turn { get; set; }
+	/// <summary>[EXT:pools-waves] The park's water attractions: a pool has waves only while a wave machine of it is on.</summary>
+	public PoolAttractionSites? Sites { get; set; }
 	/// <summary>[EXT:pools-waves] The amplitude (0 to 1) of each wave slot in the last frame, for tests and smokes.</summary>
 	public float[] WaveAmplitudes { get; } = new float[WaveSlots];
 
@@ -163,11 +165,14 @@ public sealed class PoolRenderer : Entity
 		if ( deleted )
 			return;
 		// the cell map's version moves with every write, a stroke writes many cells between two frames, and this runs once a frame: one rebuild per frame at most
-		if ( cells.Version != seenVersion )
+		var sitesVersion = Sites != null && Sites.All.Count >= 0 ? Sites.Version : 0;
+		if ( cells.Version != seenVersion || sitesVersion != seenSitesVersion )
 		{
 			seenVersion = cells.Version;
+			seenSitesVersion = sitesVersion;
 			var poolCells = PoolCells( cells );
 			var signature = Signature( poolCells );
+			signature = (signature ^ (uint)sitesVersion) * 1099511628211UL;
 			if ( signature != seenSignature || poolCells.Count != DrawnCells )
 			{
 				seenSignature = signature;
@@ -229,7 +234,7 @@ public sealed class PoolRenderer : Entity
 				continue;
 			foreach ( var cell in region.Cells )
 				seen.Add( cell );
-			if ( next < WaveSlots && PoolWaveSettings.Read( cells, region ) is { } found )
+			if ( next < WaveSlots && Sites != null && PoolWaveSettings.ActiveIn( Sites, cells, region ) is { } found )
 			{
 				settings[next] = found;
 				foreach ( var cell in region.Cells )

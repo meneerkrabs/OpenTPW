@@ -115,24 +115,6 @@ public static class PoolAttractions
 	public static IReadOnlyList<(int X, int Y)> AccessCandidates( ObjectCatalogEntry entry, int anchorX, int anchorY, int rotation ) =>
 		AccessCandidates( entry.Shape, WaterSides( entry ), anchorX, anchorY, rotation );
 
-	/// <summary>
-	/// Called when an object is placed: a wave machine gives the pool at its water side the default wave settings (<see cref="PoolWaveSettings.Default"/>) when the pool has none yet,
-	/// so it runs at once; the settings are the pool's, not the machine's, and stay when the machine goes.
-	/// </summary>
-	public static void OnPlaced( OriginalObject item, ParkCellMap? cells )
-	{
-		if ( !FeatureGates.Pools || cells == null || KindOf( item.Entry ) != PoolAttractionKind.WaveMachine )
-			return;
-		var placement = item.Placement;
-		foreach ( var (x, y) in AccessCandidates( item.Entry, placement.X, placement.Y, placement.Rotation ) )
-			if ( PoolSwimRegion.Build( cells, (x, y) ) is { } region )
-			{
-				if ( PoolWaveSettings.Read( cells, region ) == null )
-					PoolWaveSettings.Write( cells, region, PoolWaveSettings.Default );
-				return;
-			}
-	}
-
 	/// <summary>The placement rule: a water attraction needs pool water on its water side. Null (no opinion) for any other object and while the extension is off.</summary>
 	public static OriginalPlacementResult? PlacementRule( ObjectCatalogEntry entry, ParkCellMap? cells, int anchorX, int anchorY, int rotation )
 	{
@@ -173,7 +155,14 @@ public sealed class PoolAttractionSites
 	}
 
 	/// <summary>Forgets the derived sites (an object was placed or removed).</summary>
-	public void Invalidate() => cached = null;
+	public void Invalidate()
+	{
+		cached = null;
+		Version++;
+	}
+
+	/// <summary>Counts every time the derived sites may have changed (an object placed or removed); caches built from the sites key on it with <see cref="ParkCellMap.PoolWrites"/>.</summary>
+	public int Version { get; private set; }
 
 	/// <summary>Every placed water attraction whose water side holds pool water now, in placement order. Rebuilt when an object changed or a pool cell was written.</summary>
 	public IReadOnlyList<PoolAttractionSite> All
@@ -191,8 +180,8 @@ public sealed class PoolAttractionSites
 			foreach ( var item in objects() )
 			{
 				var kind = item.IsDeleted ? PoolAttractionKind.None : PoolAttractions.KindOf( item.Entry );
-				if ( kind == PoolAttractionKind.None )
-					continue;
+				if ( kind == PoolAttractionKind.None || item.ThingId == 0 )
+					continue;     // an object without a thing slot (no park pool) cannot be named by a guest's activity target
 				var placement = item.Placement;
 				foreach ( var (x, y) in PoolAttractions.AccessCandidates( item.Entry, placement.X, placement.Y, placement.Rotation ) )
 					if ( map.InBounds( x, y ) && map.RawTypeAt( x, y ) == ParkCellTypes.PoolWater )
@@ -202,6 +191,7 @@ public sealed class PoolAttractionSites
 					}
 			}
 			cachedWrites = map.PoolWrites;
+			Version++;
 			return cached = sites;
 		}
 	}

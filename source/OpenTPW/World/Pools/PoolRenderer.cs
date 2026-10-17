@@ -9,6 +9,10 @@ internal sealed class PoolPartEntity : ModelEntity
 	public float Glow { get; set; }
 	/// <summary>True for the water: its shader reads the shallow colour in place of the sun's position.</summary>
 	public bool IsWater { get; set; }
+	/// <summary>[EXT:pools-waves] The wave machine's strength for the water (0 flat to 1), in the free padding after the light position.</summary>
+	public float WaveAmplitude { get; set; }
+	/// <summary>[EXT:pools-waves] The wave's phase in cycles at the grid origin, in the free padding after the light colour.</summary>
+	public float WavePhase { get; set; }
 	/// <summary>The material every model of this part is drawn with.</summary>
 	public Material? PartMaterial { get; set; }
 
@@ -28,6 +32,8 @@ internal sealed class PoolPartEntity : ModelEntity
 			g_vLightPos = IsWater ? Shallow : sun?.Position ?? System.Numerics.Vector3.Zero,
 			g_vLightColor = sun?.Color ?? System.Numerics.Vector3.One,
 			g_vCameraPos = Camera.Position,
+			_padding0 = WaveAmplitude,
+			_padding1 = WavePhase,
 			g_flTime = Time.Now,
 			// the graphics settings' view distance, which the park's own shader (test.shader) applies to its fog
 			_padding2 = CompatibilityRuntime.RenderQuality.ViewDistanceScale,
@@ -57,11 +63,23 @@ public sealed class PoolRenderer : Entity
 	private readonly PoolStyle style;
 	// the opaque parts are created first, so they draw before the translucent water
 	private readonly PoolPartEntity lowerWalls, floor, upperWalls, coping, water;
+	// [EXT:pools-waves] the water of up to four pools with a wave machine is drawn by entities of their own (created before the swimmers' renderer, so the order of drawing stays), each with its own wave
+	private readonly PoolPartEntity[] waveWater = new PoolPartEntity[WaveSlots];
+	private readonly PoolWaveSettings?[] waveSettings = new PoolWaveSettings?[WaveSlots];
 	private readonly List<Texture> textures = new();
 	private readonly List<Material> materials = new();
-	private int seenVersion = -1;
+	private int seenVersion = -1, seenSitesVersion = -1;
 	private ulong seenSignature;
 	private bool deleted;
+
+	/// <summary>[EXT:pools-waves] How many pools with waves are drawn with their own wave at once; a fifth draws flat.</summary>
+	public const int WaveSlots = 4;
+	/// <summary>[EXT:pools-waves] The park turn with a fraction, for the frame (set by the level; null draws flat water). Presentation only.</summary>
+	public Func<double>? Turn { get; set; }
+	/// <summary>[EXT:pools-waves] The park's water attractions: a pool has waves only while a wave machine of it is on.</summary>
+	public PoolAttractionSites? Sites { get; set; }
+	/// <summary>[EXT:pools-waves] The amplitude (0 to 1) of each wave slot in the last frame, for tests and smokes.</summary>
+	public float[] WaveAmplitudes { get; } = new float[WaveSlots];
 
 	/// <summary>The style the pool is drawn in.</summary>
 	public PoolStyle Style => style;
@@ -92,6 +110,8 @@ public sealed class PoolRenderer : Entity
 		upperWalls = Part( "content/shaders/pool-deck.shader", copingTexture, isWater: false );
 		coping = Part( "content/shaders/pool-deck.shader", copingTexture, isWater: false );
 		water = Part( "content/shaders/pool-water.shader", waterTexture, isWater: true );
+		for ( var slot = 0; slot < WaveSlots; slot++ )
+			waveWater[slot] = Part( "content/shaders/pool-water.shader", waterTexture, isWater: true );
 	}
 
 	private Texture Own( Texture texture )
@@ -124,8 +144,13 @@ public sealed class PoolRenderer : Entity
 	}
 
 	/// <summary>Builds the mesh of <paramref name="poolCells"/> now.</summary>
-	public PoolMesh BuildMesh( IEnumerable<(int X, int Y)> poolCells ) =>
-		PoolMeshBuilder.Build( poolCells, ( x, y ) => cells.RawTypeAt( x, y ) == ParkCellTypes.PoolWater, Ground, terrain.Origin, cellSize, options );
+	public PoolMesh BuildMesh( IEnumerable<(int X, int Y)> poolCells )
+	{
+		// [EXT:pools-river] the water of a river cell carries its current
+		var rivers = PoolRiverMap.Of( cells );
+		return PoolMeshBuilder.Build( poolCells, ( x, y ) => cells.RawTypeAt( x, y ) == ParkCellTypes.PoolWater, Ground, terrain.Origin, cellSize, options,
+			rivers.Any ? ( x, y ) => rivers.FlowAt( x, y ) : null );
+	}
 
 	/// <summary>
 	/// The ground height at a point in cell units, from the terrain's sampler (<see cref="LandscapeSampler"/> through <see cref="IParkGrid.GetTerrainHeight"/>, which takes model units, 10 to
@@ -137,32 +162,111 @@ public sealed class PoolRenderer : Entity
 
 	protected override void OnUpdate()
 	{
+		if ( deleted )
+			return;
 		// the cell map's version moves with every write, a stroke writes many cells between two frames, and this runs once a frame: one rebuild per frame at most
-		if ( deleted || cells.Version == seenVersion )
-			return;
-		seenVersion = cells.Version;
-		var poolCells = PoolCells( cells );
-		var signature = Signature( poolCells );
-		if ( signature == seenSignature && poolCells.Count == DrawnCells )
-			return;
-		seenSignature = signature;
-		DrawnCells = poolCells.Count;
-		var mesh = BuildMesh( poolCells );
-		waterLevels = PoolMeshBuilder.WaterLevels( poolCells, Ground, options );
-		Triangles = mesh.TriangleCount;
-		Rebuilds++;
-		Replace( lowerWalls, mesh.LowerWalls );
-		Replace( floor, mesh.Floor );
-		Replace( upperWalls, mesh.UpperWalls );
-		Replace( coping, mesh.Coping );
-		Replace( water, mesh.Water );
+		var sitesVersion = Sites != null && Sites.All.Count >= 0 ? Sites.Version : 0;
+		if ( cells.Version != seenVersion || sitesVersion != seenSitesVersion )
+		{
+			seenVersion = cells.Version;
+			seenSitesVersion = sitesVersion;
+			var poolCells = PoolCells( cells );
+			var signature = Signature( poolCells );
+			signature = (signature ^ (uint)sitesVersion) * 1099511628211UL;
+			if ( signature != seenSignature || poolCells.Count != DrawnCells )
+			{
+				seenSignature = signature;
+				DrawnCells = poolCells.Count;
+				var mesh = BuildMesh( poolCells );
+				waterLevels = PoolMeshBuilder.WaterLevels( poolCells, Ground, options );
+				Triangles = mesh.TriangleCount;
+				Rebuilds++;
+				Replace( lowerWalls, mesh.LowerWalls );
+				Replace( floor, mesh.Floor );
+				Replace( upperWalls, mesh.UpperWalls );
+				Replace( coping, mesh.Coping );
+				var split = SplitWater( mesh.Water, poolCells );
+				Replace( water, split.Flat );
+				for ( var slot = 0; slot < WaveSlots; slot++ )
+					Replace( waveWater[slot], split.Waves[slot] );
+				Array.Copy( split.Settings, waveSettings, WaveSlots );
+			}
+		}
+		UpdateWaves();
 	}
 
-	private static ulong Signature( IReadOnlyList<(int X, int Y)> poolCells )
+	/// <summary>
+	/// [EXT:pools-waves] Every frame: the wave slots' strength and phase from the park turn. The strength is the run's swell (<see cref="PoolWaves.Envelope"/>) times the height setting, 0 to 1; the phase is
+	/// the wave's phase in cycles at the grid origin, so the surface agrees with <see cref="PoolWaves.SmoothWave"/>, the function the swimmers bob on.
+	/// </summary>
+	private void UpdateWaves()
+	{
+		var turn = Turn?.Invoke() ?? 0.0;
+		for ( var slot = 0; slot < WaveSlots; slot++ )
+		{
+			var amplitude = 0f;
+			if ( waveSettings[slot] is { } settings && Turn != null )
+				amplitude = PoolWaves.Envelope( settings, (long)Math.Floor( turn ) ) / 64f * Math.Clamp( settings.Height, 1, 3 ) / 3f;
+			WaveAmplitudes[slot] = amplitude;
+			var cycles = turn / PoolWaves.PeriodTurns + (terrain.Origin.X + terrain.Origin.Y) / cellSize * PoolWaves.PhasePerCell / 64.0;
+			waveWater[slot].WaveAmplitude = amplitude;
+			waveWater[slot].WavePhase = (float)(cycles - Math.Floor( cycles ));
+		}
+	}
+
+	/// <summary>
+	/// [EXT:pools-waves] Takes the water quads of the pools that have wave settings out of the flat water and into one part per pool (at most <see cref="WaveSlots"/>, in row order of their first cell);
+	/// the quads of every other pool stay in the flat part. A quad belongs to the pool of the cell its middle lies in.
+	/// </summary>
+	private (PoolMeshPart Flat, PoolMeshPart[] Waves, PoolWaveSettings?[] Settings) SplitWater( PoolMeshPart waterPart, IReadOnlyList<(int X, int Y)> poolCells )
+	{
+		var waves = Enumerable.Range( 0, WaveSlots ).Select( _ => new PoolMeshPart() ).ToArray();
+		var settings = new PoolWaveSettings?[WaveSlots];
+		var slotOf = new Dictionary<(int X, int Y), int>();
+		var seen = new HashSet<(int X, int Y)>();
+		var next = 0;
+		foreach ( var start in poolCells )
+		{
+			if ( !seen.Add( start ) )
+				continue;
+			var region = PoolSwimRegion.Build( cells, start );
+			if ( region == null )
+				continue;
+			foreach ( var cell in region.Cells )
+				seen.Add( cell );
+			if ( next < WaveSlots && Sites != null && PoolWaveSettings.ActiveIn( Sites, cells, region ) is { } found )
+			{
+				settings[next] = found;
+				foreach ( var cell in region.Cells )
+					slotOf[cell] = next;
+				next++;
+			}
+		}
+		if ( next == 0 )
+			return (waterPart, waves, settings);
+		var flat = new PoolMeshPart();
+		for ( var quad = 0; quad + 3 < waterPart.Vertices.Count; quad += 4 )
+		{
+			var centre = (waterPart.Vertices[quad].Position + waterPart.Vertices[quad + 2].Position) / 2f;
+			var cell = ((int)MathF.Floor( (centre.X - terrain.Origin.X) / cellSize ), (int)MathF.Floor( (centre.Y - terrain.Origin.Y) / cellSize ));
+			var target = slotOf.TryGetValue( cell, out var slot ) ? waves[slot] : flat;
+			var @base = target.Vertices.Count;
+			for ( var corner = 0; corner < 4; corner++ )
+				target.Vertices.Add( waterPart.Vertices[quad + corner] );
+			// the quads were built as four vertices and the indices 0 1 2, 0 2 3 (PoolMeshPart.AddQuad)
+			var source = quad / 4 * 6;
+			for ( var index = 0; index < 6; index++ )
+				target.Indices.Add( @base + waterPart.Indices[source + index] - quad );
+		}
+		return (flat, waves, settings);
+	}
+
+	private ulong Signature( IReadOnlyList<(int X, int Y)> poolCells )
 	{
 		var hash = 14695981039346656037UL;
 		foreach ( var (x, y) in poolCells )
-			hash = (hash ^ (uint)(y * 4096 + x)) * 1099511628211UL;
+			// [EXT:pools-river] [EXT:pools-waves] the river and wave flags of a cell are part of what is drawn (the current, the pool that has waves)
+			hash = (hash ^ (uint)(y * 4096 + x) ^ ((ulong)((ushort)cells.FlagsAt( x, y ) & (ushort)(ParkCellFlags.PoolRiver | ParkCellFlags.PoolWaveBits)) << 32)) * 1099511628211UL;
 		return hash;
 	}
 
@@ -180,7 +284,7 @@ public sealed class PoolRenderer : Entity
 	protected override void OnDelete()
 	{
 		deleted = true;
-		foreach ( var part in new[] { lowerWalls, floor, upperWalls, coping, water } )
+		foreach ( var part in new[] { lowerWalls, floor, upperWalls, coping, water }.Concat( waveWater ) )
 		{
 			part.Model?.ReleaseBuffers();
 			part.Model = null;

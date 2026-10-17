@@ -429,7 +429,9 @@ public partial class Level
 			FeetChooser = guest =>
 			{
 				var feet = GuestRenderer.CellToEngine( park.Heightfield, guest.DrawX, guest.DrawY );
-				return guests.Grid.Cells.RawTypeAt( guest.CellX, guest.CellY ) == ParkCellTypes.PoolWater && PoolRenderer?.WaterLevelAt( guest.CellX, guest.CellY ) is { } level ? new System.Numerics.Vector3( feet.X, feet.Y, level ) : feet;
+				var height = guests.Grid.Cells.RawTypeAt( guest.CellX, guest.CellY ) == ParkCellTypes.PoolWater && PoolRenderer?.WaterLevelAt( guest.CellX, guest.CellY ) is { } level ? level : feet.Z;
+				// [EXT:pools-activities] an activity may raise or set the drawn height (a board, a slide); presentation only
+				return new System.Numerics.Vector3( feet.X, feet.Y, guests.PoolFeetHeight( guest, height ) );
 			}
 		};
 	}

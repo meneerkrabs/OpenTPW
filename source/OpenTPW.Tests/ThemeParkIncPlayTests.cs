@@ -10,8 +10,8 @@ namespace OpenTPW.Tests;
 /// The experimental Theme Park Inc slice (docs/THEME-PARK-INC.md): the edition capability policy on synthetic data,
 /// and the supported gameplay route over the original retail corpus when <c>OPENTPW_TPI_PATH</c> names it. The route is
 /// the headless composition the slice drives — the build rules of <see cref="ParkObjects.Check"/>, an
-/// <see cref="OriginalObjectRuntime"/> with its original script, a free <see cref="ParkPathBuilder"/> (no economy) and
-/// <see cref="GuestSimulation"/> — composed like the M3 gate and the determinism tests, because placed
+/// <see cref="OriginalObjectRuntime"/> with its original script, a <see cref="ParkPathBuilder"/> (free without an economy, charging the
+/// Theme Park Inc money economy with one) and <see cref="GuestSimulation"/> — composed like the M3 gate and the determinism tests, because placed
 /// <see cref="OriginalObject"/>s build GPU models. None of this compares with the original game; it checks that the
 /// slice's own systems keep working on Theme Park Inc data.
 /// </summary>
@@ -20,6 +20,7 @@ namespace OpenTPW.Tests;
 public class ThemeParkIncPlayTests
 {
 	private BaseFileSystem? previous;
+	private Logger? previousLog;
 
 	[TestCleanup]
 	public void Cleanup()
@@ -27,6 +28,9 @@ public class ThemeParkIncPlayTests
 		if ( previous != null )
 			FileSystem = previous;
 		previous = null;
+		if ( previousLog != null )
+			Log = previousLog;
+		previousLog = null;
 		GameEditions.Select( GameEdition.ThemeParkWorld );
 	}
 
@@ -37,7 +41,7 @@ public class ThemeParkIncPlayTests
 	{
 		GameEditions.Select( GameEdition.ThemeParkWorld );
 		var capabilities = GameEditions.Capabilities;
-		Assert.IsTrue( capabilities.Economy && capabilities.OriginalHud && capabilities.Building && capabilities.Guests
+		Assert.IsTrue( capabilities.Economy && capabilities.Money && capabilities.Research && capabilities.Challenges && capabilities.OriginalHud && capabilities.Building && capabilities.Guests
 			&& capabilities.Staff && capabilities.Advisor && capabilities.FrontEnd && capabilities.ParkSaves && capabilities.Sharing,
 			"every implemented system runs for Theme Park World" );
 		Assert.IsFalse( capabilities.ExperimentalHud, "the experimental HUD is the Theme Park Inc slice's" );
@@ -45,20 +49,24 @@ public class ThemeParkIncPlayTests
 	}
 
 	[TestMethod]
-	public void TheSliceGivesBuildingAndGuestsAndRefusesTheUntracedSystems()
+	public void TheSliceGivesBuildingGuestsAndMoneyAndRefusesTheUntracedSystems()
 	{
 		GameEditions.Select( GameEdition.ThemeParkInc );
 		var capabilities = GameEditions.Capabilities;
 		Assert.IsTrue( capabilities.ExperimentalHud && capabilities.Building && capabilities.Guests, "the slice builds and routes guests" );
-		Assert.IsFalse( capabilities.Economy, "Theme Park Inc Standard.sam lacks 89 of the balance keys the economy reads" );
-		Assert.IsFalse( capabilities.OriginalHud && capabilities.Staff && capabilities.Advisor && capabilities.FrontEnd
-			&& capabilities.ParkSaves && capabilities.Sharing, "the untraced systems stay refused" );
+		Assert.IsTrue( capabilities.Money, "the money runs on Theme Park Inc's own balance keys" );
+		Assert.IsFalse( capabilities.Economy, "the whole Theme Park World economy needs keys Theme Park Inc's Standard.sam lacks" );
+		Assert.IsFalse( capabilities.Staff || capabilities.Research || capabilities.Challenges, "staff, research and challenges stay refused" );
+		Assert.IsFalse( capabilities.OriginalHud || capabilities.Advisor || capabilities.FrontEnd
+			|| capabilities.ParkSaves || capabilities.Sharing, "the untraced systems stay refused" );
 		var note = capabilities.ExperimentalNote;
 		Assert.IsNotNull( note );
 		StringAssert.Contains( note, "experimental" );
-		foreach ( var refused in new[] { "economy", "staff", "advisor", "missions", "Global Master Save", "COS", "saves", "sharing" } )
+		StringAssert.Contains( note, "money only", "the note names what runs" );
+		foreach ( var refused in new[] { "staff", "research", "challenges", "advisor", "missions", "Global Master Save", "COS", "saves", "sharing" } )
 			StringAssert.Contains( note, refused, $"the note names the refused '{refused}'" );
 		StringAssert.Contains( GameEditions.SliceNotice, "not verified" );
+		StringAssert.Contains( GameEditions.SliceNotice, "money" );
 	}
 
 	[TestMethod]
@@ -86,6 +94,8 @@ public class ThemeParkIncPlayTests
 			Assert.Inconclusive( "Set OPENTPW_TPI_PATH to a Theme Park Inc installation or its Data folder." );
 		var data = Directory.EnumerateDirectories( path! ).FirstOrDefault( directory => string.Equals( Path.GetFileName( directory ), "data", StringComparison.OrdinalIgnoreCase ) ) ?? path!;
 		previous = FileSystem;
+		previousLog = Log;
+		Log = new();
 		FileSystem = new BaseFileSystem( data );
 		FileSystem.RegisterArchiveHandler<WadArchive>( ".wad" );
 		GameEditions.Select( GameEdition.ThemeParkInc );
@@ -112,9 +122,14 @@ public class ThemeParkIncPlayTests
 		/// <summary>Cells the world's own records hold (placed objects and fixed items of a prebuilt save).</summary>
 		public readonly HashSet<(int X, int Y)> Occupied = new();
 
-		public SlicePark( string world, int? arrivalTimeBetween = null )
+		/// <summary>The Theme Park Inc money economy, when <c>withMoney</c> is set (the path builder then charges it).</summary>
+		public readonly ParkEconomyRuntime? Money;
+
+		public SlicePark( string world, int? arrivalTimeBetween = null, bool withMoney = false )
 		{
 			Park = OriginalPark.Load( world );
+			if ( withMoney )
+				Money = ParkEconomyRuntime.ForThemeParkIncLevel( Park );
 			Catalog = ObjectCatalog.Load( world );
 			BuildGrid = new OriginalParkGrid( Park );
 			Grid = GuestPathGrid.FromOriginal( Park.Map, Park.Save );
@@ -122,7 +137,7 @@ public class ThemeParkIncPlayTests
 			if ( arrivalTimeBetween is int interval )
 				settings.ArrivalTimeBetween = interval;
 			Guests = new GuestSimulation( Grid, settings, Level.GuestSeed );
-			Paths = new ParkPathBuilder( Grid.Cells, Grid, () => null, BuildGrid, ( x, y ) => Occupied.Contains( (x, y) ) );
+			Paths = new ParkPathBuilder( Grid.Cells, Grid, () => Money?.Economy, BuildGrid, ( x, y ) => Occupied.Contains( (x, y) ) );
 			if ( Park.Save == null )
 				return;
 			foreach ( var record in Park.Save.PlacedObjects.Select( item => item.Record ).Concat( Park.Save.UnresolvedObjects ).Concat( Park.Save.FixedItems ) )
@@ -258,6 +273,117 @@ public class ThemeParkIncPlayTests
 				queueing = Math.Max( queueing, park.Guests.GetStatistics().Queueing );
 		}
 		Assert.IsTrue( queueing > 0, "an arrived guest queues at a prebuilt attraction within two minutes" );
+	}
+
+	// ---- The money over the corpus (docs/THEME-PARK-INC.md, "Economy") --------------------
+
+	[TestMethod]
+	public void TheMoneySettingsLoadFromTheCorpusForEveryWorld()
+	{
+		UseTpiData();
+		foreach ( var world in new[] { "arabian", "science", "water" } )
+		{
+			var settings = BalanceSettings.LoadThemeParkInc( world );
+			Assert.AreEqual( GameEdition.ThemeParkInc, settings.Edition, world );
+			Assert.AreEqual( 50000L, settings.InitialCash, $"{world}: BankAccountInfo.InitialCash" );
+			Assert.AreEqual( 25, settings.InitialAdmissionFee, $"{world}: BankAccountInfo.InitialAdmissionFee" );
+			Assert.AreEqual( new CellCosts( 25, 10, 40, 50, 75 ), settings.Costs, $"{world}: Costs.*" );
+			Assert.AreEqual( 8, settings.Loans.Count, $"{world}: eight of LoanInfo's ten slots are used" );
+			Assert.AreEqual( new LoanOffer( 0, 100000, 20, 36, 0 ), settings.Loans[0], world );
+			Assert.AreEqual( new LoanOffer( 7, 65000, 21, 30, 7 ), settings.Loans[7], world );
+			Assert.AreEqual( 0, settings.Roles.Count, $"{world}: no staff keys are invented" );
+			Assert.IsFalse( settings.Standard.Contains( "PerGradeStaffConsts[0].BaseWage" ), $"{world}: Theme Park Inc's file lacks the staff wages" );
+			Assert.IsFalse( settings.CanSpendTickets || settings.CanEarnTickets, world );
+		}
+		Assert.AreEqual( 8, BalanceSettings.LoadThemeParkInc( "arabian" ).Loans[1].LenderNameIndex, "the theme layer renames lenders over the global file" );
+	}
+
+	[TestMethod]
+	public void TheEntryFeeJudgementUsesTheDataDivisor()
+	{
+		UseTpiData();
+		// levels/Standard.sam holds 6 where Theme Park World's holds 4; arabian's own layer sets 4 again. The booth reads the same words as the balance.
+		foreach ( var (world, divisor) in new[] { ("science", 6), ("water", 6), ("arabian", 4) } )
+		{
+			Assert.AreEqual( divisor, BalanceSettings.LoadThemeParkInc( world ).EntryFee.ExcitementToCostDivisor, $"{world}: balance" );
+			var guests = GuestSettings.Load( world );
+			Assert.AreEqual( divisor, guests.ExcitementToCostDivisor, $"{world}: guest settings" );
+			Assert.AreEqual( 20u + 600 / (uint)divisor, BoothVerdict.ParkValue( 600, 0, guests ), $"{world}: park value = points / (divisor + draw % (divisor / 2 + 1)) + minimum fee" );
+		}
+	}
+
+	[TestMethod]
+	public void TheCatalogueHoldsTheThemeParkIncObjectKeysAndEveryBuildableObject()
+	{
+		UseTpiData();
+		var park = new SlicePark( "science", withMoney: true );
+		var economy = park.Money!.Economy;
+		var ride = economy.Catalog.Objects.First( info => info.Kind == ParkObjectKind.Ride && info.Upgrades[0].RunningCost > 0 );
+		Assert.IsTrue( ride.ExpectedPrice > 0, "Info.ExpectedPrice is read (rides carry 25)" );
+		Assert.IsTrue( ride.Upgrades[0].CostOfUpgrade > 0 );
+		var unpriced = park.Catalog.Buildable.Where( entry => !economy.Catalog.TryGet( entry.InfoId, out _ ) ).Select( entry => entry.DisplayName ).ToList();
+		Assert.AreEqual( 0, unpriced.Count, $"every object of the build list has a price: {string.Join( ", ", unpriced )}" );
+	}
+
+	[TestMethod]
+	public void ASciencePark_ChargesBuildsAndPaths_PaysRunningCostsMonthlyAndAdvancesItsCalendar()
+	{
+		UseTpiData();
+		var park = new SlicePark( "science", withMoney: true );
+		var economy = park.Money!.Economy;
+		var events = new List<ParkEvent>();
+		economy.EventRaised += events.Add;
+		Assert.AreEqual( 50000L, economy.Balance, "starting cash" );
+		Assert.AreEqual( 25, economy.EntranceFee, "starting admission fee" );
+		Assert.AreEqual( new DateTime( 2000, 1, 1 ), ParkCalendar.DateTimeAt( economy.Tick ), "the calendar starts on January 1, 2000" );
+		Assert.AreEqual( 0, economy.Staff.Members.Count + economy.Staff.Candidates.Count, "no staff pool is drawn" );
+
+		// a path line charges Costs.PathCell per cell through the park's path builder
+		var line = StraightExtension( park );
+		Assert.IsNotNull( line, "a buildable line exists beside the imported paths" );
+		var segment = park.Paths.BuildSegment( line!.Value.Start, line.Value.End );
+		Assert.IsTrue( segment.Completed, segment.StoppedBy.ToString() );
+		Assert.AreEqual( segment.Built.Count * 10L, segment.Charged, "Costs.PathCell 10 per cell" );
+		Assert.AreEqual( 50000L - segment.Charged, economy.Balance );
+
+		// an object charges Upgrades[0].CostOfUpgrade, after the placement rules
+		var entry = park.Catalog.Buildable
+			.Where( candidate => candidate.HasQueue && candidate.ScriptPath != null && economy.Catalog.TryGet( candidate.InfoId, out var priced )
+				&& priced.PurchaseCost is > 0 and <= 20000 && priced.Upgrades[0].RunningCost > 0 )
+			.OrderBy( candidate => candidate.InfoId ).FirstOrDefault();
+		Assert.IsNotNull( entry, "a priced ride with a running cost exists" );
+		economy.Catalog.TryGet( entry!.InfoId, out var info );
+		var before = economy.Balance;
+		var placed = PlaceBesidePath( park, entry, out _, out _ );
+		Assert.IsNotNull( placed, $"{entry} builds beside a path" );
+		Assert.AreEqual( ParkEconomy.PurchaseResult.Ok, economy.TryBuild( entry.InfoId, out var state ) );
+		Assert.AreEqual( before - info.PurchaseCost, economy.Balance, "the purchase price is debited" );
+		Assert.AreEqual( info.PurchaseCost, state!.TotalSpent );
+		Assert.AreEqual( info.Upgrades[0].RunningCost, economy.RunningCost( state ), "the running cost of level 0" );
+
+		// the first month end debits the running cost and moves the calendar on
+		var runningBefore = economy.Balance;
+		economy.AdvanceMonths( 1 );
+		Assert.AreEqual( new DateTime( 2000, 2, 1 ), ParkCalendar.DateTimeAt( economy.Tick ).Date, "the calendar advanced a month (to the first park turn of the day)" );
+		Assert.AreEqual( runningBefore - info.Upgrades[0].RunningCost, economy.Balance, "one month of running costs" );
+		Assert.IsTrue( events.Any( item => item.Kind == ParkEventKind.RunningCostsPaid && item.Amount == info.Upgrades[0].RunningCost ), "the debit is announced" );
+		Assert.AreEqual( info.Upgrades[0].RunningCost, state.CostsLastMonth, "and enters the object's cost statistic" );
+		economy.AdvanceMonths( 1 );
+		Assert.AreEqual( runningBefore - 2 * info.Upgrades[0].RunningCost, economy.Balance, "every month pays again" );
+	}
+
+	[TestMethod]
+	public void TheMoneyRulesRefuseStaffResearchAndLand()
+	{
+		UseTpiData();
+		var park = new SlicePark( "science", withMoney: true );
+		var economy = park.Money!.Economy;
+		Assert.IsFalse( economy.Rules.Staff || economy.Rules.Research || economy.Rules.Challenges );
+		Assert.IsFalse( economy.Features.GoldenTickets || economy.Features.Challenges || economy.Features.ResearchPanel || economy.Features.Upgrades );
+		Assert.ThrowsException<InvalidOperationException>( () => economy.Hire( 1 ) );
+		Assert.AreEqual( ParkEconomy.PurchaseResult.NoLandForSale, economy.TryBuyCells( CellPurchase.Land, 1 ), "Theme Park Inc has no Buy Land" );
+		Assert.ThrowsException<InvalidOperationException>( () => economy.ChargeLand( 100, 1 ) );
+		Assert.AreEqual( 50000L, economy.Balance, "neither charged anything" );
 	}
 
 	/// <summary>Places <paramref name="entry"/> through the HUD build flow's rules (Level.PlaceObject without the purchase) beside a walkable path cell.</summary>

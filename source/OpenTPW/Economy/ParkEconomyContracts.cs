@@ -76,7 +76,9 @@ public enum ParkEventKind
 	/// </summary>
 	ResearchGroupOpened,
 	/// <summary>A completion left no item unresearched (the lab's check, tp.exe <c>0x00503D40</c>).</summary>
-	ResearchAllDone
+	ResearchAllDone,
+	/// <summary>Theme Park Inc's monthly running costs were debited (<see cref="ParkEvent.Amount"/> the total, <see cref="ParkEvent.InfoId"/> the objects charged).</summary>
+	RunningCostsPaid
 }
 
 /// <summary>

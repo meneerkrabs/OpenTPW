@@ -25,8 +25,11 @@ public class OriginalSaveEngineBlocksCorpusTests
 			.OrderBy( file => file, StringComparer.Ordinal ).ToList();
 		if ( files.Count == 0 )
 			Assert.Inconclusive( "The OPENTPW_TPWS_SAVES folder has no .TPWS/.INTS files in a theme subfolder." );
+		// the documented corpus is 11 saves (a .TPWS or autosave and a restart.INTS in each of the four themes)
+		Assert.IsTrue( files.Count >= 11, $"The corpus holds {files.Count} saves, not the 11 of docs/TPWS-PAYLOAD.md." );
 		var shipped = ShippedFile();
 		var scripts = 0;
+		var checkedAgainstShippedFile = 0;
 		var emitters = 0;
 		foreach ( var path in files )
 		{
@@ -70,13 +73,23 @@ public class OriginalSaveEngineBlocksCorpusTests
 				emitters++;
 			}
 
+			Assert.AreEqual( 0, particles.ListProblems.Count, $"{name}: {string.Join( "; ", particles.ListProblems )}" );
 			if ( shipped == null )
 				continue;
-			// the in-memory template table is the file's, but for the scratch templates the game rewrites at run time (jungle changes two of the last five)
+			checkedAgainstShippedFile++;
+			// the in-memory template table is the file's, but for the scratch templates 101 to 104 the game rewrites at run time (jungle changes 101 and 102)
 			for ( var id = 0; id <= 100; id++ )
 				CollectionAssert.AreEqual( shipped.Templates[id].Raw.ToArray(), particles.EmitterTemplateBytes[id], $"{name}: emitter template {id}" );
 			for ( var id = 0; id < SaveParticlesBlock.EffectorTemplates; id++ )
 				CollectionAssert.AreEqual( shipped.EffectorTemplates[id].Raw.ToArray(), particles.EffectorTemplateBytes[id], $"{name}: effector template {id}" );
+			// the documented losses of the conversion (SaveParticleState) are harmless here: the fields Restore refills from the runtime's templates equal the saved ones, and no emitter uses a scratch template
+			foreach ( var slot in particles.ActiveEmitterOrder )
+			{
+				var emitter = particles.Emitters[slot];
+				var template = shipped.Templates[emitter.EffectId];
+				Assert.IsTrue( emitter.EffectId <= 100, $"{name}: emitter {slot} uses scratch template {emitter.EffectId}" );
+				Assert.AreEqual( (template.Hold, template.Group, template.ScreenSpace, template.RingMode, template.Immortal), (emitter.Hold, emitter.Group, emitter.ScreenSpace, emitter.RingMode, emitter.Immortal), $"{name}: emitter {slot} template-derived fields" );
+			}
 			var state = particles.ToSystemState( shipped.Templates )!;
 			Assert.IsNull( ParticleSystem.ValidateState( state ), name );
 			var system = new ParticleSystem( shipped.Templates, effectors: shipped.EffectorTemplates );
@@ -85,14 +98,21 @@ public class OriginalSaveEngineBlocksCorpusTests
 			Assert.AreEqual( state.Emitters.Count > 0 || state.Effectors.Count > 0, captured != null, name );
 			if ( captured != null )
 			{
-				Assert.AreEqual( state.Emitters.Count, captured.Emitters.Count, name );
-				Assert.AreEqual( state.Random, captured.Random, name );
-				CollectionAssert.AreEqual( state.FreeEmitters.ToArray(), captured.FreeEmitters.ToArray(), name );
-				CollectionAssert.AreEqual( state.Emitters.Select( emitter => (emitter.Slot, emitter.EffectId, emitter.Generation) ).ToArray(), captured.Emitters.Select( emitter => (emitter.Slot, emitter.EffectId, emitter.Generation) ).ToArray(), name );
-				Assert.AreEqual( state.Emitters.Count( emitter => emitter.Life == -2 || shipped.Templates[emitter.EffectId].ScreenSpace ), captured.Emitters.Count( emitter => emitter.Life == -2 ), $"{name}: only the post-load pass kills emitters" );
+				// every carried field comes back; the only change is the post-load pass (0x5200B0): screen-space emitters and killed-on-load effectors get life -2
+				var expected = new ParticleSystemState
+				{
+					Random = state.Random, TickCounter = state.TickCounter, GenerationCounter = state.GenerationCounter, EffectorGenerationCounter = state.EffectorGenerationCounter,
+					Emitters = state.Emitters.Select( emitter => shipped.Templates[emitter.EffectId].ScreenSpace ? emitter with { Life = -2 } : emitter ).ToList(),
+					FreeEmitters = state.FreeEmitters,
+					Effectors = state.Effectors.Select( effector => shipped.EffectorTemplates[effector.EffectorId].KilledOnLoad ? effector with { Life = -2 } : effector ).ToList(),
+					FreeEffectors = state.FreeEffectors
+				};
+				Assert.AreEqual( System.Text.Json.JsonSerializer.Serialize( expected ), System.Text.Json.JsonSerializer.Serialize( captured ), $"{name}: the captured pool equals the saved one" );
 			}
 		}
 		Assert.IsTrue( scripts > 0 && emitters > 0, "the corpus holds sprite scripts and live emitters" );
+		if ( checkedAgainstShippedFile == 0 )
+			Assert.Inconclusive( "Set OPENTPW_GAME_PATH to a folder with Data/Particle/Tp2.plb: the template and restore checks did not run." );
 	}
 
 	private static string TemplateName( byte[] template )

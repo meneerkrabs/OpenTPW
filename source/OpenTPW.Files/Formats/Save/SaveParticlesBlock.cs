@@ -165,11 +165,13 @@ public sealed record SaveParticleGlobals
 }
 
 /// <summary>
-/// The Particles block (writer <c>0x51F690</c>, loader <c>0x51F7A0</c>, 76,252 bytes in a save the game writes): <c>u32 'PCLT'</c> (the file holds <c>LCTP</c>), <c>u32 on</c> and, when
+/// The Particles block (writer <c>0x51F680</c> (called at 0x41661E), loader <c>0x51F7A0</c>, 76,252 bytes in a save the game writes): <c>u32 'PCLT'</c> (the file holds <c>LCTP</c>), <c>u32 on</c> and, when
 /// on, <c>u32 0x9E68</c> + the pool table (globals, 120 emitter slots of 320 bytes, 20 effector slots of 104 bytes, list heads), <c>u32 0x8B60</c> + the template table (105 emitter templates of
 /// 320 bytes and 20 effector templates of 104 bytes, the game's in-memory copy of <c>Data/Particle/Tp2.plb</c> plus whatever the running game changed), and <c>u32 c</c> + <c>c</c>
-/// bytes of the particle pool (52 bytes a particle). The game's save call (<c>0x41661B</c>) always writes c = 0, and the loader then rebuilds an empty pool; a saved pool would be read
-/// into the 52 × capacity bytes it allocates, so a larger c is rejected here (the original overruns its heap).
+/// bytes of the particle pool (52 bytes a particle). The game's save call (<c>0x41661B</c>) always writes c = 0. With c = 0 the loader rebuilds an empty pool; with c not zero it reads the pool
+/// into the 52 × capacity bytes (32-bit wrapped) it allocates and skips the rebuild (<c>0x51F8FB</c>), so a larger c is rejected here (the original overruns its heap), as is a capacity of 0 (the rebuild
+/// dereferences the NULL pool at <c>0x51F954</c>). A wrong magic or <c>on</c> = 0 is not a failure of the original load: the loader returns 0 (<c>0x51FA0C</c>, success to the caller at <c>0x41543F</c>) after
+/// 4 or 8 bytes (<see cref="SaveBlockWidths"/>), which <see cref="MagicMatched"/> and <see cref="On"/> report.
 /// </summary>
 public sealed class SaveParticlesBlock
 {
@@ -183,6 +185,10 @@ public sealed class SaveParticlesBlock
 	public int Length { get; private init; }
 	/// <summary>The 'on' word: the particle system was initialised. A block with 0 ends after its 8 bytes.</summary>
 	public bool On { get; private init; }
+	/// <summary>Whether the first word is 'PCLT'. When it is not, the loader stops after that word and succeeds (4-byte block, <see cref="On"/> false).</summary>
+	public bool MagicMatched { get; private init; } = true;
+	/// <summary>Findings about the slot lists. The original loader checks none of them (no counterpart is proven for every writer), so they are reported, not refused; <see cref="SaveParticleState.ToSystemState"/> refuses a block that has any.</summary>
+	public IReadOnlyList<string> ListProblems { get; private init; } = Array.Empty<string>();
 	public SaveParticleGlobals Globals { get; private init; } = new();
 	public IReadOnlyList<SaveParticleEmitter> Emitters { get; private init; } = Array.Empty<SaveParticleEmitter>();
 	public IReadOnlyList<SaveParticleEffector> Effectors { get; private init; } = Array.Empty<SaveParticleEffector>();
@@ -193,20 +199,23 @@ public sealed class SaveParticlesBlock
 	/// <summary>The saved particle pool bytes (empty in a save the game writes).</summary>
 	public byte[] ParticlePool { get; private init; } = Array.Empty<byte>();
 
-	/// <summary>The slots of the active emitter list from its head, newest first.</summary>
-	public IReadOnlyList<int> ActiveEmitterOrder => Walk( Globals.ActiveEmitter, Emitters.Select( slot => (int)slot.NextSlot ).ToArray() );
-	public IReadOnlyList<int> FreeEmitterOrder => Walk( Globals.FreeEmitter, Emitters.Select( slot => (int)slot.NextSlot ).ToArray() );
-	public IReadOnlyList<int> ActiveEffectorOrder => Walk( Globals.ActiveEffector, Effectors.Select( slot => (int)slot.NextSlot ).ToArray() );
-	public IReadOnlyList<int> FreeEffectorOrder => Walk( Globals.FreeEffector, Effectors.Select( slot => (int)slot.NextSlot ).ToArray() );
+	/// <summary>The slots of the active emitter list from its head, newest first (a list that loops or leaves the slots stops there and is reported in <see cref="ListProblems"/>).</summary>
+	public IReadOnlyList<int> ActiveEmitterOrder { get; private init; } = Array.Empty<int>();
+	public IReadOnlyList<int> FreeEmitterOrder { get; private init; } = Array.Empty<int>();
+	public IReadOnlyList<int> ActiveEffectorOrder { get; private init; } = Array.Empty<int>();
+	public IReadOnlyList<int> FreeEffectorOrder { get; private init; } = Array.Empty<int>();
 
-	private static List<int> Walk( int head, int[] next )
+	private static List<int> Walk( string list, int head, int[] next, List<string> problems )
 	{
 		var order = new List<int>();
 		var seen = new bool[next.Length];
 		for ( var slot = head; slot >= 0; slot = next[slot] )
 		{
 			if ( slot >= next.Length || seen[slot] )
-				throw new InvalidDataException( $"A particle slot list visits slot {slot} twice or outside 0..{next.Length - 1}." );
+			{
+				problems.Add( $"The {list} list visits slot {slot} twice or outside 0..{next.Length - 1}." );
+				break;
+			}
 			seen[slot] = true;
 			order.Add( slot );
 		}
@@ -232,10 +241,10 @@ public sealed class SaveParticlesBlock
 		if ( offset < 0 || offset > payload.Length )
 			throw new InvalidDataException( "The Particles block starts outside the payload." );
 		var cursor = new SaveBlockCursor( payload, offset, "Particles" );
-		// [BIN:TPW-EXE:0x51F7E0 Particles loader] 'PCLT' else the load fails (branch 0x51FA0C)
+		// [BIN:TPW-EXE:0x51F7E9 Particles loader] a wrong magic jumps to 0x51FA0C and 0 (success) is returned after 4 bytes; on = 0 (0x51F80B) does the same after 8
 		var magic = cursor.U32();
 		if ( magic != SaveBlockWidths.ParticlesMagic )
-			throw new InvalidDataException( $"The Particles block does not start with 'PCLT' (0x{magic:X8})." );
+			return new SaveParticlesBlock { Offset = offset, Length = cursor.Position - offset, MagicMatched = false };
 		if ( cursor.U32() == 0 )
 			return new SaveParticlesBlock { Offset = offset, Length = cursor.Position - offset };
 		var tableSize = cursor.U32();
@@ -250,9 +259,12 @@ public sealed class SaveParticlesBlock
 		var poolLength = cursor.U32();
 		var poolAt = cursor.Take( poolLength );
 		var pool = payload.Slice( poolAt, (int)poolLength );
-		// [BIN:TPW-EXE:0x51F8B3 pool length] the loader allocates 13 × capacity × 4 bytes and reads c bytes into them
-		if ( poolLength > (long)globals.PoolCapacity * ParticleBytes )
-			throw new InvalidDataException( $"The Particles block holds {poolLength} particle bytes, more than the {(long)globals.PoolCapacity * ParticleBytes} of its {globals.PoolCapacity}-particle pool; the original overruns its heap." );
+		// [BIN:TPW-EXE:0x51F8B3 pool length] the loader allocates 13 × capacity × 4 bytes (32-bit) and reads c bytes into them; a capacity of 0 reaches the NULL pool at 0x51F954
+		var allocated = unchecked( globals.PoolCapacity * (uint)ParticleBytes );
+		if ( globals.PoolCapacity == 0 )
+			throw new InvalidDataException( "The Particles block has a pool capacity of 0; the original dereferences a NULL pool." );
+		if ( poolLength > allocated )
+			throw new InvalidDataException( $"The Particles block holds {poolLength} particle bytes, more than the {allocated} of its {globals.PoolCapacity}-particle pool; the original overruns its heap." );
 
 		var emitters = new SaveParticleEmitter[EmitterSlots];
 		for ( var slot = 0; slot < emitters.Length; slot++ )
@@ -267,13 +279,25 @@ public sealed class SaveParticlesBlock
 		for ( var index = 0; index < effectorTemplates.Length; index++ )
 			effectorTemplates[index] = templates.Slice( EmitterTemplates * SaveParticleEmitter.Bytes + index * SaveParticleEffector.Bytes, SaveParticleEffector.Bytes ).ToArray();
 
-		var result = new SaveParticlesBlock
+		var problems = new List<string>();
+		var activeEmitters = Walk( "active emitter", globals.ActiveEmitter, emitters.Select( slot => (int)slot.NextSlot ).ToArray(), problems );
+		var freeEmitters = Walk( "free emitter", globals.FreeEmitter, emitters.Select( slot => (int)slot.NextSlot ).ToArray(), problems );
+		var activeEffectors = Walk( "active effector", globals.ActiveEffector, effectors.Select( slot => (int)slot.NextSlot ).ToArray(), problems );
+		var freeEffectors = Walk( "free effector", globals.FreeEffector, effectors.Select( slot => (int)slot.NextSlot ).ToArray(), problems );
+		CheckPartition( "emitter", EmitterSlots, activeEmitters, freeEmitters, problems );
+		CheckPartition( "effector", EffectorSlots, activeEffectors, freeEffectors, problems );
+		foreach ( var slot in activeEmitters )
+			if ( !emitters[slot].InUse )
+				problems.Add( $"Emitter slot {slot} is on the active list but not in use." );
+		foreach ( var slot in freeEmitters )
+			if ( emitters[slot].InUse )
+				problems.Add( $"Emitter slot {slot} is on the free list but in use." );
+		return new SaveParticlesBlock
 		{
 			Offset = offset, Length = cursor.Position - offset, On = true, Globals = globals, Emitters = emitters, Effectors = effectors,
-			EmitterTemplateBytes = emitterTemplates, EffectorTemplateBytes = effectorTemplates, ParticlePool = pool.ToArray()
+			EmitterTemplateBytes = emitterTemplates, EffectorTemplateBytes = effectorTemplates, ParticlePool = pool.ToArray(),
+			ActiveEmitterOrder = activeEmitters, FreeEmitterOrder = freeEmitters, ActiveEffectorOrder = activeEffectors, FreeEffectorOrder = freeEffectors, ListProblems = problems
 		};
-		result.ValidateLists();
-		return result;
 	}
 
 	private static SaveParticleGlobals ReadGlobals( ReadOnlySpan<byte> table )
@@ -293,22 +317,9 @@ public sealed class SaveParticlesBlock
 		};
 	}
 
-	/// <summary>The active and free lists must partition the slots, and the in-use flags must agree with them.</summary>
-	private void ValidateLists()
+	private static void CheckPartition( string kind, int slots, List<int> active, List<int> free, List<string> problems )
 	{
-		var active = ActiveEmitterOrder;
-		var free = FreeEmitterOrder;
-		if ( active.Count + free.Count != EmitterSlots || active.Intersect( free ).Any() )
-			throw new InvalidDataException( $"The emitter lists hold {active.Count} active and {free.Count} free slots, not a partition of {EmitterSlots}." );
-		foreach ( var slot in active )
-			if ( !Emitters[slot].InUse )
-				throw new InvalidDataException( $"Emitter slot {slot} is on the active list but not in use." );
-		foreach ( var slot in free )
-			if ( Emitters[slot].InUse )
-				throw new InvalidDataException( $"Emitter slot {slot} is on the free list but in use." );
-		var activeEffectors = ActiveEffectorOrder;
-		var freeEffectors = FreeEffectorOrder;
-		if ( activeEffectors.Count + freeEffectors.Count != EffectorSlots || activeEffectors.Intersect( freeEffectors ).Any() )
-			throw new InvalidDataException( $"The effector lists hold {activeEffectors.Count} active and {freeEffectors.Count} free slots, not a partition of {EffectorSlots}." );
+		if ( active.Count + free.Count != slots || active.Intersect( free ).Any() )
+			problems.Add( $"The {kind} lists hold {active.Count} active and {free.Count} free slots, not a partition of {slots}." );
 	}
 }

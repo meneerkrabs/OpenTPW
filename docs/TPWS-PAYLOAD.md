@@ -406,7 +406,7 @@ nothing about them is imported.
 
 Both blocks end exactly where their tp.exe loaders stop (`SaveBlockWidths`, no delimiter search), and both typed readers
 consume them to that width in every corpus save (11 saves: jungle, hallow, fantasy and space, each with a `restart.INTS`).
-Each reader checks the same magic and table sizes as the loader and throws `InvalidDataException` otherwise. Fields
+Each reader checks what the loader checks and throws `InvalidDataException` where the original load fails (Scripts: another magic or record size; Particles: a table size other than 0x9E68 / 0x8B60). A wrong Particles magic or `on` = 0 is **not** a failure: the loader returns 0 (`0x51F7E9` jumps to `0x51FA0C`; `on` = 0 at `0x51F80B`), which the caller at `0x41543F` takes as success, after 4 or 8 bytes, and the reader models that as a short block (`MagicMatched`, `On`). Fields
 the loader never reads, or overwrites with a process value, are kept raw and are reachable by offset.
 
 **Scripts** (writer `0x475650`, loader `0x475730`; file tag `TPCS`). `u32 'SCPT'`, `u32 0x118`, `u32 n` (100: `0x4752B3`),
@@ -429,10 +429,10 @@ The program is a word table at `0x74DAB8` shared by every script (the guests' ba
 
 The corpus holds 0 scripts in the `restart.INTS` saves, 1 in fantasy and 4 in each of hallow, jungle and space (entry points 0x5A, 0x3B and 0x61 seen; the program words behind them are not matched to what the scripts do).
 
-**Particles** (writer `0x51F690`, loader `0x51F7A0`, 76,252 bytes; file tag `LCTP`). `u32 'PCLT'`, `u32 on`; when on `u32 0x9E68` and the pool table
+**Particles** (writer `0x51F680`, called at `0x41661E`; loader `0x51F7A0`, 76,252 bytes; file tag `LCTP`). `u32 'PCLT'`, `u32 on`; when on `u32 0x9E68` and the pool table
 (the memory at `0x80CED0`), `u32 0x8B60` and the template table (`0x804370`), `u32 c` and `c` bytes of the particle pool. The game's save call writes `c = 0`; the
-loader allocates 52 x capacity bytes and reads `c` bytes into them (a larger `c` overruns the original's heap and is rejected here); then it rebuilds an empty pool, clears the live count and the
-free-particle head, and keeps only two words of the running process (the sine table `+0x1C` and the ground function `+0x24`), so the saved density (`+0x20`) becomes the pool's.
+loader allocates 52 x capacity bytes (32-bit wrapped) and, **if `c` is 0**, rebuilds an empty pool, clears the live count and the free-particle head (`0x51F8FB` `je 0x51F91B`); **if `c` is not 0** it reads `c` bytes into the pool
+and skips the rebuild (`0x51F9FC`). A larger `c` overruns the original's heap and a capacity of 0 dereferences a NULL pool at `0x51F954`; both are rejected here. It keeps only two words of the running process (the sine table `+0x1C` and the ground function `+0x24`), so the saved density (`+0x20`) becomes the pool's.
 
 The pool table (0x9E68 bytes):
 
@@ -457,11 +457,18 @@ The template table is 105 emitter templates and 20 effector templates, the game'
 in every corpus save; the last four emitter templates are scratch records the game rewrites at run time (Jungle's templates 101 and 102 differ, a modified "Smoke").
 
 Corpus: `restart.INTS` holds 0 to 1 live emitters (Jungle's is the ambient `WaterFall`, effect 20), the park saves 3 to 18 (`Button` effects and ambient emitters); no corpus save has a live effector; every pool table's
-active and free lists partition the 120 emitter slots and the 20 effector slots, and the in-use flags agree with the lists.
+active and free lists partition the 120 emitter slots and the 20 effector slots, and the in-use flags agree with the lists. The original loader checks none of this and no writer was proven to keep it, so a block that breaks it is read and reported in `ListProblems`; only the runtime conversion refuses it.
 
-**Mapping to the runtime.** `ParticleSystemState` (the park-resume part, PARTICLES.md "Saves") describes the same native structure, so `SaveParticleState.ToSystemState` is a field-for-field copy; the corpus test restores every save's
-pool into `ParticleSystem` and captures it back. The effector's template id is recovered from the template bytes the tick never rewrites. The park import does not call the conversion, and the sprite-script records have no
-runtime counterpart: both are decoded, not applied (SAVE-013, `[EXT:original-engine-state-dumps]`).
+**Mapping to the runtime.** `ParticleSystemState` (the park-resume part, PARTICLES.md "Saves") describes the same native structure, and `SaveParticleState.ToSystemState` copies the fields it has. The conversion is partial:
+
+- Not carried (no runtime field): the emitter's hold word, group, screen-space flag, ring mode, immortal word, word +0x2A, live particle count, first particle and bounds; the effector's group, mode and strength; the pool capacity, density and low-detail
+  flag; the saved template tables. `ParticleSystem.Restore` refills hold, group, screen-space and killed-on-load from the runtime's own Tp2.plb templates, so a save made with modified templates (Jungle's scratch templates 101 to 104) restores with the file's.
+  In the corpus every emitter uses effects 0 to 100 and its saved hold, group, screen-space, ring and immortal values equal the file's, so nothing is lost there.
+- Inferred: an effector slot stores no template id, so the id is matched on template bytes (group, mode, jitter, strength) that the tick does not write by direct displacement (writes through a base register were not checked); no match or several is refused. No corpus save has a live effector, so this is unexercised on real data.
+- Conditional or capped: `VolumeExtent` is null when it equals the runtime template's; `TickCounter` is capped at `int.MaxValue`; a block with `ListProblems` is refused.
+
+The corpus test restores every save's pool into `ParticleSystem`, captures it back and compares every carried field (the post-load pass `0x5200B0` is the only difference, applied to the expectation). The park import does not call the conversion, and the sprite-script
+records have no runtime counterpart: both are decoded, not applied (SAVE-013, `[EXT:original-engine-state-dumps]`).
 
 ## RSSE block (`SaveRsseBlock`)
 

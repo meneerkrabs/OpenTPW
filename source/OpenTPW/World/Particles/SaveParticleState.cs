@@ -2,14 +2,21 @@ namespace OpenTPW;
 
 /// <summary>
 /// Maps a decoded Particles block of an original park save (<see cref="SaveParticlesBlock"/>, tp.exe <c>0x51F7A0</c>) onto the runtime pool's save shape
-/// (<see cref="ParticleSystemState"/>, <see cref="ParticleSystem.Restore"/>). Both describe the same native structure, so every field is a direct copy; the conversion
-/// is pure and the park import does not call it (an original park's ambient emitters are not restored, docs/TPWS-PAYLOAD.md and SAVE-013).
+/// (<see cref="ParticleSystemState"/>, <see cref="ParticleSystem.Restore"/>). Both describe the same native structure and the fields <see cref="ParticleSystemState"/> has are copied directly. The conversion is partial, and what it leaves out is listed here and asserted by the corpus test:
+/// <list type="bullet">
+/// <item>Not carried (the runtime state has no field): the emitter's hold word, group, screen-space flag, ring mode, immortal word, word +0x2A, live particle count, first particle and bounds, the effector's group, mode and strength, the pool
+/// capacity, density and low-detail flag, and the saved template tables. <see cref="ParticleSystem.Restore"/> refills hold, group, screen-space and killed-on-load from the runtime's own templates, so a save made with modified templates
+/// (Jungle's scratch templates 101 to 104) restores with the file's; the corpus emitters use effects 0 to 100 only and their saved fields equal the file's.</item>
+/// <item>Inferred: an effector slot stores no template id, so it is matched by template bytes (group, mode, jitter, strength) that the tick does not write directly (checked for direct-displacement writes only); no match or several is refused.</item>
+/// <item>Conditional: <c>VolumeExtent</c> is null when the slot equals the runtime template's extent. <c>TickCounter</c> is capped at <see cref="int.MaxValue"/>.</item>
+/// </list>
+/// The conversion is pure and the park import does not call it (an original park's ambient emitters are not restored, docs/TPWS-PAYLOAD.md and SAVE-013).
 /// </summary>
 public static class SaveParticleState
 {
 	// [APPROX:SAVE-013] the conversion is not called by the park import: an original park's ambient emitters and sprite-script records are decoded, not applied — evidence needed: whether restoring the saved emitters changes what the player sees
 
-	// [BIN:TPW-EXE:0x52244B effector slot] the slot is a copy of the effector template without an id word, so the id is found by the template bytes the tick never rewrites (group, mode, jitter, strength: +4, +0x30 to +0x43)
+	// [BIN:TPW-EXE:0x52244B effector slot] the slot is a copy of the effector template without an id word, so the id is found by the template bytes the tick does not write by direct displacement (writes through a base register were not checked) (group, mode, jitter, strength: +4, +0x30 to +0x43)
 	private const int EffectorMatchFrom = 0x30, EffectorMatchTo = 0x44;
 
 	/// <summary>
@@ -22,6 +29,8 @@ public static class SaveParticleState
 		ArgumentNullException.ThrowIfNull( templates );
 		if ( !block.On )
 			return null;
+		if ( block.ListProblems.Count > 0 )
+			throw new InvalidDataException( $"The Particles block's slot lists are not well formed: {block.ListProblems[0]}" );
 		var emitters = new List<ParticleEmitterState>();
 		foreach ( var slot in block.ActiveEmitterOrder )
 		{

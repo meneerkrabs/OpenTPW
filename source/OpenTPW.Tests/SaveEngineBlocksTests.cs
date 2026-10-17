@@ -247,9 +247,6 @@ public class SaveEngineBlocksTests
 		var good = ParticlesBlock( pool, TemplateTable() );
 		SaveParticlesBlock.Parse( good, 0 );
 		void Rejects( byte[] bytes, string text ) => StringAssert.Contains( Assert.ThrowsException<InvalidDataException>( () => SaveParticlesBlock.Parse( bytes, 0 ) ).Message, text );
-		var badMagic = (byte[])good.Clone();
-		badMagic[0] ^= 1;
-		Rejects( badMagic, "'PCLT'" );
 		var badTable = (byte[])good.Clone();
 		badTable[8] = 0x67;
 		Rejects( badTable, "pool table" );
@@ -257,21 +254,48 @@ public class SaveEngineBlocksTests
 		badTemplates[12 + 0x9E68] = 0x5F;
 		Rejects( badTemplates, "template table" );
 		Rejects( ParticlesBlock( pool, TemplateTable(), new byte[0x800 * 52 + 1] ), "overruns its heap" );
-		Rejects( ParticlesBlock( PoolTable( new[] { 3 }, table => { Emitter( table, 3, 1, 1, 5, 0, "Sparks" ); BitConverter.TryWriteBytes( table.AsSpan( 0xC ), 0u ); } ), TemplateTable(), new byte[1] ), "overruns its heap" );
+		Rejects( ParticlesBlock( PoolTable( new[] { 3 }, table => BitConverter.TryWriteBytes( table.AsSpan( 0xC ), 0u ) ), TemplateTable() ), "NULL pool" );
+		Rejects( ParticlesBlock( PoolTable( new[] { 3 }, table => BitConverter.TryWriteBytes( table.AsSpan( 0xC ), 1u ) ), TemplateTable(), new byte[53] ), "overruns its heap" );
+		// the allocation wraps in 32 bits (52 × 0x4EC4EC5 = 2^32 + 4): 4 bytes fit, 5 do not
+		var wrapped = PoolTable( new[] { 3 }, table => BitConverter.TryWriteBytes( table.AsSpan( 0xC ), 0x4EC4EC5u ) );
+		Assert.AreEqual( 4, SaveParticlesBlock.Parse( ParticlesBlock( wrapped, TemplateTable(), new byte[4] ), 0 ).ParticlePool.Length );
+		Rejects( ParticlesBlock( wrapped, TemplateTable(), new byte[5] ), "overruns its heap" );
 		for ( var cut = 0; cut < good.Length; cut += 997 )
 			Assert.ThrowsException<InvalidDataException>( () => SaveParticlesBlock.Parse( good.AsSpan( 0, cut ), 0 ), $"truncated at {cut}" );
 		Assert.ThrowsException<InvalidDataException>( () => SaveParticlesBlock.Parse( good.AsSpan( 0, good.Length - 1 ), 0 ) );
 	}
 
 	[TestMethod]
-	public void ParticlesBlockRefusesBrokenSlotLists()
+	public void ParticlesBlockWithAWrongMagicOrNoOnWordIsNotAFailureOfTheLoader()
 	{
-		var loop = PoolTable( new[] { 3, 4 }, table => BitConverter.TryWriteBytes( table.AsSpan( SaveParticlesBlock.EmittersOffset + 4 * 320 + 0xD0 ), (short)3 ) );
-		StringAssert.Contains( Assert.ThrowsException<InvalidDataException>( () => SaveParticlesBlock.Parse( ParticlesBlock( loop, TemplateTable() ), 0 ) ).Message, "twice" );
-		var lost = PoolTable( new[] { 3 }, table => BitConverter.TryWriteBytes( table.AsSpan( SaveParticleGlobals.TailOffset + 4 ), (short)-1 ) );
-		StringAssert.Contains( Assert.ThrowsException<InvalidDataException>( () => SaveParticlesBlock.Parse( ParticlesBlock( lost, TemplateTable() ), 0 ) ).Message, "partition" );
-		var flag = PoolTable( new[] { 3 }, table => BitConverter.TryWriteBytes( table.AsSpan( SaveParticlesBlock.EmittersOffset + 3 * 320 ), (ushort)0 ) );
-		StringAssert.Contains( Assert.ThrowsException<InvalidDataException>( () => SaveParticlesBlock.Parse( ParticlesBlock( flag, TemplateTable() ), 0 ) ).Message, "not in use" );
+		// 0x51F7E9 jumps to 0x51FA0C and returns 0 (success) after 4 bytes; on = 0 returns after 8
+		var good = ParticlesBlock( PoolTable( Array.Empty<int>() ), TemplateTable() );
+		var badMagic = (byte[])good.Clone();
+		badMagic[0] ^= 1;
+		var block = SaveParticlesBlock.Parse( badMagic, 0 );
+		Assert.IsFalse( block.MagicMatched );
+		Assert.IsFalse( block.On );
+		Assert.AreEqual( 4, block.Length );
+		Assert.IsTrue( SaveBlockWidths.TryMeasure( badMagic, SaveBlock.Particles, 0, out var width ) );
+		Assert.AreEqual( 4, width );
+		Assert.IsNull( block.ToSystemState( Array.Empty<ParticleTemplate>() ) );
+		var off = SaveParticlesBlock.Parse( ParticlesBlock( Array.Empty<byte>(), Array.Empty<byte>(), on: 0 ), 0 );
+		Assert.IsTrue( off.MagicMatched );
+		Assert.AreEqual( 8, off.Length );
+	}
+
+	[TestMethod]
+	public void ParticlesBlockReportsBrokenSlotListsAndTheConversionRefusesThem()
+	{
+		var loop = SaveParticlesBlock.Parse( ParticlesBlock( PoolTable( new[] { 3, 4 }, table => BitConverter.TryWriteBytes( table.AsSpan( SaveParticlesBlock.EmittersOffset + 4 * 320 + 0xD0 ), (short)3 ) ), TemplateTable() ), 0 );
+		StringAssert.Contains( string.Join( "|", loop.ListProblems ), "twice" );
+		var lost = SaveParticlesBlock.Parse( ParticlesBlock( PoolTable( new[] { 3 }, table => BitConverter.TryWriteBytes( table.AsSpan( SaveParticleGlobals.TailOffset + 4 ), (short)-1 ) ), TemplateTable() ), 0 );
+		StringAssert.Contains( string.Join( "|", lost.ListProblems ), "partition" );
+		var flag = SaveParticlesBlock.Parse( ParticlesBlock( PoolTable( new[] { 3 }, table => BitConverter.TryWriteBytes( table.AsSpan( SaveParticlesBlock.EmittersOffset + 3 * 320 ), (ushort)0 ) ), TemplateTable() ), 0 );
+		StringAssert.Contains( string.Join( "|", flag.ListProblems ), "not in use" );
+		foreach ( var block in new[] { loop, lost, flag } )
+			StringAssert.Contains( Assert.ThrowsException<InvalidDataException>( () => block.ToSystemState( BlankTemplates() ) ).Message, "not well formed" );
+		Assert.AreEqual( 0, SaveParticlesBlock.Parse( ParticlesBlock( PoolTable( new[] { 3 } ), TemplateTable() ), 0 ).ListProblems.Count );
 	}
 
 	[TestMethod]

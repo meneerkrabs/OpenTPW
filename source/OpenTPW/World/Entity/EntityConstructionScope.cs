@@ -20,10 +20,10 @@ internal sealed class EntityConstructionScope : IDisposable
 	internal static bool IsStaging => active != null && active.candidate == null && active.paused == null;
 
 	private readonly record struct SceneState( List<Entity> Entities, Level? Level, CameraMode Camera,
-		float TargetExtent, Vector3 InitialTarget, Vector3 ListenerPosition, Vector3 ListenerForward )
+		float TargetExtent, Vector3 InitialTarget, Vector3 ListenerPosition, Vector3 ListenerForward, Vector3 ListenerFront, Vector3 ListenerUp )
 	{
 		public static SceneState Capture() => new( Entity.All, global::OpenTPW.Level.Current, global::OpenTPW.Camera.Mode,
-			ParkCameraMode.TargetExtent, ParkCameraMode.InitialTarget, AudioListener.Position, AudioListener.Forward );
+			ParkCameraMode.TargetExtent, ParkCameraMode.InitialTarget, AudioListener.Position, AudioListener.Forward, AudioListener.Front, AudioListener.Up );
 
 		public void Restore()
 		{
@@ -33,6 +33,7 @@ internal sealed class EntityConstructionScope : IDisposable
 			ParkCameraMode.TargetExtent = TargetExtent;
 			ParkCameraMode.InitialTarget = InitialTarget;
 			AudioListener.RestoreCaptured( ListenerPosition, ListenerForward );
+			AudioListener.RestoreCapturedAxes( ListenerFront, ListenerUp );
 		}
 	}
 

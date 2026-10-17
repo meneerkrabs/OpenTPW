@@ -43,6 +43,12 @@ public static class AudioListener
 	/// <summary>The listener's ground heading, normalised; sources to its right pan right.</summary>
 	public static Vector3 Forward { get; private set; } = new( 0, 0, 1 );
 
+	/// <summary>The listener's front axis in sound space (x right, y up, z ahead), normalised: the camera's view direction, pitch included.</summary>
+	public static Vector3 Front { get; private set; } = new( 0, 0, 1 );
+
+	/// <summary>The listener's up axis in sound space, normalised.</summary>
+	public static Vector3 Up { get; private set; } = new( 0, 1, 0 );
+
 	/// <summary>Reinstates an already captured listener exactly when a scene transaction rolls back.</summary>
 	internal static void RestoreCaptured( Vector3 position, Vector3 forward )
 	{
@@ -50,22 +56,104 @@ public static class AudioListener
 		ValidatePosition( forward, nameof( forward ) );
 		Position = position;
 		Forward = forward;
+		Front = forward;
+		Up = new Vector3( 0, 1, 0 );
 	}
 
-	public static void Update( Vector3 position, Vector3 forward )
+	/// <summary>Reinstates the captured camera axes after <see cref="RestoreCaptured"/>.</summary>
+	internal static void RestoreCapturedAxes( Vector3 front, Vector3 up )
+	{
+		ValidatePosition( front, nameof( front ) );
+		ValidatePosition( up, nameof( up ) );
+		Front = front;
+		Up = up;
+	}
+
+	/// <summary>
+	/// Moves the listener. <paramref name="forward"/> is the view direction in sound space; without <paramref name="up"/> only its ground heading
+	/// matters (the listener stays upright), with it the listener takes the camera's full orientation as the original does.
+	/// </summary>
+	// [BIN:TPW-EXE:0x54f8f6 listener] the park loop hands QMixer the position and the camera matrix's rows 0x7909b0 (front) and 0x7909a0 (up) through 0x51c1d0, pitch included
+	// [BIN:QMIXER-DLL:0x1800ce70 listener basis] both axes are normalised, right = up x front and up' = front x right; a source's offset is rotated into that basis (0x1800cf10: x = offset . right, y = offset . up', z = offset . front) before the azimuth is read
+	public static void Update( Vector3 position, Vector3 forward, Vector3? up = null )
 	{
 		ValidatePosition( position, nameof( position ) );
 		ValidatePosition( forward, nameof( forward ) );
+		if ( up is { } upward )
+			ValidatePosition( upward, nameof( up ) );
 		Position = position;
 		if ( forward.X != 0 || forward.Z != 0 )
 		{
 			var heading = MathF.Atan2( forward.X, forward.Z );
 			Forward = new Vector3( MathF.Sin( heading ), 0, MathF.Cos( heading ) );
 		}
+		if ( up is { } axis && forward.Length > 0 && axis.Length > 0 )
+		{
+			Front = forward.Normal;
+			Up = axis.Normal;
+		}
+		else
+		{
+			Front = Forward;
+			Up = new Vector3( 0, 1, 0 );
+		}
 	}
 
-	/// <summary>The gain and pan of a source at <paramref name="position"/> with <paramref name="range"/>: the distance law over the three-axis distance, and −1..1 by the source's bearing around the forward heading.</summary>
-	public static (float Gain, float Pan) Placement( Vector3 position, float range )
+	/// <summary>
+	/// The DirectSound pan of an azimuth: 44.444 hundredths of a decibel per degree, mirrored behind the listener so a source at +-180 degrees is as
+	/// centred as one straight ahead, rounded to an integer.
+	/// </summary>
+	// [BIN:QMIXER-DLL:0x18005730 pan law] the azimuth is wrapped into (-180, 180], a value above 90 becomes 180 - a and one below -90 becomes -180 - a, then the float 44.4444 (0x1802e2f8) multiplies it and fistp rounds to even
+	public static int DirectSoundPan( float azimuthDegrees )
+	{
+		var azimuth = azimuthDegrees;
+		while ( azimuth > 180 )
+			azimuth -= 360;
+		while ( azimuth < -180 )
+			azimuth += 360;
+		if ( azimuth > 90 )
+			azimuth = 180 - azimuth;
+		else if ( azimuth < -90 )
+			azimuth = -180 - azimuth;
+		return (int)MathF.Round( azimuth * 44.44444274902344f, MidpointRounding.ToEven );
+	}
+
+	/// <summary>The amplitude DirectSound leaves a channel after a volume of <paramref name="hundredthsOfDecibel"/> (at most 0).</summary>
+	public static float DecibelGain( int hundredthsOfDecibel ) => hundredthsOfDecibel <= -10000 ? 0 : MathF.Pow( 10f, hundredthsOfDecibel / 2000f );
+
+	/// <summary>
+	/// The volume the original sets for a gain: 2000 log10(gain) in hundredths of a decibel rounded to the nearest integer, 0 for a gain of exactly 1,
+	/// -10000 (silence) for a gain of 0 or less.
+	/// </summary>
+	// [BIN:QMIXER-DLL:0x1800ca40 gain to decibels] gain == 1 gives 0, gain <= 0 gives -10000, otherwise fistp(602.06 x log2(gain)) (602.06 = 2000 x log10(2), 0x1802e658)
+	public static int GainHundredthsOfDecibel( float gain )
+	{
+		if ( gain == 1f )
+			return 0;
+		if ( gain <= 0f )
+			return -10000;
+		return (int)MathF.Round( (float)(602.0599913279623 * Math.Log2( gain )), MidpointRounding.ToEven );
+	}
+
+	/// <summary>The amplitude left and right of a pan: the louder side keeps the level, the other side is 10^(-|pan| / 2000) of it.</summary>
+	// [BIN:QMIXER-DLL:0x18005830 volume and pan] a mono channel of the software stage gets SetVolume(dB of the gain, +0x3c) and SetPan(pan, +0x40); DirectSound's pan turns only the opposite channel down by |pan| hundredths of a decibel
+	public static (float Left, float Right) PanGains( int pan )
+	{
+		var quieter = DecibelGain( -Math.Abs( pan ) );
+		return pan > 0 ? (quieter, 1f) : pan < 0 ? (1f, quieter) : (1f, 1f);
+	}
+
+	/// <summary>The listener-relative azimuth in degrees of <paramref name="offset"/> (a source's place minus the listener's): atan2(x, z) in the listener's basis, 0 straight ahead, positive to the right.</summary>
+	public static float Azimuth( Vector3 offset )
+	{
+		var right = Vector3.Cross( Up, Front );
+		var x = Vector3.Dot( offset, right );
+		var z = Vector3.Dot( offset, Front );
+		return MathF.Atan2( x, z ) * (180f / MathF.PI);
+	}
+
+	/// <summary>The gain and the DirectSound pan (hundredths of a decibel, -4000..4000, positive to the right) of a source at <paramref name="position"/> with <paramref name="range"/>: the distance law over the three-axis distance and the azimuth's pan.</summary>
+	public static (float Gain, int Pan) Placement( Vector3 position, float range )
 	{
 		ValidatePosition( position, nameof( position ) );
 		var offset = position - Position;
@@ -73,10 +161,7 @@ public static class AudioListener
 		var gain = RangeGain( range, distance );
 		if ( gain <= 0 )
 			return (0, 0);
-		// The ground plane is the sound space's x/z; height only makes the source farther.
-		var right = new Vector3( Forward.Z, 0, -Forward.X );
-		var pan = range > 0 && distance > 0 ? Math.Clamp( (offset.X * right.X + offset.Z * right.Z) / distance, -1f, 1f ) : 0;
-		return (gain, pan);
+		return (gain, range > 0 ? DirectSoundPan( Azimuth( offset ) ) : 0);
 	}
 
 	internal static void ValidatePosition( Vector3 position, string parameter )

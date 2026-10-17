@@ -43,25 +43,12 @@ public partial class Level
 	}
 
 	/// <summary>
-	/// After an original save is imported: a saved thing OpenTPW does not rebuild (a guest the import drops, an object that did not resolve, a staff member that is not employed) is not in the
-	/// park, so its slot is freed. The world's singletons keep theirs.
+	/// After an original save is imported: a saved thing OpenTPW does not rebuild (a guest the import drops, an object that did not resolve, a staff member that is not employed) is
+	/// still a thing of the original's park, so its slot stays used as a placeholder and later things get the ids the original hands out (<see cref="ThingPool.Hold"/>). The world's
+	/// singletons keep theirs.
 	/// </summary>
-	private void ReleaseUnimportedThings()
-	{
-		var objects = Objects.Objects.Select( item => item.ThingId ).ToHashSet();
-		var guests = Guests?.Guests.Select( guest => guest.Id ).ToHashSet() ?? new HashSet<int>();
-		var staff = Park?.Economy.Staff.Members.Select( member => member.ThingId ).ToHashSet() ?? new HashSet<int>();
-		foreach ( var slot in Things.Capture() )
-		{
-			var kept = slot.Model switch
-			{
-				SaveThingModel.Attraction => objects.Contains( slot.Id ),
-				SaveThingModel.Guest => guests.Contains( slot.Id ),
-				SaveThingModel.Mechanic or SaveThingModel.Handyman or SaveThingModel.Entertainer or SaveThingModel.Guard or SaveThingModel.Researcher => staff.Contains( slot.Id ),
-				_ => true
-			};
-			if ( !kept )
-				Things.Release( slot.Id );
-		}
-	}
+	private void ReleaseUnimportedThings() => OriginalThingSlots.HoldUnbuilt( Things,
+		Objects.Objects.Select( item => item.ThingId ).ToHashSet(),
+		Guests?.Guests.Select( guest => guest.Id ).ToHashSet() ?? new HashSet<int>(),
+		Park?.Economy.Staff.Members.Select( member => member.ThingId ).ToHashSet() ?? new HashSet<int>() );
 }

@@ -10,11 +10,10 @@ public sealed partial class ParkHud
 {
 	// [BIN:TPW-EXE:0x751720 camera panel] panel id 0x62 (466,1316)-(785,1469) with b_1person 0x63 (474,1316)-(627,1469) help 479 and b_postcard 0x64 (632,1316)-(785,1469) help 480
 	// [DATA:video 8:20-8:40] the green panel right of the HUD shows those two buttons at the table's positions
-	// [EXT:camera-view-cycle] the former camera button's Standard/Close/Overview view cycle is a third round button, b_camera, to the right of the panel's two; the original has none
+	// [BIN:TPW-EXE:0x751720 no view button] the panel's table holds only the panel and its two buttons; no control of the HUD arm (0x7529dc), the camera panel, the ride, shop, sideshow, visitor or employee windows (0x755150, 0x755908, 0x755e80, 0x7575e0, 0x756f48) changes the zoom or the yaw: the locate jumps (0x4867b0, 0x486860, 0x4868d0, the map click 0x5f1050) call 0x42aab0 with the zoom and yaw arguments null and move only the target, so the original has no view-cycle button and OpenTPW has none either
 	// [APPROX:UI-042] a left click on the camcorder button only arms it (the walk starts on the next click, as with the C key); the postcard window (8:42) is the host composer
 	private static readonly LayoutTable CameraPanelTable = OriginalLayoutTables.CameraPanel;
-	private static readonly string[] CameraPanelIds = { "cameraPanel", "cameraCamcorder", "cameraPostcard", "cameraViews" };
-	private static readonly UiRect CameraPanelViewsRect = new( 790, 1316, 153, 153 );
+	private static readonly string[] CameraPanelIds = { "cameraPanel", "cameraCamcorder", "cameraPostcard" };
 
 	/// <summary>The camera panel's advisor help (0x131): posted when the panel opens, withdrawn when it is put away.</summary>
 	// [BIN:TPW-EXE:0x498bb0 camera open] the camera button's press (HUD case 0x27 with the toggle down, 0x4a0840) puts panel 33 into the arm (0x4a2590) and posts help 0x131 through 0x486b00;
@@ -31,7 +30,7 @@ public sealed partial class ParkHud
 	private void BuildCameraPanel()
 	{
 		var root = CameraPanelTable.Root.Rect;
-		var panel = new UiRect( root.X - 12, root.Y - 14, CameraPanelViewsRect.Right - root.X + 24, root.Height + 28 );
+		var panel = new UiRect( root.X - 12, root.Y - 14, root.Width + 24, root.Height + 28 );
 		// [BIN:TPW-EXE:0x4a15c8 arm panel depth] after attaching the panel to the arm (0x65f447) the drawer lowers the panel's depth by 3 (0x65f16b), so it slides out
 		// from under the HUD; OpenTPW adds its elements under the main panel, which also keeps the HUD's buttons on top of a panel that is still sliding
 		var mainPanel = hud.Find( "mainPanel" );
@@ -46,7 +45,6 @@ public sealed partial class ParkHud
 		var postcard = CameraPanelTable.Model( "b_postcard" );
 		Add( new UiButton { Id = "cameraCamcorder", Model = camcorder.Model, Help = strings.Help( camcorder.Help ), Clicked = ArmCamcorderFromPanel, Bounds = camcorder.Rect } );
 		Add( new UiButton { Id = "cameraPostcard", Model = postcard.Model, Help = strings.Help( postcard.Help ), Clicked = OpenPostcardFromPanel, Bounds = postcard.Rect } );
-		Add( new UiButton { Id = "cameraViews", Model = "b_camera", Clicked = CycleCameraView, Bounds = CameraPanelViewsRect } );
 		cameraPanelRects = CameraPanelIds.Select( id => hud.Find( id )!.Bounds ).ToArray();
 	}
 

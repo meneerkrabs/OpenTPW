@@ -25,5 +25,3 @@ public readonly record struct CameraControlInput
 	public bool Home { get; init; }
 	public float DeltaSeconds { get; init; }
 }
-
-public enum ParkCameraView { Standard, Close, Overview }

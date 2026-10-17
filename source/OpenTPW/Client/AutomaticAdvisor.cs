@@ -358,7 +358,7 @@ internal sealed class AutomaticAdvisor : IDisposable
 			return;
 		// [BIN:TPW-EXE:0x0059A550 advisor update] the update scans first (0x59C680) and queues what passes, then serves the queue, whether or not the advisor is heard
 		if ( park != null )
-			ScanTurns( new EconomyMoneyState( park.Economy ), GameTick, GameType, TutorialEnabled, gamePaused );
+			ScanPark( park.Economy, gamePaused );
 		// [BIN:STP-PPC:0x10006BB4 advisor response player] options byte +0x34 clear: the player returns 0 (0x10006BC0) before saying anything
 		// [BIN:STP-PPC:0x1000BBF0 controller playback wrapper] and the wrapper still succeeds, so the advice is picked, consumed and recorded silently with span 0
 		// [BIN:STP-PPC:0x10129308 options serializer] the object at TOC −0x763C is the options object; its +0x34 is saved as "AdvisorOn" (0x1012653C)
@@ -376,23 +376,25 @@ internal sealed class AutomaticAdvisor : IDisposable
 		Controller.Update( () => AdvisorClock, () => GameTick, Play );
 	}
 
+	/// <summary>The scan of one update for a park: its turn, game type and the tutorial option, halted while paused or while the park is lost.</summary>
+	internal int ScanPark( ParkEconomy economy, bool gamePaused ) =>
+		ScanTurns( new EconomyMoneyState( economy ), unchecked( (uint)economy.Turn ), economy.Mode == ParkGameMode.InstantAction ? 2 : 0, TutorialEnabled, gamePaused || economy.IsBankrupt );
+
 	/// <summary>
-	/// The scan the advisor's update runs once per park turn (the original's thing update, which runs once per world turn, calls it once): one scan call per turn that has
-	/// passed since the last update, at most <see cref="MaximumScansPerUpdate"/>. A paused game, or no turn passed, scans nothing; the first call only takes the turn as its start.
+	/// The scan the advisor's update runs once per park turn (the original calls 0x59A550 once per turn from the thing loop): one scan call per turn that has
+	/// passed since the last update, at most <see cref="MaximumScansPerUpdate"/>. While <paramref name="halted"/> (paused, or the park lost) or when no turn passed it scans nothing;
+	/// the first call, and the first after a halt, only take the turn as the start.
 	/// </summary>
 	/// <returns>The scan calls made.</returns>
-	// [APPROX:ADVISOR-017] the advisor runs once per frame here, the original once per world turn: the scan is tied to the park's turn counter so its pace does not follow the frame rate, and a loaded or attached advisor starts counting at its first update
-	internal int ScanTurns( IAdvisorMoneyState? money, uint turn, int gameType, bool tutorialEnabled, bool paused )
+	// [APPROX:ADVISOR-017] the queue is served once per frame here but once per turn in tp.exe (the end of 0x59A550); the scan itself is exact: once per park turn
+	internal int ScanTurns( IAdvisorMoneyState? money, uint turn, int gameType, bool tutorialEnabled, bool halted )
 	{
-		if ( paused )
-			return 0;
-		if ( lastScanTurn is not { } previous )
-		{
-			lastScanTurn = turn;
-			return 0;
-		}
-		var passed = unchecked( turn - previous );
+		var previousTurn = lastScanTurn;
 		lastScanTurn = turn;
+		// [BIN:TPW-EXE:0x00516380 thing loop] the turn word (+0x1DA70C) is incremented and the thing list walked (0x50B360 per thing; the advisor's case 0x50B3F1-0x50B437 calls 0x59A550 unless the game type is 1) only while the world state +0x1DA738 is not 4 (0x516395-0x51639E): turns that pass while the park is lost or paused are never scanned, so the turn is taken as the new start without a catch-up
+		if ( halted || previousTurn is not { } previous )
+			return 0;
+		var passed = unchecked( turn - previous );
 		if ( passed == 0 || passed > int.MaxValue )
 			return 0;
 		var calls = (int)Math.Min( passed, MaximumScansPerUpdate );

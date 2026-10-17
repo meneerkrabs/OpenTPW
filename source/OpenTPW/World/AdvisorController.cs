@@ -367,7 +367,12 @@ internal sealed class AdvisorController
 	public AdvisorQueueAdmission? Advise( int messageId, uint liveGameTick, int gameType, bool tutorialEnabled )
 	{
 		var definition = AdvisorTables.AllMessages.FirstOrDefault( message => message.MessageId == messageId );
-		if ( definition.ScoreKey == null || !Queue.HasDescriptor( messageId ) || !AdvisorTables.GameModeAccepts( definition.GameMode, gameType ) )
+		if ( definition.ScoreKey != null && !Queue.HasDescriptor( messageId ) )
+		{
+			Log.Trace( $"Advisor advice {messageId} not posted: the settings file has no controls for its group {definition.Group}." );
+			return null;
+		}
+		if ( definition.ScoreKey == null || !AdvisorTables.GameModeAccepts( definition.GameMode, gameType ) )
 			return null;
 		return Queue.Enqueue( new AdvisorPendingAdvice( messageId, Balance.ScoreOf( messageId ) ), liveGameTick, tutorialEnabled );
 	}
@@ -382,6 +387,7 @@ internal sealed class AdvisorController
 		var context = new AdvisorScanContext( Balance, money );
 		var result = Scan.Step( context, gameType, ( messageId, score ) =>
 			Queue.HasDescriptor( messageId ) && Queue.Eligibility( new AdvisorPendingAdvice( messageId, score ), liveGameTick, tutorialEnabled ) == AdvisorEligibility.Eligible );
+		// the original has no test for "no message" here: with a minimum below -1 the -1 of the empty result would be queued; the empty result is not posted (the shipped minimum is 25)
 		if ( result.MessageId == AdvisorScan.NoMessage || result.Score <= Queue.MinimumScore )
 			return new AdvisorScanOutcome( result.ScoredRow, null, null );
 		var admission = Queue.Enqueue( new AdvisorPendingAdvice( result.MessageId, result.Score ), liveGameTick, tutorialEnabled );

@@ -6,7 +6,7 @@
   above `MinScoreForConsideration` through the real queue. A callback that is not ported scores 0, like the original's stub `0x5D60C0`.
 - **State.** The cursor is controller state: it is in `AdvisorControllerSnapshot` (a snapshot without it restores 0, and a cursor outside 0-351 is rejected) and an original
   save import starts it at 0. The advisor is outside the simulation hash, so no determinism pin moved; the headless runs that pin hashes attach no advisor. The advisor runs once per
-  frame here, so `AutomaticAdvisor.ScanTurns` scans once per park turn passed (at most 32 per update, none while paused), noted under ADVISOR-017.
+  frame here, so `AutomaticAdvisor.ScanPark` scans once per park turn passed, as `0x516380` walks the things (at most 32 per update; none while paused or after bankruptcy, with no catch-up; the loan check reads the net worth through the credit test's cache without writing it; 101 and 107 round to single precision at every x87 step). The queue is still served per frame (ADVISOR-017).
 - **Money batch (wired).** 102 (take a loan), 103/104/105 (no loan available, months in the red below 3, 3 or 4, exactly 5), 100 (rich and no loan taken), 101 (the cash left
   after all debts covers the cheapest loan times `Margin`, with the original's single-precision compare) and 107 (staff wages above the income times a factor over the newest months
   of the monthly rings) are ported from `0x59E8D0`-`0x59EB80` over `EconomyMoneyState`, which reads the bank and the ledger without writing to them (the net worth is read fresh

@@ -203,15 +203,15 @@ public class AdvisorScanTests
 		Assert.IsTrue( cursor > 40 );
 		var snapshot = controller.CaptureSnapshot();
 		Assert.AreEqual( cursor, snapshot.ScanCursor );
-		var json = JsonSerializer.Serialize( snapshot );
+		var json = Encoding.UTF8.GetString( ParkResumeJson.Serialize( snapshot ) );
 		var restored = Controller();
-		restored.RestoreSnapshot( JsonSerializer.Deserialize<AdvisorController.AdvisorControllerSnapshot>( json )! );
+		restored.RestoreSnapshot( ParkResumeJson.Deserialize<AdvisorController.AdvisorControllerSnapshot>( Encoding.UTF8.GetBytes( json ) ) );
 		Assert.AreEqual( cursor, restored.Scan.Cursor );
 		// a snapshot written before the scan existed has no cursor
-		var old = json.Replace( $",\"ScanCursor\":{cursor}", "", StringComparison.Ordinal );
+		var old = System.Text.RegularExpressions.Regex.Replace( json, ",\\s*\"ScanCursor\"\\s*:\\s*\\d+", "" );
 		Assert.IsFalse( old.Contains( "ScanCursor", StringComparison.Ordinal ) );
 		var fresh = Controller();
-		fresh.RestoreSnapshot( JsonSerializer.Deserialize<AdvisorController.AdvisorControllerSnapshot>( old )! );
+		fresh.RestoreSnapshot( ParkResumeJson.Deserialize<AdvisorController.AdvisorControllerSnapshot>( Encoding.UTF8.GetBytes( old ) ) );
 		Assert.AreEqual( 0, fresh.Scan.Cursor );
 		Assert.ThrowsException<InvalidDataException>( () => fresh.ValidateSnapshot( snapshot with { ScanCursor = 352 } ) );
 		Assert.ThrowsException<InvalidDataException>( () => fresh.ValidateSnapshot( snapshot with { ScanCursor = -1 } ) );
@@ -222,17 +222,66 @@ public class AdvisorScanTests
 	{
 		var controller = Controller();
 		var advisor = new AutomaticAdvisor( controller, () => 0 );
-		Assert.AreEqual( 0, advisor.ScanTurns( null, 1000, 0, true, paused: false ), "the first update only takes the turn as its start" );
+		Assert.AreEqual( 0, advisor.ScanTurns( null, 1000, 0, true, halted: false ), "the first update only takes the turn as its start" );
 		Assert.AreEqual( 0, controller.Scan.Cursor );
-		Assert.AreEqual( 0, advisor.ScanTurns( null, 1000, 0, true, paused: false ), "no turn passed" );
-		Assert.AreEqual( 1, advisor.ScanTurns( null, 1001, 0, true, paused: false ) );
+		Assert.AreEqual( 0, advisor.ScanTurns( null, 1000, 0, true, halted: false ), "no turn passed" );
+		Assert.AreEqual( 1, advisor.ScanTurns( null, 1001, 0, true, halted: false ) );
 		var cursor = controller.Scan.Cursor;
 		Assert.IsTrue( cursor > 0 );
-		Assert.AreEqual( 0, advisor.ScanTurns( null, 1005, 0, true, paused: true ), "a paused game scans nothing" );
+		Assert.AreEqual( 0, advisor.ScanTurns( null, 1005, 0, true, halted: true ), "a paused game scans nothing" );
 		Assert.AreEqual( cursor, controller.Scan.Cursor );
-		Assert.AreEqual( 4, advisor.ScanTurns( null, 1005, 0, true, paused: false ), "a paused update keeps the last turn, so the turns that passed are scanned when play resumes" );
-		Assert.AreEqual( (int)AutomaticAdvisor.MaximumScansPerUpdate, advisor.ScanTurns( null, 1005 + 500, 0, true, paused: false ), "a long jump is capped" );
-		Assert.AreEqual( 0, advisor.ScanTurns( null, 10, 0, true, paused: false ), "a turn counter that went backwards re-synchronises without scanning" );
+		Assert.AreEqual( 1, advisor.ScanTurns( null, 1006, 0, true, halted: false ), "the halt took turn 1005 as the new start: the turns 1001-1005 are not caught up (tp.exe never scans them)" );
+		Assert.AreEqual( 1, advisor.ScanTurns( null, 1007, 0, true, halted: false ) );
+		Assert.AreEqual( (int)AutomaticAdvisor.MaximumScansPerUpdate, advisor.ScanTurns( null, 1007 + 500, 0, true, halted: false ), "a long jump is capped" );
+		Assert.AreEqual( 0, advisor.ScanTurns( null, 10, 0, true, halted: false ), "a turn counter that went backwards re-synchronises without scanning" );
+	}
+
+	[TestMethod]
+	public void TheUpdatePathScansAParkOncePerTurnAndNeverWhilePausedOrLost()
+	{
+		var park = EconomyTestData.Park( initialCash: 100 );
+		EconomyTestData.HireBest( park, StaffType.Researcher );
+		park.OpenPark();
+		var controller = Controller();
+		var advisor = new AutomaticAdvisor( controller, () => 0 );
+		Assert.AreEqual( 0, advisor.ScanPark( park, gamePaused: false ), "the first update only takes the turn" );
+		park.Advance( 30 );
+		var turns = (int)park.Turn - 0;
+		Assert.IsTrue( turns >= 2 );
+		Assert.AreEqual( turns, advisor.ScanPark( park, gamePaused: false ), "one scan per turn that passed" );
+		Assert.AreEqual( 0, advisor.ScanPark( park, gamePaused: false ), "none when no turn passed" );
+		var cursor = controller.Scan.Cursor;
+		park.Advance( 30 );
+		Assert.AreEqual( 0, advisor.ScanPark( park, gamePaused: true ) );
+		Assert.AreEqual( cursor, controller.Scan.Cursor );
+		park.Advance( 30 );
+		Assert.AreEqual( 1, Math.Min( 1, advisor.ScanPark( park, gamePaused: false ) ), "the turns of the pause are not caught up" );
+		// a lost park: the thing loop is skipped (0x516395), so no scan, and no burst when it is over
+		park.AdvanceMonths( 1 );
+		while ( !park.IsBankrupt )
+			park.AdvanceMonths( 1 );
+		advisor.ScanPark( park, gamePaused: false );
+		var lostCursor = controller.Scan.Cursor;
+		park.AdvanceMonths( 1 );
+		Assert.AreEqual( 0, advisor.ScanPark( park, gamePaused: false ) );
+		Assert.AreEqual( lostCursor, controller.Scan.Cursor );
+	}
+
+	[TestMethod]
+	public void TheLoanCheckReadsTheNetWorthThroughTheCreditTestsCacheWithoutWritingIt()
+	{
+		var park = EconomyTestData.Park( initialCash: 100 );
+		park.Litter.Cells = new ParkCellMap( 128, 128 );
+		Assert.AreEqual( 32768, park.NetWorth( 20 ), "the credit test's read caches the value" );
+		var cached = park.CachedNetWorth;
+		park.Litter.Cells = null;
+		Assert.AreEqual( 32768, park.PeekNetWorth( 20 ), "the worth dropped inside the window: the cached value answers" );
+		Assert.IsTrue( park.CanTakeAnyLoan(), "so a loan still passes" );
+		Assert.AreEqual( cached, park.CachedNetWorth, "the peek does not write the cache" );
+		park.Advance( 3000 );
+		Assert.AreEqual( 0, park.PeekNetWorth( 20 ), "past the window it counts fresh" );
+		Assert.IsFalse( park.CanTakeAnyLoan() );
+		Assert.AreEqual( cached, park.CachedNetWorth, "and still does not stamp it" );
 	}
 
 	// ------------------------------------------------------------------ the money batch
@@ -320,6 +369,8 @@ public class AdvisorScanTests
 		money.Wages = Array.Empty<int>();
 		money.Income = Array.Empty<int>();
 		Assert.AreEqual( 0, Score( 107, money ), "an empty ring averages nothing" );
+		money.Wages = new[] { 1000, 1000 };
+		Assert.AreEqual( 0, Score( 107, money ), "an empty income ring scores 0 too (0x59ED8D)" );
 		Assert.AreEqual( (10, 3), AdvisorScanCallbacks.RingAverage( new[] { 10, 10, 11, 99 }, 3 ), "the quotient is truncated: 31 / 3" );
 		Assert.AreEqual( (0, 0), AdvisorScanCallbacks.RingAverage( new[] { 1 }, 0 ) );
 		Assert.AreEqual( (0, -2), AdvisorScanCallbacks.RingAverage( new[] { 1 }, -2 ) );

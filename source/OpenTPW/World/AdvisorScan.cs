@@ -225,8 +225,8 @@ internal static class AdvisorScanCallbacks
 		if ( cheapest < 0 )
 			return 0;
 		var repayment = unchecked( (uint)money.LoanSlots[cheapest].Owed );
-		// fild dword / fstp dword: the difference is rounded to a single before the compare; fild qword × fmul dword is exact in the x87 stack
-		return repayment * margin < (float)difference ? context.Score( "WealthHighRepayLoan.Score" ) : 0;
+		// the x87 runs at 24 bits (DirectDraw's FPU setup, ADVISOR-026): fild dword / fstp dword rounds the difference to a single and the fmul rounds the product to one
+		return (float)(repayment * margin) < (float)difference ? context.Score( "WealthHighRepayLoan.Score" ) : 0;
 	}
 
 	// [BIN:TPW-EXE:0x0059E9B0 TakeLoan] balance < 0 (signed) and a loan can still be taken (0x4D0810): the word at +0x340
@@ -247,13 +247,16 @@ internal static class AdvisorScanCallbacks
 		var (wages, count) = RingAverage( money.WageMonths, (int)months );
 		if ( count == 0 )
 			return 0;
-		var (income, _) = RingAverage( money.IncomeMonths, (int)months );
-		return income * factor < wages ? context.Score( "WagesHigh.Score" ) : 0;
+		var (income, incomeCount) = RingAverage( money.IncomeMonths, (int)months );
+		// 0x59ED8D: an empty income ring scores 0 as well
+		if ( incomeCount == 0 )
+			return 0;
+		return (float)(income * factor) < (double)wages ? context.Score( "WagesHigh.Score" ) : 0;
 	}
 
 	/// <summary>
 	/// The average of the <paramref name="requested"/> newest months of a sample ring, cut to the months it holds; the sum is added in the x87 stack and the quotient truncated
-	/// (<c>__ftol</c>). A request of 0 or less averages nothing (0, and the count says so).
+	/// (<c>__ftol</c>), every step rounded to a single as the x87 does at 24 bits. A request of 0 or less averages nothing (0, and the count says so).
 	/// </summary>
 	/// <returns>The average and the number of months the callback tests for being zero.</returns>
 	public static (int Average, int Count) RingAverage( IReadOnlyList<int> newestFirst, int requested )
@@ -261,10 +264,10 @@ internal static class AdvisorScanCallbacks
 		var count = requested > newestFirst.Count ? newestFirst.Count : requested;
 		if ( count <= 0 )
 			return (0, count);
-		var sum = 0.0;
+		var sum = 0f;
 		for ( var back = 0; back < count; back++ )
-			sum += newestFirst[back];
-		return ((int)(sum / count), count);
+			sum = (float)(sum + newestFirst[back]);
+		return ((int)(float)(sum / count), count);
 	}
 }
 

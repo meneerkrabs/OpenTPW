@@ -14,12 +14,12 @@ public static class RideScriptOpcodeNames
 
 	public static string GetName( ushort opcode ) => Enum.IsDefined( typeof( Opcode ), (int)opcode ) ? ((Opcode)opcode).ToString() : $"OP_{opcode}";
 
-	/// <summary>Parses an opcode name (case-insensitive) or <c>OP_n</c> with n in 0..0x7FFF.</summary>
+	/// <summary>Parses an opcode name (case-insensitive) or <c>OP_n</c> with n in 0..0xFFFF.</summary>
 	public static bool TryParse( string name, out ushort opcode )
 	{
 		if ( ByName.TryGetValue( name, out opcode ) )
 			return true;
-		if ( name.StartsWith( "OP_", StringComparison.OrdinalIgnoreCase ) && uint.TryParse( name.AsSpan( 3 ), NumberStyles.None, CultureInfo.InvariantCulture, out var number ) && number <= 0x7FFF )
+		if ( name.StartsWith( "OP_", StringComparison.OrdinalIgnoreCase ) && uint.TryParse( name.AsSpan( 3 ), NumberStyles.None, CultureInfo.InvariantCulture, out var number ) && number <= ushort.MaxValue )
 		{
 			opcode = (ushort)number;
 			return true;
@@ -356,14 +356,14 @@ public static class RideScriptAssembler
 				var variable = tokens[start + 1];
 				if ( variable.Kind == TokenKind.Word && !IsIdentifier( variable.Text ) )
 					throw new RideScriptAssemblyException( line, variable.Column, $"'{variable.Text}' is not a valid variable name; quote names with other characters." );
-				RequireLatin1( variable, line, nonEmpty: true );
+				RequireLatin1( variable, line );
 				variables.Add( variable.Text );
 				break;
 			case ".string":
 				RequireOneArgument();
 				if ( tokens[start + 1].Kind != TokenKind.String )
 					throw new RideScriptAssemblyException( line, tokens[start + 1].Column, ".string needs a quoted string." );
-				RequireLatin1( tokens[start + 1], line, nonEmpty: false );
+				RequireLatin1( tokens[start + 1], line );
 				strings.Add( tokens[start + 1].Text );
 				break;
 			default:
@@ -371,10 +371,8 @@ public static class RideScriptAssembler
 		}
 	}
 
-	private static void RequireLatin1( Token token, int line, bool nonEmpty )
+	private static void RequireLatin1( Token token, int line )
 	{
-		if ( nonEmpty && token.Text.Length == 0 )
-			throw new RideScriptAssemblyException( line, token.Column, "a variable name cannot be empty." );
 		foreach ( var character in token.Text )
 		{
 			if ( character > 0xFF )
@@ -390,7 +388,7 @@ public static class RideScriptAssembler
 		var line = statement.Line;
 		if ( operand.Kind == TokenKind.String )
 		{
-			RequireLatin1( operand, line, nonEmpty: false );
+			RequireLatin1( operand, line );
 			var index = strings.IndexOf( operand.Text );
 			if ( index < 0 )
 			{

@@ -153,6 +153,29 @@ loop:
 	}
 
 	[TestMethod]
+	[DataRow( (ushort)32767 )]
+	[DataRow( (ushort)32768 )]
+	[DataRow( (ushort)65535 )]
+	public void HighOpcodeNumbersRoundtripFromBinaryFixtures( ushort opcode )
+	{
+		var original = RseScriptTests.CreateScript( new[] { 0x8000_0000u | opcode, 5u, 0x8000_0000u | opcode }, Array.Empty<string>(), Array.Empty<string>() );
+		var text = RideScriptDisassembler.Disassemble( original );
+		StringAssert.Contains( text, $"OP_{opcode}" );
+		CollectionAssert.AreEqual( original, RideScriptAssembler.Assemble( text ) );
+	}
+
+	[TestMethod]
+	public void EmptyVariableNamesRoundtrip()
+	{
+		var original = RseScriptTests.CreateScript( new[] { 0x8000_0000u | 38, 0x4000_0000u | 1 }, Array.Empty<string>(), new[] { "", "x", "" } );
+		var text = RideScriptDisassembler.Disassemble( original );
+		StringAssert.Contains( text, ".var \"\"" );
+		CollectionAssert.AreEqual( original, RideScriptAssembler.Assemble( text ) );
+		var empty = RideScriptAssembler.Assemble( ".var \"\"\n\tTEST $0\n" );
+		Assert.AreEqual( "", Read( empty ).VariableNames[0] );
+	}
+
+	[TestMethod]
 	public void NegativeAndHexLiteralsAssembleToSixteenBitWords()
 	{
 		var script = Read( RideScriptAssembler.Assemble( "\tCOPY 0 -1\n\tCOPY 0xFFFF 65535\n" ) );

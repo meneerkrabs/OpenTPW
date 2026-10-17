@@ -40,9 +40,17 @@ public readonly record struct GuestView( int Id, ulong BirthId, int Type, float 
 /// What this guest is willing to pay for it right now (<see cref="QueueJoinRules.WillingnessToPay"/> with the guest's meters: the stand-point test's own word, computed without recording any statistic). 0 when
 /// <paramref name="Price"/> is 0 or the host was not asked.
 /// </param>
+/// <param name="Reservations">
+/// Guests other than this one walking to the attraction to join its queue (state "going to a ride" with it as their target). Filled by the host only for a policy that
+/// <see cref="IGuestDecisions.UsesSpreading"/>, else 0.
+/// </param>
+/// <param name="TurnsPerGuest256">
+/// The attraction's observed time per guest, in 1/256 park turn (<see cref="RideThroughputs"/>: the throughput is its inverse, capacity over cycle duration): a moving average of the gaps between boardings, the cold-start value
+/// without a measurement. 0 when the host was not asked, which the policy reads as "unknown".
+/// </param>
 public readonly record struct AttractionView( int Id, int TypeId, RideVisitorKind Kind, bool HasJoinCell, (int X, int Y) BackCell, (int X, int Y) EntranceCell, int CellModifier,
 	int QueueLength, int QueueSizeInCells, uint QueueLimit, int LiveExcitement, int StaticExcitementLevel, int ThirstEffect, int HungerEffect, bool ProvidesRelief, uint AgeDays,
-	bool IsIndoors, int GoldenTicketCost, int UpgradeCost, bool IsOpen, bool IsBrokenDown, bool SameTypeAsLastUsed, int Price = 0, uint Willingness = 0 );
+	bool IsIndoors, int GoldenTicketCost, int UpgradeCost, bool IsOpen, bool IsBrokenDown, bool SameTypeAsLastUsed, int Price = 0, uint Willingness = 0, int Reservations = 0, long TurnsPerGuest256 = 0 );
 
 /// <summary>
 /// The booth's facts: the park points (the park's rating), the entrance fee, the draw the host took for the verdict (the park's generator is the host's) and, for a policy that asks for it

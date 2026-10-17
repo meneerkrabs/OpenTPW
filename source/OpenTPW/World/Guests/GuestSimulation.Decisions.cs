@@ -28,7 +28,43 @@ public sealed partial class GuestSimulation
 		var view = new AttractionView( attraction.AttractionId, attraction.TypeId, attraction.Kind, true, back, attraction.EntranceCell, modifier, attraction.QueueLength, attraction.QueueSizeInCells,
 			attraction.QueueLimit, attraction.LiveExcitement, attraction.StaticExcitementLevel, attraction.ThirstEffect, attraction.HungerEffect, attraction.ProvidesRelief, attraction.AgeDays,
 			attraction.IsIndoors, attraction.GoldenTicketCost, attraction.UpgradeCost, attraction.IsOpen, attraction.IsBrokenDown, sameType );
-		return decisions.UsesValueForMoney ? WithPrice( view, attraction, guest ) : view;
+		if ( decisions.UsesValueForMoney )
+			view = WithPrice( view, attraction, guest );
+		return decisions.UsesSpreading ? WithSpreading( view, attraction, guest ) : view;
+	}
+
+	/// <summary>
+	/// <paramref name="view"/> with what the spreading rules read (docs/SMARTER-GUESTS.md, phase 3): the guests, other than <paramref name="guest"/>, walking to the attraction (their target, not yet in its queue) and the
+	/// attraction's observed time per guest (<see cref="RideThroughputs"/>, the cold start without a measurement). Pure: it records and changes nothing.
+	/// </summary>
+	// [EXT:smarter-guests-spread] host-computed facts for the policy; the throughput bookkeeping is the host's (NoteBoarding, ObserveThroughputs)
+	private AttractionView WithSpreading( AttractionView view, IRideVisitorBridge attraction, Guest guest )
+	{
+		if ( SmarterGuests is not { } smarter )
+			return view;
+		var reservations = 0;
+		foreach ( var other in guests )
+			if ( other.State == GuestState.GoingToRide && other.AttractionId == attraction.AttractionId && !ReferenceEquals( other, guest ) )
+				reservations++;
+		var interval = smarter.Throughputs.IntervalFor( attraction.AttractionId, attraction.Kind, attraction.Capacity, attraction.Speed, ParkTurn, attraction.QueueLength );
+		return view with { Reservations = reservations, TurnsPerGuest256 = interval };
+	}
+
+	/// <summary>A guest boarded <paramref name="ride"/>: folds the gap since its previous boarding into its throughput estimate (<see cref="RideThroughputs.Boarded"/>).</summary>
+	// [EXT:smarter-guests-spread] the ride bridge reports every boarding, in the host's deterministic order, so the estimate is a function of the simulation's own events
+	private void NoteBoarding( IRideVisitorBridge ride ) =>
+		SmarterGuests?.Throughputs.Boarded( ride.AttractionId, ride.Kind, ride.Capacity, ride.Speed, ParkTurn, ride.QueueLength );
+
+	/// <summary>
+	/// The turn-start look at the attractions that have an estimate: one that is closed, broken or has nobody waiting loses its demand flag, and one whose capacity or speed changed (an upgrade) restarts
+	/// (<see cref="RideThroughputs.Observe"/>).
+	/// </summary>
+	private void ObserveThroughputs()
+	{
+		if ( SmarterGuests is not { } smarter || smarter.Throughputs.Count == 0 )
+			return;
+		foreach ( var attraction in attractions )
+			smarter.Throughputs.Observe( attraction.AttractionId, attraction.Kind, attraction.Capacity, attraction.Speed, attraction.IsOpen && !attraction.IsBrokenDown, attraction.QueueLength );
 	}
 
 	/// <summary>

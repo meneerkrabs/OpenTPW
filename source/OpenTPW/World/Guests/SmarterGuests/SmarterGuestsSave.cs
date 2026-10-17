@@ -23,6 +23,12 @@ internal sealed record SmarterGuestsSaveData
 	/// </summary>
 	[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 	public IReadOnlyList<PriceStall>? Stalls { get; init; }
+	/// <summary>
+	/// The spreading rules' throughput estimates (<see cref="RideThroughputs"/>), in attraction-id order; absent from the file while there are none, which keeps the section of a park without any (an older version, a
+	/// script-mod-only park, or an extension park whose attractions have not boarded anybody) as it was.
+	/// </summary>
+	[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+	public IReadOnlyList<RideThroughput>? Throughputs { get; init; }
 }
 
 /// <summary>
@@ -47,7 +53,8 @@ internal static class SmarterGuestsSave
 			NextBirthId = state.NextBirthId,
 			Bootstrapped = state.Bootstrapped,
 			Births = guests.Guests.Where( guest => guest.BirthId != 0 ).OrderBy( guest => guest.Id ).Select( guest => new SmarterGuestBirth( guest.Id, guest.BirthId ) ).ToArray(),
-			Stalls = state.Stalls.Count == 0 ? null : state.Stalls.Entries.ToArray()
+			Stalls = state.Stalls.Count == 0 ? null : state.Stalls.Entries.ToArray(),
+			Throughputs = state.Throughputs.Count == 0 ? null : state.Throughputs.Entries.ToArray()
 		};
 	}
 
@@ -57,18 +64,18 @@ internal static class SmarterGuestsSave
 	/// every guest has an id. Script mods share the section (their identity state): with <paramref name="scriptMods"/> (the save has a ScriptMods section) the section is required and the extension's
 	/// record is not.
 	/// </summary>
-	public static string? ShapeProblem( SmarterGuestsSaveData? section, IEnumerable<int>? guestIds, IReadOnlyList<ParkModRecord?>? mods, bool scriptMods = false )
+	public static string? ShapeProblem( SmarterGuestsSaveData? section, IEnumerable<int>? guestIds, IReadOnlyList<ParkModRecord?>? mods, bool scriptMods = false, IEnumerable<int>? attractionIds = null )
 	{
 		var recorded = mods?.Any( mod => mod != null && mod.Id == ExtensionId ) == true;
 		if ( section == null )
 			return recorded ? $"the save records {ExtensionId} but has no SmarterGuests section" : scriptMods ? "the save has a ScriptMods section but no SmarterGuests section" : null;
 		if ( !recorded && !scriptMods )
 			return $"the save has a SmarterGuests section but does not record {ExtensionId}";
-		return SectionProblem( section, guestIds );
+		return SectionProblem( section, guestIds, attractionIds );
 	}
 
 	/// <summary>The section's consistency with the guests it names, apart from the mod record (<see cref="ShapeProblem"/>).</summary>
-	public static string? SectionProblem( SmarterGuestsSaveData section, IEnumerable<int>? guestIds )
+	public static string? SectionProblem( SmarterGuestsSaveData section, IEnumerable<int>? guestIds, IEnumerable<int>? attractionIds = null )
 	{
 		if ( section.Births == null )
 			return "the SmarterGuests section has no birth list";
@@ -92,7 +99,42 @@ internal static class SmarterGuestsSave
 		}
 		if ( section.Bootstrapped && seenGuests.Count != holders.Count )
 			return $"the extension has run, but only {seenGuests.Count} of {holders.Count} guests have a birth id";
-		return StallsProblem( section.Stalls, seenIds );
+		return StallsProblem( section.Stalls, seenIds ) ?? ThroughputsProblem( section.Throughputs, attractionIds );
+	}
+
+	/// <summary>
+	/// The throughput estimates' consistency: attractions the save holds (when <paramref name="attractionIds"/> is given), strictly ascending by id, each with a capacity of at least 1, an interval and a sample
+	/// count inside the limits of <see cref="RideThroughputs"/>, a last boarding turn of −1 or more, and a demand flag only after a boarding. A boarding turn later than the saved park's turn is refused at restore.
+	/// </summary>
+	private static string? ThroughputsProblem( IReadOnlyList<RideThroughput>? entries, IEnumerable<int>? attractionIds )
+	{
+		if ( entries == null )
+			return null;
+		if ( entries.Count == 0 )
+			return "the SmarterGuests section holds an empty throughput list (it is left out when there is none)";
+		var known = attractionIds == null ? null : new HashSet<int>( attractionIds );
+		int? previous = null;
+		foreach ( var entry in entries )
+		{
+			if ( entry.AttractionId <= 0 )
+				return $"the throughput estimates name attraction {entry.AttractionId}, outside 1..{int.MaxValue}";
+			if ( known != null && !known.Contains( entry.AttractionId ) )
+				return $"the throughput estimates name attraction {entry.AttractionId}, which the save does not hold";
+			if ( previous is { } last && entry.AttractionId <= last )
+				return "the throughput estimates are not in strictly ascending attraction id order";
+			previous = entry.AttractionId;
+			if ( entry.Capacity < 1 )
+				return $"attraction {entry.AttractionId} has a throughput capacity of {entry.Capacity}, below 1";
+			if ( entry.Interval256 < RideThroughputs.MinimumInterval256 || entry.Interval256 > RideThroughputs.MaximumInterval256 )
+				return $"attraction {entry.AttractionId} has a throughput interval of {entry.Interval256}, outside {RideThroughputs.MinimumInterval256}..{RideThroughputs.MaximumInterval256}";
+			if ( entry.Samples < 0 || entry.Samples > RideThroughputs.MaximumSamples )
+				return $"attraction {entry.AttractionId} has {entry.Samples} throughput samples, outside 0..{RideThroughputs.MaximumSamples}";
+			if ( entry.LastBoardTurn < -1 )
+				return $"attraction {entry.AttractionId} has a last boarding turn of {entry.LastBoardTurn}, below -1";
+			if ( entry.Demand && entry.LastBoardTurn < 0 )
+				return $"attraction {entry.AttractionId} has demand without a boarding";
+		}
+		return null;
 	}
 
 	/// <summary>
@@ -128,8 +170,10 @@ internal static class SmarterGuestsSave
 			return;
 		if ( guests.SmarterGuests is not { } state )
 			throw new InvalidDataException( $"The saved park has guest identity state ({ExtensionId} or script mods), but neither is active." );
-		if ( SectionProblem( section, guests.Guests.Select( guest => guest.Id ) ) is { } problem )
+		if ( SectionProblem( section, guests.Guests.Select( guest => guest.Id ), guests.Attractions.Select( attraction => attraction.AttractionId ) ) is { } problem )
 			throw new InvalidDataException( $"The saved smarter-guests state is inconsistent: {problem}." );
+		if ( section.Throughputs?.FirstOrDefault( entry => entry.LastBoardTurn > guests.ParkTurn ) is { LastBoardTurn: > 0 } later )
+			throw new InvalidDataException( $"The saved smarter-guests state is inconsistent: attraction {later.AttractionId} boarded on turn {later.LastBoardTurn}, after the park's turn {guests.ParkTurn}." );
 		foreach ( var guest in guests.Guests )
 			guest.BirthId = 0;
 		var byId = guests.Guests.ToDictionary( guest => guest.Id );
@@ -138,5 +182,7 @@ internal static class SmarterGuestsSave
 		state.Restore( section.ParkSeed, section.NextBirthId, section.Bootstrapped );
 		if ( section.Stalls is { Count: > 0 } stalls )
 			state.Stalls.Load( stalls );
+		if ( section.Throughputs is { Count: > 0 } throughputs )
+			state.Throughputs.Load( throughputs );
 	}
 }

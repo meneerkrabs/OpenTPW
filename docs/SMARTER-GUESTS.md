@@ -17,7 +17,7 @@ taken: no code, no data tables, no constants. Every phase is one pull request. T
   load list marked as requiring it; a later release may offer loading an older version's park with the newer rules as an explicit "migrate" choice. Park sharing stays blocked while a simulation extension is
   active, as for every simulation mod, until packages record mods.
 - **A pure decision layer** (`World/Guests/Decisions/`). `GuestSimulation` takes an `IGuestDecisions` at construction (null: the gate decides, read once, in the constructor and never again):
-  `OriginalGuestDecisions`, a stateless pure extraction of the original, or `SmarterGuestDecisions`, which delegated every call to it in 1.0.0 and has had its first rules since 1.1.0 (phase 2). A policy gets a `DecisionContext` (settings, park
+  `OriginalGuestDecisions`, a stateless pure extraction of the original, or `SmarterGuestDecisions`, which delegated every call to it in 1.0.0 and has had its first rules since 1.1.0 (phase 2) and its spreading rules since 1.2.0 (phase 3). A policy gets a `DecisionContext` (settings, park
   turn, weather, park seed and a `Trait` accessor) and views (`GuestView`, `AttractionView`, ...) and returns a typed decision or a comparison. The host keeps every effect: routing, queue insertion
   and removal, payments, statistics, thoughts, happiness and every `WorldRng` draw. **By construction no policy can take, skip or reorder a draw or a route request**: the interface has no generator and
   no delegate, the host runs every loop and calls the policy only to score or compare, and the host throws an `InvalidOperationException` naming the policy for a result it cannot act on (an admission other
@@ -67,7 +67,7 @@ taken: no code, no data tables, no constants. Every phase is one pull request. T
 | 0b | Seam and identity (built, below): both extensions, `FeatureGates`, `IGuestDecisions` with `OriginalGuestDecisions` as a pure extraction, the birth-id section, off/on pins and a resume test. |
 | 1 | Top 3 Thoughts (fidelity, built: [below](#phase-1-top-3-thoughts-and-the-refusal-counters)) and `opentpw.guest-insights` refusal-reason counters (built, selectable). |
 | 2 | Value for money (built, version 1.1.0: [below](#phase-2-value-for-money)): price enters the shop and sideshow choice; a guest that price keeps from every stand goes home; the booth weighs the fee against the park; a price sensitivity trait. |
-| 3 | Spreading: a throughput-aware queue estimate for every attraction, a stable per-guest preference per instance, hysteresis. |
+| 3 | Spreading (built, version 1.2.0: [below](#phase-3-spreading)): an expected-wait queue term for every attraction from a persisted, per-attraction throughput estimate; a stable per-guest preference per attraction instance; hysteresis between rides in the minor decision. |
 | 4 | Queue patience as a new rule: expected wait against a trait-scaled patience; leaving gives a thought and a small happiness cost. |
 | 5 | Planning needs: a shop or toilet first when a meter will cross its threshold, a detour bonus, no high-excitement ride right after eating. |
 | 6 | Clean and quiet paths: wander goals weighted by litter and crowding, with thoughts. |
@@ -172,8 +172,116 @@ CPU: 1.31 us per tick for the default and 1.42 us for the rules on the scenario'
 | --- | --- | --- |
 | 1.0.0 | 0b | The seam and the guests' identity (birth ids, park seed, the `SmarterGuests` section). Every decision delegates to the original. |
 | 1.1.0 | 2 | Value for money: price in the shop and sideshow choice, a guest that price keeps from every stand goes home (`Stalls` in the section), the booth's variety scaling and the price sensitivity trait. A 1.0.0 park is refused (`needs opentpw.smarter-guests 1.0.0, not 1.1.0`). |
+| 1.2.0 | 3 | Spreading: the expected-wait queue term for every attraction (`Throughputs` in the section), the 94 to 106 percent preference and the ride-to-ride hysteresis. A 1.1.0 park is refused (`needs opentpw.smarter-guests 1.1.0, not 1.2.0`). |
 
 The extension stays not player-selectable (`PlayerSelectable: false`): it is exposed once the rule set (phases 2 to 6) is complete, so a player does not meet a save break with every phase.
+
+## Phase 3: Spreading
+
+Version 1.2.0 of `opentpw.smarter-guests`. In TPW a guest's queue term is the original's near-only match: it counts only within a squared distance of 8 of the back of the queue, counts only the guests already in the queue, and knows nothing of how fast the attraction serves them.
+Phase 2 moved the guests that the dear shop used to absorb onto the four one-guest rides, whose queues then grew; this phase makes the choice see the queue it is walking into. All rules are `[EXT:smarter-guests-spread]`, live in `SmarterGuestDecisions` / `SmarterGuestsRules` / `RideThroughputs`, and are gated by the extension; with it off the host does no extra work and every pin is unchanged.
+
+**What the host adds (the policy stays pure).** A policy that returns `UsesSpreading` (the smarter one; the script policy forwards its base's answer) gets, in every candidate view, `Reservations` (the guests other than the asking one walking to the attraction: state "going to a ride" with it as their target; counted by the host, exact at the moment of the decision) and
+`TurnsPerGuest256` (the attraction's observed time per guest in 1/256 park turn; the throughput is its inverse). It also feeds the throughput estimates from the boardings it already sees (`OnVisitorBoarded`, in the host's deterministic order), looks at the attractions once per park turn, and asks `SwitchesTarget` in the minor decision.
+Two additive members of `IGuestDecisions` with default implementations (a policy that ignores them, including the original and every script policy, is unchanged): `UsesSpreading` and `SwitchesTarget( context, guest, target, targetScore, candidate, candidateScore )`; `AttractionView` gained two optional trailing members; `AttractionScoreInput` gained an optional trailing `QueueMatchOverride`.
+
+**1. The queue estimate, for every attraction.** The expected wait of a guest who joins now is `(guests in the queue + guests walking there) x time per guest`, which is `ahead / throughput` with throughput = capacity / cycle duration. The smarter score is the original score with its queue match replaced by
+`100 - 100 x wait / 120 turns` (clamped to 0..100, `QueueWaitScaleTurns` = 120), counted at any distance and with the original's queue weight. An attraction without an estimate (a host that was not asked, interval 0) is scored by the original alone.
+The score is never lowered below the choice floor for a candidate the original would have chosen: **a long wait orders the candidates but does not remove them**. Leaving a queue is the patience rule's job (phase 4); a first version without this protection let a long expected wait take a guest's only ride out of the choice, which raised "can't decide" outcomes
+(jungle: 72.5 to 93 stuck guests, guest-time happiness -8.6 SE).
+
+*The throughput estimate* (`RideThroughputs`, one entry per attraction instance, persisted):
+
+- **What is averaged.** The gap in park turns between two boardings of the attraction, while it had demand throughout, as a moving average in 1/256 turn (integers only, so a resumed park continues exactly). With a ride that serves a batch the mean gap is cycle duration / capacity; with a one-guest ride it is the cycle.
+  A new gap is weighed `1 / (samples + 2)`, at most `1 / 16`: the cold-start value counts as one sample, and a long history moves by a sixteenth per gap.
+- **Cold start.** An attraction nobody has boarded yet reads as `DefaultCycleTurns` / its catalogue capacity: 60 turns for a ride, `DefaultServiceTurns` = 12 for a shop, sideshow or toilet (measured gaps: shops 9 to 12, rides 29 to 31 per guest, a toilet 45). A capacity below 1 reads as 1.
+- **Demand.** A gap counts only if the attraction was open, working and had a queue since the previous boarding: otherwise the gap measures how fast guests arrive, not how fast the attraction serves them. The host clears the flag at each park turn start for an attraction that is closed, broken down or has an empty queue; after a boarding it is set when somebody is still waiting.
+- **Closure and breakdown.** The average is kept and the downtime is not folded in; the first boarding after a reopening starts a new gap.
+- **Upgrade.** A changed capacity or speed restarts the estimate at the cold start of the new capacity, when the host looks at the turn start and again, defensively, whenever the estimate is read or a boarding is folded in.
+- **Zero throughput.** The interval cannot go below one turn (`MinimumInterval256`) or above 1,200 turns (`MaximumGapTurns` is also the longest gap folded in), so neither a zero nor an infinite wait can enter the score. An attraction that has not boarded anyone for more than two nominal cycles while guests wait is read as the gap since its last boarding, divided by its capacity (a stalled script, a stuck head).
+  A view with no estimate at all is "unknown" and falls back to the original's queue term.
+- **Removal.** An attraction's estimate is dropped when it is unregistered.
+- **Persistence.** `Throughputs` in the `SmarterGuests` section (attraction-id order; omitted while empty, so a section from before, a script-mod-only park and a park whose attractions never boarded anybody are as they were), validated strictly (attractions the save holds, strictly ascending ids, capacity at least 1, interval and samples inside their limits, a boarding turn of -1 or more and not after the park's turn, demand only after a boarding), and hashed only while non-empty (`THRP`).
+
+**2. A stable preference per guest and attraction instance.** The score of a candidate is scaled by `94 + hash % 13` percent (94 to 106), where the hash mixes the guest's `Trait( guest, 1 )` (a stateless hash of the park seed and the birth id) with the attraction's id. It is the same for the guest's whole visit, takes no random number, and differs between guests and between instances, so two identical rides have different favourites.
+The band is narrow on purpose: it breaks ties, it does not override excitement or distance. A score of 0 stays 0.
+
+**3. Hysteresis.** In the minor decision (a guest walking to a ride looks at the attractions within a 4 x 4 window that are nearer than the guest is) the host scores the target once with the same policy, inside the same metered decision, and asks `SwitchesTarget`. A **ride** target is kept unless the best ride in reach beats it by `max(2 points, 20 percent of the target's score)`; a target scoring below the choice floor holds nothing.
+A walk toward a shop, toilet or sideshow, and a shop, toilet or sideshow in reach, stay impulse stops as in the original. The restriction is measured: the same margin on every kind removed the original's impulse purchases and cost the shop-and-toilet park (Halloween) 14 SE of revenue per admitted guest (59.3 to 51.1) and 6 SE of boarded share, with no gain elsewhere.
+Two host counters (`TargetsKept`, `TargetsSwitched`, not saved or hashed) show it acts: 5 kept and 1 switched in 40 days of seed 1, 3 and 7 in seed 2, 4 and 4 in seed 3. It is rare in these parks (a decision needs two rides within a few cells), so the measured effect is nil; it is insurance against the original's "any better score steals the guest" quirk on parks with ride clusters.
+
+**Constants** (all in `SmarterGuestsRules` / `RideThroughputs`, all OpenTPW's own): wait scale 120 turns; preference 94 to 106 percent; margin 20 percent and at least 2 points; cold start 60 turns per cycle for a ride and 12 for a service; weight 1/(samples + 2) up to 1/16; gap and interval limits 1 to 1,200 turns; stall at 2 cycles.
+
+### Measured effect (phase 3)
+
+`--guest-report --guest-scale extended --guest-extension smarter-guests` against the default, 8 seeds per scenario (the same seeds as the baseline above), `--guest-compare` with 3 standard errors, release build. 1.1.0 is the phase 2 run of the table above.
+
+`park-scenario` (mean ± σ over the 8 seeds):
+
+| Metric | Default | 1.1.0 | 1.2.0 | vs default (SE, verdict) | vs 1.1.0 (SE, verdict) |
+| --- | ---: | ---: | ---: | --- | --- |
+| Queue attempts | 341.50 ± 22.92 | 337.88 ± 11.21 | 378.00 ± 11.94 | 4.0 changed | 6.9 changed |
+| Boarded / attempts | 0.544 ± 0.020 | 0.717 ± 0.015 | 0.764 ± 0.013 | 25.7 improved | 6.7 improved |
+| Rejected / attempts | 0.410 ± 0.019 | 0.245 ± 0.015 | 0.199 ± 0.012 | -26.1 improved | -6.6 improved |
+| Abandoned / attempts | 0.026 ± 0.008 | 0.009 ± 0.004 | 0.011 ± 0.004 | -4.5 changed | 0.8 same |
+| Price rejections / attempts | 0.280 ± 0.026 | 0.024 ± 0.007 | 0.024 ± 0.006 | -26.7 improved | 0.0 same |
+| Wait p50, turns | 11.62 ± 2.07 | 17.00 ± 1.69 | 12.88 ± 1.81 | 1.3 same | -4.7 improved |
+| Wait p90, censored | 73.38 ± 7.09 | 101.00 ± 6.52 | 92.50 ± 4.60 | 6.4 regressed | -3.0 improved |
+| Wait p99, censored | 108.12 ± 4.64 | 123.88 ± 16.01 | 115.00 ± 4.04 | 3.2 regressed | -1.5 same |
+| Happiness, guest-time weighted | 49.01 ± 3.13 | 62.84 ± 1.11 | 63.75 ± 1.60 | 11.9 improved | 1.3 same |
+| Happiness of the guests still inside | 48.22 ± 4.61 | 62.87 ± 2.92 | 64.37 ± 2.08 | 9.0 improved | 1.2 same |
+| Departures per admission | 0.599 ± 0.051 | 0.506 ± 0.064 | 0.417 ± 0.031 | -8.7 improved | -3.6 improved |
+| Use Gini over the rides (raw and capacity-normalised: every ride has capacity 1) | 0.198 ± 0.037 | 0.132 ± 0.025 | 0.107 ± 0.012 | -6.7 improved | -2.6 same |
+| Revenue per admitted guest | 82.06 ± 8.50 | 94.24 ± 12.14 | 105.13 ± 7.60 | 5.7 improved | 2.2 same |
+| Guests with no choice for over 50 turns | 1.250 ± 1.035 | 5.25 ± 2.31 | 5.62 ± 2.39 | 4.8 regressed | 0.3 same |
+| Guests in the park (mean) | 32.84 ± 1.88 | 36.47 ± 1.26 | 40.27 ± 0.66 | 10.6 changed | 7.5 changed |
+| Admissions | 63.88 ± 0.35 | 64.00 ± 0.00 | 63.88 ± 0.35 | 0.0 same | -0.4 same |
+
+The four level parks, 1.2.0 against the default (they have one ride, so spreading has little to do; they are **no longer bit-identical** to the default (no seed ends in the same state hash), but no metric moves beyond 3 SE except space's, below):
+
+Default → 1.2.0 (SE and verdict against the default), mean ± σ:
+
+| Metric | Jungle | Halloween | Fantasy | Space |
+| --- | --- | --- | --- | --- |
+| Boarded / attempts | 0.254 ± 0.010 → 0.255 ± 0.007 (0.2 same) | 0.684 ± 0.041 → 0.711 ± 0.038 (1.4 same) | 0.454 ± 0.025 → 0.451 ± 0.026 (-0.2 same) | 0.481 ± 0.021 → 0.496 ± 0.028 (1.2 same) |
+| Wait p50, turns | 31.88 ± 0.83 → 33.38 ± 0.74 (3.0 same) | 11.62 ± 1.19 → 12.12 ± 2.23 (0.6 same) | 25.62 ± 2.62 → 27.62 ± 1.85 (1.8 same) | 33.00 ± 1.07 → 35.25 ± 0.46 (4.3 regressed) |
+| Wait p90, censored | 528.50 ± 24.05 → 517.75 ± 33.89 (-0.7 same) | 194.12 ± 6.81 → 194.75 ± 6.69 (0.2 same) | 738.38 ± 36.35 → 739.75 ± 58.40 (0.1 same) | 432.38 ± 9.97 → 396.12 ± 24.41 (-3.9 improved) |
+| Happiness, guest-time weighted | 53.04 ± 0.51 → 53.63 ± 0.60 (2.1 same) | 37.82 ± 0.89 → 38.41 ± 0.54 (1.6 same) | 49.22 ± 0.47 → 49.39 ± 1.16 (0.4 same) | 48.45 ± 0.55 → 48.72 ± 0.60 (0.9 same) |
+| Revenue per admitted guest | 47.63 ± 0.50 → 48.09 ± 0.34 (1.8 same) | 59.31 ± 1.49 → 61.03 ± 2.48 (1.7 same) | 55.27 ± 2.31 → 56.92 ± 1.94 (1.5 same) | 46.00 ± 0.53 → 48.11 ± 0.48 (8.2 improved) |
+| Guests with no choice for over 50 turns | 72.50 ± 3.70 → 68.38 ± 2.62 (-2.6 same) | 59.12 ± 2.47 → 58.50 ± 2.14 (-0.5 same) | 70.50 ± 8.64 → 73.25 ± 12.19 (0.5 same) | 64.00 ± 4.54 → 61.62 ± 2.33 (-1.3 same) |
+| Guests in the park (mean) | 104.34 ± 1.62 → 103.96 ± 1.35 (-0.5 same) | 36.95 ± 0.92 → 36.75 ± 0.95 (-0.4 same) | 87.06 ± 4.11 → 87.35 ± 5.22 (0.1 same) | 97.88 ± 1.67 → 97.31 ± 1.47 (-0.7 same) |
+
+Level parks, honestly: space waits at the median are 2.3 turns longer (33.0 to 35.3, +4.3 SE, regressed) while its p90 falls (432 to 396, -3.9 SE), its revenue per admitted guest rises (46.0 to 48.1, +8.2 SE) and its use Gini over all attractions changes (0.285 to 0.300, +6.2 SE: the spread over the ride, the shops and the toilet shifts); everything else is equal within the spread. The four parks' queue attempts and rejections shift a little (guests see the shop's and the toilet's queues too), but the shipped parks have too few attractions for the spreading rules to matter.
+
+**Tuning.** 24 seeds of the scenario (`--guest-seeds 24 --guest-levels none`; 8 seeds are too few to tell settings of this size apart), the shipped rules against variants of one constant at a time (the default and the phase 2 run on the same 24 seeds are the first two rows):
+
+| Variant | Boarded | Wait p50 | Wait p90 cens. | Departures / adm. | Use Gini | Revenue / adm. | Happiness | Stuck | In park |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| default | 0.554 | 11.9 | 72.6 | 0.592 | 0.197 | 81.2 | 48.8 | 1.39 | 32.6 |
+| 1.1.0 | 0.723 | 16.6 | 102 | 0.519 | 0.133 | 94.7 | 62.7 | 4.79 | 36.5 |
+| wait scale 60 | 0.767 | 12.3 | 97.8 | 0.464 | 0.127 | 104 | 62.7 | 5.12 | 38.9 |
+| **shipped: scale 120** | 0.769 | 13.0 | 93.5 | 0.407 | 0.108 | 103 | 62.8 | 5.54 | 40.5 |
+| wait scale 240 | 0.755 | 14.5 | 96.0 | 0.337 | 0.103 | 108 | 63.7 | 3.83 | 41.9 |
+| ride cycle 30 | 0.764 | 14.4 | 91.2 | 0.397 | 0.097 | 108 | 63.4 | 4.96 | 41.1 |
+| ride cycle 120 | 0.774 | 12.3 | 94.7 | 0.400 | 0.131 | 106 | 62.5 | 6.79 | 40.2 |
+| service cycle 30 | 0.765 | 12.7 | 91.7 | 0.415 | 0.102 | 110 | 63.8 | 5.38 | 40.1 |
+| no hysteresis | 0.775 | 13.2 | 91.8 | 0.412 | 0.107 | 105 | 63.0 | 5.04 | 40.7 |
+| margin 0 | 0.768 | 12.9 | 93.3 | 0.403 | 0.109 | 103 | 62.8 | 5.96 | 40.6 |
+| margin 50 percent, 4 points | 0.769 | 13.0 | 93.5 | 0.407 | 0.108 | 103 | 62.8 | 5.54 | 40.5 |
+| no preference | 0.767 | 13.0 | 92.2 | 0.388 | 0.107 | 107 | 62.9 | 5.25 | 41.0 |
+| preference 97 to 103 | 0.771 | 13.4 | 92.6 | 0.402 | 0.104 | 106 | 62.8 | 5.67 | 40.4 |
+| preference 88 to 112 | 0.772 | 12.8 | 90.3 | 0.394 | 0.110 | 108 | 62.9 | 5.12 | 40.5 |
+
+Every variant of every constant lands within about 1.5 SE of the shipped value on each headline metric, so none of them is a lever: the step from 1.1.0 to any of them is the rule itself (the expected-wait term), not its tuning. The wait scale trades the median wait for crowding: a larger scale lets the park fill (departures per admission 0.46, 0.41, 0.34 and guests in the park 38.9, 40.5, 41.9 for 60, 120 and 240 turns) and leaves fewer guests with nothing to do (stuck 5.1, 5.5, 3.8), while the median wait grows (12.3, 13.0, 14.5).
+120 is the middle value; the preference band and the hysteresis margin did not move the scenario, where the two identical rides were already used evenly under 1.1.0 (368 and 364 boardings over 8 seeds) and are now (354 and 347 with more guests), so they keep their narrow, documented values; the hysteresis acts rarely there and its margin never changed a run (margin 50 percent is the shipped run to the digit).
+A multiplicative variant that keeps the original's near-only queue match and scales the score by 100 down to 40 percent of the expected wait was measured at 8 seeds: it matched the replacement within the spread (wait p50 13.9 against 13.6, p90 96.8 against 93.0) and was dropped, because the specified design replaces the queue match.
+
+**Verdict, honestly.**
+- *Fixed or clearly reduced* against 1.1.0: the median wait (17.0 to 12.9 turns, -4.7 SE; the default's is 11.6, +1.3 SE, "same"), the censored p90 (101 to 92.5, -3.0 SE), departures per admission (-3.6 SE), the use Gini (0.132 to 0.107). Phase 2's gains hold: price rejections 0.024, happiness (+11.9 SE against the default), revenue per admitted guest (+5.7 SE), the abandon rate.
+- *Not fixed.* The censored p90 and p99 remain longer than the default's (92.5 and 115 against 73 and 108; +6.4 and +3.2 SE): in the default 28% of the attempts end at the dear shop and the rest of the guests never queue, while now 76% board (up from 54%), the park holds 40 guests instead of 33, and the four one-guest rides carry all of them at the queue limit.
+  The stuck guests did not move (5.6 against 1.25 in the default, +4.8 SE; 5.25 in 1.1.0). A dump of the "can't decide" decisions at the end of the run shows why: most of these guests have just used all four rides (the used history divides every ride's score by 5, 4, 3 and 2), so every open attraction scores below the choice floor of 10, or the only attraction that scores well has a full queue.
+  No choice rule can invent something for them to do; what is needed is a rule for the guest that is done with the park (phase 5, planning needs, or a satisfied-guest rule that goes home), not more spreading.
+- CPU and allocation: 609 to 647 bytes per tick on the scenario (+6%, the per-candidate scan of the walking guests); microseconds per tick 1.8 to 3.2 for both runs on a machine under load, which is the noise.
 
 ## Measurement
 
@@ -399,3 +507,6 @@ while the extension is on and a mismatched set refuses the load. **Pins:** with 
 `ParkScenarioFixedRunHash` is the off path's.
 
 **Phase 2 tests.** `SmarterGuestsValueTests` covers the rules in isolation (the sensitivity band, the prediction against the stand-point test, the zeroed score, `PriceTurnedAway`, the booth's scaling, its monotonicity and that it is never harsher than the original), the run counter (`PriceStalls`), the guest that goes home (a policy with a limit of 3 keeps and bounds the runs; the shipped limit of 1 sends guests home at once and keeps none), the host's facts (none and no state off; the stand-point statistic recorded the same number of times with the facts asked for, and the same hash), the section (round trip, empty omitted, strict validation, a refused restore changes nothing), the scenario variant with a park rating, and the section, the first-tick bootstrap and the world hash on the shipped policy. `SmarterGuestsTests` keeps the identity tests on an identity-only policy (what 1.0.0 was) where they compare guests with the off run, extends the resume test with runs that continue equal, and holds the compare test (price rejections improve beyond 3 SE; happiness, revenue per admitted guest and admissions do not regress). **Pins in phase 2:** the off-path pins are unchanged, `DeterminismTests.SmarterGuestsFixedRunHash` did not move (the synthetic park has one cheap shop that never turns a guest away, so the rules never act there; see [DETERMINISM.md](DETERMINISM.md)), and `GuestMeasurementTests` pins the scenario with the extension on (`ScenarioSmarterFixedRunHash`), where the rules do act. The script-mod pins run over the original policy and are unchanged.
+
+**Phase 3 tests.** `SmarterGuestsSpreadingTests` covers the estimator (cold start for a ride, a shop and a capacity below 1; the first boarding, the half-weight first gap, the 1/(samples + 2) weights, no folding of a gap without demand; convergence on a steady gap and the 1/16 cap; gap and interval clamps and saturating samples; closure, breakdown and an empty queue starting a new gap; an upgrade restarting by capacity or speed in the read, the turn-start look and the boarding; zero capacity and a stalled ride read as their silence; ordering and removal), the expected wait and the queue match (unknown without an estimate, reservations as guests ahead, the inverse of throughput, saturation), the score
+(the original's for a view without an estimate, longer waits score lower, the queue counts at any distance, the floor protection over a sweep that reaches it), the preference band (94 to 106, every value occurs, roughly even, stable for the visit, two identical rides get different favourites, 0 stays 0), the hysteresis (the margin at the boundaries, rides only, shops stay impulse stops, the original always switches, the script policy forwards both new members), the host (no spreading fact, no state and no extra work off; reservations exclude the asking guest; throughput is tracked on the boardings; a removed attraction takes its estimate), the section (round trip, strict validation of every field, an unknown attraction refused at file level and a future boarding turn at restore, absent while empty, hashed only while non-empty) and that the spreading rules act in the scenario run. `AResumedParkContinuesLikeTheUninterruptedOneWithTheExtensionOn` also checks that the estimates are in the section and continue equal to the uninterrupted park's, every tick, and that they moved after the save point.

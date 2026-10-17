@@ -34,6 +34,12 @@ public sealed class SmarterGuestsState
 	/// </summary>
 	public PriceStalls Stalls { get; } = new();
 
+	/// <summary>
+	/// The observed throughput of each attraction instance (<see cref="RideThroughputs"/>, phase 3): empty until the spreading rules run and an attraction has boarded a guest. The host writes and reads it; it is saved in
+	/// the extension's section and joins the world hash only while it holds an entry, so a park that only has the guest identity (script mods) hashes as it did.
+	/// </summary>
+	public RideThroughputs Throughputs { get; } = new();
+
 	/// <summary>Gives the next birth id. A counter at its limit is refused, never wrapped: ids are never reused, so a wrap would give two guests one personality.</summary>
 	public ulong AllocateBirthId()
 	{
@@ -64,6 +70,7 @@ public sealed class SmarterGuestsState
 		Bootstrapped = bootstrapped;
 		// a restore from a section loads the runs afterwards (SmarterGuestsSave.Restore); any other restore starts without any
 		Stalls.Clear();
+		Throughputs.Clear();
 	}
 
 	/// <summary>
@@ -81,7 +88,7 @@ public sealed class SmarterGuestsState
 	/// <summary><see cref="Trait(ulong, ulong, int)"/> with this park's seed.</summary>
 	public ulong Trait( ulong birthId, int traitIndex ) => Trait( ParkSeed, birthId, traitIndex );
 
-	private static ulong Mix( ulong value )
+	internal static ulong Mix( ulong value )
 	{
 		value += 0x9E3779B97F4A7C15UL;
 		value = (value ^ (value >> 30)) * 0xBF58476D1CE4E5B9UL;
@@ -92,7 +99,7 @@ public sealed class SmarterGuestsState
 	/// <summary>Mixed into the hash before the price stalls (the ASCII "PSTL").</summary>
 	internal const long StallsHashMarker = 0x5053544CL;
 
-	/// <summary>The extension's part of <see cref="WorldStateHash"/>: the seed, the counter, the first-tick flag, the guests' ids in id order and, while there are any, the runs of price-emptied decisions in birth-id order.</summary>
+	/// <summary>The extension's part of <see cref="WorldStateHash"/>: the seed, the counter, the first-tick flag, the guests' ids in id order and, while there are any, the runs of price-emptied decisions in birth-id order and the throughput estimates in attraction-id order.</summary>
 	internal void AddCanonicalState( StateHasher hash, IReadOnlyList<Guest> guests )
 	{
 		hash.Add( HashMarker );
@@ -106,14 +113,32 @@ public sealed class SmarterGuestsState
 			hash.Add( guest.Id );
 			hash.Add( guest.BirthId );
 		}
-		if ( Stalls.Count == 0 )
-			return;
-		hash.Add( StallsHashMarker );
-		hash.Add( Stalls.Count );
-		foreach ( var entry in Stalls.Entries )
+		if ( Stalls.Count != 0 )
 		{
-			hash.Add( entry.BirthId );
-			hash.Add( entry.Count );
+			hash.Add( StallsHashMarker );
+			hash.Add( Stalls.Count );
+			foreach ( var entry in Stalls.Entries )
+			{
+				hash.Add( entry.BirthId );
+				hash.Add( entry.Count );
+			}
+		}
+		if ( Throughputs.Count == 0 )
+			return;
+		hash.Add( ThroughputHashMarker );
+		hash.Add( Throughputs.Count );
+		foreach ( var entry in Throughputs.Entries )
+		{
+			hash.Add( entry.AttractionId );
+			hash.Add( entry.Capacity );
+			hash.Add( entry.Speed );
+			hash.Add( entry.Interval256 );
+			hash.Add( entry.Samples );
+			hash.Add( entry.LastBoardTurn );
+			hash.Add( entry.Demand );
 		}
 	}
+
+	/// <summary>Mixed into the hash before the throughput estimates (the ASCII "THRP").</summary>
+	internal const long ThroughputHashMarker = 0x54485250L;
 }

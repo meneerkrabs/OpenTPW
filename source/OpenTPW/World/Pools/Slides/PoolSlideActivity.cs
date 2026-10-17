@@ -29,9 +29,6 @@ public sealed class PoolSlideActivity : IPoolActivity
 
 	public string Id => ActivityId;
 
-	/// <summary>How far from a platform spot the riders waiting stand from each other and the centre (cells).</summary>
-	private const int SpotOffset = 29491; // 0.45 cell in 16.16
-
 	public PoolActivityOffer? Offer( GuestSimulation simulation, Guest guest, PoolSwimRegion region )
 	{
 		// asked per swimmer per turn: no allocation, and the guests are scanned only for a slide that is usable in this water
@@ -93,7 +90,7 @@ public sealed class PoolSlideActivity : IPoolActivity
 	public int SpriteSlot( Guest guest ) => guest.PoolActivityPhase switch
 	{
 		PoolSlidePhases.Approach => PoolSwimSlots.Crawl,
-		PoolSlidePhases.Climb => PoolSwimSlots.LadderClimb,
+		PoolSlidePhases.Climb => guest.PoolActivityTurns > ClimbStairsEnd ? PoolSwimSlots.Walk : PoolSwimSlots.LadderClimb,
 		PoolSlidePhases.Wait => PoolSwimSlots.Stand,
 		PoolSlidePhases.Ride => PoolSwimSlots.Sliding,
 		_ => PoolSwimSlots.SplashDown
@@ -107,12 +104,18 @@ public sealed class PoolSlideActivity : IPoolActivity
 		switch ( guest.PoolActivityPhase )
 		{
 			case PoolSlidePhases.Climb:
-				// from the water surface at the foot of the stairs up to the platform
-				return heights.Water + (top - heights.Water) * Math.Min( guest.PoolActivityTurns, PoolSlideSettings.ClimbTurns ) / PoolSlideSettings.ClimbTurns;
+				// from the water surface to the ground at the foot of the stairs, up the flight (the stairs' height at each point of the line: the model's twelve steps are a straight rise to the platform), then on the deck
+				var turns = Math.Min( guest.PoolActivityTurns, PoolSlideSettings.ClimbTurns );
+				var ground = top - PoolSlideTowerModel.StairsRise;
+				if ( turns <= ClimbFootEnd )
+					return heights.Water + (ground - heights.Water) * turns / ClimbFootEnd;
+				if ( turns <= ClimbStairsEnd )
+					return ground + (top - ground) * (turns - ClimbFootEnd) / (ClimbStairsEnd - ClimbFootEnd);
+				return top;
 			case PoolSlidePhases.Wait:
 				return top;
 			case PoolSlidePhases.Ride:
-				return slide.HeightAt( slide.PositionAtTurn( guest.PoolActivityTurns ) ) / (float)PoolSlide.HeightUnit + (slide.Profile == PoolSlideProfile.Tube ? TubeRiderLift : RiderLift);
+				return slide.HeightAt( slide.PositionAtTurn( guest.PoolActivityTurns ) ) / (float)PoolSlide.HeightUnit + RiderLift;
 			default:
 				return null;
 		}
@@ -121,8 +124,8 @@ public sealed class PoolSlideActivity : IPoolActivity
 	/// <summary>How far above the track the rider is drawn, engine units: the sliding slot is bottom anchored, so its back rests on the track bed.</summary>
 	private const float RiderLift = 0.0f;
 
-	/// <summary>The tube's riders ride a little off the bed (the tube is a ring one body wide), so the head and shoulders show through the slit from the game camera.</summary>
-	private const float TubeRiderLift = 0.25f;
+	/// <summary>The climb's legs in turns: the foot of the stairs is reached after <see cref="ClimbFootEnd"/>, the top of the flight after <see cref="ClimbStairsEnd"/>, then one turn to the deck and one to the spot.</summary>
+	private const int ClimbFootEnd = 2, ClimbStairsEnd = 10;
 
 	private static PoolActivityStep Approach( GuestSimulation simulation, Guest guest, PoolSlide? slide, bool usable, ref uint random )
 	{
@@ -157,9 +160,7 @@ public sealed class PoolSlideActivity : IPoolActivity
 		// the place in the line is taken from the counters as they were before this turn (see RankInLine)
 		var (spotX, spotY) = SpotOf( simulation, guest, slide );
 		var turns = ++guest.PoolActivityTurns;
-		// a straight line from the foot of the stairs (where the climb began: the activity's point) to the platform
-		var x = guest.PoolActivityX + (int)((long)(spotX - guest.PoolActivityX) * Math.Min( turns, PoolSlideSettings.ClimbTurns ) / PoolSlideSettings.ClimbTurns);
-		var y = guest.PoolActivityY + (int)((long)(spotY - guest.PoolActivityY) * Math.Min( turns, PoolSlideSettings.ClimbTurns ) / PoolSlideSettings.ClimbTurns);
+		var (x, y) = ClimbPoint( simulation.PoolSlides!.TowerOf( slide ), guest, Math.Min( turns, PoolSlideSettings.ClimbTurns ), spotX, spotY );
 		simulation.MovePoolGuest( guest, x, y );
 		if ( turns >= PoolSlideSettings.ClimbTurns )
 		{
@@ -168,6 +169,28 @@ public sealed class PoolSlideActivity : IPoolActivity
 		}
 		return PoolActivityStep.Continue;
 	}
+
+	/// <summary>
+	/// Where the climber is after this many turns of the climb (16.16): from the cell it swam to, to the foot of the stairs at the tower's front edge, up the flight along its middle line to the top,
+	/// onto the deck beside it and to its spot. The flight is where the tower's model has it, turned with the tower; the climber moves along it, so it is drawn facing the stairs.
+	/// </summary>
+	private static (int X, int Y) ClimbPoint( PoolSlideTower? tower, Guest guest, int turns, int spotX, int spotY )
+	{
+		var start = (X: guest.PoolActivityX, Y: guest.PoolActivityY);
+		if ( tower == null )
+			return (start.X + (int)((long)(spotX - start.X) * turns / PoolSlideSettings.ClimbTurns), start.Y + (int)((long)(spotY - start.Y) * turns / PoolSlideSettings.ClimbTurns));
+		var foot = tower.ModelPoint( PoolSlideTowerModel.StairsX, PoolSlideTowerModel.StairsFootY );
+		var top = tower.ModelPoint( PoolSlideTowerModel.StairsX, PoolSlideTowerModel.StairsTopY );
+		var deck = tower.ModelPoint( PoolSlideTowerModel.StairsX + 10, PoolSlideTowerModel.DeckEntry );
+		if ( turns <= ClimbFootEnd )
+			return Lerp( start, foot, turns, ClimbFootEnd );
+		if ( turns <= ClimbStairsEnd )
+			return Lerp( foot, top, turns - ClimbFootEnd, ClimbStairsEnd - ClimbFootEnd );
+		return turns == ClimbStairsEnd + 1 ? Lerp( top, deck, 1, 1 ) : (spotX, spotY);
+	}
+
+	private static (int X, int Y) Lerp( (int X, int Y) from, (int X, int Y) to, int step, int steps ) =>
+		(from.X + (int)((long)(to.X - from.X) * step / steps), from.Y + (int)((long)(to.Y - from.Y) * step / steps));
 
 	private static PoolActivityStep Wait( GuestSimulation simulation, Guest guest, PoolSlide slide )
 	{
@@ -178,7 +201,7 @@ public sealed class PoolSlideActivity : IPoolActivity
 			return LeaveTower( simulation, guest, slide );
 		simulation.MovePoolGuest( guest, spotX, spotY );
 		// the guest who has waited longest goes first, once the one before it is a cell and a half down the track
-		if ( rank == 0 && IsStartClear( simulation, slide, guest.PoolActivityTarget ) )
+		if ( rank == 0 && IsStartClear( simulation, slide, guest.PoolActivityTarget ) && IsLandingClear( simulation, slide, guest ) )
 		{
 			guest.PoolActivityPhase = PoolSlidePhases.Ride;
 			guest.PoolActivityTurns = 0;
@@ -240,6 +263,13 @@ public sealed class PoolSlideActivity : IPoolActivity
 		return false;
 	}
 
+	/// <summary>
+	/// Whether the guest is a rider inside a closed tube: it is not drawn there (as on a real enclosed slide) but on the platform before the launch and in the water after the splash. Presentation only.
+	/// </summary>
+	public static bool IsInsideTube( GuestSimulation simulation, Guest guest ) =>
+		guest.State == GuestState.PoolActivity && guest.PoolActivityPhase == PoolSlidePhases.Ride && guest.PoolActivityId == ActivityId
+		&& simulation.PoolSlides?.FindByThing( guest.PoolActivityTarget ) is { Profile: PoolSlideProfile.Tube };
+
 	/// <summary>How many guests are on their way to, on the stairs of, or waiting in the tower with this thing id (the tower's capacity counts them all).</summary>
 	public static int Occupants( GuestSimulation simulation, int thingId )
 	{
@@ -282,26 +312,38 @@ public sealed class PoolSlideActivity : IPoolActivity
 
 	private static (int X, int Y) SpotOf( GuestSimulation simulation, Guest guest, PoolSlide slide ) => SpotOf( simulation, guest, slide, RankInLine( simulation, guest ) );
 
-	/// <summary>The guest's place on the platform (16.16): the spots lie round the tower's centre, one per rank in the line.</summary>
+	/// <summary>The guest's place on the platform (16.16): the deck's waiting spots of the model (<see cref="PoolSlideTowerModel.Spot"/>), one per rank in the line, turned with the tower.</summary>
 	private static (int X, int Y) SpotOf( GuestSimulation simulation, Guest guest, PoolSlide slide, int rank )
 	{
-		var tower = simulation.PoolSlides!.TowerOf( slide );
-		long sumX = 0, sumY = 0;
-		var count = 0;
-		if ( tower != null )
-			foreach ( var (x, y) in tower.Footprint )
-			{
-				var centre = PoolSwimRegion.Centre( (x, y) );
-				sumX += centre.X;
-				sumY += centre.Y;
-				count++;
-			}
-		if ( count == 0 )
+		if ( simulation.PoolSlides!.TowerOf( slide ) is not { Footprint.Count: > 0 } tower )
 			return (guest.PoolActivityX, guest.PoolActivityY);
-		var ring = rank / 4;
-		var (dx, dy) = ((rank & 1) == 0 ? -1 : 1, (rank & 2) == 0 ? -1 : 1);
-		var spread = SpotOffset - ring * (SpotOffset / 4);
-		return ((int)(sumX / count) + dx * spread, (int)(sumY / count) + dy * spread);
+		var (x, y) = PoolSlideTowerModel.Spot( rank );
+		return tower.ModelPoint( x, y );
+	}
+
+	/// <summary>The least distance from the landing point a swimmer must keep for a rider to be launched: 0.6 cell (16.16).</summary>
+	private const long LandingRadius = 39322;
+
+	/// <summary>
+	/// Whether the water where the slide lands is free: no swimmer, climber out of the tower or rider on the end of the track is within <see cref="LandingRadius"/> of the landing point. The rider is
+	/// not launched while it is not; the check reads positions only (no random draw) and the guests in list order, so it is the same whatever the order they are updated in.
+	/// </summary>
+	private static bool IsLandingClear( GuestSimulation simulation, PoolSlide slide, Guest rider )
+	{
+		if ( slide.LandingPoint is not { } landing )
+			return true;
+		var (landingX, landingY) = ((long)landing.X * 64, (long)landing.Y * 64);
+		var guests = simulation.Guests;
+		for ( var index = 0; index < guests.Count; index++ )
+		{
+			var other = guests[index];
+			if ( other == rider || !(other.IsSwimming || other.InPoolActivity) || other.InPoolActivity && other.PoolActivityId == ActivityId && other.PoolActivityPhase is PoolSlidePhases.Climb or PoolSlidePhases.Wait )
+				continue;
+			var (dx, dy) = (other.Navigation.X - landingX, other.Navigation.Y - landingY);
+			if ( dx * dx + dy * dy < LandingRadius * LandingRadius )
+				return false;
+		}
+		return true;
 	}
 
 	/// <summary>Whether the start of the track is free: no rider is less than <see cref="PoolSlideSettings.Gap"/> down it.</summary>
@@ -314,3 +356,4 @@ public sealed class PoolSlideActivity : IPoolActivity
 		return true;
 	}
 }
+

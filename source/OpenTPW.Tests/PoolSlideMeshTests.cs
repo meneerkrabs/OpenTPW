@@ -67,22 +67,23 @@ public class PoolSlideMeshTests
 	}
 
 	[TestMethod]
-	public void TheFlumeIsAHalfPipeWithLipsAndTheTubeARingWithASlitOnTop()
+	public void TheFlumeIsAHalfPipeWithLipsAndTheTubeAClosedRing()
 	{
 		var flume = PoolSlideMeshBuilder.Section( PoolSlideProfile.Flume );
 		var tube = PoolSlideMeshBuilder.Section( PoolSlideProfile.Tube );
 		Assert.AreEqual( 15, flume.Count );
-		Assert.AreEqual( 21, tube.Count );
+		Assert.AreEqual( 25, tube.Count );
 		// the flume's lowest point is the centreline's own point and its rims are the half pipe's radius up
 		Assert.AreEqual( 0f, flume.Min( p => p.Up ), 1e-4 );
 		Assert.AreEqual( PoolSlideMeshBuilder.FlumeRadius, flume.Max( p => p.Up ), 1e-4 );
 		Assert.AreEqual( PoolSlideMeshBuilder.FlumeRadius + PoolSlideMeshBuilder.Lip, flume.Max( p => p.Lat ), 1e-4 );
 		Assert.IsTrue( flume.All( p => MathF.Abs( p.NormalLat * p.NormalLat + p.NormalUp * p.NormalUp - 1f ) < 1e-4 ) );
-		// the tube: a ring of its radius, lowest point at the centreline, no point in the 140 degree slit on top
+		// the tube: a ring of its radius, lowest point at the centreline, a closed ring (no slit)
 		Assert.AreEqual( 0f, tube.Min( p => p.Up ), 1e-4 );
 		Assert.IsTrue( tube.All( p => MathF.Abs( MathF.Sqrt( p.Lat * p.Lat + (p.Up - PoolSlideMeshBuilder.TubeRadius) * (p.Up - PoolSlideMeshBuilder.TubeRadius) ) - PoolSlideMeshBuilder.TubeRadius ) < 1e-4 ) );
-		Assert.IsTrue( tube.All( p => p.NormalUp <= MathF.Sin( 20f * MathF.PI / 180 ) + 1e-3f ), "the slit is open" );
-		Assert.AreEqual( tube.Count, tube.Select( p => (MathF.Round( p.Lat, 4 ), MathF.Round( p.Up, 4 )) ).Distinct().Count(), "no repeated point" );
+		Assert.AreEqual( tube[0].Lat, tube[^1].Lat, 1e-4f, "the ring closes: the last point is the first" );
+		Assert.AreEqual( tube[0].Up, tube[^1].Up, 1e-4f );
+		Assert.AreEqual( tube.Count - 1, tube.Select( p => (MathF.Round( p.Lat, 4 ), MathF.Round( p.Up, 4 )) ).Distinct().Count(), "no repeated point but the closing one" );
 	}
 
 	[TestMethod]

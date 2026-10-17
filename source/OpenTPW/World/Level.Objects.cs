@@ -541,7 +541,8 @@ public partial class Level
 		}
 		return new GuestRenderer( guests, park.Heightfield, swim )
 		{
-			Draws = guest => guest.IsSwimming || guest.InPoolActivity,
+			// [EXT:pools-slides] a rider inside a closed tube is not drawn (presentation only)
+			Draws = guest => (guest.IsSwimming || guest.InPoolActivity) && !PoolSlideActivity.IsInsideTube( guests, guest ),
 			SwimSlotFallback = true,
 			BottomAnchoredSlots = PoolSwimSlots.BottomAnchored,
 			SlotChooser = guest => guest.InPoolActivity

@@ -51,10 +51,10 @@ public static class PoolSlideMeshBuilder
 		else
 		{
 			var r = TubeRadius;
-			// the ring without a 140 degree slit on the top (wide enough that the bottom anchored rider, whose back rests on the bed, shows in the camera's oblique view): from 160 degrees round through the bottom to 380 (20) degrees
-			for ( var step = 0; step <= 20; step++ )
+			// a closed ring (the riders are hidden inside it, as on an enclosed slide): from the top round and back to the top, the first point repeated at the end so the seam shades and joins
+			for ( var step = 0; step <= 24; step++ )
 			{
-				var angle = (160 + 220.0 * step / 20) * Math.PI / 180;
+				var angle = (90 + 360.0 * step / 24) * Math.PI / 180;
 				points.Add( ((float)(r * Math.Cos( angle )), (float)(r + r * Math.Sin( angle )), (float)Math.Cos( angle ), (float)Math.Sin( angle )) );
 			}
 		}

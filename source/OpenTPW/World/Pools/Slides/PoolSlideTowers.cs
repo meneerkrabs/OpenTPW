@@ -89,6 +89,48 @@ public sealed record PoolSlideTower( int X, int Y, IReadOnlyList<(int X, int Y)>
 	/// <summary>The id of the slide this tower carries (<see cref="PoolSlide.KeyOf"/>).</summary>
 	public int Id => PoolSlide.KeyOf( X, Y );
 
+	/// <summary>The rotation the tower was placed with (0, 90, 180 or 270), read back from where its pool-side cells lie: the front is the local -V side.</summary>
+	public int Rotation
+	{
+		get
+		{
+			if ( PoolSide.Count == 0 )
+				return 0;
+			foreach ( var rotation in new[] { 0, 90, 180, 270 } )
+			{
+				var (fx, fy) = ObjectFootprint.RotateDirection( rotation, 0, -1 );
+				foreach ( var cell in Footprint )
+					if ( PoolSide.Contains( (cell.X + fx, cell.Y + fy) ) )
+						return rotation;
+			}
+			return 0;
+		}
+	}
+
+	/// <summary>
+	/// A point of the tower's model (<see cref="PoolSlideTowerModel"/>, tenths of a model unit, X right and Y towards the stairs' side at rotation 0) as a place in the park (16.16 cells): the model's 2 x 2 cells
+	/// lie on the footprint, its +X along the local +U and its +Y along the front (-V), turned with the tower.
+	/// </summary>
+	public (int X, int Y) ModelPoint( int tenthsX, int tenthsY )
+	{
+		long sumX = 0, sumY = 0;
+		foreach ( var (x, y) in Footprint )
+		{
+			var centre = PoolSwimRegion.Centre( (x, y) );
+			sumX += centre.X;
+			sumY += centre.Y;
+		}
+		if ( Footprint.Count == 0 )
+			return (0, 0);
+		var rotation = Rotation;
+		var (sx, sy) = ObjectFootprint.RotateDirection( rotation, 1, 0 );
+		var (fx, fy) = ObjectFootprint.RotateDirection( rotation, 0, -1 );
+		// a model unit is a tenth of a cell: tenths of units are hundredths of a cell
+		var across = (long)(tenthsX - PoolSlideTowerModel.Size * 5) * Fixed16.One / 100;
+		var along = (long)(tenthsY - PoolSlideTowerModel.Size * 5) * Fixed16.One / 100;
+		return ((int)(sumX / Footprint.Count + across * sx + along * fx), (int)(sumY / Footprint.Count + across * sy + along * fy));
+	}
+
 	/// <summary>The first pool-side candidate that holds pool water now, or null.</summary>
 	public (int X, int Y)? PoolSideCell( ParkCellMap cells )
 	{
@@ -110,5 +152,41 @@ public sealed record PoolSlideTower( int X, int Y, IReadOnlyList<(int X, int Y)>
 				if ( !Footprint.Contains( next ) && !PoolSide.Contains( next ) && seen.Add( next ) )
 					yield return (next.X, next.Y, heading);
 			}
+	}
+}
+
+/// <summary>
+/// The geometry of the tower model that the riders' places follow (tools/blender/opentpw_slide_tower.py, which is the source of the numbers): the model is 20 x 20 units for the 2 x 2 cells, its stairs a
+/// flight of twelve steps along the left edge (X 0 to 7) from the ground at the front edge (Y = 20) up to the platform at Y = 8, the platform an L of slabs whose top is the track's height, the rails and
+/// the corner posts round it. All values are tenths of a model unit (<see cref="PoolSlideTower.ModelPoint"/>).
+/// </summary>
+// [EXT:pools-slides] OpenTPW's own model; the original game has no pools
+public static class PoolSlideTowerModel
+{
+	/// <summary>The model's side, model units (two cells of ten).</summary>
+	public const int Size = 20;
+	/// <summary>The middle of the flight, across.</summary>
+	public const int StairsX = 35;
+	/// <summary>The foot of the flight: the ground at the front edge.</summary>
+	public const int StairsFootY = 200;
+	/// <summary>The top of the flight, where its last tread meets the platform.</summary>
+	public const int StairsTopY = 85;
+	/// <summary>Where a climber steps onto the deck beside the top of the flight (the deck is the slab behind the head of the stairs).</summary>
+	public const int DeckEntry = 60;
+	/// <summary>How far the stairs' foot is above the ground the tower stands on: the platform's height above the highest ground, engine units.</summary>
+	public const float StairsRise = PoolSlideTowers.TopHeight;
+
+	/// <summary>
+	/// The places on the deck where the riders wait, in order of the line (tenths of a model unit): clear of the flight's opening (X under 7, Y over 8), the corner posts and the rails.
+	/// Four of them; a longer line stacks up beside them.
+	/// </summary>
+	public static readonly (int X, int Y)[] Spots = { (125, 130), (125, 45), (45, 45), (160, 90) };
+
+	/// <summary>The place on the deck of the guest at this rank in the line, nudged towards the middle of the deck for every four ranks ahead of it so a long line does not share a spot.</summary>
+	public static (int X, int Y) Spot( int rank )
+	{
+		var (x, y) = Spots[rank & 3];
+		var ring = rank / 4;
+		return (x + Math.Sign( 100 - x ) * ring * 12, y + Math.Sign( 100 - y ) * ring * 12);
 	}
 }

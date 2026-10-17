@@ -23,10 +23,10 @@ public class PoolSlideActivityTests
 		public readonly PoolSlideActivity Activity = new();
 		public static readonly (int X, int Y)[] Track = { (3, 4), (3, 3), (3, 2), (4, 2), (5, 2), (6, 2), (6, 3) };
 
-		public SlideRig( int capacity = 4, bool build = true, Rig? rig = null )
+		public SlideRig( int capacity = 4, bool build = true, Rig? rig = null, PoolSlideProfile profile = PoolSlideProfile.Flume )
 		{
 			Rig = rig ?? new Rig();
-			Tower = new PoolSlideTower( 3, 5, new[] { (3, 5), (4, 5), (3, 6), (4, 6) }, new[] { (5, 5), (5, 6) }, PoolSlideProfile.Flume, capacity, ThingId: 700 );
+			Tower = new PoolSlideTower( 3, 5, new[] { (3, 5), (4, 5), (3, 6), (4, 6) }, new[] { (5, 5), (5, 6) }, profile, capacity, ThingId: 700 );
 			var cells = Rig.Cells;
 			World = new PoolSlideWorld( () => new PoolSlideSite
 			{
@@ -100,9 +100,10 @@ public class PoolSlideActivityTests
 			return false;
 		}, 800 );
 		CollectionAssert.AreEqual( new[] { 0, 1, 2, 3, 4 }, phases, "approach, climb, wait, ride, splash" );
-		CollectionAssert.AreEquivalent( new[] { PoolSwimSlots.Crawl, PoolSwimSlots.LadderClimb, PoolSwimSlots.Stand, PoolSwimSlots.Sliding, PoolSwimSlots.SplashDown }, slots.ToArray() );
+		CollectionAssert.AreEquivalent( new[] { PoolSwimSlots.Crawl, PoolSwimSlots.LadderClimb, PoolSwimSlots.Walk, PoolSwimSlots.Stand, PoolSwimSlots.Sliding, PoolSwimSlots.SplashDown }, slots.ToArray() );
 		Assert.AreEqual( PoolSlideSettings.ClimbTurns, feetClimb.Count, "the climb takes its turns" );
-		Assert.IsTrue( feetClimb.Zip( feetClimb.Skip( 1 ) ).All( pair => pair.Second > pair.First ), "and rises" );
+		Assert.IsTrue( feetClimb.Zip( feetClimb.Skip( 1 ) ).All( pair => pair.Second >= pair.First ), "and rises" );
+		Assert.AreEqual( slide.TopHeight / 1000f, feetClimb[^1], 1e-4, "up to the deck" );
 		Assert.IsTrue( feetRide.Zip( feetRide.Skip( 1 ) ).All( pair => pair.Second < pair.First ), "the ride falls" );
 		Assert.AreEqual( slide.RideTurns, rideTurns, "the ride lasts as long as the slide's table says" );
 		Assert.AreEqual( GuestState.Swimming, guest.State, "back in the water" );
@@ -154,6 +155,7 @@ public class PoolSlideActivityTests
 		var seen = new HashSet<int>();
 		var turn = 0;
 		var minimumGap = int.MaxValue;
+		var deckSpots = Enumerable.Range( 0, 4 ).Select( rank => rig.Tower.ModelPoint( PoolSlideTowerModel.Spot( rank ).X, PoolSlideTowerModel.Spot( rank ).Y ) ).ToHashSet();
 		rig.Rig.Turns( 2400, () =>
 		{
 			turn++;
@@ -163,11 +165,21 @@ public class PoolSlideActivityTests
 				arrived.TryAdd( waiting.Id, turn );
 			var spots = inTower.Select( guest => (guest.Navigation.X, guest.Navigation.Y) ).ToList();
 			Assert.AreEqual( spots.Count, spots.Distinct().Count(), $"turn {turn}: two waiting guests share a spot" );
+			Assert.IsTrue( spots.All( spot => deckSpots.Contains( spot ) ), $"turn {turn}: a waiting guest is not on one of the deck's spots" );
 			var riders = rig.OnSlide.Where( guest => guest.PoolActivityPhase == PoolSlidePhases.Ride ).ToList();
 			mostOnTrack = Math.Max( mostOnTrack, riders.Count );
 			foreach ( var rider in riders )
 				if ( seen.Add( rider.Id ) )
+				{
 					launches.Add( (turn, rider.Id) );
+					// the landing water is free at the launch: nobody within (about) 0.6 cell of the landing point
+					var landing = rig.Slide.LandingPoint!.Value;
+					foreach ( var other in rig.Rig.Simulation.Guests.Where( other => other != rider && (other.IsSwimming || other.InPoolActivity) && !(other.InPoolActivity && other.PoolActivityPhase is PoolSlidePhases.Climb or PoolSlidePhases.Wait) ) )
+					{
+						var (dx, dy) = ((other.Navigation.X - landing.X * 64L) / 65536.0, (other.Navigation.Y - landing.Y * 64L) / 65536.0);
+						Assert.IsTrue( Math.Sqrt( dx * dx + dy * dy ) >= 0.5, $"turn {turn}: guest {other.Id} is {Math.Sqrt( dx * dx + dy * dy ):F2} cell from where guest {rider.Id} will land" );
+					}
+				}
 			var positions = riders.Select( rider => rig.Slide.PositionAtTurn( rider.PoolActivityTurns ) ).OrderBy( p => p ).ToList();
 			for ( var index = 1; index < positions.Count; index++ )
 				minimumGap = Math.Min( minimumGap, positions[index] - positions[index - 1] );
@@ -180,6 +192,117 @@ public class PoolSlideActivityTests
 		// the longest waiting goes first: the launch order is the order of arrival on the platform, ties by guest id
 		var expected = launches.OrderBy( launch => arrived[launch.Id] ).ThenBy( launch => launch.Id ).Select( launch => launch.Id ).ToList();
 		CollectionAssert.AreEqual( expected, launches.Select( launch => launch.Id ).ToList(), "longest waiting first" );
+	}
+
+	[TestMethod]
+	public void TheClimbFollowsTheStairsOfTheModelAndTheWaitingSpotsAreOnTheDeckForEveryRotation()
+	{
+		var shape = new ObjectShape( new[] { "**", "**" } );
+		foreach ( var rotation in new[] { 0, 90, 180, 270 } )
+		{
+			var footprint = PoolSlideTowers.Footprint( shape, 10, 10, rotation );
+			var tower = new PoolSlideTower( 10, 10, footprint, PoolSlideTowers.PoolSideCandidates( shape, 10, 10, rotation ), PoolSlideProfile.Flume, 4 );
+			Assert.AreEqual( rotation, tower.Rotation, "the rotation is read back from the pool side" );
+			var centre = tower.ModelPoint( 100, 100 );
+			var middle = ((int)footprint.Average( cell => PoolSwimRegion.Centre( cell ).X ), (int)footprint.Average( cell => PoolSwimRegion.Centre( cell ).Y ));
+			Assert.AreEqual( middle, centre, $"{rotation}: the model's middle is the footprint's middle" );
+			var (fx, fy) = ObjectFootprint.RotateDirection( rotation, 0, -1 );
+			var (sx, sy) = ObjectFootprint.RotateDirection( rotation, 1, 0 );
+			// the foot of the stairs is on the front edge (a cell from the middle towards the pool) and 0.65 cell to the model's left of the middle: the stairs' column is the footprint's first column
+			var foot = tower.ModelPoint( PoolSlideTowerModel.StairsX, PoolSlideTowerModel.StairsFootY );
+			Assert.AreEqual( centre.X + fx * 65536 - sx * 42598, foot.X, 3, $"{rotation}: the foot of the stairs (x)" );
+			Assert.AreEqual( centre.Y + fy * 65536 - sy * 42598, foot.Y, 3, $"{rotation}: the foot of the stairs (y)" );
+			var top = tower.ModelPoint( PoolSlideTowerModel.StairsX, PoolSlideTowerModel.StairsTopY );
+			Assert.AreEqual( centre.X - fx * 9830 - sx * 42598, top.X, 3, $"{rotation}: the top of the flight, 0.15 cell short of the middle towards the pool (x)" );
+			Assert.AreEqual( centre.Y - fy * 9830 - sy * 42598, top.Y, 3, $"{rotation}: the top of the flight (y)" );
+			// every waiting spot is on the deck: over the footprint, clear of the flight's opening, the posts and the rails
+			for ( var rank = 0; rank < 4; rank++ )
+			{
+				var (x, y) = PoolSlideTowerModel.Spot( rank );
+				Assert.IsTrue( x is > 20 and < 184 && y is > 15 and < 184, $"spot {rank} ({x}, {y}) inside the rails" );
+				Assert.IsFalse( x < 85 && y > 75, $"spot {rank} ({x}, {y}) is over the flight's opening" );
+				Assert.IsFalse( x > 175 && y > 170 || x > 175 && y < 20, $"spot {rank} is on a post" );
+				var point = tower.ModelPoint( x, y );
+				Assert.IsTrue( footprint.Contains( (point.X >> 16, point.Y >> 16) ), $"{rotation}: spot {rank} is over the footprint" );
+			}
+		}
+	}
+
+	[TestMethod]
+	public void TheClimberWalksTheFlightFromItsFootToItsTopThenOntoTheDeck()
+	{
+		using var scope = PoolsOn();
+		var rig = new SlideRig();
+		var guest = rig.Rig.Send();
+		rig.Rig.Until( () => guest.InPoolActivity && guest.PoolActivityPhase == PoolSlidePhases.Climb, 3000 );
+		var foot = rig.Tower.ModelPoint( PoolSlideTowerModel.StairsX, PoolSlideTowerModel.StairsFootY );
+		var top = rig.Tower.ModelPoint( PoolSlideTowerModel.StairsX, PoolSlideTowerModel.StairsTopY );
+		var positions = new Dictionary<int, (int X, int Y)>();
+		rig.Rig.Until( () =>
+		{
+			if ( guest.PoolActivityPhase != PoolSlidePhases.Climb )
+				return true;
+			positions[guest.PoolActivityTurns] = (guest.Navigation.X, guest.Navigation.Y);
+			return false;
+		}, 40 );
+		Assert.AreEqual( foot, positions[2], "at the foot of the stairs after two turns" );
+		Assert.AreEqual( top, positions[10], "at the top of the flight after ten" );
+		// the flight is a straight line: every turn between the foot and the top moves an eighth of the way
+		for ( var turn = 3; turn <= 9; turn++ )
+		{
+			Assert.AreEqual( foot.X + (long)(top.X - foot.X) * (turn - 2) / 8, positions[turn].X, 2, $"turn {turn}" );
+			Assert.AreEqual( foot.Y + (long)(top.Y - foot.Y) * (turn - 2) / 8, positions[turn].Y, 2, $"turn {turn}" );
+		}
+	}
+
+	[TestMethod]
+	public void ARiderInsideATubeIsNotDrawnAndOneInAFlumeIs()
+	{
+		using var scope = PoolsOn();
+		foreach ( var profile in new[] { PoolSlideProfile.Flume, PoolSlideProfile.Tube } )
+		{
+			var rig = new SlideRig( profile: profile );
+			var guest = rig.Rig.Send();
+			var simulation = rig.Rig.Simulation;
+			var hiddenIn = new HashSet<int>();
+			rig.Rig.Until( () => guest.InPoolActivity, 3000 );
+			rig.Rig.Until( () =>
+			{
+				if ( !guest.InPoolActivity )
+					return true;
+				if ( PoolSlideActivity.IsInsideTube( simulation, guest ) )
+					hiddenIn.Add( guest.PoolActivityPhase );
+				return false;
+			}, 4000 );
+			if ( profile == PoolSlideProfile.Tube )
+				CollectionAssert.AreEquivalent( new[] { PoolSlidePhases.Ride }, hiddenIn.ToArray(), "hidden on the track only: seen on the platform before and in the water after" );
+			else
+				Assert.AreEqual( 0, hiddenIn.Count, "the open flume shows its riders" );
+		}
+	}
+
+	[TestMethod]
+	public void AGuestAtTheFrontOfTheLineWaitsWhileASwimmerIsWithin06CellOfTheLandingPoint()
+	{
+		using var scope = PoolsOn();
+		var rig = new SlideRig();
+		var rider = rig.Rig.Send();
+		rig.Rig.Until( () => rider.InPoolActivity && rider.PoolActivityPhase == PoolSlidePhases.Wait, 3000 );
+		// a swimmer parked at the landing point holds the launch: put the waiter back to the start of its wait with the zone occupied
+		var blocker = rig.Rig.Send();
+		rig.Rig.Until( () => blocker.IsSwimming, 3000 );
+		var landing = rig.Slide.LandingPoint!.Value;
+		var waited = rider.PoolActivityTurns;
+		Assert.IsTrue( waited >= 0 );
+		(rider.PoolActivityPhase, rider.PoolActivityTurns) = (PoolSlidePhases.Wait, 0);
+		var launched = false;
+		for ( var turn = 0; turn < 12; turn++ )
+		{
+			rig.Rig.Simulation.PlacePoolGuest( blocker, landing.X * 64, landing.Y * 64 );
+			rig.Rig.Turns( 1 );
+			launched |= rider.PoolActivityPhase == PoolSlidePhases.Ride;
+		}
+		Assert.IsFalse( launched, "no launch while a swimmer sits in the landing zone" );
 	}
 
 	[TestMethod]
@@ -343,7 +466,7 @@ public class PoolSlideActivityTests
 	}
 
 	/// <summary>[EXT:pools-slides] The pinned hash of <see cref="RunFixedSlides"/> (docs/DETERMINISM.md, "Pools").</summary>
-	internal const ulong PoolsSlidesFixedRunHash = 0x8FDB7A3F30ACC019UL;
+	internal const ulong PoolsSlidesFixedRunHash = 0x5B4437FD295E3DFFUL;
 
 	[TestMethod]
 	public void FixedRunWithASlideIsTheSameInEveryProcessAndGuestsRideIt()

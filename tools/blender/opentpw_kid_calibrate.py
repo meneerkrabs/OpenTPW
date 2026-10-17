@@ -2,7 +2,7 @@
 reference sheet of the original standing frames (viewed locally, never committed).
 
 Usage:
-  Blender -b --factory-startup --python tools/blender/opentpw_kid_calibrate.py -- --out /tmp/swimart [--reference all_stand.png] [--sets BE,CH] [--edition TPW|TPI] [--copy-to reports/swimmers-calibration-tpw.png] [--no-quantise] [--dither 0.03]
+  Blender -b --factory-startup --python tools/blender/opentpw_kid_calibrate.py -- --out /tmp/swimart [--reference all_stand.png] [--sets BE,CH] [--edition TPW|TPI] [--copy-to reports/swimmers-calibration-tpw.png] [--no-quantise] [--dither 0.03] [--outfit clothes|swim]
 
 The reference is an enlarged sheet on a flat background (``--zoom``, default 4; TPI sheets are 3x): the edition's sets as
 columns (TPW: BE, BI, CH, FR, KI, SA, SU, TA; TPI: BD, GB, GK, KB, FA, MO, GM, GR), rows = directions 0..4, each cell the
@@ -22,7 +22,7 @@ BACKGROUND = (120, 170, 110)
 
 def args():
 	a = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
-	o = dict(out="/tmp/swimart", reference=None, sets=None, edition="TPW", zoom=4, copy_to=None, quantise=True, dither=None)
+	o = dict(out="/tmp/swimart", reference=None, sets=None, edition="TPW", zoom=4, copy_to=None, quantise=True, dither=None, outfit="clothes")
 	i = 0
 	while i < len(a):
 		if a[i] == "--out": o["out"] = a[i + 1]; i += 2
@@ -32,6 +32,7 @@ def args():
 		elif a[i] == "--zoom": o["zoom"] = int(a[i + 1]); i += 2
 		elif a[i] == "--copy-to": o["copy_to"] = a[i + 1]; i += 2
 		elif a[i] == "--no-quantise": o["quantise"] = False; i += 1
+		elif a[i] == "--outfit": o["outfit"] = a[i + 1]; i += 2
 		elif a[i] == "--dither": o["dither"] = float(a[i + 1]); i += 2
 		else: raise SystemExit(f"unknown argument {a[i]}")
 	return o
@@ -53,10 +54,10 @@ def main():
 	ed = K.EDITIONS[o["edition"]]
 	CELL, FEET, ZOOM = ed["cell"], ed["feet"], o["zoom"]
 	os.makedirs(o["out"], exist_ok=True)
-	st = K.setup_scene(CELL, FEET, o["edition"])
+	st = K.setup_scene(CELL, FEET, o["edition"], detail="tpc")   # the reference sheet is made from the low-detail TPC frames
 	ours = {}
 	for name in o["sets"]:
-		kid = K.build_kid(name, underwater=False)
+		kid = K.build_kid(name, underwater=False, outfit=o["outfit"])
 		K.apply_pose(kid, K.standing_pose(kid))
 		for d in range(5):
 			K.aim_camera(st, d)

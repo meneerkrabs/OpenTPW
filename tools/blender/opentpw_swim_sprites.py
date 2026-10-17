@@ -4,14 +4,14 @@ Usage:
   Blender -b --factory-startup --python tools/blender/opentpw_swim_sprites.py -- --out /tmp/swimart [--edition TPW|TPI] \
       [--sets BE,CH] [--binary-alpha] [--overview-dir /path/to/reports] [--no-quantise] [--dither 0.03] [--verify]
 
-Per set it writes ``<out>/<edition>/<SET>/<slot>_d<direction>_f<frame>.png`` (RGBA; 64 x 48 for the TPW sets, 80 x 64 for
-the TPI sets, which are rendered larger), where the slot is
+Per set it writes ``<out>/<edition>/<SET>/<slot>_d<direction>_f<frame>.png`` (RGBA; 80 x 60 for the TPW sets, 100 x 80 for
+the TPI sets, which are rendered larger; full-detail scale, see opentpw_kid.EDITIONS), where the slot is
   A  front crawl, 8 frames,   B  breaststroke, 8 frames,   C  treading water / idle, 4 frames,
 and 5 directions as in the original kid sprites (0 swims away from the camera, 2 faces screen right, 4 faces the camera;
 1 and 3 are the diagonals; directions 5 to 7 are the mirror images the game draws itself). The game stores frames
 direction-major per slot, so the sprite index of a frame is ``direction * frames + frame``.
 
-The sprite origin (the hotspot) is the edition's ``swim_origin`` pixel of every frame (TPW (32, 27), TPI (40, 36)): the centre of the swimmer's torso, at
+The sprite origin (the hotspot) is the edition's ``swim_origin`` pixel of every frame (TPW (40, 34), TPI (50, 45)): the centre of the swimmer's torso, at
 the water line. Everything below the water line is tinted blue and partly transparent (the sprite is drawn over the
 pool's water); ``--binary-alpha`` makes every pixel fully opaque or fully transparent instead, for palette sprite sets. The frames of a
 set are quantised to one shared 255-colour palette (weighted median cut over RGBA, like SpriteSetBuilder, optionally with
@@ -420,4 +420,5 @@ def main():
 		os.remove(tmp)
 
 
-main()
+if __name__ == "__main__":
+	main()

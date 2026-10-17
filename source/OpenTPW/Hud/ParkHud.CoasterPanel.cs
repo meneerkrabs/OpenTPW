@@ -73,6 +73,7 @@ public sealed partial class ParkHud
 		if ( coasterPanelElements == null || coasterPanelElements.Count != CoasterButtons.Length + 1 )
 			return;
 		var panel = level.IsCoasterToolActive ? level.CoasterPanel : null;
+		ReportCoasterPanelClosed( panel != null );
 		panel?.Refresh();
 		coasterPanelElements[^1].Visible = panel != null;
 		for ( var index = 0; index < CoasterButtons.Length; index++ )
@@ -94,7 +95,23 @@ public sealed partial class ParkHud
 			// [BIN:TPW-EXE:0x4982a0 loop help] the loop button shows help 0x127 instead of 0x126 when the mask has bit 0x200 (definition flag 0x100: the flume coasters)
 			var help = spec.Button == CoasterToolButton.Loop && (panel.Builder.Ride.Definition.Flags & CoasterDefinition.TroughFlag) != 0 ? 0x127 : spec.ToolHelp;
 			PostMessage( strings.Help( help ) );
+			// the same ids are the advisor messages the panel posts through 0x486b00 on the press: 0x121 (289, move), 0x124 (292, demolish), 0x125 (293, build), 0x126 (294, loop) or 0x127 (295, flume pylons)
+			PostToolHelp( help );
 		}
+	}
+
+	private bool coasterPanelShown;
+
+	/// <summary>
+	/// The panel's close message (0x1001D8, when the tool ends and the panel goes) withdraws the five help messages its buttons post.
+	/// </summary>
+	// [BIN:TPW-EXE:0x4982a0 panel close] message 0x1001D8 resets the sub-mode and withdraws 0x125, 0x127, 0x126, 0x121 and 0x124 (293, 295, 294, 289, 292) through 0x486b40 (0x4986ce-0x498702)
+	private void ReportCoasterPanelClosed( bool shown )
+	{
+		if ( coasterPanelShown && !shown )
+			foreach ( var message in AdvisorToolHelp.CoasterPanelMessages )
+				host?.HelpWithdrawn?.Invoke( message );
+		coasterPanelShown = shown;
 	}
 
 	/// <summary>The panel's backdrop: the green arm out of the main panel and the two blue boxes, under the HUD's buttons.</summary>
@@ -180,6 +197,8 @@ public sealed partial class ParkHud
 			if ( panel.IsBuilding )
 			{
 				ReportCoasterResult( level.CoasterClick( cursorX, cursorY ) );
+				// [BIN:TPW-EXE:0x52644c coaster tool click] the tool's click handler 0x524960 in mode 0x15 posts help 0xCD (205) after every click's action (the release 0x446300 with 0 for the edit buttons)
+				PostToolHelp( AdvisorToolHelp.CoasterToolClick );
 				coasterPress = true;
 				consumed = true;
 			}
@@ -198,6 +217,8 @@ public sealed partial class ParkHud
 			var result = panel.Release( node, inPark ? (cursorX, cursorY) : null );
 			if ( result == CoasterPanelResult.Reopened )
 				PostMessage( strings.Help( 0x125 ) );
+			if ( inPark )
+				PostToolHelp( AdvisorToolHelp.CoasterToolClick );
 			consumed = true;
 		}
 		if ( input.LeftReleased )

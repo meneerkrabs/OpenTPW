@@ -39,6 +39,8 @@ public sealed partial class ParkHud
 		{
 			BeginAreaClear();
 			CloseBuyWindow();
+			// [BIN:TPW-EXE:0x4ac8e9 clear land row] the row -2 builds tool 0x3A and posts help 0x159 (345) through 0x486b00 (0x4ac996)
+			PostToolHelp( AdvisorToolHelp.ClearLandTool );
 			return;
 		}
 		if ( !IsBuyAvailable( item ) || level.BuyLandTool is not { } tool )
@@ -53,6 +55,8 @@ public sealed partial class ParkHud
 		if ( !tool.Begin() )
 			return;
 		CloseBuyWindow();
+		// [BIN:TPW-EXE:0x4ac82f buy land row] the row -1 builds tool 0x39 and posts help 0x15A (346) through 0x486b00 (0x4ac996)
+		PostToolHelp( AdvisorToolHelp.BuyLandTool );
 		// [EXT:land-feedback] OpenTPW's hint for the two corner clicks
 		PostMessage( strings.Extra( OpenTpwText.BuyLandHint ) );
 	}

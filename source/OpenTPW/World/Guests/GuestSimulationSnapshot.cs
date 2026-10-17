@@ -293,7 +293,7 @@ public sealed record RideVisitorBridgeSnapshot
 	/// <summary>The script times at which each walking-off guest may be handed out, parallel to <see cref="WalkingOff"/>; null for a ride whose WALKOFF completes at once (every ride but the tour rides).</summary>
 	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
 	public double[]? WalkingOffReady { get; init; }
-	/// <summary>The slot nodes and walk action of each rider that WALKON put on a tour ride and WALKOFF has not taken off yet (guest, start node, end node, action); null when there are none.</summary>
+	/// <summary>The slot nodes and walk action of each rider that WALKON put on a tour ride or with the head action 4 and WALKOFF has not taken off yet (guest, start node, end node, action); null when there are none.</summary>
 	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
 	public (int Guest, int From, int To, int Mode)[]? WalkSlots { get; init; }
 	/// <summary>Always empty in a new snapshot: HOP pops the script's own heap (RideVM), not a bridge set. Kept for saves written before; whatever an old save stores here is validated and ignored.</summary>

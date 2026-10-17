@@ -58,6 +58,8 @@ public partial class Level
 			Particles = ParticlesCaptured?.Invoke( this ),
 			// [EXT:mods] null unless a simulation-changing extension or mod is active, so unmodded saves keep their bytes
 			Mods = ParkResumeMods.Capture( OpenTpwExtensions.Active ),
+			// [EXT:smarter-guests] null while the extension is off for these guests, so such saves keep their bytes
+			SmarterGuests = SmarterGuestsSave.Capture( Guests ),
 			AssetHashes = assets
 		};
 		ParkResumeSaveFile.ValidateSnapshot( snapshot, Objects.Catalog, Park.Economy.Settings, Park.Economy.Catalog, assets );
@@ -97,6 +99,8 @@ public partial class Level
 		Objects.ScriptWorld.RestoreSnapshot( snapshot.Scripts, roots );
 		ValidateResumeQueueGeometry( snapshot.Guests, Guests );
 		Guests.RestoreSnapshot( snapshot.Guests );
+		// [EXT:smarter-guests] the extension's birth ids, keyed by the guest ids the restore just rebuilt
+		SmarterGuestsSave.Restore( Guests, snapshot.SmarterGuests );
 		simulationClock.RestoreSnapshot( snapshot.Clock );
 		if ( snapshot.Weather != null )
 		{
@@ -138,7 +142,14 @@ public partial class Level
 			null, saved.Open, saved.AttractionId );
 		var gaps = ride.Runtime.RestoreSnapshot( saved.Runtime );
 		if ( gaps.Count != 0 ) throw new InvalidDataException( string.Join( "; ", gaps ) );
-		if ( PrototypeRideSave.RestoreGuestCells( saved, ride.Visitors, Guests! ) && saved.EconomyInstanceId is int instance )
+		var registered = PrototypeRideSave.RestoreGuestCells( saved, ride.Visitors, Guests! );
+		// [EXT:developer-prototype] a prototype saved before the build laid its stand cell gets it at load (a cell that holds a type is left as it is)
+		if ( registered )
+		{
+			var (standX, standY) = GuestSimulation.StandCellOf( ride.Visitors );
+			ObjectAccessCells.LayStandCell( Guests!.Grid.Cells, standX, standY );
+		}
+		if ( registered && saved.EconomyInstanceId is int instance )
 		{
 			if ( Park == null || !Park.Economy.TryGetObject( instance, out var state ) || state.InfoId != ride.Entry.InfoId )
 				throw new InvalidDataException( "The saved prototype does not match its economy instance." );

@@ -311,6 +311,7 @@ internal sealed class AdvisorScoreQueue
 		var variant = advice.ResponseVariantOverride;
 		if ( variant < 0 )
 		{
+			// [BIN:TPW-EXE:0x0059A796 sequential pick] the Windows update switches on the descriptor's word +0x2C (0x59C490): all 351 rows hold mode 2, the previous response + 1 (0x59A796, checked by tools/ppc-analysis/lanes/advisor/tpw_exe_tables.py); the mode-3 branch (a world generator draw, 0x59A7AC) is never taken, so the pick draws nothing
 			// [BIN:STP-PPC:0x10008974 cyclic variant] previous variant + 1 (wrapping signed add), reset to 0 unless below the count
 			variant = unchecked(GetHistory( advice.MessageId ).PreviousVariant + 1);
 			if ( variant >= descriptor.ResponseCount )

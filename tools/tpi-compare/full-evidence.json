@@ -670,7 +670,7 @@
     "source/OpenTPW/VM/Handlers/Math.cs": "046a3c84dc11a7bde1e967ddb1b8f346ee30b53cf4d0f2b1c698f23577a228ed",
     "source/OpenTPW/VM/Handlers/Scheduling.cs": "267961d2cc6288eac95cfb287a866cdbb13d8dcdb5d6b3de21c7641ba8aa41bc",
     "source/OpenTPW/VM/Handlers/Visitors.cs": "2f9289ef11cf68422a36acddc2ebe65c0b7e202550c255d8b29c922180f99e1c",
-    "source/OpenTPW/VM/Opcode.cs": "27d76267ce20526481c268b0b04eb4c4fcc55284223b5aaa8ce161d51b990d38"
+    "source/OpenTPW.Files/Public/Opcode.cs": "27d76267ce20526481c268b0b04eb4c4fcc55284223b5aaa8ce161d51b990d38"
   },
   "opcodes": [
     {

@@ -95,6 +95,17 @@ internal static class Game
 			TpiMissionInspection.Run( args[missionIndex + 1] );
 			return;
 		}
+		// Headless guest measurement (docs/SMARTER-GUESTS.md): the synthetic scenario needs no game data, so it runs before the data is set up; level parks run after (below).
+		if ( args.Contains( "--guest-compare" ) )
+		{
+			Environment.ExitCode = GuestReportCompare.RunCommand( args );
+			return;
+		}
+		if ( args.Contains( "--guest-report" ) && !GuestReport.WantsLevels( args ) )
+		{
+			Environment.ExitCode = GuestReport.RunCommand( args );
+			return;
+		}
 		var pathIndex = Array.IndexOf( args, "--game-path" );
 		string? commandLinePath = null;
 		if ( pathIndex >= 0 )
@@ -234,6 +245,12 @@ internal static class Game
 			Environment.ExitCode = M3Gate.RunCommand( args );
 			return;
 		}
+		// Headless guest report with level parks (docs/SMARTER-GUESTS.md): no window, renderer or audio.
+		if ( args.Contains( "--guest-report" ) )
+		{
+			Environment.ExitCode = GuestReport.RunCommand( args );
+			return;
+		}
 		// Headless M4 attraction/script gate (docs/M4-GATE.md): no window, renderer or audio.
 		if ( args.Contains( "--m4-gate" ) )
 		{
@@ -266,6 +283,9 @@ internal static class Game
 		if ( visit != null )
 			Log.Trace( ParkSharing.Describe( visit ) );
 		Render = DisplayStartup.CreateRenderer( args );
+		// [EXT:script-mods] the crash marker was written at startup; it is removed after 15 seconds of frames (docs/SCRIPT-MODS.md)
+		if ( OpenTPW.Mods.ScriptSafeMode.Current is { } scriptStartMarker )
+			Render.OnUpdate += scriptStartMarker.Update;
 		if ( movieName != null )
 		{
 			MovieCommands.Play( dataDirectory, movieName, !args.Contains( "--mute" ), args.Contains( "--smoke-test" ) );

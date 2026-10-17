@@ -710,7 +710,7 @@ public class Md2CorpusTests
 		return Convert.ToHexString( SHA256.HashData( stream.ToArray() ) );
 	}
 
-	private static IEnumerable<(string Name, WadArchiveFile File)> Md2Members( ArchiveDirectory directory, string prefix )
+	internal static IEnumerable<(string Name, WadArchiveFile File)> Md2Members( ArchiveDirectory directory, string prefix )
 	{
 		foreach ( var child in directory.Children )
 		{

@@ -506,6 +506,9 @@ public sealed class TourController
 		}
 	}
 
+	/// <summary>The time since the last tour step, for the renderer's interpolation (<see cref="TickSeconds"/> is the most); the substep scheduler (<see cref="SimulationSubstep"/>) runs the steps themselves.</summary>
+	internal void PresentAt( double secondsSinceStep ) => tickRemainder = Math.Clamp( secondsSinceStep, 0, TickSeconds - 1e-6 );
+
 	/// <summary>One world step: a car is created when fewer exist than wanted, then every live car runs its state.</summary>
 	public void Tick()
 	{

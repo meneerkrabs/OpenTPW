@@ -152,6 +152,19 @@ and a handyman), runs 30 simulated minutes as fast as possible and prints one pa
 invariant. Exit code: 1 when any row fails, 2 when no row fails but at least
 one is unresolved, 0 only when every row passes. M3 is accepted only at exit code 0. See [M3-GATE.md](M3-GATE.md).
 
+## Headless guest report
+
+```sh
+dotnet source/OpenTPW/bin/Debug/net10.0/OpenTPW.dll --guest-report [--guest-scale plan|extended] [--guest-report-json guests.json]
+```
+
+Measures the guests' behaviour passively (docs/SMARTER-GUESTS.md): eight fixed seeds of the synthetic park scenario and, when `OPENTPW_GAME_PATH` or `--game-path` is set, the four
+themes' level parks, each with a warm-up and a measured window in in-game days. It prints a short table (outcome mix of the queue attempts, waits over boarded attempts, cohort
+happiness, departures by predicate, the use Gini, revenue per guest, stuck guests, CPU and allocation per tick) and writes the stable JSON report. It opens no window and changes no
+simulation state. `--guest-seeds`, `--guest-warmup-days`, `--guest-days`, `--guest-levels`, `--guest-level-seeds`, `--guest-arrivals` and `--guest-no-perf` set the scale. See
+[SMARTER-GUESTS.md](SMARTER-GUESTS.md). `--guest-extension smarter-guests` (with `--guest-report`: build the run with the extension on, so `--guest-compare` can set it against the default), `--guest-compare baseline.json candidate.json [--guest-targets metric,metric]` compares two reports
+in standard errors of the seed spread and exits 1 on a regression or a target that did not improve.
+
 ## Headless M4 attraction and script gate
 
 ```sh

@@ -3,6 +3,8 @@ The MIT License (MIT)
 
 Copyright © `2022-2025` `Alex Guthrie`
 
+Copyright © `2026` `Eugene Krabs`
+
 Permission is hereby granted, free of charge, to any person
 obtaining a copy of this software and associated documentation
 files (the “Software”), to deal in the Software without

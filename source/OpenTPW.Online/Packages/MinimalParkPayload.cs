@@ -73,7 +73,7 @@ public sealed record MinimalParkPayload(
 	public const string SourceSandbox = "sandbox";
 
 	// [EXT:ONLINE-008] Bounds: MAP grids are at most 1024 cells per side (MapFile.MaximumDimension) and
-	// footprints at most 16 cells (SaveObjectList.MaximumFootprint).
+	// footprints at most 16 cells (SaveObject.MaximumFootprint).
 	public const int MaximumCell = 1023;
 	public const int MaximumPathCells = 1024 * 64;
 	public const int MaximumObjects = 4096;

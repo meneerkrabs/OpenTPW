@@ -9,7 +9,7 @@ public static class BrowserStartup
 			throw new ArgumentException( "Choose an experimental Theme Park Inc theme: arabian, science or water." );
 		var edition = GameEditions.Detect( dataDirectory );
 		if ( edition.Edition == GameEdition.ThemeParkInc && theme.Length == 0 )
-			throw new ArgumentException( "Theme Park Inc data needs an explicit experimental theme: arabian, science or water; its front end is unsupported." );
+			throw new ArgumentException( "Theme Park Inc data needs an explicit experimental theme: arabian, science or water; the Personnel File start screen is not offered in the browser yet." );
 		if ( edition.Edition != GameEdition.ThemeParkInc && theme.Length != 0 )
 			throw new ArgumentException( "The chosen files are not identified as Theme Park Inc. Choose Theme Park World or provide the Theme Park Inc installation." );
 		if ( theme.Length != 0 && GameLanguage.FindEntry( dataDirectory, Path.Combine( "levels", theme ), true ) == null )

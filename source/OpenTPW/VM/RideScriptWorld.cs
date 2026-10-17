@@ -13,6 +13,7 @@ public sealed class RideScriptWorld
 	private readonly Func<DateTime>? civilTime;
 	private int nextId = 1;
 	private int nextAttractionId = 1;
+	private long scriptPass;
 	private WorldRng world;
 
 	/// <param name="seed">Start state of the seed stream for scripts without an explicit seed (<see cref="WorldSeed.ScriptStream"/>).</param>
@@ -63,7 +64,7 @@ public sealed class RideScriptWorld
 	/// The world generator (tp.exe <c>0x00516330</c>) the scripts without an explicit seed draw their RAND and FINDSCRIPTRAND from, and the bump, tour and
 	/// head-space draws take theirs from: the park's one stream, shared with the guests, the staff and the economy (<see cref="AttachWorld"/>).
 	/// </summary>
-	// [APPROX:DET-013] the scripts', rides' and heads' draws are the world generator's, with the original's projections, but taken in the original's order within a park turn (the substep's scripts, then the newest-first thing sweep) but on OpenTPW's per-tick cadence between turns, not the original's substep scheduler (a script slice per eight substeps)
+	// [BIN:TPW-EXE:0x0054F56B script pass] the scripts', rides' and heads' draws are the world generator's, taken in the original's order: the substep's bump module, the script pass (newest script first, one slice per eight passes), the tour cars on even substeps, then on every eighth substep the thing sweep
 	public WorldRng World => world;
 
 	/// <summary>Makes <paramref name="generator"/> this world's generator (the level's shared one); its state is not touched.</summary>
@@ -85,6 +86,30 @@ public sealed class RideScriptWorld
 		if ( divisor == 0 )
 			throw new RideScriptException( $"RAND maximum {maximumInclusive} as an int16 is -1: the original divides by zero" );
 		return Math.Abs( (int)(world.NextWord() >> 1) % divisor );
+	}
+
+	/// <summary>
+	/// The script pass counter (tp.exe <c>0x8791A4</c>): the passes run since the script system started. Unlike the park's substep counter it restarts at 0 when a level loads, and the original's save does not hold it;
+	/// OpenTPW's own park saves do (<see cref="RideScriptWorldSnapshot.PassCounter"/>), an original save starts it at 0.
+	/// </summary>
+	public long PassCounter => scriptPass;
+
+	/// <summary>
+	/// One pass of the original's script scheduler (tp.exe <c>0x005516B0</c>), called once per 31 ms substep: the pass counter rises, then every script in the list steps, newest first (a script is
+	/// linked at the list's head when it is created, 0x5599D3, 0x5588C0, so the list runs from the highest id down); a script created during the pass is not reached until the next one.
+	/// </summary>
+	// [BIN:TPW-EXE:0x005516D2 pass counter] the counter 0x8791A4 is incremented before the list walk, only while the script system is on; it is zeroed when the system starts (0x551643, 0x559828) and never saved
+	// [BIN:TPW-EXE:0x00558C0D script id] a script's id (+8) is the next-id word 0x8791A8 (1 when the system starts, 0x559817) which then rises by one (0x558C1C): ids are never reused and follow the order scripts are created in
+	internal void RunPass( double substepMilliseconds )
+	{
+		++scriptPass;
+		foreach ( var vm in scripts.Values.OrderByDescending( script => script.ScriptId ).ToArray() )
+		{
+			// a script removed during this pass (a faulted parent's children) is gone from the list the original walks
+			if ( !scripts.TryGetValue( vm.ScriptId, out var live ) || !ReferenceEquals( live, vm ) )
+				continue;
+			vm.StepSubstep( substepMilliseconds, scriptPass );
+		}
 	}
 
 	/// <summary>The next attraction id of this park (guests and the economy key attractions by it).</summary>
@@ -125,8 +150,9 @@ public sealed class RideScriptWorld
 	internal void AdoptAttractionId( int id ) => nextAttractionId = Math.Max( nextAttractionId, id + 1 );
 
 	/// <summary>Restores the allocator frontiers (holes below them included), the shared clock and the seed-stream states.</summary>
-	internal void RestoreCounters( int nextScriptId, int nextAttractionIdValue, double clockMilliseconds, uint? worldGenerator, uint coasterRandomState )
+	internal void RestoreCounters( int nextScriptId, int nextAttractionIdValue, double clockMilliseconds, uint? worldGenerator, uint coasterRandomState, long passCounter = 0 )
 	{
+		scriptPass = passCounter;
 		nextId = nextScriptId;
 		nextAttractionId = nextAttractionIdValue;
 		ClockMilliseconds = clockMilliseconds;
@@ -165,6 +191,7 @@ public sealed class RideScriptWorld
 			ClockMilliseconds = ClockMilliseconds,
 			NextScriptId = nextId,
 			NextAttractionId = nextAttractionId,
+			PassCounter = scriptPass,
 			Scripts = scripts.Values.OrderBy( vm => vm.ScriptId ).Select( vm => vm.CaptureSnapshot() ).ToArray()
 		};
 	}
@@ -299,7 +326,7 @@ public sealed class RideScriptWorld
 		}
 
 		// Pass 3 — the world counters, then the post-condition: exactly the saved scripts stay registered.
-		RestoreCounters( snapshot.NextScriptId, snapshot.NextAttractionId, snapshot.ClockMilliseconds, snapshot.WorldGenerator, snapshot.CoasterRandomState );
+		RestoreCounters( snapshot.NextScriptId, snapshot.NextAttractionId, snapshot.ClockMilliseconds, snapshot.WorldGenerator, snapshot.CoasterRandomState, snapshot.PassCounter ?? 0 );
 		var live = scripts.Values.Select( vm => vm.ScriptId ).OrderBy( id => id ).ToArray();
 		var savedIds = snapshot.Scripts.Select( script => script.ScriptId ).OrderBy( id => id ).ToArray();
 		if ( !live.SequenceEqual( savedIds ) )

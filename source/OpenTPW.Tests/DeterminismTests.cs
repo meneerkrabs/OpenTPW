@@ -84,15 +84,16 @@ public class DeterminismTests
 				// Level.AdvanceSimulation's order: the tick that starts a park turn runs the substep's scripts and then the economy's turn, whose thing sweep updates the guests, the economy's things,
 				// the shop's ride update, the turn's destroys and the arrivals (tp.exe 0x0054F4BF, 0x00516380); the ticks between turns update the guests first and free nothing
 				var swept = Guests.NextTickStartsTurn && Economy.NextTickStartsTurn;
+				// the substep of this tick (tp.exe 0x54F4BF): the script pass runs every script newest first on its own cadence (0x54F56B, 0x5516B0), before the objects' own ticks
+				var substep = SimulationSubstep.ForTick( Economy.Tick, Economy.Speed != GameSpeed.Paused );
 				if ( swept )
 					Guests.BeginSweepTick( Tick );
 				else
 					Guests.Tick( Tick );
 				shop.DefersAdmission = swept;
+				if ( substep.Due )
+					Scripts.RunPass( SimulationSubstep.Milliseconds );
 				shop.HostStep();
-				shopScript.Advance( Tick );
-				foreach ( var script in dice )
-					script.Advance( Tick );
 				Economy.ThingSweep = swept ? new HarnessSweep( this ) : null;
 				try
 				{

@@ -41,7 +41,7 @@ public sealed partial class ParkHud
 		if ( VisitorInfoWindowOpen )
 			CloseVisitorInfoWindow();
 		visitorInfoId = guest.Id;
-		visitorInfoTitleNumber = guest.Id;
+		visitorInfoTitleNumber = guest.VisitorNumber;
 		RefreshVisitorInfo();
 		visitorInfoScreen ??= CreateVisitorInfoScreen();
 		Stack.Push( visitorInfoScreen );
@@ -75,7 +75,7 @@ public sealed partial class ParkHud
 			return;
 		}
 		if ( visitorInfoTitleNumber == 0 )
-			visitorInfoTitleNumber = guest.Id;
+			visitorInfoTitleNumber = guest.VisitorNumber;
 		var values = ParkVisitorRoster.ValuesOf( guest, refreshed: true );
 		var status = strings.KidState( (int)guest.State, guest.State == GuestState.Using ? AttractionNameOf( guest.AttractionId ) : "" );
 		visitorInfoShown = new VisitorInfoValues( guest.Money, values.Hours, guest.RidesTaken, guest.ShopsVisited, guest.SideshowsVisited, guest.SideshowsWon,
@@ -96,7 +96,7 @@ public sealed partial class ParkHud
 		if ( next == null || next == guest.Id )
 			return false;
 		visitorInfoId = next.Value;
-		visitorInfoTitleNumber = next.Value;
+		visitorInfoTitleNumber = (level.Guests?.Guests ?? Array.Empty<Guest>()).FirstOrDefault( item => item.Id == next.Value )?.VisitorNumber ?? 0;
 		RefreshVisitorInfo();
 		return true;
 	}

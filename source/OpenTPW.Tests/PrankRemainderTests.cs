@@ -91,15 +91,15 @@ public class PrankRemainderTests
 		// with no recall (no exit counter left) the guest walks to lane B's park entrance (19, 5), not to the nearer lane A at (0, 5)
 		guest.ExitLevel = 0;
 		var furthestLeft = guest.CellX;
-		for ( var tick = 0; tick < 60 * 60 && guest.Lane == null && guest.State == GuestState.LeavingPark; tick++ )
+		for ( var tick = 0; tick < 60 * 60 && guest.State == GuestState.LeavingPark; tick++ )
 		{
 			simulation.Tick( GuestSnapshotTests.Tick );
 			furthestLeft = Math.Min( furthestLeft, guest.CellX );
 		}
-		Assert.IsNotNull( guest.Lane, "it reached a lane" );
-		Assert.AreEqual( (19, 5), guest.Lane![^1], "lane B" );
+		Assert.AreEqual( GuestState.CrossingRoadHome, guest.State, "it reached the gate's crossing cell (state 19)" );
+		Assert.AreEqual( (6, 3), guest.Navigation.Cell, "lane B's park-side crossing cell, the cell the drawn side names" );
 		Assert.AreEqual( 4, furthestLeft, "it never walked towards lane A" );
-		Assert.IsNull( guest.ExitSide, "the lane walk clears it" );
+		Assert.IsNull( guest.ExitSide, "the arrival clears it" );
 	}
 
 	[TestMethod]
@@ -108,11 +108,12 @@ public class PrankRemainderTests
 		var grid = new GuestPathGrid( 20, 10 );
 		for ( var x = 0; x < 10; x++ )
 			grid.SetPath( x, 5, true );
+		grid.Cells.SetType( 6, 3, ParkCellTypes.NoTerrain );
 		var simulation = Simulation( grid );
 		var guest = simulation.SpawnInPark( 4, 5 );
 		IGuardGuests guards = simulation;
 		guards.Hold( guest.Id );
-		Assert.IsFalse( guards.Release( guest.Id, (4, 5), 1 ), "lane B's entrance (19, 5) is no path: the route fails and 0x0050B780 destroys the guest" );
+		Assert.IsFalse( guards.Release( guest.Id, (4, 5), 1 ), "lane B's gate cell (6, 3) has no ground: the route fails and 0x0050B780 destroys the guest" );
 		var other = simulation.SpawnInPark( 6, 5 );
 		guards.Hold( other.Id );
 		Assert.IsTrue( guards.Release( other.Id, (6, 5), 0 ), "side A is in reach" );

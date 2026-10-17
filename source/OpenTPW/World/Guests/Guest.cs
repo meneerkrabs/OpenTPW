@@ -6,6 +6,11 @@ public enum GuestState : byte
 	CrossingRoad = 0,
 	CrossingRoadToPark = 1,
 	GoingToTicketBooth = 2,
+	/// <summary>
+	/// The guest stands at the ticket booth after its walk with the park closed, or after paying while the gate holds it (original state 3, <c>0x004FF7F0</c>): a paid guest walks
+	/// on to the entrance cell when it heads its cell's list; with the park closed or the gate shut it counts its wait down and goes home.
+	/// </summary>
+	WaitingAtBooth = 3,
 	AtTicketBooth = 4,
 	EnteringPark = 5,
 	DoingNothing = 6,
@@ -157,8 +162,12 @@ public sealed class Guest
 	public int AttractionId { get; internal set; }
 	/// <summary>The byte at +0x2C that state 10 counts while the guest walks to a ride with the park open; every twelfth count the minor decision runs (tp.exe 0x004FFEF2).</summary>
 	public int RideWalkCount { get; internal set; }
-	/// <summary>Park turns an expensive verdict still holds the guest at the booth (+0x200, tp.exe 0x004FF9D0): one is counted per turn, the verdict runs again as the last reaches 0.</summary>
+	/// <summary>Park turns an expensive verdict still holds the guest at the booth (+0x200, tp.exe 0x004FF9D0): one is counted per turn, the verdict runs again as the last reaches 0. State 3 counts the same word down.</summary>
 	public int BoothWait { get; internal set; }
+	/// <summary>Whether the guest has paid its admission (guest <c>+0x204</c>, set by the booth's paying verdict <c>0x004FFAD5</c>, 0 at creation): a state-3 guest with it set walks on to the entrance, one without goes back to the booth.</summary>
+	public bool Paid { get; internal set; }
+	/// <summary>The visitor number (guest <c>+0x1D8</c>): the park's visitor count at the guest's arrival at the entrance (<c>0x004FFB20</c>, <c>0x0051AAF0</c>), 0 until then ("New Visitor").</summary>
+	public int VisitorNumber { get; internal set; }
 	/// <summary>The stranded mark (tp.exe <c>+0x198</c>): the cell map's stamp counter raised by one when the wander found no way on, 0 for none; the guest does not search again until a cell edit near it stamps a block above it.</summary>
 	public int StrandedMark { get; internal set; }
 	public int LastAttractionId { get; internal set; }

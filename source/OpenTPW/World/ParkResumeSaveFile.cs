@@ -740,30 +740,21 @@ internal static class ParkResumeSaveFile
 				$"guest {guest.Id} navigation position ({navigation.X >> 16}, {navigation.Y >> 16}) is outside the cell map" );
 			Require( InBounds( navigation.TargetX >> 16, navigation.TargetY >> 16 ),
 				$"guest {guest.Id} navigation target ({navigation.TargetX >> 16}, {navigation.TargetY >> 16}) is outside the cell map" );
-			var onLane = guest.State is GuestState.CrossingRoad or GuestState.CrossingRoadToPark or GuestState.GoingToTicketBooth
-				or GuestState.AtTicketBooth or GuestState.EnteringPark || guest.State is GuestState.CrossingRoadHome or GuestState.WaitingToGoHome && guest.Lane != null;
-			if ( onLane )
-			{
-				Require( guest.Lane != null && guest.Lane.Length >= 2,
-					$"guest {guest.Id} is in state {guest.State} without an arrival lane of at least two cells" );
-				Require( guest.Lane == null || (uint)guest.LaneIndex < (uint)guest.Lane.Length,
-					$"guest {guest.Id} lane index {guest.LaneIndex} is outside its {guest.Lane!.Length}-cell lane" );
-				Require( !guest.OnGrid && navigation.OffGrid, $"guest {guest.Id} is in state {guest.State} but is marked on the path grid" );
-			}
-			else if ( guest.State == GuestState.LeavingPark && guest.Lane != null )
-			{
-				Require( guest.Lane.Length >= 2 && (uint)guest.LaneIndex < (uint)guest.Lane.Length,
-					$"guest {guest.Id} walks a lane home with index {guest.LaneIndex} of {guest.Lane.Length} cells" );
-				Require( !guest.OnGrid && navigation.OffGrid, $"guest {guest.Id} walks a lane home but is marked on the path grid" );
-			}
-			else
-			{
-				Require( guest.OnGrid && !navigation.OffGrid, $"guest {guest.Id} is in state {guest.State} but is not on the path grid" );
-				Require( guest.Lane == null, $"guest {guest.Id} is in state {guest.State} but still carries an arrival lane" );
-			}
+			// a guest saved before guest schema 9 may walk an arrival lane off the grid (the restore turns it into one on the cell map); from schema 9 on no guest carries a lane
 			if ( guest.Lane != null )
+			{
+				var laneState = guest.State is GuestState.CrossingRoad or GuestState.CrossingRoadToPark or GuestState.GoingToTicketBooth or GuestState.AtTicketBooth or GuestState.EnteringPark
+					or GuestState.CrossingRoadHome or GuestState.WaitingToGoHome or GuestState.LeavingPark;
+				Require( guests.SchemaVersion < GuestSimulationSnapshot.ArrivalWalkSchemaVersion, $"guest {guest.Id} carries an arrival lane, which a schema {guests.SchemaVersion} save does not hold" );
+				Require( laneState, $"guest {guest.Id} is in state {guest.State} but still carries an arrival lane" );
+				Require( guest.Lane.Length >= 2, $"guest {guest.Id} is in state {guest.State} with an arrival lane of fewer than two cells" );
+				Require( (uint)guest.LaneIndex < (uint)guest.Lane.Length, $"guest {guest.Id} lane index {guest.LaneIndex} is outside its {guest.Lane.Length}-cell lane" );
+				Require( !guest.OnGrid && navigation.OffGrid, $"guest {guest.Id} walks a lane but is marked on the path grid" );
 				foreach ( var (x, y) in guest.Lane )
 					Require( InBounds( x, y ), $"guest {guest.Id} lane cell ({x}, {y}) is outside the cell map" );
+			}
+			else
+				Require( guest.OnGrid && !navigation.OffGrid, $"guest {guest.Id} is in state {guest.State} but is not on the path grid" );
 		}
 
 		// Membership both ways: queue and rider lists against guest states, exactly as the live validator does.

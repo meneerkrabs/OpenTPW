@@ -263,7 +263,9 @@ public class WalkTests
 		Assert.IsTrue( guests.All( guest => GuestSpeed.BaseSpeeds.Contains( (ushort)guest.BaseSpeed ) ) );
 		Assert.IsTrue( guests.Select( guest => guest.BaseSpeed ).Distinct().Count() > 1, "drawn from the guest stream" );
 		Assert.IsTrue( guests.All( guest => guest.SmoothedSpeed == 0 && guest.MaxSpeed == GuestSpeed.Floor ) );
+		Assert.IsTrue( guests.All( guest => guest.ToiletBonus == GuestSpeed.ToiletBonus ), "the person constructor stores the speed term 25 (0x004FB1C1)" );
 		var guest = guests[0];
+		guest.ToiletBonus = 0;   // the speed term the needs phase writes for a guest without need (this test follows the smoothing alone)
 		var expected = 0f;
 		for ( var turn = 0; turn < 20; turn++ )
 		{

@@ -21,7 +21,7 @@ public class RideOpcodeTestMapTests
 	internal static readonly Type[] ScriptTestClasses =
 	{
 		typeof( DeterminismTests ), typeof( GuestTests ), typeof( PathBuilderTests ), typeof( QueueTests ),
-		typeof( RideMotionTests ), typeof( RideOpcodeEffectsTests ), typeof( RideVMTests ), typeof( RseScriptTests )
+		typeof( RideMotionTests ), typeof( RideOpcodeEffectsTests ), typeof( RideVMInternalsTests ), typeof( RideVMTests ), typeof( RseScriptTests )
 	};
 
 	internal sealed record TestRecording( string Test, IReadOnlySet<Opcode> Executed, IReadOnlySet<Opcode> PerformedByRuntime, string? Outcome );

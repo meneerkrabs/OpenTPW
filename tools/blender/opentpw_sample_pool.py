@@ -44,6 +44,8 @@ def checker_image(name, size, colour_a, colour_b, squares):
 def textured_material(name, image, wrap=True, self_lit=False):
 	material = bpy.data.materials.new(name)
 	material.use_nodes = True
+	# The game culls back faces: without this the glTF material is double-sided and the content kit warns.
+	material.use_backface_culling = True
 	nodes = material.node_tree.nodes
 	shader = nodes.get("Principled BSDF")
 	texture = nodes.new("ShaderNodeTexImage")
@@ -74,6 +76,8 @@ def build():
 	water = textured_material("pool_water", checker_image("poolwatr", 64, (0.2, 0.5, 0.85), (0.25, 0.6, 0.9), 4), self_lit=True)
 	half = SIZE / 2
 	root = bpy.data.objects.new("pool", None)
+	# The footprint covers the Blender X/Y range 0..30 (3 x 3 cells), as an MD2 model covers X/Z 0..10 * size (docs/CONTENT-KIT.md, "Converter conventions").
+	root.location = (half, half, 0)
 	bpy.context.scene.collection.objects.link(root)
 	parts = [
 		box("rim_n", (-half, half - RIM, 0), (half, half, RIM_HEIGHT), tile),

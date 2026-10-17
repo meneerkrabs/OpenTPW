@@ -7,8 +7,9 @@ namespace OpenTPW.Tests;
 
 /// <summary>
 /// The x87 precision control the sign generator ran at (24 bits, see <see cref="X87Precision"/>) against the other two the
-/// instruction set offers (53 and 64): the composed halves of all 75 corpus signs are compared byte by byte. Inconclusive
-/// without <c>OPENTPW_GAME_PATH</c>.
+/// instruction set offers (53 and 64): the composed halves of the corpus signs are compared byte by byte. Every sixth sign
+/// is composed at all three precisions by default (the 24-bit halves of all 75 are pinned by the baseline tests); set
+/// <c>OPENTPW_SIGN_PRECISION_FULL=1</c> to compose all of them (about a minute). Inconclusive without <c>OPENTPW_GAME_PATH</c>.
 /// </summary>
 [TestClass]
 [DoNotParallelize]
@@ -24,6 +25,8 @@ public class SignPrecisionCorpusTests
 			ObjectCatalog.BonusDataRoot = null;
 			var report = new List<string>();
 			var signs = 0;
+			var composed = 0;
+			var full = Environment.GetEnvironmentVariable( "OPENTPW_SIGN_PRECISION_FULL" ) == "1";
 			var different = new Dictionary<int, int>();
 			var largest = new Dictionary<int, int>();
 			foreach ( var theme in new[] { "jungle", "hallow", "fantasy", "space" } )
@@ -32,7 +35,9 @@ public class SignPrecisionCorpusTests
 				var sign = SignTextRenderer.LoadSignFile( entry.ArchivePath, entry.FileSystem );
 				if ( sign == null ) continue;
 				var (line1, line2) = ObjectSigns.Lines( entry );
-				signs++;
+				if ( !full && signs++ % 6 != 0 ) continue;
+				if ( full ) signs++;
+				composed++;
 				byte[] Compose( int bits ) => X87Precision.With( bits, () =>
 				{
 					var composed = SignTextRenderer.Shared.ComposeSign( sign, new[] { line1, line2 }, default );
@@ -53,10 +58,11 @@ public class SignPrecisionCorpusTests
 					}
 				}
 			}
-			Console.WriteLine( $"PRECISION-CORPUS signs={signs} differing53={different.GetValueOrDefault( 53 )} (max {largest.GetValueOrDefault( 53 )}) differing64={different.GetValueOrDefault( 64 )} (max {largest.GetValueOrDefault( 64 )})" );
+			Console.WriteLine( $"PRECISION-CORPUS signs={signs} composed={composed} differing53={different.GetValueOrDefault( 53 )} (max {largest.GetValueOrDefault( 53 )}) differing64={different.GetValueOrDefault( 64 )} (max {largest.GetValueOrDefault( 64 )})" );
 			foreach ( var line in report )
 				Console.WriteLine( "PRECISION-CORPUS " + line );
-			Assert.IsTrue( signs >= 75, "the 75 corpus signs compose" );
+			Assert.IsTrue( signs >= 75, "the 75 corpus signs load" );
+			Assert.IsTrue( composed >= 12, "a sample of the corpus composes at every precision" );
 			Assert.IsTrue( different.GetValueOrDefault( 53 ) > 0, "the precision control is observable in the composed signs, so matching it matters" );
 		}
 		finally

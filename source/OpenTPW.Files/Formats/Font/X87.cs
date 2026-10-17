@@ -10,7 +10,7 @@ namespace OpenTPW;
 /// render function 0x576EC0, restores the word it found.
 /// </summary>
 // [BIN:TPW-EXE:0x00576EC0 control word] the only code that rewrites the x87 control word besides the CRT and rounding-mode wrappers (_ftol 0x67A830 saves and restores the word): 0x591220 forces PC=24 and returns the old word, 0x591240 restores it (0x591250 would restore it with PC=64, only when bit 1 of [0x8BD508] is set, which no instruction sets); the sign generator is not reached from that function
-// [BIN:D3DIM-DLL:0x56664F87 CreateDevice FPU setup] with the DDSCL_FPUSETUP flag (DDRAW-DLL 0xBAABE771 maps 0x800 to local flag 0x8000) a class-2 device sets CW = (CW & 0xFCFF | 0x3F) & 0xF3FF and does not restore it
+// [BIN:D3DIM-DLL:0x56664F87 CreateDevice FPU setup] with the DDSCL_FPUSETUP flag (DDRAW-DLL 0xBAABE771 maps 0x800 to local flag 0x8000) a class-2 device sets CW = (CW & 0xFCFF | 0x3F) & 0xF3FF and does not restore it; the class is chosen at 0x56664DD8..0x56664EEA: a HAL device is class 2 only when the driver reports DrawPrimitives2 (the callbacks at global +0x638, field +0x14), else class 1 or 0 (CW untouched, the CRT's 53 bits; ForceDouble, default on, only raises PC to 53 inside D3D calls); every other device is class 2 unless the registry values DisableDP or DisableDP2 under HKLM\\Software\\Microsoft\\Direct3D are set; tp.exe names only the HAL device GUID (no reference to the RGB or MMX GUIDs), so on a driver without DrawPrimitives2 the original would have run at 53 bits
 internal static class X87Precision
 {
 	/// <summary>The mantissa bits the original's thread ran at while a sign was composed.</summary>

@@ -609,6 +609,39 @@ internal static class Game
 				}
 			};
 		}
+		// [EXT:debug-staff] for captures: once the park is up, hires a handyman, a mechanic, a guard and a researcher and puts them on valid cells round the entrance (cell 47, 17) or the cell of --debug-staff-at,
+		// as the Place tool does, so captures can show the staff beside the guests; --debug-staff-at x,y picks another centre cell. Staff and guests walk on from there.
+		if ( args.Contains( "--debug-staff" ) )
+		{
+			var staffCentre = GetOption( args, "--debug-staff-at", "x,y cell" )?.Split( ',' ).Select( int.Parse ).ToArray() ?? new[] { 47, 17 };
+			var staffFrames = 0;
+			var staffPlaced = false;
+			Render.PostUpdate += () =>
+			{
+				if ( staffPlaced || flow.Level is not { StaffPlacement: { } placement, Park: { } park } || ++staffFrames < 60 )
+					return;
+				staffPlaced = true;
+				var used = new List<(int X, int Y)>();
+				foreach ( var type in new[] { StaffType.Handyman, StaffType.Mechanic, StaffType.Guard, StaffType.Researcher, StaffType.Handyman, StaffType.Mechanic } )
+				{
+					var candidate = park.Economy.Staff.Candidates.FirstOrDefault( item => item.Type == type );
+					if ( candidate == null || !placement.BeginHire( candidate.Id ) )
+						continue;
+					for ( var radius = 0; radius < 14; radius++ )
+					{
+						var spot = Enumerable.Range( staffCentre[0] - radius, 2 * radius + 1 ).SelectMany( x => Enumerable.Range( staffCentre[1] - radius, 2 * radius + 1 ).Select( y => (X: x, Y: y) ) )
+							.FirstOrDefault( cell => used.All( other => Math.Abs( other.X - cell.X ) + Math.Abs( other.Y - cell.Y ) >= 2 ) && placement.IsValid( cell.X, cell.Y ) );
+						if ( spot == default )
+							continue;
+						placement.Click( spot.X, spot.Y );
+						used.Add( spot );
+						Log.Trace( $"--debug-staff: {type} at {spot.X},{spot.Y}." );
+						break;
+					}
+					placement.Cancel();
+				}
+			};
+		}
 		// [EXT:debug-forecast] smoke-only (Debug builds): posts one forecast quality through the simulation's own
 		// warning schedule as soon as the park's weather has started, so captures can show the forecast banner
 		// deterministically. The countdown, apply and the weather itself still come from ParkWeather's machinery;

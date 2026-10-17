@@ -50,6 +50,12 @@ public sealed class GuestRenderer : Entity
 	public IReadOnlySet<int>? RotatedSlots { get; init; }
 
 	/// <summary>
+	/// [EXT:pools-swim] The direction is the nearest 45 degree step of the exact heading seen from the camera, which the swimmers' lying poses and their residual rotation rely on. False (the kids and the costumes) is the
+	/// original's sprite pass, which turns a heading into one of eight sectors and the camera's yaw into another (<see cref="GuestSpriteAtlas.SelectOriginalDirection"/>).
+	/// </summary>
+	public bool ExactDirections { get; init; }
+
+	/// <summary>
 	/// The in-plane turn of the quad, radians, clockwise on the screen: the screen angle of the heading minus the screen angle of the heading the chosen sprite direction stands for. The heading is projected
 	/// with the camera's own right and up axes (their horizontal parts <paramref name="projectRight"/>, <paramref name="projectUp"/>), so the foreshortening of the ground is included; <paramref name="rightFlat"/> and
 	/// <paramref name="forwardFlat"/> are the camera's horizontal axes the direction was chosen with. With a camera looking straight along the ground axes the result is within a quarter of a direction step
@@ -199,7 +205,8 @@ public sealed class GuestRenderer : Entity
 		var rightFlat = SVector2.Normalize( new SVector2( cameraRight.X, cameraRight.Y ) + new SVector2( 1e-6f, 0 ) );
 		var forwardFlat = SVector2.Normalize( new SVector2( cameraForward.X, cameraForward.Y ) + new SVector2( 0, 1e-6f ) );
 		var heading = new SVector2( guest.HeadingX, guest.HeadingY );
-		var (direction, mirror) = GuestSpriteAtlas.SelectDirection( SVector2.Dot( heading, rightFlat ), SVector2.Dot( heading, forwardFlat ) );
+		int direction;
+		bool mirror;
 		int slot, step;
 		if ( SlotChooser?.Invoke( guest ) is { } chosen )
 			(slot, step) = (SwimSlotFallback ? atlas.UsableSlot( chosen.Slot ) : chosen.Slot, chosen.Step);
@@ -219,6 +226,14 @@ public sealed class GuestRenderer : Entity
 			step = 0;
 		}
 		step %= atlas.FramesPerDirection( slot );
+		if ( ExactDirections )
+			(direction, mirror) = GuestSpriteAtlas.SelectDirection( SVector2.Dot( heading, rightFlat ), SVector2.Dot( heading, forwardFlat ) );
+		else
+		{
+			// [BIN:TPW-EXE:0x00542010 direction] the original's sprite pass: the heading sector plus the camera's yaw sector, no pitch (GuestSpriteAtlas.SelectOriginalDirection)
+			var yaw = GuestSpriteAtlas.CameraYaw( cameraRight, cameraForward, Camera.Mode is ParkCameraMode );
+			(direction, mirror) = GuestSpriteAtlas.SelectOriginalDirection( heading.X, heading.Y, yaw, atlas.DirectionsOf( slot ) );
+		}
 		var rotation = 0f;
 		if ( RotatedSlots?.Contains( slot ) == true && cameraUp != default )
 			rotation = ResidualRotation( heading, rightFlat, forwardFlat, new SVector2( cameraRight.X, cameraRight.Y ), new SVector2( cameraUp.X, cameraUp.Y ) );

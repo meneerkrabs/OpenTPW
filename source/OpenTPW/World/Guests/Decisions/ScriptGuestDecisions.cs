@@ -40,6 +40,8 @@ internal sealed class ScriptGuestDecisions : IGuestDecisions
 
 	public bool UsesSpreading => inner.UsesSpreading;
 
+	public int AlternativeLookAfterTurns( in DecisionContext context, in GuestView guest ) => inner.AlternativeLookAfterTurns( context, guest );
+
 	public bool SwitchesTarget( in DecisionContext context, in GuestView guest, in AttractionView target, uint targetScore, in AttractionView candidate, uint candidateScore ) =>
 		inner.SwitchesTarget( context, guest, target, targetScore, candidate, candidateScore );
 

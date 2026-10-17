@@ -78,6 +78,7 @@ public sealed class OriginalEconomyImport
 		if ( save.ResearchLab is { } lab )
 			ImportResearch( economy, lab, save.World.ObjectControls, evidence );
 		var (objects, fixedItems, things) = ImportObjects( economy, save, evidence );
+		ImportLitter( economy, save, evidence );
 		// after the objects: the carried object of a follow-up is one of their thing ids
 		ImportChallenges( economy, save.Economy.ChallengeSystem, world.Calendar.FunnyTimeStart, things, evidence );
 		var staff = ImportStaff( economy, save, things, evidence );
@@ -159,20 +160,20 @@ public sealed class OriginalEconomyImport
 		evidence.Add( $"{records.Loans.Count} loan offers match LoanInfo amounts, APR, terms and lenders." );
 		if ( matchedRepayments != 0 )
 			evidence.Add( $"{matchedRepayments} monthly repayments equal trunc(P x pow(1 + APR/100, N/24) / N)." );
+		// [BIN:TPW-EXE:0x4d0f90 challenge slot serializer] the save holds the 20 challenge slots with their own definitions (type, time, value, objects, staff type, prize, follow-up type and the two flags), and a load takes them as they are:
+		// a slot that differs from the level's own challenge (a modified save, another count) is a challenge of its own in this park
 		var level = settings.ChallengesInThisLevel;
-		if ( records.Challenges.Count != level.Count )
-			throw new InvalidDataException( $"The save has {records.Challenges.Count} challenges; ChallengesInThisLevel lists {level.Count}." );
-		for ( var index = 0; index < level.Count; index++ )
+		var different = records.Challenges.Count != level.Count || records.Challenges.Where( ( saved, index ) => !settings.Challenges.TryGetValue( level[index], out var definition ) || saved.Type != definition.Type || saved.TargetTime != definition.TargetTime
+			|| saved.TargetValue != definition.TargetValue || saved.TargetObject != definition.TargetObject || saved.TargetObject2 != definition.TargetObject2 || saved.TargetStaffType != definition.TargetStaffType || saved.Prize != definition.Prize
+			|| saved.FollowupType != definition.FollowupType || saved.CheckAtEndOnly != definition.CheckAtEndOnly || saved.Independent != definition.Independent ).Any();
+		if ( !different )
 		{
-			var saved = records.Challenges[index];
-			if ( !settings.Challenges.TryGetValue( level[index], out var definition ) )
-				throw new InvalidDataException( $"ChallengesInThisLevel[{index}] = {level[index]} is not defined." );
-			if ( saved.Type != definition.Type || saved.TargetTime != definition.TargetTime || saved.TargetValue != definition.TargetValue || saved.TargetObject != definition.TargetObject
-				|| saved.TargetObject2 != definition.TargetObject2 || saved.TargetStaffType != definition.TargetStaffType || saved.Prize != definition.Prize
-				|| saved.FollowupType != definition.FollowupType || saved.CheckAtEndOnly != definition.CheckAtEndOnly || saved.Independent != definition.Independent )
-				throw new InvalidDataException( $"Save challenge {index} (type {saved.Type}, prize {saved.Prize}) differs from Challenges[{definition.Index}]." );
+			evidence.Add( $"{level.Count} challenge records equal Challenges[{string.Join( ", ", level )}] in ChallengesInThisLevel order." );
+			return;
 		}
-		evidence.Add( $"{level.Count} challenge records equal Challenges[{string.Join( ", ", level )}] in ChallengesInThisLevel order." );
+		settings.AdoptChallenges( records.Challenges.Select( ( saved, index ) => new ChallengeDefinition( index, saved.Type, saved.FollowupType, saved.TargetTime, saved.TargetValue, saved.TargetObject, saved.TargetObject2,
+			saved.TargetStaffType, saved.Prize, saved.CheckAtEndOnly, saved.Independent ) ).ToList() );
+		evidence.Add( $"Challenge slots adopted from the save: its {records.Challenges.Count} slots differ from the level's {level.Count} challenges Challenges[{string.Join( ", ", level )}], so the park plays the saved definitions (keys {string.Join( ", ", settings.ChallengesInThisLevel )})." );
 	}
 
 	private static void ImportBank( ParkEconomy economy, SaveBank bank, List<string> evidence )
@@ -275,9 +276,10 @@ public sealed class OriginalEconomyImport
 		// [BIN:TPW-EXE:0x004DC12B walk-away load] the loader reads mNumWalkAways (+0x1A4) back with the other fields, so it is imported (ImportObjects); 0x004E1670 raises it (from 0x005006B0) and nothing else reads the field
 		evidence.Add( $"Attraction walk-away counts {string.Join( "/", save.Attractions.Select( item => item.WalkAwayCount ) )} imported (mNumWalkAways, +0x1A4)." );
 		// [BIN:TPW-EXE:0x4DB7D0 third gauge] the float at attraction +0x4C is written by the constructor (0x4DB10B), the loader (0x4DCE42) and one more store (0x4DB363) and read only by the serializer (0x4DC64F); no other load of a +0x4C field exists in the attraction code (0x4D8000..0x4E4000), the guest code or the interface, so the third gauge needs no import
-		// [APPROX:SAVE-006] a closed open word of a working attraction (mCanLoad, the park door opens it), its sign lines (OpenTPW names no attraction), a staff claim no imported job holds (an imported job's claim is taken again with its saved turn, 0x004E01F0; any other claim is dropped, and a claim lapses 100 turns after its turn unless its claimant still targets the object, 0x004E0220, ECON-022) are not imported; the raw links (mesh instance, script and track handles, flags, footprint, entrance and exit cells, upgrade parent and balloon sprite) are rebuilt by the placement, and the queue (its cells, ends and called guest) from the laid queue cells — evidence needed: the import of the open word, the sign lines and the staff claim into the restored rides' runtimes (the operating words are imported by Level.ImportOriginalRideSettings)
+		// [BIN:TPW-EXE:0x004E0E60 SetState] the open word (mCanLoad, +0x68) is the park's open state of the attraction: an idle attraction saved with it clear is closed again by the level (Level.ImportOriginalRideSettings), the others are opened by their placement; the gate's two sign lines are the park's name (Level.SavedGateName) and every other type's lines are its OBJECT_NAMES row
+		// [BIN:TPW-EXE:0x004DB7D0 attraction serializer] the mesh instance, script and track handles, flags, footprint, entrance and exit cells, upgrade parent and balloon sprite are rebuilt by the placement, and the queue (cells, ends, called guest) from the laid queue cells
 		foreach ( var item in save.Attractions )
-			evidence.Add( $"[APPROX:SAVE-006] Attraction thing {item.Id} (Info.Id {item.InfoId}) values not imported: open word {item.CanLoad}, name \"{item.NameLine1}\"/\"{item.NameLine2}\", claim by thing {item.AssignedStaffMember} on turn {item.TimeMarkedForMaintenance}, queue size {item.QueueSizeInCells} cells, first {item.FirstInQueue}, back {item.BackOfQueue}, called {item.PersonBeingLoaded}, mesh instance {item.MeshInstanceId}, flags 0x{item.Flags:X4}." );
+			evidence.Add( $"Attraction thing {item.Id} (Info.Id {item.InfoId}): open word {item.CanLoad}, name \"{item.NameLine1}\"/\"{item.NameLine2}\", queue size {item.QueueSizeInCells} cells, first {item.FirstInQueue}, back {item.BackOfQueue}, called {item.PersonBeingLoaded}, mesh instance {item.MeshInstanceId}, flags 0x{item.Flags:X4}; the open word and the gate's name are imported by the level, the queue and the raw links are rebuilt by the placement." );
 		return (objects, fixedItems, things);
 	}
 
@@ -319,6 +321,7 @@ public sealed class OriginalEconomyImport
 		var imported = 0;
 		var adjusted = new List<string>();
 		var jobs = new List<string>();
+		var resumedClaims = new HashSet<int>();
 		// a guard chases a guest the guest import restores in the park (states 6–10, GuestSimulation.ImportsOriginalState)
 		var chaseable = save.Guests.Where( guest => guest.State is >= 6 and <= 10 ).Select( guest => guest.Id ).ToHashSet();
 		foreach ( var saved in save.Staff )
@@ -365,7 +368,7 @@ public sealed class OriginalEconomyImport
 			// [BIN:TPW-EXE:0x005054D0 staff state setter] +0x200 is the turn an idle spell started (0 after any state but a patrol), which the idle states compare with IdleDuration[grade]
 			member.IdleStamp = staff.TimeStartedIdling;
 			ImportPatrolArea( saved, member, adjusted );
-			ImportJob( economy, saved, member, things, save.Attractions, chaseable, jobs );
+			ImportJob( economy, saved, member, things, save.Attractions, chaseable, jobs, resumedClaims, save.Litter );
 			// [BIN:TPW-EXE:0x004F8B10 person serializer] the loader routes the person again to mAccurateDestX/Y (+0x18/+0x1A, 1/256 cell) once it is read (0x004FA5F0 at 0x004F9407);
 			// the walk speeds are the person's mBaseSpeed (+0xC0), mPurposeSpeed (+0xC2, the bonus a walk to a job or a chase takes) and mPreviousSpeed (+0xC8)
 			var person = saved.Person;
@@ -385,6 +388,10 @@ public sealed class OriginalEconomyImport
 			evidence.Add( $"Staff value adjusted on import: {adjustment}." );
 		foreach ( var job in jobs )
 			evidence.Add( job );
+		// [APPROX:SAVE-006] a staff claim no imported job holds is not imported — evidence needed: a save whose attraction is claimed by a staff member with no imported job on it
+		// [BIN:TPW-EXE:0x004E0220 claim lapse] a claim taken more than 100 turns ago lapses unless its claimant still targets the object: a claim whose claimant has no imported job on the object cannot be held again
+		foreach ( var held in save.Attractions.Where( item => item.AssignedStaffMember != 0 && !resumedClaims.Contains( item.Id ) ) )
+			evidence.Add( $"[APPROX:SAVE-006] Attraction thing {held.Id} (Info.Id {held.InfoId}) claim by thing {held.AssignedStaffMember} on turn {held.TimeMarkedForMaintenance} not imported: no imported job of that member targets it." );
 		// [BIN:TPW-EXE:0x00504BDC staff constructor] mJobsDone (+0x204) is set to 0 here and otherwise touched only by the serializer (0x00504EFC, 0x005052ED): nothing reads it, so it needs no import
 		if ( imported != 0 )
 			evidence.Add( $"Staff jobs-done counts {string.Join( "/", save.Staff.Select( item => item.Staff.JobsDone ) )} need no import (nothing reads mJobsDone)." );
@@ -405,23 +412,30 @@ public sealed class OriginalEconomyImport
 			}
 			economy.Staff.Strikes.Restore( levels, active, turns );
 			evidence.Add( $"Staff HQ imported: training budgets {string.Join( ", ", hq.TrainingBudgets )} (handyman, mechanic, entertainer, guard, researcher), strike levels {string.Join( "/", levels )}, active {string.Join( "/", active.Select( flag => flag ? 1 : 0 ) )}, last considered on turns {string.Join( "/", turns )}." );
-			// [APPROX:SAVE-009] the staff HQ's picked-up staff id (+0x60) is not imported: it is set when a member is picked up (0x509AE0 from 0x505C50, which also sets the member's state word to 7) and read and cleared when the placement tool puts it down (0x509AF0 from 0x46CC40); OpenTPW imports the saved state 7 as picked up (StaffJob.PickedUp) but holds no placement object for the member and does not save one in hand. The force-strike word and the trained byte need no import: the force strike (+0x64) is written only by the HQ constructor 0x5089C0 (0) and the save loader 0x508BB0, so the month gate 0x508E70 and the grievance 0x509360 see 0 in play as OpenTPW does, and the trained byte (mHaveEverTrained, training +0x14) is only cleared (0x50C620) and serialized (0x50C640), never read — evidence needed: what the original does with a member loaded in state 7 and the HQ's id when no placement object holds him (the loader 0x508BB0 reads +0x60 back; no placement is rebuilt that this reading found)
-			evidence.Add( $"[APPROX:SAVE-009] Staff HQ thing {hq.Id} values not imported: force strike {hq.ForceStrike}, picked up {hq.PickedUp}, trained {hq.Trained}." );
+			// [EXT:staff-pickup-reconcile] a member saved in state 7 (picked up) with the staff HQ's picked-up id (+0x60) naming him is imported idle (StaffPlacement.Reconcile) instead of reproducing the original's limbo (its only reader of the id is the drop 0x509AF0 from the carry tool's exit 0x46CC40, which also clears it, and no carry tool exists after a load, so the original keeps him in state 7 for good, the pick-up guard 0x505BD0 refusing state 7, loader 0x508BB0): a member nobody can ever move again would be a defect, user-approved 2026-10-17
+			// [BIN:TPW-EXE:0x5089C0 staff HQ constructor] the force strike (+0x64) is written only by the HQ constructor (0) and the save loader 0x508BB0, so the month gate 0x508E70 and the grievance 0x509360 see 0 in play as OpenTPW does; the trained byte (mHaveEverTrained, training +0x14) is only cleared (0x50C620) and serialized (0x50C640), never read
+			evidence.Add( $"Staff HQ values read, nothing to import: force strike {hq.ForceStrike}, trained {hq.Trained} (no reader after the load)." );
+			if ( hq.PickedUp != 0 )
+				evidence.Add( $"[EXT:staff-pickup-reconcile] Staff HQ thing {hq.Id} saved member {hq.PickedUp} as picked up: he is imported idle, where the original keeps him in state 7 for good (no carry tool exists after a load to drop him)." );
 		}
 		else
-			evidence.Add( "[APPROX:SAVE-009] The save has no staff HQ thing; OpenTPW's training budgets start at 0." );
+			evidence.Add( "The save has no staff HQ thing; OpenTPW's training budgets start at 0." );
 		if ( save.World.StaffPool is { } pool )
 		{
 			// [BIN:TPW-EXE:0x5084f0 staff pool update] a valid slot is a candidate of role +0 (StaffType's order, 0x507600) that leaves once the turns since its stamp
 			// (+0xc) exceed 4 × its timeout (+0x10); the pool refills once the turns since its own stamp exceed 4 × TimeBetweenStaffUpdates
 			var saved = pool.Candidates.Where( candidate => candidate.Valid )
 				.Select( candidate => ((StaffType)candidate.Type, (int)(candidate.Name % ParkStaff.NameTableSize), Math.Min( (int)candidate.Grade, BalanceSettings.GradeCount - 1 ),
-					(long)candidate.TimeSig, (long)candidate.Timeout) )
+					(long)candidate.TimeSig, (long)candidate.Timeout, (int)candidate.SubType) )
 				.ToList();
 			economy.Staff.RestoreOriginalPool( saved, pool.TimeSig );
 			evidence.Add( $"Staff pool imported: {saved.Count} candidates ({string.Join( ", ", saved.Select( item => $"{item.Item1} grade {item.Item3} made on turn {item.Item4} for {item.Item5}" ) )}), last refill on turn {pool.TimeSig}." );
-			// [APPROX:SAVE-004] the pool's sub-type and on-pointer bytes are not imported: a candidate's sub-type (+9) is its sprite variant, drawn at its creation (0x507600 → 0x541F70: (R >> 2) % the category's loaded bank count, the table 0x763F88 of 12-byte entries (category file name, loaded count at +8, filled by the sprite loader 0x541D90 → 0x541310) that GUEST-014 also describes) and handed to the placement object 0x46C6D0 when it is picked up (0x507BF0), which also sets its on-pointer byte (+0xB; the object only stores the variant and the flag, its constructor writes them to +0x10 and +0x11); OpenTPW keeps no staff variant (GUEST-014) and does not save the placement in hand. The people-in-category counts and stop-producing flags need no import: the census 0x508000 recomputes them from the park's staff before every read (the refill 0x5084F0, its top-up 0x508170 and the pick-up 0x507BF0), as UpdatePool counts the hired staff; the opening-pool flag only gates the opening pool 0x5087D0, which OpenTPW draws for a new park only — evidence needed: the staff variant of GUEST-014 (which sprite bank a hired member draws from the saved sub-type) and a placement in hand
-			evidence.Add( $"[APPROX:SAVE-004] Staff pool values not imported: sub-types {string.Join( "/", pool.Candidates.Where( candidate => candidate.Valid ).Select( candidate => candidate.SubType ) )}, on pointer {pool.Candidates.Count( candidate => candidate.Valid && candidate.OnPointer )}, people in category {string.Join( "/", pool.PeopleInCategory )}, stop producing {string.Join( "/", pool.StopProducing.Select( flag => flag ? 1 : 0 ) )}, opening pool generated {(pool.OpeningPoolGenerated ? 1 : 0)}." );
+			// [BIN:TPW-EXE:0x507600 staff candidate] a candidate's sub-type (+9) is its sprite variant, drawn at its creation (0x507600 → 0x541F70: (R >> 2) % the category's loaded bank count, the table 0x763F88 of 12-byte entries) and handed to the placement object 0x46C6D0 when it is picked up (0x507BF0): imported as the candidate's variant, which the member hired from it keeps (StaffSpriteRules.KeyOf)
+			// [BIN:TPW-EXE:0x508000 staff census] the people-in-category counts and stop-producing flags are recomputed from the park's staff before every read (the refill 0x5084F0, its top-up 0x508170 and the pick-up 0x507BF0), as UpdatePool counts the hired staff; the opening-pool flag only gates the opening pool 0x5087D0, which OpenTPW draws for a new park only
+			evidence.Add( $"Staff pool sub-types imported as the candidates' sprite variants: {string.Join( "/", economy.Staff.Candidates.Select( candidate => candidate.Variant ) )} (-1: a sub-type past the role's banks); the counts in category {string.Join( "/", pool.PeopleInCategory )}, stop producing {string.Join( "/", pool.StopProducing.Select( flag => flag ? 1 : 0 ) )} and the opening-pool flag {pool.OpeningPoolGenerated} are recomputed from the park's staff." );
+			// [APPROX:SAVE-004] a candidate saved with its on-pointer byte set (+0xB: picked up for placement) is imported as an ordinary pool candidate: the placement object in the player's hand is not saved or recreated, where the original keeps the flag until the carry tool ends (0x5083B0 then removes the candidate) — evidence needed: what the hire list and the refill do with a flagged candidate while no placement exists (none in the corpus: every saved on-pointer byte is 0)
+			if ( pool.Candidates.Any( candidate => candidate.Valid && candidate.OnPointer ) )
+				evidence.Add( $"[APPROX:SAVE-004] {pool.Candidates.Count( candidate => candidate.Valid && candidate.OnPointer )} saved candidates were on the pointer (picked up for placement); they are imported as ordinary pool candidates." );
 		}
 		else
 			evidence.Add( $"[APPROX:SAVE-004] The save's hiring pool does not read before the calendar ({save.World.OpaqueMacroAiLength} macro-AI bytes); {economy.Staff.Candidates.Count} candidates were drawn." );
@@ -491,7 +505,7 @@ public sealed class OriginalEconomyImport
 	// [BIN:TPW-EXE:0x004D4460 entertainer serializer] mTimeStartedEntertaining (+0x214); [BIN:TPW-EXE:0x00502760 researcher serializer] mTimeStartedResearching (+0x214)
 	// [BIN:TPW-EXE:0x004D6000 guard serializer] mPerp (+0x212), mProsecutionTimestamp (+0x214, the chase timer the state setter 0x004D65D0 sets)
 	// [BIN:TPW-EXE:0x00506D10 rest end] mRestArea (+0x208) names the rest area only while the member walks to it (state 2) or rests in it (state 3): the rest's end clears it
-	private static void ImportJob( ParkEconomy economy, SaveStaff saved, StaffMember member, IReadOnlyDictionary<int, ParkObjectState> things, IReadOnlyList<SaveAttraction> attractions, IReadOnlySet<int> chaseable, List<string> evidence )
+	private static void ImportJob( ParkEconomy economy, SaveStaff saved, StaffMember member, IReadOnlyDictionary<int, ParkObjectState> things, IReadOnlyList<SaveAttraction> attractions, IReadOnlySet<int> chaseable, List<string> evidence, ISet<int> resumedClaims, IReadOnlyList<SaveLitter> litter )
 	{
 		var word = saved.Staff.State;
 		var what = $"{saved.Model} thing {saved.Id}";
@@ -507,7 +521,10 @@ public sealed class OriginalEconomyImport
 		void NoteClaim( ushort thingId )
 		{
 			if ( attractions.FirstOrDefault( entry => entry.Id == thingId ) is { } held && held.AssignedStaffMember == saved.Id )
+			{
 				member.ResumeClaimTurn = Math.Min( held.TimeMarkedForMaintenance, ParkCalendar.Turn( economy.Tick ) );
+				resumedClaims.Add( held.Id );
+			}
 		}
 		string? dropped = null;
 		switch ( job )
@@ -535,9 +552,16 @@ public sealed class OriginalEconomyImport
 					dropped = $"its toilet, thing {saved.RoleToilet}, is no imported relief object";
 				break;
 			case StaffJob.ToLitter or StaffJob.Sweeping:
-				// [APPROX:SAVE-010] a handyman walking to or sweeping litter (states 8 and 9) is imported idle: the cell grid's litter is not decoded, so his target cell has no litter to claim
-				evidence.Add( $"[APPROX:SAVE-010] {what} litter job (state {word}, cell id {saved.RoleTarget}) imported idle: the saved litter is not imported." );
-				job = StaffJob.Idle;
+				// [BIN:TPW-EXE:0x004D6D60 handyman serializer] mTargetLitterCell (+0x218, a cell id y × 128 + x + 1) and mTimeStartedCleaning (+0x214): the target is the littered cell the handyman walks to or sweeps, which he holds the claim of (the cell's collector word and its marked turn)
+				if ( SaveStaffRecord.CellOf( saved.RoleTarget ) is { } target && economy.Litter.TypeAt( target.X, target.Y ) != LitterType.None )
+				{
+					member.LitterCell = target;
+					member.JobStamp = saved.RoleTimer;
+					var held = litter.FirstOrDefault( entry => entry.X == target.X && entry.Y == target.Y );
+					economy.Litter.Claim( target.X, target.Y, member.Id, held.Collector == saved.Id ? Math.Min( held.MarkedTurn, ParkCalendar.Turn( economy.Tick ) ) : ParkCalendar.Turn( economy.Tick ) );
+				}
+				else
+					dropped = $"its litter cell {saved.RoleTarget} holds no imported litter";
 				break;
 			case StaffJob.Chasing when chaseable.Contains( saved.RoleTarget ):
 				// the guest keeps its thing id as its guest id (GuestSimulation.ImportOriginal); the chase timer is +0x214
@@ -571,8 +595,29 @@ public sealed class OriginalEconomyImport
 	}
 
 	/// <summary>
+	/// The litter of the cell grid: every cell whose <c>mLitter</c> word is a litter type (1 to 8) holds that litter, unclaimed until a handyman's saved job claims it again. A word that is no litter
+	/// type, or a cell outside the litter map, is reported and skipped.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004D8DD0 map cell serializer] mLitter (+0x2C), mLitterCollector (+0x30), mLitterScript (+0x28, +0x38), mTimeMarkedForLitterCollection (+0x34) are saved with the cell; the litter's sprite is the cell's sprite script (0x4D93B0: the cell's corner plus a draw of the cell's own reseed), which OpenTPW draws from the cell alone (ParkLitter.SpriteOffset)
+	private static void ImportLitter( ParkEconomy economy, OriginalParkImport save, List<string> evidence )
+	{
+		var restored = new List<LitterCell>();
+		var skipped = new List<string>();
+		foreach ( var item in save.Litter )
+		{
+			if ( item.Type is >= 1 and <= (uint)LitterType.Stinkbomb && economy.Litter.InBounds( item.X, item.Y ) )
+				restored.Add( new LitterCell( item.X, item.Y, (LitterType)item.Type, 0, 0 ) );
+			else
+				skipped.Add( $"({item.X}, {item.Y}) type {item.Type}" );
+		}
+		if ( restored.Count > 0 || skipped.Count > 0 )
+			economy.Litter.Restore( restored );
+		evidence.Add( $"Litter imported: {restored.Count} littered cells{(restored.Count == 0 ? "" : $" ({string.Join( ", ", restored.GroupBy( cell => cell.Type ).OrderBy( group => group.Key ).Select( group => $"{group.Count()} of type {(int)group.Key}" ) )})")}{(skipped.Count == 0 ? "" : $"; skipped {string.Join( ", ", skipped )}")}." );
+	}
+
+	/// <summary>
 	/// The challenge system: the slots' won and declined counts, whether the system has started offering, a running or offered challenge and the
-	/// time of the next event. Slot k is the level's k-th challenge (<c>ChallengesInThisLevel</c>); a save whose slots do not match it keeps the new park's state.
+	/// time of the next event. Slot k is the park's k-th challenge: the level's own (<c>ChallengesInThisLevel</c>) or, where the slot differs, the saved definition (<see cref="Verify"/> adopts it, SAVE-005).
 	/// </summary>
 	// [BIN:TPW-EXE:0x4d2320 challenge system serializer] after the 20 slots: mCurrentChallenge (+0x3cc, −1 none), mNextChallengeEventTime (+0x3d0, an absolute 100 ns stamp), mSystemSwitchedOn (+0x3d8), mChallengeOn (+0x3d9, accepted and running), mWaitingForReply (+0x3da, an offer is open), mValue (+0x3dc), mActualThing (+0x3e0)
 	// [BIN:TPW-EXE:0x4d1e90 daily challenges] before the switch is on, the first offer comes once the park's elapsed day (0x4f8800 / 864e9) reaches DaysUntilFirstChallenge while the park is open (0x4c9050), and the switch is set; then an idle system offers when the clock passes the next event time, and a running challenge ends at its deadline, which the accept (0x4d2df0) stores in the same word
@@ -581,13 +626,7 @@ public sealed class OriginalEconomyImport
 		var settings = economy.Settings;
 		var level = settings.ChallengesInThisLevel;
 		var slots = system.Challenges;
-		var matches = slots.Count == level.Count && slots.Select( ( slot, index ) => settings.Challenges.TryGetValue( level[index], out var definition ) && definition.Type == slot.Type ).All( match => match );
-		if ( !matches )
-		{
-			// [APPROX:SAVE-005] a save whose slots do not match the level's challenges keeps the new park's challenge state, where the original loads the 20 slots as saved (their own definitions included) — evidence needed: challenge definitions taken from the saved slots instead of the level's settings
-			evidence.Add( $"[APPROX:SAVE-005] Challenge state not imported: the save's {slots.Count} slots do not match the level's {level.Count} challenges (the original loads whatever the slots hold); the first offer is due on day {economy.Objectives.NextOfferDay}." );
-			return;
-		}
+		// the slots are the park's challenges (Verify adopted them where they differ from the level's own): slot k is level[k]
 		// a stamp before the calendar start (or a wild one) is cut to the range a park save accepts
 		long Seconds( long stamp ) => Math.Clamp( (stamp - calendarStart) / OriginalEconomyImport.TimeStampUnitsPerSecond, 0, ParkSaveFile.MaximumParkSeconds );
 		long Day( long stamp ) => Seconds( stamp ) / ParkCalendar.SecondsPerDay;
@@ -679,9 +718,17 @@ public sealed class OriginalEconomyImport
 				current.Add( $"{category} {project.ObjectId}" );
 			else
 				refused.Add( $"{category} {project.ObjectId} level {project.UpgradeLevel}" );
-			if ( research.HighestOpenGroup( category ) != group.HighestGroup )
-				evidence.Add( $"[APPROX:SAVE-007] Research category {category}: the save's highest open group {group.HighestGroup} differs from OpenTPW's {research.HighestOpenGroup( category )}, which is kept." );
 		}
+		// [BIN:TPW-EXE:0x00504760 research group serializer] the group record's last byte is the category's highest group available, read back as it is (only the opener 0x503B80 raises it, per completed project): the saved value is the lab's, whatever the completed projects would give
+		var savedGroups = Enumerable.Range( 0, SaveResearchLab.GroupRecords ).Select( index => (int)lab.Group( index ).HighestGroup ).ToArray();
+		var recomputedGroups = Enum.GetValues<ResearchCategory>().Select( category => research.HighestOpenGroup( category ) ).ToArray();
+		if ( savedGroups.All( group => group <= ParkResearch.MaximumOpenGroup ) && savedGroups.Length == recomputedGroups.Length )
+		{
+			research.RestoreHighestGroups( savedGroups );
+			evidence.Add( $"Research highest open groups imported as saved: {string.Join( "/", savedGroups )}{(savedGroups.SequenceEqual( recomputedGroups ) ? ", the groups the researched projects give" : $" (the researched projects give {string.Join( "/", recomputedGroups )})")}." );
+		}
+		else
+			evidence.Add( $"[APPROX:SAVE-007] Research highest open groups {string.Join( "/", savedGroups )} are outside 0 to {ParkResearch.MaximumOpenGroup}: the groups the researched projects give ({string.Join( "/", recomputedGroups )}) are kept." );
 		evidence.Add( $"Research imported: {used} projects, {progress.Count} started, {completed.Count - initial} researched by the lab, effort {string.Join( "/", effort )}, work load {lab.WorkLoad}, current {(current.Count == 0 ? "none" : string.Join( ", ", current ))}." );
 		// [BIN:TPW-EXE:0x4D3AA0 object controls] the control manager's table (150 records of 32 bytes, the used ones first) is the first part of the World after its variables; a record's researched byte (+0x10) is written only by the lab's init 0x5031A0 (1 for an object without a research cost, so it starts researched) and by the research step 0x504630 when a project reaches its cost (1, with the upgrade level in +0x14), so the flags follow from the lab's projects and the objects' costs and are checked against OpenTPW's research here
 		var disagreements = new List<string>();
@@ -698,17 +745,18 @@ public sealed class OriginalEconomyImport
 			}
 			evidence.Add( $"Research object controls: {controls.Controls.Count} records, {controls.Controls.Count( control => control.Researched )} researched, {checkedControls} research items checked against OpenTPW's research, {(disagreements.Count == 0 ? "none" : string.Join( ", ", disagreements ))} disagree." );
 		}
-		// [APPROX:SAVE-007] lab projects OpenTPW does not list are dropped, a saved current project OpenTPW would not research now is not selected, and the save's highest open group is recomputed from the researched items and kept where it differs — evidence needed: the original's research table order (ECON-017), which decides what the lab lists and which project is current
+		// [APPROX:SAVE-007] a lab project of an object this install's level archives do not define (a modified save) and a saved current project OpenTPW's picker would not offer now (its group closed, its add-on target not researched) are dropped — evidence needed: a save that holds either (the 11 corpus labs hold neither: every project is a level object, in the original's scan order, ECON-017, and every saved current project is offered)
 		var dropped = new List<string>();
 		if ( unknown.Count > 0 )
-			dropped.Add( $"projects OpenTPW does not list ({string.Join( ", ", unknown )})" );
+			dropped.Add( $"projects of objects the level archives do not define ({string.Join( ", ", unknown )})" );
 		if ( refused.Count > 0 )
-			dropped.Add( $"current projects OpenTPW would not research now ({string.Join( ", ", refused )})" );
+			dropped.Add( $"current projects OpenTPW's picker would not offer now ({string.Join( ", ", refused )})" );
 		if ( disagreements.Count > 0 )
 			dropped.Add( $"object-control researched flags that disagree with OpenTPW's research ({string.Join( ", ", disagreements )})" );
 		if ( controls == null )
 			dropped.Add( "the object controls' researched flags (the save's control table does not read)" );
-		evidence.Add( $"[APPROX:SAVE-007] Research not imported: {(dropped.Count == 0 ? "nothing dropped" : string.Join( "; ", dropped ))}; the lab lists items in OpenTPW's table order (ECON-017) and the highest open group is recomputed." );
+		if ( dropped.Count > 0 )
+			evidence.Add( $"[APPROX:SAVE-007] Research not imported: {string.Join( "; ", dropped )}." );
 	}
 
 	private static void ReportNotImported( OriginalParkImport save, List<string> evidence )
@@ -716,13 +764,17 @@ public sealed class OriginalEconomyImport
 		// the guests are restored by the level's guest simulation (GuestSimulation.ImportOriginal), which reports its outcome through Report
 		var byState = string.Join( ", ", save.Guests.GroupBy( guest => guest.State ).OrderBy( group => group.Key ).Select( group => $"{group.Count()} in state {group.Key}" ) );
 		evidence.Add( $"{save.GuestCount} saved guests{(byState.Length == 0 ? "" : $" ({byState})")} are imported by the guest simulation when a level attaches it." );
-		// [EXT:original-engine-state-dumps] the raw dumps of the original's own engine structures (the Scripts SCPT records, the RSSE script state (read in full by SaveRsseBlock, not restored), the Particles pools, the Sound mixer state, the message-centre lists and the Track and Flying ride chunks) are not restored: OpenTPW has different engines that restart from the archives, so a dump has no counterpart to receive it; the widths are traced (SaveBlockWidths) only to split the save
-		// [APPROX:SAVE-010] the advisor presentation block and the decoded but unapplied camera, first clock word (the second is the advisor clock, applied when the automatic advisor attaches), vanilla time, game-system words, cheat bytes, advisor scoring and UI record count (SaveRuntimeBlocks: OpenTPW's start camera looks at its own focus, not the saved point of interest), the weather, park analyser, tag system, mechanic HQ and UI message receiver things, the world state, arrival variables and arrival bytes, the calendar session start and the advisor controller's time signature, sound, three raw words, mRequestedLastTutorial and mMessagePlaying are not imported (its current record is imported as the last tutorial advice when an automatic advisor attaches), nor are its pending advice and history when no automatic advisor is attached; of the cell map only path cells, occupancy, MAP attributes and each path cell's texture and turn are read (so a handyman walking to or sweeping litter is imported idle), and a saved path tile is drawn only while the cell's path neighbours equal the saved ones and its turn is 0/90/180/270 (otherwise the tile is chosen from the neighbours) — evidence needed: the original's post-load reconstruction of the decoded values
-		var engineDumps = save.Layout.Blocks.Where( block => block.Block is SaveBlock.Scripts or SaveBlock.Particles or SaveBlock.MessageCentre or SaveBlock.TrackRides or SaveBlock.FlyingRides or SaveBlock.Rsse or SaveBlock.Sound ).ToList();
-		evidence.Add( $"[EXT:original-engine-state-dumps] Not restored (OpenTPW's engines restart from the archives): {string.Join( ", ", engineDumps.Select( block => $"{block.Block} {block.Length} bytes" ) )}." );
-		evidence.Add( $"[APPROX:SAVE-010] Not imported: {string.Join( ", ", save.Layout.Blocks.Where( block => block.Block is not (SaveBlock.ActionRecording or SaveBlock.World or SaveBlock.RideSystem) && !engineDumps.Contains( block ) ).Select( block => $"{block.Block} {block.Length} bytes" ) )}; {Things( save.World, SaveThingModel.Weather, SaveThingModel.ParkAnalyser, SaveThingModel.TagSystem, SaveThingModel.MechanicHq, SaveThingModel.UIMsgReceiver )}." );
+		// [EXT:original-engine-state-dumps] the raw dumps of the original's own engine structures that OpenTPW's engines have no counterpart for (the Scripts SCPT records: the sprite scripts of the saved guests and litter, which OpenTPW animates from their state and the cell; the RSSE scripts' run state, whose saved ids, list order and pass counter are imported, RideScriptWorld.ImportSaved; the Sound mixer state: the sound system's handles and volumes and QMixer's chunk; the message-centre lists and the Track and Flying ride chunks) are not restored: OpenTPW has different engines that restart from the archives; the widths are traced (SaveBlockWidths) to split the save; the Particles block's pool is restored (SAVE-013)
+		// [APPROX:SAVE-010] the advisor presentation block, the first clock word (the game clock the saved scripts' waits count from, needed with the RSSE run state; the second is the advisor clock, applied when the automatic advisor attaches), vanilla time, game-system words, cheat bytes (OpenTPW has no cheat codes), advisor scoring and UI record count (SaveRuntimeBlocks), the weather, park analyser, tag system, mechanic HQ and UI message receiver things, the world state, arrival vehicle handles and bytes (the vehicle at work belongs to its script's run, which restarts) and the calendar session start and the advisor controller's time signature, sound, three raw words, mRequestedLastTutorial and mMessagePlaying are not imported (its current record is imported as the last tutorial advice when an automatic advisor attaches), nor are its pending advice and history when no automatic advisor is attached; the camera is imported (zoom, yaw and the required point of interest, loader 0x42CEC0) without the loader's yaw correction by the word 0x78D912; of the cell map the path cells, occupancy, MAP attributes, each path cell's texture and turn and the litter (type, claim) are read, and a saved path tile is drawn only while the cell's path neighbours equal the saved ones and its turn is 0/90/180/270 (otherwise the tile is chosen from the neighbours) — evidence needed: the vehicle's script run for the world state and arrival words (the saved RSSE variables and program counters, and the game clock they are timed on), the camera's yaw correction word and the sound chunk
+		var engineDumps = save.Layout.Blocks.Where( block => block.Block is SaveBlock.Scripts or SaveBlock.MessageCentre or SaveBlock.TrackRides or SaveBlock.FlyingRides or SaveBlock.Rsse or SaveBlock.Sound ).ToList();
+		evidence.Add( $"[EXT:original-engine-state-dumps] Not restored (OpenTPW's engines restart from the archives): {string.Join( ", ", engineDumps.Select( block => $"{block.Block} {block.Length} bytes" ) )}; the Rsse block's script ids, list order and pass counter are imported when the level attaches its objects, the Particles block's pool when the level builds its particle system." );
+		evidence.Add( $"[APPROX:SAVE-010] Not imported: {string.Join( ", ", save.Layout.Blocks.Where( block => block.Block is not (SaveBlock.ActionRecording or SaveBlock.World or SaveBlock.RideSystem or SaveBlock.Particles or SaveBlock.Camera) && !engineDumps.Contains( block ) ).Select( block => $"{block.Block} {block.Length} bytes" ) )}; {Things( save.World, SaveThingModel.Weather, SaveThingModel.ParkAnalyser, SaveThingModel.TagSystem, SaveThingModel.MechanicHq, SaveThingModel.UIMsgReceiver )}." );
 		if ( save.RuntimeBlocks is { } blocks )
-			evidence.Add( $"[APPROX:SAVE-010] Runtime blocks decoded, not applied: camera zoom {blocks.Camera.Zoom}, yaw {blocks.Camera.YRotation}, flags 0x{blocks.Camera.Flags:X}, required point of interest ({blocks.Camera.RequiredPoi.X}, {blocks.Camera.RequiredPoi.Y}, {blocks.Camera.RequiredPoi.Z}), saved ({blocks.Camera.SavedPoi.X}, {blocks.Camera.SavedPoi.Y}, {blocks.Camera.SavedPoi.Z}), saved yaw {blocks.Camera.SavedYRotation}; clock words {string.Join( "/", blocks.ClockWords )} (the second is applied to the automatic advisor when it attaches), vanilla time {blocks.VanillaTime}, game system words {string.Join( "/", blocks.GameSystemWords )}, cheats {Convert.ToHexString( blocks.Cheats )}, advisor scoring {blocks.AdvisorScoring}, UI window records {blocks.UiRecords}." );
+		{
+			var camera = blocks.Camera;
+			evidence.Add( $"Camera imported (a level starts it there): zoom {camera.Zoom}, yaw {camera.YRotation}, required point of interest ({camera.RequiredPoi.X}, {camera.RequiredPoi.Y}, {camera.RequiredPoi.Z}); the saved point ({camera.SavedPoi.X}, {camera.SavedPoi.Y}, {camera.SavedPoi.Z}), saved yaw {camera.SavedYRotation} and flags 0x{camera.Flags:X} (cleared by the loader) are not used." );
+			evidence.Add( $"[APPROX:SAVE-010] Runtime blocks decoded, not applied: clock words {string.Join( "/", blocks.ClockWords )} (the second is applied to the automatic advisor when it attaches), vanilla time {blocks.VanillaTime}, game system words {string.Join( "/", blocks.GameSystemWords )}, cheats {Convert.ToHexString( blocks.Cheats )}, advisor scoring {blocks.AdvisorScoring}, UI window records {blocks.UiRecords}." );
+		}
 		var variables = save.World.Variables;
 		evidence.Add( $"[APPROX:SAVE-010] World values not imported: world state {variables.WorldState}, arrival vehicle sizes {variables.ArrivalVehicleSize1}/{variables.ArrivalVehicleSize2}/{variables.ArrivalVehicleSize3}, current arrival vehicle thing {variables.CurrentArrivalVehicle} (its script state is not restored, [EXT:original-engine-state-dumps]), arrival bytes {Convert.ToHexString( save.World.Arrivals )}, calendar session start {save.World.Calendar.SessionStart}." );
 		if ( save.Advisor is { } advisor )

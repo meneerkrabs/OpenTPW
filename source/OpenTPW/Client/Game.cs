@@ -491,8 +491,11 @@ internal static class Game
 		if ( debugPool != null )
 		{
 			var shapeText = debugPool.Length > 0 && debugPool != "default" ? debugPool : "0,0,6,4;6,2,3,6;11,0,1,1";
-			var rectangles = shapeText.Split( ';' ).Select( part => part.Split( ',' ).Select( int.Parse ).ToArray() ).ToArray();
+			// [EXT:debug-pool] a rectangle written with a leading 'r' ("r0,0,8,1") is painted with the river option ([EXT:pools-river]): its cells carry the lazy river's flag
+			var rectangles = shapeText.Split( ';' ).Select( part => part.TrimStart( 'r' ).Split( ',' ).Select( int.Parse ).ToArray() ).ToArray();
+			var riverRectangles = shapeText.Split( ';' ).Select( part => part.StartsWith( 'r' ) ).ToArray();
 			var shape = rectangles.SelectMany( r => Enumerable.Range( 0, r[2] ).SelectMany( dx => Enumerable.Range( 0, r[3] ).Select( dy => (X: r[0] + dx, Y: r[1] + dy) ) ) ).Distinct().ToArray();
+			var riverShape = rectangles.Where( ( _, index ) => riverRectangles[index] ).SelectMany( r => Enumerable.Range( 0, r[2] ).SelectMany( dx => Enumerable.Range( 0, r[3] ).Select( dy => (X: r[0] + dx, Y: r[1] + dy) ) ) ).ToHashSet();
 			var poolCamera = GetOption( args, "--capture-camera", "x,y,height,yaw" )?.Split( ',' ).Select( value => float.Parse( value, System.Globalization.CultureInfo.InvariantCulture ) ).ToArray();
 			var poolFrames = 0;
 			var poolFrame = GetOption( args, "--capture-frames", "a frame count" ) is { } poolFrameText && int.TryParse( poolFrameText, out var poolParsed ) && poolParsed > 60 ? poolParsed - 59 : 40;
@@ -507,7 +510,7 @@ internal static class Game
 				var searchY = poolCamera != null ? poolCamera[1] : park.Target.Y;
 				if ( level.PoolBuilder is not { } builder || !level.TryGetGridCell( searchX, searchY, out var cellX, out var cellY ) )
 				{
-					Log.Warning( "--debug-pool: the opentpw.pools extension is off (use --enable-mod opentpw.pools) or the camera target is off the grid." );
+					Log.Warning( "--debug-pool: the opentpw.pools extension is off (it is on by default; check mods.json and --disable-extension), this is a Theme Park Inc run, or the camera target is off the grid." );
 					return;
 				}
 				// [EXT:debug-pool] --debug-pool-offset dx,dy moves the place the shape is looked for from the camera target by whole cells (so a capture can frame a changing room beside the pool)
@@ -525,6 +528,8 @@ internal static class Game
 							if ( !shape.All( cell => builder.Check( originX + cell.X, originY + cell.Y ) == PoolBuildResult.Ok ) )
 								continue;
 							var stroke = builder.PaintCells( shape.Select( cell => (originX + cell.X, originY + cell.Y) ) );
+							foreach ( var cell in riverShape )
+								level.Guests!.Grid.Cells.SetFlags( originX + cell.X, originY + cell.Y, ParkCellFlags.PoolRiver );
 							var grid = level.Objects.Grid.Origin;
 							var centreX = grid.X + (originX + shape.Average( cell => cell.X ) + 0.5f) * ObjectPlacement.CellSize;
 							var centreY = grid.Y + (originY + shape.Average( cell => cell.Y ) + 0.5f) * ObjectPlacement.CellSize;
@@ -533,6 +538,9 @@ internal static class Game
 							// puts N guests into the water at once, so a capture shows swimmers (docs/POOLS.md)
 							if ( GetOption( args, "--debug-swimmers", "guests to put into the pool" ) is { } swimText && int.TryParse( swimText, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var swimmerCount ) )
 								PlaceDebugChangingRoom( level, shape.Select( cell => (X: originX + cell.X, Y: originY + cell.Y) ).ToArray(), swimmerCount, args.Contains( "--debug-extras" ) );
+							// [EXT:debug-attractions] smoke-only: --debug-attractions ropeswing,jets,wavemachine,spa (or all) places those objects beside the pool through the level's own placement (docs/POOLS.md)
+							if ( GetOption( args, "--debug-attractions", "kinds: ropeswing,jets,wavemachine,spa or all" ) is { } attractionKinds )
+								Log.Trace( $"--debug-attractions: placed {string.Join( ", ", level.BuildPoolAttractionsBeside( shape.Select( cell => (X: originX + cell.X, Y: originY + cell.Y) ).ToArray(), attractionKinds ).Select( placed => $"{placed.Entry.DisplayName} at {placed.Placement.X},{placed.Placement.Y}/{placed.Placement.Rotation}" ) )}." );
 							return;
 						}
 				Log.Warning( "--debug-pool: no place near the camera target takes the whole shape." );
@@ -692,7 +700,7 @@ internal static class Game
 		var level = visit != null
 			? flow.StartLevel( visit.Level, original: !visit.IsSandbox, developerPanels: true, visit: visit )
 			: originalLevelIndex >= 0
-			? flow.StartLevel( args[originalLevelIndex + 1], original: true, developerPanels: !GameEditions.IsThemeParkInc )
+			? flow.StartLevel( args[originalLevelIndex + 1], original: true, developerPanels: !GameEditions.IsThemeParkInc, playerSave: ReadPlayerSave( args ) )
 			: flow.StartLevel( "jungle", original: false, developerPanels: true );
 
 		if ( sliceSmoke )
@@ -1098,6 +1106,18 @@ internal static class Game
 		Log.Trace( $"--debug-swimmers: built the {placed.Entry.DisplayName} at {placed.Placement.X},{placed.Placement.Y} rotation {placed.Placement.Rotation}; {started} of {swimmers} guests swim." );
 		if ( started == 0 )
 			Log.Warning( $"--debug-swimmers: no guest swims: changing room {placed.Visitors.IsChangingRoom}, pool-side cells {string.Join( " ", placed.Visitors.PoolAccessCandidates )}, access {level.Guests.PoolAccessOf( placed.Visitors )}, region {level.Guests.SwimRegionOf( placed.Visitors )?.Cells.Count}, park closed {level.Park?.Economy.IsParkOpen == false}, registered {placed.Visitors.HasCells}." );
+	}
+
+	/// <summary>
+	/// <c>--original-save &lt;file&gt;</c> with <c>--load-original-level</c>: the decoded payload of a player's own original park save (an <c>autosave.TPWS</c>, a named park or a <c>restart.INTS</c>) of that level, which the park starts from
+	/// instead of the shipped Easymode save; null without the option.
+	/// </summary>
+	private static ReadOnlyMemory<byte>? ReadPlayerSave( string[] args )
+	{
+		if ( GetOption( args, "--original-save", "an original park save file (.TPWS or .INTS)" ) is not { } path )
+			return null;
+		using var reader = new SaveReader( path );
+		return reader.ReadFile();
 	}
 
 	private static string? GetOption( string[] args, string name, string description )

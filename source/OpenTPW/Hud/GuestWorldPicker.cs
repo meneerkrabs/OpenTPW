@@ -20,11 +20,7 @@ internal static class GuestWorldPicker
 		var right = new NVector3(view.M11, view.M21, view.M31);
 		var up = new NVector3(view.M12, view.M22, view.M32);
 		// Same hotspot, mirroring, scale and camera basis used by GuestRenderer.OnRender.
-		var left = mirror ? -(frame.OriginX + frame.Width) : frame.OriginX;
-		var x0 = left * GuestRenderer.UnitsPerPixel;
-		var x1 = (left + frame.Width) * GuestRenderer.UnitsPerPixel;
-		var top = -frame.OriginY * GuestRenderer.UnitsPerPixel;
-		var bottom = -(frame.OriginY + frame.Height) * GuestRenderer.UnitsPerPixel;
+		var (x0, x1, top, bottom) = frame.Extents(mirror, GuestRenderer.UnitsPerPixel);
 		var transform = view * projection;
 		var min = new NVector2(float.PositiveInfinity);
 		var max = new NVector2(float.NegativeInfinity);

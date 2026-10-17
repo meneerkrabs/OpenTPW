@@ -345,14 +345,14 @@ internal sealed partial class GameFlow : IDisposable
 	/// Creates a level with the original HUD. CLI paths keep the developer panels. Original levels
 	/// default to the read-only reference start (shipped save imported as it was made).
 	/// </summary>
-	public Level StartLevel( string levelName, bool original, bool developerPanels, ParkVisitInfo? visit = null, ParkStartKind start = ParkStartKind.OriginalSaveReference )
+	public Level StartLevel( string levelName, bool original, bool developerPanels, ParkVisitInfo? visit = null, ParkStartKind start = ParkStartKind.OriginalSaveReference, ReadOnlyMemory<byte>? playerSave = null )
 	{
 		using var profile = LoadProfile.Measure( "start-level" );
 		using ( LoadProfile.Measure( "tear-down" ) )
 			TearDown();
 		Level level;
 		using ( LoadProfile.Measure( "level" ) )
-			level = new Level( levelName, loadOriginalLevel: original, visit: visit, onlineFolders: OnlineFolders, start: start ) { ShowDeveloperPanels = developerPanels };
+			level = new Level( levelName, loadOriginalLevel: original, visit: visit, onlineFolders: OnlineFolders, start: start, playerSave: playerSave ) { ShowDeveloperPanels = developerPanels };
 		return EnterLevel( level, levelName, original, visit );
 	}
 

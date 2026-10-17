@@ -399,7 +399,7 @@ public sealed class ParkEconomy : IParkEconomy
 	/// </summary>
 	// [BIN:TPW-EXE:0x00508E70 month gate] staff vitals and strikes follow the traced routines: the month gate 0x00508E70, the escalation 0x00508F70 and the grievance 0x00509360; the month message comes from the calendar update 0x004F8260 with no game-type test, and the age stamp 0x004F8800 counts floor(turn × 3750) seconds from world turn 0
 	// [BIN:TPW-EXE:0x004C7FA0 cached census] the gate counts the guests through the analyser's cached census with age 5 (CachedGuestCensus), which the main loop's crowd read refreshes with age 0 after every fourth turn counted from the turn the step counter 0x00877D34 started at (0x0054F82D, 0x004C81E0)
-	// [BIN:TPW-EXE:0x005089C0 forced strike] the forced-strike word is 0 from the constructor and written only by the save loader 0x00508BB0, so the gate sees 0 in play as here (SAVE-009)
+	// [BIN:TPW-EXE:0x005089C0 forced strike] the forced-strike word is 0 from the constructor and written only by the save loader 0x00508BB0, so the gate sees 0 in play as here
 	private void UpdateStaffVitals()
 	{
 		if ( Staff.Members.Count == 0 )
@@ -837,7 +837,10 @@ public sealed class ParkEconomy : IParkEconomy
 				if ( item.ScriptHosted )
 					WriteScript( item, RideVariables.VAR_BREAKSTAT, 1 );
 				else
+				{
 					item.IsBrokenDown = true;
+					Raise( ParkEventKind.RideEnteredBrokenState, 0, item.Id, item.InfoId );
+				}
 				Raise( ParkEventKind.RideBrokeDown, 0, item.Id, item.InfoId );
 			}
 		}
@@ -871,7 +874,10 @@ public sealed class ParkEconomy : IParkEconomy
 	internal void ObserveScriptState( ParkObjectState item, bool inBrokenState )
 	{
 		if ( inBrokenState && item.ScriptStateBroken == false )
+		{
 			item.IsBrokenDown = true;
+			Raise( ParkEventKind.RideEnteredBrokenState, 0, item.Id, item.InfoId );
+		}
 		item.ScriptStateBroken = inBrokenState;
 	}
 
@@ -905,6 +911,9 @@ public sealed class ParkEconomy : IParkEconomy
 			WriteScript( item, RideVariables.VAR_WORN, 1 );
 		if ( before >= WornStateOfRepair && item.StateOfRepair < WornStateOfRepair )
 			Raise( ParkEventKind.RideWorn, item.StateOfRepair, item.Id, item.InfoId );
+		// [BIN:TPW-EXE:0x004DF670 breakdown imminent] the condition byte below 10.0 with the step's wear added back not below it posts the advice 0x42 (the advisor answers this event)
+		if ( AdvisorRideEvents.CrossesImminentLine( (float)item.Repair, wear ) )
+			Raise( ParkEventKind.RideBreakdownImminent, item.StateOfRepair, item.Id, item.InfoId );
 	}
 
 	/// <summary>

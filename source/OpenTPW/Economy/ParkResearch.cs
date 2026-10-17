@@ -375,6 +375,32 @@ public sealed class ParkResearch
 		while ( changed );
 	}
 
+	/// <summary>
+	/// Each category's highest open group as a save holds it, in <see cref="ResearchCategory"/> order (0 to <see cref="MaximumOpenGroup"/>); the next completion's opener (0x503B80) goes on from it.
+	/// </summary>
+	// [BIN:TPW-EXE:0x00504760 research group serializer] the group record's last byte is the category's highest group available (mHighestGroupAvailable); the lab's loader reads it back as it is and only the opener 0x503B80, run for each completed project, raises it
+	internal void RestoreHighestGroups( IReadOnlyList<int> groups )
+	{
+		if ( groups.Count != highestGroup.Length || groups.Any( group => group is < 0 or > MaximumOpenGroup ) )
+			throw new InvalidDataException( "The saved highest open groups are not five values from 0 to 7." );
+		for ( var index = 0; index < highestGroup.Length; index++ )
+			highestGroup[index] = groups[index];
+	}
+
+	/// <summary>The highest open groups a save must carry: null while they equal what a restore recomputes from the completed projects.</summary>
+	internal IReadOnlyList<int>? HighestGroupsToSave
+	{
+		get
+		{
+			var current = highestGroup.ToArray();
+			Array.Clear( highestGroup );
+			OpenGroups();
+			var recomputed = highestGroup.ToArray();
+			Array.Copy( current, highestGroup, current.Length );
+			return recomputed.SequenceEqual( current ) ? null : current;
+		}
+	}
+
 	/// <summary>Whether the lab has an item of <paramref name="infoId"/> at <paramref name="level"/>.</summary>
 	internal bool HasItem( int infoId, int level ) => itemKeys.Contains( (infoId, level) );
 

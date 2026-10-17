@@ -210,7 +210,7 @@ public sealed partial class ParkHud
 	/// <summary>The figure in the employee window's portrait frame: the employee's role and variant walking on the spot, restarting when another employee is shown.</summary>
 	private UiSpriteFrame? EmployeePortraitFrame()
 	{
-		(StaffType Type, int Variant)? key = Employee is { } member ? (member.Type, StaffSpriteRules.VariantKey( member.NameIndex, member.Id )) : null;
+		(StaffType Type, int Variant)? key = Employee is { } member ? (member.Type, StaffSpriteRules.KeyOf( member )) : null;
 		if ( key != employeePortraitKey )
 		{
 			employeePortraitKey = key;

@@ -41,7 +41,19 @@ public sealed class TqiFrame
 		ConvertPixels( rgba, 4 );
 	}
 
-	private void ConvertPixels( Span<byte> output, int pixelBytes )
+	/// <summary>
+	/// Opaque RGBA as the PC player's 16-bit display shows it: every channel is packed to <paramref name="format"/>'s bit depths by
+	/// the row writer's rule (<see cref="TqiColour.Pack"/>: even columns round, odd columns truncate) and expanded back to 8 bits
+	/// by bit replication.
+	/// </summary>
+	public void WriteDisplayRgba32( Span<byte> rgba, TqiDisplayFormat format )
+	{
+		if ( rgba.Length < Width * Height * 4 )
+			throw new ArgumentException( "RGBA buffer is too small for the frame.", nameof( rgba ) );
+		ConvertPixels( rgba, 4, format );
+	}
+
+	private void ConvertPixels( Span<byte> output, int pixelBytes, TqiDisplayFormat? display = null )
 	{
 		var chromaWidth = Width / 2;
 		for ( var row = 0; row < Height; row++ )
@@ -50,6 +62,8 @@ public sealed class TqiFrame
 			{
 				var chroma = (row / 2) * chromaWidth + column / 2;
 				var (red, green, blue) = TqiColour.Convert( Y[row * Width + column], Cb[chroma], Cr[chroma] );
+				if ( display is { } format )
+					(red, green, blue) = (TqiColour.Pack( red, format.RedBits, column ), TqiColour.Pack( green, format.GreenBits, column ), TqiColour.Pack( blue, format.BlueBits, column ));
 				var offset = (row * Width + column) * pixelBytes;
 				output[offset] = red;
 				output[offset + 1] = green;
@@ -59,6 +73,17 @@ public sealed class TqiFrame
 			}
 		}
 	}
+}
+
+/// <summary>
+/// The channel bit depths of the display surface the PC player writes into: the writers pack every pixel to a 16-bit format
+/// whose masks the DirectDraw surface reports. Every ordinary 16-bit display is RGB 5-6-5, which is the assumed default;
+/// whether the original's display used 5-5-5 is not verified.
+/// </summary>
+public readonly record struct TqiDisplayFormat( int RedBits, int GreenBits, int BlueBits )
+{
+	public static TqiDisplayFormat Rgb565 { get; } = new( 5, 6, 5 );
+	public static TqiDisplayFormat Rgb555 { get; } = new( 5, 5, 5 );
 }
 
 /// <summary>
@@ -105,6 +130,26 @@ public static class TqiColour
 	{
 		var sum = unchecked(LumaTerms[y] + BlueTerms[cb] + RedTerms[cr]);
 		return (Channel( sum >> 23, -177, RedEntries ), Channel( (sum >> 11) & 0x1FF, -133, GreenEntries ), Channel( sum & 0x1FF, -225, BlueEntries ));
+	}
+
+	/// <summary>
+	/// One 8-bit channel value packed to <paramref name="bits"/> bits the way the row writer's packing tables do, then expanded back to
+	/// 8 bits by bit replication (what a display's DAC or a GPU makes of the packed field). The writer fills two pixels per 32-bit
+	/// word from one table entry: the first (even column) takes the low half, rounded as (v + 2^(7 − bits)) &gt;&gt; (8 − bits) and
+	/// clamped to the field's maximum, the second (odd column) the high half, truncated as v &gt;&gt; (8 − bits).
+	/// </summary>
+	// [BIN:TPW-EXE:0x00670440 TQI packing tables] the red, green and blue tables (0xFBA730, 0xFBABF8, 0xFBB010) hold, for each channel value v, (min((v + (1 << (7 − bits))) >> (8 − bits), max) << shift) in the low word and, when the surface has at most 16 bits per pixel, (v >> (8 − bits)) << (shift + 16) added in the high word; the writer 0x675D90 takes the low word for a pair's first pixel and the high word for its second
+	public static byte Pack( byte value, int bits, int column )
+	{
+		if ( bits is < 1 or > 8 )
+			throw new ArgumentOutOfRangeException( nameof( bits ) );
+		var packed = (column & 1) == 0
+			? Math.Min( (value + (1 << (7 - bits))) >> (8 - bits), (1 << bits) - 1 )
+			: value >> (8 - bits);
+		var result = 0;
+		for ( var shift = 8 - bits; shift > -bits; shift -= bits )
+			result |= shift >= 0 ? packed << shift : packed >> -shift;
+		return (byte)result;
 	}
 
 	private static byte Channel( uint field, int start, int entries ) =>

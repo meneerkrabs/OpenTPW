@@ -126,7 +126,7 @@ public sealed class StaffRenderer : Entity
 		var (slot, direction, mirror, step) = StaffSpriteRules.Portrait( elapsed, directions );
 		var frame = atlas.Frames[atlas.GetFrame( slot, direction, step % atlas.FramesPerDirection( slot ) )];
 		return new UI.Original.UiSpriteFrame( textures[atlasIndex].NativeTexture, atlas.Width, atlas.Height, frame.X, frame.Y, frame.Width, frame.Height,
-			frame.OriginX, frame.OriginY, mirror );
+			frame.OriginX, frame.OriginY, mirror, frame.ScaleX, frame.ScaleY );
 	}
 
 	/// <summary>The atlas, slot and frame a member is drawn with: for the lifecycle checks and tests; null when the member is not drawn.</summary>
@@ -139,7 +139,7 @@ public sealed class StaffRenderer : Entity
 
 	private (int Atlas, int Frame, bool Mirror, StaffClip Clip)? Select( StaffMember member, MemberView view, float now, SVector3 cameraRight, SVector3 cameraForward )
 	{
-		var atlasIndex = sprites.AtlasFor( member.Type, StaffSpriteRules.VariantKey( member.NameIndex, member.Id ) );
+		var atlasIndex = sprites.AtlasFor( member.Type, StaffSpriteRules.KeyOf( member ) );
 		if ( atlasIndex < 0 || atlasIndex >= textures.Count )
 			return null;
 		var atlas = sprites.Atlases[atlasIndex];
@@ -277,11 +277,7 @@ public sealed class StaffRenderer : Entity
 	{
 		var atlas = sprites.Atlases[atlasIndex];
 		var frame = atlas.Frames[frameIndex];
-		var left = mirror ? -(frame.OriginX + frame.Width) : frame.OriginX;
-		var x0 = left * GuestRenderer.UnitsPerPixel;
-		var x1 = (left + frame.Width) * GuestRenderer.UnitsPerPixel;
-		var yTop = -frame.OriginY * GuestRenderer.UnitsPerPixel;
-		var yBottom = -(frame.OriginY + frame.Height) * GuestRenderer.UnitsPerPixel;
+		var (x0, x1, yTop, yBottom) = frame.Extents( mirror, GuestRenderer.UnitsPerPixel );
 		var u0 = frame.X / (float)atlas.Width;
 		var u1 = (frame.X + frame.Width) / (float)atlas.Width;
 		if ( mirror )

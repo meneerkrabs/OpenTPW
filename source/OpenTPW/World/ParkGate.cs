@@ -206,8 +206,12 @@ public sealed class ParkGate
 
 	/// <summary>The guests of <paramref name="guests"/> standing on a counted cell (<see cref="GuestCensus"/>).</summary>
 	// [BIN:TPW-EXE:0x004C9130 census] every thing of type 1 (a guest) on a cell the predicate 0x004FA990 accepts (types 1, 3, 9, 10 and 0) counts; 0x004CCEB0 (the rating) and 0x004C7FA0 (the cached count) walk the same way
-	public static int CountCensus( GuestSimulation guests ) =>
-		guests.Guests.Count( guest => guest.State != GuestState.Gone && (guest.InSwimSession || CountsCellOf( guests.Grid.Cells, guest.Cell.X, guest.Cell.Y )) );
+	public static int CountCensus( GuestSimulation guests ) => guests.Guests.Count( guest => CountedInCensus( guests, guest ) );
+
+	/// <summary>Whether a guest is one of the census (<see cref="CountCensus"/>): the guests the statistics of tp.exe <c>0x004C9130</c>, <c>0x004C9290</c>-<c>0x004C95D0</c> and <c>0x004C7BB0</c> all walk.</summary>
+	// [BIN:TPW-EXE:0x004FA990 census predicate] a thing of type 1 (a guest) on a cell the predicate accepts; the same test in every guest statistic
+	internal static bool CountedInCensus( GuestSimulation guests, Guest guest ) =>
+		guest.State != GuestState.Gone && (guest.InSwimSession || CountsCellOf( guests.Grid.Cells, guest.Cell.X, guest.Cell.Y ));
 
 	/// <summary>
 	/// Live staff standing outside the counted cell types (the retry's blocker scan: thing kinds 4–8 with

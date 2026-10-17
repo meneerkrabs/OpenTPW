@@ -1,7 +1,7 @@
 namespace OpenTPW;
 
 /// <summary>
-/// The policy of the <c>opentpw.smarter-guests</c> extension (docs/SMARTER-GUESTS.md). Version 1.2.0 adds spreading (phase 3: an expected-wait queue term for every attraction, a stable per-guest preference per attraction instance and hysteresis in the minor decision, see <see cref="SmarterGuestsRules.ExpectedWait256"/>); 1.1.0 is value for money (phase 2): a guest no longer walks to a shop or sideshow whose price it expects the stand to
+/// The policy of the <c>opentpw.smarter-guests</c> extension (docs/SMARTER-GUESTS.md). Version 1.3.0 adds queue patience (phase 4: a guest does not join a queue whose expected wait, counting only the queue ahead, exceeds its patience and gives up after waiting too long, each only when another ride it could choose is clearly quicker; see <see cref="SmarterGuestsRules.JoinPatienceTurns"/>); 1.2.0 adds spreading (phase 3: an expected-wait queue term for every attraction, a stable per-guest preference per attraction instance and hysteresis in the minor decision, see <see cref="SmarterGuestsRules.ExpectedWait256"/>); 1.1.0 is value for money (phase 2): a guest no longer walks to a shop or sideshow whose price it expects the stand to
 /// refuse (<see cref="SmarterGuestsRules.WouldRefuse"/>, with a per-guest price sensitivity trait), goes home after <see cref="SmarterGuestsRules.StallsBeforeGoingHome"/> decisions in a row that this rule emptied, and
 /// the booth weighs the entrance fee against a park value that counts the open rides and sideshows (<see cref="SmarterGuestsRules.BoothParkValue"/>). Everything else still delegates to
 /// <see cref="OriginalGuestDecisions"/>. Later phases add their rules here, each one bumping the extension's version, which is the algorithm identity a park save records. The policy draws nothing and holds no
@@ -17,6 +17,10 @@ public sealed class SmarterGuestDecisions : IGuestDecisions
 	public bool UsesValueForMoney => true;
 
 	public bool UsesSpreading => true;
+
+	/// <summary>The turn this guest's give-up test starts (its own patience band), so the host scans the park's rides for it only from then on.</summary>
+	public int AlternativeLookAfterTurns( in DecisionContext context, in GuestView guest ) =>
+		(int)Math.Min( int.MaxValue, SmarterGuestsRules.PatienceTurns256( SmarterGuestsRules.GiveUpTurns, SmarterGuestsRules.PatiencePercent( context.Trait( guest, SmarterGuestsRules.PatienceTrait ) ) ) / 256 );
 
 	/// <summary>The entrance fee against the park's worth: the original's verdict over a park value that counts the open attractions.</summary>
 	// [EXT:smarter-guests-value] the host's draw and the rating are the original's; only the rating part of the value is scaled, by the open attractions the host counted (85 to 115 percent)
@@ -56,13 +60,8 @@ public sealed class SmarterGuestDecisions : IGuestDecisions
 	}
 
 	/// <summary>A ride that is in neither of the guest's histories, is not of the type it used last and whose excitement the admission gate would let it through to.</summary>
-	private static bool IsUnusedAdmissibleRide( in DecisionContext context, in GuestView guest, in AttractionView attraction )
-	{
-		if ( attraction.Kind != RideVisitorKind.Ride || attraction.SameTypeAsLastUsed || guest.UsedHistory.Contains( attraction.Id ) || guest.TemporaryHistory.Contains( attraction.Id ) )
-			return false;
-		var type = context.Settings.Types[Math.Min( guest.Type, context.Settings.Types.Count - 1 )];
-		return AttractionScore.ExcitementMatch( type.PreferredExcitement, attraction.LiveExcitement ) > 10;
-	}
+	private static bool IsUnusedAdmissibleRide( in DecisionContext context, in GuestView guest, in AttractionView attraction ) =>
+		SmarterGuestsRules.IsUnusedAdmissibleRide( context, guest, attraction );
 
 	/// <summary>A walking guest keeps a ride it is heading for unless the best ride in reach beats it by the hysteresis margin; a shop, toilet or sideshow on the way stays an impulse stop, as in the original.</summary>
 	// [EXT:smarter-guests-spread] hysteresis between rides: the original switches on any scoring ride, which makes guests change their minds on the way; measured, the same rule on shops cut revenue in a shop-and-toilet park
@@ -87,10 +86,31 @@ public sealed class SmarterGuestDecisions : IGuestDecisions
 	/// <summary>The original's comparison. A stand the price rule zeroed can still tie the initial 0 on an odd park turn, as any zero score can; overriding that was measured and moves other parks for the worse (docs/SMARTER-GUESTS.md).</summary>
 	public bool BeatsInMinorDecision( in DecisionContext context, in GuestView guest, uint score, uint best ) => original.BeatsInMinorDecision( context, guest, score, best );
 
-	public QueueAdmission DecideAdmission( in DecisionContext context, in GuestView guest, in AdmissionView admission ) => original.DecideAdmission( context, guest, admission );
+	/// <summary>
+	/// The original's gates, then patience: a guest that would wait longer than it is willing to is not admitted ("queue too long", the original's refusal and thought, so the statistics, the temporary history and the
+	/// guest's next choice are the host's existing ones).
+	/// </summary>
+	// [EXT:smarter-guests-patience] the expected wait is the phase 3 estimate for a guest at the back (the queue plus the walkers), against the base × the guest's patience band
+	public QueueAdmission DecideAdmission( in DecisionContext context, in GuestView guest, in AdmissionView admission )
+	{
+		var basis = original.DecideAdmission( context, guest, admission );
+		if ( !basis.Admits || !SmarterGuestsRules.Concerns( admission.Attraction ) )
+			return basis;
+		var percent = SmarterGuestsRules.PatiencePercent( context.Trait( guest, SmarterGuestsRules.PatienceTrait ) );
+		// at the back the guest is already on the queue's last cell: the walkers still on their way will stand behind it, so only the queue ahead counts
+		return SmarterGuestsRules.WaitExceedsPatience( admission.Attraction with { Reservations = 0 }, admission.BestAlternativeWait256, percent ) ? new QueueAdmission( QueueJoinResult.QueueTooLong ) : basis;
+	}
 
-	public QueuePatienceDecision DecideQueuePatience( in DecisionContext context, in GuestView guest, in QueuePatienceView queue ) =>
-		original.DecideQueuePatience( context, guest, queue );
+	/// <summary>Gives up on a queue after waiting longer than the guest's patience, thinking that the queue is too long; the host dismisses it (the medium happiness step of the original dismissal) as an impatient exit.</summary>
+	// [EXT:smarter-guests-patience] runs after the original's leave tests, never for a guest called forward or in an interlude (the host's call sites); never for the front of the queue, never for a shop, sideshow or toilet, and only for a ride that has a clearly shorter alternative
+	public QueuePatienceDecision DecideQueuePatience( in DecisionContext context, in GuestView guest, in QueuePatienceView queue )
+	{
+		var basis = original.DecideQueuePatience( context, guest, queue );
+		if ( basis.Leave || queue.JoinTurn < 0 || !SmarterGuestsRules.Concerns( queue.Attraction ) )
+			return basis;
+		var percent = SmarterGuestsRules.PatiencePercent( context.Trait( guest, SmarterGuestsRules.PatienceTrait ) );
+		return SmarterGuestsRules.GivesUp( context.ParkTurn - queue.JoinTurn, queue.Attraction, queue.Position, queue.BestAlternativeWait256, percent ) ? new QueuePatienceDecision( true, GuestThought.QueueTooLong ) : basis;
+	}
 
 	public PostUseDecision RememberUse( in DecisionContext context, in GuestView guest, in AttractionView ride ) => original.RememberUse( context, guest, ride );
 

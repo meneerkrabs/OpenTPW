@@ -44,19 +44,42 @@ public class PoolsTests
 	// ---- The extension ----------------------------------------------------------------------------
 
 	[TestMethod]
-	public void TheExtensionIsRegisteredOffByDefaultAndChangesTheSimulation()
+	public void ThePoolsUiIsUnavailableInThemeParkIncRunsEvenWithTheExtensionOn()
+	{
+		var edition = GameEditions.Current;
+		try
+		{
+			using var scope = OpenTpwExtensions.Use( PoolsSet( true ) );
+			Assert.IsTrue( FeatureGates.Pools );
+			GameEditions.Select( GameEdition.ThemeParkInc );
+			Assert.IsFalse( FeatureGates.Pools, "no pool tool, rows, changing rooms or swimmers in Theme Park Inc" );
+			Assert.IsNull( PoolContent.CatalogRoot( OpenTpwExtensions.Active ), "no pool objects in a Theme Park Inc catalog" );
+		}
+		finally
+		{
+			GameEditions.Select( edition );
+		}
+	}
+
+	[TestMethod]
+	public void TheExtensionIsRegisteredOnByDefaultAndChangesTheSimulation()
 	{
 		var pools = OfficialExtensions.Pools;
 		Assert.AreEqual( "opentpw.pools", pools.Id );
-		Assert.IsFalse( pools.DefaultEnabled );
+		Assert.IsTrue( pools.DefaultEnabled );
 		Assert.IsTrue( pools.AffectsSimulation );
 		Assert.AreSame( pools, OfficialExtensions.Find( "opentpw.pools" ) );
-		Assert.IsFalse( ModSet.Defaults( OfficialExtensions.All ).IsEnabled( pools.Id ) );
+		Assert.IsTrue( ModSet.Defaults( OfficialExtensions.All ).IsEnabled( pools.Id ) );
 		using ( OpenTpwExtensions.Use( PoolsSet( true ) ) )
 			Assert.IsTrue( FeatureGates.Pools );
 		using ( OpenTpwExtensions.Use( PoolsSet( false ) ) )
 			Assert.IsFalse( FeatureGates.Pools );
-		Assert.IsFalse( FeatureGates.Pools, "off in a process that set nothing" );
+		Assert.IsTrue( FeatureGates.Pools, "on in a process that set nothing" );
+		Assert.IsTrue( ModSettings.Default.IsEnabled( pools.Id, pools.DefaultEnabled ), "a mods.json without a pools choice (an old file) turns it on" );
+		var untouched = ModSettings.Parse( System.Text.Encoding.UTF8.GetBytes( "{\"enabled\":{\"opentpw.online\":false}}" ), new List<string>() );
+		Assert.IsTrue( untouched.IsEnabled( pools.Id, pools.DefaultEnabled ), "a player who never touched the pools toggle gets it on" );
+		var explicitOff = ModSettings.Parse( System.Text.Encoding.UTF8.GetBytes( "{\"enabled\":{\"opentpw.pools\":false}}" ), new List<string>() );
+		Assert.IsFalse( explicitOff.IsEnabled( pools.Id, pools.DefaultEnabled ), "an explicit off stays off" );
 		Assert.AreEqual( 75, ParkEconomy.PoolCellCost );
 	}
 

@@ -3028,8 +3028,14 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		}
 		// [BIN:TPW-EXE:0x00501FD3 state 15 entry] after the use routine (0x005015F4, 0x004FD970) the state-15 entry gives a guest with balloon life its balloon back, except at a balloon shop, whose use routine has just made one
 		// [EXT:pools-swim] a swimmer keeps its balloon away until it steps out of the changing room again (EndSwimAtOnce)
+		// [BIN:TPW-EXE:0x00502053 balloon give-back] the new model is made like the shop's: the world generator is reseeded with the thing id (0x00516370) and the sprite set (0x00541F70(10)) and the colour (0x00541FD0) are drawn
 		if ( guest.BalloonLife > 0 && ride.AppearanceEffect != GuestAppearance.Balloon && !guest.InSwimSession )
+		{
+			random.Reseed( (ushort)guest.Id );
+			random.NextWord();
+			random.NextWord();
 			guest.HasBalloon = true;
+		}
 	}
 
 	/// <summary>

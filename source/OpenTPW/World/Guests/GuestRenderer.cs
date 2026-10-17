@@ -12,8 +12,12 @@ namespace OpenTPW;
 /// </summary>
 public sealed class GuestRenderer : Entity
 {
-	/// <summary>Engine units per sprite pixel (kids ≈ 42 px tall ≈ 0.95 cell). Approximation; the original zoom mapping is unknown.</summary>
-	public const float UnitsPerPixel = 0.045f;
+	/// <summary>
+	/// Engine units per sprite pixel at scale 1 (a kid 43 pixels tall stands 1.9 engine units, 0.95 cell): 20 / 128 original units times 1 / cos(45 degrees), the original's
+	/// extent per sprite unit and its 90 degree projection (<see cref="SpriteScale"/>), times the model scale.
+	/// </summary>
+	// [BIN:TPW-EXE:0x005890E0 sprite placement] [BIN:TPW-EXE:0x00578BE0 projection] 20 / 128 × √2 = 0.2210 original units a pixel, 0.04419 engine units; read from the quad placement and the projection builder, replacing the 0.045 that was fitted by eye
+	public static readonly float UnitsPerPixel = SpriteScale.EngineUnitsPerPixel;
 	/// <summary>Walk-cycle frames per cell walked (8 frames per 0.8 cells). Approximation.</summary>
 	public const float WalkFramesPerCell = 10f;
 	private const int VerticesPerGuest = 12;
@@ -139,7 +143,8 @@ public sealed class GuestRenderer : Entity
 	/// <summary>Atlas, frame and mirroring for a guest seen with the given camera axes (engine space).</summary>
 	public (int Atlas, int Frame, bool Mirror) SelectSprite( Guest guest, SVector3 cameraRight, SVector3 cameraForward )
 	{
-		var atlasIndex = guest.Type % atlases.Count;
+		// [BIN:TPW-EXE:0x004FB19E guest sprite variant] the kid set is the guest's own draw at its creation, a function of its thing id alone (GuestAppearance.KidSet), not of its peep type
+		var atlasIndex = GuestAppearance.KidSet( guest.Id, atlases.Count );
 		var atlas = atlases[atlasIndex];
 		var rightFlat = SVector2.Normalize( new SVector2( cameraRight.X, cameraRight.Y ) + new SVector2( 1e-6f, 0 ) );
 		var forwardFlat = SVector2.Normalize( new SVector2( cameraForward.X, cameraForward.Y ) + new SVector2( 0, 1e-6f ) );

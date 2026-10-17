@@ -95,7 +95,9 @@ internal sealed partial class ParkResumeSmokeTest
 
 		// A demolished object leaves an id hole the restore must adopt, never burn.
 		var sacrifice = catalog.Buildable.Where( candidate => economy.Research.IsAvailable( candidate.InfoId )
-				&& candidate.Category is ObjectCategory.Feature or ObjectCategory.Shop && economy.Balance >= candidate.BuildCost )
+				&& candidate.Category is ObjectCategory.Feature or ObjectCategory.Shop && economy.Balance >= candidate.BuildCost
+				// the pools extension's objects need water beside them: the generic fixture picks from the original's objects
+				&& candidate.ModId != OpenTPW.Mods.OfficialExtensions.Pools.Id )
 			.OrderBy( candidate => candidate.BuildCost ).FirstOrDefault();
 		if ( sacrifice != null )
 		{

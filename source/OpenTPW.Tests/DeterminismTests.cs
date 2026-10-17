@@ -333,7 +333,7 @@ public class DeterminismTests
 	}
 
 	/// <summary>[EXT:pools-swim] The pinned hash of <see cref="RunFixedParkWithPoolsAndAChangingRoom"/> (docs/DETERMINISM.md, "Pools").</summary>
-	internal const ulong PoolsChangingRoomFixedRunHash = 0xB5B033AE20AD9BA0UL;
+	internal const ulong PoolsChangingRoomFixedRunHash = 0x42E916DFC15CED19UL;
 
 	[TestMethod]
 	public void FixedRunWithAPoolAndAChangingRoomIsTheSameInEveryProcessAndGuestsSwim()
@@ -349,7 +349,7 @@ public class DeterminismTests
 	internal const ulong PoolsFixedRunHash = 0x4EEF5812C3D8023DUL;
 
 	/// <summary>The pinned hash of <see cref="HashOfAFixedRunIsTheSameInEveryProcess"/>'s run (docs/DETERMINISM.md).</summary>
-	internal const ulong FixedRunHash = 0xA91A607272718E93UL;
+	internal const ulong FixedRunHash = 0x2A8418A90725699AUL;
 
 	/// <summary>
 	/// The pinned hash of the same run with <c>opentpw.smarter-guests</c> on (docs/SMARTER-GUESTS.md): in this run, whose one drinks shop is cheap enough that no guest is refused and which has no second attraction to choose
@@ -357,7 +357,7 @@ public class DeterminismTests
 	/// shop's throughput estimate (phase 3: its average, samples and silence clock) next to the birth ids. The scenario's pin (GuestMeasurementTests) is where the rules act. A deliberate change of the
 	/// extension's state, of the rules or of a constant changes this value (and bumps the extension's version).
 	/// </summary>
-	internal const ulong SmarterGuestsFixedRunHash = 0xC8534726E08D0EC2UL;
+	internal const ulong SmarterGuestsFixedRunHash = 0x64340E899EC258EBUL;
 
 	[TestMethod]
 	public void SmarterGuestsFixedRunHashIsTheSameInEveryProcess()
@@ -375,13 +375,13 @@ public class DeterminismTests
 	/// guest identity state. CI runs it on Windows, macOS and Linux, so an equal value means the interpreter, the stateless <c>rng</c> and the hook wiring give the same park everywhere. A deliberate change
 	/// of the example, of the language, of a limit or of the hook wiring changes this value.
 	/// </summary>
-	internal const ulong ScriptModsFixedRunHash = 0xD7388BB84BBA0676UL;
+	internal const ulong ScriptModsFixedRunHash = 0xC4BE433626584D47UL;
 
 	/// <summary>
 	/// The pinned hash of a run with a test mod that implements all four hooks, keeps counters in its state and draws with <c>rng</c> (the example uses neither <c>scoreAttraction</c>, <c>wanderGoal</c> nor
 	/// <c>rng</c>): the cross-platform pin of everything the example does not reach.
 	/// </summary>
-	internal const ulong ScriptModsAllHooksFixedRunHash = 0xC3190E46B1E70633UL;
+	internal const ulong ScriptModsAllHooksFixedRunHash = 0x9F2877C39A19BD52UL;
 
 	[TestMethod]
 	public void ScriptModsFixedRunHashIsTheSameInEveryProcess()

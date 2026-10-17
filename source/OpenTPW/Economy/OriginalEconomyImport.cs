@@ -78,6 +78,7 @@ public sealed class OriginalEconomyImport
 		if ( save.ResearchLab is { } lab )
 			ImportResearch( economy, lab, save.World.ObjectControls, evidence );
 		var (objects, fixedItems, things) = ImportObjects( economy, save, evidence );
+		ImportLitter( economy, save, evidence );
 		// after the objects: the carried object of a follow-up is one of their thing ids
 		ImportChallenges( economy, save.Economy.ChallengeSystem, world.Calendar.FunnyTimeStart, things, evidence );
 		var staff = ImportStaff( economy, save, things, evidence );
@@ -366,7 +367,7 @@ public sealed class OriginalEconomyImport
 			// [BIN:TPW-EXE:0x005054D0 staff state setter] +0x200 is the turn an idle spell started (0 after any state but a patrol), which the idle states compare with IdleDuration[grade]
 			member.IdleStamp = staff.TimeStartedIdling;
 			ImportPatrolArea( saved, member, adjusted );
-			ImportJob( economy, saved, member, things, save.Attractions, chaseable, jobs, resumedClaims );
+			ImportJob( economy, saved, member, things, save.Attractions, chaseable, jobs, resumedClaims, save.Litter );
 			// [BIN:TPW-EXE:0x004F8B10 person serializer] the loader routes the person again to mAccurateDestX/Y (+0x18/+0x1A, 1/256 cell) once it is read (0x004FA5F0 at 0x004F9407);
 			// the walk speeds are the person's mBaseSpeed (+0xC0), mPurposeSpeed (+0xC2, the bonus a walk to a job or a chase takes) and mPreviousSpeed (+0xC8)
 			var person = saved.Person;
@@ -503,7 +504,7 @@ public sealed class OriginalEconomyImport
 	// [BIN:TPW-EXE:0x004D4460 entertainer serializer] mTimeStartedEntertaining (+0x214); [BIN:TPW-EXE:0x00502760 researcher serializer] mTimeStartedResearching (+0x214)
 	// [BIN:TPW-EXE:0x004D6000 guard serializer] mPerp (+0x212), mProsecutionTimestamp (+0x214, the chase timer the state setter 0x004D65D0 sets)
 	// [BIN:TPW-EXE:0x00506D10 rest end] mRestArea (+0x208) names the rest area only while the member walks to it (state 2) or rests in it (state 3): the rest's end clears it
-	private static void ImportJob( ParkEconomy economy, SaveStaff saved, StaffMember member, IReadOnlyDictionary<int, ParkObjectState> things, IReadOnlyList<SaveAttraction> attractions, IReadOnlySet<int> chaseable, List<string> evidence, ISet<int> resumedClaims )
+	private static void ImportJob( ParkEconomy economy, SaveStaff saved, StaffMember member, IReadOnlyDictionary<int, ParkObjectState> things, IReadOnlyList<SaveAttraction> attractions, IReadOnlySet<int> chaseable, List<string> evidence, ISet<int> resumedClaims, IReadOnlyList<SaveLitter> litter )
 	{
 		var word = saved.Staff.State;
 		var what = $"{saved.Model} thing {saved.Id}";
@@ -550,9 +551,16 @@ public sealed class OriginalEconomyImport
 					dropped = $"its toilet, thing {saved.RoleToilet}, is no imported relief object";
 				break;
 			case StaffJob.ToLitter or StaffJob.Sweeping:
-				// [APPROX:SAVE-010] a handyman walking to or sweeping litter (states 8 and 9) is imported idle: the cell grid's litter is not decoded, so his target cell has no litter to claim
-				evidence.Add( $"[APPROX:SAVE-010] {what} litter job (state {word}, cell id {saved.RoleTarget}) imported idle: the saved litter is not imported." );
-				job = StaffJob.Idle;
+				// [BIN:TPW-EXE:0x004D6D60 handyman serializer] mTargetLitterCell (+0x218, a cell id y × 128 + x + 1) and mTimeStartedCleaning (+0x214): the target is the littered cell the handyman walks to or sweeps, which he holds the claim of (the cell's collector word and its marked turn)
+				if ( SaveStaffRecord.CellOf( saved.RoleTarget ) is { } target && economy.Litter.TypeAt( target.X, target.Y ) != LitterType.None )
+				{
+					member.LitterCell = target;
+					member.JobStamp = saved.RoleTimer;
+					var held = litter.FirstOrDefault( entry => entry.X == target.X && entry.Y == target.Y );
+					economy.Litter.Claim( target.X, target.Y, member.Id, held.Collector == saved.Id ? Math.Min( held.MarkedTurn, ParkCalendar.Turn( economy.Tick ) ) : ParkCalendar.Turn( economy.Tick ) );
+				}
+				else
+					dropped = $"its litter cell {saved.RoleTarget} holds no imported litter";
 				break;
 			case StaffJob.Chasing when chaseable.Contains( saved.RoleTarget ):
 				// the guest keeps its thing id as its guest id (GuestSimulation.ImportOriginal); the chase timer is +0x214
@@ -583,6 +591,27 @@ public sealed class OriginalEconomyImport
 		member.State = ParkStaff.DisplayState( (uint)job );
 		if ( dropped == null && job != StaffJob.Idle )
 			evidence.Add( $"{what} job imported: state {word} ({job}){(member.RideId != 0 ? $", ride object {member.RideId}" : "")}{(member.ToiletId != 0 ? $", toilet object {member.ToiletId}" : "")}{(member.RestAreaId != 0 ? $", rest area object {member.RestAreaId}" : "")}{(member.TargetGuestId != 0 ? $", guest {member.TargetGuestId}" : "")}{(member.JobStamp != 0 ? $", timer {member.JobStamp}" : "")}." );
+	}
+
+	/// <summary>
+	/// The litter of the cell grid: every cell whose <c>mLitter</c> word is a litter type (1 to 8) holds that litter, unclaimed until a handyman's saved job claims it again. A word that is no litter
+	/// type, or a cell outside the litter map, is reported and skipped.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004D8DD0 map cell serializer] mLitter (+0x2C), mLitterCollector (+0x30), mLitterScript (+0x28, +0x38), mTimeMarkedForLitterCollection (+0x34) are saved with the cell; the litter's sprite is the cell's sprite script (0x4D93B0: the cell's corner plus a draw of the cell's own reseed), which OpenTPW draws from the cell alone (ParkLitter.SpriteOffset)
+	private static void ImportLitter( ParkEconomy economy, OriginalParkImport save, List<string> evidence )
+	{
+		var restored = new List<LitterCell>();
+		var skipped = new List<string>();
+		foreach ( var item in save.Litter )
+		{
+			if ( item.Type is >= 1 and <= (uint)LitterType.Stinkbomb && economy.Litter.InBounds( item.X, item.Y ) )
+				restored.Add( new LitterCell( item.X, item.Y, (LitterType)item.Type, 0, 0 ) );
+			else
+				skipped.Add( $"({item.X}, {item.Y}) type {item.Type}" );
+		}
+		if ( restored.Count > 0 || skipped.Count > 0 )
+			economy.Litter.Restore( restored );
+		evidence.Add( $"Litter imported: {restored.Count} littered cells{(restored.Count == 0 ? "" : $" ({string.Join( ", ", restored.GroupBy( cell => cell.Type ).OrderBy( group => group.Key ).Select( group => $"{group.Count()} of type {(int)group.Key}" ) )})")}{(skipped.Count == 0 ? "" : $"; skipped {string.Join( ", ", skipped )}")}." );
 	}
 
 	/// <summary>
@@ -734,13 +763,17 @@ public sealed class OriginalEconomyImport
 		// the guests are restored by the level's guest simulation (GuestSimulation.ImportOriginal), which reports its outcome through Report
 		var byState = string.Join( ", ", save.Guests.GroupBy( guest => guest.State ).OrderBy( group => group.Key ).Select( group => $"{group.Count()} in state {group.Key}" ) );
 		evidence.Add( $"{save.GuestCount} saved guests{(byState.Length == 0 ? "" : $" ({byState})")} are imported by the guest simulation when a level attaches it." );
-		// [EXT:original-engine-state-dumps] the raw dumps of the original's own engine structures (the Scripts SCPT records, the RSSE script state (read in full by SaveRsseBlock, not restored), the Particles pools, the Sound mixer state, the message-centre lists and the Track and Flying ride chunks) are not restored: OpenTPW has different engines that restart from the archives, so a dump has no counterpart to receive it; the widths are traced (SaveBlockWidths) only to split the save
-		// [APPROX:SAVE-010] the advisor presentation block and the decoded but unapplied camera, first clock word (the second is the advisor clock, applied when the automatic advisor attaches), vanilla time, game-system words, cheat bytes, advisor scoring and UI record count (SaveRuntimeBlocks: OpenTPW's start camera looks at its own focus, not the saved point of interest), the weather, park analyser, tag system, mechanic HQ and UI message receiver things, the world state, arrival variables and arrival bytes, the calendar session start and the advisor controller's time signature, sound, three raw words, mRequestedLastTutorial and mMessagePlaying are not imported (its current record is imported as the last tutorial advice when an automatic advisor attaches), nor are its pending advice and history when no automatic advisor is attached; of the cell map only path cells, occupancy, MAP attributes and each path cell's texture and turn are read (so a handyman walking to or sweeping litter is imported idle), and a saved path tile is drawn only while the cell's path neighbours equal the saved ones and its turn is 0/90/180/270 (otherwise the tile is chosen from the neighbours) — evidence needed: the original's post-load reconstruction of the decoded values
-		var engineDumps = save.Layout.Blocks.Where( block => block.Block is SaveBlock.Scripts or SaveBlock.Particles or SaveBlock.MessageCentre or SaveBlock.TrackRides or SaveBlock.FlyingRides or SaveBlock.Rsse or SaveBlock.Sound ).ToList();
-		evidence.Add( $"[EXT:original-engine-state-dumps] Not restored (OpenTPW's engines restart from the archives): {string.Join( ", ", engineDumps.Select( block => $"{block.Block} {block.Length} bytes" ) )}." );
-		evidence.Add( $"[APPROX:SAVE-010] Not imported: {string.Join( ", ", save.Layout.Blocks.Where( block => block.Block is not (SaveBlock.ActionRecording or SaveBlock.World or SaveBlock.RideSystem) && !engineDumps.Contains( block ) ).Select( block => $"{block.Block} {block.Length} bytes" ) )}; {Things( save.World, SaveThingModel.Weather, SaveThingModel.ParkAnalyser, SaveThingModel.TagSystem, SaveThingModel.MechanicHq, SaveThingModel.UIMsgReceiver )}." );
+		// [EXT:original-engine-state-dumps] the raw dumps of the original's own engine structures that OpenTPW's engines have no counterpart for (the Scripts SCPT records: the sprite scripts of the saved guests and litter, which OpenTPW animates from their state and the cell; the RSSE scripts' run state, whose saved ids, list order and pass counter are imported, RideScriptWorld.ImportSaved; the Sound mixer state: the sound system's handles and volumes and QMixer's chunk; the message-centre lists and the Track and Flying ride chunks) are not restored: OpenTPW has different engines that restart from the archives; the widths are traced (SaveBlockWidths) to split the save; the Particles block's pool is restored (SAVE-013)
+		// [APPROX:SAVE-010] the advisor presentation block, the first clock word (the game clock the saved scripts' waits count from, needed with the RSSE run state; the second is the advisor clock, applied when the automatic advisor attaches), vanilla time, game-system words, cheat bytes (OpenTPW has no cheat codes), advisor scoring and UI record count (SaveRuntimeBlocks), the weather, park analyser, tag system, mechanic HQ and UI message receiver things, the world state, arrival vehicle handles and bytes (the vehicle at work belongs to its script's run, which restarts) and the calendar session start and the advisor controller's time signature, sound, three raw words, mRequestedLastTutorial and mMessagePlaying are not imported (its current record is imported as the last tutorial advice when an automatic advisor attaches), nor are its pending advice and history when no automatic advisor is attached; the camera is imported (zoom, yaw and the required point of interest, loader 0x42CEC0) without the loader's yaw correction by the word 0x78D912; of the cell map the path cells, occupancy, MAP attributes, each path cell's texture and turn and the litter (type, claim) are read, and a saved path tile is drawn only while the cell's path neighbours equal the saved ones and its turn is 0/90/180/270 (otherwise the tile is chosen from the neighbours) — evidence needed: the vehicle's script run for the world state and arrival words (the saved RSSE variables and program counters, and the game clock they are timed on), the camera's yaw correction word and the sound chunk
+		var engineDumps = save.Layout.Blocks.Where( block => block.Block is SaveBlock.Scripts or SaveBlock.MessageCentre or SaveBlock.TrackRides or SaveBlock.FlyingRides or SaveBlock.Rsse or SaveBlock.Sound ).ToList();
+		evidence.Add( $"[EXT:original-engine-state-dumps] Not restored (OpenTPW's engines restart from the archives): {string.Join( ", ", engineDumps.Select( block => $"{block.Block} {block.Length} bytes" ) )}; the Rsse block's script ids, list order and pass counter are imported when the level attaches its objects, the Particles block's pool when the level builds its particle system." );
+		evidence.Add( $"[APPROX:SAVE-010] Not imported: {string.Join( ", ", save.Layout.Blocks.Where( block => block.Block is not (SaveBlock.ActionRecording or SaveBlock.World or SaveBlock.RideSystem or SaveBlock.Particles or SaveBlock.Camera) && !engineDumps.Contains( block ) ).Select( block => $"{block.Block} {block.Length} bytes" ) )}; {Things( save.World, SaveThingModel.Weather, SaveThingModel.ParkAnalyser, SaveThingModel.TagSystem, SaveThingModel.MechanicHq, SaveThingModel.UIMsgReceiver )}." );
 		if ( save.RuntimeBlocks is { } blocks )
-			evidence.Add( $"[APPROX:SAVE-010] Runtime blocks decoded, not applied: camera zoom {blocks.Camera.Zoom}, yaw {blocks.Camera.YRotation}, flags 0x{blocks.Camera.Flags:X}, required point of interest ({blocks.Camera.RequiredPoi.X}, {blocks.Camera.RequiredPoi.Y}, {blocks.Camera.RequiredPoi.Z}), saved ({blocks.Camera.SavedPoi.X}, {blocks.Camera.SavedPoi.Y}, {blocks.Camera.SavedPoi.Z}), saved yaw {blocks.Camera.SavedYRotation}; clock words {string.Join( "/", blocks.ClockWords )} (the second is applied to the automatic advisor when it attaches), vanilla time {blocks.VanillaTime}, game system words {string.Join( "/", blocks.GameSystemWords )}, cheats {Convert.ToHexString( blocks.Cheats )}, advisor scoring {blocks.AdvisorScoring}, UI window records {blocks.UiRecords}." );
+		{
+			var camera = blocks.Camera;
+			evidence.Add( $"Camera imported (a level starts it there): zoom {camera.Zoom}, yaw {camera.YRotation}, required point of interest ({camera.RequiredPoi.X}, {camera.RequiredPoi.Y}, {camera.RequiredPoi.Z}); the saved point ({camera.SavedPoi.X}, {camera.SavedPoi.Y}, {camera.SavedPoi.Z}), saved yaw {camera.SavedYRotation} and flags 0x{camera.Flags:X} (cleared by the loader) are not used." );
+			evidence.Add( $"[APPROX:SAVE-010] Runtime blocks decoded, not applied: clock words {string.Join( "/", blocks.ClockWords )} (the second is applied to the automatic advisor when it attaches), vanilla time {blocks.VanillaTime}, game system words {string.Join( "/", blocks.GameSystemWords )}, cheats {Convert.ToHexString( blocks.Cheats )}, advisor scoring {blocks.AdvisorScoring}, UI window records {blocks.UiRecords}." );
+		}
 		var variables = save.World.Variables;
 		evidence.Add( $"[APPROX:SAVE-010] World values not imported: world state {variables.WorldState}, arrival vehicle sizes {variables.ArrivalVehicleSize1}/{variables.ArrivalVehicleSize2}/{variables.ArrivalVehicleSize3}, current arrival vehicle thing {variables.CurrentArrivalVehicle} (its script state is not restored, [EXT:original-engine-state-dumps]), arrival bytes {Convert.ToHexString( save.World.Arrivals )}, calendar session start {save.World.Calendar.SessionStart}." );
 		if ( save.Advisor is { } advisor )

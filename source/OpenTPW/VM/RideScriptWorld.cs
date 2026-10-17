@@ -232,7 +232,8 @@ public sealed class RideScriptWorld
 	// [BIN:TPW-EXE:0x005560CB FINDSCRIPTRAND] a draw only when a script matches: the draw shifted right by one, as an absolute value, modulo the match count, plus one (the 1-based index into the matches)
 	internal int FindRandom( string name, ScriptRandom? random )
 	{
-		var matches = scripts.Values.Where( x => x.State != RideVMState.Faulted && string.Equals( x.ScriptName, name, StringComparison.Ordinal ) ).OrderBy( x => x.ScriptId ).ToArray();
+		// [BIN:TPW-EXE:0x005560E2 FINDSCRIPTRAND walk] the match count is taken over the script list from its head (0x8791B0, next pointer +0), so the chosen match is the n-th from the head: the highest id first in a park's list, the saved order's reverse in a loaded save's
+		var matches = list.Where( x => x.State != RideVMState.Faulted && string.Equals( x.ScriptName, name, StringComparison.Ordinal ) ).ToArray();
 		if ( matches.Length == 0 )
 			return 0;
 		return matches[random != null ? random.Next( matches.Length ) : (int)((world.NextWord() >> 1) % (uint)matches.Length)].ScriptId;

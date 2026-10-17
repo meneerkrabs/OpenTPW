@@ -52,7 +52,7 @@ public class OriginalSaveImportTests
 	/// <paramref name="unverifiedFootprint"/> records Belly Bounce as 2×1 turned 90°, a footprint without a verified rule.
 	/// </summary>
 	internal static OriginalParkImport Park( BalanceSettings settings, byte[]? bank = null, uint parkClosed = 0, IEnumerable<(uint, uint, byte[])>? extraThings = null,
-		byte[]? researcher = null, byte[]? bellyBounce = null, byte[]? staffHq = null, bool unverifiedFootprint = false, byte[]? challenges = null, byte[]? staffPool = null )
+		byte[]? researcher = null, byte[]? bellyBounce = null, byte[]? staffHq = null, bool unverifiedFootprint = false, byte[]? challenges = null, byte[]? staffPool = null, Func<int, int, byte[]?>? cellOverride = null )
 	{
 		var map = OriginalParkImportTests.CreateMap( 3, 3, ( _, _ ) => 0 );
 		var things = SaveTestPayloads.ParkThings();
@@ -66,7 +66,7 @@ public class OriginalSaveImportTests
 			things[^1] = (1, (uint)SaveThingModel.StaffHq, staffHq);
 		things.Insert( 2, (11, (uint)SaveThingModel.Attraction, SaveTestPayloads.Attraction( new SaveTestPayloads.AttractionFields { PositionX = 128, PositionY = 128, Angle = 0, InfoId = 1601, Price = 0, Level = 0, Repair = 100, LifeGauge = 100 } )) );
 		things.InsertRange( 0, extraThings ?? Array.Empty<(uint, uint, byte[])>() );
-		var grid = SaveTestPayloads.Grid( map, ( x, y ) => OriginalParkImportTests.CreateCellRecord( 0, occupied: (x, y) == (1, 1) ) );
+		var grid = SaveTestPayloads.Grid( map, ( x, y ) => cellOverride?.Invoke( x, y ) ?? OriginalParkImportTests.CreateCellRecord( 0, occupied: (x, y) == (1, 1) ) );
 		var rideSystem = SaveTestPayloads.RideSystem( new[]
 		{
 			SaveTestPayloads.RideSystemRecord( 1601, 0, 0, 1, 1, SaveObject.FixedItemKind, 1 ),

@@ -56,6 +56,20 @@ public partial class Level : IDisposable
 	public ParkNameLines? ParkName { get; private set; }
 
 	/// <summary>
+	/// An original save's camera block puts the camera where the save left it (zoom, yaw and the point it looks at); the Home key still returns to the level's home pose. A resumed park, a
+	/// visit and a sandbox keep their own start. A saved pose that is no finite point of the map leaves the home pose.
+	/// </summary>
+	private void ApplySavedCamera()
+	{
+		if ( resumeState != null || visitLayout != null || OriginalPark?.Save?.RuntimeBlocks is not { } blocks || OriginalPark.Heightfield is not { } field || Camera.Mode is not ParkCameraMode mode )
+			return;
+		if ( ParkCameraMode.PoseOfSave( blocks.Camera ) is not var (x, z, height, yaw) )
+			return;
+		var target = OriginalParkPlacement.ToEngine( field, new System.Numerics.Vector3( x, 0, z ) );
+		mode.SetPose( new Vector3( target.X, target.Y, 0 ), height, yaw );
+	}
+
+	/// <summary>
 	/// The park name and the gate sign of an original level: a resumed park keeps its saved lines, which the sign draws as the
 	/// original's rebuild after loading does (0x468500); a new park takes the gate's default lines.
 	/// </summary>
@@ -423,6 +437,7 @@ public partial class Level : IDisposable
 		using ( LoadProfile.Measure( "coasters" ) )
 			SetupCoasters();
 		Camera.SetCameraMode<ParkCameraMode>();
+		ApplySavedCamera();
 		yield return 0.8f;
 		if ( OriginalPark != null )
 		{

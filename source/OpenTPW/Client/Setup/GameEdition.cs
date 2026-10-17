@@ -33,8 +33,17 @@ public sealed record GameEditionReport( GameEdition Edition, GameEditionEvidence
 /// </summary>
 public sealed record EditionCapabilities
 {
-	/// <summary>The park economy (money, calendar, research, staff wages): needs the Theme Park World balance keys.</summary>
-	public required bool Economy { get; init; }
+	/// <summary>
+	/// The park's money: cash, bank and loans, the calendar, build, path, queue and track charges, scrap refunds, running costs and
+	/// bankruptcy. Needs only the balance keys Theme Park Inc's own data carries (<see cref="BalanceSettings.ForThemeParkInc"/>).
+	/// </summary>
+	public required bool Money { get; init; }
+	/// <summary>Research (the lab, researchers and the research table): needs the Theme Park World research keys.</summary>
+	public required bool Research { get; init; }
+	/// <summary>Challenges, golden tickets and the Theme Park World objective system.</summary>
+	public required bool Challenges { get; init; }
+	/// <summary>The whole Theme Park World park economy: money, staff, research and challenges together.</summary>
+	public bool Economy => Money && Staff && Research && Challenges;
 	/// <summary>The original Theme Park World HUD (its <c>ui.wad</c> panels, buy window, advisor arm).</summary>
 	public required bool OriginalHud { get; init; }
 	/// <summary>The edition-appropriate basic HUD of the experimental slice (OpenTPW text UI, no original panel art).</summary>
@@ -43,7 +52,7 @@ public sealed record EditionCapabilities
 	public required bool Building { get; init; }
 	/// <summary>Guests walk, queue and ride under the ported Theme Park World guest rules.</summary>
 	public required bool Guests { get; init; }
-	/// <summary>Staff world and staffing (wages, rest, training): needs the economy.</summary>
+	/// <summary>Staff world and staffing (wages, rest, training, maintenance): needs the Theme Park World staff keys.</summary>
 	public required bool Staff { get; init; }
 	/// <summary>The automatic advisor (its <c>Advisor.sam</c> differs in Theme Park Inc).</summary>
 	public required bool Advisor { get; init; }
@@ -59,7 +68,9 @@ public sealed record EditionCapabilities
 	/// <summary>The reference capabilities: everything OpenTPW implements, for Theme Park World.</summary>
 	public static EditionCapabilities ForThemeParkWorld() => new()
 	{
-		Economy = true,
+		Money = true,
+		Research = true,
+		Challenges = true,
 		OriginalHud = true,
 		ExperimentalHud = false,
 		Building = true,
@@ -74,14 +85,16 @@ public sealed record EditionCapabilities
 
 	/// <summary>
 	/// The experimental Theme Park Inc slice: worlds load and can be built in and walked by guests, but no system whose
-	/// Theme Park Inc rules or data OpenTPW has not traced runs. The economy is off because Theme Park Inc's
-	/// <c>Standard.sam</c> lacks 89 of the balance keys the Theme Park World economy reads (measured October 13, 2026);
-	/// the original HUD, front end, advisor and every save, progress and sharing format stay refused.
+	/// Theme Park Inc rules or data OpenTPW has not traced runs. Only the money runs (docs/THEME-PARK-INC.md, "Economy"):
+	/// Theme Park Inc's <c>Standard.sam</c> lacks 86 of the balance keys the Theme Park World economy reads (measured October 17, 2026),
+	/// so staff, research and challenges stay refused, as do the original HUD, front end, advisor and every save, progress and sharing format.
 	/// </summary>
 	// [EXT:tpi-capability-gates] the slice's capability gates are OpenTPW's honest limits (a scope decision), not traced Theme Park Inc behaviour
 	public static EditionCapabilities ForThemeParkIncSlice() => new()
 	{
-		Economy = false,
+		Money = true,
+		Research = false,
+		Challenges = false,
 		OriginalHud = false,
 		ExperimentalHud = true,
 		Building = true,
@@ -91,8 +104,9 @@ public sealed record EditionCapabilities
 		FrontEnd = false,
 		ParkSaves = false,
 		Sharing = false,
-		ExperimentalNote = "experimental Theme Park Inc slice: no economy, staff, advisor, missions, Global Master Save, "
-			+ "COS files, park saves or sharing, and no Theme Park Inc interface; building is free; "
+		ExperimentalNote = "experimental Theme Park Inc slice: money only (cash, loans, build and running costs, calendar); "
+			+ "no staff, research, challenges, advisor, missions, Global Master Save, "
+			+ "COS files, park saves or sharing, and no Theme Park Inc interface; "
 			+ "none of it is checked against the original game"
 	};
 }
@@ -189,6 +203,6 @@ public static class GameEditions
 
 	/// <summary>One line for the start-up log: what the slice is and that it is not checked against the original game.</summary>
 	// [EXT:tpi-capability-gates] the slice's stated limits are OpenTPW's honest capability gates (a scope decision), not traced Theme Park Inc behaviour
-	public static string SliceNotice => "experimental Theme Park Inc slice: world, building and guests only; "
-		+ "no economy, staff, advisor, missions, Global Master Save, COS or Theme Park Inc interface; original behaviour is not verified.";
+	public static string SliceNotice => "experimental Theme Park Inc slice: world, building, guests and money only; "
+		+ "no staff, research, challenges, advisor, missions, Global Master Save, COS or Theme Park Inc interface; original behaviour is not verified.";
 }

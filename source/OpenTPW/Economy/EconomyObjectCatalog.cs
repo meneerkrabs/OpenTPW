@@ -28,6 +28,7 @@ public sealed record UpgradeLevelInfo( int Level, long CostOfUpgrade, int CostOf
 /// build these from its own catalog through <see cref="IEconomyObjectCatalog"/>.
 /// </summary>
 /// <param name="ExpectedPrice">Theme Park Inc only: <c>Info.ExpectedPrice</c> (type record +0x88); read, not used by the money slice (meaning not traced); 0 in Theme Park World.</param>
+/// <param name="NotResearched">[EXT:mods] True for an object of an <c>objects.json</c> that declares <c>"research": false</c> (the pools extension's): it is never a research project, so it is in no research table, never in the saved completed set, does not count in the group statistics and is available from the start; the golden ticket's "everything built" does not ask for it.</param>
 /// <param name="WorkingLife">Theme Park Inc only: <c>Info.WorkingLife</c> (+0x8C); read, not used by the money slice (meaning not traced); 0 in Theme Park World.</param>
 public sealed record EconomyObjectInfo(
 	int InfoId,
@@ -58,7 +59,8 @@ public sealed record EconomyObjectInfo(
 	bool ProvidesSecurity = false,
 	bool IsFireworks = false,
 	int ExpectedPrice = 0,
-	int WorkingLife = 0 )
+	int WorkingLife = 0,
+	bool NotResearched = false )
 {
 	public long PurchaseCost => Upgrades.Count > 0 ? Upgrades[0].CostOfUpgrade : 0;
 	public bool IsBuyable => Kind is ParkObjectKind.Ride or ParkObjectKind.Shop or ParkObjectKind.Sideshow or ParkObjectKind.Feature or ParkObjectKind.Upgrade;
@@ -256,7 +258,8 @@ public sealed class EconomyObjectCatalog : IEconomyObjectCatalog
 			if ( easy && files.TryGetValue( "Easy_" + objectFile, out var easyPath ) )
 				layers.Add( SamDocument.Parse( entry.FileSystem.ReadAllText( easyPath ), easyPath ) );
 			layers.Add( SamDocument.Parse( ObjectCatalog.ModLayerText( entry.ModDefinition! ), "objects.json" ) );
-			result.Add( FromSettings( new SamSettings( layers ), kind, entry.ArchivePath ) );
+			var modInfo = FromSettings( new SamSettings( layers ), kind, entry.ArchivePath );
+			result.Add( entry.ModDefinition.Research ? modInfo : modInfo with { NotResearched = true } );
 		}
 	}
 }

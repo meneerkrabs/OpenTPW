@@ -222,6 +222,29 @@ seven meters are written as their truncated low byte. Easymode's 13 guests are a
 in: 5 going to the ticket booth (state 2), 1 paid and waiting for the gate (3) and 7 entering the
 park (5), each with 300–750 cash, happiness 50 and one a balloon prankster (102).
 
+Offsets and meanings that tp.exe's code shows (round 5): the guest-object offsets of the fields are `+0x1A0` cash, `+0x1BC` exit level, `+0x1C0` prankery index, `+0x1C4`/`+0x1C8`/`+0x1CC`/`+0x1D0` the
+ride, shop, sideshow and win counts, `+0x1D4` arrival date, `+0x1D8` arrival index, `+0x1DC` major destination, `+0x1DE` saved major destination, `+0x1E0`/`+0x1E8` the ride histories, `+0x1F0` person type,
+`+0x1F1` queue position, `+0x1F4` queue move delay, `+0x1F8` been admitted, `+0x1FC` idle stamp, `+0x200` opening wait, `+0x204` paid admission, `+0x208` spot animation stamp, `+0x210` balloon script,
+`+0x214` balloon life, `+0x218`/`+0x21C` last position, `+0x220` state, `+0x224` saved state, `+0x228`/`+0x22A` queue next and previous. The constructor `0x4FAEC0` zeroes the links, flag, destinations and
+last position and stores the constant 6 into both state and saved state (6 in every saved guest).
+
+- `mBeenAdmitted` is 1 after `OnAdmittance` (`0x5012B0`, log "Person %d: OnAdmittance (I think I'm on object %d)"); the dismissal `0x5012F0` ("dismissed from queue on ride %d") logs event type 6 with the major
+  destination, clears the links, the flag, the destination and the queue position, and returns the guest to state 6. `SaveGuest` refuses any other flag value.
+- `mQNext`/`mQPrev` are the thing ids of the neighbours in the attraction's queue (0 ends the chain; the unlink code `0x501971` rewrites both neighbours).
+- `mSavedState` is the state to resume after a spot animation: `0x4FC800` copies the state into it, stamps `mTimeOfLastSpotAnim` (+0x208) with the world tick and enters state 8 through the state setter
+  `0x501DB0`. All 52 call sites of that setter pass at most 0x15, so states are 0 to 21 (`SaveGuest.MaximumState`; the reader refuses more). The setter itself does not guard the range: it stores the state at `0x501DBF` before its `ja` at `0x501DC5`.
+- `mLastPosX`/`mLastPosY` are the balloon sprite's previous position: `0x4FE900` moves the balloon script (+0x210) from them to the new point and stores it (0 without a balloon).
+- The person's event ring (thought object at person `+0x30`: `mLastThought`, 32 slots from `+0x34`, the bubble script `+0xB4`, the head `mActionHistIndex` `+0xB8`, `mTimeBubbleShown` `+0xBC`): each slot is two
+  words, event type then value (the constructor `0x50BA80` clears them as words at +4+4i and +6+4i; `SavePerson.ThoughtEvents`, `SaveThoughtEvent`). `AddEvent(type, value)` (`0x50C100`) writes the slot at
+  the head, advances it with `(head + 1) & 0x1F` and skips a pair equal to the previous slot (head − 1, wrapped). Its only callers (25 direct sites in `0x4F`–`0x53`, none elsewhere in the code section) pass types 1 to
+  0x19, so the reader refuses a head above 31 or a type above 0x19. The type numbers have no names in the code; the only non-empty ring in the corpus is the fantasy state-20 guest (head 1, slot 0 = type
+  0x13, value 0, written at `0x502312`). The ring is not imported (SAVE-002).
+- Nothing else is non-default beyond the arrival phase: all 35 corpus guests (Easymode 13, the seven private `.TPWS` 22) are unnumbered (`mArrivalIndex` 0), unqueued, never admitted and
+  hold saved state 6; `EveryGuestBodyOfEverySaveIsConsumedExactly` reads every one to the last byte. The queue, admission, balloon-position and ring-wrap fields therefore rest on the code, not on a
+  saved guest in a queue, and a save of a park with guests in queues and on rides would test them.
+- A refused guest aborts the whole park import: `OriginalParkImport` reads every guest with `SaveGuest.Read` (`OriginalParkImport.cs:283`) and the exception propagates. The refusal bounds (states
+  at most 21, admission flag 0 or 1, ring head at most 31, event type at most 0x19) are verified against this tp.exe build only.
+
 ### Cell grid (verified structure)
 
 Each record is 84 bytes: type byte at +0 (3 or 7), opaque fields, the **MAP
@@ -401,6 +424,74 @@ records share the leading layout with kind 826 and index 0: Info.Ids
 (fence-like), and 17002/17003/17005 on the Bouncy queue cells (49–52, 22). Those
 Info.Ids are not in the level object archives; the kind filter skips them and
 nothing about them is imported.
+
+## Scripts and Particles blocks (`SaveScriptsBlock`, `SaveParticlesBlock`)
+
+Both blocks end exactly where their tp.exe loaders stop (`SaveBlockWidths`, no delimiter search), and both typed readers
+consume them to that width in every corpus save (11 saves: jungle, hallow, fantasy and space, each with a `restart.INTS`).
+Each reader checks what the loader checks and throws `InvalidDataException` where the original load fails (Scripts: another magic or record size; Particles: a table size other than 0x9E68 / 0x8B60). A wrong Particles magic or `on` = 0 is **not** a failure: the loader returns 0 (`0x51F7E9` jumps to `0x51FA0C`; `on` = 0 at `0x51F80B`), which the caller at `0x41543F` takes as success, after 4 or 8 bytes, and the reader models that as a short block (`MagicMatched`, `On`). Fields
+the loader never reads, or overwrites with a process value, are kept raw and are reachable by offset.
+
+**Scripts** (writer `0x475650`, loader `0x475730`; file tag `TPCS`). `u32 'SCPT'`, `u32 0x118`, `u32 n` (100: `0x4752B3`),
+`n` slot words (process pointers; only zero or not zero is read, and the loader zeroes slot 0), then the 0x118-byte record of
+each nonzero slot 1 to n - 1. The record is a sprite-script VM instance (`0x4758F0` fills it, `0x475010` steps it, `0x475360` runs the due ones).
+The program is a word table at `0x74DAB8` shared by every script (the guests' balloon, burst and entertainer-performance steps, GUESTS.md).
+
+| Offset | Field |
+| --- | --- |
+| +0x00 | not written by any traced code (0) |
+| +0x04 | the record's own slot number (checked equal to its slot in the corpus) |
+| +0x08 / +0x0C / +0x10 | program counter / entry point / counter of the last instruction run, in words from the program table |
+| +0x14 | the program table (`0x74DAB8`; the loader rewrites it after reading) |
+| +0x18 | run state (1 to 4 in the VM: 1 stepping, 3 skipped, 4 ended; every corpus record holds 2) |
+| +0x1C | 0x14, the capacity of the 20-word area +0x20..+0x6F (read as the stack by position; zero in the corpus) |
+| +0x70 | nesting counter of the block-skipping scans `0x4750C0` and `0x475130` (0 between runs) |
+| +0x7C / +0x80 | game tick of the next run / ticks between runs (`0x475360`) |
+| +0x84..+0xCF | 19 parameter words (`0x475590`, `0x4755D0`); +0x88, +0x8C, +0x90 are the position (three floats, `0x475480`) and +0xC0 its fourth word (0x1200); +0xBC is the sprite handle of the creator `0x540C60` |
+| others | raw (+0xA0 is 0xFF, +0xA4 and +0xA8 are 1.0f, +0xD0 and up hold floats and process pointers) |
+
+The corpus holds 0 scripts in the `restart.INTS` saves, 1 in fantasy and 4 in each of hallow, jungle and space (entry points 0x5A, 0x3B and 0x61 seen; the program words behind them are not matched to what the scripts do).
+
+**Particles** (writer `0x51F680`, called at `0x41661E`; loader `0x51F7A0`, 76,252 bytes; file tag `LCTP`). `u32 'PCLT'`, `u32 on`; when on `u32 0x9E68` and the pool table
+(the memory at `0x80CED0`), `u32 0x8B60` and the template table (`0x804370`), `u32 c` and `c` bytes of the particle pool. The game's save call writes `c = 0`; the
+loader allocates 52 x capacity bytes (32-bit wrapped) and, **if `c` is 0**, rebuilds an empty pool, clears the live count and the free-particle head (`0x51F8FB` `je 0x51F91B`); **if `c` is not 0** it reads `c` bytes into the pool
+and skips the rebuild (`0x51F9FC`). A larger `c` overruns the original's heap and a capacity of 0 dereferences a NULL pool at `0x51F954`; both are rejected here. It keeps only two words of the running process (the sine table `+0x1C` and the ground function `+0x24`), so the saved density (`+0x20`) becomes the pool's.
+
+The pool table (0x9E68 bytes):
+
+| Offset | Content |
+| --- | --- |
+| +0x00 / +0x04 / +0x08 / +0x0C | live particle count (cleared on load) / tick counter / low-detail flag / pool capacity (0x800) |
+| +0x10 | the pool's private generator (`state x 214013 + 2531011`) |
+| +0x14 | set to 1 by the reset, read by nothing |
+| +0x18 / +0x1A | next emitter / effector handle generation (u16) |
+| +0x1C / +0x24 / +0x28 | sine table / ground function / pool pointer (process values) |
+| +0x20 | density (500, 1000 or 1500: the detail file's PARTICLEDENSITY) |
+| +0x2C | 120 emitter slots of 320 bytes (to +0x962C) |
+| +0x962C | 20 effector slots of 104 bytes (to +0x9E4C) |
+| +0x9E4C | list heads (`0x816D1C`..): active emitter, active effector, free emitter, free effector (i16, -1 none), the free particle head (u16, reset to 0), then 18 raw bytes |
+
+An emitter slot is a copy of its effect template (`0x521E60` copies 0x50 words, so the template offsets of PARTICLES.md are the slot offsets) overwritten by: +0x00 in use (1), +0x06 first
+live particle (-1), +0x08 live particles, +0x0A handle generation, +0x0C effect id, +0x10 death effect, +0x14/+0x18/+0x1C position (1/64 unit), +0x20 life, +0x2C velocity, +0x38 base velocity,
++0x44 volume extent, +0x54 spiral angle, +0x60 burst, +0x64 cap, +0x66 rate counter, +0x68..0x6B rates, +0xA2 control, +0xAB followed by parent, +0xB4 child handle, +0xD0/+0xD2 next/previous slot (i16),
++0xD4 initial life, +0x118 name (16 bytes: `WaterFall`, `Button`, ...), +0x128..0x13F bounds. An effector slot (`0x522360`) is a copy of an effector template with +0x00 in use, +0x08 generation, +0x0A followed,
++0x0C position, then the template fields (velocity +0x18, drag, gravity, radius +0x2C, mode +0x30, strength +0x40, death effect +0x46, life +0x4C) and +0x60/+0x62 next/previous; **it stores no template id**.
+The template table is 105 emitter templates and 20 effector templates, the game's in-memory copy of `Data/Particle/Tp2.plb`: all 20 effector templates and emitter templates 0 to 100 equal the file
+in every corpus save; the last four emitter templates are scratch records the game rewrites at run time (Jungle's templates 101 and 102 differ, a modified "Smoke").
+
+Corpus: `restart.INTS` holds 0 to 1 live emitters (Jungle's is the ambient `WaterFall`, effect 20), the park saves 3 to 18 (`Button` effects and ambient emitters); no corpus save has a live effector; every pool table's
+active and free lists partition the 120 emitter slots and the 20 effector slots, and the in-use flags agree with the lists. The original loader checks none of this and no writer was proven to keep it, so a block that breaks it is read and reported in `ListProblems`; only the runtime conversion refuses it.
+
+**Mapping to the runtime.** `ParticleSystemState` (the park-resume part, PARTICLES.md "Saves") describes the same native structure, and `SaveParticleState.ToSystemState` copies the fields it has. The conversion is partial:
+
+- Not carried (no runtime field): the emitter's hold word, group, screen-space flag, ring mode, immortal word, word +0x2A, live particle count, first particle and bounds; the effector's group, mode and strength; the pool capacity, density and low-detail
+  flag; the saved template tables. `ParticleSystem.Restore` refills hold, group, screen-space and killed-on-load from the runtime's own Tp2.plb templates, so a save made with modified templates (Jungle's scratch templates 101 to 104) restores with the file's.
+  In the corpus every emitter uses effects 0 to 100 and its saved hold, group, screen-space, ring and immortal values equal the file's, so nothing is lost there.
+- Inferred: an effector slot stores no template id, so the id is matched on template bytes (group, mode, jitter, strength) that the tick does not write by direct displacement (writes through a base register were not checked); no match or several is refused. No corpus save has a live effector, so this is unexercised on real data.
+- Conditional or capped: `VolumeExtent` is null when it equals the runtime template's; `TickCounter` is capped at `int.MaxValue`; a block with `ListProblems` is refused.
+
+The corpus test restores every save's pool into `ParticleSystem`, captures it back and compares every carried field (the post-load pass `0x5200B0` is the only difference, applied to the expectation). The park import does not call the conversion, and the sprite-script
+records have no runtime counterpart: both are decoded, not applied (SAVE-013, `[EXT:original-engine-state-dumps]`).
 
 ## RSSE block (`SaveRsseBlock`)
 

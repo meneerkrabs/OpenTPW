@@ -464,7 +464,7 @@ public sealed class ParkObjectives
 			recent = counters[ParkCounters.Admissions] - (droppedAdmissions + monthlyAdmissions.Take( monthlyAdmissions.Count - recentMonths ).Sum());
 		// [BIN:TPW-EXE:0x004D4BC0 recent visitors ticket] recent > RecentVisitors and the park clock's age in exact 30-day months (0x004F8800 divided by 0x1792F8648000) > RecentVisitorMonths, both strict
 		var ageMonths = parkSeconds / (30 * ParkCalendar.SecondsPerDay);
-		var allBuilt = research.IsAllResearched && catalog.Objects.Where( info => info.IsBuyable ).All( info => counters[ParkCounters.Built( info.InfoId )] > 0 );
+		var allBuilt = research.IsAllResearched && catalog.Objects.Where( info => info.IsBuyable && !info.NotResearched ).All( info => counters[ParkCounters.Built( info.InfoId )] > 0 );
 		void Check( GoldenTicketKind kind, bool condition )
 		{
 			if ( condition && tickets.Add( kind ) )

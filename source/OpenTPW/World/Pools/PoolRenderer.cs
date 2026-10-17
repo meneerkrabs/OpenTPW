@@ -71,6 +71,10 @@ public sealed class PoolRenderer : Entity
 	public int Triangles { get; private set; }
 	/// <summary>How many times the meshes were rebuilt.</summary>
 	public int Rebuilds { get; private set; }
+	private Dictionary<(int X, int Y), float> waterLevels = new();
+
+	/// <summary>[EXT:pools-swim] The engine height of the water surface over a pool cell (the level surface of its group of connected cells), or null when the cell holds no water in the last build.</summary>
+	public float? WaterLevelAt( int x, int y ) => waterLevels.TryGetValue( (x, y), out var level ) ? level : null;
 
 	public PoolRenderer( ParkCellMap cells, IParkGrid terrain, PoolStyle? style = null, float cellSize = OriginalParkPlacement.CellSize, PoolMeshOptions? options = null )
 	{
@@ -99,7 +103,8 @@ public sealed class PoolRenderer : Entity
 	private PoolPartEntity Part( string shader, Texture texture, bool isWater )
 	{
 		// DoubleSided: the pool is seen from inside and out, and the generated windings are consistent with their normals, not with the engine's culling
-		var material = new Material<ObjectUniformBuffer>( shader, MaterialFlags.DoubleSided );
+		// [EXT:pools-swim] the water writes no depth, so the swimmers drawn after it (the lower half of their sprite lies under the surface) are not cut away by it; the floor and the walls, drawn before, still hide them
+		var material = new Material<ObjectUniformBuffer>( shader, isWater ? MaterialFlags.DoubleSided | MaterialFlags.DisableDepthWrite : MaterialFlags.DoubleSided );
 		material.Set( "Color", texture );
 		materials.Add( material );
 		return new PoolPartEntity { Deep = style.WaterDeep.ToVector(), Shallow = style.WaterShallow.ToVector(), Glow = style.Glow, IsWater = isWater, PartMaterial = material };
@@ -143,6 +148,7 @@ public sealed class PoolRenderer : Entity
 		seenSignature = signature;
 		DrawnCells = poolCells.Count;
 		var mesh = BuildMesh( poolCells );
+		waterLevels = PoolMeshBuilder.WaterLevels( poolCells, Ground, options );
 		Triangles = mesh.TriangleCount;
 		Rebuilds++;
 		Replace( lowerWalls, mesh.LowerWalls );

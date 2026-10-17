@@ -30,6 +30,10 @@ public sealed class GuestRenderer : Entity
 	public bool Visible { get; set; } = true;
 	/// <summary>Which guests this renderer draws (null: all): the kids' renderer leaves guests in costume to the costume renderer.</summary>
 	public Func<Guest, bool>? Draws { get; init; }
+	/// <summary>[EXT:pools-swim] Chooses the animation slot and step of a guest instead of the walking, waiting and standing rules (the swimmers' renderer: the swim strokes); null for the kids and the costumes.</summary>
+	public Func<Guest, (int Slot, int Step)?>? SlotChooser { get; init; }
+	/// <summary>[EXT:pools-swim] Where a guest's hotspot lies in the engine instead of on the ground (the swimmers' renderer: on the water); null for the kids and the costumes.</summary>
+	public Func<Guest, SVector3>? FeetChooser { get; init; }
 	/// <summary>Guests drawn in the last frame.</summary>
 	public int DrawnGuests { get; private set; }
 
@@ -140,7 +144,9 @@ public sealed class GuestRenderer : Entity
 		var heading = new SVector2( guest.HeadingX, guest.HeadingY );
 		var (direction, mirror) = GuestSpriteAtlas.SelectDirection( SVector2.Dot( heading, rightFlat ), SVector2.Dot( heading, forwardFlat ) );
 		int slot, step;
-		if ( guest.IsMoving )
+		if ( SlotChooser?.Invoke( guest ) is { } chosen )
+			(slot, step) = chosen;
+		else if ( guest.IsMoving )
 		{
 			slot = GuestSpriteAtlas.WalkSlot;
 			step = (int)(guest.DrawDistanceWalked * WalkFramesPerCell);
@@ -179,7 +185,7 @@ public sealed class GuestRenderer : Entity
 				!float.IsFinite(guest.HeadingX) || !float.IsFinite(guest.HeadingY) || !float.IsFinite(guest.DrawDistanceWalked) || guest.Type < 0)
 				continue;
 			var (atlasIndex, frameIndex, mirror) = SelectSprite(guest, right, forward);
-			var feet = CellToEngine(field, guest.DrawX, guest.DrawY);
+			var feet = FeetChooser?.Invoke( guest ) ?? CellToEngine(field, guest.DrawX, guest.DrawY);
 			if (!Hud.GuestWorldPicker.TryHit(feet, atlases[atlasIndex].Frames[frameIndex], mirror, view, projection, viewport, mouse, out var hit))
 				continue;
 			if (hit < best || (hit == best && (picked == null || guest.Id < picked.Id)))
@@ -212,7 +218,7 @@ public sealed class GuestRenderer : Entity
 			var (atlasIndex, frameIndex, mirror) = SelectSprite( guest, right, forward );
 			var atlas = atlases[atlasIndex];
 			var frame = atlas.Frames[frameIndex];
-			var feet = CellToEngine( field, guest.DrawX, guest.DrawY );
+			var feet = FeetChooser?.Invoke( guest ) ?? CellToEngine( field, guest.DrawX, guest.DrawY );
 			var left = mirror ? -(frame.OriginX + frame.Width) : frame.OriginX;
 			var x0 = left * UnitsPerPixel;
 			var x1 = (left + frame.Width) * UnitsPerPixel;

@@ -37,12 +37,56 @@ public class OriginalStaffImportTests
 		return role;
 	}
 
-	private static (ParkEconomy Economy, OriginalEconomyImport Import) Import( params (uint Id, SaveThingModel Model, byte[] Body)[] staff )
+	private static (ParkEconomy Economy, OriginalEconomyImport Import) Import( params (uint Id, SaveThingModel Model, byte[] Body)[] staff ) => ImportWithCells( null, staff );
+
+	private static (ParkEconomy Economy, OriginalEconomyImport Import) ImportWithCells( Func<int, int, byte[]?>? cells, params (uint Id, SaveThingModel Model, byte[] Body)[] staff )
 	{
 		var settings = OriginalSaveImportTests.Settings();
-		var save = OriginalSaveImportTests.Park( settings, extraThings: staff.Select( item => (item.Id, (uint)item.Model, item.Body) ) );
+		var save = OriginalSaveImportTests.Park( settings, extraThings: staff.Select( item => (item.Id, (uint)item.Model, item.Body) ), cellOverride: cells );
 		var economy = new ParkEconomy( settings, EconomyTestData.Catalog(), ParkGameMode.FullSimulation, 1 );
 		return (economy, OriginalEconomyImport.Apply( economy, save ));
+	}
+
+	/// <summary>A cell record of the test map with litter: the type word (+0x2C of the original's cell, +30 in the record), the claiming handyman's thing id (+34) and the turn of the claim (+47).</summary>
+	private static byte[] LitteredCell( uint type, ushort collector = 0, uint markedTurn = 0, bool occupied = false )
+	{
+		var record = OriginalParkImportTests.CreateCellRecord( 0, occupied: occupied );
+		BinaryPrimitives.WriteUInt32LittleEndian( record.AsSpan( SaveCell.LitterOffset ), type );
+		BinaryPrimitives.WriteUInt16LittleEndian( record.AsSpan( SaveCell.LitterCollectorOffset ), collector );
+		BinaryPrimitives.WriteUInt32LittleEndian( record.AsSpan( SaveCell.LitterMarkedOffset ), markedTurn );
+		return record;
+	}
+
+	/// <summary>
+	/// The cell grid's litter is imported (the cell serializer 0x4D8DD0): a handyman saved walking to or sweeping a littered cell takes the job and the claim again, the litter of other cells stays unclaimed,
+	/// and a word that is no litter type is reported (SAVE-010).
+	/// </summary>
+	[TestMethod]
+	public void TheCellGridsLitterIsImportedAndASweepingHandymanKeepsHisClaim()
+	{
+		var (economy, import) = ImportWithCells( ( x, y ) => (x, y) switch
+		{
+			(1, 0) => LitteredCell( 2, collector: 42, markedTurn: 300 ),
+			(0, 2) => LitteredCell( 7 ),
+			(2, 2) => LitteredCell( 9 ),
+			_ => null
+		},
+			(42, SaveThingModel.Handyman, SaveTestPayloads.Staff( SaveThingModel.Handyman, state: 9, role: HandymanRole( CellId( 1, 0 ), 310, 0 ) )),
+			(43, SaveThingModel.Handyman, SaveTestPayloads.Staff( SaveThingModel.Handyman, state: 8, role: HandymanRole( CellId( 0, 2 ), 0, 0 ) )) );
+		Assert.AreEqual( LitterType.None, economy.Litter.TypeAt( 2, 2 ), "type 9 is no litter" );
+		Assert.AreEqual( LitterType.Vomit, economy.Litter.TypeAt( 0, 2 ) );
+		Assert.AreEqual( (LitterType)2, economy.Litter.TypeAt( 1, 0 ) );
+		Assert.AreEqual( 2, economy.Litter.Count );
+		var sweeper = economy.Staff.Members.Single( item => item.Job == StaffJob.Sweeping );
+		Assert.AreEqual( ((1, 0) as (int, int)?), sweeper.LitterCell );
+		Assert.AreEqual( 310L, sweeper.JobStamp );
+		Assert.AreEqual( sweeper.Id, economy.Litter.CollectorAt( 1, 0 ), "the claim is the sweeper's again" );
+		Assert.AreEqual( 300L, economy.Litter.ClaimTurnAt( 1, 0 ), "the saved claim turn" );
+		var walker = economy.Staff.Members.Single( item => item.Job == StaffJob.ToLitter );
+		Assert.AreEqual( ((0, 2) as (int, int)?), walker.LitterCell );
+		Assert.AreEqual( walker.Id, economy.Litter.CollectorAt( 0, 2 ), "a handyman walking to litter claims it even where the cell's collector word is clear" );
+		Assert.IsTrue( import.Evidence.Any( line => line.StartsWith( "Litter imported: 2 littered cells", StringComparison.Ordinal ) && line.Contains( "skipped (2, 2) type 9", StringComparison.Ordinal ) ) );
+		Assert.IsFalse( import.Evidence.Any( line => line.Contains( "[APPROX:SAVE-010] Handyman" ) ) );
 	}
 
 	[TestMethod]
@@ -102,7 +146,7 @@ public class OriginalStaffImportTests
 		string Line( string start ) => import.Evidence.Single( line => line.StartsWith( start, StringComparison.Ordinal ) );
 		StringAssert.Contains( Line( "Staff value adjusted on import: Mechanic thing 40" ), "thing 99, is no imported attraction" );
 		StringAssert.Contains( Line( "Staff value adjusted on import: Handyman thing 41" ), "thing 12, is no imported relief object" );
-		StringAssert.Contains( Line( "[APPROX:SAVE-010] Handyman thing 42 litter job" ), "the saved litter is not imported" );
+		StringAssert.Contains( Line( "Staff value adjusted on import: Handyman thing 42" ), "its litter cell 2 holds no imported litter" );
 		StringAssert.Contains( Line( "[APPROX:SAVE-002] Guard thing 43 guard job" ), "the guest is not imported" );
 		StringAssert.Contains( Line( "Staff value adjusted on import: Entertainer thing 44" ), "thing 12, is no imported rest area" );
 		StringAssert.Contains( Line( "Staff value adjusted on import: Entertainer thing 45 state word 13" ), "no state of a Entertainer" );

@@ -399,7 +399,7 @@ public sealed class ParkEconomy : IParkEconomy
 	/// </summary>
 	// [BIN:TPW-EXE:0x00508E70 month gate] staff vitals and strikes follow the traced routines: the month gate 0x00508E70, the escalation 0x00508F70 and the grievance 0x00509360; the month message comes from the calendar update 0x004F8260 with no game-type test, and the age stamp 0x004F8800 counts floor(turn × 3750) seconds from world turn 0
 	// [BIN:TPW-EXE:0x004C7FA0 cached census] the gate counts the guests through the analyser's cached census with age 5 (CachedGuestCensus), which the main loop's crowd read refreshes with age 0 after every fourth turn counted from the turn the step counter 0x00877D34 started at (0x0054F82D, 0x004C81E0)
-	// [BIN:TPW-EXE:0x005089C0 forced strike] the forced-strike word is 0 from the constructor and written only by the save loader 0x00508BB0, so the gate sees 0 in play as here (SAVE-009)
+	// [BIN:TPW-EXE:0x005089C0 forced strike] the forced-strike word is 0 from the constructor and written only by the save loader 0x00508BB0, so the gate sees 0 in play as here
 	private void UpdateStaffVitals()
 	{
 		if ( Staff.Members.Count == 0 )

@@ -52,7 +52,7 @@ public class OriginalSaveImportTests
 	/// <paramref name="unverifiedFootprint"/> records Belly Bounce as 2×1 turned 90°, a footprint without a verified rule.
 	/// </summary>
 	internal static OriginalParkImport Park( BalanceSettings settings, byte[]? bank = null, uint parkClosed = 0, IEnumerable<(uint, uint, byte[])>? extraThings = null,
-		byte[]? researcher = null, byte[]? bellyBounce = null, byte[]? staffHq = null, bool unverifiedFootprint = false, byte[]? challenges = null, byte[]? staffPool = null )
+		byte[]? researcher = null, byte[]? bellyBounce = null, byte[]? staffHq = null, bool unverifiedFootprint = false, byte[]? challenges = null, byte[]? staffPool = null, Func<int, int, byte[]?>? cellOverride = null )
 	{
 		var map = OriginalParkImportTests.CreateMap( 3, 3, ( _, _ ) => 0 );
 		var things = SaveTestPayloads.ParkThings();
@@ -66,7 +66,7 @@ public class OriginalSaveImportTests
 			things[^1] = (1, (uint)SaveThingModel.StaffHq, staffHq);
 		things.Insert( 2, (11, (uint)SaveThingModel.Attraction, SaveTestPayloads.Attraction( new SaveTestPayloads.AttractionFields { PositionX = 128, PositionY = 128, Angle = 0, InfoId = 1601, Price = 0, Level = 0, Repair = 100, LifeGauge = 100 } )) );
 		things.InsertRange( 0, extraThings ?? Array.Empty<(uint, uint, byte[])>() );
-		var grid = SaveTestPayloads.Grid( map, ( x, y ) => OriginalParkImportTests.CreateCellRecord( 0, occupied: (x, y) == (1, 1) ) );
+		var grid = SaveTestPayloads.Grid( map, ( x, y ) => cellOverride?.Invoke( x, y ) ?? OriginalParkImportTests.CreateCellRecord( 0, occupied: (x, y) == (1, 1) ) );
 		var rideSystem = SaveTestPayloads.RideSystem( new[]
 		{
 			SaveTestPayloads.RideSystemRecord( 1601, 0, 0, 1, 1, SaveObject.FixedItemKind, 1 ),
@@ -110,7 +110,9 @@ public class OriginalSaveImportTests
 			economy.Staff.Candidates.Select( candidate => (candidate.Type, candidate.NameIndex, candidate.Grade, candidate.ExpiresTick) ).ToArray() );
 		Assert.AreEqual( ParkCalendar.TickOfTurn( 740 + 4 * settings.TimeBetweenStaffUpdates + 1 ), economy.Staff.NextPoolUpdateTick );
 		Assert.IsTrue( import.Evidence.Any( line => line.StartsWith( "Staff pool imported: 2 candidates", StringComparison.Ordinal ) ) );
-		StringAssert.Contains( import.Evidence.Single( line => line.Contains( "[APPROX:SAVE-004]" ) ), "sub-types 2/0, on pointer 0, people in category 2/0/0/0/0, stop producing 0/0/0/0/0, opening pool generated 1." );
+		StringAssert.Contains( import.Evidence.Single( line => line.StartsWith( "Staff pool sub-types imported", StringComparison.Ordinal ) ), "variants: -1/0 (-1: a sub-type past the role's banks); the counts in category 2/0/0/0/0, stop producing 0/0/0/0/0 and the opening-pool flag True are recomputed" );
+		CollectionAssert.AreEqual( new[] { -1, 0 }, economy.Staff.Candidates.Select( candidate => candidate.Variant ).ToArray(), "the guard's sub-type 2 is past its one bank, the researcher's 0 is its bank" );
+		Assert.IsFalse( import.Evidence.Any( line => line.Contains( "[APPROX:SAVE-004]" ) ), "no candidate was on the pointer" );
 		// The imported candidates stay until their own turn and the pool refills on its own schedule.
 		economy.Advance( ParkCalendar.TickOfTurn( 700 + 4 * 130 + 1 ) - economy.Tick );
 		Assert.IsFalse( economy.Staff.Candidates.Any( candidate => candidate.Type == StaffType.Guard && candidate.NameIndex == 7 ) );
@@ -172,8 +174,11 @@ public class OriginalSaveImportTests
 		Assert.AreEqual( ParkCalendar.TickOfTurn( 648 ), researcher.HiredTick, "hired 2,430,000 park seconds after FunnyTimeStart = turn 648" );
 		Assert.AreEqual( 1, import.ImportedStaff );
 		Assert.IsFalse( import.ParkClosed );
-		foreach ( var id in new[] { "SAVE-004", "SAVE-006", "SAVE-007", "SAVE-010" } )
+		foreach ( var id in new[] { "SAVE-010" } )
 			Assert.IsTrue( import.Evidence.Any( line => line.Contains( $"[APPROX:{id}]" ) ), $"{id} is reported" );
+		Assert.IsTrue( import.Evidence.Any( line => line.StartsWith( "Research highest open groups imported as saved", StringComparison.Ordinal ) ), "the lab's highest groups are imported" );
+		Assert.IsFalse( import.Evidence.Any( line => line.Contains( "[APPROX:SAVE-006]" ) ), "no staff claim is left without its job" );
+		Assert.IsTrue( import.Evidence.Where( line => line.Contains( "[APPROX:SAVE-007]" ) ).All( line => line.Contains( "the object controls' researched flags (the save's control table does not read)" ) && !line.Contains( "projects of objects" ) ), "no lab project or current project is dropped" );
 		Assert.IsTrue( import.Evidence.Any( line => line.Contains( "0x3F416BBA" ) && line.Contains( "imported" ) ), "the generator state is named as imported" );
 		Assert.AreEqual( 0x3F416BBAu, economy.World.State, "the save's mRandomSeed is the world generator's state (tp.exe 0x00516330, saved raw by 0x00517123)" );
 		Assert.IsFalse( import.Evidence.Any( line => line.Contains( "[APPROX:SAVE-001]" ) ), "SAVE-001 is retired" );
@@ -208,18 +213,17 @@ public class OriginalSaveImportTests
 		StringAssert.Contains( challenges, "offered words " );
 		StringAssert.Contains( challenges, "no challenge code reads them" );
 		StringAssert.Contains( Line( "Challenges imported:" ), "not started" );
-		var attractions = import.Evidence.Where( line => line.StartsWith( "[APPROX:SAVE-006] Attraction thing ", StringComparison.Ordinal ) ).ToArray();
+		var attractions = import.Evidence.Where( line => line.StartsWith( "Attraction thing ", StringComparison.Ordinal ) && line.Contains( "open word ", StringComparison.Ordinal ) ).ToArray();
 		Assert.AreNotEqual( 0, attractions.Length );
 		foreach ( var line in attractions )
 		{
-			foreach ( var value in new[] { "open word ", "name \"",
-				"claim by thing ", "queue size ", "first ", "back ", "called ", "mesh instance ", "flags 0x" } )
+			foreach ( var value in new[] { "open word ", "name \"", "queue size ", "first ", "back ", "called ", "mesh instance ", "flags 0x" } )
 				StringAssert.Contains( line, value );
 		}
 		StringAssert.Contains( Line( "Attraction walk-away counts " ), "imported" );
 		StringAssert.Contains( Line( "Staff jobs-done counts " ), "need no import" );
-		var hq = Line( "[APPROX:SAVE-009]" );
-		foreach ( var value in new[] { "force strike ", "picked up ", "trained " } )
+		var hq = Line( "Staff HQ values read, nothing to import:" );
+		foreach ( var value in new[] { "force strike ", "trained " } )
 			StringAssert.Contains( hq, value );
 		var imported = Line( "Staff HQ imported:" );
 		foreach ( var value in new[] { "training budgets ", "strike levels ", "last considered on turns " } )
@@ -300,10 +304,10 @@ public class OriginalSaveImportTests
 		hq[^1] = 1;
 		var economy = new ParkEconomy( settings, EconomyTestData.Catalog(), ParkGameMode.FullSimulation, 1 );
 		var import = OriginalEconomyImport.Apply( economy, Park( settings, staffHq: hq ) );
-		var line = import.Evidence.Single( line => line.StartsWith( "[APPROX:SAVE-009]", StringComparison.Ordinal ) );
+		var line = import.Evidence.Single( line => line.StartsWith( "Staff HQ values read, nothing to import:", StringComparison.Ordinal ) );
 		StringAssert.Contains( import.Evidence.Single( line => line.StartsWith( "Staff HQ imported:", StringComparison.Ordinal ) ), "training budgets 0, 250, 0, 0, 0 (handyman, mechanic" );
-		StringAssert.Contains( line, "force strike 1, picked up 0" );
-		StringAssert.Contains( line, "trained 1." );
+		StringAssert.Contains( line, "force strike 1, trained 1" );
+		Assert.IsFalse( import.Evidence.Any( entry => entry.Contains( "[EXT:staff-pickup-reconcile]" ) ), "nobody was saved as picked up" );
 		Assert.AreEqual( 250, economy.Staff.GetTrainingBudget( StaffType.Mechanic ), "budget word 1 is the mechanics' (tp.exe 0x50c800)" );
 		Assert.IsTrue( Enum.GetValues<StaffType>().Where( type => type != StaffType.Mechanic ).All( type => economy.Staff.GetTrainingBudget( type ) == 0 ) );
 
@@ -420,8 +424,44 @@ public class OriginalSaveImportTests
 		var imported = new ParkEconomy( positive, EconomyTestData.Catalog(), ParkGameMode.FullSimulation, 1 );
 		OriginalEconomyImport.Apply( imported, offByOne );
 		Assert.AreEqual( LoanMath.MonthlyRepayment( positive.Loans[2].Amount, 10, positive.Loans[2].Months ) + 1, imported.Loans.Single().MonthlyRepayment, "the stored M is kept" );
+	}
+
+	/// <summary>
+	/// The save's 20 slots are the park's challenges with their own definitions (tp.exe challenge slot serializer 0x4d0f90): a slot the level's Challenges.sam does not define the same way is a
+	/// challenge of its own, the park's saves keep it and an unchanged slot keeps the level's key (SAVE-005).
+	/// </summary>
+	[TestMethod]
+	public void ASlotThatDiffersFromTheLevelsChallengeIsAdoptedAsSaved()
+	{
+		var level = Settings();
+		var save = Park( level );
+		var evidence = new List<string>();
+		OriginalEconomyImport.Verify( level, save.Economy, evidence );
+		Assert.IsNull( level.AdoptedChallenges, "slots equal to the level's challenges adopt nothing" );
 		var otherChallenges = EconomyTestData.Settings( apr: 0, extra: ExtraLoans + "ChallengesInThisLevel[1].ChallengeType 8\n" );
-		Assert.ThrowsException<InvalidDataException>( () => OriginalEconomyImport.Verify( otherChallenges, save.Economy, new List<string>() ) );
+		var report = new List<string>();
+		OriginalEconomyImport.Verify( otherChallenges, save.Economy, report );
+		var adopted = otherChallenges.AdoptedChallenges;
+		Assert.IsNotNull( adopted, string.Join( "; ", report ) );
+		Assert.AreEqual( save.Economy.Challenges.Count, adopted!.Count );
+		Assert.IsTrue( report.Any( line => line.StartsWith( "Challenge slots adopted from the save", StringComparison.Ordinal ) ) );
+		for ( var index = 0; index < adopted.Count; index++ )
+		{
+			var slot = save.Economy.Challenges[index];
+			Assert.AreEqual( (slot.Type, slot.TargetTime, slot.TargetValue, slot.Prize, slot.FollowupType), (adopted[index].Type, adopted[index].TargetTime, adopted[index].TargetValue, adopted[index].Prize, adopted[index].FollowupType) );
+			Assert.AreSame( adopted[index], otherChallenges.Challenges[otherChallenges.ChallengesInThisLevel[index]] );
+		}
+		// the park imports its challenge state over the saved definitions, and its own save carries them
+		var economy = new ParkEconomy( otherChallenges, EconomyTestData.Catalog(), ParkGameMode.FullSimulation, 1 );
+		var import = OriginalEconomyImport.Apply( economy, save );
+		Assert.IsFalse( import.Evidence.Any( line => line.Contains( "[APPROX:SAVE-005]" ) ) );
+		Assert.IsTrue( import.Evidence.Any( line => line.StartsWith( "Challenges imported:", StringComparison.Ordinal ) ) );
+		var data = ParkSaveFile.Deserialize( System.Text.Encoding.UTF8.GetBytes( ParkSaveFile.Serialize( economy ) ) );
+		Assert.IsNotNull( data.Objectives.AdoptedChallenges );
+		var fresh = EconomyTestData.Settings( apr: 0, extra: ExtraLoans + "ChallengesInThisLevel[1].ChallengeType 8\n" );
+		var restored = ParkSaveFile.Restore( data, fresh, EconomyTestData.Catalog() );
+		CollectionAssert.AreEqual( otherChallenges.ChallengesInThisLevel.ToArray(), restored.Settings.ChallengesInThisLevel.ToArray(), "a resumed park plays the same challenges" );
+		CollectionAssert.AreEqual( adopted.ToArray(), restored.Settings.AdoptedChallenges!.ToArray() );
 	}
 
 	private static byte[] Mutate( byte[] body, int offset, int value )

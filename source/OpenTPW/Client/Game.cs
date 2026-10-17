@@ -315,20 +315,6 @@ internal static class Game
 			ParkResumeSmokeTest.Run( flow, parkResumePhase, parkResumeFile, parkResumeEvidence );
 			return;
 		}
-		// [EXT:texture-pack] A pinned Clarity download is offered only after an explicit choice in Options.
-		// Startup never requests it, including a saved Clarity choice whose files are absent; smoke/captures stay offline.
-		if ( !smoke && capturePath == null && !GameEditions.IsThemeParkInc )
-		{
-			void ApplyPack( string name, bool? enhancedInterface )
-			{
-				if ( IGraphicsSettings.Instance is { } graphics )
-					graphics.Apply( graphics.Current with { TexturePackName = name, EnhancedInterface = enhancedInterface ?? graphics.Current.EnhancedInterface } );
-				var diagnostics = new List<string>();
-				TexturePackSwitch.Begin( name, diagnostics, enhancedInterface: enhancedInterface ?? IGraphicsSettings.Instance?.Current.EnhancedInterface );
-				foreach ( var diagnostic in diagnostics ) Log.Warning( $"Texture pack: {diagnostic}" );
-			}
-			flow.PrepareTexturePack = ( stack, name ) => OpenTPW.UI.Original.TexturePackDownloadScreen.TryShow( stack, flow.Strings, name, ApplyPack );
-		}
 		var startsFrontEnd = visit == null && originalLevelIndex < 0 && !args.Contains( "--advisor-say" ) && !args.Contains( "--advisor-response" ) && !args.Contains( "--sandbox" ) && (!smoke || args.Contains( "--front-end" ));
 		// [EXT:tpi-viewer] the experimental Theme Park Inc slice's own native smoke test: injected HUD input
 		// drives the real user flow (docs/THEME-PARK-INC.md); it needs the slice, not a Theme Park World park.
@@ -700,7 +686,7 @@ internal static class Game
 		var level = visit != null
 			? flow.StartLevel( visit.Level, original: !visit.IsSandbox, developerPanels: true, visit: visit )
 			: originalLevelIndex >= 0
-			? flow.StartLevel( args[originalLevelIndex + 1], original: true, developerPanels: !GameEditions.IsThemeParkInc )
+			? flow.StartLevel( args[originalLevelIndex + 1], original: true, developerPanels: !GameEditions.IsThemeParkInc, playerSave: ReadPlayerSave( args ) )
 			: flow.StartLevel( "jungle", original: false, developerPanels: true );
 
 		if ( sliceSmoke )
@@ -1106,6 +1092,18 @@ internal static class Game
 		Log.Trace( $"--debug-swimmers: built the {placed.Entry.DisplayName} at {placed.Placement.X},{placed.Placement.Y} rotation {placed.Placement.Rotation}; {started} of {swimmers} guests swim." );
 		if ( started == 0 )
 			Log.Warning( $"--debug-swimmers: no guest swims: changing room {placed.Visitors.IsChangingRoom}, pool-side cells {string.Join( " ", placed.Visitors.PoolAccessCandidates )}, access {level.Guests.PoolAccessOf( placed.Visitors )}, region {level.Guests.SwimRegionOf( placed.Visitors )?.Cells.Count}, park closed {level.Park?.Economy.IsParkOpen == false}, registered {placed.Visitors.HasCells}." );
+	}
+
+	/// <summary>
+	/// <c>--original-save &lt;file&gt;</c> with <c>--load-original-level</c>: the decoded payload of a player's own original park save (an <c>autosave.TPWS</c>, a named park or a <c>restart.INTS</c>) of that level, which the park starts from
+	/// instead of the shipped Easymode save; null without the option.
+	/// </summary>
+	private static ReadOnlyMemory<byte>? ReadPlayerSave( string[] args )
+	{
+		if ( GetOption( args, "--original-save", "an original park save file (.TPWS or .INTS)" ) is not { } path )
+			return null;
+		using var reader = new SaveReader( path );
+		return reader.ReadFile();
 	}
 
 	private static string? GetOption( string[] args, string name, string description )

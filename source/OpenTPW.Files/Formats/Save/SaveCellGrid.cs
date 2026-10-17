@@ -41,6 +41,14 @@ public readonly struct SaveCell
 	public const int MapTypeOffset = 25;
 	/// <summary>The structure (track) cell's <c>mType</c> (u32): 0x19 for a hoarding (park fence post).</summary>
 	public const int StructureTypeOffset = 77;
+	/// <summary>The map cell's <c>mLitter</c> (u32, tp.exe cell record +0x2C): the litter type 1 to 8, 0 for none.</summary>
+	public const int LitterOffset = 30;
+	/// <summary>The map cell's <c>mLitterCollector</c> (u16): the thing id of the handyman who claimed the litter, 0 for none.</summary>
+	public const int LitterCollectorOffset = 34;
+	/// <summary>The map cell's <c>mLitterScript</c> (u32): the litter sprite's script, a process pointer (the sprite-script slot word of the Scripts block).</summary>
+	public const int LitterScriptOffset = 36;
+	/// <summary>The map cell's <c>mTimeMarkedForLitterCollection</c> (u32, +0x34): the game turn of the claim.</summary>
+	public const int LitterMarkedOffset = 47;
 	/// <summary>The structure cell's <c>mHoardingNeighbours</c>: the fence links 1 (−Y), 4 (+X), 16 (+Y), 64 (−X).</summary>
 	public const int HoardingNeighboursOffset = 81;
 	/// <summary>The structure cell type of a hoarding (park fence post).</summary>
@@ -86,6 +94,19 @@ public readonly struct SaveCell
 
 	/// <summary>The map cell's type (TPW records).</summary>
 	public uint MapType => BinaryPrimitives.ReadUInt32LittleEndian( Record.Span.Slice( MapTypeOffset, 4 ) );
+
+	// [BIN:TPW-EXE:0x004D8DD0 map cell serializer] the PC serializer writes mLitter (+0x2C, 4 bytes), mLitterCollector (+0x30, 2), mLitterScript (+0x28 and +0x38, 4 each), mPylonIndex (+0x40, 2), mStatusFlags (+0x26, 1), mTimeMarkedForLitterCollection (+0x34, 4) and mWho (+0x24, 2) after the base 0x4D0B30, in the Mac order below (STP-PPC 0x100D6C90): mLitter (4), mLitterCollector (2), mLitterScript (4 twice), mPylonIndex (2), mStatusFlags (1), mTimeMarkedForLitterCollection (4) and mWho (2) follow the 29-byte base (docs/reverse/PPC-formats.md); the status flags byte is the MAP attribute at +46
+	/// <summary>The litter in the cell (TPW records): 0 for none, else 1 to 8 (<c>LitterType</c>); another value is kept as read.</summary>
+	public uint Litter => BinaryPrimitives.ReadUInt32LittleEndian( Record.Span.Slice( LitterOffset, 4 ) );
+
+	/// <summary>The thing id of the handyman who claimed the cell's litter (TPW records), 0 for none.</summary>
+	public ushort LitterCollector => BinaryPrimitives.ReadUInt16LittleEndian( Record.Span.Slice( LitterCollectorOffset, 2 ) );
+
+	/// <summary>The cell's litter sprite script as a process pointer (TPW records): the sprite-script slot word of the Scripts block that holds the litter sprite.</summary>
+	public uint LitterScript => BinaryPrimitives.ReadUInt32LittleEndian( Record.Span.Slice( LitterScriptOffset, 4 ) );
+
+	/// <summary>The game turn the litter was claimed for collection (TPW records).</summary>
+	public uint LitterMarkedTurn => BinaryPrimitives.ReadUInt32LittleEndian( Record.Span.Slice( LitterMarkedOffset, 4 ) );
 
 	/// <summary>The structure cell's type (TPW records); <see cref="HoardingType"/> for a park fence post.</summary>
 	public uint StructureType => BinaryPrimitives.ReadUInt32LittleEndian( Record.Span.Slice( StructureTypeOffset, 4 ) );

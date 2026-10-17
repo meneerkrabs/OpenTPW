@@ -145,7 +145,7 @@ public sealed class GuestRenderer : Entity
 		var (direction, mirror) = GuestSpriteAtlas.SelectDirection( SVector2.Dot( heading, rightFlat ), SVector2.Dot( heading, forwardFlat ) );
 		int slot, step;
 		if ( SlotChooser?.Invoke( guest ) is { } chosen )
-			(slot, step) = chosen;
+			(slot, step) = (atlas.UsableSlot( chosen.Slot ), chosen.Step);
 		else if ( guest.IsMoving )
 		{
 			slot = GuestSpriteAtlas.WalkSlot;

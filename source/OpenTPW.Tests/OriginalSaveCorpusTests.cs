@@ -124,6 +124,10 @@ public class OriginalSaveCorpusTests
 			var evidence = new List<string>();
 			OriginalEconomyImport.Verify( economy.Settings, park.Economy, evidence );
 			Assert.AreEqual( economy.Settings.ChallengesInThisLevel.Count, park.Economy.Challenges.Count, name );
+			// The economy import runs on every save, the restart saves included.
+			var import = OriginalEconomyImport.Apply( economy, park );
+			Assert.AreEqual( (park.PlacedObjects.Count, park.FixedItems.Count), (import.ImportedObjects, import.ImportedFixedItems), name );
+			Assert.IsTrue( import.Evidence.Any( line => line.StartsWith( $"Park turn {park.World.Variables.GameTick} imported", StringComparison.Ordinal ) && line.EndsWith( "agrees with that date.", StringComparison.Ordinal ) ), $"{name}: the calendar agrees with the saved turn" );
 		}
 	}
 

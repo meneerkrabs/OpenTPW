@@ -102,7 +102,8 @@ public static class ParkCalendar
 	/// <paramref name="turn"/> with the stored ones, stores the new fields and reports which of them differ. It posts a
 	/// single message per kind however many days have passed, so it is called once per turn.
 	/// </summary>
-	// [BIN:STP-PPC:0x100E3F0C calendar update] day, month and year messages when the extracted field differs from the stored one; the original's constructor stores day -1 and year 0, so its first update also posts a day and a year message (OpenTPW starts synchronised: no first-update messages)
+	// [BIN:STP-PPC:0x100E3F0C calendar update] day, month and year messages when the extracted field differs from the stored one; the original's constructor stores day -1 and year 0, so its first update also posts a day and a year message
+	// [APPROX:ECON-063] OpenTPW starts synchronised and posts no first-update message; on PC the world init syncs the month and year caches (0x4F85A0), so a new park's or a loaded restart save's first update posts a day message only
 	public static CalendarChange Update( ref CalendarFields stored, long turn )
 	{
 		var now = FieldsAtTurn( turn );

@@ -67,11 +67,11 @@ of it can be derived from the MD2.
 
 The 144 floats are nine row-major 4×4 matrices `M0`…`M8`: `M0 = M1` = the MD2 mesh node
 matrix exactly (Y/Z-swap rotation plus a translation such as 999.735, −774.461, 0);
-`M2 = M3` = `scale(s) · M0` with a uniform `s` (0.66596 bankrupt, 1 congrats, 0.8065 paused);
-`M4 = M8` = identity; `M5 = M6` = `s·I`; `M7` = `s·I` plus a translation (e.g. 16.16, 0,
-−72.65 for every bankrupt). What `s` and the `M7` offset are used for is not known
-(display scale/pivot are plausible, not shown). `M0`/`M1`/`M4`/`M8` match exactly; the
-scaled ones match to 1e-3 (they carry ~1e-15 rotation noise).
+`M2 = M3` = `scale(s) · M0` with a uniform `s` (0.66596 bankrupt, 1 congrats, 0.8065 paused; the
+translation row is not scaled); `M4 = M8` = identity; `M5 = M6` = `s·I`; `M7` = `s·I` plus a translation (e.g. 16.16, 0,
+−72.65 for every English/Danish/Swedish bankrupt). `M0`/`M1`/`M4`/`M8` match exactly; the
+scaled ones match to 1e-3 (they carry ~1e-15 rotation noise). What the data proves about `s` and `M7`
+is in "Scale and M7" below.
 
 Footer: `F0` = corners, `F1` = 24, `F2` = 4·`F0` + 24, `F3` = faces, `F4` = 8·`F0` + 24
 (= 2·`F2` − 24). These look like byte sizes of 4-byte-per-corner buffers plus a 24-byte
@@ -83,6 +83,31 @@ grouping gives exact affine matrices with `(0,0,0,1)` columns, and the 12-float
 grouping does not. Rendering the bankrupt/congrats/paused messages is plain MD2 work:
 the MD2 already holds positions, UVs and the `*_grad.tga` material. The
 English MD2s are installed under `Data/Language/English`.
+
+## Scale and M7 (October 17, 2026, static, 11 files against their paired MD2)
+
+The 3×3 part of `M0` is the exporter's Y/Z swap (row vector `(x, y, z)` becomes `(x, z, −y)`), so `M0` takes mesh-local
+vertices to the banner's world position. The MD2 header bounds (0x80) equal the local vertex bounds transformed by `M0` (checked for
+all 11), and the banners are screen-sized slabs: bankrupt and paused span exactly 1,700 × 500 and 1,700 × 400 units
+(x 174–1,874, y −1,000…−500 and −900…−500), congrats about 1,843 wide.
+
+- **`s` is already baked into the MD2 vertices.** The mesh-local thickness of every bankrupt and paused slab is exactly `30·s`
+  (19.979 = 30 × 0.66596 and 24.194 = 30 × 0.80645, all 4 + 3 files that have a thickness check), and `M0` is the *unscaled* node
+  matrix. So `M2 = s·M0` is the node as it stood before the scale was baked into the vertices, and `M5 = M6 = s·I` the baked scale itself.
+  The unscaled authoring depth was therefore 30 (congrats has `s = 1`: depth 30 in Danish, 30.75 in English, German and Swedish). `s` is
+  per banner design, identical in every language (bankrupt 0.66596, paused 0.80645, congrats 1); why those values, e.g. 1/1.24 for
+  paused, stays unknown.
+- **`M7` is not a function of the shipped MD2.** Its translation divided by `s` is the mesh-local X centre of the vertices
+  only in the 4 files whose `M0` translation X is the canonical 999.735 (Danish, English and Swedish bankrupt, Swedish paused; 24.2657);
+  in the other 7 it is not (German bankrupt, all congrats, Danish and German paused). Its Y component equals `M0`'s Z (−15 congrats,
+  −12.097 paused) in 5 files and is 0 in the rest, German bankrupt included (where `M0` Z is 19.979). The Z component (e.g. −109.086 for the
+  Swedish files, −131.527 English and German congrats, −149.538 Danish congrats, −201.4 Danish and German paused, all divided by `s`)
+  matches no bounds, centre or `M0` value. The same numbers repeat across languages for unrelated meshes (24.2657 for the Swedish congrats
+  as well), so `M7` looks like a stale pivot/object-offset from an earlier state of the artist's scene that was not
+  regenerated when the localised MD2s were edited. That reading is an inference from the repeated values, not shown.
+- **No placement code exists to confirm any of it.** tp.exe never names the banners (below), so neither the scale nor `M7` has a reader to tie it to.
+
+The relations above (depth, X centre) are pinned by the private test `OriginalIsoMtrScaleIsBakedIntoPairedMd2Geometry`.
 
 ## Reader
 
@@ -151,9 +176,34 @@ code immediate; its engine extension table (`.txt .md2 .tps .tpc .fps .fpc .ffn 
 closes the encrypted-code caveat. No consumer of MTR files was found in either build; a name built at
 runtime from non-literal parts remains the only, unsupported, way one could be read.
 
+**Every allowed binary (October 17, 2026).** The same raw byte counts (`.mtr` ASCII/UTF-16, the magic in both orders; also
+`mtr` anywhere) over the rest of the shipped binaries, all 0 for `.mtr` and the magic:
+
+| Input | Identity (SHA-256, prefix) | Result |
+| --- | --- | --- |
+| decrypted `tp.exe` (REA) | `5472f97b5eb2…` | the 3 bare `mtr` hits are a stack-push byte pattern and two `mTrackRideHandle`-style member names |
+| PC `TP.exe` launcher, `Ip.exe`, `Setup.exe`, `Autorun.exe`, `clokspl.exe` | `4c4c1bd6beee…`, `b0fc84022365…`, … | nothing |
+| `QMixer.dll`, `usp10.dll`, the 7 `wea*r.dll` online resources | `66ca1b8ee084…`, `58863df88dbe…`, … | nothing; no `.md2`, `.tga`, `.wad`, `.sam` file-type literal either, so they hold no data loader (audio mixer, Uniscribe, online front ends) |
+| SafeDisc/launcher DLLs `clcd16/32`, `drvmgt`, `dplayerx` | | byte-scanned only, nothing (not analysed) |
+| no-CD Theme Park Inc `Game.exe` | `95a2f86a174f…` | nothing, but it has no readable `.md2`/`.tga` literals at all: data is apparently encrypted, so weak |
+| Mac `SimThemePark.data` + 15 `libraries/*.data` (PEF) | `04809cd4ccee…` | `mtr` only inside `mTrackRideHandle`-style names; no `.mtr`, no magic |
+
+REA has no PowerPC support, so the PEF containers were searched by bytes only. The DLLs were not opened in REA: with no file-type
+literal and no mesh vocabulary a disassembly could only look for a computed name, which the same limitation as for tp.exe covers.
+
+**The banners are not named anywhere either.** tp.exe has no `bankrupt`, `congrats`, `paused`, `s_bkrupt`, `s_congrats` or `s_paused`
+string (ASCII or UTF-16, also as 4-byte immediates `bank`/`paus`/`cong`/`s_bk`/`s_pa`/`s_co`); the only near hits are the unrelated advisor events
+`Bankrupted`/`Congrat*`. The same holds for `residx.dat` (53 names: `.str`, `.bf4`, the code-page `.dat` files, no `.md2`), every `.str` and
+`Advisor.sam` (only the `Bankrupted` event). tp.exe's UI-mesh loader (`0x4891D0`, "Loaded %d UI meshes" at `0x489E54`) only picks
+nodes named `!cbut`, `!frame`, `!slider`, `!f_plain` or a non-`!` generic UI node (`0x489060`, skipping `w_small_shadow.md2`) from the UI mesh
+set it enumerates, with no language-folder name in it. So no code was found that opens `bankrupt/congrats/paused.MD2` or places the banner;
+the MD2 files' use (and therefore any use of the MTR sidecars made for them) is unproven, not merely unread.
+
 ## Remaining gates
 
-- Whether the game ever opens MTR at all: no consumer found in either build, including the decrypted tp.exe (above).
-- What `s` and `M7` mean: without a runtime consumer they stay raw and unresolved. No further work is planned.
+- Whether the game ever opens MTR at all: no consumer found in any allowed binary (tp.exe, the TPI Game.exe, the Mac PEFs and every
+  shipped DLL; the TPI and PEF results are weak). A name built at runtime remains the only way one could still be read.
+- Why `s` is 0.66596/0.80645/1 and what `M7` is: no placement code exists to read. The data shows `s` baked into the MD2 and `M7` unrelated to it (above).
+- No further work is planned.
 
 Banner rendering belongs to the MD2 renderer and needs no MTR data.

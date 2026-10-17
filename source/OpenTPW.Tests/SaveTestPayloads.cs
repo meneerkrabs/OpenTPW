@@ -279,6 +279,8 @@ internal static class SaveTestPayloads
 		public uint TimeOfLastSpotAnim { get; init; }
 		public uint TimeStartedIdling { get; init; }
 		public uint PaidAdmission { get; init; } = 1;
+		public uint ParkOpeningWaitingTime { get; init; }
+		public uint ArrivalIndex { get; init; }
 	}
 
 	/// <summary>A guest body (525 bytes): the person block, then the guest fields in the serializer's order.</summary>
@@ -298,7 +300,7 @@ internal static class SaveTestPayloads
 		BinaryPrimitives.WriteUInt32LittleEndian( person.AsSpan( 35 + 177 ), fields.PreviousSpeed );
 		writer.Write( person );
 		writer.Write( fields.ArrivalDate ); // mArrivalDate
-		writer.Write( 0u ); // mArrivalIndex
+		writer.Write( fields.ArrivalIndex ); // mArrivalIndex (+0x1D8, the visitor number)
 		writer.Write( fields.BalloonScript );
 		writer.Write( 0u ); // mBeenAdmitted
 		writer.Write( fields.Cash );
@@ -314,7 +316,7 @@ internal static class SaveTestPayloads
 		writer.Write( fields.NumSideshows );
 		writer.Write( fields.NumSideshowsWon );
 		writer.Write( fields.PaidAdmission );
-		writer.Write( 0u );
+		writer.Write( fields.ParkOpeningWaitingTime ); // mParkOpeningWaitingTime (+0x200)
 		writer.Write( fields.PersonType );
 		writer.Write( fields.PrankeryIndex );
 		for ( var slot = 0; slot < 4; slot++ )
@@ -423,7 +425,7 @@ internal static class SaveTestPayloads
 			SaveBlock.MessageCentre => new byte[4 + SaveBlockWidths.MessageLists * 4],
 			SaveBlock.TrackRides => Words( 1, 12, 12 ),
 			SaveBlock.FlyingRides => Words( SaveBlockWidths.FlyingMagic, 0 ),
-			SaveBlock.Rsse => Words( SaveBlockWidths.RsseMagic, 0, 0, 0, 0, 0, 0, 0, 0 ),
+			SaveBlock.Rsse => Words( SaveBlockWidths.RsseMagic, 0x14, 1, 0, 0x10, 0, 0, 0x5F444150, 0x5F444150, 0x5F444150, 0x5F444150, 0x5F444150, 0, SaveRsseBlock.RecordBytes ),
 			SaveBlock.Advisor => Words( SaveBlockWidths.AdvisorMagic, 0, 0 ),
 			SaveBlock.Sound => new byte[12],
 			_ => throw new ArgumentOutOfRangeException( nameof( block ), block, "No minimal body." ),

@@ -623,7 +623,7 @@ internal sealed partial class ParkResumeSmokeTest : IDisposable
 			BoardingOrWaiting = InState( GuestState.Boarding, GuestState.WaitingToBoard ),
 			Riding = InState( GuestState.Using ),
 			ExitingRide = InState( GuestState.ExitingRide ),
-			LeavingOrArriving = InState( GuestState.CrossingRoad, GuestState.CrossingRoadToPark, GuestState.GoingToTicketBooth, GuestState.AtTicketBooth,
+			LeavingOrArriving = InState( GuestState.CrossingRoad, GuestState.CrossingRoadToPark, GuestState.GoingToTicketBooth, GuestState.WaitingAtBooth, GuestState.AtTicketBooth,
 				GuestState.EnteringPark, GuestState.CrossingRoadHome, GuestState.WaitingToGoHome, GuestState.LeavingPark ),
 			Admissions = snapshot.Guests.Admissions,
 			Departed = snapshot.Guests.Departed,

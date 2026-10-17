@@ -19,7 +19,7 @@ public static class SignSurfaceComposer
 	/// <summary>Composes ARGB sign layers, then returns top-down RGBA for the two model textures.</summary>
 	// [BIN:STP-PPC:0x100AC21C..0x100AC6B0] clear, optional board alphablt, style-2 paint, ordered style-1 paint/effects, split the top 128 rows.
 	// [EXT:sign-relief-upsample] the strip resampler is tp.exe 0x5E80D0 (matched by DescimateStrip), which has no upsampling branch (a requested height above the strip divides by zero at 0x5E8364), so a strip shorter than the glyph rows is upsampled by nearest rows: an OpenTPW choice for a case the original does not define and where matching it would divide by zero
-	// [APPROX:COMPAT-003] glyph coverage: tp.exe draws each line with GDI (CreateFontIndirectA with the sign's LOGFONT, lfQuality 4 = ANTIALIASED_QUALITY, grayscale smoothing, through Uniscribe ScriptStringOut) onto an 8-bit gray DIB and the gray levels that GDI's rasterizer puts in that DIB for the shipped fonts (level count, oversampling, hinting, gamma and the Windows version the game ran on) are not in the game files or tp.exe; the glyph coverage here is OpenTPW's own ([EXT:sign-text-antialias]) and feeds the blur, shape and relief arithmetic, which follow tp.exe instruction for instruction at the x87 single precision of its thread (X87Precision)
+	// [APPROX:COMPAT-003] glyph coverage: tp.exe draws each line with GDI (CreateFontIndirectA with the sign's LOGFONT, lfQuality 4 = ANTIALIASED_QUALITY, grayscale smoothing, through Uniscribe ScriptStringOut) onto an 8-bit gray DIB; OpenTPW models its gray levels with the documented Windows 2000/XP grayscale smoothing (TrueTypeRasterizer CoverageModel.GdiGray4: 4x4 samples = 17 levels, (level * 255 + 8) / 16, no gamma, no hinting) but the oversampling factor, sample positions, hinted outline, dropout control and the byte mapping are not verified against a GDI capture (docs/COMPATIBILITY.md COMPAT-003); the coverage feeds the blur, shape and relief arithmetic, which follow tp.exe instruction for instruction at the x87 single precision of its thread (X87Precision)
 	public static (byte[] Left, byte[] Right, int TextPixelCount) Compose( SignFile sign, SignFontLibrary fonts, IReadOnlyList<string?> lines, ICollection<string> diagnostics, SignPaint? firstPaintOverride = null )
 	{
 		ArgumentNullException.ThrowIfNull( sign );
@@ -52,7 +52,7 @@ public static class SignSurfaceComposer
 			textPixels += masks[slot].Count( value => value != 0 );
 		}
 		if ( textPixels != 0 )
-			diagnostics.Add( "COMPAT-003: the glyph coverage is OpenTPW's rasterizer, not the GDI gray levels of the original text DIB." );
+			diagnostics.Add( "COMPAT-003: the glyph coverage is the documented GDI grayscale model (4x4 samples, 17 levels, no hinting), not a capture of the original text DIB's gray levels." );
 
 		// [BIN:TPW-EXE:0x005ECC69..0x005ECCC0 paint masks] each slot whose selector is nonzero gets its paint mask shaped from its glyph mask by its own paint record (0x5EBF10); a zero selector leaves an empty paint mask
 		var paintMasks = new byte[masks.Length][];

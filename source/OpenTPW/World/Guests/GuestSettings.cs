@@ -61,6 +61,12 @@ public sealed class GuestSettings
 	public int ArrivalTimeBetween { get; set; } = 150;
 	public int ArrivalNewParkBonus { get; set; } = 20;
 	public int ArrivalPointsPerVisitor { get; set; } = 6;
+	/// <summary>
+	/// Theme Park Inc only: the group size's percentages for rain, storm, snow and heatwave (<c>Arrival.RainPercentageModifier</c>, <c>StormPercentageModifier</c>,
+	/// <c>SnowPercentageModifier</c>, <c>HeatwavePercentageModifier</c>). Null when the balance file has not all four, as every Theme Park World file; a settings
+	/// object that holds them follows Theme Park Inc's group rule (<see cref="GuestSimulation.ArrivalGroupSize"/>).
+	/// </summary>
+	public int[]? ArrivalWeatherPercentages { get; set; }
 	public int AdmissionFee { get; set; } = 20;
 	// sam: FixedItemInfo (cells); null when the balance file has none
 	public (int X, int Y)[]? ArrivalLaneA { get; set; }
@@ -147,6 +153,10 @@ public sealed class GuestSettings
 		settings.ArrivalTimeBetween = Math.Max( 1, Get( "Arrival.TimeBetweenArrivals", settings.ArrivalTimeBetween ) );
 		settings.ArrivalNewParkBonus = Get( "Arrival.NewParkBonus", settings.ArrivalNewParkBonus );
 		settings.ArrivalPointsPerVisitor = Get( "Arrival.PointsPerVisitor", settings.ArrivalPointsPerVisitor );
+		// [BIN:TPI-EXE:0x005BCDEE group size] Theme Park Inc's group size scales by one of four percentage words (0x00A02244..0x00A02250: Arrival.Rain/Storm/Snow/HeatwavePercentageModifier) chosen by the weather thing's state; Theme Park World's files carry none
+		var weatherKeys = new[] { "Arrival.RainPercentageModifier", "Arrival.StormPercentageModifier", "Arrival.SnowPercentageModifier", "Arrival.HeatwavePercentageModifier" };
+		if ( weatherKeys.All( values.ContainsKey ) )
+			settings.ArrivalWeatherPercentages = weatherKeys.Select( key => Get( key, 100 ) ).ToArray();
 		settings.AdmissionFee = Get( "BankAccountInfo.InitialAdmissionFee", settings.AdmissionFee );
 
 		var types = new List<GuestType>();

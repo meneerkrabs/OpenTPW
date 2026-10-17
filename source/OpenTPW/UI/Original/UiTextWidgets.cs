@@ -88,6 +88,8 @@ public interface IUiRowList
 	bool HoverSelects => false;
 	/// <summary>The row under the pointer (-1: none) for lists that highlight on hover. Hovering never changes the selection, so a button beside the list cannot retarget while the pointer travels to it.</summary>
 	void Hover( int index ) { }
+	/// <summary>As <see cref="Hover(int)"/>, with whether the pointer moved since the last frame; a list that selects on hover selects only on a move (the original's per-move message), not under a resting pointer.</summary>
+	void Hover( int index, bool pointerMoved ) => Hover( index );
 	/// <summary>
 	/// A completed click on row <paramref name="index"/> (<paramref name="left"/>: the left button, otherwise the right one); true when the list
 	/// handled it. False leaves the screen's default: a click selects, a second click on the selected row activates, a right click backs out.

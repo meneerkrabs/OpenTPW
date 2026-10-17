@@ -12,6 +12,7 @@ public class UiScreen
 	private readonly List<UiElement> elements = new();
 	private UiElement? pressed;
 	private NVector2 lastMouse = new( -1, -1 );
+	private bool seenMouse;
 
 	public UiScreen( string name ) => Name = name;
 
@@ -93,14 +94,16 @@ public class UiScreen
 			Focused = hit;
 		if ( input.LeftPressed && hit == null && typing && input.Mouse.X >= 0 )
 			Focused = null;
-		// [BIN:TPW-EXE:0x6656a0 list hover] a list with attribute 0x80 selects the row under the pointer; OpenTPW only highlights it, because the buttons beside the list act on the selection
-		// The list decides what a hover does: most only highlight (the click selects, so buttons beside the list keep their target), the hire list selects a row when the pointer moves onto it.
+		// [BIN:TPW-EXE:0x6656a0 list hover] a list with attribute 0x80 selects the row under the pointer when the pointer moves; the list decides what a hover does: the buy, loans and hire lists select, the others only highlight (UI-108 for the Load Park list)
+		// [BIN:TPW-EXE:0x658840 pointer move] the original sends the pointer messages (0x10001/0x10003, 0x6588ef) only when the pointer position differs from the last one sent, so a resting pointer selects nothing while keys or the wheel scroll the rows under it; the first frame of a screen has no earlier position and counts as no move
+		var pointerMoved = seenMouse && input.Mouse.X >= 0 && input.Mouse != lastMouse;
 		foreach ( var element in elements )
 		{
 			if ( element is IUiRowList { HoverSelects: true } hoverList )
-				hoverList.Hover( ReferenceEquals( element, hit ) && input.Mouse.X >= 0 ? hoverList.RowAt( canvas, input.Mouse ) : -1 );
+				hoverList.Hover( ReferenceEquals( element, hit ) && input.Mouse.X >= 0 ? hoverList.RowAt( canvas, input.Mouse ) : -1, pointerMoved );
 		}
 		lastMouse = input.Mouse;
+		seenMouse = true;
 		var consumed = hit != null;
 		if ( input.LeftPressed )
 		{

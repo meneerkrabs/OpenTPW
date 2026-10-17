@@ -6,6 +6,7 @@ import { createTextureDownloads } from './opentpw-textures.js';
 import * as originals from './opentpw-originals.js';
 import { plan, importStartup, startSelected } from './opentpw-startup.js';
 import * as inputs from './opentpw-inputs.js';
+import { parseManifest, planSprites, fetchSprites } from './opentpw-pool-sprites.js';
 
 // The game in the browser (docs/WEB.md): the player's own files go into the runtime's memory, then
 // the front end runs in the canvas, one Program.Frame per animation frame.
@@ -596,6 +597,24 @@ if (served) {
 	}]));
 }
 
+// The pools extension's sprite sets (docs/POOLS.md, "Browser delivery"): fetched in the background once the game runs and its extensions are known,
+// never blocking the menu. A park that loads first keeps the fallbacks; the swimmers pick their sets up mid-level.
+async function fetchPoolSprites() {
+	// Whatever ends the fetch without every file, the game is told once, so it stops waiting for the sets (Program.PoolSpritesFailed).
+	let complete = false;
+	try {
+		if (!program.PoolsEnabled()) return;
+		const manifest = program.PoolSpriteManifest();
+		const files = manifest ? planSprites(parseManifest(manifest), { pools: true, guestArt: program.PoolGuestArtEnabled() }) : [];
+		complete = files.length > 0 && await fetchSprites({ files, active: () => gameRunning, store: (path, bytes) => gameRunning && program.AddPoolSpriteFile(path, bytes) });
+	} catch (error) {
+		console.warn('Pools sprites unavailable; swimmers and land guests keep their fallbacks:', error?.message ?? error);
+	}
+	if (!complete && gameRunning) {
+		try { program.PoolSpritesFailed(); } catch { /* the game is gone */ }
+	}
+}
+
 async function start(theme) {
 	status.textContent = 'Starting the game…';
 	try {
@@ -632,6 +651,7 @@ async function start(theme) {
 		document.getElementById('setup').hidden = true;
 		gameRunning = true;
 		startSelected(program, location.origin, theme);
+		fetchPoolSprites();
 		openKeeping();
 		// Keep saves and settings: every few seconds, and when the page is hidden or closed.
 		const keep = () => storage.sync(program).catch(error => console.warn('Saving to this browser failed', error));

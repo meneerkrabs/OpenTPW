@@ -108,6 +108,9 @@ internal static class AdvisorTables
 	/// <summary>The messages a global golden ticket moving to this park says (0xEA-0xED: coaster height, go-kart excitement, water length, big park); they belong to group 2.</summary>
 	public static readonly IReadOnlyList<int> AwardMovedMessages = new[] { 234, 235, 236, 237 };
 
+	/// <summary>The advice of a condemned ride (0x102, from the ride's message type 8).</summary>
+	public const int RideCondemnedMessage = 258;
+
 	/// <summary>The Advisor.sam key of the score of those four messages.</summary>
 	public const string AwardMovedScoreKey = "AwardMoved.Score";
 
@@ -129,6 +132,8 @@ internal static class AdvisorTables
 		rows.Add( (66, "RidesBreakdownImminent.Score", null) );
 		rows.Add( (68, "RidesBreakdownNoMechanics.Score", null) );
 		rows.Add( (69, "RidesBreakdownBusyMechanics.Score", null) );
+		// [BIN:TPW-EXE:0x005A02E0 ride condemned] the callback returns the word at +0x578, RideCondemned.Score
+		rows.Add( (RideCondemnedMessage, "RideCondemned.Score", null) );
 		rows.Add( (93, "ResearchRideResearched.Score", null) );
 		rows.Add( (94, "ResearchAddonResearched.Score", null) );
 		rows.Add( (95, "ResearchShopResearched.Score", null) );
@@ -159,6 +164,21 @@ internal static class AdvisorTables
 		(104, "InTheRedThreeMonths.Score", null),
 		(105, "InTheRedMonthLeft.Score", null),
 		(107, "WagesHigh.Score", null),
+		// [BIN:TPW-EXE:0x0059C9D0 park callbacks] the rides, cleanliness and guest mood rows (AdvisorParkCallbacks): a computed score has no flat key, so its row names the key of its multiplier; the rows with a flat score name that score
+		(3, "VisitorsThirsty.ScorePerThirstyPerson", null), (4, "VisitorsHungry.ScorePerHungryPerson", null),
+		(5, "StaffHireMechanics1.ScorePerWornRide", null), (6, "StaffHireMechanics2.ScorePerBrokenRide", null), (7, "StaffHireMechanics3.ScorePerExtraRide", null),
+		(8, "StaffHireHandymen1.ScorePerLitterPoint", null), (9, "StaffHireHandymen2.ScorePerLitterPoint", null), (10, "StaffHireHandymen3.ScorePerExtra10Cells", null),
+		(60, "RidesPoorSelection.Score", null), (62, "RidesBuildRides.Score", null),
+		(71, "ShopsPoorSelection.Score", null), (73, "ShopsBuildShops.Score", null), (74, "ShopsBuildMoreShops.Score", null),
+		(75, "SideshowsPoorSelection.Score", null), (77, "SideshowsBuildSideshows.Score", null), (78, "SideshowsBuildMoreSideshows.Score", null),
+		(79, "FeaturesPoorSelection.Score", null), (81, "FeaturesBuildFeatures.Score", null),
+		(82, "FeaturesNoToilets.Score", null),
+		// [BIN:TPW-EXE:0x0059E420 toilet figure] the callback returns 0 on every path
+		(85, "", 0),
+		(86, "FeaturesDirtyToilets1.PointsPerFilthPct", null), (87, "FeaturesDirtyToilets1.PointsPerFilthPct", null),
+		(88, "FeaturesDirtyToilets3.PointsPerFilthPct", null), (89, "FeaturesDirtyToilets4.PointsPerFilthPct", null),
+		(145, "CongratVisitorsHappy.Score", null), (158, "CongratBalloons.Score", null), (159, "CongratCostumes.Score", null),
+		(259, "RidesClosed.Score", null), (260, "ShopsClosed.Score", null), (261, "SideshowsClosed.Score", null), (262, "ToiletsClosed.Score", null),
 	};
 
 	private static IReadOnlyList<AdvisorMessageDefinition>? events;
@@ -256,7 +276,8 @@ internal sealed class AdvisorBalance
 		var settings = new SamSettings( new[] { SamDocument.Parse( Encoding.Latin1.GetString( bytes ), source ) } );
 		var groups = new Dictionary<int, (uint, bool, uint)>();
 		// the global-ticket messages' group is read when the file has it, like the unproduced messages' (the shipped file has it)
-		foreach ( var group in AdvisorTables.AllMessages.Where( message => !AdvisorTables.AwardMovedMessages.Contains( message.MessageId ) ).Select( message => (int)message.Group ).Distinct() )
+		var scanned = AdvisorTables.ScanMessages.Select( message => message.MessageId ).ToHashSet();
+		foreach ( var group in AdvisorTables.AllMessages.Where( message => !AdvisorTables.AwardMovedMessages.Contains( message.MessageId ) && !scanned.Contains( message.MessageId ) ).Select( message => (int)message.Group ).Distinct() )
 		{
 			// [BIN:STP-PPC:0x10016F4C advisor balance] MessageGroups[g] fields at +36/+40/+44 + 12g
 			var prefix = $"MessageGroups[{group}].";
@@ -265,7 +286,7 @@ internal sealed class AdvisorBalance
 		}
 		// The groups only the unproduced messages use are read when the file has them (the shipped one has groups 0 to 5 and 9); without a group's controls
 		// the messages of that group have no descriptor.
-		foreach ( var group in AdvisorTables.UnproducedMessages.Concat( AdvisorTables.EventMessages.Where( message => AdvisorTables.AwardMovedMessages.Contains( message.MessageId ) ) ).Select( message => (int)message.Group ).Distinct().Where( group => !groups.ContainsKey( group ) ) )
+		foreach ( var group in AdvisorTables.UnproducedMessages.Concat( AdvisorTables.ScanMessages ).Concat( AdvisorTables.EventMessages.Where( message => AdvisorTables.AwardMovedMessages.Contains( message.MessageId ) ) ).Select( message => (int)message.Group ).Distinct().Where( group => !groups.ContainsKey( group ) ) )
 		{
 			var prefix = $"MessageGroups[{group}].";
 			const int missing = int.MinValue;
@@ -382,9 +403,9 @@ internal sealed class AdvisorController
 	/// score is above <c>MinScoreForConsideration</c>, builds the record with that score and queues it. <paramref name="money"/> is null without a park.
 	/// </summary>
 	// [BIN:TPW-EXE:0x0059A58B scan and post] the result row is scored again (0x59BF20: the same callback on the same state), only a score above the object's +0x20 (MinScoreForConsideration, 0xFB3560, signed) builds a record (0x59B590) and queues it (0x59A940)
-	public AdvisorScanOutcome ScanOnce( IAdvisorMoneyState? money, uint liveGameTick, int gameType, bool tutorialEnabled )
+	public AdvisorScanOutcome ScanOnce( IAdvisorMoneyState? money, uint liveGameTick, int gameType, bool tutorialEnabled, IAdvisorParkState? park = null )
 	{
-		var context = new AdvisorScanContext( Balance, money );
+		var context = new AdvisorScanContext( Balance, money, park );
 		var result = Scan.Step( context, gameType, ( messageId, score ) =>
 			Queue.HasDescriptor( messageId ) && Queue.Eligibility( new AdvisorPendingAdvice( messageId, score ), liveGameTick, tutorialEnabled ) == AdvisorEligibility.Eligible );
 		// the original has no test for "no message" here: with a minimum below -1 the -1 of the empty result would be queued; the empty result is not posted (the shipped minimum is 25)

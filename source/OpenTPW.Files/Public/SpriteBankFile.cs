@@ -5,14 +5,14 @@ namespace OpenTPW;
 /// <summary>One decoded sprite frame: 8-bit palette indices (0 = transparent) and its hotspot.</summary>
 public sealed class SpriteFrame
 {
-	public SpriteFrame( int width, int height, int originX, int originY, ushort unknownA, ushort unknownB, byte[] indices )
+	public SpriteFrame( int width, int height, int originX, int originY, ushort pixelsPerUnitX, ushort pixelsPerUnitY, byte[] indices )
 	{
 		Width = width;
 		Height = height;
 		OriginX = originX;
 		OriginY = originY;
-		UnknownA = unknownA;
-		UnknownB = unknownB;
+		PixelsPerUnitX = pixelsPerUnitX;
+		PixelsPerUnitY = pixelsPerUnitY;
 		Indices = indices;
 	}
 
@@ -27,9 +27,9 @@ public sealed class SpriteFrame
 	/// <c>originX / A · scale</c> to <c>(width + originX) / A · scale</c> (Y likewise with height, origin Y and B), read by the
 	/// frame reader 0x588660; 128 in every frame of all 29 FPC and 46 TPC banks.
 	/// </summary>
-	public ushort UnknownA { get; }
-	/// <inheritdoc cref="UnknownA"/>
-	public ushort UnknownB { get; }
+	public ushort PixelsPerUnitX { get; }
+	/// <inheritdoc cref="PixelsPerUnitX"/>
+	public ushort PixelsPerUnitY { get; }
 	/// <summary>Row-major palette indices; 0 is transparent, n ≥ 1 is palette entry n − 1.</summary>
 	public byte[] Indices { get; }
 }
@@ -38,7 +38,7 @@ public sealed class SpriteFrame
 /// Paletted RLE sprite bank (<c>.FPC</c>/<c>.TPC</c> inside <c>esprites.wad</c>), see docs/GUESTS.md.
 /// Layout (little-endian): u16 3 (the format; the loader 0x587DB0 takes 2 another way), u16 (read and ignored), u32 frame count,
 /// a 256-entry BGRA palette whose entry 0 (all zero) is the transparent index (stored here as 255 entries after it), then per frame
-/// u32 data size, u16 width, u16 height, u16 ×2 (unknown), i32 origin X, i32 origin Y and the RLE rows.
+/// u32 data size, u16 width, u16 height, u16 pixels per unit across and down (128 in every shipped frame), i32 origin X, i32 origin Y and the RLE rows.
 /// Each row is a byte length followed by control bytes: c &lt; 0 repeats the next byte −c times, c &gt; 0
 /// copies c literal bytes.
 /// </summary>
@@ -103,8 +103,8 @@ public sealed class SpriteBankFile : BaseFormat
 			var size = BinaryPrimitives.ReadInt32LittleEndian( data[offset..] );
 			var width = BinaryPrimitives.ReadUInt16LittleEndian( data[(offset + 4)..] );
 			var height = BinaryPrimitives.ReadUInt16LittleEndian( data[(offset + 6)..] );
-			var unknownA = BinaryPrimitives.ReadUInt16LittleEndian( data[(offset + 8)..] );
-			var unknownB = BinaryPrimitives.ReadUInt16LittleEndian( data[(offset + 10)..] );
+			var pixelsPerUnitX = BinaryPrimitives.ReadUInt16LittleEndian( data[(offset + 8)..] );
+			var pixelsPerUnitY = BinaryPrimitives.ReadUInt16LittleEndian( data[(offset + 10)..] );
 			var originX = BinaryPrimitives.ReadInt32LittleEndian( data[(offset + 12)..] );
 			var originY = BinaryPrimitives.ReadInt32LittleEndian( data[(offset + 16)..] );
 			offset += FrameHeaderBytes;
@@ -112,7 +112,7 @@ public sealed class SpriteBankFile : BaseFormat
 				throw new InvalidDataException( $"Sprite frame {index} data is truncated." );
 			if ( width > MaximumDimension || height > MaximumDimension )
 				throw new InvalidDataException( $"Sprite frame {index} is {width}x{height}, larger than {MaximumDimension}." );
-			frames[index] = new SpriteFrame( width, height, originX, originY, unknownA, unknownB, DecodeRows( data.Slice( offset, size ), width, height, index ) );
+			frames[index] = new SpriteFrame( width, height, originX, originY, pixelsPerUnitX, pixelsPerUnitY, DecodeRows( data.Slice( offset, size ), width, height, index ) );
 			offset += size;
 		}
 		if ( offset != data.Length )

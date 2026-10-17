@@ -129,6 +129,38 @@ public sealed class GuestEconomyBridge : IGuestPayments, IParkGuestStatistics, I
 
 	public int CountHappierThan( int happiness ) => Guests.Guests.Count( guest => Guests.IsInPark( guest ) && guest.Happiness >= happiness );
 
+	private IEnumerable<Guest> CensusGuests => Guests.Guests.Where( guest => ParkGate.CountedInCensus( Guests, guest ) );
+
+	// [BIN:TPW-EXE:0x004C93F0 guests needing] every guest thing on a census cell whose meter (thirst +0x1A4, hunger +0x1A8, toilet +0x1AC), truncated to its low byte (0x67A830), is above the byte argument as an unsigned compare
+	public int CountGuestsNeeding( GuestNeedMeter meter, int threshold )
+	{
+		var limit = threshold & 0xFF;
+		return CensusGuests.Count( guest => MeterMath.Byte( meter switch { GuestNeedMeter.Thirst => guest.Thirst, GuestNeedMeter.Hunger => guest.Hunger, _ => guest.Toilet } ) > limit );
+	}
+
+	// [BIN:TPW-EXE:0x004C9530 balloons] the census guests with +0x210 nonzero
+	public int GuestsWithBalloons => CensusGuests.Count( guest => guest.HasBalloon );
+
+	// [BIN:TPW-EXE:0x004C95D0 costumes] the census guests with +0x24 equal to 2
+	public int GuestsInCostume => CensusGuests.Count( guest => guest.InCostume );
+
+	// [BIN:TPW-EXE:0x004C7BB0 average happiness] 0 while the park is closed (0x51A280); else each census guest's happiness (+0x19C) truncated to its low byte is added in an integer sum (0x67A830), and the sum is divided by the count in the x87 (24-bit) as a single; 0 without a guest
+	public float CensusHappiness
+	{
+		get
+		{
+			if ( !Economy().IsParkOpen )
+				return 0f;
+			int count = 0, sum = 0;
+			foreach ( var guest in CensusGuests )
+			{
+				count++;
+				sum += MeterMath.Byte( guest.Happiness );
+			}
+			return count == 0 ? 0f : (float)sum / count;
+		}
+	}
+
 	/// <summary>The percentage of the in-park guests holding a balloon (challenge type 9).</summary>
 	// [BIN:STP-PPC:0x100CE7B4 challenge types 9 and 10] percent = trunc(100 × in-park guests holding a balloon (guest +0x210, 0x100C3BEC) or wearing a costume (+0x24 == 2, 0x100C3CD0) / in-park guests), 0 without guests
 	// [BIN:TPW-EXE:0x004D1746 challenge types 9 and 10] the same on the PC: the counts 0x004C9530 (+0x210 set) and 0x004C95D0 (+0x24 == 2) of the guests on a park cell (0x004FA990) times 100, divided (signed) by the in-park count 0x004C9130

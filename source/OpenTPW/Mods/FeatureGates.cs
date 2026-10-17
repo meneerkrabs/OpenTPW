@@ -23,6 +23,9 @@ public static class FeatureGates
 	/// <summary>
 	/// [EXT:pools-extension] The <c>opentpw.pools</c> extension is on for this run: the pool paint tool, its buy-list rows and the pool cell type are available (docs/POOLS.md).
 	/// </summary>
+	/// <summary>The <c>opentpw.pools-guest-art</c> extension is on: the land guests use the pools extension's 2x kid and head sets (docs/POOLS.md), when the pools extension is on too.</summary>
+	public static bool PoolGuestArt => OpenTpwExtensions.IsEnabled( OfficialExtensions.PoolGuestArt );
+
 	public static bool Pools => OpenTpwExtensions.IsEnabled( OfficialExtensions.Pools );
 
 	/// <summary>

@@ -189,7 +189,7 @@ lines), the five sizes, and constant padding; nothing else is variable. A freshl
 `.timeslice 50` (verified: all 308 members), `.stack 20`, `.limbo 0`, `.bounce 0`, `.walk 0`. Only the time slice
 is verified; the others are authoring choices from the corpus distribution (253 members declare stack 0, 20 is
 the most common non-zero; limbo 0 in 284, bounce 0 in 304, walk 0 in 271). Set the sizes your opcodes need
-(`JSR` needs stack, `LIMBO` limbo slots, `BOUNCE` bounce, `WALKON` walk).
+(`JSR` needs stack, `LIMBO` limbo slots, `BOUNCE` bounce, `WALKON` walk). The stack size is also the size of the `HUSH`/`HOP` heap that holds the riders' ids (docs/RSE-VM.md): with `.stack 0` a `HUSH` does nothing and the later `HOP` pops 0, so a ride script that hangs heads (`HUSH VAR_LETMEON` ... `ADDHEAD`, `HOP VAR_LETMEOFF` ... `DELHEAD`) needs `.stack` of at least its capacity; the content kit's pool script uses 20.
 
 **Errors.** Assembly errors are `RideScriptAssemblyException` with `Line` and `Column` (1-based) and the message
 `line L, column C: ...`: unknown opcode or directive, undeclared variable, undefined or duplicate label, label

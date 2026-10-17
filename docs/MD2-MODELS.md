@@ -549,7 +549,7 @@ material and its range is contiguous; equal positions share one stored position;
 normalised and its index is `corners + face` (the corpus rule for 4,714 of 4,914 meshes). A material names a texture by file name
 (with or without `.tga`/`.wct`, at most 15 characters, printable ASCII); the model stores `<name>.tga` in a texture slot, which
 `ObjectAssets.TextureDirectories` resolves to `<archive>/textures/<name>.wct|.tga`. `wrap: true` sets slot flags 0x10 and 0x20 (wrap
-U and V), else the texture clamps (see "Texture slots" above); a name used with both wraps gets two slots. **Head records**: a node's
+U and V), else the texture clamps (see "Texture slots" above); a name used with both wraps gets two slots. `SelfLit = true` on a material sets material word +0xC bit 0x1 (`ModelBuilder.SelfLitMaterialFlag`, the constant-colour, unlit mode of "Texture slots" above; default false); the glTF converter sets it from the material extra `opentpw_self_lit` ([CONTENT-KIT.md](CONTENT-KIT.md#converter-conventions)). **Head records**: a node's
 `AddHead( id, type, data )` makes an attribute record whose type has flag 0x80 (default 0xB1) and whose value is the
 head id. A type with flag 0x40 (0xF1 and others) needs the 16-byte data block of unknown meaning, which has no safe default, so
 `AddHead` demands it as `ModelAttributeData` for those types and refuses it for 0xB1; the plain default 0xB1 has no block (487 corpus

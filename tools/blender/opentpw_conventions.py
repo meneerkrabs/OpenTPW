@@ -1,8 +1,10 @@
 """Shared conventions for authoring Theme Park World objects in Blender.
 
-Units: one Blender unit is one MD2 unit, and one park cell is 10 units (docs/MAP.md). Blender is Z-up; the glTF
-exporter writes Y-up, which is the MD2 axis convention, so no extra conversion is applied here. A model's text row
-(the front of its footprint) faces model +Z, which is Blender -Y.
+Units: one Blender unit is one MD2 unit, and one park cell is 10 units (docs/MAP.md). Blender is Z-up and right-handed;
+the glTF exporter writes Y-up (also right-handed) and the content kit's converter mirrors it into MD2's left-handed Y-up
+frame: Blender (x, y, z) becomes MD2 (x, z, y). A footprint therefore covers the Blender X/Y range 0..10*width and
+0..10*height, seen from above exactly as its Info.Shape text reads (first text row at the top, columns to the right).
+Turn on backface culling in every material: the game culls back faces.
 
 Custom properties understood by the OpenTPW importer (written to glTF `extras`):
 - on an object (usually an empty): ``opentpw_head`` (int >= 1) marks a rider head record with that head id, the

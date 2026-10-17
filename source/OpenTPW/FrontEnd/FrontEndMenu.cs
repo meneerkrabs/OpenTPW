@@ -247,7 +247,7 @@ public sealed partial class FrontEndMenu
 		if ( entries.Count == 0 )
 			screen.Add( new UiLabel { Id = "empty", Text = () => strings.Extra( OpenTpwText.NoSavedParks ), Align = UiAlign.Center, Bounds = content, Anchor = UiAnchor.Center } );
 		var parks = entries.ToArray();
-		// [APPROX:UI-108] the original's load list (attribute 0x81) selects the row under the pointer and loads on one click (0x6656a0, 0x6655a2); this list selects on click and loads on a second click, Enter or the Load Park button
+		// [EXT:load-list-select-then-load] the list keeps OpenTPW's select-then-load flow (a first click selects; Enter, a second click or the Load Park button loads) because the Load Park button (EXT:load-chooser) acts on the selection, which a hover would retarget on the way to it; the original's load list (attribute 0x81) selects the row under the pointer and loads on one click (0x6656a0, 0x6655a2); user-approved 2026-10-17
 		var list = screen.Add( new UiScrollList
 		{
 			Id = "parks",

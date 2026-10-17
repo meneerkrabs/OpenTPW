@@ -94,7 +94,7 @@ public class UiScreen
 			Focused = hit;
 		if ( input.LeftPressed && hit == null && typing && input.Mouse.X >= 0 )
 			Focused = null;
-		// [BIN:TPW-EXE:0x6656a0 list hover] a list with attribute 0x80 selects the row under the pointer when the pointer moves; the list decides what a hover does: the buy, loans and hire lists select, the others only highlight (UI-108 for the Load Park list)
+		// [BIN:TPW-EXE:0x6656a0 list hover] a list with attribute 0x80 selects the row under the pointer when the pointer moves; the list decides what a hover does: the buy, loans and hire lists select, the others only highlight (the Load Park list does not, EXT:load-list-select-then-load)
 		// [BIN:TPW-EXE:0x658840 pointer move] the original sends the pointer messages (0x10001/0x10003, 0x6588ef) only when the pointer position differs from the last one sent, so a resting pointer selects nothing while keys or the wheel scroll the rows under it; the first frame of a screen has no earlier position and counts as no move
 		var pointerMoved = seenMouse && input.Mouse.X >= 0 && input.Mouse != lastMouse;
 		foreach ( var element in elements )

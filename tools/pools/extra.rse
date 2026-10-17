@@ -1,0 +1,19 @@
+; Pool extra script (OpenTPW swimming pools): ladders, boards, showers, loungers and lamps do nothing by themselves; swimmers use them through the host's pool activities.
+.stack 4
+.timeslice 50
+.limbo 0
+.bounce 0
+.walk 0
+
+.var VAR_LETMEON
+.var VAR_LETMEOFF
+.var VAR_CAPACITY
+.var VAR_DURATION
+.var VAR_BREAKSTAT
+.var VAR_ONRIDE
+.var VAR_RIDECLOSED
+
+	NAME "Pool Extra"
+idle:
+	ENDSLICE
+	BRANCH @idle

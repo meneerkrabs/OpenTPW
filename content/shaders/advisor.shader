@@ -99,6 +99,24 @@ fragment {
     const uint FLAG_Y_AXIS_ANIM = 16;
     const uint FLAG_GOURAUD_SHADED = 32;
         
+    // TextureSlotAddressing.ClampFlag: an original MD2 slot without flag 0x10/0x20, which tp.exe clamps instead of wrapping.
+    const uint FLAG_CLAMP = 0x80000000u;
+
+    // CLAMP on the wrapping sampler: the coordinates stay half a texel of the coarsest mip the footprint can select
+    // inside the edges (that mip's real size, floor(size / 2^level) but at least 1, so odd sizes do not bleed either),
+    // so no tap reaches the opposite edge, and textureGrad keeps the unclamped derivatives so the filter and mip choice
+    // stay those of the unclamped coordinates. The margin is never wider than the footprint, so where the sampler
+    // stops at a finer mip (mipmaps off) the edge texel grows by about one screen pixel at most.
+    vec2 ClampToEdge( vec2 uv, vec2 size, vec2 dx, vec2 dy )
+    {
+        float footprint = max( length( dx * size ), length( dy * size ) );
+        vec2 levelSize = max( floor( size / exp2( ceil( log2( max( footprint, 1.0 ) ) ) ) ), vec2( 1.0 ) );
+        vec2 margin = 0.5 / levelSize;
+        return clamp( uv, margin, 1.0 - margin );
+    }
+
+    #define SAMPLE_SLOT( tex ) ( clampEdges ? textureGrad( sampler2D( tex, s_Color ), ClampToEdge( finalTexCoords, vec2( textureSize( sampler2D( tex, s_Color ), 0 ) ), uvDx, uvDy ), uvDx, uvDy ) : texture( sampler2D( tex, s_Color ), finalTexCoords ) )
+
     void main() 
     {
         vec2 finalTexCoords = vs_out.vTexCoords;
@@ -112,23 +130,26 @@ fragment {
         }*/
 
         vec4 vTextureSample = vec4(1, 0, 1, 1);
+        bool clampEdges = (outMatFlags & FLAG_CLAMP) != 0u;
+        vec2 uvDx = dFdx( finalTexCoords );
+        vec2 uvDy = dFdy( finalTexCoords );
 
-        if ( texIndex == 0 ) vTextureSample = texture( sampler2D( Color0, s_Color ), finalTexCoords);
-        if ( texIndex == 1 ) vTextureSample = texture( sampler2D( Color1, s_Color ), finalTexCoords);
-        if ( texIndex == 2 ) vTextureSample = texture( sampler2D( Color2, s_Color ), finalTexCoords);
-        if ( texIndex == 3 ) vTextureSample = texture( sampler2D( Color3, s_Color ), finalTexCoords);
-        if ( texIndex == 4 ) vTextureSample = texture( sampler2D( Color4, s_Color ), finalTexCoords);
-        if ( texIndex == 5 ) vTextureSample = texture( sampler2D( Color5, s_Color ), finalTexCoords);
-        if ( texIndex == 6 ) vTextureSample = texture( sampler2D( Color6, s_Color ), finalTexCoords);
-        if ( texIndex == 7 ) vTextureSample = texture( sampler2D( Color7, s_Color ), finalTexCoords);
-        if ( texIndex == 8 ) vTextureSample = texture( sampler2D( Color8, s_Color ), finalTexCoords);
-        if ( texIndex == 9 ) vTextureSample = texture( sampler2D( Color9, s_Color ), finalTexCoords);
-        if ( texIndex == 10 ) vTextureSample = texture( sampler2D( Color10, s_Color ), finalTexCoords);
-        if ( texIndex == 11 ) vTextureSample = texture( sampler2D( Color11, s_Color ), finalTexCoords);
-        if ( texIndex == 12 ) vTextureSample = texture( sampler2D( Color12, s_Color ), finalTexCoords);
-        if ( texIndex == 13 ) vTextureSample = texture( sampler2D( Color13, s_Color ), finalTexCoords);
-        if ( texIndex == 14 ) vTextureSample = texture( sampler2D( Color14, s_Color ), finalTexCoords);
-        if ( texIndex == 15 ) vTextureSample = texture( sampler2D( Color15, s_Color ), finalTexCoords);
+        if ( texIndex == 0 ) vTextureSample = SAMPLE_SLOT( Color0 );
+        if ( texIndex == 1 ) vTextureSample = SAMPLE_SLOT( Color1 );
+        if ( texIndex == 2 ) vTextureSample = SAMPLE_SLOT( Color2 );
+        if ( texIndex == 3 ) vTextureSample = SAMPLE_SLOT( Color3 );
+        if ( texIndex == 4 ) vTextureSample = SAMPLE_SLOT( Color4 );
+        if ( texIndex == 5 ) vTextureSample = SAMPLE_SLOT( Color5 );
+        if ( texIndex == 6 ) vTextureSample = SAMPLE_SLOT( Color6 );
+        if ( texIndex == 7 ) vTextureSample = SAMPLE_SLOT( Color7 );
+        if ( texIndex == 8 ) vTextureSample = SAMPLE_SLOT( Color8 );
+        if ( texIndex == 9 ) vTextureSample = SAMPLE_SLOT( Color9 );
+        if ( texIndex == 10 ) vTextureSample = SAMPLE_SLOT( Color10 );
+        if ( texIndex == 11 ) vTextureSample = SAMPLE_SLOT( Color11 );
+        if ( texIndex == 12 ) vTextureSample = SAMPLE_SLOT( Color12 );
+        if ( texIndex == 13 ) vTextureSample = SAMPLE_SLOT( Color13 );
+        if ( texIndex == 14 ) vTextureSample = SAMPLE_SLOT( Color14 );
+        if ( texIndex == 15 ) vTextureSample = SAMPLE_SLOT( Color15 );
 
         vec3 vShading = vs_out.vLight;
         vec3 vOutColor;

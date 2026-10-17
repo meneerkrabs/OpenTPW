@@ -806,6 +806,7 @@ public sealed partial class ParkHud
 				// [EXT:pools-slides] a slide tower refused for want of a pool says so in its own words, turned away from the pool beside it in others
 				PostMessage( strings.Extra( lastLevelMessage.EndsWith( $": {nameof( OriginalPlacementResult.NeedsPool )}.", StringComparison.Ordinal )
 					? (pendingItem?.Entry is { } refused && PoolSlideTowers.IsSlideTower( refused ) ? (level.LastRefusalTowerFacesAway ? OpenTpwText.PoolSlideTowerFacesAway : OpenTpwText.PoolSlideTowerNeedsPool) : OpenTpwText.PoolChangingRoomNeedsPool)
+					: lastLevelMessage.EndsWith( $": {nameof( OriginalPlacementResult.NeedsPoolWater )}.", StringComparison.Ordinal ) ? OpenTpwText.PoolAttractionNeedsPool
 					: lastLevelMessage.EndsWith( $": {nameof( OriginalPlacementResult.NeedsPoolEdge )}.", StringComparison.Ordinal ) ? OpenTpwText.PoolExtraNeedsEdge : OpenTpwText.CannotBuildHere ) );
 				GameAudio.PlayUi( GameAudio.ErrorEvent );
 			}
@@ -840,7 +841,13 @@ public sealed partial class ParkHud
 		// [APPROX:UI-027] the object is the one occupying the cell of the cursor's terrain hit; the original picks a ride, shop or other object by its model's pick sprite (the sprite pass 0x5890e0, the thing in the 3 x 3 cells round the hovered cell 0x532bd0, the window 0x4b6080) — evidence needed: which instances carry a pickable sprite and its size and offset
 		if ( inPark && !IsVisitorPickState( Locator.Mode, Input.ModifierMaskDown ) && level.BuildEntry == null && !level.IsPlacing && !level.CellTool.IsActive && !level.IsCoasterToolActive && level.StaffPlacement is not { IsActive: true } && level.PatrolTool is not { IsActive: true }
 			&& level.BuyLandTool is not { IsActive: true } && level.AreaClearTool is not { IsActive: true } && level.PoolTool is not { IsActive: true } && input.LeftReleased && !toolPress )
-			SelectObject( level.Objects.FindAt( cursorX, cursorY ) );
+			{
+				var clicked = level.Objects.FindAt( cursorX, cursorY );
+				// [EXT:pools-waves] a deliberate second click on the wave machine that is already selected steps its wave settings; selecting it (here or from the attractions list) changes nothing (ParkHud.Pools.cs)
+				if ( clicked != null && clicked == selectedObject && FeatureGates.Pools && PoolAttractions.KindOf( clicked.Entry ) == PoolAttractionKind.WaveMachine )
+					StepPoolWaves( clicked );
+				SelectObject( clicked );
+			}
 		if ( input.LeftReleased )
 		{
 			toolPress = false;
@@ -1069,7 +1076,7 @@ public sealed partial class ParkHud
 		else if ( level.PoolTool is { IsActive: true, HoverCell: { } poolCell, HoverResult: { } poolResult } )
 		{
 			// [EXT:pools-tool] the pool tool marks the cell under the pointer: blue where it can be painted (or erased), red where it is refused
-			cells.Add( (poolCell.X, poolCell.Y, poolResult is PoolBuildResult.Ok or PoolBuildResult.Existing ? BlueprintMarker.Allowed : BlueprintMarker.Refused) );
+			cells.Add( (poolCell.X, poolCell.Y, poolResult is PoolBuildResult.Ok or PoolBuildResult.Existing or PoolBuildResult.RiverMarked ? BlueprintMarker.Allowed : BlueprintMarker.Refused) );
 		}
 		else if ( level.CellTool.IsActive && level.CellTool.Ghost is { } ghost )
 		{

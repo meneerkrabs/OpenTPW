@@ -14,6 +14,7 @@ public sealed class PoolTool
 	private readonly PoolBuilder builder;
 	private readonly List<PoolStroke> strokes = new();
 	private readonly List<(int X, int Y)> pending = new();
+	private readonly List<(int X, int Y)> pendingMarked = new();
 	private long pendingMoney;
 	private (int X, int Y)? last;
 	private (int X, int Y)? slideTower;
@@ -41,6 +42,8 @@ public sealed class PoolTool
 	public bool IsActive { get; private set; }
 	/// <summary>True in the erase mode.</summary>
 	public bool IsErasing { get; private set; }
+	/// <summary>[EXT:pools-river] True while the river option is on: painted cells also get the river flag (docs/POOLS.md, "Lazy river"). Never in the erase mode.</summary>
+	public bool IsRiver { get; private set; }
 	/// <summary>True between a press and its release.</summary>
 	public bool IsDragging => last != null;
 	public PoolBuilder Builder => builder;
@@ -57,7 +60,7 @@ public sealed class PoolTool
 	public event Action? Ended;
 
 	/// <summary>Turns the tool on in the paint or the erase mode; a mode change while the tool is on keeps the undo stack. False when the extension is off.</summary>
-	public bool Begin( bool erase )
+	public bool Begin( bool erase, bool river = false )
 	{
 		if ( !FeatureGates.Pools )
 			return false;
@@ -65,8 +68,10 @@ public sealed class PoolTool
 		IsErasing = erase;
 		slideTower = null;
 		SlideCompleted = false;
+		IsRiver = river && !erase;
 		last = null;
 		pending.Clear();
+		pendingMarked.Clear();
 		pendingMoney = 0;
 		LastRefusal = null;
 		return true;
@@ -108,6 +113,8 @@ public sealed class PoolTool
 			return;
 		}
 		HoverResult = IsErasing ? builder.CheckErase( x, y ) : builder.Check( x, y );
+		if ( IsRiver && HoverResult == PoolBuildResult.Existing )
+			HoverResult = PoolBuildResult.Ok;
 		if ( last != null )
 			Drag( x, y );
 	}
@@ -130,6 +137,7 @@ public sealed class PoolTool
 			Release();
 		last = (x, y);
 		pending.Clear();
+		pendingMarked.Clear();
 		pendingMoney = 0;
 		LastRefusal = null;
 		LastSlideRefusal = null;
@@ -157,7 +165,7 @@ public sealed class PoolTool
 		if ( last == null )
 			return null;
 		last = null;
-		if ( pending.Count == 0 )
+		if ( pending.Count == 0 && pendingMarked.Count == 0 )
 			return null;
 		var cells = pending.ToArray();
 		pending.Clear();
@@ -176,7 +184,8 @@ public sealed class PoolTool
 			Ended?.Invoke();
 			return LastStroke;
 		}
-		var stroke = new PoolStroke( IsErasing, cells, IsErasing ? 0 : pendingMoney, IsErasing ? -pendingMoney : 0, LastRefusal );
+		var stroke = new PoolStroke( IsErasing, cells, IsErasing ? 0 : pendingMoney, IsErasing ? -pendingMoney : 0, LastRefusal ) { RiverMarked = pendingMarked.ToArray() };
+		pendingMarked.Clear();
 		pendingMoney = 0;
 		// [EXT:pools-slides] the pieces of a slide are taken back by Backspace in the slide mode, not by the pool strokes' undo (which would erase the pool cells of the track)
 		if ( slideTower != null )
@@ -210,7 +219,13 @@ public sealed class PoolTool
 		if ( stroke.Erase )
 			builder.PaintCells( stroke.Cells );
 		else
+		{
+			// [EXT:pools-river] cells that only got the river flag lose it; painted cells go (their flag with them)
+			foreach ( var (x, y) in stroke.RiverMarked )
+				if ( builder.Cells.RawTypeAt( x, y ) == ParkCellTypes.PoolWater )
+					builder.Cells.SetFlags( x, y, builder.Cells.FlagsAt( x, y ) & ~ParkCellFlags.PoolRiver );
 			builder.EraseCells( stroke.Cells.Reverse() );
+		}
 		last = null;
 		return true;
 	}
@@ -224,6 +239,7 @@ public sealed class PoolTool
 		IsActive = false;
 		IsErasing = false;
 		slideTower = null;
+		IsRiver = false;
 		HoverCell = null;
 		HoverResult = null;
 		HoverSlideResult = null;
@@ -258,12 +274,14 @@ public sealed class PoolTool
 			LastSlideRefusal ??= slide;
 			return mapped;
 		}
-		var result = IsErasing ? builder.Erase( x, y ) : builder.Paint( x, y );
+		var result = IsErasing ? builder.Erase( x, y ) : builder.Paint( x, y, IsRiver );
 		if ( result == PoolBuildResult.Ok )
 		{
 			pending.Add( (x, y) );
 			pendingMoney += builder.LastCharged;
 		}
+		else if ( result == PoolBuildResult.RiverMarked )
+			pendingMarked.Add( (x, y) );
 		else if ( result != PoolBuildResult.Existing )
 			LastRefusal ??= ((x, y), result);
 		return result;

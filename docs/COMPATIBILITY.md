@@ -148,20 +148,25 @@ old exact coverage) stays available and is what the scanline-window tests pin. T
 
 What the sources document (Windows 2000/XP era GDI is the choice: the game shipped in 1999/2000 and its Redist carries DirectX 6.1):
 
-- **Levels:** GetGlyphOutline returns grayscale bitmaps as GGO_GRAY2/4/8_BITMAP with 5, 17 and 65 levels (value ranges 0-4, 0-16, 0-64), i.e. n x n oversampling
-  with n*n + 1 levels. https://learn.microsoft.com/en-us/windows/win32/api/wingdi/nf-wingdi-getglyphoutlinea
-- **Method and hinting:** Microsoft's typography notes describe grayscale smoothing as grid-fit the outline, overscale, downsample; GetGlyphOutline
-  returns grid-fitted outlines. https://learn.microsoft.com/en-us/archive/blogs/fontblog/the-gasp-table
+- **Levels:** GetGlyphOutline returns grayscale bitmaps as GGO_GRAY2/4/8_BITMAP with 5, 17 and 65 levels (value ranges 0-4, 0-16, 0-64; "n^2+1 levels of gray").
+  https://learn.microsoft.com/en-us/windows/win32/api/wingdi/nf-wingdi-getglyphoutlinea The page states level counts only, no sampling positions, no byte mapping and no link to
+  lfQuality. **Inferred (not documented):** that those levels are n x n point samples, and that ANTIALIASED_QUALITY text uses the 17-level (4x4) form; the 4x4 factor is this model's inference.
+- **Method and hinting:** Microsoft's font blog describes font smoothing (the Windows 2000 default) as applying the hints (grid-fitting) to the outline, overscaling it, then downsampling the
+  bitmap; it gives no overscale factor. https://learn.microsoft.com/en-us/archive/blogs/fontblog/the-gasp-table The GetGlyphOutline page separately says the returned outline is
+  "for a grid-fitted glyph" (same URL as under Levels).
 - **gasp:** version 0 knows GRIDFIT (0x1) and DOGRAY (0x2) per rangeMaxPPEM; "if font smoothing is enabled, then the first two bit flags are used", and the table is
   absent-tolerant (the rasterizer applies its defaults, which the specification does not list). https://learn.microsoft.com/en-us/typography/opentype/spec/gasp
   LOGFONT says ANTIALIASED_QUALITY applies "if the font supports it and the size of the font is not too small or too large" without numbers.
   https://learn.microsoft.com/en-us/windows/win32/api/wingdi/ns-wingdi-logfonta
 - **Gamma:** SPI_GETFONTSMOOTHINGCONTRAST (default 1400) is documented for ClearType, not for grayscale smoothing, and Windows 2000 does not support it;
   no grayscale gamma is documented, so none is applied. https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-systemparametersinfoa
-- **Windows 98 differs:** the archived FontQuality page says antialiased text there needs a display above 8 bpp and a TrueType font selected into a screen DC before use
-  in a DIB section, or no smoothing occurs; FreeType lists the 98-era rasterizer as the grayscale / bilevel interpreter v35 that honours only gasp version 0 bits.
-  https://learn.microsoft.com/en-us/previous-versions/windows/desktop/bb322856(v=vs.85) and https://freetype.org/freetype2/docs/reference/ft2-properties.html
-  The game's 8-bit DIB drawing smoothed text (the 2x2 reduction `0x5EAFC3` presumes gray levels) points to the Windows 2000/XP behaviour, which is the one modelled.
+- **Windows 98 differs (display requirement only):** the archived FontQuality page says that on Windows 95 Plus!/98/Me antialiased text needs a display above 8-bit colour (a single-plane,
+  non-palette device) and a TrueType font selected into a screen DC before use in a DIB section, or no antialiasing occurs. That is a condition on the display and the DC, not on the DIB depth.
+  FreeType's table lists its grayscale / bilevel interpreter v35 (MS rasterizer 1.7) for "GDI (Win 98/2000)", so it does not separate those two versions, and v35 honours only gasp
+  version 0 bits (the table has none here). https://learn.microsoft.com/en-us/previous-versions/windows/desktop/bb322856(v=vs.85) and
+  https://freetype.org/freetype2/docs/reference/ft2-properties.html (FreeType warns the mapping may not be exact).
+  Choosing the Windows 2000/XP behaviour is an inference, not a documented fact: the game's 8-bit DIB drawing smoothed text (the 2x2 reduction `0x5EAFC3` presumes gray levels) shows that
+  smoothing happened on the machine that produced the data, which the 98 condition allows at a high-colour display mode as well.
 - **Not used:** the Mac PowerPC build's QuickDraw smoothing (16 gray levels from 4x4 supersampling, Apple TN1149) and the PS2 build's baked signs; neither settles the PC result.
 
 What the 17 shipped fonts say (read from `fonts.wad`; the signs draw them at 65 to 256 ppem, the 2x text DIB):
@@ -171,6 +176,10 @@ What the 17 shipped fonts say (read from `fonts.wad`; the signs draw them at 65 
 - All 17 are hinted: each has `fpgm` (20 bytes), `prep` (62 to 172 bytes, a CVT cut-in table by ppem), `cvt ` and glyph programs. `prep` also issues
   `SCANCTRL 0x1FF` and `SCANTYPE 1` (dropout control on at every size up to 255 ppem). OpenTPW has no TrueType bytecode interpreter, so the outlines are sampled unhinted
   and the dropout rule is not applied; at 65 to 256 ppem (32 to 128 px in the final mask) the strokes are many samples wide and only sub-quarter-pixel tips can drop out.
+- Estimated effect of the missing hinting (not measured): grid-fitting moves a stem edge by at most about half a pixel of the 2x text DIB, i.e. about a quarter of a mask pixel after the 2x2
+  reduction, and at 65 to 256 ppem that is 0.2 to 0.8 percent of the em; stems keep their shape. A TrueType bytecode interpreter (fpgm/prep/cvt, about 200 opcodes, the GDI v35 rounding and
+  dropout rules) is not worth building without a GDI capture to check it against: it could not be shown to match, and the licence rule applies (no FreeType code is copied; a clean-room
+  implementation from the public TrueType instruction-set specification would be needed).
 - `hdmx` covers 9 to 24 ppem only, outside the sizes the signs use.
 
 Still open (kept in `APPROX:COMPAT-003`): that GDI really samples 4x4 (Microsoft states no factor for ANTIALIASED_QUALITY; 4x4 is the GGO_GRAY4 form), the sample positions and

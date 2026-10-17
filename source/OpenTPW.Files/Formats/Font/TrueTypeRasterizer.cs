@@ -162,7 +162,7 @@ public static class TrueTypeRasterizer
 				{
 					winding += crossings[i].Winding;
 					if ( winding != 0 )
-						{
+					{
 						if ( gdi )
 							AddSamples( accumulator, crossings[i].X, crossings[i + 1].X, width );
 						else

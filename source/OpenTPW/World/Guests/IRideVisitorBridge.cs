@@ -203,6 +203,10 @@ public interface IRideVisitorBridge
 	/// pool beside it has water (<see cref="PoolAccessCandidates"/>).
 	/// </summary>
 	bool IsChangingRoom => false;
+	/// <summary>
+	/// [EXT:pools-swim] The object has been stopped (demolished, or its script ended): the guests it releases then step out on its exit like those of any attraction, and no swim starts.
+	/// </summary>
+	bool IsStopped => false;
 	/// <summary>[EXT:pools-swim] The cells beyond the changing room's back (opposite its entrance), in the order the first pool cell among them is taken as the pool-side cell; empty for any other object.</summary>
 	IReadOnlyList<(int X, int Y)> PoolAccessCandidates => Array.Empty<(int X, int Y)>();
 	/// <summary>Incremented when a recompute changed the queue cells.</summary>

@@ -105,6 +105,44 @@ judged against the size of the original game the player supplies anyway) is met,
 published page (the server image, `source/OpenTPW.Server/Dockerfile`) is compiled ahead of time.
 A local `dotnet publish` stays an interpreter build without a workload (docs/WEB.md).
 
+## CoreCLR on WebAssembly (17 October)
+
+.NET 11 can run the browser build on CoreCLR (`dotnet publish -p:UseMonoRuntime=false`) instead of Mono. It starts and plays,
+and the texture hash `1CC5AEB033691043` and the simulation hash `0B45FAA2ED526C78` match the Mono builds in every variant below,
+but it is slower than Mono AOT, so Mono stays the default and CoreCLR is an opt-in. Medians of 3 runs, .NET 11
+(11.0.100-rc.2.26504.105), Chrome 155 on an Apple M5:
+
+| Measure | Mono AOT | Mono interpreter | CoreCLR, interpreter | CoreCLR + ReadyToRun (`tools/web-coreclr/r2r.mjs`) |
+| --- | --- | --- | --- | --- |
+| Bundle, Brotli / raw | 19.9 MB / 69.0 MB | 13.3 MB / 29.2 MB | 13.8 MB / 30.9 MB | 29.8 MB / 152.2 MB |
+| First frame / lobby | 2376 / 2399 ms | 3323 / 3323 ms | 8657 / 8816 ms | 4501 / 4525 ms |
+| Jungle ready | 10206 ms | 13085 ms | 98368 ms | 21442 ms |
+| Jungle steady: main thread busy / p95 frame | 9.8 % / 1.6 ms | 23.8 % / 4.4 ms | 100 % / 69.6 ms (7.9 fps) | 96.6 % / 9.1 ms (38 fps) |
+| Texture decode (1698 textures) | 555 ms | 2443 ms | 16985 ms | 1590 ms |
+| 3000-tick run | 202 ms | 355 ms | 3093 ms | 1385 ms |
+
+What the .NET 11 pages say and what exists in RC2. The "What's new in .NET 11 runtime" page (updated for RC 2) lists, under
+CoreCLR on WebAssembly, WebCIL V1 as the default (crossgen2's `WasmObjectWriter` writes it) and a working native re-link. That
+is the crossgen2 tool and the loader; it does not announce an SDK switch. In the installed RC2 packs
+(`microsoft.net.sdk.webassembly.pack` and `Microsoft.NET.Runtime.WebAssembly.Sdk` 11.0.0-rc.2.26504.105) there is no ReadyToRun
+step for browser-wasm: no `PrebuiltR2RDirectory` in `ConvertDllsToWebcil`, no crossgen target, and `PublishReadyToRun=true`
+stops with NETSDK1095. The SDK integration is dotnet/runtime#133378 (merged 17 September 2026 into main, milestone 12.0.0;
+`ReadyToRunTests.cs` exists on main and not on release/11.0), and the runtime pack carries no prebuilt `native/r2r` images.
+So `dotnet publish` gives an interpreter-only CoreCLR build. The crossgen2 package that the workload restores can however target
+`--targetos:browser --targetarch:wasm --obj-format:wasm`, and the loader accepts its images if the boot config gives each one
+its `tableSize` and its `payloadSize`. `tools/web-coreclr/r2r.mjs` does exactly that on a finished publish (it compiles the trimmed IL
+as one version bubble with `--inputbubble --compilebubblegenerics`; the SDK's `--opt-cross-module:*` crashes crossgen2 RC2 on
+this project, and composite images are rejected by the runtime), which is the last column. Per assembly bubbles (no
+`--inputbubble`) boot too but are barely faster than the interpreter (about 8.6 fps, simulation 2.2 s).
+
+Result: ReadyToRun takes CoreCLR from 98 s to 21 s for Jungle and from 8 to 38 fps, texture decode becomes faster than the Mono
+interpreter, but it is still 2 times slower to Jungle, 7 times slower on the simulation, the main thread is saturated (97 % against
+10 %) and the download is 50 % larger (the Brotli size of the 152 MB raw payload is 29.8 MB). The rule for switching the published page
+(at least as fast as Mono AOT in time to playable and in frame or simulation speed) is not met, so it stays on Mono. The earlier
+"never reaches the first frame" finding came from the measuring harness waiting at the Game Mode screen, not from the runtime.
+Revisit with .NET 12 (the SDK integration, the runtime's own performance work in dotnet/runtime#124218, and probably a working
+`--opt-cross-module`).
+
 ## Frame cap (13 October)
 
 The frame rate limit on the OpenTPW options page (`DisplaySettings.FrameCap`: off by default, 30

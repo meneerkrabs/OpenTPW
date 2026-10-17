@@ -12,7 +12,7 @@ public partial class Level
 
 	/// <summary>Captures a writable fixed-ride park between simulation ticks, including its direct instance links.</summary>
 	internal ParkResumeSnapshot CaptureResumeSnapshot( AutomaticAdvisor? advisor, string displayName,
-		IReadOnlyDictionary<string, string>? verifiedAssets = null, DateTimeOffset? savedUtc = null )
+		IReadOnlyDictionary<string, string>? verifiedAssets = null, DateTimeOffset? savedUtc = null, bool advisorMaySpeak = false )
 	{
 		if ( IsReadOnlyVisit || GameEditions.IsThemeParkInc || OriginalPark == null || Park == null || Guests == null )
 			throw new InvalidOperationException( "Only a writable Theme Park World park can be saved here." );
@@ -24,7 +24,10 @@ public partial class Level
 			var state = item.Runtime.CaptureSnapshot();
 			return new ParkResumeRuntime( state.HasScript && !state.Stopped ? item.Runtime.Script!.ScriptId : 0, state );
 		} ).ToArray();
-		var assets = verifiedAssets ?? ParkResumeAssetManifest.Capture( Objects.Catalog, Park.Economy.Settings );
+		// [EXT:pools-save] the extension is recorded while the park has a pool cell or a changing room; its manifest keys are those of the objects the park placed (a changing room), not of its whole content
+		var poolsInUse = ParkResumeMods.InUse( Guests.Grid.Cells, Objects.Objects.Any( item => !item.IsDeleted && ParkResumeMods.IsPoolsObject( item.Entry ) ) ).Contains( OfficialExtensions.Pools.Id );
+		var assets = ParkResumeMods.AssetsForUse( verifiedAssets ?? ParkResumeAssetManifest.Capture( Objects.Catalog, Park.Economy.Settings ),
+			Objects.Objects.Where( item => !item.IsDeleted ).Select( item => item.Entry ) );
 		var random = CaptureRandomState();
 		var snapshot = new ParkResumeSnapshot
 		{
@@ -50,14 +53,18 @@ public partial class Level
 			Gate = Gate?.CaptureSnapshot(),
 			ParkName = ParkName is { } name ? new ParkNameSaveData( name.Line1, name.Line2 ) : null,
 			Staff = StaffWorld?.CaptureSnapshot(),
-			Advisor = advisor?.CaptureSnapshot(),
+			Advisor = advisor?.CaptureSnapshot( advisorMaySpeak ),
 			Coasters = CaptureCoastersSnapshot(),
 			Tracks = CaptureTracksSnapshot(),
 			Tours = CaptureToursSnapshot(),
 			Prototype = prototype,
 			Particles = ParticlesCaptured?.Invoke( this ),
-			// [EXT:mods] null unless a simulation-changing extension or mod is active, so unmodded saves keep their bytes
-			Mods = ParkResumeMods.Capture( OpenTpwExtensions.Active ),
+			// [EXT:mods] null unless a simulation-changing extension or mod is active, so unmodded saves keep their bytes; [EXT:pools-save] opentpw.pools is recorded only while the park has pool cells or a changing room
+			Mods = ParkResumeMods.Capture( OpenTpwExtensions.Active, poolsInUse ? new HashSet<string>( StringComparer.Ordinal ) { OfficialExtensions.Pools.Id } : new HashSet<string>( StringComparer.Ordinal ) ),
+			// [EXT:smarter-guests] null while the extension is off for these guests, so such saves keep their bytes
+			SmarterGuests = SmarterGuestsSave.Capture( Guests ),
+			// [EXT:script-mods] null while no script mod is enabled, so such saves keep their bytes
+			ScriptMods = ScriptModsSave.Capture( Guests ),
 			AssetHashes = assets
 		};
 		ParkResumeSaveFile.ValidateSnapshot( snapshot, Objects.Catalog, Park.Economy.Settings, Park.Economy.Catalog, assets );
@@ -97,6 +104,10 @@ public partial class Level
 		Objects.ScriptWorld.RestoreSnapshot( snapshot.Scripts, roots );
 		ValidateResumeQueueGeometry( snapshot.Guests, Guests );
 		Guests.RestoreSnapshot( snapshot.Guests );
+		// [EXT:smarter-guests] the extension's birth ids, keyed by the guest ids the restore just rebuilt
+		SmarterGuestsSave.Restore( Guests, snapshot.SmarterGuests );
+		// [EXT:script-mods] the script mods' state, counters and flags
+		ScriptModsSave.Restore( Guests, snapshot.ScriptMods );
 		simulationClock.RestoreSnapshot( snapshot.Clock );
 		if ( snapshot.Weather != null )
 		{
@@ -118,7 +129,7 @@ public partial class Level
 		// the resumed tiles and boats are drawn from the first frame, as they were when the park was saved
 		UpdateTrackRendering();
 		UpdateTourRendering();
-		renderedCellVersion = Guests.Grid.Cells.Version;
+		MarkCellsRendered( Guests.Grid.Cells );
 	}
 
 	/// <summary>
@@ -138,7 +149,14 @@ public partial class Level
 			null, saved.Open, saved.AttractionId );
 		var gaps = ride.Runtime.RestoreSnapshot( saved.Runtime );
 		if ( gaps.Count != 0 ) throw new InvalidDataException( string.Join( "; ", gaps ) );
-		if ( PrototypeRideSave.RestoreGuestCells( saved, ride.Visitors, Guests! ) && saved.EconomyInstanceId is int instance )
+		var registered = PrototypeRideSave.RestoreGuestCells( saved, ride.Visitors, Guests! );
+		// [EXT:developer-prototype] a prototype saved before the build laid its stand cell gets it at load (a cell that holds a type is left as it is)
+		if ( registered )
+		{
+			var (standX, standY) = GuestSimulation.StandCellOf( ride.Visitors );
+			ObjectAccessCells.LayStandCell( Guests!.Grid.Cells, standX, standY );
+		}
+		if ( registered && saved.EconomyInstanceId is int instance )
 		{
 			if ( Park == null || !Park.Economy.TryGetObject( instance, out var state ) || state.InfoId != ride.Entry.InfoId )
 				throw new InvalidDataException( "The saved prototype does not match its economy instance." );

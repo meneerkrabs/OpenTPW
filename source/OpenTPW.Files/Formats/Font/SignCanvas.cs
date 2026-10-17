@@ -54,7 +54,7 @@ public static class SignCanvas
 			if ( SlotColor( sign, index ) is not { } colour )
 				continue;
 			// [DATA:*.sgn:slot font file / LOGFONT face]
-			var font = fonts.Find( slot.FontFileName ) ?? fonts.Find( slot.FaceName );
+			var font = fonts.Find( slot.FontFileName, slot.FaceName );
 			if ( font == null )
 			{
 				// Original data names one unshipped font (space megacost.sgn); the sign-font-substitution data correction fixes it.

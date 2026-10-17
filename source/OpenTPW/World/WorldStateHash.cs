@@ -53,7 +53,7 @@ public sealed record WorldStateSources
 public static class WorldStateHash
 {
 	/// <summary>Bumped whenever the hashed fields or their order change.</summary>
-	public const int SchemaVersion = 20;
+	public const int SchemaVersion = 21;
 
 	public static ulong Compute( WorldStateSources sources )
 	{
@@ -90,6 +90,9 @@ public static class WorldStateHash
 			hash.Add( sources.Scripts.NextAttractionId );
 			hash.Add( sources.Scripts.ClockMilliseconds );
 			hash.Add( sources.Scripts.Scripts.Count );
+			// the script pass counter (which pass of eight a script's slice falls on) joins the hash once a pass has run, so a world that never ran one keeps its pin
+			if ( sources.Scripts.PassCounter != 0 )
+				hash.Add( sources.Scripts.PassCounter );
 			foreach ( var script in sources.Scripts.Scripts.OrderBy( script => script.ScriptId ) )
 				script.AddCanonicalState( hash );
 			// coaster_rng_state and the coasters (tracks, samples, ratings, trains and riders) in creation order.
@@ -110,6 +113,11 @@ public static class WorldStateHash
 				root.Remove( nameof( ParkSaveFile.Data.AnalyserCaches ) );
 			hash.Add( Canonical( node ) );
 		}
+		// [EXT:smarter-guests] the identity state joins the hash only while the extension or a script mod is on, so every park without it keeps its pins and SchemaVersion
+		if ( sources.Guests?.SmarterGuests is { } smarter )
+			smarter.AddCanonicalState( hash, sources.Guests.Guests );
+		// [EXT:script-mods] likewise the script mods' state, counters and flags: only while a script mod is enabled, with no SchemaVersion bump (docs/SCRIPT-MODS.md, "Saves and versioning")
+		sources.Guests?.ScriptMods?.AddCanonicalState( hash );
 		return hash.Value;
 	}
 

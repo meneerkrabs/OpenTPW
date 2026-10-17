@@ -283,6 +283,17 @@ internal static class SaveTestPayloads
 		public uint PaidAdmission { get; init; } = 1;
 		public uint ParkOpeningWaitingTime { get; init; }
 		public uint ArrivalIndex { get; init; }
+		public uint BeenAdmitted { get; init; }
+		public uint SavedState { get; init; } = 6;
+		public ushort QNext { get; init; }
+		public ushort QPrev { get; init; }
+		public byte QueuePos { get; init; }
+		public uint LastPosX { get; init; }
+		public uint LastPosY { get; init; }
+		public ushort SavedMajorDest { get; init; }
+		/// <summary>The event ring head (person +0xB8) and the ring's slots (type low word, value high word); the thought block ends the person block.</summary>
+		public uint ActionHistIndex { get; init; }
+		public uint[]? Events { get; init; }
 	}
 
 	/// <summary>A guest body (525 bytes): the person block, then the guest fields in the serializer's order.</summary>
@@ -300,17 +311,22 @@ internal static class SaveTestPayloads
 		BinaryPrimitives.WriteUInt32LittleEndian( person.AsSpan( 29 ), fields.EspSprite );
 		// the navigation block (177 bytes) follows mLastRecordedMapId at 33; mPreviousSpeed comes after it
 		BinaryPrimitives.WriteUInt32LittleEndian( person.AsSpan( 35 + 177 ), fields.PreviousSpeed );
+		// the thought block (0x50BAD0) closes the person block: head, 32 ring slots, mLastThought, mThoughtScript, mTimeBubbleShown
+		var thought = SaveThingChain.PersonBytes - (4 + 4 * 32 + 12);
+		BinaryPrimitives.WriteUInt32LittleEndian( person.AsSpan( thought ), fields.ActionHistIndex );
+		for ( var slot = 0; slot < (fields.Events?.Length ?? 0); slot++ )
+			BinaryPrimitives.WriteUInt32LittleEndian( person.AsSpan( thought + 4 + 4 * slot ), fields.Events![slot] );
 		writer.Write( person );
 		writer.Write( fields.ArrivalDate ); // mArrivalDate
 		writer.Write( fields.ArrivalIndex ); // mArrivalIndex (+0x1D8, the visitor number)
 		writer.Write( fields.BalloonScript );
-		writer.Write( 0u ); // mBeenAdmitted
+		writer.Write( fields.BeenAdmitted ); // mBeenAdmitted
 		writer.Write( fields.Cash );
 		writer.Write( fields.ExitLevel );
 		writer.Write( fields.Happiness );
 		writer.Write( fields.Hunger );
-		writer.Write( 0u );
-		writer.Write( 0u );
+		writer.Write( fields.LastPosX );
+		writer.Write( fields.LastPosY );
 		writer.Write( fields.Litter );
 		writer.Write( fields.MajorDest );
 		writer.Write( fields.NumRides );
@@ -326,13 +342,13 @@ internal static class SaveTestPayloads
 			writer.Write( fields.PreviousRides[slot] );
 			writer.Write( fields.PreviousTemporaryRides[slot] );
 		}
-		writer.Write( (ushort)0 );
-		writer.Write( (ushort)0 );
+		writer.Write( fields.QNext );
+		writer.Write( fields.QPrev );
 		writer.Write( fields.QueueMoveDelay );
-		writer.Write( (byte)0 );
+		writer.Write( fields.QueuePos );
 		writer.Write( fields.BalloonLife );
-		writer.Write( (ushort)0 );
-		writer.Write( 6u ); // mSavedState
+		writer.Write( fields.SavedMajorDest );
+		writer.Write( fields.SavedState ); // mSavedState
 		writer.Write( fields.State );
 		writer.Write( fields.Thirst );
 		writer.Write( fields.TimeOfLastSpotAnim );
@@ -416,6 +432,9 @@ internal static class SaveTestPayloads
 	/// <summary>The stored (byte-reversed) delimiter of <paramref name="tag"/>.</summary>
 	public static byte[] Stored( string tag ) => Encoding.ASCII.GetBytes( tag ).Reverse().ToArray();
 
+	/// <summary>The framed RideSystem block of a park without placed records: a length word naming the 12 counting bytes after it, then used, free and first-free counts of 0 (the writer 0x464140 of an empty instance list).</summary>
+	public static readonly byte[] EmptyRideSystem = new byte[] { 12, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+
 	/// <summary>The smallest valid body of a traced block (the readers of SaveBlockWidths): an empty script table, no particles, empty lists.</summary>
 	public static byte[] MinimalBlock( SaveBlock block )
 	{
@@ -438,6 +457,8 @@ internal static class SaveTestPayloads
 	/// A full payload: a 3-byte action recording, <paramref name="world"/>, then every other block (fixed-width blocks
 	/// at their widths, an empty Coasters block, <paramref name="rideSystem"/>; <paramref name="blocks"/> overrides), with
 	/// their delimiters (<paramref name="tags"/> overrides the delimiter order) and a 4-byte UI block.
+	/// <paramref name="rideSystem"/> is the complete framed RideSystem block including its length word
+	/// (<see cref="EmptyRideSystem"/> when null).
 	/// </summary>
 	public static byte[] Payload( byte[] world, byte[]? rideSystem = null, IReadOnlyDictionary<SaveBlock, byte[]>? blocks = null,
 		IEnumerable<(SaveBlock Block, string Tag)>? tags = null, uint published = 0 )
@@ -451,7 +472,7 @@ internal static class SaveTestPayloads
 			var content = blocks != null && blocks.TryGetValue( block, out var replaced ) ? replaced : block switch
 			{
 				SaveBlock.World => world,
-				SaveBlock.RideSystem => BitConverter.GetBytes( (uint)(rideSystem?.Length ?? 2) ).Concat( rideSystem ?? new byte[2] ).ToArray(),
+				SaveBlock.RideSystem => rideSystem ?? EmptyRideSystem,
 				SaveBlock.Coasters => new byte[] { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0 },
 				_ when SavePayloadLayout.FixedBlockBytes.TryGetValue( block, out var size ) => new byte[size],
 				_ => MinimalBlock( block ),
@@ -460,6 +481,93 @@ internal static class SaveTestPayloads
 			output.Write( Stored( tag ) );
 		}
 		output.Write( new byte[4] );
+		return output.ToArray();
+	}
+
+	/// <summary>A framed RideSystem block in the writer's shape (writer 0x464140, loader 0x4647a0): u32 length (= 12 + the slots' bytes),
+	/// u32 used, free-hole and first-free-slot counts, then <paramref name="slots"/>' bytes. Each slot's first byte is its presence
+	/// byte (<see cref="RideSystemRecord"/> writes 1, <see cref="RideSystemGap"/> writes 0); the counts, the first free slot (the blocks'
+	/// first absent-slot ordinal; with no absent slot the used count, as the corpus's free-less blocks hold) and the length follow from
+	/// the slots themselves.</summary>
+	public static byte[] RideSystem( IReadOnlyList<byte[]> slots )
+	{
+		var slotBytes = slots.SelectMany( slot => slot ).ToArray();
+		var used = slots.Count( slot => slot[0] == 1 );
+		var free = slots.Count - used;
+		var firstFree = used;
+		for ( var slot = 0; slot < slots.Count; slot++ )
+		{
+			if ( slots[slot][0] == 0 )
+			{
+				firstFree = slot;
+				break;
+			}
+		}
+		using var output = new MemoryStream();
+		using var writer = new BinaryWriter( output );
+		writer.Write( (uint)(12 + slotBytes.Length) );
+		writer.Write( (uint)used );
+		writer.Write( (uint)free );
+		writer.Write( (uint)firstFree );
+		writer.Write( slotBytes );
+		writer.Flush();
+		return output.ToArray();
+	}
+
+	/// <summary>An absent slot of a RideSystem block: its presence byte.</summary>
+	public static byte[] RideSystemGap() => new byte[] { 0 };
+
+	/// <summary>The control a <see cref="RideSystemRecord"/> without an explicit list stores: no flags, the "none" animation set 12.</summary>
+	public static readonly uint[] DefaultRideSystemControl = new uint[] { 0, 12, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+
+	/// <summary>An animation time control of a RideSystem record: the record's 11 stored words in the save's word order
+	/// (see <see cref="OpenTPW.SaveRideSystemControl"/>).</summary>
+	public static uint[] RideSystemControl( params uint[] words ) => words.Length == 11 ? words
+		: throw new ArgumentException( "A saved animation time control stores 11 words.", nameof( words ) );
+
+	/// <summary>
+	/// A present RideSystem slot: presence byte 1, the 54-byte header (Info.Id, X, Y, width, height, kind, index; the
+	/// packed instance flags, the +0x20 word and the +0x22 dword; the rotation, the node and embedded-node counts and
+	/// the two +0x2e/+0x32 embedded words), then <paramref name="embeddedNodes"/>' 8-byte pairs, <paramref name="nodeStates"/>' words
+	/// and <paramref name="controls"/>' 11-word animation time controls. (The header's two embedded words are separate
+	/// from the pairs: writer 0x464140 stores both, like the loader 0x4647a0 reads them.)
+	/// </summary>
+	public static byte[] RideSystemRecord( int infoId, int x, int y, int width, int height, int kind, int index, int rotation = 0,
+		uint instanceFlags = 0, ushort instanceWord = 0, uint instanceDword = 0, uint embeddedWord0 = 0, uint embeddedWord1 = 0,
+		(uint First, uint Second)[]? embeddedNodes = null, uint[]? nodeStates = null, IReadOnlyList<uint[]>? controls = null )
+	{
+		var nodeCount = nodeStates?.Length ?? 0;
+		var embeddedCount = embeddedNodes?.Length ?? 0;
+		if ( controls != null && controls.Any( control => control.Length != 11 ) )
+			throw new ArgumentException( "A saved animation time control stores 11 words.", nameof( controls ) );
+		using var output = new MemoryStream();
+		using var writer = new BinaryWriter( output );
+		writer.Write( (byte)1 );
+		foreach ( var field in new[] { infoId, x, y, width, height, kind, index } )
+			writer.Write( field );
+		writer.Write( instanceFlags );
+		// The +0x20 word's position pins the header: presence byte 1, seven u32 fields, then the packed flags.
+		if ( (int)output.Length != 1 + 0x1C + 4 )
+			throw new InvalidOperationException( "Test header layout drifted." );
+		writer.Write( instanceWord );
+		writer.Write( instanceDword );
+		writer.Write( rotation );
+		writer.Write( (ushort)nodeCount );
+		writer.Write( (ushort)embeddedCount );
+		writer.Write( embeddedWord0 );
+		writer.Write( embeddedWord1 );
+		foreach ( var (first, second) in embeddedNodes ?? Array.Empty<(uint, uint)>() )
+		{
+			writer.Write( first );
+			writer.Write( second );
+		}
+		foreach ( var state in nodeStates ?? Array.Empty<uint>() )
+			writer.Write( state );
+		// A record always has at least one control (tp.exe 0x4629d0 replaces a count of 0 with 1), so an omitted list writes one.
+		foreach ( var control in controls ?? new[] { DefaultRideSystemControl } )
+			foreach ( var word in control )
+				writer.Write( word );
+		writer.Flush();
 		return output.ToArray();
 	}
 

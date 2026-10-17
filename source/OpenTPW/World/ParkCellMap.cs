@@ -8,7 +8,12 @@ public enum ParkCellType : byte
 {
 	Empty = 0,
 	Path = 1,
-	Queue = 3
+	Queue = 3,
+	/// <summary>
+	/// [EXT:pools-cell-type] A pool water cell of the <c>opentpw.pools</c> extension (docs/POOLS.md): <see cref="ParkCellTypes.PoolWater"/>. No original type uses
+	/// the value, and it is not walkable.
+	/// </summary>
+	PoolWater = ParkCellTypes.PoolWater
 }
 
 /// <summary>The map cell types the world init and the object placement write besides <see cref="ParkCellType"/> (tp.exe numbering).</summary>
@@ -34,6 +39,13 @@ public static class ParkCellTypes
 	public const byte TrackConnection = 0x15;
 	/// <summary>A park fence post on the structure layer.</summary>
 	public const byte Hoarding = 0x19;
+	/// <summary>
+	/// [EXT:pools-cell-type] The pool water cell of the <c>opentpw.pools</c> extension (docs/POOLS.md). The original's cell types stop at 30 (<see cref="FixedWalkway"/>); the
+	/// placement writes only the shape types 0 to 23 and the walks accept 1, 3, 9, 10 and the track types, so 0x40 (64) collides with no original value, with no byte of
+	/// the original's cell record (the saves hold the type in one byte) and with the types the engine keeps as raw bytes. It is not <see cref="ParkCellType.Path"/>, so it is not walkable.
+	/// </summary>
+	// [EXT:pools-cell-type] OpenTPW's own cell type; the original game has no pools
+	public const byte PoolWater = 0x40;
 
 	/// <summary>The types of a track cell on the second layer (kart and water origins and stations, and the fence post): tp.exe's cell predicate <c>0x53AD30</c>.</summary>
 	// [BIN:TPW-EXE:0x0053AD30 track cell] true for the cell types 0xB, 0xD, 0x10, 0x12 and 0x19
@@ -371,6 +383,27 @@ public sealed class ParkCellMap
 	}
 
 	/// <summary>
+	/// Gives the entrance and exit cells of an imported object the link byte its saved cell record holds (the cells the load reads whole, where the placement's own writers lay the byte).
+	/// A cell is taken only when the record's type and owner word are the object's own.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004D0B30 cell base serializer] the load reads each cell's record, link byte (+0x0C, record byte 8) included, so an entrance or exit cell of an imported park carries the bit toward the path outside it, which the placement lays through the outside cell's link writer in mode 1 (0x5348D0 reaching the type-9 cell along its queue link, 0x5292A7..0x5293FE and 0x5298D5..0x5299AC); Easymode's nine entrance cells carry one bit each and its exit cell one, which the edge test 0x4D8750 reads to let a walk step into the stand point
+	public void TakeSavedAccessLinks( IEnumerable<(int X, int Y, ObjectShapeCell Cell)> footprint, ushort owner, SaveCellGrid saved )
+	{
+		ArgumentNullException.ThrowIfNull( footprint );
+		ArgumentNullException.ThrowIfNull( saved );
+		foreach ( var (x, y, cell) in footprint )
+		{
+			if ( cell.CellType is not (ObjectShapeSymbols.TypeEntrance or ObjectShapeSymbols.TypeExit) || !InBounds( x, y ) || x >= saved.CountX || y >= saved.CountY )
+				continue;
+			var record = saved[x, y];
+			var type = RawTypeAt( x, y );
+			if ( type is not (ParkCellTypes.Entrance or ParkCellTypes.Exit) || record.MapType != type || record.MapParentId != owner )
+				continue;
+			SetLinks( x, y, (byte)(LinksAt( x, y ) | (byte)record.PathConnections) );
+		}
+	}
+
+	/// <summary>
 	/// Empties the footprint cells a removed object typed (those still of its footprint type), unlinking an '@' path cell and taking the add-on flag off a '+' or '#' cell and its track
 	/// layer cell.
 	/// </summary>
@@ -456,9 +489,17 @@ public sealed class ParkCellMap
 	/// <summary>The original cell word of (x, y): <c>y × 128 + x + 1</c>, what <c>+0x10</c> holds for an owner and what the cell lookups (0x4D0AF0, 0x532FC0) decode as <c>cell − 1</c>, <c>&amp; 0x7F</c> and <c>&gt;&gt; 7</c>.</summary>
 	public static ushort CellWord( int x, int y ) => unchecked((ushort)(y * 128 + x + 1));
 
+	/// <summary>
+	/// [EXT:pools-render] How many of the writes counted in <see cref="Version"/> were type writes that touched a pool water cell (painting or erasing one). The drawing of paths and queues
+	/// depends on <c>Version - PoolWrites</c> alone, so a stroke of pool cells does not rebuild them. Not saved and not hashed.
+	/// </summary>
+	internal int PoolWrites { get; private set; }
+
 	public void SetType( int x, int y, byte type )
 	{
 		var index = Index( x, y );
+		if ( types[index] == ParkCellTypes.PoolWater || type == ParkCellTypes.PoolWater )
+			PoolWrites++;
 		// tp.exe's cell setter 0x5346D0 returns early for the same non-zero type only: clearing always stamps.
 		var changed = types[index] != type || type == 0;
 		typeCounts[types[index]]--;
@@ -563,6 +604,9 @@ public sealed class ParkCellMap
 	{
 		if ( type == 0 )
 			return true;
+		// [EXT:pools-cell-rules] pool water goes on empty cells only (or stays); no original rule names it, and every other type over a pool cell falls through to the refusal below
+		if ( type == ParkCellTypes.PoolWater )
+			return old is 0 or ParkCellTypes.PoolWater;
 		if ( type == 4 && old == 4 )
 			return false;
 		if ( type == 21 && old == 21 )

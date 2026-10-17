@@ -213,7 +213,7 @@ public class GuestThingIdTests
 		simulation.Voiced += ( guest, eventId ) => voiced.Add( (guest.Id, eventId) );
 		var dismiss = typeof( GuestSimulation ).GetMethod( "DismissFromQueue", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance )!;
 		foreach ( var guest in guests )
-			dismiss.Invoke( simulation, new object[] { guest, ride, GuestThought.None } );
+			dismiss.Invoke( simulation, new object[] { guest, ride, GuestThought.None, QueueEndReason.NoPlace } );
 		CollectionAssert.AreEqual( new[] { (8, 0x80u), (16, 0x80u) }, voiced.ToArray(), "thing ids 8 and 16 have their low three bits 0" );
 		Assert.AreEqual( GuestSimulation.DismissalVoiceEvent, 0x80u );
 	}
@@ -235,7 +235,7 @@ public class GuestThingIdTests
 		simulation.Voiced += ( guest, _ ) => voiced.Add( guest.Id );
 		var dismiss = typeof( GuestSimulation ).GetMethod( "DismissFromQueue", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance )!;
 		foreach ( var guest in guests )
-			dismiss.Invoke( simulation, new object[] { guest, ride, GuestThought.None } );
+			dismiss.Invoke( simulation, new object[] { guest, ride, GuestThought.None, QueueEndReason.NoPlace } );
 		CollectionAssert.AreEqual( new[] { 16, 24 }, voiced.ToArray(), "guests 13..24 are the things 13..24" );
 	}
 }

@@ -1,3 +1,5 @@
+using OpenTPW.Mods;
+
 namespace OpenTPW;
 
 /// <summary>
@@ -241,7 +243,7 @@ public static class ParkLayoutSnapshot
 	/// bounds use the cell map's dimensions (an object grid is never larger); <see cref="RestoreObjects"/> re-checks
 	/// against the actual target grid. Throws <see cref="InvalidDataException"/> naming the first inconsistency.
 	/// </summary>
-	public static void ValidateSnapshot( Data snapshot, ObjectCatalog catalog )
+	public static void ValidateSnapshot( Data snapshot, ObjectCatalog catalog, ModSet? activeMods = null )
 	{
 		ArgumentNullException.ThrowIfNull( snapshot );
 		ArgumentNullException.ThrowIfNull( catalog );
@@ -254,7 +256,7 @@ public static class ParkLayoutSnapshot
 		Require( snapshot.Objects != null, "the snapshot has no object list" );
 		var cellMap = snapshot.Cells!;
 		var objects = snapshot.Objects!;
-		ValidateCells( snapshot );
+		ValidateCells( snapshot, activeMods );
 		Require( snapshot.NextSeed >= 1, "next seed is before the first placement" );
 		Require( snapshot.NextSeed < int.MaxValue, "the placement-seed allocator is exhausted" );
 		Require( snapshot.NextAttractionId >= 1, "the attraction-id allocator is before the first allocation" );
@@ -305,7 +307,7 @@ public static class ParkLayoutSnapshot
 		}
 	}
 
-	private static void ValidateCells( Data snapshot )
+	private static void ValidateCells( Data snapshot, ModSet? activeMods = null )
 	{
 		var cells = snapshot.Cells;
 		void Require( bool condition, string message )
@@ -324,6 +326,12 @@ public static class ParkLayoutSnapshot
 			Require( cell != null, $"cell record {index} is missing" );
 			Require( cell!.X >= 0 && cell.Y >= 0 && cell.X < cells.Width && cell.Y < cells.Height, $"cell ({cell.X}, {cell.Y}) is outside the map" );
 			Require( seen.Add( (cell.X, cell.Y) ), $"cell ({cell.X}, {cell.Y}) is recorded twice" );
+			// [EXT:pools-save] a pool cell is a plain water cell: no links, queue link, owner or placement count, and it exists only while the pools extension is on
+			if ( cell.Type == ParkCellTypes.PoolWater )
+			{
+				Require( (activeMods ?? OpenTpwExtensions.Active).IsEnabled( OfficialExtensions.Pools.Id ), $"cell ({cell.X}, {cell.Y}) is a pool cell, which needs the {OfficialExtensions.Pools.Id} extension" );
+				Require( cell.Links == 0 && cell.QueueLink == 0 && cell.Owner == 0 && cell.Placements == 0, $"pool cell ({cell.X}, {cell.Y}) carries links, an owner or a placement count" );
+			}
 			Require( cell.QueueLink is 0 or 1 or 4 or 16 or 64, $"cell ({cell.X}, {cell.Y}) has queue link {cell.QueueLink}" );
 			Require( cell.QueueLink == 0 || ParkCellTypes.CarriesQueueLink( cell.Type ), $"cell ({cell.X}, {cell.Y}) has a queue link but type {cell.Type}" );
 			Require( cell.Placements >= 0, $"cell ({cell.X}, {cell.Y}) has placement count {cell.Placements}" );

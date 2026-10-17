@@ -9,7 +9,9 @@ public enum CellToolMode : byte
 	/// <summary>The kart track tool: the mode is the origin cell type the line writes (docs/TRACKS.md).</summary>
 	KartTrack = 11,
 	/// <summary>The water track tool (origin cell type 16).</summary>
-	WaterTrack = 16
+	WaterTrack = 16,
+	/// <summary>[EXT:pools-tool] The pool paint tool of the <c>opentpw.pools</c> extension: the mode is the cell type it writes, as for the other tools (docs/POOLS.md).</summary>
+	Pool = ParkCellTypes.PoolWater
 }
 
 /// <summary>Lays snapped straight lines of one cell type for <see cref="CellBuildTool"/>.</summary>

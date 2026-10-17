@@ -68,7 +68,7 @@ public interface IRideVisitorHost
 {
 	/// <summary>The attraction called the front guest forward (ride <c>+104</c> = guest; the guest walks to the stand point).</summary>
 	void OnVisitorOffered( IRideVisitorBridge ride, int guestId );
-	/// <summary>The script took the guest (HUSH/WALKON/LIMBO/BOUNCE, or it cleared VAR_LETMEON).</summary>
+	/// <summary>The script took the guest (WALKON/BOUNCE, or it consumed VAR_LETMEON).</summary>
 	void OnVisitorBoarded( IRideVisitorBridge ride, int guestId );
 	/// <summary>The script released the guest at the exit (VAR_LETMEOFF = guest id), or the ride was removed.</summary>
 	void OnVisitorReleased( IRideVisitorBridge ride, int guestId );
@@ -108,6 +108,8 @@ public interface IRideVisitorBridge
 	/// <summary>The coaster or track refuses guests (<c>0x00441970</c>, the track word): a queued guest leaves with thought 13 (state 11, <c>0x004FFFF0</c>).</summary>
 	bool TrackRefusesGuests => false;
 	int Capacity { get; }
+	/// <summary>The capacity the attraction runs with now (a ride's settings change it); the throughput estimate of the smarter guests restarts when it changes. Hosts without a live value report <see cref="Capacity"/>.</summary>
+	int LiveCapacity => Capacity;
 	/// <summary>.sam <c>UsageInfo.ExcitementLevel</c> (0–100).</summary>
 	int ExcitementLevel { get; }
 	/// <summary>.sam <c>Info.AttractionValue</c>.</summary>
@@ -164,6 +166,8 @@ public interface IRideVisitorBridge
 	int QualityOfGoods => GuestAppearance.BuiltQualityOfGoods;
 	/// <summary>Walkable path cell where guests join the queue.</summary>
 	(int X, int Y) EntranceCell { get; }
+	/// <summary>The entrance's outside cell (the original front cell), or null to use <see cref="EntranceCell"/>.</summary>
+	(int X, int Y)? QueueFrontCell => null;
 	/// <summary>Walkable path cell where released guests reappear.</summary>
 	(int X, int Y) ExitCell { get; }
 	/// <summary>.sam <c>UsageInfo.EntryCellStandPosX/Y</c>: where in its entrance cell a called guest stands (0..1 per axis).</summary>
@@ -196,6 +200,17 @@ public interface IRideVisitorBridge
 	int QueueSizeInCells { get; }
 	/// <summary>Walkable path cell where guests step onto the back of the queue; null when the queue is not connected.</summary>
 	(int X, int Y)? JoinCell { get; }
+	/// <summary>
+	/// [EXT:pools-swim] The object is a pool complex's changing room (<c>Pools.ChangingRoom</c> in its .sam): a guest released from it goes swimming instead of walking on, when the
+	/// pool beside it has water (<see cref="PoolAccessCandidates"/>).
+	/// </summary>
+	bool IsChangingRoom => false;
+	/// <summary>
+	/// [EXT:pools-swim] The object has been stopped (demolished, or its script ended): the guests it releases then step out on its exit like those of any attraction, and no swim starts.
+	/// </summary>
+	bool IsStopped => false;
+	/// <summary>[EXT:pools-swim] The cells beyond the changing room's back (opposite its entrance), in the order the first pool cell among them is taken as the pool-side cell; empty for any other object.</summary>
+	IReadOnlyList<(int X, int Y)> PoolAccessCandidates => Array.Empty<(int X, int Y)>();
 	/// <summary>Incremented when a recompute changed the queue cells.</summary>
 	int QueueEditCount { get; }
 	/// <summary>The guest called forward, 0 when none.</summary>
@@ -208,6 +223,15 @@ public interface IRideVisitorBridge
 	/// excitement gate (<see cref="QueueJoinRules"/>); null skips the gate.
 	/// </summary>
 	QueueJoinResult JoinQueue( int guestId, int? preferredExcitement = null );
+	/// <summary>
+	/// The joining checks of <see cref="JoinQueue"/> that belong to the attraction: open, not listed, room. <see cref="QueueJoinResult.Joined"/> means they hold and nothing was changed; the excitement gate
+	/// and the queue limit are the guests' decision layer's (<see cref="IGuestDecisions.DecideAdmission"/>), and <see cref="AppendToQueue"/> then joins the guest.
+	/// </summary>
+	QueueJoinResult CheckJoinRoom( int guestId );
+	/// <summary>Appends a guest <see cref="CheckJoinRoom"/> let through at the tail of the queue.</summary>
+	void AppendToQueue( int guestId );
+	/// <summary><c>0xe9a84</c>: the difference between the live excitement and a guest's preferred one, the join gate's input.</summary>
+	int JoinDifference( int preferredExcitement );
 	/// <summary>0-based position in the queue, or −1.</summary>
 	int GetQueuePosition( int guestId );
 	bool LeaveQueue( int guestId );

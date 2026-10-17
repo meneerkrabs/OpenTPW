@@ -34,7 +34,8 @@ class ProgressTests(unittest.TestCase):
     def write(self, relative, text):
         path = self.root / relative
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(text, encoding="utf-8")
+        # newline="\n": progress.py requires LF, and write_text would write CRLF on Windows
+        path.write_text(text, encoding="utf-8", newline="\n")
         return path
 
     def fragment(self, name, text):

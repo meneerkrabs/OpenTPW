@@ -1,0 +1,45 @@
+#
+#	OpenTPW swimming pools: the changing room (modelled on the keys of the original jungle toilet, a feature)
+#	Every number marked "OpenTPW's own value" is a choice of this extension, not a value of the original game.
+#
+Info.Id			65500		placeholder: objects.json replaces it with the object's own id
+Info.Name		"Changing Room"
+Info.IsChoosable	1
+Info.HasQueue		0		a feature: guests walk to its entrance, as to a toilet (the category defaults say the same; stated so the object stands alone)
+Info.WhichUIType	3		a feature (the build menu's Features tab)
+
+# A 2 x 2 cabin. The entrance '2' (the path side, facing south) is the lower left cell; the pool-side door is on the opposite face.
+Info.Shape
+---
+**
+2*
+---
+
+# The construction fence for 2 x 2 cells: the four corner pieces
+Info.Hoarding
+---
+F7
+LJ
+---
+
+# OpenTPW's own key: the engine reads it to know this object is the entrance of a pool complex (guests change here, then swim)
+Pools.ChangingRoom	1
+
+# Where a guest stands to enter and appears on leaving: near the front door of the entrance cell (OpenTPW's own value)
+UsageInfo.EntryCellStandPosX	0.5
+UsageInfo.EntryCellStandPosY	0.8
+
+UsageInfo.ExitCellAppearPosX	0.5
+UsageInfo.ExitCellAppearPosY	0.8
+
+UsageInfo.InitPricePerUse		5		OpenTPW's own value
+UsageInfo.ExcitementLevel		30		OpenTPW's own value
+UsageInfo.RideHandlesSprite		1		Guests inside are not drawn at all (the script hangs no heads), the pool sprites take over
+UsageInfo.MinCapacity			1		OpenTPW's own value
+UsageInfo.MaxCapacity			4		OpenTPW's own value
+
+Upgrades[0].CostOfUpgrade		400		OpenTPW's own value
+Upgrades[0].CostOfResearch		0		An object without research cost starts researched
+Upgrades[0].InitCapacity		2		OpenTPW's own value
+Research.Group		0
+Info.PreviewAnimNum		0

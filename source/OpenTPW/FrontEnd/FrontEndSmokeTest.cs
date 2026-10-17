@@ -84,6 +84,7 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 		flow.OnlineFolders = new OnlineFolders( Path.Combine( temporaryDirectory, "online" ) );
 		// Read back the composed output (world after scaling + UI at drawable pixels).
 		global::Global.Render.CaptureOutput = true;
+		WeatherForecastPresenter.BannerHidden = true;
 		Plan();
 	}
 
@@ -1280,8 +1281,8 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 		Do( "pause blocks window keys", () =>
 			Require( flow.Hud!.Paused && flow.Hud.Stack.Top?.Name == "pause"
 				&& !flow.Hud.VisitorWindowOpen && !flow.Hud.BuyWindowOpen, "injected window keys leave the pause menu in control" ) );
-		// The park-resume lane cannot snapshot the advisor while a response is being spoken (the speech has no
-		// snapshot seam), so the save below waits for the end of any active advisor speech first.
+		// The save below is a manual one, which saves while a response is spoken (the speech is left out of the file); the
+		// smoke still waits for the end of any advisor speech so its frame budget does not depend on the speech length.
 		WaitForAdvisorSpeech();
 		Do( "pause menu", () =>
 		{

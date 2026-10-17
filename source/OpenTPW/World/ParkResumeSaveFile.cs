@@ -122,12 +122,15 @@ internal static class ParkResumeSaveFile
 		ValidateShape( snapshot );
 		// [EXT:mods] the mods the park was saved with must be the ones that are active, before anything else is judged (docs/MODS.md)
 		ParkResumeMods.Require( snapshot.Mods, activeMods ?? OpenTpwExtensions.Active );
+		// [EXT:script-mods] the section exists exactly when a script mod is active (and so recorded), and names exactly those mods
+		if ( ScriptModsSave.ActiveProblem( snapshot.ScriptMods, activeMods ?? OpenTpwExtensions.Active ) is { } scriptMismatch )
+			throw new InvalidDataException( $"World save is inconsistent: {scriptMismatch}." );
 		void Require( bool condition, string message )
 		{
 			if ( !condition )
 				throw new InvalidDataException( $"World save is inconsistent: {message}." );
 		}
-		ParkLayoutSnapshot.ValidateSnapshot( snapshot.Layout, catalog );
+		ParkLayoutSnapshot.ValidateSnapshot( snapshot.Layout, catalog, activeMods );
 		Require( string.Equals( catalog.Theme, snapshot.Theme, StringComparison.OrdinalIgnoreCase ),
 			$"the object catalog is for theme '{catalog.Theme}', not the saved '{snapshot.Theme}'" );
 		Require( string.Equals( settings.Theme, snapshot.Theme, StringComparison.OrdinalIgnoreCase ) && settings.IsEasy == snapshot.Economy.Easy,
@@ -214,15 +217,32 @@ internal static class ParkResumeSaveFile
 				$"the prototype's economy object {prototypeInstance} has Info.Id {prototypeObject.InfoId}, which the {settings.Theme} economy catalogue does not know" );
 		}
 		Require( currentAssetHashes != null && currentAssetHashes.Count > 0, "the current asset manifest is empty" );
-		foreach ( var (key, saved) in snapshot.AssetHashes )
+		RequireAssets( snapshot, catalog, currentAssetHashes! );
+	}
+
+	/// <summary>
+	/// The asset manifest's exact key and digest agreement. [EXT:pools-save] The pools extension's keys count only for the extension objects the save places (<see cref="ParkResumeMods.AssetsForUse"/>), in
+	/// both directions: an unplaced object of the extension, in the park's assets or in the save, is ignored, so adding objects to the extension never invalidates an older save, while a placed object keeps the exact-hash check.
+	/// </summary>
+	internal static void RequireAssets( ParkResumeSnapshot snapshot, ObjectCatalog catalog, IReadOnlyDictionary<string, string> currentAssetHashes )
+	{
+		void require( bool condition, string message )
 		{
-			Require( currentAssetHashes!.TryGetValue( key, out var current ),
-				$"the save expects asset '{key}', which the park's assets do not provide" );
-			Require( string.Equals( saved, current, StringComparison.Ordinal ),
-				$"asset '{key}' hashes to '{current}', not the saved '{saved}'" );
+			if ( !condition )
+				throw new InvalidDataException( $"World save is inconsistent: {message}." );
 		}
-		foreach ( var key in currentAssetHashes!.Keys )
-			Require( snapshot.AssetHashes.ContainsKey( key ),
+		var placed = snapshot.Layout.Objects.Select( record => catalog.Find( record.InfoId ) ).OfType<ObjectCatalogEntry>().ToArray();
+		var park = ParkResumeMods.AssetsForUse( currentAssetHashes, placed );
+		var saved = ParkResumeMods.AssetsForUse( snapshot.AssetHashes, placed );
+		foreach ( var (key, hash) in saved )
+		{
+			require( park.TryGetValue( key, out var current ),
+				$"the save expects asset '{key}', which the park's assets do not provide" );
+			require( string.Equals( hash, current, StringComparison.Ordinal ),
+				$"asset '{key}' hashes to '{current}', not the saved '{hash}'" );
+		}
+		foreach ( var key in park.Keys )
+			require( saved.ContainsKey( key ),
 				$"the park provides asset '{key}', which the save does not expect" );
 	}
 
@@ -280,6 +300,17 @@ internal static class ParkResumeSaveFile
 		// [EXT:mods] the recorded mods: bounded, valid ids and digests, and every mod: asset key names a recorded mod
 		if ( ParkResumeMods.ShapeProblem( snapshot.Mods, snapshot.AssetHashes ) is { } modProblem )
 			Require( false, modProblem );
+		// [EXT:pools-save] a park with pool cells records the pools extension (a park without them does not), so a save cannot hide them from the mod check
+		if ( snapshot.Layout?.Cells?.Cells?.Any( cell => cell?.Type == ParkCellTypes.PoolWater ) == true
+			&& snapshot.Mods?.Any( mod => mod?.Id == OfficialExtensions.Pools.Id ) != true )
+			Require( false, $"the layout has pool cells but the save does not record {OfficialExtensions.Pools.Id}" );
+		// [EXT:smarter-guests] the extension's section: present exactly when the extension is recorded, with ids that fit the guests the save holds
+		if ( SmarterGuestsSave.ShapeProblem( snapshot.SmarterGuests, snapshot.Guests?.Guests?.Select( guest => guest.Id ), snapshot.Mods, snapshot.ScriptMods != null, snapshot.Guests?.Attractions?.Select( attraction => attraction.AttractionId ) ) is { } smarterProblem )
+			Require( false, smarterProblem );
+		// [EXT:script-mods] the script mods' section: every key a recorded mod, the versions this build runs, canonical state and counters that agree with the disabled flag; it needs the identity section above
+		if ( ScriptModsSave.ShapeProblem( snapshot.ScriptMods, snapshot.Mods ) is { } scriptProblem )
+			Require( false, scriptProblem );
+		Require( snapshot.ScriptMods == null || snapshot.SmarterGuests != null, "the save has script mod state but no guest identity state (the SmarterGuests section)" );
 
 		// Layout: the pure identity and allocator rules (catalog resolution is ValidateSnapshot's).
 		var layout = snapshot.Layout!;
@@ -1120,8 +1151,7 @@ internal static class ParkResumeSaveFile
 				else
 				{
 					// The boarding hand-over: the station script took the guest from VAR_LETMEON into a car with COAST 1,
-					// but the bridge marks it aboard only one host step later, when the script consumes VAR_LETMEON or
-					// HUSHes it. A save between the two holds the guest still waiting at the stand point: WaitingToBoard,
+					// but the bridge marks it aboard only one host step later, when the script consumes VAR_LETMEON. A save between the two holds the guest still waiting at the stand point: WaitingToBoard,
 					// bound to this coaster, still queued, called with VAR_LETMEON written (proved against the real
 					// Jungle station script — see GuestsBoardingARealCoasterStaySaveConsistentAtEveryTickBoundary).
 					Require( guest.State == GuestState.WaitingToBoard && guest.AttractionId == ride.AttractionId

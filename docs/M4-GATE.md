@@ -24,7 +24,7 @@ inconclusive without `OPENTPW_GAME_PATH`).
 ## Running
 
 ```sh
-dotnet source/OpenTPW/bin/Release/net10.0/OpenTPW.dll --game-path '/path/to/Theme Park World' \
+dotnet source/OpenTPW/bin/Release/net11.0/OpenTPW.dll --game-path '/path/to/Theme Park World' \
   --m4-gate [--theme jungle[,hallow,space,fantasy]] [--seed N] [--window 5] [--report m4-gate.json] [--no-determinism]
 ```
 
@@ -175,6 +175,10 @@ each, determinism probe included). **14 pass, 12 fail, 1 unresolved.**
 | `rides.camera` | FAIL | camera modes: CameraMode, LobbyCameraMode, ParkCameraMode; none takes a ride |
 | `rides.rating` | FAIL | 52 fixed rides carry their data excitement into the guest bridge; the 20 track rides have no assessment |
 | `determinism.same-seed` | PASS | 1,450 hashes per pass, identical; final `DC661D5F9137C8BC` |
+
+Since this baseline (2026-10-17) HUSH, HOP, TURBO and the LIMBO family are VM-internal
+([RSE-VM.md](RSE-VM.md#original-interpreter-internals)): a fresh run counts 43 hooked opcodes
+and resolves WALKOFF and WALKGET through the game effects; the rows above are the measured baseline.
 
 109 of the 207 supported objects are guest attractions; every one of them was chosen,
 queued for and boarded within W, so no run row is unresolved. Of the 109 stop steps,

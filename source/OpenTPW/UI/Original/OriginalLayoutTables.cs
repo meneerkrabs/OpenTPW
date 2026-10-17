@@ -708,6 +708,49 @@ public static class OriginalLayoutTables
 			new( 2, 0x1u, 0xFFFFFFFEu, 1889, 820, 1972, 903, 2, -1, "b_exit", null, null, System.Array.Empty<LayoutNode>() ),
 		} ),
 	} );
+
+	/// <summary>[BIN:TPW-EXE:0x7537d0] layout table ParkInfoWindow.</summary>
+	public static readonly LayoutTable ParkInfoWindow = new( "ParkInfoWindow", 0x7537D0, new LayoutNode[]
+	{
+		new( 1, 0x1u, 0x4A68BAu, 208, 30, 1840, 1007, -1, -1, "window3", null, null, new LayoutNode[]
+		{
+			new( 2, 0x1u, 0xFFFFFFFFu, 1711, 820, 1794, 903, 1, -1, "b_okay", null, null, System.Array.Empty<LayoutNode>() ),
+			new( 1, 0x1u, 0x4A68BBu, 269, 158, 1648, 806, -1, -1, "graphpark", null, new[] { 744, 256, 1634, 783 }, new LayoutNode[]
+			{
+				new( 2, 0x11u, 0x4A68BCu, 287, 246, 729, 316, 179, 543, "b_ltoggle2", null, new[] { 300, 258, 715, 303 }, System.Array.Empty<LayoutNode>() ),
+				new( 2, 0x11u, 0x4A68BDu, 287, 321, 729, 392, 180, 544, "b_ltoggle3", null, new[] { 300, 335, 715, 380 }, System.Array.Empty<LayoutNode>() ),
+				new( 2, 0x11u, 0x4A68BEu, 287, 397, 729, 468, 181, 545, "b_ltoggle4", null, new[] { 300, 410, 715, 455 }, System.Array.Empty<LayoutNode>() ),
+				new( 2, 0x11u, 0x4A68BFu, 287, 170, 729, 241, 178, 542, "b_ltoggle1", null, new[] { 300, 184, 715, 228 }, System.Array.Empty<LayoutNode>() ),
+				new( 2, 0x11u, 0x4A68C0u, 287, 473, 729, 543, 182, 546, "b_ltoggle5", null, new[] { 300, 486, 715, 531 }, System.Array.Empty<LayoutNode>() ),
+				new( 8, 0x11u, 0x4A68C1u, 804, 170, 1588, 241, -1, -1, null, null, null, new LayoutNode[]
+				{
+					new( 2, 0x11u, 0x4A68C2u, 1330, 170, 1588, 241, 185, -1, "b_stoggle", null, null, System.Array.Empty<LayoutNode>() ),
+					new( 2, 0x11u, 0x4A68C3u, 804, 170, 1062, 241, 183, -1, "b_stoggle", null, null, System.Array.Empty<LayoutNode>() ),
+					new( 2, 0x11u, 0x4A68C4u, 1067, 170, 1325, 241, 184, -1, "b_stoggle", null, null, System.Array.Empty<LayoutNode>() ),
+				} ),
+			} ),
+			new( 1, 0x1u, 0x4A68C5u, 736, 74, 1208, 153, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+			new( 2, 0x1u, 0x4A68C6u, 1688, 360, 1790, 462, 189, -1, "b_kids", null, null, System.Array.Empty<LayoutNode>() ),
+			new( 2, 0x1u, 0x4A68C7u, 1688, 467, 1790, 570, 188, -1, "b_allstaff", null, null, System.Array.Empty<LayoutNode>() ),
+			new( 2, 0x1u, 0x4A68C8u, 1688, 575, 1790, 677, 190, -1, "b_allthings", null, null, System.Array.Empty<LayoutNode>() ),
+			new( 1, 0x1u, 0x4A68C9u, 935, 812, 1647, 952, -1, -1, "!frame", null, null, new LayoutNode[]
+			{
+				new( 1, 0x1u, 0x4A68CAu, 1395, 885, 1631, 929, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+				new( 1, 0x1u, 0x4A68CBu, 957, 831, 1377, 876, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+				new( 1, 0x1u, 0x4A68CCu, 1395, 831, 1631, 876, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+				new( 1, 0x1u, 0x4A68CDu, 957, 885, 1377, 929, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+			} ),
+			new( 1, 0x3u, 0x4A68CEu, 291, 740, 673, 785, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+			new( 9, 0x3u, 0x4A68CFu, 314, 840, 864, 923, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+			new( 9, 0x1u, 0x4A68D0u, 269, 812, 909, 952, 187, -1, "!frame", null, new[] { 314, 840, 864, 923 }, System.Array.Empty<LayoutNode>() ),
+			new( 1, 0x1u, 0x4A68D1u, 269, 633, 694, 806, 186, -1, "toughts", null, null, new LayoutNode[]
+			{
+				new( 6, 0x1u, 0x4A68D2u, 305, 646, 409, 726, -1, -1, "ti_hungry", null, null, System.Array.Empty<LayoutNode>() ),
+				new( 6, 0x1u, 0x4A68D3u, 432, 646, 536, 726, -1, -1, "ti_hungry", null, null, System.Array.Empty<LayoutNode>() ),
+				new( 6, 0x1u, 0x4A68D4u, 562, 646, 666, 726, -1, -1, "ti_hungry", null, null, System.Array.Empty<LayoutNode>() ),
+			} ),
+		} ),
+	} );
 }
 
 /// <summary>The original game pointers: their ids and .tga files, and the tool-to-pointer switch.</summary>

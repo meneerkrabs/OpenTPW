@@ -37,6 +37,9 @@ public static class WalkEdges
 			return true;
 		var from = map.RawTypeAt( x, y );
 		var to = map.RawTypeAt( tx, ty );
+		// [EXT:pools-cell-type] a pool cell blocks every step onto it, for every walk mask: a walker set down off the paths, an escorted guest or a striking employee never wades in (docs/POOLS.md)
+		if ( to == ParkCellTypes.PoolWater )
+			return true;
 		if ( to == 1 && !IsQueue( from ) )
 			return false;
 		if ( from == 4 && to == 4 )

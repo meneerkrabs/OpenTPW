@@ -17,14 +17,19 @@ public enum ParkObjectKind
 /// <summary><c>Upgrades[n]</c> of an object: level 0 is the base purchase, levels 1 and 2 the ride upgrades.</summary>
 /// <param name="RedLineSpeed"><c>Upgrades[n].RedLineSpeed</c>: at or above this speed a ride wears faster.</param>
 /// <param name="RedLineCapacity"><c>Upgrades[n].RedLineCapacity</c>, compared with riders / 10 in the wear step.</param>
+/// <param name="RunningCost">Theme Park Inc only: <c>Upgrades[n].RunningCost</c> (type record +0x2B4 + 0x44 · n), the object's monthly running cost at this level; 0 in Theme Park World, whose files lack the key.</param>
+/// <param name="CashPerBrainPoint">Theme Park Inc only: <c>Upgrades[n].CashPerBrainPoint</c> (+0x274 + 0x44 · n); read, not used by the money slice (meaning not traced).</param>
 public sealed record UpgradeLevelInfo( int Level, long CostOfUpgrade, int CostOfResearch, int WearRate, int DurationOfUpgrade, IReadOnlyList<int> ScrapValuePercentByYear,
-	int RedLineSpeed = 0, int RedLineCapacity = 0 );
+	int RedLineSpeed = 0, int RedLineCapacity = 0, int RunningCost = 0, int CashPerBrainPoint = 0 );
 
 /// <summary>
 /// The economy-relevant fields of one original object, merged from the category <c>.sam</c>, the
 /// object's own <c>.sam</c> and, in easy mode, its <c>Easy_</c> override. The rides/objects slice may
 /// build these from its own catalog through <see cref="IEconomyObjectCatalog"/>.
 /// </summary>
+/// <param name="ExpectedPrice">Theme Park Inc only: <c>Info.ExpectedPrice</c> (type record +0x88); read, not used by the money slice (meaning not traced); 0 in Theme Park World.</param>
+/// <param name="NotResearched">[EXT:mods] True for an object of an <c>objects.json</c> that declares <c>"research": false</c> (the pools extension's): it is never a research project, so it is in no research table, never in the saved completed set, does not count in the group statistics and is available from the start; the golden ticket's "everything built" does not ask for it.</param>
+/// <param name="WorkingLife">Theme Park Inc only: <c>Info.WorkingLife</c> (+0x8C); read, not used by the money slice (meaning not traced); 0 in Theme Park World.</param>
 public sealed record EconomyObjectInfo(
 	int InfoId,
 	string Name,
@@ -52,7 +57,10 @@ public sealed record EconomyObjectInfo(
 	int WhichUIType = -1,
 	bool ProvidesRelief = false,
 	bool ProvidesSecurity = false,
-	bool IsFireworks = false )
+	bool IsFireworks = false,
+	int ExpectedPrice = 0,
+	int WorkingLife = 0,
+	bool NotResearched = false )
 {
 	public long PurchaseCost => Upgrades.Count > 0 ? Upgrades[0].CostOfUpgrade : 0;
 	public bool IsBuyable => Kind is ParkObjectKind.Ride or ParkObjectKind.Shop or ParkObjectKind.Sideshow or ParkObjectKind.Feature or ParkObjectKind.Upgrade;
@@ -130,12 +138,15 @@ public sealed class EconomyObjectCatalog : IEconomyObjectCatalog
 			var scrap = Enumerable.Range( 1, 4 ).Select( year => settings.GetInt( $"Upgrades[{level}].ScrapValueYear{year}", 0, optional: true ) ).ToArray();
 			upgrades.Add( new UpgradeLevelInfo( level, settings.GetLong( $"Upgrades[{level}].CostOfUpgrade", 0L ), settings.GetInt( $"Upgrades[{level}].CostOfResearch", 0, optional: true ),
 				settings.GetInt( $"Upgrades[{level}].WearRate", 0, optional: true ), settings.GetInt( $"Upgrades[{level}].DurationOfUpgrade", 0, optional: true ), scrap,
-				settings.GetInt( $"Upgrades[{level}].RedLineSpeed", 0, optional: true ), settings.GetInt( $"Upgrades[{level}].RedLineCapacity", 0, optional: true ) ) );
+				settings.GetInt( $"Upgrades[{level}].RedLineSpeed", 0, optional: true ), settings.GetInt( $"Upgrades[{level}].RedLineCapacity", 0, optional: true ),
+				// [BIN:TPI-EXE:0x005DEFFF monthly object cost] Theme Park Inc's type record holds Upgrades[n].RunningCost (+0x2B4, stride 0x44) and CashPerBrainPoint (+0x274); Theme Park World's files carry neither, so they read 0 there
+				settings.GetInt( $"Upgrades[{level}].RunningCost", 0, optional: true ), settings.GetInt( $"Upgrades[{level}].CashPerBrainPoint", 0, optional: true ) ) );
 		}
 		// Shops and features list levels 1 and 2 with zero cost ("no upgrades possible"); keep only real upgrade levels.
 		while ( upgrades.Count > 1 && upgrades[^1].CostOfUpgrade == 0 && upgrades[^1].CostOfResearch == 0 )
 			upgrades.RemoveAt( upgrades.Count - 1 );
 		int? Optional( string key ) => settings.Contains( key ) ? settings.GetInt( key ) : null;
+		// [APPROX:ECON-062] only shops and sideshows carry a price per use: a Theme Park Inc ride also declares UsageInfo.InitPricePerUse (20) and Info.ExpectedPrice (25), which are read without being charged
 		var hasPrices = kind is ParkObjectKind.Shop or ParkObjectKind.Sideshow;
 		return new EconomyObjectInfo( id, settings.Contains( "Info.Name" ) ? settings.GetString( "Info.Name" ).Trim() : $"Info.Id {id}", kind,
 			(ResearchCategory)Math.Clamp( researchCategory, 0, 4 ), settings.GetInt( "Research.Group", 0, optional: true ), upgrades,
@@ -162,7 +173,9 @@ public sealed class EconomyObjectCatalog : IEconomyObjectCatalog
 			// [BIN:TPW-EXE:0x004DB090 object constructor] UsageInfo.ProvidesSecurity (type +0xF0, thing +0x32 bit 0x10) adds RegionFX row 4 at the object's cell: the security cameras of all four themes
 			settings.GetInt( "UsageInfo.ProvidesSecurity", 0, optional: true ) != 0,
 			// [BIN:TPW-EXE:0x004DB090 object constructor] UsageInfo.IsFireworks (type +0x110, thing +0x32 bit 0x80) adds RegionFX row 7: Hallow's Firework Show and Space's Laser Show
-			settings.GetInt( "UsageInfo.IsFireworks", 0, optional: true ) != 0 );
+			settings.GetInt( "UsageInfo.IsFireworks", 0, optional: true ) != 0,
+			// [BIN:TPI-EXE:0x005DEFFF type record] Theme Park Inc only: Info.ExpectedPrice (+0x88) and Info.WorkingLife (+0x8C); neither is used yet
+			settings.GetInt( "Info.ExpectedPrice", 0, optional: true ), settings.GetInt( "Info.WorkingLife", 0, optional: true ) );
 	}
 
 	/// <summary>
@@ -245,7 +258,8 @@ public sealed class EconomyObjectCatalog : IEconomyObjectCatalog
 			if ( easy && files.TryGetValue( "Easy_" + objectFile, out var easyPath ) )
 				layers.Add( SamDocument.Parse( entry.FileSystem.ReadAllText( easyPath ), easyPath ) );
 			layers.Add( SamDocument.Parse( ObjectCatalog.ModLayerText( entry.ModDefinition! ), "objects.json" ) );
-			result.Add( FromSettings( new SamSettings( layers ), kind, entry.ArchivePath ) );
+			var modInfo = FromSettings( new SamSettings( layers ), kind, entry.ArchivePath );
+			result.Add( entry.ModDefinition.Research ? modInfo : modInfo with { NotResearched = true } );
 		}
 	}
 }

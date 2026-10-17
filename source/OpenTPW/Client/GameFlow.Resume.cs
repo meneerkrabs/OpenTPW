@@ -12,14 +12,16 @@ internal sealed partial class GameFlow
 			level.SaveSandbox();
 			return;
 		}
+		// [BIN:TPW-EXE:0x48b6a0 pause menu commands] the Save command (command 2, case 0x48B7AD of the handler 0x48B6A0) closes the menu and opens the save screen (0x49F280) with no speech test, and the speech stop 0x51C0E0 has only the callers 0x5994E0 and 0x5996D0 (neither on a save), so a response being spoken goes on and is not part of the file
 		var snapshot = level.CaptureResumeSnapshot( Advisor?.IsAttached == true ? Advisor : null, level.LevelName,
-			savedUtc: DateTimeOffset.UtcNow );
+			savedUtc: DateTimeOffset.UtcNow, advisorMaySpeak: true );
 		ParkResumeSaveFile.Save( SaveFileSystem.GetAbsolutePath( $"opentpw-{level.LevelName}-world.json" ), snapshot );
 		Log.Trace( $"Saved {level.LevelName} park: {snapshot.Layout.Objects.Count} objects, {snapshot.Guests.Guests.Length} guests." );
 	}
 
 	/// <summary>Preflights and builds an isolated candidate before retiring the live park or lobby.</summary>
-	internal Level ResumePark( ParkResumeSnapshot snapshot )
+	/// <param name="restart">The reload of the restart snapshot itself (Restart Park), which keeps that snapshot instead of taking a new one.</param>
+	internal Level ResumePark( ParkResumeSnapshot snapshot, bool restart = false )
 	{
 		RequireProgressSaved();
 		if ( GameEditions.IsThemeParkInc ) throw new NotSupportedException( "Theme Park Inc park saves are not supported." );
@@ -73,6 +75,8 @@ internal sealed partial class GameFlow
 				Log.Warning( $"Park resumed; audio could not start: {error.Message}" );
 			}
 			AttachProgress( candidate );
+			// a load takes the restart snapshot like the original's state 15; a restart's own reload does not
+			if ( !restart ) TakeRestartSnapshot( candidate, assets ); // the manifest was hashed for the validation above; hashing it again is most of the snapshot's cost
 			Log.Trace( $"Resumed {snapshot.Theme} park: {candidate.Objects.Objects.Count} objects, {candidate.Guests!.Guests.Count} guests." );
 			return candidate;
 		}

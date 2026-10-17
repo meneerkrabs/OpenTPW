@@ -412,6 +412,7 @@ internal sealed partial class GameFlow : IDisposable
 			Log.Trace( dropped );
 		}
 		AttachProgress( level );
+		if ( original && visit == null ) TakeRestartSnapshot( level );
 		return level;
 	}
 
@@ -435,9 +436,8 @@ internal sealed partial class GameFlow : IDisposable
 		CreateOptions = CreateOptions,
 		CreateLoad = stack => FrontEndMenu.CreateLoadScreen( stack, Strings, FindLoadEntries(), entry => QueueProgressLevel( entry.Level, () => LoadPark( entry, overFrames: true ) ) ),
 		GoOnline = WhenOnline( ShowOnline ),
-		// [APPROX:SAVE-012] the restart rebuilds the park from the level and balance instead of reloading the original's restart.INTS snapshot
-		// [EXT:pause-menu-restart] Restart Park restarts an Instant Action park of a theme (no progress is spent); a Full Simulation park would pay its theme's entry cost again, which is not traced, so its entry stays disabled
-		RestartPark = AutomaticEligible( level ) && level.Park is { Start.Kind: ParkStartKind.InstantAction } ? () => RequestParkStart( level.LevelName, GameMode.InstantAction ) : null,
+		// Restart Park reloads the restart snapshot in every original park but the read-only visit (the original's pause menu 0x48C150 lists the entry for every game type except the online visit)
+		RestartPark = RestartEligible( level ) ? () => RestartCurrentPark( level ) : null,
 		PublishPark = WhenOnline( stack => CreateOnlineScreens( stack ).ShowPublish() ),
 		ListSorts = listSorts,
 		OptionsChanged = () => { if ( PersistSettings ) GameOptions.Current.Save( OptionsPath ); },
@@ -483,6 +483,8 @@ internal sealed partial class GameFlow : IDisposable
 		AbandonParkBuild();
 		Hud?.Stack.Clear();
 		Menu?.Stack.Clear();
+		IncFrontEnd?.Stack.Clear();
+		IncFrontEnd = null;
 		Advisor?.DetachLevel();
 		GameAudio.LeavePark();
 		GameAudio.LeaveLobby();
@@ -621,6 +623,12 @@ internal sealed partial class GameFlow : IDisposable
 			{
 				UpdateViewer( Level, input );
 			}
+			return;
+		}
+		// [EXT:tpi-front-end-phase1] the Theme Park Inc Personnel File: no lobby scene, camera or sound in phase 1
+		if ( IncFrontEnd != null )
+		{
+			IncFrontEnd.Update( Context, input );
 			return;
 		}
 		GameAudio.EnsureStarted();
@@ -942,7 +950,9 @@ internal sealed partial class GameFlow : IDisposable
 			// [APPROX:UI-018] stand-in for the cloud layer: the whole backdrop is painted with the cloud grid's colour (LobbyEffects.Sky) instead of the fog colour under tinted clouds; the engine sky (0x8c1828) loads <level>\sky\sky.tga for the lobby (0x5852b0 from 0x5d8b50, "Data\Levels\fantasy") and its draw (0x585ee0-0x586a00) colours it from the 16×16 grid at +0xf60 that LobbyEffects.Sky fills; that draw and the scene's fog (50 to 300) are not traced
 			backgroundBatch.Clear();
 			var sky = lobbyEffects.Sky;
-			backgroundBatch.AddRectangle( new UiRect( 0, 0, framebuffer.Width, framebuffer.Height ), new RgbaByte( sky.R, sky.G, sky.B, 255 ) );
+			// [EXT:tpi-front-end-phase1] the Theme Park Inc Personnel File stands on a flat dark backdrop; the original's 3D intro world (wIntro) is not drawn
+			var backdropColour = IncFrontEnd != null ? new RgbaByte( 14, 18, 38, 255 ) : new RgbaByte( sky.R, sky.G, sky.B, 255 );
+			backgroundBatch.AddRectangle( new UiRect( 0, 0, framebuffer.Width, framebuffer.Height ), backdropColour );
 			backgroundRenderer.Draw( global::Global.Render.CommandList, backgroundBatch, framebuffer.Width, framebuffer.Height );
 			foreach ( var entity in Entity.All.ToArray() )
 				entity.Render();
@@ -961,6 +971,8 @@ internal sealed partial class GameFlow : IDisposable
 		}
 		else if ( IncHud != null )
 			IncHud.Draw( Context );
+		else if ( IncFrontEnd != null )
+			IncFrontEnd.Draw( Context );
 		else if ( !LobbyEntering )
 			Menu?.Stack.Draw( Context );
 		// [BIN:TPW-EXE:0x5d8d22 lobby fade] the enter's fade is a black overlay whose alpha is the eased fade value >> 8
@@ -1040,6 +1052,7 @@ internal sealed partial class GameFlow : IDisposable
 		GameAudio.Shutdown();
 		Hud?.Stack.Clear();
 		Menu?.Stack.Clear();
+		IncFrontEnd?.Stack.Clear();
 		if ( chatOverlay != null )
 			global::Global.Render.OnOverlayRender -= chatOverlay.Draw;
 		chatOverlay?.Dispose();

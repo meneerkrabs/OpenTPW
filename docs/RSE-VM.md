@@ -20,15 +20,17 @@ Code: `source/OpenTPW/VM/` (`RideVM`, `Operand`, `Instruction`, `RideOpcodes`,
 
 | | Opcodes | Corpus instructions |
 | --- | ---: | ---: |
-| Implemented (VM does the whole job) | 33 | 7,850 |
-| Hooked (VM handles operands/flags/waits; game effect → `IRideScriptEffects`) | 51 | 4,065 |
+| Implemented (VM does the whole job) | 41 | 8,049 |
+| Hooked (VM handles operands/flags/waits; game effect → `IRideScriptEffects`) | 43 | 3,866 |
 | Unknown (no handler) | 0 | 0 |
 | **Corpus total** | **84** | **11,915** |
 
-Of the 22 named opcodes the TPW corpus never uses, 6 have handlers: 4 from the
-upstream docs alone (`SETVARINPARENT`, `YEAR`, `MONTH`, `DAY`) and
+Of the 22 named opcodes the TPW corpus never uses, 10 have handlers: 4 from the
+upstream docs alone (`SETVARINPARENT`, `YEAR`, `MONTH`, `DAY`),
 `WAITABS`/`MULT` for the Theme Park Inc corpus
-([below](#theme-park-inc-gap-opcodes)); the other 16 stay unknown and fault the
+([below](#theme-park-inc-gap-opcodes)) and `PUSH`, `POP`, `SETLV` and `DBGMSG`,
+read from tp.exe ([below](#original-interpreter-internals)); the other 12 (the ride
+lights, `EVENT_EXT`, `GETCUSTPTCLCODE` and others) stay unknown and fault the
 script if executed. Operand counts of every handler equal the upstream signature
 counts and the corpus counts (`CRIT_UNLOCK`: 0).
 
@@ -70,17 +72,22 @@ implementation against those inputs, not equivalence to an executed PC game.
 - Flags: Zero = result 0, Sign = result negative. COPY updates them from the
   copied value; WAIT, ENDSLICE and KILLOBJ preserve them. `BRANCH_PV` is
   **strictly** positive (Sign and Zero clear).
-- Scheduling (**assumption**, not verified): each `Advance(delta)` — one
-  `FixedStepClock` tick (60 Hz) in the game — adds `delta` to the script clock
-  and runs one slice. A slice ends at ENDSLICE, at a wait, or after the
-  header's time slice (50 in every script) instructions outside a
-  `CRIT_LOCK…CRIT_UNLOCK` section. That budget is what lets busy loops such as
-  Totem's passenger loop (`TEST`/`BRANCH` for 10 s, no ENDSLICE) yield; a slice
-  that stays locked for 100,000 instructions faults.
+- Scheduling: in a park the substep scheduler runs the scripts (`RideScriptWorld.RunPass`, one pass per 31 ms substep of the
+  park's tick count, DETERMINISM.md "The substep scheduler"): every script's clock gains 31 ms, newest script first, and a script
+  runs a slice only when `(id xor pass counter) & 7 == 0` or its TURBO byte is nonzero (tp.exe `0x5516E1`), so an ordinary script
+  gets a slice every 248 ms. A standalone VM (tests, tools) keeps `Advance(delta)`: it adds `delta` to the script clock and runs one
+  slice per call, as every script did before the scheduler. The slice
+  itself follows tp.exe ([below](#original-interpreter-internals)): the
+  header's time slice (50 in every script) is a counter that falls by one per
+  instruction outside a critical section; `CRIT_LOCK` stops the counting,
+  `CRIT_UNLOCK` and `ENDSLICE` zero the counter, a wait ends the slice. The
+  budget is what lets busy loops such as Totem's passenger loop
+  (`TEST`/`BRANCH` for 10 s, no ENDSLICE) yield. A slice that stays locked for
+  100,000 instructions faults (`[EXT:crit-slice-guard]`: the original would hang).
 - Time unit is the millisecond (**inferred**: `WAIT 500…5300` around ride
   animations, `GETTIME; ADD VAR_STARTNOW 10000` passenger time-outs, animation
-  durations fed into `WAIT`). Waits resume on the first tick at or after the
-  wake time, so they are quantised to 1/60 s. `GETTIME` reads the park's shared
+  durations fed into `WAIT`). Waits resume on the first slice at or after the
+  wake time: in a park the slice of an ordinary script comes every 248 ms (the scheduler above), a standalone VM's every 1/60 s tick. `GETTIME` reads the park's shared
   scheduler clock (`RideScriptWorld.ClockMilliseconds`), as the original reads
   `0x10e844` on the global r30 (0xaf55c, 0xaf6d8) without subtracting a creation
   timestamp; a script created later starts at the clock's current value. The
@@ -90,8 +97,9 @@ implementation against those inputs, not equivalence to an executed PC game.
   timer 0x785970 (started once at 0x54DCF0, read by 0x402D70, set only by the save writer 0x4164C0 and loader
   0x415270, never reset for a new park), so a new park's first script sees the time since program start;
   `GETTIME` (PC handler `0x551F1E`) stores that clock unchanged and every shipped script uses it only as a deadline or in a difference (`RideClockCorpusTests`); the only possible effect of the origin is the 32-bit wrapping `WAITANIM_CH` sum (PC handler `0x55320A`) inside a park's first 134 ms, and none of the 308 Theme Park World or 282 Theme Park Inc scripts issues `WAITANIM_CH`.
-- `JSR`/`RETURN` use a LIFO stack limited to the header stack size (every
-  script that uses JSR declares ≥ 3); the old VM used a FIFO queue.
+- `JSR`/`RETURN` use a LIFO stack in the script's array of the header stack size
+  (every script that uses JSR declares ≥ 3), which HUSH/HOP share from the other
+  end ([below](#original-interpreter-internals)); the old VM used a FIFO queue.
 - Children: `SPAWNCHILD` and `SPAWNSOUND` load a script from the parent's
   archive through `RideVMOptions.ResolveScript` and run it after the parent
   each tick, in separate slots (bumper.RSE uses both). Variable IDs in
@@ -143,7 +151,9 @@ corpus, native audio and GPU checks remain deferred.
 | CMP | bitwise AND | subtraction: `RAND VAR_TEMP 10; CMP VAR_TEMP 4; BRANCH_PV; BRANCH_NZ` only makes sense as `a − b` |
 | BRANCH_PV | "positive" | excludes zero: 15× `BRANCH_PV x; BRANCH_Z x` |
 | RAND | `0..max` | inclusive for nonnegative bounds; Mac static code sign-extends the raw bound word without variable resolution; host random sequence is not qualified |
-| UNLIMBO, FORCEUNLIMBO | visitor input | output + flags: `UNLIMBO VAR_LETMEOFF; BRANCH_Z none; ADD VAR_ONRIDE 0xFFFF` |
+| UNLIMBO, FORCEUNLIMBO | visitor input | output + flags: `UNLIMBO VAR_LETMEOFF; BRANCH_Z none; ADD VAR_ONRIDE 0xFFFF` (tp.exe `0x554EF0`/`0x554F74` confirm) |
+| HUSH, HOP | visitor operations | the script's own heap: `HUSH VAR_LETMEON` pushes the id, `HOP VAR_TEMP2` pops it (tp.exe `0x553D25`/`0x553DAA`) |
+| TURBO | `value` 0..1 | stores the low byte of the raw operand word in the script's TURBO byte (tp.exe `0x5542B9`) |
 | TRIGANIM | unknown operands | `animation variant duration-out`: `TRIGANIM 5 0 VAR_TEMP; SUB VAR_TEMP VAR_TEMP 3000; WAIT VAR_TEMP; …; WAIT4ANIM` |
 | SETTIMER / GETTIMER | unknown | countdown in ms; `GETTIMER dest` = remaining time, sets flags |
 
@@ -215,8 +225,8 @@ object runtimes and VM instructions without original assets or a GPU.
 
 Valid hooked operations call `IRideScriptEffects.Perform(RideEffectCall)` with the
 resolved operand values. The VM writes the returned value to the opcode's
-destination where the corpus shows one (HOP, WALKGET, UNLIMBO, LIMBOSPACE,
-GETANIM_CH, HOUR, …), sets flags where branches consume them, and for the
+destination where the corpus shows one (WALKGET, UNBOUNCE,
+GETANIM_CH, HOUR, …; HOP and the LIMBO family are VM-internal), sets flags where branches consume them, and for the
 animation triggers takes it as the original trigger result in milliseconds
 (the clip length, 1000 for a missing member). The animation opcodes follow the
 Feral Mac handlers (docs/reverse/ANIM-plan.md §8): TRIGANIM, TRIGWAITANIM,
@@ -347,11 +357,14 @@ With no visitors, an opened Totem waits 10 s, moves once, and repeats.
 
 ## Visitors
 
-The visitor opcodes (HUSH, WALKON, HOP, WALKOFF, WALKGET, LIMBO, UNLIMBO,
-FORCEUNLIMBO, INLIMBO, LIMBOSPACE, BOUNCE, UNBOUNCE, FORCEUNBOUNCE, BOUNCING,
-ADDHEAD, DELHEAD) and the `VAR_LETMEON`/`VAR_LETMEOFF` host protocol are
-implemented against real guests by `RideVisitorBridge` (an `IRideScriptEffects`
-layer; `VisitorRideScriptEffects` wraps any other effects). Every original object (OBJECTS.md) and the sandbox Totem use
+The visitor opcodes WALKON, WALKOFF, WALKGET, BOUNCE, UNBOUNCE, FORCEUNBOUNCE,
+BOUNCING, ADDHEAD and DELHEAD and the `VAR_LETMEON`/`VAR_LETMEOFF` host protocol
+are implemented against real guests by `RideVisitorBridge` (an `IRideScriptEffects`
+layer; `VisitorRideScriptEffects` wraps any other effects). HUSH, HOP and the
+LIMBO family are not visitor operations: they work on the script's own heap and
+limbo table inside the VM ([below](#original-interpreter-internals)); the guest
+boards when the script consumes `VAR_LETMEON` (or through WALKON/BOUNCE), and
+leaves when the script writes its id to `VAR_LETMEOFF`. Every original object (OBJECTS.md) and the sandbox Totem use
 it: with guests nearby its script fills at ≈3.3 s and unloads through
 HOP/WALKOFF/WALKGET. Semantics are inferred from the corpus, see
 [GUESTS.md](GUESTS.md). The default `UnimplementedRideScriptEffects` still returns
@@ -363,10 +376,92 @@ including the Totem's `TRIGANIM_CH` channel clips (`totemm2…10`); the ANIM_* �
 member mapping, channels and the corpus run of all 262 object scripts are in
 [OBJECTS.md](OBJECTS.md).
 
+## Original interpreter internals
+
+Read from tp.exe (the interpreter `0x551CB0` executes one instruction and
+dispatches through the jump table `0x5567D8`; the scheduler pass is `0x5516B0`).
+The unit tests are `RideVMInternalsTests`.
+
+- **Slice and critical flag.** At the start of each slice the pass clears the
+  global critical flag (`0x87919C`, `0x551701`) and copies the script's time
+  slice (header, +0x94) into the slice counter (+0x98). It then runs
+  instructions while the counter is above 0 and the pc is valid; after each
+  instruction the counter falls by one only while the flag is 0
+  (`0x551724`..`0x551730`). `CRIT_LOCK` (`0x551D44`) sets the flag,
+  `CRIT_UNLOCK` (`0x551D59`) clears it and zeroes the counter, so it always ends
+  the slice; `ENDSLICE` (`0x5542A8`) zeroes the counter; `END` (`0x5567B1`) sets
+  the pc to -10000 (the script is destroyed at the end of the pass); a wait
+  rewinds the pc and ends the slice. The flag's only reader is the slice loop:
+  no host or game code looks at it, so the bridge's earlier "never inside
+  `CRIT_LOCK`" gates (`RideVisitorBridge.PresentForBoarding`, `HostStep`) had no
+  original counterpart and are gone. Whether a slice runs at all in a pass is
+  decided before: a script with a nonzero TURBO byte always runs, any other only
+  when `(script +8 xor pass counter) & 7` is 0 (`0x5516E1`..`0x5516F6`); the
+  park's substep scheduler models it (`RideVM.StepSubstep`).
+- **TURBO** (opcode 51, `0x5542B9`) stores the low byte of the raw operand word
+  (not resolved: a variable operand stores its index byte, `0xFFFF` stores
+  `0xFF`) at script +0xB8 and does nothing else. `RideVM.TurboByte` holds it
+  for the cadence of the substep scheduler; it is part of the VM snapshot and, once nonzero,
+  of the canonical hash.
+- **Heap and stack.** Each script owns one array of header-stack-size words
+  (+0x20, size +0x54, zero-filled here). `JSR` (`0x5539A9`), `RETURN`
+  (`0x553A32`), `PUSH` (`0x553C1E`) and `POP` (`0x553CBA`) use it from the top
+  (pointer +0x40, starts at size - 1, falls on push); `HUSH` (`0x553D25`) and
+  `HOP` (`0x553DAA`) use it from the bottom (count +0x44, starts at 0). Nothing
+  checks the two ends against each other. A return address is stored as
+  `pc | 0x20000000` where the pc is a code-word offset (the VM maps it back to an instruction on `RETURN` and faults on a word that starts none); `RETURN` jumps only to a word with that tag and otherwise
+  continues at the next instruction. The original's asserts are a bare `ret`
+  (`0x5DA3C0`): a full `JSR` jumps without pushing (the VM no longer faults
+  there); a full `PUSH`, an empty `POP` and an empty `RETURN` set the pc to
+  -10000 (the VM's fault, pc -10000); a full `HUSH` and an empty `HOP` do
+  nothing at all (flags and destination untouched). `HUSH` pushes the resolved
+  operand and sets the flags to it; `HOP` pops LIFO into the flags and a
+  variable destination. `SETLV` (`0x551E19`) sets the flags from the raw operand
+  word (a literal counts as its unsigned 16 bits, a variable as its tagged
+  word); `DBGMSG` (`0x554243`) skips its operand.
+- **HUSH/HOP in the corpus.** The 39 `HUSH VAR_LETMEON` come right after the
+  script has taken the called guest (`TEST VAR_LETMEON`, then `HUSH`, `ADD
+  VAR_ONRIDE 1` and `ADDHEAD`/`WALKON`/`COPY VAR_LETMEON 0`), and the 39
+  `HOP VAR_TEMP2`/`VAR_LETMEOFF` come before the guest leaves (`WALKOFF` after 19
+  of them, `DELHEAD` after 31): the script pushes the id it just took and pops
+  the newest (LIFO, not the oldest) when unloading. The earlier bridge treated
+  HUSH as boarding and HOP as "first boarded guest not yet hopped"; the boarding
+  now comes from the `VAR_LETMEON` protocol (`HostStep` marks the called guest
+  aboard when the script consumed `VAR_LETMEON`) and `WALKON`, and HOP hands back
+  the ids the script itself pushed.
+- **Limbo table** (opcodes 58-62). A per-script table of header-limbo-size
+  `{value, expiry}` slots (+0x24, zeroed) and an occupied count (+0x60), kept
+  by the VM and part of its snapshot. `LIMBO v s` (`0x554DE5`): the first slot
+  whose value is 0 takes `v` and the expiry `clock + s x 1000` (the same
+  32-bit millisecond clock as `GETTIME`, wrapping), count++, result 1; a full or
+  empty table gives result 0 and stores nothing (a stored value of 0 leaves its
+  slot "free" but still counts). `UNLIMBO d` (`0x554EF0`): the first occupied
+  slot whose expiry is strictly below the clock (signed 32-bit) is cleared in
+  place (its expiry stays), count--, result = its value, else 0; a variable
+  destination is written, a literal one only sets the flags. `FORCEUNLIMBO d`
+  (`0x554F74`) needs a variable destination (a literal does nothing at all) and
+  takes the first occupied slot whatever its expiry. `INLIMBO d` (`0x555012`) is
+  the count, `LIMBOSPACE d` (`0x555045`) is size - count. The bridge only
+  consumes what the script does with the result (`UNLIMBO VAR_LETMEOFF`, then
+  the host releases that guest); it no longer holds a limbo list, does not
+  board on `LIMBO`, and its snapshot's `Hopped`/`Limbo` arrays are always empty
+  (kept for the file format; limbo state of older saves is dropped).
+- Not implemented, tp.exe addresses noted: the ride lights (`ENABLELIGHT`
+  `0x555C7A`, `DISABLELIGHT` `0x555CCD`, `SETLIGHT` `0x555D20`, `COLOURLIGHT`
+  `0x555D9A`; `SETLIGHT` reads two operands, the upstream notes say one),
+  `EVENT_EXT` (`0x552707`) and `GETCUSTPTCLCODE` (`0x5563D5`) are game effects
+  with no use in either corpus.
+
 ## Not original behaviour yet
 
-- Slice scheduling (one slice per 60 Hz tick, budget = header time slice),
-  millisecond units, and CRIT_LOCK semantics are inferred, not traced.
+- The millisecond unit of WAIT is not original; the slice cadence is (the park's
+  substep scheduler, above); a standalone VM without a park runs a slice per
+  `Advance` call. The slice budget, the critical
+  flag, HUSH/HOP, JSR/RETURN/PUSH/POP, the limbo table and TURBO's byte are
+  ([below](#original-interpreter-internals)).
+- The ride lights (82–85, tp.exe `0x555C7A`–`0x555D9A`), `EVENT_EXT`
+  (`0x552707`) and `GETCUSTPTCLCODE` (`0x5563D5`) are game effects the VM does
+  not implement; no script of either corpus uses them.
 - Visitor opcodes work for every placed original object (its `RideVisitorBridge`);
   walks along ride nodes are instantaneous, riders are not drawn, and
   TOUR/BUMP/COAST guest handling and WALKST_FLOAT/WALKFLOATSTAT/WALKFLOATSTOP
@@ -442,10 +537,10 @@ handler attributes diverge.
 | # | Opcode | Corpus uses | Status | Evidence |
 | ---: | --- | ---: | --- | --- |
 | 0 | `NOP` | 2 | implemented | docs |
-| 1 | `CRIT_LOCK` | 150 | implemented | docs (locks the ride); VM: the slice budget cannot preempt inside CRIT_LOCK…CRIT_UNLOCK, hosts must not change visitor variables while `InCriticalSection` |
-| 2 | `CRIT_UNLOCK` | 240 | implemented | undocumented upstream; corpus: closes every CRIT_LOCK section (240 uses, 0 operands) |
+| 1 | `CRIT_LOCK` | 150 | implemented | TPW-EXE 0x551D44: sets the critical flag, which only stops instructions counting against the slice budget (the flag is cleared at every slice start; no host or game code reads it) |
+| 2 | `CRIT_UNLOCK` | 240 | implemented | TPW-EXE 0x551D59: clears the critical flag and ends the slice (240 corpus uses, 0 operands) |
 | 3 | `COPY` | 1243 | implemented | Mac-static: variable destination receives the resolved source and sets flags; non-variable destination aborts with PC -10000 |
-| 4 | `SETLV` | 0 | unknown | no corpus use; not implemented (executing it faults the script) |
+| 4 | `SETLV` | 0 | implemented | TPW-EXE 0x551E19: sets the flags from the raw operand word (not resolved: a variable operand counts as its tag word, a literal as its unsigned 16 bits); no corpus use |
 | 5 | `SUB` | 74 | implemented | docs (sets flags); corpus: operand order is `SUB dest a b` → dest = a − b |
 | 6 | `ENDSLICE` | 396 | implemented | name; corpus: sits in idle loops (`ENDSLICE; TEST VAR_RIDECLOSED; BRANCH_NZ`), so it yields until the next slice; flags survive it |
 | 7 | `GETTIME` | 172 | implemented | STP-PPC 0xaf6d8: the shared scheduler clock's 32-bit millisecond word, stored unchanged (no creation timestamp subtracted) |
@@ -470,21 +565,21 @@ handler attributes diverge.
 | 26 | `TRIGWAITANIM_CH` | 0 | hooked | STP-PPC 0xb0404: as TRIGWAITANIM on channel operand 4; leaves the LOOPANIM token |
 | 27 | `GETANIM_CH` | 15 | hooked | STP-PPC 0xb05b8: `GETANIM_CH dest channel`: the channel's AnimID, −1 once ended; result sets flags (corpus `GETANIM_CH 0 n; BRANCH_PV x; BRANCH_Z x`) |
 | 28 | `RAND` | 56 | implemented | Mac-static: signed raw bound word, inclusive nonnegative maximum, sets flags; host PRNG remains unqualified |
-| 29 | `JSR` | 70 | implemented | docs; corpus: every script using JSR declares stack ≥ 3, used as the return-address limit |
-| 30 | `RETURN` | 33 | implemented | docs; LIFO return stack (the old VM used a FIFO queue) |
+| 29 | `JSR` | 70 | implemented | docs; TPW-EXE 0x5539A9: the return address goes onto the script's shared stack/heap array (header stack size, top-down); a full array still jumps, without pushing; corpus: every script using JSR declares stack ≥ 3 |
+| 30 | `RETURN` | 33 | implemented | docs; TPW-EXE 0x553A32: pops the shared array LIFO; only an address-tagged word is jumped to; an empty stack kills the script |
 | 31 | `BRANCH` | 725 | implemented | docs; all 725 operands are branch words |
 | 32 | `BRANCH_Z` | 787 | implemented | docs (zero flag set) |
 | 33 | `BRANCH_NZ` | 943 | implemented | docs (zero flag clear) |
 | 34 | `BRANCH_NV` | 55 | implemented | docs (negative); corpus: `SUB VAR_TEMP VAR_STARTNOW VAR_TEMP; BRANCH_NV` passenger time-outs |
 | 35 | `BRANCH_PV` | 84 | implemented | docs (positive); corpus: strictly positive, because 15× `BRANCH_PV x; BRANCH_Z x` and `CMP VAR_TEMP 4; BRANCH_PV; BRANCH_NZ` would otherwise be dead code |
-| 36 | `DBGMSG` | 0 | unknown | no corpus use; not implemented (executing it faults the script) |
+| 36 | `DBGMSG` | 0 | implemented | TPW-EXE 0x554243: skips its operand and does nothing; no corpus use |
 | 37 | `NAME` | 277 | implemented | docs; the name is what FINDSCRIPTRAND searches for |
 | 38 | `TEST` | 1318 | implemented | docs |
 | 39 | `CMP` | 61 | implemented | docs say bitwise AND; corpus needs subtraction (a − b): `RAND VAR_TEMP 10; CMP VAR_TEMP 4; BRANCH_PV; BRANCH_NZ`, `CMP VAR_CAPACITY VAR_CARS; BRANCH_Z` |
-| 40 | `PUSH` | 0 | unknown | no corpus use; not implemented (executing it faults the script) |
-| 41 | `POP` | 0 | unknown | no corpus use; not implemented (executing it faults the script) |
-| 42 | `HUSH` | 39 | hooked | unknown upstream; corpus input (`HUSH VAR_LETMEON` before boarding) |
-| 43 | `HOP` | 39 | hooked | unknown upstream; corpus output (`HOP VAR_TEMP2; WALKOFF VAR_TEMP2`) |
+| 40 | `PUSH` | 0 | implemented | TPW-EXE 0x553C1E: pushes the resolved value onto the JSR array (top-down, no collision check) and sets the flags; a full array kills the script; no corpus use |
+| 41 | `POP` | 0 | implemented | TPW-EXE 0x553CBA: pops the JSR array into the flags and a variable destination; an empty array writes 0 and kills the script; no corpus use |
+| 42 | `HUSH` | 39 | implemented | TPW-EXE 0x553D25: not a visitor operation; appends the resolved value to the script's heap (header stack size, up from index 0) and sets the flags; a full heap does nothing |
+| 43 | `HOP` | 39 | implemented | TPW-EXE 0x553DAA: pops the newest heap value (LIFO) into the flags and a variable destination; an empty heap does nothing (`HUSH VAR_LETMEON … HOP VAR_TEMP2; WALKOFF VAR_TEMP2`) |
 | 44 | `WAIT` | 458 | implemented | STP-PPC 0xb0658: milliseconds divided by the script speed (0.5 + SPEED/100), truncated; flags survive it (`WAIT 300; BRANCH_NZ`) |
 | 45 | `WAITABS` | 0 | implemented | tp.exe 0x553828 and STP-PPC 0xb0710: despite the name the first encounter stores the 32-bit clock + operand (no WAIT speed division) in the shared deadline word and yields; later encounters wait while the clock is unsigned-below it; a wrapped deadline is already past and a deadline of exactly 0 arms again (Theme Park Inc corpus: 34 uses, literals 1..10000) |
 | 46 | `WAIT4ANIM` | 170 | hooked | STP-PPC 0xb07a0: deadline 0 continues; otherwise blocks while now < deadline (re-executing), then clears it |
@@ -492,18 +587,18 @@ handler attributes diverge.
 | 48 | `MULT` | 0 | implemented | TPW-EXE 0x553eb9: dest-first, a × b by imul (32-bit wrap), result in the flag word and a variable destination; Theme Park Inc corpus: `MULT VAR_TIMER VAR_TIMEOUT VAR_SCALE` |
 | 49 | `DIV` | 4 | implemented | corpus: `DIV dest a b`; Mac-static: signed truncation, zero divisor returns 0; signed overflow retains VM wrap policy |
 | 50 | `MOD` | 5 | implemented | corpus: `MOD dest a b`; Mac-static: signed remainder, zero divisor returns 0; signed overflow retains VM zero policy |
-| 51 | `TURBO` | 20 | hooked | docs (`value` 0..1, meaning unknown) |
+| 51 | `TURBO` | 20 | implemented | TPW-EXE 0x5542B9: stores the low byte of the raw operand word in the script's TURBO byte (a variable operand stores its index byte); nothing else |
 | 52 | `END` | 0 | unknown | no corpus use; not implemented (executing it faults the script) |
 | 53 | `TOUR` | 76 | hooked | Mac-static command roles: mutators preserve flags; supported queries set flags/output; required-variable gates skip invalid calls |
 | 54 | `BUMP` | 199 | hooked | Mac-static command roles: mutators preserve flags; queries set flags/output; duration commands set flags from original input |
 | 55 | `COAST` | 144 | hooked | Mac-static: commands 1/4/5/6/8 preserve flags; 2/3 set flags and optional output; 7 is a no-op |
 | 56 | `ADDHEAD` | 31 | hooked | docs (`visitor`) |
 | 57 | `DELHEAD` | 31 | hooked | docs (`visitor`) |
-| 58 | `LIMBO` | 24 | hooked | docs (`visitor unknown`) |
-| 59 | `UNLIMBO` | 24 | hooked | docs say input; corpus output + flags (`UNLIMBO VAR_LETMEOFF; BRANCH_Z`) |
-| 60 | `FORCEUNLIMBO` | 23 | hooked | docs say input; corpus output + flags (`FORCEUNLIMBO VAR_LETMEOFF; BRANCH_NZ loop`) |
-| 61 | `INLIMBO` | 6 | hooked | unknown upstream; corpus `INLIMBO 0; BRANCH_Z` → dest + flags |
-| 62 | `LIMBOSPACE` | 24 | hooked | unknown upstream; corpus `LIMBOSPACE 0; BRANCH_Z full` → dest + flags |
+| 58 | `LIMBO` | 24 | implemented | TPW-EXE 0x554DE5 (`value seconds`): the first free slot of the script's limbo table (header limbo size) takes the value and expiry now + seconds * 1000; result 1 (flags), 0 when the table is full |
+| 59 | `UNLIMBO` | 24 | implemented | TPW-EXE 0x554EF0: releases the first occupied slot whose expiry is strictly past into the flags and a variable destination, else 0 (`UNLIMBO VAR_LETMEOFF; BRANCH_Z`) |
+| 60 | `FORCEUNLIMBO` | 23 | implemented | TPW-EXE 0x554F74: variable destination only (anything else does nothing at all); releases the first occupied slot whatever its expiry, else 0 (`FORCEUNLIMBO VAR_LETMEOFF; BRANCH_NZ loop`) |
+| 61 | `INLIMBO` | 6 | implemented | TPW-EXE 0x555012: the occupied slot count into the flags and the destination (`INLIMBO 0; BRANCH_Z`) |
+| 62 | `LIMBOSPACE` | 24 | implemented | TPW-EXE 0x555045: limbo size minus the occupied count into the flags and the destination (`LIMBOSPACE 0; BRANCH_Z full`) |
 | 63 | `SPAWNCHILD` | 20 | implemented | docs (one child); corpus: all 20 names resolve to an RSE in the same WAD; the child runs after its parent each tick |
 | 64 | `SPAWNSOUND` | 28 | implemented | docs; corpus: always `EventMap.rse`, which only fills VAR_EVT0…9/VAR_PAR0 and idles; runs in its own slot (bumper.RSE has both). What the engine reads from it is not implemented |
 | 65 | `REMOVECHILD` | 4 | implemented | docs |

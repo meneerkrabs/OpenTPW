@@ -92,8 +92,30 @@ public sealed record RideVMSnapshot
 	public string? FaultMessage { get; init; }
 	/// <summary>Next instruction index, or the native diagnostic sentinel −10000 (only while faulted); at most the instruction count.</summary>
 	public required int ProgramCounter { get; init; }
-	/// <summary>Return addresses bottom → top (LIFO order of <see cref="RideVM.CallDepth"/>).</summary>
-	public required int[] CallStack { get; init; }
+	/// <summary>
+	/// The shared stack/heap array (header stack size elements; return addresses carry the 0x20000000 tag): JSR/PUSH values fill it from the top down to
+	/// <see cref="StackPointer"/>, HUSH values from index 0 up to <see cref="HeapCount"/>. Null in a snapshot written before the array was modelled, which
+	/// stores <see cref="CallStack"/> instead.
+	/// </summary>
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
+	public int[]? Stack { get; init; }
+	/// <summary>Index the next JSR/PUSH writes (script +0x40); size - 1 when nothing is pushed. Meaningful with <see cref="Stack"/>.</summary>
+	public int StackPointer { get; init; }
+	/// <summary>Values HUSH has stored (script +0x44). Meaningful with <see cref="Stack"/>.</summary>
+	public int HeapCount { get; init; }
+	/// <summary>Return addresses bottom → top, written by snapshots that predate <see cref="Stack"/>; a restore turns them into the top-down region.</summary>
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
+	public int[]? CallStack { get; init; }
+	/// <summary>The limbo slots' held values (0 = free), header limbo size entries; null when the snapshot has no limbo table (older snapshots).</summary>
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
+	public int[]? LimboValues { get; init; }
+	/// <summary>The limbo slots' expiry words on the 32-bit scheduler clock, parallel to <see cref="LimboValues"/>.</summary>
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
+	public int[]? LimboExpiries { get; init; }
+	/// <summary>Occupied limbo count (script +0x60).</summary>
+	public int LimboCount { get; init; }
+	/// <summary>The TURBO byte (script +0xB8), 0..255.</summary>
+	public int TurboByte { get; init; }
 	public required int[] Variables { get; init; }
 	public required RideVM.VMFlags Flags { get; init; }
 	public required int SliceBudget { get; init; }
@@ -122,10 +144,42 @@ public sealed record RideVMSnapshot
 	/// <summary>Deep copy.</summary>
 	public RideVMSnapshot DeepCopy() => this with
 	{
-		CallStack = (int[])CallStack.Clone(),
+		Stack = (int[]?)Stack?.Clone(),
+		CallStack = (int[]?)CallStack?.Clone(),
+		LimboValues = (int[]?)LimboValues?.Clone(),
+		LimboExpiries = (int[]?)LimboExpiries?.Clone(),
 		Variables = (int[])Variables.Clone(),
 		UnimplementedEffects = new Dictionary<Opcode, int>( UnimplementedEffects )
 	};
+
+	/// <summary>
+	/// The shared array, pointer and heap count a restore applies for a script whose header stack size is <paramref name="capacity"/>:
+	/// the stored array, or the old call stack laid out top-down. Throws <see cref="InvalidDataException"/> when the stored data does not fit.
+	/// </summary>
+	internal int[] ResolveStack( int capacity, int instructionCount, Func<int, int> wordOffsetOf, out int stackPointer, out int heapCount )
+	{
+		if ( Stack != null )
+		{
+			if ( Stack.Length != capacity )
+				throw new InvalidDataException( $"script {ScriptId} declares stack size {capacity}, the snapshot stores {Stack.Length} elements." );
+			stackPointer = StackPointer;
+			heapCount = HeapCount;
+			return Stack;
+		}
+		if ( CallStack == null || CallStack.Length > capacity )
+			throw new InvalidDataException( $"script {ScriptId} declares stack size {capacity}, the snapshot stores {CallStack?.Length ?? 0} return addresses." );
+		var array = new int[capacity];
+		for ( var depth = 0; depth < CallStack.Length; depth++ )
+		{
+			if ( CallStack[depth] < 0 || CallStack[depth] > instructionCount )
+				throw new InvalidDataException( $"script {ScriptId} return address {CallStack[depth]} is outside [0, {instructionCount}]." );
+			// the old stack held instruction indices; the array holds the original's code-word offsets
+			array[capacity - 1 - depth] = wordOffsetOf( CallStack[depth] ) | 0x20000000;
+		}
+		stackPointer = capacity - 1 - CallStack.Length;
+		heapCount = 0;
+		return array;
+	}
 
 	/// <summary>
 	/// Pure structural validation of this script alone (bounds, enum domains, RNG shape); cross-reference checks
@@ -137,7 +191,7 @@ public sealed record RideVMSnapshot
 	{
 		if ( SchemaVersion != CurrentSchemaVersion )
 			throw new InvalidDataException( $"RideVM snapshot schema version {SchemaVersion} is not {CurrentSchemaVersion}." );
-		if ( CallStack == null || Variables == null || (RandomState == null && !UsesWorldRandom) || UnimplementedEffects == null )
+		if ( (Stack == null && CallStack == null) || Variables == null || (RandomState == null && !UsesWorldRandom) || UnimplementedEffects == null )
 			throw new InvalidDataException( $"Script {ScriptId} snapshot carries a null array (call stack, variables, RNG state or effect record)." );
 		if ( ScriptId < 1 )
 			throw new InvalidDataException( $"Script id {ScriptId} is not positive." );
@@ -165,11 +219,29 @@ public sealed record RideVMSnapshot
 			throw new InvalidDataException( $"Script {ScriptId} program counter {ProgramCounter} is not the -10000 diagnostic sentinel." );
 		if ( ProgramCounter < 0 && State != RideVMState.Faulted )
 			throw new InvalidDataException( $"Script {ScriptId} is {State} but carries the faulted-only program counter {ProgramCounter}." );
-		if ( CallStack.Length > MaximumCodeWords )
-			throw new InvalidDataException( $"Script {ScriptId} call stack has {CallStack.Length} entries, above the code-word limit." );
-		foreach ( var address in CallStack )
-			if ( address < 0 || address > MaximumCodeWords )
-				throw new InvalidDataException( $"Script {ScriptId} call-stack address {address} is outside [0, {MaximumCodeWords}]." );
+		if ( CallStack != null )
+		{
+			if ( CallStack.Length > MaximumCodeWords )
+				throw new InvalidDataException( $"Script {ScriptId} call stack has {CallStack.Length} entries, above the code-word limit." );
+			foreach ( var address in CallStack )
+				if ( address < 0 || address > MaximumCodeWords )
+					throw new InvalidDataException( $"Script {ScriptId} call-stack address {address} is outside [0, {MaximumCodeWords}]." );
+		}
+		if ( Stack != null )
+		{
+			if ( Stack.Length > RideVM.MaximumHeaderTableSize )
+				throw new InvalidDataException( $"Script {ScriptId} stack array has {Stack.Length} entries, above the limit." );
+			if ( StackPointer < -1 || StackPointer > Stack.Length - 1 )
+				throw new InvalidDataException( $"Script {ScriptId} stack pointer {StackPointer} is outside [-1, {Stack.Length - 1}]." );
+			if ( HeapCount < 0 || HeapCount > Stack.Length )
+				throw new InvalidDataException( $"Script {ScriptId} heap count {HeapCount} is outside [0, {Stack.Length}]." );
+		}
+		if ( LimboValues != null != (LimboExpiries != null) || LimboValues != null && LimboValues.Length != LimboExpiries!.Length )
+			throw new InvalidDataException( $"Script {ScriptId} limbo values and expiries do not match." );
+		if ( LimboValues != null && LimboValues.Length > RideVM.MaximumHeaderTableSize )
+			throw new InvalidDataException( $"Script {ScriptId} limbo table has {LimboValues.Length} slots, above the limit." );
+		if ( TurboByte is < 0 or > 255 )
+			throw new InvalidDataException( $"Script {ScriptId} TURBO byte {TurboByte} is outside [0, 255]." );
 		if ( Variables.Length > RideScriptFile.MaximumVariables )
 			throw new InvalidDataException( $"Script {ScriptId} has {Variables.Length} variables, above the limit." );
 		if ( ( Flags & ~RideVM.VMFlags.All ) != 0 )
@@ -229,6 +301,9 @@ public sealed record RideScriptWorldSnapshot
 	public required int NextScriptId { get; init; }
 	/// <summary>Next attraction id the allocator will hand out.</summary>
 	public required int NextAttractionId { get; init; }
+	/// <summary>The script pass counter (<see cref="RideScriptWorld.PassCounter"/>); a snapshot written before the substep scheduler holds none and the counter restarts at 0.</summary>
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
+	public long? PassCounter { get; init; }
 	/// <summary>Every live script, ordered by id.</summary>
 	public required IReadOnlyList<RideVMSnapshot> Scripts { get; init; }
 
@@ -248,6 +323,8 @@ public sealed record RideScriptWorldSnapshot
 			throw new InvalidDataException( "The world snapshot carries no script array." );
 		if ( !double.IsFinite( ClockMilliseconds ) || ClockMilliseconds < 0 )
 			throw new InvalidDataException( $"World clock {ClockMilliseconds} is not finite and non-negative." );
+		if ( PassCounter is < 0 )
+			throw new InvalidDataException( $"World pass counter {PassCounter} is negative." );
 		if ( NextScriptId < 1 || NextAttractionId < 1 )
 			throw new InvalidDataException( $"World allocators ({NextScriptId}, {NextAttractionId}) are not positive." );
 		var byId = new Dictionary<int, RideVMSnapshot>();

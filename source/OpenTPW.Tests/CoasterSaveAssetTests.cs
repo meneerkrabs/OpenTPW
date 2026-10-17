@@ -289,6 +289,7 @@ public class CoasterSaveAssetTests
 		runtime.Visitors.EntranceCell = runtime.Visitors.ExitCell = (39, 21);
 		runtime.Visitors.HasCells = true;
 		simulation.Register( runtime.Visitors );
+		GuestTests.LayStandCell( simulation.Grid, runtime.Visitors );
 		foreach ( var (x, y) in new[] { (39, 22), (39, 23), (40, 21), (41, 21), (39, 24), (42, 21), (39, 25), (43, 21) } )
 			simulation.SpawnInPark( x, y );
 

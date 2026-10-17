@@ -524,7 +524,9 @@ public static class OptionsScreen
 				() => PackChoices().Select( pack => Prefix( OpenTpwText.EnhancedTextures ) + PackText( pack ) ),
 				direction => { state.TexturePackSelected = true; state.TexturePack = CycleWrap( PackChoices(), state.TexturePack, direction ); }, strings.Extra( OpenTpwText.TexturePackHelp ) );
 		// [EXT:language] language row (original installs had one language; OpenTPW reads CD overlays)
-		string LanguageName( string language ) => " " + (SupplementaryStrings.LanguageNames.TryGetValue( language, out var name ) ? name : language);
+		// a language's own name (Korean "한국어") is shown only when the font in use draws it; otherwise its English name
+		var drawable = GameLanguage.IsSelected ? new HashSet<char>( GameLanguage.Current.CharacterTable.Characters ) : null;
+		string LanguageName( string language ) => " " + SupplementaryStrings.DisplayName( language, drawable == null ? null : drawable.Contains );
 		Row( "language", () => Prefix( OpenTpwText.Language ) + LanguageName( state.Language ),
 			() => services.Languages.Select( language => Prefix( OpenTpwText.Language ) + LanguageName( language ) ),
 			direction => state.Language = CycleWrap( services.Languages, state.Language, direction ) );
@@ -569,7 +571,7 @@ public static class OptionsScreen
 			Bounds = Rect( 1331, 1330, 1730, 1434 ),
 			Anchor = UiAnchor.Center
 		} );
-		// [EXT:mods-ui] Extensions and mods, beside Game files (the browser lists the official extensions only; it has no folder chooser)
+		// [EXT:mods-ui] Extensions and mods, beside Game files (the browser lists the data mods shipped with the page; its mod inputs are chosen with the page's folder dialog)
 		screen.Add( new UiButton
 		{
 			Id = "mods",

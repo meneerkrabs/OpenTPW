@@ -5,6 +5,9 @@ namespace OpenTPW;
 public sealed record ImportedCoasterSection( SaveCoasterSection Section, IReadOnlyList<SaveObject> Objects,
 	IReadOnlyList<SaveAttraction> Attractions );
 
+/// <summary>A Theme Park Inc RideSystem scene record joined to its attraction thing: the same mesh instance id (the record's u32 after its leading byte, the thing's MeshInstanceID) and Info.Id, and for a placed object the same cell.</summary>
+public readonly record struct ImportedThemeParkIncObject( SaveObject Record, ThemeParkIncAttraction Attraction );
+
 /// <summary>A placed object whose footprint was cross-checked against the save cell grid.</summary>
 public readonly record struct ImportedParkObject( SaveObject Record, int MinX, int MinY, int MaxX, int MaxY );
 
@@ -23,7 +26,7 @@ public sealed class OriginalParkImport
 	private OriginalParkImport( MapFile map, SavePayloadLayout layout, SaveWorld world, IReadOnlyList<(int X, int Y)> pathCells,
 		IReadOnlyList<ImportedParkObject> placedObjects, IReadOnlyList<SaveObject> fixedItems, IReadOnlyList<SaveObject> unresolvedObjects,
 		IReadOnlyList<SaveAttraction> attractions, SaveEconomyRecords economy, IReadOnlyList<SaveStaff> staff, IReadOnlyList<SaveGuest> guests, SaveStaffHq? staffHq,
-		SaveAdvisorController? advisor, SaveResearchLab? researchLab, SaveCoasterBlock coasters )
+		SaveAdvisorController? advisor, SaveResearchLab? researchLab, SaveCoasterBlock coasters, SaveRideSystemBlock? rideSystem )
 		: this( map, layout, world.Cells, pathCells, placedObjects, fixedItems, unresolvedObjects )
 	{
 		this.world = world;
@@ -35,6 +38,7 @@ public sealed class OriginalParkImport
 		Advisor = advisor;
 		ResearchLab = researchLab;
 		CoasterBlock = coasters;
+		RideSystem = rideSystem;
 		var objectsByCell = placedObjects.Select( item => item.Record ).Concat( unresolvedObjects ).Concat( fixedItems )
 			.ToLookup( record => (record.X, record.Y) );
 		var attractionsByCell = attractions.ToLookup( attraction => (attraction.CellX, attraction.CellY) );
@@ -71,7 +75,24 @@ public sealed class OriginalParkImport
 
 	public MapFile Map { get; }
 	public SavePayloadLayout Layout { get; }
-	public SaveWorld World => world ?? throw new InvalidOperationException( "The Theme Park Inc viewer does not decode save World state." );
+	public SaveWorld World => world ?? throw new InvalidOperationException( "The Theme Park Inc viewer does not decode save World state; see ThemeParkIncWorld." );
+	/// <summary>The typed World of a Theme Park Inc save (variables, controls, staff pool, calendar, cells, things, special rides); null for a Theme Park World save.</summary>
+	public ThemeParkIncSaveWorld? ThemeParkIncWorld { get; private init; }
+	/// <summary>The Theme Park Inc scene records joined to their attraction things (empty for a Theme Park World save).</summary>
+	public IReadOnlyList<ImportedThemeParkIncObject> ThemeParkIncObjects { get; private init; } = Array.Empty<ImportedThemeParkIncObject>();
+	/// <summary>
+	/// The Theme Park Inc attraction things no scene record names. Only the lake mission obstacle (Info.Id 1703) may be one; the import throws for any other.
+	/// </summary>
+	public IReadOnlyList<ThemeParkIncAttraction> UnrecordedThemeParkIncAttractions { get; private init; } = Array.Empty<ThemeParkIncAttraction>();
+
+	/// <summary>The Theme Park Inc attraction of a scene record (see <see cref="ImportedThemeParkIncObject"/>); null when none was joined.</summary>
+	public ThemeParkIncAttraction? FindThemeParkIncAttraction( SaveObject record )
+	{
+		foreach ( var item in ThemeParkIncObjects )
+			if ( item.Record.Offset == record.Offset )
+				return item.Attraction;
+		return null;
+	}
 	public SaveCellGrid Cells => cells;
 	/// <summary>Model-3 things in list order (rides, shops, sideshows, features and fixed items).</summary>
 	public IReadOnlyList<SaveAttraction> Attractions { get; }
@@ -101,6 +122,19 @@ public sealed class OriginalParkImport
 	/// Theme Park Inc viewer, whose coaster semantics are separate (no Theme Park Inc coaster chunk is inferred).
 	/// </summary>
 	public SaveCoasterBlock? CoasterBlock { get; }
+	/// <summary>
+	/// The parsed RideSystem block (writer 0x464140, loader 0x4647a0): its used/free slot counts, first free slot
+	/// and the framed walk's typed records (scene-mesh instances of kinds 815/826/865 with their embedded nodes,
+	/// node states and animation time controls). Null for the Theme Park Inc viewer, whose RideSystem bytes carry
+	/// a separate SYSG record shape.
+	/// </summary>
+	/// <remarks>
+	/// The animation control count of a record is not stored in the save; the original loader reads it from the
+	/// live instance (which 0x4557c0 fills from the object type's entry, built by 0x4629d0). The walk derives each count from the
+	/// block's one complete parse, or from the caller's table of the objects' control counts when one is given (see
+	/// <see cref="SaveRideSystemBlock"/>); a block with more than one complete parse is refused.
+	/// </remarks>
+	public SaveRideSystemBlock? RideSystem { get; }
 	/// <summary>The clock, vanilla-time, game-system, cheat, advisor-scoring, camera and UI-count blocks of a Theme Park World save, read for the import report; null for Theme Park Inc.</summary>
 	public SaveRuntimeBlocks? RuntimeBlocks { get; private init; }
 	/// <summary>The RSSE block's script records, read in full (null for the Theme Park Inc viewer).</summary>
@@ -182,7 +216,10 @@ public sealed class OriginalParkImport
 	/// one coaster reads; without it only a single coaster's trains stay raw. A coaster's station is the saved attraction whose mesh instance id equals the header's
 	/// controller +0x10.
 	/// </param>
-	public static OriginalParkImport Import( ReadOnlyMemory<byte> payload, MapFile map, Func<int, SaveCoasterTrainLayout?>? coasterTrains = null )
+	/// <param name="controlCounts">
+	/// The animation control count of the object with an Info.Id (<c>max(1, UsageInfo.NumSimultAnims)</c> of its .sam), for <see cref="SaveRideSystemBlock.Parse"/>; null derives every count from the RideSystem block alone.
+	/// </param>
+	public static OriginalParkImport Import( ReadOnlyMemory<byte> payload, MapFile map, Func<int, SaveCoasterTrainLayout?>? coasterTrains = null, Func<int, int?>? controlCounts = null )
 	{
 		ArgumentNullException.ThrowIfNull( map );
 		var layout = SavePayloadLayout.Parse( payload.Span );
@@ -204,29 +241,41 @@ public sealed class OriginalParkImport
 		var placed = new List<ImportedParkObject>();
 		var fixedItems = new List<SaveObject>();
 		var unresolved = new List<SaveObject>();
-		foreach ( var record in SaveObjectList.Parse( payload.Span, layout, map.CellCountX, map.CellCountY ) )
+		// The RideSystem block is framed: the walk is the original writer's (u32 length, used/free/first-free
+		// counts, then one presence byte per slot), and its records carry kinds 815, 826 and 865 of which only
+		// 815 and 865 name scene-mesh objects; the others (drawn instance kinds) are skipped.
+		var rideSystem = SaveRideSystemBlock.Parse( payload.Span, layout, controlCounts );
+		foreach ( var record in rideSystem.Records )
 		{
+			if ( !record.IsPlacedObject && !record.IsFixedItem )
+				continue;
+			// Scene records (815 and 865) are validated before they are routed: the old signature scan's checks on the
+			// Info.Id, the cell, the size, the index and the rotation, applied to the raw unsigned words.
+			var saveObject = record.ToSaveObject();
+			var invalid = saveObject.Validate( map.CellCountX, map.CellCountY );
+			if ( invalid != null )
+				throw new InvalidDataException( $"Save object {saveObject.Index} (Info.Id {saveObject.InfoId}, kind {saveObject.Kind}, slot {record.Slot}) is invalid: {invalid}." );
 			if ( record.IsFixedItem )
 			{
-				fixedItems.Add( record );
+				fixedItems.Add( saveObject );
 				continue;
 			}
-			if ( !record.TryGetFootprint( out var minX, out var minY, out var maxX, out var maxY ) )
+			if ( !saveObject.TryGetFootprint( out var minX, out var minY, out var maxX, out var maxY ) )
 			{
-				unresolved.Add( record );
+				unresolved.Add( saveObject );
 				continue;
 			}
 			if ( minX < 0 || minY < 0 || maxX >= map.CellCountX || maxY >= map.CellCountY )
-				throw new InvalidDataException( $"Save object {record.Index} (Info.Id {record.InfoId}) footprint lies outside the map." );
+				throw new InvalidDataException( $"Save object {saveObject.Index} (Info.Id {saveObject.InfoId}) footprint lies outside the map." );
 			for ( var y = minY; y <= maxY; y++ )
 			{
 				for ( var x = minX; x <= maxX; x++ )
 				{
 					if ( !cells[x, y].IsOccupied )
-						throw new InvalidDataException( $"Save object {record.Index} (Info.Id {record.InfoId}) footprint cell ({x}, {y}) is not occupied in the cell grid." );
+						throw new InvalidDataException( $"Save object {saveObject.Index} (Info.Id {saveObject.InfoId}) footprint cell ({x}, {y}) is not occupied in the cell grid." );
 				}
 			}
-			placed.Add( new ImportedParkObject( record, minX, minY, maxX, maxY ) );
+			placed.Add( new ImportedParkObject( saveObject, minX, minY, maxX, maxY ) );
 		}
 		var span = payload.Span;
 		var staff = world.Things.Where( thing => thing.Model is >= SaveThingModel.Mechanic and <= SaveThingModel.Researcher ).ToList()
@@ -247,7 +296,7 @@ public sealed class OriginalParkImport
 		var clockBlock = layout[SaveBlock.Clock];
 		var savedClock = clockBlock.Length == SavePayloadLayout.FixedBlockBytes[SaveBlock.Clock] ? System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian( span.Slice( clockBlock.Offset + 4, 4 ) ) : (uint?)null;
 		return new OriginalParkImport( map, layout, world, paths.AsReadOnly(), placed.AsReadOnly(), fixedItems.AsReadOnly(), unresolved.AsReadOnly(),
-			attractions, SaveEconomyRecords.Parse( span, world ), staff.AsReadOnly(), guests.AsReadOnly(), hq, advisor, lab, coasters )
+			attractions, SaveEconomyRecords.Parse( span, world ), staff.AsReadOnly(), guests.AsReadOnly(), hq, advisor, lab, coasters, rideSystem )
 		{
 			RuntimeBlocks = SaveRuntimeBlocks.Read( span, layout ),
 			Rsse = SaveRsseBlock.Read( span, layout ),
@@ -256,16 +305,22 @@ public sealed class OriginalParkImport
 	}
 
 	/// <summary>
-	/// Imports the observed Theme Park Inc prebuilt-save profile. Cell records are 88/98 bytes and
-	/// SYSG object headers have an extra u32 before Info.Id. Objects without a fully occupied,
-	/// verified footprint remain in <see cref="UnresolvedObjects"/> with their saved coordinates.
+	/// Imports a Theme Park Inc save (the prebuilt profile): the payload is split by the Theme Park Inc block readers, its World block is read into typed records
+	/// (<see cref="ThemeParkIncSaveWorld"/>: the status-byte cell map, the marker-checked thing chain), and the RideSystem block's SYSG object headers (an extra u32 before Info.Id)
+	/// are joined to the attraction things by mesh instance id and Info.Id. Objects without a fully occupied, verified footprint remain in <see cref="UnresolvedObjects"/> with
+	/// their saved coordinates. Throws <see cref="InvalidDataException"/> when the World does not read exactly, the cell attributes differ from the map, or a scene record names
+	/// no attraction thing.
 	/// </summary>
+	// [DATA:PreBuilt/prebuilt.TPWS:SYSG] the RideSystem block's scene records are still found by signature (its record walk is not decoded); each must name exactly one attraction thing of the typed World, which replaces the former requirement of exactly 23 records with 14 fixed items
+	/// <summary>The Info.Ids of attraction things that may have no scene record: the lake mission obstacle, whose RideSystem entry is not an 815/865 scene record.</summary>
+	private static readonly HashSet<int> UnrecordedAttractionInfoIds = new() { 1703 };
+
 	public static OriginalParkImport ImportThemeParkInc( ReadOnlyMemory<byte> payload, MapFile map )
 	{
 		ArgumentNullException.ThrowIfNull( map );
 		var layout = SavePayloadLayout.ParseThemeParkInc( payload.Span );
-		var worldBlock = layout[SaveBlock.World];
-		var cells = SaveCellGrid.ParseThemeParkInc( payload, worldBlock.Offset, worldBlock.End, map.CellCountX, map.CellCountY );
+		var tpiWorld = ThemeParkIncSaveWorld.Parse( payload, layout, map.CellCountX, map.CellCountY );
+		var cells = tpiWorld.Cells;
 		var paths = new List<(int X, int Y)>();
 		for ( var y = 0; y < map.CellCountY; y++ )
 		{
@@ -282,12 +337,20 @@ public sealed class OriginalParkImport
 		var placed = new List<ImportedParkObject>();
 		var fixedItems = new List<SaveObject>();
 		var unresolved = new List<SaveObject>();
-		var records = ThemeParkIncSaveObjectList.Parse( payload.Span, layout, map.CellCountX, map.CellCountY );
-		// [DATA:PreBuilt/prebuilt.TPWS:SYSG] Fail closed if the only supported prebuilt profile was only partly scanned.
-		if ( records.Count != 23 || records.Count( record => record.IsFixedItem ) != 14 )
-			throw new InvalidDataException( "Unsupported Theme Park Inc prebuilt SYSG object profile." );
-		foreach ( var record in records )
+		var joined = new List<ImportedThemeParkIncObject>();
+		var named = new HashSet<int>();
+		var span = payload.Span;
+		foreach ( var record in ThemeParkIncSaveObjectList.Parse( span, layout, map.CellCountX, map.CellCountY ) )
 		{
+			// the record's u32 after its leading byte is the scene mesh instance, the thing's MeshInstanceID
+			var mesh = System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian( span[(record.Offset + 1)..] );
+			var matches = tpiWorld.Attractions.Where( attraction => attraction.MeshInstanceId == mesh && attraction.InfoId == record.InfoId
+				&& (record.IsFixedItem || attraction.CellX == record.X && attraction.CellY == record.Y) ).Take( 2 ).ToList();
+			if ( matches.Count != 1 )
+				throw new InvalidDataException( $"Theme Park Inc scene record {record.Index} (mesh {mesh}, Info.Id {record.InfoId}) matches {matches.Count} attraction things; expected one." );
+			if ( !named.Add( matches[0].Id ) )
+				throw new InvalidDataException( $"Theme Park Inc scene record {record.Index} (mesh {mesh}, Info.Id {record.InfoId}) names attraction thing {matches[0].Id}, which another scene record already names." );
+			joined.Add( new ImportedThemeParkIncObject( record, matches[0] ) );
 			if ( record.IsFixedItem )
 			{
 				fixedItems.Add( record );
@@ -308,6 +371,16 @@ public sealed class OriginalParkImport
 			else
 				unresolved.Add( record );
 		}
-		return new OriginalParkImport( map, layout, cells, paths.AsReadOnly(), placed.AsReadOnly(), fixedItems.AsReadOnly(), unresolved.AsReadOnly() );
+		var unrecorded = tpiWorld.Attractions.Where( attraction => !named.Contains( attraction.Id ) ).ToList();
+		// [DATA:PreBuilt/prebuilt.TPWS:SYSG] the lake obstacle (Info.Id 1703) is the one attraction the prebuilt's scene records do not name; any other attraction without a record means the signature scan lost a damaged record, so the save is refused
+		foreach ( var attraction in unrecorded )
+			if ( !UnrecordedAttractionInfoIds.Contains( attraction.InfoId ) )
+				throw new InvalidDataException( $"Theme Park Inc attraction thing {attraction.Id} (Info.Id {attraction.InfoId}, mesh {attraction.MeshInstanceId}) has no scene record; the RideSystem record for it is damaged or missing." );
+		return new OriginalParkImport( map, layout, cells, paths.AsReadOnly(), placed.AsReadOnly(), fixedItems.AsReadOnly(), unresolved.AsReadOnly() )
+		{
+			ThemeParkIncWorld = tpiWorld,
+			ThemeParkIncObjects = joined.AsReadOnly(),
+			UnrecordedThemeParkIncAttractions = unrecorded.AsReadOnly(),
+		};
 	}
 }

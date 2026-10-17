@@ -91,6 +91,8 @@ public sealed class ObjectCatalogEntry
 	public string? ModId => Root.ModId;
 	/// <summary>The <c>objects.json</c> entry that listed this object, for the objects a mod adds.</summary>
 	internal ModObjectDefinition? ModDefinition { get; init; }
+	/// <summary>For a mod's object: the <c>Info.Name</c> of its own .sam, which objects.json's English name replaces in <see cref="SettingsName"/> (null for other objects).</summary>
+	internal string? OwnSettingsName { get; init; }
 	/// <summary>Whether the object is not game data: an official bonus archive or a mod's object. Such objects have no OBJECT_NAMES row.</summary>
 	public bool IsExternal => !Root.IsData;
 	public string Theme { get; }
@@ -354,7 +356,8 @@ public sealed class ObjectCatalog
 		IReadOnlyList<CatalogContentRoot> roots;
 		lock ( cache )
 			roots = modRoots;
-		var key = $"{BonusDataRoot}|{theme}|{easy}|{(GameLanguage.IsSelected ? GameLanguage.Current.Name : "")}|{OpenTpwExtensions.Active.Digest}";
+		// [EXT:pools-content] the pools extension's own objects are no mod, so the mods digest in the key does not tell whether they are listed: the key does
+		var key = $"{BonusDataRoot}|{theme}|{easy}|{(GameLanguage.IsSelected ? GameLanguage.Current.Name : "")}|{OpenTpwExtensions.Active.Digest}|{(roots.Any( root => root.ModId == OfficialExtensions.Pools.Id ) ? "pools" : "")}";
 		ObjectCatalog? cached;
 		lock ( cache )
 			cache.GetValue( fileSystem, _ => new Dictionary<string, ObjectCatalog>( StringComparer.OrdinalIgnoreCase ) ).TryGetValue( key, out cached );
@@ -563,6 +566,8 @@ public sealed class ObjectCatalog
 			layers.Add( ObjectSettingsFile.Load( fileSystem, easyFile ) );
 		// [APPROX:RIDES-045] a Theme Park Inc object a mod brings runs its own script, but the variables only Theme Park Inc's engine writes (VAR_FPBYPASS, VAR_SPECIAL, VAR_SPEED, the litter bin's VAR_BOMB, ...) stay 0 in a Theme Park World park
 		// [EXT:mods] a mod's object gets the Info.Id its objects.json assigns, whatever its own .sam says (Layout records join on Info.Id, so the id is the mod's to keep stable)
+		// the designers' own Info.Name, before objects.json puts a name over it (the key a Theme Park Inc string table is matched by, ObjectNames.ApplyThemeParkIncNames)
+		var ownName = modObject != null ? new ObjectSettings( layers )["Info.Name"] : null;
 		if ( modObject != null )
 			layers.Add( new ObjectSettingsFile( ModLayerText( modObject ), "objects.json" ) );
 		var settings = new ObjectSettings( layers );
@@ -594,7 +599,7 @@ public sealed class ObjectCatalog
 			if ( candidates.Length == 1 )
 				script = candidates[0];
 		}
-		var entry = new ObjectCatalogEntry( theme, category, archive, settings, shape, model, preview, script, scripts, animations, auxiliary, models, fileSystem, bonusNumber, contentRoot?.Root ) { ModDefinition = modObject };
+		var entry = new ObjectCatalogEntry( theme, category, archive, settings, shape, model, preview, script, scripts, animations, auxiliary, models, fileSystem, bonusNumber, contentRoot?.Root ) { ModDefinition = modObject, OwnSettingsName = ownName };
 		if ( shared.Count > 0 )
 			entry.SharedSettings = new ObjectSettings( shared );
 		if ( bonusNumber != null )
@@ -650,6 +655,44 @@ public static class ObjectNames
 		// The Info.Id table is tp.exe's; Theme Park Inc ships another OBJECT_NAMES.str (other order and length) and keeps the English-name matcher.
 		var tpw = GameEditions.Current == GameEdition.ThemeParkWorld;
 		Assign( entries, tpw ? Bind( entries ) : Match( entries, english ), localized, tpw );
+		ApplyThemeParkIncNames( catalog.Entries );
+	}
+
+	/// <summary>
+	/// [EXT:cross-edition-objects] The objects a mod brings from a Theme Park Inc install (a mod input registered as one, docs/MODS.md) take their names from
+	/// that install's own <c>OBJECT_NAMES.str</c> in the selected language, as the Theme Park Inc slice does, instead of the English name
+	/// objects.json carries; an object whose name the table does not hold, and an install without the selected language (English then),
+	/// keep what objects.json gives.
+	/// </summary>
+	internal static void ApplyThemeParkIncNames( IEnumerable<ObjectCatalogEntry> entries )
+	{
+		foreach ( var group in entries.Where( entry => entry.ModDefinition != null && entry.OwnSettingsName != null && ContentSoundRoots.IsRegistered( entry.FileSystem ) ).GroupBy( entry => entry.FileSystem ) )
+		{
+			var language = GameLanguage.IsSelected ? GameLanguage.Current.Name : GameLanguage.DefaultLanguage;
+			var data = group.Key.GetAbsolutePath( "/" );
+			if ( TryLoadFrom( data, GameLanguage.DefaultLanguage ) is not { } english )
+				continue;
+			var localized = string.Equals( language, GameLanguage.DefaultLanguage, StringComparison.OrdinalIgnoreCase ) ? english : TryLoadFrom( data, language ) ?? english;
+			foreach ( var (entry, index, length) in Match( group.ToList(), english, entry => entry.OwnSettingsName! ) )
+			{
+				var joined = index + length <= localized.Count ? Join( localized.Skip( index ).Take( length ) ) : "";
+				if ( joined.Length > 0 )
+					entry.DisplayName = joined;
+			}
+		}
+	}
+
+	/// <summary>One install's <c>OBJECT_NAMES.str</c> in a language, or null when the install has no such language folder or table.</summary>
+	private static IReadOnlyList<string>? TryLoadFrom( string dataDirectory, string language )
+	{
+		try
+		{
+			return GameLanguage.Resolve( dataDirectory, language, null ).LoadStrings( FileName ).Entries;
+		}
+		catch ( Exception exception ) when ( exception is IOException or InvalidDataException or UnauthorizedAccessException or DirectoryNotFoundException )
+		{
+			return null;
+		}
 	}
 
 	/// <summary>
@@ -692,7 +735,11 @@ public static class ObjectNames
 
 	/// <summary>Pure matching step, exposed for tests.</summary>
 	// [EXT:tpi-object-name-matcher] Theme Park Inc object names: OBJECT_NAMES entries bound by English name equality within the theme block (the Info.Id table is tp.exe's; the TPI executable's own binding is not traced) — the original TPI rule is unknown
-	public static IReadOnlyList<(ObjectCatalogEntry Entry, int Index, int Length)> Match( IReadOnlyList<ObjectCatalogEntry> entries, IReadOnlyList<string> names )
+	public static IReadOnlyList<(ObjectCatalogEntry Entry, int Index, int Length)> Match( IReadOnlyList<ObjectCatalogEntry> entries, IReadOnlyList<string> names ) =>
+		Match( entries, names, entry => entry.SettingsName );
+
+	/// <summary>The matching step with the English name each entry is looked up by (<see cref="ObjectCatalogEntry.SettingsName"/> unless a caller knows a better one).</summary>
+	internal static IReadOnlyList<(ObjectCatalogEntry Entry, int Index, int Length)> Match( IReadOnlyList<ObjectCatalogEntry> entries, IReadOnlyList<string> names, Func<ObjectCatalogEntry, string> englishName )
 	{
 		var blocks = new List<(int Start, int End)>();
 		var start = 0;
@@ -712,7 +759,7 @@ public static class ObjectNames
 			var matches = new List<(ObjectCatalogEntry, int, int)>();
 			foreach ( var entry in entries )
 			{
-				var wanted = Normalize( entry.SettingsName );
+				var wanted = Normalize( englishName( entry ) );
 				if ( wanted.Length == 0 )
 					continue;
 				var found = -1;

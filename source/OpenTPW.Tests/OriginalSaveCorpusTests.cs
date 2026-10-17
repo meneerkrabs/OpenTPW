@@ -42,15 +42,55 @@ public class OriginalSaveCorpusTests
 			var name = $"{theme}/{Path.GetFileName( path )}";
 			using var reader = new SaveReader( path );
 			var container = reader.Inspect();
-			Assert.AreEqual( (500u, (byte)133), (container.Magic, container.Version), name );
+			Assert.AreEqual( (500u, 0x01221985u, false), (container.Magic, container.Stamp, container.IsThemeParkInc), name );
 			var payload = reader.ReadFile();
 			var layout = SavePayloadLayout.Parse( payload );
 			Assert.AreEqual( 19, layout.Blocks.Count, name );
 
 			if ( !maps.TryGetValue( theme, out var map ) )
 				maps[theme] = map = new MapFile( new MemoryStream( OriginalParkImportTests.ReadArchiveMember( $"levels/{theme}/terrain.wad", "base.map" ) ) );
+			// The RideSystem block on its own, before any import: it must have exactly one complete parse (Parse throws on none
+			// or on several), and for every record whose object archive is known the control count the frame fixes must be the one tp.exe's
+			// type entry holds, the object's max(1, UsageInfo.NumSimultAnims) (0x4629d0 -> 0x461f10 -> type entry +0xe -> instance +0xe).
+			var standalone = SaveRideSystemBlock.Parse( payload, layout );
+			Assert.AreEqual( standalone.Used, (uint)standalone.Records.Length, name );
+			Assert.AreEqual( 0, standalone.TableControlCounts, name );
+			var catalog = ObjectCatalog.Load( theme );
+			Func<int, int?> table = infoId => catalog.Find( infoId )?.NumSimultaneousAnimations;
+			var resolved = 0;
+			foreach ( var record in standalone.Records )
+			{
+				if ( table( record.InfoId ) is { } count )
+				{
+					Assert.AreEqual( count, record.Controls.Length, $"{name}: slot {record.Slot} (Info.Id {record.InfoId}) control count" );
+					resolved++;
+				}
+				else
+				{
+					// Types the object archives do not declare (hoardings and the like) are registered with a literal count of 1
+					// (tp.exe 0x41437e and 0x43015b pass 1 as the 0x4629d0 count); no corpus record of that kind has more.
+					Assert.AreEqual( 1, record.Controls.Length, $"{name}: slot {record.Slot} (Info.Id {record.InfoId}) has no object archive" );
+				}
+			}
+			Assert.IsTrue( resolved > 0, name );
+			var pinned = SaveRideSystemBlock.Parse( payload, layout, table );
+			Assert.AreEqual( resolved, pinned.TableControlCounts, name );
+			CollectionAssert.AreEqual( standalone.Records.Select( record => (record.Slot, record.InfoId, record.Controls.Length) ).ToArray(),
+				pinned.Records.Select( record => (record.Slot, record.InfoId, record.Controls.Length) ).ToArray(), name );
+
+			// The production import (OriginalPark) supplies the object catalogue's control counts itself.
+			var production = OriginalPark.ImportOriginalSave( theme, payload, map );
+			Assert.AreEqual( resolved, production.RideSystem!.TableControlCounts, $"{name}: production control-count table" );
+			CollectionAssert.AreEqual( standalone.Records.Select( record => (record.Slot, record.InfoId, record.Controls.Length) ).ToArray(),
+				production.RideSystem.Records.Select( record => (record.Slot, record.InfoId, record.Controls.Length) ).ToArray(), name );
 			var park = OriginalParkImport.Import( payload, map );
 			Assert.AreEqual( 0, park.UnresolvedObjects.Count, name );
+			// The framed RideSystem walk runs on every save: each block has one complete parse, with the routed records
+			// matching the placed/fixed counts.
+			Assert.IsNotNull( park.RideSystem, name );
+			Assert.AreEqual( park.RideSystem!.Used, (uint)park.RideSystem.Records.Length, name );
+			Assert.AreEqual( park.RideSystem.Records.Count( record => record.IsPlacedObject ), park.PlacedObjects.Count, name );
+			Assert.AreEqual( park.RideSystem.Records.Count( record => record.IsFixedItem ), park.FixedItems.Count, name );
 			for ( var x = 0; x < map.CellCountX; x++ )
 				for ( var y = 0; y < map.CellCountY; y++ )
 					if ( map.GetFlagsAt( x, y ).HasFlag( MapCellFlags.InitialPath ) )

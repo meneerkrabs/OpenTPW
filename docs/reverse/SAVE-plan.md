@@ -59,12 +59,14 @@ Tags are shown as constants; the file holds them byte-reversed (`DLRW`, `CSPS`�
 The writer has an early exit after the action recording when its mode argument
 is 1 (`0x11cc00`); its use (published/online parks) is not traced.
 
-**Correction still pending in TPWS-PAYLOAD.md and `SavePayloadLayout`:** those
-read each tag as the *start* of the following data. The bytes before a tag
-belong to it: "SYSG records" are the **RideSystem** block (before `RSYS`), the
+**Correction note:** earlier code read each tag as the *start* of the following
+data. The bytes before a tag belong to it: the RideSystem block sits before the
+`RSYS` delimiter (cheap sanity probes had mislabelled it "SYSG records"), the
 `SYSR` build stamp is **TrackRides**, `KOLC`'s word is **VanillaTime**, `RYLF`
-holds **RSSE**, and so on (PPC-formats.md already says this; code comments and
-names were not changed by this research node).
+holds **RSSE**, and so on (PPC-formats.md already says this). The reader rename
+has since happened in code: the former "SYSG" reader is now
+`SaveRideSystemBlock` (see block 8), `SavePayloadLayout` walks tags backwards
+from the delimiter.
 
 ## 3. Block inventory
 
@@ -82,7 +84,7 @@ OpenTPW production code, **W** witnessed by an evidence lane only, **—** opaqu
 | 5 | Clock (`CLOK`) | `0x10e944` / `0x10e998` | 8 | adjusted scaled + unscaled clock words | W (clock) |
 | 6 | VanillaTime (`VANT`) | `0x127ac8` / `0x127b64` | 4 | raw `LbTime_GetClock` at save | W (clock) |
 | 7 | GameSystem (`GSYS`) | `0x1c2e00` / `0x1c31f4` | 36 | outer cadence stamps and phase | W (clock) |
-| 8 | RideSystem (`RSYS`) | `0x5ae70` / `0x5b898` | 17,526 | scene-mesh instance records (kinds 815/826/865) | **R** (`SaveObjectList`, mislabelled SYSG) |
+| 8 | RideSystem (`RSYS`) | `0x5ae70` / `0x5b898` (PC: `0x464140` / `0x4647a0`) | 17,526 | scene-mesh instance records (kinds 815/826/865); framed layout decoded, see TPWS-PAYLOAD.md | **R** (`SaveRideSystemBlock`, formerly the signature-scanned "SYSG" reader) |
 | 9 | TrackRides (`TRAK`) | `0x1a424` / `0x1b74c` | 44 | chunked (`{id,size,…}`); PC stamp `20:25:29Oct 21 1999`, Mac writer stamp `Nov  6 2000`; reader seeks past unread chunk bytes | W (formats) |
 | 10 | FlyingRides (`FLYR`) | `0x674bc` / `0x67c1c` | 452 | starts `FLY_` | — |
 | 11 | RSSE (`RSSE`) | `0xb3868` / `0xb4818` | 10,856 | RSE script manager, 14 × 244-byte scripts, IDs, deadlines | W (clock) |

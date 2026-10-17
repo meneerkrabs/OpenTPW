@@ -52,6 +52,8 @@ public sealed class SpriteBankFile : BaseFormat
 
 	/// <summary>BGRA palette as stored (alpha varies: anti-aliased edges).</summary>
 	public byte[] Palette { get; private set; } = Array.Empty<byte>();
+	/// <summary>The u32 at offset 8 (palette entry 0 of the loader's 256; 0 in every shipped bank), kept for a byte-exact rewrite.</summary>
+	public uint HeaderWord { get; private set; }
 	public IReadOnlyList<SpriteFrame> Frames { get; private set; } = Array.Empty<SpriteFrame>();
 
 	public SpriteBankFile( string path ) => ReadFromFile( path );
@@ -89,6 +91,7 @@ public sealed class SpriteBankFile : BaseFormat
 		var count = BinaryPrimitives.ReadInt32LittleEndian( data[4..] );
 		if ( count < 0 || count > MaximumFrames )
 			throw new InvalidDataException( $"Sprite bank frame count {count} is out of range." );
+		HeaderWord = BinaryPrimitives.ReadUInt32LittleEndian( data[8..] );
 		Palette = data.Slice( HeaderBytes, PaletteEntries * 4 ).ToArray();
 
 		var frames = new SpriteFrame[count];

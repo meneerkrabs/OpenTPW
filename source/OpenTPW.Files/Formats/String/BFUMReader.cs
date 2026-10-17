@@ -33,7 +33,7 @@ public sealed class BFUMReader : BaseFormat
 	/// <summary>First and last code unit of each range, in file order.</summary>
 	public IReadOnlyList<(char First, char Last)> Ranges { get; private set; } = Array.Empty<(char, char)>();
 
-	/// <summary>Every (code unit -> 1-based codepage index) entry, including filler entries.</summary>
+	/// <summary>Every (code unit -> code) entry, including filler entries: the 1-based codepage index in a single-byte table; in a two-byte table (Polish, Korean) a value above 0xFF is the lead byte (low byte) and trail byte (high byte).</summary>
 	public IReadOnlyDictionary<char, int> Entries => indices;
 
 	protected override void ReadFromStream( Stream stream )
@@ -75,17 +75,31 @@ public sealed class BFUMReader : BaseFormat
 public sealed class GameTextCodec
 {
 	private readonly BFMUReader decodeTable;
-	private readonly Dictionary<char, byte> encodeTable = new();
+	// the game bytes of a character: one byte, or the lead byte then the trail byte of a two-byte table (Polish, Korean)
+	private readonly Dictionary<char, (byte First, byte Second, bool TwoBytes)> encodeTable = new();
 
 	public GameTextCodec( BFMUReader decodeTable, BFUMReader encodeTable )
 	{
 		this.decodeTable = decodeTable ?? throw new ArgumentNullException( nameof( decodeTable ) );
 		ArgumentNullException.ThrowIfNull( encodeTable );
-		foreach ( var (character, index) in encodeTable.Entries )
+		foreach ( var (character, value) in encodeTable.Entries )
 		{
-			// Only mappings that round-trip are real; the rest are filler.
-			if ( index >= 1 && index <= decodeTable.Characters.Count && index <= byte.MaxValue && decodeTable.Characters[index - 1] == character )
-				this.encodeTable[character] = (byte)index;
+			// Only mappings that round-trip are real; the rest are filler. A value above 0xFF holds the lead byte (low byte)
+			// and the trail byte (high byte) of a two-byte table; in the single-byte tables it is the 1-based index itself.
+			if ( value <= byte.MaxValue )
+			{
+				if ( value >= 1 && value <= decodeTable.SingleByteCount && decodeTable.Characters[value - 1] == character )
+					this.encodeTable[character] = ((byte)value, 0, false);
+				continue;
+			}
+			var lead = (byte)(value & 0xFF);
+			var trail = (byte)(value >> 8);
+			if ( decodeTable.IsLeadByte( lead ) && trail >= 1 )
+			{
+				var index = decodeTable.TwoByteIndex( lead, trail );
+				if ( index <= decodeTable.Characters.Count && decodeTable.Characters[index - 1] == character )
+					this.encodeTable[character] = (lead, trail, true);
+			}
 		}
 	}
 
@@ -113,23 +127,30 @@ public sealed class GameTextCodec
 		var result = new List<byte>( text.Length );
 		foreach ( var character in text )
 		{
-			if ( encodeTable.TryGetValue( character, out var index ) )
-				result.Add( index );
-			else
+			if ( encodeTable.TryGetValue( character, out var code ) || TryGetPlaceholder( character, unmappable, out code ) )
 			{
-				unmappable?.Add( character );
-				if ( encodeTable.TryGetValue( '?', out var question ) )
-					result.Add( question );
+				result.Add( code.First );
+				if ( code.TwoBytes )
+					result.Add( code.Second );
 			}
 		}
 		return result.ToArray();
 	}
 
+	private bool TryGetPlaceholder( char character, ICollection<char>? unmappable, out (byte First, byte Second, bool TwoBytes) code )
+	{
+		unmappable?.Add( character );
+		return encodeTable.TryGetValue( '?', out code );
+	}
+
 	public string Decode( ReadOnlySpan<byte> bytes )
 	{
-		var characters = new char[bytes.Length];
-		for ( var i = 0; i < bytes.Length; i++ )
-			characters[i] = decodeTable.GetCharacter( bytes[i] );
-		return new string( characters );
+		var characters = new System.Text.StringBuilder( bytes.Length );
+		for ( var position = 0; position < bytes.Length; )
+		{
+			position += decodeTable.Decode( bytes, position, out var character );
+			characters.Append( character );
+		}
+		return characters.ToString();
 	}
 }

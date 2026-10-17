@@ -26,6 +26,7 @@ public partial class Level : IDisposable
 				PatrolTool?.Cancel();
 				BuyLandTool?.Cancel();
 				AreaClearTool?.Cancel();
+				PoolTool?.Cancel();
 			}
 			isPlacing = value;
 		}
@@ -90,14 +91,29 @@ public partial class Level : IDisposable
 	}
 	private bool wasMouseDown;
 	private int renderedCellVersion;
+	private int renderedOtherVersion;
+
+	/// <summary>Notes that the path layer, the queues and the pool holes are drawn for the cell map as it is now.</summary>
+	private void MarkCellsRendered( ParkCellMap cells )
+	{
+		renderedCellVersion = cells.Version;
+		renderedOtherVersion = cells.Version - cells.PoolWrites;
+	}
 
 	/// <summary>Rebuilds the path layer (path tiles and queue models) when the cell map changed since it was last drawn; every frame's update runs it.</summary>
 	internal void RefreshRenderedCells()
 	{
 		if ( OriginalTerrain == null || Guests == null || Guests.Grid.Cells.Version == renderedCellVersion )
 			return;
-		renderedCellVersion = Guests.Grid.Cells.Version;
-		OriginalTerrain.RefreshPaths();
+		var cells = Guests.Grid.Cells;
+		var other = cells.Version - cells.PoolWrites;
+		var pathsChanged = other != renderedOtherVersion;
+		MarkCellsRendered( cells );
+		// [EXT:pools-render] a stroke of pool cells changes the ground mesh's holes only: the path layer and the queue models are not rebuilt for it
+		if ( pathsChanged )
+			OriginalTerrain.RefreshPaths();
+		else
+			OriginalTerrain.RefreshHoles();
 	}
 	/// <summary>Set each frame by the original HUD when the pointer is over it, so HUD clicks do not build.</summary>
 	public bool UiCapturesMouse { get; set; }
@@ -113,6 +129,8 @@ public partial class Level : IDisposable
 	public RideHeadRenderer? RideHeadRenderer { get; private set; }
 	/// <summary>Draws the guests in costume with the theme's costume set (null when the theme ships none: they keep their kid sprite).</summary>
 	public GuestRenderer? CostumeRenderer { get; private set; }
+	/// <summary>[EXT:pools-swim] Draws the swimmers with the swim sprites, on the water; created beside the pool renderer, after it, so it draws after the water.</summary>
+	public GuestRenderer? SwimmerRenderer { get; private set; }
 	/// <summary>Draws the heads of riders in costume with the theme's costume heads (Jungle and Space only).</summary>
 	public RideHeadRenderer? CostumeHeadRenderer { get; private set; }
 	/// <summary>Draws the guests' balloons.</summary>
@@ -132,7 +150,7 @@ public partial class Level : IDisposable
 	/// </summary>
 	public ParkVisitInfo? Visit { get; }
 	public bool IsReadOnlyVisit => Visit != null;
-	/// <summary>True while this level runs the experimental Theme Park Inc slice: no economy, HUD or advisor of the reference game.</summary>
+	/// <summary>True while this level runs the experimental Theme Park Inc slice: only the money economy (no staff, research or challenges), no HUD or advisor of the reference game.</summary>
 	public bool IsThemeParkIncSlice => GameEditions.IsThemeParkInc && OriginalPark != null;
 	/// <summary>The version 2 layout a visit applies instead of the shipped level import; null for version 1 packages and own parks.</summary>
 	private readonly OpenTPW.Online.Packages.MinimalParkPayload? visitLayout;
@@ -239,13 +257,16 @@ public partial class Level : IDisposable
 			if ( resume != null && (resume.Layout.Cells.Width != OriginalPark.Map.CellCountX || resume.Layout.Cells.Height != OriginalPark.Map.CellCountY) )
 				throw new InvalidDataException( "The saved cell map dimensions do not match the original terrain." );
 			yield return 0.15f;
-			// [EXT:tpi-viewer] the edition capability policy decides the economy: Theme Park Inc's Standard.sam lacks 89 of the
-			// balance keys it reads, so its worlds run without one and building stays free (docs/THEME-PARK-INC.md).
+			// [EXT:tpi-viewer] the edition capability policy decides the economy: Theme Park Inc's Standard.sam lacks 86 of the
+			// balance keys the Theme Park World economy reads, so its worlds run the money only (Theme Park Inc's own keys: cash, loans, costs,
+			// the calendar, running costs) and not the staff, research or challenges (docs/THEME-PARK-INC.md, "Economy").
 			using ( LoadProfile.Measure( "economy" ) )
 			{
 				if ( !IsReadOnlyVisit && GameEditions.Capabilities.Economy )
 					Park = resume == null ? ParkEconomyRuntime.ForOriginalLevel( OriginalPark, start, Seed )
 						: ParkEconomyRuntime.ForResume( resumedEconomy ?? throw new InvalidDataException( "The resumed economy is missing." ), start );
+				else if ( !IsReadOnlyVisit && GameEditions.IsThemeParkInc && GameEditions.Capabilities.Money && resume == null )
+					Park = ParkEconomyRuntime.ForThemeParkIncLevel( OriginalPark, Seed );
 			}
 			yield return 0.2f;
 		}
@@ -403,12 +424,14 @@ public partial class Level : IDisposable
 				OriginalTerrain.QueueSource = ( x, y ) => cells.TypeAt( x, y ) == ParkCellType.Queue;
 				OriginalTerrain.QueueModelSource = ( x, y ) => cells.TypeAt( x, y ) == ParkCellType.Queue ? QueueModels.Choose( cells, x, y ) : null;
 				OriginalTerrain.PathVariantSource = PathVariants.IsSecond;
+				// [EXT:pools-render] the pool cells are render-only holes of the ground mesh while the extension is on (nothing else reads this)
+				OriginalTerrain.RenderHoleSource = ( x, y ) => PoolRenderHoles.IsHole( cells, x, y, FeatureGates.Pools );
 				// [BIN:TPW-EXE:0x00536490 map init refresh] the world's set-up refreshes every cell in order, so each path cell's chooser rolls once at the start
 				for ( var y = 0; y < cells.Height; y++ )
 					for ( var x = 0; x < cells.Width; x++ )
 						RefreshTile( x, y );
 				OriginalTerrain.RefreshPaths();
-				renderedCellVersion = cells.Version;
+				MarkCellsRendered( cells );
 			}
 			if ( Park != null && Guests != null )
 				Park.AttachGuests( Guests, openParkOnAttach: resumeState == null );
@@ -423,8 +446,11 @@ public partial class Level : IDisposable
 			ImportOriginalRideSettings();
 			if ( resumeState == null && !GameEditions.IsThemeParkInc && OriginalPark.Save != null && visitLayout == null )
 				ReleaseUnimportedThings();
-			SetupStaff();
-			SetupParkGate();
+			if ( GameEditions.Capabilities.Staff )
+				SetupStaff();
+			// [EXT:tpi-park-open] the Theme Park Inc park runs no gate commands: its gate script is not traced, so the economy neither drives nor closes the park door
+			if ( !GameEditions.IsThemeParkInc )
+				SetupParkGate();
 		}
 	}
 
@@ -461,9 +487,10 @@ public partial class Level : IDisposable
 		// A guest in costume is drawn with the theme's costume set (sprite category 2, tp.exe 0x004FE65E: +0x20 from 0x00541F70(2)), its head on a ride with the costume heads where the theme has them
 		var costumes = GuestSpriteAtlas.LoadCostumes( park.LevelName );
 		var costumeHeads = GuestSpriteAtlas.LoadCostumeHeads( park.LevelName );
-		GuestRenderer = new GuestRenderer( Guests, park.Heightfield, sprites ) { Draws = costumes.Count == 0 ? null : guest => !guest.InCostume };
+		// [EXT:pools-swim] swimmers are drawn by the pools' own renderer with the swim sprites (RefreshPools), whatever they wear
+		GuestRenderer = new GuestRenderer( Guests, park.Heightfield, sprites ) { Draws = guest => (!guest.IsSwimming || SwimmerRenderer == null) && (costumes.Count == 0 || !guest.InCostume) };
 		if ( costumes.Count > 0 )
-			CostumeRenderer = new GuestRenderer( Guests, park.Heightfield, costumes ) { Draws = guest => guest.InCostume };
+			CostumeRenderer = new GuestRenderer( Guests, park.Heightfield, costumes ) { Draws = guest => guest.InCostume && (!guest.IsSwimming || SwimmerRenderer == null) };
 		RideHeadRenderer = new RideHeadRenderer( Guests, GuestSpriteAtlas.LoadKidHeads(), Objects ) { Draws = costumeHeads.Count == 0 ? null : guest => !guest.InCostume };
 		RideHeadRenderer.AddSource( new TrackHeadSources( () => trackRenderers.Values ) );
 		RideHeadRenderer.AddSource( new TourHeadSources( () => tourRenderer ) );
@@ -508,6 +535,10 @@ public partial class Level : IDisposable
 		var costumed = CostumeRenderer?.PickVisitor( mouse, viewport, view, projection, out costumeDepth );
 		var picked = kid == null || costumed == null ? kid ?? costumed
 			: costumeDepth < kidDepth || (costumeDepth == kidDepth && costumed.Id < kid.Id) ? costumed : kid;
+		// [EXT:pools-swim] a swimmer in the water is picked like any visitor
+		float swimDepth = float.PositiveInfinity;
+		if ( SwimmerRenderer?.PickVisitor( mouse, viewport, view, projection, out swimDepth ) is { } swimmer && ( picked == null || swimDepth < Math.Min( kidDepth, costumeDepth ) ) )
+			picked = swimmer;
 		if ( picked == null || OriginalPark is not { } park )
 			return picked;
 		return TryGetGroundHit( mouse, viewport, view, projection, out var ground ) && OriginalParkPlacement.TryGetCell( park.Heightfield, ground.X, ground.Y, out var x, out var y ) && IsInHoveredNeighbourhood( (x, y), ((int)MathF.Floor( picked.X ), (int)MathF.Floor( picked.Y )) ) ? picked : null;
@@ -685,6 +716,9 @@ public partial class Level : IDisposable
 		ride.Visitors.ExitCell = entrance.Value;
 		ride.Visitors.HasCells = true;
 		Guests.Register( ride.Visitors );
+		// [EXT:developer-prototype] the prototype has no placement that lays access cells, so the cell a called guest's search walks into (state 13) is laid here the way a build lays an entrance
+		var (standX, standY) = GuestSimulation.StandCellOf( ride.Visitors );
+		ObjectAccessCells.LayStandCell( Guests.Grid.Cells, standX, standY );
 		LinkPrototypeToEconomy( ride );
 		Log.Trace( $"{ride.Name}: guests queue and exit at path cell {entrance.Value} (nearest path cell; the prototype has no catalog entrance)." );
 	}
@@ -772,6 +806,7 @@ public partial class Level : IDisposable
 		UpdateWorldInput( Input.Mouse.Left, UiCapturesMouse || ImGuiNET.ImGui.GetIO().WantCaptureMouse,
 			Input.Mouse.Position, new Vector2( Screen.Size.X, Screen.Size.Y ), Input.ModifierMaskDown );
 		RefreshRenderedCells();
+		RefreshPools();
 		AdvanceSimulation( Time.Delta * SimulationTimeScale );
 		foreach ( var entity in Entity.All.ToArray() )
 			entity.Update();
@@ -846,6 +881,12 @@ public partial class Level : IDisposable
 		PlacedRide?.Delete();
 		if ( PlacedRide != null )
 		{
+			// the cell its registration laid for the called guests' walk goes with it
+			if ( Guests != null && PlacedRide.Visitors.HasCells )
+			{
+				var (standX, standY) = GuestSimulation.StandCellOf( PlacedRide.Visitors );
+				ObjectAccessCells.ClearStandCell( Guests.Grid.Cells, standX, standY );
+			}
 			Guests?.Unregister( PlacedRide.Visitors );
 			RemovePrototypeFromEconomy( PlacedRide );
 		}
@@ -947,6 +988,7 @@ public partial class Level : IDisposable
 		PatrolTool?.Cancel();
 		BuyLandTool?.Cancel();
 		AreaClearTool?.Cancel();
+		PoolTool?.Cancel();
 		AttachStaffWorld();
 		AttachCoasterChallenges();
 		// The gate holds the economy it was built over; the load replaced it.

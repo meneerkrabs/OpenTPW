@@ -57,12 +57,13 @@ TPWS and an INTS for each theme.
 | Cell grid | Found once, starting at 5,729 (INTS) or 6,259–6,512 (TPWS); 16,384 × 84 bytes, no extension records; +46 equals the theme's `base.map` |
 | Path cells | The 10 MAP `InitialPath` cells, nothing else |
 | SYSG | No placed objects; fixed items 5 (TPWS) or 2 (INTS), all with their theme's Info.Ids (*600–*604) |
-
-These checks ran with the earlier leading-tag marker reader ("prefix" = action
-recording + World block, "SYSG" = RideSystem block). The writer-order block
-split and the thing-chain walk have not been run on this set yet.
 | Attraction records | 5 in each TPWS, one per fixed item (Bus, Seaplane, Ferry, Traffic Lights and the *601 park object); an INTS holds two attraction things (Gates, Lights), which decode once the initial calendar and empty history ring are accepted (docs/SAVE-THINGS.md, "The restart saves"); all three gauges are 100 in all 35 records |
 | Economy | Bank prefix, 8 loan offers equal to the theme's `LoanInfo`, and the full challenge list of `ChallengesInThisLevel` (8–10 records); see docs/ECONOMY.md for the corrected challenge layout |
+
+These checks first ran with the earlier leading-tag marker reader ("prefix" = action
+recording + World block, "SYSG" = RideSystem block). `OriginalSaveCorpusTests` now runs
+the writer-order block split, the thing-chain walk and the park and economy imports on
+all eleven saves, the four restart saves included.
 
 Initial state of the INTS saves (an unplayed park): the macro-AI calendar is the constructor's (`0x4F7E80`: start 2000-01-01, month cache 0,
 day cache -1, rate 15000, park turn 0) and every attraction history ring is the empty ring of `0x51ADE0` (current entry -1, 30 entries, no wrap).
@@ -142,7 +143,7 @@ block, which has a bounded structural reader (next section).
 | 1,179–1,242 | 64 bytes of labelled World variables (`SaveWorldVariables`, writer `0x105d3c`/reader `0x106708`): `version` (2; other versions are rejected), arrival-vehicle sizes, thing IDs of the bank, mechanic HQ, analyser, gates, traffic lights, research lab, staff HQ, tag system, UI receiver, weather and the first staff of each role and first object, `mGameTick` 755, `mParkClosed` 0, `mNumberOfVisitorsToDate`, `mRandomSeed`, `mWorldState` |
 | 1,243–6,048 | Control manager (`0xd1a60`): width not pinned, kept opaque |
 | 6,049–6,718 | Staff hiring pool (`SaveStaffPool`, tp.exe writer `0x507850`, the macro AI's first part): 32 × 20-byte candidates (role, name index, grade, sub-type, valid, on pointer, time stamp, timeout), five (people in category, stop producing) pairs, the pool's time stamp (722) and the opening-pool flag; 16 valid candidates |
-| 6,719–6,746 | Calendar (`0xe3d30`): FunnyTimeStart 8, SessionStart 8, month cache 4, day cache 4, rate 4 (15,000) |
+| 6,719–6,746 | Calendar (`0xe3d30`, tp.exe `0x4F7F30`): FunnyTimeStart 8, SessionStart 8, month cache 4, day cache 4, rate 4 (15,000); a calendar not updated since its constructor (`0x4F7E80`, the restart saves) holds month 0, day -1 |
 | 6,747–6,764 | Arrivals (`0xcb050`): 18 bytes, raw |
 | 6,765–1,385,520 | Per-cell grid: 16,384 records (16,134 × 84 bytes + 250 × 94 bytes) |
 | 1,385,521–1,495,461 | `Used Thing Head`, then the thing list: 42 things, ending with next ID 0 exactly at the `WRLD` delimiter |

@@ -113,9 +113,11 @@ public static class WorldStateHash
 				root.Remove( nameof( ParkSaveFile.Data.AnalyserCaches ) );
 			hash.Add( Canonical( node ) );
 		}
-		// [EXT:smarter-guests] the extension's own state joins the hash only while the extension is on, so every park without it keeps its pins and SchemaVersion
+		// [EXT:smarter-guests] the identity state joins the hash only while the extension or a script mod is on, so every park without it keeps its pins and SchemaVersion
 		if ( sources.Guests?.SmarterGuests is { } smarter )
 			smarter.AddCanonicalState( hash, sources.Guests.Guests );
+		// [EXT:script-mods] likewise the script mods' state, counters and flags: only while a script mod is enabled, with no SchemaVersion bump (docs/SCRIPT-MODS.md, "Saves and versioning")
+		sources.Guests?.ScriptMods?.AddCanonicalState( hash );
 		return hash.Value;
 	}
 

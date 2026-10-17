@@ -239,12 +239,12 @@ cannot collide with the mod's own, because one theme and category never lists tw
 
 `content.scripts` has `files` (1 to 8 mod-relative script files, same path rules as the other content, no duplicates) and `hooks` (1 or
 more entries from a known hook name to the function that implements it). Only the hook names of script API v1 are accepted
-(`scoreAttraction`, `joinQueue`, `leaveQueue`, `wanderGoal`); hooks are inert until the game wires them into the guest simulation (phase 4).
+(`scoreAttraction`, `joinQueue`, `leaveQueue`, `wanderGoal`); the game runs them through the guest decision seam ([SCRIPT-MODS.md](SCRIPT-MODS.md#hook-api-v1)).
 At resolve time every script file is compiled and checked against the script limits, and each hook must name a function that exactly one
 file defines, with the hook's parameter count. A compile error or a failed check refuses the mod with the file, line and message. The
 files, the caps (8 files, 256 KiB of source in all, 64 KiB each), safe mode and the rule that the executed bytes are the hashed bytes
 are in [SCRIPT-MODS.md](SCRIPT-MODS.md#loading-and-the-manifest). A mod with scripts changes the simulation (next sections), and the mods
-screen says "Contains scripts" for it. The shipped example is `opentpw.example.patient-guests` (off by default; it compiles, and runs once phase 4 lands).
+screen says "Contains scripts" for it. The shipped example is `opentpw.example.patient-guests` (off by default; not in the web build).
 
 ## Resolution
 

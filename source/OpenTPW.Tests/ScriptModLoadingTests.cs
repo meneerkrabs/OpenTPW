@@ -395,7 +395,7 @@ public class ScriptModLoadingTests
 	// ---- The shipped example -----------------------------------------------------------------------
 
 	private const string ExampleId = "opentpw.example.patient-guests";
-	private const string ExampleGoldenDigest = "3e3621368d1572124841f1154546a8997718186b7bae9d8cb9ac26bb4a7226f9";
+	private const string ExampleGoldenDigest = "323ccca9d4092d4d8746101b91823a21936ffa285436a4fb0611d9c98fabd8d8";
 
 	private static string ExampleFolder => Path.Combine( ModDiscovery.ProgramModsDirectory( AppContext.BaseDirectory ), ExampleId );
 

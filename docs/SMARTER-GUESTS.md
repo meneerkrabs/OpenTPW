@@ -36,6 +36,13 @@ taken: no code, no data tables, no constants. Every phase is one pull request. T
   The wander's off-path search (`GuestWander.OffPath`, a start cell without links) stays host-only. The policy sources are checked against a list of banned APIs (hash codes, clocks, GUIDs, any random,
   hash-set or dictionary, threads) and the policy types by reflection (sealed, no mutable field); the histories in a `GuestView` are read-only wrappers that cannot be cast back to the guest's arrays;
   the extension's variation comes from `SmarterGuestsState.Trait`.
+- **Script mods on the seam** (phase 4 of [SCRIPT-MODS.md](SCRIPT-MODS.md)). When script mods are enabled, `GuestSimulation` wraps the base policy (original or smarter) in `ScriptGuestDecisions`, which chains the mods' hooks over the
+  base answers for `ScoreAttraction`, `DecideAdmission`, `DecideQueuePatience` and `ChooseWanderGoal` (the other four points pass through). Small additions to the seam serve it, none of which changes a policy that ignores
+  them: `IGuestDecisions.BeginDecision()`/`EndDecision()` (default no-ops, bracketing each candidate loop so the scores of a decision can be treated as a unit), `IGuestDecisions.BeginTick()` (a default no-op, called at the start of every tick so a policy that meters work per tick, the scripts' step budget, starts its tick; it is the one place a policy holds state, and
+  that state is the script mods' own, saved in their section), `DecisionContext.GridWidth` and `GridHeight` (a wander goal must lie in the map; 0 when unknown), and `UsesExtensionState` now also means "needs the guest identity
+  state". That state (`SmarterGuestsState`: park seed, counter, birth ids) is **split from the smarter-guests rules**: a script policy brings it, the guests get birth ids at creation with no draw, and nothing else about the
+  guests changes (a test runs a mod that only answers `prev` against the off run: equal guest hash and `WorldRng` state). A park with script mods saves the `SmarterGuests` section without the extension's record
+  (`SmarterGuestsSave.ShapeProblem( ..., scriptMods )`). The policy still takes no generator; a script's `rng` is a stateless hash of its call identity.
 - **Randomness.** Extension off: the `WorldRng` sequence is untouched (the existing pins prove it). On: the promise is deterministic replay for the same seed, set and save, not
   stream equality with the original; with the delegating policy of 1.0.0 the stream is the original's anyway. The policy itself draws nothing.
 - **Identity.** With the extension on, `Guest.BirthId` (64 bits, 0 = none) is allocated in `GuestSimulation.Create`, after the creation's draws and before the guest's first decision (the booth
@@ -134,7 +141,7 @@ a plain tick).
 **Protocol.** Eight fixed seeds (`WorldSeed` 1 to 8) per scenario, a warm-up, then a measured window, both in in-game days (23 park turns, about 343 fixed ticks, 5.7 s at normal speed).
 
 ```sh
-dotnet source/OpenTPW/bin/Release/net10.0/OpenTPW.dll --guest-report [--guest-scale plan|extended] [--guest-seeds 8] [--guest-warmup-days N] [--guest-days N] \
+dotnet source/OpenTPW/bin/Release/net11.0/OpenTPW.dll --guest-report [--guest-scale plan|extended] [--guest-seeds 8] [--guest-warmup-days N] [--guest-days N] \
   [--guest-levels jungle,hallow,fantasy,space|all|none] [--guest-level-seeds 8] [--guest-arrivals 20] [--guest-report-json report.json] [--guest-no-perf]
 ```
 
@@ -148,6 +155,10 @@ The plan scale (2 warm-up + 10 measured days, the default) takes about 20 s with
 With `--guest-extension smarter-guests` (repeatable; the extension's id works too) the whole run builds its simulations with the extension on (each reads the gate once, when built), the JSON gets an
 `extensions` list beside its protocol (always present, `[]` for the default run), and the table says `Extensions on: ...`. With the delegating policy of 0b the report is the default's: every seed ends in the same guest state hash and
 `--guest-compare off.json on.json` shows every metric `same` (a note names the two extension sets).
+
+With `--guest-mod <folder or id>` (repeatable) the run switches the named mods on (a mod folder, or the id of a mod shipped with OpenTPW, such as the example script mod); the JSON gets a `mods` list beside `extensions`, each scenario a
+`scriptMods` list (calls, steps, the largest call and tick, failures, seeds that disabled the mod), the table the same as `script mod ...` lines, and `--guest-compare` names differing mod sets. A mod that cannot run is an error, not a silent
+baseline. The measured budgets and the example mod's effect are in [SCRIPT-MODS.md](SCRIPT-MODS.md#budgets-measured).
 
 To compare two runs: `--guest-compare baseline.json candidate.json [--guest-targets metric,metric] [--guest-compare-k 3]` prints every metric's change in standard errors with a verdict
 (`improved`, `regressed`, `changed`, `same`, `undefined`) and exits 1 on a regression, a named target that did not improve, or a non-zero `queue.superseded`.

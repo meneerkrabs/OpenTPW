@@ -6,7 +6,7 @@
 # own game folder in the browser, and the optional word filter is mounted read-only.
 ARG WEB_CLIENT=true
 
-FROM mcr.microsoft.com/dotnet/sdk:10.0 AS server
+FROM mcr.microsoft.com/dotnet/sdk:11.0 AS server
 ARG BUILD_REVISION
 WORKDIR /src
 COPY source/OpenTPW.Online/ source/OpenTPW.Online/
@@ -16,7 +16,7 @@ RUN dotnet publish source/OpenTPW.Server/OpenTPW.Server.csproj -c Release -o /ap
 # The browser build compiles the game's own sources (no game data) to WebAssembly, ahead of time:
 # AOT halves the cold park construction and the first buy-menu frames against the interpreter, with
 # identical texture and simulation digests, for about 5 MB more download (docs/BROWSER-PERFORMANCE.md).
-FROM mcr.microsoft.com/dotnet/sdk:10.0 AS web
+FROM mcr.microsoft.com/dotnet/sdk:11.0 AS web
 ARG BUILD_REVISION
 # --build-arg WEB_AOT=false builds the interpreter page instead (CI's pull-request check: same sources, a few minutes faster;
 # the images CI publishes from main and the release tags stay AOT).
@@ -33,7 +33,7 @@ COPY source/ source/
 COPY tools/hero-art/ tools/hero-art/
 RUN dotnet publish source/OpenTPW.Web/OpenTPW.Web.csproj -c Release -p:RunAOTCompilation="$WEB_AOT" -o /web --nologo -p:SourceRevisionId="$BUILD_REVISION"
 
-FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime-false
+FROM mcr.microsoft.com/dotnet/aspnet:11.0 AS runtime-false
 # Links the published image to the repository, whose visibility it then shares.
 LABEL org.opencontainers.image.source=https://github.com/meneerkrabs/OpenTPW \
       org.opencontainers.image.description="OpenTPW server: online play and the browser game" \

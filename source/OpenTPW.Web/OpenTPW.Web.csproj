@@ -8,7 +8,7 @@
 	ONNX Runtime and an upscaler executable, and only runs from the desktop command line).
 	-->
 	<PropertyGroup>
-		<TargetFramework>net10.0</TargetFramework>
+		<TargetFramework>net11.0</TargetFramework>
 		<OutputType>Exe</OutputType>
 		<ImplicitUsings>enable</ImplicitUsings>
 		<Nullable>enable</Nullable>
@@ -77,7 +77,7 @@
 		</PropertyGroup>
 		<MakeDir Directories="$(PredecodedHeroArtStaging)" />
 		<Exec StandardOutputImportance="high" Command="$(_PredecodeDotnet) build &quot;$(MSBuildThisFileDirectory)../../tools/hero-art/PredecodeHeroArt.csproj&quot; -c $(Configuration) --nologo -v:quiet" />
-		<Exec StandardOutputImportance="high" Command="$(_PredecodeDotnet) &quot;$(MSBuildThisFileDirectory)../../tools/hero-art/bin/$(Configuration)/net10.0/PredecodeHeroArt.dll&quot; --source &quot;$(MSBuildThisFileDirectory)../../content/hero-art&quot; --staging &quot;$(PredecodedHeroArtStaging.TrimEnd('/\'))&quot;" />
+		<Exec StandardOutputImportance="high" Command="$(_PredecodeDotnet) &quot;$(MSBuildThisFileDirectory)../../tools/hero-art/bin/$(Configuration)/net11.0/PredecodeHeroArt.dll&quot; --source &quot;$(MSBuildThisFileDirectory)../../content/hero-art&quot; --staging &quot;$(PredecodedHeroArtStaging.TrimEnd('/\'))&quot;" />
 		<ItemGroup>
 			<_PredecodedHeroArt Include="$(PredecodedHeroArtStaging)**/*" />
 		</ItemGroup>

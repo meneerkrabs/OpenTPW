@@ -450,6 +450,12 @@ from `GuestSimulation.ComputeStateHash`; it joins `WorldStateHash` only while th
 `ParkResumeSnapshot.SmarterGuests` section (null and omitted while off). The gate is read once when the guest simulation is built. With the delegating policy of version 1.0.0 the guests and
 the `WorldRng` stream equal the off run's tick for tick; `DeterminismTests.SmarterGuestsFixedRunHash` pins the on run's world hash.
 
+Script mods ([SCRIPT-MODS.md](SCRIPT-MODS.md)) keep their `state`, failure counters and disabled flag in the optional `ParkResumeSnapshot.ScriptMods` section (null and omitted while no script mod is on) and join `WorldStateHash`
+only while one is on, so the off-path hash and `SchemaVersion` (21) do not change; the section needs the guests' identity state (the `SmarterGuests` section, shared) and the behaviour and API versions it was saved under, and a
+park of another version is refused. A script's `rng` is a stateless hash of (park seed, mod id, hook, guest birth id, park turn, draw ordinal), so it never moves the `WorldRng` stream. Two pins hold the interpreter and the wiring
+on every platform: `DeterminismTests.ScriptModsFixedRunHash` (the shipped example mod) and `ScriptModsAllHooksFixedRunHash` (all four hooks, state and `rng`); a resumed park continues equal to the uninterrupted one
+(`ScriptModsSaveTests.AResumedParkWithScriptModsContinuesLikeTheUninterruptedOne`).
+
 A run with a mod that brings Theme Park Inc rides is as deterministic as any other: the M3 gate with such a ride as its attraction gives the same guest and state hashes in two runs
 (`TpiRidesEndToEndTests`, over the install named by `OPENTPW_TPI_PATH`), and the extension is recorded in the save, so a park saved with it loads only with it.
 

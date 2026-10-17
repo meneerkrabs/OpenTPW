@@ -8,7 +8,9 @@ namespace OpenTPW;
 /// <param name="ParkTurn">The park turn the decision is taken on (<see cref="GuestSimulation.ParkTurn"/>).</param>
 /// <param name="Raining">Drops are falling (the weather's current drops above 0).</param>
 /// <param name="ParkSeed">The seed a stateless trait derives from: the extension's saved park seed, else the simulation's seed.</param>
-public readonly record struct DecisionContext( GuestSettings Settings, long ParkTurn, bool Raining, ulong ParkSeed = 0 )
+/// <param name="GridWidth">The park map's width in cells (0 when unknown); a wander goal must lie inside it.</param>
+/// <param name="GridHeight">The park map's height in cells (0 when unknown).</param>
+public readonly record struct DecisionContext( GuestSettings Settings, long ParkTurn, bool Raining, ulong ParkSeed = 0, int GridWidth = 0, int GridHeight = 0 )
 {
 	/// <summary>A stateless trait of <paramref name="guest"/> (<see cref="SmarterGuestsState.Trait(ulong, ulong, int)"/>): the same for the whole visit, no random number taken.</summary>
 	public ulong Trait( in GuestView guest, int traitIndex ) => SmarterGuestsState.Trait( ParkSeed, guest.BirthId, traitIndex );

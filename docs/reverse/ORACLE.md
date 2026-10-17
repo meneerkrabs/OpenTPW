@@ -2408,5 +2408,5 @@ corner of the motion's quadrant whose diagonal cell cuts it. The steering sums t
 makes the walk search again. A reading that ignores the walk's mask differs on 226 edge inputs and 220 searches.
 
 **Fixed in C#.** Guests walking the park's cells use this walk (WALK-002 and WALK-009 retired; WALK-004 .. WALK-008 narrowed). Its
-limits: the oracle maps hold no objects or things (WALK-005), separation runs without neighbours here (WALK-003), and a walk into an entrance cell the edge test refuses
+limits: the oracle maps hold no objects or things (WALK-005), separation runs without neighbours here (WALK-003), and a walk into an entrance cell of a park resumed from an old save (no link byte)
 and walks from older saves keep the route walk (WALK-006).

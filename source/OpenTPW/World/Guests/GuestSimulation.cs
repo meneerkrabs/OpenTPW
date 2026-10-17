@@ -1033,7 +1033,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		else
 		{
 			found = navigation.Navigate( Grid.Cells, target.X, target.Y, route, alsoOpen );
-			// [APPROX:WALK-006] a refused search keeps the route walk of the ride's cells for the last walk into the entrance cell (see UpdateStanding)
+			// [APPROX:WALK-006] a refused search keeps the route walk of the ride's cells for the last walk into the entrance cell (see UpdateStanding): only the entrance cells of a park resumed from a save made before the import took the saved link byte refuse it
 			if ( !found && routeWalkIfRefused )
 			{
 				navigation.SetDestination( target.X, target.Y, route, alsoOpen );
@@ -2363,7 +2363,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		{
 			guest.QueueCalled = false;
 			// [BIN:TPW-EXE:0x004FFFF0 called forward] the call (flag +0x1F8, the ride's called guest 0x004E0AA0) asks the generic route 0x004FA5F0 to the stand point 0x004DEDF0(0) (the entry cell +0x36 of the ride); a route makes state 13 ("being loaded to ride"), none logs "the player has removed the path from under me and I can no longer get into object" and releases the called slot (0x004E0AC0), unlinks the guest (0x004DDD20) and dismisses it (0x005012F0) through the exit 0x005004AA, with no thought
-			// where the search cannot enter the entrance cell (OpenTPW's imported and restored rides have no link byte on it toward the path outside, so the edge test 0x4D8750 refuses the step) the guest keeps OpenTPW's route walk into it instead of the original's dismissal (WALK-006, SetDestination)
+			// where the search cannot enter the entrance cell (a park resumed from a save made before the import took the saved link byte holds none on it toward the path outside, so the edge test 0x4D8750 refuses the step) the guest keeps OpenTPW's route walk into it instead of the original's dismissal (WALK-006, SetDestination)
 			SetQueueDestination( guest, attraction, 0, StandPoint( attraction ), toEntrance: true );
 			guest.State = GuestState.Boarding;
 			return;

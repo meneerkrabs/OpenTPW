@@ -45,7 +45,7 @@ public class QueueStandWalkTests
 	[TestMethod]
 	public void AnEntranceCellTheEdgeTestRefusesKeepsTheRouteWalk()
 	{
-		// imports and restores keep no link byte on the entrance cell, so the search cannot enter it (WALK-006): the guest still walks in and boards
+		// a park resumed from a save made before the import took the saved link byte has none on the entrance cell, so the search cannot enter it (WALK-006): the guest still walks in and boards
 		var rig = new QueueTests.Rig( takesGuests: true, capacity: 1, parameters: new QueueParameters( true, false, false, 600, 60, 60, 1, 30 ) );
 		var guests = Enumerable.Range( 0, 2 ).Select( _ => rig.Send() ).ToList();
 		var routeWalks = 0;

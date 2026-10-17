@@ -480,6 +480,49 @@ internal static class Game
 				}
 			}
 		}
+		// [EXT:debug-pool] smoke-only: once the original level is up and the opentpw.pools extension is on, paints pool cells through the pool tool's own builder
+		// (Level.PoolBuilder.PaintCells, charged as the tool does) at the first place near the camera target where every cell of the shape can be painted, so a
+		// capture shows the water and the edges (docs/POOLS.md). The shape is rectangles "x,y,w,h" relative to that place, separated by ';' (default a 6 x 4 basin
+		// plus an L arm and a single cell, which covers straight edges, inner and outer corners and an isolated cell).
+		var debugPool = GetOption( args, "--debug-pool", "pool rectangles x,y,w,h;... relative to the camera target" );
+		if ( debugPool != null )
+		{
+			var shapeText = debugPool.Length > 0 && debugPool != "default" ? debugPool : "0,0,6,4;6,2,3,6;11,0,1,1";
+			var rectangles = shapeText.Split( ';' ).Select( part => part.Split( ',' ).Select( int.Parse ).ToArray() ).ToArray();
+			var shape = rectangles.SelectMany( r => Enumerable.Range( 0, r[2] ).SelectMany( dx => Enumerable.Range( 0, r[3] ).Select( dy => (X: r[0] + dx, Y: r[1] + dy) ) ) ).Distinct().ToArray();
+			var poolFrames = 0;
+			var poolFrame = GetOption( args, "--capture-frames", "a frame count" ) is { } poolFrameText && int.TryParse( poolFrameText, out var poolParsed ) && poolParsed > 60 ? poolParsed - 59 : 40;
+			Render.PostUpdate += PaintDebugPool;
+			void PaintDebugPool()
+			{
+				if ( flow.Level is not { OriginalPark: not null } level || Camera.Mode is not ParkCameraMode park || ++poolFrames < poolFrame )
+					return;
+				Render.PostUpdate -= PaintDebugPool;
+				if ( level.PoolBuilder is not { } builder || !level.TryGetGridCell( park.Target.X, park.Target.Y, out var cellX, out var cellY ) )
+				{
+					Log.Warning( "--debug-pool: the opentpw.pools extension is off (use --enable-mod opentpw.pools) or the camera target is off the grid." );
+					return;
+				}
+				for ( var radius = 0; radius < 40; radius++ )
+					for ( var dx = -radius; dx <= radius; dx++ )
+						for ( var dy = -radius; dy <= radius; dy++ )
+						{
+							if ( Math.Max( Math.Abs( dx ), Math.Abs( dy ) ) != radius )
+								continue;
+							var originX = cellX + dx;
+							var originY = cellY + dy;
+							if ( !shape.All( cell => builder.Check( originX + cell.X, originY + cell.Y ) == PoolBuildResult.Ok ) )
+								continue;
+							var stroke = builder.PaintCells( shape.Select( cell => (originX + cell.X, originY + cell.Y) ) );
+							var grid = level.Objects.Grid.Origin;
+							var centreX = grid.X + (originX + shape.Average( cell => cell.X ) + 0.5f) * ObjectPlacement.CellSize;
+							var centreY = grid.Y + (originY + shape.Average( cell => cell.Y ) + 0.5f) * ObjectPlacement.CellSize;
+							Log.Trace( FormattableString.Invariant( $"--debug-pool: painted {stroke.Cells.Count} cells at {originX},{originY} (engine centre {centreX:0.#},{centreY:0.#}), charged {stroke.Charged}, refusal {stroke.FirstRefusal?.Reason.ToString() ?? "none"}." ) );
+							return;
+						}
+				Log.Warning( "--debug-pool: no place near the camera target takes the whole shape." );
+			}
+		}
 		// [EXT:debug-sim-minutes] smoke-only: once the original level is up, runs its fixed-step simulation (guests, ride scripts, economy) for that many park minutes
 		// as fast as it goes and prints the scream statistics (docs/AUDIO.md "Scream diagnostics"); use it with --capture-world, which ends the run afterwards.
 		var debugSim = GetOption( args, "--debug-sim-minutes", "park minutes to simulate for the audio diagnostics" );

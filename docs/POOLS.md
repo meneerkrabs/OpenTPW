@@ -119,6 +119,23 @@ unit length, the top surfaces face up, walls are vertical and the winding agrees
 ground the mesh is closed: no edge is shared by three triangles and the only open edges are the three skirt-bottom edges per outline side, lying on the ground; the water is one surface across cells.
 The GPU side (`PoolRenderer`, the shader) is not exercised by tests; **a visual check is needed** before the look is called right.
 
+### Checking it on screen
+
+`--debug-pool [x,y,w,h;...]` (`[EXT:debug-pool]`, smoke-only) paints pool cells through the tool's own builder once the
+original level is up. The shape is a list of rectangles, measured from the first place near the camera target that takes
+the whole shape and charged as the tool charges. The default shape is a 6 x 4 basin, an L-shaped arm and one single
+cell, which together show straight edges, inner and outer corners and an isolated cell. It needs the extension. The log
+prints the shape's engine centre, which `--capture-camera` can aim at:
+
+```sh
+bash scripts/run.sh --game-path '/path/to/Theme Park World' --load-original-level jungle --enable-mod opentpw.pools \
+  --debug-pool default --silent --capture-world pool.png --capture-frames 300 --capture-camera 28.2,-38.6,45,-90
+```
+
+First on-screen check (October 17, 2026; Jungle, 43 cells): the water animates, and the coping joins at straight edges,
+inner and outer corners and around the single cell. The basin sits on top of the land, so the water reads as a shallow
+tray rather than a deep pool. Depth (a darker floor, a visible inner wall) is a follow-up.
+
 ## Saves and determinism
 
 See [the save rule](#the-extension-and-the-save-rule). The pins (docs/DETERMINISM.md, "Pools"): every existing pin is unchanged with the extension on or off

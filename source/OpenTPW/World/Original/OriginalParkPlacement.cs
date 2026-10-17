@@ -17,7 +17,9 @@ public enum OriginalPlacementResult
 	/// <summary>An entrance's or exit's outside cell refuses the access the original lays there (tp.exe <c>0x528A70</c>).</summary>
 	AccessBlocked,
 	/// <summary>[EXT:pools-changing-room] A changing room needs pool water beside its back (docs/POOLS.md).</summary>
-	NeedsPool
+	NeedsPool,
+	/// <summary>[EXT:pools-extras] A pool extra needs its spot: a straight pool edge, a changing room beside it, or water beside it (docs/POOLS.md, "Extras").</summary>
+	NeedsPoolEdge
 }
 
 /// <summary>

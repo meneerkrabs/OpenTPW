@@ -147,8 +147,30 @@ public sealed class GuestSpriteAtlas
 		var animation = Animations.Animations[slot];
 		if ( animation.IsEmpty )
 			animation = Animations.Animations[StandSlot];
+		// [EXT:pools-activities] a swim set has art for some slots only (the strokes): a slot without art falls back to the first slot that has some
+		if ( animation.IsEmpty )
+			animation = Animations.Animations.FirstOrDefault( candidate => !candidate.IsEmpty );
+		if ( animation.IsEmpty )
+			return 0;
 		var frame = animation.GetFrame( direction, step );
 		return Math.Clamp( frame, 0, Frames.Length - 1 );
+	}
+
+	/// <summary>[EXT:pools-render] Whether the set has any art for the animation slot (a swim set has it for the strokes, slots 8 to 10, until the swimwear slots are drawn).</summary>
+	public bool HasArt( int slot ) => !Animations.Animations[slot].IsEmpty;
+
+	/// <summary>
+	/// [EXT:pools-render] The slot a set can draw for a wished slot: the slot itself when it has art, else treading water (10), the breaststroke (9) or the crawl (8), the swim slots every swim set has.
+	/// A swimwear slot whose art a set does not have yet is drawn as the swimmer in the water rather than not at all.
+	/// </summary>
+	public int UsableSlot( int slot )
+	{
+		if ( HasArt( slot ) )
+			return slot;
+		foreach ( var fallback in new[] { 10, 9, 8 } )
+			if ( HasArt( fallback ) )
+				return fallback;
+		return slot;
 	}
 
 	public int FramesPerDirection( int slot )

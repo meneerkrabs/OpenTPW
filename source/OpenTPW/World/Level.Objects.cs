@@ -330,7 +330,16 @@ public partial class Level
 		Objects.ClearPath = ( x, y ) => Paths?.Remove( x, y );
 		Objects.PathRuleAllows = ( x, y ) => Paths?.CheckPathRule( x, y ) is { } rule ? rule is CellBuildResult.Ok or CellBuildResult.Existing : null;
 		// [EXT:pools-changing-room] a changing room needs pool water beside its back
-		Objects.PlacementRule = ( entry, x, y, rotation ) => PoolChangingRooms.PlacementRule( entry, Guests?.Grid.Cells, x, y, rotation );
+		// [EXT:pools-extras] and a pool extra needs its spot beside the water (or the room)
+		// [EXT:pools-extras] a swimmer in an activity at an erased or demolished extra leaves the session at once (the activity lets go first); the extras the swim session sees are read again after any placement or removal
+		Objects.ObjectRemoving += item =>
+		{
+			if ( PoolExtras.KindOf( item.Entry ) != PoolExtraKind.None )
+				Guests?.AbortPoolActivitiesOf( item.ThingId );
+		};
+		Objects.ObjectPlaced += _ => poolExtraSites = null;
+		Objects.ObjectRemoved += _ => poolExtraSites = null;
+		Objects.PlacementRule = ( entry, x, y, rotation ) => PoolChangingRooms.PlacementRule( entry, Guests?.Grid.Cells, x, y, rotation ) ?? PoolExtras.PlacementRule( entry, Guests?.Grid.Cells, Objects, x, y, rotation );
 	}
 
 	/// <summary>Whether a cell of this type keeps objects off it: any type but empty ground, a path and the object, entrance and exit types ([EXT:pools-cell-type]: pool water is one).</summary>
@@ -368,6 +377,36 @@ public partial class Level
 	}
 
 	/// <summary>
+	/// [EXT:debug-pool] Smoke-only (<c>--debug-extras</c>): builds one of each pool extra of the theme through the level's own placement (charged, with its rule) at the first anchor and rotation, within
+	/// four cells of <paramref name="pool"/>, that the rules allow, in the order ladder, diving board, shower, lounger, lamp, underwater light. Returns what was placed.
+	/// </summary>
+	internal List<OriginalObject> BuildPoolExtrasBeside( IReadOnlyList<(int X, int Y)> pool )
+	{
+		var placed = new List<OriginalObject>();
+		if ( pool.Count == 0 )
+			return placed;
+		RegisterPoolActivities();
+		var (minX, maxX, minY, maxY) = (pool.Min( cell => cell.X ) - 4, pool.Max( cell => cell.X ) + 4, pool.Min( cell => cell.Y ) - 4, pool.Max( cell => cell.Y ) + 4);
+		foreach ( var kind in new[] { PoolExtraKind.Ladder, PoolExtraKind.DivingBoard, PoolExtraKind.Shower, PoolExtraKind.Lounger, PoolExtraKind.Lamp, PoolExtraKind.UnderwaterLight } )
+		{
+			var entry = Objects.Catalog.Entries.FirstOrDefault( item => PoolExtras.KindOf( item ) == kind );
+			if ( entry == null )
+				continue;
+			var done = false;
+			for ( var y = minY; y <= maxY && !done; y++ )
+				for ( var x = minX; x <= maxX && !done; x++ )
+					foreach ( var rotation in new[] { 0, 90, 180, 270 } )
+						if ( CheckObject( entry, x, y, rotation ) == OriginalPlacementResult.Allowed && PlaceObject( entry, x, y, rotation ) is { } item )
+						{
+							placed.Add( item );
+							done = true;
+							break;
+						}
+		}
+		return placed;
+	}
+
+	/// <summary>
 	/// [EXT:pools-swim] Why a pool cell cannot be erased: a swimmer is in it, or it lies beside the back of a changing room (the room needs its pool, and a save that holds a changing room
 	/// records the extension). Null when it can go.
 	/// </summary>
@@ -378,6 +417,9 @@ public partial class Level
 		foreach ( var item in Objects.Objects )
 			if ( !item.IsDeleted && item.Visitors.IsChangingRoom && item.Visitors.PoolAccessCandidates.Contains( (x, y) ) )
 				return PoolBuildResult.ChangingRoomAccess;
+		// [EXT:pools-extras] the water a ladder, board, lounger, lamp or light stands beside stays
+		if ( PoolExtras.NeedsWater( PoolExtras.Sites( Objects ), x, y ) )
+			return PoolBuildResult.ExtraNeedsWater;
 		return null;
 	}
 
@@ -417,9 +459,27 @@ public partial class Level
 		}
 	}
 
+	/// <summary>[EXT:pools-activities] Registers the pool activities with the simulation while the extension is on and lets it read the placed extras; called once when the level's guests are made, so no path runs with an empty registry.</summary>
+	internal void RegisterPoolActivities()
+	{
+		if ( Guests == null || !FeatureGates.Pools )
+			return;
+		// [EXT:pools-extras] the swim session reads the placed extras through the level's objects: rebuilt once per park turn and whenever an object is placed or removed (SetupObjects)
+		Guests.PoolExtraSites ??= () =>
+		{
+			if ( poolExtraSitesTurn != Guests.ParkTurn || poolExtraSites == null )
+				(poolExtraSites, poolExtraSitesTurn) = (PoolExtras.Sites( Objects ), Guests.ParkTurn);
+			return poolExtraSites;
+		};
+		foreach ( var activity in PoolActivityRegistry.Create() )
+			Guests.RegisterPoolActivity( activity );
+	}
+
 	private bool swimSpritesTried;
 	/// <summary>[EXT:pools-swim] The swim sets, loaded when the level's guests are set up while the extension is on (null otherwise).</summary>
 	private List<GuestSpriteAtlas>? swimSpriteSets;
+	private List<PoolExtraSite>? poolExtraSites;
+	private long poolExtraSitesTurn = -1;
 
 	private GuestRenderer? CreateSwimmerRenderer( GuestSimulation guests, OriginalPark park )
 	{
@@ -438,12 +498,21 @@ public partial class Level
 		}
 		return new GuestRenderer( guests, park.Heightfield, swim )
 		{
-			Draws = guest => guest.IsSwimming,
-			SlotChooser = guest => (PoolSwimming.SpriteSlot( guest.SwimStroke ), (int)(guests.TimeSeconds * (guest.SwimStroke == 2 ? 3 : 6)) + guest.Id),
+			Draws = guest => guest.IsSwimming || guest.InPoolActivity,
+			SwimSlotFallback = true,
+			SlotChooser = guest => guest.InPoolActivity
+				? (guests.PoolActivityOf( guest )?.SpriteSlot( guest ) ?? PoolSwimSlots.TreadWater, (int)(guests.TimeSeconds * 6) + guest.Id)
+				: (PoolSwimming.SpriteSlot( guest.SwimStroke ), (int)(guests.TimeSeconds * (guest.SwimStroke == 2 ? 3 : 6)) + guest.Id),
 			FeetChooser = guest =>
 			{
 				var feet = GuestRenderer.CellToEngine( park.Heightfield, guest.DrawX, guest.DrawY );
-				return PoolRenderer?.WaterLevelAt( guest.CellX, guest.CellY ) is { } level ? new System.Numerics.Vector3( feet.X, feet.Y, level ) : feet;
+				var height = guests.Grid.Cells.RawTypeAt( guest.CellX, guest.CellY ) == ParkCellTypes.PoolWater && PoolRenderer?.WaterLevelAt( guest.CellX, guest.CellY ) is { } level ? level : feet.Z;
+				if ( !guest.InPoolActivity )
+					return new System.Numerics.Vector3( feet.X, feet.Y, height );
+				// [EXT:pools-activities] an activity may raise or set the drawn height (a board, a slide, a ladder between the water and the deck); presentation only
+				var region = guests.SwimRoomOf( guest ) is { } room ? guests.SwimRegionOf( room ) : null;
+				var water = region != null && PoolRenderer?.WaterLevelAt( region.Access.X, region.Access.Y ) is { } surface ? surface : height;
+				return new System.Numerics.Vector3( feet.X, feet.Y, guests.PoolFeetHeight( guest, new PoolFeetHeights( height, water, feet.Z ) ) );
 			}
 		};
 	}

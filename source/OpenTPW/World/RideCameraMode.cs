@@ -10,15 +10,15 @@ namespace OpenTPW;
 /// (the player rides with <see cref="Level.EnterRideView"/>) and by read-only visits of a shared park. A coaster takes the seat of its first train's front car model.
 /// </summary>
 // [BIN:TPW-EXE:0x42b1c0 camera update] the per-frame camera update: with the ride flag set, the camera matrix is the seat node's world matrix (0x790a30) with the three rotation rows blended with the node's matrix of the previous frame (0x790948) and the translation copied exactly (0x42ca04-0x42cb96), then the free-look rotation is multiplied in (0x42cba0-0x42cbdf)
-// [APPROX:UI-094] the ride camera never changes the projection (0x578be0, built once with the argument 90 at 0x42a990 and 0x54e860), so its field of view is the park camera's and shares UI-101's difference (55 against 90); the car 0x436880 selects is decoded (the train with the smallest position, its car 0 or the second car behind a front car of another type, COAST-011), the eye is its model's camera seat; the signs of the look rotations are read from the video (the view turns right and down with the pointer, 77:20-77:21), not from the matrix code; which of the seat's axes is the view direction (the model's Z) is taken from the car models
+// [BIN:TPW-EXE:0x42a990 ride projection] the ride camera never changes the projection (0x578be0, built once with the argument 90 at 0x42a990 and 0x54e860), so the ride view uses the park camera's projection (OriginalProjection). [APPROX:UI-094] the car 0x436880 selects is decoded (the train with the smallest position, its car 0 or the second car behind a front car of another type, COAST-011), the eye is its model's camera seat; the signs of the look rotations are read from the video (the view turns right and down with the pointer, 77:20-77:21), not from the matrix code; which of the seat's axes is the view direction (the model's Z) is taken from the car models
 public sealed class RideCameraMode : CameraMode
 {
 	/// <summary>Engine units above the front car's sample the eye sits at when a coaster's car model has no seat (half of the drawn car height, CoasterRenderer).</summary>
 	public const float CoasterSeatHeight = 1.5f;
 	/// <summary>Engine units above the prototype ride's anchor the eye sits at when its model has no seat.</summary>
 	public const float PrototypeSeatHeight = 2f;
-	/// <summary>The field of view of the ride view; the original's first-person field of view is not traced (UI-094).</summary>
-	public const float ViewFieldOfView = 55f;
+	/// <summary>The field of view of the ride view: the original's one projection angle (<see cref="OriginalProjection"/>).</summary>
+	public const float ViewFieldOfView = OriginalProjection.FieldOfView;
 	/// <summary>The pointer's dead zone each side of the view's centre, in units of the half width.</summary>
 	public const float LookDeadZoneX = 0.2f;
 
@@ -40,6 +40,7 @@ public sealed class RideCameraMode : CameraMode
 		this.heading = heading;
 		this.seat = seat ?? DefaultSeat( ride );
 		FieldOfView = ViewFieldOfView;
+		UsesOriginalProjection = true;
 	}
 
 	/// <summary>The ride being ridden.</summary>

@@ -107,7 +107,7 @@ public partial class Level
 				DemoPreview = new CoasterPreview( ends.Depart.X + DemoCircuit[4].X, ends.Depart.Y + DemoCircuit[4].Y, true, height, false );
 			}
 			var centre = OriginalParkPlacement.GetCellCenter( OriginalPark.Heightfield, ends.Depart.X - 2, ends.Depart.Y + 4 );
-			(Camera.Mode as ParkCameraMode)?.SetPose( new Vector3( centre.X, centre.Y, 0 ), 28, -20 );
+			(Camera.Mode as ParkCameraMode)?.SetPose( new Vector3( centre.X, centre.Y, 0 ), ParkCameraMode.MaximumHeight, -20 );
 			Log.Trace( $"--debug-coaster: {entry.DisplayName} at ({cell.X}, {cell.Y}), {(finished ? "finished" : "open")} with {builder.Track.PylonCount} pylons; camera on engine ({centre.X:0.#}, {centre.Y:0.#})." );
 			return station;
 		}

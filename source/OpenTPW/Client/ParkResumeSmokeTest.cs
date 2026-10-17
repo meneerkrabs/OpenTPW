@@ -151,6 +151,11 @@ internal sealed partial class ParkResumeSmokeTest : IDisposable
 		{
 			// The harness owns the update path flow.Update normally drives; the camera still needs its per-frame
 			// update for the view/projection the world pass draws with (the visit smoke test drives it the same way).
+			// the smoke searches the middle of the screen for free sites: scroll to the paths' centre at the original's farthest zoom, as a player can
+			if ( frame == 1 && level?.OriginalPark != null && Camera.Mode is ParkCameraMode smokeCamera )
+			{
+				smokeCamera.SetPose( level.PathFocus, ParkCameraMode.MaximumHeight, ParkCameraMode.HomeYaw );
+			}
 			Camera.Update();
 			// The level's frame update also redraws the path layer after a cell edit; the built park's queue models are parts of it.
 			level?.RefreshRenderedCells();

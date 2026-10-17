@@ -28,16 +28,31 @@ internal sealed partial class SandboxSmokeTest
 		bool Clickable( (int X, int Y) cell, out System.Numerics.Vector2 point ) => TryClickPoint( cell, out point );
 		var grid = level.Objects.Grid;
 		(int X, int Y)? anchor = null;
-		for ( var index = 0; index < grid.Width * grid.Height && anchor == null; index++ )
+		// nearest to the paths' centre first, where the camera looked before it scrolls to a site
+		var focusCell = OriginalParkPlacement.TryGetCell( level.OriginalPark.Heightfield, level.PathFocus.X, level.PathFocus.Y, out var focusX, out var focusY ) ? (X: focusX, Y: focusY) : (X: 0, Y: 0);
+		foreach ( var candidate in Enumerable.Range( 0, grid.Width * grid.Height ).Select( index => (X: index % grid.Width, Y: index / grid.Width) )
+			.OrderBy( cell => Math.Abs( cell.X - focusCell.X ) + Math.Abs( cell.Y - focusCell.Y ) ) )
 		{
-			var candidate = (X: index % grid.Width, Y: index / grid.Width);
+			if ( anchor != null )
+				break;
 			if ( level.Objects.CheckFree( entry!, candidate.X, candidate.Y, 0 ) != OriginalPlacementResult.Allowed )
 				continue;
 			if ( CoasterBuilder.StationEnds( entry!.Shape, candidate.X, candidate.Y, 0 ) is not { } ends )
 				continue;
 			var cells = SmokeCircuit.Select( offset => (ends.Depart.X + offset.X, ends.Depart.Y + offset.Y) ).Append( ends.Return ).ToArray();
-			if ( cells.All( cell => level.Objects.FindAt( cell.Item1, cell.Item2 ) == null && level.Objects.Grid.CheckTerrain( cell.Item1, cell.Item2 ) == OriginalPlacementResult.Allowed
-				&& !level.Guests!.Grid.Cells.FlagsAt( cell.Item1, cell.Item2 ).HasFlag( ParkCellFlags.Unowned ) && Clickable( cell, out _ ) ) )
+			if ( !cells.All( cell => level.Objects.FindAt( cell.Item1, cell.Item2 ) == null && level.Objects.Grid.CheckTerrain( cell.Item1, cell.Item2 ) == OriginalPlacementResult.Allowed
+				&& !level.Guests!.Grid.Cells.FlagsAt( cell.Item1, cell.Item2 ).HasFlag( ParkCellFlags.Unowned ) ) )
+				continue;
+			// a player scrolls to the site: look at the circuit's middle first
+			// the circuit sits in the middle of the view, clear of the tool panel that opens at the bottom left
+			bool Centred( (int, int) cell ) => Clickable( cell, out var at ) && at.X > canvas.Width * 0.3f && at.Y < canvas.Height * 0.7f;
+			if ( Camera.Mode is ParkCameraMode parkCamera && !cells.All( Centred ) )
+			{
+				var middle = OriginalParkPlacement.GetCellCenter( level.OriginalPark.Heightfield, (int)cells.Average( cell => cell.Item1 ), (int)cells.Average( cell => cell.Item2 ) );
+				parkCamera.SetPose( new Vector3( middle.X, middle.Y, 0 ), parkCamera.Height, parkCamera.Yaw );
+				Camera.Update();
+			}
+			if ( cells.All( Centred ) )
 				anchor = candidate;
 		}
 		Require( anchor != null, "find an on-screen site for a coaster and its circuit" );
@@ -83,6 +98,27 @@ internal sealed partial class SandboxSmokeTest
 
 	/// <summary>The screen point of a cell's centre when the pointer there reaches the park: on screen, under no HUD element, picking that very cell.</summary>
 	private bool TryClickPoint( (int X, int Y) cell, out System.Numerics.Vector2 point )
+	{
+		if ( TryClickPointInView( cell, out point ) )
+			return true;
+		// a player scrolls to the cell they want to click
+		if ( level.OriginalPark != null && Camera.Mode is ParkCameraMode parkCamera )
+		{
+			var centre = OriginalParkPlacement.GetCellCenter( level.OriginalPark.Heightfield, cell.X, cell.Y );
+			// a window may cover the view's middle: look slightly past the cell until it is free of the interface
+			foreach ( var (dx, dy) in new[] { (0f, 0f), (8f, 0f), (-8f, 0f), (0f, 8f), (0f, -8f), (14f, 0f), (-14f, 0f), (0f, 14f), (0f, -14f), (8f, 8f), (-8f, -8f), (8f, -8f), (-8f, 8f) } )
+			{
+				parkCamera.SetPose( new Vector3( centre.X + dx, centre.Y + dy, 0 ), parkCamera.Height, parkCamera.Yaw );
+				Camera.Update();
+				if ( TryClickPointInView( cell, out point ) )
+					return true;
+			}
+			return false;
+		}
+		return false;
+	}
+
+	private bool TryClickPointInView( (int X, int Y) cell, out System.Numerics.Vector2 point )
 	{
 		point = default;
 		if ( hudContext == null || hud == null )

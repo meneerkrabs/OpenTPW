@@ -1,7 +1,46 @@
+using OpenTPW.Mods;
+
 namespace OpenTPW;
 
 /// <summary>The saved form of one slide (<see cref="PoolSlidesSaveData"/>).</summary>
 public sealed record PoolSlideSaveData( int TowerX, int TowerY, int Profile, int StartX, int StartY, int StartHeading, int[] Pieces, int TopHeight, int EndHeight );
+
+/// <summary>[EXT:pools-slides] The shape check of the slides part of a save (<see cref="PoolSlideSaves"/>).</summary>
+internal static class PoolSlideSaves
+{
+	/// <summary>
+	/// What is wrong with the saved slides on their own, or null: a bounded count, slides in tower order, a bounded piece list of known pieces, known headings and profiles, heights in a sane range, and the
+	/// <c>opentpw.pools</c> extension recorded (a slide's tower and pool are the extension's).
+	/// </summary>
+	public static string? ShapeProblem( PoolSlidesSaveData? slides, IReadOnlyList<ParkModRecord?>? mods )
+	{
+		if ( slides == null )
+			return null;
+		if ( slides.Slides == null || slides.Slides.Count == 0 || slides.Slides.Count > 256 )
+			return "the slides part holds no slide or too many";
+		if ( mods?.Any( mod => mod?.Id == OfficialExtensions.Pools.Id ) != true )
+			return $"the save holds slides but does not record {OfficialExtensions.Pools.Id}";
+		var previous = int.MinValue;
+		foreach ( var slide in slides.Slides )
+		{
+			if ( slide == null || slide.Pieces == null )
+				return "a saved slide is empty";
+			if ( slide.TowerX is < 0 or > 4095 || slide.TowerY is < 0 or > 4095 )
+				return $"a saved slide's tower ({slide.TowerX}, {slide.TowerY}) is outside the map";
+			var id = PoolSlide.KeyOf( slide.TowerX, slide.TowerY );
+			if ( id <= previous )
+				return $"the saved slide at {slide.TowerX},{slide.TowerY} does not follow the one before it in tower order";
+			previous = id;
+			if ( slide.Pieces.Length is 0 or > PoolSlide.MaximumPieces || slide.Pieces.Any( piece => piece is < 0 or > 3 ) )
+				return $"the saved slide at {slide.TowerX},{slide.TowerY} holds {slide.Pieces.Length} pieces, or one that does not exist";
+			if ( slide.StartHeading is < 0 or > 3 || slide.Profile is < 0 or > 1 )
+				return $"the saved slide at {slide.TowerX},{slide.TowerY} has a heading or a profile that does not exist";
+			if ( slide.TopHeight is < -100_000 or > 100_000 || slide.EndHeight is < -100_000 or > 100_000 )
+				return $"the saved slide at {slide.TowerX},{slide.TowerY} has heights outside the map's range";
+		}
+		return null;
+	}
+}
 
 /// <summary>The park-resume part of the slides: every slide, in tower order. Absent from a save without slides, so such saves keep their bytes.</summary>
 public sealed record PoolSlidesSaveData( IReadOnlyList<PoolSlideSaveData> Slides );

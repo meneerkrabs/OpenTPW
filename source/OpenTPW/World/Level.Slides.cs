@@ -5,9 +5,11 @@ public partial class Level
 	/// <summary>[EXT:pools-slides] The park's water slides: towers placed beside a pool and the tracks built from them (docs/POOLS.md, "Water slides"); null on a read-only visit and before the paths are set up.</summary>
 	public PoolSlideWorld? PoolSlides { get; private set; }
 
-	private readonly Dictionary<int, PoolSlideTower> slideTowers = new();
+	private Dictionary<int, PoolSlideTower>? slideTowerStore;
+	private Dictionary<int, PoolSlideTower> slideTowers => slideTowerStore ??= new();
 	private int slideWaterStamp = -1;
-	private Dictionary<(int X, int Y), float> slideWaterLevels = new();
+	private Dictionary<(int X, int Y), float>? slideWaterLevelStore;
+	private Dictionary<(int X, int Y), float> slideWaterLevels { get => slideWaterLevelStore ??= new(); set => slideWaterLevelStore = value; }
 
 	/// <summary>
 	/// [EXT:pools-slides] Creates the slide world over the level's cell map and follows the placed slide towers: a tower placed registers its slide, a tower removed takes its slide with it and ends the rides

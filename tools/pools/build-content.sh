@@ -5,6 +5,8 @@
 #   2. opentpw-kit object turns each glb into an object archive   tools/pools/cabin.sam, cabin.rse        -> content/pools/objects/<theme>/cabin/
 #   3. Blender renders the eight kid swimmer sets (TPW kids)      tools/blender/opentpw_guest_sprites.py   -> <work>/guests/tpw/Kids/<SET>/
 #   4. pack_swim_sets.py packs them with opentpw-kit sprites      tools/pools/pack_swim_sets.py            -> content/pools/esprites/Swim/SPR_xx.ESP/.TPC
+#   5. Blender builds the water attractions (rope swing, jets,    tools/blender/opentpw_pool_attractions.py -> <work>/attractions/<kind>_<theme>.glb
+#      wave machine, spa) for each theme, the kit makes archives  tools/pools/<kind>.sam, attraction.rse    -> content/pools/objects/<theme>/<kind>/
 #
 # Takes about 3 minutes on an Apple-silicon Mac, nearly all of it step 3 (the 800 swim frames; steps 1, 2 and 4 are a few seconds each,
 # plus the first kit build). Idempotent: the outputs are replaced, never appended to. Needs Blender 5.x, the .NET SDK and python3.
@@ -56,5 +58,16 @@ fi
 echo "== 4. pack swim sets"
 python3 -I tools/pools/pack_swim_sets.py --frames "$work/guests" --out content/pools/esprites/Swim --stage "$work/stage" \
 	--kit "$dotnet run ${kit_options[*]} --project source/OpenTPW.ContentKit --"
+
+echo "== 5. water attractions"
+rm -rf "$work/attractions"
+"$blender" -b --factory-startup --python tools/blender/opentpw_pool_attractions.py -- --out "$work/attractions" --preview "$work/previews" > "$work/attractions.log" 2>&1 \
+	|| { tail -30 "$work/attractions.log"; exit 1; }
+for kind in ropeswing jets wavemachine spa; do
+	for theme in "${themes[@]}"; do
+		kit object --glb "$work/attractions/${kind}_${theme}.glb" --name "$kind" --out "content/pools/objects/$theme/$kind" \
+			--sam "tools/pools/$kind.sam" --script tools/pools/attraction.rse --force
+	done
+done
 
 echo "done: content/pools"

@@ -21,7 +21,11 @@ entrance, guests choose it like an attraction, change, swim freely through the c
 | `[EXT:pools-changing-room]` | the changing room object and its placement rule |
 | `[EXT:pools-swim]` | the swim session: guest states, steering, the numbers, saves |
 | `[EXT:pools-content]` | the extension's own shipped content (`content/pools`) |
-| `[EXT:debug-pool]`, `[EXT:debug-swimmers]` | the smoke-only options that build a pool, a room and swimmers for captures |
+| `[EXT:pools-activities]` | the activity extension point of the swim session |
+| `[EXT:pools-attractions]` | the water attractions: rope swing, jets, spa, wave machine objects, their rules and activities |
+| `[EXT:pools-waves]` | the wave machine's settings, the waves, the swimmers' bob and the wave happiness |
+| `[EXT:pools-river]` | the lazy river: the river option, rings, the current |
+| `[EXT:debug-pool]`, `[EXT:debug-swimmers]`, `[EXT:debug-attractions]` | the smoke-only options that build a pool (with a river ring), a room, swimmers and water attractions for captures |
 
 ## The extension and the save rule
 
@@ -317,6 +321,62 @@ An **activity** is something a swimmer does during its session besides swimming:
 
 **Tests.** `PoolsActivityHostTests` proves the host with a test-only fake activity: offer, start, continue, back in the water, end of session, declined start, the shower-like start offer, no draws and no hash change with an empty registry or an activity that offers nothing, the aborts (demolish, pool erased, park closed, target erased, unknown id), a save in the middle of an activity, the validator and the hash.
 
+## Water attractions, waves, spa and lazy river (phase P5)
+
+Four objects per theme (sixteen, `content/pools/objects/<theme>/{ropeswing,jets,wavemachine,spa}`, Info.Ids 65200 to 65215, [Content](#content-extpools-content)) and one special kind of pool region, all `IPoolActivity`s or effects of the swim session ([Activities](#activities-extpools-activities)); `source/OpenTPW/World/Pools/PoolAttractions.cs`, `PoolWaterActivities.cs`, `PoolWaves.cs`, `PoolWaterEffects.cs`, `PoolRiver.cs`, `PoolSpray.cs`. Every number is OpenTPW's own (`PoolAttractionSettings`, `PoolRiverSettings`, `PoolWaves`): the original has no pools.
+
+### The objects and their placement rule (`[EXT:pools-attractions]`)
+
+The objects are data only, made with the content kit (`tools/blender/opentpw_pool_attractions.py`, one geometry per kind, styled per theme; no entrance, no exit, no queue, no guest ever walks to them: `Info.IsChoosable 0`, so they are no attraction of the guests and `GuestSimulation.Attractions` does not list them; they are objects of the Features tab). Two own .sam keys say what they are: `Pools.Attraction ropeswing|jets|wavemachine|spa` and `Pools.WaterSide N|E|S|W|*`, the compass side of the unrotated shape (its top row is north) that must face the water (`*` is any side). The **water side** of a placed object is, for every footprint cell, the neighbour on that side turned with the object that is not part of the footprint; a rope swing, jets and spa are 1 cell, the wave machine 2 x 1.
+
+| Object | Shape | Water side | Price | Does |
+| --- | --- | --- | --- | --- |
+| Rope swing (65200 to 65203) | `*` | N | 600 | an activity, one guest at a time |
+| Water jets (65204 to 65207) | `*` | N | 450 | an activity for up to 3, and a spray bonus for every swimmer near it |
+| Wave machine (65208 to 65211) | `**` | N | 1500 | the waves of its pool |
+| Spa pool (65212 to 65215) | `*` | any | 800 | an activity with 8 seats |
+
+- **Placement.** Besides every general rule (owned empty ground, level enough, not over water or a path) at least one water-side cell must hold pool water: `PoolAttractions.PlacementRule`, wired into `Objects.PlacementRule` by `Level.ConfigureObjectHooks` after the changing room's. A refusal is `OriginalPlacementResult.NeedsPoolEdge`, which the HUD words "This must stand beside a pool". The spa is "one tile on an empty owned cell beside the pool" by the same rule with any side. Turning the object turns its water side (`PoolsAttractionsContentTests.ThePlacementRuleOfTheShippedObjectsNeedsWaterOnTheirWaterSideForEveryRotation`).
+- **Sites.** The simulation does not store the attractions: `PoolAttractionSites` derives them from the placed objects and the pool cells (`Level.PoolSites`): per object its attraction id (what a guest saves as its activity target), kind, footprint and **access cell**, the first water-side cell that holds water. Objects whose water side has no water are no sites; with the extension off there are none.
+- **Erasing.** The pool tool refuses to erase the **last** water cell of an attraction's water side (`PoolBuildResult.AttractionAccess`, "This attraction needs this pool water"), as for a changing room; other cells go. A guest in an activity also keeps its cell (`Swimmers`).
+- **Demolishing** an object ends its users' sessions at once (`GuestSimulation.AbortPoolActivitiesOf`, called by `Level`'s `ObjectRemoved` handler), as the swimmers of a demolished changing room.
+
+### Rope swing (`attraction.ropeswing`)
+
+A swimmer is offered the nearest rope swing nobody is on (the offer is the water-side cell). Phases (`PoolActivityPhase`; `PoolActivityTurns` counts the phase's turns): **0** swims to the steps with the swimmer's steering (at most 80 turns, else it swims on), **1** climbs onto the platform (the guest is set on the object's own cell, sprite slot 3, 10 turns, its drawn height rising to 0.9), **2** swings out along the line from the platform over the water-side cell to a point half a cell beyond its middle (slot 14, 14 turns, `FeetHeight` falls from the platform and arcs), **3** splashes (slot 11, 6 turns), then +6 happiness and `BackInWater`. Everything but the turn count is derived from the object, so a save in any phase continues identically (`ASaveInTheMiddleOfEachRopeSwingPhaseRestoresAndContinuesIdentically`). Refusals: no offer while someone is on it; an object that goes brings the guest back into the water; an abort sends it out of the session.
+
+### Splash cannon and water jets (`attraction.jets`, `[EXT:pools-attractions]`)
+
+Two effects. The **activity**: a swimmer is offered jets with room (3 at once) and stands under the spray at the water-side cell for 15 to 30 seconds (60 to 119 turns drawn from its own stream), treading water (slot 10) or sitting (slot 12), 0.5 happiness every 24 turns and +3 at the end. The **spray bonus**: every free swimmer within two cells (Chebyshev) of a jet's water-side cell gets +0.3 happiness every 12 park turns (`PoolWaterEffects`, an `IPoolAmbient`; no random draw). The jets show a **particle spray**: 36 droplets per jet fly a parabola from the nozzle over the water and fall into it (`PoolSpray`, a pure function of the time, drawn as small camera-facing quads by `PoolSprayRenderer` through the particle shader; presentation only).
+
+### Spa pool (`attraction.spa`)
+
+A swimmer is offered a spa with a free seat. The spa has **eight seats** on its tile (`SpaActivity.Seat`: eight points on a circle of 0.27 cells round the middle, seat 0 to the east); the lowest free one is the guest's `PoolActivityX/Y` from the start, so two guests never share one. Phases: **0** swims to the steps, **1** steps out onto the (dry) tile and sits (slot 12, 80 to 199 turns drawn, 0.4 happiness every 24 turns), **2** steps back into the pool, +8 happiness. A ninth swimmer finds no offer and swims on. A save restores the seat (`ASaveInTheSpaRestoresTheSeatAndTheGuestSitsOnIdentically`).
+
+### Wave machine and waves (`[EXT:pools-waves]`)
+
+The machine stands on the pool edge (same rule). **Settings** are the pool's, not the machine's: on or off, a height (1 low, 2 medium, 3 high) and an interval (0 short, 1 medium, 2 long), `PoolWaveSettings`, stored in the flags of the **first cell (row by row) of the pool region** (`ParkCellFlags.PoolWavesOn`, `PoolWaveHeightMask` 0x0300, `PoolWaveIntervalMask` 0xC000; a stored height of 0 means "no settings"). They are therefore saved, validated (`ParkLayoutSnapshot.ValidateCells` refuses other flags on a pool cell and wave bits without a height) and hashed with the cell map, with no format of their own and no field a park without a wave machine has. A new wave machine writes the default (on, 2, 1) if its pool has none yet and never overwrites the player's; when the cell that holds them is erased they move to a neighbour (`PoolWaveSettings.MoveFromErased`); two machines on one pool share the settings. The control is **interim**: a click on a wave machine steps its pool through four presets (default, 3/short, 1/long, off; `PoolWaveSettings.Presets`, `ParkHud.StepPoolWaves`) and says which. RCT3 keeps the settings in the changing room's window; OpenTPW's object windows are traced controls of the original, with no row for them yet (see [Not done yet](#not-done-yet)).
+
+**The waves** are a pure function of the park turn and the settings (`PoolWaves`, integers only): a run of 120 turns (30 s) swells in and out over 12 turns each, then rests 40, 100 or 200 turns by the interval; the wave is a plane wave of period 24 turns (6 s) running along +x +y, 21/64 of a period per cell (about three cells long); its height is 0.05, 0.09 or 0.14 engine units for the water surface and 0.03, 0.05 or 0.08 for the swimmers' bob. Three things read it:
+
+- **The surface.** The pool's water quads go to a draw part of their own per pool with settings (up to four pools at once; `PoolRenderer.WaveSlots`) with the strength and the phase in the water shader's free padding (`g_flWaveAmp`, `g_flWavePhase` in `pool-water.shader`): crests are lighter, troughs darker and more opaque, the caustics ripple. The surface mesh itself stays flat (its tiles are half a cell: no vertex swell).
+- **The swimmers' bob.** A swimmer's drawn height gets `PoolWaterEffects.Bob` (`FeetChooser`): a smooth sine at the frame's time with the turn's envelope. **Simulation-neutral**: only the drawn height changes, never a position, state or hash, and it uses floating point and the presentation clock (`SmoothTurn`), which is why it is not part of any pin.
+- **The happiness.** Every free swimmer of a pool whose waves run gets `0.4 x height` happiness once per wave period (every 24th park turn): 0.4, 0.8 or 1.2, so at most 6 in one run. This one **is** simulation: `PoolWaterEffects` is an `IPoolAmbient` (the host calls it once per turn for every free swimmer), reads the park turn and the settings, draws nothing and stores nothing (`TheWavesPayASwimmerAndChangeNeitherItsMovementNorItsRandomStream`).
+
+### Lazy river (`[EXT:pools-river]`)
+
+A river is a **ring of pool cells painted with the river option** of the pool tool: a third buy-list row, "Lazy river water" (row id -20, same price as a pool cell, `PoolTool.Begin( erase: false, river: true )`). The option sets `ParkCellFlags.PoolRiver` (0x1000) on the painted cells; on a cell that already is water it only sets the flag, at no price (`PoolBuildResult.RiverMarked`; undo clears it). Erasing a cell clears its flag.
+
+**The extension point** is `PoolRiverMap`, derived on demand from the flags and cached per change of the pool cells (`PoolRiverMap.Of( cells )`, nothing stored): a **ring** is a 4-connected set of at least four flagged cells in which every cell has exactly two flagged neighbours, so one lane wide (a lane that touches itself, a dead end, a branch or a solid block is plain water). The region knows `IsRiver( x, y )`, the ring a cell belongs to, `NextCell` and `FlowAt( x, y )` (a unit step), so the current's direction per cell comes from the ring whatever its shape: it runs **clockwise as the map is drawn** (east along the ring's first row, then down). A river may be painted as its own channel or, to be wide, as the perimeter lane inside a larger pool (the pin and the captures do): the lane carries swimmers round, the water inside is ordinary. A one-cell channel is drawn narrow (the rim takes a quarter of a cell on each side).
+
+**The activity** (`attraction.river`, `RiverActivity`) needs no object and no host change: a swimmer whose cell is a river cell is offered it (no target, `TargetId` 0) and takes it on the usual cadence. It then **floats in a ring** (slot 13) instead of free swimming: each turn `PoolRiverMap.Float` moves it 1/14 cell along the cell's flow (0.28 cells a second, slower than a swimmer's 0.37 to 0.85) and loses an eighth of its offset from the middle of the lane, so it follows the corners and stays in free water (`AFloaterFollowsTheCurrentRoundTheCornersStayingInTheRingAndLapsTheRing`); after 120 to 239 turns (30 to 60 s, drawn at the start) it gets +5 happiness and swims on. A ring broken under a floater lets it go back to swimming. The water surface of river cells carries the flow in its normal's x and y (`PoolMeshBuilder.Build`'s `flowAt`) and the shader scrolls the caustics along it. The saved state is the guest's position and the turns left, so a save while floating continues identically.
+
+### Checking it on screen and tests
+
+`--debug-pool` takes rectangles written with a leading `r` as river rectangles (`--debug-pool "r0,0,12,1;r0,7,12,1;r0,1,1,6;r11,1,1,6;1,1,10,6"`: a perimeter lane round a pool), `--debug-attractions ropeswing,jets,wavemachine,spa` (or `all`; `[EXT:debug-attractions]`) places the objects beside the pool through the level's own placement, next to `--debug-swimmers N`. Captures (`reports/pools-p5-<theme>.png`, 1600 wide; `reports/pools-p5-waves.gif`, `reports/pools-p5-river.gif`) show the four objects with the spray, the wave bands moving across the water and the swimmers floating in the lane. The swim sets have no art for slots 3, 11, 12, 13 and 14 yet, so those guests are drawn with the host's fallback (treading water, then breaststroke, then crawl): the activity logic and slots are final, the art comes with the hi-res guests.
+
+`PoolsAttractionsTests` (rig of the swim session, no game data): the water-side geometry for every rotation, the wave settings in the flags, the wave function (runs, rests, envelope, pure, bounded, travelling), the happiness once per period, ring detection (rectangle, L, plus, line, solid block, 2 x 2), the current's lap, every activity in full with its happiness, one-at-a-time, capacity, eight seats, aborts, a save in the middle of each phase restored to the same hash and the same continuation, a river without offers changing no hash and drawing nothing, the pool tool's river option with undo, the flags through the layout save and the validator refusing forged ones, the ambient effects changing neither movement nor stream, the spray function. `PoolsAttractionsContentTests`: the sixteen shipped objects with their keys, shapes, prices, models and textures, and the placement rule for every rotation. `PoolsAttractionsLevelTests` (a real `Level`): the rule through the level's hooks, the site derived from the placed object and no attraction of the guests, the erase guard, the default waves of a new machine and the click's presets, removal. The pin is `DeterminismTests.PoolsAttractionsFixedRunHash` (docs/DETERMINISM.md, "Pools"). The native park-resume smoke (`OPENTPW_SMOKE_POOLS=1`) now also paints the basin's perimeter as a river, builds the four objects and checks that the ring, the waves and the objects come back from the save.
+
 ## Saves and determinism
 
 See [the save rule](#the-extension-and-the-save-rule). The pins (docs/DETERMINISM.md, "Pools"): every existing pin is unchanged with the extension on or off
@@ -328,10 +388,13 @@ The extension's version stays 1.0.0: phase P1 was not released, a P1 park holds 
 
 - **Swimwear on the deck:** guests walk the path in their normal sprites; only the swimmers have swim sprites (the changing room hides the change). The sprites of the standing, walking and sitting swimwear guests, and the swimmers for the Theme Park Inc sets and the costume sets (a costumed guest swims in its kid set), are not made.
 - **A swim-appeal term** (warmer months more, rain less) and any new decision point for `IGuestDecisions`: not needed for P2, nothing was added.
-- **Diving, climbing out at ladders,** the wave machine and the rest of the extras: P3 and later. Swimmers enter and leave only at the room's pool-side cell.
+- **Diving, climbing out at ladders** and the rest of the extras: P3 and later. Swimmers enter and leave only at the room's pool-side cell.
 - **Water quality, lifeguards and a handyman for the pool:** not done.
-- **Pool objects and extras** (ladders, diving boards, showers, loungers, lamps, lifeguard chair, wave machine, spa): P3.
-- **Water slides** on the track system, and attractions that end in a pool: P4 and P5.
+- **Pool objects and extras** (ladders, diving boards, showers, loungers, lamps, lifeguard chair): P3.
+- **Water slides** on the track system: P4. The rope swing, jets, wave machine, spa and lazy river are P5 ([above](#water-attractions-waves-spa-and-lazy-river-phase-p5)).
+- **The wave machine's window:** the settings (on or off, height, interval) are stepped by clicking the machine through four presets; a window with real controls (RCT3's changing-room window) needs rows in the object windows' traced controls and is not made. The water surface waves are a shader effect (no vertex swell), and a pool beyond the fourth with waves draws flat.
+- **Wide rivers:** a river is a ring one lane wide; a channel of that width is drawn narrow. A river through the middle of a pool (water on both sides of the lane) works as it is; a ring two lanes wide with its own flow field does not exist. The river's current always runs clockwise as the map is drawn (no reverse). Undoing an erase stroke paints cells back without their river flag.
+- **Art:** the swim sets have no frames for the ladder, splash, sitting, ring and rope slots; those guests are drawn with the nearest existing slot until the hi-res set lands.
 - Depth levels (each cell has one depth), diagonal or curved edges (the tiling is square), digging the terrain, a pool-deck cell type, pool water on the Theme Park Inc layout, exporting parks with pools as packages.
 - Name and description rows for the Extensions and mods screen are not translated: the screen shows the extension's English name.
 - Pool cells are not drawn on the park map (the minimap), where they show as open ground.

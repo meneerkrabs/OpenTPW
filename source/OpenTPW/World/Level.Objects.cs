@@ -170,6 +170,15 @@ public partial class Level
 			RegisterObjectWithGuests( item );
 		Objects.ObjectPlaced += RegisterObjectWithGuests;
 		Objects.ObjectRemoved += item => Guests?.Unregister( item.Visitors );
+		// [EXT:pools-attractions] the water attractions are derived from the placed objects; a new wave machine gives its pool the default wave settings
+		Objects.ObjectPlaced += item => { PoolSites.Invalidate(); PoolAttractions.OnPlaced( item, Guests?.Grid.Cells ); };
+		Objects.ObjectRemoved += item =>
+		{
+			// whoever is on a removed rope swing, under removed jets or in a removed spa leaves the water at once, as the swimmers of a demolished changing room do
+			if ( PoolAttractions.KindOf( item.Entry ) != PoolAttractionKind.None )
+				Guests?.AbortPoolActivitiesOf( item.Visitors.AttractionId );
+			PoolSites.Invalidate();
+		};
 		// A ride with queue cells takes them with it: the refunds are settled while the cells are laid, the cells go once its guests are set down
 		Objects.ObjectRemoving += SettleDemolishedQueue;
 		Objects.ObjectRemoved += ClearDemolishedQueue;
@@ -330,7 +339,9 @@ public partial class Level
 		Objects.ClearPath = ( x, y ) => Paths?.Remove( x, y );
 		Objects.PathRuleAllows = ( x, y ) => Paths?.CheckPathRule( x, y ) is { } rule ? rule is CellBuildResult.Ok or CellBuildResult.Existing : null;
 		// [EXT:pools-changing-room] a changing room needs pool water beside its back
-		Objects.PlacementRule = ( entry, x, y, rotation ) => PoolChangingRooms.PlacementRule( entry, Guests?.Grid.Cells, x, y, rotation );
+		// [EXT:pools-attractions] a rope swing, jets, wave machine or spa needs pool water on its water side
+		Objects.PlacementRule = ( entry, x, y, rotation ) => PoolChangingRooms.PlacementRule( entry, Guests?.Grid.Cells, x, y, rotation )
+			?? PoolAttractions.PlacementRule( entry, Guests?.Grid.Cells, x, y, rotation );
 	}
 
 	/// <summary>Whether a cell of this type keeps objects off it: any type but empty ground, a path and the object, entrance and exit types ([EXT:pools-cell-type]: pool water is one).</summary>
@@ -378,7 +389,8 @@ public partial class Level
 		foreach ( var item in Objects.Objects )
 			if ( !item.IsDeleted && item.Visitors.IsChangingRoom && item.Visitors.PoolAccessCandidates.Contains( (x, y) ) )
 				return PoolBuildResult.ChangingRoomAccess;
-		return null;
+		// [EXT:pools-attractions] the last water cell of a water attraction's water side stays
+		return PoolSites.IsAccessCell( x, y ) ? PoolBuildResult.AttractionAccess : null;
 	}
 
 	/// <summary>[EXT:pools-tool] The headless pool builder over the level's cell map (original levels, not a read-only visit); null otherwise (docs/POOLS.md).</summary>
@@ -406,11 +418,12 @@ public partial class Level
 		if ( !poolActivitiesRegistered )
 		{
 			poolActivitiesRegistered = true;
-			foreach ( var activity in PoolActivityRegistry.Create() )
+			foreach ( var activity in PoolActivityRegistry.Create( PoolSites ) )
 				Guests.RegisterPoolActivity( activity );
 		}
 		if ( SwimmerRenderer == null && PoolRenderer != null )
 			SwimmerRenderer = CreateSwimmerRenderer( Guests, OriginalPark );
+		RefreshPoolEffects();
 	}
 
 	private bool poolActivitiesRegistered;
@@ -430,8 +443,8 @@ public partial class Level
 			{
 				var feet = GuestRenderer.CellToEngine( park.Heightfield, guest.DrawX, guest.DrawY );
 				var height = guests.Grid.Cells.RawTypeAt( guest.CellX, guest.CellY ) == ParkCellTypes.PoolWater && PoolRenderer?.WaterLevelAt( guest.CellX, guest.CellY ) is { } level ? level : feet.Z;
-				// [EXT:pools-activities] an activity may raise or set the drawn height (a board, a slide); presentation only
-				return new System.Numerics.Vector3( feet.X, feet.Y, guests.PoolFeetHeight( guest, height ) );
+				// [EXT:pools-waves] a swimmer bobs on the waves of its pool (the drawn height only); [EXT:pools-activities] an activity may raise or set the drawn height (a board, a slide); presentation only
+				return new System.Numerics.Vector3( feet.X, feet.Y, guests.PoolFeetHeight( guest, height + PoolWaterEffects.Bob( guests, guest ) ) );
 			}
 		};
 	}

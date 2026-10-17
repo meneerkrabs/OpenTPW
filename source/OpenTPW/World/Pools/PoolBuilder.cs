@@ -28,7 +28,11 @@ public enum PoolBuildResult
 	/// <summary>[EXT:pools-swim] Erasing a pool cell with a swimmer in it: the water stays until the swimmer is out.</summary>
 	Swimmers,
 	/// <summary>[EXT:pools-changing-room] Erasing a pool cell beside the back of a changing room: the room needs its pool.</summary>
-	ChangingRoomAccess
+	ChangingRoomAccess,
+	/// <summary>[EXT:pools-attractions] Erasing the last pool cell on the water side of a rope swing, jets, wave machine or spa: the attraction needs its pool.</summary>
+	AttractionAccess,
+	/// <summary>[EXT:pools-river] The river option on a pool cell that was not a river cell: its flag is set, nothing is charged (the cell is paid for already). Not a refusal.</summary>
+	RiverMarked
 }
 
 /// <summary>One drag of the pool tool: the cells it wrote, the money, and its first refusal.</summary>
@@ -39,6 +43,9 @@ public enum PoolBuildResult
 /// <param name="FirstRefusal">The first cell the stroke could not write, with the reason; null when none was refused.</param>
 public sealed record PoolStroke( bool Erase, IReadOnlyList<(int X, int Y)> Cells, long Charged, long Refunded, ((int X, int Y) Cell, PoolBuildResult Reason)? FirstRefusal )
 {
+	/// <summary>[EXT:pools-river] Cells that already were pool cells and got the river flag in this stroke (undone by clearing it). Painted river cells are in <see cref="Cells"/>.</summary>
+	public IReadOnlyList<(int X, int Y)> RiverMarked { get; init; } = Array.Empty<(int X, int Y)>();
+
 	/// <summary>True when no cell of the stroke was refused.</summary>
 	public bool Completed => FirstRefusal == null;
 }
@@ -139,10 +146,19 @@ public sealed class PoolBuilder
 		return eraseBlock?.Invoke( x, y ) ?? PoolBuildResult.Ok;
 	}
 
-	/// <summary>Paints one cell and charges it. Returns <see cref="PoolBuildResult.Ok"/> when it was painted, <see cref="PoolBuildResult.Existing"/> when it already was a pool cell, else the refusal.</summary>
-	public PoolBuildResult Paint( int x, int y )
+	/// <summary>
+	/// Paints one cell and charges it. Returns <see cref="PoolBuildResult.Ok"/> when it was painted, <see cref="PoolBuildResult.Existing"/> when it already was a pool cell, else the refusal.
+	/// With <paramref name="river"/> (the river option, [EXT:pools-river]) the cell also gets the river flag: a pool cell that was none then returns <see cref="PoolBuildResult.RiverMarked"/> and is not charged again.
+	/// </summary>
+	public PoolBuildResult Paint( int x, int y, bool river = false )
 	{
 		var check = Check( x, y );
+		if ( check == PoolBuildResult.Existing && river && !Cells.FlagsAt( x, y ).HasFlag( ParkCellFlags.PoolRiver ) )
+		{
+			LastCharged = 0;
+			Cells.SetFlags( x, y, Cells.FlagsAt( x, y ) | ParkCellFlags.PoolRiver );
+			return PoolBuildResult.RiverMarked;
+		}
 		if ( check != PoolBuildResult.Ok )
 			return check;
 		var park = Economy;
@@ -150,6 +166,8 @@ public sealed class PoolBuilder
 			return PoolBuildResult.NotEnoughMoney;
 		var before = park?.Balance ?? 0;
 		Cells.SetType( x, y, ParkCellType.PoolWater );
+		if ( river )
+			Cells.SetFlags( x, y, Cells.FlagsAt( x, y ) | ParkCellFlags.PoolRiver );
 		park?.TrySpendCell( CellPurchase.Pool );
 		LastCharged = before - (park?.Balance ?? 0);
 		return PoolBuildResult.Ok;
@@ -162,6 +180,10 @@ public sealed class PoolBuilder
 		if ( check != PoolBuildResult.Ok )
 			return check;
 		var before = Economy?.Balance ?? 0;
+		// [EXT:pools-river] [EXT:pools-waves] the cell takes its river flag away, and its pool keeps the wave settings it held
+		PoolWaveSettings.MoveFromErased( Cells, x, y );
+		if ( Cells.FlagsAt( x, y ).HasFlag( ParkCellFlags.PoolRiver ) )
+			Cells.SetFlags( x, y, Cells.FlagsAt( x, y ) & ~ParkCellFlags.PoolRiver );
 		Cells.SetType( x, y, ParkCellType.Empty );
 		Economy?.RefundPoolCell();
 		LastCharged = before - (Economy?.Balance ?? 0);
@@ -172,20 +194,23 @@ public sealed class PoolBuilder
 	/// Paints <paramref name="cells"/> in order. A refused cell is skipped and the first refusal recorded, except for money: a cell that cannot be paid for ends the stroke.
 	/// Cells that already are pool cells are passed over.
 	/// </summary>
-	public PoolStroke PaintCells( IEnumerable<(int X, int Y)> cells )
+	public PoolStroke PaintCells( IEnumerable<(int X, int Y)> cells, bool river = false )
 	{
 		ArgumentNullException.ThrowIfNull( cells );
 		var painted = new List<(int X, int Y)>();
+		var marked = new List<(int X, int Y)>();
 		((int X, int Y), PoolBuildResult)? refusal = null;
 		long charged = 0;
 		foreach ( var (x, y) in cells )
 		{
-			var result = Paint( x, y );
+			var result = Paint( x, y, river );
 			if ( result == PoolBuildResult.Ok )
 			{
 				painted.Add( (x, y) );
 				charged += LastCharged;
 			}
+			else if ( result == PoolBuildResult.RiverMarked )
+				marked.Add( (x, y) );
 			else if ( result != PoolBuildResult.Existing )
 			{
 				refusal ??= ((x, y), result);
@@ -193,7 +218,7 @@ public sealed class PoolBuilder
 					break;
 			}
 		}
-		return new PoolStroke( false, painted, charged, 0, refusal );
+		return new PoolStroke( false, painted, charged, 0, refusal ) { RiverMarked = marked };
 	}
 
 	/// <summary>Erases <paramref name="cells"/> in order, refunding each pool cell; cells that are not pool cells are skipped and the first one recorded as the refusal.</summary>

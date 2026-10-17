@@ -15,12 +15,15 @@ public sealed partial class ParkHud
 	/// <summary>The Miscellaneous list's pool erase row (row id -4).</summary>
 	public static readonly BuildItem PoolEraseRow = new( "pool:erase", -4, BuildCategory.Features, 0, 0, null, Array.Empty<string>() );
 
+	/// <summary>[EXT:pools-river] The Miscellaneous list's lazy river row (row id -20): paints pool water with the river option.</summary>
+	public static readonly BuildItem PoolRiverRow = new( "pool:river", -20, BuildCategory.Features, 0, ParkEconomy.PoolCellCost, null, Array.Empty<string>() );
+
 	/// <summary>Whether <paramref name="item"/> is one of the pool rows.</summary>
-	public static bool IsPoolRow( BuildItem item ) => item.InfoId is -3 or -4 && item.Entry == null && item.Category == BuildCategory.Features;
+	public static bool IsPoolRow( BuildItem item ) => item.InfoId is -3 or -4 or -20 && item.Entry == null && item.Category == BuildCategory.Features;
 
-	private string PoolRowName( BuildItem item ) => strings.Extra( item.InfoId == PoolPaintRow.InfoId ? OpenTpwText.PoolRowPaint : OpenTpwText.PoolRowErase );
+	private string PoolRowName( BuildItem item ) => strings.Extra( item.InfoId == PoolPaintRow.InfoId ? OpenTpwText.PoolRowPaint : item.InfoId == PoolRiverRow.InfoId ? OpenTpwText.PoolRowRiver : OpenTpwText.PoolRowErase );
 
-	private long PoolRowPrice( BuildItem item ) => item.InfoId == PoolPaintRow.InfoId ? (level.Park?.Economy.CellCost( CellPurchase.Pool ) ?? 0) : 0;
+	private long PoolRowPrice( BuildItem item ) => item.InfoId != PoolEraseRow.InfoId ? (level.Park?.Economy.CellCost( CellPurchase.Pool ) ?? 0) : 0;
 
 	private bool IsPoolRowAvailable() => FeatureGates.Pools && !level.IsReadOnlyVisit && level.PoolTool != null;
 
@@ -43,10 +46,11 @@ public sealed partial class ParkHud
 			level.StaffPlacement?.Cancel();
 			LeaveBuildTool();
 		}
-		if ( !tool.Begin( erase ) )
+		var river = item.InfoId == PoolRiverRow.InfoId;
+		if ( !tool.Begin( erase, river ) )
 			return;
 		CloseBuyWindow();
-		PostMessage( strings.Extra( erase ? OpenTpwText.PoolEraseHint : OpenTpwText.PoolPaintHint ) );
+		PostMessage( strings.Extra( erase ? OpenTpwText.PoolEraseHint : river ? OpenTpwText.PoolRiverHint : OpenTpwText.PoolPaintHint ) );
 	}
 
 	/// <summary>
@@ -75,7 +79,7 @@ public sealed partial class ParkHud
 			return false;
 		}
 		tool.Hover( cursorX, cursorY );
-		context.HoverHelp = strings.Extra( tool.IsErasing ? OpenTpwText.PoolEraseHelp : OpenTpwText.PoolPaintHelp );
+		context.HoverHelp = strings.Extra( tool.IsErasing ? OpenTpwText.PoolEraseHelp : tool.IsRiver ? OpenTpwText.PoolRiverHelp : OpenTpwText.PoolPaintHelp );
 		if ( input.LeftPressed )
 		{
 			refusalClick.Press();
@@ -107,7 +111,21 @@ public sealed partial class ParkHud
 			PoolBuildResult.TooSteep => OpenTpwText.PoolTooSteep,
 			PoolBuildResult.Swimmers => OpenTpwText.PoolSwimmersInWater,
 			PoolBuildResult.ChangingRoomAccess => OpenTpwText.PoolChangingRoomNeedsWater,
+			PoolBuildResult.AttractionAccess => OpenTpwText.PoolAttractionNeedsWater,
 			_ => OpenTpwText.CannotBuildHere
 		} ) );
+	}
+
+	/// <summary>
+	/// [EXT:pools-waves] A click on a wave machine steps its pool's wave settings through the presets (<see cref="PoolWaveSettings.Presets"/>) and says what they are now. This is the interim control:
+	/// RCT3 keeps the settings in the changing room's window, and OpenTPW's object windows are traced controls of the original game (docs/UI.md) that have no row for them yet.
+	/// </summary>
+	private void StepPoolWaves( OriginalObject item )
+	{
+		if ( level.CyclePoolWaves( item ) is not { } waves )
+			return;
+		PostMessage( waves.On
+			? $"{strings.Extra( OpenTpwText.PoolWavesOn )}: {strings.Extra( OpenTpwText.PoolWavesHeight )} {waves.Height}, {strings.Extra( OpenTpwText.PoolWavesInterval )} {waves.Interval + 1}"
+			: strings.Extra( OpenTpwText.PoolWavesOff ) );
 	}
 }

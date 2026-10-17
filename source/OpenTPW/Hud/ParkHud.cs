@@ -796,7 +796,8 @@ public sealed partial class ParkHud
 				// [EXT:cannot-build-sound] a refused placement ('Cannot build') plays the error feedback 0x1D with OpenTPW's own message text: tp.exe plays 0x1D at exactly two sites (0x487b51 in the park click handler 0x4879d0, a cost above the money, and the helper 0x486ae0, whose only caller is the hire window 0x4af480), so the original plays nothing for a refused placement; the feedback is an OpenTPW addition
 				// [APPROX:AUDIO-009] within the build tools' code (0x524960-0x535100, which plays only 0xAF, 0x65, 0xCE, 0x8B, 0x97-0x99 and 0x90) no refusal sound exists, and none of the 82 call sites of the sound entry 0x51bfc0 lies between 0x535100 and 0x5471cd, where the refusal stages 0x535670 and 0x536100 are; the callees of those stages were not each traced for a sound
 				// [EXT:pools-changing-room] a changing room that is refused for want of a pool says so
-				PostMessage( strings.Extra( lastLevelMessage.EndsWith( $": {nameof( OriginalPlacementResult.NeedsPool )}.", StringComparison.Ordinal ) ? OpenTpwText.PoolChangingRoomNeedsPool : OpenTpwText.CannotBuildHere ) );
+				PostMessage( strings.Extra( lastLevelMessage.EndsWith( $": {nameof( OriginalPlacementResult.NeedsPool )}.", StringComparison.Ordinal ) ? OpenTpwText.PoolChangingRoomNeedsPool
+					: lastLevelMessage.EndsWith( $": {nameof( OriginalPlacementResult.NeedsPoolEdge )}.", StringComparison.Ordinal ) ? OpenTpwText.PoolAttractionNeedsPool : OpenTpwText.CannotBuildHere ) );
 				GameAudio.PlayUi( GameAudio.ErrorEvent );
 			}
 		}
@@ -1059,7 +1060,7 @@ public sealed partial class ParkHud
 		else if ( level.PoolTool is { IsActive: true, HoverCell: { } poolCell, HoverResult: { } poolResult } )
 		{
 			// [EXT:pools-tool] the pool tool marks the cell under the pointer: blue where it can be painted (or erased), red where it is refused
-			cells.Add( (poolCell.X, poolCell.Y, poolResult is PoolBuildResult.Ok or PoolBuildResult.Existing ? BlueprintMarker.Allowed : BlueprintMarker.Refused) );
+			cells.Add( (poolCell.X, poolCell.Y, poolResult is PoolBuildResult.Ok or PoolBuildResult.Existing or PoolBuildResult.RiverMarked ? BlueprintMarker.Allowed : BlueprintMarker.Refused) );
 		}
 		else if ( level.CellTool.IsActive && level.CellTool.Ghost is { } ghost )
 		{
@@ -1114,6 +1115,9 @@ public sealed partial class ParkHud
 
 	public void SelectObject( OriginalObject? item )
 	{
+		// [EXT:pools-waves] clicking a wave machine also steps its pool's wave settings (ParkHud.Pools.cs)
+		if ( item != null && FeatureGates.Pools && PoolAttractions.KindOf( item.Entry ) == PoolAttractionKind.WaveMachine )
+			StepPoolWaves( item );
 		selectedObject = item;
 		SetInfoArm( item != null );
 	}

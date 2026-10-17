@@ -119,8 +119,16 @@ public static class PoolSwimSlots
 public static class PoolActivityRegistry
 {
 	/// <summary>The built-in activities. Each phase of the pools work adds its own to this list; a registry holding none changes nothing.</summary>
-	public static IEnumerable<IPoolActivity> Create()
+	public static IEnumerable<IPoolActivity> Create( PoolAttractionSites? attractions = null )
 	{
-		yield break;
+		// [EXT:pools-attractions] [EXT:pools-river] the water attractions (P5) and the lazy river
+		if ( attractions != null )
+		{
+			yield return new RopeSwingActivity( attractions );
+			yield return new JetsActivity( attractions );
+			yield return new SpaActivity( attractions );
+		}
+		yield return new RiverActivity();
+		yield return new PoolWaterEffects( attractions );
 	}
 }

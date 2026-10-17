@@ -1,0 +1,99 @@
+using System.Runtime.CompilerServices;
+
+namespace OpenTPW;
+
+/// <summary>
+/// The effects of a pool on the free swimmers in it (docs/POOLS.md, "Wave machine" and "Splash cannon and water jets"), run by the swim session once per park turn for every swimmer
+/// (<see cref="IPoolAmbient"/>): the waves pay a small happiness bonus once per wave period while they run, and the spray of a water jet pays a smaller one every few turns to a swimmer inside it.
+/// Both are functions of the park turn and the swimmer's cell: no random draw, no new state, no new save field (the happiness the swimmer gained is saved with the guest).
+/// It is registered as the activity <c>ambient.water</c>, which offers nothing; the registry is only how the host finds it.
+/// </summary>
+// [EXT:pools-waves] [EXT:pools-attractions] OpenTPW's own pool effects; the original game has no pools
+public sealed class PoolWaterEffects : IPoolActivity, IPoolAmbient
+{
+	public const string ActivityId = "ambient.water";
+	private static readonly ConditionalWeakTable<PoolSwimRegion, WaveCache> caches = new();
+	private readonly PoolAttractionSites? sites;
+
+	private sealed class WaveCache
+	{
+		public int Writes = -1;
+		public PoolWaveSettings? Settings;
+	}
+
+	public PoolWaterEffects( PoolAttractionSites? sites = null ) => this.sites = sites;
+
+	public string Id => ActivityId;
+
+	public PoolActivityOffer? Offer( GuestSimulation simulation, Guest guest, PoolSwimRegion region ) => null;
+
+	public bool Start( GuestSimulation simulation, Guest guest, PoolActivityOffer offer, ref uint random ) => false;
+
+	public PoolActivityStep Update( GuestSimulation simulation, Guest guest, ref uint random ) => PoolActivityStep.BackInWater;
+
+	public void Abort( GuestSimulation simulation, Guest guest )
+	{
+	}
+
+	/// <summary>The wave settings of a swim region, read from its cells once per change of the pool cells (<see cref="ParkCellMap.PoolWrites"/>), or null when the pool has none.</summary>
+	public static PoolWaveSettings? WavesOf( ParkCellMap cells, PoolSwimRegion region )
+	{
+		var cache = caches.GetOrCreateValue( region );
+		if ( cache.Writes != cells.PoolWrites )
+		{
+			cache.Settings = PoolWaveSettings.Read( cells, region );
+			cache.Writes = cells.PoolWrites;
+		}
+		return cache.Settings;
+	}
+
+	public void Ambient( GuestSimulation simulation, Guest guest, PoolSwimRegion region )
+	{
+		var turn = simulation.ParkTurn;
+		if ( WavesOf( simulation.Grid.Cells, region ) is { } waves && PoolWaves.HappinessGain( waves, turn ) is var gain and > 0f )
+			guest.Happiness = MeterMath.Add( guest.Happiness, gain );
+		if ( sites != null && turn % PoolAttractionSettings.SprayPeriodTurns == 0 && InSpray( sites, region, guest.CellX, guest.CellY ) )
+			guest.Happiness = MeterMath.Add( guest.Happiness, PoolAttractionSettings.SprayHappiness );
+	}
+
+	/// <summary>Whether a cell is in the spray of a water jet of the region: within <see cref="PoolAttractionSettings.SprayRadius"/> cells (Chebyshev) of its water-side cell.</summary>
+	public static bool InSpray( PoolAttractionSites sites, PoolSwimRegion region, int x, int y )
+	{
+		foreach ( var jet in sites.In( region, PoolAttractionKind.Jets ) )
+			if ( Math.Max( Math.Abs( x - jet.Access.X ), Math.Abs( y - jet.Access.Y ) ) <= PoolAttractionSettings.SprayRadius )
+				return true;
+		return false;
+	}
+
+	/// <summary>
+	/// The drawn-height offset of a swimmer on the waves of its pool, in engine units: a smooth sine at the exact time of the frame (presentation only, so it may use floating point and the wall-clock fraction of the
+	/// turn), with the strength of the turn's envelope. Zero when the swimmer's pool has no waves or they rest.
+	/// </summary>
+	public static float Bob( GuestSimulation simulation, Guest guest )
+	{
+		if ( !guest.IsSwimming || PoolActivityHelpers.RegionOf( simulation, guest ) is not { } region || WavesOf( simulation.Grid.Cells, region ) is not { } waves )
+			return 0f;
+		return PoolWaves.SmoothBob( waves, SmoothTurn( simulation ), guest.DrawX, guest.DrawY );
+	}
+
+	private sealed class TurnClock
+	{
+		public long Turn = -1;
+		public double StartedAt;
+	}
+
+	private static readonly ConditionalWeakTable<GuestSimulation, TurnClock> clocks = new();
+
+	/// <summary>
+	/// The park turn with a fraction, for the frame: the whole turn of the simulation plus how far the presentation clock has come since the turn changed (a turn is <see cref="ParkCalendar.TurnMilliseconds"/> ms).
+	/// Presentation only: it reads and writes no simulation state. The surface shader is given the same value (<see cref="PoolRenderer"/>).
+	/// </summary>
+	public static double SmoothTurn( GuestSimulation simulation )
+	{
+		var clock = clocks.GetOrCreateValue( simulation );
+		var turn = simulation.ParkTurn;
+		if ( turn != clock.Turn )
+			(clock.Turn, clock.StartedAt) = (turn, simulation.TimeSeconds);
+		return turn + Math.Clamp( (simulation.TimeSeconds - clock.StartedAt) * 1000.0 / ParkCalendar.TurnMilliseconds, 0.0, 1.0 );
+	}
+}

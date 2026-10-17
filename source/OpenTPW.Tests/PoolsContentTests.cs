@@ -64,9 +64,12 @@ public class PoolsContentTests
 	{
 		var file = ModObjectsFile.Load( Path.Combine( PoolContent.Directory!, "objects.json" ), Array.Empty<string>() );
 		Assert.AreEqual( (PoolContent.FirstReservedId, PoolContent.LastReservedId), (file.FirstId, file.LastId), "the file reserves exactly the extension's range" );
-		Assert.AreEqual( 4, file.Objects.Count );
-		CollectionAssert.AreEqual( Themes, file.Objects.Select( item => item.Theme ).ToArray() );
-		CollectionAssert.AreEqual( new[] { 65500, 65501, 65502, 65503 }, file.Objects.Select( item => item.InfoId ).ToArray() );
+		// the changing rooms first, then the water attractions of P5 (65200 to 65215: rope swing, jets, wave machine and spa, each a block of the four themes)
+		Assert.AreEqual( 20, file.Objects.Count );
+		CollectionAssert.AreEqual( Themes, file.Objects.Take( 4 ).Select( item => item.Theme ).ToArray() );
+		CollectionAssert.AreEqual( new[] { 65500, 65501, 65502, 65503 }, file.Objects.Take( 4 ).Select( item => item.InfoId ).ToArray() );
+		CollectionAssert.AreEqual( Enumerable.Range( 65200, 16 ).ToArray(), file.Objects.Skip( 4 ).Select( item => item.InfoId ).ToArray() );
+		Assert.AreEqual( file.Objects.Count, file.Objects.Select( item => item.InfoId ).Distinct().Count(), "no id twice" );
 		Assert.IsTrue( file.Objects.All( item => item.Category == ObjectCategory.Feature && item.Input == null ) );
 		Assert.IsTrue( file.Objects.All( item => item.InfoId is >= PoolContent.FirstReservedId and <= PoolContent.LastReservedId ) );
 		Assert.IsTrue( PoolContent.FirstReservedId >= CrossEditionObjects.FirstReservableId && PoolContent.LastReservedId <= CrossEditionObjects.LastReservableId );
@@ -96,7 +99,8 @@ public class PoolsContentTests
 				Assert.AreEqual( 2, entry.InitialCapacity );
 				Assert.AreEqual( 5, entry.Economy.PricePerUse );
 				Assert.IsNotNull( entry.ScriptPath );
-				Assert.AreEqual( 1, ObjectCatalog.Load( Themes[index] ).Entries.Count( item => item.ModId == "opentpw.pools" ), "one room per theme" );
+				Assert.AreEqual( 1, ObjectCatalog.Load( Themes[index] ).Entries.Count( item => item.ModId == "opentpw.pools" && PoolChangingRooms.IsChangingRoom( item ) ), "one room per theme" );
+				Assert.AreEqual( 5, ObjectCatalog.Load( Themes[index] ).Entries.Count( item => item.ModId == "opentpw.pools" ), "and the theme's four water attractions" );
 			}
 			Assert.IsNull( ObjectCatalog.Load( "jungle" ).Find( 65501 ), "the hallow room is not a jungle object" );
 		}
@@ -290,7 +294,7 @@ public class PoolsContentTests
 	{
 		var folder = PoolContent.Directory!;
 		var files = Directory.EnumerateFiles( folder, "*", SearchOption.AllDirectories ).ToArray();
-		Assert.IsTrue( files.Sum( file => new FileInfo( file ).Length ) < 1_500_000, "small enough for the browser build" );
+		Assert.IsTrue( files.Sum( file => new FileInfo( file ).Length ) < 2_500_000, "small enough for the browser build" );
 		Assert.IsFalse( files.Any( file => file.EndsWith( ".wad", StringComparison.OrdinalIgnoreCase ) || file.EndsWith( ".wct", StringComparison.OrdinalIgnoreCase ) ), "no original archive or texture format file" );
 		Assert.IsTrue( files.All( file => Path.GetFileName( file ).Length <= 24 ) );
 		// the swim sets carry no full-detail bank: only the .TPC is read (docs/CONTENT-KIT.md)

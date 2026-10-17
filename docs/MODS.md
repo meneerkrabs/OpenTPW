@@ -22,7 +22,7 @@ In code the system is called `OpenTPW.Mods` / "extensions"; `OpenTPW.ModKit` is 
 
 - manifests are parsed and validated, mod folders are discovered, `mods.json` is read and the run's set of extensions
   and mods is resolved once at startup;
-- the official extensions are `opentpw.online`, `opentpw.cross-edition-objects`, `opentpw.smarter-guests` and `opentpw.guest-insights` (below), and `opentpw.pools`, off by default, in which the player paints
+- the official extensions are `opentpw.online`, `opentpw.cross-edition-objects`, `opentpw.smarter-guests` and `opentpw.guest-insights` (below), and `opentpw.pools`, on by default (not in a Theme Park Inc run), in which the player paints
   pool water cells (see [POOLS.md](POOLS.md)); a park save records `opentpw.pools` only when the park has pool cells;
 - park saves record the mods that change the simulation and refuse a mismatched set (below);
 - the **Extensions and mods screen** (below) edits `mods.json`;

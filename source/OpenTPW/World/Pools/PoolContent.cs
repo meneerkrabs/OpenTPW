@@ -48,7 +48,7 @@ public static class PoolContent
 	/// </summary>
 	internal static CatalogContentRoot? CatalogRoot( ModSet set )
 	{
-		if ( !set.IsEnabled( OfficialExtensions.Pools.Id ) || Directory is not { } folder )
+		if ( !set.IsEnabled( OfficialExtensions.Pools.Id ) || GameEditions.IsThemeParkInc || Directory is not { } folder )
 			return null;
 		var file = Path.Combine( folder, "objects.json" );
 		if ( !File.Exists( file ) )

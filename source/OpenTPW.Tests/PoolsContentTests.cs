@@ -185,7 +185,8 @@ public class PoolsContentTests
 			Assert.AreEqual( 5, bridge.Price );
 			Assert.IsFalse( bridge.ProvidesRelief, "no relief: only a toilet gives that" );
 		}
-		Assert.IsFalse( OriginalObjectRuntime.CreateVisitorBridge( entry, 5 ).IsChangingRoom, "a park loaded with the extension off has no swimmers' room" );
+		using ( OpenTpwExtensions.Use( PoolsTests.PoolsSet( false ) ) )
+			Assert.IsFalse( OriginalObjectRuntime.CreateVisitorBridge( entry, 5 ).IsChangingRoom, "a park loaded with the extension off has no swimmers' room" );
 	}
 
 	// ---- The pool side -----------------------------------------------------------------------------------------------

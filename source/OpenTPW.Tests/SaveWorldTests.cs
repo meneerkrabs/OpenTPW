@@ -92,6 +92,42 @@ public class SaveWorldTests
 	}
 
 	[TestMethod]
+	public void AcceptsTheCalendarOfAnUnplayedParkAndNothingLooser()
+	{
+		// tp.exe 0x4F7E80: a new calendar starts at 2000-01-01 with month cache 0, day cache -1 and rate 15000
+		var world = Parse( Payload( calendar: SaveTestPayloads.CalendarAndArrivals( month: 0, day: -1 ) ) );
+		Assert.IsTrue( world.Calendar.IsInitial );
+		Assert.IsFalse( world.Calendar.IsUpdated );
+		Assert.AreEqual( (0, -1, 15_000), (world.Calendar.MonthAtLastUpdate, world.Calendar.DayAtLastUpdate, world.Calendar.FunnySecsPerRealSec) );
+		Assert.IsFalse( Parse( Payload() ).Calendar.IsInitial );
+		foreach ( var calendar in new[]
+		{
+			SaveTestPayloads.CalendarAndArrivals( month: 0, day: -1, rate: 7_500 ),
+			SaveTestPayloads.CalendarAndArrivals( month: 0, day: 0 ),
+			SaveTestPayloads.CalendarAndArrivals( month: 1, day: -1 ),
+			SaveTestPayloads.CalendarAndArrivals( month: 0, day: -2 ),
+			SaveTestPayloads.CalendarAndArrivals( month: 0, day: -1, funnyTimeStart: 125_911_584_000_000_001L ),
+		} )
+			StringAssert.Contains( Assert.ThrowsException<InvalidDataException>( () => Parse( Payload( calendar: calendar ) ) ).Message, "calendar" );
+	}
+
+	[TestMethod]
+	public void ReadsTheEmptyHistoryRingOfANewAttractionAndNothingLooser()
+	{
+		// tp.exe 0x51ADE0: a new ring has current entry -1, 30 entries and no wrap
+		var empty = SaveAttraction.Read( SaveTestPayloads.Attraction( new SaveTestPayloads.AttractionFields { RingHead = -1, RingFlag = 0 } ), 0, 1 );
+		Assert.IsTrue( empty.Histories.All( ring => ring.CurrentEntry == SaveAttraction.EmptyRingHead && !ring.WrappedAround && ring.Entries.Count == 30 ) );
+		foreach ( var fields in new[]
+		{
+			new SaveTestPayloads.AttractionFields { RingHead = -1, RingFlag = 1 },
+			new SaveTestPayloads.AttractionFields { RingHead = -1, RingFlag = 0, RingCount = 29 },
+			new SaveTestPayloads.AttractionFields { RingHead = -2, RingFlag = 0 },
+			new SaveTestPayloads.AttractionFields { RingHead = int.MinValue, RingFlag = 0 },
+		} )
+			Assert.ThrowsException<InvalidDataException>( () => SaveAttraction.Read( SaveTestPayloads.Attraction( fields ), 0, 1 ), fields.ToString() );
+	}
+
+	[TestMethod]
 	public void ReadsAttractionsWithinTheirBounds()
 	{
 		var body = SaveTestPayloads.Attraction( new SaveTestPayloads.AttractionFields() );

@@ -345,6 +345,167 @@ public class GuestTests
 		Assert.IsTrue( releaseTimes[3] >= 4000, "the third guest boards after a limbo slot frees" );
 	}
 
+	[TestMethod]
+	public void HushPushesTheTakenGuestAndHopHandsTheNewestBackWhileTheProtocolDoesTheBoarding()
+	{
+		// Totem shape: HUSH VAR_LETMEON keeps the id in the script's heap, the host boards the guest when the script consumes VAR_LETMEON,
+		// and the unload loop's HOP pops the newest id (LIFO: 3, 2, 1) for WALKOFF; the bridge never sees HUSH or HOP.
+		var on = V( (int)RideVariables.VAR_LETMEON );
+		var off = V( (int)RideVariables.VAR_LETMEOFF );
+		var onRide = V( (int)RideVariables.VAR_ONRIDE );
+		var temp = V( PeepId );
+		var asm = new Asm()
+			.Label( "loop" )
+			.I( Opcode.CRIT_LOCK )
+			.I( Opcode.TEST, on )
+			.I( Opcode.BRANCH_Z, "check" )
+			.I( Opcode.HUSH, on )
+			.I( Opcode.COPY, on, 0 )
+			.I( Opcode.ADD, onRide, 1 )
+			.Label( "check" )
+			.I( Opcode.CRIT_UNLOCK )
+			.I( Opcode.CMP, onRide, 3 )
+			.I( Opcode.BRANCH_NZ, "idle" )
+			.Label( "unload" )
+			.I( Opcode.TEST, off )
+			.I( Opcode.BRANCH_NZ, "unload" )
+			.I( Opcode.HOP, temp )
+			.I( Opcode.WALKOFF, temp )
+			.Label( "walkget" )
+			.I( Opcode.WALKGET, off )
+			.I( Opcode.BRANCH_Z, "walkget" )
+			.I( Opcode.ADD, onRide, 0xFFFF )
+			.I( Opcode.BRANCH_NZ, "unload" )
+			.I( Opcode.BRANCH, "idle" )
+			.Label( "idle" )
+			.I( Opcode.ENDSLICE )
+			.I( Opcode.BRANCH, "loop" );
+		var ride = new ScriptedAttraction( 8, 3, 70, (0, 0), bridge => new RideVM( new RideScriptFile( new MemoryStream( asm.Build( ShopVariables ) ) ),
+			new RideVMOptions { Effects = new VisitorRideScriptEffects( bridge, UnimplementedRideScriptEffects.Instance ), Seed = 1 } ), GuestNeeds.None );
+		var host = new RecordingHost();
+		ride.Bridge.Host = host;
+		foreach ( var guest in new[] { 1, 2, 3 } )
+			ride.Bridge.TryJoinQueue( guest );
+		for ( var tick = 0; tick < 20 * 60; tick++ )
+			ride.Step();
+		CollectionAssert.AreEqual( new[] { "board 1", "board 2", "board 3", "release 3", "release 2", "release 1" },
+			host.Events.Where( item => item.StartsWith( "board" ) || item.StartsWith( "release" ) ).ToArray(), string.Join( ", ", host.Events ) );
+		Assert.AreEqual( 0, ride.Script.HeapCount, "every pushed id was popped" );
+		Assert.AreEqual( 0, ride.Script.UnimplementedEffects.Count, "HUSH and HOP never reached the effects" );
+	}
+
+	[TestMethod]
+	public void AGuestTakenAndHandedToLetMeOffInOneSliceIsBoardedThenReleased()
+	{
+		var on = V( (int)RideVariables.VAR_LETMEON );
+		var off = V( (int)RideVariables.VAR_LETMEOFF );
+		var temp = V( PeepId );
+		var asm = new Asm()
+			.Label( "loop" )
+			.I( Opcode.CRIT_LOCK ).I( Opcode.TEST, on ).I( Opcode.BRANCH_Z, "idle" )
+			.I( Opcode.HUSH, on ).I( Opcode.HOP, temp ).I( Opcode.COPY, off, temp ).I( Opcode.COPY, on, 0 )
+			.Label( "idle" ).I( Opcode.CRIT_UNLOCK ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "loop" );
+		var ride = new ScriptedAttraction( 9, 2, 70, (0, 0), bridge => new RideVM( new RideScriptFile( new MemoryStream( asm.Build( ShopVariables ) ) ),
+			new RideVMOptions { Effects = new VisitorRideScriptEffects( bridge, UnimplementedRideScriptEffects.Instance ), Seed = 1 } ), GuestNeeds.None );
+		var host = new RecordingHost();
+		ride.Bridge.Host = host;
+		foreach ( var guest in new[] { 1, 2 } )
+			ride.Bridge.TryJoinQueue( guest );
+		for ( var tick = 0; tick < 10 * 60; tick++ )
+			ride.Step();
+		CollectionAssert.AreEqual( new[] { "board 1", "release 1", "board 2", "release 2" }, host.Events.Where( item => item.StartsWith( "board" ) || item.StartsWith( "release" ) ).ToArray(), string.Join( ", ", host.Events ) );
+		Assert.AreEqual( 0, ride.Bridge.Riders.Count, "nobody is stranded aboard" );
+	}
+
+	private static byte[] LegacyUnloadProgram() => new Asm().WithHeader( 8, 2 )
+		.I( Opcode.WALKON, 1, 0, 0, 0, 0, 0, 0 ).I( Opcode.WALKON, 2, 0, 0, 0, 0, 0, 0 ).I( Opcode.WALKON, 3, 0, 0, 0, 0, 0, 0 )
+		.I( Opcode.COPY, V( (int)RideVariables.VAR_ONRIDE ), 3 )
+		.Label( "closed" ).I( Opcode.ENDSLICE ).I( Opcode.TEST, V( (int)RideVariables.VAR_RIDECLOSED ) ).I( Opcode.BRANCH_Z, "closed" )
+		.Label( "unload" )
+		.I( Opcode.TEST, V( (int)RideVariables.VAR_LETMEOFF ) ).I( Opcode.BRANCH_NZ, "unload" )
+		.I( Opcode.HOP, V( PeepId ) ).I( Opcode.WALKOFF, V( PeepId ) )
+		.Label( "walkget" ).I( Opcode.WALKGET, V( (int)RideVariables.VAR_LETMEOFF ) ).I( Opcode.BRANCH_Z, "walkget" )
+		.I( Opcode.ADD, V( (int)RideVariables.VAR_ONRIDE ), 0xFFFF ).I( Opcode.BRANCH_NZ, "unload" )
+		.Label( "idle" ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "idle" ).Build( ShopVariables );
+
+	/// <summary>Gives the ride's queue its one cell, so its snapshots carry queue geometry.</summary>
+	private static ScriptedAttraction WithQueueCell( ScriptedAttraction ride )
+	{
+		var grid = new GuestPathGrid( 4, 4 );
+		grid.SetPath( 0, 0, true );
+		ride.Bridge.RecomputeQueue( grid );
+		return ride;
+	}
+
+	private static ScriptedAttraction LegacyRide() => WithQueueCell( new( 11, 3, 70, (0, 0), bridge => new RideVM( new RideScriptFile( new MemoryStream( LegacyUnloadProgram() ) ),
+		new RideVMOptions { Effects = new VisitorRideScriptEffects( bridge, UnimplementedRideScriptEffects.Instance ), Seed = 1 } ), GuestNeeds.None ) );
+
+	[TestMethod]
+	public void RidersOfASaveFromBeforeTheScriptHeapAreHandedBackByHopInTheOldOrder()
+	{
+		var saved = LegacyRide();
+		for ( var tick = 0; tick < 5; tick++ )
+			saved.Step();
+		CollectionAssert.AreEqual( new[] { 1, 2, 3 }, saved.Bridge.Riders.ToArray() );
+		// The old save: VM snapshot without the array, bridge snapshot without the marker (the old HOP handed out the first boarded guest not yet hopped).
+		var legacyVm = saved.Script.CaptureSnapshot() with { Stack = null, StackPointer = 0, HeapCount = 0, LimboValues = null, LimboExpiries = null, LimboCount = 0, CallStack = Array.Empty<int>() };
+		var legacyBridge = saved.Bridge.CaptureSnapshot() with { VmOwnsHeapAndLimbo = false };
+		var loaded = ParkResumeJson.Deserialize<RideVisitorBridgeSnapshot>( ParkResumeJson.Serialize( legacyBridge ) );
+		Assert.IsFalse( loaded.VmOwnsHeapAndLimbo );
+
+		var resumed = LegacyRide();
+		var host = new RecordingHost();
+		resumed.Bridge.Host = host;
+		resumed.Script.RestoreSnapshot( legacyVm );
+		resumed.Bridge.RestoreSnapshot( loaded );
+		Assert.AreEqual( 3, resumed.Script.HeapCount, "the three riders were moved into the script's heap" );
+		resumed.Script[RideVariables.VAR_RIDECLOSED] = 1;
+		for ( var tick = 0; tick < 5 * 60; tick++ )
+			resumed.Step();
+		CollectionAssert.AreEqual( new[] { "release 1", "release 2", "release 3" }, host.Events.Where( item => item.StartsWith( "release" ) ).ToArray(), "the old HOP order: first boarded first" );
+		Assert.AreEqual( 0, resumed.Bridge.Riders.Count );
+		Assert.IsTrue( resumed.Bridge.CaptureSnapshot().VmOwnsHeapAndLimbo );
+	}
+
+	[TestMethod]
+	public void RidersWithoutRoomInAnOldScriptsHeapAreReleasedAtTheFirstHostStep()
+	{
+		var saved = LegacyRide();
+		for ( var tick = 0; tick < 5; tick++ )
+			saved.Step();
+		var legacyVm = saved.Script.CaptureSnapshot() with { Stack = null, StackPointer = 0, HeapCount = 0, LimboValues = null, LimboExpiries = null, LimboCount = 0, CallStack = Array.Empty<int>() };
+		var legacyBridge = saved.Bridge.CaptureSnapshot() with { VmOwnsHeapAndLimbo = false };
+		// A script whose heap holds only two of the three: the third (boarded last) would never come back through HOP.
+		var smaller = new Asm().WithHeader( 2, 2 ).I( Opcode.HOP, V( 0 ) ).Label( "idle" ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "idle" ).Build( ShopVariables );
+		var resumed = WithQueueCell( new ScriptedAttraction( 11, 3, 70, (0, 0), bridge => new RideVM( new RideScriptFile( new MemoryStream( smaller ) ),
+			new RideVMOptions { Effects = new VisitorRideScriptEffects( bridge, UnimplementedRideScriptEffects.Instance ), Seed = 1 } ), GuestNeeds.None ) );
+		var host = new RecordingHost();
+		resumed.Bridge.Host = host;
+		resumed.Script[RideVariables.VAR_ONRIDE] = 3;
+		resumed.Bridge.RestoreSnapshot( legacyBridge );
+		Assert.AreEqual( 2, resumed.Script.HeapCount );
+		resumed.Bridge.HostStep();
+		CollectionAssert.AreEqual( new[] { "release 3" }, host.Events.Where( item => item.StartsWith( "release" ) ).ToArray() );
+		Assert.AreEqual( 2, resumed.Script[RideVariables.VAR_ONRIDE], "its share of VAR_ONRIDE was given back" );
+		Assert.AreEqual( 2, resumed.Bridge.Riders.Count );
+	}
+
+	[TestMethod]
+	public void ALimboListOfASaveFromBeforeTheScriptTableMovesIntoTheScriptWithItsDeadline()
+	{
+		var idle = new Asm().I( Opcode.WALKON, 7, 0, 0, 0, 0, 0, 0 ).Label( "idle" ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "idle" ).Build( ShopVariables );
+		ScriptedAttraction Make() => WithQueueCell( new( 12, 2, 70, (0, 0), bridge => new RideVM( new RideScriptFile( new MemoryStream( idle ) ),
+			new RideVMOptions { Effects = new VisitorRideScriptEffects( bridge, UnimplementedRideScriptEffects.Instance ), Seed = 1 } ), GuestNeeds.None ) );
+		var saved = Make();
+		saved.Step();
+		var legacy = saved.Bridge.CaptureSnapshot() with { VmOwnsHeapAndLimbo = false, Limbo = new[] { (Guest: 7, Until: 3000.0) } };
+		var resumed = Make();
+		resumed.Bridge.RestoreSnapshot( legacy );
+		Assert.AreEqual( 1, resumed.Script.LimboCount );
+		Assert.AreEqual( (7, 3000 + (int)resumed.Script.ClockOriginMilliseconds), resumed.Script.GetLimboSlot( 0 ), "the script-clock deadline became a scheduler-clock expiry" );
+		Assert.AreEqual( 0, resumed.Script.HeapCount, "a limbo guest is not also handed out by HOP" );
+	}
+
 	// ---- Simulation -----------------------------------------------------------------------------
 
 	[TestMethod]

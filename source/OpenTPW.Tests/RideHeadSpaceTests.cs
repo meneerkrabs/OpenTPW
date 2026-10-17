@@ -84,7 +84,7 @@ public class RideHeadSpaceTests
 			{
 				Heads = RideHeadSpace.Of( new[] { 4, 5 }, 1 ), EntranceCell = (1, 1), ExitCell = (1, 1), HasCells = true
 			};
-			var bytes = new Asm().I( Opcode.HUSH, guest.Id ).I( Opcode.ADDHEAD, guest.Id )
+			var bytes = new Asm().I( Opcode.WALKON, guest.Id, 0, 0, 0, 0, 0, 0 ).I( Opcode.ADDHEAD, guest.Id )
 				.Label( "idle" ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "idle" ).Build( GuestTests.ShopVariables );
 			var script = new RideVM( new RideScriptFile( new MemoryStream( bytes ) ), new RideVMOptions
 			{
@@ -118,7 +118,7 @@ public class RideHeadSpaceTests
 	{
 		var bridge = new RideVisitorBridge( 1, "Ride", RideVisitorKind.Ride, 1, 25, 30 ) { Heads = RideHeadSpace.Of( new[] { 4 }, 1 ) };
 		var script = new RideVM( new RideScriptFile( new MemoryStream( new Asm()
-			.I( Opcode.HUSH, 7 ).I( Opcode.ADDHEAD, 7 ).I( Opcode.COPY, V( Array.IndexOf( GuestTests.ShopVariables, nameof( RideVariables.VAR_LETMEOFF ) ) ), 7 )
+			.I( Opcode.WALKON, 7, 0, 0, 0, 0, 0, 0 ).I( Opcode.ADDHEAD, 7 ).I( Opcode.COPY, V( Array.IndexOf( GuestTests.ShopVariables, nameof( RideVariables.VAR_LETMEOFF ) ) ), 7 )
 			.Label( "idle" ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "idle" ).Build( GuestTests.ShopVariables ) ) ),
 			new RideVMOptions { Effects = new VisitorRideScriptEffects( bridge, UnimplementedRideScriptEffects.Instance ), Seed = 1 } );
 		bridge.Attach( script, () => true );
@@ -147,7 +147,7 @@ public class RideHeadSpaceTests
 		// [BIN:TPW-EXE:0x00558D2B script init] SPAWNCHILD and SPAWNSOUND create their script with thing id 0, which skips the head table; ADDHEAD and DELHEAD exit on the NULL table.
 		var childBytes = new Asm().I( Opcode.ADDHEAD, 77 ).Label( "idle" ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "idle" ).Build( GuestTests.ShopVariables );
 		var bridge = new RideVisitorBridge( 1, "Ride", RideVisitorKind.Ride, 2, 25, 30 ) { Heads = RideHeadSpace.Of( new[] { 4, 5 }, 1 ) };
-		var bytes = new Asm().I( Opcode.HUSH, 7 ).I( Opcode.ADDHEAD, 7 ).I( Opcode.SPAWNCHILD, S( 0 ) )
+		var bytes = new Asm().I( Opcode.WALKON, 7, 0, 0, 0, 0, 0, 0 ).I( Opcode.ADDHEAD, 7 ).I( Opcode.SPAWNCHILD, S( 0 ) )
 			.Label( "idle" ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "idle" ).Build( GuestTests.ShopVariables, "child.rse" );
 		var script = new RideVM( new RideScriptFile( new MemoryStream( bytes ) ), new RideVMOptions
 		{

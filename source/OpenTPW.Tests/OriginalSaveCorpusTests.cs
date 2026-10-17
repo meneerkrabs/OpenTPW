@@ -64,11 +64,21 @@ public class OriginalSaveCorpusTests
 				foreach ( var section in coaster.Sections )
 					Assert.IsTrue( section.CellX < map.CellCountX && section.CellY < map.CellCountY, $"{name}: coaster section inside the grid" );
 			Assert.AreEqual( park.World.Block.End, park.World.Things[^1].End, $"{name}: the thing list closes at the World delimiter" );
-			// A park save keeps one attraction record per saved object (as in Easymode); the initial INTS saves keep none.
-			var expected = Path.GetExtension( path ).Equals( ".INTS", StringComparison.OrdinalIgnoreCase ) ? Array.Empty<int>()
-				: park.PlacedObjects.Select( item => item.Record.InfoId ).Concat( park.FixedItems.Select( item => item.InfoId ) ).ToArray();
+			// A park save keeps one attraction record per saved object (as in Easymode); the initial INTS saves keep the two fixed items (gates, lights) and nothing placed.
+			var initial = Path.GetExtension( path ).Equals( ".INTS", StringComparison.OrdinalIgnoreCase );
+			var expected = park.PlacedObjects.Select( item => item.Record.InfoId ).Concat( park.FixedItems.Select( item => item.InfoId ) ).ToArray();
 			Assert.IsTrue( park.FixedItems.Count > 0, name );
 			CollectionAssert.AreEquivalent( expected, attractions.Select( ride => ride.InfoId ).ToArray(), name );
+			if ( initial )
+			{
+				// restart.INTS is the park before its first update: the constructor's calendar and empty history rings (tp.exe 0x4F7E80, 0x51ADE0)
+				Assert.AreEqual( 0, park.PlacedObjects.Count, name );
+				Assert.IsTrue( park.World.Calendar.IsInitial, name );
+				Assert.AreEqual( 0u, park.World.Variables.GameTick, name );
+				Assert.IsTrue( attractions.SelectMany( ride => ride.Histories ).All( ring => ring.CurrentEntry == SaveAttraction.EmptyRingHead && !ring.WrappedAround ), name );
+			}
+			else
+				Assert.IsFalse( park.World.Calendar.IsInitial, name );
 
 			var economy = new ParkEconomy( BalanceSettings.Load( theme, easy: false ), EconomyObjectCatalog.Load( theme, easy: false ), ParkGameMode.FullSimulation, 1 );
 			var evidence = new List<string>();

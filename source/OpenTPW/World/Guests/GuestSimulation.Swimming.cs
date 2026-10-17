@@ -423,7 +423,10 @@ public sealed partial class GuestSimulation
 	private readonly HashSet<(string Id, int Target)> poolTargetsTaken = new();
 	private readonly HashSet<(string Id, int Target, int X, int Y)> poolSeatsTaken = new();
 
-	/// <summary>Whether a guest does the activity at the target (when <paramref name="seat"/> is given, on that seat cell). Exact at every moment: it is rebuilt from the guests whenever one starts or ends an activity.</summary>
+	/// <summary>
+	/// Whether a guest does the activity at the target (when <paramref name="seat"/> is given, on that seat cell). Exact at every moment: it is rebuilt from the guests whenever one starts or ends an activity.
+	/// A seat is the cell of <see cref="Guest.PoolActivityX"/>, <see cref="Guest.PoolActivityY"/> as <see cref="IPoolActivity.Start"/> left it: an activity that books seats keeps that point for the whole activity.
+	/// </summary>
 	public bool IsPoolActivityTaken( string id, int target, (int X, int Y)? seat = null )
 	{
 		if ( poolOccupancyVersion != poolActivityVersion )

@@ -28,7 +28,7 @@ public class TrueTypeRasterizerGoldenTests
 	}
 
 	private static CoverageBitmap Rasterize( params (IReadOnlyList<IReadOnlyList<TrueTypePoint>> Outline, float PenX)[] placed ) =>
-		TrueTypeRasterizer.Rasterize( placed, Scale, Scale );
+		TrueTypeRasterizer.Rasterize( placed, Scale, Scale, CoverageModel.Linear );
 
 	private static IReadOnlyList<IReadOnlyList<TrueTypePoint>> Contours( params IReadOnlyList<TrueTypePoint>[] contours ) => contours;
 
@@ -144,7 +144,7 @@ public class TrueTypeRasterizerGoldenTests
 		// remaining nothing leave no edges at all.
 		var flat = Rasterize( (Contours( PixelRectangle( 0, 2, 4, 2 ) ), 0f) );
 		Assert.AreEqual( CoverageBitmap.Empty, flat );
-		var none = TrueTypeRasterizer.Rasterize( Array.Empty<(IReadOnlyList<IReadOnlyList<TrueTypePoint>>, float)>(), Scale, Scale );
+		var none = TrueTypeRasterizer.Rasterize( Array.Empty<(IReadOnlyList<IReadOnlyList<TrueTypePoint>>, float)>(), Scale, Scale, CoverageModel.Linear );
 		Assert.AreEqual( CoverageBitmap.Empty, none );
 	}
 

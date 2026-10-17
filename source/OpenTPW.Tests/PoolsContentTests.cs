@@ -301,24 +301,75 @@ public class PoolsContentTests
 	// ---- Saves ---------------------------------------------------------------------------------------------------------
 
 	[TestMethod]
-	public void ASaveHoldsTheExtensionsOwnAssetKeysOnlyWhileTheParkUsesTheExtension()
+	public void ASaveHoldsTheExtensionsAssetKeysOfThePlacedObjectsOnly()
 	{
+		using var scope = Enabled( true, FileSystem );
+		var catalog = ObjectCatalog.Load( "jungle" );
+		var room = catalog.Get( 65500 );
 		var manifest = new Dictionary<string, string>
 		{
 			["data:/levels/jungle/rides/totem/totem.sam"] = new string( 'a', 64 ),
 			["mod:opentpw.pools:/objects/jungle/cabin/Cabin.sam"] = new string( 'b', 64 ),
+			["mod:opentpw.pools:/objects/jungle/cabin/cabin.MD2"] = new string( 'e', 64 ),
+			["mod:opentpw.pools:/objects/jungle/cabin2/Cabin.sam"] = new string( 'f', 64 ),
 			["mod:community.other:/objects/x/x.sam"] = new string( 'c', 64 )
 		};
-		var unused = ParkResumeMods.AssetsForUse( manifest, poolsInUse: false );
-		CollectionAssert.AreEquivalent( new[] { "data:/levels/jungle/rides/totem/totem.sam", "mod:community.other:/objects/x/x.sam" }, unused.Keys.ToArray(), "no pool cell and no room: none of the extension's files, every other key stays" );
-		Assert.AreSame( manifest, ParkResumeMods.AssetsForUse( manifest, poolsInUse: true ), "in use: the manifest as it is" );
+		var none = ParkResumeMods.AssetsForUse( manifest, Array.Empty<ObjectCatalogEntry>() );
+		CollectionAssert.AreEquivalent( new[] { "data:/levels/jungle/rides/totem/totem.sam", "mod:community.other:/objects/x/x.sam" }, none.Keys.ToArray(), "nothing of the extension placed: none of its files, every other key stays" );
+		var placed = ParkResumeMods.AssetsForUse( manifest, new[] { room } );
+		CollectionAssert.AreEquivalent( new[] { "data:/levels/jungle/rides/totem/totem.sam", "mod:community.other:/objects/x/x.sam", "mod:opentpw.pools:/objects/jungle/cabin/Cabin.sam", "mod:opentpw.pools:/objects/jungle/cabin/cabin.MD2" },
+			placed.Keys.ToArray(), "the placed room's files only; a folder that merely starts with its name is another object" );
 		var plain = new Dictionary<string, string> { ["data:/a"] = "x" };
-		Assert.AreSame( plain, ParkResumeMods.AssetsForUse( plain, poolsInUse: false ), "a manifest without the extension's keys is returned untouched" );
-		// the save's shape rule: a mod: key must name a recorded mod, so the filtered manifest passes without the record and the full one needs it
-		Assert.IsNull( ParkResumeMods.ShapeProblem( null, unused.Where( pair => pair.Key.StartsWith( "mod:opentpw", StringComparison.Ordinal ) ).ToDictionary( pair => pair.Key, pair => pair.Value ) ) );
+		Assert.AreSame( plain, ParkResumeMods.AssetsForUse( plain, Array.Empty<ObjectCatalogEntry>() ), "a manifest without the extension's keys is returned untouched" );
+		// the save's shape rule: a mod: key must name a recorded mod, so the manifest without them passes without the record and one with them needs it
+		Assert.IsNull( ParkResumeMods.ShapeProblem( null, none.Where( pair => pair.Key.StartsWith( "mod:opentpw", StringComparison.Ordinal ) ).ToDictionary( pair => pair.Key, pair => pair.Value ) ) );
 		StringAssert.Contains( ParkResumeMods.ShapeProblem( null, manifest )!, "mod opentpw.pools, which the save does not record" );
 		Assert.IsNotNull( ParkResumeMods.ShapeProblem( new[] { new ParkModRecord( "community.other", "1.0.0", new string( 'd', 64 ) ) }, manifest ), "recording another mod does not cover the extension's keys" );
 		Assert.IsNull( ParkResumeMods.ShapeProblem( new[] { new ParkModRecord( "opentpw.pools", "1.0.0", ModSet.NoFilesSha256 ), new ParkModRecord( "community.other", "1.0.0", new string( 'd', 64 ) ) }, manifest ) );
+	}
+
+	private static ParkResumeSnapshot WithRoomsPlaced( ParkResumeSnapshot snapshot, IReadOnlyDictionary<string, string> assets, params int[] infoIds )
+	{
+		var template = snapshot.Layout.Objects[0];
+		var objects = infoIds.Select( ( infoId, index ) => template with { InfoId = infoId, AttractionId = 100 + index } ).ToList();
+		return snapshot with { AssetHashes = assets, Layout = snapshot.Layout with { Objects = objects } };
+	}
+
+	[TestMethod]
+	public void ASaveWithPoolCellsMadeBeforeTheRoomsContentExistedStillLoads()
+	{
+		using var scope = Enabled( true, FileSystem );
+		var catalog = ObjectCatalog.Load( "jungle" );
+		var current = ParkResumeAssetManifest.Capture( catalog, "jungle", easy: false );
+		var roomKeys = current.Keys.Where( key => key.StartsWith( "mod:opentpw.pools:", StringComparison.Ordinal ) ).ToArray();
+		Assert.IsTrue( roomKeys.Length > 0, "the park's manifest lists the extension's room" );
+		// a P1 save: pool cells, no room, a manifest without any of the room's keys (it did not exist then)
+		var saved = current.Where( pair => !roomKeys.Contains( pair.Key ) ).ToDictionary( pair => pair.Key, pair => pair.Value );
+		var snapshot = WithRoomsPlaced( ParkResumeSaveFileTests.Envelope(), saved );
+		snapshot = snapshot with { Layout = snapshot.Layout with { Objects = new List<ParkLayoutSnapshot.PlacedObjectData>() } };
+		ParkResumeSaveFile.RequireAssets( snapshot, catalog, current );
+		// the same save with later additions to the extension (a key of an object the catalog does not have yet) still loads
+		ParkResumeSaveFile.RequireAssets( snapshot, catalog, new Dictionary<string, string>( current ) { ["mod:opentpw.pools:/objects/jungle/slide/Slide.sam"] = new string( '9', 64 ) } );
+	}
+
+	[TestMethod]
+	public void ASaveWithAPlacedRoomRequiresTheRoomsKeysAndHashes()
+	{
+		using var scope = Enabled( true, FileSystem );
+		var catalog = ObjectCatalog.Load( "jungle" );
+		var current = ParkResumeAssetManifest.Capture( catalog, "jungle", easy: false );
+		var roomKeys = current.Keys.Where( key => key.StartsWith( "mod:opentpw.pools:", StringComparison.Ordinal ) ).ToArray();
+		var withRoom = WithRoomsPlaced( ParkResumeSaveFileTests.Envelope(), current, 65500 );
+		ParkResumeSaveFile.RequireAssets( withRoom, catalog, current );
+		// a save that places the room but holds none of its keys is refused: the park provides them
+		var withoutKeys = withRoom with { AssetHashes = current.Where( pair => !roomKeys.Contains( pair.Key ) ).ToDictionary( pair => pair.Key, pair => pair.Value ) };
+		StringAssert.Contains( Assert.ThrowsException<InvalidDataException>( () => ParkResumeSaveFile.RequireAssets( withoutKeys, catalog, current ) ).Message, "the save does not expect" );
+		// a room whose files changed is refused
+		var changed = new Dictionary<string, string>( current ) { [roomKeys[0]] = new string( '0', 64 ) };
+		StringAssert.Contains( Assert.ThrowsException<InvalidDataException>( () => ParkResumeSaveFile.RequireAssets( withRoom, catalog, changed ) ).Message, "hashes to" );
+		// a room whose file is gone is refused
+		var missing = current.Where( pair => pair.Key != roomKeys[0] ).ToDictionary( pair => pair.Key, pair => pair.Value );
+		StringAssert.Contains( Assert.ThrowsException<InvalidDataException>( () => ParkResumeSaveFile.RequireAssets( withRoom, catalog, missing ) ).Message, "do not provide" );
 	}
 
 	[TestMethod]

@@ -123,10 +123,12 @@ class Page {
 	 * Starts Full Simulation on the game mode screen by what the game shows rather than by counting presses: Full Simulation, the
 	 * tick, and the new-progress consent (a profile without a progress file asks for it once, its first choice starts the
 	 * progress) are each clicked once per visit of their screen, until the park of `level` has its HUD. Returns the time of the park.
-	 * A progress failure dialog or a Continue screen (the harness always starts a new park) end it with an error.
+	 * A progress failure dialog ends it with an error; the Continue screen of an island with an automatic checkpoint is answered with New park.
 	 */
 	async enterFullSimulation(level, timeoutMs = 300000) {
-		const steps = { gameMode: ['fullSimulation', 'ok'], newProgress: ['choice0'] };
+		// Leaving a park writes its automatic checkpoint, so entering the island again offers it: [Continue automatic, New park, Back], and the harness only
+		// ever starts new parks (it never saves by hand, so no Continue saved line shifts the choices).
+		const steps = { gameMode: ['fullSimulation', 'ok'], newProgress: ['choice0'], themeStart: ['choice1'] };
 		const begin = Date.now();
 		let screen = null, done = 0;
 		for (;;) {
@@ -136,8 +138,6 @@ class Page {
 			const shown = state?.hudScreen === 'progressFailed' ? 'progressFailed' : state?.menu;
 			if (shown === 'progressFailed')
 				throw new Error(`Starting ${level} ended in the progress failure dialog; state ${JSON.stringify(state)}`);
-			if (shown === 'themeStart')
-				throw new Error(`The profile has a saved park for ${level} and the game offers to continue it; the harness needs a fresh profile`);
 			if (shown !== screen) {
 				screen = shown;
 				done = 0;
@@ -233,7 +233,7 @@ const scenarios = {
 		if (state.island !== 'jungle')
 			throw new Error(`The lobby shows ${state.island}, not the jungle island`);
 		await page.call('PerfClick', 'enterPark');
-		await page.waitFor('the game mode menu', current => current.menu === 'gameMode', 10000);
+		await page.waitFor('the game mode menu', current => current.menu === 'gameMode' || current.menu === 'themeStart', 10000);
 		// The load profile covers the click, the construction and the first seconds after (textures that load lazily).
 		await page.eval('opentpwPerf.program.PerfProfile(true)');
 		const cold = await page.action('the Jungle park', () => page.enterFullSimulation('jungle'),
@@ -300,7 +300,7 @@ const scenarios = {
 		const lobbyMs = Date.now() - click;
 		await sleep(2000);
 		await page.call('PerfClick', 'enterPark');
-		await page.waitFor('the game mode menu', current => current.menu === 'gameMode', 10000);
+		await page.waitFor('the game mode menu', current => current.menu === 'gameMode' || current.menu === 'themeStart', 10000);
 		const park = Date.now();
 		// The consent for new progress is answered on the way if the kept profile asks for it.
 		const entering = page.enterFullSimulation('jungle', 120000).catch(error => error);
@@ -344,13 +344,19 @@ const scenarios = {
 		const toLobby = async () => {
 			await page.call('PerfOpenPauseMenu');
 			await page.waitFor('the pause menu', current => current.hudScreen === 'pause', 10000);
+			// The pause menu lays its lines out from their measured text on its first frames: a click before that misses them
+			for (let frame = 0; frame < 3; frame++)
+				await page.nextFrame();
 			await page.call('PerfClick', 'ExitToLobby');
-			await page.waitFor('the lobby', current => current.menu === 'lobby' && !current.hud, 60000);
+			// A checkpoint that cannot be written shows its failure dialog instead of leaving: say so rather than time out
+			const left = await page.waitFor('the lobby', current => (current.menu === 'lobby' && !current.hud) || current.hudScreen === 'automaticFailed', 60000);
+			if (left.hudScreen === 'automaticFailed')
+				throw new Error(`Exit To Lobby ended in the automatic checkpoint failure dialog; state ${JSON.stringify(left)}`);
 			await sleep(2000);
 		};
 		const enterPark = async island => {
 			await page.call('PerfClick', 'enterPark');
-			await page.waitFor('the game mode menu', current => current.menu === 'gameMode', 10000);
+			await page.waitFor('the game mode menu', current => current.menu === 'gameMode' || current.menu === 'themeStart', 10000);
 			await page.enterFullSimulation(island);
 			await sleep(3000);
 		};
@@ -360,12 +366,32 @@ const scenarios = {
 		await record('lobby');
 		await page.call('PerfClick', 'nextIsland');
 		const other = (await page.waitFor('the next island', current => current.island && current.island !== 'jungle', 10000)).island;
-		await enterPark(other);
-		await record(other);
+		let second = other;
+		try {
+			await enterPark(other);
+		} catch (error) {
+			// A fresh profile has not earned the keys of the next island (Full Simulation asks for them): leave the dialog and the
+			// game mode screen, and Jungle is the second park instead, so the switch through the lobby is still measured.
+			if (!/progress failure dialog/.test(error.message))
+				throw error;
+			await page.call('PerfClick', 'choice0');
+			await page.waitFor('the game mode menu', current => current.menu === 'gameMode' && current.hudScreen == null, 10000);
+			await page.nextFrame();
+			await page.call('PerfKey', 'Back');
+			await page.waitFor('the lobby', current => current.menu === 'lobby', 10000);
+			await page.nextFrame();
+			await page.call('PerfKey', 'Left');
+			await page.waitFor('the jungle island', current => current.island === 'jungle', 10000);
+			second = 'jungle (next island locked)';
+			await enterPark('jungle');
+		}
+		await record(second);
 		await toLobby();
 		await record('lobby again');
-		await page.call('PerfKey', 'Left');
-		await page.waitFor('the jungle island', current => current.island === 'jungle', 10000);
+		if (second === other) {
+			await page.call('PerfKey', 'Left');
+			await page.waitFor('the jungle island', current => current.island === 'jungle', 10000);
+		}
 		await enterPark('jungle');
 		await record('jungle again');
 		return { steps };

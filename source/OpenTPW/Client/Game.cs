@@ -514,7 +514,7 @@ internal static class Game
 					return;
 				}
 				// [EXT:debug-pool] --debug-pool-offset dx,dy moves the place the shape is looked for from the camera target by whole cells (so a capture can frame a changing room beside the pool)
-				if ( GetOption( args, "--debug-pool-offset", "dx,dy cells" )?.Split( ',' ) is { Length: 2 } offsetParts && int.TryParse( offsetParts[0], out var offsetX ) && int.TryParse( offsetParts[1], out var offsetY ) )
+				if ( GetOption( args, "--debug-pool-offset", "dx,dy cells" )?.Split( ',' ) is { Length: 2 } offsetParts && int.TryParse( offsetParts[0], System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var offsetX ) && int.TryParse( offsetParts[1], System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var offsetY ) )
 					(cellX, cellY) = (cellX + offsetX, cellY + offsetY);
 				for ( var radius = 0; radius < 40; radius++ )
 					for ( var dx = -radius; dx <= radius; dx++ )
@@ -534,7 +534,7 @@ internal static class Game
 							Log.Trace( FormattableString.Invariant( $"--debug-pool: painted {stroke.Cells.Count} cells at {originX},{originY} (engine centre {centreX:0.#},{centreY:0.#}), charged {stroke.Charged}, refusal {stroke.FirstRefusal?.Reason.ToString() ?? "none"}." ) );
 							// [EXT:debug-swimmers] smoke-only: --debug-swimmers N builds a changing room beside the pool (through the level's own placement, which charges it and needs the pool at its back) and
 							// puts N guests into the water at once, so a capture shows swimmers (docs/POOLS.md)
-							if ( GetOption( args, "--debug-swimmers", "guests to put into the pool" ) is { } swimText && int.TryParse( swimText, out var swimmerCount ) )
+							if ( GetOption( args, "--debug-swimmers", "guests to put into the pool" ) is { } swimText && int.TryParse( swimText, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var swimmerCount ) )
 								PlaceDebugChangingRoom( level, shape.Select( cell => (X: originX + cell.X, Y: originY + cell.Y) ).ToArray(), swimmerCount );
 							// [EXT:debug-slide] smoke-only: --debug-slide flume|tube builds a slide tower beside the pool and lays a valid slide from it into the water (docs/POOLS.md, "Water slides")
 							if ( GetOption( args, "--debug-slide", "flume or tube" ) is { } slideText )

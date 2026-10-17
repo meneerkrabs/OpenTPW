@@ -122,7 +122,7 @@ public sealed class Guest
 	// [EXT:pools-activities] the generic fields of a pool activity (docs/POOLS.md, "Activities"); all zero (the id null) outside state 25
 	/// <summary>The <see cref="IPoolActivity.Id"/> of the activity the guest is doing.</summary>
 	public string? PoolActivityId { get; internal set; }
-	/// <summary>The target the activity was offered for (<see cref="PoolActivityOffer.TargetId"/>: an attraction or object id, 0 for none).</summary>
+	/// <summary>The thing id of the object that provides the activity (<see cref="PoolActivityOffer.TargetId"/>; 0 for none, such as a river).</summary>
 	public int PoolActivityTarget { get; internal set; }
 	/// <summary>The activity's own phase number (0 at the start).</summary>
 	public int PoolActivityPhase { get; internal set; }

@@ -15,10 +15,15 @@ internal sealed class RestoredAdviceDriver
 	private readonly Func<uint> gameTick;
 	private readonly Func<int> gameType;
 	private readonly Func<bool> tutorialEnabled;
+	private readonly Func<int?>? playerKeys;
 	// where the poll goes on (one rule per scan call, like the scan's cursor); not saved
 	private int pollCursor;
-	// the arrival vehicle seen on the last observation (null before the first); not saved
-	private int? arrivalVehicle;
+	// the kind of the arrival vehicle last seen at work (null: none yet) and whether the park has been observed; not saved
+	private int? lastVehicleKind;
+	private bool vehicleObserved;
+	// the golden tickets won and not yet told, and the player's keys as last seen; not saved
+	private readonly List<GoldenTicketKind> pendingTickets = new();
+	private int? lastKeys;
 	// the follow-up challenges met in a row; not saved
 	private int followups;
 
@@ -26,8 +31,10 @@ internal sealed class RestoredAdviceDriver
 	/// <param name="gameTick">The park turn the queue's history is stamped with.</param>
 	/// <param name="gameType">The original game type (2 = Instant Action).</param>
 	/// <param name="tutorialEnabled">The tutorial option.</param>
-	public RestoredAdviceDriver( AdvisorController controller, Func<uint> gameTick, Func<int> gameType, Func<bool> tutorialEnabled )
+	/// <param name="playerKeys">The player's golden keys (<see cref="PlayerTicketLedger.Keys"/>, as the HUD reads them); null when no progress is kept, which leaves the key lines unsaid.</param>
+	public RestoredAdviceDriver( AdvisorController controller, Func<uint> gameTick, Func<int> gameType, Func<bool> tutorialEnabled, Func<int?>? playerKeys = null )
 	{
+		this.playerKeys = playerKeys;
 		this.controller = controller ?? throw new ArgumentNullException( nameof( controller ) );
 		this.gameTick = gameTick ?? throw new ArgumentNullException( nameof( gameTick ) );
 		this.gameType = gameType ?? throw new ArgumentNullException( nameof( gameType ) );
@@ -47,8 +54,11 @@ internal sealed class RestoredAdviceDriver
 	public void Reset()
 	{
 		pollCursor = 0;
-		arrivalVehicle = null;
+		lastVehicleKind = null;
+		vehicleObserved = false;
 		followups = 0;
+		pendingTickets.Clear();
+		lastKeys = null;
 	}
 
 	/// <summary>Posts a help message (the descriptor's help score), when the extension restores it and is on.</summary>
@@ -80,7 +90,10 @@ internal sealed class RestoredAdviceDriver
 		switch ( item.Kind )
 		{
 			case ParkEventKind.GoldenTicketWon when Enum.IsDefined( (GoldenTicketKind)item.Amount ):
-				TicketWon( economy, (GoldenTicketKind)item.Amount );
+				// the player's keys are the ledger's, which updates as the event is raised: the ticket is told on the next frame (ResolveTickets)
+				if ( RestoredAdvice.AwardMessage( (GoldenTicketKind)item.Amount ) is { } award )
+					Post( award, $"the {(GoldenTicketKind)item.Amount} award" );
+				pendingTickets.Add( (GoldenTicketKind)item.Amount );
 				break;
 			// [EXT:restored-advice-upgrades] the purchase is queued whether or not a mechanic is hired (ParkEconomy.TryBuyUpgrade), so 130 and 131 are the advice that goes with it
 			case ParkEventKind.UpgradeBought when !economy.Staff.OfType( StaffType.Mechanic ).Any():
@@ -108,44 +121,62 @@ internal sealed class RestoredAdviceDriver
 	}
 
 	/// <summary>
-	/// A golden ticket was won: the award line of a global ticket, then the ticket's own. The key a ticket earns is a third of the park's tickets (the player-wide count, <see cref="PlayerProgress.TicketsPerKey"/>,
-	/// is the player's ledger's; the park's own count is what the advisor can read). No key says 99; the key that opens Wonderland (3) or Space Zone (5) says 165 or 164; any other key the ticket's criterion line
-	/// (218, 223 or 228, or the twin once the first has been said, with the response that carries the ticket's caption).
+	/// Tells the golden tickets won since the last frame, by the keys the player has now against the keys seen before (the player-wide ledger the HUD shows, <see cref="PlayerTicketLedger.Keys"/>; the ledger updates as the win is
+	/// raised, so this runs a frame later). A ticket that earned no key says 99; the key that opens Wonderland (3) or Space Zone (5) says 165 or 164; any other key says the ticket's criterion line (218, 223 or 228, or the twin once the first
+	/// has been said, with the response that carries the ticket's caption). Without a ledger the keys are unknown and every ticket says 99, which claims no key.
 	/// </summary>
-	// [EXT:restored-advice-tickets] OpenTPW chooses the lines and the key rule; tp.exe has no caller of 0x59B590 for 99, 164, 165, 218, 219, 223, 224, 228, 229 or 230 to 233 to learn them from
-	private void TicketWon( ParkEconomy economy, GoldenTicketKind kind )
+	// [EXT:restored-advice-tickets] OpenTPW chooses the lines; tp.exe has no caller of 0x59B590 for 99, 164, 165, 218, 219, 223, 224, 228, 229 or 230 to 233 to learn them from
+	public void ResolveTickets()
 	{
-		if ( RestoredAdvice.AwardMessage( kind ) is { } award )
-			Post( award, $"the {kind} award" );
-		var tickets = economy.Objectives.GoldenTickets.Count;
-		if ( tickets % PlayerProgress.TicketsPerKey != 0 )
+		if ( !RestoredAdvice.Enabled )
 		{
-			Post( 99, $"the {kind} ticket (no key)" );
+			pendingTickets.Clear();
 			return;
 		}
-		var keys = PlayerProgress.StartingKeys + tickets / PlayerProgress.TicketsPerKey;
-		if ( RestoredAdvice.UnlockMessage( keys ) is { } unlock )
+		var keys = playerKeys?.Invoke();
+		if ( pendingTickets.Count == 0 )
 		{
-			Post( unlock, $"the {kind} ticket (key {keys})" );
+			lastKeys = keys;
 			return;
 		}
-		if ( RestoredAdvice.TicketMessage( kind ) is not var (message, twin, variant) )
-			return;
-		Post( controller.Queue.GetHistory( message ).HasBeenPlayed ? twin : message, $"the {kind} ticket (key {keys})", variant );
+		var gained = keys is { } now && lastKeys is { } before ? Math.Max( 0, now - before ) : 0;
+		var tickets = pendingTickets.ToArray();
+		pendingTickets.Clear();
+		lastKeys = keys;
+		foreach ( var kind in tickets )
+		{
+			if ( gained <= 0 || keys is not { } total )
+			{
+				Post( 99, $"the {kind} ticket (no key)" );
+				continue;
+			}
+			gained--;
+			if ( RestoredAdvice.UnlockMessage( total ) is { } unlock )
+			{
+				Post( unlock, $"the {kind} ticket (key {total})" );
+				continue;
+			}
+			if ( RestoredAdvice.TicketMessage( kind ) is var (message, twin, variant) )
+				Post( controller.Queue.GetHistory( message ).HasBeenPlayed ? twin : message, $"the {kind} ticket (key {total})", variant );
+		}
 	}
 
 	/// <summary>
-	/// An observation of the arrival vehicle at work (<see cref="GuestSimulation.ArrivalVehicle"/>, -1 for none): one that starts a group says its line (137 bus, 138 seaplane, 139 Ferry); the
-	/// vehicle already at work when the park is first seen is only taken as the start.
+	/// An observation of the arrival vehicle at work (<see cref="GuestSimulation.ArrivalVehicle"/>, -1 for none; the simulation puts it back to none after every group). A vehicle of another kind than the one seen last says its line
+	/// (137 bus, 138 seaplane, 139 Ferry), and each is told once per park (<see cref="RestoredAdviceEntry.RepeatGroups"/>); the vehicle already at work when the park is first seen is only taken as the start.
 	/// </summary>
-	// [EXT:restored-advice-arrivals] OpenTPW's own trigger: the vehicle changing from none (or another kind) to a kind is a group arriving (GuestSimulation.DispatchArrivalVehicle)
+	// [EXT:restored-advice-arrivals] OpenTPW's own trigger: a vehicle kind that differs from the last one seen is a change of how guests arrive (GuestSimulation.DispatchArrivalVehicle)
 	public void ObserveVehicle( int vehicle )
 	{
 		if ( !RestoredAdvice.Enabled )
 			return;
-		var previous = arrivalVehicle;
-		arrivalVehicle = vehicle;
-		if ( previous is not { } before || vehicle < 0 || vehicle == before )
+		var first = !vehicleObserved;
+		vehicleObserved = true;
+		if ( vehicle < 0 )
+			return;
+		var previous = lastVehicleKind;
+		lastVehicleKind = vehicle;
+		if ( first || previous == vehicle )
 			return;
 		var message = vehicle switch { ArrivalVehicleKind.Bus => 137, ArrivalVehicleKind.Seaplane => 138, ArrivalVehicleKind.Ferry => 139, _ => 0 };
 		if ( message != 0 )
@@ -165,23 +196,19 @@ internal sealed class RestoredAdviceDriver
 		{
 			var message = PollMessages[pollCursor++ % PollMessages.Length];
 			var score = RestoredAdviceScan.PollRules[message]( new AdvisorScanContext( controller.Balance, null ) { Restored = state } );
-			if ( score > controller.Queue.MinimumScore && controller.Queue.HasDescriptor( message )
+			if ( score > controller.Queue.MinimumScore && controller.Queue.HasDescriptor( message ) && RestoredAdvice.RepeatAllows( controller.Queue, message, gameTick() )
 				&& controller.Queue.Eligibility( new AdvisorPendingAdvice( message, score ), gameTick(), tutorialEnabled() ) == AdvisorEligibility.Eligible )
 				Post( message, "the poll" );
 		}
 	}
 
 	/// <summary>
-	/// A screen of the online extension opened (<see cref="UI.OnlineHost.Advise"/>): its help message, or for the news the advice that a message came in.
+	/// A screen of the online extension opened (<see cref="UI.OnlineHost.Advise"/>): its help message.
 	/// </summary>
 	// [EXT:restored-advice-online] the original's online screens posted these through 0x486B00 in the lobby; OpenTPW's online screens open over a park too (Go Online in the pause menu)
 	public void OnlineScreen( int message )
 	{
-		if ( !RestoredAdvice.Enabled || RestoredAdvice.Find( message ) is not { Topic: "online" } entry )
-			return;
-		if ( entry.Trigger == RestoredTrigger.Event )
-			Post( message, "the online news" );
-		else
+		if ( RestoredAdvice.Enabled && RestoredAdvice.Find( message ) is { Topic: "online" } )
 			Help( message, "an online screen" );
 	}
 }

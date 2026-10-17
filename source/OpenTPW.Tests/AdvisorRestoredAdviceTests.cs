@@ -20,7 +20,7 @@ namespace OpenTPW.Tests;
 public class AdvisorRestoredAdviceTests
 {
 	// Synthetic settings in the Advisor.sam layout (values chosen for the tests, not copied from the original).
-	private const string Sam = """
+	internal const string SamText = """
 		GeneralAdvisor.MinTimeAnyMessage	5
 		GeneralAdvisor.MinTimeSameMessage	120
 		GeneralAdvisor.MinScoreForConsideration	25
@@ -53,6 +53,7 @@ public class AdvisorRestoredAdviceTests
 		HelpMessage.Score	1000
 		HelpMessage.ContextHelpScore	1500
 		StaffSetGuardArea.MonthsIntoGameForConsideration	6
+		StaffSetGuardArea.AtLeastThisMany	2
 		StaffGuardCoverage.Score	12
 		StaffGuardCoverage.ScorePerNonCoveredPercent	2
 		RidesNoUpgrades.MonthsIntoGameForConsideration	3
@@ -74,8 +75,9 @@ public class AdvisorRestoredAdviceTests
 		BusArrived.Score	71
 		PlaneArrived.Score	72
 		BoatArrived.Score	73
-		OnlineMessage.Score	74
 		""";
+
+	private const string Sam = SamText;
 
 	[TestInitialize]
 	public void Setup() => Log ??= new();
@@ -92,7 +94,7 @@ public class AdvisorRestoredAdviceTests
 	private static AdvisorPendingAdvice PendingOf( AdvisorController controller, int message ) =>
 		Enumerable.Range( 0, AdvisorScoreQueue.Capacity ).Select( controller.Queue.GetSlot ).Single( slot => slot?.MessageId == message )!;
 
-	private sealed class Money : IAdvisorMoneyState
+	internal sealed class MoneyFake : IAdvisorMoneyState
 	{
 		public int Balance { get; set; }
 		public IReadOnlyList<AdvisorLoanSlot> LoanSlots { get; } = new AdvisorLoanSlot[AdvisorLoanSlot.Count];
@@ -103,11 +105,23 @@ public class AdvisorRestoredAdviceTests
 		public IReadOnlyList<int> IncomeMonths { get; } = Array.Empty<int>();
 	}
 
+	/// <summary>A busy park in which every restored condition holds all the time (the worst case for nagging).</summary>
+	internal static IRestoredAdviceState TypicalState() => new State
+	{
+		ParkMonths = 40, HiredGuards = 4, GuardsWithPatrol = 1, SecurityCoverage = new RestoredSecurityCoverage( 200, 150, 0 ),
+		Rides = new[] { Ride( queue: 25 ), Ride( queue: 22 ), Ride( queue: 30 ), Ride( queue: 3 ) },
+		UpgradesAvailable = 2, Land = new RestoredLand( 400, 20 ), Toilets = 3, MonthlyWages = 100,
+	};
+
+	/// <summary>A park of 40 months with no guard and no camera.</summary>
+	internal static IRestoredAdviceState NoSecurityState() => new State { ParkMonths = 40, SecurityCoverage = new RestoredSecurityCoverage( 200, 0, 0 ) };
+
 	/// <summary>A park the tests describe fact by fact.</summary>
-	private sealed class State : IRestoredAdviceState
+	internal sealed class State : IRestoredAdviceState
 	{
 		public int ParkMonths { get; set; } = 12;
 		public int HiredGuards { get; set; }
+		public int GuardsWithPatrol { get; set; }
 		public int HiredMechanics { get; set; }
 		public bool MechanicsOnStrike { get; set; }
 		public bool UpgradesPossible { get; set; } = true;
@@ -137,12 +151,12 @@ public class AdvisorRestoredAdviceTests
 		new( 1, open, broken, condemned, riders, queue, exitBlocked );
 
 	/// <summary>The park state (and money) that makes each scan-zero row's restored callback hold.</summary>
-	private static readonly IReadOnlyDictionary<int, Action<State, Money>> ScanScenarios = new Dictionary<int, Action<State, Money>>
+	private static readonly IReadOnlyDictionary<int, Action<State, MoneyFake>> ScanScenarios = new Dictionary<int, Action<State, MoneyFake>>
 	{
-		[24] = ( state, _ ) => { state.HiredGuards = 2; state.SecurityCoverage = new RestoredSecurityCoverage( 100, 60, 0 ); },
+		[24] = ( state, _ ) => { state.HiredGuards = 2; state.GuardsWithPatrol = 1; state.SecurityCoverage = new RestoredSecurityCoverage( 100, 60, 0 ); },
 		[25] = ( state, _ ) => state.SecurityCoverage = new RestoredSecurityCoverage( 100, 0, 0 ),
-		[58] = ( state, _ ) => state.Rides = new[] { Ride( queue: 25 ), Ride( queue: 3 ) },
-		[59] = ( state, _ ) => state.Rides = new[] { Ride( queue: 25 ), Ride( queue: 30 ), Ride( queue: 2 ) },
+		[58] = ( state, _ ) => state.Rides = new[] { Ride( queue: 35 ), Ride( queue: 3 ) },
+		[59] = ( state, _ ) => state.Rides = new[] { Ride( queue: 35 ), Ride( queue: 40 ), Ride( queue: 2 ) },
 		[65] = ( state, _ ) => { state.UpgradesAvailable = 1; state.UpgradesBought = 0; },
 		[151] = ( state, _ ) => { state.Thresholds[GoldenTicketKind.CoasterHeight] = 100; state.Records[ParkRecordKind.CoasterHeight] = 80; },
 		[152] = ( state, _ ) => state.Held.Add( GoldenTicketKind.CoasterHeight ),
@@ -166,7 +180,7 @@ public class AdvisorRestoredAdviceTests
 		[318] = state => { state.Thresholds[GoldenTicketKind.ProfitYear] = 1000; state.ProfitThisYear = 900; },
 	};
 
-	private static IReadOnlyList<int> Scan( AdvisorController controller, IRestoredAdviceState? state, Money? money = null, int steps = 160, uint tick = 100, int gameType = 0, bool tutorial = true )
+	private static IReadOnlyList<int> Scan( AdvisorController controller, IRestoredAdviceState? state, MoneyFake? money = null, int steps = 160, uint tick = 100, int gameType = 0, bool tutorial = true )
 	{
 		var posted = new List<int>();
 		for ( var step = 0; step < steps; step++ )
@@ -175,7 +189,7 @@ public class AdvisorRestoredAdviceTests
 		return posted;
 	}
 
-	private static RestoredAdviceDriver Driver( AdvisorController controller, int gameType = 0, bool tutorial = true ) => new( controller, () => 100u, () => gameType, () => tutorial );
+	private static RestoredAdviceDriver Driver( AdvisorController controller, int gameType = 0, bool tutorial = true, Func<int?>? keys = null ) => new( controller, () => 100u, () => gameType, () => tutorial, keys );
 
 	// ------------------------------------------------------------------ the extension
 
@@ -289,7 +303,7 @@ public class AdvisorRestoredAdviceTests
 		{
 			var controller = Controller();
 			var state = new State();
-			var money = new Money { Balance = 5000 };
+			var money = new MoneyFake { Balance = 5000 };
 			scenario( state, money );
 			var posted = Scan( controller, state, money );
 			CollectionAssert.Contains( posted.ToArray(), message, $"message {message} is posted by the scan" );
@@ -311,7 +325,7 @@ public class AdvisorRestoredAdviceTests
 		{
 			var controller = Controller();
 			var state = new State();
-			var money = new Money { Balance = 5000 };
+			var money = new MoneyFake { Balance = 5000 };
 			ScanScenarios[message]( state, money );
 			Scan( controller, state, money );
 			return PendingOf( controller, message );
@@ -320,8 +334,8 @@ public class AdvisorRestoredAdviceTests
 		Assert.AreEqual( 66, Posted( 349 ).Score, "riders stuck use the stranded-people key" );
 		Assert.AreEqual( 77, Posted( 350 ).Score, "RideCondemned.Score" );
 		Assert.AreEqual( 64, Posted( 65 ).Score, "RidesNoUpgrades.Score" );
-		Assert.AreEqual( 80, Posted( 24 ).Score, "40 percent uncovered x ScorePerNonCoveredPercent 2, above the floor 12" );
-		Assert.AreEqual( 200, Posted( 25 ).Score, "100 percent uncovered x 2" );
+		Assert.AreEqual( RestoredAdvice.SecurityScoreCap, Posted( 24 ).Score, "40 percent uncovered x ScorePerNonCoveredPercent 2 is 80, capped below the originals' warnings" );
+		Assert.AreEqual( RestoredAdvice.SecurityScoreCap, Posted( 25 ).Score, "100 percent uncovered x 2 is 200, capped" );
 		Assert.AreEqual( RestoredAdvice.QueueScore, Posted( 58 ).Score );
 		Assert.AreEqual( RestoredAdvice.QueueWorseScore, Posted( 59 ).Score );
 		Assert.AreEqual( RestoredAdvice.LowBalanceScore, Posted( 347 ).Score );
@@ -336,9 +350,9 @@ public class AdvisorRestoredAdviceTests
 	{
 		// an empty park: no restored message, in a whole pass
 		var controller = Controller();
-		Assert.AreEqual( 0, Scan( controller, new State(), new Money { Balance = 100_000 }, steps: 400 ).Count( RestoredAdvice.IsRestored ) );
+		Assert.AreEqual( 0, Scan( controller, new State(), new MoneyFake { Balance = 100_000 }, steps: 400 ).Count( RestoredAdvice.IsRestored ) );
 		// the conditions' edges
-		var edges = new (int Message, Action<State, Money> Almost)[]
+		var edges = new (int Message, Action<State, MoneyFake> Almost)[]
 		{
 			( 24, ( state, _ ) => { state.HiredGuards = 1; state.SecurityCoverage = new RestoredSecurityCoverage( 100, 95, 0 ); } ),
 			( 24, ( state, _ ) => { state.ParkMonths = 2; state.HiredGuards = 1; state.SecurityCoverage = new RestoredSecurityCoverage( 100, 10, 0 ); } ),
@@ -365,7 +379,7 @@ public class AdvisorRestoredAdviceTests
 		foreach ( var (message, almost) in edges )
 		{
 			var state = new State();
-			var money = new Money { Balance = 100_000 };
+			var money = new MoneyFake { Balance = 100_000 };
 			almost( state, money );
 			Assert.IsFalse( Scan( Controller(), state, money ).Contains( message ), $"message {message} needs more than its edge case" );
 		}
@@ -390,7 +404,7 @@ public class AdvisorRestoredAdviceTests
 		{
 			var controller = Controller();
 			var state = new State();
-			var money = new Money { Balance = 5000 };
+			var money = new MoneyFake { Balance = 5000 };
 			scenario( state, money );
 			Assert.IsFalse( Scan( controller, state, money ).Contains( message ), $"message {message} stays silent while the extension is off" );
 		}
@@ -416,7 +430,6 @@ public class AdvisorRestoredAdviceTests
 		driver.ObserveVehicle( ArrivalVehicleKind.Bus );
 		driver.Help( RestoredAdvice.FirstChallengeHelp, "test" );
 		driver.OnlineScreen( RestoredAdvice.PublishHelp );
-		driver.OnlineScreen( RestoredAdvice.NewsHelp );
 		driver.Attached( popUpHelp: false );
 		Assert.AreEqual( 0, Pending( events ).Count );
 	}
@@ -506,46 +519,83 @@ public class AdvisorRestoredAdviceTests
 		public int KidsWithCostumesPercent => 0;
 	}
 
+	/// <summary>A driver whose player-wide keys are the starting key and a third of the tickets won (the ledger's rule).</summary>
+	private static (RestoredAdviceDriver Driver, Action<GoldenTicketKind> Win) TicketDriver( ParkEconomy economy, AdvisorController controller, Func<int?>? keys = null )
+	{
+		keys ??= () => PlayerProgress.StartingKeys + economy.Objectives.GoldenTickets.Count / PlayerProgress.TicketsPerKey;
+		var driver = Driver( controller, keys: keys );
+		driver.ResolveTickets();
+		return (driver, kind =>
+		{
+			Win( economy, kind );
+			driver.OnParkEvent( Event( ParkEventKind.GoldenTicketWon, (long)kind ), economy );
+			driver.ResolveTickets();
+		});
+	}
+
 	[TestMethod]
 	public void GoldenTicketsSayTheirOwnLinesByTheKeyTheyEarn()
 	{
 		var economy = EconomyTestData.Park();
 		var controller = Controller();
-		var driver = Driver( controller );
-		void Won( GoldenTicketKind kind ) { Win( economy, kind ); driver.OnParkEvent( Event( ParkEventKind.GoldenTicketWon, (long)kind ), economy ); }
+		var (_, won) = TicketDriver( economy, controller );
 		// the first and second tickets earn no key: the plain line
-		Won( GoldenTicketKind.Visitors );
+		won( GoldenTicketKind.Visitors );
 		CollectionAssert.AreEqual( new[] { 99 }, Pending( controller ).ToArray() );
-		Won( GoldenTicketKind.PeopleInPark );
+		won( GoldenTicketKind.PeopleInPark );
 		Assert.AreEqual( 2, Pending( controller ).Count( message => message == 99 ), "99 allows more than one pending copy" );
 		// the third earns the second key: the criterion line of its kind, with the response that carries its caption (the ticket's index)
-		Won( GoldenTicketKind.Happiness );
+		won( GoldenTicketKind.Happiness );
 		Assert.IsTrue( Pending( controller ).Contains( 218 ) );
 		Assert.AreEqual( (int)GoldenTicketKind.Happiness, PendingOf( controller, 218 ).ResponseVariantOverride );
 		Assert.AreEqual( 9100, PendingOf( controller, 218 ).Score, "GeneralWonGoldenTicket.Score" );
 		// the global tickets say the award line too, and 223 (the response is the kind's place among the four)
-		Won( GoldenTicketKind.ProfitYear );
-		Won( GoldenTicketKind.CoasterHeight );
+		won( GoldenTicketKind.ProfitYear );
+		won( GoldenTicketKind.CoasterHeight );
 		Assert.IsTrue( Pending( controller ).Contains( 230 ), "the coaster height award" );
-		Won( GoldenTicketKind.GokartExcitement );
+		won( GoldenTicketKind.GokartExcitement );
 		Assert.IsTrue( Pending( controller ).Contains( 231 ) );
 		Assert.AreEqual( 6, economy.Objectives.GoldenTickets.Count );
 		Assert.IsTrue( Pending( controller ).Contains( 165 ), "the sixth ticket earns the third key, which opens Wonderland" );
 	}
 
 	[TestMethod]
-	public void TheKeyThatOpensSpaceZoneAndTheTwinLines()
+	public void TheKeysAreThePlayersLedgersNotTheParksTickets()
 	{
+		// a player whose ledger already holds tickets from other parks: this park's first ticket earns the key
 		var economy = EconomyTestData.Park();
-		foreach ( var kind in new[] { GoldenTicketKind.Visitors, GoldenTicketKind.PeopleInPark, GoldenTicketKind.Happiness, GoldenTicketKind.ProfitYear, GoldenTicketKind.CoasterHeight, GoldenTicketKind.GokartExcitement } )
-			Win( economy, kind );
+		var ledgerKeys = 1;
 		var controller = Controller();
-		var driver = Driver( controller );
-		Win( economy, GoldenTicketKind.WaterLength );
-		driver.OnParkEvent( Event( ParkEventKind.GoldenTicketWon, (long)GoldenTicketKind.WaterLength ), economy );
-		Assert.AreEqual( new[] { 232, 99 }.OrderBy( message => message ).ToArray().Length, Pending( controller ).Count, "the seventh ticket: the water award and the no-key line" );
-		// 218 and its twin 219 carry the same responses (the second says it once the first has been said)
-		var twins = Controller();
+		var (driver, _) = TicketDriver( economy, controller, () => ledgerKeys );
+		Win( economy, GoldenTicketKind.Visitors );
+		driver.OnParkEvent( Event( ParkEventKind.GoldenTicketWon, (long)GoldenTicketKind.Visitors ), economy );
+		ledgerKeys = 2;
+		driver.ResolveTickets();
+		CollectionAssert.AreEqual( new[] { 218 }, Pending( controller ).ToArray(), "the ledger's key count went up: the key line, though the park holds one ticket" );
+		// a ticket that moves no key says the plain line, whatever the park's own count is
+		Win( economy, GoldenTicketKind.PeopleInPark );
+		driver.OnParkEvent( Event( ParkEventKind.GoldenTicketWon, (long)GoldenTicketKind.PeopleInPark ), economy );
+		driver.ResolveTickets();
+		CollectionAssert.AreEquivalent( new[] { 218, 99 }, Pending( controller ).ToArray() );
+		// the key that opens Space Zone, from the ledger
+		ledgerKeys = 4;
+		Win( economy, GoldenTicketKind.Happiness );
+		driver.ResolveTickets();
+		driver.OnParkEvent( Event( ParkEventKind.GoldenTicketWon, (long)GoldenTicketKind.Happiness ), economy );
+		ledgerKeys = 5;
+		driver.ResolveTickets();
+		Assert.IsTrue( Pending( controller ).Contains( 164 ) );
+		// without a ledger no key is claimed
+		var bare = Controller();
+		var noLedger = Driver( bare );
+		noLedger.OnParkEvent( Event( ParkEventKind.GoldenTicketWon, (long)GoldenTicketKind.Visitors ), economy );
+		noLedger.ResolveTickets();
+		CollectionAssert.AreEqual( new[] { 99 }, Pending( bare ).ToArray() );
+	}
+
+	[TestMethod]
+	public void TheTwinLinesAndTheUnlockAndAwardMessages()
+	{
 		Assert.AreEqual( 218, RestoredAdvice.TicketMessage( GoldenTicketKind.Visitors )!.Value.Message );
 		Assert.AreEqual( 219, RestoredAdvice.TicketMessage( GoldenTicketKind.Visitors )!.Value.Twin );
 		Assert.AreEqual( AdvisorDescriptorTable.Rows[218].FirstResponseId, AdvisorDescriptorTable.Rows[219].FirstResponseId );
@@ -557,7 +607,6 @@ public class AdvisorRestoredAdviceTests
 		Assert.IsNull( RestoredAdvice.UnlockMessage( 4 ) );
 		Assert.AreEqual( 233, RestoredAdvice.AwardMessage( GoldenTicketKind.BigPark ) );
 		Assert.IsNull( RestoredAdvice.AwardMessage( GoldenTicketKind.Visitors ) );
-		Assert.IsNotNull( twins );
 	}
 
 	[TestMethod]
@@ -565,17 +614,22 @@ public class AdvisorRestoredAdviceTests
 	{
 		var economy = EconomyTestData.Park();
 		var controller = Controller();
-		var driver = Driver( controller );
-		// the third ticket earns a key (keys are not 3 or 5 yet: the starting key and one)
-		Win( economy, GoldenTicketKind.Visitors );
-		Win( economy, GoldenTicketKind.PeopleInPark );
-		Win( economy, GoldenTicketKind.Happiness );
-		driver.OnParkEvent( Event( ParkEventKind.GoldenTicketWon, (long)GoldenTicketKind.Happiness ), economy );
-		var queue = controller.Queue;
+		var (driver, won) = TicketDriver( economy, controller );
+		won( GoldenTicketKind.Visitors );
+		won( GoldenTicketKind.PeopleInPark );
+		won( GoldenTicketKind.Happiness );
 		Assert.IsTrue( Pending( controller ).Contains( 218 ) );
-		queue.Restore( new AdvisorPendingAdvice?[AdvisorScoreQueue.Capacity], new Dictionary<int, AdvisorMessageHistory> { [218] = new AdvisorMessageHistory( 50, 0, true, 0 ) } );
-		driver.OnParkEvent( Event( ParkEventKind.GoldenTicketWon, (long)GoldenTicketKind.Happiness ), economy );
+		controller.Queue.Restore( new AdvisorPendingAdvice?[AdvisorScoreQueue.Capacity], new Dictionary<int, AdvisorMessageHistory> { [218] = new AdvisorMessageHistory( 50, 0, true, 0 ) } );
+		// another key (the sixth ticket would open Wonderland, so the twin is tested with a ledger that jumps to 2 again)
+		var keys = 2;
+		var twin = Driver( controller, keys: () => keys );
+		twin.ResolveTickets();
+		keys = 3 - 1;
+		twin.OnParkEvent( Event( ParkEventKind.GoldenTicketWon, (long)GoldenTicketKind.Happiness ), economy );
+		keys = 4;
+		twin.ResolveTickets();
 		Assert.IsTrue( Pending( controller ).Contains( 219 ), "218 has been said: the twin says it again" );
+		Assert.IsNotNull( driver );
 	}
 
 	[TestMethod]
@@ -603,14 +657,24 @@ public class AdvisorRestoredAdviceTests
 		arrivalDriver.ObserveVehicle( ArrivalVehicleKind.Bus );
 		arrivalDriver.ObserveVehicle( ArrivalVehicleKind.Bus );
 		Assert.AreEqual( 0, Pending( arrivals ).Count, "the first observation is the start, and a vehicle that stays is no new group" );
+		// the simulation puts the vehicle back to none after each group: the same kind again is not a change
+		arrivalDriver.ObserveVehicle( -1 );
+		arrivalDriver.ObserveVehicle( ArrivalVehicleKind.Bus );
+		Assert.AreEqual( 0, Pending( arrivals ).Count, "another busload is no news" );
 		arrivalDriver.ObserveVehicle( -1 );
 		arrivalDriver.ObserveVehicle( ArrivalVehicleKind.Seaplane );
 		arrivalDriver.ObserveVehicle( -1 );
 		arrivalDriver.ObserveVehicle( ArrivalVehicleKind.Ferry );
+		CollectionAssert.AreEquivalent( new[] { 138, 139 }, Pending( arrivals ).ToArray(), "a vehicle of another kind is" );
+		// and each is told once per park, whatever the order of the vehicles
+		arrivals.Queue.Restore( new AdvisorPendingAdvice?[AdvisorScoreQueue.Capacity], new Dictionary<int, AdvisorMessageHistory> { [138] = new AdvisorMessageHistory( 50, 0, true, 0 ) } );
+		arrivalDriver.ObserveVehicle( -1 );
+		arrivalDriver.ObserveVehicle( ArrivalVehicleKind.Seaplane );
 		arrivalDriver.ObserveVehicle( -1 );
 		arrivalDriver.ObserveVehicle( ArrivalVehicleKind.Bus );
-		CollectionAssert.AreEquivalent( new[] { 138, 139, 137 }, Pending( arrivals ).ToArray() );
-		Assert.AreEqual( 72, PendingOf( arrivals, 138 ).Score );
+		arrivalDriver.ObserveVehicle( -1 );
+		arrivalDriver.ObserveVehicle( ArrivalVehicleKind.Seaplane );
+		CollectionAssert.AreEquivalent( new[] { 137 }, Pending( arrivals ).ToArray(), "138 has been said in this park" );
 	}
 
 	[TestMethod]
@@ -655,14 +719,12 @@ public class AdvisorRestoredAdviceTests
 			Driver( refused, tutorial: false ).Help( entry.MessageId, "test" );
 			Assert.AreEqual( 0, Pending( refused ).Count, $"help {entry.MessageId} is tutorial" );
 		}
-		// the online screens go through the online path, the news as advice
+		// the online screens' help
 		var online = Controller();
 		var driver = Driver( online );
-		driver.OnlineScreen( RestoredAdvice.NewsHelp );
 		driver.OnlineScreen( RestoredAdvice.WorldHelp );
 		driver.OnlineScreen( 100 );
-		CollectionAssert.AreEquivalent( new[] { 143, 334 }, Pending( online ).ToArray() );
-		Assert.AreEqual( 74, PendingOf( online, 143 ).Score, "OnlineMessage.Score" );
+		CollectionAssert.AreEqual( new[] { 334 }, Pending( online ).ToArray() );
 		// a help message that is not restored is not the extension's to post
 		var other = Controller();
 		Driver( other ).Help( 188, "the buy window" );
@@ -693,8 +755,20 @@ public class AdvisorRestoredAdviceTests
 		var played = new List<int>();
 		repeat.Update( () => 1000u, () => 100u, response => { played.Add( response ); return 1000u; } );
 		Assert.AreEqual( 1, played.Count );
-		Assert.AreEqual( AdvisorEligibility.RepeatDelay, repeat.AdviseRestored( 160, 105, 0, true )!.Value.Eligibility, "30 groups of 4 turns have not passed" );
-		Assert.AreEqual( AdvisorEligibility.Eligible, repeat.AdviseRestored( 160, 224, 0, true )!.Value.Eligibility );
+		Assert.IsNull( repeat.AdviseRestored( 160, 105, 0, true ), "the extension's own rule: the congratulation is said once per park" );
+		Assert.IsNull( repeat.AdviseRestored( 160, 100_000, 0, true ), "however long after" );
+		// the original group rule still holds for a message with the extension's default (message 58: group 0, 120 groups of four turns, long repeat on top)
+		var group = Controller();
+		Assert.IsTrue( group.AdviseRestored( 99, 100, 0, true )!.Value.Stored );
+		group.Update( () => 1000u, () => 100u, response => 1000u );
+		Assert.AreEqual( AdvisorEligibility.RepeatDelay, group.AdviseRestored( 99, 105, 0, true )!.Value.Eligibility, "the descriptor's group interval applies to an event line" );
+		// a long repeat (message 173) lets the line come back after its interval, and not before
+		var longRepeat = Controller();
+		Assert.IsTrue( longRepeat.AdviseRestored( 173, 100, 0, true )!.Value.Stored );
+		longRepeat.Update( () => 1000u, () => 100u, response => 1000u );
+		Assert.IsNull( longRepeat.AdviseRestored( 173, 100 + 4 * 400, 0, true ), "past the group's interval (120 groups) but inside the extension's" );
+		Assert.IsNull( longRepeat.AdviseRestored( 173, 100 + 4 * (RestoredAdvice.LongRepeatGroups - 1), 0, true ) );
+		Assert.IsTrue( longRepeat.AdviseRestored( 173, 100 + 4 * (RestoredAdvice.LongRepeatGroups + 1), 0, true )!.Value.Stored );
 		// the tutorial group says its message once
 		var tutorial = Controller();
 		Driver( tutorial ).Help( 196, "test" );
@@ -771,22 +845,59 @@ public class AdvisorRestoredAdviceTests
 	}
 
 	[TestMethod]
+	public void PairedLinesNeverPlayBackToBack()
+	{
+		// both queue lines hold (59's condition includes 58's): only the stronger is posted
+		var state = new State();
+		ScanScenarios[59]( state, new MoneyFake() );
+		var posted = Scan( Controller(), state );
+		Assert.IsTrue( posted.Contains( 59 ) && !posted.Contains( 58 ) );
+		// both balance lines hold (under the wage bill with a loan): 348 only
+		var money = new MoneyFake { Balance = 50, LoanAvailable = true };
+		var poor = new State { MonthlyWages = 100 };
+		posted = Scan( Controller(), poor, money );
+		Assert.IsTrue( posted.Contains( 348 ) && !posted.Contains( 347 ) );
+		money.LoanAvailable = false;
+		posted = Scan( Controller(), poor, money );
+		Assert.IsTrue( posted.Contains( 347 ) && !posted.Contains( 348 ) );
+	}
+
+	[TestMethod]
+	public void TheToolHintsEndWithTheirMode()
+	{
+		var advisor = Attached( out _ );
+		advisor.PostHelp( RestoredAdvice.RotateBlueprintHelp );
+		advisor.PostHelp( RestoredAdvice.TrackRideHelp );
+		advisor.PostHelp( RestoredAdvice.CamcorderHelp );
+		CollectionAssert.AreEquivalent( new[] { 202, 204, 306 }, Pending( advisor.Controller ).ToArray() );
+		advisor.OnModeChanged();
+		CollectionAssert.AreEqual( new[] { 306 }, Pending( advisor.Controller ).ToArray(), "the blueprint and roller coaster hints go with their tool; the camcorder's stays" );
+	}
+
+	[TestMethod]
 	public void TheSecurityLinesFireThroughTheRealStateOfAPark()
 	{
-		var park = ParkWithPaths( out _ );
-		var controller = Controller();
-		// months run, one guard walks the park with no patrol area: 25 needs none at all, 24 needs some
+		var park = EconomyTestData.Park();
+		var cells = new ParkCellMap( 40, 2 );
+		for ( var x = 0; x < 40; x++ )
+			cells.SetType( x, 1, ParkCellType.Path );
+		park.Litter.Cells = cells;
 		EconomyTestData.AdvanceToTurn( park, ParkCalendar.Turn( ParkCalendar.TickAtMonth( 7 ) ) );
 		var state = new ParkRestoredAdviceState( park, null );
 		Assert.IsTrue( state.ParkMonths >= 6 );
-		Assert.IsTrue( Scan( controller, state ).Contains( 25 ), "no guard and no camera" );
-		var guard = EconomyTestData.HireBest( park, StaffType.Guard );
-		guard.SetPatrolArea( (0, 0), (2, 2) );
-		var second = Controller();
-		Assert.IsTrue( Scan( second, new ParkRestoredAdviceState( park, null ) ).Contains( 24 ), "a guard with a patrol area over three of ten path cells" );
-		Assert.IsFalse( Scan( Controller(), new ParkRestoredAdviceState( park, null ) ).Contains( 25 ) );
-		guard.SetPatrolArea( (0, 0), (9, 3) );
-		Assert.IsFalse( Scan( Controller(), new ParkRestoredAdviceState( park, null ) ).Contains( 24 ), "everything patrolled" );
+		Assert.IsTrue( Scan( Controller(), state ).Contains( 25 ), "no guard and no camera in a park of 40 path cells" );
+		// two guards, one with a patrol area over a quarter of the path: the siblings' gates hold (2 guards, one patrol area set), 25 no longer
+		var first = EconomyTestData.HireBest( park, StaffType.Guard );
+		var second = EconomyTestData.HireBest( park, StaffType.Guard );
+		Assert.IsFalse( Scan( Controller(), state ).Contains( 24 ), "no patrol area is set: the cover row's own gate" );
+		first.SetPatrolArea( (0, 0), (9, 1) );
+		var posted = Scan( Controller(), state );
+		Assert.IsTrue( posted.Contains( 24 ) && !posted.Contains( 25 ), "a guard with a patrol area over ten of forty path cells" );
+		var oneGuard = new State { ParkMonths = 12, HiredGuards = 1, GuardsWithPatrol = 1, SecurityCoverage = new RestoredSecurityCoverage( 100, 10, 0 ) };
+		Assert.IsFalse( Scan( Controller(), oneGuard ).Contains( 24 ), "AtLeastThisMany guards" );
+		first.SetPatrolArea( (0, 0), (39, 1) );
+		Assert.IsFalse( Scan( Controller(), state ).Contains( 24 ), "everything patrolled" );
+		Assert.IsNotNull( second );
 	}
 
 	[TestMethod]
@@ -806,9 +917,11 @@ public class AdvisorRestoredAdviceTests
 		Assert.IsFalse( ParkRestoredAdviceState.ExitBlocked( ride, points, grid ) );
 		// the player takes the path in front of the exit away
 		grid.SetPath( exit.OutsideX, exit.OutsideY, false );
-		Assert.IsTrue( ParkRestoredAdviceState.ExitBlocked( ride, points, grid ), "riders could not get off" );
-		// only a ride with a queue, with registered cells, and a grid
-		Assert.IsFalse( ParkRestoredAdviceState.ExitBlocked( new RideVisitorBridge( 8, "No queue", RideVisitorKind.Ride, 5, 55, 30 ) { HasCells = true }, points, grid ), "the placement lays no exit path for a ride without a queue" );
+		Assert.IsFalse( ParkRestoredAdviceState.ExitBlocked( ride, points, grid ), "guests still resolve the exit to the queue and path cells near it (Level.WalkableNear): no false alarm" );
+		// nothing walkable anywhere near: the guests' exit cell does not resolve
+		var bare = new GuestPathGrid( 24, 24 );
+		Assert.IsTrue( ParkRestoredAdviceState.ExitBlocked( ride, points, bare ), "riders could not get off" );
+		// only a ride with registered cells, and a grid
 		Assert.IsFalse( ParkRestoredAdviceState.ExitBlocked( new RideVisitorBridge( 9, "No cells", RideVisitorKind.Ride, 5, 55, 30 ) { Parameters = ride.Parameters }, points, grid ) );
 		Assert.IsFalse( ParkRestoredAdviceState.ExitBlocked( ride, points, null ) );
 		Assert.IsFalse( ParkRestoredAdviceState.ExitBlocked( ride, points.Where( point => point.Kind != ObjectCellKind.Exit ), grid ), "a ride without an exit point" );
@@ -1066,8 +1179,7 @@ public class AdvisorRestoredAdviceTests
 		advisor.OnWindowOpened( "rideUpgrade" );
 		advisor.PostHelp( RestoredAdvice.CamcorderHelp );
 		advisor.OnOnlineScreenOpened( RestoredAdvice.PublishHelp );
-		advisor.OnOnlineScreenOpened( RestoredAdvice.NewsHelp );
-		CollectionAssert.AreEquivalent( new[] { 211, 306, 328, 143 }, Pending( advisor.Controller ).ToArray() );
+		CollectionAssert.AreEquivalent( new[] { 211, 306, 328 }, Pending( advisor.Controller ).ToArray() );
 		// an original window's help is the original's, on or off
 		advisor.OnWindowOpened( "buy" );
 		Assert.IsTrue( Pending( advisor.Controller ).Contains( 188 ) );

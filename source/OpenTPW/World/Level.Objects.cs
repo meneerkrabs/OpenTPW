@@ -928,7 +928,7 @@ public partial class Level
 	// [BIN:TPW-EXE:0x0052FAB0 queue option] the option 0x81B0CC is set by the build tool from the type's +0x40 (0x52FA90 at 0x527986 and 0x46D644) and is 1 after SetMode (0x52F139); 0x8187F8 is the upgrade selection (0x52F880), which no OpenTPW build uses
 	// [BIN:TPW-EXE:0x00534115 bridge ops] the refresh ops after the laid cell run 0x81 (the tile refresh 0x5365D0, RefreshTile) and 0x85 and 0x86, which act on a track cell of the second layer (0x53AD30 first) and so do nothing for a cell that holds none
 	// A cell nothing laid (an imported or restored park, Theme Park Inc) keeps the nearest walkable cell as the guests' entrance, which their route graph needs to be a path cell (QUEUE-003, WALK-005).
-	private static (int X, int Y)? WalkableNear( GuestPathGrid grid, int x, int y ) =>
+	internal static (int X, int Y)? WalkableNear( GuestPathGrid grid, int x, int y ) =>
 		grid.IsWalkable( x, y ) || grid.IsQueue( x, y ) ? (x, y) : FindRideEntrance( grid, x, y, x, y );
 
 	public void RotateBuild() => BuildRotation = (BuildRotation + 90) % 360;

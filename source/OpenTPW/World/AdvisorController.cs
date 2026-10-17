@@ -390,7 +390,7 @@ internal sealed class AdvisorController
 	{
 		var context = new AdvisorScanContext( Balance, money ) { Restored = restored };
 		var result = Scan.Step( context, gameType, ( messageId, score ) =>
-			Queue.HasDescriptor( messageId ) && Queue.Eligibility( new AdvisorPendingAdvice( messageId, score ), liveGameTick, tutorialEnabled ) == AdvisorEligibility.Eligible );
+			Queue.HasDescriptor( messageId ) && RestoredAdvice.RepeatAllows( Queue, messageId, liveGameTick ) && Queue.Eligibility( new AdvisorPendingAdvice( messageId, score ), liveGameTick, tutorialEnabled ) == AdvisorEligibility.Eligible );
 		// the original has no test for "no message" here: with a minimum below -1 the -1 of the empty result would be queued; the empty result is not posted (the shipped minimum is 25)
 		if ( result.MessageId == AdvisorScan.NoMessage || result.Score <= Queue.MinimumScore )
 			return new AdvisorScanOutcome( result.ScoredRow, null, null );
@@ -400,13 +400,13 @@ internal sealed class AdvisorController
 
 	/// <summary>
 	/// [EXT:restored-advice] Posts a restored message the way game code posts advice (<c>0x59B590</c> and <c>0x59A940</c>): with the score of <see cref="RestoredAdvice.ScoreOf"/> (null leaves it silent), subject to the queue's admission
-	/// rules (tutorial option, once-only, slaps, duplicates, repeat interval) and the descriptor's game-mode selector. Null for a message the extension does not restore, one without a descriptor or a score, or one the game mode excludes.
+	/// rules (tutorial option, once-only, slaps, duplicates, repeat interval) and the descriptor's game-mode selector. Null for a message the extension does not restore, one without a descriptor or a score, one the game mode excludes or one its own repeat rule holds back (<see cref="RestoredAdviceEntry.RepeatGroups"/>).
 	/// </summary>
 	/// <param name="variant">The response to say (the caption of the matching ticket, say); -1 takes the descriptor's next response.</param>
 	public AdvisorQueueAdmission? AdviseRestored( int messageId, uint liveGameTick, int gameType, bool tutorialEnabled, int variant = -1 )
 	{
 		if ( RestoredAdvice.ScoreOf( Balance, messageId ) is not { } score || !Queue.HasDescriptor( messageId ) || messageId >= AdvisorDescriptorTable.Rows.Count
-			|| !AdvisorTables.GameModeAccepts( AdvisorDescriptorTable.Rows[messageId].GameMode, gameType ) )
+			|| !AdvisorTables.GameModeAccepts( AdvisorDescriptorTable.Rows[messageId].GameMode, gameType ) || !RestoredAdvice.RepeatAllows( Queue, messageId, liveGameTick ) )
 			return null;
 		return Queue.Enqueue( new AdvisorPendingAdvice( messageId, score, variant ), liveGameTick, tutorialEnabled );
 	}

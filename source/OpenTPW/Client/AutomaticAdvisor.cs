@@ -315,7 +315,7 @@ internal sealed partial class AutomaticAdvisor : IDisposable
 	// [BIN:TPW-EXE:0x0052F200 interface mode change] a changed mode withdraws the ten tool and mode help messages (AdvisorUiHelp.ModeHelpMessages)
 	public void OnModeChanged()
 	{
-		if ( level != null && Controller.WithdrawModeHelp( AdvisorClock ) )
+		if ( level != null && (Controller.WithdrawModeHelp( AdvisorClock ) | WithdrawRestoredModeHelp()) )
 			CutOffSpeech();
 	}
 

@@ -313,7 +313,7 @@ Their names and descriptions exist in the nine interface languages for the scree
 
 ## Restored advice (`opentpw.restored-advice`)
 
-An official extension that gives the advisor the lines the original game recorded but never says: tp.exe v2.0 scores 21 of its scanned messages with a constant-zero stub and nothing posts 84 more. The extension restores **56** of those 105 messages, by trigger: security cover gaps, long queues, blocked ride exits, riders stuck in a
+An official extension that gives the advisor the lines the original game recorded but never says: tp.exe v2.0 scores 21 of its scanned messages with a constant-zero stub and nothing posts 84 more. The extension restores **55** of those 105 messages, by trigger: security cover gaps, long queues, blocked ride exits, riders stuck in a
 broken or condemned ride, low balances, land running out, buses, seaplanes and Ferries arriving, golden ticket and award news by the key a ticket earns, double-or-nothing challenges, upgrades without a mechanic, a few tutorial hints and the lines of the online screens. The messages, triggers, scores and the messages skipped on purpose are in
 [reverse/ADVISOR-SCAN.md](reverse/ADVISOR-SCAN.md) "Restored advice"; the mechanism (one scan hook, one poll, a driver for events) is in [LIPS.md](LIPS.md) "Restored advice".
 
@@ -321,6 +321,7 @@ broken or condemned ride, low balances, land running out, buses, seaplanes and F
 - **It never changes the simulation** (`AffectsSimulation` false), which is what lets it be on by default: it only reads park state and posts advice through the advisor's queue, the advisor is outside the world state hash, and it keeps no state a save would carry. A park save
   records no mod for it, so a save made with it loads with it off and the other way round (the advisor's saved state has the same shape either way; a pending or said restored message loads wherever all 351 descriptors exist, which is every build). The pins of `DeterminismTests` do not move.
   `AdvisorRestoredAdviceTests` checks the hash, the mod records and the save in both directions. `[EXT:restored-advice]`.
+- **A save made with it on may carry restored advice**: up to eight pending restored records, and the history of the restored messages said, are in the advisor's own saved state. They load with the extension off, where a pending record still plays once (harmless: it is an ordinary descriptor's advice), and nothing else of the extension is saved. Its once-per-park and long-repeat rules read that same history.
 - **Off means silent**: with `opentpw.restored-advice` disabled in `mods.json` or by `--disable-extension opentpw.restored-advice` the scan rows score 0 as in tp.exe and no restored event, poll or help is posted. Every trigger is labelled `[EXT:restored-advice-<topic>]` where it is coded.
 
 ## The online extension (`opentpw.online`)

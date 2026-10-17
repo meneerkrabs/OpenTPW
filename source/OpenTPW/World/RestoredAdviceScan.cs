@@ -32,8 +32,9 @@ internal static class RestoredAdviceScan
 		[24] = context => SecurityScore( context, none: false ),
 		[25] = context => SecurityScore( context, none: true ),
 		// [EXT:restored-advice-queues] 58 and 59 (the bored-in-queues lines, whose captions TAG_SYSTEM 63 and 64 exist): the original's connected-queue test is not their input; the long queue is the extension's own measure
-		[58] = When( 58, ( state, _ ) => state.Rides.Any( ride => ride.Open && ride.QueueLength >= RestoredAdvice.LongQueueGuests ) ),
-		[59] = When( 59, ( state, _ ) => LongQueues( state ) ),
+		// the stronger line of the pair only (59 when it holds, else 58), so the two never play back to back
+		[58] = When( 58, ( state, _ ) => QueueLines( state.Rides ) == 58 ),
+		[59] = When( 59, ( state, _ ) => QueueLines( state.Rides ) == 59 ),
 		// [EXT:restored-advice-upgrades] 65: RidesNoUpgrades (months, score) is the callback the row would have had; its trigger is a researched upgrade that was never bought
 		[65] = When( 65, ( state, settings ) => state.UpgradesPossible && settings.Int( "RidesNoUpgrades.MonthsIntoGameForConsideration" ) is { } months && state.ParkMonths >= months
 			&& state.UpgradesAvailable > 0 && state.UpgradesBought == 0 ),
@@ -49,8 +50,8 @@ internal static class RestoredAdviceScan
 		// [EXT:restored-advice-exits] 265: RideExitBlocked.Score is the key of the row's would-be callback (its shipped comment is about people stranded)
 		[265] = When( 265, ( state, _ ) => state.Rides.Any( ride => ride.ExitBlocked ) ),
 		// [EXT:restored-advice-money] 347 and 348: the balance is still in the black (the in-the-red rows 102 to 105 and 106 cover the rest) but cannot carry the next wage bill
-		[347] = context => LowBalance( context, 347, withLoan: false ),
-		[348] = context => LowBalance( context, 348, withLoan: true ),
+		[347] = context => LowBalance( context, 347 ),
+		[348] = context => LowBalance( context, 348 ),
 		// [EXT:restored-advice-stranded] 349 and 350: riders aboard a broken-down or a condemned ride (the new riders-stuck tracking)
 		[349] = When( 349, ( state, _ ) => state.Rides.Any( ride => ride.BrokenDown && !ride.Condemned && ride.RidersAboard > 0 ) ),
 		[350] = When( 350, ( state, _ ) => state.Rides.Any( ride => ride.Condemned && ride.RidersAboard > 0 ) ),
@@ -69,11 +70,22 @@ internal static class RestoredAdviceScan
 		[318] = When( 318, ( state, settings ) => NearProfitTicket( state, settings ) is { } near && near.Profit >= near.NearProfit ),
 	};
 
-	private static bool LongQueues( IRestoredAdviceState state )
+	/// <summary>The queue line that applies: 59 when enough open rides have long queues (or half of them, at least two), else 58 for one long queue, else 0.</summary>
+	private static int QueueLines( IReadOnlyList<RestoredRide> rides )
 	{
-		var open = state.Rides.Count( ride => ride.Open );
-		var need = Math.Max( 2, Math.Min( RestoredAdvice.WorseQueueRides, (open + 1) / 2 ) );
-		return state.Rides.Count( ride => ride.Open && ride.QueueLength >= RestoredAdvice.LongQueueGuests ) >= need;
+		var open = 0;
+		var longQueues = 0;
+		foreach ( var ride in rides )
+		{
+			if ( !ride.Open )
+				continue;
+			open++;
+			if ( ride.QueueLength >= RestoredAdvice.LongQueueGuests )
+				longQueues++;
+		}
+		if ( longQueues >= Math.Max( 2, Math.Min( RestoredAdvice.WorseQueueRides, (open + 1) / 2 ) ) )
+			return 59;
+		return longQueues > 0 ? 58 : 0;
 	}
 
 	private static bool Approaching( IRestoredAdviceState state, GoldenTicketKind ticket, ParkRecordKind record )
@@ -92,27 +104,40 @@ internal static class RestoredAdviceScan
 		return (state.ProfitThisYear, threshold, nearProfit);
 	}
 
-	private static int LowBalance( AdvisorScanContext context, int message, bool withLoan )
+	/// <summary>The low-balance line that applies: 348 (under the wage bill, a loan available) before 347 (under twice it), so the two never play back to back.</summary>
+	private static int LowBalance( AdvisorScanContext context, int message )
 	{
 		if ( context.Restored is not { } state || context.Money is not { } money || state.MonthlyWages <= 0 || money.Balance < 0 )
 			return 0;
-		var holds = withLoan ? money.Balance < state.MonthlyWages && money.LoanAvailable : money.Balance < 2 * state.MonthlyWages;
-		return holds ? Score( context, message ) : 0;
+		var loan = money.Balance < state.MonthlyWages && money.LoanAvailable;
+		var line = loan ? 348 : money.Balance < 2 * state.MonthlyWages ? 347 : 0;
+		return line == message ? Score( context, message ) : 0;
 	}
 
 	private static int SecurityScore( AdvisorScanContext context, bool none )
 	{
 		var settings = context.Balance.Restored;
 		if ( context.Restored is not { } state || settings.Int( "StaffSetGuardArea.MonthsIntoGameForConsideration" ) is not { } months || state.ParkMonths < months
-			|| settings.Int( "StaffGuardCoverage.ScorePerNonCoveredPercent" ) is not { } perPercent || settings.Int( "StaffGuardCoverage.Score" ) is not { } floor )
+			|| settings.Int( "StaffGuardCoverage.ScorePerNonCoveredPercent" ) is not { } perPercent || settings.Int( "StaffGuardCoverage.Score" ) is not { } floor
+			|| settings.Int( "StaffSetGuardArea.AtLeastThisMany" ) is not { } guards )
 			return 0;
 		var coverage = state.SecurityCoverage;
 		if ( coverage.PathCells == 0 )
 			return 0;
-		var secured = state.HiredGuards + coverage.Cameras;
-		if ( none != (secured == 0) )
+		if ( none )
+		{
+			// nothing at all, in a park with some path to cover
+			if ( state.HiredGuards + coverage.Cameras != 0 || coverage.PathCells < MinimumPathCells )
+				return 0;
+			return Math.Min( RestoredAdvice.SecurityScoreCap, Math.Max( floor, 100 * perPercent ) );
+		}
+		// the siblings' gates (the coverage rows 19, 21, 27): enough staff of the role and some patrol area set
+		if ( state.HiredGuards < guards || state.GuardsWithPatrol < 1 )
 			return 0;
-		var uncovered = none ? 100 : coverage.UncoveredPercent;
-		return uncovered <= 0 ? 0 : Math.Max( floor, uncovered * perPercent );
+		var uncovered = coverage.UncoveredPercent;
+		return uncovered <= 0 ? 0 : Math.Min( RestoredAdvice.SecurityScoreCap, Math.Max( floor, uncovered * perPercent ) );
 	}
+
+	/// <summary>[EXT:restored-advice-security] a park needs this many path cells before 25 says it has no security.</summary>
+	private const int MinimumPathCells = 30;
 }

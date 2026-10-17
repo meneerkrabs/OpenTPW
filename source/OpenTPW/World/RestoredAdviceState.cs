@@ -33,6 +33,8 @@ internal interface IRestoredAdviceState
 	/// <summary>Whole 30-day months of the park's clock (<see cref="EconomyMoneyState.ParkMonths"/>).</summary>
 	int ParkMonths { get; }
 	int HiredGuards { get; }
+	/// <summary>Guards who have a patrol area set.</summary>
+	int GuardsWithPatrol { get; }
 	int HiredMechanics { get; }
 	/// <summary>The mechanics' strike is on (<see cref="ParkEconomy.RoleOnStrike"/>).</summary>
 	bool MechanicsOnStrike { get; }

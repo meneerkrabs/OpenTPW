@@ -403,7 +403,10 @@ internal sealed partial class GameFlow : IDisposable
 			advisorUnavailable = Advisor == null;
 			Advisor?.AttachLevel( level );
 			if ( Advisor != null )
+			{
 				Advisor.CaptionSink = Hud.PostAdvisorCaption;
+				Advisor.PlayerKeys = PlayerKeys;
+			}
 		}
 		if ( Advisor?.IsAttached != true && level.Park?.Import is { } import && level.OriginalPark?.Save?.Advisor is { } saved )
 		{

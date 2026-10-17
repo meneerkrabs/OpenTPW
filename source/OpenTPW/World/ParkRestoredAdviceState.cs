@@ -6,8 +6,8 @@ namespace OpenTPW;
 /// </summary>
 /// <remarks>
 /// The three new trackings are here. <b>Security cover</b> (<see cref="SecurityCoverage"/>) joins the environment grid's security word (cameras and guards where they stand, <see cref="ParkEnvironment"/>, the
-/// camera ticket's test <see cref="ParkEconomy.SecurityCoveragePercent"/>) with the patrol areas of the guards who have one, over the path and queue cells. <b>Blocked exits</b> (<see cref="ExitBlocked"/>) is a ride with a
-/// queue whose exit's outside cell, laid as a path by the placement (<see cref="ObjectAccessCells.Lay"/>), is no path now. <b>Riders stuck</b> is the ride's state (<see cref="ParkEconomy.ObjectState"/>) with the guests aboard
+/// camera ticket's test <see cref="ParkEconomy.SecurityCoveragePercent"/>) with the patrol areas of the guards who have one, over the path and queue cells. <b>Blocked exits</b> (<see cref="ExitBlocked"/>) is a ride whose exit does not resolve to a path for the guests (the level's own
+/// rule, <see cref="Level.WalkableNear"/>). <b>Riders stuck</b> is the ride's state (<see cref="ParkEconomy.ObjectState"/>) with the guests aboard
 /// (<see cref="RideVisitorBridge.RidersOnBoard"/>, <see cref="RideVisitorBridge.Riders"/>).
 /// </remarks>
 // [EXT:restored-advice-security] [EXT:restored-advice-exits] [EXT:restored-advice-stranded] OpenTPW's own tracking; tp.exe computes none of it (its callbacks are stubs, 0x005D60C0)
@@ -25,6 +25,7 @@ internal sealed class ParkRestoredAdviceState : IRestoredAdviceState
 	// [BIN:TPW-EXE:0x004F8800 park time] the clock divided by 30 days, as EconomyMoneyState reads it
 	public int ParkMonths => (int)Math.Min( int.MaxValue, ParkCalendar.Seconds( economy.Tick ) / ParkEconomy.SecondsPerMonthInRed );
 	public int HiredGuards => economy.Staff.OfType( StaffType.Guard ).Count();
+	public int GuardsWithPatrol => economy.Staff.OfType( StaffType.Guard ).Count( guard => guard.HasPatrolArea );
 	public int HiredMechanics => economy.Staff.OfType( StaffType.Mechanic ).Count();
 	public bool MechanicsOnStrike => economy.RoleOnStrike( StaffType.Mechanic );
 	public bool UpgradesPossible => economy.Features.Upgrades;
@@ -91,18 +92,18 @@ internal sealed class ParkRestoredAdviceState : IRestoredAdviceState
 	}
 
 	/// <summary>
-	/// Whether a ride's exit has no path: the ride has a queue (the placement lays the exit's outside cell as a path only then, <see cref="ObjectAccessCells.Lay"/>), registered cells
-	/// with the guests, and its last exit's outside cell is not a path cell now.
+	/// Whether a ride's exit has no path, tested as guests use it (<see cref="Level.ResolveVisitorCells"/>): the ride has registered cells and its first exit (its entrance when it has none) has no walkable or queue cell
+	/// on its outside cell and no path near enough for the level's fallback (<see cref="Level.WalkableNear"/>), so the guests' exit cell does not resolve.
 	/// </summary>
 	internal static bool ExitBlocked( RideVisitorBridge bridge, IEnumerable<ObjectAccessPoint> points, GuestPathGrid? grid )
 	{
-		if ( grid == null || !bridge.HasCells || !bridge.HasQueue )
+		if ( grid == null || !bridge.HasCells )
 			return false;
-		ObjectAccessPoint? exit = null;
-		foreach ( var point in points )
-			if ( point.Kind == ObjectCellKind.Exit )
-				exit = point;
-		return exit is { } leave && !grid.IsWalkable( leave.OutsideX, leave.OutsideY );
+		var all = points.ToArray();
+		var exit = all.FirstOrDefault( point => point.Kind == ObjectCellKind.Exit );
+		if ( exit == default )
+			exit = all.FirstOrDefault( point => point.Kind == ObjectCellKind.Entrance );
+		return exit != default && Level.WalkableNear( grid, exit.OutsideX, exit.OutsideY ) == null;
 	}
 
 	/// <inheritdoc />

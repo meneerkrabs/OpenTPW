@@ -16,7 +16,7 @@ public sealed class OnlineHost
 	public Action<ParkVisitInfo>? Visit { get; init; }
 	/// <summary>The online globe behind the Online World screen; null where it is not shown (in a park).</summary>
 	public Func<GlobeScene?> Globe { get; init; } = () => null;
-	/// <summary>[EXT:restored-advice-online] Tells the advisor that a screen opened (the message of <see cref="RestoredAdvice"/>: 328 publish, 329 park details, 331 other parks, 332 find parks, 333 outbox, 334 world, 143 news); null where there is no advisor.</summary>
+	/// <summary>[EXT:restored-advice-online] Tells the advisor that a screen opened (the message of <see cref="RestoredAdvice"/>: 328 publish, 329 park details, 331 other parks, 332 find parks, 333 outbox, 334 world); null where there is no advisor.</summary>
 	public Action<int>? Advise { get; init; }
 }
 
@@ -294,7 +294,6 @@ public sealed class OnlineScreens
 	/// </summary>
 	public void ShowNews()
 	{
-		host.Advise?.Invoke( RestoredAdvice.NewsHelp );
 		var screen = new UiScreen( "onlineNews" );
 		var window = new UiRect( 186, 30, 1832, 977 );
 		screen.Add( new UiModelImage { Id = "window", Model = "w_big", Bounds = window, Anchor = UiAnchor.Center } );

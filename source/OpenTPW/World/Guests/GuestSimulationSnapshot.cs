@@ -89,6 +89,12 @@ public sealed record GuestSnapshot
 	public int RideWalkCount { get; init; }
 	/// <summary>The park turns left of the booth's wait (<see cref="Guest.BoothWait"/>). Absent in older saves, which hold none.</summary>
 	public int BoothWait { get; init; }
+	/// <summary>Whether the guest has paid its admission (<see cref="Guest.Paid"/>). Absent before schema 9: a guest at the booth had not.</summary>
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault )]
+	public bool Paid { get; init; }
+	/// <summary>The visitor number (<see cref="Guest.VisitorNumber"/>, 0 for none). Absent before schema 9: 0.</summary>
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault )]
+	public int VisitorNumber { get; init; }
 	/// <summary>The stranded mark (<see cref="Guest.StrandedMark"/>). Absent in older saves, which hold none.</summary>
 	public int StrandedMark { get; init; }
 	public required long InterludeTurn { get; init; }
@@ -138,7 +144,7 @@ public sealed record GuestSnapshot
 	public required float OffsetX { get; init; }
 	public required float OffsetY { get; init; }
 	public required bool HasWaypoint { get; init; }
-	/// <summary>The arrival lane's cells (one of the settings' lanes, copied); null while the guest is on the grid.</summary>
+	/// <summary>The arrival lane's cells (one of the settings' lanes, copied) of a guest saved before schema 9 that walked it; null for every guest on the cell map (all of schema 9).</summary>
 	public required (int X, int Y)[]? Lane { get; init; }
 	public required int LaneIndex { get; init; }
 	public required bool LaneReversed { get; init; }
@@ -332,12 +338,15 @@ public sealed record GuestSimulationSnapshot
 	/// empty and the former seconds-based <see cref="GuestSnapshot.ExitLevel"/> is truncated toward zero. Versions 1 and 2
 	/// (before the state-6 decision, WANDER-plan) restore with no activity, and their decision timer is dropped. Versions 1 to 3 (before
 	/// per-cell litter) restore with empty litter meters, versions 1 to 4 (before pranks) without pranksters, versions 1 to 5 (before balloons and costumes)
-	/// without either, versions 1 to 6 (before thought bubbles) without a bubble, versions 1 to 7 (before the thing pool) with guest ids that are a simulation's own counter.</summary>
-	public const int CurrentSchemaVersion = 8;
+	/// without either, versions 1 to 6 (before thought bubbles) without a bubble, versions 1 to 7 (before the thing pool) with guest ids that are a simulation's own counter,
+	/// versions 1 to 8 (before the arrival walk on the cell map) with guests that walk an arrival lane off the grid, which the restore turns into guests on the map.</summary>
+	public const int CurrentSchemaVersion = 9;
 	/// <summary>The first schema whose guest ids are slots of the park's thing pool (tp.exe 0x00516270): earlier saves count their guests, and keep those ids.</summary>
 	public const int ThingPoolSchemaVersion = 8;
-	/// <summary>The versions <see cref="ParkResumeSaveFile"/> accepts: 8 as written now, 7 before the thing pool, 6 before thought bubbles, 5 before balloons and costumes, 4 before pranks, 3 before the litter meter, 2 before the state-6 decision, 1 before F24–F26.</summary>
-	public static int[] AcceptedSchemaVersions { get; } = { 1, 2, 3, 4, 5, 6, 7, 8 };
+	/// <summary>The first schema whose guests all walk the cell map, the arrival walk's states 0 to 5 included (tp.exe 0x004FF520 and the states around it): earlier saves may hold guests on an arrival lane.</summary>
+	public const int ArrivalWalkSchemaVersion = 9;
+	/// <summary>The versions <see cref="ParkResumeSaveFile"/> accepts: 9 as written now, 8 before the arrival walk on the cell map, 7 before the thing pool, 6 before thought bubbles, 5 before balloons and costumes, 4 before pranks, 3 before the litter meter, 2 before the state-6 decision, 1 before F24–F26.</summary>
+	public static int[] AcceptedSchemaVersions { get; } = { 1, 2, 3, 4, 5, 6, 7, 8, 9 };
 
 	public required int SchemaVersion { get; init; }
 	/// <summary>The seed the simulation was constructed with; informational (the restored <see cref="RandomState"/> supersedes it).</summary>
@@ -362,6 +371,9 @@ public sealed record GuestSimulationSnapshot
 	public ThingPoolSnapshot? Things { get; init; }
 	public required long Admissions { get; init; }
 	public required int Departed { get; init; }
+	/// <summary>The park's visitor count (<see cref="GuestSimulation.VisitorCount"/>). Absent before schema 9: 0.</summary>
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault )]
+	public int VisitorCount { get; init; }
 
 	// Arrival stream.
 	public required long ArrivalTimerStart { get; init; }

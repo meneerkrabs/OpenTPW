@@ -84,7 +84,7 @@ public sealed class OriginalEconomyImport
 		ReportNotImported( save, evidence );
 		// [BIN:STP-PPC:0x10106708 world reader] mParkClosed is restored with the world variables (0 = open)
 		var closed = world.Variables.ParkClosed != 0;
-		evidence.Add( $"Park {(closed ? "closed" : "open")} (mParkClosed {world.Variables.ParkClosed}), {world.Variables.NumberOfVisitorsToDate} visitors to date (not imported)." );
+		evidence.Add( $"Park {(closed ? "closed" : "open")} (mParkClosed {world.Variables.ParkClosed}), {world.Variables.NumberOfVisitorsToDate} visitors to date (the guest simulation's count)." );
 		return new OriginalEconomyImport( save.Economy, closed, objects, fixedItems, staff, evidence, things.ToDictionary( pair => pair.Key, pair => pair.Value.Id ) );
 	}
 
@@ -721,7 +721,7 @@ public sealed class OriginalEconomyImport
 		if ( save.RuntimeBlocks is { } blocks )
 			evidence.Add( $"[APPROX:SAVE-010] Runtime blocks decoded, not applied: camera zoom {blocks.Camera.Zoom}, yaw {blocks.Camera.YRotation}, flags 0x{blocks.Camera.Flags:X}, required point of interest ({blocks.Camera.RequiredPoi.X}, {blocks.Camera.RequiredPoi.Y}, {blocks.Camera.RequiredPoi.Z}), saved ({blocks.Camera.SavedPoi.X}, {blocks.Camera.SavedPoi.Y}, {blocks.Camera.SavedPoi.Z}), saved yaw {blocks.Camera.SavedYRotation}; clock words {string.Join( "/", blocks.ClockWords )} (the second is applied to the automatic advisor when it attaches), vanilla time {blocks.VanillaTime}, game system words {string.Join( "/", blocks.GameSystemWords )}, cheats {Convert.ToHexString( blocks.Cheats )}, advisor scoring {blocks.AdvisorScoring}, UI window records {blocks.UiRecords}." );
 		var variables = save.World.Variables;
-		evidence.Add( $"[APPROX:SAVE-010] World values not imported: world state {variables.WorldState}, arrival vehicle sizes {variables.ArrivalVehicleSize1}/{variables.ArrivalVehicleSize2}/{variables.ArrivalVehicleSize3}, current arrival vehicle thing {variables.CurrentArrivalVehicle}, arrival bytes {Convert.ToHexString( save.World.Arrivals )}, calendar session start {save.World.Calendar.SessionStart}." );
+		evidence.Add( $"[APPROX:SAVE-010] World values not imported: world state {variables.WorldState}, arrival vehicle sizes {variables.ArrivalVehicleSize1}/{variables.ArrivalVehicleSize2}/{variables.ArrivalVehicleSize3}, current arrival vehicle thing {variables.CurrentArrivalVehicle} (its script state is not restored, [EXT:original-engine-state-dumps]), arrival bytes {Convert.ToHexString( save.World.Arrivals )}, calendar session start {save.World.Calendar.SessionStart}." );
 		if ( save.Advisor is { } advisor )
 		{
 			var current = advisor.Current;

@@ -264,7 +264,7 @@ public class GuestSnapshotValidationReviewTests
 			Navigation = guest.Navigation with { Reroutes = -1 }
 		} ), "negative reroute count" );
 		Rejects( target, WithGuest( snapshot, first, guest => guest with { Thought = unchecked( (GuestThought)999 ) } ), "undefined thought" );
-		Rejects( target, WithGuest( snapshot, first, guest => guest with { State = (GuestState)22 } ), "undefined guest state" );
+		Rejects( target, WithGuest( snapshot, first, guest => guest with { State = (GuestState)25 } ), "undefined guest state" );
 		Rejects( target, WithGuest( snapshot, first, guest => guest with { Type = 99 } ), "guest type beyond the park's types" );
 		Rejects( target, snapshot with { SeenQueueEdits = snapshot.SeenQueueEdits.Append( (snapshot.Attractions[0].AttractionId, 0) ).ToArray() }, "seen-edit counter repeated" );
 		Rejects( target, snapshot with { SeenQueueEdits = snapshot.SeenQueueEdits.Select( ( edit, index ) => index == 0 ? (edit.AttractionId, -2) : edit ).ToArray() }, "seen-edit counter below minus one" );

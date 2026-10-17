@@ -11,8 +11,8 @@ namespace OpenTPW;
 internal readonly record struct AdvisorHelpMessage( int MessageId, int FirstResponseId, int ResponseCount, byte Group, byte MaximumPendingDuplicates, byte GameMode );
 
 /// <summary>
-/// The shipped help-message table (<c>content/data/advisor-help-messages.toml</c>): the 82 context-help descriptors of the Windows
-/// executable's table at 0x76E300, copied for interoperability by <c>tools/ppc-analysis/lanes/advisor/tpw_exe_tables.py</c>.
+/// The shipped help-message table (<c>content/data/advisor-help-messages.toml</c>): the 81 context-help descriptors (of the 82 that share the
+/// score callback 0x59E8C0; 291 names the absent response 551) of the Windows executable's table at 0x76E300, copied for interoperability by <c>tools/ppc-analysis/lanes/advisor/tpw_exe_tables.py</c>.
 /// </summary>
 internal static class AdvisorHelpTable
 {

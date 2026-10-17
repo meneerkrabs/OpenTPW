@@ -166,6 +166,11 @@ public sealed class ParkObjects
 	/// occupancy rules do not apply to it and this one does. Null: they are ordinary object cells.
 	/// </summary>
 	public Func<int, int, bool>? AddOnCellRule { get; set; }
+	/// <summary>
+	/// [EXT:pools-changing-room] An extra placement rule of the host, asked last with the entry, anchor and rotation: a refusal it answers is the placement's result, null has no opinion
+	/// (the level: a changing room needs pool water beside it, <see cref="PoolChangingRooms.PlacementRule"/>).
+	/// </summary>
+	public Func<ObjectCatalogEntry, int, int, int, OriginalPlacementResult?>? PlacementRule { get; set; }
 	public event Action<OriginalObject>? ObjectPlaced;
 	public event Action<OriginalObject>? ObjectRemoved;
 
@@ -202,6 +207,8 @@ public sealed class ParkObjects
 		}
 		if ( result == OriginalPlacementResult.Allowed )
 			result = CheckAccessCells( entry, anchorX, anchorY, rotation, overwritten );
+		if ( result == OriginalPlacementResult.Allowed && PlacementRule?.Invoke( entry, anchorX, anchorY, rotation ) is { } refused )
+			result = refused;
 		if ( result == OriginalPlacementResult.Allowed )
 			plan = new ObjectPlacementPlan( overwritten, paths );
 		return result;

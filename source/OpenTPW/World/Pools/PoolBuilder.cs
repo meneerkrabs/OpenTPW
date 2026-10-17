@@ -24,7 +24,11 @@ public enum PoolBuildResult
 	TooSteep,
 	NotEnoughMoney,
 	/// <summary>Erasing a cell that is not a pool cell.</summary>
-	NotPool
+	NotPool,
+	/// <summary>[EXT:pools-swim] Erasing a pool cell with a swimmer in it: the water stays until the swimmer is out.</summary>
+	Swimmers,
+	/// <summary>[EXT:pools-changing-room] Erasing a pool cell beside the back of a changing room: the room needs its pool.</summary>
+	ChangingRoomAccess
 }
 
 /// <summary>One drag of the pool tool: the cells it wrote, the money, and its first refusal.</summary>
@@ -57,19 +61,23 @@ public sealed class PoolBuilder
 	private readonly Func<ParkEconomy?> economy;
 	private readonly Func<int, int, bool>? isOccupied;
 	private readonly Func<int, int, bool>? isStoodOn;
+	private readonly Func<int, int, PoolBuildResult?>? eraseBlock;
 
 	/// <param name="cells">The level's cell map.</param>
 	/// <param name="economy">Reads the current economy on each call (a level replaces it when a park save loads); null for a free pool.</param>
 	/// <param name="terrain">The object build grid: its terrain rule and its corner heights.</param>
 	/// <param name="isOccupied">Objects, fixed items and other host-blocked cells.</param>
 	/// <param name="isStoodOn">Whether a guest or an employee stands on a cell (water is not painted under them).</param>
-	public PoolBuilder( ParkCellMap cells, Func<ParkEconomy?> economy, IParkGrid terrain, Func<int, int, bool>? isOccupied = null, Func<int, int, bool>? isStoodOn = null )
+	/// <param name="eraseBlock">[EXT:pools-swim] Why a pool cell may not be erased now (a swimmer in it, a changing room beside it), or null.</param>
+	public PoolBuilder( ParkCellMap cells, Func<ParkEconomy?> economy, IParkGrid terrain, Func<int, int, bool>? isOccupied = null, Func<int, int, bool>? isStoodOn = null,
+		Func<int, int, PoolBuildResult?>? eraseBlock = null )
 	{
 		Cells = cells ?? throw new ArgumentNullException( nameof( cells ) );
 		this.economy = economy ?? throw new ArgumentNullException( nameof( economy ) );
 		Terrain = terrain ?? throw new ArgumentNullException( nameof( terrain ) );
 		this.isOccupied = isOccupied;
 		this.isStoodOn = isStoodOn;
+		this.eraseBlock = eraseBlock;
 	}
 
 	public ParkCellMap Cells { get; }
@@ -121,12 +129,14 @@ public sealed class PoolBuilder
 		return PoolBuildResult.Ok;
 	}
 
-	/// <summary>Whether a cell can be erased: it is a pool cell and the extension is on.</summary>
+	/// <summary>Whether a cell can be erased: it is a pool cell, the extension is on, no swimmer is in it and no changing room needs it.</summary>
 	public PoolBuildResult CheckErase( int x, int y )
 	{
 		if ( !FeatureGates.Pools )
 			return PoolBuildResult.ExtensionOff;
-		return Cells.InBounds( x, y ) && Cells.RawTypeAt( x, y ) == ParkCellTypes.PoolWater ? PoolBuildResult.Ok : PoolBuildResult.NotPool;
+		if ( !Cells.InBounds( x, y ) || Cells.RawTypeAt( x, y ) != ParkCellTypes.PoolWater )
+			return PoolBuildResult.NotPool;
+		return eraseBlock?.Invoke( x, y ) ?? PoolBuildResult.Ok;
 	}
 
 	/// <summary>Paints one cell and charges it. Returns <see cref="PoolBuildResult.Ok"/> when it was painted, <see cref="PoolBuildResult.Existing"/> when it already was a pool cell, else the refusal.</summary>

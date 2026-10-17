@@ -49,10 +49,13 @@ public readonly record struct DecisionVariables( uint NewRideDays, uint NewRideM
 /// <param name="SameTypeAsLastUsed">The thing the guest used last (history slot 0) still exists and is of the same type as this one.</param>
 /// <param name="UsedHistory">The guest's used history, newest first (guest <c>+480..+486</c>).</param>
 /// <param name="TemporaryHistory">The guest's temporary history, newest first (guest <c>+488..+494</c>).</param>
+/// <param name="QueueMatchOverride">
+/// OpenTPW's own extension (docs/SMARTER-GUESTS.md, phase 3): a queue match (0..100) that replaces the original's near-only queue match and counts at any distance. Null (the original) leaves the score as it is.
+/// </param>
 public readonly record struct AttractionScoreInput( int GuestX, int GuestY, int RideX, int RideY, int CellModifier, int QueueCount, int QueueCells,
 	int PreferredExcitement, int Excitement, bool ExcitementGated, float Thirst, float Hunger, float Toilet, float Illness, int ThirstEffect, int HungerEffect,
 	bool Relief, uint AgeDays, bool Raining, bool Indoors, int GoldenTicketCost, int UpgradeCost, int AttractionId, bool SameTypeAsLastUsed,
-	IReadOnlyList<int> UsedHistory, IReadOnlyList<int> TemporaryHistory );
+	IReadOnlyList<int> UsedHistory, IReadOnlyList<int> TemporaryHistory, uint? QueueMatchOverride = null);
 
 /// <summary>
 /// The original's attraction score (<c>0xe9164</c>, docs/reverse/ORACLE.md F24, docs/reverse/PPC-guests.md): seven matches, each 0..100,
@@ -142,6 +145,9 @@ public static class AttractionScore
 		var near = squared <= QueueRangeSquared;
 		var queueMatch = near ? QueueMatch( input.QueueCount, input.QueueCells ) : 0u;
 		var queueWeight = near ? weights.Queue : 0u;
+		// [EXT:smarter-guests-spread] the smarter policy's expected-wait match counts at any distance
+		if ( input.QueueMatchOverride is { } queueOverride )
+			(queueMatch, queueWeight) = (queueOverride, weights.Queue);
 		var excitementMatch = (uint)ExcitementMatch( input.PreferredExcitement, input.Excitement );
 		var excitementWeight = input.ExcitementGated ? weights.Excitement & 0xFFFF : 0u;
 		var distanceWeight = weights.Distance & 0xFFFF;

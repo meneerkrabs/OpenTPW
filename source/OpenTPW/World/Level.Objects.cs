@@ -188,7 +188,12 @@ public partial class Level
 	private void RegisterObjectWithGuests( OriginalObject item )
 	{
 		if ( Guests != null && RegisterWithGuests( item.Runtime, item.AccessPoints, Guests, item.Placement.Rotation, OwnerWord( item ) ) )
+		{
 			item.Runtime.Visitors.QueueEdited += () => ReevaluateQueuedRide( item.Runtime );
+			// [EXT:pools-changing-room] a changing room's pool-side cells follow from its footprint (geometry only: the water is read when a guest swims)
+			if ( item.Runtime.Visitors.IsChangingRoom )
+				item.Runtime.Visitors.PoolAccessCandidates = PoolChangingRooms.AccessCandidates( item.Entry.Shape, item.Placement.X, item.Placement.Y, item.Placement.Rotation );
+		}
 	}
 
 	/// <summary>
@@ -324,6 +329,8 @@ public partial class Level
 		Objects.PathAt = ( x, y ) => Guests?.Grid.Cells is { } cells ? ObjectPathAt( cells, x, y ) : null;
 		Objects.ClearPath = ( x, y ) => Paths?.Remove( x, y );
 		Objects.PathRuleAllows = ( x, y ) => Paths?.CheckPathRule( x, y ) is { } rule ? rule is CellBuildResult.Ok or CellBuildResult.Existing : null;
+		// [EXT:pools-changing-room] a changing room needs pool water beside its back
+		Objects.PlacementRule = ( entry, x, y, rotation ) => PoolChangingRooms.PlacementRule( entry, Guests?.Grid.Cells, x, y, rotation );
 	}
 
 	/// <summary>Whether a cell of this type keeps objects off it: any type but empty ground, a path and the object, entrance and exit types ([EXT:pools-cell-type]: pool water is one).</summary>
@@ -340,6 +347,38 @@ public partial class Level
 		if ( Guests != null && Guests.Guests.Any( guest => guest.State != GuestState.Gone && guest.Cell == (x, y) ) )
 			return true;
 		return Park?.Economy.Staff.Members.Any( member => member.CellX is { } staffX && member.CellY is { } staffY && (int)MathF.Floor( (float)staffX ) == x && (int)MathF.Floor( (float)staffY ) == y ) == true;
+	}
+
+	/// <summary>
+	/// [EXT:debug-pool] Smoke-only: builds the theme's changing room through the level's own placement (it is charged, and the pool at its back is the placement rule) at the first anchor and rotation,
+	/// within four cells of <paramref name="pool"/>, that the rules allow; null when the extension is off, the theme lists no changing room or nothing fits.
+	/// </summary>
+	internal OriginalObject? BuildChangingRoomBeside( IReadOnlyList<(int X, int Y)> pool )
+	{
+		var entry = Objects.Catalog.Entries.FirstOrDefault( PoolChangingRooms.IsChangingRoom );
+		if ( entry == null || pool.Count == 0 )
+			return null;
+		var (minX, maxX, minY, maxY) = (pool.Min( cell => cell.X ) - 4, pool.Max( cell => cell.X ) + 4, pool.Min( cell => cell.Y ) - 4, pool.Max( cell => cell.Y ) + 4);
+		foreach ( var rotation in new[] { 0, 90, 180, 270 } )
+			for ( var y = minY; y <= maxY; y++ )
+				for ( var x = minX; x <= maxX; x++ )
+					if ( CheckObject( entry, x, y, rotation ) == OriginalPlacementResult.Allowed && PlaceObject( entry, x, y, rotation ) is { } placed )
+						return placed;
+		return null;
+	}
+
+	/// <summary>
+	/// [EXT:pools-swim] Why a pool cell cannot be erased: a swimmer is in it, or it lies beside the back of a changing room (the room needs its pool, and a save that holds a changing room
+	/// records the extension). Null when it can go.
+	/// </summary>
+	internal PoolBuildResult? PoolEraseBlock( int x, int y )
+	{
+		if ( Guests?.IsSwimmerIn( x, y ) == true )
+			return PoolBuildResult.Swimmers;
+		foreach ( var item in Objects.Objects )
+			if ( !item.IsDeleted && item.Visitors.IsChangingRoom && item.Visitors.PoolAccessCandidates.Contains( (x, y) ) )
+				return PoolBuildResult.ChangingRoomAccess;
+		return null;
 	}
 
 	/// <summary>[EXT:pools-tool] The headless pool builder over the level's cell map (original levels, not a read-only visit); null otherwise (docs/POOLS.md).</summary>
@@ -363,6 +402,36 @@ public partial class Level
 				return;
 			PoolRenderer = new PoolRenderer( Guests.Grid.Cells, Objects.Grid, PoolStyles.ForTheme( OriginalPark.LevelName ) );
 		}
+		// [EXT:pools-swim] the swimmers are drawn after the water (entities draw in the order they are made), with the swim sprites loaded beside the kid sets
+		// the sets are looked for once per level: a missing or broken folder is one warning, not a scan every frame
+		if ( SwimmerRenderer == null && PoolRenderer != null && !swimSpritesTried )
+		{
+			swimSpritesTried = true;
+			SwimmerRenderer = CreateSwimmerRenderer( Guests, OriginalPark );
+		}
+	}
+
+	private bool swimSpritesTried;
+
+	private GuestRenderer? CreateSwimmerRenderer( GuestSimulation guests, OriginalPark park )
+	{
+		var swim = PoolSwimSprites.Load();
+		if ( swim.Count == 0 )
+		{
+			// without swim sprites the swimmers are drawn by the normal guest renderer with their kid sprite (Level.cs: Draws), standing in the water
+			Log.Warning( $"No swim sprite sets found in '{PoolSwimSprites.Directory}': swimmers are drawn with the normal guest sprites." );
+			return null;
+		}
+		return new GuestRenderer( guests, park.Heightfield, swim )
+		{
+			Draws = guest => guest.IsSwimming,
+			SlotChooser = guest => (PoolSwimming.SpriteSlot( guest.SwimStroke ), (int)(guests.TimeSeconds * (guest.SwimStroke == 2 ? 3 : 6)) + guest.Id),
+			FeetChooser = guest =>
+			{
+				var feet = GuestRenderer.CellToEngine( park.Heightfield, guest.DrawX, guest.DrawY );
+				return PoolRenderer?.WaterLevelAt( guest.CellX, guest.CellY ) is { } level ? new System.Numerics.Vector3( feet.X, feet.Y, level ) : feet;
+			}
+		};
 	}
 
 	/// <summary>The path tiles' texture rolls (presentation; <see cref="PathTileVariants"/>).</summary>
@@ -419,7 +488,7 @@ public partial class Level
 		// [EXT:pools-tool] the pool builder and its paint tool share the cell map; they refuse every cell while the extension is off (FeatureGates.Pools)
 		if ( !IsReadOnlyVisit )
 		{
-			PoolBuilder = new PoolBuilder( Guests.Grid.Cells, () => Park?.Economy, Objects.Grid, IsPathBlocked, IsStoodOn );
+			PoolBuilder = new PoolBuilder( Guests.Grid.Cells, () => Park?.Economy, Objects.Grid, IsPathBlocked, IsStoodOn, PoolEraseBlock );
 			PoolTool = new PoolTool( PoolBuilder );
 		}
 		AreaClearTool = IsReadOnlyVisit ? null : new AreaClearTool( RemoveObjectAt, () => Guests?.Grid.Cells, RemovePathCell, TypesFootprints ? null : ( x, y ) => Objects.FindAt( x, y ) );

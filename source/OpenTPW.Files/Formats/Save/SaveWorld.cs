@@ -402,6 +402,7 @@ internal ref struct SaveFieldReader
 	}
 
 	public int Position { get; private set; }
+	public string What => what;
 
 	private ReadOnlySpan<byte> Take( int count )
 	{

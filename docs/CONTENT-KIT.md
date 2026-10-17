@@ -250,6 +250,10 @@ guest is never released. Real swimming comes later, in an extension.
 What is missing: a placement as an `OriginalObject` entity (it builds renderer entities and needs a GPU context, so the real draw of the converted model, its texture orientation and its mirror state in the game are not
 checked); and a sideshow-category object has no headless park test (the gate places rides only, and a sideshow guest needs the live sideshow terms the runtime derives).
 
+## Content shipped with the game: pools
+
+The official `opentpw.pools` extension ships its changing rooms and swim sprites as committed generated files in `content/pools` (our own art, nothing from the original game). `tools/pools/build-content.sh` regenerates them (Blender 5.x, the .NET SDK, python3; about 3 minutes; env `KIT_ARTIFACTS`, `WORK`, `FORCE_SPRITES`): the cabin model comes from `tools/blender/opentpw_changing_room.py` through `GltfModelConverter` and `opentpw-kit object` with `tools/pools/cabin.sam` and `cabin.rse`, the swimmers from `opentpw_guest_sprites.py --part swim` packed by `tools/pools/pack_swim_sets.py` through `opentpw-kit sprites`. See [POOLS.md](POOLS.md#content-extpools-content).
+
 ## What is unverified
 
 - Whether tp.exe itself accepts an authored MD2 (the planned layout, the default words of [MD2-MODELS.md](MD2-MODELS.md#writing-and-authoring)), an authored ESP/FPC set or an assembled RSE: the original was not run.

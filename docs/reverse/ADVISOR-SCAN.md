@@ -18,8 +18,8 @@ values are game data: the inventory stores the `TAG_SYSTEM.str` entry numbers an
 
 | Status | Messages | Meaning |
 | --- | ---: | --- |
-| wired | 87 | OpenTPW produces the message today |
-| ready | 146 | every input exists in OpenTPW (the inventory names the class or field); only the producer is missing |
+| wired | 98 | OpenTPW produces the message today |
+| ready | 135 | every input exists in OpenTPW (the inventory names the class or field); only the producer is missing |
 | blocked | 13 | an input is missing or approximated |
 | none | 105 | nothing to produce: 21 are scored by the scan but their callback is the constant-zero stub, 84 have no producer in `tp.exe` at all |
 
@@ -33,7 +33,7 @@ values are game data: the inventory stores the `TAG_SYSTEM.str` entry numbers an
 
 | Batch | wired | ready | blocked | none | Total |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| Money | 1 | 7 | 0 | 0 | 8 |
+| Money | 8 | 0 | 0 | 0 | 8 |
 | Cleanliness | 0 | 8 | 0 | 0 | 8 |
 | Rides, shops, sideshows and features | 1 | 21 | 0 | 0 | 22 |
 | Queues and prices | 0 | 22 | 1 | 0 | 23 |
@@ -41,24 +41,26 @@ values are game data: the inventory stores the `TAG_SYSTEM.str` entry numbers an
 | Staff | 25 | 38 | 6 | 0 | 69 |
 | Research | 10 | 9 | 0 | 0 | 19 |
 | Weather | 0 | 0 | 0 | 0 | 0 |
-| Challenges and golden tickets | 1 | 28 | 0 | 0 | 29 |
+| Challenges and golden tickets | 5 | 24 | 0 | 0 | 29 |
 | Tutorial and help | 43 | 2 | 3 | 37 | 85 |
 | Other | 3 | 5 | 1 | 68 | 77 |
-| Total | 87 | 146 | 13 | 105 | 351 |
+| Total | 98 | 135 | 13 | 105 | 351 |
 
 Weather has no message: no score callback reads weather or season state, no poster is a weather event, and no `TAG_SYSTEM.str` caption
-of the advisor mentions rain, storm or snow. The "about 91" messages with a producer are **87** that produce advice today: 45 posted by game code (0, 323, 106, 128, 129, 33-57, 70, 93-97,
-125-127, 133-136, 167, 271) and 42 help messages of windows and tools OpenTPW has. Four more look wired but are not: `AutomaticAdvisor.GlobalTicketMovedMessage`
-posts 234-237 when a global golden ticket moves here, but `AdvisorTables` has no definition of them, so `AdvisorController.Advise` returns null and nothing
-is said (inventory status ready; the fix is the four rows `(234-237, "AwardMoved.Score")` in `EventScoreKeys`). 66, 68 and 69 are defined in `AdvisorTables` without
+of the advisor mentions rain, storm or snow. The "about 91" messages with a producer: **98** produce advice today: 49 posted by game code (0, 323, 106, 128, 129, 33-57, 70, 93-97,
+125-127, 133-136, 167, 234-237, 271), 42 help messages of windows and tools OpenTPW has, and 7 scored by the ported scan (the money batch: 100-105 and 107).
+`AutomaticAdvisor.GlobalTicketMovedMessage` posts 234-237 when a global golden ticket moves here, and `AdvisorTables` now defines them (the four rows
+`(234-237, "AwardMoved.Score")` in `EventScoreKeys`; their group 2 controls are read when the settings file has them). 66, 68 and 69 are defined in `AdvisorTables` without
 a poster (status ready).
 
 ## The scan
 
 `0x59A550` is the advisor controller's update (thing type 11; called by the thing update `0x50B437`). Each call:
 
-1. `push 1; call 0x59C680` on the controller's `Advisor.sam` object `0xFB3540`: the scan advances **one descriptor** (the cursor is the
-   object's first word, wrapped to 0 when it reaches `0x15F` = 351). A full pass is therefore 351 updates.
+1. `push 1; call 0x59C680` on the controller's `Advisor.sam` object `0xFB3540`: the scan scores **one descriptor** (the cursor is the
+   object's first word, wrapped to 0 when it reaches `0x15F` = 351). The loop's counter (`[esp+0x10]`) is incremented only at `0x59C822`, which a skipped
+   row (first word nonzero) bypasses, so one call walks past any number of game-code rows to the next scanned one and leaves the cursor after it:
+   a full pass is **155** scored updates (134 computed callbacks and 21 stubs), not 351.
 2. The scan skips a descriptor whose first word is nonzero (the "posted by game code" flag: help messages, strikes, research and so on,
    196 rows here), applies the game-mode selector in word `+0xC` (2 always, 0 only in the full simulation, 1 only in Instant
    Action, `0xFB3B7C`), and calls the score callback `[desc+0x10]` with `this = 0xFB3540 + [desc+0x14]`. The callback returns a score (<= 0
@@ -70,8 +72,15 @@ a poster (status ready).
 5. The queue is then served as documented in docs/LIPS.md: the strongest pending record above the minimum is said when the previous
    one has finished.
 
-So the scan costs one callback per update and spreads the 134 computed scores over 351 updates; every score is evaluated from the
-state of that moment (no history is kept except what the helpers read). `AutomaticAdvisor.Update` is the place for the cursor.
+So the scan costs one callback per update and spreads the 134 computed scores over 155 updates; every score is evaluated from the
+state of that moment (no history is kept except what the helpers read).
+
+**OpenTPW.** `AdvisorScan` (`source/OpenTPW/World/AdvisorScan.cs`) is `0x59C680` with count 1: the cursor, the skip rule, the wrap at 351, the mode selector
+(`AdvisorTables.GameModeAccepts`), the callback dispatch by the descriptor's callback address, strictly-higher-than-best and the eligibility check. A callback that is
+not ported scores 0, like the stub `0x5D60C0`. `AdvisorController.ScanOnce` adds step 4: the score must be above `MinScoreForConsideration`, then the record
+(message, the callback's score) goes through `AdvisorScoreQueue.Enqueue`, which repeats the eligibility check as `0x59A940` does. The cursor is part of
+`AdvisorControllerSnapshot` (a snapshot without one restores it at 0; an original save import starts at 0: no save word for it was found). The advisor is presentation state
+outside the simulation hash, so the scan moves no determinism pin. `AutomaticAdvisor.ScanPark` calls the scan once per park turn: `0x516380` increments the turn word and walks the thing list only while the world state `+0x1DA738` is not 4, and the advisor's case (`0x50B3F1`-`0x50B437`) calls `0x59A550` unless the game type is 1, so turns that pass while paused or lost are never scanned (ADVISOR-017). Ported callbacks: the money batch below; the other 127 computed callbacks score 0 until their batch lands.
 
 Callback conventions: the world is `[0x80239C]` (also `[[0x7CF6EC]]`). `0x519510` returns the **park thing** (handle at world `+0x1DA720`,
 pool `0x7CFB90`, stride `0x14`); the park thing holds the statistics the helpers read (visitor counter `+0x21C08`, visitor ring
@@ -143,23 +152,33 @@ response is speech only. Texts are paraphrased.
 | Queues are too long | 58 (caption 63: bored in long queues) and 59 (caption 64: reduce ride duration) | the scan reaches them but both callbacks are `0x5D60C0` (constant 0) and nothing posts them: **dead in v2.0**. The only queue line that can play is 113 (a queue not connected to a path, caption 134, `0x59EF60`, blocked: `queueLinks`) | none / blocked |
 | The park is dirty | 8, 9, 10 (captions 14, 15, 16) for litter without enough handymen; 86-89 (captions 89-92) for dirty toilets | scan, `0x59CB40`, `0x59CBB0`, `0x59CC20` (litter points, developed cells per handyman) and `0x59E450`-`0x59E680` (mean toilet filth in four bands, with and without cleaners) | ready |
 | Guests' thoughts | 3 thirsty (caption 9), 4 hungry (10), 82 no toilets (86), 141 too scared (159), 14 entertainers needed (20), 145 visitors happy (no caption) | scan; the advisor reads the guests' **need meters** (thirst, hunger, toilet, happiness bytes), not the thought ids of `THOUGHTS.str` (those feed the park window's Top 3 Thoughts only) | ready (141 blocked: `rideFear`) |
-| Money warnings 102-105 | 102 take a loan (caption 123), 103 six-months warning (124), 104 three months (125), 105 five months (126); 106 bankruptcy (127) | scan `0x59E9B0`, `0x59E9F0`, `0x59EA70`, `0x59EAF0`: balance < 0; 102 needs a loan available; 103-105 need **no** loan available and read the months in the red (`0x4D0260` / 30 days): 103 below 3, 104 3 or 4, 105 exactly 5. 106 is game event 2 (`0x4D0370`) | ready (106 wired) |
+| Money warnings 102-105 | 102 take a loan (caption 123), 103 six-months warning (124), 104 three months (125), 105 five months (126); 106 bankruptcy (127) | scan `0x59E9B0`, `0x59E9F0`, `0x59EA70`, `0x59EAF0`: balance < 0; 102 needs a loan available; 103-105 need **no** loan available and read the months in the red (`0x4D0260` / 30 days): 103 below 3, 104 3 or 4, 105 exactly 5. 106 is game event 2 (`0x4D0370`) | wired |
 | Broken rides | 5 worn rides and no mechanic (caption 11), 6 broken rides and no mechanic (12), 7 too few mechanics (13); 66 breakdown imminent (71), 68 no mechanic (72), 69 mechanics busy (73), 70 mechanic on the way (74); 258 ride condemned; 259 too many rides closed | scan `0x59CA30`/`0x59CA80`/`0x59CAC0`/`0x5A02F0`; posts `0x4DF8C0` (condition crosses below 10 percent in the wear step `0x4DF670`) and `0x4DADC0` (the breakdown handler: 68 when no mechanic is hired, 70 when one takes it, 69 when all are busy); condemn message type 8 (`0x59B448`) | ready (70 wired) |
 
 ## Money
 
 | Msg | Status | Producer | Condition and score | TAG_SYSTEM caption |
 | ---: | --- | --- | --- | --- |
-| 100 | ready | cb 0x59E8D0 | balance (bank +0xC via 0x6AD810) > WealthHigh.MoreMoneyThan and no loan taken (0x4D0690 = 0): flat WealthHigh.Score | speech only |
-| 101 | ready | cb 0x59E910 | balance minus total debt (0x4D0A00) greater than the repayment of the cheapest loan (0x4D09A0, 0x4D0970) x Margin: flat WealthHighRepayLoan.Score | speech only |
-| 102 | ready | cb 0x59E9B0 | balance below 0 and a loan can still be taken (0x4D0810): flat TakeLoan.Score | 123 |
-| 103 | ready | cb 0x59E9F0 | balance below 0, no loan available, months in the red (0x4D0260 / 30-day months) < 3: flat InTheRedSixMonths.Score | 124 |
-| 104 | ready | cb 0x59EA70 | balance below 0, no loan available, months in the red 3 or 4: flat InTheRedThreeMonths.Score | 125 |
-| 105 | ready | cb 0x59EAF0 | balance below 0, no loan available, months in the red exactly 5: flat InTheRedMonthLeft.Score | 126 |
+| 100 | wired | cb 0x59E8D0 | balance (bank +0xC via 0x6AD810) > WealthHigh.MoreMoneyThan and no loan taken (0x4D0690 = 0): flat WealthHigh.Score | speech only |
+| 101 | wired | cb 0x59E910 | balance minus total debt (0x4D0A00) greater than the repayment of the cheapest loan (0x4D09A0, 0x4D0970) x Margin: flat WealthHighRepayLoan.Score | speech only |
+| 102 | wired | cb 0x59E9B0 | balance below 0 and a loan can still be taken (0x4D0810): flat TakeLoan.Score | 123 |
+| 103 | wired | cb 0x59E9F0 | balance below 0, no loan available, months in the red (0x4D0260 / 30-day months) < 3: flat InTheRedSixMonths.Score | 124 |
+| 104 | wired | cb 0x59EA70 | balance below 0, no loan available, months in the red 3 or 4: flat InTheRedThreeMonths.Score | 125 |
+| 105 | wired | cb 0x59EAF0 | balance below 0, no loan available, months in the red exactly 5: flat InTheRedMonthLeft.Score | 126 |
 | 106 | wired | CMsgEvent 2 from the bank month 0x4D0370 (0x4D0557); handler 0x59AED6 posts 106 | balance < 0, previous balance < 0 and 6 or more 30-day months in the red: posted at every month end while it holds | 127 |
-| 107 | ready | cb 0x59EB80 | after 3 months: the average staff wages over WagesHigh.AverageOverMonths months (ring +0x1F7F0) x WagesTimesHigherThanIncome above the average income (ring +0x1FC90): flat WagesHigh.Score | 128 |
+| 107 | wired | cb 0x59EB80 | after 3 months: the average staff wages over WagesHigh.AverageOverMonths months (ring +0x1F7F0) above the average income (ring +0x1FC90) x WagesTimesHigherThanIncome (0 when a ring is empty): flat WagesHigh.Score | 128 |
 
-The state exists: `ParkEconomy.Balance`, `Loans`, `IsLoanAvailable`, `MonthsInRed` (ECON-030) and `Ledger.History`. 103-105 need the months in the red the way the bank counts them (`TurnEnteredRed`), not whole calendar months.
+Wired (`AdvisorScanCallbacks`, `AdvisorScanTests`): the callbacks are ported from the disassembly, over `IAdvisorMoneyState` (`EconomyMoneyState` reads the economy without changing it).
+All seven have the `this` offset 0 and return the flat score of their key, so the offsets above are the schema offsets of the keys; the rows with mode 0 (101, 102) are scored in
+the full simulation only, the others in both game types.
+
+- **100 `0x59E8D0`:** `balance > WealthHigh.MoreMoneyThan` (signed) and loans taken (`0x4D0690`, the bought records of the eight at bank `+0x28 + 0x20 i`) = 0.
+- **101 `0x59E910`:** `diff = balance - total debt` (`0x4D0A00`: the sum over bought records of `(term - repaid) x instalment`, words `+0x0`, `+0xC`, `+0x4` of the record at bank `+0x20 + 0x20 i`); the cheapest loan (`0x4D09A0`: the smallest non-zero owed amount as an unsigned word, the first of equals, -1 for none -> 0); `repayment (0x4D0970, unsigned) x WealthHighRepayLoan.Margin < (float)diff`. `Margin` is a single, and `diff` is rounded to a single by the `fild`/`fstp` pair before the compare.
+- **102 `0x59E9B0`:** `balance < 0` and a loan can be taken (`0x4D0810`: walking the eight offers, the first not bought that passes the credit test `0x4D06B0`).
+- **103/104/105 `0x59E9F0`/`0x59EA70`/`0x59EAF0`:** `balance < 0`, no loan available, then `months = __alldiv(0x4D0260, 0x1792F8648000)` (0 unless the last balance `+0x11C` is below 0; else the park time since the turn entered red `+0x120`): below 3, `3 <= months < 5`, exactly 5. OpenTPW's `ParkEconomy.MonthsSinceEnteringRed` is that count.
+- **107 `0x59EB80`:** the park clock must have run 3 months (`0x4F8800` / `0x1792F8648000`); `n = AverageOverMonths` cut to the months the ring holds (`head + 1`, or 144 when full); the wage average and the income average are the truncated (`__ftol`) means of the newest `n` months of the rings at park `+0x1F7F0` and `+0x1FC90` (a ring is: current accumulator, 144 words, head, capacity, full flag; the month close `0x4C7740` pushes the accumulators and zeroes them, so the ring is the ledger's closed months: `StaffCosts` and `MoneyIn`); `income x WagesTimesHigherThanIncome < wages` (single factor; an empty income ring scores 0 too, `0x59ED8D`). The x87 runs at 24 bits (DirectDraw's FPU setup, ADVISOR-026), so OpenTPW rounds to a single after every step of 101 and 107.
+
+Two reading choices keep the advisor from changing simulation state: the loan availability peeks the net worth as `0x4D06B0` reads it (`0x4C7DB0(20)`: the cached value while its age is at most 20, else a fresh count that is not stamped) and does not store the offers' credit tests (the original's `0x4D06B0` rewrites word `+0x14` of each offer it tests, which the loan list rebuilds before it reads), so the scan never writes to the economy. In a park in the red with staff and no income the wages line 107 (90) outranks the early warnings 103/104 (75, 50) once three months have passed, so those are served after it; 105 (110) outranks it.
 
 ## Cleanliness
 

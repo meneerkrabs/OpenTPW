@@ -321,7 +321,7 @@ public class PoolsAttractionsTests
 		{
 			slots.Add( activity.SpriteSlot( guest ) );
 			phases.Add( guest.PoolActivityPhase );
-			heights.Add( activity.FeetHeight( rig.Simulation, guest, 0f ) ?? 0f );
+			heights.Add( activity.FeetHeight( rig.Simulation, guest, new PoolFeetHeights( 0f, 0f, 0f ) ) ?? 0f );
 			if ( guest.PoolActivityPhase == 1 )
 				Assert.AreEqual( (11, 5), guest.Navigation.Cell, "on the platform, on the object's own cell" );
 			Assert.IsTrue( phases.Count < 400, "the swing ends" );
@@ -533,9 +533,18 @@ public class PoolsAttractionsTests
 
 	// ---- The river ---------------------------------------------------------------------------------------------------
 
+	/// <summary>Sends guests until one floats (the offer cadence is one in 90 turns, so a single swimmer may finish its swim first) and returns it.</summary>
+	private static Guest SendAndWaitForAFloater( Rig rig, int turns = 3000 )
+	{
+		for ( var i = 0; i < 12; i++ )
+			rig.Send();
+		rig.Until( () => rig.Simulation.Guests.Any( guest => guest.State == GuestState.PoolActivity ), turns );
+		return rig.Simulation.Guests.First( guest => guest.State == GuestState.PoolActivity );
+	}
+
 	private static Rig RiverRig()
 	{
-		var rig = new Rig();
+		var rig = new Rig( capacity: 12 );
 		// the pool's perimeter is a lazy river; its middle is ordinary water
 		for ( var y = 3; y <= 8; y++ )
 			for ( var x = 5; x <= 10; x++ )
@@ -551,8 +560,7 @@ public class PoolsAttractionsTests
 		var rig = RiverRig();
 		var rivers = PoolRiverMap.Of( rig.Cells );
 		Assert.AreEqual( 1, rivers.Rings.Count );
-		var guest = rig.Send();
-		rig.Until( () => guest.State == GuestState.PoolActivity, 3000 );
+		var guest = SendAndWaitForAFloater( rig );
 		Assert.AreEqual( RiverActivity.ActivityId, guest.PoolActivityId );
 		Assert.AreEqual( 0, guest.PoolActivityTarget );
 		var planned = guest.PoolActivityTurns;
@@ -602,13 +610,14 @@ public class PoolsAttractionsTests
 	public void ASaveWhileFloatingRestoresAndTheFloaterGoesOnRoundTheSameWay()
 	{
 		var rig = RiverRig();
-		var guest = rig.Send();
-		rig.Until( () => guest.State == GuestState.PoolActivity && guest.PoolActivityTurns < 80, 3000 );
+		var guest = SendAndWaitForAFloater( rig );
+		rig.Until( () => guest.State != GuestState.PoolActivity || guest.PoolActivityTurns < 80, 400 );
+		Assert.AreEqual( GuestState.PoolActivity, guest.State );
 		var snapshot = ParkResumeJson.Deserialize<GuestSimulationSnapshot>( ParkResumeJson.Serialize( rig.Simulation.CaptureSnapshot() ) );
 		Assert.IsTrue( rig.Simulation.ValidateSnapshot( snapshot ).IsValid, string.Join( "; ", rig.Simulation.ValidateSnapshot( snapshot ).Errors ) );
 		var copy = RiverRig();
 		copy.Simulation.RestoreSnapshot( snapshot );
-		var twin = copy.Simulation.Guests.Single();
+		var twin = copy.Simulation.Guests.Single( other => other.Id == guest.Id );
 		Assert.AreEqual( HashOf( rig ), HashOf( copy ) );
 		for ( var tick = 0; tick < 4000 && (guest.InPoolActivity || twin.InPoolActivity); tick++ )
 		{
@@ -623,8 +632,7 @@ public class PoolsAttractionsTests
 	public void ARiverBrokenUnderAFloaterLetsItGoBackToSwimming()
 	{
 		var rig = RiverRig();
-		var guest = rig.Send();
-		rig.Until( () => guest.State == GuestState.PoolActivity, 3000 );
+		var guest = SendAndWaitForAFloater( rig );
 		foreach ( var (x, y) in new[] { (7, 3), (8, 3), (9, 3), (6, 3), (5, 3), (5, 4), (5, 5) } )
 			rig.Cells.SetFlags( x, y, ParkCellFlags.None );
 		rig.Turns( 3 );
@@ -1110,7 +1118,7 @@ public class PoolsAttractionsLevelTests
 			Assert.AreEqual( attractionsBefore, level.Guests.Attractions.Count, "guests never choose it from the park: it is no attraction of theirs" );
 			var site = level.PoolSites.All.Single();
 			Assert.AreEqual( (PoolAttractionKind.RopeSwing, (20, 19)), (site.Kind, site.Access) );
-			Assert.AreEqual( placed!.Visitors.AttractionId, site.ObjectId );
+			Assert.AreEqual( placed!.ThingId, site.ObjectId );
 			CollectionAssert.AreEqual( new[] { (20, 20) }, site.Cells.ToArray() );
 			return 0;
 		} );

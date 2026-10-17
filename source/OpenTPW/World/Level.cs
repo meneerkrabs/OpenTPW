@@ -481,6 +481,7 @@ public partial class Level : IDisposable
 			: null;
 		Guests = new GuestSimulation( grid, settings, Seed.GuestStream ) { OnlineVisit = Visit != null };
 		Guests.AttachThings( Things );
+		RegisterPoolActivities();
 		List<GuestSpriteAtlas> sprites;
 		using ( LoadProfile.Measure( "guest-sprites" ) )
 			sprites = GuestSpriteAtlas.LoadKids();
@@ -488,9 +489,9 @@ public partial class Level : IDisposable
 		var costumes = GuestSpriteAtlas.LoadCostumes( park.LevelName );
 		var costumeHeads = GuestSpriteAtlas.LoadCostumeHeads( park.LevelName );
 		// [EXT:pools-swim] swimmers are drawn by the pools' own renderer with the swim sprites (RefreshPools), whatever they wear
-		GuestRenderer = new GuestRenderer( Guests, park.Heightfield, sprites ) { Draws = guest => !guest.IsSwimming && !guest.InPoolActivity && (costumes.Count == 0 || !guest.InCostume) };
+		GuestRenderer = new GuestRenderer( Guests, park.Heightfield, sprites ) { Draws = guest => (!(guest.IsSwimming || guest.InPoolActivity) || SwimmerRenderer == null) && (costumes.Count == 0 || !guest.InCostume) };
 		if ( costumes.Count > 0 )
-			CostumeRenderer = new GuestRenderer( Guests, park.Heightfield, costumes ) { Draws = guest => guest.InCostume && !guest.IsSwimming && !guest.InPoolActivity };
+			CostumeRenderer = new GuestRenderer( Guests, park.Heightfield, costumes ) { Draws = guest => guest.InCostume && (!(guest.IsSwimming || guest.InPoolActivity) || SwimmerRenderer == null) };
 		RideHeadRenderer = new RideHeadRenderer( Guests, GuestSpriteAtlas.LoadKidHeads(), Objects ) { Draws = costumeHeads.Count == 0 ? null : guest => !guest.InCostume };
 		RideHeadRenderer.AddSource( new TrackHeadSources( () => trackRenderers.Values ) );
 		RideHeadRenderer.AddSource( new TourHeadSources( () => tourRenderer ) );

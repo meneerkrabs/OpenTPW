@@ -238,6 +238,93 @@ public class PoolsSwimSessionTests
 	}
 
 	[TestMethod]
+	public void DemolishingTheRoomInTheOrderOfTheRealPathStartsNoSwimForTheGuestsChangingInside()
+	{
+		var rig = new Rig( capacity: 4 );
+		var swimmer = rig.Send();
+		var changing = rig.Send();
+		var third = rig.Send();
+		// one guest is in the water while another is still changing inside the room
+		rig.Until( () => swimmer.State == GuestState.Swimming && rig.Simulation.Guests.Any( guest => guest.State == GuestState.Using ), 800 );
+		var aboard = rig.Simulation.Guests.Where( guest => guest.State == GuestState.Using ).ToList();
+		var randomBefore = rig.Simulation.CaptureSnapshot().RandomState;
+		var swimmersBefore = rig.Simulation.Guests.Count( guest => guest.InSwimSession );
+		// OriginalObject.OnDelete -> OriginalObjectRuntime.Stop (marks the visitors stopped, then releases everyone aboard); then ParkObjects.ObjectRemoved -> GuestSimulation.Unregister
+		rig.Ride.IsStopped = true;
+		rig.Ride.ReleaseAll();
+		foreach ( var guest in aboard )
+		{
+			Assert.AreNotEqual( GuestState.Swimming, guest.State, "released by the demolition: it steps out like a rider of any attraction, no swim starts" );
+			Assert.AreEqual( GuestState.ExitingRide, guest.State );
+		}
+		Assert.AreEqual( randomBefore, rig.Simulation.CaptureSnapshot().RandomState, "no swim was seeded: the world generator was not drawn" );
+		var happiness = aboard.Select( guest => guest.Happiness ).ToArray();
+		rig.Simulation.Unregister( rig.Ride );
+		for ( var index = 0; index < aboard.Count; index++ )
+		{
+			// like a rider of any other attraction: already on the exit, no attraction named, and Unregister's happiness loss does not reach it a second time
+			Assert.AreEqual( GuestState.ExitingRide, aboard[index].State );
+			Assert.AreEqual( 0, aboard[index].AttractionId );
+			Assert.AreEqual( (2, 0), aboard[index].Cell );
+			Assert.AreEqual( happiness[index], aboard[index].Happiness, "no second treatment by the unregistering" );
+		}
+		Assert.IsTrue( swimmersBefore >= 1 );
+		Assert.IsTrue( rig.Simulation.Guests.All( guest => !guest.InSwimSession ), "the swimmers who were in the water are out as well" );
+		Assert.IsFalse( rig.Simulation.IsChangingIn( changing ) || rig.Simulation.IsChangingIn( third ) );
+	}
+
+	[TestMethod]
+	public void ARoomThatHasStoppedReleasesItsGuestsOnFootAndAFullPoolDoesNotTakeMoreSwimmers()
+	{
+		var rig = new Rig( capacity: 8 );
+		// the water shrinks to two cells: the pool holds the minimum capacity of four swimmers
+		foreach ( var (x, y) in rig.Region.Cells.ToArray() )
+			if ( (x, y) is not ((5, 3) or (5, 4)) )
+				rig.Cells.SetType( x, y, ParkCellType.Empty );
+		Assert.AreEqual( 2, rig.Region.Cells.Count );
+		Assert.AreEqual( PoolSwimSettings.MinimumCapacity, rig.Region.Capacity, "two cells hold the minimum, not 2 x 2 swimmers" );
+		var guests = Enumerable.Range( 0, 6 ).Select( _ => rig.Send() ).ToList();
+		var peak = 0;
+		rig.Until( () =>
+		{
+			peak = Math.Max( peak, rig.Simulation.Guests.Count( guest => guest.IsSwimming ) );
+			return guests.All( guest => guest.LastAttractionId == rig.Ride.AttractionId && guest.State != GuestState.Using );
+		}, 600 );
+		Assert.AreEqual( PoolSwimSettings.MinimumCapacity, peak, "the pool filled to its capacity and no further" );
+		Assert.AreEqual( 2, guests.Count( guest => !guest.InSwimSession ), "the two guests who found it full left the room the normal way" );
+		Assert.IsTrue( guests.Where( guest => !guest.InSwimSession ).All( guest => guest.State is GuestState.ExitingRide or GuestState.DoingNothing or GuestState.WalkingAround && guest.AttractionId == 0 ), "on foot at the room's exit" );
+		// a big pool scales with its cells: two swimmers per water cell
+		var big = new Rig();
+		Assert.AreEqual( 72, big.Region.Capacity );
+		var single = new Rig();
+		foreach ( var (x, y) in single.Region.Cells.ToArray() )
+			if ( (x, y) != (5, 3) )
+				single.Cells.SetType( x, y, ParkCellType.Empty );
+		Assert.AreEqual( PoolSwimSettings.MinimumCapacity, single.Region.Capacity );
+	}
+
+	[TestMethod]
+	public void SwimmersCountInTheParkCensusAndAreNotAskedToBeOnAParkCell()
+	{
+		var rig = new Rig();
+		var guest = rig.Send();
+		var walker = rig.Simulation.SpawnInPark( 2, 0 );
+		rig.Until( () => guest.State == GuestState.Swimming, 400 );
+		Assert.IsFalse( rig.Simulation.IsOnParkCell( guest ), "the water is no counted cell type" );
+		Assert.IsTrue( rig.Simulation.IsCountedInPark( guest ), "but a swimmer is in the park" );
+		var census = ParkGate.CountCensus( rig.Simulation );
+		Assert.AreEqual( rig.Simulation.Guests.Count( other => other.State != GuestState.Gone && ( other.InSwimSession || rig.Simulation.IsOnParkCell( other ) ) ), census );
+		Assert.IsTrue( census >= 2, $"the swimmer and the walker ({walker.Id}) both count ({census})" );
+		// the gate cannot close under a swimmer climbing out, nor a guest changing back
+		guest.SwimTurns = 1;
+		rig.Until( () => guest.State == GuestState.ChangingOut, 400 );
+		Assert.IsTrue( ParkGate.CountCensus( rig.Simulation ) >= 2 );
+		rig.Until( () => !guest.InSwimSession, 200 );
+		// with no swim session nothing differs from a cell test: the same count a park without a room gets
+		Assert.AreEqual( rig.Simulation.Guests.Count( other => other.State != GuestState.Gone && rig.Simulation.IsOnParkCell( other ) ), ParkGate.CountCensus( rig.Simulation ) );
+	}
+
+	[TestMethod]
 	public void AClosedParkSendsTheSwimmersOutOfTheWater()
 	{
 		var payments = new QueueTests.ClosedPayments();
@@ -299,22 +386,6 @@ public class PoolsSwimSessionTests
 			if ( guest.IsSwimming )
 				Assert.IsTrue( InWater( rig, guest ), $"turn {turn}" );
 		}
-	}
-
-	[TestMethod]
-	public void ThePoolToolRefusesToErasePoolWaterUnderASwimmer()
-	{
-		using var scope = OpenTpwExtensions.Use( PoolsTests.PoolsSet( true ) );
-		var rig = new Rig();
-		var guest = rig.Send();
-		rig.Until( () => guest.State == GuestState.Swimming, 400 );
-		var builder = new PoolBuilder( rig.Cells, () => null, new PoolsTests.FlatGrid( 12, 12 ), null, null, ( x, y ) => rig.Simulation.IsSwimmerIn( x, y ) ? PoolBuildResult.Swimmers : null );
-		var under = guest.Cell;
-		Assert.AreEqual( PoolBuildResult.Swimmers, builder.CheckErase( under.X, under.Y ) );
-		Assert.AreEqual( PoolBuildResult.Swimmers, builder.Erase( under.X, under.Y ) );
-		Assert.AreEqual( ParkCellTypes.PoolWater, rig.Cells.RawTypeAt( under.X, under.Y ), "the water stayed" );
-		var away = rig.Region.Cells.First( cell => cell != under && cell.Y > under.Y + 1 );
-		Assert.AreEqual( PoolBuildResult.Ok, builder.Erase( away.X, away.Y ), "a cell with nobody in it goes" );
 	}
 
 	[TestMethod]
@@ -394,27 +465,36 @@ public class PoolsSwimSessionTests
 	[TestMethod]
 	public void ASaveInTheMiddleOfASwimRestoresAndContinuesWithTheSameHash()
 	{
-		foreach ( var stopAt in new Func<Guest, bool>[]
+		foreach ( var (name, stopAt) in new (string, Func<List<Guest>, bool>)[]
 		{
-			guest => guest.State == GuestState.Using,
-			guest => guest.State == GuestState.Swimming && guest.SwimTurns < 120,
-			guest => guest.State == GuestState.ClimbingOut,
-			guest => guest.State == GuestState.ChangingOut
+			("everyone swimming", guests => guests.All( guest => guest.State == GuestState.Swimming && guest.SwimTurns < 120 )),
+			("one climbing out", guests => guests.Any( guest => guest.State == GuestState.ClimbingOut )),
+			("one changing back", guests => guests.Any( guest => guest.State == GuestState.ChangingOut ))
 		} )
 		{
-			var rig = new Rig( capacity: 3 );
-			var guests = Enumerable.Range( 0, 3 ).Select( _ => rig.Send() ).ToList();
-			rig.Until( () => guests.Any( stopAt ), 1500 );
+			var rig = new Rig( capacity: 4 );
+			var guests = Enumerable.Range( 0, 4 ).Select( _ => rig.Send() ).ToList();
+			// the rooms' scripts are not in the guest snapshot, so the session is saved once nobody is aboard or queueing: every guest is in the water or on the path
+			rig.Until( () => guests.All( guest => guest.InSwimSession ), 1500 );
+			rig.Until( () => stopAt( guests ), 1500 );
 			var json = System.Text.Encoding.UTF8.GetString( ParkResumeJson.Serialize( rig.Simulation.CaptureSnapshot() ) );
 			var snapshot = ParkResumeJson.Deserialize<GuestSimulationSnapshot>( System.Text.Encoding.UTF8.GetBytes( json ) );
-			Assert.AreEqual( json, System.Text.Encoding.UTF8.GetString( ParkResumeJson.Serialize( snapshot ) ), "the snapshot round-trips as JSON" );
+			Assert.AreEqual( json, System.Text.Encoding.UTF8.GetString( ParkResumeJson.Serialize( snapshot ) ), $"{name}: the snapshot round-trips as JSON" );
 			var copy = Restored( snapshot );
-			Assert.AreEqual( rig.Simulation.ComputeStateHash(), copy.Simulation.ComputeStateHash(), "the restored simulation hashes as the original" );
-			// the rides' scripts are not in the guest snapshot: the copy's script continues on its own, so compare the guests' own steps only
-			var states = guests.Select( guest => (guest.Id, guest.State, guest.SwimTurns, guest.SwimHeading, guest.SwimStroke, guest.SwimHasGoal, guest.SwimGoalX, guest.SwimGoalY, guest.SwimRandom, guest.Navigation.X, guest.Navigation.Y) ).ToList();
-			var restoredStates = copy.Simulation.Guests.Select( guest => (guest.Id, guest.State, guest.SwimTurns, guest.SwimHeading, guest.SwimStroke, guest.SwimHasGoal, guest.SwimGoalX, guest.SwimGoalY, guest.SwimRandom, guest.Navigation.X, guest.Navigation.Y) ).ToList();
-			CollectionAssert.AreEqual( states, restoredStates );
-			Assert.IsTrue( copy.Simulation.Guests.Any( stopAt ), "and the same moment of the session" );
+			Assert.AreEqual( rig.Simulation.ComputeStateHash(), copy.Simulation.ComputeStateHash(), $"{name}: the restored simulation hashes as the original" );
+			Assert.IsTrue( stopAt( copy.Simulation.Guests.ToList() ), $"{name}: the same moment of the session" );
+			// both run on tick for tick, the original uninterrupted: the hash agrees at the end of every park turn, through the avoidance, the climb out, the change and the walk away
+			var turns = 0;
+			for ( var tick = 0; tick < 400 * 15 + 30; tick++ )
+			{
+				rig.Simulation.Tick( Tick );
+				copy.Simulation.Tick( Tick );
+				if ( rig.Simulation.ParkTurn == turns )
+					continue;
+				turns = (int)rig.Simulation.ParkTurn;
+				Assert.AreEqual( rig.Simulation.ComputeStateHash(), copy.Simulation.ComputeStateHash(), $"{name}: park turn {turns} after the restore" );
+			}
+			Assert.IsTrue( turns >= 390, $"{name}: ran {turns} turns" );
 		}
 	}
 
@@ -465,6 +545,37 @@ public class PoolsSwimSessionTests
 		Assert.IsFalse( rig.Simulation.ValidateSnapshot( With( item => item with { SwimStroke = 3 } ) ).IsValid, "a stroke out of range" );
 		Assert.IsFalse( rig.Simulation.ValidateSnapshot( With( item => item with { SwimTurns = -1 } ) ).IsValid, "negative turns" );
 		Assert.IsFalse( rig.Simulation.ValidateSnapshot( With( item => item with { State = GuestState.DoingNothing } ) ).IsValid, "swim fields outside a swim session" );
+	}
+
+	[TestMethod]
+	public void TheSnapshotValidatorBoundsTheSwimTurnsOfEachStateByWhatTheSessionCanSet()
+	{
+		var rig = new Rig();
+		var guest = rig.Send();
+		rig.Until( () => guest.State == GuestState.Swimming, 400 );
+		var good = rig.Simulation.CaptureSnapshot();
+		bool Valid( GuestState state, int turns ) => rig.Simulation.ValidateSnapshot( good with { Guests = good.Guests.Select( item => item with { State = state, SwimTurns = turns } ).ToArray() } ).IsValid;
+		var longest = PoolSwimSettings.MinimumTurns + PoolSwimSettings.ExtraTurns - 1;
+		Assert.IsTrue( Valid( GuestState.Swimming, longest ) );
+		Assert.IsFalse( Valid( GuestState.Swimming, longest + 1 ), "more than the longest swim" );
+		Assert.IsFalse( Valid( GuestState.Swimming, 0 ), "a swim with no turn left has already become the climb out" );
+		Assert.IsTrue( Valid( GuestState.ClimbingOut, GuestSimulation.ClimbOutLimitTurns ) );
+		Assert.IsFalse( Valid( GuestState.ClimbingOut, GuestSimulation.ClimbOutLimitTurns + 1 ), "more than the climb-out limit" );
+		Assert.IsTrue( Valid( GuestState.ChangingOut, PoolSwimSettings.ChangeOutTurns ) );
+		Assert.IsFalse( Valid( GuestState.ChangingOut, PoolSwimSettings.ChangeOutTurns + 1 ), "more than the change duration" );
+		Assert.IsFalse( Valid( GuestState.ChangingOut, int.MaxValue ), "an absurd count would keep the guest hidden for years" );
+	}
+
+	[TestMethod]
+	public void TheSnapshotValidatorRefusesASwimmerBoundToAnAttractionThatIsNoChangingRoom()
+	{
+		var rig = new Rig();
+		var guest = rig.Send();
+		rig.Until( () => guest.State == GuestState.Swimming, 400 );
+		var good = rig.Simulation.CaptureSnapshot();
+		rig.Ride.IsChangingRoom = false;
+		var errors = rig.Simulation.ValidateSnapshot( good ).Errors;
+		Assert.IsTrue( errors.Any( error => error.Contains( "not a changing room", StringComparison.Ordinal ) ), string.Join( "; ", errors ) );
 	}
 
 	// ---- The hash ------------------------------------------------------------------------------------------------------

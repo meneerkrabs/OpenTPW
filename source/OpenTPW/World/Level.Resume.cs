@@ -12,7 +12,7 @@ public partial class Level
 
 	/// <summary>Captures a writable fixed-ride park between simulation ticks, including its direct instance links.</summary>
 	internal ParkResumeSnapshot CaptureResumeSnapshot( AutomaticAdvisor? advisor, string displayName,
-		IReadOnlyDictionary<string, string>? verifiedAssets = null, DateTimeOffset? savedUtc = null )
+		IReadOnlyDictionary<string, string>? verifiedAssets = null, DateTimeOffset? savedUtc = null, bool advisorMaySpeak = false )
 	{
 		if ( IsReadOnlyVisit || GameEditions.IsThemeParkInc || OriginalPark == null || Park == null || Guests == null )
 			throw new InvalidOperationException( "Only a writable Theme Park World park can be saved here." );
@@ -24,9 +24,10 @@ public partial class Level
 			var state = item.Runtime.CaptureSnapshot();
 			return new ParkResumeRuntime( state.HasScript && !state.Stopped ? item.Runtime.Script!.ScriptId : 0, state );
 		} ).ToArray();
-		// [EXT:pools-save] the pools extension's own objects are in the manifest only while the park uses the extension (a pool cell or a changing room)
+		// [EXT:pools-save] the extension is recorded while the park has a pool cell or a changing room; its manifest keys are those of the objects the park placed (a changing room), not of its whole content
 		var poolsInUse = ParkResumeMods.InUse( Guests.Grid.Cells, Objects.Objects.Any( item => !item.IsDeleted && ParkResumeMods.IsPoolsObject( item.Entry ) ) ).Contains( OfficialExtensions.Pools.Id );
-		var assets = ParkResumeMods.AssetsForUse( verifiedAssets ?? ParkResumeAssetManifest.Capture( Objects.Catalog, Park.Economy.Settings ), poolsInUse );
+		var assets = ParkResumeMods.AssetsForUse( verifiedAssets ?? ParkResumeAssetManifest.Capture( Objects.Catalog, Park.Economy.Settings ),
+			Objects.Objects.Where( item => !item.IsDeleted ).Select( item => item.Entry ) );
 		var random = CaptureRandomState();
 		var snapshot = new ParkResumeSnapshot
 		{
@@ -52,13 +53,13 @@ public partial class Level
 			Gate = Gate?.CaptureSnapshot(),
 			ParkName = ParkName is { } name ? new ParkNameSaveData( name.Line1, name.Line2 ) : null,
 			Staff = StaffWorld?.CaptureSnapshot(),
-			Advisor = advisor?.CaptureSnapshot(),
+			Advisor = advisor?.CaptureSnapshot( advisorMaySpeak ),
 			Coasters = CaptureCoastersSnapshot(),
 			Tracks = CaptureTracksSnapshot(),
 			Tours = CaptureToursSnapshot(),
 			Prototype = prototype,
 			Particles = ParticlesCaptured?.Invoke( this ),
-			// [EXT:mods] null unless a simulation-changing extension or mod is active, so unmodded saves keep their bytes; [EXT:pools-save] opentpw.pools is recorded only while the park has pool cells
+			// [EXT:mods] null unless a simulation-changing extension or mod is active, so unmodded saves keep their bytes; [EXT:pools-save] opentpw.pools is recorded only while the park has pool cells or a changing room
 			Mods = ParkResumeMods.Capture( OpenTpwExtensions.Active, poolsInUse ? new HashSet<string>( StringComparer.Ordinal ) { OfficialExtensions.Pools.Id } : new HashSet<string>( StringComparer.Ordinal ) ),
 			// [EXT:smarter-guests] null while the extension is off for these guests, so such saves keep their bytes
 			SmarterGuests = SmarterGuestsSave.Capture( Guests ),

@@ -25,6 +25,9 @@ public class PoolsActivityHostTests
 		public bool Decline { get; set; }
 		public int Slot { get; init; } = PoolSwimSlots.Lying;
 		public int StartPercent { get; init; }
+		public int Target { get; init; } = 4242;
+		/// <summary>When set, <see cref="Start"/> places the guest at this point (16.16 cells) instead of the middle of the offered cell.</summary>
+		public (int X, int Y)? PlaceAt { get; init; }
 		public int Offers, Starts, Updates, Aborts;
 
 		public int SpriteSlot( Guest guest ) => Slot;
@@ -33,7 +36,7 @@ public class PoolsActivityHostTests
 		public PoolActivityOffer? Offer( GuestSimulation simulation, Guest guest, PoolSwimRegion region )
 		{
 			Offers++;
-			return Available ? new PoolActivityOffer( 4242, Dry ? 4 : 7, 5 ) : null;
+			return Available ? new PoolActivityOffer( Target, Dry ? 4 : 7, 5 ) : null;
 		}
 
 		public bool Start( GuestSimulation simulation, Guest guest, PoolActivityOffer offer, ref uint random )
@@ -41,7 +44,7 @@ public class PoolsActivityHostTests
 			if ( Decline )
 				return false;
 			Starts++;
-			var (x, y) = PoolSwimRegion.Centre( (offer.X, offer.Y) );
+			var (x, y) = PlaceAt ?? PoolSwimRegion.Centre( (offer.X, offer.Y) );
 			simulation.PlacePoolGuest( guest, x, y );
 			return true;
 		}
@@ -206,10 +209,67 @@ public class PoolsActivityHostTests
 			Assert.IsFalse( guest.InPoolActivity, how );
 			Assert.IsNull( guest.PoolActivityId, how );
 			Assert.AreEqual( 0, guest.PoolActivityTurns, how );
+			if ( how == "park closed" )
+			{
+				// a closed park sends the guest out like a swimmer: back in the water, swimming to the steps, then changing back (no jump to the exit)
+				Assert.AreEqual( GuestState.ClimbingOut, guest.State, how );
+				Assert.IsTrue( rig.Region.IsWater( guest.Navigation.X, guest.Navigation.Y ), how );
+				rig.Until( () => !guest.InSwimSession, 600 );
+			}
 			rig.Turns( 30 );
 			Assert.IsFalse( guest.InSwimSession, $"{how}: the session is over" );
 			Assert.AreEqual( 0, guest.AttractionId, how );
 		}
+	}
+
+	[TestMethod]
+	public void AbortingATargetByThingIdOnlyHitsTheActivitiesOfThatTarget()
+	{
+		var rig = new Rig( capacity: 3 );
+		var one = new Fake { Id = "test.one", Target = 11, Duration = 400 };
+		var two = new Fake { Id = "test.two", Target = 12, Duration = 400 };
+		var none = new Fake { Id = "test.none", Target = 0, Duration = 400 };
+		foreach ( var activity in new[] { one, two, none } )
+			rig.Simulation.RegisterPoolActivity( activity );
+		var guests = Enumerable.Range( 0, 3 ).Select( _ => rig.Send() ).ToList();
+		rig.Until( () => guests.All( guest => guest.State == GuestState.Swimming || guest.State == GuestState.PoolActivity ), 1500 );
+		// put each swimmer into its own activity, whatever the cadence did
+		foreach ( var guest in guests.Where( guest => guest.State == GuestState.PoolActivity ) )
+			rig.Simulation.AbortPoolActivitiesOf( guest.PoolActivityTarget == 0 ? 999 : guest.PoolActivityTarget );
+		rig.Until( () => guests.All( guest => guest.State == GuestState.Swimming ), 1500 );
+		var ids = new[] { "test.one", "test.two", "test.none" };
+		for ( var index = 0; index < 3; index++ )
+			Assert.IsTrue( rig.Simulation.DebugStartActivity( guests[index], ids[index] ), ids[index] );
+		Assert.AreEqual( 0, new[] { one, two, none }.Sum( activity => activity.Aborts ) );
+		rig.Simulation.AbortPoolActivitiesOf( 0 );
+		Assert.IsTrue( guests.All( guest => guest.InPoolActivity ), "0 is no target: nothing is aborted" );
+		rig.Simulation.AbortPoolActivitiesOf( 11 );
+		Assert.AreEqual( (1, 0, 0), (one.Aborts, two.Aborts, none.Aborts) );
+		Assert.IsFalse( guests[0].InPoolActivity );
+		Assert.IsTrue( guests[1].InPoolActivity && guests[2].InPoolActivity, "the others go on" );
+	}
+
+	[TestMethod]
+	public void AnActivityThatLeavesTheGuestInTheRimOfItsWaterPutsItBackAtItsOwnCellNotAtTheSteps()
+	{
+		// (5.1, 5.5) is in the water cell (5, 5) but inside the margin of the rim: not free water; the middle of that cell is
+		var (rig, guest, _) = Swimmer( new Fake { PlaceAt = (5 * 65536 + 6554, 5 * 65536 + 32768), Duration = 2 } );
+		rig.Until( () => guest.State == GuestState.PoolActivity, 1500 );
+		Assert.IsFalse( rig.Region.IsWater( guest.Navigation.X, guest.Navigation.Y ) );
+		rig.Until( () => guest.State == GuestState.Swimming, 20 );
+		Assert.AreEqual( (5, 5), guest.Navigation.Cell );
+		Assert.AreEqual( (5 * 65536 + 32768, 5 * 65536 + 32768), (guest.Navigation.X, guest.Navigation.Y), "the middle of its own cell, not the room's steps" );
+	}
+
+	[TestMethod]
+	public void TheValidatorEnforcesTheActivityTurnCap()
+	{
+		var (rig, guest, _) = Swimmer();
+		rig.Until( () => guest.State == GuestState.PoolActivity, 1500 );
+		var good = rig.Simulation.CaptureSnapshot();
+		GuestSimulationSnapshot With( int turns ) => good with { Guests = good.Guests.Select( item => item with { PoolActivityTurns = turns } ).ToArray() };
+		Assert.IsTrue( rig.Simulation.ValidateSnapshot( With( PoolActivitySettings.MaximumTurns ) ).IsValid );
+		Assert.IsFalse( rig.Simulation.ValidateSnapshot( With( PoolActivitySettings.MaximumTurns + 1 ) ).IsValid );
 	}
 
 	[TestMethod]
@@ -291,7 +351,7 @@ public class PoolsActivityAmbientTests
 		public bool Start( GuestSimulation simulation, Guest guest, PoolActivityOffer offer, ref uint random ) => false;
 		public PoolActivityStep Update( GuestSimulation simulation, Guest guest, ref uint random ) => PoolActivityStep.Continue;
 		public void Abort( GuestSimulation simulation, Guest guest ) { }
-		public float? FeetHeight( GuestSimulation simulation, Guest guest, float defaultHeight ) => Height is { } lift ? defaultHeight + lift : null;
+		public float? FeetHeight( GuestSimulation simulation, Guest guest, PoolFeetHeights heights ) => Height is { } lift ? heights.Deck + lift : null;
 		public void Ambient( GuestSimulation simulation, Guest guest, PoolSwimRegion region )
 		{
 			Calls[guest.Id] = Calls.GetValueOrDefault( guest.Id ) + 1;
@@ -348,11 +408,11 @@ public class PoolsActivityAmbientTests
 		rig.Simulation.RegisterPoolActivity( fake );
 		var guest = rig.Send();
 		rig.Until( () => guest.State == GuestState.Swimming, 400 );
-		Assert.AreEqual( 2.5f, rig.Simulation.PoolFeetHeight( guest, 2.5f ), "a free swimmer is drawn at the default height" );
+		Assert.AreEqual( 2.5f, rig.Simulation.PoolFeetHeight( guest, new PoolFeetHeights( 2.5f, 2.0f, 3.0f ) ), "a free swimmer is drawn at the default height" );
 		(guest.State, guest.PoolActivityId) = (GuestState.PoolActivity, "test.ambient");
-		Assert.AreEqual( 8.5f, rig.Simulation.PoolFeetHeight( guest, 2.5f ), "in an activity the activity's height wins" );
+		Assert.AreEqual( 9f, rig.Simulation.PoolFeetHeight( guest, new PoolFeetHeights( 2.5f, 2.0f, 3.0f ) ), "in an activity the activity's height wins" );
 		fake.Height = null;
-		Assert.AreEqual( 2.5f, rig.Simulation.PoolFeetHeight( guest, 2.5f ), "null keeps the default" );
+		Assert.AreEqual( 2.5f, rig.Simulation.PoolFeetHeight( guest, new PoolFeetHeights( 2.5f, 2.0f, 3.0f ) ), "null keeps the default" );
 		(guest.State, guest.PoolActivityId) = (GuestState.Swimming, null);
 	}
 }

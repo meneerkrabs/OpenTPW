@@ -48,7 +48,7 @@ public partial class Level
 	public PoolWaveSettings? CyclePoolWaves( OriginalObject item )
 	{
 		if ( !FeatureGates.Pools || Guests?.Grid.Cells is not { } cells || PoolAttractions.KindOf( item.Entry ) != PoolAttractionKind.WaveMachine
-			|| PoolSites.Find( item.Visitors.AttractionId ) is not { } site || PoolSwimRegion.Build( cells, site.Access ) is not { } region )
+			|| PoolSites.Find( item.ThingId ) is not { } site || PoolSwimRegion.Build( cells, site.Access ) is not { } region )
 			return null;
 		var next = PoolWaveSettings.NextPreset( PoolWaveSettings.Read( cells, region ) );
 		PoolWaveSettings.Write( cells, region, next );

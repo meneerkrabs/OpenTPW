@@ -217,6 +217,11 @@ New objects made from scratch (models, textures, scripts) are authored with the 
 - `archive`: the archive's path without `.wad` (a plain folder works too), in the mod's folder, or, with `input`, in the
   data folder of that input (the folder the player chose in `mods.json`, or the `Data` folder inside it). The path may
   not leave its folder (the rules of the manifest's content paths).
+- `research` (optional, a top-level field of the file, default `true`): `false` makes every object of the file available from the start while its mod is on. Such objects are never research projects: they are in no research table, never in a
+  save's research set, do not count in the group percentages and do not hold back the golden ticket for "everything researched and built". The official pools extension's `objects.json` sets it (its changing rooms), so a park that
+  uses none of them has the same research tables and saved bytes with the extension on or off. Community mods leave it out and are researched like the game's own objects.
+- The asset hashes of a save: a save of a park that places an object of the official pools extension holds that object's files (`mod:opentpw.pools:` keys) and a load requires them to hash the same; the files of objects the park does not place
+  are ignored in both directions. Changing the files of a placed object changes the saves that place it; adding objects to the extension does not ([POOLS.md](POOLS.md#the-extension-and-the-save-rule)).
 - `theme`: `jungle`, `hallow`, `space` or `fantasy`. `category`: `rides`, `shops`, `sideshow`, `features` or `upgrades`.
 - `names`: the object's name per language; the selected language, then English, then the archive's `.sam` name.
 - The archive must hold one `.sam` with an `Info.Id` and the main model, like the game's own. The category defaults

@@ -65,21 +65,6 @@ internal static class PoolActivityHelpers
 		return count;
 	}
 
-	/// <summary>The site nearest to the guest (ties by lower object id).</summary>
-	public static PoolAttractionSite? Nearest( IEnumerable<PoolAttractionSite> sites, Guest guest )
-	{
-		PoolAttractionSite? best = null;
-		var bestDistance = long.MaxValue;
-		foreach ( var site in sites )
-		{
-			var (cx, cy) = PoolSwimRegion.Centre( site.Access );
-			var distance = Fixed16.Octile( guest.Navigation.X - cx, guest.Navigation.Y - cy );
-			if ( distance < bestDistance || (distance == bestDistance && best != null && site.ObjectId < best.ObjectId) )
-				(best, bestDistance) = (site, distance);
-		}
-		return best;
-	}
-
 	/// <summary>
 	/// One swimming step of the guest towards a point (16.16) with the swimmer's own steering, ignoring the crowd (the guest is on its way to something that is its own). True once it is within the goal radius.
 	/// Draws from <paramref name="random"/> only.
@@ -121,8 +106,8 @@ public sealed class RopeSwingActivity : IPoolActivity
 
 	public PoolActivityOffer? Offer( GuestSimulation simulation, Guest guest, PoolSwimRegion region )
 	{
-		var free = sites.In( region, PoolAttractionKind.RopeSwing ).Where( site => PoolActivityHelpers.Occupancy( simulation, Id, site.ObjectId ) == 0 );
-		return PoolActivityHelpers.Nearest( free, guest ) is { } chosen ? new PoolActivityOffer( chosen.ObjectId, chosen.Access.X, chosen.Access.Y ) : null;
+		var chosen = sites.NearestIn( region, PoolAttractionKind.RopeSwing, guest.Navigation.X, guest.Navigation.Y, site => PoolActivityHelpers.Occupancy( simulation, Id, site.ObjectId ) == 0 );
+		return chosen != null ? new PoolActivityOffer( chosen.ObjectId, chosen.Access.X, chosen.Access.Y ) : null;
 	}
 
 	public bool Start( GuestSimulation simulation, Guest guest, PoolActivityOffer offer, ref uint random ) => sites.Find( offer.TargetId ) != null && PoolActivityHelpers.Occupancy( simulation, Id, offer.TargetId ) == 1;
@@ -191,13 +176,19 @@ public sealed class RopeSwingActivity : IPoolActivity
 	};
 
 	/// <summary>The guest stands on the platform while climbing (rising), swings down from it, and lands on the water.</summary>
-	public float? FeetHeight( GuestSimulation simulation, Guest guest, float defaultHeight ) => defaultHeight + guest.PoolActivityPhase switch
+	public float? FeetHeight( GuestSimulation simulation, Guest guest, PoolFeetHeights heights )
 	{
-		1 => PoolAttractionSettings.SwingPlatformHeight * guest.PoolActivityTurns / PoolAttractionSettings.SwingClimbTurns,
-		2 => PoolAttractionSettings.SwingPlatformHeight * (1f - (float)guest.PoolActivityTurns / PoolAttractionSettings.SwingTurns)
-			+ 0.25f * MathF.Sin( MathF.PI * guest.PoolActivityTurns / PoolAttractionSettings.SwingTurns ),
-		_ => 0f
-	};
+		var platform = heights.Deck + PoolAttractionSettings.SwingPlatformHeight;
+		return guest.PoolActivityPhase switch
+		{
+			// up the ladder from the deck to the platform
+			1 => heights.Deck + PoolAttractionSettings.SwingPlatformHeight * guest.PoolActivityTurns / PoolAttractionSettings.SwingClimbTurns,
+			// down from the platform to the water in an arc, then the splash at the water's surface
+			2 => platform + (heights.Water - platform) * guest.PoolActivityTurns / PoolAttractionSettings.SwingTurns + 0.25f * MathF.Sin( MathF.PI * guest.PoolActivityTurns / PoolAttractionSettings.SwingTurns ),
+			3 => heights.Water,
+			_ => null
+		};
+	}
 
 	public void Abort( GuestSimulation simulation, Guest guest )
 	{
@@ -222,8 +213,8 @@ public sealed class JetsActivity : IPoolActivity
 
 	public PoolActivityOffer? Offer( GuestSimulation simulation, Guest guest, PoolSwimRegion region )
 	{
-		var room = sites.In( region, PoolAttractionKind.Jets ).Where( site => PoolActivityHelpers.Occupancy( simulation, Id, site.ObjectId ) < PoolAttractionSettings.JetCapacity );
-		return PoolActivityHelpers.Nearest( room, guest ) is { } chosen ? new PoolActivityOffer( chosen.ObjectId, chosen.Access.X, chosen.Access.Y ) : null;
+		var chosen = sites.NearestIn( region, PoolAttractionKind.Jets, guest.Navigation.X, guest.Navigation.Y, site => PoolActivityHelpers.Occupancy( simulation, Id, site.ObjectId ) < PoolAttractionSettings.JetCapacity );
+		return chosen != null ? new PoolActivityOffer( chosen.ObjectId, chosen.Access.X, chosen.Access.Y ) : null;
 	}
 
 	public bool Start( GuestSimulation simulation, Guest guest, PoolActivityOffer offer, ref uint random ) =>
@@ -293,8 +284,8 @@ public sealed class SpaActivity : IPoolActivity
 
 	public PoolActivityOffer? Offer( GuestSimulation simulation, Guest guest, PoolSwimRegion region )
 	{
-		var room = sites.In( region, PoolAttractionKind.Spa ).Where( site => PoolActivityHelpers.Occupancy( simulation, Id, site.ObjectId ) < PoolAttractionSettings.SpaSeats );
-		return PoolActivityHelpers.Nearest( room, guest ) is { } chosen ? new PoolActivityOffer( chosen.ObjectId, chosen.Access.X, chosen.Access.Y ) : null;
+		var chosen = sites.NearestIn( region, PoolAttractionKind.Spa, guest.Navigation.X, guest.Navigation.Y, site => PoolActivityHelpers.Occupancy( simulation, Id, site.ObjectId ) < PoolAttractionSettings.SpaSeats );
+		return chosen != null ? new PoolActivityOffer( chosen.ObjectId, chosen.Access.X, chosen.Access.Y ) : null;
 	}
 
 	public bool Start( GuestSimulation simulation, Guest guest, PoolActivityOffer offer, ref uint random )
@@ -353,7 +344,7 @@ public sealed class SpaActivity : IPoolActivity
 	public int SpriteSlot( Guest guest ) => guest.PoolActivityPhase == 1 ? PoolSwimSlots.SittingInWater : PoolSwimSlots.Crawl;
 
 	/// <summary>A seated guest sits in the water of the tub: a little above the ground of the tile.</summary>
-	public float? FeetHeight( GuestSimulation simulation, Guest guest, float defaultHeight ) => guest.PoolActivityPhase == 1 ? defaultHeight + 0.35f : null;
+	public float? FeetHeight( GuestSimulation simulation, Guest guest, PoolFeetHeights heights ) => guest.PoolActivityPhase == 1 ? heights.Deck + 0.35f : null;
 
 	public void Abort( GuestSimulation simulation, Guest guest )
 	{

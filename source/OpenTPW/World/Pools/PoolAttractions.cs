@@ -20,7 +20,7 @@ public enum PoolAttractionKind
 /// One placed water attraction as the swim session sees it: the object, where it stands and the pool cell beside it where the swimmers meet it. Made by <see cref="PoolAttractionSites"/>
 /// from the placed objects, never stored.
 /// </summary>
-/// <param name="ObjectId">The object's attraction id (<c>RideVisitorBridge.AttractionId</c>), what a guest saves as its activity target.</param>
+/// <param name="ObjectId">The object's thing id (<c>OriginalObject.ThingId</c>), what a guest saves as its activity target.</param>
 /// <param name="Kind">What the object is.</param>
 /// <param name="Cells">The footprint cells.</param>
 /// <param name="Access">The first water-side cell that holds pool water: where swimmers leave the water for the attraction or land from it.</param>
@@ -197,7 +197,7 @@ public sealed class PoolAttractionSites
 				foreach ( var (x, y) in PoolAttractions.AccessCandidates( item.Entry, placement.X, placement.Y, placement.Rotation ) )
 					if ( map.InBounds( x, y ) && map.RawTypeAt( x, y ) == ParkCellTypes.PoolWater )
 					{
-						sites.Add( new PoolAttractionSite( item.Visitors.AttractionId, kind, item.Cells.Select( cell => (cell.X, cell.Y) ).ToArray(), (x, y) ) );
+						sites.Add( new PoolAttractionSite( item.ThingId, kind, item.Cells.Select( cell => (cell.X, cell.Y) ).ToArray(), (x, y) ) );
 						break;
 					}
 			}
@@ -212,6 +212,24 @@ public sealed class PoolAttractionSites
 	/// <summary>The sites of a kind whose access cell lies in the swim region, in placement order.</summary>
 	public IEnumerable<PoolAttractionSite> In( PoolSwimRegion region, PoolAttractionKind kind ) =>
 		All.Where( site => site.Kind == kind && region.Contains( site.Access.X, site.Access.Y ) );
+
+	/// <summary>The nearest site of a kind in the region to a point (16.16) that <paramref name="accepts"/> (ties by lower id), without allocating: the activities call it for every swimmer every turn.</summary>
+	public PoolAttractionSite? NearestIn( PoolSwimRegion region, PoolAttractionKind kind, int x, int y, Func<PoolAttractionSite, bool> accepts )
+	{
+		PoolAttractionSite? best = null;
+		var bestDistance = int.MaxValue;
+		var all = All;
+		for ( var i = 0; i < all.Count; i++ )
+		{
+			var site = all[i];
+			if ( site.Kind != kind || !region.Contains( site.Access.X, site.Access.Y ) || !accepts( site ) )
+				continue;
+			var distance = Fixed16.Octile( x - (site.Access.X * Fixed16.One + Fixed16.One / 2), y - (site.Access.Y * Fixed16.One + Fixed16.One / 2) );
+			if ( distance < bestDistance || (distance == bestDistance && best != null && site.ObjectId < best.ObjectId) )
+				(best, bestDistance) = (site, distance);
+		}
+		return best;
+	}
 
 	/// <summary>
 	/// Whether the pool cell (x, y) is the water side of a water attraction: erasing it would leave the attraction without its pool, so the pool tool refuses it

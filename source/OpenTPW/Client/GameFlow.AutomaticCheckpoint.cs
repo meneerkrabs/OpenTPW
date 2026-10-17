@@ -53,7 +53,12 @@ internal sealed partial class GameFlow
 					if ( !string.Equals( executionSession.BoundProfileDigest, receipt, StringComparison.OrdinalIgnoreCase ) ) throw new InvalidDataException( "The checkpoint profile changed before capture." );
 					session = executionSession;
 					session.TryCheckpoint( () => AutomaticProgressReceipt( owner, receipt ),
-			() => AutomaticCaptureOverride?.Invoke( level ) ?? level.CaptureResumeSnapshot( Advisor?.IsAttached == true ? Advisor : null, level.LevelName, savedUtc: DateTimeOffset.UtcNow ),
+			() =>
+			{
+				// The player is leaving: a response still being spoken (the level-start welcome runs for about half a minute) ends here instead of refusing the checkpoint
+				if ( Advisor?.IsAttached == true ) Advisor.EndSpeechForExit();
+				return AutomaticCaptureOverride?.Invoke( level ) ?? level.CaptureResumeSnapshot( Advisor?.IsAttached == true ? Advisor : null, level.LevelName, savedUtc: DateTimeOffset.UtcNow );
+			},
 			() => RetireAutomaticPark( level.LevelName ) );
 				}
 				catch ( Exception error ) when ( !session.CheckpointCommitted && ProgressFailure( error ) ) { ShowAutomaticFailure( level, hud, screen, error ); }

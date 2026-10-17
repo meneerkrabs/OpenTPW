@@ -18,8 +18,12 @@ public sealed class GuestRenderer : Entity
 	/// </summary>
 	// [BIN:TPW-EXE:0x005890E0 sprite placement] [BIN:TPW-EXE:0x00578BE0 projection] 20 / 128 × √2 = 0.2210 original units a pixel, 0.04419 engine units; read from the quad placement and the projection builder, replacing the 0.045 that was fitted by eye
 	public static readonly float UnitsPerPixel = SpriteScale.EngineUnitsPerPixel;
-	/// <summary>Walk-cycle frames per cell walked (8 frames per 0.8 cells). Approximation.</summary>
-	public const float WalkFramesPerCell = 10f;
+	/// <summary>
+	/// Walk-cycle steps per cell walked: the walk step sets the sprite's interval to 62 ms over twice the speed (the walk script doubles it, the run does not), so a sprite steps
+	/// 248 / (62 / (2 v)) times in a turn it covers v / 2.5098 cells in: 20.08 a cell, a run 10.04. The 8 frames of the walk script therefore span 0.4 cell.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004FA2A0 walk step] v = step length (16.16 per turn) x 3.829657e-05 (0x007006E8), doubled unless the guest runs (a smoothed speed word above 0, thing types 1 and 7); 0x004D41D0 sets the interval to trunc(62 / v) ms (0x007003A0), at most 250, applied by 0x004D4190; the sprite player 0x00475360 runs one script step per interval
+	public const float WalkFramesPerCell = 20.078f;
 	private const int VerticesPerGuest = 12;
 
 	private readonly GuestSimulation simulation;

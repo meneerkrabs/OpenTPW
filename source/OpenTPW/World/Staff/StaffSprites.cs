@@ -1,23 +1,7 @@
 namespace OpenTPW;
 
-/// <summary>How a staff animation slot plays (the original's script entries, table 0x75a418).</summary>
-public enum StaffPlayback
-{
-	/// <summary>All frames, looping.</summary>
-	Loop,
-	/// <summary>All frames at half the frame rate, looping (the patrol walk, the sweep).</summary>
-	HalfRateLoop,
-	/// <summary>The frames once, then the last one held (researching, striking).</summary>
-	OnceThenHold,
-	/// <summary>The first frame only (state 6).</summary>
-	Single,
-	/// <summary>The slot once, then <see cref="StaffClip.ThenSlot"/> looping (the guard's catch, then carrying the kid).</summary>
-	OnceThenLoop
-}
-
-/// <summary>One staff animation: an ESP slot, how it plays and the original script number it stands for.</summary>
-/// <param name="MaxFrames">Frames of the slot used (the dangling cursor sprite loops frames 0-3 of a slot that may hold more); 0 = all.</param>
-public readonly record struct StaffClip( int Script, int Slot, StaffPlayback Playback, int ThenSlot = -1, int MaxFrames = 0 );
+/// <summary>One staff animation: the original script number (<see cref="StaffScripts"/>) and the ESP slot it shows; the frames and their order come from the script.</summary>
+public readonly record struct StaffClip( int Script, int Slot );
 
 /// <summary>The sprite banks of one role in a theme: a folder of <c>esprites.wad</c> and the banks the variant picks from.</summary>
 public sealed record StaffBankSet( string Folder, IReadOnlyList<string> Banks );
@@ -29,31 +13,34 @@ public sealed record StaffBankSet( string Folder, IReadOnlyList<string> Banks );
 public static class StaffSpriteRules
 {
 	// [BIN:TPW-EXE:0x4d4190 script table 0x75a418] each script is a list of (ESP slot, frames); the numbers are the table's indices
-	public static readonly StaffClip Stand = new( 3, 0, StaffPlayback.Single );
-	public static readonly StaffClip Walk = new( 1, 1, StaffPlayback.Loop );
-	public static readonly StaffClip Run = new( 2, 2, StaffPlayback.Loop );
+	public static readonly StaffClip Stand = new( 3, 0 );
+	public static readonly StaffClip Walk = new( 1, 1 );
+	public static readonly StaffClip Run = new( 2, 2 );
 	/// <summary>Script 9: the walk at half rate (patrol, to a strike, a handyman to litter or a toilet).</summary>
-	public static readonly StaffClip WalkHalf = new( 9, 1, StaffPlayback.HalfRateLoop );
-	/// <summary>Script 10: researching, 4 frames then hold.</summary>
-	public static readonly StaffClip Research = new( 10, 4, StaffPlayback.OnceThenHold, MaxFrames: 4 );
+	public static readonly StaffClip WalkHalf = new( 9, 1 );
+	/// <summary>Script 10: researching, 4 frames then four steps of the first, looping.</summary>
+	public static readonly StaffClip Research = new( 10, 4 );
 	/// <summary>Script 0x11: sweeping and cleaning, 4 frames at half rate.</summary>
-	public static readonly StaffClip Sweep = new( 0x11, 4, StaffPlayback.HalfRateLoop, MaxFrames: 4 );
+	public static readonly StaffClip Sweep = new( 0x11, 4 );
 	/// <summary>Script 0x12: a mechanic repairing, an 8-frame loop.</summary>
-	public static readonly StaffClip Repair = new( 0x12, 4, StaffPlayback.Loop, MaxFrames: 8 );
-	/// <summary>Script 0x13: striking, 4 frames then hold.</summary>
-	public static readonly StaffClip Strike = new( 0x13, 5, StaffPlayback.OnceThenHold, MaxFrames: 4 );
+	public static readonly StaffClip Repair = new( 0x12, 4 );
+	/// <summary>Script 0x13: striking, 4 frames then six steps of the first, looping.</summary>
+	public static readonly StaffClip Strike = new( 0x13, 5 );
 	/// <summary>Script 0x14: state 6, a single frame of slot 3.</summary>
 	// [BIN:TPW-EXE:0x5054D0 staff state 6] state 6 has no StaffJob, so no clip plays it in OpenTPW: SetState 0x5054D0 case 6 stamps the idle clock (+0x200) and plays script 0x14 (slot 3, one frame), and ModelState 0x5056E0 returns the member to state 0 after 3 x the role's rate (table 0x785330)
 	// [BIN:TPW-EXE:0x5054D0 staff state 6] nothing in tp.exe writes 6: the SetState call sites pass 0, 1, 2, 3, 4, 5 or 7 or a role setter's parameter (0x4D46D0, 0x4D65D0, 0x4D7330, 0x4DA370, 0x502C20), whose callers pass 0, 1, 8-0xD, 0xF, 0x10, 0x12 or 0x13; the other stores of the state word +0x19C are those setters', the constructor's 0 (0x5185D8) and the entertainer's 0, 1 and 0xE; only the staff serializer 0x504DE0 can restore a 6 from a save, so the clip stays for a loaded save
-	public static readonly StaffClip State6 = new( 0x14, 3, StaffPlayback.Single );
+	public static readonly StaffClip State6 = new( 0x14, 3 );
 	/// <summary>Script 0x15: the dangling cursor sprite, slot 6 frames 0-3 looping.</summary>
-	public static readonly StaffClip Dangle = new( 0x15, 6, StaffPlayback.Loop, MaxFrames: 4 );
+	public static readonly StaffClip Dangle = new( 0x15, 6 );
 	/// <summary>Script 0x16: a guard catching (slot 7 once) and then carrying the kid (slot 8 looping).</summary>
-	public static readonly StaffClip CatchAndCarry = new( 0x16, 7, StaffPlayback.OnceThenLoop, ThenSlot: 8 );
+	public static readonly StaffClip CatchAndCarry = new( 0x16, 7 );
 
-	/// <summary>Frames per second of a full-rate clip.</summary>
-	// [APPROX:GUEST-016] the staff clips' frame rate (10 per second, half rate 5), the 'moving' test (a position change within the last 0.6 s, 1.3 s for members the world moves a cell per second) and the smoothing of the drawn position replace tp.exe's timing: the sprite player 0x475360 runs one script step when the millisecond clock passes the sprite's due time +0x7c and adds its interval +0x80 (62 ms at creation, 0x4758f0), and the movement step 0x4fa2a0 sets the heading from the position change, picks the walk or run clip and, through 0x4d41d0 and 0x4d4190, sets the interval to clamp(trunc(62 / v), 0, 250) ms once per turn (v = step length × 3.829657e-05, doubled for the walk clip) — evidence needed: the frames a script step draws and the step length per turn
-	public const float FramesPerSecond = 10f;
+	/// <summary>
+	/// Steps per second of a sprite that keeps the interval it was created with, 62 ms (the dangling cursor sprite and the hire window's figure). A walking member's interval comes from
+	/// <see cref="SpritePlayer"/>.
+	/// </summary>
+	// [APPROX:GUEST-016] the 'moving' test (a position change within the last 0.6 s, 1.3 s for members the world moves a cell per second), the smoothing of the drawn position and the step length OpenTPW takes from the displacement between two position changes stand in for tp.exe's: the walk step 0x4FA2A0 takes the length of the person's own step of the turn (evidence needed: how the drawn position follows the movement position, the sub-turn position 0x004F9F00 gives the sprite each frame)
+	public const float FramesPerSecond = 1000f / SpritePlayer.DefaultInterval;
 
 	/// <summary>The slot an entertainer performs when the bank lists no performance (every shipped entertainer bank lists slot 4).</summary>
 	public const int DefaultPerformanceSlot = 4;
@@ -146,10 +133,10 @@ public static class StaffSpriteRules
 	public static StaffClip Perform( int seed, IReadOnlyList<SpritePerformance>? performances, int count )
 	{
 		if ( performances == null || count <= 0 || performances.Count == 0 )
-			return new StaffClip( 13, DefaultPerformanceSlot, StaffPlayback.Loop );
+			return new StaffClip( 13, DefaultPerformanceSlot );
 		var entry = count == 1 ? 0 : (int)((uint)seed % (uint)(count - 1));
 		var slot = performances[Math.Min( entry, performances.Count - 1 )].Slot;
-		return new StaffClip( 13 + entry, slot is >= 0 and < SpriteAnimationFile.SlotCount ? slot : DefaultPerformanceSlot, StaffPlayback.Loop );
+		return new StaffClip( 13 + entry, slot is >= 0 and < SpriteAnimationFile.SlotCount ? slot : DefaultPerformanceSlot );
 	}
 
 	/// <summary>The hire window's figure: the walk slot (ESP slot 1), frames 0..7 in turn, looping.</summary>
@@ -174,33 +161,17 @@ public static class StaffSpriteRules
 		return (PortraitSlot, mirror ? 8 - direction : direction, mirror, step);
 	}
 
-	/// <summary>The slot and frame step of a clip <paramref name="elapsed"/> seconds after it started.</summary>
-	public static (int Slot, int Step) Resolve( StaffClip clip, float elapsed, IReadOnlyList<SpriteAnimation> animations )
-	{
-		var slot = clip.Slot;
-		var frames = FrameCount( clip, slot, animations );
-		var ticks = (int)MathF.Max( 0, elapsed * FramesPerSecond );
-		switch ( clip.Playback )
-		{
-			case StaffPlayback.Single:
-				return (slot, 0);
-			case StaffPlayback.HalfRateLoop:
-				return (slot, ticks / 2 % frames);
-			case StaffPlayback.OnceThenHold:
-				return (slot, Math.Min( ticks, frames - 1 ));
-			case StaffPlayback.OnceThenLoop:
-				if ( ticks < frames )
-					return (slot, ticks);
-				return (clip.ThenSlot, (ticks - frames) % FrameCount( clip, clip.ThenSlot, animations ));
-			default:
-				return (slot, ticks % frames);
-		}
-	}
+	/// <summary>The slot and frame step of a clip <paramref name="elapsed"/> seconds after it started, at the interval a sprite is created with.</summary>
+	public static (int Slot, int Step) Resolve( StaffClip clip, float elapsed, IReadOnlyList<SpriteAnimation> animations ) =>
+		ResolveSteps( clip, (int)MathF.Max( 0, elapsed * FramesPerSecond ), animations );
 
-	private static int FrameCount( StaffClip clip, int slot, IReadOnlyList<SpriteAnimation> animations )
+	/// <summary>The slot and frame the clip shows at its <paramref name="steps"/>-th script step (the entertainers' performance scripts, which follow the bank, loop all frames of their slot).</summary>
+	public static (int Slot, int Step) ResolveSteps( StaffClip clip, int steps, IReadOnlyList<SpriteAnimation> animations )
 	{
-		var count = slot >= 0 && slot < animations.Count && !animations[slot].IsEmpty ? animations[slot].FramesPerDirection : 1;
-		return Math.Max( 1, clip.MaxFrames > 0 && slot == clip.Slot ? Math.Min( count, clip.MaxFrames ) : count );
+		if ( StaffScripts.At( clip.Script, steps ) is { } shown )
+			return shown;
+		var count = clip.Slot >= 0 && clip.Slot < animations.Count && !animations[clip.Slot].IsEmpty ? animations[clip.Slot].FramesPerDirection : 1;
+		return (clip.Slot, Math.Max( 0, steps ) % Math.Max( 1, count ));
 	}
 }
 

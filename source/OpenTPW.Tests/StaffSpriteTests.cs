@@ -88,14 +88,13 @@ public class StaffSpriteTests
 		mechanic.BusyTicks = 0;
 		mechanic.State = StaffState.Idle;
 		Assert.AreEqual( StaffSpriteRules.Stand, StaffSpriteRules.SelectClip( mechanic, false ) );
-		Assert.AreEqual( 8, StaffSpriteRules.Repair.MaxFrames );
+		Assert.AreEqual( 8, StaffScripts.Get( StaffSpriteRules.Repair.Script )!.Frames.Count );
 
 		var researcher = Member( StaffType.Researcher );
 		Assert.AreEqual( StaffSpriteRules.Stand, StaffSpriteRules.SelectClip( researcher, false ) );
 		researcher.Job = StaffJob.Researching;
-		Assert.AreEqual( StaffSpriteRules.Research, StaffSpriteRules.SelectClip( researcher, false ), "researching: slot 4, 4 frames then hold" );
+		Assert.AreEqual( StaffSpriteRules.Research, StaffSpriteRules.SelectClip( researcher, false ), "researching: slot 4, four frames then four steps of the first, looping" );
 		Assert.AreEqual( StaffSpriteRules.Walk, StaffSpriteRules.SelectClip( researcher, true ) );
-		Assert.AreEqual( StaffPlayback.OnceThenHold, StaffSpriteRules.Research.Playback );
 
 		var guard = Member( StaffType.Guard );
 		Assert.AreEqual( StaffSpriteRules.Stand, StaffSpriteRules.SelectClip( guard, false ) );
@@ -119,7 +118,7 @@ public class StaffSpriteTests
 		// Every shipped entertainer bank: one entry, 01 05 00 00 (program 0 on slot 4); tp.exe's script choice is 13 when n is 1.
 		var shipped = new[] { new SpritePerformance( 0, 4, 0, 0 ), new SpritePerformance( -1, -1, 0, 0 ), new SpritePerformance( -1, -1, 0, 0 ), new SpritePerformance( -1, -1, 0, 0 ) };
 		var clip = StaffSpriteRules.SelectClip( entertainer, false, shipped, 1 )!.Value;
-		Assert.AreEqual( (13, 4, StaffPlayback.Loop), (clip.Script, clip.Slot, clip.Playback) );
+		Assert.AreEqual( (13, 4), (clip.Script, clip.Slot) );
 		Assert.IsTrue( Enumerable.Range( 0, 8 ).All( id => StaffSpriteRules.Perform( id, shipped, 1 ).Slot == 4 ), "every member plays the one entry" );
 		// A bank without entries performs slot 4 too.
 		Assert.AreEqual( 4, StaffSpriteRules.SelectClip( entertainer, false )!.Value.Slot );
@@ -131,21 +130,61 @@ public class StaffSpriteTests
 	}
 
 	[TestMethod]
-	public void ClipsPlayTheirFramesAtTheirRates()
+	public void ClipsPlayTheScriptsFramesStepByStep()
 	{
 		var animations = Enumerable.Range( 0, 20 ).Select( slot => new SpriteAnimation( slot, 0, slot switch { 0 => 1, 1 => 8, 4 => 8, 5 => 4, 6 => 5, 7 => 8, 8 => 8, _ => 0 }, 5 ) ).ToArray();
-		Assert.AreEqual( (0, 0), StaffSpriteRules.Resolve( StaffSpriteRules.Stand, 12f, animations ) );
-		Assert.AreEqual( (1, 3), StaffSpriteRules.Resolve( StaffSpriteRules.Walk, 0.3f, animations ) );
-		Assert.AreEqual( (1, 6), StaffSpriteRules.Resolve( StaffSpriteRules.Walk, 2.2f, animations ), "8-frame loop at 10 per second" );
-		Assert.AreEqual( (1, 1), StaffSpriteRules.Resolve( StaffSpriteRules.WalkHalf, 0.3f, animations ), "half rate" );
-		Assert.AreEqual( (5, 3), StaffSpriteRules.Resolve( StaffSpriteRules.Strike, 99f, animations ), "4 frames then hold" );
-		Assert.AreEqual( (4, 7), StaffSpriteRules.Resolve( StaffSpriteRules.Repair, 0.7f, animations ) );
-		Assert.AreEqual( (4, 0), StaffSpriteRules.Resolve( StaffSpriteRules.Repair, 0.8f, animations ), "the repair loops its 8 frames" );
-		Assert.AreEqual( (6, 3), StaffSpriteRules.Resolve( StaffSpriteRules.Dangle, 0.3f, animations ), "the dangling sprite loops frames 0-3 of a 5-frame slot" );
-		Assert.AreEqual( (6, 0), StaffSpriteRules.Resolve( StaffSpriteRules.Dangle, 0.4f, animations ) );
-		Assert.AreEqual( (7, 5), StaffSpriteRules.Resolve( StaffSpriteRules.CatchAndCarry, 0.5f, animations ) );
-		Assert.AreEqual( (8, 2), StaffSpriteRules.Resolve( StaffSpriteRules.CatchAndCarry, 1.0f, animations ), "the catch plays once, then the carry loops" );
+		(int, int) At( StaffClip clip, int steps ) => StaffSpriteRules.ResolveSteps( clip, steps, animations );
+		Assert.AreEqual( (0, 0), At( StaffSpriteRules.Stand, 99 ) );
+		Assert.AreEqual( (1, 3), At( StaffSpriteRules.Walk, 3 ) );
+		Assert.AreEqual( (1, 0), At( StaffSpriteRules.Walk, 8 ), "8 frames, looping" );
+		CollectionAssert.AreEqual( new[] { 0, 0, 1, 1, 2, 2, 3, 3 }, Enumerable.Range( 0, 8 ).Select( step => At( StaffSpriteRules.WalkHalf, step ).Item2 ).ToArray(), "the patrol walk shows each frame twice (script 9)" );
+		CollectionAssert.AreEqual( new[] { 0, 1, 2, 3, 0, 0, 0, 0, 0, 1 }, Enumerable.Range( 0, 10 ).Select( step => At( StaffSpriteRules.Research, step ).Item2 ).ToArray(), "researching loops: 4 frames then four steps of frame 0" );
+		CollectionAssert.AreEqual( new[] { 0, 1, 2, 3, 0, 0, 0, 0, 0, 0, 0, 1 }, Enumerable.Range( 0, 12 ).Select( step => At( StaffSpriteRules.Strike, step ).Item2 ).ToArray(), "striking loops: 4 frames then six steps of frame 0" );
+		CollectionAssert.AreEqual( new[] { 0, 0, 1, 1, 2, 2, 3, 3, 0 }, Enumerable.Range( 0, 9 ).Select( step => At( StaffSpriteRules.Sweep, step ).Item2 ).ToArray() );
+		Assert.AreEqual( (4, 7), At( StaffSpriteRules.Repair, 7 ) );
+		Assert.AreEqual( (4, 0), At( StaffSpriteRules.Repair, 8 ), "the repair loops its 8 frames" );
+		Assert.AreEqual( (6, 3), At( StaffSpriteRules.Dangle, 3 ), "the dangling sprite shows frames 0-3 of a 5-frame slot" );
+		Assert.AreEqual( (6, 0), At( StaffSpriteRules.Dangle, 4 ) );
+		Assert.AreEqual( (7, 5), At( StaffSpriteRules.CatchAndCarry, 5 ) );
+		Assert.AreEqual( (8, 2), At( StaffSpriteRules.CatchAndCarry, 10 ), "the catch plays once, then the carry (script 0x17) loops" );
+		Assert.AreEqual( (8, 0), At( StaffSpriteRules.CatchAndCarry, 16 ) );
 		Assert.AreEqual( 6, StaffSpriteRules.Dangle.Slot );
-		Assert.AreEqual( 4, StaffSpriteRules.Dangle.MaxFrames );
+		Assert.AreEqual( (6, 3), StaffSpriteRules.Resolve( StaffSpriteRules.Dangle, 0.2f, animations ), "62 ms a step when the sprite keeps the interval it was created with" );
+	}
+
+	[TestMethod]
+	public void ASpritePlayerStepsOncePerTickPastItsDueTimeWithoutCatchingUp()
+	{
+		var player = new SpritePlayer( 1000 );
+		player.Tick( 1062 );
+		Assert.AreEqual( 0, player.Steps, "the due time is the creation plus 62 ms and the clock must pass it" );
+		player.Tick( 1063 );
+		Assert.AreEqual( 1, player.Steps );
+		player.Tick( 1300 );
+		Assert.AreEqual( 2, player.Steps, "one step per tick however late" );
+		player.Tick( 1301 );
+		Assert.AreEqual( 2, player.Steps, "the next due time is the tick's clock plus the interval" );
+		player.SetInterval( 0 );
+		Assert.AreEqual( 62, player.Interval, "0 asks for no change" );
+		player.SetInterval( 100 );
+		player.Tick( 1363 );
+		Assert.AreEqual( 3, player.Steps );
+		player.Tick( 1400 );
+		Assert.AreEqual( 3, player.Steps, "the 100 ms interval is due at 1463" );
+		player.Restart();
+		Assert.AreEqual( 0, player.Steps );
+	}
+
+	[TestMethod]
+	public void AWalkStepAsksForSixtyTwoOverTheSpeedTruncatedAndCapped()
+	{
+		// v = length (16.16, a park turn) x 3.829657e-05, doubled for the walk script: 0.4 cell = 26214 units, v = 1.0039 (run) or 2.0078 (walk)
+		Assert.AreEqual( 61, SpritePlayer.IntervalFor( 26214f, run: true ) );
+		Assert.AreEqual( 30, SpritePlayer.IntervalFor( 26214f, run: false ) );
+		Assert.AreEqual( 250, SpritePlayer.IntervalFor( 100f, run: false ), "capped at 250 ms" );
+		Assert.AreEqual( 0, SpritePlayer.IntervalFor( 0f, run: false ), "no movement asks for no change" );
+		Assert.AreEqual( 0, SpritePlayer.IntervalFor( 1e7f, run: true ), "62 over a speed above 62 truncates to 0: no change" );
+		// steps per cell: a turn is 248 ms, so a walk shows 248 / 30 = 8.3 steps for 0.4 cell: about 20 a cell; a run about 10
+		Assert.AreEqual( 20f, 0.248f / (SpritePlayer.IntervalFor( 26214f, run: false ) / 1000f) / 0.4f, 1f );
 	}
 }

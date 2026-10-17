@@ -488,6 +488,17 @@ public partial class Level : IDisposable
 		List<GuestSpriteAtlas> sprites;
 		using ( LoadProfile.Measure( "guest-sprites" ) )
 			sprites = GuestSpriteAtlas.LoadKids();
+		// [EXT:pools-guest-art] with the pools extension on, the kid and head sets are the extension's 2x ones (together, and only where the game's kid sets are the Theme Park World ones)
+		var poolGuestSprites = PoolGuestSprites.LoadReplacement( sprites );
+		var gameKidCount = sprites.Count;
+		var headSprites = poolGuestSprites?.Heads ?? GuestSpriteAtlas.LoadKidHeads();
+		if ( poolGuestSprites != null )
+			sprites = poolGuestSprites.Kids;
+		// [EXT:pools-swim] the swim sets (64 MiB decoded) are decoded on a worker only for a park that has pool water already; any other park starts that when its first pool cell is painted (PreloadSwimSprites)
+		swimSpriteSets = null;
+		swimSpritesPreloaded = false;
+		if ( grid.Cells.CountOf( ParkCellType.PoolWater ) > 0 )
+			PreloadSwimSprites();
 		// A guest in costume is drawn with the theme's costume set (sprite category 2, tp.exe 0x004FE65E: +0x20 from 0x00541F70(2)), its head on a ride with the costume heads where the theme has them
 		var costumes = GuestSpriteAtlas.LoadCostumes( park.LevelName );
 		var costumeHeads = GuestSpriteAtlas.LoadCostumeHeads( park.LevelName );
@@ -495,7 +506,7 @@ public partial class Level : IDisposable
 		GuestRenderer = new GuestRenderer( Guests, park.Heightfield, sprites ) { Draws = guest => (!(guest.IsSwimming || guest.InPoolActivity) || SwimmerRenderer == null) && (costumes.Count == 0 || !guest.InCostume) };
 		if ( costumes.Count > 0 )
 			CostumeRenderer = new GuestRenderer( Guests, park.Heightfield, costumes ) { Draws = guest => guest.InCostume && (!(guest.IsSwimming || guest.InPoolActivity) || SwimmerRenderer == null) };
-		RideHeadRenderer = new RideHeadRenderer( Guests, GuestSpriteAtlas.LoadKidHeads(), Objects ) { Draws = costumeHeads.Count == 0 ? null : guest => !guest.InCostume };
+		RideHeadRenderer = new RideHeadRenderer( Guests, headSprites, Objects ) { Draws = costumeHeads.Count == 0 ? null : guest => !guest.InCostume };
 		RideHeadRenderer.AddSource( new TrackHeadSources( () => trackRenderers.Values ) );
 		RideHeadRenderer.AddSource( new TourHeadSources( () => tourRenderer ) );
 		AddCoasterHeads( RideHeadRenderer );
@@ -510,7 +521,7 @@ public partial class Level : IDisposable
 		ThoughtRenderer = new ThoughtRenderer( Guests, park.Heightfield, GuestSpriteAtlas.LoadThoughts(),
 			() => Park?.Economy.Staff.Members ?? (IReadOnlyList<StaffMember>)Array.Empty<StaffMember>(),
 			member => member.State != StaffState.PickedUp && StaffRenderer != null && StaffRenderer.TryGetDrawCell( member, out var x, out var y ) ? (x, y) : null );
-		Log.Trace( $"Guests: {grid.WalkableCount} walkable path cells, {sprites.Count} original kid sprite sets, {costumes.Count} costume sets, {Guests.Settings.Types.Count} .sam peep types." );
+		Log.Trace( $"Guests: {grid.WalkableCount} walkable path cells, {gameKidCount} original kid sprite sets{(poolGuestSprites != null ? $" (replaced by the pools extension's {sprites.Count} 2x sets)" : "")}, {costumes.Count} costume sets, {Guests.Settings.Types.Count} .sam peep types." );
 	}
 
 	/// <summary>The Buy Land tool (tp.exe mouse mode 0x39); null for a level without land (no Hoardings.sam, Theme Park Inc, a visit).</summary>

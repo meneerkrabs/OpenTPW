@@ -47,6 +47,23 @@ public class GuestAssetTests
 	}
 
 	/// <summary>
+	/// Honouring the pixels-per-unit fields changes nothing for the shipped art: every frame of every guest, head, costume, balloon and thought atlas has 128 in both
+	/// (scale factor exactly 1, so the quads are the fixed-scale quads) and every atlas keeps its 1024-pixel width.
+	/// </summary>
+	[TestMethod]
+	public void EveryShippedAtlasHasUnitScaleAndTheOriginalWidth()
+	{
+		var atlases = GuestSpriteAtlas.LoadKids().Concat( GuestSpriteAtlas.LoadKidHeads() ).Concat( GuestSpriteAtlas.LoadBalloons() ).Concat( GuestSpriteAtlas.LoadThoughts() )
+			.Concat( new[] { "Jungle", "Hallow", "Space", "Fantasy" }.SelectMany( theme => GuestSpriteAtlas.LoadCostumes( theme ).Concat( GuestSpriteAtlas.LoadCostumeHeads( theme ) ) ) ).ToList();
+		Assert.IsTrue( atlases.Count >= 20, $"{atlases.Count} atlases" );
+		foreach ( var atlas in atlases )
+		{
+			Assert.AreEqual( GuestSpriteAtlas.AtlasWidth, atlas.Width, atlas.Name );
+			Assert.IsTrue( atlas.Frames.All( frame => frame.ScaleX == 1f && frame.ScaleY == 1f ), atlas.Name );
+		}
+	}
+
+	/// <summary>
 	/// Every ESP's byte 0x10C picks its bank as the game does (0x5410D3): sets with 1 open their FPC, which each of them ships; the
 	/// others their TPC. Jungle SPR_EX and Space SPR_SK ship an FPC too but say 0, so their TPC is drawn. Every frame's two header
 	/// words (pixels per sprite unit, 0x5890E0) are 128.
@@ -89,7 +106,7 @@ public class GuestAssetTests
 					continue;
 				checkedSets++;
 				using var bank = FileSystem.OpenRead( $"{directory}/{stem}{animations.BankExtension}" );
-				Assert.IsTrue( new SpriteBankFile( bank ).Frames.All( frame => frame.UnknownA == 128 && frame.UnknownB == 128 ), name );
+				Assert.IsTrue( new SpriteBankFile( bank ).Frames.All( frame => frame.PixelsPerUnitX == 128 && frame.PixelsPerUnitY == 128 ), name );
 				Assert.AreEqual( 16, animations.ExtraSlotBytes.Length );
 			}
 		}

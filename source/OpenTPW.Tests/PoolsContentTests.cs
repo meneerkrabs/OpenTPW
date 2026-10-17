@@ -64,12 +64,12 @@ public class PoolsContentTests
 	{
 		var file = ModObjectsFile.Load( Path.Combine( PoolContent.Directory!, "objects.json" ), Array.Empty<string>() );
 		Assert.AreEqual( (PoolContent.FirstReservedId, PoolContent.LastReservedId), (file.FirstId, file.LastId), "the file reserves exactly the extension's range" );
-		Assert.AreEqual( 4 + 24 + 16 + 8, file.Objects.Count, "four changing rooms, six extras for each of the four themes, four water attractions for each and two slide towers for each" );
+		Assert.AreEqual( 4 + 24 + 20 + 8, file.Objects.Count, "four changing rooms, six extras for each of the four themes, five water attractions for each (one of them the large spa) and two slide towers for each" );
 		var rooms = file.Objects.Where( item => item.InfoId >= 65500 ).ToArray();
 		CollectionAssert.AreEqual( Themes, rooms.Select( item => item.Theme ).ToArray() );
 		CollectionAssert.AreEqual( new[] { 65500, 65501, 65502, 65503 }, rooms.Select( item => item.InfoId ).ToArray() );
 		CollectionAssert.AreEqual( Enumerable.Range( 0, 24 ).Select( index => 65000 + index / 6 * 10 + index % 6 ).ToArray(), file.Objects.Where( item => item.InfoId < 65100 ).Select( item => item.InfoId ).ToArray(), "the extras take 65000 to 65099, six a theme" );
-		CollectionAssert.AreEqual( Enumerable.Range( 65200, 16 ).ToArray(), file.Objects.Where( item => item.InfoId is >= 65200 and < 65300 ).Select( item => item.InfoId ).ToArray(), "the water attractions take 65200 to 65215, a block of four themes per kind" );
+		CollectionAssert.AreEqual( Enumerable.Range( 65200, 20 ).ToArray(), file.Objects.Where( item => item.InfoId is >= 65200 and < 65300 ).Select( item => item.InfoId ).ToArray(), "the water attractions take 65200 to 65219, a block of four themes per kind" );
 		Assert.AreEqual( file.Objects.Count, file.Objects.Select( item => item.InfoId ).Distinct().Count(), "no id twice" );
 		Assert.IsTrue( file.Objects.All( item => item.Category == ObjectCategory.Feature && item.Input == null ) );
 		Assert.IsTrue( file.Objects.All( item => item.InfoId is >= PoolContent.FirstReservedId and <= PoolContent.LastReservedId ) );
@@ -101,7 +101,7 @@ public class PoolsContentTests
 				Assert.AreEqual( 5, entry.Economy.PricePerUse );
 				Assert.IsNotNull( entry.ScriptPath );
 				Assert.AreEqual( 1, ObjectCatalog.Load( Themes[index] ).Entries.Count( item => item.ModId == "opentpw.pools" && PoolChangingRooms.IsChangingRoom( item ) ), "one room per theme" );
-				Assert.AreEqual( 4, ObjectCatalog.Load( Themes[index] ).Entries.Count( item => item.ModId == "opentpw.pools" && PoolAttractions.KindOf( item ) != PoolAttractionKind.None ), "and its four water attractions" );
+				Assert.AreEqual( 5, ObjectCatalog.Load( Themes[index] ).Entries.Count( item => item.ModId == "opentpw.pools" && PoolAttractions.KindOf( item ) != PoolAttractionKind.None ), "and its five water attractions (the large spa is the fifth)" );
 				Assert.AreEqual( 6, ObjectCatalog.Load( Themes[index] ).Entries.Count( item => item.ModId == "opentpw.pools" && PoolExtras.KindOf( item ) != PoolExtraKind.None ), "and six extras" );
 			}
 			Assert.IsNull( ObjectCatalog.Load( "jungle" ).Find( 65501 ), "the hallow room is not a jungle object" );

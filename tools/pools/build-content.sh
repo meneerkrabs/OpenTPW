@@ -11,7 +11,7 @@
 #   4. pack_sprite_sets.py packs them with opentpw-kit sprites    tools/pools/pack_sprite_sets.py          -> content/pools/esprites/Swim/SPR_xx.ESP/.TPC
 #                                                                                                          -> content/pools/esprites/Generic/Kids/ and Kidsheads/
 #   5. Blender builds the water attractions (rope swing, jets,    tools/blender/opentpw_pool_attractions.py -> <work>/attractions/<kind>_<theme>.glb
-#      wave machine, spa) for each theme, the kit makes archives  tools/pools/<kind>.sam, attraction.rse    -> content/pools/objects/<theme>/<kind>/
+#      wave machine, spa, large spa) for each theme, the kit makes archives  tools/pools/<kind>.sam, attraction.rse    -> content/pools/objects/<theme>/<kind>/
 #   6. sprite_manifest.py pins the sprite files for the browser   tools/pools/sprite_manifest.py         -> content/pools/esprites.manifest.json
 #
 # Takes about 30 minutes on an Apple-silicon Mac, nearly all of it step 3 (about 2300 sprite frames per set at 2x, 5 directions each, of which the kid sets keep the slots 0, 1 and 14; steps 1, 2, 2b and 4
@@ -98,7 +98,7 @@ echo "== 5. water attractions"
 rm -rf "$work/attractions"
 "$blender" -b --factory-startup --python tools/blender/opentpw_pool_attractions.py -- --out "$work/attractions" --preview "$work/previews" > "$work/attractions.log" 2>&1 \
 	|| { tail -30 "$work/attractions.log"; exit 1; }
-for kind in ropeswing jets wavemachine spa; do
+for kind in ropeswing jets wavemachine spa bigspa; do
 	for theme in "${themes[@]}"; do
 		kit object --glb "$work/attractions/${kind}_${theme}.glb" --name "$kind" --out "content/pools/objects/$theme/$kind" \
 			--sam "tools/pools/$kind.sam" --script tools/pools/attraction.rse --force

@@ -45,14 +45,14 @@ public sealed class ParkScenario
 
 	private readonly List<ScenarioAttraction> attractions = new();
 
-	public ParkScenario( WorldSeed seed, ParkScenarioOptions? options = null )
+	public ParkScenario( WorldSeed seed, ParkScenarioOptions? options = null, IGuestDecisions? decisions = null )
 	{
 		options ??= new ParkScenarioOptions();
 		Seed = seed;
 		Options = options;
 		Grid = BuildGrid();
 		Settings = CreateSettings( options );
-		Guests = new GuestSimulation( Grid, Settings, seed.GuestStream );
+		Guests = new GuestSimulation( Grid, Settings, seed.GuestStream, decisions );
 		// the park's one thing pool as Level builds it: the world's ten singletons, then the gate and the lights (things 1 to 12), so the first guest is thing 13
 		Things = new ThingPool();
 		Things.AllocateWorldSetup();

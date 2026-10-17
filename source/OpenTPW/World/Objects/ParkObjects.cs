@@ -549,6 +549,25 @@ public sealed class ParkObjects
 	}
 
 	/// <summary>
+	/// One fixed tick of the original's substep scheduler (tp.exe main loop <c>0x0054F4BF</c>, <see cref="SimulationSubstep"/>): in a substep that is due the bump module ticks (0x54F55F), then the script pass runs every
+	/// script newest first on its own cadence (0x54F56B, 0x5516B0); the objects' own ticks follow, the tour cars among them on even substeps (0x54F5D7). A paused park runs none of it.
+	/// </summary>
+	internal void Simulate( double deltaSeconds, SimulationSubstep substep, OriginalObject? prototype = null )
+	{
+		ScriptWorld.Bumpers.HostDriven = true;
+		if ( substep.Due )
+		{
+			ScriptWorld.Bumpers.StepSubstep();
+			ScriptWorld.RunPass( SimulationSubstep.Milliseconds );
+		}
+		if ( substep.Running )
+			ScriptWorld.Bumpers.PresentAt( substep.SecondsSinceModuleStep );
+		prototype?.Simulate( deltaSeconds, substep );
+		foreach ( var item in objects )
+			item.Simulate( deltaSeconds, substep );
+	}
+
+	/// <summary>
 	/// Replaces the Easymode markers with the real objects: every SYSG placed record at its saved anchor and
 	/// rotation (unresolved non-square rotations use the catalog shape), and the fixed items in park space.
 	/// Imported objects are opened (the saved open word is not imported, SAVE-006).

@@ -374,6 +374,9 @@ public class GuestSnapshotTests
 		public int CalledGuest => 0;
 		public bool TryJoinQueue( int guestId ) => false;
 		public QueueJoinResult JoinQueue( int guestId, int? preferredExcitement = null ) => QueueJoinResult.Closed;
+		public QueueJoinResult CheckJoinRoom( int guestId ) => QueueJoinResult.Closed;
+		public void AppendToQueue( int guestId ) { }
+		public int JoinDifference( int preferredExcitement ) => 0;
 		public int GetQueuePosition( int guestId ) => -1;
 		public bool LeaveQueue( int guestId ) => false;
 		public bool RecomputeQueue( GuestPathGrid grid ) => false;

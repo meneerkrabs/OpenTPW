@@ -20,6 +20,14 @@ public static class FeatureGates
 	/// </summary>
 	public static bool CrossEditionObjects => OpenTpwExtensions.IsEnabled( OfficialExtensions.CrossEditionObjects );
 
+	/// <summary>
+	/// The <c>opentpw.smarter-guests</c> extension is on for this run (docs/SMARTER-GUESTS.md). The guest simulation reads it once, when it is built, never per tick.
+	/// </summary>
+	public static bool SmarterGuests => OpenTpwExtensions.IsEnabled( OfficialExtensions.SmarterGuests );
+
+	/// <summary>The <c>opentpw.guest-insights</c> extension is on for this run: refusal reasons and the complaints summary in the park windows (docs/SMARTER-GUESTS.md).</summary>
+	public static bool GuestInsights => OpenTpwExtensions.IsEnabled( OfficialExtensions.GuestInsights );
+
 	/// <summary>Exporting, importing, visiting and postcards: the edition supports sharing and the online extension is on.</summary>
 	public static bool Sharing => GameEditions.Capabilities.Sharing && Online;
 

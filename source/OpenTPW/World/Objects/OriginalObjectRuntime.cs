@@ -228,7 +228,13 @@ public sealed partial class OriginalObjectRuntime
 	}
 
 	/// <summary>One fixed simulation tick: the script slice, then the animation channels.</summary>
-	public void Simulate( double deltaSeconds )
+	public void Simulate( double deltaSeconds ) => Simulate( deltaSeconds, null );
+
+	/// <summary>
+	/// One fixed simulation tick. With a <paramref name="substep"/> the park's substep scheduler runs the script pass (<see cref="RideScriptWorld.RunPass"/>) and the bump module before the objects' ticks, and this
+	/// tick steps the tour cars on the even substeps only; without one (a standalone object) the script gets a slice and the tour its clock on every tick.
+	/// </summary>
+	internal void Simulate( double deltaSeconds, SimulationSubstep? substep )
 	{
 		if ( stopped )
 			return;
@@ -239,7 +245,8 @@ public sealed partial class OriginalObjectRuntime
 			return;
 		}
 		Visitors.HostStep();
-		Script?.Advance( deltaSeconds );
+		if ( substep == null )
+			Script?.Advance( deltaSeconds );
 		if ( Script is { State: RideVMState.Faulted } )
 		{
 			Stop();
@@ -254,7 +261,16 @@ public sealed partial class OriginalObjectRuntime
 		}
 		// the object pass then moves the kept ADDOBJ effects to their keys ([BIN:TPW-EXE:0x55189D ADDOBJ follow])
 		FollowParticleObjects();
-		Tour?.Advance( deltaSeconds );
+		if ( substep is { } step )
+		{
+			// [BIN:TPW-EXE:0x54F5D7 tour cars] the tour tick runs after the script pass on the even substeps only
+			if ( step.TourDue )
+				Tour?.Tick();
+			if ( step.Running )
+				Tour?.PresentAt( step.SecondsSinceTourStep );
+		}
+		else
+			Tour?.Advance( deltaSeconds );
 		Animator.Advance( deltaSeconds );
 		var running = GetVariable( RideVariables.VAR_RUNNING ) != 0;
 		// [EXT:ride-cycle-counter] CompletedCycles counts VAR_RUNNING 1 → 0 edges as OpenTPW's own diagnostic counter: nothing in the original counts ride cycles (it only reads VAR_RUNNING as a level), so there is no original behaviour to match

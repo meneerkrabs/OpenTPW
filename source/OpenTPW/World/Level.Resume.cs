@@ -58,6 +58,8 @@ public partial class Level
 			Particles = ParticlesCaptured?.Invoke( this ),
 			// [EXT:mods] null unless a simulation-changing extension or mod is active, so unmodded saves keep their bytes
 			Mods = ParkResumeMods.Capture( OpenTpwExtensions.Active ),
+			// [EXT:smarter-guests] null while the extension is off for these guests, so such saves keep their bytes
+			SmarterGuests = SmarterGuestsSave.Capture( Guests ),
 			AssetHashes = assets
 		};
 		ParkResumeSaveFile.ValidateSnapshot( snapshot, Objects.Catalog, Park.Economy.Settings, Park.Economy.Catalog, assets );
@@ -97,6 +99,8 @@ public partial class Level
 		Objects.ScriptWorld.RestoreSnapshot( snapshot.Scripts, roots );
 		ValidateResumeQueueGeometry( snapshot.Guests, Guests );
 		Guests.RestoreSnapshot( snapshot.Guests );
+		// [EXT:smarter-guests] the extension's birth ids, keyed by the guest ids the restore just rebuilt
+		SmarterGuestsSave.Restore( Guests, snapshot.SmarterGuests );
 		simulationClock.RestoreSnapshot( snapshot.Clock );
 		if ( snapshot.Weather != null )
 		{

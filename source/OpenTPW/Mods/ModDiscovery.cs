@@ -14,7 +14,7 @@ public enum ModSource
 }
 
 /// <summary>A mod folder found at startup: its manifest, or the reason it was refused.</summary>
-public sealed record DiscoveredMod( string Id, string Directory, ModSource Source, ModManifest? Manifest, string? Error )
+public sealed record DiscoveredMod( string Id, string Directory, ModSource Source, ModManifest? Manifest, string? Error, byte[]? ManifestBytes = null )
 {
 	public bool IsValid => Manifest != null && Error == null;
 }
@@ -121,18 +121,21 @@ public static class ModDiscovery
 		if ( !Directory.Exists( folder ) )
 			return new DiscoveredMod( name, folder, source, null, "the folder does not exist" );
 		ModManifest manifest;
+		byte[] manifestBytes;
 		try
 		{
-			manifest = ModManifest.Load( Path.Combine( folder, ModManifest.FileName ) );
+			// the bytes are kept: resolving checks that the file it hashes is the one that was parsed here
+			manifestBytes = ModFiles.ReadBounded( Path.Combine( folder, ModManifest.FileName ), ModManifest.MaximumBytes, ModManifest.FileName );
+			manifest = ModManifest.Parse( manifestBytes );
 		}
 		catch ( Exception exception ) when ( exception is IOException or InvalidDataException or UnauthorizedAccessException or ArgumentException )
 		{
 			return new DiscoveredMod( name, folder, source, null, exception.Message );
 		}
 		if ( requireFolderName && name != manifest.Id )
-			return new DiscoveredMod( manifest.Id, folder, source, manifest, $"the folder must be named after its id '{manifest.Id}'" );
+			return new DiscoveredMod( manifest.Id, folder, source, manifest, $"the folder must be named after its id '{manifest.Id}'", manifestBytes );
 		if ( manifest.Category == ModCategory.Official && source != ModSource.Program )
-			return new DiscoveredMod( manifest.Id, folder, source, manifest, $"'{ModManifest.OfficialPrefix}' ids are reserved for content shipped with OpenTPW" );
-		return new DiscoveredMod( manifest.Id, folder, source, manifest, null );
+			return new DiscoveredMod( manifest.Id, folder, source, manifest, $"'{ModManifest.OfficialPrefix}' ids are reserved for content shipped with OpenTPW", manifestBytes );
+		return new DiscoveredMod( manifest.Id, folder, source, manifest, null, manifestBytes );
 	}
 }

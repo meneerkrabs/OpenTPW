@@ -6,6 +6,8 @@ public partial class Level
 	internal void AdvanceSimulation( double elapsedSeconds ) => simulationClock.Advance( elapsedSeconds, deltaTime =>
 	{
 		SyncObjectEconomy();
+		// the substep this tick stands in (the park's own tick before the economy advances it): none while the park is paused
+		var substep = SimulationSubstep.ForTick( Park?.Economy.Tick ?? simulationClock.TickCount, Park == null || Park.Economy.Speed != GameSpeed.Paused );
 		// [BIN:TPW-EXE:0x00516380 world update] a lost park (world state 4, ParkEconomy.IsBankrupt) runs no thing updates: the guests and the staff walks stop, the ride scripts (the RSSE tick) go on
 		var lost = Park?.Economy.IsBankrupt == true;
 		// A park whose guests take their ids from the level's thing pool runs its turns as the original does (0x00516380): the tick that starts a turn runs the substep's ride scripts, then the sweep over the
@@ -13,21 +15,22 @@ public partial class Level
 		// economy) the turn is not swept: the things update in the order of the ticks between turns, and the destroys are freed at the end of each tick.
 		var pooled = Park != null && Guests is { SharesThings: true };
 		// the guests' tick count starts at 0 where the economy of an original save starts at its turn: both cut the ticks into the same turns
-		if ( pooled && !lost && Park!.Economy.Speed != GameSpeed.Paused )
+		if ( pooled && Park!.Economy.Speed != GameSpeed.Paused )
 			Guests!.AlignTurns( Park.Economy.Tick );
 		var guestsTurn = pooled && Guests!.NextTickStartsTurn;
 		var economyTurn = pooled && Park!.Economy.NextTickStartsTurn;
-		var sweeping = !lost && guestsTurn && economyTurn;
+		// [BIN:TPW-EXE:0x0051643B lost park turn] a lost park (world state 4) still runs the turn: its counter, the gate retry, the destroys and the world tail with the arrival update (0x4D7B20); only the thing walk is skipped
+		var sweeping = guestsTurn && economyTurn;
 		if ( sweeping )
-			SimulateSweptTurn( deltaTime );
+			SimulateSweptTurn( deltaTime, substep );
 		else
 		{
 			if ( !lost )
 				Guests?.Tick( deltaTime );
-			PlacedRide?.Simulate( deltaTime );
-			Objects.Simulate( deltaTime );
+			Objects.Simulate( deltaTime, substep, PlacedRide );
 			Park?.FixedTick();
-			AdvanceWeather();
+			if ( !lost )
+				AdvanceWeather();
 			// The deferred gate-close retry follows the thing sweep (Mac 0x10536c).
 			Gate?.Tick();
 		}
@@ -56,7 +59,7 @@ public partial class Level
 	/// the bump module of the substep, then the economy's turn, whose thing sweep (<see cref="LevelThingSweep"/>) updates every thing newest first.
 	/// </summary>
 	// [BIN:TPW-EXE:0x0054F4F2 world substep] each 31 ms substep runs 0x520130, the bump module 0x546C80 (0x54F55F) and the RSSE tick 0x5516B0 (0x54F56B); every eighth substep (0x54F668) then calls the park turn (0x54F7BB)
-	private void SimulateSweptTurn( float deltaTime )
+	private void SimulateSweptTurn( float deltaTime, SimulationSubstep substep )
 	{
 		Guests!.BeginSweepTick( deltaTime );
 		var items = Objects.Objects.Concat( PlacedRide is { IsDeleted: false } prototype ? new OriginalObject[] { prototype } : [] ).ToArray();
@@ -64,8 +67,7 @@ public partial class Level
 			item.Visitors.DefersAdmission = true;
 		try
 		{
-			PlacedRide?.Simulate( deltaTime );
-			Objects.Simulate( deltaTime );
+			Objects.Simulate( deltaTime, substep, PlacedRide );
 		}
 		finally
 		{
@@ -81,7 +83,6 @@ public partial class Level
 		{
 			Park.Economy.ThingSweep = null;
 		}
-		AdvanceWeather();
 	}
 
 	/// <summary>
@@ -166,8 +167,8 @@ public partial class Level
 		// [BIN:TPW-EXE:0x00516641 deferred destroy] the turn's destroy requests are carried out last request first once the walk and the gate retry are over (0x516641..0x516691)
 		Things.DestroyQueued();
 		// [BIN:TPW-EXE:0x00516695 world turn tail] 0x004D7B20 then runs the arrival update (0x004CF3E0), the staff pool (0x005084F0), the calendar (0x004F8260) and every 100th turn the golden ticket step (0x004D4A00)
-		if ( !lost )
-			guests.UpdateTurnEndArrivals();
+		// [BIN:TPW-EXE:0x004D7B20 world tail] runs in every world state: the arrival update has no lost-park test of its own (0x4CF3E0 reads the vehicle and the group only), so a lost park still sends its bus and steps guests off
+		guests.UpdateTurnEndArrivals();
 	}
 
 	/// <summary>One staff member's thing update of the sweep: its research (a researcher's pre-update, every 20th turn), its vitals and job timer, and the world's state machine.</summary>

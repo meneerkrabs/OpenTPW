@@ -743,14 +743,9 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	public QueueJoinResult JoinQueue( int guestId, int? preferredExcitement = null )
 	{
 		// [BIN:TPW-EXE:0x004FFBC0 state-10 join] the join reads neither the ride's state (+0x19C) nor its open word (+0x68): after the walk step 0x004FA2A0 it tests the guest's cell against the back cell (0x004DE110), the room 0x004DDA20, the excitement gate 0x004FD4E0 / 0x004E0860(1) and the limit 0x004DDB60, then appends (0x004DDB90); a guest joining a closed or broken ride is sent away when it reaches the head (HostStep: 0x004E1220 → 0x004E0450, states 1, 2 and 4 through 0x004E0E00). Only the choice's counts-test 0x004DD920 refuses them. A ride whose script does not run takes nobody (OpenTPW's teardown), nor does a coaster or track that refuses guests (COAST-024)
-		if ( guestId <= 0 || !AcceptsJoins )
-			return QueueJoinResult.Closed;
-		if ( links.ContainsKey( guestId ) || Holds( guestId ) )
-			return QueueJoinResult.AlreadyQueued;
+		if ( CheckJoinRoom( guestId ) is var room && room != QueueJoinResult.Joined )
+			return room;
 		var count = links.Count;
-		// [BIN:STP-PPC:0x100DC988 queue room] a guest may join only while count < 4 × queue size in cells (+60)
-		if ( count >= QueueRoom )
-			return QueueJoinResult.NoRoom;
 		// [BIN:STP-PPC:0x100ECD6C join gate] 0xe9a84 then 0xe02ec(ride, 1) and the 45 test; executed in the oracle (ORACLE.md F16, queue-join-gate)
 		// [BIN:TPW-EXE:0x004E0560 live excitement] a ride with a controller behind it (thing +0x28) has the base level × 60 / 100 + clamp(3 × crossings + longest straight run + 2 × corners, 0, 40) from the section counts 0x00545310 (BumpController.ExcitementBase); water rides have one
 		// [BIN:TPW-EXE:0x00529E10 controller types] the placement builds a controller through 0x00545890 for any nonzero ride type word +0xA0 (Bumper.BumperType); the shipped rides of all four themes (bonus entries included) use only −1 and −4..−14, each with the WhichTrackType of its family (0 bumper cars, 1 karts, 2 water), so BumperTemplates.ForRide covers every one (BumperTypeCoverageTests); the loader of a saved ride (0x00543560) restores the controller from the save
@@ -758,6 +753,26 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 			return refusal;
 		if ( count >= QueueLimit )
 			return QueueJoinResult.QueueTooLong;
+		AppendToQueue( guestId );
+		return QueueJoinResult.Joined;
+	}
+
+	/// <summary>The attraction's part of the joining checks, in the original order: open, not listed, room (see <see cref="IRideVisitorBridge.CheckJoinRoom"/>).</summary>
+	public QueueJoinResult CheckJoinRoom( int guestId )
+	{
+		if ( guestId <= 0 || !AcceptsJoins )
+			return QueueJoinResult.Closed;
+		if ( links.ContainsKey( guestId ) || Holds( guestId ) )
+			return QueueJoinResult.AlreadyQueued;
+		// [BIN:STP-PPC:0x100DC988 queue room] a guest may join only while count < 4 × queue size in cells (+60)
+		if ( links.Count >= QueueRoom )
+			return QueueJoinResult.NoRoom;
+		return QueueJoinResult.Joined;
+	}
+
+	/// <summary>Appends a guest the checks let through at the tail of the queue.</summary>
+	public void AppendToQueue( int guestId )
+	{
 		// [BIN:STP-PPC:0x100DCD34 queue append] the guest is appended at the tail of the ride's linked list
 		links[guestId] = (0, tail);
 		if ( tail != 0 )
@@ -765,7 +780,6 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		else
 			head = guestId;
 		tail = guestId;
-		return QueueJoinResult.Joined;
 	}
 
 	/// <summary>

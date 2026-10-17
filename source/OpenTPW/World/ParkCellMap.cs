@@ -79,7 +79,19 @@ public enum ParkCellFlags : ushort
 	/// <summary>The world init's copy of MAP bit 0x10 (the entrance complex).</summary>
 	EntranceArea = 0x80,
 	/// <summary>The world init's copy of MAP bit 0x04 (high byte bit 0x04); its readers are not traced.</summary>
-	MapBit04 = 0x400
+	MapBit04 = 0x400,
+	/// <summary>
+	/// [EXT:pools-river] On a pool water cell: the cell is part of a lazy river's ring (docs/POOLS.md, "Lazy river"). The original's flag word has no use of this bit, and only pool cells carry it.
+	/// </summary>
+	PoolRiver = 0x1000,
+	/// <summary>[EXT:pools-waves] On a pool water cell: the pool's wave machine is switched on (<see cref="PoolWaveSettings"/>).</summary>
+	PoolWavesOn = 0x2000,
+	/// <summary>[EXT:pools-waves] The two wave-height bits (0 means the pool has no wave settings yet, 1 to 3 is the height).</summary>
+	PoolWaveHeightMask = 0x0300,
+	/// <summary>[EXT:pools-waves] The two wave-interval bits (0 to 2 is the interval; 3 is unused).</summary>
+	PoolWaveIntervalMask = 0xC000,
+	/// <summary>[EXT:pools-waves] Every pool flag a pool cell may carry besides the river bit: the wave settings' bits.</summary>
+	PoolWaveBits = PoolWavesOn | PoolWaveHeightMask | PoolWaveIntervalMask
 }
 
 /// <summary>
@@ -534,7 +546,11 @@ public sealed class ParkCellMap
 
 	public void SetFlags( int x, int y, ParkCellFlags value )
 	{
-		flags[Index( x, y )] = (ushort)value;
+		var index = Index( x, y );
+		// [EXT:pools-river] a change of a pool cell's flags (river, waves) counts as a pool write, so the water's regions and mesh are made again
+		if ( types[index] == ParkCellTypes.PoolWater && flags[index] != (ushort)value )
+			PoolWrites++;
+		flags[index] = (ushort)value;
 		Version++;
 	}
 

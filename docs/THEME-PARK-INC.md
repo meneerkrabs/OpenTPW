@@ -352,6 +352,45 @@ The prebuilt's park analyser has all its rings full (3, 144, 50, 5 and 50 entrie
 width only (the loaders copy each member, so a signedness or float type is not visible), the 12-byte vectors and the 12-byte strike levels and staff slots stay raw, and the 8-byte times follow the
 calendar (100 ns since 1601-01-01). Tp.exe's weather serializer (`0x512010`) is the same class with a different field list (91 bytes, no wind), so the layouts are not shared between the games.
 
+### Field meanings (the attraction history, the control record, the calendar, the special rides)
+
+Read October 17, 2026 from the loaders and from the code that uses each field (no-CD `Game.exe`, instruction level; nothing was run). The prebuilt holds no ring value and no guest, so none of this was seen in a save.
+
+**Attraction history (SAVE-940).** The attraction's history object (`0x5ea020`, 0x14c8 bytes, built by `0x5e9dc0`) holds 19 rings. A ring is `mTemp`, the running value that the game's code adds to, then `mData[n]`, `mCurrentEntry`, `mNumEntries` and `mWrappedAround`; the constructor
+sets the entry count to the capacity, which is why every saved ring stores its full capacity. The calendar step `0x6083d0` compares the game date with `mDayAtLastUpdate`/`mMonthAtLastUpdate`
+and sends message 11 (a new day) or 12 (a new month); the attraction's handlers `0x5df19f` and `0x5defff` push each ring's `mTemp` into its next entry and clear it. So the 13 short rings (30 entries) are daily and the 6 long rings (144 entries, 12 years) are monthly, the order the serializer saves them:
+
+| # | Ring | Fed by |
+| --- | --- | --- |
+| 0 | daily takings | `0x5e5de0` (a payment) |
+| 1 | daily costs | `0x5e60e0` (the cost of the goods of a sale, the cost of a ride's use) |
+| 2 | daily customers | `0x5e5da0`, from the guest's end of visit `0x6118d0` |
+| 3 | daily walk-aways | `0x5e5d70` (with `mNumWalkAways`) |
+| 4 | daily rated visits | `0x5e61d0`, after the guest's happiness change |
+| 5 to 8 | daily very happy, happy, unhappy and very unhappy guests | `0x612740`: the visit's score against four thresholds (`0xa01b1c` and `0xa01b20` above, `0xa01b24` and `0xa01b28` below); the first two send thought 5, the others thought 6 |
+| 9 | daily declined guests | the guest's own refusal, a refused price at an info category 2 attraction, the failed chance of a special effect |
+| 10 | daily failed ingredient checks | `0x612b5b`, `0x612c3d` |
+| 11 | daily cheap-price guests | `0x6120c0`: the price below `PcOfGoodPriceIsCheap` (`0xa01b18`) percent of the fair value |
+| 12 | daily expensive-price guests | `0x6120c0`: the price above the fair value or the guest's money |
+| 13 | monthly takings | with ring 0 |
+| 14 | monthly costs | with ring 1 |
+| 15 | monthly total costs | computed at the month change: the running cost plus the costs |
+| 16 | monthly running cost | `m_runningCost`, or 0 while the attraction's state is 1 or 4 |
+| 17 | monthly profit | takings minus total costs (the signed ring, serializer `0x5ba2b0`) |
+| 18 | monthly customers | with ring 2 |
+
+The game reads a ring back with `0x5eb090` (the entry `n` periods ago is `current - n`, wrapping once the ring has been full) and counts it with `0x5eb2f0`; `ThemeParkIncAttraction.NewestFirst` does the same. The three gauge words after `mQueueSizeInCells` are, in file order, a gauge nothing reads (the constructor sets it to 100.0 with the state of repair;
+Theme Park World's third gauge at +0x4c is the same), the life gauge (`+0x58`, the second word of the breakdown test `0x5e48df`; a breakdown takes 5.0 off it) and the state of repair (`+0x54`, which repairs set to 100.0). Each is saved as a float truncated to a byte. The ring names are our descriptions
+of what feeds each ring, not names from the game (rings 4, 9 and 10 are the least certain); the original's log names only the ring members.
+
+**Control record (SAVE-941).** The control manager (`0x5cf9b0`) copies 150 records of 0x24 bytes. The constructor of a record (`0x5cff00`) fills it from the object's info: the id (a 16-bit word), three info words at +4, +8 and +0xc (the first is the object's price, which a sale at `0x5de85e` takes a percentage of), `researched` at +0x10 (the info's research cost is 0), the research level at +0x14 (0), the number of
+things of the type that are built at +0x18 (0, incremented when a thing is made and decremented when it is destroyed), the game tick of the first build at +0x1c (-1 until then; Theme Park World starts at 0) and, new in Theme Park Inc, a counter at +0x20 (0) that the placement step `0x667cb0` increments each time the player places an object, and which numbers the copies ("name 2", "name 3").
+
+**Calendar and arrivals (SAVE-942).** The calendar serializer (`0x607f70`) saves `mFunnyTimeStart`, `mSessionStart` (8 bytes each), `mYearAtLastUpdate`, `mMonthAtLastUpdate` (zero-based), `mDayAtLastUpdate` and `mFunnySecsPerRealSec`, the order the reader uses. The arrivals (`0x5bc670`, 18 bytes) are `mArrivalRate`, `mTimeSig` (4 bytes), `mTargetVehicleCapacity`, `mPeopleOnBus`, `mOffloading` (1) and `mGatesOpen` (1).
+
+**Special rides (SAVE-943).** The loader `0x6244b0` reads `mNumSpecialRides` straight into the global `0xaa071c` and then loops by that global, so the loop runs the saved count. The table it fills (`0xaa0330`, records of 0xf4 bytes) has room for four records: the count global itself lies inside the fifth record's memory, so a larger count would overwrite it while being read. A record is a 16-bit `SpecialRideThingId`
+and 20 slots of a 16-bit `AllSpecialRidesThingId`, a 32-bit `AllSpecialRidesAbility` and a 32-bit `AllSpecialRidesType`.
+
 ## Theme Park Inc front end
 
 Phase 1 builds the start screen only: the Personnel File.

@@ -18,9 +18,9 @@ public sealed class ThemeParkIncHudHost
 /// <summary>
 /// The experimental Theme Park Inc slice's HUD: an OpenTPW text interface over the shared build, path and guest
 /// systems. Theme Park Inc's own interface is not traced (its <c>ui.wad</c> panels are not Theme Park World's), so
-/// nothing here imitates it: the state line names the experiment, the build list offers the world's catalog free
-/// (no economy runs), and every button is an OpenTPW control. Building, path and queue interaction follows the
-/// traced Theme Park World tools (docs/PATHS.md) because they are what the slice runs.
+/// nothing here imitates it: the state line names the experiment, the money line shows the park's cash and date,
+/// the build list offers the world's catalog at the prices of its own data, and every button is an OpenTPW control.
+/// Building, path and queue interaction follows the traced Theme Park World tools (docs/PATHS.md) because they are what the slice runs.
 /// </summary>
 // [EXT:tpi-text-hud] the whole HUD is an OpenTPW text interface (an OpenTPW design decision for the experimental slice); no original Theme Park Inc interface behaviour is claimed
 public sealed class ThemeParkIncHud
@@ -58,6 +58,7 @@ public sealed class ThemeParkIncHud
 		hud = new UiScreen( "tpiHud" ) { Modal = false };
 		Stack.Push( hud );
 		AddLabel( "guests", () => GuestsText(), new UiRect( 24, 196, 900, 60 ) );
+		AddLabel( "money", MoneyText, new UiRect( 960, 196, 1000, 60 ) );
 		AddLabel( "selection", () => SelectedText, new UiRect( 24, 256, 1300, 60 ) );
 		AddLabel( "message", () => messages.Count > 0 ? messages[0].Text : "", new UiRect( 24, 316, 1300, 120 ) );
 		BuildTopLine();
@@ -99,7 +100,7 @@ public sealed class ThemeParkIncHud
 			return;
 		armedEntry = null;
 		level.BuildEntry = null;
-		// The placed object is free ([EXT:tpi-free-builds]); the queue tool follows as in the Theme Park World place flow.
+		// The purchase was charged by Level.PlaceObject (Theme Park Inc's own prices); the queue tool follows as in the Theme Park World place flow.
 		PostMessage( string.Format( strings.Extra( OpenTpwText.Built ), ItemNameOf( item.Entry ) ) );
 		if ( item.Entry.HasQueue && item.Runtime.IsAttraction && item.Visitors.HasCells && level.EnterQueueTool( item.Visitors ) )
 			PostMessage( strings.Extra( OpenTpwText.LayQueue ) );
@@ -248,8 +249,20 @@ public sealed class ThemeParkIncHud
 
 	private string ItemText( BuildItem item )
 	{
-		// [EXT:tpi-free-builds] builds are free because the slice runs no economy (an OpenTPW scope decision); no original Theme Park Inc price is claimed
-		return string.Format( T( OpenTpwText.TpiItemFree ), item.Entry != null ? ItemNameOf( item.Entry ) : item.Id );
+		var name = item.Entry != null ? ItemNameOf( item.Entry ) : item.Id;
+		// the price is Upgrades[0].CostOfUpgrade of the object's own settings (docs/THEME-PARK-INC.md, "Economy"); an object the economy does not list is not charged
+		return item.Entry != null && level.Park?.Economy.Catalog.TryGet( item.Entry.InfoId, out var info ) == true
+			? string.Format( T( OpenTpwText.TpiItemPriced ), name, info.PurchaseCost.ToString( "N0" ) )
+			: string.Format( T( OpenTpwText.TpiItemNotPriced ), name );
+	}
+
+	/// <summary>The money line: cash, the park's date and the entrance fee (the park's own clock; docs/THEME-PARK-INC.md).</summary>
+	private string MoneyText()
+	{
+		if ( level.Park?.Economy is not { } economy )
+			return "";
+		var state = economy.IsBankrupt ? T( OpenTpwText.TpiBankrupt ) : economy.Balance < 0 ? T( OpenTpwText.TpiInTheRed ) : "";
+		return string.Format( T( OpenTpwText.TpiMoney ), economy.Balance.ToString( "N0" ), state, economy.Date, economy.EntranceFee );
 	}
 
 	private string SelectedText => selectedObject is not { IsDeleted: false } item ? "" : string.Format( T( OpenTpwText.TpiSelected ), item.Entry.DisplayName ) + (item.Entry.IsFixedItem ? T( OpenTpwText.TpiFixedItem ) : "");
@@ -291,7 +304,8 @@ public sealed class ThemeParkIncHud
 		armedEntry = entry;
 		level.IsRemovingObjects = false;
 		CloseBuildWindow();
-		PostMessage( string.Format( T( OpenTpwText.TpiPlaceHint ), ItemNameOf( entry ) ) );
+		var price = level.Park?.Economy.Catalog.TryGet( entry.InfoId, out var info ) == true ? $" (${info.PurchaseCost:N0})" : "";
+		PostMessage( string.Format( T( OpenTpwText.TpiPlaceHint ), ItemNameOf( entry ), price ) );
 	}
 
 	private void DisarmBuild()
@@ -522,7 +536,7 @@ public sealed class ThemeParkIncHud
 		}
 		else if ( inPark && level.BuildEntry is { } entry && cursorX >= 0 )
 		{
-			// No economy runs: the footprint's own terrain and occupancy check decides the colour.
+			// the footprint's own terrain and occupancy check decides the colour (the purchase is checked when the click places it)
 			var allowed = level.CheckObject( entry, cursorX, cursorY, level.BuildRotation ) == OriginalPlacementResult.Allowed;
 			var anchor = Level.GetCentredAnchor( entry, cursorX, cursorY, level.BuildRotation );
 			var footprint = BlueprintGhosts.Footprint( entry.Shape, anchor.X, anchor.Y, level.BuildRotation, allowed );

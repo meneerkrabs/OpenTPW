@@ -178,9 +178,64 @@ public sealed class SaveCellGrid
 		return new SaveCellGrid( countX, countY, start, position, result );
 	}
 
-	/// <summary>Parses the observed Theme Park Inc profile: 88-byte cells, a ten-byte type-7 extension, and FF FF at +86.</summary>
-	public static SaveCellGrid ParseThemeParkInc( ReadOnlyMemory<byte> payload, int searchStart, int searchEnd, int countX, int countY )
-		=> Parse( payload, searchStart, searchEnd, countX, countY, SaveCell.ThemeParkIncRecordBytes );
+	/// <summary>The bytes one Theme Park Inc map cell takes after its status byte: the 56-byte map cell (bit 0), the 31-byte track cell (bit 1) and the 10-byte effects record (bit 2); the status byte's other bits are not read.</summary>
+	public static int ThemeParkIncCellBytes( byte status ) =>
+		SaveBlockWidths.CellStatusBytes + ((status & 1) != 0 ? ThemeParkIncSaveWorld.MapCellBytes : 0) + ((status & 2) != 0 ? SaveBlockWidths.TrackCellBytes : 0) + ((status & 4) != 0 ? SaveBlockWidths.EffectsCellBytes : 0);
+
+	/// <summary>
+	/// Parses the Theme Park Inc map that starts exactly at <paramref name="start"/> (the map loader 0x5d6d40: for each cell a status byte, then the 56-byte map cell when bit 0 is set,
+	/// the 31-byte track cell when bit 1 is set and the 10-byte effects record when bit 2 is set) and must end exactly at <paramref name="end"/>. A cell with both bits 0 and 1 (every
+	/// cell of the prebuilt) exposes its bytes as saved; a cell without one of the two records gets a copy with that record zero-filled, so every <see cref="SaveCell.Record"/> has the
+	/// 88-byte shape (98 with the effects record) the accessors read.
+	/// </summary>
+	// [BIN:TPI-EXE:0x5d6d40 map loader] per cell u8 status, 56-byte map cell if bit 0, 31-byte track cell if bit 1, 10-byte effects record if bit 2
+	public static SaveCellGrid ParseThemeParkIncAt( ReadOnlyMemory<byte> payload, int start, int end, int countX, int countY )
+	{
+		if ( countX <= 0 || countY <= 0 || countX > MapFile.MaximumDimension || countY > MapFile.MaximumDimension || (long)countX * countY > MapFile.MaximumCells )
+			throw new ArgumentOutOfRangeException( nameof( countX ), "Grid dimensions must match a valid MAP." );
+		if ( end < 0 || end > payload.Length )
+			throw new ArgumentOutOfRangeException( nameof( end ) );
+		if ( start < 0 || start > end )
+			throw new InvalidDataException( $"Save cell grid would start at offset {start}, outside the World block that ends at {end}." );
+		var data = payload.Span[..end];
+		var required = countX * countY;
+		var result = new SaveCell[required];
+		var position = start;
+		for ( var index = 0; index < required; index++ )
+		{
+			if ( position >= end )
+				throw new InvalidDataException( $"Save Theme Park Inc cell grid is truncated at cell {index}." );
+			var status = data[position];
+			var length = ThemeParkIncCellBytes( status );
+			if ( end - position < length )
+				throw new InvalidDataException( $"Save Theme Park Inc cell {index} at offset {position} crosses the end of the grid." );
+			result[index] = new SaveCell( (status & 3) == 3 ? payload.Slice( position, length ) : Normalize( data.Slice( position, length ), status ), SaveCell.ThemeParkIncRecordBytes );
+			position += length;
+		}
+		if ( position != end )
+			throw new InvalidDataException( $"Save Theme Park Inc cell grid ends at offset {position}, not at {end}." );
+		return new SaveCellGrid( countX, countY, start, position, result );
+	}
+
+	private static byte[] Normalize( ReadOnlySpan<byte> saved, byte status )
+	{
+		var record = new byte[SaveCell.ThemeParkIncRecordBytes + ((status & 4) != 0 ? SaveCell.ExtensionBytes : 0)];
+		record[0] = status;
+		var source = 1;
+		if ( (status & 1) != 0 )
+		{
+			saved.Slice( source, ThemeParkIncSaveWorld.MapCellBytes ).CopyTo( record.AsSpan( 1 ) );
+			source += ThemeParkIncSaveWorld.MapCellBytes;
+		}
+		if ( (status & 2) != 0 )
+		{
+			saved.Slice( source, SaveBlockWidths.TrackCellBytes ).CopyTo( record.AsSpan( 1 + ThemeParkIncSaveWorld.MapCellBytes ) );
+			source += SaveBlockWidths.TrackCellBytes;
+		}
+		if ( (status & 4) != 0 )
+			saved.Slice( source, SaveCell.ExtensionBytes ).CopyTo( record.AsSpan( SaveCell.ThemeParkIncRecordBytes ) );
+		return record;
+	}
 
 	private static SaveCellGrid Parse( ReadOnlyMemory<byte> payload, int searchStart, int searchEnd, int countX, int countY, int recordBytes )
 	{

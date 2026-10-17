@@ -253,11 +253,11 @@ which fixed items the original spawns, and when, is unknown).
 ## Interfaces for other slices
 
 - Guests: `IRideVisitorBridge.Perform(ride, call)` receives every visitor opcode
-  (`OriginalObjectRuntime.VisitorOpcodes`: HUSH, HOP, ADD/DELHEAD, LIMBO family,
-  BOUNCE family, WALK family) and returns the opcode result (RSE-VM.md). Set it
+  (ADD/DELHEAD, BOUNCE family, WALK family; HUSH, HOP and the LIMBO family are
+  VM-internal, RSE-VM.md) and returns the opcode result. Set it
   per object (`Runtime.Visitors`) or for new objects (`ParkObjects.Visitors`).
-  Host inputs: `Runtime.SetVariable("VAR_LETMEON"/"VAR_LETMEOFF", id)` while
-  `Script.InCriticalSection` is false. Geometry: `OriginalObject.AccessPoints`
+  Host inputs: `Runtime.SetVariable("VAR_LETMEON"/"VAR_LETMEOFF", id)` at any
+  time (the original host never looks at the critical flag). Geometry: `OriginalObject.AccessPoints`
   (entrance/exit cell + outside cell), `Cells`, `GetNodeTransform(node)` (seat
   dummies such as `HeadNN`/`bodyNN`), `Entry.HasQueue`, `InitialCapacity`, raw
   `UsageInfo.EntryCellStandPos*`/`ExitCellAppearPos*`.

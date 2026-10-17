@@ -83,6 +83,13 @@ public sealed partial class ParkHud
 	public bool BuyWindowOpen => buyScreen != null && Stack.Screens.Contains( buyScreen );
 	public BuildCategory Category => buy.Category;
 	public BuildItem? SelectedBuyItem => buy.SelectedItem;
+	/// <summary>The item whose model, footprint and name the preview frame shows: the selection once it has rested for <see cref="BuyPreviewDelay"/> seconds.</summary>
+	public BuildItem? BuyPreviewItem { get; private set; }
+	private BuildItem? buyPendingPreview, buyLastSelection;
+	private float buyPendingSince;
+	/// <summary>How long a selection must rest before the preview object is made (seconds).</summary>
+	// [BIN:TPW-EXE:0x4ac42e buy preview delay] the window's update makes the pending preview (0x4ab1b0) only when the clock (0x65968e) is more than 0x1f4 = 500 ms past the moment the selection last changed ([0x7cc1f0], written by 0x4aca2a); until then the old preview keeps turning
+	public const float BuyPreviewDelay = 0.5f;
 	public int SelectedBuyIndex => buy.SelectedIndex;
 	public int BuyFirstRow => buy.FirstRow;
 	public BuySortColumn BuySort => buy.Sort;
@@ -101,6 +108,8 @@ public sealed partial class ParkHud
 		LeaveBuildTool();
 		buyScreen ??= CreateBuyScreen();
 		buy.EnsureSelection();
+		// [BIN:TPW-EXE:0x4acd72 buy window build] the window starts with no preview and no pending one (the ids [0x7cc1e4], [0x7cc1e8] and the time [0x7cc1f0] are set to -1); the first selection arms the preview like any other
+		(BuyPreviewItem, buyPendingPreview, buyLastSelection) = (null, null, null);
 		Stack.Push( buyScreen );
 		buyScreen.Focus( buyScreen.Find( "buyList" ) );
 		UpdateBuyScrollVisibility( buyScreen );
@@ -129,6 +138,24 @@ public sealed partial class ParkHud
 			Stack.Pop();
 		if ( Stack.Top == buyScreen )
 			Stack.Pop();
+	}
+
+	/// <summary>Follows the selection with the preview: a change arms it, and it is made once the selection has rested for <see cref="BuyPreviewDelay"/> (called once per frame with the UI clock).</summary>
+	// [BIN:TPW-EXE:0x4ac9e8 buy list selection] the list's selection message 0x401 (posted by 0x66525c on every change of the selected row) updates the stats frame at once (0x4abb00) and arms the preview when the row's type differs from the pending one ([0x7cc1e4], time [0x7cc1f0]); a selection of nothing (-1) does nothing
+	internal void UpdateBuyPreview( float time )
+	{
+		var selected = buy.SelectedItem;
+		if ( selected != null && !Equals( selected, buyLastSelection ) )
+		{
+			buyLastSelection = selected;
+			buyPendingPreview = selected;
+			buyPendingSince = time;
+		}
+		if ( buyPendingPreview != null && time - buyPendingSince > BuyPreviewDelay )
+		{
+			BuyPreviewItem = buyPendingPreview;
+			buyPendingPreview = null;
+		}
 	}
 
 	public void SelectCategory( BuildCategory category ) => buy.SelectCategory( category );
@@ -224,7 +251,7 @@ public sealed partial class ParkHud
 		// [DATA:Mac buy table 0x4cd94:492] item name line at the top of the preview frame
 		screen.Add( new UiLabel
 		{
-			Id = "itemName", Text = () => buy.SelectedItem == null ? "" : ItemName( buy.SelectedItem ), Font = fonts => fonts.Label, Color = UiColors.Text,
+			Id = "itemName", Text = () => BuyPreviewItem == null ? "" : ItemName( BuyPreviewItem ), Font = fonts => fonts.Label, Color = UiColors.Text,
 			Align = UiAlign.Center, Fit = true, Bounds = Rect( 437, 198, 797, 243 ), Anchor = UiAnchor.Center
 		} );
 		// [DATA:Mac buy table 0x4cd94:490] preview content region (437,202)-(797,565)
@@ -292,7 +319,9 @@ public sealed partial class ParkHud
 				owner.ScrollBuyList( input.Wheel > 0 ? -1 : 1 );
 				input = input with { Wheel = 0 };
 			}
-			return base.Update( context, input );
+			var consumed = base.Update( context, input );
+			owner.UpdateBuyPreview( context.Time );
+			return consumed;
 		}
 	}
 
@@ -304,7 +333,7 @@ public sealed partial class ParkHud
 
 		public override void Draw( UiContext context, bool focused, bool pressed )
 		{
-			if ( owner.buy.SelectedItem is not { } item )
+			if ( owner.BuyPreviewItem is not { } item )
 				return;
 			// [BIN:TPW-EXE:0x468e50 buy preview turn] each update adds the clock's elapsed milliseconds (0x785970, 0x4031e0) x 0.0004 to the preview's angle (+0x48), and a
 			// new preview keeps the angle modulo 2 pi (0x468e2f), so the turn runs on across selections, as a clock-derived angle does
@@ -415,6 +444,35 @@ public sealed partial class ParkHud
 		public void Select( int index ) => owner.SelectBuyItem( index );
 		public void Scroll( int rows ) => owner.ScrollBuyList( rows );
 		public override void Activate() => owner.BuySelected();
+
+		public bool HoverSelects => true;
+		private int hoveredSlot = -1;
+
+		/// <summary>The pointer moved onto the row <paramref name="index"/> (-1: off the rows).</summary>
+		// [BIN:TPW-EXE:0x6656a0 list hover] the list has attribute 0x91, which includes 0x80: every pointer move over the list (messages 0x10001 and 0x10003, 0x665c35) selects the row under it (0x66552e → 0x66525c: the row index is (y - top) / row height; a row past the last one leaves the selection, as attribute 0x100 is not set), the same selection as a click or an arrow key, so the stats frame follows at once and the preview after 500 ms
+		// [BIN:TPW-EXE:0x665c35 list leave] the list handles no message for the pointer leaving (0x10002 goes to the base control, 0x65f6d1, which only informs the pointer manager), so the selection stays on the last hovered row
+		// the screen reports the row under the pointer every frame, not a pointer move: a row counts as newly hovered when the pointer's row slot changes, so the arrow keys and the wheel (which scroll the rows under a resting pointer) keep their selection until the pointer moves to another slot
+		// note: a pointer that moves within the same row after an arrow key does not select that row again, as the original's per-move message would (no pointer-move events reach the list here)
+		public void Hover( int index )
+		{
+			var slot = index < 0 ? -1 : index - owner.buy.FirstRow;
+			var moved = slot != hoveredSlot;
+			hoveredSlot = slot;
+			if ( moved && index >= 0 )
+				owner.SelectBuyItem( index );
+		}
+
+		/// <summary>A left click selects the row and posts the list's message 0x400, which buys; the other button posts 0x402, which the window ignores, so it backs out.</summary>
+		// [BIN:TPW-EXE:0x6655a2 list click] with attribute 0x80 a press selects the row (0x66552e) and posts 0x400 to the window at once (-1 < selected), and the release posts it again (0x6656fa); the buy window's handler for 0x400 (0x4ac4f9) is the purchase: cash and golden ticket checks, then the placing of the type and the window's close (0x658d9f, message 4)
+		// [BIN:TPW-EXE:0x66563d list click] the other button posts 0x402, which the buy window does not handle (0x4ac9c9 handles 0x401 and 0x407)
+		public bool RowClicked( int index, bool left )
+		{
+			if ( !left )
+				return false;
+			owner.SelectBuyItem( index );
+			owner.BuySelected();
+			return true;
+		}
 		public override void Adjust( int direction ) => owner.SelectBuyItem( Math.Max( 0, owner.SelectedBuyIndex ) + direction );
 
 		private UiRect RowRect( UiCanvas canvas, int visibleIndex ) =>

@@ -323,6 +323,21 @@ public sealed partial class ParkHud
 		public void Select( int index ) => owner.SelectLoan( index );
 		public void Scroll( int rows ) => owner.ScrollLoans( rows );
 		public override void Activate() => owner.ActivateLoan();
+
+		public bool HoverSelects => true;
+		private int hoveredSlot = -1;
+
+		/// <summary>The pointer moved onto the row <paramref name="index"/> (-1: off the rows): it selects that row, and the selection stays where it was when the pointer leaves.</summary>
+		// [BIN:TPW-EXE:0x6656a0 list hover] the loans list has attribute 0x91 (0x7525a0), which includes 0x80: every pointer move over it selects the row under it, as for the buy list; the loans window (0x49f4e0) handles the click message 0x400 only (the confirmation) and no 0x401, so a hover moves nothing but the highlight; leaving the list changes nothing (0x665c35 has no leave handling)
+		// a row counts as newly hovered when the pointer's row slot changes, so the arrow keys and the wheel keep their selection under a resting pointer
+		public void Hover( int index )
+		{
+			var slot = index < 0 ? -1 : index - owner.loanFirstRow;
+			var moved = slot != hoveredSlot;
+			hoveredSlot = slot;
+			if ( moved && index >= 0 )
+				owner.SelectLoan( index );
+		}
 		public override void Adjust( int direction ) => owner.SelectLoan( Math.Max( 0, owner.selectedLoan ) + direction );
 		public int RowAt( UiCanvas canvas, NVector2 point )
 		{

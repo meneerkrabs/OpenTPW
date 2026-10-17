@@ -883,7 +883,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 				&& GuestThoughts.Pick( guest.Hunger, guest.Thirst, guest.Toilet, guest.Nausea, guest.Happiness, () => MessyShare( guest ) ) is { } thought )
 			{
 				Think( guest, thought );
-				// [BIN:TPW-EXE:0x4fca3e thought voice] the pick's tail plays a voice for the thoughts 4, 12, 13 and 15 on one thing id in sixteen: the need-toilet thought (4) is cat_kids 0x85 (0x4fca6f; 12 is 0x7E, 13 is 0x7F, 15 is 0x85, none of which this pick returns)
+				// [BIN:TPW-EXE:0x4fca3e thought voice] the pick's tail plays a voice for the thoughts 4, 13 and 14 on one thing id in sixteen (table 0x4fca94, index = thought - 4): the need-toilet thought (4) is cat_kids 0x85 (0x4fca6f); 13 is 0x7E and 14 is 0x7F, which this pick does not return
 				if ( thought == GuestThought.NeedToilet && VoiceGate( guest ) )
 					Voiced?.Invoke( guest, ToiletThoughtVoiceEvent );
 			}

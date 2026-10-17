@@ -18,6 +18,8 @@ namespace OpenTPW.ContentKit;
 ///   "frames": { "slot01_d0_f0": { "originX": -25, "originY": -53 } },
 ///   "performances": [ { "program": 0, "slot": 4, "intro": 0, "hold": 0 } ] }
 /// </code>
+/// <c>pixelsPerUnit</c> (default 128, 1 to 65535) is the pixels-per-unit field written to every frame (<see cref="SpriteFrame.PixelsPerUnitX"/>/<see cref="SpriteFrame.PixelsPerUnitY"/>): the quad of a frame spans
+/// <c>width / pixelsPerUnit</c> units, so a set drawn at twice the pixel size gets 256 and appears at the same world size with twice the detail (docs/CONTENT-KIT.md, "Resolution").
 /// <c>detailFlag</c> is ESP byte 0x10C (1: <c>.FPC</c> and <c>.TPC</c> are written, 0: only the <c>.TPC</c>; default 1), <c>kidFlag</c> byte 0x10D (default 0). A slot with
 /// <c>directions</c> 0 has no directions (balloons, thoughts: files <c>d0</c> only). <c>originX</c>/<c>originY</c> are the offset of the frame's top-left corner from the hotspot (the
 /// reader's <see cref="SpriteFrame.OriginX"/>/<see cref="SpriteFrame.OriginY"/>); <c>defaultOrigin</c> serves every frame without an entry.
@@ -26,7 +28,7 @@ public static class SpriteSetFolder
 {
 	public const string DescriptionFileName = "set.json";
 	private static readonly Regex FramePattern = new( @"\Aslot(\d{1,2})_d(\d{1,3})_f(\d{1,3})\.png\z", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase );
-	private static readonly string[] SetFields = { "name", "detailFlag", "kidFlag", "slots", "frames", "defaultOrigin", "performances" };
+	private static readonly string[] SetFields = { "name", "detailFlag", "kidFlag", "pixelsPerUnit", "slots", "frames", "defaultOrigin", "performances" };
 
 	/// <summary>The folders of <c>esprites.wad</c> (below <c>esprites/</c> in the data), with the casing the game's own archive uses.</summary>
 	public static readonly IReadOnlyList<string> KnownFolders = new[]
@@ -67,6 +69,9 @@ public static class SpriteSetFolder
 			FullDetail = Flag( root, "detailFlag", true ),
 			KidFlag = (byte)(Flag( root, "kidFlag", false ) ? 1 : 0)
 		};
+		var pixelsPerUnit = 128;
+		if ( root.TryGetProperty( "pixelsPerUnit", out var unitElement ) && (unitElement.ValueKind != JsonValueKind.Number || !unitElement.TryGetInt32( out pixelsPerUnit ) || pixelsPerUnit is < 1 or > ushort.MaxValue) )
+			throw new InvalidDataException( $"{DescriptionFileName}: pixelsPerUnit must be a whole number from 1 to {ushort.MaxValue}." );
 
 		(int X, int Y)? defaultOrigin = root.TryGetProperty( "defaultOrigin", out var fallback ) ? Origin( fallback, "defaultOrigin" ) : null;
 		var origins = new Dictionary<string, (int X, int Y)>( StringComparer.OrdinalIgnoreCase );
@@ -126,7 +131,7 @@ public static class SpriteSetFolder
 					if ( !files.TryGetValue( (slot, direction, frame), out var file ) )
 						throw new InvalidDataException( $"Slot {slot} needs {stem}.png ({(directional ? directionCount : 1)} direction(s) of {perDirection} frame(s)); it is missing." );
 					var origin = origins.TryGetValue( stem, out var own ) ? own : defaultOrigin ?? throw new InvalidDataException( $"{stem} has no origin in {DescriptionFileName} and there is no defaultOrigin." );
-					list.Add( Decode( file, origin ) );
+					list.Add( Decode( file, origin ) with { PixelsPerUnit = (ushort)pixelsPerUnit } );
 				}
 				directionList.Add( list );
 			}

@@ -54,6 +54,13 @@ public static class OfficialExtensions
 	public static IOpenTpwExtension Pools { get; } = new OpenTpwExtension( "opentpw.pools", "Pools", new ModVersion( 1, 0, 0 ), DefaultEnabled: true, AffectsSimulation: true );
 
 	/// <summary>
+	/// The pool guest art (docs/POOLS.md): while it and the pools extension are on, the land guests of a Theme Park World park are drawn with OpenTPW's own 2x Blender kid and head sets instead of the original sprites
+	/// (the swimmers always use the swim sets while pools is on). Presentation only: <c>AffectsSimulation</c> is false, so it is not recorded in saves and changes no hash. On by default; switch it off for the original guests on land.
+	/// </summary>
+	// [EXT:pools-guest-art] OpenTPW's own guest art; the original game's guests are the faithful look
+	public static IOpenTpwExtension PoolGuestArt { get; } = new OpenTpwExtension( "opentpw.pools-guest-art", "Pool guest art", new ModVersion( 1, 0, 0 ), DefaultEnabled: true, AffectsSimulation: false );
+
+	/// <summary>
 	/// The guest insights extension (docs/SMARTER-GUESTS.md): the refusal-reason counters (too expensive, queue too long, too scary, too boring, ride broken or closed) in the park information window (phase 1).
 	/// It only reads the simulation (<see cref="GuestRefusalCounters"/>, a passive observer), so it is not recorded in park saves and a player may switch it on freely
 	/// (<see cref="IOpenTpwExtension.PlayerSelectable"/>).
@@ -69,7 +76,7 @@ public static class OfficialExtensions
 	public static IOpenTpwExtension SmarterGuests { get; } = new OpenTpwExtension( "opentpw.smarter-guests", "Smarter guests", new ModVersion( 1, 3, 0 ), DefaultEnabled: false, AffectsSimulation: true, PlayerSelectable: false );
 
 	/// <summary>All official extensions, in declaration order.</summary>
-	public static IReadOnlyList<IOpenTpwExtension> All { get; } = new[] { Online, CrossEditionObjects, SmarterGuests, GuestInsights, Pools };
+	public static IReadOnlyList<IOpenTpwExtension> All { get; } = new[] { Online, CrossEditionObjects, SmarterGuests, GuestInsights, Pools, PoolGuestArt };
 
 	public static IOpenTpwExtension? Find( string id ) => All.FirstOrDefault( extension => extension.Id == id );
 }

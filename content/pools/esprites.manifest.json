@@ -1,0 +1,245 @@
+{
+	"format": 1,
+	"files": [
+		{
+			"path": "Generic/Kids/SPR_BE.ESP",
+			"size": 350,
+			"sha256": "1a6df86f1cedaf09f636f698816a50b9eb78820157850f92e5852ba9672ddb89"
+		},
+		{
+			"path": "Generic/Kids/SPR_BE.TPC",
+			"size": 150079,
+			"sha256": "56157b1bc82e3d7b891a1c1435076c3858384c8e01b49ab566990cd8cedce02e"
+		},
+		{
+			"path": "Generic/Kids/SPR_BI.ESP",
+			"size": 350,
+			"sha256": "f2d691ccc775281818203448dae82dece59c7abfaa5865f4af476b7c5b61784c"
+		},
+		{
+			"path": "Generic/Kids/SPR_BI.TPC",
+			"size": 149239,
+			"sha256": "803da0a3e217e136146733045074ef143f385f35030a00eee69e92f00c15dfe1"
+		},
+		{
+			"path": "Generic/Kids/SPR_CH.ESP",
+			"size": 350,
+			"sha256": "74bc19d07b4974ddc5fd7ac36fd08a33714abbaede52c96c0cce0289a6f18b84"
+		},
+		{
+			"path": "Generic/Kids/SPR_CH.TPC",
+			"size": 160154,
+			"sha256": "2f0166b735f2d1c9c34b40dc39d6e42638a6ca603e8b81279414ce75b938cc22"
+		},
+		{
+			"path": "Generic/Kids/SPR_FR.ESP",
+			"size": 350,
+			"sha256": "8c3a87596feecc2eb85a4f0d382031b6f515af3caefae29405783c74e4e1969d"
+		},
+		{
+			"path": "Generic/Kids/SPR_FR.TPC",
+			"size": 149284,
+			"sha256": "fac3d7a1f17c8687aba6e60db999d6c338779bc87afdb8617f674a22cad16db7"
+		},
+		{
+			"path": "Generic/Kids/SPR_KI.ESP",
+			"size": 350,
+			"sha256": "acfc1d07a80ed3247dccc3a39daf36aa9c209a572c00ba0d920d3bdbfe4f0fbf"
+		},
+		{
+			"path": "Generic/Kids/SPR_KI.TPC",
+			"size": 162845,
+			"sha256": "b9231414dccb8ae42c934fe265ef0b93633f2ee46c02fc4c5ed466f55ce9182a"
+		},
+		{
+			"path": "Generic/Kids/SPR_SA.ESP",
+			"size": 350,
+			"sha256": "c3388a877f9d10e404754a92897828ae9e779dded44dca5bf984c70412a03975"
+		},
+		{
+			"path": "Generic/Kids/SPR_SA.TPC",
+			"size": 153570,
+			"sha256": "6b50112923d6cd722196ba6b3161723a20b88856864683791096b7910d950a8b"
+		},
+		{
+			"path": "Generic/Kids/SPR_SU.ESP",
+			"size": 350,
+			"sha256": "5d149eb7b3edad155adcfc860c9cb6d1d73adb2505c44b2d0811b668ecc07e48"
+		},
+		{
+			"path": "Generic/Kids/SPR_SU.TPC",
+			"size": 147944,
+			"sha256": "c716189b740cfc425c5a2297967caf816f6a7cb122545facd47cdbe6786ebfa9"
+		},
+		{
+			"path": "Generic/Kids/SPR_TA.ESP",
+			"size": 350,
+			"sha256": "bb76a298dde576bd5d90f6df1f28ce196e58af31c6732e4b9110662b390ee75f"
+		},
+		{
+			"path": "Generic/Kids/SPR_TA.TPC",
+			"size": 153589,
+			"sha256": "891e5001e63e5d9e7b54b41d32d977900bf0bee66b00c24b81f57e6b424180fd"
+		},
+		{
+			"path": "Generic/Kidsheads/SPR_BE.ESP",
+			"size": 350,
+			"sha256": "51792edf9f665a7e4f69e5bf65a01e0dfe092db7f1115e40fcb735839cbd1183"
+		},
+		{
+			"path": "Generic/Kidsheads/SPR_BE.TPC",
+			"size": 124132,
+			"sha256": "7535c439b71db07eb5319578fe2839b44bc3048e901924e3e601271bf951fb6a"
+		},
+		{
+			"path": "Generic/Kidsheads/SPR_BI.ESP",
+			"size": 350,
+			"sha256": "a7c6bbfa864fcd8e9b68cfc7658082d3ced6833dc190dc27fee92b1f0be985d8"
+		},
+		{
+			"path": "Generic/Kidsheads/SPR_BI.TPC",
+			"size": 124066,
+			"sha256": "9f10a4304d2bcf9bb5f75c7c37f1066cdb0ff0d4204a6cbddb4418b05cee3d4c"
+		},
+		{
+			"path": "Generic/Kidsheads/SPR_CH.ESP",
+			"size": 350,
+			"sha256": "5106ef7bd97fc4be4d22a15806bfd6b7cba5b03f865c4cc8aa37ce86a6f1bb1b"
+		},
+		{
+			"path": "Generic/Kidsheads/SPR_CH.TPC",
+			"size": 137106,
+			"sha256": "210a774c2757939386f2da3a4371d148567a363c9699c45a4cca51796a7b9d2c"
+		},
+		{
+			"path": "Generic/Kidsheads/SPR_FR.ESP",
+			"size": 350,
+			"sha256": "d6671eb3682795a6b5ebcca1261d71d531d77de36d60dec48005368477aae13c"
+		},
+		{
+			"path": "Generic/Kidsheads/SPR_FR.TPC",
+			"size": 124147,
+			"sha256": "943ab3036eb350aa11001743a85df87e84fedd526bb06b15e9b1b0f6ffc15a80"
+		},
+		{
+			"path": "Generic/Kidsheads/SPR_KI.ESP",
+			"size": 350,
+			"sha256": "65941cbe450907dda843cadc026b782dd65a4dd2cfb80bf023979ccd890d3e59"
+		},
+		{
+			"path": "Generic/Kidsheads/SPR_KI.TPC",
+			"size": 138682,
+			"sha256": "646cd8ee9e89d3558efcc3630fbc2a2ad052929543336f1c57bb1b241210a3f6"
+		},
+		{
+			"path": "Generic/Kidsheads/SPR_SA.ESP",
+			"size": 350,
+			"sha256": "0ae47093d6af3212ce4a77f05ae12369978a38809d3a24f5d0378ad3776e5a0b"
+		},
+		{
+			"path": "Generic/Kidsheads/SPR_SA.TPC",
+			"size": 130894,
+			"sha256": "e76251b7f24847deca42de58fca055d32a5314c791c1066227f82b085d15616c"
+		},
+		{
+			"path": "Generic/Kidsheads/SPR_SU.ESP",
+			"size": 350,
+			"sha256": "df5e6de540b94f7342609c8bf46c71dfc41b9563aedaa03b0e2289ab3f9ba4a4"
+		},
+		{
+			"path": "Generic/Kidsheads/SPR_SU.TPC",
+			"size": 136306,
+			"sha256": "e17d92980fde21094a2c09abdb4ae81818db68e148619bd59d914737e812c508"
+		},
+		{
+			"path": "Generic/Kidsheads/SPR_TA.ESP",
+			"size": 350,
+			"sha256": "552f748116d7c4766177e93446e6d3b124b5500bbcac7d13f1b53549aec38189"
+		},
+		{
+			"path": "Generic/Kidsheads/SPR_TA.TPC",
+			"size": 136772,
+			"sha256": "74d64cb4805c04e6318ab12c16999e16612e3066841a5a70490d936461516144"
+		},
+		{
+			"path": "Swim/SPR_BE.ESP",
+			"size": 350,
+			"sha256": "2fe39ae7129d4a56536dfe81a945920087bf4f3eabcd13b3dc8d674ddd0e6ecf"
+		},
+		{
+			"path": "Swim/SPR_BE.TPC",
+			"size": 813301,
+			"sha256": "a544e2e3ee68865dc5ff053c840c552cd0943aa88ac473269b3c5e1b9e4109c3"
+		},
+		{
+			"path": "Swim/SPR_BI.ESP",
+			"size": 350,
+			"sha256": "0398d65a9bb060d0e0f9ca6f584ecf7580113bec9d563b644ce5ac569d727db0"
+		},
+		{
+			"path": "Swim/SPR_BI.TPC",
+			"size": 815834,
+			"sha256": "817f448fb6d9204e3c7eb705365298b8ced80dfbc84b4d66482a01f143387849"
+		},
+		{
+			"path": "Swim/SPR_CH.ESP",
+			"size": 350,
+			"sha256": "ae4c283909fbac53c2a55d91035d5731b277e64b87836a97b86740a2bb69de0e"
+		},
+		{
+			"path": "Swim/SPR_CH.TPC",
+			"size": 828132,
+			"sha256": "528a03626b17b5f85d031a79e93965ff25249eb119ddfd8b13ec4e192e6c63b4"
+		},
+		{
+			"path": "Swim/SPR_FR.ESP",
+			"size": 350,
+			"sha256": "6354850ad986c01239ec33db6737ffe68b92eda36f35b986478d52082102b5d3"
+		},
+		{
+			"path": "Swim/SPR_FR.TPC",
+			"size": 806256,
+			"sha256": "8cee1395f4b5d1e5410c7ddc01afe58f5d6f4900feca8d3058c6cedea821032b"
+		},
+		{
+			"path": "Swim/SPR_KI.ESP",
+			"size": 350,
+			"sha256": "9746915cc8674d44d32420dc1f6e528aae8e15fa5626458d97f428611d7381a0"
+		},
+		{
+			"path": "Swim/SPR_KI.TPC",
+			"size": 838286,
+			"sha256": "c69707c606bfeaf74901a8c56248a192c9a6d6138216bfdc958b454b0f1e7944"
+		},
+		{
+			"path": "Swim/SPR_SA.ESP",
+			"size": 350,
+			"sha256": "fd5efcf16dfb97f25deb51379d97af9ef5790859f8d03d72ac26e7d9d5bf5103"
+		},
+		{
+			"path": "Swim/SPR_SA.TPC",
+			"size": 799064,
+			"sha256": "3f370040fe1ce52e203d0aee47d308623ea5404b476432d2395ae83f4471a631"
+		},
+		{
+			"path": "Swim/SPR_SU.ESP",
+			"size": 350,
+			"sha256": "95d3c1217456e4be948ce05229670d9a73dc65ba04eea6a6f14b566a840784ab"
+		},
+		{
+			"path": "Swim/SPR_SU.TPC",
+			"size": 832709,
+			"sha256": "35dbfce89b6e609dc53d98ade7571e35f8c12bfff853cb0da74d681e2f542569"
+		},
+		{
+			"path": "Swim/SPR_TA.ESP",
+			"size": 350,
+			"sha256": "9adbdbb74fd0507ac75aa016aaa7bbb0b79f49ce2eba1dfd49378725e82ca7cc"
+		},
+		{
+			"path": "Swim/SPR_TA.TPC",
+			"size": 820134,
+			"sha256": "3406637dc498abe72fa95e207c68e2f344b1a3a739315783e993121c2f5c7edb"
+		}
+	]
+}

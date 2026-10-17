@@ -95,6 +95,12 @@ public sealed class StaffPlacement
 	public (int X, int Y)? Origin { get; private set; }
 	/// <summary>The cell under the cursor, null while the cursor is outside the park view.</summary>
 	public (int X, int Y)? HoverCell { get; private set; }
+	/// <summary>
+	/// The exact point under the pointer in cell units (0.5 = a cell's centre), refreshed every frame while a tool runs, also over the HUD; null when the pointer
+	/// is outside the window or misses the ground. The dangling sprite hangs here, not at the hovered cell's centre.
+	/// </summary>
+	// [BIN:TPW-EXE:0x46c480 tool frame] every frame the tool draws its sprite (0x475480) at the world point under the mouse (0x45d610 → 0x7a1c90: x, y + 5, z), whatever is under the pointer
+	public (float X, float Y)? Cursor { get; private set; }
 	/// <summary>Whether a click on <see cref="HoverCell"/> would work.</summary>
 	public bool HoverValid { get; private set; }
 	/// <summary>The member placed or dropped by the last <see cref="Click"/>.</summary>
@@ -129,6 +135,7 @@ public sealed class StaffPlacement
 		park.Staff.PendingPlacementId = candidate.Id;
 		HoverCell = null;
 		HoverValid = false;
+		Cursor = null;
 		return true;
 	}
 
@@ -152,8 +159,12 @@ public sealed class StaffPlacement
 		Origin = origin;
 		HoverCell = null;
 		HoverValid = false;
+		Cursor = null;
 		return true;
 	}
+
+	/// <summary>Sets the exact pointer position in cell units (null: no ground under the pointer).</summary>
+	public void SetCursor( float? x, float? y ) => Cursor = IsActive && x is { } cellX && y is { } cellY ? (cellX, cellY) : null;
 
 	/// <summary>Cursor move: the hovered cell and whether it is valid; null leaves the park view.</summary>
 	public void Hover( int? x, int? y )
@@ -240,6 +251,7 @@ public sealed class StaffPlacement
 		Origin = null;
 		HoverCell = null;
 		HoverValid = false;
+		Cursor = null;
 		Ended?.Invoke();
 	}
 
@@ -269,6 +281,7 @@ public sealed class StaffPlacement
 		Origin = null;
 		HoverCell = null;
 		HoverValid = false;
+		Cursor = null;
 		if ( wasActive )
 			Ended?.Invoke();
 	}

@@ -58,7 +58,8 @@ public sealed class GuestSpriteAtlas
 	public GuestAtlasFrame[] Frames { get; }
 	public int Width { get; }
 	public int Height { get; }
-	private readonly SpriteBankFile bank;
+	/// <summary>Each frame and the bank (palette) it decodes from: the set's bank, or its <c>.TPC</c> for a slot taken from there (<see cref="LoadSets"/>).</summary>
+	private readonly (SpriteBankFile Bank, SpriteFrame Frame)[] sources;
 	private readonly object pixelsGate = new();
 	private byte[]? pixels;
 	/// <summary>
@@ -74,8 +75,8 @@ public sealed class GuestSpriteAtlas
 				if ( pixels == null )
 				{
 					var decoded = new byte[Width * Height * 4];
-					for ( var index = 0; index < bank.Frames.Count; index++ )
-						bank.DecodeRgba( bank.Frames[index], decoded, Width * 4, Frames[index].X, Frames[index].Y );
+					for ( var index = 0; index < sources.Length; index++ )
+						sources[index].Bank.DecodeRgba( sources[index].Frame, decoded, Width * 4, Frames[index].X, Frames[index].Y );
 					pixels = decoded;
 				}
 				return pixels;
@@ -95,21 +96,34 @@ public sealed class GuestSpriteAtlas
 	/// <param name="packFolder">Folder of the set under <c>esprites/&lt;packRoot&gt;</c> for the texture pack key (<c>kids</c>, <c>kidsheads</c>, <c>costumes</c>, ...).</param>
 	/// <param name="packRoot">The <c>esprites</c> folder the set lives in: <c>generic</c>, or a theme for the costumes.</param>
 	public GuestSpriteAtlas( string name, SpriteBankFile bank, SpriteAnimationFile animations, string packFolder = "kids", string packRoot = "generic" )
+		: this( name, bank, animations, null, -1, packFolder, packRoot )
+	{
+	}
+
+	/// <param name="lowDetail">The set's <c>.TPC</c> bank when the frames of <paramref name="lowDetailSlot"/> are taken from it instead of <paramref name="bank"/>; null for none.</param>
+	/// <param name="lowDetailSlot">The animation slot whose frames <paramref name="lowDetail"/> supplies (the frame numbers are the same in both banks of a set).</param>
+	internal GuestSpriteAtlas( string name, SpriteBankFile bank, SpriteAnimationFile animations, SpriteBankFile? lowDetail, int lowDetailSlot, string packFolder = "kids", string packRoot = "generic" )
 	{
 		Name = name;
 		Animations = animations;
-		this.bank = bank;
+		sources = bank.Frames.Select( frame => (bank, frame) ).ToArray();
+		if ( lowDetail != null && lowDetailSlot >= 0 && lowDetailSlot < animations.Animations.Count && animations.Animations[lowDetailSlot] is { IsEmpty: false } slot )
+		{
+			var end = Math.Min( slot.FirstFrame + slot.FrameCount, Math.Min( sources.Length, lowDetail.Frames.Count ) );
+			for ( var index = slot.FirstFrame; index < end; index++ )
+				sources[index] = (lowDetail, lowDetail.Frames[index]);
+		}
 		PackKey = $"esprites/{packRoot.ToLowerInvariant()}/{packFolder}/{name.ToLowerInvariant()}.atlas";
-		Frames = new GuestAtlasFrame[bank.Frames.Count];
-		var padding = bank.Frames.Any( frame => frame.PixelsPerUnitX > GuestAtlasFrame.ReferencePixelsPerUnit || frame.PixelsPerUnitY > GuestAtlasFrame.ReferencePixelsPerUnit ) ? HighResolutionPadding : Padding;
+		Frames = new GuestAtlasFrame[sources.Length];
+		var padding = sources.Any( source => source.Frame.PixelsPerUnitX > GuestAtlasFrame.ReferencePixelsPerUnit || source.Frame.PixelsPerUnitY > GuestAtlasFrame.ReferencePixelsPerUnit ) ? HighResolutionPadding : Padding;
 		// Every shipped set fits 1024 pixels across and at most 2048 down; a set drawn at twice the size or more is packed into a wider atlas rather than a very tall one,
 		// and a frame wider than the atlas row makes the atlas wider too.
 		var width = AtlasWidth;
-		var widest = bank.Frames.Count == 0 ? 0 : bank.Frames.Max( frame => frame.Width );
+		var widest = sources.Length == 0 ? 0 : sources.Max( source => source.Frame.Width );
 		while ( width < widest + 2 * padding && width < MaximumWidth )
 			width *= 2;
 		int needed;
-		while ( (needed = Pack( bank, Frames, width, padding )) > MaximumHeight && width < MaximumWidth )
+		while ( (needed = Pack( sources, Frames, width, padding )) > MaximumHeight && width < MaximumWidth )
 			width *= 2;
 		if ( needed > MaximumWidth || width < widest + 2 * padding )
 			throw new InvalidDataException( $"Sprite set {name} does not fit a {MaximumWidth} x {MaximumWidth} atlas ({widest} px wide frames, {needed} rows at {width} across)." );
@@ -120,14 +134,14 @@ public sealed class GuestSpriteAtlas
 	}
 
 	/// <summary>Places the frames in rows of <paramref name="width"/> pixels and returns the height the rows need; fills <paramref name="frames"/>.</summary>
-	private static int Pack( SpriteBankFile bank, GuestAtlasFrame[] frames, int width, int padding )
+	private static int Pack( (SpriteBankFile Bank, SpriteFrame Frame)[] sources, GuestAtlasFrame[] frames, int width, int padding )
 	{
 		var x = padding;
 		var y = padding;
 		var rowHeight = 0;
-		for ( var index = 0; index < bank.Frames.Count; index++ )
+		for ( var index = 0; index < sources.Length; index++ )
 		{
-			var frame = bank.Frames[index];
+			var frame = sources[index].Frame;
 			if ( x + frame.Width + padding > width )
 			{
 				x = padding;
@@ -280,8 +294,12 @@ public sealed class GuestSpriteAtlas
 	// [DATA:esprites.wad/Generic/SpecialFX/SPR_SF.ESP+TPC] one 32 x 39 frame (slot 0) whose hotspot lies 85 pixels below its top edge: a blue balloon with a yellow up arrow
 	public static List<GuestSpriteAtlas> LoadSpecialEffects() => LoadSets( "/esprites/Generic/SpecialFX", "specialfx" );
 
-	/// <summary>Each set's ESP chooses its bank (<see cref="SpriteAnimationFile.BankExtension"/>): the FPC when it has one at full detail, else the TPC.</summary>
-	internal static List<GuestSpriteAtlas> LoadSets( string directory, string packFolder, string packRoot = "generic" )
+	/// <summary>
+	/// Each set's ESP chooses its bank (<see cref="SpriteAnimationFile.BankExtension"/>): the FPC when it has one at full detail, else the TPC. With <paramref name="lowDetailSlot"/>
+	/// the frames of that slot come from the set's TPC whatever the ESP chooses: the staff tools' dangling sprite, which the FPC banks hold as 2 x 2 pixel placeholders.
+	/// </summary>
+	// [APPROX:GUEST-022] tp.exe draws the .tpc of every set (the detail flag its ESP loader 0x540D90 tests is never set, SpriteAnimationFile.FlagA); OpenTPW draws the .fpc of the sets with byte 0x10C = 1, and the .tpc only for a slot asked for here
+	internal static List<GuestSpriteAtlas> LoadSets( string directory, string packFolder, string packRoot = "generic", int lowDetailSlot = -1 )
 	{
 		var sets = new List<GuestSpriteAtlas>();
 		string[] files;
@@ -305,7 +323,7 @@ public sealed class GuestSpriteAtlas
 			using var bankStream = FileSystem.OpenRead( $"{directory}/{bank}" );
 			try
 			{
-				sets.Add( new GuestSpriteAtlas( stem, new SpriteBankFile( bankStream ), animations, packFolder, packRoot ) );
+				sets.Add( new GuestSpriteAtlas( stem, new SpriteBankFile( bankStream ), animations, LowDetailBank( directory, files, stem, bank, lowDetailSlot ), lowDetailSlot, packFolder, packRoot ) );
 			}
 			catch ( InvalidDataException exception ) when ( exception.Message.StartsWith( "Sprite set ", StringComparison.Ordinal ) )
 			{
@@ -313,5 +331,23 @@ public sealed class GuestSpriteAtlas
 			}
 		}
 		return sets;
+	}
+
+	/// <summary>The set's TPC when a slot is to be taken from it and the chosen bank is another one; null when there is none or it does not decode.</summary>
+	private static SpriteBankFile? LowDetailBank( string directory, string[] files, string stem, string chosen, int slot )
+	{
+		if ( slot < 0 || chosen.EndsWith( ".TPC", StringComparison.OrdinalIgnoreCase )
+			|| files.FirstOrDefault( file => string.Equals( file, stem + ".TPC", StringComparison.OrdinalIgnoreCase ) ) is not { } tpc )
+			return null;
+		try
+		{
+			using var stream = FileSystem.OpenRead( $"{directory}/{tpc}" );
+			return new SpriteBankFile( stream );
+		}
+		catch ( InvalidDataException exception )
+		{
+			Log?.Warning( $"The low-detail bank {tpc} in {directory} is not used: {exception.Message}" );
+			return null;
+		}
 	}
 }

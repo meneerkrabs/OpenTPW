@@ -1184,6 +1184,22 @@ public partial class Level
 		return float.IsFinite( screen.X ) && float.IsFinite( screen.Y );
 	}
 
+	/// <summary>
+	/// The continuous cell coordinates of the terrain point under the pointer (cell units, 0.5 = a cell's centre), clamped to the grid; false when the ray misses the ground.
+	/// Unlike <see cref="TryGetGridCell(System.Numerics.Vector2, System.Numerics.Vector2, out int, out int)"/> it does not snap to a cell and does not need a cell under the pointer.
+	/// </summary>
+	// [BIN:TPW-EXE:0x45d610 mouse ground point] the staff tools read the exact world point under the mouse (0x7a1c90: x, y, z floats), not the hover cell
+	public bool TryGetGroundCell( System.Numerics.Vector2 mousePosition, System.Numerics.Vector2 viewportSize, out float cellX, out float cellY )
+	{
+		cellX = cellY = 0;
+		if ( !TryGetGroundHit( mousePosition, viewportSize, out var ground ) || !float.IsFinite( ground.X ) || !float.IsFinite( ground.Y ) )
+			return false;
+		var origin = Objects.Grid.Origin;
+		cellX = Math.Clamp( (ground.X - origin.X) / ObjectPlacement.CellSize, 0f, Objects.Grid.Width - 0.001f );
+		cellY = Math.Clamp( (ground.Y - origin.Y) / ObjectPlacement.CellSize, 0f, Objects.Grid.Height - 0.001f );
+		return true;
+	}
+
 	public bool TryGetGridCell( float engineX, float engineY, out int x, out int y )
 	{
 		var origin = Objects.Grid.Origin;

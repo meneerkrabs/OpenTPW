@@ -8,7 +8,7 @@ namespace OpenTPW;
 /// <summary>
 /// Draws every placed staff member as a camera-facing quad of its original sprite (<c>esprites.wad</c>, tp.exe body sprite 0x4d4140), the way
 /// <see cref="GuestRenderer"/> draws the kids: one draw call, one dynamic vertex buffer, the same sprite shader and atlas loading, the hotspot on the terrain.
-/// A member in the player's hand is not drawn; the tool's dangling sprite (slot 6, frames 0-3 looping) hangs over the hovered cell instead.
+/// A member in the player's hand is not drawn; the tool's dangling sprite (slot 6, frames 0-3 looping, from the bank's .TPC) hangs at the pointer's ground point instead.
 /// Nothing is allocated per frame once the members have been seen.
 /// </summary>
 public sealed class StaffRenderer : Entity
@@ -16,9 +16,11 @@ public sealed class StaffRenderer : Entity
 	private const int VerticesPerSprite = 12;
 	/// <summary>A park turn in seconds (the simulation's 248 ms).</summary>
 	private const float ParkTurnSeconds = 0.248f;
-	/// <summary>Height of the dangling sprite above the ground, in original units.</summary>
-	// [BIN:TPW-EXE:0x46c480 hover] the cursor sprite follows the mouse 5 units above the ground
+	/// <summary>Height of the dangling sprite above the mouse's world point, in original units.</summary>
+	// [BIN:TPW-EXE:0x0046C480 tool frame] every frame the tool's sprite is placed at the mouse's world point (0x0045D610 returns 0x007A1C90) 5 units up, with sprite direction 4 (0x00475480 stores x, y + 5, z at +0x88..+0x90 and the direction at +0xC0)
 	public const float DangleLift = 5f;
+	/// <summary>The sprite direction the tools draw their dangling person with (tp.exe 0x0046C480): facing the player.</summary>
+	public const int DangleDirection = 4;
 
 	private sealed class MemberView
 	{
@@ -50,6 +52,10 @@ public sealed class StaffRenderer : Entity
 	public int DrawnStaff { get; private set; }
 	/// <summary>Whether the last frame drew the tool's dangling sprite.</summary>
 	public bool DrewDangling { get; private set; }
+	/// <summary>Where the last frame hung the tool's dangling sprite, in cell units; null when it was not drawn.</summary>
+	internal (float X, float Y)? DangleAt { get; private set; }
+	/// <summary>The size in pixels of the frame the last dangling sprite showed; null when it was not drawn.</summary>
+	internal (int Width, int Height)? DangleFrameSize { get; private set; }
 
 	/// <summary>The atlas textures, material and independently owned shader used by native lifecycle checks.</summary>
 	internal IReadOnlyList<Asset> OwnedAssets => textures.Cast<Asset>().Concat( material == null ? Array.Empty<Asset>() : new Asset[] { material, material.Shader } ).ToArray();
@@ -214,10 +220,16 @@ public sealed class StaffRenderer : Entity
 		}
 	}
 
+	/// <summary>Where the tool's sprite hangs this frame in cell units: the exact pointer ground point, else the hovered cell's centre; null when neither is known.</summary>
+	internal static (float X, float Y)? DanglePoint( StaffPlacement placement ) =>
+		placement.Cursor ?? (placement.HoverCell is { } cell ? (cell.X + 0.5f, cell.Y + 0.5f) : null);
+
 	protected override void OnRender()
 	{
 		DrawnStaff = 0;
 		DrewDangling = false;
+		DangleAt = null;
+		DangleFrameSize = null;
 		if ( !Visible || material == null || deleted )
 			return;
 		var list = members();
@@ -247,15 +259,16 @@ public sealed class StaffRenderer : Entity
 		}
 		if ( ++frames % 256 == 0 && views.Count > list.Count )
 			Prune( list );
-		if ( placement.HoverCell is { } cell && placement.ToolType is { } toolType
+		if ( DanglePoint( placement ) is var (danglingX, danglingY) && placement.ToolType is { } toolType
 			&& sprites.AtlasFor( toolType, placement.ToolVariantKey ) is var atlasIndex and >= 0 && atlasIndex < textures.Count )
 		{
 			var atlas = sprites.Atlases[atlasIndex];
 			var (slot, step) = StaffSpriteRules.Resolve( StaffSpriteRules.Dangle, now, atlas.Animations.Animations );
-			// the cursor sprite faces the player: sprite direction 4
-			var frameIndex = atlas.GetFrame( slot, 4, step );
-			AddSprite( ref count, atlasIndex, frameIndex, false, GuestRenderer.CellToEngine( field, cell.X + 0.5f, cell.Y + 0.5f, DangleLift ), right, up, forward );
+			var frameIndex = atlas.GetFrame( slot, DangleDirection, step );
+			AddSprite( ref count, atlasIndex, frameIndex, false, GuestRenderer.CellToEngine( field, danglingX, danglingY, DangleLift ), right, up, forward );
 			DrewDangling = true;
+			DangleAt = (danglingX, danglingY);
+			DangleFrameSize = (atlas.Frames[frameIndex].Width, atlas.Frames[frameIndex].Height);
 		}
 		if ( count == 0 )
 			return;

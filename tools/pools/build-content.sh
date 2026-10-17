@@ -3,6 +3,8 @@
 #
 #   1. Blender builds the changing room cabin for each theme      tools/blender/opentpw_changing_room.py   -> <work>/glb/<theme>.glb
 #   2. opentpw-kit object turns each glb into an object archive   tools/pools/cabin.sam, cabin.rse        -> content/pools/objects/<theme>/cabin/
+#   2b. Blender builds the water slide towers (flume and tube)    tools/blender/opentpw_slide_tower.py     -> <work>/towers/<theme>-<profile>.glb, then the kit
+#                                                                tools/pools/slide-tower-<profile>.sam, slide-tower.rse -> content/pools/objects/<theme>/<profile>tower/
 #   3. Blender renders the eight kid swimmer sets (TPW kids)      tools/blender/opentpw_guest_sprites.py   -> <work>/guests/tpw/Kids/<SET>/
 #   4. pack_swim_sets.py packs them with opentpw-kit sprites      tools/pools/pack_swim_sets.py            -> content/pools/esprites/Swim/SPR_xx.ESP/.TPC
 #
@@ -41,6 +43,17 @@ echo "== 2. object archives"
 for theme in "${themes[@]}"; do
 	kit object --glb "$work/glb/$theme.glb" --name cabin --out "content/pools/objects/$theme/cabin" \
 		--sam tools/pools/cabin.sam --script tools/pools/cabin.rse --force
+done
+
+echo "== 2b. water slide towers"
+rm -rf "$work/towers"
+"$blender" -b --factory-startup --python tools/blender/opentpw_slide_tower.py -- --out "$work/towers" --preview "$work/previews" > "$work/towers.log" 2>&1 \
+	|| { tail -30 "$work/towers.log"; exit 1; }
+for theme in "${themes[@]}"; do
+	for profile in flume tube; do
+		kit object --glb "$work/towers/$theme-$profile.glb" --name "${profile}tower" --out "content/pools/objects/$theme/${profile}tower" \
+			--sam "tools/pools/slide-tower-$profile.sam" --script tools/pools/slide-tower.rse --force
+	done
 done
 
 echo "== 3. swim sprites"

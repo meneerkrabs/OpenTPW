@@ -64,14 +64,15 @@ public class PoolsContentTests
 	{
 		var file = ModObjectsFile.Load( Path.Combine( PoolContent.Directory!, "objects.json" ), Array.Empty<string>() );
 		Assert.AreEqual( (PoolContent.FirstReservedId, PoolContent.LastReservedId), (file.FirstId, file.LastId), "the file reserves exactly the extension's range" );
-		Assert.AreEqual( 4, file.Objects.Count );
-		CollectionAssert.AreEqual( Themes, file.Objects.Select( item => item.Theme ).ToArray() );
-		CollectionAssert.AreEqual( new[] { 65500, 65501, 65502, 65503 }, file.Objects.Select( item => item.InfoId ).ToArray() );
+		var rooms = file.Objects.Where( item => item.InfoId >= 65500 ).ToList();
+		Assert.AreEqual( 4, rooms.Count );
+		CollectionAssert.AreEqual( Themes, rooms.Select( item => item.Theme ).ToArray() );
+		CollectionAssert.AreEqual( new[] { 65500, 65501, 65502, 65503 }, rooms.Select( item => item.InfoId ).ToArray() );
 		Assert.IsTrue( file.Objects.All( item => item.Category == ObjectCategory.Feature && item.Input == null ) );
 		Assert.IsTrue( file.Objects.All( item => item.InfoId is >= PoolContent.FirstReservedId and <= PoolContent.LastReservedId ) );
 		Assert.IsTrue( PoolContent.FirstReservedId >= CrossEditionObjects.FirstReservableId && PoolContent.LastReservedId <= CrossEditionObjects.LastReservableId );
-		Assert.AreEqual( 9, file.Objects[0].Names.Count, "a name for each of the nine languages" );
-		Assert.AreEqual( "Changing Room", file.Objects[0].Names["English"] );
+		Assert.AreEqual( 9, rooms[0].Names.Count, "a name for each of the nine languages" );
+		Assert.AreEqual( "Changing Room", rooms[0].Names["English"] );
 	}
 
 	[TestMethod]
@@ -96,7 +97,7 @@ public class PoolsContentTests
 				Assert.AreEqual( 2, entry.InitialCapacity );
 				Assert.AreEqual( 5, entry.Economy.PricePerUse );
 				Assert.IsNotNull( entry.ScriptPath );
-				Assert.AreEqual( 1, ObjectCatalog.Load( Themes[index] ).Entries.Count( item => item.ModId == "opentpw.pools" ), "one room per theme" );
+				Assert.AreEqual( 1, ObjectCatalog.Load( Themes[index] ).Entries.Count( item => item.ModId == "opentpw.pools" && PoolChangingRooms.IsChangingRoom( item ) ), "one room per theme" );
 			}
 			Assert.IsNull( ObjectCatalog.Load( "jungle" ).Find( 65501 ), "the hallow room is not a jungle object" );
 		}

@@ -13,7 +13,8 @@ Footprint: 2 x 2 cells = the Blender X/Y range 0..20, with the Info.Shape (first
 
 The stairs face the pool, on the +Y face (the shape's front, the local -V side at rotation 0, which is where ``Pools.SlideTower`` looks for water): a flight of twelve steps along the
 left edge (X 0..7) rises from the ground at Y = 20 to the platform at Y = 8. The platform is an L of three slabs whose top lies exactly 25 units (five engine units) above the ground,
-the height at which ``PoolSlideTowers.TopHeight`` puts the track and the waiting guests' feet. The other three sides are open: the track starts on any of them. Corner posts carry a
+the height at which ``PoolSlideTowers.TopHeight`` puts the track and the waiting guests' feet. The platform and rails reach the full footprint (they are far above a walker's sprite); the flight and the
+corner posts stand SIDE_INSET inside the footprint on the three sides that can face a path, so a guest or staff member walking past is not cut by a wall that reaches the cell edge (docs/POOLS.md, "Model inset"). The other three sides are open: the track starts on any of them. Corner posts carry a
 finial that tells the two profiles apart: a flat pennant for the open flume, a wide cap for the closed tube.
 """
 
@@ -34,6 +35,7 @@ SLAB = 1.2                 # platform thickness
 POST = 1.6
 STEPS = 12
 STAIR_WIDTH = 7.0
+SIDE_INSET = 1.5           # the flight and the posts stand this far inside the footprint on the sides a path can run along (not on the pool side, +Y)
 STAIR_TOP_Y = 8.0          # where the flight meets the platform
 RAIL = 4.0
 
@@ -51,25 +53,25 @@ def add_tower(b, theme, profile):
 		y_hi = SIZE - i * depth
 		y_lo = y_hi - depth
 		height = TOP * (i + 1) / STEPS
-		b.box("wall", (0.0, y_lo, 0.0), (STAIR_WIDTH, y_hi, height), skip=("-z", "-y") if i > 0 else ("-z",),
+		b.box("wall", (SIDE_INSET, y_lo, 0.0), (STAIR_WIDTH, y_hi, height), skip=("-z", "-y") if i > 0 else ("-z",),
 			faces_material={"+z": "trim"})
 	# corner posts under and above the platform (the front left one stands beside the flight)
-	for px, py in ((0.0, 0.0), (SIZE - POST, 0.0), (SIZE - POST, SIZE - POST), (STAIR_WIDTH, STAIR_TOP_Y)):
+	for px, py in ((SIDE_INSET, SIDE_INSET), (SIZE - POST - SIDE_INSET, SIDE_INSET), (SIZE - POST - SIDE_INSET, SIZE - POST), (STAIR_WIDTH, STAIR_TOP_Y)):
 		b.box("wall", (px, py, 0.0), (px + POST, py + POST, TOP + RAIL), skip=("-z",))
 	# a low rail along the front of the platform (over the stairs' side the flight's own edge keeps the climbers in) and along the back wall
 	b.box("trim", (STAIR_WIDTH + POST, SIZE - 0.6, TOP), (SIZE - POST, SIZE, TOP + 2.2), skip=("-z",))
 	b.box("trim", (POST, 0.0, TOP), (SIZE - POST, 0.6, TOP + 2.2), skip=("-z",))
 	# finial on the front right post: a pennant for the open flume, a wide cap for the closed tube
-	post_x, post_y = SIZE - POST, SIZE - POST
+	post_x, post_y = SIZE - POST - SIDE_INSET, SIZE - POST
 	if profile == "flume":
 		b.box("trim", (post_x + 0.6, post_y + 0.6, TOP + RAIL), (post_x + 1.0, post_y + 1.0, TOP + RAIL + 5.0), skip=("-z",))
 		b.box("light" if theme == "space" else "roof", (post_x - 3.5, post_y + 0.7, TOP + RAIL + 3.0), (post_x + 1.0, post_y + 0.9, TOP + RAIL + 5.0), skip=("-z",))
 	else:
 		# a wide cap on the post, and a bead on top of it
-		b.box("roof", (post_x - 1.6, post_y - 1.6, TOP + RAIL), (SIZE, SIZE, TOP + RAIL + 1.4), skip=("-z",))
+		b.box("roof", (post_x - 1.6, post_y - 1.6, TOP + RAIL), (post_x + POST + SIDE_INSET, SIZE, TOP + RAIL + 1.4), skip=("-z",))
 		b.box("light" if theme == "space" else "trim", (post_x + 0.3, post_y + 0.3, TOP + RAIL + 1.4), (post_x + 1.3, post_y + 1.3, TOP + RAIL + 2.8), skip=("-z",))
 	if theme == "hallow":
-		b.box("trim", (0.0, 0.0, TOP + RAIL), (POST, POST, TOP + RAIL + 3.0), skip=("-z",))
+		b.box("trim", (SIDE_INSET, SIDE_INSET, TOP + RAIL), (SIDE_INSET + POST, SIDE_INSET + POST, TOP + RAIL + 3.0), skip=("-z",))
 	elif theme == "space":
 		b.box("light", (0.0, 0.3, TOP - SLAB + 0.2), (SIZE, 0.7, TOP - 0.1), skip=("-z", "-y", "+z"))
 

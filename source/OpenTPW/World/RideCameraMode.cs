@@ -105,7 +105,7 @@ public sealed class RideCameraMode : CameraMode
 		Position = new Vector3( node.Translation.X, node.Translation.Y, node.Translation.Z );
 		Rotation = BasisRotation( lookForward, lookUp );
 		if ( !EntityConstructionScope.IsStaging )
-			GameAudio.UpdateListener( new NVector3( Position.X, Position.Y, Position.Z ), lookForward, Level.Current?.OriginalPark?.Heightfield );
+			GameAudio.UpdateListener( new NVector3( Position.X, Position.Y, Position.Z ), lookForward, Level.Current?.OriginalPark?.Heightfield, lookUp );
 	}
 
 	/// <summary>

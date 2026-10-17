@@ -74,6 +74,6 @@ public sealed class FreeWalkCameraMode : CameraMode
 		if ( length > 1 ) { f /= length; r /= length; }
 		var next = Position + (flat.Forward * f + flat.Right * r) * MoveSpeed * dt;
 		if ( TryGround( field, next.X, next.Y, out var ground ) ) Position = ground + Vector3.Up * EyeHeight;
-		if ( !EntityConstructionScope.IsStaging ) GameAudio.UpdateListener( Position.GetSystemVector3(), Rotation.Forward.GetSystemVector3(), field );
+		if ( !EntityConstructionScope.IsStaging ) GameAudio.UpdateListener( Position.GetSystemVector3(), Rotation.Forward.GetSystemVector3(), field, Rotation.Up.GetSystemVector3() );
 	}
 }

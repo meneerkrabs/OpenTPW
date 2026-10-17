@@ -69,6 +69,8 @@ public partial class Level
 		PrepareThings();
 		// [BIN:TPW-EXE:0x5590f7 demolish effect] the type's DestroyParticleEffect starts at the footprint before the script goes, for every removal but a park load or clear
 		Objects.ObjectRemoving += item => item.Runtime.StartObjectEffect( ObjectParticleEffect.Destroy );
+		// [BIN:TPW-EXE:0x5285a2 demolition cue] the demolition 0x527ee0 plays its size-classed cat_ui cue after the footprint count, for every removal that is not a park load (0x785a2c)
+		Objects.ObjectRemoving += PlayDemolitionCue;
 		Objects.ObjectRemoved += item =>
 		{
 			if ( ReferenceEquals( RideView?.Ride, item ) )
@@ -1251,6 +1253,8 @@ public partial class Level
 		}
 		// [BIN:TPW-EXE:0x558e7c build effect] the type's CreateParticleEffect starts when the new object's script attaches, not when a park loads
 		placed.Runtime.StartObjectEffect( ObjectParticleEffect.Create );
+		// [BIN:TPW-EXE:0x528e30 placement cue] the commit pass of the placement plays its size-classed cat_ui cue
+		PlayPlacementCue( entry, x, y, rotation );
 		if ( bought != null )
 			LinkEconomy( placed, bought.Id );
 		LastActionMessage = bought != null

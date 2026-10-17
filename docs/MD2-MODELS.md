@@ -493,28 +493,50 @@ either (the reader refuses them too).
 content, `Unknown46` from `Counts`), flags, source name, bounds, header height (+0xA0); texture flag words, slot words, frame names;
 every node record (type, links, matrix, stored index, name); every mesh (position blocks, corner table, normals, face records,
 material records, texture-coordinate blocks, mesh bounds); the attribute records with their 12 reserved bytes; the path records and
-points; the terrain heightfield block. Padding inside position and texture-coordinate blocks stays zero (it is zero in all 4,141 and
-3,425 original padded slots); the unmodelled words of a mesh record (+116, +144, +152..159) stay zero (zero in all 4,914 meshes).
+points; the terrain heightfield block; the **attribute data blocks** (below). The words of unknown meaning in the header (0x0C, 0x10, 0x14,
+the u16 at 0x34, 0x2C; `ModelFile.HeaderOpaque`) and each node's first-child / next-sibling links (`ModelNode.FirstChildIndex`,
+`NextSiblingIndex`; 200 original chains are not in node index order) are kept in the model, so a planned layout keeps them too. Bytes
+the writer has no field for are written as zero: the padding of position and texture-coordinate blocks (zero in all 4,141 and 3,425
+original padded slots), the mesh record words +116, +144, +152..159 (zero in all 4,914 meshes), the flag record word +4 and slot record
+bytes +4..9 (zero in all 7,282 slots), and the zero padding after names. With a captured layout any non-zero byte there is kept as a
+gap (below) instead of being lost.
+
+**Attribute data blocks.** An attribute record with type flag 0x40 (0xF1, 0x400F1, 0x100400F1, 0x41071, ...) has the pointer to a 16-byte
+block in its word +12 (bytes 4..7 of `ModelDummyAttribute.Reserved`): all 248 records with the flag have a non-zero pointer, none of the
+2,204 without it do, in 28 members, and every target is distinct; the blocks form one array of 16-byte entries that ends exactly at the
+attribute table. A block is a `u32` word and three floats that look like a roughly unit-length direction (`ModelAttributeData`; meaning
+unverified, values kept raw). The **high 16 bits of the word are the byte distance back to a second 16-byte entry** `f32 x, f32 y, f32 z, 0`
+(a position; 126 of the 248 records have one, 122 have 0 in the high bits; all 126 entries have a zero fourth word, lie in an array that
+precedes the block array and never overlap anything else), which is what the first version of this writer mistook for "unreferenced gap
+bytes" in 12 members (the other entries are zero and were invisible). The low 16 bits (0x16..0x1F, 0x2A..0x2D, 0x37..0x147, ...) are not
+understood and kept. The reader decodes the block and the position (`ModelAttributeData.Position`; the pointer bytes of `Reserved` and
+the high bits of the word are then zero in the model), and the writer places the position array and the block array and writes the
+pointers and distances in captured and planned layouts alike. The words +8 and
++16 of an attribute record (`Reserved` bytes 0..3 and 8..11; non-zero in 128 records without a block, values like 0x1, 0x10, 0x40) stay raw.
 
 **What is copied raw.** `ModelLayout` (kept by `new ModelFile( stream, captureLayout: true )`; an ordinary read keeps none, so
-existing consumers pay nothing) holds the 0xB8-byte header as read (the opaque words 0x0C, 0x10, 0x14, 0x2C and 0x34, and the
-source-name bytes while the name is unchanged), every region offset, the per-mesh offsets, each node's name offset and its first
-child / next sibling (200 original sibling chains are not in node index order, so the order is kept), and the **gaps**: the non-zero
-bytes that no structure covers. Most gaps are zero alignment padding (not stored); 28 members carry unreferenced non-zero runs of 16
-to 933 bytes (unreferenced, float-like data; e.g. `levels/fantasy/rides/cat_co.wad/caterbd.MD2` has 39 bytes before the attribute table), which are
-kept verbatim. The writer finds them by writing the model with the captured offsets and marking which bytes it touched, so a field the
-reader dropped shows up as a roundtrip mismatch instead of hiding in a gap.
+existing consumers pay nothing) holds the 0xB8-byte header as read (including the source-name bytes while the name is unchanged),
+every region offset, the per-mesh offsets, each node's name offset, each attribute data block's offset, and the **gaps**: non-zero
+bytes that no field accounts for. The gap mechanism is a last resort that keeps the roundtrip exact for data the reader does not
+understand, and it is reported (`ModelLayout.Gaps`). **No original member needs it any more**: the first version of this writer found 28
+members with non-zero runs of 16 to 933 bytes and called them unreferenced, but they were the attribute data blocks above (248
+pointers); with those decoded all 838 members have zero gaps (`Md2WriterCorpusTests` asserts it). The writer finds gaps by writing the
+model with the captured offsets and marking exactly the bytes it wrote (nothing is marked as a block), so a field the reader dropped
+shows up as a gap or a roundtrip mismatch. The layout also records the sizes it was captured for (`ModelLayout.Shape`): if the model
+changes shape (an appended position, a renamed node of another length) the writer plans a fresh layout instead of overlapping the
+neighbouring arrays.
 
 **Proven by roundtrip** (`Md2WriterCorpusTests`, needs `OPENTPW_GAME_PATH`): all 838 version 221.203 geometry members of the 312 local
 WADs (2,118 MD2 members; the 1,278 animation members and the two version 207 members are not written) are written back **byte for byte**
-from their captured layout, with no member that cannot be made identical. The same test class reads every member without a layout,
-writes it with a **planned** layout (the one authored models get) and reads it back: all 838 equal the original in every field the reader
-keeps (counts, nodes and matrices, textures, positions, corners, UVs, normals, faces, materials, attributes, paths, heightfields); only
-offsets and padding differ.
+from their captured layout, with no member that cannot be made identical and no member that needs gap bytes. The same test class reads
+every member without a layout, writes it with a **planned** layout (the one authored models get) and reads it back: all 838 equal the
+original in every field the reader keeps (header words, counts, nodes with matrices and sibling order, textures, positions, corners,
+UVs, normals, faces, materials, attributes with their data blocks compared by content, paths, heightfields); only offsets and padding
+differ.
 
 **Planned layout** (no captured layout): header, texture flags, frame names, slot records, then (16-byte aligned) positions, normals,
 (8-byte aligned) materials, faces, corner tables, (16-byte aligned) texture coordinates, node names, terrain block, path points,
-attributes, path records, then the mesh and dummy tables, each mesh's arrays in mesh order. This follows the order the corpus shows
+attribute data blocks, attributes, path records, then the mesh and dummy tables, each mesh's arrays in mesh order. This follows the order the corpus shows
 (e.g. `gates.MD2`: flags, names, slots, positions, normals, materials, faces, corners, texture coordinates, names, attributes, mesh
 table, dummy table); the original's region order varies (eight orders in the corpus) and its alignment rules are not verified beyond
 that, so the planned layout is *a* valid layout, not the exporter's. Regions that are absent get offset 0 (no dummies, attributes,
@@ -528,8 +550,10 @@ normalised and its index is `corners + face` (the corpus rule for 4,714 of 4,914
 (with or without `.tga`/`.wct`, at most 15 characters, printable ASCII); the model stores `<name>.tga` in a texture slot, which
 `ObjectAssets.TextureDirectories` resolves to `<archive>/textures/<name>.wct|.tga`. `wrap: true` sets slot flags 0x10 and 0x20 (wrap
 U and V), else the texture clamps (see "Texture slots" above); a name used with both wraps gets two slots. **Head records**: a node's
-`AddHead( id, type )` makes an attribute record whose type has flag 0x80 (default 0xB1, also accepted: 0xF1) and whose value is the
-head id; ids must be unique and run from 1 (the ride script counts from 1 until the lookup fails). Record `i` belongs to node
+`AddHead( id, type, data )` makes an attribute record whose type has flag 0x80 (default 0xB1) and whose value is the
+head id. A type with flag 0x40 (0xF1 and others) needs the 16-byte data block of unknown meaning, which has no safe default, so
+`AddHead` demands it as `ModelAttributeData` for those types and refuses it for 0xB1; the plain default 0xB1 has no block (487 corpus
+records); ids must be unique and run from 1 (the ride script counts from 1 until the lookup fails). Record `i` belongs to node
 `Unknown46 + i` (docs/GUESTS.md "Riders' heads"), so the table starts at the first dummy (or an earlier head node) and spans every node
 up to the last head node; the nodes in between get a plain record. `RideHeadSpace.NodeForHead` finds the ids on their nodes in the
 tests, and a ride script's ADDHEAD can hang guest heads on them.
@@ -542,7 +566,7 @@ tests, and a ride script's ADDHEAD can hang guest heads on them.
 | Header words 0x0C / 0x10 | 1142 / 281 | the commonest pair (61 members) |
 | Header word 0x14 | 939121370 | a 1999 Unix time; every value is nearly unique |
 | Header word 0x2C | file length - 11 | 0 to 29 bytes below the length; 11 is the commonest (79 members) |
-| Header word 0x34 | 0 | all 838 |
+| Header u16 at 0x34 | 0 | all 838 (the u32 at 0x34 also holds the texture count at 0x36, so it is never 0) |
 | Source name | empty | 92 differ from the member name |
 | Header height (0xA0) | 0 | 755 of 838 |
 | Mesh node type | 0x1 | 4,578 of 4,914 meshes |

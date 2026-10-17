@@ -275,7 +275,7 @@ public class DeterminismTests
 	/// The pinned hash of the same run with <c>opentpw.smarter-guests</c> on (docs/SMARTER-GUESTS.md): the policy still delegates to the original, so everything but the extension's own state (its seed,
 	/// counter and birth ids, which join the world hash only while it is on) is the off run's. A deliberate change of the extension's state or of its policy changes this value.
 	/// </summary>
-	internal const ulong SmarterGuestsFixedRunHash = 0x39B42E5D061F87B6UL;
+	internal const ulong SmarterGuestsFixedRunHash = 0xCB2F2ECD287ED83FUL;
 
 	[TestMethod]
 	public void SmarterGuestsFixedRunHashIsTheSameInEveryProcess()

@@ -34,6 +34,12 @@ public class DeterminismTests
 			// Fastest speed so the staff pool (economy stream) draws within the run.
 			Economy.Speed = GameSpeed.Fastest;
 			Guests = new GuestSimulation( GuestTests.CreateCross(), GuestTests.CreateSettings(), seed.GuestStream );
+			// the park's one thing pool as Level builds it: the world's ten singletons, then the gates and the lights (things 1 to 12), so the first guest is thing 13 (WALK-010)
+			Things = new ThingPool();
+			Things.AllocateWorldSetup();
+			Things.Allocate( SaveThingModel.Attraction );
+			Things.Allocate( SaveThingModel.Attraction );
+			Guests.AttachThings( Things );
 			Scripts = new RideScriptWorld( seed.ScriptStream );
 			// the park's one world generator, as Level links it: the economy's, which the guests and the scripts draw from
 			Guests.AttachWorld( Economy.World );
@@ -54,6 +60,7 @@ public class DeterminismTests
 		}
 
 		public WorldSeed Seed { get; }
+		public ThingPool Things { get; }
 		public ParkEconomy Economy { get; private set; }
 		public GuestSimulation Guests { get; }
 		public RideScriptWorld Scripts { get; }
@@ -75,6 +82,8 @@ public class DeterminismTests
 			for ( var tick = 0; tick < ticks; tick++ )
 			{
 				Guests.Tick( Tick );
+				// the park turn's end frees the things that asked for their destruction (Level.AdvanceSimulation)
+				Things.DestroyQueued();
 				shop.HostStep();
 				shopScript.Advance( Tick );
 				foreach ( var script in dice )
@@ -197,7 +206,7 @@ public class DeterminismTests
 	}
 
 	/// <summary>The pinned hash of <see cref="HashOfAFixedRunIsTheSameInEveryProcess"/>'s run (docs/DETERMINISM.md).</summary>
-	internal const ulong FixedRunHash = 0x01946A39A53F851EUL;
+	internal const ulong FixedRunHash = 0x7A199E7425A19C8BUL;
 
 	/// <summary>
 	/// Switching only the <c>opentpw.online</c> extension (docs/MODS.md) leaves the pinned digests unchanged: this fixed run,

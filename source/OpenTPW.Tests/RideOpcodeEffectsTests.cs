@@ -191,34 +191,32 @@ public class RideOpcodeEffectsTests
 	}
 
 	[TestMethod]
-	public void HushHopAndHeadOpcodesPassTheirVisitorOperand()
+	public void HeadOpcodesPassTheirVisitorOperandAndLeaveTheFlagsAlone()
 	{
-		var effects = new RecordingEffects { Result = call => call.Opcode switch { Opcode.HOP => 5, _ => 0 } };
+		var effects = new RecordingEffects();
 		var vm = Load( new Asm()
 			.I( Opcode.TEST, V( 2 ) )
-			.I( Opcode.HUSH, V( 0 ) )
-			.I( Opcode.HOP, V( 1 ) )
-			.I( Opcode.BRANCH_NV, "kept" )
-			.I( Opcode.COPY, V( 3 ), 0 ).I( Opcode.BRANCH, "heads" )
-			.Label( "kept" ).I( Opcode.COPY, V( 3 ), 1 )
-			.Label( "heads" )
 			.I( Opcode.ADDHEAD, V( 0 ) )
 			.I( Opcode.DELHEAD, V( 0 ) )
+			.I( Opcode.BRANCH_NV, "kept" )
+			.I( Opcode.COPY, V( 3 ), 0 ).I( Opcode.BRANCH, "idle" )
+			.Label( "kept" ).I( Opcode.COPY, V( 3 ), 1 )
 			.Label( "idle" ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "idle" ), effects );
 		vm.Variables[0] = 44;
 		vm.Variables[2] = -1;
 		Run( vm, 1 );
-		Assert.AreEqual( 5, vm.Variables[1], "HOP writes its result to the destination" );
-		Assert.AreEqual( 1, vm.Variables[3], "HOP leaves the flags alone (the corpus never branches on it)" );
-		CollectionAssert.AreEqual( new[] { "HUSH 44", "HOP 0", "ADDHEAD 44", "DELHEAD 44" }, effects.Calls );
+		Assert.AreEqual( 1, vm.Variables[3], "ADDHEAD and DELHEAD leave the flags alone" );
+		CollectionAssert.AreEqual( new[] { "ADDHEAD 44", "DELHEAD 44" }, effects.Calls );
 		Assert.AreEqual( RideVMState.Running, vm.State );
 	}
 
 	[TestMethod]
 	public void ForceUnlimboAndInLimboWriteTheirDestinationAndSetFlags()
 	{
-		var effects = new RecordingEffects { Result = call => call.Opcode switch { Opcode.FORCEUNLIMBO => 1, Opcode.INLIMBO => 0, _ => 0 } };
+		// The limbo table is the script's own (TPW-EXE 0x554DE5..0x555045), so the game effects never see these opcodes.
+		var effects = new RecordingEffects();
 		var vm = Load( new Asm()
+			.I( Opcode.LIMBO, 21, 5 )
 			.I( Opcode.TEST, V( 2 ) )
 			.I( Opcode.FORCEUNLIMBO, V( 0 ) )
 			.I( Opcode.BRANCH_NZ, "released" )
@@ -231,12 +229,12 @@ public class RideOpcodeEffectsTests
 			.Label( "idle" ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "idle" ), effects );
 		vm.Variables[2] = 9;
 		Run( vm, 1 );
-		Assert.AreEqual( 1, vm.Variables[0], "FORCEUNLIMBO writes its released visitor to the destination" );
+		Assert.AreEqual( 21, vm.Variables[0], "FORCEUNLIMBO writes its released visitor to the destination" );
 		Assert.AreEqual( 3, vm.Variables[1], "INLIMBO set the zero flag from its result" );
-		// Words: TEST 0-1, FORCEUNLIMBO 2-3, BRANCH_NZ 4-5, COPY 6-8, BRANCH 9-10, COPY 11-13, INLIMBO 14.
-		Assert.AreEqual( Opcode.INLIMBO, vm.Instructions[6].Opcode );
-		Assert.AreEqual( 0, vm.Instructions[6].Operands[0].Value, "INLIMBO with a literal destination discards the write (corpus: `INLIMBO 0; BRANCH_Z`)" );
-		CollectionAssert.AreEqual( new[] { "FORCEUNLIMBO 0", "INLIMBO 0" }, effects.Calls );
+		// Words: LIMBO 0-2, TEST 3-4, FORCEUNLIMBO 5-6, BRANCH_NZ 7-8, COPY 9-11, BRANCH 12-13, COPY 14-16, INLIMBO 17.
+		Assert.AreEqual( Opcode.INLIMBO, vm.Instructions[7].Opcode );
+		Assert.AreEqual( 0, vm.Instructions[7].Operands[0].Value, "INLIMBO with a literal destination discards the write (corpus: `INLIMBO 0; BRANCH_Z`)" );
+		CollectionAssert.AreEqual( Array.Empty<string>(), effects.Calls );
 		Assert.AreEqual( RideVMState.Running, vm.State );
 	}
 
@@ -310,7 +308,6 @@ public class RideOpcodeEffectsTests
 			.I( Opcode.SETREVERB, 7 )
 			.I( Opcode.DIPMUSIC, 1 )
 			.I( Opcode.REPAIREFFECT, 0 )
-			.I( Opcode.TURBO, V( 0 ) )
 			.I( Opcode.SPARK, V( 1 ), 5, 6, 7 )
 			.I( Opcode.COPY, V( 2 ), 1 )
 			.Label( "idle" ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "idle" ), effects );
@@ -318,7 +315,7 @@ public class RideOpcodeEffectsTests
 		vm.Variables[1] = 2;
 		Run( vm, 1 );
 		Assert.AreEqual( 1, vm.Variables[2] );
-		CollectionAssert.AreEqual( new[] { "SETREVERB 7", "DIPMUSIC 1", "REPAIREFFECT 0", "TURBO 1", "SPARK 2 5 6 7" }, effects.Calls );
+		CollectionAssert.AreEqual( new[] { "SETREVERB 7", "DIPMUSIC 1", "REPAIREFFECT 0", "SPARK 2 5 6 7" }, effects.Calls );
 		Assert.AreEqual( RideVMState.Running, vm.State );
 	}
 

@@ -273,7 +273,21 @@ A new or re-chosen piece is a new instance without a clip (`0x53AFA0`), and the 
 `+0xE6` of the ride's script, which the script attach (`0x558C71`) and the load's script restore (`0x5597A0`) set to −1, so the first `BUMP 17 0` of the water
 ride's loop starts the water and the later ones do nothing; a track edit stops it until the ride closes (`BUMP 17 1`) and opens again. The state is presentation only
 (`Level.TrackPieceAnimations`, a clock advanced with the world step, not saved or hashed); the renderer plays one animator per group of tiles of a piece that started
-(and froze) together and draws their moving meshes from one copy. The walks start at the station's exit and entry, the cells `0x52A490` and `0x52A700` compute ("The station"). Open (TRACK-018): the edit sub-modes and texture-frame clips.
+(and froze) together and draws their moving meshes from one copy. The walks start at the station's exit and entry, the cells `0x52A490` and `0x52A700` compute ("The station"). Open (TRACK-018): the edit sub-modes ("The track edit sub-modes").
+
+**Texture-frame clips (settled, October 17, 2026).** The Crypt Karts' bridge pieces (`gk_trckH`, `_u`, `_d` and `_a`, ten table entries) are the only pieces whose `m` clip carries a texture-frame track: no node track,
+one track on slot 0 (`h_trkunder.tga`, a slot of one frame) with 20 keys that all name frame 0, so the clip update (`0xA56F8`) rewrites the frame the slot already shows; no other member of the archive
+animates the bridge's flame slot 7 (`fire0.tga` to `flame2.tga`, the Pgokarts prop's clip animates its own model's slot 11). The renderer's texture-coordinate tracks are everything the shipped clips need
+(`TrackPieceClipDataTests`).
+
+**The track edit sub-modes** (`0x524960`, read October 17, 2026; not built). The ride window's track button (`0x4AF200`) builds the tool 0xE for a type with track word 1 (karts) and 0x13 for 2 (water), and the
+hover (`0x5234D0` through `0x527960`) keeps the sub-mode. The first click with the circuit open (the ride's word `+0x2C` zero, `0x530830` collects the track's corners from the station to its open end and sets the
+line start there) switches to the line tool 0xB or 0x10 at once. With the circuit closed, a click picks a track tile (an extension cell takes its origin, `0x53AD90`; a station tile is refused, `0x53ADB0`), orders it by
+its step number (`+0x24`, `0x53AEC0`) and tests it (`0x539760`, mode 0xE or 0x13); the second click does the same, and the pair, the lower step first, goes to `0x52B400` (last argument 1), which walks the flow from the first tile to
+the second clearing each tile between them (`0x53B280`), re-links the end tiles of the cut (`0x53BC60`: the arms, then the piece chooser `0x53AFA0`) and finds the cut's ends by equal step. A first click whose test answers 1 is dropped, a second whose test does not answer 9 leaves the tool (`0x52F200`). After the cut the walk `0x52A970` sets the ride's word:
+valid, `0x52A490` starts the pieces forward (the table above); invalid, `0x52A490` and `0x52A700` stop them and the tool continues as the line tool from the track's open end. OpenTPW's track button always
+starts the line tool at the station's exit: it has no cut and no continuation at the open end. Needed to build it: the pick tests of `0x539760`, the cut `0x52B400` with its re-links (the pieces' shape tests
+`0x53AE00`, a corner, `0x53AE50` and `0x53AE90`, by arm counts) and the corner collector `0x530830` with its undo stack.
 
 **Vehicle height** (TRACK-001 narrowed, TRACK-031 retired). Each probe of `0x546280` takes the object on its cell (`0x450AC0`: the cell's owner, a track cell through `0x53BF30`)
 and samples it in the mode `0x450EA0` chooses (`TrackSurface.FromObject`):
@@ -375,7 +389,7 @@ run counters and values, the dummies' show and hide, the Teleport's vehicle hook
 ## Open points
 
 - Jumps and tunnels (TRACK-008: the add-ons' placement is built headless; their offer and sale, section values and the teleport hook are not, see "Add-ons"), the edit
-  sub-modes' piece trigger and texture-frame piece clips (TRACK-018), the demolition's replayed action list, the station line's modes 0x80 and 0x83, the walk's
+  sub-modes (TRACK-018, "The track edit sub-modes"), the demolition's replayed action list, the station line's modes 0x80 and 0x83, the walk's
   untraced junction conditions (see the `TRACK-` entries in [the register](https://opentpw.io/docs/FIDELITY-REGISTER.html)).
 - The script performance value is the ride's speed bias (`Script.SpeedBias`, 50 at creation), pushed to the controller every tick.
 

@@ -67,13 +67,13 @@ public class OriginalGuestImportTests
 		var random = simulation.CaptureSnapshot().RandomState;
 		var saved = new[]
 		{
-			Decode( new SaveTestPayloads.GuestFields { Position = (At( 3 ), At( 5 )), State = 6, TimeStartedIdling = 750, PrankeryIndex = 101, Cash = 345 }, 41 ),
+			Decode( new SaveTestPayloads.GuestFields { Position = (At( 3 ), At( 5 )), State = 6, TimeStartedIdling = 750, PrankeryIndex = 101, Cash = 345, ArrivalIndex = 7 }, 41 ),
 			Decode( new SaveTestPayloads.GuestFields { Position = (At( 4 ), At( 5 )), Destination = (At( 12, 64 ), At( 5, 192 )), State = 7, BaseSpeed = 140, EspSprite = 2 }, 36 ),
 			Decode( new SaveTestPayloads.GuestFields { Position = (At( 6 ), At( 5 )), State = 10, MajorDest = 15, PreviousRides = new ushort[] { 15, 99, 0, 0 } }, 38 ),
 			Decode( new SaveTestPayloads.GuestFields { Position = (At( 7 ), At( 5 )), State = 9, MajorDest = 17, BalloonScript = 3, BalloonLife = 120 }, 39 ),
 			Decode( new SaveTestPayloads.GuestFields { Position = (At( 8 ), At( 5 )), State = 18 }, 40 ),
 		};
-		var report = simulation.ImportOriginal( saved, 755, thing => thing == 15 ? 3 : 0, thing => thing == 17 ? 21 : 0 );
+		var report = simulation.ImportOriginal( saved, 755, thing => thing == 15 ? 3 : 0, thing => thing == 17 ? 21 : 0, visitorsToDate: 9 );
 		CollectionAssert.AreEqual( new[] { 36, 38, 39, 40, 41 }, simulation.Guests.Select( guest => guest.Id ).ToArray(), "thing ids, in ascending order" );
 		Assert.AreEqual( random, simulation.CaptureSnapshot().RandomState, "the import draws nothing from the guest stream" );
 		Guest Of( int id ) => simulation.Guests.Single( guest => guest.Id == id );
@@ -82,6 +82,7 @@ public class OriginalGuestImportTests
 			"state 6; the decision stamp 750 lies before the save's turn 755 and counts from the import" );
 		Assert.AreEqual( (50f, 20f, 30f, 10f, 2f, 5f, 90), (deciding.Happiness, deciding.Hunger, deciding.Thirst, deciding.Toilet, deciding.Nausea, deciding.Litter, deciding.ExitLevel) );
 		Assert.AreEqual( (3, 5, true), (deciding.CellX, deciding.CellY, deciding.IsOnGridForTest()) );
+		Assert.AreEqual( (7, 0, 9), (deciding.VisitorNumber, Of( 36 ).VisitorNumber, simulation.VisitorCount), "mArrivalIndex is the visitor number and mNumberOfVisitorsToDate the park's count (0x0051AAF0)" );
 		var walker = Of( 36 );
 		Assert.AreEqual( (GuestState.WalkingAround, 140, true, true), (walker.State, walker.BaseSpeed, walker.InCostume, walker.HasWaypointForTest()), "state 7 walks on to mAccurateDestX/Y" );
 		var toRide = Of( 38 );
@@ -93,20 +94,20 @@ public class OriginalGuestImportTests
 		Assert.IsTrue( simulation.ValidateSnapshot( simulation.CaptureSnapshot() ).IsValid, string.Join( "; ", simulation.ValidateSnapshot( simulation.CaptureSnapshot() ).Errors ) );
 		StringAssert.Contains( report.Single( line => line.StartsWith( "Guests imported:", StringComparison.Ordinal ) ), "5 of 5" );
 		var spawned = simulation.SpawnInPark( 2, 5 );
-		Assert.AreEqual( 42, spawned.Id, "new guests take ids above the imported ones" );
+		Assert.AreEqual( 1, spawned.Id, "a new guest takes the lowest free slot of the pool: the imported guests keep their own slots, and a load rebuilds the free list ascending (0x00518D43)" );
 		for ( var tick = 0; tick < 600; tick++ )
 			simulation.Tick( 1f / 60 );
 		Assert.IsTrue( simulation.ValidateSnapshot( simulation.CaptureSnapshot() ).IsValid );
 	}
 
 	[TestMethod]
-	public void ArrivingGuestsWalkOnAlongTheNearestLaneAndQueuedGuestsAreReported()
+	public void ArrivingGuestsKeepTheirStatesOnTheCellMapAndQueuedGuestsAreReported()
 	{
 		var simulation = Simulation();
 		var saved = new[]
 		{
 			Decode( new SaveTestPayloads.GuestFields { Position = (At( 10 ), At( 11 )), State = 2 }, 30 ),
-			Decode( new SaveTestPayloads.GuestFields { Position = (At( 10 ), At( 8 )), State = 3 }, 31 ),
+			Decode( new SaveTestPayloads.GuestFields { Position = (At( 10 ), At( 8 )), State = 3, ParkOpeningWaitingTime = 250 }, 31 ),
 			Decode( new SaveTestPayloads.GuestFields { Position = (At( 10 ), At( 7 )), State = 5 }, 32 ),
 			Decode( new SaveTestPayloads.GuestFields { Position = (At( 10 ), At( 8 )), State = 4 }, 33 ),
 			Decode( new SaveTestPayloads.GuestFields { Position = (At( 10 ), At( 13 )), State = 19 }, 34 ),
@@ -117,22 +118,23 @@ public class OriginalGuestImportTests
 		};
 		var report = simulation.ImportOriginal( saved, 755, _ => 0, _ => 0 );
 		Guest Of( int id ) => simulation.Guests.Single( guest => guest.Id == id );
+		// every arrival state stays what it was saved as, on the cell map (the original's guests walk it from their creation, tp.exe 0x004FB201)
 		Assert.AreEqual( GuestState.GoingToTicketBooth, Of( 30 ).State );
-		Assert.AreEqual( (GuestState.EnteringPark, GuestState.EnteringPark, GuestState.AtTicketBooth, GuestState.CrossingRoadHome),
-			(Of( 31 ).State, Of( 32 ).State, Of( 33 ).State, Of( 34 ).State), "a paid guest waiting for the gate (state 3) walks in" );
-		Assert.AreEqual( GuestState.LeavingPark, Of( 38 ).State, "an unpaid guest at a closed park's booth (state 3) goes home" );
+		Assert.AreEqual( (GuestState.WaitingAtBooth, true, 250), (Of( 31 ).State, Of( 31 ).Paid, Of( 31 ).BoothWait), "state 3 keeps mPaidAdmission and the wait +0x200" );
+		Assert.AreEqual( (GuestState.EnteringPark, GuestState.AtTicketBooth, GuestState.CrossingRoadHome), (Of( 32 ).State, Of( 33 ).State, Of( 34 ).State) );
+		Assert.AreEqual( (GuestState.WaitingAtBooth, false), (Of( 38 ).State, Of( 38 ).Paid), "an unpaid guest of state 3 goes back to the booth or home on the next update" );
+		Assert.IsTrue( simulation.Guests.All( guest => guest.Lane == null && guest.OnGrid ) );
 		Assert.AreEqual( 6, simulation.Guests.Count );
 		StringAssert.Contains( report.Single( line => line.StartsWith( "[APPROX:SAVE-002] Guests not imported:", StringComparison.Ordinal ) ), "guest 35 (state 11), guest 36 (state 16), guest 37 (state 6 off the paths at (2, 2))" );
-		Assert.IsTrue( report.Any( line => line.StartsWith( "Guest value adjusted on import: guest 31 state 3 (paid", StringComparison.Ordinal ) ) );
 		Assert.IsTrue( simulation.ValidateSnapshot( simulation.CaptureSnapshot() ).IsValid, string.Join( "; ", simulation.ValidateSnapshot( simulation.CaptureSnapshot() ).Errors ) );
-		for ( var tick = 0; tick < 3000 && simulation.Guests.Any( guest => guest.Id is 30 or 31 or 32 && guest.State != GuestState.DoingNothing ); tick++ )
+		for ( var tick = 0; tick < 6000 && simulation.Guests.Any( guest => guest.Id is 30 or 31 or 32 && guest.State != GuestState.DoingNothing ); tick++ )
 			simulation.Tick( 1f / 60 );
 		Assert.IsTrue( new[] { 30, 31, 32 }.All( id => Of( id ).State is not (GuestState.GoingToTicketBooth or GuestState.EnteringPark) ), "they reached the booth and the park" );
 		Assert.ThrowsException<InvalidOperationException>( () => simulation.ImportOriginal( saved, 755, _ => 0, _ => 0 ), "only into an empty simulation" );
 	}
 
 	[TestMethod]
-	public void AShortLaneAndAGuestOffTheMapAreHandled()
+	public void ALaneShorterThanTheFixedCellsAndAGuestOffTheMapAreDropped()
 	{
 		var grid = new GuestPathGrid( 20, 20 );
 		grid.SetPath( 10, 6, true );
@@ -142,15 +144,34 @@ public class OriginalGuestImportTests
 		{
 			Decode( new SaveTestPayloads.GuestFields { Position = (At( 10 ), At( 7 )), State = 18, PersonType = 0 }, 30 ),
 			Decode( new SaveTestPayloads.GuestFields { Position = (At( 10 ), At( 7 )), State = 1, PersonType = 0 }, 31 ),
-			Decode( new SaveTestPayloads.GuestFields { Position = (At( 10 ), At( 7 )), State = 4, PersonType = 0 }, 32 ),
 			Decode( new SaveTestPayloads.GuestFields { Position = (At( 30 ), At( 7 )), State = 2, PersonType = 0 }, 33 ),
 		};
 		var report = simulation.ImportOriginal( saved, 755, _ => 0, _ => 0 );
-		CollectionAssert.AreEqual( new[] { 30, 31, 32 }, simulation.Guests.Select( guest => guest.Id ).ToArray() );
-		StringAssert.Contains( report.Single( line => line.StartsWith( "[APPROX:SAVE-002] Guests not imported:", StringComparison.Ordinal ) ), "guest 33 (state 2 outside the map at (30, 7))" );
-		Assert.IsTrue( simulation.ValidateSnapshot( simulation.CaptureSnapshot() ).IsValid, string.Join( "; ", simulation.ValidateSnapshot( simulation.CaptureSnapshot() ).Errors ) );
-		for ( var tick = 0; tick < 600; tick++ )
-			simulation.Tick( 1f / 60 );
+		Assert.AreEqual( 0, simulation.Guests.Count, "the arrival walk needs the level's five fixed cells (bus stop, both crossings, booth, entrance)" );
+		StringAssert.Contains( report.Single( line => line.StartsWith( "[APPROX:SAVE-002] Guests not imported:", StringComparison.Ordinal ) ), "guest 30 (state 18, no arrival lane), guest 31 (state 1, no arrival lane), guest 33 (state 2 outside the map at (30, 7))" );
+		Assert.IsTrue( simulation.ValidateSnapshot( simulation.CaptureSnapshot() ).IsValid );
+	}
+
+	[TestMethod]
+	public void GuestsOnTheWayHomeFromTheGateKeepTheirStatesOnTheCellMap()
+	{
+		var grid = new GuestPathGrid( 20, 20 );
+		for ( var x = 0; x < 16; x++ )
+			grid.SetPath( x, 5, true );
+		grid.SetPath( 10, 6, true );
+		var settings = new GuestSettings { ArrivalLaneA = new[] { (10, 14), (10, 12), (10, 10), (10, 8), (10, 6) } };
+		settings.Types.Add( new GuestType( 60, 600, 40 ) );
+		var simulation = new GuestSimulation( grid, settings, 5 ) { ArrivalsEnabled = false };
+		var saved = new[]
+		{
+			Decode( new SaveTestPayloads.GuestFields { Position = (At( 10 ), At( 7 )), Destination = (At( 10 ), At( 10 )), State = 18, PersonType = 0 }, 30 ),
+			Decode( new SaveTestPayloads.GuestFields { Position = (At( 10 ), At( 10 )), State = 19, PersonType = 0 }, 31 ),
+			Decode( new SaveTestPayloads.GuestFields { Position = (At( 10 ), At( 14 )), State = 21, PersonType = 0 }, 32 ),
+		};
+		simulation.ImportOriginal( saved, 755, _ => 0, _ => 0 );
+		Assert.AreEqual( (GuestState.LeavingPark, GuestState.CrossingRoadHome, GuestState.WaitingToGoHome), (simulation.Guests[0].State, simulation.Guests[1].State, simulation.Guests[2].State) );
+		Assert.IsTrue( simulation.Guests.All( guest => guest.Navigation.Mask == 1 && guest.Lane == null ), "the walk home has the leaving mask" );
+		Assert.IsTrue( simulation.ValidateSnapshot( simulation.CaptureSnapshot() ).IsValid );
 	}
 
 	[TestMethod]
@@ -207,7 +228,7 @@ public class OriginalGuestImportTests
 			foreach ( var saved in save.Guests )
 			{
 				var guest = simulation.Guests.Single( item => item.Id == saved.Id );
-				Assert.AreEqual( saved.State == 2 ? GuestState.GoingToTicketBooth : GuestState.EnteringPark, guest.State, $"guest {saved.Id} state {saved.State}" );
+				Assert.AreEqual( saved.State switch { 2 => GuestState.GoingToTicketBooth, 3 => GuestState.WaitingAtBooth, _ => GuestState.EnteringPark }, guest.State, $"guest {saved.Id} state {saved.State}" );
 				Assert.AreEqual( (saved.Cash, (int)saved.PersonType, (int)saved.PrankeryIndex, saved.ExitLevel), (guest.Money, guest.Type, guest.PrankFlag, guest.ExitLevel) );
 				Assert.AreEqual( (saved.Person.Base.X / 256f, saved.Person.Base.Y / 256f), (guest.X, guest.Y) );
 			}

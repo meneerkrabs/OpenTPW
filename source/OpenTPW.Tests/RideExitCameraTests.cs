@@ -61,10 +61,10 @@ public class RideExitCameraTests
 	public void LookAlongPutsTheEyeBehindTheTargetAndKeepsTheTargetAndHeight()
 	{
 		var camera = new ParkCameraMode();
-		camera.SetPose( new Vector3( 10, 20, 0 ), 30, -135 );
+		camera.SetPose( new Vector3( 10, 20, 0 ), 90, -135 );
 		camera.LookAlong( new V2( 1, 0 ) );
 		Assert.AreEqual( new Vector3( 10, 20, 0 ), camera.Target );
-		Assert.AreEqual( 30f, camera.Height );
+		Assert.AreEqual( 90f, camera.Height );
 		Assert.IsTrue( camera.Position.X < 10 && Math.Abs( camera.Position.Y - 20 ) < 1e-3f, "the eye is on the -X side, so the view runs along +X" );
 		camera.LookAlong( new V2( 0, -1 ) );
 		Assert.IsTrue( camera.Position.Y > 20 && Math.Abs( camera.Position.X - 10 ) < 1e-3f );

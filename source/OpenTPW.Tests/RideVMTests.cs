@@ -18,6 +18,16 @@ public class RideVMTests
 		private readonly List<uint> words = new();
 		private readonly Dictionary<string, int> labels = new();
 		private readonly List<(int Word, string Label)> fixups = new();
+		private int stack = 4;
+		private int limbo = 2;
+
+		/// <summary>Header stack size and limbo size (the defaults are 4 and 2).</summary>
+		public Asm WithHeader( int stackSize, int limboSize )
+		{
+			stack = stackSize;
+			limbo = limboSize;
+			return this;
+		}
 
 		public Asm Label( string name )
 		{
@@ -53,7 +63,7 @@ public class RideVMTests
 		{
 			foreach ( var (word, label) in fixups )
 				words[word] = 0x2000_0000 | (uint)labels[label];
-			return RseScriptTests.CreateScript( words.ToArray(), strings, variables );
+			return RseScriptTests.CreateScript( words.ToArray(), strings, variables, stack: stack, limbo: limbo );
 		}
 	}
 
@@ -374,10 +384,11 @@ public class RideVMTests
 		Assert.AreEqual( 111, vm.Variables[0] );
 		Assert.AreEqual( 0, vm.CallDepth );
 
+		// [BIN:TPW-EXE:0x5539F9 JSR overflow] a full stack does not fault: the assert is a no-op and the jump still runs, nothing is pushed
 		var recursive = Load( new Asm().Label( "self" ).I( Opcode.JSR, "self" ) );
 		Run( recursive, 1 );
-		Assert.AreEqual( RideVMState.Faulted, recursive.State );
-		StringAssert.Contains( recursive.FaultMessage, "stack size 4" );
+		Assert.AreEqual( RideVMState.Running, recursive.State );
+		Assert.AreEqual( 4, recursive.CallDepth, "the declared stack size 4 holds four return addresses" );
 
 		var stray = Load( new Asm().I( Opcode.RETURN ) );
 		Run( stray, 1 );
@@ -977,10 +988,11 @@ public class RideVMTests
 	[TestMethod]
 	public void UnknownOpcodesAndRunningOffTheEndStopTheScript()
 	{
-		var unknown = Load( new Asm().I( Opcode.PUSH, 1 ) );
+		// the ride lights are game effects (TPW-EXE 0x555C7A..0x555D9A) that this VM does not implement yet
+		var unknown = Load( new Asm().I( Opcode.ENABLELIGHT, 1 ) );
 		Run( unknown, 1 );
 		Assert.AreEqual( RideVMState.Faulted, unknown.State );
-		StringAssert.Contains( unknown.FaultMessage, "PUSH" );
+		StringAssert.Contains( unknown.FaultMessage, "ENABLELIGHT" );
 
 		var end = Load( new Asm().I( Opcode.NOP ) );
 		Run( end, 2 );
@@ -996,8 +1008,8 @@ public class RideVMTests
 		var histogram = RseScriptTests.CorpusHistogram.Split( ',' ).Select( x => x.Split( ':' ) ).ToDictionary( x => ushort.Parse( x[0] ), x => int.Parse( x[1] ) );
 		Assert.IsTrue( histogram.Keys.All( x => RideOpcodes.GetStatus( (Opcode)x ) != RideOpcodeStatus.Unknown ), "every corpus opcode has a handler" );
 		var corpusStatuses = histogram.Keys.GroupBy( x => RideOpcodes.GetStatus( (Opcode)x ) ).ToDictionary( x => x.Key, x => (Opcodes: x.Count(), Instructions: x.Sum( y => histogram[y] )) );
-		Assert.AreEqual( (33, 7850), corpusStatuses[RideOpcodeStatus.Implemented] );
-		Assert.AreEqual( (51, 4065), corpusStatuses[RideOpcodeStatus.Hooked] );
+		Assert.AreEqual( (41, 8049), corpusStatuses[RideOpcodeStatus.Implemented] );
+		Assert.AreEqual( (43, 3866), corpusStatuses[RideOpcodeStatus.Hooked] );
 
 		var directory = new DirectoryInfo( AppContext.BaseDirectory );
 		while ( directory != null && !File.Exists( Path.Combine( directory.FullName, "docs", "RSE-VM.md" ) ) )

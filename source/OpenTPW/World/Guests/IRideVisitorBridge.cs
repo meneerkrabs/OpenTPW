@@ -68,7 +68,7 @@ public interface IRideVisitorHost
 {
 	/// <summary>The attraction called the front guest forward (ride <c>+104</c> = guest; the guest walks to the stand point).</summary>
 	void OnVisitorOffered( IRideVisitorBridge ride, int guestId );
-	/// <summary>The script took the guest (HUSH/WALKON/LIMBO/BOUNCE, or it cleared VAR_LETMEON).</summary>
+	/// <summary>The script took the guest (WALKON/BOUNCE, or it consumed VAR_LETMEON).</summary>
 	void OnVisitorBoarded( IRideVisitorBridge ride, int guestId );
 	/// <summary>The script released the guest at the exit (VAR_LETMEOFF = guest id), or the ride was removed.</summary>
 	void OnVisitorReleased( IRideVisitorBridge ride, int guestId );
@@ -164,6 +164,8 @@ public interface IRideVisitorBridge
 	int QualityOfGoods => GuestAppearance.BuiltQualityOfGoods;
 	/// <summary>Walkable path cell where guests join the queue.</summary>
 	(int X, int Y) EntranceCell { get; }
+	/// <summary>The entrance's outside cell (the original front cell), or null to use <see cref="EntranceCell"/>.</summary>
+	(int X, int Y)? QueueFrontCell => null;
 	/// <summary>Walkable path cell where released guests reappear.</summary>
 	(int X, int Y) ExitCell { get; }
 	/// <summary>.sam <c>UsageInfo.EntryCellStandPosX/Y</c>: where in its entrance cell a called guest stands (0..1 per axis).</summary>

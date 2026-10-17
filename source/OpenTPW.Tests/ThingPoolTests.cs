@@ -1,0 +1,282 @@
+using System;
+using System.IO;
+using System.Linq;
+using Microsoft.VisualStudio.TestTools.UnitTesting;
+
+namespace OpenTPW.Tests;
+
+/// <summary>The thing pool: tp.exe's one table of 10239 thing ids (allocator 0x516270, free 0x516200, deferred destroy 0x516310, load 0x518D43; WALK-010).</summary>
+[TestClass]
+public class ThingPoolTests
+{
+	[TestMethod]
+	public void AFreshPoolGivesIdsFromOneUpInAscendingOrder()
+	{
+		var pool = new ThingPool();
+		Assert.AreEqual( 0, pool.Count );
+		Assert.AreEqual( 1, pool.NextId );
+		CollectionAssert.AreEqual( new[] { 1, 2, 3 }, new[] { pool.Allocate( SaveThingModel.Guest ), pool.Allocate( SaveThingModel.Attraction ), pool.Allocate( SaveThingModel.Guest ) } );
+		Assert.AreEqual( 4, pool.NextId );
+		Assert.AreEqual( SaveThingModel.Attraction, pool.ModelOf( 2 ) );
+	}
+
+	[TestMethod]
+	public void ThePoolHoldsTenThousandTwoHundredAndThirtyNineThingsAndThenGivesIdZero()
+	{
+		var pool = new ThingPool();
+		for ( var expected = 1; expected <= ThingPool.Capacity; expected++ )
+			Assert.AreEqual( expected, pool.Allocate( SaveThingModel.Guest ) );
+		Assert.AreEqual( 10239, ThingPool.Capacity );
+		Assert.AreEqual( ThingPool.Capacity, pool.Count );
+		Assert.AreEqual( 0, pool.NextId );
+		Assert.AreEqual( 0, pool.Allocate( SaveThingModel.Guest ), "the original logs a fatal error and carries on with id 0" );
+		Assert.IsTrue( pool.Release( 77 ) );
+		Assert.AreEqual( 77, pool.Allocate( SaveThingModel.Guest ), "a full pool takes the freed slot again" );
+	}
+
+	[TestMethod]
+	public void AFreedIdIsTakenAgainByTheNextThingLastInFirstOut()
+	{
+		var pool = new ThingPool();
+		for ( var count = 0; count < 6; count++ )
+			pool.Allocate( SaveThingModel.Guest );
+		Assert.IsTrue( pool.Release( 2 ) );
+		Assert.IsTrue( pool.Release( 5 ) );
+		Assert.IsTrue( pool.Release( 3 ) );
+		CollectionAssert.AreEqual( new[] { 3, 5, 2, 7 }, pool.FreeInOrder().Take( 4 ).ToArray(), "the slot freed last is first in line, then the earlier ones, then the never used ids" );
+		CollectionAssert.AreEqual( new[] { 3, 5, 2, 7, 8 }, Enumerable.Range( 0, 5 ).Select( _ => pool.Allocate( SaveThingModel.Guest ) ).ToArray() );
+		Assert.IsFalse( pool.Release( 99 ), "a slot that is not in use frees nothing" );
+		Assert.IsFalse( pool.Release( 0 ) );
+	}
+
+	[TestMethod]
+	public void ADestroyRequestWaitsForTheTurnsEndAndThenFreesLastRequestFirst()
+	{
+		var pool = new ThingPool();
+		for ( var count = 0; count < 5; count++ )
+			pool.Allocate( SaveThingModel.Guest );
+		pool.QueueDestroy( 4 );
+		pool.QueueDestroy( 2 );
+		pool.QueueDestroy( 4 );
+		pool.QueueDestroy( 9 );
+		Assert.AreEqual( 2, pool.QueuedCount, "a repeated request and a free slot change nothing" );
+		Assert.IsTrue( pool.IsUsed( 4 ) && pool.IsUsed( 2 ), "the things stay in use until the turn's end" );
+		Assert.AreEqual( 6, pool.NextId, "so a thing built in the same turn takes a new slot" );
+		CollectionAssert.AreEqual( new[] { 2, 4 }, pool.DestroyQueued().ToArray(), "the queue's head, the request made last, is freed first" );
+		Assert.AreEqual( 0, pool.QueuedCount );
+		CollectionAssert.AreEqual( new[] { 4, 2, 6 }, pool.FreeInOrder().Take( 3 ).ToArray(), "so the request made first is the next thing's id" );
+		Assert.AreEqual( 4, pool.Allocate( SaveThingModel.Attraction ) );
+	}
+
+	[TestMethod]
+	public void TheUsedListRunsNewestFirstAndKeepsItsOrderAcrossFrees()
+	{
+		var pool = new ThingPool();
+		for ( var count = 0; count < 4; count++ )
+			pool.Allocate( SaveThingModel.Guest );
+		CollectionAssert.AreEqual( new[] { 4, 3, 2, 1 }, pool.UsedNewestFirst().Select( slot => slot.Id ).ToArray() );
+		pool.Release( 3 );
+		CollectionAssert.AreEqual( new[] { 4, 2, 1 }, pool.UsedNewestFirst().Select( slot => slot.Id ).ToArray() );
+		Assert.AreEqual( 3, pool.Allocate( SaveThingModel.Handyman ) );
+		CollectionAssert.AreEqual( new[] { 3, 4, 2, 1 }, pool.UsedNewestFirst().Select( slot => slot.Id ).ToArray(), "the reused slot is the newest thing" );
+		pool.Release( 3 );
+		pool.Release( 1 );
+		Assert.AreEqual( 4, pool.Newest );
+		CollectionAssert.AreEqual( new[] { 4, 2 }, pool.UsedNewestFirst().Select( slot => slot.Id ).ToArray() );
+	}
+
+	[TestMethod]
+	public void TheWorldSetupBuildsTenSingletonsInTheConstructorOrder()
+	{
+		var pool = new ThingPool();
+		CollectionAssert.AreEqual( Enumerable.Range( 1, 10 ).ToArray(), pool.AllocateWorldSetup().ToArray() );
+		// the jungle level's shipped save lists thing ids 1 to 10 with these models (the chain's tail)
+		CollectionAssert.AreEqual( new[] { 9, 10, 11, 12, 13, 14, 15, 16, 17, 19 }, Enumerable.Range( 1, 10 ).Select( id => (int)pool.ModelOf( id ) ).ToArray() );
+		Assert.AreEqual( 11, pool.NextId, "the gates and the lights are the park's first objects" );
+	}
+
+	[TestMethod]
+	public void ALoadKeepsTheSavedSlotsAndRebuildsTheFreeListInAscendingOrder()
+	{
+		var pool = new ThingPool();
+		for ( var count = 0; count < 20; count++ )
+			pool.Allocate( SaveThingModel.Guest );
+		pool.Release( 7 );
+		pool.Release( 3 );
+		CollectionAssert.AreEqual( new[] { 3, 7, 21 }, pool.FreeInOrder().Take( 3 ).ToArray(), "the live pool's free list is last in, first out" );
+		var saved = pool.Capture();
+		var loaded = new ThingPool();
+		loaded.Restore( saved );
+		CollectionAssert.AreEqual( new[] { 3, 7, 21 }, loaded.FreeInOrder().Take( 3 ).ToArray() );
+		pool.Release( 12 );
+		Assert.AreEqual( 12, pool.NextId, "a live pool takes the slot freed last" );
+		var reloaded = new ThingPool();
+		reloaded.Restore( pool.Capture() );
+		CollectionAssert.AreEqual( new[] { 3, 7, 12, 21 }, reloaded.FreeInOrder().Take( 4 ).ToArray(), "a load puts the free ids in ascending order, whatever the freeing order was" );
+		CollectionAssert.AreEqual( pool.Capture(), reloaded.Capture(), "the used list keeps its order" );
+	}
+
+	[TestMethod]
+	public void ALoadOfTheShippedJungleChainTakesTheNextIdAfterItsHighestHole()
+	{
+		var chain = new[] { (42, 1), (41, 1), (31, 1), (30, 8), (29, 1), (15, 3), (28, 7), (27, 6), (11, 3), (10, 19), (9, 17), (1, 9) };
+		var pool = new ThingPool();
+		pool.Restore( chain.Select( entry => new ThingSlot( entry.Item1, (SaveThingModel)entry.Item2 ) ) );
+		Assert.AreEqual( chain.Length, pool.Count );
+		Assert.AreEqual( 2, pool.NextId );
+		CollectionAssert.AreEqual( new[] { 2, 3, 4 }, Enumerable.Range( 0, 3 ).Select( _ => pool.Allocate( SaveThingModel.Guest ) ).ToArray() );
+		Assert.AreEqual( 42, pool.UsedNewestFirst().ElementAt( 3 ).Id, "the saved head is the newest only until a thing is built" );
+	}
+
+	[TestMethod]
+	public void ALoadRefusesIdsOutsideThePoolRepeatedIdsAndUnknownModels()
+	{
+		var pool = new ThingPool();
+		Assert.ThrowsException<InvalidDataException>( () => pool.Restore( new[] { new ThingSlot( 0, SaveThingModel.Guest ) } ) );
+		Assert.ThrowsException<InvalidDataException>( () => pool.Restore( new[] { new ThingSlot( ThingPool.Capacity + 1, SaveThingModel.Guest ) } ) );
+		Assert.ThrowsException<InvalidDataException>( () => pool.Restore( new[] { new ThingSlot( 5, SaveThingModel.Guest ), new ThingSlot( 5, SaveThingModel.Attraction ) } ) );
+		Assert.ThrowsException<InvalidDataException>( () => pool.Restore( new[] { new ThingSlot( 5, (SaveThingModel)0 ) } ) );
+		Assert.ThrowsException<InvalidDataException>( () => pool.Restore( new[] { new ThingSlot( 5, (SaveThingModel)20 ) } ) );
+		Assert.AreEqual( 0, pool.Count, "a refused load leaves the pool as it was" );
+		Assert.ThrowsException<ArgumentOutOfRangeException>( () => pool.Allocate( (SaveThingModel)0 ) );
+	}
+
+	[TestMethod]
+	public void OccupyTakesOneSlotAsTheNewestAndKeepsTheRestOfTheFreeList()
+	{
+		var pool = new ThingPool();
+		Assert.IsTrue( pool.Occupy( 3, SaveThingModel.Guest ) );
+		Assert.IsFalse( pool.Occupy( 3, SaveThingModel.Guest ), "a slot in use cannot be taken again" );
+		Assert.IsFalse( pool.Occupy( 0, SaveThingModel.Guest ) );
+		Assert.IsFalse( pool.Occupy( ThingPool.Capacity + 1, SaveThingModel.Guest ) );
+		CollectionAssert.AreEqual( new[] { 1, 2, 4, 5 }, pool.FreeInOrder().Take( 4 ).ToArray() );
+		Assert.AreEqual( 3, pool.Newest );
+		Assert.IsTrue( pool.Release( 3 ) );
+		CollectionAssert.AreEqual( new[] { 3, 1, 2, 4 }, pool.FreeInOrder().Take( 4 ).ToArray() );
+	}
+
+	[TestMethod]
+	public void ReleasingAQueuedThingDropsItsRequest()
+	{
+		var pool = new ThingPool();
+		pool.Allocate( SaveThingModel.Guest );
+		pool.QueueDestroy( 1 );
+		Assert.IsTrue( pool.Release( 1 ) );
+		Assert.AreEqual( 0, pool.QueuedCount );
+		Assert.AreEqual( 0, pool.DestroyQueued().Count );
+		Assert.AreEqual( 1, pool.Allocate( SaveThingModel.Guest ), "a slot is not freed twice" );
+		Assert.AreEqual( 2, pool.NextId );
+	}
+
+	/// <summary>The jungle level's shipped save holds the world setup as things 1 to 12 (the singletons in the constructor order, then two attractions) and nothing above the highest id it lists, so the pool puts the chain back and the next thing is 43.</summary>
+	[TestMethod]
+	public void TheShippedJungleSaveHoldsTheWorldSetupAsTheFirstTwelveThings()
+	{
+		var payload = OriginalParkImportTests.ReadEasymodePayload();
+		var layout = SavePayloadLayout.Parse( payload );
+		var world = SaveWorld.Parse( payload, layout, 128, 128 );
+		var chain = world.Things;
+		CollectionAssert.AreEqual( Enumerable.Range( 1, chain.Count ).ToArray(), chain.Select( thing => thing.Id ).OrderBy( id => id ).ToArray(), "the ids are 1 up to the thing count" );
+		var byId = chain.ToDictionary( thing => thing.Id, thing => thing.Model );
+		CollectionAssert.AreEqual( ThingPool.WorldSetupModels.ToArray(), Enumerable.Range( 1, 10 ).Select( id => byId[id] ).ToArray(), "things 1 to 10 are the world's singletons in the constructor order of 0x5156A0" );
+		Assert.AreEqual( (SaveThingModel.Attraction, SaveThingModel.Attraction), (byId[11], byId[12]), "the gates and the lights" );
+		var attractions = SaveAttractionList.Parse( payload, world ).ToDictionary( attraction => attraction.Id );
+		Assert.AreEqual( (1601, 1603), (attractions[11].InfoId, attractions[12].InfoId), "Gates (Info.Id 1601) is thing 11 and Lights (1603) thing 12, the order of the world setup 0x5156A0" );
+		Assert.AreEqual( 1600, attractions[15].InfoId, "the bus, built when it was first sent, came after objects 13 and 14" );
+		Assert.AreEqual( chain.Select( thing => thing.Id ).First(), chain.Max( thing => thing.Id ), "the chain's head is the thing built last" );
+		var pool = new ThingPool();
+		pool.Restore( chain.Select( thing => new ThingSlot( thing.Id, thing.Model ) ) );
+		Assert.AreEqual( chain.Count, pool.Count );
+		Assert.AreEqual( chain.Count + 1, pool.NextId );
+		CollectionAssert.AreEqual( chain.Select( thing => thing.Id ).ToArray(), pool.UsedNewestFirst().Select( slot => slot.Id ).ToArray(), "the used list keeps the chain's order" );
+	}
+
+	/// <summary>A save taken between a destroy request and the turn's end keeps the request: the thing still holds its slot, and the restored pool frees it at its own turn's end.</summary>
+	[TestMethod]
+	public void ASnapshotKeepsTheDestroyRequestsOfTheTurn()
+	{
+		var pool = new ThingPool();
+		for ( var count = 0; count < 5; count++ )
+			pool.Allocate( SaveThingModel.Guest );
+		pool.QueueDestroy( 2 );
+		pool.QueueDestroy( 4 );
+		var snapshot = pool.CaptureSnapshot();
+		CollectionAssert.AreEqual( new[] { 2, 4 }, snapshot.Pending!.ToArray() );
+		Assert.IsNull( new ThingPool().CaptureSnapshot().Pending, "a pool with no request writes none" );
+		var restored = new ThingPool();
+		restored.RestoreSnapshot( snapshot );
+		Assert.AreEqual( 2, restored.QueuedCount );
+		Assert.IsTrue( restored.IsUsed( 2 ) && restored.IsUsed( 4 ) );
+		CollectionAssert.AreEqual( pool.DestroyQueued().ToArray(), restored.DestroyQueued().ToArray(), "the same order" );
+		CollectionAssert.AreEqual( pool.FreeInOrder().Take( 4 ).ToArray(), restored.FreeInOrder().Take( 4 ).ToArray() );
+		Assert.IsTrue( ThingPool.Problems( snapshot with { Pending = new[] { 9 } } ).Count > 0, "a request for a free slot" );
+		Assert.IsTrue( ThingPool.Problems( snapshot with { Pending = new[] { 2, 2 } } ).Count > 0, "a request made twice" );
+	}
+
+	// ---- Placeholder slots of an imported original save ---------------------------------------------------
+
+	/// <summary>A thing of an imported original save that OpenTPW does not rebuild keeps its slot: the free list and the next id stay what the original's load made them.</summary>
+	[TestMethod]
+	public void AHeldSlotStaysUsedSoTheFreeListKeepsTheOriginalsLoadOrder()
+	{
+		var chain = new[] { (9, SaveThingModel.Guest), (8, SaveThingModel.Guest), (5, SaveThingModel.Attraction), (4, SaveThingModel.Guest), (1, SaveThingModel.StaffHq) };
+		var original = new ThingPool();
+		original.Restore( chain.Select( entry => new ThingSlot( entry.Item1, entry.Item2 ) ) );
+		var pool = new ThingPool();
+		pool.Restore( chain.Select( entry => new ThingSlot( entry.Item1, entry.Item2 ) ) );
+		Assert.IsTrue( pool.Hold( 8 ) );
+		Assert.IsTrue( pool.Hold( 5 ) );
+		Assert.IsFalse( pool.Hold( 6 ), "a free slot cannot be held" );
+		Assert.IsTrue( pool.IsUsed( 8 ) && pool.IsHeld( 8 ) && !pool.IsHeld( 9 ) );
+		Assert.AreEqual( 2, pool.HeldCount );
+		CollectionAssert.AreEqual( new[] { 5, 8 }, pool.HeldIds().ToArray() );
+		Assert.AreEqual( SaveThingModel.Guest, pool.ModelOf( 8 ), "the slot keeps the saved model" );
+		Assert.AreEqual( original.Count, pool.Count );
+		CollectionAssert.AreEqual( original.UsedNewestFirst().ToArray(), pool.UsedNewestFirst().ToArray(), "the used list keeps its place" );
+		CollectionAssert.AreEqual( original.FreeInOrder().Take( 10 ).ToArray(), pool.FreeInOrder().Take( 10 ).ToArray() );
+		Assert.AreEqual( original.Allocate( SaveThingModel.Guest ), pool.Allocate( SaveThingModel.Guest ), "the next thing built gets the id the original gives" );
+	}
+
+	[TestMethod]
+	public void AHeldSlotIsNeverDestroyedByARequestAndReleasingItClearsTheHold()
+	{
+		var pool = new ThingPool();
+		for ( var count = 0; count < 4; count++ )
+			pool.Allocate( SaveThingModel.Guest );
+		pool.Hold( 2 );
+		pool.QueueDestroy( 2 );
+		pool.QueueDestroy( 3 );
+		Assert.AreEqual( 1, pool.QueuedCount, "a request for a placeholder changes nothing" );
+		CollectionAssert.AreEqual( new[] { 3 }, pool.DestroyQueued().ToArray() );
+		Assert.IsTrue( pool.IsUsed( 2 ) );
+		Assert.IsTrue( pool.Release( 2 ) );
+		Assert.IsFalse( pool.IsHeld( 2 ) );
+		Assert.AreEqual( 2, pool.Allocate( SaveThingModel.Attraction ), "a released slot is an ordinary free one again" );
+		Assert.IsFalse( pool.IsHeld( 2 ) );
+		pool.Hold( 1 );
+		pool.Clear();
+		Assert.AreEqual( 0, pool.HeldCount );
+	}
+
+	[TestMethod]
+	public void ASnapshotKeepsThePlaceholderSlots()
+	{
+		var pool = new ThingPool();
+		for ( var count = 0; count < 5; count++ )
+			pool.Allocate( SaveThingModel.Guest );
+		pool.Hold( 4 );
+		pool.Hold( 2 );
+		var snapshot = pool.CaptureSnapshot();
+		CollectionAssert.AreEqual( new[] { 2, 4 }, snapshot.Held!.ToArray() );
+		Assert.IsNull( new ThingPool().CaptureSnapshot().Held, "a pool with no placeholder writes none" );
+		var json = System.Text.Json.JsonSerializer.Serialize( snapshot );
+		var restored = new ThingPool();
+		restored.RestoreSnapshot( System.Text.Json.JsonSerializer.Deserialize<ThingPoolSnapshot>( json )! );
+		CollectionAssert.AreEqual( new[] { 2, 4 }, restored.HeldIds().ToArray() );
+		CollectionAssert.AreEqual( pool.FreeInOrder().Take( 4 ).ToArray(), restored.FreeInOrder().Take( 4 ).ToArray() );
+		Assert.IsTrue( ThingPool.Problems( snapshot with { Held = new[] { 9 } } ).Count > 0, "a placeholder for a free slot" );
+		Assert.IsTrue( ThingPool.Problems( snapshot with { Held = new[] { 2, 2 } } ).Count > 0, "a placeholder twice" );
+		Assert.IsTrue( ThingPool.Problems( snapshot with { Pending = new[] { 2 } } ).Count > 0, "a placeholder that waits for its destruction" );
+		Assert.AreEqual( 0, ThingPool.Problems( new ThingPoolSnapshot { Used = snapshot.Used } ).Count, "a save from before the placeholders has none" );
+	}
+}

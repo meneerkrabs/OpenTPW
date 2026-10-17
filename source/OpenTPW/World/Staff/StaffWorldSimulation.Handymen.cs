@@ -54,8 +54,8 @@ public sealed partial class StaffWorldSimulation
 				continue;
 			// the entertainers' and guards' pre-update moves their RegionFX row with them (the constructor puts it on the first cell)
 			economy.MoveStaffEffect( member, Cell( member ) );
-			// [BIN:TPW-EXE:0x00505490 staff pre-update] on the member's phase ((id & 3) == (turn & 3)) the thought object's update 0x0050BE40 takes an old bubble away
-			if ( member.BubbleThought != 0 && NeedsUpdate.IsPhase( (uint)turn, member.Id ) && (ulong)(member.BubbleTurn + GuestThoughts.BubbleTurns) < (ulong)turn )
+			// [BIN:TPW-EXE:0x00505490 staff pre-update] on the member's phase ((thing id & 3) == (turn & 3); the roster id where the economy has no thing pool) the thought object's update 0x0050BE40 takes an old bubble away
+			if ( member.BubbleThought != 0 && NeedsUpdate.IsPhase( (uint)turn, member.PhaseId ) && (ulong)(member.BubbleTurn + GuestThoughts.BubbleTurns) < (ulong)turn )
 				member.BubbleThought = 0;
 			switch ( member.State )
 			{

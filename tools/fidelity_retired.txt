@@ -69,7 +69,9 @@ COAST-025 docs/COASTERS.md
 COAST-027 docs/COASTERS.md
 COAST-030 docs/COASTERS.md
 COAST-031 docs/COASTERS.md
+COMPAT-001 docs/COMPATIBILITY.md
 COMPAT-005 docs/reverse/APPROX-TRACE.md
+COMPAT-006 docs/COMPATIBILITY.md
 COMPAT-008 docs/reverse/APPROX-TRACE.md
 COMPAT-009 docs/COMPATIBILITY.md
 COMPAT-011 docs/reverse/APPROX-TRACE.md
@@ -149,8 +151,10 @@ GATE-005 docs/M3-GATE.md
 GATEM4-001 docs/M4-GATE.md
 GATEM4-002 docs/M4-GATE.md
 GUEST-001 docs/PROGRESS.md
+GUEST-003 docs/progress/2026-10-17-thing-pool-and-thing-ids.md
 GUEST-008 docs/PROGRESS.md
 GUEST-009 docs/PROGRESS.md
+GUEST-012 docs/GUESTS.md
 GUEST-018 docs/GUESTS.md
 HEADS-001 docs/GUESTS.md
 HEADS-002 docs/PROGRESS.md
@@ -197,6 +201,7 @@ PTCL-907 docs/PARTICLES.md
 QUEUE-001 docs/PROGRESS.md
 QUEUE-002 docs/PROGRESS.md
 QUEUE-004 docs/GUESTS.md
+QUEUE-005 docs/progress/2026-10-17-thing-pool-and-thing-ids.md
 QUEUE-006 docs/reverse/BOARD-plan.md
 QUEUE-007 docs/reverse/BOARD-plan.md
 QUEUE-008 docs/GUESTS.md
@@ -318,10 +323,12 @@ UI-093 docs/PROGRESS.md
 UI-097 docs/PROGRESS.md
 UI-098 docs/PROGRESS.md
 UI-099 docs/STAFF-PLACEMENT.md
-UI-106 docs/progress/2026-10-16-research-bars.md
+UI-101 docs/UI.md
 UI-102 docs/UI.md
 UI-103 docs/UI.md
+UI-104 docs/UI.md
 UI-105 docs/UI.md
+UI-106 docs/progress/2026-10-16-research-bars.md
 UI-902 docs/PROGRESS.md
 UI-903 docs/PROGRESS.md
 UI-906 docs/PROGRESS.md
@@ -335,4 +342,5 @@ VM-902 docs/DETERMINISM.md
 WALK-001 docs/progress/2026-10-16-ride-shop-and-sideshow-settings.md
 WALK-002 docs/GUESTS.md
 WALK-004 docs/GUESTS.md
+WALK-008 docs/GUESTS.md
 WALK-009 docs/GUESTS.md

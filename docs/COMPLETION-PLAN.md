@@ -147,6 +147,8 @@ local copy of the application. No other table or code from the executable is cop
 Evidence references get their own label, for example
 `[BIN:STP-PPC:<function or address>]`, `[BIN:TPI-EXE:<function or address>]` and
 `[BIN:QMIXER-DLL:<address>]` (the game's QMixer.dll sound mixer, analysed statically),
+`[BIN:USP10-DLL:<address>]` (the game's usp10.dll, Uniscribe, analysed statically),
+`[BIN:D3DIM-DLL:<address>]` and `[BIN:DDRAW-DLL:<address>]` (the DirectX 6.1 d3dim.dll and ddraw.dll shipped in the game's Redist folder, analysed statically),
 with the SHA-256 of the analyzed executable in `RECOMPILATION-ASSESSMENT.md`. The
 fidelity register (`tools/fidelity_register.py`) must still learn that label
 before the first rule is marked this way.

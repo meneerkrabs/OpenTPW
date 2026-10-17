@@ -5,26 +5,50 @@ public class ParkCameraMode : CameraMode
 	public const float SandboxTargetExtent = 32f;
 	public static float TargetExtent { get; set; } = SandboxTargetExtent;
 	public static Vector3 InitialTarget { get; set; } = Vector3.Zero;
-	// Host interaction tuning, not reconstructed original-game speed constants.
-	public const float HostPanSpeed = 24f;
-	public const float HostRotationSpeed = 90f;
-	public const float HostZoomSpeed = 24f;
+	// Host interaction tuning: the edge band and the right-button drag (the original's own pan model is not ported).
 	public const float HostEdgeFraction = 0.015f;
+	/// <summary>The original's zoom value at its own range's near end (<see cref="Height"/>).</summary>
+	// [BIN:TPW-EXE:0x42b1c0 zoom range] without the flag 0x200 the zoom value (0x7909ec) is clamped to 70..130 (0x42c621-0x42c6a1: 70.0 at 0x6fde08, 130.0 at 0x6fde0c; the flag 0x200 swaps in 40..300 from 0x74c9d8/0x74c9dc, a flag whose setter was not found: 0x42aa6e only keeps it), so the camera never gets nearer or farther than these
+	public const float MinimumHeight = 70f;
+	/// <summary>The original's zoom value at its far end.</summary>
+	public const float MaximumHeight = 130f;
+	/// <summary>The zoom value of the Home pose and of a new camera (<c>0x42A990</c>: 110.0).</summary>
+	public const float HomeHeight = 110f;
+	/// <summary>The Home target's x and z in original units (<c>0x42A990</c>: 475.0 and 175.0, the middle of the entrance cells (47, 17) and (48, 17)).</summary>
+	public const float HomeTargetX = 475f, HomeTargetZ = 175f;
+	/// <summary>Engine units per original unit (a cell is ten original units, two engine units).</summary>
+	public const float UnitScale = OriginalParkPlacement.ModelScale;
+	/// <summary>The yaw change of the rotate keys in smooth mode, degrees per second: 0.002 radians per millisecond (<c>0x42b1c0</c>).</summary>
+	public const float RotationSpeed = 0.002f * 1000f * 180f / MathF.PI;
+	/// <summary>The zoom keys' rate in zoom units per second: 0.05 per millisecond (<c>0x42b1c0</c>).</summary>
+	public const float ZoomSpeed = 0.05f * 1000f;
+	/// <summary>The zoom change of one wheel notch (message 0x1000D, <c>0x42a760</c>).</summary>
+	public const float WheelStep = 10f;
 	public bool UiCapturesKeyboard { get; set; }
 	public bool ModalOpen { get; set; }
 	public Vector3 Target { get; private set; }
-	public float Height { get; private set; } = 42f;
-	public float Yaw { get; private set; } = -135f;
-	public ParkCameraView View { get; private set; }
+	/// <summary>
+	/// The original's zoom value (0x7909ec: 70..130, 110 at Home, 0x42a990) in original units: it sets the pitch and the distance of the eye (<see cref="PitchOf"/>,
+	/// <see cref="EyeOffset"/>). Not a height above the ground in engine units.
+	/// </summary>
+	public float Height { get; private set; } = HomeHeight;
+	/// <summary>The bearing of the eye from the target in degrees (the eye is at <c>Target + (cos, sin) * distance</c>); the original's yaw 0 is -90 here (<see cref="OriginalYaw"/>).</summary>
+	public float Yaw { get; private set; } = HomeYaw;
+	/// <summary>The yaw of the Home pose: the original's yaw 0 looks along +Y (its +z), so the eye sits to the -Y side of the target.</summary>
+	public const float HomeYaw = -90f;
+	private float smoothedGround;
 	private bool dragging;
 	private bool middleTurning, middleWasDown;
 	private readonly ReferenceFrameClock turnFrames = new();
 
 	public ParkCameraMode()
 	{
-		// [APPROX:UI-101] the park camera's field of view is 55 degrees where tp.exe's projection has 90 (0x42A990 and 0x54E86F -> 0x578BE0); the pose below (height, yaw, pull-back) is OpenTPW's own and was tuned to 55, so the value is not changed here until the original view is captured
-		FieldOfView = 55;
+		// [BIN:TPW-EXE:0x42a990 projection] the camera init builds the projection once with pi/2 radians scaled to 90 degrees (0x578be0, near 0.1, far 1000) and the pose: zoom 110, yaw 0, target (475, 0, 175) (the entrance cells 47/48, 17 of every level's Standard.sam)
+		FieldOfView = OriginalProjection.FieldOfView;
+		UsesOriginalProjection = true;
 		Focus( InitialTarget );
+		smoothedGround = GroundAtTarget();
+		UpdateTransform();
 	}
 
 	/// <summary>Focus on park coordinates: X/Y ground plane, Z up. Targets stay on the ground.</summary>
@@ -39,14 +63,16 @@ public class ParkCameraMode : CameraMode
 	/// <summary>Places the camera at a fixed pose (screenshots): ground target, height and yaw in degrees.</summary>
 	public void SetPose( Vector3 target, float height, float yaw )
 	{
-		Height = float.IsFinite( height ) ? Math.Clamp( height, 12, MaximumHeight ) : Height;
+		Height = float.IsFinite( height ) ? Math.Clamp( height, MinimumHeight, MaximumHeight ) : Height;
 		Yaw = float.IsFinite( yaw ) ? yaw % 360 : Yaw;
 		Focus( target );
+		smoothedGround = GroundAtTarget();
+		UpdateTransform();
 	}
 
 	/// <summary>
 	/// Turns the camera to look along the ground direction <paramref name="direction"/> (engine X/Y), keeping the target and the height: the eye goes behind the
-	/// target, <c>Position = Target + (cos yaw, sin yaw) × Height</c>. A zero or non-finite direction changes nothing.
+	/// target, <c>Position = Target + (cos yaw, sin yaw) × <see cref="HorizontalDistance"/></c>. A zero or non-finite direction changes nothing.
 	/// </summary>
 	public void LookAlong( System.Numerics.Vector2 direction )
 	{
@@ -55,16 +81,6 @@ public class ParkCameraMode : CameraMode
 		Yaw = MathF.Atan2( -direction.Y, -direction.X ) * 180f / MathF.PI;
 		UpdateTransform();
 	}
-
-	public ParkCameraView CycleView()
-	{
-		View = (ParkCameraView)(((int)View + 1) % 3);
-		Height = View switch { ParkCameraView.Close => 20f, ParkCameraView.Overview => MaximumHeight, _ => 42f };
-		UpdateTransform();
-		return View;
-	}
-
-	private float MaximumHeight => Math.Max( 100, float.IsFinite( TargetExtent ) ? TargetExtent * 2 : 100 );
 
 	public override void Update()
 	{
@@ -88,6 +104,12 @@ public class ParkCameraMode : CameraMode
 	/// <summary>Apply one frame without SDL, ImGui or renderer dependencies.</summary>
 	public void Update( CameraControlInput input, GameOptions options )
 	{
+		Step( input, options );
+		SmoothGround( input.DeltaSeconds );
+	}
+
+	private void Step( CameraControlInput input, GameOptions options )
+	{
 		var inside = input.LogicalSize.X > 0 && input.LogicalSize.Y > 0
 			&& input.MousePosition.X >= 0 && input.MousePosition.Y >= 0
 			&& input.MousePosition.X < input.LogicalSize.X && input.MousePosition.Y < input.LogicalSize.Y;
@@ -96,12 +118,12 @@ public class ParkCameraMode : CameraMode
 		var keyboard = !input.CaptureKeyboard && !input.TextEntry;
 		if ( keyboard )
 		{
-			if ( input.Home ) { Yaw = -135; Height = 42; View = ParkCameraView.Standard; Focus( InitialTarget ); }
+			if ( input.Home ) { Yaw = HomeYaw; Height = HomeHeight; Focus( InitialTarget ); }
 			var rotation = options.Rotation == RotationMode.Smooth
-				? ((input.RotateRight ? 1 : 0) - (input.RotateLeft ? 1 : 0)) * HostRotationSpeed * dt
+				? ((input.RotateRight ? 1 : 0) - (input.RotateLeft ? 1 : 0)) * RotationSpeed * dt
 				: ((input.RotateRightPressed ? 1 : 0) - (input.RotateLeftPressed ? 1 : 0)) * 90;
 			Yaw = (Yaw + rotation) % 360;
-			Height = Math.Clamp( Height - input.Zoom * HostZoomSpeed * dt, 12, MaximumHeight );
+			Height = Math.Clamp( Height - input.Zoom * ZoomSpeed * dt, MinimumHeight, MaximumHeight );
 		}
 		Yaw = (Yaw + MiddleTurn( input, dt )) % 360;
 		var radians = Yaw.DegreesToRadians();
@@ -111,19 +133,19 @@ public class ParkCameraMode : CameraMode
 		var mouse = !input.CaptureMouse && !input.TextEntry;
 		if ( mouse )
 		{
-			Height = Math.Clamp( Height - input.Wheel * 3, 12, MaximumHeight );
+			Height = Math.Clamp( Height - input.Wheel * WheelStep, MinimumHeight, MaximumHeight );
 			if ( options.Scroll == ScrollMode.Pushscroll )
 			{
 				x += Edge( input.MousePosition.X, input.LogicalSize.X );
 				y -= Edge( input.MousePosition.Y, input.LogicalSize.Y );
 			}
 			else if ( input.RightButton && dragging )
-				Target += (right * input.MouseDelta.X / input.LogicalSize.X - forward * input.MouseDelta.Y / input.LogicalSize.Y) * Height * 2;
+				Target += (right * input.MouseDelta.X / input.LogicalSize.X - forward * input.MouseDelta.Y / input.LogicalSize.Y) * HorizontalSpan( Height );
 		}
 		dragging = mouse && options.Scroll == ScrollMode.RightButton && input.RightButton;
 		var length = MathF.Sqrt( x * x + y * y );
 		if ( length > 1 ) { x /= length; y /= length; }
-		Focus( Target + (right * x + forward * y) * dt * HostPanSpeed );
+		Focus( Target + (right * x + forward * y) * dt * PanSpeed( Height ) );
 	}
 
 	/// <summary>
@@ -154,11 +176,78 @@ public class ParkCameraMode : CameraMode
 	public static float MiddleTurnRadians( float pointerX, int width ) => width <= 0 ? 0 : MathF.Floor( pointerX ) / width - 0.5f;
 
 	private static float Edge( float position, int size ) => position < size * HostEdgeFraction ? -1 : position >= size * (1 - HostEdgeFraction) ? 1 : 0;
+	/// <summary>The pan speed at a zoom value, engine units per second: the original's steady-state velocity of 0.02 x the square root of the zoom value per millisecond.</summary>
+	// [BIN:TPW-EXE:0x42b1c0 pan velocity] each frame the velocity becomes (sqrt(zoom) x 0.02 x key direction + the old velocity) x 0.5 (0x42bc30-0x42bc96: fsqrt, 0.02 at 0x6fddf8, 0.5 at 0x6fddfc), which settles at 0.02 x sqrt(zoom) original units per millisecond; the target then moves by the frame's milliseconds times that. OpenTPW takes the settled value (no ramp)
+	public static float PanSpeed( float zoom ) => 0.02f * MathF.Sqrt( zoom ) * 1000f * UnitScale;
+
+	/// <summary>The ground distance the right-button drag covers for a whole screen width at a zoom value (host choice: about the width of the view at the target).</summary>
+	public static float HorizontalSpan( float zoom ) => 2f * zoom * UnitScale;
+
+	/// <summary>The pitch of the camera in radians for a zoom value: from 45 degrees at 70 to 65 degrees at 130 (1.134464 rad).</summary>
+	// [BIN:TPW-EXE:0x42b1c0 pitch] t = (zoom - 70) / 60 (0x42c742: 70.0 at 0x6fde08, 0.016666668 at 0x6fde14); pitch (0x790a3c) = (1 - t) x 0.7853982 - t x -1.134464 (0x6fde18), clamped to 0..1.4707963 (0x42c7c0)
+	public static float PitchOf( float zoom )
+	{
+		var t = (zoom - 70f) * 0.016666668f;
+		return Math.Clamp( (1f - t) * 0.7853982f - t * -1.134464f, 0f, 1.4707963f );
+	}
+
+	/// <summary>The ground distance from the target to the point under the eye, in original units: the zoom value times the cosine of the pitch.</summary>
+	public static float HorizontalDistanceOf( float zoom ) => zoom * MathF.Cos( PitchOf( zoom ) );
+
+	/// <summary>The ground distance from the target to the point under the eye, in engine units.</summary>
+	public float HorizontalDistance => HorizontalDistanceOf( Height ) * UnitScale;
+
+	/// <summary>
+	/// The eye's offset from the target in engine units for a zoom value and a bearing in degrees: the ground part is the zoom value times the cosine of the pitch
+	/// toward the bearing, the height is the zoom value times the sine of the pitch, plus the smoothed ground height under the target.
+	/// </summary>
+	// [BIN:TPW-EXE:0x42b1c0 eye] the eye offset (0x790aa0..0x790aa8) is (0, zoom x sin(pitch), -zoom x cos(pitch)) turned about the up axis by the smoothed yaw (0x7909e0): x = sin(yaw) x its z part, z = cos(yaw) x its z part (0x42c96d-0x42c9fe); the eye is the target (0x7908f0, 0x7908f4 = 0, 0x7908f8) plus that offset, and its height also gets the ground height under the target (0x452560 with flag 1, averaged with the previous frame's value 0x790ae4 each frame, 0x42c817-0x42c848)
+	public static Vector3 EyeOffset( float zoom, float yawDegrees, float ground )
+	{
+		var pitch = PitchOf( zoom );
+		var distance = zoom * MathF.Cos( pitch ) * UnitScale;
+		var radians = yawDegrees.DegreesToRadians();
+		return new Vector3( MathF.Cos( radians ) * distance, MathF.Sin( radians ) * distance, zoom * MathF.Sin( pitch ) * UnitScale + ground );
+	}
+
+	/// <summary>The view direction for a zoom value and a bearing in degrees: along the pitch, toward the target's side of the eye.</summary>
+	// [BIN:TPW-EXE:0x42b1c0 view matrix] the camera matrix (0x790990) is the x rotation by the pitch (0x46fb50: rows (1,0,0), (0,cos,sin), (0,-sin,cos)) turned about the up axis by the smoothed yaw (0x46f650); its third row is the view direction, so the camera looks down by the pitch and not at the target point itself (the ground height under the target only lifts the eye)
+	public static Vector3 ViewDirection( float zoom, float yawDegrees )
+	{
+		var pitch = PitchOf( zoom );
+		var radians = yawDegrees.DegreesToRadians();
+		return new Vector3( -MathF.Cos( radians ) * MathF.Cos( pitch ), -MathF.Sin( radians ) * MathF.Cos( pitch ), -MathF.Sin( pitch ) );
+	}
+
+	/// <summary>The yaw in the original's terms, radians: its forward on the ground is (sin, cos) in (x, y).</summary>
+	public static float OriginalYaw( float yawDegrees ) => (-90f - yawDegrees).DegreesToRadians();
+
+	private float GroundAtTarget()
+	{
+		if ( Level.Current?.OriginalPark?.Heightfield is not { } field )
+			return 0;
+		var origin = OriginalParkPlacement.GetOrigin( field );
+		var ground = OriginalTerrain.GroundUnder( field, (Target.X + origin.X) / UnitScale, (Target.Y + origin.Y) / UnitScale ) * UnitScale;
+		return float.IsFinite( ground ) ? ground : 0;
+	}
+
+	/// <summary>Moves the smoothed ground height toward the ground under the target: the original averages the two once per frame, here per 60 Hz reference frame of elapsed time.</summary>
+	private void SmoothGround( float deltaSeconds )
+	{
+		var frames = float.IsFinite( deltaSeconds ) ? Math.Clamp( deltaSeconds, 0, 0.5f ) * ReferenceFrameClock.FramesPerSecond : 0;
+		var keep = MathF.Pow( 0.5f, frames );
+		var ground = GroundAtTarget();
+		var next = ground + (smoothedGround - ground) * keep;
+		if ( MathF.Abs( next - smoothedGround ) < 1e-6f )
+			return;
+		smoothedGround = next;
+		UpdateTransform();
+	}
+
 	private void UpdateTransform()
 	{
-		var radians = Yaw.DegreesToRadians();
-		Position = Target + new Vector3( MathF.Cos( radians ) * Height, MathF.Sin( radians ) * Height, Height );
-		Rotation = Rotation.LookAt( Target - Position );
+		Position = Target + EyeOffset( Height, Yaw, smoothedGround );
+		Rotation = Rotation.LookAt( ViewDirection( Height, Yaw ) );
 		if ( !EntityConstructionScope.IsStaging ) UpdateAudioListener();
 	}
 

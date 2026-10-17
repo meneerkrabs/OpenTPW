@@ -132,7 +132,7 @@ public partial class Level : IDisposable
 	/// </summary>
 	public ParkVisitInfo? Visit { get; }
 	public bool IsReadOnlyVisit => Visit != null;
-	/// <summary>True while this level runs the experimental Theme Park Inc slice: no economy, HUD or advisor of the reference game.</summary>
+	/// <summary>True while this level runs the experimental Theme Park Inc slice: only the money economy (no staff, research or challenges), no HUD or advisor of the reference game.</summary>
 	public bool IsThemeParkIncSlice => GameEditions.IsThemeParkInc && OriginalPark != null;
 	/// <summary>The version 2 layout a visit applies instead of the shipped level import; null for version 1 packages and own parks.</summary>
 	private readonly OpenTPW.Online.Packages.MinimalParkPayload? visitLayout;
@@ -239,13 +239,16 @@ public partial class Level : IDisposable
 			if ( resume != null && (resume.Layout.Cells.Width != OriginalPark.Map.CellCountX || resume.Layout.Cells.Height != OriginalPark.Map.CellCountY) )
 				throw new InvalidDataException( "The saved cell map dimensions do not match the original terrain." );
 			yield return 0.15f;
-			// [EXT:tpi-viewer] the edition capability policy decides the economy: Theme Park Inc's Standard.sam lacks 89 of the
-			// balance keys it reads, so its worlds run without one and building stays free (docs/THEME-PARK-INC.md).
+			// [EXT:tpi-viewer] the edition capability policy decides the economy: Theme Park Inc's Standard.sam lacks 86 of the
+			// balance keys the Theme Park World economy reads, so its worlds run the money only (Theme Park Inc's own keys: cash, loans, costs,
+			// the calendar, running costs) and not the staff, research or challenges (docs/THEME-PARK-INC.md, "Economy").
 			using ( LoadProfile.Measure( "economy" ) )
 			{
 				if ( !IsReadOnlyVisit && GameEditions.Capabilities.Economy )
 					Park = resume == null ? ParkEconomyRuntime.ForOriginalLevel( OriginalPark, start, Seed )
 						: ParkEconomyRuntime.ForResume( resumedEconomy ?? throw new InvalidDataException( "The resumed economy is missing." ), start );
+				else if ( !IsReadOnlyVisit && GameEditions.IsThemeParkInc && GameEditions.Capabilities.Money && resume == null )
+					Park = ParkEconomyRuntime.ForThemeParkIncLevel( OriginalPark, Seed );
 			}
 			yield return 0.2f;
 		}
@@ -324,6 +327,9 @@ public partial class Level : IDisposable
 			PlacedRide.Start();
 	}
 
+	/// <summary>The centre of the park's paths, where the native smoke tests aim the camera (a pose inside the original's zoom range, which a player can reach by scrolling).</summary>
+	internal Vector3 PathFocus { get; private set; }
+
 	private IEnumerable<float> SetupEntities()
 	{
 		SunLight = new Sun() { Position = new( 0, 100, 100 ) };
@@ -352,8 +358,11 @@ public partial class Level : IDisposable
 			var origin = OriginalParkPlacement.GetOrigin( OriginalPark.Heightfield );
 			ParkCameraMode.TargetExtent = Math.Max( origin.X, origin.Y );
 			var save = OriginalPark.Save;
-			// Focus the imported paths, else the MAP initial path at the entrance, else the terrain centre.
 			var field = OriginalPark.Heightfield;
+			// [BIN:TPW-EXE:0x42a990 home target] the camera starts, and the Home key returns, at the target (475, 0, 175) in original units, the middle of the entrance cells (47, 17) and (48, 17) that every level's Standard.sam names (FixedItemInfo.EntranceA/BPos); a saved park's own camera (the KAME block: 0x42cdc0 writes the zoom, yaw, flags and target) is not imported (docs/reverse/SAVE-plan.md), so every park starts at Home
+			var home = OriginalParkPlacement.ToEngine( field, new System.Numerics.Vector3( ParkCameraMode.HomeTargetX, 0, ParkCameraMode.HomeTargetZ ) );
+			ParkCameraMode.InitialTarget = new Vector3( home.X, home.Y, 0 );
+			// the native smoke tests look for free owned sites in the middle of the screen, which the original's Home view (the entrance forecourt) rarely has; they scroll to the imported paths' centre (or the initial path's, or the terrain centre) with this
 			var paths = save?.PathCells.ToList() ?? Enumerable.Range( 0, field.CellCountX * field.CellCountZ )
 				.Select( index => (X: index % field.CellCountX, Y: index / field.CellCountX) )
 				.Where( cell => OriginalPark.Map.GetFlagsAt( cell.X, cell.Y ).HasFlag( MapCellFlags.InitialPath ) ).ToList();
@@ -362,8 +371,8 @@ public partial class Level : IDisposable
 			var focus = paths.Count > 0
 				? (X: (int)paths.Average( cell => cell.X ), Y: (int)paths.Average( cell => cell.Y ))
 				: (X: field.CellCountX / 2, Y: field.CellCountZ / 2);
-			var center = OriginalParkPlacement.GetCellCenter( OriginalPark.Heightfield, focus.X, focus.Y );
-			ParkCameraMode.InitialTarget = new Vector3( center.X, center.Y, 0 );
+			var center = OriginalParkPlacement.GetCellCenter( field, focus.X, focus.Y );
+			PathFocus = new Vector3( center.X, center.Y, 0 );
 			Log.Trace( $"Original {OriginalPark.LevelName} level: {OriginalTerrain.SurfaceCellCount} heightfield cells, {OriginalTerrain.TerrainMeshCount} terrain meshes"
 				+ (save == null ? "; no original save." : $"; Easymode import: {save.PathCells.Count} path cells, {save.PlacedObjects.Count} placed objects, {save.FixedItems.Count} fixed items.")
 				+ (visitLayout != null ? $"; shared layout: {visitLayout.Cells?.Count ?? 0} cells, {visitLayout.Objects.Count} objects, {visitLayout.Coasters?.Count ?? 0} coasters." : "") );
@@ -415,8 +424,13 @@ public partial class Level : IDisposable
 				litterEffects = new ParkLitterEffects( Park.Economy.Litter, ParticleRendererModule.AdvisorPool );
 			ImportOriginalGuests();
 			ImportOriginalRideSettings();
-			SetupStaff();
-			SetupParkGate();
+			if ( resumeState == null && !GameEditions.IsThemeParkInc && OriginalPark.Save != null && visitLayout == null )
+				ReleaseUnimportedThings();
+			if ( GameEditions.Capabilities.Staff )
+				SetupStaff();
+			// [EXT:tpi-park-open] the Theme Park Inc park runs no gate commands: its gate script is not traced, so the economy neither drives nor closes the park door
+			if ( !GameEditions.IsThemeParkInc )
+				SetupParkGate();
 		}
 	}
 
@@ -446,6 +460,7 @@ public partial class Level : IDisposable
 			? new BuyLandTool( () => Guests?.Grid.Cells, () => Park?.Economy, ( x, y ) => ParkLand.IsBarrier( park.Map, park.Heightfield, x, y ) )
 			: null;
 		Guests = new GuestSimulation( grid, settings, Seed.GuestStream ) { OnlineVisit = Visit != null };
+		Guests.AttachThings( Things );
 		List<GuestSpriteAtlas> sprites;
 		using ( LoadProfile.Measure( "guest-sprites" ) )
 			sprites = GuestSpriteAtlas.LoadKids();
@@ -923,7 +938,16 @@ public partial class Level : IDisposable
 	public void LoadPark( string path )
 	{
 		// a load that fails leaves the economy, and so the staff tool and its pending flag, as they were
+		var replacedStaff = Park?.Economy.Staff.Members.Select( member => member.ThingId ).Where( id => id != 0 ).ToList() ?? new List<int>();
 		Streams.LoadPark( path );
+		// the loaded economy's staff take their things (a member the save names keeps its slot); the replaced economy's staff are destroyed at the turn's end
+		if ( Park != null )
+		{
+			Park.Economy.Staff.AttachThings( Things );
+			var kept = Park.Economy.Staff.Members.Select( member => member.ThingId ).ToHashSet();
+			foreach ( var id in replacedStaff.Where( id => !kept.Contains( id ) ) )
+				Things.QueueDestroy( id );
+		}
 		StaffPlacement?.Abandon();
 		// the patrol tool's employee id belongs to the replaced economy
 		PatrolTool?.Cancel();

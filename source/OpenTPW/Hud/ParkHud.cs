@@ -37,6 +37,13 @@ public sealed class HudHost
 	public Action<int>? HelpPosted { get; init; }
 	/// <summary>The HUD withdraws an advisor help message it posted (0x486B40).</summary>
 	public Action<int>? HelpWithdrawn { get; init; }
+	/// <summary>The interface mode changed (a tool started or ended): the advisor withdraws the help of the tools (0x52F200).</summary>
+	public Action? ModeChanged { get; init; }
+	/// <summary>
+	/// Whether an advisor says the staff strike messages: it queues them as advice 33-57 and posts the text of each as the caption of its speech, so the HUD does not
+	/// post the text itself. Null (no advisor) leaves the HUD to post it when the event happens.
+	/// </summary>
+	public Func<bool>? AdvisorSaysStaffMessages { get; init; }
 	/// <summary>F1 was pressed in a HUD window that passes keys to the original's default window procedure; the advisor repeats the last tutorial advice.</summary>
 	public Action? HelpKeyPressed { get; init; }
 }
@@ -274,7 +281,7 @@ public sealed partial class ParkHud
 		// [DATA:Mac main HUD table 0x4ab38:50,48,49,51-55] cash extras: i_dollar left of the balance, the change text (yellow) with green_up, golden key and ticket counters
 		// [DATA:video 15:20, 73:21] the trend arrow beside the cash is red and points down after spending
 		// [BIN:TPW-EXE:0x004a0c18 HUD balance refresh] 0x4a0ab0 sets i_dollar (control 0x32) to frame 1 for a negative balance and 0 otherwise, beside the balance's absolute value
-		// [APPROX:UI-051] the ticket count is the park's available tickets, where the original shows the player's earned tickets less the spent count (0x5af5d0) (the purchase check 0x4d4ad0 → 0x5af740 adds the cost to the player's spent count +0x1c, which the park's own spent count does not reach) — evidence needed: routing the park's ticket purchases into the player ledger
+		// [APPROX:UI-051] the ticket count is the park's available tickets, where the original shows the player's earned tickets less the spent count (0x5af5d0, from the HUD handler 0x4a0fb0 at 0x4a10cd: the global flags once, every park's locals and the secret flags; a moved global ticket changes no count) (the purchase check 0x4d4ad0 → 0x5af740 adds the cost to the player's spent count +0x1c, which the park's own spent count does not reach) — evidence needed: routing the park's ticket purchases into the player ledger
 		economyElements.Add( hud.Add( new UiModelImage { Id = "dollar", Model = "i_dollar", Frame = () => Status.Money < 0 ? 1 : 0, Bounds = Rect( 37, 58, 242, 262 ), Anchor = UiAnchor.TopLeft } ) );
 		economyElements.Add( hud.Add( new UiLabel { Id = "cashChange", Text = () => CashChangeText, Font = fonts => fonts.Balance, Color = UiColors.Highlight, Align = UiAlign.Right, Fit = true, Bounds = Rect( 458, 273, 720, 363 ), Anchor = UiAnchor.TopLeft } ) );
 		economyElements.Add( hud.Add( new UiModelImage { Id = "cashTrend", Model = "green_up", Frame = () => CashTrendFrame, Bounds = Rect( 728, 109, 831, 211 ), Anchor = UiAnchor.TopLeft } ) );
@@ -427,6 +434,8 @@ public sealed partial class ParkHud
 		level.IsPlacing = false;
 		CloseBuyWindow();
 		PostMessage( strings.Help( 440 ) );
+		// [BIN:TPW-EXE:0x4ac683 buy click] the chosen item's type record +0x4C (Info.WhichUIType) is 0 (a ride) and no ride stands in the park (0x4824d0(0x80, 0): the first placed object with that type and no add-on id, 0x4828f0): help 0xC9 (201), else 0xCE (206)
+		PostToolHelp( AdvisorToolHelp.BuildStart( entry.WhichUIType, level.Objects.Objects.Any( placed => !placed.IsDeleted && placed.Entry.WhichUIType == 0 ) ) );
 	}
 
 	// [BIN:TPW-EXE:0x5253b8 placement dispatcher] a placement without an entrance keeps the build tool armed when the click held exactly Ctrl (modifier mask 0xc), else the tool returns to mode 0 (0x52f580); a ride with an entrance continues into the entrance, exit and queue sub-modes (0x52fab0 / 0x52faf0, 0x52f580(3,0)), whose last click does the same Ctrl test. Level.PlaceObject owns purchase/guest linkage and its removal handler owns scrap credits
@@ -701,6 +710,7 @@ public sealed partial class ParkHud
 			consumed = true;
 		}
 		ReportScreens();
+		ReportInterfaceMode();
 		if ( Camera.Mode is ParkCameraMode camera )
 		{
 			camera.UiCapturesKeyboard = Input.TextEntryActive || Stack.Screens.Count > 1;
@@ -937,6 +947,7 @@ public sealed partial class ParkHud
 			}
 			// [BIN:TPW-EXE:0x005271B7 lay click] every path or queue click past the refused-ghost test plays cat_ui 101 (0x65) before its start or line, the first click included
 			GameAudio.PlayPathToolSound( GameAudio.PathLayEvent );
+			ReportCellToolClick( false, CellToolMode.Path, tool, false );
 			PostMessage( strings.Help( 443 ) );
 			tool.Hover( (cursorX, cursorY) );
 			return toolPress = true;
@@ -956,6 +967,9 @@ public sealed partial class ParkHud
 		// The commit click; Level skips it because the HUD reports the pointer as captured this frame.
 		refusalClick.Press();
 		var queueJoin = level.QueueJoinCell( tool );
+		var hadStart = tool.Start != null;
+		var modeBefore = tool.Mode;
+		var interfaceBefore = InterfaceMode();
 		cellToolClicking = true;
 		SegmentResult? result;
 		try
@@ -966,6 +980,8 @@ public sealed partial class ParkHud
 		{
 			cellToolClicking = false;
 		}
+		if ( result is not { GhostRefused: true } )
+			ReportCellToolClick( hadStart, modeBefore, tool, queueJoin != null, interfaceBefore );
 		ResolveQueueRearm( result );
 		// [BIN:TPW-EXE:0x527587 queue-join sound] it follows every commit; a click on a refused ghost lays nothing and returns before the commit (0x524A63)
 		if ( result is { GhostRefused: false } )
@@ -1044,7 +1060,7 @@ public sealed partial class ParkHud
 			var rotation = level.BuildRotation;
 			var anchor = Level.GetCentredAnchor( entry, cursorX, cursorY, rotation );
 			var allowed = level.CheckObject( entry, cursorX, cursorY, rotation ) == OriginalPlacementResult.Allowed
-				&& (level.Park == null || level.Park.Economy.CheckBuild( entry.InfoId ) == ParkEconomy.PurchaseResult.Ok);
+				&& (level.Park == null || level.Park.Economy.CheckBuild( entry.InfoId, level.IsMoving ) == ParkEconomy.PurchaseResult.Ok);
 			placementRefused = !allowed;
 			var footprint = BlueprintGhosts.Footprint( entry.Shape, anchor.X, anchor.Y, rotation, allowed );
 			cells.AddRange( footprint.Cells );

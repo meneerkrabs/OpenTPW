@@ -13,7 +13,7 @@ public sealed partial class ParkHud
 {
 	// [BIN:TPW-EXE:0x755150 object window tables] the three tables share the window rectangle, the preview box (348,162), the stats frame (853,162) with 7 or 8 rows of a label (x 876..1273) and a value (x 1315..1550), the title box at y 74..153 and the buttons b_door (1430,784), b_erase (300,800), b_okay (1671,818), b_arup/b_ardown (1662,126/216) and b_allthings (1648,583); the ride table also has b_queue, b_ride it!, b_callmech and b_upgrade in the bottom row
 	// [DATA:video 4:00, 10:40, 23:40, 24:20, 77:09, 78:20] the windows of Belly Bounce, Tempel der Duisternis, Wilde Aap, Drankwinkel, Klein Toilet and IJswinkeltje have this layout (title in yellow, preview, seven rows, bottom row of round buttons, right column of arrows, list and tick); labels and values are white
-	// [APPROX:UI-104] b_move is not drawn (control 0x3e2c: enabled by 0x52c2b0, its click 0x48cfa0 enters the move tool, mode 0x3b, with the object picked up; the move tool is not simulated)
+	// [BIN:TPW-EXE:0x4ad6c7 b_move] the ride window's refresh shows control 0x3e2c and enables it with 0x52c2b0 (Level.CanMove); the shop and sideshow windows' b_move (0xc080, 0xa0a8) have no such test and click the same pick-up 0x48cfa0 (their handlers 0x4b0b30 and 0x4b2150)
 	// [APPROX:UI-024] the preview is OpenTPW's orthographic icon; the settings controls are ParkHud.ObjectSettings
 	/// <summary>What a row of the stats frame shows; the labels are UITEXT 17-23 for rides, 32-38 for shops and 41-48 for sideshows (<see cref="RowLabels"/>).</summary>
 	internal enum ObjectRowKind { None, Users, Age, Excitement, Reliability, Repair, Life, Scrap, Customers, CostOfGoods, Takings, Profit, Satisfaction, Happiness, Winners }
@@ -67,6 +67,7 @@ public sealed partial class ParkHud
 		public required (LayoutNode Label, LayoutNode Value)[] Rows { get; init; }
 		public LayoutNode? Door { get; init; }
 		public LayoutNode? Erase { get; init; }
+		public LayoutNode? Move { get; init; }
 		public LayoutNode? Okay { get; init; }
 		public LayoutNode? Previous { get; init; }
 		public LayoutNode? Next { get; init; }
@@ -100,7 +101,7 @@ public sealed partial class ParkHud
 			return cache[table] = new ObjectWindowLayout
 			{
 				Table = table, Stats = stats, Preview = preview, Title = title, Rows = labels.Zip( values ).ToArray(),
-				Door = table.TryModel( "b_door" ), Erase = table.TryModel( "b_erase" ), Okay = table.TryModel( "b_okay" ), Previous = table.TryModel( "b_arup" ),
+				Door = table.TryModel( "b_door" ), Erase = table.TryModel( "b_erase" ), Move = table.TryModel( "b_move" ), Okay = table.TryModel( "b_okay" ), Previous = table.TryModel( "b_arup" ),
 				Next = table.TryModel( "b_ardown" ), List = table.TryModel( "b_allthings" ), RideIt = table.TryModel( "b_ride it!" ),
 				// a toilet's call button (shops have none of their own) uses the ride table's slot
 				CallMech = table.TryModel( "b_callmech" ) ?? OriginalLayoutTables.RideWindow.Model( "b_callmech" ), Upgrade = table.TryModel( "b_upgrade" ), Queue = table.TryModel( "b_queue" ), Track = table.TryModel( "b_track" ), ApplyAll = table.TryModel( "b_applyall" )
@@ -205,6 +206,7 @@ public sealed partial class ParkHud
 			// b_door state frames: open door normally, closed door in the "down" frames.
 			Selected = () => selectedObject?.IsOpen == false } );
 		objErase = Info( new UiButton { Id = "deleteRide", Model = "b_erase", Clicked = DeleteRide } );
+		objMove = Info( new UiButton { Id = "moveRide", Model = "b_move", Clicked = MoveObject } );
 		objOkay = Info( new UiButton { Id = "retractInfo", Model = "b_okay", Clicked = () => SetInfoArm( false ) } );
 		objPrevious = Info( new UiButton { Id = "infoPrevious", Model = "b_arup", Clicked = () => CycleSelectedObject( -1 ) } );
 		objNext = Info( new UiButton { Id = "infoNext", Model = "b_ardown", Clicked = () => CycleSelectedObject( 1 ) } );
@@ -220,6 +222,36 @@ public sealed partial class ParkHud
 	private bool CanEditQueue( OriginalObject item ) => !level.IsReadOnlyVisit && item.Entry.HasQueue && item.Runtime.IsAttraction && item.Visitors.HasCells && item.Visitors.QueueFrontCell != null;
 
 	private bool CanEditTrack( OriginalObject item ) => !level.IsReadOnlyVisit && (item.Runtime.Coaster != null || item.Runtime.Bump != null);
+
+	private bool CanMoveObject( OriginalObject item ) => !level.IsReadOnlyVisit && !item.Entry.IsFixedItem && level.CanMove( item );
+
+	/// <summary>
+	/// The window's move button (<c>b_move</c>, <c>0x48cfa0</c>): the object is demolished as its erase button does, without the confirmation, and the Move tool arms the same type at its angle;
+	/// the window closes.
+	/// </summary>
+	// [BIN:TPW-EXE:0x48cfa0 move pick-up] the pick-up neither asks for the confirmation the erase button's handler 0x48cd10 asks (the option 0x78d90f) nor posts a tool help: its mode switch 0x52f200(0x3b, 1) posts only for modes 3, 0x15, 0x16, 1 and 0x35
+	private void MoveObject()
+	{
+		if ( RejectReadOnlyAction() )
+			return;
+		if ( selectedObject is not { IsDeleted: false } item || !CanMoveObject( item ) )
+			return;
+		var entry = item.Entry;
+		var buyItem = Catalog.GetItems( (BuildCategory)entry.WhichUIType ).FirstOrDefault( candidate => candidate.InfoId == entry.InfoId );
+		if ( buyItem == null )
+			return;
+		level.CellTool.Cancel();
+		level.StaffPlacement?.Cancel();
+		level.PatrolTool?.Cancel();
+		level.BuyLandTool?.Cancel();
+		level.AreaClearTool?.Cancel();
+		LeaveBuildTool();
+		if ( !level.BeginMove( item ) )
+			return;
+		pendingItem = buyItem;
+		selectedObject = null;
+		SetInfoArm( false );
+	}
 
 	private void EditQueue()
 	{
@@ -261,7 +293,7 @@ public sealed partial class ParkHud
 	}
 
 	// the elements of the object window, found once by BuildObjectWindow
-	private UiElement? objQueue, objTrack, objApplyAll, objWindow, objStatsFrame, objPreviewFrame, objPreview, objName, objDoor, objErase, objOkay, objPrevious, objNext, objList, objRideIt;
+	private UiElement? objQueue, objTrack, objApplyAll, objWindow, objStatsFrame, objPreviewFrame, objPreview, objName, objDoor, objErase, objMove, objOkay, objPrevious, objNext, objList, objRideIt;
 	private readonly UiElement?[] objLabels = new UiElement?[ObjectWindowRows], objValues = new UiElement?[ObjectWindowRows], objGauges = new UiElement?[ObjectWindowRows];
 	private ObjectWindowLayout? appliedObjectLayout;
 	private string? appliedObjectLanguage;
@@ -300,6 +332,7 @@ public sealed partial class ParkHud
 			Place( objName, layout.Title );
 			Place( objDoor, layout.Door );
 			Place( objErase, layout.Erase, HelpOf( layout.Erase?.Help ?? -1 ) );
+			Place( objMove, layout.Move, HelpOf( layout.Move?.Help ?? -1 ) );
 			Place( objOkay, layout.Okay, HelpOf( layout.Okay?.Help ?? -1 ) );
 			Place( objPrevious, layout.Previous, HelpOf( layout.Previous?.Help ?? -1 ) );
 			Place( objNext, layout.Next, HelpOf( layout.Next?.Help ?? -1 ) );
@@ -328,6 +361,7 @@ public sealed partial class ParkHud
 		var target = selectedObject!;
 		if ( objQueue != null ) objQueue.Visible &= layout.Queue != null && CanEditQueue( target );
 		if ( objTrack != null ) objTrack.Visible &= layout.Track != null && CanEditTrack( target );
+		if ( objMove != null ) objMove.Enabled = layout.Move != null && CanMoveObject( target );
 		if ( objApplyAll != null ) objApplyAll.Visible &= layout.ApplyAll != null && TryPriceTarget( target, out _, out _ );
 		for ( var row = layout.Rows.Length; row < ObjectWindowRows; row++ )
 		{

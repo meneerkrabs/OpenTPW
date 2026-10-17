@@ -65,10 +65,10 @@ class ReplayTests(unittest.TestCase):
         self.assertIn('{ message = 188, response = 407, count = 1, group = 1, duplicates = 1, mode = 2 }', text)
 
     def test_descriptor_rows_render(self):
-        row = {'first': 407, 'count': 1, 'group': 1, 'duplicates': 1, 'mode': 2, 'callback': 0x59E8C0}
+        row = {'first': 407, 'count': 1, 'group': 1, 'duplicates': 1, 'mode': 2, 'callback': 0x59E8C0, 'skip_scan': 1}
         table = {message: row for message in range(tables.DESCRIPTOR_COUNT)}
         text = tables.render_descriptors(table)
-        self.assertIn('{ message = 188, response = 407, count = 1, group = 1, duplicates = 1, mode = 2, callback = 0x59e8c0 },', text)
+        self.assertIn('{ message = 188, response = 407, count = 1, group = 1, duplicates = 1, mode = 2, scan = 0, callback = 0x59e8c0 },', text)
         self.assertEqual(tables.DESCRIPTOR_COUNT, text.count('{ message = '))
 
 

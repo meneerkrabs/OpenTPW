@@ -62,10 +62,11 @@ public class SignMaskShapingTests
 	{
 		var kernel = SignMaskShaping.Kernel( 1f );
 		Assert.AreEqual( 5, kernel.Length );
-		Assert.AreEqual( 0.40261994689424746, kernel[2], 1e-15 );
-		Assert.AreEqual( 0.24420134200323335, kernel[1], 1e-15 );
+		// the taps are single-precision values (the original's x87 runs at 24 bits), stored as doubles
+		Assert.AreEqual( 0.40261994689424746, kernel[2], 1e-7 );
+		Assert.AreEqual( 0.24420134200323335, kernel[1], 1e-7 );
 		Assert.AreEqual( kernel[0], kernel[4] );
-		Assert.AreEqual( 1.0, kernel.Sum(), 1e-12 );
+		Assert.AreEqual( 1.0, kernel.Sum(), 1e-6 );
 		// 3 + trunc(2.5 * 1.2) = 6 taps: an even kernel, centred on tap (6 - 1) / 2 = 2, so it reaches one further right.
 		var even = SignMaskShaping.Kernel( 1.2f );
 		Assert.AreEqual( 6, even.Length );

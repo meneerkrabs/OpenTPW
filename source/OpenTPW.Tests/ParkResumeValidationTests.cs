@@ -142,7 +142,7 @@ public class ParkResumeValidationTests
 		var minimumVelocity = snapshot.Guests.Guests.Select( ( guest, index ) => index == 0
 			? guest with { Navigation = guest.Navigation with { VelocityY = int.MinValue } } : guest ).ToArray();
 		Rejects( snapshot with { Guests = snapshot.Guests with { Guests = minimumVelocity } }, "navigation velocity" );
-		Rejects( snapshot with { Guests = snapshot.Guests with { SchemaVersion = 9 } }, "schema version" );
+		Rejects( snapshot with { Guests = snapshot.Guests with { SchemaVersion = 10 } }, "schema version" );
 		Rejects( snapshot with { Guests = snapshot.Guests with { SeenQueueEdits = Array.Empty<(int AttractionId, int SeenEditCount)>() } }, "no seen queue-edit counter" );
 		Rejects( snapshot with
 		{
@@ -152,12 +152,14 @@ public class ParkResumeValidationTests
 		{
 			Guests = snapshot.Guests with { Attractions = snapshot.Guests.Attractions.Select( attraction => attraction with { QueueCells = new[] { (99, 99) } } ).ToArray() }
 		}, "queue cell (99, 99) is outside" );
-		Rejects( snapshot with { Guests = snapshot.Guests with { NextGuestId = 1 } }, "not below the next guest id" );
+		Rejects( snapshot with { Guests = snapshot.Guests with { SchemaVersion = 7, NextGuestId = 1 } }, "not below the next guest id" );
 
 		var first = snapshot.Guests.Guests[0];
-		Rejects( snapshot with { Guests = snapshot.Guests with { Guests = new[] { first, first } } }, "does not follow guest" );
+		Rejects( snapshot with { Guests = snapshot.Guests with { SchemaVersion = 7, Guests = new[] { first, first } } }, "does not follow guest" );
+		Rejects( snapshot with { Guests = snapshot.Guests with { Guests = new[] { first, first } } }, "appears more than once" );
+		Rejects( snapshot with { Guests = snapshot.Guests with { Guests = new[] { first with { Id = ThingPool.Capacity + 1 } } } }, "not a slot of the thing pool" );
 		Rejects( snapshot with { Guests = snapshot.Guests with { Guests = new[] { first with { State = GuestState.Gone } } } }, "already gone" );
-		Rejects( snapshot with { Guests = snapshot.Guests with { Guests = new[] { first with { State = (GuestState)3 } } } }, "is not a guest state" );
+		Rejects( snapshot with { Guests = snapshot.Guests with { Guests = new[] { first with { State = (GuestState)22 } } } }, "is not a guest state" );
 		Rejects( snapshot with { Guests = snapshot.Guests with { Guests = new[] { first with { BaseSpeed = 200 } } } }, "base speed" );
 		Rejects( snapshot with { Guests = snapshot.Guests with { Guests = new[] { first with { CellX = 500 } } } }, "cell (500" );
 

@@ -59,7 +59,7 @@ Standard.sam)", "This folder holds Theme Park World data, not Theme Park Inc", "
 the wrong edition is not saved. Saved folders go to `inputs` in `mods.json`.
 
 **OK** writes `mods.json` (only when a choice changed) and shows a restart notice; **Cancel** and Escape discard the edits.
-Nothing is applied while the game runs. The texts are in the six languages (`OpenTpwText`, `SupplementaryStrings`). The
+Nothing is applied while the game runs. The texts are in the nine languages (`OpenTpwText`, `SupplementaryStrings`). The
 browser build has no mod folders, so the community list is empty there and the screen lists the official extensions only.
 
 ## Manifest
@@ -191,6 +191,8 @@ refused) adds object archives to the theme catalogs:
       "names": { "English": "Bumper Cars" } } ] }
 ```
 
+New objects made from scratch (models, textures, scripts) are authored with the content kit ([CONTENT-KIT.md](CONTENT-KIT.md)).
+
 - `idRange`: the Info.Ids the mod reserves, between 5000 and 65535, at most 4096 of them (one rule for every mod, see
   [Cross-edition objects](#cross-edition-objects-opentpwcross-edition-objects)). Every `infoId` lies in
   it and is used once. Layout records and saves join on the Info.Id, so a mod keeps an object's id stable across
@@ -314,6 +316,10 @@ What the extension provides in the engine:
   categories in `levels/<theme of the object's archive>/Sound`, and nothing falls back to the running game's categories (the
   original has no second folder to try either). Every Theme Park Inc ride and ambient bank resolves in the Theme Park Inc
   root. Fixed-id sounds (screams, repair sounds) still use the running game's categories.
+- **Names in the selected language.** The objects a mod brings from a Theme Park Inc install take their names from that install's own
+  `OBJECT_NAMES.str` in the selected language (matched by the object's own `Info.Name`, which `objects.json`'s English name replaces), as the
+  Theme Park Inc slice names its objects; a name the table lacks, and a language the install does not have (it has Dutch, English, French, German
+  and Swedish), keep the `objects.json` name ([LANGUAGES.md](LANGUAGES.md#theme-park-inc)).
 - **The two Theme Park Inc RSE opcodes** `WAITABS` (45) and `MULT` (48) need no new support: the VM already runs them, and
   they are not Theme Park Inc only. Theme Park Inc's `Game.exe` and `tp.exe` have the same two handlers (same operand
   decoding and the same effect; see `[BIN:TPI-EXE:0x6a8b7e]` and `[BIN:TPI-EXE:0x6a9108]`).

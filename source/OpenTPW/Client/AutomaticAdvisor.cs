@@ -141,6 +141,57 @@ internal sealed class AutomaticAdvisor : IDisposable
 		// [BIN:TPW-EXE:0x004F88B0 park time] the term is (park turn − stamp) as an unsigned 32-bit count × the calendar rate (+0x1C of world+0x2A0, 15000) / 4 × 10^7, the park time in 100 ns units; 0x004D04D9–0x004D04F2 take 0 months unless the balance (+0xC) and mLastBalance (+0x11C) are both below 0 (ParkEconomy.MonthsSinceEnteringRed, raised as ParkEventKind.BankruptcyMessage)
 		if ( item.Kind == ParkEventKind.BankruptcyMessage )
 			Raise( AdvisorGameEvent.Bankrupted );
+		// [BIN:TPW-EXE:0x00509031 staff messages] the staff manager's month routine sends the staff info message (type 0x17, kind and role) that 0x59AFC0 turns into the advice 33-57; the kind and role are those of the strike message, whose text the advisor's caption then posts
+		if ( item.Kind == ParkEventKind.StaffStrikeMessage )
+			PostEventAdvice( AdvisorTables.StaffMessage( new StrikeMessage( (StaffType)item.InfoId, (StrikeMessageKind)item.Amount ) ), "a staff strike message" );
+		// the research completion message 0x11 (0x504630 sends it as the project reaches its target) reaches the lab and the advisor; a free item that followed one sends none
+		if ( item.Kind == ParkEventKind.ItemResearched && item.InstanceId == 1 && park != null )
+		{
+			var category = item.Amount > 0 ? ResearchCategory.Upgrade : park.Economy.Catalog.TryGet( item.InfoId, out var info ) ? info.ResearchCategory : ResearchCategory.Feature;
+			PostEventAdvice( ResearchDoneMessage( category ), $"research of {item.Detail} ({category})" );
+		}
+		if ( item.Kind == ParkEventKind.ResearchGroupOpened && NewResearchGroupMessage( (ResearchCategory)item.Amount ) is { } groupAdvice )
+			PostEventAdvice( groupAdvice, $"a new {(ResearchCategory)item.Amount} research group" );
+		if ( item.Kind == ParkEventKind.GlobalTicketMoved && GlobalTicketMovedMessage( (GoldenTicketKind)item.Amount ) is { } movedAdvice )
+			PostEventAdvice( movedAdvice, $"the {(GoldenTicketKind)item.Amount} ticket moved here" );
+		// [BIN:TPW-EXE:0x00503E8E all research done] 0x167 (167) is posted in Instant Action (the game-type word 0xFB3B7C is 2) without further test; in the full simulation only when the player's ledger has the flag +0xB9 of every park (0x5B0C40), which OpenTPW's ledger lacks
+		if ( item.Kind == ParkEventKind.ResearchAllDone && GameType == 2 )
+			PostEventAdvice( 167, "all research done" );
+	}
+
+	/// <summary>The advice of a global ticket that moved to this park (0x4D5270 case 4 of 0x5AF940: 0xEA + type, one response each, responses 474 to 477; none for another kind).</summary>
+	// [BIN:TPW-EXE:0x004D5270 global ticket moved] the type 0..3 (coaster height, go-kart excitement, water length, big park) picks 0xEA, 0xEB, 0xEC or 0xED, built through 0x59B590
+	internal static int? GlobalTicketMovedMessage( GoldenTicketKind kind ) => kind is >= GoldenTicketKind.CoasterHeight and <= GoldenTicketKind.BigPark ? 234 + (kind - GoldenTicketKind.CoasterHeight) : null;
+
+	/// <summary>The advice of each research category's completion (0x59B060, message type 0x11: ride 93, add-on 94, shop 95, sideshow 96, feature 97).</summary>
+	// [BIN:TPW-EXE:0x0059B0E6 research done] the category in the message's +0xC picks the advice: 0 queues 0x5D, 1 0x5F, 2 0x60, 3 0x61 and 4 0x5E; the project's category is the object's own, or 4 for an upgrade level
+	internal static int ResearchDoneMessage( ResearchCategory category ) => category switch
+	{
+		ResearchCategory.Ride => 93,
+		ResearchCategory.Shop => 95,
+		ResearchCategory.Sideshow => 96,
+		ResearchCategory.Feature => 97,
+		_ => 94,
+	};
+
+	/// <summary>The advice of a new research group (0x503B80: ride 133, shop 134, sideshow 135, feature 136; none for the upgrades).</summary>
+	// [BIN:TPW-EXE:0x00503C6E group advice] the switch on the category posts 0x85, 0x86, 0x87 or 0x88 through 0x59B590 and 0x59A940
+	internal static int? NewResearchGroupMessage( ResearchCategory category ) => category switch
+	{
+		ResearchCategory.Ride => 133,
+		ResearchCategory.Shop => 134,
+		ResearchCategory.Sideshow => 135,
+		ResearchCategory.Feature => 136,
+		_ => null,
+	};
+
+	/// <summary>Advice posted by game code (the original builds the record through 0x59B590 with the descriptor's score and queues it through 0x59A940).</summary>
+	internal void PostEventAdvice( int message, string source )
+	{
+		if ( level == null )
+			return;
+		var admission = Controller.Advise( message, GameTick, GameType, TutorialEnabled );
+		Log.Trace( $"Advisor advice for {source}: message {message} {(admission is { } result ? $"{result.Eligibility}{(result.Stored ? $" in slot {result.Slot}" : result.Acknowledged ? ", queue full" : "")}" : "not posted (game mode)")}." );
 	}
 
 	/// <summary>A mechanic set off for a broken-down ride: advice 70 reaches the advisor's queue at once.</summary>
@@ -172,7 +223,7 @@ internal sealed class AutomaticAdvisor : IDisposable
 	/// A prankster pranked: the prank message reaches the advisor at once (the bus delivers it as it is sent), which queues one of the three prank
 	/// lines by the prankster's id (<see cref="AdvisorTables.PrankAdvice"/>).
 	/// </summary>
-	// Approximation (GUEST-007, registered at GuestSimulation.Prank): the prank line is chosen by OpenTPW's guest id modulo 3 where the original takes the prankster's thing id (WALK-010), and the advice record's prankster id and cell words (+0x0, +0x4, 0x0059B590) are not kept, as for every advice OpenTPW queues — evidence needed: what reads those two words of a queued record
+	// Approximation (GUEST-007, registered at GuestSimulation.Prank): the prank line is chosen by the prankster's thing id modulo 3 (the guest's id), and the advice record's prankster id and cell words (+0x0, +0x4, 0x0059B590) are not kept, as for every advice OpenTPW queues — evidence needed: what reads those two words of a queued record
 	internal void OnPrank( Guest guest, GuestDecision.Prank prank )
 	{
 		if ( level == null )

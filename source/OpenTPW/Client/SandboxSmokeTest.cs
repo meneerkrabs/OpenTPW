@@ -105,6 +105,11 @@ internal sealed partial class SandboxSmokeTest : IDisposable
 	public void Update()
 	{
 		++frame;
+		// the smoke searches the middle of the screen for free sites: scroll to the paths' centre at the original's farthest zoom, as a player can
+		if ( frame == 1 && level.OriginalPark != null && Camera.Mode is ParkCameraMode smokeCamera )
+		{
+			smokeCamera.SetPose( level.PathFocus, ParkCameraMode.MaximumHeight, ParkCameraMode.HomeYaw );
+		}
 		TrackObjectMotion();
 		TrackRideHeads();
 		if ( StepRideHeadReadback() )
@@ -450,6 +455,12 @@ internal sealed partial class SandboxSmokeTest : IDisposable
 	{
 		var metrics = Render.Metrics;
 		var site = new System.Numerics.Vector3( cell.X, cell.Y, 0 );
+		// a player scrolls to what they click: look at the cell (the earlier stages moved the camera)
+		if ( level.OriginalPark != null && Camera.Mode is ParkCameraMode parkCamera )
+		{
+			parkCamera.SetPose( new Vector3( cell.X, cell.Y, 0 ), parkCamera.Height, parkCamera.Yaw );
+			Camera.Update();
+		}
 		Require( ScreenMapping.TryProjectToPixel( site, Camera.ViewMatrix, Camera.ProjMatrix, metrics.PixelSize, out var pixel ), $"{label} projects onto the screen" );
 		var mouse = metrics.PixelToLogical( pixel );
 		Require( level.TryGetPlacementPosition( mouse, new Vector2( Screen.Size.X, Screen.Size.Y ), out var picked ), $"pick the {label}" );

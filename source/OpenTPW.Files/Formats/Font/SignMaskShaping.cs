@@ -105,28 +105,18 @@ public static class SignMaskShaping
 	/// (an even count leans right), each <c>exp(-0.5 d² / sigma²) / (2 pi sigma²)</c> divided by the sum of all taps.
 	/// </summary>
 	// [BIN:TPW-EXE:0x005EA8A0 Gaussian kernel] n = 3 - _ftol(sigma * -2.5) (0x702F38 = -2.5, _ftol 0x67A830 truncates); each tap is 2^(log2(e) * (d² * -0.5 / sigma²)) / (sigma² * 6.2831853) (0x702F30, 0x702F28), summed, stored as double and divided by the sum
-	public static double[] Kernel( float sigma )
+	public static double[] Kernel( float sigma ) => Array.ConvertAll( KernelTaps( sigma ), tap => tap.ToDouble() );
+
+	private static Ext[] KernelTaps( float sigma )
 	{
 		var s = (double)sigma;
 		if ( !double.IsFinite( s ) || Math.Abs( s ) > MaximumSigma )
 			throw new NotSupportedException( "Sign mask blur parameter is not supported by the compositor." );
-		var count = 3 - (int)Math.Truncate( s * -2.5 );
+		var count = 3 - (int)(Ext.FromFloat( sigma ) * Ext.FromDouble( -2.5 )).Truncate();
 		if ( count <= 0 )
-			return Array.Empty<double>();
+			return Array.Empty<Ext>();
 		var centre = (count - 1) / 2;
-		var squared = s * s;
-		var taps = new double[count];
-		var sum = 0.0;
-		for ( var k = 0; k < count; k++ )
-		{
-			var d = k - centre;
-			var tap = Math.Exp( d * d * -0.5 / squared ) / (squared * 6.2831853);
-			sum += tap;
-			taps[k] = tap;
-		}
-		for ( var k = 0; k < count; k++ )
-			taps[k] /= sum;
-		return taps;
+		return Ext.GaussianTaps( sigma, Enumerable.Range( 0, count ).Select( k => (k - centre) * (k - centre) ).ToArray() );
 	}
 
 	/// <summary>
@@ -136,7 +126,7 @@ public static class SignMaskShaping
 	// [BIN:TPW-EXE:0x005EA9DC..0x005EAA40 horizontal pass] for pixel x the taps run over [max(0, x - c), min(w - 1, x + n - c - 1)], tap index i - x + c, summed from 0.0 in source order and truncated with _ftol; the vertical pass 0x5EAAC1..0x5EAB1F does the same along each column of the row-blurred mask
 	public static void Blur( byte[] mask, int width, int height, float sigma )
 	{
-		var kernel = Kernel( sigma );
+		var kernel = KernelTaps( sigma );
 		// [BIN:TPW-EXE:0x005EA8A0 empty kernel] with no taps (a parameter of -1.2 or less) both passes still run, every tap range [x - c, x + n - c - 1] is empty, and each pixel is written as the truncated empty sum 0
 		if ( kernel.Length == 0 )
 		{
@@ -160,13 +150,13 @@ public static class SignMaskShaping
 		}
 	}
 
-	private static byte Convolve( byte[] line, int at, int length, double[] kernel, int centre )
+	private static byte Convolve( byte[] line, int at, int length, Ext[] kernel, int centre )
 	{
 		var first = Math.Max( 0, at - centre );
 		var last = Math.Min( length - 1, at + kernel.Length - centre - 1 );
-		var sum = 0.0;
+		var sum = Ext.Zero;
 		for ( var i = first; i <= last; i++ )
-			sum += line[i] * kernel[i - at + centre];
-		return (byte)(long)sum;
+			sum += Ext.FromInt( line[i] ) * kernel[i - at + centre];
+		return unchecked( (byte)sum.Truncate() );
 	}
 }

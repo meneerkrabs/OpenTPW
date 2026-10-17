@@ -365,6 +365,8 @@ internal sealed partial class GameFlow : IDisposable
 				GameAudio.EnterPark( levelName, level.Seed.SoundStream );
 		StartKind = level.Park?.Start.Kind;
 		if ( level.Guests != null )
+			level.Guests.Voiced += ( guest, eventId ) => GameAudio.PlayGuestVoice( eventId, new Vector3( guest.X * 10, 0, guest.Y * 10 ) );
+		if ( level.Guests != null )
 			level.Guests.Pranked += ( guest, prank ) =>
 			{
 				if ( prank == GuestDecision.Prank.Stinkbomb )
@@ -410,6 +412,7 @@ internal sealed partial class GameFlow : IDisposable
 			Log.Trace( dropped );
 		}
 		AttachProgress( level );
+		if ( original && visit == null ) TakeRestartSnapshot( level );
 		return level;
 	}
 
@@ -433,8 +436,8 @@ internal sealed partial class GameFlow : IDisposable
 		CreateOptions = CreateOptions,
 		CreateLoad = stack => FrontEndMenu.CreateLoadScreen( stack, Strings, FindLoadEntries(), entry => QueueProgressLevel( entry.Level, () => LoadPark( entry, overFrames: true ) ) ),
 		GoOnline = WhenOnline( ShowOnline ),
-		// [EXT:pause-menu-restart] Restart Park restarts an Instant Action park of a theme (no progress is spent); a Full Simulation park would pay its theme's entry cost again, which is not traced, so its entry stays disabled
-		RestartPark = AutomaticEligible( level ) && level.Park is { Start.Kind: ParkStartKind.InstantAction } ? () => RequestParkStart( level.LevelName, GameMode.InstantAction ) : null,
+		// Restart Park reloads the restart snapshot in every original park but the read-only visit (the original's pause menu 0x48C150 lists the entry for every game type except the online visit)
+		RestartPark = RestartEligible( level ) ? () => RestartCurrentPark( level ) : null,
 		PublishPark = WhenOnline( stack => CreateOnlineScreens( stack ).ShowPublish() ),
 		ListSorts = listSorts,
 		OptionsChanged = () => { if ( PersistSettings ) GameOptions.Current.Save( OptionsPath ); },
@@ -443,6 +446,8 @@ internal sealed partial class GameFlow : IDisposable
 		WindowClosed = window => Advisor?.OnWindowClosed( window ),
 		HelpPosted = message => Advisor?.PostHelp( message ),
 		HelpWithdrawn = message => Advisor?.WithdrawHelp( message ),
+		ModeChanged = () => Advisor?.OnModeChanged(),
+		AdvisorSaysStaffMessages = () => Advisor != null,
 		HelpKeyPressed = () => Advisor?.OnHelpKeyPressed(),
 	};
 

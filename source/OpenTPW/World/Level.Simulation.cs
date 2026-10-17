@@ -13,7 +13,8 @@ public partial class Level
 		PlacedRide?.Simulate( deltaTime );
 		Objects.Simulate( deltaTime );
 		Park?.FixedTick();
-		if ( Park != null && Guests != null )
+		// [EXT:tpi-viewer] Theme Park Inc's weather is not traced (its states and keys differ from the Theme Park World weather this class ports), so a Theme Park Inc park has none
+		if ( Park != null && Guests != null && !Park.Economy.Rules.ThemeParkInc )
 		{
 			Weather ??= new ParkWeather( Park.Economy.Settings.Standard, Seed.WeatherStream, Guests.Grid.Cells.Width, Guests.Grid.Cells.Height );
 			Weather.AdvanceTo( Park.Economy.Tick );
@@ -24,5 +25,7 @@ public partial class Level
 			StaffWorld?.Tick( deltaTime );
 		UpdateTrackRendering( deltaTime );
 		UpdateTourRendering( deltaTime );
+		// [BIN:TPW-EXE:0x00516641 turn's end] the park turn ends by freeing the things that asked for their destruction, last request first (0x00516310, 0x00516200)
+		Things.DestroyQueued();
 	} );
 }

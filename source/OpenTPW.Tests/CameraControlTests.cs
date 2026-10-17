@@ -17,7 +17,7 @@ public class CameraControlTests
 	public void EdgesMoveAndCornersHaveTheSameSpeed()
 	{
 		var edge = Camera(); edge.Update( Frame( 0, 300 ), Options() );
-		Assert.AreEqual( 2.4f, edge.Target.Length, 0.0001f );
+		Assert.AreEqual( ParkCameraMode.PanSpeed( ParkCameraMode.HomeHeight ) * 0.1f, edge.Target.Length, 0.0001f, "the original's settled pan speed, 0.02 x sqrt(zoom) per millisecond" );
 		var corner = Camera(); corner.Update( Frame( 0, 0 ), Options() );
 		Assert.AreEqual( edge.Target.Length, corner.Target.Length, 0.0001f );
 		Assert.AreNotEqual( edge.Target, corner.Target );
@@ -48,7 +48,7 @@ public class CameraControlTests
 		foreach ( var blocked in new[] { active with { HasFocus = false }, active with { Modal = true }, active with { MousePosition = new Vector2( -1, 0 ) }, active with { MousePosition = new Vector2( 1000, 0 ) }, active with { TextEntry = true }, active with { CaptureMouse = true, CaptureKeyboard = true } } )
 		{
 			var camera = Camera(); camera.Update( blocked, Options() );
-			Assert.AreEqual( Vector3.Zero, camera.Target ); Assert.AreEqual( 42f, camera.Height ); Assert.AreEqual( -135f, camera.Yaw );
+			Assert.AreEqual( Vector3.Zero, camera.Target ); Assert.AreEqual( 110f, camera.Height ); Assert.AreEqual( -90f, camera.Yaw );
 		}
 		var drag = Camera(); var right = Frame() with { RightButton = true, MouseDelta = new Vector2( 100, 0 ) };
 		drag.Update( right, Options( ScrollMode.RightButton ) );
@@ -69,18 +69,29 @@ public class CameraControlTests
 		Assert.AreEqual( right.Target, large.Target );
 	}
 
+	/// <summary>[BIN:TPW-EXE:0x42aab0 locate jump] every locate and map jump of the original moves only the target (the zoom and yaw arguments are null), so no focus changes the zoom or the yaw and the original has no view-cycle button.</summary>
+	[TestMethod]
+	public void FocusMovesOnlyTheTargetAndLeavesZoomAndYaw()
+	{
+		var camera = Camera(); camera.SetPose( Vector3.Zero, 90, 33 );
+		var height = camera.Height; var yaw = camera.Yaw;
+		camera.Focus( new Vector3( 10, -20, 5 ) );
+		Assert.AreEqual( new Vector3( 10, -20, 0 ), camera.Target ); Assert.AreEqual( height, camera.Height ); Assert.AreEqual( yaw, camera.Yaw );
+	}
+
 	[TestMethod]
 	public void RotationZoomHomeFocusAndDeltaAreBounded()
 	{
-		var camera = Camera(); camera.Update( Frame() with { RotateRight = true, RotateRightPressed = true }, Options() ); Assert.AreEqual( -45f, camera.Yaw );
-		camera.Update( Frame() with { RotateRight = true }, Options() ); Assert.AreEqual( -45f, camera.Yaw );
-		camera.Update( Frame() with { RotateRight = true, DeltaSeconds = 10 }, new GameOptions { Rotation = RotationMode.Smooth } ); Assert.AreEqual( -36f, camera.Yaw );
-		camera.Update( Frame() with { Zoom = 1 }, Options() ); Assert.AreEqual( 39.6f, camera.Height, 0.0001f );
+		var camera = Camera(); camera.Update( Frame() with { RotateRight = true, RotateRightPressed = true }, Options() ); Assert.AreEqual( 0f, camera.Yaw );
+		camera.Update( Frame() with { RotateRight = true }, Options() ); Assert.AreEqual( 0f, camera.Yaw );
+		var smooth = ParkCameraMode.RotationSpeed * 0.1f;
+		camera.Update( Frame() with { RotateRight = true, DeltaSeconds = 10 }, new GameOptions { Rotation = RotationMode.Smooth } ); Assert.AreEqual( smooth, camera.Yaw, 1e-3f, "0.002 radians per millisecond, the frame capped at 0.1 s" );
+		camera.Update( Frame() with { Zoom = 1 }, Options() ); Assert.AreEqual( 105f, camera.Height, 0.0001f, "0.05 zoom units per millisecond" );
+		camera.Update( Frame() with { Wheel = 2 }, Options() ); Assert.AreEqual( 85f, camera.Height, 0.0001f, "ten per wheel notch" );
+		camera.Update( Frame() with { Wheel = 20 }, Options() ); Assert.AreEqual( 70f, camera.Height, "the zoom stops at 70" );
+		camera.Update( Frame() with { Wheel = -20 }, Options() ); Assert.AreEqual( 130f, camera.Height, "and at 130" );
 		camera.Focus( new Vector3( 999, -999, 7 ) ); Assert.AreEqual( new Vector3( 32, -32, 0 ), camera.Target );
-		camera.Update( Frame() with { Home = true }, Options() ); Assert.AreEqual( Vector3.Zero, camera.Target ); Assert.AreEqual( 42f, camera.Height );
-		Assert.AreEqual( ParkCameraView.Close, camera.CycleView() ); Assert.AreEqual( 20f, camera.Height );
-		Assert.AreEqual( ParkCameraView.Overview, camera.CycleView() ); Assert.AreEqual( 100f, camera.Height );
-		Assert.AreEqual( ParkCameraView.Standard, camera.CycleView() );
+		camera.Update( Frame() with { Home = true }, Options() ); Assert.AreEqual( Vector3.Zero, camera.Target ); Assert.AreEqual( 110f, camera.Height ); Assert.AreEqual( -90f, camera.Yaw );
 		camera.Update( Frame() with { Forward = 1, DeltaSeconds = float.NaN }, Options() ); Assert.AreEqual( Vector3.Zero, camera.Target );
 	}
 }

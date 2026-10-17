@@ -19,7 +19,9 @@ public sealed class FreeWalkCameraMode : CameraMode
 		Position = ground + Vector3.Up * EyeHeight;
 		Yaw = float.IsFinite( heading.X ) && float.IsFinite( heading.Y ) && heading.X * heading.X + heading.Y * heading.Y > 0
 			? MathF.Atan2( heading.Y, heading.X ).RadiansToDegrees() : 0;
-		FieldOfView = 55;
+		// [BIN:TPW-EXE:0x42a990 walk projection] the walk view is the camcorder mode of the same camera, so it shares the one projection
+		FieldOfView = OriginalProjection.FieldOfView;
+		UsesOriginalProjection = true;
 		Rotation = Rotation.From( 0, Yaw, 0 );
 	}
 

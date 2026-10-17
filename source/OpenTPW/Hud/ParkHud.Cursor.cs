@@ -57,7 +57,7 @@ public sealed partial class ParkHud
 		if ( level.AreaClearTool is { IsActive: true } )
 			return OriginalPointers.TypeOf( OriginalPointers.ForTool( 0x3A ) ?? 2 );
 		// the tool mode of the original: 4 places a blueprint, the cell tool's own mode is the cell type it writes (path 1, queue 3, kart track 11, water track 16)
-		var mode = level.BuildEntry != null ? 4 : level.CellTool.IsActive ? (int)level.CellTool.Mode : level.IsCoasterToolActive ? 11 : 0;
+		var mode = level.BuildEntry != null ? (level.IsMoving ? MoveToolMode : 4) : level.CellTool.IsActive ? (int)level.CellTool.Mode : level.IsCoasterToolActive ? 11 : 0;
 		var pointer = OriginalPointers.ForTool( mode, noPlace: level.BuildEntry != null && placementRefused, cash: CashPointerShown( mode ) );
 		return OriginalPointers.TypeOf( pointer ?? 2 );
 	}
@@ -69,6 +69,9 @@ public sealed partial class ParkHud
 	// [BIN:TPW-EXE:0x523662 blueprint cash flag] the hover handler 0x5234d0 clears the flags 0x816d4c, 0x816d50, 0x816d5c and 0x816d60 on entry; in the place mode (4) it reads the tool's cost (0x52fbc0, the price 0x52fb90 stored from +0x1b8) and the balance (0x6ad810) and sets 0x816d50 and the cash flag 0x816d5c when the cost is greater, the replay flag 0x785a2c being clear
 	// [BIN:TPW-EXE:0x53593f line cash flag] the cell validator 0x535670 sets the same flags and refuses the cell (returns 1) when the line's cost so far exceeds the balance (0x535927: cost > balance, equal allowed); the pointer switch 0x52f950 lets the cash flag override the tool's own pointer and noplace
 	private bool CashPointerShown( int mode ) => CashPointerShown( mode, BuildActionCost, Status.Money, level.CellTool.IsActive ? level.CellTool.Ghost : null );
+
+	/// <summary>The interface mode of the Move tool (<c>0x3b</c>), which draws the build tool's placing pointer (<c>0x52f950</c>: 4 and 0x3b share it) but never the cash pointer: its hover (<c>0x523940</c>) has no cash flag.</summary>
+	internal const int MoveToolMode = 0x3b;
 
 	internal static bool CashPointerShown( int mode, long? cost, long balance, SegmentResult? ghost ) => mode switch
 	{

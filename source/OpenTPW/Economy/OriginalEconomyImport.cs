@@ -84,7 +84,7 @@ public sealed class OriginalEconomyImport
 		ReportNotImported( save, evidence );
 		// [BIN:STP-PPC:0x10106708 world reader] mParkClosed is restored with the world variables (0 = open)
 		var closed = world.Variables.ParkClosed != 0;
-		evidence.Add( $"Park {(closed ? "closed" : "open")} (mParkClosed {world.Variables.ParkClosed}), {world.Variables.NumberOfVisitorsToDate} visitors to date (not imported)." );
+		evidence.Add( $"Park {(closed ? "closed" : "open")} (mParkClosed {world.Variables.ParkClosed}), {world.Variables.NumberOfVisitorsToDate} visitors to date (the guest simulation's count)." );
 		return new OriginalEconomyImport( save.Economy, closed, objects, fixedItems, staff, evidence, things.ToDictionary( pair => pair.Key, pair => pair.Value.Id ) );
 	}
 
@@ -95,7 +95,9 @@ public sealed class OriginalEconomyImport
 		var date = ParkCalendar.DateTimeAt( economy.Tick );
 		var calendar = world.Calendar;
 		var epoch = (ParkCalendar.Epoch - new DateTime( 1601, 1, 1 )).Ticks;
-		var matches = calendar.FunnyTimeStart == epoch && calendar.FunnySecsPerRealSec == ParkCalendar.SecondsPerTurn * 4
+		// [BIN:TPW-EXE:0x4F7E80 calendar constructor] an unplayed park (restart.INTS) keeps the constructor's calendar: the park's start (2000-01-01), month cache 0, day cache -1; the first update fills the caches
+		var unplayed = calendar.IsInitial && world.Variables.GameTick == 0;
+		var matches = unplayed || calendar.FunnyTimeStart == epoch && calendar.FunnySecsPerRealSec == ParkCalendar.SecondsPerTurn * 4
 			&& calendar.MonthAtLastUpdate == date.Month - 1 && calendar.DayAtLastUpdate == date.Day;
 		evidence.Add( $"Park turn {world.Variables.GameTick} imported ({ParkCalendar.ToDate( economy.Tick )}); the save's calendar (rate {calendar.FunnySecsPerRealSec}, month cache {calendar.MonthAtLastUpdate}, day cache {calendar.DayAtLastUpdate}) {(matches ? "agrees" : "does not agree")} with that date." );
 		// [BIN:TPW-EXE:0x0051710F world generator word] the world writer saves the u32 at world +0x1DA708 raw under the name "mRandomSeed" (0x00517123 with the name at 0x00762924) and the loader reads it back raw (0x00517DFC): it is the whole state of the one world generator 0x00516330, which the park continues from
@@ -355,7 +357,7 @@ public sealed class OriginalEconomyImport
 			if ( points != staff.GradePercentage )
 				adjusted.Add( $"{saved.Model} thing {saved.Id} grade percentage {staff.GradePercentage} imported as {points} (OpenTPW promotes at {ParkStaff.TrainingPointsPerGrade})" );
 			var name = staff.Name.Length is > 0 and <= StaffMember.MaximumNameLength ? staff.Name : null;
-			var member = economy.Staff.AddImported( type, staff.Grade, points, happiness, StaffState.Idle, hired, energy, name );
+			var member = economy.Staff.AddImported( type, staff.Grade, points, happiness, StaffState.Idle, hired, energy, name, thingId: saved.Id );
 			// [DATA:SaveThingBase] exact base position is in 1/256-cell units, including the sub-cell offset.
 			member.CellX = saved.Base.X / 256f;
 			member.CellY = saved.Base.Y / 256f;
@@ -713,7 +715,7 @@ public sealed class OriginalEconomyImport
 		// the guests are restored by the level's guest simulation (GuestSimulation.ImportOriginal), which reports its outcome through Report
 		var byState = string.Join( ", ", save.Guests.GroupBy( guest => guest.State ).OrderBy( group => group.Key ).Select( group => $"{group.Count()} in state {group.Key}" ) );
 		evidence.Add( $"{save.GuestCount} saved guests{(byState.Length == 0 ? "" : $" ({byState})")} are imported by the guest simulation when a level attaches it." );
-		// [EXT:original-engine-state-dumps] the raw dumps of the original's own engine structures (the Scripts SCPT records, the RSSE script state, the Particles pools, the Sound mixer state, the message-centre lists and the Track and Flying ride chunks) are not restored: OpenTPW has different engines that restart from the archives, so a dump has no counterpart to receive it; the widths are traced (SaveBlockWidths) only to split the save
+		// [EXT:original-engine-state-dumps] the raw dumps of the original's own engine structures (the Scripts SCPT records, the RSSE script state (read in full by SaveRsseBlock, not restored), the Particles pools, the Sound mixer state, the message-centre lists and the Track and Flying ride chunks) are not restored: OpenTPW has different engines that restart from the archives, so a dump has no counterpart to receive it; the widths are traced (SaveBlockWidths) only to split the save
 		// [APPROX:SAVE-010] the advisor presentation block and the decoded but unapplied camera, first clock word (the second is the advisor clock, applied when the automatic advisor attaches), vanilla time, game-system words, cheat bytes, advisor scoring and UI record count (SaveRuntimeBlocks: OpenTPW's start camera looks at its own focus, not the saved point of interest), the weather, park analyser, tag system, mechanic HQ and UI message receiver things, the world state, arrival variables and arrival bytes, the calendar session start and the advisor controller's time signature, sound, three raw words, mRequestedLastTutorial and mMessagePlaying are not imported (its current record is imported as the last tutorial advice when an automatic advisor attaches), nor are its pending advice and history when no automatic advisor is attached; of the cell map only path cells, occupancy, MAP attributes and each path cell's texture and turn are read (so a handyman walking to or sweeping litter is imported idle), and a saved path tile is drawn only while the cell's path neighbours equal the saved ones and its turn is 0/90/180/270 (otherwise the tile is chosen from the neighbours) — evidence needed: the original's post-load reconstruction of the decoded values
 		var engineDumps = save.Layout.Blocks.Where( block => block.Block is SaveBlock.Scripts or SaveBlock.Particles or SaveBlock.MessageCentre or SaveBlock.TrackRides or SaveBlock.FlyingRides or SaveBlock.Rsse or SaveBlock.Sound ).ToList();
 		evidence.Add( $"[EXT:original-engine-state-dumps] Not restored (OpenTPW's engines restart from the archives): {string.Join( ", ", engineDumps.Select( block => $"{block.Block} {block.Length} bytes" ) )}." );
@@ -721,7 +723,7 @@ public sealed class OriginalEconomyImport
 		if ( save.RuntimeBlocks is { } blocks )
 			evidence.Add( $"[APPROX:SAVE-010] Runtime blocks decoded, not applied: camera zoom {blocks.Camera.Zoom}, yaw {blocks.Camera.YRotation}, flags 0x{blocks.Camera.Flags:X}, required point of interest ({blocks.Camera.RequiredPoi.X}, {blocks.Camera.RequiredPoi.Y}, {blocks.Camera.RequiredPoi.Z}), saved ({blocks.Camera.SavedPoi.X}, {blocks.Camera.SavedPoi.Y}, {blocks.Camera.SavedPoi.Z}), saved yaw {blocks.Camera.SavedYRotation}; clock words {string.Join( "/", blocks.ClockWords )} (the second is applied to the automatic advisor when it attaches), vanilla time {blocks.VanillaTime}, game system words {string.Join( "/", blocks.GameSystemWords )}, cheats {Convert.ToHexString( blocks.Cheats )}, advisor scoring {blocks.AdvisorScoring}, UI window records {blocks.UiRecords}." );
 		var variables = save.World.Variables;
-		evidence.Add( $"[APPROX:SAVE-010] World values not imported: world state {variables.WorldState}, arrival vehicle sizes {variables.ArrivalVehicleSize1}/{variables.ArrivalVehicleSize2}/{variables.ArrivalVehicleSize3}, current arrival vehicle thing {variables.CurrentArrivalVehicle}, arrival bytes {Convert.ToHexString( save.World.Arrivals )}, calendar session start {save.World.Calendar.SessionStart}." );
+		evidence.Add( $"[APPROX:SAVE-010] World values not imported: world state {variables.WorldState}, arrival vehicle sizes {variables.ArrivalVehicleSize1}/{variables.ArrivalVehicleSize2}/{variables.ArrivalVehicleSize3}, current arrival vehicle thing {variables.CurrentArrivalVehicle} (its script state is not restored, [EXT:original-engine-state-dumps]), arrival bytes {Convert.ToHexString( save.World.Arrivals )}, calendar session start {save.World.Calendar.SessionStart}." );
 		if ( save.Advisor is { } advisor )
 		{
 			var current = advisor.Current;

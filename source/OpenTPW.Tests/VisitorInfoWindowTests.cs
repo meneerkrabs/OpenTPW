@@ -62,8 +62,8 @@ public class VisitorInfoWindowTests
 	public void TheWindowShowsTheVisitorsCountersCashBarAndThoughtAndFollowsTheArrows()
 	{
 		var hud = VisitorWorldSelectionTests.Fixture( out var simulation, out _ );
-		var first = new Guest( 1, 0 ) { State = GuestState.WalkingAround, Money = 250, RidesTaken = 3, ShopsVisited = 2, SideshowsVisited = 1, SideshowsWon = 1, Happiness = 50, Thought = GuestThought.Thirsty };
-		var second = new Guest( 8, 0 ) { State = GuestState.Queueing, Money = 40 };
+		var first = new Guest( 1, 0 ) { VisitorNumber = 1, State = GuestState.WalkingAround, Money = 250, RidesTaken = 3, ShopsVisited = 2, SideshowsVisited = 1, SideshowsWon = 1, Happiness = 50, Thought = GuestThought.Thirsty };
+		var second = new Guest( 8, 0 ) { VisitorNumber = 8, State = GuestState.Queueing, Money = 40 };
 		SetGuests( simulation, first, second );
 
 		Assert.IsTrue( hud.OpenVisitorInfoWindow( first ) );

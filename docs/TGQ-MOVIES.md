@@ -387,7 +387,7 @@ and a hash of the presented planes (no window, GPU or audio device);
   of the last video frame and the end of the audio, holding the last frame:
   `plan.tgq` shows its final frame for ~12.9 s while its audio finishes. The
   original player's behaviour here is unknown.
-- **Presentation**: the original player's colour tables (`TqiColour`) and its 16-bit 5-6-5 packing on the CPU to RGBA, uploaded to a
+- **Presentation**: the original player's colour tables (`TqiColour`) at full 8-bit colour (`[EXT:movie-full-color]`; the original's 16-bit packing is documented below and kept as a tested helper) on the CPU to RGBA, uploaded to a
   320×352 texture and drawn with the existing fullscreen-triangle blit shader
   into a centred viewport at the original's display aspect 640:352 (the 320×352
   frames are shown at twice their width, as the original's movie box does; see
@@ -621,8 +621,21 @@ matrix builder 0x6710C0, block decoder 0x6747D0, transform passes 0x67673C/0x676
   16-bit field. The low half of an entry is the rounded field, `min((v + 2^(7−b)) >> (8−b), 2^b − 1)`; when the surface has
   at most 16 bits per pixel the high half is the truncated field `v >> (8−b)`. The row writer `0x675D90` handles two pixels
   per 32-bit word and takes the low half for the first (even column) and the high half for the second (odd column), so
-  even columns round and odd columns truncate. OpenTPW does the same for a 5-6-5 display (`TqiColour.Pack`,
-  `TqiFrame.WriteDisplayRgba32`) and expands the fields back to 8 bits by bit replication for its 32-bit texture.
+  even columns round and odd columns truncate. OpenTPW reproduces this for a 5-6-5 display (`TqiColour.Pack`,
+  `TqiFrame.WriteDisplayRgba32`, fields expanded back to 8 bits by bit replication) as a tested helper, but presents movies at full
+  colour by default (`[EXT:movie-full-color]`, user-approved 2026-10-17: the original packs to its 16-bit surface, which bands the
+  gradients and does not suit upscaled movies; `MoviePresenter.DisplayFormat` is null unless set).
+  **Display depth** (read): the window setup `0x44E080` passes `16 + 16 × (start-up flag 0x200000)` as the DirectDraw display depth
+  (`0x44DF20` to `SetDisplayMode` in `0x563460`), and the option routine `0x44D8F0` sets that flag from `RENDER32` (`0x7858A8`, between
+  `MIPMAP` and `TEXTURE32` in the key table at `0x7445F0`), so the Low, Medium and High presets (`RENDER32 0`) run 16 bits and only
+  an edited file or the Enhanced preset (`1`) a 32-bit display. The colour mode `0x670C20` picks the 16-bit writers (`0x671800`,
+  `0x671940`, row writers `0x67519D`/`0x675579`) for a surface of at most 16 bits and the 32-bit writers (`0x6718A0`, rows `0x67538B`/`0x675767`,
+  one pixel per word) otherwise; with 8-bit fields the same tables hold the value unchanged, so a 32-bit display shows no banding
+  (`MoviePresenter.OriginalDisplayFormat`: packed for `RENDER32` 0, unpacked for 1). A windowed start-up (flag bit 0) takes the
+  desktop format instead, which is not modelled.
+  **Replacement movies**: the only mechanism is a `.tgq` of the same name in a Movies folder of the `--cd-data` overlay (`MovieLibrary`, searched after the install's own folder, so
+  it only fills a missing movie); there is no loader for other formats or for the texture pack's recorded movies (a separate manual download). The presenter
+  sizes its texture from the file and fits it into the original box and the `[EXT:movie-letterbox]` letterbox, so a higher-resolution `.tgq` is shown at its own resolution.
   The 5-6-5 layout is an assumption (the masks come from the DirectDraw surface; every common 16-bit display is 5-6-5);
   the export tools (`--export-tgq-png`) keep the unpacked 8-bit values.
 
@@ -641,8 +654,8 @@ frames), so the FPU precision the game runs movies at stays an assumption.
 
 ## Remaining gates
 
-The x87 precision control the game runs movies with (53-bit assumed, see above), the display's channel layout (the packing is read; 5-6-5
-is assumed, the masks come from the DirectDraw surface), the 0x100000 open flag that would replace the default brightness, what the original
+The x87 precision control the game runs movies with (53-bit assumed, see above), the display's channel layout for the original packing (read; 5-6-5
+is assumed, the masks come from the DirectDraw surface; OpenTPW presents full colour either way), the 0x100000 open flag that would replace the default brightness, what the original
 does with the audio of `plan.tgq` after its last frame (see "End of a movie"), the layout of `dialog.tcf` and what it can switch, and the
 window-mode origin correction of the picture box (a window is not an original mode). None of these are verified.
 

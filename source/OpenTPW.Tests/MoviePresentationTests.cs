@@ -103,6 +103,13 @@ public class MoviePresentationTests
 	}
 
 	[TestMethod]
+	public void TheOriginalPacksOnlyOnAnOption0Display()
+	{
+		Assert.AreEqual( TqiDisplayFormat.Rgb565, MoviePresenter.OriginalDisplayFormat( 0 ), "the original's presets run a 16-bit display" );
+		Assert.IsNull( MoviePresenter.OriginalDisplayFormat( 1 ), "a 32-bit display keeps the colour tables' 8-bit values" );
+	}
+
+	[TestMethod]
 	public void PackedChannelsStayWithinOneFieldStepOfTheTableValue()
 	{
 		for ( var value = 0; value < 256; value++ )
@@ -135,23 +142,29 @@ public class MoviePresentationTests
 	}
 
 	[TestMethod]
-	public void OriginalMovieFrameDisplayCaptureMatchesThePin()
+	public void PresenterShowsFullColourByDefaultAndTheOriginalPackingOnRequest()
 	{
-		// A silent capture of bf.tgq frame 127 as the 16-bit display shows it (the colour tables' 8-bit values packed to 5-6-5).
+		// A silent capture of bf.tgq frame 127 as presented: full 8-bit colour by default ([EXT:movie-full-color]); the original's
+		// 16-bit packing of the same frame stays reproducible and pinned.
 		var movie = new TgqMovieFile( System.IO.File.OpenRead( System.IO.Path.Combine( OriginalMovieDirectory(), "bf.tgq" ) ) );
 		var frame = movie.DecodeVideoFrame( 127 );
-		var shown = new byte[frame.Width * frame.Height * 4];
-		frame.WriteDisplayRgba32( shown, TqiDisplayFormat.Rgb565 );
-		var plain = new byte[shown.Length];
+		var plain = new byte[frame.Width * frame.Height * 4];
 		frame.WriteRgba32( plain );
-		CollectionAssert.AreNotEqual( plain, shown );
-		for ( var pixel = 0; pixel < shown.Length / 4; pixel++ )
+		var shown = new byte[plain.Length];
+		MoviePresenter.ToRgba( frame, null, shown );
+		CollectionAssert.AreEqual( plain, shown );
+		Assert.AreEqual( "51E4375FF971DB435DA81D19A96C18D8702BE12F6EE8B1C3D557416F1B8D7209", System.Convert.ToHexString( System.Security.Cryptography.SHA256.HashData( shown ) ) );
+
+		var packed = new byte[plain.Length];
+		MoviePresenter.ToRgba( frame, TqiDisplayFormat.Rgb565, packed );
+		CollectionAssert.AreNotEqual( plain, packed );
+		for ( var pixel = 0; pixel < packed.Length / 4; pixel++ )
 		{
-			// Every shown channel is a replicated 5- or 6-bit field.
-			Assert.AreEqual( shown[pixel * 4] & 7, shown[pixel * 4] >> 5 );
-			Assert.AreEqual( shown[pixel * 4 + 1] & 3, shown[pixel * 4 + 1] >> 6 );
+			// Every packed channel is a replicated 5- or 6-bit field.
+			Assert.AreEqual( packed[pixel * 4] & 7, packed[pixel * 4] >> 5 );
+			Assert.AreEqual( packed[pixel * 4 + 1] & 3, packed[pixel * 4 + 1] >> 6 );
 		}
-		Assert.AreEqual( "01EF358E76F64111233E933D9394BE6D178D6C75E5DF6A98DEA084E9530BDE91", System.Convert.ToHexString( System.Security.Cryptography.SHA256.HashData( shown ) ) );
+		Assert.AreEqual( "01EF358E76F64111233E933D9394BE6D178D6C75E5DF6A98DEA084E9530BDE91", System.Convert.ToHexString( System.Security.Cryptography.SHA256.HashData( packed ) ) );
 	}
 
 	private static string OriginalMovieDirectory()

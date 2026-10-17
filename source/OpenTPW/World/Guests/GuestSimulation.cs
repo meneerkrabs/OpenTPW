@@ -2494,7 +2494,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			if ( !SetQueueDestination( guest, attraction, 0, StandPoint( attraction ), toEntrance: true ) )
 			{
 				Log?.Warning( "The player has removed the path from under me and I can no longer get into object" );
-				DismissFromQueue( guest, attraction, GuestThought.None );
+				DismissFromQueue( guest, attraction, GuestThought.None, QueueEndReason.NoPlace );
 				return;
 			}
 			guest.State = GuestState.Boarding;

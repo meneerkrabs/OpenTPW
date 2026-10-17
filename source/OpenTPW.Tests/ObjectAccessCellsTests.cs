@@ -426,6 +426,7 @@ public class ObjectAccessCellsTests
 			const BindingFlags Private = BindingFlags.Instance | BindingFlags.NonPublic;
 			typeof( Level ).GetField( "<Objects>k__BackingField", Private )!.SetValue( level, objects );
 			typeof( Level ).GetField( "<Guests>k__BackingField", Private )!.SetValue( level, simulation );
+			typeof( Level ).GetField( "<PathVariants>k__BackingField", Private )!.SetValue( level, new PathTileVariants() );
 			typeof( Level ).GetField( "resumeState", Private )!.SetValue( level, System.Runtime.CompilerServices.RuntimeHelpers.GetUninitializedObject( typeof( ParkResumeSnapshot ) ) );
 			typeof( Level ).GetMethod( "ConnectObjectsToGuests", Private )!.Invoke( level, null );
 			return new LevelResumed( level, cells, simulation, objects );
@@ -460,6 +461,7 @@ public class ObjectAccessCellsTests
 		for ( var turn = 0; turn < 3000 && guest.RidesTaken == 0; turn++ )
 		{
 			resumed.Simulation.Tick( tick );
+			bridge.HostStep();
 			script.Advance( tick );
 			walkedIn |= guest.State == GuestState.Boarding && guest.HasWaypoint && guest.Navigation.Original;
 		}

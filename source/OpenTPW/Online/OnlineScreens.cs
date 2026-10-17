@@ -1011,12 +1011,18 @@ public sealed class OnlineScreens
 		var markDelete = screen.Add( new UiButton { Id = "markDelete", Text = () => OnlineStrings.Get( OnlineLabel.MarkAllDelete ), Clicked = () => Mark( 2 ),
 			Bounds = new UiRect( 740, 1040, 340, 90 ), Anchor = UiAnchor.Center } );
 		// The three original bulk buttons (0xee5-0xee7).
-		screen.Add( new UiButton { Id = "markAllSend", Text = () => OnlineStrings.Get( OnlineLabel.MarkAllSend ),
-			Clicked = () => { foreach ( var entry in cards ) marks[entry.Path] = 1; }, Bounds = new UiRect( 265, 792, 154, 153 ), Anchor = UiAnchor.Center } );
-		screen.Add( new UiButton { Id = "markAllDelete", Text = () => OnlineStrings.Get( OnlineLabel.MarkAllDelete ),
-			Clicked = () => { foreach ( var entry in cards ) marks[entry.Path] = 2; }, Bounds = new UiRect( 438, 792, 153, 153 ), Anchor = UiAnchor.Center } );
-		screen.Add( new UiButton { Id = "unmarkAll", Text = () => OnlineStrings.Get( OnlineLabel.UnmarkAll ),
-			Clicked = () => marks.Clear(), Bounds = new UiRect( 610, 792, 154, 153 ), Anchor = UiAnchor.Center } );
+		// [EXT:ONLINE-UI] the original's table gives these controls (and the dialogs' 83 x 83 close button) a rectangle and no text: they are art buttons, at about 96 pixels
+		// wide on a 1280 x 720 screen, and the original's control text is not wrapped and is cut off at the control's bitmap. OpenTPW's labels do not fit that size on the
+		// button, so each button carries its label as a wrapped caption under it, inside the window's frame; the close button's own label shrinks to fit (UiTextFit)
+		void Bulk( string id, Func<string> label, Action clicked, UiRect rect )
+		{
+			screen.Add( new UiButton { Id = id, Clicked = clicked, Bounds = rect, Anchor = UiAnchor.Center } );
+			screen.Add( new UiLabel { Id = id + "Caption", Wrap = true, Font = fonts => fonts.Small, Align = UiAlign.Center, Text = label,
+				Bounds = new UiRect( rect.X + rect.Width / 2 - 86, rect.Bottom + 2, 172, 60 ), Anchor = UiAnchor.Center } );
+		}
+		Bulk( "markAllSend", () => OnlineStrings.Get( OnlineLabel.MarkAllSend ), () => { foreach ( var entry in cards ) marks[entry.Path] = 1; }, new UiRect( 265, 792, 154, 153 ) );
+		Bulk( "markAllDelete", () => OnlineStrings.Get( OnlineLabel.MarkAllDelete ), () => { foreach ( var entry in cards ) marks[entry.Path] = 2; }, new UiRect( 438, 792, 153, 153 ) );
+		Bulk( "unmarkAll", () => OnlineStrings.Get( OnlineLabel.UnmarkAll ), () => marks.Clear(), new UiRect( 610, 792, 154, 153 ) );
 		// The Send action sends the marked cards (all of them when none is marked) and deletes the marked-deleted ones;
 		// "Sending mails from outbox, please wait ..." is UITEXT 313.
 		var send = screen.Add( new UiButton { Id = "sendAll", Model = "b_sendall", Text = () => OnlineStrings.Ui( OnlineStrings.Send, "Send" ),

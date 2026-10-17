@@ -136,6 +136,7 @@ public sealed class BalloonRenderer : Entity
 		if ( !Visible || material == null || atlas == null || deleted )
 			return;
 		var now = Time.Now;
+		// [APPROX:GUEST-017] the balloons are placed in OpenTPW's guest order, where tp.exe walks its people list (0x00518F90), so which balloon takes which bob phase differs; the burst's first frame shows at the burst, where the script starts at its next tick
 		var view = Camera.ViewMatrix;
 		var right = new SVector3( view.M11, view.M21, view.M31 );
 		var up = new SVector3( view.M12, view.M22, view.M32 );

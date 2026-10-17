@@ -33,8 +33,9 @@ original save) is put back to Idle by `StaffPlacement.Reconcile`.
 
 Staff are sprites (`esprites.wad`), not MD2 models: Generic\Handymen `SPR_HA`; Generic\Mechanics `SPR_FA`, `SPR_OM`; Generic\Guards `SPR_GU`;
 Generic\Researchers `SPR_RE`; entertainers per theme (Jungle DI, EX, NA; Fantasy FL, GN, LA; Hallow DR, FK, HU; Space MO, SM, SP). The bank is
-`(NameIndex + Id)` modulo the folder's banks, where tp.exe draws a variant per candidate (`0x541f70`; GUEST-014). Clips follow the script table 0x75a418: stand slot 0, walk slot 1 (half rate for patrol and
-handyman walks), run slot 2, work slot 4 (sweep at half rate, repair an 8-frame loop, research 4 frames then hold), strike slot 5, the dangling cursor
-sprite slot 6 frames 0-3, the guard's catch and carry slots 7 and 8. Resting members have no sprite. Entertainer performances are the bank's multi-frame
-slots (GUEST-015); frame rates, the moving test and the position smoothing are GUEST-016. `StaffRenderer` draws one quad per member in one draw call with the
+the candidate's drawn variant (`0x541f70`: the first draw of the candidate constructor, mod the role's loaded banks), kept with the candidate and the hired member, saved as an optional field and imported from an original save's pool sub-type; a member without one derives it as `(NameIndex + Id)` modulo the folder's banks (GUEST-014).
+Clips are the scripts of the table 0x75a418 decoded in `StaffScripts` (`StaffAnimation.cs`): stand slot 0, walk slot 1 (the patrol walk shows each frame twice), run slot 2, work slot 4 (the sweep shows
+each of 4 frames twice, repair is an 8-frame loop, research loops 4 frames and four steps of frame 0), strike slot 5 (4 frames and six steps of frame 0, looping), the dangling cursor
+sprite slot 6 frames 0-3, the guard's catch then carry slots 7 and 8. Resting members have no sprite. Entertainer performances play the bank's performance program (intro and hold: GUEST-015). The sprite clock is
+`SpritePlayer` (0x475360): one step per rendered frame past the due time, 62 ms at creation, and a walking member's interval is 62 over its speed (doubled for the walk, 0x4FA2A0): 20 steps a cell walking, 10 running; the moving test and the position smoothing are GUEST-016. `StaffRenderer` draws one quad per member in one draw call with the
 guests' sprite shader and atlas loading and allocates nothing per frame once the members are known.

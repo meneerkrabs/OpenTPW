@@ -81,7 +81,7 @@ public class StaffPlacementTests
 		var member = f.Park.Staff.Members.Single( item => item.Id == candidate.Id );
 		Assert.AreEqual( employed + 1, f.Park.Staff.Members.Count );
 		Assert.AreEqual( (7.5f, 9.5f), (member.CellX, member.CellY) );
-		Assert.AreEqual( toolVariant, StaffSpriteRules.VariantKey( member.NameIndex, member.Id ), "the member keeps the sprite bank the cursor sprite showed" );
+		Assert.AreEqual( toolVariant, member.SpriteKey, "the member keeps the sprite bank the cursor sprite showed" );
 		Assert.AreEqual( StaffState.Idle, member.State );
 		Assert.AreEqual( (0, 0, ParkLitter.MapSize - 1, ParkLitter.MapSize - 1), member.PatrolArea, "the patrol rectangle is the whole map" );
 		Assert.AreEqual( (100f, 100f), (member.Happiness, member.Energy) );

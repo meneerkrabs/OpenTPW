@@ -12,10 +12,18 @@ namespace OpenTPW;
 /// </summary>
 public sealed class GuestRenderer : Entity
 {
-	/// <summary>Engine units per sprite pixel of a frame with 128 pixels per unit (kids ≈ 42 px tall ≈ 0.95 cell); a frame with other pixels-per-unit fields is scaled by 128 / A across and 128 / B down (<see cref="GuestAtlasFrame.ScaleX"/>). Approximation; the original zoom mapping is unknown.</summary>
-	public const float UnitsPerPixel = 0.045f;
-	/// <summary>Walk-cycle frames per cell walked (8 frames per 0.8 cells). Approximation.</summary>
-	public const float WalkFramesPerCell = 10f;
+	/// <summary>
+	/// Engine units per sprite pixel at scale 1 (a kid 43 pixels tall stands 1.9 engine units, 0.95 cell): 20 / 128 original units times 1 / cos(45 degrees), the original's
+	/// extent per sprite unit and its 90 degree projection (<see cref="SpriteScale"/>), times the model scale; a frame with other pixels-per-unit fields is scaled by 128 / A across and 128 / B down (<see cref="GuestAtlasFrame.ScaleX"/>).
+	/// </summary>
+	// [BIN:TPW-EXE:0x005890E0 sprite placement] [BIN:TPW-EXE:0x00578BE0 projection] 20 / 128 × √2 = 0.2210 original units a pixel, 0.04419 engine units; read from the quad placement and the projection builder, replacing the 0.045 that was fitted by eye
+	public static readonly float UnitsPerPixel = SpriteScale.EngineUnitsPerPixel;
+	/// <summary>
+	/// Walk-cycle steps per cell walked: the walk step sets the sprite's interval to 62 ms over twice the speed (the walk script doubles it, the run does not), so a sprite steps
+	/// 248 / (62 / (2 v)) times in a turn it covers v / 2.5098 cells in: 20.08 a cell, a run 10.04. The 8 frames of the walk script therefore span 0.4 cell.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004FA2A0 walk step] v = step length (16.16 per turn) x 3.829657e-05 (0x007006E8), doubled unless the guest runs (a smoothed speed word above 0, thing types 1 and 7); 0x004D41D0 sets the interval to trunc(62 / v) ms (0x007003A0), at most 250, applied by 0x004D4190; the sprite player 0x00475360 runs one script step per interval
+	public const float WalkFramesPerCell = 20.078f;
 	private const int VerticesPerGuest = 12;
 
 	private readonly GuestSimulation simulation;
@@ -185,7 +193,8 @@ public sealed class GuestRenderer : Entity
 
 	private (int Atlas, int Frame, bool Mirror, int Slot, int Direction, float Rotation) SelectSpriteAndSlot( Guest guest, SVector3 cameraRight, SVector3 cameraForward, SVector3 cameraUp = default )
 	{
-		var atlasIndex = guest.Type % atlases.Count;
+		// [BIN:TPW-EXE:0x004FB19E guest sprite variant] the kid set is the guest's own draw at its creation, a function of its thing id alone (GuestAppearance.KidSet), not of its peep type
+		var atlasIndex = GuestAppearance.KidSet( guest.Id, atlases.Count );
 		var atlas = atlases[atlasIndex];
 		var rightFlat = SVector2.Normalize( new SVector2( cameraRight.X, cameraRight.Y ) + new SVector2( 1e-6f, 0 ) );
 		var forwardFlat = SVector2.Normalize( new SVector2( cameraForward.X, cameraForward.Y ) + new SVector2( 0, 1e-6f ) );

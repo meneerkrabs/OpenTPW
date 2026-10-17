@@ -110,7 +110,9 @@ public class OriginalSaveImportTests
 			economy.Staff.Candidates.Select( candidate => (candidate.Type, candidate.NameIndex, candidate.Grade, candidate.ExpiresTick) ).ToArray() );
 		Assert.AreEqual( ParkCalendar.TickOfTurn( 740 + 4 * settings.TimeBetweenStaffUpdates + 1 ), economy.Staff.NextPoolUpdateTick );
 		Assert.IsTrue( import.Evidence.Any( line => line.StartsWith( "Staff pool imported: 2 candidates", StringComparison.Ordinal ) ) );
-		StringAssert.Contains( import.Evidence.Single( line => line.Contains( "[APPROX:SAVE-004]" ) ), "sub-types 2/0, on pointer 0, people in category 2/0/0/0/0, stop producing 0/0/0/0/0, opening pool generated 1." );
+		StringAssert.Contains( import.Evidence.Single( line => line.StartsWith( "Staff pool sub-types imported", StringComparison.Ordinal ) ), "variants: -1/0 (-1: a sub-type past the role's banks); the counts in category 2/0/0/0/0, stop producing 0/0/0/0/0 and the opening-pool flag True are recomputed" );
+		CollectionAssert.AreEqual( new[] { -1, 0 }, economy.Staff.Candidates.Select( candidate => candidate.Variant ).ToArray(), "the guard's sub-type 2 is past its one bank, the researcher's 0 is its bank" );
+		Assert.IsFalse( import.Evidence.Any( line => line.Contains( "[APPROX:SAVE-004]" ) ), "no candidate was on the pointer" );
 		// The imported candidates stay until their own turn and the pool refills on its own schedule.
 		economy.Advance( ParkCalendar.TickOfTurn( 700 + 4 * 130 + 1 ) - economy.Tick );
 		Assert.IsFalse( economy.Staff.Candidates.Any( candidate => candidate.Type == StaffType.Guard && candidate.NameIndex == 7 ) );
@@ -172,7 +174,7 @@ public class OriginalSaveImportTests
 		Assert.AreEqual( ParkCalendar.TickOfTurn( 648 ), researcher.HiredTick, "hired 2,430,000 park seconds after FunnyTimeStart = turn 648" );
 		Assert.AreEqual( 1, import.ImportedStaff );
 		Assert.IsFalse( import.ParkClosed );
-		foreach ( var id in new[] { "SAVE-004", "SAVE-010" } )
+		foreach ( var id in new[] { "SAVE-010" } )
 			Assert.IsTrue( import.Evidence.Any( line => line.Contains( $"[APPROX:{id}]" ) ), $"{id} is reported" );
 		Assert.IsTrue( import.Evidence.Any( line => line.StartsWith( "Research highest open groups imported as saved", StringComparison.Ordinal ) ), "the lab's highest groups are imported" );
 		Assert.IsFalse( import.Evidence.Any( line => line.Contains( "[APPROX:SAVE-006]" ) ), "no staff claim is left without its job" );
@@ -220,8 +222,8 @@ public class OriginalSaveImportTests
 		}
 		StringAssert.Contains( Line( "Attraction walk-away counts " ), "imported" );
 		StringAssert.Contains( Line( "Staff jobs-done counts " ), "need no import" );
-		var hq = Line( "[APPROX:SAVE-009]" );
-		foreach ( var value in new[] { "force strike ", "picked up ", "trained " } )
+		var hq = Line( "Staff HQ values read, nothing to import:" );
+		foreach ( var value in new[] { "force strike ", "trained " } )
 			StringAssert.Contains( hq, value );
 		var imported = Line( "Staff HQ imported:" );
 		foreach ( var value in new[] { "training budgets ", "strike levels ", "last considered on turns " } )
@@ -302,10 +304,10 @@ public class OriginalSaveImportTests
 		hq[^1] = 1;
 		var economy = new ParkEconomy( settings, EconomyTestData.Catalog(), ParkGameMode.FullSimulation, 1 );
 		var import = OriginalEconomyImport.Apply( economy, Park( settings, staffHq: hq ) );
-		var line = import.Evidence.Single( line => line.StartsWith( "[APPROX:SAVE-009]", StringComparison.Ordinal ) );
+		var line = import.Evidence.Single( line => line.StartsWith( "Staff HQ values read, nothing to import:", StringComparison.Ordinal ) );
 		StringAssert.Contains( import.Evidence.Single( line => line.StartsWith( "Staff HQ imported:", StringComparison.Ordinal ) ), "training budgets 0, 250, 0, 0, 0 (handyman, mechanic" );
-		StringAssert.Contains( line, "force strike 1, picked up 0" );
-		StringAssert.Contains( line, "trained 1." );
+		StringAssert.Contains( line, "force strike 1, trained 1" );
+		Assert.IsFalse( import.Evidence.Any( entry => entry.Contains( "[APPROX:SAVE-009]" ) ), "nobody was saved as picked up" );
 		Assert.AreEqual( 250, economy.Staff.GetTrainingBudget( StaffType.Mechanic ), "budget word 1 is the mechanics' (tp.exe 0x50c800)" );
 		Assert.IsTrue( Enum.GetValues<StaffType>().Where( type => type != StaffType.Mechanic ).All( type => economy.Staff.GetTrainingBudget( type ) == 0 ) );
 

@@ -287,6 +287,9 @@ public static class ParkSaveFile
 		/// <summary>The turn an original save recorded for the claim this member's job takes again once a world places it (absent: none).</summary>
 		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 		public long? ResumeClaimTurn { get; init; }
+		/// <summary>The sprite variant the member was hired with (<see cref="StaffMember.Variant"/>); absent for a member of an original save and in older saves.</summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public int? Variant { get; init; }
 		public required int Grade { get; init; }
 		public required int TrainingPoints { get; init; }
 		public required long HiredTick { get; init; }
@@ -693,6 +696,7 @@ public static class ParkSaveFile
 					Name = member.Name,
 					ResumeDestination = member.ResumeDestination is { } resume ? new[] { resume.X, resume.Y } : null,
 					ResumeClaimTurn = member.ResumeClaimTurn,
+					Variant = member.Variant >= 0 ? member.Variant : null,
 					Grade = member.Grade,
 					TrainingPoints = member.TrainingPoints,
 					HiredTick = member.HiredTick,
@@ -1029,6 +1033,7 @@ public static class ParkSaveFile
 			Name = member.Name,
 			ResumeDestination = member.ResumeDestination is [var resumeX, var resumeY] ? (resumeX, resumeY) : null,
 			ResumeClaimTurn = member.ResumeClaimTurn,
+			Variant = member.Variant ?? -1,
 			Grade = member.Grade,
 			TrainingPoints = member.TrainingPoints,
 			HiredTick = member.HiredTick,

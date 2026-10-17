@@ -13,4 +13,6 @@ determinism hash, every other pin and the saves are the same, and a run with the
   baseline and its acceptance thresholds (2σ of the seed spread to improve a target, 1σ to regress elsewhere) use the extended 20 + 60 days. In the baseline about 55% of the scenario's
   queue attempts board, 40% are rejected (mostly the dear shop's price) and the level parks' single ride saturates with waits of hundreds of turns.
 
+After merging the substep scheduler (#312): the observer hooks also cover the swept turn (`RemoveGone`, `FinishSweep`); `DeterminismTests.FixedRunHash` (now the composed pin) is unchanged with the observer on; `ScenarioFixedRunHash` and the whole baseline stayed the same, because the scenario and level-park runs use plain `Tick` loops that main's changes do not reach, so no re-pin was needed.
+
 Verified with the guest, queue and determinism tests and the report run on the four themes.

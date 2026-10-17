@@ -71,11 +71,15 @@ abandon reasons) and, with `--guest-report-json`, the stable machine-readable re
 `--guest-no-perf`, a machine-dependent `performance` block that is left out of comparisons). Two runs with the same options give the same JSON apart from `performance`.
 The plan scale (2 warm-up + 10 measured days, the default) takes about 20 s with the four level parks; `--guest-scale extended` (20 + 60 days) about 35 s.
 
+**Decision: two scales.** The plan scale (2 + 10 days) stays the quick default of `--guest-report`; `--guest-scale extended` (20 + 60 days) is the scale of the baseline and of every acceptance threshold on this page.
+
 **Why an extended scale.** A day is about 343 ticks, and a guest's exit counter runs about 120 s (about 21 days). At the plan's 2 + 10 days the scenario sees 3 to 8 queue attempts and
 no departures per seed, far too little for a spread to mean anything. The baseline and the thresholds below therefore use the extended scale (20 warm-up + 60 measured days); the plan
 scale is recorded for completeness.
 
 ## Baseline
+
+Re-measured after the substep scheduler and swept park turn (#312) and the walk changes arrived on main: every number below is unchanged, because the scenario and the level parks are driven by plain `GuestSimulation.Tick` loops, not the host's thing sweep. The report does not exercise the sweep; the pinned fixed runs in `DeterminismTests` do, and they hold with the observer on.
 
 Original policy, release build, 8 seeds per scenario. Reproduce with `--guest-scale extended`. The same seeds reproduce these numbers exactly; σ is the sample standard deviation over
 the 8 seeds, so it is the seed-to-seed variation a rule has to beat.

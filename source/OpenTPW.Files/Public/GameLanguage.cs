@@ -16,8 +16,11 @@ namespace OpenTPW;
 public sealed class GameLanguage
 {
 	public const string DefaultLanguage = "English";
-	/// <summary>Languages with verified original data: the European CD (English, Danish, French, German, Swedish) and the Benelux CD (Dutch).</summary>
-	public static readonly IReadOnlyList<string> ShippedLanguages = new[] { "English", "Danish", "Dutch", "French", "German", "Swedish" };
+	/// <summary>
+	/// Languages with verified original data: the European CD (English, Danish, French, German, Swedish), the Benelux CD
+	/// (Dutch), the Polish CD, the Spanish CD and the Korean EA Slim Pack CD.
+	/// </summary>
+	public static readonly IReadOnlyList<string> ShippedLanguages = new[] { "English", "Danish", "Dutch", "French", "German", "Korean", "Polish", "Spanish", "Swedish" };
 
 	private static GameLanguage? current;
 	private readonly string[] searchDirectories;
@@ -64,8 +67,9 @@ public sealed class GameLanguage
 	public static IReadOnlyList<string> Choosable() => Readable( Current.BaseDataDirectory, AvailableOverlay ?? Current.OverlayDataDirectory );
 
 	/// <summary>
-	/// The languages of <see cref="FindLanguages"/> whose character table OpenTPW can read; the Polish CD's table uses
-	/// a different layout (docs/LANGUAGES.md), so Polish is left out rather than failing when chosen.
+	/// The languages of <see cref="FindLanguages"/> whose character table OpenTPW can read; a language whose table
+	/// is damaged or in an unknown layout is left out rather than failing when chosen (the single-byte and the two-byte
+	/// layouts of the shipped languages are read, see <see cref="BFMUReader"/>).
 	/// </summary>
 	public static IReadOnlyList<string> Readable( string dataDirectory, string? overlayPath ) =>
 		FindLanguages( dataDirectory, overlayPath ).Where( name =>
@@ -259,6 +263,8 @@ public sealed class GameLanguage
 		{
 			if ( overlay.Length == 1 )
 				name = overlay[0].Name;
+			else if ( CopiedCdLanguages( dataDirectory, baseLanguages ) is { Length: 1 } copied )
+				name = copied[0];
 			else
 			{
 				var candidates = baseLanguages.Length > 0 ? baseLanguages : overlay.Select( entry => entry.Name ).ToArray();
@@ -322,6 +328,20 @@ public sealed class GameLanguage
 		return root == null ? null : FindEntry( root, Path.Combine( name, "Meshes", name ), true );
 	}
 
+	/// <summary>
+	/// The language of a game folder copied from a single-language CD whose full <c>Data</c> folder still carries the English folder next
+	/// to the CD's own (the Spanish and Korean CDs): the non-English language with a folder of its own beside <c>Data</c> (<c>Spanish</c>,
+	/// <c>Korean</c>, which holds the installer and the banner meshes). That language is the CD's speech and text, so it is the default
+	/// when no language is chosen.
+	/// </summary>
+	private static string[] CopiedCdLanguages( string dataDirectory, string[] baseLanguages )
+	{
+		var root = Path.GetDirectoryName( Path.TrimEndingDirectorySeparator( dataDirectory ) );
+		if ( root == null )
+			return Array.Empty<string>();
+		return baseLanguages.Where( name => !string.Equals( name, DefaultLanguage, StringComparison.OrdinalIgnoreCase ) && FindEntry( root, name, true ) != null ).ToArray();
+	}
+
 	private readonly record struct OverlayLanguage( string Name, string Directory, string DataDirectory, string? MeshDirectory );
 
 	private static IEnumerable<OverlayLanguage> OverlayLanguages( string? overlayPath )
@@ -332,11 +352,15 @@ public sealed class GameLanguage
 		// A single CD "<Lang>/data" folder.
 		if ( FindEntry( overlayPath, "Language", true ) is { } languageRoot )
 		{
-			foreach ( var directory in System.IO.Directory.EnumerateDirectories( languageRoot ).OrderBy( path => path, StringComparer.OrdinalIgnoreCase ) )
+			var parent = Path.GetDirectoryName( Path.TrimEndingDirectorySeparator( overlayPath ) );
+			var directories = System.IO.Directory.EnumerateDirectories( languageRoot ).OrderBy( path => path, StringComparer.OrdinalIgnoreCase ).ToArray();
+			// The full Data folder of the Spanish and Korean CDs: the CD's own language has a folder beside Data, and the English
+			// folder that stays in Data is not the CD's English (its speech is the CD's), so only languages with such a folder count.
+			var ownFolders = parent == null ? Array.Empty<string>() : directories.Where( directory => FindEntry( parent, CanonicalName( Path.GetFileName( directory ) ), true ) != null ).ToArray();
+			foreach ( var directory in ownFolders.Length > 0 ? ownFolders : directories )
 			{
 				var name = CanonicalName( Path.GetFileName( directory ) );
-				var parent = Path.GetDirectoryName( Path.TrimEndingDirectorySeparator( overlayPath ) );
-				var meshes = parent == null ? null : FindEntry( parent, Path.Combine( "Meshes", name ), true );
+				var meshes = parent == null ? null : FindEntry( parent, Path.Combine( "Meshes", name ), true ) ?? FindEntry( parent, Path.Combine( name, "Meshes", name ), true );
 				yield return new OverlayLanguage( name, directory, overlayPath, meshes );
 			}
 			yield break;
@@ -351,6 +375,21 @@ public sealed class GameLanguage
 			if ( directory == null )
 				continue;
 			yield return new OverlayLanguage( name, directory, dataDirectory!, FindEntry( languageFolder, Path.Combine( "Meshes", name ), true ) );
+		}
+
+		// The root of a single-language CD with a complete Data folder: "Data/Language/<Lang>" beside a "<Lang>" folder.
+		if ( FindEntry( overlayPath, "Data", true ) is { } cdData && FindEntry( cdData, "Language", true ) is { } cdLanguages )
+		{
+			foreach ( var languageFolder in System.IO.Directory.EnumerateDirectories( overlayPath ).OrderBy( path => path, StringComparer.OrdinalIgnoreCase ) )
+			{
+				var name = CanonicalName( Path.GetFileName( languageFolder ) );
+				// English is the installed game's own (the CD's Data folder only keeps it next to the CD's language); a language that has
+				// its own "<Lang>/data" tree is listed above
+				if ( string.Equals( name, "Data", StringComparison.OrdinalIgnoreCase ) || string.Equals( name, DefaultLanguage, StringComparison.OrdinalIgnoreCase )
+					|| FindEntry( languageFolder, "data", true ) != null || FindEntry( cdLanguages, name, true ) is not { } directory )
+					continue;
+				yield return new OverlayLanguage( name, directory, cdData, FindEntry( languageFolder, Path.Combine( "Meshes", name ), true ) );
+			}
 		}
 	}
 

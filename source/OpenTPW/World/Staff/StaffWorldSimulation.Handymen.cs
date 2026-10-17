@@ -40,6 +40,15 @@ public sealed partial class StaffWorldSimulation
 	// [BIN:TPW-EXE:0x0050B360 staff update] each staff thing in list order: the type's pre-update, then its state handler (4 mechanic 0x00505490 / 0x004DA490, 5 handyman 0x004D7060 / 0x004D73C0, 6 entertainer 0x004D4660 / 0x004D4810, 7 guard 0x004D6360 / 0x004D6410, 8 researcher 0x00502960 / 0x005029F0)
 	public void UpdateStaff( ParkEconomy economy, long turn )
 	{
+		BeginStaffTurn( economy, turn );
+		foreach ( var member in economy.Staff.Members.Where( economy.DrivenByWorld ).ToList() )
+			UpdateStaffMember( economy, member, turn );
+		EndStaffTurn( economy, turn );
+	}
+
+	/// <summary>The world's bookkeeping before a turn's member updates, and the members an original save resumes (see <see cref="IStaffWorld.BeginStaffTurn"/>).</summary>
+	public void BeginStaffTurn( ParkEconomy economy, long turn )
+	{
 		// the voices wait for the audio until it takes them; a run that never takes them keeps only the latest
 		if ( voices.Count > MaxQueuedVoices )
 			voices.RemoveRange( 0, voices.Count - MaxQueuedVoices );
@@ -47,75 +56,81 @@ public sealed partial class StaffWorldSimulation
 		// members loaded from an original save walk on to their saved destination and take back the claims of their jobs before any member updates
 		foreach ( var member in economy.Staff.Members.Where( member => member.ResumeDestination != null && member.Navigation == null && economy.DrivenByWorld( member ) ).ToList() )
 			Resume( economy, member );
-		foreach ( var member in economy.Staff.Members.Where( economy.DrivenByWorld ).ToList() )
+	}
+
+	/// <summary>What follows a turn's member updates: the resting count.</summary>
+	public void EndStaffTurn( ParkEconomy economy, long turn ) => CountRestingStaff( economy );
+
+	/// <summary>One member's update of a turn: its place, its pre-update and its state handler (nothing for a member the economy does not hand to this world).</summary>
+	public void UpdateStaffMember( ParkEconomy economy, StaffMember member, long turn )
+	{
+		if ( !economy.DrivenByWorld( member ) )
+			return;
+		var placed = member.Navigation == null;
+		if ( !Place( member ) )
+			return;
+		// the entertainers' and guards' pre-update moves their RegionFX row with them (the constructor puts it on the first cell)
+		economy.MoveStaffEffect( member, Cell( member ) );
+		// [BIN:TPW-EXE:0x00505490 staff pre-update] on the member's phase ((thing id & 3) == (turn & 3); the roster id where the economy has no thing pool) the thought object's update 0x0050BE40 takes an old bubble away
+		if ( member.BubbleThought != 0 && NeedsUpdate.IsPhase( (uint)turn, member.PhaseId ) && (ulong)(member.BubbleTurn + GuestThoughts.BubbleTurns) < (ulong)turn )
+			member.BubbleThought = 0;
+		switch ( member.State )
 		{
-			var placed = member.Navigation == null;
-			if ( !Place( member ) )
-				continue;
-			// the entertainers' and guards' pre-update moves their RegionFX row with them (the constructor puts it on the first cell)
-			economy.MoveStaffEffect( member, Cell( member ) );
-			// [BIN:TPW-EXE:0x00505490 staff pre-update] on the member's phase ((thing id & 3) == (turn & 3); the roster id where the economy has no thing pool) the thought object's update 0x0050BE40 takes an old bubble away
-			if ( member.BubbleThought != 0 && NeedsUpdate.IsPhase( (uint)turn, member.PhaseId ) && (ulong)(member.BubbleTurn + GuestThoughts.BubbleTurns) < (ulong)turn )
-				member.BubbleThought = 0;
-			switch ( member.State )
-			{
-				case StaffState.PickedUp:
-					// a guard picked up while escorting sets the guest down where he stands (0x004D65D0 state 7)
-					if ( member.Job == StaffJob.Escorting && member.TargetGuestId != 0 )
-					{
-						SetDown( economy, member );
-						member.TargetGuestId = 0;
-					}
-					member.Job = StaffJob.PickedUp;
-					continue;
-				// a strike or rest the economy started without a walk (an older save): the member strikes or rests where he stands
-				case StaffState.OnStrike when member.Job is not (StaffJob.ToStrike or StaffJob.Striking):
-					member.Job = StaffJob.Striking;
-					break;
-				case StaffState.Resting when member.Job is not (StaffJob.ToRestArea or StaffJob.Resting):
-					member.Job = StaffJob.Resting;
-					break;
-			}
-			if ( placed && member.Type is StaffType.Handyman or StaffType.Mechanic )
-			{
-				// a timed job of the headless dispatch (an older save) ends unfinished; a new handyman searches at once (the constructor
-				// 0x004D6B60 runs the job search), and so does a mechanic placed with a dispatched job
-				var dispatched = member.BusyTicks > 0;
-				DropDispatchedJob( economy, member );
-				if ( member.Type == StaffType.Handyman )
-					Search( economy, member, turn );
-				else if ( dispatched )
-					SearchMechanic( economy, member, turn );
-			}
-			else if ( member.Job == StaffJob.PickedUp )
-			{
-				// set down by the player (0x00505EA0 sets state 0): the type's search runs in the same update
-				SetJob( economy, member, StaffJob.Idle, turn );
-				SearchByType( economy, member, turn );
-			}
+			case StaffState.PickedUp:
+				// a guard picked up while escorting sets the guest down where he stands (0x004D65D0 state 7)
+				if ( member.Job == StaffJob.Escorting && member.TargetGuestId != 0 )
+				{
+					SetDown( economy, member );
+					member.TargetGuestId = 0;
+				}
+				member.Job = StaffJob.PickedUp;
+				return;
+			// a strike or rest the economy started without a walk (an older save): the member strikes or rests where he stands
+			case StaffState.OnStrike when member.Job is not (StaffJob.ToStrike or StaffJob.Striking):
+				member.Job = StaffJob.Striking;
+				break;
+			case StaffState.Resting when member.Job is not (StaffJob.ToRestArea or StaffJob.Resting):
+				member.Job = StaffJob.Resting;
+				break;
+		}
+		if ( placed && member.Type is StaffType.Handyman or StaffType.Mechanic )
+		{
+			// a timed job of the headless dispatch (an older save) ends unfinished; a new handyman searches at once (the constructor
+			// 0x004D6B60 runs the job search), and so does a mechanic placed with a dispatched job
+			var dispatched = member.BusyTicks > 0;
+			DropDispatchedJob( economy, member );
+			if ( member.Type == StaffType.Handyman )
+				Search( economy, member, turn );
+			else if ( dispatched )
+				SearchMechanic( economy, member, turn );
+		}
+		else if ( member.Job == StaffJob.PickedUp )
+		{
+			// set down by the player (0x00505EA0 sets state 0): the type's search runs in the same update
+			SetJob( economy, member, StaffJob.Idle, turn );
+			SearchByType( economy, member, turn );
+		}
+		else
+		{
+			// the pre-update's speed step (0x004FA870 through 0x00505490, shared with the guests)
+			(member.SmoothedSpeed, _, var maxSpeed, var maxForce) = GuestSpeed.Update( member.SmoothedSpeed, member.BaseSpeed, member.SpeedBonus, 0 );
+			if ( member.Job is StaffJob.ToRestArea or StaffJob.Resting or StaffJob.ToStrike or StaffJob.Striking )
+				UpdateRestOrStrike( economy, member, turn, maxSpeed, maxForce );
 			else
 			{
-				// the pre-update's speed step (0x004FA870 through 0x00505490, shared with the guests)
-				(member.SmoothedSpeed, _, var maxSpeed, var maxForce) = GuestSpeed.Update( member.SmoothedSpeed, member.BaseSpeed, member.SpeedBonus, 0 );
-				if ( member.Job is StaffJob.ToRestArea or StaffJob.Resting or StaffJob.ToStrike or StaffJob.Striking )
-					UpdateRestOrStrike( economy, member, turn, maxSpeed, maxForce );
-				else
+				switch ( member.Type )
 				{
-					switch ( member.Type )
-					{
-						case StaffType.Handyman: UpdateHandyman( economy, member, turn, maxSpeed, maxForce ); break;
-						case StaffType.Entertainer: UpdateEntertainer( economy, member, turn, maxSpeed, maxForce ); break;
-						case StaffType.Guard: UpdateGuard( economy, member, turn, maxSpeed, maxForce ); break;
-						case StaffType.Researcher: UpdateResearcher( economy, member, turn, maxSpeed, maxForce ); break;
-						case StaffType.Mechanic: UpdateMechanic( economy, member, turn, maxSpeed, maxForce ); break;
-					}
+					case StaffType.Handyman: UpdateHandyman( economy, member, turn, maxSpeed, maxForce ); break;
+					case StaffType.Entertainer: UpdateEntertainer( economy, member, turn, maxSpeed, maxForce ); break;
+					case StaffType.Guard: UpdateGuard( economy, member, turn, maxSpeed, maxForce ); break;
+					case StaffType.Researcher: UpdateResearcher( economy, member, turn, maxSpeed, maxForce ); break;
+					case StaffType.Mechanic: UpdateMechanic( economy, member, turn, maxSpeed, maxForce ); break;
 				}
 			}
-			var navigation = member.Navigation!;
-			member.CellX = navigation.X / (float)Fixed16.One;
-			member.CellY = navigation.Y / (float)Fixed16.One;
 		}
-		CountRestingStaff( economy );
+		var navigation = member.Navigation!;
+		member.CellX = navigation.X / (float)Fixed16.One;
+		member.CellY = navigation.Y / (float)Fixed16.One;
 	}
 
 	/// <summary>

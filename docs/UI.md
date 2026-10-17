@@ -286,7 +286,7 @@ both pages; Cancel/Escape there discards everything.
 The enhanced-textures row (`enhancedTextures`, `[EXT:texture-pack]`) cycles "Original" (the game's own textures),
 "Enhanced" (the default: the HD interface art shipped in `content/hero-art` plus the local `enhanced` pack
 when one is built), then every other installed texture pack (a directory under `<config>/texture-packs` with a
-valid `pack.json`; see TEXTURE-PACKS.md): `detailed` is labelled "Detailed" (translated in all six languages),
+valid `pack.json`; see TEXTURE-PACKS.md): `detailed` is labelled "Detailed" (translated in all nine languages),
 other pack names are shown as they are. Its popup help explains the choice and that switching runs in the
 background. The choice is applied on OK, without a restart and without a loading screen: the options close
 and the game loop swaps the textures of the running game in place while the player keeps playing; a
@@ -296,7 +296,7 @@ restart notice appears for a texture pack.
 
 A park chosen in the front end, loaded or visited is built over several frames while the lobby (or
 the park being left) keeps drawing and playing, and input waits (`[EXT:park-build-over-frames]`,
-BROWSER-PERFORMANCE.md). The same kind of line shows "Building the park..." (in all six languages)
+BROWSER-PERFORMANCE.md). The same kind of line shows "Building the park..." (in all nine languages)
 with the construction's progress.
 
 OK saves `save/opentpw-options.json`. Size/window-mode changes use

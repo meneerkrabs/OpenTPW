@@ -537,7 +537,7 @@ which were searched):
   band composes "thunderstorms". The apply message names the resolved weather ("The weather has
   changed: snow.").
 * The lines are worded in the selected game language, like OpenTPW's other own labels
-  (`SupplementaryStrings`, the six shipped languages; English for any other): in Dutch the countdown
+  (`SupplementaryStrings`, the nine shipped languages; English for any other): in Dutch the countdown
   reads "Weerbericht: morgen regen.". The countdown is worded again on every step, so a language
   switch shows at once; a transient line keeps the language it was made in for its six seconds.
 

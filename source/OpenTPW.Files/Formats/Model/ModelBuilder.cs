@@ -31,6 +31,8 @@ public sealed class ModelBuilder
 	public const uint DefaultHeadType = 0xB1;
 	/// <summary>The longest texture name without its <c>.tga</c> extension: the slot name field is 20 bytes with a terminating NUL.</summary>
 	public const int MaximumTextureNameLength = 15;
+	/// <summary>Material word +0xC bit 0x1: the mesh is drawn in one constant colour instead of per-vertex lighting (tp.exe 0x580C51; water, signs, glow). 920 of 12,951 corpus materials set it.</summary>
+	public const uint SelfLitMaterialFlag = 0x1;
 	public const uint MeshNodeType = 0x1;
 	public const uint DummyNodeType = 0x200;
 
@@ -198,7 +200,8 @@ public sealed class ModelBuilder
 				EndIndex = (ushort)(cornerPositions.Count - 1),
 				TextureIndex = slot,
 				Name = stem ?? "",
-				Flags = slot < 0 ? 0 : textures[slot].Flags
+				Flags = slot < 0 ? 0 : textures[slot].Flags,
+				Pad = material.SelfLit ? SelfLitMaterialFlag : 0
 			} );
 		}
 		if ( indices.Count / 3 > ushort.MaxValue )
@@ -360,6 +363,8 @@ public sealed class ModelMaterialBuilder
 
 	public string? TextureName { get; }
 	public bool Wrap { get; }
+	/// <summary>Sets material word +0xC bit 0x1 (<see cref="ModelBuilder.SelfLitMaterialFlag"/>): the material is drawn without per-vertex lighting. Default false.</summary>
+	public bool SelfLit { get; set; }
 	internal List<ModelBuilderVertex> Vertices { get; } = new();
 	internal List<(int A, int B, int C)> Triangles { get; } = new();
 

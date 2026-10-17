@@ -527,7 +527,7 @@ material and its range is contiguous; equal positions share one stored position;
 normalised and its index is `corners + face` (the corpus rule for 4,714 of 4,914 meshes). A material names a texture by file name
 (with or without `.tga`/`.wct`, at most 15 characters, printable ASCII); the model stores `<name>.tga` in a texture slot, which
 `ObjectAssets.TextureDirectories` resolves to `<archive>/textures/<name>.wct|.tga`. `wrap: true` sets slot flags 0x10 and 0x20 (wrap
-U and V), else the texture clamps (see "Texture slots" above); a name used with both wraps gets two slots. **Head records**: a node's
+U and V), else the texture clamps (see "Texture slots" above); a name used with both wraps gets two slots. `SelfLit = true` on a material sets material word +0xC bit 0x1 (`ModelBuilder.SelfLitMaterialFlag`, the constant-colour, unlit mode of "Texture slots" above; default false); the glTF converter sets it from the material extra `opentpw_self_lit` ([CONTENT-KIT.md](CONTENT-KIT.md#converter-conventions)). **Head records**: a node's
 `AddHead( id, type )` makes an attribute record whose type has flag 0x80 (default 0xB1, also accepted: 0xF1) and whose value is the
 head id; ids must be unique and run from 1 (the ride script counts from 1 until the lookup fails). Record `i` belongs to node
 `Unknown46 + i` (docs/GUESTS.md "Riders' heads"), so the table starts at the first dummy (or an earlier head node) and spans every node

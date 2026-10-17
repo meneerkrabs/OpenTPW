@@ -587,4 +587,16 @@ public class RideVMInternalsTests
 		Assert.AreEqual( hashA.Value, hashB.Value );
 		Assert.IsFalse( System.Text.Encoding.UTF8.GetString( ParkResumeJson.Serialize( vm.CaptureSnapshot() ) ).Contains( "WalkFloat" ), "a script without a float writes no member" );
 	}
+
+	[TestMethod]
+	public void EndSetsTheProgramCounterToMinusTenThousandAndEndsTheScriptWithoutAFault()
+	{
+		// tp.exe 0x5567B1: mov [esi + 0x3c], 0xFFFFD8F0 and nothing else
+		var vm = Load( new Asm().I( Opcode.COPY, V( 0 ), 1 ).I( Opcode.END ).I( Opcode.COPY, V( 1 ), 1 ) );
+		Run( vm, 3 );
+		Assert.AreEqual( RideVMState.Halted, vm.State );
+		Assert.IsNull( vm.FaultMessage );
+		Assert.AreEqual( (1, 0), (vm.Variables[0], vm.Variables[1]), "nothing after END runs" );
+		Assert.AreEqual( -10000, vm.ProgramCounter );
+	}
 }

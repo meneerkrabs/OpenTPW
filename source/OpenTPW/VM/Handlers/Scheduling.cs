@@ -20,6 +20,10 @@ public static partial class OpcodeHandlers
 			vm.EndSlice();
 		}
 
+		// [BIN:TPW-EXE:0x5567B1 END] sets the program counter to -10000 (the register the dispatcher keeps at 0xFFFFD8F0) and nothing else; the pass loop ends on an invalid counter (0x551719) and the script is destroyed at the end of the pass, so END ends the script cleanly where an invalid word faults it
+		[OpcodeHandler( Opcode.END, RideOpcodeStatus.Implemented, "TPW-EXE 0x5567B1 (no operands): sets the program counter to -10000, which ends the slice and the script (destroyed at the end of the pass); no corpus use" )]
+		public static void End( RideVM vm ) => vm.EndScript();
+
 		[OpcodeHandler( Opcode.ENDSLICE, RideOpcodeStatus.Implemented, "name; corpus: sits in idle loops (`ENDSLICE; TEST VAR_RIDECLOSED; BRANCH_NZ`), so it yields until the next slice; flags survive it" )]
 		public static void EndSlice( RideVM vm ) => vm.EndSlice();
 

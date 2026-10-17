@@ -363,6 +363,13 @@ public sealed class RideVM
 		Fault( message );
 	}
 
+	/// <summary>END: the program counter becomes -10000 and the script ends without a fault.</summary>
+	internal void EndScript()
+	{
+		ProgramCounter = -10000;
+		State = RideVMState.Halted;
+	}
+
 	/// <summary>Stops this script and its children and removes them from the world.</summary>
 	public void Stop()
 	{

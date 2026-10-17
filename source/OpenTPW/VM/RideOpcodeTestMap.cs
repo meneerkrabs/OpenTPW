@@ -18,6 +18,7 @@ public static class RideOpcodeTestMap
 		(Opcode.CRIT_UNLOCK, "DeterminismTests.DifferentSeedGivesADifferentHash", false),
 		(Opcode.COPY, "DeterminismTests.DifferentSeedGivesADifferentHash", false),
 		(Opcode.SETLV, "RideVMInternalsTests.SetLastValueSetsTheFlagsFromTheRawOperandWord", false),
+		(Opcode.END, "RideVMInternalsTests.EndSetsTheProgramCounterToMinusTenThousandAndEndsTheScriptWithoutAFault", false),
 		(Opcode.SUB, "RideVMTests.ArithmeticWritesDestinationFirstAndSignExtendsLiterals", false),
 		(Opcode.ENDSLICE, "DeterminismTests.DifferentSeedGivesADifferentHash", false),
 		(Opcode.GETTIME, "RideVMTests.GetTimeAndTimerCountInMilliseconds", false),

@@ -196,14 +196,18 @@ public sealed class SpriteAnimationFile : BaseFormat
 	public string BankName { get; private set; } = "";
 	/// <summary>
 	/// Byte 0x10C: the set has a full-detail <c>.FPC</c> bank. [BIN:TPW-EXE:0x005410D3 sprite bank extension] the ESP loader 0x540D90
-	/// opens <c>.fpc</c> when this byte and the sprite-detail flag (set to 1 at start-up, 0x54E688) are both non-zero, else <c>.tpc</c>
-	/// (the <c>.fps</c>/<c>.tps</c> pair of the other branch is never selected on the PC). 27 of the 27 sets with 1 ship an FPC; Jungle
-	/// SPR_EX and Space SPR_SK ship one too but have 0, so the game draws their TPC.
+	/// opens <c>.fpc</c> when this byte and the sprite-detail flag 0x8768FC are both non-zero, else <c>.tpc</c> (the <c>.fps</c>/<c>.tps</c>
+	/// pair of the other branch is never selected on the PC: 0x763F28 is 1 and only read). The flag's only writer 0x540900 stores its first
+	/// argument, which both of its calls pass as 0 (0x54E688: push ebx = 1, push esi = 0; 0x54ED2C: push edi, push edi = 0), so the PC game
+	/// draws the TPC of every set. 27 of the 27 sets with 1 ship an FPC; Jungle SPR_EX and Space SPR_SK ship one too but have 0.
 	/// </summary>
 	public byte FlagA { get; private set; }
 	/// <summary>Byte 0x10D: 1 for kid sets CH, KI, SA, SU and their heads. Stored by the ESP loader (object +0x206) but read nowhere in tp.exe.</summary>
 	public byte FlagB { get; private set; }
-	/// <summary>The bank the game opens with full sprite detail (<see cref="FlagA"/>): <c>.FPC</c> or <c>.TPC</c>.</summary>
+	/// <summary>
+	/// The bank the loader opens with the sprite-detail flag set (<see cref="FlagA"/>): <c>.FPC</c> or <c>.TPC</c>. The PC game never sets the flag and
+	/// draws the TPC; OpenTPW still draws this one (GUEST-022).
+	/// </summary>
 	public string BankExtension => FlagA != 0 ? ".FPC" : ".TPC";
 	/// <summary>
 	/// The 16 bytes after the 16 animation slots (entries 16–19 of the 4-byte grid): the four <see cref="Performances"/>, raw. The loader

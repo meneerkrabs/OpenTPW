@@ -920,6 +920,7 @@ public sealed partial class ParkHud
 			return toolPress = true;
 		}
 		// the sprite hangs at the exact ground point under the pointer every frame, also while the pointer is over the HUD (the original reads the mouse's world point, not the hover cell)
+		// [APPROX:GUEST-021] the terrain point only: tp.exe's picker (0x45BF90) takes the nearer hit on an object's model when there is one
 		if ( input.Mouse.X >= 0 && input.Mouse.Y >= 0 && level.TryGetGroundCell( input.Mouse, viewport, out var groundX, out var groundY ) )
 			tool.SetCursor( groundX, groundY );
 		else

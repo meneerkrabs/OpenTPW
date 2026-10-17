@@ -39,6 +39,7 @@ internal sealed partial class SandboxSmokeTest
 		}
 		var point = StaffProbePoint( origin, staffProbe );
 		Require( renderer.DrewDangling && renderer.DangleAt != null, $"the {tool} tool draws the dangling sprite at probe {staffProbe}" );
+		Require( renderer.DangleFrameSize is { Width: > 16, Height: > 16 }, $"the {tool} tool's dangling frame has art, not a 2 x 2 placeholder ({renderer.DangleFrameSize})" );
 		var at = renderer.DangleAt!.Value;
 		Require( level.TryGetGroundCell( point, viewport, out var wantX, out var wantY ), "the probe point hits the ground" );
 		Require( Math.Abs( at.X - wantX ) < 0.02f && Math.Abs( at.Y - wantY ) < 0.02f, $"the {tool} sprite hangs at the pointer's ground point ({at} vs {(wantX, wantY)}), not at a cell centre" );

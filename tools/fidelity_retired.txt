@@ -253,7 +253,9 @@ RIDES-043 docs/OBJECTS.md
 RIDES-044 docs/RSE-VM.md
 SAVE-001 docs/DETERMINISM.md
 SAVE-003 docs/reverse/REVIEW-SAVE-2.md
+SAVE-005 docs/ECONOMY.md
 SAVE-008 docs/progress/2026-10-16-economy-and-saves-sweep.md
+SAVE-009 docs/SAVE-THINGS.md
 TOUR-001 docs/PROGRESS.md
 TOUR-002 docs/TOURS.md
 TOUR-003 docs/TOURS.md
@@ -343,6 +345,6 @@ VM-902 docs/DETERMINISM.md
 WALK-001 docs/progress/2026-10-16-ride-shop-and-sideshow-settings.md
 WALK-002 docs/GUESTS.md
 WALK-004 docs/GUESTS.md
+WALK-006 docs/GUESTS.md
 WALK-008 docs/GUESTS.md
 WALK-009 docs/GUESTS.md
-WALK-006 docs/GUESTS.md

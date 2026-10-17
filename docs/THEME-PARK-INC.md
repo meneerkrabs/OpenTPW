@@ -6,7 +6,8 @@ OpenTPW reads, measured on October 9, 2026. It is a comparison, not a support cl
 OpenTPW does not support Theme Park Inc. Since October 10, 2026 OpenTPW has a reader for
 its `.fsh` textures ([FSH.md](FSH.md)), and since October 13, 2026 an experimental
 [playable slice](#theme-park-inc-playable-slice) that loads its worlds, builds in them
-and walks guests through them under an explicit capability policy.
+and walks guests through them under an explicit capability policy; since October 17, 2026 it also runs the
+[money](#theme-park-inc-economy-money-only) of Theme Park Inc's own balance keys.
 
 For installation and launch steps, use the [static Theme Park Inc guide](https://opentpw.io/theme-park-inc.html), which distinguishes current release/browser starts from the upcoming desktop edition chooser.
 
@@ -41,7 +42,7 @@ TPWS container, and its balance settings grow.
 | Settings `.sam` | 418 | 369 | 369/369 |
 | Fonts `.bf4` (`F4FB`) | 32 | 180 | 180/180 |
 | Lip sync `.lip` | 641 | 1,136 | 1,136/1,136 |
-| Strings `.str` (`BFST`), `BFMU`/`BFUM` tables | 21 | 185 | same magic (not parsed in this run) |
+| Strings `.str` (`BFST`), `BFMU`/`BFUM` tables | 21 | 185 (37 in each of 5 languages) | same magic; all 185 decode with the language's `MBToUni.dat` ([LANGUAGES.md](LANGUAGES.md#theme-park-inc)) |
 | Sound banks `.sdt` | 48 | 28 | 26/28; the 2 failures are truncated music banks, see below |
 | Textures | 8,712 `.wct` | 34 `.wct` (intro only), 7,283 `.fsh`, 2,856 `.tga`, 172 `.png` | `.wct` 34/34; `.fsh` 7,283/7,283 decode to RGBA ([FSH.md](FSH.md)) |
 | Terrain/attribute maps `.map` (`TP2M`) | 5 | 4 | 4/4; the other `.map` files are sound catalogs in both games |
@@ -57,7 +58,7 @@ starts the playable slice below (older links still land here).
 
 `--load-original-level arabian|science|water` with Theme Park Inc data starts the experimental
 **playable slice** (`[EXT:tpi-viewer]`, October 13, 2026). It is not Theme Park Inc support: there is
-no Theme Park Inc interface, front end, economy, rules or native save writing, and nothing it draws has been
+no Theme Park Inc interface, front end, staff, research, challenges or native save writing (its money is the only economy), and nothing it draws has been
 compared with the original game. How to extract the CD cabinets and start it:
 [RUNNING.md](RUNNING.md#theme-park-inc-level-viewer-experimental).
 
@@ -71,12 +72,13 @@ See [WEB.md](WEB.md#game-files-on-demand) for import retries and storage limits.
 
 **Edition capability policy.** `GameEditions.Capabilities` (Client/Setup/GameEdition.cs) is the one
 place that says what an edition's park runs. Theme Park World keeps every implemented system. The
-Theme Park Inc slice runs building and guests under an experimental HUD and refuses the systems whose
-Theme Park Inc rules or data OpenTPW has not traced: economy (its `Standard.sam` lacks 89 of the 155
-balance keys the Theme Park World economy reads, e.g. `PerGradeStaffConsts[0].BaseWage`; measured
-October 13, 2026), staff, advisor, front end, park saves, sharing (export/import/visit), the mission
-campaign, the Global Master Save and the disc's COS files (`[EXT:tpi-capability-gates]`, an OpenTPW scope decision). `Level` gates its economy on the
-policy; the refusals stay real, not deleted: nothing writes or resumes a native Theme Park Inc park save, GMS
+Theme Park Inc slice runs building, guests and the money under an experimental HUD and refuses the systems whose
+Theme Park Inc rules or data OpenTPW has not traced. The economy capability is split into `Money` (on for the slice),
+`Staff`, `Research` and `Challenges` (off): Theme Park Inc's `Standard.sam` lacks 86 of the 152 fixed balance
+keys the Theme Park World economy reads, e.g. `PerGradeStaffConsts[0].BaseWage` (re-measured against the executable's
+schema rows October 17, 2026; the October 13 count of 89 of 155 was a text count), but carries the money keys. Also refused: advisor, front end, park saves, sharing
+(export/import/visit), the mission campaign, the Global Master Save and the disc's COS files (`[EXT:tpi-capability-gates]`, an OpenTPW scope decision).
+`Level` gates its economy on the policy; the refusals stay real, not deleted: nothing writes or resumes a native Theme Park Inc park save, GMS
 or COS file, and the start-up command line additionally refuses `--sandbox`, `--front-end`,
 `--smoke-test`, `--advisor-say`, `--advisor-response`, `--setup`, `--park-resume-smoke`,
 `--export-park`, `--import-park` and `--visit-park` on Theme Park Inc data.
@@ -89,25 +91,26 @@ save and still use the default fixed items (RIDES-019). The camera is the park c
 zoom); the sandbox developer panels are off. On top of that the slice adds:
 
 - The **experimental HUD** (`ThemeParkIncHud`, `[EXT:tpi-text-hud]`): an OpenTPW text interface — a state line that
-  names the experiment and its refused systems, a guest counter, a message line, a build window over
-  the world's own catalog, remove/rotate/cancel tools, a speed control and a pause menu (Esc) whose
-  application-owned layout checkpoint controls are described below. Building is **free** (`[EXT:tpi-free-builds]`): the slice runs no economy, so nothing is
-  charged or refunded. If the HUD cannot be built the world falls back to the bare viewer
+  names the experiment and its refused systems, a guest counter, a money line (cash, park date, entrance fee), a message line, a build window over
+  the world's own catalog with each object's price, remove/rotate/cancel tools, a speed control and a pause menu (Esc) whose
+  application-owned layout checkpoint controls are described below. Building is **charged** at Theme Park Inc's own prices and removing refunds the scrap value
+  ([economy](#theme-park-inc-economy-money-only); `[EXT:tpi-free-builds]` is retired). If the HUD cannot be built the world falls back to the bare viewer
   (Esc quits, P pauses) with a warning.
 - **Building** through the same rules as a Theme Park World park (`ParkObjects` terrain and occupancy
-  checks, `Level.PlaceObject` without the purchase), including the path and queue tools of the traced
+  checks, `Level.PlaceObject` with the purchase), including the path and queue tools of the traced
   Theme Park World flow (`[EXT:tpi-tool-flow]`): a click on an empty owned cell starts the path tool, Backspace
   undoes, right-click cancels; a placed `Info.HasQueue` ride switches to the queue tool. The build
   ghost markers now resolve their textures by name without extension, so Theme Park Inc's own
   `blue.tga`/`red.tga` markers draw (Theme Park World keeps its `blue.wct`/`red.wct`).
 - **Guests** (`[EXT:tpi-twp-guest-rules]`) under the ported Theme Park World guest rules over the Theme Park Inc world's
   own guest settings: arrivals from the bus stop through the ticket booth, path walking, needs,
-  queues and rides. The slice's frame pumps guests, object scripts and crowd audio only — no advisor,
-  staff voices or weather sounds, which need the economy.
+  queues and rides. The slice's frame pumps guests, object scripts, the money and crowd audio only — no advisor,
+  staff voices or weather sounds, which need systems the slice refuses.
 
 `ThemeParkIncPlayTests` covers the policy (synthetic) and the supported gameplay route over the corpus
-(headless composition of the build rules, a placed object's original script, free path laying and
-guest arrivals; `OPENTPW_TPI_PATH`). None of it compares with the original game.
+(headless composition of the build rules, a placed object's original script, path laying, guest arrivals and the money:
+the settings, the charges, the running costs and the calendar; `OPENTPW_TPI_PATH`); `ThemeParkIncEconomyTests` covers the money rules on synthetic data.
+None of it compares with the original game.
 
 **Layout checkpoints** (an OpenTPW extension, `EXT:tpi-layout-checkpoint`) are separate from continuation and native park saves. The experimental
 pause menu can save the built layout and explicitly confirm loading it as a new session. Typed cells,
@@ -116,7 +119,7 @@ Prototype/coaster layouts are refused. Trusted asset checks and staged candidate
 the current world on preflight/construction failure. See [PARK-SAVES.md](PARK-SAVES.md#experimental-theme-park-inc-layout-checkpoints)
 for the separate `.tpilayout` format, exact state boundaries and verification limits.
 
-**What it leaves out.** No money, calendar, research, challenges or staff; no continuation or native park saving/loading;
+**What it leaves out.** No research, challenges or staff (the money runs, see above); no continuation or native park saving/loading;
 no front end or online world; no advisor. The prebuilt save's economy, guests, ride state and
 untraced scene records are not restored. Arabian and water remain empty apart from default fixed
 items; the science save contains no Bus record, so none is inferred for that park. Several ride
@@ -167,7 +170,7 @@ snowfield), most likely because the ground is drawn without blending (not confir
 show black interiors in all three worlds. Esc and P in the viewer are implemented but were not
 exercised by an automated run (all checks used `--capture-world`).
 
-The slice's own scope decisions are OpenTPW design decisions, not approximations (October 14, 2026): the text HUD, the free builds,
+The slice's own scope decisions are OpenTPW design decisions, not approximations (October 14, 2026): the text HUD, the builds' price (free until October 17),
 the Theme Park World guest rules over Theme Park Inc data, the capability gates and the Theme Park World tool flow (`[EXT:tpi-*]` at their sites; TPI-900 to
 TPI-904 are retired).
 
@@ -177,6 +180,49 @@ drawn as 0, 0), RIDES-019 (the End object; the Bus from setup is `[EXT:tpi-bus-f
 scene records). Open: how the original game transforms the zero-coordinate scene records and
 places the gate and bus in worlds without a prebuilt save; what the `*_newenv.MD2` files are for (`3ns_newenv` and `4ns_newenv` carry a heightfield and an `arrival_*` mesh set); the
 missing lake bed textures; the viewer's lighting and water transparency against the original.
+
+### Theme Park Inc economy (money only)
+
+Since October 17, 2026 the slice runs Theme Park Inc's **money** (`EditionCapabilities.Money`) and still refuses staff, research and challenges
+(`Staff`, `Research`, `Challenges`; the whole Theme Park World economy is `Economy`, true only for Theme Park World). The park's economy is
+the same `ParkEconomy` class under `EconomyRules.ThemeParkIncMoney` (`Economy/EconomyRules.cs`), over settings built from Theme Park Inc's own keys.
+Evidence: static reading of the no-CD `Game.exe` against `tp.exe` (October 17, 2026), nothing run; none of it is compared with the running original.
+
+**Settings.** `levels/Standard.sam` of Theme Park Inc lacks 86 of the 152 fixed keys the Theme Park World economy reads (the executable's schema rows
+`0x009966C0`, getter `0x0041B350`, block `0x00A01A6C`; tp.exe's are `0x0073FC70`, `0x00402B10`, `0x0078504C`) and no theme layer supplies them. So
+`BalanceSettings.ForThemeParkInc` / `LoadThemeParkInc(theme)` (global file under the theme's, no Easy layer) reads only the money keys and fills every
+staff, research, golden-ticket and challenge member with an empty or zero placeholder, never a Theme Park World number; a missing money key fails the load.
+The object catalogue adds the keys only Theme Park Inc's type record has: `Info.ExpectedPrice` (+0x88), `Info.WorkingLife` (+0x8C),
+`Upgrades[n].RunningCost` (+0x2B4, stride 0x44) and `Upgrades[n].CashPerBrainPoint` (+0x274); Theme Park World's files read 0 for them. `Info.ExpectedPrice`,
+`WorkingLife` and `CashPerBrainPoint` are read but not used (meaning not traced).
+
+| What | Theme Park Inc | Theme Park World | Here |
+| --- | --- | --- | --- |
+| `BankAccountInfo.InitialCash` 50,000, `InitialAdmissionFee` 25 | bank constructor `0x5BFBBA`, `0x5BFC73` (block `0x00A020BC`, `0x00A020C0`) | `0x4CF8C6` (`0x007851D8`) | the same bank; the data holds 20 for the fee in Theme Park World |
+| `LoanInfo[n]` (ten slots, eight used) | `0x5BFB97` (`0x00A020C4`); the loan loop and the monthly step `0x5C0B10`..`0x5C0C49` | `0x4CF7C0`, `0x4D0370` | `LoanMath` unchanged (oracle X8, X9) |
+| bank debit | `0x5C07B0` | `0x4D01F0` | `ParkEconomy.Post` |
+| `Costs.QueueCell`, `PathCell`, `KartTrackCell`, `WaterTrackCell` | setter `0x4289AC` (`0x00A0264C`..`0x00A02658`) | `0x408192` | path, queue and track charges as in Theme Park World |
+| `Costs.MapCell` | in the data (`0x00A0265C`), read by no instruction found | the Buy Land tool | **no Buy Land**: `TryBuyCells(Land)` answers `NoLandForSale`; the park boundary is the mission's `BoundaryClicks` (moderate confidence) |
+| calendar | constructor `0x607E90` | `0x4F7E80` | 2000-01-01, 15,000 game seconds per real second (`ParkCalendar`) |
+| entry-fee judgement | `0x6157D0` (divisor word `0x00A01A90`) | `0x4FF5C0` | same routine; the divisor is data: 6 in Theme Park Inc's global file (4 in arabian's layer), 4 in Theme Park World's |
+| object purchase, upgrade purchase | `0x5DBE3C`, `0x5E2A99` | `0x4DB090`, `0x4AF4E9` | the build charges `Upgrades[0].CostOfUpgrade`; the upgrade needs a mechanic, so it stays refused (`NeedsStaff`) |
+| scrap value | `0x5E7890`, percentage `0x5E75F0` | `0x4E2400`, `0x4E2290` | by year of age, 100 % if unused within 30 days, plus a condemned object (state 4) refunds nothing; the thing-flag branch is left out (ECON-061) |
+| running costs | month message `0x5DEFFF` | none | each object pays its current level's `Upgrades[n].RunningCost` every month, nothing in ride state 1 or 4 (ECON-060) |
+| arrival group | `0x5BCD60` (words `0x00A02240`..`0x00A02250`) | `0x4CF5B0` | `GuestSimulation.ArrivalGroupSize` with `Arrival.*PercentageModifier`, single-precision 0.01 (oracle X7); no Theme Park Inc weather runs, so the percentage is always 100 (ARRIVAL-008) |
+
+**What runs.** Starting cash and admission fee; the build, path, queue and kart/water track charges (a refused purchase says why); scrap refunds when an object
+is removed; the loans; the bankruptcy after six months in the red (the arrival stops, building is refused); the calendar and each
+object's cost statistics (the month's costs, the 30-day cost ring and the total profit, which the running cost enters; Theme Park Inc's are monthly rings, ECON-060); the monthly running costs; the entry-fee judgement and the arrival rule above. The HUD's money line shows the cash, the park date and the entrance
+fee, the build list shows each object's price and a placed object's refusal (not enough money) is the level's message. The Theme Park Inc park opens at the start
+(`[EXT:tpi-park-open]`): the slice has no gate control, its gate script is not traced, so the economy neither drives nor closes the park door. The prebuilt
+science save's objects register uncharged, like an imported park's; its own economy is not restored. A layout checkpoint saves the layout only: the cash, calendar and
+loans start fresh in the new session, like the guests.
+
+**What stays refused.** Staff (no pool, no wages, no mechanics, handymen or entertainers), so the rides neither wear nor break down (`[EXT:tpi-money-only]`), a toilet use wears no gauge and no litter is dropped, because no handyman would ever clean it (`[EXT:tpi-no-maintenance-wear]`), and no
+upgrade is installed; research (the whole catalogue is on offer, `[EXT:tpi-no-research]`); challenges, golden tickets and the missions; the shares game; Theme Park Inc's
+weather; the advisor; every save format. Rides carry `UsageInfo.InitPricePerUse` (20) and `Info.ExpectedPrice` (25) in Theme Park Inc's data, but the guests pay
+nothing for a ride, as in Theme Park World (ECON-062). Coaster track charges use the Theme Park World coaster cost model over Theme Park Inc's object settings and are
+not verified for it. The statistics block's accumulator (`+0x938`), which the month message adds to the running cost, is not traced (ECON-060).
 
 ### Prebuilt science save
 
@@ -188,19 +234,83 @@ No original executable was run to establish a broader TPI save schema.
 
 | Field used | Observation and use |
 | --- | --- |
-| Container | Magic 500; 24 bytes inserted after magic (`01 13 00 00 00`, `Version: Beta_21` and terminator); file type at `0x61c`, version 133 at `0x620`, offline flag at `0x621`, `BILZ` at `0x625`, zlib at `0x641`. The existing bounded zlib reader applies after shifting these offsets. |
-| Decoded payload | 1,692,641 bytes; all 17 writer-order trailing delimiters occur once. The World block ends at `DLRW` offset 1,571,677. The Camera block is 48 bytes (TPW saves use 40), so it has a separate TPI layout parser. |
-| Cell grid | One 128×128 X-fastest run at offsets 7,116–1,449,038. Type 3 records are 88 bytes; 13 type 7 records add 10 bytes. `FF FF` closes each base record at +86/+87. MAP attributes remain at +46; path flag bit 0 at +13, connections +8, path texture +17, turn +21 and occupancy +12 match the TPW positions. The save yields 76 path cells. |
+| Container | Magic 500; the 24-byte version block after the magic (`01 13 00 00 00`, `Version: Beta_21\r\n` and its NUL); language byte at `0x1c`, stamp `01 22 19 85` at `0x61d`, online word at `0x621`, `BILZ` at `0x625`, zlib at `0x641`. The bounded zlib reader applies after shifting these offsets; see [SAVE-CONTAINER.md](SAVE-CONTAINER.md#theme-park-inc-version-block). |
+| Decoded payload | 1,692,641 bytes; all 17 writer-order trailing delimiters occur once. The World block ends at `DLRW` offset 1,571,677. The blocks are split by their readers' widths under the Theme Park Inc profile (45 message lists, a 48-byte camera, an empty UI block), see [the save layout](#theme-park-inc-park-save-layout). |
+| Cell grid | One 128×128 X-fastest run at offsets 7,116–1,449,038, read by the map loader's status-byte rule (below): every cell has status 3 (88 bytes) or, for 13 cells, 7 (98 bytes with the 10-byte effects record); `FF FF` closes each base record at +86/+87. MAP attributes remain at +46; path flag bit 0 at +13, connections +8, path texture +17, turn +21 and occupancy +12 match the TPW positions. The save yields 76 path cells. |
 | `SYSG` objects | A candidate begins with byte `1`, then an opaque `u32`, followed by little-endian `u32` Info.Id at +5, X +9, Y +13, width +17, height +21, kind +25 and index +29; rotation is `u16` at +43. The bounded signature scan finds 23 records: 9 kind 815 objects and 14 kind 865 fixed/scene records. |
 | Catalogue and placement | All nine kind 815 IDs resolve in science: eight rectangular footprints are occupied in the grid and one (`1101`, 4×5 at 42,26) has two unoccupied corner cells (42,30 and 45,30), so its footprint remains unresolved while the object is rendered at its saved anchor. Of the 14 fixed/scene records, nine IDs resolve; five zero-coordinate IDs (`1702`, `1701`, `1700`, `1750`, `1798`) have no object archive and are not rendered. One resolved record is a tool, leaving 17 objects rendered in the native viewer. |
 | Entrance | Saved `1601` Gates at (46,17), and `103` Lobby plus `104` atmdesk at (46,16), all rotation 0. TPI fixed models use local coordinates, so the viewer applies these saved anchors and rotations. There is no Bus record in this save. Eleven other fixed/scene records use (0,0); their thing records hold the default position (128, 128) and angle 0 for the six with an archive (real positions for the five without one), and how the original places their local-coordinate models at that anchor remains an approximation (RIDES-040). |
 
-The importer is read-only. It requires this observed 23-record SYSG profile so a damaged or
-different save cannot quietly produce a partial park. It uses the same exact map-attribute check
+The importer is read-only. The World block is read into typed records
+(`ThemeParkIncSaveWorld`) and must consume exactly to its delimiter; each SYSG record found by
+the signature scan must then name exactly one attraction thing of that World by mesh instance id
+(the record's `u32` at +1, the thing's `MeshInstanceID`), Info.Id and, for a placed object, cell, so a damaged or
+different save cannot quietly produce a partial park. This replaced the former requirement of
+exactly 23 records with 14 fixed items. The join runs both ways: every record must name one attraction,
+no attraction may be named by two records, and every attraction must have a record except the lake
+obstacle `1703` (whose RideSystem entry is not an 815/865 scene record; it is the only entry of
+`UnrecordedThemeParkIncAttractions`). A damaged or duplicated record therefore still fails the import. It uses the same exact map-attribute check
 as TPW but the TPI record widths and SYSG header are separate, leaving TPW save reading unchanged. A 300-frame native
 science capture draws the paths and park objects; it does not prove their appearance against the
 original game. Economy, ride state, guests, opaque cell data and unrecognised scene records are
 not restored.
+
+### Theme Park Inc park save layout
+
+Static reading of the no-CD `Game.exe` (save `0x43ee20`, header writer `0x440a20`, loader `0x43f370`),
+checked against the one park save that exists, `prebuilt.TPWS` (decoded 1,692,641 bytes). Container
+fields: [SAVE-CONTAINER.md](SAVE-CONTAINER.md). The payload loader (`0x43fad0`, writer `0x441060`)
+uses the same 17 delimiters in the same order as `tp.exe` (`0x415270`), so `SavePayloadLayout.Parse(payload,
+SavePayloadProfile.ThemeParkInc)` splits it by the blocks' own reader widths; only a Coasters block with a
+coaster is still found by its delimiter (SAVE-011). `ParseThemeParkInc` is that call.
+
+| Block | Prebuilt bytes | Reader rule (Theme Park Inc against Theme Park World) |
+| --- | ---: | --- |
+| ActionRecording | 563 | `u32` published flag, `u32` size, bytes (same) |
+| World | 1,571,114 | `ThemeParkIncSaveWorld`, below |
+| Scripts | 412 | `SCPT` block, `0x118`-byte records (same; loader `0x4e4410`) |
+| Particles | 76,252 | same (loader `0x658810`) |
+| MessageCentre | 476 | 45 lists of `u32 count, count × u16` (TPW 29; loader `0x437140`) |
+| Clock / VanillaTime / GameSystem | 8 / 4 / 36 | same (`0x41b890`, `0x41bec0`, `0x6a2390`) |
+| RideSystem | 13,154 | `u32` length and that many bytes (same; its records have an extra `u32` before Info.Id, `0x4c5770`) |
+| TrackRides / FlyingRides | 180 / 452 | same (`0x6921a0`, `0x6b6720`) |
+| RSSE | 26,446 | same; the records end in `OBJ ` (`0x6afd90`) |
+| Camera | 48 | 40 bytes plus `gf_SavedRideXRotation` and `gf_SavedRideYRotation` (`0x46a150`) |
+| Coasters | 1,226 | the TPW layout: one coaster, one section, 30 train slots of one car (30 × 38 bytes), `SaveCoasterBlock.ParseBlock` consumes it exactly (`0x4782e0`) |
+| Advisor / Sound | 392 / 1,804 | same (`0x717460`, `0x652e60`) |
+| Cheat / AdvisorScoring | 2 / 4 | same (`0x423c40`, `0x71c300`) |
+| UI | 0 | the writer (`0x4f8630`) is a bare `ret` and the loader reads nothing: nothing may follow the `ADSC` delimiter |
+
+**World block** (loader `0x64bc00`, 1,571,114 bytes, consumed exactly): variables (version 3,
+70 bytes: the TPW version 2's 64 plus `mLobby`, `mCurrentObstacle` and `mFirstGardener`), the control
+manager (`0x5cf9b0`: 150 records of 36 bytes, `u32` count, `u16` search key, 5,406 bytes), the staff pool
+(`0x6308a0`: 32 candidates of 31 bytes (`0x62f980`: type, name, salary, agency, sub-type, valid, on-pointer, time
+stamp, timeout, experience), six role pairs of count and stop flag, time stamp and flag, 1,027 bytes), the
+calendar (32 bytes: the TPW calendar with `mYearAtLastUpdate`), the arrivals (18 bytes, raw), the map and the thing list.
+
+The map (`0x5d6d40`) is the TPW rule with a wider cell: for each of the fixed `0x4000` cells a status byte,
+then the 56-byte map cell (TPW 52, `mIsObstacle` added) when bit 0 is set, the 31-byte track cell when bit 1 is set and the
+10-byte effects record when bit 2 is set. The prebuilt's grid is at 7,116 to 1,449,038. The thing list is `u32 head`, the marker `EATC`, then per
+thing `u32 next, u32 model, 'LDMT'`, the model's 4-byte tag and the body, and ends with `ENOD`, followed by the new special
+rides (`0x6244b0`: `u32 count`, then count records of a `u16` and 20 slots of 10 bytes, 4 = 812 bytes in the
+prebuilt).
+
+| Model | Tag | Body | In `ThemeParkIncSaveWorld` |
+| --- | --- | --- | --- |
+| 3 attraction | `OBJE` | 312 bytes, plus 5,263 of history when its flag byte (the last of the 312) is 1: 13 rings of 30 and 6 rings of 144 | typed (`ThemeParkIncAttraction`, including the history rings); 24 in the prebuilt |
+| 16 bank | `BANK` | 292 (the TPW bank) | typed (`SaveBank`) |
+| 10 mechanic HQ, 12 tag system, 17 UI receiver, 21 `OBJH`, 22 `CUTS`, 23 `TRNR` | | 10, 12, 8, 14, 10, 8 | exact; base plus raw tail (`ThemeParkIncSmallThing`) |
+| 9 staff HQ, 11 advisor controller, 13 park analyser, 14 research lab, 15 weather, 19 challenge system | | 411, 233, 76,617, 8,414, 104, 1,287 | raw; these widths are the prebuilt's, not traced from the serializers (closure-derived), and the header that must follow checks them |
+| 1 guest, 4 to 8 staff, 20 gardener | | none in the prebuilt | raw; no width, the body ends at the first following header that reads (heuristic) |
+
+Models 0, 2 and 18 have no serializer (the jump table `0x64d7e0` sends 18 to the challenge case too, but only 19 is witnessed) and are
+rejected. The widths of the staff HQ, advisor, analyser, lab, weather and challenge things are therefore **not** traced
+reader widths, and guests, staff and gardeners (absent from the prebuilt) are found by searching for the next header that reads
+(or, for the last thing, the `ENOD` whose special-rides tail is followed by the `WRLD` delimiter). A complete header
+lookalike inside such a search-bounded body would fabricate a shorter body and an extra thing that still closes at the delimiter and passes
+the variable checks; a uniqueness check cannot catch it, because a raw body can always absorb the thing after it. This is SAVE-944.
+The block must in every case read exactly to its delimiter.
+Typed fields that are inferred rather than traced are SAVE-940 to SAVE-944 in the [register](FIDELITY-REGISTER.md).
 
 ## Ride-script VM: shared formats and opcode lineage
 
@@ -245,8 +355,8 @@ the semantics of the TPW corpus.
   32-bit (2,974) or 16-bit (1) palette. Most are 32×32, 64×64 or 128×128. `.wct`
   remains only in `levels/wIntro`. `FshFile` decodes all of them; see [FSH.md](FSH.md).
 - **Saves.** `prebuilt.TPWS` starts with magic 500 (TPWS), like TPW saves, but then
-  inserts `01 13 00 00 00` and the ASCII string `Version: Beta_21` before the
-  UTF-16 `THE SAVE GAME DATA…` banner. Its BILZ chunk and decoded payload retain
+  carries the Theme Park Inc version block (`01 13 00 00 00` and the string `Version: Beta_21\r\n`) before the
+  language byte and the UTF-16 `THE SAVE GAME DATA…` banner. Its BILZ chunk and decoded payload retain
   the familiar trailing delimiters, but the Camera block, cell and SYSG records have the distinct widths
   documented [above](#prebuilt-science-save). The reader accepts this observed
   offline profile only; it does not write TPI saves.

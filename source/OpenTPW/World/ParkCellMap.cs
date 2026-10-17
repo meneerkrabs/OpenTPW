@@ -371,6 +371,27 @@ public sealed class ParkCellMap
 	}
 
 	/// <summary>
+	/// Gives the entrance and exit cells of an imported object the link byte its saved cell record holds (the cells the load reads whole, where the placement's own writers lay the byte).
+	/// A cell is taken only when the record's type and owner word are the object's own.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004D0B30 cell base serializer] the load reads each cell's record, link byte (+0x0C, record byte 8) included, so an entrance or exit cell of an imported park carries the bit toward the path outside it, which the placement lays through the outside cell's link writer in mode 1 (0x5348D0 reaching the type-9 cell along its queue link, 0x5292A7..0x5293FE and 0x5298D5..0x5299AC); Easymode's nine entrance cells carry one bit each and its exit cell one, which the edge test 0x4D8750 reads to let a walk step into the stand point
+	public void TakeSavedAccessLinks( IEnumerable<(int X, int Y, ObjectShapeCell Cell)> footprint, ushort owner, SaveCellGrid saved )
+	{
+		ArgumentNullException.ThrowIfNull( footprint );
+		ArgumentNullException.ThrowIfNull( saved );
+		foreach ( var (x, y, cell) in footprint )
+		{
+			if ( cell.CellType is not (ObjectShapeSymbols.TypeEntrance or ObjectShapeSymbols.TypeExit) || !InBounds( x, y ) || x >= saved.CountX || y >= saved.CountY )
+				continue;
+			var record = saved[x, y];
+			var type = RawTypeAt( x, y );
+			if ( type is not (ParkCellTypes.Entrance or ParkCellTypes.Exit) || record.MapType != type || record.MapParentId != owner )
+				continue;
+			SetLinks( x, y, (byte)(LinksAt( x, y ) | (byte)record.PathConnections) );
+		}
+	}
+
+	/// <summary>
 	/// Empties the footprint cells a removed object typed (those still of its footprint type), unlinking an '@' path cell and taking the add-on flag off a '+' or '#' cell and its track
 	/// layer cell.
 	/// </summary>

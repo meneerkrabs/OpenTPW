@@ -9,7 +9,7 @@ namespace OpenTPW;
 /// rotate cycle, the place click through <see cref="Level.UpdateWorldInput"/>, the queue tool a placed HasQueue
 /// ride switches to, Escape's ordering (tool → armed item → window → pause menu), the speed control including
 /// pause freezing the guests, the remove tool and the pause menu's Quit — and checks the capability gates hold in
-/// the running game (no economy, no Theme Park World HUD, the experiment banner drawn). macOS TCC blocks
+/// the running game (the money economy only, no Theme Park World HUD, the experiment banner drawn). macOS TCC blocks
 /// synthetic OS input, so clicks and keys are injected as <see cref="GameFlow.InjectedInput"/> frames, like the
 /// front-end smoke test; the one input injection cannot reach (the world click reads the real mouse) goes through
 /// Level's own world-input path, like the sandbox smoke test. Best run on `science`, the world with prebuilt paths.
@@ -43,6 +43,7 @@ internal sealed class ThemeParkIncSmokeTest : IDisposable
 	private System.Numerics.Vector2 sitePoint;
 	private System.Numerics.Vector2 endPoint;
 	private int objectsBefore;
+	private long cashBeforePlace;
 	private (int X, int Y)[] pausedCells = Array.Empty<(int, int)>();
 	private int resumedAt;
 
@@ -65,11 +66,12 @@ internal sealed class ThemeParkIncSmokeTest : IDisposable
 		{
 			var level = flow.Level;
 			Require( flow.IncHud != null && flow.Hud == null && level != null, "the Theme Park Inc slice runs with its own HUD, not the Theme Park World one" );
-			Require( level!.OriginalPark != null && level.Park == null && level.IsThemeParkIncSlice, "the world loads without an economy" );
-			Require( !GameEditions.Capabilities.Economy && GameEditions.Capabilities.ExperimentalHud && !GameEditions.Capabilities.ParkSaves, "the capability policy refuses economy and saves at runtime" );
-			Require( LabelText( "title" ).Contains( "EXPERIMENTAL", StringComparison.Ordinal ), "the HUD names the experiment on screen" );
-			Require( LabelText( "limits" ) == GameEditions.Capabilities.ExperimentalNote, "the HUD's limits line is the capability policy's note" );
-			Require( Context.Batch.TextDraws.Any( draw => draw.Text.StartsWith( "Guests in park:", StringComparison.Ordinal ) ), "the guest counter is drawn" );
+			Require( level!.OriginalPark != null && level.Park is { Economy.Rules.ThemeParkInc: true } && level.IsThemeParkIncSlice, "the world loads with the Theme Park Inc money economy" );
+			Require( GameEditions.Capabilities.Money && !GameEditions.Capabilities.Staff && !GameEditions.Capabilities.Research && !GameEditions.Capabilities.Challenges && GameEditions.Capabilities.ExperimentalHud && !GameEditions.Capabilities.ParkSaves, "the capability policy runs the money and refuses staff, research, challenges and saves at runtime" );
+			Require( Context.Batch.TextDraws.Any( draw => draw.Text == LabelText( "money" ) && draw.Text.Length > 0 ), "the money line is drawn" );
+			Require( LabelText( "title" ) == flow.Strings.Extra( OpenTpwText.TpiTitle ) && (GameLanguage.Current.Name != GameLanguage.DefaultLanguage || LabelText( "title" ).Contains( "EXPERIMENTAL", StringComparison.Ordinal )), "the HUD names the experiment on screen, in the selected language" );
+			Require( LabelText( "limits" ) == flow.Strings.Extra( OpenTpwText.TpiLimits ) && (GameLanguage.Current.Name != GameLanguage.DefaultLanguage || LabelText( "limits" ) == GameEditions.Capabilities.ExperimentalNote), "the HUD's limits line is the capability policy's note (in the selected language)" );
+			Require( Context.Batch.TextDraws.Any( draw => draw.Text == Hud.GuestsText() ), "the guest counter is drawn" );
 		} );
 		Do( "open the build window", () => Click( Hud.Screen, "build" ) );
 		Wait( "build window opens", 2 );
@@ -80,7 +82,7 @@ internal sealed class ThemeParkIncSmokeTest : IDisposable
 		{
 			Require( Level.BuildEntry == armedEntry && armedEntry != null, "activating the row arms the item's placement" );
 			Require( Hud.Screen.Find( "buildList" )!.Visible == false, "arming closes the build window" );
-			Require( Hud.Messages.Any( message => message.Contains( "click the park to place", StringComparison.Ordinal ) ), "the HUD says how to place" );
+			Require( Hud.Messages.Any( message => FitsTemplate( message, OpenTpwText.TpiPlaceHint ) ), "the HUD says how to place" );
 		} );
 		for ( var turn = 1; turn <= 4; turn++ )
 		{
@@ -114,6 +116,7 @@ internal sealed class ThemeParkIncSmokeTest : IDisposable
 		} );
 		Do( "place through the world click", () =>
 		{
+			cashBeforePlace = Level.Park!.Economy.Balance;
 			var viewport = Viewport;
 			Level.UpdateWorldInput( false, false, sitePoint, viewport );
 			Level.UpdateWorldInput( true, false, sitePoint, viewport );
@@ -125,7 +128,8 @@ internal sealed class ThemeParkIncSmokeTest : IDisposable
 			Require( placed?.Entry == armedEntry && Level.Objects.Objects.Count == objectsBefore + 1, "the world click places the armed item" );
 			Require( Level.LastActionMessage.StartsWith( "Built", StringComparison.Ordinal ) && Hud.Messages.Any( message => message.StartsWith( "Built", StringComparison.Ordinal ) ),
 				"the level and the HUD both report the build" );
-			Require( Level.Park == null, "nothing was charged: the slice runs no economy" );
+			Require( Level.Park is { } park && park.Economy.Catalog.TryGet( armedEntry!.InfoId, out var priced ) && priced.PurchaseCost > 0
+				&& cashBeforePlace - park.Economy.Balance == priced.PurchaseCost, $"Level.PlaceObject debited exactly the purchase price once ({cashBeforePlace} -> {Level.Park?.Economy.Balance})" );
 			queueToolOn = armedEntry!.HasQueue;
 			if ( queueToolOn )
 				Require( Level.CellTool.IsActive && Level.CellTool.Mode == CellToolMode.Queue && Level.CellTool.Start == (entrance.OutsideX, entrance.OutsideY),
@@ -181,7 +185,7 @@ internal sealed class ThemeParkIncSmokeTest : IDisposable
 		// Guests: the counter reads the live simulation, pause freezes it, normal speed runs it again.
 		Do( "spawn guests near the ride", SpawnGuests );
 		Wait( "guests appear", 2 );
-		Do( "the counter counts them", () => Require( LabelText( "guests" ) == $"Guests in park: {Level.Guests!.GetStatistics().InPark}", "the guest counter reads the live guest simulation" ) );
+		Do( "the counter counts them", () => Require( LabelText( "guests" ) == string.Format( flow.Strings.Extra( OpenTpwText.TpiGuestsInPark ), Level.Guests!.GetStatistics().InPark ), "the guest counter reads the live guest simulation" ) );
 		Do( "the speed button runs fast", () => Click( Hud.Screen, "speed" ) );
 		Wait( "speed applies", 2 );
 		Do( "double speed runs", () => Require( Hud.TimeScale == 2 && Level.SimulationTimeScale == 2, "the speed button doubles the simulation's time scale" ) );
@@ -325,7 +329,16 @@ internal sealed class ThemeParkIncSmokeTest : IDisposable
 	{
 		var camera = Camera.Mode as ParkCameraMode;
 		Require( camera != null, "the slice runs the park camera" );
-		camera!.Focus( OriginalParkPlacement.GetCellCenter( Level.OriginalPark!.Heightfield, site.X, site.Y ) );
+		var focus = OriginalParkPlacement.GetCellCenter( Level.OriginalPark!.Heightfield, site.X, site.Y );
+		if ( armedEntry!.HasQueue )
+		{
+			// Centre between the site and the end of its queue line: a site near the map edge puts the queue's end off the bottom of the
+			// screen when the camera is centred on the site alone.
+			var (dx, dy) = (entrance.OutsideX - entrance.X, entrance.OutsideY - entrance.Y);
+			var end = OriginalParkPlacement.GetCellCenter( Level.OriginalPark!.Heightfield, entrance.OutsideX + dx * SmokeQueueLength, entrance.OutsideY + dy * SmokeQueueLength );
+			focus = (focus + end) / 2;
+		}
+		camera!.Focus( focus );
 	}
 
 	private void SpawnGuests()
@@ -342,6 +355,10 @@ internal sealed class ThemeParkIncSmokeTest : IDisposable
 		Level.Guests.SpawnInPark( near[0].X, near[0].Y );
 		Level.Guests.SpawnInPark( near[1].X, near[1].Y );
 	}
+
+	/// <summary>Whether a HUD message is the selected language's text for <paramref name="key"/> with its {0}, {1} ... filled in.</summary>
+	private bool FitsTemplate( string message, OpenTpwText key ) =>
+		System.Text.RegularExpressions.Regex.IsMatch( message, "^" + System.Text.RegularExpressions.Regex.Replace( System.Text.RegularExpressions.Regex.Escape( flow.Strings.Extra( key ) ), @"\\\{\d+\}", ".+" ) + "$", System.Text.RegularExpressions.RegexOptions.Singleline );
 
 	private bool Clickable( (int X, int Y) cell, out System.Numerics.Vector2 point )
 	{

@@ -371,7 +371,7 @@ public class ModsScreenTests
 	}
 
 	[TestMethod]
-	public void EveryNewTextIsTranslatedIntoAllSixLanguages()
+	public void EveryNewTextIsTranslatedIntoEveryShippedLanguage()
 	{
 		foreach ( var key in Enum.GetValues<OpenTpwText>().Where( key => key.ToString().StartsWith( "Mod" ) ) )
 		{

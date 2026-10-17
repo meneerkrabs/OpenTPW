@@ -1,5 +1,7 @@
 # Release builds
 
+Releases are normal stable releases: the [hourly release train](#hourly-releases) publishes one from a green `main` whenever something new has merged, and a maintainer can still publish one by hand.
+
 `.github/workflows/release.yml` publishes self-contained builds (no .NET install
 needed) for six runtimes on every `v*` tag, and attaches them to a GitHub
 release. Versions with a suffix, or the preview checkbox, are pre-releases. The bundled runtime is the one that ships with the SDK pinned in `global.json` (.NET 11 RC2 until the pin moves to the GA SDK). Original game files are never part of a release: start the game with

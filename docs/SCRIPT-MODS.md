@@ -4,12 +4,36 @@ Mods ([MODS.md](MODS.md)) may carry **scripts** that change simulation decisions
 prefers. Scripts are written in *TPW Script*, a small deterministic language that OpenTPW interprets itself. There is no
 external scripting engine, and a mod can never ship native code or .NET assemblies.
 
-**Status.** The language core (lexer, parser, compiler, interpreter, `state` codec) is implemented and tested in
-`source/OpenTPW/Scripting/` (phase 2). Phase 3 added the manifest (`scripts`, `hooks`, `scriptApi`), loading and compiling at resolve
-time, the classification as simulation-changing, "Contains scripts" on the mods screen and safe mode. **Phase 4 (this page, as built)** wires
-the four hooks into the guest simulation through the `IGuestDecisions` seam, adds the failure counters and the disabled flag, the `ScriptMods`
-park-resume section, its part of the `WorldStateHash`, the measured budgets and the working `opentpw.example.patient-guests`. **Not yet**: the
-browser check (phase 5) and `--test-mod` (phase 6). The browser build does not embed the example, so script mods do not run there yet.
+**Status.** The language, the manifest and loading, and the four guest-decision hooks are implemented and tested: `source/OpenTPW/Scripting/` holds the lexer,
+compiler, interpreter and the `state` codec; a mod's scripts are loaded and compiled at start-up with "Contains scripts" on the mods screen and safe mode;
+and the hooks run through the `IGuestDecisions` seam with failure counters, a disabled flag, the `ScriptMods` park-resume section, its part of the
+`WorldStateHash` and measured budgets. `opentpw.example.patient-guests` is a working example. **Scripts run in the desktop app only.** The browser does not run
+script mods yet: it does not embed the example and has no folders for community mods. `--test-mod` does not exist yet ([Phases](#phases)).
+
+## Quick start
+
+1. Enable the shipped example to see a script mod at work: Options > OpenTPW > Extensions and mods > Community mods > *Patient guests (example)* > on, then restart (or run once
+   with `--enable-mod opentpw.example.patient-guests`). It is off by default ([MODS.md](MODS.md#quick-start-your-first-data-mod)).
+2. Copy `content/mods/opentpw.example.patient-guests/` to `<config>/mods/community.my-hook/` and edit the manifest (`id`: `community.my-hook`, `category`: `community`).
+3. Write your first hook in `scripts/main.tps` (delete the example's script file). A hook is a top-level function named in the manifest's `content.scripts.hooks`; it receives read-only views and
+   `prev`, the answer the game (and the mods before yours) would give, and returns the answer to use. For example, let a guest with at least 30 happiness join a ride whose excitement is up to 10 points further from its taste than the game allows (the game refuses from a difference of 45):
+
+   ```lua
+   function joinQueue(guest, attraction, prev)
+     if prev then
+       return true
+     end
+     return guest.happiness >= 30 and attraction.joinDifference < 55 and attraction.queueCount < attraction.queueLimit
+   end
+   ```
+
+   ```json
+   "content": { "scripts": { "files": ["scripts/main.tps"], "hooks": { "joinQueue": "joinQueue" } } }
+   ```
+
+4. Restart. A compile error, a missing function or a wrong parameter count refuses the mod with the file, line and message (startup log and mods screen). At run time a failing call
+   answers `prev`, and after 16 failures the mod is disabled for the park ([Failure counters](#failure-counters-and-the-disabled-flag)). The tables in [The views](#the-views) list
+   every field; the example mod ([below](#the-example-mod)) is the model to start from.
 
 ## Why our own language
 
@@ -374,6 +398,22 @@ never an index into a list. A view cannot be changed or kept.
 - **`leaveQueue`'s attraction** adds `joinTurn`, `waitedTurns` (park turns since the guest joined), `position`, `queueCount`.
 
 Each table has 17 to 28 entries, far below the view caps (4096 entries, 1024-character strings).
+
+### Quick reference
+
+All hooks receive the host's answer as the last parameter, `prev`, and every view is a read-only table of ints and bools (history fields are arrays of ints).
+
+| Hook | Parameters | Returns | Views |
+| --- | --- | --- | --- |
+| `scoreAttraction(guest, candidate, prev)` | guest view, candidate view, `prev` int | int, 0 to 4294967295 | `guest`; `candidate` (attraction fields) |
+| `joinQueue(guest, attraction, prev)` | guest view, attraction view, `prev` bool | bool (true admits) | `guest`; `attraction` plus `joinDifference`, `excitementWord`, `queueCount` |
+| `leaveQueue(guest, attraction, prev)` | guest view, attraction view, `prev` bool | bool (true leaves) | `guest`; `attraction` plus `joinTurn`, `waitedTurns`, `position`, `queueCount` |
+| `wanderGoal(guest, prev)` | guest view, `prev` int (`y * 1024 + x`) | int, `y * 1024 + x` of a cell inside the map | `guest` |
+
+Guest fields: `id`, `birthId`, `type`, `happiness`, `thirst`, `hunger`, `toilet`, `nausea`, `money`, `cellX`, `cellY`, `usedHistory`, `temporaryHistory`, `turn`, `raining`, `mapWidth`, `mapHeight`.
+Attraction fields: `id`, `typeId`, `kind`, `hasJoinCell`, `backX`, `backY`, `entranceX`, `entranceY`, `cellModifier`, `queueLength`, `queueSizeInCells`, `queueLimit`, `excitement`,
+`excitementLevel`, `thirstEffect`, `hungerEffect`, `providesRelief`, `ageDays`, `isIndoors`, `goldenTicketCost`, `upgradeCost`, `isOpen`, `isBroken`, `sameTypeAsLast`.
+A mod can implement any subset of the four hooks (`scriptApi` `>=1.0.0 <2.0.0`).
 
 ## Failure counters and the disabled flag
 

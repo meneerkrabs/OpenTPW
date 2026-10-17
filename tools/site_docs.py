@@ -59,12 +59,19 @@ def document_text(repo: Path, source: str) -> str:
 
 # Documents a player or server host is most likely to want, in this order, under their own heading.
 FEATURED = [
+    ("MODS.md", "Extensions and mods"),
+    ("SCRIPT-MODS.md", "Script mods (TPW Script)"),
+    ("POOLS.md", "Swimming pools (on by default)"),
     ("RUNNING.md", "Running from source and command-line options"),
     ("SETUP.md", "How the game folder is found"),
     ("WEB.md", "The browser version"),
     ("ONLINE.md", "Online play"),
     ("SERVER.md", "Hosting a server"),
-    ("TEXTURE-PACKS.md", "Enhanced textures"),
+    ("MODDING-GUIDE.md", "Modding guide (start here)"),
+    ("MODS.md", "Extensions and mods"),
+    ("SCRIPT-MODS.md", "Script mods (TPW Script)"),
+    ("POOLS.md", "Pools (on by default)"),
+    ("TEXTURE-PACKS.md", "Texture packs"),
     ("LANGUAGES.md", "Languages"),
     ("COMPATIBILITY.md", "Compatibility"),
     ("PROGRESS.md", "Progress notes"),
@@ -643,7 +650,7 @@ def page(title: str, body: str, depth: int, source: str | None) -> str:
 <body>
 <a class="skip" href="#main">Skip to content</a>
 <header class="top"><div class="wrap"><a class="brand" href="{up}../"><img src="{up}../logo.svg" alt="" width="40" height="40"><span>Open<b>TPW</b></span></a>
-<nav aria-label="Main"><a href="{up}../install.html">Install</a><a href="{up}index.html">Docs</a><a href="{up}../#download">Download</a><a href="https://github.com/meneerkrabs/OpenTPW">GitHub</a></nav></div></header>
+<nav aria-label="Main"><a href="{up}../install.html">Install</a><a href="{up}index.html">Docs</a><a href="{up}MODS.html">Mods</a><a href="{up}../#download">Download</a><a href="https://github.com/meneerkrabs/OpenTPW">GitHub</a></nav></div></header>
 <main id="main" class="wrap page doc">
 <!--email_off-->
 {body}

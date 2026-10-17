@@ -7,15 +7,17 @@
     {"text": "Run a park with guests, staff, money, loans, research, objectives, golden tickets and keys, and save it and resume it later (the app and the browser).", "href": "docs/PARK-SAVES.html"},
     {"text": "Build your own roller coaster: pylons, closed circuits, original cost, rating and train motion.", "href": "docs/COASTERS.html"},
     {"text": "Hear the advisor, the park music and most ride, crowd and interface sounds, and play the game in nine languages at any resolution.", "href": "docs/AUDIO.html"},
+    {"text": "Build swimming pools with changing rooms, slides, spas, a lazy river and swimming guests: the pools extension is on by default, with its own models, textures and guest animations (switch it off under Options, OpenTPW, Extensions and mods).", "href": "docs/POOLS.html"},
+    {"text": "Change the game with mods: data mods, sandboxed TPW Script mods for guest decisions (desktop), the official extensions and local texture packs you build from your own copy.", "href": "docs/MODS.html"},
     {"text": "Go online: publish and visit parks, vote, send postcards and chat, on the official server or your own.", "href": "docs/ONLINE.html"}
   ],
   "cannot": [
-    {"text": "Build go-kart tracks or water rides; the coaster track is still drawn as a plain band.", "matrix": ["Coaster construction, ride behavior and rating"]},
-    {"text": "Load an original save game completely: guests and research are not imported yet.", "href": "docs/TPWS-PAYLOAD.html", "matrix": ["Versioned saves and original read-only import"]},
+    {"text": "Add jumps and tunnels to go-kart tracks and water rides (you can build those tracks and the rides run), or see the riders' heads on coaster and tour cars.", "matrix": ["Coaster construction, ride behavior and rating"]},
+    {"text": "Load an original save game completely: its staff, guests (except those queueing, boarding or riding) and research load, but the random state and some script, particle and sound blocks do not.", "href": "docs/TPWS-PAYLOAD.html", "matrix": ["Versioned saves and original read-only import"]},
     {"text": "Hear every sound: weather, positioned ride effects and some staff sounds are missing or not yet verified.", "matrix": ["Audio, music, video and first-person/ride cameras"]},
     {"text": "See other players or share a park together: a shared park is a snapshot, visits are read-only.", "href": "docs/ONLINE.html"},
     {"text": "Rely on the original's exact numbers everywhere: some rules still use a documented approximation.", "href": "docs/FIDELITY-REGISTER.html", "matrix": ["Visitors, needs, routing and queues", "Economy, shops, toilets and staffing"]}
   ],
-  "later": "Full Theme Park Inc / Sim Coaster support is a later goal. The experimental building-and-guests slice can already start with your own files in the browser or through the desktop world command. Campaign, economy, staff, advisor and native park saves remain unavailable. The new desktop edition chooser is a reviewed PR for a future release.",
+  "later": "Full Theme Park Inc / Sim Coaster support is a later goal. The experimental building-and-guests slice can already start with your own files in the browser or through the desktop world command. Campaign, economy, staff, advisor and native park saves remain unavailable. The desktop edition chooser (--setup) is part of the releases since v0.8.0.",
   "later_href": "docs/THEME-PARK-INC.html"
 }

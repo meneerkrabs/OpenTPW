@@ -12,7 +12,7 @@ public enum PoolAttractionKind
 	Jets,
 	/// <summary>A wave machine on the pool edge: its pool's surface runs waves while it is on.</summary>
 	WaveMachine,
-	/// <summary>A spa pool on one tile beside the pool, with eight seats.</summary>
+	/// <summary>A spa pool beside the pool: one tile with one seat, or the large one (2 x 2 tiles) with four.</summary>
 	Spa
 }
 

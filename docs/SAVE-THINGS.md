@@ -16,7 +16,7 @@ The Theme Park Inc `prebuilt.TPWS` does not decode its World state (`ImportTheme
 
 - **Easymode** (42 things, ids 1 to 42, none free, so the original's load hands out id 43 next; `OriginalThingSlotsTests` pins this). The counts in the first table below are Easymode's.
 - **The eleven private saves** (seven `.TPWS`, four `restart.INTS`; per-save table below). Every park is empty (no placed objects, no staff, no coaster), so they add only the five fixed items, the guests the
-  cheat parks keep and, in one theme, a guest in a state the import drops. `OriginalSaveCorpusTests` (`OPENTPW_TPWS_SAVES`) reads them; the four `.INTS` do not pass the corpus test yet (see "The restart saves").
+  cheat parks keep and, in one theme, a guest in a state the import drops. `OriginalSaveCorpusTests` (`OPENTPW_TPWS_SAVES`) reads them; the four `.INTS` pass it too (see "The restart saves").
 
 On Easymode every saved guest, object and staff member is rebuilt, so no placeholder is held there; a placeholder appears for a guest in a state the import drops (SAVE-002), an object that does not resolve
 and a staff member nobody employs, which `OriginalThingSlotsTests` exercises on the Easymode chain. Of the eleven private saves only `fantasy/Wonder Land.TPWS` and `fantasy/autosave.TPWS` hold one (guest 39, state 20).
@@ -69,9 +69,10 @@ None of the eleven saves holds a coaster: every Coasters block is the empty boun
 
 ### The restart saves
 
-The four `restart.INTS` files are initial saves: no guest, no staff, two attraction things (Gates 11, Lights 12) and the ten singletons, so the next id is 13. They do not read through `OriginalParkImport.Import` today, for two
-reasons that are not caused by the thing pool: the macro-AI calendar before the map reads as rate 15000, month 0, day -1, which the World reader refuses as not a calendar (`SaveWorld.Parse`), and an attraction's history ring
-carries the current entry 0xFFFFFFFF (nothing written yet) where the reader accepts 0 to 31 only (`SaveAttraction.ReadHistory`). Both look like the initial state of an unplayed park; no register ID covers them yet.
+The four `restart.INTS` files are initial saves: no guest, no staff, two attraction things (Gates 11, Lights 12) and the ten singletons, so the next id is 13. They read through `OriginalParkImport.Import` since the importer accepts the two initial states the original builds: the macro-AI calendar of the constructor `0x4F7E80` (start 2000-01-01, month cache 0, day cache -1,
+rate 15000, `SaveCalendar.IsInitial`) and the empty history ring of `0x51ADE0` (current entry 0xFFFFFFFF, 30 entries, no wrap, `SaveAttraction.EmptyRingHead`). The loaders `0x4F7F30` and `0x4E2C10` take both unchecked, so
+nothing looser is accepted than what the constructors write. The original's restart reloads the file: the Mac writes it after a park load (state 15) and reloads it in state 14, and tp.exe's park state machine `0x54E360` does the same
+(state 15 writes it through `0x550B30`, a restart request takes state 10 to 13 and 14, which loads it through `0x5AC5F0` and `0x414D40`). OpenTPW's Restart Park starts a fresh park instead (`SAVE-012`).
 
 ## IDs that are still needed
 

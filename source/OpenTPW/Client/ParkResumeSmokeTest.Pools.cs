@@ -1,7 +1,7 @@
 namespace OpenTPW;
 
 /// <summary>
-/// The opt-in pools variant of the park-resume fixture (<c>OPENTPW_SMOKE_POOLS=1</c> in both phases, with <c>--enable-mod opentpw.pools</c>, docs/POOLS.md): a pool of 6 x 4 cells is painted near the path spine, a
+/// The opt-in pools variant of the park-resume fixture (<c>OPENTPW_SMOKE_POOLS=1</c> in both phases, the pools extension on, which is the default, docs/POOLS.md): a pool of 6 x 4 cells is painted near the path spine, a
 /// changing room is built beside it through the level's own placement, and guests swim in it at the save. The save records the extension and the room's asset keys and holds the swimmers; the restore phase checks
 /// the room and the swimmers came back in the water and continues the same ticks, whose canonical hashes must equal the capture phase's.
 /// </summary>
@@ -34,7 +34,7 @@ internal sealed partial class ParkResumeSmokeTest
 
 	private void PlacePoolsFixture( (int X, int Y) near )
 	{
-		Require( FeatureGates.Pools && level.PoolBuilder != null, "the opentpw.pools extension is on (--enable-mod opentpw.pools) for the pools variant" );
+		Require( FeatureGates.Pools && level.PoolBuilder != null, "the opentpw.pools extension is on (the default) for the pools variant" );
 		var builder = level.PoolBuilder!;
 		var shape = PoolBuilder.Rectangle( (0, 0), (5, 3) ).ToArray();
 		var grid = level.Objects.Grid;

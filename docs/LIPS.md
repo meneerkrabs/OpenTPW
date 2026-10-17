@@ -624,6 +624,18 @@ Native check (macOS arm64 Metal, October 10, 2026): `--smoke-test
 game mixer (SDL audio queue)`. Audibility and on-screen appearance were not
 inspected.
 
+### Restored advice (EXT, October 17, 2026)
+
+The official extension `opentpw.restored-advice` (on by default, `AffectsSimulation` false; [MODS.md](MODS.md)) says advisor messages that exist in the data but that tp.exe v2.0 never posts (the 105 "none" rows of [reverse/ADVISOR-SCAN.md](reverse/ADVISOR-SCAN.md)); it restores 55 of them, each trigger labelled
+`[EXT:restored-advice-<topic>]`. It adds no data and no queue: a restored message is pending advice like any other, with its descriptor's group, its original response rows (the ticket lines pick the response that carries the ticket's own caption), its `Advisor.sam` score where its descriptor's callback names a key and
+otherwise a documented constant, and it goes through the same admission rules (tutorial option, once-only, repeat interval, pending-duplicate limit, game mode, `MinScoreForConsideration`). Three entry points, all gated on the extension at the moment they run:
+
+- the **scan hook**: a scan-zero row's callback (`0x005D60C0`) is replaced by the extension's own while it is on (`AdvisorScan.ScoreOf` asks `RestoredAdviceScan.CallbackFor`); the scan's cursor, row order and eligibility check are the original's;
+- the **poll and events** of `RestoredAdviceDriver`: one state-driven rule per scan call for the rows the scan skips, and the park events, arrival vehicles and online screens that post the rest;
+- the **help hooks**: windows (`RestoredAdvice.WindowHelp`), tools and the message tube post tutorial hints through `HudHost.RestoredHelp`; `AutomaticAdvisor.PostHelp` drops a restored help message while the extension is off.
+
+The extension keeps no saved state. The pending records and history it causes are in the advisor's own snapshot, which has the same shape with the extension on or off and loads either way. `AdvisorRestoredAdviceTests` fires each trigger through the real queue in a constructed park state and checks that off is silent.
+
 ## Raw LIP authoring
 
 `LipSyncFile.Encode(IReadOnlyList<uint>)` emits the documented raw little-endian

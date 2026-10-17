@@ -1,6 +1,6 @@
 # Pools (`opentpw.pools`)
 
-An official extension (docs/MODS.md), **off by default**, in which the player paints **pool water cells** of any size and shape on the park grid. It is modelled on the
+An official extension (docs/MODS.md), **on by default** (switch it off on the Extensions and mods screen), in which the player paints **pool water cells** of any size and shape on the park grid. It is modelled on the
 pool tiles of Roller Coaster Tycoon 3 Soaked! (ideas only; no asset of that game or of Theme Park World is used or shipped). The original Theme Park World has no pools: everything
 here is OpenTPW's own and carries `[EXT:pools-*]` labels in the code and in this page.
 
@@ -30,8 +30,21 @@ entrance, guests choose it like an attraction, change, swim freely through the c
 
 ## The extension and the save rule
 
-`opentpw.pools` is registered in `OfficialExtensions` with `DefaultEnabled: false` and `AffectsSimulation: true`; the gate is `FeatureGates.Pools`, read the way
-`FeatureGates.CrossEditionObjects` is. Turn it on in `mods.json` (`"opentpw.pools": true`), on the Extensions and mods screen, or for one run with `--enable-mod opentpw.pools`.
+`opentpw.pools` is registered in `OfficialExtensions` with `DefaultEnabled: true` and `AffectsSimulation: true`; the gate is `FeatureGates.Pools`, read the way
+`FeatureGates.CrossEditionObjects` is. It is **on by default** (since October 17, 2026). Turn it off in `mods.json` (`"opentpw.pools": false`), on the Extensions and mods screen, or for one run with `--disable-extension opentpw.pools`.
+`--enable-mod opentpw.pools` still works and changes nothing now.
+
+**Existing `mods.json` files.** The file stores only the choices a player made (`ModSettings.Enabled` holds an entry per toggled mod or extension, and `IsEnabled` falls back to the extension's default for an id without an entry; the Extensions and mods screen
+writes the loaded entries plus the toggles, never the untouched defaults). So a player who never touched the pools toggle has no `opentpw.pools` entry and gets the extension **on** after the update, and a player who switched it off
+explicitly has `"opentpw.pools": false` and stays off. The browser's `/config/mods.json` has the same format and the same behaviour. A player who once switched it **on** has `true`, which is the new default too. (There is
+no case where an untouched old default "off" is stored, so no migration is needed.) A park without pool cells or a changing room saves and loads the same bytes with the extension on or off, so switching on changes no existing park.
+
+**Theme Park Inc.** The pools UI is unavailable in a Theme Park Inc run (`GameEditions.IsThemeParkInc`) even with the extension on: `FeatureGates.Pools` is false there, so there is no pool row in the buy list, no pool tool, no render holes, no
+changing room, no pool extras and no swimmers, and `PoolContent.CatalogRoot` adds no objects to the Theme Park Inc catalog. The reason is that the styles (`PoolStyles` knows the four Theme Park World themes; a Theme Park Inc world would get `Generic`), the changing rooms and extras (`objects.json` lists only the four Theme Park World themes), the
+guest sprite sets (the eight Theme Park World kid sets) and the park layout were made and checked for Theme Park World only; Theme Park Inc is an experimental slice (docs/THEME-PARK-INC.md). It is covered by
+`PoolsTests.ThePoolsUiIsUnavailableInThemeParkIncRunsEvenWithTheExtensionOn`. Pools for Theme Park Inc can be added later with styles and rooms of its own.
+
+**Browser.** The browser build embeds `content/pools` (objects, changing rooms, swim sprites) and resolves the extensions from the default set plus `/config/mods.json`, so pools is on there by default too.
 
 **A save records the extension only when the park actually has pool cells.** `AffectsSimulation: true` alone would tag every save of every park once the extension is on
 (`ModSet.SimulationMods`), so the extension is one of `ParkResumeMods.UsedOnlyExtensionIds`: `ParkResumeMods.Capture(active, inUse)` leaves it out unless `inUse` names it, and
@@ -179,7 +192,7 @@ cell, which together show straight edges, inner and outer corners and an isolate
 prints the shape's engine centre, which `--capture-camera` can aim at:
 
 ```sh
-bash scripts/run.sh --game-path '/path/to/Theme Park World' --load-original-level jungle --enable-mod opentpw.pools \
+bash scripts/run.sh --game-path '/path/to/Theme Park World' --load-original-level jungle \
   --debug-pool default --silent --capture-world pool.png --capture-frames 300 --capture-camera 28.2,-38.6,45,-90
 ```
 
@@ -290,7 +303,7 @@ The extension ships `content/pools` (copied next to the program with the rest of
 - **Which slots ship.** The land renderers draw only three slots of a kid set: 0 (standing), 1 (walking) and 14 (waiting in a queue); the running slot 2 and the gestures, stumble and cheer (4, 6, 11, 12) are read by nothing in OpenTPW, so the kid replacement ships 0, 1 and 14 and leaves the rest empty (an empty slot draws the standing frame). To add a slot, render it (`--part land` makes them all), list it in `pack_sprite_sets.py --slots` in `build-content.sh` and regenerate; the swimwear table keeps every slot (P3 to P5 use 0, 1 and 3 to 14).
 - **Sizes.** On disk: swimwear 6.56 MB, kids 1.23 MB, heads 1.05 MB, 8.84 MB of sprites and 0.22 MB of objects (9.06 MB, 7 MB compressed; every regeneration adds about that to the git history). In memory (`PoolsContentTests.TheShippedAtlasSizesArePinned`): the kid atlases are 1024 x 512 (one 1024 x 256), 15 MiB of RGBA in all, the heads 11 MiB (four 1024 x 256, four 1024 x 512) and the swim sets eight 1024 x 2048, 64 MiB: **90 MiB of RGBA, about 120 MiB on the GPU with mip levels.** The decoded pixels are dropped after the upload (`GuestSpriteAtlas.ReleasePixels`; the bank keeps a byte per pixel and a texture-pack reload decodes again), so the CPU keeps the banks, not a second copy; the swim sets (64 MiB decoded) are decoded on a worker on the desktop only for a park that already has pool water at level setup, or when its first pool cell is painted (`Level.PreloadSwimSprites`), and held until the swimmers' renderer uploads them; a park without pools decodes nothing. The browser build is single-threaded and does no preload: the renderer loads and decodes them when it is created (the first frame with a pool and complete sets).
 - **When the swap applies.** The kid and head sets are swapped together or not at all: both folders must hold exactly the eight sets (`Complete`/`Matches`), the game's kid sets must be the Theme Park World ones (a Theme Park Inc park has four of other names and keeps its own guests; its swimmers still use the Theme Park World swim sets, a known mismatch), and the **pool guest art** extension `opentpw.pools-guest-art` (presentation only, no simulation flag, on by default, listed on the Extensions and mods screen in every language) must be on. Switched off, land guests are the original ones and swimmers keep the swim sets. A trace line says when the swap takes over. The sets are read with System.IO from the extension's folder, so an `overrides` mod of `/esprites/Generic/Kids*` and a texture pack's kid atlases do not apply to them while the swap is on (switch the art off to use them).
-- **Browser.** The sprite sets are **not embedded** (`OpenTPW.Web.csproj` leaves `content/pools/esprites` out of the resources: 8.8 MB in the startup assembly would cost every user about 5 to 6 MB Brotli, `PoolSpriteDeliveryTests.TheWebProjectEmbedsTheManifestButNotTheSprites` and `PoolsContentTests.TheWebProjectDoesNotEmbedTheSpriteSets`), and they are not missing either: they are delivered on demand like the Clarity texture pack (`PoolSpriteDelivery`).
+- **Browser.** The sprite sets are **not embedded** (`OpenTPW.Web.csproj` leaves `content/pools/esprites` out of the resources: 8.8 MB in the startup assembly would cost every user about 5 to 6 MB Brotli, `PoolSpriteDeliveryTests.TheWebProjectEmbedsTheManifestButNotTheSprites` and `PoolsContentTests.TheWebProjectDoesNotEmbedTheSpriteSets`), and they are not missing either: they are delivered on demand (`PoolSpriteDelivery`).
   - **Pinned manifest.** `content/pools/esprites.manifest.json` lists the path, size and SHA-256 of every file below `esprites` (48 files, 8.84 MB; about 7 KB, the only part in the startup download). `tools/pools/sprite_manifest.py --write` makes it (`build-content.sh` runs it), `PoolSpriteDeliveryTests.TheManifestPinsEveryShippedSpriteFileAndNothingElse` fails when it and the files disagree.
   - **Static files.** The web project publishes the files below `wwwroot/pools-sprites/` (`Content` linked into `wwwroot`), so the site serves them from the page's own origin, and the server image copies `content/pools` (and `content/mods`) into its web build.
   - **Background fetch.** Once the game has started and the extensions are known, `main.js` plans the fetch (`opentpw-pool-sprites.js`: nothing with pools off; the swim sets (`Swim/`, 16 files, 6.56 MB) whenever pools is on; the land sets (`Generic/`, 32 files) too only with `opentpw.pools-guest-art` on, fetched first because a park swaps them only at its setup) and downloads the files with three at a time, never blocking the menu. Each file goes through the default HTTP cache (the address carries the first 16 hex digits of its hash, so a changed file is a new URL) to `Program.AddPoolSpriteFile`, which keeps it in the in-memory file system at the desktop's path (`content/pools/esprites/...` below the program folder) only when its path, size and SHA-256 are the pinned ones (`PoolSpriteDelivery.Store`: traversal, absolute and unknown paths, a wrong size and a wrong hash are refused; the file appears under its name only once complete). Nothing goes to the save or options storage.
@@ -308,14 +321,14 @@ is used or committed; [CONTENT-KIT.md](CONTENT-KIT.md) describes the tools.
 random points. `--debug-pool-offset dx,dy` moves the place the pool shape is searched from the camera target by whole cells, to frame the room:
 
 ```sh
-bash scripts/run.sh --game-path '/path/to/Theme Park World' --load-original-level jungle --enable-mod opentpw.pools \
+bash scripts/run.sh --game-path '/path/to/Theme Park World' --load-original-level jungle \
   --debug-pool default --debug-swimmers 8 --debug-pool-offset 3,0 --silent --capture-world pool.png --capture-frames 400 --capture-camera -29.5,-50.6,45,-90
 ```
 
 First on-screen check (October 17, 2026; all four parks, eight swimmers each, camera `x,y,45,-90` and `x,y,45,-150`; 3024 x 1686 captures, shown at 1600 wide): the swimmers swim in all directions with different strokes (arms out of the water, the foam ring, the lower body tinted), keep inside the coping, and the
 cabin stands beside the pool with its themed textures. The images are `reports/pools-p2-<theme>-top.png` and `-angle.png` and a short clip `reports/pools-p2-swimming.gif` (`--capture-sequence 40,4`). The art was judged on these captures only, not against a capture of the original game (which has no pools).
 
-The save roundtrip in the middle of a swim is also checked natively: `OPENTPW_SMOKE_POOLS=1 bash scripts/run.sh ... --enable-mod opentpw.pools --park-resume-smoke capture ...` then `restore` (`ParkResumeSmokeTest.Pools.cs`) paints a pool, builds a room, puts three guests in the water at the save, and the restore phase finds the room and the swimmers
+The save roundtrip in the middle of a swim is also checked natively: `OPENTPW_SMOKE_POOLS=1 bash scripts/run.sh ... --park-resume-smoke capture ...` then `restore` (`ParkResumeSmokeTest.Pools.cs`) paints a pool, builds a room, puts three guests in the water at the save, and the restore phase finds the room and the swimmers
 in the water of the 24-cell pool and continues with the capture phase's canonical hashes.
 
 ### Tests

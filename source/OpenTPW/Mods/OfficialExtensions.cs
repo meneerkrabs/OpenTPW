@@ -46,12 +46,12 @@ public static class OfficialExtensions
 
 	/// <summary>
 	/// The pools extension (docs/POOLS.md): the player paints pool water cells of any size and shape, which are drawn with an animated surface and
-	/// auto-joined edges, cost money per cell and are saved. Off by default because it adds a cell type to the park simulation. A park save records
+	/// auto-joined edges, cost money per cell and are saved. On by default (a player can switch it off); it adds a cell type to the park simulation, but a park save records
 	/// the extension only while the park has pool cells or a changing room, so a park without either saves byte-identically whether the extension is on or off
 	/// (<c>ParkResumeMods.UsedOnlyExtensionIds</c>).
 	/// </summary>
 	// [EXT:pools-extension] OpenTPW's own extension; the original game has no pools
-	public static IOpenTpwExtension Pools { get; } = new OpenTpwExtension( "opentpw.pools", "Pools", new ModVersion( 1, 0, 0 ), DefaultEnabled: false, AffectsSimulation: true );
+	public static IOpenTpwExtension Pools { get; } = new OpenTpwExtension( "opentpw.pools", "Pools", new ModVersion( 1, 0, 0 ), DefaultEnabled: true, AffectsSimulation: true );
 
 	/// <summary>
 	/// The pool guest art (docs/POOLS.md): while it and the pools extension are on, the land guests of a Theme Park World park are drawn with OpenTPW's own 2x Blender kid and head sets instead of the original sprites
@@ -75,8 +75,17 @@ public static class OfficialExtensions
 	// [EXT:smarter-guests] OpenTPW's own extension; the original game's guests are the faithful default
 	public static IOpenTpwExtension SmarterGuests { get; } = new OpenTpwExtension( "opentpw.smarter-guests", "Smarter guests", new ModVersion( 1, 3, 0 ), DefaultEnabled: false, AffectsSimulation: true, PlayerSelectable: false );
 
+	/// <summary>
+	/// The restored advice extension (docs/MODS.md, docs/reverse/ADVISOR-SCAN.md "Restored advice"): triggers for advisor messages that exist in the shipped data (speech recorded, often captioned)
+	/// but that tp.exe v2.0 never plays, because their score callback is the constant-zero stub or nothing posts them. On by default and it never changes the park simulation: the advisor is
+	/// outside the world state hash (<see cref="WorldStateHash"/>), the extension only reads park state and posts advice, and a save made with or without it loads with or without it
+	/// (<see cref="AdvisorController.AdvisorControllerSnapshot"/> has the same shape and every descriptor exists in both cases), so it is not recorded in park saves.
+	/// </summary>
+	// [EXT:restored-advice] OpenTPW's own extension; the original game never says these lines
+	public static IOpenTpwExtension RestoredAdvice { get; } = new OpenTpwExtension( "opentpw.restored-advice", "Restored advice", new ModVersion( 1, 0, 0 ), DefaultEnabled: true, AffectsSimulation: false, PlayerSelectable: true );
+
 	/// <summary>All official extensions, in declaration order.</summary>
-	public static IReadOnlyList<IOpenTpwExtension> All { get; } = new[] { Online, CrossEditionObjects, SmarterGuests, GuestInsights, Pools, PoolGuestArt };
+	public static IReadOnlyList<IOpenTpwExtension> All { get; } = new[] { Online, CrossEditionObjects, SmarterGuests, GuestInsights, Pools, PoolGuestArt, RestoredAdvice };
 
 	public static IOpenTpwExtension? Find( string id ) => All.FirstOrDefault( extension => extension.Id == id );
 }

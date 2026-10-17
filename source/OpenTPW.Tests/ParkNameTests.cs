@@ -30,6 +30,26 @@ public class ParkNameTests
 	/// the setters 0x4E2950 and 0x4E2A50); the shipped jungle Easymode save holds LOST / Kingdom, the gate's default row.
 	/// </summary>
 	[TestMethod]
+	public void ASavedGatesTwoLinesAreTheParkNameUnlessEmptyOrUnholdable()
+	{
+		Assert.AreEqual( new ParkNameLines( "Wonder", "Land" ), ParkNameLines.FromSavedGate( "Wonder", "Land" ) );
+		Assert.AreEqual( new ParkNameLines( "", "Land" ), ParkNameLines.FromSavedGate( "", "Land" ) );
+		Assert.IsNull( ParkNameLines.FromSavedGate( "", "" ), "an unnamed gate keeps the default lines" );
+		Assert.IsNull( ParkNameLines.FromSavedGate( null, "Land" ) );
+		Assert.IsNull( ParkNameLines.FromSavedGate( new string( 'x', ParkNameLines.MaximumLength + 1 ), "Land" ), "a line longer than the gate holds is refused" );
+		Assert.IsNull( ParkNameLines.FromSavedGate( "Wonder\u0007", "Land" ), "a control character is refused" );
+	}
+
+	[TestMethod]
+	public void AnIdleAttractionSavedWithItsOpenWordClearIsClosedAndTheOthersAreNot()
+	{
+		Assert.IsTrue( RideOpening.ClosedByImportedOpenWord( 0, RideObjectStates.Idle ) );
+		Assert.IsFalse( RideOpening.ClosedByImportedOpenWord( 1, RideObjectStates.Idle ) );
+		foreach ( var state in new[] { RideObjectStates.BrokenDown, RideObjectStates.Upgrading, RideObjectStates.Condemned, RideObjectStates.NotAnAttraction } )
+			Assert.IsFalse( RideOpening.ClosedByImportedOpenWord( 0, state ), $"state {state} is imported by its own rules" );
+	}
+
+	[TestMethod]
 	public void TheShippedEasymodeSaveCarriesTheGateLines()
 	{
 		if ( ObjectCatalogCorpusTests.UseOriginalData( out var previous ) == null )

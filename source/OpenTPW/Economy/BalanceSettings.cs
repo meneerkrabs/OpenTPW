@@ -245,8 +245,49 @@ public sealed class BalanceSettings
 	public EntryFeePerception EntryFee { get; }
 	public GoldenTicketSettings GoldenTickets { get; }
 	public ChallengeSchedule ChallengeTiming { get; }
-	public IReadOnlyList<int> ChallengesInThisLevel { get; }
-	public IReadOnlyDictionary<int, ChallengeDefinition> Challenges { get; }
+	public IReadOnlyList<int> ChallengesInThisLevel { get; private set; }
+	public IReadOnlyDictionary<int, ChallengeDefinition> Challenges { get; private set; }
+
+	/// <summary>The challenge slots an original save loaded in place of the level's own (<see cref="AdoptChallenges"/>); null while the park plays the level's challenges.</summary>
+	public IReadOnlyList<ChallengeDefinition>? AdoptedChallenges { get; private set; }
+
+	/// <summary>
+	/// Makes the challenges the slots of an original save: slot k holds <paramref name="slots"/>[k] (its definition, which an original load takes from the save and not from
+	/// <c>Challenges.sam</c>), and the level's list becomes the slots' keys in order. A slot equal to the level's own definition keeps that definition's key, any other gets a key of its own.
+	/// </summary>
+	// [BIN:TPW-EXE:0x4d0f90 challenge slot serializer] each slot's type, time, value, objects, staff type, prize, follow-up type and the two flags are saved and loaded as they are (the definition of the challenge, not a reference to Challenges.sam)
+	internal void AdoptChallenges( IReadOnlyList<ChallengeDefinition> slots )
+	{
+		ArgumentNullException.ThrowIfNull( slots );
+		var definitions = new Dictionary<int, ChallengeDefinition>( Challenges );
+		var order = new List<int>();
+		var nextKey = definitions.Keys.DefaultIfEmpty( -1 ).Max() + 1;
+		for ( var index = 0; index < slots.Count; index++ )
+		{
+			var slot = slots[index];
+			var key = index < ChallengesInThisLevel.Count && Challenges.TryGetValue( ChallengesInThisLevel[index], out var own ) && Same( own, slot ) ? own.Index : nextKey++;
+			definitions[key] = slot with { Index = key };
+			order.Add( key );
+		}
+		var unchanged = order.SequenceEqual( ChallengesInThisLevel );
+		Challenges = definitions;
+		ChallengesInThisLevel = order;
+		AdoptedChallenges = unchanged ? null : order.Select( key => definitions[key] ).ToList();
+	}
+
+	/// <summary>Takes the adopted challenge slots of an own park save back with the keys they were saved under (<see cref="AdoptedChallenges"/>).</summary>
+	internal void RestoreAdoptedChallenges( IReadOnlyList<ChallengeDefinition> adopted )
+	{
+		ArgumentNullException.ThrowIfNull( adopted );
+		var definitions = new Dictionary<int, ChallengeDefinition>( Challenges );
+		foreach ( var definition in adopted )
+			definitions[definition.Index] = definition;
+		Challenges = definitions;
+		ChallengesInThisLevel = adopted.Select( definition => definition.Index ).ToList();
+		AdoptedChallenges = adopted.ToList();
+	}
+
+	private static bool Same( ChallengeDefinition a, ChallengeDefinition b ) => a with { Index = 0 } == b with { Index = 0 };
 	public int KeysToEnter { get; }
 	public bool CanEarnTickets { get; }
 	public bool CanSpendTickets { get; }

@@ -13,7 +13,8 @@ namespace OpenTPW;
 // [EXT:texture-pack] Upscaled replacement textures are an OpenTPW presentation option, not original behaviour.
 public static class TexturePack
 {
-	public const string DefaultName = "clarity-enhanced";
+	/// <summary>The retired Clarity pack (removed October 17, 2026): a saved choice of it migrates to Original (<see cref="GraphicsSettings.Validate"/>).</summary>
+	public const string RetiredClarityName = "clarity-enhanced";
 	public const string EnhancedName = "enhanced";
 	public const string ManifestFileName = "pack.json";
 	public const string TexturesDirectoryName = "textures";
@@ -26,14 +27,11 @@ public static class TexturePack
 	public static int Replaced { get; private set; }
 
 	/// <summary>The pack names the options screen labels itself, in cycle order.</summary>
-	public static readonly string[] KnownNames = { DefaultName, EnhancedName, "detailed" };
+	public static readonly string[] KnownNames = { EnhancedName, "detailed" };
 
 	/// <summary><c>&lt;config&gt;/texture-packs</c>, next to <c>display.json</c> and <c>graphics.json</c>; one directory per pack.</summary>
 	public static string PacksDirectory() =>
 		Path.Combine( Path.GetDirectoryName( DisplaySettings.GetDefaultPath() )!, "texture-packs" );
-
-	/// <summary><c>&lt;config&gt;/texture-packs/clarity-enhanced</c>, for a local override of the default pack.</summary>
-	public static string DefaultPackDirectory() => PackDirectory( DefaultName );
 
 	/// <summary>Portable bundled packs next to the executable, also usable from the browser's virtual file system.</summary>
 	public static string BundledPacksDirectory() => Path.Combine( AppContext.BaseDirectory, "content", "texture-packs" );
@@ -81,19 +79,14 @@ public static class TexturePack
 	/// <summary>True when an enhanced world choice (any non-empty valid pack name) is active.</summary>
 	public static bool Enhanced { get; private set; }
 
-	/// <summary>True when the selected pack is Clarity (an explicit Original choice leaves this false).</summary>
-	public static bool IsDefaultActive { get; private set; }
-
-	/// <summary>Optional asynchronous host request for a missing Clarity PNG, relative to its pack directory.</summary>
-	public static Action<string>? RequestMissing { get; set; }
 	/// <summary>Independent interface choice: shipped HD icons can be used with original world textures.</summary>
 	public static bool EnhancedInterface { get; private set; } = true;
 
 	private static bool packBeforeShippedArt;
 
 	/// <summary>
-	/// The replacement PNG for a game texture path, or null when there is none. Clarity and an environment override
-	/// use their own interface art first, falling back to the shipped icons; older choices keep the shipped icons first.
+	/// The replacement PNG for a game texture path, or null when there is none. An environment override
+	/// uses its own interface art first, falling back to the shipped icons; named packs keep the shipped icons first.
 	/// With Original HUD/icons, <c>ui/</c> paths use neither pack replacements nor shipped icons.
 	/// </summary>
 	public static string? Find( string gamePath )
@@ -103,8 +96,6 @@ public static class TexturePack
 		if ( interfaceTexture && !EnhancedInterface )
 			return null;
 		var packed = string.IsNullOrEmpty( Directory ) ? null : Path.Combine( Directory, relative );
-		if ( IsDefaultActive && (packed == null || !File.Exists( packed )) )
-			RequestMissing?.Invoke( TexturesDirectoryName + "/" + relative );
 		var shipped = interfaceTexture && EnhancedInterface ? Path.Combine( ShippedDirectory, relative ) : null;
 		if ( packBeforeShippedArt && packed != null && File.Exists( packed ) )
 			return ReplacedFile( packed );
@@ -162,11 +153,6 @@ public static class TexturePack
 		}
 	}
 
-	/// <summary>True when a specific pack directory, or the default local/bundled pack, exists and is usable.</summary>
-	public static bool IsInstalled( string? packDirectory = null ) => packDirectory != null
-		? Open( packDirectory, new List<string>() ) != null
-		: Resolve( DefaultName, new List<string>(), PacksDirectory(), BundledPacksDirectory() ) != null;
-
 	private static (string Directory, TexturePackManifest Manifest)? Resolve( string name, ICollection<string> diagnostics, string packsDirectory, string bundledPacksDirectory )
 	{
 		foreach ( var root in new[] { packsDirectory, bundledPacksDirectory }.Distinct( StringComparer.Ordinal ) )
@@ -187,7 +173,6 @@ public static class TexturePack
 	/// </summary>
 	public static void Activate( string? name, ICollection<string> diagnostics, string? packsDirectory = null, string? bundledPacksDirectory = null, bool enhancedInterface = true )
 	{
-		IsDefaultActive = false;
 		EnhancedInterface = enhancedInterface;
 		if ( Environment.GetEnvironmentVariable( "OPENTPW_TEXTURE_PACK" ) is { Length: > 0 } environmentOverride )
 		{
@@ -207,8 +192,6 @@ public static class TexturePack
 			return;
 		}
 		Enhanced = true;
-		packBeforeShippedArt = string.Equals( name, DefaultName, StringComparison.OrdinalIgnoreCase );
-		IsDefaultActive = packBeforeShippedArt;
 		var resolved = Resolve( name, diagnostics, packsDirectory ?? PacksDirectory(), bundledPacksDirectory ?? BundledPacksDirectory() );
 		if ( resolved == null )
 		{

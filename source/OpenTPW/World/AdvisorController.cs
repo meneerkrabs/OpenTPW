@@ -307,12 +307,16 @@ internal sealed class AdvisorBalance
 			// The help score is optional: a settings file without it leaves the help silent instead of disabling the advisor.
 			ContextHelpScore = settings.GetInt( AdvisorTables.ContextHelpScoreKey, 0, optional: true ),
 			ScanParameters = ReadScanParameters( settings ),
+			Restored = RestoredAdviceSettings.Read( settings ),
 			Scores = AdvisorTables.AllMessages.Where( message => message.FixedScore == null ).Select( message => message.ScoreKey ).Distinct( StringComparer.OrdinalIgnoreCase )
 				.ToDictionary( key => key, key => key == AdvisorTables.HelpScoreKey || key == AdvisorTables.ChallengeScoreKey || key == AdvisorTables.MechanicOnTheWayScoreKey || AdvisorTables.PrankScoreKeys.Contains( key, StringComparer.OrdinalIgnoreCase )
 					|| AdvisorTables.EventScoreKeys.Concat( AdvisorTables.ScanScoreKeys ).Any( entry => string.Equals( entry.ScoreKey, key, StringComparison.OrdinalIgnoreCase ) )
 					? settings.GetInt( key, 0, optional: true ) : settings.GetInt( key ), StringComparer.OrdinalIgnoreCase ),
 		};
 	}
+
+	/// <summary>[EXT:restored-advice] The optional keys of the restored messages' callbacks (<see cref="RestoredAdviceSettings"/>); empty when the file has none.</summary>
+	public RestoredAdviceSettings Restored { get; init; } = RestoredAdviceSettings.Empty;
 
 	/// <summary>The thresholds the ported scan callbacks read besides their scores (<see cref="AdvisorScan.ParameterKeys"/>); a key the file lacks is absent and leaves its callback silent.</summary>
 	public IReadOnlyDictionary<string, double> ScanParameters { get; init; } = new Dictionary<string, double>( StringComparer.OrdinalIgnoreCase );
@@ -357,7 +361,7 @@ internal sealed class AdvisorController
 	{
 		Balance = balance ?? throw new ArgumentNullException( nameof( balance ) );
 		Queue = new AdvisorScoreQueue( balance.Descriptors(), new Dictionary<int, AdvisorMessageHistory>(), balance.MinimumScore );
-		Scan = new AdvisorScan( AdvisorDescriptorTable.Rows, scanCallbacks ?? AdvisorScanCallbacks.Implemented );
+		Scan = new AdvisorScan( AdvisorDescriptorTable.Rows, scanCallbacks ?? AdvisorScanCallbacks.Implemented, RestoredAdviceScan.CallbackFor );
 	}
 
 	/// <summary>The background scan and its cursor (the controller's only state besides the queue).</summary>
@@ -403,16 +407,29 @@ internal sealed class AdvisorController
 	/// score is above <c>MinScoreForConsideration</c>, builds the record with that score and queues it. <paramref name="money"/> is null without a park.
 	/// </summary>
 	// [BIN:TPW-EXE:0x0059A58B scan and post] the result row is scored again (0x59BF20: the same callback on the same state), only a score above the object's +0x20 (MinScoreForConsideration, 0xFB3560, signed) builds a record (0x59B590) and queues it (0x59A940)
-	public AdvisorScanOutcome ScanOnce( IAdvisorMoneyState? money, uint liveGameTick, int gameType, bool tutorialEnabled, IAdvisorParkState? park = null )
+	public AdvisorScanOutcome ScanOnce( IAdvisorMoneyState? money, uint liveGameTick, int gameType, bool tutorialEnabled, IAdvisorParkState? park = null, IRestoredAdviceState? restored = null )
 	{
-		var context = new AdvisorScanContext( Balance, money, park );
+		var context = new AdvisorScanContext( Balance, money, park ) { Restored = restored };
 		var result = Scan.Step( context, gameType, ( messageId, score ) =>
-			Queue.HasDescriptor( messageId ) && Queue.Eligibility( new AdvisorPendingAdvice( messageId, score ), liveGameTick, tutorialEnabled ) == AdvisorEligibility.Eligible );
+			Queue.HasDescriptor( messageId ) && RestoredAdvice.RepeatAllows( Queue, messageId, liveGameTick ) && Queue.Eligibility( new AdvisorPendingAdvice( messageId, score ), liveGameTick, tutorialEnabled ) == AdvisorEligibility.Eligible );
 		// the original has no test for "no message" here: with a minimum below -1 the -1 of the empty result would be queued; the empty result is not posted (the shipped minimum is 25)
 		if ( result.MessageId == AdvisorScan.NoMessage || result.Score <= Queue.MinimumScore )
 			return new AdvisorScanOutcome( result.ScoredRow, null, null );
 		var admission = Queue.Enqueue( new AdvisorPendingAdvice( result.MessageId, result.Score ), liveGameTick, tutorialEnabled );
 		return new AdvisorScanOutcome( result.ScoredRow, new AdvisorPendingAdvice( result.MessageId, result.Score ), admission );
+	}
+
+	/// <summary>
+	/// [EXT:restored-advice] Posts a restored message the way game code posts advice (<c>0x59B590</c> and <c>0x59A940</c>): with the score of <see cref="RestoredAdvice.ScoreOf"/> (null leaves it silent), subject to the queue's admission
+	/// rules (tutorial option, once-only, slaps, duplicates, repeat interval) and the descriptor's game-mode selector. Null for a message the extension does not restore, one without a descriptor or a score, one the game mode excludes or one its own repeat rule holds back (<see cref="RestoredAdviceEntry.RepeatGroups"/>).
+	/// </summary>
+	/// <param name="variant">The response to say (the caption of the matching ticket, say); -1 takes the descriptor's next response.</param>
+	public AdvisorQueueAdmission? AdviseRestored( int messageId, uint liveGameTick, int gameType, bool tutorialEnabled, int variant = -1 )
+	{
+		if ( RestoredAdvice.ScoreOf( Balance, messageId ) is not { } score || !Queue.HasDescriptor( messageId ) || messageId >= AdvisorDescriptorTable.Rows.Count
+			|| !AdvisorTables.GameModeAccepts( AdvisorDescriptorTable.Rows[messageId].GameMode, gameType ) || !RestoredAdvice.RepeatAllows( Queue, messageId, liveGameTick ) )
+			return null;
+		return Queue.Enqueue( new AdvisorPendingAdvice( messageId, score, variant ), liveGameTick, tutorialEnabled );
 	}
 
 	/// <summary>

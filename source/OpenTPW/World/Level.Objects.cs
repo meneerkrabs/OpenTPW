@@ -1047,7 +1047,7 @@ public partial class Level
 	// [BIN:TPW-EXE:0x0052FAB0 queue option] the option 0x81B0CC is set by the build tool from the type's +0x40 (0x52FA90 at 0x527986 and 0x46D644) and is 1 after SetMode (0x52F139); 0x8187F8 is the upgrade selection (0x52F880), which no OpenTPW build uses
 	// [BIN:TPW-EXE:0x00534115 bridge ops] the refresh ops after the laid cell run 0x81 (the tile refresh 0x5365D0, RefreshTile) and 0x85 and 0x86, which act on a track cell of the second layer (0x53AD30 first) and so do nothing for a cell that holds none
 	// A cell nothing laid (an imported or restored park, Theme Park Inc) keeps the nearest walkable cell as the guests' entrance, which their route graph needs to be a path cell (QUEUE-003, WALK-005).
-	private static (int X, int Y)? WalkableNear( GuestPathGrid grid, int x, int y ) =>
+	internal static (int X, int Y)? WalkableNear( GuestPathGrid grid, int x, int y ) =>
 		grid.IsWalkable( x, y ) || grid.IsQueue( x, y ) ? (x, y) : FindRideEntrance( grid, x, y, x, y );
 
 	public void RotateBuild() => BuildRotation = (BuildRotation + 90) % 360;
@@ -1416,6 +1416,33 @@ public partial class Level
 	}
 
 	/// <summary>
+	/// An original save's RSSE block gives the imported objects' scripts their saved ids, list order and pass counter (<see cref="ParkObjects.ImportOriginalScripts"/>, DET-013): the
+	/// one slice per eight passes then falls on the passes the saved park ran it on. Only a park started from an original save does this; a resumed park restores its own scripts.
+	/// </summary>
+	private void ImportOriginalScripts()
+	{
+		if ( resumeState != null || OriginalPark?.Save is not { Rsse: { } rsse } )
+			return;
+		foreach ( var line in Objects.ImportOriginalScripts( rsse ) )
+		{
+			Park?.Import?.Report( line );
+			Log.Trace( $"Park script import: {line}" );
+		}
+	}
+
+	/// <summary>
+	/// An original save's Particles block gives the level's particle pool its saved emitters and effectors, generator and counters (SAVE-013, tp.exe loader 0x51F7A0). Only a park started from an
+	/// original save does this; a resumed park restores its own pool.
+	/// </summary>
+	private void ImportOriginalParticles()
+	{
+		if ( resumeState != null || OriginalPark?.Save is not { Particles: { On: true } block } )
+			return;
+		ParticlesImported?.Invoke( this, block );
+		Park?.Import?.Report( $"Particles imported: {block.ActiveEmitterOrder.Count} emitters and {block.ActiveEffectorOrder.Count} effectors restored with the saved generator and counters; the post-load pass hides the screen-space ones (0x5200B0)." );
+	}
+
+	/// <summary>
 	/// An original save's operating words (speed, capacity and duration, SAVE-006) become the linked ride runtimes' words where they differ from the tier's values. Only a park started
 	/// from the shipped save does this; a resumed park restores its own words (<see cref="OriginalObjectRuntimeSnapshot"/>).
 	/// </summary>
@@ -1429,6 +1456,13 @@ public partial class Level
 			if ( !import.AttractionInstances.TryGetValue( attraction.Id, out var instance ) || !runtimes.TryGetValue( instance, out var runtime ) )
 				continue;
 			var taken = runtime.RestoreOriginalSettingWords( attraction.OperatingSpeed, attraction.OperatingCapacity, attraction.OperatingDuration );
+			// [BIN:TPW-EXE:0x004E0E60 SetState] the open word (mCanLoad, +0x68) is cleared by states 1, 2 and 4 (their import closes the ride already) and by the player's close or a maintenance call; an idle attraction saved with it clear stays closed until the door opens the park
+			if ( Park!.Economy.TryGetObject( instance, out var objectState ) && RideOpening.ClosedByImportedOpenWord( attraction.CanLoad, ParkEconomy.ObjectState( objectState ) ) && runtime.IsOpen )
+			{
+				runtime.Close();
+				SyncOpenState( runtime );
+				taken = taken.Concat( new[] { "closed (the saved open word is 0)" } ).ToList();
+			}
 			if ( taken.Count == 0 )
 				continue;
 			var line = $"Ride settings imported for attraction thing {attraction.Id} (Info.Id {attraction.InfoId}): {string.Join( ", ", taken )}.";

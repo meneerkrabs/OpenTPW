@@ -49,6 +49,8 @@ internal sealed class AdvisorScanContext
 	public AdvisorBalance Balance { get; }
 	/// <summary>The park's money statistics; null without a park (every money callback then scores 0).</summary>
 	public IAdvisorMoneyState? Money { get; }
+	/// <summary>[EXT:restored-advice] The read-only park view the extension's callbacks read; null while the extension is off or without a park (they then score 0).</summary>
+	public IRestoredAdviceState? Restored { get; init; }
 	/// <summary>The park's rides, cleanliness and guest statistics; null without a park (every park callback then scores 0).</summary>
 	public IAdvisorParkState? Park { get; }
 
@@ -87,10 +89,14 @@ internal sealed class AdvisorScan
 	private readonly IReadOnlyList<AdvisorDescriptorRow> rows;
 	private readonly IReadOnlyDictionary<uint, AdvisorScoreCallback> callbacks;
 
-	public AdvisorScan( IReadOnlyList<AdvisorDescriptorRow> rows, IReadOnlyDictionary<uint, AdvisorScoreCallback> callbacks )
+	// [EXT:restored-advice] asked for the callback of a row whose own is the constant-zero stub; null (the default) leaves such rows scoring 0, as the original's do
+	private readonly Func<int, AdvisorScoreCallback?>? restored;
+
+	public AdvisorScan( IReadOnlyList<AdvisorDescriptorRow> rows, IReadOnlyDictionary<uint, AdvisorScoreCallback> callbacks, Func<int, AdvisorScoreCallback?>? restored = null )
 	{
 		this.rows = rows ?? throw new ArgumentNullException( nameof( rows ) );
 		this.callbacks = callbacks ?? throw new ArgumentNullException( nameof( callbacks ) );
+		this.restored = restored;
 	}
 
 	/// <summary>The scan's cursor (the first word of the <c>Advisor.sam</c> object): the next row to look at, 0 to 351.</summary>
@@ -113,7 +119,10 @@ internal sealed class AdvisorScan
 		if ( !AdvisorTables.GameModeAccepts( row.GameMode, gameType ) )
 			return -1;
 		// [BIN:TPW-EXE:0x005D60C0 constant zero stub] the callbacks of 21 scanned rows (and of every one OpenTPW has not ported) return 0
-		return callbacks.TryGetValue( row.Callback, out var callback ) ? callback( context ) : 0;
+		if ( callbacks.TryGetValue( row.Callback, out var callback ) )
+			return callback( context );
+		// [EXT:restored-advice] a scan-zero row may get the extension's callback while it is on
+		return row.Callback == RestoredAdviceScan.ConstantZeroCallback && restored?.Invoke( row.MessageId ) is { } restoredCallback ? restoredCallback( context ) : 0;
 	}
 
 	/// <summary>

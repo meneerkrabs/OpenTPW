@@ -19,8 +19,4 @@ internal static partial class Page
 	/// </summary>
 	[JSImport( "chooseInput", "opentpw-page" )]
 	public static partial void ChooseInput( string edition );
-
-	/// <summary>Queues a missing Clarity replacement without blocking a render frame.</summary>
-	[JSImport( "requestTexture", "opentpw-page" )]
-	public static partial void RequestTexture( string relativePath );
 }

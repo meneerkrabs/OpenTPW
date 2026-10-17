@@ -101,14 +101,50 @@ def beam(b, material, p0, p1, width=0.4):
 	b.box(material, (min(x0, x1) - h, min(y0, y1) - h, min(z0, z1) - h), (max(x0, x1) + h, max(y0, y1) + h, max(z0, z1) + h))
 
 
+def bar(b, material, p0, p1, width=0.4):
+	"""A square bar between two points that may be diagonal in the YZ plane (the ladder's rails curve there): four sides and two end caps, every face turned away from the bar's middle."""
+	import mathutils
+	d = mathutils.Vector(p1) - mathutils.Vector(p0)
+	u = mathutils.Vector((1.0, 0.0, 0.0))
+	v = d.cross(u).normalized()
+	h = width / 2
+	ring = [(-u - v), (u - v), (u + v), (-u + v)]
+	a = [mathutils.Vector(p0) + c * h for c in ring]
+	c = [mathutils.Vector(p1) + k * h for k in ring]
+	middle = (mathutils.Vector(p0) + mathutils.Vector(p1)) / 2
+	quads = [[a[i], a[(i + 1) % 4], c[(i + 1) % 4], c[i]] for i in range(4)] + [[a[3], a[2], a[1], a[0]], [c[0], c[1], c[2], c[3]]]
+	for points in quads:
+		centre = sum(points, mathutils.Vector()) / 4
+		normal = (points[1] - points[0]).cross(points[2] - points[1])
+		if normal.dot(centre - middle) < 0:
+			points = list(reversed(points))
+		b.poly(material, [tuple(q) for q in points])
+
+
+# The ladder's measures (units; a cell is 10, Y 0 the back of the cell, 10 its edge, the coping reaches 12.5 and is where the wall begins, the deck is Z 0, the water 0.6 below it, a kid about 10 tall).
+LADDER_RAIL_Y = 12.8        # the rails and rungs hang 0.1 off the wall: 0.78 cell from the middle of the land cell, where the climbing guest is (PoolExtraSettings.LadderFootDistance)
+LADDER_RAIL_X = (2.9, 7.1)
+LADDER_RUNGS = (3.4, 1.7, 0.0, -1.7, -3.4)     # a rung every 1.7 (0.34 engine units), the lowest well under the water
+LADDER_BOTTOM = -4.2
+
+
 def add_ladder(b, theme):
 	slab(b, 0.0, 10.0)
-	for x in (3.2, 6.8):
-		post(b, x, 8.4, 0.3, 6.5)                              # the post on the deck
-		beam(b, "frame", (x, 8.4, 6.5), (x, 11.0, 6.5))         # the handrail reaching over the water
-		beam(b, "frame", (x, 11.0, 6.5), (x, 11.0, 0.4))        # and down the water side: the rails the rungs sit between
-	for z in (1.5, 3.0, 4.5):
-		beam(b, "frame", (3.2, 11.0, z), (6.8, 11.0, z), width=0.3)   # the rungs
+	post_y, top, radius = 11.3, 5.2, (LADDER_RAIL_Y - 11.3) / 2
+	for x in LADDER_RAIL_X:
+		b.box("frame", (x - 0.5, post_y - 0.5, 0.0), (x + 0.5, post_y + 0.5, 0.2), skip=("-z",))     # the foot plate on the coping
+		bar(b, "frame", (x, post_y, 0.2), (x, post_y, top))                                              # the post on the coping
+		previous = (x, post_y, top)
+		for i in range(1, 7):                                                                            # the handrail curves over the coping ...
+			angle = math.pi * (1 - i / 6)
+			point = (x, post_y + radius + radius * math.cos(angle), top + radius * math.sin(angle) if i < 6 else top)
+			bar(b, "frame", previous, point)
+			previous = point
+		bar(b, "frame", (x, LADDER_RAIL_Y, top), (x, LADDER_RAIL_Y, LADDER_BOTTOM))                      # ... and goes down along the wall into the water
+		for z in (-0.8, -3.6):
+			b.box("frame", (x - 0.3, 12.5, z - 0.3), (x + 0.3, LADDER_RAIL_Y - 0.2, z + 0.3))             # brackets on the wall
+	for z in LADDER_RUNGS:
+		beam(b, "frame", (LADDER_RAIL_X[0], LADDER_RAIL_Y, z), (LADDER_RAIL_X[1], LADDER_RAIL_Y, z), width=0.3)
 
 
 def add_board(b, theme):

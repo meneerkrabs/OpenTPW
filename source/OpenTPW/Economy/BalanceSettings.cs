@@ -72,9 +72,7 @@ public sealed class BalanceSettings
 		// [DATA:levels/Standard.sam:BankAccountInfo.* (layered)]
 		InitialCash = standard.GetLong( "BankAccountInfo.InitialCash" );
 		InitialAdmissionFee = standard.GetInt( "BankAccountInfo.InitialAdmissionFee" );
-		Loans = standard.GetIndices( "LoanInfo", "LoanAmount" ).Select( index => new LoanOffer( index,
-			standard.GetLong( $"LoanInfo[{index}].LoanAmount" ), standard.GetInt( $"LoanInfo[{index}].APRInPercent" ),
-			standard.GetInt( $"LoanInfo[{index}].RepaymentPeriodInMonths" ), standard.GetInt( $"LoanInfo[{index}].Lendername" ) ) ).ToList();
+		Loans = ReadLoans( standard );
 		BaseWage = Grades( grade => standard.GetInt( $"PerGradeStaffConsts[{grade}].BaseWage" ) );
 		// [DATA:levels/Standard.sam:PerGradeStaffConsts[g].RecuperationRate/HappinessRecuperationRate, AllStaffConstants.RestLevel/HappyHitCosNoRestArea] read as singles: the rest step 0x100F3D8C adds the two rates at settings +756/+760 + 16 g to a staff member's energy and happiness, RestLevel (+740) and the missing-rest-area happiness hit (+744) are the words 0x100F4900 compares and subtracts
 		RecuperationRate = Grades( grade => (float)standard.GetDouble( $"PerGradeStaffConsts[{grade}].RecuperationRate" ) );
@@ -106,16 +104,8 @@ public sealed class BalanceSettings
 			Role( StaffType.Guard, "Guards", "Guard" ),
 			Role( StaffType.Researcher, "Researchers", "Researcher" )
 		};
-		int NonNegative( string key )
-		{
-			var value = standard.GetInt( key );
-			return value >= 0 ? value : throw new InvalidDataException( $"Balance problem: invalid -ve value specified ({key} {value})" );
-		}
-		// [BIN:TPW-EXE:0x00401D7C balance parser] Costs.* are type-5 balance keys: the parser tests the parsed value and a negative one (jl 0x40260D) reports 'Balance problem: invalid -ve value specified', which fails the balance load, so the level never starts with a negative cell cost
-		Costs = new CellCosts( NonNegative( "Costs.QueueCell" ), NonNegative( "Costs.PathCell" ), NonNegative( "Costs.KartTrackCell" ),
-			NonNegative( "Costs.WaterTrackCell" ), NonNegative( "Costs.MapCell" ) );
-		EntryFee = new EntryFeePerception( standard.GetInt( "PeepInfo.ExcitementToCostDivisor" ), standard.GetInt( "PeepInfo.MinimumEntryFee" ),
-			standard.GetDouble( "PeepInfo.CheapPriceMultiplier" ), standard.GetDouble( "PeepInfo.AveragePriceMultiplier" ), standard.GetDouble( "PeepInfo.ExpensivePriceMultiplier" ) );
+		Costs = ReadCosts( standard );
+		EntryFee = ReadEntryFee( standard );
 		GoldenTickets = new GoldenTicketSettings( standard.GetInt( "GoldenTicketLocal.Visitors" ), standard.GetInt( "GoldenTicketLocal.PeopleInPark" ),
 			standard.GetInt( "GoldenTicketLocal.Happiness" ), standard.GetInt( "GoldenTicketLocal.AtLeastThisManyHappyPeople" ),
 			standard.GetInt( "GoldenTicketLocal.ProfitYear" ), standard.GetInt( "GoldenTicketLocal.RecentVisitors" ), standard.GetInt( "GoldenTicketLocal.RecentVisitorMonths" ),
@@ -155,6 +145,69 @@ public sealed class BalanceSettings
 
 	private static T[] Grades<T>( Func<int, T> read ) => Enumerable.Range( 0, GradeCount ).Select( read ).ToArray();
 
+	// The money keys Theme Park World and Theme Park Inc share (same names, same readers; docs/THEME-PARK-INC.md "Economy"): both ctors read them through these.
+
+	/// <summary><c>LoanInfo[n]</c> offers; the array is read as far as <c>LoanAmount</c> is declared (Theme Park Inc declares ten slots, eight used).</summary>
+	private static List<LoanOffer> ReadLoans( SamSettings standard ) => standard.GetIndices( "LoanInfo", "LoanAmount" ).Select( index => new LoanOffer( index,
+		standard.GetLong( $"LoanInfo[{index}].LoanAmount" ), standard.GetInt( $"LoanInfo[{index}].APRInPercent" ),
+		standard.GetInt( $"LoanInfo[{index}].RepaymentPeriodInMonths" ), standard.GetInt( $"LoanInfo[{index}].Lendername" ) ) ).ToList();
+
+	/// <summary><c>Costs.*</c>, refused when negative.</summary>
+	private static CellCosts ReadCosts( SamSettings standard )
+	{
+		int NonNegative( string key )
+		{
+			var value = standard.GetInt( key );
+			return value >= 0 ? value : throw new InvalidDataException( $"Balance problem: invalid -ve value specified ({key} {value})" );
+		}
+		// [BIN:TPW-EXE:0x00401D7C balance parser] Costs.* are type-5 balance keys: the parser tests the parsed value and a negative one (jl 0x40260D) reports 'Balance problem: invalid -ve value specified', which fails the balance load, so the level never starts with a negative cell cost
+		// [BIN:TPI-EXE:0x004289AC cost setter] the same four cell costs are read and applied by TPI's setter, which equals tp.exe 0x00408192
+		return new CellCosts( NonNegative( "Costs.QueueCell" ), NonNegative( "Costs.PathCell" ), NonNegative( "Costs.KartTrackCell" ),
+			NonNegative( "Costs.WaterTrackCell" ), NonNegative( "Costs.MapCell" ) );
+	}
+
+	/// <summary><c>PeepInfo</c>'s entry-fee perception constants. The divisor is data: levels/Standard.sam holds 4 in Theme Park World and 6 in Theme Park Inc, whose arabian layer sets 4.</summary>
+	private static EntryFeePerception ReadEntryFee( SamSettings standard ) =>
+		new( standard.GetInt( "PeepInfo.ExcitementToCostDivisor" ), standard.GetInt( "PeepInfo.MinimumEntryFee" ),
+			standard.GetDouble( "PeepInfo.CheapPriceMultiplier" ), standard.GetDouble( "PeepInfo.AveragePriceMultiplier" ), standard.GetDouble( "PeepInfo.ExpensivePriceMultiplier" ) );
+
+	/// <summary>
+	/// The settings of a Theme Park Inc park: only the keys Theme Park Inc's own <c>levels/Standard.sam</c> (and the theme layer) carry. The money keys
+	/// (bank, loans, <c>Costs.*</c>, entry-fee perception) are read as for Theme Park World; every staff, research, golden-ticket and challenge
+	/// member is empty or zero, an inert placeholder and never a Theme Park World value: Theme Park Inc's file lacks 86 of the 152 fixed keys
+	/// Theme Park World reads (docs/THEME-PARK-INC.md), no theme layer supplies them, and the systems that read those members stay refused
+	/// (<see cref="EditionCapabilities"/>). A missing money key fails the load, as in Theme Park World.
+	/// </summary>
+	// [BIN:TPI-EXE:0x0041B350 balance getter] Theme Park Inc's Standard.sam schema (rows 0x009966C0) fills the block at 0x00A01A6C, a different layout from tp.exe's 0x0078504C; the money keys below keep tp.exe's names and meaning
+	// [BIN:TPI-EXE:0x005BFBBA bank constructor] BankAccountInfo.InitialCash and InitialAdmissionFee fill the bank as tp.exe's constructor 0x004CF8C6 does, and LoanInfo[n] (a ten-slot array, eight used) fills the offers (0x005BFB97)
+	private BalanceSettings( SamSettings standard, string theme )
+	{
+		Edition = GameEdition.ThemeParkInc;
+		Theme = theme;
+		IsEasy = false;
+		Standard = standard;
+		InitialCash = standard.GetLong( "BankAccountInfo.InitialCash" );
+		InitialAdmissionFee = standard.GetInt( "BankAccountInfo.InitialAdmissionFee" );
+		Loans = ReadLoans( standard );
+		Costs = ReadCosts( standard );
+		EntryFee = ReadEntryFee( standard );
+		// inert placeholders: nothing reads them while staff, research and challenges are refused
+		BaseWage = Array.Empty<int>();
+		RecuperationRate = HappinessRecuperationRate = Array.Empty<float>();
+		IdleDuration = HandymanDetectionRange = EntertainerActivationDistance = Array.Empty<int>();
+		StrikeArea = (0, 0, 1, 1);
+		ResearchAbility = ResearchEffort = ResearchTechPercentage = Array.Empty<int>();
+		Roles = Array.Empty<StaffRoleSettings>();
+		GoldenTickets = new GoldenTicketSettings( 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 );
+		ChallengeTiming = new ChallengeSchedule( 0, 0, 0, 0, 0 );
+		ChallengesInThisLevel = Array.Empty<int>();
+		Challenges = new Dictionary<int, ChallengeDefinition>();
+		CanEarnTickets = false;
+		CanSpendTickets = false;
+	}
+
+	/// <summary>Which edition's keys these settings hold (<see cref="ForThemeParkInc"/> builds the Theme Park Inc subset).</summary>
+	public GameEdition Edition { get; } = GameEdition.ThemeParkWorld;
 	public string Theme { get; }
 	public bool IsEasy { get; }
 	public SamSettings Standard { get; }
@@ -229,6 +282,22 @@ public sealed class BalanceSettings
 		var globalPath = $"/levels/{theme}/global.sam";
 		var global = FileSystem.FileExists( globalPath ) ? new SamSettings( new[] { SamDocument.Parse( FileSystem.ReadAllText( globalPath ), globalPath ) } ) : null;
 		return new BalanceSettings( new SamSettings( layers ), challenges, global, theme, easy );
+	}
+
+	/// <summary>The Theme Park Inc money subset (see the private constructor) over explicit layers; the caller owns the layer order.</summary>
+	public static BalanceSettings ForThemeParkInc( SamSettings standard, string theme )
+	{
+		ArgumentNullException.ThrowIfNull( standard );
+		ValidateTheme( theme );
+		return new BalanceSettings( standard, theme );
+	}
+
+	/// <summary>Loads the Theme Park Inc money settings of <paramref name="theme"/> (arabian, science, water): the global <c>levels/Standard.sam</c> under the theme's own.</summary>
+	// [BIN:TPI-EXE:0x0041B350 balance getter] the global Standard.sam and the theme's are loaded in this order as in tp.exe; Theme Park Inc ships no Easy_Standard layer
+	public static BalanceSettings LoadThemeParkInc( string theme )
+	{
+		var layers = GetStandardLayers( theme, easy: false ).Select( path => SamDocument.Parse( FileSystem.ReadAllText( path ), path ) );
+		return ForThemeParkInc( new SamSettings( layers ), theme );
 	}
 
 	/// <summary>Whether the theme ships an easy-mode balance layer (only jungle in the available data).</summary>

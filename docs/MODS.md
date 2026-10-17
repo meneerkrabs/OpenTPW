@@ -200,6 +200,8 @@ refused) adds object archives to the theme catalogs:
       "names": { "English": "Bumper Cars" } } ] }
 ```
 
+New objects made from scratch (models, textures, scripts) are authored with the content kit ([CONTENT-KIT.md](CONTENT-KIT.md)).
+
 - `idRange`: the Info.Ids the mod reserves, between 5000 and 65535, at most 4096 of them (one rule for every mod, see
   [Cross-edition objects](#cross-edition-objects-opentpwcross-edition-objects)). Every `infoId` lies in
   it and is used once. Layout records and saves join on the Info.Id, so a mod keeps an object's id stable across

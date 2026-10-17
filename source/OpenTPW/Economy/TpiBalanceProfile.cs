@@ -12,7 +12,8 @@ public sealed record TpiBalanceReadiness( IReadOnlyList<string> MissingSupported
 
 /// <summary>
 /// TPI's cash and cell-cost settings, without constructing the TPW staff/research/challenge profile.
-/// Missing values stay absent; this data adapter does not authorize any edition capability.
+/// Missing values stay absent; this data adapter does not authorize any edition capability. The running money economy reads the same
+/// keys through <see cref="BalanceSettings.ForThemeParkInc"/> (which fails on a missing key instead of leaving it absent).
 /// </summary>
 public sealed class TpiBalanceProfile
 {
@@ -37,11 +38,11 @@ public sealed class TpiBalanceProfile
 			Array.AsReadOnly( SupportedKeys.Where( key => !standard.Contains( key ) ).ToArray() ),
 			Array.AsReadOnly( new[]
 			{
-				"TPI bank, admission, calendar and loan execution rules are unqualified.",
+				"TPI's per-object statistics accumulator (+0x938) and the month handler's order are untraced (ECON-060).",
 				"TPI staff wages, grades, training and staff-room rules are unqualified.",
 				"TPI research progression and object availability are unqualified.",
 				"TPI missions and progress replace the TPW challenge/golden-ticket system.",
-				"The park runtime requires BalanceSettings and couples economy to staff, weather and park gates."
+				"The Theme Park World staff, research and challenge systems need balance keys TPI's Standard.sam lacks."
 			} ) );
 
 		TpiBalanceValue<long>? ReadLong( string key ) => standard.Find( key ) is { } entry ? new( standard.GetLong( key ), entry ) : null;

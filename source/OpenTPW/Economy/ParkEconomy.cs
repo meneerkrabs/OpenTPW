@@ -905,6 +905,9 @@ public sealed class ParkEconomy : IParkEconomy
 			WriteScript( item, RideVariables.VAR_WORN, 1 );
 		if ( before >= WornStateOfRepair && item.StateOfRepair < WornStateOfRepair )
 			Raise( ParkEventKind.RideWorn, item.StateOfRepair, item.Id, item.InfoId );
+		// [BIN:TPW-EXE:0x004DF670 breakdown imminent] the condition byte below 10.0 with the step's wear added back not below it posts the advice 0x42 (the advisor answers this event)
+		if ( AdvisorRideEvents.CrossesImminentLine( (float)item.Repair, wear ) )
+			Raise( ParkEventKind.RideBreakdownImminent, item.StateOfRepair, item.Id, item.InfoId );
 	}
 
 	/// <summary>

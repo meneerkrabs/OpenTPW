@@ -210,7 +210,8 @@ public class AdvisorProducerInventoryTests
 		// and the other way: what OpenTPW posts is wired in the inventory
 		foreach ( var id in windowHelp )
 			Assert.AreEqual( "wired", messages[id].Status, $"help message {id} is posted by OpenTPW" );
-		var staged = new[] { 66, 68, 69 };
+		// 66, 68, 69 and 258 are posted by the ride events (AdvisorRideEvents), so they are wired like the rest
+		var staged = Array.Empty<int>();
 		foreach ( var id in defined.Where( id => !windowHelp.Contains( id ) && !AdvisorTables.HelpMessages.Any( help => help.MessageId == id ) ) )
 		{
 			if ( staged.Contains( id ) )

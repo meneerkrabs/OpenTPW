@@ -151,6 +151,12 @@ internal sealed class AutomaticAdvisor : IDisposable
 		// [BIN:TPW-EXE:0x004F88B0 park time] the term is (park turn − stamp) as an unsigned 32-bit count × the calendar rate (+0x1C of world+0x2A0, 15000) / 4 × 10^7, the park time in 100 ns units; 0x004D04D9–0x004D04F2 take 0 months unless the balance (+0xC) and mLastBalance (+0x11C) are both below 0 (ParkEconomy.MonthsSinceEnteringRed, raised as ParkEventKind.BankruptcyMessage)
 		if ( item.Kind == ParkEventKind.BankruptcyMessage )
 			Raise( AdvisorGameEvent.Bankrupted );
+		// [BIN:TPW-EXE:0x004DF8BE ride breakdown imminent] the wear step queues the advice 0x42 as a ride's condition crosses below 10 percent (not in game type 1, which never wears)
+		if ( item.Kind == ParkEventKind.RideBreakdownImminent )
+			PostEventAdvice( AdvisorRideEvents.BreakdownImminentMessage, "a ride about to break down" );
+		// [BIN:TPW-EXE:0x004DADC0 breakdown handler] a ride that breaks down: the advice of the mechanics' state (68, 69), or 258 for a condemned ride
+		if ( item.Kind == ParkEventKind.RideBrokeDown && park != null && park.Economy.TryGetObject( item.InstanceId, out var broken ) && AdvisorRideEvents.ForBreakdown( park.Economy, broken ) is { } breakdownAdvice )
+			PostEventAdvice( breakdownAdvice, $"ride {item.InstanceId} breaking down" );
 		// [BIN:TPW-EXE:0x00509031 staff messages] the staff manager's month routine sends the staff info message (type 0x17, kind and role) that 0x59AFC0 turns into the advice 33-57; the kind and role are those of the strike message, whose text the advisor's caption then posts
 		if ( item.Kind == ParkEventKind.StaffStrikeMessage )
 			PostEventAdvice( AdvisorTables.StaffMessage( new StrikeMessage( (StaffType)item.InfoId, (StrikeMessageKind)item.Amount ) ), "a staff strike message" );
@@ -378,7 +384,7 @@ internal sealed class AutomaticAdvisor : IDisposable
 
 	/// <summary>The scan of one update for a park: its turn, game type and the tutorial option, halted while paused or while the park is lost.</summary>
 	internal int ScanPark( ParkEconomy economy, bool gamePaused ) =>
-		ScanTurns( new EconomyMoneyState( economy ), unchecked( (uint)economy.Turn ), economy.Mode == ParkGameMode.InstantAction ? 2 : 0, TutorialEnabled, gamePaused || economy.IsBankrupt );
+		ScanTurns( new EconomyMoneyState( economy ), unchecked( (uint)economy.Turn ), economy.Mode == ParkGameMode.InstantAction ? 2 : 0, TutorialEnabled, gamePaused || economy.IsBankrupt, new EconomyParkState( economy ) );
 
 	/// <summary>
 	/// The scan the advisor's update runs once per park turn (the original calls 0x59A550 once per turn from the thing loop): one scan call per turn that has
@@ -387,7 +393,7 @@ internal sealed class AutomaticAdvisor : IDisposable
 	/// </summary>
 	/// <returns>The scan calls made.</returns>
 	// [APPROX:ADVISOR-017] the queue is served once per frame here but once per turn in tp.exe (the end of 0x59A550); the scan itself is exact: once per park turn
-	internal int ScanTurns( IAdvisorMoneyState? money, uint turn, int gameType, bool tutorialEnabled, bool halted )
+	internal int ScanTurns( IAdvisorMoneyState? money, uint turn, int gameType, bool tutorialEnabled, bool halted, IAdvisorParkState? park = null )
 	{
 		var previousTurn = lastScanTurn;
 		lastScanTurn = turn;
@@ -400,7 +406,7 @@ internal sealed class AutomaticAdvisor : IDisposable
 		var calls = (int)Math.Min( passed, MaximumScansPerUpdate );
 		for ( var call = 0; call < calls; call++ )
 		{
-			var outcome = Controller.ScanOnce( money, turn, gameType, tutorialEnabled );
+			var outcome = Controller.ScanOnce( money, turn, gameType, tutorialEnabled, park );
 			if ( outcome is { Posted: { } posted, Admission: { } admission } )
 				Log.Trace( $"Advisor scan of row {outcome.ScoredRow}: advice {posted.MessageId} score {posted.Score} {admission.Eligibility}{(admission.Stored ? $" in slot {admission.Slot}" : admission.Acknowledged ? ", queue full" : "")}." );
 		}

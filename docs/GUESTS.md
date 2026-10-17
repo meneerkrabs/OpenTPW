@@ -629,7 +629,7 @@ and whether a guest stands at position 0.
 
 `RideVisitorBridge` implements it for an RSE script. Host protocol (inferred from
 the corpus: Coconut, Totem, Gift Shop, Bouncy, Jungle Spray all follow it), run
-once per tick before the script slice and never inside `CRIT_LOCK`:
+once per tick before the script slice (the original's host never looks at the critical flag, so there is no `CRIT_LOCK` gate):
 
 1. `VAR_LETMEOFF ≠ 0` → release that guest at `ExitCell`, write 0 back (scripts
    wait with `TEST VAR_LETMEOFF; BRANCH_NZ` until the host has taken the guest).
@@ -646,14 +646,14 @@ Visitor opcodes (all operate on the guests the script holds; semantics inferred)
 
 | Opcode | Bridge behaviour | Corpus evidence |
 | --- | --- | --- |
-| HUSH v | guest boards (leaves host control) | Totem `HUSH VAR_LETMEON` before `WALKON`, `COPY VAR_LETMEON 0` |
+| HUSH v | script heap push (VM-internal, not a visitor operation; tp.exe `0x553D25`) | Totem `HUSH VAR_LETMEON` before `WALKON`, `COPY VAR_LETMEON 0` |
 | WALKON v … | guest boards; walk along ride nodes not simulated | Jungle Spray boards with WALKON alone |
-| HOP dest | next boarded guest not yet hopped, else 0 | Totem `HOP VAR_TEMP2; WALKOFF VAR_TEMP2` |
+| HOP dest | script heap pop, newest first (VM-internal; tp.exe `0x553DAA`) | Totem `HOP VAR_TEMP2; WALKOFF VAR_TEMP2` |
 | WALKOFF v | queue v for WALKGET (instant) | |
 | WALKGET dest | next walked-off guest, else 0 | `WALKGET VAR_LETMEOFF; BRANCH_Z` |
-| LIMBO v s | guest boards, held `s` **seconds** (unit inferred; corpus 5, 15, VAR_DURATION) | Gift Shop `LIMBOSPACE 0; BRANCH_Z; LIMBO VAR_LETMEON 5` |
-| UNLIMBO / FORCEUNLIMBO dest | first guest whose time is up / any guest, else 0 | `UNLIMBO VAR_TEMP; BRANCH_Z; WALKOFF VAR_TEMP` |
-| INLIMBO / LIMBOSPACE dest | held count / header limbo size − held | |
+| LIMBO v s | script limbo table (VM-internal; tp.exe `0x554DE5`): the first free slot holds `v` for `s` **seconds**, result 1, 0 when full; boards nobody (the guest boarded when the script consumed `VAR_LETMEON`) | Gift Shop `LIMBOSPACE 0; BRANCH_Z; LIMBO VAR_LETMEON 5` |
+| UNLIMBO / FORCEUNLIMBO dest | VM-internal: first slot whose time is strictly past / first occupied slot, else 0 (the script then hands the id on, e.g. through `VAR_LETMEOFF`) | `UNLIMBO VAR_TEMP; BRANCH_Z; WALKOFF VAR_TEMP` |
+| INLIMBO / LIMBOSPACE dest | VM-internal: held count / header limbo size − held | |
 | BOUNCE v d | guest boards, held `d` s (10 s when VAR_DURATION is 0) | Bouncy `BOUNCE VAR_LETMEON VAR_DURATION` |
 | UNBOUNCE / FORCEUNBOUNCE out | writes the leaving guest into its operand | Bouncy `TEST VAR_LETMEOFF; BRANCH_NZ; UNBOUNCE VAR_LETMEOFF` |
 | BOUNCING dest | bouncing count | |

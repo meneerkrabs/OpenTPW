@@ -343,6 +343,55 @@ public class GuestTests
 		Assert.IsTrue( releaseTimes[3] >= 4000, "the third guest boards after a limbo slot frees" );
 	}
 
+	[TestMethod]
+	public void HushPushesTheTakenGuestAndHopHandsTheNewestBackWhileTheProtocolDoesTheBoarding()
+	{
+		// Totem shape: HUSH VAR_LETMEON keeps the id in the script's heap, the host boards the guest when the script consumes VAR_LETMEON,
+		// and the unload loop's HOP pops the newest id (LIFO: 3, 2, 1) for WALKOFF; the bridge never sees HUSH or HOP.
+		var on = V( (int)RideVariables.VAR_LETMEON );
+		var off = V( (int)RideVariables.VAR_LETMEOFF );
+		var onRide = V( (int)RideVariables.VAR_ONRIDE );
+		var temp = V( PeepId );
+		var asm = new Asm()
+			.Label( "loop" )
+			.I( Opcode.CRIT_LOCK )
+			.I( Opcode.TEST, on )
+			.I( Opcode.BRANCH_Z, "check" )
+			.I( Opcode.HUSH, on )
+			.I( Opcode.COPY, on, 0 )
+			.I( Opcode.ADD, onRide, 1 )
+			.Label( "check" )
+			.I( Opcode.CRIT_UNLOCK )
+			.I( Opcode.CMP, onRide, 3 )
+			.I( Opcode.BRANCH_NZ, "idle" )
+			.Label( "unload" )
+			.I( Opcode.TEST, off )
+			.I( Opcode.BRANCH_NZ, "unload" )
+			.I( Opcode.HOP, temp )
+			.I( Opcode.WALKOFF, temp )
+			.Label( "walkget" )
+			.I( Opcode.WALKGET, off )
+			.I( Opcode.BRANCH_Z, "walkget" )
+			.I( Opcode.ADD, onRide, 0xFFFF )
+			.I( Opcode.BRANCH_NZ, "unload" )
+			.I( Opcode.BRANCH, "idle" )
+			.Label( "idle" )
+			.I( Opcode.ENDSLICE )
+			.I( Opcode.BRANCH, "loop" );
+		var ride = new ScriptedAttraction( 8, 3, 70, (0, 0), bridge => new RideVM( new RideScriptFile( new MemoryStream( asm.Build( ShopVariables ) ) ),
+			new RideVMOptions { Effects = new VisitorRideScriptEffects( bridge, UnimplementedRideScriptEffects.Instance ), Seed = 1 } ), GuestNeeds.None );
+		var host = new RecordingHost();
+		ride.Bridge.Host = host;
+		foreach ( var guest in new[] { 1, 2, 3 } )
+			ride.Bridge.TryJoinQueue( guest );
+		for ( var tick = 0; tick < 20 * 60; tick++ )
+			ride.Step();
+		CollectionAssert.AreEqual( new[] { "board 1", "board 2", "board 3", "release 3", "release 2", "release 1" },
+			host.Events.Where( item => item.StartsWith( "board" ) || item.StartsWith( "release" ) ).ToArray(), string.Join( ", ", host.Events ) );
+		Assert.AreEqual( 0, ride.Script.HeapCount, "every pushed id was popped" );
+		Assert.AreEqual( 0, ride.Script.UnimplementedEffects.Count, "HUSH and HOP never reached the effects" );
+	}
+
 	// ---- Simulation -----------------------------------------------------------------------------
 
 	[TestMethod]

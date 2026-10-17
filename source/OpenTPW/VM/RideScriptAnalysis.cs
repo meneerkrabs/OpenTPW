@@ -86,7 +86,7 @@ public static class RideScriptAnalysis
 		[Opcode.LOOPANIM_CH] = 3, [Opcode.TRIGWAITANIM_CH] = 4, [Opcode.GETANIM_CH] = 2, [Opcode.RAND] = 2, [Opcode.JSR] = 1,
 		[Opcode.RETURN] = 0, [Opcode.BRANCH] = 1, [Opcode.BRANCH_Z] = 1, [Opcode.BRANCH_NZ] = 1, [Opcode.BRANCH_NV] = 1,
 		[Opcode.BRANCH_PV] = 1, [Opcode.DBGMSG] = 1, [Opcode.NAME] = 1, [Opcode.TEST] = 1, [Opcode.CMP] = 2, [Opcode.PUSH] = 1,
-		[Opcode.POP] = 0, [Opcode.HUSH] = 1, [Opcode.HOP] = 1, [Opcode.WAIT] = 1, [Opcode.WAITABS] = 1, [Opcode.WAIT4ANIM] = 0,
+		[Opcode.POP] = 1, [Opcode.HUSH] = 1, [Opcode.HOP] = 1, [Opcode.WAIT] = 1, [Opcode.WAITABS] = 1, [Opcode.WAIT4ANIM] = 0,
 		[Opcode.ADD] = 2, [Opcode.MULT] = 3, [Opcode.DIV] = 3, [Opcode.MOD] = 3, [Opcode.TURBO] = 1, [Opcode.END] = 0,
 		[Opcode.TOUR] = 2, [Opcode.BUMP] = 2, [Opcode.COAST] = 2, [Opcode.ADDHEAD] = 1, [Opcode.DELHEAD] = 1, [Opcode.LIMBO] = 2,
 		[Opcode.UNLIMBO] = 1, [Opcode.FORCEUNLIMBO] = 1, [Opcode.INLIMBO] = 1, [Opcode.LIMBOSPACE] = 1, [Opcode.SPAWNCHILD] = 1,

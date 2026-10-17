@@ -4,13 +4,14 @@ namespace OpenTPW;
 /// Connects real guests to an original RSE script and owns the attraction's queue (docs/GUESTS.md,
 /// docs/reverse/QUEUE-plan.md). The queue is the original's per-ride state: front cell, cached back cell,
 /// size in cells and a doubly linked list of guest ids with one called ("pending") visitor. Between
-/// slices, outside CRIT_LOCK, the host calls the front guest forward when the original admission gates
+/// slices, the host calls the front guest forward when the original admission gates
 /// hold; the guest walks to the stand point and writes its id to VAR_LETMEON when that is 0; it stays in
 /// the list until the script consumes it. When the script puts a guest id in VAR_LETMEOFF the host
-/// releases that guest at the exit and writes 0 back. The visitor opcodes (HUSH, WALKON, HOP, WALKOFF, WALKGET, LIMBO,
-/// UNLIMBO, FORCEUNLIMBO, INLIMBO, LIMBOSPACE, BOUNCE, UNBOUNCE, FORCEUNBOUNCE, BOUNCING, ADDHEAD,
-/// DELHEAD) operate on the guests the script holds. Semantics are inferred from corpus control flow,
-/// not traced from the original executable; walk animations along ride nodes are not simulated (WALKON
+/// releases that guest at the exit and writes 0 back. The bridge owns WALKON, WALKOFF, WALKGET, BOUNCE, UNBOUNCE,
+/// FORCEUNBOUNCE, BOUNCING, ADDHEAD and DELHEAD; HUSH, HOP and the LIMBO family are the script VM's own heap and
+/// limbo table (RideVM, tp.exe 0x553D25, 0x553DAA, 0x554DE5..0x555045) and never reach the bridge: a guest boards when the
+/// script consumes VAR_LETMEON (or through WALKON/BOUNCE) and leaves through VAR_LETMEOFF. Walk animations along ride nodes
+/// are not simulated (WALKON
 /// and WALKOFF complete immediately).
 /// </summary>
 public sealed class RideVisitorBridge : IRideVisitorBridge
@@ -35,9 +36,7 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	private readonly List<int> onRide = new();          // boarded, in boarding order
 	private readonly Queue<int> walkingOff = new();     // WALKOFF done, waiting for WALKGET
 	private readonly Queue<double> walkingOffReady = new(); // the script time at which WALKGET may hand the guest out (parallel to walkingOff)
-	private readonly HashSet<int> hopped = new();
 	private readonly Dictionary<int, (int From, int To, int Mode)> walkSlots = new(); // WALKON: the walker's slot nodes (operands u3, u4) and walk action, read by WALKOFF (0x005571A0)
-	private readonly List<(int Guest, double Until)> limbo = new();
 	private readonly List<(int Guest, double Until, double Start)> bouncing = new(); // BOUNCE slot table in index order: visitor (0 = free), deadline, start; trailing free slots are trimmed
 	private readonly List<(int X, int Y)> queueCells = new();
 	private RideVM? vm;
@@ -243,15 +242,6 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 			foreach ( var value in values )
 				hash.Add( value );
 		}
-		void AddTimed( List<(int Guest, double Until)> values )
-		{
-			hash.Add( values.Count );
-			foreach ( var (guest, until) in values )
-			{
-				hash.Add( guest );
-				hash.Add( until );
-			}
-		}
 		hash.Add( MaximumQueueLength );
 		hash.Add( called );
 		hash.Add( BoardedTotal );
@@ -272,8 +262,6 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 				hash.Add( slot.Mode );
 			}
 		}
-		AddList( hopped.Order().ToArray() );
-		AddTimed( limbo );
 		hash.Add( bouncing.Count );
 		foreach ( var (guest, until, start) in bouncing )
 		{
@@ -321,8 +309,8 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		WalkingOff = walkingOff.ToArray(),
 		WalkingOffReady = WalkOffMilliseconds > 0 ? walkingOffReady.ToArray() : null,
 		WalkSlots = walkSlots.Count > 0 ? walkSlots.OrderBy( pair => pair.Key ).Select( pair => (pair.Key, pair.Value.From, pair.Value.To, pair.Value.Mode) ).ToArray() : null,
-		Hopped = hopped.Order().ToArray(),
-		Limbo = limbo.ToArray(),
+		Hopped = Array.Empty<int>(),
+		Limbo = Array.Empty<(int Guest, double Until)>(),
 		Bounce = bouncing.ToArray(),
 		CalledGuest = called,
 		LetMeOnWritten = letMeOnWritten,
@@ -497,10 +485,6 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		walkSlots.Clear();
 		foreach ( var slot in snapshot.WalkSlots ?? Array.Empty<(int Guest, int From, int To, int Mode)>() )
 			walkSlots[slot.Guest] = (slot.From, slot.To, slot.Mode);
-		hopped.Clear();
-		hopped.UnionWith( snapshot.Hopped );
-		limbo.Clear();
-		limbo.AddRange( snapshot.Limbo );
 		bouncing.Clear();
 		bouncing.AddRange( snapshot.Bounce );
 		called = snapshot.CalledGuest;
@@ -827,7 +811,8 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 			return false;
 		if ( letMeOnWritten )
 			return true;
-		if ( vm.InCriticalSection || Get( RideVariables.VAR_LETMEON ) != 0 )
+		// [BIN:TPW-EXE:0x551724 critical flag] the original's host side never looks at the critical flag (its only reader is the slice loop); the admission method writes VAR_LETMEON whenever it is 0, whatever the script is doing
+		if ( Get( RideVariables.VAR_LETMEON ) != 0 )
 			return false;
 		Set( RideVariables.VAR_LETMEON, guestId );
 		letMeOnWritten = true;
@@ -860,9 +845,6 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 			ReleaseAll();
 			return;
 		}
-		if ( vm.InCriticalSection )
-			return;
-
 		var off = Get( RideVariables.VAR_LETMEOFF );
 		if ( off != 0 )
 		{
@@ -1005,9 +987,7 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 			return;
 		// Host cleanup: do not leave a presentation slot on the previous ride after release.
 		Heads?.Remove( guest );
-		hopped.Remove( guest );
 		walkSlots.Remove( guest );
-		limbo.RemoveAll( entry => entry.Guest == guest );
 		for ( var index = 0; index < bouncing.Count; index++ )
 			if ( bouncing[index].Guest == guest )
 				FreeBounceSlot( bouncing, index );
@@ -1074,9 +1054,6 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		var now = call.VM.TimeMilliseconds;
 		switch ( call.Opcode )
 		{
-			case Opcode.HUSH:
-				MarkBoarded( call.Argument( 0 ) );
-				return true;
 			case Opcode.WALKON:
 			{
 				var guest = call.Argument( 0 );
@@ -1087,17 +1064,11 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 					walkSlots[guest] = (call.Argument( 3 ), call.Argument( 4 ), call.Argument( 5 ));
 				return true;
 			}
-			case Opcode.HOP:
-				result = onRide.FirstOrDefault( guest => !hopped.Contains( guest ) );
-				if ( result != 0 )
-					hopped.Add( result );
-				return true;
 			case Opcode.WALKOFF:
 			{
 				var guest = call.Argument( 0 );
 				if ( onRide.Contains( guest ) && !walkingOff.Contains( guest ) )
 				{
-					hopped.Add( guest );
 					walkingOff.Enqueue( guest );
 					var duration = WalkOffMilliseconds;
 					if ( WalkNodeDistance != null && walkSlots.Remove( guest, out var slot ) )
@@ -1117,26 +1088,6 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 					result = walkingOff.Dequeue();
 					walkingOffReady.Dequeue();
 				}
-				return true;
-			case Opcode.LIMBO:
-			{
-				var guest = call.Argument( 0 );
-				MarkBoarded( guest );
-				if ( onRide.Contains( guest ) && !limbo.Any( entry => entry.Guest == guest ) )
-					limbo.Add( (guest, now + Math.Max( 0, call.Argument( 1 ) ) * 1000.0) );
-				return true;
-			}
-			case Opcode.UNLIMBO:
-				result = TakeExpired( limbo, now, force: false );
-				return true;
-			case Opcode.FORCEUNLIMBO:
-				result = TakeExpired( limbo, now, force: true );
-				return true;
-			case Opcode.INLIMBO:
-				result = limbo.Count;
-				return true;
-			case Opcode.LIMBOSPACE:
-				result = Math.Max( 0, call.VM.Script.LimboSize - limbo.Count );
 				return true;
 			case Opcode.BOUNCE:
 			{
@@ -1225,20 +1176,6 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 			if ( force || ((long)Math.Floor( until ) < clock && elapsed % 1000 / 200 == 0) )
 			{
 				FreeBounceSlot( list, index );
-				return guest;
-			}
-		}
-		return 0;
-	}
-
-	private static int TakeExpired( List<(int Guest, double Until)> list, double now, bool force )
-	{
-		for ( var index = 0; index < list.Count; index++ )
-		{
-			if ( force || list[index].Until <= now )
-			{
-				var guest = list[index].Guest;
-				list.RemoveAt( index );
 				return guest;
 			}
 		}

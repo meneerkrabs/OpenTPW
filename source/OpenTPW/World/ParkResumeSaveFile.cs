@@ -1126,8 +1126,7 @@ internal static class ParkResumeSaveFile
 				else
 				{
 					// The boarding hand-over: the station script took the guest from VAR_LETMEON into a car with COAST 1,
-					// but the bridge marks it aboard only one host step later, when the script consumes VAR_LETMEON or
-					// HUSHes it. A save between the two holds the guest still waiting at the stand point: WaitingToBoard,
+					// but the bridge marks it aboard only one host step later, when the script consumes VAR_LETMEON. A save between the two holds the guest still waiting at the stand point: WaitingToBoard,
 					// bound to this coaster, still queued, called with VAR_LETMEON written (proved against the real
 					// Jungle station script — see GuestsBoardingARealCoasterStaySaveConsistentAtEveryTickBoundary).
 					Require( guest.State == GuestState.WaitingToBoard && guest.AttractionId == ride.AttractionId

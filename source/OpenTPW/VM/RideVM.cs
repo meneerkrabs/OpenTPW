@@ -42,20 +42,34 @@ public sealed class RideVMOptions
 /// <summary>
 /// Interpreter for compiled RSE scripts.
 ///
-/// Scheduling (not verified against the original engine, see docs/RSE-VM.md): every call to
-/// <see cref="Advance"/> — one <see cref="FixedStepClock"/> tick in the game — adds the elapsed time to the
-/// script clock and runs one slice. A slice runs until the script yields (ENDSLICE or a wait) or until
-/// it has executed <see cref="SliceBudget"/> instructions outside a CRIT_LOCK section; the budget is
+/// Scheduling: every call to <see cref="Advance"/> — one <see cref="FixedStepClock"/> tick in the game —
+/// adds the elapsed time to the script clock and runs one slice (the cadence is an assumption: the original
+/// runs a slice only on the passes the script's TURBO byte and id select, tp.exe 0x5516E1). The slice follows
+/// tp.exe 0x551701..0x551736: the budget (the header time slice) falls per instruction while no critical
+/// section is open, CRIT_UNLOCK and ENDSLICE zero it and a wait ends the slice; the budget is
 /// what lets the corpus's busy-wait loops (e.g. Totem's passenger loop) give time back to the game.
 /// Times (WAIT, GETTIME, SETTIMER) are milliseconds.
 /// </summary>
 public sealed class RideVM
 {
-	/// <summary>Stops a slice that never leaves a critical section.</summary>
+	/// <summary>
+	/// Stops a slice that never leaves a critical section.
+	/// </summary>
+	// [EXT:crit-slice-guard] the original has no such bound (a script that locks and never unlocks never ends its slice and hangs the game); the guard faults the script instead
 	public const int MaximumInstructionsPerSlice = 100_000;
 
+	/// <summary>Largest stack or limbo size accepted from a header (a managed array bound; the original allocates what the header says).</summary>
+	public const int MaximumHeaderTableSize = 1 << 20;
+
 	private readonly Instruction[] instructions;
-	private readonly Stack<int> callStack = new();
+	// [BIN:TPW-EXE:0x558930 script heap] one int array of the header stack size (script +0x20, element count +0x54) serves JSR/RETURN/PUSH/POP from the top (pointer +0x40 starts at size - 1 at 0x558bf5..0x558c04 and falls) and HUSH/HOP from the bottom (count +0x44 starts at 0); no handler checks the two ends against each other
+	private readonly int[] stack;
+	private int stackPointer;
+	private int heapCount;
+	// [BIN:TPW-EXE:0x558a01 limbo table] header limbo size slots of {value, expiry} (script +0x24, slot count +0x58, zero-filled), occupied count +0x60
+	private readonly int[] limboValues;
+	private readonly int[] limboExpiries;
+	private int limboCount;
 	// A private seeded .NET-compatible generator whose full state the park-resume snapshot can store; its draws
 	// are exactly a seeded System.Random's (ScriptRandomTests proves it). Null for a script created without a seed:
 	// it draws from the world generator (RideScriptWorld.World), whose state the world saves. The canonical hash takes the seed
@@ -93,7 +107,30 @@ public sealed class RideVM
 	public RideVM.VMFlags Flags { get; internal set; } = VMFlags.None;
 	public int SliceBudget { get; }
 	public bool InCriticalSection { get; internal set; }
-	public int CallDepth => callStack.Count;
+	/// <summary>Return addresses on the shared stack/heap array: its top-down region, <c>size - 1 - pointer</c> (never negative).</summary>
+	public int CallDepth => Math.Max( 0, stack.Length - 1 - stackPointer );
+
+	/// <summary>Values HUSH has stored and HOP has not yet taken (the heap grows up from index 0 of the shared array).</summary>
+	public int HeapCount => heapCount;
+
+	/// <summary>The shared stack/heap array's size (header stack size).</summary>
+	public int StackCapacity => stack.Length;
+
+	/// <summary>One element of the shared stack/heap array (diagnostics and tests).</summary>
+	public int GetStackSlot( int index ) => stack[index];
+
+	/// <summary>The script's TURBO byte (script +0xB8): the low byte of TURBO's raw operand word; 0 at creation.</summary>
+	// [BIN:TPW-EXE:0x5542B9 TURBO] stores cl (the low byte of the unresolved operand word, a variable operand stores its index byte) at +0xB8; the pass at 0x5516E1 reads the byte (nonzero = the script runs its slice on every pass, zero = only on the passes selected by +8 xor the pass counter & 7)
+	public int TurboByte { get; internal set; }
+
+	/// <summary>Occupied limbo slots (script +0x60).</summary>
+	public int LimboCount => limboCount;
+
+	/// <summary>The limbo table's slot count (header limbo size).</summary>
+	public int LimboCapacity => limboValues.Length;
+
+	/// <summary>One limbo slot: the held value (0 = free) and its expiry on the 32-bit scheduler clock.</summary>
+	public (int Value, int Expiry) GetLimboSlot( int index ) => (limboValues[index], limboExpiries[index]);
 
 	/// <summary>Script clock: milliseconds since this VM was created (waits, timers and their deadlines).</summary>
 	public double TimeMilliseconds { get; private set; }
@@ -164,6 +201,13 @@ public sealed class RideVM
 		if ( SliceBudget <= 0 )
 			throw new InvalidDataException( $"RSE slice budget {SliceBudget} is not positive." );
 		Variables = new int[script.VariableCount];
+		// a size above the bound is refused up front (the original allocates whatever the header says); the corpus declares at most a few dozen
+		if ( script.StackSize > MaximumHeaderTableSize || script.LimboSize > MaximumHeaderTableSize )
+			throw new InvalidDataException( $"RSE stack size {script.StackSize} or limbo size {script.LimboSize} exceeds the VM limit {MaximumHeaderTableSize}." );
+		stack = new int[Math.Max( 0, script.StackSize )];
+		stackPointer = stack.Length - 1;
+		limboValues = new int[Math.Max( 0, script.LimboSize )];
+		limboExpiries = new int[limboValues.Length];
 
 		instructions = new Instruction[script.Instructions.Count];
 		for ( var index = 0; index < instructions.Length; ++index )
@@ -230,6 +274,8 @@ public sealed class RideVM
 	{
 		if ( State is RideVMState.Halted or RideVMState.Faulted )
 			return;
+		// [BIN:TPW-EXE:0x551701 slice start] the pass clears the global critical flag (0x87919C) before it hands the slice budget (+0x94, the header time slice) to the counter +0x98; the only reader is the loop below. A waiting script re-executes its wait in every slice, which also clears the flag
+		InCriticalSection = false;
 		if ( State == RideVMState.Waiting )
 		{
 			if ( TimeMilliseconds < WakeTimeMilliseconds )
@@ -240,10 +286,10 @@ public sealed class RideVM
 		++SliceCount;
 		yieldRequested = false;
 		var executed = 0;
-		while ( !yieldRequested && State == RideVMState.Running )
+		var budget = SliceBudget;
+		// [BIN:TPW-EXE:0x551719 slice loop] while the counter is above 0 and the pc is valid, one instruction runs (0x551cb0) and the counter falls by one only while the flag is 0 (0x551724..0x551730): CRIT_LOCK (0x551D44) sets the flag, so instructions from the lock on are free, and CRIT_UNLOCK (0x551D59) clears it and zeroes the counter (+0x98), ENDSLICE (0x5542A8) zeroes it too, and a wait rewinds the pc and ends the slice
+		while ( !yieldRequested && State == RideVMState.Running && budget > 0 )
 		{
-			if ( executed >= SliceBudget && !InCriticalSection )
-				break;
 			if ( executed >= MaximumInstructionsPerSlice )
 			{
 				Fault( $"slice exceeded {MaximumInstructionsPerSlice} instructions inside a critical section" );
@@ -273,6 +319,8 @@ public sealed class RideVM
 			{
 				Fault( $"{instruction} at word {instruction.WordOffset}: {exception.Message}" );
 			}
+			if ( !InCriticalSection )
+				--budget;
 		}
 	}
 
@@ -337,7 +385,13 @@ public sealed class RideVM
 			State = State,
 			FaultMessage = FaultMessage,
 			ProgramCounter = ProgramCounter,
-			CallStack = callStack.Reverse().ToArray(),
+			Stack = (int[])stack.Clone(),
+			StackPointer = stackPointer,
+			HeapCount = heapCount,
+			LimboValues = (int[])limboValues.Clone(),
+			LimboExpiries = (int[])limboExpiries.Clone(),
+			LimboCount = limboCount,
+			TurboByte = TurboByte,
 			Variables = (int[])Variables.Clone(),
 			Flags = Flags,
 			SliceBudget = SliceBudget,
@@ -368,11 +422,11 @@ public sealed class RideVM
 		ArgumentNullException.ThrowIfNull( snapshot );
 		if ( snapshot.Variables.Length != Variables.Length )
 			throw new InvalidDataException( $"script '{ScriptName}' ({SourceName}) has {Variables.Length} variables, the snapshot stores {snapshot.Variables.Length}." );
-		if ( snapshot.CallStack.Length > Script.StackSize )
-			throw new InvalidDataException( $"script '{ScriptName}' declares stack size {Script.StackSize}, the snapshot stores {snapshot.CallStack.Length} return addresses." );
-		foreach ( var address in snapshot.CallStack )
-			if ( address < 0 || address > instructions.Length )
-				throw new InvalidDataException( $"script '{ScriptName}' return address {address} is outside [0, {instructions.Length}]." );
+		var restoredStack = snapshot.ResolveStack( stack.Length, out var restoredPointer, out var restoredHeapCount );
+		if ( snapshot.LimboValues != null && (snapshot.LimboValues.Length != limboValues.Length || snapshot.LimboExpiries?.Length != limboValues.Length) )
+			throw new InvalidDataException( $"script '{ScriptName}' declares limbo size {limboValues.Length}, the snapshot stores {snapshot.LimboValues.Length} slots." );
+		if ( snapshot.LimboValues == null && snapshot.LimboCount != 0 )
+			throw new InvalidDataException( $"script '{ScriptName}' has no limbo table in the snapshot but counts {snapshot.LimboCount} held values." );
 		if ( snapshot.ProgramCounter < -10000 || snapshot.ProgramCounter > instructions.Length )
 			throw new InvalidDataException( $"script '{ScriptName}' program counter {snapshot.ProgramCounter} is outside [-10000, {instructions.Length}]." );
 		if ( snapshot.ProgramCounter < 0 && snapshot.State != RideVMState.Faulted )
@@ -384,9 +438,21 @@ public sealed class RideVM
 		State = snapshot.State;
 		FaultMessage = snapshot.FaultMessage;
 		ProgramCounter = snapshot.ProgramCounter;
-		callStack.Clear();
-		for ( var index = snapshot.CallStack.Length - 1; index >= 0; index-- )
-			callStack.Push( snapshot.CallStack[index] );
+		Array.Copy( restoredStack, stack, stack.Length );
+		stackPointer = restoredPointer;
+		heapCount = restoredHeapCount;
+		if ( snapshot.LimboValues != null )
+		{
+			Array.Copy( snapshot.LimboValues, limboValues, limboValues.Length );
+			Array.Copy( snapshot.LimboExpiries!, limboExpiries, limboValues.Length );
+		}
+		else
+		{
+			Array.Clear( limboValues );
+			Array.Clear( limboExpiries );
+		}
+		limboCount = snapshot.LimboCount;
+		TurboByte = snapshot.TurboByte;
 		Array.Copy( snapshot.Variables, Variables, Variables.Length );
 		Flags = snapshot.Flags;
 		InCriticalSection = snapshot.InCriticalSection;
@@ -450,20 +516,137 @@ public sealed class RideVM
 
 	internal void BranchTo( Operand location ) => ProgramCounter = location.RequireBranchTarget();
 
+	/// <summary>The tag the original puts on a stored return address (high byte 0x20, the branch operand tag).</summary>
+	private const int ReturnAddressTag = 0x20000000;
+
+	/// <summary>
+	/// JSR: the return address goes onto the shared array at the stack pointer, which then falls; the jump is taken either way.
+	/// </summary>
+	// [BIN:TPW-EXE:0x5539A9 JSR] stores (pc after the operand | 0x20000000) at heap[+0x40] and decrements +0x40 only while 0 <= +0x40 < size; otherwise the assert (0x5DA3C0 is a bare ret) does nothing and the jump to the operand still runs (0x553A0A..0x553A24), so a full stack jumps without pushing and a later RETURN comes back to an older address
 	internal void PushReturn( Operand location )
 	{
-		if ( callStack.Count >= Script.StackSize )
-			throw new RideScriptException( $"JSR exceeds the declared stack size {Script.StackSize}" );
-		callStack.Push( ProgramCounter );
-		BranchTo( location );
+		var target = location.RequireBranchTarget();
+		if ( stackPointer >= 0 && stackPointer < stack.Length )
+			stack[stackPointer--] = ProgramCounter | ReturnAddressTag;
+		ProgramCounter = target;
 	}
 
+	/// <summary>
+	/// RETURN: pops the shared array; a popped word tagged as an address becomes the pc, any other word (a HUSH value that reached the call region) leaves the pc alone.
+	/// </summary>
+	// [BIN:TPW-EXE:0x553A32 RETURN] with a heap and -1 <= +0x40 < size - 1 the pointer rises and heap[+0x40] is read; otherwise the pc becomes -10000 (script dead, here a fault). Only a word whose high byte is 0x20 is jumped to (xor 0x20000000, 0x553A66..0x553A7C); the rest returns without touching the pc
 	internal void PopReturn()
 	{
-		if ( callStack.Count == 0 )
+		if ( stackPointer < -1 || stackPointer >= stack.Length - 1 )
 			throw new RideScriptException( "RETURN without JSR" );
-		ProgramCounter = callStack.Pop();
+		var word = stack[++stackPointer];
+		if ( (word & unchecked( (int)0xFF000000 )) == ReturnAddressTag )
+			ProgramCounter = word ^ ReturnAddressTag;
 	}
+
+	/// <summary>
+	/// PUSH: stores the value at the stack pointer and lowers it; true when stored. A full stack kills the script and still sets the result register.
+	/// </summary>
+	// [BIN:TPW-EXE:0x553C1E PUSH] heap[+0x40] = value, +0x40--, result = value while 0 <= +0x40 < size; otherwise assert (no-op), pc = -10000 and result = value
+	internal bool PushValue( int value )
+	{
+		SetFlags( value );
+		if ( stackPointer < 0 || stackPointer >= stack.Length )
+			return false;
+		stack[stackPointer--] = value;
+		return true;
+	}
+
+	/// <summary>POP: raises the pointer and returns the word it reaches; false on an empty stack (the result is 0 and the script dies).</summary>
+	// [BIN:TPW-EXE:0x553CBA POP] with -1 <= +0x40 < size - 1: +0x40++, value = heap[+0x40]; otherwise the value is 0 and pc = -10000; either way the shared tail 0x555939 writes the result register and a variable destination
+	internal bool PopValue( out int value )
+	{
+		if ( stackPointer < -1 || stackPointer >= stack.Length - 1 )
+		{
+			value = 0;
+			return false;
+		}
+		value = stack[++stackPointer];
+		return true;
+	}
+
+	/// <summary>HUSH: appends to the heap and sets the result register; a full heap does nothing at all.</summary>
+	// [BIN:TPW-EXE:0x553D25 HUSH] heap[+0x44] = value, result (+0x48) = value, +0x44++ while 0 <= +0x44 < size (+0x54); on overflow the assert is a no-op and neither the array nor the result register changes
+	internal void HeapPush( int value )
+	{
+		if ( heapCount < 0 || heapCount >= stack.Length )
+			return;
+		stack[heapCount++] = value;
+		SetFlags( value );
+	}
+
+	/// <summary>HOP: takes the newest heap value (LIFO); false when the heap is empty (nothing changes).</summary>
+	// [BIN:TPW-EXE:0x553DAA HOP] with +0x44 > 0 (the +0x40 <= size test at 0x553DE7 cannot fail): +0x44--, value = heap[+0x44], then the shared tail 0x555939 sets the result register and writes a variable destination; an empty heap asserts (no-op) and leaves the result register and the destination alone
+	internal bool HeapPop( out int value )
+	{
+		if ( heapCount <= 0 )
+		{
+			value = 0;
+			return false;
+		}
+		value = stack[--heapCount];
+		return true;
+	}
+
+	/// <summary>Current 32-bit scheduler clock as the signed word the limbo table stores.</summary>
+	private int LimboClock => unchecked( (int)ClockMilliseconds32 );
+
+	/// <summary>LIMBO: the first slot holding 0 takes the value and an expiry <c>now + seconds * 1000</c>; 1 when stored, 0 when the table is full or empty.</summary>
+	// [BIN:TPW-EXE:0x554DE5 LIMBO] size (+0x58) <= 0: result 0. Otherwise the first slot whose value word is 0 (0x554E8E) gets the value and expiry = clock (0x402D70 on timer 0x785970, as GETTIME) + seconds * 1000 as a wrapping 32-bit sum (0x554EC3..0x554ECC, 125 * 8), count (+0x60)++ and result 1; no free slot: result 0, nothing stored. A value of 0 leaves its slot "free" but still counts
+	internal int Limbo( int value, int seconds )
+	{
+		for ( var index = 0; index < limboValues.Length; index++ )
+		{
+			if ( limboValues[index] != 0 )
+				continue;
+			limboValues[index] = value;
+			limboExpiries[index] = unchecked( LimboClock + seconds * 1000 );
+			++limboCount;
+			return 1;
+		}
+		return 0;
+	}
+
+	/// <summary>UNLIMBO: releases the first occupied slot whose expiry lies strictly before the clock (signed 32-bit); 0 when none.</summary>
+	// [BIN:TPW-EXE:0x554EF0 UNLIMBO] slots in index order; an occupied one (value != 0) whose expiry is below the clock as signed words (jl at 0x554F3A) is released through 0x5567BF: count--, the value word cleared in place (the expiry stays), result = the value
+	internal int Unlimbo()
+	{
+		var now = LimboClock;
+		for ( var index = 0; index < limboValues.Length; index++ )
+		{
+			if ( limboValues[index] == 0 || limboExpiries[index] >= now )
+				continue;
+			return Release( index );
+		}
+		return 0;
+	}
+
+	/// <summary>FORCEUNLIMBO: releases the first occupied slot whatever its expiry; 0 when none.</summary>
+	// [BIN:TPW-EXE:0x554F74 FORCEUNLIMBO] needs a variable destination (any other operand returns before anything happens, 0x554FA6); the first slot with value != 0 (0x554FBA) is released as UNLIMBO does (0x554FC9..0x554FE8), none gives 0; the result register and the variable get the value
+	internal int ForceUnlimbo()
+	{
+		for ( var index = 0; index < limboValues.Length; index++ )
+			if ( limboValues[index] != 0 )
+				return Release( index );
+		return 0;
+	}
+
+	private int Release( int index )
+	{
+		--limboCount;
+		var value = limboValues[index];
+		limboValues[index] = 0;
+		return value;
+	}
+
+	// [BIN:TPW-EXE:0x555012 INLIMBO] the result is the count (+0x60); [BIN:TPW-EXE:0x555045 LIMBOSPACE] the result is size (+0x58) - count (+0x60), negative for a table overfilled by LIMBO 0
+	internal int LimboOccupied => limboCount;
+	internal int LimboFree => limboValues.Length - limboCount;
 
 	internal void EndSlice() => yieldRequested = true;
 
@@ -554,9 +737,28 @@ public sealed class RideVM
 		hash.Add( (int)Flags );
 		hash.Add( InCriticalSection );
 		hash.Add( yieldRequested );
-		hash.Add( callStack.Count );
-		foreach ( var address in callStack )
-			hash.Add( address );
+		// the call region of the shared array (top-down) is hashed as before; the heap, any word the two regions share, the limbo table and the TURBO byte are added only when a script has used them, so scripts that do not keep their earlier digests
+		var depth = CallDepth;
+		hash.Add( depth );
+		for ( var index = stackPointer + 1; depth > 0 && index < stack.Length; index++ )
+			hash.Add( stack[index] & ~ReturnAddressTag );
+		if ( heapCount != 0 )
+		{
+			hash.Add( heapCount );
+			for ( var index = 0; index < heapCount; index++ )
+				hash.Add( stack[index] );
+		}
+		if ( limboCount != 0 || limboValues.Any( x => x != 0 ) )
+		{
+			hash.Add( limboCount );
+			for ( var index = 0; index < limboValues.Length; index++ )
+			{
+				hash.Add( limboValues[index] );
+				hash.Add( limboExpiries[index] );
+			}
+		}
+		if ( TurboByte != 0 )
+			hash.Add( TurboByte );
 		hash.Add( Variables.Length );
 		foreach ( var value in Variables )
 			hash.Add( value );

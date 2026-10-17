@@ -290,9 +290,9 @@ public sealed record RideVisitorBridgeSnapshot
 	/// <summary>The slot nodes and walk action of each rider that WALKON put on a tour ride and WALKOFF has not taken off yet (guest, start node, end node, action); null when there are none.</summary>
 	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
 	public (int Guest, int From, int To, int Mode)[]? WalkSlots { get; init; }
-	/// <summary>Guests already picked by HOP, sorted.</summary>
+	/// <summary>Always empty in a new snapshot: HOP pops the script's own heap (RideVM), not a bridge set. Kept for saves written before; whatever an old save stores here is validated and ignored.</summary>
 	public required int[] Hopped { get; init; }
-	/// <summary>LIMBO entries in slot order.</summary>
+	/// <summary>Always empty in a new snapshot: the limbo table is part of the script's state (RideVM, <see cref="RideVMSnapshot.LimboValues"/>). Kept for saves written before; whatever an old save stores here is validated and ignored.</summary>
 	public required (int Guest, double Until)[] Limbo { get; init; }
 	/// <summary>BOUNCE slot table in index order; interior free slots (guest 0) keep their place.</summary>
 	public required (int Guest, double Until, double Start)[] Bounce { get; init; }

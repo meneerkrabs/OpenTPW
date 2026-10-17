@@ -94,6 +94,26 @@ public sealed class OriginalParkImport
 		return null;
 	}
 	public SaveCellGrid Cells => cells;
+
+	private IReadOnlyList<SaveLitter>? litter;
+
+	/// <summary>The litter the cell grid holds (a Theme Park World save), in row order: a cell whose <c>mLitter</c> word is not 0.</summary>
+	public IReadOnlyList<SaveLitter> Litter => litter ??= world == null ? Array.Empty<SaveLitter>() : ReadLitter();
+
+	private IReadOnlyList<SaveLitter> ReadLitter()
+	{
+		var found = new List<SaveLitter>();
+		for ( var y = 0; y < cells.CountY; y++ )
+		{
+			for ( var x = 0; x < cells.CountX; x++ )
+			{
+				var cell = cells[x, y];
+				if ( cell.Litter != 0 )
+					found.Add( new SaveLitter( x, y, cell.Litter, cell.LitterCollector, cell.LitterScript, cell.LitterMarkedTurn ) );
+			}
+		}
+		return found;
+	}
 	/// <summary>Model-3 things in list order (rides, shops, sideshows, features and fixed items).</summary>
 	public IReadOnlyList<SaveAttraction> Attractions { get; }
 	public SaveEconomyRecords Economy => economy ?? throw new InvalidOperationException( "The Theme Park Inc viewer does not decode save economy state." );
@@ -139,6 +159,10 @@ public sealed class OriginalParkImport
 	public SaveRuntimeBlocks? RuntimeBlocks { get; private init; }
 	/// <summary>The RSSE block's script records, read in full (null for the Theme Park Inc viewer).</summary>
 	public SaveRsseBlock? Rsse { get; private init; }
+	/// <summary>The Particles block (loader tp.exe 0x51F7A0): the pool's globals, emitters and effectors (null for the Theme Park Inc viewer).</summary>
+	public SaveParticlesBlock? Particles { get; private init; }
+	/// <summary>The Scripts block (loader tp.exe 0x475730): the sprite-script slots and their VM records (null for the Theme Park Inc viewer).</summary>
+	public SaveScriptsBlock? Scripts { get; private init; }
 	/// <summary>Original TPW track sections joined to scene records and matching attraction things.
 	/// Missing or ambiguous matches stay visible; neither record index nor header words are guessed as station ids.</summary>
 	public IReadOnlyList<ImportedCoasterSection> CoasterSections { get; } = Array.Empty<ImportedCoasterSection>();
@@ -300,6 +324,8 @@ public sealed class OriginalParkImport
 		{
 			RuntimeBlocks = SaveRuntimeBlocks.Read( span, layout ),
 			Rsse = SaveRsseBlock.Read( span, layout ),
+			Particles = SaveParticlesBlock.Parse( span, layout ),
+			Scripts = SaveScriptsBlock.Parse( span, layout ),
 			SavedAdvisorClockMilliseconds = savedClock,
 		};
 	}
@@ -384,3 +410,6 @@ public sealed class OriginalParkImport
 		};
 	}
 }
+
+/// <summary>One litter item of the saved cell grid: its type (1 to 8 as the original's <c>mLitter</c>, anything else is kept as read), the thing id of the handyman who claimed it (0: none), its sprite's script pointer and the game turn of the claim.</summary>
+public readonly record struct SaveLitter( int X, int Y, uint Type, ushort Collector, uint Script, uint MarkedTurn );

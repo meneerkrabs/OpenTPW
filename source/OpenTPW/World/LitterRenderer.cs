@@ -52,7 +52,6 @@ public sealed class LitterRenderer : Entity
 		material = new Material<ObjectUniformBuffer>( "content/shaders/sprite.shader" );
 		material.Set( "Color", Enumerable.Repeat( texture, 8 ).ToArray() );
 		TexturePackSwitch.PackChanged += ReloadAtlas;
-		TexturePackSwitch.FilesAvailable += ReloadAtlas;
 	}
 
 	private void ReloadAtlas() => ReloadAtlas( null );
@@ -188,7 +187,6 @@ public sealed class LitterRenderer : Entity
 		deleted = true;
 		Follow( null );
 		TexturePackSwitch.PackChanged -= ReloadAtlas;
-		TexturePackSwitch.FilesAvailable -= ReloadAtlas;
 		var owned = texture;
 		texture = null;
 		if ( owned != null )

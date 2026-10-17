@@ -53,8 +53,6 @@ internal sealed partial class GameFlow : IDisposable
 	public string OptionsPath { get; set; }
 	/// <summary>When false, options are not written (smoke tests).</summary>
 	public bool PersistSettings { get; set; } = true;
-	/// <summary>True when selecting a pack opens its download page instead of an immediate texture switch.</summary>
-	public Func<UiScreenStack, string, bool>? PrepareTexturePack { get; set; }
 	public Level? Level { get; private set; }
 	public ParkHud? Hud { get; private set; }
 	/// <summary>The level of the Theme Park Inc slice, which has no <see cref="Hud"/> but the experimental <see cref="IncHud"/> (docs/THEME-PARK-INC.md).</summary>
@@ -226,8 +224,6 @@ internal sealed partial class GameFlow : IDisposable
 		TexturePacks = TexturePack.InstalledPacks(),
 		BeginTexturePackSwitch = name =>
 		{
-			if ( PrepareTexturePack?.Invoke( stack, name ) == true )
-				return null;
 			var diagnostics = new List<string>();
 			var textureSwitch = TexturePackSwitch.Begin( name, diagnostics );
 			foreach ( var diagnostic in diagnostics )
@@ -345,14 +341,14 @@ internal sealed partial class GameFlow : IDisposable
 	/// Creates a level with the original HUD. CLI paths keep the developer panels. Original levels
 	/// default to the read-only reference start (shipped save imported as it was made).
 	/// </summary>
-	public Level StartLevel( string levelName, bool original, bool developerPanels, ParkVisitInfo? visit = null, ParkStartKind start = ParkStartKind.OriginalSaveReference )
+	public Level StartLevel( string levelName, bool original, bool developerPanels, ParkVisitInfo? visit = null, ParkStartKind start = ParkStartKind.OriginalSaveReference, ReadOnlyMemory<byte>? playerSave = null )
 	{
 		using var profile = LoadProfile.Measure( "start-level" );
 		using ( LoadProfile.Measure( "tear-down" ) )
 			TearDown();
 		Level level;
 		using ( LoadProfile.Measure( "level" ) )
-			level = new Level( levelName, loadOriginalLevel: original, visit: visit, onlineFolders: OnlineFolders, start: start ) { ShowDeveloperPanels = developerPanels };
+			level = new Level( levelName, loadOriginalLevel: original, visit: visit, onlineFolders: OnlineFolders, start: start, playerSave: playerSave ) { ShowDeveloperPanels = developerPanels };
 		return EnterLevel( level, levelName, original, visit );
 	}
 

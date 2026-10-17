@@ -284,8 +284,7 @@ returns to the original page with the edits still pending, and OK on the origina
 both pages; Cancel/Escape there discards everything.
 
 The enhanced-textures row (`enhancedTextures`, `[EXT:texture-pack]`) cycles "Original" (the game's own textures),
-"Enhanced" (the default: the HD interface art shipped in `content/hero-art` plus the local `enhanced` pack
-when one is built), then every other installed texture pack (a directory under `<config>/texture-packs` with a
+"Enhanced" (the local `enhanced` pack when one is built; the HD interface art shipped in `content/hero-art` is a separate HUD option), then every other installed texture pack (a directory under `<config>/texture-packs` with a
 valid `pack.json`; see TEXTURE-PACKS.md): `detailed` is labelled "Detailed" (translated in all nine languages),
 other pack names are shown as they are. Its popup help explains the choice and that switching runs in the
 background. The choice is applied on OK, without a restart and without a loading screen: the options close

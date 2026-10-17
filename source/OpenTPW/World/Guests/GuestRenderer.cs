@@ -72,7 +72,6 @@ public sealed class GuestRenderer : Entity
 		material = new Material<ObjectUniformBuffer>( "content/shaders/sprite.shader" );
 		material.Set( "Color", slots );
 		TexturePackSwitch.PackChanged += ReloadAtlases;
-		TexturePackSwitch.FilesAvailable += ReloadAtlases;
 	}
 
 	/// <summary>
@@ -326,7 +325,6 @@ public sealed class GuestRenderer : Entity
 	{
 		deleted = true;
 		TexturePackSwitch.PackChanged -= ReloadAtlases;
-		TexturePackSwitch.FilesAvailable -= ReloadAtlases;
 		var ownedTextures = textures.ToArray();
 		textures.Clear();
 		foreach ( var texture in ownedTextures )

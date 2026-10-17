@@ -52,7 +52,6 @@ public sealed class ThoughtRenderer : Entity
 		material = new Material<ObjectUniformBuffer>( "content/shaders/sprite.shader" );
 		material.Set( "Color", Enumerable.Range( 0, 8 ).Select( index => textures[Math.Min( index, textures.Count - 1 )] ).ToArray() );
 		TexturePackSwitch.PackChanged += ReloadAtlases;
-		TexturePackSwitch.FilesAvailable += ReloadAtlases;
 	}
 
 	private void ReloadAtlases() => ReloadAtlases( null );
@@ -178,7 +177,6 @@ public sealed class ThoughtRenderer : Entity
 	{
 		deleted = true;
 		TexturePackSwitch.PackChanged -= ReloadAtlases;
-		TexturePackSwitch.FilesAvailable -= ReloadAtlases;
 		var owned = textures.ToArray();
 		textures.Clear();
 		foreach ( var texture in owned )

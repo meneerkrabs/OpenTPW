@@ -56,12 +56,26 @@ public partial class Level : IDisposable
 	public ParkNameLines? ParkName { get; private set; }
 
 	/// <summary>
+	/// An original save's camera block puts the camera where the save left it (zoom, yaw and the point it looks at); the Home key still returns to the level's home pose. A resumed park, a
+	/// visit and a sandbox keep their own start. A saved pose that is no finite point of the map leaves the home pose.
+	/// </summary>
+	private void ApplySavedCamera()
+	{
+		if ( resumeState != null || visitLayout != null || OriginalPark?.Save?.RuntimeBlocks is not { } blocks || OriginalPark.Heightfield is not { } field || Camera.Mode is not ParkCameraMode mode )
+			return;
+		if ( ParkCameraMode.PoseOfSave( blocks.Camera ) is not var (x, z, height, yaw) )
+			return;
+		var target = OriginalParkPlacement.ToEngine( field, new System.Numerics.Vector3( x, 0, z ) );
+		mode.SetPose( new Vector3( target.X, target.Y, 0 ), height, yaw );
+	}
+
+	/// <summary>
 	/// The park name and the gate sign of an original level: a resumed park keeps its saved lines, which the sign draws as the
 	/// original's rebuild after loading does (0x468500); a new park takes the gate's default lines.
 	/// </summary>
 	private void SetupParkName()
 	{
-		var savedName = resumeState?.ParkName is { } saved ? new ParkNameLines( saved.Line1, saved.Line2 ) : null;
+		var savedName = resumeState?.ParkName is { } saved ? new ParkNameLines( saved.Line1, saved.Line2 ) : SavedGateName();
 		if ( OriginalPark != null )
 		{
 			try { GateSign = OriginalGateSign.TryCreate( OriginalPark, Global, savedName, reloaded: savedName != null ); }
@@ -71,6 +85,21 @@ public partial class Level : IDisposable
 			}
 		}
 		ParkName = savedName ?? GateSign?.Lines;
+	}
+
+	/// <summary>
+	/// The park name a player's own original save holds: the two sign lines of its park gate's attraction thing (<c>mParkGates</c>, name lines +0x3C8 and +0x40A), which the load's sign rebuild redraws (0x468500).
+	/// Null for any other start (the shipped Easymode seed keeps the gate's default lines in the player's language) and for lines OpenTPW's sign cannot hold.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004DB7D0 attraction serializer] the placed object's two sign lines (NameA/NameB) are part of its record; a park's name is its gate's pair (SAVE-006)
+	private ParkNameLines? SavedGateName()
+	{
+		if ( playerSavePayload == null || OriginalPark?.Save is not { } save )
+			return null;
+		var gate = save.Attractions.FirstOrDefault( attraction => attraction.Id == save.World.Variables.ParkGates );
+		if ( gate == null )
+			return null;
+		return ParkNameLines.FromSavedGate( gate.NameLine1, gate.NameLine2 );
 	}
 
 	/// <summary>
@@ -182,8 +211,9 @@ public partial class Level : IDisposable
 		}
 	}
 
-	public Level( string levelName, bool loadOriginalLevel = false, ParkVisitInfo? visit = null, OnlineFolders? onlineFolders = null, ParkStartKind start = ParkStartKind.OriginalSaveReference, WorldSeed? seed = null )
-		: this( levelName, loadOriginalLevel, visit, onlineFolders, start, seed, null, null, overFrames: false ) { }
+	/// <param name="playerSave">The decoded payload of a player's own original save of this level (<c>--original-save</c>): the park starts from it instead of the shipped Easymode save, with Full Simulation rules and the balance the save was made with.</param>
+	public Level( string levelName, bool loadOriginalLevel = false, ParkVisitInfo? visit = null, OnlineFolders? onlineFolders = null, ParkStartKind start = ParkStartKind.OriginalSaveReference, WorldSeed? seed = null, ReadOnlyMemory<byte>? playerSave = null )
+		: this( levelName, loadOriginalLevel, visit, onlineFolders, start, seed, null, null, overFrames: false, playerSave: playerSave ) { }
 
 	internal Level( ParkResumeSnapshot snapshot, ParkEconomy economy, OnlineFolders? onlineFolders = null )
 		: this( snapshot.Theme, true, null, onlineFolders, snapshot.StartKind, new WorldSeed( snapshot.Seed ), snapshot, economy, overFrames: false ) { }
@@ -197,8 +227,9 @@ public partial class Level : IDisposable
 		new( levelName, loadOriginalLevel, visit, onlineFolders, start, null, null, null, overFrames: true );
 
 	private Level( string levelName, bool loadOriginalLevel, ParkVisitInfo? visit, OnlineFolders? onlineFolders,
-		ParkStartKind start, WorldSeed? seed, ParkResumeSnapshot? resume, ParkEconomy? resumedEconomy, bool overFrames, ThemeParkIncLayoutCheckpoint? checkpoint = null )
+		ParkStartKind start, WorldSeed? seed, ParkResumeSnapshot? resume, ParkEconomy? resumedEconomy, bool overFrames, ThemeParkIncLayoutCheckpoint? checkpoint = null, ReadOnlyMemory<byte>? playerSave = null )
 	{
+		playerSavePayload = playerSave;
 		if (checkpoint != null && !GameEditions.IsThemeParkInc)
 			throw new NotSupportedException("TPI layout checkpoints require Theme Park Inc data.");
 		incLayout = checkpoint;
@@ -222,6 +253,7 @@ public partial class Level : IDisposable
 	}
 
 	private IEnumerator<float>? construction;
+	private readonly ReadOnlyMemory<byte>? playerSavePayload;
 
 	/// <summary>How far the construction has come, from 0 to 1 (a rough share of the work, for a progress bar).</summary>
 	internal float ConstructionProgress { get; private set; }
@@ -250,7 +282,8 @@ public partial class Level : IDisposable
 			using ( LoadProfile.Measure( "original-park" ) )
 			{
 				var parts = 0;
-				foreach ( var loaded in OriginalPark.LoadSteps( LevelName, readShippedSave: incLayout == null && resume == null && (IsReadOnlyVisit || ParkStart.ReadsShippedSave( start )) ) )
+				foreach ( var loaded in OriginalPark.LoadSteps( LevelName, readShippedSave: incLayout == null && resume == null && (IsReadOnlyVisit || ParkStart.ReadsShippedSave( start )),
+					savePayload: incLayout == null && resume == null && !IsReadOnlyVisit ? playerSavePayload : null ) )
 				{
 					if ( loaded == null )
 						yield return Math.Min( 0.14f, 0.004f * ++parts );
@@ -267,7 +300,7 @@ public partial class Level : IDisposable
 			using ( LoadProfile.Measure( "economy" ) )
 			{
 				if ( !IsReadOnlyVisit && GameEditions.Capabilities.Economy )
-					Park = resume == null ? ParkEconomyRuntime.ForOriginalLevel( OriginalPark, start, Seed )
+					Park = resume == null ? ParkEconomyRuntime.ForOriginalLevel( OriginalPark, start, Seed, playerSave: playerSavePayload != null )
 						: ParkEconomyRuntime.ForResume( resumedEconomy ?? throw new InvalidDataException( "The resumed economy is missing." ), start );
 				else if ( !IsReadOnlyVisit && GameEditions.IsThemeParkInc && GameEditions.Capabilities.Money && resume == null )
 					Park = ParkEconomyRuntime.ForThemeParkIncLevel( OriginalPark, Seed );
@@ -408,6 +441,7 @@ public partial class Level : IDisposable
 		using ( LoadProfile.Measure( "coasters" ) )
 			SetupCoasters();
 		Camera.SetCameraMode<ParkCameraMode>();
+		ApplySavedCamera();
 		yield return 0.8f;
 		if ( OriginalPark != null )
 		{
@@ -456,6 +490,8 @@ public partial class Level : IDisposable
 			}
 			ImportOriginalGuests();
 			ImportOriginalRideSettings();
+			ImportOriginalScripts();
+			ImportOriginalParticles();
 			if ( resumeState == null && !GameEditions.IsThemeParkInc && OriginalPark.Save != null && visitLayout == null )
 				ReleaseUnimportedThings();
 			if ( GameEditions.Capabilities.Staff )

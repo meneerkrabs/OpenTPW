@@ -499,6 +499,25 @@ public class PoolSlidesTests
 		Assert.AreEqual( PoolBuildResult.NotEnoughMoney, second.Press( 8, 10 ) );
 	}
 
+	[TestMethod]
+	public void TheRouteSearchFindsTheShortestValidSlideAndTheWorldBuildsIt()
+	{
+		var (cells, tower) = Fixture();
+		Assert.IsNull( PoolSlideRoutes.Find( tower, Site( cells ) ), "the extension is off" );
+		using var scope = PoolsOn();
+		var route = PoolSlideRoutes.Find( tower, Site( cells ) );
+		Assert.IsNotNull( route );
+		var world = World( cells, tower );
+		Build( world, tower, route! );
+		var slide = world.Find( tower.Id )!;
+		Assert.IsTrue( slide.IsComplete && world.IsUsable( slide ), $"{route.Count} pieces, slope {slide.SlopePermille}" );
+		Assert.IsTrue( route.Count is >= 3 and <= 8, $"{route.Count}" );
+		// a tower with no pool beside it has no route; a pool too far has none within the piece limit
+		cells.SetType( 10, 12, ParkCellType.Empty );
+		cells.SetType( 10, 13, ParkCellType.Empty );
+		Assert.IsNull( PoolSlideRoutes.Find( tower, Site( cells ) ) );
+	}
+
 	private static ulong CellDigest( ParkCellMap cells )
 	{
 		var hash = new StateHasher();

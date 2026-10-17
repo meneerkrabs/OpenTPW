@@ -496,6 +496,9 @@ internal static class Game
 			var poolCamera = GetOption( args, "--capture-camera", "x,y,height,yaw" )?.Split( ',' ).Select( value => float.Parse( value, System.Globalization.CultureInfo.InvariantCulture ) ).ToArray();
 			var poolFrames = 0;
 			var poolFrame = GetOption( args, "--capture-frames", "a frame count" ) is { } poolFrameText && int.TryParse( poolFrameText, out var poolParsed ) && poolParsed > 60 ? poolParsed - 59 : 40;
+			// [EXT:debug-pool] --debug-pool-at N builds the pool (and what follows it) at frame N instead of 59 frames before the capture, so swimmers and riders have time to act
+			if ( GetOption( args, "--debug-pool-at", "a frame count" ) is { } poolAtText && int.TryParse( poolAtText, out var poolAt ) && poolAt > 0 )
+				poolFrame = poolAt;
 			Render.PostUpdate += PaintDebugPool;
 			void PaintDebugPool()
 			{
@@ -533,6 +536,9 @@ internal static class Game
 							// puts N guests into the water at once, so a capture shows swimmers (docs/POOLS.md)
 							if ( GetOption( args, "--debug-swimmers", "guests to put into the pool" ) is { } swimText && int.TryParse( swimText, out var swimmerCount ) )
 								PlaceDebugChangingRoom( level, shape.Select( cell => (X: originX + cell.X, Y: originY + cell.Y) ).ToArray(), swimmerCount );
+							// [EXT:debug-slide] smoke-only: --debug-slide flume|tube builds a slide tower beside the pool and lays a valid slide from it into the water (docs/POOLS.md, "Water slides")
+							if ( GetOption( args, "--debug-slide", "flume or tube" ) is { } slideText )
+								PlaceDebugSlide( level, shape.Select( cell => (X: originX + cell.X, Y: originY + cell.Y) ).ToArray(), slideText );
 							return;
 						}
 				Log.Warning( "--debug-pool: no place near the camera target takes the whole shape." );
@@ -1086,6 +1092,19 @@ internal static class Game
 		Log.Trace( $"--debug-swimmers: built the {placed.Entry.DisplayName} at {placed.Placement.X},{placed.Placement.Y} rotation {placed.Placement.Rotation}; {started} of {swimmers} guests swim." );
 		if ( started == 0 )
 			Log.Warning( $"--debug-swimmers: no guest swims: changing room {placed.Visitors.IsChangingRoom}, pool-side cells {string.Join( " ", placed.Visitors.PoolAccessCandidates )}, access {level.Guests.PoolAccessOf( placed.Visitors )}, region {level.Guests.SwimRegionOf( placed.Visitors )?.Cells.Count}, park closed {level.Park?.Economy.IsParkOpen == false}, registered {placed.Visitors.HasCells}." );
+	}
+
+	/// <summary>[EXT:debug-slide] Builds a slide tower of the profile beside the pool cells <paramref name="pool"/> and its slide (<see cref="Level.BuildSlideBeside"/>); the swimmers then take it like any guest.</summary>
+	private static void PlaceDebugSlide( Level level, IReadOnlyList<(int X, int Y)> pool, string profile )
+	{
+		var kind = string.Equals( profile, "tube", StringComparison.OrdinalIgnoreCase ) ? PoolSlideProfile.Tube : PoolSlideProfile.Flume;
+		if ( level.BuildSlideBeside( pool, kind ) is not { } placed )
+		{
+			Log.Warning( "--debug-slide: no slide could be built beside the pool (the opentpw.pools extension must be on, the theme must list the tower, and a valid route into the pool must exist)." );
+			return;
+		}
+		var slide = level.PoolSlides?.Find( PoolSlide.KeyOf( placed.Placement.X, placed.Placement.Y ) );
+		Log.Trace( $"--debug-slide: built the {placed.Entry.DisplayName} at {placed.Placement.X},{placed.Placement.Y} rotation {placed.Placement.Rotation} with a slide of {slide?.Pieces.Count} pieces (complete {slide?.IsComplete}, slope {slide?.SlopePermille})." );
 	}
 
 	private static string? GetOption( string[] args, string name, string description )

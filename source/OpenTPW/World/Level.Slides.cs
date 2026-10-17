@@ -89,6 +89,36 @@ public partial class Level
 		};
 	}
 
+	/// <summary>
+	/// [EXT:debug-pool] Smoke-only (<c>--debug-slide</c>): builds the theme's slide tower of the profile through the level's own placement (charged; it needs pool water at its front) at the first anchor and
+	/// rotation within four cells of <paramref name="pool"/> that the rules allow and from which a valid slide into the pool exists, then lays that slide piece by piece through the slide world. Null when
+	/// the extension is off, the theme lists no such tower or nothing fits.
+	/// </summary>
+	internal OriginalObject? BuildSlideBeside( IReadOnlyList<(int X, int Y)> pool, PoolSlideProfile profile )
+	{
+		var entry = Objects.Catalog.Entries.FirstOrDefault( item => PoolSlideTowers.IsSlideTower( item ) && PoolSlideTowers.ProfileOf( item ) == profile );
+		if ( entry == null || pool.Count == 0 || PoolSlides == null || SlideSite() is not { } site )
+			return null;
+		var (minX, maxX, minY, maxY) = (pool.Min( cell => cell.X ) - 4, pool.Max( cell => cell.X ) + 4, pool.Min( cell => cell.Y ) - 4, pool.Max( cell => cell.Y ) + 4);
+		foreach ( var rotation in new[] { 0, 90, 180, 270 } )
+			for ( var y = minY; y <= maxY; y++ )
+				for ( var x = minX; x <= maxX; x++ )
+				{
+					if ( CheckObject( entry, x, y, rotation ) != OriginalPlacementResult.Allowed )
+						continue;
+					var anchor = GetCentredAnchor( entry, x, y, rotation );
+					var tower = new PoolSlideTower( anchor.X, anchor.Y, PoolSlideTowers.Footprint( entry.Shape, anchor.X, anchor.Y, rotation ),
+						PoolSlideTowers.PoolSideCandidates( entry.Shape, anchor.X, anchor.Y, rotation ), profile, PoolSlideTowers.CapacityOf( entry ) );
+					if ( PoolSlideRoutes.Find( tower, SlideSite()! ) is not { } route || PlaceObject( entry, x, y, rotation ) is not { } placed )
+						continue;
+					foreach ( var (cellX, cellY) in route )
+						if ( PoolSlides.AddCell( placed.Placement.X, placed.Placement.Y, cellX, cellY ) != PoolSlideResult.Ok )
+							break;
+					return placed;
+				}
+		return null;
+	}
+
 	/// <summary>[EXT:pools-slides] Why a pool cell cannot be erased because of a slide: it is the splash cell of a slide with riders on it, or the foot of a tower's stairs with guests on them. Null when it can go.</summary>
 	private PoolBuildResult? SlideEraseBlock( int x, int y )
 	{

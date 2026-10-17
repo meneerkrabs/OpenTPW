@@ -90,7 +90,7 @@ public class SignEffectShapeTests
 		var kernel = SignEffectShape.Kernel( 1f, out var size );
 		Assert.AreEqual( 5, size, "3 + trunc(2.5 sigma)" );
 		Assert.AreEqual( 25, kernel.Length );
-		Assert.AreEqual( 1.0, kernel.Sum(), 1e-12 );
+		Assert.AreEqual( 1.0, kernel.Sum(), 1e-6, "single-precision taps" );
 		Assert.AreEqual( kernel[0], kernel[4] );
 		Assert.AreEqual( kernel[2 * 5 + 2], kernel.Max() );
 		var even = SignEffectShape.Kernel( 1.2f, out var evenSize );

@@ -582,6 +582,8 @@ the mask word, the separable Gaussian by the parameter), so the composed sign ha
 half hashes of the frozen sign baseline and the five signs pinned in `RidesRound2CorpusTests` were re-pinned deliberately (no sign
 line, text pixel count or `.sgn` hash moved). Sign pixels are presentation only and never enter the world hash, so the pinned fixed
 run is untouched. Catalogue signs now draw the info-record name (empty for an Info.Id outside tp.exe's table), also presentation only.
+
+Sign precision (October 17): the sign blurs, bevel levels and relief arithmetic run on emulated x87 registers at 24 mantissa bits (`Ext`, `X87Precision`), the precision tp.exe's thread runs at, instead of in double precision. 72 of the 75 frozen sign halves and the five `RidesRound2Tests` signs were re-pinned; no line, text pixel count or `.sgn` hash moved, and sign pixels still never enter the world hash. The arithmetic is integer-only (UInt128) apart from sine, cosine, 2^x - 1 and log2, which come from `System.Math` in double precision (the x87 computes them in extended precision, so a last-bit difference there could only matter at a rounding tie).
 The park's name (the gate's two sign lines) is saved in the world save's optional `ParkName` part, but it is not hashed: renaming the
 park changes no simulation state, and a save from before the part restores with the gate's default lines.
 

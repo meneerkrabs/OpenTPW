@@ -38,8 +38,23 @@ public static partial class Program
 		// Display and graphics settings go to /config, which the page keeps between visits.
 		Environment.SetEnvironmentVariable( "OPENTPW_CONFIG_DIR", "/config" );
 		Log = new Logger();
+		// The Extensions and mods screen asks the page for a folder of the player's own game files (docs/WEB.md).
+		OpenTPW.Mods.BrowserModInputs.Choose = Page.ChooseInput;
 		Console.WriteLine( "OpenTPW: runtime ready." );
 	}
+
+	/// <summary>Empties the copy of an original game's files that mods read (before the page copies a chosen folder again).</summary>
+	[JSExport]
+	public static void BeginInput( string edition ) => OpenTPW.Mods.BrowserModInputs.Begin( edition );
+
+	/// <summary>Stores one file of an original game's files for mods, as <c>Data/...</c> below the edition's folder.</summary>
+	[JSExport]
+	public static void AddInputFile( string edition, string relativePath, byte[] contents )
+		=> OpenTPW.Mods.BrowserModInputs.AddFile( edition, relativePath, contents );
+
+	/// <summary>The page finished a mod input import or restore (an empty message), or gave up (why). The Extensions and mods screen refreshes.</summary>
+	[JSExport]
+	public static void InputChanged( string message ) => OpenTPW.Mods.BrowserModInputs.Changed( message );
 
 	/// <summary>Stores one game file at its path below the game folder (e.g. Data/levels/jungle/terrain.wad).</summary>
 	[JSExport]
@@ -132,8 +147,8 @@ public static partial class Program
 		// Use the same persisted graphics choice as the desktop, including an explicit Original choice.
 		TexturePack.RequestMissing = Page.RequestTexture;
 		CompatibilityStartup.Initialize( Array.Empty<string>(), dataDirectory );
-		// [EXT:mods] The browser has the official extensions only (no files-based mods yet), with the choices in /config/mods.json (docs/MODS.md).
-		OpenTPW.Mods.ModStartup.InitializeOfficial( Log.Trace, Log.Warning );
+		// [EXT:mods] The browser has the data mods shipped with the page (content/mods) and the official extensions, with the choices in /config/mods.json (docs/MODS.md).
+		OpenTPW.Mods.ModStartup.InitializeBrowser( Log.Trace, Log.Warning );
 
 		// Sound plays through WebAudio (Browser/WebAudioOutput.cs); movies are not in the browser yet.
 		GameAudio.Enabled = true;

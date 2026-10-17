@@ -5,6 +5,7 @@ import * as storage from './opentpw-storage.js';
 import { createTextureDownloads } from './opentpw-textures.js';
 import * as originals from './opentpw-originals.js';
 import { plan, importStartup, startSelected } from './opentpw-startup.js';
+import * as inputs from './opentpw-inputs.js';
 
 // The game in the browser (docs/WEB.md): the player's own files go into the runtime's memory, then
 // the front end runs in the canvas, one Program.Frame per animation frame.
@@ -12,7 +13,7 @@ const status = document.getElementById('status');
 const runtime = await dotnet.create();
 const { setModuleImports, getAssemblyExports, getConfig, runMain } = runtime;
 setModuleImports('opentpw-gl', webgl);
-setModuleImports('opentpw-page', { requestLevel, requestLanguage, requestTexture });
+setModuleImports('opentpw-page', { requestLevel, requestLanguage, requestTexture, chooseInput });
 setModuleImports('opentpw-audio', audio);
 const program = (await getAssemblyExports(getConfig().mainAssemblyName)).OpenTPW.Program;
 // runMain keeps the runtime alive after Main returns, so the exports stay callable.
@@ -47,11 +48,12 @@ let textureDownloads;
 let gameRunning = false;
 let parkLoadingText = '';
 let textureLoading = false;
+let inputLoadingText = '';
 
 function updateLoading() {
 	const loading = document.getElementById('loading');
-	loading.hidden = !parkLoadingText && !languageLoadingText && !textureLoading;
-	loading.textContent = parkLoadingText || languageLoadingText || 'Enhancing textures…';
+	loading.hidden = !parkLoadingText && !languageLoadingText && !inputLoadingText && !textureLoading;
+	loading.textContent = parkLoadingText || languageLoadingText || inputLoadingText || 'Enhancing textures…';
 }
 
 // Called from TexturePack.Find. Requests are deduplicated and bounded; the original draws while
@@ -115,6 +117,19 @@ if (keepLock) {
 }
 if (!store)
 	keepMode = 'off';
+// The files of another original game that a mod reads (opentpw-inputs.js, docs/WEB.md "Mods in the browser") are kept in a second store, so the
+// Theme Park World files and the Theme Park Inc files never share a manifest. Opened with the same lock as the first.
+let inputStore = null;
+if (keepLock) {
+	try {
+		inputStore = await originals.openOriginalStore(await navigator.storage.getDirectory(), { name: inputs.STORE_DIRECTORY });
+	} catch (error) {
+		console.warn('This browser cannot keep the files of mod inputs', error);
+	}
+}
+// The input's files are in the runtime (copied this visit or restored); mods read them from the next start on.
+let inputLoaded = false;
+let inputBusy = false;
 let keepFailed = false;
 // Files are kept in the background, one after another, so copying into the game never waits for the disk; at most this many
 // bytes wait to be written (the 'all' mode reads a whole folder, faster than it can be written).
@@ -487,6 +502,73 @@ document.getElementById('play').addEventListener('click', () => {
 });
 updateSetup();
 
+// ---- Mod inputs: the player's Theme Park Inc files for the Theme Park Inc rides mod (opentpw-inputs.js) ----
+const inputFolder = document.getElementById('inputFolder');
+const inputStatus = document.getElementById('inputStatus');
+function updateInput() {
+	const kept = inputStore?.manifest && Object.keys(inputStore.manifest.files).length > 0 && keepMode !== 'off';
+	document.getElementById('inputRow').hidden = gameRunning;
+	document.getElementById('inputChoose').disabled = inputBusy;
+	document.getElementById('inputRemove').hidden = !(inputLoaded || kept);
+	document.getElementById('inputRemove').disabled = inputBusy;
+	if (inputBusy)
+		return;
+	const size = inputStore?.bytes ? ` (${(inputStore.bytes.stored / 1048576).toFixed(0)} MB)` : '';
+	inputStatus.textContent = inputLoaded ? `Theme Park Inc files loaded for mods${kept ? `, kept in this browser${size}` : ''}.`
+		: kept ? `Theme Park Inc files kept in this browser${size}; they load when the game starts.` : 'None chosen.';
+}
+// Called by the game (the Extensions and mods screen) and by the setup button: opens the folder dialog.
+function chooseInput() {
+	if (!inputBusy)
+		inputFolder.click();
+}
+document.getElementById('inputChoose').addEventListener('click', chooseInput);
+// A dialog closed without a choice must not leave the game's screen waiting.
+inputFolder.addEventListener('cancel', () => program.InputChanged(''));
+inputFolder.addEventListener('change', async event => {
+	const files = [...event.target.files];
+	event.target.value = '';
+	if (files.length === 0 || inputBusy)
+		return program.InputChanged('');
+	inputBusy = true;
+	let failure = '';
+	const report = text => {
+		inputStatus.textContent = `Copying ${text}…`;
+		inputLoadingText = gameRunning ? `Copying the Theme Park Inc files for mods: ${text}` : '';
+		updateLoading();
+	};
+	updateInput();
+	try {
+		const planned = inputs.planInput(files.map(file => [file.webkitRelativePath.split('/').slice(1).join('/'), () => file.arrayBuffer(), file.size]));
+		const result = await inputs.importInput(program, planned, { store: keepMode !== 'off' && !keepFailed ? inputStore : null, progress: report });
+		inputLoaded = true;
+		console.info(`Theme Park Inc files for mods: ${result.count} files, ${(result.bytes / 1048576).toFixed(0)} MB, ${result.kept ? 'kept' : 'not kept'}`);
+	} catch (error) {
+		console.warn('The Theme Park Inc files could not be used', error);
+		failure = error.message;
+	} finally {
+		inputBusy = false;
+		inputLoadingText = '';
+		updateLoading();
+		updateInput();
+		if (failure)
+			inputStatus.textContent = failure;
+	}
+});
+document.getElementById('inputRemove').addEventListener('click', async () => {
+	if (!confirm('Remove the Theme Park Inc files kept in this browser for mods?'))
+		return;
+	await inputStore?.clear();
+	try {
+		program.BeginInput(inputs.EDITION);
+		inputLoaded = false;
+	} catch (error) {
+		console.warn(error);
+	}
+	updateInput();
+});
+updateInput();
+
 // For local testing: ?data=<url of a game folder served next to the page, with a files.txt listing its
 // files>. A line may name the URL to fetch after a tab (for servers that only serve known file types).
 const served = new URLSearchParams(location.search).get('data');
@@ -509,6 +591,11 @@ async function start(theme) {
 		console.warn('Saved games could not be read from this browser', error);
 	}
 	await loadSavedLanguage();
+	// The kept Theme Park Inc files (when the player chose a folder in an earlier visit) are back in memory before the mods are resolved.
+	if (!inputLoaded && inputStore && keepMode !== 'off') {
+		status.textContent = 'Restoring the Theme Park Inc files for mods…';
+		inputLoaded = await inputs.restoreInput(program, inputStore) > 0;
+	}
 	if (perf && perfQuery.get('perfSeed')) {
 		const seed = JSON.parse(atob(perfQuery.get('perfSeed')));
 		for (const [path, text] of Object.entries(seed))

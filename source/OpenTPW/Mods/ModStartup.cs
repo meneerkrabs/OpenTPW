@@ -91,14 +91,27 @@ public static class ModStartup
 		return settings;
 	}
 
-	/// <summary>The browser startup: official extensions only, with the choices saved in <c>/config/mods.json</c>.</summary>
-	public static ModSet InitializeOfficial( Action<string> trace, Action<string> warning )
+	/// <summary>
+	/// The browser startup: the mods shipped with the page (<c>content/mods</c>, written to the runtime's memory like the other content), the
+	/// choices saved in <c>/config/mods.json</c> and the inputs the page copied from the player's own game files
+	/// (<see cref="BrowserModInputs"/>). The browser has no mod folders of its own and loads no code: the mods are data only, as on the desktop.
+	/// </summary>
+	public static ModSet InitializeBrowser( Action<string> trace, Action<string> warning ) =>
+		InitializeBrowser( trace, warning, AppContext.BaseDirectory, ModSettings.GetDefaultPath() );
+
+	/// <summary><see cref="InitializeBrowser(Action{string}, Action{string})"/> with an explicit program folder and settings file (tests).</summary>
+	internal static ModSet InitializeBrowser( Action<string> trace, Action<string> warning, string programDirectory, string settingsPath )
 	{
 		var diagnostics = new List<string>();
-		var settings = ModSettings.Load( ModSettings.GetDefaultPath(), diagnostics );
-		var set = Resolve( Array.Empty<DiscoveredMod>(), settings, Array.Empty<string>(), diagnostics );
+		var discovered = ModDiscovery.Discover( Array.Empty<string>(), Array.Empty<string>(), null, programDirectory );
+		var settings = BrowserModInputs.WithDefaults( ModSettings.Load( settingsPath, diagnostics ), discovered );
+		var set = Resolve( discovered, settings, Array.Empty<string>(), diagnostics );
 		Report( set, diagnostics, trace, warning );
 		OpenTpwExtensions.Activate( set );
+		Discovered = discovered;
+		BrowserModInputs.LockInUse( set );
+		// [EXT:mods] the mods' objects become visible to the game (docs/MODS.md); files-based overrides work the same way
+		ModContentRoots.Activate( set, trace );
 		return set;
 	}
 

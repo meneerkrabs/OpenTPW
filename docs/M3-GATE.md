@@ -16,7 +16,7 @@ the suite.
 ## Running
 
 ```sh
-dotnet source/OpenTPW/bin/Debug/net10.0/OpenTPW.dll --game-path '/path/to/Theme Park World' \
+dotnet source/OpenTPW/bin/Debug/net11.0/OpenTPW.dll --game-path '/path/to/Theme Park World' \
   --m3-gate [--level jungle] [--seed N] [--minutes 30] [--report m3-gate.json] [--no-determinism]
 ```
 

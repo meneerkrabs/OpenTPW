@@ -280,7 +280,7 @@ public class GuestSnapshotValidationReviewTests
 		}, "join cell outside the map" );
 		Rejects( target, snapshot with { Attractions = snapshot.Attractions.Select( ( attraction, index ) => index == 0 ? attraction with { ReleasedTotal = -1 } : attraction ).ToArray() },
 			"negative released total" );
-		Rejects( target, snapshot with { NextGuestId = 1 }, "next guest id below every saved guest" );
+		Rejects( target, snapshot with { SchemaVersion = 7, NextGuestId = 1 }, "next guest id below every saved guest of a save from before the thing pool" );
 		var laneIndex = Array.FindIndex( snapshot.Guests, guest => guest.Lane != null );
 		if ( laneIndex >= 0 )
 			Rejects( target, WithGuest( snapshot, laneIndex, guest => guest with { LaneIndex = guest.Lane!.Length } ), "lane index past the lane" );

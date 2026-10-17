@@ -141,6 +141,11 @@ public sealed class ParkObjects
 
 	public ObjectCatalog Catalog { get; }
 	public IParkGrid Grid { get; }
+	/// <summary>
+	/// The park's thing pool (<see cref="ThingPool"/>): each placed object takes a slot as its thing id, and a removed object's slot is freed at the turn's end. Null: objects have no thing id
+	/// (a grid of its own, such as the headless gates').
+	/// </summary>
+	public ThingPool? Things { get; set; }
 	public RideScriptWorld ScriptWorld { get; }
 	public IReadOnlyList<OriginalObject> Objects => objects;
 	/// <summary>Extra blocked cells owned by the host (the sandbox Totem prototype).</summary>
@@ -386,8 +391,8 @@ public sealed class ParkObjects
 	/// Add it applies no build rules and charges nothing; the seed allocator itself is restored separately with
 	/// <see cref="RestoreSeedAllocator"/> so objects placed after the load continue the saved seed sequence.
 	/// </summary>
-	internal OriginalObject AddRestored( ObjectCatalogEntry entry, int anchorX, int anchorY, int rotation, bool open, int seed, int attractionId, bool legacyBaseHeight = false ) =>
-		Register( new OriginalObject( entry, ComputePlacement( entry, anchorX, anchorY, rotation, legacyBaseHeight ), ScriptWorld, seed, open, attractionId, seedScript: false ) );
+	internal OriginalObject AddRestored( ObjectCatalogEntry entry, int anchorX, int anchorY, int rotation, bool open, int seed, int attractionId, bool legacyBaseHeight = false, int thingId = 0 ) =>
+		Register( new OriginalObject( entry, ComputePlacement( entry, anchorX, anchorY, rotation, legacyBaseHeight ), ScriptWorld, seed, open, attractionId, seedScript: false ), thingId );
 
 	// [DATA:Easymode.TPWI:SYSG X/Y/rotation] [DATA:<fixed item>.MD2:park-space coordinates]
 	// [DATA:PreBuilt/prebuilt.TPWS:SYSG X/Y/rotation] TPI fixed models use local coordinates and their saved anchor.
@@ -398,8 +403,20 @@ public sealed class ParkObjects
 				entry.IsFixedItem ? 0 : legacyBaseHeight ? GetLegacyBaseHeight( entry, anchorX, anchorY, rotation ) : GetBaseHeight( entry, anchorX, anchorY, rotation ),
 				legacyBaseHeight && !entry.IsFixedItem );
 
-	private OriginalObject Register( OriginalObject item )
+	/// <param name="item">The object to register.</param>
+	/// <param name="thingId">A thing id the object keeps (a save's, adopted from the pool); 0 takes the next slot of the pool.</param>
+	// [BIN:TPW-EXE:0x004DB090 object constructor] the attraction's constructor takes its thing id through the base constructor 0x50AFE0 and the pool's allocator (0x516270), the same pool as every other kind of thing
+	private OriginalObject Register( OriginalObject item, int thingId = 0 )
 	{
+		if ( Things is { } pool )
+		{
+			if ( thingId == 0 )
+				item.ThingId = pool.Allocate( SaveThingModel.Attraction ) is var taken and not 0 ? taken : throw new InvalidOperationException( $"The thing pool is full ({ThingPool.Capacity} things); {item.Entry.DisplayName} cannot be built." );
+			else if ( pool.IsUsed( thingId ) ? pool.ModelOf( thingId ) != SaveThingModel.Attraction || objects.Any( other => other.ThingId == thingId ) : !pool.Occupy( thingId, SaveThingModel.Attraction ) )
+				throw new InvalidDataException( $"The thing id {thingId} of {item.Entry.DisplayName} is not a free attraction slot of the thing pool." );
+			else
+				item.ThingId = thingId;
+		}
 		objects.Add( item );
 		foreach ( var (x, y, _) in item.Cells )
 			occupied[(x, y)] = item;
@@ -496,6 +513,14 @@ public sealed class ParkObjects
 		foreach ( var key in occupied.Where( pair => pair.Value == item ).Select( pair => pair.Key ).ToArray() )
 			occupied.Remove( key );
 		item.Delete();
+		// [BIN:TPW-EXE:0x00527EE0 object demolition] the demolition asks for the thing's destruction (0x0050B780 → 0x00516310), which the turn's end carries out; a park that clears itself frees the slots at once (0x00515FB0)
+		if ( Things is { } pool && item.ThingId != 0 )
+		{
+			if ( clearing )
+				pool.Release( item.ThingId );
+			else
+				pool.QueueDestroy( item.ThingId );
+		}
 		ObjectRemoved?.Invoke( item );
 		return true;
 	}
@@ -544,7 +569,10 @@ public sealed class ParkObjects
 			if ( entry == null || entry.IsTool )
 				continue;
 			// [APPROX:RIDES-040] TPI fixed scene records at (0, 0) use their local model origin; the thing records of the six that have an archive carry the fixed-item default position (128, 128) and angle 0 (the five without an archive carry real positions, but nothing to draw), so no transform field is left unread in the save — evidence needed: how the original places a local-coordinate fixed model at its anchor (the no-CD Theme Park Inc exe holds that code; it is not in the REA session)
-			Add( entry, record.X, record.Y, record.Rotation );
+			// the object keeps its saved thing id when the save's attraction thing is the one record that matches (the pool holds the saved chain)
+			var thingId = Things != null && save.FindAttraction( record ) is { } thing && Things.IsUsed( thing.Id ) && Things.ModelOf( thing.Id ) == SaveThingModel.Attraction
+				&& objects.All( other => other.ThingId != thing.Id ) ? thing.Id : 0;
+			Register( new OriginalObject( entry, ComputePlacement( entry, record.X, record.Y, record.Rotation ), ScriptWorld, nextSeed++ ^ scriptKey, true, attractionId: null, seedScript: false ), thingId );
 			count++;
 			yield return (count, (index + 1) / (float)records.Count);
 		}

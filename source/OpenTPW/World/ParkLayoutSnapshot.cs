@@ -143,6 +143,12 @@ public static class ParkLayoutSnapshot
 		public int? BaseHeightRule { get; init; }
 		/// <summary>Whether the entry is a fixed item (<c>Info.DontApplyOffset</c>); must match the catalog at load.</summary>
 		public required bool IsFixedItem { get; init; }
+		/// <summary>
+		/// The object's thing id, a slot of the park's thing pool (<see cref="ThingPool"/>; the resume envelope keeps the pool). 0 in a save from before the pool: the object then takes the next free
+		/// slot when it is placed back.
+		/// </summary>
+		[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault )]
+		public int ThingId { get; init; }
 	}
 
 	/// <summary>The base height rule a placement is saved with: 1 (vertex midpoint), or none for a placement restored from a save that predates it.</summary>
@@ -188,7 +194,8 @@ public static class ParkLayoutSnapshot
 				AttractionId = item.Visitors.AttractionId,
 				BaseHeight = item.Placement.BaseHeight,
 				BaseHeightRule = BaseHeightRuleOf( item.Placement ),
-				IsFixedItem = item.Entry.IsFixedItem
+				IsFixedItem = item.Entry.IsFixedItem,
+				ThingId = item.ThingId
 			} );
 		}
 		var stamps = cells.CaptureBlockStamps();
@@ -280,6 +287,7 @@ public static class ParkLayoutSnapshot
 			}
 		}
 		var previousAttraction = 0;
+		var thingIds = new HashSet<int>();
 		for ( var index = 0; index < objects.Count; index++ )
 		{
 			var record = objects[index]!;
@@ -292,6 +300,8 @@ public static class ParkLayoutSnapshot
 			Require( record.AttractionId > previousAttraction,
 				$"object {index}'s attraction id {record.AttractionId} does not follow {previousAttraction} in placement order" );
 			previousAttraction = record.AttractionId;
+			Require( record.ThingId is >= 0 and <= ThingPool.Capacity, $"object {index}'s thing id {record.ThingId} is not a slot of the thing pool (1..{ThingPool.Capacity})" );
+			Require( record.ThingId == 0 || thingIds.Add( record.ThingId ), $"two objects share thing id {record.ThingId}" );
 		}
 	}
 
@@ -461,7 +471,7 @@ public static class ParkLayoutSnapshot
 				var entry = target.Catalog.Find( record.InfoId )!;
 				// The runtime adopts the record's saved attraction id; validation has already proven the ids increase
 				// with placement order, so no id is taken twice and no dead id is ever replayed.
-				var item = target.AddRestored( entry, record.X, record.Y, record.Rotation, record.Open, record.CreationSeed, record.AttractionId, legacyBaseHeight: record.BaseHeightRule == null );
+				var item = target.AddRestored( entry, record.X, record.Y, record.Rotation, record.Open, record.CreationSeed, record.AttractionId, legacyBaseHeight: record.BaseHeightRule == null, thingId: record.ThingId );
 				var placement = item.Placement;
 				if ( placement.X != record.X || placement.Y != record.Y || placement.Rotation != record.Rotation )
 					throw new InvalidDataException(

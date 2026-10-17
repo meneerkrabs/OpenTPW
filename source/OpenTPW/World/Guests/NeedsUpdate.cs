@@ -27,7 +27,7 @@ public static class NeedsUpdate
 
 	/// <summary>Whether the guest's needs block runs on this turn (<c>0xeed24..0xeed40</c>): the low two bits of the turn and of the thing id agree.</summary>
 	// [BIN:STP-PPC:0x100EED24 needs phase] cmplw of (id & 3) and (game +0x1da70c & 3); the id is the 16-bit thing id (0xfa9a4)
-	// [APPROX:WALK-010] the needs phase that gates the toilet speed term compares the park turn with OpenTPW's guest id; the original compares the low two bits of the tick with the thing id (tp.exe 0x501676), taken from one pool of 10239 slots shared by every thing kind (allocator 0x516270, ids 1, 2, 3, ... on a fresh park, freed ids reused last-in first-out after the turn's deferred destroy), so the phase depends on the whole construction and destroy history — still open: OpenTPW has no shared thing pool
+	// [BIN:TPW-EXE:0x00501676 needs phase] the tick's low two bits are compared with the low byte of the thing id (0x0050B350) taken from the pool (0x00516270); the guest's id is its thing id (ThingPool)
 	public static bool IsPhase( uint turn, int guestId ) => (guestId & PhaseMask) == (int)(turn & PhaseMask);
 
 	/// <summary>

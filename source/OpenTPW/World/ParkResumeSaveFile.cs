@@ -443,6 +443,7 @@ internal static class ParkResumeSaveFile
 		}
 
 		ValidateGuests( snapshot );
+		ValidateThings( snapshot );
 		ValidateCoasters( snapshot );
 		ValidateTracks( snapshot );
 		ValidateTours( snapshot );
@@ -561,6 +562,48 @@ internal static class ParkResumeSaveFile
 	/// rider membership both ways, and every attraction reference resolving to a placed object. The destination's
 	/// own <see cref="GuestSimulation.ValidateSnapshot"/> re-checks everything against the restored park.
 	/// </summary>
+	/// <summary>
+	/// The thing pool and the things that hold its slots: with a pool every placed object, guest and staff member names a slot of its own model, nothing else holds a slot of those models, and the
+	/// pool itself is well formed; without one (a save from before it) no object or member names a slot.
+	/// </summary>
+	private static void ValidateThings( ParkResumeSnapshot snapshot )
+	{
+		void Require( bool condition, string message )
+		{
+			if ( !condition )
+				throw new InvalidDataException( $"Park save is inconsistent: {message}." );
+		}
+		var objects = snapshot.Layout.Objects!;
+		var members = snapshot.Economy.Staff.Members;
+		if ( snapshot.Things == null )
+		{
+			Require( objects.All( record => record!.ThingId == 0 ), "an object names a thing id but the save holds no thing pool" );
+			Require( members.All( member => member.ThingId == 0 ), "a staff member names a thing id but the save holds no thing pool" );
+			return;
+		}
+		var problems = ThingPool.Problems( snapshot.Things );
+		Require( problems.Count == 0, $"the thing pool: {(problems.Count == 0 ? "" : problems[0])}" );
+		var models = snapshot.Things.Used.ToDictionary( slot => slot.Id, slot => (SaveThingModel)slot.Model );
+		// a thing demolished or dismissed since the turn's last end still holds its slot, and nothing names it
+		var pending = (snapshot.Things.Pending ?? Array.Empty<int>()).ToHashSet();
+		var named = new HashSet<int>();
+		void Names( int id, SaveThingModel model, string what )
+		{
+			Require( models.TryGetValue( id, out var held ) && held == model, $"{what} names thing id {id}, which is not a {model} slot of the thing pool" );
+			Require( named.Add( id ), $"two things name thing id {id}" );
+		}
+		foreach ( var record in objects )
+			Names( record!.ThingId, SaveThingModel.Attraction, $"the object at ({record.X}, {record.Y})" );
+		foreach ( var member in members )
+			Names( member.ThingId, ParkStaff.ThingModelOf( member.Type ), $"staff member {member.Id}" );
+		if ( snapshot.Guests!.SchemaVersion >= GuestSimulationSnapshot.ThingPoolSchemaVersion )
+			foreach ( var guest in snapshot.Guests.Guests! )
+				Names( guest!.Id, SaveThingModel.Guest, $"guest {guest.Id}" );
+		Require( !named.Overlaps( pending ), "a thing waiting for its destruction is named by a thing" );
+		var held = snapshot.Things.Used.Count( slot => slot.Model is 1 or 3 or (>= 4 and <= 8) && !pending.Contains( slot.Id ) );
+		Require( held == named.Count || snapshot.Guests.SchemaVersion < GuestSimulationSnapshot.ThingPoolSchemaVersion, "the thing pool holds a guest, attraction or staff slot no thing names" );
+	}
+
 	private static void ValidateGuests( ParkResumeSnapshot snapshot )
 	{
 		void Require( bool condition, string message )
@@ -636,9 +679,15 @@ internal static class ParkResumeSaveFile
 		{
 			var guest = guests.Guests[index];
 			Require( guest != null, $"guest snapshot {index} is missing" );
-			Require( guest!.Id >= 1 && guest.Id < guests.NextGuestId,
-				$"guest {guest.Id} is not below the next guest id {guests.NextGuestId}" );
-			Require( guest.Id > previousId, $"guest {guest.Id} does not follow guest {previousId}; guests are saved in ascending id order" );
+			// before the thing pool a guest's id is a counter (ascending, below the next id); with it the id is a slot of the pool, so ids are reused and the list is in build order
+			if ( guests.SchemaVersion >= GuestSimulationSnapshot.ThingPoolSchemaVersion )
+				Require( guest!.Id >= 1 && guest.Id <= ThingPool.Capacity, $"guest {guest.Id} is not a slot of the thing pool (1..{ThingPool.Capacity})" );
+			else
+			{
+				Require( guest!.Id >= 1 && guest.Id < guests.NextGuestId,
+					$"guest {guest.Id} is not below the next guest id {guests.NextGuestId}" );
+				Require( guest.Id > previousId, $"guest {guest.Id} does not follow guest {previousId}; guests are saved in ascending id order" );
+			}
 			previousId = guest.Id;
 			Require( guestIds.Add( guest.Id ), $"guest {guest.Id} appears more than once" );
 			Require( Enum.IsDefined( guest.State ), $"guest {guest.Id} state {(int)guest.State} is not a guest state" );

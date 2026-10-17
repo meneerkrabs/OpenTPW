@@ -273,6 +273,9 @@ public static class ParkSaveFile
 	public sealed class StaffMemberData
 	{
 		public required int Id { get; init; }
+		/// <summary>The member's thing id, a slot of the park's thing pool (<see cref="ThingPool"/>); absent (0) in an economy without a pool and in saves from before it, whose members then take the next free slot.</summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingDefault )]
+		public int ThingId { get; init; }
 		public required StaffType Type { get; init; }
 		public required int NameIndex { get; init; }
 		/// <summary>A name kept from an original save (<see cref="StaffMember.Name"/>); absent for a member named by its name index.</summary>
@@ -678,6 +681,7 @@ public static class ParkSaveFile
 				Members = park.Staff.Members.Select( member => new StaffMemberData
 				{
 					Id = member.Id,
+					ThingId = member.ThingId,
 					Type = member.Type,
 					NameIndex = member.NameIndex,
 					Name = member.Name,
@@ -867,9 +871,11 @@ public static class ParkSaveFile
 				&& (item.WalkAwayDays is null || item.WalkAwayDays.Length <= ParkEconomy.WalkAwayHistoryDays && item.WalkAwayDays.All( day => day >= 0 )), $"object {item.Id} walk-aways" );
 		}
 		var staffIds = new HashSet<int>();
+		var staffThingIds = new HashSet<int>();
 		foreach ( var member in data.Staff.Members )
 		{
 			Require( member.Id > 0 && member.Id < data.Staff.NextId && staffIds.Add( member.Id ), $"staff id {member.Id}" );
+			Require( member.ThingId is >= 0 and <= ThingPool.Capacity && (member.ThingId == 0 || staffThingIds.Add( member.ThingId )), $"staff {member.Id} thing id {member.ThingId}" );
 			Require( Enum.IsDefined( member.Type ) && member.Grade is >= 0 and < BalanceSettings.GradeCount && member.TrainingPoints is >= 0 and < ParkStaff.TrainingPointsPerGrade, $"staff {member.Id}" );
 			Require( member.Happiness is >= 0f and <= StaffVitals.Maximum && member.Energy is >= 0f and <= StaffVitals.Maximum, $"staff {member.Id} vitals" );
 			Require( member.Name is null || (member.Name.Length is > 0 and <= StaffMember.MaximumNameLength && !member.Name.Contains( '\0' )), $"staff {member.Id} name" );
@@ -1005,6 +1011,7 @@ public static class ParkSaveFile
 		park.Staff.Restore( data.Staff.Members.Select( member => new StaffMember
 		{
 			Id = member.Id,
+			ThingId = member.ThingId,
 			Type = member.Type,
 			NameIndex = member.NameIndex,
 			Name = member.Name,

@@ -40,7 +40,9 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	private readonly Dictionary<int, Guest> byId = new();
 	private readonly List<IRideVisitorBridge> attractions = new();
 	private WorldRng random;
-	private int nextId = 1;
+	// the park's thing pool (tp.exe 0x516270): a guest's id is the slot its constructor takes; a simulation of its own owns a pool and drains its deferred destroys itself
+	private ThingPool things = new();
+	private bool ownsThings = true;
 	// The arrival timer's start turn (0 until the first group: the original's timer starts unset) and the group being dropped off.
 	private long arrivalTimerStart;
 	private bool deliveringArrivals;
@@ -82,6 +84,23 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	public WorldRng World => random;
 	/// <summary>Makes <paramref name="world"/> the generator the guests draw from (the level's shared one); its state is not touched.</summary>
 	public void AttachWorld( WorldRng world ) => random = world ?? throw new ArgumentNullException( nameof( world ) );
+	/// <summary>
+	/// The park's thing pool (tp.exe 0x00516270): a guest's id is the slot its constructor takes, shared with every other kind of thing. A simulation without a level owns a
+	/// pool of its own (ids 1, 2, 3, ...).
+	/// </summary>
+	public ThingPool Things => things;
+	/// <summary>
+	/// Makes <paramref name="pool"/> the thing pool the guests take their ids from (the level's shared one); the host then ends the turn's deferred destroys
+	/// (<see cref="ThingPool.DestroyQueued"/>, the park turn's end 0x00516641). Only before any guest exists.
+	/// </summary>
+	public void AttachThings( ThingPool pool )
+	{
+		ArgumentNullException.ThrowIfNull( pool );
+		if ( guests.Count != 0 )
+			throw new InvalidOperationException( "The thing pool is attached before the first guest is built." );
+		things = pool;
+		ownsThings = false;
+	}
 	public IReadOnlyList<Guest> Guests => guests;
 	public IReadOnlyList<IRideVisitorBridge> Attractions => attractions;
 	public long TickCount { get; private set; }
@@ -184,7 +203,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// the medium step, the queue words cleared); every guest's used history forgets the attraction.
 	/// </summary>
 	// [BIN:TPW-EXE:0x004FB360 object removed] for message 10 naming the target +0x1DC: a guest in state 16 (on the ride) gets its model back (0x004D4140 / 0x004217F0), +0x28 = 0, event 0xD and the cat_kids 0x80 sound; any other guest in states 11–14 (0x00502430, state 8's held state too) the dismissal 0x005012F0; then every one the small step (0x004FE980(0), clamped by 0x004FB4F0), +0x1DC = 0 and state 6 (0x00501DB0); the target test (0x004FB383, jne 0x004FB4A6) guards only that block: for every guest the message reaches, the major destination +0x1DE is cleared when it names the object (0x004FB4A6) and each used-history slot +0x1E0 that does is zeroed with the temporary-history slot +0x1E8 of the same index (0x004FB4BA..0x004FB4D9)
-	// [APPROX:GUEST-004] OpenTPW keeps no major destination (+0x1DE, a target set aside for a minor one, 0x00500900) and clears the target when a visit ends, where tp.exe keeps +0x1DC until the next choice 0x004FCB10, so a guest that has just left the removed attraction is not hit; the dismissal's event 6 and sound and the state-16 event 0xD and sound are not modelled (QUEUE-005); a guest on the ride or in the queue is placed at once on the exit or join cell (QUEUE-010)
+	// [APPROX:GUEST-004] OpenTPW keeps no major destination (+0x1DE, a target set aside for a minor one, 0x00500900) and clears the target when a visit ends, where tp.exe keeps +0x1DC until the next choice 0x004FCB10, so a guest that has just left the removed attraction is not hit; the state-16 event 0xD and sound are not modelled; a guest on the ride or in the queue is placed at once on the exit or join cell (QUEUE-010)
 	public void Unregister( IRideVisitorBridge attraction )
 	{
 		if ( !attractions.Remove( attraction ) )
@@ -247,15 +266,19 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		}
 	}
 
-	private Guest Create()
+	private Guest? Create()
 	{
+		// [BIN:TPW-EXE:0x004F896A thing id] the base constructor 0x004F8940 takes the thing's id from the pool (0x0050AFE0 → the allocator 0x00516270) before its first draw; a full pool logs a fatal error and gives id 0 (here: no guest)
+		var id = things.Allocate( SaveThingModel.Guest );
+		if ( id == 0 )
+			return null;
 		// [BIN:TPW-EXE:0x004F89E1 base speed draw] the thing base constructor 0x004F8940 draws first: R mod 5 (unsigned) indexes the speed table {60, 80, 100, 120, 140} (0x0075C7F8) for +0xC0
 		var baseSpeed = GuestSpeed.BaseSpeeds[(int)random.Next( (uint)GuestSpeed.BaseSpeeds.Length )];
 		// [BIN:STP-PPC:0x100E7644 guest constructor] the starting values come from GuestStart (ORACLE.md F25): eight draws in the constructor's order
 		// [BIN:TPW-EXE:0x004FAFF8 guest constructor draws] the person constructor 0x004FAEC0 takes the eight draws of GuestStart right after the base constructor's (0x004FAFF8, 0x004FB01F, 0x004FB046, 0x004FB085, 0x004FB0AB, 0x004FB0D1, 0x004FB109, 0x004FB114), all from the one world generator
 		var start = GuestStart.FromDraws( Settings.Types, Settings.ExitLevelSeconds, Settings.ExitLevelVarSeconds, Settings.StartingCashVarPercent, () => random.NextWord(),
-			Settings.PrankeryLikelihood, nextId );
-		var guest = new Guest( nextId++, start.Type );
+			Settings.PrankeryLikelihood, id );
+		var guest = new Guest( id, start.Type );
 		// [BIN:TPW-EXE:0x004FAFDB arrival stamp] the person constructor stamps the world turn into +0x1D4, the one write of the visitor's time in the park
 		guest.TimeInParkSeconds = 0;
 		guest.PrankFlag = start.PrankFlag;
@@ -267,7 +290,6 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		guest.Nausea = start.Illness;
 		guest.ExitLevel = start.ExitLevel;
 		// [BIN:TPW-EXE:0x004FB19E guest reseed] the constructor then reseeds the world generator with the thing's id (zero-extended u16, through 0x0050B350), so everything the guest and the world draw after its creation starts from a state that depends on the id alone
-		// [APPROX:DET-014] OpenTPW's guest ids are its own counter (WALK-010), not the original's thing ids (a pool slot of the 10239), so the reseed uses the id the guest has here
 		random.Reseed( (ushort)guest.Id );
 		// [BIN:TPW-EXE:0x004FB1A7 guest sprite variant] the next call, 0x00541F70 with category 0, draws (R >> 2) mod the category's bank count (0x00541F85) for the guest's sprite bank +0x20: the draw is taken, its value is not used (the sprite choice is OpenTPW's own, GUEST-017)
 		random.NextWord();
@@ -294,7 +316,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 
 	/// <summary>Spawns a guest at a bus stop; it crosses the road, pays at the ticket booth and enters.</summary>
 	// [BIN:TPW-EXE:0x004FB201 arrival entrance] a guest whose cell is not a path cell (0x004FA990 false, every guest of the arrival vehicle) takes two draws after its reseed: R & 1 picks the entrance cell (0x004D8710: the cell at world words 0x007855DC or 0x007855E4 with the row 0x007855E0) and the low byte of R is the sideways point in the cell (0x004FB21C), the other byte is 0xC8; 0x004FA5F0 stores both as the position (+0x18, +0x1A)
-	// [APPROX:DET-014] the two entrance cells are the first cells of the settings' lanes A and B (Arrival.Lane), whose link to the world words 0x007855DC..0x007855E4 is not read; the lane the guest then walks is the one its entrance starts
+	// [APPROX:DET-014] the entrance cell a creation takes is the first cell of the settings' lane A or B (the bus stop), where tp.exe's 0x004D8710 reads the bus-side crossing cell (FixedItemInfo.CrossingBSSideAPosX or BPosX with APosY: 0x007855DC, 0x007855E4, 0x007855E0, the lane's second cell); the lane the guest then walks is the one its entrance starts
 	public Guest? SpawnArrival()
 	{
 		var a = ValidLane( Settings.ArrivalLaneA );
@@ -305,6 +327,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			return start == null ? null : SpawnInPark( start.Value.X, start.Value.Y );
 		}
 		var guest = Create();
+		if ( guest == null )
+			return null;
 		var side = random.NextWord() & 1;
 		var sideways = (int)(random.NextWord() & 0xFF);
 		var lane = (side == 0 ? a ?? b : b ?? a)!;
@@ -325,7 +349,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	{
 		if ( !Grid.IsWalkable( x, y ) )
 			throw new ArgumentException( $"Cell ({x}, {y}) is not a walkable path cell." );
-		var guest = Create();
+		var guest = Create() ?? throw new InvalidOperationException( $"The thing pool is full ({ThingPool.Capacity} things); no guest can be built." );
 		PlaceOnGrid( guest, x, y );
 		guest.State = GuestState.DoingNothing;
 		return guest;
@@ -396,10 +420,14 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		{
 			if ( guests[index].State != GuestState.Gone )
 				continue;
+			// [BIN:TPW-EXE:0x0050B780 destroy request] a leaving guest asks for its destruction (0x0050B780 → 0x00516310); the id is freed at the park turn's end (0x00516641)
+			things.QueueDestroy( guests[index].Id );
 			byId.Remove( guests[index].Id );
 			guests.RemoveAt( index );
 			Departed++;
 		}
+		if ( ownsThings )
+			things.DestroyQueued();
 	}
 
 	/// <summary>
@@ -734,9 +762,13 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	{
 		switch ( guest.State )
 		{
+			case GuestState.GoingToTicketBooth:
+				if ( turnStarted )
+					guest.ToiletBonus = BoothWalkSpeedTerm( guest );
+				UpdateLane( guest, dt );
+				break;
 			case GuestState.CrossingRoad:
 			case GuestState.CrossingRoadToPark:
-			case GuestState.GoingToTicketBooth:
 			case GuestState.EnteringPark:
 				UpdateLane( guest, dt );
 				break;
@@ -1181,6 +1213,19 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		return Grid.InBounds( x, y ) && Grid.InBounds( x + 1, y - 2 ) ? [(x, y), (x + 1, y), (x, y - 2), (x + 1, y - 2)] : null;
 	}
 
+	/// <summary>The purpose speed (+0xC2, the guest's speed term) of a guest on its way to the ticket booth: 25 for one in four guests, 50 while the bus waits at its status 3, else 0.</summary>
+	// [BIN:TPW-EXE:0x004FF730 booth walk speed] state 2 sets +0xC2 on every update, before its walk step: with a vehicle other than the bus at work (0x0051AAD0), or with none or the bus when the vehicle's status (0x0051A690) is not 3, it is the word 0x0075C7F2 (25) for a thing id with its low two bits 0 (0x004FF776) and 0x0075C7F0 (0) for the others; the bus at status 3 gives 0x0075C7F4 (50) (0x004FF753..0x004FF765)
+	private int BoothWalkSpeedTerm( Guest guest )
+	{
+		if ( !NonBusVehicleAtWork() && ReadArrivalVehicle() == BusWaitingStatus )
+			return BusWaitingSpeedTerm;
+		return (guest.Id & 3) == 0 ? GuestSpeed.ToiletBonus : 0;
+	}
+
+	/// <summary>The vehicle status in which the bus gives a guest on its way to the booth the larger speed term.</summary>
+	private const int BusWaitingStatus = 3;
+	private const int BusWaitingSpeedTerm = 50;
+
 	/// <summary>Whether the arrival vehicle at work is the seaplane or the Ferry (tp.exe <c>0x0051AAD0</c>: a vehicle at work that is not the bus).</summary>
 	// [BIN:TPW-EXE:0x0051AAD0 non-bus vehicle] 1 when the vehicle at work (+0x1DA72A) is set and differs from the bus's handle (+0x1DA72C)
 	private bool NonBusVehicleAtWork() => arrivalVehicle >= 0 && arrivalVehicle != ArrivalVehicleKind.Bus;
@@ -1616,7 +1661,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// A prank of an unhappy prankster (state 6, tp.exe <c>0x004FF0F5</c>): a stinkbomb or litter on its own cell, or a balloon burst; a prank raises
 	/// <see cref="Pranked"/> (the original's prank message to the advisor and the guards) and adds 1 to the prankster's happiness.
 	/// </summary>
-	// [APPROX:GUEST-007] PRANKS: the prank step (0x4FF0F5, x86 X18), its outcomes, the guard reply (0x508A30), the guard's set-down at the cell's centre with the side its world draw picks (0x4FEB50) and the advisor's prank lines (0x59B060: advice 0x7D, 0x7E or 0x7F by the message's kind word, the prankster's id modulo 3) match, the bus delivers the prank message at once (0x40FB10) and event 15 feeds only the debug dump 0x4FAA60; a balloon prankster's victim is the first balloon-holding other guest in OpenTPW's guest order, where the cell's thing list is head-inserted on every cell change (0x50B6A0, 0x4D91F0) so the original takes the one that entered last; the prank line is chosen by OpenTPW's guest id where the original takes the prankster's thing id (WALK-010), and the queued advice keeps neither the prankster's id nor its cell (record words +0x0 and +0x4, 0x59B590); a set-down guest walks to its side's gate cell (0x4D86D0, the original's route) and on along OpenTPW's arrival lane (ARRIVAL-001), where the original's states 19 to 21 walk it to the arrival vehicle's stop cells — evidence needed: which guest states are on the cell thing lists, and what reads a queued advice record's id and cell words
+	// [APPROX:GUEST-007] PRANKS: the prank step (0x4FF0F5, x86 X18), its outcomes, the guard reply (0x508A30), the guard's set-down at the cell's centre with the side its world draw picks (0x4FEB50) and the advisor's prank lines (0x59B060: advice 0x7D, 0x7E or 0x7F by the message's kind word, the prankster's id modulo 3) match, the bus delivers the prank message at once (0x40FB10) and event 15 feeds only the debug dump 0x4FAA60; a balloon prankster's victim is the first balloon-holding other guest in OpenTPW's guest order, where the cell's thing list is head-inserted on every cell change (0x50B6A0, 0x4D91F0) so the original takes the one that entered last; and the queued advice keeps neither the prankster's id nor its cell (record words +0x0 and +0x4, 0x59B590); a set-down guest walks to its side's gate cell (0x4D86D0, the original's route) and on along OpenTPW's arrival lane (ARRIVAL-001), where the original's states 19 to 21 walk it to the arrival vehicle's stop cells — evidence needed: which guest states are on the cell thing lists, and what reads a queued advice record's id and cell words
 	private bool Prank( Guest guest, GuestDecision.Prank prank, LitterType type )
 	{
 		if ( prank == GuestDecision.Prank.Balloon )
@@ -1638,6 +1683,15 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 
 	/// <summary>A prankster pranked (the stinkbomb's sound, the advisor and the guards listen to the original's prank message).</summary>
 	public event Action<Guest, GuestDecision.Prank>? Pranked;
+
+	/// <summary>
+	/// A guest's voice (tp.exe <c>0x004FAA00</c>: the guest sound bank <c>cat_kids</c> at the guest's position): raised with the bank's event number. Presentation only: it takes no draw
+	/// from the park's generators and changes no state.
+	/// </summary>
+	public event Action<Guest, uint>? Voiced;
+
+	/// <summary>The <c>cat_kids</c> event of a guest dismissed from a queue: the sound <c>0x0050133D</c> plays for one thing id in eight (0x80).</summary>
+	public const uint DismissalVoiceEvent = 0x80;
 
 	/// <summary>Litter of <paramref name="type"/> on the guest's cell (lost when the cell already holds some).</summary>
 	private void DropLitter( Guest guest, LitterType type ) => Litter?.Drop( guest.CellX, guest.CellY, type );
@@ -2125,8 +2179,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			// a guest missing from the list cannot occur in the original (0x004DDF50 asserts); OpenTPW sends it away
 			if ( position < 0 || position >= room )
 			{
-				// [BIN:TPW-EXE:0x00501496 queue edited] before the dismissal a guest whose thing id is a multiple of 3 thinks 13 (Angry); the others think nothing
-				// [APPROX:QUEUE-005] a guest sent away thinks Angry by OpenTPW's guest id modulo 3 rather than its thing id (word at thing +0, 0x00501496), and its dismissal (0x005012f0) neither records event 6 with the ride id in the guest's event ring (0x0050C100 with ECX = guest + 0x30; the ring feeds only the debug dump 0x004FAA60, GUEST-005) nor plays the sound [0x00803A24] when the thing id's low three bits are 0 (0x0050133D); its medium happiness drop is applied — evidence needed: the thing-id numbering (WALK-010)
+				// [BIN:TPW-EXE:0x00501496 queue edited] before the dismissal a guest whose thing id (the word at thing +0, read at 0x00501483) is a multiple of 3 thinks 13 (Angry, 0x0050BE80); the others think nothing; the guest's id is its thing id
+				// [EXT:guest-event-ring] the dismissal 0x005012F0's event 6 with the ride's id is a record of the debug-only guest event ring (0x0050C100), which OpenTPW does not keep
 				DismissFromQueue( guest, attraction, guest.Id % 3 == 0 ? GuestThought.Angry : GuestThought.None );
 				continue;
 			}
@@ -2352,7 +2406,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	{
 		// [BIN:TPW-EXE:0x00500756 price refusal] "Object is too expensive, I'm leaving the queue": thought 6, then the refusal's own 0x004FEA70(1) before the dismissal's
 		guest.Happiness = Math.Max( 0, guest.Happiness - Settings.MediumHappinessChange );
-		// [APPROX:GUEST-003] the refusal's dismissal does not play its sound for a guest whose thing id has its low three bits 0 (0x4FAA00, [0x803A24] event 0x80), OpenTPW's guest ids not being the original's thing ids (WALK-010; QUEUE-005 has the same sound) — evidence needed: none (read)
+		// [BIN:TPW-EXE:0x0050133D dismissal sound] the dismissal that follows (0x005012F0) plays the guest sound 0x80 for a thing id with its low three bits 0 (Voiced); [EXT:guest-event-ring] its event 6 and the refusal's event 10 are records of the debug-only guest event ring
 		// [BIN:TPW-EXE:0x0050077F refusal walk-away] after 0x004FEA70(1) the ride's walk-away count (0x004E1670), then its loading slot (0x004E0AC0) and queue list (0x004DDD20) let the guest go and the dismissal 0x005012F0 runs
 		Payments?.WalkedAway( attraction );
 		DismissFromQueue( guest, attraction, GuestThought.Dissatisfied );
@@ -2541,11 +2595,14 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// dismissal <c>0x005012F0</c>, which lowers happiness by the medium step (<c>0x004FEA70</c> with 1, <c>PeepInfo.MediumHappinessChange</c>, clamped at 0)
 	/// before the guest leaves the queue.
 	/// </summary>
-	// [BIN:TPW-EXE:0x005012F0 dismissal] "Person %d: dismissed from queue on ride %d", event 6 (0x0050C100), the sound for one thing id in eight, 0x004FEA70(1), the queue words +0x22A/+0x228/+0x1F8/+0x1DC/+0x1F1 cleared, state 6; the event and the sound are not modelled (QUEUE-005)
+	// [BIN:TPW-EXE:0x005012F0 dismissal] "Person %d: dismissed from queue on ride %d", event 6 (0x0050C100, [EXT:guest-event-ring]), the sound for one thing id in eight (Voiced), 0x004FEA70(1), the queue words +0x22A/+0x228/+0x1F8/+0x1DC/+0x1F1 cleared, state 6
 	private void DismissFromQueue( Guest guest, IRideVisitorBridge attraction, GuestThought thought )
 	{
 		if ( thought != GuestThought.None )
 			Think( guest, thought );
+		// [BIN:TPW-EXE:0x0050133D dismissal sound] a guest whose thing id has its low three bits 0 plays [0x00803A24] (cat_kids) event 0x80 through 0x004FAA00 before the happiness step; the guest's id is its thing id
+		if ( (guest.Id & 7) == 0 )
+			Voiced?.Invoke( guest, DismissalVoiceEvent );
 		guest.Happiness = Math.Max( 0, guest.Happiness - Settings.MediumHappinessChange );
 		LeaveQueue( guest, attraction, GuestThought.None );
 	}
@@ -2942,7 +2999,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			WorldGenerator = random.State,
 			TickCount = TickCount,
 			TimeSeconds = TimeSeconds,
-			NextGuestId = nextId,
+			NextGuestId = guests.Count == 0 ? 1 : guests.Max( guest => guest.Id ) + 1,
+			Things = ownsThings ? things.CaptureSnapshot() : null,
 			Admissions = Admissions,
 			Departed = Departed,
 			ArrivalTimerStart = arrivalTimerStart,
@@ -3216,6 +3274,10 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		}
 
 		// Guests: identity, bounds and per-guest structure first, state cross-references after.
+		var poolIds = snapshot.SchemaVersion >= GuestSimulationSnapshot.ThingPoolSchemaVersion;
+		if ( poolIds && snapshot.Things is { } ownPool )
+			foreach ( var problem in ThingPool.Problems( ownPool ) )
+				Error( $"Things: {problem}." );
 		var guestIds = new HashSet<int>();
 		var typeCount = Math.Max( 1, Settings.Types.Count );
 		GuestSnapshot? previous = null;
@@ -3229,13 +3291,24 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			}
 			if ( guest.Id < 1 )
 				Error( $"Guests[{index}] id {guest.Id} is not positive." );
-			if ( previous != null && guest.Id <= previous.Id )
-				Error( $"Guests[{index}] id {guest.Id} does not follow guest id {previous.Id}; guests are saved in ascending id order." );
+			// a save from before the thing pool counts its guests: ids ascend and stay below the counter; with the pool a guest's id is a slot (ids are reused, so the order is the build order)
+			if ( poolIds )
+			{
+				if ( guest.Id > ThingPool.Capacity )
+					Error( $"Guests[{index}] id {guest.Id} is not a slot of the thing pool (1..{ThingPool.Capacity})." );
+			}
+			else
+			{
+				if ( previous != null && guest.Id <= previous.Id )
+					Error( $"Guests[{index}] id {guest.Id} does not follow guest id {previous.Id}; guests are saved in ascending id order." );
+				if ( guest.Id >= snapshot.NextGuestId )
+					Error( $"Guest {guest.Id} is not below the next guest id {snapshot.NextGuestId}." );
+			}
 			previous = guest;
 			if ( !guestIds.Add( guest.Id ) )
 				Error( $"Guest {guest.Id} appears more than once." );
-			if ( guest.Id >= snapshot.NextGuestId )
-				Error( $"Guest {guest.Id} is not below the next guest id {snapshot.NextGuestId}." );
+			if ( poolIds && !ownsThings && guest.Id <= ThingPool.Capacity && (!things.IsUsed( guest.Id ) || things.ModelOf( guest.Id ) != SaveThingModel.Guest) )
+				Error( $"Guest {guest.Id} is not a guest slot of the park's thing pool." );
 			if ( !Enum.IsDefined( guest.State ) )
 				Error( $"Guest {guest.Id} state {(int)guest.State} is not a guest state." );
 			else if ( guest.State == GuestState.Gone )
@@ -3475,6 +3548,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			bridges.Add( attraction.AttractionId, (RideVisitorBridge)attraction );
 		foreach ( var attractionSnapshot in snapshot.Attractions )
 			bridges[attractionSnapshot.AttractionId].RestoreSnapshot( attractionSnapshot );
+		RestoreThings( snapshot, restored );
 		guests.Clear();
 		guests.AddRange( restored );
 		byId.Clear();
@@ -3485,7 +3559,6 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			seenQueueEdits[attractionId] = seen;
 		if ( snapshot.WorldGenerator is { } generator )
 			random.Restore( generator );
-		nextId = snapshot.NextGuestId;
 		TickCount = snapshot.TickCount;
 		TimeSeconds = snapshot.TimeSeconds;
 		Admissions = snapshot.Admissions;
@@ -3499,6 +3572,33 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		ArrivalsEnabled = snapshot.ArrivalsEnabled;
 		seenGridVersion = snapshot.SeenGridVersion;
 		RebuildOccupants();
+	}
+
+	/// <summary>
+	/// The guests' slots of the thing pool after a restore. A simulation with its own pool takes the saved pool (a save from before the pool: a pool of the guests' ids, newest last);
+	/// with the park's pool the guests' slots are already there (the park restored it first), or, for a save from before the pool, are taken one by one (ids above the pool's
+	/// size, which a counter reaches in a long park, stay outside it).
+	/// </summary>
+	// [BIN:TPW-EXE:0x00518D43 free list rebuild] a load keeps each saved thing in its own slot and rebuilds the free list from the unused slots in ascending order
+	private void RestoreThings( GuestSimulationSnapshot snapshot, List<Guest> restored )
+	{
+		if ( ownsThings )
+		{
+			if ( snapshot.SchemaVersion >= GuestSimulationSnapshot.ThingPoolSchemaVersion && snapshot.Things != null )
+				things.RestoreSnapshot( snapshot.Things );
+			else
+				things.Restore( Enumerable.Reverse( restored ).Where( guest => guest.Id <= ThingPool.Capacity ).Select( guest => new ThingSlot( guest.Id, SaveThingModel.Guest ) ) );
+			return;
+		}
+		foreach ( var current in guests )
+			things.Release( current.Id );
+		foreach ( var guest in restored )
+		{
+			if ( guest.Id > ThingPool.Capacity || (things.IsUsed( guest.Id ) && things.ModelOf( guest.Id ) == SaveThingModel.Guest) )
+				continue;
+			if ( !things.Occupy( guest.Id, SaveThingModel.Guest ) )
+				throw new InvalidDataException( $"Guest {guest.Id}'s thing slot is taken by a {things.ModelOf( guest.Id )}." );
+		}
 	}
 
 	/// <summary>Copies a validated guest snapshot into a fresh <see cref="Guest"/> (route, lane and buffer arrays are copied again).</summary>
@@ -3622,7 +3722,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	{
 		hash.Add( TickCount );
 		hash.Add( TimeSeconds );
-		hash.Add( nextId );
+		hash.Add( things.NextId );
 		hash.Add( Admissions );
 		hash.Add( Departed );
 		hash.Add( arrivalTimerStart );
@@ -3750,7 +3850,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		void AddFloat( float value ) => Add( BitConverter.SingleToInt32Bits( value ) );
 		Add( TickCount );
 		Add( (long)random.State );
-		Add( nextId );
+		Add( things.NextId );
 		Add( Admissions );
 		Add( guests.Count );
 		foreach ( var guest in guests )

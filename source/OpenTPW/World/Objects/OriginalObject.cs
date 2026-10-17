@@ -195,6 +195,11 @@ public class OriginalObject : Entity
 	/// </summary>
 	public int? CreationSeed { get; }
 	public RideVM? Script => Runtime.Script;
+	/// <summary>
+	/// The object's thing id: the slot of the park's thing pool its constructor took (tp.exe 0x004DB090 → 0x0050AFE0 → 0x00516270), 0 for an object of a park without a pool. Distinct
+	/// from <see cref="RideVisitorBridge.AttractionId"/>, the script world's own counter.
+	/// </summary>
+	public int ThingId { get; internal set; }
 	/// <summary>Visitor side of the script (guests slice).</summary>
 	public RideVisitorBridge Visitors => Runtime.Visitors;
 	public bool IsOpen => Runtime.IsOpen;

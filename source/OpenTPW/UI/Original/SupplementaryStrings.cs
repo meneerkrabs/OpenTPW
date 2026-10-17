@@ -82,6 +82,7 @@ public enum OpenTpwText
 	EditionRestart,
 	ExperimentalFolder,
 	ExperimentalWorld,
+	TpiZoneChooser,
 	ExperimentalNotUsable,
 	InspectionTimedOut,
 	BonusFolder,
@@ -160,6 +161,9 @@ public enum OpenTpwText
 	ModInputFoundTpiKnown,
 	ModInputFoundTpiStructure,
 	ModInputWrongEdition,
+	ModInputBrowserChoosing,
+	ModInputBrowserLocked,
+	ModInputBrowserNone,
 	ModsSaved,
 	ModChecking,
 	// [EXT:tpi-ui] the experimental Theme Park Inc slice's interface
@@ -396,6 +400,8 @@ public static class SupplementaryStrings
 			"Utgåvan används nästa gång OpenTPW startas." },
 		[OpenTpwText.ExperimentalFolder] = new[] { "Theme Park Inc folder:", "Theme Park Inc-mappe:", "Theme Park Inc-map:", "Dossier Theme Park Inc :", "Theme Park Inc-Ordner:", "Theme Park Inc 폴더:", "Folder Theme Park Inc:", "Carpeta de Theme Park Inc:", "Theme Park Inc-mapp:" },
 		[OpenTpwText.ExperimentalWorld] = new[] { "World:", "Verden:", "Wereld:", "Monde :", "Welt:", "월드:", "Świat:", "Mundo:", "Värld:" },
+		// [EXT:tpi-front-end-zone-chooser] the label of the Personnel File's OpenTPW zone chooser (the original reaches the zones through the campaign)
+		[OpenTpwText.TpiZoneChooser] = new[] { "Choose zone (OpenTPW):", "Vælg zone (OpenTPW):", "Kies zone (OpenTPW):", "Choisir la zone (OpenTPW) :", "Zone wählen (OpenTPW):", "구역 선택 (OpenTPW):", "Wybierz strefę (OpenTPW):", "Elegir zona (OpenTPW):", "Välj zon (OpenTPW):" },
 		[OpenTpwText.ExperimentalNotUsable] = new[] {
 			"This folder has no Theme Park Inc worlds.",
 			"Denne mappe indeholder ingen Theme Park Inc-verdener.",
@@ -491,6 +497,9 @@ public static class SupplementaryStrings
 		[OpenTpwText.ModInputFoundTpiKnown] = new[] { "Theme Park Inc data found (known retail Standard.sam)", "Theme Park Inc-data fundet (kendt Standard.sam fra salgsversionen)", "Theme Park Inc-gegevens gevonden (bekende Standard.sam van de winkelversie)", "Données de Theme Park Inc trouvées (Standard.sam connu de la version commerciale)", "Theme Park Inc-Daten gefunden (bekannte Standard.sam der Handelsversion)", "Theme Park Inc 데이터 발견 (정식 판 Standard.sam 확인)", "Znaleziono dane Theme Park Inc (znany Standard.sam z wersji sklepowej)", "Datos de Theme Park Inc encontrados (Standard.sam conocido de la versión comercial)", "Theme Park Inc-data hittades (känd Standard.sam från butiksversionen)" },
 		[OpenTpwText.ModInputFoundTpiStructure] = new[] { "Theme Park Inc data found (recognised by its folder structure)", "Theme Park Inc-data fundet (genkendt på mappestrukturen)", "Theme Park Inc-gegevens gevonden (herkend aan de mapstructuur)", "Données de Theme Park Inc trouvées (reconnues à la structure des dossiers)", "Theme Park Inc-Daten gefunden (an der Ordnerstruktur erkannt)", "Theme Park Inc 데이터 발견 (폴더 구조로 인식)", "Znaleziono dane Theme Park Inc (rozpoznane po strukturze folderów)", "Datos de Theme Park Inc encontrados (reconocidos por la estructura de carpetas)", "Theme Park Inc-data hittades (känns igen på mappstrukturen)" },
 		[OpenTpwText.ModInputWrongEdition] = new[] { "This folder holds {0} data, not {1}", "Denne mappe indeholder {0}-data, ikke {1}", "Deze map bevat {0}-gegevens, geen {1}", "Ce dossier contient des données de {0}, pas de {1}", "Dieser Ordner enthält {0}-Daten, keine {1}", "이 폴더는 {1}이(가) 아니라 {0} 데이터입니다", "Ten folder zawiera dane {0}, a nie {1}", "Esta carpeta contiene datos de {0}, no de {1}", "Den här mappen innehåller {0}-data, inte {1}" },
+		[OpenTpwText.ModInputBrowserChoosing] = new[] { "Choose your own game folder in the browser's dialog; its files are copied into this page...", "Vælg din egen spilmappe i browserens dialog; filerne kopieres ind i denne side...", "Kies je eigen spelmap in het dialoogvenster van de browser; de bestanden worden naar deze pagina gekopieerd...", "Choisissez votre propre dossier de jeu dans la boîte de dialogue du navigateur ; ses fichiers sont copiés dans cette page...", "Wählen Sie Ihren eigenen Spielordner im Dialog des Browsers; seine Dateien werden in diese Seite kopiert...", "브라우저 대화 상자에서 자신의 게임 폴더를 선택하세요. 파일이 이 페이지로 복사됩니다...", "Wybierz własny folder gry w oknie dialogowym przeglądarki; jego pliki zostaną skopiowane do tej strony...", "Elige tu propia carpeta del juego en el cuadro de diálogo del navegador; sus archivos se copian en esta página...", "Välj din egen spelmapp i webbläsarens dialogruta; filerna kopieras in i den här sidan..." },
+		[OpenTpwText.ModInputBrowserLocked] = new[] { "A mod of this visit already uses these files. Reload the page to choose another folder.", "Et mod i dette besøg bruger allerede disse filer. Genindlæs siden for at vælge en anden mappe.", "Een mod van dit bezoek gebruikt deze bestanden al. Laad de pagina opnieuw om een andere map te kiezen.", "Un mod de cette visite utilise déjà ces fichiers. Rechargez la page pour choisir un autre dossier.", "Eine Mod dieses Besuchs verwendet diese Dateien bereits. Laden Sie die Seite neu, um einen anderen Ordner zu wählen.", "이번 방문의 모드가 이미 이 파일을 사용하고 있습니다. 다른 폴더를 선택하려면 페이지를 새로 고치세요.", "Mod z tej wizyty już używa tych plików. Odśwież stronę, aby wybrać inny folder.", "Un mod de esta visita ya usa estos archivos. Recarga la página para elegir otra carpeta.", "Ett mod under det här besöket använder redan filerna. Ladda om sidan för att välja en annan mapp." },
+		[OpenTpwText.ModInputBrowserNone] = new[] { "The browser cannot take this folder; only Theme Park Inc data can be chosen here.", "Browseren kan ikke bruge denne mappe; kun Theme Park Inc-data kan vælges her.", "De browser kan deze map niet gebruiken; hier kan alleen Theme Park Inc-data worden gekozen.", "Le navigateur ne peut pas utiliser ce dossier ; seules les données de Theme Park Inc peuvent être choisies ici.", "Der Browser kann diesen Ordner nicht verwenden; hier können nur Theme Park Inc-Daten gewählt werden.", "브라우저가 이 폴더를 사용할 수 없습니다. 여기서는 Theme Park Inc 데이터만 선택할 수 있습니다.", "Przeglądarka nie może użyć tego folderu; tutaj można wybrać tylko dane Theme Park Inc.", "El navegador no puede usar esta carpeta; aquí solo se pueden elegir datos de Theme Park Inc.", "Webbläsaren kan inte använda den här mappen; här kan bara Theme Park Inc-data väljas." },
 		[OpenTpwText.ModsSaved] = new[] { "Extensions and mods saved\n\nRestart OpenTPW to use the new choices.", "Udvidelser og mods gemt\n\nGenstart OpenTPW for at bruge de nye valg.", "Extensies en mods opgeslagen\n\nStart OpenTPW opnieuw om de nieuwe keuzes te gebruiken.", "Extensions et mods enregistrés\n\nRedémarrez OpenTPW pour utiliser les nouveaux choix.", "Erweiterungen und Mods gespeichert\n\nStarten Sie OpenTPW neu, um die neuen Einstellungen zu verwenden.", "확장과 모드를 저장했습니다\n\n새 선택을 쓰려면 OpenTPW를 다시 시작하십시오.", "Rozszerzenia i modyfikacje zapisane\n\nUruchom OpenTPW ponownie, aby użyć nowych ustawień.", "Extensiones y mods guardados\n\nReinicia OpenTPW para usar las nuevas opciones.", "Tillägg och mods sparade\n\nStarta om OpenTPW för att använda de nya valen." },
 		[OpenTpwText.ModChecking] = new[] { "Checking...", "Kontrollerer...", "Wordt gecontroleerd...", "Vérification...", "Wird geprüft...", "확인 중...", "Sprawdzanie...", "Comprobando...", "Kontrollerar..." },
 		// [EXT:tpi-ui] the experimental Theme Park Inc slice's interface (docs/LANGUAGES.md, "Theme Park Inc")

@@ -166,10 +166,7 @@ public sealed class RideHeadRenderer : Entity
 			var spriteRight = right * cos + up * sin;
 			var spriteUp = up * cos - right * sin;
 			var unit = GuestRenderer.UnitsPerPixel * placement.Scale;
-			var x0 = frame.OriginX * unit;
-			var x1 = (frame.OriginX + frame.Width) * unit;
-			var yTop = -frame.OriginY * unit;
-			var yBottom = -(frame.OriginY + frame.Height) * unit;
+			var (x0, x1, yTop, yBottom) = frame.Extents( false, unit );
 			var u0 = frame.X / (float)atlas.Width;
 			var u1 = (frame.X + frame.Width) / (float)atlas.Width;
 			var v0 = frame.Y / (float)atlas.Height;

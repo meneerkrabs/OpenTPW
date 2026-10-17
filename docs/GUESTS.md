@@ -74,7 +74,9 @@ WAD contains a kid/peep/visitor model (all 312 WADs listed). The sprites live in
 u32 0`, then 255 palette entries of 4 bytes **B, G, R, A** (alpha varies: anti-
 aliased edges), then per frame: `u32 dataSize, u16 width, u16 height, u16 128,
 u16 128` (pixels per sprite unit across and down: the placement 0x5890E0 spans the quad from
-`originX / A · scale` to `(width + originX) / A · scale`, likewise down with B; 128 in every frame),
+`originX / A · scale` to `(width + originX) / A · scale`, likewise down with B; 128 in every frame. The reader names the fields
+`SpriteFrame.PixelsPerUnitX` (A) and `PixelsPerUnitY` (B), the writer's frame has one `PixelsPerUnit` for both; OpenTPW honours them, see
+[Pixels per unit](#pixels-per-unit-and-resolution) below),
 `i32 originX, i32 originY` (offset of the frame's
 top-left corner from the hotspot; for walking kids the hotspot is at the feet),
 then `height` RLE rows. Each row is a length byte followed by control bytes:
@@ -121,6 +123,21 @@ more go through median cut with nearest-entry mapping. Defaults of a new set, an
 `FullDetail` true (flag 0x10C = 1, FPC and TPC written with the same content, as every full-detail set ships both), kid flag 0, both unit words 128 (every
 shipped frame), no performance entries. Unverified against tp.exe: whether the original's loader accepts a bank with unused zero palette entries or frames wider than any shipped
 one (they decode here), and how the game blends the palette's alpha (the readers treat it as straight alpha).
+
+### Pixels per unit and resolution
+
+Every frame header carries two u16 fields, A across and B down. The original's sprite placement `0x5890E0` ([BIN:TPW-EXE:0x005890E0 sprite placement]) spans the quad from `originX / A · scale` to
+`(width + originX) / A · scale` and likewise vertically with `originY`, `height` and B, so a frame drawn with 256 in both fields covers the same world area with half as many world units per pixel, that is twice the pixels for
+the same size. All 29 FPC and 46 TPC banks of Theme Park World have 128 in both fields (`GuestAssetTests.EveryEspChoosesTheBankTheGameOpens`).
+
+OpenTPW honours the fields in every sprite renderer (`GuestRenderer` for the kids, costumes and swimmers, `RideHeadRenderer`, `BalloonRenderer`, `ThoughtRenderer`, the staff and entertainers through `GuestRenderer`/`StaffRenderer`, the hire window's
+figure and the picking of guests in the world): `GuestAtlasFrame.Extents` scales a pixel by `128 / A` across and `128 / B` down on top of the engine's fixed `GuestRenderer.UnitsPerPixel` (0.045, an approximation), so a
+frame of 128 is drawn exactly as before (the factor is 1.0, the multiplication leaves every float unchanged: `SpritePixelScaleTests.FramesWith128PixelsPerUnitMakeTheFixedScaleQuadBitForBit`,
+5000 random frames, mirrored and not). Nothing pinned can move with the shipped data: every shipped frame has 128 (`GuestAssetTests.EveryShippedAtlasHasUnitScaleAndTheOriginalWidth`), and sprites are presentation only, so no simulation
+hash, save or determinism pin reads them. Particle sprites (`ParticleSpriteAtlas`) are drawn by the particle system's own size rules and do not read the fields; no shipped bank would show a difference.
+
+The 1024-pixel atlas width of `GuestSpriteAtlas` suffices for every shipped set (corpus-tested: all are 1024 wide, at most 512 rows). A set drawn at 2x needs up to 2048 rows in 1024 columns; beyond `MaximumHeight` (2048, which is also what WebGL2 guarantees)
+an atlas is packed into the next power of two wider (2048, then 4096) instead of a taller texture, a frame wider than the row widens it too, and a set that fits no 4096 x 4096 atlas is refused (skipped with a warning in `LoadSets`). Frames drawn at more than 128 pixels per unit get 4 pixels of padding instead of 2 so mip levels do not bleed into the next frame. The pools extension's sets (docs/POOLS.md): 1024 x 256 to 1024 x 512 for the kids and heads, 1024 x 2048 for the swimwear sets, 90 MiB of RGBA in all and about 120 MiB on the GPU with mip levels (pinned by `PoolsContentTests.TheShippedAtlasSizesArePinned`); the decoded pixels are released after the upload.
 
 Kid slots (identical in all 8 sets; labels from viewing the frames, not traced):
 
@@ -938,7 +955,7 @@ per visible guest (both windings), feet on the bilinear heightfield corner
 heights (also over heightfield holes such as the entrance road), one draw call
 with up to eight kid atlases (`GuestSpriteAtlas`, 1024-wide RGBA, built on the
 CPU from `.FPC`). Direction comes from the guest's heading relative to the
-camera; the walk frame advances 10 frames per cell walked. Sprite world size
+camera; the walk frame advances 20 frames per cell walked (10 running). Sprite world size
 is read from the original: one pixel is 20 / 128 x sqrt(2) = 0.2210 world units (ten a cell), 0.0442 engine units (`SpriteScale`: the quad placement 0x5890E0 adds 20 sprite extent units a sprite unit
 of 128 pixels in clip space, and the projection builder 0x578BE0 runs a 90 degree field of view with the clip x and y scaled by cos 45 degrees); a kid of 43 pixels stands 0.95 cell.
 A kid's set is the original's own draw at its creation, the world generator reseeded with its thing id and the first draw shifted right by 2 modulo the 8 sets (`GuestAppearance.KidSet`), not its peep type;

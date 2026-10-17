@@ -76,8 +76,8 @@ public sealed class MoviePlayback : IDisposable
 	public bool IsFinished { get; private set; }
 	public bool WasSkipped { get; private set; }
 	/// <summary>
-	/// Linear volume 0..1 applied to the PCM before it is queued (the Movie volume option; the original maps its
-	/// percentage to QuickTime's linear 0..256 movie volume). 1 leaves the samples untouched.
+	/// Amplitude factor 0..1 applied to the PCM before it is queued (the Movie volume option through the PC player's
+	/// DirectSound decibel curve, <see cref="MovieVolumeCurve"/>). 1 leaves the samples untouched.
 	/// </summary>
 	public float Gain { get; set; } = 1f;
 	private bool AudioDrained => audioReader!.EndOfStream && audio!.QueuedFrames == 0;

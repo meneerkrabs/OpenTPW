@@ -301,6 +301,10 @@ real install (324 files, 74 MB) before and during the game, kept and restored af
 with `/inputs/theme-park-inc`), and the Jungle park's buy list showing the mod's Arabian objects (18 rides, 7 shops, 6 sideshows, 13 features) with the mod on.
 The real folder dialog, the screen's drawing and gameplay with the mod's objects placed were not checked in the browser.
 
+### The pools sprite sets
+
+The pools extension's 2x guest and swimwear sprites (`content/pools/esprites`, 8.84 MB) are not in the startup download. The build embeds only the pinned manifest `content/pools/esprites.manifest.json`; the files are static files of the site below `pools-sprites/` (the web project links them into `wwwroot` as `Content`; the server image copies `content/pools`), and `wwwroot/opentpw-pool-sprites.js` fetches them in the background after the game has started while the extension is on. `Program.AddPoolSpriteFile` stores a file in the in-memory file system only when its path, size and SHA-256 are the pinned ones; a set is used only when complete, and offline or a 404 leaves the fallbacks (details: [POOLS.md](POOLS.md#content-extpools-content)). The files are not part of the saves or the options storage, and the browser's HTTP cache keeps them between visits.
+
 ### Saves and settings
 
 The display choices the browser honours (render scale, interface scale and the frame rate limit)

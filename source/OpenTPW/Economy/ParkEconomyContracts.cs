@@ -80,7 +80,18 @@ public enum ParkEventKind
 	/// <summary>A global golden ticket moved to this park from another park that held it with a lower record (tp.exe <c>0x005AF940</c> result 4): <see cref="ParkEvent.Amount"/> the <see cref="GoldenTicketKind"/>; the advisor says its moved-award advice.</summary>
 	GlobalTicketMoved,
 	/// <summary>Theme Park Inc's monthly running costs were debited (<see cref="ParkEvent.Amount"/> the total, <see cref="ParkEvent.InfoId"/> the objects charged).</summary>
-	RunningCostsPaid
+	RunningCostsPaid,
+	/// <summary>
+	/// A wear step took a ride's condition below 10 percent (tp.exe <c>0x004DF670</c>, which then queues the advisor's advice 66): <see cref="ParkEvent.InstanceId"/> the ride,
+	/// <see cref="ParkEvent.Amount"/> its state of repair.
+	/// </summary>
+	RideBreakdownImminent,
+	/// <summary>
+	/// The ride entered its broken state (state 1, or state 4 when its life gauge byte is 0): the moment the ride update (tp.exe <c>0x004E14E0</c>) has read the script's VAR_BROKEN and its
+	/// state change (<c>0x004E0E60</c>) sends the breakdown message the advisor answers, unlike <see cref="RideBrokeDown"/>, which is the earlier breakdown request.
+	/// <see cref="ParkEvent.InstanceId"/> the ride.
+	/// </summary>
+	RideEnteredBrokenState
 }
 
 /// <summary>
@@ -151,6 +162,29 @@ public interface IParkGuestStatistics
 	int CountHappierThan( int happiness );
 	int KidsWithBalloonsPercent { get; }
 	int KidsWithCostumesPercent { get; }
+
+	/// <summary>
+	/// The guests of the census (<see cref="GuestCensus"/>) whose need meter, truncated to its low byte, is strictly above <paramref name="threshold"/>'s low byte (tp.exe
+	/// <c>0x004C93F0</c> thirst, <c>0x004C9340</c> hunger, <c>0x004C9290</c> toilet). The advisor reads these counts; statistics without guests answer 0.
+	/// </summary>
+	int CountGuestsNeeding( GuestNeedMeter meter, int threshold ) => 0;
+	/// <summary>The census guests holding a balloon (tp.exe <c>0x004C9530</c>: guest <c>+0x210</c> nonzero).</summary>
+	int GuestsWithBalloons => 0;
+	/// <summary>The census guests in a costume (tp.exe <c>0x004C95D0</c>: guest <c>+0x24</c> equal to 2).</summary>
+	int GuestsInCostume => 0;
+	/// <summary>
+	/// The mean happiness the advisor reads (tp.exe <c>0x004C7BB0</c>): 0 while the park is closed, else the single mean of the truncated happiness bytes of the census guests (0 without any).
+	/// Statistics that do not tell it answer <see cref="AverageHappiness"/>.
+	/// </summary>
+	float CensusHappiness => AverageHappiness;
+}
+
+/// <summary>The guest need meters the advisor counts guests by (the offsets of the original's guest: <c>+0x1A4</c> thirst, <c>+0x1A8</c> hunger, <c>+0x1AC</c> toilet).</summary>
+public enum GuestNeedMeter
+{
+	Thirst,
+	Hunger,
+	Toilet,
 }
 
 /// <summary>Statistics of an empty park, used until the guests slice supplies real ones.</summary>

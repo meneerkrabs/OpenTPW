@@ -46,12 +46,19 @@ public static class OfficialExtensions
 
 	/// <summary>
 	/// The pools extension (docs/POOLS.md): the player paints pool water cells of any size and shape, which are drawn with an animated surface and
-	/// auto-joined edges, cost money per cell and are saved. Off by default because it adds a cell type to the park simulation. A park save records
+	/// auto-joined edges, cost money per cell and are saved. On by default (a player can switch it off); it adds a cell type to the park simulation, but a park save records
 	/// the extension only while the park has pool cells or a changing room, so a park without either saves byte-identically whether the extension is on or off
 	/// (<c>ParkResumeMods.UsedOnlyExtensionIds</c>).
 	/// </summary>
 	// [EXT:pools-extension] OpenTPW's own extension; the original game has no pools
-	public static IOpenTpwExtension Pools { get; } = new OpenTpwExtension( "opentpw.pools", "Pools", new ModVersion( 1, 0, 0 ), DefaultEnabled: false, AffectsSimulation: true );
+	public static IOpenTpwExtension Pools { get; } = new OpenTpwExtension( "opentpw.pools", "Pools", new ModVersion( 1, 0, 0 ), DefaultEnabled: true, AffectsSimulation: true );
+
+	/// <summary>
+	/// The pool guest art (docs/POOLS.md): while it and the pools extension are on, the land guests of a Theme Park World park are drawn with OpenTPW's own 2x Blender kid and head sets instead of the original sprites
+	/// (the swimmers always use the swim sets while pools is on). Presentation only: <c>AffectsSimulation</c> is false, so it is not recorded in saves and changes no hash. On by default; switch it off for the original guests on land.
+	/// </summary>
+	// [EXT:pools-guest-art] OpenTPW's own guest art; the original game's guests are the faithful look
+	public static IOpenTpwExtension PoolGuestArt { get; } = new OpenTpwExtension( "opentpw.pools-guest-art", "Pool guest art", new ModVersion( 1, 0, 0 ), DefaultEnabled: true, AffectsSimulation: false );
 
 	/// <summary>
 	/// The guest insights extension (docs/SMARTER-GUESTS.md): the refusal-reason counters (too expensive, queue too long, too scary, too boring, ride broken or closed) in the park information window (phase 1).
@@ -69,7 +76,7 @@ public static class OfficialExtensions
 	public static IOpenTpwExtension SmarterGuests { get; } = new OpenTpwExtension( "opentpw.smarter-guests", "Smarter guests", new ModVersion( 1, 3, 0 ), DefaultEnabled: false, AffectsSimulation: true, PlayerSelectable: false );
 
 	/// <summary>All official extensions, in declaration order.</summary>
-	public static IReadOnlyList<IOpenTpwExtension> All { get; } = new[] { Online, CrossEditionObjects, SmarterGuests, GuestInsights, Pools };
+	public static IReadOnlyList<IOpenTpwExtension> All { get; } = new[] { Online, CrossEditionObjects, SmarterGuests, GuestInsights, Pools, PoolGuestArt };
 
 	public static IOpenTpwExtension? Find( string id ) => All.FirstOrDefault( extension => extension.Id == id );
 }

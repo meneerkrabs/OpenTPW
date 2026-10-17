@@ -1,7 +1,7 @@
 namespace OpenTPW;
 
 /// <summary>
-/// The opt-in pools variant of the park-resume fixture (<c>OPENTPW_SMOKE_POOLS=1</c> in both phases, with <c>--enable-mod opentpw.pools</c>, docs/POOLS.md): a pool of 6 x 4 cells is painted near the path spine, a
+/// The opt-in pools variant of the park-resume fixture (<c>OPENTPW_SMOKE_POOLS=1</c> in both phases, the pools extension on, which is the default, docs/POOLS.md): a pool of 6 x 4 cells is painted near the path spine, a
 /// changing room is built beside it through the level's own placement, and guests swim in it at the save. The save records the extension and the room's asset keys and holds the swimmers; the restore phase checks
 /// the room and the swimmers came back in the water and continues the same ticks, whose canonical hashes must equal the capture phase's.
 /// </summary>
@@ -34,7 +34,7 @@ internal sealed partial class ParkResumeSmokeTest
 
 	private void PlacePoolsFixture( (int X, int Y) near )
 	{
-		Require( FeatureGates.Pools && level.PoolBuilder != null, "the opentpw.pools extension is on (--enable-mod opentpw.pools) for the pools variant" );
+		Require( FeatureGates.Pools && level.PoolBuilder != null, "the opentpw.pools extension is on (the default) for the pools variant" );
 		var builder = level.PoolBuilder!;
 		var shape = PoolBuilder.Rectangle( (0, 0), (5, 3) ).ToArray();
 		var grid = level.Objects.Grid;
@@ -52,8 +52,13 @@ internal sealed partial class ParkResumeSmokeTest
 		Require( origin != null, "find a free site for a pool near the spine" );
 		var cells = shape.Select( offset => (X: origin!.Value.X + offset.X, Y: origin.Value.Y + offset.Y) ).ToArray();
 		Require( builder.PaintCells( cells ).Completed, "paint the pool through the pool builder" );
+		// [EXT:pools-river] the basin's perimeter is a lazy river (a ring of 16 cells round a middle of 8), [EXT:pools-attractions] and the four water attractions stand beside it
+		foreach ( var cell in cells.Where( cell => cell.X == origin!.Value.X || cell.X == origin.Value.X + 5 || cell.Y == origin.Value.Y || cell.Y == origin.Value.Y + 3 ) )
+			level.Guests!.Grid.Cells.SetFlags( cell.X, cell.Y, ParkCellFlags.PoolRiver );
 		var room = level.BuildChangingRoomBeside( cells );
 		Require( room != null, "build a changing room beside the pool through the level's placement" );
+		var attractions = level.BuildPoolAttractionsBeside( cells, "all" );
+		Log.Trace( $"Park-resume fixture: {attractions.Count} water attraction(s): {string.Join( ", ", attractions.Select( item => item.Entry.DisplayName ) )}." );
 		Log.Trace( $"Park-resume fixture: pool of {cells.Length} cells at {origin}, {room!.Entry.DisplayName} #{room.Visitors.AttractionId} at {room.Placement.X},{room.Placement.Y}." );
 	}
 
@@ -72,6 +77,13 @@ internal sealed partial class ParkResumeSmokeTest
 		Require( swimmers.Count >= 1, "the resumed park holds guests in a swim session" );
 		Require( swimmers.Where( guest => guest.IsSwimming ).All( guest => region!.IsWater( guest.Navigation.X, guest.Navigation.Y ) ), "every resumed swimmer is in the water" );
 		Require( swimmers.All( guest => guest.AttractionId == room.Visitors.AttractionId ), "and names its changing room" );
+		// [EXT:pools-river] [EXT:pools-waves] [EXT:pools-attractions] the ring is derived again from the saved flags, the pool kept its wave settings, and the water attractions are placed objects again
+		Require( PoolRiverMap.Of( cells ).Rings.Count == 1 && PoolRiverMap.Of( cells ).Rings[0].Cells.Count == 16, "the resumed park holds its lazy river ring of 16 cells" );
+		var waves = level.PoolSites.All.Where( site => site.Kind == PoolAttractionKind.WaveMachine ).Select( site => (PoolWaveSettings?)PoolWaveSettings.At( cells, site.Access ) ).FirstOrDefault();
+		Require( waves != null || !level.Objects.Objects.Any( item => !item.IsDeleted && PoolAttractions.KindOf( item.Entry ) == PoolAttractionKind.WaveMachine ), "the resumed pool holds its wave settings (a wave machine stands beside it)" );
+		var kinds = level.Objects.Objects.Where( item => !item.IsDeleted ).Select( item => PoolAttractions.KindOf( item.Entry ) ).Where( kind => kind != PoolAttractionKind.None ).Distinct().Count();
+		Require( kinds >= 1 && level.PoolSites.All.Count == kinds, $"the resumed park holds its water attractions beside the water ({kinds} kinds, {level.PoolSites.All.Count} sites)" );
+		Log.Trace( $"Park-resume restore: the river ring, the waves ({waves}) and {kinds} kinds of water attraction came back." );
 		Log.Trace( $"Park-resume restore: the changing room came back with {swimmers.Count} swimmer(s) in its {region!.Cells.Count}-cell pool." );
 	}
 }

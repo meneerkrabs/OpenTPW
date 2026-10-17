@@ -82,6 +82,7 @@ public enum OpenTpwText
 	EditionRestart,
 	ExperimentalFolder,
 	ExperimentalWorld,
+	TpiZoneChooser,
 	ExperimentalNotUsable,
 	InspectionTimedOut,
 	BonusFolder,
@@ -326,6 +327,8 @@ public static class SupplementaryStrings
 			"Utgåvan används nästa gång OpenTPW startas." },
 		[OpenTpwText.ExperimentalFolder] = new[] { "Theme Park Inc folder:", "Theme Park Inc-mappe:", "Theme Park Inc-map:", "Dossier Theme Park Inc :", "Theme Park Inc-Ordner:", "Theme Park Inc-mapp:" },
 		[OpenTpwText.ExperimentalWorld] = new[] { "World:", "Verden:", "Wereld:", "Monde :", "Welt:", "Värld:" },
+		// [EXT:tpi-front-end-zone-chooser] the label of the Personnel File's OpenTPW zone chooser (the original reaches the zones through the campaign)
+		[OpenTpwText.TpiZoneChooser] = new[] { "Choose zone (OpenTPW):", "Vælg zone (OpenTPW):", "Kies zone (OpenTPW):", "Choisir la zone (OpenTPW) :", "Zone wählen (OpenTPW):", "Välj zon (OpenTPW):" },
 		[OpenTpwText.ExperimentalNotUsable] = new[] {
 			"This folder has no Theme Park Inc worlds.",
 			"Denne mappe indeholder ingen Theme Park Inc-verdener.",

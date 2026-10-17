@@ -41,6 +41,7 @@ public class ThemeParkIncPlayTests
 			&& capabilities.Staff && capabilities.Advisor && capabilities.FrontEnd && capabilities.ParkSaves && capabilities.Sharing,
 			"every implemented system runs for Theme Park World" );
 		Assert.IsFalse( capabilities.ExperimentalHud, "the experimental HUD is the Theme Park Inc slice's" );
+		Assert.IsFalse( capabilities.PersonnelFileFrontEnd, "the Personnel File is the Theme Park Inc slice's start screen" );
 		Assert.IsNull( capabilities.ExperimentalNote, "the full game needs no experimental caveat" );
 	}
 
@@ -50,6 +51,7 @@ public class ThemeParkIncPlayTests
 		GameEditions.Select( GameEdition.ThemeParkInc );
 		var capabilities = GameEditions.Capabilities;
 		Assert.IsTrue( capabilities.ExperimentalHud && capabilities.Building && capabilities.Guests, "the slice builds and routes guests" );
+		Assert.IsTrue( capabilities.PersonnelFileFrontEnd, "the slice starts at its own Personnel File screen" );
 		Assert.IsFalse( capabilities.Economy, "Theme Park Inc Standard.sam lacks 89 of the balance keys the economy reads" );
 		Assert.IsFalse( capabilities.OriginalHud && capabilities.Staff && capabilities.Advisor && capabilities.FrontEnd
 			&& capabilities.ParkSaves && capabilities.Sharing, "the untraced systems stay refused" );

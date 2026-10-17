@@ -56,13 +56,15 @@ Until October 13, 2026 this section described the view-only "level viewer"; the 
 starts the playable slice below (older links still land here).
 
 `--load-original-level arabian|science|water` with Theme Park Inc data starts the experimental
-**playable slice** (`[EXT:tpi-viewer]`, October 13, 2026). It is not Theme Park Inc support: there is
-no Theme Park Inc interface, front end, economy, rules or native save writing, and nothing it draws has been
+**playable slice** (`[EXT:tpi-viewer]`, October 13, 2026). A start without a world opens the slice's
+[Personnel File start screen](#theme-park-inc-front-end) instead. It is not Theme Park Inc support: there is
+no Theme Park Inc in-game interface, economy, rules or native save writing, and nothing it draws has been
 compared with the original game. How to extract the CD cabinets and start it:
 [RUNNING.md](RUNNING.md#theme-park-inc-level-viewer-experimental).
 
 The browser setup also offers the same experimental route with an explicit Arabian,
-Science or Water choice and the player's own extracted `Data` folder. It imports the
+Science or Water choice and the player's own extracted `Data` folder (the Personnel File start screen is not offered in the browser yet: phase 1 keeps this up-front
+choice, because the browser copies a theme's files at setup and its on-demand copy for a zone chosen later is not built for Theme Park Inc). It imports the
 selected theme before checking the existing edition evidence, then enters the existing
 experimental world/HUD path without a Theme Park World lobby. Its capability restrictions
 are the same as the desktop slice. Synthetic startup/cache controls and a browser-project
@@ -75,11 +77,13 @@ Theme Park Inc slice runs building and guests under an experimental HUD and refu
 Theme Park Inc rules or data OpenTPW has not traced: economy (its `Standard.sam` lacks 89 of the 155
 balance keys the Theme Park World economy reads, e.g. `PerGradeStaffConsts[0].BaseWage`; measured
 October 13, 2026), staff, advisor, front end, park saves, sharing (export/import/visit), the mission
-campaign, the Global Master Save and the disc's COS files (`[EXT:tpi-capability-gates]`, an OpenTPW scope decision). `Level` gates its economy on the
+campaign, the Global Master Save and the disc's COS files (`[EXT:tpi-capability-gates]`, an OpenTPW scope decision). `FrontEnd` is Theme Park World's 3D lobby and stays off;
+the Theme Park Inc Personnel File start screen has its own flag, `PersonnelFileFrontEnd` (on for the slice, `[EXT:tpi-front-end-phase1]`). `Level` gates its economy on the
 policy; the refusals stay real, not deleted: nothing writes or resumes a native Theme Park Inc park save, GMS
-or COS file, and the start-up command line additionally refuses `--sandbox`, `--front-end`,
+or COS file, and the start-up command line additionally refuses `--sandbox`,
 `--smoke-test`, `--advisor-say`, `--advisor-response`, `--setup`, `--park-resume-smoke`,
-`--export-park`, `--import-park` and `--visit-park` on Theme Park Inc data.
+`--export-park`, `--import-park` and `--visit-park` on Theme Park Inc data, and `--front-end` together with a world. `--front-end` alone (or a start with no
+world and only file, language, display or sound options) opens the Personnel File; any other option without a world is refused as before.
 
 **What the slice shows and runs.** The base terrain (`base.MD2` heightfield and meshes), the lake, the
 path layer (`pathtex` textures), the monorail (part of the terrain meshes), guests with their sprites,
@@ -177,6 +181,53 @@ drawn as 0, 0), RIDES-019 (the End object; the Bus from setup is `[EXT:tpi-bus-f
 scene records). Open: how the original game transforms the zero-coordinate scene records and
 places the gate and bus in worlds without a prebuilt save; what the `*_newenv.MD2` files are for (`3ns_newenv` and `4ns_newenv` carry a heightfield and an `arrival_*` mesh set); the
 missing lake bed textures; the viewer's lighting and water transparency against the original.
+
+## Theme Park Inc front end
+
+Phase 1 builds the start screen only: the Personnel File.
+
+Theme Park Inc has no island lobby. It boots into the 3D intro world (`wIntro`; the exe's world name table at `0x9d53b4` lists arabian, science, water, intro as 0 to 3, and
+`THEMENAMES.str` names the zones "Land of Invention", "Polar Zone", "Intro World" and "Arabian Nights") and runs its front-end screens as overlays on it. Its start menu is
+the **Personnel File** (October 17, 2026, static reading of the no-CD `Game.exe`, SHA-256 `77ea0c41410aad7c94a5eda658e31cb4ac05f7253aaf6746ad5e8a90afbd967a`; the retail
+executable is SafeDisc-encrypted):
+
+| Item | Where in `Game.exe` |
+| --- | --- |
+| Layout table `PersonnelFile` | `0x9c0fbc` (39 nodes, root `0xc738`, `!window_s`, rectangle (273,72)-(1775,1464)); ends at `0x9c15ac` |
+| Builder / handlers | builder `0x56adb0` (window created by `0x84dea0` over the table), click handler `0x568ce0`/`0x568d40`, slot handlers `0x569e12` to `0x56a9ce` |
+| Title | text box `0xc75c`, UITEXT 19 "TPi Personnel File" |
+| Player slots | four `filetab` buttons `0xc73d` to `0xc740`; a free slot shows UITEXT 20 "New Player" |
+| File page | `filepage` panel `0xc73b`; label boxes `0xc741` to `0xc74e` (money, golden tickets, shares, portfolio, objective: UITEXT 21 to 26, 29; UITEXT 28 "Zone not yet opened") |
+| Name entry | `filebox` `0xc756` + `filebutok` `0xc757` + text field `0xc758` (prompt UITEXT 32 "Enter name here") |
+| Buttons | Enter Game `0xc754` (UITEXT 34, help 287; handler `0x56ab40` saves the player, selects the slot and reads its world: -1 or 3, the intro world, becomes 1, science, then `ChangeWorld` `0x6a26b0`), Load A Game `0xc759` (35, help 287, opens table `0x9ba364`), Delete Player `0xc755` (33, help 288), Coaster Design Kit `0xc73a` (31, help 290), Quit Game `0xc75b` (30, help 289) |
+| Mugshot | `!frame` `0xc75d` around `mugshot` `0xc75e` |
+| Quit confirmation | generic confirm builder `0x4f47f0` over table `0x9b18bc` (5 nodes, root `0xea60`, `!window`); the quit click (`0x568d67`) passes UITEXT 773 and mode words 2 and 1, which make its two buttons `b_cancel` (`0xea61`, help 3) and `b_okay` (`0xea62`, help 0, action `0x568e60` quits) |
+| Fonts | PERSONNELFILEBIG, PERSONNELFILEMED, PERSONNELFILESMALL (and MATISSE18/36 elsewhere) in the language folder |
+
+Theme Park Inc's `ui.wad` has 1,462 members, 172 MD2 models with unique root-name hashes and its textures as `.fsh`/`.tga`; only 37 root names are shared with Theme Park World's.
+Its `UITEXT.str` has 994 records with ids unlike Theme Park World's (`UIStrings` does not apply; `ThemeParkIncText` names the ids used, read with `UiStringTable.Entry`),
+`UIHELPTEXT.str` 367 records.
+
+**What phase 1 builds.** `tools/ppc-analysis/lanes/ui/tpi_exe_layouts.py` (the same stream grammar as `tpw_exe_layouts.py`, checked by reading all 86 layout tables of the
+executable) writes `ThemeParkIncLayoutTables` (`UI/Original/ThemeParkIncLayoutTables.cs`: rectangles, ids, help ids and model names only, no game data) for the two tables above.
+`FrontEnd/ThemeParkIncFrontEnd.cs` draws the Personnel File from Theme Park Inc's `ui.wad` models at those rectangles with its strings and the PERSONNELFILE fonts
+(`[EXT:tpi-front-end-phase1]`), over a flat dark backdrop (no 3D intro world, no sound, no start-up movies):
+
+- **One player** (`[EXT:tpi-front-end-one-player]`, the same decision as `[EXT:no-player-profiles]`): slot 1 is shown selected as "New Player" and the other three slots, the name
+  box and its tick are drawn inactive. Nothing is saved or loaded; the stock labels (money, shares, objective) are not drawn because the slice runs no economy.
+- **Enter Game** starts the slice in the chosen zone, science by default (the original's default for a new player), through the same queued level start as `--load-original-level`.
+- **Zone chooser** (`[EXT:tpi-front-end-zone-chooser]`): the original reaches Polar Zone and Arabian Nights only through its campaign and Overview Map, so the page offers a latched
+  button per zone (Land of Invention = science, Polar Zone = water, Arabian Nights = arabian, named by `THEMENAMES.str`) above Enter Game. The label above them is OpenTPW's
+  (`OpenTpwText.TpiZoneChooser`).
+- **Load A Game, Delete Player and the Coaster Design Kit** are drawn but inactive (disabled buttons show their disabled frame and give no help text); **Quit Game** (and Escape)
+  asks the confirmation (cancel has the focus) and the tick closes the window.
+- Desktop: `--front-end`, or a plain start with Theme Park Inc data (`OPENTPW_GAME_PATH`/`--game-path` and no world), opens the page; `--load-original-level` still starts a world
+  directly. The setup wizard and the remembered edition still ask for a world and start it directly in this phase, and the browser keeps its up-front theme choice.
+
+`ThemeParkIncFrontEndTests` covers the generated tables, the id map, the capability flag and start-up routing, the page's routing headless and (with `OPENTPW_TPI_PATH`) that every
+model of the tables is in Theme Park Inc's `ui.wad` and loads with its textures, that the strings resolve in English and Dutch, that the fonts load and that the page draws.
+**Not verified:** how the page looks on screen (no capture was taken), the exact text positions inside the controls (the buttons draw fitted text over the whole control rectangle),
+the window's own text area in the quit confirmation, and the label boxes' content, which phase 1 leaves out.
 
 ### Prebuilt science save
 

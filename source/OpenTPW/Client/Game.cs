@@ -316,10 +316,11 @@ internal static class Game
 		if ( sliceSmoke && !GameEditions.IsThemeParkInc )
 			throw new ArgumentException( "--tpi-smoke-test drives the experimental Theme Park Inc slice: start it with --load-original-level and Theme Park Inc data (docs/THEME-PARK-INC.md)." );
 		// [EXT:autorun] The CD's launcher window comes first when its Autorun folder is available (docs/AUTORUN.md).
-		var autorun = startsFrontEnd && capturePath == null ? CreateAutorun( args, bonusSettings, dataDirectory ) : null;
+		var autorun = startsFrontEnd && capturePath == null && !GameEditions.IsThemeParkInc ? CreateAutorun( args, bonusSettings, dataDirectory ) : null;
 		// The original plays its start-up movies before the front end on every start (docs/TGQ-MOVIES.md); after
 		// the launcher's Play when it is shown. Smoke tests, --capture-world and --no-intro / OPENTPW_NO_INTRO go straight to the front end.
-		var playIntro = IntroPlaylist.ShouldPlay( startsFrontEnd, smoke, args, Environment.GetEnvironmentVariable( "OPENTPW_NO_INTRO" ) );
+		// [EXT:tpi-front-end-phase1] the Theme Park Inc Personnel File plays no start-up movies yet
+		var playIntro = !GameEditions.IsThemeParkInc && IntroPlaylist.ShouldPlay( startsFrontEnd, smoke, args, Environment.GetEnvironmentVariable( "OPENTPW_NO_INTRO" ) );
 		Func<IDisposable>? startIntro = playIntro ? () => StartIntro( flow, args, dataDirectory ) : null;
 		if ( autorun == null && !playIntro )
 		{
@@ -591,6 +592,13 @@ internal static class Game
 			if ( startIntro != null )
 			{
 				using var intro = startIntro();
+				Render.Run();
+				return;
+			}
+			if ( GameEditions.IsThemeParkInc )
+			{
+				// [EXT:tpi-front-end-phase1] a Theme Park Inc start without a world opens its Personnel File (docs/THEME-PARK-INC.md)
+				flow.ShowThemeParkIncFrontEnd();
 				Render.Run();
 				return;
 			}
@@ -985,7 +993,7 @@ internal static class Game
 		if ( GameEditions.ViewerRefusal( args ) is { } refusal )
 			throw new ArgumentException( refusal );
 		var level = GetOption( args, "--load-original-level", "a Theme Park Inc world such as 'arabian'" );
-		Log.Warning( $"Theme Park Inc data detected ({(edition.Evidence == GameEditionEvidence.StandardSamHash ? "retail Standard.sam" : "folder structure")}): experimental slice for '{level}'. "
+		Log.Warning( $"Theme Park Inc data detected ({(edition.Evidence == GameEditionEvidence.StandardSamHash ? "retail Standard.sam" : "folder structure")}): experimental slice {(level == null ? "front end (the Personnel File)" : $"for '{level}'")}. "
 			+ GameEditions.SliceNotice );
 	}
 

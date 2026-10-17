@@ -13,11 +13,11 @@ public static class PoolStyles
 		Wall: new( 214, 198, 154 ), WallJoint: new( 150, 134, 100 ),
 		WaterDeep: new( 6, 84, 92 ), WaterShallow: new( 82, 224, 188 ), Glow: 0f );
 
-	/// <summary>Dark mossy stone; murky green-purple water with a faint glow.</summary>
+	/// <summary>Dark mossy stone; murky purple water with a faint glow.</summary>
 	public static PoolStyle Hallow { get; } = new( "hallow", PoolCopingPattern.MossyStone,
 		CopingBase: new( 66, 62, 74 ), CopingAccent: new( 74, 112, 58 ), CopingJoint: new( 30, 28, 36 ),
 		Wall: new( 58, 56, 70 ), WallJoint: new( 28, 26, 36 ),
-		WaterDeep: new( 36, 22, 60 ), WaterShallow: new( 120, 148, 70 ), Glow: 0.3f );
+		WaterDeep: new( 40, 14, 74 ), WaterShallow: new( 146, 88, 188 ), Glow: 0.3f );
 
 	/// <summary>Riveted metal panels; bright cyan water with a soft emissive glow.</summary>
 	public static PoolStyle Space { get; } = new( "space", PoolCopingPattern.RivetedPanels,

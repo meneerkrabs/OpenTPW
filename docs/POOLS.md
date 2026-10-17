@@ -158,7 +158,7 @@ check below.
 ### Checking it on screen
 
 `--debug-pool [x,y,w,h;...]` (`[EXT:debug-pool]`, smoke-only) paints pool cells through the tool's own builder once the
-original level is up. The shape is a list of rectangles, measured from the first place near the camera target that takes
+original level is up. The shape is a list of rectangles, measured from the first place near the camera target (the `--capture-camera` target when one is given, so a capture is repeatable) that takes
 the whole shape and charged as the tool charges. The default shape is a 6 x 4 basin, an L-shaped arm and one single
 cell, which together show straight edges, inner and outer corners and an isolated cell. It needs the extension. The log
 prints the shape's engine centre, which `--capture-camera` can aim at:
@@ -174,7 +174,7 @@ tray rather than a deep pool.
 
 Second check (October 17, 2026; all four parks, `--debug-pool default`, camera `x,y,45,-90` and `x,y,45,-150`; the camera clamps the height to 70, so a lower height gives the same view): the pool is dug into the
 ground with a visible inner wall, a tiled floor seen through the translucent water, lighter water at the edge, the coping a quarter of a cell wide with joints, and each theme's own look (wooden coping and
-lagoon water in the jungle, mossy dark stone and murky green water in hallow, riveted metal and bright cyan water in space, candy tiles and lilac water in fantasy). The images are `reports/pools-p1-<theme>-top.png` and `-angle.png`.
+lagoon water in the jungle, mossy dark stone and murky purple water in hallow (made purpler after the first look, October 17, 2026), riveted metal and bright cyan water in space, candy tiles and lilac water in fantasy). The images are `reports/pools-p1-<theme>-top.png` and `-angle.png`.
 
 ## Saves and determinism
 

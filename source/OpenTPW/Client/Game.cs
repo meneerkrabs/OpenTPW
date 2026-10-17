@@ -484,7 +484,7 @@ internal static class Game
 			}
 		}
 		// [EXT:debug-pool] smoke-only: once the original level is up and the opentpw.pools extension is on, paints pool cells through the pool tool's own builder
-		// (Level.PoolBuilder.PaintCells, charged as the tool does) at the first place near the camera target where every cell of the shape can be painted, so a
+		// (Level.PoolBuilder.PaintCells, charged as the tool does) at the first place near the camera target (--capture-camera's when given) where every cell of the shape can be painted, so a
 		// capture shows the water and the edges (docs/POOLS.md). The shape is rectangles "x,y,w,h" relative to that place, separated by ';' (default a 6 x 4 basin
 		// plus an L arm and a single cell, which covers straight edges, inner and outer corners and an isolated cell).
 		var debugPool = GetOption( args, "--debug-pool", "pool rectangles x,y,w,h;... relative to the camera target" );
@@ -493,6 +493,7 @@ internal static class Game
 			var shapeText = debugPool.Length > 0 && debugPool != "default" ? debugPool : "0,0,6,4;6,2,3,6;11,0,1,1";
 			var rectangles = shapeText.Split( ';' ).Select( part => part.Split( ',' ).Select( int.Parse ).ToArray() ).ToArray();
 			var shape = rectangles.SelectMany( r => Enumerable.Range( 0, r[2] ).SelectMany( dx => Enumerable.Range( 0, r[3] ).Select( dy => (X: r[0] + dx, Y: r[1] + dy) ) ) ).Distinct().ToArray();
+			var poolCamera = GetOption( args, "--capture-camera", "x,y,height,yaw" )?.Split( ',' ).Select( value => float.Parse( value, System.Globalization.CultureInfo.InvariantCulture ) ).ToArray();
 			var poolFrames = 0;
 			var poolFrame = GetOption( args, "--capture-frames", "a frame count" ) is { } poolFrameText && int.TryParse( poolFrameText, out var poolParsed ) && poolParsed > 60 ? poolParsed - 59 : 40;
 			Render.PostUpdate += PaintDebugPool;
@@ -501,7 +502,10 @@ internal static class Game
 				if ( flow.Level is not { OriginalPark: not null } level || Camera.Mode is not ParkCameraMode park || ++poolFrames < poolFrame )
 					return;
 				Render.PostUpdate -= PaintDebugPool;
-				if ( level.PoolBuilder is not { } builder || !level.TryGetGridCell( park.Target.X, park.Target.Y, out var cellX, out var cellY ) )
+				// the held capture camera's target when one is given (the live camera may still be moving at this frame), else the park camera's
+				var searchX = poolCamera != null ? poolCamera[0] : park.Target.X;
+				var searchY = poolCamera != null ? poolCamera[1] : park.Target.Y;
+				if ( level.PoolBuilder is not { } builder || !level.TryGetGridCell( searchX, searchY, out var cellX, out var cellY ) )
 				{
 					Log.Warning( "--debug-pool: the opentpw.pools extension is off (use --enable-mod opentpw.pools) or the camera target is off the grid." );
 					return;
@@ -512,8 +516,9 @@ internal static class Game
 						{
 							if ( Math.Max( Math.Abs( dx ), Math.Abs( dy ) ) != radius )
 								continue;
-							var originX = cellX + dx;
-							var originY = cellY + dy;
+							// the shape is centred on the search cell
+							var originX = cellX + dx - (int)MathF.Round( (float)shape.Average( cell => cell.X ) );
+							var originY = cellY + dy - (int)MathF.Round( (float)shape.Average( cell => cell.Y ) );
 							if ( !shape.All( cell => builder.Check( originX + cell.X, originY + cell.Y ) == PoolBuildResult.Ok ) )
 								continue;
 							var stroke = builder.PaintCells( shape.Select( cell => (originX + cell.X, originY + cell.Y) ) );

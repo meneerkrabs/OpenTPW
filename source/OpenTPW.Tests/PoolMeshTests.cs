@@ -331,6 +331,8 @@ public class PoolMeshTests
 		Assert.IsTrue( PoolStyles.Jungle.WaterShallow.G > PoolStyles.Jungle.WaterShallow.R && PoolStyles.Jungle.WaterShallow.B > PoolStyles.Jungle.WaterShallow.R );
 		Assert.AreEqual( PoolCopingPattern.MossyStone, PoolStyles.Hallow.Coping );
 		Assert.IsTrue( PoolStyles.Hallow.Glow > 0 && PoolStyles.Hallow.CopingBase.R < 100 && PoolStyles.Hallow.WaterDeep.B > PoolStyles.Hallow.WaterDeep.G );
+		// purple, not green: blue and red both above green in the shallow water
+		Assert.IsTrue( PoolStyles.Hallow.WaterShallow.B > PoolStyles.Hallow.WaterShallow.G && PoolStyles.Hallow.WaterShallow.R > PoolStyles.Hallow.WaterShallow.G );
 		Assert.AreEqual( PoolCopingPattern.RivetedPanels, PoolStyles.Space.Coping );
 		Assert.IsTrue( PoolStyles.Space.Glow > PoolStyles.Hallow.Glow && PoolStyles.Space.WaterShallow.G > 200 && PoolStyles.Space.WaterShallow.B > 200 && PoolStyles.Space.WaterShallow.R < 150 );
 		Assert.AreEqual( PoolCopingPattern.CandyTiles, PoolStyles.Fantasy.Coping );

@@ -57,6 +57,8 @@ public sealed class UiStringTable
 	public string Language { get; }
 	public string this[UIStrings id] => Get( uiText, (int)id );
 	public string Help( int index ) => Get( helpText, index );
+	/// <summary>UITEXT record <paramref name="index"/> by the file's own numbering (Theme Park Inc's table has 994 records with ids unlike Theme Park World's, so no <see cref="UIStrings"/> name applies); empty when out of range.</summary>
+	public string Entry( int index ) => Get( uiText, index );
 	public string Theme( int index ) => Get( themeNames, index );
 	public string Object( int index ) => Get( objectNames, index );
 	public string Lender( int index ) => Get( lenderNames, index );

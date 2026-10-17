@@ -9,8 +9,8 @@ using OpenTPW.Mods;
 namespace OpenTPW.Tests;
 
 /// <summary>
-/// Theme Park Inc attractions in Theme Park World through the example data mod (docs/MODS.md, Making a Theme Park Inc rides mod): the mod
-/// is written at test time (<see cref="TpiRidesFixture"/>, no Theme Park Inc bytes) and reads the install named by <c>OPENTPW_TPI_PATH</c>
+/// Theme Park Inc attractions in Theme Park World through the data mod OpenTPW ships (<c>content/mods/opentpw.tpi-rides</c>, docs/MODS.md): the mod
+/// is the shipped one (<see cref="TpiRidesFixture"/>, no Theme Park Inc bytes) and reads the install named by <c>OPENTPW_TPI_PATH</c>
 /// (an installation or its Data folder) next to the Theme Park World data of <c>OPENTPW_GAME_PATH</c>. Inconclusive without both.
 /// </summary>
 [TestClass]
@@ -39,7 +39,7 @@ public class TpiRidesEndToEndTests
 		FileSystem = new BaseFileSystem( data );
 		FileSystem.RegisterArchiveHandler<WadArchive>( ".wad" );
 		ObjectCatalog.BonusDataRoot = null;
-		set = TpiRidesFixture.Resolve( TpiRidesFixture.Write( root ), TpiRidesFixture.Settings( tpiFolder ) );
+		set = TpiRidesFixture.Resolve( TpiRidesFixture.Settings( tpiFolder ) );
 		Assert.AreEqual( 0, set.Refused.Count, string.Join( "; ", set.Refused.Select( refusal => refusal.Reason ) ) );
 		scope = ModContentRoots.Use( set, FileSystem );
 	}
@@ -72,17 +72,17 @@ public class TpiRidesEndToEndTests
 		Assert.AreEqual( "Giant Robot Swing", robot.DisplayName );
 		foreach ( var entry in new[] { bounce, robot, bin, drinks } )
 		{
-			Assert.AreEqual( "community.tpi-rides", entry.ModId );
+			Assert.AreEqual( TpiRidesFixture.Id, entry.ModId );
 			Assert.IsTrue( entry.IsExternal && !entry.IsBonus );
-			Assert.AreEqual( "mod:community.tpi-rides:/levels/", entry.Root.Key( "/levels/" )[..32] );
+			StringAssert.StartsWith( entry.Root.Key( "/levels/x" ), "mod:opentpw.tpi-rides:/levels/" );
 			Assert.IsNotNull( entry.ScriptPath, $"{entry} has its original script" );
 			Assert.IsTrue( entry.Animations.Count > 0 || entry.Category != ObjectCategory.Ride, $"{entry} has its clips" );
 		}
 		// the game's own objects are unchanged and keep their ids (the mod's ids sit above every original one)
 		Assert.AreEqual( "Belly Bounce", ObjectCatalog.Load( "jungle" ).Find( 1100 )!.DisplayName );
 		Assert.IsTrue( ObjectCatalog.Load( "jungle" ).Entries.Where( entry => !entry.IsExternal ).All( entry => entry.InfoId < CrossEditionObjects.FirstReservableId ) );
-		Assert.AreEqual( 2, ObjectCatalog.Load( "jungle" ).Entries.Count( entry => entry.IsExternal ) );
-		Assert.AreEqual( 2, ObjectCatalog.Load( "space" ).Entries.Count( entry => entry.IsExternal ) );
+		foreach ( var theme in new[] { "jungle", "space", "fantasy" } )
+			Assert.AreEqual( TpiRidesFixture.Items.Count( item => item.Theme == theme ), ObjectCatalog.Load( theme ).Entries.Count( entry => entry.IsExternal ), $"every archive the shipped mod lists is in {theme}" );
 		Assert.AreEqual( 0, ObjectCatalog.Load( "hallow" ).Entries.Count( entry => entry.IsExternal ), "the mod adds nothing to the other themes" );
 	}
 
@@ -125,17 +125,9 @@ public class TpiRidesEndToEndTests
 	}
 
 	[TestMethod]
-	public void EveryArchiveOfTheInstallLoadsIntoItsThemeUnlessTheGameAlreadyListsThatName()
+	public void EveryArchiveTheShippedModListsLoadsIntoItsThemeWithItsEconomyEntry()
 	{
-		var data = DataRoots.FindDataDirectory( tpiFolder )!;
-		var items = TpiRidesFixture.ArchivesOf( data );
-		var install = new BaseFileSystem( data );
-		install.RegisterArchiveHandler<WadArchive>( ".wad" );
-		scope!.Dispose();
-		scope = null;
-		var bulk = TpiRidesFixture.Resolve( TpiRidesFixture.Write( Path.Combine( root, "bulk" ), items, last: 40999 ), TpiRidesFixture.Settings( tpiFolder ) );
-		Assert.AreEqual( 0, bulk.Refused.Count, string.Join( "; ", bulk.Refused.Select( refusal => refusal.Reason ) ) );
-		using var all = ModContentRoots.Use( bulk, FileSystem );
+		var items = TpiRidesFixture.Items;
 		var loaded = 0;
 		foreach ( var theme in ObjectCatalog.Themes )
 		{
@@ -143,23 +135,17 @@ public class TpiRidesEndToEndTests
 			var economy = ParkEconomy.CreateForTheme( theme, false );
 			foreach ( var item in items.Where( item => item.Theme == theme ) )
 			{
-				var entry = catalog.Find( item.InfoId );
-				if ( entry == null )
-				{
-					// the original keeps the first archive of a name: the game's own gates, bus, lights, ... in that theme and category
-					var name = ObjectCatalog.ArchiveKey( Path.GetFileName( item.Archive ) );
-					var gameArchives = FileSystem.GetDirectories( $"/levels/{theme}/{item.Category}" ).Select( archive => ObjectCatalog.ArchiveKey( Path.GetFileName( archive ) ) );
-					Assert.IsTrue( gameArchives.Contains( name, StringComparer.OrdinalIgnoreCase ) || !HasInfoId( install, "/" + item.Archive ),
-						$"{item.Archive} is not listed in {theme}, though the game has no archive of that name and it declares an Info.Id" );
-					continue;
-				}
+				var entry = catalog.Find( item.InfoId ) ?? throw new AssertFailedException( $"{item.Archive} is not listed in {theme}" );
 				loaded++;
+				Assert.AreEqual( TpiRidesFixture.Id, entry.ModId );
+				Assert.AreEqual( item.English, entry.SettingsName );
 				Assert.AreEqual( item.Category switch { "rides" => ObjectCategory.Ride, "shops" => ObjectCategory.Shop, "sideshow" => ObjectCategory.Sideshow, "features" => ObjectCategory.Feature, _ => ObjectCategory.Upgrade }, entry.Category );
 				Assert.IsTrue( economy.Catalog.TryGet( item.InfoId, out _ ), $"{item.Archive} is in the {theme} economy catalogue" );
 			}
 		}
-		// the retail install: 217 archives in the rides, shops, sideshow, features and upgrades folders of its three worlds, 182 of which the parks list
-		Assert.AreEqual( (217, 182), (items.Count, loaded) );
+		Assert.AreEqual( items.Count, loaded );
+		// the retail install: 182 archives of its three worlds' rides, shops, sideshow, features and upgrades folders load, plus the science litter bin
+		Assert.AreEqual( 183, items.Count );
 	}
 
 	/// <summary>Whether a .sam of the archive declares an Info.Id: Theme Park Inc's ptract holds none, so no object can be made of it (the catalogue says so and skips it).</summary>
@@ -276,16 +262,16 @@ public class TpiRidesEndToEndTests
 	public void AParkWithTheModRecordsItAndATpiObjectNeedsItToLoad()
 	{
 		var records = ParkResumeMods.Capture( set );
-		CollectionAssert.AreEqual( new[] { "opentpw.cross-edition-objects", "community.tpi-rides" }, records!.Select( record => record.Id ).ToArray() );
+		CollectionAssert.AreEqual( new[] { "opentpw.cross-edition-objects", TpiRidesFixture.Id }, records!.Select( record => record.Id ).ToArray() );
 		Assert.AreEqual( 0, ParkResumeMods.Unmet( records, set ).Count );
 		var without = ModSet.Defaults( OfficialExtensions.All );
 		var unmet = ParkResumeMods.Unmet( records, without );
-		StringAssert.Contains( string.Join( "; ", unmet ), "needs community.tpi-rides 1.0.0" );
+		StringAssert.Contains( string.Join( "; ", unmet ), "needs opentpw.tpi-rides 1.0.0" );
 		var message = Assert.ThrowsException<InvalidDataException>( () => ParkResumeMods.Require( records, without ) ).Message;
-		StringAssert.Contains( message, "community.tpi-rides" );
+		StringAssert.Contains( message, TpiRidesFixture.Id );
 		// the asset manifest pins the install's members the park uses, keyed by the mod's root
 		var manifest = ParkResumeAssetManifest.Capture( ObjectCatalog.Load( "jungle" ), BalanceSettings.Load( "jungle", false ) );
-		Assert.IsTrue( manifest.Keys.Any( key => key.StartsWith( "mod:community.tpi-rides:/levels/arabian/rides/tbounce/", StringComparison.Ordinal ) ), "the TPI archive's members are pinned" );
+		Assert.IsTrue( manifest.Keys.Any( key => key.StartsWith( "mod:opentpw.tpi-rides:/levels/arabian/rides/tbounce/", StringComparison.Ordinal ) ), "the TPI archive's members are pinned" );
 		Assert.IsTrue( manifest.Keys.Any( key => key.StartsWith( "data:/levels/jungle/rides/", StringComparison.Ordinal ) ) );
 		Assert.IsNull( ParkResumeMods.ShapeProblem( records, manifest ) );
 		// a park saved without the mod, loaded with it, is refused for the mod that was not there

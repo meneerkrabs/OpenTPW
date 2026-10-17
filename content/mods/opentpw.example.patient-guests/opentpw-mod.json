@@ -1,0 +1,5 @@
+{ "schema": 1, "id": "opentpw.example.patient-guests", "name": "Patient guests (example)", "version": "1.0.0", "category": "official",
+  "author": "OpenTPW",
+  "description": "An example script mod: guests wait longer in queues and join longer queues. Off by default. Its hooks only run once the game wires script hooks into the guest simulation; until then it is checked and compiled, nothing more.",
+  "scriptApi": ">=1.0.0 <2.0.0",
+  "content": { "scripts": { "files": [ "scripts/patient-guests.tps" ], "hooks": { "leaveQueue": "leaveQueue", "joinQueue": "joinQueue" } } } }

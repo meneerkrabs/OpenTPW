@@ -283,6 +283,9 @@ internal static class Game
 		if ( visit != null )
 			Log.Trace( ParkSharing.Describe( visit ) );
 		Render = DisplayStartup.CreateRenderer( args );
+		// [EXT:script-mods] the crash marker was written at startup; it is removed after 15 seconds of frames (docs/SCRIPT-MODS.md)
+		if ( OpenTPW.Mods.ScriptSafeMode.Current is { } scriptStartMarker )
+			Render.OnUpdate += scriptStartMarker.Update;
 		if ( movieName != null )
 		{
 			MovieCommands.Play( dataDirectory, movieName, !args.Contains( "--mute" ), args.Contains( "--smoke-test" ) );

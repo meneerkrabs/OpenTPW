@@ -90,6 +90,9 @@ public static class WorldStateHash
 			hash.Add( sources.Scripts.NextAttractionId );
 			hash.Add( sources.Scripts.ClockMilliseconds );
 			hash.Add( sources.Scripts.Scripts.Count );
+			// the script pass counter (which pass of eight a script's slice falls on) joins the hash once a pass has run, so a world that never ran one keeps its pin
+			if ( sources.Scripts.PassCounter != 0 )
+				hash.Add( sources.Scripts.PassCounter );
 			foreach ( var script in sources.Scripts.Scripts.OrderBy( script => script.ScriptId ) )
 				script.AddCanonicalState( hash );
 			// coaster_rng_state and the coasters (tracks, samples, ratings, trains and riders) in creation order.

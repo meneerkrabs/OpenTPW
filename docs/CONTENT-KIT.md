@@ -254,7 +254,21 @@ frames (ours / original, in pixels; `top`/`bottom` are `originY` and `originY + 
 
 | Set | Slot | Width | Height | Top | Bottom |
 | --- | --- | --- | --- | --- | --- |
-
+| BE | 0 | 21 to 26 / 20 to 27 | 38 to 42 / 40 to 42 | -39 to -37 / -41 to -38 | 1 to 3 / 1 to 2 |
+| BE | 1 | 22 to 28 / 17 to 32 | 36 to 42 / 38 to 43 | -39 to -36 / -41 to -38 | 0 to 5 / 0 to 2 |
+| BE | 12 | 20 to 26 / 19 to 33 | 37 to 42 / 40 to 45 | -43 to -37 / -43 to -38 | -3 to 3 / 1 to 2 |
+| TA | 0 | 22 to 26 / 17 to 26 | 39 to 41 / 38 to 41 | -38 to -38 / -39 to -37 | 1 to 3 / 1 to 2 |
+| TA | 1 | 22 to 28 / 16 to 31 | 36 to 42 / 36 to 41 | -39 to -35 / -39 to -35 | 0 to 5 / 1 to 2 |
+| TA | 12 | 22 to 26 / 17 to 32 | 35 to 42 / 37 to 41 | -42 to -36 / -39 to -36 | -3 to 3 / 1 to 2 |
+| BD | 0 | 27 to 30 / 21 to 32 | 46 to 49 / 47 to 50 | -45 to -45 / -49 to -49 | 1 to 4 / -2 to 1 |
+| BD | 1 | 27 to 34 / 19 to 38 | 44 to 49 / 45 to 50 | -46 to -42 / -48 to -46 | 0 to 7 / -2 to 3 |
+| BD | 12 | 26 to 30 / 21 to 38 | 42 to 50 / 45 to 50 | -50 to -42 / -49 to -47 | -3 to 4 / -3 to 1 |
+| FA | 0 | 32 to 38 / 27 to 35 | 61 to 64 / 60 to 64 | -59 to -59 / -63 to -61 | 2 to 5 / -1 to 1 |
+| FA | 1 | 32 to 42 / 28 to 46 | 57 to 65 / 56 to 63 | -60 to -54 / -63 to -58 | -1 to 10 / -2 to 1 |
+| FA | 12 | 32 to 38 / 29 to 49 | 59 to 64 / 58 to 65 | -64 to -57 / -63 to -59 | -2 to 5 / -1 to 2 |
+| GM | 0 | 28 to 32 / 30 to 36 | 52 to 56 / 46 to 55 | -54 to -49 / -54 to -51 | 1 to 4 / -5 to 1 |
+| GM | 1 | 29 to 36 / 27 to 36 | 47 to 58 / 50 to 56 | -54 to -43 / -55 to -52 | -1 to 8 / -3 to 1 |
+| GM | 12 | 26 to 32 / 26 to 42 | 52 to 56 / 47 to 61 | -55 to -49 / -59 to -49 | -3 to 4 / -2 to 2 |
 
 ### Slots
 

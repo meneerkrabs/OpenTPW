@@ -85,7 +85,7 @@ whose number matches (class 0x80 for the head action 4), u4 one of class 0x800 (
 saved part) and the ride runtime measures the model's dummies (`OriginalObjectRuntime.WalkNodeDistance`). The Star and Tweety Tours' slots lie 10 model units apart (the Cosmic Cruiser's
 10.03, the Tweety Tours' exactly 10), so both ride 1000 ms, as before (`TourAssetTests.TheTourWalkOffsSpanTheModelsSlotNodes`, `WalkOffTimingTests`). TOUR-007 retired. The beam effect of action 2 at WALKOFF
 is built (`RideVisitorBridge.WalkOffEffect`: effect `0x13` at the slot's start node, class `0x800`, each coordinate truncated to whole units and shifted left by 10, `0x00521E60` at `0x005572EB`; the handle is not kept). WALKON's own walk-on
-time (`ftol(distance between u1 and u2) x 100`, stored by 0x00556F40 at +0x0C) is not modelled, because what reads it and moves the entry to state 4 is not read: riders board at once (TOUR-011).
+time (`ftol(distance between u1 and u2) x 100`, stored by 0x00556F40 at +0x0C) is read by the walk update `0x00557D80` (state 1): it moves the walking body along its nodes and, at the end, moves the entry to state 2 (a head action 4 hangs the head then). It gates only the body and the head, not the script (the state 4 WALKGET hands out comes from WALKOFF's walk), and is not modelled: riders board at once and a head action 4 head hangs at once (TOUR-011).
 
 ## Pose sines (TOUR-008 narrowed)
 

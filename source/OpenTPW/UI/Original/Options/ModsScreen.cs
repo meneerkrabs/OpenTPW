@@ -15,9 +15,18 @@ public sealed class ModsServices
 	public Func<ModSet> Active { get; init; } = () => OpenTpwExtensions.Active;
 	public ModVersion? OpenTpwVersion { get; init; } = ModStartup.OpenTpwVersion();
 	public Func<GameEdition> Edition { get; init; } = () => GameEditions.Current;
-	/// <summary>Inspects a folder away from the game's threads (a helper process by default, like the Game files screen).</summary>
-	internal Func<string, CancellationToken, Task<InstallationDiscoveryResult>> Inspect { get; init; } =
-		( path, cancellation ) => InstallationDiscovery.InspectAsync( path, cancellation: cancellation );
+	/// <summary>
+	/// The browser build: no folder dialog of the game, no helper process and no thread pool. A mod input is the copy of the player's own game
+	/// files that the page keeps in memory (<see cref="BrowserModInputs"/>), chosen with the page's folder dialog.
+	/// </summary>
+	public bool Browser { get; init; } = OperatingSystem.IsBrowser();
+	/// <summary>
+	/// Inspects a folder away from the game's threads (a helper process by default, like the Game files screen). The browser inspects its copy
+	/// in this process, at once.
+	/// </summary>
+	internal Func<string, CancellationToken, Task<InstallationDiscoveryResult>> Inspect { get; init; } = OperatingSystem.IsBrowser()
+		? ( path, _ ) => Task.FromResult( new InstallationDiscoveryResult( new[] { GameInstallation.Inspect( path ) }, false, null ) )
+		: ( path, cancellation ) => InstallationDiscovery.InspectAsync( path, cancellation: cancellation );
 }
 
 /// <summary>
@@ -28,7 +37,8 @@ public sealed class ModsServices
 /// the folder chooser of the Game files screen with the check of that folder (<see cref="ModInputCheck"/>, which uses
 /// <see cref="GameEditions.Detect"/> and <see cref="GameEditions.HasKnownStandardSam"/>). The statuses come from resolving the real
 /// <see cref="ModSet"/> with the pending choices. OK writes <c>mods.json</c> and says the changes apply after a restart; Cancel
-/// and Escape discard them. The browser build lists the official extensions only.
+/// and Escape discard them. In the browser build the community list holds the mods shipped with the page, and a mod input is
+/// the page's copy of the player's own game files (<see cref="BrowserModInputs"/>), chosen with the page's folder dialog.
 /// </summary>
 // [EXT:mods-ui] OpenTPW's own mods screen; the original game had no mods
 public static class ModsScreen
@@ -39,6 +49,9 @@ public static class ModsScreen
 		var discovered = services.Discovered();
 		var diagnostics = new List<string>();
 		var saved = ModSettings.Load( services.SettingsPath, diagnostics );
+		// the browser's inputs are the page's copies: an input without a saved folder uses its edition's copy when there is one
+		if ( services.Browser )
+			saved = BrowserModInputs.WithDefaults( saved, discovered );
 		var pending = saved;
 		var version = 0;
 		// The rows of the pending choices: the startup's resolution first, then the resolution of each change.
@@ -248,6 +261,24 @@ public static class ModsScreen
 				Changed();
 			} );
 		}
+		var seenRevision = BrowserModInputs.Revision;
+		var choosing = false;
+		void ChooseInBrowser( ModInput input )
+		{
+			if ( BrowserModInputs.FolderFor( input ) is not { } folder || BrowserModInputs.Choose == null )
+			{
+				note = strings.Extra( OpenTpwText.ModInputBrowserNone );
+				return;
+			}
+			if ( BrowserModInputs.IsLocked )
+			{
+				note = strings.Extra( OpenTpwText.ModInputBrowserLocked );
+				return;
+			}
+			choosing = true;
+			note = strings.Extra( OpenTpwText.ModInputBrowserChoosing );
+			BrowserModInputs.Choose( input.Edition! );
+		}
 		void Browse( Action<string> target, string? initial )
 		{
 			if ( picker != null )
@@ -262,7 +293,15 @@ public static class ModsScreen
 			picker = InstallationDiscovery.PickAsync( CurrentInput() is { } input ? InputName( input ) : strings.Extra( OpenTpwText.ModsPage ), initial, lifetime.Token );
 		}
 		var inputChange = screen.Add( new UiButton { Id = "inputChange", Text = () => strings.Extra( OpenTpwText.ChangeFolder ),
-			Clicked = () => { if ( CurrentInput() is { } input ) Browse( SetInput, InputPath( input ) ); },
+			Clicked = () =>
+			{
+				if ( CurrentInput() is not { } input )
+					return;
+				if ( services.Browser )
+					ChooseInBrowser( input );
+				else
+					Browse( SetInput, InputPath( input ) );
+			},
 			Bounds = Rect( 57, 1245, 457, 1320 ), Anchor = UiAnchor.Center } );
 		var inputType = screen.Add( new UiButton { Id = "inputType", Text = () => strings.Extra( OpenTpwText.EnterFolderPath ),
 			Clicked = () => { if ( CurrentInput() is { } input ) stack.Push( GameFilesScreen.PathEntry( stack, strings, InputPath( input ), SetInput ) ); },
@@ -376,8 +415,8 @@ public static class ModsScreen
 						return (null, exception.Message, target);
 					}
 				}
-				// Without mod folders (always in the browser, which cannot rely on a thread pool) there is nothing to read or hash: resolve at once.
-				resolution = found.Count == 0 ? Task.FromResult( Resolve() ) : Task.Run( Resolve );
+				// Without mod folders, and in the browser (which cannot rely on a thread pool; its shipped mods are two small files), there is little to read or hash: resolve at once.
+				resolution = found.Count == 0 || services.Browser ? Task.FromResult( Resolve() ) : Task.Run( Resolve );
 			}
 			// Check a folder chosen earlier once (in the helper process) when its mod is shown.
 			if ( inspection == null && CurrentInput() is { } input && InputPath( input ) is { } path && !checks.ContainsKey( CheckKey( path, input ) ) )
@@ -385,10 +424,23 @@ public static class ModsScreen
 				var key = CheckKey( path, input );
 				Inspect( path, report => checks[key] = report == null ? new ModInputCheck( ModInputState.NotFound, null, GameEditionEvidence.None ) : ModInputCheck.Evaluate( report, input ) );
 			}
-			var busy = picker != null || inspection != null;
+			// The page finished copying (or refused) the player's files: look at the folder again and take it as the input.
+			if ( services.Browser && BrowserModInputs.Revision != seenRevision )
+			{
+				seenRevision = BrowserModInputs.Revision;
+				choosing = false;
+				checks.Clear();
+				note = BrowserModInputs.Message ?? "";
+				pending = BrowserModInputs.WithDefaults( pending, discovered );
+				Changed();
+			}
+			var busy = picker != null || inspection != null || choosing;
 			var hasInput = CurrentInput() != null;
 			foreach ( var element in new UiElement[] { inputChange, inputType, inputRemove } )
 				element.Visible = hasInput;
+			// The browser has no typed paths and its copy is replaced, not removed, here (the page's setup screen removes the kept files).
+			if ( services.Browser )
+				inputType.Visible = inputRemove.Visible = false;
 			inputNext.Visible = hasInput && (ModRowSelected()?.Manifest?.Inputs.Count ?? 0) > 1;
 			inputChange.Enabled = !busy;
 			inputType.Enabled = inspection == null;

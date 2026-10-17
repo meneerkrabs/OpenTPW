@@ -13,6 +13,13 @@ internal static partial class Page
 	[JSImport( "requestLanguage", "opentpw-page" )]
 	public static partial void RequestLanguage( string language );
 
+	/// <summary>
+	/// Opens the browser's folder dialog for the player's own files of an original game (<c>theme-park-inc</c>) that a mod reads; the page copies
+	/// them and calls <c>Program.InputChanged</c> when done.
+	/// </summary>
+	[JSImport( "chooseInput", "opentpw-page" )]
+	public static partial void ChooseInput( string edition );
+
 	/// <summary>Queues a missing Clarity replacement without blocking a render frame.</summary>
 	[JSImport( "requestTexture", "opentpw-page" )]
 	public static partial void RequestTexture( string relativePath );

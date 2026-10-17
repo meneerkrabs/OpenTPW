@@ -87,6 +87,11 @@ public sealed class ModelHeightfield
 		this.cellWords = cellWords;
 	}
 
+	/// <summary>The stored corner heights, X-fastest (for <see cref="ModelFileWriter"/>).</summary>
+	internal IReadOnlyList<float> Heights => heights;
+	/// <summary>The stored cell words, X-fastest (for <see cref="ModelFileWriter"/>).</summary>
+	internal IReadOnlyList<uint> CellWords => cellWords;
+
 	public int CellCountX { get; }
 	public int CellCountZ { get; }
 	public float CellSizeX { get; }

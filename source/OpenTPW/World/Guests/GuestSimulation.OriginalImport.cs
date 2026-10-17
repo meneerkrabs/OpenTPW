@@ -214,11 +214,15 @@ public sealed partial class GuestSimulation
 		}
 	}
 
-	/// <summary>A saved guest the import does not restore is not in the park: its slot of the pool (held by the saved chain) is freed.</summary>
+	/// <summary>
+	/// A saved guest the import does not restore is not in the park, but the original keeps it: its slot of the pool (held by the saved chain) stays used as a placeholder, so the
+	/// next thing built gets the id the original hands out.
+	/// </summary>
+	// [BIN:TPW-EXE:0x00518D43 free list rebuild] a load keeps every saved thing in its slot, so the unused slots (and with them the next ids) are those the save leaves free
 	private void ReleaseDroppedThing( int id )
 	{
 		if ( things.IsUsed( id ) && things.ModelOf( id ) == SaveThingModel.Guest && !byId.ContainsKey( id ) )
-			things.Release( id );
+			things.Hold( id );
 	}
 
 	/// <summary>A guest on its way in or out of the park, in the state it was saved in: the arrival walk's states 0 to 5, state 18 off the paths and the gate's states 19 and 21 stand on the cell map as they did.</summary>

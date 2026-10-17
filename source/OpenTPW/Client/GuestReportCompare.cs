@@ -18,7 +18,7 @@ public static class GuestReportCompare
 	{
 		"queue.boarded.rate" or "happiness.guestTime" or "happiness.survivors" or "revenue.perAdmittedGuest" => 1,
 		"queue.rejected.rate" or "queue.rejected.price.rate" or "queue.wait.p50" or "queue.wait.p90" or "queue.wait.p99" or "queue.wait.p90.censored" or "queue.wait.p99.censored"
-			or "departures.perAdmission" or "departures.happinessZero.perAdmission" or "use.giniRides" or "use.giniRidesPerCapacity" or "guests.stuck" => -1,
+			or "departures.perAdmission" or "departures.happinessZero.perAdmission" or "use.giniRides" or "use.giniRidesPerCapacity" or "use.guestSecondsPerRide" or "guests.stuck" => -1,
 		_ => 0
 	};
 

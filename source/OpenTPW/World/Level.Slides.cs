@@ -5,6 +5,9 @@ public partial class Level
 	/// <summary>[EXT:pools-slides] The park's water slides: towers placed beside a pool and the tracks built from them (docs/POOLS.md, "Water slides"); null on a read-only visit and before the paths are set up.</summary>
 	public PoolSlideWorld? PoolSlides { get; private set; }
 
+	/// <summary>[EXT:pools-render] Draws the park's slides; created with the pool renderer.</summary>
+	public PoolSlideRenderer? PoolSlideRenderer { get; private set; }
+
 	private Dictionary<int, PoolSlideTower>? slideTowerStore;
 	private Dictionary<int, PoolSlideTower> slideTowers => slideTowerStore ??= new();
 	private int slideWaterStamp = -1;

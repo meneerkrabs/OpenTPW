@@ -467,6 +467,22 @@ The object catalog's cache key includes `ModSet.Digest`, so a catalog is never s
 empty set, with only the online extension toggled and with a presentation-only mod, and checks the same digests and no
 record; the M4 gate and browser digests read the same code paths and are checked by the smokes.
 
+## Pools
+
+The `opentpw.pools` extension ([POOLS.md](POOLS.md), `[EXT:pools-save]`) adds the pool water cell type (`ParkCellTypes.PoolWater`, 0x40). Pool cells are ordinary non-empty cells of the cell map, so they join
+the canonical hash through `ParkCellMap.AddCanonicalState` with no schema change (the schema stays 21), and a park without any keeps every pin: `PoolsTests.TogglingThePoolsExtensionKeepsEveryExistingPinWithoutPoolCells`
+runs the pinned fixed run (`FixedRunHash`) and the guest-pathing run with the extension on and off (asserting the gate really differs) and gets the same digests. The extension is recorded in a park save **only while the park
+has pool cells** (`ParkResumeMods.UsedOnlyExtensionIds`); a park without them saves with no `Mods` field and the same bytes whether the extension is on or off (`PoolsLevelTests.RealCapturesWithoutPoolCellsAreByteIdenticalWithTheExtensionOnAndOff`,
+two real `Level.CaptureResumeSnapshot` captures).
+
+Guest code does read pool cells, in two places, and neither changes anything in a park without them: `WalkEdges.Blocked` blocks every step onto a pool cell for every walk mask, and `GuestWander.OffPath` skips a random
+candidate in the water (its draws are unchanged). A pool cell also scores 2 park-value points, like empty land (`ParkValueRules.CellPoints`). Pool *drawing* (the render-only holes of the ground mesh, the meshes) is
+presentation and reads nothing the simulation hashes.
+
+A new pin covers a park with pools: `DeterminismTests.PoolsFixedRunHash` = `0x4EEF5812C3D8023D`, the fixed synthetic run (the same park, shop, scripts and 14,400 ticks as `FixedRunHash`) on a cross park that also has
+a 4 x 2 and a 3 x 3 block of pool cells (17 cells) painted through `PoolBuilder` before the first tick. It differs from `FixedRunHash` because the pool cells and the block stamps their writes leave are part of the
+digest and because the walks keep out of the water (the first versions of the pin, `0x51B905DC5CF06BC6` and `0xC53F22BFFA12A843`, were taken before walkers that leave the paths were kept out of pool cells and before main's substep scheduler re-pin, which moves the run underneath); no random draw is added or removed.
+
 ## Tests
 
 `DeterminismTests` (no game data needed):

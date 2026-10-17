@@ -21,6 +21,11 @@ public static class FeatureGates
 	public static bool CrossEditionObjects => OpenTpwExtensions.IsEnabled( OfficialExtensions.CrossEditionObjects );
 
 	/// <summary>
+	/// [EXT:pools-extension] The <c>opentpw.pools</c> extension is on for this run: the pool paint tool, its buy-list rows and the pool cell type are available (docs/POOLS.md).
+	/// </summary>
+	public static bool Pools => OpenTpwExtensions.IsEnabled( OfficialExtensions.Pools );
+
+	/// <summary>
 	/// The <c>opentpw.smarter-guests</c> extension is on for this run (docs/SMARTER-GUESTS.md). The guest simulation reads it once, when it is built, never per tick.
 	/// </summary>
 	public static bool SmarterGuests => OpenTpwExtensions.IsEnabled( OfficialExtensions.SmarterGuests );

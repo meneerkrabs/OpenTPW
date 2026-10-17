@@ -45,6 +45,15 @@ public static class OfficialExtensions
 	public static IOpenTpwExtension CrossEditionObjects { get; } = new OpenTpwExtension( "opentpw.cross-edition-objects", "Cross-edition objects", new ModVersion( 1, 0, 0 ), DefaultEnabled: false, AffectsSimulation: true );
 
 	/// <summary>
+	/// The pools extension (docs/POOLS.md): the player paints pool water cells of any size and shape, which are drawn with an animated surface and
+	/// auto-joined edges, cost money per cell and are saved. Off by default because it adds a cell type to the park simulation. A park save records
+	/// the extension only while the park has pool cells, so a park without any saves byte-identically whether the extension is on or off
+	/// (<c>ParkResumeMods.UsedOnlyExtensionIds</c>).
+	/// </summary>
+	// [EXT:pools-extension] OpenTPW's own extension; the original game has no pools
+	public static IOpenTpwExtension Pools { get; } = new OpenTpwExtension( "opentpw.pools", "Pools", new ModVersion( 1, 0, 0 ), DefaultEnabled: false, AffectsSimulation: true );
+
+	/// <summary>
 	/// The guest insights extension (docs/SMARTER-GUESTS.md): the refusal-reason counters (too expensive, queue too long, too scary, too boring, ride broken or closed) in the park information window (phase 1).
 	/// It only reads the simulation (<see cref="GuestRefusalCounters"/>, a passive observer), so it is not recorded in park saves and a player may switch it on freely
 	/// (<see cref="IOpenTpwExtension.PlayerSelectable"/>).
@@ -61,7 +70,7 @@ public static class OfficialExtensions
 	public static IOpenTpwExtension SmarterGuests { get; } = new OpenTpwExtension( "opentpw.smarter-guests", "Smarter guests", new ModVersion( 1, 0, 0 ), DefaultEnabled: false, AffectsSimulation: true, PlayerSelectable: false );
 
 	/// <summary>All official extensions, in declaration order.</summary>
-	public static IReadOnlyList<IOpenTpwExtension> All { get; } = new[] { Online, CrossEditionObjects, SmarterGuests, GuestInsights };
+	public static IReadOnlyList<IOpenTpwExtension> All { get; } = new[] { Online, CrossEditionObjects, SmarterGuests, GuestInsights, Pools };
 
 	public static IOpenTpwExtension? Find( string id ) => All.FirstOrDefault( extension => extension.Id == id );
 }

@@ -31,10 +31,12 @@ public static class ParkSharing
 	/// not record mods yet, so such a park would play differently for whoever visits it (docs/MODS.md).
 	/// </summary>
 	// [EXT:mods] OpenTPW's own mod system; the original game had no mods
-	public static string? ModsRefusal()
+	public static string? ModsRefusal( Level? level = null )
 	{
-		var mods = OpenTPW.Mods.OpenTpwExtensions.Active.SimulationMods;
-		return mods.Count == 0 ? null
+		// [EXT:pools-save] opentpw.pools counts only while the park has pool cells, as a save records it (ParkResumeMods.Capture)
+		var inUse = ParkResumeMods.InUse( level?.Guests?.Grid.Cells );
+		var mods = OpenTPW.Mods.OpenTpwExtensions.Active.SimulationMods.Where( mod => !ParkResumeMods.UsedOnlyExtensionIds.Contains( mod.Id ) || inUse.Contains( mod.Id ) ).ToArray();
+		return mods.Length == 0 ? null
 			: $"This park records mods ({string.Join( ", ", mods.Select( mod => $"{mod.Id} {mod.Version}" ) )}) and cannot be exported yet; turn them off to share a park without mods.";
 	}
 
@@ -43,7 +45,7 @@ public static class ParkSharing
 	{
 		if ( level.IsReadOnlyVisit )
 			throw new InvalidOperationException( "A visited park cannot be exported as the visitor's own park." );
-		if ( ModsRefusal() is { } refusal )
+		if ( ModsRefusal( level ) is { } refusal )
 			throw new InvalidOperationException( refusal );
 		var snapshot = ParkSnapshotBuilder.FromLevel( level );
 		MapFile? map = level.OriginalPark?.Map;

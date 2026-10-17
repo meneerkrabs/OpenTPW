@@ -26,6 +26,7 @@ public partial class Level : IDisposable
 				PatrolTool?.Cancel();
 				BuyLandTool?.Cancel();
 				AreaClearTool?.Cancel();
+				PoolTool?.Cancel();
 			}
 			isPlacing = value;
 		}
@@ -90,14 +91,29 @@ public partial class Level : IDisposable
 	}
 	private bool wasMouseDown;
 	private int renderedCellVersion;
+	private int renderedOtherVersion;
+
+	/// <summary>Notes that the path layer, the queues and the pool holes are drawn for the cell map as it is now.</summary>
+	private void MarkCellsRendered( ParkCellMap cells )
+	{
+		renderedCellVersion = cells.Version;
+		renderedOtherVersion = cells.Version - cells.PoolWrites;
+	}
 
 	/// <summary>Rebuilds the path layer (path tiles and queue models) when the cell map changed since it was last drawn; every frame's update runs it.</summary>
 	internal void RefreshRenderedCells()
 	{
 		if ( OriginalTerrain == null || Guests == null || Guests.Grid.Cells.Version == renderedCellVersion )
 			return;
-		renderedCellVersion = Guests.Grid.Cells.Version;
-		OriginalTerrain.RefreshPaths();
+		var cells = Guests.Grid.Cells;
+		var other = cells.Version - cells.PoolWrites;
+		var pathsChanged = other != renderedOtherVersion;
+		MarkCellsRendered( cells );
+		// [EXT:pools-render] a stroke of pool cells changes the ground mesh's holes only: the path layer and the queue models are not rebuilt for it
+		if ( pathsChanged )
+			OriginalTerrain.RefreshPaths();
+		else
+			OriginalTerrain.RefreshHoles();
 	}
 	/// <summary>Set each frame by the original HUD when the pointer is over it, so HUD clicks do not build.</summary>
 	public bool UiCapturesMouse { get; set; }
@@ -406,12 +422,14 @@ public partial class Level : IDisposable
 				OriginalTerrain.QueueSource = ( x, y ) => cells.TypeAt( x, y ) == ParkCellType.Queue;
 				OriginalTerrain.QueueModelSource = ( x, y ) => cells.TypeAt( x, y ) == ParkCellType.Queue ? QueueModels.Choose( cells, x, y ) : null;
 				OriginalTerrain.PathVariantSource = PathVariants.IsSecond;
+				// [EXT:pools-render] the pool cells are render-only holes of the ground mesh while the extension is on (nothing else reads this)
+				OriginalTerrain.RenderHoleSource = ( x, y ) => PoolRenderHoles.IsHole( cells, x, y, FeatureGates.Pools );
 				// [BIN:TPW-EXE:0x00536490 map init refresh] the world's set-up refreshes every cell in order, so each path cell's chooser rolls once at the start
 				for ( var y = 0; y < cells.Height; y++ )
 					for ( var x = 0; x < cells.Width; x++ )
 						RefreshTile( x, y );
 				OriginalTerrain.RefreshPaths();
-				renderedCellVersion = cells.Version;
+				MarkCellsRendered( cells );
 			}
 			if ( Park != null && Guests != null )
 				Park.AttachGuests( Guests, openParkOnAttach: resumeState == null );
@@ -781,6 +799,7 @@ public partial class Level : IDisposable
 		UpdateWorldInput( Input.Mouse.Left, UiCapturesMouse || ImGuiNET.ImGui.GetIO().WantCaptureMouse,
 			Input.Mouse.Position, new Vector2( Screen.Size.X, Screen.Size.Y ), Input.ModifierMaskDown );
 		RefreshRenderedCells();
+		RefreshPools();
 		AdvanceSimulation( Time.Delta * SimulationTimeScale );
 		foreach ( var entity in Entity.All.ToArray() )
 			entity.Update();
@@ -962,6 +981,7 @@ public partial class Level : IDisposable
 		PatrolTool?.Cancel();
 		BuyLandTool?.Cancel();
 		AreaClearTool?.Cancel();
+		PoolTool?.Cancel();
 		AttachStaffWorld();
 		AttachCoasterChallenges();
 		// The gate holds the economy it was built over; the load replaced it.

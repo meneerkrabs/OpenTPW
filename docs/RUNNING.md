@@ -317,6 +317,7 @@ bash scripts/run.sh --game-path '/path/to/Theme Park World' --fullscreen --upsca
 | `--frame-stats` | Logs frames per second, average/p99/max frame time, CPU use, allocation rate and garbage collections every 5 seconds. |
 | `--save-display-settings` | Also stores these values as the user's display settings. |
 | `--export-ps2 <ps2 DATA dir> <out dir>` | Lists the PS2 version's archives and exports its textures as PNG for viewing (PS2.md). |
+| `--debug-pool [x,y,w,h;...]` | With the `opentpw.pools` extension (`--enable-mod opentpw.pools`): paints pool cells near the camera target once the level is up, for captures ([POOLS.md](POOLS.md#checking-it-on-screen)). |
 | `--capture-world <file.png>` | After `--capture-frames N` frames (default 240) writes the 3D world without interface at its render size and exits; for screenshots and comparisons. |
 | `--debug-guest-looks` | For captures: gives every second guest a balloon and every third a costume as they appear, and keeps a thought bubble over every fourth (`[EXT:debug-guest-looks]`, docs/GUESTS.md "Rendering"). |
 | `--capture-interface` | With `--capture-world`: writes the composed output (world plus the original-style interface, no ImGui) instead of the world alone. |

@@ -245,6 +245,7 @@ public sealed partial class ParkHud
 		level.PatrolTool?.Cancel();
 		level.BuyLandTool?.Cancel();
 		level.AreaClearTool?.Cancel();
+		level.PoolTool?.Cancel();
 		LeaveBuildTool();
 		if ( !level.BeginMove( item ) )
 			return;

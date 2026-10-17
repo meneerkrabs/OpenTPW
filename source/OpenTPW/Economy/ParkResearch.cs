@@ -216,6 +216,7 @@ public sealed class ParkResearch
 			}
 			var percent = count == 0 ? 0 : done * 100 / count;
 			// [BIN:TPW-EXE:0x00503B80 research group threshold] the opener compares the percentage with the word at 0x785540 + 4h (h the category's highest open group, read at 0x503C1C) and stops at h > 6; the settings object 0x785040 lays its keys out from slot 1 at object + 8 + 4 x slot (the builder 0x401030 over the 60-byte descriptors at 0x73FC70), which puts descriptor 165 PercentageForThisTech inside a one-member array of 10 at slot 317 = 0x78553C, so ResearchTech[0] is at 0x78553C, ResearchTech[h + 1] at 0x785540 + 4h, and the opener reads index h + 1 as here (0x785040 + 1276 for entry 0, as the Mac balance +1276); no other code reads 0x78553C
+			// [BIN:TPW-EXE:0x00503B80 research group opener] the original compares against the dword at 0x785540 + 4 * highest, and ResearchTech[0].PercentageForThisTech is at 0x78553C (the key loader 0x4017A0 stores element n at field address + 4 * n; the layout pass 0x401030 puts one spare dword after every array: the same pass puts ResearchCategories[0].Effort at 0x785568, the base of the five-entry loop 0x503330, and StartingWorkLoad at 0x785580, read at 0x502D79), so 0x785540 is ResearchTech[1] and the threshold to open group highest + 1 is ResearchTech[highest + 1]
 			// Thresholds past the data's ResearchTech entries read as 0, like the zero-filled balance block.
 			var threshold = highest + 1 < settings.ResearchTechPercentage.Count ? settings.ResearchTechPercentage[highest + 1] : 0;
 			if ( percent < threshold )

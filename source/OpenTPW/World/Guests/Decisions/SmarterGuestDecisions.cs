@@ -1,9 +1,11 @@
 namespace OpenTPW;
 
 /// <summary>
-/// The policy of the <c>opentpw.smarter-guests</c> extension (docs/SMARTER-GUESTS.md). Version 1.0.0 is the seam alone: every call delegates to <see cref="OriginalGuestDecisions"/>, so the guests
-/// behave as the original and only the extension's own saved state (<see cref="SmarterGuestsState"/>) differs. The rules of the later phases land here, each one bumping the extension's
-/// version, which is the algorithm identity a park save records. The policy draws nothing: any variation comes from <see cref="SmarterGuestsState.Trait"/>.
+/// The policy of the <c>opentpw.smarter-guests</c> extension (docs/SMARTER-GUESTS.md). Version 1.1.0 is value for money (phase 2): a guest no longer walks to a shop or sideshow whose price it expects the stand to
+/// refuse (<see cref="SmarterGuestsRules.WouldRefuse"/>, with a per-guest price sensitivity trait), skips for a while one that refused it (the host's <see cref="PriceMemory"/>, read through
+/// <see cref="AttractionView.RecentlyRefused"/>), and the booth weighs the entrance fee against a park value that counts the open attractions (<see cref="SmarterGuestsRules.BoothParkValue"/>). Everything else still
+/// delegates to <see cref="OriginalGuestDecisions"/>. Later phases add their rules here, each one bumping the extension's version, which is the algorithm identity a park save records. The policy draws nothing and
+/// holds no state: any variation comes from <see cref="SmarterGuestsState.Trait"/> and the memory is the host's.
 /// </summary>
 // [EXT:smarter-guests] OpenTPW's own extension; the original game has no such policy
 public sealed class SmarterGuestDecisions : IGuestDecisions
@@ -12,12 +14,31 @@ public sealed class SmarterGuestDecisions : IGuestDecisions
 
 	public bool UsesExtensionState => true;
 
-	public BoothDecision DecideBooth( in DecisionContext context, in GuestView guest, in BoothView booth ) => original.DecideBooth( context, guest, booth );
+	public bool UsesValueForMoney => true;
 
-	public uint ScoreAttraction( in DecisionContext context, in GuestView guest, in AttractionView attraction ) => original.ScoreAttraction( context, guest, attraction );
+	/// <summary>The entrance fee against the park's worth: the original's verdict over a park value that counts the open attractions.</summary>
+	// [EXT:smarter-guests-value] the host's draw and the rating are the original's; only the rating part of the value is scaled, by the open attractions the host counted (85 to 115 percent)
+	public BoothDecision DecideBooth( in DecisionContext context, in GuestView guest, in BoothView booth )
+	{
+		var value = SmarterGuestsRules.BoothParkValue( BoothVerdict.ParkValue( booth.ParkPoints, booth.Draw, context.Settings ), booth.OpenAttractions, context.Settings );
+		return new( BoothVerdict.Decide( value, booth.Fee, context.Settings ) );
+	}
+
+	/// <summary>The original's score, zeroed for a shop or sideshow the guest expects to refuse, or remembers having been refused at.</summary>
+	// [EXT:smarter-guests-value] price enters the choice: a score of 0 is below the choice floor, so the guest does not walk to a stand that will turn it away (the stand-point test stays the host's)
+	public uint ScoreAttraction( in DecisionContext context, in GuestView guest, in AttractionView attraction )
+	{
+		var score = original.ScoreAttraction( context, guest, attraction );
+		if ( score == 0 || !SmarterGuestsRules.IsPriced( attraction ) )
+			return score;
+		if ( attraction.RecentlyRefused )
+			return 0;
+		return SmarterGuestsRules.WouldRefuse( attraction, guest.Money, SmarterGuestsRules.SensitivityPercent( context.Trait( guest, SmarterGuestsRules.PriceSensitivityTrait ) ) ) ? 0 : score;
+	}
 
 	public bool BeatsInMajorDecision( in DecisionContext context, in GuestView guest, uint score, uint best ) => original.BeatsInMajorDecision( context, guest, score, best );
 
+	/// <summary>The original's comparison. A stand the price rule zeroed can still tie the initial 0 on an odd park turn, as any zero score can; overriding that was measured and moves other parks for the worse (docs/SMARTER-GUESTS.md).</summary>
 	public bool BeatsInMinorDecision( in DecisionContext context, in GuestView guest, uint score, uint best ) => original.BeatsInMinorDecision( context, guest, score, best );
 
 	public QueueAdmission DecideAdmission( in DecisionContext context, in GuestView guest, in AdmissionView admission ) => original.DecideAdmission( context, guest, admission );

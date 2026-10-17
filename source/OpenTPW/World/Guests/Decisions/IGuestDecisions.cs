@@ -17,6 +17,13 @@ public interface IGuestDecisions
 	bool UsesExtensionState => false;
 
 	/// <summary>
+	/// The policy weighs prices (docs/SMARTER-GUESTS.md, phase 2): the host then fills <see cref="AttractionView.Price"/>, <see cref="AttractionView.Willingness"/> and
+	/// <see cref="AttractionView.RecentlyRefused"/>, counts the open attractions into <see cref="BoothView.OpenAttractions"/> and remembers a guest's price refusals in the extension's state. A policy that
+	/// ignores prices leaves it false and the host does none of this, so the original path does no extra work. A policy that wraps another forwards it.
+	/// </summary>
+	bool UsesValueForMoney => false;
+
+	/// <summary>
 	/// The host calls this at the start of every simulation tick (<see cref="GuestSimulation.Tick"/> and the swept tick), before any decision of the tick. The faithful and the smarter policy
 	/// hold no state and ignore it; a policy that meters work per tick (the script policy's step budget) starts its tick here. A policy that wraps another forwards it.
 	/// </summary>

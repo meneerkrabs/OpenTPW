@@ -68,14 +68,20 @@ public class GuestMeasurementTests
 		Assert.AreEqual( ScenarioFixedRunHash, hash, $"0x{hash:X16}" );
 	}
 
-	/// <summary>With <c>opentpw.smarter-guests</c> on and its policy still delegating, the scenario's guests are the pinned run's (docs/SMARTER-GUESTS.md, phase 0b).</summary>
+	/// <summary>
+	/// The scenario's guests with <c>opentpw.smarter-guests</c> 1.1.0 on (docs/SMARTER-GUESTS.md, phase 2). The scenario's dear shop is where the rule acts, so unlike the synthetic park's pin this one moves with the
+	/// rules: it is the on-path pin of the behaviour. A deliberate change of a rule constant changes this value (and bumps the extension's version).
+	/// </summary>
+	private const ulong ScenarioSmarterFixedRunHash = 0xDB81E0A9B39513E1UL;
+
 	[TestMethod]
-	public void ParkScenarioFixedRunHashHoldsWithTheSmarterGuestsExtensionOn()
+	public void ParkScenarioFixedRunHashWithTheSmarterGuestsExtensionOnIsPinned()
 	{
 		using var scope = OpenTPW.Mods.OpenTpwExtensions.Use( SmarterGuestsTests.On() );
 		var park = ScenarioRun( 1, null, 12_000 );
 		Assert.IsInstanceOfType( park.Guests.Decisions, typeof( SmarterGuestDecisions ) );
-		Assert.AreEqual( ScenarioFixedRunHash, park.Hash, $"0x{park.Hash:X16}" );
+		Assert.AreNotEqual( ScenarioFixedRunHash, park.Hash, "the rules change the scenario's guests" );
+		Assert.AreEqual( ScenarioSmarterFixedRunHash, park.Hash, $"0x{park.Hash:X16}" );
 	}
 
 	[TestMethod]

@@ -524,6 +524,9 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			smarter.Bootstrap( GuestsInThingListOrder() );
 		staffOnMap = StaffOnMapView?.Invoke().ToArray();
 		turnStarted = ParkCalendar.Turn( TickCount + turnPhase ) != ParkCalendar.Turn( TickCount - 1 + turnPhase );
+		// [EXT:smarter-guests-value] the price memory forgets what has expired, once per park turn
+		if ( turnStarted )
+			SmarterGuests?.Memory.Prune( ParkTurn );
 		SyncQueues();
 	}
 
@@ -531,6 +534,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	private void RemoveGone( Guest guest )
 	{
 		Observer?.Departed( guest );
+		// [EXT:smarter-guests-value] a departing guest's price memory goes with it, so the memory is bounded by the guests in the park
+		SmarterGuests?.Memory.Forget( guest.BirthId );
 		// [BIN:TPW-EXE:0x0050B780 destroy request] a leaving guest asks for its destruction (0x0050B780 → 0x00516310); the id is freed at the park turn's end (0x00516641)
 		things.QueueDestroy( guest.Id );
 		byId.Remove( guest.Id );
@@ -1249,7 +1254,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	private void PayAdmission( Guest guest )
 	{
 		// the verdict's draw is the host's, taken first; the decision layer weighs the fee (BoothVerdict.Decide in the original)
-		var verdict = decisions.DecideBooth( ContextNow(), ViewOf( guest ), new BoothView( (uint)Math.Max( 0, ParkPoints?.Invoke() ?? 0 ), (uint)Math.Max( 0, AdmissionFee ), random.NextWord() ) ).Verdict;
+		var verdict = decisions.DecideBooth( ContextNow(), ViewOf( guest ), new BoothView( (uint)Math.Max( 0, ParkPoints?.Invoke() ?? 0 ), (uint)Math.Max( 0, AdmissionFee ), random.NextWord(), OpenAttractionCount() ) ).Verdict;
 		if ( !Enum.IsDefined( verdict ) )
 			throw PolicyError( $"returned the booth verdict {(int)verdict}" );
 		if ( verdict == BoothVerdictKind.FarTooExpensive )
@@ -2535,6 +2540,9 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		// [BIN:TPW-EXE:0x0050133D dismissal sound] the dismissal that follows (0x005012F0) plays the guest sound 0x80 for a thing id with its low three bits 0 (Voiced); [EXT:guest-event-ring] its event 6 and the refusal's event 10 are records of the debug-only guest event ring
 		// [BIN:TPW-EXE:0x0050077F refusal walk-away] after 0x004FEA70(1) the ride's walk-away count (0x004E1670), then its loading slot (0x004E0AC0) and queue list (0x004DDD20) let the guest go and the dismissal 0x005012F0 runs
 		Payments?.WalkedAway( attraction );
+		// [EXT:smarter-guests-value] a policy that weighs prices remembers where it was refused (the extension's state, keyed by birth id; nothing is drawn)
+		if ( decisions.UsesValueForMoney )
+			SmarterGuests?.Memory.Remember( guest.BirthId, attraction.AttractionId, ParkTurn + SmarterGuestsRules.RefusalMemoryTurns );
 		DismissFromQueue( guest, attraction, GuestThought.Dissatisfied, QueueEndReason.Price );
 	}
 

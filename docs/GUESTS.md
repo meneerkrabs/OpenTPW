@@ -66,15 +66,17 @@ WAD contains a kid/peep/visitor model (all 312 WADs listed). The sprites live in
 | --- | --- | --- |
 | `Generic/Kids` | `SPR_{BE,BI,CH,FR,KI,SA,SU,TA}.{ESP,FPC,TPC}` | 8 kid sets, 175 frames each |
 | `Generic/Kidsheads` | `SPR_xx.{ESP,TPC}` | heads (8 frames × 7 directions); drawn on riders of ADDHEAD rides (below) |
-| `Generic/Thoughts` | `SPR_TB` (16), `SPR_TC` (10) | thought-bubble icons; not used yet |
-| `Generic/{Balloons,Litter,Particles,SpecialFX}` | `.ESP/.TPC` | balloons, litter, particles |
+| `Generic/Thoughts` | `SPR_TB` (16), `SPR_TC` (10) | thought-bubble icons (drawn by `ThoughtRenderer`) |
+| `Generic/{Balloons,Litter,Particles,SpecialFX}` | `.ESP/.TPC` | balloons (`BalloonRenderer`), litter (`LitterRenderer`), particles, the upgrade balloon (`UpgradeBalloonRenderer`) |
 | `Generic/{Guards,Handymen,Mechanics,Researchers}`, `<Theme>/{Entertainers,Costumes,Costumeheads}` | | staff and entertainer sprites |
 
 **`.FPC` / `.TPC` sprite bank** (little-endian): `u16 3, u16 3, u32 frameCount,
 u32 0`, then 255 palette entries of 4 bytes **B, G, R, A** (alpha varies: anti-
 aliased edges), then per frame: `u32 dataSize, u16 width, u16 height, u16 128,
 u16 128` (pixels per sprite unit across and down: the placement 0x5890E0 spans the quad from
-`originX / A · scale` to `(width + originX) / A · scale`, likewise down with B; 128 in every frame),
+`originX / A · scale` to `(width + originX) / A · scale`, likewise down with B; 128 in every frame. The reader names the fields
+`SpriteFrame.PixelsPerUnitX` (A) and `PixelsPerUnitY` (B), the writer's frame has one `PixelsPerUnit` for both; OpenTPW honours them, see
+[Pixels per unit](#pixels-per-unit-and-resolution) below),
 `i32 originX, i32 originY` (offset of the frame's
 top-left corner from the hotspot; for walking kids the hotspot is at the feet),
 then `height` RLE rows. Each row is a length byte followed by control bytes:
@@ -100,8 +102,7 @@ first byte (0x541FA0), and 0x540C70 returns entry e as program (byte 0 − 1, th
 (byte 1 − 1) and two program registers (bytes 2 and 3). Their only user is the entertainer's search 0x4D46D0, which
 starts a performance as script 13 + (r mod (n − 1)), or 13 for one entry (scripts 13–16 hold entries 0–3), and
 0x475B80 plays it. Exactly the twelve entertainer banks have one: `01 05 00 00` (program 0 on slot 4) in eleven and
-`01 05 02 28` in Hallow SPR_DR, so every entertainer performs slot 4 (GUEST-015 keeps the program's steps for SPR_DR's
-2 and 40).
+`01 05 02 28` in Hallow SPR_DR, so every entertainer performs slot 4; the program's registers 0x11 and 0x12 are SPR_DR's 2 and 40: frames 0-2 once, then for ever the frames from 2 on and 41 steps of frame 0 (`StaffScripts.PerformanceFrame`, GUEST-015).
 
 **Writing a sprite set** (`SpriteBankWriter`, `SpriteAnimationWriter`, `SpriteSetBuilder`). A usable set is the `.ESP` plus the bank its byte
 0x10C selects (`.FPC` when set, else `.TPC`; `GuestSpriteAtlas.LoadSets` opens exactly those). The `.FPS`/`.TPS` files the ESP names are never shipped and
@@ -122,6 +123,21 @@ more go through median cut with nearest-entry mapping. Defaults of a new set, an
 `FullDetail` true (flag 0x10C = 1, FPC and TPC written with the same content, as every full-detail set ships both), kid flag 0, both unit words 128 (every
 shipped frame), no performance entries. Unverified against tp.exe: whether the original's loader accepts a bank with unused zero palette entries or frames wider than any shipped
 one (they decode here), and how the game blends the palette's alpha (the readers treat it as straight alpha).
+
+### Pixels per unit and resolution
+
+Every frame header carries two u16 fields, A across and B down. The original's sprite placement `0x5890E0` ([BIN:TPW-EXE:0x005890E0 sprite placement]) spans the quad from `originX / A · scale` to
+`(width + originX) / A · scale` and likewise vertically with `originY`, `height` and B, so a frame drawn with 256 in both fields covers the same world area with half as many world units per pixel, that is twice the pixels for
+the same size. All 29 FPC and 46 TPC banks of Theme Park World have 128 in both fields (`GuestAssetTests.EveryEspChoosesTheBankTheGameOpens`).
+
+OpenTPW honours the fields in every sprite renderer (`GuestRenderer` for the kids, costumes and swimmers, `RideHeadRenderer`, `BalloonRenderer`, `ThoughtRenderer`, the staff and entertainers through `GuestRenderer`/`StaffRenderer`, the hire window's
+figure and the picking of guests in the world): `GuestAtlasFrame.Extents` scales a pixel by `128 / A` across and `128 / B` down on top of the engine's fixed `GuestRenderer.UnitsPerPixel` (0.045, an approximation), so a
+frame of 128 is drawn exactly as before (the factor is 1.0, the multiplication leaves every float unchanged: `SpritePixelScaleTests.FramesWith128PixelsPerUnitMakeTheFixedScaleQuadBitForBit`,
+5000 random frames, mirrored and not). Nothing pinned can move with the shipped data: every shipped frame has 128 (`GuestAssetTests.EveryShippedAtlasHasUnitScaleAndTheOriginalWidth`), and sprites are presentation only, so no simulation
+hash, save or determinism pin reads them. Particle sprites (`ParticleSpriteAtlas`) are drawn by the particle system's own size rules and do not read the fields; no shipped bank would show a difference.
+
+The 1024-pixel atlas width of `GuestSpriteAtlas` suffices for every shipped set (corpus-tested: all are 1024 wide, at most 512 rows). A set drawn at 2x needs up to 2048 rows in 1024 columns; beyond `MaximumHeight` (2048, which is also what WebGL2 guarantees)
+an atlas is packed into the next power of two wider (2048, then 4096) instead of a taller texture, a frame wider than the row widens it too, and a set that fits no 4096 x 4096 atlas is refused (skipped with a warning in `LoadSets`). Frames drawn at more than 128 pixels per unit get 4 pixels of padding instead of 2 so mip levels do not bleed into the next frame. The pools extension's sets (docs/POOLS.md): 1024 x 256 to 1024 x 512 for the kids and heads, 1024 x 2048 for the swimwear sets, 90 MiB of RGBA in all and about 120 MiB on the GPU with mip levels (pinned by `PoolsContentTests.TheShippedAtlasSizesArePinned`); the decoded pixels are released after the upload.
 
 Kid slots (identical in all 8 sets; labels from viewing the frames, not traced):
 
@@ -712,8 +728,8 @@ Visitor opcodes (all operate on the guests the script holds; semantics inferred)
 | ADDHEAD / DELHEAD | the ride's head table (`RideHeadSpace`): a free slot takes the visitor, DELHEAD frees it; the head is drawn by `RideHeadRenderer` (below) | Mac `0x100B0E9C` / `0x100B0F90` |
 
 `TOUR/BUMP/COAST` (ride-type controllers with their own guest handling, e.g.
-`COAST 3 VAR_LETMEOFF`), `WALKST_FLOAT`, `WALKFLOATSTAT`, `WALKFLOATSTOP` stay
-unimplemented. A rider on a ride is not drawn as a guest (`RideHandlesSprite 1`);
+`COAST 3 VAR_LETMEOFF`) stay unimplemented. `WALKST_FLOAT`, `WALKFLOATSTAT` and
+`WALKFLOATSTOP` are the script's own float state, which the VM keeps (RSE-VM.md). A rider on a ride is not drawn as a guest (`RideHandlesSprite 1`);
 on a ride whose script runs ADDHEAD the rider's head is drawn at the head's node
 instead (see "Riders' heads"). Riders on the other rides stay hidden: the original
 places them through the model and seat attachment is not implemented.
@@ -939,9 +955,12 @@ per visible guest (both windings), feet on the bilinear heightfield corner
 heights (also over heightfield holes such as the entrance road), one draw call
 with up to eight kid atlases (`GuestSpriteAtlas`, 1024-wide RGBA, built on the
 CPU from `.FPC`). Direction comes from the guest's heading relative to the
-camera; the walk frame advances 10 frames per cell walked. Sprite world size
-(0.045 engine units per pixel, ≈ one cell per kid height) is an approximation.
-Not drawn: thought bubbles, shadows, riders' bodies on a ride (their heads are drawn, see below).
+camera; the walk frame advances 20 frames per cell walked (10 running). Sprite world size
+is read from the original: one pixel is 20 / 128 x sqrt(2) = 0.2210 world units (ten a cell), 0.0442 engine units (`SpriteScale`: the quad placement 0x5890E0 adds 20 sprite extent units a sprite unit
+of 128 pixels in clip space, and the projection builder 0x578BE0 runs a 90 degree field of view with the clip x and y scaled by cos 45 degrees); a kid of 43 pixels stands 0.95 cell.
+A kid's set is the original's own draw at its creation, the world generator reseeded with its thing id and the first draw shifted right by 2 modulo the 8 sets (`GuestAppearance.KidSet`), not its peep type;
+a walking kid steps its 8-frame walk 20 times a cell (0x4FA2A0: the interval is 62 ms over twice the speed).
+Not drawn: shadows, riders' bodies on a ride (their heads are drawn, see below).
 
 **Costumes.** A guest in costume is drawn by a second `GuestRenderer` with the theme's costume set (`esprites.wad/<theme>/Costumes`: Jungle
 `SPR_TI`, Fantasy `SPR_BK`, Hallow `SPR_HK`, Space `SPR_SK`; one set per theme, so the original's draw among them, `0x541f70(2)`, always
@@ -953,7 +972,11 @@ and a burst frame, the colour drawn anew whenever the balloon appears (after a p
 `0x4fa030`: the balloon hangs at the guest's position 0.35 of a park turn behind (`0x4f9f00`), one unit up, lowered by twice the distance
 between that point and the guest in world units (ten per cell), and bobbing through a 20-entry table (0 to 0.2, scaled by 1.5). A
 balloon that bursts (its life ends, a prank, a guard's catch) shows its burst frame for a moment; one put away for a ride just goes.
-GUEST-017 lists what is approximated (the colour stream, the bob's pace, the burst's length and fade). The developer option
+The colour is the guest's own draw (the second draw after the reseed with its thing id, 0x541FD0, the same whenever the balloon appears, a shop's gift or a give-back), the bob phase steps on every eleventh balloon placement and every balloon is placed on every rendered frame (0x4FA030 from 0x518F90), and a burst fades the sprite from alpha 250 by 20 a step for 13 steps of 62 ms (script 0x74F4C0, register 7 the alpha byte, drawn through the sprite shader's alpha). GUEST-017 keeps the order of the placements and the burst's first frame.
+
+**Litter.** `LitterRenderer` draws each item the drop creates (0x4D93B0; the only creators are the guest's litter step and the vomit step) as one flat quad of `Generic/Litter/SPR_LI` on the ground (script flag 0x80000: the quad's y extents go to the map's y axis, 0x589320), at the cell corner plus the 1-9 tenths the cell id's two draws give, half a unit above the ground height, the picture upright with the map's rows running down. The slot is the kind: 1-5 slots 0-4, 6 and any other slot 5, vomit slot 6, stinkbomb slot 7. The width takes the display's height over width (0x582EB0, 0.75 for 4:3, which is what `SpriteScale` uses). The sweep deletes the sprite (0x4D9620); litter restored from a save has none, as the original's cell load makes none.
+
+**Upgrade balloon.** An installed upgrade (0x4DF8F0) deletes the ride's old balloon and, when the new level is 1 or 2, hangs one of `Generic/SpecialFX/SPR_SF` (a blue balloon with a yellow up arrow, its hotspot 85 pixels below its top) over the middle of the ride's front cell; the ride's removal (0x4DD0A0) takes it. `UpgradeBalloonRenderer` draws it from `ParkEventKind.UpgradeCompleted`. The developer option
 `--debug-guest-looks` gives every second guest a balloon and every third a costume as they appear, for captures.
 
 ## Riders' heads
@@ -979,7 +1002,7 @@ OpenTPW (`RideHeadSpace`, `HeadPresentation`, `RideHeadRenderer`): each script k
 
 The original-level smoke test requires submitted head quads and separately compares visible/hidden GPU captures on one identified, naturally boarded animating ride. Simulation, animation, camera and shader time are frozen; repeated visible frames and repeated hidden frames must each be byte-identical, and toggling only that attraction's head renderer must change pixels. This establishes visible OpenTPW head geometry, not original visual equivalence.
 
-Approximations ([HEADS register](https://opentpw.io/docs/FIDELITY-REGISTER.html)): the slot draw is the original's, `labs(worldRand() >>> 1) % length` (tp.exe `0x554CB5`, repeated until a free slot), on the one shared world generator `0x516330` that the park's guests, staff and scripts draw from, so HEADS-001 is retired (the record-to-node link, the per-script allocation and the table-length rule, formerly HEADS-002/003, are traced and retired too). The remaining head presentation uncertainty (HEADS-004): how sprite scale 1.0 maps to world units (the body's pixel scale times 0.685 is used), depth handling, the reference frame of the roll (the node matrix in world axes is used; the PC routine `0x44B510` turns the sprite by the angle between the chosen frame's pre-rendered up direction and the view), and costume heads (guests wear none). The frame choice is read (October 16, 2026): `0x44B510` takes the (row, column) of the 7 by 8 table whose direction has the largest dot product with the camera direction in the node's frame (first on a tie; rows 0 and 6 use column 0), where row r is r times 30 degrees from +Y towards +Z and column 0 faces local +Z, each column turning 45 degrees about Y from +Z towards -X. A child or sound script has no head table at all on the PC (it is created with thing id 0, which skips the table allocation, and copies the parent's thing id only afterwards; ADDHEAD and DELHEAD exit on the NULL table, tp.exe `0x558D2B`, `0x554C89`, `0x554D6F`), and OpenTPW does the same: their head opcodes do nothing (HEADS-005 retired, October 14, 2026); no associated child/sound script in this shipped corpus uses a head command.
+Approximations ([HEADS register](https://opentpw.io/docs/FIDELITY-REGISTER.html)): the size and depth are read (a head is a camera-facing quad of scale 0.685 at the node, 0.2210 x 0.685 world units a pixel, no depth offset; the PC routine sets the sprite's frame register to 8 x row + column, register 9 to the roll in turns and register 8 to the scale 0.685, tp.exe 0x44BA04..0x44BA34); the slot draw is the original's, `labs(worldRand() >>> 1) % length` (tp.exe `0x554CB5`, repeated until a free slot), on the one shared world generator `0x516330` that the park's guests, staff and scripts draw from, so HEADS-001 is retired (the record-to-node link, the per-script allocation and the table-length rule, formerly HEADS-002/003, are traced and retired too). The remaining head presentation uncertainty (HEADS-004): how sprite scale 1.0 maps to world units (the body's pixel scale times 0.685 is used), depth handling, the reference frame of the roll (the node matrix in world axes is used; the PC routine `0x44B510` turns the sprite by the angle between the chosen frame's pre-rendered up direction and the view), and costume heads (guests wear none). The frame choice is read (October 16, 2026): `0x44B510` takes the (row, column) of the 7 by 8 table whose direction has the largest dot product with the camera direction in the node's frame (first on a tie; rows 0 and 6 use column 0), where row r is r times 30 degrees from +Y towards +Z and column 0 faces local +Z, each column turning 45 degrees about Y from +Z towards -X. A child or sound script has no head table at all on the PC (it is created with thing id 0, which skips the table allocation, and copies the parent's thing id only afterwards; ADDHEAD and DELHEAD exit on the NULL table, tp.exe `0x558D2B`, `0x554C89`, `0x554D6F`), and OpenTPW does the same: their head opcodes do nothing (HEADS-005 retired, October 14, 2026); no associated child/sound script in this shipped corpus uses a head command.
 
 Not done in OpenTPW: heads of riders on coaster and tour cars. The cars carry head records (above) and the PC executable keeps them as
 records with a handle and no head table (maexah `saves.md`, "A head on a node"); the Mac code that places a car's rider is not
@@ -1055,6 +1078,7 @@ The All Attractions shop/sideshow business rows display the counters already mai
 - `APPROX:QUEUE-022`, closed as `[EXT:synthetic-ride-zero-guard]` (only synthetic objects lack operating values).
 - `APPROX:ARRIVAL-002`, closed as `[EXT:online-visit-settings]` (the online visit is a read-only extension).
 - GUEST-006 keeps its original-behaviour remainder; `[EXT:online-bubbles-on]` covers the bubbles in a visit.
-- GUEST-017 keeps its remainder; `[EXT:empty-costume-heads-keep-kid-head]` avoids the original's division by an empty group.
+- GUEST-017 keeps its remainder (the order of the balloon placements, the burst's first frame); `[EXT:empty-costume-heads-keep-kid-head]` avoids the original's division by an empty group. The costume return needs no change: the reseed with the thing id makes the kid set repeat.
+- Round 7 (sprites in the game): the sprite pixel size, the kid sets, the balloon colour, bob and fade, the staff scripts and their sprite clock, the entertainers' program, the staff variant, litter and the upgrade balloon are read and drawn (GUEST-014 to 017 narrowed, HEADS-004 narrowed). The balloon give-back after a ride reseeds the world generator and takes two draws (0x502053).
 - PATH-007 keeps the land rules; `[EXT:no-land-maps]` covers maps without a fence setup, Theme Park Inc and visits.
 - GUEST-014 is split: GUEST-020 holds the flagged-folder bank limits. PATH-013 is retired: PATH-017 holds the P window's layer. TRACK-032 is new: the saved-ride controller.

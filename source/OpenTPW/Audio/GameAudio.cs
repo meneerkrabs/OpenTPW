@@ -124,12 +124,12 @@ public static class GameAudio
 	public const uint GlobeAmbienceEvent = 3;
 	/// <summary>The enter-park sound (<c>cat_globallobbysfx</c> 4).</summary>
 	public const uint EnterParkEvent = 4;
-	/// <summary>The repair sound a ride script's <c>REPAIREFFECT 1</c> starts (<c>0x100B1F78</c> → <c>0x100ACC24</c>: <c>cat_kids</c>, families 75–78/79–82/83–86/87–90 by the object's repair level, index 0 for the traced call).</summary>
-	public const uint RepairStartEvent = 75;
-	/// <summary>The first sound pair a ride script's <c>REPAIREFFECT 0</c> plays (<c>0x100B1E60</c>–<c>0x100B1EC0</c>: <c>cat_rides</c> 111 at the object's position).</summary>
-	public const uint RepairStopEvent = 111;
-	/// <summary>The second sound of <c>REPAIREFFECT 0</c> (<c>0x100B1ED0</c>–<c>0x100B1F00</c>: <c>cat_rides</c> 211 at the object's position).</summary>
-	public const uint RepairStopSecondEvent = 211;
+	/// <summary>The scream-family sound a ride script's <c>REPAIREFFECT 0</c> plays by the script's band (tp.exe <c>0x55635F</c> → <c>0x551320</c>: <c>cat_kids</c>, families 75–78/79–82/83–86/87–90, index 0; silent for band 0).</summary>
+	public const uint RepairBandEvent = 75;
+	/// <summary>The first sound a ride script's non-zero <c>REPAIREFFECT</c> plays (tp.exe <c>0x5562CD</c>: event 0x6F of the global <c>cat_rides</c> at the object's position).</summary>
+	public const uint RepairFirstEvent = 111;
+	/// <summary>The second sound of a non-zero <c>REPAIREFFECT</c> (tp.exe <c>0x556340</c>: event 0xD3 of the global <c>cat_rides</c> at the object's position).</summary>
+	public const uint RepairSecondEvent = 211;
 	/// <summary>The rain loop of the global <c>cat_ambient</c> (<c>0x10103C4C</c> mode 0: effect 0x21 submitted flat, the handle kept at the weather thing's +0x54).</summary>
 	public const uint RainEvent = 0x21;
 	/// <summary>The thunder one-shot of the global <c>cat_ambient</c> (<c>0x101034D8</c>–<c>0x10103518</c>: event 0x20 submitted at the last bolt's top, the weather thing's +0x48..+0x50).</summary>
@@ -831,40 +831,39 @@ public static class GameAudio
 		return events.StartSentence( sound.Value.Category, eventId, AudioChannel.Effects, position: position );
 	}
 
-	// [BIN:STP-PPC:0x100B1F78 REPAIREFFECT show] the repair-start path calls the cat_kids submit family (0x100ACC24; the traced call selects event 75, families up to 90 by the object's repair level)
-	// [BIN:STP-PPC:0x100B1E60 REPAIREFFECT hide] hiding plays cat_rides 111 and 211 (0x100B1EC0/0x100B1F00) at the object's position
-	// [BIN:TPW-EXE:0x55635f REPAIREFFECT 1] with more than five operands it calls 0x551320(band, 1, 1, x, y, z) at the object's position (0x556a80): the index (a + b) / 50 capped at 3 is 0 here, and the band is the word [[vm+0x1c]+0x14], the script's own variable slot 5 (the array [vm+0x1c] holds the script variables: the interpreter's variable operand 0x40000000 | n is stored at [vm+0x1c + 4n], 0x556408), which the standard ride scripts keep as VAR_ONRIDE; the family comes from it (0 silent, 1 -> 75, 2-3 and negative -> 79, 4-7 -> 83, >= 8 -> 87, all cat_kids 0x803a24; 0x551351-0x5514d8)
-	/// <summary>The <c>cat_kids</c> repair sound of a band at index 0 (<c>0x551320</c>), or <c>null</c> for the silent band 0.</summary>
-	public static uint? RepairStartEventForBand( int band ) => band switch
+	// [BIN:TPW-EXE:0x5562C5 REPAIREFFECT polarity] after the type's repair effect is switched (0x556DE0), `cmp esi, edi; je 0x55635F` sends the value 0 to the band sound and every other value falls through to the two sounds 0x6F and 0xD3 of the global ride category ([0x803A28], the category EVENT type 5 uses, 0x557875) at the object's position (0x556A80, each coordinate through __ftol). Earlier versions read the Mac code the other way round (REPAIREFFECT 1 as the band sound)
+	// [BIN:TPW-EXE:0x55635f REPAIREFFECT 0] with more than five operands it calls 0x551320(band, 1, 1, x, y, z) at the object's position (0x556a80): the index (a + b) / 50 capped at 3 is 0 here, and the band is the word [[vm+0x1c]+0x14], the script's own variable slot 5 (the array [vm+0x1c] holds the script variables: the interpreter's variable operand 0x40000000 | n is stored at [vm+0x1c + 4n], 0x556408), which the standard ride scripts keep as VAR_ONRIDE; the family comes from it (0 silent, 1 -> 75, 2-3 and negative -> 79, 4-7 -> 83, >= 8 -> 87, all cat_kids 0x803a24; 0x551351-0x5514d8)
+	/// <summary>The <c>cat_kids</c> sound of a band at index 0 (<c>0x551320</c>), or <c>null</c> for the silent band 0.</summary>
+	public static uint? RepairBandEventForBand( int band ) => band switch
 	{
 		0 => null,
-		1 => RepairStartEvent,
-		< 4 => RepairStartEvent + 4,
-		< 8 => RepairStartEvent + 8,
-		_ => RepairStartEvent + 12,
+		1 => RepairBandEvent,
+		< 4 => RepairBandEvent + 4,
+		< 8 => RepairBandEvent + 8,
+		_ => RepairBandEvent + 12,
 	};
 
 	/// <summary>
-	/// The sounds of a ride script's <c>REPAIREFFECT</c> instruction: showing the repair effect starts a repair sound of
-	/// <c>cat_kids</c>, hiding it plays two <c>cat_rides</c> sounds at the object's position.
+	/// The sounds of a ride script's <c>REPAIREFFECT</c> instruction: a non-zero value plays two <c>cat_rides</c> sounds at the object's position, zero plays the band-dependent
+	/// <c>cat_kids</c> one-shot (silent for the riders count 0 of a repair).
 	/// </summary>
 	public static void PlayRepairEffect( int show ) => PlayRepairEffect( show, null );
 
-	/// <summary>The show sound (<c>cat_kids</c> 75) or the hide pair at a validated sound-space origin (the object's place; flat without one); returns submitted voices for owner cleanup.</summary>
+	/// <summary>The band sound (value 0, <c>cat_kids</c> 75 family) or the pair of the non-zero value at a validated sound-space origin (the object's place; flat without one); returns submitted voices for owner cleanup.</summary>
 	internal static (AudioVoice? First, AudioVoice? Second) PlayRepairEffect( int show, Vector3? position, int band = 1 )
 	{
 		if ( events == null )
 			return (null, null);
-		if ( show != 0 )
+		if ( show == 0 )
 		{
-			if ( RepairStartEventForBand( band ) is not { } start )
+			if ( RepairBandEventForBand( band ) is not { } start )
 				return (null, null);
 			return (position == null ? events.Play( Kids, start, AudioChannel.Effects ) : events.PlayAt( Kids, start, AudioChannel.Effects, position.Value ), null);
 		}
-		var first = position == null ? events.Play( Rides, RepairStopEvent, AudioChannel.Effects ) : events.PlayAt( Rides, RepairStopEvent, AudioChannel.Effects, position.Value );
+		var first = position == null ? events.Play( Rides, RepairFirstEvent, AudioChannel.Effects ) : events.PlayAt( Rides, RepairFirstEvent, AudioChannel.Effects, position.Value );
 		try
 		{
-			var second = position == null ? events.Play( Rides, RepairStopSecondEvent, AudioChannel.Effects ) : events.PlayAt( Rides, RepairStopSecondEvent, AudioChannel.Effects, position.Value );
+			var second = position == null ? events.Play( Rides, RepairSecondEvent, AudioChannel.Effects ) : events.PlayAt( Rides, RepairSecondEvent, AudioChannel.Effects, position.Value );
 			return (first, second);
 		}
 		catch

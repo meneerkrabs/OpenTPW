@@ -25,6 +25,8 @@ public static class PoolExtraSettings
 
 	/// <summary>The most the swimmer's feet are raised on the board, in engine units (the board's top is 6.6 model units, 0.2 engine units each).</summary>
 	public const float BoardLift = 1.32f;
+	/// <summary>The top of the lounger's cushion above the deck, in engine units: 3.4 model units (tools/blender/opentpw_pool_extras.py, <c>add_lounger</c>: the seat cushion spans 2.6 to 3.4), 0.2 engine units each.</summary>
+	public const float LoungerBedLift = 0.68f;
 
 	/// <summary>A ladder: turns standing on the deck before jumping in, 5 to 10.</summary>
 	public const int LadderStandTurns = 5, LadderStandExtra = 6;
@@ -128,7 +130,9 @@ internal static class PoolExtraMotion
 		switch ( step )
 		{
 			case 3:
-				if ( StepToward( simulation, guest, Along( land, side, PoolExtraSettings.RimDistance ), PoolExtraSettings.WalkSpeed ) )
+				// at the rim: wait (up to LandingWaitTurns, counted in the turns of this step) while another body is in the water where the jump lands
+				if ( StepToward( simulation, guest, Along( land, side, PoolExtraSettings.RimDistance ), PoolExtraSettings.WalkSpeed )
+					&& (guest.PoolActivityTurns++ >= PoolAttractionSettings.LandingWaitTurns || !PoolActivityHelpers.LandingBusy( simulation, guest, Entry( land, side ) )) )
 					SetStep( guest, 4 );
 				break;
 			case 4:
@@ -201,6 +205,9 @@ public sealed class LadderActivity : IPoolActivity
 
 	public void Abort( GuestSimulation simulation, Guest guest ) { }
 
+	/// <summary>A body in the water while swimming to the ladder (0), jumping in (4) and splashing (5).</summary>
+	public bool InWater( GuestSimulation simulation, Guest guest ) => PoolExtraMotion.StepOf( guest ) is 0 or 4 or 5;
+
 	public int SpriteSlot( Guest guest ) => PoolExtraMotion.StepOf( guest ) switch
 	{
 		0 => PoolSwimSlots.Crawl, 1 => PoolSwimSlots.LadderClimb, 2 => PoolSwimSlots.Stand, 3 => PoolSwimSlots.Walk, 4 => PoolSwimSlots.Dive, _ => PoolSwimSlots.SplashDown
@@ -256,11 +263,13 @@ public sealed class DivingBoardActivity : IPoolActivity
 				break;
 			case 2:
 				if ( PoolExtraMotion.StepToward( simulation, guest, PoolExtraMotion.Along( land, side, PoolExtraSettings.BoardEnd ), PoolExtraSettings.WalkSpeed ) )
-					PoolExtraMotion.SetStep( guest, 3, PoolExtraSettings.BoardPauseTurns );
+					PoolExtraMotion.SetStep( guest, 3, PoolExtraSettings.BoardPauseTurns + PoolAttractionSettings.LandingWaitTurns );
 				break;
 			case 3:
+				// the pause is the turns above LandingWaitTurns; then the diver waits (up to LandingWaitTurns more) while another body is in the water at the landing
 				PoolExtraMotion.Face( guest, side );
-				if ( --guest.PoolActivityTurns <= 0 )
+				if ( --guest.PoolActivityTurns <= PoolAttractionSettings.LandingWaitTurns
+					&& (guest.PoolActivityTurns <= 0 || !PoolActivityHelpers.LandingBusy( simulation, guest, PoolExtraMotion.Along( land, side, PoolExtraSettings.BoardLanding ) )) )
 					PoolExtraMotion.SetStep( guest, 4 );
 				break;
 			case 4:
@@ -279,6 +288,9 @@ public sealed class DivingBoardActivity : IPoolActivity
 	}
 
 	public void Abort( GuestSimulation simulation, Guest guest ) { }
+
+	/// <summary>A body in the water while swimming to the foot of the board (0), diving (4) and splashing (5); the board's guests are above the water.</summary>
+	public bool InWater( GuestSimulation simulation, Guest guest ) => PoolExtraMotion.StepOf( guest ) is 0 or 4 or 5;
 
 	public int SpriteSlot( Guest guest ) => PoolExtraMotion.StepOf( guest ) switch
 	{
@@ -426,11 +438,15 @@ public sealed class LoungerActivity : IPoolActivity
 
 	public void Abort( GuestSimulation simulation, Guest guest ) { }
 
+	/// <summary>A body in the water while swimming to the lounger (0), jumping in (4) and splashing (5).</summary>
+	public bool InWater( GuestSimulation simulation, Guest guest ) => PoolExtraMotion.StepOf( guest ) is 0 or 4 or 5;
+
 	public int SpriteSlot( Guest guest ) => PoolExtraMotion.StepOf( guest ) switch
 	{
 		0 => PoolSwimSlots.Crawl, 1 => PoolSwimSlots.LadderClimb, 2 => PoolSwimSlots.Lying, 3 => PoolSwimSlots.Walk, 4 => PoolSwimSlots.Dive, _ => PoolSwimSlots.SplashDown
 	};
 
-	/// <summary>As the ladder's: from the water up to the deck, lying on it, and back down with the jump.</summary>
-	public float? FeetHeight( GuestSimulation simulation, Guest guest, PoolFeetHeights heights ) => PoolExtraMotion.EdgeFeet( guest, heights );
+	/// <summary>As the ladder's: from the water up to the deck and back down with the jump, but the lie (step 2) is on the cushion, <see cref="PoolExtraSettings.LoungerBedLift"/> above the deck, where the bottom-anchored lying frames rest.</summary>
+	public float? FeetHeight( GuestSimulation simulation, Guest guest, PoolFeetHeights heights )
+		=> PoolExtraMotion.StepOf( guest ) == 2 ? heights.Deck + PoolExtraSettings.LoungerBedLift : PoolExtraMotion.EdgeFeet( guest, heights );
 }

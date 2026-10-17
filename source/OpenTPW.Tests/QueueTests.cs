@@ -28,14 +28,15 @@ public class QueueTests
 	/// </summary>
 	internal sealed class Rig
 	{
-		public readonly GuestPathGrid Grid = new( 12, 12 );
+		public readonly GuestPathGrid Grid;
 		public readonly RideVisitorBridge Ride;
 		public readonly RideVM Script;
 		public readonly GuestSimulation Simulation;
 		public bool Open = true;
 
-		public Rig( int queueCells = 5, QueueParameters? parameters = null, GuestNeeds satisfies = GuestNeeds.None, int capacity = 5, bool takesGuests = false, int excitement = 55, Action<GuestSettings>? configure = null, RideVisitorKind? kind = null )
+		public Rig( int queueCells = 5, QueueParameters? parameters = null, GuestNeeds satisfies = GuestNeeds.None, int capacity = 5, bool takesGuests = false, int excitement = 55, Action<GuestSettings>? configure = null, RideVisitorKind? kind = null, int gridSize = 12 )
 		{
+			Grid = new( gridSize, gridSize );
 			for ( var x = 0; x < 10; x++ )
 				Grid.SetPath( x, 0, true );
 			Ride = new RideVisitorBridge( RideId, "Queue ride", kind ?? (satisfies == GuestNeeds.None ? RideVisitorKind.Ride : RideVisitorKind.Facility), capacity, excitement, 30, satisfies )
@@ -250,7 +251,19 @@ public class QueueTests
 		Assert.AreEqual( 9, Take( 50, (0, 0, 0), (9, 40, 49), (8, 10, 50) ), "a free slot is skipped" );
 		Assert.AreEqual( 9, Take( 1049, (9, 40, 49), (8, 10, 49) ), "index order, not deadline order" );
 		var slots = new List<(int Guest, double Until, double Start)> { (0, 0, 0), (4, 1e12, 0), (6, 1e12, 0) };
-		Assert.AreEqual( 4, RideVisitorBridge.TakeUnbounced( slots, 0, force: true ), "FORCEUNBOUNCE takes the first occupied slot" );
+		Assert.AreEqual( 4, RideVisitorBridge.TakeUnbounced( slots, 0, force: true ), "FORCEUNBOUNCE takes the first occupied slot of the window (inside it: time 0 - start 0 = 0)" );
+	}
+
+	[TestMethod]
+	public void ForceUnbounceDropsTheDeadlineTestButKeepsTheWindow()
+	{
+		// FORCEUNBOUNCE 0x00555842 is UNBOUNCE 0x005557A3 without the deadline compare (0x00555811): the 200 ms window of each second since the bounce (0x005558A4..0x005558B7) still gates it
+		static int Force( double now, params (int Guest, double Until, double Start)[] slots ) => RideVisitorBridge.TakeUnbounced( slots.ToList(), now, force: true );
+		Assert.AreEqual( 7, Force( 1100, (7, 1e12, 1000) ), "a deadline far ahead does not matter inside the window" );
+		Assert.AreEqual( 0, Force( 1200, (7, 1e12, 1000) ), "(200 mod 1000) / 200 = 1: outside the window" );
+		Assert.AreEqual( 0, Force( 1900, (7, 0, 1000) ), "a passed deadline does not open the window" );
+		Assert.AreEqual( 7, Force( 2000, (7, 1e12, 1000) ), "the next second opens it again" );
+		Assert.AreEqual( 8, Force( 1300, (7, 1e12, 1000), (8, 1e12, 1300) ), "index order among the entries inside their windows: entry 7 is outside its window, entry 8 inside its own" );
 	}
 
 	[TestMethod]

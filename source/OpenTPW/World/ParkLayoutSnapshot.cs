@@ -331,7 +331,15 @@ public static class ParkLayoutSnapshot
 			{
 				Require( (activeMods ?? OpenTpwExtensions.Active).IsEnabled( OfficialExtensions.Pools.Id ), $"cell ({cell.X}, {cell.Y}) is a pool cell, which needs the {OfficialExtensions.Pools.Id} extension" );
 				Require( cell.Links == 0 && cell.QueueLink == 0 && cell.Owner == 0 && cell.Placements == 0, $"pool cell ({cell.X}, {cell.Y}) carries links, an owner or a placement count" );
+				// [EXT:pools-river] [EXT:pools-waves] a pool cell's flags are the river bit and the wave settings' bits, nothing else; the wave bits are a stored height (1 to 3) and an interval (0 to 2), on or off
+				var poolBits = (ParkCellFlags)cell.Flags;
+				Require( (poolBits & ~(ParkCellFlags.PoolRiver | ParkCellFlags.PoolWaveBits)) == 0, $"pool cell ({cell.X}, {cell.Y}) carries flags {cell.Flags:X4} besides the river and wave bits" );
+				Require( (poolBits & ParkCellFlags.PoolWaveBits) == 0 || PoolWaveSettings.Has( poolBits ), $"pool cell ({cell.X}, {cell.Y}) has wave bits but no wave height" );
+				Require( ((int)(poolBits & ParkCellFlags.PoolWaveIntervalMask) >> 14) <= 2, $"pool cell ({cell.X}, {cell.Y}) has the unused wave interval 3" );
 			}
+			// [EXT:pools-river] [EXT:pools-waves] the river and wave bits exist on pool cells only
+			if ( cell.Type != ParkCellTypes.PoolWater )
+				Require( (cell.Flags & (ushort)(ParkCellFlags.PoolRiver | ParkCellFlags.PoolWaveBits)) == 0, $"cell ({cell.X}, {cell.Y}) carries pool river or wave flags but is no pool cell" );
 			Require( cell.QueueLink is 0 or 1 or 4 or 16 or 64, $"cell ({cell.X}, {cell.Y}) has queue link {cell.QueueLink}" );
 			Require( cell.QueueLink == 0 || ParkCellTypes.CarriesQueueLink( cell.Type ), $"cell ({cell.X}, {cell.Y}) has a queue link but type {cell.Type}" );
 			Require( cell.Placements >= 0, $"cell ({cell.X}, {cell.Y}) has placement count {cell.Placements}" );

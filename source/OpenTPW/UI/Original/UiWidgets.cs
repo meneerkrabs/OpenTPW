@@ -8,7 +8,7 @@ public enum UiAlign { Left, Center, Right }
 /// <summary>Everything a screen needs to lay out and draw one frame.</summary>
 public sealed class UiContext
 {
-	private readonly Dictionary<(FontAtlas, string, int), TextLayoutResult> layouts = new();
+	private readonly Dictionary<(FontAtlas, string, int, int), TextLayoutResult> layouts = new();
 
 	public UiContext( UiStringTable strings, UiFonts fonts, UiModels models )
 	{
@@ -34,14 +34,15 @@ public sealed class UiContext
 	public bool PopupHelp { get; set; } = true;
 	public Func<string, string?> ResolveTexture { get; set; } = name => UiImages.Resolve( name );
 
-	public TextLayoutResult Layout( FontAtlas font, string text, int maximumWidthPixels = 0 )
+	public TextLayoutResult Layout( FontAtlas font, string text, int maximumWidthPixels = 0, int? textScale = null )
 	{
-		var key = (font, text, maximumWidthPixels);
+		var scale = Math.Max( 1, textScale ?? Canvas.TextScale );
+		var key = (font, text, maximumWidthPixels, scale);
 		if ( !layouts.TryGetValue( key, out var layout ) )
 		{
 			if ( layouts.Count > 2048 )
 				layouts.Clear();
-			layout = TextLayout.Create( font, text, maximumWidthPixels > 0 ? Math.Max( 1, maximumWidthPixels / Canvas.TextScale ) : 0 );
+			layout = TextLayout.Create( font, text, maximumWidthPixels > 0 ? Math.Max( 1, maximumWidthPixels / scale ) : 0 );
 			layouts[key] = layout;
 		}
 		return layout;
@@ -54,24 +55,41 @@ public sealed class UiContext
 		return (layout.Width * Canvas.TextScale, layout.Height * Canvas.TextScale);
 	}
 
-	/// <summary>Draws text aligned horizontally inside <paramref name="rect"/> and centred vertically when it fits.</summary>
-	public void DrawText( FontAtlas font, string text, UiRect rect, RgbaByte color, UiAlign align = UiAlign.Left, bool wrap = false, bool shadow = true, int? textScale = null )
+	/// <summary>Draws text inside <paramref name="rect"/> as tp.exe's text library places it: the block aligned horizontally, each line aligned inside the block, the block centred vertically.</summary>
+	public void DrawText( FontAtlas font, string text, UiRect rect, RgbaByte color, UiAlign align = UiAlign.Left, bool wrap = false, bool shadow = true, int? textScale = null, bool originalPlacement = true )
 	{
 		if ( string.IsNullOrEmpty( text ) )
 			return;
-		var scale = wrap ? Canvas.TextScale : textScale ?? Canvas.TextScale;
-		var layout = Layout( font, text, wrap ? (int)rect.Width : 0 );
+		var scale = textScale ?? Canvas.TextScale;
+		var layout = Layout( font, text, wrap ? (int)rect.Width : 0, scale );
+		var textAlignment = align switch { UiAlign.Center => TextAlignment.Center, UiAlign.Right => TextAlignment.Right, _ => TextAlignment.Left };
+		int ix, iy;
 		var width = layout.Width * scale;
 		var height = layout.Height * scale;
-		var x = align switch
+		if ( originalPlacement )
 		{
-			UiAlign.Center => rect.X + (rect.Width - width) / 2,
-			UiAlign.Right => rect.Right - width,
-			_ => rect.X
-		};
-		var y = height <= rect.Height ? rect.Y + (rect.Height - height) / 2 : rect.Y;
-		var ix = (int)MathF.Round( x );
-		var iy = (int)MathF.Round( y );
+			// [BIN:TPW-EXE:0x6ae550 line offset] a centred or right aligned multi-line text moves each line inside the widest one
+			layout = layout.AlignLines( textAlignment );
+			// [BIN:TPW-EXE:0x6aeb10 block box] whole-pixel block placement; a block taller than the box is still centred (the original's control bitmap cuts it off at both ends; OpenTPW does not clip)
+			var left = (int)MathF.Round( rect.X );
+			var top = (int)MathF.Round( rect.Y );
+			ix = TextPlacement.BlockLeft( textAlignment, left, (int)MathF.Round( rect.Right ), width );
+			iy = TextPlacement.BlockTopCentered( top, (int)MathF.Round( rect.Bottom ), height );
+		}
+		else
+		{
+			// [EXT:fit-button-text] the wrapped fallback of a button label that fits at no size keeps its own placement (block aligned in the box, lines left aligned in it,
+			// an overflowing block hangs from the box top), so the approved fitting does not move with the text library's rules
+			var x = align switch
+			{
+				UiAlign.Center => rect.X + (rect.Width - width) / 2,
+				UiAlign.Right => rect.Right - width,
+				_ => rect.X
+			};
+			var y = height <= rect.Height ? rect.Y + (rect.Height - height) / 2 : rect.Y;
+			ix = (int)MathF.Round( x );
+			iy = (int)MathF.Round( y );
+		}
 		// [APPROX:UI-007] drop shadow one text pixel down-right; the original's control text renderer (0x48f830) draws each string once, without a shadow, and the glyph draw entry 0x6ae0f0 is reached only through the text box routine 0x492750 (single call per caller; BF4 glyphs hold coverage only) — evidence needed: the sprite draw of a text control's bitmap (0x48f410 → 0x588c20 is only the release of the control's sprite quads, and the text control's vtable 0x6ff350 has no draw slot of its own (slot 2 is a bare return), so the control's sprite quads are drawn by the engine's sprite pass, where no reader of the colour at +0x78 was found) and what in the capture looks like a shadow
 		if ( shadow )
 			Batch.AddText( font, layout, ix + scale, iy + scale, UiColors.Shadow, scale );
@@ -91,11 +109,30 @@ public sealed class UiContext
 			return;
 		var candidates = new List<FontAtlas> { font };
 		candidates.AddRange( Fonts.Smaller( font ) );
+		// [EXT:fit-button-text] a label that fits no size of its own family goes on to the body fonts, smaller than the last size tried, so a small icon button
+		// (a bulk-mark or close button) still shows its whole text; the original's buttons carry art, not these labels
+		foreach ( var body in new[] { Fonts.Label, Fonts.Small }.Where( body => body.LineHeight < candidates[^1].LineHeight && !candidates.Contains( body ) ).OrderByDescending( body => body.LineHeight ) )
+			candidates.Add( body );
 		var boxes = candidates.Select( candidate => InkBox( candidate, text, shadow ) ).ToArray();
 		var fit = UiTextFit.Choose( Canvas.TextScale, boxes.Select( box => (box.Right - box.Left, box.Bottom - box.Top) ).ToArray(), rect.Width, rect.Height );
 		if ( fit.Wrap )
 		{
-			DrawText( candidates[fit.Index], text, rect, color, align, true, shadow );
+			// [EXT:fit-button-text] before any word is cut between characters, the label is wrapped at its spaces in the largest size whose lines all fit the box
+			var words = text.Split( new[] { ' ', '\t', '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries );
+			var wrapped = UiTextFit.ChooseWrapped( Canvas.TextScale, candidates.Count, ( index, scale ) =>
+			{
+				var available = (int)(rect.Width / scale);
+				var layout = Layout( candidates[index], text, (int)rect.Width, scale );
+				var wordsWhole = words.All( word => Layout( candidates[index], word ).Width <= available );
+				return (wordsWhole, layout.Height, layout.LineCount);
+			}, rect.Height );
+			if ( wrapped is { } choice )
+			{
+				DrawText( candidates[choice.Index], text, rect, color, align, true, shadow, choice.Scale, originalPlacement: false );
+				return;
+			}
+			// No size fits even wrapped (a box of a few pixels): the smallest size on one line, centred, as the original's unwrapped control text is.
+			DrawTextAt( candidates[^1], 1, text, rect, color, align, shadow );
 			return;
 		}
 		DrawTextAt( candidates[fit.Index], fit.Scale, text, rect, color, align, shadow );

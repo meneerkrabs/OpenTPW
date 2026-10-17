@@ -7,7 +7,8 @@ namespace OpenTPW;
 /// <list type="bullet">
 /// <item><c>objects.json</c> and the object archives below it: the changing rooms, one per theme (<see cref="PoolChangingRooms"/>), listed in the theme catalogs while the extension is on as a content
 /// root of the id <c>opentpw.pools</c> (asset keys <c>mod:opentpw.pools:/...</c>, so a park save records and checks them like a mod's objects);</item>
-/// <item><c>esprites/Swim</c>: the swim sprite sets of the eight Theme Park World kid sets (<see cref="PoolSwimSprites"/>).</item>
+/// <item><c>esprites/Swim</c>: the swimwear sprite sets of the eight Theme Park World kid sets, drawn at twice the pixel size (<see cref="PoolSwimSprites"/>);</item>
+/// <item><c>esprites/Generic/Kids</c> and <c>Kidsheads</c>: the eight kid sets and their heads in clothes, redrawn at twice the pixel size, which replace the game's while the extension is on (<see cref="PoolGuestSprites"/>).</item>
 /// </list>
 /// Nothing of it comes from the original game: it is generated from code by <c>tools/pools/build-content.sh</c> (docs/CONTENT-KIT.md).
 /// </summary>
@@ -48,7 +49,7 @@ public static class PoolContent
 	/// </summary>
 	internal static CatalogContentRoot? CatalogRoot( ModSet set )
 	{
-		if ( !set.IsEnabled( OfficialExtensions.Pools.Id ) || Directory is not { } folder )
+		if ( !set.IsEnabled( OfficialExtensions.Pools.Id ) || GameEditions.IsThemeParkInc || Directory is not { } folder )
 			return null;
 		var file = Path.Combine( folder, "objects.json" );
 		if ( !File.Exists( file ) )

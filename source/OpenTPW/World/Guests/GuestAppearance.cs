@@ -24,4 +24,31 @@ public static class GuestAppearance
 		var life = (int)((uint)((byte)quality * MaximumBalloonLife) / 100u);
 		return Math.Clamp( life, MinimumBalloonLife, MaximumBalloonLife );
 	}
+
+	/// <summary>
+	/// The kid sprite set a guest is drawn with (the original's sprite bank <c>+0x20</c>): the world generator reseeded with the guest's thing id, its first draw shifted right by 2 and taken modulo
+	/// the number of loaded kid sets. A pure function of the id, so a guest who returns a costume (reseed, same draw) gets its own set back.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004FB19E guest sprite variant] the guest constructor reseeds with the thing id (0x00516370) and draws 0x00541F70(0): (draw >> 2) mod the category's loaded bank count (the table 0x00763F88 entry +8); returning a costume does the same (0x004FE6A1), so the value repeats
+	public static int KidSet( int guestId, int sets )
+	{
+		if ( sets <= 0 )
+			return 0;
+		var generator = new WorldRng( (ushort)guestId );
+		return (int)((generator.NextWord() >> 2) % (uint)sets);
+	}
+
+	/// <summary>
+	/// The colour (the animation slot) of a guest's balloon: the world generator reseeded with the guest's thing id, a first draw for the sprite set (one set, so always the first) and a second,
+	/// shifted right by 2, modulo the set's animation slots (0x00541FD0: the word at <c>+0x21E</c>, the count of slots with frames). The same whenever the balloon appears.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004FE6FC balloon colour] the shop's gift reseeds (0x00516370) and calls 0x00541F70(10) then 0x00541FD0(10, set); the give-back after a ride does the same (0x00502053..0x00502079); the colour is the slot of the sprite (0x004758F0 +0xB4)
+	public static int BalloonColour( int guestId, int colours )
+	{
+		if ( colours <= 0 )
+			return 0;
+		var generator = new WorldRng( (ushort)guestId );
+		generator.NextWord();
+		return (int)((generator.NextWord() >> 2) % (uint)colours);
+	}
 }

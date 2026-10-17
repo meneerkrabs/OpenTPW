@@ -10,7 +10,7 @@ namespace OpenTPW.Hud;
 internal static class GuestWorldPicker
 {
 	internal static bool TryHit(NVector3 feet, GuestAtlasFrame frame, bool mirror, Matrix4x4 view,
-		Matrix4x4 projection, NVector2 viewport, NVector2 mouse, out float depth)
+		Matrix4x4 projection, NVector2 viewport, NVector2 mouse, out float depth, float rotation = 0f)
 	{
 		depth = 0;
 		if (!float.IsFinite(viewport.X) || !float.IsFinite(viewport.Y) || viewport.X <= 0 || viewport.Y <= 0 ||
@@ -20,17 +20,15 @@ internal static class GuestWorldPicker
 		var right = new NVector3(view.M11, view.M21, view.M31);
 		var up = new NVector3(view.M12, view.M22, view.M32);
 		// Same hotspot, mirroring, scale and camera basis used by GuestRenderer.OnRender.
-		var left = mirror ? -(frame.OriginX + frame.Width) : frame.OriginX;
-		var x0 = left * GuestRenderer.UnitsPerPixel;
-		var x1 = (left + frame.Width) * GuestRenderer.UnitsPerPixel;
-		var top = -frame.OriginY * GuestRenderer.UnitsPerPixel;
-		var bottom = -(frame.OriginY + frame.Height) * GuestRenderer.UnitsPerPixel;
+		var (x0, x1, top, bottom) = frame.Extents(mirror, GuestRenderer.UnitsPerPixel);
 		var transform = view * projection;
 		var min = new NVector2(float.PositiveInfinity);
 		var max = new NVector2(float.NegativeInfinity);
 		for (var corner = 0; corner < 4; corner++)
 		{
-			var point = feet + right * ((corner & 1) == 0 ? x0 : x1) + up * ((corner & 2) == 0 ? top : bottom);
+			var (cx, cy) = ((corner & 1) == 0 ? x0 : x1, (corner & 2) == 0 ? top : bottom);
+			var (sin, cos) = MathF.SinCos( rotation );
+			var point = feet + right * (cx * cos + cy * sin) + up * (-cx * sin + cy * cos);
 			var clip = NVector4.Transform(new NVector4(point, 1), transform);
 			if (!float.IsFinite(clip.W) || clip.W <= 0)
 				return false;

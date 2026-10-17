@@ -8,6 +8,6 @@ public static class HeadApproximations
 {
 	public static readonly IReadOnlyList<(string Id, string Rule)> Entries = new[]
 	{
-		("HEADS-004", "the head's size, depth and roll are partly untraced: how sprite scale 1.0 maps to world units (the head uses the body's pixel scale times the traced scale property 0.685), the depth handling of the quad, and the roll (the PC draw routine 0x44b510 turns the sprite by the angle between the chosen frame's pre-rendered up direction and the view, via 0x46f150, 0x46fbb0 and 0x46f200; OpenTPW uses the node matrix in world axes); OpenTPW guests wear no costumes, so the costumeheads art (visitor +0x24 == 2) is never chosen"),
+		("HEADS-004", "the head's roll is the node matrix's own (atan2(-m10, m11) of the rotation left once the chosen frame's direction is taken out, as tp.exe's 0x46F200 turns the sprite, register 9 in turns), but OpenTPW composes it from the node matrix in world axes where the PC routine 0x44B510 builds the chosen frame's own reference basis from its row and column (0x44B6EF..0x44B96C) and multiplies it into the view through 0x46F150, 0x46FBB0 and 0x470040, and that composition has not been compared instruction by instruction (size and depth are read: the head is a camera-facing quad of scale 0.685 at the node's position, 20 / 128 x sqrt(2) world units a pixel times the scale, no depth offset); OpenTPW guests wear no costumes, so the costumeheads art (visitor +0x24 == 2) is never chosen"),
 	};
 }

@@ -9,6 +9,8 @@ public partial class Level
 
 	/// <summary>Rebuilds the saved particle pool in a resumed park (set by the particle renderer module; null in headless hosts).</summary>
 	internal static Action<Level, ParticleSystemState>? ParticlesResumed { get; set; }
+	/// <summary>Set by the particle module: gives the level the pool of an original save's Particles block (the state's emitters and effectors, the post-load pass applied).</summary>
+	internal static Action<Level, SaveParticlesBlock>? ParticlesImported { get; set; }
 
 	/// <summary>Captures a writable fixed-ride park between simulation ticks, including its direct instance links.</summary>
 	internal ParkResumeSnapshot CaptureResumeSnapshot( AutomaticAdvisor? advisor, string displayName,
@@ -56,6 +58,7 @@ public partial class Level
 			Advisor = advisor?.CaptureSnapshot( advisorMaySpeak ),
 			Coasters = CaptureCoastersSnapshot(),
 			Tracks = CaptureTracksSnapshot(),
+			PoolSlides = PoolSlides?.CaptureSnapshot(),
 			Tours = CaptureToursSnapshot(),
 			Prototype = prototype,
 			Particles = ParticlesCaptured?.Invoke( this ),
@@ -125,6 +128,9 @@ public partial class Level
 		// node), and this restores the saved tracks, controller state, trains and riders over them.
 		RestoreCoastersSnapshot( snapshot.Coasters );
 		RestoreTracksSnapshot( snapshot.Tracks );
+		// [EXT:pools-slides] the slides go back over their towers and the pool cells the layout restored
+		PoolSlides?.RestoreSnapshot( snapshot.PoolSlides );
+		PoolSlides?.ValidateGuests( Guests.Guests );
 		RestoreToursSnapshot( snapshot.Tours );
 		// the resumed tiles and boats are drawn from the first frame, as they were when the park was saved
 		UpdateTrackRendering();

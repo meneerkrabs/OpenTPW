@@ -36,6 +36,13 @@ public static class RideOpening
 	public static bool MayOpen( int state, bool maintenanceFlag, bool queueConnected, int trackType, bool coasterComplete ) =>
 		state != RideObjectStates.BrokenDown && state != RideObjectStates.Condemned && !maintenanceFlag && state != RideObjectStates.Upgrading
 		&& queueConnected && (trackType != CoasterTrackType || coasterComplete);
+
+	/// <summary>
+	/// Whether an imported attraction is closed again: it is idle (state 0) and its saved open word (<c>mCanLoad</c>, +0x68) is clear. The broken, upgrading and condemned states clear the
+	/// word themselves (SetState 0x4E0E60) and their import closes the ride already; a fixed item (state 3) is never opened or closed by the player.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004E0E60 SetState] states 1, 2 and 4 clear the open word; the player's close and the maintenance call (0x4DFE30) clear it for an idle ride
+	public static bool ClosedByImportedOpenWord( uint openWord, int state ) => openWord == 0 && state == RideObjectStates.Idle;
 }
 
 /// <summary>

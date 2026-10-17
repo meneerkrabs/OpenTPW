@@ -52,7 +52,6 @@ public sealed class ThoughtRenderer : Entity
 		material = new Material<ObjectUniformBuffer>( "content/shaders/sprite.shader" );
 		material.Set( "Color", Enumerable.Range( 0, 8 ).Select( index => textures[Math.Min( index, textures.Count - 1 )] ).ToArray() );
 		TexturePackSwitch.PackChanged += ReloadAtlases;
-		TexturePackSwitch.FilesAvailable += ReloadAtlases;
 	}
 
 	private void ReloadAtlases() => ReloadAtlases( null );
@@ -158,10 +157,7 @@ public sealed class ThoughtRenderer : Entity
 			Array.Resize( ref vertices, Math.Max( 64 * VerticesPerSprite, vertices.Length * 2 ) );
 		var anchor = GuestRenderer.CellToEngine( field, x, y, Lift );
 		var unit = GuestRenderer.UnitsPerPixel;
-		var x0 = frame.OriginX * unit;
-		var x1 = (frame.OriginX + frame.Width) * unit;
-		var yTop = -frame.OriginY * unit;
-		var yBottom = -(frame.OriginY + frame.Height) * unit;
+		var (x0, x1, yTop, yBottom) = frame.Extents( false, unit );
 		var u0 = frame.X / (float)atlas.Width;
 		var u1 = (frame.X + frame.Width) / (float)atlas.Width;
 		var v0 = frame.Y / (float)atlas.Height;
@@ -181,7 +177,6 @@ public sealed class ThoughtRenderer : Entity
 	{
 		deleted = true;
 		TexturePackSwitch.PackChanged -= ReloadAtlases;
-		TexturePackSwitch.FilesAvailable -= ReloadAtlases;
 		var owned = textures.ToArray();
 		textures.Clear();
 		foreach ( var texture in owned )

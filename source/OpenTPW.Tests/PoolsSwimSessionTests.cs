@@ -27,9 +27,9 @@ public class PoolsSwimSessionTests
 		public GuestSimulation Simulation => Park.Simulation;
 		public RideVisitorBridge Ride => Park.Ride;
 
-		public Rig( int capacity = 2, Action<GuestSettings>? configure = null )
+		public Rig( int capacity = 2, Action<GuestSettings>? configure = null, int gridSize = 12 )
 		{
-			Park = new QueueTests.Rig( queueCells: 5, takesGuests: true, capacity: capacity, kind: RideVisitorKind.Facility, configure: configure ) { KeepNeedsEmpty = true };
+			Park = new QueueTests.Rig( queueCells: 5, takesGuests: true, capacity: capacity, kind: RideVisitorKind.Facility, configure: configure, gridSize: gridSize ) { KeepNeedsEmpty = true };
 			for ( var y = 3; y <= 8; y++ )
 				for ( var x = 5; x <= 10; x++ )
 					Park.Grid.Cells.SetType( x, y, ParkCellTypes.PoolWater );
@@ -277,12 +277,12 @@ public class PoolsSwimSessionTests
 	public void ARoomThatHasStoppedReleasesItsGuestsOnFootAndAFullPoolDoesNotTakeMoreSwimmers()
 	{
 		var rig = new Rig( capacity: 8 );
-		// the water shrinks to two cells: the pool holds the minimum capacity of four swimmers
+		// the water shrinks to two cells: the pool holds the minimum capacity of two swimmers
 		foreach ( var (x, y) in rig.Region.Cells.ToArray() )
 			if ( (x, y) is not ((5, 3) or (5, 4)) )
 				rig.Cells.SetType( x, y, ParkCellType.Empty );
 		Assert.AreEqual( 2, rig.Region.Cells.Count );
-		Assert.AreEqual( PoolSwimSettings.MinimumCapacity, rig.Region.Capacity, "two cells hold the minimum, not 2 x 2 swimmers" );
+		Assert.AreEqual( PoolSwimSettings.MinimumCapacity, rig.Region.Capacity, "two cells hold the minimum, not 2 x 1 swimmers" );
 		var guests = Enumerable.Range( 0, 6 ).Select( _ => rig.Send() ).ToList();
 		var peak = 0;
 		rig.Until( () =>
@@ -291,11 +291,11 @@ public class PoolsSwimSessionTests
 			return guests.All( guest => guest.LastAttractionId == rig.Ride.AttractionId && guest.State != GuestState.Using );
 		}, 600 );
 		Assert.AreEqual( PoolSwimSettings.MinimumCapacity, peak, "the pool filled to its capacity and no further" );
-		Assert.AreEqual( 2, guests.Count( guest => !guest.InSwimSession ), "the two guests who found it full left the room the normal way" );
+		Assert.AreEqual( 6 - PoolSwimSettings.MinimumCapacity, guests.Count( guest => !guest.InSwimSession ), "the guests who found it full left the room the normal way" );
 		Assert.IsTrue( guests.Where( guest => !guest.InSwimSession ).All( guest => guest.State is GuestState.ExitingRide or GuestState.DoingNothing or GuestState.WalkingAround && guest.AttractionId == 0 ), "on foot at the room's exit" );
-		// a big pool scales with its cells: two swimmers per water cell
+		// a big pool scales with its cells: one body per water cell
 		var big = new Rig();
-		Assert.AreEqual( 72, big.Region.Capacity );
+		Assert.AreEqual( 36, big.Region.Capacity );
 		var single = new Rig();
 		foreach ( var (x, y) in single.Region.Cells.ToArray() )
 			if ( (x, y) != (5, 3) )

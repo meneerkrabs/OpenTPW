@@ -22,7 +22,7 @@ In code the system is called `OpenTPW.Mods` / "extensions"; `OpenTPW.ModKit` is 
 
 - manifests are parsed and validated, mod folders are discovered, `mods.json` is read and the run's set of extensions
   and mods is resolved once at startup;
-- the official extensions are `opentpw.online`, `opentpw.cross-edition-objects`, `opentpw.smarter-guests` and `opentpw.guest-insights` (below), and `opentpw.pools`, off by default, in which the player paints
+- the official extensions are `opentpw.online`, `opentpw.cross-edition-objects`, `opentpw.smarter-guests`, `opentpw.guest-insights` and `opentpw.restored-advice` (below), `opentpw.pools-guest-art` (presentation only, on by default: with the pools extension on, land guests use OpenTPW's own 2x kids, off shows the original guests; [POOLS.md](POOLS.md)), and `opentpw.pools`, on by default (not in a Theme Park Inc run), in which the player paints
   pool water cells (see [POOLS.md](POOLS.md)); a park save records `opentpw.pools` only when the park has pool cells;
 - park saves record the mods that change the simulation and refuse a mismatched set (below);
 - the **Extensions and mods screen** (below) edits `mods.json`;
@@ -310,6 +310,19 @@ feature, phase 1); **smarter guests cannot yet**: it has no real rule, and a no-
 
 Their names and descriptions exist in the nine interface languages for the screen. Switching either on or off changes none of the pinned digests of the off path
 (`DeterminismTests`); with smarter guests on, `DeterminismTests.SmarterGuestsFixedRunHash` pins the world hash, which then includes the extension's state.
+
+## Restored advice (`opentpw.restored-advice`)
+
+An official extension that gives the advisor the lines the original game recorded but never says: tp.exe v2.0 scores 21 of its scanned messages with a constant-zero stub and nothing posts 84 more. The extension restores **55** of those 105 messages, by trigger: security cover gaps, long queues, blocked ride exits, riders stuck in a
+broken or condemned ride, low balances, land running out, buses, seaplanes and Ferries arriving, golden ticket and award news by the key a ticket earns, double-or-nothing challenges, upgrades without a mechanic, a few tutorial hints and the lines of the online screens. The messages, triggers, scores and the messages skipped on purpose are in
+[reverse/ADVISOR-SCAN.md](reverse/ADVISOR-SCAN.md) "Restored advice"; the mechanism (one scan hook, one poll, a driver for events) is in [LIPS.md](LIPS.md) "Restored advice".
+
+- **On by default**, `PlayerSelectable` (the Extensions and mods screen lists it with its name and description in the nine languages; a restart applies a change like every extension), version 1.0.0.
+- **It never changes the simulation** (`AffectsSimulation` false), which is what lets it be on by default: it only reads park state and posts advice through the advisor's queue, the advisor is outside the world state hash, and it keeps no state a save would carry. A park save
+  records no mod for it, so a save made with it loads with it off and the other way round (the advisor's saved state has the same shape either way; a pending or said restored message loads wherever all 351 descriptors exist, which is every build). The pins of `DeterminismTests` do not move.
+  `AdvisorRestoredAdviceTests` checks the hash, the mod records and the save in both directions. `[EXT:restored-advice]`.
+- **A save made with it on may carry restored advice**: up to eight pending restored records, and the history of the restored messages said, are in the advisor's own saved state. They load with the extension off, where a pending record still plays once (harmless: it is an ordinary descriptor's advice), and nothing else of the extension is saved. Its once-per-park and long-repeat rules read that same history.
+- **Off means silent**: with `opentpw.restored-advice` disabled in `mods.json` or by `--disable-extension opentpw.restored-advice` the scan rows score 0 as in tp.exe and no restored event, poll or help is posted. Every trigger is labelled `[EXT:restored-advice-<topic>]` where it is coded.
 
 ## The online extension (`opentpw.online`)
 

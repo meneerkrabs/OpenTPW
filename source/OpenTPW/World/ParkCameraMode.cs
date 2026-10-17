@@ -222,6 +222,22 @@ public class ParkCameraMode : CameraMode
 	/// <summary>The yaw in the original's terms, radians: its forward on the ground is (sin, cos) in (x, y).</summary>
 	public static float OriginalYaw( float yawDegrees ) => (-90f - yawDegrees).DegreesToRadians();
 
+	/// <summary>The yaw in this camera's degrees of an original yaw in radians (the inverse of <see cref="OriginalYaw"/>).</summary>
+	public static float YawOf( float originalRadians ) => -90f - originalRadians.RadiansToDegrees();
+
+	/// <summary>
+	/// The pose a save's camera block gives the camera when the park is loaded: the zoom (0x7909EC, clamped to the zoom range), the yaw (0x790A38, radians) and the required point of
+	/// interest (0x7908F0, original units: x and z on the ground), the point the camera looks at. Null when a value is not a finite number or the point is off the map.
+	/// </summary>
+	// [BIN:TPW-EXE:0x42CEC0 camera loader] gf_CameraZoom, gf_YRotation, gui_CameraFlags (cleared again after the read), gs_RequiredPOIPosition (three floats), gs_SavedPOIPosition and the saved yaw are read into the camera's own words; the camera then steers to the required point
+	public static (float X, float Z, float Height, float Yaw)? PoseOfSave( SaveCamera camera )
+	{
+		var (x, z) = (camera.RequiredPoi.X, camera.RequiredPoi.Z);
+		if ( !float.IsFinite( camera.Zoom ) || !float.IsFinite( camera.YRotation ) || !float.IsFinite( x ) || !float.IsFinite( z ) || x < 0 || z < 0 || x > 1280 || z > 1280 )
+			return null;
+		return (x, z, Math.Clamp( camera.Zoom, MinimumHeight, MaximumHeight ), YawOf( camera.YRotation ));
+	}
+
 	private float GroundAtTarget()
 	{
 		if ( Level.Current?.OriginalPark?.Heightfield is not { } field )

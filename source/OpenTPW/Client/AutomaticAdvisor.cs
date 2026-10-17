@@ -9,7 +9,7 @@ namespace OpenTPW;
 /// update per frame and says the chosen response through <see cref="Advisor.SayResponse"/>.
 /// See docs/LIPS.md, "Automatic advice".
 /// </summary>
-internal sealed class AutomaticAdvisor : IDisposable
+internal sealed partial class AutomaticAdvisor : IDisposable
 {
 	// [BIN:TPW-EXE:0x00402D63 clock offset] the clock's offset word starts at 0 and is rewritten only by the savegame load (0x415140 → 0x402E80 → 0x403160: the saved advisor clock minus the live clock); pause is 0x4092A0 and resume 0x409300
 	// [APPROX:ADVISOR-017] the clock starts at 0 for a new park, carries the saved word on an original-save import (AttachLevel), is sampled once per frame and stands still while the pause menu is open; the original stands still whenever 0x4092A0 pauses the timer: 0x46B74C in the main window procedure 0x46B600 (WM_ACTIVATEAPP deactivation, unless 0xF82884), 0x47F26C in the message box builder 0x47F020, 0x49EFB0 (load window), 0x49F280 (save window), 0x48C87E (the Escape menu 0x48C830, opened by VK_ESCAPE at 0x4A2933 and 0x4BE537: OpenTPW's pause menu) and 0x4A3A6C (the Game Options dialog 0x4A3A30, title 0x1D4D4, opened from that menu's items 0x48B977 and 0x48BF28) are identified, and 0x4092A0 acts only while the pause object's enable word (0x786BA4) is 1 and clears it — evidence needed: the screens of the callers 0x4A93D7 (0x4A9380, the level exit path: it sets 0x7CC150 to 3) and 0x5F0B7F (0x5F0B40, a modal with controls 0x990-0x995)
@@ -25,6 +25,8 @@ internal sealed class AutomaticAdvisor : IDisposable
 	private bool presentationFailed;
 	private Level? level;
 	private ParkEconomyRuntime? park;
+	/// <summary>The park turn of the newest object construction and of the newest hire (tp.exe park words <c>+0x21C30</c> and <c>+0x21C38</c>): advisor state, outside the economy and its hashes.</summary>
+	private long objectStampTurn, hireStampTurn;
 	private GuestSimulation? guests;
 	private StaffWorldSimulation? staffWorld;
 	// The park turn the scan last ran for; not saved (a loaded or attached advisor takes the turn of its first update as the start).
@@ -98,6 +100,8 @@ internal sealed class AutomaticAdvisor : IDisposable
 		{
 			park.EventRaised += OnParkEvent;
 			park.Economy.Objectives.TimeShort += OnChallengeTimeShort;
+			// [BIN:TPW-EXE:0x004C58C0 park init] the analyser stamps the object and hire words with the current time (0x4C5CAF, 0x4C5CDE); a loaded park's snapshot or save then replaces them
+			(objectStampTurn, hireStampTurn) = EconomyParkState.NewestStamps( park.Economy );
 		}
 		guests = started.Guests;
 		if ( guests != null )
@@ -118,6 +122,7 @@ internal sealed class AutomaticAdvisor : IDisposable
 		// [BIN:STP-PPC:0x101C2108 main loop] CMsgEvent 10 (history reset of variant, played flag and slaps) followed by CMsgEvent 0 at 0x101C2174
 		Raise( AdvisorGameEvent.ResetForEasyMode );
 		Raise( AdvisorGameEvent.LevelStarted );
+		RestoredAttached();
 	}
 
 	// [BIN:TPW-EXE:0x005996D0 stop path] "Kill advisor" (0x429D60) hides the model; the stop path has six callers, level exit among them
@@ -136,8 +141,12 @@ internal sealed class AutomaticAdvisor : IDisposable
 		staffWorld = null;
 		// Help still pending or speaking belongs to the windows of this park, which close without reporting.
 		if ( level != null )
+		{
 			foreach ( var message in AdvisorUiHelp.AllWindowMessages )
 				Controller.Withdraw( message, AdvisorClock );
+			WithdrawRestoredWindowHelp();
+		}
+		RestoredDetached();
 		park = null;
 		level = null;
 		lastScanTurn = null;
@@ -145,12 +154,35 @@ internal sealed class AutomaticAdvisor : IDisposable
 		presentation?.Kill();
 	}
 
-	private void OnParkEvent( ParkEvent item )
+	/// <summary>An economy without a level (tests of the event mapping): its events are answered like a level's park's.</summary>
+	private ParkEconomy? detachedEconomy;
+	private ParkEconomy? CurrentEconomy => park?.Economy ?? detachedEconomy;
+
+	/// <summary>Follows an economy's events without a level, as <see cref="AttachLevel"/> follows its park's: for tests of the event mapping.</summary>
+	internal void AttachEconomy( ParkEconomy economy )
+	{
+		detachedEconomy = economy;
+		economy.EventRaised += OnParkEvent;
+		(objectStampTurn, hireStampTurn) = EconomyParkState.NewestStamps( economy );
+	}
+
+	internal void OnParkEvent( ParkEvent item )
 	{
 		// [BIN:TPW-EXE:0x004D0370 bankruptcy event] at the bank's month-end message (type 0xC via 0x4D02D0): balance < 0, previous balance (+0x11C) < 0 and __alldiv(0x4F88B0(world+0x2A0, turn entered red +0x120), 0x1792F8648000 = 2.592e13) >= 6 (0x4D053B–0x4D054F) post event 2 every month while that holds, through 0x40F630(2); the turn entered red is set when the balance first goes below zero (0x4D041A–0x4D0432); it does not close the park
 		// [BIN:TPW-EXE:0x004F88B0 park time] the term is (park turn − stamp) as an unsigned 32-bit count × the calendar rate (+0x1C of world+0x2A0, 15000) / 4 × 10^7, the park time in 100 ns units; 0x004D04D9–0x004D04F2 take 0 months unless the balance (+0xC) and mLastBalance (+0x11C) are both below 0 (ParkEconomy.MonthsSinceEnteringRed, raised as ParkEventKind.BankruptcyMessage)
 		if ( item.Kind == ParkEventKind.BankruptcyMessage )
 			Raise( AdvisorGameEvent.Bankrupted );
+		// [BIN:TPW-EXE:0x004DB7A3 object stamp] every object construction and every staff init (0x504C65) rewrites the park's stamp with the current time (mLastObjectBuilt, mLastStaffHired)
+		if ( item.Kind == ParkEventKind.ObjectBuilt )
+			objectStampTurn = ParkCalendar.Turn( item.Tick );
+		if ( item.Kind == ParkEventKind.StaffHired )
+			hireStampTurn = ParkCalendar.Turn( item.Tick );
+		// [BIN:TPW-EXE:0x004DF8BE ride breakdown imminent] the wear step queues the advice 0x42 as a ride's condition crosses below 10 percent (not in game type 1, which never wears)
+		if ( item.Kind == ParkEventKind.RideBreakdownImminent )
+			PostEventAdvice( AdvisorRideEvents.BreakdownImminentMessage, "a ride about to break down" );
+		// [BIN:TPW-EXE:0x004E0FA0 broken state entered] the handler 0x4DADC0 runs on the message of type 7 that case 1 of 0x4E0E60 builds (0x40F380) when the ride update has read the script's VAR_BROKEN, not at the earlier breakdown request (0x4E0B90); a condemned ride sends type 8 (0x40F3D0): the advice of the mechanics' state (68, 69), or 258
+		if ( item.Kind == ParkEventKind.RideEnteredBrokenState && CurrentEconomy is { } economy && economy.TryGetObject( item.InstanceId, out var broken ) && AdvisorRideEvents.ForBreakdown( economy, broken ) is { } breakdownAdvice )
+			PostEventAdvice( breakdownAdvice, $"ride {item.InstanceId} breaking down" );
 		// [BIN:TPW-EXE:0x00509031 staff messages] the staff manager's month routine sends the staff info message (type 0x17, kind and role) that 0x59AFC0 turns into the advice 33-57; the kind and role are those of the strike message, whose text the advisor's caption then posts
 		if ( item.Kind == ParkEventKind.StaffStrikeMessage )
 			PostEventAdvice( AdvisorTables.StaffMessage( new StrikeMessage( (StaffType)item.InfoId, (StrikeMessageKind)item.Amount ) ), "a staff strike message" );
@@ -167,6 +199,7 @@ internal sealed class AutomaticAdvisor : IDisposable
 		// [BIN:TPW-EXE:0x00503E8E all research done] 0x167 (167) is posted in Instant Action (the game-type word 0xFB3B7C is 2) without further test; in the full simulation only when the player's ledger has the flag +0xB9 of every park (0x5B0C40), which OpenTPW's ledger lacks
 		if ( item.Kind == ParkEventKind.ResearchAllDone && GameType == 2 )
 			PostEventAdvice( 167, "all research done" );
+		RestoredOnParkEvent( item );
 	}
 
 	/// <summary>The advice of a global ticket that moved to this park (0x4D5270 case 4 of 0x5AF940: 0xEA + type, one response each, responses 474 to 477; none for another kind).</summary>
@@ -198,7 +231,7 @@ internal sealed class AutomaticAdvisor : IDisposable
 	/// <summary>Advice posted by game code (the original builds the record through 0x59B590 with the descriptor's score and queues it through 0x59A940).</summary>
 	internal void PostEventAdvice( int message, string source )
 	{
-		if ( level == null )
+		if ( level == null && detachedEconomy == null )
 			return;
 		var admission = Controller.Advise( message, GameTick, GameType, TutorialEnabled );
 		Log.Trace( $"Advisor advice for {source}: message {message} {(admission is { } result ? $"{result.Eligibility}{(result.Stored ? $" in slot {result.Slot}" : result.Acknowledged ? ", queue full" : "")}" : "not posted (game mode)")}." );
@@ -267,12 +300,15 @@ internal sealed class AutomaticAdvisor : IDisposable
 			OnModeChanged();
 		if ( AdvisorUiHelp.MessageFor( window ) is { } message )
 			PostHelp( message, $"window {window}" );
+		else if ( TryRestoredWindowHelp( window, out var restored ) )
+			PostHelp( restored, $"window {window}" );
 	}
 
 	/// <summary>Posts help <paramref name="message"/> as a window builder does through 0x486B00, without an interface mode change.</summary>
 	public void PostHelp( int message, string source = "the HUD" )
 	{
-		if ( level == null )
+		// [EXT:restored-advice] a help message the extension restores is posted only while it is on (the HUD posts them unconditionally)
+		if ( level == null || (RestoredAdvice.IsRestored( message ) && !RestoredAdvice.Enabled) )
 			return;
 		var admission = Controller.Advise( message, GameTick, GameType, TutorialEnabled );
 		Log.Trace( $"Advisor help for {source}: message {message} {(admission is { } result ? $"{result.Eligibility}{(result.Stored ? $" in slot {result.Slot}" : result.Acknowledged ? ", queue full" : "")}" : "not posted (game mode)")}." );
@@ -287,6 +323,8 @@ internal sealed class AutomaticAdvisor : IDisposable
 	{
 		foreach ( var message in AdvisorUiHelp.WithdrawnWith( window ) )
 			WithdrawHelp( message, $"window {window}" );
+		if ( RestoredAdvice.WindowHelp.TryGetValue( window, out var restored ) )
+			WithdrawHelp( restored, $"window {window}" );
 	}
 
 	/// <summary>Withdraws help <paramref name="message"/> as a close handler does through 0x486B40.</summary>
@@ -304,7 +342,7 @@ internal sealed class AutomaticAdvisor : IDisposable
 	// [BIN:TPW-EXE:0x0052F200 interface mode change] a changed mode withdraws the ten tool and mode help messages (AdvisorUiHelp.ModeHelpMessages)
 	public void OnModeChanged()
 	{
-		if ( level != null && Controller.WithdrawModeHelp( AdvisorClock ) )
+		if ( level != null && (Controller.WithdrawModeHelp( AdvisorClock ) | WithdrawRestoredModeHelp()) )
 			CutOffSpeech();
 	}
 
@@ -377,8 +415,12 @@ internal sealed class AutomaticAdvisor : IDisposable
 	}
 
 	/// <summary>The scan of one update for a park: its turn, game type and the tutorial option, halted while paused or while the park is lost.</summary>
-	internal int ScanPark( ParkEconomy economy, bool gamePaused ) =>
-		ScanTurns( new EconomyMoneyState( economy ), unchecked( (uint)economy.Turn ), economy.Mode == ParkGameMode.InstantAction ? 2 : 0, TutorialEnabled, gamePaused || economy.IsBankrupt );
+	internal int ScanPark( ParkEconomy economy, bool gamePaused )
+	{
+		// [EXT:restored-advice] the extension's park view (null while it is off) and its per-frame observations
+		RestoredObserve();
+		return ScanTurns( new EconomyMoneyState( economy ), unchecked( (uint)economy.Turn ), economy.Mode == ParkGameMode.InstantAction ? 2 : 0, TutorialEnabled, gamePaused || economy.IsBankrupt, new EconomyParkState( economy, objectStampTurn, hireStampTurn ), RestoredState( economy ) );
+	}
 
 	/// <summary>
 	/// The scan the advisor's update runs once per park turn (the original calls 0x59A550 once per turn from the thing loop): one scan call per turn that has
@@ -387,7 +429,7 @@ internal sealed class AutomaticAdvisor : IDisposable
 	/// </summary>
 	/// <returns>The scan calls made.</returns>
 	// [APPROX:ADVISOR-017] the queue is served once per frame here but once per turn in tp.exe (the end of 0x59A550); the scan itself is exact: once per park turn
-	internal int ScanTurns( IAdvisorMoneyState? money, uint turn, int gameType, bool tutorialEnabled, bool halted )
+	internal int ScanTurns( IAdvisorMoneyState? money, uint turn, int gameType, bool tutorialEnabled, bool halted, IAdvisorParkState? park = null, IRestoredAdviceState? restored = null )
 	{
 		var previousTurn = lastScanTurn;
 		lastScanTurn = turn;
@@ -400,10 +442,13 @@ internal sealed class AutomaticAdvisor : IDisposable
 		var calls = (int)Math.Min( passed, MaximumScansPerUpdate );
 		for ( var call = 0; call < calls; call++ )
 		{
-			var outcome = Controller.ScanOnce( money, turn, gameType, tutorialEnabled );
+			var outcome = Controller.ScanOnce( money, turn, gameType, tutorialEnabled, park, restored );
 			if ( outcome is { Posted: { } posted, Admission: { } admission } )
 				Log.Trace( $"Advisor scan of row {outcome.ScoredRow}: advice {posted.MessageId} score {posted.Score} {admission.Eligibility}{(admission.Stored ? $" in slot {admission.Slot}" : admission.Acknowledged ? ", queue full" : "")}." );
 		}
+		// [EXT:restored-advice] one poll step for every scan call
+		if ( restored != null )
+			RestoredPoll( restored, calls );
 		return calls;
 	}
 
@@ -484,7 +529,7 @@ internal sealed class AutomaticAdvisor : IDisposable
 	/// cannot resume — is rejected by validation instead of silently restoring a silent advisor. The
 	/// process-local presentation-failure flag and the pause state are re-established, not saved.
 	/// </summary>
-	internal sealed record AutomaticAdvisorSnapshot( AdvisorController.AdvisorControllerSnapshot Controller, uint AdvisorClockMilliseconds, bool SpeechWasActive );
+	internal sealed record AutomaticAdvisorSnapshot( AdvisorController.AdvisorControllerSnapshot Controller, uint AdvisorClockMilliseconds, bool SpeechWasActive, long? ObjectStampTurn = null, long? HireStampTurn = null );
 
 	/// <summary>
 	/// The advisor's state for a park save; fails explicitly while a playback attempt is outstanding or a
@@ -495,7 +540,7 @@ internal sealed class AutomaticAdvisor : IDisposable
 	{
 		if ( IsSpeechActive && !whileSpeaking )
 			throw new InvalidOperationException( "Cannot capture the automatic advisor while a response is being spoken: the presentation's speech has no snapshot seam, so it cannot continue after a load." );
-		return new AutomaticAdvisorSnapshot( Controller.CaptureSnapshot(), AdvisorClock, SpeechWasActive: false );
+		return new AutomaticAdvisorSnapshot( Controller.CaptureSnapshot(), AdvisorClock, SpeechWasActive: false, objectStampTurn, hireStampTurn );
 	}
 
 	/// <summary>
@@ -523,6 +568,9 @@ internal sealed class AutomaticAdvisor : IDisposable
 		ValidateSnapshot( snapshot );
 		Controller.RestoreSnapshot( snapshot.Controller );
 		lastScanTurn = null;
+		// a snapshot from before the stamps were kept leaves the ones derived at attach
+		objectStampTurn = snapshot.ObjectStampTurn ?? objectStampTurn;
+		hireStampTurn = snapshot.HireStampTurn ?? hireStampTurn;
 		// The rebase, not an offset on the source: the destination's own elapsed time (construction, pause
 		// screens) must not shift the saved reservations.
 		clock.RestoreMilliseconds( snapshot.AdvisorClockMilliseconds );

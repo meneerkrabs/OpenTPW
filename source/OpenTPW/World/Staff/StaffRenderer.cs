@@ -14,6 +14,8 @@ namespace OpenTPW;
 public sealed class StaffRenderer : Entity
 {
 	private const int VerticesPerSprite = 12;
+	/// <summary>A park turn in seconds (the simulation's 248 ms).</summary>
+	private const float ParkTurnSeconds = 0.248f;
 	/// <summary>Height of the dangling sprite above the ground, in original units.</summary>
 	// [BIN:TPW-EXE:0x46c480 hover] the cursor sprite follows the mouse 5 units above the ground
 	public const float DangleLift = 5f;
@@ -23,9 +25,11 @@ public sealed class StaffRenderer : Entity
 		public float X, Y, LastX, LastY;
 		public float HeadingX, HeadingY = 1;
 		public float MovedAt = float.NegativeInfinity;
-		public float ClipStart;
 		public int ClipKey = -1;
 		public bool Initialised;
+		public SpritePlayer Player = null!;
+		/// <summary>The length of the member's latest step in the walk step's 16.16 units per park turn, until a clip has taken the interval it asks for; 0 when none is waiting.</summary>
+		public float StepLength;
 	}
 
 	private readonly Func<IReadOnlyList<StaffMember>> members;
@@ -67,7 +71,6 @@ public sealed class StaffRenderer : Entity
 		material = new Material<ObjectUniformBuffer>( "content/shaders/sprite.shader" );
 		material.Set( "Color", slots );
 		TexturePackSwitch.PackChanged += ReloadAtlases;
-		TexturePackSwitch.FilesAvailable += ReloadAtlases;
 	}
 
 	private void ReloadAtlases() => ReloadAtlases( null );
@@ -126,7 +129,7 @@ public sealed class StaffRenderer : Entity
 		var (slot, direction, mirror, step) = StaffSpriteRules.Portrait( elapsed, directions );
 		var frame = atlas.Frames[atlas.GetFrame( slot, direction, step % atlas.FramesPerDirection( slot ) )];
 		return new UI.Original.UiSpriteFrame( textures[atlasIndex].NativeTexture, atlas.Width, atlas.Height, frame.X, frame.Y, frame.Width, frame.Height,
-			frame.OriginX, frame.OriginY, mirror );
+			frame.OriginX, frame.OriginY, mirror, frame.ScaleX, frame.ScaleY );
 	}
 
 	/// <summary>The atlas, slot and frame a member is drawn with: for the lifecycle checks and tests; null when the member is not drawn.</summary>
@@ -139,7 +142,7 @@ public sealed class StaffRenderer : Entity
 
 	private (int Atlas, int Frame, bool Mirror, StaffClip Clip)? Select( StaffMember member, MemberView view, float now, SVector3 cameraRight, SVector3 cameraForward )
 	{
-		var atlasIndex = sprites.AtlasFor( member.Type, StaffSpriteRules.VariantKey( member.NameIndex, member.Id ) );
+		var atlasIndex = sprites.AtlasFor( member.Type, StaffSpriteRules.KeyOf( member ) );
 		if ( atlasIndex < 0 || atlasIndex >= textures.Count )
 			return null;
 		var atlas = sprites.Atlases[atlasIndex];
@@ -151,9 +154,15 @@ public sealed class StaffRenderer : Entity
 		if ( view.ClipKey != key )
 		{
 			view.ClipKey = key;
-			view.ClipStart = now;
+			view.Player.Restart();
 		}
-		var (slot, step) = StaffSpriteRules.Resolve( clip, now - view.ClipStart, atlas.Animations.Animations );
+		if ( view.StepLength > 0f )
+		{
+			// [BIN:TPW-EXE:0x004FA2A0 walk step] the interval a step of that length asks for takes effect with the clip playing (the run clip does not double the speed); a clip that is not a walk keeps the interval the last step left
+			view.Player.SetInterval( SpritePlayer.IntervalFor( view.StepLength, clip == StaffSpriteRules.Run ) );
+			view.StepLength = 0f;
+		}
+		var (slot, step) = StaffSpriteRules.ResolveSteps( clip, view.Player.Steps, atlas.Animations.Animations );
 		var (frame, mirror) = FrameFor( atlas, slot, step, view.HeadingX, view.HeadingY, cameraRight, cameraForward );
 		return (atlasIndex, frame, mirror, clip);
 	}
@@ -184,6 +193,10 @@ public sealed class StaffRenderer : Entity
 		{
 			view.HeadingX = dx / step;
 			view.HeadingY = dy / step;
+			// the step of one park turn: the displacement over the time since the previous change, scaled to a turn (the world moves most roles once a turn, mechanics once a second)
+			var elapsed = now - view.MovedAt;
+			var turns = float.IsFinite( elapsed ) ? Math.Clamp( elapsed, 0.05f, 2f ) / ParkTurnSeconds : 1f;
+			view.StepLength = step / turns * Fixed16.One;
 			view.MovedAt = now;
 			(view.LastX, view.LastY) = (x, y);
 		}
@@ -217,15 +230,17 @@ public sealed class StaffRenderer : Entity
 		if ( vertices.Length < needed )
 			vertices = new Vertex[Math.Max( needed, 16 * VerticesPerSprite ) * 2];
 		var now = Time.Now;
+		var nowMs = (long)(now * 1000f);
 		var count = 0;
 		for ( var index = 0; index < list.Count; index++ )
 		{
 			var member = list[index];
 			if ( !views.TryGetValue( member, out var memberView ) )
-				views[member] = memberView = new MemberView();
+				views[member] = memberView = new MemberView { Player = new SpritePlayer( nowMs ) };
 			if ( ReferenceEquals( member, placement.Carried ) || member.CellX == null )
 				continue;
 			Track( member, memberView, now, Time.Delta );
+			memberView.Player.Tick( nowMs );
 			if ( Select( member, memberView, now, right, forward ) is not { } chosen )
 				continue;
 			AddSprite( ref count, chosen.Atlas, chosen.Frame, chosen.Mirror, GuestRenderer.CellToEngine( field, memberView.X, memberView.Y ), right, up, forward );
@@ -277,11 +292,7 @@ public sealed class StaffRenderer : Entity
 	{
 		var atlas = sprites.Atlases[atlasIndex];
 		var frame = atlas.Frames[frameIndex];
-		var left = mirror ? -(frame.OriginX + frame.Width) : frame.OriginX;
-		var x0 = left * GuestRenderer.UnitsPerPixel;
-		var x1 = (left + frame.Width) * GuestRenderer.UnitsPerPixel;
-		var yTop = -frame.OriginY * GuestRenderer.UnitsPerPixel;
-		var yBottom = -(frame.OriginY + frame.Height) * GuestRenderer.UnitsPerPixel;
+		var (x0, x1, yTop, yBottom) = frame.Extents( mirror, GuestRenderer.UnitsPerPixel );
 		var u0 = frame.X / (float)atlas.Width;
 		var u1 = (frame.X + frame.Width) / (float)atlas.Width;
 		if ( mirror )
@@ -320,7 +331,6 @@ public sealed class StaffRenderer : Entity
 	{
 		deleted = true;
 		TexturePackSwitch.PackChanged -= ReloadAtlases;
-		TexturePackSwitch.FilesAvailable -= ReloadAtlases;
 		var ownedTextures = textures.ToArray();
 		textures.Clear();
 		foreach ( var texture in ownedTextures )

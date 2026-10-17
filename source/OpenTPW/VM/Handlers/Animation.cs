@@ -16,16 +16,18 @@ public static partial class OpcodeHandlers
 		/// <summary>Trigger operand channel of the plain opcodes (0xafb10, 0xafc68, 0xafd7c, 0xafe7c, 0xb005c).</summary>
 		public const int MainChannel = 0;
 
-		[OpcodeHandler( Opcode.TRIGANIM, RideOpcodeStatus.Hooked, "STP-PPC 0xafa94: trigger channel 0, flags 0; out = max(ret − 300, 300); WAIT4ANIM deadline = now + out / script speed; LOOPANIM token reset" )]
+		[OpcodeHandler( Opcode.TRIGANIM, RideOpcodeStatus.Hooked, "TPW-EXE 0x552875 (`anim variant out`: two resolved, the third raw, written when it is a variable); STP-PPC 0xafa94: trigger channel 0, flags 0; out = max(ret - 300, 300); WAIT4ANIM deadline = now + out / script speed; LOOPANIM token reset" )]
 		public static void TrigAnim( RideVM vm, Operand animation, Operand variant, Operand duration )
 		{
 			var adjusted = RideAnimationTiming.AdjustTriggerReturn( Trigger( vm, Opcode.TRIGANIM, new[] { animation, variant, duration } ) );
 			duration.Value = adjusted;
+			// [BIN:TPW-EXE:0x552972 TRIGANIM flags] the trigger family keeps the adjusted result in the flag word (+0x48) and writes it to a variable out operand from there (0x552972, 0x55299A; TRIGANIMSPEED 0x552F96, TRIGANIM_CH 0x5531B0, TRIGWAITANIM 0x552D5C, TRIGWAITANIM_CH 0x553644): the flags follow the out value (at least 300, so positive)
+			vm.SetFlags( adjusted );
 			vm.Wait4AnimDeadline = vm.TimeMilliseconds + RideAnimationTiming.TriggerDelay( adjusted, vm.ScriptSpeed );
 			vm.LoopAnimationToken = RideAnimationTiming.NoLoopToken;
 		}
 
-		[OpcodeHandler( Opcode.WAITANIM, RideOpcodeStatus.Hooked, "STP-PPC 0xafbbc: trigger channel 0, flags 0; waits max(unsigned(ret − 300) / script speed, 300) (a clip under 300 ms saturates to INT32_MAX ms) on a u32 deadline; zeroes the WAIT4ANIM deadline; LOOPANIM token reset" )]
+		[OpcodeHandler( Opcode.WAITANIM, RideOpcodeStatus.Hooked, "TPW-EXE 0x5529BC (`anim variant`, resolved); STP-PPC 0xafbbc: trigger channel 0, flags 0; waits max(unsigned(ret - 300) / script speed, 300) (a clip under 300 ms saturates to INT32_MAX ms) on a u32 deadline; zeroes the WAIT4ANIM deadline; LOOPANIM token reset" )]
 		public static void WaitAnim( RideVM vm, Operand animation, Operand variant )
 		{
 			var wait = RideAnimationTiming.WaitAnimDelay( Trigger( vm, Opcode.WAITANIM, new[] { animation, variant } ), vm.ScriptSpeed );
@@ -34,7 +36,7 @@ public static partial class OpcodeHandlers
 			WaitUntilDeadline( vm, unchecked((uint)wait) );
 		}
 
-		[OpcodeHandler( Opcode.LOOPANIM, RideOpcodeStatus.Hooked, "STP-PPC 0xafd00: no-op while token anim + (sub << 16) equals script +168; else loops on channel 0 (flags 1), stores the token, zeroes the WAIT4ANIM deadline" )]
+		[OpcodeHandler( Opcode.LOOPANIM, RideOpcodeStatus.Hooked, "TPW-EXE 0x552B2F (`anim variant`, resolved); STP-PPC 0xafd00: no-op while token anim + (sub << 16) equals script +168; else loops on channel 0 (flags 1), stores the token, zeroes the WAIT4ANIM deadline" )]
 		public static void LoopAnim( RideVM vm, Operand animation, Operand variant )
 		{
 			// [BIN:STP-PPC:0x100AFD2C LOOPANIM token] an equal token returns before the trigger and leaves the deadline; TRIGANIM, WAITANIM, TRIGWAITANIM and TRIGANIMSPEED store 0xFFFF (0x100AFBB4, 0x100AFCF8, 0x100AFF24, 0x100B00EC), as does script creation (0x100B31A0); the _CH forms leave it
@@ -46,14 +48,14 @@ public static partial class OpcodeHandlers
 			vm.LoopAnimationToken = token;
 		}
 
-		[OpcodeHandler( Opcode.TRIGWAITANIM, RideOpcodeStatus.Hooked, "STP-PPC 0xafd94: as TRIGANIM, then re-executes until channel 0's AnimID equals the triggered one (+188 = id + 1), yielding while it differs" )]
+		[OpcodeHandler( Opcode.TRIGWAITANIM, RideOpcodeStatus.Hooked, "TPW-EXE 0x552C1A (`anim variant out`, as TRIGANIM); STP-PPC 0xafd94: as TRIGANIM, then re-executes until channel 0's AnimID equals the triggered one (+188 = id + 1), yielding while it differs" )]
 		public static void TrigWaitAnim( RideVM vm, Operand animation, Operand variant, Operand duration )
 			=> TriggerAndWait( vm, Opcode.TRIGWAITANIM, new[] { animation, variant, duration }, animation, duration, MainChannel, resetLoopToken: true );
 
-		[OpcodeHandler( Opcode.GETANIM, RideOpcodeStatus.Hooked, "STP-PPC 0xaff3c: channel 0's AnimID (12 = none), −1 once its non-looping clip ended (channel flag 0x4); result sets flags" )]
+		[OpcodeHandler( Opcode.GETANIM, RideOpcodeStatus.Hooked, "TPW-EXE 0x552DB4 (`dest`, raw); STP-PPC 0xaff3c: channel 0's AnimID (12 = none), -1 once its non-looping clip ended (channel flag 0x4); result sets flags" )]
 		public static void GetAnim( RideVM vm, Operand dest ) => Query( vm, Opcode.GETANIM, new[] { dest }, dest );
 
-		[OpcodeHandler( Opcode.TRIGANIMSPEED, RideOpcodeStatus.Hooked, "STP-PPC 0xaffc4: trigger channel 0 at script speed × operand / 1000; out = max(ret − 300, 300); deadline = now + out × 1000 / operand (signed divw); LOOPANIM token reset" )]
+		[OpcodeHandler( Opcode.TRIGANIMSPEED, RideOpcodeStatus.Hooked, "TPW-EXE 0x552E3A (`anim variant out speed`: three resolved, the third raw); STP-PPC 0xaffc4: trigger channel 0 at script speed x operand / 1000; out = max(ret - 300, 300); deadline = now + out x 1000 / operand (signed divw); LOOPANIM token reset" )]
 		public static void TrigAnimSpeed( RideVM vm, Operand animation, Operand variant, Operand duration, Operand perMille )
 		{
 			var speed = perMille.Value;
@@ -65,25 +67,27 @@ public static partial class OpcodeHandlers
 					: $"TRIGANIMSPEED speed {speed} per mille: negative speeds are defined in the original but their channel playback is not traced (RIDES-038)" );
 			var adjusted = RideAnimationTiming.AdjustTriggerReturn( Trigger( vm, Opcode.TRIGANIMSPEED, new[] { animation, variant, duration, perMille } ) );
 			duration.Value = adjusted;
+			vm.SetFlags( adjusted );
 			vm.Wait4AnimDeadline = vm.TimeMilliseconds + RideAnimationTiming.SpeedTriggerDelay( adjusted, speed );
 			vm.LoopAnimationToken = RideAnimationTiming.NoLoopToken;
 		}
 
-		[OpcodeHandler( Opcode.FLUSHANIM, RideOpcodeStatus.Hooked, "STP-PPC 0xafa68 → 0xa6c90: clears only channel 0's deferred clip; the playing clip and the WAIT4ANIM deadline stay" )]
+		[OpcodeHandler( Opcode.FLUSHANIM, RideOpcodeStatus.Hooked, "TPW-EXE 0x552861 (no operands); STP-PPC 0xafa68 → 0xa6c90: clears only channel 0's deferred clip; the playing clip and the WAIT4ANIM deadline stay" )]
 		public static void FlushAnim( RideVM vm ) => vm.Effect( Opcode.FLUSHANIM, Array.Empty<Operand>() );
 
-		[OpcodeHandler( Opcode.FLUSHANIM_CH, RideOpcodeStatus.Hooked, "STP-PPC 0xb00f4 → 0xa6c90: clears only the operand channel's deferred clip" )]
+		[OpcodeHandler( Opcode.FLUSHANIM_CH, RideOpcodeStatus.Hooked, "TPW-EXE 0x553000 (`channel`, resolved); STP-PPC 0xb00f4 → 0xa6c90: clears only the operand channel's deferred clip" )]
 		public static void FlushAnimChannel( RideVM vm, Operand channel ) => vm.Effect( Opcode.FLUSHANIM_CH, new[] { channel } );
 
-		[OpcodeHandler( Opcode.TRIGANIM_CH, RideOpcodeStatus.Hooked, "STP-PPC 0xb013c: as TRIGANIM on channel operand 4 (Totem `TRIGANIM_CH 5 1 0 1`); leaves the LOOPANIM token" )]
+		[OpcodeHandler( Opcode.TRIGANIM_CH, RideOpcodeStatus.Hooked, "TPW-EXE 0x55306E (`anim variant out channel`); STP-PPC 0xb013c: as TRIGANIM on channel operand 4 (Totem `TRIGANIM_CH 5 1 0 1`); leaves the LOOPANIM token" )]
 		public static void TrigAnimChannel( RideVM vm, Operand animation, Operand variant, Operand duration, Operand channel )
 		{
 			var adjusted = RideAnimationTiming.AdjustTriggerReturn( Trigger( vm, Opcode.TRIGANIM_CH, new[] { animation, variant, duration, channel } ) );
 			duration.Value = adjusted;
+			vm.SetFlags( adjusted );
 			vm.Wait4AnimDeadline = vm.TimeMilliseconds + RideAnimationTiming.TriggerDelay( adjusted, vm.ScriptSpeed );
 		}
 
-		[OpcodeHandler( Opcode.WAITANIM_CH, RideOpcodeStatus.Hooked, "STP-PPC 0xb0268, PC 0x55320A (same arithmetic): as WAITANIM on channel operand 3 without the speed division or fctiwz: unsigned max(ret − 300, 300) added to the clock as a wrapping u32 (0xb035c), so a clip under 300 ms gives a deadline in the past and the script continues next slice; zeroes the deadline" )]
+		[OpcodeHandler( Opcode.WAITANIM_CH, RideOpcodeStatus.Hooked, "TPW-EXE 0x55320A (`anim variant channel`), STP-PPC 0xb0268 (same arithmetic): as WAITANIM on channel operand 3 without the speed division or fctiwz: unsigned max(ret - 300, 300) added to the clock as a wrapping u32 (0xb035c), so a clip under 300 ms gives a deadline in the past and the script continues next slice; zeroes the deadline" )]
 		public static void WaitAnimChannel( RideVM vm, Operand animation, Operand variant, Operand channel )
 		{
 			var wait = RideAnimationTiming.WaitAnimChannelDelay( Trigger( vm, Opcode.WAITANIM_CH, new[] { animation, variant, channel } ) );
@@ -91,21 +95,21 @@ public static partial class OpcodeHandlers
 			WaitUntilDeadline( vm, wait );
 		}
 
-		[OpcodeHandler( Opcode.LOOPANIM_CH, RideOpcodeStatus.Hooked, "STP-PPC 0xb037c: loops on channel operand 3 (flags 1) on every call, no token check; zeroes the deadline" )]
+		[OpcodeHandler( Opcode.LOOPANIM_CH, RideOpcodeStatus.Hooked, "TPW-EXE 0x553399 (`anim variant channel`); STP-PPC 0xb037c: loops on channel operand 3 (flags 1) on every call, no token check; zeroes the deadline" )]
 		public static void LoopAnimChannel( RideVM vm, Operand animation, Operand variant, Operand channel )
 		{
 			vm.Effect( Opcode.LOOPANIM_CH, new[] { animation, variant, channel } );
 			vm.Wait4AnimDeadline = 0;
 		}
 
-		[OpcodeHandler( Opcode.TRIGWAITANIM_CH, RideOpcodeStatus.Hooked, "STP-PPC 0xb0404: as TRIGWAITANIM on channel operand 4; leaves the LOOPANIM token" )]
+		[OpcodeHandler( Opcode.TRIGWAITANIM_CH, RideOpcodeStatus.Hooked, "TPW-EXE 0x553494 (`anim variant out channel`); STP-PPC 0xb0404: as TRIGWAITANIM on channel operand 4; leaves the LOOPANIM token" )]
 		public static void TrigWaitAnimChannel( RideVM vm, Operand animation, Operand variant, Operand duration, Operand channel )
 			=> TriggerAndWait( vm, Opcode.TRIGWAITANIM_CH, new[] { animation, variant, duration, channel }, animation, duration, channel.Value, resetLoopToken: false );
 
-		[OpcodeHandler( Opcode.GETANIM_CH, RideOpcodeStatus.Hooked, "STP-PPC 0xb05b8: `GETANIM_CH dest channel`: the channel's AnimID, −1 once ended; result sets flags (corpus `GETANIM_CH 0 n; BRANCH_PV x; BRANCH_Z x`)" )]
+		[OpcodeHandler( Opcode.GETANIM_CH, RideOpcodeStatus.Hooked, "TPW-EXE 0x5536AE (`dest channel`: the first raw, the second resolved); STP-PPC 0xb05b8: the channel's AnimID, -1 once ended; result sets flags (corpus `GETANIM_CH 0 n; BRANCH_PV x; BRANCH_Z x`)" )]
 		public static void GetAnimChannel( RideVM vm, Operand dest, Operand channel ) => Query( vm, Opcode.GETANIM_CH, new[] { dest, channel }, dest );
 
-		[OpcodeHandler( Opcode.WAIT4ANIM, RideOpcodeStatus.Hooked, "STP-PPC 0xb07a0: deadline 0 continues; otherwise blocks while now < deadline (re-executing), then clears it" )]
+		[OpcodeHandler( Opcode.WAIT4ANIM, RideOpcodeStatus.Hooked, "TPW-EXE 0x5538EB (no operands); STP-PPC 0xb07a0: deadline 0 continues; otherwise blocks while now < deadline (re-executing), then clears it" )]
 		public static void Wait4Anim( RideVM vm )
 		{
 			var deadline = vm.Wait4AnimDeadline;
@@ -191,6 +195,7 @@ public static partial class OpcodeHandlers
 			}
 			var adjusted = RideAnimationTiming.AdjustTriggerReturn( Trigger( vm, opcode, operands ) );
 			duration.Value = adjusted;
+			vm.SetFlags( adjusted );
 			vm.Wait4AnimDeadline = vm.TimeMilliseconds + RideAnimationTiming.TriggerDelay( adjusted, vm.ScriptSpeed );
 			if ( resetLoopToken )
 				vm.LoopAnimationToken = RideAnimationTiming.NoLoopToken;

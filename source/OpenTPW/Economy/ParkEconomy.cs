@@ -9,7 +9,9 @@ public enum CellPurchase
 	WaterTrack,
 	Land,
 	/// <summary>[EXT:pools-cost] One pool water cell of the <c>opentpw.pools</c> extension (<see cref="ParkEconomy.PoolCellCost"/>).</summary>
-	Pool
+	Pool,
+	/// <summary>[EXT:pools-cost] One piece of a water slide of the <c>opentpw.pools</c> extension (<see cref="ParkEconomy.SlidePieceCost"/>).</summary>
+	SlidePiece
 }
 
 /// <summary>
@@ -399,7 +401,7 @@ public sealed class ParkEconomy : IParkEconomy
 	/// </summary>
 	// [BIN:TPW-EXE:0x00508E70 month gate] staff vitals and strikes follow the traced routines: the month gate 0x00508E70, the escalation 0x00508F70 and the grievance 0x00509360; the month message comes from the calendar update 0x004F8260 with no game-type test, and the age stamp 0x004F8800 counts floor(turn × 3750) seconds from world turn 0
 	// [BIN:TPW-EXE:0x004C7FA0 cached census] the gate counts the guests through the analyser's cached census with age 5 (CachedGuestCensus), which the main loop's crowd read refreshes with age 0 after every fourth turn counted from the turn the step counter 0x00877D34 started at (0x0054F82D, 0x004C81E0)
-	// [BIN:TPW-EXE:0x005089C0 forced strike] the forced-strike word is 0 from the constructor and written only by the save loader 0x00508BB0, so the gate sees 0 in play as here (SAVE-009)
+	// [BIN:TPW-EXE:0x005089C0 forced strike] the forced-strike word is 0 from the constructor and written only by the save loader 0x00508BB0, so the gate sees 0 in play as here
 	private void UpdateStaffVitals()
 	{
 		if ( Staff.Members.Count == 0 )
@@ -837,7 +839,10 @@ public sealed class ParkEconomy : IParkEconomy
 				if ( item.ScriptHosted )
 					WriteScript( item, RideVariables.VAR_BREAKSTAT, 1 );
 				else
+				{
 					item.IsBrokenDown = true;
+					Raise( ParkEventKind.RideEnteredBrokenState, 0, item.Id, item.InfoId );
+				}
 				Raise( ParkEventKind.RideBrokeDown, 0, item.Id, item.InfoId );
 			}
 		}
@@ -871,7 +876,10 @@ public sealed class ParkEconomy : IParkEconomy
 	internal void ObserveScriptState( ParkObjectState item, bool inBrokenState )
 	{
 		if ( inBrokenState && item.ScriptStateBroken == false )
+		{
 			item.IsBrokenDown = true;
+			Raise( ParkEventKind.RideEnteredBrokenState, 0, item.Id, item.InfoId );
+		}
 		item.ScriptStateBroken = inBrokenState;
 	}
 
@@ -905,6 +913,9 @@ public sealed class ParkEconomy : IParkEconomy
 			WriteScript( item, RideVariables.VAR_WORN, 1 );
 		if ( before >= WornStateOfRepair && item.StateOfRepair < WornStateOfRepair )
 			Raise( ParkEventKind.RideWorn, item.StateOfRepair, item.Id, item.InfoId );
+		// [BIN:TPW-EXE:0x004DF670 breakdown imminent] the condition byte below 10.0 with the step's wear added back not below it posts the advice 0x42 (the advisor answers this event)
+		if ( AdvisorRideEvents.CrossesImminentLine( (float)item.Repair, wear ) )
+			Raise( ParkEventKind.RideBreakdownImminent, item.StateOfRepair, item.Id, item.InfoId );
 	}
 
 	/// <summary>
@@ -1934,6 +1945,13 @@ public sealed class ParkEconomy : IParkEconomy
 	// [EXT:pools-cost] OpenTPW's own price; the original game has no pools
 	public const int PoolCellCost = 75;
 
+	/// <summary>
+	/// [EXT:pools-cost] The price of one piece of a water slide: 90. The original's balance files have no slide price, so it is a constant of the extension (docs/POOLS.md, "Water slides");
+	/// a slide of ten pieces costs 900 on top of its tower, the price of a modest ride. Riding is free.
+	/// </summary>
+	// [EXT:pools-cost] OpenTPW's own price; the original game has no pools
+	public const int SlidePieceCost = 90;
+
 	public long CellCost( CellPurchase kind ) => kind switch
 	{
 		CellPurchase.Path => Settings.Costs.PathCell,
@@ -1942,6 +1960,7 @@ public sealed class ParkEconomy : IParkEconomy
 		CellPurchase.WaterTrack => Settings.Costs.WaterTrackCell,
 		CellPurchase.Land => Settings.Costs.MapCell,
 		CellPurchase.Pool => PoolCellCost,
+		CellPurchase.SlidePiece => SlidePieceCost,
 		_ => throw new ArgumentOutOfRangeException( nameof( kind ) )
 	};
 
@@ -2056,6 +2075,15 @@ public sealed class ParkEconomy : IParkEconomy
 			return 0;
 		Post( LedgerCategory.OtherIncome, PoolCellCost );
 		return PoolCellCost;
+	}
+
+	/// <summary>[EXT:pools-cost] Refunds one removed slide piece in full, as an erased pool cell is (nothing while withdrawals are disabled). Returns the amount credited.</summary>
+	public long RefundSlidePiece()
+	{
+		if ( !WithdrawalsEnabled )
+			return 0;
+		Post( LedgerCategory.OtherIncome, SlidePieceCost );
+		return SlidePieceCost;
 	}
 
 	/// <summary>

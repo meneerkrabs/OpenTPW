@@ -81,9 +81,10 @@ public class TpiRidesEndToEndTests
 		// the game's own objects are unchanged and keep their ids (the mod's ids sit above every original one)
 		Assert.AreEqual( "Belly Bounce", ObjectCatalog.Load( "jungle" ).Find( 1100 )!.DisplayName );
 		Assert.IsTrue( ObjectCatalog.Load( "jungle" ).Entries.Where( entry => !entry.IsExternal ).All( entry => entry.InfoId < CrossEditionObjects.FirstReservableId ) );
+		// counted by the mod's id: the pools extension (on by default) adds its own objects to every Theme Park World theme
 		foreach ( var theme in new[] { "jungle", "space", "fantasy" } )
-			Assert.AreEqual( TpiRidesFixture.Items.Count( item => item.Theme == theme ), ObjectCatalog.Load( theme ).Entries.Count( entry => entry.IsExternal ), $"every archive the shipped mod lists is in {theme}" );
-		Assert.AreEqual( 0, ObjectCatalog.Load( "hallow" ).Entries.Count( entry => entry.IsExternal ), "the mod adds nothing to the other themes" );
+			Assert.AreEqual( TpiRidesFixture.Items.Count( item => item.Theme == theme ), ObjectCatalog.Load( theme ).Entries.Count( entry => entry.ModId == TpiRidesFixture.Id ), $"every archive the shipped mod lists is in {theme}" );
+		Assert.AreEqual( 0, ObjectCatalog.Load( "hallow" ).Entries.Count( entry => entry.ModId == TpiRidesFixture.Id ), "the mod adds nothing to the other themes" );
 	}
 
 	[TestMethod]
@@ -119,8 +120,10 @@ public class TpiRidesEndToEndTests
 	public void WithoutTheModNothingOfTheInstallIsListedOrRouted()
 	{
 		using var plain = ModContentRoots.Use( ModSet.Defaults( OfficialExtensions.All ), FileSystem );
-		Assert.AreEqual( 0, ObjectCatalog.Load( "jungle" ).Entries.Count( entry => entry.IsExternal ) );
-		Assert.IsFalse( ParkEconomy.CreateForTheme( "jungle", false ).Catalog.Objects.Any( info => info.InfoId >= CrossEditionObjects.FirstReservableId ) );
+		// the default set includes the pools extension (on by default), whose own objects are external too and sit in their reserved ids: nothing else is listed
+		Assert.AreEqual( 0, ObjectCatalog.Load( "jungle" ).Entries.Count( entry => entry.IsExternal && entry.ModId != OfficialExtensions.Pools.Id ) );
+		Assert.IsFalse( ParkEconomy.CreateForTheme( "jungle", false ).Catalog.Objects.Any( info => info.InfoId >= CrossEditionObjects.FirstReservableId
+			&& info.InfoId is not (>= PoolContent.FirstReservedId and <= PoolContent.LastReservedId) ) );
 		Assert.IsNull( ContentSoundRoots.SourceOf( Entry( "jungle", 1100 ) ) );
 	}
 
@@ -273,7 +276,8 @@ public class TpiRidesEndToEndTests
 		var manifest = ParkResumeAssetManifest.Capture( ObjectCatalog.Load( "jungle" ), BalanceSettings.Load( "jungle", false ) );
 		Assert.IsTrue( manifest.Keys.Any( key => key.StartsWith( "mod:opentpw.tpi-rides:/levels/arabian/rides/tbounce/", StringComparison.Ordinal ) ), "the TPI archive's members are pinned" );
 		Assert.IsTrue( manifest.Keys.Any( key => key.StartsWith( "data:/levels/jungle/rides/", StringComparison.Ordinal ) ) );
-		Assert.IsNull( ParkResumeMods.ShapeProblem( records, manifest ) );
+		// as a save holds it: the pools extension (on by default) keeps only the keys of the pools objects a park placed (none here), ParkResumeMods.AssetsForUse
+		Assert.IsNull( ParkResumeMods.ShapeProblem( records, ParkResumeMods.AssetsForUse( manifest, Array.Empty<ObjectCatalogEntry>() ) ) );
 		// a park saved without the mod, loaded with it, is refused for the mod that was not there
 		StringAssert.Contains( string.Join( "; ", ParkResumeMods.Unmet( null, set ) ), "was saved without" );
 	}

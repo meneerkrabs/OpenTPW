@@ -56,12 +56,26 @@ public partial class Level : IDisposable
 	public ParkNameLines? ParkName { get; private set; }
 
 	/// <summary>
+	/// An original save's camera block puts the camera where the save left it (zoom, yaw and the point it looks at); the Home key still returns to the level's home pose. A resumed park, a
+	/// visit and a sandbox keep their own start. A saved pose that is no finite point of the map leaves the home pose.
+	/// </summary>
+	private void ApplySavedCamera()
+	{
+		if ( resumeState != null || visitLayout != null || OriginalPark?.Save?.RuntimeBlocks is not { } blocks || OriginalPark.Heightfield is not { } field || Camera.Mode is not ParkCameraMode mode )
+			return;
+		if ( ParkCameraMode.PoseOfSave( blocks.Camera ) is not var (x, z, height, yaw) )
+			return;
+		var target = OriginalParkPlacement.ToEngine( field, new System.Numerics.Vector3( x, 0, z ) );
+		mode.SetPose( new Vector3( target.X, target.Y, 0 ), height, yaw );
+	}
+
+	/// <summary>
 	/// The park name and the gate sign of an original level: a resumed park keeps its saved lines, which the sign draws as the
 	/// original's rebuild after loading does (0x468500); a new park takes the gate's default lines.
 	/// </summary>
 	private void SetupParkName()
 	{
-		var savedName = resumeState?.ParkName is { } saved ? new ParkNameLines( saved.Line1, saved.Line2 ) : null;
+		var savedName = resumeState?.ParkName is { } saved ? new ParkNameLines( saved.Line1, saved.Line2 ) : SavedGateName();
 		if ( OriginalPark != null )
 		{
 			try { GateSign = OriginalGateSign.TryCreate( OriginalPark, Global, savedName, reloaded: savedName != null ); }
@@ -71,6 +85,21 @@ public partial class Level : IDisposable
 			}
 		}
 		ParkName = savedName ?? GateSign?.Lines;
+	}
+
+	/// <summary>
+	/// The park name a player's own original save holds: the two sign lines of its park gate's attraction thing (<c>mParkGates</c>, name lines +0x3C8 and +0x40A), which the load's sign rebuild redraws (0x468500).
+	/// Null for any other start (the shipped Easymode seed keeps the gate's default lines in the player's language) and for lines OpenTPW's sign cannot hold.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004DB7D0 attraction serializer] the placed object's two sign lines (NameA/NameB) are part of its record; a park's name is its gate's pair (SAVE-006)
+	private ParkNameLines? SavedGateName()
+	{
+		if ( playerSavePayload == null || OriginalPark?.Save is not { } save )
+			return null;
+		var gate = save.Attractions.FirstOrDefault( attraction => attraction.Id == save.World.Variables.ParkGates );
+		if ( gate == null )
+			return null;
+		return ParkNameLines.FromSavedGate( gate.NameLine1, gate.NameLine2 );
 	}
 
 	/// <summary>
@@ -119,6 +148,9 @@ public partial class Level : IDisposable
 	public bool UiCapturesMouse { get; set; }
 	/// <summary>Simulation speed from the HUD speed control (0 = paused).</summary>
 	public float SimulationTimeScale { get; set; } = 1f;
+
+	/// <summary>The scene's rate-scaled clock (<see cref="OpenTPW.SceneClock"/>): the sky and the coasters' scrolling textures read it, so they follow the game speed and the pause.</summary>
+	internal SceneClock SceneClock { get; } = new();
 	/// <summary>Shows the ImGui developer panel and the sandbox BF4 text panel (off when the original HUD runs alone).</summary>
 	public bool ShowDeveloperPanels { get; set; } = true;
 	private readonly FixedStepClock simulationClock = new();
@@ -137,6 +169,10 @@ public partial class Level : IDisposable
 	public BalloonRenderer? BalloonRenderer { get; private set; }
 	/// <summary>Draws the guests' and the staff's thought bubbles.</summary>
 	public ThoughtRenderer? ThoughtRenderer { get; private set; }
+	/// <summary>The litter sprites lying on the park's cells (null without a park economy).</summary>
+	public LitterRenderer? LitterRenderer { get; private set; }
+	/// <summary>The balloons over rides whose upgrade has just been installed (null without a park economy).</summary>
+	public UpgradeBalloonRenderer? UpgradeBalloons { get; private set; }
 	/// <summary>The default world seed (<see cref="WorldSeed.DefaultValue"/>); with it the guest stream keeps its old seed.</summary>
 	public const ulong GuestSeed = WorldSeed.DefaultValue;
 	/// <summary>The one seed every simulation random stream of this level derives from (docs/DETERMINISM.md).</summary>
@@ -178,8 +214,9 @@ public partial class Level : IDisposable
 		}
 	}
 
-	public Level( string levelName, bool loadOriginalLevel = false, ParkVisitInfo? visit = null, OnlineFolders? onlineFolders = null, ParkStartKind start = ParkStartKind.OriginalSaveReference, WorldSeed? seed = null )
-		: this( levelName, loadOriginalLevel, visit, onlineFolders, start, seed, null, null, overFrames: false ) { }
+	/// <param name="playerSave">The decoded payload of a player's own original save of this level (<c>--original-save</c>): the park starts from it instead of the shipped Easymode save, with Full Simulation rules and the balance the save was made with.</param>
+	public Level( string levelName, bool loadOriginalLevel = false, ParkVisitInfo? visit = null, OnlineFolders? onlineFolders = null, ParkStartKind start = ParkStartKind.OriginalSaveReference, WorldSeed? seed = null, ReadOnlyMemory<byte>? playerSave = null )
+		: this( levelName, loadOriginalLevel, visit, onlineFolders, start, seed, null, null, overFrames: false, playerSave: playerSave ) { }
 
 	internal Level( ParkResumeSnapshot snapshot, ParkEconomy economy, OnlineFolders? onlineFolders = null )
 		: this( snapshot.Theme, true, null, onlineFolders, snapshot.StartKind, new WorldSeed( snapshot.Seed ), snapshot, economy, overFrames: false ) { }
@@ -193,8 +230,9 @@ public partial class Level : IDisposable
 		new( levelName, loadOriginalLevel, visit, onlineFolders, start, null, null, null, overFrames: true );
 
 	private Level( string levelName, bool loadOriginalLevel, ParkVisitInfo? visit, OnlineFolders? onlineFolders,
-		ParkStartKind start, WorldSeed? seed, ParkResumeSnapshot? resume, ParkEconomy? resumedEconomy, bool overFrames, ThemeParkIncLayoutCheckpoint? checkpoint = null )
+		ParkStartKind start, WorldSeed? seed, ParkResumeSnapshot? resume, ParkEconomy? resumedEconomy, bool overFrames, ThemeParkIncLayoutCheckpoint? checkpoint = null, ReadOnlyMemory<byte>? playerSave = null )
 	{
+		playerSavePayload = playerSave;
 		if (checkpoint != null && !GameEditions.IsThemeParkInc)
 			throw new NotSupportedException("TPI layout checkpoints require Theme Park Inc data.");
 		incLayout = checkpoint;
@@ -218,6 +256,7 @@ public partial class Level : IDisposable
 	}
 
 	private IEnumerator<float>? construction;
+	private readonly ReadOnlyMemory<byte>? playerSavePayload;
 
 	/// <summary>How far the construction has come, from 0 to 1 (a rough share of the work, for a progress bar).</summary>
 	internal float ConstructionProgress { get; private set; }
@@ -246,7 +285,8 @@ public partial class Level : IDisposable
 			using ( LoadProfile.Measure( "original-park" ) )
 			{
 				var parts = 0;
-				foreach ( var loaded in OriginalPark.LoadSteps( LevelName, readShippedSave: incLayout == null && resume == null && (IsReadOnlyVisit || ParkStart.ReadsShippedSave( start )) ) )
+				foreach ( var loaded in OriginalPark.LoadSteps( LevelName, readShippedSave: incLayout == null && resume == null && (IsReadOnlyVisit || ParkStart.ReadsShippedSave( start )),
+					savePayload: incLayout == null && resume == null && !IsReadOnlyVisit ? playerSavePayload : null ) )
 				{
 					if ( loaded == null )
 						yield return Math.Min( 0.14f, 0.004f * ++parts );
@@ -263,7 +303,7 @@ public partial class Level : IDisposable
 			using ( LoadProfile.Measure( "economy" ) )
 			{
 				if ( !IsReadOnlyVisit && GameEditions.Capabilities.Economy )
-					Park = resume == null ? ParkEconomyRuntime.ForOriginalLevel( OriginalPark, start, Seed )
+					Park = resume == null ? ParkEconomyRuntime.ForOriginalLevel( OriginalPark, start, Seed, playerSave: playerSavePayload != null )
 						: ParkEconomyRuntime.ForResume( resumedEconomy ?? throw new InvalidDataException( "The resumed economy is missing." ), start );
 				else if ( !IsReadOnlyVisit && GameEditions.IsThemeParkInc && GameEditions.Capabilities.Money && resume == null )
 					Park = ParkEconomyRuntime.ForThemeParkIncLevel( OriginalPark, Seed );
@@ -404,6 +444,7 @@ public partial class Level : IDisposable
 		using ( LoadProfile.Measure( "coasters" ) )
 			SetupCoasters();
 		Camera.SetCameraMode<ParkCameraMode>();
+		ApplySavedCamera();
 		yield return 0.8f;
 		if ( OriginalPark != null )
 		{
@@ -441,9 +482,19 @@ public partial class Level : IDisposable
 			using var connectProfile = LoadProfile.Measure( "staff-gate-economy" );
 			ConnectObjectsToEconomy();
 			if ( Park != null )
+			{
 				litterEffects = new ParkLitterEffects( Park.Economy.Litter, ParticleRendererModule.AdvisorPool );
+				if ( OriginalPark != null )
+				{
+					// the economy that owns the litter is replaced by a load, so the renderer asks for it again every frame
+					LitterRenderer = new LitterRenderer( OriginalPark.Heightfield, () => Park?.Economy.Litter, GuestSpriteAtlas.LoadLitter() );
+					UpgradeBalloons = new UpgradeBalloonRenderer( OriginalPark.Heightfield, GuestSpriteAtlas.LoadSpecialEffects() );
+				}
+			}
 			ImportOriginalGuests();
 			ImportOriginalRideSettings();
+			ImportOriginalScripts();
+			ImportOriginalParticles();
 			if ( resumeState == null && !GameEditions.IsThemeParkInc && OriginalPark.Save != null && visitLayout == null )
 				ReleaseUnimportedThings();
 			if ( GameEditions.Capabilities.Staff )
@@ -485,6 +536,17 @@ public partial class Level : IDisposable
 		List<GuestSpriteAtlas> sprites;
 		using ( LoadProfile.Measure( "guest-sprites" ) )
 			sprites = GuestSpriteAtlas.LoadKids();
+		// [EXT:pools-guest-art] with the pools extension on, the kid and head sets are the extension's 2x ones (together, and only where the game's kid sets are the Theme Park World ones)
+		var poolGuestSprites = PoolGuestSprites.LoadReplacement( sprites );
+		var gameKidCount = sprites.Count;
+		var headSprites = poolGuestSprites?.Heads ?? GuestSpriteAtlas.LoadKidHeads();
+		if ( poolGuestSprites != null )
+			sprites = poolGuestSprites.Kids;
+		// [EXT:pools-swim] the swim sets (64 MiB decoded) are decoded on a worker only for a park that has pool water already; any other park starts that when its first pool cell is painted (PreloadSwimSprites)
+		swimSpriteSets = null;
+		swimSpritesPreloaded = false;
+		if ( grid.Cells.CountOf( ParkCellType.PoolWater ) > 0 )
+			PreloadSwimSprites();
 		// A guest in costume is drawn with the theme's costume set (sprite category 2, tp.exe 0x004FE65E: +0x20 from 0x00541F70(2)), its head on a ride with the costume heads where the theme has them
 		var costumes = GuestSpriteAtlas.LoadCostumes( park.LevelName );
 		var costumeHeads = GuestSpriteAtlas.LoadCostumeHeads( park.LevelName );
@@ -492,7 +554,7 @@ public partial class Level : IDisposable
 		GuestRenderer = new GuestRenderer( Guests, park.Heightfield, sprites ) { Draws = guest => (!(guest.IsSwimming || guest.InPoolActivity) || SwimmerRenderer == null) && (costumes.Count == 0 || !guest.InCostume) };
 		if ( costumes.Count > 0 )
 			CostumeRenderer = new GuestRenderer( Guests, park.Heightfield, costumes ) { Draws = guest => guest.InCostume && (!(guest.IsSwimming || guest.InPoolActivity) || SwimmerRenderer == null) };
-		RideHeadRenderer = new RideHeadRenderer( Guests, GuestSpriteAtlas.LoadKidHeads(), Objects ) { Draws = costumeHeads.Count == 0 ? null : guest => !guest.InCostume };
+		RideHeadRenderer = new RideHeadRenderer( Guests, headSprites, Objects ) { Draws = costumeHeads.Count == 0 ? null : guest => !guest.InCostume };
 		RideHeadRenderer.AddSource( new TrackHeadSources( () => trackRenderers.Values ) );
 		RideHeadRenderer.AddSource( new TourHeadSources( () => tourRenderer ) );
 		AddCoasterHeads( RideHeadRenderer );
@@ -507,7 +569,7 @@ public partial class Level : IDisposable
 		ThoughtRenderer = new ThoughtRenderer( Guests, park.Heightfield, GuestSpriteAtlas.LoadThoughts(),
 			() => Park?.Economy.Staff.Members ?? (IReadOnlyList<StaffMember>)Array.Empty<StaffMember>(),
 			member => member.State != StaffState.PickedUp && StaffRenderer != null && StaffRenderer.TryGetDrawCell( member, out var x, out var y ) ? (x, y) : null );
-		Log.Trace( $"Guests: {grid.WalkableCount} walkable path cells, {sprites.Count} original kid sprite sets, {costumes.Count} costume sets, {Guests.Settings.Types.Count} .sam peep types." );
+		Log.Trace( $"Guests: {grid.WalkableCount} walkable path cells, {gameKidCount} original kid sprite sets{(poolGuestSprites != null ? $" (replaced by the pools extension's {sprites.Count} 2x sets)" : "")}, {costumes.Count} costume sets, {Guests.Settings.Types.Count} .sam peep types." );
 	}
 
 	/// <summary>The Buy Land tool (tp.exe mouse mode 0x39); null for a level without land (no Hoardings.sam, Theme Park Inc, a visit).</summary>
@@ -582,9 +644,30 @@ public partial class Level : IDisposable
 				AttractionRuntimeOf( item.InstanceId )?.StartObjectEffect( ObjectParticleEffect.Upgrade );
 				// [BIN:TPW-EXE:0x55A2E5 upgrade sound] the same routine then plays the global cat_rides event 0xB8 at the footprint middle
 				AttractionRuntimeOf( item.InstanceId )?.PlayUpgradeSound();
+				HangUpgradeBalloon( item.InstanceId, (int)item.Amount );
 				OpenAfterRepair( item.InstanceId );
 			}
 		};
+	}
+
+	/// <summary>
+	/// An installed upgrade replaces the ride's balloon sprite: level 1 or 2 hangs a new one over the ride's front cell, level 3 none (tp.exe 0x4DF8F0, <see cref="UpgradeBalloonRenderer"/>).
+	/// </summary>
+	private void HangUpgradeBalloon( int instance, int level )
+	{
+		if ( UpgradeBalloons == null )
+			return;
+		OriginalObject? placed = null;
+		foreach ( var (item, linked) in economyInstances )
+			if ( linked == instance )
+				placed = item;
+		var visitors = placed?.Runtime.Visitors;
+		if ( placed == null || visitors is not { HasCells: true } )
+		{
+			UpgradeBalloons.Completed( instance, 0, (0, 0), () => false );
+			return;
+		}
+		UpgradeBalloons.Completed( instance, level, visitors.QueueFrontCell ?? visitors.EntranceCell, () => !placed.IsDeleted );
 	}
 
 	/// <summary>The park door over the current economy; rebuilt by <see cref="LoadPark"/>, which replaces the economy.</summary>
@@ -810,6 +893,7 @@ public partial class Level : IDisposable
 			Input.Mouse.Position, new Vector2( Screen.Size.X, Screen.Size.Y ), Input.ModifierMaskDown );
 		RefreshRenderedCells();
 		RefreshPools();
+		SceneClock.Advance( Time.Delta * SimulationTimeScale );
 		AdvanceSimulation( Time.Delta * SimulationTimeScale );
 		foreach ( var entity in Entity.All.ToArray() )
 			entity.Update();
@@ -987,6 +1071,7 @@ public partial class Level : IDisposable
 				Things.QueueDestroy( id );
 		}
 		StaffPlacement?.Abandon();
+		UpgradeBalloons?.Clear();
 		// the patrol tool's employee id belongs to the replaced economy
 		PatrolTool?.Cancel();
 		BuyLandTool?.Cancel();

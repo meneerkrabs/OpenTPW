@@ -371,7 +371,7 @@ public class PoolsLevelTests
 			one.Visitors.PoolAccessCandidates = new[] { (4, 2) };
 			level.RegisterPoolActivities();
 			Call( level, "PrepareThings" );
-			CollectionAssert.AreEquivalent( new[] { "extra.board", "extra.ladder", "extra.lounger", "extra.shower" }, level.Guests!.PoolActivities.Select( activity => activity.Id ).ToArray(), "registered when the level's guests are made" );
+			CollectionAssert.AreEquivalent( new[] { "ambient.water", "attraction.jets", "attraction.river", "attraction.ropeswing", "attraction.spa", "extra.board", "extra.ladder", "extra.lounger", "extra.shower", "slide.ride" }, level.Guests!.PoolActivities.Select( activity => activity.Id ).ToArray(), "registered when the level's guests are made" );
 			var (ladderEntry, showerEntry, loungerEntry) = (ExtraEntry( 66001, PoolExtraKind.Ladder, "*" ), ExtraEntry( 66003, PoolExtraKind.Shower, "*" ), ExtraEntry( 66004, PoolExtraKind.Lounger, "**" ));
 			// placement through the level's own hooks
 			Assert.AreEqual( OriginalPlacementResult.NeedsPoolEdge, level.Objects.Check( ladderEntry, 3, 1, 90 ), "the water cell beyond is a corner of the pool" );

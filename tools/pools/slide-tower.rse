@@ -1,0 +1,28 @@
+; Water slide tower ride script (OpenTPW swimming pools).
+; The tower is an object of the Features tab that guests never choose: it only has to exist and idle. The slide's riders are not guests of this script
+; (the pools extension's slide activity moves them), so there are no head records and no ADDHEAD.
+; The variables are those of every ride script, so the host reads the same names.
+.stack 4
+.timeslice 50
+.limbo 0
+.bounce 0
+.walk 0
+
+.var VAR_LETMEON
+.var VAR_LETMEOFF
+.var VAR_CAPACITY
+.var VAR_DURATION
+.var VAR_BREAKSTAT
+.var VAR_ONRIDE
+.var VAR_RIDECLOSED
+.var VAR_BROKEN
+.var VAR_WORN
+.var VAR_RUNNING
+.var VAR_PAD
+.var VAR_PARAM
+.var VAR_SPACELEFT
+
+	NAME "Slide Tower"
+idle:
+	ENDSLICE
+	BRANCH @idle

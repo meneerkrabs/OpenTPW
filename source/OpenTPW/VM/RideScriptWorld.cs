@@ -10,6 +10,8 @@ namespace OpenTPW;
 public sealed class RideScriptWorld
 {
 	private readonly Dictionary<int, RideVM> scripts = new();
+	/// <summary>The script list in the original's order (head first, 0x8791B0): a new script is linked at the head, the pass walks from the head.</summary>
+	private readonly List<RideVM> list = new();
 	private readonly Func<DateTime>? civilTime;
 	private int nextId = 1;
 	private int nextAttractionId = 1;
@@ -64,8 +66,8 @@ public sealed class RideScriptWorld
 	/// The world generator (tp.exe <c>0x00516330</c>) the scripts without an explicit seed draw their RAND and FINDSCRIPTRAND from, and the bump, tour and
 	/// head-space draws take theirs from: the park's one stream, shared with the guests, the staff and the economy (<see cref="AttachWorld"/>).
 	/// </summary>
-	// [BIN:TPW-EXE:0x0054F56B script pass] the scripts', rides' and heads' draws are the world generator's, taken in the original's order: the substep's bump module, the script pass (newest script first, one slice per eight passes), the tour cars on even substeps, then on every eighth substep the thing sweep
-	// [APPROX:DET-013] a script created with an explicit seed keeps a private generator, and the ids and pass phase of an imported original save's scripts are OpenTPW's creation order and 0 (the original's saved script ids and states are not imported)
+	// [BIN:TPW-EXE:0x0054F56B script pass] the scripts', rides' and heads' draws are the world generator's, taken in the original's order: the substep's bump module, the script pass (list head first, one slice per eight passes), the tour cars on even substeps, then on every eighth substep the thing sweep
+	// [APPROX:DET-013] a script created with an explicit seed keeps a private generator, and an imported original save's scripts take its ids, list order and pass counter but not its saved run state (program counter, stack, variables, waits)
 	public WorldRng World => world;
 
 	/// <summary>Makes <paramref name="generator"/> this world's generator (the level's shared one); its state is not touched.</summary>
@@ -90,21 +92,21 @@ public sealed class RideScriptWorld
 	}
 
 	/// <summary>
-	/// The script pass counter (tp.exe <c>0x8791A4</c>): the passes run since the script system started. Unlike the park's substep counter it restarts at 0 when a level loads, and the original's save does not hold it;
-	/// OpenTPW's own park saves do (<see cref="RideScriptWorldSnapshot.PassCounter"/>), an original save starts it at 0.
+	/// The script pass counter (tp.exe <c>0x8791A4</c>): the passes run since the script system started. Unlike the park's substep counter it restarts at 0 when a level starts; the RSSE block of an original save holds it
+	/// (header word 1, <see cref="ImportSaved"/>), as do OpenTPW's own park saves (<see cref="RideScriptWorldSnapshot.PassCounter"/>).
 	/// </summary>
 	public long PassCounter => scriptPass;
 
 	/// <summary>
-	/// One pass of the original's script scheduler (tp.exe <c>0x005516B0</c>), called once per 31 ms substep: the pass counter rises, then every script in the list steps, newest first (a script is
-	/// linked at the list's head when it is created, 0x5599D3, 0x5588C0, so the list runs from the highest id down); a script created during the pass is not reached until the next one.
+	/// One pass of the original's script scheduler (tp.exe <c>0x005516B0</c>), called once per 31 ms substep: the pass counter rises, then every script in the list steps from its head (a script is
+	/// linked at the list's head when it is created, 0x5599D3, 0x5588C0, so a park's list runs from the highest id down, a loaded save's scripts in reverse of the saved order, ImportSaved); a script created during the pass is not reached until the next one.
 	/// </summary>
-	// [BIN:TPW-EXE:0x005516D2 pass counter] the counter 0x8791A4 is incremented before the list walk, only while the script system is on; it is zeroed when the system starts (0x551643, 0x559828) and never saved
+	// [BIN:TPW-EXE:0x005516D2 pass counter] the counter 0x8791A4 is incremented before the list walk, only while the script system is on; it is zeroed when the system starts (0x551643) and when the loader starts (0x559828), and the loader's raw header read (0x5597A0) then restores the saved value
 	// [BIN:TPW-EXE:0x00558C0D script id] a script's id (+8) is the next-id word 0x8791A8 (1 when the system starts, 0x559817) which then rises by one (0x558C1C): ids are never reused and follow the order scripts are created in
 	internal void RunPass( double substepMilliseconds )
 	{
 		++scriptPass;
-		foreach ( var vm in scripts.Values.OrderByDescending( script => script.ScriptId ).ToArray() )
+		foreach ( var vm in list.ToArray() )
 		{
 			// a script removed during this pass (a faulted parent's children) is gone from the list the original walks
 			if ( !scripts.TryGetValue( vm.ScriptId, out var live ) || !ReferenceEquals( live, vm ) )
@@ -132,20 +134,82 @@ public sealed class RideScriptWorld
 	{
 		var id = nextId++;
 		scripts.Add( id, vm );
+		list.Insert( 0, vm );
 		return id;
 	}
 
-	internal void Unregister( RideVM vm ) => scripts.Remove( vm.ScriptId );
+	internal void Unregister( RideVM vm )
+	{
+		if ( scripts.Remove( vm.ScriptId, out var removed ) )
+			list.Remove( removed );
+	}
 
 	/// <summary>Registers <paramref name="vm"/> under a restored id (the snapshot restore rebinds constructor-temporary ids with it).</summary>
 	internal void RegisterWithId( RideVM vm, int id )
 	{
 		scripts.Add( id, vm );
+		list.Insert( 0, vm );
 		vm.AdoptScriptId( id );
 	}
 
 	/// <summary>Drops the registration under <paramref name="id"/> without touching the VM (restore bookkeeping of constructor temporaries).</summary>
-	internal void UnregisterById( int id ) => scripts.Remove( id );
+	internal void UnregisterById( int id )
+	{
+		if ( scripts.Remove( id, out var removed ) )
+			list.Remove( removed );
+	}
+
+	/// <summary>
+	/// Gives the scripts an original save's RSSE block restored (loader tp.exe <c>0x5597A0</c>): each matched script takes its saved id, the script list takes the order the loader leaves it in,
+	/// the next-id word and the pass counter are the saved header's. <paramref name="savedListOrder"/> is the saved ids head first, as the writer 0x559350 walks the list.
+	/// </summary>
+	// [BIN:TPW-EXE:0x5597A0 RSSE loader] the header (initialised flag, pass counter 0x8791A4, next id 0x8791A8, record count, list head) is read raw over 0x8791A0, so the saved pass counter and next id are the running ones; each record is then linked at the list's head (next = old head, 0x559886 onward), so the walk after a load runs the saved records in reverse of the file's order (the file is written head first)
+	// [BIN:TPW-EXE:0x559350 RSSE writer] the header is written raw from 0x8791A0 (0x14 bytes), then the records from the head of the list (0x8791B0) to its tail
+	// a script that is live but not in the save (OpenTPW created it for something the save lacks) is linked at the head after the loaded ones with a fresh id, as one created after the load
+	internal void ImportSaved( IReadOnlyList<(RideVM Vm, int SavedId)> matched, IReadOnlyList<int> savedListOrder, int savedNextId, long savedPassCounter )
+	{
+		ArgumentNullException.ThrowIfNull( matched );
+		ArgumentNullException.ThrowIfNull( savedListOrder );
+		if ( savedNextId <= 0 || savedPassCounter < 0 )
+			throw new ArgumentOutOfRangeException( nameof( savedNextId ), "The saved next script id and pass counter must be positive." );
+		var byId = new Dictionary<int, RideVM>();
+		var live = new HashSet<RideVM>( list );
+		foreach ( var (vm, savedId) in matched )
+		{
+			if ( savedId <= 0 || !byId.TryAdd( savedId, vm ) )
+				throw new ArgumentException( $"Saved script id {savedId} is not a unique positive id.", nameof( matched ) );
+			if ( !live.Contains( vm ) )
+				throw new ArgumentException( "A matched script is not live in this world.", nameof( matched ) );
+		}
+		if ( byId.Values.Distinct().Count() != byId.Count )
+			throw new ArgumentException( "A script cannot take two saved ids.", nameof( matched ) );
+		var matchedSet = byId.Values.ToHashSet();
+		var rest = list.Where( vm => !matchedSet.Contains( vm ) ).ToList();
+		var next = Math.Max( savedNextId, byId.Keys.Max( id => id + 1 ) );
+		var loaded = savedListOrder.Reverse().Where( byId.ContainsKey ).Distinct().ToList();
+		loaded.AddRange( byId.Keys.Where( id => !loaded.Contains( id ) ).OrderBy( id => id ) );
+		scripts.Clear();
+		list.Clear();
+		foreach ( var vm in rest.OrderBy( vm => vm.ScriptId ).ToList() )
+		{
+			var id = next++;
+			vm.AdoptScriptId( id );
+			scripts.Add( id, vm );
+		}
+		list.AddRange( rest );
+		foreach ( var id in loaded )
+		{
+			var vm = byId[id];
+			vm.AdoptScriptId( id );
+			scripts.Add( id, vm );
+			list.Add( vm );
+		}
+		nextId = next;
+		scriptPass = savedPassCounter;
+	}
+
+	/// <summary>The scripts in the order the pass walks them (head of the list first).</summary>
+	internal IReadOnlyList<RideVM> ListOrder => list;
 
 	/// <summary>Moves the attraction-id frontier past <paramref name="id"/> without allocating (restore of a saved attraction id).</summary>
 	internal void AdoptAttractionId( int id ) => nextAttractionId = Math.Max( nextAttractionId, id + 1 );
@@ -168,7 +232,8 @@ public sealed class RideScriptWorld
 	// [BIN:TPW-EXE:0x005560CB FINDSCRIPTRAND] a draw only when a script matches: the draw shifted right by one, as an absolute value, modulo the match count, plus one (the 1-based index into the matches)
 	internal int FindRandom( string name, ScriptRandom? random )
 	{
-		var matches = scripts.Values.Where( x => x.State != RideVMState.Faulted && string.Equals( x.ScriptName, name, StringComparison.Ordinal ) ).OrderBy( x => x.ScriptId ).ToArray();
+		// [BIN:TPW-EXE:0x005560E2 FINDSCRIPTRAND walk] the match count is taken over the script list from its head (0x8791B0, next pointer +0), so the chosen match is the n-th from the head: the highest id first in a park's list, the saved order's reverse in a loaded save's
+		var matches = list.Where( x => x.State != RideVMState.Faulted && string.Equals( x.ScriptName, name, StringComparison.Ordinal ) ).ToArray();
 		if ( matches.Length == 0 )
 			return 0;
 		return matches[random != null ? random.Next( matches.Length ) : (int)((world.NextWord() >> 1) % (uint)matches.Length)].ScriptId;

@@ -66,6 +66,9 @@ public sealed partial class ParkHud
 		pendingMessages.Add( text );
 		pendingActions.Add( actions.Take( MessageActionIds.Length ).ToArray() );
 		GameAudio.PlayUi( MessagePostedEvent );
+		// [EXT:restored-advice-tutorial] 322 (a message icon sits on the control panel antenna): the first message of the tube; the advisor posts it only while the extension is on, once (the tutorial group)
+		if ( pendingMessages.Count == 1 )
+			host?.RestoredHelp?.Invoke( RestoredAdvice.MessageIconHelp );
 		while ( pendingMessages.Count > MessageTubeCapacity )
 		{
 			pendingMessages.RemoveAt( 0 );

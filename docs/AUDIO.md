@@ -72,10 +72,11 @@ geometry/timing remain unqualified.
 
 ## Placed repair sounds
 
-`REPAIREFFECT 0` submits the traced global `cat_rides` events 111 and 211 using
+tp.exe's REPAIREFFECT handler (`0x5562A6`) switches the type's repair effect first (`0x556DE0`, a non-zero value starts it, 0 ends it), then compares the value with 0 (`cmp esi, edi; je 0x55635F`
+at `0x5562C5`). **A non-zero value** submits the traced global `cat_rides` events 111 (`0x6F`) and 211 (`0xD3`) using
 one sample of the object's origin (the placement/render transform of model-space zero, the
-original's object position `0x556a80`). The existing `PlayAt` distance/pan and flag-`0x8` loop policy
-applies independently to each returned voice. Live hide loops join the existing exact-runtime ledger, so
+original's object position `0x556a80`, each coordinate through `__ftol`). The existing `PlayAt` distance/pan and flag-`0x8` loop policy
+applies independently to each returned voice. Live pair loops join the existing exact-runtime ledger, so
 Stop, object removal and root-fault containment stop only that owner's loops.
 They trigger the same narrow live-audio capture refusal; one-shots, finished
 loops, missing audio and flat/headless fallback do not add a save restriction.
@@ -83,11 +84,15 @@ No audio handle or save schema is introduced. If the second submission fails,
 only a partially submitted first loop is stopped before the original exception
 propagates; a first one-shot keeps its existing lifetime.
 
-`REPAIREFFECT 1` (any nonzero value) plays a `cat_kids` repair sound **at the object** too, as the original does
-(`0x55635f` -> `0x551320(band, 1, 1, x, y, z)` with the object's position): the band is `[[vm+0x1c]+0x14]`, i.e. the
+(Until October 17, 2026 the port had the two paths the other way round, from a Mac reading in which the pair was the "hide" path and the band sound the "show" path, and it attributed `0x55635F` to the value 1.
+The PC compare is the authority: the two blocks are the same on the Mac, the pair first and the band sound at `0x100B1F78`, so the polarity of the port was inverted, not the sounds.)
+
+**The value 0** jumps to `0x55635F` and plays a `cat_kids` one-shot at the object too
+(`0x551320(band, 1, 1, x, y, z)` with the object's position): with more than five variables, the band is `[[vm+0x1c]+0x14]`, i.e. the
 script's own variable slot 5 (the array at `[vm+0x1c]` holds the script variables, `0x556408`; the standard ride scripts
 keep `VAR_ONRIDE` there), and picks the family (band 1 -> 75, 2-3 and negative -> 79, 4-7 -> 83, >= 8 -> 87, 0 silent;
-index `(a + b) / 50` capped at 3, so 0 here). `GameAudio.RepairStartEventForBand` does the mapping. The
+index `(a + b) / 50` capped at 3, so 0 here). `GameAudio.RepairBandEventForBand` does the mapping. The script ends a repair with
+`REPAIREFFECT 0` while nobody is aboard, so that sound is silent in play. The
 public `GameAudio.PlayRepairEffect(int show)` API retains its flat behavior (band 1).
 
 `RepairHideAudioTests` exercises actual placed root VMs, imported-terrain
@@ -320,7 +325,7 @@ global `cat_globallobbysfx` at 40, `0x100BC4C0` a level's `cat_locallobbymusic`/
 | Path tool | `cat_ui` 101 lay, 175 refused | a committed path line; a click on a refused path or queue ghost (or a refused track commit), at the clicked cell (x * 10, 0, z * 10) | `0x10070DE0` (commit), tp.exe `0x52496e` (refused `0xAF`, `0x524a80`, at the release that follows a park-view press (byte `0x8186d8`, set by the press handler `0x524790`) outside a layout replay (`0x785a2c`); AUDIO-022 is retired) |
 | Ride-script sounds | any event of the routed category | an RSE `EVENT type key id` instruction: type 3 level `cat_rides` (no fallback to the global one: an id the level lacks is silent, `0x6c5870`; AUDIO-011 is retired), 4 level `cat_ambient` (likewise), 5 global `cat_rides`, 6 `cat_kids`, 7 `cat_staff`, 8 `cat_ambient`, 9 `cat_ui` | `0x100AE930` (dispatcher, guard `bgt` 10 at `0x100AE938`); tp.exe `0x5575c7` (anchored at the key's model node, the footprint middle for a negative key, nothing for an unknown key; see "Placed sound EVENT origins") |
 | Ride screams | `cat_kids` 71–74 held per ride (STARTSCREAM), STOPSCREAM stops it; `cat_kids` 75–109 one-shot (SINGLESCREAM) | a ride script's scream instructions; band 1 → 71, 2–3 → 72, 4–7 → 73, 8+ → 74; parameter (level + 50) / 2 (parameter 6 on the PC); **positioned at the ride's footprint middle** | `0x100B19DC` (STARTSCREAM), `0x100B1A74` (STOPSCREAM), `0x100B1A90` (SINGLESCREAM), `0x100ACA38`, `0x100ACB7C`, `0x100ACC24`, `0x100ACE68`; tp.exe `0x551130` (STARTSCREAM submit: positioned, 0x47-0x4A at (x, y, z), parameter 6 = clamp((a + b) / 2, 0, 100)), `0x555edb`, `0x555f1b` -> `0x556af0` -> `0x551320` |
-| Repair sounds | `cat_kids` 75 (families 75–90) show; `cat_rides` 111 and 211 hide | an RSE `REPAIREFFECT 1/0` instruction, both at the object | `0x100B1F78` / `0x100B1EC0`, `0x100B1F00`; tp.exe `0x55635f` / `0x551320` |
+| Repair sounds | `cat_rides` 111 and 211 for a non-zero value; `cat_kids` 75 (families 75–90, by the script's variable 5) for 0 | an RSE `REPAIREFFECT 1/0` instruction, both at the object | tp.exe `0x5562C5` (the compare), `0x5562CD`–`0x556351` (the pair), `0x55635F` / `0x551320` (the band sound); Mac `0x100B1EC0`, `0x100B1F00` (pair), `0x100B1F78` (band) |
 | Rain | `cat_ambient` 0x21 (branching sentence, parameter 8 = the drops' level 0–100), and a second flat 0x21 voice of the weather thing's own while it rains | the weather's current drops: started above 0, stopped at 0 (also in snow); the thing's own voice starts in rain mode and stops in snow or clear | `0x10103394` (level), `0x100BC3D4`–`0x100BC41C` (global voice); tp.exe `0x512a7f` (level), `0x5131f0` / `0x51327c` (the thing's voice, handle `+0x54`) |
 | Thunder | `cat_ambient` 0x20 at the last bolt's top (x, 300, z) | a lightning strike's thunder countdown ends | `0x101034C8`–`0x10103518` |
 | Placed ambients | `cat_ambient` (global) or the level's `cat_ambient`, the effect the scape record names; a sentence-type effect plays as a positioned sentence | the level's `scape.omp` type 1 records, started with the park and kept for its lifetime; range from the record | tp.exe `0x550e00` (type 1 -> placed submit `0x51c130`, coordinates `/1024` toward zero, range `*2/1024`); `PlacedObjectsFile`, distance law of the mixer (AUDIO-018) |

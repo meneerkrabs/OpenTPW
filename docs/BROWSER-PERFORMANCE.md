@@ -377,7 +377,7 @@ until the game has started.
 Two matched 30-second samples on 11 October 2026 used headless Chrome, Apple M4
 hardware Metal through ANGLE, a 1280×900 canvas, Original world textures and the
 bundled Enhanced HUD. Jungle used a stationary camera, music and speech muted through
-the UI, effects on and no Clarity downloads. Muting does not itself stop audio decoding.
+the UI, effects on and no world-texture downloads (the browser build has none). Muting does not itself stop audio decoding.
 
 | Phase | v0.7.6 main-thread CPU | Optimized prototype | Reduction |
 | --- | --- | --- | --- |

@@ -35,6 +35,8 @@ public sealed class HudHost
 	public Action<string>? WindowClosed { get; init; }
 	/// <summary>The HUD posts an advisor help message (0x486B00) that belongs to no screen, such as the camera panel's.</summary>
 	public Action<int>? HelpPosted { get; init; }
+	/// <summary>[EXT:restored-advice-tutorial] Asks the advisor for a help message the restored advice extension adds (<see cref="RestoredAdvice"/>: 202, 204, 306, 322); the advisor posts it only while the extension is on. Separate from <see cref="HelpPosted"/>, which carries the original's own posts.</summary>
+	public Action<int>? RestoredHelp { get; init; }
 	/// <summary>The HUD withdraws an advisor help message it posted (0x486B40).</summary>
 	public Action<int>? HelpWithdrawn { get; init; }
 	/// <summary>The interface mode changed (a tool started or ended): the advisor withdraws the help of the tools (0x52F200).</summary>
@@ -465,6 +467,13 @@ public sealed partial class ParkHud
 			PostMessage( strings.Help( 0x125 ) );
 			return;
 		}
+		// [EXT:pools-slides] a placed slide tower enters the slide mode of the pool tool: the player lays the track from the tower down into the pool
+		if ( PoolSlideTowers.IsSlideTower( item.Entry ) && level.EnterSlideTool( item ) )
+		{
+			level.ResetBuildRotation();
+			PostMessage( strings.Extra( OpenTpwText.PoolSlideHint ) );
+			return;
+		}
 		// a placed water ride enters the water track tool (tool mode 16) at its station; the queue tool follows once the circuit is valid (Level.RewalkTrack)
 		if ( item.Runtime.Bump != null && level.EnterTrackTool( item ) )
 		{
@@ -799,7 +808,10 @@ public sealed partial class ParkHud
 				// [EXT:cannot-build-sound] a refused placement ('Cannot build') plays the error feedback 0x1D with OpenTPW's own message text: tp.exe plays 0x1D at exactly two sites (0x487b51 in the park click handler 0x4879d0, a cost above the money, and the helper 0x486ae0, whose only caller is the hire window 0x4af480), so the original plays nothing for a refused placement; the feedback is an OpenTPW addition
 				// [BIN:TPW-EXE:0x535670 refusal stage] [BIN:TPW-EXE:0x536100 refusal stage] the build tools' code (0x524960-0x535100) plays only 0xAF, 0x65, 0xCE, 0x8B, 0x97-0x99 and 0x90, and no call site of the sound entry 0x51bfc0 lies in the refusal stages or the callees reached from them, so the original plays nothing for a refused placement
 				// [EXT:pools-changing-room] a changing room that is refused for want of a pool says so
-				PostMessage( strings.Extra( lastLevelMessage.EndsWith( $": {nameof( OriginalPlacementResult.NeedsPool )}.", StringComparison.Ordinal ) ? OpenTpwText.PoolChangingRoomNeedsPool
+				// [EXT:pools-slides] a slide tower refused for want of a pool says so in its own words, turned away from the pool beside it in others
+				PostMessage( strings.Extra( lastLevelMessage.EndsWith( $": {nameof( OriginalPlacementResult.NeedsPool )}.", StringComparison.Ordinal )
+					? (pendingItem?.Entry is { } refused && PoolSlideTowers.IsSlideTower( refused ) ? (level.LastRefusalTowerFacesAway ? OpenTpwText.PoolSlideTowerFacesAway : OpenTpwText.PoolSlideTowerNeedsPool) : OpenTpwText.PoolChangingRoomNeedsPool)
+					: lastLevelMessage.EndsWith( $": {nameof( OriginalPlacementResult.NeedsPoolWater )}.", StringComparison.Ordinal ) ? OpenTpwText.PoolAttractionNeedsPool
 					: lastLevelMessage.EndsWith( $": {nameof( OriginalPlacementResult.NeedsPoolEdge )}.", StringComparison.Ordinal ) ? OpenTpwText.PoolExtraNeedsEdge : OpenTpwText.CannotBuildHere ) );
 				GameAudio.PlayUi( GameAudio.ErrorEvent );
 			}
@@ -834,7 +846,13 @@ public sealed partial class ParkHud
 		// [APPROX:UI-027] the object is the one occupying the cell of the cursor's terrain hit; the original picks a ride, shop or other object by its model's pick sprite (the sprite pass 0x5890e0, the thing in the 3 x 3 cells round the hovered cell 0x532bd0, the window 0x4b6080) — evidence needed: which instances carry a pickable sprite and its size and offset
 		if ( inPark && !IsVisitorPickState( Locator.Mode, Input.ModifierMaskDown ) && level.BuildEntry == null && !level.IsPlacing && !level.CellTool.IsActive && !level.IsCoasterToolActive && level.StaffPlacement is not { IsActive: true } && level.PatrolTool is not { IsActive: true }
 			&& level.BuyLandTool is not { IsActive: true } && level.AreaClearTool is not { IsActive: true } && level.PoolTool is not { IsActive: true } && input.LeftReleased && !toolPress )
-			SelectObject( level.Objects.FindAt( cursorX, cursorY ) );
+			{
+				var clicked = level.Objects.FindAt( cursorX, cursorY );
+				// [EXT:pools-waves] a deliberate second click on the wave machine that is already selected steps its wave settings; selecting it (here or from the attractions list) changes nothing (ParkHud.Pools.cs)
+				if ( clicked != null && clicked == selectedObject && FeatureGates.Pools && PoolAttractions.KindOf( clicked.Entry ) == PoolAttractionKind.WaveMachine )
+					StepPoolWaves( clicked );
+				SelectObject( clicked );
+			}
 		if ( input.LeftReleased )
 		{
 			toolPress = false;
@@ -1063,7 +1081,7 @@ public sealed partial class ParkHud
 		else if ( level.PoolTool is { IsActive: true, HoverCell: { } poolCell, HoverResult: { } poolResult } )
 		{
 			// [EXT:pools-tool] the pool tool marks the cell under the pointer: blue where it can be painted (or erased), red where it is refused
-			cells.Add( (poolCell.X, poolCell.Y, poolResult is PoolBuildResult.Ok or PoolBuildResult.Existing ? BlueprintMarker.Allowed : BlueprintMarker.Refused) );
+			cells.Add( (poolCell.X, poolCell.Y, poolResult is PoolBuildResult.Ok or PoolBuildResult.Existing or PoolBuildResult.RiverMarked ? BlueprintMarker.Allowed : BlueprintMarker.Refused) );
 		}
 		else if ( level.CellTool.IsActive && level.CellTool.Ghost is { } ghost )
 		{

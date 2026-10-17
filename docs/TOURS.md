@@ -41,7 +41,7 @@ Jump table `0x005569D0`, command − 1 indexes it; the first argument of every h
 ## Cars, boarding, end of a run (Q3)
 
 The per-tick state machine is `[BIN:TPW-EXE:0x0055ABF0]`, called from `0x0054F5EF` on **every second** world step: the world loop (`0x0054E360`) advances its clock by 31 ms and counts the
-steps (`[0x00877D34]`, raised at `0x0054F4D3`), and the tour tick sits behind `test al, 1` on that counter (`0x0054F5D7`), so it runs once per 62 ms. The draw divides the time since that tick by the
+steps (`[0x00877D34]`, raised at `0x0054F4D3`), and the tour tick sits behind `test al, 1` on that counter (`0x0054F5D7`), so it runs once per 62 ms; OpenTPW runs it in the park's substep scheduler on the even passes (`SimulationSubstep`, DETERMINISM.md "The substep scheduler"), after the script pass and not from the objects' own tick. The draw divides the time since that tick by the
 same 62 ms (`0x00700F90` is 1/62), and TOUR 8's `operand x 1000 / 64` ticks are about `operand` seconds at that rate. `TourController.TickSeconds` is 0.062. Car states: 1 docked (loading, or unloading when its
 rider count is negative), 2 take-off, 3 tour, 4 return, 5 staging (fixed approach), 6 approach, 7 landing, 8 patrol, 9 leaving. A new car appears outside the flight area and
 circles the station (state 8) until the landing slot (+0x2C) is free. The first car of a ride is created docked and sets the ready flag.

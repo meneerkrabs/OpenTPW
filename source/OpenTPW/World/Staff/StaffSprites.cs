@@ -47,8 +47,17 @@ public static class StaffSpriteRules
 	/// <summary>The slot an entertainer performs when the bank lists no performance (every shipped entertainer bank lists slot 4).</summary>
 	public const int DefaultPerformanceSlot = 4;
 
-	/// <summary>The key a person's sprite bank derives from: the same for the candidate and the member it becomes.</summary>
-	// [APPROX:GUEST-014] tp.exe draws a candidate's variant first in its constructor (0x507600 → 0x541f70: (world draw >> 2) mod the category's loaded bank count; candidate +9, member +0x20) and draws bank = the category's first bank + variant (0x542010); OpenTPW makes the variant draw in its place (ParkStaff) but keeps no variant: the bank is (NameIndex + Id) modulo the folder's banks, in file order (the shipped save carries no variant field, so an imported member's bank is not known; the loaded banks are GUEST-020)
+	/// <summary>The banks the sprite loader keeps for a role (the table 0x00763F88 entry's loaded count): the staff folders are cut at the limit of 0x0041AA40, 2 banks above the lowest graphics setting, and the entertainers' folders are not.</summary>
+	// [BIN:TPW-EXE:0x00541310 bank limits] the handymen, mechanics, guards and researchers folders stop at the limit (1 on the lowest graphics setting, else 2); the shipped mechanics folder holds two banks and the others one; the entertainers' folders (three banks a theme) are unflagged and load whole
+	public static int LoadedBanks( StaffType type ) => type switch
+	{
+		StaffType.Mechanic => 2,
+		StaffType.Entertainer => 3,
+		_ => 1
+	};
+
+	/// <summary>The key of a person's sprite bank that has no kept variant (a candidate or member from before it was kept, an original save's member): derived from the name index and the id.</summary>
+	// [APPROX:GUEST-014] a member from an original save has no variant that is read (the member's +0x20 in the saved person body is not parsed), so its bank derives from the name index and id as every member's did before the draw was kept
 	public static int VariantKey( int nameIndex, int id ) => (nameIndex + id) & int.MaxValue;
 
 	/// <summary>Index of a variant's bank among <paramref name="count"/> banks.</summary>

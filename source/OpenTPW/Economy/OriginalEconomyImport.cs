@@ -416,7 +416,7 @@ public sealed class OriginalEconomyImport
 			// (+0xc) exceed 4 × its timeout (+0x10); the pool refills once the turns since its own stamp exceed 4 × TimeBetweenStaffUpdates
 			var saved = pool.Candidates.Where( candidate => candidate.Valid )
 				.Select( candidate => ((StaffType)candidate.Type, (int)(candidate.Name % ParkStaff.NameTableSize), Math.Min( (int)candidate.Grade, BalanceSettings.GradeCount - 1 ),
-					(long)candidate.TimeSig, (long)candidate.Timeout) )
+					(long)candidate.TimeSig, (long)candidate.Timeout, candidate.SubType < StaffSpriteRules.LoadedBanks( (StaffType)candidate.Type ) ? (int?)candidate.SubType : null) )
 				.ToList();
 			economy.Staff.RestoreOriginalPool( saved, pool.TimeSig );
 			evidence.Add( $"Staff pool imported: {saved.Count} candidates ({string.Join( ", ", saved.Select( item => $"{item.Item1} grade {item.Item3} made on turn {item.Item4} for {item.Item5}" ) )}), last refill on turn {pool.TimeSig}." );

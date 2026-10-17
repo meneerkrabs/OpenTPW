@@ -143,7 +143,7 @@ public sealed class StaffRenderer : Entity
 
 	private (int Atlas, int Frame, bool Mirror, StaffClip Clip)? Select( StaffMember member, MemberView view, float now, SVector3 cameraRight, SVector3 cameraForward )
 	{
-		var atlasIndex = sprites.AtlasFor( member.Type, StaffSpriteRules.VariantKey( member.NameIndex, member.Id ) );
+		var atlasIndex = sprites.AtlasFor( member.Type, member.SpriteKey );
 		if ( atlasIndex < 0 || atlasIndex >= textures.Count )
 			return null;
 		var atlas = sprites.Atlases[atlasIndex];

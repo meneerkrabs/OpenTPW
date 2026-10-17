@@ -40,8 +40,8 @@ public static class SpriteBankWriter
 			BinaryPrimitives.WriteInt32LittleEndian( frameHeader, rows.Length );
 			BinaryPrimitives.WriteUInt16LittleEndian( frameHeader[4..], (ushort)frame.Width );
 			BinaryPrimitives.WriteUInt16LittleEndian( frameHeader[6..], (ushort)frame.Height );
-			BinaryPrimitives.WriteUInt16LittleEndian( frameHeader[8..], frame.UnknownA );
-			BinaryPrimitives.WriteUInt16LittleEndian( frameHeader[10..], frame.UnknownB );
+			BinaryPrimitives.WriteUInt16LittleEndian( frameHeader[8..], frame.PixelsPerUnitX );
+			BinaryPrimitives.WriteUInt16LittleEndian( frameHeader[10..], frame.PixelsPerUnitY );
 			BinaryPrimitives.WriteInt32LittleEndian( frameHeader[12..], frame.OriginX );
 			BinaryPrimitives.WriteInt32LittleEndian( frameHeader[16..], frame.OriginY );
 			memory.Write( frameHeader );

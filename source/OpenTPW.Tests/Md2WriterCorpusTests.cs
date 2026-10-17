@@ -17,7 +17,7 @@ public class Md2WriterCorpusTests
 	public void EveryOriginalGeometryMemberIsWrittenBackByteForByte()
 	{
 		var dataPath = Md2CorpusTests.OriginalDataPath();
-		int geometry = 0, identical = 0, animation = 0, refused = 0;
+		int geometry = 0, identical = 0, animation = 0, refused = 0, withGaps = 0, dataBlocks = 0;
 		var different = new List<string>();
 		foreach ( var wad in Directory.EnumerateFiles( dataPath, "*", SearchOption.AllDirectories ).Where( file => file.EndsWith( ".wad", StringComparison.OrdinalIgnoreCase ) ) )
 		{
@@ -42,6 +42,8 @@ public class Md2WriterCorpusTests
 					continue;
 				}
 				geometry++;
+				withGaps += model.Layout!.Gaps.Count > 0 ? 1 : 0;
+				dataBlocks += model.DummyAttributes.Count( attribute => attribute.Data != null );
 				var written = ModelFileWriter.Write( model );
 				if ( written.AsSpan().SequenceEqual( original ) )
 				{
@@ -54,10 +56,14 @@ public class Md2WriterCorpusTests
 				different.Add( $"{Path.GetRelativePath( dataPath, wad )}/{name}: first difference at 0x{at:X} (written {written.Length}, original {original.Length})" );
 			}
 		}
-		Console.WriteLine( $"MD2 writer roundtrip: {identical} of {geometry} geometry members byte-identical ({animation} animation members skipped, {refused} refused versions)" );
+		Console.WriteLine( $"MD2 writer roundtrip: {identical} of {geometry} geometry members byte-identical ({animation} animation members skipped, {refused} refused versions); {withGaps} need gap bytes, {dataBlocks} attribute data blocks" );
 		Assert.AreEqual( 0, different.Count, string.Join( Environment.NewLine, different.Take( 20 ) ) );
 		Assert.AreEqual( 838, geometry );
 		Assert.AreEqual( 838, identical );
+		// Every non-zero byte is accounted for by a decoded field: the gap mechanism is a last resort and nothing in the corpus needs it.
+		Assert.AreEqual( 0, withGaps );
+		// Type flag 0x40 records and their 16-byte blocks (28 members).
+		Assert.AreEqual( 248, dataBlocks );
 		Assert.AreEqual( 1278, animation );
 		Assert.AreEqual( 2, refused );
 	}
@@ -119,6 +125,8 @@ internal static class Md2ModelComparison
 			return "header";
 		if ( left.Counts != right.Counts )
 			return $"counts {left.Counts} / {right.Counts}";
+		if ( left.HeaderOpaque != right.HeaderOpaque )
+			return $"opaque header words {left.HeaderOpaque} / {right.HeaderOpaque}";
 		if ( left.BoundsMin != right.BoundsMin || left.BoundsMax != right.BoundsMax )
 			return "bounds";
 		if ( left.RootNodeIndex != right.RootNodeIndex )
@@ -141,7 +149,7 @@ internal static class Md2ModelComparison
 		for ( var index = 0; index < left.DummyAttributes.Count; index++ )
 		{
 			var (a, b) = (left.DummyAttributes[index], right.DummyAttributes[index]);
-			if ( a.Type != b.Type || a.Value != b.Value || !a.Reserved.SequenceEqual( b.Reserved ) )
+			if ( a.Type != b.Type || a.Value != b.Value || !a.Reserved.SequenceEqual( b.Reserved ) || a.Data != b.Data || ((a.Type & 0x40) != 0) != (a.Data != null) )
 				return $"attribute {index}";
 		}
 		if ( left.ExtraRecords.Count != right.ExtraRecords.Count )

@@ -29,6 +29,8 @@ public sealed class ModelBuilder
 	public const uint SlotWrapFlags = 0x30;
 	/// <summary>The default head record type: 0xB1 (487 corpus records; flag 0x80 = head record, 0x30 = has a world matrix).</summary>
 	public const uint DefaultHeadType = 0xB1;
+	/// <summary>The longest source name (the header field is 20 bytes with a terminating NUL).</summary>
+	public const int MaximumSourceNameLength = 19;
 	/// <summary>The longest texture name without its <c>.tga</c> extension: the slot name field is 20 bytes with a terminating NUL.</summary>
 	public const int MaximumTextureNameLength = 15;
 	/// <summary>Material word +0xC bit 0x1: the mesh is drawn in one constant colour instead of per-vertex lighting (tp.exe 0x580C51; water, signs, glow). 920 of 12,951 corpus materials set it.</summary>
@@ -72,8 +74,20 @@ public sealed class ModelBuilder
 		var roots = nodes.Where( node => node.Parent == null ).ToArray();
 		if ( roots.Length != 1 )
 			throw new InvalidOperationException( $"A model has exactly one root node; found {roots.Length}." );
+		CheckPrintable( SourceName, "Source name", MaximumSourceNameLength );
+		if ( !float.IsFinite( HeaderHeight ) )
+			throw new InvalidOperationException( "The header height is not finite." );
+		var names = new HashSet<string>( StringComparer.Ordinal );
 		foreach ( var node in nodes )
+		{
 			CheckPrintable( node.Name, "Node name", 255 );
+			if ( !names.Add( node.Name ) )
+				throw new InvalidOperationException( $"Two nodes are named '{node.Name}'; node names must be unique." );
+			if ( !IsFinite( node.Transform ) )
+				throw new InvalidOperationException( $"The transform of node '{node.Name}' is not finite." );
+			if ( node.IsMesh && node.Mesh!.Materials.Count == 0 )
+				throw new InvalidOperationException( $"Mesh '{node.Name}' has no material; add a material with vertices or use a dummy node." );
+		}
 
 		// Node order: meshes first, then dummies, each in the order added.
 		var ordered = nodes.Where( node => node.IsMesh ).Concat( nodes.Where( node => !node.IsMesh ) ).ToList();
@@ -96,11 +110,16 @@ public sealed class ModelBuilder
 		var slotOf = new Dictionary<(string Name, bool Wrap), int>();
 		var meshes = new List<ModelFile.Mesh>();
 		var modelNodes = new ModelNode[ordered.Count];
-		NVector3 boundsMin = new( float.PositiveInfinity ), boundsMax = new( float.NegativeInfinity );
+		NVector3 boundsMin = default, boundsMax = default;
+		var anyPosition = false;
 		for ( var index = 0; index < ordered.Count; index++ )
 		{
 			var node = ordered[index];
-			modelNodes[index] = new ModelNode( index, node.Type, (uint)index, node.Name, node.Parent == null ? -1 : indexOf[node.Parent], index < meshCount ? index : -1, node.Transform );
+			var children = ordered.Where( other => other.Parent == node ).Select( other => indexOf[other] ).OrderBy( child => child ).ToArray();
+			var siblings = node.Parent == null ? Array.Empty<int>() : ordered.Where( other => other.Parent == node.Parent ).Select( other => indexOf[other] ).OrderBy( sibling => sibling ).ToArray();
+			var next = siblings.Where( sibling => sibling > index ).DefaultIfEmpty( -1 ).First();
+			modelNodes[index] = new ModelNode( index, node.Type, (uint)index, node.Name, node.Parent == null ? -1 : indexOf[node.Parent], index < meshCount ? index : -1, node.Transform,
+				children.Length == 0 ? -1 : children[0], next );
 			if ( !node.IsMesh )
 				continue;
 			var mesh = BuildMesh( node, textures, slotOf );
@@ -109,12 +128,11 @@ public sealed class ModelBuilder
 			foreach ( var position in mesh.Positions )
 			{
 				var moved = NVector3.Transform( new NVector3( position.X, position.Y, position.Z ), composed );
-				boundsMin = NVector3.Min( boundsMin, moved );
-				boundsMax = NVector3.Max( boundsMax, moved );
+				boundsMin = anyPosition ? NVector3.Min( boundsMin, moved ) : moved;
+				boundsMax = anyPosition ? NVector3.Max( boundsMax, moved ) : moved;
+				anyPosition = true;
 			}
 		}
-		if ( float.IsInfinity( boundsMin.X ) )
-			boundsMin = boundsMax = NVector3.Zero;
 
 		var attributes = BuildAttributes( ordered, indexOf, meshCount, out var unknown46 );
 		var model = new ModelFile
@@ -122,6 +140,7 @@ public sealed class ModelBuilder
 			SourceName = SourceName,
 			HeaderFlags = HeaderFlags,
 			HeaderHeight = HeaderHeight,
+			HeaderOpaque = ModelHeaderOpaque.Default,
 			BoundsMin = new Vector3( boundsMin.X, boundsMin.Y, boundsMin.Z ),
 			BoundsMax = new Vector3( boundsMax.X, boundsMax.Y, boundsMax.Z ),
 			Textures = textures,
@@ -260,11 +279,19 @@ public sealed class ModelBuilder
 		{
 			var node = ordered[first + index];
 			attributes[index] = node.HeadId is { } id
-				? new ModelDummyAttribute( node.HeadType, (uint)id, new byte[12] )
+				? new ModelDummyAttribute( node.HeadType, (uint)id, new byte[12], node.HeadData )
 				: new ModelDummyAttribute( 0x1, 0, new byte[12] );
 		}
 		return attributes;
 	}
+
+	internal static bool IsFinite( NMatrix4x4 matrix ) =>
+		float.IsFinite( matrix.M11 ) && float.IsFinite( matrix.M12 ) && float.IsFinite( matrix.M13 ) && float.IsFinite( matrix.M14 )
+		&& float.IsFinite( matrix.M21 ) && float.IsFinite( matrix.M22 ) && float.IsFinite( matrix.M23 ) && float.IsFinite( matrix.M24 )
+		&& float.IsFinite( matrix.M31 ) && float.IsFinite( matrix.M32 ) && float.IsFinite( matrix.M33 ) && float.IsFinite( matrix.M34 )
+		&& float.IsFinite( matrix.M41 ) && float.IsFinite( matrix.M42 ) && float.IsFinite( matrix.M43 ) && float.IsFinite( matrix.M44 );
+
+	internal static bool IsFinite( NVector3 value ) => float.IsFinite( value.X ) && float.IsFinite( value.Y ) && float.IsFinite( value.Z );
 
 	internal static string TextureStem( string name )
 	{
@@ -307,7 +334,13 @@ public sealed class ModelNodeBuilder
 	public string Name { get; }
 	public ModelNodeBuilder? Parent { get; }
 	/// <summary>The parent-relative matrix (row vectors, translation in the fourth row); the world matrix is <c>local × parent world</c>.</summary>
-	public NMatrix4x4 Transform { get; set; }
+	public NMatrix4x4 Transform
+	{
+		get => transform;
+		set => transform = ModelBuilder.IsFinite( value ) ? value : throw new ArgumentException( "The transform is not finite.", nameof( value ) );
+	}
+
+	private NMatrix4x4 transform;
 	public bool IsMesh { get; }
 	/// <summary>The node type word (0x1 mesh, 0x200 dummy by default; other corpus values 0x401, 0x2, 0x208, 0x300, 0x600 are not interpreted).</summary>
 	public uint Type { get; set; }
@@ -316,18 +349,36 @@ public sealed class ModelNodeBuilder
 	public int? HeadId { get; private set; }
 	/// <summary>The head record's type word; flag 0x80 marks it as a head record.</summary>
 	public uint HeadType { get; private set; } = ModelBuilder.DefaultHeadType;
+	/// <summary>The 16-byte data block of a head record whose type has flag 0x40 (such as 0xF1); null for 0xB1.</summary>
+	public ModelAttributeData? HeadData { get; private set; }
 
-	/// <summary>Makes this node carry head record <paramref name="headId"/>. A node has at most one head record; ids are unique and run from 1.</summary>
-	public ModelNodeBuilder AddHead( int headId, uint type = ModelBuilder.DefaultHeadType )
+	/// <summary>
+	/// Makes this node carry head record <paramref name="headId"/>. A node has at most one head record; ids are unique and run from 1. A type with flag 0x40
+	/// (0xF1, 0x400F1, ...) points at a 16-byte data block of unknown meaning that cannot be defaulted, so it needs <paramref name="data"/>; a type without
+	/// the flag (the default 0xB1) takes none.
+	/// </summary>
+	public ModelNodeBuilder AddHead( int headId, uint type = ModelBuilder.DefaultHeadType, ModelAttributeData? data = null )
 	{
 		if ( headId < 1 )
 			throw new ArgumentOutOfRangeException( nameof( headId ), "Head ids start at 1." );
 		if ( (type & 0x80) == 0 )
 			throw new ArgumentException( "A head record type needs flag 0x80.", nameof( type ) );
+		if ( (type & ModelDummyAttribute.DataFlag) != 0 && data == null )
+			throw new ArgumentException( "A head record type with flag 0x40 points at a 16-byte data block; pass it as data (its meaning is unknown, so there is no default), or use type 0xB1.", nameof( data ) );
+		if ( (type & ModelDummyAttribute.DataFlag) == 0 && data != null )
+			throw new ArgumentException( "Only a type with flag 0x40 has a data block.", nameof( data ) );
+		if ( data is { } block )
+		{
+			if ( !float.IsFinite( block.X ) || !float.IsFinite( block.Y ) || !float.IsFinite( block.Z ) || (block.Position is { } place && !ModelBuilder.IsFinite( place )) )
+				throw new ArgumentException( "The data block holds a non-finite float.", nameof( data ) );
+			if ( block.Word > 0xFFFF )
+				throw new ArgumentException( "The high 16 bits of the data word are the distance to the position entry; give the position as Position and keep Word below 0x10000.", nameof( data ) );
+		}
 		if ( HeadId != null )
 			throw new InvalidOperationException( $"Node '{Name}' already has head record {HeadId}." );
 		HeadId = headId;
 		HeadType = type;
+		HeadData = data;
 		return this;
 	}
 }
@@ -371,6 +422,8 @@ public sealed class ModelMaterialBuilder
 	/// <summary>Adds a corner and returns its index within this material. Equal positions share one stored position.</summary>
 	public int AddVertex( NVector3 position, NVector3 normal, NVector2 textureCoordinate )
 	{
+		if ( !ModelBuilder.IsFinite( position ) || !ModelBuilder.IsFinite( normal ) || !float.IsFinite( textureCoordinate.X ) || !float.IsFinite( textureCoordinate.Y ) )
+			throw new ArgumentException( "A vertex position, normal or texture coordinate is not finite." );
 		Vertices.Add( new ModelBuilderVertex( position, normal, textureCoordinate ) );
 		return Vertices.Count - 1;
 	}

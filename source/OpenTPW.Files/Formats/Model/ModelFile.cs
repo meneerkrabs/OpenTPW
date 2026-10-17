@@ -26,6 +26,8 @@ public partial class ModelFile : BaseFormat
 	public uint VersionMinor { get; internal set; }
 	public string SourceName { get; internal set; } = "";
 	public uint HeaderFlags { get; internal set; }
+	/// <summary>The header words of unknown meaning (0x0C, 0x10, 0x14, 0x2C, the u16 at 0x34), kept for <see cref="ModelFileWriter"/>.</summary>
+	public ModelHeaderOpaque HeaderOpaque { get; internal set; } = ModelHeaderOpaque.Default;
 	/// <summary>
 	/// The header float at +0xA0: the height above the terrain the original's height sampler adds for an object it samples as terrain (the flat track pieces' floor,
 	/// a bumper ride's platform; tp.exe 0x004511A0), 0 for most models.
@@ -72,10 +74,10 @@ public partial class ModelFile : BaseFormat
 	// Layout pieces gathered while reading (only kept with captureLayout).
 	private byte[]? headerBytes;
 	private int fileLength;
-	private int[] firstChild = Array.Empty<int>();
-	private int[] nextSibling = Array.Empty<int>();
 	private uint[] nodeNameOffsets = Array.Empty<uint>();
 	private readonly List<ModelMeshLayout> meshLayouts = new();
+	private uint[] attributeData = Array.Empty<uint>();
+	private uint[] attributeVectors = Array.Empty<uint>();
 
 	/// <summary>
 	/// The file layout (region offsets, record links and the bytes between structures), kept only when the model was read with
@@ -224,6 +226,7 @@ public partial class ModelFile : BaseFormat
 		var nameLength = nameBytes.IndexOf( (byte)0 );
 		SourceName = Encoding.Latin1.GetString( nameLength < 0 ? nameBytes : nameBytes[..nameLength] );
 		HeaderFlags = U32( data, 0x30 );
+		HeaderOpaque = new ModelHeaderOpaque( U32( data, 0x0C ), U32( data, 0x10 ), U32( data, 0x14 ), U16( data, 0x34 ), U32( data, 0x2C ) );
 		HeaderHeight = BinaryPrimitives.ReadSingleLittleEndian( data.AsSpan( 0xA0 ) );
 		Counts = new ModelHeaderCounts( U16( data, 0x36 ), U16( data, 0x38 ), U16( data, 0x3A ), U16( data, 0x3C ), U16( data, 0x3E ),
 			U16( data, 0x40 ), U16( data, 0x42 ), U16( data, 0x44 ), U16( data, 0x46 ), U16( data, 0x48 ), U16( data, 0x4A ) );
@@ -302,13 +305,39 @@ public partial class ModelFile : BaseFormat
 		ReadMeshes( data, offsets, nodeRecords, textures, flagTable );
 
 		var attributes = new ModelDummyAttribute[counts.DummyAttributeCount];
+		attributeData = new uint[attributes.Length];
+		attributeVectors = new uint[attributes.Length];
 		if ( attributes.Length > 0 )
 		{
 			Require( data, offsets[11], attributes.Length * 20L, "dummy attribute table" );
 			for ( var index = 0; index < attributes.Length; index++ )
 			{
 				var record = (int)offsets[11] + index * 20;
-				attributes[index] = new ModelDummyAttribute( U32( data, record ), U32( data, record + 4 ), data.AsSpan( record + 8, 12 ).ToArray() );
+				var reserved = data.AsSpan( record + 8, 12 ).ToArray();
+				var type = U32( data, record );
+				var dataOffset = U32( data, record + 12 );
+				attributeData[index] = 0;
+				attributeVectors[index] = 0;
+				ModelAttributeData? block = null;
+				// A flag 0x40 record points at its 16-byte block; a pointer that does not hit the file stays in Reserved raw.
+				if ( (type & ModelDummyAttribute.DataFlag) != 0 && dataOffset >= HeaderBytes && dataOffset <= data.Length - 16L )
+				{
+					var word = U32( data, (int)dataOffset );
+					System.Numerics.Vector3? position = null;
+					// the high 16 bits of the block's word are the distance back to a position entry (x, y, z, 0)
+					var distance = word >> 16;
+					if ( distance != 0 && distance <= dataOffset - HeaderBytes && dataOffset - distance + 16L <= data.Length && U32( data, (int)(dataOffset - distance) + 12 ) == 0 )
+					{
+						var at = (int)(dataOffset - distance);
+						position = new System.Numerics.Vector3( F32( data, at ), F32( data, at + 4 ), F32( data, at + 8 ) );
+						attributeVectors[index] = dataOffset - distance;
+						word &= 0xFFFF;
+					}
+					block = new ModelAttributeData( word, F32( data, (int)dataOffset + 4 ), F32( data, (int)dataOffset + 8 ), F32( data, (int)dataOffset + 12 ), position );
+					attributeData[index] = dataOffset;
+					Array.Clear( reserved, 4, 4 );
+				}
+				attributes[index] = new ModelDummyAttribute( type, U32( data, record + 4 ), reserved, block );
 			}
 		}
 		DummyAttributes = attributes;
@@ -353,7 +382,7 @@ public partial class ModelFile : BaseFormat
 		if ( UnknownBlockOffset != 0 )
 			Heightfield = ReadHeightfield( data, UnknownBlockOffset );
 		if ( captureLayout )
-			Layout = ModelFileWriter.CaptureLayout( this, data, offsets, headerBytes!, fileLength, firstChild, nextSibling, nodeNameOffsets, meshLayouts );
+			Layout = ModelFileWriter.CaptureLayout( this, data, offsets, headerBytes!, fileLength, nodeNameOffsets, meshLayouts, attributeData, attributeVectors );
 	}
 
 	private static ModelHeightfield ReadHeightfield( byte[] data, uint offset )
@@ -439,7 +468,7 @@ public partial class ModelFile : BaseFormat
 			siblings[index] = Resolve( U32( data, record + 8 ), "sibling", index );
 			children[index] = Resolve( U32( data, record + 12 ), "child", index );
 			nodes[index] = new ModelNode( index, U32( data, record ), U32( data, record + 80 ), ReadCString( data, U32( data, record + 84 ) ),
-				parents[index], index < meshCount ? index : -1, ReadMatrix( data, record + 16 ) );
+				parents[index], index < meshCount ? index : -1, ReadMatrix( data, record + 16 ), children[index], siblings[index] );
 		}
 
 		if ( !byOffset.TryGetValue( offsets[10], out var root ) )
@@ -472,8 +501,6 @@ public partial class ModelFile : BaseFormat
 
 		RootNodeIndex = root;
 		Nodes = nodes;
-		firstChild = children;
-		nextSibling = siblings;
 		nodeNameOffsets = nameOffsets;
 	}
 

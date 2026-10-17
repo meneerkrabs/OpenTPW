@@ -23,7 +23,7 @@ public sealed record DiscoveredMod( string Id, string Directory, ModSource Sourc
 /// Finds files-based mods (docs/MODS.md): <c>--mod-dir</c>, then <c>OPENTPW_MOD_DIRS</c>, then
 /// <c>&lt;config&gt;/mods/&lt;id&gt;/</c>, then <c>&lt;program&gt;/content/mods/&lt;id&gt;/</c>. The first folder with an id
 /// wins; later folders with the same id are reported as shadowed. Nothing is loaded or executed: discovery only reads
-/// manifests. The browser build has no files-based mods yet.
+/// manifests. The browser build discovers only the program folder: the mods shipped with the page are embedded and written below it at start (docs/WEB.md).
 /// </summary>
 // [EXT:mods] OpenTPW's own mod system; the original game had no mods
 public static class ModDiscovery

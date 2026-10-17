@@ -9,7 +9,8 @@ namespace OpenTPW;
 /// written from the <see cref="ModelFile"/>; the offsets and the bytes between structures come from <see cref="ModelFile.Layout"/>
 /// when the model was read with <c>captureLayout: true</c> (then the output equals the original member byte for byte, proven over the
 /// whole local corpus by <c>Md2WriterCorpusTests</c>), otherwise from a planned layout (see <see cref="Plan"/>), which is how
-/// <see cref="ModelBuilder"/> models are written. Header counts are always recomputed from the content.
+/// <see cref="ModelBuilder"/> models are written. A captured layout is used only while the model still has the shape it was captured for
+/// (<see cref="ModelLayout.Shape"/>); a model that grew or shrank is planned afresh. Header counts are always recomputed from the content.
 /// </summary>
 public static class ModelFileWriter
 {
@@ -19,7 +20,8 @@ public static class ModelFileWriter
 		ArgumentNullException.ThrowIfNull( model );
 		if ( model.Kind != ModelFileKind.Geometry )
 			throw new NotSupportedException( "Only geometry members are written; animation members are not supported." );
-		return Serialize( model, model.Layout ?? Plan( model ), null );
+		var layout = model.Layout is { } captured && captured.Shape.SequenceEqual( ShapeOf( model ) ) ? captured : Plan( model );
+		return Serialize( model, layout, null );
 	}
 
 	/// <summary>Writes the member to <paramref name="stream"/> (left open).</summary>
@@ -41,16 +43,38 @@ public static class ModelFileWriter
 			faces += mesh.Indices.Length / 3;
 			normals += mesh.CornerPositionIndices.Length + mesh.Indices.Length / 3;
 		}
-		return new ModelHeaderCounts( U16( model.Textures.Count ), U16( vertexBlocks ), U16( uvBlocks ), U16( materials ), U16( faces ), U16( model.ExtraRecords.Count ),
-			U16( model.Nodes.Count ), U16( model.Meshes.Count ), model.Counts == null ? (ushort)0xFFFF : model.Counts.Unknown46, U16( model.DummyAttributes.Count ), U16( normals ) );
+		return new ModelHeaderCounts( U16( model.Textures.Count, "texture slots" ), U16( vertexBlocks, "position blocks (4 positions each, per mesh rounded up)" ),
+			U16( uvBlocks, "texture-coordinate blocks (4 corners each, per mesh rounded up)" ), U16( materials, "materials" ), U16( faces, "faces" ), U16( model.ExtraRecords.Count, "paths" ),
+			U16( model.Nodes.Count, "nodes" ), U16( model.Meshes.Count, "meshes" ), model.Counts == null ? (ushort)0xFFFF : model.Counts.Unknown46,
+			U16( model.DummyAttributes.Count, "attribute records" ), U16( normals, "normals (corners plus faces)" ) );
+	}
+
+	/// <summary>The sizes a layout depends on (see <see cref="ModelLayout.Shape"/>).</summary>
+	internal static long[] ShapeOf( ModelFile model )
+	{
+		var shape = new List<long> { model.Textures.Count };
+		shape.AddRange( model.Textures.Select( texture => (long)texture.FrameNames.Count ) );
+		shape.Add( model.Meshes.Count );
+		foreach ( var mesh in model.Meshes )
+			shape.AddRange( new long[] { mesh.Positions.Length, mesh.CornerPositionIndices.Length, mesh.Indices.Length / 3, mesh.Materials.Length } );
+		shape.Add( model.Nodes.Count );
+		shape.AddRange( model.Nodes.Select( node => (long)Encoding.ASCII.GetByteCount( node.Name ) ) );
+		shape.Add( model.DummyAttributes.Count );
+		shape.AddRange( model.DummyAttributes.Select( attribute => attribute.Data == null ? 0L : attribute.Data.Position == null ? 1L : 2L ) );
+		shape.Add( model.ExtraRecords.Count );
+		shape.AddRange( model.Paths.Select( path => (long)path.Points.Count ) );
+		shape.Add( model.Heightfield == null ? 0 : 1 );
+		if ( model.Heightfield is { } terrain )
+			shape.AddRange( new long[] { terrain.Heights.Count, terrain.CellWords.Count } );
+		return shape.ToArray();
 	}
 
 	/// <summary>
 	/// Builds the layout that was read from <paramref name="data"/>: the header, the offsets, the node links, and the non-zero bytes
 	/// that the writer does not cover itself (found by writing the model with this layout and comparing which bytes it touched).
 	/// </summary>
-	internal static ModelLayout CaptureLayout( ModelFile model, byte[] data, uint[] offsets, byte[] header, int fileLength, int[] firstChild, int[] nextSibling,
-		uint[] nodeNames, IReadOnlyList<ModelMeshLayout> meshes )
+	internal static ModelLayout CaptureLayout( ModelFile model, byte[] data, uint[] offsets, byte[] header, int fileLength,
+		uint[] nodeNames, IReadOnlyList<ModelMeshLayout> meshes, uint[] attributeData, uint[] attributeVectors )
 	{
 		var extraOffset = BinaryPrimitives.ReadUInt32LittleEndian( data.AsSpan( 0xAC ) );
 		var pathPoints = new uint[model.ExtraRecords.Count];
@@ -81,10 +105,11 @@ public static class ModelFileWriter
 			Attributes = offsets[11],
 			Paths = extraOffset,
 			NodeNames = nodeNames,
-			FirstChild = firstChild,
-			NextSibling = nextSibling,
 			Meshes = meshes.ToArray(),
-			PathPoints = pathPoints
+			PathPoints = pathPoints,
+			AttributeData = attributeData,
+			AttributeVectors = attributeVectors,
+			Shape = ShapeOf( model )
 		};
 		var covered = new bool[fileLength];
 		Serialize( model, layout, covered );
@@ -189,6 +214,25 @@ public static class ModelFileWriter
 			position += model.Paths[index].Points.Count * 12L;
 		}
 
+		var attributeData = new uint[model.DummyAttributes.Count];
+		var attributeVectors = new uint[model.DummyAttributes.Count];
+		// the position entries form an array (x, y, z, 0 each) that precedes the array of data blocks
+		for ( var index = 0; index < attributeData.Length; index++ )
+		{
+			if ( model.DummyAttributes[index].Data?.Position == null )
+				continue;
+			position = Align( position, 4 );
+			attributeVectors[index] = (uint)position;
+			position += 16;
+		}
+		for ( var index = 0; index < attributeData.Length; index++ )
+		{
+			if ( model.DummyAttributes[index].Data == null )
+				continue;
+			position = Align( position, 4 );
+			attributeData[index] = (uint)position;
+			position += 16;
+		}
 		position = Align( position, 8 );
 		long attributes = 0;
 		if ( model.DummyAttributes.Count > 0 )
@@ -215,32 +259,11 @@ public static class ModelFileWriter
 		if ( position > ModelFile.MaximumFileBytes )
 			throw new InvalidOperationException( "The model exceeds the 16 MiB member limit." );
 
-		var firstChild = new int[nodes.Count];
-		var nextSibling = new int[nodes.Count];
-		Array.Fill( firstChild, -1 );
-		Array.Fill( nextSibling, -1 );
-		var lastChild = new int[nodes.Count];
-		Array.Fill( lastChild, -1 );
-		for ( var index = 0; index < nodes.Count; index++ )
-		{
-			var parent = nodes[index].ParentIndex;
-			if ( parent < 0 )
-				continue;
-			if ( lastChild[parent] < 0 )
-				firstChild[parent] = index;
-			else
-				nextSibling[lastChild[parent]] = index;
-			lastChild[parent] = index;
-		}
-
 		var header = new byte[ModelFile.HeaderBytes];
 		BinaryPrimitives.WriteUInt32LittleEndian( header.AsSpan( 0 ), ModelFile.Magic );
 		BinaryPrimitives.WriteUInt32LittleEndian( header.AsSpan( 4 ), ModelFile.SupportedVersionMajor );
 		BinaryPrimitives.WriteUInt32LittleEndian( header.AsSpan( 8 ), ModelFile.SupportedVersionMinor );
-		// Opaque words: the most common corpus values (0x0C/0x10 pair in 61 members, 0x14 a 1999 Unix time); 0x2C sits a few bytes below the file length.
-		BinaryPrimitives.WriteUInt32LittleEndian( header.AsSpan( 0x0C ), OpaqueWord0C );
-		BinaryPrimitives.WriteUInt32LittleEndian( header.AsSpan( 0x10 ), OpaqueWord10 );
-		BinaryPrimitives.WriteUInt32LittleEndian( header.AsSpan( 0x14 ), OpaqueWord14 );
+		// The opaque words come from the model (WriteHeader); 0x2C sits a few bytes below the file length unless the model keeps its own.
 		BinaryPrimitives.WriteUInt32LittleEndian( header.AsSpan( 0x2C ), (uint)Math.Max( 0, position - OpaqueWord2CBelowEnd ) );
 
 		return new ModelLayout
@@ -262,11 +285,12 @@ public static class ModelFileWriter
 			Attributes = (uint)attributes,
 			Paths = (uint)paths,
 			NodeNames = names,
-			FirstChild = firstChild,
-			NextSibling = nextSibling,
 			Meshes = Enumerable.Range( 0, meshes.Count ).Select( index => new ModelMeshLayout( (uint)meshLayouts[index, 0], (uint)meshLayouts[index, 1],
 				(uint)meshLayouts[index, 2], (uint)meshLayouts[index, 3], (uint)meshLayouts[index, 4], (uint)meshLayouts[index, 5] ) ).ToArray(),
-			PathPoints = pathPoints
+			PathPoints = pathPoints,
+			AttributeData = attributeData,
+			AttributeVectors = attributeVectors,
+			Shape = ShapeOf( model )
 		};
 	}
 
@@ -280,7 +304,7 @@ public static class ModelFileWriter
 	{
 		var meshes = model.Meshes;
 		var nodes = model.Nodes;
-		if ( layout.Meshes.Count != meshes.Count || layout.NodeNames.Count != nodes.Count || layout.FirstChild.Count != nodes.Count )
+		if ( layout.Meshes.Count != meshes.Count || layout.NodeNames.Count != nodes.Count || layout.AttributeData.Count != model.DummyAttributes.Count || layout.AttributeVectors.Count != model.DummyAttributes.Count )
 			throw new InvalidOperationException( "The layout does not match the model." );
 		var image = new Image( new byte[layout.FileLength], covered );
 		foreach ( var gap in layout.Gaps )
@@ -291,10 +315,8 @@ public static class ModelFileWriter
 		var nameCursor = layout.FlagTable + textures.Count * 8L;
 		for ( var index = 0; index < textures.Count; index++ )
 		{
-			image.Mark( layout.FlagTable + index * 8, 8 );
 			image.U32( layout.FlagTable + index * 8, textures[index].Flags );
 			var slot = layout.SlotTable + index * 16;
-			image.Mark( slot, 16 );
 			image.U32( slot, textures[index].Unknown );
 			image.U16( slot + 10, U16( textures[index].FrameNames.Count ) );
 			image.U32( slot + 12, (uint)nameCursor );
@@ -302,7 +324,7 @@ public static class ModelFileWriter
 			{
 				if ( Encoding.ASCII.GetByteCount( name ) > 19 )
 					throw new InvalidOperationException( $"Texture frame name '{name}' does not fit its 20-byte field." );
-				image.Mark( nameCursor, 20 );
+				image.Mark( nameCursor, Encoding.ASCII.GetByteCount( name ) + 1 );
 				Encoding.ASCII.GetBytes( name, image.Data.AsSpan( (int)nameCursor, 20 ) );
 				nameCursor += 20;
 			}
@@ -314,11 +336,10 @@ public static class ModelFileWriter
 		{
 			var node = nodes[index];
 			var record = RecordOffset( index );
-			image.Mark( record, index < meshCount ? ModelFile.MeshRecordBytes : ModelFile.DummyRecordBytes );
 			image.U32( record, node.Type );
 			image.U32( record + 4, node.ParentIndex < 0 ? 0 : (uint)RecordOffset( node.ParentIndex ) );
-			image.U32( record + 8, layout.NextSibling[index] < 0 ? 0 : (uint)RecordOffset( layout.NextSibling[index] ) );
-			image.U32( record + 12, layout.FirstChild[index] < 0 ? 0 : (uint)RecordOffset( layout.FirstChild[index] ) );
+			image.U32( record + 8, node.NextSiblingIndex < 0 ? 0 : (uint)RecordOffset( node.NextSiblingIndex ) );
+			image.U32( record + 12, node.FirstChildIndex < 0 ? 0 : (uint)RecordOffset( node.FirstChildIndex ) );
 			var matrix = node.Transform;
 			var cells = new[] { matrix.M11, matrix.M12, matrix.M13, matrix.M14, matrix.M21, matrix.M22, matrix.M23, matrix.M24,
 				matrix.M31, matrix.M32, matrix.M33, matrix.M34, matrix.M41, matrix.M42, matrix.M43, matrix.M44 };
@@ -356,7 +377,6 @@ public static class ModelFileWriter
 			image.U32( record + 148, at.Corners );
 
 			// Positions and texture coordinates are stored as blocks of four (X×4, Y×4, Z×4 / U×4, V×4); block padding stays zero.
-			image.Mark( at.Positions, RoundUp4( mesh.Positions.Length ) * 12L );
 			for ( var vertex = 0; vertex < mesh.Positions.Length; vertex++ )
 			{
 				var block = at.Positions + vertex / 4 * 48L + vertex % 4 * 4;
@@ -364,29 +384,24 @@ public static class ModelFileWriter
 				image.F32( block + 16, mesh.Positions[vertex].Y );
 				image.F32( block + 32, mesh.Positions[vertex].Z );
 			}
-			image.Mark( at.TextureCoordinates, RoundUp4( corners ) * 8L );
 			for ( var corner = 0; corner < corners; corner++ )
 			{
 				var block = at.TextureCoordinates + corner / 4 * 32L + corner % 4 * 4;
 				image.F32( block, mesh.TexCoords[corner].X );
 				image.F32( block + 16, mesh.TexCoords[corner].Y );
 			}
-			image.Mark( at.Corners, corners * 2L );
 			for ( var corner = 0; corner < corners; corner++ )
 				image.U16( at.Corners + corner * 2L, mesh.CornerPositionIndices[corner] );
-			image.Mark( at.Normals, (corners + faces) * 12L );
 			for ( var corner = 0; corner < corners; corner++ )
 				image.Vector( at.Normals + corner * 12L, mesh.CornerNormals[corner] );
 			for ( var face = 0; face < faces; face++ )
 				image.Vector( at.Normals + (corners + face) * 12L, mesh.FaceNormals[face] );
-			image.Mark( at.Faces, faces * 8L );
 			for ( var face = 0; face < faces; face++ )
 			{
 				image.U16( at.Faces + face * 8L, mesh.FaceNormalIndices[face] );
 				for ( var corner = 0; corner < 3; corner++ )
 					image.U16( at.Faces + face * 8L + 2 + corner * 2, U16( mesh.Indices[face * 3 + corner] ) );
 			}
-			image.Mark( at.Materials, mesh.Materials.Length * 16L );
 			for ( var material = 0; material < mesh.Materials.Length; material++ )
 			{
 				var data = mesh.Materials[material];
@@ -400,7 +415,6 @@ public static class ModelFileWriter
 			}
 		}
 
-		image.Mark( layout.Attributes, model.DummyAttributes.Count * 20L );
 		for ( var index = 0; index < model.DummyAttributes.Count; index++ )
 		{
 			var attribute = model.DummyAttributes[index];
@@ -408,16 +422,37 @@ public static class ModelFileWriter
 			image.U32( record, attribute.Type );
 			image.U32( record + 4, attribute.Value );
 			attribute.Reserved.CopyTo( image.Data, (int)record + 8 );
+			image.Mark( record + 8, 12 );
+			if ( attribute.Data is { } block )
+			{
+				// the block's pointer replaces the stored one (Reserved bytes 4..7)
+				image.U32( record + 12, layout.AttributeData[index] );
+				var word = block.Word;
+				if ( block.Position is { } place )
+				{
+					var distance = (long)layout.AttributeData[index] - layout.AttributeVectors[index];
+					if ( distance <= 0 || distance > ushort.MaxValue )
+						throw new InvalidOperationException( "An attribute position entry lies out of the 16-bit distance of its data block." );
+					word = (word & 0xFFFF) | (uint)distance << 16;
+					image.F32( layout.AttributeVectors[index], place.X );
+					image.F32( layout.AttributeVectors[index] + 4, place.Y );
+					image.F32( layout.AttributeVectors[index] + 8, place.Z );
+					image.U32( layout.AttributeVectors[index] + 12, 0 );
+				}
+				image.U32( layout.AttributeData[index], word );
+				image.F32( layout.AttributeData[index] + 4, block.X );
+				image.F32( layout.AttributeData[index] + 8, block.Y );
+				image.F32( layout.AttributeData[index] + 12, block.Z );
+			}
 		}
 
-		image.Mark( layout.Paths, model.ExtraRecords.Count * 16L );
 		for ( var index = 0; index < model.ExtraRecords.Count; index++ )
 		{
 			var record = layout.Paths + index * 16L;
 			model.ExtraRecords[index].CopyTo( image.Data, (int)record );
+			image.Mark( record, 16 );
 			image.U32( record + 8, layout.PathPoints[index] );
 			var points = model.Paths[index].Points;
-			image.Mark( layout.PathPoints[index], points.Count * 12L );
 			for ( var point = 0; point < points.Count; point++ )
 			{
 				image.F32( layout.PathPoints[index] + point * 12L, points[point].X );
@@ -429,7 +464,6 @@ public static class ModelFileWriter
 		if ( model.Heightfield is { } terrain )
 		{
 			var at = layout.Heightfield;
-			image.Mark( at, ModelHeightfield.HeaderBytes );
 			for ( var word = 0; word < 4; word++ )
 				image.U32( at + word * 4L, terrain.OpaqueHeaderWords[word] );
 			image.F32( at + 16, terrain.CellSizeX );
@@ -440,10 +474,8 @@ public static class ModelFileWriter
 			image.F32( at + 36, terrain.StoredUpperHeight );
 			image.U32( at + 40, layout.HeightfieldHeights );
 			image.U32( at + 44, layout.HeightfieldCells );
-			image.Mark( layout.HeightfieldHeights, terrain.Heights.Count * 4L );
 			for ( var index = 0; index < terrain.Heights.Count; index++ )
 				image.F32( layout.HeightfieldHeights + index * 4L, terrain.Heights[index] );
-			image.Mark( layout.HeightfieldCells, terrain.CellWords.Count * 4L );
 			for ( var index = 0; index < terrain.CellWords.Count; index++ )
 				image.U32( layout.HeightfieldCells + index * 4L, terrain.CellWords[index] );
 		}
@@ -468,6 +500,13 @@ public static class ModelFileWriter
 			Encoding.Latin1.GetBytes( model.SourceName, image.Data.AsSpan( 0x18, 20 ) );
 		}
 		image.U32( 0x30, model.HeaderFlags );
+		var opaque = model.HeaderOpaque;
+		image.U32( 0x0C, opaque.Word0C );
+		image.U32( 0x10, opaque.Word10 );
+		image.U32( 0x14, opaque.Word14 );
+		image.U16( 0x34, opaque.Word34 );
+		if ( opaque.Word2C is { } word2C )
+			image.U32( 0x2C, word2C );
 		var counts = ComputeCounts( model );
 		ushort[] values = { counts.TextureCount, counts.VertexBlockCount, counts.UvBlockCount, counts.MaterialCount, counts.FaceCount, counts.ExtraRecordCount,
 			counts.NodeCount, counts.MeshCount, counts.Unknown46, counts.DummyAttributeCount, counts.NormalCount };
@@ -495,7 +534,8 @@ public static class ModelFileWriter
 		return root < model.Meshes.Count ? layout.MeshTable + (uint)(root * ModelFile.MeshRecordBytes) : layout.DummyTable + (uint)((root - model.Meshes.Count) * ModelFile.DummyRecordBytes);
 	}
 
-	private static ushort U16( long value ) => value is >= 0 and <= ushort.MaxValue ? (ushort)value : throw new InvalidOperationException( $"The count {value} does not fit a 16-bit field." );
+	private static ushort U16( long value, string what = "value" )
+		=> value is >= 0 and <= ushort.MaxValue ? (ushort)value : throw new InvalidOperationException( $"The model has {value} {what}, more than the 65,535 a 16-bit header count holds." );
 	private static int RoundUp4( int value ) => (value + 3) & ~3;
 	private static long Align( long value, int alignment ) => (value + alignment - 1) / alignment * alignment;
 
@@ -517,9 +557,23 @@ public static class ModelFileWriter
 				Array.Fill( covered, true, (int)offset, (int)length );
 		}
 
-		public void U16( long offset, ushort value ) => BinaryPrimitives.WriteUInt16LittleEndian( Data.AsSpan( (int)offset ), value );
-		public void U32( long offset, uint value ) => BinaryPrimitives.WriteUInt32LittleEndian( Data.AsSpan( (int)offset ), value );
-		public void F32( long offset, float value ) => BinaryPrimitives.WriteSingleLittleEndian( Data.AsSpan( (int)offset ), value );
+		public void U16( long offset, ushort value )
+		{
+			Mark( offset, 2 );
+			BinaryPrimitives.WriteUInt16LittleEndian( Data.AsSpan( (int)offset ), value );
+		}
+
+		public void U32( long offset, uint value )
+		{
+			Mark( offset, 4 );
+			BinaryPrimitives.WriteUInt32LittleEndian( Data.AsSpan( (int)offset ), value );
+		}
+
+		public void F32( long offset, float value )
+		{
+			Mark( offset, 4 );
+			BinaryPrimitives.WriteSingleLittleEndian( Data.AsSpan( (int)offset ), value );
+		}
 
 		public void Vector( long offset, Vector3 value )
 		{

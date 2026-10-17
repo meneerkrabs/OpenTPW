@@ -38,11 +38,42 @@ public sealed record ModelTexture( uint Flags, uint Unknown, IReadOnlyList<strin
 /// <summary>
 /// Hierarchy node (mesh or dummy). <see cref="Transform"/> is the stored row-major matrix
 /// with translation in the fourth row; whether it is parent-relative is not verified.
+/// <see cref="FirstChildIndex"/> and <see cref="NextSiblingIndex"/> (-1: none) keep the order of the stored sibling chain, which is not always node index order
+/// (200 corpus chains); <see cref="ModelFileWriter"/> writes the links back.
 /// </summary>
-public sealed record ModelNode( int Index, uint Type, uint StoredIndex, string Name, int ParentIndex, int MeshIndex, Matrix4x4 Transform );
+public sealed record ModelNode( int Index, uint Type, uint StoredIndex, string Name, int ParentIndex, int MeshIndex, Matrix4x4 Transform,
+	int FirstChildIndex = -1, int NextSiblingIndex = -1 );
 
-/// <summary>20-byte dummy attribute record; only the first two words are separated.</summary>
-public sealed record ModelDummyAttribute( uint Type, uint Value, byte[] Reserved );
+/// <summary>
+/// 20-byte attribute record: <c>u32 type, u32 value, 12 bytes</c>. Type flag 0x80 marks a head record (value = head id). Type flag 0x40 marks
+/// a record whose word +12 points at a <see cref="ModelAttributeData"/> block (248 of 248 records with the flag, none without it, in 28 members).
+/// <see cref="Reserved"/> holds the 12 bytes at +8; when <see cref="Data"/> was decoded its bytes 4..7 (the pointer) are zero here and the writer places
+/// the block and writes the pointer.
+/// </summary>
+public sealed record ModelDummyAttribute( uint Type, uint Value, byte[] Reserved, ModelAttributeData? Data = null )
+{
+	/// <summary>Attribute type flag 0x40: the record has a data block.</summary>
+	public const uint DataFlag = 0x40;
+}
+
+/// <summary>
+/// What a flag 0x40 attribute record points at: a 16-byte block <c>u32 word, f32 x, f32 y, f32 z</c> (the three floats look like a roughly unit-length
+/// direction) and, when the high 16 bits of the word are non-zero, a second 16-byte entry <c>f32 x, f32 y, f32 z, 0</c> that many bytes before the block (a
+/// position of the attachment; 126 of 248 records have one, all with a zero fourth word, spaced in an array of such entries that precedes the block array).
+/// The meaning of either is not verified. When <see cref="Position"/> is decoded, the high 16 bits of <see cref="Word"/> are zero here and the writer fills
+/// in the distance from the layout; otherwise <see cref="Word"/> is the raw word. The low 16 bits (0x16..0x1F, 0x2A..0x2D, 0x37..0x147, ...) are not understood.
+/// </summary>
+public sealed record ModelAttributeData( uint Word, float X, float Y, float Z, System.Numerics.Vector3? Position = null );
+
+/// <summary>
+/// The header words whose meaning is unknown, kept so that a model written without a captured layout keeps them: 0x0C, 0x10, 0x14 (looks like a 1999 Unix time),
+/// the u16 at 0x34 and 0x2C (a few bytes below the file length; null: derived from the planned length).
+/// </summary>
+public sealed record ModelHeaderOpaque( uint Word0C, uint Word10, uint Word14, ushort Word34, uint? Word2C )
+{
+	/// <summary>The most common corpus values (unverified defaults of a built model; 0x2C is derived).</summary>
+	public static ModelHeaderOpaque Default { get; } = new( ModelFileWriter.OpaqueWord0C, ModelFileWriter.OpaqueWord10, ModelFileWriter.OpaqueWord14, 0, null );
+}
 
 /// <summary>72-byte animation trailer kept as raw little-endian words; semantics unverified.</summary>
 public sealed record ModelAnimationTrailer( int Offset, IReadOnlyList<uint> Words );

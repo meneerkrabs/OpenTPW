@@ -114,7 +114,7 @@ public class Md2ModelBuilderTests
 		var normal = new NVector3( 0, 1, 0 );
 		material.AddTriangle( material.AddVertex( NVector3.Zero, normal, NVector2.Zero ), material.AddVertex( NVector3.UnitX, normal, NVector2.Zero ), material.AddVertex( NVector3.UnitZ, normal, NVector2.Zero ) );
 		var plain = builder.AddDummy( "marker", root );
-		var second = builder.AddDummy( "seat_b", root ).AddHead( 2, 0xF1 );
+		var second = builder.AddDummy( "seat_b", root ).AddHead( 2 );
 		var first = builder.AddDummy( "seat_a", root ).AddHead( 1 );
 		var model = builder.Build();
 
@@ -124,12 +124,12 @@ public class Md2ModelBuilderTests
 		Assert.AreEqual( 0u, model.DummyAttributes[0].Value );
 		Assert.AreEqual( 2, RideHeadSpace.NodeForHead( model, 2 ), "seat_b is node 2" );
 		Assert.AreEqual( 3, RideHeadSpace.NodeForHead( model, 1 ), "seat_a is node 3" );
-		Assert.AreEqual( 0xF1u, model.DummyAttributes[1].Type );
+		Assert.AreEqual( ModelBuilder.DefaultHeadType, model.DummyAttributes[1].Type );
 		Assert.AreEqual( "marker", model.Nodes[1].Name );
 		Assert.IsNotNull( plain );
 		Assert.IsNotNull( first );
 		Assert.IsNotNull( second );
-		Assert.AreEqual( 1, model.Textures.Count + 1, "an untextured material owns no slot" );
+		Assert.AreEqual( 0, model.Textures.Count, "an untextured material owns no slot" );
 		Assert.AreEqual( -1, model.Meshes[0].Materials[0].TextureIndex );
 		Assert.AreEqual( "", model.Meshes[0].Materials[0].Name );
 	}
@@ -237,6 +237,192 @@ public class Md2ModelBuilderTests
 			var material = new ModelBuilder().AddMesh( "m" ).Mesh!.AddMaterial( null );
 			material.AddTriangle( 0, 1, 2 );
 		} );
+	}
+
+	[TestMethod]
+	public void AHeadTypeWithDataFlag0x40NeedsItsDataBlockAndRoundTripsIt()
+	{
+		var builder = new ModelBuilder();
+		var root = builder.AddMesh( "hull" );
+		AddTriangle( root.Mesh!.AddMaterial( null ) );
+		var data = new ModelAttributeData( 0x2A, 0.25f, 0.5f, 0.75f, new NVector3( 1, 2, 3 ) );
+		var seat = builder.AddDummy( "seat", root );
+		var node = builder.AddDummy( "seat2", root );
+		var second = builder.AddDummy( "seat3", root );
+		Assert.ThrowsException<ArgumentException>( () => second.AddHead( 3, 0xF1, new ModelAttributeData( 0x00D0002A, 0, 0, 1 ) ), "the high word is the position distance" );
+		second.AddHead( 3, 0x400F1, new ModelAttributeData( 0x16, 0, 0, 1 ) );
+		Assert.ThrowsException<ArgumentException>( () => seat.AddHead( 1, 0xF1 ), "0xF1 has flag 0x40: a data block is required" );
+		Assert.ThrowsException<ArgumentException>( () => seat.AddHead( 1, 0xB1, data ), "0xB1 has no data block" );
+		seat.AddHead( 1, 0xF1, data );
+		node.AddHead( 2 );
+		var bytes = builder.ToBytes();
+		var model = new ModelFile( new MemoryStream( bytes ) );
+		Assert.AreEqual( 0xF1u, model.DummyAttributes[0].Type );
+		Assert.AreEqual( data, model.DummyAttributes[0].Data );
+		Assert.IsNull( model.DummyAttributes[1].Data );
+		Assert.AreEqual( new NVector3( 1, 2, 3 ), model.DummyAttributes[0].Data!.Position );
+		Assert.IsNull( model.DummyAttributes[2].Data!.Position, "a block without a position entry keeps a zero distance" );
+		Assert.AreEqual( 1, RideHeadSpace.NodeForHead( model, 1 ) );
+		// the pointer of the record hits the block
+		var captured = new ModelFile( new MemoryStream( bytes ), captureLayout: true );
+		Assert.AreEqual( 0, captured.Layout!.Gaps.Count );
+		CollectionAssert.AreEqual( bytes, ModelFileWriter.Write( captured ) );
+		var planned = new ModelFile( new MemoryStream( ModelFileWriter.Write( model ) ) );
+		Assert.AreEqual( data, planned.DummyAttributes[0].Data, "a planned layout moves the blocks and fixes the pointers and the distance" );
+	}
+
+	[TestMethod]
+	public void ACapturedLayoutIsReplacedWhenTheModelChangesShape()
+	{
+		var bytes = TwoNodes( out _, out _ ).ToBytes();
+		var model = new ModelFile( new MemoryStream( bytes ), captureLayout: true );
+		var mesh = model.Meshes[0];
+		// one more position: the old position block would overlap the next array
+		mesh.Positions = mesh.Positions.Append( new OpenTPW.Vector3( 9, 9, 9 ) ).ToArray();
+		var grown = ModelFileWriter.Write( model );
+		var again = new ModelFile( new MemoryStream( grown ) );
+		Assert.AreEqual( 5, again.Meshes[0].Positions.Length );
+		Assert.AreEqual( 9f, again.Meshes[0].Positions[4].X );
+		CollectionAssert.AreEqual( mesh.TexCoords.Select( uv => uv.X ).ToArray(), again.Meshes[0].TexCoords.Select( uv => uv.X ).ToArray(), "the neighbouring arrays survive" );
+		Assert.AreEqual( 0, model.Layout!.Gaps.Count );
+	}
+
+	[TestMethod]
+	public void ARenamedNodeOfADifferentLengthDoesNotOverwriteItsNeighbour()
+	{
+		var model = new ModelFile( new MemoryStream( TwoNodes( out _, out _ ).ToBytes() ), captureLayout: true );
+		model.Nodes = new[] { model.Nodes[0] with { Name = "a_much_longer_body_name" }, model.Nodes[1] };
+		var again = new ModelFile( new MemoryStream( ModelFileWriter.Write( model ) ) );
+		Assert.AreEqual( "a_much_longer_body_name", again.Nodes[0].Name );
+		Assert.AreEqual( "seat", again.Nodes[1].Name );
+	}
+
+	[TestMethod]
+	public void APlannedLayoutKeepsTheHeaderWordsSiblingOrderAndDataBlocksOfARead()
+	{
+		var bytes = TwoNodes( out _, out _ ).ToBytes();
+		var model = new ModelFile( new MemoryStream( bytes ) );
+		model.HeaderOpaque = new ModelHeaderOpaque( 7, 8, 9, 0, 1234 );
+		model.Nodes = model.Nodes.Select( node => node ).ToArray();
+		var again = new ModelFile( new MemoryStream( ModelFileWriter.Write( model ) ) );
+		Assert.AreEqual( new ModelHeaderOpaque( 7, 8, 9, 0, 1234 ), again.HeaderOpaque );
+		Assert.AreEqual( 1, again.Nodes[0].FirstChildIndex );
+		Assert.AreEqual( -1, again.Nodes[1].NextSiblingIndex );
+
+		// a sibling chain in reverse index order (as 200 corpus chains have) survives a planned write
+		var builder = new ModelBuilder();
+		var root = builder.AddMesh( "root" );
+		AddTriangle( root.Mesh!.AddMaterial( null ) );
+		builder.AddDummy( "a", root );
+		builder.AddDummy( "b", root );
+		var shell = builder.Build();
+		var reversed = shell.Nodes.ToArray();
+		reversed[0] = reversed[0] with { FirstChildIndex = 2 };
+		reversed[2] = reversed[2] with { NextSiblingIndex = 1 };
+		reversed[1] = reversed[1] with { NextSiblingIndex = -1 };
+		shell.Nodes = reversed;
+		var back = new ModelFile( new MemoryStream( ModelFileWriter.Write( shell ) ) );
+		Assert.AreEqual( 2, back.Nodes[0].FirstChildIndex );
+		Assert.AreEqual( 1, back.Nodes[2].NextSiblingIndex );
+	}
+
+	[TestMethod]
+	public void BytesNoFieldAccountsForAreKeptAsReportedGapsOfACapturedLayout()
+	{
+		var bytes = TwoNodes( out _, out _ ).ToBytes();
+		var probe = new ModelFile( new MemoryStream( bytes ), captureLayout: true ).Layout!;
+		var flagTable = (int)probe.FlagTable;
+		var slotTable = (int)probe.SlotTable;
+		var junk = (byte[])bytes.Clone();
+		junk[flagTable + 4] = 0x55;
+		junk[slotTable + 6] = 0x66;
+		var captured = new ModelFile( new MemoryStream( junk ), captureLayout: true );
+		Assert.AreEqual( 2, captured.Layout!.Gaps.Count, "the two unmodelled words are reported, not dropped" );
+		CollectionAssert.AreEqual( junk, ModelFileWriter.Write( captured ) );
+		// without a layout the unmodelled words are written as zero
+		CollectionAssert.AreEqual( bytes, ModelFileWriter.Write( new ModelFile( new MemoryStream( junk ) ) ) );
+	}
+
+	[TestMethod]
+	public void NonFiniteValuesEmptyMeshesAndBadNamesAreRefused()
+	{
+		var builder = new ModelBuilder();
+		var mesh = builder.AddMesh( "m" );
+		var material = mesh.Mesh!.AddMaterial( null );
+		Assert.ThrowsException<ArgumentException>( () => material.AddVertex( new NVector3( float.NaN, 0, 0 ), NVector3.UnitZ, NVector2.Zero ) );
+		Assert.ThrowsException<ArgumentException>( () => material.AddVertex( NVector3.Zero, new NVector3( 0, float.PositiveInfinity, 0 ), NVector2.Zero ) );
+		Assert.ThrowsException<ArgumentException>( () => material.AddVertex( NVector3.Zero, NVector3.UnitZ, new NVector2( 0, float.NaN ) ) );
+		Assert.ThrowsException<ArgumentException>( () => { mesh.Transform = Matrix4x4.CreateTranslation( float.PositiveInfinity, 0, 0 ); } );
+		Assert.ThrowsException<ArgumentException>( () => builder.AddDummy( "bad", mesh, new Matrix4x4( float.NaN, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1 ) ), "a non-finite local matrix is refused at build time" );
+
+		var empty = new ModelBuilder();
+		empty.AddMesh( "empty" );
+		StringAssert.Contains( Assert.ThrowsException<InvalidOperationException>( () => empty.ToBytes() ).Message, "no material" );
+		var noVertices = new ModelBuilder();
+		noVertices.AddMesh( "m" ).Mesh!.AddMaterial( null );
+		StringAssert.Contains( Assert.ThrowsException<InvalidOperationException>( () => noVertices.ToBytes() ).Message, "without vertices" );
+
+		var twins = new ModelBuilder();
+		var top = twins.AddDummy( "same" );
+		twins.AddDummy( "same", top );
+		StringAssert.Contains( Assert.ThrowsException<InvalidOperationException>( () => twins.ToBytes() ).Message, "unique" );
+		Assert.ThrowsException<InvalidOperationException>( () => Throw( new ModelBuilder { SourceName = "caf\u00e9" } ) );
+		Assert.ThrowsException<InvalidOperationException>( () => Throw( new ModelBuilder { SourceName = new string( 'x', 20 ) } ) );
+		Assert.ThrowsException<InvalidOperationException>( () => Throw( new ModelBuilder { HeaderHeight = float.NaN } ) );
+		var named = new ModelBuilder();
+		named.AddDummy( "tab\tname" );
+		Assert.ThrowsException<InvalidOperationException>( () => named.ToBytes() );
+	}
+
+	private static bool Throw( ModelBuilder builder )
+	{
+		builder.AddDummy( "d" );
+		builder.ToBytes();
+		return true;
+	}
+
+	[TestMethod]
+	public void SeveralMeshesKeepTheirOwnArraysAndTotalsBeyond16BitFieldsAreRefusedClearly()
+	{
+		var builder = new ModelBuilder();
+		var root = builder.AddDummy( "root" );
+		for ( var index = 0; index < 3; index++ )
+		{
+			var mesh = builder.AddMesh( $"mesh{index}", root, Matrix4x4.CreateTranslation( index * 10, 0, 0 ) );
+			var material = mesh.Mesh!.AddMaterial( index == 1 ? null : $"tex{index}" );
+			AddTriangle( material, index );
+		}
+		var model = builder.Build();
+		Assert.AreEqual( 3, model.Meshes.Count );
+		CollectionAssert.AreEqual( new[] { "mesh0", "mesh1", "mesh2" }, model.Meshes.Select( mesh => mesh.Name ).ToArray() );
+		for ( var index = 0; index < 3; index++ )
+		{
+			Assert.AreEqual( index, model.Meshes[index].Positions[0].Z, "each mesh keeps its own positions" );
+			Assert.AreEqual( 3, model.Meshes[index].Indices.Length );
+		}
+		CollectionAssert.AreEqual( new[] { "tex0", "tex2" }, model.Textures.Select( texture => texture.FrameNames[0][..^4] ).ToArray() );
+		Assert.AreEqual( -1, model.Meshes[1].Materials[0].TextureIndex );
+		Assert.AreEqual( 1, model.Meshes[2].Materials[0].TextureIndex );
+		Assert.AreEqual( 0, model.Meshes[0].Materials[0].TextureIndex );
+
+		// 65,535 corners fit a mesh; the position blocks of enough such meshes exceed the 16-bit header count
+		var big = new ModelBuilder();
+		var bigRoot = big.AddMesh( "root" );
+		var bigMaterial = bigRoot.Mesh!.AddMaterial( null );
+		for ( var index = 0; index < 65535; index++ )
+			bigMaterial.AddVertex( new NVector3( index, 0, 0 ), NVector3.UnitZ, NVector2.Zero );
+		bigMaterial.AddTriangle( 0, 1, 2 );
+		var secondMaterial = bigRoot.Mesh!.AddMaterial( null );
+		Assert.ThrowsException<InvalidOperationException>( () => big.ToBytes() );
+		secondMaterial.AddVertex( NVector3.Zero, NVector3.UnitZ, NVector2.Zero );
+		var tooMany = Assert.ThrowsException<InvalidOperationException>( () => big.ToBytes() );
+		StringAssert.Contains( tooMany.Message, "65" );
+	}
+
+	private static void AddTriangle( ModelMaterialBuilder material, float z = 0 )
+	{
+		var normal = new NVector3( 0, 0, 1 );
+		material.AddTriangle( material.AddVertex( new NVector3( 0, 0, z ), normal, NVector2.Zero ), material.AddVertex( new NVector3( 1, 0, z ), normal, NVector2.UnitX ), material.AddVertex( new NVector3( 0, 1, z ), normal, NVector2.UnitY ) );
 	}
 
 	[TestMethod]

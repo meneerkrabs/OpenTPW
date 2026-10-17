@@ -1,0 +1,26 @@
+#
+#	OpenTPW swimming pools: a wave machine: a housing with a grille on the water side and a paddle, two cells wide.
+#	Every number marked "OpenTPW's own value" is a choice of this extension, not a value of the original game.
+#
+Info.Id			65500		placeholder: objects.json replaces it with the object's own id
+Info.Name		"Wave Machine"
+Info.IsChoosable	0		not offered as a choice to guests
+Info.HasQueue		0		no queue and no entrance: guests do not walk to it, the pool code uses it
+Info.WhichUIType	3		a feature (the build menu's Features tab)
+
+# Two cells side by side. The unrotated shape's north (its top row, Blender +Y) is the side that must face the pool water.
+Info.Shape
+---
+**
+---
+
+# No Info.Hoarding block: the engine does not read it (the construction fence is not drawn for these objects)
+
+# OpenTPW's own keys: the engine reads them to know the object is a water attraction of this kind and which side of the unrotated shape must face the pool
+Pools.Attraction	wavemachine
+Pools.WaterSide		N
+
+Upgrades[0].CostOfUpgrade		1500		OpenTPW's own value
+Upgrades[0].CostOfResearch		0		An object without research cost starts researched
+Research.Group		0
+Info.PreviewAnimNum		0

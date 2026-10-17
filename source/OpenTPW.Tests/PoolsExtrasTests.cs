@@ -119,9 +119,48 @@ public class PoolsExtrasTests
 				// the model's X spans the footprint; its Z (the cell's Y) runs from the back of the cell out over the water, up to 2.4 cells for the board; nothing lies behind the cell
 				var width10 = entry.Shape.Width * 10f;
 				var composed = model.Meshes.SelectMany( mesh => mesh.Vertices.Select( vertex => System.Numerics.Vector3.Transform( vertex.Position.GetSystemVector3(), WorldOf( model, mesh.NodeIndex ) ) ) ).ToArray();
-				Assert.IsTrue( composed.All( p => p.X >= -0.01f && p.X <= width10 + 0.01f && p.Z >= -0.01f && p.Z <= (kind == PoolExtraKind.DivingBoard ? 24.01f : 16f) && p.Y >= -0.01f && p.Y < 14f ), $"{name}: inside its cells and the overhang" );
+				Assert.IsTrue( composed.All( p => p.X >= -0.01f && p.X <= width10 + 0.01f && p.Z >= -0.01f && p.Z <= (kind == PoolExtraKind.DivingBoard ? 24.01f : 16f) && p.Y >= (kind == PoolExtraKind.Ladder ? -4.5f : -0.01f) && p.Y < 14f ), $"{name}: inside its cells and the overhang" );
 				Assert.AreEqual( 0, RideHeadSpace.Create( model, seed: 1 )?.Count ?? 0, name );
 			}
+	}
+
+	[TestMethod]
+	public void TheLadderModelsRungsAreAtTheFootPointWhereTheGuestClimbs()
+	{
+		// PoolExtraSettings.LadderFootDistance is derived from this: 10 model units a cell, the model's Z the depth of the cell (0 the back, 10 the cell's edge, the wall at 12.5), Y up (the deck 0, the water 0.6 below)
+		using var scope = Enabled( true, FileSystem );
+		for ( var theme = 0; theme < Themes.Length; theme++ )
+		{
+			var entry = ObjectCatalog.Load( Themes[theme] ).Get( IdOf( theme, PoolExtraKind.Ladder ) );
+			var model = ObjectAssets.LoadModel( entry.FileSystem, entry.ModelPath );
+			var composed = model.Meshes.SelectMany( mesh => mesh.Vertices.Select( vertex => System.Numerics.Vector3.Transform( vertex.Position.GetSystemVector3(), WorldOf( model, mesh.NodeIndex ) ) ) ).ToArray();
+			var footZ = PoolExtraSettings.LadderFootDistance / (float)Fixed16.One * 10f + 5f;
+			// the part in the water: below the deck, at the wall
+			var inWater = composed.Where( p => p.Y < -0.7f && p.Z > 12.55f ).ToArray();
+			Assert.IsTrue( inWater.Length > 0, $"{Themes[theme]}: the rails go down into the water" );
+			Assert.AreEqual( footZ, (inWater.Min( p => p.Z ) + inWater.Max( p => p.Z )) / 2f, 0.15f, $"{Themes[theme]}: the rails and rungs hang at the foot point ({footZ} model units from the back of the cell)" );
+			Assert.IsTrue( inWater.Min( p => p.Z ) > 12.5f, $"{Themes[theme]}: off the wall, not in it" );
+			Assert.IsTrue( composed.Min( p => p.Y ) < -4f && composed.Min( p => p.Y ) > -4.5f, $"{Themes[theme]}: the rails reach about 4 model units under the deck, 3.6 under the water" );
+			// the rungs: horizontal bars between the rails at the foot, every 1.7 units from above the deck down below the water
+			// a rung's ends (X 2.75 and 7.25) lie inside the rails, whose own vertices are at X 2.7 and 3.1 (and mirrored)
+			var ys = composed.Where( p => MathF.Abs( MathF.Abs( p.X - 5f ) - 2.25f ) < 0.03f && MathF.Abs( p.Z - footZ ) < 0.2f ).Select( p => p.Y ).OrderBy( y => y ).ToList();
+			var rungs = new List<float>();
+			for ( var i = 0; i < ys.Count; )
+			{
+				var j = i;
+				while ( j + 1 < ys.Count && ys[j + 1] - ys[j] < 0.5f )
+					j++;
+				rungs.Add( (ys[i] + ys[j]) / 2f );
+				i = j + 1;
+			}
+			Assert.AreEqual( 5, rungs.Count, $"{Themes[theme]}: five rungs at the foot point ({string.Join( ", ", rungs )})" );
+			for ( var i = 1; i < rungs.Count; i++ )
+				Assert.AreEqual( 1.7f, rungs[i] - rungs[i - 1], 0.05f, $"{Themes[theme]}: a rung every 1.7 model units (0.34 engine units, a quarter of a kid's height)" );
+			Assert.IsTrue( rungs[^1] > 3f && rungs[0] < -3f && rungs.Any( y => y > -0.6f && y < 0.6f ), $"{Themes[theme]}: from above the deck to under the water, one at the water line" );
+			Assert.IsTrue( composed.All( p => p.X >= -0.01f && p.X <= 10.01f && p.Z <= 13.1f ), $"{Themes[theme]}: nothing reaches further than the rails" );
+			// the guest's feet (water to deck, 0.6 units) are at the rungs: the climbing guest is on the rail line
+			Assert.IsTrue( PoolExtraSettings.LadderFootDistance - PoolExtraSettings.RimDistance < Fixed16.One / 3 && footZ > 12.5f, "the foot is within a third of a cell of the rim, off the wall" );
+		}
 	}
 
 	private static System.Numerics.Matrix4x4 WorldOf( ModelFile model, int node )
@@ -244,13 +283,79 @@ public class PoolsExtrasTests
 		rig.Until( () => guest.State == GuestState.Swimming, 400 );
 		happiness = guest.Happiness;
 		var (steps, cells, slots, turns) = Trace( rig, guest, "extra.ladder" );
-		CollectionAssert.AreEqual( new[] { 0, 1, 2, 3, 4, 5 }, steps, "swim to the edge, climb, stand, walk to the rim, jump, splash" );
+		CollectionAssert.AreEqual( new[] { 0, 1, 2, 3, 4, 5, 6 }, steps, "swim to the foot, climb on the spot, step onto the deck, stand, walk to the rim, jump, splash" );
 		Assert.IsTrue( cells.Contains( (4, 5) ), "it stood on the ladder's deck cell" );
-		CollectionAssert.AreEqual( new[] { PoolSwimSlots.Crawl, PoolSwimSlots.LadderClimb, PoolSwimSlots.Stand, PoolSwimSlots.Walk, PoolSwimSlots.Dive, PoolSwimSlots.SplashDown }, slots.Distinct().ToArray() );
+		CollectionAssert.AreEqual( new[] { PoolSwimSlots.Crawl, PoolSwimSlots.LadderClimb, PoolSwimSlots.Walk, PoolSwimSlots.Stand, PoolSwimSlots.Dive, PoolSwimSlots.SplashDown }, slots.Distinct().ToArray() );
 		Assert.AreEqual( GuestState.Swimming, guest.State, "back in the water" );
 		Assert.IsTrue( rig.Region.IsWater( guest.Navigation.X, guest.Navigation.Y ) );
 		Assert.IsTrue( guest.Happiness >= happiness + PoolExtraSettings.LadderHappiness - 0.01f || guest.Happiness >= 99.99f, $"happiness {happiness} to {guest.Happiness}" );
-		Assert.IsTrue( turns is > 20 and < 120, $"{turns} turns" );
+		Assert.IsTrue( turns is > 20 and < 140, $"{turns} turns" );
+	}
+
+	/// <summary>Runs one activity of a guest turn by turn and notes, for every turn spent in the step, the guest's point, heading and drawn feet (water 2, deck 3.5).</summary>
+	private static (List<(int X, int Y, float Feet, float HeadingX)> Climb, List<(int X, int Y)> Step, (int X, int Y) Foot, bool Done) ClimbTrace( Rig rig, Guest guest, string id, int climbStep, int afterStep )
+	{
+		var heights = new PoolFeetHeights( 3f, 2f, 3.5f );
+		var climb = new List<(int X, int Y, float Feet, float HeadingX)>();
+		var stepOver = new List<(int X, int Y)>();
+		var foot = (0, 0);
+		var seen = false;
+		rig.Until( () =>
+		{
+			if ( guest.State == GuestState.PoolActivity && guest.PoolActivityId == id )
+			{
+				seen = true;
+				var step = guest.PoolActivityPhase & 15;
+				var feet = rig.Simulation.PoolActivityOf( guest )!.FeetHeight( rig.Simulation, guest, heights ) ?? heights.Default;
+				if ( step == climbStep )
+					climb.Add( (guest.Navigation.X, guest.Navigation.Y, feet, guest.HeadingX) );
+				else if ( step == afterStep )
+					stepOver.Add( (guest.Navigation.X, guest.Navigation.Y) );
+				else if ( step < climbStep )
+					foot = (guest.Navigation.X, guest.Navigation.Y);
+				return false;
+			}
+			return seen;
+		}, 4000 );
+		return (climb, stepOver, foot, seen && guest.State == GuestState.Swimming);
+	}
+
+	[TestMethod]
+	public void ALadderIsClimbedOnTheSpotWithTheFeetRisingFromTheWaterToTheDeck()
+	{
+		const int One = 65536;
+		var rig = ExtrasRig( Site( 301, PoolExtraKind.Ladder, 90, (4, 5) ) );
+		var guest = rig.Send();
+		var (climb, stepOver, _, done) = ClimbTrace( rig, guest, "extra.ladder", 1, 2 );
+		var foot = (climb[0].X, climb[0].Y);
+		var expectedFoot = (4 * One + One / 2 + PoolExtraSettings.LadderFootDistance, 5 * One + One / 2);
+		Assert.AreEqual( expectedFoot, foot, "it swam to the foot of the ladder: just off the rim, in front of the rungs" );
+		Assert.IsTrue( PoolExtraSettings.LadderFootDistance - PoolExtraSettings.RimDistance < One / 3, "x" );
+		Assert.AreEqual( PoolExtraSettings.ClimbTurns, climb.Count, "the climb takes its turns" );
+		Assert.IsTrue( climb.All( point => (point.X, point.Y) == expectedFoot ), "no horizontal travel while climbing" );
+		Assert.IsTrue( climb.All( point => point.HeadingX < -0.99f ), "the guest faces the ladder (the land, to the west)" );
+		for ( var i = 1; i < climb.Count; i++ )
+			Assert.IsTrue( climb[i].Feet > climb[i - 1].Feet, $"the feet rise every turn ({climb[i - 1].Feet} to {climb[i].Feet})" );
+		Assert.IsTrue( climb[0].Feet >= 2f && climb[0].Feet < 2.3f && climb[^1].Feet <= 3.5f && climb[^1].Feet > 3.2f, $"from the water ({climb[0].Feet}) up to the deck ({climb[^1].Feet})" );
+		Assert.IsTrue( stepOver.Count is >= 2 and <= 8, $"the step onto the deck is short ({stepOver.Count} turns)" );
+		Assert.IsTrue( stepOver.Select( point => point.X ).Max() - stepOver.Select( point => point.X ).Min() <= One * 3 / 5, "and about half a cell (0.55)" );
+		Assert.IsTrue( done, "the activity completed and returned the guest to the water" );
+		Assert.IsTrue( rig.Region.IsWater( guest.Navigation.X, guest.Navigation.Y ) );
+	}
+
+	[TestMethod]
+	public void ALoungerIsClimbedOntoOnTheSpotToo()
+	{
+		const int One = 65536;
+		var rig = ExtrasRig( Site( 304, PoolExtraKind.Lounger, 90, (4, 5), (4, 6) ) );
+		var guest = rig.Send();
+		var (climb, stepOver, _, _) = ClimbTrace( rig, guest, "extra.lounger", 1, 2 );
+		var foot = (X: climb[0].X, Y: climb[0].Y);
+		Assert.AreEqual( 4 * One + One / 2 + PoolExtraSettings.LadderFootDistance, foot.X, "it swam to the rim of the seat" );
+		Assert.AreEqual( PoolExtraSettings.ClimbTurns, climb.Count );
+		Assert.IsTrue( climb.All( point => point.X == foot.X && point.Y == foot.Y ), "no horizontal travel while climbing out" );
+		Assert.IsTrue( climb.Zip( climb.Skip( 1 ), ( a, b ) => b.Feet > a.Feet ).All( rising => rising ) && climb[^1].Feet <= 3.5f, "the feet rise from the water to the deck" );
+		Assert.IsTrue( stepOver.Count > 0 && stepOver.Last().X < foot.X - One / 3, "then it steps over the rim onto the seat" );
 	}
 
 	[TestMethod]
@@ -287,13 +392,15 @@ public class PoolsExtrasTests
 		// the ladder interpolates between the same two heights
 		guest.PoolActivityId = "extra.ladder";
 		guest.PoolActivityPhase = 1 | (1 << 4);
-		rig.Simulation.PlacePoolGuest( guest, 4 * One + One / 2 + PoolExtraSettings.EntryDistance, 5 * One + One / 2 );
-		Assert.AreEqual( 2f, rig.Simulation.PoolFeetHeight( guest, feet ), 0.05f, "the ladder starts at the water" );
-		rig.Simulation.PlacePoolGuest( guest, 4 * One + One / 2, 5 * One + One / 2 );
-		Assert.AreEqual( 3.5f, rig.Simulation.PoolFeetHeight( guest, feet ), 0.05f, "and reaches the deck" );
-		guest.PoolActivityPhase = 2 | (1 << 4);
+		guest.PoolActivityTurns = 0;
+		Assert.AreEqual( 2f, rig.Simulation.PoolFeetHeight( guest, feet ), 0.001f, "the ladder starts at the water" );
+		guest.PoolActivityTurns = PoolExtraSettings.ClimbTurns / 2;
+		Assert.AreEqual( 2.75f, rig.Simulation.PoolFeetHeight( guest, feet ), 0.001f, "half way up after half the turns, wherever the guest is" );
+		guest.PoolActivityTurns = PoolExtraSettings.ClimbTurns;
+		Assert.AreEqual( 3.5f, rig.Simulation.PoolFeetHeight( guest, feet ), 0.001f, "and reaches the deck" );
+		guest.PoolActivityPhase = 3 | (1 << 4);
 		Assert.AreEqual( 3.5f, rig.Simulation.PoolFeetHeight( guest, feet ), "standing on the deck" );
-		guest.PoolActivityPhase = 4 | (1 << 4);
+		guest.PoolActivityPhase = 5 | (1 << 4);
 		rig.Simulation.PlacePoolGuest( guest, 4 * One + One / 2 + PoolExtraSettings.EntryDistance, 5 * One + One / 2 );
 		Assert.AreEqual( 2f, rig.Simulation.PoolFeetHeight( guest, feet ), 0.05f, "the jump ends in the water" );
 		(guest.State, guest.PoolActivityId, guest.PoolActivityPhase, guest.PoolActivityX, guest.PoolActivityY) = (GuestState.Swimming, null, 0, 0, 0);
@@ -410,9 +517,9 @@ public class PoolsExtrasTests
 	{
 		foreach ( var (id, site, stage) in new (string, PoolExtraSite, int)[]
 		{
-			("extra.ladder", Site( 301, PoolExtraKind.Ladder, 90, (4, 5) ), 2),
+			("extra.ladder", Site( 301, PoolExtraKind.Ladder, 90, (4, 5) ), 3),
 			("extra.board", Site( 302, PoolExtraKind.DivingBoard, 90, (4, 5) ), 3),
-			("extra.lounger", Site( 304, PoolExtraKind.Lounger, 90, (4, 5), (4, 6) ), 2)
+			("extra.lounger", Site( 304, PoolExtraKind.Lounger, 90, (4, 5), (4, 6) ), 3)
 		} )
 		{
 			var rig = ExtrasRig( site );

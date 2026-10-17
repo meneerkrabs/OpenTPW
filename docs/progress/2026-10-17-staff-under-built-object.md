@@ -1,0 +1,4 @@
+## A staff member under a freshly built object walks out (October 17, 2026)
+
+- A staff member standing on a path cell that an object's placement then took (the pools extension's changing room is the common case, built beside the path the entertainers patrol) stayed inside the object for good: the cell kept no link, and the staff patrol (`StaffWorldSimulation.Patrol`) ran only the link walk of the wander search, which finds nothing from a cell that is no path cell. The patrol now continues with the off-path search of tp.exe 0x004F9490 (`GuestWander.OffPath`), after the step-count draw it already took, exactly as a guest in that spot does, and he walks to the nearest path cell a route reaches.
+- Nothing changes for a member on a path or queue cell, so runs without such a member keep their determinism pins. Covered by `StaffPoolObjectTests` (the cabin built over an entertainer in all four rotations).

@@ -36,10 +36,26 @@ public static class PoolAttractionSettings
 	public const int SprayRadius = 2;
 	public const int SprayPeriodTurns = 12;
 	public const float SprayHappiness = 0.3f;
-	/// <summary>The spa: seats on its one tile.</summary>
-	public const int SpaSeats = 8;
-	/// <summary>The spa: how far from the middle of the tile the seats are, in 16.16 cells.</summary>
-	public const int SpaSeatRadius = (int)(0.27 * Fixed16.One);
+	/// <summary>
+	/// The spa: seats on its one tile. One, in the middle of the tub: the swimwear sprite of a seated guest (slot 12) is up to 0.729 engine units (0.36 cell) wide each side of its hotspot below the tub's rim,
+	/// the basin's inner wall is 0.74 engine units (0.37 cell) from the middle at its flat sides (<c>tools/blender/opentpw_pool_attractions.py</c>, <c>SPA_INNER</c>; <c>PoolsSpaGeometryTests</c>), so any seat off
+	/// the middle puts the guest's shoulders through the wall (eight seats on a 0.27 cell circle did).
+	/// </summary>
+	public const int SpaSeats = 1;
+	/// <summary>The spa: how far from the middle of the tile the seats are, in 16.16 cells (0: the one seat is the middle).</summary>
+	public const int SpaSeatRadius = 0;
+	/// <summary>
+	/// The large spa (a 2 x 2 footprint, <see cref="PoolAttractionSites"/> counts its cells): four seats on a circle of 0.48 cell round the middle of the footprint, at 45, 135, 225 and 315 degrees so each is in a cell of its own. The basin's flat sides are
+	/// 8.55 model units (0.855 cell) from the middle (<c>BIG_INNER</c> in <c>tools/blender/opentpw_pool_attractions.py</c>), the seated sprite reaches 3.65 units (0.365 cell) each side of its hotspot below the rim,
+	/// so a seat may be at most 0.49 cell from the middle; at 0.48 the seats are 0.679 cell apart (the sprite is 0.73 wide at the water line, so neighbours overlap by less than a tenth) and five would be 0.56 apart.
+	/// </summary>
+	public const int BigSpaSeats = 4;
+	/// <summary>The large spa: how far from the middle of its footprint the seats are, in 16.16 cells.</summary>
+	public const int BigSpaSeatRadius = (int)(0.48 * Fixed16.One);
+	/// <summary>The footprint cells from which a spa is the large one.</summary>
+	public const int BigSpaCells = 4;
+	/// <summary>The spa: the water surface of the tub above the deck, in engine units: 5.2 model units (<c>SPA_WATER</c>), 0.2 engine units each. A seated guest's torso (the sprite's hotspot) is at the water line.</summary>
+	public const float SpaWaterHeight = 1.04f;
 	/// <summary>The spa: the shortest sit, in turns (20 seconds), plus a draw below <see cref="SpaExtraTurns"/>.</summary>
 	public const int SpaMinimumTurns = 80;
 	public const int SpaExtraTurns = 120;
@@ -371,7 +387,7 @@ public sealed class JetsActivity : IPoolActivity
 }
 
 /// <summary>
-/// The spa pool (<c>attraction.spa</c>, docs/POOLS.md, "Spa pool"): a swimmer swims to the water side of a spa with a free seat (eight on its one tile), steps out onto the seat, sits in it (slot 12) for
+/// The spa pool (<c>attraction.spa</c>, docs/POOLS.md, "Spa pool"): a swimmer swims to the water side of a spa with a free seat (one, in the middle of its tub), steps out onto the seat, sits in it (slot 12) for
 /// 20 to 50 seconds and steps back into the pool, happier. The seat is the guest's <c>PoolActivityX/Y</c>, taken when the activity starts. Phases: 0 swimming to the spa, 1 sitting, 2 stepping back.
 /// </summary>
 // [EXT:pools-attractions] OpenTPW's own spa pool; the original game has no pools
@@ -384,16 +400,23 @@ public sealed class SpaActivity : IPoolActivity
 
 	public string Id => ActivityId;
 
-	/// <summary>The seat positions of a spa whose tile has the middle (16.16): eight points on a circle, seat 0 to the east.</summary>
-	public static (int X, int Y) Seat( (int X, int Y) middle, int index )
+	/// <summary>The seats of a spa site: <see cref="PoolAttractionSettings.BigSpaSeats"/> for the large spa (a footprint of at least <see cref="PoolAttractionSettings.BigSpaCells"/> cells), else <see cref="PoolAttractionSettings.SpaSeats"/>.</summary>
+	public static int SeatsOf( PoolAttractionSite site ) => site.Cells.Count >= PoolAttractionSettings.BigSpaCells ? PoolAttractionSettings.BigSpaSeats : PoolAttractionSettings.SpaSeats;
+
+	/// <summary>The seat positions of the small spa whose tile has the middle (16.16): <see cref="PoolAttractionSettings.SpaSeats"/> points on a circle of <see cref="PoolAttractionSettings.SpaSeatRadius"/> (with the one seat: the middle), seat 0 to the east.</summary>
+	public static (int X, int Y) Seat( (int X, int Y) middle, int index ) => Seat( middle, index, PoolAttractionSettings.SpaSeats );
+
+	/// <summary>The seat <paramref name="index"/> of a spa with <paramref name="seats"/> seats round <paramref name="middle"/> (16.16): the one seat is the middle, four are at 45 degrees and every 90 on a circle of <see cref="PoolAttractionSettings.BigSpaSeatRadius"/>.</summary>
+	public static (int X, int Y) Seat( (int X, int Y) middle, int index, int seats )
 	{
-		var (dx, dy) = PoolSwimming.Direction( index * (PoolSwimSettings.Headings / PoolAttractionSettings.SpaSeats) );
-		return (middle.X + (int)((long)dx * PoolAttractionSettings.SpaSeatRadius >> 16), middle.Y + (int)((long)dy * PoolAttractionSettings.SpaSeatRadius >> 16));
+		var radius = seats > PoolAttractionSettings.SpaSeats ? PoolAttractionSettings.BigSpaSeatRadius : PoolAttractionSettings.SpaSeatRadius;
+		var (dx, dy) = PoolSwimming.Direction( index * (PoolSwimSettings.Headings / seats) + (seats > 1 ? PoolSwimSettings.Headings / (2 * seats) : 0) );
+		return (middle.X + (int)((long)dx * radius >> 16), middle.Y + (int)((long)dy * radius >> 16));
 	}
 
 	public PoolActivityOffer? Offer( GuestSimulation simulation, Guest guest, PoolSwimRegion region )
 	{
-		var chosen = sites.NearestIn( region, PoolAttractionKind.Spa, guest.Navigation.X, guest.Navigation.Y, site => PoolActivityHelpers.Occupancy( simulation, Id, site.ObjectId ) < PoolAttractionSettings.SpaSeats );
+		var chosen = sites.NearestIn( region, PoolAttractionKind.Spa, guest.Navigation.X, guest.Navigation.Y, site => PoolActivityHelpers.Occupancy( simulation, Id, site.ObjectId ) < SeatsOf( site ) );
 		return chosen != null ? new PoolActivityOffer( chosen.ObjectId, chosen.Access.X, chosen.Access.Y ) : null;
 	}
 
@@ -403,9 +426,10 @@ public sealed class SpaActivity : IPoolActivity
 			return false;
 		// the lowest seat nobody has taken (the other guests' seats are their PoolActivityX/Y)
 		var middle = site.CentreFixed;
-		for ( var index = 0; index < PoolAttractionSettings.SpaSeats; index++ )
+		var seats = SeatsOf( site );
+		for ( var index = 0; index < seats; index++ )
 		{
-			var seat = Seat( middle, index );
+			var seat = Seat( middle, index, seats );
 			if ( simulation.Guests.Any( other => other != guest && other.State == GuestState.PoolActivity && other.PoolActivityId == Id && other.PoolActivityTarget == offer.TargetId
 				&& (other.PoolActivityX, other.PoolActivityY) == seat ) )
 				continue;
@@ -464,8 +488,8 @@ public sealed class SpaActivity : IPoolActivity
 
 	public int SpriteSlot( Guest guest ) => guest.PoolActivityPhase == 1 ? PoolSwimSlots.SittingInWater : PoolSwimSlots.Crawl;
 
-	/// <summary>A seated guest sits in the water of the tub: a little above the ground of the tile.</summary>
-	public float? FeetHeight( GuestSimulation simulation, Guest guest, PoolFeetHeights heights ) => guest.PoolActivityPhase == 1 ? heights.Deck + 0.35f : null;
+	/// <summary>A seated guest sits in the water of the tub: the torso (the sprite's hotspot, slot 12) at the water surface, <see cref="PoolAttractionSettings.SpaWaterHeight"/> above the deck.</summary>
+	public float? FeetHeight( GuestSimulation simulation, Guest guest, PoolFeetHeights heights ) => guest.PoolActivityPhase == 1 ? heights.Deck + PoolAttractionSettings.SpaWaterHeight : null;
 
 	public void Abort( GuestSimulation simulation, Guest guest ) => PoolActivityHelpers.Left( simulation, Id, guest.PoolActivityTarget );
 }

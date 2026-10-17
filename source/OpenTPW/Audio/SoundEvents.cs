@@ -165,6 +165,12 @@ public sealed class SoundEventSystem
 	public const int VoicePool = 12;
 
 	/// <summary>
+	/// A seam for the tests: raised for every event the game asks this system to play, start or chain (the category name, the event id, the place), before the catalogue is
+	/// consulted, so a headless run can tell which sound events fire without an audio device or the original data. Presentation only; it never draws.
+	/// </summary>
+	internal static Action<string?, uint, Vector3?>? Triggered { get; set; }
+
+	/// <summary>
 	/// A voice's distance word in the pool: 0xFFFF − round(d² / 100) over the ground distance to the listener (tp.exe <c>0x6bb9f0</c>), 0xFFFF for a flat
 	/// voice or one at the listener, and 0 past the scale (the original leaves its old word there).
 	/// </summary>
@@ -558,6 +564,7 @@ public sealed class SoundEventSystem
 	/// <summary>Plays a one-shot event (or the first sample of a sentence event, once). Returns the voice, or null when nothing plays.</summary>
 	public AudioVoice? Play( SoundCategory? category, uint eventId, AudioChannel channel )
 	{
+		Triggered?.Invoke( category?.Name, eventId, null );
 		var soundEvent = category?.Catalog.Find( eventId );
 		if ( category == null || soundEvent == null || soundEvent.Sounds.Count == 0 )
 			return null;
@@ -586,6 +593,7 @@ public sealed class SoundEventSystem
 	/// </summary>
 	public AudioVoice? PlayAt( SoundCategory? category, uint eventId, AudioChannel channel, Vector3 position, float? range = null )
 	{
+		Triggered?.Invoke( category?.Name, eventId, position );
 		var soundEvent = category?.Catalog.Find( eventId );
 		if ( category == null || soundEvent == null || soundEvent.Sounds.Count == 0 )
 			return null;
@@ -614,6 +622,7 @@ public sealed class SoundEventSystem
 	/// </summary>
 	public PlacedSound? PlayAtWhenDecoded( SoundCategory? category, uint eventId, AudioChannel channel, Vector3 position, float? range = null )
 	{
+		Triggered?.Invoke( category?.Name, eventId, position );
 		var soundEvent = category?.Catalog.Find( eventId );
 		if ( category == null || soundEvent == null || soundEvent.Sounds.Count == 0 )
 			return null;
@@ -641,6 +650,7 @@ public sealed class SoundEventSystem
 	/// <param name="range">The positioned sentence's range; the first sound's own range when null.</param>
 	public SoundSentence? StartSentence( SoundCategory? category, uint eventId, AudioChannel channel, Func<uint>? sampleDraw = null, Vector3? position = null, float? range = null )
 	{
+		Triggered?.Invoke( category?.Name, eventId, position );
 		var soundEvent = category?.Catalog.Find( eventId );
 		if ( category == null || soundEvent == null || soundEvent.Sounds.Count == 0 )
 			return null;
@@ -665,6 +675,7 @@ public sealed class SoundEventSystem
 	/// <summary>Starts a held-chain event (a scream) at a place; null when the event is missing.</summary>
 	public SoundChain? StartChain( SoundCategory? category, uint eventId, AudioChannel channel, int parameter, Vector3? position, float? range = null )
 	{
+		Triggered?.Invoke( category?.Name, eventId, position );
 		var soundEvent = category?.Catalog.Find( eventId );
 		if ( category == null || soundEvent == null || soundEvent.Sounds.Count == 0 )
 			return null;

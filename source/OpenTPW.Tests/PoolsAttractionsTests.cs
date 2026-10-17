@@ -20,6 +20,7 @@ public class PoolsAttractionsTests
 	private static readonly PoolAttractionSite Rope = new( 4301, PoolAttractionKind.RopeSwing, new[] { (11, 5) }, (10, 5) );
 	private static readonly PoolAttractionSite Jets = new( 4302, PoolAttractionKind.Jets, new[] { (7, 2) }, (7, 3) );
 	private static readonly PoolAttractionSite Spa = new( 4303, PoolAttractionKind.Spa, new[] { (4, 6) }, (5, 6) );
+	private static readonly PoolAttractionSite BigSpa = new( 4304, PoolAttractionKind.Spa, new[] { (3, 6), (4, 6), (3, 7), (4, 7) }, (5, 6) );
 
 	private static PoolAttractionSites Sites( params PoolAttractionSite[] sites ) => new( () => sites );
 
@@ -552,18 +553,20 @@ public class PoolsAttractionsTests
 	// ---- The spa -----------------------------------------------------------------------------------------------------
 
 	[TestMethod]
-	public void TheEightSeatsOfTheSpaAreEightDistinctPointsOnItsTile()
+	public void TheSeatsOfTheSpaAreDistinctPointsOnItsTile()
 	{
 		var middle = Spa.CentreFixed;
 		Assert.AreEqual( (4 * 65536 + 32768, 6 * 65536 + 32768), middle );
+		// the one seat of the tub is its middle (the sitting sprite is as wide as the basin; PoolsSpaGeometryTests)
+		Assert.AreEqual( 1, PoolAttractionSettings.SpaSeats );
 		var seats = Enumerable.Range( 0, PoolAttractionSettings.SpaSeats ).Select( index => SpaActivity.Seat( middle, index ) ).ToArray();
-		Assert.AreEqual( 8, seats.Distinct().Count() );
+		Assert.AreEqual( PoolAttractionSettings.SpaSeats, seats.Distinct().Count() );
 		Assert.IsTrue( seats.All( seat => seat.X >> 16 == 4 && seat.Y >> 16 == 6 ), "all on the one tile" );
 		Assert.AreEqual( (middle.X + PoolAttractionSettings.SpaSeatRadius, middle.Y), seats[0], "seat 0 to the east" );
 	}
 
 	[TestMethod]
-	public void EightGuestsSitInTheSpaAtOnceAndTheNinthSwimsOn()
+	public void OneGuestSitsInTheSpaAtATimeAndTheOthersSwimOn()
 	{
 		var rig = new Rig( capacity: 10 );
 		rig.Simulation.RegisterPoolActivity( new SpaActivity( Sites( Spa ) ) );
@@ -585,7 +588,37 @@ public class PoolsAttractionsTests
 			return Done( guests, joined );
 		}, 12000 );
 		Assert.IsTrue( most <= PoolAttractionSettings.SpaSeats, $"{most} in the spa at most" );
-		Assert.IsTrue( seatsSeen.Count >= 3, $"{seatsSeen.Count} different seats were taken" );
+		Assert.AreEqual( PoolAttractionSettings.SpaSeats, seatsSeen.Count, "the one seat was taken, by one guest after the other" );
+	}
+
+	[TestMethod]
+	public void FourGuestsSitInTheLargeSpaAtOnceEachInACellOfItsOwnAndTheOthersSwimOn()
+	{
+		var middle = BigSpa.CentreFixed;
+		Assert.AreEqual( (4 * 65536, 7 * 65536), middle, "the middle of the 2 x 2 footprint is its centre corner" );
+		Assert.AreEqual( PoolAttractionSettings.BigSpaSeats, SpaActivity.SeatsOf( BigSpa ) );
+		Assert.AreEqual( PoolAttractionSettings.SpaSeats, SpaActivity.SeatsOf( Spa ) );
+		var seats = Enumerable.Range( 0, PoolAttractionSettings.BigSpaSeats ).Select( index => SpaActivity.Seat( middle, index, PoolAttractionSettings.BigSpaSeats ) ).ToArray();
+		CollectionAssert.AreEquivalent( BigSpa.Cells.ToArray(), seats.Select( seat => (seat.X >> 16, seat.Y >> 16) ).ToArray(), "one seat in each footprint cell" );
+		var rig = new Rig( capacity: 10 );
+		rig.Simulation.RegisterPoolActivity( new SpaActivity( Sites( BigSpa ) ) );
+		var guests = Enumerable.Range( 0, 8 ).Select( _ => rig.Send() ).ToList();
+		var joined = new HashSet<int>();
+		var seatsSeen = new HashSet<(int X, int Y)>();
+		var mostSitting = 0;
+		rig.Until( () =>
+		{
+			var sitting = rig.Simulation.Guests.Where( guest => guest.InPoolActivity && guest.PoolActivityPhase == 1 ).ToList();
+			mostSitting = Math.Max( mostSitting, sitting.Count );
+			Assert.AreEqual( sitting.Count, sitting.Select( guest => (guest.PoolActivityX, guest.PoolActivityY) ).Distinct().Count(), "nobody shares a seat" );
+			Assert.IsTrue( rig.Simulation.Guests.Count( guest => guest.InPoolActivity ) <= PoolAttractionSettings.BigSpaSeats, "never more than the seats" );
+			foreach ( var guest in sitting )
+				seatsSeen.Add( (guest.PoolActivityX, guest.PoolActivityY) );
+			return Done( guests, joined );
+		}, 20000 );
+		Assert.AreEqual( PoolAttractionSettings.BigSpaSeats, mostSitting, "four sat at the same time" );
+		Assert.AreEqual( PoolAttractionSettings.BigSpaSeats, seatsSeen.Count, "all four seats were used" );
+		CollectionAssert.IsSubsetOf( seatsSeen.ToArray(), seats );
 	}
 
 	[TestMethod]
@@ -1004,7 +1037,8 @@ public class PoolsAttractionsContentTests
 		("ropeswing", PoolAttractionKind.RopeSwing, new[] { "*" }, "N", 600, 65200),
 		("jets", PoolAttractionKind.Jets, new[] { "*" }, "N", 450, 65204),
 		("wavemachine", PoolAttractionKind.WaveMachine, new[] { "**" }, "N", 1500, 65208),
-		("spa", PoolAttractionKind.Spa, new[] { "*" }, "*", 800, 65212)
+		("spa", PoolAttractionKind.Spa, new[] { "*" }, "*", 800, 65212),
+		("bigspa", PoolAttractionKind.Spa, new[] { "**", "**" }, "*", 1800, 65216)
 	};
 	private string root = null!;
 	private BaseFileSystem? previousFileSystem;
@@ -1062,7 +1096,7 @@ public class PoolsAttractionsContentTests
 				Assert.AreEqual( "mod:opentpw.pools:", entry.Root.KeyPrefix, label );
 				Assert.AreEqual( side == "*" ? 4 : 1, PoolAttractions.WaterSides( entry ).Count, label );
 				Assert.IsNotNull( entry.ScriptPath, label );
-				Assert.AreEqual( 4, catalog.Entries.Count( item => item.ModId == "opentpw.pools" && PoolAttractions.KindOf( item ) != PoolAttractionKind.None ), $"{Themes[theme]}: four attractions" );
+				Assert.AreEqual( 5, catalog.Entries.Count( item => item.ModId == "opentpw.pools" && PoolAttractions.KindOf( item ) != PoolAttractionKind.None ), $"{Themes[theme]}: five attractions (the large spa is the fifth)" );
 			}
 		}
 	}
@@ -1095,8 +1129,10 @@ public class PoolsAttractionsContentTests
 					Assert.IsTrue( width is 64 or 128 && height == width && data.Length == width * height * 4, $"{label}: {name} is {width} x {height}" );
 				}
 				var width10 = shape[0].Length * 10f;
+				var height10 = shape.Length * 10f;
 				var composed = model.Meshes.SelectMany( mesh => mesh.Vertices.Select( vertex => System.Numerics.Vector3.Transform( vertex.Position.GetSystemVector3(), World( model, mesh.NodeIndex ) ) ) ).ToArray();
 				Assert.IsTrue( composed.Min( p => p.X ) >= -0.5f && composed.Max( p => p.X ) <= width10 + 0.5f, $"{label}: within its {width10} units across ({composed.Min( p => p.X ):F1} to {composed.Max( p => p.X ):F1})" );
+				Assert.IsTrue( kind != "bigspa" || composed.Min( p => p.Z ) >= -0.5f && composed.Max( p => p.Z ) <= height10 + 0.5f, $"{label}: within its {height10} units along" );
 				Assert.IsTrue( composed.Min( p => p.Y ) >= -0.5f, $"{label}: stands on the ground" );
 				Assert.IsTrue( composed.Max( p => p.Y ) > 3f, $"{label}: has some height" );
 				Assert.AreEqual( 0, RideHeadSpace.Create( model, seed: 1 )?.Count ?? 0, $"{label}: no head records" );

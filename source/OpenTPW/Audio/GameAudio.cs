@@ -962,13 +962,16 @@ public static class GameAudio
 	/// engine unit at model scale 0.2), undoing the heightfield's centering for imported parks.
 	/// </summary>
 	// [BIN:TPW-EXE:0x54f8f6 listener] the park loop sets the listener through 0x51c1d0: when the camera-mode byte 0x790ab0 has bits 0x16 the listener is the camera position (0x7909c0..c8); otherwise it is pos - (pos - target) * 0.5 (0x700f88) with the target at 0x790ab8..c0; the orientation vectors are 0x7909a0.. and 0x7909b0..
-	public static void UpdateListener( System.Numerics.Vector3 ear, System.Numerics.Vector3 forward, ModelHeightfield? heightfield = null )
+	public static void UpdateListener( System.Numerics.Vector3 ear, System.Numerics.Vector3 forward, ModelHeightfield? heightfield = null, System.Numerics.Vector3? up = null )
 	{
 		const float soundUnitsPerEngineUnit = 1f / OriginalParkPlacement.ModelScale;
 		var origin = heightfield == null ? System.Numerics.Vector2.Zero : OriginalParkPlacement.GetOrigin( heightfield );
-		AudioListener.Update(
-			new Vector3( (ear.X + origin.X) * soundUnitsPerEngineUnit, ear.Z * soundUnitsPerEngineUnit, (ear.Y + origin.Y) * soundUnitsPerEngineUnit ),
-			new Vector3( forward.X, 0, forward.Y ) );
+		var place = new Vector3( (ear.X + origin.X) * soundUnitsPerEngineUnit, ear.Z * soundUnitsPerEngineUnit, (ear.Y + origin.Y) * soundUnitsPerEngineUnit );
+		// the engine's (X, Y ground, Z up) becomes the sound space (x, y up, z ground), as for positions; with the camera's up vector the listener keeps its pitch (AudioListener.Update)
+		if ( up is { } upward )
+			AudioListener.Update( place, new Vector3( forward.X, forward.Z, forward.Y ), new Vector3( upward.X, upward.Z, upward.Y ) );
+		else
+			AudioListener.Update( place, new Vector3( forward.X, 0, forward.Y ) );
 	}
 
 	/// <summary>
@@ -993,6 +996,9 @@ public static class GameAudio
 
 	/// <summary>Plays a <c>cat_ui</c> event (control activation clicks, drawer and error feedback).</summary>
 	public static AudioVoice? PlayUi( uint eventId ) => events?.Play( Ui, eventId, AudioChannel.Effects );
+
+	/// <summary>Starts a <c>cat_ui</c> sentence event flat (the research window's loops and slider sound); null when sound is off or the event is missing.</summary>
+	public static SoundSentence? StartUiSentence( uint eventId ) => events?.StartSentence( Ui, eventId, AudioChannel.Effects );
 
 	/// <summary>Plays one event of the global <c>cat_speech</c> category flat on the speech channel (the advisor's cut-off slap); null when nothing plays.</summary>
 	public static AudioVoice? PlaySpeechEffect( uint eventId ) => events?.Play( Speech, eventId, AudioChannel.Speech );

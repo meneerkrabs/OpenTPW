@@ -1,7 +1,7 @@
 """Builds the swimming-pool water attractions (rope swing, water jets, wave machine, spa) for each theme and exports one .glb per kind and theme.
 
 Usage:
-	blender -b --factory-startup --python tools/blender/opentpw_pool_attractions.py -- --out <dir> [--kinds ropeswing,jets,wavemachine,spa]
+	blender -b --factory-startup --python tools/blender/opentpw_pool_attractions.py -- --out <dir> [--kinds ropeswing,jets,wavemachine,spa,bigspa]
 		[--themes jungle,hallow,space,fantasy] [--preview <dir>]
 
 Writes ``<dir>/<kind>_<theme>.glb`` (and, with --preview, ``<dir>/<kind>_<theme>.png``, an 800 x 600 workbench render from the water side, for looking at the
@@ -12,7 +12,8 @@ Footprints (Blender X/Y range 0..10 per cell, seen from above exactly as the Inf
 	ropeswing    *    one cell,   two posts and an arm that reaches over the water, a rope with a handle hangs from it
 	jets         *    one cell,   a pedestal with an angled nozzle
 	wavemachine  **   two cells,  a housing with a grille and a paddle
-	spa          *    one cell,   an octagonal tub with eight seats and a water disc
+	spa          *    one cell,   an octagonal tub with a water surface just below the rim (one seat, in the middle)
+	bigspa       **   2 x 2 cells, the same tub widened to the footprint (four seats on a circle round the middle), X and Y 0..20
 
 The water side of ropeswing, jets and wavemachine is Blender +Y (the shape's north, like the changing room's pool-side back); the spa has no water side.
 The arm of the rope swing and the paddle of the wave machine reach up to 8 units beyond the +Y edge of the footprint. Every object stands on a one-unit
@@ -36,8 +37,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import opentpw_changing_room as cabin  # noqa: E402  (its texture helpers and Builder)
 import opentpw_export  # noqa: E402
 
-KINDS = ("ropeswing", "jets", "wavemachine", "spa")
-PREFIX = {"ropeswing": "rs", "jets": "jt", "wavemachine": "wm", "spa": "sp"}
+KINDS = ("ropeswing", "jets", "wavemachine", "spa", "bigspa")
+PREFIX = {"ropeswing": "rs", "jets": "jt", "wavemachine": "wm", "spa": "sp", "bigspa": "bs"}
 THEMES = cabin.THEMES
 CODES = cabin.CODES
 SLAB = 1.0                  # the coping-like base slab
@@ -246,16 +247,21 @@ def add_wavemachine(b, theme):
 		b.box("light", (9.0, 1.2, 10.5), (11.0, 8.0, 10.9), skip=("-z",))                    # a light strip along the roof
 
 
+# The spa's basin, in Blender units (a cell is 10, an engine unit 5). Measured against the sitting swimwear sprite (slot 12, tools/blender/opentpw_guest_sprites.py): below the rim the sprite is up to 0.729
+# engine units (3.65 units) wide each side of its hotspot, so a guest fits the basin only at its middle: one seat. The inner wall's apothem (the distance of its flat sides, 4.0 * cos 22.5 = 3.70) must stay
+# above that, and the water must stand just below the rim so the guest sits in it (the sprite's hotspot is the torso at the water line). OpenTPW's own values; the test PoolsSpaGeometryTests reads them back
+# from the shipped models.
+SPA_OUTER = 4.7                                                                   # circumradius of the wall's outside
+SPA_INNER = 4.0                                                                   # circumradius of the wall's inside (the basin)
+SPA_RIM = 5.6                                                                     # top of the wall
+SPA_WATER = 5.2                                                                   # the water surface
+
+
 def add_spa(b, theme):
 	base_slab(b, 10.0)
 	phase = 22.5                                                                      # flat sides face the compass directions
-	b.ring("wood", "trim", 5.0, 5.0, 4.7, 3.7, SLAB, 5.6, phase=phase, inner_material="trim")
-	b.ring("trim", "trim", 5.0, 5.0, 3.7, 2.5, SLAB, 4.8, phase=phase)                # the bench ring
-	for i in range(8):                                                                # eight seats: a divider between each pair
-		angle = math.radians(phase + 45.0 * i)
-		cx, cy = 5.0 + 3.1 * math.cos(angle), 5.0 + 3.1 * math.sin(angle)
-		b.prism("wood", cx, cy, 0.45, 4.8, 5.4, sides=4, phase=45.0 + math.degrees(angle))
-	b.poly("water", [(5.0 + 2.5 * math.cos(math.radians(phase + 45.0 * i)), 5.0 + 2.5 * math.sin(math.radians(phase + 45.0 * i)), 4.3) for i in range(8)])
+	b.ring("wood", "trim", 5.0, 5.0, SPA_OUTER, SPA_INNER, SLAB, SPA_RIM, phase=phase, inner_material="trim")
+	b.poly("water", [(5.0 + SPA_INNER * math.cos(math.radians(phase + 45.0 * i)), 5.0 + SPA_INNER * math.sin(math.radians(phase + 45.0 * i)), SPA_WATER) for i in range(8)])
 	# the theme prop in the corner outside the tub: a torch, crystal, antenna or lollipop
 	px, py = 1.3, 1.3
 	b.box("trim", (px - 0.3, py - 0.3, SLAB), (px + 0.3, py + 0.3, 5.0), skip=("-z",))
@@ -264,14 +270,35 @@ def add_spa(b, theme):
 		b.box("light", (px - 0.5, py - 0.5, 5.0), (px + 0.5, py + 0.5, 5.8), skip=("-z",))
 
 
-BUILDERS = {"ropeswing": add_ropeswing, "jets": add_jets, "wavemachine": add_wavemachine, "spa": add_spa}
+# The large spa: the same rim and water heights over a 2 x 2 footprint (X and Y 0..20, the middle at 10, 10). The basin is as wide as the footprint allows: the outside of the wall just inside the edge, a wall
+# 0.6 units thick, so the inner wall's flat sides are 9.15 * cos 22.5 - 0.6 = 8.55 units from the middle. A guest's sprite reaches 3.65 units each side of its hotspot below the rim, so a seat may be at most
+# 8.55 - 3.65 = 4.9 units from the middle; four seats on a circle of 4.8 are 6.79 units apart (the sprite is 7.3 wide at its widest, at the water line, and the guests overlap by less than a tenth of it).
+# More do not fit: five at 4.8 are 5.6 apart. OpenTPW's own values; PoolsSpaGeometryTests reads them back from the shipped models.
+BIG_OUTER = 9.9                                                                   # circumradius of the wall's outside (its flat sides are 9.15 from the middle)
+BIG_INNER = 9.25                                                                  # circumradius of the wall's inside (the basin; 8.55 at the flat sides)
+
+
+def add_bigspa(b, theme):
+	b.box("trim", (0.0, 0.0, 0.0), (20.0, 20.0, SLAB), skip=("-z",), faces_material={"+z": "wood"})
+	phase = 22.5
+	b.ring("wood", "trim", 10.0, 10.0, BIG_OUTER, BIG_INNER, SLAB, SPA_RIM, phase=phase, inner_material="trim")
+	b.poly("water", [(10.0 + BIG_INNER * math.cos(math.radians(phase + 45.0 * i)), 10.0 + BIG_INNER * math.sin(math.radians(phase + 45.0 * i)), SPA_WATER) for i in range(8)])
+	px, py = 1.6, 1.6                                                                 # the theme prop in the corner outside the tub
+	b.box("trim", (px - 0.3, py - 0.3, SLAB), (px + 0.3, py + 0.3, 5.0), skip=("-z",))
+	post_cap(b, theme, px, py, 5.0, 1.2)
+	if theme in ("jungle", "hallow", "space"):
+		b.box("light", (px - 0.5, py - 0.5, 5.0), (px + 0.5, py + 0.5, 5.8), skip=("-z",))
+
+
+BUILDERS = {"ropeswing": add_ropeswing, "jets": add_jets, "wavemachine": add_wavemachine, "spa": add_spa, "bigspa": add_bigspa}
 PARTS = {
 	"ropeswing": ("wood", "trim", "rope", "light"),
 	"jets": ("wood", "trim", "light", "water"),
 	"wavemachine": ("wood", "trim", "light", "vent"),
 	"spa": ("wood", "trim", "light", "water"),
+	"bigspa": ("wood", "trim", "light", "water"),
 }
-CENTRES = {"ropeswing": (5.0, 10.0, 7.0), "jets": (5.0, 7.0, 4.0), "wavemachine": (10.0, 8.0, 5.0), "spa": (5.0, 5.0, 3.0)}
+CENTRES = {"ropeswing": (5.0, 10.0, 7.0), "jets": (5.0, 7.0, 4.0), "wavemachine": (10.0, 8.0, 5.0), "spa": (5.0, 5.0, 3.0), "bigspa": (10.0, 10.0, 3.0)}
 
 
 def build(kind, theme):
@@ -303,7 +330,7 @@ def render_preview(kind, path):
 	world.color = (0.40, 0.65, 0.85)                                                  # the water side is +Y, so the backdrop is pool blue
 	camera_data = bpy.data.cameras.new("cam")
 	camera_data.type = "ORTHO"
-	camera_data.ortho_scale = 46.0 if kind != "wavemachine" else 54.0
+	camera_data.ortho_scale = {"wavemachine": 54.0, "bigspa": 62.0}.get(kind, 46.0)
 	camera = bpy.data.objects.new("cam", camera_data)
 	scene.collection.objects.link(camera)
 	# from the water side (+Y), the left (-X) and above

@@ -356,6 +356,22 @@ internal sealed partial class GameFlow : IDisposable
 		return EnterLevel( level, levelName, original, visit );
 	}
 
+	/// <summary>
+	/// Plays the guests' voices and the stinkbomb at the guest's place. Every route into a park attaches it, a resumed park included: the voices draw from the sound seed,
+	/// which a park save carries, so a resumed park must draw exactly as the park it continues.
+	/// </summary>
+	private static void AttachGuestSounds( Level level )
+	{
+		if ( level.Guests == null )
+			return;
+		level.Guests.Voiced += ( guest, eventId ) => GameAudio.PlayGuestVoice( eventId, new Vector3( guest.X * 10, 0, guest.Y * 10 ) );
+		level.Guests.Pranked += ( guest, prank ) =>
+		{
+			if ( prank == GuestDecision.Prank.Stinkbomb )
+				GameAudio.PlayStinkbomb( new Vector3( guest.X * 10, 0, guest.Y * 10 ) );
+		};
+	}
+
 	/// <summary>The rest of <see cref="StartLevel"/> once its level is built and current: park audio, HUD and advisor.</summary>
 	private Level EnterLevel( Level level, string levelName, bool original, ParkVisitInfo? visit )
 	{
@@ -364,14 +380,7 @@ internal sealed partial class GameFlow : IDisposable
 			using ( LoadProfile.Measure( "enter-park-audio" ) )
 				GameAudio.EnterPark( levelName, level.Seed.SoundStream );
 		StartKind = level.Park?.Start.Kind;
-		if ( level.Guests != null )
-			level.Guests.Voiced += ( guest, eventId ) => GameAudio.PlayGuestVoice( eventId, new Vector3( guest.X * 10, 0, guest.Y * 10 ) );
-		if ( level.Guests != null )
-			level.Guests.Pranked += ( guest, prank ) =>
-			{
-				if ( prank == GuestDecision.Prank.Stinkbomb )
-					GameAudio.PlayStinkbomb( new Vector3( guest.X * 10, 0, guest.Y * 10 ) );
-			};
+		AttachGuestSounds( level );
 		// [EXT:tpi-viewer] the edition capability policy runs the experimental Theme Park Inc slice: the shared world,
 		// build and guest systems under the experimental HUD, without the reference game's economy, HUD or advisor.
 		if ( level.IsThemeParkIncSlice )

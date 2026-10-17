@@ -12,3 +12,6 @@ is not 3 dB down. Tests cover the mixer law and which events fire.
 AUDIO-009 is retired (the build tools never refuse with a sound). AUDIO-003, AUDIO-004 and AUDIO-038 keep their narrowed text: reverb, the
 senders of the 0xBD click and the in-range resume of a stopped sentence are still unread. AUDIO-018 now lists only the axis mapping of the
 camera rows and the flat voices' placement as open.
+
+A resumed park never attached the guests' voices or the stinkbomb sound, so it drew nothing from the sound seed while the park it continued did; with the guests' voices the park-resume smoke
+caught the difference through the economy section (which carries the sound seed). Every route into a park now attaches them (`GameFlow.AttachGuestSounds`).

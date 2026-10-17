@@ -60,6 +60,7 @@ internal sealed partial class GameFlow
 			scene.Activate();
 			Level = candidate;
 			Hud = candidateHud;
+			AttachGuestSounds( candidate );
 			StartKind = snapshot.StartKind;
 			Advisor = candidateAdvisor;
 			candidateAdvisor = null;

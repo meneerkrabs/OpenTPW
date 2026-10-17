@@ -54,19 +54,29 @@ public class GuestCreationDrawTests
 		Assert.AreEqual( mirror.State, simulation.World.State );
 	}
 
-	/// <summary>The reseed takes the id as a halfword, as the original's thing ids are (0x0050B350 returns the u16 at +0).</summary>
+	/// <summary>
+	/// The reseed takes the thing's id, a slot of the park's pool (0x0050B350 returns the u16 at +0): a guest built after the world's twelve first things is thing 13, and the generator
+	/// continues from that id alone.
+	/// </summary>
 	[TestMethod]
-	public void TheReseedTruncatesTheIdToAHalfword()
+	public void TheReseedTakesTheGuestsThingIdFromThePool()
 	{
 		var simulation = new GuestSimulation( GuestTests.CreateCross(), GuestTests.CreateSettings(), 3 ) { ArrivalsEnabled = false };
-		var other = new GuestSimulation( GuestTests.CreateCross(), GuestTests.CreateSettings(), 3 ) { ArrivalsEnabled = false };
-		simulation.RestoreSnapshot( simulation.CaptureSnapshot() with { NextGuestId = 65536 + 7 } );
-		other.RestoreSnapshot( other.CaptureSnapshot() with { NextGuestId = 7 } );
-		var high = simulation.SpawnInPark( 10, 0 );
-		var low = other.SpawnInPark( 10, 0 );
-		Assert.AreNotEqual( high.Id, low.Id );
-		Assert.AreEqual( low.Money, high.Money, "the draws before the reseed are the same" );
-		Assert.AreEqual( other.World.State, simulation.World.State, "the reseed took the low 16 bits of the id, so both generators are in the same state after the guest's creation" );
+		var pool = new ThingPool();
+		pool.AllocateWorldSetup();
+		pool.Allocate( SaveThingModel.Attraction );
+		pool.Allocate( SaveThingModel.Attraction );
+		simulation.AttachThings( pool );
+		var mirror = new WorldRng( simulation.World.State );
+		var guest = simulation.SpawnInPark( 10, 0 );
+		Assert.AreEqual( 13, guest.Id, "ids 1 to 12 are the world's singletons, the gates and the lights" );
+		Assert.AreEqual( SaveThingModel.Guest, pool.ModelOf( 13 ) );
+		mirror.NextWord();
+		var settings = GuestTests.CreateSettings();
+		GuestStart.FromDraws( settings.Types, settings.ExitLevelSeconds, settings.ExitLevelVarSeconds, settings.StartingCashVarPercent, () => mirror.NextWord(), settings.PrankeryLikelihood, 13 );
+		mirror.Reseed( 13 );
+		mirror.NextWord();
+		Assert.AreEqual( mirror.State, simulation.World.State, "the stream after the guest's creation depends on thing id 13 alone" );
 	}
 
 	/// <summary>The balloon shop reseeds with the guest's id and draws the balloon's sprite set and colour; a costume returned reseeds the same way (0x004FE6FC, 0x004FE6A1).</summary>

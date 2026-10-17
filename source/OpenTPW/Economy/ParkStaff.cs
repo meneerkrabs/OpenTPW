@@ -49,6 +49,13 @@ public enum StaffJob : byte
 public sealed class StaffMember
 {
 	public required int Id { get; init; }
+	/// <summary>
+	/// The member's thing id, the slot of the park's thing pool its person constructor took when the member was placed (tp.exe 0x0050AFE0 → 0x00516270), 0 in an economy without a pool.
+	/// <see cref="Id"/> stays the roster's own counter.
+	/// </summary>
+	public int ThingId { get; internal set; }
+	/// <summary>The id the thing-keyed rules read: the member's thing id, or the roster id where there is no pool.</summary>
+	public int PhaseId => ThingId != 0 ? ThingId : Id;
 	public required StaffType Type { get; init; }
 	public required int NameIndex { get; init; }
 	/// <summary>
@@ -175,6 +182,53 @@ public sealed class ParkStaff
 	private readonly long[] trainingBudget = new long[BalanceSettings.StaffTypeCount];
 
 	public ParkStaff( BalanceSettings settings ) => this.settings = settings;
+
+	private ThingPool? things;
+
+	/// <summary>The park's thing pool, once attached (<see cref="AttachThings"/>): a hired member takes a slot as its thing id and a dismissed one's slot is freed at the turn's end.</summary>
+	public ThingPool? Things => things;
+
+	/// <summary>The thing model of a role's person thing (the saved model numbers 4 to 8).</summary>
+	public static SaveThingModel ThingModelOf( StaffType type ) => type switch
+	{
+		StaffType.Mechanic => SaveThingModel.Mechanic,
+		StaffType.Handyman => SaveThingModel.Handyman,
+		StaffType.Entertainer => SaveThingModel.Entertainer,
+		StaffType.Guard => SaveThingModel.Guard,
+		_ => SaveThingModel.Researcher
+	};
+
+	/// <summary>
+	/// Attaches the park's thing pool. Each member already employed keeps the thing id it has (its slot is taken in the pool when the pool does not hold it yet) or, with none, takes the
+	/// next free slot.
+	/// </summary>
+	/// <exception cref="InvalidDataException">A member's thing id is held by a thing of another model, or by another member.</exception>
+	internal void AttachThings( ThingPool pool )
+	{
+		ArgumentNullException.ThrowIfNull( pool );
+		things = pool;
+		var seen = new HashSet<int>();
+		foreach ( var member in members )
+		{
+			AdoptThing( member );
+			if ( member.ThingId != 0 && !seen.Add( member.ThingId ) )
+				throw new InvalidDataException( $"Staff thing id {member.ThingId} belongs to two members." );
+		}
+	}
+
+	private void AdoptThing( StaffMember member )
+	{
+		if ( things == null )
+			return;
+		var model = ThingModelOf( member.Type );
+		if ( member.ThingId == 0 )
+		{
+			member.ThingId = things.Allocate( model );
+			return;
+		}
+		if ( things.IsUsed( member.ThingId ) ? things.ModelOf( member.ThingId ) != model : !things.Occupy( member.ThingId, model ) )
+			throw new InvalidDataException( $"Staff member {member.Id}'s thing id {member.ThingId} is not a free {model} slot of the thing pool." );
+	}
 
 	/// <summary>The five roles' strike levels, flags and last-considered turns (the staff manager's per-role records, ECON-014).</summary>
 	public StaffStrikeBoard Strikes { get; } = new();
@@ -312,8 +366,12 @@ public sealed class ParkStaff
 		var candidate = candidates.FirstOrDefault( item => item.Id == candidateId ) ?? throw new InvalidOperationException( $"No staff candidate {candidateId}." );
 		if ( !CanHire( candidate.Type ) )
 			throw new InvalidOperationException( $"The park already employs the maximum of {settings[candidate.Type].MaximumInPark} {candidate.Type} staff." );
+		// [BIN:TPW-EXE:0x0046C8E0 staff placement] the hire's thing exists only after the placing click: the role's person constructor (0x4D9EB0, 0x4D6B60, 0x4D4340, 0x4D5D40, 0x502600) takes its thing id from the pool (0x504B10 → 0x4F8940 → 0x50AFE0)
+		var thingId = things?.Allocate( ThingModelOf( candidate.Type ) ) ?? 0;
+		if ( things != null && thingId == 0 )
+			throw new InvalidOperationException( $"The thing pool is full ({ThingPool.Capacity} things); no staff member can be placed." );
 		candidates.Remove( candidate );
-		var member = new StaffMember { Id = candidate.Id, Type = candidate.Type, NameIndex = candidate.NameIndex, Grade = candidate.Grade, HiredTick = tick };
+		var member = new StaffMember { Id = candidate.Id, ThingId = thingId, Type = candidate.Type, NameIndex = candidate.NameIndex, Grade = candidate.Grade, HiredTick = tick };
 		members.Add( member );
 		return member;
 	}
@@ -322,6 +380,9 @@ public sealed class ParkStaff
 	{
 		var member = members.FirstOrDefault( item => item.Id == staffId ) ?? throw new InvalidOperationException( $"No employee {staffId}." );
 		members.Remove( member );
+		// [BIN:TPW-EXE:0x00505790 staff removal] a dismissed member's thing is destroyed through the destroy request (0x0050B780 → 0x00516310): its slot is freed at the turn's end
+		if ( things != null && member.ThingId != 0 )
+			things.QueueDestroy( member.ThingId );
 		return member;
 	}
 
@@ -365,8 +426,14 @@ public sealed class ParkStaff
 	internal void Restore( IEnumerable<StaffMember> restoredMembers, IEnumerable<StaffCandidate> restoredCandidates, IReadOnlyList<long> budgets, int nextId, long nextPoolUpdate )
 	{
 		PendingPlacementId = 0;
+		if ( things != null )
+			foreach ( var old in members )
+				if ( old.ThingId != 0 )
+					things.Release( old.ThingId );
 		members.Clear();
 		members.AddRange( restoredMembers );
+		if ( things != null )
+			AttachThings( things );
 		candidates.Clear();
 		candidates.AddRange( restoredCandidates );
 		for ( var index = 0; index < trainingBudget.Length; index++ )
@@ -390,10 +457,11 @@ public sealed class ParkStaff
 	};
 
 	/// <summary>Adds an employee taken from an original save (not hired from the pool).</summary>
-	internal StaffMember AddImported( StaffType type, int grade, int trainingPoints, float happiness, StaffState state, long hiredTick, float energy = StaffVitals.Maximum, string? name = null )
+	internal StaffMember AddImported( StaffType type, int grade, int trainingPoints, float happiness, StaffState state, long hiredTick, float energy = StaffVitals.Maximum, string? name = null, int thingId = 0 )
 	{
-		var member = new StaffMember { Id = AllocateId(), Type = type, NameIndex = 0, Name = string.IsNullOrEmpty( name ) ? null : name, Grade = grade, TrainingPoints = trainingPoints, Happiness = happiness, Energy = energy, State = state, HiredTick = hiredTick };
+		var member = new StaffMember { Id = AllocateId(), ThingId = thingId, Type = type, NameIndex = 0, Name = string.IsNullOrEmpty( name ) ? null : name, Grade = grade, TrainingPoints = trainingPoints, Happiness = happiness, Energy = energy, State = state, HiredTick = hiredTick };
 		members.Add( member );
+		AdoptThing( member );
 		return member;
 	}
 

@@ -365,6 +365,8 @@ internal sealed partial class GameFlow : IDisposable
 				GameAudio.EnterPark( levelName, level.Seed.SoundStream );
 		StartKind = level.Park?.Start.Kind;
 		if ( level.Guests != null )
+			level.Guests.Voiced += ( guest, eventId ) => GameAudio.PlayGuestVoice( eventId, new Vector3( guest.X * 10, 0, guest.Y * 10 ) );
+		if ( level.Guests != null )
 			level.Guests.Pranked += ( guest, prank ) =>
 			{
 				if ( prank == GuestDecision.Prank.Stinkbomb )

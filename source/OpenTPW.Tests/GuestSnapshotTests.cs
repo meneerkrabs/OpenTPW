@@ -286,8 +286,8 @@ public class GuestSnapshotTests
 		var corrupt = new List<(string Name, GuestSimulationSnapshot Snapshot)>
 		{
 			( "duplicate guest id", snapshot with { Guests = snapshot.Guests.Append( snapshot.Guests[0] ).ToArray() } ),
-			( "guest id beyond the allocator", WithGuest( 0, guest => guest with { Id = snapshot.NextGuestId } ) ),
-			( "guest ids out of order", snapshot with { Guests = new[] { snapshot.Guests[1], snapshot.Guests[0] }.Concat( snapshot.Guests.Skip( 2 ) ).ToArray() } ),
+			( "guest id beyond the thing pool", WithGuest( 0, guest => guest with { Id = ThingPool.Capacity + 1 } ) ),
+			( "guest ids out of order in a save from before the thing pool", snapshot with { SchemaVersion = 7, Guests = new[] { snapshot.Guests[1], snapshot.Guests[0] }.Concat( snapshot.Guests.Skip( 2 ) ).ToArray() } ),
 			( "already gone", WithGuest( 0, guest => guest with { State = GuestState.Gone } ) ),
 			( "ride-walk count past its reset", WithGuest( 0, guest => guest with { RideWalkCount = 12 } ) ),
 			( "negative booth wait", WithGuest( 0, guest => guest with { BoothWait = -1 } ) ),

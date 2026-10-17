@@ -332,10 +332,12 @@ public sealed record GuestSimulationSnapshot
 	/// empty and the former seconds-based <see cref="GuestSnapshot.ExitLevel"/> is truncated toward zero. Versions 1 and 2
 	/// (before the state-6 decision, WANDER-plan) restore with no activity, and their decision timer is dropped. Versions 1 to 3 (before
 	/// per-cell litter) restore with empty litter meters, versions 1 to 4 (before pranks) without pranksters, versions 1 to 5 (before balloons and costumes)
-	/// without either, versions 1 to 6 (before thought bubbles) without a bubble.</summary>
-	public const int CurrentSchemaVersion = 7;
-	/// <summary>The versions <see cref="ParkResumeSaveFile"/> accepts: 7 as written now, 6 before thought bubbles, 5 before balloons and costumes, 4 before pranks, 3 before the litter meter, 2 before the state-6 decision, 1 before F24–F26.</summary>
-	public static int[] AcceptedSchemaVersions { get; } = { 1, 2, 3, 4, 5, 6, 7 };
+	/// without either, versions 1 to 6 (before thought bubbles) without a bubble, versions 1 to 7 (before the thing pool) with guest ids that are a simulation's own counter.</summary>
+	public const int CurrentSchemaVersion = 8;
+	/// <summary>The first schema whose guest ids are slots of the park's thing pool (tp.exe 0x00516270): earlier saves count their guests, and keep those ids.</summary>
+	public const int ThingPoolSchemaVersion = 8;
+	/// <summary>The versions <see cref="ParkResumeSaveFile"/> accepts: 8 as written now, 7 before the thing pool, 6 before thought bubbles, 5 before balloons and costumes, 4 before pranks, 3 before the litter meter, 2 before the state-6 decision, 1 before F24–F26.</summary>
+	public static int[] AcceptedSchemaVersions { get; } = { 1, 2, 3, 4, 5, 6, 7, 8 };
 
 	public required int SchemaVersion { get; init; }
 	/// <summary>The seed the simulation was constructed with; informational (the restored <see cref="RandomState"/> supersedes it).</summary>
@@ -350,8 +352,14 @@ public sealed record GuestSimulationSnapshot
 	public uint? WorldGenerator { get; init; }
 	public required long TickCount { get; init; }
 	public required double TimeSeconds { get; init; }
-	/// <summary>The next guest id the allocator hands out.</summary>
+	/// <summary>The id after the highest guest id (before the thing pool: the next guest id the counter handed out; with it the next id is the pool's, <see cref="Things"/>).</summary>
 	public required int NextGuestId { get; init; }
+	/// <summary>
+	/// The simulation's own thing pool, in a snapshot of a simulation that owns one (a standalone simulation); null when the park's pool is shared (the park's save keeps it, see
+	/// <see cref="ParkResumeSnapshot"/>) and in saves from before the pool.
+	/// </summary>
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
+	public ThingPoolSnapshot? Things { get; init; }
 	public required long Admissions { get; init; }
 	public required int Departed { get; init; }
 
@@ -367,7 +375,7 @@ public sealed record GuestSimulationSnapshot
 
 	/// <summary>The grid version the queues last synced with.</summary>
 	public required int SeenGridVersion { get; init; }
-	/// <summary>Every guest, in the simulation's update order (id ascending in live state).</summary>
+	/// <summary>Every guest, in the simulation's update order (the order they were built in).</summary>
 	public required GuestSnapshot[] Guests { get; init; }
 	/// <summary>Every registered attraction's queue state, in registration order (attraction id ascending).</summary>
 	public required RideVisitorBridgeSnapshot[] Attractions { get; init; }

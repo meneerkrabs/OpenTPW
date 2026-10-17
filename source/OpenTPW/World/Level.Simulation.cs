@@ -24,5 +24,7 @@ public partial class Level
 			StaffWorld?.Tick( deltaTime );
 		UpdateTrackRendering( deltaTime );
 		UpdateTourRendering( deltaTime );
+		// [BIN:TPW-EXE:0x00516641 turn's end] the park turn ends by freeing the things that asked for their destruction, last request first (0x00516310, 0x00516200)
+		Things.DestroyQueued();
 	} );
 }

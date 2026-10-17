@@ -76,7 +76,8 @@ public class MapOverlayReviewTests
 		second.Thought = GuestThought.Dissatisfied;
 		Matches( rig, 0, 1, 1 );
 		var replacement = rig.Guests.SpawnInPark( 5, 5 ); replacement.Thought = GuestThought.Pleased;
-		Assert.AreNotEqual( first.Id, replacement.Id );
+		Assert.AreNotSame( first, replacement );
+		Assert.AreEqual( first.Id, replacement.Id, "the pool gives the slot the leaving guest freed to the next guest" );
 		Matches( rig, 1, 1, 2 );
 		replacement.Thought = GuestThought.Happy; Matches( rig, 0, 1, 1 );
 		replacement.Thought = GuestThought.Pleased; Matches( rig, 1, 1, 2 );

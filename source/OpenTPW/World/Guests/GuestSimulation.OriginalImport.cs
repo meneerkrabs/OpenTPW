@@ -40,11 +40,13 @@ public sealed partial class GuestSimulation
 			if ( !ImportsOriginalState( save.State ) )
 			{
 				dropped.Add( $"{what} (state {save.State})" );
+				ReleaseDroppedThing( save.Id );
 				continue;
 			}
 			if ( save.PersonType >= Settings.Types.Count || byId.ContainsKey( save.Id ) )
 			{
 				dropped.Add( $"{what} (type {save.PersonType} of {Settings.Types.Count})" );
+				ReleaseDroppedThing( save.Id );
 				continue;
 			}
 			var position = (X: (int)person.Base.X, Y: (int)person.Base.Y);
@@ -52,18 +54,27 @@ public sealed partial class GuestSimulation
 			if ( !Grid.InBounds( cell.X, cell.Y ) )
 			{
 				dropped.Add( $"{what} (state {save.State} outside the map at ({cell.X}, {cell.Y}))" );
+				ReleaseDroppedThing( save.Id );
 				continue;
 			}
 			var inPark = save.State is >= 6 and <= 10 || save.State == 18 && Grid.IsWalkable( cell.X, cell.Y );
 			if ( inPark && !Grid.IsWalkable( cell.X, cell.Y ) )
 			{
 				dropped.Add( $"{what} (state {save.State} off the paths at ({cell.X}, {cell.Y}))" );
+				ReleaseDroppedThing( save.Id );
 				continue;
 			}
 			var lane = inPark ? null : NearestLane( cell );
 			if ( !inPark && lane == null )
 			{
 				dropped.Add( $"{what} (state {save.State}, no arrival lane)" );
+				ReleaseDroppedThing( save.Id );
+				continue;
+			}
+			// the guest keeps its thing id: the saved thing's slot in the pool (the park's pool holds it already when the level restored the saved chain)
+			if ( save.Id <= ThingPool.Capacity && !(things.IsUsed( save.Id ) && things.ModelOf( save.Id ) == SaveThingModel.Guest) && !things.Occupy( save.Id, SaveThingModel.Guest ) )
+			{
+				dropped.Add( $"{what} (its thing id is taken by a {things.ModelOf( save.Id )})" );
 				continue;
 			}
 			var guest = new Guest( save.Id, save.PersonType );
@@ -147,8 +158,6 @@ public sealed partial class GuestSimulation
 			Occupy( guest );
 			states.Add( $"{guest.Id}:{save.State}→{(int)guest.State}" );
 		}
-		if ( guests.Count > 0 )
-			nextId = Math.Max( nextId, guests.Max( guest => guest.Id ) + 1 );
 		evidence.Add( $"Guests imported: {guests.Count} of {saved.Count} ({(states.Count == 0 ? "none" : string.Join( ", ", states ))}, saved state → state)." );
 		foreach ( var line in adjusted )
 			evidence.Add( $"Guest value adjusted on import: {line}." );
@@ -216,6 +225,13 @@ public sealed partial class GuestSimulation
 				guest.State = GuestState.DoingNothing;
 				break;
 		}
+	}
+
+	/// <summary>A saved guest the import does not restore is not in the park: its slot of the pool (held by the saved chain) is freed.</summary>
+	private void ReleaseDroppedThing( int id )
+	{
+		if ( things.IsUsed( id ) && things.ModelOf( id ) == SaveThingModel.Guest && !byId.ContainsKey( id ) )
+			things.Release( id );
 	}
 
 	/// <summary>A guest on its way in or out: it walks on along the lane, from the point its state has reached.</summary>

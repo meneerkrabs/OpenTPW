@@ -749,6 +749,13 @@ public static class GameAudio
 		Log.Trace( $"Sound: stinkbomb cat_kids {StinkbombEvent} {(voice == null ? "not available" : "played")}." );
 	}
 
+	/// <summary>A guest's voice: a <c>cat_kids</c> event at the guest's position (tp.exe <c>0x004FAA00</c>, which places it at the thing's model position and plays it through <c>0x0051BFC0</c>).</summary>
+	public static void PlayGuestVoice( uint eventId, Vector3 position )
+	{
+		var voice = events?.PlayAt( Kids, eventId, AudioChannel.Effects, position );
+		Log.Trace( $"Sound: guest voice cat_kids {eventId} {(voice == null ? "not available" : "played")}." );
+	}
+
 	/// <summary>The visitor click (<see cref="VisitorClickEvent"/>), played whenever a visitor's details are opened.</summary>
 	public static void PlayVisitorClick()
 	{

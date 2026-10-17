@@ -69,6 +69,11 @@ public sealed class GuestSpriteAtlas
 		var animation = Animations.Animations[slot];
 		if ( animation.IsEmpty )
 			animation = Animations.Animations[StandSlot];
+		// [EXT:pools-activities] a swim set has art for some slots only (the strokes): a slot without art falls back to the first slot that has some
+		if ( animation.IsEmpty )
+			animation = Animations.Animations.FirstOrDefault( candidate => !candidate.IsEmpty );
+		if ( animation.IsEmpty )
+			return 0;
 		var frame = animation.GetFrame( direction, step );
 		return Math.Clamp( frame, 0, Frames.Length - 1 );
 	}

@@ -214,6 +214,8 @@ internal static class ParkResumeSaveFile
 				$"the prototype's economy object {prototypeInstance} has Info.Id {prototypeObject.InfoId}, which the {settings.Theme} economy catalogue does not know" );
 		}
 		Require( currentAssetHashes != null && currentAssetHashes.Count > 0, "the current asset manifest is empty" );
+		// [EXT:pools-save] the extension's own objects are in a save's manifest only when the save records the extension (ParkResumeMods.AssetsForUse)
+		currentAssetHashes = ParkResumeMods.AssetsForUse( currentAssetHashes!, snapshot.Mods?.Any( mod => mod.Id == OfficialExtensions.Pools.Id ) == true );
 		foreach ( var (key, saved) in snapshot.AssetHashes )
 		{
 			Require( currentAssetHashes!.TryGetValue( key, out var current ),

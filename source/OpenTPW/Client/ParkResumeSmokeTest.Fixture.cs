@@ -136,6 +136,9 @@ internal sealed partial class ParkResumeSmokeTest
 		// The bumper variant's bought bumper ride (OPENTPW_SMOKE_BUMPER=1, ParkResumeSmokeTest.Bumper.cs).
 		if ( BumperVariant )
 			PlaceBumperFixture( spineEnd );
+		// The pools variant's pool, changing room and swimmers (OPENTPW_SMOKE_POOLS=1, ParkResumeSmokeTest.Pools.cs).
+		if ( PoolsVariant )
+			PlacePoolsFixture( spineEnd );
 
 		// Staff for the staff world to travel.
 		foreach ( var type in new[] { StaffType.Mechanic, StaffType.Entertainer } )
@@ -386,7 +389,7 @@ internal sealed partial class ParkResumeSmokeTest
 	{
 		for ( var step = 0; step < PopulateAdvancesPerFrame; step++ )
 		{
-			if ( RichMoment() && WaterReady() && BumperReady() && TourReady() )
+			if ( RichMoment() && WaterReady() && BumperReady() && TourReady() && PoolsReady() )
 			{
 				Log.Trace( $"Park-resume populate: rich state after {populateTicks} ticks ({DescribeGuests()})." );
 				stage = Stage.Save;

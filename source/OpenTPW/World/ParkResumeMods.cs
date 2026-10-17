@@ -41,9 +41,27 @@ internal static class ParkResumeMods
 		return recorded.Select( mod => new ParkModRecord( mod.Id, mod.Version.ToString(), mod.ContentSha256 ) ).ToArray();
 	}
 
-	/// <summary>[EXT:pools-extension] The used-only extensions a park uses: <c>opentpw.pools</c> when <paramref name="cells"/> holds a pool cell.</summary>
-	public static IReadOnlySet<string> InUse( ParkCellMap? cells ) =>
-		cells != null && cells.CountOf( ParkCellType.PoolWater ) > 0 ? new HashSet<string>( StringComparer.Ordinal ) { OfficialExtensions.Pools.Id } : new HashSet<string>( StringComparer.Ordinal );
+	/// <summary>
+	/// [EXT:pools-extension] The used-only extensions a park uses: <c>opentpw.pools</c> when <paramref name="cells"/> holds a pool cell, or when the park holds one of the extension's own objects
+	/// (<paramref name="poolsObjects"/>: a changing room, whose asset keys name the extension and whose swimmers the save holds).
+	/// </summary>
+	public static IReadOnlySet<string> InUse( ParkCellMap? cells, bool poolsObjects = false ) =>
+		poolsObjects || (cells != null && cells.CountOf( ParkCellType.PoolWater ) > 0) ? new HashSet<string>( StringComparer.Ordinal ) { OfficialExtensions.Pools.Id } : new HashSet<string>( StringComparer.Ordinal );
+
+	/// <summary>
+	/// [EXT:pools-extension] The asset manifest as a save holds it: the catalog lists the extension's own objects (<c>mod:opentpw.pools:</c> keys) whenever the extension is on, but a save that does not record
+	/// the extension (<paramref name="poolsInUse"/> false: no pool cell, no changing room) holds none of them, so it is the same bytes with the extension on or off and loads with it on or off.
+	/// </summary>
+	public static IReadOnlyDictionary<string, string> AssetsForUse( IReadOnlyDictionary<string, string> assets, bool poolsInUse )
+	{
+		ArgumentNullException.ThrowIfNull( assets );
+		var prefix = ContentRoot.Mod( OfficialExtensions.Pools.Id ).KeyPrefix;
+		return poolsInUse || !assets.Keys.Any( key => key.StartsWith( prefix, StringComparison.Ordinal ) ) ? assets
+			: assets.Where( pair => !pair.Key.StartsWith( prefix, StringComparison.Ordinal ) ).ToDictionary( pair => pair.Key, pair => pair.Value, StringComparer.Ordinal );
+	}
+
+	/// <summary>[EXT:pools-extension] Whether a placed object is one of the pools extension's own (a changing room).</summary>
+	public static bool IsPoolsObject( ObjectCatalogEntry entry ) => entry.ModId == OfficialExtensions.Pools.Id;
 
 	/// <summary>
 	/// The recorded mods' own consistency, with no active set: a bounded count, valid and distinct ids, versions and

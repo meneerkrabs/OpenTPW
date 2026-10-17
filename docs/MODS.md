@@ -6,7 +6,7 @@ OpenTPW has two kinds of add-ons, both labelled `[EXT:mods]` in the source (`sou
   `[EXT]`/`[APPROX]` labels. They are compiled in, ship no files and can be switched off. Their ids start with
   `opentpw.`.
 - **Mods** are folders of data with an `opentpw-mod.json` manifest. Community mods use ids that start with
-  `community.`; `opentpw.` ids are reserved for data-only content shipped with OpenTPW.
+  `community.`; `opentpw.` ids are reserved for data-only content shipped with OpenTPW. The pools extension's own content is a catalog root of the id `opentpw.pools` (`content/pools`, Info.Ids 65500 to 65519 reserved; [POOLS.md](POOLS.md#content-extpools-content)), listed only while that extension is on.
 
 Mods are **data, plus sandboxed TPW Script**. A mod may ship data files as before, and (from the scripting phases on, see
 [SCRIPT-MODS.md](SCRIPT-MODS.md)) scripts in *TPW Script*, a small deterministic language with its own interpreter inside

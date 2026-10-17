@@ -121,6 +121,13 @@ public enum OpenTpwText
 	PoolPaintHint,
 	PoolEraseHint,
 	PoolTooSteep,
+	// [EXT:pools-swim] the guest states of the swim session and the refusals of the changing room (docs/POOLS.md)
+	PoolStateSwimming,
+	PoolStateClimbingOut,
+	PoolStateChanging,
+	PoolSwimmersInWater,
+	PoolChangingRoomNeedsWater,
+	PoolChangingRoomNeedsPool,
 	WeatherThunderstorms,
 	WeatherThunderAndLightning,
 	WeatherSnowOrRain,
@@ -476,6 +483,13 @@ public static class SupplementaryStrings
 		[OpenTpwText.PoolPaintHint] = new[] { "Pool water: press and drag over empty land to paint it; right click to stop.", "Poolvand: tryk og træk over tom grund for at male; højreklik for at stoppe.", "Zwembadwater: houd ingedrukt en sleep over leeg land om te schilderen; klik met rechts om te stoppen.", "Eau de piscine : appuyez et faites glisser sur un terrain vide pour peindre ; clic droit pour arrêter.", "Poolwasser: auf leerem Land drücken und ziehen, um zu malen; Rechtsklick beendet.", "수영장 물: 빈 땅 위에서 누른 채 끌어서 칠하십시오. 오른쪽 클릭하면 멈춥니다.", "Woda basenowa: naciśnij i przeciągnij po pustym gruncie, aby malować; PPM kończy.", "Agua de piscina: pulsa y arrastra sobre terreno vacío para pintar; clic derecho para parar.", "Poolvatten: tryck och dra över tom mark för att måla; högerklicka för att sluta." },
 		[OpenTpwText.PoolEraseHint] = new[] { "Remove pool water: press and drag over pool cells; right click to stop.", "Fjern poolvand: tryk og træk over poolfelter; højreklik for at stoppe.", "Zwembadwater verwijderen: houd ingedrukt en sleep over zwembadvakjes; klik met rechts om te stoppen.", "Retirer l'eau de piscine : appuyez et faites glisser sur les cases d'eau ; clic droit pour arrêter.", "Poolwasser entfernen: über Poolfelder drücken und ziehen; Rechtsklick beendet.", "수영장 물 제거: 수영장 칸 위에서 누른 채 끄십시오. 오른쪽 클릭하면 멈춥니다.", "Usuń wodę basenową: naciśnij i przeciągnij po polach basenu; PPM kończy.", "Quitar agua de piscina: pulsa y arrastra sobre las casillas de piscina; clic derecho para parar.", "Ta bort poolvatten: tryck och dra över poolrutor; högerklicka för att sluta." },
 		[OpenTpwText.PoolTooSteep] = new[] { "The ground is too steep for a pool here", "Jorden er for skrå til en pool her", "De grond is hier te steil voor een zwembad", "Le terrain est trop pentu pour une piscine ici", "Der Boden ist hier zu steil für einen Pool", "이곳은 지면이 너무 가팔라 수영장을 만들 수 없습니다", "Teren jest tu zbyt stromy na basen", "El terreno es demasiado empinado para una piscina aquí", "Marken är för brant för en pool här" },
+		// [EXT:pools-swim] the swim session's guest states and the changing room's refusals
+		[OpenTpwText.PoolStateSwimming] = new[] { "Swimming", "Svømmer", "Zwemt", "Nage", "Schwimmt", "수영 중", "Pływa", "Nadando", "Simmar" },
+		[OpenTpwText.PoolStateClimbingOut] = new[] { "Climbing out of the pool", "Kravler op af poolen", "Klimt uit het zwembad", "Sort de la piscine", "Steigt aus dem Pool", "수영장에서 나오는 중", "Wychodzi z basenu", "Saliendo de la piscina", "Klättrar upp ur poolen" },
+		[OpenTpwText.PoolStateChanging] = new[] { "Changing", "Skifter tøj", "Kleedt zich om", "Se change", "Zieht sich um", "옷을 갈아입는 중", "Przebiera się", "Cambiándose", "Byter om" },
+		[OpenTpwText.PoolSwimmersInWater] = new[] { "Swimmers are in the water here", "Der er svømmere i vandet her", "Er zwemmers in het water hier", "Des nageurs sont dans l'eau ici", "Hier sind Schwimmer im Wasser", "이곳 물속에 수영하는 사람이 있습니다", "W wodzie są pływacy", "Hay nadadores en el agua aquí", "Det finns simmare i vattnet här" },
+		[OpenTpwText.PoolChangingRoomNeedsWater] = new[] { "A changing room needs this pool water", "Et omklædningsrum har brug for dette poolvand", "Een kleedkamer heeft dit zwembadwater nodig", "Un vestiaire a besoin de cette eau de piscine", "Eine Umkleide braucht dieses Poolwasser", "탈의실에 이 수영장 물이 필요합니다", "Przebieralnia potrzebuje tej wody basenowej", "Un vestuario necesita esta agua de piscina", "Ett omklädningsrum behöver det här poolvattnet" },
+		[OpenTpwText.PoolChangingRoomNeedsPool] = new[] { "A changing room must stand beside a pool", "Et omklædningsrum skal ligge ved siden af en pool", "Een kleedkamer moet naast een zwembad staan", "Un vestiaire doit se trouver à côté d'une piscine", "Eine Umkleide muss neben einem Pool stehen", "탈의실은 수영장 옆에 있어야 합니다", "Przebieralnia musi stać obok basenu", "Un vestuario debe estar junto a una piscina", "Ett omklädningsrum måste ligga bredvid en pool" },
 		[OpenTpwText.NotAvailable] = new[] { "Not available yet", "Endnu ikke tilgængelig", "Nog niet beschikbaar", "Pas encore disponible", "Noch nicht verfügbar", "아직 이용할 수 없음", "Jeszcze niedostępne", "Aún no disponible", "Inte tillgänglig ännu" },
 		// [EXT:forecast-wording] the weather forecast's own words (no weather text exists in the shipped string tables); {0} is the kind, {1} when it comes
 		[OpenTpwText.WeatherThunderstorms] = new[] { "thunderstorms", "tordenvejr", "onweer", "des orages", "Gewitter", "뇌우", "burze", "tormentas", "åskväder" },

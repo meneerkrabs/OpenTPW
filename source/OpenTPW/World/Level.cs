@@ -129,6 +129,8 @@ public partial class Level : IDisposable
 	public RideHeadRenderer? RideHeadRenderer { get; private set; }
 	/// <summary>Draws the guests in costume with the theme's costume set (null when the theme ships none: they keep their kid sprite).</summary>
 	public GuestRenderer? CostumeRenderer { get; private set; }
+	/// <summary>[EXT:pools-swim] Draws the swimmers with the swim sprites, on the water; created beside the pool renderer, after it, so it draws after the water.</summary>
+	public GuestRenderer? SwimmerRenderer { get; private set; }
 	/// <summary>Draws the heads of riders in costume with the theme's costume heads (Jungle and Space only).</summary>
 	public RideHeadRenderer? CostumeHeadRenderer { get; private set; }
 	/// <summary>Draws the guests' balloons.</summary>
@@ -485,9 +487,10 @@ public partial class Level : IDisposable
 		// A guest in costume is drawn with the theme's costume set (sprite category 2, tp.exe 0x004FE65E: +0x20 from 0x00541F70(2)), its head on a ride with the costume heads where the theme has them
 		var costumes = GuestSpriteAtlas.LoadCostumes( park.LevelName );
 		var costumeHeads = GuestSpriteAtlas.LoadCostumeHeads( park.LevelName );
-		GuestRenderer = new GuestRenderer( Guests, park.Heightfield, sprites ) { Draws = costumes.Count == 0 ? null : guest => !guest.InCostume };
+		// [EXT:pools-swim] swimmers are drawn by the pools' own renderer with the swim sprites (RefreshPools), whatever they wear
+		GuestRenderer = new GuestRenderer( Guests, park.Heightfield, sprites ) { Draws = guest => !guest.IsSwimming && (costumes.Count == 0 || !guest.InCostume) };
 		if ( costumes.Count > 0 )
-			CostumeRenderer = new GuestRenderer( Guests, park.Heightfield, costumes ) { Draws = guest => guest.InCostume };
+			CostumeRenderer = new GuestRenderer( Guests, park.Heightfield, costumes ) { Draws = guest => guest.InCostume && !guest.IsSwimming };
 		RideHeadRenderer = new RideHeadRenderer( Guests, GuestSpriteAtlas.LoadKidHeads(), Objects ) { Draws = costumeHeads.Count == 0 ? null : guest => !guest.InCostume };
 		RideHeadRenderer.AddSource( new TrackHeadSources( () => trackRenderers.Values ) );
 		RideHeadRenderer.AddSource( new TourHeadSources( () => tourRenderer ) );
@@ -532,6 +535,10 @@ public partial class Level : IDisposable
 		var costumed = CostumeRenderer?.PickVisitor( mouse, viewport, view, projection, out costumeDepth );
 		var picked = kid == null || costumed == null ? kid ?? costumed
 			: costumeDepth < kidDepth || (costumeDepth == kidDepth && costumed.Id < kid.Id) ? costumed : kid;
+		// [EXT:pools-swim] a swimmer in the water is picked like any visitor
+		float swimDepth = float.PositiveInfinity;
+		if ( SwimmerRenderer?.PickVisitor( mouse, viewport, view, projection, out swimDepth ) is { } swimmer && ( picked == null || swimDepth < Math.Min( kidDepth, costumeDepth ) ) )
+			picked = swimmer;
 		if ( picked == null || OriginalPark is not { } park )
 			return picked;
 		return TryGetGroundHit( mouse, viewport, view, projection, out var ground ) && OriginalParkPlacement.TryGetCell( park.Heightfield, ground.X, ground.Y, out var x, out var y ) && IsInHoveredNeighbourhood( (x, y), ((int)MathF.Floor( picked.X ), (int)MathF.Floor( picked.Y )) ) ? picked : null;

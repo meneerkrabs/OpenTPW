@@ -28,9 +28,11 @@ public class DeterminismTests
 		private readonly GuestEconomyBridge payments;
 		private readonly RideVisitorBridge shop;
 		private readonly RideVM shopScript;
+		private readonly RideVisitorBridge? room;
+		private readonly RideVM? roomScript;
 		private readonly List<RideVM> dice = new();
 
-		public SyntheticPark( WorldSeed seed, IGuestObserver? observer = null, Action<ParkCellMap>? prepareCells = null )
+		public SyntheticPark( WorldSeed seed, IGuestObserver? observer = null, Action<ParkCellMap>? prepareCells = null, bool changingRoom = false )
 		{
 			Seed = seed;
 			Economy = EconomyTestData.Park( seed: seed.EconomyStream );
@@ -60,9 +62,24 @@ public class DeterminismTests
 			Assert.AreEqual( ParkEconomy.PurchaseResult.Ok, Economy.TryBuild( 1203, out var bought ) );
 			payments.Link( shop.AttractionId, bought!.Id );
 			AddDice();
+			// [EXT:pools-swim] a changing room hanging below the cross park's path cell (5, 5), whose back cells (5, 8) and (6, 8) lie in the pool the fixture painted: the swim session joins the run
+			if ( changingRoom )
+			{
+				room = new RideVisitorBridge( Scripts.AllocateAttractionId(), "Changing Room", RideVisitorKind.Facility, 2, 70, 30, GuestNeeds.None )
+				{
+					EntranceCell = (5, 5), ExitCell = (5, 5), QueueFrontCell = (5, 5), QueueEntranceDirection = 2, HasCells = true,
+					IsChangingRoom = true, PoolAccessCandidates = new[] { (5, 8), (6, 8) }
+				};
+				roomScript = GuestTests.CreateShopScript( new VisitorRideScriptEffects( room, UnimplementedRideScriptEffects.Instance ), Scripts, seed: null );
+				room.Attach( roomScript, () => true );
+				Guests.Register( room );
+				// the entrance cell below the path cell, as a placement lays it
+				GuestTests.LayStandCell( Guests.Grid, room );
+			}
 		}
 
 		public WorldSeed Seed { get; }
+		public RideVisitorBridge? Room => room;
 		public ThingPool Things { get; }
 		public ParkEconomy Economy { get; private set; }
 		public GuestSimulation Guests { get; }
@@ -97,6 +114,11 @@ public class DeterminismTests
 				if ( substep.Due )
 					Scripts.RunPass( SimulationSubstep.Milliseconds );
 				shop.HostStep();
+				if ( room != null )
+				{
+					room.DefersAdmission = swept;
+					room.HostStep();
+				}
 				Economy.ThingSweep = swept ? new HarnessSweep( this ) : null;
 				try
 				{
@@ -123,6 +145,7 @@ public class DeterminismTests
 				park.Guests.FinishSweep();
 				economy.UpdateThings( turn );
 				park.shop.UpdateAdmission();
+				park.room?.UpdateAdmission();
 				park.Things.DestroyQueued();
 				park.Guests.UpdateTurnEndArrivals();
 			}
@@ -285,6 +308,40 @@ public class DeterminismTests
 		} );
 		park.Run( PinnedRunTicks );
 		return park.Hash;
+	}
+
+	/// <summary>
+	/// [EXT:pools-swim] The fixed run on the cross park with a pool of 6 x 2 cells (x 3 to 8, y 8 to 9) and a changing room below the path row, its entrance cell (5, 6) reached from the path cell (5, 5) and its back cells (5, 8) and (6, 8) in the pool: guests choose the room like the shop,
+	/// change, swim, climb out and walk on (docs/POOLS.md, docs/DETERMINISM.md, "Pools"). Returns the hash, how many guests were in the water at the busiest moment and how many swims the room released.
+	/// </summary>
+	internal static (ulong Hash, int MostSwimming, int Swims, int Admissions) RunFixedParkWithPoolsAndAChangingRoom()
+	{
+		using var scope = OpenTPW.Mods.OpenTpwExtensions.Use( PoolsTests.PoolsSet( true ) );
+		var park = new SyntheticPark( WorldSeed.Default, null, cells =>
+		{
+			var builder = new PoolBuilder( cells, () => null, new PoolsTests.FlatGrid( cells.Width, cells.Height ) );
+			Assert.IsTrue( builder.PaintCells( PoolBuilder.Rectangle( (3, 8), (8, 9) ) ).Completed );
+		}, changingRoom: true );
+		var most = 0;
+		for ( var chunk = 0; chunk < PinnedRunTicks / 60; chunk++ )
+		{
+			park.Run( 60 );
+			most = Math.Max( most, park.Guests.Guests.Count( guest => guest.IsSwimming ) );
+		}
+		return (park.Hash, most, park.Room!.ReleasedTotal, (int)park.Guests.Admissions);
+	}
+
+	/// <summary>[EXT:pools-swim] The pinned hash of <see cref="RunFixedParkWithPoolsAndAChangingRoom"/> (docs/DETERMINISM.md, "Pools").</summary>
+	internal const ulong PoolsChangingRoomFixedRunHash = 0xA3A5D45575B07527UL;
+
+	[TestMethod]
+	public void FixedRunWithAPoolAndAChangingRoomIsTheSameInEveryProcessAndGuestsSwim()
+	{
+		var (hash, most, swims, admissions) = RunFixedParkWithPoolsAndAChangingRoom();
+		Assert.IsTrue( swims >= 5, $"the room was used {swims} times ({admissions} guests admitted)" );
+		Assert.IsTrue( most >= 1, $"swimmers were in the water ({most} at most at once)" );
+		Assert.AreEqual( hash, RunFixedParkWithPoolsAndAChangingRoom().Hash, "repeatable in the process" );
+		Assert.AreEqual( PoolsChangingRoomFixedRunHash, hash, $"0x{hash:X16} ({swims} swims, {most} at once, {admissions} admitted)" );
 	}
 
 	/// <summary>[EXT:pools-save] The pinned hash of <see cref="RunFixedParkWithPools"/> (docs/DETERMINISM.md, "Pools").</summary>

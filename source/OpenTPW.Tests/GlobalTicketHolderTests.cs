@@ -49,6 +49,20 @@ public class GlobalTicketHolderTests
 	}
 
 	[TestMethod]
+	public void AnAdoptedHolderLearnsItsRecordOnceSoABetterParkStillNeedsToBeatIt()
+	{
+		var legacy = PlayerTicketLedger.Restore( new( ParkGameMode.FullSimulation, 0, 0, new[] { new EarnedTicketIdentity( null, GoldenTicketKind.WaterLength ) } ) );
+		legacy.Reconcile( "space", new[] { GoldenTicketKind.WaterLength } );
+		Assert.AreEqual( 0, legacy.HolderOf( GoldenTicketKind.WaterLength )!.Record );
+		Assert.AreEqual( GlobalTicketOutcome.None, legacy.RecordGlobal( "space", GoldenTicketKind.WaterLength, 300 ) );
+		Assert.AreEqual( 300, legacy.HolderOf( GoldenTicketKind.WaterLength )!.Record );
+		Assert.AreEqual( GlobalTicketOutcome.None, legacy.RecordGlobal( "space", GoldenTicketKind.WaterLength, 900 ), "a known record is not raised" );
+		Assert.AreEqual( 300, legacy.HolderOf( GoldenTicketKind.WaterLength )!.Record );
+		Assert.AreEqual( GlobalTicketOutcome.None, legacy.RecordGlobal( "jungle", GoldenTicketKind.WaterLength, 250 ) );
+		Assert.AreEqual( GlobalTicketOutcome.Moved, legacy.RecordGlobal( "jungle", GoldenTicketKind.WaterLength, 301 ) );
+	}
+
+	[TestMethod]
 	public void HoldersRoundTripAndOlderFilesStillLoad()
 	{
 		var ledger = new PlayerTicketLedger();

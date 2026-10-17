@@ -73,7 +73,14 @@ internal sealed class PlayerTicketLedger
 			holders[kind] = new( kind, canonical, record );
 			return GlobalTicketOutcome.None;
 		}
-		if ( holder.Theme == canonical || holder.Record >= record )
+		if ( holder.Theme == canonical )
+		{
+			// A holder adopted without a record (an older file, record 0: a real record is above its threshold) learns the park's record once; the original's holder keeps its award-time record.
+			if ( holder.Record == 0 && record > 0 )
+				holders[kind] = holder with { Record = record };
+			return GlobalTicketOutcome.None;
+		}
+		if ( holder.Record >= record )
 			return GlobalTicketOutcome.None;
 		holders[kind] = new( kind, canonical, record );
 		return GlobalTicketOutcome.Moved;

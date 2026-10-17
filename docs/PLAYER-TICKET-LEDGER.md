@@ -74,7 +74,7 @@ The ledger keeps the holder per global (`GlobalHolders` in the progress file: ki
 record), optional and validated: a holder must be a global kind that is earned, a canonical
 theme and a record of at least 0, at most one per kind. A file without the field loads with
 unknown holders, and the first park that reports a global it has earned adopts the holder
-(record 0). `PlayerProgressRuntimeOwner` attaches the ledger to the park's objectives while
+with its record (a holder adopted by `Reconcile` without a record keeps 0 until its park reports one). `PlayerProgressRuntimeOwner` attaches the ledger to the park's objectives while
 it is eligible, so a park without a holder role does not earn the ticket a second time, a park
 with a better record takes it (`ParkEventKind.GlobalTicketMoved`, advisor message 234 + type),
 and a lower or equal record changes nothing. Without an eligible owner (Instant Action, no

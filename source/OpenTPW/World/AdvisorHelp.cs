@@ -114,6 +114,17 @@ internal static class AdvisorUiHelp
 		["visitorInfo"] = 302,
 		["entryPrice"] = 303,
 		[Hud.ParkHud.StaffPlacementHelp] = 309,
+		// [BIN:TPW-EXE:0x005F0B40 map window] the builder posts 0x130 (304) as it opens (0x486B00 at 0x5F100D) and the close path withdraws it (0x486B40 at 0x5F123C)
+		[Hud.ParkHud.MapScreenName] = 304,
+	};
+
+	/// <summary>
+	/// The windows whose procedure hands the keys it does not handle to the default window procedure, whose F1 row repeats the last tutorial advice: the windows
+	/// of <see cref="Windows"/> the callers of 0x488BA0 identified. The map window's procedure is not among those callers.
+	/// </summary>
+	private static readonly HashSet<string> HelpKeyWindows = new( StringComparer.Ordinal )
+	{
+		"buy", "staff", "attractions", "employee", "loans", "finance", "parkInfo", "research", "visitors", "visitorInfo", "entryPrice", Hud.ParkHud.StaffPlacementHelp
 	};
 
 	/// <summary>
@@ -121,7 +132,7 @@ internal static class AdvisorUiHelp
 	/// windows pass the key messages they do not handle to the default window procedure, whose F1 row replays it.
 	/// </summary>
 	// [BIN:TPW-EXE:0x00488BA0 default window procedure] called with the window message from the procedures of the buy (0x4AC80B), hire staff (0x49B768), all attractions (0x495331), loans (0x49F81B), finance (0x49A100, 0x49A149, 0x49A1B7), park information (0x4A4A9B), all visitors (0x49337C) and ticket price (0x498D53, in 0x498C60 with its withdrawal 0x498CC7) windows, each beside its window's withdrawal call; seven more callers (0x48D27E, 0x495EE5, 0x4A8111, 0x4A9B3A, 0x4B26F7, 0x4B7ADA and one of the finance sites) belong to windows not identified
-	public static bool RepeatsTutorialOnHelpKey( string? window ) => window != null && Windows.ContainsKey( window );
+	public static bool RepeatsTutorialOnHelpKey( string? window ) => window != null && HelpKeyWindows.Contains( window );
 
 	/// <summary>The help message of the HUD window named <paramref name="window"/>, or null when it has none.</summary>
 	public static int? MessageFor( string window ) =>
@@ -129,21 +140,30 @@ internal static class AdvisorUiHelp
 
 	/// <summary>The messages a closing window withdraws: its own, and for a ride window the one it did not post as well.</summary>
 	public static IReadOnlyList<int> WithdrawnWith( string window ) =>
-		ObjectInfoHelp.TryParse( window, out _, out var withdrawn ) ? withdrawn : MessageFor( window ) is { } message ? new[] { message } : Array.Empty<int>();
+		ObjectInfoHelp.TryParse( window, out _, out var withdrawn ) ? withdrawn
+			: MessageFor( window ) is { } message ? (ExtraWithdrawals.TryGetValue( window, out var extra ) ? new[] { message, extra } : new[] { message }) : Array.Empty<int>();
+
+	/// <summary>The second message a closing window withdraws: the employee window's close handler withdraws 0xD4 next to its own 0xC0.</summary>
+	// [BIN:TPW-EXE:0x004B5CF8 employee close] withdraws 0xC0 (192) and then 0xD4 (212, the patrol area help its refresh posts), 0x4B5D05
+	private static readonly Dictionary<string, int> ExtraWithdrawals = new( StringComparer.Ordinal ) { ["employee"] = AdvisorToolHelp.PatrolAreaSet };
 
 	/// <summary>Every message some window posts (the ones a park that ends withdraws).</summary>
-	public static IEnumerable<int> AllWindowMessages => Windows.Values.Concat( ObjectInfoHelp.Messages ).Distinct();
+	public static IEnumerable<int> AllWindowMessages => Windows.Values.Concat( ObjectInfoHelp.Messages ).Concat( AdvisorToolHelp.All ).Append( Hud.ParkHud.CameraPanelHelp ).Append( Hud.ParkHud.MessagePanelHelp ).Distinct();
 
 	/// <summary>
 	/// The ten help messages the original withdraws whenever the interface mode changes (0x52F200, 0x52F580): the help of the tools
-	/// and modes rather than of windows. Their producers are not bound (ADVISOR-009).
+	/// and modes rather than of windows. <see cref="AdvisorToolHelp"/> binds the post of each.
 	/// </summary>
 	// [BIN:TPW-EXE:0x0052F200 interface mode change] when the new mode differs from the old one, 0x59AA70 is called for 0xB8, 0xCB, 0xD6, 0xCD, 0xC9, 0xCE, 0xC1, 0x159, 0x15A and 0x151 (184, 203, 214, 205, 201, 206, 193, 345, 346, 337); the new mode 3 then posts 0xCB (203)
 	public static readonly IReadOnlyList<int> ModeHelpMessages = new[] { 184, 203, 214, 205, 201, 206, 193, 345, 346, 337 };
 }
 
-/// <summary>The kinds of object window the original opens for a placed object (one layout table each).</summary>
-internal enum ObjectInfoKind { Ride, Shop, Sideshow }
+/// <summary>
+/// The kinds of object window the original opens for a placed object (one layout table each): <see cref="Relief"/> is the window of a feature that provides relief
+/// (a toilet), <see cref="Rest"/> of one that chills you out and <see cref="Feature"/> of any other feature; <see cref="AddOn"/> is the window of a ride-type object
+/// that is an add-on of kind 2 (<c>AddOn.UpgradeType</c>, not a track add-on).
+/// </summary>
+internal enum ObjectInfoKind { Ride, Shop, Sideshow, Relief, Rest, Feature, AddOn }
 
 /// <summary>
 /// The help of the object windows. The original opens one of three windows for a placed object, by its layout table, and each builder posts its
@@ -155,13 +175,27 @@ internal enum ObjectInfoKind { Ride, Shop, Sideshow }
 // [BIN:TPW-EXE:0x004B0E30 shop window builder] the window of layout table 0x755908 posts 0xD1 (209) at 0x4B0E5C; its close handler withdraws it (0x4B0BE3)
 // [BIN:TPW-EXE:0x004B2430 sideshow window builder] the window of layout table 0x755E80 posts 0xD0 (208) at 0x4B245C; its close handler withdraws it (0x4B2203)
 // [BIN:TPW-EXE:0x00486900 thing window dispatcher] the object's window is chosen by its kind: 0x4AF980 (calls at 0x4869CB and 0x4869F1), 0x4B0E30 (0x486A01) or 0x4B2430 (0x486A11)
+// [BIN:TPW-EXE:0x00486920 thing window dispatcher] a placed object (thing type 3) opens its window by its kind word +0x4AC (Info.WhichUIType): 0 the ride window (0x4AF980), 1 the shop window (0x4B0E30), 2 the sideshow window (0x4B2430), 3 a feature's window by the thing flags +0x32, and no window for a larger value (the jump table 0x486A90 ends at 3); a feature with bit 0 (UsageInfo.ProvidesRelief) opens 0x497990, with bit 1 (UsageInfo.ChillsYouOut) 0x4B5290, any other 0x499EB0
+// [BIN:TPW-EXE:0x00486958 ride kind dispatch] a ride-type object whose type record +0x288 (AddOn.UpgradeType, +0x284 is AddOn.UpgradesId) is 2 opens the window of table 0x7573C8 (0x4B6AE0) instead of the ride window: it posts 0x12D (301) as it opens (0x4B6B09) and its close handler withdraws it (0x4B6850)
+// [BIN:TPW-EXE:0x00497990 relief window] after building the window of layout table 0x751190 it truncates the float at the object's +0x44 (the state, as the ride window's repair) and posts 0xD5 (213) at 0x4979CA when its low byte is below 0x19, else 0x12B (299) at 0x4979DB; the close handler withdraws 0x12B and then 0xD5 (0x4976A0, 0x4976AD)
+// [BIN:TPW-EXE:0x004B5290 rest window] the window posts 0x12C (300) at 0x4B52B9 and its close handler withdraws it (0x4B50D4)
+// [BIN:TPW-EXE:0x00499EB0 feature window] the window posts 0x12A (298) at 0x499ED9 and its close handler withdraws it (0x499C10)
 internal static class ObjectInfoHelp
 {
 	public const string Prefix = "objectInfo/";
 	public const int RideMessage = 207, RideRepairMessage = 297, ShopMessage = 209, SideshowMessage = 208;
+	public const int ReliefDirtyMessage = 213, ReliefMessage = 299, RestMessage = 300, FeatureMessage = 298, AddOnMessage = 301;
 
 	/// <summary>The messages any object window posts.</summary>
-	public static readonly IReadOnlyList<int> Messages = new[] { RideMessage, RideRepairMessage, ShopMessage, SideshowMessage };
+	public static readonly IReadOnlyList<int> Messages = new[] { RideMessage, RideRepairMessage, ShopMessage, SideshowMessage, ReliefDirtyMessage, ReliefMessage, RestMessage, FeatureMessage, AddOnMessage };
+
+	/// <summary>Whether the truncated state of a relief feature posts the first message: the low byte of the integer is below 25 (a missing state counts as clean).</summary>
+	public static bool IsDirty( double? state )
+	{
+		if ( state is not { } value || !double.IsFinite( value ) )
+			return false;
+		return (byte)(int)Math.Truncate( value ) < 25;
+	}
 
 	/// <summary>Whether the truncated state of repair posts the repair message: the low byte of the integer is 1 to 20.</summary>
 	public static bool IsLowRepair( double? repair )
@@ -174,7 +208,7 @@ internal static class ObjectInfoHelp
 
 	/// <summary>The window name for the <paramref name="opening"/>th object window shown; <paramref name="repair"/> matters for a ride only.</summary>
 	public static string WindowName( ObjectInfoKind kind, double? repair, int opening ) =>
-		$"{Prefix}{kind}{(kind == ObjectInfoKind.Ride && IsLowRepair( repair ) ? "/repair" : "")}/{opening.ToString( CultureInfo.InvariantCulture )}";
+		$"{Prefix}{kind}{(kind == ObjectInfoKind.Ride && IsLowRepair( repair ) ? "/repair" : kind == ObjectInfoKind.Relief && IsDirty( repair ) ? "/dirty" : "")}/{opening.ToString( CultureInfo.InvariantCulture )}";
 
 	/// <summary>Reads a window name made by <see cref="WindowName"/>: the message it posts and the messages its close withdraws.</summary>
 	public static bool TryParse( string window, out int posted, out IReadOnlyList<int> withdrawn )
@@ -196,10 +230,60 @@ internal static class ObjectInfoHelp
 				posted = ShopMessage;
 				withdrawn = new[] { ShopMessage };
 				return true;
+			case ObjectInfoKind.Relief:
+				posted = parts.Length == 3 && parts[1] == "dirty" ? ReliefDirtyMessage : ReliefMessage;
+				withdrawn = new[] { ReliefMessage, ReliefDirtyMessage };
+				return true;
+			case ObjectInfoKind.Rest:
+				posted = RestMessage;
+				withdrawn = new[] { RestMessage };
+				return true;
+			case ObjectInfoKind.Feature:
+				posted = FeatureMessage;
+				withdrawn = new[] { FeatureMessage };
+				return true;
+			case ObjectInfoKind.AddOn:
+				posted = AddOnMessage;
+				withdrawn = new[] { AddOnMessage };
+				return true;
 			default:
 				posted = SideshowMessage;
 				withdrawn = new[] { SideshowMessage };
 				return true;
 		}
 	}
+}
+
+/// <summary>
+/// The help the tools and panels post through 0x486B00: ids of the descriptor table (<c>advisor-help-messages.toml</c>) with the places that post them (see
+/// <c>docs/LIPS.md</c> "Contextual help").
+/// </summary>
+internal static class AdvisorToolHelp
+{
+	// [BIN:TPW-EXE:0x004982A0 coaster panel] the press of its buttons posts 0x121 (move, control 0x1B), 0x125 (build, 0x1F), 0x126 (loop, 0x20: 0x127 when the coaster is a flume, mask bit 0x200) and 0x124 (demolish, 0x21); the close message 0x1001D8 withdraws all five
+	public const int CoasterMove = 289, CoasterDemolish = 292, CoasterBuild = 293, CoasterLoop = 294, CoasterTrough = 295;
+	/// <summary>The messages the coaster panel's close withdraws.</summary>
+	public static readonly IReadOnlyList<int> CoasterPanelMessages = new[] { CoasterBuild, CoasterTrough, CoasterLoop, CoasterMove, CoasterDemolish };
+	/// <summary>Posted after every click of the coaster tool (the click handler's mode 0x15, 0x52644C).</summary>
+	public const int CoasterToolClick = 205;
+
+	// [BIN:TPW-EXE:0x00527200 path and queue tool click] the first click of the path tool posts 0xB8 (184), the third later click of either tool 0xD6 (214), the click that ends the queue tool without a path join 0x151 (337)
+	public const int PathStart = 184, PathLaterClick = 214, QueueEnd = 337;
+	/// <summary>Posted when the queue tool starts, by every way into it (SetMode(3), 0x52F4B0).</summary>
+	public const int QueueTool = 203;
+
+	// [BIN:TPW-EXE:0x004AC5D0 buy list click] choosing an item builds the placement tool and posts 0xC9 (201) when the item is a ride and no ride is placed yet, else 0xCE (206); the land rows build tool 0x3A (0x159, 345) and 0x39 (0x15A, 346)
+	public const int FirstRide = 201, Placement = 206, ClearLandTool = 345, BuyLandTool = 346;
+
+	/// <summary>The help a chosen buy item posts: 201 for a ride (<c>Info.WhichUIType</c> 0) while the park has no ride, else 206.</summary>
+	public static int BuildStart( int whichUiType, bool anyRidePlaced ) => whichUiType == 0 && !anyRidePlaced ? FirstRide : Placement;
+
+	// [BIN:TPW-EXE:0x004B3F60 locator open] the staff locator posts 0xC6 (198), the visitor locator (0x4B3F60 with a visitor, 0x4B4280) 0x11F (287); the panel's close message 0x1001D8 withdraws both
+	public const int StaffLocator = 198, VisitorLocator = 287;
+
+	// [BIN:TPW-EXE:0x004B5B50 patrol toggle] setting an area closes the employee window and posts 0xC1 (193); [BIN:TPW-EXE:0x004B5AB0 employee refresh] a refresh with an own area posts 0xD4 (212)
+	public const int PatrolTool = 193, PatrolAreaSet = 212;
+
+	/// <summary>Every message a tool or panel posts, for the withdrawal when a park ends.</summary>
+	public static IEnumerable<int> All => CoasterPanelMessages.Concat( new[] { CoasterToolClick, PathStart, PathLaterClick, QueueEnd, QueueTool, FirstRide, Placement, ClearLandTool, BuyLandTool, PatrolTool, PatrolAreaSet, StaffLocator, VisitorLocator } );
 }

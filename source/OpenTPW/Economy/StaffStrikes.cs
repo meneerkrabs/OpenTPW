@@ -23,7 +23,10 @@ public readonly record struct StrikeMessage( StaffType Role, StrikeMessageKind K
 	/// entertainers, scientists). The original builds the message from the role and the kind (0x100116590); the order of the five texts is
 	/// read from their wording.
 	/// </summary>
-	public int TagSystemIndex => 38 + 5 * (int)Kind + RoleOrder[(int)Role];
+	public int TagSystemIndex => FirstTagSystemIndex + 5 * (int)Kind + RoleOrder[(int)Role];
+
+	/// <summary>The first <c>TAG_SYSTEM.str</c> entry of the strike messages.</summary>
+	public const int FirstTagSystemIndex = 38;
 
 	// Handyman, Mechanic, Entertainer, Guard, Researcher -> position inside each group of five
 	private static readonly int[] RoleOrder = { 1, 0, 3, 2, 4 };

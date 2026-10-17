@@ -198,8 +198,10 @@ public sealed class ParkResearch
 			OpenGroups( category );
 	}
 
-	private void OpenGroups( ResearchCategory category )
+	/// <summary>Opens the groups the percentage of researched items allows; true when the category's highest open group rose.</summary>
+	private bool OpenGroups( ResearchCategory category )
 	{
+		var risen = false;
 		ref var highest = ref highestGroup[(int)category];
 		while ( highest < MaximumOpenGroup )
 		{
@@ -218,8 +220,24 @@ public sealed class ParkResearch
 			if ( percent < threshold )
 				break;
 			highest++;
+			risen = true;
 		}
+		return risen;
 	}
+
+	private List<ResearchCategory> lastGroupsOpened = new();
+	private List<ResearchItem> lastResearched = new();
+
+	/// <summary>The categories whose highest open group rose with the completions of the last <see cref="AddResearcherPoints"/> (the original's group opener 0x503B80, run for each completion).</summary>
+	public IReadOnlyList<ResearchCategory> LastGroupsOpened => lastGroupsOpened;
+	/// <summary>The items the last <see cref="AddResearcherPoints"/> completed with research points (the original's completion message 0x11), not the free items that followed them.</summary>
+	public IReadOnlyList<ResearchItem> LastResearched => lastResearched;
+
+	/// <summary>Whether the category has an item that is not researched yet (a record of its category whose progress is below its target, 0x503BC0).</summary>
+	public bool HasUnresearched( ResearchCategory category ) => items.Any( item => item.Category == category && !completed.Contains( (item.InfoId, item.Level) ) );
+
+	/// <summary>Whether every item of every category is researched (the lab's check after a completion, 0x503E3F).</summary>
+	public bool AllResearched => items.All( item => completed.Contains( (item.InfoId, item.Level) ) );
 
 	/// <summary>The item a category is currently researching, or null when nothing is researchable.</summary>
 	// [BIN:STP-PPC:0x100F0EF0 research cursor] each category researches the first item in table order whose group is open and which is not yet researched; cost is never compared
@@ -284,6 +302,8 @@ public sealed class ParkResearch
 	{
 		var done = new List<ResearchItem>();
 		var finished = new List<ResearchItem>();
+		lastGroupsOpened = new List<ResearchCategory>();
+		lastResearched = finished;
 		var active = Enum.GetValues<ResearchCategory>().Select( category => (Category: category, Item: Current( category )) )
 			.Where( entry => entry.Item != null ).ToList();
 		var totalEffort = active.Sum( entry => (long)effort[(int)entry.Category] );
@@ -309,7 +329,8 @@ public sealed class ParkResearch
 		if ( done.Count > 0 )
 		{
 			foreach ( var category in done.Select( item => item.Category ).Distinct() )
-				OpenGroups( category );
+				if ( OpenGroups( category ) )
+					lastGroupsOpened.Add( category );
 			PropagateFreeItems( done );
 		}
 		foreach ( var item in finished )

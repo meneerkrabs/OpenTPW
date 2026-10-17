@@ -230,12 +230,16 @@ public sealed partial class ParkHud
 		}
 		CloseOpenWindowsForLocator();
 		Locator.OpenVisitors();
+		// [BIN:TPW-EXE:0x004b4449 visitor locator help] 0x4b4280 posts help 0x11f (287) after it set the visitor role
+		host?.HelpPosted?.Invoke( AdvisorToolHelp.VisitorLocator );
 	}
 
 	private void OpenLocator( LocatorMode mode, int role, int actorId )
 	{
 		CloseOpenWindowsForLocator();
 		Locator.Open( mode, role, actorId );
+		// [BIN:TPW-EXE:0x004b4099 locator help] 0x4b3f60 ends by posting help 0x11f (287) through 0x486b00 when the chosen role is 6 (a visitor) and 0xc6 (198) for every other role or none, whether or not an actor was given
+		host?.HelpPosted?.Invoke( Locator.Role == LocatorModel.VisitorRole ? AdvisorToolHelp.VisitorLocator : AdvisorToolHelp.StaffLocator );
 		if ( Locator.Following )
 			FollowLocatorActor();
 	}
@@ -259,6 +263,12 @@ public sealed partial class ParkHud
 
 	public void CloseLocator()
 	{
+		// [BIN:TPW-EXE:0x004b37d5 locator close] the panel's close message 0x1001d8 withdraws help 0x11f (287) and then 0xc6 (198) through 0x486b40 (0x4b381d, 0x4b382a)
+		if ( Locator.Mode != LocatorMode.None )
+		{
+			host?.HelpWithdrawn?.Invoke( AdvisorToolHelp.VisitorLocator );
+			host?.HelpWithdrawn?.Invoke( AdvisorToolHelp.StaffLocator );
+		}
 		Locator.Close();
 		locatorCameraTarget = null;
 	}

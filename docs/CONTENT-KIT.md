@@ -129,9 +129,9 @@ rest.
 
 | Constant | TPW | TPI |
 | --- | --- | --- |
-| Camera elevation | 32 degrees | 34 degrees (re-measured against the FPC frames: 25 degrees matched widths and heights best, 42 the look of hats and shoulders, so a compromise) |
-| Pixels per unit (full detail, `.FPC`, what the game draws) | 11.875 | 14.3 |
-| Pixels per unit (low detail, `.TPC`, the calibration reference) | 9.5 | 11.44 |
+| Camera elevation | 27 degrees (was 32; the originals' side views look like 25-30) | 25 degrees (was 34, and 42 before that) |
+| Pixels per unit (full detail, `.FPC`, what the game draws) | 11.7 | 14.4 |
+| Pixels per unit (low detail, `.TPC`, the calibration reference) | 9.36 | 11.52 |
 | Calibration reference cell / standing hotspot | 48 x 56, feet at (24, 53) | 64 x 80, feet at (32, 70) |
 | Swim frame canvas / hotspot | 80 x 60, (40, 34) | 100 x 80, (50, 45) |
 
@@ -146,12 +146,12 @@ ours right) and prints heights. Standing height in pixels (direction 4), ours vs
 
 | TPW | BE | BI | CH | FR | KI | SA | SU | TA |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| ours | 32 | 33 | 31 | 33 | 32 | 30 | 31 | 32 |
+| ours | 32 | 32 | 31 | 32 | 32 | 30 | 31 | 32 |
 | original | 32 | 32 | 34 | 31 | 34 | 30 | 34 | 32 |
 
 | TPI | BD | GB | GK | KB | FA | MO | GM | GR |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| ours | 38 | 37 | 36 | 39 | 49 | 47 | 41 | 37 |
+| ours | 39 | 39 | 37 | 40 | 50 | 48 | 41 | 37 |
 | original | 40 | 41 | 38 | 43 | 50 | 48 | 42 | 38 |
 
 All within 3 pixels for TPW and within 4 for TPI (the TPI kids come out a little short), most within 2. The proportions follow the originals more closely since October 17, 2026:
@@ -319,3 +319,23 @@ rendered at 1 / 0.685 of the body's pixel scale (the game draws a head sprite at
 - Slots 4 and 6 of the originals have a few extra poses (a head shake, a shrug) that are folded into the four we make.
 - Our lighting is baked from one fixed direction, so the mirrored half of the directions is lit from the other side, as in the originals.
 - The shipped heads' hotspots sit about 5 pixels lower than ours; the head frames' sizes are matched, their placement is not.
+
+
+### Third-review fixes (measured against the original FPC frames)
+
+| Measure | Before | After | Original |
+| --- | --- | --- | --- |
+| TPI camera elevation | 34 degrees | 25 | matches widths and heights best |
+| TPW camera elevation | 32 degrees | 27 | 25-30 by eye |
+| Walk foot spread, direction 2, contact frame (px; BE / BD / FA) | 22 / 26 / 39 | 28 / 34 / 40 | 28 / 33 / 38 |
+| Walk foot spread at the passing frame (px; BE / BD / FA) | 14 / 15 / 20 | 12 / 14 / 18 | 11 / 15 / 20 |
+| Run foot spread at contact (px; BE / BD) | 25 / 30 | 28 / 35 | 33 / 41 |
+| Head height over total height, direction 4 (BE / BD / FA) | 0.39 / 0.38 / 0.29 | 0.35 / 0.33 / 0.26 | 0.32 / 0.33 / 0.24 |
+
+Walk and run now start at the contact pose (legs furthest apart, as the originals' frame 0), pass with the feet together a quarter
+of the loop later and push off at the next contact; the body is highest at the passing frame, and the hip swing and arm swing scale
+with a per-body `stride` (kids 1.0, mum 0.85, dad 0.72, granny 0.6, grandpa 0.62). Kids have longer legs (0.46 + 0.42) and a head
+scale of 0.84; the adults' heads are 0.85 to 0.95. FA has a smaller hat brim and a bigger nose so his face shows in profile; GR stoops
+34 degrees, has darker skin so the bald top does not read as a white ball, and the white hair sits at the sides and back. The TPI head
+sets use a hotspot 6 px lower (the shipped TPI heads put it about 9 px below the head centre), and FA's head is drawn 1.3 times larger.
+The head ratio is measured at the narrowest row between 25 % and 55 % of the frame height, so it is a rough number.

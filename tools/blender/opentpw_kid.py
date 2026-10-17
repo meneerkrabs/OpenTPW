@@ -30,8 +30,8 @@ import numpy as np
 # ``feet`` describe that TPC reference sheet, ``swim_canvas``/``swim_origin`` our FPC-scale swimmer frames.
 FPC_SCALE = 1.25
 EDITIONS = {
-	"TPW": dict(elevation=32.0, ppu=11.875, ppu_tpc=9.5, cell=(48, 56), feet=(24, 53), swim_canvas=(80, 60), swim_origin=(40, 34)),
-	"TPI": dict(elevation=34.0, ppu=14.3, ppu_tpc=11.44, cell=(64, 80), feet=(32, 70), swim_canvas=(100, 80), swim_origin=(50, 45)),
+	"TPW": dict(elevation=27.0, ppu=11.7, ppu_tpc=9.36, cell=(48, 56), feet=(24, 53), swim_canvas=(80, 60), swim_origin=(40, 34)),
+	"TPI": dict(elevation=25.0, ppu=14.4, ppu_tpc=11.52, cell=(64, 80), feet=(32, 70), swim_canvas=(100, 80), swim_origin=(50, 45)),
 }
 SUPERSAMPLE = 6              # the frame is rendered this many times larger and box-filtered down
 SHARPEN = 0.2                # unsharp-mask weight after the downsample (the originals are crisp)
@@ -65,11 +65,11 @@ WET_HAIR_SCALE = 0.88    # wet hair sits closer to the head
 SWIM_ARM_SCALE = 1.3
 SWIM_LEG_SCALE = 1.12
 BODIES = {
-	"kid": dict(th=0.58, tw=0.62, td=0.46, thigh=0.40, shin=0.36, arm_up=0.42, arm_low=0.37, head=1.0, limb=1.0, stoop=0.0, size=1.0),
-	"mum": dict(th=0.72, tw=0.60, td=0.44, thigh=0.66, shin=0.62, arm_up=0.52, arm_low=0.48, head=1.0, limb=0.9, stoop=0.0, size=1.2),
-	"dad": dict(th=0.86, tw=0.8, td=0.7, belly=1, thigh=0.68, shin=0.63, arm_up=0.52, arm_low=0.48, head=1.05, limb=1.15, stoop=0.0, size=1.3),
-	"granny": dict(th=0.64, tw=0.63, td=0.5, thigh=0.54, shin=0.50, arm_up=0.44, arm_low=0.40, head=1.04, limb=1.0, stoop=10.0, size=1.1),
-	"grandpa": dict(th=0.70, tw=0.62, td=0.46, thigh=0.64, shin=0.58, arm_up=0.52, arm_low=0.48, head=1.0, limb=1.0, stoop=18.0, size=1.15),
+	"kid": dict(th=0.58, tw=0.62, td=0.46, thigh=0.46, shin=0.42, arm_up=0.42, arm_low=0.37, head=0.84, stride=1.0, limb=1.0, stoop=0.0, size=1.0),
+	"mum": dict(th=0.72, tw=0.60, td=0.44, thigh=0.66, shin=0.62, arm_up=0.52, arm_low=0.48, head=0.9, stride=0.85, limb=0.9, stoop=0.0, size=1.2),
+	"dad": dict(th=0.86, tw=0.8, td=0.7, belly=1, thigh=0.68, shin=0.63, arm_up=0.52, arm_low=0.48, head=0.85, stride=0.72, limb=1.15, stoop=0.0, size=1.3),
+	"granny": dict(th=0.64, tw=0.63, td=0.5, thigh=0.54, shin=0.50, arm_up=0.44, arm_low=0.40, head=0.85, stride=0.6, limb=1.0, stoop=10.0, size=1.1),
+	"grandpa": dict(th=0.70, tw=0.62, td=0.46, thigh=0.64, shin=0.58, arm_up=0.52, arm_low=0.48, head=0.95, stride=0.62, limb=1.0, stoop=34.0, size=1.15),
 }
 
 
@@ -98,10 +98,10 @@ PRESETS = {
 	"GK": dict(edition="TPI", girl=True, skin=(238, 186, 160), hair=(222, 192, 108), outfit=(226, 110, 156), hair_style="cap", cap=(232, 118, 160), cap_up=0.0, tail=True, iris=(40, 90, 215), ears=False),
 	"KB": dict(edition="TPI", girl=False, skin=(238, 186, 160), hair=(92, 52, 26), outfit=(50, 100, 160), hair_style="cap", cap=(240, 192, 40), fringe=True, cap_up=0.18, iris=(40, 90, 215), ears=True),
 	# TPI parents and grandparents (no hats or camera: swim caps or bare heads)
-	"FA": dict(edition="TPI", body="dad", girl=False, skin=(228, 172, 144), hair=(112, 88, 56), outfit=(228, 186, 44), hair_style="short", mustache="hair", stubble=True, iris=(60, 80, 160), ears=True),
+	"FA": dict(edition="TPI", body="dad", girl=False, skin=(228, 172, 144), hair=(112, 88, 56), outfit=(228, 186, 44), hair_style="short", mustache="hair", stubble=True, big_nose=True, head_fit=1.3, iris=(60, 80, 160), ears=True),
 	"MO": dict(edition="TPI", body="mum", girl=True, skin=(236, 184, 158), hair=(214, 182, 120), outfit=(166, 42, 92), lips=(214, 28, 72), hair_style="bun", iris=(40, 90, 215), ears=False),
 	"GM": dict(edition="TPI", body="granny", girl=True, skin=(238, 190, 166), hair=(176, 176, 186), outfit=(232, 124, 152), glasses=True, hair_style="perm", iris=(40, 90, 215), ears=False),
-	"GR": dict(edition="TPI", body="grandpa", girl=False, skin=(228, 178, 152), hair=(228, 228, 230), outfit=(100, 64, 42), hair_style="balding", mustache="hair", iris=(70, 90, 160), ears=True),
+	"GR": dict(edition="TPI", body="grandpa", girl=False, skin=(196, 146, 120), hair=(228, 228, 230), outfit=(100, 64, 42), hair_style="balding", mustache="hair", iris=(70, 90, 160), ears=True),
 }
 # The land outfits (sRGB), after the originals' standing sprites. ``top``: style (jacket, shirt, dress, cardigan, suit) and
 # colour; ``sleeves``: long, short or none, in ``sleeve`` colour when different; ``bottom``: trousers, shorts, skirt or
@@ -413,6 +413,7 @@ def build_kid(preset_name, underwater=True, tag=None, swim=False, outfit="swim")
 	kid = Kid()
 	kid.size = b["size"]
 	kid.stoop = b["stoop"]
+	kid.stride = b.get("stride", 1.0)
 	th, tw, td, limb = b["th"], b["tw"], b["td"], b["limb"]
 	hip_z = -(th - 0.1)
 	kid.torso_to_feet = -hip_z + b["thigh"] + b["shin"] + 0.14
@@ -473,7 +474,7 @@ def build_kid(preset_name, underwater=True, tag=None, swim=False, outfit="swim")
 		_mesh(kid, "sphere", f"brow{s}", (0.19, 0.08, 0.055), (0.25 * s, 0.6, 0.36), m_brow, head, rot=(0, math.radians(-14 * s), 0), segments=8)
 		if p["ears"]:
 			_mesh(kid, "sphere", f"ear{s}", (0.12, 0.17, 0.22), (0.7 * s, -0.02, -0.02), m_rosy, head, segments=8)
-	_mesh(kid, "sphere", "nose", (0.13, 0.15, 0.13), (0, 0.72, -0.2), m_rosy, head, segments=8)
+	_mesh(kid, "sphere", "nose", (0.13, 0.15, 0.13) if not p.get("big_nose") else (0.18, 0.22, 0.18), (0, 0.72, -0.2), m_rosy, head, segments=8)
 	if p.get("stubble"):
 		m_stub = mat("stubble", tuple(a * 0.72 + b * 0.28 for a, b in zip(skin[:3], hair[:3])) + (1.0,), 0.7, "skin", 0.1)
 		_mesh(kid, "sphere", "stubble", (0.735, 0.69, 0.36), (0, 0.0, -0.34), m_stub, head, segments=14)
@@ -565,7 +566,7 @@ def _build_clothes_extras(kid, p, cl, b, c):
 			_mesh(kid, "sphere", "brim", (0.5, 0.62, 0.07), (0, 0.66, 0.34), m_hat, head, rot=(math.radians(-12), 0, 0), segments=14)
 		else:  # safari hat: a crown, a wide brim and a darker band
 			_mesh(kid, "sphere", "crown", (0.78, 0.76, 0.5), (0, -0.02, 0.54), m_hat, head, segments=16)
-			_mesh(kid, "sphere", "hatBrim", (1.1, 1.08, 0.08), (0, 0.02, 0.4), m_hat, head, rot=(math.radians(-6), 0, 0), segments=18)
+			_mesh(kid, "sphere", "hatBrim", (0.98, 0.96, 0.07), (0, 0.0, 0.46), m_hat, head, rot=(math.radians(-6), 0, 0), segments=18)
 			_mesh(kid, "cylinder", "hatBand", (0.77, 0.75, 0.07), (0, -0.02, 0.46), c["m_dark"], head, segments=18)
 	if cl.get("camera"):
 		_mesh(kid, "cylinder", "camBody", (0.26, 0.15, 0.17), (0.18, td * 1.05 + 0.15, uz(0.05)), c["m_dark"], up, rot=(math.radians(90), 0, 0), segments=10)
@@ -683,7 +684,7 @@ def _build_hair(kid, p, head, m_hair, m_bobble, m_cap):
 		for s in (-1, 1):
 			_mesh(kid, "sphere", f"side{s}", (0.22, 0.42, 0.34), (0.68 * s, -0.12, 0.06), m_hair, head, segments=10)
 			_mesh(kid, "sphere", f"sideburn{s}", (0.14, 0.24, 0.3), (0.66 * s, 0.18, -0.26), m_hair, head, segments=8)
-		_mesh(kid, "sphere", "back", (0.6, 0.3, 0.34), (0, -0.55, 0.0), m_hair, head, segments=10)
+		_mesh(kid, "sphere", "back", (0.68, 0.4, 0.44), (0, -0.5, 0.05), m_hair, head, segments=10)
 		_mesh(kid, "sphere", "brow", (0.5, 0.18, 0.08), (0, 0.55, 0.32), m_hair, head, segments=8)
 	else:
 		raise ValueError(style)

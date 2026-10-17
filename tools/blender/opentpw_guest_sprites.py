@@ -39,7 +39,8 @@ DIRECTIONS = 5
 LAND_HOTSPOT_DROP = 1      # our soles sit 1 to 2 pixels lower than the originals' (+1..+2 below the hotspot), so the hotspot is 1 pixel lower
 LAND_CANVAS = {"TPW": ((100, 90), (50, 78)), "TPI": ((140, 130), (70, 112))}
 HEAD_CANVAS = {"TPW": ((64, 64), (32, 32)), "TPI": ((80, 80), (40, 40))}
-HEAD_FIT = 0.9             # our heads render a little smaller than the geometry says so their frames match the originals
+HEAD_FIT = 1.0             # our heads render a little smaller than the geometry says so their frames match the originals
+HEAD_HOTSPOT_DROP = {"TPW": 0, "TPI": 6}   # the shipped TPI heads put the hotspot about 9 px below the head centre (TPW: about 3, which ours already has; measured against ours the net shift is 6)
 HEAD_SCALE = 0.685          # the game draws a head sprite at 0.685 of the body's pixel scale (docs/GUESTS.md)
 SWIM_SLOTS = {"A": (8, "swim-crawl", 8), "B": (9, "swim-breaststroke", 8), "C": (10, "swim-tread", 4)}
 
@@ -230,9 +231,9 @@ def main():
 		if "heads" in o["part"]:
 			canvas, origin = HEAD_CANVAS[edition]
 			st = K.setup_scene(canvas, origin, edition)
-			st.cam.data.ortho_scale = max(canvas) / (ed["ppu"] / HEAD_SCALE * HEAD_FIT)
+			st.cam.data.ortho_scale = max(canvas) / (ed["ppu"] / HEAD_SCALE * HEAD_FIT * K.PRESETS[name].get("head_fit", 1.0))
 			frames = render_heads(st, name, tmp)
-			meta = {0: {"name": "head", "source": "heads", "directions": 7, "framesPerDirection": 8, "_origin": origin}}
+			meta = {0: {"name": "head", "source": "heads", "directions": 7, "framesPerDirection": 8, "_origin": (origin[0], origin[1] + HEAD_HOTSPOT_DROP[edition])}}
 			write_set(os.path.join(o["out"], edition.lower(), heads_folder, name), name, edition, heads_folder, HEAD_MEMBER.get(name, f"SPR_{name}"), frames, meta, o["quantise"], o["dither"], 0)
 		print("done", name, flush=True)
 	if os.path.exists(tmp):

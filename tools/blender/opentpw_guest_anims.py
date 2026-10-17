@@ -43,26 +43,29 @@ def stand(kid, f=0, n=1):
 	return make(kid, arms=((0, 14, 6), (0, 14, 6)))
 
 
-def _gait(kid, f, n, hip, knee0, knee1, arm, elbow0, elbow1, stoop, hop, bob):
+def _gait(kid, f, n, hip, knee0, knee1, arm, elbow0, elbow1, stoop, hop):
+	"""A walk or run cycle that starts at the contact pose (legs furthest apart, as the originals' frame 0), passes through the
+	passing pose (feet together, body highest for a walk) at a quarter of the loop and pushes off at the next contact."""
 	tau = 2 * math.pi
 	ph = f / n
+	hip *= kid.stride
 	arms, legs = [], []
 	for s in (-1, 1):
-		th = tau * (ph + (0.0 if s < 0 else 0.5))
+		th = tau * (ph + 0.25 + (0.0 if s < 0 else 0.5))
 		a = hip * math.sin(th)
 		k = knee0 + knee1 * max(0.0, math.cos(th)) ** 1.4
 		legs.append((a, 4, k))
-		arms.append((-arm * math.sin(th), 10, elbow0 + elbow1 * max(0.0, -math.sin(th))))
-	lift = hop * (0.5 - 0.5 * math.cos(tau * 2 * ph)) + bob * math.sin(tau * 2 * ph + 0.6)
+		arms.append((-arm * kid.stride * math.sin(th), 10, elbow0 + elbow1 * max(0.0, -math.sin(th))))
+	lift = hop * (0.5 - 0.5 * math.cos(tau * 2 * ph))
 	return make(kid, stoop=stoop, roll=5 * math.sin(tau * ph), head_pitch=-stoop * 0.6, arms=tuple(arms), legs=tuple(legs), lift=lift)
 
 
 def walk(kid, f, n=8):
-	return _gait(kid, f, n, hip=44, knee0=8, knee1=52, arm=40, elbow0=12, elbow1=26, stoop=5, hop=0.0, bob=0.04)
+	return _gait(kid, f, n, hip=60, knee0=6, knee1=40, arm=44, elbow0=12, elbow1=26, stoop=5, hop=0.1)
 
 
 def run(kid, f, n=8):
-	return _gait(kid, f, n, hip=66, knee0=26, knee1=88, arm=66, elbow0=82, elbow1=12, stoop=16, hop=0.24, bob=0.0)
+	return _gait(kid, f, n, hip=94, knee0=22, knee1=90, arm=72, elbow0=84, elbow1=12, stoop=16, hop=0.3)
 
 
 def gesture_a(kid, f, n=4):

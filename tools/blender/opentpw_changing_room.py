@@ -12,7 +12,12 @@ Footprint: 2 x 2 cells = the Blender X/Y range 0..20, with the Info.Shape (first
 	2*
 
 so the entrance cell is the lower left one: the path-side door is in the Y = 0 face over X 0..10, and the pool-side door is in the Y = 20 face, centred at
-X = 10. The walls are inset by half a unit, the roof reaches the full 20 x 20. The roof peak is 16 units high (a kid guest is about 10 units tall).
+X = 10. The walls stand SIDE_INSET (1.6 units) inside the footprint on the three sides that can face a path (the entrance side and the two flanks) and BACK_INSET (0.5) on the pool side;
+the roof overhangs the flank and entrance walls by 0.6 and reaches the pool-side edge. A low apron slab covers the whole footprint. The roof peak is 16 units high (a kid guest is about 10 units tall).
+
+Why the inset: a walker (guest or staff) is a camera-facing sprite at the depth of its feet, and the steering lets it come to 0.2 cell (2 units) from the edge of a path cell, so a wall that reaches the footprint edge cuts the sprite of anyone
+walking along it. The original buildings keep a clear gap too (measured with the game's own models: a shop or sideshow stands at least 0.5 to 0.9 units, typically 1.5 to 4 units, inside its footprint at the height of a walker's sprite);
+see docs/POOLS.md, "Model inset".
 
 One geometry serves all themes; only the textures (and a few trim parts) differ:
 jungle = bamboo and plank walls with a thatched roof, hallow = dark mossy stone with purple trim, space = riveted metal with a cyan light strip,
@@ -33,10 +38,14 @@ import opentpw_conventions as conventions  # noqa: E402
 import opentpw_export  # noqa: E402
 
 SIZE = 20.0                # 2 x 2 cells
-INSET = 0.5                # the walls stand this far inside the footprint; the roof overhangs to it
+SIDE_INSET = 1.6           # the entrance and flank walls stand this far inside the footprint (the sides a path can run along)
+BACK_INSET = 0.5           # the pool-side wall (the water side) stands this far inside it
+ROOF_INSET = 1.0           # the roof reaches this far towards the entrance and the flanks; it reaches the pool-side edge
+APRON = 0.15               # the low slab that covers the whole footprint
 WALL = 1.0                 # wall thickness
 WALL_HEIGHT = 10.0
 PEAK = 16.0
+RIDGE_Y = (ROOF_INSET + SIZE) / 2   # the roof ridge (set below ROOF_INSET); the theme parts stand on it
 DOOR_HEIGHT = 8.0
 DOOR_WIDTH = 4.0
 FRONT_DOOR_X = 5.0         # centre of the entrance cell column
@@ -314,62 +323,67 @@ class Builder:
 
 def roof_profile(theme):
 	"""The roof cross-section across Y as (y, z) points from the front eave over the ridge to the back eave."""
+	span = SIZE - ROOF_INSET
+	middle = ROOF_INSET + span / 2
 	if theme == "fantasy":
 		segments = 8
 		points = []
 		for i in range(segments + 1):
 			angle = math.pi * i / segments
-			points.append((SIZE / 2 - math.cos(angle) * SIZE / 2, WALL_HEIGHT + math.sin(angle) * (PEAK - WALL_HEIGHT)))
+			points.append((middle - math.cos(angle) * span / 2, WALL_HEIGHT + math.sin(angle) * (PEAK - WALL_HEIGHT)))
 		return points
-	return [(0.0, WALL_HEIGHT), (SIZE / 2, PEAK), (SIZE, WALL_HEIGHT)]
+	return [(ROOF_INSET, WALL_HEIGHT), (middle, PEAK), (SIZE, WALL_HEIGHT)]
 
 
 def add_roof(b, theme):
 	profile = roof_profile(theme)
-	x0, x1 = 0.0, SIZE
+	x0, x1 = ROOF_INSET, SIZE - ROOF_INSET
 	# Outer skin: one quad per profile segment, normal pointing up and out.
 	for (ya, za), (yb, zb) in zip(profile, profile[1:]):
 		b.quad("roof", (x0, ya, za), (x1, ya, za), (x1, yb, zb), (x0, yb, zb))
 	# Under side, seen from inside the cabin: one flat ceiling.
-	b.quad("trim", (x0, 0.0, WALL_HEIGHT - 0.0), (x0, SIZE, WALL_HEIGHT), (x1, SIZE, WALL_HEIGHT), (x1, 0.0, WALL_HEIGHT))
+	b.quad("trim", (x0, ROOF_INSET, WALL_HEIGHT), (x0, SIZE, WALL_HEIGHT), (x1, SIZE, WALL_HEIGHT), (x1, ROOF_INSET, WALL_HEIGHT))
 	# Gable ends: the profile polygon down to the wall top, in the wall material.
 	end = [(y, z) for y, z in profile]
 	b.poly("wall", [(x0, y, z) for y, z in end])                  # -x end: the profile runs clockwise in (y, z), whose normal is -x
 	b.poly("wall", [(x1, y, z) for y, z in reversed(end)])        # +x end: counter-clockwise, normal +x
 	# Eave beam along the front and back, in trim.
-	b.box("trim", (x0, 0.0, WALL_HEIGHT - 0.7), (x1, 0.6, WALL_HEIGHT), skip=("+z", "-z", "+y"))
+	b.box("trim", (x0, ROOF_INSET, WALL_HEIGHT - 0.7), (x1, ROOF_INSET + 0.6, WALL_HEIGHT), skip=("+z", "-z", "+y"))
 	b.box("trim", (x0, SIZE - 0.6, WALL_HEIGHT - 0.7), (x1, SIZE, WALL_HEIGHT), skip=("+z", "-z", "-y"))
 
 
 def add_walls(b, theme):
-	lo, hi = INSET, SIZE - INSET
+	lx, hx = SIDE_INSET, SIZE - SIDE_INSET          # the flank walls' outer faces
+	ly, hy = SIDE_INSET, SIZE - BACK_INSET          # the entrance wall's and the pool-side wall's outer faces
 	h = WALL_HEIGHT
 	door_top = DOOR_HEIGHT
 	f0, f1 = FRONT_DOOR_X - DOOR_WIDTH / 2, FRONT_DOOR_X + DOOR_WIDTH / 2
 	k0, k1 = BACK_DOOR_X - DOOR_WIDTH / 2, BACK_DOOR_X + DOOR_WIDTH / 2
+	# apron: a low slab over the whole footprint, so the cabin still meets the pool deck and the ground around it
+	b.box("trim", (0.0, 0.0, 0.0), (SIZE, SIZE, APRON), skip=("-z", "-x", "+x", "-y", "+y"))
 	# floor slab
-	b.box("trim", (lo, lo, 0.0), (hi, hi, 0.4), skip=("-z", "-x", "+x", "-y", "+y"))
+	b.box("trim", (lx, ly, 0.0), (hx, hy, 0.4), skip=("-z", "-x", "+x", "-y", "+y"))
 	# side walls (full height)
-	b.box("wall", (lo, lo, 0.0), (lo + WALL, hi, h), skip=("-z", "+z"))
-	b.box("wall", (hi - WALL, lo, 0.0), (hi, hi, h), skip=("-z", "+z"))
-	# front wall (path side, Y = 0.5..1.5): the pieces left and right of the door, and the lintel
-	b.box("wall", (lo + WALL, lo, 0.0), (f0, lo + WALL, h), skip=("-z", "+z", "-x"))
-	b.box("wall", (f1, lo, 0.0), (hi - WALL, lo + WALL, h), skip=("-z", "+z", "+x"))
-	b.box("wall", (f0, lo, door_top), (f1, lo + WALL, h), skip=("+z", "-x", "+x"))
+	b.box("wall", (lx, ly, 0.0), (lx + WALL, hy, h), skip=("-z", "+z"))
+	b.box("wall", (hx - WALL, ly, 0.0), (hx, hy, h), skip=("-z", "+z"))
+	# front wall (path side): the pieces left and right of the door, and the lintel
+	b.box("wall", (lx + WALL, ly, 0.0), (f0, ly + WALL, h), skip=("-z", "+z", "-x"))
+	b.box("wall", (f1, ly, 0.0), (hx - WALL, ly + WALL, h), skip=("-z", "+z", "+x"))
+	b.box("wall", (f0, ly, door_top), (f1, ly + WALL, h), skip=("+z", "-x", "+x"))
 	# back wall (pool side): door centred at X = 10
-	b.box("wall", (lo + WALL, hi - WALL, 0.0), (k0, hi, h), skip=("-z", "+z", "-x"))
-	b.box("wall", (k1, hi - WALL, 0.0), (hi - WALL, hi, h), skip=("-z", "+z", "+x"))
-	b.box("wall", (k0, hi - WALL, door_top), (k1, hi, h), skip=("+z", "-x", "+x"))
+	b.box("wall", (lx + WALL, hy - WALL, 0.0), (k0, hy, h), skip=("-z", "+z", "-x"))
+	b.box("wall", (k1, hy - WALL, 0.0), (hx - WALL, hy, h), skip=("-z", "+z", "+x"))
+	b.box("wall", (k0, hy - WALL, door_top), (k1, hy, h), skip=("+z", "-x", "+x"))
 	# door frames: posts and a lintel board in trim, standing half a unit proud of the wall
 	frame = 0.5
-	for x_lo, x_hi, y_a, y_b, touching in ((f0, f1, lo - frame, lo, "+y"), (k0, k1, hi, hi + frame, "-y")):
+	for x_lo, x_hi, y_a, y_b, touching in ((f0, f1, ly - frame, ly, "+y"), (k0, k1, hy, hy + frame, "-y")):
 		b.box("trim", (x_lo - frame, y_a, 0.0), (x_lo, y_b, door_top + frame), skip=("-z", touching))
 		b.box("trim", (x_hi, y_a, 0.0), (x_hi + frame, y_b, door_top + frame), skip=("-z", touching))
 		b.box("trim", (x_lo, y_a, door_top), (x_hi, y_b, door_top + frame), skip=("-x", "+x", touching))
 	# corner posts
 	post = 1.4
-	for px in (lo - 0.2, hi - post + 0.2):
-		for py in (lo - 0.2, hi - post + 0.2):
+	for px in (lx - 0.2, hx - post + 0.2):
+		for py in (ly - 0.2, hy - post + 0.2):
 			b.box("trim", (px, py, 0.0), (px + post, py + post, h), skip=("-z", "+z"))
 
 
@@ -377,18 +391,18 @@ def add_theme_parts(b, theme):
 	"""A few trim differences per theme."""
 	if theme == "jungle":
 		# a bamboo sign board above the front door
-		b.box("trim", (2.5, 0.0, WALL_HEIGHT - 0.2), (7.5, INSET, WALL_HEIGHT + 1.6), skip=("-z", "+y"))
+		b.box("trim", (2.5, SIDE_INSET - 0.5, WALL_HEIGHT - 0.2), (7.5, SIDE_INSET, WALL_HEIGHT + 1.6), skip=("-z", "+y"))
 	elif theme == "hallow":
 		# a small spike on the ridge
-		b.box("trim", (9.4, 9.4, PEAK - 0.1), (10.6, 10.6, PEAK + 1.6), skip=("-z",))
+		b.box("trim", (9.4, RIDGE_Y - 0.6, PEAK - 0.1), (10.6, RIDGE_Y + 0.6, PEAK + 1.6), skip=("-z",))
 	elif theme == "space":
 		# cyan light strips over both doors and along the ridge
-		b.box("light", (3.0, 0.2, WALL_HEIGHT - 1.4), (7.0, INSET, WALL_HEIGHT - 0.8), skip=("-z", "+y"))
-		b.box("light", (8.0, SIZE - INSET, WALL_HEIGHT - 1.4), (12.0, SIZE - 0.2, WALL_HEIGHT - 0.8), skip=("-z", "-y"))
-		b.box("light", (0.5, 9.7, PEAK - 0.4), (SIZE - 0.5, 10.3, PEAK + 0.3), skip=("-z",))
+		b.box("light", (3.0, SIDE_INSET - 0.3, WALL_HEIGHT - 1.4), (7.0, SIDE_INSET, WALL_HEIGHT - 0.8), skip=("-z", "+y"))
+		b.box("light", (8.0, SIZE - BACK_INSET, WALL_HEIGHT - 1.4), (12.0, SIZE - BACK_INSET + 0.3, WALL_HEIGHT - 0.8), skip=("-z", "-y"))
+		b.box("light", (ROOF_INSET + 0.5, RIDGE_Y - 0.3, PEAK - 0.4), (SIZE - ROOF_INSET - 0.5, RIDGE_Y + 0.3, PEAK + 0.3), skip=("-z",))
 	else:
 		# a candy ball on top of the roof
-		b.box("trim", (9.3, 9.3, PEAK - 0.2), (10.7, 10.7, PEAK + 1.4), skip=("-z",))
+		b.box("trim", (9.3, RIDGE_Y - 0.7, PEAK - 0.2), (10.7, RIDGE_Y + 0.7, PEAK + 1.4), skip=("-z",))
 
 
 def clear_scene():

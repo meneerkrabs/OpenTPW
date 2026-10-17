@@ -837,7 +837,10 @@ public sealed class ParkEconomy : IParkEconomy
 				if ( item.ScriptHosted )
 					WriteScript( item, RideVariables.VAR_BREAKSTAT, 1 );
 				else
+				{
 					item.IsBrokenDown = true;
+					Raise( ParkEventKind.RideEnteredBrokenState, 0, item.Id, item.InfoId );
+				}
 				Raise( ParkEventKind.RideBrokeDown, 0, item.Id, item.InfoId );
 			}
 		}
@@ -871,7 +874,10 @@ public sealed class ParkEconomy : IParkEconomy
 	internal void ObserveScriptState( ParkObjectState item, bool inBrokenState )
 	{
 		if ( inBrokenState && item.ScriptStateBroken == false )
+		{
 			item.IsBrokenDown = true;
+			Raise( ParkEventKind.RideEnteredBrokenState, 0, item.Id, item.InfoId );
+		}
 		item.ScriptStateBroken = inBrokenState;
 	}
 
@@ -905,6 +911,9 @@ public sealed class ParkEconomy : IParkEconomy
 			WriteScript( item, RideVariables.VAR_WORN, 1 );
 		if ( before >= WornStateOfRepair && item.StateOfRepair < WornStateOfRepair )
 			Raise( ParkEventKind.RideWorn, item.StateOfRepair, item.Id, item.InfoId );
+		// [BIN:TPW-EXE:0x004DF670 breakdown imminent] the condition byte below 10.0 with the step's wear added back not below it posts the advice 0x42 (the advisor answers this event)
+		if ( AdvisorRideEvents.CrossesImminentLine( (float)item.Repair, wear ) )
+			Raise( ParkEventKind.RideBreakdownImminent, item.StateOfRepair, item.Id, item.InfoId );
 	}
 
 	/// <summary>

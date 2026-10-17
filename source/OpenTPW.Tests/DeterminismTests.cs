@@ -33,7 +33,7 @@ public class DeterminismTests
 		private readonly RideVM? roomScript;
 		private readonly List<RideVM> dice = new();
 
-		public SyntheticPark( WorldSeed seed, IGuestObserver? observer = null, Action<ParkCellMap>? prepareCells = null, bool changingRoom = false )
+		public SyntheticPark( WorldSeed seed, IGuestObserver? observer = null, Action<ParkCellMap>? prepareCells = null, bool changingRoom = false, Action<GuestSimulation>? prepareGuests = null )
 		{
 			Seed = seed;
 			Economy = EconomyTestData.Park( seed: seed.EconomyStream );
@@ -77,6 +77,8 @@ public class DeterminismTests
 				// the entrance cell below the path cell, as a placement lays it
 				GuestTests.LayStandCell( Guests.Grid, room );
 			}
+			// [EXT:pools-attractions] a fixture that registers pool activities of its own (the water attractions pin)
+			prepareGuests?.Invoke( Guests );
 		}
 
 		public WorldSeed Seed { get; }
@@ -315,14 +317,20 @@ public class DeterminismTests
 	/// [EXT:pools-swim] The fixed run on the cross park with a pool of 6 x 2 cells (x 3 to 8, y 8 to 9) and a changing room below the path row, its entrance cell (5, 6) reached from the path cell (5, 5) and its back cells (5, 8) and (6, 8) in the pool: guests choose the room like the shop,
 	/// change, swim, climb out and walk on (docs/POOLS.md, docs/DETERMINISM.md, "Pools"). Returns the hash, how many guests were in the water at the busiest moment and how many swims the room released.
 	/// </summary>
-	internal static (ulong Hash, int MostSwimming, int Swims, int Admissions) RunFixedParkWithPoolsAndAChangingRoom()
+	internal static (ulong Hash, int MostSwimming, int Swims, int Admissions) RunFixedParkWithPoolsAndAChangingRoom( bool fullRegistry = false )
 	{
 		using var scope = OpenTPW.Mods.OpenTpwExtensions.Use( PoolsTests.PoolsSet( true ) );
 		var park = new SyntheticPark( WorldSeed.Default, null, cells =>
 		{
 			var builder = new PoolBuilder( cells, () => null, new PoolsTests.FlatGrid( cells.Width, cells.Height ) );
 			Assert.IsTrue( builder.PaintCells( PoolBuilder.Rectangle( (3, 8), (8, 9) ) ).Completed );
-		}, changingRoom: true );
+		}, changingRoom: true, prepareGuests: fullRegistry ? guests =>
+		{
+			// [EXT:pools-attractions] the registry the level fills while the extension is on, with no water attraction in the park and no river: nothing offers, nothing is drawn
+			foreach ( var activity in PoolActivityRegistry.Create( new PoolAttractionSites( () => Array.Empty<PoolAttractionSite>() ) ) )
+				guests.RegisterPoolActivity( activity );
+		}
+		: null );
 		var most = 0;
 		for ( var chunk = 0; chunk < PinnedRunTicks / 60; chunk++ )
 		{
@@ -394,6 +402,76 @@ public class DeterminismTests
 		Assert.AreEqual( hash, RunFixedParkWithPoolExtras().Hash, "repeatable in the process" );
 		Assert.AreNotEqual( PoolsChangingRoomFixedRunHash, hash, "the extras change the run" );
 		Assert.AreEqual( PoolExtrasFixedRunHash, hash, $"0x{hash:X16} ({swims} swims; {summary})" );
+	}
+
+	[TestMethod]
+	public void FixedRunWithAPoolAndAChangingRoomIsUnchangedByTheFullActivityRegistryWithNothingToOffer()
+	{
+		var (hash, _, swims, _) = RunFixedParkWithPoolsAndAChangingRoom( fullRegistry: true );
+		Assert.IsTrue( swims >= 5 );
+		Assert.AreEqual( PoolsChangingRoomFixedRunHash, hash, "the registry of P5 offers nothing in a park without river cells or water attractions, draws nothing and hashes nothing" );
+	}
+
+	/// <summary>
+	/// [EXT:pools-attractions] The fixed run with a changing room beside a lazy river channel of 10 cells round an island of land (x 6 to 9, y 7 to 9), a wave machine's settings on its access cell (medium
+	/// height, short interval), and a rope swing, water jets and a spa pool beside the water (the room's back cells (5, 8) and (6, 8) are in the middle row) (given as sites, as the level derives them from placed objects): the swim sessions use all of them.
+	/// Returns the hash, the activities started by id, the river rides and the happiness the waves and the spray paid (docs/POOLS.md, docs/DETERMINISM.md, "Pools").
+	/// </summary>
+	internal static (ulong Hash, Dictionary<string, int> Started, int Swims) RunFixedParkWithWaterAttractions()
+	{
+		using var scope = OpenTPW.Mods.OpenTpwExtensions.Use( PoolsTests.PoolsSet( true ) );
+		// the pool is a channel one cell wide round an island of land (x 7 and 8 of row 8), the hard case of a lazy river: its bends cut the corner squares that are coping; the room's back cell (6, 8) is in it
+		var sites = new PoolAttractionSites( () => new[]
+		{
+			new PoolAttractionSite( 9001, PoolAttractionKind.RopeSwing, new[] { (5, 7) }, (6, 7) ),
+			new PoolAttractionSite( 9002, PoolAttractionKind.Jets, new[] { (8, 6) }, (8, 7) ),
+			new PoolAttractionSite( 9003, PoolAttractionKind.Spa, new[] { (8, 10) }, (8, 9) ),
+			new PoolAttractionSite( 9004, PoolAttractionKind.WaveMachine, new[] { (10, 8) }, (9, 8) )
+		} );
+		var park = new SyntheticPark( WorldSeed.Default, null, cells =>
+		{
+			var builder = new PoolBuilder( cells, () => null, new PoolsTests.FlatGrid( cells.Width, cells.Height ) );
+			var island = new HashSet<(int X, int Y)> { (7, 8), (8, 8) };
+			var lane = PoolBuilder.Rectangle( (6, 7), (9, 9) ).Where( cell => !island.Contains( cell ) ).ToArray();
+			Assert.IsTrue( builder.PaintCells( lane, river: true ).Completed );
+			Assert.AreEqual( 1, PoolRiverMap.Of( cells ).Rings.Count );
+			Assert.AreEqual( 10, PoolRiverMap.Of( cells ).Rings[0].Cells.Count );
+			PoolWaveSettings.SetAt( cells, (9, 8), new PoolWaveSettings( true, 2, 0 ) );
+		}, changingRoom: true, prepareGuests: guests =>
+		{
+			foreach ( var activity in PoolActivityRegistry.Create( sites ) )
+				guests.RegisterPoolActivity( activity );
+		} );
+		var started = new Dictionary<string, int>();
+		var doing = new Dictionary<int, string?>();
+		for ( var chunk = 0; chunk < PinnedRunTicks / 30; chunk++ )
+		{
+			park.Run( 30 );
+			// a start is a guest seen in an activity it was not in at the last look (the shortest activity is longer than a chunk)
+			foreach ( var guest in park.Guests.Guests )
+			{
+				var id = guest.State == GuestState.PoolActivity ? guest.PoolActivityId : null;
+				if ( id != null && doing.GetValueOrDefault( guest.Id ) != id )
+					started[id] = started.GetValueOrDefault( id ) + 1;
+				doing[guest.Id] = id;
+			}
+		}
+		return (park.Hash, started, park.Room!.ReleasedTotal);
+	}
+
+	/// <summary>[EXT:pools-attractions] The pinned hash of <see cref="RunFixedParkWithWaterAttractions"/> (docs/DETERMINISM.md, "Pools").</summary>
+	internal const ulong PoolsAttractionsFixedRunHash = 0xC7370809D0D43A0BUL;
+
+	[TestMethod]
+	public void FixedRunWithWaterAttractionsIsTheSameInEveryProcessAndSwimmersUseThem()
+	{
+		var (hash, started, swims) = RunFixedParkWithWaterAttractions();
+		Assert.IsTrue( swims >= 5, $"the room was used {swims} times" );
+		Assert.AreEqual( hash, RunFixedParkWithWaterAttractions().Hash, "repeatable in the process" );
+		var summary = string.Join( ", ", started.OrderBy( pair => pair.Key ).Select( pair => $"{pair.Key} {pair.Value}" ) );
+		Assert.IsTrue( started.GetValueOrDefault( "attraction.ropeswing" ) >= 1 && started.GetValueOrDefault( "attraction.jets" ) >= 1 && started.GetValueOrDefault( "attraction.spa" ) >= 1 && started.GetValueOrDefault( "attraction.river" ) >= 1,
+			$"every kind of activity was used: {summary} ({swims} swims)" );
+		Assert.AreEqual( PoolsAttractionsFixedRunHash, hash, $"0x{hash:X16} ({swims} swims; {summary})" );
 	}
 
 	/// <summary>[EXT:pools-save] The pinned hash of <see cref="RunFixedParkWithPools"/> (docs/DETERMINISM.md, "Pools").</summary>

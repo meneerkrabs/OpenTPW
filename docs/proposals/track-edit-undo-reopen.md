@@ -1,6 +1,10 @@
 # Draft proposal: TRACK-018 existing-track undo and valid-circuit reopen
 
-## Status and boundary
+## Implementation update (October 18, 2026)
+
+This draft now implements existing-track Backspace and guarded Line/Edit reopening. Independent source review passed; documentation explicitly preserves the separate existing add-on wrapper reopening. Local C# execution is unavailable because dotnet is absent; exact-head CI and gameplay evidence remain pending. TRACK-018 stays open for residual replay/bounds qualifications and BLUEPRINT-003 cut markers. The historical proposal below retains its still-open acceptance scope.
+
+## Historical status and boundary
 
 Plan only, October 18, 2026. No gameplay implementation or runtime tests are delivered by this draft. Do not merge as an implemented feature; keep this PR draft until the implementation/evidence gates below are met and independently reviewed. No approximation ID is retired and no platform/original-fidelity qualification is claimed.
 

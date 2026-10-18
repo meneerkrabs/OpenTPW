@@ -81,18 +81,11 @@ if (!originals.MODES.includes(keepMode))
 let store = null;
 let keepNote = '';
 // One tab at a time keeps files: tabs share the store, and two of them could otherwise mix two installations. The lock is held
-// for the page's life; a second tab plays without kept files.
-const keepLock = keepSupported && navigator.locks
-	? await new Promise(resolve => navigator.locks.request('opentpw-originals', { ifAvailable: true }, lock => {
-		resolve(lock !== null);
-		return lock ? new Promise(() => {}) : undefined;
-	}).catch(error => {
-		console.warn('The lock for the kept game files is not available', error);
-		resolve(false);
-	}))
-	: false;
+// until the game stops or the page closes (releaseKeeping); a second tab plays without kept files.
+const keepClaim = keepSupported ? await originals.claimKeeping() : { acquired: false, release() {}, unavailable: true };
+const keepLock = keepClaim.acquired;
 if (keepSupported && !keepLock)
-	keepNote = navigator.locks ? 'Another OpenTPW tab is using the game files kept in this browser.' : '';
+	keepNote = keepClaim.unavailable ? '' : 'Another OpenTPW tab is using the game files kept in this browser.';
 if (keepLock) {
 	try {
 		store = await originals.openOriginalStore(await navigator.storage.getDirectory());
@@ -119,6 +112,8 @@ let inputBusy = false;
 // The import in progress: the game never starts (and never resolves its mods) before it has finished, so it cannot read a half-copied install.
 let inputImport = Promise.resolve();
 let keepFailed = false;
+// Set once a stopped game has given the files and the lock back (releaseKeeping): this page no longer keeps or offers them.
+let keepReleased = false;
 // Files are kept in the background, one after another, so copying into the game never waits for the disk; at most this many
 // bytes wait to be written (the 'all' mode reads a whole folder, faster than it can be written).
 const keepPendingLimit = 64 * 1048576;
@@ -168,6 +163,24 @@ async function keepFile(relative, bytes, generation = keepGeneration) {
 		if (keepPending === 0)
 			store?.flush().catch(error => console.warn('The list of kept game files could not be written', error));
 	});
+}
+
+// A game that has stopped (an uncaught error in a frame) leaves its page open on the error. That page must not hold the kept files
+// for as long as it stays open: a restart in a new tab would find them locked, play without them and copy the whole folder again,
+// and keep nothing. So it drops what is still queued, writes the list of what was kept and lets another tab claim the lock.
+async function releaseKeeping() {
+	if (keepReleased || !keepLock)
+		return;
+	keepReleased = true;
+	keepFailed = true;
+	try {
+		await keepChain;
+		await store?.flush();
+	} catch (error) {
+		console.warn('The list of kept game files could not be written', error);
+	}
+	keepClaim.release();
+	updateSetup();
 }
 
 // Waits for the files queued so far, then writes the list of kept files.
@@ -448,7 +461,7 @@ document.getElementById('folder').addEventListener('change', event => {
 // The setup screen's choices for kept files: Play starts from them, the mode applies to the next folder chosen and to what the
 // game reads from now on, and Remove deletes them.
 function startKept() {
-	if (!store?.manifest)
+	if (!store?.manifest || keepReleased)
 		return false;
 	try {
 		const files = plan(Object.entries(store.manifest.files).map(([relative]) => [relative]), document.getElementById('edition').value);
@@ -460,7 +473,7 @@ function startKept() {
 function updateSetup() {
 	const select = document.getElementById('keep');
 	select.value = keepMode;
-	document.getElementById('keepRow').hidden = !store || perf !== null && !!perfQuery.get('data');
+	document.getElementById('keepRow').hidden = !store || keepReleased || perf !== null && !!perfQuery.get('data');
 	document.getElementById('forget').disabled = starting;
 	document.getElementById('edition').disabled = starting;
 	if (keepNote && !starting && !gameRunning)
@@ -468,7 +481,7 @@ function updateSetup() {
 	const ready = keepMode !== 'off' && startKept();
 	document.getElementById('kept').hidden = !ready;
 	document.getElementById('folderText').textContent = ready ? 'Choose another folder' : 'Choose folder';
-	document.getElementById('forget').hidden = !store?.manifest;
+	document.getElementById('forget').hidden = !store?.manifest || keepReleased;
 	if (store?.manifest)
 		document.getElementById('keptSize').textContent = `${(store.bytes.stored / 1048576).toFixed(0)} MB`;
 }
@@ -660,6 +673,7 @@ async function start(theme) {
 				document.getElementById('setup').hidden = false;
 				status.textContent = `The game stopped: ${error.message}`;
 				console.error(error);
+				releaseKeeping();
 				return;
 			}
 			if (running)

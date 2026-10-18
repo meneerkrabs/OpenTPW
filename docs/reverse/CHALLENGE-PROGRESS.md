@@ -1,7 +1,7 @@
 # Challenge progress: recovered contract and partial live implementation
 
-ECON-058 remains open for the offer/result lifecycle described below. The all-33 progress path is now
-implemented using numeric bindings and runtime localized strings. No original text or assets are included.
+ECON-058 remains open for the offer lifecycle and integration residuals described below. The all-33 progress
+and terminal paths use numeric bindings and runtime localized strings. No original text or assets are included.
 The evidence is static; neither original execution nor OpenTPW visual validation is claimed here.
 
 ## Numeric bindings and formatting
@@ -16,7 +16,8 @@ All progress records replace themselves, use icon selector 4, actions 0/0 and li
 274 → 306, 275 → 307, 277 → 309 and 279 → 312. Other offers use the no-text replacement sentinel 383,
 so do not replace a row. Every success/failure record replaces its corresponding progress tag and has
 a 30000 lifetime; offers have lifetime 90000.
-These numeric lifetimes do not by themselves establish a host timer timebase.
+A later static caller trace establishes unscaled UI milliseconds and restart-on-resume semantics; the bounded
+terminal implementation and its host mapping are documented in [Challenge terminals](CHALLENGE-TERMINALS.md).
 
 Formatting uses existing `StringTemplate.Parts`, keyed by argument ID. Target value is 1, target duration 2,
 prize 3, stored raw value 4, signed whole days left 5, object name or staff plural 6, and second object name 7.
@@ -70,12 +71,13 @@ progress row without evicting an old message. Generic message behavior is unchan
 
 ## Deliberate residuals and validation
 
-This is a partial live-progress slice, not complete original challenge-message parity:
+These are bounded progress/terminal slices, not complete original challenge-message parity:
 
 - Existing offer wording, Accept/Decline buttons and unanswered-offer repost extension are retained.
 - Exact incoming offer/result replacement effects run once per actual transition; repost does not repeat them.
-- Success/failure currently remove their exact replacement progress rows without inserting original terminal
-  text, playing that new-result sound or scheduling its lifetime.
+- Success/failure now remove their exact replacement progress rows synchronously, format the immutable
+  emitted payload, and insert distinct retained terminal instances with the new-row sound and lifetime.
+  The [terminal lifecycle](CHALLENGE-TERMINALS.md) describes read cancellation, delayed release and explicit residuals.
 - Original offer expiry/removal dispatch to Decline, generic tube ownership/capacity, persistence and art
   remain separately scoped. The original ten-slot tube is distinct from the advisor's eight-slot queue.
 

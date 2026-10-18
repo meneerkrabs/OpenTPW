@@ -179,7 +179,7 @@ public partial class Level
 		simulationClock.RestoreSnapshot( snapshot.Clock );
 		if ( snapshot.Weather != null )
 		{
-			Weather = new ParkWeather( Park.Economy.Settings.Standard, Seed.WeatherStream, Guests.Grid.CountX, Guests.Grid.CountY );
+			Weather = new ParkWeather( Park.Economy.Settings.Standard, Seed.WeatherStream, Guests.Grid.CountX, Guests.Grid.CountY, FeatureGates.WinterWeather );
 			Weather.RestoreSnapshot( snapshot.Weather );
 		}
 		// the particle pool's emitters and effectors (no particles), rebuilt by the renderer module when the host draws

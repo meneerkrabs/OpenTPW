@@ -9,7 +9,7 @@ public sealed partial class ParkHud
 	/// </summary>
 	// [BIN:TPW-EXE:0x004D2C50 challenge offer] the offer posts a message of type 25 (CMsgChallenge, 0x0040F7A0, vtable 0x006FD830 returns 0x19) to the bus, with a type-dependent text tag (0x004D3220), separate spoken advice and the slot's prize, time and objects
 	// [BIN:TPW-EXE:0x0048E0F0 message buttons] the message panel's action 0x1A calls the accept 0x004D2DF0 and action 0x1B the decline 0x004D2EC0; both act only while an offer waits for its answer (+0x3DA) and answer the current slot (+0x3CC)
-	// Offer wording/buttons stay the existing OpenTPW description. Progress uses the recovered TAG_SYSTEM bindings; terminal text/timers remain ECON-058.
+	// Offer wording/buttons stay the existing OpenTPW description. Progress and terminal rows use recovered TAG_SYSTEM bindings; the offer lifecycle remains ECON-058.
 	private void HookChallengeMessages()
 	{
 		if ( level.Park != null )
@@ -18,12 +18,12 @@ public sealed partial class ParkHud
 
 	private StringFile? challengeTemplates;
 	private bool challengeTemplatesUnavailable;
-	private HashSet<int>? unavailableChallengeCaptions;
+	private HashSet<(int Type, ChallengePresentationKind Kind)>? unavailableChallengeCaptions;
 
 	private void OnChallengePresentation( ChallengePresentation message )
 	{
 		// Apply transition identities even when localized text is unavailable. Offer repost never enters this path.
-		if ( message.Kind != ChallengePresentationKind.Progress )
+		if ( message.Kind == ChallengePresentationKind.Offer )
 		{
 			ApplyChallengePresentation( message, null, _ => null, _ => null );
 			return;
@@ -37,13 +37,17 @@ public sealed partial class ParkHud
 				staffTypes ??= GameLanguage.Current.LoadStrings( "STAFF_TYPES.str" ).Entries;
 				return index >= 0 && index < staffTypes.Length ? staffTypes[index] : null;
 			}
-			if ( !ApplyChallengePresentation( message, challengeTemplates, ChallengeObjectName, StaffEntry ) )
-				ReportUnavailableChallengeCaption( message.Type );
+			ApplyChallengePresentation( message, challengeTemplates, ChallengeObjectName, StaffEntry, out var unavailable );
+			if ( unavailable )
+				ReportUnavailableChallengeCaption( message );
 		}
 		catch ( Exception exception ) when ( exception is IOException or InvalidDataException or KeyNotFoundException )
 		{
 			challengeTemplatesUnavailable = true;
-			ReportUnavailableChallengeCaption( message.Type );
+			// Loading can fail before Apply is reached. Missing captions never suppress the exact transition removal.
+			if ( message.Kind is ChallengePresentationKind.Success or ChallengePresentationKind.Failure )
+				ApplyChallengePresentation( message, null, _ => null, _ => null );
+			ReportUnavailableChallengeCaption( message );
 		}
 	}
 
@@ -58,32 +62,46 @@ public sealed partial class ParkHud
 		return ObjectNames.Join( new[] { firstText, secondText } );
 	}
 
-	private void ReportUnavailableChallengeCaption( int type )
+	private void ReportUnavailableChallengeCaption( ChallengePresentation message )
 	{
-		unavailableChallengeCaptions ??= new HashSet<int>();
-		if ( unavailableChallengeCaptions.Add( type ) )
-			Log.Warning( $"Challenge progress type {type} has no complete localized template/arguments; its caption is skipped." );
+		unavailableChallengeCaptions ??= new();
+		if ( unavailableChallengeCaptions.Add( (message.Type, message.Kind) ) )
+			Log.Warning( $"Challenge {message.Kind} type {message.Type} has no complete localized template/arguments; its caption is skipped." );
 	}
 
 	/// <summary>
-	/// Offer/result transitions remove only their traced replacement row. Terminal insertion/text/timers remain a documented partial lifecycle.
-	/// A progress caption is omitted when its localized typed template or required name is unavailable; there is no invented generic fallback.
+	/// Offer/result transitions remove only their traced replacement row; terminal captions use the immutable event payload.
+	/// A challenge caption is omitted when its localized typed template or required name is unavailable; there is no invented generic fallback.
 	/// </summary>
-	internal bool ApplyChallengePresentation( ChallengePresentation message, StringFile? templates, Func<int, string?> objectName, Func<int, string?> staffEntry )
+	internal bool ApplyChallengePresentation( ChallengePresentation message, StringFile? templates, Func<int, string?> objectName, Func<int, string?> staffEntry ) =>
+		ApplyChallengePresentation( message, templates, objectName, staffEntry, out _ );
+
+	private bool ApplyChallengePresentation( ChallengePresentation message, StringFile? templates, Func<int, string?> objectName, Func<int, string?> staffEntry, out bool unavailableCaption )
 	{
+		unavailableCaption = false;
 		if ( !ChallengeMessageRecords.TryGet( message.Type, message.Kind, out var record ) )
-			return false;
-		if ( message.Kind != ChallengePresentationKind.Progress )
 		{
+			unavailableCaption = true;
+			return false;
+		}
+		if ( message.Kind != ChallengePresentationKind.Progress )
 			RemoveChallengeProgress( record.ReplacementTag );
-			if ( message.Kind == ChallengePresentationKind.Offer )
-				PostGameMessage( message.OfferText, ChallengeActions( () => level?.Park?.Economy ) );
+		if ( message.Kind == ChallengePresentationKind.Offer )
+		{
+			PostGameMessage( message.OfferText, ChallengeActions( () => level?.Park?.Economy ) );
 			return true;
 		}
 		if ( !ChallengeMessageText.TryFormat( templates, message, objectName, staffEntry, out var text ) )
-			return false;
+		{
+			unavailableCaption = true;
+			// Keep the existing terminal transition result: its replacement was handled even without a caption.
+			return message.Kind != ChallengePresentationKind.Progress;
+		}
 		// A full tube is a normal insertion refusal, not evidence of a missing localized template.
-		PostChallengeProgress( record.Tag, text );
+		if ( message.Kind == ChallengePresentationKind.Progress )
+			PostChallengeProgress( record.Tag, text );
+		else
+			PostChallengeTerminal( record, text );
 		return true;
 	}
 

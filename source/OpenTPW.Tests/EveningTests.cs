@@ -662,4 +662,64 @@ public class EveningTests
 		Assert.IsNull( level.EveningLampLights );
 		Assert.IsFalse( level.Look.IsDay );
 	}
+
+	// ---- The lamp cache ----------------------------------------------------------------------------------------------
+
+	// an object needs a graphics device to be built, so the cache is tested on uninitialized objects with a counting resolver
+	private static OriginalObject Stub() => (OriginalObject)RuntimeHelpers.GetUninitializedObject( typeof( OriginalObject ) );
+
+	private static readonly IReadOnlyList<ResolvedEveningLamp> OneLamp = new[] { (ResolvedEveningLamp)RuntimeHelpers.GetUninitializedObject( typeof( ResolvedEveningLamp ) ) };
+
+	[TestMethod]
+	public void TheLampCacheFollowsPlacementAndRemovalAndResolvesEachObjectOnlyOncePerRebuild()
+	{
+		var placed = new List<OriginalObject>();
+		var version = 0;
+		var resolves = 0;
+		var bearing = new HashSet<OriginalObject>();
+		var source = new EveningLampSource( new EveningLampTable( Array.Empty<EveningLampRule>() ), () => placed, () => 1f, () => version )
+		{
+			ResolverOverride = item => { resolves++; return bearing.Contains( item ) ? OneLamp : Array.Empty<ResolvedEveningLamp>(); }
+		};
+		source.Refresh();
+		Assert.AreEqual( 0, source.BearerCount );
+
+		var (a, b, c) = (Stub(), Stub(), Stub());
+		bearing.Add( a );
+		bearing.Add( c );
+		placed.AddRange( new[] { a, b, c } );
+		version++;
+		source.Refresh();
+		Assert.AreEqual( 2, source.BearerCount, "a placed object that bears a lamp joins the cache; one without does not" );
+		Assert.AreEqual( 3, resolves );
+
+		for ( var frame = 0; frame < 100; frame++ )
+			source.Refresh();
+		Assert.AreEqual( 3, resolves, "an unchanged set is not walked again" );
+
+		placed.Remove( a );
+		version++;
+		source.Refresh();
+		Assert.AreEqual( 1, source.BearerCount, "a removed object leaves the cache" );
+
+		// a host without a change counter is caught by the list length
+		var plain = new EveningLampSource( new EveningLampTable( Array.Empty<EveningLampRule>() ), () => placed, () => 1f ) { ResolverOverride = item => OneLamp };
+		plain.Refresh();
+		Assert.AreEqual( 2, plain.BearerCount );
+		placed.Add( Stub() );
+		plain.Refresh();
+		Assert.AreEqual( 3, plain.BearerCount );
+	}
+
+	[TestMethod]
+	public void TheLampCacheAllocatesNothingPerFrameWhileTheSetIsUnchanged()
+	{
+		var placed = Enumerable.Range( 0, 500 ).Select( _ => Stub() ).ToList();
+		var source = new EveningLampSource( new EveningLampTable( Array.Empty<EveningLampRule>() ), () => placed, () => 0f, () => 7 ) { ResolverOverride = item => Array.Empty<ResolvedEveningLamp>() };
+		source.Refresh();
+		var before = GC.GetAllocatedBytesForCurrentThread();
+		for ( var frame = 0; frame < 1000; frame++ )
+			source.Refresh();
+		Assert.IsTrue( GC.GetAllocatedBytesForCurrentThread() - before < 4096 );
+	}
 }

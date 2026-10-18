@@ -147,7 +147,7 @@ internal sealed partial class SandboxSmokeTest
 	/// </summary>
 	/// <summary>A mod object this smoke builds: any mod's or extension's object except the pools extension's, which needs a pool (docs/POOLS.md).</summary>
 	// [EXT:pools-extension] the pools objects are on by default and have their own smokes (OPENTPW_SMOKE_POOLS)
-	private static bool IsSmokeModObject( ObjectCatalogEntry entry ) => entry.ModId != null && entry.ModId != OpenTPW.Mods.OfficialExtensions.Pools.Id;
+	private static bool IsSmokeModObject( ObjectCatalogEntry entry ) => entry.ModId != null && entry.ModId != OpenTPW.Mods.OfficialExtensions.Pools.Id && entry.ModId != OpenTPW.Mods.OfficialExtensions.Umbrellas.Id;
 
 	// [EXT:mods] OpenTPW's own mod system; the original game had no mods
 	private void PlaceModObjects( ParkEconomy? economy, int siteX, int siteY )

@@ -27,6 +27,18 @@ public static class FeatureGates
 	/// </summary>
 	public static bool Pools => OpenTpwExtensions.IsEnabled( OfficialExtensions.Pools ) && !GameEditions.IsThemeParkInc;
 
+	/// <summary>
+	/// [EXT:umbrellas-extension] The <c>opentpw.umbrellas</c> extension is on for this run: the brolly shops are listed in the theme catalogs and the guests' umbrella rules apply (docs/UMBRELLAS.md). It is on by default, but not in a
+	/// Theme Park Inc run, which has its own shop, art and rules.
+	/// </summary>
+	public static bool Umbrellas => OpenTpwExtensions.IsEnabled( OfficialExtensions.Umbrellas ) && !GameEditions.IsThemeParkInc;
+
+	/// <summary>
+	/// [EXT:rain-mood-extension] The <c>opentpw.rain-mood</c> extension is on for this run: guests lose or gain happiness, thirst and hunger in rain, storm and snow (docs/UMBRELLAS.md). Off by default, and not in a Theme Park Inc
+	/// run, where OpenTPW does not implement the weather rule (the extension is only offered for Theme Park World parks).
+	/// </summary>
+	public static bool RainMood => OpenTpwExtensions.IsEnabled( OfficialExtensions.RainMood ) && !GameEditions.IsThemeParkInc;
+
 	/// <summary>The <c>opentpw.pools-guest-art</c> extension is on: the land guests use the pools extension's 2x kid and head sets (docs/POOLS.md), when the pools extension is on too.</summary>
 	public static bool PoolGuestArt => OpenTpwExtensions.IsEnabled( OfficialExtensions.PoolGuestArt );
 

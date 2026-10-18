@@ -30,6 +30,10 @@ feet has a negative y), for the standing frame (slot 0), every walking frame (sl
 as the frames, so the numbers are exact by construction; nothing is rendered (``--part none --emit-anchors`` writes only the table, in seconds). Directions 5 to 7 are the mirror of 3 to 1 (the game flips the
 frame), so their hand x is the negated one.
 
+``--emit-winter-anchors`` (winter extension, docs/WINTER.md) writes ``<out>/<edition>/winter-anchors.json`` (schema 2, a separate file: the umbrellas' ``anchors.json`` and its emission above are unchanged
+byte for byte): for **every** land slot and frame of every kid set and each direction 0 to 4 the head-top point and the head centre, both hand end points with the forearm's screen angle, and a
+visibility flag per hand (a ray from the hand towards the camera against the body), plus the head's yaw and pitch per frame. Same camera as the frames, nothing rendered.
+
 Slots: the original table's slots keep their numbers, frame counts and directions (see ``opentpw_guest_anims.py``); the swimmers
 take the free slots 8 (front crawl, 8 frames), 9 (breaststroke, 8) and 10 (treading water, 4), all with 5 directions. Heads
 (``Kidsheads``, ``Parentsheads``, ``Grandparentsheads``) have one slot 0 of 7 elevation rows by 8 azimuths.
@@ -78,12 +82,13 @@ HEAD_MEMBER = {"BD": "Spr_bd", "GB": "Spr_gb"}      # the TPI kid heads of BD an
 
 def parse():
 	a = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
-	o = dict(out="/tmp/swimart/guests", edition="TPW", sets=None, part="land,swim,heads", slots=None, outfit="clothes", quantise=True, dither=None, scale=1, supersample=None, emit_anchors=False)
+	o = dict(out="/tmp/swimart/guests", edition="TPW", sets=None, part="land,swim,heads", slots=None, outfit="clothes", quantise=True, dither=None, scale=1, supersample=None, emit_anchors=False, emit_winter_anchors=False)
 	i = 0
 	while i < len(a):
 		k = a[i]
 		if k == "--no-quantise": o["quantise"] = False; i += 1
 		elif k == "--emit-anchors": o["emit_anchors"] = True; i += 1
+		elif k == "--emit-winter-anchors": o["emit_winter_anchors"] = True; i += 1
 		elif k in ("--out", "--edition", "--sets", "--part", "--slots", "--outfit", "--dither", "--scale", "--supersample"):
 			v = a[i + 1]
 			o[k[2:]] = v.split(",") if k in ("--sets", "--part", "--slots") else (float(v) if k == "--dither" else (int(v) if k in ("--scale", "--supersample") else v))
@@ -322,6 +327,108 @@ def emit_anchors(st, names, edition, scale):
 		"sets": sets}
 
 
+# ---- Winter anchors (schema 2): the head and both hands for every land slot ----------------------------------------------------------
+
+WINTER_FIELDS = ["headTopX", "headTopY", "headX", "headY", "rightHandX", "rightHandY", "rightHandAngle", "leftHandX", "leftHandY", "leftHandAngle", "visible"]
+HEAD_TOP_LOCAL = 0.67      # the skull's top in the head pivot's own units (``opentpw_kid.build_kid``: the skull radii are (0.72, 0.7, 0.67) times the head's scale)
+HAND_RAY_START = 0.35      # the visibility ray starts this far from the hand end point towards the camera, outside the hand's own sphere
+HAND_RAY_LENGTH = 40.0
+OWN_ARM = ("hand{s}", "foreArm{s}", "elbowBall{s}", "upperArm{s}", "shoulderBall{s}")
+
+
+def _screen(st, point):
+	"""A world point as (x right, y down) pixels from the feet hotspot at the stage's scale."""
+	rot = st.cam.matrix_world.to_3x3()
+	right, up = rot @ mathutils.Vector((1, 0, 0)), rot @ mathutils.Vector((0, 1, 0))
+	return st.ppu * point.dot(right), -st.ppu * point.dot(up)
+
+
+def hand_visible(st, kid, side):
+	"""Whether the hand end point of ``side`` (-1 left, +1 right) is seen from the camera: a ray from just in front of the hand towards the camera hits nothing but the hand's own arm."""
+	depsgraph = bpy.context.evaluated_depsgraph_get()
+	towards = (st.cam.matrix_world.to_3x3() @ mathutils.Vector((0, 0, 1))).normalized()
+	origin = kid.ends[f"hand{side}"].matrix_world.translation + towards * HAND_RAY_START
+	own = tuple(pattern.format(s=side) for pattern in OWN_ARM)
+	remaining = HAND_RAY_LENGTH
+	while remaining > 0:
+		hit, location, _, _, obj, _ = st.scene.ray_cast(depsgraph, origin, towards, distance=remaining)
+		if not hit:
+			return True
+		if not obj.name.startswith(own):
+			return False
+		step = (location - origin).length + 0.01
+		origin = location + towards * 0.01
+		remaining -= step
+	return True
+
+
+def winter_record(st, kid, tops):
+	"""The 11 numbers of ``WINTER_FIELDS`` for the current pose and camera."""
+	top = _screen(st, tops["top"].matrix_world.translation)
+	centre = _screen(st, kid.pivots["head"].matrix_world.translation)
+	record = [top[0], top[1], centre[0], centre[1]]
+	flags = 0
+	for bit, side in ((0, 1), (1, -1)):
+		hand = _screen(st, kid.ends[f"hand{side}"].matrix_world.translation)
+		elbow = _screen(st, kid.pivots[f"elbow{side}"].matrix_world.translation)
+		angle = math.degrees(math.atan2(hand[0] - elbow[0], hand[1] - elbow[1]))      # 0 = the forearm points straight down the picture, positive towards the right
+		record += [hand[0], hand[1], angle]
+		if hand_visible(st, kid, side):
+			flags |= 1 << bit
+	return [round(value, 1) for value in record] + [flags]
+
+
+def emit_winter_anchors(st, names, edition, scale):
+	"""Schema 2 of the anchors: every land slot of the kid sets with every frame and direction (see the module docstring)."""
+	sets = {}
+	for name in names:
+		kid = K.build_kid(name, underwater=False, outfit="clothes")
+		head = kid.pivots["head"]
+		top = bpy.data.objects.new("headTop", None)
+		bpy.context.scene.collection.objects.link(top)
+		top.parent = head
+		top.location = (0, 0, HEAD_TOP_LOCAL)
+		kid.objects.append(top)
+		tops = {"top": top}
+		slots = {}
+		for slot, slot_name, n in LAYOUT[name][2]:
+			fn = A.SLOT_POSES[slot_name]
+			points = [[] for _ in range(DIRECTIONS)]
+			yaw, pitch = [], []
+			for f in range(n):
+				pose = fn(kid, f, n)
+				K.apply_pose(kid, pose)
+				yaw.append(round(pose.get("head_yaw", 0.0), 1))
+				pitch.append(round(pose.get("head_pitch", 0.0), 1))
+				for d in range(DIRECTIONS):
+					K.aim_camera(st, d)
+					points[d].append(winter_record(st, kid, tops))
+			slots[slot_name] = {"slot": slot, "frames": n, "headYaw": yaw, "headPitch": pitch, "points": points}
+		sets[name] = {"slots": slots}
+		K.clear_kid(kid)
+	return {"schema": 2, "generator": "tools/blender/opentpw_guest_sprites.py --emit-winter-anchors", "edition": edition, "pixelsPerUnit": 128 * scale, "scale": scale, "elevation": st.elevation,
+		"directions": DIRECTIONS, "fields": WINTER_FIELDS,
+		"units": "pixels at pixelsPerUnit from the feet hotspot, x right and y down; rightHandAngle and leftHandAngle in degrees, the forearm (elbow to hand) rotated from straight down the picture, positive towards the right; "
+			"visible bit 0 = the kid's right hand is seen, bit 1 = the left hand; headYaw and headPitch in degrees per frame; directions 5 to 7 mirror 3 to 1 with every x negated and every angle negated",
+		"headTop": "the top of the skull, where a hat's hotspot goes; headX and headY is the head centre, where the earmuffs' hotspot goes; the hands' points are the rig's hand end points, where a mitten's hotspot goes",
+		"skullRadii": [round(0.72 * 0.84, 3), round(0.70 * 0.84, 3), round(0.67 * 0.84, 3)],
+		"sets": sets}
+
+
+def dump_compact(value, level=0):
+	"""JSON with the structure indented and every list of plain numbers on one line (the winter anchors have tens of thousands of numbers)."""
+	pad = " " * (level + 1)
+	if isinstance(value, dict):
+		inner = (",\n").join(f"{pad}{json.dumps(key)}: {dump_compact(item, level + 1)}" for key, item in value.items())
+		return "{\n" + inner + "\n" + " " * level + "}"
+	if isinstance(value, list):
+		if all(isinstance(item, (int, float)) and not isinstance(item, bool) for item in value):
+			return json.dumps(value, separators=(",", ":"))
+		inner = (",\n").join(pad + dump_compact(item, level + 1) for item in value)
+		return "[\n" + inner + "\n" + " " * level + "]"
+	return json.dumps(value)
+
+
 def write_set(base, name, edition, folder, member, frames, slot_meta, quantise, dither, scale=1, folder_label=None):
 	"""Quantises (one palette for the set), trims and writes the frames and set.json."""
 	os.makedirs(base, exist_ok=True)
@@ -371,6 +478,14 @@ def main():
 			json.dump(anchors, handle, indent=1)
 			handle.write("\n")
 		print("anchors", len(anchors["sets"]), "sets", flush=True)
+	if o["emit_winter_anchors"]:
+		canvas, origin = LAND_CANVAS[edition]
+		st = K.setup_scene(canvas, origin, edition, scale=S)
+		winter = emit_winter_anchors(st, [name for name in sets if K.PRESETS[name]["edition"] == edition and LAYOUT[name][0] == "Kids"], edition, S)
+		os.makedirs(os.path.join(o["out"], edition.lower()), exist_ok=True)
+		with open(os.path.join(o["out"], edition.lower(), "winter-anchors.json"), "w") as handle:
+			handle.write(dump_compact(winter) + "\n")
+		print("winter anchors", len(winter["sets"]), "sets", flush=True)
 	for name in sets:
 		folder, heads_folder, table = LAYOUT[name]
 		if "land" in o["part"] or "swim" in o["part"]:

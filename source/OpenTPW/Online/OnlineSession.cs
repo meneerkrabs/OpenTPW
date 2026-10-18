@@ -168,6 +168,14 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 	private bool quietBuddyAnswers;
 	/// <summary>An ask for the buddy list is out: its first answer replaces <see cref="Buddies"/>, which stands as it was until then.</summary>
 	private bool buddyAnswerPending;
+	/// <summary>When the last ask for the buddy list went out on this connection, typed or the overlay's (<see cref="Environment.TickCount64"/>).</summary>
+	private long? buddyAskedAt;
+	/// <summary>
+	/// The overlay asks for the buddy list at most once in this many milliseconds, a typed <c>/buddy</c> included: each ask spends the connection's shared
+	/// request allowance, and an ask of the overlay right after a typed one would keep the typed one's answer off the chat lines. An ask that got no
+	/// answer in that time is taken as dropped.
+	/// </summary>
+	internal int BuddyAskIntervalMilliseconds { get; set; } = 5000;
 	/// <summary>The players this chat connection ignores, from the server's answers (it keeps the list per connection).</summary>
 	public IReadOnlyCollection<string> Ignored => ignored;
 	private readonly HashSet<string> ignored = new( StringComparer.OrdinalIgnoreCase );
@@ -409,6 +417,7 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 		buddies.Clear();
 		quietBuddyAnswers = false;
 		buddyAnswerPending = false;
+		buddyAskedAt = null;
 		ignored.Clear();
 		Earmuffs = false;
 		votedRooms.Clear();
@@ -645,6 +654,8 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 		// the server keeps the ignore list and the earmuffs per connection: a new one starts without them
 		ignored.Clear();
 		Earmuffs = false;
+		// an ask on the old connection gets no answer on this one
+		buddyAskedAt = null;
 		_ = Task.Run( () => ReceiveLoopAsync( chat, cancel.Token ) );
 		if ( joinPending && requestedRoom is { } room )
 		{
@@ -911,6 +922,7 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 			// a typed /buddy lists the buddies in the chat lines, and its answer replaces the list as an ask's does
 			buddyAnswerPending = true;
 			quietBuddyAnswers = false;
+			buddyAskedAt = Environment.TickCount64;
 		}
 		SendOnChat( chat, ChatRequest.ForCommand( command, argument ) );
 	}
@@ -1040,16 +1052,22 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 
 	/// <summary>
 	/// Asks for the buddy list afresh, for the overlay: the answers (each buddy online or offline) rebuild <see cref="Buddies"/>, so a buddy removed elsewhere
-	/// drops out, and stay off the chat lines. The old list stands until the first answer, so a dropped ask leaves no buddy looking like a stranger.
+	/// drops out, and stay off the chat lines. The old list stands until the first answer, so a dropped ask leaves no buddy looking like a stranger. Nothing
+	/// is asked within <see cref="BuddyAskIntervalMilliseconds"/> of the last ask (<see cref="BuddyAskDue"/>).
 	/// </summary>
+	// [EXT:online-chat-person-flags] the overlay keeps its buddy list from asks of its own, one in five seconds at most; the original kept the flags from the server's buddy messages (0x4EE5C0)
 	public void AskBuddies()
 	{
-		if ( Chat == null )
+		if ( Chat == null || !BuddyAskDue( buddyAskedAt, Environment.TickCount64, BuddyAskIntervalMilliseconds ) )
 			return;
 		buddyAnswerPending = true;
 		quietBuddyAnswers = true;
+		buddyAskedAt = Environment.TickCount64;
 		SendCommand( ChatCommand.Buddy, "" );
 	}
+
+	/// <summary>Whether a new ask for the buddy list may go out at <paramref name="now"/>: none was sent yet, or the last at least <paramref name="interval"/> milliseconds ago.</summary>
+	internal static bool BuddyAskDue( long? askedAt, long now, int interval ) => askedAt is not { } asked || now - asked >= interval;
 
 	/// <summary>Sends one chat command (the chat overlay's buttons and popups), whatever the language's command words.</summary>
 	public void SendCommand( ChatCommand command, string argument )

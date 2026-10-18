@@ -1,0 +1,150 @@
+# Engine performance
+
+October 18, 2026. Where the desktop engine spends CPU time in a busy park, how to measure it, what was changed and
+what is left. The browser build runs the same code on Mono AOT; its own measurements are in
+[BROWSER-PERFORMANCE.md](BROWSER-PERFORMANCE.md).
+
+The numbers below come from one Apple-silicon Mac (macOS, arm64, .NET 11 RC2, Release build) that was shared with other
+`dotnet test` runs the whole time. Compare builds only with runs taken alternately on the same machine; a difference
+smaller than the spread of the medians is not a result. Game data: a PC installation of Theme Park World.
+
+## Measuring
+
+| What | Command |
+| --- | --- |
+| Simulation, level park with the real objects and scripts | `dotnet source/OpenTPW/bin/Release/net11.0/osx-arm64/OpenTPW.dll --guest-report --guest-levels jungle --guest-level-seeds 1 --guest-seeds 1 --guest-arrivals 20 --guest-no-perf --guest-warmup-days 5 --guest-days 300` (add `--guest-extension smarter-guests` for the extension; `--guest-arrivals 3` for a crowded park) |
+| Simulation, synthetic scenario (µs per tick, best of five) | `--guest-report --guest-levels none --guest-seeds 1 --guest-scale extended` |
+| Frame, native, a busy park | `bash scripts/run.sh --load-original-level jungle --offscreen --silent --mute --no-advisor --frame-stats --perf-run 3000 --perf-arrivals 3` |
+| CPU profile of either | `dotnet-trace collect --profile dotnet-sampled-thread-time --format speedscope -- dotnet OpenTPW.dll …` |
+
+`--perf-run N` (RUNNING.md) hides the developer panels as a park started from the front end does, opens the park door,
+runs the simulation at four times the normal speed (`--perf-speed 1|2|4`) with the guests arriving every
+`--perf-arrivals` turns, and closes the window after N frames. Without `--no-vsync` an offscreen run is paced at 60 Hz,
+which is what a player's frame budget looks like; with it the frames are CPU-bound, which suits profiling. `--frame-stats`
+now also prints where a frame goes: the update (and inside it the simulation), the world drawing, the interface overlay,
+submit and present, the wait for the GPU, and the whole `Renderer.Update` call.
+
+The sampling profiler (`dotnet-sampled-thread-time`, 100 Hz) stops threads at GC poll points, so a loop with a back edge
+collects more samples than its cost and inlined callees fall into their caller. The simulation figures below therefore
+come from stopwatches around the tick's phases; the profile was used to find the candidates.
+
+## Where the time goes
+
+Simulation, Jungle level park of the guest report (14 placed objects, 2 staff, about 42 guests in the park, 104,577
+ticks = 305 park days, original guests), before any change:
+
+| Phase of a tick | Time | Share | Allocated |
+| --- | ---: | ---: | ---: |
+| Objects: scripts, host step, animation (`OriginalObjectRuntime.Simulate`) | 1,834 ms | 67 % | 723 MB |
+| of which `ObjectAnimator.Advance` (poses, vertex animation) | about 1,600 ms | 59 % | |
+| Guests: `BeginSweepTick` and the tick between turns | 451 ms | 17 % | 72 MB |
+| Park turn: economy and the guests' thing sweep (7,028 turns) | 435 ms | 16 % | 149 MB |
+
+That is 26 µs per tick, 8.9 ms per park day (343 ticks), or 0.16 % of one core at the normal speed of 60 ticks per second.
+Even the crowded park (`--guest-arrivals 3`, 560 guests in the park on average) costs 41 µs per tick, 0.25 % of a core.
+The simulation is not what limits the game on the desktop; a frame is (below). It matters more in the browser, where
+the same work runs several times slower on the one thread that also draws.
+
+Inclusive hotspots of the sampled tick loop (a profile taken before the vertex-pose and key-search changes below; inclusive, so they overlap, and biased as described above):
+
+| # | Method | Share of the tick loop |
+| ---: | --- | ---: |
+| 1 | `ParkEconomy.AdvanceTurn` (turn sweep) | 30 % |
+| 2 | `GuestSimulation.UpdateGuest` (all states) | 28 % |
+| 3 | `ObjectAnimator.Update` (node poses and meshes) | 18 % |
+| 4 | `OriginalObjectRuntime.Simulate` | 15 % |
+| 5 | `ObjectAnimator.UpdateMesh` | 11 % |
+| 6 | `ModelVertexAnimation.ApplyAnimatedGroups` | 9 % |
+| 7 | `ParkEconomyRuntime.FixedTick` | 9 % |
+| 8 | `GuestSimulation.SweepGuest` | 7 % |
+| 9 | `ModelVertexAnimation.ApplyPose` | 7 % |
+| 10 | `GuestSimulation.UpdateGoingToRide` | 6 % |
+
+Frame, the same park in a native run (paced at 60 Hz, four ticks per frame, about 25 guests): the main thread spends about
+1.05 ms of the 16.7 ms frame, of which the world drawing is 0.7 ms, the update 0.17 ms (0.13 ms of it the simulation) and
+the interface overlay 0.04 ms. Submit, present and the GPU wait are under 0.02 ms. The process uses 1.6 to 2 ms of CPU per
+frame in total (Metal and audio threads included).
+
+Frame hotspots (a CPU-bound `--no-vsync` run before any change, with the developer panel still visible; share of the main
+thread's CPU under `Renderer.Update` without the wait for the GPU fence; inclusive, so they overlap):
+
+| # | Where | Share |
+| ---: | --- | ---: |
+| 1 | `Level.Render` → `ModelEntity.OnRender` (33 drawn parts per frame) | 44 % |
+| 2 | Veldrid Metal `CommandList.UpdateBuffer` for the per-draw uniforms (a staging buffer and a blit encoder per call) | 16 % |
+| 3 | Veldrid Metal `BeginCurrentRenderPass` (the render pass restarts after every blit) | 16 % |
+| 4 | `GameFlow.Update` → `Level.Update` | 16 % |
+| 5 | `Material.Set` (the same uniform uploads seen from OpenTPW) | 10 % |
+| 6 | `Sky.Draw` (21,600 vertices rebuilt and uploaded per frame) | 14 % |
+| 7 | `Renderer.Compose` (HUD, text, overlay) | 8 % |
+| 8 | `ParkLayout.Draw` (ImGui developer panel; hidden in a front-end park) | 7 % |
+| 9 | `Level.AdvanceSimulation` | 6 % |
+| 10 | `Marshal.SizeOf<Vertex>()` in the renderers (reflection on every call) | 4 % |
+
+## What changed
+
+Every change keeps the order of operations and the floating-point expressions it touches, so results are bit for bit the
+same; `DeterminismTests`, the `*FixedRunHash` pins, `ParkResume*`, the animator, vertex-animation and snapshot tests and
+the guest report's JSON (including every seed's state hash, original and smarter-guests, two park densities) are
+unchanged.
+
+| Change | Why it is behaviour-neutral | Effect |
+| --- | --- | --- |
+| `ObjectAnimator` keeps its channels in two arrays rebuilt when the sorted dictionary changes, instead of enumerating the dictionary for every node and copying it every tick (`channels.ToArray()`) | the arrays hold the same channels in the same ascending order; `Advance` iterates a snapshot as before | the object phase allocates 0.8 KB per tick instead of 6.9 KB |
+| `ObjectAnimator.Advance` skips the whole-pose update when no channel advanced and the last such update changed nothing (`settled`) | the update is a function of the channels' ticks and the node-state bits; when nothing changed it computes the previous result again. A pose that changes something on every update (two ended channels leaving opposite node-state bits on one mesh toggle it each time) is never marked settled, so its version counters count as before | 45 % of the object ticks of the Jungle park do no pose work |
+| `OriginalObject.UpdateTransforms` returns when the animator's new `PoseVersion` has not changed | a part's transform is a function of the pose and the object's (read-only) placement | no matrix work for still objects |
+| `ModelVertexGroup` hands the sampler its arrays and the largest index it lists; `ApplyAnimatedGroups` and `ApplyStaticGroup` loop over them | same keys, same fused multiply-adds in the same order; the index check is made once per group (a failing group still throws from the original loop with the original message) | no LINQ, interface enumeration or per-call validation in the per-tick vertex pose |
+| `ModelAnimationTrack.FindKey` takes the key times through a struct accessor instead of a delegate over a captured list | the same linear scan | no closure allocation per sampled track and tick |
+| `Model.Bounds` is measured when read (the next draw), not on every `UpdateVertices` | the bounds of the vertices that are drawn, which is what the frustum test used | no scan of the mesh per animated mesh and tick |
+| `Sky` stages its vertices once per layer count and rewrites only the clouds' texture coordinates, computed once per grid vertex | the uploaded buffer is byte-identical (checked every frame for 4 layers in a native run before the check was removed) | about 30 % less `Sky.Draw` CPU |
+| `Vertex.SizeInBytes`, and the same for the UI and text vertices, replace `Marshal.SizeOf` in the per-frame renderers | the same number, read once | no reflection per draw |
+| `UiBatch.AddText` indexes the layout's glyph list instead of enumerating it through its interface | same glyphs, same order | no enumerator per text |
+| `--frame-stats` phase timers, `--perf-run` | measurement only; the timers read the clock only while frame statistics are on | |
+
+Results, medians of three alternating runs of the pre-change and the changed build:
+
+| Measure | Before | After | Change |
+| --- | ---: | ---: | ---: |
+| Jungle park, original guests: object phase of the ticks | 1,834 ms | 1,092 ms | −40 % |
+| Same, allocated by the object phase | 723 MB | 86 MB | −88 % |
+| Same, guest phase / park turns (not touched) | 451 / 435 ms | 481 / 446 ms | noise |
+| Same, per tick / per park day | 26 µs / 8.9 ms | 19 µs / 6.6 ms | −26 % |
+| Same, whole `--guest-report` process, 600 days (median of 5, includes about 1 s of start) | 6.6 to 7.4 s | 5.4 to 6.3 s | −15 to −18 % |
+| Same with `--guest-extension smarter-guests` (whole process) | 7.3 s | 6.7 s | |
+| Smarter guests against original guests, whole process, after the change | | 6.7 s against 6.3 s | +6 % (about +8 % of the simulation) |
+| Frame, update (simulation inside) | 0.18 (0.14) ms | 0.16 (0.11) ms | within noise |
+| Frame, main thread, whole `Renderer.Update` | 1.08 ms | 1.05 ms | within noise |
+| Frame, allocation | 96 KB, 5.9 MB/s | 43 KB, 2.7 MB/s | −55 % |
+
+The frame's CPU time did not move measurably: the remaining cost is in the world drawing (below), which this pass did not
+touch. What it removed is garbage, which matters most in the browser, where a collection pauses the only thread. The
+smarter-guests ratio of the synthetic scenario (`--guest-report … --guest-extension smarter-guests`, best of five)
+cannot be separated from noise on this machine (1.1 to 1.4 µs per tick both ways, the pinned 1.08 in SMARTER-GUESTS.md
+stands); on the Jungle park it is the +6 % above. The guest code itself (`GuestSimulation`) was not changed.
+
+## What is left
+
+1. **Per-draw uniform uploads (about 30 to 40 % of the frame's CPU).** `Material.Set` writes the object uniforms through
+   `CommandList.UpdateBuffer` between two draws. On Metal, Veldrid answers each call with a staging buffer, a blit
+   encoder and a new render pass (`UpdateBufferCore`, `EnsureBlitEncoder`, `BeginCurrentRenderPass`, `newBuffer` in the
+   profile), so 33 parts cost about 16 µs each. `UiRenderer` already avoids this by writing mapped buffers per frame slot.
+   Approach: write all uniforms of a pass into one mapped ring per frame slot and bind them with dynamic offsets
+   (`ResourceLayoutElementOptions.DynamicBinding`), or at least upload every uniform before the pass's first draw. It
+   changes how every material binds, so it needs pixel comparisons that this pass (no captures) did not make.
+2. **The sky (about 0.1 ms per frame after this pass).** It still uploads 21,600 unindexed vertices (227 KB) every frame
+   although only the texture offsets move. Approach: an indexed 16 × 16 grid per layer in a static buffer and the scroll
+   in the uniform buffer (a shader change).
+3. **Vertex-animated meshes.** `ModelVertexAnimation.ApplyAnimatedGroups` dequantises both keys of every vertex on every
+   tick. The words are fixed, so a per-group cache of the dequantised keys would halve the arithmetic (at three times the
+   memory of the packed words; build it lazily per played group).
+4. **The pose update of an animating object** recomputes every node's scale, rotation and translation matrices on every
+   tick. A node whose channels give the same tick as the last update (several of the Jungle park's clips are slower than
+   the 60 Hz tick) could keep its matrix, and unanimated nodes only need their parent's change to propagate.
+5. **RideVM variable access by name** (`GetVariableIndex(string)` is 1 to 2 % of the tick): resolve the standard variables
+   to indexes once per script.
+6. **Per-turn allocations of the thing sweep** (`Level.RunThingSweep` builds dictionaries and sets, 21 KB per turn in the
+   gate park): small at 7.5 turns per second, worth reusing in the browser.
+7. **`Level.Update` per frame** copies `Entity.All` twice (`ToArray` in `Update` and `Render`); a reused snapshot buffer
+   would remove the last of the per-frame garbage that is not Veldrid's.
+8. **The browser.** None of the above was measured there. `tools/web-perf` (BROWSER-PERFORMANCE.md) runs the same
+   simulation as its `digest` scenario; the object phase is the part most likely to show.

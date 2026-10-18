@@ -488,6 +488,16 @@ glyph in all 14 UI fonts of each language.
   Excitement, Reliability, State of repair and Remaining life, Scrap value), the round buttons open/close (`b_door`),
   delete (`b_erase`), call mechanic (`b_callmech`), upgrades (`b_upgrade`), Ride it! (`b_ride it!`, rides that can be ridden), the
   arrows (`b_arup`, `b_ardown`) that step through the objects of the type, the list button (`b_allthings`, All Attractions) and the tick that closes the window.
+  **The status banner** (the `chev` control: `0x3e25` rides (300,275)-(828,462), `0xc06d` shops, `0xa0a3` sideshows; `RideWindowStatus`, `ParkHud.ApplyObjectStatus`) lies over
+  the preview and shows the object's status of `0x485f60` with mode 2, the first that applies: CONDEMNED; TRACK INCOMPLETE (a track ride whose track is not valid, or a coaster without
+  a complete circuit); TRACK INVALID (a coaster that crosses itself); an upgrade or a called service by its mechanic or, for a toilet's call, its handyman (none hired, on strike, on
+  the way, at work, waiting; at work is a world mechanic in state 13 or a handyman in state 11 on the object, `0x5065d0`); BROKEN DOWN (REPAIRS IN PROGRESS while the mechanic works);
+  QUEUE NOT CONNECTED (open or closed); CLOSED; nothing for an open object. The text is the UITEXT entry (364-389), centred and wrapped in font slot 8 in the status's colour of
+  table `0x74fb50` (CLOSED grey, broken down and condemned red, the service statuses blue, the queue,
+  exit and track statuses orange); the colour goes to the text only (`0x65c5d5`), the chev art keeps its own frame. The ride window's refresh (`0x4ad4e0`) hides the door, queue,
+  track, call, move, Ride it! and upgrade buttons of a condemned ride, greys the door for the two track statuses whatever its open word and while the ride is closed and the
+  reopening guard refuses (`0x4df290`); the shop and sideshow windows show the banner without door logic. EXIT NOT CONNECTED is never shown (`APPROX:ECON-049`: OpenTPW's
+  entrance and exit cells keep no link byte for the exit test `0x4de5a0`).
   The gauge rows are the original's: UI-028 retired. The window refresh `0x4ade40` sets each gauge to `(byte << 10) / 100` of 1024 with the window's own slider
   values, so a drag moves them before the window applies it: excitement is `0x4e0560` (a ride's data level, or its track controller's base, times the speed and
   duration ratios clamped to 0.75..1.25 and truncated in extended precision; a sideshow's `20 + win × sqrt(prize margin) × 0.08`; a coaster's `50 + ½ excitement`),
@@ -668,7 +678,8 @@ the real assets. Approximation tags refer to the register below.
 | Control | Action | Status | Test |
 | --- | --- | --- | --- |
 | name and stat rows | live catalogue values; unknown statistics say "not simulated" | wired | `FrontEndSmokeTest` |
-| `b_door` open/close (12) | closes/opens the attraction through the reopening guard; disabled for non-attractions and read-only visits | wired | `FrontEndSmokeTest` |
+| status banner (`chev`) | the object's status (`0x485f60`): condemned, track, service, breakdown, queue and closed statuses in the original's colours; none for an open object | wired | `ObjectWindowStatusTests`, `RideStateRulesTests` |
+| `b_door` open/close (12) | closes/opens the attraction through the reopening guard; disabled for non-attractions and read-only visits; a ride's greys for the track statuses and while the guard refuses its reopening, and a condemned ride's is hidden | wired | `FrontEndSmokeTest`, `ObjectWindowStatusTests` |
 | `b_erase` delete (15) | sells and removes the object (confirmation when enabled); fixed items and read-only visits cannot | wired | `FrontEndSmokeTest` |
 | `b_move` (14 / 32 / 44) | the Move tool ("The Move tool"): demolishes the object as `b_erase` does, without the confirmation, and arms the same type at its angle; a kart or water ride needs one arm on each tile beside its station; fixed items and read-only visits cannot | wired | `MoveToolTests`, `SandboxSmokeTest` |
 | `b_okay` tick (1) | closes the window | wired | `FrontEndSmokeTest` |

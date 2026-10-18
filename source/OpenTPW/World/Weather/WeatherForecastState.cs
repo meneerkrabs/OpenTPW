@@ -25,7 +25,7 @@ public readonly record struct WeatherForecastSample(
 /// The forecast's presentation state (docs/AUDIO.md "Weather visuals"): the countdown line a pending forecast
 /// shows, the transient lines when the weather changes, and the messages posted at those moments. This is the
 /// testable, GPU-free half — <see cref="WeatherForecastPresenter"/> draws it. The original shows no forecast or
-/// change at all (<see cref="ParkWeather"/>, [EXT:forecast-presentation]), so the wording, cadence and surface are
+/// change at all (<see cref="ParkWeather"/>, the forecast-presentation extension), so the wording, cadence and surface are
 /// OpenTPW's own, worded in the selected language (<see cref="SupplementaryStrings"/>).
 /// </summary>
 // [EXT:forecast-wording] the forecast's kind text classifies the pending quality by the converter's bands only — the apply-time snow/rain coin flip has not happened, so both bands read "snow or rain", and the lightning band composes "thunderstorms"; the wording is OpenTPW's (no weather text exists in the shipped string tables)

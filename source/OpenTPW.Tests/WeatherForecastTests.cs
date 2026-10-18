@@ -8,7 +8,7 @@ namespace OpenTPW.Tests;
 /// The forecast's presentation (docs/AUDIO.md "Weather visuals"): the countdown line a pending forecast shows,
 /// the messages posted when a forecast appears and applies, the transient changed/current lines, and the
 /// ParkWeather seams the presentation reads (apply day, current day, band classification, the debug seam).
-/// All of it is an OpenTPW extension ([EXT:forecast-presentation]): the original shows no forecast, and no original
+/// All of it is an OpenTPW extension (forecast-presentation): the original shows no forecast, and no original
 /// forecast text exists to compare against.
 /// </summary>
 [TestClass]

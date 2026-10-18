@@ -150,7 +150,7 @@ public sealed class ParticleRenderer : Entity
 		if ( vertexCount == 0 )
 			return;
 
-		var stride = (uint)Marshal.SizeOf<Vertex>();
+		var stride = Vertex.SizeInBytes;
 		vertexBuffer ??= Device.ResourceFactory.CreateBuffer( new BufferDescription( (uint)vertices.Length * stride, BufferUsage.VertexBuffer | BufferUsage.Dynamic ) );
 		var commandList = global::Global.Render.CommandList;
 		commandList.UpdateBuffer( vertexBuffer, 0, ref vertices[0], (uint)vertexCount * stride );

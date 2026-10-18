@@ -1,49 +1,45 @@
-# AUDIO-040: SoundQuality-controlled FADEOBJ decay
+# AUDIO-040: SoundQuality-controlled FADEOBJ lifecycle
 
 ## Status
 
-Evidence/design correction only. OpenTPW still stops held sounds for both KILLOBJ and FADEOBJ. AUDIO-040 remains open; no fade cadence or sentence-lifetime parity is claimed.
+The bounded runtime lifecycle is implemented. AUDIO-040 remains open for the managed group quantization and host scheduling policies below. This supersedes the earlier evidence-only proposal and its immediate-stop fallback; it does not claim complete sound-library parity.
 
-The earlier fixed-60%-forever description is contradicted by the sample-parameter handler. Do not implement or test that description.
+## Static evidence and configuration
 
-## Established behavior
+- `0x5523D0 -> 0x51C300 -> 0x6B8930` posts ratio 60 when quality is strictly greater than the configured threshold; otherwise FADEOBJ uses KILLOBJ's immediate stop. Both release every matching script/slot record immediately.
+- The sound configuration descriptors at `0x746C3C` and `0x746C78` bind DEFAULTQUALITY to `0x78591C` and FADETOGGLE to `0x785920`. The supplied sound.sam values are 50 and 30. The loader at `0x45B277` precedes option initialization; `0x4236E0` copies the configured default. Zero-filled storage is not the initialized default. With those supplied values, qualities 0..30 stop and 31..100 fade. A saved original user's quality is unavailable.
+- Startup `0x54DE02..0x54DE22` uses the default for the normal initialized options branch, or integer-halves it for the alternate branch. OpenTPW's absent/null SoundQuality option uses the loaded configured default directly, without claiming to reconstruct that unmodelled startup branch or a persisted original option. Missing/unreadable SAM values use the explicit host fallback 50/30. Explicit saved values normalize to 0..100, survive Clone/CopyFrom/Cancel, and are independent of legacy volume migration.
+- The existing Audio Quality row now edits this option. It controls only this recovered fade effect, not other original hardware/detail settings.
 
-- KILLOBJ stops the matching sound. FADEOBJ posts a handle and the value 60 (`0x5523D0 -> 0x51C300 -> 0x6B8930`). When library settings bit `0x400` is clear, it uses the same stop path as KILLOBJ. When the bit is set, it calls the voice's fade entry through `0x6B65A0`. Both opcodes release the matching script records.
-- SoundQuality controls that library bit through `0x51B920`: the comparison at `0x51BA6B..0x51BAA9` is quality greater than the threshold at `0x785920`. The threshold's zero-initialized storage supports the quality-zero stop branch, but does not establish the retail persisted options-file default.
-- The options UI offers integer SoundQuality values from 0 through 100: `0x4A3D44..0x4A3D52` sends the quality value to the shared slider builder `0x4A4490`, whose range setup at `0x4A4554..0x4A455A` supplies 0 and 100. The handler calls the quality setter at `0x4A3087..0x4A3094 -> 0x423B40`. The options apply path calls `0x51B920` at `0x42384C..0x423850`; the loader stores the quality field at `0x42452A..0x424536`.
-- The base fade entry `0x6B7130` stores 60 in placeholder byte `+0x44` and sets flag `0x400` at `+0x30`. This is a decay ratio, not an absolute target gain.
-- The base fade update `0x6BCB80` uses `0x6C50D0`, which sets sample-parameter request mask `0x80000` and passes the ratio in `+0x9C`. At `0x6C570B..0x6C5737`, the sample handler reads the current effective integer volume using `0x6BB860`, multiplies it by the ratio, divides by 100 with integer truncation, and stores the result as the sample's own volume. It sends that result to the device and returns it to the updater (`0x6C5742..0x6C5775`). The ordinary absolute-volume setter is the separate `0x6C5130` / request-mask-2 path.
-- With no enabled group factors and no other volume writes, successive base updates starting at 100 produce 60, 36, 21, 12, 7, 4, 2, 1, 0. At zero the updater clears fade flag `0x400` and sets stop flag `0x100` (`0x6BCCCD..0x6BCCDF`, `0x6BCC6E..0x6BCC77`); the manager subsequently dispatches stop (`0x6B62FB..0x6B6320`). A looping base voice therefore does not remain indefinitely at 60%.
-- The base updater also marks stop when no playing sample handle exists, its parameter reply is missing, or placeholder flag `0x4000` is set. Pending decode must not be assumed to start later at an absolute gain of 0.60.
-- Normal parameter re-evaluation suppresses a new volume calculation while fade flag `0x400` is set, but still recomputes pitch (`0x6BBC5E..0x6BBCA4`). An implementation must not reset the current decaying volume during such re-evaluation.
-- Manager byte `+0x50` is initialized to 1 at `0x6B60F0`. The threaded-library initialization path writes it to 0 at `0x6B9F66` and starts a separate updater; `0x6BA080 -> 0x6B6260` invokes each fading voice independently of that byte. Therefore byte zero does not imply that fading is disabled.
-- Clearing the library quality bit marks every currently fading voice for stop (`0x6B85CF -> 0x6B6240`). The library stop-all path also walks the manager's active voices (`0x6B85F0 -> 0x6B6550` with argument 0), including voices whose script records have already been released.
+## Poll and ownership contract
 
-## Remaining evidence gates
+The selected library factory `0x6B5D00` installs table `0x70A2A0`; initialization `0x6B9F40` starts `0x6B9E30`. The import `0x6FD1D4` is Sleep. The worker scans immediately, counts fading placeholders before updating them, then sleeps 100 ms if any were counted and 250 ms otherwise. The scan clearing the last fade therefore still chooses 100 ms. Posting a fade only sets its flag and ratio; it neither resets nor wakes the shared phase.
 
-1. Establish the selected library's complete virtual dispatch and timing before choosing a production fade interval. A separate updater loop at `0x6B9E30` calls `0x6BA080` and passes delay arguments 100 while fades exist and 250 otherwise. The sound initialization calls the corresponding factory at `0x51B6B1 -> 0x6B5D00`, but the required virtual-table and import entries are outside the available complete spans. This is not yet authority to implement a 100 ms schedule.
-2. Resolve fade dispatch for sentence and sequence subtypes, especially virtual entries `+0x2C` and `+0x30` of tables `0x70A390` and `0x70A2E0`, and transitions between child samples. Do not generalize the base updater's zero-handle behavior to every sentence subtype without this mapping.
-3. Establish pending-play/admission ordering and the effect of enabled group gains. `0x6BB860` can incorporate group factors before each decay step; simply multiplying a floating voice gain by 0.6 while applying mixer groups once is not a demonstrated equivalent.
-4. Obtain the retail persisted SoundQuality default if default parity is claimed. Zero is a defensible explicit OpenTPW compatibility fallback; the in-memory zero initializer alone does not prove the retail configuration.
+`HeldSoundService` owns released tails independently of script records. Its injected monotonic clock starts with an empty startup scan. The main audio host serializes group refresh, one due scan, stop processing, then decode readiness/admission. It runs at most one scan per callback and delays the next poll from that actual scan, with no fabricated catch-up steps after a stalled host. Simulation pause and time scale do not set this clock. This serialization and startup phase are a managed compatibility policy, not a measurement of original OS scheduling.
 
-## Bounded implementation contract
+A never-admitted sample has no logical handle: if its first poll precedes readiness it becomes stop-pending and cannot be admitted. If readiness/admission precedes that poll it starts normally and then decays. The fade post itself does not cancel decoding. Stop-pending is handled before admission. Failed/cancelled decode, explicit stop, quality downgrade, mixer stop-all, leave-park, sound disable and shutdown all prevent late admission or completion callbacks from resurrecting the sound. A completed stale segment callback cannot replace the current segment.
 
-- Correct the comments and approximation register now, without changing runtime behavior or retiring AUDIO-040.
-- Settings support may be developed separately: integer range 0..100, explicit compatibility fallback 0, JSON persistence, CopyFrom/Cancel restoration and normalization. Do not present an exposed positive setting as a completed fade feature while its runtime behavior remains unimplemented.
-- Keep the current stop fallback until timing and subtype gates are resolved. Do not replace it with fixed 0.60 gain, indefinite tails, a guessed frame-based schedule, or a guessed 100 ms schedule.
-- Future runtime work must separate record release from audio ownership: remove all matching `(scriptId, slot)` records immediately; keep a released fading voice in the audio service until it finishes or a global cleanup stops it. Later slot moves, parameters and script cleanup must not regain the released record. KILLOBJ remains an immediate stop.
-- The audio service must own cleanup of active and pending sounds. A mixer-only stop-all is insufficient if pending decode or sentence callbacks can start another voice afterward. Quality downgrade, leave-park/stop-all and shutdown must be covered explicitly.
+## Integer volume and groups
 
-## Acceptance cases
+`0x6B7130` sets ratio 60 and fade flag 0x400. `0x6BCB80 -> 0x6C50D0 -> 0x6C570B` computes effective integer sample volume, truncates its product with 60 / 100, stores that as the sample's new own volume, and writes that exact value to the device. At zero, absent sample/reply or suspended placeholder it clears fading and marks stop. Without groups, 100 decays through 60, 36, 21, 12, 7, 4, 2, 1, 0; 68 through 40, 24, 14, 8, 4, 2, 1, 0.
 
-1. Settings: default/absent JSON field uses the declared compatibility fallback; values 0, 1 and 100 survive save/load and Clone/CopyFrom; invalid values normalize to 0..100; old volume-format migration does not scale SoundQuality.
-2. Routing: quality-zero FADEOBJ and KILLOBJ stop all matching records; KILLOBJ still stops at positive quality; unrelated scripts and slots remain untouched; particle behavior is unchanged.
-3. Arithmetic oracle independent of a clock: base voice without enabled group factors follows 100 -> 60 -> 36 -> 21 -> 12 -> 7 -> 4 -> 2 -> 1 -> 0; volume 68 starts 40 -> 24 -> 14. Assert stop-at-zero. A constant-60 or nonterminating floating-point decay implementation must fail this test.
-4. Record ownership: releasing a faded record prevents later slot move/parameter calls from reaching it; repeated fade/kill/cleanup does not recreate or double-stop it; the service still owns the tail for final cleanup.
-5. Re-evaluation: parameter changes may update pitch but must not restore full volume while the base fade flag is active.
-6. Lifecycle, after the subtype gate is resolved: already-playing one-shot, looping sample, pending decode, failed/cancelled decode, sentence between samples and sentence with a pending next sample. Verify natural completion and no resurrection after stop-all, quality downgrade or shutdown.
-7. Cadence and non-unity groups require their own proved expected traces before runtime parity can be claimed. Passing a build or synthetic arithmetic test alone does not close these gates.
+`HeldSoundLifetime` keeps own volume, last device volume and live logical sample/reply state separately from transient AudioVoice. Category record +8 supplies group bits: master 1, Music 2, Speech 4, Effects 8, in that order (`0x6C0510`, `0x6BBF91`, `0x6BB447`). Supplied category masks are 9/3/5; RSE types 3..9 use mask 9. Speech ducking and DIPMUSIC change these same factors. Ordinary group changes recompute device volume without overwriting own volume. A fade folds the enabled current group product back into own volume each poll. Exact injected Effects 0.5 gives 100 -> 30 -> 9. The mixer bypasses its usual channel multiplication for these final device writes.
 
-## Evidence boundary
+Managed compatibility policy: float32 group multiplication in bit order, float32 own-volume product, nearest-even integer conversion, then signed integer ratio division. Nonfinite injected host factors become zero before integer conversion. The original `0x6BB860` uses x87 FISTP after a float32 store without forcing the caller's control word. Its exact nonintegral/tie results are still unresolved. Tests with exact unity and 0.5 are stable arithmetic oracles; tests for other fractions assert the stated host policy, not original parity.
 
-These findings come from static inspection of fully available mapped code spans. The available executable data is incomplete; this does not establish complete-binary identity, successful full extraction, or an observed original runtime. No original executable, media, instruction dump or private acquisition metadata is part of this proposal.
+## Subtypes and continuation
+
+The parser's existing priority remains intact: one-shot, then linear before the bit-2/container branch, then branching/shuffle/plain sample-backed sentence. All seven catalog types use fade entries `0x6B7130` / `0x6BCB80`.
+
+- OneShot owns its sample and decays it.
+- OneShotSentence and OneShotBranchingSentence have no parent sample. Their first fade poll marks the parent for stop; manager cleanup stops the currently represented child. It does not recursively fade children.
+- Sentence, SentenceShuffle, LinearSentence and BranchingSentence retain logical sample volume through segment completion and pending next decode. Native continuation `0x6BDE00 -> 0x6BDF00 -> 0x6B9A60` updates the existing stream without absolute-volume mask 2. Fading continuation therefore neither redraws nor restores volume. Parameter re-evaluation skips volume while fading and still evaluates pitch (`0x6BBBE0`).
+- Fresh ADDOBJ's queued flag-1 submission returns prior handle zero (`0x6B87D0`), so no script-held record is retained. The existing host decode queue handles that submission; this does not add native queued-pool scheduling parity.
+
+An ordinary continuation gap retains a logical reply. An explicit host range stop instead loses the output reply while retaining placeholder identity; a subsequent fade poll marks stop. This is a bounded host mapping of the stopped/released mixer slot, not evidence that native range stop clears placeholder +0x24. Existing AUDIO-038 range/pool/admission and restart approximations remain unchanged. General sentence child concurrency and selection are not completed by this fade implementation.
+
+## Verification map
+
+`HeldSoundFadeTests` names the source audit's cases: Q1–Q6 quality/config, T1–T4 shared scheduling, A1–A3 integer feedback and pitch, G1–G5 groups, S1–S4 all seven subtypes and continuation, P1–P3 readiness order/decode gaps, L1–L2 terminal safety and R1 immediate kill. Extra tests cover speech start/end, DIPMUSIC changes, invalid host gains, range-stop versus decode-gap, stale completion, channel-specific stop and volume-draw suppression. `HeldSoundTests` covers O1–O2 script ownership, particle behavior and leave-park/disable. `AudioTests` covers category mask propagation across binary category records. `OriginalUiTests` covers the existing slider and Cancel restoration.
+
+No original program was executed and no original assets, strings, instruction dumps or acquisition metadata are included. C# tests require the repository's .NET 11 preview SDK; local execution was attempted but the SDK is absent. A CI build/test run and independent review remain necessary before publication readiness.

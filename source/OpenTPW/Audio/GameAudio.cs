@@ -183,6 +183,7 @@ public static class GameAudio
 	// [BIN:TPW-EXE:0x004FF289 stinkbomb sound] after the stinkbomb's litter (0x004D93B0, type 8) the prank plays bank 0x00803A24 (cat_kids, loaded at 0x0051EBFE) event 0xCF through 0x004FAA00, which places it at the thing's model position (+0xC)
 	public const uint StinkbombEvent = 207;
 	private static SoundEventSystem? events;
+	private static SoundFadeSettings fadeSettings = new();
 	private static SoundSentence? music;
 	private static SoundSentence? crowd;
 	private static SoundSentence? lobbyMusic;
@@ -198,7 +199,13 @@ public static class GameAudio
 	private static bool staffVoiceLogged;
 	private static IReadOnlyList<PlacedSound>? placedAmbients;
 
-	public static bool Enabled { get; set; } = true;
+	private static bool enabled = true;
+	public static bool Enabled
+	{
+		get => enabled;
+		set { enabled = value; if ( !value ) events?.HeldSounds.StopAll(); }
+	}
+	internal static int ResolveSoundQuality( GameOptions options ) => fadeSettings.Resolve( options.SoundQuality );
 	/// <summary>The start-up sound's voice (<see cref="StartupEvent"/>), played once when the service first starts; null when <c>cat_ui</c> or the event is missing.</summary>
 	public static AudioVoice? StartupVoice { get; private set; }
 	public static AudioMixer? Mixer => events?.Mixer;
@@ -235,6 +242,8 @@ public static class GameAudio
 		// Clock seed like the original's start-up seeding (tp.exe 0x72e09c, QueryPerformanceCounter); it only colours front-end sounds, since EnterPark reseeds from the park's world seed ([EXT:sound-chooser-seed]).
 		events = new SoundEventSystem( mixer, (uint)Environment.TickCount );
 		mixer.DuckingLevel = ReadDuckingLevel() / 100f;
+		fadeSettings = ReadFadeSettings();
+		events.HeldSounds.Configure( fadeSettings, GameOptions.Current.SoundQuality );
 		mixer.MusicDuckRequest = MusicDuckRequest;
 		ResetReverb();
 		if ( ReverbMap == null )
@@ -271,6 +280,20 @@ public static class GameAudio
 		{
 			Log.Warning( $"sound.sam ignored: {exception.Message}" );
 			return 100;
+		}
+	}
+
+	private static SoundFadeSettings ReadFadeSettings()
+	{
+		try
+		{
+			return FileSystem.FileExists( "/sound.sam" )
+				? SoundFadeSettings.Read( new SamSettings( new[] { SamDocument.Parse( FileSystem.ReadAllText( "/sound.sam" ), "/sound.sam" ) } ) ) : new();
+		}
+		catch ( Exception exception ) when ( exception is IOException or InvalidDataException or FormatException )
+		{
+			Log.Warning( $"Sound fade settings ignored: {exception.Message}" );
+			return new();
 		}
 	}
 
@@ -374,6 +397,7 @@ public static class GameAudio
 
 	public static void LeavePark()
 	{
+		events?.HeldSounds.StopAll();
 		// the park's scripts are destroyed with it, and each writes the duck request 0 (tp.exe 0x558513); the reverb returns to the default at the next frame outside a ride
 		SetMusicDuck( 0 );
 		var (leftMusic, leftSpeech, leftAmbient, leftRides) = (LevelMusic, LevelSpeech, LevelAmbient, LevelRides);
@@ -993,6 +1017,7 @@ public static class GameAudio
 	// [BIN:TPW-EXE:0x557970 ADDOBJ record] the dispatcher 0x5573D0 returns the submit's handle (0x51BFC0, 0 for event 0 or with the sound system off, 0x802BC8/0x802BD4) and 0x557970 keeps the record only when it is not 0
 	public static HeldSound? StartHeldRseEvent( int type, uint eventId, Vector3? position = null, RseSoundSource? source = null )
 	{
+		if ( !Enabled ) return null;
 		var sound = FindRseEvent( type, eventId, source );
 		if ( sound == null || events == null )
 			return null;
@@ -1072,6 +1097,7 @@ public static class GameAudio
 		var mixer = events.Mixer;
 		var options = GameOptions.Current;
 		ApplyOptions( mixer, options );
+		events.HeldSounds.Configure( fadeSettings, options.SoundQuality );
 		if ( music != null && guestsInPark is { } guests )
 		{
 			var parameter = MusicParameter( guests, parkLost );

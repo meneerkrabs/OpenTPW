@@ -7,27 +7,91 @@ public sealed partial class ParkHud
 	/// waits on (<see cref="ParkEconomy.AcceptChallenge"/>, <see cref="ParkEconomy.DeclineChallenge"/>). Until one is pressed no other challenge is
 	/// offered, checked or timed out.
 	/// </summary>
-	// [BIN:TPW-EXE:0x004D2C50 challenge offer] the offer posts a message of type 25 (CMsgChallenge, 0x0040F7A0, vtable 0x006FD830 returns 0x19) to the bus, with the slot's advice text by type (0x004D3220) and the slot's prize, time and objects
+	// [BIN:TPW-EXE:0x004D2C50 challenge offer] the offer posts a message of type 25 (CMsgChallenge, 0x0040F7A0, vtable 0x006FD830 returns 0x19) to the bus, with a type-dependent text tag (0x004D3220), separate spoken advice and the slot's prize, time and objects
 	// [BIN:TPW-EXE:0x0048E0F0 message buttons] the message panel's action 0x1A calls the accept 0x004D2DF0 and action 0x1B the decline 0x004D2EC0; both act only while an offer waits for its answer (+0x3DA) and answer the current slot (+0x3CC)
-	// The tube text is OpenTPW's description of the challenge (ParkObjectives.Describe): the advisor's spoken advice for the offer (advice 0xF7..0x117 by type, 0x004D3220) has no shipped text table
+	// Offer wording/buttons stay the existing OpenTPW description. Progress uses the recovered TAG_SYSTEM bindings; terminal text/timers remain ECON-058.
 	private void HookChallengeMessages()
 	{
 		if ( level.Park != null )
-			level.Park.EventRaised += OnChallengeEvent;
+			level.Park.ChallengePresentationPosted += OnChallengePresentation;
 	}
 
-	private void OnChallengeEvent( ParkEvent item )
+	private StringFile? challengeTemplates;
+	private bool challengeTemplatesUnavailable;
+	private HashSet<int>? unavailableChallengeCaptions;
+
+	private void OnChallengePresentation( ChallengePresentation message )
 	{
-		if ( item.Kind != ParkEventKind.ChallengeOffered )
+		// Apply transition identities even when localized text is unavailable. Offer repost never enters this path.
+		if ( message.Kind != ChallengePresentationKind.Progress )
+		{
+			ApplyChallengePresentation( message, null, _ => null, _ => null );
 			return;
-		PostGameMessage( item.Detail, ChallengeActions( () => level.Park?.Economy ) );
+		}
+		try
+		{
+			if ( !challengeTemplatesUnavailable )
+				challengeTemplates ??= GameLanguage.Current.LoadStrings( "TAG_SYSTEM.str" );
+			string? StaffEntry( int index )
+			{
+				staffTypes ??= GameLanguage.Current.LoadStrings( "STAFF_TYPES.str" ).Entries;
+				return index >= 0 && index < staffTypes.Length ? staffTypes[index] : null;
+			}
+			if ( !ApplyChallengePresentation( message, challengeTemplates, ChallengeObjectName, StaffEntry ) )
+				ReportUnavailableChallengeCaption( message.Type );
+		}
+		catch ( Exception exception ) when ( exception is IOException or InvalidDataException or KeyNotFoundException )
+		{
+			challengeTemplatesUnavailable = true;
+			ReportUnavailableChallengeCaption( message.Type );
+		}
+	}
+
+	private string? ChallengeObjectName( int infoId )
+	{
+		if ( !ObjectNameTable.TryGet( infoId, out var first, out var second ) )
+			return null;
+		var firstText = strings.Object( first );
+		var secondText = second == ObjectNameTable.EmptyIndex ? "" : strings.Object( second );
+		if ( string.IsNullOrWhiteSpace( firstText ) || second != ObjectNameTable.EmptyIndex && string.IsNullOrWhiteSpace( secondText ) )
+			return null;
+		return ObjectNames.Join( new[] { firstText, secondText } );
+	}
+
+	private void ReportUnavailableChallengeCaption( int type )
+	{
+		unavailableChallengeCaptions ??= new HashSet<int>();
+		if ( unavailableChallengeCaptions.Add( type ) )
+			Log.Warning( $"Challenge progress type {type} has no complete localized template/arguments; its caption is skipped." );
+	}
+
+	/// <summary>
+	/// Offer/result transitions remove only their traced replacement row. Terminal insertion/text/timers remain a documented partial lifecycle.
+	/// A progress caption is omitted when its localized typed template or required name is unavailable; there is no invented generic fallback.
+	/// </summary>
+	internal bool ApplyChallengePresentation( ChallengePresentation message, StringFile? templates, Func<int, string?> objectName, Func<int, string?> staffEntry )
+	{
+		if ( !ChallengeMessageRecords.TryGet( message.Type, message.Kind, out var record ) )
+			return false;
+		if ( message.Kind != ChallengePresentationKind.Progress )
+		{
+			RemoveChallengeProgress( record.ReplacementTag );
+			if ( message.Kind == ChallengePresentationKind.Offer )
+				PostGameMessage( message.OfferText, ChallengeActions( () => level?.Park?.Economy ) );
+			return true;
+		}
+		if ( !ChallengeMessageText.TryFormat( templates, message, objectName, staffEntry, out var text ) )
+			return false;
+		// A full tube is a normal insertion refusal, not evidence of a missing localized template.
+		PostChallengeProgress( record.Tag, text );
+		return true;
 	}
 
 	/// <summary>
 	/// Keeps a waiting offer answerable: while the challenge system waits on an answer and neither the tube nor the open panel holds the offer's
 	/// message (it was closed, deleted, pushed out of a full tube, or the park was loaded), the offer is posted again.
 	/// </summary>
-	// [EXT:challenge-offer-repost] an offer whose message is deleted unanswered is posted again, so the challenge system (which waits on the answer) never stalls; the original's handling of a deleted offer is not traced and matching an unknown would risk a hang
+	// [EXT:challenge-offer-repost] an offer whose message is deleted unanswered is posted again, so the challenge system (which waits on the answer) never stalls; the original removal path invokes Decline for action 27, whereas this existing extension keeps offers answerable; expiry/removal parity is separate from progress refresh
 	internal bool KeepChallengeOfferPosted( ParkEconomy? economy )
 	{
 		if ( economy?.Objectives.Current is not { Accepted: false } || economy.Objectives.CurrentDefinition is not { } definition )

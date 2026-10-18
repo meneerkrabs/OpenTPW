@@ -184,6 +184,8 @@ placed once on the release. Backspace waits for a drag; a drag let go while the 
   coaster's own, `0x42f390`). A hovered chain start (the closing target) takes the node flag `0x800000`, or `0x804000` when the closing link is refused (`0x4360c4`), and the marker
   textures draw that node's own tag pairs (`0x43f4e0` with both nodes the same); the rebuild `0x43eb70` draws no link into the start. `0x4360c0` also sets `0x200000` on the ends and their neighbours: it is the mark that makes the self-intersection pass `0x439ab0` re-test a node (`0x439b6b`), redundant here because the pass runs over every node. The rebuild `0x43eb70` samples and tests every track it draws, so while a coaster is built (and while a pylon is dragged) a link that crosses the track, the cursor's link included, is drawn with the crossing marker.
 
+The loop tool resumes a pending pair from the open chain endpoint after closing/reopening the panel or using an edit button: the second pylon keeps counter 1, its cursor omits `LoopFirst`, and placing it ends loop mode. The endpoint is the incomplete chain's tail or a completed cut circuit's predecessor, not an arbitrary picked pylon. Build stays disabled while that endpoint carries `0x80`, independently of the active tool. Availability and upgrade gates remain in force. See [loop-pair resumption](COASTER-LOOP-RESUMPTION.md) for the static evidence, synthetic coverage and remaining COAST-035 dispatch/loader qualifications.
+
 ## Running
 
 The station runs its original script (`Coaster.RSE`). The script's `COAST`

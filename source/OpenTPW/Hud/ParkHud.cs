@@ -119,7 +119,7 @@ public sealed partial class ParkHud
 
 	public OriginalObject? SelectedObject => selectedObject;
 	/// <summary>True while a menu is on top of the HUD; the buy, staff, attractions and visitors windows, a visit's chat mode and its name popups do not pause.</summary>
-	public bool Paused => Stack.Screens.Any( screen => screen != hud && screen != rideScreen && screen != buyScreen && screen != staffScreen
+	public bool Paused => Stack.Screens.Any( screen => screen != hud && screen != rideScreen && screen != finaleScreen && screen != buyScreen && screen != staffScreen
 		&& screen != attractionScreen && screen != visitorScreen && screen != chatModeScreen && screen.Name != OpenTPW.UI.ChatPanel.PopupScreenName );
 	public IReadOnlyList<string> Messages => messages.Select( message => message.Text ).ToArray();
 	/// <summary>The park simulation's time scale for the screens now open (see <see cref="TimeScaleFor"/>).</summary>
@@ -260,8 +260,8 @@ public sealed partial class ParkHud
 		// [DATA:video 15:20] the message tube (red, left of the HUD) with its icons, and the buttons of the green slide-out panel: the bomb deletes the opened message, the red cross closes the panel
 		hud.Add( new MessageTubeList( this ) { Id = "messageTube", Help = strings.Extra( OpenTpwText.MessageTubeHelp ), Bounds = TubeBase, Anchor = UiAnchor.BottomLeft } );
 		// [BIN:TPW-EXE:0x7501a0 message panel] mb_erase at (486,1325)-(589,1428) deletes the opened message; the two action buttons above it (486,1218) and (486,1110) take the art of their action's kind (mb_locate, mb_callmech, mb_resrch, mb_buy, mb_accept, mb_decline: ParkHud.MessageTube.cs)
-		// [APPROX:UI-025] only the challenge offers carry actions (mb_accept, mb_decline: ParkHud.ChallengeMessages.cs); the action buttons stay hidden for every other message, and the original's other action kinds (0x48e610: mb_locate, mb_buy, b_loan, mb_resrch, b_pkinfo, b_staffcost, mb_callmech, b_entry) have no OpenTPW message that posts them
-		hud.Add( new UiButton { Id = "messageDelete", Model = "mb_erase", Clicked = CloseMessagePanel, Bounds = OriginalLayoutTables.MessagePanel.Model( "mb_erase" ).Rect, Anchor = UiAnchor.BottomLeft, Visible = false } );
+		// UI-025: only the challenge offers carry actions (mb_accept, mb_decline: ParkHud.ChallengeMessages.cs); the action buttons stay hidden for every other message, and the original's other action kinds (0x48e610: mb_locate, mb_buy, b_loan, mb_resrch, b_pkinfo, b_staffcost, mb_callmech, b_entry) have no OpenTPW message that posts them
+		hud.Add( new UiButton { Id = "messageDelete", Model = "mb_erase", Clicked = DeleteOpenedMessage, Bounds = OriginalLayoutTables.MessagePanel.Model( "mb_erase" ).Rect, Anchor = UiAnchor.BottomLeft, Visible = false } );
 		for ( var slot = 0; slot < MessageActionIds.Length; slot++ )
 		{
 			var index = slot;
@@ -685,6 +685,8 @@ public sealed partial class ParkHud
 	// Explicit captures run the identical frame body in asset-free tests. Null samples native IO at its original point.
 	internal bool Update( UiContext context, UiInput input, bool? mouseCaptured, bool? keyboardCaptured, bool? textCaptured )
 	{
+		if ( UpdateResearchFinale( context, input, mouseCaptured, keyboardCaptured, textCaptured ) )
+			return true;
 		var ridingAtStart = IsRiding;
 		SyncRideScreen( context.Delta );
 		HandleChatModeKey();
@@ -1140,10 +1142,11 @@ public sealed partial class ParkHud
 			var (targetX, targetY, rotation) = level.BuildTarget( entry, cursorX, cursorY );
 			level.SetBuildRotation( rotation );
 			var anchor = Level.GetCentredAnchor( entry, targetX, targetY, rotation );
-			var allowed = level.CheckBuildTarget( entry, targetX, targetY, rotation ) == OriginalPlacementResult.Allowed
+			var placementResult = level.CheckBuildTarget( entry, targetX, targetY, rotation );
+			var allowed = placementResult == OriginalPlacementResult.Allowed
 				&& (level.Park == null || level.Park.Economy.CheckBuild( entry.InfoId, level.IsMoving ) == ParkEconomy.PurchaseResult.Ok);
 			placementRefused = !allowed;
-			var footprint = BlueprintGhosts.Footprint( entry.Shape, anchor.X, anchor.Y, rotation, allowed );
+			var footprint = level.ObjectBlueprint( entry, anchor.X, anchor.Y, rotation, placementResult, allowed );
 			cells.AddRange( footprint.Cells );
 			directions = footprint.Directions;
 		}

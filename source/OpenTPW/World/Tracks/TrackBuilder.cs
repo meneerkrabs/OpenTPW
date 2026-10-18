@@ -230,6 +230,9 @@ public sealed class TrackBuilder
 			ClearTile( x, y );
 	}
 
+	/// <summary>Erases the four cells of the tile whose origin is (x, y) from the layer and the cell map without touching its neighbours' arms (the track editor's clear does those).</summary>
+	internal void EraseTile( int x, int y ) => ClearTile( x, y );
+
 	private void ClearTile( int x, int y )
 	{
 		foreach ( var (cx, cy) in TrackStation.TileCellsOf( x, y ) )
@@ -346,8 +349,19 @@ public sealed class TrackBuilder
 		{
 			var (nx, ny) = (x + TrackStation.TileCells * TrackHeading.Dx( heading ), y + TrackStation.TileCells * TrackHeading.Dy( heading ));
 			var neighbour = Tracks.Get( nx, ny );
-			if ( neighbour.IsOrigin && (neighbour.Mask & TrackHeading.Opposite( heading )) != 0 && Compatible( neighbour.Owner, owner ) )
+			if ( !neighbour.IsOrigin || !Compatible( neighbour.Owner, owner ) )
+				continue;
+			// a station tile also takes the tile on its axis when its own arm toward it was taken away (an edit cut the track there, TrackEditor.ClearCell)
+			var axis = TrackCellTypes.IsStation( neighbour.Type ) && neighbour.Link != 0 ? (byte)(neighbour.Link | TrackHeading.Opposite( neighbour.Link )) : (byte)0;
+			if ( (neighbour.Mask & TrackHeading.Opposite( heading )) != 0 || (axis & TrackHeading.Opposite( heading )) != 0 )
+			{
 				AddArm( (x, y), heading );
+				if ( (neighbour.Mask & TrackHeading.Opposite( heading )) == 0 )
+				{
+					AddArm( (nx, ny), TrackHeading.Opposite( heading ) );
+					Refresh( nx, ny );
+				}
+			}
 		}
 	}
 

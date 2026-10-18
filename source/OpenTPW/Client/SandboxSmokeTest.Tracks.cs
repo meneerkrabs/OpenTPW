@@ -24,6 +24,9 @@ internal sealed partial class SandboxSmokeTest
 		public bool Captured;
 		public int Phase;
 		public int PeakKarts;
+		public int EditStage = -1;
+		public int EditWait;
+		public long EditBalance;
 	}
 
 	private readonly TrackSmokeRun waterSmoke = new();
@@ -238,6 +241,12 @@ internal sealed partial class SandboxSmokeTest
 			return;
 		var bump = run.Station.Runtime.Bump!;
 		Require( run.Wait!.Elapsed.TotalSeconds < 120, $"a boat launches and runs (phase {bump.Phase}, boats {bump.VehicleCount}, runs {bump.CompletedRuns})" );
+		if ( run.Phase == 1 )
+		{
+			if ( UpdateTrackEditPhase( run, "original-water-track", water: true ) )
+				FinishWaterTrackPhase( run );
+			return;
+		}
 		if ( bump.VehicleCount == 0 && !run.VehicleSeen )
 			return;
 		var boat = bump.Vehicles.FirstOrDefault();
@@ -255,12 +264,92 @@ internal sealed partial class SandboxSmokeTest
 			return;
 		Require( level.TrackInstances.Tiles >= 8, "the track tiles are drawn" );
 		CaptureFrame( "original-water-track.png" );
+		run.Phase = 1;
+		Log.Trace( $"HUD water track: a boat ran ({(boat == null ? "lap complete" : $"{boat.X},{boat.Y}")}), the tiles and the boat were drawn." );
+	}
+
+	/// <summary>
+	/// The track button on a finished circuit (docs/TRACKS.md, "The track edit sub-modes"): the edit tool picks two tiles of the closed circuit and cuts the track between them
+	/// (the tiles go and refund, the ride's circuit is open), the tool goes on as the line tool from the open end, and a click on the far side of the gap lays the line that closes
+	/// the circuit again. Frames of the cut and of the mended circuit are captured. Returns true once the circuit is whole again.
+	/// </summary>
+	private bool UpdateTrackEditPhase( TrackSmokeRun run, string capture, bool water )
+	{
+		var ride = run.Station!;
+		var bump = ride.Runtime.Bump!;
+		var layout = level.TrackStations[ride];
+		var builder = level.BuilderOf( ride )!;
+		(int X, int Y) At( int x, int y ) => (layout.First.X + x, layout.First.Y + y);
+		var editMode = water ? CellToolMode.WaterEdit : CellToolMode.KartEdit;
+		var lineMode = water ? CellToolMode.WaterTrack : CellToolMode.KartTrack;
+		switch ( run.EditStage )
+		{
+			case -1:
+				if ( ++run.EditWait >= 20 )
+					run.EditStage = 0;
+				return false;
+			case 0:
+				Require( bump.IsTrackValid, "the circuit is closed before the edit" );
+				run.EditBalance = level.Park?.Economy?.Balance ?? 0;
+				Require( level.EnterTrackTool( ride ) && level.CellTool.IsActive && level.CellTool.Mode == editMode && level.CellTool.Start == null,
+					"the track button on a closed circuit opens the edit tool" );
+				Require( level.CellTool.Click( At( 2, 0 ) ) == null && level.CellTool.Start == null, "a station tile is no pick" );
+				Require( level.CellTool.Hover( At( 2, 4 ) ) is { Completed: true, Line.Count: 4 }, "the hover marks the tile under the pointer" );
+				Require( level.CellTool.Click( At( 3, 5 ) ) == null && level.CellTool.Start == At( 3, 5 ), "a click on an extension cell picks its tile" );
+				run.EditWait = 0;
+				run.EditStage = 10;
+				return false;
+			case 10:
+				// the hover marks the two tiles of the cut; a few frames pass so the markers are drawn (the HUD hovers too)
+				Require( level.CellTool.Hover( At( 0, 4 ) ) is { Completed: true, Line.Count: 8 }, "the hover marks the two tiles of the cut" );
+				if ( ++run.EditWait < 5 )
+					return false;
+				CaptureFrame( $"{capture}-hover.png" );
+				run.EditStage = 11;
+				return false;
+			case 11:
+				var cut = level.CellTool.Click( At( 0, 4 ) );
+				Require( cut is { Completed: true } && cut.Built.Count == 2, "the second click cuts the two tiles" );
+				Require( !builder.IsTile( At( 2, 4 ).X, At( 2, 4 ).Y ) && !builder.IsTile( At( 0, 4 ).X, At( 0, 4 ).Y ), "both tiles are gone" );
+				Require( !bump.IsTrackValid, "the circuit is open" );
+				Require( level.CellTool.IsActive && level.CellTool.Mode == lineMode && level.CellTool.Start == At( 4, 4 ), "the tool goes on as the line tool from the end of the track" );
+				if ( level.Park?.Economy is { } economy )
+					Require( economy.Balance >= run.EditBalance, "the cleared tiles refund" );
+				run.EditWait = 0;
+				run.EditStage = 12;
+				return false;
+			case 12:
+				if ( ++run.EditWait < 5 )
+					return false;
+				run.EditStage = 1;
+				return false;
+			case 1:
+				CaptureFrame( $"{capture}-cut.png" );
+				var mend = level.CellTool.Click( At( -2, 4 ) );
+				Require( mend is { Completed: true } && bump.IsTrackValid && !(level.CellTool.IsActive && level.CellTool.Mode == lineMode), "the line across the gap closes the circuit again and ends the line tool" );
+				level.CellTool.Cancel();
+				run.EditStage = 2;
+				return false;
+			default:
+				CaptureFrame( $"{capture}-edited.png" );
+				Require( builder.Tiles().Count() == 10, "the mended circuit has its ten tiles again" );
+				return true;
+		}
+	}
+
+	private void FinishWaterTrackPhase( TrackSmokeRun run )
+	{
 		var tilesBefore = level.WaterTracks!.Tracks.Count;
 		var ride = run.Station;
 		level.Objects.Remove( ride );
-		Require( level.WaterTracks.Tracks.Count == 0 && tilesBefore > 0, "removing the ride clears its station and track tiles" );
+		// the replays run only for a ride that is registered with the park economy (a type with a queue, 0x527F5B) and clear its whole circuit; otherwise the station tiles go and the track stays
+		var left = level.WaterTracks.Tracks.Count;
+		Require( tilesBefore > 0 && (left == 0 || left == tilesBefore - 8), "removing the ride clears its station tiles and, when the demolition replays run, its track tiles" );
+		// the tiles a queue-less ride leaves behind would count in the next ride's circuit; sweep them so the later phases start on a clean layer
+		foreach ( var tile in level.WaterTracks.Tiles().ToList() )
+			level.WaterTracks.EraseTile( tile.X, tile.Y );
 		Require( level.Objects.ScriptWorld.Bumpers.Controllers.Count == 0, "removing the ride removes its controller" );
-		Log.Trace( $"HUD water track: a boat ran ({(boat == null ? "lap complete" : $"{boat.X},{boat.Y}")}), the tiles and the boat were drawn, the ride and its track were removed." );
+		Log.Trace( "HUD water track: the circuit was cut and mended through the edit tool, the ride and its track were removed." );
 		run.Station = null;
 		run.Done = true;
 	}
@@ -313,12 +402,21 @@ internal sealed partial class SandboxSmokeTest
 				Require( run.Captured, "the karts were seen on the circuit before the race ended" );
 				Require( bump.CompletedRuns == 2, $"both karts finished and unloaded ({bump.CompletedRuns})" );
 				Require( bump.Command( 2, 0 ) != 0 && bump.Command( 2, 0 ) != 0 && bump.Command( 2, 0 ) == 0, "both riders were handed back" );
+				run.Phase = 3;
+				return;
+			case 3:
+				if ( !UpdateTrackEditPhase( run, "original-kart-track", water: false ) )
+					return;
 				var tilesBefore = level.KartTracks!.Tracks.Count;
 				var ride = run.Station;
 				level.Objects.Remove( ride );
-				Require( level.KartTracks.Tracks.Count == 0 && tilesBefore > 0, "removing the ride clears its station and track tiles" );
+				// the replays run only for a ride registered with the park economy (a type with a queue, 0x527F5B) and clear its whole circuit; otherwise the station tiles go and the track stays
+				var kartLeft = level.KartTracks.Tracks.Count;
+				Require( tilesBefore > 0 && (kartLeft == 0 || kartLeft == tilesBefore - 8), "removing the ride clears its station tiles and, when the demolition replays run, its track tiles" );
+				foreach ( var tile in level.KartTracks.Tiles().ToList() )
+					level.KartTracks.EraseTile( tile.X, tile.Y );
 				Require( level.Objects.ScriptWorld.Bumpers.Controllers.Count == 0, "removing the ride removes its controller" );
-				Log.Trace( $"HUD kart track: {run.PeakKarts} karts parked on the grid, raced a lap, ended the race and unloaded; the tiles and the karts were drawn, the ride and its track were removed." );
+				Log.Trace( $"HUD kart track: {run.PeakKarts} karts parked on the grid, raced a lap, ended the race and unloaded; the circuit was cut and mended through the edit tool, the tiles and the karts were drawn, the ride and its track were removed." );
 				run.Station = null;
 				run.Done = true;
 				return;

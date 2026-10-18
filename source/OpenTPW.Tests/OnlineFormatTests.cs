@@ -223,6 +223,22 @@ public class OnlineFormatTests
 	}
 
 	[TestMethod]
+	public void PlayerIdentityKeepsCompatibilityNormalizationAndDotNetCasing()
+	{
+		foreach ( var (name, expected) in new[] { ("Ｂｏｂ", "BOB"), ("ﬃ", "FFI"), ("Søren", "SØREN"), ("Jürgen", "JÜRGEN") } )
+			Assert.AreEqual( expected, OnlineText.NormalizeName( name ), name );
+		Assert.AreEqual( "Straße".Normalize( NormalizationForm.FormKC ).ToUpperInvariant(), OnlineText.NormalizeName( "Straße" ) );
+		foreach ( var name in new[] { "Ｂｏｂ", "ﬃab" } )
+		{
+			Assert.IsTrue( OnlineText.IsValidPlayerName( name ) );
+			Assert.ThrowsException<InvalidDataException>( () => Postcard.Create( "Alice", new[] { name, name.Normalize( NormalizationForm.FormKC ) }, "t", "x", "English" ) );
+		}
+		Assert.IsFalse( OnlineText.IsValidPlayerName( "Ju\u0308rgen" ) );
+		foreach ( var malformed in new[] { "a\uD800b", "a\uDC00b", "a\uFFFEb" } )
+			Assert.ThrowsException<ArgumentException>( () => OnlineText.NormalizeName( malformed ) );
+	}
+
+	[TestMethod]
 	public void PngEncoderOutputValidates()
 	{
 		var png = Thumbnail( 3, 2 );

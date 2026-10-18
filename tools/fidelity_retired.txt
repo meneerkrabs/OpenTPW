@@ -56,6 +56,7 @@ COAST-007 docs/COASTERS.md
 COAST-008 docs/reverse/COAST-plan.md
 COAST-009 docs/reverse/COAST-plan.md
 COAST-010 docs/reverse/COAST-plan.md
+COAST-011 docs/reverse/COAST-plan.md
 COAST-012 docs/reverse/COAST-plan.md
 COAST-013 docs/reverse/COAST-plan.md
 COAST-016 docs/COASTERS.md
@@ -281,6 +282,7 @@ TRACK-009 docs/PROGRESS.md
 TRACK-011 docs/PROGRESS.md
 TRACK-012 docs/PROGRESS.md
 TRACK-013 docs/PROGRESS.md
+TRACK-014 docs/TRACKS.md
 TRACK-015 docs/PROGRESS.md
 TRACK-016 docs/PROGRESS.md
 TRACK-017 docs/PROGRESS.md

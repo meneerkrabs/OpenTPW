@@ -80,6 +80,13 @@ public sealed class ObjectAnimator
 
 	private readonly ModelFile model;
 	private readonly SortedDictionary<int, Channel> channels = new();
+	/// <summary>The channels in ascending channel order, as pairs and as channels; rebuilt after the dictionary changed so the per-tick walks allocate nothing (a sorted dictionary allocates an enumerator for every walk).</summary>
+	private KeyValuePair<int, Channel>[]? channelPairs;
+	private Channel[]? channelList;
+	/// <summary>Counts the effects an <see cref="Update"/> can have on what renderers read (hidden nodes, vertex and texture-coordinate caches, texture frames).</summary>
+	private int updateEffects;
+	/// <summary>True after an update that changed nothing: with no channel advancing, the next update would change nothing either, so <see cref="Advance"/> skips it.</summary>
+	private bool settled;
 	private readonly Matrix4x4[] rest;
 	private readonly (NVector3 Scale, Quaternion Rotation, NVector3 Translation)[] restComponents;
 	private readonly Matrix4x4[] world;
@@ -104,6 +111,7 @@ public sealed class ObjectAnimator
 	private long serial;
 	private double clockMilliseconds;
 	private int hiddenVersion;
+	private int poseVersion;
 
 	/// <summary>Clip ticks per second used by every channel this animator plays.</summary>
 	public float TicksPerSecond { get; }
@@ -193,7 +201,16 @@ public sealed class ObjectAnimator
 	/// <summary>Model-space node matrices of the current pose.</summary>
 	public IReadOnlyList<Matrix4x4> NodeTransforms => world;
 	/// <summary>True while some channel plays a clip that has not ended.</summary>
-	public bool IsPlaying => channels.Values.Any( channel => !channel.Ended );
+	public bool IsPlaying
+	{
+		get
+		{
+			foreach ( var channel in ChannelList )
+				if ( !channel.Ended )
+					return true;
+			return false;
+		}
+	}
 	public int ActiveChannels => channels.Count;
 
 	/// <summary>
@@ -233,11 +250,30 @@ public sealed class ObjectAnimator
 	/// <summary>Changes whenever <see cref="IsNodeHidden"/> of some node changes.</summary>
 	public int HiddenVersion => hiddenVersion;
 
+	/// <summary>Changes whenever the node transforms may have changed: every update that recomputed the pose. An object whose animator did not update has the same transforms as the last time they were read.</summary>
+	public int PoseVersion => poseVersion;
+
 	/// <summary>
 	/// True while some bound clip addresses a texture slot of this model with a texture-frame track
 	/// (trailer word 12 behind bit 0x2, clip update 0xa56f8), so <see cref="GetTextureFrame"/> can change.
 	/// </summary>
-	public bool HasTextureFrames => channels.Values.Any( channel => channel.FrameTracks.Length > 0 );
+	public bool HasTextureFrames
+	{
+		get
+		{
+			foreach ( var channel in ChannelList )
+				if ( channel.FrameTracks.Length > 0 )
+					return true;
+			return false;
+		}
+	}
+
+	private KeyValuePair<int, Channel>[] ChannelPairs => channelPairs ??= channels.ToArray();
+
+	private Channel[] ChannelList => channelList ??= channels.Values.ToArray();
+
+	/// <summary>The channel dictionary changed: the ordered copies are rebuilt on the next walk.</summary>
+	private void ChannelsChanged() => (channelPairs, channelList) = (null, null);
 
 	/// <summary>
 	/// The frame a texture slot of the model currently shows: 0 (the stored frame name) until a bound clip's
@@ -260,6 +296,7 @@ public sealed class ObjectAnimator
 	{
 		if ( (uint)slot >= (uint)frameBySlot.Length || available.Length != model.Textures[slot].FrameNames.Count )
 			throw new ArgumentException( "Texture-frame availability must match a model slot's frame names." );
+		settled = false;
 		availableFramesBySlot[slot] = (bool[])available.Clone();
 		if ( frameBySlot[slot] != 0 && !available[frameBySlot[slot]] )
 		{
@@ -368,13 +405,17 @@ public sealed class ObjectAnimator
 	public void Stop( int channel )
 	{
 		if ( channels.Remove( channel ) )
+		{
+			ChannelsChanged();
 			Update();
+		}
 	}
 
 	/// <summary>Removes every channel (object deletion).</summary>
 	public void StopAll()
 	{
 		channels.Clear();
+		ChannelsChanged();
 		Update();
 	}
 
@@ -385,10 +426,12 @@ public sealed class ObjectAnimator
 			throw new ArgumentOutOfRangeException( nameof( seconds ) );
 		clockMilliseconds += seconds * 1000.0;
 		var now = NowMilliseconds;
-		foreach ( var (index, channel) in channels.ToArray() )
+		var advanced = false;
+		foreach ( var (index, channel) in ChannelPairs )
 		{
 			if ( channel.Ended )
 				continue;
+			advanced = true;
 			var frame = GetFrame( now - channel.StartMilliseconds, channel.Clip.Speed );
 			float duration = channel.Clip.Animation.Duration;
 			// 0xa7360: past the end only when strictly greater, so a frame equal to the duration samples the last key.
@@ -425,7 +468,15 @@ public sealed class ObjectAnimator
 			}
 			channel.Player.SetTick( frame );
 		}
-		Update();
+		// With every channel ended (or none) the pose is the one the last update made; the first update that finds nothing to change settles it, and the ticks after it skip the walk over every node
+		if ( advanced )
+			Update();
+		else if ( !settled )
+		{
+			var effects = updateEffects;
+			Update();
+			settled = updateEffects == effects;
+		}
 	}
 
 	private void Start( int index, Clip clip, long now )
@@ -436,6 +487,7 @@ public sealed class ObjectAnimator
 		// A start without flag 0x2 leaves the deferred slot (+36) as it was.
 		state.Deferred = channels.TryGetValue( index, out var previous ) ? previous.Deferred : null;
 		channels[index] = state;
+		ChannelsChanged();
 		ApplyNodeList( clip.Animation );
 	}
 
@@ -600,6 +652,7 @@ public sealed class ObjectAnimator
 		channels.Clear();
 		foreach ( var (index, state) in restored )
 			channels[index] = state;
+		ChannelsChanged();
 		Array.Copy( snapshot.NodeStateBits, nodeStateBit, nodeStateBit.Length );
 		Array.Clear( frameBySlot );
 		Array.Clear( slotAnimated );
@@ -682,6 +735,7 @@ public sealed class ObjectAnimator
 		if ( nodeStateBit[node] == value )
 			return;
 		nodeStateBit[node] = value;
+		updateEffects++;
 		if ( meshByNode[node] >= 0 )
 			hiddenVersion++;
 	}
@@ -744,6 +798,9 @@ public sealed class ObjectAnimator
 
 	private void Update()
 	{
+		settled = false;
+		poseVersion++;
+		var channelsInOrder = ChannelList;
 		// [BIN:STP-PPC:0x100A7A5C object update channel order] 0xa7960 runs the channel updates in ascending channel order (stride 56, count +14), each sampling in set mode, so the highest channel that writes a component wins
 		foreach ( var node in order )
 		{
@@ -752,7 +809,7 @@ public sealed class ObjectAnimator
 			Matrix4x4? facing = null;
 			NVector3 facingScale = NVector3.One;
 			Channel? vertexWinner = null, uvWinner = null;
-			foreach ( var channel in channels.Values )
+			foreach ( var channel in channelsInOrder )
 			{
 				var track = channel.Tracks[node];
 				if ( track == null )
@@ -815,7 +872,7 @@ public sealed class ObjectAnimator
 			return;
 		Array.Clear( slotAddressed, 0, slotAddressed.Length );
 		Array.Copy( frameBySlot, sampledFrameBySlot, frameBySlot.Length );
-		foreach ( var channel in channels.Values )
+		foreach ( var channel in ChannelList )
 		{
 			foreach ( var track in channel.FrameTracks )
 			{
@@ -838,6 +895,7 @@ public sealed class ObjectAnimator
 			{
 				frameBySlot[slot] = sampledFrameBySlot[slot];
 				textureFrameVersion++;
+				updateEffects++;
 			}
 		}
 	}
@@ -884,7 +942,10 @@ public sealed class ObjectAnimator
 			changed = true;
 		}
 		if ( changed )
+		{
 			vertexVersions[mesh]++;
+			updateEffects++;
+		}
 	}
 
 	/// <summary>

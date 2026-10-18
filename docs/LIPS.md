@@ -628,8 +628,8 @@ inspected.
 
 ### Restored advice (EXT, October 17, 2026)
 
-The official extension `opentpw.restored-advice` (on by default, `AffectsSimulation` false; [MODS.md](MODS.md)) says advisor messages that exist in the data but that tp.exe v2.0 never posts (the 105 "none" rows of [reverse/ADVISOR-SCAN.md](reverse/ADVISOR-SCAN.md)); it restores 55 of them, each trigger labelled
-`[EXT:restored-advice-<topic>]`. It adds no data and no queue: a restored message is pending advice like any other, with its descriptor's group, its original response rows (the ticket lines pick the response that carries the ticket's own caption), its `Advisor.sam` score where its descriptor's callback names a key and
+The official extension `opentpw.restored-advice` (on by default, `AffectsSimulation` false; [MODS.md](MODS.md)) says advisor messages that exist in the data but that tp.exe v2.0 never posts (the 105 "none" rows of [reverse/ADVISOR-SCAN.md](reverse/ADVISOR-SCAN.md)); it restores 45 of them (ten lines stood down because the original's own ticket advice, 215-227, and first-offer line, 344, are now ported), each trigger labelled
+`[EXT:restored-advice-<topic>]`. It adds no data and no queue: a restored message is pending advice like any other, with its descriptor's group, its original response rows, its `Advisor.sam` score where its descriptor's callback names a key and
 otherwise a documented constant, and it goes through the same admission rules (tutorial option, once-only, repeat interval, pending-duplicate limit, game mode, `MinScoreForConsideration`). Three entry points, all gated on the extension at the moment they run:
 
 - the **scan hook**: a scan-zero row's callback (`0x005D60C0`) is replaced by the extension's own while it is on (`AdvisorScan.ScoreOf` asks `RestoredAdviceScan.CallbackFor`); the scan's cursor, row order and eligibility check are the original's;

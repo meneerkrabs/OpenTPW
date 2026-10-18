@@ -408,7 +408,6 @@ internal sealed partial class GameFlow : IDisposable
 			if ( Advisor != null )
 			{
 				Advisor.CaptionSink = Hud.PostAdvisorCaption;
-				Advisor.PlayerKeys = PlayerKeys;
 				Advisor.PlayerTickets = PlayerTickets;
 			}
 		}

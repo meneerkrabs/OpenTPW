@@ -514,7 +514,7 @@ Whether the spoken clip says the same words is not verifiable without the audio.
 
 ## Restored advice (the `opentpw.restored-advice` extension)
 
-Of the 105 messages tp.exe v2.0 never says (the status "none" rows), the official extension `opentpw.restored-advice` (version 1.0.0, **on by default**, listed on the Extensions and mods screen) restores **55**: it gives them a trigger and posts
+Of the 105 messages tp.exe v2.0 never says (the status "none" rows), the official extension `opentpw.restored-advice` (version 1.0.0, **on by default**, listed on the Extensions and mods screen) restores **45**. Ten of the first 55 stood down (the ticket-win lines 99, 164, 165, 218, 219, 223, 224, 228, 229 and the first-challenge hint 344) because the original's own ticket advice (215-227) and first-offer line (344) are now ported. The extension gives them a trigger and posts
 them through the advisor's own queue. The producer map keeps the original's status for them (the rows stay `none`, `scan-zero` or `unused`); each restored row carries an extra `restored = "<topic>"` field in `content/data/advisor-producers.toml`, and
 `RestoredAdvice.Entries` (`source/OpenTPW/World/RestoredAdvice.cs`) is the one list of them, kept equal to the inventory by `AdvisorProducerInventoryTests`. Every trigger is labelled `[EXT:restored-advice-<topic>]` at its site. Messages are
 referred to by id only: the captions, the `Advisor.sam` values and the speech transcripts are game content and are not in the repository.
@@ -528,13 +528,13 @@ save with a restored message pending or said loads with the extension off, and a
 **How it plugs in** (a few touch points, so the scan driver stays the original's):
 - *Scan-zero rows.* `AdvisorScan.ScoreOf` asks `RestoredAdviceScan.CallbackFor(message)` for a row whose callback is `0x5D60C0`; the hook answers only while the extension is on, and `AdvisorScanContext.Restored` is the read-only park view (null while off, so every restored callback scores 0).
 - *Rows nothing posts.* `RestoredAdviceDriver.Poll` evaluates one state-driven rule (`RestoredAdviceScan.PollRules`) with every scan call, in message order, and posts it above `MinScoreForConsideration` through `AdvisorController.AdviseRestored`.
-- *Events.* `RestoredAdviceDriver.OnParkEvent`, `ObserveVehicle` and `OnlineScreen` post the lines of tickets, upgrades, challenges, arriving vehicles and the online screens; the HUD's windows, tools and the message tube post the tutorial lines through `HudHost.RestoredHelp` and the window map `RestoredAdvice.WindowHelp`.
+- *Events.* `RestoredAdviceDriver.OnParkEvent`, `ObserveVehicle` and `OnlineScreen` post the award lines of tickets, upgrades, challenges, arriving vehicles and the online screens; the HUD's windows, tools and the message tube post the tutorial lines through `HudHost.RestoredHelp` and the window map `RestoredAdvice.WindowHelp`.
 - Every post is admitted by the queue like any other advice: tutorial option (group 1), once-only, slap limit, pending-duplicate limit, repeat interval, the descriptor's game mode, and `MinScoreForConsideration` on selection. With the advisor option off the response still plays silently and its caption still goes to the tube (parameterised captions are not posted, as for every other advice).
 
 **Repeat rules (no nagging).** The descriptor group's repeat interval (120 groups of four turns for group 0, about two minutes) is not enough for a condition that stays true, so the extension adds its own, `RestoredAdviceEntry.RepeatGroups`, read from the advisor's own history (which a save already carries, so nothing new is saved and a save loads the same with the extension on or off): the congratulations (151-154, 160) and the arrivals (137-139, one per vehicle kind, told when the kind changes from the one last seen, not at every group) are said **once per park**; the persistent lines (24, 25, 58, 59, 65, 83, 84, 173, 265, 277, 318, 347, 348) wait **5400 groups** (about 1.5 real hours at normal speed); the stranded riders (349, 350) and the upgrade lines (130-132) wait 900 groups. The
 restored own scores are low (30 to 50, the two security lines capped at 60) so the originals (50 to 110, help 1000) keep priority; keys the original callbacks name keep their values (65, 265 and 349 still repeat only after their interval). `AdvisorRestoredRatesTests` plays an hour (14516 turns at 248 ms) of a park whose conditions all hold: **before 144 restored lines against 24 original ones, after 4 against 24**; a park with no guard or camera heard 25 **24 times an hour before and once after**, the original's 102 unchanged at 24.
 
-**Scores.** The message's own key where its descriptor callback is a getter of one (the unused rows 84, 99, 130-132, 137-139, 143, 218-233, 318-320 and the stub rows whose siblings name the key: 24/25 `StaffGuardCoverage`, 65 `RidesNoUpgrades`, 265 `RideExitBlocked`, 349/350 the
+**Scores.** The message's own key where its descriptor callback is a getter of one (the unused rows 84, 130-132, 137-139, 143, 230-233, 318-320 and the stub rows whose siblings name the key: 24/25 `StaffGuardCoverage`, 65 `RidesNoUpgrades`, 265 `RideExitBlocked`, 349/350 the
 stranded-people and condemned keys); else the extension's own constant, documented where it is declared (`RestoredAdvice.QueueScore`, `FameScore`, ... `[EXT:restored-advice-<topic>]`). The restored keys are optional: a settings file without one leaves its message silent. The shipped file has them all (checked by `EveryRestoredMessageHasItsKeysAndItsGroupInTheShippedAdvisorSettings`).
 
 ### What is restored
@@ -544,7 +544,6 @@ stranded-people and condemned keys); else the extension's own constant, document
 | Restorable with existing triggers (36) | 58, 59 | an open ride's queue holds 30 guests or more (59: three such rides, or half of the open rides, at least two; 59's speech sample is a silent stub, its caption plays); only the stronger line of the pair is posted |
 | | 65 | after `RidesNoUpgrades` months: a researched upgrade is on offer and none has ever been bought |
 | | 83, 84 | after 82 has been said, still no toilet and over twice `MorePeopleThanThisNeeding` guests with a toilet need above `NeedingMoreThan`; toilets exist but more than `MorePeopleThanThisNeeding` needy guests are 24 or more cells from the nearest |
-| | 99, 164, 165, 218, 219, 223, 224, 228, 229 | a golden ticket is won: the player-wide key count (the ledger's `PlayerTicketLedger.Keys`, which the HUD shows) tells whether it earned a key. No key, or no ledger, says 99; the key that opens Wonderland (3rd) or Space Zone (5th) says 165 or 164 (`Keys.CostToEnter` 3 and 5); another key says the ticket's criterion line (218 local, 223 global, 228 secret, the response is the ticket's own caption) and the twin 219/224/229 once the first has been said |
 | | 230-233 | the park earns a global ticket nobody held (coaster height, go-kart excitement, water length, big park): the award line |
 | | 319, 320 | a challenge is met and a follow-up is offered (double or nothing); the second in a row |
 | | 130, 131, 132 | an upgrade is bought with no mechanic hired, or while the mechanics strike; an upgrade is researched with no mechanic hired |
@@ -557,9 +556,9 @@ stranded-people and condemned keys); else the extension's own constant, document
 | New tracking (5) | 24, 25 | security cover below, after `StaffSetGuardArea` months: the cover row's own gates (at least `AtLeastThisMany` guards, one with a patrol area) and 9 percent or more of the path cells uncovered (24); no guard and no camera in a park of 30 path cells (25); both scores capped at 60 |
 | | 265 | a ride's exit has no path (below) |
 | | 349, 350 | guests aboard a broken-down ride (349), or a condemned one (350) |
-| Tutorial leftovers (8) | 196, 211 | the training budget window and the ride upgrade window open (screens `staffCosts`, `rideUpgrade`) |
+| Tutorial leftovers (7) | 196, 211 | the training budget window and the ride upgrade window open (screens `staffCosts`, `rideUpgrade`) |
 | | 202, 204 | a blueprint is chosen to place; the roller coaster tool starts |
-| | 283, 306, 322, 344 | a park starts with the pop-up help off; the camcorder is armed; the first message reaches the tube; the first challenge is offered |
+| | 283, 306, 322 | a park starts with the pop-up help off; the camcorder is armed; the first message reaches the tube (344, the first challenge, is the original's own now) |
 | Online and postcards (6) | 328, 329, 331, 332, 333, 334 | the Publish Park, park details, other parks, Find Parks, unsent postcards (outbox) and online world screens open (the online extension's own screens, also over a park through Go Online) |
 
 ### The new tracking

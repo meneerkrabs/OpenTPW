@@ -707,6 +707,96 @@ public class PoolsAttractionsTests
 		return rig;
 	}
 
+	/// <summary>[EXT:pools-waves] The river rig with a wave machine at the pool's north edge (its access cell is a river cell) and the water effects registered.</summary>
+	private static Rig RiverRigWithWaves( PoolWaveSettings settings )
+	{
+		var rig = RiverRig();
+		PoolWaveSettings.SetAt( rig.Cells, (6, 3), settings );
+		rig.Simulation.RegisterPoolActivity( new PoolWaterEffects( Sites( new PoolAttractionSite( 7001, PoolAttractionKind.WaveMachine, new[] { (6, 2) }, (6, 3) ) ) ) );
+		return rig;
+	}
+
+	[TestMethod]
+	public void TheWavesCarryTheFloatersInTheRiverWhoStayInTheLaneAndAreStillPaid()
+	{
+		var settings = new PoolWaveSettings( true, 3, 0 );
+		var calm = RiverRig();
+		var wavy = RiverRigWithWaves( settings );
+		for ( var i = 0; i < 12; i++ )
+		{
+			calm.Send();
+			wavy.Send();
+		}
+		var rivers = PoolRiverMap.Of( wavy.Cells );
+		var (apart, floatingTurns, paid) = (0, 0, 0);
+		var floatingBefore = new HashSet<int>();
+		for ( var turn = 0; turn < 3000; turn++ )
+		{
+			calm.Turns( 1 );
+			wavy.Turns( 1 );
+			foreach ( var floater in wavy.Simulation.Guests.Where( guest => guest.State == GuestState.PoolActivity && guest.PoolActivityId == RiverActivity.ActivityId ) )
+			{
+				floatingTurns++;
+				Assert.IsTrue( rivers.IsRiver( floater.Navigation.X >> 16, floater.Navigation.Y >> 16 ), $"turn {turn}: guest {floater.Id} stays in the river" );
+				Assert.IsTrue( wavy.Region.IsWater( floater.Navigation.X, floater.Navigation.Y ), $"turn {turn}: guest {floater.Id} stays in free water" );
+				if ( calm.Simulation.Guests.FirstOrDefault( other => other.Id == floater.Id ) is { } twin && (twin.Navigation.X, twin.Navigation.Y) != (floater.Navigation.X, floater.Navigation.Y) )
+					apart++;
+			}
+			var floatingNow = wavy.Simulation.Guests.Where( guest => guest.State == GuestState.PoolActivity && guest.PoolActivityId == RiverActivity.ActivityId ).Select( guest => guest.Id ).ToHashSet();
+			paid += floatingBefore.Count( id => !floatingNow.Contains( id ) );
+			floatingBefore = floatingNow;
+		}
+		Assert.IsTrue( floatingTurns > 200, $"{floatingTurns} floating turns" );
+		Assert.IsTrue( apart > floatingTurns / 10, $"the waves carry the floaters ({apart} of {floatingTurns} floating turns apart from the calm river)" );
+		Assert.IsTrue( paid > 0, "floats still end" );
+	}
+
+	[TestMethod]
+	public void ARiverWithWavesThatAreOffFloatsExactlyAsAPoolWithoutWaves()
+	{
+		var calm = RiverRig();
+		var off = RiverRigWithWaves( new PoolWaveSettings( false, 3, 0 ) );
+		for ( var i = 0; i < 12; i++ )
+		{
+			calm.Send();
+			off.Send();
+		}
+		for ( var turn = 0; turn < 1500; turn++ )
+		{
+			calm.Turns( 1 );
+			off.Turns( 1 );
+			foreach ( var guest in calm.Simulation.Guests )
+			{
+				var twin = off.Simulation.Guests.Single( other => other.Id == guest.Id );
+				Assert.AreEqual( (guest.State, guest.Navigation.X, guest.Navigation.Y), (twin.State, twin.Navigation.X, twin.Navigation.Y), $"turn {turn}: guest {guest.Id}" );
+			}
+		}
+	}
+
+	[TestMethod]
+	public void ASaveWhileTheWavesCarryAFloaterRestoresAndContinuesIdentically()
+	{
+		var settings = new PoolWaveSettings( true, 3, 0 );
+		var rig = RiverRigWithWaves( settings );
+		var guest = SendAndWaitForAFloater( rig );
+		rig.Until( () => guest.State != GuestState.PoolActivity
+			|| PoolWaves.Push( settings, rig.Simulation.ParkTurn, guest.Navigation.X, guest.Navigation.Y ).X > 0, 400 );
+		Assert.AreEqual( GuestState.PoolActivity, guest.State );
+		var snapshot = ParkResumeJson.Deserialize<GuestSimulationSnapshot>( ParkResumeJson.Serialize( rig.Simulation.CaptureSnapshot() ) );
+		Assert.IsTrue( rig.Simulation.ValidateSnapshot( snapshot ).IsValid, string.Join( "; ", rig.Simulation.ValidateSnapshot( snapshot ).Errors ) );
+		var copy = RiverRigWithWaves( settings );
+		copy.Simulation.RestoreSnapshot( snapshot );
+		var twin = copy.Simulation.Guests.Single( other => other.Id == guest.Id );
+		Assert.AreEqual( HashOf( rig ), HashOf( copy ) );
+		for ( var tick = 0; tick < 4000 && (guest.InPoolActivity || twin.InPoolActivity); tick++ )
+		{
+			rig.Simulation.Tick( 1f / FixedStepClock.TicksPerSecond );
+			copy.Simulation.Tick( 1f / FixedStepClock.TicksPerSecond );
+			Assert.AreEqual( (guest.State, guest.PoolActivityTurns, guest.Navigation.X, guest.Navigation.Y), (twin.State, twin.PoolActivityTurns, twin.Navigation.X, twin.Navigation.Y), $"tick {tick}" );
+		}
+		Assert.AreEqual( HashOf( rig ), HashOf( copy ) );
+	}
+
 	[TestMethod]
 	public void ASwimmerThatReachesTheRiverFloatsRoundTheRingAtTheCurrentsSpeedThenSwimsOn()
 	{

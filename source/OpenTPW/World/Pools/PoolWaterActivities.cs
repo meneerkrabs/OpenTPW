@@ -542,6 +542,7 @@ public sealed class RiverActivity : IPoolActivity
 			return PoolActivityStep.BackInWater;
 		}
 		// a floater keeps its gap along the lane: with another body in the water ahead of it within FloatGap (a floater, or a swimmer in the lane) it only drifts, and it stands when that one is closer than FloatMinimumGap
+		var rivers = PoolRiverMap.Of( simulation.Grid.Cells );
 		var (fromX, fromY) = (navigation.X, navigation.Y);
 		var blocker = Blocker( simulation, guest, region, fromX, fromY, x - fromX, y - fromY );
 		if ( blocker < PoolRiverSettings.FloatGap )
@@ -549,12 +550,21 @@ public sealed class RiverActivity : IPoolActivity
 			x = fromX;
 			y = fromY;
 			if ( blocker >= PoolRiverSettings.FloatMinimumGap )
-				PoolRiverMap.Of( simulation.Grid.Cells ).Float( ref x, ref y, PoolRiverSettings.DriftSpeed );
-			else
-				return PoolActivityStep.Continue;
+				rivers.Float( ref x, ref y, PoolRiverSettings.DriftSpeed );
 		}
 		// the float never leaves free water: a step that would (a lane the rim narrows) is not taken this turn
-		if ( region.IsWater( x, y ) )
+		if ( !region.IsWater( x, y ) )
+			(x, y) = (fromX, fromY);
+		// [EXT:pools-waves] the waves of the pool carry the floater too, where the push keeps it in free water of the river and clear of the other bodies: along the lane it surges and falls back,
+		// across it the float's own centring brings it back to the middle line
+		var (pushX, pushY) = simulation.PoolCurrent( guest, region );
+		if ( pushX != 0 || pushY != 0 )
+		{
+			var body = new PoolSwimBody { X = x, Y = y };
+			if ( rivers.IsRiver( (x + pushX) >> 16, (y + pushY) >> 16 ) && PoolSwimming.Drift( region, ref body, pushX, pushY, simulation.WaterBodyPoints( region, guest, x, y ) ) )
+				(x, y) = (body.X, body.Y);
+		}
+		if ( (x, y) != (fromX, fromY) )
 			simulation.MovePoolGuest( guest, x, y );
 		return PoolActivityStep.Continue;
 	}

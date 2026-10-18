@@ -195,8 +195,15 @@ public sealed partial class ParkHud
 			Bounds = table.Control( 0x1F4E ).Rect, Anchor = UiAnchor.Center } );
 		screen.Add( new UpgradeList( this ) { Id = "upgradeList", Bounds = UpgradeContent, Anchor = UiAnchor.Center } );
 		screen.Add( new UpgradeScrollBar( this ) { Id = "upgradeScroll", Bounds = new UiRect( UpgradeKnob.X, UpgradeTrack.Y, UpgradeTrack.Right - UpgradeKnob.X, UpgradeTrack.Height ), Anchor = UiAnchor.Center } );
-		screen.Add( new UiButton { Id = "scrollUp", Model = "b_up", Clicked = () => ScrollUpgrades( -1 ), Bounds = table.Model( "b_up" ).Rect, Anchor = UiAnchor.Center } );
-		screen.Add( new UiButton { Id = "scrollDown", Model = "b_down", Clicked = () => ScrollUpgrades( 1 ), Bounds = table.Model( "b_down" ).Rect, Anchor = UiAnchor.Center } );
+		// The list 0x1F4D is style 0x81 (no bit 0x10). The arrows' parent is its type 3 slider, style 0x10, so they play 0xBD and repeat at 500 ms then 125 ms.
+		void ScrollArrow( LayoutNode node, int step )
+		{
+			void Scroll() => ScrollUpgrades( step );
+			screen.Add( new UiButton { Id = step < 0 ? "scrollUp" : "scrollDown", Model = node.Model, ClickSound = table.ClickSoundOf( node ),
+				Clicked = Scroll, Repeat = UiButton.ScrollArrowRepeat( Scroll ), Bounds = node.Rect, Anchor = UiAnchor.Center } );
+		}
+		ScrollArrow( table.Model( "b_up" ), -1 );
+		ScrollArrow( table.Model( "b_down" ), 1 );
 		var exit = table.Model( "b_exit" );
 		screen.Add( new UiButton { Id = "cancel", Model = exit.Model, Help = strings.Help( 2 ), Clicked = CloseRideUpgrade, Bounds = exit.Rect, Anchor = UiAnchor.Center } );
 		screen.Back = CloseRideUpgrade;

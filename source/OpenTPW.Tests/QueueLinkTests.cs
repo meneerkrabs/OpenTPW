@@ -92,6 +92,22 @@ public class QueueLinkTests
 	}
 
 	[TestMethod]
+	public void APathLaidOverAQueueCellEditsTheQueueOfTheRideThatOwnsIt()
+	{
+		// [BIN:TPW-EXE:0x0053481F] the cell type setter's queue branch (type 1 over type 3) runs the owning ride's re-evaluation 0x004DE1F0
+		var (grid, ride) = Park();
+		ride.OwnerWord = ParkCellMap.CellWord( 2, 0 );
+		QueuePaths.TryExtend( grid, ride, Enumerable.Range( 0, 5 ).Select( index => (2, 5 - index) ) );
+		Assert.AreEqual( ride.OwnerWord, grid.Cells.OwnerAt( 2, 1 ) );
+		var paved = new List<ushort>();
+		var paths = new ParkPathBuilder( grid.Cells, grid, (ParkEconomy?)null, new FlatGrid() );
+		paths.QueueCellPaved += paved.Add;
+		var result = paths.BuildSegment( (5, 1), (2, 1) );
+		Assert.IsTrue( result.Built.Contains( (2, 1) ) || grid.Cells.TypeAt( 2, 1 ) == ParkCellType.Path, $"the path covers the queue end ({result.StoppedBy})" );
+		CollectionAssert.AreEqual( new[] { ride.OwnerWord }, paved );
+	}
+
+	[TestMethod]
 	public void EveryQueueEditRaisesTheReevaluationOfTheRide()
 	{
 		// tp.exe 0x004DE1F0 runs after each edit of the ride's cells; the level opens a closed, connected ride from it (QUEUE-023)

@@ -620,6 +620,15 @@ public partial class Level
 			ObjectGivesWay = ( x, y ) => Objects.GivesWay( x, y, ParkObjects.PathOverwritePriority ),
 			DemolishObject = DemolishObjectAt
 		};
+		// [BIN:TPW-EXE:0x0053481F queue edit] a path laid over a queue cell edits the queue of the ride that owns the cell (owner word): its queue is recomputed, its back cell stamped and the re-evaluation 0x004DE1F0 run
+		Paths.QueueCellPaved += owner =>
+		{
+			if ( Guests is { } guests && guests.Attractions.OfType<RideVisitorBridge>().FirstOrDefault( ride => ride.HasQueue && ride.OwnerWord == owner ) is { } ride )
+			{
+				ride.RecomputeQueue( guests.Grid );
+				ride.NotifyQueueEdited( guests.Grid );
+			}
+		};
 		// [EXT:pools-tool] the pool builder and its paint tool share the cell map; they refuse every cell while the extension is off (FeatureGates.Pools)
 		if ( !IsReadOnlyVisit )
 		{

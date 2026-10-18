@@ -879,17 +879,32 @@ public sealed class CoasterTrack
 	// ---- Cost -------------------------------------------------------------------------------------------
 
 	/// <summary>
-	/// The cost of one pylon (<c>0x4b168</c>) in single precision: CostPerUnit + CostPer2DLength × (horizontal
-	/// distance to the previous node / 10) + CostPerHeight × (pylon height / 10); distances in world units.
+	/// The cost of one pylon (<c>0x447830</c>) in single precision: the length rate × (2D length × 0.1) plus the unit cost, plus the height rate × (pylon height × 0.1); distances in world units.
+	/// Every operation rounds to a single, as the x87 does at the 24-bit precision the thread runs at (COAST-032).
 	/// </summary>
-	// [BIN:STP-PPC:0x1004B168 pylon cost] [CostPerUnit] + CostPer2DLength × (2D length / 10) + CostPerHeight × (height / 10), fused single multiply-adds, height h0 + t(h1 − h0) (0x100369BC) of the node's own pylon; the unit term is the own pylon's, the length and height rates those of <paramref name="rates"/> (default: the own pylon)
+	// [BIN:TPW-EXE:0x00447830 pylon cost] st0 = height × f32 0.1 (0x6fe1f0, 0x4478bf), length = fsqrt(dz² + dx²) × f32 0.1 (0x44791f, 0x447921), then ((CostPer2DLength × length) + unit) + (CostPerHeight × height) (0x447958..0x447968); the unit term is the own pylon's CostPerUnit (+0x5c) when the caller charges it (its second argument, 0x447919..0x447929) and 0 otherwise, the two rates those of the selected pylon (+0x60, +0x64; 0x447932..0x447956)
+	// [BIN:TPW-EXE:0x00563914 control word] the thread runs at 24 bits (docs/progress/2026-10-17-sign-precision.md: the CRT's 53 bits, then DirectDraw's FPUSETUP and D3DIM's CreateDevice set CW 0x7F and nothing restores it; the render function 0x576EC0 restores the word it found), so every fmul, fadd, fsub and fsqrt of this routine rounds to a single, which C# float arithmetic does one operation at a time
 	public static float PylonCost( CoasterPylonControl pylon, float length2D, float height, bool chargeUnit = true, CoasterPylonControl? rates = null )
 	{
 		rates ??= pylon;
-		var total = chargeUnit ? pylon.CostPerUnit : 0f;
-		total = MathF.FusedMultiplyAdd( rates.CostPer2DLength, length2D / CostUnitDivisor, total );
-		return MathF.FusedMultiplyAdd( rates.CostPerHeight, height / CostUnitDivisor, total );
+		var scaledHeight = height * CostUnitScale;
+		var scaledLength = length2D * CostUnitScale;
+		var length = rates.CostPer2DLength * scaledLength;
+		var unit = length + (chargeUnit ? pylon.CostPerUnit : 0f);
+		var heightCost = rates.CostPerHeight * scaledHeight;
+		return unit + heightCost;
 	}
+
+	/// <summary>The single the cost routine scales a length and a height by (<c>0x6fe1f0</c>): 0.1f, a multiplication where the Mac divides by 10.</summary>
+	public const float CostUnitScale = 0.1f;
+
+	/// <summary>The 2D length of a cost link in world units as the x87 forms it at 24 bits: the two squares and their sum rounded to singles, the square root rounded to a single.</summary>
+	// [BIN:TPW-EXE:0x004478f3 cost length] st0 = z difference, st1 = x difference (each a single subtraction of the two knot positions, +0x54 and +0x4c); the x difference goes through a double store (exact for a single), fmul squares each, faddp, fsqrt (0x4478e3..0x44791f)
+	public static float CostLength( float dx, float dz ) => MathF.Sqrt( dx * dx + dz * dz );
+
+	/// <summary>The pylon height a cost uses: <c>(h1 − h0) × t + h0</c>, one rounding per operation (<c>0x4346a0</c>: fld +0xc0, fsub +0xbc, fmul t, fadd +0xbc).</summary>
+	// [BIN:TPW-EXE:0x004346a0 cost height] the twin of 0x100369BC without the fused multiply-add; its callers are the cost routine 0x4478b3 and 0x443fb5
+	public static float CostHeight( CoasterPylonControl pylon, float t ) => (pylon.MeshHeightHigh - pylon.MeshHeightLow) * t + pylon.MeshHeightLow;
 
 	/// <summary>
 	/// The pylon whose length and height rates a node pays (<c>0x4b294..0x4b2d4</c>): a loop or trough pylon pays the
@@ -933,13 +948,24 @@ public sealed class CoasterTrack
 		return LinkCost( nodes[index], nodes[index - 1], StackBelow( nodes[index] ), chargeUnit );
 	}
 
-	// [BIN:STP-PPC:0x1004B244 cost length] the 2D length is sqrt(fmadd(dx, dx, dz·dz)) in double, rounded to single
+	// [BIN:TPW-EXE:0x004478b3 cost inputs] the positions are the two nodes' knot positions (+0x4c, +0x54; a station end node's is its dummy's, a pylon node's its cell corner + 5), the height the node's own pylon at the node's loft parameter (0x4346a0)
 	private float LinkCost( CoasterNode node, CoasterNode previous, CoasterNode? below, bool chargeUnit = true )
 	{
-		float dx = (node.X - previous.X) * CellUnits, dy = (node.Y - previous.Y) * CellUnits;
+		var (x, z) = KnotXZ( node );
+		var (px, pz) = KnotXZ( previous );
 		var pylon = Definition.Pylon( node.LoopPylon );
-		var length = (float)Math.Sqrt( (double)dx * dx + dy * dy );
-		return PylonCost( pylon, length, PylonHeight( pylon, node.T ), chargeUnit, RatePylon( node, previous, below ) );
+		var length = CostLength( x - px, z - pz );
+		return PylonCost( pylon, length, CostHeight( pylon, node.T ), chargeUnit, RatePylon( node, previous, below ) );
+	}
+
+	/// <summary>The horizontal position of a node's knot as the cost reads it: the exact position of a pylon-less node (the station end's is the first node's), else the cell corner plus half a cell.</summary>
+	private (float X, float Z) KnotXZ( CoasterNode node )
+	{
+		if ( node.IsStationEnd && nodes.Count > 0 )
+			node = nodes[0];
+		if ( node.ExactPosition is { } exact )
+			return (exact.X, exact.Z);
+		return (node.X * CellUnits + HalfCell, node.Y * CellUnits + HalfCell);
 	}
 
 	/// <summary>The float cost a pylon at (x, y) with the requested height would have after the last node.</summary>

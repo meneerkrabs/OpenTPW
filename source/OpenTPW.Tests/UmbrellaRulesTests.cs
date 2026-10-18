@@ -83,6 +83,7 @@ public class UmbrellaRulesTests
 		Assert.AreEqual( 200u, UmbrellaRules.ApplyBalloonFactor( 200, true, 0 ), "the model without life (+0x298 of 0) skips the cut" );
 		Assert.AreEqual( 200u, UmbrellaRules.ApplyBalloonFactor( 200, true, 255 ), "the quirk: a full-life balloon does not lower the shop's score at all, while a nearly full one cuts it to a hundredth" );
 		Assert.AreEqual( 2u, UmbrellaRules.ApplyBalloonFactor( 200, true, 254 ) );
+		Assert.AreEqual( 7050327u, UmbrellaRules.ApplyBalloonFactor( 100_000_000, true, 128 ), "factor 50 x 100000000 wraps at 32 bits before the division by 100, as the original's imul does" );
 	}
 
 	[DataTestMethod]

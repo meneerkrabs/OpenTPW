@@ -209,6 +209,33 @@ public class DeterminismTests
 		return park.Hash;
 	}
 
+	/// <summary>
+	/// [EXT:evening] The evening and night extension is presentation only: a park run with it on, with the day cycle stepping beside the simulation the way Level.Update does, ends with the
+	/// same world hash as the run without it, and as the plain run every other pin here is made with.
+	/// </summary>
+	[TestMethod]
+	public void TheEveningExtensionChangesNoWorldHashOfAParkRun()
+	{
+		ulong Run( bool extensionOn )
+		{
+			using var scope = OpenTPW.Mods.OpenTpwExtensions.Use( EveningTests.Set( extensionOn ) );
+			var level = EveningTests.BareLevel();
+			var park = new SyntheticPark( WorldSeed.Default );
+			for ( var chunk = 0; chunk < 2 * HalfRun / 60; chunk++ )
+			{
+				park.Run( 60 );
+				// a frame of presentation beside every second of simulation; half the frames are paused, which the cycle also survives
+				level.AdvanceEvening( FeatureGates.Evening, EveningPace.Minutes10, 0.25, playing: chunk % 2 == 0 );
+			}
+			Assert.AreEqual( extensionOn, level.EveningDayClock != null );
+			Assert.IsTrue( park.Guests.Admissions > 10, "guests arrived and paid" );
+			return park.Hash;
+		}
+		var off = Run( extensionOn: false );
+		Assert.AreEqual( off, Run( extensionOn: true ), "the evening extension leaves the world hash alone" );
+		Assert.AreEqual( RunToEnd( WorldSeed.Default ), off, "and the run is the plain run every other pin is made with" );
+	}
+
 	[TestMethod]
 	public void DefaultWorldSeedKeepsThePreviousStreamSeeds()
 	{

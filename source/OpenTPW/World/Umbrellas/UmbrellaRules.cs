@@ -133,9 +133,9 @@ public static class UmbrellaRules
 		return factor;
 	}
 
-	/// <summary>The score after the balloon's cut: times <see cref="BalloonFactor"/> over 100 (unsigned); unchanged without a cut.</summary>
+	/// <summary>The score after the balloon's cut: times <see cref="BalloonFactor"/> over 100 (unsigned); unchanged without a cut. The product wraps at 32 bits before the division, as the original's <c>imul ecx, edi</c> does (<c>TPI-EXE:0x610b4a</c>).</summary>
 	public static uint ApplyBalloonFactor( uint score, bool holdsBalloon, int balloonLife, int discardPercent = DiscardBalloonPctModifier ) =>
-		BalloonFactor( holdsBalloon, balloonLife, discardPercent ) is { } factor ? (uint)((ulong)(uint)factor * score / 100u) : score;
+		BalloonFactor( holdsBalloon, balloonLife, discardPercent ) is { } factor ? unchecked( (uint)factor * score ) / 100u : score;
 
 	// ---- The day gate and the states ---------------------------------------------------------------------------------
 

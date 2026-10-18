@@ -1,0 +1,25 @@
+#
+#	OpenTPW example mod: a lamp post whose light the object's script switches and colours (docs/LIGHTS.md)
+#	Every number marked "OpenTPW's own value" is a choice of this example, not a value of the original game.
+#
+Info.Id			65000		placeholder: objects.json replaces it with the object's own id
+Info.Name		"Lamp Post"
+Info.IsChoosable	0		guests never choose a lamp
+Info.HasQueue		0
+Info.WhichUIType	3		a feature (the build menu's Features tab)
+
+# The footprint: one cell, no entrance and no exit.
+Info.Shape
+---
+*
+---
+
+Upgrades[0].CostOfUpgrade		40		OpenTPW's own value
+Upgrades[0].CostOfResearch		0		An object without research cost starts researched
+Research.Group		0
+Info.PreviewAnimNum		0
+
+# [EXT:object-lights] The model carries one light dummy, number 0 (a warm white of radius 60 model units); these keys tune it without
+# touching the model. Colours are percent of full, the radius is in model units (0.2 engine units each: 70 is 14 units, seven cells).
+Lights[0].Radius	70		overrides the 60 the model carries
+Lights[0].On		1		the light starts on (the default); 0 would start it off until the script enables it

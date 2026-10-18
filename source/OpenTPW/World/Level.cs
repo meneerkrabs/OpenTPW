@@ -9,6 +9,9 @@ public partial class Level : IDisposable
 	public RootPanel Hud { get; set; }
 	public Sun SunLight { get; set; }
 
+	/// <summary>[EXT:point-lights] The level's point lights (docs/LIGHTS.md): placed objects with light dummies register here; the original engine supports them but never creates one.</summary>
+	public PointLightSet PointLights { get; } = new();
+
 	public SettingsFile Global { get; private init; }
 	private ParkLayout parkLayout = null!;
 	internal SandboxTextOverlay TextOverlay { get; private set; } = null!;
@@ -1140,6 +1143,8 @@ public partial class Level : IDisposable
 
 	public void Render()
 	{
+		// [EXT:point-lights] the lights of the objects that have any, for every draw of this frame
+		PointLights?.Gather( Camera.ViewMatrix * Camera.ProjMatrix );
 		foreach ( var entity in Entity.All.ToArray() )
 			entity.Render();
 	}

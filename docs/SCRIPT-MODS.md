@@ -477,6 +477,12 @@ the tick (the base policy answers) and `TicksOverBudget` grows, but it is never 
 Because the whole of `state` is copied (on the first write of a call) and validated (on every write), a mod that writes a large `state` on every call pays about two steps per node: a call that
 writes into a 2 000-node `state` is at the call budget. Keep the state small or write it rarely.
 
+## Object lights are not a script-mod hook
+
+TPW Script mods answer the four guest hooks only. Lights belong to the objects' own RSE scripts (`ENABLELIGHT`, `DISABLELIGHT`, `SETLIGHT`, `COLOURLIGHT`) and their models, which a data mod brings with `objects.json`: see
+[LIGHTS.md](LIGHTS.md) and the example `opentpw.example.lamp-lights`. A light is presentation, so such a mod needs no script and changes no simulation hash (a mod with objects is still recorded in park saves as
+[MODS.md](MODS.md#mods-in-park-saves) describes).
+
 ## The example mod
 
 `opentpw.example.patient-guests` (official, off by default, not in the web build) implements `joinQueue` and `leaveQueue` and keeps two counters in `state`:

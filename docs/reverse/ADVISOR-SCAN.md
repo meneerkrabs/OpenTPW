@@ -18,8 +18,8 @@ values are game data: the inventory stores the `TAG_SYSTEM.str` entry numbers an
 
 | Status | Messages | Meaning |
 | --- | ---: | --- |
-| wired | 133 | OpenTPW produces the message today |
-| ready | 100 | every input exists in OpenTPW (the inventory names the class or field); only the producer is missing |
+| wired | 171 | OpenTPW produces the message today |
+| ready | 62 | every input exists in OpenTPW (the inventory names the class or field); only the producer is missing |
 | blocked | 13 | an input is missing or approximated |
 | none | 105 | nothing to produce: 21 are scored by the scan but their callback is the constant-zero stub, 84 have no producer in `tp.exe` at all |
 
@@ -38,18 +38,19 @@ values are game data: the inventory stores the `TAG_SYSTEM.str` entry numbers an
 | Rides, shops, sideshows and features | 22 | 0 | 0 | 0 | 22 |
 | Queues and prices | 0 | 22 | 1 | 0 | 23 |
 | Guest mood and thoughts | 9 | 0 | 2 | 0 | 11 |
-| Staff | 25 | 38 | 6 | 0 | 69 |
+| Staff | 63 | 0 | 6 | 0 | 69 |
 | Research | 10 | 9 | 0 | 0 | 19 |
 | Weather | 0 | 0 | 0 | 0 | 0 |
 | Challenges and golden tickets | 5 | 24 | 0 | 0 | 29 |
 | Tutorial and help | 43 | 2 | 3 | 37 | 85 |
 | Other | 3 | 5 | 1 | 68 | 77 |
-| Total | 133 | 100 | 13 | 105 | 351 |
+| Total | 171 | 62 | 13 | 105 | 351 |
 
 Weather has no message: no score callback reads weather or season state, no poster is a weather event, and no `TAG_SYSTEM.str` caption
-of the advisor mentions rain, storm or snow. The "about 91" messages with a producer: **133** produce advice today: 53 posted by game code (0, 323, 106, 128, 129, 33-57, 66, 68-70, 93-97,
-125-127, 133-136, 167, 234-237, 258, 271), 42 help messages of windows and tools OpenTPW has, and 38 scored by the ported scan (the money batch: 100-105 and 107, and the 31 park
-callbacks of the rides, cleanliness and guest mood batches: 3-10, 60, 62, 71, 73-75, 77-79, 81, 82, 85-89, 145, 158, 159 and 259-262).
+of the advisor mentions rain, storm or snow. The "about 91" messages with a producer: **171** produce advice today: 53 posted by game code (0, 323, 106, 128, 129, 33-57, 66, 68-70, 93-97,
+125-127, 133-136, 167, 234-237, 258, 271), 42 help messages of windows and tools OpenTPW has, and 76 scored by the ported scan (the money batch: 100-105 and 107, the 31 park
+callbacks of the rides, cleanliness and guest mood batches: 3-10, 60, 62, 71, 73-75, 77-79, 81, 82, 85-89, 145, 158, 159 and 259-262, and the 38 staff callbacks: 11, 13, 14, 18, 20, 23, 26, 28-32,
+108-112, 114-123, 144, 146-150, 169-172 and 263).
 `AutomaticAdvisor.GlobalTicketMovedMessage` posts 234-237 when a global golden ticket moves here, and `AdvisorTables` now defines them (the four rows
 `(234-237, "AwardMoved.Score")` in `EventScoreKeys`; their group 2 controls are read when the settings file has them). 66, 68, 69 and 258 are posted by the ride events
 (`AdvisorRideEvents`, see "Park callbacks").
@@ -302,27 +303,48 @@ events) and `AdvisorProducerInventoryTests` (every ported callback is "wired"). 
 | 159 | wired | cb 0x59F970 | guests in costume (0x4C95D0, +0x24 == 2) > CongratCostumes.MoreThan: flat Score | 175 |
 | 264 | blocked | cb 0x5A04F0 | pranksters (0x4C94A0 arg 0) > MorePrankstersThan: flat LotsOfPranks.Score | speech only |
 
+## Staff callbacks
+
+The 38 staff rows below that were `ready` are ported (`AdvisorStaffCallbacks` in `source/OpenTPW/World/AdvisorScanStaff.cs`, over `IAdvisorStaffState`, which `EconomyParkState` implements next
+to `IAdvisorParkState`; a park state without it, and a settings file without a threshold, score 0). Re-read from the code of the callbacks, this corrects the first inventory text in five places:
+
+- **Set a patrol area** (18, 20, 23, 26: `0x59D0C0`, `0x59D250`, `0x59D400`, `0x59D4C0`): the score is `(100 - percent) x ScorePerUnpatrolledPct`, not `(DontBotherIfPatrolledUp - percent)`; `DontBotherIfPatrolledUp` is only the upper bound of the
+  percent (`percent <= DontBother` passes). The months are the park clock divided by 30 days (`0x4F8800` / `0x1792F8648000`, whole days / 30). The original divides by the role's staff count even when it is 0, which only a `AtLeastThisMany` of 0 or less can reach: a fault there, 0 here.
+- **Training** (28-32: `0x59D620`-`0x59D7A0`; congratulations 146-150): the "training in progress" word is the role's **training budget** in the staff HQ (`0x519450` returns the HQ at `+0x1DA718`; its budget words start at `+0xC` in the order handyman, mechanic, entertainer, guard,
+  researcher, the training window stores them at `0x4B2534`-`0x4B25CB`). The advice to train needs the budget not above 0, the congratulations need it above 0. The "average training" `0x4C9C00(role)` is `grades x 100 / (members x 5)` over the members of the role (`+0x1E4`, the pay grade), not the training points.
+- **Staff happy** (144: `0x59F590`): the staff's mean happiness (`0x4C7CC0`, the truncated happiness bytes added in an integer, then divided as a single; 0 without staff) must be at least `HappierThan` (equality passes), not strictly above it.
+- **Train your staff** (172: `0x59FB10`) reads the byte `+0x20` of the same record, the HQ's `mHaveEverTrained`: the training window sets it when a budget above 0 is stored (`0x4B25D0`) and nothing clears it. It is saved (`0x50C640`), so an earlier note that no code reads it missed this line.
+  OpenTPW keeps it as `ParkStaff.HaveEverTrained` (set by `SetTrainingBudget`, imported from the original save's HQ, written to the park save when set).
+- **Too many staff of a role** (114-123): the words `0x7852E8` (handyman), `0x7852EC` (mechanic), `0x7852F0` (entertainer), `0x7852F4` (guard) and `0x7852F8` (researcher) are the schema fields `MaxHandymenInPark` to `MaxResearchersInPark` of `StaffPoolInfo` (five consecutive words in the schema's order; counting the schema's leaves on from `0x7852E8` through the rest of `StaffPoolInfo` and `Arrival` lands on
+  `RestLevel`, the first key of `AllStaffConstants`, at `0x785324`, the word the tired test `0x506680` reads), read with `BalanceSettings` as `MaximumInPark`. The first line of a role needs the limit to equal `<Role>.MoreThan` and the role's staff to reach it; the V2 line needs the limit to differ from it and the staff to equal the limit.
+  122 (`0x59F1A0`) compares the **guards'** limit with `MaxGuards.MoreThan` and counts the researchers against `MaxResearchers.MoreThan`: the original's copy slip, ported as it is.
+
+The remaining inputs: busy points `0x4C81E0` = half the guests on census cells, at most 100 (the same census as `0x4C9130`); unhappy percent `0x4C9750(30)` = the census guests whose happiness byte is below 30 x 100 / the census
+(`IParkGuestStatistics.CensusPercentBelowHappiness`); tired staff `0x4C9AA0` = energy byte below `RestLevel` (`0x506680`); staff with a patrol area `0x4C9B40(role)` = area corner words other than 1 and `0x4000` (`StaffMember.HasPatrolArea`; argument 0 counts every role);
+all staff `0x4C9A10` (every thing of the models 4 to 8, where `0x4C9960` also tests the flag byte `+3`); visitors so far `0x4C94C0` = the lifetime counter `+0x21C08` (`ParkCounters.Admissions`); staff rooms `0x4CA030` / closed `0x4CA0C0` = the attractions with the rest-area flag (`UsageInfo.ChillsYouOut`,
+bit 2 of `+0x32`) whose open word is 0. The coverage rows (19, 21, 27) and the prank rows (12, 22, 98) stay blocked.
+
 ## Staff
 
 | Msg | Status | Producer | Condition and score | TAG_SYSTEM caption |
 | ---: | --- | --- | --- | --- |
-| 11 | ready | cb 0x59CCB0 | park open, days since first hire >= DaysForStaff, no guard: busy points (0x4C81E0 = min(100, guests/2)) minus AtLeastThisBusy, x ScorePerExtraBusyPoint | 17 |
+| 11 | wired | cb 0x59CCB0 | park open, days since the newest hire (the hire stamp) >= DaysForStaff, no guard: (busy points (0x4C81E0 = min(100, guests in the park / 2)) - AtLeastThisBusy) x ScorePerExtraBusyPoint, not clamped | 17 |
 | 12 | blocked | cb 0x59CD30 | park open, no guard: StaffHireGuards2.Score + misbehaving kids (0x4C94A0 arg 0) x AdditionalPerMisbehavingKid | 18 |
-| 13 | ready | cb 0x59CD90 | park open, days since first hire >= DaysForStaff, developed cells >= MinCellsForConsideration: (cells - guards x IdealDevelopedCellsPerGuard) x ScorePerExtra10Cells | 19 |
-| 14 | ready | cb 0x59CE30 | park open, no entertainer, more than 30 percent of guests have happiness below 30 (0x4C9750): (busy points - AtLeastThisBusy) x ScorePerExtraBusyPoint | 20 |
-| 18 | ready | cb 0x59D0C0 | months in game >= MonthsIntoGameForConsideration, staff of the role >= AtLeastThisMany, percent with a patrol area set (0x4C9B40) <= DontBotherIfPatrolledUp: (DontBotherIfPatrolledUp - percent) x ScorePerUnpatrolledPct | speech only |
+| 13 | wired | cb 0x59CD90 | park open, days since the newest hire >= DaysForStaff, developed cells >= MinCellsForConsideration: (cells - guards x IdealDevelopedCellsPerGuard) x ScorePerExtra10Cells while above 0 | 19 |
+| 14 | wired | cb 0x59CE30 | park open, no entertainer, more than 30 percent of the guests have a happiness byte below 30 (0x4C9750 of 30): (busy points - AtLeastThisBusy) x ScorePerExtraBusyPoint | 20 |
+| 18 | wired | cb 0x59D0C0 | park months (clock / 30 days) >= MonthsIntoGameForConsideration, staff of the role >= AtLeastThisMany, percent with a patrol area set (0x4C9B40 x 100 / staff) <= DontBotherIfPatrolledUp: (100 - percent) x ScorePerUnpatrolledPct | speech only |
 | 19 | blocked | cb 0x59D180 | months in game >= threshold, role count >= AtLeastThisMany, some patrol area set: uncovered-cell percent (0x4CD500) x ScorePerNonCoveredPercent, at least the coverage Score | speech only |
-| 20 | ready | cb 0x59D250 | months in game >= MonthsIntoGameForConsideration, staff of the role >= AtLeastThisMany, percent with a patrol area set (0x4C9B40) <= DontBotherIfPatrolledUp: (DontBotherIfPatrolledUp - percent) x ScorePerUnpatrolledPct | speech only |
+| 20 | wired | cb 0x59D250 | park months (clock / 30 days) >= MonthsIntoGameForConsideration, staff of the role >= AtLeastThisMany, percent with a patrol area set (0x4C9B40 x 100 / staff) <= DontBotherIfPatrolledUp: (100 - percent) x ScorePerUnpatrolledPct | speech only |
 | 21 | blocked | cb 0x59D310 | months in game >= threshold, role count >= AtLeastThisMany, some patrol area set: uncovered-cell percent (0x4CD500) x ScorePerNonCoveredPercent, at least the coverage Score | speech only |
 | 22 | blocked | cb 0x59D3B0 | a guard exists and the escape counter (0x4C94A0 arg 1) > StaffGuardBuildCamera.AcceptableTrouble: flat Score | 28 |
-| 23 | ready | cb 0x59D400 | months in game >= MonthsIntoGameForConsideration, staff of the role >= AtLeastThisMany, percent with a patrol area set (0x4C9B40) <= DontBotherIfPatrolledUp: (DontBotherIfPatrolledUp - percent) x ScorePerUnpatrolledPct | speech only |
-| 26 | ready | cb 0x59D4C0 | months in game >= MonthsIntoGameForConsideration, staff of the role >= AtLeastThisMany, percent with a patrol area set (0x4C9B40) <= DontBotherIfPatrolledUp: (DontBotherIfPatrolledUp - percent) x ScorePerUnpatrolledPct | speech only |
+| 23 | wired | cb 0x59D400 | park months (clock / 30 days) >= MonthsIntoGameForConsideration, staff of the role >= AtLeastThisMany, percent with a patrol area set (0x4C9B40 x 100 / staff) <= DontBotherIfPatrolledUp: (100 - percent) x ScorePerUnpatrolledPct | speech only |
+| 26 | wired | cb 0x59D4C0 | park months (clock / 30 days) >= MonthsIntoGameForConsideration, staff of the role >= AtLeastThisMany, percent with a patrol area set (0x4C9B40 x 100 / staff) <= DontBotherIfPatrolledUp: (100 - percent) x ScorePerUnpatrolledPct | speech only |
 | 27 | blocked | cb 0x59D580 | months in game >= threshold, role count >= AtLeastThisMany, some patrol area set: uncovered-cell percent (0x4CD500) x ScorePerNonCoveredPercent, at least the coverage Score | speech only |
-| 28 | ready | cb 0x59D620 | role exists, no training in progress (0x519450 +0xC), average training percent (0x4C9C00) < WorseThan: flat Score | 33 |
-| 29 | ready | cb 0x59D680 | role exists, no training in progress (0x519450 +0xC), average training percent (0x4C9C00) < WorseThan: flat Score | 34 |
-| 30 | ready | cb 0x59D6E0 | role exists, no training in progress (0x519450 +0xC), average training percent (0x4C9C00) < WorseThan: flat Score | 35 |
-| 31 | ready | cb 0x59D740 | role exists, no training in progress (0x519450 +0xC), average training percent (0x4C9C00) < WorseThan: flat Score | 36 |
-| 32 | ready | cb 0x59D7A0 | role exists, no training in progress (0x519450 +0xC), average training percent (0x4C9C00) < WorseThan: flat Score | 37 |
+| 28 | wired | cb 0x59D620 | role exists, its training budget in the staff HQ (0x519450 +0xC to +0x1C) is not above 0, average training (0x4C9C00 = 20 x grades / members) < WorseThan: flat Score | 33 |
+| 29 | wired | cb 0x59D680 | role exists, its training budget in the staff HQ (0x519450 +0xC to +0x1C) is not above 0, average training (0x4C9C00 = 20 x grades / members) < WorseThan: flat Score | 34 |
+| 30 | wired | cb 0x59D6E0 | role exists, its training budget in the staff HQ (0x519450 +0xC to +0x1C) is not above 0, average training (0x4C9C00 = 20 x grades / members) < WorseThan: flat Score | 35 |
+| 31 | wired | cb 0x59D740 | role exists, its training budget in the staff HQ (0x519450 +0xC to +0x1C) is not above 0, average training (0x4C9C00 = 20 x grades / members) < WorseThan: flat Score | 36 |
+| 32 | wired | cb 0x59D7A0 | role exists, its training budget in the staff HQ (0x519450 +0xC to +0x1C) is not above 0, average training (0x4C9C00 = 20 x grades / members) < WorseThan: flat Score | 37 |
 | 33 | wired | CMsgStaffInfo (type 0x17) from the staff manager month routine 0x509031-0x5092AA; 0x59AFC0 posts 33 + 5 x kind + role (0x59B034) | kind 0 unhappy, 1 very unhappy, 2 striking, 3 happier, 4 strike over; role order handyman, mechanic, guard, entertainer, researcher | 38 |
 | 34 | wired | CMsgStaffInfo (type 0x17) from the staff manager month routine 0x509031-0x5092AA; 0x59AFC0 posts 33 + 5 x kind + role (0x59B034) | kind 0 unhappy, 1 very unhappy, 2 striking, 3 happier, 4 strike over; role order handyman, mechanic, guard, entertainer, researcher | 39 |
 | 35 | wired | CMsgStaffInfo (type 0x17) from the staff manager month routine 0x509031-0x5092AA; 0x59AFC0 posts 33 + 5 x kind + role (0x59B034) | kind 0 unhappy, 1 very unhappy, 2 striking, 3 happier, 4 strike over; role order handyman, mechanic, guard, entertainer, researcher | 40 |
@@ -349,32 +371,32 @@ events) and `AdvisorProducerInventoryTests` (every ported callback is "wired"). 
 | 56 | wired | CMsgStaffInfo (type 0x17) from the staff manager month routine 0x509031-0x5092AA; 0x59AFC0 posts 33 + 5 x kind + role (0x59B034) | kind 0 unhappy, 1 very unhappy, 2 striking, 3 happier, 4 strike over; role order handyman, mechanic, guard, entertainer, researcher | 61 |
 | 57 | wired | CMsgStaffInfo (type 0x17) from the staff manager month routine 0x509031-0x5092AA; 0x59AFC0 posts 33 + 5 x kind + role (0x59B034) | kind 0 unhappy, 1 very unhappy, 2 striking, 3 happier, 4 strike over; role order handyman, mechanic, guard, entertainer, researcher | 62 |
 | 98 | blocked | cb 0x59E840 | escaped pranksters (0x4C94A0 arg 1) > MoreThanThisGotAway: count x ScorePerGetAway | 119 |
-| 108 | ready | cb 0x59EDD0 | handymen hired > attractions (0x4CA8E0 kind 0) + FudgeFactor: flat Score | 129 |
-| 109 | ready | cb 0x59EE20 | entertainers hired > attractions (0x4CA8E0 kind 0) + FudgeFactor: flat Score | 130 |
-| 110 | ready | cb 0x59EE70 | mechanics hired > attractions (0x4CA8E0 kind 0) + FudgeFactor: flat Score | 131 |
-| 111 | ready | cb 0x59EEC0 | guards hired > attractions (0x4CA8E0 kind 0) + FudgeFactor: flat Score | 132 |
-| 112 | ready | cb 0x59EF10 | researchers hired > attractions (0x4CA8E0 kind 0) + FudgeFactor: flat Score | 133 |
-| 114 | ready | cb 0x59EFA0 | staff of the role has reached MoreThan, the limit of ten: flat Score (the V2 message is the repeat variant) | 135 |
-| 115 | ready | cb 0x59EFE0 | staff of the role has reached MoreThan, the limit of ten: flat Score (the V2 message is the repeat variant) | 136 |
-| 116 | ready | cb 0x59F020 | staff of the role has reached MoreThan, the limit of ten: flat Score (the V2 message is the repeat variant) | 137 |
-| 117 | ready | cb 0x59F060 | staff of the role has reached MoreThan, the limit of ten: flat Score (the V2 message is the repeat variant) | 138 |
-| 118 | ready | cb 0x59F0A0 | staff of the role has reached MoreThan, the limit of ten: flat Score (the V2 message is the repeat variant) | 139 |
-| 119 | ready | cb 0x59F0E0 | staff of the role has reached MoreThan, the limit of ten: flat Score (the V2 message is the repeat variant) | 140 |
-| 120 | ready | cb 0x59F120 | staff of the role has reached MoreThan, the limit of ten: flat Score (the V2 message is the repeat variant) | 141 |
-| 121 | ready | cb 0x59F160 | staff of the role has reached MoreThan, the limit of ten: flat Score (the V2 message is the repeat variant) | 142 |
-| 122 | ready | cb 0x59F1A0 | staff of the role has reached MoreThan, the limit of ten: flat Score (the V2 message is the repeat variant) | 143 |
-| 123 | ready | cb 0x59F1E0 | staff of the role has reached MoreThan, the limit of ten: flat Score (the V2 message is the repeat variant) | 144 |
-| 144 | ready | cb 0x59F590 | staff >= MinimumStaff and average staff happiness (0x4C7CC0) > HappierThan: flat CongratStaffHappy.Score | speech only |
-| 146 | ready | cb 0x59F630 | training has run (0x519450 +0xC > 0), guards > Minimum and average training (0x4C9C00) > BetterThan: flat Score | speech only |
-| 147 | ready | cb 0x59F6A0 | training has run (0x519450 +0xC > 0), researchers > Minimum and average training (0x4C9C00) > BetterThan: flat Score | speech only |
-| 148 | ready | cb 0x59F710 | training has run (0x519450 +0xC > 0), handymen > Minimum and average training (0x4C9C00) > BetterThan: flat Score | speech only |
-| 149 | ready | cb 0x59F780 | training has run (0x519450 +0xC > 0), entertainers > Minimum and average training (0x4C9C00) > BetterThan: flat Score | speech only |
-| 150 | ready | cb 0x59F7F0 | training has run (0x519450 +0xC > 0), mechanics > Minimum and average training (0x4C9C00) > BetterThan: flat Score | speech only |
-| 169 | ready | cb 0x59F9C0 | after 3 months: tired staff percent (0x4C9AA0 / total) > NeedStaffRoom.PctOfStaffTired: flat Score | speech only |
-| 170 | ready | cb 0x59FA60 | park open, visitors ever >= MinVisitorsEver, no staff at all: flat HireStaffGeneral.Score | speech only |
-| 171 | ready | cb 0x59FAC0 | staff > MinStaffForMessage and nobody has a patrol area (0x4C9B40): flat SetPatrolsGeneral.Score | speech only |
-| 172 | ready | cb 0x59FB10 | staff > MinStaffForMessage and no training ever started (0x519450 +0xC == 0): flat TrainStaffGeneral.Score | speech only |
-| 263 | ready | cb 0x5A0490 | staff rooms closed (0x4CA0C0) x 100 / staff rooms > MoreThanThisPercentClosed: flat StaffroomClosed.Score | speech only |
+| 108 | wired | cb 0x59EDD0 | handymen hired > attractions (0x4CA8E0 kind 0) + FudgeFactor: flat Score | 129 |
+| 109 | wired | cb 0x59EE20 | entertainers hired > attractions (0x4CA8E0 kind 0) + FudgeFactor: flat Score | 130 |
+| 110 | wired | cb 0x59EE70 | mechanics hired > attractions (0x4CA8E0 kind 0) + FudgeFactor: flat Score | 131 |
+| 111 | wired | cb 0x59EEC0 | guards hired > attractions (0x4CA8E0 kind 0) + FudgeFactor: flat Score | 132 |
+| 112 | wired | cb 0x59EF10 | researchers hired > attractions (0x4CA8E0 kind 0) + FudgeFactor: flat Score | 133 |
+| 114 | wired | cb 0x59EFA0 | the role's park limit (MaxHandymenInPark, words 0x7852E8-0x7852F8) equals MoreThan and the staff of the role >= MoreThan: flat Score; the V2 message is the line for a limit that is not MoreThan | 135 |
+| 115 | wired | cb 0x59EFE0 | the role's park limit is not the first message's MoreThan and the staff of the role equal the limit exactly: flat Score (the repeat variant of the limit line) | 136 |
+| 116 | wired | cb 0x59F020 | the role's park limit (MaxEntertainersInPark, words 0x7852E8-0x7852F8) equals MoreThan and the staff of the role >= MoreThan: flat Score; the V2 message is the line for a limit that is not MoreThan | 137 |
+| 117 | wired | cb 0x59F060 | the role's park limit is not the first message's MoreThan and the staff of the role equal the limit exactly: flat Score (the repeat variant of the limit line) | 138 |
+| 118 | wired | cb 0x59F0A0 | the role's park limit (MaxMechanicsInPark, words 0x7852E8-0x7852F8) equals MoreThan and the staff of the role >= MoreThan: flat Score; the V2 message is the line for a limit that is not MoreThan | 139 |
+| 119 | wired | cb 0x59F0E0 | the role's park limit is not the first message's MoreThan and the staff of the role equal the limit exactly: flat Score (the repeat variant of the limit line) | 140 |
+| 120 | wired | cb 0x59F120 | the role's park limit (MaxGuardsInPark, words 0x7852E8-0x7852F8) equals MoreThan and the staff of the role >= MoreThan: flat Score; the V2 message is the line for a limit that is not MoreThan | 141 |
+| 121 | wired | cb 0x59F160 | the role's park limit is not the first message's MoreThan and the staff of the role equal the limit exactly: flat Score (the repeat variant of the limit line) | 142 |
+| 122 | wired | cb 0x59F1A0 | the guards' park limit (0x7852F4, the original's copy slip) equals MaxGuards.MoreThan and the researchers >= MaxResearchers.MoreThan: flat Score; the V2 message is the line for a limit that is not MoreThan | 143 |
+| 123 | wired | cb 0x59F1E0 | the role's park limit is not the first message's MoreThan and the staff of the role equal the limit exactly: flat Score (the repeat variant of the limit line) | 144 |
+| 144 | wired | cb 0x59F590 | staff >= MinimumStaff and average staff happiness (0x4C7CC0, a single) >= HappierThan: flat CongratStaffHappy.Score | speech only |
+| 146 | wired | cb 0x59F630 | the role's training budget in the staff HQ is above 0, staff of the role > Minimum and average training (0x4C9C00) > BetterThan: flat Score | speech only |
+| 147 | wired | cb 0x59F6A0 | the role's training budget in the staff HQ is above 0, staff of the role > Minimum and average training (0x4C9C00) > BetterThan: flat Score | speech only |
+| 148 | wired | cb 0x59F710 | the role's training budget in the staff HQ is above 0, staff of the role > Minimum and average training (0x4C9C00) > BetterThan: flat Score | speech only |
+| 149 | wired | cb 0x59F780 | the role's training budget in the staff HQ is above 0, staff of the role > Minimum and average training (0x4C9C00) > BetterThan: flat Score | speech only |
+| 150 | wired | cb 0x59F7F0 | the role's training budget in the staff HQ is above 0, staff of the role > Minimum and average training (0x4C9C00) > BetterThan: flat Score | speech only |
+| 169 | wired | cb 0x59F9C0 | park months >= 3: tired staff percent (0x4C9AA0 x 100 / all staff) > PctOfStaffTired: flat Score | speech only |
+| 170 | wired | cb 0x59FA60 | park open, visitors ever >= MinVisitorsEver, no staff at all: flat HireStaffGeneral.Score | speech only |
+| 171 | wired | cb 0x59FAC0 | staff > MinStaffForMessage and nobody has a patrol area (0x4C9B40): flat SetPatrolsGeneral.Score | speech only |
+| 172 | wired | cb 0x59FB10 | all staff > MinStaffForMessage and the staff HQ's mHaveEverTrained byte (+0x20 of 0x519450, set once a training budget above 0 is stored) is clear: flat TrainStaffGeneral.Score | speech only |
+| 263 | wired | cb 0x5A0490 | staff rooms closed (0x4CA0C0) x 100 / staff rooms > MoreThanThisPercentClosed: flat StaffroomClosed.Score | speech only |
 
 ## Research
 
@@ -567,7 +589,7 @@ stranded-people and condemned keys); else the extension's own constant, document
 3. **Rides and breakdowns** (5, 6, 7, 60, 62, 66, 68, 69, 71, 73-75, 77-79, 81, 85, 258-261): done (see "Park callbacks"); 70 was already wired.
 4. **Cleanliness** (8, 9, 10, 86-89, 262): done.
 5. **Guest mood** (3, 4, 82, 145, 158, 159): done (the census members are on `IParkGuestStatistics`); 141 and 264 stay blocked.
-6. **Staff** (11, 13, 14, 18, 20, 23, 26, 28-32, 108-123, 144, 146-150, 169-172) and **research** (15-17, 61, 63, 64, 72, 76, 80).
+6. **Staff** (11, 13, 14, 18, 20, 23, 26, 28-32, 108-112, 114-123, 144, 146-150, 169-172, 263): done (see "Staff callbacks"); **research** (15-17, 61, 63, 64, 72, 76, 80) is next.
 7. **Prices** (91, 92, then 238-257): the price ring exists; the shop value and satisfaction scans need the line-by-line port.
 8. **Challenges and golden tickets** (270, 272, 273, 215-229, 311, 315, 274-281, 314-318).
 9. **Blocked**: coverage (19, 21, 27), pranks (12, 22, 98, 264), queue links (113), ride fear (141), arrivals (140), and the three help windows.

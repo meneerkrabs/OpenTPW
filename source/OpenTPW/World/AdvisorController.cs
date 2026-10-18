@@ -179,7 +179,7 @@ internal static class AdvisorTables
 		(88, "FeaturesDirtyToilets3.PointsPerFilthPct", null), (89, "FeaturesDirtyToilets4.PointsPerFilthPct", null),
 		(145, "CongratVisitorsHappy.Score", null), (158, "CongratBalloons.Score", null), (159, "CongratCostumes.Score", null),
 		(259, "RidesClosed.Score", null), (260, "ShopsClosed.Score", null), (261, "SideshowsClosed.Score", null), (262, "ToiletsClosed.Score", null),
-	};
+	}.Concat( AdvisorStaffCallbacks.ScoreKeys ).ToArray();
 
 	private static IReadOnlyList<AdvisorMessageDefinition>? events;
 

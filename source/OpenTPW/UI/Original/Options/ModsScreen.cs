@@ -53,6 +53,7 @@ public static class ModsScreen
 		[OfficialExtensions.PoolGuestArt.Id] = (OpenTpwText.ExtensionPoolGuestArtName, OpenTpwText.ExtensionPoolGuestArtDescription),
 		[OfficialExtensions.RainMood.Id] = (OpenTpwText.ExtensionRainMoodName, OpenTpwText.ExtensionRainMoodDescription),
 		[OfficialExtensions.RestoredAdvice.Id] = (OpenTpwText.ExtensionRestoredAdviceName, OpenTpwText.ExtensionRestoredAdviceDescription),
+		[OfficialExtensions.Evening.Id] = (OpenTpwText.ExtensionEveningName, OpenTpwText.ExtensionEveningDescription),
 	};
 
 	public static UiScreen Create( UiScreenStack stack, UiStringTable strings, ModsServices? services = null )

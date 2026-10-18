@@ -179,10 +179,10 @@ the script, the sprite banks (slots, directions, 256 ppu, hotspots at the tip) a
 | --- | --- |
 | `[EXT:umbrellas-content]` | the extension's own shipped content (`content/umbrellas`) and the pipeline that builds it |
 | `[EXT:umbrellas-extension]` | the extension itself: its registration, its gate and the host rules (U2) |
-| `[EXT:umbrellas-weather-map]` | the mapping of `ParkWeather` to Theme Park Inc's weather states (U2; awaiting the user's approval) |
+| `[EXT:umbrellas-weather-map]` | the mapping of `ParkWeather` to Theme Park Inc's weather states (U2; user-approved 2026-10-18) |
 | `[EXT:umbrellas-save]` | the save rule: recorded only while the park has a brolly shop or an umbrella, the placed shops' asset keys, the optional guest fields (U2) |
-| `[EXT:umbrellas-save-due]` | the saved pending-change turn (U2; awaiting the user's approval) |
-| `[EXT:umbrellas-balloon-gate]` | a balloon shop's refusal of a balloon holder, applied only in a park that uses umbrellas (U2; awaiting the user's approval) |
+| `[EXT:umbrellas-save-due]` | the saved pending-change turn (U2; user-approved 2026-10-18) |
+| `[EXT:umbrellas-balloon-gate]` | a balloon shop's refusal of a balloon holder, applied only in a park that uses umbrellas (U2; user-approved 2026-10-18) |
 | `[EXT:rain-mood-once-per-day]` | the weather mood rule applied once per qualifying day, with the saved day of the last application (U4; awaiting the user's approval) |
 | `[EXT:rain-mood-extension]` | the extension itself: its registration, its gate (`FeatureGates.RainMood`), off by default, always recorded while on (U4; awaiting the user's approval) |
 | `[EXT:rain-mood-imported-age]` | an imported original guest without a known time in the park counts as new, so its rule day is 0 for good (U4) |

@@ -12,9 +12,9 @@
     </p>
 </p>
 
-![A resumed Jungle park with fixed rides and shops](website/images/shot-current.png)
+![The Lost Kingdom entrance with guests arriving, the original interface and the Belly Bounce ride beyond](website/images/shot-current.png)
 
-Actual browser gameplay after loading an own-format park save.
+A native OpenTPW capture of the Lost Kingdom with the original textures and interface, rendered offscreen from the original game data.
 
 ## About this fork
 

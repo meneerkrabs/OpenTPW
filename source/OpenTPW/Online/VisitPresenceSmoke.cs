@@ -7,7 +7,8 @@ namespace OpenTPW;
 /// <summary>
 /// The visit smoke's online players (<c>--visit-park … --smoke-test --smoke-presence</c>): a session without a server whose room holds three scripted
 /// players round the park entrance (one walks a circle, one stands, one teleports), so the native run checks that the figures are drawn with their
-/// names and sparkles and that a click on the ground walks the player's own figure through the HUD and sends its places.
+/// names and sparkles, that a click on the ground walks the player's own figure through the HUD and sends its places, and that a click on a ride
+/// rides it with the figure hidden until the ride ends.
 /// </summary>
 internal sealed class VisitPresenceSmoke
 {
@@ -27,6 +28,9 @@ internal sealed class VisitPresenceSmoke
 	private (float X, float Y) clickTarget;
 	private int movesBeforeClick;
 	private int clicks;
+	private OriginalObject? riddenRide;
+	private (Vector3 Target, float Height, float Yaw)? poseBeforeRide;
+	private (float X, float Y) standBeforeRide;
 
 	private VisitPresenceSmoke( Level level, ParkPresence presence, ParkCellMap cells, Session session )
 	{
@@ -63,7 +67,8 @@ internal sealed class VisitPresenceSmoke
 	{
 		time += delta;
 		Script( time );
-		if ( Completed || level.HidesInterface )
+		// the ride view hides the interface: only the riding checks run meanwhile
+		if ( Completed || (level.HidesInterface && phase != 14) )
 			return;
 		phaseFrames++;
 		switch ( phase )
@@ -217,6 +222,69 @@ internal sealed class VisitPresenceSmoke
 				if ( phaseFrames < 3 )
 					return;
 				Require( hud!.Stack.Top?.Name != UI.ChatPanel.PopupScreenName, "a click beside the popup closes it" );
+				phase = 12;
+				phaseFrames = 0;
+				return;
+			case 12:
+				// a click on a rideable ride in the chat mode rides it (0x4BD7F4 → 0x4E15B0): the camera looks at the park's first one
+				riddenRide = level.Objects.Objects.Select( ParkHud.ChatModeRide ).FirstOrDefault( ride => ride != null && RideCell( ride ) != null );
+				Require( riddenRide != null && Camera.Mode is ParkCameraMode && level.OriginalPark?.Heightfield != null, "the park has a ride to ride from the chat mode" );
+				var rideCamera = (ParkCameraMode)Camera.Mode;
+				var rideField = level.OriginalPark!.Heightfield!;
+				poseBeforeRide = (rideCamera.Target, rideCamera.Height, rideCamera.Yaw);
+				standBeforeRide = (presence.State.Own.X, presence.State.Own.Y);
+				var rideCell = RideCell( riddenRide! )!.Value;
+				var centre = GuestRenderer.CellToEngine( rideField, rideCell.X + 0.5f, rideCell.Y + 0.5f );
+				rideCamera.SetPose( new Vector3( centre.X, centre.Y, centre.Z ), rideCamera.Height, rideCamera.Yaw );
+				phase = 13;
+				phaseFrames = 0;
+				return;
+			case 13:
+				if ( phaseFrames < 10 )
+					return;
+				var onScreen = RideCell( riddenRide! )!.Value;
+				Require( level.TryProjectCell( onScreen.X, onScreen.Y, new System.Numerics.Vector2( Render.OverlayFramebuffer.Width, Render.OverlayFramebuffer.Height ), out var ridePoint ),
+					"the ride is on screen" );
+				injectInput!( UiInput.Click( ridePoint ) );
+				Log.Trace( FormattableString.Invariant( $"Visit smoke: clicking {riddenRide!.Entry.DisplayName} at cell {onScreen.X},{onScreen.Y} in the chat mode." ) );
+				phase = 14;
+				phaseFrames = 0;
+				return;
+			case 14:
+				// riding: the player's own figure is hidden for the room and not drawn, the others are; the ride view's screen covers the chat overlay
+				if ( phaseFrames < 20 )
+					return;
+				Require( hud!.IsRiding && ReferenceEquals( level.RideView?.Ride, riddenRide ), $"a chat-mode click on the ride rides it (riding {hud.IsRiding})" );
+				Require( hud.Stack.Top?.Name == "rideView", $"the ride view's screen covers the chat overlay (top screen {hud.Stack.Top?.Name})" );
+				Require( presence.State.Riding && session.Modes.Contains( ChatMoveMode.Hide ), "boarding hides the player's figure for the room" );
+				Require( level.GuestRenderer?.DrawnFigures == Others.Length, $"the riding player's own figure is not drawn ({level.GuestRenderer?.DrawnFigures})" );
+				// the ride view's own exits work over the chat mode: a right click after two seconds (RMB cancel), else Escape
+				if ( GameOptions.Current.RmbCancel && !ParkHud.RideRightClickReady( Time.Now - level.RideViewOpenedAt ) )
+					return;
+				var screenMiddle = new System.Numerics.Vector2( context!.Canvas.Width / 2, context.Canvas.Height / 2 );
+				injectInput!( GameOptions.Current.RmbCancel ? new UiInput( screenMiddle, false, false, false, true, UiKeys.None ) : UiInput.Key( UiKeys.Back ) );
+				phase = 15;
+				phaseFrames = 0;
+				return;
+			case 15:
+				if ( phaseFrames < 10 )
+					return;
+				Require( !hud!.IsRiding && !presence.State.Riding, $"the ride view's {(GameOptions.Current.RmbCancel ? "right click" : "Escape")} left the ride" );
+				Require( session.Modes[^1] is ChatMoveMode.Unhide or ChatMoveMode.Walk && session.Modes.Contains( ChatMoveMode.Unhide ), "the ride's end shows the figure again" );
+				if ( ParkPresence.ExitOf( riddenRide! ) is { } exit )
+					Require( MathF.Abs( presence.State.Own.X - exit.X ) + MathF.Abs( presence.State.Own.Y - exit.Y ) < 0.01f, "the figure comes out at the ride's exit" );
+				Require( hud.ChatMode && hud.Stack.Screens.Count == 1, "the chat overlay is back after the ride" );
+				// the capture shows the entrance again, with the player's figure teleported back to where it stood
+				if ( poseBeforeRide is { } pose && Camera.Mode is ParkCameraMode back )
+					back.SetPose( pose.Target, pose.Height, pose.Yaw );
+				presence.State.TeleportTo( standBeforeRide.X, standBeforeRide.Y );
+				phase = 16;
+				phaseFrames = 0;
+				return;
+			case 16:
+				if ( phaseFrames < 5 )
+					return;
+				Require( session.Modes[^1] == ChatMoveMode.Teleport, $"a teleport goes out as one ({session.Modes[^1]})" );
 				phase = 20;
 				phaseFrames = 0;
 				return;
@@ -227,9 +295,20 @@ internal sealed class VisitPresenceSmoke
 				return;
 			default:
 				Completed = true;
-				Report = FormattableString.Invariant( $", {1 + Others.Length} online figures ({presence.Sparkles} sparkles, {session.Moves} places sent{(clicks > 0 ? $", walked {presence.State.Own.DistanceWalked:F1} cells after a click" : "")}{(session.Said.Count > 0 ? ", a chat line said in the overlay's entry" : "")}{(session.Commands.Count > 0 ? $", {session.Commands.Count} popup command(s)" : "")})" );
+				Report = FormattableString.Invariant( $", {1 + Others.Length} online figures ({presence.Sparkles} sparkles, {session.Moves} places sent{(clicks > 0 ? $", walked {presence.State.Own.DistanceWalked:F1} cells after a click" : "")}{(session.Said.Count > 0 ? ", a chat line said in the overlay's entry" : "")}{(session.Commands.Count > 0 ? $", {session.Commands.Count} popup command(s)" : "")}{(riddenRide != null ? $", rode {riddenRide.Entry.DisplayName} from the chat mode hidden" : "")})" );
 				return;
 		}
+	}
+
+	/// <summary>A cell of <paramref name="ride"/>'s footprint near its placement, where a click picks it, or null.</summary>
+	private (int X, int Y)? RideCell( OriginalObject ride )
+	{
+		for ( var radius = 0; radius <= 3; radius++ )
+			for ( var dy = -radius; dy <= radius; dy++ )
+				for ( var dx = -radius; dx <= radius; dx++ )
+					if ( Math.Max( Math.Abs( dx ), Math.Abs( dy ) ) == radius && ReferenceEquals( level.Objects.FindAt( ride.Placement.X + dx, ride.Placement.Y + dy ), ride ) )
+						return (ride.Placement.X + dx, ride.Placement.Y + dy);
+		return null;
 	}
 
 	/// <summary>A point of <paramref name="name"/>'s row in the chat overlay's people list (framebuffer pixels), or null.</summary>
@@ -280,6 +359,7 @@ internal sealed class VisitPresenceSmoke
 		public string? RefusedRoom => null;
 		public int? ServerProtocol => ParkPresence.MovementProtocol;
 		public IReadOnlyDictionary<string, (float X, float Y)> RoomPositions => positions;
+		public IReadOnlyDictionary<string, int> RoomJumps { get; } = new Dictionary<string, int>();
 		public IReadOnlyList<string> RoomPlayers { get; } = Others.Prepend( VisitPresenceSmoke.PlayerName ).ToArray();
 		/// <summary>Ann is a buddy in the park, Dave one who is offline.</summary>
 		public IReadOnlyList<(string Name, bool Online)> Buddies { get; } = new[] { ("Ann", true), ("Dave", false) };
@@ -291,11 +371,17 @@ internal sealed class VisitPresenceSmoke
 		public List<string> Said { get; } = new();
 		public List<(ChatCommand Command, string Argument)> Commands { get; } = new();
 		public int Moves { get; private set; }
+		public List<ChatMoveMode> Modes { get; } = new();
 		public void ConnectChat() { }
 		public void CloseChat() { }
 		public void FetchServerInfo() { }
 		public void JoinRoom( string room ) => CurrentRoom = room;
-		public void MoveTo( float x, float y ) { positions[VisitPresenceSmoke.PlayerName] = (x, y); Moves++; }
+		public void MoveTo( float x, float y, ChatMoveMode mode = ChatMoveMode.Walk )
+		{
+			positions[VisitPresenceSmoke.PlayerName] = (x, y);
+			Moves++;
+			Modes.Add( mode );
+		}
 		public void SendChatLine( string line )
 		{
 			Said.Add( line );

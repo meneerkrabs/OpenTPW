@@ -6,6 +6,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 using OpenTPW.Online.Chat;
 using OpenTPW.Online.Client;
 using OpenTPW.Online.Packages;
+using OpenTPW.Server;
 
 namespace OpenTPW.Tests;
 
@@ -139,7 +140,7 @@ public class OnlineIntegrationTests
 			var bobVisit = Visit( bob, park.Id, (20.5f, 10.5f) );
 			Assert.IsTrue( await Until( ann, annVisit, bob, bobVisit, () => annVisit.State.Others.Any( other => other.Name == "Bob" ) && bobVisit.State.Others.Any( other => other.Name == "Ann" ) ),
 				$"the visitors never saw each other: {ann.Status} / {bob.Status} / rooms {ann.CurrentRoom}, {bob.CurrentRoom}" );
-			Assert.AreEqual( ParkPresence.MovementProtocol, ann.ServerProtocol );
+			Assert.AreEqual( ServerProgram.ProtocolVersion, ann.ServerProtocol );
 			var annSeen = bobVisit.State.Others.Single( other => other.Name == "Ann" );
 			Assert.AreEqual( 10.5f, annSeen.X, 0.01f, "Bob sees Ann where she stands" );
 			// Ann walks; Bob's view of her follows
@@ -149,6 +150,15 @@ public class OnlineIntegrationTests
 			// a line said in the park reaches the other visitor
 			annVisit.Say( "hello park" );
 			Assert.IsTrue( await Until( ann, annVisit, bob, bobVisit, () => bob.ChatLines.Any( line => line.Contains( "hello park" ) ) ) );
+			// Ann rides a ride: her figure is gone from Bob's park until the ride ends, and is back at the ride's exit
+			var riding = true;
+			annVisit.Ride = () => riding ? new ParkPresence.PresenceRide( (25.5f, 12.5f) ) : null;
+			Assert.IsTrue( await Until( ann, annVisit, bob, bobVisit, () => bobVisit.State.Others.Count == 0 ), "Bob still sees the riding Ann" );
+			Assert.IsTrue( bob.RoomPlayers.Contains( "Ann" ), "she is still in the park" );
+			riding = false;
+			Assert.IsTrue( await Until( ann, annVisit, bob, bobVisit, () => bobVisit.State.Others.Any( other => other.Name == "Ann" ) ), "Ann never came back" );
+			var annBack = bobVisit.State.Others.Single( other => other.Name == "Ann" );
+			Assert.AreEqual( (25.5f, 12.5f), (MathF.Round( annBack.X, 2 ), MathF.Round( annBack.Y, 2 )), "at the ride's exit, at once" );
 			// Ann leaves: her visit closes the connection it opened, and she is gone from Bob's park
 			annVisit.Dispose();
 			Assert.IsNull( ann.Chat );

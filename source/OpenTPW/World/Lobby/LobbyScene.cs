@@ -94,7 +94,7 @@ public sealed class LobbyScene : OriginalModelScene
 	/// reproduced). Presentation only.
 	/// </summary>
 	// [BIN:TPW-EXE:0x5e11ea island clip] the island clips are picked with rand() & 1 (CRT rand 0x67b5c0), and each island's constructor spends three rand() calls on its default sky target (0x5dfb4a-0x5dfb7b), which this stream mirrors
-	// [EXT:presentation-rand] the CRT's process-wide stream is replaced by a local clock-seeded stand-in (the original's is shared with the rest of the game and cannot be reproduced); no world or guest stream is used
+	// [APPROX:UI-018] the CRT's process-wide rand() stream is replaced by a local clock-seeded stand-in (the original's is shared with the rest of the game and cannot be reproduced); no world or guest stream is used
 	private uint crtRand = (uint)Environment.TickCount;
 	private int Rand()
 	{

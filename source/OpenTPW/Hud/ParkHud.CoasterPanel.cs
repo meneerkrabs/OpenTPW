@@ -55,6 +55,8 @@ public sealed partial class ParkHud
 				Id = $"coaster{spec.Button}",
 				Model = spec.Model,
 				Help = strings.Help( spec.Help ),
+				// Coaster panel table 0x751530 is not generated. These nine toggles are its radio group (type 8, style 0x11), so they play 0xBD.
+				ClickSound = GameAudio.SelectClickEvent,
 				Clicked = () => SelectCoasterButton( spec ),
 				Selected = () => level.CoasterPanel?.Selected == spec.Button,
 				Bounds = spec.Rect,

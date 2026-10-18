@@ -83,8 +83,8 @@ public readonly record struct PoolWaveSettings( bool On, int Height, int Interva
 /// <summary>
 /// The waves of a pool, a function of the park turn and the settings of its wave machine (docs/POOLS.md, "Wave machine"; docs/DETERMINISM.md). What the simulation reads is only turn counts and
 /// integer arithmetic: whether the waves run (<see cref="IsRunning"/>), their strength (<see cref="Envelope"/>) and the happiness paid once per period (<see cref="HappinessGain"/>). A machine runs for
-/// <see cref="RunTurns"/>, rests for the interval's turns and runs again; a run swells in and out over <see cref="SwellTurns"/>. The surface (the pool water shader) and the swimmers' bob draw the same
-/// plane wave (<see cref="SmoothWave"/>, floating point at the time of the frame, presentation only): the bob only moves a swimmer's drawn height, never its position, state or hash.
+/// <see cref="RunTurns"/>, rests for the interval's turns and runs again; a run swells in and out over <see cref="SwellTurns"/>. The surface (the pool water shader, which raises and lowers the water mesh) and the swimmers' bob
+/// draw the same plane wave (<see cref="SmoothWave"/>, floating point at the time of the frame, presentation only): the bob only moves a swimmer's drawn height, never its position, state or hash.
 /// </summary>
 // [EXT:pools-waves] OpenTPW's own wave machine; the original game has no pools
 public static class PoolWaves
@@ -99,8 +99,13 @@ public static class PoolWaves
 	public const int PeriodTurns = 24;
 	/// <summary>The happiness a swimmer in the waves gets per period and height step: 0.4, 0.8 and 1.2 (meter 0 to 100).</summary>
 	public const float HappinessPerHeight = 0.4f;
-	/// <summary>How far a swimmer's drawn height bobs, by height 1, 2, 3, in engine units. The water shader's amplitude is the envelope (0 to 1) times height / 3.</summary>
-	public static readonly float[] BobHeights = { 0.03f, 0.05f, 0.08f };
+	/// <summary>
+	/// How far the water surface rises and falls at height 3, in engine units (a cell is 2 wide): the pool water shader's <c>kMaxHeave</c>, which raises the mesh by this times its strength (the
+	/// envelope, 0 to 1, times height / 3). It stays under the 0.12 the water lies below the lowest deck (<see cref="PoolMeshOptions.WaterDrop"/>), so a crest never tops the coping.
+	/// </summary>
+	public const float MaxHeave = 0.105f;
+	/// <summary>How far a swimmer's drawn height bobs, by height 1, 2, 3, in engine units: the surface's own rise at that height, so a swimmer rides the water it is drawn in.</summary>
+	public static readonly float[] BobHeights = { MaxHeave / 3, MaxHeave * 2 / 3, MaxHeave };
 	/// <summary>The phase a wave front advances per cell along +x +y (of 64 steps of a period): the wave length, about 3 cells. The direction is the same for every pool.</summary>
 	public const int PhasePerCell = 21;
 

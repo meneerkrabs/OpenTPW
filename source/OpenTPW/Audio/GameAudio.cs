@@ -92,6 +92,11 @@ public static class GameAudio
 
 	/// <summary>The click every control activation plays (<c>0x10137FD0</c>: a 0x100 message from a control plays <c>cat_ui</c> 0x1F).</summary>
 	public const uint ClickEvent = 0x1F;
+	/// <summary>
+	/// The second UI click (<c>cat_ui</c> 0xBD). The hook <c>0x485780</c> plays this instead of <see cref="ClickEvent"/> when the
+	/// receiver of message 0x100 has style bit 0x10 (the choice at <c>0x4857cb</c>).
+	/// </summary>
+	public const uint SelectClickEvent = 0xBD;
 	/// <summary>The error feedback of the buy window and the dialogs (<c>0x10139A40</c>: <c>cat_ui</c> 0x1D; called from the buy window at <c>0x10163AFC</c>/<c>0x10163BFC</c> and the checkbox dialog at <c>0x1013B7A4</c>).</summary>
 	public const uint ErrorEvent = 0x1D;
 	/// <summary>The map/research drawer's open sound (<c>0x1015644C</c> message 0x0b: <c>cat_ui</c> 0x1C); the PC drawer (<c>0x4a14f0</c>) plays it again when a close starts (message 0xB, <c>0x4a186f</c>).</summary>

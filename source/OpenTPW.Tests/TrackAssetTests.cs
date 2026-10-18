@@ -33,6 +33,103 @@ public class TrackAssetTests
 			.Where( entry => !entry.IsBonus && entry.Settings.GetInt( "Bumper.WhichTrackType" ) == whichTrackType && entry.Category == ObjectCategory.Ride );
 
 	[TestMethod]
+	public void EveryShippedPieceMapHoldsItsTilesFourCellsAtEveryRotation()
+	{
+		var checkedPieces = 0;
+		foreach ( var (trackType, family) in new[] { (2, TrackFamily.Water), (1, TrackFamily.Kart) } )
+		{
+			foreach ( var entry in TrackRides( trackType ) )
+			{
+				var kit = TrackPieceKit.Load( entry.FileSystem, entry.ArchivePath, family );
+				foreach ( var piece in kit.Entries.Where( item => item.Index != 0 && kit.GetHeightProfile( item.Index ) != null ) )
+				{
+					var map = kit.GetHeightProfile( piece.Index )!;
+					foreach ( var rotation in new[] { 0, 90, 180, 270 } )
+					{
+						var (positionX, positionY) = TrackRenderer.PieceInstanceOrigin( 30, 40, rotation );
+						var indices = new HashSet<int>();
+						foreach ( var (dx, dy) in new[] { (0, 0), (1, 0), (0, 1), (1, 1) } )
+						{
+							var index = ObjectHeightMaps.CellIndex( map, ( 360 - rotation ) % 360, positionX, positionY, 30 + dx, 40 + dy );
+							Assert.IsNotNull( index, $"{entry.DisplayName} piece {piece.Index} rotation {rotation}: tile cell ({dx}, {dy}) lies inside the map" );
+							indices.Add( index.Value );
+						}
+						Assert.AreEqual( 4, indices.Count );
+					}
+					checkedPieces++;
+				}
+			}
+		}
+		Assert.IsTrue( checkedPieces > 100, $"{checkedPieces} pieces checked" );
+	}
+
+	[TestMethod]
+	public void ATrackTilesCellsGiveTheirPieceMapByteOnTheInstanceHeight()
+	{
+		var entry = TrackRides( 1 ).First();
+		var kit = TrackPieceKit.Load( entry.FileSystem, entry.ArchivePath, TrackFamily.Kart );
+		var piece = kit.Entries.First( item => item.Index != 0 && kit.GetHeightProfile( item.Index )?.CellMaxima.Span.ToArray().Distinct().Count() > 1 ).Index;
+		var map = kit.GetHeightProfile( piece )!;
+		var renderer = new TrackRenderer( entry, kit, () => System.Numerics.Vector2.Zero, ( x, y ) => 0f );
+		var layer = new TrackCellLayer( 128, 128 );
+		layer.Set( 30, 40, new TrackCell { Type = TrackCellTypes.KartOrigin, Parent = -1, Family = (int)TrackFamily.Kart, Piece = piece, Rotation = 0 } );
+		foreach ( var (dx, dy) in new[] { (1, 0), (0, 1), (1, 1) } )
+			layer.Set( 30 + dx, 40 + dy, new TrackCell { Type = TrackCellTypes.Extension, Parent = layer.IndexOf( 30, 40 ) } );
+		var heights = new[] { (0, 0), (1, 0), (0, 1), (1, 1) }.Select( cell => renderer.PieceGround( layer, 30 + cell.Item1, 40 + cell.Item2 ) ).ToArray();
+		Assert.IsTrue( heights.All( height => height.HasValue ), "every cell of the tile reads its map" );
+		var expected = map.CellMaxima.Span.ToArray().Select( value => value * ObjectHeightMaps.ByteScale ).OrderBy( value => value ).ToArray();
+		CollectionAssert.AreEqual( expected, heights.Select( height => height!.Value ).OrderBy( value => value ).ToArray(), "the four cells give the four bytes of the map, scaled, on a flat ground" );
+		Assert.IsNull( renderer.PieceGround( layer, 32, 40 ), "the cell beside the tile has no instance" );
+		layer.Set( 30, 40, new TrackCell { Type = TrackCellTypes.KartOrigin, Parent = -1, Family = (int)TrackFamily.Kart, Piece = piece, Flags = TrackCell.FlagAddOn } );
+		Assert.IsNull( renderer.PieceGround( layer, 30, 40 ), "an add-on's tile has no piece instance" );
+	}
+
+	[TestMethod]
+	public void ATrackTilesPieceMapTurnsWithItsRotationAndStationsAndOtherFamiliesGiveNothing()
+	{
+		// a piece whose four rotated readings of the map all differ, so a swapped rotation cannot match by symmetry
+		static bool AllRotationsDiffer( ReadOnlySpan<byte> m ) => new[] { (m[0], m[1], m[2], m[3]), (m[3], m[2], m[1], m[0]), (m[2], m[0], m[3], m[1]), (m[1], m[3], m[0], m[2]) }.Distinct().Count() == 4;
+		var candidates = TrackRides( 1 ).Select( ride => (Entry: ride, Kit: TrackPieceKit.Load( ride.FileSystem, ride.ArchivePath, TrackFamily.Kart )) )
+			.SelectMany( ride => ride.Kit.Entries.Where( item => item.Index != 0 && ride.Kit.GetHeightProfile( item.Index ) is { } found && found.CellMaxima.Length == 4 && AllRotationsDiffer( found.CellMaxima.Span ) ).Select( item => (ride.Entry, ride.Kit, item.Index) ) );
+		var (entry, kit, pieceIndex) = candidates.FirstOrDefault();
+		if ( entry == null )
+			Assert.Inconclusive( "No shipped kart piece map reads differently at all four rotations" );
+		var map = kit.GetHeightProfile( pieceIndex )!;
+		var renderer = new TrackRenderer( entry, kit, () => System.Numerics.Vector2.Zero, ( x, y ) => 0f );
+		float?[,] Read( int rotation, int piece = -1, int family = (int)TrackFamily.Kart )
+		{
+			var layer = new TrackCellLayer( 128, 128 );
+			layer.Set( 30, 40, new TrackCell { Type = TrackCellTypes.KartOrigin, Parent = -1, Family = family, Piece = piece < 0 ? pieceIndex : piece, Rotation = rotation } );
+			foreach ( var (dx, dy) in new[] { (1, 0), (0, 1), (1, 1) } )
+				layer.Set( 30 + dx, 40 + dy, new TrackCell { Type = TrackCellTypes.Extension, Parent = layer.IndexOf( 30, 40 ) } );
+			var grid = new float?[2, 2];
+			for ( var dx = 0; dx < 2; dx++ )
+				for ( var dy = 0; dy < 2; dy++ )
+					grid[dx, dy] = renderer.PieceGround( layer, 30 + dx, 40 + dy );
+			return grid;
+		}
+		var bytes = map.CellMaxima.Span.ToArray().Select( value => value * ObjectHeightMaps.ByteScale ).ToArray();
+		var zero = Read( 0 );
+		for ( var dx = 0; dx < 2; dx++ )
+			for ( var dy = 0; dy < 2; dy++ )
+				Assert.AreEqual( bytes[dy * 2 + dx], zero[dx, dy]!.Value, 1e-4f, $"rotation 0 reads the map row by row: cell ({dx}, {dy})" );
+		var half = Read( 180 );
+		var quarter = Read( 90 );
+		var third = Read( 270 );
+		float[] Row( float?[,] grid ) => new[] { grid[0, 0]!.Value, grid[1, 0]!.Value, grid[0, 1]!.Value, grid[1, 1]!.Value };
+		var (a, b, c, d) = (bytes[0], bytes[1], bytes[2], bytes[3]);
+		Assert.IsTrue( new[] { d, c, b, a }.Zip( Row( half ) ).All( pair => Math.Abs( pair.First - pair.Second ) < 1e-4f ), "rotation 180 turns the map half way" );
+		var turns = new[] { new[] { c, a, d, b }, new[] { b, d, a, c } };
+		var quarterRow = Row( quarter );
+		var thirdRow = Row( third );
+		var quarterIs = turns.ToList().FindIndex( turn => turn.Zip( quarterRow ).All( pair => Math.Abs( pair.First - pair.Second ) < 1e-4f ) );
+		var thirdIs = turns.ToList().FindIndex( turn => turn.Zip( thirdRow ).All( pair => Math.Abs( pair.First - pair.Second ) < 1e-4f ) );
+		Assert.IsTrue( quarterIs >= 0 && thirdIs >= 0 && quarterIs != thirdIs, "rotations 90 and 270 are the two different quarter turns of the map" );
+		Assert.IsNull( Read( 0, piece: 0 )[0, 0], "a station (piece 0) has no piece instance" );
+		Assert.IsNull( Read( 0, family: (int)TrackFamily.Water )[0, 0], "another family's tile is not this renderer's" );
+	}
+
+	[TestMethod]
 	public void TheFourWaterRidesAndFourKartRidesHaveCompletePieceKits()
 	{
 		var water = TrackRides( 2 ).ToArray();

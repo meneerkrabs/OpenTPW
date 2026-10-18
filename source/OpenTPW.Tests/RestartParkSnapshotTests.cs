@@ -171,11 +171,117 @@ public class RestartParkSnapshotTests
 	public void SlicedRestartBytesEqualTheSynchronousFormat()
 	{
 		var snapshot = Snapshot( "same bytes" );
-		var write = new RestartSnapshotWrite( RestartFile, snapshot ); var slices = 0;
+		var write = new RestartSnapshotWrite( RestartFile, snapshot, cooperative: true ); var slices = 0;
 		while ( !write.Run( TimeSpan.Zero ) ) Assert.IsTrue( ++slices < 10000 );
 		CollectionAssert.AreEqual( ParkResumeSaveFile.Serialize( snapshot ), File.ReadAllBytes( RestartFile ) );
 		Assert.IsTrue( slices > 1 );
 		Assert.IsTrue( write.Run( TimeSpan.Zero ), "completed writes are idempotent" );
+	}
+
+	[TestMethod]
+	public void BrowserCompletionCopiesAndHashesOnlyOneBoundedChunkPerZeroBudgetSlice()
+	{
+		var snapshot = Snapshot( "chunked" );
+		var assets = new System.Collections.Generic.Dictionary<string, string>( snapshot.AssetHashes );
+		for ( var i = 0; i < 2000; i++ ) assets.Add( $"/synthetic-{i}.sam", new string( 'a', 64 ) );
+		snapshot = snapshot with { AssetHashes = assets };
+		var expected = ParkResumeSaveFile.Serialize( snapshot );
+		Assert.IsTrue( expected.Length > RestartSnapshotWrite.CopyChunkBytes * 2 );
+		var write = new RestartSnapshotWrite( RestartFile, snapshot, cooperative: true );
+		var slices = 0; var copySlices = 0;
+		while ( !write.Done )
+		{
+			var before = write.CopiedBytes;
+			write.Run( TimeSpan.Zero );
+			var copied = write.CopiedBytes - before;
+			Assert.IsTrue( copied >= 0 && copied <= RestartSnapshotWrite.CopyChunkBytes );
+			if ( copied > 0 ) copySlices++;
+			Assert.IsTrue( ++slices < 10000 );
+		}
+		Assert.IsTrue( copySlices >= 3 );
+		CollectionAssert.AreEqual( expected, File.ReadAllBytes( RestartFile ) );
+	}
+
+	[TestMethod]
+	public void DesktopCompletionRemainsPendingUntilItsDetachedWorkerFinishes()
+	{
+		Action? queued = null;
+		var finished = new System.Threading.Tasks.TaskCompletionSource( System.Threading.Tasks.TaskCreationOptions.RunContinuationsAsynchronously );
+		var snapshot = Snapshot( "worker" );
+		var write = new RestartSnapshotWrite( RestartFile, snapshot, cooperative: false,
+			background: work => { queued = work; return finished.Task; } );
+		for ( var slices = 0; queued == null; slices++ )
+		{
+			Assert.IsFalse( write.Run( TimeSpan.Zero ) );
+			Assert.IsTrue( slices < 10000 );
+		}
+		Assert.IsFalse( write.Done ); Assert.IsFalse( File.Exists( RestartFile ) );
+		Assert.IsFalse( write.Run( TimeSpan.Zero ), "ordinary frames never wait for the worker" );
+		queued!(); finished.SetResult();
+		Assert.IsTrue( write.Run( TimeSpan.MaxValue ), "the lifecycle drain observes the completed worker" );
+		CollectionAssert.AreEqual( ParkResumeSaveFile.Serialize( snapshot ), File.ReadAllBytes( RestartFile ) );
+	}
+
+	[TestMethod]
+	public async System.Threading.Tasks.Task UnlimitedDrainWaitsForTheDesktopWorker()
+	{
+		var queued = new System.Threading.Tasks.TaskCompletionSource<Action>( System.Threading.Tasks.TaskCreationOptions.RunContinuationsAsynchronously );
+		var finished = new System.Threading.Tasks.TaskCompletionSource( System.Threading.Tasks.TaskCreationOptions.RunContinuationsAsynchronously );
+		var write = new RestartSnapshotWrite( RestartFile, Snapshot( "drain" ), cooperative: false,
+			background: work => { queued.SetResult( work ); return finished.Task; } );
+		var drain = System.Threading.Tasks.Task.Run( () => write.Run( TimeSpan.MaxValue ) );
+		await System.Threading.Tasks.Task.WhenAny( queued.Task, drain );
+		if ( !queued.Task.IsCompleted ) { await drain; Assert.Fail( "The drain ended without scheduling its worker." ); }
+		var complete = await queued.Task;
+		try
+		{
+			Assert.IsFalse( drain.IsCompleted, "restart/shutdown must not return while the write is pending" );
+			complete();
+		}
+		finally { finished.SetResult(); }
+		Assert.IsTrue( await drain ); Assert.IsTrue( write.Done );
+	}
+
+	[TestMethod]
+	public void DesktopWorkerFailureReachesTheDrainAndCannotExposeThePreviousPark()
+	{
+		ParkResumeSaveFile.Save( RestartFile, Snapshot( "old" ) );
+		var write = new RestartSnapshotWrite( RestartFile, Snapshot( "new" ), cooperative: false,
+			background: _ => System.Threading.Tasks.Task.FromException( new IOException( "worker failed" ) ) );
+		Assert.ThrowsException<IOException>( () => write.Run( TimeSpan.MaxValue ) );
+		Assert.IsFalse( write.Done );
+		Assert.AreEqual( "old", ParkResumeSaveFile.Load( RestartFile ).DisplayName );
+		Assert.ThrowsException<InvalidDataException>( () => RestartSnapshotWrite.Load( RestartFile ) );
+	}
+
+	[TestMethod]
+	public void RealWorldEntrySnapshotStaysUnchangedWhileTheParkTicksBetweenSlices()
+	{
+		using var renderer = new AutomaticCheckpointCpuRendererScope();
+		var fixture = new UpgradeCatalogueDefaultsTests(); fixture.Setup();
+		try
+		{
+			var type = typeof( UpgradeCatalogueDefaultsTests );
+			var world = ((Level Level, ParkEconomy Economy, OriginalObject One, OriginalObject Two, ParkObjectState State))type.GetMethod( "World", BindingFlags.Instance | BindingFlags.NonPublic )!.Invoke( fixture, new object[] { "", 0, false } )!;
+			var assets = (System.Collections.Generic.Dictionary<string, string>)type.GetMethod( "PrepareCapture", BindingFlags.Static | BindingFlags.NonPublic )!.Invoke( null, new object[] { world } )!;
+			typeof( Level ).GetMethod( "SetupStaff", BindingFlags.Instance | BindingFlags.NonPublic )!.Invoke( world.Level, null );
+			typeof( Level ).GetMethod( "SetupParkGate", BindingFlags.Instance | BindingFlags.NonPublic )!.Invoke( world.Level, null );
+			var expected = ParkResumeSaveFile.Serialize( world.Level.CaptureResumeSnapshot( null, "jungle", assets ) );
+			var before = world.Level.ComputeStateHash();
+			var flow = Flow( world.Level );
+			flow.TakeRestartSnapshot( world.Level, assets, overFrames: true );
+			Assert.IsTrue( flow.RestartSnapshotPending );
+			Assert.AreEqual( before, world.Level.ComputeStateHash(), "capture does not advance the live park" );
+			for ( var tick = 0; tick < 600; tick++ )
+			{
+				world.Level.AdvanceSimulation( FixedStepClock.TickDuration );
+				flow.PumpRestartSnapshot( TimeSpan.Zero );
+			}
+			flow.FlushRestartSnapshot();
+			Assert.AreNotEqual( before, world.Level.ComputeStateHash(), "the live world really advanced" );
+			CollectionAssert.AreEqual( expected, File.ReadAllBytes( RestartFile ) );
+		}
+		finally { fixture.Cleanup(); }
 	}
 
 	[TestMethod]

@@ -250,7 +250,7 @@ public static class GraphicsPresets
 		["GameOptions.TOTALPARTICLES"] = "Not applied, as in the original: tp.exe never reads it; the pool always holds 2048 particles.",
 		["GameOptions.NUMKIDS"] = "Exposed for the guests slice (simulation-affecting).",
 		["GameOptions.WEATHER"] = "Exposed (simulation-affecting); no weather yet.",
-		["GameOptions.LOBBYOBJECTS"] = "Exposed for the frontend lobby; not consumed yet.",
+		["GameOptions.LOBBYOBJECTS"] = "Applied: the percent of each lobby flying-mesh group (bats, butterflies) that is spawned, at least one.",
 	};
 }
 

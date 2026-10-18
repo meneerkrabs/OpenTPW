@@ -104,6 +104,10 @@ public sealed class GuestEconomyBridge : IGuestPayments, IParkGuestStatistics, I
 
 	public void PriceTested( int category, int value ) => Economy().PriceStatistics.Record( category, value );
 
+	public void ArrivalCreated() => Economy().StatisticsHistory.RecordArrival();
+
+	public void StayEnded( int days ) => Economy().StatisticsHistory.RecordStay( days );
+
 	public int PeopleInPark => Guests.GetStatistics().InPark;
 
 	public int GuestCensus => ParkGate.CountCensus( Guests );

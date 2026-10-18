@@ -1275,7 +1275,9 @@ public sealed class ParkEconomy : IParkEconomy
 		}
 		// [BIN:TPW-EXE:0x004C7720 month sample] the analyser's month handler stores the net worth read with age 0 (0x004C79A7)
 		// [BIN:TPW-EXE:0x004C7720 month sample] the same handler reads the cached census with age 0 first (0x004C78C1); the month message goes to the things in id order (the listener tree walked by 0x0040FB10, dispatching through 0x0050B550) and the world constructor 0x005156A0 creates the staff manager (type 9) before the analyser (type 13), so the gate above has already read its count
-		CachedGuestCensus( 0 );
+		var census = CachedGuestCensus( 0 );
+		// [BIN:TPW-EXE:0x004C7720 month sample] the same handler fills the statistics rings the park information window graphs: the arrivals, the guests in the park (this census), the mean happiness (0x4C7BB0) and the mean stay
+		StatisticsHistory.CloseMonth( guestStatistics.CensusHappiness, census );
 		var closed = Ledger.CloseMonth( nextMonthIndex, ParkRating, NetWorth( 0 ) );
 		Raise( ParkEventKind.MonthEnded, closed.ClosingBalance, 0, 0, $"in ${closed.MoneyIn}, out ${closed.MoneyOut}" );
 		if ( nextMonthIndex % ParkCalendar.MonthsPerYear == 0 )
@@ -2443,6 +2445,9 @@ public sealed class ParkEconomy : IParkEconomy
 
 	/// <summary>The park's perception statistics (<see cref="ParkPriceStatistics"/>), which the price test at a stand point records.</summary>
 	public ParkPriceStatistics PriceStatistics { get; } = new();
+
+	/// <summary>The analyser's monthly statistics the park information window graphs (<see cref="ParkStatisticsHistory"/>); nothing in the simulation reads them.</summary>
+	public ParkStatisticsHistory StatisticsHistory { get; } = new();
 
 	public void ReportRecord( ParkRecordKind kind, int instanceId, long value )
 	{

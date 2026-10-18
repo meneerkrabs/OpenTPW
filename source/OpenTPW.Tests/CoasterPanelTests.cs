@@ -52,10 +52,12 @@ public class CoasterPanelTests
 		var (finished, _) = Finished();
 		var done = new CoasterToolPanel( finished );
 		Assert.AreEqual( CoasterToolButton.Height, done.Selected, "a finished circuit opens on the height button" );
+		Assert.IsFalse( done.ShowsActionCost, "mode 8 is hidden before a height drag begins" );
 		Assert.AreEqual( Edits | CoasterToolButton.Demolish, done.EnabledMask, "a complete track clears the two build buttons and keeps the demolish button" );
 		Assert.IsFalse( done.Select( CoasterToolButton.Build ), "a disabled button does nothing" );
 		Assert.AreEqual( CoasterToolButton.Height, done.Selected );
 		Assert.IsTrue( done.Select( CoasterToolButton.Demolish ) );
+		Assert.IsFalse( done.ShowsActionCost, "the demolition mode does not set the height-drag bit" );
 	}
 
 	[TestMethod]

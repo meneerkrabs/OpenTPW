@@ -202,7 +202,7 @@ public sealed partial class ParkHud
 	/// </summary>
 	// [BIN:TPW-EXE:0x4a0cdd HUD cash refresh] control 48 shows the number the active tool keeps in 0x81af4c (read by 0x52fbc0) and is hidden, cost -10000, or reset to the unset marker -999 when no tool is active: only the mode objects whose type (vtable +0x24) is 3, 4 or 8 (8 while 0x79c658 bit 0 is set, 0x447990) show it; type 3 is the tool-mode object 0x6fe9e0 that every build tool runs in; it is no sum of balance changes
 	// [DATA:video 2:05, 74:00-76:00] "$ 2500" while the blueprint of a 2500 ride is held, "$ 150" in the path tool, "$ 10000" for the coaster station and "$ 70" to "$ 130" per track segment; absent outside the build tools even when the balance changes
-	// [APPROX:UI-047] type 3 is the tool-mode object (vtable 0x6fe9e0) of every build tool; type 8 is the coaster panel's mode object (vtable 0x6feaa0, 0x46cfc0, made by 0x497bc0 when a panel button is pressed), which shows the cost only while bit 0 of 0x79c658 is set (0x447990, set at 0x441a5d), a placement-in-progress state (set at 0x441a5d when (flags & 0x3f) is 0, cleared by the second action of 0x441a00) OpenTPW does not track for the coaster tool, so it shows its cost in every sub-mode; no mode-object class returns 4 (the classes 0x6fe980-0x6fead0 return 7, 3, 1, 5, 6, 8, 9; 5 and 6 are the staff place and carry tools, which show nothing) — evidence needed: what bit 0 of 0x79c658 stands for
+	// [APPROX:UI-047] coaster panel cost visibility now follows the traced build/move mode versus active height-drag distinction. OpenTPW still derives the active mode from its panel rather than reproducing the original mode-object stack; a missing panel keeps the existing cost fallback. The unidentified type-4 mode remains unqualified.
 	public long? BuildActionCost
 	{
 		get
@@ -210,7 +210,7 @@ public sealed partial class ParkHud
 			if ( !Status.HasEconomy )
 				return null;
 			if ( level.IsCoasterToolActive )
-				return level.CoasterPanel?.DragCost ?? CoasterGhost?.Cost ?? 0;
+				return level.CoasterPanel is { ShowsActionCost: false } ? null : level.CoasterPanel?.DragCost ?? CoasterGhost?.Cost ?? 0;
 			if ( level.CellTool.IsActive )
 				return level.CellTool.Ghost?.Charged ?? 0;
 			if ( pendingItem != null && level.BuildEntry != null )

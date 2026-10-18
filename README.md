@@ -103,7 +103,10 @@ What works today, with your own original game data:
   save persists between visits. A save is pinned to the game data it was made with: changed
   simulation assets refuse the load with a reason before the running park is touched. Roller coasters
   and prototype rides cannot be saved yet, and the original TPWS/TPWI format stays read-only
-  ([park saves](https://opentpw.io/docs/PARK-SAVES.html)).
+  ([park saves](https://opentpw.io/docs/PARK-SAVES.html)). A park in play is also autosaved every five
+  minutes into its own slot per theme (an OpenTPW extra that never touches your manual save, on by
+  default under Options, OpenTPW): after a crash the theme menu offers "Continue autosave"
+  ([periodic autosave](https://opentpw.io/docs/PARK-SAVES.html#periodic-autosave)).
 - **Advisor, music and movies:** the advisor speaks for the traced game events with lip sync, the
   park and the front-end lobby play their original music, rides, the crowd and the interface play
   their original sounds, and all nine movies play. Placed ambients, rain and thunder, ride screams,

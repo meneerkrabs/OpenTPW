@@ -7,7 +7,8 @@ the park. Manual `opentpw-{theme}-world.json` saves remain separate. Quit, manua
 Save, generic replacement/loading and teardown do not create this checkpoint.
 Read-only visits, reference inspection, sandbox and Theme Park Inc retain their
 existing exit policy without automatic writes. This is OpenTPW host policy, not
-native autosave/profile parity.
+native autosave/profile parity. The timer-driven [periodic autosave](PARK-SAVES.md#periodic-autosave) is a separate slot and path
+(`opentpw-{theme}-autosave-world.json`); it does not flush progress, retire the park or replace this checkpoint.
 
 The actual mounted pause Exit button leases its HUD, Level, runtime, save root
 and progress owner. Capture runs in the queued transition, after the click

@@ -600,6 +600,7 @@ internal sealed partial class GameFlow : IDisposable
 			Level.SimulationTimeScale = parkBuild != null ? 0 : Hud.SimulationTimeScale;
 			Level.Update();
 			Advisor?.Update( Hud.Paused );
+			UpdateAutosave( Level, Hud );
 			var parkLost = Level.Park?.Economy.IsBankrupt == true;
 			GameAudio.Update( Level.Guests?.GetStatistics().InPark, parkLost );
 			ReverbSelector.Update( Level.RideView?.Ride );

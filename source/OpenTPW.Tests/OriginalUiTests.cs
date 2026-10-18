@@ -368,7 +368,7 @@ public class OriginalUiTests
 		Assert.AreEqual( 1, OptionsScreen.Cycle( new[] { 1, 2, 3 }, 9, -1 ) );
 	}
 
-	private static OptionsServices OptionsServicesFor( GameOptions options, StubDisplaySettings display, Action? saved = null, ICollection<string>? languages = null, IGraphicsSettings? graphics = null ) => new()
+	internal static OptionsServices OptionsServicesFor( GameOptions options, StubDisplaySettings display, Action? saved = null, ICollection<string>? languages = null, IGraphicsSettings? graphics = null ) => new()
 	{
 		Display = display, Options = options, Languages = new[] { "Dutch", "English" }, CurrentLanguage = "English", Graphics = graphics,
 		SaveOptions = saved ?? ( () => { } ), SaveLanguage = language => languages?.Add( language )

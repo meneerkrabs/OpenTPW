@@ -518,6 +518,8 @@ public sealed partial class OriginalObjectRuntime
 			GoldenTicketCost = settings.GetInt( "UsageInfo.GoldenTicketCost" ),
 			UpgradeCost = entry.Upgrades.FirstOrDefault( upgrade => upgrade.Level == 0 )?.GetInt( "CostOfUpgrade" ) ?? 0,
 			IsIndoors = settings.GetInt( "UsageInfo.ISIndoors" ) != 0,
+			// [BIN:TPW-EXE:0x745a60 schema RequiresTeleport] the key after ChillsYouOut (+0xFC) is type record +0x100, which the guest state setter 0x501db0 tests in states 15 and 16
+			RequiresTeleport = settings.GetInt( "UsageInfo.RequiresTeleport" ) != 0,
 			TypeId = entry.InfoId,
 			// [DATA:<object>.sam:UsageInfo.InitCostOfGoods/InitPricePerUse/InitChanceOfLoosing] the sideshow words of the join excitement (0xdff70); the level mirrors the live economy values over them
 			Sideshow = new SideshowTerms( settings.GetInt( "UsageInfo.InitCostOfGoods" ), settings.GetInt( "UsageInfo.InitPricePerUse" ), settings.GetInt( "UsageInfo.InitChanceOfLoosing" ) ),

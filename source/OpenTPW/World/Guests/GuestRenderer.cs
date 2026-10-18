@@ -6,6 +6,12 @@ using SVector3 = System.Numerics.Vector3;
 namespace OpenTPW;
 
 /// <summary>
+/// A presentation-only figure <see cref="GuestRenderer.Figures"/> draws with the guests' sprites: its place in cells, the direction it faces, the cells it
+/// has walked (the walk animation's step), whether it walks, and the number that chooses its sprite set.
+/// </summary>
+public readonly record struct SpriteFigure( float CellX, float CellY, float HeadingX, float HeadingY, float DistanceWalked, bool Moving, int Look );
+
+/// <summary>
 /// Draws every visible guest as a camera-facing quad of its original kid sprite (one draw call, one dynamic
 /// vertex buffer). Direction and walk-cycle frame come from <see cref="GuestSpriteAtlas"/>; the sprite's
 /// hotspot (its feet) sits on the terrain heightfield, and the quad is pulled towards the camera as the original pulls a visitor's sprite
@@ -98,6 +104,14 @@ public sealed class GuestRenderer : Entity
 	public IReadOnlySet<int>? BottomAnchoredSlots { get; init; }
 	/// <summary>Guests drawn in the last frame.</summary>
 	public int DrawnGuests { get; private set; }
+
+	/// <summary>
+	/// Figures drawn after the guests with the same sprite sets, which are not guests: the online players of a visited park (<see cref="ParkPresence"/>).
+	/// The simulation, the visitor picking and the world hash never see them. Null: none.
+	/// </summary>
+	public Func<IReadOnlyCollection<SpriteFigure>>? Figures { get; set; }
+	/// <summary>Figures drawn in the last frame.</summary>
+	public int DrawnFigures { get; private set; }
 
 	/// <summary>The atlas textures, material and independently owned shader used by native lifecycle checks.</summary>
 	internal IReadOnlyList<Asset> OwnedAssets => textures.Cast<Asset>().Concat( material == null ? Array.Empty<Asset>() : new Asset[] { material, material.Shader } ).ToArray();
@@ -325,9 +339,27 @@ public sealed class GuestRenderer : Entity
 		return picked;
 	}
 
+	/// <summary>
+	/// Atlas, frame and mirroring of a <see cref="SpriteFigure"/>: walking or standing as a guest is, in the sprite set its look chooses, facing
+	/// its heading through the original's sprite pass (<see cref="GuestSpriteAtlas.SelectOriginalDirection"/>).
+	/// </summary>
+	internal (int Atlas, int Frame, bool Mirror) SelectFigureSprite( SpriteFigure figure, SVector3 cameraRight, SVector3 cameraForward )
+	{
+		// the material binds the first eight sets (the constructor's slots)
+		var atlasIndex = (int)((uint)figure.Look % (uint)Math.Min( atlases.Count, 8 ));
+		var atlas = atlases[atlasIndex];
+		var slot = figure.Moving ? GuestSpriteAtlas.WalkSlot : GuestSpriteAtlas.StandSlot;
+		var step = figure.Moving ? (int)(figure.DistanceWalked * WalkFramesPerCell) : 0;
+		step %= Math.Max( 1, atlas.FramesPerDirection( slot ) );
+		var yaw = GuestSpriteAtlas.CameraYaw( cameraRight, cameraForward, Camera.Mode is ParkCameraMode );
+		var (direction, mirror) = GuestSpriteAtlas.SelectOriginalDirection( figure.HeadingX, figure.HeadingY, yaw, atlas.DirectionsOf( slot ) );
+		return (atlasIndex, atlas.GetFrame( slot, direction, step ), mirror);
+	}
+
 	protected override void OnRender()
 	{
 		DrawnGuests = 0;
+		DrawnFigures = 0;
 		if ( !Visible || material == null || deleted )
 			return;
 		var view = Camera.ViewMatrix;
@@ -335,7 +367,8 @@ public sealed class GuestRenderer : Entity
 		var up = new SVector3( view.M12, view.M22, view.M32 );
 		var forward = -new SVector3( view.M13, view.M23, view.M33 );
 		var eye = Eye( view );
-		var needed = simulation.Guests.Count * VerticesPerGuest;
+		var figures = Figures?.Invoke();
+		var needed = (simulation.Guests.Count + (figures?.Count ?? 0)) * VerticesPerGuest;
 		if ( vertices.Length < needed )
 			vertices = new Vertex[Math.Max( needed, 64 * VerticesPerGuest ) * 2];
 		var count = 0;
@@ -350,27 +383,20 @@ public sealed class GuestRenderer : Entity
 			var share = 1f;
 			if ( DepthPulledSlots?.Invoke( slot ) != false )
 				(feet, share) = PullTowardsEye( feet, eye, forward );
-			var (x0, x1, yTop, yBottom) = frame.Extents( mirror, UnitsPerPixel );
-			var u0 = frame.X / (float)atlas.Width;
-			var u1 = (frame.X + frame.Width) / (float)atlas.Width;
-			if ( mirror )
-				(u0, u1) = (u1, u0);
-			var v0 = frame.Y / (float)atlas.Height;
-			var v1 = (frame.Y + frame.Height) / (float)atlas.Height;
-			// a lying pose may be turned in its own plane about the hotspot (RotatedSlots); (sin, cos) of the clockwise screen angle
-			var (sin, cos) = MathF.SinCos( rotation );
-			SVector3 Corner( float x, float y ) => feet + (right * (x * cos + y * sin) + up * (-x * sin + y * cos)) * share;
-			var topLeft = new Vertex( Corner( x0, yTop ), -forward, new SVector2( u0, v0 ) ) { TexIndex = atlasIndex };
-			var topRight = new Vertex( Corner( x1, yTop ), -forward, new SVector2( u1, v0 ) ) { TexIndex = atlasIndex };
-			var bottomLeft = new Vertex( Corner( x0, yBottom ), -forward, new SVector2( u0, v1 ) ) { TexIndex = atlasIndex };
-			var bottomRight = new Vertex( Corner( x1, yBottom ), -forward, new SVector2( u1, v1 ) ) { TexIndex = atlasIndex };
-			// Both windings, so the quad survives back-face culling whatever the clip-space convention.
-			vertices[count++] = topLeft; vertices[count++] = topRight; vertices[count++] = bottomLeft;
-			vertices[count++] = topRight; vertices[count++] = bottomRight; vertices[count++] = bottomLeft;
-			vertices[count++] = topLeft; vertices[count++] = bottomLeft; vertices[count++] = topRight;
-			vertices[count++] = topRight; vertices[count++] = bottomLeft; vertices[count++] = bottomRight;
+			AddQuad( ref count, atlas, atlasIndex, frame, mirror, feet, share, rotation, right, up, forward );
 			DrawnGuests++;
 		}
+		if ( figures != null )
+			foreach ( var figure in figures )
+			{
+				if ( !float.IsFinite( figure.CellX ) || !float.IsFinite( figure.CellY ) || !float.IsFinite( figure.HeadingX ) || !float.IsFinite( figure.HeadingY ) || !float.IsFinite( figure.DistanceWalked ) )
+					continue;
+				var (atlasIndex, frameIndex, mirror) = SelectFigureSprite( figure, right, forward );
+				var atlas = atlases[atlasIndex];
+				var (feet, share) = PullTowardsEye( CellToEngine( field, figure.CellX, figure.CellY ), eye, forward );
+				AddQuad( ref count, atlas, atlasIndex, atlas.Frames[frameIndex], mirror, feet, share, 0f, right, up, forward );
+				DrawnFigures++;
+			}
 		if ( count == 0 )
 			return;
 
@@ -400,6 +426,30 @@ public sealed class GuestRenderer : Entity
 		for ( uint index = 0; index < resourceSets.Length; ++index )
 			commandList.SetGraphicsResourceSet( index, resourceSets[index] );
 		commandList.Draw( (uint)count );
+	}
+
+	/// <summary>Adds one camera-facing quad (both windings) of <paramref name="frame"/> with its hotspot at <paramref name="feet"/>, shrunk by <paramref name="share"/> and turned by <paramref name="rotation"/> in its plane.</summary>
+	private void AddQuad( ref int count, GuestSpriteAtlas atlas, int atlasIndex, GuestAtlasFrame frame, bool mirror, SVector3 feet, float share, float rotation, SVector3 right, SVector3 up, SVector3 forward )
+	{
+		var (x0, x1, yTop, yBottom) = frame.Extents( mirror, UnitsPerPixel );
+		var u0 = frame.X / (float)atlas.Width;
+		var u1 = (frame.X + frame.Width) / (float)atlas.Width;
+		if ( mirror )
+			(u0, u1) = (u1, u0);
+		var v0 = frame.Y / (float)atlas.Height;
+		var v1 = (frame.Y + frame.Height) / (float)atlas.Height;
+		// a lying pose may be turned in its own plane about the hotspot (RotatedSlots); (sin, cos) of the clockwise screen angle
+		var (sin, cos) = MathF.SinCos( rotation );
+		SVector3 Corner( float x, float y ) => feet + (right * (x * cos + y * sin) + up * (-x * sin + y * cos)) * share;
+		var topLeft = new Vertex( Corner( x0, yTop ), -forward, new SVector2( u0, v0 ) ) { TexIndex = atlasIndex };
+		var topRight = new Vertex( Corner( x1, yTop ), -forward, new SVector2( u1, v0 ) ) { TexIndex = atlasIndex };
+		var bottomLeft = new Vertex( Corner( x0, yBottom ), -forward, new SVector2( u0, v1 ) ) { TexIndex = atlasIndex };
+		var bottomRight = new Vertex( Corner( x1, yBottom ), -forward, new SVector2( u1, v1 ) ) { TexIndex = atlasIndex };
+		// Both windings, so the quad survives back-face culling whatever the clip-space convention.
+		vertices[count++] = topLeft; vertices[count++] = topRight; vertices[count++] = bottomLeft;
+		vertices[count++] = topRight; vertices[count++] = bottomRight; vertices[count++] = bottomLeft;
+		vertices[count++] = topLeft; vertices[count++] = bottomLeft; vertices[count++] = topRight;
+		vertices[count++] = topRight; vertices[count++] = bottomLeft; vertices[count++] = bottomRight;
 	}
 
 	protected override void OnDelete()

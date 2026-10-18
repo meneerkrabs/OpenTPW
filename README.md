@@ -115,8 +115,9 @@ What works today, with your own original game data:
   official server or one you host yourself. A shared park is the park as its owner built it (paths,
   queues, objects and player-built coasters in version 2 packages, with a layout digest checked on
   import). Visits show the published statistics read-only, use the shared ride camera for supported
-  rides and allow voting. Park visits do not synchronize simulations or show other players; the
-  service and its protocol are OpenTPW implementations ([online](https://opentpw.io/docs/ONLINE.html),
+  rides and allow voting. A visit shows the park's other visitors walking in it, with their names
+  and chat, but does not synchronize the parks' simulations; the service and its protocol are
+  OpenTPW implementations ([online](https://opentpw.io/docs/ONLINE.html),
   [server](https://opentpw.io/docs/SERVER.html)).
 - **Modern systems:** native builds for Windows, macOS and Linux; any resolution and aspect ratio
   with a HiDPI-aware interface scale; button labels fitted per language; compatibility fixes from

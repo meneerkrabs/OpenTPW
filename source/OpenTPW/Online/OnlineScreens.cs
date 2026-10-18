@@ -207,7 +207,7 @@ public sealed class OnlineScreens
 		PanelButton( "ownLobby", "b_bck2lob", 66, 799, 219, 953, 348, () => { while ( stack.Top != null && stack.Top.Name is "cityLobby" or "onlineWorld" ) stack.Pop(); } );
 		PanelButton( "worldView", "b_worldview", 66, 957, 219, 1110, 346, stack.Pop );
 		var enter = PanelButton( "enterPark", "b_entpark", 66, 1113, 219, 1267, 345,
-			() => { if ( screen.SelectedPark is { } park ) Guard( () => Session.Download( park, path => Inspect( path, start: true ) ) ); } );
+			() => { if ( screen.SelectedPark is { } park ) Guard( () => Session.Download( park, path => Inspect( path, start: true, park.Id ) ) ); } );
 		PanelButton( "previousIsland", "b_lobleft", 95, 1299, 249, 1453, 343, () => screen.Step( -1 ) );
 		PanelButton( "nextIsland", "b_lobright", 260, 1299, 413, 1453, 344, () => screen.Step( 1 ) );
 		// [BIN:STP-PPC:0x101834A0 item detail overlay] label 0x49D9: the selected item's name, font slot 5, colour (252,232,7); label 0x49DA: "%d" of its index + 1, font slot 0; both hidden without a selection
@@ -673,7 +673,7 @@ public sealed class OnlineScreens
 		screen.Add( new UiLabel { Id = "description", Wrap = true, Font = fonts => fonts.Small,
 			Bounds = new UiRect( 922, 207, 680, 448 ), Anchor = UiAnchor.Center, Text = () => park.Description } );
 		var visit = screen.Add( new UiButton { Id = "visit", Text = () => OnlineStrings.Get( OnlineLabel.VisitReadOnly ),
-			Clicked = () => Guard( () => Session.Download( park, path => Inspect( path, start: true ) ) ),
+			Clicked = () => Guard( () => Session.Download( park, path => Inspect( path, start: true, park.Id ) ) ),
 			Font = fonts => fonts.Label, Bounds = new UiRect( 1481, 800, 154, 153 ), Anchor = UiAnchor.Center } );
 		// The owner action button is enabled only for the player's own parks (0x1018b474); OpenTPW unpublishes.
 		var unpublish = screen.Add( new UiButton { Id = "unpublish", Text = () => OnlineStrings.Get( OnlineLabel.Unpublish ),
@@ -1247,12 +1247,13 @@ public sealed class OnlineScreens
 		Push( screen );
 	}
 
-	private void Inspect( string path, bool start )
+	/// <param name="parkId">The published park's id when the file was just downloaded from the server: the visit joins the park's chat room.</param>
+	private void Inspect( string path, bool start, string? parkId = null )
 	{
 		inspected = null;
 		Guard( () =>
 		{
-			inspected = ParkSharing.PrepareVisit( ParkPackage.Load( path ) );
+			inspected = ParkSharing.PrepareVisit( ParkPackage.Load( path ) ) with { OnlineParkId = parkId };
 			if ( start && host.Visit != null )
 				host.Visit( inspected );
 		} );

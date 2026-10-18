@@ -892,6 +892,9 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		// [EXT:umbrellas-extension] the umbrella rule runs first on the guest's own phase, as Theme Park Inc's weather rule opens its needs block; only a guest who owns an umbrella is touched
 		if ( guest.UmbrellaState != UmbrellaRules.StateNone && NeedsUpdate.IsPhase( turn, guest.Id ) )
 			UpdateUmbrella( guest, turn );
+		// [EXT:rain-mood-extension] the mood rule follows the umbrella step on the same phase, for every guest in every state (Theme Park Inc's rule runs for all of them); off unless the extension sets the settings
+		if ( RainMood != null && NeedsUpdate.IsPhase( turn, guest.Id ) )
+			UpdateRainMood( guest, RainMood );
 		var cell = Litter?.Environment.At( guest.CellX, guest.CellY ) ?? default;
 		var result = NeedsUpdate.Apply( new GuestMeters( guest.Happiness, guest.Thirst, guest.Hunger, guest.Toilet, guest.Nausea ), guest.ExitLevel, turn, guest.Id,
 			cell.Happiness, cell.Illness, cell.Hunger );
@@ -3500,6 +3503,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			UmbrellaState = guest.UmbrellaState,
 			UmbrellaType = guest.UmbrellaType,
 			UmbrellaDueTurn = guest.UmbrellaDueTurn,
+			RainMoodDay = guest.RainMoodDay,
 			QueueJoinHappiness = guest.QueueJoinHappiness,
 			QueueCellIndex = guest.QueueCellIndex,
 			QueueTargetIndex = guest.QueueTargetIndex,
@@ -3766,6 +3770,9 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 				Error( $"Guest {guest.Id} umbrella colour {guest.UmbrellaType} is not 0 to {UmbrellaRules.Colours - 1} (and 0 without an umbrella)." );
 			if ( guest.UmbrellaDueTurn < 0 || guest.UmbrellaDueTurn % 4 != 0 || (guest.UmbrellaDueTurn != 0 && guest.UmbrellaState is not (UmbrellaRules.StateClosing or UmbrellaRules.StateOpening)) )
 				Error( $"Guest {guest.Id} umbrella due turn {guest.UmbrellaDueTurn} is negative, not a multiple of four, or set without a pending open or close." );
+			// [EXT:rain-mood-once-per-day] the optional day of the rule's last application: never negative
+			if ( guest.RainMoodDay < 0 )
+				Error( $"Guest {guest.Id} rain mood day {guest.RainMoodDay} is negative." );
 			if ( guest.BinId < 0 || (guest.BinId != 0) != (guest.State == GuestState.ThrowingAwayLitter) )
 				Error( $"Guest {guest.Id} bin {guest.BinId} does not match its state {guest.State}." );
 			Bounded( guest.Id, guest.QueueJoinHappiness, nameof( guest.QueueJoinHappiness ), 0, 100 );
@@ -4148,6 +4155,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		guest.UmbrellaState = snapshot.UmbrellaState;
 		guest.UmbrellaType = snapshot.UmbrellaType;
 		guest.UmbrellaDueTurn = snapshot.UmbrellaDueTurn;
+		guest.RainMoodDay = snapshot.RainMoodDay;
 		guest.QueueJoinHappiness = snapshot.QueueJoinHappiness;
 		guest.QueueCellIndex = snapshot.QueueCellIndex;
 		guest.QueueTargetIndex = snapshot.QueueTargetIndex;
@@ -4291,6 +4299,9 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 				hash.Add( guest.UmbrellaType );
 				hash.Add( guest.UmbrellaDueTurn );
 			}
+			// [EXT:rain-mood-once-per-day] the day of the rule's last application joins the digest only once it has applied (every park without the extension keeps its pins)
+			if ( guest.RainMoodDay != 0 )
+				hash.Add( 0x5241494EL + guest.RainMoodDay );
 			hash.Add( guest.QueuePosition );
 			hash.Add( guest.QueueJoinTurn );
 			hash.Add( guest.LastQueueWaitTurns );
@@ -4400,6 +4411,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 				Add( guest.UmbrellaType );
 				Add( guest.UmbrellaDueTurn );
 			}
+			if ( guest.RainMoodDay != 0 )
+				Add( 0x5241494EL + guest.RainMoodDay );
 			AddFloat( guest.Happiness );
 			Add( guest.ExitLevel );
 			Add( guest.Money );

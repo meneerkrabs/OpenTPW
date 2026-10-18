@@ -413,6 +413,69 @@ public class DeterminismTests
 		Assert.AreEqual( UmbrellasFixedRunHash, hash, $"0x{hash:X16} ({buyers} buyers, {admissions} admitted)" );
 	}
 
+	/// <summary>
+	/// [EXT:rain-mood-extension] The fixed run on the cross park in a weather that rains from the 20th to the 80th second and from the 140th to the 200th and is clear in between, with the rain mood rule on (docs/UMBRELLAS.md,
+	/// docs/DETERMINISM.md, "Rain mood"), with or without the brolly shop of <see cref="RunFixedParkWithABrollyShopInTheRain"/> (its own weather is replaced by the same rain). Returns the hash and how many guests the rule changed.
+	/// </summary>
+	internal static (ulong Hash, int Affected) RunFixedParkInTheRainWithRainMood( bool brollyShop )
+	{
+		var park = new SyntheticPark( WorldSeed.Default, brollyShop: brollyShop, prepareGuests: guests =>
+		{
+			guests.RainMood = RainMoodSettings.Default;
+			guests.UmbrellaWeatherState = () => guests.TickCount is >= 1200 and < 4800 or >= 8400 and < 12000 ? UmbrellaRules.WeatherRain : UmbrellaRules.WeatherNone;
+		} );
+		var affected = new HashSet<int>();
+		for ( var chunk = 0; chunk < PinnedRunTicks / 60; chunk++ )
+		{
+			park.Run( 60 );
+			foreach ( var guest in park.Guests.Guests.Where( guest => guest.RainMoodDay != 0 ) )
+				affected.Add( guest.Id );
+		}
+		return (park.Hash, affected.Count);
+	}
+
+	/// <summary>[EXT:rain-mood-extension] The pinned hash of <see cref="RunFixedParkInTheRainWithRainMood"/> without a brolly shop (docs/DETERMINISM.md, "Rain mood").</summary>
+	internal const ulong RainMoodFixedRunHash = 0x3697B9094432D152UL;
+
+	/// <summary>[EXT:rain-mood-extension] The pinned hash of <see cref="RunFixedParkInTheRainWithRainMood"/> with the brolly shop: the umbrellas and the rain mood rule both on (docs/DETERMINISM.md, "Rain mood").</summary>
+	internal const ulong RainMoodWithUmbrellasFixedRunHash = 0xF599E7E8B09C0FB7UL;
+
+	[TestMethod]
+	public void FixedRunInTheRainWithRainMoodIsTheSameInEveryProcessAndMovesTheRun()
+	{
+		var (hash, affected) = RunFixedParkInTheRainWithRainMood( brollyShop: false );
+		Assert.IsTrue( affected >= 5, $"{affected} guests were changed by the rule" );
+		Assert.AreEqual( hash, RunFixedParkInTheRainWithRainMood( brollyShop: false ).Hash, "repeatable in the process" );
+		Assert.AreNotEqual( FixedRunHash, hash, "the rule changes the run" );
+		Assert.AreEqual( RainMoodFixedRunHash, hash, $"0x{hash:X16} ({affected} affected)" );
+	}
+
+	[TestMethod]
+	public void FixedRunInTheRainWithRainMoodAndUmbrellasIsTheSameInEveryProcess()
+	{
+		var (hash, affected) = RunFixedParkInTheRainWithRainMood( brollyShop: true );
+		Assert.IsTrue( affected >= 5, $"{affected} guests were changed by the rule" );
+		Assert.AreEqual( hash, RunFixedParkInTheRainWithRainMood( brollyShop: true ).Hash, "repeatable in the process" );
+		Assert.AreNotEqual( RunFixedParkInTheRainWithRainMood( brollyShop: false ).Hash, hash, "the umbrellas change the run again" );
+		Assert.AreNotEqual( UmbrellasFixedRunHash, hash, "the rule changes the umbrellas run" );
+		Assert.AreEqual( RainMoodWithUmbrellasFixedRunHash, hash, $"0x{hash:X16} ({affected} affected)" );
+	}
+
+	[TestMethod]
+	public void EveryExistingPinIsUnchangedWithTheRainMoodExtensionOffAndItsOwnPinNeedsItOn()
+	{
+		foreach ( var enabled in new[] { false, true } )
+		{
+			using var scope = OpenTPW.Mods.OpenTpwExtensions.Use( OpenTPW.Mods.ModSet.Resolve( Array.Empty<OpenTPW.Mods.DiscoveredMod>(),
+				new OpenTPW.Mods.ModSettings { Enabled = new Dictionary<string, bool> { [OpenTPW.Mods.OfficialExtensions.RainMood.Id] = enabled } }, null, GameEdition.ThemeParkWorld, OpenTPW.Mods.OfficialExtensions.All ) );
+			Assert.AreEqual( enabled, FeatureGates.RainMood );
+			// the synthetic parks set the rule on their guests by hand (Level does it from the gate), so the extension's switch alone changes none of these pins
+			Assert.AreEqual( FixedRunHash, RunFixedPark(), $"the fixed run, rain mood {enabled}" );
+			Assert.AreEqual( PoolsChangingRoomFixedRunHash, RunFixedParkWithPoolsAndAChangingRoom().Hash, $"the changing room run, rain mood {enabled}" );
+			Assert.AreEqual( UmbrellasFixedRunHash, RunFixedParkWithABrollyShopInTheRain().Hash, $"the umbrellas run, rain mood {enabled}" );
+		}
+	}
+
 	[TestMethod]
 	public void EveryExistingPinIsUnchangedWithTheUmbrellasExtensionOnOrOffAndNoBrollyShop()
 	{

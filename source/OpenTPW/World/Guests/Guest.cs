@@ -188,6 +188,11 @@ public sealed class Guest
 	/// continues the same run.
 	/// </summary>
 	public long UmbrellaDueTurn { get; internal set; }
+	/// <summary>
+	/// [EXT:rain-mood-once-per-day] The game day plus one on which the rain mood rule (<c>opentpw.rain-mood</c>) last changed this guest's meters; 0 while it never has. Theme Park Inc stores its day at <c>+0x2E8</c> and never reads it,
+	/// so the extension keeps its own to apply the rule once per qualifying day.
+	/// </summary>
+	public long RainMoodDay { get; internal set; }
 	/// <summary>Whether the guest wears a costume (guest <c>+0x24</c> == 2): a costume shop puts one on, and the next visit to one returns it.</summary>
 	public bool InCostume { get; internal set; }
 	public int Money { get; internal set; }

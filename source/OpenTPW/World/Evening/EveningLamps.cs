@@ -265,15 +265,22 @@ public sealed class EveningLampSource : IPointLightSource
 	private readonly EveningLampTable table;
 	private readonly Func<IReadOnlyList<OriginalObject>> objects;
 	private readonly Func<float> lampLevel;
+	private readonly Func<int>? version;
 	private readonly System.Runtime.CompilerServices.ConditionalWeakTable<ObjectCatalogEntry, IReadOnlyList<ResolvedEveningLamp>> resolved = new();
+	// the lamp-bearing objects of the placed set, rebuilt only when the set changes (not once per night frame)
+	private readonly List<(OriginalObject Item, IReadOnlyList<ResolvedEveningLamp> Lamps)> bearers = new();
+	private IReadOnlyList<OriginalObject>? cachedList;
+	private int cachedVersion = int.MinValue;
+	private int cachedCount = -1;
 	private readonly HashSet<string> warned = new( StringComparer.Ordinal );
 	private bool reported;
 
 	/// <summary>The lights this source put into the last frame's list (for tests and the performance notes).</summary>
 	public int LastCount { get; private set; }
 
-	public EveningLampSource( EveningLampTable table, Func<IReadOnlyList<OriginalObject>> objects, Func<float> lampLevel )
+	public EveningLampSource( EveningLampTable table, Func<IReadOnlyList<OriginalObject>> objects, Func<float> lampLevel, Func<int>? version = null )
 	{
+		this.version = version;
 		this.table = table;
 		this.objects = objects;
 		this.lampLevel = lampLevel;
@@ -282,6 +289,8 @@ public sealed class EveningLampSource : IPointLightSource
 	/// <summary>The lamps of an object, resolved once per catalog entry (its model and the table row do not change).</summary>
 	private IReadOnlyList<ResolvedEveningLamp> LampsOf( OriginalObject item )
 	{
+		if ( ResolverOverride != null )
+			return ResolverOverride( item );
 		var entry = item.Entry;
 		if ( resolved.TryGetValue( entry, out var lamps ) )
 			return lamps;
@@ -297,6 +306,35 @@ public sealed class EveningLampSource : IPointLightSource
 		return lamps;
 	}
 
+	/// <summary>Test seam: resolves an object's lamps without a catalog entry and model (an object needs a graphics device to be built).</summary>
+	internal Func<OriginalObject, IReadOnlyList<ResolvedEveningLamp>>? ResolverOverride { get; set; }
+
+	/// <summary>The number of objects in the lamp cache (for tests).</summary>
+	internal int BearerCount => bearers.Count;
+
+	/// <summary>
+	/// Brings the cache of lamp-bearing objects up to date: it is rebuilt when the object list, the host's change counter or (without a counter) the list's length differs from last time.
+	/// The order of the placed list is kept, so the lights come out in the same order as a walk over every object.
+	/// </summary>
+	internal void Refresh()
+	{
+		var placed = objects();
+		var current = version?.Invoke() ?? 0;
+		if ( ReferenceEquals( placed, cachedList ) && current == cachedVersion && placed.Count == cachedCount )
+			return;
+		cachedList = placed;
+		cachedVersion = current;
+		cachedCount = placed.Count;
+		bearers.Clear();
+		for ( var objectIndex = 0; objectIndex < placed.Count; objectIndex++ )
+		{
+			var item = placed[objectIndex];
+			var lamps = LampsOf( item );
+			if ( lamps.Count > 0 )
+				bearers.Add( (item, lamps) );
+		}
+	}
+
 	public void AppendPointLights( List<PointLight> into )
 	{
 		LastCount = 0;
@@ -304,14 +342,10 @@ public sealed class EveningLampSource : IPointLightSource
 		if ( !( level > 0.002f ) )
 			return;
 		var start = into.Count;
-		// indexed loops: foreach over an interface list boxes an enumerator every frame
-		var placed = objects();
-		for ( var objectIndex = 0; objectIndex < placed.Count; objectIndex++ )
+		Refresh();
+		for ( var bearerIndex = 0; bearerIndex < bearers.Count; bearerIndex++ )
 		{
-			var item = placed[objectIndex];
-			var lamps = LampsOf( item );
-			if ( lamps.Count == 0 )
-				continue;
+			var (item, lamps) = bearers[bearerIndex];
 			var nodes = item.NodeTransforms;
 			for ( var lampIndex = 0; lampIndex < lamps.Count; lampIndex++ )
 			{

@@ -1,7 +1,7 @@
 # Winter (`opentpw.winter`, planned)
 
 October 18, 2026. Status: **phase W0 (the research below and the decisions), phase W2 (our own art and data pipeline, [Content](#content-extwinter-content)) and phase W3 (the simulation, [Simulation](#simulation-phase-w3)) are done.**
-The winter kiosk and the glühwein stall are in the Theme Park World catalogs and guests buy from them; the items are not drawn yet (W4), the snow cover (W1) and the cold rule (W5) are not written.
+The winter kiosk and the glühwein stall are in the Theme Park World catalogs and guests buy from them; the items are drawn on the guests ([Drawing](#drawing-phase-w4)), the snow cover (W1) and the cold rule (W5) are not written.
 
 The request (user, 2026-10-18): three features of our own (`[EXT:winter-*]`), with no original art, script or number table copied: (1) snow that settles on the ground, roofs and objects during snowfall and
 melts afterwards; (2) a winter kiosk that sells hats, mittens and earmuffs, worn visibly by the guests; (3) a glühwein stall (the user's choice over hot chocolate; a warm drink with no drunk effects).
@@ -141,7 +141,7 @@ Both have their names and descriptions in the eleven interface languages (the Ex
   thunder-snow reads as a storm); otherwise the game's score times the weather and season percentages below.
 - **The items** `[EXT:winter-items]`, `[EXT:winter-item-colour]`. `UsageInfo.AppearanceEffect` **4** is this extension's (1 balloon and 2 costume are tp.exe's, 3 is the umbrellas'). A purchase fills the head slot first, with a hat for two guests in three and earmuffs for the third, chosen by a hash of the
   guest id, then the mittens; a third purchase gives nothing and a guest never has two head items. The colours are a hash of guest id and item (`WinterRules.ColourOf`, three for hats, two for earmuffs, three for mittens, the sprite slots of `SPR_WI`, `WinterRules.SpriteSlotOf`): **a purchase takes no draw from any
-  stream**. Nothing takes an item off: the guest keeps it until it leaves, whatever the weather. A costume does not remove the items (it only hides them, in W4).
+  stream**. Nothing takes an item off: the guest keeps it until it leaves, whatever the weather. A costume does not remove the items (a costumed guest shows its head item, [Drawing](#drawing-phase-w4)).
 - **The glühwein stall** `[EXT:winter-gluehwein]`, `[EXT:winter-spice-label]`, `[EXT:winter-season-terms]`. A normal drinks shop: `ShopType 4`, `SpecialIngredient 3`, so the use routine, the drinks challenge and the drinks price statistics are the original's. Evidence, tp.exe: the sale counter `0x4e16b0` switches on the shop's
   `ShopType` (jump table `0x4e18e4`, index `ShopType - 1`): type 4 goes to the ingredient switch (`0x4e1779`, table `0x4e18fc`, index `ingredient - 1`), whose third slot (`0x4e17f9`) adds 1 to counter 3, the drinks challenge; ShopType 1 (the kiosk's) adds to counter 5 through `0x4e1814`, not to the costume counter 7
   (ShopType 5). The stall has no gate and no drunk effects (`[EXT:winter-gluehwein-no-drunk]`: `VomitEffect` 5, no new guest state). The score is the game's times the weather's percentage of its `.sam` (`WeatherModifier.Rain/Storm/SnowPercentage`) when that is nonzero, then the season's percentage when that is nonzero
@@ -160,7 +160,7 @@ Both have their names and descriptions in the eleven interface languages (the Ex
   Every pin that existed is unchanged.
 - **Tests.** `WinterSimulationTests` (the seasons, the gate table, the percentages, the purchase order, the colours, the score through the host, the purchase without a draw, the snapshot, the validator, the hash, a resume mid-snow), `WinterWiringTests` (the registration, the catalogs of the four themes with the extension on and off, a Theme Park Inc run, the bridges' terms, the drinks counters, the save rule),
   `WinterWeatherTests` (the converter, December and other months, Halloween and space untouched, the 400-day runs, a resume mid-snow) and the determinism pins.
-- **Not here.** The drawing of the items (W4), the cold rule and the glühwein's warmth (W5), settling snow (W1). The kid's `RainMoodDay`, the umbrellas and the rain mood are untouched.
+- **Not here.** The cold rule and the glühwein's warmth (W5), settling snow (W1). The kid's `RainMoodDay`, the umbrellas and the rain mood are untouched.
 
 ## Drawing (phase W4)
 

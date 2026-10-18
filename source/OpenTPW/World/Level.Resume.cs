@@ -166,6 +166,18 @@ public partial class Level
 	}
 
 	/// <summary>
+	/// Plays the scripts' held screams again once the resumed park's audio has started (<see cref="GameAudio.EnterPark"/>): the restore brings every
+	/// handle and its operands back without a chain, because the candidate makes no sound before it replaces the live park and leaving that park stops
+	/// every chain.
+	/// </summary>
+	internal void ResumeHeldScreams()
+	{
+		foreach ( var item in Objects.Objects )
+			item.Runtime.ResumeHeldScream();
+		PlacedRide?.Runtime.ResumeHeldScream();
+	}
+
+	/// <summary>
 	/// Rebuilds the saved developer Totem, or null when the save holds none: a fresh candidate with the saved
 	/// position, script seed, open flag and attraction id (the id is adopted, nothing allocated or charged), its
 	/// runtime restored like a placed object's, its bridge registered with the guests through its saved guest cells

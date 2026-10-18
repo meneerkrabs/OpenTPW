@@ -383,6 +383,18 @@ capacity, so OpenTPW's band equals the original's for the same riders; whether t
 (boarding and queue pace) is the guest slice's question, not the band's. Near a full ride a band of 4 or more picks the
 0-500 ms and 100-1000 ms event (73, 74) in 43 % of the starts of the jungle run, as in the original's busiest minutes.
 
+**Held screams in a park save (October 18).** The script's handle is state, not sound. `OriginalObjectEffects` keeps whether
+the script holds a handle, the STARTSCREAM band, level and speed word, the level of the last SCREAMLEVEL while the handle is
+held, and how many handles refused starts lost. A run without audio (headless, `--mute`) gets the same values as a run with a
+sound service, and a park save stores them, so its snapshot and hashes do not depend on audio. The refusal is decided by the
+script's handle. Both STARTSCREAM operands and SCREAMLEVEL's operand are resolved whether or not a handle is held (tp.exe
+`0x555E5E`, `0x555FDA`). The chain only plays the held scream.
+
+A restore brings the state back exactly and starts no sound, so a candidate park that a failed load rejects leaves no chain in
+the live park. Once `GameFlow.ResumePark` has entered the park's audio, `Level.ResumeHeldScreams` starts each held scream's
+chain from its operands. Entering the park's audio stops every chain of the park it replaces, so a chain started earlier
+would go silent at once. A lost handle is restored only as a count: its chain does not scream again.
+
 Traced in the binary and played:
 
 * `EVENT` types 1 and 2 create **particles**, not positioned sound loops; see the particle section above.

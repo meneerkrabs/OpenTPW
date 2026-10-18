@@ -122,11 +122,14 @@ refused this way before anything is replaced.
   but the part describes exactly the Inca Totem; any other entry in that slot is refused rather
   than accepted as opaque state. Player-built coasters are saved too (see above). The
   original `TPWS` import stays partial and read-only ([TPWS-PAYLOAD.md](TPWS-PAYLOAD.md)).
-- **Transient sounds are not saved.** A park cannot be saved while a ride scream is playing or the
-  advisor is speaking, or while a placed object owns a live flag-`0x8` looping EVENT or repair-hide voice. The latter
-  remains a live-audio persistence limitation: stop the owning object/sound before saving; one-shots,
-  finished loop voices and headless/stopped owners do not trigger it. No voice, music or audio state persists through a
-  save.
+- **Transient sounds are not saved.** No voice, chain, music or other audio state persists through a save. A ride
+  that holds a scream is saved as its script holds it: the handle, its STARTSCREAM and SCREAMLEVEL operands, and the count
+  of handles that refused starts lost. These are the same with or without audio. The held scream plays again once the
+  loaded park's audio runs ([AUDIO.md](AUDIO.md), "Held screams in a park save"); the chain of a lost handle does not. The
+  pause menu's Save does not wait for advice being spoken: the speech goes on, it is not saved, and a loaded park starts
+  silent. A park cannot be saved while a placed object owns a live flag-`0x8` looping EVENT or repair-hide voice. This
+  remains a live-audio persistence limitation: stop the owning object/sound before saving; one-shots, finished loop
+  voices and headless/stopped owners do not trigger it.
 - **The camera and menu focus are not saved**; the view and interface start fresh after a load.
 - **Older saves keep their old cell types.** The cell map is saved as it was. A save made before the cells were typed as
   tp.exe types them (no terrain, water, fixed walkway and the cell flags 0x80 and 0x400 at level start, and the 4/9/10 footprint types
@@ -151,8 +154,8 @@ embedded by value, so both formats' validators run on every load.
 
 ## Developer notes
 
-- **API.** `Level.CaptureResumeSnapshot` captures between ticks (refusing
-  an attraction's active scream and active advisor speech); `ParkResumeSaveFile.Save`/`Load` do the
+- **API.** `Level.CaptureResumeSnapshot` captures between ticks (refusing a placed object's live looping
+  EVENT or repair-hide voice, and advice being spoken unless the pause menu's Save asks); `ParkResumeSaveFile.Save`/`Load` do the
   atomic, size-capped, suffix-checked file I/O; `GameFlow.SaveCurrentPark` (the pause menu's Save)
   and `GameFlow.ResumePark` (Load) wire it into the UI. The developer Totem rides along as the
   envelope's optional prototype part (`PrototypeRideSave`), joined by attraction id exactly like a

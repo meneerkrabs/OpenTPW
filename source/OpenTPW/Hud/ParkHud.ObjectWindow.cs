@@ -148,7 +148,7 @@ public sealed partial class ParkHud
 				: level.PublishedObjectState( item )?.Repair is { } repair ? UiGauge.OfPercent( RideBreakdownRules.GaugeByte( (float)repair ) ) : null, true ),
 			ObjectRowKind.Life => new ObjectStat( label, null, state?.LifeGauge is { } life ? UiGauge.OfPercent( RideBreakdownRules.GaugeByte( (float)life ) ) : null, true ),
 			// [BIN:TPW-EXE:0x4b1914 shop and sideshow refresh] the local happiness gauge (0xc07c, 0xa09e) is 0x4cd880 of the object's cell with radius 1 × 1024 / 100
-			ObjectRowKind.Happiness => new ObjectStat( label, null, LocalHappinessGauge( item ), true ),
+			ObjectRowKind.Happiness => new ObjectStat( label, null, LocalHappinessGauge( item ), true, true ),
 			// [BIN:TPW-EXE:0x4b1a89 customer satisfaction gauge] the shop and sideshow windows' gauge (0xc079, 0xa094) is 0x4e1e30 of the object's own 30-day history (50 plus the mean of the visits' happiness changes), (value << 10) / 100
 			ObjectRowKind.Satisfaction => new ObjectStat( label, null, state == null ? null : UiGauge.OfPercent( state.SatisfactionRing.Satisfaction ), true ),
 			ObjectRowKind.Winners => new ObjectStat( label, null, state == null ? null : WinnersGauge( state.WinnersLast30Days, state.CustomersLast30Days ), true ),
@@ -390,7 +390,7 @@ public sealed partial class ParkHud
 			if ( owner.StatOfRow( row ) is not { IsGauge: true } stat )
 				return;
 			var rect = ScreenRect( context.Canvas );
-			UiGauge.Draw( context.Batch, UiGauge.BarRect( rect, context.Canvas ), stat.Gauge );
+			UiGauge.Draw( context.Batch, UiGauge.BarRect( rect, context.Canvas ), stat.Gauge, stat.IsHappiness ? UiGauge.HappinessArtPath : UiGauge.ArtPath );
 		}
 	}
 

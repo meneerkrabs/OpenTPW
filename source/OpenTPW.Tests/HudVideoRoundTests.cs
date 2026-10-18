@@ -37,6 +37,18 @@ public class HudVideoRoundTests
 	}
 
 	[TestMethod]
+	public void TheHappinessBarsDrawHappygradAndTheOthersRidestatbar()
+	{
+		// [BIN:TPW-EXE:0x7508c0] the happiness bars hand the gauge model builder happygrad.wct
+		var batch = new UiBatch();
+		UiGauge.Draw( batch, new UiRect( 0, 0, 100, 10 ), 0.5f, UiGauge.HappinessArtPath );
+		Assert.IsTrue( batch.Draws.All( draw => draw.Texture.ImagePath == UiGauge.HappinessArtPath ) );
+		batch.Clear();
+		UiGauge.Draw( batch, new UiRect( 0, 0, 100, 10 ), 0.5f );
+		Assert.IsTrue( batch.Draws.All( draw => draw.Texture.ImagePath == UiGauge.ArtPath ) );
+	}
+
+	[TestMethod]
 	public void AFinanceGraphMarkIsAHollowThreeByThreePixelBox()
 	{
 		// [BIN:TPW-EXE:0x47ffe0 graph sample mark] four one-pixel edges round the sample end

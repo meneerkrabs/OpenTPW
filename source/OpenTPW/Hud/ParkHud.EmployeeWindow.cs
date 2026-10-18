@@ -256,10 +256,10 @@ public sealed partial class ParkHud
 		Value( "employedFor", 0x51B, () => Employee == null ? "" : strings.Format( UiTextRecord.Days, employeeStats.EmployedDays.ToString( CultureInfo.InvariantCulture ) ) );
 		Value( "monthlyWage", 0x51E, () => Employee == null ? "" : FormatMoney( employeeStats.MonthlyWage ) );
 		Value( "status", 0x517, () => Employee == null ? "" : StaffStatus( employeeStats.Status ) );
-		void Bar( string id, uint control, Func<EmployeeStats, int> value ) => screen.Add( new UiGaugeBar { Id = id,
+		void Bar( string id, uint control, Func<EmployeeStats, int> value, string art = UiGauge.ArtPath ) => screen.Add( new UiGaugeBar { Id = id, Art = art,
 			Value = () => Employee == null ? null : value( employeeStats ) / (float)EmployeeWindowRules.GaugeFull, Bounds = table.Control( control ).Rect, Anchor = UiAnchor.Center } );
 		Bar( "skillBar", 0x514, stats => stats.SkillGauge );
-		Bar( "happinessBar", 0x513, stats => stats.HappinessGauge );
+		Bar( "happinessBar", 0x513, stats => stats.HappinessGauge, UiGauge.HappinessArtPath );
 		Bar( "energyBar", 0x515, stats => stats.EnergyGauge );
 		var icon = table.Control( 0x51F );
 		screen.Add( new FrameIcon { Id = "statusIcon", Model = icon.Model!, Frame = () => Employee == null ? -1 : EmployeeWindowRules.StatusIcon( employeeStats.Status ),

@@ -14,6 +14,10 @@ public static class UiGauge
 	/// <summary>The gauge art (the original's <c>ridestatbar.wct</c>), 32 x 32 texels: rows 0-15 the bar, rows 16-31 the track.</summary>
 	public const string ArtPath = "/ui/textures/ridestatbar.wct";
 	private const float ArtSize = 32f;
+
+	/// <summary>The happiness gauge art (<c>happygrad.wct</c>, blue through orange to yellow), laid out like <see cref="ArtPath"/>.</summary>
+	// [BIN:TPW-EXE:0x7508c0 happygrad.wct] the gauge model builder 0x477ff0 is given happygrad.wct instead of ridestatbar.wct by the happiness bars: the visitors list's happiness column (0x493bc5), the visitor window's (0x4b7205), the employee window's 0x513 (0x4b56f5) and the local-happiness rows of the shop and sideshow windows (0x4b018c, 0x4b1681), where the excitement, reliability, repair, life and satisfaction bars keep ridestatbar.wct
+	public const string HappinessArtPath = "/ui/textures/happygrad.wct";
 /// <summary>The range of a type-9 gauge's value (0x66d885 clamps it to 0..0x400).</summary>
 	public const int FullValue = 1024;
 
@@ -37,9 +41,9 @@ public static class UiGauge
 		new( control.X, control.Y + insetUnits * canvas.Scale, control.Width, Math.Max( 0f, control.Height - 2 * insetUnits * canvas.Scale ) );
 
 	/// <summary>Draws a gauge in <paramref name="track"/> filled to <paramref name="fraction"/> (0..1); null or 0 draws the empty track.</summary>
-	public static void Draw( UiBatch batch, UiRect track, float? fraction )
+	public static void Draw( UiBatch batch, UiRect track, float? fraction, string art = ArtPath )
 	{
-		var texture = UiTexture.Image( ArtPath );
+		var texture = UiTexture.Image( art );
 		// Half a texel inside each half keeps the linear filter from mixing the bar's last row with the track's first.
 		const float barTop = 0.5f / ArtSize, barBottom = 15.5f / ArtSize, trackTop = 16.5f / ArtSize, trackBottom = 31.5f / ArtSize;
 		batch.AddQuad( texture, track, new NVector2( 0.5f / ArtSize, trackTop ), new NVector2( 31.5f / ArtSize, trackBottom ), RgbaByte.White );
@@ -56,11 +60,13 @@ public static class UiGauge
 public sealed class UiGaugeBar : UiElement
 {
 	public Func<float?> Value { get; set; } = () => null;
+	/// <summary>The art the bar draws (<see cref="UiGauge.ArtPath"/> or <see cref="UiGauge.HappinessArtPath"/>).</summary>
+	public string Art { get; set; } = UiGauge.ArtPath;
 
 	public override void Draw( UiContext context, bool focused, bool pressed )
 	{
 		var rect = ScreenRect( context.Canvas );
-		UiGauge.Draw( context.Batch, rect.Inflate( -rect.Height * 0.12f ), Value() );
+		UiGauge.Draw( context.Batch, rect.Inflate( -rect.Height * 0.12f ), Value(), Art );
 	}
 }
 

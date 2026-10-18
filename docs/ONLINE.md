@@ -13,7 +13,8 @@ The online screens support the server's Game News and System News, account regis
 voting, read-only visits, local postcard composition, sending the outbox, fetching the
 inbox, and chat — including the globe's five **chat parks**, standing rooms with live
 presence: everyone in a chat park sees who is there and where they stand, and the server
-relays each player's movement. Chat commands use the selected original `CHAT_COMMANDS.str`
+relays each player's movement. A visit of a published park shows the park's other visitors
+walking in it ([Players in a visited park](#players-in-a-visited-park)). Chat commands use the selected original `CHAT_COMMANDS.str`
 words; original text is used where verified and supplementary labels cover the six supported
 languages. Chat lines use the local `GAME8AA.bf4` font. What the original service had and
 where each piece stands is inventoried in [reverse/ONLINE-FEATURES.md](reverse/ONLINE-FEATURES.md).
@@ -227,20 +228,74 @@ the archived official pages):
   (docs/SERVER.md). Voting stays a separate action from Find Parks or the city lobby.
 
 Visitors and rides animate locally (the visited park's own scripts run); those
-simulations are not synchronized multiplayer, and no other players appear in the park
-(the original's chat parks with online persons are not implemented). A package carries
-no guests, so a visit starts empty and fills from its own arrivals, which read the park
-turn of the save the visit is built on (`EXT:online-visit-arrivals`): the visit of a
-Jungle park sends its first group at once, as an own park started from the shipped save
-(Instant Action) does. Counted from turn 0, the first group would wait until turn 604,
-about 150 s into the visit, with nobody before it to ride a ride such as the Belly
-Bounce. A visit cannot
+simulations are not synchronized multiplayer: each visitor's guests and rides are their
+own, and only the players themselves are shared ([below](#players-in-a-visited-park)). A
+package carries no guests, so a visit starts empty and fills from its own arrivals, which
+read the park turn of the save the visit is built on (`EXT:online-visit-arrivals`): the
+visit of a Jungle park sends its first group at once, as an own park started from the
+shipped save (Instant Action) does. Counted from turn 0, the first group would wait until
+turn 604, about 150 s into the visit, with nobody before it to ride a ride such as the
+Belly Bounce. A visit cannot
 place or remove rides, build paths or save, load or export the sandbox. The panel and
 startup log explicitly report mismatches, missing objects/bonus archives and terrain
 hash differences. Missing content is never downloaded automatically. Original
 textures/models/audio and executable code are never embedded in these sharing files.
-Live multiplayer, original server behavior and original online panel visual parity
-remain unsupported.
+Building one park together, original server behavior and original online panel visual
+parity remain unsupported.
+
+### Players in a visited park
+
+A visit of a park downloaded from the server (Find Parks, the park details or a city lobby's
+*Enter Park*) while logged in puts the player in the park's chat room (`park:<id>`), as the
+original's visit switched to chat mode on entering the park (manual p. 65). Every visitor of the
+park — and anyone in the park's room through the park details' *Chat* button — appears as a
+figure in the park (`ParkPresence`):
+
+- **Figures**: each player is drawn with the guests' kid sprites (the pools extension's sets when
+  it is on), walking or standing like a guest, with their name over their head on a dark plate —
+  the player's own in yellow — under the HUD's windows. Each figure gets the original's avatar
+  sparkle once a world turn: effect 53 *Avatar* for the player's own figure, 57 *OtherAvatar* for
+  the others, from `Data/Particle/Tp2.plb` (tp.exe 0x4F7C60 / 0x4FA470 in the online person's tick
+  0x50B453; docs/reverse/ONLINE-VISIT.md).
+- **Walking**: a left click on the ground that hits no object walks the player's figure
+  there, and a double click teleports it (manual p. 68). The walk goes from cell centre to cell
+  centre round water, objects, the fence and cells without terrain, by the octile distance the
+  original's person route uses (0x50F8E0), and straight when there is no route. Objects keep their
+  click: a click on a ride still opens its window, and the ride view still rides it.
+- **Places**: the figure's place goes to the server as a fraction of the park's map (the chat
+  protocol's `move`), at most every 0.12 s while it walks, on arrival, and every ten seconds while
+  it stands; the server relays it to the room. The other figures follow the relayed places and
+  jump when a place is more than three cells away (a teleport, or a player in the overhead chat
+  view, whose square maps onto the same fractions).
+- **Chat**: the room's last lines show at the original chat overlay's message list for ten seconds
+  after each line (instead of the chat overlay's corner box); **Enter** over the park opens a chat
+  line at the overlay's entry, Enter again says it (commands work as in the chat screen), Escape
+  closes it.
+- **Leaving** the park leaves its room, so the others see the parting; a chat connection that
+  the visit opened is closed again, so the Online World's lines do not follow the player into
+  their own park. A park that was unpublished meanwhile is refused by the server; its visit then
+  shows no figures.
+
+Walking runs on real time, whatever the visited park's speed or pause. Figures need a server that
+answers each room's first movement with where everyone stands (protocol version 4,
+docs/SERVER.md); with an older server the visit chats but shows no figures. A park file opened
+from disk (Import file, `--visit-park`) has no room and no figures.
+`--visit-park <file> --smoke-test --smoke-presence` runs the native visit check with three scripted
+players round the entrance: their figures, names and sparkles are drawn, a HUD click walks the
+player's figure and its places are sent, and Enter says a chat line that shows over the park
+(`artifacts/native-smoke-online-visit-presence.png`).
+
+| EXT label | OpenTPW decision | Known original evidence (not reproduced) |
+| --- | --- | --- |
+| `online-visit-presence` | The visit joins the park's room and the server relays fractions of the park, sent several times a second while a figure walks; a far jump is shown as a teleport. | The original's `BOSS_CHAT_MOVE` carried a cell position (8.8 words) and a mode: 0 walk to it (every client walked the online person there itself, 0x4F7DE0), 1 teleport (0x4F7E20), 2 hide, 3 unhide and teleport (tp.exe 0x4E7265 in 0x4E6E80). Hiding while riding is not sent. |
+| `online-avatar-look` | A figure wears the guests' kid set chosen by an FNV-1a hash of the lower-case name, the same for every client. | The online person's own model (`MODEL_ONLINE_PERSON`) is not decoded. |
+| `online-avatar-walk` | The player's figure walks 1.2 cells a second, about a quick guest's pace. | The online person's walk step (0x4FA2A0 on its route) is not read. |
+| `online-avatar-route` | The cells a figure may cross: land, paths, queues, object entrances and exits and fixed walkways inside the park. | The route map the original passes to its route search (person +0xB4 → 0x511420) is not read. |
+| `online-avatar-start` | A figure appears between the park entrance's two cells. | The original's first place of an online person is not read (mode 3 unhides it at a relayed place). |
+| `online-avatar-click` | A ground click that hits no object walks the figure; the ground's help in a visit says so (WalkHint), where a visit used to show the path tool's help. | The original's chat-mode click handling in a visited park is not decoded. |
+| `online-avatar-labels` | Names over the figures, the player's own in yellow, drawn under the HUD's windows. | The decoded online code draws no names over persons; the chat overlay's people list names them. |
+| `online-avatar-sparkle-cap` | At most six figures sparkle in a turn (the player's own first, then the nearest), and none while more than 80 of the particle pool's 120 emitters are live. | The original sparkles every online person every turn; its server capped a park's attendance ("Capping the number of people in online park"). |
+| `online-visit-chat-line` | Enter over the park opens one chat line at the original overlay's entry (799020), and the room's last lines show at its message list (799019) for ten seconds after each line. | The original's in-park chat overlay (Mac table data:0x50b2c) with its people list, player buttons and vote button is not reproduced in the visit. |
 
 ## Local server
 

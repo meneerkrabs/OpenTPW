@@ -1,5 +1,10 @@
 name: Hourly release
 on:
+  # CI completion is the primary wake-up; cron is a best-effort recovery path.
+  workflow_run:
+    workflows: [Cross-platform build and CPU tests]
+    types: [completed]
+    branches: [main]
   schedule:
     - cron: '17 * * * *'
   workflow_dispatch:
@@ -17,7 +22,12 @@ permissions:
 jobs:
   train:
     # The scheduled run belongs to the default branch; ignore forks, which have no releases to publish.
-    if: github.repository == 'meneerkrabs/OpenTPW'
+    if: >-
+      github.repository == 'meneerkrabs/OpenTPW' &&
+      (github.event_name != 'workflow_run' ||
+       (github.event.workflow_run.event == 'push' &&
+        github.event.workflow_run.head_repository.full_name == github.repository &&
+        github.event.workflow_run.conclusion == 'success'))
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -58,9 +68,9 @@ jobs:
           COMMIT: ${{ steps.plan.outputs.commit }}
         run: |
           # Right before dispatching, fetch the tags again and plan again: another release may have been
-          # tagged since the plan above. Only go on when the new plan names the same version and commit.
-          git fetch --tags --force origin
-          python -B tools/release_train.py --notes-file "$RUNNER_TEMP/notes-recheck.md" > "$RUNNER_TEMP/recheck.json"
+          # tagged or main may have moved since the plan above. Only go on when the new plan names the same version and commit.
+          git fetch --tags origin +refs/heads/main:refs/remotes/origin/main
+          python -B tools/release_train.py --head "$(git rev-parse refs/remotes/origin/main)" --notes-file "$RUNNER_TEMP/notes-recheck.md" > "$RUNNER_TEMP/recheck.json"
           if [[ "$(jq -r .action "$RUNNER_TEMP/recheck.json")" != release \
                 || "$(jq -r .version "$RUNNER_TEMP/recheck.json")" != "$VERSION" \
                 || "$(jq -r .commit "$RUNNER_TEMP/recheck.json")" != "$COMMIT" ]]; then

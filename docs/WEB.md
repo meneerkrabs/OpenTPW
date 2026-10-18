@@ -72,6 +72,20 @@ files, not symbolic links: ASP.NET reports a link's own size.
   | ImGui developer panels, the editor, SDL audio | `Browser/DeveloperPanels.cs`, `Browser/DesktopOnly.cs`: silent stand-ins |
   | `Program.cs`, `Client/Game.cs` (command line, setup window) | `Program.cs`: `AddFile`, `Start` and `Frame` for the page |
 
+  The legacy `Settings.Designer.cs`, `Client/GameDir.cs`, `Client/LegacySettings.cs` and unused
+  `UI/Cursor.cs` are also excluded. The browser's `Browser/LegacySettings.cs` always returns no
+  legacy game path, so shared audio and game-files callers use their existing fallback without
+  loading `System.Configuration.ConfigurationManager`. `GameDir.GetPath` was only called by that
+  old cursor; the active park cursor uses `ParkHud.Cursor.cs`. Desktop setup keeps its own settings.
+
+  Canonical Unicode normalization remains in .NET: object-name matching uses FormD to remove
+  accents and punctuation, and mod path keys use FormC. These forms work in browser .NET; unlike
+  the online NFKC identity rule, they must not fold compatibility characters such as ligatures.
+  `tools/web-postcard-smoke.mjs` exercises both exports in the published WASM runtime, twice and
+  offline after boot, with synthetic object names and no original assets. It checks the settings
+  boundary, split-name matching, mod path keys, postcard identity and unchanged persistent files.
+  This is focused platform coverage, not a claim that every shared desktop API is browser-safe.
+
   The desktop code itself only skips two things in the browser: watching shader files and
   colouring console output. The browser has no `graphics.json`, so it uses the default Original
   world textures; a locally built texture pack does not exist there (docs/TEXTURE-PACKS.md).

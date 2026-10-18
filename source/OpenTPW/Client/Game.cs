@@ -790,7 +790,9 @@ internal static class Game
 			Render.OnRender += advisor.Render;
 		if ( visit != null && smoke )
 		{
-			using var visitSmokeTest = new VisitSmokeTest( level, flow.Hud );
+			// --smoke-presence adds scripted online players round the park entrance (VisitPresenceSmoke)
+			using var visitSmokeTest = new VisitSmokeTest( level, flow.Hud, input => flow.InjectedInput = input,
+				args.Contains( "--smoke-presence" ) ? visited => VisitPresenceSmoke.Attach( visited, flow.AttachPresence ) : null );
 			Render.PostUpdate += visitSmokeTest.Update;
 			Render.Run();
 			visitSmokeTest.VerifyCompleted();

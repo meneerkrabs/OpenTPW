@@ -53,25 +53,37 @@ without requiring a website code change.
 
 ## Hourly releases
 
-`.github/workflows/release-train.yml` (**Actions → Hourly release**) runs at minute 17 of every hour and, when it
-finds something new, starts the normal release workflow for the next stable version. The result is a regular release
+`.github/workflows/release-train.yml` (**Actions → Hourly release**) wakes after a successful **Cross-platform build and CPU tests** push run on `main`, and keeps
+minute 17 of every hour as a recovery fallback. GitHub schedules can be delayed or dropped; the cron expression is
+not an hourly delivery guarantee. When the train finds something new, it starts the normal release workflow for the next stable version. The result is a regular release
 that becomes the latest download, exactly like a manual one. Manual releases keep working as described above.
 
 Each train (`tools/release_train.py`) takes the current commit of `main` and:
 
-1. skips when a release run is still queued or running;
+1. skips when a release run is queued, running, requested, pending, or waiting for approval;
 2. retries a half-failed release first: if the newest stable tag exists but its release is missing or still a draft,
-   the train dispatches that same version again on the commit it was tagged at (the publish script repairs it), so a
-   version is never reused for a different commit and never skipped forever;
+   the train first requires successful push CI on that exact tagged commit, then dispatches the same version again
+   (the publish script repairs it), without assigning that version to a different commit. Missing, pending or failed
+   CI on the tagged commit blocks automatic repair and needs a successful CI rerun or maintainer attention;
 3. skips when that commit already carries a stable tag, or when no commit is newer than the newest stable tag;
 4. skips when **Cross-platform build and CPU tests** has not finished on that exact commit (the next train retries,
    so pull requests that merge while CI runs ride a later train) or did not succeed, including cancelled runs (the job
    summary says so);
 5. otherwise picks `vX.Y.(Z+1)`, where `vX.Y.Z` is the newest stable tag (preview tags are ignored), plans again
-   after refetching the tags right before dispatching, and dispatches **Release builds** with that version,
+   after refetching `main` and the tags right before dispatching, and dispatches **Release builds** with that version,
    `prerelease=false` and the commit SHA. The commit input fixes the build and the tag to the validated commit, even
    when `main` moves before the build starts (the commit must be on `main`). Trains never overlap (concurrency group),
-   and the release workflow serializes runs of the same version.
+   and the release workflow serializes runs of the same version. A changed commit/version or a newly active release
+   aborts dispatch. The publish script leaves a complete release unchanged, including if duplicate wake-ups race
+   with GitHub making a dispatched run visible.
+
+A completion event is only a wake-up, never proof that the current `main` is green: the planner always queries
+all matching push CI runs for the selected full SHA again. PR, fork, tag and manual-build events cannot use this
+trigger to start a release; the train checks out trusted `main`, never the event checkout or its artifacts.
+For a new release, if `main` moves during planning, the train starts nothing and lets a subsequent completion or
+fallback retry. Repairing an unfinished tagged release remains pinned to its older tagged commit.
+Manual **Only report** remains the default and never dispatches. The existing workflow name is retained so
+saved links and manual instructions still work.
 
 The release notes are GitHub's list of merged pull requests since the previous tag, plus links to the progress
 fragments (`docs/progress/`) added since then. A tag pushed with the workflow token would not start other workflows,

@@ -59,7 +59,7 @@ def check_state(runs):
     return 'green'
 
 
-def plan(head, tags, tags_at_head, commits_since_last_tag, build_runs, release_runs_active, unfinished=None):
+def plan(head, tags, tags_at_head, commits_since_last_tag, build_runs, release_runs_active, unfinished=None, retry_build_runs=None):
     """Return {'action': 'release'|'skip', 'reason': ..., 'version': ..., 'commit': ...}."""
     def skip(reason):
         return {'action': 'skip', 'reason': reason, 'version': '', 'commit': head}
@@ -68,7 +68,10 @@ def plan(head, tags, tags_at_head, commits_since_last_tag, build_runs, release_r
     # The newest stable tag exists but its release is missing or still a draft: an earlier run died after tagging.
     # Retry that exact version on the commit it was tagged at (the publish script repairs it), never a new version.
     if unfinished:
-        version, commit = sorted(unfinished.items())[-1]
+        version = max(unfinished, key=parse_tag)
+        commit = unfinished[version]
+        if check_state(retry_build_runs or []) != 'green':
+            return skip('unfinished release %s needs successful CI on its exact commit %s' % (version, commit))
         return {'action': 'release', 'reason': 'retrying the unfinished release of %s' % version,
                 'version': version, 'commit': commit}
     if tags_at_head:
@@ -105,8 +108,16 @@ def workflow_runs(repository, workflow, **query):
     flags = []
     for key, value in query.items():
         flags += ['-f', '%s=%s' % (key, value)]
-    out = sh('gh', 'api', '--method', 'GET', path, *flags, '--jq', '.workflow_runs')
-    return json.loads(out or '[]')
+    # --paginate emits one JSON object per page. Decode the stream ourselves:
+    # gh does not allow combining --slurp and --jq, and older runners lack --slurp.
+    out = sh('gh', 'api', '--method', 'GET', path, *flags, '--paginate')
+    decoder = json.JSONDecoder()
+    runs = []
+    while out.strip():
+        page, end = decoder.raw_decode(out.lstrip())
+        runs.extend(page['workflow_runs'])
+        out = out.lstrip()[end:]
+    return runs
 
 
 def release_is_unfinished(repository, tag):
@@ -126,15 +137,19 @@ def gather(repository, head):
     previous = last_tag(tags)
     since = int(sh('git', 'rev-list', '--count', '%s..%s' % (previous, head))) if previous else 1
     builds = workflow_runs(repository, 'build.yml', head_sha=head, event='push', branch='main')
-    active = (workflow_runs(repository, 'release.yml', status='queued')
-              + workflow_runs(repository, 'release.yml', status='in_progress'))
+    # Include approval/concurrency waits, not just runners that already started.
+    active = [run for status in ('queued', 'in_progress', 'waiting', 'pending', 'requested')
+              for run in workflow_runs(repository, 'release.yml', status=status)]
     unfinished = {}
     if previous and release_is_unfinished(repository, previous):
         unfinished[previous] = sh('git', 'rev-list', '-n', '1', previous).strip()
+    retry_builds = []
+    if unfinished:
+        retry_builds = workflow_runs(repository, 'build.yml', head_sha=unfinished[previous], event='push', branch='main')
     fragments = []
-    if previous:
+    if previous and not unfinished:
         fragments = sh('git', 'diff', '--name-only', '--diff-filter=A', previous, head, '--', 'docs/progress/').split()
-    return tags, at_head, since, builds, active, fragments, unfinished
+    return tags, at_head, since, builds, active, fragments, unfinished, retry_builds
 
 
 def main(argv=None):
@@ -148,8 +163,8 @@ def main(argv=None):
     head = args.head or sh('git', 'rev-parse', 'HEAD').strip()
     if not SHA_RE.match(head):
         parser.error('--head must be a full lowercase commit SHA')
-    tags, at_head, since, builds, active, fragments, unfinished = gather(args.repository, head)
-    decision = plan(head, tags, at_head, since, builds, active, unfinished)
+    tags, at_head, since, builds, active, fragments, unfinished, retry_builds = gather(args.repository, head)
+    decision = plan(head, tags, at_head, since, builds, active, unfinished, retry_builds)
     if args.notes_file:
         with open(args.notes_file, 'w') as handle:
             handle.write(release_notes(fragments, args.repository, head) if decision['action'] == 'release' else '')

@@ -5,8 +5,10 @@ namespace OpenTPW;
 /// <summary>
 /// Explicit state of one <see cref="OriginalObjectRuntime"/> (park-resume slice): the entry identity the state
 /// belongs to, the animator, the head slot table, the lifecycle counters and flags, and the ride script's identity
-/// (its instruction state lives in the <see cref="RideScriptWorldSnapshot"/>). Sound chains are live audio: a held
-/// scream is saved by its STARTSCREAM operands and started again on restore; unreferenced chains are only counted.
+/// (its instruction state lives in the <see cref="RideScriptWorldSnapshot"/>). Sound chains are live audio and are not
+/// saved: the scream is saved as the script holds it (its handle and STARTSCREAM/SCREAMLEVEL operands, and the count of
+/// handles a refused STARTSCREAM lost), the same with or without audio, and the held scream plays again once a resumed
+/// park's audio runs.
 /// </summary>
 /// <summary>One ADDOBJ record of a live particle effect: the slot operand KILLOBJ names and the pool handle.</summary>
 public sealed record ParticleObjectRecord
@@ -49,13 +51,16 @@ public sealed record OriginalObjectRuntimeSnapshot
 	public required int AnimationsPlayed { get; init; }
 	/// <summary>(animation, variant) requests without a matching member, as "a/v".</summary>
 	public required IReadOnlyList<string> UnresolvedAnimations { get; init; }
-	/// <summary>Whether the script's effects held a STARTSCREAM chain at capture (started again on restore).</summary>
+	/// <summary>
+	/// Whether the script held a scream handle at capture, with or without audio (the same value as <see cref="ScriptHoldsScream"/>; saves written before
+	/// that field and before the handle followed the script told whether a chain played). A resumed park plays the held scream again once its audio runs.
+	/// </summary>
 	public required bool HeldScream { get; init; }
-	/// <summary>The held scream's STARTSCREAM band, level and script speed word (0 in saves written before they were kept).</summary>
+	/// <summary>The held scream's STARTSCREAM band, level (the last SCREAMLEVEL's) and script speed word; 0 without a held scream and in saves written before they were kept.</summary>
 	public int HeldScreamBand { get; init; }
 	public int HeldScreamLevel { get; init; }
 	public int HeldScreamSpeed { get; init; }
-	/// <summary>Chains the effects still owned at capture (screams play on; not restorable across a restart).</summary>
+	/// <summary>Handles a refused STARTSCREAM lost before the capture (their chains scream on unreferenced until the object stops): restored as a count, their chains do not scream again.</summary>
 	public required int OwnedScreamCount { get; init; }
 	/// <summary>
 	/// Fault message of a stopped runtime's script: its VM is unregistered, so the world snapshot does not carry it.
@@ -78,7 +83,7 @@ public sealed record OriginalObjectRuntimeSnapshot
 	public int? RideCapacity { get; init; }
 	[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 	public int? RideDuration { get; init; }
-	/// <summary>Whether the script's own view of its scream handle is set (the scream diagnostics follow it, with or without audio); null in older saves, which fall back to <see cref="HeldScream"/>.</summary>
+	/// <summary>Whether the script's own view of its scream handle is set (the scream diagnostics follow it, with or without audio); null in older saves, which fall back to <see cref="HeldScream"/>. The restore takes this one when the two differ.</summary>
 	public bool? ScriptHoldsScream { get; init; }
 
 	/// <summary>Deep copy.</summary>

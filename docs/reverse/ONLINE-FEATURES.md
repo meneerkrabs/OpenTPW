@@ -57,6 +57,7 @@ S5 the TPW-SE roadmap).
 | Selected island's rank at the top, name at the bottom (item detail overlay) | STP-PPC 0x101834A0 labels 0x49D9/0x49DA | Done |
 | "Other Parks In <city>": the chart of the parks outside the top 10, five columns | DATA data:0x5137e; UITEXT 446, 292-297 | Done — original composition and columns |
 | Enter this park (download and visit); "Entering…" | DATA data:0x50172 b_entpark; UITEXT 463 | Done (read-only visit) |
+| Other players in a visited park: online persons walking and teleporting, each with its avatar sparkle | tp.exe 0x50B453 (online person tick), 0x4F7C60/0x4FA470 (effects 0x35/0x39), 0x4E7265 (`BOSS_CHAT_MOVE` modes 0-3); MAN pp. 65, 68 | Done — the visit joins the park's room; figures with names, routes and the original sparkle; places relayed as fractions of the park [EXT:online-visit-presence]; hiding while riding is not sent |
 | Previous/next island | DATA data:0x50172 b_lobleft/right | Done |
 | "Getting Ride List" / "Getting Theme List" / "Getting Logical Server List" | DATA UITEXT 253-255 | Missing: the visit runtime builds its content from the package (docs/ONLINE.md); the lists themselves are not decoded |
 

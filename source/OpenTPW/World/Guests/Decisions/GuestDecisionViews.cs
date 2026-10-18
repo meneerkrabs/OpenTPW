@@ -22,8 +22,16 @@ public readonly record struct DecisionContext( GuestSettings Settings, long Park
 /// </summary>
 /// <param name="Id">The guest's thing id.</param>
 /// <param name="BirthId">The smarter-guests extension's birth id, 0 while the guest has none (the extension is off, or its first tick has not run).</param>
+/// <param name="MealTurn">
+/// The park turn of the guest's last meal (a use of an attraction with a hunger effect), or -1 for none. Filled by the host only for a policy that <see cref="IGuestDecisions.UsesPlanning"/>, else -1.
+/// Additive, phase 5.
+/// </param>
+/// <param name="PlanTurns256">
+/// The turns, in 1/256 park turn, before this guest could next serve a need if it committed to a ride now: the shortest expected wait plus cycle of a ride it could choose (<see cref="AttractionView.CycleTurns256"/>),
+/// or, in the minor decision, those of the ride it is walking to; -1 when the host did not look (the policy does not plan, or no meter is near a level it plans for) or there is no such ride. Additive, phase 5.
+/// </param>
 public readonly record struct GuestView( int Id, ulong BirthId, int Type, float Happiness, float Thirst, float Hunger, float Toilet, float Nausea, int Money, int CellX, int CellY,
-	IReadOnlyList<int> UsedHistory, IReadOnlyList<int> TemporaryHistory );
+	IReadOnlyList<int> UsedHistory, IReadOnlyList<int> TemporaryHistory, long MealTurn = -1, long PlanTurns256 = -1 );
 
 /// <summary>
 /// An attraction as the policy sees it, built by the host for one guest: every value the original score reads, precomputed. An attraction without a join cell (<see cref="HasJoinCell"/> false)
@@ -48,9 +56,18 @@ public readonly record struct GuestView( int Id, ulong BirthId, int Type, float 
 /// The attraction's observed time per guest, in 1/256 park turn (<see cref="RideThroughputs"/>: the throughput is its inverse, capacity over cycle duration): a moving average of the gaps between boardings, the cold-start value
 /// without a measurement. 0 when the host was not asked, which the policy reads as "unknown".
 /// </param>
+/// <param name="CycleTurns256">
+/// The attraction's cycle, in 1/256 park turn: its time per guest times its capacity (a ride of capacity 20 that boards a guest every 5 turns runs a cycle of 100), what a guest spends on it once it is at the front. Filled
+/// with <see cref="TurnsPerGuest256"/> (a policy that <see cref="IGuestDecisions.UsesSpreading"/>), else 0. Additive, phase 5.
+/// </param>
+/// <param name="OnTheWay">
+/// The candidate stands in the minor decision's window: a stop on the guest's way to its target (the window's rule: within 4 x 4 cells and nearer the target than the guest). Set by the host in the minor decision only, and
+/// only for a policy that <see cref="IGuestDecisions.UsesPlanning"/>. Additive, phase 5.
+/// </param>
 public readonly record struct AttractionView( int Id, int TypeId, RideVisitorKind Kind, bool HasJoinCell, (int X, int Y) BackCell, (int X, int Y) EntranceCell, int CellModifier,
 	int QueueLength, int QueueSizeInCells, uint QueueLimit, int LiveExcitement, int StaticExcitementLevel, int ThirstEffect, int HungerEffect, bool ProvidesRelief, uint AgeDays,
-	bool IsIndoors, int GoldenTicketCost, int UpgradeCost, bool IsOpen, bool IsBrokenDown, bool SameTypeAsLastUsed, int Price = 0, uint Willingness = 0, int Reservations = 0, long TurnsPerGuest256 = 0 );
+	bool IsIndoors, int GoldenTicketCost, int UpgradeCost, bool IsOpen, bool IsBrokenDown, bool SameTypeAsLastUsed, int Price = 0, uint Willingness = 0, int Reservations = 0, long TurnsPerGuest256 = 0,
+	long CycleTurns256 = 0, bool OnTheWay = false );
 
 /// <summary>
 /// The booth's facts: the park points (the park's rating), the entrance fee, the draw the host took for the verdict (the park's generator is the host's) and, for a policy that asks for it

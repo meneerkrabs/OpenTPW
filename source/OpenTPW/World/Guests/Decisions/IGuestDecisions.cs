@@ -32,6 +32,20 @@ public interface IGuestDecisions
 	bool UsesSpreading => false;
 
 	/// <summary>
+	/// The policy plans the guest's needs (docs/SMARTER-GUESTS.md, phase 5; additive): the host then fills <see cref="GuestView.MealTurn"/> (from the extension's state, which it also writes when a guest eats),
+	/// <see cref="GuestView.PlanTurns256"/> (only for a guest with a meter near a level the policy plans for, so the scan of the park's rides is not paid for the others) and, in the minor decision,
+	/// <see cref="AttractionView.OnTheWay"/>. Needs <see cref="UsesSpreading"/> (the expected waits and cycles). A policy that ignores them leaves it false and the host does none of this, so the original path
+	/// does no extra work. A policy that wraps another forwards it.
+	/// </summary>
+	bool UsesPlanning => false;
+
+	/// <summary>
+	/// The planning rule itself is on (phase 5): the host then also looks at the rides for <see cref="GuestView.PlanTurns256"/>. A policy with only the meal or detour rule leaves it false and pays nothing for the scan.
+	/// Needs <see cref="UsesPlanning"/>. A policy that wraps another forwards it.
+	/// </summary>
+	bool UsesPlanHorizon => false;
+
+	/// <summary>
 	/// The queue patience rules look at the alternatives (additive, phase 4): -1 (the default) means the host does not look for this guest. Otherwise the host fills <see cref="AdmissionView.BestAlternativeWait256"/> at every
 	/// admission and <see cref="QueuePatienceView.BestAlternativeWait256"/> once the guest, not at the front of its queue, has waited at least this many park turns (the policy returns the turn its own give-up test starts, so the
 	/// scan of the park's rides is not paid before it can matter). Needs <see cref="UsesSpreading"/> (the estimates). A policy that wraps another forwards it.

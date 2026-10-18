@@ -181,6 +181,60 @@ public sealed class ParkScenario
 		}
 	}
 
+	/// <summary>Clock ticks (of the clock <see cref="RunTimed"/> was given) the guests' own update took in <see cref="RunTimed"/> (the guest tick or the swept turn's tick, the sweep over the thing pool, its end and the arrival update); the ride scripts and the admission are left out.</summary>
+	public long GuestWatchTicks { get; private set; }
+	/// <summary>The guests in the park summed over the park turns <see cref="RunTimed"/> ran: the denominator of the cost per guest-turn.</summary>
+	public long GuestTurns { get; private set; }
+	/// <summary>The park turns <see cref="RunTimed"/> ran.</summary>
+	public long TimedTurns { get; private set; }
+
+	/// <summary>
+	/// <see cref="Run"/> that times the guests' update apart from the rest (docs/SMARTER-GUESTS.md, "Cost"): the same calls in the same order, so the run is the same, with a timestamp pair around the guests' part of each tick.
+	/// Counts the guests in the park at the start of every park turn into <see cref="GuestTurns"/>. The clock is the caller's (the simulation folders read none, <c>Client/GuestCost.cs</c> passes a stopwatch's).
+	/// </summary>
+	public void RunTimed( long ticks, Func<long> timestamp )
+	{
+		long guestTicks = 0;
+		for ( long tick = 0; tick < ticks; tick++ )
+		{
+			var swept = Guests.NextTickStartsTurn;
+			if ( swept && Options.Litter && Guests.ParkTurn % Math.Max( 1, Options.HandymanTurns ) == 0 )
+				SweepOneLitter();
+			var mark = timestamp();
+			if ( swept )
+			{
+				TimedTurns++;
+				GuestTurns += Guests.Guests.Count;
+				Guests.BeginSweepTick( (float)Tick );
+			}
+			else
+			{
+				Guests.Tick( (float)Tick );
+			}
+			guestTicks += timestamp() - mark;
+			foreach ( var attraction in attractions )
+			{
+				attraction.Bridge.DefersAdmission = swept;
+				attraction.Step( Tick );
+			}
+			if ( !swept )
+				continue;
+			mark = timestamp();
+			foreach ( var slot in Things.Capture() )
+				if ( !Things.IsQueued( slot.Id ) )
+					Guests.SweepGuest( slot.Id );
+			Guests.FinishSweep();
+			guestTicks += timestamp() - mark;
+			foreach ( var attraction in attractions )
+				attraction.Bridge.UpdateAdmission();
+			Things.DestroyQueued();
+			mark = timestamp();
+			Guests.UpdateTurnEndArrivals();
+			guestTicks += timestamp() - mark;
+		}
+		GuestWatchTicks += guestTicks;
+	}
+
 	/// <summary>The cell the handyman proxy swept last, as <c>x * 128 + y</c> in the original's search order; the next sweep takes the first littered cell after it, so the sweeping goes round the whole park.</summary>
 	private int sweepCursor = -1;
 

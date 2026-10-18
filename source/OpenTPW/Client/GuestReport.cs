@@ -512,6 +512,9 @@ public static class GuestReport
 	/// </summary>
 	public static int RunCommand( string[] args )
 	{
+		// the cost measurement of the guests (docs/SMARTER-GUESTS.md, "Cost"): --guest-report --guest-cost
+		if ( args.Contains( "--guest-cost" ) )
+			return GuestCost.RunCommand( args );
 		var extended = Option( args, "--guest-scale" ) is { } scale ? scale == "extended" ? true : scale == "plan" ? false : throw new ArgumentException( "--guest-scale is 'plan' or 'extended'." ) : false;
 		var seedCount = IntOption( args, "--guest-seeds", 1, 8 );
 		var options = new GuestReportOptions

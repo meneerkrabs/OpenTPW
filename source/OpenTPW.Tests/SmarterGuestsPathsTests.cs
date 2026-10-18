@@ -182,7 +182,8 @@ public class SmarterGuestsPathsTests
 		Assert.IsTrue( new SmarterGuestDecisions( SmarterRuleSet.Litter ).UsesPathComfort );
 		Assert.IsTrue( new SmarterGuestDecisions( SmarterRuleSet.Crowding ).UsesPathComfort );
 		Assert.AreEqual( SmarterRuleSet.Litter | SmarterRuleSet.Crowding, SmarterRuleSet.Paths );
-		Assert.AreEqual( SmarterRuleSet.Phase5 | SmarterRuleSet.Paths, SmarterRuleSet.All );
+		Assert.AreEqual( SmarterRuleSet.Phase5 | SmarterRuleSet.Paths, SmarterRuleSet.Phase6 );
+		Assert.AreEqual( SmarterRuleSet.Phase6 | SmarterRuleSet.Bins, SmarterRuleSet.All );
 		Assert.AreEqual( PathDecision.Keep, ((IGuestDecisions)OriginalGuestDecisions.Instance).ChoosePath( Context(), Guest(), new WanderPathView( Cell(), [Cell()] ) ) );
 	}
 
@@ -587,7 +588,7 @@ public class SmarterGuestsPathsTests
 		StringAssert.Contains( Problem( new MealTime( births[1], 5 ), new MealTime( births[0], 5 ) )!, "ascending" );
 		StringAssert.Contains( Problem( new MealTime( births[0], -1 ) )!, "below 0" );
 		StringAssert.Contains( Problem()!, "empty complaint list" );
-		var record = new[] { new ParkModRecord( "opentpw.smarter-guests", "1.5.0", ModSet.NoFilesSha256 ) };
+		var record = new[] { new ParkModRecord( "opentpw.smarter-guests", "1.6.0", ModSet.NoFilesSha256 ) };
 		var withComplaint = section with { Complaints = [new MealTime( births[0], 5 )] };
 		Assert.IsNull( SmarterGuestsSave.ShapeProblem( withComplaint, ids, record, false, attractions ) );
 		StringAssert.Contains( SmarterGuestsSave.ShapeProblem( withComplaint, ids, null, true, attractions )!, "does not record" );

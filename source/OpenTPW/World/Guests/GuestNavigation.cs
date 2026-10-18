@@ -443,12 +443,6 @@ public sealed class GuestNavigation
 
 	[ThreadStatic] private static List<(int X, int Y)>? searchPath;
 
-	/// <summary>
-	/// Refines the original's route after its search (the cell map, this walk's mask, the start cell and the waypoints, which it may edit). Null for every walker but a guest of a policy that routes round litter
-	/// (<see cref="IGuestDecisions.UsesLitterRoutes"/>); not state, not saved, not hashed: the host sets it before it asks for a route.
-	/// </summary>
-	public Action<ParkCellMap, int, (int X, int Y), List<(int X, int Y)>>? RouteAdjuster;
-
 	/// <summary>The octile length between the centres of two waypoint cells (<c>0x50CD80</c>, then |dx| + |dy| − min / 2).</summary>
 	private static int SegmentLength( (int X, int Y) a, (int X, int Y) b ) => Fixed16.Octile( (b.X - a.X) << 16, (b.Y - a.Y) << 16 );
 
@@ -499,8 +493,6 @@ public sealed class GuestNavigation
 			Stuck = true;
 			return false;
 		}
-		// [EXT:smarter-guests-litter] the host's refinement of the original's route, set only by a policy that routes round litter (null otherwise: the route stays the original's)
-		RouteAdjuster?.Invoke( map, Mask, start, path );
 		if ( reroute )
 		{
 			path.Insert( 0, start );

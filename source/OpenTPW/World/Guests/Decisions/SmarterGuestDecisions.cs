@@ -1,7 +1,7 @@
 namespace OpenTPW;
 
 /// <summary>
-/// The policy of the <c>opentpw.smarter-guests</c> extension (docs/SMARTER-GUESTS.md). Version 1.5.0 adds clean and quiet paths (phase 6: a wander goal on or beside litter or in a crowd is swapped for a cleaner or quieter cell of the same walk, and a guest standing in litter or a crowd complains with a small, rate-limited happiness cost; see <see cref="SmarterPathComfort"/>); 1.4.0 adds planning needs (phase 5: a service whose need will cross its level before the guest is done with its ride is scored as if it had, a service on the guest's way gets a small detour step, and shortly after a meal a ride that would make the guest sick scores lower; see <see cref="SmarterGuestsRules.Planned"/> and <see cref="SmarterGuestsRules.TooMuchAfterMeal"/>); 1.3.0 adds queue patience (phase 4: a guest does not join a queue whose expected wait, counting only the queue ahead, exceeds its patience and gives up after waiting too long, each only when another ride it could choose is clearly quicker; see <see cref="SmarterGuestsRules.JoinPatienceTurns"/>); 1.2.0 adds spreading (phase 3: an expected-wait queue term for every attraction, a stable per-guest preference per attraction instance and hysteresis in the minor decision, see <see cref="SmarterGuestsRules.ExpectedWait256"/>); 1.1.0 is value for money (phase 2): a guest no longer walks to a shop or sideshow whose price it expects the stand to
+/// The policy of the <c>opentpw.smarter-guests</c> extension (docs/SMARTER-GUESTS.md). Version 1.6.0 adds the litter bins (phase 6b: a guest with litter looks eight cells around it for a bin, not three, <see cref="SmarterBinCarry"/>). Version 1.5.0 added clean and quiet paths (phase 6: a wander goal on or beside litter or in a crowd is swapped for a cleaner or quieter cell of the same walk, and a guest standing in litter or a crowd complains with a small, rate-limited happiness cost; see <see cref="SmarterPathComfort"/>); 1.4.0 adds planning needs (phase 5: a service whose need will cross its level before the guest is done with its ride is scored as if it had, a service on the guest's way gets a small detour step, and shortly after a meal a ride that would make the guest sick scores lower; see <see cref="SmarterGuestsRules.Planned"/> and <see cref="SmarterGuestsRules.TooMuchAfterMeal"/>); 1.3.0 adds queue patience (phase 4: a guest does not join a queue whose expected wait, counting only the queue ahead, exceeds its patience and gives up after waiting too long, each only when another ride it could choose is clearly quicker; see <see cref="SmarterGuestsRules.JoinPatienceTurns"/>); 1.2.0 adds spreading (phase 3: an expected-wait queue term for every attraction, a stable per-guest preference per attraction instance and hysteresis in the minor decision, see <see cref="SmarterGuestsRules.ExpectedWait256"/>); 1.1.0 is value for money (phase 2): a guest no longer walks to a shop or sideshow whose price it expects the stand to
 /// refuse (<see cref="SmarterGuestsRules.WouldRefuse"/>, with a per-guest price sensitivity trait), goes home after <see cref="SmarterGuestsRules.StallsBeforeGoingHome"/> decisions in a row that this rule emptied, and
 /// the booth weighs the entrance fee against a park value that counts the open rides and sideshows (<see cref="SmarterGuestsRules.BoothParkValue"/>). Everything else still delegates to
 /// <see cref="OriginalGuestDecisions"/>. Later phases add their rules here, each one bumping the extension's version, which is the algorithm identity a park save records. The policy draws nothing and holds no
@@ -38,17 +38,10 @@ public sealed class SmarterGuestDecisions : IGuestDecisions
 
 	public bool UsesPathComfort => (rules & SmarterRuleSet.Paths) != 0;
 
-	public bool UsesLitterRoutes => rules.HasFlag( SmarterRuleSet.Routes );
-
 	public bool UsesBinCarry => rules.HasFlag( SmarterRuleSet.Bins );
 
 	// [EXT:smarter-guests-litter] the original's bin search and walk, over a larger radius
-	public int BinSearchRadius( in DecisionContext context, in GuestView guest ) => SmarterPathComfort.BinRadius;
-
-	// [EXT:smarter-guests-litter] the route search stays the original's; the policy prices a littered cell and bounds the detour (SmarterPathComfort)
-	public int RouteCellCost( in DecisionContext context, in RouteCellView cell ) => SmarterPathComfort.RouteCellCost( cell );
-
-	public int RouteMaxExtraCells( in DecisionContext context ) => SmarterPathComfort.RouteMaxExtraCells;
+	public int BinSearchRadius( in DecisionContext context, in GuestView guest ) => SmarterBinCarry.Radius( guest );
 
 	public bool UsesPlanHorizon => planning.HasFlag( SmarterRuleSet.Planning );
 

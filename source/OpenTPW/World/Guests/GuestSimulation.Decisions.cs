@@ -6,33 +6,6 @@ public sealed partial class GuestSimulation
 	/// <summary>What every decision may read besides its own views: the settings, the park turn and the weather.</summary>
 	private DecisionContext ContextNow() => new( Settings, ParkTurn, WeatherDropsFalling?.Invoke() ?? false, SmarterGuests?.ParkSeed ?? Seed, Grid.CountX, Grid.CountY );
 
-	private Action<ParkCellMap, int, (int X, int Y), List<(int X, int Y)>>? routeAdjuster;
-
-	/// <summary>
-	/// [EXT:smarter-guests-litter] The route refinement of a policy that routes round litter (<see cref="RouteDetour"/>), or null: with no policy of that kind, and in a park without litter, every route is the original's.
-	/// </summary>
-	private Action<ParkCellMap, int, (int X, int Y), List<(int X, int Y)>>? RouteAdjuster => decisions.UsesLitterRoutes ? routeAdjuster ??= AdjustRoute : null;
-
-	private void AdjustRoute( ParkCellMap map, int mask, (int X, int Y) start, List<(int X, int Y)> path )
-	{
-		if ( Litter is not { Count: > 0 } litter )
-			return;
-		var context = ContextNow();
-		var extra = decisions.RouteMaxExtraCells( context );
-		if ( extra < 0 )
-			throw PolicyError( $"returned the route bound {extra}" );
-		RouteDetour.Apply( map, mask, start, path, ( x, y ) =>
-		{
-			var units = SmarterPathComfort.LitterUnitsOf( litter.TypeAt( x, y ) );
-			if ( units == 0 )
-				return 0;
-			var cost = decisions.RouteCellCost( context, new RouteCellView( x, y, units ) );
-			if ( cost < 0 )
-				throw PolicyError( $"returned the route cost {cost}" );
-			return cost;
-		}, extra );
-	}
-
 	/// <summary>The error for a policy result the host cannot act on: it names the policy, and nothing of the result is used.</summary>
 	private InvalidOperationException PolicyError( string what ) => new( $"The guest decision policy {decisions.GetType().Name} {what}." );
 

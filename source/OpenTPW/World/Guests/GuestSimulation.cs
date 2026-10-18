@@ -1184,7 +1184,6 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			return false;
 		guest.StrandedMark = 0;
 		var (x, y) = GuestNavigation.BytePoint( cell, GuestWander.CentreByte, GuestWander.CentreByte );
-		navigation.RouteAdjuster = RouteAdjuster;
 		var found = route == null ? navigation.Navigate( Grid.Cells, x, y ) : SetDestination( guest, (x, y), route );
 		guest.HasWaypoint = true;
 		return found;
@@ -1195,7 +1194,6 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		var navigation = guest.Navigation;
 		var (x, y, distance) = (guest.X, guest.Y, guest.DistanceWalked);
 		stepping = navigation;
-		navigation.RouteAdjuster = RouteAdjuster;
 		var arrived = navigation.Step( guest.MaxSpeed, guest.MaxForce, Grid.Cells, isOpenForStep, separationForStep );
 		stepping = null;
 		Occupy( guest );
@@ -1338,7 +1336,6 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			navigation.SetDestination( target.X, target.Y, route, alsoOpen );
 		else
 		{
-			navigation.RouteAdjuster = RouteAdjuster;
 			found = navigation.Navigate( Grid.Cells, target.X, target.Y, route, alsoOpen );
 		}
 		guest.HasWaypoint = true;
@@ -1459,7 +1456,6 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		var byteX = (int)(random.NextWord() & 0xFF);
 		var byteY = (int)(random.NextWord() & 0xFF);
 		var (x, y) = GuestNavigation.BytePoint( cell, byteX, byteY );
-		guest.Navigation.RouteAdjuster = RouteAdjuster;
 		var found = guest.Navigation.Navigate( Grid.Cells, x, y );
 		guest.HasWaypoint = true;
 		return found;

@@ -49,18 +49,6 @@ public static class SmarterPathComfort
 	public static int CostOf( in PathCellView cell, bool litter, bool crowd ) =>
 		(litter ? cell.LitterUnits * LitterWeight : 0) + (crowd ? cell.Crowd * CrowdWeight + cell.NearCrowd * NearWeight : 0);
 
-	/// <summary>Prototype: the cost, in cells of walking, of one unit of litter on a cell a route would enter.</summary>
-	public static int RouteUnitCells = int.Parse( Environment.GetEnvironmentVariable( "ROUTE_UNIT" ) ?? "3" );
-
-	/// <summary>Prototype: the longest detour, in cells beyond the straight walk of a segment.</summary>
-	public static int RouteMaxExtraCells = int.Parse( Environment.GetEnvironmentVariable( "ROUTE_EXTRA" ) ?? "4" );
-
-	/// <summary>Prototype: bin search radius.</summary>
-	public static int BinRadius = int.Parse( Environment.GetEnvironmentVariable( "BIN_RADIUS" ) ?? "8" );
-
-	/// <summary>The extra cost of a route entering this littered cell.</summary>
-	public static int RouteCellCost( in RouteCellView cell ) => cell.LitterUnits * RouteUnitCells;
-
 	/// <summary>The happiness a complaint costs under these settings.</summary>
 	public static float HappinessCost( GuestSettings settings ) => Math.Max( 0, settings.SmallHappinessChange ) / (float)CostDivisor;
 
@@ -85,8 +73,6 @@ public static class SmarterPathComfort
 			if ( best != walk.Length - 1 && CostOf( walk[^1], litter, crowd ) - bestCost >= SwitchMargin )
 				goal = best;
 		}
-		if ( Environment.GetEnvironmentVariable( "PATH_NOCOMPLAINT" ) == "1" )
-			return new PathDecision( goal );
 		if ( guest.BirthId == 0 || guest.ComplaintTurn >= 0 && context.ParkTurn - guest.ComplaintTurn < ComplaintCooldownTurns )
 			return new PathDecision( goal );
 		if ( litter && path.Here.LitterUnits >= LitterComplaintUnits )

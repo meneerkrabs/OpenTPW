@@ -73,7 +73,7 @@ public sealed class ParkScenario
 		{
 			var bins = options.BinsAtShops
 				? new[] { new LitterBin( 1000, (15, 2), (14, 2) ), new LitterBin( 1001, (17, 2), (16, 2) ), new LitterBin( 1002, (15, 8), (14, 8) ) }
-				: BinColumns.Select( ( column, index ) => new LitterBin( 1000 + index, (column, StreetRow - (options.WideStreet ? 2 : 1)), (column, StreetRow) ) ).ToArray();
+				: BinColumns.Select( ( column, index ) => new LitterBin( 1000 + index, (column, StreetRow - 1), (column, StreetRow) ) ).ToArray();
 			Guests.Bins = () => bins;
 		}
 		Scripts = new RideScriptWorld( seed.ScriptStream );
@@ -118,12 +118,6 @@ public sealed class ParkScenario
 		for ( var x = 0; x < StreetLength; x++ )
 		{
 			grid.SetPath( x, StreetRow, true );
-			// [EXT:park-scenario] the wide variant: a street of three rows, so a guest can walk round a cell (see ParkScenarioOptions.WideStreet)
-			if ( options.WideStreet )
-			{
-				grid.SetPath( x, StreetRow - 1, true );
-				grid.SetPath( x, StreetRow + 1, true );
-			}
 		}
 		foreach ( var column in options.FoodShop ? new[] { 10, 12, 14, FoodColumn } : new[] { 10, 12, 14 } )
 			for ( var y = 1; y <= 9; y++ )
@@ -309,11 +303,6 @@ public sealed record ParkScenarioOptions
 	/// sweeps one littered cell every <see cref="HandymanTurns"/> park turns. Off by default, so the default scenario, its report and its pins are the ones of the baseline.
 	/// </summary>
 	public bool Litter { get; init; }
-	/// <summary>
-	/// The wide variant (docs/SMARTER-GUESTS.md, phase 6b): the street is three cells wide instead of one, so a guest has a path cell beside any littered one. Off by default, so the default scenario, its report and its pins are
-	/// the ones of the baseline.
-	/// </summary>
-	public bool WideStreet { get; init; }
 	/// <summary>The bin variant (phase 6b): four litter bins stand beside the street; a guest with a full litter meter walks to one within the original's three cells (or the policy's radius) instead of dropping it.</summary>
 	public bool Bins { get; init; }
 	/// <summary>With <see cref="Bins"/>: three bins beside the shops' branches instead of four along the street (a player's usual place for them).</summary>

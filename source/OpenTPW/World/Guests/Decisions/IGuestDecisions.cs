@@ -53,18 +53,6 @@ public interface IGuestDecisions
 	bool UsesPathComfort => false;
 
 	/// <summary>
-	/// The policy routes round litter (docs/SMARTER-GUESTS.md, phase 6b; additive): the host then refines the route of every guest walk after the original's search (<see cref="RouteDetour"/>), pricing each littered cell
-	/// with <see cref="RouteCellCost"/> and walking round it when that is cheaper within <see cref="RouteMaxExtraCells"/>. A policy that does not leaves it false and the host does nothing, so the original route stays. A policy that wraps another forwards it.
-	/// </summary>
-	bool UsesLitterRoutes => false;
-
-	/// <summary>The extra cost, in cells of walking, of a route entering a littered cell (only asked for a cell that holds litter; a clean cell costs nothing). Asked only of a policy that <see cref="UsesLitterRoutes"/>.</summary>
-	int RouteCellCost( in DecisionContext context, in RouteCellView cell ) => 0;
-
-	/// <summary>How many cells longer than the straight walk of a route segment the detour round litter may be. Asked only of a policy that <see cref="UsesLitterRoutes"/>.</summary>
-	int RouteMaxExtraCells( in DecisionContext context ) => 0;
-
-	/// <summary>
 	/// The policy carries litter further to a bin (phase 6b; additive): the host then asks <see cref="BinSearchRadius"/> when a guest whose litter meter is full looks for a bin. A policy that does not leaves it false
 	/// and the search keeps the original's radius (<see cref="GuestSimulation.BinRadius"/>). A policy that wraps another forwards it.
 	/// </summary>

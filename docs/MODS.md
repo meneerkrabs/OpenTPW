@@ -316,7 +316,7 @@ without pool cells saves, loads and exports identically with it on or off ([POOL
 
 ## Smarter guests and guest insights (`opentpw.smarter-guests`, `opentpw.guest-insights`)
 
-Two official extensions for the park visitors ([SMARTER-GUESTS.md](SMARTER-GUESTS.md) has the plan, the architecture and the measurement): guest insights at version 1.0.0 and smarter guests at version 1.5.0. **Guest insights can be switched on** (it has its first
+Two official extensions for the park visitors ([SMARTER-GUESTS.md](SMARTER-GUESTS.md) has the plan, the architecture and the measurement): guest insights at version 1.0.0 and smarter guests at version 1.6.0. **Guest insights can be switched on** (it has its first
 feature, phase 1); **smarter guests cannot yet**: its rule set (phases 2 to 6) is built and measured, but a player cannot switch it on until phase 6 shows a measurable positive effect, so a save does not break for nothing. It is registered for tests and development, hidden from the Extensions and mods screen, and a `mods.json` entry or
 `--enable-mod` for it is ignored with a log line.
 

@@ -389,7 +389,7 @@ public class SmarterGuestsPlanningTests
 		StringAssert.Contains( Problem( new MealTime( births[0], -1 ) )!, "below 0" );
 		StringAssert.Contains( Problem()!, "empty meal list" );
 		// extension state needs the extension recorded: a save that only carries script mods holds the identity half and nothing else
-		var record = new[] { new ParkModRecord( "opentpw.smarter-guests", "1.5.0", ModSet.NoFilesSha256 ) };
+		var record = new[] { new ParkModRecord( "opentpw.smarter-guests", "1.6.0", ModSet.NoFilesSha256 ) };
 		var withMeals = section with { Meals = [new MealTime( births[0], 5 )] };
 		Assert.IsNull( SmarterGuestsSave.ShapeProblem( withMeals, ids, record, false, attractions ) );
 		StringAssert.Contains( SmarterGuestsSave.ShapeProblem( withMeals, ids, null, true, attractions )!, "does not record" );

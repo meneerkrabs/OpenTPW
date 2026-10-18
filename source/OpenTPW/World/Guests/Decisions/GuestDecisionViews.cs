@@ -167,9 +167,6 @@ public readonly record struct PathDecision( int GoalIndex = -1, PathComplaint Co
 	public static PathDecision Keep => new( -1 );
 }
 
-/// <summary>A littered cell as the route rule sees it (phase 6b): the litter on the cell itself, 1 for a piece, 2 for a vomit or a stinkbomb.</summary>
-public readonly record struct RouteCellView( int X, int Y, int LitterUnits );
-
 /// <summary>What a guest complains about on its path (phase 6).</summary>
 public enum PathComplaint : byte
 {

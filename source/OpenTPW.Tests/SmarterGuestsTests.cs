@@ -24,7 +24,7 @@ public class SmarterGuestsTests
 	// ---- The extensions -----------------------------------------------------------------------
 
 	[TestMethod]
-	public void BothExtensionsAreRegisteredOffByDefaultAndTheSmarterOneIsAtVersion150()
+	public void BothExtensionsAreRegisteredOffByDefaultAndTheSmarterOneIsAtVersion160()
 	{
 		var smarter = OfficialExtensions.SmarterGuests;
 		var insights = OfficialExtensions.GuestInsights;
@@ -34,7 +34,7 @@ public class SmarterGuestsTests
 		Assert.IsFalse( insights.AffectsSimulation, "the insights only read the park" );
 		Assert.IsFalse( smarter.DefaultEnabled );
 		Assert.IsFalse( insights.DefaultEnabled );
-		Assert.AreEqual( new ModVersion( 1, 5, 0 ), smarter.Version, "the version is the algorithm identity" );
+		Assert.AreEqual( new ModVersion( 1, 6, 0 ), smarter.Version, "the version is the algorithm identity" );
 		Assert.AreEqual( new ModVersion( 1, 0, 0 ), insights.Version );
 		CollectionAssert.IsSubsetOf( new[] { smarter, insights }, OfficialExtensions.All.ToArray() );
 		Assert.AreSame( smarter, OfficialExtensions.Find( smarter.Id ) );
@@ -68,7 +68,7 @@ public class SmarterGuestsTests
 			Enabled = OfficialExtensions.All.ToDictionary( extension => extension.Id, _ => true )
 		}, null, GameEdition.ThemeParkWorld, OfficialExtensions.All );
 		var records = ParkResumeMods.Capture( everything )!;
-		Assert.IsTrue( records.Contains( new ParkModRecord( "opentpw.smarter-guests", "1.5.0", ModSet.NoFilesSha256 ) ) );
+		Assert.IsTrue( records.Contains( new ParkModRecord( "opentpw.smarter-guests", "1.6.0", ModSet.NoFilesSha256 ) ) );
 		Assert.IsFalse( records.Any( record => record.Id == "opentpw.guest-insights" ), "a presentation-only extension is never recorded" );
 		Assert.IsNull( ParkResumeMods.Capture( ModSet.Defaults( OfficialExtensions.All ) ), "off by default: no record, so the save keeps its bytes" );
 	}
@@ -76,17 +76,17 @@ public class SmarterGuestsTests
 	[TestMethod]
 	public void AParkRefusesAMismatchedSmarterGuestsSet()
 	{
-		var record = new ParkModRecord( "opentpw.smarter-guests", "1.5.0", ModSet.NoFilesSha256 );
+		var record = new ParkModRecord( "opentpw.smarter-guests", "1.6.0", ModSet.NoFilesSha256 );
 		var off = ModSet.Defaults( OfficialExtensions.All );
 		var on = On();
 		ParkResumeMods.Require( [record], on );
 		ParkResumeMods.Require( null, off );
 		var missing = Assert.ThrowsException<InvalidDataException>( () => ParkResumeMods.Require( [record], off ) );
-		StringAssert.Contains( missing.Message, "needs opentpw.smarter-guests 1.5.0" );
+		StringAssert.Contains( missing.Message, "needs opentpw.smarter-guests 1.6.0" );
 		var extra = Assert.ThrowsException<InvalidDataException>( () => ParkResumeMods.Require( null, on ) );
-		StringAssert.Contains( extra.Message, "was saved without opentpw.smarter-guests 1.5.0" );
+		StringAssert.Contains( extra.Message, "was saved without opentpw.smarter-guests 1.6.0" );
 		var older = Assert.ThrowsException<InvalidDataException>( () => ParkResumeMods.Require( [record with { Version = "0.9.0" }], on ) );
-		StringAssert.Contains( older.Message, "needs opentpw.smarter-guests 0.9.0, not 1.5.0" );
+		StringAssert.Contains( older.Message, "needs opentpw.smarter-guests 0.9.0, not 1.6.0" );
 	}
 
 	// ---- The seam -----------------------------------------------------------------------------
@@ -618,7 +618,7 @@ public class SmarterGuestsTests
 	[TestMethod]
 	public void TheSectionIsValidatedAgainstItsGuestsAndTheRecordedMods()
 	{
-		var record = new[] { new ParkModRecord( "opentpw.smarter-guests", "1.5.0", ModSet.NoFilesSha256 ) };
+		var record = new[] { new ParkModRecord( "opentpw.smarter-guests", "1.6.0", ModSet.NoFilesSha256 ) };
 		SmarterGuestsSaveData Section( ulong next, bool bootstrapped, params (int, ulong)[] births ) =>
 			new() { ParkSeed = 5, NextBirthId = next, Bootstrapped = bootstrapped, Births = births.Select( item => new SmarterGuestBirth( item.Item1, item.Item2 ) ).ToArray() };
 		string? Problem( SmarterGuestsSaveData? section, params int[] guests ) => SmarterGuestsSave.ShapeProblem( section, guests, record );
@@ -652,7 +652,7 @@ public class SmarterGuestsTests
 			ParkSeed = 42, NextBirthId = (ulong)ids.Length + 1, Bootstrapped = true,
 			Births = ids.OrderBy( id => id ).Select( ( id, index ) => new SmarterGuestBirth( id, (ulong)index + 1 ) ).ToArray()
 		};
-		var mods = new[] { new ParkModRecord( "opentpw.smarter-guests", "1.5.0", ModSet.NoFilesSha256 ) };
+		var mods = new[] { new ParkModRecord( "opentpw.smarter-guests", "1.6.0", ModSet.NoFilesSha256 ) };
 		var with = plain with { SmarterGuests = section, Mods = mods };
 		var restored = ParkResumeSaveFile.Deserialize( ParkResumeSaveFile.Serialize( with ) );
 		Assert.AreEqual( 42UL, restored.SmarterGuests!.ParkSeed );
@@ -671,7 +671,7 @@ public class SmarterGuestsTests
 		var plain = ParkResumeSaveFileTests.Envelope();
 		var ids = plain.Guests.Guests.Select( guest => guest.Id ).ToArray();
 		var section = new SmarterGuestsSaveData { ParkSeed = 1, NextBirthId = 1, Bootstrapped = false, Births = Array.Empty<SmarterGuestBirth>() };
-		var bytes = ParkResumeSaveFile.Serialize( plain with { SmarterGuests = section, Mods = [new ParkModRecord( "opentpw.smarter-guests", "1.5.0", ModSet.NoFilesSha256 )] } );
+		var bytes = ParkResumeSaveFile.Serialize( plain with { SmarterGuests = section, Mods = [new ParkModRecord( "opentpw.smarter-guests", "1.6.0", ModSet.NoFilesSha256 )] } );
 		var json = JsonNode.Parse( Encoding.UTF8.GetString( bytes ) )!.AsObject();
 		json.Remove( "SmarterGuests" );
 		json["SomethingFromTheFuture"] = 1;

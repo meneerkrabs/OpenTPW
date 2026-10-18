@@ -3397,7 +3397,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		foreach ( var value in happiness )
 		{
 			total++;
-			var level = (int)value & 0xff;
+			var level = MeterMath.Byte( value );
 			if ( level < 33 )
 				sad++;
 			if ( 66 < level )

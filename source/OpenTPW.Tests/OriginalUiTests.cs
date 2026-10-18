@@ -22,7 +22,7 @@ public class OriginalUiTests
 		new[] { "Lost Kingdom", "Halloween World", "Wonder Land", "Space Zone" },
 		Enumerable.Range( 0, 374 ).Select( index => $"object{index}" ).ToArray() );
 
-	private static UiContext FakeContext( int width = 1024, int height = 768 ) => new( FakeStrings(), null!, new UiModels( name => throw new FileNotFoundException( name ) ) )
+	internal static UiContext FakeContext( int width = 1024, int height = 768 ) => new( FakeStrings(), null!, new UiModels( name => throw new FileNotFoundException( name ) ) )
 	{
 		Canvas = new UiCanvas( width, height )
 	};

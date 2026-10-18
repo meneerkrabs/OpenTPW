@@ -87,6 +87,13 @@ public sealed class PoolWaterEffects : IPoolActivity, IPoolAmbient
 		return PoolWaves.SmoothBob( waves, SmoothTurn( simulation ), guest.DrawX, guest.DrawY );
 	}
 
+	/// <summary>
+	/// The surface's rise on the waves of <paramref name="region"/> under a guest's drawn point, in engine units, whatever the guest is doing (the water level an activity draws its swimmer at rides the same
+	/// swell as the surface). Zero when the pool has no waves or they rest. Presentation only.
+	/// </summary>
+	public static float SurfaceRise( GuestSimulation simulation, Guest guest, PoolSwimRegion? region, PoolAttractionSites? sites ) =>
+		region != null && WavesOf( sites, simulation.Grid.Cells, region ) is { } waves ? PoolWaves.SmoothBob( waves, SmoothTurn( simulation ), guest.DrawX, guest.DrawY ) : 0f;
+
 	private sealed class TurnClock
 	{
 		public long Turn = -1;

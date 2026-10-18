@@ -74,6 +74,18 @@ public sealed class HistoryRing
 	}
 
 	/// <summary>
+	/// A ring with exactly the saved <paramref name="slots"/>, <paramref name="head"/> and <paramref name="wrapped"/> flag (already validated by
+	/// <see cref="RingData.IsValid"/>), so a ring that has gone round keeps its head and flag and saves back to the same data.
+	/// </summary>
+	internal static HistoryRing Restore( IReadOnlyList<double> slots, int head, bool wrapped )
+	{
+		var ring = new HistoryRing( slots.Count ) { Head = head, Wrapped = wrapped };
+		for ( var slot = 0; slot < slots.Count; slot++ )
+			ring.data[slot] = slots[slot];
+		return ring;
+	}
+
+	/// <summary>
 	/// The sum and the number of entries of the newest <paramref name="count"/> (cut to the entries held), the way <c>0x4CEF30</c> adds them.
 	/// </summary>
 	// [BIN:TPW-EXE:0x4CEF30 history sum] the newest n entries added as signed integers into a double, n cut to the entries the ring holds; the caller divides by the count it gets back
@@ -153,11 +165,11 @@ public sealed class ParkStatisticsHistory
 	public void Restore( ParkStatisticsData data )
 	{
 		ArrivalsThisMonth = data.ArrivalsThisMonth;
-		Arrivals = data.Arrivals!.ToRing( MonthsKept );
-		Happiness = data.Happiness!.ToRing( MonthsKept );
-		Stay = data.Stay!.ToRing( MonthsKept );
-		People = data.People!.ToRing( MonthsKept );
-		RecentStays = data.RecentStays!.ToRing( StayWindow );
+		Arrivals = data.Arrivals!.ToRing();
+		Happiness = data.Happiness!.ToRing();
+		Stay = data.Stay!.ToRing();
+		People = data.People!.ToRing();
+		RecentStays = data.RecentStays!.ToRing();
 	}
 
 	/// <summary>Whether nothing has been recorded (a fresh park, or a save from before the history).</summary>
@@ -226,15 +238,9 @@ public sealed class RingData
 
 	internal bool IsValid( int size ) => Slots is { } slots && slots.Count == size && Head >= -1 && Head < size && (Head >= 0 || !Wrapped) && slots.All( double.IsFinite );
 
-	internal HistoryRing ToRing( int size )
-	{
-		// entries oldest first: the ring replays them, which restores head and the wrapped flag
-		var ring = new HistoryRing( size );
-		var count = Wrapped ? size : Head + 1;
-		for ( var back = count - 1; back >= 0; back-- )
-			ring.Add( Slots[(Head - back + size) % size] );
-		return ring;
-	}
+	// the slots, head and wrapped flag are restored as saved: replaying the entries into a fresh ring would leave a ring that has gone round with its
+	// head at size - 1 and the flag clear, so the next save would differ from the loaded one (IsValid has checked the size before this runs)
+	internal HistoryRing ToRing() => HistoryRing.Restore( Slots, Head, Wrapped );
 }
 
 /// <summary>The park statistics history as saved (optional; absent in saves from before the park information window's graph).</summary>

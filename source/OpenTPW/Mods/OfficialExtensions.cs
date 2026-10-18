@@ -93,8 +93,16 @@ public static class OfficialExtensions
 	// [EXT:restored-advice] OpenTPW's own extension; the original game never says these lines
 	public static IOpenTpwExtension RestoredAdvice { get; } = new OpenTpwExtension( "opentpw.restored-advice", "Restored advice", new ModVersion( 1, 0, 0 ), DefaultEnabled: true, AffectsSimulation: false, PlayerSelectable: true );
 
+	/// <summary>
+	/// The evening and night extension (docs/EVENING.md): a day and night cycle on the play time (not the park speed), with a darker sky, ground and water at night and lamps that light up at
+	/// dusk (the pools extension's lamps and underwater lights, lamp-like original features and a few ride lights, from <c>content/data/evening-lights.json</c>). Presentation only:
+	/// <c>AffectsSimulation</c> is false, so it is not recorded in park saves and changes no hash. On by default; the pace is set on the OpenTPW options page.
+	/// </summary>
+	// [EXT:evening] OpenTPW's own extension; the original game's parks are always in daylight
+	public static IOpenTpwExtension Evening { get; } = new OpenTpwExtension( "opentpw.evening", "Evening and night", new ModVersion( 1, 0, 0 ), DefaultEnabled: true, AffectsSimulation: false, PlayerSelectable: true );
+
 	/// <summary>All official extensions, in declaration order.</summary>
-	public static IReadOnlyList<IOpenTpwExtension> All { get; } = new[] { Online, CrossEditionObjects, SmarterGuests, GuestInsights, Pools, PoolGuestArt, Umbrellas, RestoredAdvice };
+	public static IReadOnlyList<IOpenTpwExtension> All { get; } = new[] { Online, CrossEditionObjects, SmarterGuests, GuestInsights, Pools, PoolGuestArt, Umbrellas, RestoredAdvice, Evening };
 
 	public static IOpenTpwExtension? Find( string id ) => All.FirstOrDefault( extension => extension.Id == id );
 }

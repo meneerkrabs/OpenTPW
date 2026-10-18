@@ -186,7 +186,8 @@ public sealed class UiScrollList : UiElement, IUiRowList
 	{
 		if ( Selected < 0 || Selected >= Rows().Count || RowActivated == null )
 			return;
-		// [BIN:TPW-EXE:0x485780 UI message hook] a row activation is a control message like any other, so it clicks (unless the owner clicks itself once its activation is accepted)
+		// [BIN:TPW-EXE:0x6655a2 list click] a row click posts 0x400-0x406 to the list's owner, not message 0x100, so the hook 0x485780 (the 0xBD/0x1F choice at 0x4857cb) may play nothing for it. The button class 0x668f9c is the only sender of 0x100 for a mouse release over a button; window procedures also send 0x100 to their own window (0x48d83b, 0x49973e, 0x49ec53, 0x4a6df5 (via the dispatcher 0x658d9f), 0x4b640a, 0x4b9f06, 0x4bb020 and 0x4bfc29).
+		// [APPROX:AUDIO-041] left open: this still plays cat_ui 0x1F on row activation. Do not change it to silence or to 0xBD until that question is read.
 		if ( ClicksOnActivate )
 			GameAudio.PlayUi( GameAudio.ClickEvent );
 		RowActivated( Selected );

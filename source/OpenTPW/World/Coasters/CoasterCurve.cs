@@ -152,16 +152,17 @@ public sealed class HermiteCoasterCurve : ICoasterCurve
 	}
 
 	/// <summary>The loop-pylon tangent factor K = (1 − w)·((1 − x²)·C + 2.1·x²) + 2.1·w (<c>0x432430</c>).</summary>
-	// [BIN:TPW-EXE:0x43255c loop knot factor] x = clamp(|heading · yaw axis|, 0, 1); k = f32((1 − x²)·C − x²·f32(−2.1)) stored as single (0x4325b4..0x4325d0, constant 0x6fdec4); w = (T + 1)·0.5 with T the PC table entry at the nearest index (fistp) of (2π·u − (−π/2))·scale, u = clamp(2·fmod(loop rotate, 0.5), 0, 1) (0x4325d9..0x43264a, the sum carried unrounded); K = f32((1 − w)·k − w·f32(−2.1)) (0x432650..0x432665)
+	// [BIN:TPW-EXE:0x43255c loop knot factor] x = clamp(|heading · yaw axis|, 0, 1); k = f32((1 − x²)·C − x²·f32(−2.1)) stored as single (0x4325b4..0x4325d0, constant 0x6fdec4); w = (T + 1)·0.5 with T the PC table entry at the nearest index (fistp) of (2π·u − (−π/2))·scale, u = clamp(2·fmod(loop rotate, 0.5), 0, 1) (0x4325d9..0x43264a); K = f32((1 − w)·k − w·f32(−2.1)) (0x432650..0x432665)
+	// [BIN:TPW-EXE:0x004325b4 loop knot arithmetic] every fmul, fsub and fadd of the routine rounds to a single (the thread's 24-bit precision, [BIN:TPW-EXE:0x00563914 control word]): x², 1 − x², its product with C and x² times −2.1 and their difference; 2π·u, the difference with −π/2 and the scaled index; T + 1, w, 1 − w and the final products and difference; fmod and the doubling of its result are exact
 	public static float LoopKnotFactor( float curviness, float side, float loopRotate )
 	{
 		var x = Math.Clamp( MathF.Abs( side ), 0f, 1f );
-		double x2 = (double)x * x;
-		var k = (float)((1.0 - x2) * curviness - x2 * LoopTangentConstant);
+		var x2 = x * x;
+		var k = (1f - x2) * curviness - x2 * LoopTangentConstant;
 		var u = Math.Clamp( 2f * (loopRotate % 0.5f), 0f, 1f );
-		var index = (int)MathF.Round( (float)((u * (double)TwoPiSingle - MinusHalfPiSingle) * CoasterTrig.PcScale) ) & (CoasterTrig.Size - 1);
-		var w = ((double)CoasterTrig.PcEntry( index ) - -1.0) * 0.5;
-		return (float)((1.0 - w) * k - w * LoopTangentConstant);
+		var index = (int)MathF.Round( (u * TwoPiSingle - MinusHalfPiSingle) * CoasterTrig.PcScale ) & (CoasterTrig.Size - 1);
+		var w = (CoasterTrig.PcEntry( index ) + 1f) * 0.5f;
+		return (1f - w) * k - w * LoopTangentConstant;
 	}
 
 	/// <summary>The constant at <c>0x6fdec4</c>, f32(−2.1).</summary>
@@ -518,8 +519,9 @@ public static class CoasterTrig
 	/// <summary>sin a with the index rounded to nearest even, the default <c>fistp</c> of the module's lookups (the swing, <c>0x43c7be</c>).</summary>
 	// [BIN:TPW-EXE:0x43c7be nearest index] index = fistp(f32(scale · a)) & mask under the default control word (round to nearest even); the Mac lookup truncates
 	public static float PcSin( float angle ) => PcTable[(int)MathF.Round( PcScale * angle ) & (Size - 1)];
-	/// <summary>cos a with the nearest index: the index of f32((a − (−π/2)) · scale), the difference carried unrounded (<c>0x43c7d0..0x43c7e5</c>).</summary>
-	public static float PcCos( float angle ) => PcTable[(int)MathF.Round( (float)(((double)angle - MinusHalfPi) * PcScale) ) & (Size - 1)];
+	/// <summary>cos a with the nearest index: the index of f32((a − (−π/2)) · scale), the subtraction and the product rounded to singles (<c>0x43c7d0..0x43c7e5</c>).</summary>
+	// [BIN:TPW-EXE:0x43c7d0 cos index] fld a; fsub [0x6fe040] (the single −π/2); fmul [0x7b095c]; fstp dword; fistp: the subtraction and the product each round to a single at the thread's 24-bit precision ([BIN:TPW-EXE:0x00563914 control word]), where an extended difference would not
+	public static float PcCos( float angle ) => PcTable[(int)MathF.Round( (angle - MinusHalfPi) * PcScale ) & (Size - 1)];
 
 	/// <summary>sin a with the truncating index of the self-intersection pass, which runs with the rounding mode set to truncate (<c>0x439ac4</c>).</summary>
 	public static float PcSinTruncated( float angle ) => PcTable[(int)(angle * PcScale) & (Size - 1)];

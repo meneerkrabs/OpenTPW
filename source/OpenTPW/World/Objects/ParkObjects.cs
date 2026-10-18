@@ -148,6 +148,9 @@ public sealed class ParkObjects
 	public ThingPool? Things { get; set; }
 	public RideScriptWorld ScriptWorld { get; }
 	public IReadOnlyList<OriginalObject> Objects => objects;
+
+	/// <summary>Counts every addition to and removal from <see cref="Objects"/>, so a cache of the placed objects (the evening lamps) rebuilds only when the set changes.</summary>
+	public int Version { get; private set; }
 	/// <summary>Extra blocked cells owned by the host (the sandbox Totem prototype).</summary>
 	public Func<int, int, bool>? IsReserved { get; set; }
 	/// <summary>Cells the park does not own (the level's cell map, flag 0x40); null owns every cell.</summary>
@@ -429,6 +432,7 @@ public sealed class ParkObjects
 				item.ThingId = thingId;
 		}
 		objects.Add( item );
+		Version++;
 		foreach ( var (x, y, _) in item.Cells )
 			occupied[(x, y)] = item;
 		registered?.Invoke( item );
@@ -517,6 +521,7 @@ public sealed class ParkObjects
 				ObjectRemoving?.Invoke( item );
 			if ( !objects.Remove( item ) )
 				return false;
+			Version++;
 		}
 		finally
 		{

@@ -17,7 +17,7 @@ public readonly record struct PoolWaveSettings( bool On, int Height, int Interva
 	public static PoolWaveSettings Default { get; } = new( true, 2, 1 );
 
 	/// <summary>
-	/// The settings a click on a wave machine steps through (the interim control; the player's window comes later): the default, strong and frequent, gentle and rare, then off, and round again.
+	/// The settings <c>Level.CyclePoolWaves</c> steps through, for scripted use (the player sets them in the machine's settings window): the default, strong and frequent, gentle and rare, then off, and round again.
 	/// </summary>
 	public static IReadOnlyList<PoolWaveSettings> Presets { get; } = new[] { Default, new PoolWaveSettings( true, 3, 0 ), new PoolWaveSettings( true, 1, 2 ), new PoolWaveSettings( false, 2, 1 ) };
 

@@ -250,7 +250,7 @@ public sealed class OriginalTerrain : Entity
 				material.Set( "Color", slots.ToArray(), SamplerType.Anisotropic );
 				pathMaterials.Add( key, material );
 			}
-			pathParts.Add( AddPart( new Model( vertices.ToArray(), indices.ToArray(), material ), $"paths {pathParts.Count}" ) );
+			pathParts.Add( AddPathPart( new Model( vertices.ToArray(), indices.ToArray(), material ), $"paths {pathParts.Count}" ) );
 		}
 		BuildQueueModels( textures, queues );
 	}
@@ -349,7 +349,7 @@ public sealed class OriginalTerrain : Entity
 				slots[index] = index < names.Count ? LoadTexture( textures, names[index], "textures", directory ) : slots[0];
 			var material = new Material<ObjectUniformBuffer>( "content/shaders/test.shader" );
 			material.Set( "Color", slots );
-			pathParts.Add( AddPart( new Model( vertices.ToArray(), indices.ToArray(), material ), $"queue models {pathParts.Count}" ) );
+			pathParts.Add( AddPathPart( new Model( vertices.ToArray(), indices.ToArray(), material ), $"queue models {pathParts.Count}" ) );
 		}
 		names.Clear();
 		vertices.Clear();
@@ -577,8 +577,18 @@ public sealed class OriginalTerrain : Entity
 	private ModelEntity AddPart( Model model, string name )
 	{
 		models.Add( model );
-		var part = new ModelEntity { Model = model, Name = name };
+		// [EXT:winter-snow-surfaces] every terrain part draws with test.shader: ground takes the full cover (the paths and queue models change it to slush where they are added)
+		var part = new ModelEntity { Model = model, Name = name, SnowSurface = SnowCover.GroundSurface };
 		parts.Add( part );
+		return part;
+	}
+
+	/// <summary>A part of the path layer (paths and queue models): under snow it shows slush, not white (<see cref="SnowCover.PathSurface"/>).</summary>
+	// [EXT:winter-snow-paths] the user's decision (2026-10-18): paths turn to slush so they stay readable
+	private ModelEntity AddPathPart( Model model, string name )
+	{
+		var part = AddPart( model, name );
+		part.SnowSurface = SnowCover.PathSurface;
 		return part;
 	}
 

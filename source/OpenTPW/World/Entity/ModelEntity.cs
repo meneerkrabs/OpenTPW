@@ -39,6 +39,13 @@ public partial class ModelEntity : Entity
 	/// </summary>
 	protected virtual bool FollowsTimeOfDay => true;
 
+	/// <summary>
+	/// [EXT:winter-snow-surfaces] How much of the park's settled snow cover (<see cref="Level.SnowUniform"/>) this entity shows, written per draw into test.shader's <c>g_flSnowCover</c>:
+	/// 0 (the default) shows none, <see cref="SnowCover.GroundSurface"/> is full cover on up-facing surfaces, a negative value (<see cref="SnowCover.PathSurface"/>) reads as slush. Only entities
+	/// drawn with test.shader set it (ground, paths, objects, track and coaster pieces); cars, markers, signs, lobby scenes and every other shader keep 0, so their draws are unchanged.
+	/// </summary>
+	public float SnowSurface { get; set; }
+
 	protected override void OnRender()
 	{
 		if ( Model == null || Hidden )
@@ -72,6 +79,8 @@ public partial class ModelEntity : Entity
 			_padding3 = FollowsTimeOfDay ? ( Level?.Look.AmbientColourUniform.X ?? 0f ) : 0f,
 			_padding4 = FollowsTimeOfDay ? ( Level?.Look.AmbientColourUniform.Y ?? 0f ) : 0f,
 			_padding5 = FollowsTimeOfDay ? ( Level?.Look.AmbientColourUniform.Z ?? 0f ) : 0f,
+			// [EXT:winter-snow-surfaces] test.shader's g_flSnowCover: the park's cover times this entity's surface factor (0 with no snow, which is what the padding always was)
+			_padding6 = SnowSurface != 0f ? ( Level?.SnowUniform ?? 0f ) * SnowSurface : 0f,
 		}.WithFog();
 
 		SetObjectUniforms( uniformBuffer, model );

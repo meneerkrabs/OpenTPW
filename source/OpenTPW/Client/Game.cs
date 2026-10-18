@@ -491,6 +491,23 @@ internal static class Game
 				Log.Trace( $"--debug-weather: quality {debugQuality} applied (snow {weather.Snow}, rain {weather.Rain}, lightning {weather.Lightning}, target {weather.TargetDrops} drops)." );
 			}
 		}
+		// [EXT:debug-snow-cover] smoke-only: sets the settled snow cover (0..1) of the park as soon as it exists, so captures can show full cover (or its melt, with the weather dry) without waiting for
+		// the weather's turns; the extension must be on (it is by default). Presentation only: the cover is in no hash and no mod record.
+		var debugSnowCover = GetOption( args, "--debug-snow-cover", "a snow cover 0..1 for smoke captures" );
+		if ( debugSnowCover != null )
+		{
+			if ( !double.TryParse( debugSnowCover, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var debugCover ) || debugCover is < 0 or > 1 )
+				throw new ArgumentException( "--debug-snow-cover expects a cover from 0 to 1." );
+			Render.PostUpdate += ApplyDebugSnowCover;
+			void ApplyDebugSnowCover()
+			{
+				if ( flow.Level?.Snow is not { } snow )
+					return;
+				Render.PostUpdate -= ApplyDebugSnowCover;
+				snow.Set( debugCover );
+				Log.Trace( $"--debug-snow-cover: cover {debugCover} set." );
+			}
+		}
 		// [EXT:debug-particle] smoke-only: once the original level is up, starts template effects (ids, comma separated) at an engine position
 		// (--debug-particle-at x,y,z, Z up; default the park camera's target) through the same starter an ADDOBJ uses, so captures can show smoke or fireworks
 		// without waiting for a ride script to fire them (docs/PARTICLES.md).

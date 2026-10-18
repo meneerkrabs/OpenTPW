@@ -321,7 +321,8 @@ public class OriginalObject : Entity, IPointLightSource
 			// version -1 makes the first update show the pose of a clip the script may already have started.
 			if ( dynamic )
 				vertexParts.Add( (model, part.MeshIndex, part.Vertices, -1) );
-			parts.Add( (new ModelEntity { Model = model, Name = $"{Entry.ArchiveName}:{part.Name}" }, part.NodeIndex) );
+			// [EXT:winter-snow-surfaces] objects (roofs, trees, rides) take snow on their up-facing surfaces
+			parts.Add( (new ModelEntity { Model = model, Name = $"{Entry.ArchiveName}:{part.Name}", SnowSurface = SnowCover.GroundSurface }, part.NodeIndex) );
 		}
 		frameTextures.AddRange( frameSlots.Values.Where( frames => frames.Bindings.Count > 0 ) );
 	}

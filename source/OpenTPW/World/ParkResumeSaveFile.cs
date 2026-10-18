@@ -553,6 +553,8 @@ internal static class ParkResumeSaveFile
 					"the weather holds a negative lightning clock" );
 			}
 		}
+		if ( snapshot.SnowCover is { } snowCover )
+			Require( SnowCover.IsValidSavedCover( snowCover ), $"the snow cover {snowCover} is not a number above 0 and at most 1" );
 		if ( snapshot.Gate is { } gate )
 			Require( gate.LastObservedTurn >= 0, $"the park gate's last observed turn {gate.LastObservedTurn} is negative" );
 		if ( snapshot.ParkName is { } parkName )

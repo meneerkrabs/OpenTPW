@@ -51,6 +51,7 @@ public partial class Level
 		if ( Park == null || Guests == null || Park.Economy.Rules.ThemeParkInc )
 			return;
 		Weather ??= new ParkWeather( Park.Economy.Settings.Standard, Seed.WeatherStream, Guests.Grid.Cells.Width, Guests.Grid.Cells.Height );
+		AttachSnow();
 		Weather.AdvanceTo( Park.Economy.Tick );
 	}
 

@@ -436,7 +436,7 @@ public sealed class CoasterRenderer : Entity
 			material.Set( "Color", slots );
 			model = new Model( vertices, indices, material, dynamic );
 			models.Add( model );
-			entities.Add( new ModelEntity { Model = model, Name = "coaster", TransformOverride = matrix, Position = new SVector3( matrix.M41, matrix.M42, matrix.M43 ) } );
+			entities.Add( new ModelEntity { Model = model, Name = "coaster", SnowSurface = SnowCover.GroundSurface, TransformOverride = matrix, Position = new SVector3( matrix.M41, matrix.M42, matrix.M43 ) } );
 		}
 
 		private void ClearStatic()

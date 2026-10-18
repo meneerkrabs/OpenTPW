@@ -20,6 +20,7 @@ vertex {
         float g_flAmbientG;
         float g_flAmbientB;
         vec3 g_vFogColor;
+        float g_flSnowCover; // [EXT:winter-snow] the settled snow of this draw: 0 = none (the padding after the fog colour), 0..1 = white, negative = slush; see snowBlend
         vec4 g_vPointLight[32]; // [EXT:point-lights] 16 lights x 2 vec4, from byte 272; only the lights of a draw are uploaded
     } g_oUbo;
 
@@ -76,6 +77,7 @@ fragment {
         float g_flAmbientG;
         float g_flAmbientB;
         vec3 g_vFogColor;
+        float g_flSnowCover; // [EXT:winter-snow] the settled snow of this draw: 0 = none (the padding after the fog colour), 0..1 = white, negative = slush; see snowBlend
         vec4 g_vPointLight[32]; // [EXT:point-lights] 16 lights x 2 vec4, from byte 272; only the lights of a draw are uploaded
     } g_oUbo;
 
@@ -140,6 +142,39 @@ fragment {
       return sum;
     }
 
+    // [EXT:winter-snow] Settling snow (docs/WINTER.md): procedural noise on up-facing surfaces, no texture and no binding. g_flSnowCover is the park's cover times the draw's surface factor (the CPU
+    // writes 0 for everything that takes no snow, and then none of this runs, so the picture is the original's). Two octaves of value noise on the world position make the snow start in patches and
+    // melt back into them; the slope term keeps walls and cliffs bare (up is the world's Z axis). A negative value is slush: a wet, greyish brown at a lower ceiling (paths).
+    float snowHash( vec2 p )
+    {
+      return fract( sin( dot( p, vec2( 127.1, 311.7 ) ) ) * 43758.5453 );
+    }
+
+    float snowNoise( vec2 p )
+    {
+      vec2 i = floor( p );
+      vec2 f = fract( p );
+      f = f * f * ( 3.0 - 2.0 * f );
+      return mix( mix( snowHash( i ), snowHash( i + vec2( 1.0, 0.0 ) ), f.x ), mix( snowHash( i + vec2( 0.0, 1.0 ) ), snowHash( i + vec2( 1.0, 1.0 ) ), f.x ), f.y );
+    }
+
+    vec3 snowBlend( vec3 albedo, vec3 normal, vec3 positionWs, float cover, float lightLevel )
+    {
+      bool slush = cover < 0.0;
+      // a slush draw's surface factor is at most 0.35: normalise it so its patches fill in like the snow's do
+      float amount = slush ? min( -cover / 0.35, 1.0 ) : min( cover, 1.0 );
+      float up = normalize( mat3( g_oUbo.g_mModel ) * normal ).z;
+      float slope = smoothstep( 0.55, 0.85, up );
+      vec2 q = positionWs.xy * 0.9;
+      float n = snowNoise( q ) * 0.65 + snowNoise( q * 2.7 + vec2( 7.3, 3.1 ) ) * 0.35;
+      float m = smoothstep( n - 0.08, n + 0.08, amount * slope * 1.15 );
+      float luma = dot( albedo, vec3( 0.299, 0.587, 0.114 ) );
+      vec3 snowColour = slush
+        ? vec3( 0.46, 0.46, 0.43 ) * ( 0.75 + 0.5 * luma ) / lightLevel
+        : vec3( 0.90, 0.93, 1.0 ) * ( 0.84 + 0.16 * clamp( luma * 1.6, 0.0, 1.0 ) ) * ( 0.94 + 0.12 * n ) / lightLevel;
+      return mix( albedo, snowColour, m * ( slush ? 0.8 : 1.0 ) );
+    }
+
     void main() 
     {
         vec2 finalTexCoords = vs_out.vTexCoords;
@@ -186,6 +221,11 @@ fragment {
         // [EXT:point-lights] lights in reach add to the shading like the sun and the ambient (0x5741B0 sums them into one vertex colour)
         if ( g_oUbo.g_flLightCount > 0.5 )
             vShading += pointLights( vs_out.vPosition );
+        // [EXT:winter-snow] snow and slush on the albedo, after the light is known (so a lit white lands near 0.9 instead of burning out, and the evening's dark ambient still darkens it) and before
+        // the evening tint and the fog act on the result (g_flSnowCover 0 skips it)
+        if ( g_oUbo.g_flSnowCover != 0.0 && ( outMatFlags & FLAG_TRANSPARENT ) == 0u )
+            vTextureSample.xyz = snowBlend( vTextureSample.xyz, N, vs_out.vPosition, g_oUbo.g_flSnowCover, max( dot( vShading, vec3( 0.333 ) ), 1.0 ) );
+
         vec3 vOutColor;
 
         // Apply Gouraud shading if the flag is set, otherwise use flat shading

@@ -912,9 +912,9 @@ public sealed class OriginalObjectEffects : IRideScriptEffects, IRideAnimationQu
 		}
 		if ( call.Opcode is Opcode.KILLOBJ or Opcode.FADEOBJ )
 		{
-			// [BIN:TPW-EXE:0x5522C5 KILLOBJ] [BIN:TPW-EXE:0x5523D0 FADEOBJ] every record with the slot ends: types 1-2 through 0x51FF70(handle, -2), types 3-10 through the immediate stop (FADEOBJ's fade branch is never taken here, see OriginalObjectRuntime.EndHeldSounds)
+			// [BIN:TPW-EXE:0x5522C5 KILLOBJ] [BIN:TPW-EXE:0x5523D0 FADEOBJ] every record with the slot ends: types 1-2 through 0x51FF70(handle, -2), types 3-10 stop or release a quality-enabled fade tail (OriginalObjectRuntime.EndHeldSounds)
 			ride.KillParticleObjects(call.Argument(0));
-			ride.EndHeldSounds(call.VM.ScriptId, call.Argument(0));
+			ride.EndHeldSounds(call.VM.ScriptId, call.Argument(0), call.Opcode == Opcode.FADEOBJ);
 			return 0;
 		}
 		if ( call.Opcode == Opcode.SETOBJPARAM )

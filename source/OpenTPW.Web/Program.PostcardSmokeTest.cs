@@ -49,7 +49,7 @@ public static partial class Program
 		RejectDuplicate( "ﬃab", "ffiab" );
 		Check( true, "compatibility-duplicates-rejected" );
 
-		var recipients = new[] { "Ｂｏｂ", "ﬃab", "Søren", "Straße", "Strasse" };
+		var recipients = new[] { "Ｂｏｂ", "ﬃab", "Søren", "Straße", "Strasse", "card+browser@example.test" };
 		var original = Postcard.Create( "Sender", recipients, "Browser postcard", "First line\r\nSecond line", "English" );
 		var restored = Postcard.Read( original.ToBytes() );
 		Check( restored.Id == original.Id && restored.Manifest.To.SequenceEqual( recipients )
@@ -100,7 +100,7 @@ public static partial class Program
 
 			draft = Compose( "Ｂｏｂ; Bob", "Keep this draft", "Keep this message" );
 			Click( draft, "ok" );
-			Check( stack.Top?.Name == "postcardFailed" && Stored() == 2 && !draft.IsRemoved
+			Check( stack.Top?.Name == "postcardRecipients" && Stored() == 2 && !draft.IsRemoved
 				&& Field( draft, "to" ).Text == "Ｂｏｂ; Bob" && Field( draft, "title" ).Text == "Keep this draft"
 				&& Field( draft, "message" ).Text == "Keep this message", "duplicate-send-preserves-draft" );
 			Click( stack.Top!, "choice0" );

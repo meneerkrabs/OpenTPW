@@ -76,7 +76,7 @@ chooser and a script made with a seed.
 
 What is still unlike the original, and recorded in DET-013 to DET-015: the guest and staff sites with no counterpart here
 (the arrival lane picks of later states, the gate wait, the won sideshow's tail, the staff constructors' draws), the
-scripts of an imported original save (the animations, nodes and child scripts of their records, below), scripts created with an explicit seed (tests and
+scripts of an imported original save (the animations and nodes of their records, a script with a saved child or sound child, and the saved child records its parent recreates, below), scripts created with an explicit seed (tests and
 older saves), and the weather, which keeps its own stream (`[EXT:weather-stream]`). The advisor takes no draw: its pick is
 sequential for every message (below).
 
@@ -290,7 +290,10 @@ import") sets the economy's tick, bank, loans, objects and staff before its firs
 tick. All of it is in the economy digest, and the run that the pinned hash
 covers starts no original save, so the pin is not affected by it. The
 save's `mRandomSeed` is imported (SAVE-001 retired): it is the state of the one world generator (`0x516330`, saved raw at world `+0x1DA708`,
-written at `0x517123` and read back at `0x517DFC`), and the park continues the saved stream.
+written at `0x517123` and read back at `0x517DFC`), and the park continues the saved stream. A saved WAIT4ANIM deadline
+that is not ahead of the saved clock imports as 0 (October 18; it was -1, which the script snapshot rejects): the script's
+hashed state differs from before until it next runs an animation opcode, and tp.exe treats 0 and a reached deadline alike
+(`0x5538EB`). Only Jungle's shipped save holds such a deadline, and no pinned run starts from it.
 
 Other OpenTPW state that is **not in the hash**:
 
@@ -300,6 +303,8 @@ Other OpenTPW state that is **not in the hash**:
 | `GuestEconomyBridge` attraction → economy instance map | not yet part of the canonical state; the economy objects themselves are in the economy digest |
 | `FixedStepClock` pending time (`PendingSeconds`) | frame timing, below one tick; the substep scheduler is DET-I2 |
 | Sound chooser seed | presentation, see above |
+| `ParkSaveFile.Data.AnalyserCaches` (the analyser's cached readings) | saved for an exact continuation, but a reading aid that no simulation step reads; removed from the economy digest |
+| `ParkSaveFile.Data.StatisticsHistory` (the monthly rings of `ParkStatisticsHistory`) | only the park information window's graph reads them, no simulation step does; removed from the economy digest |
 
 A change to any of these does not change the hash. Adding one means bumping
 `SchemaVersion` and re-pinning the fixed-run hash.
@@ -662,7 +667,7 @@ mirrors the level (ten singletons, gates and lights first). Saves: guest snapsho
 
 | ID | Rule |
 | --- | --- |
-| DET-013 | scripts, bump and tour rides and rider heads draw from the one world generator with the original's projections, a park turn takes its draws in the original's thing-sweep order and the substep scheduler (script pass newest first, one slice per eight passes, tour cars on even substeps, bump module every substep) is ported; but a script created with an explicit seed (tests, older saves) keeps a private generator, an imported original save's scripts take its ids, list order and pass counter but restart their programs (the saved program counters, stacks, variables and waits are not imported), and the host's visitor step, the coasters, the animators and the effects system 0x520130 stay per 60 Hz tick |
+| DET-013 | scripts, bump and tour rides and rider heads draw from the one world generator with the original's projections, a park turn takes its draws in the original's thing-sweep order and the substep scheduler (script pass newest first, one slice per eight passes, tour cars on even substeps, bump module every substep) is ported; but a script created with an explicit seed (tests, older saves) keeps a private generator, an imported original save's scripts take its ids, list order, pass counter and run state on the saved game clock (the program counter, shared stack and heap, variables, limbo table, result register, TURBO/DIPMUSIC/reverb/speed words, WALKST_FLOAT state and the WAIT, WAITANIM, WAIT4ANIM and SETTIMER deadlines, `RideVM.ImportSavedRunState`), but not the animations playing on their objects, the object nodes, bounce and walk tables or the object lists, and a script with a saved child or sound child keeps its fresh state; saved child records are left for their parent to recreate, and the host's visitor step, the coasters, the animators and the effects system 0x520130 stay per 60 Hz tick |
 | DET-014 | guests draw from the world generator in the original's creation order and at the traced sites and reseed with their thing id (a slot of the park's thing pool, WALK-010), but take the entrance from lanes A and B and have no counterpart for the later arrival-lane picks, the gate wait and the sideshow tail |
 | DET-015 | the economy's staff pool and the staff walks draw from the world generator, but hired staff have no constructor draws, and the weather keeps its own stream ([EXT:weather-stream]); the advisor draws nothing (its pick is sequential in every row, retired from this entry) |
 

@@ -25,7 +25,7 @@ public enum ParkInfoSeries
 public static class ParkInfoGraph
 {
 	/// <summary>The series mask the window starts with: the guests in the park (<c>0x753C48</c> = 8).</summary>
-	// [BIN:TPW-EXE:0x753C48 series mask] the mask is initialised to 8 (only the people-in-park toggle, 0x4A68BF) and kept by the window procedure across openings; the builder presses a toggle for each set bit (0x4A52A0)
+	// [BIN:TPW-EXE:0x753C48 series mask] the mask is initialised to 8 (only the people-in-park toggle, 0x4A68BF) and kept by the window procedure across openings (for the process; OpenTPW keeps it within a park, UI-914); the builder presses a toggle for each set bit (0x4A52A0)
 	public const ParkInfoSeries InitialSeries = ParkInfoSeries.People;
 
 	/// <summary>The period the window starts with: 1 year (<c>0x7CB39C</c> = 0).</summary>

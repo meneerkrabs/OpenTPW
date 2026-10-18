@@ -62,6 +62,8 @@ public enum CoasterNodeFlags : uint
 	ZeroBank = 0x100,
 	/// <summary>A chain-lift (winch) section, set by the rating pass.</summary>
 	Winch = 0x800,
+	/// <summary>Keeps <see cref="Winch"/> through the rebuild's clearing (<c>0x432b50</c> clears 0x800 on every node without 0x1000); the creation parameter 0x20 of the station's first two nodes sets it with the winch mark (0x1800).</summary>
+	WinchKept = 0x1000,
 	/// <summary>The node or the link after it failed the validator (shown as invalid; the edit is kept).</summary>
 	Invalid = 0x4000,
 	/// <summary>The station node at the departing end (S2) and the middle one (S1): no pylon stacks on a node with this flag (creation parameter 8).</summary>
@@ -214,7 +216,8 @@ public sealed class CoasterTrack
 	/// </summary>
 	// [BIN:TPW-EXE:0x436ac0 station nodes] S0: creation parameters 0x274 = node flags 0x400 | 0x1800 (winch) | 0x80000 (no previous link), bit 4 skips the height clamp (0x433bd0 → 0x433790), bit 0x200 registers the pylon in its cell; S1: 0x3c = 0x200 | 0x400 | 0x1800, the exact dummy position as knot (node +0x4c..+0x54); S2: 0x28c = 0x200 | 0x40000 (no next link); ordinals 0, 1, 2
 	// [BIN:TPW-EXE:0x434060 node creation parameters] the constructor maps its parameter bits to node flags: 8 → 0x200, 0x10 → 0x400, 0x20 → 0x1800, 0x40 → 0x80000, 0x80 → 0x40000, 0x100 → 0x100000 (0x4343a6..0x4343eb); bit 0x200 puts the pylon in its map cell (0x452d30)
-	// [APPROX:COAST-029] the middle node's winch mark is re-derived by the rating pass (CoasterRide sets or clears every node's mark) where the PC pass 0x43C450 only sets 0x800 on a floor speed and clears nothing there (what else clears it is not traced); the station's pylon nodes below the StdPylon's h0 (Ghosta Coasta 2.04 against 4, Scatty Batty 3.5 against 5, Candy Coaster 7.09 against 10) are the original's: the knot pass clamps their height parameter to 0 and writes it back (0x430ca0) and stands them at ground + h0 (0x430ed0), so S0 and S2 sit above the middle node by h0 − h
+	// [BIN:TPW-EXE:0x432b50 winch clear] every rebuild (0x43eb70: knot pass 0x430ed0, 0x432b50, sampler 0x440c10, rating pass 0x43c450) first clears node flag 0x800 on every node without 0x1000, then the rating pass sets it where the speed sits on the floor: the winch marks are re-derived per rebuild as here, and S0 and S1 (creation parameter 0x20 = 0x1800) keep theirs
+	// [BIN:TPW-EXE:0x430ca0 station below h0] the station's pylon nodes below the StdPylon's h0 (Ghosta Coasta 2.04 against 4, Scatty Batty 3.5 against 5, Candy Coaster 7.09 against 10) are the original's: the knot pass clamps their height parameter to 0 and writes it back (0x430ca0) and stands them at ground + h0 (0x430ed0), so S0 and S2 sit above the middle node by h0 minus the dummy height
 	public void SetStation( (int X, int Y) depart, (int X, int Y) @return, CoasterStationLayout layout )
 	{
 		if ( depart == @return )
@@ -223,9 +226,9 @@ public sealed class CoasterTrack
 		DepartCell = depart;
 		ReturnCell = @return;
 		nodes.Clear();
-		nodes.Add( StationPylon( layout.End, CoasterNodeFlags.StationHead | CoasterNodeFlags.Winch | CoasterNodeFlags.NoPreviousLink ) );
+		nodes.Add( StationPylon( layout.End, CoasterNodeFlags.StationHead | CoasterNodeFlags.Winch | CoasterNodeFlags.WinchKept | CoasterNodeFlags.NoPreviousLink ) );
 		nodes.Add( new CoasterNode( CellOf( layout.Mid.X ), CellOf( layout.Mid.Z ), 0, 0, false, 0, true, ExactPosition: new SVector3( layout.Mid.X, layout.Mid.Y, layout.Mid.Z ) )
-		{ Flags = CoasterNodeFlags.StationTail | CoasterNodeFlags.StationHead | CoasterNodeFlags.Winch } );
+		{ Flags = CoasterNodeFlags.StationTail | CoasterNodeFlags.StationHead | CoasterNodeFlags.Winch | CoasterNodeFlags.WinchKept } );
 		nodes.Add( StationPylon( layout.Start, CoasterNodeFlags.StationTail | CoasterNodeFlags.NoNextLink ) );
 		IsComplete = IsClosed = false;
 		Version++;
@@ -834,6 +837,12 @@ public sealed class CoasterTrack
 				Incline = savedNode.Incline ?? 0
 			};
 			nodes.Add( node );
+		}
+		// a save from before the kept winch mark: the station's first two nodes (creation parameter 0x20) carry it
+		for ( var index = 0; index < Math.Min( 2, nodes.Count ); index++ )
+		{
+			if ( nodes[index].IsStation && !nodes[index].IsStationEnd )
+				nodes[index].Flags |= CoasterNodeFlags.Winch | CoasterNodeFlags.WinchKept;
 		}
 		IsClosed = saved.IsClosed;
 		IsComplete = saved.IsComplete;

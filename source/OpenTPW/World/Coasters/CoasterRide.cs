@@ -345,7 +345,8 @@ public sealed class CoasterRide
 		for ( var index = 0; index < nodes.Count; index++ )
 		{
 			var node = nodes[index];
-			node.Flags = winch.Contains( index ) ? node.Flags | CoasterNodeFlags.Winch : node.Flags & ~CoasterNodeFlags.Winch;
+			// [BIN:TPW-EXE:0x432b50 winch clear] the rebuild clears 0x800 on every node without 0x1000 before the rating pass sets it
+			node.Flags = winch.Contains( index ) || (node.Flags & CoasterNodeFlags.WinchKept) != 0 ? node.Flags | CoasterNodeFlags.Winch : node.Flags & ~CoasterNodeFlags.Winch;
 		}
 		// Controller +264: the sections with both node flags 0x40 and 0x80 (CoasterRating.FinalFor; ORACLE F8).
 		var counted = CoasterRating.FinalFor( 0, 0, 0, 0, nodes.Select( node => (uint)node.Flags ), 0, 0, 0, 0 ).Sections;

@@ -46,6 +46,12 @@ public sealed class SmarterGuestsState
 	/// </summary>
 	public MealTimes Meals { get; } = new();
 
+	/// <summary>
+	/// The park turn of each guest's latest complaint about its path (phase 6; the same (birth id, turn) bookkeeping as <see cref="Meals"/>, so its <see cref="MealTime"/> entries read "complained on turn"): empty until
+	/// the path rules run and a guest complains. The host writes and reads it; it is saved in the extension's section and joins the world hash only while it holds an entry.
+	/// </summary>
+	public MealTimes Complaints { get; } = new();
+
 	/// <summary>Gives the next birth id. A counter at its limit is refused, never wrapped: ids are never reused, so a wrap would give two guests one personality.</summary>
 	public ulong AllocateBirthId()
 	{
@@ -78,6 +84,7 @@ public sealed class SmarterGuestsState
 		Stalls.Clear();
 		Throughputs.Clear();
 		Meals.Clear();
+		Complaints.Clear();
 	}
 
 	/// <summary>
@@ -106,7 +113,7 @@ public sealed class SmarterGuestsState
 	/// <summary>Mixed into the hash before the price stalls (the ASCII "PSTL").</summary>
 	internal const long StallsHashMarker = 0x5053544CL;
 
-	/// <summary>The extension's part of <see cref="WorldStateHash"/>: the seed, the counter, the first-tick flag, the guests' ids in id order and, while there are any, the runs of price-emptied decisions in birth-id order, the throughput estimates in attraction-id order and the meal times in birth-id order.</summary>
+	/// <summary>The extension's part of <see cref="WorldStateHash"/>: the seed, the counter, the first-tick flag, the guests' ids in id order and, while there are any, the runs of price-emptied decisions in birth-id order, the throughput estimates in attraction-id order the meal times and the complaint times in birth-id order.</summary>
 	internal void AddCanonicalState( StateHasher hash, IReadOnlyList<Guest> guests )
 	{
 		hash.Add( HashMarker );
@@ -146,16 +153,29 @@ public sealed class SmarterGuestsState
 				hash.Add( entry.Demand );
 			}
 		}
-		if ( Meals.Count == 0 )
+		if ( Meals.Count != 0 )
+		{
+			hash.Add( MealsHashMarker );
+			hash.Add( Meals.Count );
+			foreach ( var entry in Meals.Entries )
+			{
+				hash.Add( entry.BirthId );
+				hash.Add( entry.Turn );
+			}
+		}
+		if ( Complaints.Count == 0 )
 			return;
-		hash.Add( MealsHashMarker );
-		hash.Add( Meals.Count );
-		foreach ( var entry in Meals.Entries )
+		hash.Add( ComplaintsHashMarker );
+		hash.Add( Complaints.Count );
+		foreach ( var entry in Complaints.Entries )
 		{
 			hash.Add( entry.BirthId );
 			hash.Add( entry.Turn );
 		}
 	}
+
+	/// <summary>Mixed into the hash before the complaint times (the ASCII "CMPL").</summary>
+	internal const long ComplaintsHashMarker = 0x434D504CL;
 
 	/// <summary>Mixed into the hash before the meal times (the ASCII "MEAL").</summary>
 	internal const long MealsHashMarker = 0x4D45414CL;

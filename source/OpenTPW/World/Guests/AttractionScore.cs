@@ -210,7 +210,7 @@ public static class AttractionScore
 	/// </summary>
 	public static uint DivideByHistory( uint score, int attractionId, IReadOnlyList<int> used, IReadOnlyList<int> temporary )
 	{
-		var divisors = new[] { 5, 4, 3, 2 };
+		ReadOnlySpan<int> divisors = [5, 4, 3, 2];
 		var value = unchecked( (int)score );
 		for ( var slot = 0; slot < 4 && slot < used.Count; slot++ )
 		{

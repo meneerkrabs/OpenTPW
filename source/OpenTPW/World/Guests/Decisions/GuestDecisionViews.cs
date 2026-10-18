@@ -14,6 +14,9 @@ public readonly record struct DecisionContext( GuestSettings Settings, long Park
 {
 	/// <summary>A stateless trait of <paramref name="guest"/> (<see cref="SmarterGuestsState.Trait(ulong, ulong, int)"/>): the same for the whole visit, no random number taken.</summary>
 	public ulong Trait( in GuestView guest, int traitIndex ) => SmarterGuestsState.Trait( ParkSeed, guest.BirthId, traitIndex );
+
+	/// <summary>The same trait for a guest known by its birth id only.</summary>
+	public ulong Trait( ulong birthId, int traitIndex ) => SmarterGuestsState.Trait( ParkSeed, birthId, traitIndex );
 }
 
 /// <summary>
@@ -30,8 +33,11 @@ public readonly record struct DecisionContext( GuestSettings Settings, long Park
 /// The turns, in 1/256 park turn, before this guest could next serve a need if it committed to a ride now: the shortest expected wait plus cycle of a ride it could choose (<see cref="AttractionView.CycleTurns256"/>),
 /// or, in the minor decision, those of the ride it is walking to; -1 when the host did not look (the policy does not plan, or no meter is near a level it plans for) or there is no such ride. Additive, phase 5.
 /// </param>
+/// <param name="ComplaintTurn">
+/// The park turn of the guest's latest complaint about its path (<see cref="PathDecision"/>), or -1 for none. Filled by the host only for a policy that <see cref="IGuestDecisions.UsesPathComfort"/>, else -1. Additive, phase 6.
+/// </param>
 public readonly record struct GuestView( int Id, ulong BirthId, int Type, float Happiness, float Thirst, float Hunger, float Toilet, float Nausea, int Money, int CellX, int CellY,
-	IReadOnlyList<int> UsedHistory, IReadOnlyList<int> TemporaryHistory, long MealTurn = -1, long PlanTurns256 = -1 );
+	IReadOnlyList<int> UsedHistory, IReadOnlyList<int> TemporaryHistory, long MealTurn = -1, long PlanTurns256 = -1, long ComplaintTurn = -1 );
 
 /// <summary>
 /// An attraction as the policy sees it, built by the host for one guest: every value the original score reads, precomputed. An attraction without a join cell (<see cref="HasJoinCell"/> false)
@@ -50,7 +56,7 @@ public readonly record struct GuestView( int Id, ulong BirthId, int Type, float 
 /// </param>
 /// <param name="Reservations">
 /// Guests other than this one walking to the attraction to join its queue (state "going to a ride" with it as their target). Filled by the host only for a policy that
-/// <see cref="IGuestDecisions.UsesSpreading"/>, else 0.
+/// <see cref="IGuestDecisions.UsesSpreading"/>, else 0. Also 0 in the views of the queue hooks (<see cref="IGuestDecisions.DecideQueuePatience"/>): outside a candidate loop counting the walkers is a scan of every guest, and neither queue hook reads them.
 /// </param>
 /// <param name="TurnsPerGuest256">
 /// The attraction's observed time per guest, in 1/256 park turn (<see cref="RideThroughputs"/>: the throughput is its inverse, capacity over cycle duration): a moving average of the gaps between boardings, the cold-start value
@@ -118,3 +124,55 @@ public readonly record struct QueuePatienceDecision( bool Leave, GuestThought Th
 
 /// <summary>What a guest remembers when a use ends: whether the attraction enters its used history (the original always does).</summary>
 public readonly record struct PostUseDecision( bool PushUsedHistory );
+
+/// <summary>
+/// One path cell as the wander's comfort rule sees it (docs/SMARTER-GUESTS.md, phase 6), counted by the host from the park's litter and its per-cell guest lists.
+/// </summary>
+/// <param name="X">The cell's column.</param>
+/// <param name="Y">The cell's row.</param>
+/// <param name="LitterUnits">The litter in the cell and the eight around it: 1 for each piece, 2 for each vomit or stinkbomb (<see cref="SmarterGuestsRules.LitterUnitsOf"/>); 0 when the park has no litter.</param>
+/// <param name="Crowd">The guests standing in the cell (the asking guest included when it stands there).</param>
+/// <param name="NearCrowd">The guests standing in the eight cells around it (the crowd a guest walks into on its way there).</param>
+public readonly record struct PathCellView( int X, int Y, int LitterUnits, int Crowd, int NearCrowd = 0 );
+
+/// <summary>
+/// What the wander's comfort rule reads: the cell the guest stands on and the cells the original's random walk visited on its way to the proposed goal, in order, the goal itself last (a copy of cells the
+/// host's search already walked: the policy chooses among candidates the host enumerated and draws nothing). A ref struct, so the cells live on the host's stack for the call.
+/// </summary>
+public readonly ref struct WanderPathView
+{
+	public WanderPathView( PathCellView here, ReadOnlySpan<PathCellView> walk )
+	{
+		Here = here;
+		Walk = walk;
+	}
+
+	/// <summary>The cell the guest stands on.</summary>
+	public PathCellView Here { get; }
+
+	/// <summary>The walk's cells in order; the last is the original's goal (never empty when the host asks).</summary>
+	public ReadOnlySpan<PathCellView> Walk { get; }
+}
+
+/// <summary>
+/// The comfort rule's verdict: the index of the <see cref="WanderPathView.Walk"/> cell to walk to instead of the original's goal (-1 keeps the goal), and a complaint, if any, with the happiness it costs. The
+/// host thinks the thought, takes the happiness and notes the turn (the cooldown); the sub-cell bytes of the original's goal stay.
+/// </summary>
+/// <param name="GoalIndex">The walk cell to go to, or -1 to keep the original's goal (the last cell).</param>
+/// <param name="Complaint">What the guest complains about, or <see cref="PathComplaint.None"/>.</param>
+/// <param name="Thought">The thought the complaint shows (an existing one: the original has no thought for a crowd); <see cref="GuestThought.None"/> without a complaint.</param>
+/// <param name="HappinessCost">The happiness points the complaint costs, 0 without one.</param>
+public readonly record struct PathDecision( int GoalIndex = -1, PathComplaint Complaint = PathComplaint.None, GuestThought Thought = GuestThought.None, float HappinessCost = 0 )
+{
+	public static PathDecision Keep => new( -1 );
+}
+
+/// <summary>What a guest complains about on its path (phase 6).</summary>
+public enum PathComplaint : byte
+{
+	None = 0,
+	/// <summary>Litter or vomit around it: the original's "Too messy" thought.</summary>
+	Litter = 1,
+	/// <summary>A crowd in its cell.</summary>
+	Crowd = 2
+}

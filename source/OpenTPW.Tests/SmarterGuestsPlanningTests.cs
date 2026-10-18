@@ -17,8 +17,8 @@ namespace OpenTPW.Tests;
 public class SmarterGuestsPlanningTests
 {
 	private static readonly GuestSettings Settings = GuestTests.CreateSettings();
-	private static readonly SmarterGuestDecisions Smarter = new();
-	private static readonly SmarterGuestDecisions Phase4 = new( SmarterPlanningRules.None );
+	private static readonly SmarterGuestDecisions Smarter = new( SmarterRuleSet.Phase5 );
+	private static readonly SmarterGuestDecisions Phase4 = new( SmarterRuleSet.None );
 
 	/// <summary>A guest of thing id 8 (a multiple of 4: the only kind whose meters ever grow) and thing id 7 (whose meters never do).</summary>
 	private const int Grower = 8, Steady = 7;
@@ -145,7 +145,7 @@ public class SmarterGuestsPlanningTests
 		var projected = SmarterGuestsRules.ProjectedMeters( guest, 800, 80 );
 		Assert.AreEqual( Phase4.ScoreAttraction( Context(), guest with { Hunger = projected.Hunger, PlanTurns256 = -1 }, food ), planned, "the same score the guest would give the shop with the grown meter" );
 		Assert.AreEqual( without, Phase4.ScoreAttraction( Context(), guest, food ), "with the rule off the score is the previous version's" );
-		var onlyDetour = new SmarterGuestDecisions( SmarterPlanningRules.Detour | SmarterPlanningRules.MealTime );
+		var onlyDetour = new SmarterGuestDecisions( SmarterRuleSet.Detour | SmarterRuleSet.MealTime );
 		Assert.AreEqual( without, onlyDetour.ScoreAttraction( Context(), guest, food ), "planning switched off alone" );
 		Assert.AreEqual( Phase4.ScoreAttraction( Context(), guest, Ride() ), Smarter.ScoreAttraction( Context(), guest, Ride() ), "a ride's score does not read the plan" );
 	}
@@ -271,7 +271,7 @@ public class SmarterGuestsPlanningTests
 		Assert.AreEqual( Phase4.ScoreAttraction( Context( 900 ), fed, calm ), Smarter.ScoreAttraction( Context( 900 ), fed, calm ), "20 / 10 x 4 = 8 is no trouble" );
 		Assert.AreEqual( phase4, Smarter.ScoreAttraction( Context( 1000 ), fed, thrill ), "after the window" );
 		Assert.AreEqual( phase4, Smarter.ScoreAttraction( Context( 900 ), fed with { MealTurn = -1 }, thrill ), "no meal" );
-		Assert.AreEqual( phase4, new SmarterGuestDecisions( SmarterPlanningRules.Planning | SmarterPlanningRules.Detour ).ScoreAttraction( Context( 900 ), fed, thrill ), "the rule switched off" );
+		Assert.AreEqual( phase4, new SmarterGuestDecisions( SmarterRuleSet.Planning | SmarterRuleSet.Detour ).ScoreAttraction( Context( 900 ), fed, thrill ), "the rule switched off" );
 		var food = Shop( hungerEffect: 25 );
 		Assert.AreEqual( Phase4.ScoreAttraction( Context( 900 ), fed, food ), Smarter.ScoreAttraction( Context( 900 ), fed, food ) );
 	}
@@ -280,10 +280,10 @@ public class SmarterGuestsPlanningTests
 	public void WithoutAMealAPlanOrAStopOnTheWayThePoliciesAreTheSameAndTheRulesAreSwitchable()
 	{
 		Assert.IsTrue( Smarter.UsesPlanning );
-		Assert.IsTrue( new SmarterGuestDecisions( SmarterPlanningRules.Detour ).UsesPlanning );
+		Assert.IsTrue( new SmarterGuestDecisions( SmarterRuleSet.Detour ).UsesPlanning );
 		Assert.IsFalse( Phase4.UsesPlanning, "no rule: the previous version's policy, which asks the host for nothing" );
 		Assert.IsFalse( ((IGuestDecisions)OriginalGuestDecisions.Instance).UsesPlanning );
-		Assert.AreEqual( SmarterPlanningRules.All, SmarterPlanningRules.Planning | SmarterPlanningRules.Detour | SmarterPlanningRules.MealTime );
+		Assert.AreEqual( SmarterRuleSet.Phase5, SmarterRuleSet.Planning | SmarterRuleSet.Detour | SmarterRuleSet.MealTime );
 		foreach ( var guest in new[] { Guest(), Guest( Steady, hunger: 80, toilet: 70 ), Guest( hunger: 99, thirst: 99 ) } )
 			foreach ( var attraction in new[] { Ride( 95 ), Ride( 20, 7 ), Shop( thirstEffect: 40 ), Shop( hungerEffect: 25 ), Shop( relief: true ) } )
 				Assert.AreEqual( Phase4.ScoreAttraction( Context(), guest, attraction ), Smarter.ScoreAttraction( Context(), guest, attraction ), $"{guest.Id} {attraction.Kind} {attraction.HungerEffect}" );
@@ -317,7 +317,7 @@ public class SmarterGuestsPlanningTests
 	[TestMethod]
 	public void TheMealTimesJoinTheWorldHashOnlyWhileTheyHoldAnEntry()
 	{
-		var park = SmarterPark( 1, 3000, SmarterPlanningRules.All );
+		var park = SmarterPark( 1, 3000, SmarterRuleSet.Phase5 );
 		var seed = new WorldSeed( 1 );
 		ulong Hash() => WorldStateHash.Compute( new WorldStateSources { Seed = seed, Guests = park.Guests } );
 		park.Guests.SmarterGuests!.Meals.Clear();
@@ -334,7 +334,7 @@ public class SmarterGuestsPlanningTests
 
 	// ---- Persistence --------------------------------------------------------------------------------
 
-	private static ParkScenario SmarterPark( ulong seed, long ticks, SmarterPlanningRules rules, bool food = false )
+	private static ParkScenario SmarterPark( ulong seed, long ticks, SmarterRuleSet rules, bool food = false )
 	{
 		var park = new ParkScenario( new WorldSeed( seed ), new ParkScenarioOptions { FoodShop = food }, new SmarterGuestDecisions( rules ) );
 		park.Run( ticks );
@@ -344,7 +344,7 @@ public class SmarterGuestsPlanningTests
 	[TestMethod]
 	public void TheMealTimesRoundTripThroughTheSectionAndRestoreIntoAFreshInstance()
 	{
-		var park = SmarterPark( 1, 5000, SmarterPlanningRules.All );
+		var park = SmarterPark( 1, 5000, SmarterRuleSet.Phase5 );
 		var guests = park.Guests.Guests.Where( guest => guest.BirthId != 0 ).OrderBy( guest => guest.BirthId ).Take( 2 ).ToArray();
 		Assert.AreEqual( 2, guests.Length );
 		park.Guests.SmarterGuests!.Meals.Note( guests[1].BirthId, park.Guests.ParkTurn - 10 );
@@ -366,7 +366,7 @@ public class SmarterGuestsPlanningTests
 	[TestMethod]
 	public void ASectionWithoutMealsHasNoMemberSoTheSectionOfAnOlderParkIsAsItWas()
 	{
-		var park = SmarterPark( 1, 3000, SmarterPlanningRules.None );
+		var park = SmarterPark( 1, 3000, SmarterRuleSet.None );
 		var section = SmarterGuestsSave.Capture( park.Guests )!;
 		Assert.IsNull( section.Meals );
 		Assert.IsFalse( System.Text.Json.Nodes.JsonNode.Parse( System.Text.Encoding.UTF8.GetString( ParkResumeJson.Serialize( section ) ) )!.AsObject().ContainsKey( "Meals" ) );
@@ -375,7 +375,7 @@ public class SmarterGuestsPlanningTests
 	[TestMethod]
 	public void BadMealDataIsRefused()
 	{
-		var park = SmarterPark( 1, 5000, SmarterPlanningRules.All );
+		var park = SmarterPark( 1, 5000, SmarterRuleSet.Phase5 );
 		var ids = park.Guests.Guests.Select( guest => guest.Id ).ToArray();
 		var attractions = park.Guests.Attractions.Select( attraction => attraction.AttractionId ).ToArray();
 		var section = SmarterGuestsSave.Capture( park.Guests )!;
@@ -389,7 +389,7 @@ public class SmarterGuestsPlanningTests
 		StringAssert.Contains( Problem( new MealTime( births[0], -1 ) )!, "below 0" );
 		StringAssert.Contains( Problem()!, "empty meal list" );
 		// extension state needs the extension recorded: a save that only carries script mods holds the identity half and nothing else
-		var record = new[] { new ParkModRecord( "opentpw.smarter-guests", "1.4.0", ModSet.NoFilesSha256 ) };
+		var record = new[] { new ParkModRecord( "opentpw.smarter-guests", "1.5.0", ModSet.NoFilesSha256 ) };
 		var withMeals = section with { Meals = [new MealTime( births[0], 5 )] };
 		Assert.IsNull( SmarterGuestsSave.ShapeProblem( withMeals, ids, record, false, attractions ) );
 		StringAssert.Contains( SmarterGuestsSave.ShapeProblem( withMeals, ids, null, true, attractions )!, "does not record" );
@@ -428,7 +428,7 @@ public class SmarterGuestsPlanningTests
 	// ---- The host -----------------------------------------------------------------------------------
 
 	/// <summary>Records what the policy is given: the guests' meal turns and plans, and which candidates the host calls a stop on the way.</summary>
-	private sealed class Spy( SmarterPlanningRules rules ) : SmarterGuestsTests.DelegatingDecisions( new SmarterGuestDecisions( rules ) )
+	private sealed class Spy( SmarterRuleSet rules ) : SmarterGuestsTests.DelegatingDecisions( new SmarterGuestDecisions( rules ) )
 	{
 		public readonly List<(int GuestId, long Meal, long Plan, bool Service, bool OnTheWay)> Views = new();
 		public readonly List<AttractionView> Rides = new();
@@ -446,12 +446,12 @@ public class SmarterGuestsPlanningTests
 	[TestMethod]
 	public void TheHostFillsInTheMealTurnOnlyForAPolicyThatPlansAndItIsTheTurnTheGuestAte()
 	{
-		var spy = new Spy( SmarterPlanningRules.All );
+		var spy = new Spy( SmarterRuleSet.Phase5 );
 		var park = new ParkScenario( new WorldSeed( 2 ), new ParkScenarioOptions { FoodShop = true }, spy );
 		park.Run( 20_000 );
 		Assert.IsTrue( spy.Views.Any( view => view.Meal >= 0 ), "guests ate and the policy was told" );
 		Assert.IsTrue( spy.Views.All( view => view.Meal <= park.Guests.ParkTurn ), "never a turn in the future" );
-		var silent = new Spy( SmarterPlanningRules.None );
+		var silent = new Spy( SmarterRuleSet.None );
 		var quiet = new ParkScenario( new WorldSeed( 2 ), new ParkScenarioOptions { FoodShop = true }, silent );
 		quiet.Run( 20_000 );
 		Assert.IsTrue( silent.Views.Count > 100 && silent.Views.All( view => view.Meal == -1 && view.Plan == -1 && !view.OnTheWay ), "a policy that does not plan is given the defaults, and the host keeps no meals for it" );
@@ -461,7 +461,7 @@ public class SmarterGuestsPlanningTests
 	[TestMethod]
 	public void MealsAreNotedAtTheFoodShopRememberedByBirthIdAndForgottenWhenTheGuestLeaves()
 	{
-		var park = SmarterPark( 2, 20_000, SmarterPlanningRules.All, food: true );
+		var park = SmarterPark( 2, 20_000, SmarterRuleSet.Phase5, food: true );
 		var meals = park.Guests.SmarterGuests!.Meals;
 		var inPark = park.Guests.Guests.Where( guest => guest.BirthId != 0 ).Select( guest => guest.BirthId ).ToHashSet();
 		Assert.IsTrue( meals.Count > 0, "the food shop fed somebody who is still here" );
@@ -476,7 +476,7 @@ public class SmarterGuestsPlanningTests
 	[TestMethod]
 	public void ThePlanOfAGrowerNearALevelIsTheQuickestRidesWaitPlusItsCycleAndOthersAreNotScanned()
 	{
-		var spy = new Spy( SmarterPlanningRules.All );
+		var spy = new Spy( SmarterRuleSet.Phase5 );
 		var park = new ParkScenario( new WorldSeed( 3 ), decisions: spy );
 		park.Run( 6000 );
 		var growers = park.Guests.Guests.Where( guest => (guest.Id & 3) == 0 && guest.State is GuestState.DoingNothing or GuestState.WalkingAround ).ToArray();
@@ -543,7 +543,7 @@ public class SmarterGuestsPlanningTests
 	[TestMethod]
 	public void OnlyTheMinorDecisionCallsACandidateAStopOnTheWay()
 	{
-		var spy = new Spy( SmarterPlanningRules.All );
+		var spy = new Spy( SmarterRuleSet.Phase5 );
 		var park = new ParkScenario( new WorldSeed( 1 ), decisions: spy );
 		park.Run( 12_000 );
 		Assert.IsTrue( spy.Views.Any( view => view.OnTheWay ), "the minor decision's window offered a candidate" );
@@ -551,7 +551,7 @@ public class SmarterGuestsPlanningTests
 		foreach ( var guest in park.Guests.Guests.ToArray() )
 			park.Guests.PeekChoice( guest );
 		Assert.IsTrue( spy.Views.Count > 0 && spy.Views.All( view => !view.OnTheWay ), "the major decision's candidates are not on the way to anything" );
-		var plain = new Spy( SmarterPlanningRules.Planning | SmarterPlanningRules.MealTime );
+		var plain = new Spy( SmarterRuleSet.Planning | SmarterRuleSet.MealTime );
 		var other = new ParkScenario( new WorldSeed( 1 ), decisions: plain );
 		other.Run( 12_000 );
 		Assert.IsTrue( plain.Views.Any( view => view.OnTheWay ), "the host marks the window for any policy that plans; the policy decides what it means (detour off here)" );
@@ -563,9 +563,9 @@ public class SmarterGuestsPlanningTests
 	public void WithThePhaseFiveRulesOffTheScenarioIsVersion130sRunAndWithThemOnItIsTheSameWhereNoRuleActs()
 	{
 		// the pin of 1.3.0 (GuestMeasurementTests.ScenarioSmarterFixedRunHash): the scenario has no food shop and nobody near a level at a decision, so the rules never act in it
-		var off = new ParkScenario( new WorldSeed( 1 ), decisions: new SmarterGuestDecisions( SmarterPlanningRules.None ) );
+		var off = new ParkScenario( new WorldSeed( 1 ), decisions: new SmarterGuestDecisions( SmarterRuleSet.None ) );
 		off.Run( 12_000 );
-		var on = new ParkScenario( new WorldSeed( 1 ), decisions: new SmarterGuestDecisions( SmarterPlanningRules.All ) );
+		var on = new ParkScenario( new WorldSeed( 1 ), decisions: new SmarterGuestDecisions( SmarterRuleSet.Phase5 ) );
 		on.Run( 12_000 );
 		Assert.AreEqual( off.Hash, on.Hash );
 		Assert.AreEqual( WorldStateHash.Compute( new WorldStateSources { Seed = off.Seed, Guests = off.Guests } ), WorldStateHash.Compute( new WorldStateSources { Seed = on.Seed, Guests = on.Guests } ) );
@@ -575,44 +575,44 @@ public class SmarterGuestsPlanningTests
 	[TestMethod]
 	public void WithAFoodShopTheMealRuleChangesTheRunAndEachRuleOnItsOwnIsADeterministicReplay()
 	{
-		ulong Run( SmarterPlanningRules rules )
+		ulong Run( SmarterRuleSet rules )
 		{
 			var park = SmarterPark( 4, 30_000, rules, food: true );
 			return park.Hash;
 		}
-		Assert.AreEqual( Run( SmarterPlanningRules.MealTime ), Run( SmarterPlanningRules.MealTime ), "replay" );
-		Assert.AreEqual( Run( SmarterPlanningRules.All ), Run( SmarterPlanningRules.All ), "replay" );
-		Assert.AreNotEqual( Run( SmarterPlanningRules.None ), Run( SmarterPlanningRules.MealTime ), "after a meal the thrill ride scores lower, so somebody rides something else" );
+		Assert.AreEqual( Run( SmarterRuleSet.MealTime ), Run( SmarterRuleSet.MealTime ), "replay" );
+		Assert.AreEqual( Run( SmarterRuleSet.Phase5 ), Run( SmarterRuleSet.Phase5 ), "replay" );
+		Assert.AreNotEqual( Run( SmarterRuleSet.None ), Run( SmarterRuleSet.MealTime ), "after a meal the thrill ride scores lower, so somebody rides something else" );
 	}
 
 	[TestMethod]
 	public void TheReportCanSwitchThePhaseFiveRulesOffAndSaysSo()
 	{
-		CollectionAssert.AreEqual( new[] { SmarterPlanningRules.None }, new[] { GuestReport.ParsePlanningRules( "none" ) } );
-		Assert.AreEqual( SmarterPlanningRules.All, GuestReport.ParsePlanningRules( "all" ) );
-		Assert.AreEqual( SmarterPlanningRules.Planning | SmarterPlanningRules.MealTime, GuestReport.ParsePlanningRules( "planning, meal" ) );
-		Assert.ThrowsException<ArgumentException>( () => GuestReport.ParsePlanningRules( "everything" ) );
+		CollectionAssert.AreEqual( new[] { SmarterRuleSet.None }, new[] { GuestReport.ParseRules( "none" ) } );
+		Assert.AreEqual( SmarterRuleSet.All, GuestReport.ParseRules( "all" ) );
+		Assert.AreEqual( SmarterRuleSet.Planning | SmarterRuleSet.MealTime, GuestReport.ParseRules( "planning, meal" ) );
+		Assert.ThrowsException<ArgumentException>( () => GuestReport.ParseRules( "everything" ) );
 		var options = new GuestReportOptions
 		{
 			Seeds = new ulong[] { 4 }, WarmupDays = 20, MeasuredDays = 60, Performance = false, Scenario = new ParkScenarioOptions { FoodShop = true },
 			Extensions = GuestReport.ResolveExtensions( new[] { "smarter-guests" } )
 		};
 		ulong Reported( GuestReportOptions run ) => GuestReport.Run( run ).Scenarios.Single( scenario => scenario.Name == GuestReport.ScenarioName ).Seeds.Single().StateHash;
-		ulong Explicit( SmarterPlanningRules rules )
+		ulong Explicit( SmarterRuleSet rules )
 		{
 			var park = new ParkScenario( new WorldSeed( 4 ), options.Scenario, new SmarterGuestDecisions( rules ) );
 			park.Run( GuestReport.TicksForDays( 80 ) );
 			return park.Hash;
 		}
-		var none = GuestReport.ToJsonObject( GuestReport.Run( options with { PlanningRules = SmarterPlanningRules.None } ) );
+		var none = GuestReport.ToJsonObject( GuestReport.Run( options with { Rules = SmarterRuleSet.None } ) );
 		var all = GuestReport.ToJsonObject( GuestReport.Run( options ) );
-		Assert.IsFalse( all.ContainsKey( "planningRules" ), "the shipped extension's report says nothing extra" );
-		Assert.AreEqual( "None", (string)none["planningRules"]! );
+		Assert.IsFalse( all.ContainsKey( "rules" ), "the shipped extension's report says nothing extra" );
+		Assert.AreEqual( "None", (string)none["rules"]! );
 		// the run really used the rules it says: its end state is an explicit run's, and not the other's
-		Assert.AreEqual( Explicit( SmarterPlanningRules.None ), Reported( options with { PlanningRules = SmarterPlanningRules.None } ), "the report's run with the rules off is the explicit run with them off" );
-		Assert.AreEqual( Explicit( SmarterPlanningRules.All ), Reported( options ), "and the default is all three" );
-		Assert.AreNotEqual( Explicit( SmarterPlanningRules.None ), Explicit( SmarterPlanningRules.All ), "which differ in this scenario" );
-		Assert.ThrowsException<ArgumentException>( () => GuestReport.Run( options with { PlanningRules = SmarterPlanningRules.None, Mods = ["x"] } ) );
-		StringAssert.Contains( GuestReportCompare.Compare( all, none, [] ).Notes, "phase 5 rules: baseline All, candidate None" );
+		Assert.AreEqual( Explicit( SmarterRuleSet.None ), Reported( options with { Rules = SmarterRuleSet.None } ), "the report's run with the rules off is the explicit run with them off" );
+		Assert.AreEqual( Explicit( SmarterRuleSet.All ), Reported( options ), "and the default is all three" );
+		Assert.AreNotEqual( Explicit( SmarterRuleSet.None ), Explicit( SmarterRuleSet.All ), "which differ in this scenario" );
+		Assert.ThrowsException<ArgumentException>( () => GuestReport.Run( options with { Rules = SmarterRuleSet.None, Mods = ["x"] } ) );
+		StringAssert.Contains( GuestReportCompare.Compare( all, none, [] ).Notes, "smarter-guests rules: baseline All, candidate None" );
 	}
 }

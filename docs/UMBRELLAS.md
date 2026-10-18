@@ -181,10 +181,11 @@ sprite: `[BIN:TPI-EXE:0x60ae35]`, the placement routine `0x60AE00` compares the 
   reproduces it from the local game frames) reads the game's own frames. The eight 1x kid sets have a 2x redraw of the same pose, so their anchor is the 2x rig anchor at half the pixels, moved sideways by the difference of the two silhouettes' mean x (the redraws match the originals
   within about a pixel). The four costume sets have no redraw: a rule fitted on the kids gives the hand's height as a share of the silhouette's height above its bottom edge and its x as a share of half the box's width, per slot and direction. Leaving each kid set out in turn
   predicts its anchors to 3.55 pixels on average (largest 9.7; a kid is 37 pixels tall, and most of it is the swinging walking hand the umbrella does not follow). The 2x sets of the pools guest art use the rig table; the table follows the frame's pixels per unit.
+- **Browser capture.** A real Chrome screenshot of the published browser build (Jungle, zoom 80, four umbrellas drawn) comes from `tools/web-perf/run.mjs --scenarios jungle,umbrellas`: the browser has no command line, so the hook `PerfUmbrellas` stands in for `--debug-umbrellas`.
 - **Browser.** The whole folder (shops, the 29 KB sprite set, the tables) is embedded (`OpenTPW.Web.csproj`), about 0.7 MB before compression; there is nothing to fetch.
 - **Captures** (Debug builds): `--debug-umbrellas` gives every guest an open umbrella, colour by id, and keeps it open; `--debug-umbrellas-follow zoom,yaw` holds the park camera on the first guest; with `--debug-weather 8` and `--capture-world`. `[EXT:debug-umbrellas]`
 
 | Label | What |
 | --- | --- |
 | `[EXT:umbrellas-draw]` | the drawing: the renderer, its placement from the tables, the sight-line pull, the steady hand |
-| `[EXT:debug-umbrellas]` | the Debug-build capture flags |
+| `[EXT:debug-umbrellas]` | the Debug-build capture flags and the browser harness hook `PerfUmbrellas` (`tools/web-perf/run.mjs --scenarios jungle,umbrellas`, docs/BROWSER-PERFORMANCE.md) |

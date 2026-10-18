@@ -421,7 +421,7 @@ public class WinterContentTests
 	[TestMethod]
 	public void NothingOfTheContentIsWiredIntoTheGameYet()
 	{
-		Assert.IsFalse( OfficialExtensions.All.Any( extension => extension.Id.StartsWith( "opentpw.winter", StringComparison.Ordinal ) ), "the extensions themselves come with phases W1, W3 and W5; the content only sits in content/winter" );
+		Assert.IsFalse( OfficialExtensions.All.Any( extension => extension.Id.StartsWith( "opentpw.winter", StringComparison.Ordinal ) && extension.Id != OfficialExtensions.WinterSnow.Id ), "the shop and cold extensions come with phases W3 and W5 (the settling snow, W1, has no content); the content only sits in content/winter" );
 		// the production path: the catalog roots of a default run (every official extension at its default) and the catalogs built from them name no winter shop
 		var roots = ModContentRoots.CatalogRoots( ModSet.Defaults( OfficialExtensions.All ) );
 		Assert.IsFalse( roots.Any( root => root.Objects.Any( definition => definition.InfoId is >= FirstId and <= LastId ) ), "no catalog root of a default run lists a winter shop" );

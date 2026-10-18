@@ -686,6 +686,7 @@ internal sealed partial class GameFlow : IDisposable
 			var strings = UiStringTable.Load( language );
 			var fonts = UiFonts.Load( language );
 			GameLanguage.Current = language;
+			LanguageInterfaceArchive.Apply( FileSystem, language );
 			Strings = strings;
 			Context = new UiContext( strings, fonts, Context.Models );
 			Log.Trace( $"Language: {language}" );

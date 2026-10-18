@@ -15,7 +15,20 @@ public sealed class UiContext
 		Strings = strings;
 		this.fonts = fonts;
 		Models = models;
+		RightToLeft = strings != null && GameLanguage.OriginalLanguageId( strings.Language ) == GameLanguage.HebrewLanguageId;
 	}
+
+	/// <summary>
+	/// Whether text is drawn for a right-to-left language (Hebrew): left and right alignment trade places, as tp.exe's two text helpers do
+	/// (docs/LANGUAGES.md, "Hebrew"). The lines themselves are put in visual order by <see cref="TextLayout"/>.
+	/// </summary>
+	public bool RightToLeft { get; set; }
+
+	/// <summary><paramref name="align"/> as drawn: left and right swapped in a right-to-left language, centre unchanged.</summary>
+	// [BIN:TPW-EXE:0x492750 Hebrew alignment] [BIN:TPW-EXE:0x4929f0 Hebrew alignment] both helpers turn alignment 0 (left) into 2 (right) and 2 into 0
+	// when 0x41a850 reports Hebrew, before they pick the text library's mode (0 left, 2 centre, 1 right); 0x4925a0 does the same for the alignment
+	// a caller keeps (0x4a1d70)
+	public UiAlign Drawn( UiAlign align ) => !RightToLeft ? align : align switch { UiAlign.Left => UiAlign.Right, UiAlign.Right => UiAlign.Left, _ => align };
 
 	public UiStringTable Strings { get; }
 	private UiFonts fonts;
@@ -60,6 +73,7 @@ public sealed class UiContext
 	{
 		if ( string.IsNullOrEmpty( text ) )
 			return;
+		align = Drawn( align );
 		var scale = textScale ?? Canvas.TextScale;
 		var layout = Layout( font, text, wrap ? (int)rect.Width : 0, scale );
 		var textAlignment = align switch { UiAlign.Center => TextAlignment.Center, UiAlign.Right => TextAlignment.Right, _ => TextAlignment.Left };
@@ -143,6 +157,7 @@ public sealed class UiContext
 	{
 		if ( string.IsNullOrEmpty( text ) )
 			return;
+		align = Drawn( align );
 		var box = InkBox( chosen, text, shadow );
 		var width = (box.Right - box.Left) * scale;
 		var x = align switch

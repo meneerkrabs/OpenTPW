@@ -28,6 +28,12 @@ public interface IPointLightSource
 	void AppendPointLights( List<PointLight> lights );
 }
 
+/// <summary>A source of one fixed light (the smoke-only <c>--debug-light</c> option and tests).</summary>
+public sealed class FixedPointLightSource( PointLight light ) : IPointLightSource
+{
+	public void AppendPointLights( List<PointLight> lights ) => lights.Add( light );
+}
+
 /// <summary>
 /// A light as the shaders read it: two vec4 in the uniform block. The first is the position and the squared radius, the second the colour and one over the squared radius, so
 /// the shader's falloff is the original's <c>(r2 - d2) * k</c> with <c>k = 1 / r2</c> (the light record's +0x48 and +0x4C) without a division per pixel.

@@ -1376,7 +1376,7 @@ public sealed class ParkEconomy : IParkEconomy
 		if ( !Catalog.TryGet( item.InfoId, out var info ) || info.Upgrades.Count == 0 )
 			return 0;
 		// [BIN:TPI-EXE:0x005E765B scrap percentage] Theme Park Inc's percentage routine 0x005E75F0 refuses a condemned object (state +0xA0 = 4) any refund before it reaches the year rule it shares with tp.exe 0x004E2290
-		// [APPROX:ECON-061] the routine's first branch (thing flag +0x43 bit 0x10, which gives 100, 67, 34 or 0 percent from a count read through a script-side lookup) is left out: what sets the flag and what the count is are not traced, so such an object takes the year rule — evidence needed: the writer of flag +0x43 and the lookup behind 0x40AE89 / 0x4078BA
+		// [APPROX:ECON-061] the routine's first branch (thing flag +0x43 bit 0x10, which gives 100, 67, 34 or 0 percent from a count read through a script-side lookup) is left out: what sets the flag and what the count is are not traced, so such an object takes the year rule — evidence needed: the writer of flag +0x43 (no site of TPI Game.exe sets the bit directly: the 16 that touch +0x43 only test it) and the lookup behind 0x40AE89 / 0x4078BA, whose count n gives (3 - n) x 33.33 percent, 1 plus the truncated product unless it is exactly 0 (100, 67, 34 and 0 for n = 0 to 3, negative above, 0x5E7613..0x5E764F)
 		if ( Rules.ThemeParkInc && ObjectState( item ) == RideObjectStates.Condemned )
 			return 0;
 		var level = Math.Min( item.Level, info.Upgrades.Count - 1 );

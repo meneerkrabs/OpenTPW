@@ -383,7 +383,10 @@ answers each room's first movement with where everyone stands (protocol version 
 docs/SERVER.md); with an older server the visit chats but shows no figures. Hiding a riding
 player needs protocol version 5, whose movements carry their mode; on a version 4 server, and
 for a player whose game is older, the riding player's figure stands where it was until the ride
-ends. A park file opened
+ends. A reconnect reads the version again before a hide goes out, and holds the hide until that
+read finishes, so neither an older game nor a current one is shown the rider in the meantime. A
+failed read is tried again, with a growing wait that levels off, for as long as the connection
+stays open. A park file opened
 from disk (Import file, `--visit-park`) has no room and no figures.
 `--visit-park <file> --smoke-test --smoke-presence` runs the native visit check with three scripted
 players round the entrance: the visit starts in the chat mode, their figures, names and sparkles are
@@ -396,7 +399,7 @@ exit (`artifacts/native-smoke-online-visit-presence.png`, `native-smoke-online-v
 | EXT label | OpenTPW decision | Known original evidence (not reproduced) |
 | --- | --- | --- |
 | `online-visit-presence` | The visit joins the park's room and the server relays fractions of the park, sent several times a second while a figure walks; a far jump is shown as a teleport, and from protocol 5 each movement says whether it walks, teleports, hides or shows the figure again. | The original's `BOSS_CHAT_MOVE` carried a cell position (8.8 words) and a mode: 0 walk to it (every client walked the online person there itself, 0x4F7DE0), 1 teleport (0x4F7E20), 2 hide, 3 unhide and teleport (tp.exe 0x4E7265 in 0x4E6E80). |
-| `online-ride-hiding` | A player who rides is hidden for the room from boarding to the ride's end, and then shown at the ride's exit (or where they stood); any later movement shows a hidden figure again, so a lost "unhide" heals. The server sends the mode only to games that send one, and a hidden player's place to nobody who reads no mode. | The original hid the own person locally on entering any first-person view and sent mode 2 for a ride (0x4BD090 → 0x4EA3F0); a ride entered from the first-person walk ended at its exit cell with mode 3 (0x42A1D0, 0x4EA410), but the return to the overview from a ride boarded there sent only a teleport (mode 1, 0x4BD260 → 0x4EA2D0), which leaves the person hidden for the others: only mode 3 rebuilds its model, while modes 0 and 1 move a hidden person unseen. |
+| `online-ride-hiding` | A player who rides is hidden for the room from boarding to the ride's end, and then shown at the ride's exit (or where they stood); any later movement shows a hidden figure again, so a lost "unhide" heals. The server sends the mode only to games that send one, and a hidden player's place to nobody who reads no mode. A hide waits until the version of the open connection is known, and a failed version read is tried again until it is. | The original hid the own person locally on entering any first-person view and sent mode 2 for a ride (0x4BD090 → 0x4EA3F0); a ride entered from the first-person walk ended at its exit cell with mode 3 (0x42A1D0, 0x4EA410), but the return to the overview from a ride boarded there sent only a teleport (mode 1, 0x4BD260 → 0x4EA2D0), which leaves the person hidden for the others: only mode 3 rebuilds its model, while modes 0 and 1 move a hidden person unseen. |
 | `online-avatar-look` | A figure wears the guests' kid set chosen by an FNV-1a hash of the lower-case name, the same for every client. | The online person's own model (`MODEL_ONLINE_PERSON`) is not decoded. |
 | `online-avatar-walk` | The player's figure walks 1.2 cells a second, about a quick guest's pace. | The online person's walk step (0x4FA2A0 on its route) is not read. |
 | `online-avatar-route` | The cells a figure may cross: land, paths, queues, object entrances and exits and fixed walkways inside the park. | The route map the original passes to its route search (person +0xB4 → 0x511420) is not read. |

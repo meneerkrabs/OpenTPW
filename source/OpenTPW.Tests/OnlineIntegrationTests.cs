@@ -1,8 +1,16 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Net;
+using System.Net.Http;
+using System.Net.Http.Headers;
+using System.Net.WebSockets;
+using System.Reflection;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using OpenTPW.Online.Api;
 using OpenTPW.Online.Chat;
 using OpenTPW.Online.Client;
 using OpenTPW.Online.Packages;
@@ -389,16 +397,20 @@ public class OnlineIntegrationTests
 		}
 	}
 
-	private static async Task<bool> Until( OnlineSession session, Func<bool> condition )
+	/// <summary>Pumps <paramref name="session"/> and, when given, its visit, until <paramref name="condition"/> holds.</summary>
+	private static async Task<bool> Until( OnlineSession session, Func<bool> condition, ParkPresence? visit = null )
 	{
-		var until = DateTime.UtcNow.AddSeconds( 10 );
+		var until = DateTime.UtcNow.AddSeconds( 15 );
 		while ( DateTime.UtcNow < until )
 		{
 			session.Pump();
+			visit?.Update( 0.25f );
 			if ( condition() )
 				return true;
-			await Task.Delay( 10 );
+			await Task.Delay( 20 );
 		}
+		session.Pump();
+		visit?.Update( 0.25f );
 		return condition();
 	}
 
@@ -618,5 +630,312 @@ public class OnlineIntegrationTests
 			Assert.AreEqual( "http", OnlineClient.ValidateServerUrl( new Uri( url ) ).Scheme, url );
 		foreach ( var url in new[] { "http://play.opentpw.io", "http://example.test", "http://8.8.8.8", "http://172.32.0.1", "http://[2001:db8::1]", "http://localhost.evil.test", "http://nas.local" } )
 			Assert.ThrowsException<ArgumentException>( () => OnlineClient.ValidateServerUrl( new Uri( url ) ), url );
+	}
+
+	[TestMethod]
+	public void AWalkKeepsAQueuedHideTeleportOrAppearance()
+	{
+		Assert.AreEqual( ChatMoveMode.Hide, OnlineSession.KeepPlaceMode( ChatMoveMode.Walk, ChatMoveMode.Hide ) );
+		Assert.AreEqual( ChatMoveMode.Teleport, OnlineSession.KeepPlaceMode( ChatMoveMode.Walk, ChatMoveMode.Teleport ) );
+		Assert.AreEqual( ChatMoveMode.Unhide, OnlineSession.KeepPlaceMode( ChatMoveMode.Walk, ChatMoveMode.Unhide ) );
+		Assert.AreEqual( ChatMoveMode.Walk, OnlineSession.KeepPlaceMode( ChatMoveMode.Walk, ChatMoveMode.Walk ) );
+		// a later mode replaces a hide: the ride ending is an appearance, not a walk
+		Assert.AreEqual( ChatMoveMode.Unhide, OnlineSession.KeepPlaceMode( ChatMoveMode.Unhide, ChatMoveMode.Hide ) );
+		Assert.AreEqual( ChatMoveMode.Teleport, OnlineSession.KeepPlaceMode( ChatMoveMode.Teleport, ChatMoveMode.Hide ) );
+	}
+
+	[TestMethod]
+	public async Task AHiddenRiderStaysHiddenAcrossAReconnect()
+	{
+		await using var server = await LoopbackServer.StartAsync( options => options.ChatBurst = 50 );
+		var gate = new VersionGate();
+		var (ann, http) = GatedSession( server.Url, "Ann", gate );
+		using var cancel = new CancellationTokenSource();
+		var daveSeen = new List<ChatEvent>();
+		var carolSeen = new List<ChatEvent>();
+		try
+		{
+			using var owner = await server.LoginAsync( "Owner" );
+			var park = await owner.UploadParkAsync( OnlineFormatTests.Package() );
+			ann.Register( "Ann", "correct horse" );
+			await PumpUntilIdle( ann );
+			var visit = Visit( ann, park.Id, (10.5f, 10.5f) );
+			using var daveClient = await server.LoginAsync( "Dave" );
+			using var carolClient = await server.LoginAsync( "Carol" );
+			await using var dave = await daveClient.ConnectChatAsync();
+			await using var carol = await carolClient.ConnectChatAsync();
+			var daveRead = Collect( dave, daveSeen, cancel.Token );
+			var carolRead = Collect( carol, carolSeen, cancel.Token );
+			await dave.JoinAsync( visit.Room );
+			await carol.JoinAsync( visit.Room );
+			// Dave reads modes; Carol is an older client and never sends one
+			await dave.MoveAsync( 0.4f, 0.4f, ChatMoveMode.Walk );
+			await carol.MoveAsync( 0.6f, 0.4f );
+			Assert.IsTrue( await Until( ann, () => visit.InRoom && ann.ProtocolCurrent && MovesOf( daveSeen, "Ann" ).Count > 0, visit ),
+				$"Ann never announced herself ({ann.Status}, room {ann.CurrentRoom}, protocol {ann.ServerProtocol}, current {ann.ProtocolCurrent})" );
+
+			var riding = true;
+			visit.Ride = () => riding ? new ParkPresence.PresenceRide( (40.5f, 20.5f) ) : null;
+			Assert.IsTrue( await Until( ann, () => MovesOf( daveSeen, "Ann" ).Any( item => item.Mode == ChatMoveMode.Hide ), visit ),
+				"Dave was not told that Ann is riding" );
+			Assert.IsFalse( MovesOf( carolSeen, "Ann" ).Any( item => item.Mode == ChatMoveMode.Hide ), "an older client is not sent a mode" );
+
+			lock ( daveSeen ) daveSeen.Clear();
+			lock ( carolSeen ) carolSeen.Clear();
+			// the reconnect's version read stays in flight, which is when a mode-less announce used to show the rider
+			gate.HoldNext();
+			AbortChat( ann );
+			var sawUnknown = false;
+			var until = DateTime.UtcNow.AddSeconds( 8 );
+			while ( DateTime.UtcNow < until )
+			{
+				ann.Pump();
+				visit.Update( 0.25f );
+				if ( ann.Chat != null && !ann.ProtocolCurrent )
+					sawUnknown = true;
+				await Task.Delay( 20 );
+			}
+			Assert.IsTrue( sawUnknown, "the reconnected chat never sat with an unknown version" );
+			Assert.AreEqual( 0, MovesOf( daveSeen, "Ann" ).Count, "a hide was sent before the version was known" );
+			AssertNoRider( daveSeen, carolSeen, "while the version read was in flight" );
+
+			gate.Release( 5 );
+			Assert.IsTrue( await Until( ann, () => ann.ProtocolCurrent && MovesOf( daveSeen, "Ann" ).Any( item => item.Mode == ChatMoveMode.Hide ), visit ),
+				$"the hide was not sent again once the version was known ({ann.ServerProtocol}, current {ann.ProtocolCurrent})" );
+			AssertNoRider( daveSeen, carolSeen, "after the version was known" );
+
+			riding = false;
+			Assert.IsTrue( await Until( ann, () => MovesOf( daveSeen, "Ann" ).Any( item => item.Mode == ChatMoveMode.Unhide ), visit ), "Dave never saw Ann leave the ride" );
+			Assert.IsTrue( await Until( ann, () => MovesOf( carolSeen, "Ann" ).Any( item => item.Mode == null ), visit ), "Carol never saw Ann reappear" );
+			visit.Dispose();
+			ann.Dispose();
+			cancel.Cancel();
+			await Task.WhenAll( daveRead, carolRead );
+		}
+		finally
+		{
+			cancel.Cancel();
+			gate.Release( 5 );
+			ann.Dispose();
+			http.Dispose();
+			server.DeleteData();
+		}
+	}
+
+	[TestMethod]
+	public async Task AStaleServerVersionCannotReplaceTheOpenConnections()
+	{
+		await using var server = await LoopbackServer.StartAsync( options => options.ChatBurst = 50 );
+		var calls = 0;
+		var first = new TaskCompletionSource<int>( TaskCreationOptions.RunContinuationsAsynchronously );
+		var second = new TaskCompletionSource<int>( TaskCreationOptions.RunContinuationsAsynchronously );
+		var (ann, http) = GatedSession( server.Url, "Ann", respond: async () =>
+		{
+			var index = Interlocked.Increment( ref calls );
+			var version = index == 1 ? await first.Task : await second.Task;
+			return ServerInfoResponse( version );
+		} );
+		using var cancel = new CancellationTokenSource();
+		var seen = new List<ChatEvent>();
+		try
+		{
+			Assert.IsNull( ann.ServerProtocol );
+			Assert.IsFalse( ann.ProtocolCurrent );
+			ann.Register( "Ann", "correct horse" );
+			await PumpUntilIdle( ann );
+			ann.FetchServerInfo();
+			await WaitUntil( () => Volatile.Read( ref calls ) >= 1 );
+			ann.ConnectChat();
+			await PumpUntil( ann, () => ann.Chat != null && Volatile.Read( ref calls ) >= 2 );
+			Assert.IsFalse( ann.ProtocolCurrent, "a connection's version is unknown until its own read returns" );
+			Assert.IsNull( ann.ServerProtocol, "the read that started first is still in flight" );
+
+			using var bobClient = await server.LoginAsync( "Bob" );
+			await using var bob = await bobClient.ConnectChatAsync();
+			var reading = Collect( bob, seen, cancel.Token );
+			var room = ChatProtocol.SatelliteRoom( 1 );
+			ann.JoinRoom( room );
+			await bob.JoinAsync( room );
+			await bob.MoveAsync( 0.5f, 0.5f, ChatMoveMode.Walk );
+			await PumpUntil( ann, () => ann.CurrentRoom == room );
+			// a walk still goes out while the version is unknown; a hide does not
+			ann.MoveTo( 0.2f, 0.3f, ChatMoveMode.Walk );
+			Assert.IsTrue( await Until( ann, () => MovesOf( seen, "Ann" ).Any( item => item.Mode == null ) ), "Bob never saw Ann's walk" );
+			lock ( seen ) seen.Clear();
+			ann.MoveTo( 0.2f, 0.3f, ChatMoveMode.Hide );
+			var held = DateTime.UtcNow.AddMilliseconds( 300 );
+			while ( DateTime.UtcNow < held ) { ann.Pump(); await Task.Delay( 20 ); }
+			Assert.AreEqual( 0, MovesOf( seen, "Ann" ).Count, "a hide was sent before the version was known" );
+
+			// the connection's own read says 4; the older read, which says 5, must not win when it arrives afterwards
+			second.SetResult( 4 );
+			await PumpUntil( ann, () => ann.ProtocolCurrent && ann.ServerProtocol == 4 );
+			first.SetResult( 5 );
+			var quiet = DateTime.UtcNow.AddMilliseconds( 400 );
+			while ( DateTime.UtcNow < quiet ) { ann.Pump(); await Task.Delay( 20 ); }
+			Assert.AreEqual( 4, ann.ServerProtocol, "a stale version replaced the open connection's" );
+			Assert.IsTrue( ann.ProtocolCurrent );
+			// known to be older than modes: the held hide goes out as a plain place
+			Assert.IsTrue( await Until( ann, () => MovesOf( seen, "Ann" ).Count > 0 ), "the held hide was never sent" );
+			Assert.IsNull( MovesOf( seen, "Ann" ).Single().Mode, "a server read as version 4 was sent a mode" );
+			ann.Disconnect();
+			Assert.IsNull( ann.ServerProtocol );
+			Assert.IsFalse( ann.ProtocolCurrent, "disconnect forgets the version" );
+			cancel.Cancel();
+			await reading;
+		}
+		finally
+		{
+			cancel.Cancel();
+			first.TrySetResult( 4 );
+			second.TrySetResult( 4 );
+			ann.Dispose();
+			http.Dispose();
+			server.DeleteData();
+		}
+	}
+
+	[TestMethod]
+	public async Task AFailedServerVersionReadIsRetriedAndThenHides()
+	{
+		await using var server = await LoopbackServer.StartAsync( options => options.ChatBurst = 50 );
+		var calls = 0;
+		var release = new TaskCompletionSource<int>( TaskCreationOptions.RunContinuationsAsynchronously );
+		var (ann, http) = GatedSession( server.Url, "Ann", respond: async () =>
+		{
+			var index = Interlocked.Increment( ref calls );
+			if ( index == 1 )
+				return new HttpResponseMessage( HttpStatusCode.ServiceUnavailable );
+			return ServerInfoResponse( await release.Task );
+		} );
+		using var cancel = new CancellationTokenSource();
+		var seen = new List<ChatEvent>();
+		try
+		{
+			ann.SetServerInfoRetryDelays( new[] { TimeSpan.FromMilliseconds( 40 ) } );
+			ann.Register( "Ann", "correct horse" );
+			await PumpUntilIdle( ann );
+			ann.ConnectChat();
+			await PumpUntil( ann, () => ann.Chat != null && Volatile.Read( ref calls ) >= 1 );
+			Assert.IsFalse( ann.ProtocolCurrent, "a failed read leaves modes off" );
+			await PumpUntil( ann, () => Volatile.Read( ref calls ) >= 2 );
+			Assert.IsFalse( ann.ProtocolCurrent, "the retry has not answered yet" );
+
+			using var bobClient = await server.LoginAsync( "Bob" );
+			await using var bob = await bobClient.ConnectChatAsync();
+			var reading = Collect( bob, seen, cancel.Token );
+			var room = ChatProtocol.SatelliteRoom( 1 );
+			ann.JoinRoom( room );
+			await bob.JoinAsync( room );
+			await bob.MoveAsync( 0.5f, 0.5f, ChatMoveMode.Walk );
+			await PumpUntil( ann, () => ann.CurrentRoom == room );
+			ann.MoveTo( 0.25f, 0.75f, ChatMoveMode.Hide );
+			var held = DateTime.UtcNow.AddMilliseconds( 250 );
+			while ( DateTime.UtcNow < held ) { ann.Pump(); await Task.Delay( 20 ); }
+			Assert.AreEqual( 0, MovesOf( seen, "Ann" ).Count, "a hide was sent while the version read was still failing" );
+
+			release.SetResult( 5 );
+			await PumpUntil( ann, () => ann.ProtocolCurrent && ann.ServerProtocol == 5 );
+			Assert.IsTrue( await Until( ann, () => MovesOf( seen, "Ann" ).Any( item => item.Mode == ChatMoveMode.Hide ) ), "the hide was not sent once version 5 was known" );
+			var settled = Volatile.Read( ref calls );
+			await Task.Delay( 150 );
+			ann.Pump();
+			Assert.AreEqual( settled, Volatile.Read( ref calls ), "a version that arrived is not read again" );
+			cancel.Cancel();
+			await reading;
+		}
+		finally
+		{
+			cancel.Cancel();
+			release.TrySetResult( 5 );
+			ann.Dispose();
+			http.Dispose();
+			server.DeleteData();
+		}
+	}
+
+	private static async Task WaitUntil( Func<bool> done, int seconds = 10 )
+	{
+		var until = DateTime.UtcNow.AddSeconds( seconds );
+		while ( !done() && DateTime.UtcNow < until )
+			await Task.Delay( 20 );
+		Assert.IsTrue( done() );
+	}
+
+	private static List<ChatEvent> MovesOf( List<ChatEvent> seen, string name )
+	{
+		lock ( seen )
+			return seen.Where( item => item.Kind == ChatEventKind.Move && item.From == name ).ToList();
+	}
+
+	private static void AssertNoRider( List<ChatEvent> modes, List<ChatEvent> plain, string when )
+	{
+		var shown = MovesOf( modes, "Ann" ).Where( item => item.Mode != ChatMoveMode.Hide ).Select( item => item.Mode?.ToString() ?? "plain" ).ToArray();
+		Assert.AreEqual( 0, shown.Length, $"a client that reads modes was shown the rider {when}: {string.Join( ", ", shown )}" );
+		Assert.AreEqual( 0, MovesOf( plain, "Ann" ).Count, $"an older client was shown the rider {when}" );
+	}
+
+	private static void AbortChat( OnlineSession session )
+	{
+		var chat = session.Chat ?? throw new AssertFailedException( "No chat to drop." );
+		var socket = (ClientWebSocket)typeof( ChatConnection ).GetField( "socket", BindingFlags.Instance | BindingFlags.NonPublic )!.GetValue( chat )!;
+		socket.Abort();
+	}
+
+	private static Task Collect( ChatConnection chat, List<ChatEvent> into, CancellationToken cancel ) => Task.Run( async () =>
+	{
+		try
+		{
+			while ( !cancel.IsCancellationRequested )
+			{
+				var item = await chat.ReceiveAsync( cancel );
+				if ( item == null )
+					break;
+				lock ( into )
+					into.Add( item );
+			}
+		}
+		catch ( Exception exception ) when ( exception is OperationCanceledException or WebSocketException or ObjectDisposedException or InvalidDataException )
+		{
+		}
+	}, cancel );
+
+	private static (OnlineSession Session, HttpClient Http) GatedSession( Uri server, string name, VersionGate? gate = null, Func<Task<HttpResponseMessage>>? respond = null )
+	{
+		var handler = new ServerInfoHandler( new HttpClientHandler { AllowAutoRedirect = false }, respond ?? (gate ?? throw new ArgumentNullException( nameof( gate ) )).Next );
+		var http = new HttpClient( handler ) { Timeout = TimeSpan.FromSeconds( 30 ) };
+		var session = new OnlineSession( Folders() );
+		session.UseClient( new OnlineClient( server, http ), name );
+		return (session, http);
+	}
+
+	/// <summary>Answers <c>GET /api/v1/server</c> at once, or holds the next reads until <see cref="Release"/>.</summary>
+	private sealed class VersionGate
+	{
+		private TaskCompletionSource<int>? hold;
+
+		public void HoldNext() => Volatile.Write( ref hold, new TaskCompletionSource<int>( TaskCreationOptions.RunContinuationsAsynchronously ) );
+
+		public void Release( int version ) => Volatile.Read( ref hold )?.TrySetResult( version );
+
+		public async Task<HttpResponseMessage> Next()
+		{
+			var pending = Volatile.Read( ref hold );
+			return ServerInfoResponse( pending == null ? 5 : await pending.Task );
+		}
+	}
+
+	private sealed class ServerInfoHandler( HttpMessageHandler inner, Func<Task<HttpResponseMessage>> serverInfo ) : DelegatingHandler( inner )
+	{
+		protected override Task<HttpResponseMessage> SendAsync( HttpRequestMessage request, CancellationToken cancellationToken ) =>
+			request.RequestUri?.AbsolutePath == ApiRoutes.Server ? serverInfo() : base.SendAsync( request, cancellationToken );
+	}
+
+	private static HttpResponseMessage ServerInfoResponse( int protocol )
+	{
+		var body = StrictJson.Serialize( new ServerInfo( "OpenTPW", "test", protocol, null, true, false, 1024, 1024, 8, 5 ) );
+		var content = new ByteArrayContent( body );
+		content.Headers.ContentType = new MediaTypeHeaderValue( "application/json" );
+		return new HttpResponseMessage( HttpStatusCode.OK ) { Content = content };
 	}
 }

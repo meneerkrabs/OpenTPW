@@ -253,11 +253,13 @@ room's first movement this way; visits draw figures only on such a server.
 
 Protocol version 5 adds a movement's mode, the original's `BOSS_CHAT_MOVE` modes: `"mode"` is
 `"walk"`, `"teleport"`, `"hide"` (the player rides a ride) or `"unhide"` (the ride ended; the figure
-appears at the place). A game sends it only to a server of version 5 or later, and the server
-sends it only to connections that sent one themselves, so neither older games nor older servers
-see a member they would refuse. A hidden player's movements reach no connection that reads no
-mode, the answer to a first movement leaves hidden players out, and the player's next movement of
-any other mode shows them again.
+appears at the place). A game sends it only to a server of version 5 or later, and only after it
+has read that version for the open connection: a hide is held back until the read finishes, so a
+reconnect cannot show the rider as a plain place, and a failed read is tried again with a growing
+wait for as long as the connection stays open. The server sends a mode only to connections that
+sent one themselves, so neither older games nor older servers see a member they would refuse. A
+hidden player's movements reach no connection that reads no mode, the answer to a first movement
+leaves hidden players out, and the player's next movement of any other mode shows them again.
 
 Publishing a park masks swear words in its **name** with the server's word filter — the original
 showed them as asterisks — while a filtered **description** is refused outright. The publish limit

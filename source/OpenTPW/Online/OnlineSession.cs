@@ -78,11 +78,22 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 	private long? joinSentAt;
 	/// <summary>A join the server neither confirms nor refuses within this long is sent again (the chat rate limit drops requests over it).</summary>
 	internal const int JoinAnswerMilliseconds = 5000;
-	/// <summary>The newest place <see cref="MoveTo"/> was given and not sent yet with its connection, and whether a send of it is queued.</summary>
-	private (ChatConnection Chat, float X, float Y, ChatMoveMode? Mode)? latestMove;
+	/// <summary>The newest place <see cref="MoveTo"/> was given and not sent yet, with the connection it belongs to and the mode the player asked for.</summary>
+	private (ChatConnection Chat, float X, float Y, ChatMoveMode Mode)? latestMove;
 	private bool moveQueued;
 	private readonly object moveLock = new();
 	private bool fetchingServerInfo;
+	/// <summary>The server-version read in flight. A newer read replaces it, and an older read's answer is ignored.</summary>
+	private int serverInfoEpoch;
+	/// <summary>
+	/// Waits before trying a connection's version again after a failed read, then the last wait is reused. One read at a time, so a dead server is asked
+	/// at most once per this interval and modes do not stay off for the rest of the connection.
+	/// </summary>
+	internal static readonly TimeSpan[] ServerInfoRetryDelays =
+	{
+		TimeSpan.FromSeconds( 1 ), TimeSpan.FromSeconds( 2 ), TimeSpan.FromSeconds( 4 ), TimeSpan.FromSeconds( 8 ), TimeSpan.FromSeconds( 15 ),
+	};
+	private TimeSpan[] serverInfoRetryDelays = ServerInfoRetryDelays;
 
 	public OnlineSession( OnlineFolders folders )
 	{
@@ -148,13 +159,14 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 	public IReadOnlyList<string> RoomPlayers { get; private set; } = Array.Empty<string>();
 	/// <summary>
 	/// Where each player in the current chat park stands (both axes 0-1 within the park), from the server's relayed
-	/// movement; the player's own position is set by <see cref="MoveTo"/>. Empty in a room nobody moved in.
+	/// movement; the player's own position is set by <see cref="MoveTo"/>. A relayed hide removes that player's place
+	/// until their next movement. Empty in a room nobody moved in.
 	/// </summary>
 	public IReadOnlyDictionary<string, (float X, float Y)> RoomPositions => positions;
 	private readonly Dictionary<string, (float X, float Y)> positions = new( StringComparer.OrdinalIgnoreCase );
 	/// <summary>
 	/// How often each player's figure in the current room jumped (a teleport, or the appearance after a ride, <see cref="ChatMoveMode"/>): a figure whose
-	/// count changed is shown at its place at once. A player whose figure is hidden (riding a ride) has no place in <see cref="RoomPositions"/>.
+	/// count changed is shown at its place at once.
 	/// </summary>
 	public IReadOnlyDictionary<string, int> RoomJumps => jumps;
 	private readonly Dictionary<string, int> jumps = new( StringComparer.OrdinalIgnoreCase );
@@ -284,6 +296,17 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 		Folders.SaveSettings( Settings );
 	}
 
+	/// <summary>Tests: the session uses <paramref name="client"/> (a stub transport) instead of opening one from a URL.</summary>
+	internal void UseClient( OnlineClient client, string? playerName )
+	{
+		if ( disposed )
+			throw new ObjectDisposedException( nameof( OnlineSession ) );
+		Disconnect();
+		Client = client;
+		Settings = new OnlineSettings( client.ServerUrl.ToString(), playerName ?? Settings.PlayerName );
+		Folders.SaveSettings( Settings );
+	}
+
 	/// <summary>Registers; on a server with two-step login this leaves an <see cref="Enrollment"/> to confirm with a code.</summary>
 	public void Register( string name, string password ) => WithClient( async client =>
 	{
@@ -408,6 +431,8 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 		ServerProtocol = null;
 		protocolCurrent = false;
 		fetchingServerInfo = false;
+		// a version read for the server just left must not answer the next one
+		serverInfoEpoch++;
 		Client?.Dispose();
 		Client = null;
 		Parks = Array.Empty<ParkSummary>();
@@ -679,9 +704,9 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 		Earmuffs = false;
 		// an ask on the old connection gets no answer on this one
 		buddyAskedAt = null;
-		// the server behind a new connection may be another version (a restart): movements carry no mode until its version is read again
+		// the server behind a new connection may be another version (a restart): movements carry no mode until its version is read again, and a hide waits for that read
 		protocolCurrent = false;
-		FetchServerInfo( refresh: true );
+		BeginServerInfo( refresh: true, attempt: 0 );
 		_ = Task.Run( () => ReceiveLoopAsync( chat, cancel.Token ) );
 		if ( joinPending && requestedRoom is { } room )
 		{
@@ -809,6 +834,9 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 				Chat = null;
 				chatCancel?.Dispose();
 				chatCancel = null;
+				// a place held for the connection that just died is not this one's
+				lock ( moveLock )
+					latestMove = null;
 				if ( lost && IsLoggedIn && Client is { } client )
 				{
 					// The new connection returns to the room the player was in, or to the one they were on their way to.
@@ -1037,19 +1065,29 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 	public int? ServerProtocol { get; private set; }
 	/// <summary>
 	/// <see cref="ServerProtocol"/> was read after the open chat connection was made: only then do movements carry their mode, as a server that restarted on an
-	/// older version (a deploy taken back) would refuse the member.
+	/// older version (a deploy taken back) would refuse the member. A hide is not sent at all until this is set, so a reconnect cannot show a riding player.
 	/// </summary>
 	private bool protocolCurrent;
+	/// <summary>Whether <see cref="protocolCurrent"/> is set (tests).</summary>
+	internal bool ProtocolCurrent => protocolCurrent;
 
 	/// <summary>Asks the server for its version once (no login needed), beside the operation slot; <see cref="ServerProtocol"/> holds the answer.</summary>
-	public void FetchServerInfo() => FetchServerInfo( refresh: false );
+	public void FetchServerInfo() => BeginServerInfo( refresh: false, attempt: 0 );
 
-	/// <param name="refresh">Asks again whatever is known, for the chat connection just made (<see cref="Install"/>).</param>
-	private void FetchServerInfo( bool refresh )
+	/// <summary>Tests: how long a failed version read waits before the next try (<see cref="ServerInfoRetryDelays"/>).</summary>
+	internal void SetServerInfoRetryDelays( TimeSpan[] delays ) => serverInfoRetryDelays = delays;
+
+	/// <param name="refresh">Asks again whatever is known, for the chat connection just made (<see cref="Install"/>) or a failed read of it.</param>
+	/// <param name="attempt">How many reads of this connection have already failed; chooses the wait before the next one.</param>
+	private void BeginServerInfo( bool refresh, int attempt )
 	{
-		if ( disposed || (!refresh && (fetchingServerInfo || ServerProtocol != null)) || Client is not { } client )
+		if ( disposed || Client is not { } client )
 			return;
+		if ( !refresh && (fetchingServerInfo || ServerProtocol != null) )
+			return;
+		// a refresh replaces a read already in flight: that read's answer is then stale
 		fetchingServerInfo = true;
+		var epoch = ++serverInfoEpoch;
 		var startedGeneration = generation;
 		var connection = Chat;
 		_ = Task.Run( async () =>
@@ -1058,21 +1096,50 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 			try
 			{
 				var info = await client.GetServerInfoAsync();
-				Post( () =>
-				{
-					fetchingServerInfo = false;
-					ServerProtocol = info.ProtocolVersion;
-					// the answer speaks for the connection that was open when it was asked
-					if ( connection != null && Chat == connection )
-						protocolCurrent = true;
-				} );
+				Post( () => ApplyServerInfo( epoch, client, connection, info.ProtocolVersion ) );
 			}
 			catch ( Exception exception )
 			{
-				if ( exception is not (OnlineException or HttpRequestException or IOException or InvalidDataException or TaskCanceledException or InvalidOperationException) )
+				if ( exception is not (OnlineException or HttpRequestException or IOException or InvalidDataException or TaskCanceledException or InvalidOperationException or ObjectDisposedException) )
 					Log.Warning( $"Server version request failed: {exception}" );
-				Post( () => fetchingServerInfo = false );
+				Post( () => FailServerInfo( epoch, client, connection, attempt ) );
 			}
+		} );
+	}
+
+	/// <summary>The answer of version read <paramref name="epoch"/>, ignored when a newer read or another server has taken its place.</summary>
+	private void ApplyServerInfo( int epoch, OnlineClient client, ChatConnection? connection, int protocol )
+	{
+		if ( epoch != serverInfoEpoch || Client != client )
+			return;
+		fetchingServerInfo = false;
+		ServerProtocol = protocol;
+		// the answer speaks for the connection that was open when it was asked, and still is
+		if ( connection != null && Chat == connection )
+			protocolCurrent = true;
+		FlushMove();
+	}
+
+	/// <summary>A failed version read. The open connection's read is tried again, so modes do not stay off after one lost answer.</summary>
+	private void FailServerInfo( int epoch, OnlineClient client, ChatConnection? connection, int attempt )
+	{
+		if ( epoch != serverInfoEpoch || Client != client )
+			return;
+		fetchingServerInfo = false;
+		if ( connection == null || Chat != connection || protocolCurrent || disposed )
+			return;
+		var delay = serverInfoRetryDelays[Math.Min( attempt, serverInfoRetryDelays.Length - 1 )];
+		var next = attempt + 1;
+		var generationAtFail = generation;
+		_ = Task.Run( async () =>
+		{
+			await Task.Delay( delay );
+			Post( () =>
+			{
+				if ( disposed || generation != generationAtFail || Client != client || Chat != connection || protocolCurrent )
+					return;
+				BeginServerInfo( refresh: true, attempt: next );
+			} );
 		} );
 	}
 
@@ -1080,7 +1147,8 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 	/// Walks the player's avatar to a place in the chat park (manual p. 68: "Left click to walk to destination;
 	/// Double click to teleport"): the server relays the position to everyone in the park. The player's own place is
 	/// recorded at once, so the view moves even before the server answers. A server of <see cref="ChatProtocol.MoveModesVersion"/> or later is told how
-	/// the figure moved (<paramref name="mode"/>); an older one, which refuses the mode, gets the place alone.
+	/// the figure moved (<paramref name="mode"/>); an older one, which refuses the mode, gets the place alone. A hide waits until this connection's version
+	/// is known: sending it without the mode would show the rider to every older client for the whole ride.
 	/// </summary>
 	public void MoveTo( float x, float y, ChatMoveMode mode = ChatMoveMode.Walk )
 	{
@@ -1090,29 +1158,51 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 		var name = Settings.PlayerName;
 		if ( name != null )
 			positions[name] = (x, y);
-		ChatMoveMode? sent = protocolCurrent && ServerProtocol >= ChatProtocol.MoveModesVersion ? mode : null;
-		// One send of the newest place waits in the chain at a time: a connection that cannot keep up skips the places in between, never the last one.
 		lock ( moveLock )
 		{
-			// a walk that replaces a waiting teleport or appearance keeps its jump
-			if ( sent == ChatMoveMode.Walk && latestMove is { Mode: ChatMoveMode.Teleport or ChatMoveMode.Unhide } waiting )
-				sent = waiting.Mode;
-			latestMove = (chat, x, y, sent);
-			if ( moveQueued )
+			// a walk that replaces a waiting teleport, appearance or hide keeps that mode (the place is the new one)
+			if ( latestMove is { Chat: var pendingChat, Mode: var pending } && pendingChat == chat )
+				mode = KeepPlaceMode( mode, pending );
+			latestMove = (chat, x, y, mode);
+		}
+		FlushMove();
+	}
+
+	/// <summary>The mode a newer walk leaves in place: a teleport or an appearance keeps its jump, and a hide must not be walked into view before it is sent.</summary>
+	internal static ChatMoveMode KeepPlaceMode( ChatMoveMode incoming, ChatMoveMode pending ) =>
+		incoming == ChatMoveMode.Walk && pending is ChatMoveMode.Teleport or ChatMoveMode.Unhide or ChatMoveMode.Hide ? pending : incoming;
+
+	/// <summary>
+	/// Sends the newest place, or keeps a hide until <see cref="protocolCurrent"/> says this connection's version is known. One send waits in the chain at a
+	/// time: a connection that cannot keep up skips the places in between, never the last one.
+	/// </summary>
+	private void FlushMove()
+	{
+		(ChatConnection Chat, float X, float Y, ChatMoveMode? Wire) snapshot;
+		lock ( moveLock )
+		{
+			if ( moveQueued || latestMove is not { } held )
 				return;
+			if ( held.Chat != Chat )
+			{
+				latestMove = null;
+				return;
+			}
+			// a hide with its mode stripped is a plain place, and an older client keeps that place for the whole ride
+			if ( held.Mode == ChatMoveMode.Hide && !protocolCurrent )
+				return;
+			var wire = protocolCurrent && ServerProtocol >= ChatProtocol.MoveModesVersion ? held.Mode : (ChatMoveMode?)null;
+			latestMove = null;
 			moveQueued = true;
+			snapshot = (held.Chat, held.X, held.Y, wire);
 		}
 		Chain( () =>
 		{
-			(ChatConnection Chat, float X, float Y, ChatMoveMode? Mode)? place;
 			lock ( moveLock )
-			{
-				place = latestMove;
-				latestMove = null;
 				moveQueued = false;
-			}
-			// the newest place goes out on the connection it was meant for (a reconnection's announcement on the new one)
-			return place is { } move ? move.Chat.SendAsync( ChatRequest.ForMove( move.X, move.Y, move.Mode ) ) : Task.CompletedTask;
+			// a place that arrived while this one was on the wire, or a hide released by the version answer, goes next
+			Post( FlushMove );
+			return snapshot.Chat.SendAsync( ChatRequest.ForMove( snapshot.X, snapshot.Y, snapshot.Wire ) );
 		} );
 	}
 

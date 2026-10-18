@@ -707,9 +707,13 @@ public sealed class BumpController
 	public Func<int, bool[]?>? SeatHeadSource { get; set; }
 
 	/// <summary>One beam (particle 19) for each of the first <paramref name="count"/> riders of <paramref name="vehicle"/> whose seat has a head dummy.</summary>
-	// [BIN:TPW-EXE:0x00549C60 beam flag] the beam is raised only for a rider whose head dummy handle is not -1; where the dummies are not known (no model resolved, no draw yet) no rider is assumed seated, so no beam is raised
+	// [BIN:TPW-EXE:0x00549C60 beam flag] the beam is raised only for a rider whose head dummy handle (0x44B220 on the loaded model) is not -1; OpenTPW's own
+	// fallback: where no host resolves the model's dummies, no rider is taken as seated and no beam is raised
 	private void RaiseRiderBeams( BumpVehicle vehicle, int count )
 	{
+		// presentation only: without a listener (a headless run) the mesh is not even read
+		if ( Effect == null )
+			return;
 		var seats = vehicle.SeatHeads ?? SeatHeadSource?.Invoke( vehicle.Variant );
 		if ( seats == null )
 			return;

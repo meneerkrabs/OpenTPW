@@ -537,10 +537,9 @@ public sealed class TrackRenderer : IDisposable
 	/// </summary>
 	internal static bool[]? ReadSeatHeadFlags( ObjectCatalogEntry entry, int variant )
 	{
-		var name = entry.Settings[$"SupplementalMeshes[{variant}].FileName"] ?? (variant == 0 ? "wr_ring.md2" : null);
 		try
 		{
-			var path = name == null ? null : entry.FileSystem.GetFiles( entry.ArchivePath ).FirstOrDefault( file => string.Equals( Path.GetFileName( file ), name.Trim( '"', ' ' ), StringComparison.OrdinalIgnoreCase ) );
+			var path = VehicleMeshPath( entry, variant );
 			if ( path == null )
 				return null;
 			var model = ObjectAssets.LoadModel( entry.FileSystem, path );
@@ -548,11 +547,22 @@ public sealed class TrackRenderer : IDisposable
 				? SeatHeads( model, ModelAnimationPlayer.ComputeRestTransforms( model ) ).Nodes.Select( node => node != null ).ToArray()
 				: null;
 		}
-		catch ( Exception exception ) when ( exception is InvalidDataException or NotSupportedException or IOException )
+		catch ( Exception )
 		{
+			// presentation only: an unreadable mesh must never escape into the simulation tick that asks for the beams
 			return null;
 		}
 	}
+
+	/// <summary>The archive path of a vehicle variant's mesh (the ride's supplemental mesh <c>n</c>, <c>wr_ring.md2</c> for variant 0), or null when the archive lacks it.</summary>
+	private static string? VehicleMeshPath( ObjectCatalogEntry entry, int variant )
+	{
+		var name = VehicleMeshName( entry, variant );
+		return name == null ? null : entry.FileSystem.GetFiles( entry.ArchivePath ).FirstOrDefault( file => string.Equals( Path.GetFileName( file ), name, StringComparison.OrdinalIgnoreCase ) );
+	}
+
+	private static string? VehicleMeshName( ObjectCatalogEntry entry, int variant ) =>
+		(entry.Settings[$"SupplementalMeshes[{variant}].FileName"] ?? (variant == 0 ? "wr_ring.md2" : null))?.Trim( '"', ' ' );
 
 	/// <summary>The mesh of a vehicle variant: the ride's supplemental mesh <c>n</c> (<c>wr_ring.md2</c>, <c>gk_blue.md2</c>, …), or null when the archive lacks it.</summary>
 	private PieceGeometry? VehicleMesh( int variant )
@@ -560,11 +570,10 @@ public sealed class TrackRenderer : IDisposable
 		if ( vehicleMeshes.TryGetValue( variant, out var cached ) )
 			return cached;
 		PieceGeometry? geometry = null;
-		var directory = entry.ArchivePath;
-		var name = entry.Settings[$"SupplementalMeshes[{variant}].FileName"] ?? (variant == 0 ? "wr_ring.md2" : null);
+		var name = VehicleMeshName( entry, variant );
 		try
 		{
-			var path = name == null ? null : entry.FileSystem.GetFiles( directory ).FirstOrDefault( file => string.Equals( Path.GetFileName( file ), name.Trim( '"', ' ' ), StringComparison.OrdinalIgnoreCase ) );
+			var path = VehicleMeshPath( entry, variant );
 			if ( path != null )
 			{
 				var model = ObjectAssets.LoadModel( entry.FileSystem, path );

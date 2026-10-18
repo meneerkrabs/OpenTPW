@@ -50,6 +50,7 @@ public static class SignTextLayout
 
 	// [APPROX:COMPAT-033] a Hangul run places like a Latin one (usp10's generic shaper and placer, 0x6511325C and 0x65113458, one glyph per UTF-16 unit, no composition or kerning), with the integer GDI advances (gmCellIncX, 0x6510EB3E) replaced by the scaled hmtx advance
 	// [BIN:TPW-EXE:0x5EACE0 sign text] the four ScriptStringAnalyse calls pass a UTF-16 string and dwFlags 0x80 (SSA_GLYPHS) only: no SSA_FALLBACK, so a character the font lacks is drawn from that font alone (.notdef here)
+	// [APPROX:COMPAT-034] a Hebrew run is placed in logical order (each letter a .notdef box: no font of fonts.wad has a Hebrew glyph), where usp10's ScriptStringAnalyse resolves bidi levels and ScriptStringOut draws visual order
 	private static List<(int Glyph, float PenX)> Place( TrueTypeFont font, string text, bool kerning, out float advance, out List<int> missing, int widthPercent = 100, float pixelsPerUnit = 1 )
 	{
 		var placed = new List<(int Glyph, float PenX)>();

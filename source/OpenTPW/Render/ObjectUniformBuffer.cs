@@ -19,7 +19,7 @@ struct ObjectUniformBuffer
 	public float _padding0; // 4
 
 	public Vector3 g_vLightColor; // 12
-	public float _padding1; // 4
+	public float _padding1; // 4 (g_flLightCount in the lit shaders: the number of point lights that follow the block, see PointLights.cs)
 
 	public Vector3 g_vCameraPos; // 12
 	public float g_flTime; // 4
@@ -31,6 +31,16 @@ struct ObjectUniformBuffer
 
 	public Vector3 g_vFogColor; // 12
 	public float _padding6; // 4
+
+	/// <summary>
+	/// [EXT:point-lights] How many point lights follow this block in the uploaded bytes (<see cref="LitObjectUniformBuffer"/>), in the padding after the light colour that
+	/// test.shader, pool-deck.shader and pool-basin.shader name <c>g_flLightCount</c>. 0 for every draw without lights, which is what the zeroed padding always meant.
+	/// </summary>
+	public float LightCount
+	{
+		readonly get => _padding1;
+		set => _padding1 = value;
+	}
 
 	/// <summary>The buffer with the engine fog colour (<see cref="RenderFog"/>), which every fogged shader (test, water, sprite, 3d) blends distant pixels into.</summary>
 	public ObjectUniformBuffer WithFog()

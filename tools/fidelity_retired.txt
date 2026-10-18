@@ -258,6 +258,7 @@ RIDES-041 docs/OBJECTS.md
 RIDES-042 docs/OBJECTS.md
 RIDES-043 docs/OBJECTS.md
 RIDES-044 docs/RSE-VM.md
+RIDES-046 docs/LIGHTS.md
 SAVE-001 docs/DETERMINISM.md
 SAVE-003 docs/reverse/REVIEW-SAVE-2.md
 SAVE-004 docs/progress/2026-10-18-round8-saves-econ.md

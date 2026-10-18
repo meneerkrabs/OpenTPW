@@ -148,6 +148,8 @@ public static partial class Input
 
 		Mouse = mouseInfo;
 		Typed = new string( inputSnapshot.KeyCharPresses.ToArray() );
+		if ( GameLanguage.IsSelected && GameLanguage.Current.IsRightToLeft )
+			Typed = HebrewKeyboard.Map( Typed );
 		KeyPresses = inputSnapshot.KeyEvents.Where( keyEvent => keyEvent.Down ).Select( keyEvent => keyEvent.Key ).ToArray();
 
 		Right = 0;

@@ -524,6 +524,11 @@ the high bits of the word are then zero in the model), and the writer places the
 pointers and distances in captured and planned layouts alike. The words +8 and
 +16 of an attribute record (`Reserved` bytes 0..3 and 8..11; non-zero in 128 records without a block, values like 0x1, 0x10, 0x40) stay raw.
 
+**Light dummies (`[EXT:object-lights]`).** An attribute record whose type has bit `0x20000` is a light dummy: the value is the light number, and OpenTPW writes the type `0x20040` (`ModelBuilder.LightType`) with a data block that holds
+the base colour (the three floats, linear 0..1) and, in the low 16 bits of the word, the radius in model units (0: the default of 100). tp.exe addresses lights by this class (`0x44B220`, the RSE light opcodes `0x555C7A` to
+`0x555D9A`) but its instance builder never creates the light (`0x44A870`) and no shipped model has such a record (no attribute type of the 838 geometry members has bit `0x20000`); the model reader and writer carry the records like any
+other and `ModelLights` decodes them ([LIGHTS.md](LIGHTS.md#the-model-format)).
+
 **What is copied raw.** `ModelLayout` (kept by `new ModelFile( stream, captureLayout: true )`; an ordinary read keeps none, so
 existing consumers pay nothing) holds the 0xB8-byte header as read (including the source-name bytes while the name is unchanged),
 every region offset, the per-mesh offsets, each node's name offset, each attribute data block's offset, and the **gaps**: non-zero

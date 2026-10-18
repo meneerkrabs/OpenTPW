@@ -344,6 +344,7 @@ public sealed class TrackRenderer : IDisposable
 			vehicle.SparksNode = sparks > 0 && VehicleMesh( vehicle.Variant ) is { SparksNodes: var nodes } && nodes[sparks] is { } rest
 				? System.Numerics.Vector3.Transform( System.Numerics.Vector3.Zero, ObjectPlacement.SwapAxes( rest ) * transform )
 				: null;
+			vehicle.SeatHeads = VehicleMesh( vehicle.Variant ) is { HeadNodes: var seatNodes } ? seatNodes.Select( node => node != null ).ToArray() : null;
 			visual.Vehicle = vehicle;
 			visual.Controller = controller;
 			visual.Hover = hover;

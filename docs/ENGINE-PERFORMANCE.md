@@ -122,6 +122,9 @@ smarter-guests ratio of the synthetic scenario (`--guest-report … --guest-exte
 cannot be separated from noise on this machine (1.1 to 1.4 µs per tick both ways, the pinned 1.08 in SMARTER-GUESTS.md
 stands); on the Jungle park it is the +6 % above. The guest code itself (`GuestSimulation`) was not changed.
 
+Point lights (October 18, 2026, [LIGHTS.md](LIGHTS.md)) were added to the per-draw uniform upload rather than as another upload: a draw with no light uploads the same 272 bytes as before and the frame's cost with no
+light in the park did not move (whole update call 1.91 to 2.17 ms before and 1.90 to 2.16 ms after in four alternating runs); a light adds 32 bytes to the draws it reaches.
+
 ## What is left
 
 1. **Per-draw uniform uploads (about 30 to 40 % of the frame's CPU).** `Material.Set` writes the object uniforms through

@@ -325,6 +325,112 @@ public class CoasterTrainLayoutTests
 	}
 
 	[TestMethod]
+	public void IncompleteToBuiltRestartsEveryExistingSlotWithoutReplacingItsTrain()
+	{
+		var settings = CoasterTests.PcSettings();
+		settings["sCoasterType.uiTrainReleaseRate"] = "4000";
+		var ride = Built( CoasterDefinition.FromValues( settings ) );
+		var slots = ride.Trains.ToArray();
+		Assert.IsTrue( slots.Length >= 2, "the reset must visit more than the first slot" );
+		ride.Advance( 0.125 );
+		Assert.IsTrue( slots.All( train => train.WheelAnimationStartSeconds == 0.0 ) );
+		// Arrange the transient state between PlaceTrains and EnterState in Rebuild. Entering Incomplete normally
+		// removes the trains, which would only test constructor initialization rather than the state setter's reset loop.
+		typeof( CoasterRide ).GetProperty( nameof( CoasterRide.State ) )!.SetValue( ride, CoasterControllerState.Incomplete );
+		ride.EnterState( CoasterControllerState.Built );
+		Assert.AreEqual( CoasterControllerState.Built, ride.State );
+		Assert.AreEqual( slots.Length, ride.Trains.Count );
+		for ( var index = 0; index < slots.Length; index++ )
+		{
+			Assert.AreSame( slots[index], ride.Trains[index], $"slot {index} was reset without replacement" );
+			Assert.AreEqual( 0.125, slots[index].WheelAnimationStartSeconds, $"state 1 → 2 restarts slot {index} at the current controller time" );
+		}
+	}
+
+	[TestMethod]
+	public void ReratingAndOrdinaryStateChangesKeepExistingWheelEpochs()
+	{
+		var settings = CoasterTests.PcSettings();
+		settings["sCoasterType.uiMaxTrains"] = "1";
+		var ride = Built( CoasterDefinition.FromValues( settings ) );
+		var train = ride.Trains[0];
+		var start = train.WheelAnimationStartSeconds;
+		ride.Advance( 0.125 );
+		ride.Rebuild();
+		ride.ApplyScriptSpeed( 51 );
+		Assert.AreSame( train, ride.Trains[0] );
+		Assert.AreEqual( start, train.WheelAnimationStartSeconds, "0x43cad6 only sets up rating slots that were inactive" );
+		foreach ( var state in new[] { CoasterControllerState.Open, CoasterControllerState.Closed, CoasterControllerState.Open,
+			CoasterControllerState.Built, CoasterControllerState.Closed, CoasterControllerState.Built, CoasterControllerState.Built } )
+		{
+			ride.Advance( 0.03125 );
+			ride.EnterState( state );
+			Assert.AreSame( train, ride.Trains[0] );
+			Assert.AreEqual( start, train.WheelAnimationStartSeconds, $"state {state} leaves the wheel clip running" );
+		}
+		ride.Command( 4, 1 );
+		ride.Command( 4, 0 );
+		ride.Command( 6, 8 );
+		Assert.AreEqual( start, train.WheelAnimationStartSeconds, "power and capacity changes do not initialize a train slot" );
+	}
+
+	/// <summary>A synthetic flat sampler: at the default speed 5, the rating lap is (count − 2) × 3/5 seconds.</summary>
+	private sealed class WheelSlotCurve : ICoasterCurve
+	{
+		public int Count { get; set; } = 8;
+		public CoasterSampling Sample( IReadOnlyList<CoasterKnot> knots, float curviness ) => new(
+			Enumerable.Range( 0, Count ).Select( index => new CoasterSample { Position = new System.Numerics.Vector3( 0, 0, index * 3f ) } ).ToArray(), 3f );
+	}
+
+	[TestMethod]
+	public void RatingStartsOnlyNewSlotsAndRestartsSlotsRemovedAndActivatedAgain()
+	{
+		var settings = CoasterTests.PcSettings();
+		settings["sCoasterType.uiTrainReleaseRate"] = "2000";
+		var ride = Built( CoasterDefinition.FromValues( settings ) );
+		var curve = new WheelSlotCurve();
+		ride.Curve = curve;
+		ride.Rebuild();
+		Assert.AreEqual( 1, ride.Trains.Count, "3.6-second lap / 2-second release" );
+		var retained = ride.Trains[0];
+		var start = retained.WheelAnimationStartSeconds;
+		ride.Advance( 0.125 );
+		curve.Count = 15;
+		ride.Rebuild();
+		Assert.AreEqual( 3, ride.Trains.Count, "7.8-second lap / 2-second release" );
+		Assert.AreSame( retained, ride.Trains[0] );
+		Assert.AreEqual( start, retained.WheelAnimationStartSeconds );
+		foreach ( var train in ride.Trains.Skip( 1 ) )
+			Assert.AreEqual( 0.125, train.WheelAnimationStartSeconds, "a newly activated slot starts now" );
+		var removed = ride.Trains[1];
+		ride.Advance( 0.125 );
+		curve.Count = 8;
+		ride.Rebuild();
+		Assert.AreEqual( 1, ride.Trains.Count );
+		ride.Advance( 0.125 );
+		curve.Count = 15;
+		ride.Rebuild();
+		Assert.AreEqual( 3, ride.Trains.Count );
+		Assert.AreNotSame( removed, ride.Trains[1] );
+		Assert.AreEqual( start, retained.WheelAnimationStartSeconds );
+		foreach ( var train in ride.Trains.Skip( 1 ) )
+			Assert.AreEqual( 0.375, train.WheelAnimationStartSeconds, "an inactive slot starts a fresh clip when reused" );
+	}
+
+	[TestMethod]
+	public void RestoredTrainsStartFreshPresentationWithoutAddingSaveFields()
+	{
+		var ride = Built( CoasterDefinition.FromValues( CoasterTests.PcSettings() ) );
+		ride.Advance( 0.125 );
+		var captured = CoasterSave.CaptureRide( ride, 3 );
+		var restored = new CoasterRide( ride.Definition, new CoasterWorld( 1 ), "Restored" );
+		restored.RestoreSnapshot( captured );
+		Assert.AreEqual( ride.Trains.Count, restored.Trains.Count );
+		Assert.IsTrue( restored.Trains.All( train => train.WheelAnimationStartSeconds == restored.TimeSeconds ), "restore initializes fresh slots at the restored controller time" );
+		Assert.AreEqual( 0.0, ride.Trains[0].WheelAnimationStartSeconds, "capture did not mutate the running clip" );
+	}
+
+	[TestMethod]
 	public void ASaveFromBeforeTheCarLayoutHoldsTheFrontCarsCoordinate()
 	{
 		var ride = Built( CoasterDefinition.FromValues( CoasterTests.PcSettings() ) );

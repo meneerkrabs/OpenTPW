@@ -43,9 +43,10 @@ public sealed class CoasterTrain
 	private readonly List<int>[] cars;
 	private readonly List<int>[] boarding;
 
-	internal CoasterTrain( int index, int carCount )
+	internal CoasterTrain( int index, int carCount, double wheelAnimationStartSeconds )
 	{
 		Index = index;
+		WheelAnimationStartSeconds = wheelAnimationStartSeconds;
 		var count = Math.Max( 1, carCount );
 		cars = new List<int>[count];
 		boarding = new List<int>[count];
@@ -58,6 +59,12 @@ public sealed class CoasterTrain
 	}
 
 	public int Index { get; }
+	/// <summary>
+	/// Controller time when slot setup started the non-bend cars' looping wheel clips. Presentation only: all cars of a
+	/// train start together, independent of their visibility or renderer lifetime. A restored train starts a fresh clip.
+	/// </summary>
+	// [BIN:TPW-EXE:0x43be10 wheel clip start] slot setup plays id 5, sub 0, flags 1, speed 1.0 on every non-bend car (0x4732a0); the state setter 0x435730 and newly activated rating slots (0x43cad6) call setup
+	internal double WheelAnimationStartSeconds { get; set; }
 	/// <summary>
 	/// The reference car's position in samples from the station node (train <c>+0x74</c>): the middle car, <see cref="CoasterDefinition.ReferenceCar"/>;
 	/// every other car stands its offset (<see cref="CoasterDefinition.CarOffsets"/>) over the spacing ahead of it or behind it. In [0, sample count)
@@ -478,7 +485,7 @@ public sealed class CoasterRide
 			trains.RemoveRange( count, trains.Count - count );
 		while ( trains.Count < count )
 		{
-			var train = new CoasterTrain( trains.Count, Definition.CarCount );
+			var train = new CoasterTrain( trains.Count, Definition.CarCount, TimeSeconds );
 			RebuildSeats( train );
 			trains.Add( train );
 		}
@@ -971,6 +978,11 @@ public sealed class CoasterRide
 		var old = State;
 		switch ( (old, next) )
 		{
+			case (CoasterControllerState.Incomplete, CoasterControllerState.Built):
+				// 0x435730 runs slot setup for every train on 1 → 2; other state changes do not restart the clips.
+				foreach ( var train in trains )
+					train.WheelAnimationStartSeconds = TimeSeconds;
+				break;
 			case (CoasterControllerState.Built, CoasterControllerState.Incomplete):
 			case (CoasterControllerState.Open, CoasterControllerState.Incomplete):
 			case (CoasterControllerState.Closed, CoasterControllerState.Incomplete):

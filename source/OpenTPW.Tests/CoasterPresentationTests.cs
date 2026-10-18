@@ -238,6 +238,113 @@ public class CoasterPresentationTests
 		Assert.IsTrue( ride.IsOperational );
 	}
 
+	// These tests exercise the renderer's phase query without a graphics device or original models. The asset tests
+	// apply that phase to the shipped wheel UV tracks; no GPU/visual parity claim follows from these CPU fixtures.
+	internal static CoasterRide WheelRide( double setupSeconds = 2 )
+	{
+		var builder = OpenTrack( CoasterTests.Circuit.Length );
+		builder.Ride.Advance( setupSeconds );
+		Assert.AreEqual( CoasterPlaceResult.Ok, CoasterTests.CloseAndComplete( builder ) );
+		Assert.IsTrue( builder.Ride.Trains.Count > 0 );
+		return builder.Ride;
+	}
+
+	internal static CoasterRenderer WheelRenderer( CoasterRide ride ) => new( () => new[] { ride }, () => default, 0.2f,
+		_ => null, _ => null, _ => 0 );
+
+	[TestMethod]
+	public void WheelPhaseMatchesWhetherTheTrainWasSampledContinuouslyOrFirstSeenLater()
+	{
+		var visible = WheelRide();
+		var offscreen = WheelRide();
+		var continuous = WheelRenderer( visible );
+		CoasterRenderer? firstSeen = null;
+		try
+		{
+			Assert.AreEqual( 0f, continuous.WheelTick( visible, 0, 20 ) );
+			var expected = 0f;
+			for ( var step = 0; step < 8; step++ )
+			{
+				visible.Advance( 0.03125 );
+				offscreen.Advance( 0.03125 );
+				visible.Trains[0].Speed = offscreen.Trains[0].Speed = 10f;
+				expected = continuous.WheelTick( visible, 0, 20 );
+			}
+			firstSeen = WheelRenderer( offscreen );
+			Assert.AreEqual( 7.5f, expected, 1e-5f, "250 ms × (0.1 × 10) × 0.03, from slot setup at 2 s" );
+			Assert.AreEqual( expected, firstSeen.WheelTick( offscreen, 0, 20 ), "first visibility cannot restart the wheel clip" );
+			Assert.AreEqual( 2.0, offscreen.Trains[0].WheelAnimationStartSeconds );
+		}
+		finally
+		{
+			continuous.Delete();
+			firstSeen?.Delete();
+		}
+	}
+
+	[TestMethod]
+	public void RecreatingTheRendererKeepsTheTrainSlotsWheelEpoch()
+	{
+		var ride = WheelRide( 4 );
+		var renderer = WheelRenderer( ride );
+		try
+		{
+			ride.Advance( 0.125 );
+			ride.Trains[0].Speed = 10f;
+			Assert.AreEqual( 3.75f, renderer.WheelTick( ride, 0, 20 ), 1e-5f );
+			renderer.Delete();
+			ride.Advance( 0.125 );
+			ride.Trains[0].Speed = 10f;
+			renderer = WheelRenderer( ride );
+			Assert.AreEqual( 7.5f, renderer.WheelTick( ride, 0, 20 ), 1e-5f, "recreating presentation keeps the start at 4 s" );
+			Assert.AreEqual( 4.0, ride.Trains[0].WheelAnimationStartSeconds );
+		}
+		finally
+		{
+			renderer.Delete();
+		}
+	}
+
+	[TestMethod]
+	public void ReinitializingTheSlotsRestartsWheelsEvenWhenTheRendererAndTrainCountStayTheSame()
+	{
+		var ride = WheelRide();
+		var renderer = WheelRenderer( ride );
+		try
+		{
+			var oldTrain = ride.Trains[0];
+			var count = ride.Trains.Count;
+			ride.Advance( 0.125 );
+			oldTrain.Speed = 10f;
+			Assert.AreEqual( 3.75f, renderer.WheelTick( ride, 0, 20 ), 1e-5f );
+			ride.EnterState( CoasterControllerState.Incomplete );
+			Assert.AreEqual( 0, ride.Trains.Count );
+			ride.Rebuild();
+			Assert.AreEqual( count, ride.Trains.Count );
+			Assert.AreNotSame( oldTrain, ride.Trains[0] );
+			Assert.AreEqual( 2.125, ride.Trains[0].WheelAnimationStartSeconds );
+			Assert.AreEqual( 0f, renderer.WheelTick( ride, 0, 20 ), "a reused train index reads the new slot's epoch" );
+			ride.Advance( 0.125 );
+			ride.Trains[0].Speed = 10f;
+			Assert.AreEqual( 3.75f, renderer.WheelTick( ride, 0, 20 ), 1e-5f );
+		}
+		finally
+		{
+			renderer.Delete();
+		}
+	}
+
+	[TestMethod]
+	public void WheelFrameArithmeticKeepsMillisecondTruncationCurrentSpeedAndLooping()
+	{
+		Assert.AreEqual( 0f, CoasterCarRig.WheelTick( 5000, 0f, 20 ) );
+		Assert.AreEqual( 10f, CoasterCarRig.WheelTick( 1000, 10f, 20 ), 1e-4f );
+		Assert.AreEqual( 24f, CoasterCarRig.WheelTick( 2000, 4f, 90 ), 1e-4f );
+		Assert.AreEqual( CoasterCarRig.WheelTick( 125, 10f, 20 ), CoasterCarRig.WheelTick( 125.75, 10f, 20 ), "the animation clock uses whole milliseconds" );
+		Assert.AreEqual( 0f, CoasterCarRig.WheelTick( -1, 10f, 20 ) );
+		Assert.AreEqual( 0f, CoasterCarRig.WheelTick( 100, 5f, 0 ) );
+	}
+
 	// ---- Pylons and cars ------------------------------------------------------------------------------
 
 	/// <summary>The clip fractions of the pose routine (<c>0x430ed0</c>, <c>0x430ca0</c>) with a coaster's clip maps.</summary>

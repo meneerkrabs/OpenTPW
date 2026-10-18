@@ -1,5 +1,7 @@
 # UI-047: Track coaster placement cost state
 
+> Superseded: this was the plan-only draft; #474 implemented it (docs/progress/2026-10-18-coaster-cost-visibility.md). The status lines below describe the draft, not the code on main.
+
 ## Status and classification
 - Plan-only draft proposal; no implementation, tests-run claim, retirement or merge.
 - Classification: `missing_behavior`.

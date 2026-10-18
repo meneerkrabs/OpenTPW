@@ -7,7 +7,7 @@ at `0x493bc5`, `0x4b7205`, `0x4b56f5`, `0x4b018c`, `0x4b1681`), `happygrad.wct` 
 
 The hire window's skill gauge is the candidate's grade byte x 1024 / 5 (`0x49b8e2`), not (grade + 1) / 5: the video's guard candidates ($60, $75, $105 are
 the Easy_Standard grades 1, 2, 3 at multiplier 15) show a fifth for the cheapest, which is grade 1. UI-081 is retired. The All Attractions list's bars use
-the same `(value << 10) / 100` scale as the object windows (`0x4955e0`), which retires UI-905.
+the same `(value << 10) / 100` scale as the object windows (`0x4955e0`); UI-905 is retired.
 
 The buy list's owned column draws the model `i_boxtick` (frame 0 the box, 1 the tick) instead of strokes; the star state (frame 2, the three most
 recent items of a category, ring read by `0x4caa70`) is not drawn (UI-050 narrowed). The finance graph draws one-pixel lines and, in the 1 and 3 year

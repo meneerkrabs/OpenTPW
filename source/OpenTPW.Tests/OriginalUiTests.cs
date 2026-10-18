@@ -339,6 +339,8 @@ public class OriginalUiTests
 		Assert.AreEqual( 90f, island.Angle );
 		Assert.AreEqual( 12.5f, island.Height );
 		Assert.AreEqual( ((byte)243, (byte)203, (byte)191), island.SkyColour );
+		Assert.IsTrue( island.HasSkyColour );
+		Assert.IsFalse( new LobbyDefinition().ParseTheme( "space", "ISLAND(3,\"data\\lobby\\terrain\",\"s_isle\",\"s_gate\",\"Space Zone\",0.0,1.0)\r\n" )!.HasSkyColour, "a file without SKYCOLOUR keeps the constructor's random target" );
 		CollectionAssert.AreEqual( new[] { "bfly_PINK" }, island.FlyingMeshes.ToArray() );
 		Assert.IsTrue( island.Rainy );
 		Assert.AreEqual( 63, island.Lightning );

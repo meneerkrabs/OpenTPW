@@ -28,6 +28,17 @@ public class LobbyFlyingMeshesTests
 	}
 
 	[TestMethod]
+	public void TheLobbyObjectsShareScalesEachGroupsCountWithAtLeastOneFlyer()
+	{
+		// 0x5d9db0: count x [0x7858dc] / 100, at least 1 and at most the count
+		Assert.AreEqual( 5, new LobbyFlyingMeshes( () => 1u, 10 ).Add( Bats, NVector3.Zero ).Count );
+		Assert.AreEqual( 35, new LobbyFlyingMeshes( () => 1u, 70 ).Add( Bats, NVector3.Zero ).Count );
+		Assert.AreEqual( 1, new LobbyFlyingMeshes( () => 1u, 0 ).Add( Bats, NVector3.Zero ).Count, "never fewer than one" );
+		Assert.AreEqual( 50, new LobbyFlyingMeshes( () => 1u, 250 ).Add( Bats, NVector3.Zero ).Count, "never more than the authored count" );
+		Assert.AreEqual( 1, new LobbyFlyingMeshes( () => 1u, -20 ).Add( Bats, NVector3.Zero ).Count );
+	}
+
+	[TestMethod]
 	public void AGroupFliesInABoxFiftyUnitsAboveTheIslandTarget()
 	{
 		uint state = 99;

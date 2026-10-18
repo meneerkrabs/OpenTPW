@@ -221,7 +221,8 @@ Original values ([DATA:Data/low.sam, med.sam, high.sam]):
 | COASTERSMOOTHNESS (1..8) / COASTERTRACKDETAIL | 1/0 | 4/1 | 6/1 | 8/1 | exposed for the rides slice |
 | PARTICLEDENSITY / TOTALPARTICLES (simulation) | 500/1000 | 1000/3200 | 1500/2000 | 1500/2000 (2000 with `enhanced-game-options`) | density applied to the particle pool at park start; TOTALPARTICLES unread, as in tp.exe |
 | NUMKIDS (0→4, 1→6, 2→8, 3→max; simulation) | 0 | 2 | 2 | 2 (3 with `enhanced-game-options`) | exposed for the guests slice |
-| WEATHER / LOBBYOBJECTS | 0/10 | 1/70 | 1/100 | 1/100 | exposed |
+| WEATHER | 0 | 1 | 1 | 1 | exposed |
+| LOBBYOBJECTS (%) | 10 | 70 | 100 | 100 | **applied** to the share of each lobby flying-mesh group that is spawned (`0x5d9db0`, at least 1) |
 
 The Enhanced preset also stretches OpenTPW's fog distance by 2 ([EXT] view distance; the
 original presets keep scale 1). Default preset: the original's per-machine choice (traced: Low below 65 MB or 301 MHz, Medium below 192 MB or 450 MHz, otherwise High), with the processor clock taken as at least 450 MHz (`[EXT:graphics-preset-cpu]`). Settings live in

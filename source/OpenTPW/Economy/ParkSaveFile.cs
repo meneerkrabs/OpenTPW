@@ -100,6 +100,12 @@ public static class ParkSaveFile
 		/// <summary>The park's perception statistics, the categories that hold a value; absent in older saves and while none does.</summary>
 		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 		public List<PriceStatisticData>? PriceStatistics { get; init; }
+		/// <summary>
+		/// The monthly statistics the park information window graphs (<see cref="ParkStatisticsHistory"/>); absent in older saves and while nothing is recorded: the graph then starts empty.
+		/// A reading aid like <see cref="AnalyserCaches"/>: nothing in the simulation reads it, so it stays out of the run hash.
+		/// </summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public ParkStatisticsData? StatisticsHistory { get; init; }
 		/// <summary>World seed and the guest, script and sound streams (absent in saves written before world seeds: those streams are not restored).</summary>
 		// [EXT:legacy-economy-save] this legacy economy-only park save (Level.SavePark/LoadPark, used by DeterminismTests) persists the economy and every random stream, not guests, queues or object script state, and a load keeps the running guests and scripts; the player's save (GameFlow.SaveCurrentPark -> ParkResumeSaveFile) already stores the guests with their queue bookkeeping, the script world and each object runtime, the advisor, the coasters and the tracks
 		public WorldData? World { get; init; }
@@ -749,6 +755,7 @@ public static class ParkSaveFile
 			MechanicCursor = park.MechanicCursor,
 			PriceStatistics = park.PriceStatistics.Capture() is { Count: > 0 } rings
 				? rings.Select( ring => new PriceStatisticData { Category = ring.Category, Head = ring.Head, Full = ring.Full, Values = ring.Values } ).ToList() : null,
+			StatisticsHistory = park.StatisticsHistory.IsEmpty ? null : park.StatisticsHistory.Capture(),
 			World = world == null ? null : new WorldData { Seed = world.Seed, SoundSeed = world.SoundSeed }
 		};
 	}
@@ -931,6 +938,7 @@ public static class ParkSaveFile
 		Require( data.MechanicCursor >= 0, "mechanic cursor" );
 		Require( data.PriceStatistics is null || data.PriceStatistics.All( ring => ring?.Values is not null )
 			&& ParkPriceStatistics.IsValid( data.PriceStatistics.Select( ring => new PriceStatisticRing( ring.Category, ring.Head, ring.Full, ring.Values ) ).ToList() ), "price statistics" );
+		Require( data.StatisticsHistory is null || data.StatisticsHistory.IsValid, "statistics history" );
 		Require( data.AvailableLoanOffers == null || data.AvailableLoanOffers.Distinct().Count() == data.AvailableLoanOffers.Count && data.AvailableLoanOffers.All( index => index >= 0 ), "available loan offers" );
 		if ( data.AnalyserCaches is { } caches )
 		{
@@ -1068,6 +1076,8 @@ public static class ParkSaveFile
 			data.Objectives.ActualThing, data.Objectives.CarriedThings, data.Objectives.NextOfferSeconds );
 		park.Counters.Restore( data.Counters );
 		park.MechanicCursor = data.MechanicCursor;
+		if ( data.StatisticsHistory is { } history )
+			park.StatisticsHistory.Restore( history );
 		if ( data.PriceStatistics is { } statistics )
 			park.PriceStatistics.Restore( statistics.Select( ring => new PriceStatisticRing( ring.Category, ring.Head, ring.Full, ring.Values ) ).ToList() );
 		return park;

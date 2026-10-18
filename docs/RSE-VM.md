@@ -10,8 +10,8 @@ A bare `RideVM` is VM-level execution: its effects go through a hook that record
 unimplemented. In a park, every placed original object runs its scripts against the game systems they talk to: the visitors
 (`RideVisitorBridge`), the animation channels, the sounds (events, screams, held object records), the particles, the ride-type controllers (TOUR, BUMP, COAST) and
 the clock. What still goes to the unimplemented hook is small: the four light opcodes (no shipped script and no shipped model has a light,
-`APPROX:RIDES-046`), the bounce riders' node and base words where the rider is not rendered at its bounce node
-(BOUNCESETNODE, BOUNCESETBASE, being done), and the object type's own sound list (ADDOBJ and EVENT type 10, no shipped script).
+`APPROX:RIDES-046`) and the object type's own sound list (ADDOBJ and EVENT type 10, no shipped script). BOUNCESETNODE and
+BOUNCESETBASE are served by the visitor bridge and the bouncing riders are drawn at their nodes ([below](#bounce-opcodes)).
 Container format and static corpus inventory: [RSE-SCRIPTS.md](RSE-SCRIPTS.md).
 
 Code: `source/OpenTPW/VM/` (`RideVM`, `Operand`, `Instruction`, `RideOpcodes`,

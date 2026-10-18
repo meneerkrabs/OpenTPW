@@ -26,6 +26,10 @@ public class ParkCameraMode : CameraMode
 	public const float WheelStep = 10f;
 	public bool UiCapturesKeyboard { get; set; }
 	public bool ModalOpen { get; set; }
+	/// <summary>The text field taking the keys lies over the park view (a visit's chat entry): it keeps the keyboard, the camera keeps the pointer.</summary>
+	public bool TextEntryKeepsPointer { get; set; }
+	/// <summary>The UI under the pointer leaves the screen's edge band to the camera (a visit's chat overlay, whose panels lie along the edges).</summary>
+	public bool EdgeScrollOverUi { get; set; }
 	public Vector3 Target { get; private set; }
 	/// <summary>
 	/// The original's zoom value (0x7909ec: 70..130, 110 at Home, 0x42a990) in original units: it sets the pitch and the distance of the eye (<see cref="PitchOf"/>,
@@ -91,7 +95,8 @@ public class ParkCameraMode : CameraMode
 			LogicalSize = Screen.Size, MousePosition = Input.Mouse.Position, MouseDelta = Input.Mouse.Delta,
 			CaptureMouse = io.WantCaptureMouse || Level.Current?.UiCapturesMouse == true,
 			CaptureKeyboard = io.WantCaptureKeyboard || UiCapturesKeyboard,
-			TextEntry = io.WantTextInput || Input.TextEntryActive, Modal = ModalOpen,
+			TextEntry = io.WantTextInput || (Input.TextEntryActive && !TextEntryKeepsPointer), Modal = ModalOpen,
+			EdgeScrollOverUi = EdgeScrollOverUi && !io.WantCaptureMouse,
 			RightButton = Input.Mouse.Right, MiddleButton = Input.Mouse.Middle, Wheel = Input.Mouse.Wheel,
 			Forward = Input.Forward, Right = Input.Right + (Input.Down( InputButton.ScrollRight ) ? 1 : 0) - (Input.Down( InputButton.ScrollLeft ) ? 1 : 0),
 			RotateLeft = Input.Down( InputButton.RotateLeft ), RotateRight = Input.Down( InputButton.RotateRight ),
@@ -134,13 +139,14 @@ public class ParkCameraMode : CameraMode
 		if ( mouse )
 		{
 			Height = Math.Clamp( Height - input.Wheel * WheelStep, MinimumHeight, MaximumHeight );
-			if ( options.Scroll == ScrollMode.Pushscroll )
-			{
-				x += Edge( input.MousePosition.X, input.LogicalSize.X );
-				y -= Edge( input.MousePosition.Y, input.LogicalSize.Y );
-			}
-			else if ( input.RightButton && dragging )
+			if ( options.Scroll != ScrollMode.Pushscroll && input.RightButton && dragging )
 				Target += (right * input.MouseDelta.X / input.LogicalSize.X - forward * input.MouseDelta.Y / input.LogicalSize.Y) * HorizontalSpan( Height );
+		}
+		// the edge band scrolls over the park, and over a UI that leaves the band to the camera (the chat overlay's panels along the edges)
+		if ( options.Scroll == ScrollMode.Pushscroll && !input.TextEntry && (mouse || input.EdgeScrollOverUi) )
+		{
+			x += Edge( input.MousePosition.X, input.LogicalSize.X );
+			y -= Edge( input.MousePosition.Y, input.LogicalSize.Y );
 		}
 		dragging = mouse && options.Scroll == ScrollMode.RightButton && input.RightButton;
 		var length = MathF.Sqrt( x * x + y * y );

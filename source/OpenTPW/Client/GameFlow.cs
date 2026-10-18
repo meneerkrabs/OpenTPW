@@ -1027,12 +1027,19 @@ internal sealed partial class GameFlow : IDisposable
 			if ( onlineSession == null )
 			{
 				onlineSession = new OnlineSession( OnlineFolders ?? global::OpenTPW.OnlineFolders.FromEnvironment() );
-				chatOverlay = new UI.ChatOverlay( onlineSession ) { Hidden = () => presence != null };
+				// the chat park screen and a visit's chat mode show the room in the original chat overlay, also under a name popup or the postcard composer
+				// opened from it; elsewhere (a visit's HUD, F4) the corner box shows it
+				chatOverlay = new UI.ChatOverlay( onlineSession )
+				{
+					Hidden = () => (presence != null && Hud?.ChatMode == true) || ShowsChatScreen( Menu?.Stack ) || ShowsChatScreen( Hud?.Stack ),
+				};
 				global::Global.Render.OnOverlayRender += chatOverlay.Draw;
 			}
 			return onlineSession;
 		}
 	}
+
+	private static bool ShowsChatScreen( UiScreenStack? stack ) => stack?.Screens.Any( screen => screen.Name == UI.OnlineScreens.ChatScreenName ) == true;
 
 	/// <summary>The visit's online players (null: none).</summary>
 	internal ParkPresence? Presence => presence;

@@ -393,8 +393,8 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 				("online-outbox.png", screens => screens.ShowOutbox(), "outbox", null),
 				("online-inbox.png", screens => screens.ShowInbox(), "inbox", null),
 				("online-chat.png", screens => screens.ShowChat(), "chat",
-					// The original chat overlay (data:0x50b2c): the park view answers a click with a walk.
-					OnlineStrings.Get( OnlineLabel.WalkHint )),
+					// The original chat overlay (tp.exe table 0x758AE8) over the chat park view, which answers a click with a walk (UIHELPTEXT 401).
+					flow.Strings.Help( 401 )),
 				("online-import.png", screens => screens.ShowImport(), "import", null),
 				// A fixed example secret; the capture is checked by decoding its QR code (docs/ONLINE.md, "Two-step login").
 				("online-two-step.png", screens =>

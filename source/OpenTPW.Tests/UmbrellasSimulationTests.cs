@@ -547,4 +547,30 @@ public class UmbrellasSimulationTests
 		Assert.AreEqual( JsonSerializer.Serialize( park.Simulation.CaptureSnapshot() ), JsonSerializer.Serialize( resumed.Simulation.CaptureSnapshot() ) );
 		CollectionAssert.IsSubsetOf( new[] { 1, 2, 3, 4 }, seen.ToArray(), "the umbrellas moved through the states during the continuation (rain, then clear, then snow)" );
 	}
+
+	[TestMethod]
+	public void AGuestWithAnOpenOrPendingUmbrellaGetsNoSpeedTermFromItsToiletOrAReliefVisit()
+	{
+		var rig = new Rig();
+		var guest = rig.Simulation.SpawnInPark( 6, 5 );
+		guest.Toilet = 90;
+		guest.UmbrellaState = UmbrellaRules.StateOpen;
+		guest.ToiletBonus = 0;
+		rig.Weather = UmbrellaRules.WeatherRain;
+		rig.RunTurns( 8 );
+		Assert.AreEqual( 0, guest.ToiletBonus, "a full toilet speeds a guest up by 25 (GuestSpeed.ToiletBonus), but not while its umbrella is open" );
+		rig.Weather = UmbrellaRules.WeatherNone;
+		guest.UmbrellaState = UmbrellaRules.StateClosed;
+		rig.RunTurns( 8 );
+		Assert.AreEqual( GuestSpeed.ToiletBonus, guest.ToiletBonus, "a closed umbrella gives it back on the guest's next needs phase" );
+		// a relief visit sets the term to 25 for anyone else (0x004FE7FB) and leaves 0 for an open umbrella
+		var relief = new RideVisitorBridge( 5, "Toilet", RideVisitorKind.Facility, 1, 0, 0, GuestNeeds.Toilet ) { ExitCell = (6, 5) };
+		var holder = rig.Simulation.SpawnInPark( 6, 5 );
+		holder.UmbrellaState = UmbrellaRules.StateOpening;
+		var other = rig.Simulation.SpawnInPark( 6, 5 );
+		holder.ToiletBonus = other.ToiletBonus = 0;
+		rig.Visit( holder, relief );
+		rig.Visit( other, relief );
+		Assert.AreEqual( (0, GuestSpeed.ToiletBonus), (holder.ToiletBonus, other.ToiletBonus) );
+	}
 }

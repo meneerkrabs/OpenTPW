@@ -200,4 +200,12 @@ public class UmbrellaRulesTests
 			Assert.AreEqual( (int)((draw >> 2) % 3), UmbrellaRules.Colour( draw ) );
 		}
 	}
+
+	[TestMethod]
+	public void AnOpenOrPendingUmbrellaTakesTheWalkingSpeedTermAway()
+	{
+		foreach ( var state in new[] { 0, 1, 2, 3, 4 } )
+			foreach ( var term in new[] { 0, 25, 50 } )
+				Assert.AreEqual( state is 1 or 3 or 4 ? 0 : term, UmbrellaRules.SpeedTerm( state, term ), $"state {state}, term {term}" );
+	}
 }

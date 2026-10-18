@@ -188,6 +188,7 @@ OpenTPW has two kinds of add-ons, both switched on and off on **Options > OpenTP
   | `opentpw.online` | on | Online play ([online](https://opentpw.io/docs/ONLINE.html)); it makes no network request until you act. |
   | `opentpw.pools` | **on** | Swimming pools: paint pool water, build changing rooms, extras (ladders, diving boards, showers, loungers, lamps, underwater lights), water slide towers and water attractions (rope swing, water jets, wave machine, small and large spa), a lazy river, and guests who swim in their own swimwear animations. Not in a Theme Park Inc run ([pools](https://opentpw.io/docs/POOLS.html)). |
   | `opentpw.pools-guest-art` | on | With pools on, land guests are drawn with OpenTPW's own 2x kid and head sprites; switch it off for the original guests. Presentation only. |
+  | `opentpw.umbrellas` | **on** | A brolly shop in every theme and guests who buy an open umbrella in the rain, from a trace of Theme Park Inc's rules ([umbrellas](https://opentpw.io/docs/UMBRELLAS.html)). Simulation only for now: the umbrellas are not drawn yet. |
   | `opentpw.restored-advice` | on | Advisor lines that exist in the game's data but that the original program never plays. |
   | `opentpw.guest-insights` | off | Counts why guests refuse rides and shops in the park information window. |
   | `opentpw.cross-edition-objects` | off | The engine support for a mod that brings Theme Park Inc attractions into Theme Park World (the shipped mod `opentpw.tpi-rides` is off too). |

@@ -184,7 +184,7 @@ public sealed class Guest
 	/// <summary>[EXT:umbrellas-extension] The umbrella's colour, the sprite slot 0 to 2 (<see cref="UmbrellaRules.Colours"/>); 0 while there is no umbrella.</summary>
 	public int UmbrellaType { get; internal set; }
 	/// <summary>
-	/// [EXT:umbrellas-save] The park turn a scheduled change (state 1 or 3) is due, a multiple of four; 0 in every other state. Theme Park Inc's <c>+0x23C</c> is not saved; the extension saves it so a resumed park
+	/// [EXT:umbrellas-save-due] The park turn a scheduled change (state 1 or 3) is due, a multiple of four; 0 in every other state. Theme Park Inc's <c>+0x23C</c> is not saved; the extension saves it so a resumed park
 	/// continues the same run.
 	/// </summary>
 	public long UmbrellaDueTurn { get; internal set; }

@@ -505,6 +505,18 @@ A new pin covers a park with pools: `DeterminismTests.PoolsFixedRunHash` = `0x34
 a 4 x 2 and a 3 x 3 block of pool cells (17 cells) painted through `PoolBuilder` before the first tick. It differs from `FixedRunHash` because the pool cells and the block stamps their writes leave are part of the
 digest and because the walks keep out of the water (the first versions of the pin, `0x51B905DC5CF06BC6` and `0xC53F22BFFA12A843`, were taken before walkers that leave the paths were kept out of pool cells and before main's substep scheduler re-pin, which moves the run underneath); no random draw is added or removed.
 
+## Umbrellas
+
+The `opentpw.umbrellas` extension ([UMBRELLAS.md](UMBRELLAS.md), `[EXT:umbrellas-save]`) adds a brolly shop, a guest umbrella state and its weather rule. A park without a brolly shop and without a guest with an umbrella is untouched by all of it: nobody owns an umbrella, so the weather rule
+and the speed term never run, the host score changes no score (the shop's percentages are read for the extension's own objects only, and the balloon-holder refusal of a balloon shop applies only in a park with a brolly shop or an umbrella), and no draw is taken. **Every pin stands with the extension at its default (on)**, and
+`DeterminismTests.EveryExistingPinIsUnchangedWithTheUmbrellasExtensionOnOrOffAndNoBrollyShop` runs the fixed run (`FixedRunHash`) and the changing-room run with the extension on and off and gets the same hashes. The umbrella fields (state, colour, due turn) join the canonical hash and the guests' own digest only for a
+guest that has an umbrella, and the guest snapshot writes them only then (schema unchanged, older saves load), so a park without one has the same bytes. A park save records the extension only while it has a brolly shop or an umbrella (`ParkResumeMods.UsedOnlyExtensionIds`).
+
+A new pin covers a park with a brolly shop: `DeterminismTests.UmbrellasFixedRunHash` = `0xE912E7E5D5B6E612`, the fixed synthetic run (the same park, shop, scripts and 14,400 ticks as `FixedRunHash`) plus a brolly shop at (10, 1) paid through the economy like the drinks shop and a weather
+that rains from the 20th to the 80th second and from the 140th to the 200th (`GuestSimulation.UmbrellaWeatherState`, which the level reads from `ParkWeather`'s rain, lightning and snow flags): 45 guests buy an umbrella and every state of the machine is seen. Its moves of the stream: the decisions (the shop scores in the rain), the sales,
+and **one world draw per purchase** for the umbrella's colour (taken only at a brolly shop); the reaction delay is a per-guest hash of (guest id, park turn) and takes no draw (`APPROX:UMB-001`). A park saved mid-rain with umbrellas in every state and resumed into a fresh instance continues with the same hash tick by tick
+(`UmbrellasSimulationTests.AParkSavedMidRainWithUmbrellasInEveryStateContinuesIdenticallyAfterAResume`).
+
 ## Tests
 
 `DeterminismTests` (no game data needed):

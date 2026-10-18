@@ -898,7 +898,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		(guest.Happiness, guest.Thirst, guest.Hunger, guest.Toilet, guest.Nausea) = result.Meters;
 		guest.ExitLevel = result.ExitLevel;
 		if ( result.ToiletSpeedTerm is { } term )
-			guest.ToiletBonus = term;
+			guest.ToiletBonus = UmbrellaRules.SpeedTerm( guest.UmbrellaState, term );
 		NeedsUpdate.DecayHistory( guest.TemporaryHistory, turn );
 		if ( !NeedsUpdate.IsPhase( turn, guest.Id ) )
 			return;
@@ -3279,7 +3279,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			if ( ((long)guest.Nausea & 0xFF) > 90 )
 				guest.Nausea = 0;
 			// [BIN:TPW-EXE:0x004FE7F5 relief speed term] the block ends by setting the toilet speed term +0xC2 to 25 (word 0x0075C7F2), until the guest's next needs phase rewrites it
-			guest.ToiletBonus = GuestSpeed.ToiletBonus;
+			guest.ToiletBonus = UmbrellaRules.SpeedTerm( guest.UmbrellaState, GuestSpeed.ToiletBonus );
 		}
 		// [BIN:TPW-EXE:0x004FE802 sideshow win tail] a won sideshow's routine ends with happiness += trunc(medium step × log2(prize / price)), clamped to 0..100 ("Sideshow won - happiness up"), and one world draw whose value nothing reads (0x004FE8D9 → 0x00516330)
 		if ( ride.Kind == RideVisitorKind.Sideshow )

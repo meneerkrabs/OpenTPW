@@ -176,6 +176,13 @@ public static class UmbrellaRules
 	// [BIN:TPI-EXE:0x6142e0 close umbrella] only while the sprite object +0x240 exists: state := 2 and the sprite is destroyed; the caller 0x61A7EA runs it for every nonzero state
 	public static int StateAfterEntering( int state ) => state is StateOpen or StateClosing ? StateClosed : state;
 
+	/// <summary>
+	/// The walking speed term (the guest's +0xC2: 25 or 50, set by a toilet need, a relief visit or the walk to the booth) for a guest in umbrella <paramref name="state"/>: 0 while the umbrella is open or pending (states 1, 3 and 4);
+	/// the term as it is otherwise, and a term of 0 stays 0.
+	/// </summary>
+	// [BIN:TPI-EXE:0x60b3f0 speed term setter] for a guest (the class byte +2 is 1) with a nonzero term index: the umbrella words 4, 1 and 3 make the index 0 before the word table 0x9CFB20 (0, 25, 50) is read; the callers are the constructor, the relief visit, the needs phase and the walk to the booth
+	public static int SpeedTerm( int state, int term ) => term != 0 && state is StateOpen or StateClosing or StateOpening ? 0 : term;
+
 	// ---- The reaction delay ------------------------------------------------------------------------------------------
 
 	/// <summary>

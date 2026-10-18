@@ -623,7 +623,7 @@ public class DeterminismTests
 	}
 
 	/// <summary>[EXT:pools-attractions] The pinned hash of <see cref="RunFixedParkWithWaterAttractions"/> (docs/DETERMINISM.md, "Pools").</summary>
-	internal const ulong PoolsAttractionsFixedRunHash = 0xE9FD7C4AC1871E89UL;
+	internal const ulong PoolsAttractionsFixedRunHash = 0x2D7EE079E5A9B09FUL;
 
 	[TestMethod]
 	public void FixedRunWithWaterAttractionsIsTheSameInEveryProcessAndSwimmersUseThem()

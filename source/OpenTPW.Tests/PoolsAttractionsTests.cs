@@ -717,7 +717,7 @@ public class PoolsAttractionsTests
 	}
 
 	[TestMethod]
-	public void TheWavesCarryTheFloatersInTheRiverWhoStayInTheLaneAndAreStillPaid()
+	public void TheWavesCarryTheFloatersInTheRiverAlongTheirLaneAndTheFloatsStillEnd()
 	{
 		var settings = new PoolWaveSettings( true, 3, 0 );
 		var calm = RiverRig();
@@ -728,27 +728,59 @@ public class PoolsAttractionsTests
 			wavy.Send();
 		}
 		var rivers = PoolRiverMap.Of( wavy.Cells );
-		var (apart, floatingTurns, paid) = (0, 0, 0);
+		var (floatingTurns, ended) = (0, 0);
+		var (calmOffset, wavyOffset) = (0, 0);
 		var floatingBefore = new HashSet<int>();
+		// how far a floater is from the middle line of its lane (across the cell's flow)
+		int Offset( Guest guest )
+		{
+			var cell = (X: guest.Navigation.X >> 16, Y: guest.Navigation.Y >> 16);
+			var centre = PoolSwimRegion.Centre( cell );
+			return rivers.FlowAt( cell.X, cell.Y ) is { } flow ? Math.Abs( flow.Dx != 0 ? guest.Navigation.Y - centre.Y : guest.Navigation.X - centre.X ) : 0;
+		}
 		for ( var turn = 0; turn < 3000; turn++ )
 		{
 			calm.Turns( 1 );
 			wavy.Turns( 1 );
+			foreach ( var floater in calm.Simulation.Guests.Where( guest => guest.State == GuestState.PoolActivity && guest.PoolActivityId == RiverActivity.ActivityId ) )
+				calmOffset = Math.Max( calmOffset, Offset( floater ) );
 			foreach ( var floater in wavy.Simulation.Guests.Where( guest => guest.State == GuestState.PoolActivity && guest.PoolActivityId == RiverActivity.ActivityId ) )
 			{
 				floatingTurns++;
 				Assert.IsTrue( rivers.IsRiver( floater.Navigation.X >> 16, floater.Navigation.Y >> 16 ), $"turn {turn}: guest {floater.Id} stays in the river" );
 				Assert.IsTrue( wavy.Region.IsWater( floater.Navigation.X, floater.Navigation.Y ), $"turn {turn}: guest {floater.Id} stays in free water" );
-				if ( calm.Simulation.Guests.FirstOrDefault( other => other.Id == floater.Id ) is { } twin && (twin.Navigation.X, twin.Navigation.Y) != (floater.Navigation.X, floater.Navigation.Y) )
-					apart++;
+				wavyOffset = Math.Max( wavyOffset, Offset( floater ) );
 			}
 			var floatingNow = wavy.Simulation.Guests.Where( guest => guest.State == GuestState.PoolActivity && guest.PoolActivityId == RiverActivity.ActivityId ).Select( guest => guest.Id ).ToHashSet();
-			paid += floatingBefore.Count( id => !floatingNow.Contains( id ) );
+			ended += floatingBefore.Count( id => !floatingNow.Contains( id ) );
 			floatingBefore = floatingNow;
 		}
 		Assert.IsTrue( floatingTurns > 200, $"{floatingTurns} floating turns" );
-		Assert.IsTrue( apart > floatingTurns / 10, $"the waves carry the floaters ({apart} of {floatingTurns} floating turns apart from the calm river)" );
-		Assert.IsTrue( paid > 0, "floats still end" );
+		Assert.IsTrue( ended > 0, "floats still end" );
+		// the push runs along the lane only: the floaters stay as close to the middle line as in a calm river (at a bend, before the middle of the cell, the cell's flow axis is across the way in,
+		// so a push there can add a sliver, never the half cell a push across the lane would)
+		Assert.IsTrue( wavyOffset <= calmOffset + Fixed16.One / 16, $"off the middle line: {wavyOffset} with waves, {calmOffset} without" );
+	}
+
+	[TestMethod]
+	public void AFloaterTakesTheWavesPushAlongItsLaneOnlyAndOnlyWithinItsRing()
+	{
+		var cells = RingMap( 4, 4, 11, 8 );
+		var rivers = PoolRiverMap.Of( cells );
+		const int a = 3000;
+		foreach ( var (cellX, cellY) in new[] { (6, 4), (11, 6), (6, 8), (4, 6) } )
+		{
+			var flow = rivers.FlowAt( cellX, cellY )!.Value;
+			var (x, y) = PoolSwimRegion.Centre( (cellX, cellY) );
+			var push = RiverActivity.WavePush( rivers, x, y, (a, a) );
+			// the waves run along +x +y: a lane along x keeps the x part, a lane along y the y part, whichever way it flows
+			Assert.AreEqual( flow.Dx != 0 ? (a, 0) : (0, a), push, $"cell ({cellX}, {cellY}) flowing ({flow.Dx}, {flow.Dy})" );
+		}
+		Assert.AreEqual( (0, 0), RiverActivity.WavePush( rivers, PoolSwimRegion.Centre( (6, 4) ).X, PoolSwimRegion.Centre( (6, 4) ).Y, (0, 0) ), "no waves" );
+		Assert.AreEqual( (0, 0), RiverActivity.WavePush( rivers, PoolSwimRegion.Centre( (7, 6) ).X, PoolSwimRegion.Centre( (7, 6) ).Y, (a, a) ), "not in a river cell" );
+		// a push that would land two cells on, outside the cell's neighbours in its ring, is not taken
+		var (edgeX, edgeY) = PoolSwimRegion.Centre( (6, 4) );
+		Assert.AreEqual( (0, 0), RiverActivity.WavePush( rivers, edgeX, edgeY, (2 * Fixed16.One, 2 * Fixed16.One) ) );
 	}
 
 	[TestMethod]

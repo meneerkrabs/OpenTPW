@@ -24,6 +24,8 @@ public sealed class UmbrellaAnchors
 	private sealed class SetTable
 	{
 		public readonly Dictionary<int, (float X, float Y)[][]> Slots = new();
+		/// <summary>The mean over the steps, per slot and direction, made at load: the steady hand reads it every frame for every umbrella.</summary>
+		public readonly Dictionary<int, (float X, float Y)[]> Means = new();
 	}
 
 	private readonly Dictionary<(string Set, int PixelsPerUnit), SetTable> sets = new();
@@ -88,6 +90,7 @@ public sealed class UmbrellaAnchors
 				if ( directions.Length == 0 || directions.Any( steps => steps.Length == 0 ) || directions.SelectMany( steps => steps ).Any( point => !float.IsFinite( point.Item1 ) || !float.IsFinite( point.Item2 ) ) )
 					throw new InvalidDataException( $"{origin}: the set {set.Name} has an empty or invalid {name} table." );
 				table.Slots[slot] = directions;
+				table.Means[slot] = directions.Select( steps => (steps.Average( point => point.Item1 ), steps.Average( point => point.Item2 )) ).ToArray();
 			}
 			if ( table.Slots.Count > 0 )
 				sets[(setName( set.Name ), pixelsPerUnit)] = table;
@@ -103,10 +106,16 @@ public sealed class UmbrellaAnchors
 	{
 		if ( !sets.TryGetValue( (set, pixelsPerUnit), out var table ) )
 			return null;
-		if ( !table.Slots.TryGetValue( TableSlot( slot ), out var directions ) && !table.Slots.TryGetValue( GuestSpriteAtlas.StandSlot, out directions ) )
-			return null;
-		var steps = directions[Math.Clamp( direction, 0, directions.Length - 1 )];
-		var (x, y) = steady ? (steps.Average( point => point.X ), steps.Average( point => point.Y )) : steps[(int)((uint)Math.Max( step, 0 ) % (uint)steps.Length)];
+		var tableSlot = TableSlot( slot );
+		if ( !table.Slots.TryGetValue( tableSlot, out var directions ) )
+		{
+			tableSlot = GuestSpriteAtlas.StandSlot;
+			if ( !table.Slots.TryGetValue( tableSlot, out directions ) )
+				return null;
+		}
+		var index = Math.Clamp( direction, 0, directions.Length - 1 );
+		var steps = directions[index];
+		var (x, y) = steady ? table.Means[tableSlot][index] : steps[(int)((uint)Math.Max( step, 0 ) % (uint)steps.Length)];
 		return ((float)(mirror ? -x : x), (float)y);
 	}
 }

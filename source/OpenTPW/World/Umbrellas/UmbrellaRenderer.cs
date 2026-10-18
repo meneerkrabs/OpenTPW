@@ -43,7 +43,7 @@ public sealed class UmbrellaRenderer : Entity
 	private readonly GuestSimulation simulation;
 	private readonly ModelHeightfield field;
 	private readonly GuestSpriteAtlas? atlas;
-	private readonly IReadOnlyList<GuestRenderer> guests;
+	private readonly GuestRenderer[] guests;
 	private readonly UmbrellaAnchors anchors;
 	private readonly Material<ObjectUniformBuffer>? material;
 	private Texture? texture;
@@ -68,7 +68,7 @@ public sealed class UmbrellaRenderer : Entity
 	{
 		this.simulation = simulation;
 		this.field = field;
-		guests = guestRenderers;
+		guests = guestRenderers.ToArray();
 		this.anchors = anchors;
 		Name = "Umbrellas";
 		atlas = atlases.FirstOrDefault();
@@ -157,9 +157,8 @@ public sealed class UmbrellaRenderer : Entity
 				continue;
 			GuestMount mount = default;
 			var mounted = false;
-			foreach ( var renderer in guests )
-				if ( mounted = renderer.TryMount( guest, right, up, forward, eye, out mount ) )
-					break;
+			for ( var index = 0; index < guests.Length && !mounted; index++ )
+				mounted = guests[index].TryMount( guest, right, up, forward, eye, out mount );
 			if ( !mounted )
 				continue;
 			var slot = atlas.HasArt( guest.UmbrellaType ) ? guest.UmbrellaType : GuestSpriteAtlas.StandSlot;

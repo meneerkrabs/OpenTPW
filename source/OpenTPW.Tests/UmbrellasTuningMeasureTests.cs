@@ -19,9 +19,10 @@ public class UmbrellasTuningMeasureTests
 	/// <summary>Ticks of one park day: 23.04 turns of 14.88 ticks.</summary>
 	private const double TicksPerDay = 23.04 * 14.88;
 
-	internal sealed record Measurement( int Seed, bool Shop, int KidScore, bool RainMood, int Admitted, int Buyers, long Balance, double RainHappiness, double BuyerHappiness, double OthersHappiness, int BalloonsHeld, int BalloonsReleased, int DressedBuyers );
+	internal sealed record Measurement( int Seed, int BalloonEvery, bool Shop, int KidScore, bool RainMood, int Admitted, int Buyers, long Balance, double RainHappiness, double BuyerHappiness, double OthersHappiness, int BalloonsHeld, int BalloonsReleased, int DressedBuyers );
 
-	internal static Measurement Measure( ulong seedValue, bool shop, int kidScore, bool rainMood, int clearDays = 4, int rainDays = 7, int afterDays = 3 )
+	/// <param name="balloonEvery">Every n-th guest to arrive holds a balloon of life 120 (0: nobody does).</param>
+	internal static Measurement Measure( ulong seedValue, bool shop, int kidScore, bool rainMood, int balloonEvery = 2, int clearDays = 4, int rainDays = 7, int afterDays = 3 )
 	{
 		var rainStart = (long)Math.Round( clearDays * TicksPerDay );
 		var rainEnd = (long)Math.Round( (clearDays + rainDays) * TicksPerDay );
@@ -46,8 +47,8 @@ public class UmbrellasTuningMeasureTests
 			park.Run( 15 );
 			foreach ( var guest in park.Guests.Guests )
 			{
-				// a held balloon for every second guest to arrive, as --debug-guest-looks dresses them (life 120 of 255: a fresh balloon cuts the shop's score to nothing, see the balloon factor), so the balloon trade has something to trade
-				if ( seen.Add( guest.Id ) && seen.Count % 2 == 0 )
+				// a held balloon for every n-th guest to arrive, as --debug-guest-looks dresses them (life 120 of 255: a fresh balloon cuts the shop's score to nothing, see the balloon factor), so the balloon trade has something to trade
+				if ( seen.Add( guest.Id ) && balloonEvery > 0 && seen.Count % balloonEvery == 0 )
 				{
 					guest.HasBalloon = true;
 					guest.BalloonLife = 120;
@@ -69,7 +70,7 @@ public class UmbrellasTuningMeasureTests
 				}
 			}
 		}
-		return new Measurement( (int)(seedValue & 0xFF), shop, kidScore, rainMood, (int)park.Guests.Admissions, buyers.Count, park.Economy.Balance,
+		return new Measurement( (int)(seedValue & 0xFF), balloonEvery, shop, kidScore, rainMood, (int)park.Guests.Admissions, buyers.Count, park.Economy.Balance,
 			rainSamples == 0 ? 0 : rainSum / rainSamples, buyerSamples == 0 ? 0 : buyerSum / buyerSamples, otherSamples == 0 ? 0 : otherSum / otherSamples, held, buyers.Count( lostEarly.Contains ), buyers.Count( dressed.Contains ) );
 	}
 
@@ -96,14 +97,15 @@ public class UmbrellasTuningMeasureTests
 		if ( Environment.GetEnvironmentVariable( "OPENTPW_UMBRELLAS_MEASURE" ) is not { Length: > 0 } path )
 			return;
 		var seeds = new[] { WorldSeed.DefaultValue, WorldSeed.DefaultValue ^ 0x11, WorldSeed.DefaultValue ^ 0x22, WorldSeed.DefaultValue ^ 0x33 };
-		var lines = new List<string> { "seed shop kid% mood admitted buyers balance rainHappy buyerHappy otherHappy balloonsHeld balloonsReleased dressedBuyers" };
-		foreach ( var seed in seeds )
-			foreach ( var (shop, kid) in new[] { (false, 100), (true, 75), (true, 100) } )
-				foreach ( var mood in new[] { false, true } )
-				{
-					var m = Measure( seed, shop, kid, mood );
-					lines.Add( string.Create( CultureInfo.InvariantCulture, $"{m.Seed:X2} {(shop ? "shop" : "none")} {kid} {(mood ? "on" : "off")} {m.Admitted} {m.Buyers} {m.Balance} {m.RainHappiness:F2} {m.BuyerHappiness:F2} {m.OthersHappiness:F2} {m.BalloonsHeld} {m.BalloonsReleased} {m.DressedBuyers}" ) );
-				}
+		var lines = new List<string> { "balloonEvery seed shop kid% mood admitted buyers balance rainHappy buyerHappy otherHappy balloonsHeld balloonsReleased dressedBuyers" };
+		foreach ( var balloons in new[] { 2, 0 } )
+			foreach ( var seed in seeds )
+				foreach ( var (shop, kid) in new[] { (false, 100), (true, 75), (true, 100) } )
+					foreach ( var mood in new[] { false, true } )
+					{
+						var m = Measure( seed, shop, kid, mood, balloons );
+						lines.Add( string.Create( CultureInfo.InvariantCulture, $"{balloons} {m.Seed:X2} {(shop ? "shop" : "none")} {kid} {(mood ? "on" : "off")} {m.Admitted} {m.Buyers} {m.Balance} {m.RainHappiness:F2} {m.BuyerHappiness:F2} {m.OthersHappiness:F2} {m.BalloonsHeld} {m.BalloonsReleased} {m.DressedBuyers}" ) );
+					}
 		File.WriteAllLines( path, lines );
 	}
 }

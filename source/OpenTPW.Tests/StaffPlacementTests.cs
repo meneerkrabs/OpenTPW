@@ -13,6 +13,20 @@ namespace OpenTPW.Tests;
 [TestClass]
 public class StaffPlacementTests
 {
+	[TestMethod]
+	public void ARidesFootprintIsRefusedByItsCellTypesAndItsEntranceTakesADrop()
+	{
+		// tp.exe 0x46CC40 reads the cell's type (0, 1, 3 or 9) and never an object list: the placement's types 4 and 10 refuse, the entrance's 9 does not (GUEST-013)
+		var grid = new GuestPathGrid( 24, 24 );
+		var shape = new ObjectShape( new[] { "*2S" } );
+		var footprint = ObjectFootprint.GetCells( shape, 4, 8, 0 ).ToList();
+		grid.Cells.WriteFootprint( footprint, ParkCellMap.CellWord( 4, 8 ), 0 );
+		var types = footprint.Select( cell => grid.Cells.RawTypeAt( cell.X, cell.Y ) ).ToArray();
+		CollectionAssert.AreEquivalent( new byte[] { 4, 9, 10 }, types, "body, entrance and exit" );
+		foreach ( var (x, y, _) in footprint )
+			Assert.AreEqual( grid.Cells.RawTypeAt( x, y ) == 9, StaffPlacementRules.IsValidDropCell( grid.Cells, x, y, null ), $"({x}, {y}) of type {grid.Cells.RawTypeAt( x, y )}" );
+	}
+
 	private sealed class Fixture
 	{
 		public readonly GuestPathGrid Grid = new( 20, 20 );

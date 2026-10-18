@@ -265,6 +265,52 @@ public class ParkFinaleTests
 	}
 
 	[TestMethod]
+	public void WinningScreenPumpsTerminalExpiryAndDelayedReleaseWhileItOwnsCapturedInput()
+	{
+		var level = LevelFor( Objects( Entry() ) ); Complete( level ); var hud = Hud( level ); var context = Context();
+		long now = 0;
+		hud.ChallengeMessageClock = () => now;
+		Assert.IsTrue( ChallengeMessageRecords.TryGet( 1, ChallengePresentationKind.Success, out var record ) );
+		Assert.IsTrue( hud.PostChallengeTerminal( record, "synthetic terminal" ) );
+		var speed = hud.Status.Speed;
+		Assert.IsTrue( hud.Update( context, UiInput.Key( UiKeys.Pause ), false, false, false ) );
+		Assert.AreEqual( speed, hud.Status.Speed, "the finale keeps ownership of Pause" );
+		now = 25000;
+		hud.Update( context, UiInput.Idle( new N.Vector2( -1 ) ), true, true, true );
+		Assert.IsTrue( hud.ChallengeTerminalState( 0 )!.Value.PreExpiryReached );
+		now = 30000;
+		hud.Update( context, UiInput.Idle( new N.Vector2( -1 ) ), true, true, true );
+		Assert.IsFalse( hud.IsPendingMessageVisible( 0 ) );
+		Assert.AreEqual( 1, hud.PendingMessages.Count );
+		now = 30499;
+		hud.Update( context, UiInput.Idle( new N.Vector2( -1 ) ), true, true, true );
+		Assert.AreEqual( 1, hud.PendingMessages.Count );
+		now = 30500;
+		hud.Update( context, UiInput.Idle( new N.Vector2( -1 ) ), true, true, true );
+		Assert.AreEqual( 0, hud.PendingMessages.Count );
+		Assert.IsTrue( level.ResearchFinaleActive, "timer delivery does not dismiss or bypass the full-screen owner" );
+	}
+
+	[TestMethod]
+	public void WinningScreenStillReleasesAnAlreadyDeletedTerminalDuringExplicitUserPause()
+	{
+		var level = LevelFor( Objects( Entry() ) ); var hud = Hud( level ); var context = Context();
+		long now = 0;
+		hud.ChallengeMessageClock = () => now;
+		Assert.IsTrue( ChallengeMessageRecords.TryGet( 1, ChallengePresentationKind.Failure, out var record ) );
+		Assert.IsTrue( hud.PostChallengeTerminal( record, "synthetic terminal" ) );
+		hud.OpenPendingMessage( 0 );
+		hud.DeleteOpenedMessage();
+		hud.SetUserGameSpeed( GameSpeed.Paused );
+		Complete( level );
+		now = 500;
+		Assert.IsTrue( hud.Update( context, UiInput.Key( UiKeys.Pause ), false, false, false ) );
+		Assert.AreEqual( GameSpeed.Paused, hud.Status.Speed );
+		Assert.AreEqual( 0, hud.PendingMessages.Count, "delayed final release does not consult lifetime suspension" );
+		Assert.IsTrue( level.ResearchFinaleActive );
+	}
+
+	[TestMethod]
 	public void ResumeButtonDismissesAndAStaleScreenCannotDismissANewFinale()
 	{
 		var level = LevelFor( Objects( Entry() ) ); Complete( level ); var hud = Hud( level ); var context = Context();

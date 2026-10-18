@@ -595,6 +595,8 @@ public sealed class OnlineScreens
 			Bounds = new UiRect( 196, 164, 1539, 636 ),
 			Anchor = UiAnchor.Center,
 			RowHeight = 84,
+			// [BIN:TPW-EXE:0x4bfb5a Find Parks row] notification 0x400 opens Park Details (0x4c0ae0), without message 0x100 or a dedicated row sound.
+			ClicksOnActivate = false,
 			Columns = columns.Select( column => ((float Offset, Func<string> Text))(column.Offset, () => OnlineStrings.Ui( column.Text, "" )) ).ToArray(),
 			Rows = () => Session.Parks.Count == 0
 				? new[] { OnlineStrings.Ui( OnlineStrings.NoSearchResults, "No search results" ) }
@@ -724,6 +726,8 @@ public sealed class OnlineScreens
 			Bounds = new UiRect( 349, 192, 1235, 636 ),
 			Anchor = UiAnchor.Center,
 			RowHeight = 105,
+			// [BIN:TPW-EXE:0x4c1aec Other Parks row] notification 0x400 opens Park Details (0x4c0ae0), without message 0x100 or a dedicated row sound.
+			ClicksOnActivate = false,
 			Columns = columns.Select( column => ((float Offset, Func<string> Text))(column.Offset, () => OnlineStrings.Ui( column.Text, "" )) ).ToArray(),
 			Rows = () => (Session.CityParks ?? Array.Empty<ParkSummary>()).Count == 0
 				? new[] { OnlineStrings.Ui( OnlineStrings.NoSearchResults, "No search results" ) }

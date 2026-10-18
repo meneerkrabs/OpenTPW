@@ -6,6 +6,7 @@
 //   lobby   a steady window in the lobby
 //   jungle  the cold start of Full Simulation Jungle (the construction frame), then a steady window in the park
 //   buy     the first buy-menu open and four first selections (the 12 October table)
+//   umbrellaCost  the frame cost of a crowd in rain with and without an open umbrella over every guest, at the Home and the farthest zoom (after jungle)
 //   memory  memory samples over a longer park session
 //   switch  memory across park changes: Jungle, the lobby, the next island's park, the lobby, Jungle again
 //   revisit a second visit in the same profile without the served folder: Play starts from the files kept in the browser
@@ -36,7 +37,7 @@ const SELECTIONS = [['Rides', 'Belly Bounce'], ['Shops', 'Balloon Shop'], ['Shop
 function parseArguments(argv) {
 	const options = {
 		web: null, game: null, label: 'unlabelled', out: null, chrome: process.env.CHROME ?? DEFAULT_CHROME, headed: false,
-		scenarios: ['start', 'lobby', 'jungle', 'buy', 'digest'], window: 30, memoryMinutes: 10, music: false, width: 1280, height: 900, runs: 1, frameCap: 0, keep: 'off', zoom: null, shot: null, evening: null,
+		scenarios: ['start', 'lobby', 'jungle', 'buy', 'digest'], window: 30, memoryMinutes: 10, music: false, width: 1280, height: 900, runs: 1, frameCap: 0, keep: 'off', zoom: null, shot: null, crowd: 400, evening: null,
 	};
 	for (let index = 2; index < argv.length; index++) {
 		const [flag, inline] = argv[index].split(/=(.*)/s);
@@ -57,6 +58,7 @@ function parseArguments(argv) {
 			case '--frame-cap': options.frameCap = Number(value()); break;
 			case '--keep': options.keep = value(); break;
 			case '--zoom': options.zoom = Number(value()); break;
+			case '--crowd': options.crowd = Number(value()); break;
 			case '--shot': options.shot = value(); break;
 			case '--evening': options.evening = value(); break;
 			case '--help': case '-h': console.log(usage()); process.exit(0);
@@ -74,11 +76,12 @@ function usage() {
 	return `Usage: node tools/web-perf/run.mjs --web <published wwwroot> --game <Theme Park World folder> [options]
   --label <name>          build label in the report (interpreter, aot, ...)
   --out <file.json>       report path (default reports/web-perf/<date>-<label>.json)
-  --scenarios <list>      comma list of start,lobby,jungle,buy,memory,switch,revisit,digest (default start,lobby,jungle,buy,digest)
+  --scenarios <list>      comma list of start,lobby,jungle,buy,umbrellas,umbrellaCost,memory,switch,revisit,digest (default start,lobby,jungle,buy,digest)
   --window <seconds>      steady window length (default 30)
   --memory-minutes <n>    memory scenario length (default 10)
   --music                 keep music and speech on (default: muted, effects on, as on 11 October)
   --size <w>x<h>          window size (default 1280x900)
+  --crowd <n>             umbrellaCost: extra guests staged in the Jungle park (default 400)
   --shot <file>           umbrellas: where the screenshot goes
   --zoom <value>          jungle: after the steady window, hold the park camera at this zoom value (40..300 with the wide zoom option) and measure a second window
   --evening <mode>        jungle: after the steady window, hold the evening look (night, dusk, day) or switch the extension off, and measure a second window
@@ -274,6 +277,36 @@ const scenarios = {
 		await sleep(2000);
 		const zoomed = { zoom: options.zoom, reached, ...await page.steady(options.window * 1000) };
 		return { ...result, zoomed };
+	},
+
+	/**
+	 * [EXT:umbrellas-tuning] Frame cost of umbrellas: in the Jungle park with a crowd (--crowd extra guests, default 400) in rain, a steady window with no umbrella and one with an open umbrella over every guest, the umbrellas the
+	 * last frame drew, and the same two windows at the wide zoom's far end (zoom 300). The park is staged by Program.PerfUmbrellaCrowd (UmbrellaPerf) and is not a real run afterwards.
+	 */
+	async umbrellaCost(page, options) {
+		const state = await page.state();
+		if (!state.hud || state.level !== 'jungle')
+			throw new Error('The umbrellaCost scenario needs the Jungle park: run it after jungle');
+		const crowd = options.crowd;
+		// the crowd is staged once (the first call); later calls only switch the umbrellas, so both windows have the same guests
+		let extra = crowd;
+		const stage = async umbrellas => {
+			const staged = JSON.parse(await page.eval(`opentpwPerf.program.PerfUmbrellaCrowd(${extra}, 30, ${umbrellas})`));
+			extra = 0;
+			return staged;
+		};
+		const result = { crowd };
+		for (const zoom of [null, 300]) {
+			const key = zoom == null ? 'home' : `zoom${zoom}`;
+			if (zoom != null)
+				result[`${key}Reached`] = await page.eval(`opentpwPerf.program.PerfZoom(${zoom})`);
+			result[`${key}Plain`] = { staged: await stage(false), ...await page.steady(options.window * 1000) };
+			result[`${key}Umbrellas`] = { staged: await stage(true) };
+			await sleep(2000);
+			Object.assign(result[`${key}Umbrellas`], await page.steady(options.window * 1000));
+			result[`${key}Umbrellas`].drawn = await page.eval('opentpwPerf.program.PerfUmbrellaCrowdDrawn()');
+		}
+		return result;
 	},
 
 	/** [EXT:debug-umbrellas] After jungle: every guest gets an open umbrella, the camera follows the first one, and a screenshot is saved (--shot, default opentpw-umbrellas.png in the temp dir). */

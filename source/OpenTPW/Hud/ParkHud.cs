@@ -94,6 +94,7 @@ public sealed partial class ParkHud
 		this.strings = strings;
 		this.host = host;
 		Status = status;
+		challengeUserPaused = status.Speed == GameSpeed.Paused;
 		Catalog = catalog;
 		buy = new BuyListModel( catalog, ListName, BuyPrice, Sorts, LandRows, item => Status.IsAvailable( item ) );
 		lastLevelMessage = level.LastActionMessage;
@@ -316,7 +317,7 @@ public sealed partial class ParkHud
 				Id = $"speed{speed}",
 				Text = () => label,
 				Font = fonts => fonts.Label,
-				Clicked = () => Status.Speed = speed,
+				Clicked = () => SetUserGameSpeed( speed ),
 				Selected = () => Status.Speed == speed,
 				Bounds = new UiRect( 1540 + index * 122, 1430, 116, 84 ),
 				Anchor = UiAnchor.BottomRight
@@ -685,8 +686,14 @@ public sealed partial class ParkHud
 	// Explicit captures run the identical frame body in asset-free tests. Null samples native IO at its original point.
 	internal bool Update( UiContext context, UiInput input, bool? mouseCaptured, bool? keyboardCaptured, bool? textCaptured )
 	{
+		SyncChallengeMessageSuspension();
+		QueueChallengeTerminalTimers();
 		if ( UpdateResearchFinale( context, input, mouseCaptured, keyboardCaptured, textCaptured ) )
+		{
+			// The full-screen owner consumes input, not the unscaled UI timer/delayed-release pumps.
+			FinishChallengeMessageFrame();
 			return true;
+		}
 		var ridingAtStart = IsRiding;
 		SyncRideScreen( context.Delta );
 		HandleChatModeKey();
@@ -754,7 +761,7 @@ public sealed partial class ParkHud
 		// [BIN:TPW-EXE:0x6698e6 key delivery] a key event (0x1000a/b/c, posted to window 1 by 0x658c38/0x658c67/0x658c96) is handed to exactly one window: an accelerator-table window (0x65e640, list and edit controls) when the key is in its table, else the focus window (0x65e59b, [0xfaa5ec]) while its flag bit 0 is set, else the root ([0xfaa5dc]); nothing falls through to a second window
 		// [BIN:TPW-EXE:0x48ac40 ride view creation] the ride view window (flags 1) takes the focus (0x65e59b) and the HUD's own window handle [0x7c24c8] gets message 5 and is cleared, so the HUD's key groups (0x787c14, 0x787a60, 0x78721c at 0x488886) are never reached while it is open: the procedure 0x488a00 acts only on Escape, the C shortcut (action 0x10) and the postcard action (0xf), and the pause key and the park door shortcuts are not offered while riding
 		if ( !paused && !IsRiding && !Input.TextEntryActive && input.Has( UiKeys.Pause ) )
-			Status.Speed = Status.Speed == GameSpeed.Paused ? GameSpeed.Normal : GameSpeed.Paused;
+			SetUserGameSpeed( Status.Speed == GameSpeed.Paused ? GameSpeed.Normal : GameSpeed.Paused );
 
 		if ( mouseCaptured == null || keyboardCaptured == null || textCaptured == null )
 		{
@@ -897,6 +904,7 @@ public sealed partial class ParkHud
 		UpdateCursor( input, overUi || consumed, mouseCaptured == true );
 		Status.Update( context.Delta );
 		SyncRideScreen( 0 );
+		FinishChallengeMessageFrame();
 		return overUi || consumed || toolClick;
 	}
 

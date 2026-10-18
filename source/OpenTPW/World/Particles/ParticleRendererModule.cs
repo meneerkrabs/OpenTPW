@@ -23,6 +23,7 @@ internal static class ParticleRendererModule
 		Level.ParticlesCaptured = Capture;
 		Level.ParticlesResumed = Resume;
 		Level.ParticlesImported = ImportOriginal;
+		Level.PlacedParticlesStarted = StartPlaced;
 	}
 
 	private static ParticleRenderer? RendererOf( Level level ) => ParticleRenderer.For( level );
@@ -182,6 +183,31 @@ internal static class ParticleRendererModule
 		{
 			Log.Warning( $"The saved particles were not imported ({exception.Message})." );
 		}
+	}
+
+	/// <summary>Starts the land effects of a level's <c>scape.omp</c> in its pool: each record's effect at its place, taken as native units (1/1024 of an original unit), the handle dropped.</summary>
+	// [BIN:TPW-EXE:0x550e00 scape.omp type 2] 0x521E60(effect, x, y, z) with the record's words, no conversion
+	private static void StartPlaced( Level level, IReadOnlyList<PlacedObjectsFile.Record> records )
+	{
+		if ( global::Global.Render == null )
+			return;
+		var renderer = RendererOf( level ) ?? Create( level );
+		if ( renderer == null )
+			return;
+		var started = StartPlacedIn( renderer.Particles, records );
+		Log.Trace( $"Particles: {started} land effect(s) of scape.omp started in {level.LevelName}; the first at engine {ToEngine( level, new SVector3( records[0].Place.X, records[0].Place.Height, records[0].Place.Z ) / ParticleKeyResolver.NativeDirectionMultiplier )}." );
+	}
+
+	/// <summary>Starts every record's effect in <paramref name="system"/> (the pool's refusals, an unknown effect id or a full pool, start nothing) and returns how many emitters started.</summary>
+	internal static int StartPlacedIn( ParticleSystem system, IReadOnlyList<PlacedObjectsFile.Record> records )
+	{
+		var started = 0;
+		foreach ( var record in records )
+		{
+			if ( record.Type == PlacedObjectsFile.ParticleType && system.Create( record.Effect, record.Place ) is not (0 or -1) )
+				started++;
+		}
+		return started;
 	}
 
 	private static ParticleRenderer? Create( Level level )

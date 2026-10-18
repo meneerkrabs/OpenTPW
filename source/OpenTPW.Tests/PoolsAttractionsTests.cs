@@ -5,6 +5,8 @@ using System.Linq;
 using System.Text;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using OpenTPW.Mods;
+using OpenTPW.UI.Original;
+using OpenTPW.Hud;
 using static OpenTPW.Tests.PoolsSwimSessionTests;
 
 namespace OpenTPW.Tests;
@@ -1361,6 +1363,97 @@ public class PoolsAttractionsLevelTests
 		} );
 		Assert.IsNull( level.CyclePoolWaves( one ), "and an ordinary object neither" );
 	}
+
+	[TestMethod]
+	public void TheWaveMachineWindowSetsOnOffHeightAndIntervalAndCancelLeavesThemAsTheyWere()
+	{
+		var wave = Entry( 1309, "wavemachine", "N", "**" );
+		var swing = Entry( 1310, "ropeswing", "N", "*" );
+		With( () =>
+		{
+			level.PoolBuilder!.PaintCells( PoolBuilder.Rectangle( (4, 12), (9, 14) ) );
+			var machine = level.Objects.TryPlace( wave, 5, 15, 0, out _ )!;
+			var rope = level.Objects.TryPlace( swing, 8, 15, 0, out _ )!;
+			var region = PoolSwimRegion.Build( Cells, (4, 12) )!;
+			var hud = new ParkHud( level, OriginalUiTests.FakeStrings(), new EconomyParkStatus( () => null ), new UiTestCatalog(), new HudHost() );
+			Assert.AreEqual( PoolWaveSettings.Default, level.PoolWavesOf( machine ) );
+
+			// the window opens on the machine's settings, the choices show them, and the tick writes the edited copy to the machine
+			hud.SelectObject( machine );
+			hud.OpenWaveSettings( machine );
+			var screen = hud.Stack.Top!;
+			Assert.AreEqual( "waveSettings", screen.Name );
+			Assert.IsTrue( Selected( screen, "wavesOn" ) && Selected( screen, "height2" ) && Selected( screen, "interval1" ) );
+			Assert.IsFalse( Selected( screen, "wavesOff" ) || Selected( screen, "height3" ) || Selected( screen, "interval0" ) );
+			screen.Find( "height3" )!.Activate();
+			screen.Find( "interval0" )!.Activate();
+			Assert.AreEqual( PoolWaveSettings.Default, level.PoolWavesOf( machine ), "nothing is written before the tick" );
+			screen.Find( "apply" )!.Activate();
+			Assert.AreNotSame( screen, hud.Stack.Top, "the tick closes the window" );
+			Assert.AreEqual( new PoolWaveSettings( true, 3, 0 ), level.PoolWavesOf( machine ) );
+			Assert.AreEqual( new PoolWaveSettings( true, 3, 0 ), PoolWaveSettings.ActiveIn( level.PoolSites, Cells, region ), "the pool runs them" );
+
+			// off and a long rest, then the cross: nothing changes
+			hud.OpenWaveSettings( machine );
+			screen = hud.Stack.Top!;
+			screen.Find( "wavesOff" )!.Activate();
+			screen.Find( "interval2" )!.Activate();
+			screen.Find( "cancel" )!.Activate();
+			Assert.AreEqual( new PoolWaveSettings( true, 3, 0 ), level.PoolWavesOf( machine ), "the cross leaves them as they were" );
+			hud.OpenWaveSettings( machine );
+			screen = hud.Stack.Top!;
+			screen.Find( "wavesOff" )!.Activate();
+			screen.Find( "height1" )!.Activate();
+			screen.Find( "interval2" )!.Activate();
+			screen.Find( "apply" )!.Activate();
+			Assert.AreEqual( new PoolWaveSettings( false, 1, 2 ), level.PoolWavesOf( machine ) );
+			Assert.IsNull( PoolWaveSettings.ActiveIn( level.PoolSites, Cells, region ), "off: no waves" );
+
+			// only a wave machine has the window
+			var screens = hud.Stack.Screens.Count;
+			hud.OpenWaveSettings( rope );
+			hud.OpenWaveSettings( one );
+			Assert.AreEqual( screens, hud.Stack.Screens.Count );
+			Assert.IsNull( level.PoolWavesOf( rope ) );
+			Assert.IsFalse( level.SetPoolWaves( rope, PoolWaveSettings.Default ) );
+			return 0;
+		} );
+	}
+
+	[TestMethod]
+	public void TheWaveMachineWindowsChoicesFitItAndAreNamedInEveryLanguage()
+	{
+		var wave = Entry( 1311, "wavemachine", "N", "**" );
+		With( () =>
+		{
+			level.PoolBuilder!.PaintCells( PoolBuilder.Rectangle( (4, 12), (9, 14) ) );
+			var machine = level.Objects.TryPlace( wave, 5, 15, 0, out _ )!;
+			var hud = new ParkHud( level, OriginalUiTests.FakeStrings(), new EconomyParkStatus( () => null ), new UiTestCatalog(), new HudHost() );
+			hud.OpenWaveSettings( machine );
+			var screen = hud.Stack.Top!;
+			var canvas = new UiCanvas( 2048, 1536 );
+			var window = screen.Find( "window" )!.ScreenRect( canvas );
+			foreach ( var element in screen.Elements.Where( element => element.Id != "window" ) )
+			{
+				var rect = element.ScreenRect( canvas );
+				Assert.IsTrue( rect.X >= window.X && rect.Y >= window.Y && rect.Right <= window.Right && rect.Bottom <= window.Bottom, $"{element.Id} lies inside the window" );
+			}
+			return 0;
+		} );
+		var keys = new[] { OpenTpwText.PoolWavesWindow, OpenTpwText.PoolWavesSettings, OpenTpwText.PoolWavesLow, OpenTpwText.PoolWavesMedium, OpenTpwText.PoolWavesHigh,
+			OpenTpwText.PoolWavesShort, OpenTpwText.PoolWavesNormal, OpenTpwText.PoolWavesLong };
+		foreach ( var language in SupplementaryStrings.SupportedLanguages )
+			foreach ( var key in keys )
+			{
+				var text = SupplementaryStrings.Get( key, language );
+				Assert.IsFalse( string.IsNullOrWhiteSpace( text ), $"{language} {key}" );
+				Assert.IsTrue( text.Length <= 24, $"{language} {key}: '{text}' fits a toggle" );
+			}
+	}
+
+	private static bool Selected( UiScreen screen, string id ) => ((UiButton)screen.Find( id )!).Selected!();
+
+	private sealed class UiTestCatalog : IBuildCatalog { public IReadOnlyList<BuildItem> GetItems( BuildCategory category ) => Array.Empty<BuildItem>(); }
 
 	[TestMethod]
 	public void TheSpaCellIsKeptWhileUsedAndRemovingTheSpaSendsItsGuestOut()

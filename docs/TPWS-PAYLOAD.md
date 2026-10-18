@@ -729,14 +729,31 @@ exactly except for the first-purchase stamps: the import stamps the saved turn i
 `0x4DB690`), so the original writes the same value on its next save; the four `restart.INTS` come back unchanged. The exported payload goes back through the loader's split (each block's reader and
 tag) and both importers and yields the same economy (`OriginalParkExportTests`).
 
+**Research (`OriginalResearchExport`).** When the caller passes the park's research (`OriginalParkExportOptions.Research`), the research lab thing and the object controls are written from it too: the 256 project
+records in the original's order (the fill `0x5031A0` walks the object scan and adds a base project for a research cost above 0, or for a free base its first level project at that turn; the level projects completions
+appended follow in completion order, `0x504580`), each project's cost and points (a finished project holds its cost, the overshoot of its last research step is not kept), the five group records (effort, output
+`(effort x 100 / the sum) x work load / 100` in unsigned integers, the current project's index, the highest open group), the tail (project count, work load, the fill's most expensive project, the lab-active byte
+that `0x504090` and `0x504140` set with the researchers) and each researchable object's control (`+0x10` researched, `+0x14` the highest finished level, the levels without a cost counting as finished,
+`ParkResearch.ResearchedLevel`). The four `restart.INTS` the original wrote hold exactly OpenTPW's new-park table for their theme (Hallow 48 projects, Jungle 48, Fantasy 44, Space 46, key for key and in order), so a
+new park's lab is built, not carried, and reads back to the byte in all four (`OriginalResearchExportTests`); only the shipped Easymode save lists a subset (24 of the 44), which a template of the same level keeps.
+The eleven private saves come back through import and export with the same fields (the played saves' finished projects hold their cost where the save kept the overshoot).
+
+**Things of a new park (`SaveNewParkThings`).** The park analyser (73,536 bytes: the grid words, 1,024 cell records whose extents the setup `0x4C7A90` fills, the history rings and extreme trackers at the
+constructor `0x4C58C0`'s values, in the order of the serializer `0x4C5D70`), the advisor controller (`0x599E70`; its first pending record, message 0 at score 100,000, is in all four restart saves and its posting site is
+not read), the tag system, the UI message receiver, the mechanic HQ and the staff HQ are generated, and equal the four restart saves' bodies byte for byte (`SaveNewParkThingsTests`).
+
 What OpenTPW cannot export yet, so the template's version stays: placed objects and their attraction things (a new object needs its attraction body, its RideSystem scene record with the object
 model's node and control counts, the cells' parent, mesh-instance and footprint fields and a thing id), built paths (a path cell differs from a plain one in the direction, flag, neighbour, texture,
-rotation and type fields; the rule that sets each is not traced), staff, guests, the research lab's projects and the object controls' researched bytes, the advisor controller, weather and the engine
-blocks. A park without a template cannot be exported: the four `restart.INTS` show what a new park holds, and of its 12 things the analyser (73,536 bytes), the advisor controller (5,838), the
-tag system, the message receiver and both HQs are identical in all four themes, while the object controls, the map cells, the attractions, the challenges, the bank, the weather, the research lab,
-the particles, the RSSE, the RideSystem, the flying rides, the advisor block and the sound chunk depend on the theme, and the message centre's lists and the track-rides build stamp are
-executable constants. Building them from the level's data would be the from-scratch writer; it needs the analyser's, advisor controller's and research lab's constructors and the object
-models' node counts first.
+rotation and type fields; the rule that sets each is not traced), staff, guests, the advisor's state beyond a new park's, weather and the engine blocks. A park without a template cannot be exported: of a new park's
+12 things the analyser, the advisor controller, the tag system, the message receiver and both HQs are now built, and the research lab is built from the research; the object controls (the ids of the level's
+objects), the map cells, the attractions, the challenges, the bank, the weather, the particles, the RSSE, the RideSystem, the flying rides, the advisor block and the sound chunk depend on the theme, and the
+message centre's lists and the track-rides build stamp are executable constants. Building those from the level's data is the rest of the from-scratch writer; it needs the attraction and scene-record
+constructors and the object models' node counts next.
+
+**Import of the script run state.** The Clock block's first word is the game clock the RSSE records' absolute deadlines count from (the Fantasy corpus seaplane is saved inside a `WAITANIM` 4,873 ms short of its
+deadline, `0x553783` and `0x553828` store the deadline at `+0xA0` and rewind the program counter): an imported park's script world starts its scheduler clock there and each matched script resumes at its saved
+program counter with its stack, variables, limbo table, waits and timers (`SavedScriptImport`, `RideVM.ImportSavedRunState`). The object lists, node, bounce and walk tables of the records, and the animations
+playing on their objects, are not restored.
 
 ## Tests
 
@@ -789,7 +806,7 @@ RideSystem, attraction and economy readers over the second fixture set
 
 ## Remaining gates
 
-- A from-scratch original-format park (no template): the constructors of the park analyser, advisor controller, research lab, attractions and ride-system scene records (see "Writing original-format saves"); exporting placed objects, built paths, staff and guests.
+- A from-scratch original-format park (no template): the constructors of the attractions and ride-system scene records (the analyser, advisor controller and research lab are built, see "Writing original-format saves"); exporting placed objects, built paths, staff and guests.
 - An online (LAYS) save; LAYS payloads are unsupported.
 - A non-empty TPWS: the second fixture set has no placed objects, extension records or
   extra paths, so those readers are still proven on Easymode alone. A Theme Park World

@@ -97,7 +97,7 @@ The rotation builder behind the car pose (`0x0046F6F0`) reads sine and cosine fr
 
 ## Not done
 
-A shadow under the cars (TOUR-008: the car draw and the MESHSHADOW flag show none, the generic instance draw was not read for one), the mesh-derived and second-layer-owned ground (TOUR-005); see the register.
+The mesh-derived and second-layer-owned ground (TOUR-005); see the register. There is no shadow under the cars in the original either (TOUR-008 retired: the car draw, the MESHSHADOW flag, the vertex writer and the batcher `0x00581DB0` show none).
 
 ## Drawing
 
@@ -117,7 +117,7 @@ The pose is the original's draw pass `[BIN:TPW-EXE:0x0055CE60]` (`TourPose`):
   count of consecutively numbered head nodes of the car mesh (`+0xDC`, counted at `0x0055AA2D`); more riders than nodes share nodes. `TourPose.HeadNode` is a presentation function of that word:
   it draws nothing, so the simulation's random stream is untouched.
 
-## Sounds, effects and animations (TOUR-004 retired, TOUR-008 narrowed)
+## Sounds, effects and animations (TOUR-004 and TOUR-008 retired)
 
 The controller raises `TourEffect`s (`TourController.Effect`, presentation only: no world draw) and `OriginalObjectRuntime` plays them:
 
@@ -151,8 +151,7 @@ are the typed cells of one owner word). Still terrain: cells with a second-layer
 - Reclassified: TOUR-006 is `[EXT:legacy-tour-save]`.
 - Reclassified: TOUR-002 is `[EXT:tour-thrown-riders-released]` (formerly `APPROX:TOUR-002`: riders a severe breakdown threw off are handed out through TOUR 4, which lowers VAR_ONRIDE; the original's loop in `0x0055DA70` discards the id `0x0055D720` returns, so the script never releases them and **thrown-off riders inflate the ride's rider count**, VAR_ONRIDE, for ever; OpenTPW fixes that on purpose).
 - Narrowed: TOUR-004 (all
-  triggers located, nothing played), TOUR-005 (implemented for the shipped maps), TOUR-008 (animations and
-  shadow only).
+  triggers located, nothing played), TOUR-005 (implemented for the shipped maps), TOUR-008 (retired: the cars have no shadow in the original).
 
 ## Verification
 

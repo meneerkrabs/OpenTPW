@@ -249,6 +249,55 @@ public class LitterTests
 	}
 
 	[TestMethod]
+	public void ACloserBinTestedAfterTheReachableOneThatFailsItsRouteLeavesTheWalkStuck()
+	{
+		// tp.exe 0x00500DC0: every candidate closer than the best makes its own route request, and a failed one (0x0050F8E0) leaves the walk stuck
+		var litter = new ParkLitter();
+		var simulation = Row( out _, litter );
+		var bins = new[] { new LitterBin( 9, (4, 6), (4, 5) ), new LitterBin( 8, (3, 4), (3, 3) ) };   // the second is closer, its access cell is no path
+		simulation.Bins = () => bins;
+		var binned = new List<int>();
+		simulation.LitterBinned += ( _, bin ) => binned.Add( bin );
+		var guest = simulation.SpawnInPark( 2, 5 );
+		guest.Litter = 90;
+		Assert.IsTrue( RunUntilEmpty( simulation, guest ) );
+		Assert.AreEqual( 0, binned.Count, "the stuck walk bins nothing" );
+		Assert.AreEqual( 1, litter.Count, "state 9 drops the litter on the cell" );
+	}
+
+	[TestMethod]
+	public void AClosestBinThatIsTestedFirstDoesNotSpoilALaterReachableOne()
+	{
+		var litter = new ParkLitter();
+		var simulation = Row( out _, litter );
+		var bins = new[] { new LitterBin( 8, (3, 4), (3, 3) ), new LitterBin( 9, (4, 6), (4, 5) ) };
+		simulation.Bins = () => bins;
+		var binned = new List<int>();
+		simulation.LitterBinned += ( _, bin ) => binned.Add( bin );
+		var guest = simulation.SpawnInPark( 2, 5 );
+		guest.Litter = 90;
+		Assert.IsTrue( RunUntilEmpty( simulation, guest ) );
+		CollectionAssert.AreEqual( new[] { 9 }, binned );
+	}
+
+	[TestMethod]
+	public void ARouteRequestOfAStrandedGuestRefusesAtOnceAndLeavesTheWalkAlone()
+	{
+		// tp.exe 0x004FA530: a mark +0x198 still held by 0x004FA770 returns 0 before anything is written; a mark the cell map has stamped past clears and the request goes on
+		var simulation = Row( out var grid, new ParkLitter() );
+		var guest = simulation.SpawnInPark( 2, 5 );
+		var route = typeof( GuestSimulation ).GetMethod( "RouteToCell", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance )!;
+		guest.StrandedMark = grid.Cells.StampCounter + 1;   // what the wander stores when it finds no way on
+		var before = (guest.Navigation.TargetX, guest.Navigation.TargetY, guest.HasWaypoint);
+		Assert.IsFalse( (bool)route.Invoke( simulation, [guest, (6, 5)] )!, "still stranded" );
+		Assert.AreEqual( before, (guest.Navigation.TargetX, guest.Navigation.TargetY, guest.HasWaypoint), "the walk is untouched" );
+		Assert.AreNotEqual( 0, guest.StrandedMark, "the mark stays" );
+		grid.Cells.StampBlockAt( 2, 5 );   // an edit beside the guest stamps its block at the mark
+		Assert.IsTrue( (bool)route.Invoke( simulation, [guest, (6, 5)] )!, "a stamped block frees the guest" );
+		Assert.AreEqual( 0, guest.StrandedMark );
+	}
+
+	[TestMethod]
 	public void AWalkToABinThatLosesItsRouteDropsTheLitter()
 	{
 		var litter = new ParkLitter();

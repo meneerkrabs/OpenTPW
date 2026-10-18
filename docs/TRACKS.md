@@ -19,7 +19,7 @@ Code: `source/OpenTPW/World/Tracks/`, the track layer in `ParkCellMap`, the tool
   chosen, and the controller rebuilds its sections, collision objects and buoys. A valid circuit ends the tool and starts the queue tool.
 - The ride's own `Wateride.RSE` drives a `BumpController`: it waits for a valid track (`BUMP 5`), opens (`BUMP 7`), takes guests (`BUMP 1`),
   launches boats (`BUMP 4`) and hands guests back (`BUMP 2`). Boats run the traced integer physics around the loop and unload at the station.
-- Pieces are drawn from the ride's `wr_trck*.md2` meshes, boats from the supplemental mesh `wr_ring.md2`.
+- Pieces are drawn from the ride's `wr_trck*.md2` meshes, boats from the supplemental mesh `wr_ring.md2`; rider k of a boat hangs its head from the boat's head dummy k (1 to 5, `0x549C60`, TRACK-026), as a kart's riders do.
 - The cells, the controller and its boats are saved in the park-resume envelope (optional `Tracks` part) and restored exactly.
 
 Not in phases 1 and 2: jumps and tunnels (add-ons); the three other themes' water rides were checked for data only (the

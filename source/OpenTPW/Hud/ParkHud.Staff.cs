@@ -291,10 +291,9 @@ public sealed partial class ParkHud
 		return FormatMoney( row switch { 0 => balance.Income, 1 => balance.StaffCosts, 2 => balance.OtherCosts, _ => balance.Balance } );
 	}
 
-	/// <summary>The hire window's skill gauge (control 9346) as a share of the full bar: the candidate's skill byte over 5.</summary>
-	// [BIN:TPW-EXE:0x49b8c3 skill gauge] the gauge is set to the skill byte (candidate +8) × 1024 / 5 (0x49b8e2..0x49b8f5), so the byte 5 fills the bar
-	// [APPROX:UI-081] the field is the grade (0x507600 writes +8 = AvgGradeOf* + R % 3 - 1, stored as 4 when above 4), so the original's value is Grade × 1024 / 5 of the gauge's 0..1024 range (0x66d885) and a grade-0 candidate's value is 0; the bar keeps (Grade + 1) / 5 because the video's cheapest ($60) candidate shows about a fifth (12:00); the gauge models crop their art to value × 100 / 1024 per cent (UI-046), so a byte of 0 would draw an empty bar and the fifth is not explained by the drawing — evidence needed: which byte that candidate holds (0x507600 stores AvgGradeOf* + R % 3 - 1 as a byte, a wrapped 0xff becoming 4)
-	public static float? SkillGauge( StaffCandidate? candidate ) => candidate == null ? null : Math.Clamp( (candidate.Grade + 1) / 5f, 0f, 1f );
+	/// <summary>The hire window's skill gauge (control 9346) as a share of the full bar: the candidate's skill byte (its grade) × 1024 / 5 of the gauge's 0..1024 range.</summary>
+	// [BIN:TPW-EXE:0x49b8c3 skill gauge] the gauge is set to the skill byte (candidate +8, the grade 0..4 that 0x507600 writes as AvgGradeOf* + R % 3 - 1, a wrapped 0xff stored as 4) × 1024 / 5 (0x49b8e2..0x49b8f5), so grade 4 fills four fifths of the bar and grade 0 none; the video's guard candidates (12:00, wages $60 $75 $105 = Easy_Standard grades 1 2 3 at multiplier 15) show a fifth for the cheapest, as grade 1 does
+	public static float? SkillGauge( StaffCandidate? candidate ) => candidate == null ? null : Math.Clamp( (candidate.Grade << 10) / 5, 0, UiGauge.FullValue ) / (float)UiGauge.FullValue;
 
 	private string SelectedName => showingEmployedStaff
 		? SelectedStaff is { } member ? StaffName( member ) : ""

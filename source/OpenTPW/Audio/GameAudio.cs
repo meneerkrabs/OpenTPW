@@ -232,8 +232,13 @@ public static class GameAudio
 		mixer.DuckingLevel = ReadDuckingLevel() / 100f;
 		mixer.MusicDuckRequest = MusicDuckRequest;
 		ResetReverb();
-		if ( ReverbMap == null && !string.IsNullOrEmpty( Settings.Default.GamePath ) )
-			LoadReverbMap( Settings.Default.GamePath );
+		if ( ReverbMap == null )
+		{
+			// The browser has no System.Configuration store; an optional reverb map must not stop startup.
+			var gamePath = LegacySettings.GamePath;
+			if ( !string.IsNullOrEmpty( gamePath ) )
+				LoadReverbMap( gamePath );
+		}
 		// [BIN:STP-PPC:0x100BC6F0 sound manager] global categories registered at sound-manager offsets 12 (cat_ui), 20 (cat_speech), 0 (cat_ambient), 8 (cat_rides), 4 (cat_kids), 16 (cat_staff)
 		Ui = SoundCategory.TryLoad( FileSystem, "/global/sound", "cat_ui" );
 		Speech = SoundCategory.TryLoad( FileSystem, "/global/Speech", "cat_speech" );

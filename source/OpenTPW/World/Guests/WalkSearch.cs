@@ -23,7 +23,7 @@ public static class WalkEdges
 	/// <c>0x4D8750</c>: true when a walker with <paramref name="mask"/> may not step from (<paramref name="x"/>,
 	/// <paramref name="y"/>) to its neighbour in <paramref name="direction"/>. Coordinates are bytes, as in the original.
 	/// </summary>
-	// [APPROX:WALK-005] the edge test 0x4d8750 reads only the cell map: OpenTPW's cells hold no object or thing references, so an object standing on a target cell (0x5363f0, its type record's 0x53ad20 bits) never blocks, a type-9 target's ride thing (on its owner cell +0x10, type 3: 0x42a440, 0x4dd4e0 +0x118) never decides a mask-2 step, and the underground link byte +0x22 (0x522770 with 0x81b4cc) is not kept; the types are the ones OpenTPW's map holds (map init 0x536490's 0, 1, 2, 7 and 0x1e, and the path, queue, entrance, exit, object and track cells its tools write) — still open: object and thing references in the cell map
+	// [APPROX:WALK-005] the edge test 0x4d8750 reads only the cell map: OpenTPW's cells hold no track records, so the test on a target cell's track record (0x5363f0: kind 11, 13, 16, 18 or 25, or the parent of a kind 12 or 17 record, 0x53ad30 and 0x53ad90) that blocks the step unless the record's flag nibble (+0xE & 0xF, 0x53ad20) is set is not made, a type-9 target's ride thing (on its owner cell +0x10, type 3: 0x42a440, 0x4dd4e0 +0x118) never decides a mask-2 step, and the underground link byte +0x22 (0x522770 with 0x81b4cc) is not kept; the types are the ones OpenTPW's map holds — still open: the track records of the cell map (TRACK-002) and the writer of the flag nibble
 	public static bool Blocked( ParkCellMap map, int x, int y, int direction, int mask )
 	{
 		x &= 0xFF;
@@ -65,8 +65,8 @@ public static class WalkEdges
 		}
 		if ( IsQueue( from ) && to == 1 )
 			return (map.LinksAt( tx, ty ) & BackLink( direction )) == 0;
-		// 0x4D89C3: an object standing on the target cell (0x5363F0) blocks unless its type record says otherwise (0x53AD20);
-		// OpenTPW's cell map holds no object references (WALK-005).
+		// 0x4D89C3: a target cell whose track record is of a track kind (0x5363F0) blocks unless the record's flag nibble is set (0x53AD20);
+		// OpenTPW's cell map holds no track records (WALK-005).
 		if ( from != 1 && !IsQueue( from ) )
 			return false;
 		if ( mask == 1 && from == 1 && to != 1 && !IsQueue( to ) && to != 4 )

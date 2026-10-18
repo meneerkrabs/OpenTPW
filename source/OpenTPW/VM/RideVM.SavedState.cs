@@ -1,0 +1,102 @@
+namespace OpenTPW;
+
+public sealed partial class RideVM
+{
+	/// <summary>
+	/// Applies the run state of one script record of an original save's RSSE block (the 0xF4-byte struct and its buffers, loader tp.exe <c>0x5597A0</c>) to this script, which was just created
+	/// for the same object: the program counter, the shared stack and heap, the variables, the limbo table, the result register, the TURBO and DIPMUSIC bytes, the reverb and speed words, the
+	/// WALKST_FLOAT state and every wait and timer deadline. <paramref name="clockWord"/> is the saved game clock (the first word of the Clock block, <c>0x402E30</c>), which every absolute
+	/// deadline of the record counts from. Returns null when the state was applied, else the reason it was refused; a refusal changes nothing.
+	/// </summary>
+	// [BIN:TPW-EXE:0x5597A0 RSSE loader] the struct is read raw over a fresh 0xF4-byte block (only the list links are kept), then the code, stack, variable, limbo, bounce, walk, string and node buffers are allocated and read; the program counter (+0x3C), stack pointer (+0x40), heap count (+0x44), result register (+0x48), the deadlines (+0xA0, +0xA4, +0xC4) and the other words stay exactly as saved
+	// [BIN:TPW-EXE:0x553783 WAIT] with the deadline word (+0xA0) at 0 the handler stores clock + trunc(operand / speed), rewinds the program counter to the instruction (-2) and yields; with it set the instruction runs again each pass and continues, clearing the word, once the clock is not below it. WAITABS (0x553828), WAITANIM (0x5529BC) and WAITANIM_CH (0x55320A) share the word and the rewind; so a saved program counter on one of them, with a deadline, is a script inside its wait
+	// [BIN:TPW-EXE:0x55641B SETTIMER] +0xC4 = clock + operand (absolute); GETTIMER (0x55644D) returns max(0, +0xC4 - clock), so a saved timer word counts from the saved clock like the waits
+	internal string? ImportSavedRunState( SaveRsseRecord record, uint clockWord )
+	{
+		ArgumentNullException.ThrowIfNull( record );
+		if ( record.ChildScriptId != 0 || record.SoundScriptId != 0 )
+			return $"the script has a child ({record.ChildScriptId}) or sound child ({record.SoundScriptId}) script whose run state is not restored";
+		if ( record.CodeWordCount != Script.CodeWordCount )
+			return $"the saved code is {record.CodeWordCount} words, this install's script {Script.CodeWordCount}";
+		if ( record.Variables.Length != Variables.Length * 4 )
+			return $"the saved script has {record.Variables.Length / 4} variables, this install's {Variables.Length}";
+		if ( record.Stack.Length != stack.Length * 4 )
+			return $"the saved stack holds {record.Stack.Length / 4} words, this install's header declares {stack.Length}";
+		if ( record.Limbo.Length != limboValues.Length * SaveRsseRecord.LimboEntryBytes )
+			return $"the saved limbo table holds {record.Limbo.Length / SaveRsseRecord.LimboEntryBytes} entries, this install's header declares {limboValues.Length}";
+		var counter = unchecked( (int)record.ProgramCounter );
+		var index = counter == Script.CodeWordCount ? instructions.Length : Script.GetInstructionIndexAtWord( counter );
+		if ( index < 0 )
+			return $"the saved program counter {counter} is not the start of an instruction";
+		var pointer = unchecked( (int)record.StackPointer );
+		var heap = unchecked( (int)System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian( record.Raw.AsSpan( 0x44 ) ) );
+		if ( pointer < -1 || pointer > stack.Length - 1 || heap < 0 || heap > stack.Length )
+			return $"the saved stack pointer {pointer} or heap count {heap} is outside the stack of {stack.Length} words";
+		if ( record.LimboInUse > limboValues.Length )
+			return $"the saved limbo count {record.LimboInUse} exceeds the table of {limboValues.Length}";
+
+		var wakes = false;
+		var wake = 0.0;
+		var resume = index;
+		// a script saved inside a TRIGWAITANIM has the animation it triggered playing on its object, which is not restored: the instruction triggers again
+		var triggerToken = unchecked( (int)record.AnimationWait2 );
+		if ( index < instructions.Length )
+		{
+			var opcode = instructions[index].Opcode;
+			if ( opcode is Opcode.WAIT or Opcode.WAITABS or Opcode.WAITANIM or Opcode.WAITANIM_CH && record.WaitDeadline != 0 )
+			{
+				resume = index + 1;
+				if ( clockWord < record.WaitDeadline )
+				{
+					wakes = true;
+					wake = record.WaitDeadline - clockWord;
+				}
+			}
+			if ( opcode is Opcode.TRIGWAITANIM or Opcode.TRIGWAITANIM_CH )
+				triggerToken = 0;
+		}
+
+		ProgramCounter = resume;
+		State = wakes ? RideVMState.Waiting : resume >= instructions.Length ? RideVMState.Halted : RideVMState.Running;
+		FaultMessage = null;
+		for ( var slot = 0; slot < stack.Length; slot++ )
+			stack[slot] = System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian( record.Stack.AsSpan( slot * 4 ) );
+		stackPointer = pointer;
+		heapCount = heap;
+		for ( var slot = 0; slot < Variables.Length; slot++ )
+			Variables[slot] = System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian( record.Variables.AsSpan( slot * 4 ) );
+		for ( var slot = 0; slot < limboValues.Length; slot++ )
+		{
+			limboValues[slot] = System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian( record.Limbo.AsSpan( slot * SaveRsseRecord.LimboEntryBytes ) );
+			limboExpiries[slot] = System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian( record.Limbo.AsSpan( slot * SaveRsseRecord.LimboEntryBytes + 4 ) );
+		}
+		limboCount = (int)record.LimboInUse;
+		SetFlags( unchecked( (int)record.ResultRegister ) );
+		TurboByte = record.Turbo;
+		ReverbLevel = unchecked( (int)record.Reverb );
+		SpeedBias = record.Speed;
+		if ( record.DipMusic != 0 )
+		{
+			MusicDuckByte = record.DipMusic;
+			RequestMusicDuck( record.DipMusic );
+		}
+		walkFloatStart = record.WalkFloat0;
+		walkFloatDuration = unchecked( (int)record.WalkFloat1 );
+		walkFloatWords = unchecked( (int)System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian( record.Raw.AsSpan( 0x88 ) ) );
+		LoopAnimationToken = unchecked( (int)record.AnimationWait1 ) & 0xFFFF;
+		TriggerWaitToken = triggerToken;
+		// the deadlines are absolute in the saved clock, this script's clock starts at the import: a deadline is the difference to the clock as a signed word (GETTIMER's subtraction, 0x556468)
+		Wait4AnimDeadline = RelativeDeadline( record.AnimationWait0, clockWord );
+		timerEndMilliseconds = record.Timer == 0 ? 0 : unchecked( (int)(record.Timer - clockWord) );
+		WakeTimeMilliseconds = wake;
+		TimeMilliseconds = 0;
+		ClockOriginMilliseconds = clockWord;
+		InCriticalSection = false;
+		yieldRequested = false;
+		return null;
+	}
+
+	/// <summary>A saved absolute deadline as this script's clock counts it: 0 stays none, a deadline not ahead of the saved clock is already past (any value below the script clock behaves alike).</summary>
+	private static double RelativeDeadline( uint saved, uint clockWord ) =>
+		saved == 0 ? 0 : unchecked( (int)(saved - clockWord) ) is var difference && difference > 0 ? difference : -1;
+}

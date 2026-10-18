@@ -150,7 +150,7 @@ public class ParkResumeValidationTests
 		}, "but the park does not place it" );
 		Rejects( snapshot with
 		{
-			Guests = snapshot.Guests with { Attractions = snapshot.Guests.Attractions.Select( attraction => attraction with { QueueCells = new[] { (99, 99) } } ).ToArray() }
+			Guests = snapshot.Guests with { Attractions = snapshot.Guests.Attractions.Select( attraction => attraction with { QueueCells = attraction.QueueCells.Append( (99, 99) ).ToArray() } ).ToArray() }
 		}, "queue cell (99, 99) is outside" );
 		Rejects( snapshot with { Guests = snapshot.Guests with { SchemaVersion = 7, NextGuestId = 1 } }, "not below the next guest id" );
 

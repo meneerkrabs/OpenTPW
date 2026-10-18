@@ -14,6 +14,7 @@ namespace OpenTPW.Tests;
 [TestClass]
 public class QueueLinkTests
 {
+
 	private sealed class FlatGrid : IParkGrid
 	{
 		public int Width => 12;
@@ -89,6 +90,42 @@ public class QueueLinkTests
 		paths.BuildSegment( (3, 1), (5, 1) );
 		ride.RecomputeQueue( grid );
 		Assert.IsNull( ride.JoinCell );
+	}
+
+	[TestMethod]
+	public void APathLaidOverAQueueCellEditsTheQueueOfTheRideThatOwnsIt()
+	{
+		// [BIN:TPW-EXE:0x0053481F] the cell type setter's queue branch (type 1 over type 3) runs the owning ride's re-evaluation 0x004DE1F0
+		var (grid, ride) = Park();
+		ride.OwnerWord = ParkCellMap.CellWord( 2, 0 );
+		QueuePaths.TryExtend( grid, ride, Enumerable.Range( 0, 5 ).Select( index => (2, 5 - index) ) );
+		Assert.AreEqual( ride.OwnerWord, grid.Cells.OwnerAt( 2, 1 ) );
+		var paved = new List<ushort>();
+		var paths = new ParkPathBuilder( grid.Cells, grid, (ParkEconomy?)null, new FlatGrid() );
+		paths.QueueCellPaved += paved.Add;
+		var result = paths.BuildSegment( (5, 1), (2, 1) );
+		Assert.IsTrue( result.Built.Contains( (2, 1) ) || grid.Cells.TypeAt( 2, 1 ) == ParkCellType.Path, $"the path covers the queue end ({result.StoppedBy})" );
+		CollectionAssert.AreEqual( new[] { ride.OwnerWord }, paved );
+	}
+
+	[TestMethod]
+	[DataRow( 3 )]
+	[DataRow( 1 )]
+	public void GuestsWaitingInAQueueThatAPathIsLaidOverAreHandled( int row )
+	{
+		// [BIN:TPW-EXE:0x0053481F] the paved cell is edited out of the queue (what Level does with the paved event); guests that queued on it or behind it must not stay stuck
+		var rig = new QueueTests.Rig( takesGuests: true, capacity: 1, parameters: new QueueParameters( true, false, false, 600, 60, 60, 1, 30 ) ) { KeepNeedsEmpty = true };
+		rig.HoldAdmission();
+		var guests = Enumerable.Range( 0, 6 ).Select( _ => rig.Send() ).ToList();
+		rig.RunTurns( 120 );
+		Assert.IsTrue( guests.Count( guest => guest.IsInQueue ) >= 3, "the guests queued" );
+		rig.Grid.Cells.SetType( 2, row, ParkCellType.Path );
+		rig.Ride.RecomputeQueue( rig.Grid );
+		rig.Ride.NotifyQueueEdited( rig.Grid );
+		rig.Script[RideVariables.VAR_RUNNING] = 0;
+		rig.RunTurns( 6000 );
+		var report = string.Join( ", ", guests.Select( guest => $"{guest.State}/{guest.RidesTaken}/{guest.Cell}" ) );
+		Assert.IsTrue( guests.All( guest => guest.RidesTaken >= 1 ), report );
 	}
 
 	[TestMethod]

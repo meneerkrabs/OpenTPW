@@ -97,6 +97,9 @@ public sealed record GuestSnapshot
 	public int VisitorNumber { get; init; }
 	/// <summary>The stranded mark (<see cref="Guest.StrandedMark"/>). Absent in older saves, which hold none.</summary>
 	public int StrandedMark { get; init; }
+	/// <summary>The number the guest took when it entered its cell's list (<see cref="Guest.CellSerial"/>), which orders the cell lists; 0 in older saves, whose lists start in guest order.</summary>
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault )]
+	public long CellSerial { get; init; }
 
 	// [EXT:pools-swim] the swim session (docs/POOLS.md); every field is absent (zero) outside it and in saves made before the pools extension, which restore with no swimmers
 	/// <summary>The swimmer's heading, 0..63 (<see cref="Guest.SwimHeading"/>).</summary>

@@ -45,7 +45,7 @@ public static class FeatureGates
 	public static bool RestoredAdvice => OpenTpwExtensions.IsEnabled( OfficialExtensions.RestoredAdvice );
 
 	/// <summary>
-	/// [EXT:evening] The <c>opentpw.evening</c> extension is on for this run (off by default): the park has a day and night cycle and its lamps (docs/EVENING.md). Presentation only.
+	/// [EXT:evening] The <c>opentpw.evening</c> extension is on for this run (on by default): the park has a day and night cycle and its lamps (docs/EVENING.md). Presentation only.
 	/// </summary>
 	public static bool Evening => OpenTpwExtensions.IsEnabled( OfficialExtensions.Evening );
 

@@ -90,7 +90,7 @@ public static class OfficialExtensions
 	/// <c>AffectsSimulation</c> is false, so it is not recorded in park saves and changes no hash. Off by default until it is tuned; the pace is set on the OpenTPW options page.
 	/// </summary>
 	// [EXT:evening] OpenTPW's own extension; the original game's parks are always in daylight
-	public static IOpenTpwExtension Evening { get; } = new OpenTpwExtension( "opentpw.evening", "Evening and night", new ModVersion( 1, 0, 0 ), DefaultEnabled: false, AffectsSimulation: false, PlayerSelectable: true );
+	public static IOpenTpwExtension Evening { get; } = new OpenTpwExtension( "opentpw.evening", "Evening and night", new ModVersion( 1, 0, 0 ), DefaultEnabled: true, AffectsSimulation: false, PlayerSelectable: true );
 
 	/// <summary>All official extensions, in declaration order.</summary>
 	public static IReadOnlyList<IOpenTpwExtension> All { get; } = new[] { Online, CrossEditionObjects, SmarterGuests, GuestInsights, Pools, PoolGuestArt, RestoredAdvice, Evening };

@@ -2,7 +2,7 @@
 
 October 18, 2026. The **evening and night extension** (`opentpw.evening`) gives the park a day and night cycle: the sun sets, the sky, the ground, the guests and the pool water darken, and lamps, pool lights and a few ride lights
 switch on as it gets dark. The original game's parks are always in daylight (its theme `.sam` files carry an ambient and a directional light level that tp.exe never changes over time), so everything on this page is an
-addition of this reimplementation, labelled `[EXT:evening]` in the code. It is **presentation only** and **off by default** until it is tuned: with it on or off the simulation, the economy, the guests, the saved parks, the world
+addition of this reimplementation, labelled `[EXT:evening]` in the code. It is **presentation only** and **on by default** (the user decided on October 18, 2026, after the tuning captures; it can be switched off on Options > OpenTPW > Extensions and mods): with it on or off the simulation, the economy, the guests, the saved parks, the world
 state hashes and the determinism pins are exactly the same (`AffectsSimulation` is false, so a park save does not record it, as for `opentpw.restored-advice`).
 
 | Part | Where |
@@ -170,7 +170,7 @@ at `--evening-pace night` (the lamp source registered, 3 point lights in view) a
 
 `EveningTests` (no GPU; the data test is inconclusive without `OPENTPW_GAME_PATH`): the daylight curve (full around noon, zero at night, mirrored, monotone, no jumps, wrapping), that **full day is the original's look exactly** (every uniform
 and tint, byte for byte), the clock (pace lengths, wrapping, bad steps), the level's step (pausing stops it, a hitch is capped, off creates nothing, null-safe for a level built without its constructor), the options value (default, round trip by
-name, unknown values, `CopyFrom`, `Normalized`, the row on the OpenTPW page: cycling, OK and Cancel), every interface language of every text, the extension's registration (off by default, not simulation, selectable, never recorded in a save), the
+name, unknown values, `CopyFrom`, `Normalized`, the row on the OpenTPW page: cycling, OK and Cancel), every interface language of every text, the extension's registration (on by default, not simulation, selectable, never recorded in a save), the
 mods screen row, a park run's **world state hash equal with the extension on and off** (`EveningTests` on the economy and `DeterminismTests` on the full synthetic park with guests, scripts and pools, which also equals the plain run), the uniform
 layout (byte 204, the block still 272 bytes) and the shader text of the five changed shaders, the lamp table (the shipped one, every kind of bad row), the lamp resolution on a built model, the pool lamp and underwater light on their shipped models,
 and, with the game's data, that every row of the shipped table matches an original object and every node it names exists (44 lights resolved, counting each theme's copy of an object).

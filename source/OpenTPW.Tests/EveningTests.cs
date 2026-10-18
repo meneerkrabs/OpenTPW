@@ -329,18 +329,18 @@ public class EveningTests
 	// ---- the extension ----
 
 	[TestMethod]
-	public void TheExtensionIsRegisteredOffByDefaultPresentationOnlyAndSelectable()
+	public void TheExtensionIsRegisteredOnByDefaultPresentationOnlyAndSelectable()
 	{
 		var evening = OfficialExtensions.Evening;
 		Assert.AreEqual( "opentpw.evening", evening.Id );
-		Assert.IsFalse( evening.DefaultEnabled, "off until the user decides the default" );
+		Assert.IsTrue( evening.DefaultEnabled, "on by default: the user decided on 2026-10-18 after the tuning captures" );
 		Assert.IsFalse( evening.AffectsSimulation );
 		Assert.IsTrue( evening.PlayerSelectable );
 		Assert.AreEqual( new ModVersion( 1, 0, 0 ), evening.Version );
 		Assert.AreSame( evening, OfficialExtensions.Find( "opentpw.evening" ) );
 		CollectionAssert.Contains( OfficialExtensions.All.ToArray(), evening );
-		Assert.IsFalse( ModSet.Defaults( OfficialExtensions.All ).IsEnabled( evening.Id ) );
-		Assert.IsFalse( FeatureGates.Evening );
+		Assert.IsTrue( ModSet.Defaults( OfficialExtensions.All ).IsEnabled( evening.Id ) );
+		Assert.IsTrue( FeatureGates.Evening, "the process default" );
 		using ( OpenTpwExtensions.Use( Set( true ) ) )
 			Assert.IsTrue( FeatureGates.Evening );
 		using ( OpenTpwExtensions.Use( Set( false ) ) )

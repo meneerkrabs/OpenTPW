@@ -70,6 +70,14 @@ public static class OfficialExtensions
 	public static IOpenTpwExtension Umbrellas { get; } = new OpenTpwExtension( "opentpw.umbrellas", "Umbrellas", new ModVersion( 1, 0, 0 ), DefaultEnabled: true, AffectsSimulation: true );
 
 	/// <summary>
+	/// The rain mood extension (docs/UMBRELLAS.md, "The rain mood rule (phase U4)"): Theme Park Inc's weather rule for the guests' meters, which Theme Park World does not have. In rain, storm and snow a guest's happiness, thirst and hunger change
+	/// by the shipped kid row, once per qualifying day, and an open umbrella softens a happiness loss. Off by default; it changes every park with weather, so a save always records it while it is on
+	/// (it is not in <c>ParkResumeMods.UsedOnlyExtensionIds</c>) and its version is the rule identity. It does not need the umbrellas extension, and the umbrellas work without it.
+	/// </summary>
+	// [EXT:rain-mood-extension] OpenTPW's own extension; Theme Park World's guests do not mind the weather
+	public static IOpenTpwExtension RainMood { get; } = new OpenTpwExtension( "opentpw.rain-mood", "Rain mood", new ModVersion( 1, 0, 0 ), DefaultEnabled: false, AffectsSimulation: true );
+
+	/// <summary>
 	/// The guest insights extension (docs/SMARTER-GUESTS.md): the refusal-reason counters (too expensive, queue too long, too scary, too boring, ride broken or closed) in the park information window (phase 1).
 	/// It only reads the simulation (<see cref="GuestRefusalCounters"/>, a passive observer), so it is not recorded in park saves and a player may switch it on freely
 	/// (<see cref="IOpenTpwExtension.PlayerSelectable"/>).
@@ -102,7 +110,7 @@ public static class OfficialExtensions
 	public static IOpenTpwExtension Evening { get; } = new OpenTpwExtension( "opentpw.evening", "Evening and night", new ModVersion( 1, 0, 0 ), DefaultEnabled: true, AffectsSimulation: false, PlayerSelectable: true );
 
 	/// <summary>All official extensions, in declaration order.</summary>
-	public static IReadOnlyList<IOpenTpwExtension> All { get; } = new[] { Online, CrossEditionObjects, SmarterGuests, GuestInsights, Pools, PoolGuestArt, Umbrellas, RestoredAdvice, Evening };
+	public static IReadOnlyList<IOpenTpwExtension> All { get; } = new[] { Online, CrossEditionObjects, SmarterGuests, GuestInsights, Pools, PoolGuestArt, Umbrellas, RainMood, RestoredAdvice, Evening };
 
 	public static IOpenTpwExtension? Find( string id ) => All.FirstOrDefault( extension => extension.Id == id );
 }

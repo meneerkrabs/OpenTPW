@@ -112,6 +112,9 @@ weather Rain/Storm 200 (science 250), Snow 150, HeatWave 5. Weather spells (`0x6
   only in states 1 and 3), restored, and hashed (both digests) only while a guest has an umbrella. The due turn is OpenTPW's addition: Theme Park Inc does not save it (`+0x23C`), so a resumed park would not continue the same run. `[EXT:umbrellas-save-due]`
   A park save records `opentpw.umbrellas` only while the park has a brolly shop or a guest with an umbrella, with the asset keys of the placed shops only (`ParkResumeMods.UsedOnlyExtensionIds`, `InUse`, `AssetsForUse`; the pools' rule); a save with an umbrella and no record is refused by
   the envelope's shape check, and a recorded extension that is off or in another version refuses the load. `[EXT:umbrellas-save]`
+  The kid score's change to 75 (October 18) changed `Brolly.sam`, whose hash a save with a placed brolly shop pins: such a save from v0.8.26 or v0.8.27
+  no longer resumes ("asset … hashes to …"); parks without a brolly shop are unaffected. The extension stays 1.0.0, because a bump would also refuse the saves that
+  record it only through a guest's umbrella.
 - **Determinism.** The fixed run on the cross park is unchanged with the extension on or off and no brolly shop (`DeterminismTests.EveryExistingPinIsUnchangedWithTheUmbrellasExtensionOnOrOffAndNoBrollyShop`, and every other pin, which now runs with the extension at its default). The new pin
   `DeterminismTests.UmbrellasFixedRunHash` covers the fixed run plus a brolly shop at (10, 1) and a rain that comes and goes (see [DETERMINISM.md](DETERMINISM.md#umbrellas)).
 - **Approximated, registered** (`UmbrellaApproximations`): `UMB-001` the reaction delay is a SplitMix64 hash of (guest id, park turn) with the original's bound, not the C runtime's `rand()`; `UMB-002` the view condition of the scheduling and of the carrying out is dropped (low confidence in what it is);

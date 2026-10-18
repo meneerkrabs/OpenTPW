@@ -506,4 +506,45 @@ public class UmbrellasSimulationTests
 		Assert.AreNotEqual( open, Hash( guest => (guest.UmbrellaState, guest.UmbrellaType) = (UmbrellaRules.StateOpen, 2) ), "the colour counts" );
 		Assert.AreNotEqual( open, Hash( guest => (guest.UmbrellaState, guest.UmbrellaType) = (UmbrellaRules.StateClosed, 1) ), "the state counts" );
 	}
+
+	[TestMethod]
+	public void AParkSavedMidRainWithUmbrellasInEveryStateContinuesIdenticallyAfterAResume()
+	{
+		// the weather depends on the park's own clock, so a resumed park meets the same weather at the same tick
+		static void Weather( Rig rig ) => rig.Simulation.UmbrellaWeatherState = () => rig.Simulation.TickCount < 900 ? UmbrellaRules.WeatherRain : rig.Simulation.TickCount < 1500 ? UmbrellaRules.WeatherNone : UmbrellaRules.WeatherSnow;
+		var park = new Rig( 11 );
+		Weather( park );
+		var guests = Enumerable.Range( 0, 8 ).Select( _ => park.Simulation.SpawnInPark( 4, 5 ) ).ToArray();
+		var states = new[] { 0, 1, 2, 3, 4, 2, 4, 3 };
+		for ( var index = 0; index < guests.Length; index++ )
+		{
+			guests[index].UmbrellaState = states[index];
+			guests[index].UmbrellaType = states[index] == 0 ? 0 : index % 3;
+			guests[index].UmbrellaDueTurn = states[index] is 1 or 3 ? 60 + 8 * index : 0;
+			guests[index].TimeInParkSeconds = (96 + index) * TurnSeconds;
+		}
+		for ( var tick = 0; tick < 300; tick++ )
+			park.Simulation.Tick( GuestSnapshotTests.Tick );
+		Assert.IsTrue( park.Simulation.Guests.Any( guest => guest.UmbrellaState != 0 ), "the park holds umbrellas at the snapshot moment" );
+		var snapshot = park.Simulation.CaptureSnapshot();
+		Assert.IsTrue( park.Simulation.ValidateSnapshot( snapshot ).IsValid );
+		var resumed = new Rig( 11 );
+		Weather( resumed );
+		resumed.Simulation.RestoreSnapshot( snapshot );
+		Assert.AreEqual( park.Simulation.ComputeStateHash(), resumed.Simulation.ComputeStateHash(), "the restored park hashes the same as the saved one" );
+		var seen = new HashSet<int>( park.Simulation.Guests.Select( guest => guest.UmbrellaState ) );
+		for ( var tick = 0; tick < 2400; tick++ )
+		{
+			park.Simulation.Tick( GuestSnapshotTests.Tick );
+			resumed.Simulation.Tick( GuestSnapshotTests.Tick );
+			if ( tick % 40 == 0 )
+			{
+				Assert.AreEqual( park.Simulation.ComputeStateHash(), resumed.Simulation.ComputeStateHash(), $"the parks diverged at tick {tick}" );
+				foreach ( var guest in park.Simulation.Guests )
+					seen.Add( guest.UmbrellaState );
+			}
+		}
+		Assert.AreEqual( JsonSerializer.Serialize( park.Simulation.CaptureSnapshot() ), JsonSerializer.Serialize( resumed.Simulation.CaptureSnapshot() ) );
+		CollectionAssert.IsSubsetOf( new[] { 1, 2, 3, 4 }, seen.ToArray(), "the umbrellas moved through the states during the continuation (rain, then clear, then snow)" );
+	}
 }

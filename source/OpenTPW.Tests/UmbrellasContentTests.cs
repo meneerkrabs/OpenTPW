@@ -384,4 +384,88 @@ public class UmbrellasContentTests
 		var totem = ObjectCatalog.Load( "jungle" ).Entries.First( entry => entry.ModId == null );
 		Assert.IsNull( OriginalObjectRuntime.CreateVisitorBridge( totem, 8 ).UmbrellaTerms, "an original object keeps the game's score: the keys are read for the extension's objects only" );
 	}
+
+	// ---- Saves -------------------------------------------------------------------------------------------------------------
+
+	[TestMethod]
+	public void ASaveHoldsTheBrollyShopsAssetKeysOfThePlacedShopsOnly()
+	{
+		var shop = ObjectCatalog.Load( "jungle" ).Get( 64500 );
+		var other = ObjectCatalog.Load( "hallow" ).Get( 64501 );
+		var manifest = new Dictionary<string, string>
+		{
+			["data:/levels/jungle/rides/totem/totem.sam"] = new string( 'a', 64 ),
+			["mod:opentpw.umbrellas:/objects/jungle/brolly/Brolly.sam"] = new string( 'b', 64 ),
+			["mod:opentpw.umbrellas:/objects/hallow/brolly/Brolly.sam"] = new string( 'e', 64 ),
+			["mod:opentpw.pools:/objects/jungle/cabin/Cabin.sam"] = new string( 'f', 64 )
+		};
+		var none = ParkResumeMods.AssetsForUse( manifest, Array.Empty<ObjectCatalogEntry>() );
+		CollectionAssert.AreEquivalent( new[] { "data:/levels/jungle/rides/totem/totem.sam" }, none.Keys.ToArray(), "no extension object placed: none of either extension's files" );
+		var placed = ParkResumeMods.AssetsForUse( manifest, new[] { shop } );
+		CollectionAssert.AreEquivalent( new[] { "data:/levels/jungle/rides/totem/totem.sam", "mod:opentpw.umbrellas:/objects/jungle/brolly/Brolly.sam" }, placed.Keys.ToArray(), "the placed shop's files only" );
+		Assert.IsTrue( ParkResumeMods.IsUmbrellasObject( shop ) && ParkResumeMods.IsUmbrellasObject( other ) );
+		Assert.IsFalse( ParkResumeMods.IsUmbrellasObject( ObjectCatalog.Load( "jungle" ).Entries.First( item => item.ModId == null ) ) );
+		StringAssert.Contains( ParkResumeMods.ShapeProblem( null, placed )!, "mod opentpw.umbrellas, which the save does not record" );
+		Assert.IsNull( ParkResumeMods.ShapeProblem( new[] { new ParkModRecord( ModId, "1.0.0", ModSet.NoFilesSha256 ) }, placed ) );
+	}
+
+	[TestMethod]
+	public void AParkUsesTheExtensionWithABrollyShopOrAnUmbrellaAndOtherwiseSavesAsIfItWereOff()
+	{
+		var shop = ObjectCatalog.Load( "jungle" ).Get( 64500 );
+		var ordinary = ObjectCatalog.Load( "jungle" ).Entries.First( item => item.ModId == null );
+		var cells = new ParkCellMap( 20, 10 );
+		CollectionAssert.AreEqual( Array.Empty<string>(), ParkResumeMods.InUse( cells ).ToArray() );
+		CollectionAssert.AreEqual( new[] { ModId }, ParkResumeMods.InUse( cells, umbrellas: true ).ToArray() );
+		var rig = new GuestSimulation( GuestTests.CreateCross(), GuestTests.CreateSettings(), 3 ) { ArrivalsEnabled = false };
+		var guest = rig.SpawnInPark( 10, 5 );
+		Assert.IsFalse( ParkResumeMods.UmbrellasInUse( new[] { ordinary }, rig ), "an ordinary object and a guest without an umbrella: not in use" );
+		Assert.IsTrue( ParkResumeMods.UmbrellasInUse( new[] { ordinary, shop }, rig ), "a brolly shop" );
+		guest.UmbrellaState = UmbrellaRules.StateClosed;
+		Assert.IsTrue( ParkResumeMods.UmbrellasInUse( Array.Empty<ObjectCatalogEntry>(), rig ), "a guest with an umbrella, the shop long sold" );
+		Assert.IsFalse( ParkResumeMods.UmbrellasInUse( Array.Empty<ObjectCatalogEntry>(), null ) );
+		// the capture follows the rule, with the extension on and off, and the park without either saves the same bytes
+		var plain = ParkResumeSaveFile.Serialize( ParkResumeSaveFileTests.Envelope() );
+		foreach ( var enabled in new[] { true, false } )
+		{
+			var set = UmbrellasSet( enabled );
+			using var scope = OpenTpwExtensions.Use( set );
+			var unused = ParkResumeMods.Capture( set, ParkResumeMods.InUse( cells ) );
+			Assert.IsNull( unused, $"extension {enabled}: nothing to record in a park that does not use it" );
+			Assert.IsTrue( ParkResumeSaveFile.Serialize( ParkResumeSaveFileTests.Envelope() with { Mods = unused } ).SequenceEqual( plain ), $"extension {enabled}: identical bytes" );
+			var used = ParkResumeMods.Capture( set, ParkResumeMods.InUse( cells, umbrellas: true ) );
+			if ( enabled )
+				Assert.AreEqual( ModId, used!.Single().Id );
+			else
+				Assert.IsNull( used, "an extension that is off records nothing" );
+		}
+	}
+
+	[TestMethod]
+	public void ASaveWithAnUmbrellaRecordsTheExtensionRoundTripsAndRefusesToLoadWithItOff()
+	{
+		var on = UmbrellasSet( true );
+		var off = UmbrellasSet( false );
+		var envelope = ParkResumeSaveFileTests.Envelope();
+		Assert.IsTrue( envelope.Guests.Guests.Length > 0, "the envelope holds guests" );
+		var carrying = envelope with { Guests = envelope.Guests with { Guests = envelope.Guests.Guests.Select( ( guest, index ) => index == 0 ? guest with { UmbrellaState = UmbrellaRules.StateClosing, UmbrellaType = 2, UmbrellaDueTurn = 400 } : guest ).ToArray() } };
+		// a save with an umbrella must record the extension: it cannot hide the state from the mod check
+		StringAssert.Contains( Assert.ThrowsException<InvalidDataException>( () => ParkResumeSaveFile.ValidateShape( carrying ) ).Message, "has an umbrella but the save does not record opentpw.umbrellas" );
+		var recorded = carrying with { Mods = ParkResumeMods.Capture( on, new HashSet<string> { ModId } ) };
+		ParkResumeSaveFile.ValidateShape( recorded );
+		var bytes = ParkResumeSaveFile.Serialize( recorded );
+		var text = System.Text.Encoding.UTF8.GetString( bytes );
+		StringAssert.Contains( text, "opentpw.umbrellas" );
+		StringAssert.Contains( text, "\"UmbrellaDueTurn\":400" );
+		var loaded = ParkResumeSaveFile.Deserialize( bytes );
+		Assert.IsTrue( ParkResumeSaveFile.Serialize( loaded ).SequenceEqual( bytes ), "byte-stable" );
+		Assert.AreEqual( (UmbrellaRules.StateClosing, 2, 400L), (loaded.Guests.Guests[0].UmbrellaState, loaded.Guests.Guests[0].UmbrellaType, loaded.Guests.Guests[0].UmbrellaDueTurn) );
+		ParkResumeMods.Require( loaded.Mods, on );
+		StringAssert.Contains( Assert.ThrowsException<InvalidDataException>( () => ParkResumeMods.Require( loaded.Mods, off ) ).Message, "needs opentpw.umbrellas 1.0.0" );
+		// the same park with another version of the extension is refused too
+		var other = new[] { new ParkModRecord( ModId, "1.1.0", ModSet.NoFilesSha256 ) };
+		StringAssert.Contains( Assert.ThrowsException<InvalidDataException>( () => ParkResumeMods.Require( other, on ) ).Message, "needs opentpw.umbrellas 1.1.0, not 1.0.0" );
+		// a save made without the extension in use loads with it on (a used-only extension that is not recorded is fine)
+		ParkResumeMods.Require( null, on );
+	}
 }

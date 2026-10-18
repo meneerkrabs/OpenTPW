@@ -66,9 +66,8 @@ public sealed class SpriteSetBuilder
 	public string Name { get; }
 
 	/// <summary>
-	/// ESP byte 0x10C: the game opens the <c>.FPC</c> bank (else the <c>.TPC</c>). With true the builder writes both files with the same content, as every
-	/// shipped full-detail set ships both. Default true: the PC game draws the FPC of such sets and the TPC of the rest. Unverified: choosing false makes the
-	/// game read only the TPC; a set the game must draw needs the file it opens.
+	/// ESP byte 0x10C: the set also ships an <c>.FPC</c> bank (which the loader opens only with the sprite-detail flag, which the PC never sets: the game draws the
+	/// <c>.TPC</c>, <see cref="SpriteAnimationFile.FlagA"/>). With true the builder writes both files with the same content, as every shipped full-detail set ships both.
 	/// </summary>
 	public bool FullDetail { get; set; } = true;
 

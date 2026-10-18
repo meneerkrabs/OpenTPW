@@ -16,7 +16,7 @@ quantised to one 255-colour palette) and ``set.json`` describing the set for the
 ``originX``/``originY`` follow the sprite reader's convention (``SpriteFrame.OriginX/Y``): the offset of the frame's top left pixel
 from the hotspot, so ``(-12, -37)`` means the frame starts 12 pixels left of and 37 above the hotspot. Standing sprites have the
 hotspot between the feet on the floor, swimmers the torso centre at the water line, heads the centre of the skull. Frames are
-listed direction-major, as the bank stores them. ``fullDetail`` is the ESP byte 0x10C (the game opens the ``.FPC`` bank).
+listed direction-major, as the bank stores them. ``fullDetail`` is the ESP byte 0x10C (the set ships an ``.FPC`` too; the game draws the ``.TPC``).
 
 ``--scale N`` renders every frame at N times the pixel size (canvas, hotspot offsets and pixels per Blender unit all N times larger, so the
 sprite covers the same world area with N times the detail) and writes ``"pixelsPerUnit": 128 * N`` into ``set.json``; the packer puts that
@@ -44,13 +44,16 @@ import opentpw_swim_sprites as SW  # noqa: E402
 import opentpw_pool_poses as PP  # noqa: E402
 
 DIRECTIONS = 5
-LAND_HOTSPOT_DROP = 1      # our soles sit 1 to 2 pixels lower than the originals' (+1..+2 below the hotspot), so the hotspot is 1 pixel lower
+LAND_HOTSPOT_DROP = 0      # the hotspot is the floor point the render puts at the world origin: a standing kid's soles then end 3 to 5 pixels below
+                           # it at 1x, as the originals' TPC (mean 3.9 against 4.0 to 4.2); it was 1 against the FPC, whose soles end 1 to 2 below
 LAND_CANVAS = {"TPW": ((100, 90), (50, 78)), "TPI": ((140, 130), (70, 112))}
 HEAD_CANVAS = {"TPW": ((64, 64), (32, 32)), "TPI": ((80, 80), (40, 40))}
 TORSO_CANVAS = {"TPW": ((96, 96), (48, 48)), "TPI": ((120, 120), (60, 60))}   # slots whose hotspot is the torso centre (a body may point up or down the frame)
 HEAD_FIT = 1.0             # our heads render a little smaller than the geometry says so their frames match the originals
 HEAD_HOTSPOT_DROP = {"TPW": 0, "TPI": 6}   # the shipped TPI heads put the hotspot about 9 px below the head centre (TPW: about 3, which ours already has; measured against ours the net shift is 6)
 HEAD_SCALE = 0.685          # the game draws a head sprite at 0.685 of the body's pixel scale (docs/GUESTS.md)
+HEAD_PPU = {"TPW": 11.7, "TPI": 14.4}   # the heads' own pixels per unit: they match the original head sets (TPC only) at the scale the bodies
+                           # had before October 18, 2026; the TPW bodies are 11.1 since then, measured against the TPC, which would make the heads 6 % small
 SWIM_SLOTS = {"A": (8, "swim-crawl", 8), "B": (9, "swim-breaststroke", 8), "C": (10, "swim-tread", 4)}
 SWIM_KEY = {8: "A", 9: "B", 10: "C"}      # slot -> the swim generator's pose key
 RING_COLOURS = {"BE": (255, 130, 30), "BI": (255, 215, 40), "CH": (255, 255, 255), "FR": (255, 255, 255), "KI": (255, 120, 170), "SA": (255, 215, 40), "SU": (255, 130, 30), "TA": (255, 255, 255)}   # float ring colour per kid
@@ -344,7 +347,7 @@ def main():
 		if "heads" in o["part"]:
 			canvas, origin = HEAD_CANVAS[edition]
 			st = K.setup_scene(canvas, origin, edition, scale=S)
-			st.cam.data.ortho_scale = max(canvas) / (ed["ppu"] / HEAD_SCALE * HEAD_FIT * K.PRESETS[name].get("head_fit", 1.0))
+			st.cam.data.ortho_scale = max(canvas) / (HEAD_PPU[edition] / HEAD_SCALE * HEAD_FIT * K.PRESETS[name].get("head_fit", 1.0))
 			frames = render_heads(st, name, tmp)
 			meta = {0: {"name": "head", "source": "heads", "directions": 7, "framesPerDirection": 8, "_origin": (origin[0] * S, (origin[1] + HEAD_HOTSPOT_DROP[edition]) * S)}}
 			write_set(os.path.join(o["out"], edition.lower(), heads_folder, name), name, edition, heads_folder, HEAD_MEMBER.get(name, f"SPR_{name}"), frames, meta, o["quantise"], o["dither"], S)

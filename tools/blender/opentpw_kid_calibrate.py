@@ -54,7 +54,7 @@ def main():
 	ed = K.EDITIONS[o["edition"]]
 	CELL, FEET, ZOOM = ed["cell"], ed["feet"], o["zoom"]
 	os.makedirs(o["out"], exist_ok=True)
-	st = K.setup_scene(CELL, FEET, o["edition"], detail="tpc")   # the reference sheet is made from the low-detail TPC frames
+	st = K.setup_scene(CELL, FEET, o["edition"])   # the reference sheet is made from the TPC frames the game draws
 	ours = {}
 	for name in o["sets"]:
 		kid = K.build_kid(name, underwater=False, outfit=o["outfit"])

@@ -8,7 +8,7 @@ namespace OpenTPW;
 /// <summary>
 /// Draws every placed staff member as a camera-facing quad of its original sprite (<c>esprites.wad</c>, tp.exe body sprite 0x4d4140), the way
 /// <see cref="GuestRenderer"/> draws the kids: one draw call, one dynamic vertex buffer, the same sprite shader and atlas loading, the hotspot on the terrain.
-/// A member in the player's hand is not drawn; the tool's dangling sprite (slot 6, frames 0-3 looping, from the bank's .TPC) hangs at the pointer's ground point instead.
+/// A member in the player's hand is not drawn; the tool's dangling sprite (slot 6, frames 0-3 looping) hangs at the pointer's ground point instead.
 /// Nothing is allocated per frame once the members have been seen.
 /// </summary>
 public sealed class StaffRenderer : Entity

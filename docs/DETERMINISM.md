@@ -303,6 +303,8 @@ Other OpenTPW state that is **not in the hash**:
 | `GuestEconomyBridge` attraction → economy instance map | not yet part of the canonical state; the economy objects themselves are in the economy digest |
 | `FixedStepClock` pending time (`PendingSeconds`) | frame timing, below one tick; the substep scheduler is DET-I2 |
 | Sound chooser seed | presentation, see above |
+| `ParkSaveFile.Data.AnalyserCaches` (the analyser's cached readings) | saved for an exact continuation, but a reading aid that no simulation step reads; removed from the economy digest |
+| `ParkSaveFile.Data.StatisticsHistory` (the monthly rings of `ParkStatisticsHistory`) | only the park information window's graph reads them, no simulation step does; removed from the economy digest |
 
 A change to any of these does not change the hash. Adding one means bumping
 `SchemaVersion` and re-pinning the fixed-run hash.

@@ -1,4 +1,5 @@
 using OpenTPW.UI.Original;
+using Veldrid;
 
 namespace OpenTPW.Hud;
 
@@ -19,6 +20,33 @@ public sealed partial class ParkHud
 	private bool[]? parkInfoIcons;
 	private bool[] parkInfoIconHidden => parkInfoIcons ??= new bool[3];
 	private UiScreen? parkInfoScreen;
+	// [BIN:TPW-EXE:0x753C48 series mask] the graph's series mask and the period (0x7CB39C) are globals the window procedure keeps across openings; they start at the people-in-park series and 1 year
+	private ParkInfoSeries? parkInfoSeriesChoice;
+	private ParkInfoSeries parkInfoSeries { get => parkInfoSeriesChoice ?? ParkInfoGraph.InitialSeries; set => parkInfoSeriesChoice = value; }
+	private int parkInfoPeriod;
+	private int parkInfoPeople, parkInfoSad, parkInfoHappy;
+	private long parkInfoVisitors;
+
+	/// <summary>The series the window's graph shows.</summary>
+	public ParkInfoSeries ParkInfoSelectedSeries => parkInfoSeries;
+	/// <summary>The graph's period: 0 for 1 year, 1 for 3 years, 2 for 12 years.</summary>
+	public int ParkInfoPeriod => parkInfoPeriod;
+	/// <summary>The counts frame as last refreshed: the guests in the park and the visitors so far.</summary>
+	public (int People, long Visitors) ParkInfoCounts => (parkInfoPeople, parkInfoVisitors);
+	/// <summary>The happiness levels as last refreshed: the percent of the guests that are sad (happiness below 33) and happy (above 66).</summary>
+	public (int Sad, int Happy) ParkInfoHappiness => (parkInfoSad, parkInfoHappy);
+
+	/// <summary>Presses or releases a series toggle, as the window procedure does on its message 0x100 (a plain checkbox: the others keep their state).</summary>
+	// [BIN:TPW-EXE:0x4A4B90 series toggle] each toggle sets or clears its bit of the mask by its pressed state (1 sets) and the window re-reads the scale; the toggles are independent of each other, unlike the finance graph's
+	public void SetParkInfoSeries( ParkInfoSeries series, bool on ) => parkInfoSeries = on ? parkInfoSeries | series : parkInfoSeries & ~series;
+
+	/// <summary>Chooses the graph's period (0, 1 or 2); any other index is ignored.</summary>
+	// [BIN:TPW-EXE:0x4A4B90 period radio] the three buttons set the period index 0 (0x4A68C3), 1 (0x4A68C4) or 2 (0x4A68C2) and redraw the graph with the period's 12, 36 or 144 samples
+	public void SetParkInfoPeriod( int period )
+	{
+		if ( period is >= 0 and <= 2 )
+			parkInfoPeriod = period;
+	}
 
 	/// <summary>Whether the park information window is open.</summary>
 	public bool ParkInfoWindowOpen => parkInfoScreen != null && Stack.Screens.Contains( parkInfoScreen );
@@ -40,14 +68,46 @@ public sealed partial class ParkHud
 		for ( var slot = 0; slot < parkInfoIconHidden.Length; slot++ )
 			if ( parkInfoTop.FrameAt( slot ) < 0 )
 				parkInfoIconHidden[slot] = true;
+		// [BIN:TPW-EXE:0x004A4830 counts and happiness] the timer message reads the guests in the park (0x4C9130) and the visitors so far (0x4C94C0, the lifetime counter +0x21C08) into the counts frame (written only when they change), and the sad (0x4C9750 with 0x21) and happy (0x4C9670 with 0x42) percents into the two bars
+		if ( level.PublishedParkStats == null && level.Guests is { } owner )
+		{
+			parkInfoPeople = ParkGate.CountCensus( owner );
+			parkInfoVisitors = (Status.EconomySource as ParkEconomy)?.Counters[ParkCounters.Admissions] ?? 0;
+			(parkInfoSad, parkInfoHappy) = owner.GetHappinessLevels();
+		}
+		else
+		{
+			parkInfoPeople = level.PublishedParkStats?.Visitors ?? 0;
+			parkInfoVisitors = 0;
+			(parkInfoSad, parkInfoHappy) = (0, 0);
+		}
 	}
 
-	/// <summary>The park information window: the original's Top 3 Thoughts frame and a live park summary using existing simulation values; a read-only visit shows the published statistics.</summary>
-	// [BIN:TPW-EXE:0x004A52A0 park information window] table 0x7537D0 (OriginalLayoutTables.ParkInfoWindow): the window3 frame, the title 0x4A68C5 (UITEXT 0x96), the line graph with its toggles
-	// (not built here), the Top 3 Thoughts frame "toughts" 0x4A68D1 with its title 0x4A68CE (UITEXT 0x9C, help 186) and three ti_hungry icons 0x4A68D2..0x4A68D4, the counts frame 0x4A68C9, the
-	// happiness levels 0x4A68CF / 0x4A68D0 (UITEXT 0x9D) and the buttons b_kids, b_allstaff, b_allthings and b_okay
-	// [APPROX:UI-914] the line graph, the counts frame, the happiness levels and the three navigation buttons are not built: the summary rows below stand in the graph's area, and OpenTPW's economy rows are not the original's
-	// [EXT:park-summary] the summary rows are a functional host summary; the original information-screen layout beyond the Top 3 Thoughts remains unqualified
+	/// <summary>The fill of the happiness bar: <c>(100 - happy) x 1024 / 100</c>, the bar under the sad one (0x4A68CF).</summary>
+	// [BIN:TPW-EXE:0x004A4830 happiness bars] the bar of hap.wct (0x4A68CF) is set to (100 - the happy percent) << 10 / 100 and the bar of sad_undec.wct (0x4A68D0) to the sad percent << 10 / 100, both on the 0..1024 scale of a type-9 gauge
+	public static int ParkInfoHappyBarValue( int happyPercent ) => ((100 - happyPercent) << 10) / 100;
+
+	/// <summary>The fill of the sad bar: <c>sad x 1024 / 100</c> (0x4A68D0).</summary>
+	public static int ParkInfoSadBarValue( int sadPercent ) => (sadPercent << 10) / 100;
+
+	/// <summary>Closes the park information window and the screens above it.</summary>
+	public void CloseParkInfoWindow()
+	{
+		if ( parkInfoScreen == null || !ParkInfoWindowOpen )
+			return;
+		while ( Stack.Top != parkInfoScreen && Stack.Screens.Count > 1 )
+			Stack.Pop();
+		if ( Stack.Top == parkInfoScreen )
+			Stack.Pop();
+	}
+
+	/// <summary>
+	/// The park information window (the original's table 0x7537D0): the line graph with its five series toggles and 1 / 3 / 12 year buttons, the counts frame, the happiness levels, the Top 3 Thoughts
+	/// and the buttons to the visitors, staff and attractions windows. A read-only visit shows the statistics the owner published in the graph's place.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004A52A0 park information window] table 0x7537D0 (OriginalLayoutTables.ParkInfoWindow): the window3 frame, the title 0x4A68C5 (UITEXT 0x96), the graph 0x4A68BB with its five toggles (b_ltoggle1..5, UITEXT 0x97..0x9B, pressed by the mask 0x753C48, initially 8) and the three period buttons
+	// (b_stoggle, UITEXT 0x16A..0x16C, selected by 0x7CB39C), the Top 3 Thoughts frame "toughts" 0x4A68D1 with its title 0x4A68CE (UITEXT 0x9C, help 186) and three ti_hungry icons 0x4A68D2..0x4A68D4, the counts frame 0x4A68C9 (labels UITEXT 0x97 and 0x9E, values 0x4A68CC and 0x4A68CA), the happiness bars 0x4A68CF / 0x4A68D0 (UITEXT 0x9D on the first) and the buttons b_kids, b_allstaff and b_allthings
+	// [EXT:park-summary] a visit has no history or guests: the published figures stand in the graph's area, as the visit's functional summary
 	public void OpenParkInfoWindow()
 	{
 		if ( Stack.Screens.Any( screen => screen.Name == "parkInfo" ) )
@@ -62,63 +122,14 @@ public sealed partial class ParkHud
 		// (the original's visitor saw the park as saved; docs/reverse/ONLINE-VISIT.md), never simulated values.
 		// [EXT:ONLINE-074] the published park's figures are shown in the park information window of a visit.
 		var published = level.PublishedParkStats;
-		var rows = published is { } stats
-			? new (UIStrings Label, Func<string> Value)[]
-			{
-				(UIStrings.PeopleInPark, () => stats.Visitors.ToString( System.Globalization.CultureInfo.InvariantCulture )),
-				(UIStrings.BankBalance, () => FormatMoney( stats.Balance )),
-				(UIStrings.ParkValue, () => stats.Value.ToString( System.Globalization.CultureInfo.InvariantCulture )),
-				(UIStrings.ParkRating, () => stats.Rating.ToString( System.Globalization.CultureInfo.InvariantCulture )),
-				(UIStrings.AllStaff, () => strings.Extra( OpenTpwText.NotAvailable )),
-			}
-			: new (UIStrings Label, Func<string> Value)[]
-			{
-				(UIStrings.PeopleInPark, () => (level.Guests?.GetStatistics().InPark ?? 0).ToString()),
-				(UIStrings.BankBalance, () => BalanceWithCurrency),
-				(UIStrings.ParkValue, () => (Status.EconomySource as ParkEconomy)?.ParkValue.ToString() ?? strings.Extra( OpenTpwText.NotAvailable )),
-				(UIStrings.ParkRating, () => (Status.EconomySource as ParkEconomy)?.ParkRating.ToString() ?? strings.Extra( OpenTpwText.NotAvailable )),
-				(UIStrings.AllStaff, () => (Status.EconomySource as ParkEconomy)?.Staff.Members.Count.ToString() ?? "0"),
-			};
-		// The rows stand in the area of the original's line graph, to the right of the toggles' column
-		var graph = table.Control( 0x4A68BB ).Inner!.Value;
-		for ( var index = 0; index < rows.Length; index++ )
-		{
-			var row = rows[index];
-			screen.Add( new UiLabel { Id = $"label{index}", Text = () => strings[row.Label],
-				Bounds = new UiRect( graph.X + 16, graph.Y + 14 + index * 105, 520, 80 ), Anchor = UiAnchor.Center } );
-			screen.Add( new UiLabel { Id = $"value{index}", Text = row.Value,
-				Bounds = new UiRect( graph.X + 546, graph.Y + 14 + index * 105, 330, 80 ), Anchor = UiAnchor.Center } );
-		}
+		var graphNode = table.Control( 0x4A68BB );
+		var graph = graphNode.Inner!.Value;
 		if ( published is { } publishedStats )
-		{
-			// The published in-game date and the read-only note close the visit's window.
-			screen.Add( new UiLabel { Id = "published", Text = () => OnlineStrings.Get( OnlineLabel.PublishedOn ) + publishedStats.Date,
-				Font = fonts => fonts.Label, Bounds = new UiRect( graph.X + 16, graph.Bottom - 190, 870, 70 ), Anchor = UiAnchor.Center } );
-			screen.Add( new UiLabel { Id = "note", Text = () => OnlineStrings.Get( OnlineLabel.PublishedStatsNote ),
-				Font = fonts => fonts.Label, Fit = true, Bounds = new UiRect( graph.X + 16, graph.Bottom - 110, 870, 70 ), Anchor = UiAnchor.Center } );
-		}
-		// [EXT:guest-insights] with the extension on, the refusal-reason counters stand in the column where the original keeps its line toggles (b_ltoggle1..5, not built here, UI-914): a title and one
-		// count per reason; the counters are the simulation's passive observer, never saved, and a visit has none
-		if ( published == null && FeatureGates.GuestInsights && level.Guests?.RefusalCounters is { } counters )
-		{
-			var toggles = table.Control( 0x4A68BF ).Rect;
-			screen.Add( new UiLabel { Id = "refusalsTitle", Text = () => strings.Extra( OpenTpwText.RefusalsTitle ), Font = fonts => fonts.Label, Color = UiColors.Text, Align = UiAlign.Center, Fit = true,
-				Bounds = new UiRect( toggles.X, toggles.Y, toggles.Width, 60 ), Anchor = UiAnchor.Center } );
-			var reasons = new (RefusalReason Reason, OpenTpwText Text)[]
-			{
-				(RefusalReason.TooExpensive, OpenTpwText.RefusalTooExpensive), (RefusalReason.QueueTooLong, OpenTpwText.RefusalQueueTooLong), (RefusalReason.TooScary, OpenTpwText.RefusalTooScary),
-				(RefusalReason.TooBoring, OpenTpwText.RefusalTooBoring), (RefusalReason.RideUnavailable, OpenTpwText.RefusalRideUnavailable)
-			};
-			for ( var index = 0; index < reasons.Length; index++ )
-			{
-				var (reason, text) = reasons[index];
-				var top = toggles.Y + 70 + index * 56;
-				screen.Add( new UiLabel { Id = $"refusal{index}", Text = () => strings.Extra( text ), Font = fonts => fonts.Label, Color = UiColors.Text, Fit = true,
-					Bounds = new UiRect( toggles.X, top, 330, 50 ), Anchor = UiAnchor.Center } );
-				screen.Add( new UiLabel { Id = $"refusalCount{index}", Text = () => counters.Count( reason ).ToString( System.Globalization.CultureInfo.InvariantCulture ), Font = fonts => fonts.Label,
-					Color = UiColors.Value, Align = UiAlign.Right, Fit = true, Bounds = new UiRect( toggles.X + 340, top, toggles.Width - 340, 50 ), Anchor = UiAnchor.Center } );
-			}
-		}
+			AddPublishedStatistics( screen, publishedStats, graph );
+		else
+			AddParkInfoGraph( screen, table, graph );
+		AddParkInfoCounts( screen, table, published != null );
+		AddParkInfoNavigation( screen, table );
 		// [BIN:TPW-EXE:0x004A52A0 top 3 thoughts] the frame (help 186), its title (UITEXT 0x9C, font slot 6) and the three icons: the ranking's slot 0 goes to 0x4A68D4 (the rightmost), slot 1 to 0x4A68D3 and slot 2 to 0x4A68D2
 		var thoughts = table.Control( 0x4A68D1 );
 		screen.Add( new UiModelImage { Id = "thoughtsFrame", Model = thoughts.Model!, Help = strings.Help( thoughts.Help ), Bounds = thoughts.Rect, Anchor = UiAnchor.Center } );
@@ -135,14 +146,138 @@ public sealed partial class ParkHud
 				HelpSource = () => ParkInfoIconFrame( shown ) is var frame and >= 0 ? strings.Thought( frame + 1 ) : null, Bounds = icon.Rect, Anchor = UiAnchor.Center } );
 		}
 		var okay = table.Model( "b_okay" );
-		screen.Add( new UiButton { Id = "close", Model = okay.Model, Help = strings.Help( okay.Help ), Clicked = ClosePark, Bounds = okay.Rect, Anchor = UiAnchor.Center } );
-		screen.Back = ClosePark;
+		screen.Add( new UiButton { Id = "close", Model = okay.Model, Help = strings.Help( okay.Help ), Clicked = CloseParkInfoWindow, Bounds = okay.Rect, Anchor = UiAnchor.Center } );
+		screen.Back = CloseParkInfoWindow;
 		Array.Clear( parkInfoIconHidden );
 		RefreshParkInfo();
 		parkInfoScreen = screen;
 		Stack.Push( screen );
+	}
 
-		void ClosePark() => Stack.Pop();
+	/// <summary>The graph control with its five series toggles and its three period buttons.</summary>
+	private void AddParkInfoGraph( UiScreen screen, LayoutTable table, UiRect graph )
+	{
+		screen.Add( new ParkInfoGraphElement( this ) { Id = "graph", Bounds = graph, Anchor = UiAnchor.Center } );
+		// [BIN:TPW-EXE:0x004A52A0 series toggles] b_ltoggle1 (0x4A68BF) is the people in the park (UITEXT 0x97, bit 8), b_ltoggle2 (0x4A68BC) the arrival rate (0x98, bit 1), b_ltoggle3 (0x4A68BD) the average happiness (0x99, bit 2),
+		// b_ltoggle4 (0x4A68BE) the average time in the park (0x9A, bit 4) and b_ltoggle5 (0x4A68C0) the park rating (0x9B, bit 0x10); each is a text control in font slot 6
+		foreach ( var (control, series, label) in new[]
+		{
+			(0x4A68BFu, ParkInfoSeries.People, UIStrings.PeopleInPark), (0x4A68BCu, ParkInfoSeries.Arrivals, UIStrings.ArrivalRate), (0x4A68BDu, ParkInfoSeries.Happiness, UIStrings.AvgHappiness),
+			(0x4A68BEu, ParkInfoSeries.Stay, UIStrings.AvgTimeInPark), (0x4A68C0u, ParkInfoSeries.Rating, UIStrings.ParkRating)
+		} )
+		{
+			var node = table.Control( control );
+			var shown = series;
+			screen.Add( new UiButton { Id = $"series{series}", Model = node.Model, Text = () => strings[label], Font = fonts => fonts.Small, Help = strings.Help( node.Help ),
+				Selected = () => parkInfoSeries.HasFlag( shown ), Clicked = () => SetParkInfoSeries( shown, !parkInfoSeries.HasFlag( shown ) ), Bounds = node.Rect, Anchor = UiAnchor.Center } );
+		}
+		// [BIN:TPW-EXE:0x004A52A0 period buttons] 0x4A68C3 (period 0, UITEXT 0x16A), 0x4A68C4 (period 1, 0x16B) and 0x4A68C2 (period 2, 0x16C), each b_stoggle with help 183, 184 and 185 and font slot 6; the one the period names starts pressed (0x66A295)
+		foreach ( var (control, period) in new[] { (0x4A68C3u, 0), (0x4A68C4u, 1), (0x4A68C2u, 2) } )
+		{
+			var node = table.Control( control );
+			var shown = period;
+			screen.Add( new UiButton { Id = $"period{period}", Model = node.Model, Text = () => strings[UIStrings.Year1 + (shown == 0 ? 0 : shown == 1 ? 1 : 2)], Font = fonts => fonts.Small, Help = strings.Help( node.Help ),
+				Selected = () => parkInfoPeriod == shown, Clicked = () => SetParkInfoPeriod( shown ), Bounds = node.Rect, Anchor = UiAnchor.Center } );
+		}
+		// [EXT:guest-insights] with the extension on, the refusal-reason counters are written over the plot's top left: a title and one count per reason; the counters are the simulation's passive observer, never saved, and a visit has none
+		if ( FeatureGates.GuestInsights && level.Guests?.RefusalCounters is { } counters )
+		{
+			screen.Add( new UiLabel { Id = "refusalsTitle", Text = () => strings.Extra( OpenTpwText.RefusalsTitle ), Font = fonts => fonts.Label, Color = UiColors.Text, Align = UiAlign.Left, Fit = true,
+				Bounds = new UiRect( graph.X + 24, graph.Y + 16, 380, 50 ), Anchor = UiAnchor.Center } );
+			var reasons = new (RefusalReason Reason, OpenTpwText Text)[]
+			{
+				(RefusalReason.TooExpensive, OpenTpwText.RefusalTooExpensive), (RefusalReason.QueueTooLong, OpenTpwText.RefusalQueueTooLong), (RefusalReason.TooScary, OpenTpwText.RefusalTooScary),
+				(RefusalReason.TooBoring, OpenTpwText.RefusalTooBoring), (RefusalReason.RideUnavailable, OpenTpwText.RefusalRideUnavailable)
+			};
+			for ( var index = 0; index < reasons.Length; index++ )
+			{
+				var (reason, text) = reasons[index];
+				var top = graph.Y + 70 + index * 46;
+				screen.Add( new UiLabel { Id = $"refusal{index}", Text = () => strings.Extra( text ), Font = fonts => fonts.Label, Color = UiColors.Text, Fit = true,
+					Bounds = new UiRect( graph.X + 24, top, 330, 42 ), Anchor = UiAnchor.Center } );
+				screen.Add( new UiLabel { Id = $"refusalCount{index}", Text = () => counters.Count( reason ).ToString( System.Globalization.CultureInfo.InvariantCulture ), Font = fonts => fonts.Label,
+					Color = UiColors.Value, Align = UiAlign.Right, Fit = true, Bounds = new UiRect( graph.X + 364, top, 120, 42 ), Anchor = UiAnchor.Center } );
+			}
+		}
+	}
+
+	/// <summary>The counts frame and the happiness levels: the guests in the park and the visitors so far, and the bar of the sad, undecided and happy shares.</summary>
+	private void AddParkInfoCounts( UiScreen screen, LayoutTable table, bool visit )
+	{
+		// [BIN:TPW-EXE:0x004A52A0 counts frame] the frame 0x4A68C9 holds the labels 0x4A68CB (UITEXT 0x97) and 0x4A68CD (UITEXT 0x9E) as text controls in font slot 6 and the values 0x4A68CC (people in the park) and 0x4A68CA (visitors) as count cells (0x48FDE0); none gets the centring call 0x65C428
+		var frame = table.Control( 0x4A68C9 );
+		screen.Add( new UiModelImage { Id = "countsFrame", Model = frame.Model!, Bounds = frame.Rect, Anchor = UiAnchor.Center } );
+		screen.Add( new UiLabel { Id = "peopleLabel", Text = () => strings[UIStrings.PeopleInPark], Font = fonts => fonts.Label, Color = UiColors.Text, Bounds = table.Control( 0x4A68CB ).Rect, Anchor = UiAnchor.Center } );
+		screen.Add( new UiLabel { Id = "peopleValue", Text = () => parkInfoPeople.ToString( System.Globalization.CultureInfo.InvariantCulture ), Font = fonts => fonts.Label, Color = UiColors.Text,
+			Bounds = table.Control( 0x4A68CC ).Rect, Anchor = UiAnchor.Center } );
+		screen.Add( new UiLabel { Id = "visitorsLabel", Text = () => strings[UIStrings.TotalParkVisitors], Font = fonts => fonts.Label, Color = UiColors.Text, Bounds = table.Control( 0x4A68CD ).Rect, Anchor = UiAnchor.Center } );
+		// [EXT:ONLINE-074] a visit's published statistics carry no visitor total
+		screen.Add( new UiLabel { Id = "visitorsValue", Text = () => visit ? strings.Extra( OpenTpwText.NotAvailable ) : parkInfoVisitors.ToString( System.Globalization.CultureInfo.InvariantCulture ),
+			Font = fonts => fonts.Label, Color = UiColors.Text, Bounds = table.Control( 0x4A68CA ).Rect, Anchor = UiAnchor.Center } );
+		// [BIN:TPW-EXE:0x004A52A0 happiness bars] 0x4A68D0 is a !frame (help 187) holding the bar of sad_undec.wct and 0x4A68CF the bar of hap.wct with the caption UITEXT 0x9D (font slot 6, black, centred) over the same rectangle
+		var bars = table.Control( 0x4A68D0 );
+		screen.Add( new UiModelImage { Id = "happinessFrame", Model = bars.Model!, Help = strings.Help( bars.Help ), Bounds = bars.Rect, Anchor = UiAnchor.Center } );
+		var barRect = table.Control( 0x4A68CF ).Rect;
+		screen.Add( new ParkInfoHappinessBars( this ) { Id = "happinessBars", Bounds = barRect, Anchor = UiAnchor.Center } );
+		screen.Add( new UiLabel { Id = "happinessCaption", Text = () => strings[UIStrings.HappinessLevels], Font = fonts => fonts.Label, Color = new RgbaByte( 0, 0, 0, 255 ), Align = UiAlign.Center, Fit = true,
+			Shadow = false, Bounds = barRect, Anchor = UiAnchor.Center } );
+	}
+
+	/// <summary>The three buttons to the visitors, staff and attractions windows.</summary>
+	private void AddParkInfoNavigation( UiScreen screen, LayoutTable table )
+	{
+		// [BIN:TPW-EXE:0x004A4830 navigation] b_kids (0x4A68C6) runs 0x493530 (All Visitors), b_allstaff (0x4A68C7) 0x496620 with -1 (All Staff, on its last tab) and b_allthings (0x4A68C8) 0x495aa0 with -1 (the attractions window, on its last category), each replacing this window
+		var kids = table.Control( 0x4A68C6 );
+		screen.Add( new UiButton { Id = "allVisitors", Model = kids.Model, Help = strings.Help( kids.Help ), Clicked = () => { CloseParkInfoWindow(); OpenVisitorWindow(); }, Bounds = kids.Rect, Anchor = UiAnchor.Center } );
+		var staff = table.Control( 0x4A68C7 );
+		screen.Add( new UiButton { Id = "allStaff", Model = staff.Model, Help = strings.Help( staff.Help ), Clicked = () => { CloseParkInfoWindow(); OpenStaffWindow(); ShowEmployedStaff( true ); }, Bounds = staff.Rect, Anchor = UiAnchor.Center } );
+		var things = table.Control( 0x4A68C8 );
+		screen.Add( new UiButton { Id = "allThings", Model = things.Model, Help = strings.Help( things.Help ), Clicked = () => { CloseParkInfoWindow(); OpenAttractionsWindow(); }, Bounds = things.Rect, Anchor = UiAnchor.Center } );
+	}
+
+	/// <summary>A visit's published statistics, written in the graph's area.</summary>
+	private void AddPublishedStatistics( UiScreen screen, OpenTPW.Online.Packages.ParkStatsRecord stats, UiRect graph )
+	{
+		var rows = new (UIStrings Label, Func<string> Value)[]
+		{
+			(UIStrings.PeopleInPark, () => stats.Visitors.ToString( System.Globalization.CultureInfo.InvariantCulture )),
+			(UIStrings.BankBalance, () => FormatMoney( stats.Balance )),
+			(UIStrings.ParkValue, () => stats.Value.ToString( System.Globalization.CultureInfo.InvariantCulture )),
+			(UIStrings.ParkRating, () => stats.Rating.ToString( System.Globalization.CultureInfo.InvariantCulture )),
+			(UIStrings.AllStaff, () => strings.Extra( OpenTpwText.NotAvailable )),
+		};
+		for ( var index = 0; index < rows.Length; index++ )
+		{
+			var row = rows[index];
+			screen.Add( new UiLabel { Id = $"label{index}", Text = () => strings[row.Label],
+				Bounds = new UiRect( graph.X + 16, graph.Y + 14 + index * 105, 520, 80 ), Anchor = UiAnchor.Center } );
+			screen.Add( new UiLabel { Id = $"value{index}", Text = row.Value,
+				Bounds = new UiRect( graph.X + 546, graph.Y + 14 + index * 105, 330, 80 ), Anchor = UiAnchor.Center } );
+		}
+		// The published in-game date and the read-only note close the visit's window.
+		screen.Add( new UiLabel { Id = "published", Text = () => OnlineStrings.Get( OnlineLabel.PublishedOn ) + stats.Date,
+			Font = fonts => fonts.Label, Bounds = new UiRect( graph.X + 16, graph.Bottom - 190, 870, 70 ), Anchor = UiAnchor.Center } );
+		screen.Add( new UiLabel { Id = "note", Text = () => OnlineStrings.Get( OnlineLabel.PublishedStatsNote ),
+			Font = fonts => fonts.Label, Fit = true, Bounds = new UiRect( graph.X + 16, graph.Bottom - 110, 870, 70 ), Anchor = UiAnchor.Center } );
+	}
+
+	/// <summary>The happiness levels' two bars over one rectangle: sad_undec.wct (blue bar over an orange track) filled to the sad share, hap.wct (a clear bar over a yellow track) filled to the not-happy share.</summary>
+	// [DATA:ui.wad sad_undec.wct, hap.wct] sad_undec.wct is 32 x 32 with a blue top half (the bar) and an orange bottom half (the track); hap.wct has a fully transparent top half and a yellow bottom half, so its bar clears the first (100 - happy) percent of the rectangle and its track leaves the happy share yellow: blue, orange, yellow from the left
+	private sealed class ParkInfoHappinessBars( ParkHud owner ) : UiElement
+	{
+		public const string HappyArt = "/ui/textures/hap.wct", SadArt = "/ui/textures/sad_undec.wct";
+
+		public override void Draw( UiContext context, bool focused, bool pressed )
+		{
+			var rect = ScreenRect( context.Canvas );
+			UiGauge.Draw( context.Batch, rect, ParkInfoSadBarValue( owner.parkInfoSad ) / (float)UiGauge.FullValue, SadArt );
+			var cleared = Math.Clamp( ParkInfoHappyBarValue( owner.parkInfoHappy ) / (float)UiGauge.FullValue, 0f, 1f );
+			if ( cleared < 1f )
+			{
+				var yellow = new UiRect( rect.X + rect.Width * cleared, rect.Y, rect.Width * (1f - cleared), rect.Height );
+				context.Batch.AddQuad( UiTexture.Image( HappyArt ), yellow, new System.Numerics.Vector2( 0.5f / 32f + 31f * cleared / 32f, 16.5f / 32f ), new System.Numerics.Vector2( 31.5f / 32f, 31.5f / 32f ), RgbaByte.White );
+			}
+		}
 	}
 
 	/// <summary>The window's screen: refreshes the thoughts every second.</summary>

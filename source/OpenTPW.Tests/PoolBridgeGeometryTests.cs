@@ -141,6 +141,11 @@ public class PoolBridgeGeometryTests
 				// Clip triangles, rather than testing vertices alone: a diagonal support could cross the water with both endpoints on land.
 				var waterPart = Clip( Clip( triangle, 20.0001f, 1 ), 49.9999f, -1 );
 				Assert.IsTrue( waterPart.All( v => v.Z >= 8.89f ), "The full swimming span has at least 8.89 model units of air above ground." );
+				// Full water-anchored swim-sprite audit: maximum above-hotspot rectangle is 1.215340 engine units.
+				// Conservatively make its entire camera-up extent vertical and add the maximum visible wave crest.
+				var swimmerTop = -new PoolMeshOptions().WaterDrop + PoolWaves.MaxHeave + 1.215340f;
+				Assert.IsTrue( waterPart.All( v => v.Z * OriginalParkPlacement.CellSize / 10f - swimmerTop >= 0.57765f ),
+					"Maximum crest plus full swimmer sprite must retain the audited 0.57766 clearance (float tolerance 0.00001)." );
 			}
 		}
 	}

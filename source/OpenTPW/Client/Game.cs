@@ -639,8 +639,23 @@ internal static class Game
 							var centreY = grid.Y + (originY + shape.Average( cell => cell.Y ) + 0.5f) * ObjectPlacement.CellSize;
 							Log.Trace( FormattableString.Invariant( $"--debug-pool: painted {stroke.Cells.Count} cells at {originX},{originY} (engine centre {centreX:0.#},{centreY:0.#}), charged {stroke.Charged}, refusal {stroke.FirstRefusal?.Reason.ToString() ?? "none"}." ) );
 							// Place the bridge before swimmers: its normal standing guard must never be bypassed.
-							var debugBridge = args.Contains( "--debug-bridge" )
-								? level.BuildDebugPoolBridge( shape.Select( cell => (X: originX + cell.X, Y: originY + cell.Y) ).ToArray() ) : null;
+							var bridgeCells = shape.Select( cell => (X: originX + cell.X, Y: originY + cell.Y) ).ToArray();
+							var bridgeDelay = GetOption( args, "--debug-bridge-delay", "frames to wait after swimmers exist before building the bridge" ) is { } delayText
+								&& int.TryParse( delayText, out var delay ) && delay > 0 ? delay : 0;
+							var debugBridge = args.Contains( "--debug-bridge" ) && bridgeDelay == 0 ? level.BuildDebugPoolBridge( bridgeCells ) : null;
+							if ( args.Contains( "--debug-bridge" ) && bridgeDelay > 0 )
+							{
+								var bridgeFrames = 0;
+								Render.PostUpdate += BuildLateBridge;
+								void BuildLateBridge()
+								{
+									if ( flow.Level != level ) { Render.PostUpdate -= BuildLateBridge; return; }
+									if ( level.SwimmerRenderer == null || ++bridgeFrames < bridgeDelay ) return;
+									Render.PostUpdate -= BuildLateBridge;
+									Log.Trace( $"--debug-bridge-delay: building after {bridgeFrames} frames with existing guest/staff/swimmer renderers; swimmers {level.Guests!.Guests.Count( guest => guest.IsSwimming )}." );
+									if ( level.BuildDebugPoolBridge( bridgeCells ) is { } lateBridge ) level.StartDebugBridgeWalkers( lateBridge );
+								}
+							}
 							// [EXT:debug-swimmers] smoke-only: --debug-swimmers N builds a changing room beside the pool (through the level's own placement, which charges it and needs the pool at its back) and
 							// puts N guests into the water at once, so a capture shows swimmers (docs/POOLS.md)
 							if ( GetOption( args, "--debug-swimmers", "guests to put into the pool" ) is { } swimText && int.TryParse( swimText, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var swimmerCount ) )

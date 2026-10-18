@@ -14,7 +14,7 @@ public sealed record PoolBridgeAssetPart( string Name, string Texture, float[][]
 
 public static class PoolBridgeMeshBuilder
 {
-	public static PoolMeshPart Build( PoolBridgeAssetPart part, IEnumerable<PoolBridge> bridges, SVector2 origin, float cellSize = 2 )
+	public static PoolMeshPart Build( PoolBridgeAssetPart part, IEnumerable<PoolBridge> bridges, SVector2 origin, float cellSize = OriginalParkPlacement.CellSize )
 	{
 		var mesh = new PoolMeshPart();
 		foreach ( var bridge in bridges )
@@ -38,37 +38,58 @@ public static class PoolBridgeMeshBuilder
 /// <summary>[EXT:pools-bridges] Opaque, depth-tested Blender bridge meshes above the independent swimming layer.</summary>
 public sealed class PoolBridgeRenderer : Entity
 {
-	private readonly PoolBridgeWorld world;
+	private readonly Func<PoolBridgeWorld?> worldSource;
 	private readonly SVector2 origin;
-	private readonly PoolBridgeAsset asset;
+	private PoolBridgeAsset? asset;
 	private readonly List<PoolPartEntity> parts = new();
 	private readonly List<Material> materials = new();
+	private PoolBridgeWorld? seenWorld;
 	private int seenVersion = -1;
-	public PoolBridgeRenderer( PoolBridgeWorld world, SVector2 origin, PoolStyle style )
+	private const int PartCount = 3;
+
+	public PoolBridgeRenderer( PoolBridgeWorld world, SVector2 origin, PoolStyle style ) : this( () => world, origin, style ) { }
+
+	/// <summary>Reserve opaque draw slots before sprite renderers, even when the world and its first bridge arrive later. Empty parks load no assets or GPU resources.</summary>
+	public PoolBridgeRenderer( Func<PoolBridgeWorld?> worldSource, SVector2 origin, PoolStyle style )
 	{
-		this.world = world; this.origin = origin;
+		this.worldSource = worldSource; this.origin = origin;
 		Name = "PoolBridges";
+		for ( var i = 0; i < PartCount; i++ )
+			parts.Add( new PoolPartEntity { Deep = style.WaterDeep.ToVector(), Shallow = style.WaterShallow.ToVector(), Glow = 0, IsWater = false } );
+	}
+
+	private void LoadAssets()
+	{
+		if ( asset != null ) return;
 		var directory = Path.Combine( PoolContent.Directory ?? PoolContent.DirectoryOf( AppContext.BaseDirectory ), "bridge" );
-		asset = PoolBridgeAsset.Load( Path.Combine( directory, "bridge.json" ) );
-		foreach ( var part in asset.Parts )
+		var loaded = PoolBridgeAsset.Load( Path.Combine( directory, "bridge.json" ) );
+		if ( loaded.Parts.Length != PartCount )
+			throw new InvalidDataException( "The pool bridge mesh must contain exactly three reserved draw parts." );
+		for ( var i = 0; i < PartCount; i++ )
 		{
 			// Blender triangles follow outward normals, not the engine's clockwise front-face convention (as with pool meshes).
 			var material = new Material<ObjectUniformBuffer>( "content/shaders/pool-deck.shader", MaterialFlags.DoubleSided );
-			material.Set( "Color", new Texture( Path.Combine( directory, part.Texture ), TextureFlags.Wrap ) );
 			materials.Add( material );
-			parts.Add( new PoolPartEntity { Deep = style.WaterDeep.ToVector(), Shallow = style.WaterShallow.ToVector(), Glow = 0, IsWater = false, PartMaterial = material } );
+			material.Set( "Color", new Texture( Path.Combine( directory, loaded.Parts[i].Texture ), TextureFlags.Wrap ) );
+			parts[i].PartMaterial = material;
 		}
+		asset = loaded;
 	}
+
 	protected override void OnUpdate()
 	{
-		if ( seenVersion == world.Version ) return;
-		seenVersion = world.Version;
+		var world = worldSource();
+		if ( ReferenceEquals( seenWorld, world ) && seenVersion == (world?.Version ?? 0) ) return;
+		if ( world is { Count: > 0 } ) LoadAssets();
 		for ( var i = 0; i < parts.Count; i++ )
 		{
 			var entity = parts[i]; entity.Model?.ReleaseBuffers(); entity.Model = null;
-			var mesh = PoolBridgeMeshBuilder.Build( asset.Parts[i], world.Bridges, origin );
+			if ( world is not { Count: > 0 } ) continue;
+			var mesh = PoolBridgeMeshBuilder.Build( asset!.Parts[i], world.Bridges, origin );
 			if ( mesh.Vertices.Count > 0 ) entity.Model = new Model( mesh.Vertices.Select( v => new Vertex( v.Position, v.Normal, v.Uv ) ).ToArray(), mesh.Indices.Select( i => (uint)i ).ToArray(), entity.PartMaterial! );
 		}
+		seenWorld = world;
+		seenVersion = world?.Version ?? 0;
 	}
 	protected override void OnDelete()
 	{

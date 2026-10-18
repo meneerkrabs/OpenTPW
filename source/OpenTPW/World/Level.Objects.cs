@@ -475,8 +475,6 @@ public partial class Level
 		// [EXT:pools-slides] the slides are drawn with the pool, before the swimmers and the riders (entities draw in the order they are made)
 		if ( PoolSlideRenderer == null && PoolSlides != null && PoolRenderer != null )
 			PoolSlideRenderer = new PoolSlideRenderer( PoolSlides, SlideSite, Guests.Grid.Cells, Objects.Grid.Origin, PoolStyles.ForTheme( OriginalPark.LevelName ) );
-		if ( PoolBridgeRenderer == null && PoolBridges is { Count: > 0 } )
-			PoolBridgeRenderer = new PoolBridgeRenderer( PoolBridges, Objects.Grid.Origin, PoolStyles.ForTheme( OriginalPark.LevelName ) );
 		// [EXT:pools-swim] the swimmers are drawn after the water (entities draw in the order they are made), with the swim sprites loaded at level setup
 		// the sets are looked for once per level: a missing or broken folder is one warning, not a scan every frame
 		switch ( NextSwimSpriteStep( SwimmerRenderer != null, swimSpritesTried, PoolRenderer != null, PoolSpriteDelivery.IsPending( PoolSpriteDelivery.SwimGroup ) ) )

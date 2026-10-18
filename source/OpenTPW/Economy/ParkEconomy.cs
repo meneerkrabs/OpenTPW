@@ -2094,7 +2094,6 @@ public sealed class ParkEconomy : IParkEconomy
 		return PoolCellCost;
 	}
 
-	/// <summary>[EXT:pools-cost] Refunds one removed slide piece in full, as an erased pool cell is (nothing while withdrawals are disabled). Returns the amount credited.</summary>
 	/// <summary>[EXT:pools-bridges] Charges one bridge without altering original cell prices.</summary>
 	public PurchaseResult TrySpendPoolBridge()
 	{
@@ -2110,6 +2109,7 @@ public sealed class ParkEconomy : IParkEconomy
 		return PoolBridgeWorld.Price;
 	}
 
+	/// <summary>[EXT:pools-cost] Refunds one removed slide piece in full, as an erased pool cell is (nothing while withdrawals are disabled). Returns the amount credited.</summary>
 	public long RefundSlidePiece()
 	{
 		if ( !WithdrawalsEnabled )

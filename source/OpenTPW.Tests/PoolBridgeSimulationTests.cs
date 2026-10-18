@@ -18,15 +18,11 @@ public class PoolBridgeSimulationTests
 		Assert.AreEqual( PoolBridgeResult.Ok, world.TryAdd( 8, 1, 2 ) );
 		var swimmer = rig.Send();
 		rig.Until( () => swimmer.State == GuestState.Swimming, 600 );
-		var under = PoolSwimRegion.Centre( (8, 4) );
-		swimmer.Navigation.X = under.X;
-		swimmer.Navigation.Y = under.Y;
-		swimmer.CellX = 8;
-		swimmer.CellY = 4;
-		swimmer.SwimHasGoal = false;
-		Assert.IsTrue( rig.Region.IsWater( under.X, under.Y ) );
-		Assert.IsTrue( rig.Simulation.IsWaterBody( swimmer, rig.Region ) );
-		Assert.IsFalse( rig.Simulation.IsOnParkCell( swimmer ), "A swimmer under a bridge is still a swimmer." );
+		// Start at the changing room's real water entry, then swim across the bridge axis under ordinary movement.
+		Assert.IsTrue( swimmer.Navigation.Cell.X < 8 );
+		var swimTarget = PoolSwimRegion.Centre( (9, 4) );
+		var swimmerWentUnder = false;
+		var swimmerReachedOtherSide = false;
 
 		var walker = rig.Simulation.SpawnInPark( 8, 8 );
 		walker.State = GuestState.WalkingAround;
@@ -34,11 +30,27 @@ public class PoolBridgeSimulationTests
 		Assert.IsTrue( walker.Navigation.Navigate( rig.Cells, target.X, target.Y ) );
 		walker.HasWaypoint = true;
 		var seen = new HashSet<(int X, int Y)>();
-		for ( var tick = 0; tick < 12000 && walker.Navigation.Cell != (8, 0); tick++ )
+		var walkerReachedOtherSide = false;
+		for ( var tick = 0; tick < 12000 && (!walkerReachedOtherSide || !swimmerReachedOtherSide); tick++ )
 		{
 			swimmer.SwimTurns = 200;
+			if ( !swimmerReachedOtherSide )
+			{
+				swimmer.SwimGoalX = swimTarget.X;
+				swimmer.SwimGoalY = swimTarget.Y;
+				swimmer.SwimHasGoal = true;
+			}
 			rig.Park.Step();
+			if ( swimmer.Navigation.Cell.X == 8 )
+			{
+				swimmerWentUnder = true;
+				Assert.IsTrue( world.Covers( swimmer.Navigation.Cell.X, swimmer.Navigation.Cell.Y ) );
+				Assert.IsTrue( rig.Simulation.IsWaterBody( swimmer, rig.Region ) );
+				Assert.IsFalse( rig.Simulation.IsOnParkCell( swimmer ), "A moving swimmer under the bridge remains on the water layer." );
+			}
+			if ( swimmer.Navigation.Cell.X >= 9 ) swimmerReachedOtherSide = true;
 			seen.Add( walker.Navigation.Cell );
+			if ( walker.Navigation.Cell == (8, 0) ) walkerReachedOtherSide = true;
 			Assert.IsFalse( walker.Navigation.Stuck );
 			Assert.IsFalse( rig.Simulation.IsWaterBody( walker, rig.Region ), "Deck walkers never enter swimmer separation buckets." );
 			if ( world.Covers( walker.CellX, walker.CellY ) )
@@ -48,7 +60,8 @@ public class PoolBridgeSimulationTests
 			}
 			Assert.IsTrue( rig.Region.IsWater( swimmer.Navigation.X, swimmer.Navigation.Y ) );
 		}
-		Assert.AreEqual( (8, 0), walker.Navigation.Cell, "The full simulation reaches the far end." );
+		Assert.IsTrue( swimmerWentUnder && swimmerReachedOtherSide, "The swimmer must actually cross beneath the bridge, without teleporting." );
+		Assert.IsTrue( walkerReachedOtherSide, "The full simulation reaches the far end." );
 		for ( var y = 1; y <= 7; y++ )
 			Assert.IsTrue( seen.Contains( (8, y) ), $"The walker crosses deck cell (8,{y})." );
 		for ( var y = 3; y <= 5; y++ )

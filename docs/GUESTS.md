@@ -976,6 +976,20 @@ A kid's set is the original's own draw at its creation, the world generator rese
 a walking kid steps its 8-frame walk 20 times a cell (0x4FA2A0: the interval is 62 ms over twice the speed).
 Not drawn: shadows, riders' bodies on a ride (their heads are drawn, see below).
 
+**Depth.** The quad is camera-facing, so all of it lies at the depth of the hotspot, and seen from above the ground just in front of the
+feet is nearer the camera than the hotspot: it hides whatever hangs below the hotspot. In the `.TPC` the soles of a standing kid end 3 to 5
+pixels below it (up to 8 in a stride). The original pulls such sprites towards the camera once their quad is placed: in its sprite pass
+(0x589B50) a sprite flagged 0x200 gets the clip z of its four vertices moved to z - 0.2 / (z + 1), x, y and w kept, unless engine flag
+0x2000 is set, which only the front end's 3D scenes do (0x5D9680). 0x200 is the pick flag that the pick of 0x5890E0 tests, the way the
+original selects visitors and staff, so it is their sprites that are pulled; the shadow copies clear it (0x475CF0, 0x475E10), and the staff
+tools' dangling person keeps the flags its creation clears (0x4758F0). Under the projection 0x578BE0 (clip z = a (v - n), w = s v, with
+s = sin 45 degrees, a = s / (1 - n / f), near 0.1 and far 1000) the pulled depth is that of the view depth v / (1 + 0.2 / (n a (a (v - n) + 1))),
+3.5 to 3.9 world units nearer at the park view's depths of 40 to 250. OpenTPW moves the hotspot along its view ray by that share and shrinks
+the quad by it (`SpriteScale.PulledDepthShare`, `GuestRenderer.PullTowardsEye`), so it covers the same pixels nearer the camera: the kids,
+the costumes and the staff members, not the dangling person, balloons, thoughts, litter or riders' heads. At the lowest camera pitch, 45 degrees,
+that keeps soles up to 16 pixels below the hotspot clear of flat ground. Before October 18, 2026 OpenTPW drew them at the hotspot's
+depth, which cut the soles of the original kids and hid the shoes of the pools' 45 degree kids altogether.
+
 **Costumes.** A guest in costume is drawn by a second `GuestRenderer` with the theme's costume set (`esprites.wad/<theme>/Costumes`: Jungle
 `SPR_TI`, Fantasy `SPR_BK`, Hallow `SPR_HK`, Space `SPR_SK`; one set per theme, so the original's draw among them, `0x541f70(2)`, always
 picks it). The sets share the kids' animation slots. On a ride, its head comes from the theme's costume heads (Jungle and Space; the other

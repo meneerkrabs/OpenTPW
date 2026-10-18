@@ -10,14 +10,16 @@ public sealed partial class GuestSimulation
 	private InvalidOperationException PolicyError( string what ) => new( $"The guest decision policy {decisions.GetType().Name} {what}." );
 
 	/// <summary>A copy of the fields of <paramref name="guest"/> the decisions read; the histories are views of the guest's arrays, unchanged while a decision runs.</summary>
-	private static GuestView ViewOf( Guest guest ) => new( guest.Id, guest.BirthId, guest.Type, guest.Happiness, guest.Thirst, guest.Hunger, guest.Toilet, guest.Nausea, guest.Money,
-		guest.CellX, guest.CellY, Array.AsReadOnly( guest.UsedHistory ), Array.AsReadOnly( guest.TemporaryHistory ) );
+	internal GuestView ViewOf( Guest guest ) => new( guest.Id, guest.BirthId, guest.Type, guest.Happiness, guest.Thirst, guest.Hunger, guest.Toilet, guest.Nausea, guest.Money,
+		guest.CellX, guest.CellY, Array.AsReadOnly( guest.UsedHistory ), Array.AsReadOnly( guest.TemporaryHistory ),
+		// [EXT:smarter-guests-planning] the guest's last meal comes from the extension's state, for a policy that plans
+		decisions.UsesPlanning && SmarterGuests is { } smarter ? smarter.Meals.Of( guest.BirthId ) : -1 );
 
 	/// <summary>
 	/// <paramref name="attraction"/> as <paramref name="guest"/> sees it: every value the original score reads, taken now. An attraction without a join cell carries identity and flags only
 	/// (the original scores it 0 without reading anything else).
 	/// </summary>
-	private AttractionView ViewOf( IRideVisitorBridge attraction, Guest guest )
+	internal AttractionView ViewOf( IRideVisitorBridge attraction, Guest guest )
 	{
 		if ( attraction.JoinCell == null )
 			return new AttractionView( attraction.AttractionId, attraction.TypeId, attraction.Kind, false, default, attraction.EntranceCell, 0, attraction.QueueLength, attraction.QueueSizeInCells,
@@ -44,7 +46,7 @@ public sealed partial class GuestSimulation
 			return view;
 		var reservations = ReservationsOf( attraction.AttractionId, guest );
 		var interval = smarter.Throughputs.IntervalFor( attraction.AttractionId, attraction.Kind, attraction.LiveCapacity, attraction.Speed, ParkTurn, attraction.QueueLength );
-		return view with { Reservations = reservations, TurnsPerGuest256 = interval };
+		return view with { Reservations = reservations, TurnsPerGuest256 = interval, CycleTurns256 = SmarterGuestsRules.CycleTurns256Of( interval, attraction.LiveCapacity ) };
 	}
 
 	/// <summary>The walkers per attraction, counted once at the start of a decision (<see cref="BeginReservations"/>); null outside one.</summary>
@@ -128,6 +130,59 @@ public sealed partial class GuestSimulation
 	}
 
 	/// <summary>
+	/// <paramref name="view"/> with the commitment the planning rule looks ahead over (docs/SMARTER-GUESTS.md, phase 5): when a meter of the guest is near a level the rule plans for
+	/// (<see cref="SmarterGuestsRules.MayCross"/>), the turns before it could next serve a need if it committed to a ride now: the ride it is walking to (<paramref name="target"/>, in the minor decision), else the
+	/// quickest ride it could choose. A guest with no meter that close pays nothing, which is nearly every guest. Pure: it records and changes nothing.
+	/// </summary>
+	// [EXT:smarter-guests-planning] the expected wait is the phase 3 estimate (queue ahead plus walkers over the observed throughput), the ride time its cycle
+	internal GuestView WithPlanHorizon( GuestView view, Guest guest, IRideVisitorBridge? target )
+	{
+		if ( !decisions.UsesPlanHorizon || !decisions.UsesSpreading || !SmarterGuestsRules.MayCross( view, ParkTurn ) )
+			return view;
+		var turns = target != null ? CommitmentTurns256( ViewOf( target, guest ) ) : BestCommitment256( guest );
+		return turns < 0 ? view : view with { PlanTurns256 = turns };
+	}
+
+	/// <summary>The turns a guest is busy with a ride from now: the expected wait of the queue (and the walkers) plus one cycle, in 1/256 turn; -1 without an estimate or for anything but a ride.</summary>
+	private static long CommitmentTurns256( in AttractionView ride ) =>
+		ride.Kind == RideVisitorKind.Ride && SmarterGuestsRules.ExpectedWait256( ride ) is { } wait ? wait + ride.CycleTurns256 : -1;
+
+	/// <summary>
+	/// The shortest <see cref="CommitmentTurns256"/> over the rides <paramref name="guest"/> could choose now (open, working, with room, its excitement admitted, and not one it has used or been turned away from lately:
+	/// <see cref="SmarterGuestsRules.IsUnusedAdmissibleRide"/>), or -1 when there is none. The least, so the planning only acts when even the quickest ride leaves a need to cross. Pure.
+	/// </summary>
+	private long BestCommitment256( Guest guest )
+	{
+		var type = Settings.Types[Math.Min( guest.Type, Settings.Types.Count - 1 )];
+		var (context, guestView) = (ContextNow(), ViewOf( guest ));
+		var counted = reservationCounts == null;
+		BeginReservations();
+		try
+		{
+			var best = -1L;
+			foreach ( var other in attractions )
+			{
+				if ( !CouldJoinRide( other, type ) )
+					continue;
+				var view = ViewOf( other, guest );
+				if ( SmarterGuestsRules.IsUnusedAdmissibleRide( context, guestView, view ) && CommitmentTurns256( view ) is var turns and >= 0 && (best < 0 || turns < best) )
+					best = turns;
+			}
+			return best;
+		}
+		finally
+		{
+			if ( counted )
+				EndReservations();
+		}
+	}
+
+	/// <summary>A ride a guest of this type could join now: it has a join cell, is open and working, has room, and its excitement is admitted.</summary>
+	private static bool CouldJoinRide( IRideVisitorBridge other, GuestType type ) =>
+		other.Kind == RideVisitorKind.Ride && other.JoinCell != null && other.IsOpen && !other.IsBrokenDown && other.QueueLength < other.QueueLimit
+		&& QueueJoinRules.Refusal( other.StaticExcitementLevel, other.JoinDifference( type.PreferredExcitement ) ) == null;
+
+	/// <summary>
 	/// The queue patience hook (docs/SMARTER-GUESTS.md): runs after the existing leave tests of a waiting guest, on a turn the guest stays, never while it is called forward or in an
 	/// interlude. True when the policy lets the guest leave; the host then dismisses it with the policy's thought. The original policy always stays, so this changes nothing and takes no draw.
 	/// </summary>
@@ -163,8 +218,7 @@ public sealed partial class GuestSimulation
 			var best = -1L;
 			foreach ( var other in attractions )
 			{
-				if ( other.AttractionId == excludeAttractionId || other.Kind != RideVisitorKind.Ride || other.JoinCell == null || !other.IsOpen || other.IsBrokenDown
-					|| other.QueueLength >= other.QueueLimit || QueueJoinRules.Refusal( other.StaticExcitementLevel, other.JoinDifference( type.PreferredExcitement ) ) != null )
+				if ( other.AttractionId == excludeAttractionId || !CouldJoinRide( other, type ) )
 					continue;
 				var view = WithSpreading( ViewOf( other, guest ), other, guest );
 				if ( SmarterGuestsRules.IsUnusedAdmissibleRide( context, guestView, view ) && SmarterGuestsRules.ExpectedWait256( view ) is { } wait && (best < 0 || wait < best) )

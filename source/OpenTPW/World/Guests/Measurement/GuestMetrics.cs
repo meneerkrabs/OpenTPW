@@ -34,9 +34,19 @@ public sealed record AttractionUse( int AttractionId, string Name, string Kind, 
 public sealed record DepartureMetrics( long Total, long Admitted, long NeverAdmitted, long HappinessZero, long ExitCounterZero, long ParkClosed, long BoothRefused, long Guard, long Other,
 	double? MeanHappinessAtDeparture, double? MeanTurnsInPark, double? MeanRides );
 
+/// <summary>
+/// What the guests' needs did in the window (docs/SMARTER-GUESTS.md, phase 5). Passive counts only.
+/// </summary>
+/// <param name="Vomits">Guests that vomited (the illness meter at 100, a vomiting activity), admitted or not.</param>
+/// <param name="VomitsAfterMeal">The vomits among them within <see cref="SmarterGuestsRules.MealWindowTurns"/> park turns of a use of an attraction with a hunger effect (the collector watches the boardings itself, so it counts in any configuration).</param>
+/// <param name="NeedThoughts">Thoughts of an unmet need: hungry, thirsty, hungry and thirsty, need the toilet.</param>
+/// <param name="DepartedWithUnmetNeeds">Admitted guests that left with a hunger or thirst byte of 100, or a toilet byte above 80 (the levels the planning rule plans for).</param>
+/// <param name="MeanIllnessAtDeparture">The mean illness meter of the admitted guests that left, or null with none.</param>
+public sealed record NeedsMetrics( long Vomits, long VomitsAfterMeal, long NeedThoughts, long DepartedWithUnmetNeeds, double? MeanIllnessAtDeparture );
+
 public sealed record GuestMetricsSnapshot( long Admissions, double RevenueTotal, double RevenueEntrance, double RevenuePerAdmittedGuest, QueueOutcomeMetrics Queue,
 	double? GuestTimeHappiness, double? SurvivorHappiness, IReadOnlyList<CohortMetrics> Cohorts, DepartureMetrics Departures, IReadOnlyList<AttractionUse> Attractions,
-	double GiniRides, double GiniAll, double GiniRidesPerCapacity, long NoChoiceEvents, long StuckGuests, double GuestSeconds, double MeanGuestsInPark, long Ticks )
+	double GiniRides, double GiniAll, double GiniRidesPerCapacity, long NoChoiceEvents, long StuckGuests, double GuestSeconds, double MeanGuestsInPark, long Ticks, NeedsMetrics? Needs = null )
 {
 	/// <summary>
 	/// Guest time per ride boarding: the guest-seconds of the window over the boardings of rides in it (NaN with none). The pooled form of "time between a guest's boardings": a wait cut bought with refusals shows
@@ -78,6 +88,16 @@ public sealed record GuestMetricsSnapshot( long Admissions, double RevenueTotal,
 			("guests.stuck", StuckGuests),
 			("guests.meanInPark", MeanGuestsInPark)
 		};
+		// phase 5: what the needs did; appended after the older metrics so their order stays
+		if ( Needs is { } needs )
+		{
+			list.Add( ("queue.abandoned.needToilet.rate", Rate( queue.AbandonedByReason.GetValueOrDefault( "NeedToilet" ) )) );
+			list.Add( ("needs.vomits.perAdmission", Admissions == 0 ? 0 : (double)needs.Vomits / Admissions) );
+			list.Add( ("needs.vomitsAfterMeal.perAdmission", Admissions == 0 ? 0 : (double)needs.VomitsAfterMeal / Admissions) );
+			list.Add( ("needs.thoughts.perAdmission", Admissions == 0 ? 0 : (double)needs.NeedThoughts / Admissions) );
+			list.Add( ("departures.unmetNeeds.perAdmission", Admissions == 0 ? 0 : (double)needs.DepartedWithUnmetNeeds / Admissions) );
+			list.Add( ("departures.meanIllness", needs.MeanIllnessAtDeparture ?? double.NaN) );
+		}
 		return list.Select( item => (item.Item1, item.Item2) ).ToList();
 	}
 
@@ -169,7 +189,10 @@ public sealed record GuestMetricsSnapshot( long Admissions, double RevenueTotal,
 				["entrance"] = N( RevenueEntrance ),
 				["perAdmittedGuest"] = N( RevenuePerAdmittedGuest )
 			},
-			["noChoice"] = new JsonObject { ["events"] = NoChoiceEvents, ["stuckGuests"] = StuckGuests }
+			["noChoice"] = new JsonObject { ["events"] = NoChoiceEvents, ["stuckGuests"] = StuckGuests },
+			["needs"] = Needs is { } needs
+				? new JsonObject { ["vomits"] = needs.Vomits, ["vomitsAfterMeal"] = needs.VomitsAfterMeal, ["needThoughts"] = needs.NeedThoughts, ["departedWithUnmetNeeds"] = needs.DepartedWithUnmetNeeds, ["meanIllnessAtDeparture"] = N( needs.MeanIllnessAtDeparture ) }
+				: null
 		};
 	}
 }
@@ -197,6 +220,8 @@ public sealed class GuestMetrics : IGuestObserver
 		public DepartureCause LastCause;
 		public long NoChoiceSinceTurn = -1;
 		public bool Stuck;
+		/// <summary>The park turn of the guest's latest use of an attraction with a hunger effect, -1 for none.</summary>
+		public long LastMealTurn = -1;
 	}
 
 	private sealed class Cohort
@@ -228,7 +253,8 @@ public sealed class GuestMetrics : IGuestObserver
 	private double guestSeconds, happinessSeconds, guestTickSum;
 	private long ticks;
 	private long departures, departedAdmitted, depHappinessZero, depExitZero, depClosed, depBooth, depGuard, depOther;
-	private double depHappiness, depTurns, depRides;
+	private double depHappiness, depTurns, depRides, depIllness;
+	private long vomits, vomitsAfterMeal, needThoughts, depUnmet;
 
 	public GuestMetrics( GuestMetricsOptions? options = null ) => this.options = options ?? new GuestMetricsOptions();
 
@@ -264,7 +290,8 @@ public sealed class GuestMetrics : IGuestObserver
 		guestSeconds = happinessSeconds = guestTickSum = 0;
 		ticks = 0;
 		departures = departedAdmitted = depHappinessZero = depExitZero = depClosed = depBooth = depGuard = depOther = 0;
-		depHappiness = depTurns = depRides = 0;
+		depHappiness = depTurns = depRides = depIllness = 0;
+		vomits = vomitsAfterMeal = needThoughts = depUnmet = 0;
 		foreach ( var track in tracks.Values )
 		{
 			if ( track.Attempt != null )
@@ -328,7 +355,7 @@ public sealed class GuestMetrics : IGuestObserver
 		return new GuestMetricsSnapshot( admissions, revenue, entranceRevenue, admissions == 0 ? 0 : revenue / admissions, queue,
 			guestSeconds > 0 ? happinessSeconds / guestSeconds : null, survivors.Count > 0 ? survivors.Average() : null, cohortList, departureMetrics, snapshotAttractions,
 			Gini( rideUses ), Gini( snapshotAttractions.Select( item => (double)item.Uses ).ToList() ), Gini( rideUsePerCapacity ), noChoiceEvents, stuck, guestSeconds,
-			ticks > 0 ? guestTickSum / ticks : 0, ticks );
+			ticks > 0 ? guestTickSum / ticks : 0, ticks, new NeedsMetrics( vomits, vomitsAfterMeal, needThoughts, depUnmet, departedAdmitted > 0 ? depIllness / departedAdmitted : null ) );
 	}
 
 	private Track Get( Guest guest )
@@ -407,6 +434,9 @@ public sealed class GuestMetrics : IGuestObserver
 		if ( recording )
 			Of( attraction.AttractionId ).Uses++;
 		var track = Get( guest );
+		// a boarding of something that takes hunger off is a meal (the same definition as the planning rule's, docs/SMARTER-GUESTS.md phase 5), kept in any configuration
+		if ( attraction.HungerEffect > 0 )
+			track.LastMealTurn = Turn;
 		if ( track.Attempt is { } open )
 		{
 			if ( open.Counted )
@@ -464,6 +494,21 @@ public sealed class GuestMetrics : IGuestObserver
 		}
 	}
 
+	public void Vomited( Guest guest )
+	{
+		if ( !recording )
+			return;
+		vomits++;
+		if ( Get( guest ).LastMealTurn is >= 0 and var meal && Turn >= meal && Turn - meal < SmarterGuestsRules.MealWindowTurns )
+			vomitsAfterMeal++;
+	}
+
+	public void Thought( Guest guest, GuestThought thought )
+	{
+		if ( recording && thought is GuestThought.Hungry or GuestThought.Thirsty or GuestThought.HungryAndThirsty or GuestThought.NeedToilet )
+			needThoughts++;
+	}
+
 	public void Leaving( Guest guest, DepartureCause cause ) => Get( guest ).LastCause = cause;
 
 	public void Recalled( Guest guest ) => Get( guest ).LastCause = DepartureCause.None;
@@ -508,6 +553,9 @@ public sealed class GuestMetrics : IGuestObserver
 		if ( !track.Admitted )
 			return;
 		departedAdmitted++;
+		depIllness += guest.Nausea;
+		if ( MeterMath.Byte( guest.Hunger ) >= 100 || MeterMath.Byte( guest.Thirst ) >= 100 || MeterMath.Byte( guest.Toilet ) > 80 )
+			depUnmet++;
 		depHappiness += guest.Happiness;
 		depTurns += ParkCalendar.Turn( (long)((guest.TimeInParkSeconds ?? 0) * FixedStepClock.TicksPerSecond) );
 		depRides += guest.RidesTaken;

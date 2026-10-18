@@ -29,14 +29,8 @@ public static class UiImages
 		// [EXT:texture-pack] the optional local pack replaces interface art too (docs/TEXTURE-PACKS.md); UVs are relative, so a larger image drops in.
 		if ( path.EndsWith( ".wct", StringComparison.OrdinalIgnoreCase ) && TexturePack.Find( path ) is { } replacement )
 		{
-			// The browser's shipped art arrives predecoded (docs/WEB.md); the pink key below applies to it exactly as to a PNG.
-			if ( replacement.EndsWith( PredecodedUiArt.Extension, StringComparison.OrdinalIgnoreCase ) )
-				(width, height, data) = PredecodedUiArt.Load( File.ReadAllBytes( replacement ) );
-			else
-			{
-				var image = ImageResult.FromMemory( File.ReadAllBytes( replacement ), ColorComponents.RedGreenBlueAlpha );
-				(width, height, data) = (image.Width, image.Height, image.Data);
-			}
+			var image = ImageResult.FromMemory( File.ReadAllBytes( replacement ), ColorComponents.RedGreenBlueAlpha );
+			(width, height, data) = (image.Width, image.Height, image.Data);
 		}
 		else if ( path.EndsWith( ".wct", StringComparison.OrdinalIgnoreCase ) )
 		{

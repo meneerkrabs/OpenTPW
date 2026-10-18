@@ -1,6 +1,6 @@
 # Texture packs (Enhanced, Detailed and Original)
 
-October 17, 2026. Status: **OpenTPW extension (`[EXT:texture-pack]`), Original world textures and Enhanced HUD/icons by default.**
+October 18, 2026. Status: **OpenTPW extension (`[EXT:texture-pack]`), Original world textures by default.**
 
 > **Clarity removed (October 17, 2026).** The curated Clarity pack (`clarity-enhanced`) and everything that offered,
 > downloaded, verified or preferred it were removed from OpenTPW on the project owner's decision. That covers its
@@ -11,11 +11,14 @@ October 17, 2026. Status: **OpenTPW extension (`[EXT:texture-pack]`), Original w
 
 The world-texture options offer **Original** (the game's own textures), **Enhanced** (the `enhanced` pack, the
 default name of the local builder), **Detailed**, and other installed packs. An explicit saved choice is preserved.
-A fresh installation uses Original world textures plus the HD HUD and menu icons included with OpenTPW. This
-interface art needs no download. Enhanced is always listed; without a local `enhanced` pack it means the shipped
-interface art only. The separate **HUD and icons** option selects Enhanced or Original interface art. To reproduce
-every original texture, choose Original for both world textures and HUD/icons. Original HUD/icons excludes pack UI
-replacements even while a world pack is selected.
+A fresh installation uses Original world textures. Enhanced is always listed; without a local `enhanced` pack it
+behaves like Original.
+
+> **Redrawn interface art removed (October 18, 2026).** OpenTPW no longer ships redrawn HUD and menu buttons. The 55
+> AI-redrawn button textures, the tools that made them, the **HUD and icons** option, the browser build's predecoded
+> copy of the art and the builder's directory option for hand-made replacements were removed on the project owner's
+> decision: the original icons now decode crisply (the WCT planar-row decoder was fixed), so the redraws were no
+> longer needed. Old settings files that still carry the `EnhancedInterface` key load unchanged and the key is ignored.
 
 ## Packs
 
@@ -27,48 +30,14 @@ For a named pack, OpenTPW checks these locations in order:
 Each pack needs a supported `pack.json` and a `textures` directory. An invalid local manifest is
 reported and a valid bundle of the same name is tried. The options list usable packs from both
 locations once, with Enhanced and Detailed first, then the others alphabetically. If a selected pack is unavailable,
-the game reports the missing pack and continues with original world textures; the independent HUD choice determines
-whether its icons come from shipped HD art or the original game.
+the game reports the missing pack and continues with original world textures.
 
 Desktop publishing already copies `content/**/*`, so a pack staged in the second location travels
 with the executable and works offline. This runtime support does not fetch packs or include their
-binary content by itself. The browser build has no local packs: it supplies only the shipped HD interface art.
+binary content by itself. The browser build has no local packs.
 
-With Enhanced HUD/icons enabled, named packs use the priority shipped hero icons first, then the selected pack. An
-explicit `OPENTPW_TEXTURE_PACK=<pack>/textures` override pins that directory and takes precedence over both
-the saved choice and shipped icons.
-
-## Shipped interface art
-
-`content/hero-art/textures/ui/textures/*.wct.png` holds 55 HD replacements (8×, e.g. a 64×64 texture
-becomes 512×512) for the HUD, lobby and options buttons: buy, info, money, research, map, camera, the build
-categories (rides, shops, shows, features), door, enter-park, erase, OK, exit, retract, the
-arrows and the slider ball, with their pressed, highlighted and disabled states, and the golden ticket
-and golden key counters at the top right. With Enhanced they
-replace the original interface art before its pack is consulted (`TexturePack.Find`) when Enhanced
-HUD/icons is enabled. The same shipped icons work with Original world textures.
-
-Provenance: on October 10, 2026 each base icon was cut out of the original texture at its alpha mask,
-enlarged, and redrawn by Google Gemini's image model in the Gemini web app with a fixed prompt per icon
-("recreate exactly this icon as a crisp 1024×1024 image, same composition, colours and late-90s
-glossy 3D cartoon style; do not redesign"; `tools/hero-art/prompts.tsv`). Matching pairs were made
-as edits of one result (door closed/open, left/right arrow; the right lobby arrow is the mirrored
-left one; the lit feature button is a recolour of the normal one). `tools/hero-art/fit.py` fits each
-result back into the original texture layout: the icon is scaled onto the original icon's
-outline (where the original's alpha crosses 50% through its centre, not its bounding box, which includes the
-original's soft drop shadow), the alpha is the redrawn silhouette (the image model's white backdrop and soft grey
-drop shadow are removed, together with the one-pixel blend into them), the backdrop is
-painted with the nearest outline colour before resampling and every transparent texel gets the nearest solid
-icon colour, so neither the backdrop nor texture filtering leaves a light halo, and the state variants are derived from the
-redrawn base with the original's colour change (per-channel gain for pressed and grey states, a
-fitted colour mapping for highlighted ones). Every button keeps the rim the image model drew (an earlier
-version kept the original rim from the anime-upscaled original, but that rim is cropped in the original texture
-and vanishes on the darker pressed states). The golden key's progress frames (`gkey0`-`gkey2`: see-through, gold
-ring, gold ring and lower shaft) are derived from the redrawn full key `gkey3` by `tools/hero-art/keyfill.py`, cut
-straight across the key where each original frame's gold ends. Backdrop enclosed by an outline (the key ring's hole)
-becomes transparent where the original is transparent there. The two option toggles `b_on1`/`b_on2` (multi-piece
-atlases) stay original. These images are AI recreations of the original EA/Bullfrog icons; the
-project owner chose to ship them.
+An explicit `OPENTPW_TEXTURE_PACK=<pack>/textures` override pins that directory and takes precedence over the saved
+choice.
 
 The original textures are small: 8,375 `.wct` textures in the installed WADs, mostly
 32×32 (2,777) and 128×128 (2,352), the largest 256×128 (48.4 million pixels in total).
@@ -153,7 +122,7 @@ removed); runtime pack support does not grant rights to the original assets or t
 
    Options: `--texture-pack-name <name>` (default `enhanced`; the pack goes to
    `<config>/texture-packs/<name>`), `--upscale-model <name>` (default `realesrgan-x4plus`),
-   `--texture-pack-hero-dir <dir>` (hero art, below), `--prepass-model <onnx>` (without it there is no pre-pass and the build is exactly the old one),
+   `--prepass-model <onnx>` (without it there is no pre-pass and the build is exactly the old one),
    `--prepass-sprites`, `--texture-pack-dir <dir>` (overrides the location), `--texture-pack-subtree <data-relative dir>`
    (e.g. `levels/jungle`, for a quick trial; it selects WAD directories), `--interface-model <name>` (default
    `realesrgan-x4plus-anime`), `--texture-pack-no-interface`, `--texture-pack-interface-only`,
@@ -164,8 +133,7 @@ removed); runtime pack support does not grant rights to the original assets or t
    the pack and overrides the setting.
 3. Choose **Game Options -> OpenTPW -> Enhanced textures** (Original, Enhanced, then Detailed and any other
    installed pack) and press OK. The textures are swapped in the running game in the background; no
-   restart is needed. Enhanced is always offered: without a local `enhanced` pack it means the shipped
-   interface art only.
+   restart is needed. Enhanced is always offered: without a local `enhanced` pack it behaves like Original.
 
 ### Setting and migration
 
@@ -178,21 +146,15 @@ wins. Names must be plain directory names (letters, digits, `-`, `_`, `.`).
 
 **Clarity migration.** A saved `"TexturePack": "clarity-enhanced"` (any case) reads as `""` (Original world
 textures). `GraphicsSettings.Load` logs "The 'clarity-enhanced' texture pack was removed; using the original world
-textures." once and writes the migrated file back, so later starts are silent. The interface choice is untouched: a
-Clarity player without an explicit `EnhancedInterface` keeps the shipped HD HUD. A player-local copy under
+textures." once and writes the migrated file back, so later starts are silent. A player-local copy under
 `<config>/texture-packs/clarity-enhanced` is not removed and gets no special handling: if it holds a valid
 `pack.json` and `textures` directory it is listed like any other installed pack (labelled "clarity-enhanced") and
 can be selected again by hand.
 
-`"EnhancedInterface": true` selects HD HUD/icons and `false` selects original interface textures,
-independently of `TexturePack`. Fresh settings use `true`. Older files containing an explicit
-`"TexturePack": ""` or legacy `"EnhancedTextures": false` without an explicit named world pack retain their previous all-original look
-by inferring `EnhancedInterface: false`; an explicit new flag always wins. Earlier enhanced choices
-infer `true`. The inferred choice is written when graphics settings are next saved. Native smoke
-tests set both world and interface choices to Original for original-pixel checks.
+**Removed HUD choice.** Earlier versions also stored `"EnhancedInterface": true|false` (the **HUD and icons** option). The
+key is ignored when read and is not written back. Smoke tests set the world choice to Original for original-pixel checks.
 
-Reading settings, finding installed packs, and activating local files never touch the network. Changing only
-HUD/icons uses the local texture-reload callback and never requests a world pack.
+Reading settings, finding installed packs, and activating local files never touch the network.
 
 ### Pre-pass
 
@@ -212,15 +174,6 @@ Timing: one 256x256 run takes about 1.2 s on Apple silicon through CoreML (1.9 s
 runs four textures at once (about 0.47 s per 128x128 texture, `OPENTPW_PREPASS_PROVIDER=cpu` forces the CPU
 provider). A 128x128 texture takes one run, a 256x256 one four. A full build with the pre-pass therefore takes
 roughly an hour or more on top of the upscale; try `--texture-pack-subtree levels/jungle` first.
-
-### Hero art
-
-`--texture-pack-hero-dir <dir>` points at a directory of hand-made or redrawn replacements. A file named
-like the pack's texture, e.g. `ui/textures/b_buy.wct.png` (lower case, same layout as the pack's `textures`
-directory), is copied over the automatic result for that key, so it wins over the upscale and survives rebuilds
-and `--texture-pack-merge`. It may have any size whose aspect ratio equals the original texture's; a file with
-another aspect ratio, or for a texture that does not exist, is skipped with a warning. Hero art is applied at the
-end of every build that names the directory and counted in `pack.json` as `HeroTextures`. Keep it outside the repository.
 
 ### Switching at runtime
 

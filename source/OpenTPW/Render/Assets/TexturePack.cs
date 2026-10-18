@@ -70,45 +70,16 @@ public static class TexturePack
 		}
 	}
 
-	/// <summary>
-	/// HD interface art shipped with OpenTPW (<c>content/hero-art/textures</c>, same layout as a pack's textures; docs/TEXTURE-PACKS.md):
-	/// AI-redrawn HUD and menu icons, used when Enhanced HUD/icons is enabled, independently of the world pack.
-	/// </summary>
-	public static string ShippedDirectory { get; set; } = Path.Combine( AppContext.BaseDirectory, "content", "hero-art", "textures" );
-
 	/// <summary>True when an enhanced world choice (any non-empty valid pack name) is active.</summary>
 	public static bool Enhanced { get; private set; }
 
-	/// <summary>Independent interface choice: shipped HD icons can be used with original world textures.</summary>
-	public static bool EnhancedInterface { get; private set; } = true;
-
-	private static bool packBeforeShippedArt;
-
-	/// <summary>
-	/// The replacement PNG for a game texture path, or null when there is none. An environment override
-	/// uses its own interface art first, falling back to the shipped icons; named packs keep the shipped icons first.
-	/// With Original HUD/icons, <c>ui/</c> paths use neither pack replacements nor shipped icons.
-	/// </summary>
+	/// <summary>The replacement PNG for a game texture path in the active pack, or null when there is none.</summary>
 	public static string? Find( string gamePath )
 	{
-		var relative = RelativeFileName( gamePath );
-		var interfaceTexture = relative.StartsWith( "ui/", StringComparison.Ordinal );
-		if ( interfaceTexture && !EnhancedInterface )
+		if ( string.IsNullOrEmpty( Directory ) )
 			return null;
-		var packed = string.IsNullOrEmpty( Directory ) ? null : Path.Combine( Directory, relative );
-		var shipped = interfaceTexture && EnhancedInterface ? Path.Combine( ShippedDirectory, relative ) : null;
-		if ( packBeforeShippedArt && packed != null && File.Exists( packed ) )
-			return ReplacedFile( packed );
-		if ( shipped != null )
-		{
-			if ( File.Exists( shipped ) )
-				return shipped;
-			// [EXT:texture-pack] the browser build ships predecoded siblings instead of the PNGs (docs/WEB.md); only the shipped art can be one.
-			var predecoded = PredecodedUiArt.SiblingPath( shipped );
-			if ( predecoded != null && File.Exists( predecoded ) )
-				return predecoded;
-		}
-		return packed != null && File.Exists( packed ) ? ReplacedFile( packed ) : null;
+		var packed = Path.Combine( Directory, RelativeFileName( gamePath ) );
+		return File.Exists( packed ) ? ReplacedFile( packed ) : null;
 	}
 
 	private static string ReplacedFile( string file )
@@ -166,24 +137,20 @@ public static class TexturePack
 
 	/// <summary>
 	/// Selects a local pack, then the bundled pack of the same name. An empty name means original world textures;
-	/// <paramref name="enhancedInterface"/> independently selects bundled HD icons. A missing pack keeps original
-	/// world textures. An <c>OPENTPW_TEXTURE_PACK</c>
+	/// A missing pack keeps original world textures. An <c>OPENTPW_TEXTURE_PACK</c>
 	/// override pins its textures directory. Textures already loaded keep their pixels until
 	/// <see cref="TexturePackSwitch"/> reloads them.
 	/// </summary>
-	public static void Activate( string? name, ICollection<string> diagnostics, string? packsDirectory = null, string? bundledPacksDirectory = null, bool enhancedInterface = true )
+	public static void Activate( string? name, ICollection<string> diagnostics, string? packsDirectory = null, string? bundledPacksDirectory = null )
 	{
-		EnhancedInterface = enhancedInterface;
 		if ( Environment.GetEnvironmentVariable( "OPENTPW_TEXTURE_PACK" ) is { Length: > 0 } environmentOverride )
 		{
 			Directory = environmentOverride;
 			Enhanced = true;
-			packBeforeShippedArt = true;
 			return;
 		}
 		Directory = null;
 		Enhanced = false;
-		packBeforeShippedArt = false;
 		if ( string.IsNullOrEmpty( name ) )
 			return;
 		if ( !IsValidName( name ) )
@@ -195,7 +162,7 @@ public static class TexturePack
 		var resolved = Resolve( name, diagnostics, packsDirectory ?? PacksDirectory(), bundledPacksDirectory ?? BundledPacksDirectory() );
 		if ( resolved == null )
 		{
-			var fallback = EnhancedInterface ? "shipped interface art and original world textures" : "original textures";
+			const string fallback = "original textures";
 			if ( name != EnhancedName )
 				diagnostics.Add( $"No usable texture pack '{name}'; using {fallback}. Install a pack or build one with --build-texture-pack." );
 			Log?.Trace( $"Texture pack '{name}': {fallback}; no usable local or bundled pack." );
@@ -222,8 +189,6 @@ public sealed record TexturePackManifest
 	public string InterfaceModel { get; init; } = "";
 	/// <summary>ONNX de-artifact model run on world textures before upscaling; empty when there was no pre-pass.</summary>
 	public string PrepassModel { get; init; } = "";
-	/// <summary>Textures copied from the hero art directory over the automatic upscale in this run (part of <see cref="Textures"/>).</summary>
-	public int HeroTextures { get; init; }
 	public int Textures { get; init; }
 	/// <summary>Interface textures built in this run (part of <see cref="Textures"/>).</summary>
 	public int InterfaceTextures { get; init; }

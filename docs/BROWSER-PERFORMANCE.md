@@ -42,7 +42,7 @@ Frame times are the wall time of each exported `Program.Frame`, recorded by the 
 drawing and input. It is not the operating system's CPU time, and whether the October samples
 below used the same method is not recorded, so the two are not directly comparable.
 Music and speech are muted through the options file and effects stay on, as on 11 October
-(`--music` keeps them on); world textures are the default Original with the bundled HD interface.
+(`--music` keeps them on); world textures are the default Original (the browser then also carried the redrawn HD interface art, removed on October 18, 2026).
 The hooks behind `?perf=1` (`Program.Perf.cs`: state, a click on an element by id, a key, a
 buy-window selection, memory counters) change nothing unless the harness calls them. The page
 honours `?perf` and `?perfSeed` only on a loopback address, and the seed may only write the
@@ -379,7 +379,7 @@ until the game has started.
 
 Two matched 30-second samples on 11 October 2026 used headless Chrome, Apple M4
 hardware Metal through ANGLE, a 1280×900 canvas, Original world textures and the
-bundled Enhanced HUD. Jungle used a stationary camera, music and speech muted through
+redrawn HD interface art that the build then bundled (removed on October 18, 2026). Jungle used a stationary camera, music and speech muted through
 the UI, effects on and no world-texture downloads (the browser build has none). Muting does not itself stop audio decoding.
 
 | Phase | v0.7.6 main-thread CPU | Optimized prototype | Reduction |
@@ -405,7 +405,7 @@ cubic, decoded planes use arrays, and previews resolve each used material once a
 reuse parsed models. Unused sign materials still do no work.
 
 Matched cold selections used the same original files, Full Simulation Jungle,
-Original world textures, Enhanced HUD and a 1280×800 browser viewport. These numbers
+Original world textures, the then-bundled HD interface (removed on October 18, 2026) and a 1280×800 browser viewport. These numbers
 measure wall time inside the actual exported `Program.Frame`, not network loading,
 GPU time or overall FPS. The baseline is deployed v0.7.12; the after column is the
 optimized local build.

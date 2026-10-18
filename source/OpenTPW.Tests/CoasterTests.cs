@@ -853,7 +853,8 @@ public class CoasterTests
 		Assert.IsTrue( SVector3.Distance( back, new SVector3( -6.1803398f, 14.40983f, 5 ) ) < 1e-4f, $"{back}" );
 		Assert.IsTrue( SVector3.Distance( forward, new SVector3( 19.90712f, 27.45356f, 5 ) ) < 1e-4f, $"{forward}" );
 		Assert.AreEqual( 0x40066666u, Bits( HermiteCoasterCurve.LoopKnotFactor( 1.25f, 0, 0.5f ) ), "2.1" );
-		Assert.AreEqual( 0x3FCDCC67u, Bits( HermiteCoasterCurve.LoopKnotFactor( 1.25f, 0.6f, 0.3f ) ) );
+		// the PC twin 0x432430 rounds the table index to the nearest (3482 here; the Mac lookup truncated to 3481 and gave 0x3FCDCC67); worked out apart from the C# code with single-precision steps
+		Assert.AreEqual( 0x3FCDD470u, Bits( HermiteCoasterCurve.LoopKnotFactor( 1.25f, 0.6f, 0.3f ) ) );
 	}
 
 	[TestMethod]

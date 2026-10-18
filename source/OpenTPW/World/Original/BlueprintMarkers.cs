@@ -66,7 +66,7 @@ public sealed class BlueprintMarkers : ModelEntity
 	/// The placement area's texture: translucent yellow and black squares, two by two to a cell.
 	/// </summary>
 	// [BIN:TPW-EXE:0x5243a6 area face] the cells of the coaster tool's placement area get face type 0x11f; the video (73:20-75:58) shows them as a translucent yellow with dark mottling, and the dynamic texture table holds no such texture (orange.tga is not on the PC CD)
-	// [APPROX:COAST-028] the texture is generated: 4 x 4 squares of yellow (255, 214, 0) and near-black (40, 34, 0), both at alpha 205 — evidence needed: the original texture behind face type 0x11f
+	// [APPROX:COAST-028] the texture is generated: 4 x 4 squares of yellow (255, 214, 0) and near-black (40, 34, 0), both at alpha 205 — evidence needed: the original texture behind face type 0x11f (the dynamic texture table 0x763b3c lists blue, red, orange, m_enter, m_exit; orange.tga is not on the PC CD, and the slot of face type 0x11f is not traced)
 	private static Texture AreaTexture()
 	{
 		const int Size = 8, Square = 4;

@@ -621,6 +621,13 @@ public sealed class SoundEventSystem
 	/// of a second for the jungle in the browser) is not part of the park's first frame.
 	/// </summary>
 	public PlacedSound? PlayAtWhenDecoded( SoundCategory? category, uint eventId, AudioChannel channel, Vector3 position, float? range = null )
+		=> PlaceWhenDecoded( category, eventId, channel, position, range );
+
+	/// <summary>
+	/// <see cref="PlayAtWhenDecoded"/> for a sound that may have no place (a flat voice, the original's unpositioned submit); the held ADDOBJ sounds use it
+	/// (<see cref="PlayHeld"/>), because the script moves, parameterises and ends them later.
+	/// </summary>
+	internal PlacedSound? PlaceWhenDecoded( SoundCategory? category, uint eventId, AudioChannel channel, Vector3? position, float? range = null )
 	{
 		Triggered?.Invoke( category?.Name, eventId, position );
 		var soundEvent = category?.Catalog.Find( eventId );
@@ -636,12 +643,29 @@ public sealed class SoundEventSystem
 		var volume = Volume( sound, table ) / 100f;
 		var pitch = Pitch( sound, table );
 		var placed = new PlacedSound( mixer, channel, volume, position, range ?? sound.Rolloff, (soundEvent.Flags & 0x8) != 0,
-			DecodeSentenceAsync( category, sound.Samples[index] ) ) { Priority = soundEvent.Priority, Flags = soundEvent.Flags, Pitch = pitch, Delay = DelaySeconds( sound ) };
+			DecodeSentenceAsync( category, sound.Samples[index] ) ) { Priority = soundEvent.Priority, Flags = soundEvent.Flags, PitchValue = pitch, Delay = DelaySeconds( sound ), Parameters = new PlacedSoundParameters( this, sound, table ) };
 		if ( !placed.Pump() )
 			placements.Add( placed );
 		else if ( placed.Voice is { } started )
 			oneShots.Add( (started, soundEvent.Priority, soundEvent.Flags, ExpiryFrame( started, soundEvent.Flags, placed.Delay )) );
 		return placed;
+	}
+
+	/// <summary>
+	/// Starts an event the way the original's submit (0x51BFC0) does for a record the script keeps: a repeating (sentence) event as a sentence, a one-shot as a sound that
+	/// starts once its sample is decoded; both at <paramref name="position"/>, or flat without one. The result takes the later position, parameter and stop calls.
+	/// </summary>
+	internal HeldSound? PlayHeld( SoundCategory? category, uint eventId, AudioChannel channel, Vector3? position )
+	{
+		var soundEvent = category?.Catalog.Find( eventId );
+		if ( category == null || soundEvent == null || soundEvent.Sounds.Count == 0 )
+		{
+			Triggered?.Invoke( category?.Name, eventId, position );
+			return null;
+		}
+		if ( soundEvent.Player != SoundEventPlayer.OneShot )
+			return StartSentence( category, eventId, channel, null, position, null ) is { } sentence ? new HeldSound( sentence ) : null;
+		return PlaceWhenDecoded( category, eventId, channel, position ) is { } placed ? new HeldSound( placed ) : null;
 	}
 
 	/// <summary>Starts a sentence event; an optional chooser replaces only its sample draws. Null when the event is missing.</summary>
@@ -705,20 +729,45 @@ public sealed class SoundEventSystem
 /// the previous one ends. The next sample is chosen and decoded ahead while the current one plays:
 /// native hosts decode in a background task, and browser hosts yield between bounded MPEG frame batches.
 /// </summary>
-/// <summary>A positioned sound that starts once its sample is decoded (<see cref="SoundEventSystem.PlayAtWhenDecoded"/>); it can be stopped before.</summary>
+/// <summary>What a placed one-shot needs to take the original's parameter call later: the sound's own record and the placeholder's parameter table.</summary>
+internal sealed class PlacedSoundParameters
+{
+	private readonly SoundEventSystem system;
+	private readonly SoundEntry sound;
+	private SoundParameterTable? table;
+
+	public PlacedSoundParameters( SoundEventSystem system, SoundEntry sound, SoundParameterTable? table )
+	{
+		this.system = system;
+		this.sound = sound;
+		this.table = table;
+	}
+
+	/// <summary>Stores the value in every table slot coded <paramref name="code"/> and returns the re-evaluated (volume, pitch) when a slot of the sound's own bindings (1-3) matched, else null.</summary>
+	// [BIN:TPW-EXE:0x6bbb80 SetParameter] the table is created when missing (0x6b7150); the code is compared with all four slot codes and the byte value stored in each match; a match in slot 1-3, with placeholder flag 0x4000 clear, re-evaluates the volume and pitch (0x6bbbe0), as SoundSentence.SetParameter does for a sentence
+	public (float Volume, int Pitch)? Set( int code, int value )
+	{
+		table ??= new SoundParameterTable();
+		if ( !table.Set( unchecked((byte)code), unchecked((byte)value) ) )
+			return null;
+		return (system.Volume( sound, table ) / 100f, system.Pitch( sound, table ));
+	}
+}
+
+/// <summary>A positioned (or flat) sound that starts once its sample is decoded (<see cref="SoundEventSystem.PlayAtWhenDecoded"/>); it can be moved, given parameters and stopped before.</summary>
 public sealed class PlacedSound
 {
 	/// <summary>The creation order among all voices (see <see cref="SoundEventSystem.ComparePoolOrder"/>).</summary>
 	internal long Serial { get; } = VoiceOrder.Next();
 	private readonly AudioMixer mixer;
 	private readonly AudioChannel channel;
-	private readonly float volume;
-	private Vector3 position;
+	private float volume;
+	private Vector3? position;
 	private readonly float range;
 	private readonly bool loops;
 	private readonly Task<Mp2Audio?> decoding;
 	private bool stopped;
-	internal Vector3 Position => position;
+	internal Vector3? Position => position;
 
 	/// <summary>Moves the sound, and its voice once it plays (a rectangle sound follows the listener each tick).</summary>
 	internal void MoveTo( Vector3 place )
@@ -732,12 +781,14 @@ public sealed class PlacedSound
 	internal uint Priority { get; init; }
 	/// <summary>The event flags (0x200: audible at any distance).</summary>
 	internal ushort Flags { get; init; }
-	/// <summary>The pitch step drawn when the sound was placed.</summary>
-	internal int Pitch { get; init; }
+	/// <summary>The pitch step drawn when the sound was placed (a parameter call changes it).</summary>
+	internal int Pitch { get; private set; }
 	/// <summary>The delay drawn when the sound was placed, in seconds (<see cref="SoundEventSystem.DelaySeconds"/>).</summary>
 	internal double Delay { get; init; }
+	/// <summary>The parameter binding of the placed sound's event, null for a sound placed by a caller that gives it no parameters.</summary>
+	internal PlacedSoundParameters? Parameters { get; init; }
 
-	internal PlacedSound( AudioMixer mixer, AudioChannel channel, float volume, Vector3 position, float range, bool loops, Task<Mp2Audio?> decoding )
+	internal PlacedSound( AudioMixer mixer, AudioChannel channel, float volume, Vector3? position, float range, bool loops, Task<Mp2Audio?> decoding )
 	{
 		this.mixer = mixer;
 		this.channel = channel;
@@ -748,8 +799,27 @@ public sealed class PlacedSound
 		this.decoding = decoding;
 	}
 
+	internal int PitchValue { init => Pitch = value; }
+
 	/// <summary>The voice once the sample is decoded and playing; null before, or when the sample could not be decoded.</summary>
 	public AudioVoice? Voice { get; private set; }
+
+	/// <summary>Whether the sound has ended: stopped, or its voice has played out (a sample not decoded yet has not).</summary>
+	public bool IsFinished => stopped || Voice is { IsFinished: true, Loops: false };
+
+	/// <summary>The original's parameter call on the placed sound: the stored volume and pitch change, and a playing voice takes them at once.</summary>
+	internal void SetParameter( int code, int value )
+	{
+		if ( stopped || Parameters?.Set( code, value ) is not { } changed )
+			return;
+		volume = changed.Volume;
+		Pitch = changed.Pitch;
+		if ( Voice is { IsFinished: false } playing )
+		{
+			playing.Gain = volume;
+			playing.SetPitch( Pitch );
+		}
+	}
 
 	/// <summary>Starts the voice when the sample is ready; true once nothing is left to wait for.</summary>
 	internal bool Pump()
@@ -762,7 +832,7 @@ public sealed class PlacedSound
 			Log.Warning( $"A placed sound was not started: its sample could not be decoded ({decoding.Exception?.GetBaseException().Message})." );
 		else if ( decoding.IsCompletedSuccessfully && decoding.Result is { } audio )
 		{
-			Voice = mixer.Play( audio, channel, volume, position, range );
+			Voice = position is { } place ? mixer.Play( audio, channel, volume, place, range ) : mixer.Play( audio, channel, volume );
 			Voice.Serial = Serial;
 			Voice.SetPitch( Pitch );
 			Voice.Loops = loops;

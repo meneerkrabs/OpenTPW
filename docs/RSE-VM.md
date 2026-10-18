@@ -1,16 +1,18 @@
 # RSE VM: executing original ride scripts
 
-October 9, 2026; updated October 14, 2026 (WAITABS deadline, MIN/SEC, child head tables) and October 17, 2026 (the hooked opcodes' operands, flags
-and time base read from tp.exe, [below](#hooked-opcodes-the-operands-as-the-handlers-read-them)). Status: **every opcode
+October 9, 2026; updated October 14, 2026 (WAITABS deadline, MIN/SEC, child head tables), October 17, 2026 (the hooked opcodes' operands, flags
+and time base read from tp.exe, [below](#hooked-opcodes-the-operands-as-the-handlers-read-them)) and October 18, 2026 (the sounds the object records hold, [below](#the-sounds-an-addobj-keeps)). Status: **every opcode
 used by the 308 original scripts has a VM handler**, and all scripts that can be
 started run in the VM without faults. The two opcodes only Theme Park Inc
 scripts contain — `WAITABS` (45) and `MULT` (48) — also have handlers now
 ([below](#theme-park-inc-gap-opcodes)).
-This is VM-level execution, not original ride behaviour: the game systems the
-scripts talk to (visitors, animation playback, sounds, objects, ride-type
-controllers, park clock) are not implemented, so their effects go through a
-hook that records them as unimplemented. Container format and static corpus
-inventory: [RSE-SCRIPTS.md](RSE-SCRIPTS.md).
+A bare `RideVM` is VM-level execution: its effects go through a hook that records them as
+unimplemented. In a park, every placed original object runs its scripts against the game systems they talk to: the visitors
+(`RideVisitorBridge`), the animation channels, the sounds (events, screams, held object records), the particles, the ride-type controllers (TOUR, BUMP, COAST) and
+the clock. What still goes to the unimplemented hook is small: the four light opcodes (no shipped script and no shipped model has a light,
+`APPROX:RIDES-046`) and the object type's own sound list (ADDOBJ and EVENT type 10, no shipped script). BOUNCESETNODE and
+BOUNCESETBASE are served by the visitor bridge and the bouncing riders are drawn at their nodes ([below](#bounce-opcodes)).
+Container format and static corpus inventory: [RSE-SCRIPTS.md](RSE-SCRIPTS.md).
 
 Code: `source/OpenTPW/VM/` (`RideVM`, `Operand`, `Instruction`, `RideOpcodes`,
 `RideScriptEffects`, `RideScriptWorld`, `Handlers/*`). Tests:
@@ -297,7 +299,7 @@ corpus constraints are `RideOperandCorpusTests`.
 | Family | Opcodes (handler) | Operands | What the handler does |
 | --- | --- | --- | --- |
 | Objects and sounds by key | ADDOBJ (`0x551F5F`), ADDOBJ_EXT (`0x5520E8`), EVENT (`0x552615`), EVENT_EXT (`0x552707`) | `type key id slot` R R R R; EXT forms `type key id control (slot)` | The dispatcher `0x5573D0(script, type, key, id, control)` (control 1000 unless an EXT form gives it): types 1-2 particle effects (PARTICLES.md), 3-9 sounds of the category the type names (AUDIO.md), 10 the object type's own list (`0x557686`, no shipped script); a type outside 1-10 logs. Key -1 (a negative key) is the footprint middle, a number a model dummy. ADDOBJ keeps a 0x1C-byte record on the list at +0xB0 (type, handle, key, node of class 0x100 for types 1-2 and 0x200 above, slot) and frees it when the handle is 0 |
-| Ending a record | KILLOBJ (`0x5522C5`), FADEOBJ (`0x5523D0`), SETOBJPARAM (`0x5524D9`) | `slot` R; `slot param value` R R R | Every record with the slot: KILLOBJ ends types 1-2 with `0x51FF70(handle, -2)` and 3-10 with `0x51C2C0`, FADEOBJ types 3-10 with `0x51C300`, both free the record; SETOBJPARAM calls `0x51BC40(handle, param, value)` for types 3-10 and keeps the new handle. None sets flags |
+| Ending a record | KILLOBJ (`0x5522C5`), FADEOBJ (`0x5523D0`), SETOBJPARAM (`0x5524D9`) | `slot` R; `slot param value` R R R | Every record with the slot: KILLOBJ ends types 1-2 with `0x51FF70(handle, -2)` and 3-10 with `0x51C2C0`, FADEOBJ types 3-10 with `0x51C300` (the stop, unless the library's SoundQuality bit `0x400` is set, [below](#the-sounds-an-addobj-keeps)), both free the record; SETOBJPARAM calls `0x51BC40(handle, param, value)` for types 3-10 and keeps the new handle. None sets flags. Built: `OriginalObjectRuntime.HeldSounds` |
 | Animation | TRIGANIM `0x552875`, WAITANIM `0x5529BC`, LOOPANIM `0x552B2F`, TRIGWAITANIM `0x552C1A`, GETANIM `0x552DB4`, TRIGANIMSPEED `0x552E3A`, FLUSHANIM(_CH) `0x552861`/`0x553000`, TRIGANIM_CH `0x55306E`, WAITANIM_CH `0x55320A`, LOOPANIM_CH `0x553399`, TRIGWAITANIM_CH `0x553494`, GETANIM_CH `0x5536AE`, WAIT4ANIM `0x5538EB` | `anim variant` R R (+ `out` W for TRIG*, + `channel` R for the _CH forms, + `speed` R for TRIGANIMSPEED); GETANIM(_CH) `dest` W (+ channel R) | The Mac-read arithmetic (below) with the PC operand kinds; the trigger family also puts its out value in the flag word |
 | Visitors, walks | WALKON `0x555963`, WALKOFF `0x555B0C`, WALKGET `0x555B34` | `visitor u1 u2 u3 u4 action u5` R x7; `visitor` R; `dest` W | The script's walk table (TOURS.md): first free entry of the header walk size, states 1-4, WALKGET hands out the first entry in state 4. The shipped WALKON operands: the rider a variable, `action` 1, 2, 4, 5 or 6 (only 2 and 4 act), `u5` always 1 (bit 0: the body's height from the nodes) |
 | Visitors, bounce and float | BOUNCESETNODE `0x5555D9`, BOUNCESETBASE `0x555618`, BOUNCE `0x555674`, UNBOUNCE `0x5557A3`, FORCEUNBOUNCE `0x555842`, BOUNCING `0x555910`; WALKST_FLOAT `0x555B72`, WALKFLOATSTAT `0x555BD8`, WALKFLOATSTOP `0x555C11` | `node` W; `base` W; `visitor seconds` R R; `dest` W x3; `seconds a b` R R R; `dest` W | The script's own bounce table (16-byte entries at +0x28: visitor, node, deadline, start) and float words (+0x80, +0x84, +0x88, +0x8A); UNBOUNCE and FORCEUNBOUNCE release only inside the first 200 ms of a second since the bounce, UNBOUNCE also needs the deadline below the clock; the node and base words only feed the render pass |
@@ -419,11 +421,31 @@ through the object's channels ([MD2-MODELS.md](MD2-MODELS.md)); its 430 ticks
 at 30 ticks/s give the trigger result 14,333 ms, so the duration operand gets
 14,033 ms and WAIT4ANIM waits until that deadline. Which Totem clip the
 original binds to `ANIM_Main` is inferred (`totemm1` is the full cart/cog
-cycle), not traced. All other Totem effects (channel animations
-`totemm2…10`, objects, screams, reverb, visitors) are unimplemented; its EVENT
-instructions now play their original sounds (the type routes are traced,
-AUDIO.md).
+cycle), not traced. The Totem's other effects are served too: the channel animations
+`totemm2…10`, its screams, its sound records (`ADDOBJ 3 -1 73/74/75/90 2|5`, kept under their slots and ended by KILLOBJ) and its EVENT
+instructions play their original sounds (the type routes are traced, AUDIO.md); no Totem effect is an unimplemented one.
 With no visitors, an opened Totem waits 10 s, moves once, and repeats.
+
+## The sounds an ADDOBJ keeps
+
+October 18, 2026. ADDOBJ and ADDOBJ_EXT of the sound types 3-9 (334 of the 644 shipped ADDOBJ instructions, in 60 scripts) submit their event exactly as an EVENT of that type does
+(the category the type names, the place of the key: a node of the model, or the footprint middle for a negative key, truncated to whole units; `0x5573D0`, `0x5575C7`),
+and keep the handle in a record under the slot operand (`0x557970`; a submit with no handle, because the key names no node, the event is missing or no sound system runs, keeps no record).
+`OriginalObjectRuntime.HeldSounds` holds the records, newest first, each with its script: the object list is the script's own (`+0xB0`), so a KILLOBJ, FADEOBJ or SETOBJPARAM reaches only the records of the script
+that runs it, as in the original (the particle records of types 1-2 are still kept per object).
+
+| Opcode | What it does to the records of its slot | tp.exe |
+| --- | --- | --- |
+| ADDOBJ, ADDOBJ_EXT (types 3-9) | starts the sound and keeps it (a repeating event runs as a sentence, a one-shot as a sound that starts when its sample is decoded; both at the key's place, flat without a placement) | `0x551F5F`, `0x5520E8`, `0x557970` |
+| (object pass) | every eighth scheduler pass, the one where `(script id xor pass counter) & 7 == 0`, a record with a key >= 0 moves its sound to the key's node again (the position truncated to whole units); a negative key never moves | `0x5516B0` -> `0x551A1C` -> `0x51C270` |
+| KILLOBJ | ends the sound at once, no tail, and frees the record (a sound that has played out is no longer found by its handle, so nothing happens) | `0x5522C5` -> `0x51C2C0` -> `0x6B89B0` |
+| FADEOBJ | the same as KILLOBJ at the original's default (SoundQuality 0): `0x51C300` posts `{handle, 0x3C}` and `0x6B8930` only takes its fade call while bit `0x400` of the sound library's settings word is set (the bit is `SoundQuality > 0`); with the bit set the call is `0x6B7130`, which is no fade: it stores 0x3C as the voice's fixed volume and the manager tick holds the sample at 60 % while the record, and the handle, are gone. OpenTPW has no SoundQuality option ([`APPROX:AUDIO-040`](AUDIO.md)). The particle records of the slot end with `0x51FF70(handle, -2)` like KILLOBJ | `0x5523D0` -> `0x51C300` -> `0x6B8930` |
+| SETOBJPARAM `slot code value` | the parameter call on the sound: `value` as a byte goes into every slot of the voice's parameter table coded `code` and a match in the sound's own bindings re-evaluates its volume and pitch (the bus engine's code 20 against its event 6, `0 / 75` for idle and driving); particle records are skipped | `0x5524D9` -> `0x51BC40` -> `0x6BBB80` |
+| a script's end or removal | END (the program counter goes negative) destroys the script after its slice, and so does the removal of its object; every record it still holds ends | `0x551ABC`, `0x558500` |
+
+Sounds are presentation: no record is in a world-state hash or in an OpenTPW park save. The original's RSSE block does write each script's records raw (type, handle, key, node pointer, slot,
+`0x559710`) and its loader links them back without starting a sound (`0x559F44`), so a loaded game holds records whose handles name no voice; the park resume does the same in effect: it holds no record and starts no held sound
+(`HeldSoundTests.HeldSoundsAreNotSavedAndAResumedParkStartsNone`), and a looping held ambient does not block a save (a looping EVENT does, `CaptureSnapshot`). Resumed rides therefore stay silent until their script starts the sound again.
 
 ## Visitors
 
@@ -559,16 +581,16 @@ The unit tests are `RideVMInternalsTests`.
   ([below](#original-interpreter-internals)).
 - The ride lights (82–85, tp.exe `0x555C7A`–`0x555D9A`) have no light system to act on in OpenTPW (`APPROX:RIDES-046`); they are unimplemented effects that do not fault.
 - Visitor opcodes work for every placed original object (its `RideVisitorBridge`);
-  riders are not drawn walking along the ride nodes (the walk table and its times are the original's, [TOURS.md](TOURS.md), TOUR-011), and
-  TOUR/BUMP/COAST guest handling is unimplemented. WALKST_FLOAT, WALKFLOATSTAT and WALKFLOATSTOP are the script's own state in the original and in the VM.
+  riders are not drawn walking along the ride nodes (the walk table and its times are the original's, [TOURS.md](TOURS.md), TOUR-011), and a bounce
+  rider is not yet drawn at its bounce node. The TOUR, BUMP and COAST commands go to their controllers ([TOURS.md](TOURS.md), [TRACKS.md](TRACKS.md), [COASTERS.md](COASTERS.md)).
+  WALKST_FLOAT, WALKFLOATSTAT and WALKFLOATSTOP are the script's own state in the original and in the VM.
 - Animation playback only through the objects' effects (OBJECTS.md; rigid node
-  tracks, vertex animation not decoded); EVENT types 3-9 and REPAIREFFECT play
+  tracks, vertex animation not decoded). EVENT types 1-2 and ADDOBJ types 1-2 start particles (PARTICLES.md), EVENT types 3-9, ADDOBJ types 3-9 and REPAIREFFECT play
   their original sounds (the category routes are traced, AUDIO.md); the pair a non-zero
   REPAIREFFECT plays uses the same sampled placed sound-space origin and owned-loop cleanup as EVENT
-  types 3–9, and the value 0 plays the band one-shot of the cat_kids 75 family. Types
-  1/2 create particles in the original and remain unimplemented here; type 0
-  is unsupported, not a positioned sound loop. No objects/particles, no ride-type
-  controllers (TOUR/BUMP/COAST), no light opcodes. TPW YEAR/MONTH/DAY/HOUR/MIN/SEC
+  types 3–9, and the value 0 plays the band one-shot of the cat_kids 75 family; the screams (STARTSCREAM, STOPSCREAM, SCREAMLEVEL, SINGLESCREAM)
+  are served too. Type 0 is unsupported, not a positioned sound loop, and type 10 (the object type's own sound list, no shipped script) stays an unimplemented effect,
+  as do the light opcodes. TPW YEAR/MONTH/DAY/HOUR/MIN/SEC
   sample host civil time (an unsaved external input, `[EXT:vm-host-time]`); they do not read the park calendar.
 - What the engine does with `EventMap.rse` variables is still unread; the host protocol of `VAR_LETMEON`/`VAR_LETMEOFF` is [GUESTS.md](GUESTS.md)'s; the `0xFFFF` second operand of EVENT is the key -1,
   the footprint middle (`0x556B90`, [above](#hooked-opcodes-the-operands-as-the-handlers-read-them)).

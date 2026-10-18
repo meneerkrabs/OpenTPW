@@ -212,3 +212,63 @@ sprite: `[BIN:TPI-EXE:0x60ae35]`, the placement routine `0x60AE00` compares the 
 | --- | --- |
 | `[EXT:umbrellas-draw]` | the drawing: the renderer, its placement from the tables, the sight-line pull, the steady hand |
 | `[EXT:debug-umbrellas]` | the Debug-build capture flags |
+
+## Tuning (phase U5)
+
+October 18, 2026. Captures, headless measurements and frame times with the three phases running together (U2 simulation, U3 drawing, U4 rain mood). Presentation changes move no pin; nothing in the simulation data changed (the kid score stays at Theme Park Inc's 75 %, see below).
+
+### Captures
+
+Native Debug runs of the four themes (Jungle, Fantasy, Hallow, Space) in rain (`--debug-weather 30`), storm (5) and snow (15, Hallow) and clear, the park camera at the zoom values 40 and 300 of the wide range and 70 and 130 of the original range (pitch 45 and 65 degrees, 84 above 188) at four yaws, with the pool guest art on and off, with the umbrellas extension off, and with a held balloon and a thought bubble:
+`--debug-sim-minutes 3 --capture-frames 300 --debug-umbrellas --debug-weather 30 --debug-umbrellas-follow <zoom>,<yaw> --capture-world <png>`. The captures hold original sprites and stay out of the repository.
+
+- **Hands and anchors.** The handle meets the hand and the canopy stands over the head in all four themes, with the 2x pool art (rig anchors) and with the original 1x sprites (measured anchors), facing the camera, away from it and sideways, standing and walking; the mirrored directions put the handle at the mirrored hand. No anchor needed a change.
+- **Size** `[EXT:umbrellas-size]`. The set was drawn with the canopy 0.8 of a kid's standing height across (the plan's reading of Theme Park Inc's ratio), but the camera looks down at 45 degrees and shortens a standing kid by cos 45 while the canopy's width stays whole: on screen the canopy was about 1.2 to 1.25 times a kid's height and hid its head from every side (from the front at the near zoom it covered everything above the shoulders). The quad is now scaled 0.85 about the hotspot (`UmbrellaRenderer.SizeScale`; the handle tip stays in the hand), which brings the canopy to about the kid's on-screen height and leaves the face visible from the front. Theme Park Inc's own kid frame height is not known statically (its art is not in the executable), so the ratio could not be checked against it: this is a Theme Park World tuning, one constant.
+- **Camera pull** `[EXT:umbrellas-pull-cap]`. Theme Park Inc pulls the umbrella 10 % of the way to the camera (`[BIN:TPI-EXE:0x60b236]`), a share of the distance; Theme Park World's own zoom stops at 130 (`[BIN:TPW-EXE:0x42c621]`), where 10 % is 13 units (Theme Park Inc's zoom range was not checked). With the wide zoom range (up to 300, `[EXT:wide-zoom]`) a relative 10 % would be up to 30 units and draw an umbrella over objects a whole cell nearer the camera than its guest. The pull is now the smaller of 10 % and 13 units (`UmbrellaRenderer.MaxPullUnits`), so nothing changes at the original's zooms and the wide range keeps the pull of its 130 end. In the captures the umbrella is in front of its own guest at every zoom and behind a kiosk or ride that stands in front of the guest (the rainbow umbrella behind the brolly shop's glass).
+- **Thought bubble.** The bubble hangs 6.0 units above the umbrella's guest (`[BIN:TPI-EXE:0x60b0a4]`, re-read: `fld [0x9CFB38]` with the umbrella flag, else `[0x9CFB34]`, added to the guest's height). It clears the canopy at every zoom, with a gap that grows at the near zoom (about 0.6 canopy widths at 45 degrees, 0.4 at 65). Kept as Theme Park Inc has it.
+- **Mirroring, colours, draw order.** The three colours (blue, rainbow, red and white) read well on all four themes' paths and grass, in rain and snow and clear. A guest never holds a balloon and an open umbrella (a balloon shop scores 0 for an open umbrella, and an umbrella shop lets a held balloon go), so there is no balloon under a canopy to order; a balloon that is let go flies away as before. Guests and balloons take no point light, so neither does the umbrella; the pool water is drawn in the world pass and a swimmer has no umbrella, so no order problem showed.
+- **Wide zoom.** At 300 (84 degrees) the umbrella sits over its guest and hides most of it, as an umbrella seen from above does; at 40 it is large and sharp. Fine.
+
+### Simulation: a rainy week (headless, fixed seed)
+
+`UmbrellasTuningMeasureTests` (`OPENTPW_UMBRELLAS_MEASURE=<file>` writes the table below): the pinned synthetic cross park (a drinks shop, the brolly shop at (10, 1), paid through the economy), four clear days so guests arrive, seven days of rain, three clear days; mean over four seeds. The park is small (about 39 guests admitted in 14 days), so the counts are small and the point is the comparison. Every second arrival holds a balloon of life 120 (a fresh balloon cuts the shop's score to nothing: the original's factor `100 - life x 100 / 255` hits exactly 0 only at full life, which the zero quirk skips, but a life near full gives almost no score), the other columns have none.
+
+| Park | Buyers | Buyers who held a balloon | Mean happiness over the rain week, rain mood off | rain mood on |
+| --- | ---: | ---: | ---: | ---: |
+| no brolly shop | 0 | - | 52.02 | 50.95 |
+| brolly shop, kid score 75 % (Theme Park Inc) | 12.5 | 4.0 | 52.86 | 51.81 |
+| brolly shop, kid score 100 % | 13.75 | 7.0 | 51.50 | 50.47 |
+| no balloons: no shop | 0 | - | 51.89 | 50.82 |
+| no balloons: shop, 75 % or 100 % (identical) | 13.0 | - | 52.57 | 51.54 |
+
+- **Sales and revenue.** A brolly shop sells to about a third of the guests of a rainy week (13 of 39); at the shop's price a week of rain brings about 13 sales, and 100 % instead of 75 % adds about 1.3 sales (+10 %, about $40 here). With nobody holding a balloon the two scores sell the same (the shop is the only candidate whose score changes, and the guests choose the best of the others), so the choice only matters through the balloon holders.
+- **Happiness.** The umbrella lifts a buyer well above a non-buyer (buyers 62 against 52 with 75 %). The rain mood rule costs everyone about 1 over the week with or without a shop (a kid loses 1 on each qualifying rainy day, `opentpw.rain-mood`), and a buyer loses about 1.3 of it too: the rule fires once on the first rainy update of a qualifying day, most likely before a guest has reached the shop, so the umbrella's protection (`UmbrellaModifier`) only shows on later qualifying days (not isolated here).
+- **Balloon releases.** Each buyer who holds a balloon lets it go (`-15` happiness, `MediumHappinessChange`): 4 per week at 75 % and 7 at 100 % in this park. That is why 100 % lowers the week's mean happiness (51.50) below a park with no shop at all (52.02), while 75 % leaves it above (52.86).
+- **Recommendation (awaiting the user's choice, not applied).** Keep Theme Park Inc's **75 %**: 100 % sells about a tenth more umbrellas, but the extra sales are balloon holders trading a balloon for an umbrella at -15 happiness each, which more than cancels the umbrella's gain in the mean, and where nobody holds a balloon the two values are the same. The data keeps 75 % until the user decides (`KidScorePercentage` in the four `Brolly.sam`); the numbers above would change with the balloon share of a real park, which this fixture sets at one guest in two.
+
+### Frame cost
+
+- **Native** (Debug build, Jungle, `--offscreen --no-vsync --frame-stats --perf-run 3000 --perf-zoom <z>`, 343 guests all holding an open umbrella in rain, two rounds): Home zoom 110, extension off 3.45 and 2.83 ms a frame, umbrellas drawn 3.88 and 2.84 ms (CPU 4.56 and 3.60 ms against 5.63 and 3.99 ms per frame); zoom 300 (one round): 4.03 and 4.05 ms. The difference is inside the run-to-run noise: the renderer builds one quad per umbrella and draws them in one call.
+- **Browser** (`tools/web-perf` scenario `umbrellas`, interpreter build, headless Chrome 155, Apple M5, 1280 x 900, 15 s windows, the same 400 guests in rain without and then with an open umbrella over each; median frame time):
+
+| | No umbrellas | 400 umbrellas | Extra |
+| --- | ---: | ---: | ---: |
+| Home zoom: median / p95 / p99 frame (ms) | 3.5 / 7.2 / 9.9 | 5.2 / 8.0 / 10.4 | +1.7 ms |
+| Zoom 300 | 3.6 / 5.5 / 6.6 | 5.0 / 7.1 / 8.9 | +1.4 ms |
+| Main thread busy (Home / 300) | 25.6 % / 27.4 % | 34.5 % / 35.6 % | +9 / +8 points |
+
+  All 400 umbrellas were drawn (the renderer's `DrawnUmbrellas`), the page stayed at 60 frames a second and every frame stayed far inside 16.7 ms. Before this phase's trim (`UmbrellaAnchors` computed the steady hand's mean over the steps for every umbrella every frame, and the renderer enumerated its guest renderers through an interface) the zoom 300 window cost +3.2 ms; the means are now made at load and the loop is indexed.
+  The harness stages the crowd and the umbrellas through `Program.PerfUmbrellas` (`UmbrellaPerf`, loopback `?perf=1` only): `node tools/web-perf/run.mjs --web <wwwroot> --game <folder> --scenarios jungle,umbrellas`.
+
+### Bugs found and fixed here (cross-check against the owners' PRs)
+
+- U3, first push: the browser build did not embed `content/umbrellas`, so there were no umbrellas and no brolly shops in the browser; the current U3 push (`3232e996`) embeds it, and this branch's browser run confirms 400 umbrellas drawn.
+- U3: the camera pull was relative only, so in the wide zoom range an umbrella could be pulled up to 30 units (fixed: `[EXT:umbrellas-pull-cap]`).
+- U3: per frame and umbrella the steady hand re-averaged its steps with LINQ and the renderer enumerated its guest renderers through an interface (fixed, see Frame cost).
+- Test fixture: the `UmbrellasFixedRunHash` park's `SyntheticPark` could not vary the kid score or share its harness; it is now internal with a `brollyKidScore` argument (default 100, so the pins did not move).
+
+| Label | What |
+| --- | --- |
+| `[EXT:umbrellas-size]` | the canopy scaled 0.85 about the hotspot (a Theme Park World tuning from captures) |
+| `[EXT:umbrellas-pull-cap]` | the pull towards the camera limited to 13 units, the 10 % of the original's far zoom |
+| `[EXT:umbrellas-tuning]` | the measurement aids: the headless harness (`UmbrellasTuningMeasureTests`) and the browser scenario (`UmbrellaPerf`) |

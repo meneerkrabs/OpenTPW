@@ -26,9 +26,12 @@ internal sealed class ChatOverlay : IDisposable
 
 	public ChatOverlay( OnlineSession session ) => this.session = session;
 
+	/// <summary>True while another view shows the lines (a visit with other players draws the room's lines in its HUD).</summary>
+	public Func<bool>? Hidden { get; init; }
+
 	public void Draw()
 	{
-		if ( session.ChatLines.Count == 0 )
+		if ( session.ChatLines.Count == 0 || Hidden?.Invoke() == true )
 			return;
 		if ( font == null || fontVersion != GameLanguage.Version )
 		{

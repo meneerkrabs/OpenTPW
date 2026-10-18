@@ -31,6 +31,8 @@ def export(out, collection=None):
 		for problem in problems:
 			print(f"opentpw_export: {problem}", file=sys.stderr)
 		return False
+	for warning in conventions.light_warnings(objects):
+		print(f"opentpw_export: warning: {warning}", file=sys.stderr)
 	if collection:
 		layer = bpy.context.view_layer.layer_collection.children[collection]
 		bpy.context.view_layer.active_layer_collection = layer
@@ -42,7 +44,7 @@ def export(out, collection=None):
 		export_apply=True,
 		export_extras=True,
 		export_cameras=False,
-		export_lights=False,
+		export_lights=True,  # point lights become light dummies (docs/LIGHTS.md); other kinds are skipped by the converter with a warning
 		export_animations=False,
 		export_image_format="AUTO",
 	)

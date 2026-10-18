@@ -70,6 +70,9 @@ internal static class ParticleRendererModule
 		return handle is 0 or -1 ? null : new EmitterRef( renderer.Particles, handle, level );
 	}
 
+	/// <summary>The emitters live in the current level's pool (0 without one), for callers that leave room for the park's own effects.</summary>
+	internal static int LiveEmitters() => Level.Current is { } level && RendererOf( level ) is { } renderer ? renderer.Particles.LiveEmitters : 0;
+
 	/// <summary>The advisor's screen effects start in the current level's pool (at native positions, which screen-space templates read as screen points).</summary>
 	internal static IAdvisorParticlePool AdvisorPool { get; } = new LevelAdvisorPool();
 

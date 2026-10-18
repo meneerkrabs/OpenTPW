@@ -1,0 +1,4 @@
+{ "schema": 1, "id": "opentpw.example.lamp-lights", "name": "Lamp light (example)", "version": "1.0.0", "category": "official",
+  "author": "OpenTPW",
+  "description": "An example data mod: a lamp post whose light the object's script pulses, flickers and colour-cycles with the ENABLELIGHT, DISABLELIGHT, SETLIGHT and COLOURLIGHT opcodes (docs/LIGHTS.md). Adds a feature to the jungle park. Off by default.",
+  "content": { "objects": "objects.json" } }

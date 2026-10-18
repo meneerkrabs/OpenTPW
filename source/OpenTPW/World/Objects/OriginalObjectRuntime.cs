@@ -64,6 +64,8 @@ public sealed partial class OriginalObjectRuntime
 		if ( Model.Kind != ModelFileKind.Geometry )
 			throw new InvalidDataException( $"{entry.ModelPath} is not a geometry model." );
 		Visitors.Heads = RideHeadSpace.Create( Model, world.NextWorldDraw );
+		// [EXT:object-lights] the light dummies of the model (none in any shipped model), with the object's .sam keys over them
+		Lights = ObjectLightBank.Create( Model, entry.Settings, entry.DisplayName );
 		// Fixed items keep their last vertex pose when a clip ends (ObjectAnimator.UpdateVertices).
 		Animator = new ObjectAnimator( Model, keepsPoseOnClipChange: entry.IsFixedItem, holdsLastFrameAtClipEnd: ObjectAnimations.HasOnlyBaseClips( entry.Animations ) );
 		effects = new OriginalObjectEffects( this );
@@ -175,6 +177,11 @@ public sealed partial class OriginalObjectRuntime
 	/// </summary>
 	public BumpController? LiveBump => Bump != null && !stopped && scriptWorld.Bumpers.Controllers.Contains( Bump ) ? Bump : null;
 	public ModelFile Model { get; }
+	/// <summary>
+	/// [EXT:object-lights] The object's lights (docs/LIGHTS.md), or null when its model has no light dummy. Presentation only: not part of the canonical state a hash reads, saved with the runtime snapshot.
+	/// </summary>
+	public ObjectLightBank? Lights { get; }
+	private bool noLightsLogged;
 	public ObjectAnimator Animator { get; }
 	/// <summary>The object's original script, or null for the few objects without one.</summary>
 	public RideVM? Script { get; }
@@ -321,6 +328,24 @@ public sealed partial class OriginalObjectRuntime
 		scriptWorld.Bumpers.Remove( Bump );
 	}
 
+	/// <summary>
+	/// [EXT:object-lights] ENABLELIGHT, DISABLELIGHT, SETLIGHT and COLOURLIGHT. A light the model does not have is a no-op logged once per opcode and number, never a fault: the original
+	/// looks the dummy up and uses the result without a check (0x555C7A..0x555D9A), and its instance builder never fills the light pointer of a dummy (0x44A870), so there it would fault.
+	/// </summary>
+	internal void PerformLight( RideEffectCall call )
+	{
+		var number = call.Argument( 0 );
+		var argument = call.OperandCount > 1 ? call.Argument( 1 ) : 0;
+		var second = call.OperandCount > 2 ? call.Argument( 2 ) : 0;
+		var third = call.OperandCount > 3 ? call.Argument( 3 ) : 0;
+		if ( Lights?.Apply( call.Opcode, number, argument, second, third ) == true )
+			return;
+		var first = Lights == null ? !noLightsLogged : Lights.NoteMissing( call.Opcode, number );
+		noLightsLogged = true;
+		if ( first )
+			Log?.Warning( $"{Entry.DisplayName}: {call.Opcode} {number} names a light the model does not have; nothing changes (the original would fault)" );
+	}
+
 	/// <summary>The performance (0..100) the script's speed bias gives the controller; the creation bias is 50.</summary>
 	// [BIN:TPW-EXE:0x005516B0 RSSE tick] every script tick pushes the script performance (+0x30, 0..100, default 50) to the controller (0x00545180); the ride's InitSpeed bias is the same word (RIDES-033)
 	// [BIN:TPW-EXE:0x5516b0 bumper performance] the script loop pushes the script's speed bias (RideVM.SpeedBias, the ride's InitSpeed; 50 at creation) to the bumper controller every pass (0x545180)
@@ -377,7 +402,8 @@ public sealed partial class OriginalObjectRuntime
 			ScriptHoldsScream = effects.ScriptHoldsScream,
 			RideSpeed = speedWord,
 			RideCapacity = capacityWord,
-			RideDuration = durationWord
+			RideDuration = durationWord,
+			Lights = Lights?.Capture()
 		};
 	}
 
@@ -435,6 +461,13 @@ public sealed partial class OriginalObjectRuntime
 		if ( !snapshot.Stopped )
 			effects.RestoreScreams( snapshot.ScriptHoldsScream ?? snapshot.HeldScream, snapshot.HeldScreamBand, snapshot.HeldScreamLevel, snapshot.HeldScreamSpeed, snapshot.OwnedScreamCount );
 		RestoreSettingWords( snapshot.RideSpeed, snapshot.RideCapacity, snapshot.RideDuration );
+		// [EXT:object-lights] the lights' on/off and colour; a number this model no longer has is reported, a model without lights ignores the list
+		if ( snapshot.Lights is { } savedLights )
+		{
+			var unknownLights = Lights?.Restore( savedLights ) ?? savedLights.Select( record => record.Number ).ToArray();
+			if ( unknownLights.Count > 0 )
+				gaps.Add( $"'{Entry.ArchivePath}': saved light(s) {string.Join( ", ", unknownLights )} are not in the model any more and were dropped." );
+		}
 		CompletedCycles = snapshot.CompletedCycles;
 		AnimationsPlayed = snapshot.AnimationsPlayed;
 		unresolvedAnimations.Clear();
@@ -625,7 +658,7 @@ public sealed partial class OriginalObjectRuntime
 /// <see cref="RideVisitorBridge"/> (guests slice). EVENT and REPAIREFFECT play their original sounds and particles, STARTSCREAM/STOPSCREAM/SCREAMLEVEL/SINGLESCREAM
 /// the screams. ADDOBJ keeps the particle effects (types 1-2) and sounds (types 3-9) it starts under its slot (<see cref="OriginalObjectRuntime"/>), KILLOBJ and FADEOBJ end them, SETOBJPARAM
 /// gives the sounds a parameter, and a script's end ends what it still holds (<see cref="IRideScriptLifetime"/>). TPW YEAR/MONTH/DAY/HOUR/MIN/SEC sample host civil time. The ride-type controllers
-/// TOUR/BUMP/COAST go to their controllers. What stays an unimplemented effect (<see cref="RideVM.UnimplementedEffects"/>): the ride lights, the bounce rider opcodes where their object has no bounce
+/// TOUR/BUMP/COAST go to their controllers. The ride lights (ENABLELIGHT, DISABLELIGHT, SETLIGHT, COLOURLIGHT) act on the model's light dummies when it has them (<see cref="OriginalObjectRuntime.Lights"/>, docs/LIGHTS.md) and are a logged no-op when it does not. What stays an unimplemented effect (<see cref="RideVM.UnimplementedEffects"/>): the bounce rider opcodes where their object has no bounce
 /// rider rendering, and ADDOBJ/EVENT type 10 (the object type's own sound list). DIPMUSIC sets the sound service's music duck request; SETREVERB's level is read by <see cref="ReverbSelector"/>.
 /// </summary>
 public sealed class OriginalObjectEffects : IRideScriptEffects, IRideAnimationQuery, IRideCanonicalEffects, IRideScriptLifetime
@@ -711,6 +744,13 @@ public sealed class OriginalObjectEffects : IRideScriptEffects, IRideAnimationQu
 	{
 		switch ( call.Opcode )
 		{
+			case Opcode.ENABLELIGHT:
+			case Opcode.DISABLELIGHT:
+			case Opcode.SETLIGHT:
+			case Opcode.COLOURLIGHT:
+				// [EXT:object-lights] the model's light dummies; the original's own lights are never created (docs/LIGHTS.md)
+				ride.PerformLight( call );
+				return 0;
 			case Opcode.YEAR:
 			case Opcode.MONTH:
 			case Opcode.DAY:

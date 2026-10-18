@@ -19,6 +19,7 @@ internal sealed class GlbBuilder
 	private readonly List<string> materials = new();
 	private readonly List<string> meshes = new();
 	private readonly List<string> nodes = new();
+	private readonly List<string> lights = new();
 
 	private static string F( float value ) => value.ToString( "R", CultureInfo.InvariantCulture );
 
@@ -105,7 +106,7 @@ internal sealed class GlbBuilder
 	}
 
 	/// <summary>A node with an optional mesh, translation, rotation quaternion (x, y, z, w), children and raw extras JSON members.</summary>
-	public int AddNode( string name, int mesh = -1, Vector3? translation = null, Quaternion? rotation = null, int[]? children = null, string? extras = null )
+	public int AddNode( string name, int mesh = -1, Vector3? translation = null, Quaternion? rotation = null, int[]? children = null, string? extras = null, int light = -1 )
 	{
 		var parts = new List<string> { $"\"name\": \"{name}\"" };
 		if ( mesh >= 0 )
@@ -116,10 +117,24 @@ internal sealed class GlbBuilder
 			parts.Add( $"\"rotation\": [ {F( r.X )}, {F( r.Y )}, {F( r.Z )}, {F( r.W )} ]" );
 		if ( children is { Length: > 0 } )
 			parts.Add( $"\"children\": [ {string.Join( ", ", children )} ]" );
+		if ( light >= 0 )
+			parts.Add( $"\"extensions\": {{ \"KHR_lights_punctual\": {{ \"light\": {light} }} }}" );
 		if ( extras != null )
 			parts.Add( $"\"extras\": {{ {extras} }}" );
 		nodes.Add( $"{{ {string.Join( ", ", parts )} }}" );
 		return nodes.Count - 1;
+	}
+
+	/// <summary>A <c>KHR_lights_punctual</c> light (type <c>point</c>, <c>spot</c> or <c>directional</c>); a null colour or range leaves the member out, as a file may.</summary>
+	public int AddLight( string type = "point", Vector3? colour = null, float intensity = 1f, float? range = null )
+	{
+		var parts = new List<string> { $"\"type\": \"{type}\"", $"\"intensity\": {F( intensity )}" };
+		if ( colour is { } c )
+			parts.Add( $"\"color\": [ {F( c.X )}, {F( c.Y )}, {F( c.Z )} ]" );
+		if ( range is { } r )
+			parts.Add( $"\"range\": {F( r )}" );
+		lights.Add( $"{{ {string.Join( ", ", parts )} }}" );
+		return lights.Count - 1;
 	}
 
 	public byte[] Build( params int[] roots )
@@ -132,6 +147,8 @@ internal sealed class GlbBuilder
 			$"\"buffers\": [ {{ \"byteLength\": {binary.Count} }} ]",
 			$"\"bufferViews\": [ {string.Join( ", ", bufferViews )} ]",
 		};
+		if ( lights.Count > 0 )
+			sections.Add( $"\"extensionsUsed\": [ \"KHR_lights_punctual\" ], \"extensions\": {{ \"KHR_lights_punctual\": {{ \"lights\": [ {string.Join( ", ", lights )} ] }} }}" );
 		if ( meshes.Count > 0 )
 			sections.Add( $"\"meshes\": [ {string.Join( ", ", meshes )} ]" );
 		if ( accessors.Count > 0 )

@@ -24,7 +24,7 @@ public class DeterminismTests
 	/// Economy, guests, a shop script and an unseeded RAND script wired like Level: guests pay into the
 	/// economy and every stream comes from one <see cref="WorldSeed"/>. Ticks run in Level.Update's order.
 	/// </summary>
-	private sealed class SyntheticPark
+	internal sealed class SyntheticPark
 	{
 		private readonly GuestEconomyBridge payments;
 		private readonly RideVisitorBridge shop;
@@ -36,7 +36,7 @@ public class DeterminismTests
 		private readonly List<(RideVisitorBridge Bridge, RideVM Script)> winter = new();
 		private readonly List<RideVM> dice = new();
 
-		public SyntheticPark( WorldSeed seed, IGuestObserver? observer = null, Action<ParkCellMap>? prepareCells = null, bool changingRoom = false, Action<GuestSimulation>? prepareGuests = null, IGuestDecisions? decisions = null, bool brollyShop = false, bool winterShops = false )
+		public SyntheticPark( WorldSeed seed, IGuestObserver? observer = null, Action<ParkCellMap>? prepareCells = null, bool changingRoom = false, Action<GuestSimulation>? prepareGuests = null, IGuestDecisions? decisions = null, bool brollyShop = false, int brollyKidScore = 100, bool winterShops = false )
 		{
 			Seed = seed;
 			Economy = EconomyTestData.Park( seed: seed.EconomyStream );
@@ -86,7 +86,7 @@ public class DeterminismTests
 			{
 				brolly = new RideVisitorBridge( Scripts.AllocateAttractionId(), "Brolly Shop", RideVisitorKind.Shop, 1, 60, 30, GuestNeeds.None )
 				{
-					EntranceCell = (10, 1), ExitCell = (10, 1), AppearanceEffect = UmbrellaRules.ShopAppearanceEffect, UmbrellaTerms = new UmbrellaShopTerms( 200, 200, 150, 5, 100 )
+					EntranceCell = (10, 1), ExitCell = (10, 1), AppearanceEffect = UmbrellaRules.ShopAppearanceEffect, UmbrellaTerms = new UmbrellaShopTerms( 200, 200, 150, 5, brollyKidScore )
 				};
 				brollyScript = GuestTests.CreateShopScript( new VisitorRideScriptEffects( brolly, UnimplementedRideScriptEffects.Instance ), Scripts, seed: null );
 				brolly.Attach( brollyScript, () => true );
@@ -719,7 +719,7 @@ public class DeterminismTests
 	}
 
 	/// <summary>[EXT:pools-attractions] The pinned hash of <see cref="RunFixedParkWithWaterAttractions"/> (docs/DETERMINISM.md, "Pools").</summary>
-	internal const ulong PoolsAttractionsFixedRunHash = 0x5232DC9F32832BC6UL;
+	internal const ulong PoolsAttractionsFixedRunHash = 0xD9F94E889BDAB453UL;
 
 	[TestMethod]
 	public void FixedRunWithWaterAttractionsIsTheSameInEveryProcessAndSwimmersUseThem()

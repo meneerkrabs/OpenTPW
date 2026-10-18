@@ -203,6 +203,31 @@ public class RseFollowupAudioTests
 		}
 	}
 
+	[TestMethod]
+	public void TheDefaultPresetStaysDryAndARidePresetIsMixed()
+	{
+		var before = AudioMixer.Current;
+		GameAudio.ResetReverb();
+		try
+		{
+			var mixer = new AudioMixer( null );
+			AudioMixer.Current = mixer;
+			GameAudio.ReverbMap = SndReverbMap.Read( MapBytes( (true, 1), (true, 1) ) );
+			GameAudio.SelectReverb( 0 );
+			Assert.IsFalse( mixer.Reverb.Active, "[APPROX:AUDIO-039] the default preset 0 is not mixed" );
+			GameAudio.SelectReverb( 1 );
+			Assert.IsTrue( mixer.Reverb.Active );
+			GameAudio.SelectReverb( 0 );
+			Assert.IsFalse( mixer.Reverb.Active, "leaving the ride switches the reverb off" );
+		}
+		finally
+		{
+			GameAudio.ResetReverb();
+			GameAudio.ReverbMap = null;
+			AudioMixer.Current = before;
+		}
+	}
+
 	/// <summary>The original file (the game folder's root, outside Data): 32 entries, 15 of them present, 820 bytes (inconclusive without OPENTPW_GAME_PATH).</summary>
 	[TestMethod]
 	public void TheOriginalReverbMapParses()

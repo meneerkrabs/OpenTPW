@@ -329,8 +329,11 @@ public static class GameAudio
 		ApplyReverb();
 	}
 
-	/// <summary>Hands the held preset's record to the mixer's reverb (none for a preset the map lacks, or without a map).</summary>
-	private static void ApplyReverb() => AudioMixer.Current?.Reverb.Set( ReverbSettings.FromRecord( ReverbRecord ) );
+	/// <summary>
+	/// Hands the held preset's record to the mixer's reverb (none for a preset the map lacks, or without a map).
+	/// </summary>
+	// [APPROX:AUDIO-039] preset 0 (the default everywhere outside a ridden ride that sets a level) stays dry: its record asks for the device's full room level, which this stand-in would put on every positioned sound of the park; only the ride presets (1-14) are mixed
+	private static void ApplyReverb() => AudioMixer.Current?.Reverb.Set( ReverbPreset > 0 ? ReverbSettings.FromRecord( ReverbRecord ) : null );
 
 	/// <summary>
 	/// Loads <c>SndReverb.map</c> from the game folder (it sits beside <c>Data</c>, not inside it, so the mounted data does not hold it); a missing or damaged file leaves the reverb off.

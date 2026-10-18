@@ -1,3 +1,4 @@
+using System;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace OpenTPW.Tests;
@@ -48,5 +49,20 @@ public class CoasterAreaCellTests
 		Assert.IsTrue( Level.IsCoasterAreaCell( map, 2, 2 ), "an extension without an owner word returns 0 (0x536400)" );
 		map.SetOwner( 2, 2, 5 );
 		Assert.IsFalse( Level.IsCoasterAreaCell( map, 2, 2 ) );
+	}
+
+	[TestMethod]
+	[DataRow( -90f )]
+	[DataRow( -20f )]
+	[DataRow( 45f )]
+	[DataRow( 200f )]
+	public void TheParkCameraYawIsTheOriginalsCameraYawOfTheTiltDrag( float yawDegrees )
+	{
+		// The camera looks from Target + (cos, sin) * d at the target, so its forward direction is (-cos, -sin); its atan2(x, z) heading is the original's yaw 0x790a38 (0x443371).
+		var radians = yawDegrees * MathF.PI / 180f;
+		var heading = MathF.Atan2( -MathF.Cos( radians ), -MathF.Sin( radians ) );
+		var original = ParkCameraMode.OriginalYaw( yawDegrees );
+		var difference = MathF.IEEERemainder( heading - original, 2 * MathF.PI );
+		Assert.AreEqual( 0f, difference, 1e-4f );
 	}
 }

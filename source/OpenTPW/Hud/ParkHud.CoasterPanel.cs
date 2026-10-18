@@ -188,7 +188,7 @@ public sealed partial class ParkHud
 			panel.HoverNothing();
 		if ( panel.IsDragging )
 		{
-			// [APPROX:COAST-028] the camera's heading in the node-yaw convention (atan2(x, z) of the forward direction in track coordinates) turns the tilt drag; the original's camera yaw (0x790a38) convention is not matched
+			// [BIN:TPW-EXE:0x443371 tilt drag yaw] the camera yaw (0x790a38) minus the node's yaw turns the tilt drag
 			panel.Drag( pointer, level.CoasterCameraYaw, inPark ? (cursorX, cursorY) : null );
 			consumed = true;
 		}

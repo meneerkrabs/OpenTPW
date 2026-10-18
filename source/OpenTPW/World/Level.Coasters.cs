@@ -114,11 +114,14 @@ public partial class Level
 		return null;
 	}
 
-	/// <summary>The camera's heading in the knot directions' yaw convention (atan2(x, z) of its forward direction in track coordinates), which turns the tilt drag to the view.</summary>
+	/// <summary>The camera's yaw as the original keeps it (0x790a38, radians): the tilt drag turns by it minus the pylon's yaw (<c>0x443340</c>).</summary>
+	// [BIN:TPW-EXE:0x443371 tilt drag yaw] the drag update reads the camera yaw global 0x790a38 and subtracts the selected node's yaw (+0xe0); the park camera's yaw maps onto that global by ParkCameraMode.OriginalYaw (the camera block of the saves, 0x42cec0), which is the atan2(x, z) heading of the forward direction in track coordinates
 	internal float CoasterCameraYaw
 	{
 		get
 		{
+			if ( Camera.Mode is ParkCameraMode park )
+				return ParkCameraMode.OriginalYaw( park.Yaw );
 			var forward = Camera.Rotation.Forward;
 			return MathF.Atan2( forward.X, forward.Y );
 		}

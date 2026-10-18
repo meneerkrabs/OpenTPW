@@ -95,6 +95,47 @@ public static partial class Program
 		return camera.Height;
 	}
 
+	private static Action? umbrellaHook;
+
+	/// <summary>
+	/// [EXT:debug-umbrellas] The browser twin of the desktop's Debug-build <c>--debug-umbrellas</c> (a capture aid for tools/web-perf, scenario <c>umbrellas</c>): gives every guest an open umbrella (colour from its id) and keeps it open every frame,
+	/// and when <paramref name="zoom"/> is above zero holds the park camera on the lowest-numbered visible guest at that zoom value and <paramref name="yaw"/> (degrees). The guests' own umbrella fields are written directly, so a run that calls this is not the
+	/// park's own simulation and nothing may be saved from it. Returns false outside a park or when the umbrellas extension has no renderer.
+	/// </summary>
+	[JSExport]
+	public static bool PerfUmbrellas( double zoom, double yaw )
+	{
+		if ( flow?.Level is not { UmbrellaRenderer: not null } || renderer == null )
+			return false;
+		if ( umbrellaHook != null )
+			renderer.PostUpdate -= umbrellaHook;
+		umbrellaHook = () =>
+		{
+			if ( flow?.Level is not { Guests: { } simulation } level )
+				return;
+			if ( zoom > 0 && Camera.Mode is ParkCameraMode camera && level.OriginalPark is { } park )
+				if ( simulation.Guests.Where( candidate => candidate.IsVisible && float.IsFinite( candidate.DrawX ) ).OrderBy( candidate => candidate.Id ).FirstOrDefault() is { } followed )
+				{
+					var spot = GuestRenderer.CellToEngine( park.Heightfield, followed.DrawX, followed.DrawY );
+					camera.SetPose( new System.Numerics.Vector3( spot.X, spot.Y, 0 ), (float)zoom, (float)yaw );
+				}
+			foreach ( var guest in simulation.Guests )
+			{
+				if ( guest.UmbrellaState == UmbrellaRules.StateOpen )
+					continue;
+				guest.UmbrellaState = UmbrellaRules.StateOpen;
+				guest.UmbrellaType = guest.Id % UmbrellaRules.Colours;
+				guest.UmbrellaDueTurn = 0;
+			}
+		};
+		renderer.PostUpdate += umbrellaHook;
+		return true;
+	}
+
+	/// <summary>How many umbrellas the renderer drew in the last frame, or -1 without one.</summary>
+	[JSExport]
+	public static int PerfDrawnUmbrellas() => flow?.Level?.UmbrellaRenderer?.DrawnUmbrellas ?? -1;
+
 	/// <summary>The items of a buy-window category (Rides, Shops, Sideshows, Features) as JSON: archive name and shown name.</summary>
 	[JSExport]
 	public static string PerfBuyItems( string category )

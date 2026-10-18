@@ -36,7 +36,7 @@ const SELECTIONS = [['Rides', 'Belly Bounce'], ['Shops', 'Balloon Shop'], ['Shop
 function parseArguments(argv) {
 	const options = {
 		web: null, game: null, label: 'unlabelled', out: null, chrome: process.env.CHROME ?? DEFAULT_CHROME, headed: false,
-		scenarios: ['start', 'lobby', 'jungle', 'buy', 'digest'], window: 30, memoryMinutes: 10, music: false, width: 1280, height: 900, runs: 1, frameCap: 0, keep: 'off', zoom: null,
+		scenarios: ['start', 'lobby', 'jungle', 'buy', 'digest'], window: 30, memoryMinutes: 10, music: false, width: 1280, height: 900, runs: 1, frameCap: 0, keep: 'off', zoom: null, shot: null,
 	};
 	for (let index = 2; index < argv.length; index++) {
 		const [flag, inline] = argv[index].split(/=(.*)/s);
@@ -57,6 +57,7 @@ function parseArguments(argv) {
 			case '--frame-cap': options.frameCap = Number(value()); break;
 			case '--keep': options.keep = value(); break;
 			case '--zoom': options.zoom = Number(value()); break;
+			case '--shot': options.shot = value(); break;
 			case '--help': case '-h': console.log(usage()); process.exit(0);
 			default: throw new Error(`Unknown option ${flag}\n${usage()}`);
 		}
@@ -77,6 +78,7 @@ function usage() {
   --memory-minutes <n>    memory scenario length (default 10)
   --music                 keep music and speech on (default: muted, effects on, as on 11 October)
   --size <w>x<h>          window size (default 1280x900)
+  --shot <file>           umbrellas: where the screenshot goes
   --zoom <value>          jungle: after the steady window, hold the park camera at this zoom value (40..300 with the wide zoom option) and measure a second window
   --keep <mode>           keep the game files in the browser on the first visit: lazy, all or off (default off)
   --frame-cap <fps>       the display settings' frame cap (0 off, 30, 60; default 0)
@@ -261,6 +263,20 @@ const scenarios = {
 		await sleep(2000);
 		const zoomed = { zoom: options.zoom, reached, ...await page.steady(options.window * 1000) };
 		return { cold, steady, zoomed };
+	},
+
+	/** [EXT:debug-umbrellas] After jungle: every guest gets an open umbrella, the camera follows the first one, and a screenshot is saved (--shot, default opentpw-umbrellas.png in the temp dir). */
+	async umbrellas(page, options) {
+		if (!(await page.state()).hud)
+			throw new Error('The umbrellas scenario needs a park: run it after jungle');
+		const zoom = options.zoom ?? 80;
+		await page.call('PerfUmbrellas', zoom, 35);
+		await sleep(4000);
+		const drawn = await page.eval('opentpwPerf.program.PerfDrawnUmbrellas()');
+		const shot = await page.send('Page.captureScreenshot', { format: 'png' });
+		const file = options.shot ?? path.join(os.tmpdir(), 'opentpw-umbrellas.png');
+		await fs.writeFile(file, Buffer.from(shot.data, 'base64'));
+		return { zoom, drawnUmbrellas: drawn, screenshot: file };
 	},
 
 	async buy(page) {

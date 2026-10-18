@@ -191,7 +191,7 @@ OpenTPW has two kinds of add-ons, both switched on and off on **Options > OpenTP
   | `opentpw.restored-advice` | on | Advisor lines that exist in the game's data but that the original program never plays. |
   | `opentpw.guest-insights` | off | Counts why guests refuse rides and shops in the park information window. |
   | `opentpw.cross-edition-objects` | off | The engine support for a mod that brings Theme Park Inc attractions into Theme Park World (the shipped mod `opentpw.tpi-rides` is off too). |
-  | `opentpw.smarter-guests` | not selectable yet | Guests that decide better; it becomes selectable once its rules show a measurable effect. |
+  | `opentpw.smarter-guests` | off | Guests that decide better: dear shops, spread-out queues, patience, needs, cleaner and quieter paths, litter carried to a bin (RollerCoaster Tycoon-inspired ideas, no code). Changes the simulation, so a park saved with it needs it. |
 
 - **Community mods** are folders with an `opentpw-mod.json` manifest, off until you switch them on. A mod can replace
   game files (overrides), replace string tables (strings), add objects and carry scripts.

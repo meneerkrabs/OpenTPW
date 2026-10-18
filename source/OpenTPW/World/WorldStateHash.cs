@@ -114,6 +114,9 @@ public static class WorldStateHash
 				root.Remove( nameof( ParkSaveFile.Data.AnalyserCaches ) );
 				// the statistics history only feeds the park information window's graph, which no simulation step reads: it stays out of the digest so the pins keep
 				root.Remove( nameof( ParkSaveFile.Data.StatisticsHistory ) );
+				// Challenge RawValue feeds only the localized progress caption; scoring continues to use Baseline and the live measures.
+				if ( root[nameof( ParkSaveFile.Data.Objectives )] is JsonObject objectives && objectives[nameof( ParkSaveFile.ObjectivesData.Current )] is JsonObject challenge )
+					challenge.Remove( nameof( ActiveChallenge.RawValue ) );
 			}
 			hash.Add( Canonical( node ) );
 		}

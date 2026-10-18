@@ -12,6 +12,12 @@ namespace OpenTPW;
 public readonly record struct SpriteFigure( float CellX, float CellY, float HeadingX, float HeadingY, float DistanceWalked, bool Moving, int Look );
 
 /// <summary>
+/// Where and how a guest is drawn this frame (<see cref="GuestRenderer.TryMount"/>): its hotspot in the engine after the depth pull, the share that pull shrinks its quad to, the sprite set's name, the frame (whose pixels per unit
+/// say which table a hand is in), and the animation slot, stored direction, step and mirroring of that frame.
+/// </summary>
+internal readonly record struct GuestMount( System.Numerics.Vector3 Feet, float Share, string SetName, GuestAtlasFrame Frame, int Slot, int Direction, int Step, bool Mirror );
+
+/// <summary>
 /// Draws every visible guest as a camera-facing quad of its original kid sprite (one draw call, one dynamic
 /// vertex buffer). Direction and walk-cycle frame come from <see cref="GuestSpriteAtlas"/>; the sprite's
 /// hotspot (its feet) sits on the terrain heightfield, and the quad is pulled towards the camera as the original pulls a visitor's sprite
@@ -236,11 +242,11 @@ public sealed class GuestRenderer : Entity
 	/// <summary>Atlas, frame and mirroring for a guest seen with the given camera axes (engine space).</summary>
 	public (int Atlas, int Frame, bool Mirror) SelectSprite( Guest guest, SVector3 cameraRight, SVector3 cameraForward )
 	{
-		var (atlas, frame, mirror, _, _, _) = SelectSpriteAndSlot( guest, cameraRight, cameraForward );
+		var (atlas, frame, mirror, _, _, _, _) = SelectSpriteAndSlot( guest, cameraRight, cameraForward );
 		return (atlas, frame, mirror);
 	}
 
-	private (int Atlas, int Frame, bool Mirror, int Slot, int Direction, float Rotation) SelectSpriteAndSlot( Guest guest, SVector3 cameraRight, SVector3 cameraForward, SVector3 cameraUp = default, BounceRiderPose? rider = null )
+	private (int Atlas, int Frame, bool Mirror, int Slot, int Direction, float Rotation, int Step) SelectSpriteAndSlot( Guest guest, SVector3 cameraRight, SVector3 cameraForward, SVector3 cameraUp = default, BounceRiderPose? rider = null )
 	{
 		// [BIN:TPW-EXE:0x004FB19E guest sprite variant] the kid set is the guest's own draw at its creation, a function of its thing id alone (GuestAppearance.KidSet), not of its peep type
 		var atlasIndex = GuestAppearance.KidSet( guest.Id, atlases.Count );
@@ -291,7 +297,7 @@ public sealed class GuestRenderer : Entity
 		var rotation = 0f;
 		if ( RotatedSlots?.Contains( slot ) == true && cameraUp != default )
 			rotation = ResidualRotation( heading, rightFlat, forwardFlat, new SVector2( cameraRight.X, cameraRight.Y ), new SVector2( cameraUp.X, cameraUp.Y ) );
-		return (atlasIndex, atlas.GetFrame( slot, direction, step ), mirror, slot, direction, rotation);
+		return (atlasIndex, atlas.GetFrame( slot, direction, step ), mirror, slot, direction, rotation, step);
 	}
 
 	private readonly Dictionary<(int Atlas, int Slot, int Direction), float> anchorLifts = new();
@@ -322,6 +328,25 @@ public sealed class GuestRenderer : Entity
 	internal static float AnchorLift( IReadOnlySet<int>? bottomAnchored, int slot, IEnumerable<GuestAtlasFrame> animation ) =>
 		animation.Select( frame => AnchorLift( bottomAnchored, slot, frame ) ).DefaultIfEmpty( 0f ).Max();
 
+	/// <summary>
+	/// Where a guest this renderer draws stands, for what is carried or held at its hand (<see cref="UmbrellaRenderer"/>): the hotspot after the depth pull and that pull's share, and the frame the guest is drawn
+	/// with (set, pixels per unit, slot, direction, step, mirroring), so a table of hand points can be read for it. False when this renderer does not draw the guest now (a rider, a swimmer, one in the other set).
+	/// </summary>
+	internal bool TryMount( Guest guest, SVector3 right, SVector3 up, SVector3 forward, SVector3 eye, out GuestMount mount )
+	{
+		mount = default;
+		if ( !Visible || deleted || atlases.Count == 0 || !guest.IsVisible || Draws?.Invoke( guest ) == false )
+			return false;
+		var (atlasIndex, frameIndex, mirror, slot, direction, _, step) = SelectSpriteAndSlot( guest, right, forward, up );
+		var atlas = atlases[atlasIndex];
+		var feet = (FeetChooser?.Invoke( guest ) ?? CellToEngine( field, guest.DrawX, guest.DrawY )) + up * AnchorLift( atlasIndex, slot, direction ) - forward * (DepthPullChooser?.Invoke( guest ) ?? 0f);
+		var share = 1f;
+		if ( DepthPulledSlots?.Invoke( slot ) != false )
+			(feet, share) = PullTowardsEye( feet, eye, forward );
+		mount = new GuestMount( feet, share, atlas.Name, atlas.Frames[frameIndex], slot, direction, step, mirror );
+		return true;
+	}
+
 	/// <summary>Picks the current visible in-park sprite without touching render resources or simulation state.</summary>
 	internal Guest? PickVisitor(SVector2 mouse, SVector2 viewport, System.Numerics.Matrix4x4 view, System.Numerics.Matrix4x4 projection) =>
 		PickVisitor(mouse, viewport, view, projection, out _);
@@ -341,7 +366,7 @@ public sealed class GuestRenderer : Entity
 			if (!guest.IsVisible || Draws?.Invoke(guest) == false || !simulation.IsInPark(guest) || !float.IsFinite(guest.DrawX) || !float.IsFinite(guest.DrawY) ||
 				!float.IsFinite(guest.HeadingX) || !float.IsFinite(guest.HeadingY) || !float.IsFinite(guest.DrawDistanceWalked) || guest.Type < 0)
 				continue;
-			var (atlasIndex, frameIndex, mirror, slot, direction, rotation) = SelectSpriteAndSlot(guest, right, forward, new SVector3(view.M12, view.M22, view.M32));
+			var (atlasIndex, frameIndex, mirror, slot, direction, rotation, _) = SelectSpriteAndSlot(guest, right, forward, new SVector3(view.M12, view.M22, view.M32));
 			var frame = atlases[atlasIndex].Frames[frameIndex];
 			var feet = (FeetChooser?.Invoke( guest ) ?? CellToEngine(field, guest.DrawX, guest.DrawY)) + new SVector3(view.M12, view.M22, view.M32) * AnchorLift(atlasIndex, slot, direction) - forward * (DepthPullChooser?.Invoke(guest) ?? 0f);
 			if (!Hud.GuestWorldPicker.TryHit(feet, frame, mirror, view, projection, viewport, mouse, out var hit, rotation))
@@ -397,7 +422,7 @@ public sealed class GuestRenderer : Entity
 			BounceRiderPose? rider = bounceRiders.Count > 0 && bounceRiders.TryGetValue( guest.Id, out var pose ) && RideHeadRenderer.CanDraw( guest, pose.AttractionId ) ? pose : null;
 			if ( !guest.IsVisible && rider == null || Draws?.Invoke( guest ) == false )
 				continue;
-			var (atlasIndex, frameIndex, mirror, slot, direction, rotation) = SelectSpriteAndSlot( guest, right, forward, up, rider );
+			var (atlasIndex, frameIndex, mirror, slot, direction, rotation, _) = SelectSpriteAndSlot( guest, right, forward, up, rider );
 			var atlas = atlases[atlasIndex];
 			var frame = atlas.Frames[frameIndex];
 			var feet = (rider?.Feet ?? FeetChooser?.Invoke( guest ) ?? CellToEngine( field, guest.DrawX, guest.DrawY )) + up * AnchorLift( atlasIndex, slot, direction ) - forward * (DepthPullChooser?.Invoke( guest ) ?? 0f);
@@ -440,7 +465,7 @@ public sealed class GuestRenderer : Entity
 			g_mProj = Camera.ProjMatrix,
 			g_vCameraPos = Camera.Position,
 			g_flTime = Time.Now
-		}.WithFog() );
+		}.WithFog().WithSpriteTint( Level?.Look ?? EveningLook.Day ) );
 		commandList.SetVertexBuffer( 0, vertexBuffer );
 		commandList.SetPipeline( material.Pipeline );
 		var resourceSets = material.GetResourceSets();

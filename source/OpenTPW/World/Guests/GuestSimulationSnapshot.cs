@@ -160,6 +160,21 @@ public sealed record GuestSnapshot
 	public bool HasBalloon { get; init; }
 	/// <summary>Whether the guest wears a costume. Absent before schema 6.</summary>
 	public bool InCostume { get; init; }
+	/// <summary>[EXT:umbrellas-save] The umbrella state (<see cref="Guest.UmbrellaState"/>, 0 to 4); written only while the guest has an umbrella, so a save without one has no such field and every older save loads as before.</summary>
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault )]
+	public int UmbrellaState { get; init; }
+	/// <summary>[EXT:umbrellas-save] The umbrella's colour (0 to 2); absent for colour 0 and without an umbrella.</summary>
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault )]
+	public int UmbrellaType { get; init; }
+	/// <summary>[EXT:umbrellas-save] The park turn a pending open or close is due (<see cref="Guest.UmbrellaDueTurn"/>); only in states 1 and 3.</summary>
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault )]
+	public long UmbrellaDueTurn { get; init; }
+	/// <summary>[EXT:rain-mood-once-per-day] The game day plus one of the rain mood rule's last application to the guest (<see cref="Guest.RainMoodDay"/>); written only once it has applied, so a save without the extension has no such field.</summary>
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault )]
+	public long RainMoodDay { get; init; }
+	/// <summary>[EXT:rain-mood-imported-age] The park turn an imported guest without a known time in the park was loaded at (<see cref="Guest.RainMoodAgeStartTurn"/>); written only for such a guest while the extension is on, so every other save has no such field.</summary>
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
+	public long? RainMoodAgeStartTurn { get; init; }
 	public required float QueueJoinHappiness { get; init; }
 	public required int QueueCellIndex { get; init; }
 	public required int QueueTargetIndex { get; init; }

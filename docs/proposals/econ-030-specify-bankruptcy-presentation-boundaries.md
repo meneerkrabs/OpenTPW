@@ -1,43 +1,47 @@
-# Draft proposal: ECON-030 — Specify bankruptcy presentation boundaries
+# ECON-030: lost-park menu and remaining bankruptcy presentation
 
-- Classification: **missing**.
-- Mode: Evidence-gated implementation design only.
-- Baseline: provided main `5ccddcab` source snapshot; source inspected locally on 2026-10-18.
-- Status: PLAN ONLY. No runtime implementation, identifier retirement or merge is claimed.
+## Status
 
-## Current residual
-World loss is implemented, but loss panel is missing, warning producers absent, and purchase/hire restrictions lack original evidence.
+Bounded menu implementation in progress, based on main `75c5de1b`. ECON-030 remains open. This proposal does not claim completed loss-camera presentation, original runtime playback, or register retirement.
 
-## Source audit
-- `source/OpenTPW/Economy/ParkEconomy.cs:1339` (APPROX).
-- Current source `source/OpenTPW/Economy/ParkEconomy.cs:1340`: `private void HandleBankruptcyMessage()`.
+## Verified current behavior and correction
 
-## Missing evidence
-Trace 0x4A2925 plus state-4 UI paths and advice 102-105 month-in-red scores.
-- The available original Data corpus contains no executables or additional built-coaster saves.
-- Repository reverse-engineering annotations are leads; they are not a newly executed original-game oracle.
+`ParkEconomy.HandleBankruptcyMessage` already records bankruptcy. The warning producers for advice 102–105 already exist in `AdvisorScan`, `EconomyMoneyState` and `AutomaticAdvisor`, with regression coverage. Their former description as absent was stale; this slice does not duplicate or replace them. Purchase/hire refusals remain current host policy rather than newly proven original behavior.
 
-## Bounded proposal
-Plan loss panel/tool closure and evidence-led interaction policy; delegate warning producer ownership to ADVISOR-009.
-- Keep this identifier scoped to the residual above; link shared interfaces rather than duplicating another owner’s implementation.
-- Record unsupported fixtures and unresolved questions explicitly instead of silently treating them as confirmed.
+Static interoperability analysis establishes a separate lost-state pause-menu branch. The menu builder at `0x48C150` tests the visit/game-type branch before world state 4. Its lost-state rows are Load, Restart Park, Resume Game, Exit Lobby and Quit, in that order. The corresponding command values are 22–25 with Resume at 21. The old annotation conflated a text identifier with command 22: Load uses text ID 3. A previously claimed tick-button dismissal is not supported by the inspected loss-handler branches.
 
-## Acceptance plan
-- Existing regression homes to inspect/extend (not executed in this audit): `source/OpenTPW.Tests/ParkCalendarTurnTests.cs`, `source/OpenTPW.Tests/ShopGoodsCostTests.cs`.
-1. Entering loss closes active tool and hides correct windows.
-2. advice 106 repeats per bank event.
-3. pause/play remain functional.
-4. unsupported purchase restrictions are not asserted original.
-5. Retain an evidence manifest with fixture origin/hash, baseline revision, observed trace and expected result; synthetic cases must be labeled synthetic.
-6. Re-run the affected existing test suite and compare deterministic state/RNG traces where relevant; these are future checks, not tests run by this proposal.
+## Bounded implementation
 
-## Ownership and dependencies
-- Owner: proposed simulation/economy maintainer; assignment remains open.
-- Dependency: ADVISOR-009.
-- Dependency: HUD loss panel.
-- GuestSimulation runtime changes must coordinate with the ongoing umbrellas follow-up before implementation.
+Use live economy state when constructing the ordinary park pause menu. Preserve read-only-visit precedence. For a writable bankrupt park, select the five evidenced entries from the existing menu callbacks; retain the current confirmations, capabilities, stale-ownership guards and pause/speed restoration. Ordinary parks retain their existing menu, including the explicitly extended online entry. Resume, Back and canceled actions must not clear bankruptcy or alter money.
 
-## Completion boundary
-- Deliver the evidence ledger, agreed contract and concrete regression cases described above.
-- Keep this proposal draft while required original evidence or scope decisions are unavailable.
-- Any later implementation, approximation retirement and merge require separate verified results; this document performs none.
+No new warning producer, camera, banner, scene transition, gameplay restriction, save field, hash behavior or network policy belongs in this slice.
+
+## Source and evidence boundary
+
+- `source/OpenTPW/Hud/ParkHud.cs`: actual pause-menu construction and callbacks.
+- `source/OpenTPW/Economy/ParkEconomy.cs`: live bankruptcy state.
+- `source/OpenTPW/Economy/EconomyApproximations.cs` and `docs/ECONOMY.md`: canonical residual and evidence qualifications.
+- Original builder `0x48C150`, handler `0x48B6A0`, row dispatch `0x48B2A0`: branch ordering and existing action routes.
+- The lost Load route passes a different argument to `0x49EFB0`, but the inspected callee does not read it. The extra lost Restart/Exit/Quit cleanup call is a return-only routine in the inspected build. These observations do not justify invented host behavior.
+
+Only conclusions and source anchors are recorded here; original files, private input metadata and extracted resources are not published.
+
+## Acceptance checks
+
+1. Construct the real pause menu for ordinary, bankrupt and read-only-visit parks; assert exact lost row order and visit precedence.
+2. Verify missing optional capabilities retain the existing enabled/action behavior and a missing economy does not masquerade as bankrupt.
+3. Verify reopening observes current state, while duplicate opens preserve the owned menu guard.
+4. Exercise Resume and Back with paused and running speeds; retain bankruptcy and cash.
+5. Exercise Load cancellation, Restart confirmation/cancellation, Quit confirmation/cancellation and Exit Lobby with current ownership guards.
+6. Preserve ordinary callbacks and the online extension; run existing economy/advisor warning regressions.
+7. Run full code CI and independent source/test review before readiness or merge. Synthetic menu tests are not original rendered evidence.
+
+## Remaining evidence-gated work
+
+The original loss transition selects a gate-dependent camera, creates a dedicated fullscreen root and later installs a hidden-HUD overlay. Loaded bankrupt parks take a separate path without replaying the gate camera. The inspected dismissal paths include delayed right-release and unmodified Escape; this is insufficient to claim the complete default control procedure or all input restrictions.
+
+The camera helper fallback order is statically traced, but gate model/script camera data, the root's drawing resource, layout/default dispatch, tool cancellation and complete lifetime behavior still require evidence and implementation. Existing ride-view behavior is not a substitute for this contract. Unsupported economic interaction restrictions must remain qualified. These remaining concerns keep ECON-030 open after the menu slice.
+
+## Review and ownership
+
+This slice owns pause-menu selection and directly related ECON-030 documentation/tests only. It reuses existing callbacks instead of changing shared level, network, guest, umbrella or postcard flows. Implementation results and exact-head CI are recorded in the PR and progress fragment when available; this document alone is not proof that those checks passed.

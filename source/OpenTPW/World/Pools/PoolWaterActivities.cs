@@ -542,6 +542,7 @@ public sealed class RiverActivity : IPoolActivity
 			return PoolActivityStep.BackInWater;
 		}
 		// a floater keeps its gap along the lane: with another body in the water ahead of it within FloatGap (a floater, or a swimmer in the lane) it only drifts, and it stands when that one is closer than FloatMinimumGap
+		var rivers = PoolRiverMap.Of( simulation.Grid.Cells );
 		var (fromX, fromY) = (navigation.X, navigation.Y);
 		var blocker = Blocker( simulation, guest, region, fromX, fromY, x - fromX, y - fromY );
 		if ( blocker < PoolRiverSettings.FloatGap )
@@ -549,14 +550,37 @@ public sealed class RiverActivity : IPoolActivity
 			x = fromX;
 			y = fromY;
 			if ( blocker >= PoolRiverSettings.FloatMinimumGap )
-				PoolRiverMap.Of( simulation.Grid.Cells ).Float( ref x, ref y, PoolRiverSettings.DriftSpeed );
-			else
-				return PoolActivityStep.Continue;
+				rivers.Float( ref x, ref y, PoolRiverSettings.DriftSpeed );
 		}
 		// the float never leaves free water: a step that would (a lane the rim narrows) is not taken this turn
-		if ( region.IsWater( x, y ) )
+		if ( !region.IsWater( x, y ) )
+			(x, y) = (fromX, fromY);
+		// [EXT:pools-waves] the waves of the pool carry the floater too, along its lane only (WavePush), where the push keeps it in free water of its own ring and clear of the other bodies
+		var (pushX, pushY) = WavePush( rivers, x, y, simulation.PoolCurrent( guest, region ) );
+		if ( pushX != 0 || pushY != 0 )
+		{
+			var body = new PoolSwimBody { X = x, Y = y };
+			if ( PoolSwimming.Drift( region, ref body, pushX, pushY, simulation.WaterBodyPoints( region, guest, x, y ) ) )
+				(x, y) = (body.X, body.Y);
+		}
+		if ( (x, y) != (fromX, fromY) )
 			simulation.MovePoolGuest( guest, x, y );
 		return PoolActivityStep.Continue;
+	}
+
+	/// <summary>
+	/// [EXT:pools-waves] The part of the water's push (<paramref name="push"/>, 16.16 cells; the waves run along +x +y) a floater at (<paramref name="x"/>, <paramref name="y"/>) takes: its projection on the axis of
+	/// the floater's cell's flow, so the floater keeps to the middle line of its lane; on a lane that runs with the waves it is carried forward, on one that runs against them held back. Nothing when the pushed
+	/// point would leave the floater's cell, its next or its previous cell of the same ring (a small ring's lanes lie side by side), or when the point is in no river cell. Integers only.
+	/// </summary>
+	public static (int X, int Y) WavePush( PoolRiverMap rivers, int x, int y, (int X, int Y) push )
+	{
+		var cell = (X: x >> 16, Y: y >> 16);
+		if ( push == (0, 0) || rivers.FlowAt( cell.X, cell.Y ) is not { } flow )
+			return (0, 0);
+		var along = flow.Dx != 0 ? (push.X, 0) : (0, push.Y);
+		var landing = ((x + along.Item1) >> 16, (y + along.Item2) >> 16);
+		return landing == cell || landing == rivers.NextCell( cell.X, cell.Y ) || landing == rivers.PreviousCell( cell.X, cell.Y ) ? along : (0, 0);
 	}
 
 	/// <summary>The distance (16.16) to the nearest other body in the water ahead of the guest (a floater or a swimmer in the lane) within <see cref="PoolRiverSettings.FloatGap"/> (ahead: on the side of the step the guest is about to take), or <see cref="int.MaxValue"/> when there is none.</summary>

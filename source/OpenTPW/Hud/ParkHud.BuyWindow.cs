@@ -285,16 +285,23 @@ public sealed partial class ParkHud
 		// [DATA:Mac buy table 0x4cd94:16,17] column header buttons (name, price) without a model; the third (18) has no text and no action
 		screen.Add( new BuyHeader( this, BuySortColumn.Name, () => strings[UIStrings.NameAttr] ) { Id = "headerName", Bounds = Rect( 1032, 317, 1454, 422 ), Anchor = UiAnchor.Center } );
 		screen.Add( new BuyHeader( this, BuySortColumn.Price, () => strings[UIStrings.Price] ) { Id = "headerPrice", Bounds = Rect( 1458, 317, 1664, 422 ), Anchor = UiAnchor.Center } );
-		// [DATA:Mac buy table 0x4cd94:1,2] b_up / b_down at their rectangles
-		screen.Add( new UiButton { Id = "scrollUp", Model = BuyUpModel, Clicked = () => ScrollBuyList( -1 ), Bounds = Rect( 1742, 318, 1803, 378 ), Anchor = UiAnchor.Center } );
-		screen.Add( new UiButton { Id = "scrollDown", Model = BuyDownModel, Clicked = () => ScrollBuyList( 1 ), Bounds = Rect( 1742, 809, 1803, 869 ), Anchor = UiAnchor.Center } );
+		// [DATA:Mac buy table 0x4cd94:1,2] b_up / b_down at their rectangles. The buy table 0x754cf8 is not generated; its list is type 7 style 0x91 and its slider is type 3 style 0x10, so the arrows and the headers play cat_ui 0xBD (parent style bit 0x10, hook 0x485780 at 0x4857cb). A held arrow repeats (500 ms, then 125 ms) and the release after that plays nothing.
+		void ScrollArrow( string id, string model, UiRect bounds, int step )
+		{
+			void Scroll() => ScrollBuyList( step );
+			screen.Add( new UiButton { Id = id, Model = model, ClickSound = GameAudio.SelectClickEvent, Clicked = Scroll,
+				Repeat = UiButton.ScrollArrowRepeat( Scroll ), Bounds = bounds, Anchor = UiAnchor.Center } );
+		}
+		ScrollArrow( "scrollUp", BuyUpModel, Rect( 1742, 318, 1803, 378 ), -1 );
+		ScrollArrow( "scrollDown", BuyDownModel, Rect( 1742, 809, 1803, 869 ), 1 );
 		foreach ( var entry in BuyCategories )
 		{
 			var category = entry;
+			// The four category buttons are the radio group (type 8, style 0x11) of table 0x754cf8, so a press plays 0xBD even when the tab is already selected.
 			screen.Add( new UiButton
 			{
-				Id = $"category{category.Category}", Model = category.Model, Help = strings.Help( category.Help ), Clicked = () => SelectCategory( category.Category ),
-				Selected = () => buy.Category == category.Category, Bounds = category.Rect, Anchor = UiAnchor.Center
+				Id = $"category{category.Category}", Model = category.Model, Help = strings.Help( category.Help ), ClickSound = GameAudio.SelectClickEvent,
+				Clicked = () => SelectCategory( category.Category ), Selected = () => buy.Category == category.Category, Bounds = category.Rect, Anchor = UiAnchor.Center
 			} );
 		}
 		// [DATA:Mac buy table 0x4cd94:-2,511] b_exit (help 2) closes; b_allstaff (help 153) opens the staff window.
@@ -390,7 +397,12 @@ public sealed partial class ParkHud
 		}
 
 		public override bool Focusable => Visible && Enabled;
-		public override void Activate() => owner.SortBuyList( column );
+		// The header is a child of the sortable list (type 7, style 0x91). That parent receives 0x100, so the hook plays 0xBD (0x4857cb).
+		public override void Activate()
+		{
+			GameAudio.PlayUi( GameAudio.SelectClickEvent );
+			owner.SortBuyList( column );
+		}
 
 		public override void Draw( UiContext context, bool focused, bool pressed )
 		{

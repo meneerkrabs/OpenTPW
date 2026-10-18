@@ -342,7 +342,12 @@ internal sealed partial class SandboxSmokeTest
 		var tilesBefore = level.WaterTracks!.Tracks.Count;
 		var ride = run.Station;
 		level.Objects.Remove( ride );
-		Require( level.WaterTracks.Tracks.Count == 0 && tilesBefore > 0, "removing the ride clears its station and track tiles" );
+		// the replays run only for a ride that is registered with the park economy (a type with a queue, 0x527F5B) and clear its whole circuit; otherwise the station tiles go and the track stays
+		var left = level.WaterTracks.Tracks.Count;
+		Require( tilesBefore > 0 && (left == 0 || left == tilesBefore - 8), "removing the ride clears its station tiles and, when the demolition replays run, its track tiles" );
+		// the tiles a queue-less ride leaves behind would count in the next ride's circuit; sweep them so the later phases start on a clean layer
+		foreach ( var tile in level.WaterTracks.Tiles().ToList() )
+			level.WaterTracks.EraseTile( tile.X, tile.Y );
 		Require( level.Objects.ScriptWorld.Bumpers.Controllers.Count == 0, "removing the ride removes its controller" );
 		Log.Trace( "HUD water track: the circuit was cut and mended through the edit tool, the ride and its track were removed." );
 		run.Station = null;
@@ -405,7 +410,11 @@ internal sealed partial class SandboxSmokeTest
 				var tilesBefore = level.KartTracks!.Tracks.Count;
 				var ride = run.Station;
 				level.Objects.Remove( ride );
-				Require( level.KartTracks.Tracks.Count == 0 && tilesBefore > 0, "removing the ride clears its station and track tiles" );
+				// the replays run only for a ride registered with the park economy (a type with a queue, 0x527F5B) and clear its whole circuit; otherwise the station tiles go and the track stays
+				var kartLeft = level.KartTracks.Tracks.Count;
+				Require( tilesBefore > 0 && (kartLeft == 0 || kartLeft == tilesBefore - 8), "removing the ride clears its station tiles and, when the demolition replays run, its track tiles" );
+				foreach ( var tile in level.KartTracks.Tiles().ToList() )
+					level.KartTracks.EraseTile( tile.X, tile.Y );
 				Require( level.Objects.ScriptWorld.Bumpers.Controllers.Count == 0, "removing the ride removes its controller" );
 				Log.Trace( $"HUD kart track: {run.PeakKarts} karts parked on the grid, raced a lap, ended the race and unloaded; the circuit was cut and mended through the edit tool, the tiles and the karts were drawn, the ride and its track were removed." );
 				run.Station = null;

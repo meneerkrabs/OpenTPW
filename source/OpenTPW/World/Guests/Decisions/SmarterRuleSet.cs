@@ -1,7 +1,7 @@
 namespace OpenTPW;
 
 /// <summary>
-/// The rules of phases 5 and 6 of the smarter guests (docs/SMARTER-GUESTS.md) as switches. The shipped extension (version 1.5.0) has all of them on; the switches exist so a measurement can run an earlier
+/// The rules of phases 5, 6 and 6b of the smarter guests (docs/SMARTER-GUESTS.md) as switches. The shipped extension (version 1.6.0) has all of them on; the switches exist so a measurement can run an earlier
 /// version's behaviour and each rule alone from the same build (<c>--guest-rules</c>) and so tests can show what each one does. They are not a player setting: a park records the extension's version as its
 /// algorithm identity, which means all of them on. The rules of phases 2 to 4 have no switch: they are the base every set runs.
 /// </summary>
@@ -20,10 +20,14 @@ public enum SmarterRuleSet
 	Litter = 8,
 	/// <summary>Crowding: a wander goal in a crowd is swapped for a quieter cell of the walk, and a guest standing in a crowd complains (phase 6).</summary>
 	Crowding = 16,
+	/// <summary>Bins: a guest with a full litter meter looks further for a bin before it drops the litter (phase 6b).</summary>
+	Bins = 32,
 	/// <summary>The three rules of phase 5: version 1.4.0.</summary>
 	Phase5 = Planning | Detour | MealTime,
 	/// <summary>The two rules of phase 6.</summary>
 	Paths = Litter | Crowding,
-	/// <summary>All five: version 1.5.0.</summary>
-	All = Phase5 | Paths
+	/// <summary>The five rules of phases 5 and 6: version 1.5.0.</summary>
+	Phase6 = Phase5 | Paths,
+	/// <summary>All six: version 1.6.0.</summary>
+	All = Phase6 | Bins
 }

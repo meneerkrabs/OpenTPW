@@ -58,7 +58,7 @@ public class SmarterGuestsParkResumeTests
 		Assert.IsNotNull( source.Level.Guests!.SmarterGuests, "the level's guests were built with the extension on" );
 		source.Level.Guests.SmarterGuests!.Restore( 77, 5, true );
 		var saved = ParkResumeSaveFile.Deserialize( ParkResumeSaveFile.Serialize( source.Level.CaptureResumeSnapshot( null, "on", assets ) ) );
-		Assert.AreEqual( new ParkModRecord( "opentpw.smarter-guests", "1.5.0", ModSet.NoFilesSha256 ), saved.Mods!.Single() );
+		Assert.AreEqual( new ParkModRecord( "opentpw.smarter-guests", "1.6.0", ModSet.NoFilesSha256 ), saved.Mods!.Single() );
 		Assert.AreEqual( 77UL, saved.SmarterGuests!.ParkSeed );
 		Assert.AreEqual( 5UL, saved.SmarterGuests.NextBirthId );
 		Assert.IsTrue( saved.SmarterGuests.Bootstrapped );
@@ -104,9 +104,9 @@ public class SmarterGuestsParkResumeTests
 		void Validate( ParkResumeSnapshot snapshot ) => ParkResumeSaveFile.ValidateSnapshot( snapshot, catalog, settings, offWorld.Economy.Catalog, offAssets );
 		Validate( off );
 		var refused = Assert.ThrowsException<InvalidDataException>( () => Validate( on ) );
-		StringAssert.Contains( refused.Message, "needs opentpw.smarter-guests 1.5.0" );
+		StringAssert.Contains( refused.Message, "needs opentpw.smarter-guests 1.6.0" );
 		using var scope = OpenTpwExtensions.Use( SmarterGuestsTests.On() );
 		var extra = Assert.ThrowsException<InvalidDataException>( () => Validate( off ) );
-		StringAssert.Contains( extra.Message, "was saved without opentpw.smarter-guests 1.5.0" );
+		StringAssert.Contains( extra.Message, "was saved without opentpw.smarter-guests 1.6.0" );
 	}
 }

@@ -663,25 +663,16 @@ A park started from the save (Instant Action, or the reference start) then runs
 `OriginalEconomyImport.Apply` (docs/ECONOMY.md, "Original save import") and the
 automatic advisor takes the saved controller (docs/LIPS.md). `Import` also parses the
 Coasters block (`SaveCoasterBlock`; a block that breaks its traced contract refuses the save) and
-exposes it as `CoasterBlock`, with `ObjectsAt`/`AttractionsAt` cell joins for consumers; no coaster
-state is imported. Imported: park turn
-and date, bank balance, admission fee, annual profit and bought loans, each
-object's price, cost of goods, upgrade level, state of repair, life gauge and walk-away count
-(also for objects whose footprint is unverified), staff (type, grade, training percentage, happiness, state, hire time), the park
-open flag, and the advisor's pending advice and history of bound messages. Every
-value read but not imported is reported with its SAVE approximation (SAVE-002 to
-SAVE-010 in the fidelity register): guests, staff
-names/jobs/positions/energy/idle ticks/role suffixes, the hiring pool, the
-challenge system's timing, switch bytes, Value and ActualThing, each
-attraction's state, chance of winning, third gauge, totals, name lines,
-quality of goods, queue size, customer
-count, time stamp and mesh instance ID, research, unmapped bank
-words and the loan offers' Available flags, the staff HQ's training budgets,
-strike words, strike levels and trained byte, the world state,
-arrival variables and bytes, the calendar session start, the advisor
-controller's presentation words and current record, the weather, park analyser,
-tag system, mechanic HQ and UI receiver things. The raw dumps of the original's own engine structures (the Scripts, RSSE, Particles, Sound, message-centre, Track ride and Flying ride blocks) are
-not restored: OpenTPW's engines restart from the archives (`[EXT:original-engine-state-dumps]`, formerly part of SAVE-010); the exceptions are the Particles pool (restored, SAVE-013) and the RSSE block's script ids, list order, next id and pass counter (applied to the imported objects' scripts, `SavedScriptImport`; the scripts restart their programs). Staff
+exposes it as `CoasterBlock`, with `ObjectsAt`/`AttractionsAt` cell joins for consumers. A park whose block lists a coaster is refused
+(`RequireSupportedCoasterRuntime`, SAVE-920): the headers, sections, trains and cars are decoded and no runtime track, controller or train is rebuilt.
+Imported: park turn and date, the world generator state `mRandomSeed` (`World.Restore`, SAVE-001 retired), bank balance, admission fee, annual profit and bought loans, each
+object's price, cost of goods, upgrade level, state of repair, life gauge, walk-away count, operating state, chance of winning, quality of goods, customer
+count and time stamp (also for objects whose footprint is unverified), staff (type, grade, training percentage, happiness, energy, name, job, hire time, idle stamp and patrol), the hiring pool, the staff HQ's training budgets and strike levels, research (finished and started projects, each category's effort and current project, the work load and the highest open groups), the challenges, the park
+open flag, and the advisor's pending advice and history of bound messages. The saved guests are restored by `GuestSimulation.ImportOriginal`: states 0–10, 18, 19 and 21 keep their thing id, type, cash, meters and destination and walk on; guests queueing or boarding (11–14), leaving a ride (15), using an attraction (16), held by a guard (17), walking to the arrival vehicle (20), or standing off the paths, are not imported (SAVE-002).
+Still read and not imported, each reported with its SAVE approximation: those dropped guests (SAVE-002), a research project of an object the archives lack or a current project the picker would not offer (SAVE-007), the hiring
+pool's candidates saved on the pointer (SAVE-004), the advisor presentation block, the world state, the arrival variables and bytes, the calendar session start, the advisor
+controller's presentation words (its current record is the last tutorial advice when an automatic advisor attaches) and the weather, park analyser,
+tag system, mechanic HQ and UI receiver things (SAVE-010). The Scripts block's sprite scripts, the saved guests' and litter's animations, are decoded and not applied (SAVE-013): guests and staff animate from their state and litter from the cell. The Particles pool is restored, minus the emitter and effector fields SAVE-013 drops. The RSSE block's script ids, list order, next id, pass counter and run state are applied (`SavedScriptImport`, `RideVM.ImportSavedRunState`: the program counter, stack, variables, limbo table, waits and timers on the saved game clock); the records' object lists, node, bounce and walk tables, and the animations playing on their objects, are not restored. The Sound block, the message-centre lists and the Track and Flying ride chunks are not restored (`[EXT:original-engine-state-dumps]`). Staff
 values outside OpenTPW's ranges (happiness outside the traced 0–100, a 100 %
 training percentage, a state without a STAFFSTATES entry, a hire time outside
 the calendar or inside a park turn, which is rounded down to the turn) are adjusted and each adjustment is reported; an attraction whose

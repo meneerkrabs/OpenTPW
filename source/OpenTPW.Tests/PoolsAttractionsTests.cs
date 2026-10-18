@@ -1048,6 +1048,11 @@ public class PoolsAttractionsTests
 		still.Until( () => sitter.IsSwimming, 400 );
 		Assert.AreEqual( 0f, PoolWaterEffects.Bob( still.Simulation, sitter, EffectSites ), "a pool without waves" );
 		Assert.AreEqual( 0f, PoolWaterEffects.Bob( rig.Simulation, new Guest( 999, 0 ), EffectSites ), "a guest who is not swimming" );
+		// the water level an activity draws its swimmer at rises with the same surface as a free swimmer's bob, and not without a region
+		var region = PoolActivityHelpers.RegionOf( rig.Simulation, guest );
+		Assert.IsNotNull( region );
+		Assert.AreEqual( PoolWaterEffects.Bob( rig.Simulation, guest, EffectSites ), PoolWaterEffects.SurfaceRise( rig.Simulation, guest, region, EffectSites ), 1e-6f );
+		Assert.AreEqual( 0f, PoolWaterEffects.SurfaceRise( rig.Simulation, guest, null, EffectSites ) );
 	}
 }
 

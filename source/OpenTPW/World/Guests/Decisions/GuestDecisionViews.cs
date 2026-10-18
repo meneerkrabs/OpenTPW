@@ -14,6 +14,9 @@ public readonly record struct DecisionContext( GuestSettings Settings, long Park
 {
 	/// <summary>A stateless trait of <paramref name="guest"/> (<see cref="SmarterGuestsState.Trait(ulong, ulong, int)"/>): the same for the whole visit, no random number taken.</summary>
 	public ulong Trait( in GuestView guest, int traitIndex ) => SmarterGuestsState.Trait( ParkSeed, guest.BirthId, traitIndex );
+
+	/// <summary>The same trait for a guest known by its birth id only.</summary>
+	public ulong Trait( ulong birthId, int traitIndex ) => SmarterGuestsState.Trait( ParkSeed, birthId, traitIndex );
 }
 
 /// <summary>
@@ -53,7 +56,7 @@ public readonly record struct GuestView( int Id, ulong BirthId, int Type, float 
 /// </param>
 /// <param name="Reservations">
 /// Guests other than this one walking to the attraction to join its queue (state "going to a ride" with it as their target). Filled by the host only for a policy that
-/// <see cref="IGuestDecisions.UsesSpreading"/>, else 0.
+/// <see cref="IGuestDecisions.UsesSpreading"/>, else 0. Also 0 in the views of the queue hooks (<see cref="IGuestDecisions.DecideQueuePatience"/>): outside a candidate loop counting the walkers is a scan of every guest, and neither queue hook reads them.
 /// </param>
 /// <param name="TurnsPerGuest256">
 /// The attraction's observed time per guest, in 1/256 park turn (<see cref="RideThroughputs"/>: the throughput is its inverse, capacity over cycle duration): a moving average of the gaps between boardings, the cold-start value

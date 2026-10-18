@@ -40,6 +40,12 @@ public sealed class SmarterGuestDecisions : IGuestDecisions
 
 	public bool UsesPlanHorizon => planning.HasFlag( SmarterRuleSet.Planning );
 
+	/// <summary>
+	/// The give-up test needs a wait above the guest's patience (<see cref="SmarterGuestsRules.GivesUp"/>: <c>waited x 256 &gt; PatienceTurns256</c>), so before <c>floor(PatienceTurns256 / 256) + 1</c> turns the answer is the original's: stay.
+	/// </summary>
+	public int QueuePatienceQuietTurns( in DecisionContext context, ulong birthId ) =>
+		(int)Math.Min( int.MaxValue - 1, SmarterGuestsRules.PatienceTurns256( SmarterGuestsRules.GiveUpTurns, SmarterGuestsRules.PatiencePercent( context.Trait( birthId, SmarterGuestsRules.PatienceTrait ) ) ) / 256 + 1 );
+
 	/// <summary>The turn this guest's give-up test starts (its own patience band), so the host scans the park's rides for it only from then on.</summary>
 	public int AlternativeLookAfterTurns( in DecisionContext context, in GuestView guest ) =>
 		(int)Math.Min( int.MaxValue, SmarterGuestsRules.PatienceTurns256( SmarterGuestsRules.GiveUpTurns, SmarterGuestsRules.PatiencePercent( context.Trait( guest, SmarterGuestsRules.PatienceTrait ) ) ) / 256 );

@@ -60,6 +60,13 @@ public interface IGuestDecisions
 	int AlternativeLookAfterTurns( in DecisionContext context, in GuestView guest ) => -1;
 
 	/// <summary>
+	/// How many park turns a queued guest must have waited before <see cref="DecideQueuePatience"/> can answer anything but what <see cref="OriginalGuestDecisions"/> answers (additive, phase 6 release work): the host skips the
+	/// hook, and the views it would have built, for a guest that has waited fewer turns (a guest whose join turn is not recorded is always asked). -1, the default, is "never skip". The answer may depend on the
+	/// park seed and the guest's birth id only: the host asks every turn of every queued guest and the policy keeps no state. A policy that wraps another forwards it, or answers -1 while a hook of its own may answer earlier.
+	/// </summary>
+	int QueuePatienceQuietTurns( in DecisionContext context, ulong birthId ) => -1;
+
+	/// <summary>
 	/// The minor decision's hysteresis (additive, phase 3): whether the best window candidate (<paramref name="candidate"/>, scoring <paramref name="candidateScore"/>) replaces the target the guest is walking to
 	/// (<paramref name="target"/>, scoring <paramref name="targetScore"/> for this guest now). The host asks only a policy that <see cref="UsesSpreading"/>, after its comparison rule picked the candidate and before the
 	/// route tests. The default always switches, as the original does.

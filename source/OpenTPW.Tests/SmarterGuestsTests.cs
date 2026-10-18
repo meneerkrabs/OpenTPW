@@ -150,6 +150,7 @@ public class SmarterGuestsTests
 		public virtual bool UsesPathComfort => inner.UsesPathComfort;
 		public virtual PathDecision ChoosePath( in DecisionContext context, in GuestView guest, in WanderPathView path ) => inner.ChoosePath( context, guest, path );
 		public virtual int AlternativeLookAfterTurns( in DecisionContext context, in GuestView guest ) => inner.AlternativeLookAfterTurns( context, guest );
+		public virtual int QueuePatienceQuietTurns( in DecisionContext context, ulong birthId ) => inner.QueuePatienceQuietTurns( context, birthId );
 		public virtual bool SwitchesTarget( in DecisionContext context, in GuestView guest, in AttractionView target, uint targetScore, in AttractionView candidate, uint candidateScore ) =>
 			inner.SwitchesTarget( context, guest, target, targetScore, candidate, candidateScore );
 		public virtual bool PriceTurnedAway( in DecisionContext context, in GuestView guest, in AttractionView attraction ) => inner.PriceTurnedAway( context, guest, attraction );

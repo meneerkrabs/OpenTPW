@@ -160,6 +160,8 @@ public class SmarterGuestsPatienceTests
 		public Func<int, Guest?> Find = _ => null;
 		public Spy( int look ) : base( new SmarterGuestDecisions() ) => this.look = look;
 		public override int AlternativeLookAfterTurns( in DecisionContext context, in GuestView guest ) => look;
+		/// <summary>The spy sees every call the hook could receive: it is never skipped.</summary>
+		public override int QueuePatienceQuietTurns( in DecisionContext context, ulong birthId ) => -1;
 		public override QueueAdmission DecideAdmission( in DecisionContext context, in GuestView guest, in AdmissionView admission )
 		{
 			Admissions.Add( (admission.BestAlternativeWait256, admission.Attraction.Id, guest.UsedHistory.Concat( guest.TemporaryHistory ).Where( id => id != 0 ).ToArray()) );
@@ -231,6 +233,51 @@ public class SmarterGuestsPatienceTests
 		plain.Run( 6_000 );
 		Assert.IsTrue( silent.Admissions.Count > 0 && silent.Admissions.All( admission => admission.Alternative == -1 ), "a policy that does not ask is given -1: the original path does no extra work" );
 		Assert.IsTrue( silent.Patience.Count > 0 && silent.Patience.All( call => call.Alternative == -1 ) );
+	}
+
+	[TestMethod]
+	public void TheQuietWindowIsTheTurnsBeforeTheGiveUpTestCanFireAndSkippingItChangesNothing()
+	{
+		var impatient = Guest( GuestWithPatience( 70 ) );
+		var patient = Guest( GuestWithPatience( 130 ) );
+		// waited x 256 > PatienceTurns256 first holds one turn after the floor of the patience in turns
+		Assert.AreEqual( 85, Smarter.QueuePatienceQuietTurns( Context(), impatient.BirthId ) );
+		Assert.AreEqual( 157, Smarter.QueuePatienceQuietTurns( Context(), patient.BirthId ) );
+		Assert.AreEqual( -1, ((IGuestDecisions)OriginalGuestDecisions.Instance).QueuePatienceQuietTurns( Context(), patient.BirthId ), "a policy that says nothing is always asked" );
+		var ride = Ride( queue: 9, interval: 20 * 256 );
+		foreach ( var (guest, quiet) in new[] { (impatient, 85), (patient, 157) } )
+		{
+			for ( var turn = 0; turn < quiet; turn++ )
+				Assert.IsFalse( Smarter.DecideQueuePatience( Context( turn ), guest, Queue( ride, 0, 8, 0 ) ).Leave, $"turn {turn} of {quiet}: inside the window the answer is the original's" );
+			Assert.IsTrue( Smarter.DecideQueuePatience( Context( quiet ), guest, Queue( ride, 0, 8, 0 ) ).Leave, "the first turn outside it can give up" );
+		}
+		// a run in which the host never skips (a spy that always says -1) is the run in which it does
+		var skipping = new ParkScenario( new WorldSeed( 2 ), decisions: new SmarterGuestDecisions() );
+		skipping.Run( 20_000 );
+		var asked = new ParkScenario( new WorldSeed( 2 ), decisions: new Spy( -1 ) );
+		asked.Run( 20_000 );
+		Assert.AreEqual( asked.Hash, skipping.Hash, "the guests" );
+		Assert.AreEqual( asked.Guests.RandomState, skipping.Guests.RandomState, "the draws" );
+		// and a policy that is asked less often sees fewer calls than one that is always asked
+		var counting = new Spy( -1 );
+		var quietSpy = new QuietSpy();
+		new ParkScenario( new WorldSeed( 2 ), decisions: counting ).Run( 20_000 );
+		new ParkScenario( new WorldSeed( 2 ), decisions: quietSpy ).Run( 20_000 );
+		Assert.IsTrue( quietSpy.Calls > 0 && quietSpy.Calls < counting.Patience.Count / 2, $"{quietSpy.Calls} calls against {counting.Patience.Count}" );
+		Assert.AreEqual( 0, quietSpy.WithWalkers, "the queue hook's view carries no walkers (counting them outside a decision scans every guest, and the hook does not read them)" );
+		Assert.AreEqual( quietSpy.Calls, quietSpy.WithEstimate, "but it still carries the throughput estimate the give-up test reads" );
+	}
+
+	private sealed class QuietSpy() : SmarterGuestsTests.DelegatingDecisions( new SmarterGuestDecisions() )
+	{
+		public int Calls, WithWalkers, WithEstimate;
+		public override QueuePatienceDecision DecideQueuePatience( in DecisionContext context, in GuestView guest, in QueuePatienceView queue )
+		{
+			Calls++;
+			WithWalkers += queue.Attraction.Reservations != 0 ? 1 : 0;
+			WithEstimate += queue.Attraction.TurnsPerGuest256 > 0 ? 1 : 0;
+			return base.DecideQueuePatience( context, guest, queue );
+		}
 	}
 
 	[TestMethod]

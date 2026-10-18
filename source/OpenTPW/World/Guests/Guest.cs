@@ -230,6 +230,11 @@ public sealed class Guest
 	public int[] UsedHistory { get; } = new int[HistorySlots];
 	/// <summary>The attractions the guest recently turned away from (queue too long, too boring or too exciting), newest first (guest <c>+488..+494</c>); a 0 is shifted in every 20 park turns. 0 = empty slot.</summary>
 	public int[] TemporaryHistory { get; } = new int[HistorySlots];
+	private IReadOnlyList<int>? usedHistoryView, temporaryHistoryView;
+	/// <summary>The used history as the decision layer sees it: a read-only wrapper of <see cref="UsedHistory"/> (the array is never replaced), made once.</summary>
+	internal IReadOnlyList<int> UsedHistoryView => usedHistoryView ??= Array.AsReadOnly( UsedHistory );
+	/// <summary>The temporary history as the decision layer sees it: a read-only wrapper of <see cref="TemporaryHistory"/>, made once.</summary>
+	internal IReadOnlyList<int> TemporaryHistoryView => temporaryHistoryView ??= Array.AsReadOnly( TemporaryHistory );
 	/// <summary>Slots of each history array (four).</summary>
 	public const int HistorySlots = 4;
 

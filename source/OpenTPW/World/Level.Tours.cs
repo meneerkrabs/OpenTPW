@@ -24,14 +24,40 @@ public partial class Level
 	{
 		if ( waterTracks?.Tracks is { } layer )
 		{
-			foreach ( var renderer in trackRenderers.Values )
+			foreach ( var family in TrackFamilies )
 			{
-				if ( renderer.PieceGround( layer, x, y ) is { } piece )
+				if ( family != TrackFamily.Bumper && TourGroundOf( family ) is { } renderer && renderer.PieceGround( layer, x, y ) is { } piece )
 					return piece;
 			}
 		}
 		return Objects.FindAt( x, y ) is { } item ? tourHeightMaps.Height( item, x, y ) : null;
 	}
+
+	/// <summary>
+	/// The piece lookup of a track family for the tour cars' ground. It is the simulation's own (never the drawing's renderer, which exists only once a frame has drawn the tracks), so the cars fly the same
+	/// with or without rendering; built from the family's first station when one exists, and never drawn or updated.
+	/// </summary>
+	private TrackRenderer? TourGroundOf( TrackFamily family )
+	{
+		if ( tourTrackGround.TryGetValue( family, out var known ) )
+			return known;
+		var station = trackStations.Keys.FirstOrDefault( item => !item.IsDeleted && item.Runtime.Bump?.Template.Family == family );
+		if ( station == null )
+			return null;
+		TrackRenderer? created = null;
+		try
+		{
+			created = new TrackRenderer( station.Entry, TrackPieceKit.Load( station.Entry.FileSystem, station.Entry.ArchivePath, family ), () => Objects.Grid.Origin, ( x, y ) => Objects.Grid.GetCellHeight( x, y ), ( x, y ) => Objects.Grid.GetCornerHeight( x, y ), ( x, y ) => Objects.Grid.GetTerrainHeight( x, y ) );
+		}
+		catch ( Exception exception ) when ( exception is InvalidDataException or IOException or NotSupportedException )
+		{
+			Log.Warning( $"The tour ground of the {family} tracks reads the objects only: {exception.Message}" );
+		}
+		tourTrackGround[family] = created;
+		return created;
+	}
+
+	private readonly Dictionary<TrackFamily, TrackRenderer?> tourTrackGround = new();
 	private TourRenderer? tourRenderer;
 	private bool tourRenderFailed;
 

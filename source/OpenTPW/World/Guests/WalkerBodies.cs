@@ -48,7 +48,7 @@ internal static class WalkerBodies
 	public static int SectorOf( int heading ) => heading & 7;
 
 	/// <summary>The walk's share in thousandths, as the update computes it: <c>(now x 1000 - began x 1000) / (end - began)</c> in unsigned 32-bit arithmetic (a walk of no length counts as done).</summary>
-	// [BIN:TPW-EXE:0x00557DAB walk share] uint((now x 1000 + began x -1000) / (end - began)); 0x005580A0 replaces a share above 1000 by 1 before it moves the body
+	// [BIN:TPW-EXE:0x00557DAB walk share] uint((now x 1000 + began x -1000) / (end - began)); 0x005580A0 (0x00558113: cmp 0x3E8, jle, mov 0x3E8) clamps a share above 1000 to 1000, as a signed value, before it moves the body
 	public static uint Share( double now, double began, double ends )
 	{
 		var length = unchecked( (uint)((int)ends - (int)began) );
@@ -57,8 +57,8 @@ internal static class WalkerBodies
 		return unchecked( (uint)((int)now * 1000 + (int)began * -1000) ) / length;
 	}
 
-	/// <summary>The share the body routine moves by: the share, or 1 when it is above 1000.</summary>
-	public static int BodyShare( uint share ) => share > 1000 ? 1 : (int)share;
+	/// <summary>The share the body routine moves by: the share as a signed word, clamped to 1000 when above it (a share that wrapped below zero is not clamped).</summary>
+	public static int BodyShare( uint share ) => Math.Min( unchecked( (int)share ), 1000 );
 
 	/// <summary>The body's point between two node positions for a share in thousandths: <c>((b - a) x share - a x -1000) x 0.001</c> on every axis.</summary>
 	// [BIN:TPW-EXE:0x005580FF body position] the nodes' positions by the elapsed share, a float expression per axis

@@ -85,6 +85,51 @@ public class TrackAssetTests
 	}
 
 	[TestMethod]
+	public void ATrackTilesPieceMapTurnsWithItsRotationAndStationsAndOtherFamiliesGiveNothing()
+	{
+		// a piece whose four rotated readings of the map all differ, so a swapped rotation cannot match by symmetry
+		static bool AllRotationsDiffer( ReadOnlySpan<byte> m ) => new[] { (m[0], m[1], m[2], m[3]), (m[3], m[2], m[1], m[0]), (m[2], m[0], m[3], m[1]), (m[1], m[3], m[0], m[2]) }.Distinct().Count() == 4;
+		var candidates = TrackRides( 1 ).Select( ride => (Entry: ride, Kit: TrackPieceKit.Load( ride.FileSystem, ride.ArchivePath, TrackFamily.Kart )) )
+			.SelectMany( ride => ride.Kit.Entries.Where( item => item.Index != 0 && ride.Kit.GetHeightProfile( item.Index ) is { } found && found.CellMaxima.Length == 4 && AllRotationsDiffer( found.CellMaxima.Span ) ).Select( item => (ride.Entry, ride.Kit, item.Index) ) );
+		var (entry, kit, pieceIndex) = candidates.FirstOrDefault();
+		if ( entry == null )
+			Assert.Inconclusive( "No shipped kart piece map reads differently at all four rotations" );
+		var map = kit.GetHeightProfile( pieceIndex )!;
+		var renderer = new TrackRenderer( entry, kit, () => System.Numerics.Vector2.Zero, ( x, y ) => 0f );
+		float?[,] Read( int rotation, int piece = -1, int family = (int)TrackFamily.Kart )
+		{
+			var layer = new TrackCellLayer( 128, 128 );
+			layer.Set( 30, 40, new TrackCell { Type = TrackCellTypes.KartOrigin, Parent = -1, Family = family, Piece = piece < 0 ? pieceIndex : piece, Rotation = rotation } );
+			foreach ( var (dx, dy) in new[] { (1, 0), (0, 1), (1, 1) } )
+				layer.Set( 30 + dx, 40 + dy, new TrackCell { Type = TrackCellTypes.Extension, Parent = layer.IndexOf( 30, 40 ) } );
+			var grid = new float?[2, 2];
+			for ( var dx = 0; dx < 2; dx++ )
+				for ( var dy = 0; dy < 2; dy++ )
+					grid[dx, dy] = renderer.PieceGround( layer, 30 + dx, 40 + dy );
+			return grid;
+		}
+		var bytes = map.CellMaxima.Span.ToArray().Select( value => value * ObjectHeightMaps.ByteScale ).ToArray();
+		var zero = Read( 0 );
+		for ( var dx = 0; dx < 2; dx++ )
+			for ( var dy = 0; dy < 2; dy++ )
+				Assert.AreEqual( bytes[dy * 2 + dx], zero[dx, dy]!.Value, 1e-4f, $"rotation 0 reads the map row by row: cell ({dx}, {dy})" );
+		var half = Read( 180 );
+		var quarter = Read( 90 );
+		var third = Read( 270 );
+		float[] Row( float?[,] grid ) => new[] { grid[0, 0]!.Value, grid[1, 0]!.Value, grid[0, 1]!.Value, grid[1, 1]!.Value };
+		var (a, b, c, d) = (bytes[0], bytes[1], bytes[2], bytes[3]);
+		Assert.IsTrue( new[] { d, c, b, a }.Zip( Row( half ) ).All( pair => Math.Abs( pair.First - pair.Second ) < 1e-4f ), "rotation 180 turns the map half way" );
+		var turns = new[] { new[] { c, a, d, b }, new[] { b, d, a, c } };
+		var quarterRow = Row( quarter );
+		var thirdRow = Row( third );
+		var quarterIs = turns.ToList().FindIndex( turn => turn.Zip( quarterRow ).All( pair => Math.Abs( pair.First - pair.Second ) < 1e-4f ) );
+		var thirdIs = turns.ToList().FindIndex( turn => turn.Zip( thirdRow ).All( pair => Math.Abs( pair.First - pair.Second ) < 1e-4f ) );
+		Assert.IsTrue( quarterIs >= 0 && thirdIs >= 0 && quarterIs != thirdIs, "rotations 90 and 270 are the two different quarter turns of the map" );
+		Assert.IsNull( Read( 0, piece: 0 )[0, 0], "a station (piece 0) has no piece instance" );
+		Assert.IsNull( Read( 0, family: (int)TrackFamily.Water )[0, 0], "another family's tile is not this renderer's" );
+	}
+
+	[TestMethod]
 	public void TheFourWaterRidesAndFourKartRidesHaveCompletePieceKits()
 	{
 		var water = TrackRides( 2 ).ToArray();

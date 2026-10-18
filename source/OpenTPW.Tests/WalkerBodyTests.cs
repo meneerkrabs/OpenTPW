@@ -40,7 +40,8 @@ public class WalkerBodyTests
 		Assert.AreEqual( 1000u, WalkerBodies.Share( 600, 100, 600 ) );
 		Assert.AreEqual( 1200u, WalkerBodies.Share( 700, 100, 600 ) );
 		Assert.AreEqual( 500, WalkerBodies.BodyShare( 500 ) );
-		Assert.AreEqual( 1, WalkerBodies.BodyShare( 1200 ), "the body routine replaces a share above 1000 by 1" );
+		Assert.AreEqual( 1000, WalkerBodies.BodyShare( 1200 ), "the body routine clamps a share above 1000 to 1000" );
+		Assert.AreEqual( -1000, WalkerBodies.BodyShare( unchecked( (uint)-1000 ) ), "a share that wrapped below zero is signed and not clamped" );
 		Assert.AreEqual( 1000u, WalkerBodies.Share( 5, 5, 5 ), "a walk of no length is done" );
 	}
 

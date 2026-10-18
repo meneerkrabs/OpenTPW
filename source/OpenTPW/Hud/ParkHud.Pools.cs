@@ -3,9 +3,9 @@ using OpenTPW.UI.Original;
 namespace OpenTPW.Hud;
 
 /// <summary>
-/// The HUD side of the pool tool of the <c>opentpw.pools</c> extension (docs/POOLS.md). The original HUD has no pool entry, so the extension adds two rows to the end of
+/// The HUD side of the pool tool of the <c>opentpw.pools</c> extension (docs/POOLS.md). The original HUD has no pool entry, so the extension adds pool, slide, river and bridge rows to
 /// the buy window's Miscellaneous list (beside Buy Land and Clear Land) while it is on: "Pool water" arms the paint mode and "Remove pool water" the erase mode. Press and drag in the
-/// park to paint or erase; right click or Escape leaves.
+/// park to paint or erase; bridges use a single click. Right click or Escape leaves.
 /// </summary>
 // [EXT:pools-ui] OpenTPW's own rows and texts; the original game has no pools
 public sealed partial class ParkHud
@@ -21,13 +21,21 @@ public sealed partial class ParkHud
 	/// <summary>[EXT:pools-river] The Miscellaneous list's lazy river row (row id -20): paints pool water with the river option.</summary>
 	public static readonly BuildItem PoolRiverRow = new( "pool:river", -20, BuildCategory.Features, 0, ParkEconomy.PoolCellCost, null, Array.Empty<string>() );
 
-	/// <summary>Whether <paramref name="item"/> is one of the pool rows.</summary>
-	public static bool IsPoolRow( BuildItem item ) => item.InfoId is -3 or -4 or -5 or -20 && item.Entry == null && item.Category == BuildCategory.Features;
+	public static readonly BuildItem PoolBridgeEastRow = new( "pool:bridge-east", -21, BuildCategory.Features, 0, PoolBridgeWorld.Price, null, Array.Empty<string>() );
+	public static readonly BuildItem PoolBridgeSouthRow = new( "pool:bridge-south", -22, BuildCategory.Features, 0, PoolBridgeWorld.Price, null, Array.Empty<string>() );
+	public static readonly BuildItem PoolBridgeEraseRow = new( "pool:bridge-erase", -23, BuildCategory.Features, 0, 0, null, Array.Empty<string>() );
 
-	private string PoolRowName( BuildItem item ) => strings.Extra( item.InfoId == PoolPaintRow.InfoId ? OpenTpwText.PoolRowPaint : item.InfoId == PoolRiverRow.InfoId ? OpenTpwText.PoolRowRiver
+	private static bool IsPoolBridgeRow( BuildItem item ) => item.InfoId is -21 or -22 or -23;
+
+	/// <summary>Whether <paramref name="item"/> is one of the pool rows.</summary>
+	public static bool IsPoolRow( BuildItem item ) => item.InfoId is -3 or -4 or -5 or -20 or -21 or -22 or -23 && item.Entry == null && item.Category == BuildCategory.Features;
+
+	private string PoolRowName( BuildItem item ) => strings.Extra( item.InfoId == PoolBridgeEastRow.InfoId ? OpenTpwText.PoolBridgeEast
+		: item.InfoId == PoolBridgeSouthRow.InfoId ? OpenTpwText.PoolBridgeSouth : item.InfoId == PoolBridgeEraseRow.InfoId ? OpenTpwText.PoolBridgeErase
+		: item.InfoId == PoolPaintRow.InfoId ? OpenTpwText.PoolRowPaint : item.InfoId == PoolRiverRow.InfoId ? OpenTpwText.PoolRowRiver
 		: item.InfoId == PoolSlideRow.InfoId ? OpenTpwText.PoolRowSlide : OpenTpwText.PoolRowErase );
 
-	private long PoolRowPrice( BuildItem item ) => item.InfoId == PoolSlideRow.InfoId ? (level.Park?.Economy.CellCost( CellPurchase.SlidePiece ) ?? 0)
+	private long PoolRowPrice( BuildItem item ) => IsPoolBridgeRow( item ) ? (item.InfoId == PoolBridgeEraseRow.InfoId ? 0 : PoolBridgeWorld.Price) : item.InfoId == PoolSlideRow.InfoId ? (level.Park?.Economy.CellCost( CellPurchase.SlidePiece ) ?? 0)
 		: item.InfoId != PoolEraseRow.InfoId ? (level.Park?.Economy.CellCost( CellPurchase.Pool ) ?? 0) : 0;
 
 	private bool IsPoolRowAvailable() => FeatureGates.Pools && !level.IsReadOnlyVisit && level.PoolTool != null;
@@ -60,7 +68,7 @@ public sealed partial class ParkHud
 			}
 			return;
 		}
-		var erase = item.InfoId == PoolEraseRow.InfoId;
+		var erase = item.InfoId == PoolEraseRow.InfoId || item.InfoId == PoolBridgeEraseRow.InfoId;
 		if ( !tool.IsActive )
 		{
 			level.EndBuildTools();
@@ -68,10 +76,11 @@ public sealed partial class ParkHud
 			LeaveBuildTool();
 		}
 		var river = item.InfoId == PoolRiverRow.InfoId;
-		if ( !tool.Begin( erase, river ) )
+		var bridge = IsPoolBridgeRow( item );
+		if ( !(bridge ? tool.BeginBridge( item.InfoId == PoolBridgeEastRow.InfoId ? 1 : 2, erase ) : tool.Begin( erase, river )) )
 			return;
 		CloseBuyWindow();
-		PostMessage( strings.Extra( erase ? OpenTpwText.PoolEraseHint : river ? OpenTpwText.PoolRiverHint : OpenTpwText.PoolPaintHint ) );
+		PostMessage( strings.Extra( bridge ? (erase ? OpenTpwText.PoolBridgeEraseHelp : OpenTpwText.PoolBridgeHelp) : erase ? OpenTpwText.PoolEraseHint : river ? OpenTpwText.PoolRiverHint : OpenTpwText.PoolPaintHint ) );
 	}
 
 	/// <summary>
@@ -100,7 +109,7 @@ public sealed partial class ParkHud
 			return false;
 		}
 		tool.Hover( cursorX, cursorY );
-		context.HoverHelp = strings.Extra( tool.IsSlide ? OpenTpwText.PoolSlideHelp : tool.IsErasing ? OpenTpwText.PoolEraseHelp : tool.IsRiver ? OpenTpwText.PoolRiverHelp : OpenTpwText.PoolPaintHelp );
+		context.HoverHelp = strings.Extra( tool.IsBridge ? (tool.IsErasing ? OpenTpwText.PoolBridgeEraseHelp : OpenTpwText.PoolBridgeHelp) : tool.IsSlide ? OpenTpwText.PoolSlideHelp : tool.IsErasing ? OpenTpwText.PoolEraseHelp : tool.IsRiver ? OpenTpwText.PoolRiverHelp : OpenTpwText.PoolPaintHelp );
 		if ( input.LeftPressed )
 		{
 			refusalClick.Press();
@@ -128,6 +137,19 @@ public sealed partial class ParkHud
 		if ( tool.LastRefusal is not { } refusal )
 			return;
 		refusalClick.Refused( refusal.Cell.X, refusal.Cell.Y );
+		if ( tool.LastBridgeRefusal is { } bridgeRefusal )
+		{
+			PostMessage( strings.Extra( bridgeRefusal switch
+			{
+				PoolBridgeResult.NotEnoughMoney => OpenTpwText.NotEnoughMoney,
+				PoolBridgeResult.NotOverPool => OpenTpwText.PoolBridgeNeedsWater,
+				PoolBridgeResult.NotBridge => OpenTpwText.PoolBridgeNotBridge,
+				PoolBridgeResult.Standing => OpenTpwText.PoolBridgeStanding,
+				PoolBridgeResult.TooSteep => OpenTpwText.PoolTooSteep,
+				_ => OpenTpwText.CannotBuildHere
+			} ) );
+			return;
+		}
 		PostMessage( strings.Extra( refusal.Reason switch
 		{
 			PoolBuildResult.SlideRefused => tool.LastSlideRefusal switch

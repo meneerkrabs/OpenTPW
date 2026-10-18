@@ -46,7 +46,8 @@ public partial class Level
 			StaffSpriteSet sprites;
 			using ( LoadProfile.Measure( "staff-sprites" ) )
 				sprites = StaffSpriteSet.Load( LevelName );
-			StaffRenderer = new StaffRenderer( () => Park.Economy.Staff.Members, OriginalPark.Heightfield, sprites, StaffPlacement );
+			StaffRenderer = new StaffRenderer( () => Park.Economy.Staff.Members, OriginalPark.Heightfield, sprites, StaffPlacement )
+			{ FeetHeight = ( x, y ) => PoolBridges?.At( (int)x, (int)y )?.HeightAt( x, y ) };
 		}
 	}
 

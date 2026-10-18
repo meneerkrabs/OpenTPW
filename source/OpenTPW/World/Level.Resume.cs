@@ -121,6 +121,7 @@ public partial class Level
 			Coasters = CaptureCoastersSnapshot(),
 			Tracks = CaptureTracksSnapshot(),
 			PoolSlides = PoolSlides?.CaptureSnapshot(),
+			PoolBridges = PoolBridges?.CaptureSnapshot(),
 			Tours = CaptureToursSnapshot(),
 			Prototype = prototype,
 			Particles = ParticlesCaptured?.Invoke( this ),
@@ -169,6 +170,7 @@ public partial class Level
 		PlacedRide = RestorePrototypeRideSnapshot( snapshot.Prototype, roots );
 		Objects.ScriptWorld.RestoreSnapshot( snapshot.Scripts, roots );
 		ValidateResumeQueueGeometry( snapshot.Guests, Guests );
+		PoolBridges?.RestoreSnapshot( snapshot.PoolBridges );
 		Guests.RestoreSnapshot( snapshot.Guests );
 		// [EXT:smarter-guests] the extension's birth ids, keyed by the guest ids the restore just rebuilt
 		SmarterGuestsSave.Restore( Guests, snapshot.SmarterGuests );

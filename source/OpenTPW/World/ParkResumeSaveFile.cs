@@ -495,6 +495,8 @@ internal static class ParkResumeSaveFile
 		ValidateTracks( snapshot );
 		ValidateTours( snapshot );
 		// [EXT:pools-slides] the slides part: shape only (the rules need the towers, which the level checks while it restores)
+		if ( PoolBridgeWorld.ShapeProblem( snapshot.PoolBridges, snapshot.Mods ) is { } bridgeProblem )
+			throw new InvalidDataException( bridgeProblem );
 		if ( PoolSlideSaves.ShapeProblem( snapshot.PoolSlides, snapshot.Mods ) is { } slideProblem )
 			Require( false, slideProblem );
 

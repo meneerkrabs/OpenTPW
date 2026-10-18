@@ -827,7 +827,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	public bool IsOnParkCell( Guest guest )
 	{
 		var (x, y) = guest.Navigation.Cell;
-		return Grid.InBounds( x, y ) && Grid.Cells.RawTypeAt( x, y ) is 0 or 1 or 3 or 9 or 10;
+		return Grid.InBounds( x, y ) && (Grid.Cells.RawTypeAt( x, y ) is 0 or 1 or 3 or 9 or 10 || !guest.InSwimSession && Grid.Cells.PoolBridges?.Covers( x, y ) == true);
 	}
 
 	/// <summary>
@@ -862,7 +862,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			// open back to deciding, so a closed-park dismissal unwinds when the park reopens. The three leaving causes all fail it in the same turn.
 			// [BIN:TPW-EXE:0x00500A50 recall cell test] the recall also demands the guest's own cell pass 0x4FA990 (cell types 0, 1, 3, 9 and 10, 0x536310..0x536390, the set of ParkGate.CountsCellType): the walk out of the park crosses the gate's walkway cells (type 0x1E, 7 outside the terrain) and a guest on one cannot change its mind; the booth refusal and a closed park's state 3 enter state 18 with a zeroed counter (0x4FF9D0, 0x4FF7F0) and are never recalled
 			if ( guest.State == GuestState.LeavingPark && GuestLifecycle.ShouldRecall( guest.Happiness, guest.ExitLevel, Payments?.ParkClosed ?? false )
-				&& Grid.Cells.RawTypeAt( guest.Navigation.Cell.X, guest.Navigation.Cell.Y ) is 0 or 1 or 3 or 9 or 10 )
+				&& IsOnParkCell( guest ) )
 			{
 				// [BIN:TPW-EXE:0x00500AB9 recall clears the walk mask] guest +0x188 (walk +0xB4) = 0 before state 6
 				guest.Navigation.Mask = 0;
@@ -2080,7 +2080,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			guest.HasWaypoint = false;
 			return false;
 		}
-		if ( (cells.LinksAt( start.X, start.Y ) & 0x55) == 0 )
+		if ( (Grid.LinksAt( start.X, start.Y ) & 0x55) == 0 )
 		{
 			// [BIN:TPW-EXE:0x004F9490 start without links] the step count R % 5 is drawn first, then the search for a path cell around the start (0x522810 below 1)
 			random.NextWord();
@@ -2092,7 +2092,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		if ( GuestWander.Pick( Grid, start, () => random.NextWord(), null, out _, trail, out trailCount ) is not { } destination )
 		{
 			// [BIN:TPW-EXE:0x004F9D6E stranded] a guest (not a staff member) whose cell has links but no candidate is "stranded at time": thought Confused and the mark, raised stamp counter
-			if ( (Grid.IsWalkable( start.X, start.Y ) || Grid.IsQueue( start.X, start.Y )) && GuestWander.OriginalCandidates( Grid, start ) == 0 && (cells.LinksAt( start.X, start.Y ) & 0x55) != 0 )
+			if ( (Grid.IsWalkable( start.X, start.Y ) || Grid.IsQueue( start.X, start.Y )) && GuestWander.OriginalCandidates( Grid, start ) == 0 && (Grid.LinksAt( start.X, start.Y ) & 0x55) != 0 )
 			{
 				Think( guest, GuestThought.Confused );
 				guest.StrandedMark = cells.StampCounter + 1;
@@ -4360,6 +4360,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		}
 		// [EXT:pools-slides] the park's water slides join the digest only when there are any (every park without slides keeps its pins)
 		PoolSlides?.AddCanonicalState( hash );
+		Grid.Cells.PoolBridges?.AddCanonicalState( hash );
 	}
 
 	/// <summary>FNV-1a over guest gameplay state, the RNG and counters; display-only TimeInParkSeconds is excluded.</summary>

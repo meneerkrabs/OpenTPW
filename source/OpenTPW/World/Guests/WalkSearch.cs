@@ -35,6 +35,9 @@ public static class WalkEdges
 		// OpenTPW maps smaller than the original's 128 × 128 end at their own edge (the same test for the original's size).
 		if ( !map.InBounds( tx, ty ) )
 			return true;
+		// Elevated decks have their own edges. Neither off-path movement nor walk masks may bypass their sides.
+		if ( map.PoolBridges is { } bridges && (bridges.Covers( x, y ) || bridges.Covers( tx, ty )) )
+			return !bridges.Connects( x, y, direction );
 		var from = map.RawTypeAt( x, y );
 		var to = map.RawTypeAt( tx, ty );
 		// [EXT:pools-cell-type] a pool cell blocks every step onto it, for every walk mask: a walker set down off the paths, an escorted guest or a striking employee never wades in (docs/POOLS.md)

@@ -114,6 +114,9 @@ internal sealed record ParkResumeSnapshot
 	/// </summary>
 	[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 	public PoolSlidesSaveData? PoolSlides { get; init; }
+	/// <summary>[EXT:pools-bridges] Absent in parks without bridges, preserving their existing save bytes.</summary>
+	[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+	public PoolBridgesSaveData? PoolBridges { get; init; }
 	/// <summary>
 	/// The developer prototype Totem, or null when the park had none: where it stands, its runtime and script state
 	/// and its economy association, joined by attraction id (the part joined the envelope with the prototype slice;

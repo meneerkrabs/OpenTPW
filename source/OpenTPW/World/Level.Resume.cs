@@ -91,7 +91,8 @@ public partial class Level
 		// [EXT:pools-save] the extension is recorded while the park has a pool cell or a changing room; its manifest keys are those of the objects the park placed (a changing room), not of its whole content.
 		// [EXT:umbrellas-save] opentpw.umbrellas likewise: recorded while the park has a brolly shop or a guest with an umbrella, with the keys of the placed shops only
 		var placedEntries = Objects.Objects.Where( item => !item.IsDeleted ).Select( item => item.Entry ).ToArray();
-		var extensionsInUse = ParkResumeMods.InUse( Guests.Grid.Cells, placedEntries.Any( ParkResumeMods.IsPoolsObject ), ParkResumeMods.UmbrellasInUse( placedEntries, Guests ) );
+		// [EXT:winter-save] opentpw.winter likewise: recorded while the park has a winter kiosk or a glühwein stall or a guest with a warm item
+		var extensionsInUse = ParkResumeMods.InUse( Guests.Grid.Cells, placedEntries.Any( ParkResumeMods.IsPoolsObject ), ParkResumeMods.UmbrellasInUse( placedEntries, Guests ), ParkResumeMods.WinterInUse( placedEntries, Guests ) );
 		var assets = ParkResumeMods.AssetsForUse( verifiedAssets ?? ParkResumeAssetManifest.Capture( Objects.Catalog, Park.Economy.Settings ), placedEntries );
 		var random = CaptureRandomState();
 		var snapshot = new ParkResumeSnapshot

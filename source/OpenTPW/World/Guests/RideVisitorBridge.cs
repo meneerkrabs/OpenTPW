@@ -157,6 +157,9 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 
 	/// <summary>[EXT:umbrellas-extension] The weather and generation percentages of a brolly shop, set only for the umbrellas extension's own objects (<see cref="IRideVisitorBridge.UmbrellaTerms"/>).</summary>
 	public UmbrellaShopTerms? UmbrellaTerms { get; set; }
+
+	/// <summary>[EXT:winter-extension] The weather and season percentages of a winter kiosk or a glühwein stall, set only for the winter extension's own objects (<see cref="IRideVisitorBridge.WinterTerms"/>).</summary>
+	public WinterShopTerms? WinterTerms { get; set; }
 	/// <summary>The ride's amount of the special ingredient (Mac <c>+404</c>, PC <c>+0x198</c> beside the price per use at <c>+0x194</c>; the serializer <c>0x004DB7D0</c> names it <c>mAmountOfSpecialIngredient</c>), 50 when the ride is built.</summary>
 	// [BIN:TPW-EXE:0x4b0aa0 ingredient amount] the amount is the economy record's (ParkObjectState.IngredientAmount): 50 when the ride is built (0x4db090 stores 0x32 at +0x198, 0x4db3b3), the shop window's 0..100 slider (range 0x4b06d2, shown for ingredients 1..4 by 0x4b0950) applied to the object (0x4b0aa0) or every object of the type (0x4b0ae0), saved with the park and imported as mAmountOfSpecialIngredient (0x4dcdc1); a Sugar visit adds trunc(6 x amount / 100) (0x4fe5f8)
 	// The level mirrors it from the object's economy record (ParkObjectState.IngredientAmount, saved) every tick; tests set it directly.

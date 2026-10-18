@@ -11,8 +11,9 @@ namespace OpenTPW.Tests;
 
 /// <summary>
 /// The winter extension's shipped content (docs/WINTER.md, phase W2): <c>content/winter</c> holds the winter kiosk and the gluhwein stall of each theme, the warm item sprite set (hats, earmuffs, mittens) and
-/// the schema 2 anchors of the 2x kid sets (head and both hands for every land slot), made by <c>tools/winter/build-content.sh</c>. The content is not wired into the game yet (phase W3), so these tests load
-/// the committed files through the game's own pipelines (the object catalog, the sprite readers, the ride script VM) with a content root made here, without any original game data.
+/// the schema 2 anchors of the 2x kid sets (head and both hands for every land slot), made by <c>tools/winter/build-content.sh</c>. These tests load
+/// the committed files through the game's own pipelines (the object catalog, the sprite readers, the ride script VM) with a content root made here, without any original game data; the extension that lists them in the game
+/// (phase W3) is covered by <see cref="WinterSimulationTests"/> and <see cref="WinterWiringTests"/>.
 /// </summary>
 // [EXT:winter-content] OpenTPW's own shipped content; neither Theme Park World nor Theme Park Inc ships anything of it
 [TestClass]
@@ -416,18 +417,26 @@ public class WinterContentTests
 		}
 	}
 
-	// ---- The inert rule --------------------------------------------------------------------------------------------
+	// ---- The wiring ------------------------------------------------------------------------------------------------
 
 	[TestMethod]
-	public void NothingOfTheContentIsWiredIntoTheGameYet()
+	public void TheContentIsListedOnlyThroughTheWinterExtensionsOwnRootAndTheSnowAndColdExtensionsAreNotRegisteredYet()
 	{
-		Assert.IsFalse( OfficialExtensions.All.Any( extension => extension.Id.StartsWith( "opentpw.winter", StringComparison.Ordinal ) ), "the extensions themselves come with phases W1, W3 and W5; the content only sits in content/winter" );
-		// the production path: the catalog roots of a default run (every official extension at its default) and the catalogs built from them name no winter shop
-		var roots = ModContentRoots.CatalogRoots( ModSet.Defaults( OfficialExtensions.All ) );
-		Assert.IsFalse( roots.Any( root => root.Objects.Any( definition => definition.InfoId is >= FirstId and <= LastId ) ), "no catalog root of a default run lists a winter shop" );
-		using ( ModContentRoots.Use( ModSet.Defaults( OfficialExtensions.All ), null ) )
-			foreach ( var theme in Themes )
-				Assert.IsFalse( ObjectCatalog.Load( theme ).Entries.Any( entry => entry.InfoId is >= FirstId and <= LastId ), $"{theme}: no winter shop in the catalog of a default run" );
+		CollectionAssert.AreEqual( new[] { "opentpw.winter", "opentpw.winter-weather" }, OfficialExtensions.All.Where( extension => extension.Id.StartsWith( "opentpw.winter", StringComparison.Ordinal ) ).Select( extension => extension.Id ).ToArray(),
+			"W3 registers the winter extension and the wintry Decembers option; the snow cover (W1) and the cold rule (W5) come with their own phases" );
+		WinterContent.DirectoryOverride = Folder;
+		try
+		{
+			var roots = ModContentRoots.CatalogRoots( ModSet.Defaults( OfficialExtensions.All ) );
+			Assert.AreEqual( 1, roots.Count( root => root.ModId == ModId ), "a default run lists the winter root once" );
+			Assert.AreEqual( 8, roots.Single( root => root.ModId == ModId ).Objects.Count( definition => definition.InfoId is >= FirstId and <= LastId ) );
+			var off = ModSet.Resolve( Array.Empty<DiscoveredMod>(), new ModSettings { Enabled = new Dictionary<string, bool> { [ModId] = false } }, null, GameEdition.ThemeParkWorld, OfficialExtensions.All );
+			Assert.IsFalse( ModContentRoots.CatalogRoots( off ).Any( root => root.ModId == ModId ), "switched off: no winter root" );
+		}
+		finally
+		{
+			WinterContent.DirectoryOverride = null;
+		}
 		ObjectCatalog.SetContentRoots( Array.Empty<CatalogContentRoot>() );
 		foreach ( var theme in Themes )
 			Assert.IsFalse( ObjectCatalog.Load( theme ).Entries.Any( entry => entry.InfoId is >= FirstId and <= LastId ), $"{theme}: no winter shop in a catalog without the test's own root" );

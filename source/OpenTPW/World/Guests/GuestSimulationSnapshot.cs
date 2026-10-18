@@ -172,6 +172,12 @@ public sealed record GuestSnapshot
 	/// <summary>[EXT:rain-mood-once-per-day] The game day plus one of the rain mood rule's last application to the guest (<see cref="Guest.RainMoodDay"/>); written only once it has applied, so a save without the extension has no such field.</summary>
 	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault )]
 	public long RainMoodDay { get; init; }
+	/// <summary>[EXT:winter-save] The warm items the guest wears (<see cref="Guest.WarmItems"/>, bits 1 hat, 2 earmuffs, 4 mittens); written only while the guest has one, so a save without the winter extension has no such field and every older save loads as before.</summary>
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault )]
+	public int WarmItems { get; init; }
+	/// <summary>[EXT:winter-save] The park day a glühwein's warmth lasts until (<see cref="Guest.WarmUntilDay"/>); written only while set (phase W5 writes it), so every other save has no such field.</summary>
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault )]
+	public long WarmUntilDay { get; init; }
 	/// <summary>[EXT:rain-mood-imported-age] The park turn an imported guest without a known time in the park was loaded at (<see cref="Guest.RainMoodAgeStartTurn"/>); written only for such a guest while the extension is on, so every other save has no such field.</summary>
 	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
 	public long? RainMoodAgeStartTurn { get; init; }

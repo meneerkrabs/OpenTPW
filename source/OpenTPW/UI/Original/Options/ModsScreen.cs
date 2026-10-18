@@ -53,6 +53,8 @@ public static class ModsScreen
 		[OfficialExtensions.PoolGuestArt.Id] = (OpenTpwText.ExtensionPoolGuestArtName, OpenTpwText.ExtensionPoolGuestArtDescription),
 		[OfficialExtensions.RainMood.Id] = (OpenTpwText.ExtensionRainMoodName, OpenTpwText.ExtensionRainMoodDescription),
 		[OfficialExtensions.Umbrellas.Id] = (OpenTpwText.ExtensionUmbrellasName, OpenTpwText.ExtensionUmbrellasDescription),
+		[OfficialExtensions.Winter.Id] = (OpenTpwText.ExtensionWinterName, OpenTpwText.ExtensionWinterDescription),
+		[OfficialExtensions.WinterWeather.Id] = (OpenTpwText.ExtensionWinterWeatherName, OpenTpwText.ExtensionWinterWeatherDescription),
 		[OfficialExtensions.RestoredAdvice.Id] = (OpenTpwText.ExtensionRestoredAdviceName, OpenTpwText.ExtensionRestoredAdviceDescription),
 		[OfficialExtensions.Evening.Id] = (OpenTpwText.ExtensionEveningName, OpenTpwText.ExtensionEveningDescription),
 	};

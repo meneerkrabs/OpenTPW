@@ -33,23 +33,29 @@ partial class TextureFile
 	}
 
 	// One inverse D4 step over a row's scale/wavelet pairs. The previous pair
-	// wraps around to the last one. Source pairs sit at stride 2, except that
-	// half-scale data halves the source index; output pairs sit at stride 2
-	// for full-scale data and stride 1 for half-scale, so half-scale output
-	// neighbours overlap by one sample.
-	void D4InverseTransformRows( float[] pSrc, float[] pDest, int offset, int size, D4Coefficients coefs, bool isHalfScale )
+	// wraps around to the last one. Output pairs sit at stride 2.
+	//
+	// The coefficients of a row come in one of two layouts, chosen by the header's first flag bit (TextureFlags.InterleavedRows):
+	// interleaved (scale, wavelet, scale, wavelet, ...; the world textures, flags 0x13) or planar (all scale
+	// samples of the row, then all its wavelet samples; the interface art of ui.wad, flags 0x12).
+	// [BIN:TPW-EXE:0x593ab0 planar rows, 0x595920 interleaved rows] the two decoders of the vtable at 0x7026d8: 0x593ab0 dequantises a row of N
+	// coefficients into a scratch row and reads its scale samples from the first N/2 entries and its wavelet samples from the last N/2
+	// (local_5c[i], local_5c[N/2 + i]); 0x595920 takes each scale/wavelet pair straight from the stream. The sign boards' wavelet decoder
+	// (SignWaveletDecoder) reads planar rows the same way. The column pass is planar in both.
+	void D4InverseTransformRows( float[] pSrc, float[] pDest, int offset, int pairs, D4Coefficients coefs, bool planarRows )
 	{
-		for ( int i = 0; i < size; i++ )
+		for ( int i = 0; i < pairs; i++ )
 		{
-			int prev = (i == 0) ? size - 1 : i - 1;
-			int srcPrev = isHalfScale ? prev / 2 : prev * 2;
-			int srcCur = isHalfScale ? i / 2 : i * 2;
-			int dst = isHalfScale ? i : i * 2;
+			int prev = (i == 0) ? pairs - 1 : i - 1;
+			int srcPrev = planarRows ? prev : prev * 2;
+			int srcCur = planarRows ? i : i * 2;
+			int waveletStep = planarRows ? pairs : 1;
+			int dst = i * 2;
 
 			float s0 = pSrc[srcPrev + offset];
-			float w0 = pSrc[srcPrev + 1 + offset];
+			float w0 = pSrc[srcPrev + waveletStep + offset];
 			float s1 = pSrc[srcCur + offset];
-			float w1 = pSrc[srcCur + 1 + offset];
+			float w1 = pSrc[srcCur + waveletStep + offset];
 
 			pDest[dst + offset] = ApplyScalingCoefficientsInv( s0, w0, s1, w1, coefs );
 			pDest[dst + 1 + offset] = ApplyWaveCoefficientsInv( s0, w0, s1, w1, coefs );
@@ -80,7 +86,7 @@ partial class TextureFile
 		}
 	}
 
-	private bool DecodeChannel( ref ImageDecodeState state, int size, ref byte[] pSrc, float[] outputBuffer, float dequantizationScale, bool isHalfScale, bool isAlpha = false )
+	private bool DecodeChannel( ref ImageDecodeState state, int size, ref byte[] pSrc, float[] outputBuffer, float dequantizationScale, bool planarRows )
 	{
 		int count = size * (size / 2);
 		int index = 0;
@@ -122,19 +128,16 @@ partial class TextureFile
 		//
 		// Step 2: decode rows
 		//
-		if ( isHalfScale )
-			dequantizationScale *= MathF.PI * 1/6f;
-
 		D4Coefficients coefs = new( dequantizationScale );
-		int rowTransformSize = (isHalfScale) ? size : size / 2;
+		int rowTransformSize = size / 2;
 		for ( int i = 0; i < size; i++ )
-			D4InverseTransformRows( state.DequantizationBuffer, state.RowDecodeBuffer, i * size, rowTransformSize, coefs, isHalfScale );
+			D4InverseTransformRows( state.DequantizationBuffer, state.RowDecodeBuffer, i * size, rowTransformSize, coefs, planarRows );
 
 		//
 		// Step 3: decode columns
 		//
 		coefs = new( 1.0f );
-		int wOffset = isAlpha && isHalfScale ? (size * size) : size * (size / 2);
+		int wOffset = size * (size / 2);
 		for ( int i = 0; i < size; ++i )
 			D4InverseTransformColumns( state.RowDecodeBuffer, outputBuffer, size, coefs, i, wOffset );
 

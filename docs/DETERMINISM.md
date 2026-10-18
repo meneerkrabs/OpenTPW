@@ -541,6 +541,24 @@ Two new pins cover the rule, on the same fixed synthetic run and the weather of 
 
 Review fix of the umbrella modifier: in Theme Park Inc only a guest who is already open (state 4) when the rule starts gets it (`TPI-EXE:0x611334`), not one whose umbrella the same step opens (1 to 4 at `0x6111E3`, a due 3 through `0x402d8d`). That moved `RainMoodWithUmbrellasFixedRunHash` from `0xF599E7E8B09C0FB7` to `0xADEE2FA6AFC2ACE3` (104 guests changed, as before); `RainMoodFixedRunHash` (no shop, so no umbrella) and every other pin stand. The optional `Guest.RainMoodAgeStartTurn` (the load turn of an imported guest without a time in the park, `[EXT:rain-mood-imported-age]`) joins the canonical hash and the guests' own digest only when set, which only an import with the extension on does, so no pin is affected.
 
+## Winter
+
+The `opentpw.winter` extension ([WINTER.md](WINTER.md#simulation-phase-w3), `[EXT:winter-save]`) adds a winter kiosk, a glühwein stall and the guest fields `WarmItems` and `WarmUntilDay`. A park without a winter shop and without a guest with an item is untouched by all of it: the host score reads the extension's percentages for its own objects only, the kiosk's
+purchase is the only writer of `WarmItems` and takes **no draw from any stream** (the head item and the colours are hashes of the guest id, `WinterRules.HeadItemOf`, `WinterRules.ColourOf`), and the fields join the canonical hash, the guests' own digest and the guest snapshot only while they are set, so such a park keeps its bytes and its pins.
+`DeterminismTests.EveryExistingPinIsUnchangedWithTheWinterExtensionAndTheWinterWeatherOnOrOffAndNoWinterShop` runs the fixed run, the changing-room run, the umbrellas run and the rain mood run with the extension and the wintry Decembers option each on and off and gets the same hashes (no baseline moved). A park save records the extension only while it uses it
+(`ParkResumeMods.WinterInUse`).
+
+A new pin covers a park with winter shops: `DeterminismTests.WinterFixedRunHash` = `0x8F7023321586F670`, the fixed synthetic run plus a winter kiosk at (10, 1) and a glühwein stall at (10, 8), paid through the economy like the drinks shop, a snowfall from the 20th to the 80th second and from the 140th to the 200th
+(`GuestSimulation.UmbrellaWeatherState`, which the level reads from `ParkWeather`) and a calendar that is December for the first 100 seconds and May after it (`GuestSimulation.WinterMonth`): 49 guests buy a hat or earmuffs or mittens, the kiosk sells 50 times and the stall 70. A park saved mid-snow with items and resumed into a fresh instance
+continues with the same hash (`WinterSimulationTests.AParkSavedMidSnowWithItemsContinuesIdenticallyAfterAResume`).
+
+## Wintry Decembers
+
+The `opentpw.winter-weather` option ([WINTER.md](WINTER.md#simulation-phase-w3), `[EXT:winter-weather]`) is off by default; the level hands it to `ParkWeather` when it builds the weather. The weather is outside the canonical hash ("Weather timing"), but what the guests read from it is not: the umbrella rules, the rain mood and the winter shops see snow instead of a
+thunderstorm in a December of the jungle and fantasy parks. The converter draws nothing for the change (the roll's draws and the tie-break are the same), but with no lightning the lightning clock's draws stop, so the weather stream moves on from the first wintry spell: a park with the option on is another weather from its first December, which is why a save always records
+the option while it is on. The roll's month is derived from the forecast's apply time (`applyAt - DaysOfWarning` days), so the weather snapshot gains nothing and a resume mid-snow continues exactly (`WinterWeatherTests.AWintryWeatherSavedMidSnowContinuesIdenticallyAfterAResume`).
+Two pins cover the jungle's weather turn by turn over its first 400 days under seed 21: `WinterWeatherTests.JungleSeed21OffHash` = `0x58F5D2429FDCADAA` (the original's weather, option off) and `JungleSeed21WintryHash` = `0x2DC4898B7594C4FA` (option on; 29 snowy days, the first on day 343). Halloween and space run the same weather with the option on or off.
+
 ## Tests
 
 `DeterminismTests` (no game data needed):

@@ -1,0 +1,11 @@
+## Winter in the simulation: the kiosk, the glühwein stall and wintry Decembers (October 18, 2026)
+
+Phase W3 of the winter extension ([WINTER.md](../WINTER.md#simulation-phase-w3)): `opentpw.winter` is registered, on by default, and its kiosk and glühwein stall of each theme are listed in the Theme Park World catalogs; guests buy from them. The items are not drawn yet (W4).
+
+- **Extension plumbing.** `OfficialExtensions.Winter` (1.0.0, simulation, on by default, used-only in saves, not in a Theme Park Inc run, `FeatureGates.Winter`), `WinterContent.CatalogRoot` in `ModContentRoots.CatalogRoots` and the `ObjectCatalog` cache key, names and descriptions in the eleven interface languages. A park save records the extension only while
+  the park has one of its shops or a guest with an item or warmth, with the asset keys of the placed shops only.
+- **The kiosk.** `AppearanceEffect` 4: sells only in snow or December to February and not to a guest with both slots full; a purchase gives a head item (hat or earmuffs from a hash of the guest id) first and then mittens, with colours from a hash of guest id and item and **no random draw**. Guest fields `WarmItems` and `WarmUntilDay` are optional, validated, and saved and hashed only when set.
+- **The stall.** A normal drinks shop (`ShopType 4`, Ice mechanics labelled "Spices", no drunk effects) with the weather and season percentages of its `.sam` (`SeasonModifier.*` are our own keys). tp.exe `0x4e16b0` confirms the drinks challenge counts it and the kiosk's `ShopType 1` is counter 5, not costumes.
+- **Wintry Decembers.** `opentpw.winter-weather` (off by default, recorded in every save while on): a December roll in the rain band of the jungle and fantasy parks is snow without lightning, with the storm's drops, so umbrellas and the rain mood read snow; Halloween and space are untouched. tp.exe's converter `0x512f00` has no calendar input.
+- **Pins.** Every existing pin is unchanged with the extension and the option on or off. New: `WinterFixedRunHash` = `0x8F7023321586F670` (kiosk and stall in snow, 49 buyers) and the jungle's 400-day weather pins off `0x58F5D2429FDCADAA` and on `0x2DC4898B7594C4FA`. Resumes mid-snow continue identically.
+- **Tests.** `WinterSimulationTests`, `WinterWiringTests`, `WinterWeatherTests`, the determinism pins; `WinterContentTests` now checks the wiring.

@@ -299,19 +299,21 @@ internal sealed class Advisor : IDisposable
 		// The chosen language's own bank and lips (overlay first, else the installation), for the level's speech as well as the global one:
 		// the Welcome line (response 1) comes from the level bank, which every language of the CD ships (docs/LANGUAGES.md).
 		var languageRoot = language == null ? null : root.TrimStart( '/' );
-		byte[] bankBytes;
+		string bankPath;
 		string source;
 		if ( languageRoot != null && language!.ResolveDataFile( $"{languageRoot}/speechHD.SDT" ) is { } languageBank )
 		{
-			bankBytes = File.ReadAllBytes( languageBank );
+			bankPath = languageBank;
 			source = $"{language.Name}: {languageBank}";
 		}
 		else
 		{
-			bankBytes = File.ReadAllBytes( fileSystem.GetAbsolutePath( $"{root}/speechHD.SDT" ) );
+			bankPath = fileSystem.GetAbsolutePath( $"{root}/speechHD.SDT" );
 			source = $"{root}/speechHD.SDT";
 		}
-		var mpeg = new SoundBank( bankBytes ).GetMpeg( (uint)response.Sample, int.MaxValue, out _, out var playbackBytes )
+		// Read only the selected speech entry: the global bank can contain hundreds of unrelated responses.
+		var bank = new SoundBank( () => File.OpenRead( bankPath ), new FileInfo( bankPath ).Length );
+		var mpeg = bank.GetMpeg( (uint)response.Sample, int.MaxValue, out _, out var playbackBytes )
 			?? throw new FileNotFoundException( $"Speech sample {response.Sample} of response {response.Id} is not in {source}." );
 		var marks = Array.Empty<uint>() as IReadOnlyList<uint>;
 		if ( response.Lip > 0 )

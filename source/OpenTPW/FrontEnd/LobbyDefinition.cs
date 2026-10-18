@@ -14,6 +14,9 @@ public sealed record LobbyFlyingMeshInfo( string Directory, string Mesh, int Cou
 public sealed record LobbyIslandInfo( int Index, string Level, string Directory, string IslandModel, string GateModel, string Name, float Angle, float Height,
 	(byte R, byte G, byte B) SkyColour, IReadOnlyList<string> FlyingMeshes, bool Rainy, int Lightning )
 {
+	/// <summary>Whether the island file has a SKYCOLOUR line; without one the island keeps the random target its constructor drew (<see cref="OpenTPW.LobbyScene"/>).</summary>
+	public bool HasSkyColour { get; init; } = true;
+
 	/// <summary>The island's FLYINGMESH lines in file order (<see cref="FlyingMeshes"/> keeps only their mesh names).</summary>
 	public IReadOnlyList<LobbyFlyingMeshInfo> Flights { get; init; } = Array.Empty<LobbyFlyingMeshInfo>();
 
@@ -100,6 +103,7 @@ public sealed class LobbyDefinition
 			commands.Where( command => command.Name == "FLYINGMESH" && command.Arguments.Count >= 2 ).Select( command => command.Arguments[1] ).ToArray(),
 			rainy.Name != null && Number( rainy.Arguments, 0 ) != 0, lightning.Name == null ? 0 : (int)Number( lightning.Arguments, 0 ) )
 		{
+			HasSkyColour = sky.Name != null,
 			Flights = commands.Where( command => command.Name == "FLYINGMESH" && command.Arguments.Count >= 7 )
 				.Select( command => new LobbyFlyingMeshInfo( command.Arguments[0], command.Arguments[1], (int)Number( command.Arguments, 2 ),
 					new System.Numerics.Vector3( Number( command.Arguments, 3 ), Number( command.Arguments, 4 ), Number( command.Arguments, 5 ) ), Number( command.Arguments, 6 ) ) )

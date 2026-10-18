@@ -110,7 +110,11 @@ public static class WorldStateHash
 			// the analyser's caches are saved for an exact continuation but are a reading aid, not park state: they stay out of the digest
 			var node = JsonSerializer.SerializeToNode( ParkSaveFile.Capture( economy ) );
 			if ( node is JsonObject root )
+			{
 				root.Remove( nameof( ParkSaveFile.Data.AnalyserCaches ) );
+				// the statistics history only feeds the park information window's graph, which no simulation step reads: it stays out of the digest so the pins keep
+				root.Remove( nameof( ParkSaveFile.Data.StatisticsHistory ) );
+			}
 			hash.Add( Canonical( node ) );
 		}
 		// [EXT:smarter-guests] the identity state joins the hash only while the extension or a script mod is on, so every park without it keeps its pins and SchemaVersion

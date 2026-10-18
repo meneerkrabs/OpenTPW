@@ -34,4 +34,8 @@ public interface IGuestPayments
 	void PriceTested( int category, int value ) { }
 	/// <summary>The park's litter by cell, where guests drop theirs (null: litter is not kept).</summary>
 	ParkLitter? Litter => null;
+	/// <summary>The vehicle's group dropped one more guest off: the analyser's running arrivals rise by one (tp.exe <c>0x004CF3E0</c>, <c>+0x20CC0</c>).</summary>
+	void ArrivalCreated() { }
+	/// <summary>A guest that paid its admission reached the stop to leave after <paramref name="days"/> days in the park: the analyser's stay ring takes it (tp.exe <c>0x004C7600</c>).</summary>
+	void StayEnded( int days ) { }
 }

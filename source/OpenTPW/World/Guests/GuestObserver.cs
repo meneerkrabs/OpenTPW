@@ -117,4 +117,10 @@ public interface IGuestObserver
 	/// the guest-time tallies.
 	/// </summary>
 	void Ticked( GuestSimulation simulation, float deltaSeconds );
+
+	/// <summary>A guest vomited (state 6, the illness meter at 100). Additive, phase 5: a default that ignores it, so an observer that does not count vomiting needs nothing.</summary>
+	void Vomited( Guest guest ) { }
+
+	/// <summary>A guest thought <paramref name="thought"/> (<see cref="GuestSimulation"/>'s <c>Think</c>, whether or not a bubble showed it). Additive, phase 5: a default that ignores it.</summary>
+	void Thought( Guest guest, GuestThought thought ) { }
 }

@@ -1,7 +1,7 @@
 namespace OpenTPW;
 
 /// <summary>
-/// The policy of the <c>opentpw.smarter-guests</c> extension (docs/SMARTER-GUESTS.md). Version 1.3.0 adds queue patience (phase 4: a guest does not join a queue whose expected wait, counting only the queue ahead, exceeds its patience and gives up after waiting too long, each only when another ride it could choose is clearly quicker; see <see cref="SmarterGuestsRules.JoinPatienceTurns"/>); 1.2.0 adds spreading (phase 3: an expected-wait queue term for every attraction, a stable per-guest preference per attraction instance and hysteresis in the minor decision, see <see cref="SmarterGuestsRules.ExpectedWait256"/>); 1.1.0 is value for money (phase 2): a guest no longer walks to a shop or sideshow whose price it expects the stand to
+/// The policy of the <c>opentpw.smarter-guests</c> extension (docs/SMARTER-GUESTS.md). Version 1.4.0 adds planning needs (phase 5: a service whose need will cross its level before the guest is done with its ride is scored as if it had, a service on the guest's way gets a small detour step, and shortly after a meal a ride that would make the guest sick scores lower; see <see cref="SmarterGuestsRules.Planned"/> and <see cref="SmarterGuestsRules.TooMuchAfterMeal"/>); 1.3.0 adds queue patience (phase 4: a guest does not join a queue whose expected wait, counting only the queue ahead, exceeds its patience and gives up after waiting too long, each only when another ride it could choose is clearly quicker; see <see cref="SmarterGuestsRules.JoinPatienceTurns"/>); 1.2.0 adds spreading (phase 3: an expected-wait queue term for every attraction, a stable per-guest preference per attraction instance and hysteresis in the minor decision, see <see cref="SmarterGuestsRules.ExpectedWait256"/>); 1.1.0 is value for money (phase 2): a guest no longer walks to a shop or sideshow whose price it expects the stand to
 /// refuse (<see cref="SmarterGuestsRules.WouldRefuse"/>, with a per-guest price sensitivity trait), goes home after <see cref="SmarterGuestsRules.StallsBeforeGoingHome"/> decisions in a row that this rule emptied, and
 /// the booth weighs the entrance fee against a park value that counts the open rides and sideshows (<see cref="SmarterGuestsRules.BoothParkValue"/>). Everything else still delegates to
 /// <see cref="OriginalGuestDecisions"/>. Later phases add their rules here, each one bumping the extension's version, which is the algorithm identity a park save records. The policy draws nothing and holds no
@@ -12,11 +12,24 @@ public sealed class SmarterGuestDecisions : IGuestDecisions
 {
 	private readonly IGuestDecisions original = OriginalGuestDecisions.Instance;
 
+	/// <summary>Which phase 5 rules run: all of them in the shipped extension; fewer only in a measurement or a test (<see cref="SmarterPlanningRules"/>).</summary>
+	private readonly SmarterPlanningRules planning;
+
+	public SmarterGuestDecisions() : this( SmarterPlanningRules.All )
+	{
+	}
+
+	public SmarterGuestDecisions( SmarterPlanningRules planning ) => this.planning = planning;
+
 	public bool UsesExtensionState => true;
 
 	public bool UsesValueForMoney => true;
 
 	public bool UsesSpreading => true;
+
+	public bool UsesPlanning => planning != SmarterPlanningRules.None;
+
+	public bool UsesPlanHorizon => planning.HasFlag( SmarterPlanningRules.Planning );
 
 	/// <summary>The turn this guest's give-up test starts (its own patience band), so the host scans the park's rides for it only from then on.</summary>
 	public int AlternativeLookAfterTurns( in DecisionContext context, in GuestView guest ) =>
@@ -34,9 +47,16 @@ public sealed class SmarterGuestDecisions : IGuestDecisions
 	// [EXT:smarter-guests-value] price enters the choice: a score of 0 is below the choice floor, so the guest does not walk to a stand that will turn it away (the stand-point test stays the host's)
 	public uint ScoreAttraction( in DecisionContext context, in GuestView guest, in AttractionView attraction )
 	{
-		var score = SpreadScore( context, guest, attraction );
-		return score == 0 || !Refuses( context, guest, attraction ) ? score : 0;
+		// [EXT:smarter-guests-planning] a service is scored on the needs the guest will have (planning) or has one step more of when the stop is on its way (detour); a ride, and a service no rule concerns, on the guest as it is
+		var score = SpreadScore( context, Seen( context, guest, attraction ), attraction );
+		score = score == 0 || !Refuses( context, guest, attraction ) ? score : 0;
+		// [EXT:smarter-guests-planning] shortly after a meal a ride that would make this guest sick scores lower (never below the choice floor when it was above it)
+		return planning.HasFlag( SmarterPlanningRules.MealTime ) && score >= AttractionScore.CandidateFloor && SmarterGuestsRules.TooMuchAfterMeal( context, guest, attraction ) ? SmarterGuestsRules.LowerAfterMeal( score ) : score;
 	}
+
+	/// <summary>The guest as it scores this attraction: planned and nudged for a service (<see cref="SmarterGuestsRules.Planned"/>), as it is otherwise.</summary>
+	private GuestView Seen( in DecisionContext context, in GuestView guest, in AttractionView attraction ) =>
+		UsesPlanning ? SmarterGuestsRules.Planned( guest, attraction, context.ParkTurn, planning.HasFlag( SmarterPlanningRules.Planning ), planning.HasFlag( SmarterPlanningRules.Detour ) ) : guest;
 
 	/// <summary>
 	/// The original's score with the queue match replaced by the expected wait (every attraction, at any distance: guests ahead plus guests walking there, over the observed throughput), scaled by the guest's
@@ -72,9 +92,12 @@ public sealed class SmarterGuestDecisions : IGuestDecisions
 		SmarterGuestsRules.IsPriced( attraction )
 		&& SmarterGuestsRules.WouldRefuse( attraction, guest.Money, SmarterGuestsRules.SensitivityPercent( context.Trait( guest, SmarterGuestsRules.PriceSensitivityTrait ) ) );
 
-	/// <summary>True for a stand the price rule zeroed that the original would have let the guest choose (it scores at least the choice floor).</summary>
+	/// <summary>
+	/// True for a stand the price rule zeroed that the original would have let the guest choose (it scores at least the choice floor). Judged on the guest as <see cref="ScoreAttraction"/> sees it (planned), so the two agree on
+	/// which stands the price emptied; the price itself is the real guest's (the host computed the willingness from its real meters, which is what the stand-point test uses).
+	/// </summary>
 	public bool PriceTurnedAway( in DecisionContext context, in GuestView guest, in AttractionView attraction ) =>
-		Refuses( context, guest, attraction ) && original.ScoreAttraction( context, guest, attraction ) >= AttractionScore.CandidateFloor;
+		Refuses( context, guest, attraction ) && original.ScoreAttraction( context, Seen( context, guest, attraction ), attraction ) >= AttractionScore.CandidateFloor;
 
 	/// <summary>Goes home, thinking the original's "too expensive" thought, once the run of price-emptied decisions reaches the limit.</summary>
 	// [EXT:smarter-guests-value] the original guest, refused at the stand, loses happiness until it leaves; this one is not sent to the stand and, with nothing else to do, leaves with the same thought (thought 6, [BIN:TPW-EXE:0x00500756 price refusal])

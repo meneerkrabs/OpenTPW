@@ -18,7 +18,8 @@ public static class GuestReportCompare
 	{
 		"queue.boarded.rate" or "happiness.guestTime" or "happiness.survivors" or "revenue.perAdmittedGuest" => 1,
 		"queue.rejected.rate" or "queue.rejected.price.rate" or "queue.wait.p50" or "queue.wait.p90" or "queue.wait.p99" or "queue.wait.p90.censored" or "queue.wait.p99.censored"
-			or "departures.perAdmission" or "departures.happinessZero.perAdmission" or "use.giniRides" or "use.giniRidesPerCapacity" or "use.guestSecondsPerRide" or "guests.stuck" => -1,
+			or "departures.perAdmission" or "departures.happinessZero.perAdmission" or "use.giniRides" or "use.giniRidesPerCapacity" or "use.guestSecondsPerRide" or "guests.stuck"
+			or "queue.abandoned.needToilet.rate" or "needs.vomits.perAdmission" or "needs.vomitsAfterMeal.perAdmission" or "needs.thoughts.perAdmission" or "departures.unmetNeeds.perAdmission" or "departures.meanIllness" => -1,
 		_ => 0
 	};
 
@@ -50,6 +51,9 @@ public static class GuestReportCompare
 		static string Extensions( JsonObject report ) => report["extensions"] is JsonArray { Count: > 0 } list ? string.Join( ", ", list.Select( item => (string)item! ) ) : "none";
 		if ( Extensions( baseline ) != Extensions( candidate ) )
 			notes.AppendLine( $"extensions: baseline {Extensions( baseline )}, candidate {Extensions( candidate )}" );
+		static string Rules( JsonObject report ) => (string?)report["planningRules"] ?? "All";
+		if ( Rules( baseline ) != Rules( candidate ) )
+			notes.AppendLine( $"phase 5 rules: baseline {Rules( baseline )}, candidate {Rules( candidate )}" );
 		static string Mods( JsonObject report ) => report["mods"] is JsonArray { Count: > 0 } list ? string.Join( ", ", list.Select( item => (string)item! ) ) : "none";
 		if ( Mods( baseline ) != Mods( candidate ) )
 			notes.AppendLine( $"mods: baseline {Mods( baseline )}, candidate {Mods( candidate )}" );

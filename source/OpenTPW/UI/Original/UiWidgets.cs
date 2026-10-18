@@ -90,7 +90,7 @@ public sealed class UiContext
 			ix = (int)MathF.Round( x );
 			iy = (int)MathF.Round( y );
 		}
-		// [APPROX:UI-007] drop shadow one text pixel down-right; the original's control text renderer (0x48f830) draws each string once, without a shadow, and the glyph draw entry 0x6ae0f0 is reached only through the text box routine 0x492750 (single call per caller; BF4 glyphs hold coverage only) — evidence needed: the sprite draw of a text control's bitmap (0x48f410 → 0x588c20 is only the release of the control's sprite quads, and the text control's vtable 0x6ff350 has no draw slot of its own (slot 2 is a bare return), so the control's sprite quads are drawn by the engine's sprite pass, where no reader of the colour at +0x78 was found) and what in the capture looks like a shadow
+		// [APPROX:UI-007] drop shadow one text pixel down-right; the original's control text renderer (0x48f830) draws each string once, without a shadow, and the engine's sprite draw 0x58a010 submits the control's quads with the control colour as their only diffuse colour (no offset pass) — evidence needed: the blend and texture-stage state of those quads, to tell whether the capture's apparent shadow is a render-state effect
 		if ( shadow )
 			Batch.AddText( font, layout, ix + scale, iy + scale, UiColors.Shadow, scale );
 		Batch.AddText( font, layout, ix, iy, color, scale, text );

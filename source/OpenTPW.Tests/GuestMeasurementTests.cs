@@ -69,7 +69,7 @@ public class GuestMeasurementTests
 	}
 
 	/// <summary>
-	/// The scenario's guests with <c>opentpw.smarter-guests</c> 1.3.0 on (docs/SMARTER-GUESTS.md, phases 2 to 4). The scenario's dear shop (value for money) and its four rides (the queue estimate, the preference, the queue patience and the
+	/// The scenario's guests with <c>opentpw.smarter-guests</c> 1.4.0 on (docs/SMARTER-GUESTS.md, phases 2 to 5; this scenario has no food shop and nobody near a need level at a decision, so phase 5 does not act in it; the pin has held since 1.2.0, because the queue patience rules of 1.3.0 do not act in this 12,000-tick run either). The scenario's dear shop (value for money) and its four rides (the queue estimate, the preference, the queue patience and the
 	/// hysteresis) are where the rules act, so unlike the synthetic park's pin this one moves with the rules: it is the on-path pin of the behaviour. A deliberate change of a rule constant changes this value (and bumps the extension's version).
 	/// </summary>
 	private const ulong ScenarioSmarterFixedRunHash = 0xC0344925E23A32C1UL;
@@ -82,6 +82,31 @@ public class GuestMeasurementTests
 		Assert.IsInstanceOfType( park.Guests.Decisions, typeof( SmarterGuestDecisions ) );
 		Assert.AreNotEqual( ScenarioFixedRunHash, park.Hash, "the rules change the scenario's guests" );
 		Assert.AreEqual( ScenarioSmarterFixedRunHash, park.Hash, $"0x{park.Hash:X16}" );
+		// the phase 5 rules switched off are version 1.3.0's guests, so the pin of 1.3.0 holds for them as it was set
+		var phase4 = new ParkScenario( new WorldSeed( 1 ), decisions: new SmarterGuestDecisions( SmarterPlanningRules.None ) );
+		phase4.Run( 12_000 );
+		Assert.AreEqual( ScenarioSmarterFixedRunHash, phase4.Hash, $"0x{phase4.Hash:X16}" );
+	}
+
+	/// <summary>
+	/// The scenario with its food shop (<see cref="ParkScenarioOptions.FoodShop"/>) and the extension (1.4.0) on: guests eat, so the meal rule (docs/SMARTER-GUESTS.md, phase 5) acts. The on-path pin of phase 5, which the scenario
+	/// pin above cannot be: it did not move, because the rules of phase 5 need a meal or a meter near a level. A deliberate change of a phase 5 constant changes this value (and bumps the extension's version).
+	/// </summary>
+	private const ulong ScenarioFoodSmarterFixedRunHash = 0x336E044598FE1EBBUL;
+
+	[TestMethod]
+	public void ParkScenarioWithAFoodShopAndTheSmarterGuestsExtensionOnIsPinned()
+	{
+		using var scope = OpenTPW.Mods.OpenTpwExtensions.Use( SmarterGuestsTests.On() );
+		var park = new ParkScenario( new WorldSeed( 1 ), new ParkScenarioOptions { FoodShop = true } );
+		park.Run( 12_000 );
+		Assert.IsInstanceOfType( park.Guests.Decisions, typeof( SmarterGuestDecisions ) );
+		var phase4 = new ParkScenario( new WorldSeed( 1 ), new ParkScenarioOptions { FoodShop = true }, new SmarterGuestDecisions( SmarterPlanningRules.None ) );
+		phase4.Run( 12_000 );
+		Assert.AreNotEqual( phase4.Hash, park.Hash, "the phase 5 rules change the run once guests eat" );
+		Assert.IsTrue( park.Guests.SmarterGuests!.Meals.Count > 0 && phase4.Guests.SmarterGuests!.Meals.Count == 0, "the meal times are kept by 1.4.0 and not by 1.3.0's rules" );
+		var hash = WorldStateHash.Compute( new WorldStateSources { Seed = park.Seed, Guests = park.Guests } );
+		Assert.AreEqual( ScenarioFoodSmarterFixedRunHash, hash, $"0x{hash:X16} (the guests' own hash is 0x{park.Hash:X16})" );
 	}
 
 	[TestMethod]

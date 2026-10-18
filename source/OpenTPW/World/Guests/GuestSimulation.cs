@@ -556,6 +556,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		Observer?.Departed( guest );
 		// [EXT:smarter-guests-value] a departing guest's run of price-emptied decisions goes with it, so the bookkeeping is bounded by the guests in the park
 		SmarterGuests?.Stalls.Reset( guest.BirthId );
+		SmarterGuests?.Meals.Forget( guest.BirthId );
 		// [BIN:TPW-EXE:0x0050B780 destroy request] a leaving guest asks for its destruction (0x0050B780 → 0x00516310); the id is freed at the park turn's end (0x00516641)
 		things.QueueDestroy( guest.Id );
 		LeaveCellLists( guest );
@@ -1583,6 +1584,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 				StartActivity( guest, GuestActivity.Cheering );
 				break;
 			case GuestDecision.Outcome.Vomit:
+				Observer?.Vomited( guest );
 				StartActivity( guest, GuestActivity.Vomiting );
 				DropLitter( guest, LitterType.Vomit );
 				guest.Nausea = 0;
@@ -2095,6 +2097,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	// Approximation (GUEST-006, registered at UpdateNeedsTurn): bubbles are always on; the original skips them in an online game (GameType 1) and while bits 0x16 of the flag word 0x00790AB0 are set, whose meaning is untraced
 	private void Think( Guest guest, GuestThought thought )
 	{
+		Observer?.Thought( guest, thought );
 		guest.Thought = thought;
 		guest.BubbleThought = GuestThought.None;
 		if ( !GuestThoughts.TakesBubble( (int)thought, ParkTurn, guest.BubbleTurn ) )
@@ -2171,6 +2174,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		BeginReservations();
 		try
 		{
+		// the plan's scan of the rides shares the decision's walker count
+		view = WithPlanHorizon( view, guest, null );
 		foreach ( var attraction in NewestFirst() )
 		{
 			// an attraction without a back-of-queue cell is never a candidate
@@ -2370,6 +2375,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		BeginReservations();
 		try
 		{
+		view = WithPlanHorizon( view, guest, target );
 		for ( var x = guest.CellX - 2; x < guest.CellX + 2; x++ )
 		{
 			for ( var y = guest.CellY - 2; y < guest.CellY + 2; y++ )
@@ -2381,7 +2387,9 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 					if ( candidate.EntranceCell != (x, y) || candidate.AttractionId == target.AttractionId || candidate.JoinCell == null
 						|| !candidate.IsOpen || candidate.IsBrokenDown || candidate.QueueLength >= RideVisitorBridge.PositionsPerCell * candidate.QueueSizeInCells )
 						continue;
-					var score = decisions.ScoreAttraction( context, view, ViewOf( candidate, guest ) );
+					// [EXT:smarter-guests-planning] a candidate in the window stands on the guest's way: a policy that plans is told so (the window's rule is the original's definition of "near the route")
+					var candidateView = ViewOf( candidate, guest );
+					var score = decisions.ScoreAttraction( context, view, decisions.UsesPlanning ? candidateView with { OnTheWay = true } : candidateView );
 					if ( decisions.BeatsInMinorDecision( context, view, score, bestScore ) )
 						(best, bestScore) = (candidate, score);
 				}
@@ -3173,6 +3181,9 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		var effects = UseEffects.Apply( new GuestMeters( guest.Happiness, guest.Thirst, guest.Hunger, guest.Toilet, guest.Nausea ),
 			ride.ThirstEffect, ride.HungerEffect, ride.VomitEffect, ride.HappinessEffect );
 		(guest.Happiness, guest.Thirst, guest.Hunger, _, guest.Nausea) = effects;
+		// [EXT:smarter-guests-planning] a use that takes hunger off is a meal; the extension remembers when (the original keeps nothing)
+		if ( ride.HungerEffect > 0 && decisions.UsesPlanning )
+			SmarterGuests?.Meals.Note( guest.BirthId, ParkTurn );
 		// [BIN:TPW-EXE:0x4fe303 drink or meal voice] after the thirst and hunger meters the use routine compares the type's thirst effect (+0x144) with its hunger effect (+0x148): the larger thirst plays cat_kids 0x83, the larger hunger 0x84, equal ones nothing
 		if ( ride.ThirstEffect != ride.HungerEffect )
 			Voiced?.Invoke( guest, ride.ThirstEffect > ride.HungerEffect ? DrinkVoiceEvent : MealVoiceEvent );

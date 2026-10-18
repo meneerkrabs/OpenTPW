@@ -328,6 +328,7 @@ public sealed partial class ParkHud
 		// [BIN:TPW-EXE:0x4af8b4 ride erase] b_erase (control 0x3e2b) deletes the ride (0x48cd10), asking first (UITEXT 0x18c) when the Confirmations option [0x78d90f] is on
 		BuildObjectWindow();
 		AddShopPriceButton();
+		AddWaveSettingsButton();
 		BuildObjectSettingControls();
 		AddRideUpgradeButton();
 		AddCallStaffButton();
@@ -709,6 +710,7 @@ public sealed partial class ParkHud
 
 		UpdateCoasterPanelElements();
 		UpdateShopPriceButton( mouseCaptured, keyboardCaptured, textCaptured );
+		UpdateWaveSettingsButton();
 		UpdateRideUpgradeButton( input );
 		UpdateCallStaffButton();
 		UpdateEconomyElements();
@@ -864,9 +866,9 @@ public sealed partial class ParkHud
 			&& level.BuyLandTool is not { IsActive: true } && level.AreaClearTool is not { IsActive: true } && level.PoolTool is not { IsActive: true } && input.LeftReleased && !toolPress )
 			{
 				var clicked = level.Objects.FindAt( cursorX, cursorY );
-				// [EXT:pools-waves] a deliberate second click on the wave machine that is already selected steps its wave settings; selecting it (here or from the attractions list) changes nothing (ParkHud.Pools.cs)
-				if ( !ChatMode && clicked != null && clicked == selectedObject && FeatureGates.Pools && PoolAttractions.KindOf( clicked.Entry ) == PoolAttractionKind.WaveMachine )
-					StepPoolWaves( clicked );
+				// [EXT:pools-waves] a deliberate second click on the wave machine that is already selected opens its settings window; selecting it (here or from the attractions list) changes nothing (ParkHud.Pools.cs)
+				if ( !ChatMode && clicked != null && clicked == selectedObject && IsWaveMachine( clicked ) )
+					OpenWaveSettings( clicked );
 				// a click on a track add-on opens its ride's window (Level.WindowTarget); the chat mode has no object window
 				if ( !ChatMode )
 					SelectObject( level.WindowTarget( clicked ) );

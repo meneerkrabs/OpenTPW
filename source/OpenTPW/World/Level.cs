@@ -554,6 +554,11 @@ public partial class Level : IDisposable
 		GuestRenderer = new GuestRenderer( Guests, park.Heightfield, sprites ) { Draws = guest => (!(guest.IsSwimming || guest.InPoolActivity) || SwimmerRenderer == null) && (costumes.Count == 0 || !guest.InCostume) };
 		if ( costumes.Count > 0 )
 			CostumeRenderer = new GuestRenderer( Guests, park.Heightfield, costumes ) { Draws = guest => guest.InCostume && (!(guest.IsSwimming || guest.InPoolActivity) || SwimmerRenderer == null) };
+		// the riders of the bounce rides are drawn as bodies on the ride (tp.exe 0x00557AB0, BounceRiders), by the set of the guest's own kind
+		var bounceRiders = new FlatRideBounceRiders( Objects );
+		GuestRenderer.BounceRiders = bounceRiders;
+		if ( CostumeRenderer != null )
+			CostumeRenderer.BounceRiders = bounceRiders;
 		RideHeadRenderer = new RideHeadRenderer( Guests, headSprites, Objects ) { Draws = costumeHeads.Count == 0 ? null : guest => !guest.InCostume };
 		RideHeadRenderer.AddSource( new TrackHeadSources( () => trackRenderers.Values ) );
 		RideHeadRenderer.AddSource( new TourHeadSources( () => tourRenderer ) );

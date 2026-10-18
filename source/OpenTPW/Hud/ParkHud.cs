@@ -119,7 +119,7 @@ public sealed partial class ParkHud
 
 	public OriginalObject? SelectedObject => selectedObject;
 	/// <summary>True while a menu is on top of the HUD; the buy, staff, attractions and visitors windows, a visit's chat mode and its name popups do not pause.</summary>
-	public bool Paused => Stack.Screens.Any( screen => screen != hud && screen != rideScreen && screen != buyScreen && screen != staffScreen
+	public bool Paused => Stack.Screens.Any( screen => screen != hud && screen != rideScreen && screen != finaleScreen && screen != buyScreen && screen != staffScreen
 		&& screen != attractionScreen && screen != visitorScreen && screen != chatModeScreen && screen.Name != OpenTPW.UI.ChatPanel.PopupScreenName );
 	public IReadOnlyList<string> Messages => messages.Select( message => message.Text ).ToArray();
 	/// <summary>The park simulation's time scale for the screens now open (see <see cref="TimeScaleFor"/>).</summary>
@@ -685,6 +685,8 @@ public sealed partial class ParkHud
 	// Explicit captures run the identical frame body in asset-free tests. Null samples native IO at its original point.
 	internal bool Update( UiContext context, UiInput input, bool? mouseCaptured, bool? keyboardCaptured, bool? textCaptured )
 	{
+		if ( UpdateResearchFinale( context, input, mouseCaptured, keyboardCaptured, textCaptured ) )
+			return true;
 		var ridingAtStart = IsRiding;
 		SyncRideScreen( context.Delta );
 		HandleChatModeKey();

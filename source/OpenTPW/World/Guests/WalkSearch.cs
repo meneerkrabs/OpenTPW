@@ -36,7 +36,7 @@ public static class WalkEdges
 		if ( !map.InBounds( tx, ty ) )
 			return true;
 		// Elevated decks have their own edges. Neither off-path movement nor walk masks may bypass their sides.
-		if ( map.PoolBridges is { } bridges && (bridges.Covers( x, y ) || bridges.Covers( tx, ty )) )
+		if ( map.PoolBridges is { Count: > 0 } bridges && (bridges.Covers( x, y ) || bridges.Covers( tx, ty )) )
 			return !bridges.Connects( x, y, direction );
 		var from = map.RawTypeAt( x, y );
 		var to = map.RawTypeAt( tx, ty );

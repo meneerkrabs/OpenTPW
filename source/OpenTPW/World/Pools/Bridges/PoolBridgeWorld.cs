@@ -60,7 +60,7 @@ public sealed class PoolBridgeWorld
 
 	public bool Connects( int x, int y, int direction )
 	{
-		if ( direction is < 0 or > 3 ) return false;
+		if ( Count == 0 || direction is < 0 or > 3 ) return false;
 		var (dx, dy) = GuestPathGrid.Directions[direction];
 		var target = (X: x + dx, Y: y + dy);
 		var bridge = At( x, y ) ?? At( target.X, target.Y );
@@ -73,6 +73,7 @@ public sealed class PoolBridgeWorld
 
 	public byte LinksAt( int x, int y )
 	{
+		if ( Count == 0 ) return 0;
 		byte links = 0;
 		for ( var d = 0; d < 4; d++ ) if ( Connects( x, y, d ) ) links |= GuestPathGrid.LinkValue( d );
 		return links;

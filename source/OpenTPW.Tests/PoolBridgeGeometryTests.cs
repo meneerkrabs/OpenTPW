@@ -203,4 +203,25 @@ public class PoolBridgeGeometryTests
 		}
 	}
 
+	[TestMethod]
+	public void WalkHeightMatchesEveryAuthoredStairTopInAllFourDirections()
+	{
+		var asset = PoolBridgeAsset.Load( Path.Combine( Folder(), "bridge.json" ) );
+		var deck = asset.Parts.Single( p => p.Name == "deck" );
+		for ( var direction = 0; direction < 4; direction++ )
+		{
+			var bridge = new PoolBridge( 12, 14, direction, 1250 );
+			var (dx, dy) = GuestPathGrid.Directions[direction];
+			foreach ( var along in Enumerable.Range( 0, 10 ).SelectMany( step => new[] { 1f + 2 * step, 69f - 2 * step } ).Concat( new[] { 25f, 35f, 45f } ) )
+			{
+				// Measure the committed tread's vertices, not another copy of HeightAt's formula.
+				var surface = deck.Vertices.Where( v => MathF.Abs( v[0] - along ) < 1f ).Max( v => v[2] );
+				var x = bridge.X + .5f + dx * (along / asset.UnitsPerCell - .5f);
+				var y = bridge.Y + .5f + dy * (along / asset.UnitsPerCell - .5f);
+				Assert.AreEqual( bridge.Ground + surface * OriginalParkPlacement.CellSize / asset.UnitsPerCell,
+					bridge.HeightAt( x, y ), 0.0001f, $"Direction {direction}, model X {along}: feet on the actual tread." );
+			}
+		}
+	}
+
 }

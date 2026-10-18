@@ -173,7 +173,7 @@ public sealed class GuestPathGrid
 		var ny = y + dy;
 		if ( !IsWalkable( x, y ) || !IsWalkable( nx, ny ) )
 			return false;
-		if ( Cells.PoolBridges is { } bridges && (bridges.Covers( x, y ) || bridges.Covers( nx, ny )) )
+		if ( Cells.PoolBridges is { Count: > 0 } bridges && (bridges.Covers( x, y ) || bridges.Covers( nx, ny )) )
 			return bridges.Connects( x, y, direction );
 		return (Cells.LinksAt( x, y ) & LinkValue( direction )) != 0 || (Cells.LinksAt( nx, ny ) & LinkValue( (direction + 2) & 3 )) != 0;
 	}

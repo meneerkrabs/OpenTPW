@@ -33,6 +33,39 @@ public class PoolBridgeWorldTests
 	}
 
 	[TestMethod]
+	public void LevelBridgeSiteRejectsForbiddenTerrainAndExistingCoasterNodes()
+	{
+		var terrain = new PoolsTests.FlatGrid( 64, 64 );
+		var ride = new CoasterRide( CoasterDefinition.FromValues( CoasterTests.PcSettings() ), new CoasterWorld( 1 ), "Bridge collision" );
+		var builder = new CoasterBuilder( ride, new CoasterSite( 64, 64 ) );
+		CoasterTests.PlaceStation( builder, (20, 20) );
+		var coasters = new[] { ride };
+		var occupied = ride.Track.Nodes[0];
+		Assert.IsTrue( Level.IsPoolBridgeSiteReserved( terrain, coasters, occupied.X, occupied.Y ) );
+		Assert.IsFalse( Level.IsPoolBridgeSiteReserved( terrain, coasters, 2, 3 ) );
+		terrain.Terrain = ( _, _ ) => OriginalPlacementResult.NoTerrainSurface;
+		Assert.IsTrue( Level.IsPoolBridgeSiteReserved( terrain, coasters, 2, 3 ) );
+		terrain.Terrain = ( _, _ ) => OriginalPlacementResult.Allowed;
+		Assert.IsTrue( Level.IsPoolBridgeSiteReserved( terrain, coasters, 64, 3 ) );
+		Assert.IsTrue( Level.IsPoolBridgeSiteReserved( terrain, coasters, -1, 3 ) );
+	}
+
+	[TestMethod]
+	public void CoasterAreaCannotPlacePylonsOnBridgeApproachesOrEndConnections()
+	{
+		var cells = Crossing();
+		var world = new PoolBridgeWorld( cells );
+		Assert.IsTrue( Level.IsCoasterAreaCell( cells, 2, 3 ) );
+		Assert.IsTrue( Level.IsCoasterAreaCell( cells, 1, 3 ) );
+		Assert.AreEqual( PoolBridgeResult.Ok, world.TryAdd( 2, 3, 1 ) );
+		for ( var x = 1; x <= 9; x++ ) Assert.IsFalse( Level.IsCoasterAreaCell( cells, x, 3 ) );
+		Assert.IsTrue( Level.IsCoasterAreaCell( cells, 2, 4 ) );
+		Assert.AreEqual( PoolBridgeResult.Ok, world.RemoveAt( 2, 3 ) );
+		Assert.IsTrue( Level.IsCoasterAreaCell( cells, 2, 3 ) );
+		Assert.IsTrue( Level.IsCoasterAreaCell( cells, 1, 3 ) );
+	}
+
+	[TestMethod]
 	public void FlatBridgePreservesUnderlyingCellsAndOnlyTouchesVersionOnMutation()
 	{
 		var cells = Crossing();

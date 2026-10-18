@@ -596,6 +596,9 @@ internal static class Game
 							var centreX = grid.X + (originX + shape.Average( cell => cell.X ) + 0.5f) * ObjectPlacement.CellSize;
 							var centreY = grid.Y + (originY + shape.Average( cell => cell.Y ) + 0.5f) * ObjectPlacement.CellSize;
 							Log.Trace( FormattableString.Invariant( $"--debug-pool: painted {stroke.Cells.Count} cells at {originX},{originY} (engine centre {centreX:0.#},{centreY:0.#}), charged {stroke.Charged}, refusal {stroke.FirstRefusal?.Reason.ToString() ?? "none"}." ) );
+							// Place the bridge before swimmers: its normal standing guard must never be bypassed.
+							var debugBridge = args.Contains( "--debug-bridge" )
+								? level.BuildDebugPoolBridge( shape.Select( cell => (X: originX + cell.X, Y: originY + cell.Y) ).ToArray() ) : null;
 							// [EXT:debug-swimmers] smoke-only: --debug-swimmers N builds a changing room beside the pool (through the level's own placement, which charges it and needs the pool at its back) and
 							// puts N guests into the water at once, so a capture shows swimmers (docs/POOLS.md)
 							if ( GetOption( args, "--debug-swimmers", "guests to put into the pool" ) is { } swimText && int.TryParse( swimText, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var swimmerCount ) )
@@ -606,6 +609,7 @@ internal static class Game
 							// [EXT:debug-slide] smoke-only: --debug-slide flume|tube builds a slide tower beside the pool and lays a valid slide from it into the water (docs/POOLS.md, "Water slides")
 							if ( GetOption( args, "--debug-slide", "flume or tube" ) is { } slideText )
 								PlaceDebugSlide( level, shape.Select( cell => (X: originX + cell.X, Y: originY + cell.Y) ).ToArray(), slideText );
+							if ( debugBridge != null ) level.StartDebugBridgeWalkers( debugBridge );
 							return;
 						}
 				Log.Warning( "--debug-pool: no place near the camera target takes the whole shape." );

@@ -65,7 +65,7 @@ public sealed class PoolRenderer : Entity
 	private readonly PoolStyle style;
 	// the opaque parts are created first, so they draw before the translucent water
 	private readonly PoolPartEntity lowerWalls, floor, upperWalls, coping, water;
-	// [EXT:pools-waves] the water of up to four pools with a wave machine is drawn by entities of their own (created before the swimmers' renderer, so the order of drawing stays), each with its own wave
+	// [EXT:pools-waves] the water of up to eight pools with a wave machine is drawn by entities of their own (created before the swimmers' renderer, so the order of drawing stays), each with its own wave
 	private readonly PoolPartEntity[] waveWater = new PoolPartEntity[WaveSlots];
 	private readonly PoolWaveSettings?[] waveSettings = new PoolWaveSettings?[WaveSlots];
 	private readonly List<Texture> textures = new();
@@ -74,8 +74,8 @@ public sealed class PoolRenderer : Entity
 	private ulong seenSignature;
 	private bool deleted;
 
-	/// <summary>[EXT:pools-waves] How many pools with waves are drawn with their own wave at once; a fifth draws flat.</summary>
-	public const int WaveSlots = 4;
+	/// <summary>[EXT:pools-waves] How many pools with waves are drawn with their own wave at once; a ninth draws flat.</summary>
+	public const int WaveSlots = 8;
 	/// <summary>[EXT:pools-waves] The park turn with a fraction, for the frame (set by the level; null draws flat water). Presentation only.</summary>
 	public Func<double>? Turn { get; set; }
 	/// <summary>[EXT:pools-waves] The park's water attractions: a pool has waves only while a wave machine of it is on.</summary>

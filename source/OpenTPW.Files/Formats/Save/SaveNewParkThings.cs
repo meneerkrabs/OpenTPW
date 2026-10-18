@@ -45,6 +45,7 @@ public static class SaveNewParkThings
 	/// no response yet; the code that posts it at the park's start is not read.
 	/// </summary>
 	// [BIN:TPW-EXE:0x599E70 advisor constructor] the valid byte of each of the eight 0x18-byte pending slots (from +0x28) is 0, +0xC, +0x10 (time signature, sound), +0xD4, +0xD8 and +0xDC are 0, each of the 0x15F (351) history entries from +0xE0 is {0, 0xFFFFFFFF, 0, 0} and +0x16E4 (requested last tutorial) is 0
+	// [APPROX:SAVE-012] the first pending record (valid, message 0, score 100,000, response -1) is observed in the four restart.INTS, not read from tp.exe: the constructor leaves every slot free and the code that posts it at the park's start is not found
 	public static byte[] AdvisorController( ushort mapChild, ushort mapParent )
 	{
 		var writer = new SaveByteWriter();

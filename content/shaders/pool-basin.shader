@@ -8,6 +8,8 @@ common {
 
     vec3 g_vLightPos;
     vec3 g_vLightColor;
+    // [EXT:point-lights] the number of lights after the block (the padding after the light colour)
+    float g_flLightCount;
     vec3 g_vCameraPos;
 
     float g_flTime;
@@ -18,6 +20,8 @@ common {
     float g_flDeepB;
     vec3 g_vFogColor;
     float g_flGlow;
+    // [EXT:point-lights] 16 lights x 2 vec4, from byte 272; only the lights of a draw are uploaded
+    vec4 g_vPointLight[32];
   } g_oUbo;
 }
 
@@ -54,6 +58,24 @@ fragment {
     return max( dot( N, L ), 0.0 ) * g_oUbo.g_vLightColor + vec3( 0.4 );
   }
 
+  // [EXT:point-lights] The park's point lights (docs/LIGHTS.md): what the lit uniform block carries after g_vFogColor, g_flLightCount lights of two vec4 each (the position and the squared
+  // radius; the colour and one over the squared radius). The original engine's falloff, (r2 - d2) x (1 / r2) added to the lit colour with no normal term, full at the centre and nothing
+  // at the radius (tp.exe 0x5741B0). The world position is the model-space position the shader gets from g_mModel. With no light (count 0) nothing is added, so such a draw shades as before.
+  vec3 pointLights( vec3 positionWs )
+  {
+    vec3 sum = vec3( 0.0 );
+    int count = min( int( g_oUbo.g_flLightCount ), 16 );
+    for ( int i = 0; i < count; i++ )
+    {
+      vec4 a = g_oUbo.g_vPointLight[i * 2];
+      vec4 b = g_oUbo.g_vPointLight[i * 2 + 1];
+      vec3 d = positionWs - a.xyz;
+      float share = ( a.w - dot( d, d ) ) * b.w;
+      sum += b.xyz * max( share, 0.0 );
+    }
+    return sum;
+  }
+
   void main()
   {
     vec3 position = vs_out.vPosition;
@@ -65,7 +87,11 @@ fragment {
     vec3 deep = vec3( g_oUbo.g_flDeepR, g_oUbo.g_flDeepG, g_oUbo.g_flDeepB );
     float t = g_oUbo.g_flTime;
     float caustic = pow( abs( sin( position.x * 2.6 + t * 0.9 ) * sin( position.y * 2.3 - t * 0.7 ) + sin( ( position.x + position.y ) * 1.7 + t * 0.5 ) * 0.5 ), 3.0 );
-    vec3 lit = tile * ( 0.75 + 0.35 * caustic * ( 1.0 - depth * 0.5 ) );
+    vec3 shading = vec3( 0.75 + 0.35 * caustic * ( 1.0 - depth * 0.5 ) );
+    // [EXT:point-lights] lights in reach (a lamp over or in the pool) add to the tiles' shading, under the water tint
+    if ( g_oUbo.g_flLightCount > 0.5 )
+      shading += pointLights( position );
+    vec3 lit = tile * shading;
     vec3 colour = mix( lit, deep * 0.55, depth * 0.62 );
     colour *= mix( 1.0, 0.45, depth );
     colour += g_oUbo.g_flGlow * deep * 0.25 * ( 1.0 - depth * 0.4 );

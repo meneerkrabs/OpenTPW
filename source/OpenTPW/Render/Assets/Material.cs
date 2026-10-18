@@ -42,6 +42,7 @@ public partial class Material : Asset
 	{
 		Shader = new Shader( shaderPath );
 		Shader.OnRecompile += () => SetupResources( flags );
+		ReceivesPointLights = ShaderReadsPointLights( shaderPath );
 
 		All.Add( this );
 		SetupResources( flags );
@@ -52,6 +53,7 @@ public partial class Material : Asset
 		Shader = new Shader( shaderPath );
 		Shader.OnRecompile += () => SetupResources( flags );
 		UniformBufferType = uniformBufferType;
+		ReceivesPointLights = ShaderReadsPointLights( shaderPath );
 
 		All.Add( this );
 		SetupResources( flags );
@@ -155,6 +157,29 @@ public partial class Material : Asset
 	public void Set<T>( string name, T obj ) where T : unmanaged
 	{
 		Render.UpdateUniform( ScratchBuffer, obj );
+		Bind( name, ScratchBuffer );
+	}
+
+	/// <summary>
+	/// [EXT:point-lights] Whether the shader reads the point lights after the uniform block (<c>g_vPointLight</c>): the park's lit shaders (test.shader for the ground, objects,
+	/// coasters and tracks, pool-deck.shader and pool-basin.shader for the pools). The sprite, particle, sky and water shaders do not, and a draw of theirs never uploads lights.
+	/// </summary>
+	public bool ReceivesPointLights { get; }
+
+	private static bool ShaderReadsPointLights( string shaderPath )
+	{
+		var file = System.IO.Path.GetFileName( shaderPath );
+		return file.Equals( "test.shader", StringComparison.OrdinalIgnoreCase ) || file.Equals( "pool-deck.shader", StringComparison.OrdinalIgnoreCase )
+			|| file.Equals( "pool-basin.shader", StringComparison.OrdinalIgnoreCase );
+	}
+
+	/// <summary>
+	/// [EXT:point-lights] Writes the block and the first <paramref name="lightCount"/> lights of <paramref name="value"/> in one upload (the block's own bytes when there are no lights).
+	/// </summary>
+	internal void Set( string name, ref LitObjectUniformBuffer value, int lightCount )
+	{
+		value.Base.LightCount = lightCount;
+		Render.UpdateUniform( ScratchBuffer, ref value, LitObjectUniformBuffer.UploadSize( lightCount ) );
 		Bind( name, ScratchBuffer );
 	}
 

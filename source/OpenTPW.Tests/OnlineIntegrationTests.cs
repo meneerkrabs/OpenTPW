@@ -17,13 +17,15 @@ public class OnlineIntegrationTests
 	internal static async Task PumpUntilIdle( OnlineSession session )
 	{
 		var until = DateTime.UtcNow.AddSeconds( 10 );
-		while ( session.Busy > 0 && DateTime.UtcNow < until )
+		// chat traffic runs beside the operation slot (OnlineSession.ChatBusy), so both must settle
+		while ( (session.Busy > 0 || session.ChatBusy) && DateTime.UtcNow < until )
 		{
 			session.Pump();
 			await Task.Delay( 10 );
 		}
 		session.Pump();
 		Assert.AreEqual( 0, session.Busy, session.Status );
+		Assert.IsFalse( session.ChatBusy, session.Status );
 	}
 
 	[TestMethod]
@@ -72,6 +74,129 @@ public class OnlineIntegrationTests
 
 			ann.Dispose();
 			bob.Dispose();
+		}
+		finally
+		{
+			server.DeleteData();
+		}
+	}
+
+	/// <summary>Every cell passable (the presence's rules are tested in ParkPresenceStateTests).</summary>
+	private sealed class OpenGround : IPresenceGround
+	{
+		public int Width => 128;
+		public int Height => 128;
+		public bool IsPassable( int x, int y ) => true;
+	}
+
+	private static ParkPresence Visit( OnlineSession session, string parkId, (float X, float Y) start )
+	{
+		var clock = System.Diagnostics.Stopwatch.StartNew();
+		return new ParkPresence( session, parkId, session.Settings.PlayerName!, new OpenGround(), start, () => clock.Elapsed.TotalSeconds );
+	}
+
+	/// <summary>
+	/// Pumps both sessions and updates both visits until <paramref name="condition"/> holds, or twenty seconds pass. Each round advances the visits by a
+	/// quarter of a second of walking, so a walk does not take its real time on a slow machine (the network still runs in real time).
+	/// </summary>
+	private static async Task<bool> Until( OnlineSession first, ParkPresence firstVisit, OnlineSession second, ParkPresence secondVisit, Func<bool> condition )
+	{
+		var until = DateTime.UtcNow.AddSeconds( 20 );
+		while ( DateTime.UtcNow < until )
+		{
+			first.Pump();
+			second.Pump();
+			firstVisit.Update( 0.25f );
+			secondVisit.Update( 0.25f );
+			if ( condition() )
+				return true;
+			await Task.Delay( 20 );
+		}
+		return condition();
+	}
+
+	[TestMethod]
+	public async Task VisitorsOfAPublishedParkSeeEachOtherWalk()
+	{
+		await using var server = await LoopbackServer.StartAsync( options => options.ChatBurst = 50 );
+		try
+		{
+			using var owner = await server.LoginAsync( "Owner" );
+			var park = await owner.UploadParkAsync( OnlineFormatTests.Package() );
+			var ann = new OnlineSession( Folders() );
+			var bob = new OnlineSession( Folders() );
+			ann.UseServer( server.Url.ToString(), "Ann" );
+			bob.UseServer( server.Url.ToString(), "Bob" );
+			ann.Register( "Ann", "correct horse" );
+			await PumpUntilIdle( ann );
+			bob.Register( "Bob", "correct horse" );
+			await PumpUntilIdle( bob );
+			// both visits start right after a download, without a chat connection: each opens one and joins the park's room
+			var annVisit = Visit( ann, park.Id, (10.5f, 10.5f) );
+			var bobVisit = Visit( bob, park.Id, (20.5f, 10.5f) );
+			Assert.IsTrue( await Until( ann, annVisit, bob, bobVisit, () => annVisit.State.Others.Any( other => other.Name == "Bob" ) && bobVisit.State.Others.Any( other => other.Name == "Ann" ) ),
+				$"the visitors never saw each other: {ann.Status} / {bob.Status} / rooms {ann.CurrentRoom}, {bob.CurrentRoom}" );
+			Assert.AreEqual( ParkPresence.MovementProtocol, ann.ServerProtocol );
+			var annSeen = bobVisit.State.Others.Single( other => other.Name == "Ann" );
+			Assert.AreEqual( 10.5f, annSeen.X, 0.01f, "Bob sees Ann where she stands" );
+			// Ann walks; Bob's view of her follows
+			annVisit.Click( 15.5f, 10.5f );
+			Assert.IsTrue( await Until( ann, annVisit, bob, bobVisit, () => !annVisit.State.Walking && MathF.Abs( annSeen.X - 15.5f ) < 0.05f ),
+				$"Bob's view of Ann did not follow her walk ({annSeen.X}, {annVisit.State.Own.X})" );
+			// a line said in the park reaches the other visitor
+			annVisit.Say( "hello park" );
+			Assert.IsTrue( await Until( ann, annVisit, bob, bobVisit, () => bob.ChatLines.Any( line => line.Contains( "hello park" ) ) ) );
+			// Ann leaves: her visit closes the connection it opened, and she is gone from Bob's park
+			annVisit.Dispose();
+			Assert.IsNull( ann.Chat );
+			Assert.AreEqual( 0, ann.ChatLines.Count, "the visit's lines do not follow her home" );
+			Assert.IsTrue( await Until( ann, annVisit, bob, bobVisit, () => bobVisit.State.Others.Count == 0 ), "Ann left Bob's park" );
+			bobVisit.Dispose();
+			ann.Dispose();
+			bob.Dispose();
+		}
+		finally
+		{
+			server.DeleteData();
+		}
+	}
+
+	[TestMethod]
+	public async Task RosterUpdatesKeepTheRoomsPlacesAndAJoinDroppedByTheRateLimitIsSentAgain()
+	{
+		// one chat request a second: a join right after a line is dropped by the server's limit
+		await using var server = await LoopbackServer.StartAsync( options => { options.ChatBurst = 1; options.ChatMessagesPerSecond = 1; } );
+		try
+		{
+			var ann = new OnlineSession( Folders() );
+			ann.UseServer( server.Url.ToString(), "Ann" );
+			ann.Register( "Ann", "correct horse" );
+			await PumpUntilIdle( ann );
+			ann.ConnectChat();
+			await PumpUntilIdle( ann );
+			ann.SendChatLine( "hello" );
+			var satellite = ChatProtocol.SatelliteRoom( 1 );
+			ann.JoinRoom( satellite );
+			Assert.AreEqual( satellite, ann.WantedRoom );
+			Assert.IsTrue( await Until( ann, () => ann.CurrentRoom == satellite ), "the dropped join was sent again" );
+			ann.MoveTo( 0.25f, 0.5f );
+			await PumpUntilIdle( ann );
+			// someone else enters: the roster changes, the places stay
+			using var bobClient = await server.LoginAsync( "Bob" );
+			await using var bob = await bobClient.ConnectChatAsync();
+			await Task.Delay( 1100 );
+			await bob.JoinAsync( satellite );
+			Assert.IsTrue( await Until( ann, () => ann.RoomPlayers.Contains( "Bob" ) ) );
+			Assert.IsTrue( ann.RoomPositions.ContainsKey( "Ann" ), "a roster update of the same room keeps the places" );
+			// a park that does not exist is refused, and remembered as refused
+			await Task.Delay( 1100 );
+			ann.JoinRoom( ChatProtocol.ParkRoom( "missing" ) );
+			Assert.IsTrue( await Until( ann, () => ann.RefusedRoom == ChatProtocol.ParkRoom( "missing" ) ) );
+			Assert.AreEqual( satellite, ann.WantedRoom, "the player stays where they were" );
+			ann.Disconnect();
+			Assert.IsNull( ann.RefusedRoom );
+			Assert.AreEqual( ChatProtocol.LobbyRoom, ann.WantedRoom );
+			ann.Dispose();
 		}
 		finally
 		{

@@ -16,8 +16,11 @@ public static class ServerProgram
 {
 	public const string Version = "1.0";
 	public const string BuildInfoRoute = "/api/v1/build-info";
-	/// <summary>2: registration may answer 202 with a two-step setup (docs/ONLINE.md, "Two-step login").</summary>
-	public const int ProtocolVersion = 3;
+	/// <summary>
+	/// 2: registration may answer 202 with a two-step setup (docs/ONLINE.md, "Two-step login"). 4: the chat relays movement in park rooms and
+	/// answers each room's first movement with where everyone stands, which a visit's online players rely on (docs/ONLINE.md, "Players in a visited park").
+	/// </summary>
+	public const int ProtocolVersion = 4;
 	private const string WebsitePolicy = "website";
 	/// <summary>File in the data folder that asks the host to update the server (deploy/opentpw-deploy.path).</summary>
 	public const string DeployRequestFile = ".deploy-requested";

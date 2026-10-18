@@ -49,7 +49,7 @@ Changes to `mods.json` apply at the next start; nothing is swapped while the gam
 | `opentpw.restored-advice` | yes | yes | no | advisor lines in the shipped data that the original never plays |
 | `opentpw.guest-insights` | no | yes | no | refusal counters in the park information window |
 | `opentpw.cross-edition-objects` | no | yes | yes | engine support for mods that bring Theme Park Inc attractions into Theme Park World |
-| `opentpw.smarter-guests` | no | **no, not yet** | yes | guests that decide better; selectable once its rule set is complete |
+| `opentpw.smarter-guests` | no | yes | yes | guests that decide better ([SMARTER-GUESTS.md](SMARTER-GUESTS.md)); a park saved with it opens only with it, in the same version |
 
 Mods are off until switched on. Switch an extension off (or a mod on) for one run with `--disable-extension <id>` and `--enable-mod <id>`, or
 permanently on the Extensions and mods screen or in `mods.json` ([below](#settings-modsjson)).
@@ -316,14 +316,12 @@ without pool cells saves, loads and exports identically with it on or off ([POOL
 
 ## Smarter guests and guest insights (`opentpw.smarter-guests`, `opentpw.guest-insights`)
 
-Two official extensions for the park visitors ([SMARTER-GUESTS.md](SMARTER-GUESTS.md) has the plan, the architecture and the measurement): guest insights at version 1.0.0 and smarter guests at version 1.4.0. **Guest insights can be switched on** (it has its first
-feature, phase 1); **smarter guests cannot yet**: its rules (phases 2 to 5 so far) are built and measured, but a player cannot switch it on until the rule set is complete (phase 6), so a save does not break with every phase. It is registered for tests and development, hidden from the Extensions and mods screen, and a `mods.json` entry or
-`--enable-mod` for it is ignored with a log line.
+Two official extensions for the park visitors ([SMARTER-GUESTS.md](SMARTER-GUESTS.md) has the plan, the architecture and the measurement): guest insights at version 1.0.0 and smarter guests at version 1.5.0. **Both can be switched on** from the Extensions and mods screen, in `mods.json` or with `--enable-mod`, and both are off by default. Smarter guests was kept hidden while its rules were built (phases 2 to 5), so that a player's save did not break with every phase; version 1.5.0 is the first with the whole rule set (value for money, spreading, queue patience, planning needs, clean and quiet paths) and the first a player can choose.
 
 - **`opentpw.smarter-guests`** changes the simulation (`AffectsSimulation`), so a park saved with it records it (id, version, no files) and loads only with it on, in the same version; a park saved without it
   loads only with it off. **The extension's version is the algorithm identity**: every release that changes how guests decide bumps it, and a park saved by another version is refused with
   `needs opentpw.smarter-guests <saved version>, not <current>`. In 1.0.0 the guests still decided exactly as the original (the policy delegated); what the extension added is the seam (`IGuestDecisions`),
-  a birth id for every guest and its own park state, saved in an optional `SmarterGuests` section of the park save (since 1.1.0 also the price-stall runs, the attractions' throughput estimates and, in 1.4.0, the guests' meal times). A build from before that section refuses such a save. Switching it needs a
+  a birth id for every guest and its own park state, saved in an optional `SmarterGuests` section of the park save (since 1.1.0 also the price-stall runs, the attractions' throughput estimates and, in 1.4.0 and 1.5.0, the guests' meal times and complaint times). A build from before that section refuses such a save. Switching it needs a
   restart like every extension, and a save made without it is refused while it is on.
   `FeatureGates.SmarterGuests` is read once when the guest simulation is built. `[EXT:smarter-guests]`.
 - **`opentpw.guest-insights`** only reads the park (`AffectsSimulation` false) and is listed on the Extensions and mods screen (`PlayerSelectable`). Switched on, the park information window gains a column of

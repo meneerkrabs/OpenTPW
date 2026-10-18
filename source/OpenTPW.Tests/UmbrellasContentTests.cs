@@ -78,7 +78,7 @@ public class UmbrellasContentTests
 		CollectionAssert.AreEqual( Themes, file.Objects.Select( item => item.Theme ).ToArray() );
 		CollectionAssert.AreEqual( new[] { 64500, 64501, 64502, 64503 }, file.Objects.Select( item => item.InfoId ).ToArray() );
 		Assert.IsTrue( file.Objects.All( item => item.Category == ObjectCategory.Shop && item.Input == null && !item.Research ), "shops, our own files, no research item (decision of October 18, 2026)" );
-		Assert.IsTrue( file.Objects.All( item => item.Names.Count == 9 && item.Names["English"] == "Brolly Shop" ), "a name for each of the nine languages" );
+		Assert.IsTrue( file.Objects.All( item => item.Names.Count == 11 && item.Names["English"] == "Brolly Shop" ), "a name for each of the eleven languages" );
 	}
 
 	[TestMethod]

@@ -13,7 +13,9 @@ public sealed partial class GuestSimulation
 	internal GuestView ViewOf( Guest guest ) => new( guest.Id, guest.BirthId, guest.Type, guest.Happiness, guest.Thirst, guest.Hunger, guest.Toilet, guest.Nausea, guest.Money,
 		guest.CellX, guest.CellY, Array.AsReadOnly( guest.UsedHistory ), Array.AsReadOnly( guest.TemporaryHistory ),
 		// [EXT:smarter-guests-planning] the guest's last meal comes from the extension's state, for a policy that plans
-		decisions.UsesPlanning && SmarterGuests is { } smarter ? smarter.Meals.Of( guest.BirthId ) : -1 );
+		decisions.UsesPlanning && SmarterGuests is { } smarter ? smarter.Meals.Of( guest.BirthId ) : -1, -1,
+		// [EXT:smarter-guests-paths] the guest's last complaint about its path, for a policy that weighs the path's comfort
+		decisions.UsesPathComfort && SmarterGuests is { } paths ? paths.Complaints.Of( guest.BirthId ) : -1 );
 
 	/// <summary>
 	/// <paramref name="attraction"/> as <paramref name="guest"/> sees it: every value the original score reads, taken now. An attraction without a join cell carries identity and flags only
@@ -231,5 +233,51 @@ public sealed partial class GuestSimulation
 			if ( counted )
 				EndReservations();
 		}
+	}
+
+	/// <summary>
+	/// The comfort of the wander's goal (docs/SMARTER-GUESTS.md, phase 6): hands the policy the cell the guest stands on and the cells the original's random walk visited (the goal last), each with the litter around it and
+	/// the guests standing in it, and performs the verdict: the goal moves to the named cell of the walk (the goal's own sub-cell bytes stay) and a complaint is thought, taken off the guest's happiness and noted for the
+	/// cooldown. Reads the litter map and the cell lists only; the neighbourhoods are the nine cells around the walk's at most <see cref="GuestWander.TrailCapacity"/> + 1 cells.
+	/// </summary>
+	// [EXT:smarter-guests-paths] no draw is taken here and the original's route request is made afterwards, for whatever goal results
+	private GuestWander.Destination WeighPath( Guest guest, GuestWander.Destination proposal, ReadOnlySpan<(int X, int Y)> trail )
+	{
+		Span<PathCellView> walk = stackalloc PathCellView[trail.Length];
+		for ( var index = 0; index < trail.Length; index++ )
+			walk[index] = PathCellOf( trail[index] );
+		var decision = decisions.ChoosePath( ContextNow(), ViewOf( guest ), new WanderPathView( PathCellOf( (guest.CellX, guest.CellY) ), walk ) );
+		if ( decision.GoalIndex < -1 || decision.GoalIndex >= walk.Length )
+			throw PolicyError( $"returned the walk cell {decision.GoalIndex} of {walk.Length}" );
+		if ( decision.Complaint != PathComplaint.None )
+		{
+			if ( !Enum.IsDefined( decision.Complaint ) || !Enum.IsDefined( decision.Thought ) || decision.Thought == GuestThought.None || !float.IsFinite( decision.HappinessCost ) || decision.HappinessCost < 0 || decision.HappinessCost > Settings.BigHappinessChange )
+				throw PolicyError( $"returned the complaint {decision.Complaint} with thought {(int)decision.Thought} and happiness cost {decision.HappinessCost}" );
+			Observer?.PathComplained( guest, decision.Complaint );
+			Think( guest, decision.Thought );
+			guest.Happiness = MeterMath.Add( guest.Happiness, -decision.HappinessCost );
+			SmarterGuests?.Complaints.Note( guest.BirthId, ParkTurn );
+		}
+		else if ( decision.Thought != GuestThought.None || decision.HappinessCost != 0 )
+		{
+			throw PolicyError( $"returned thought {(int)decision.Thought} and happiness cost {decision.HappinessCost} without a complaint" );
+		}
+		if ( decision.GoalIndex is not (>= 0 and var goal) || goal == walk.Length - 1 )
+			return proposal;
+		Observer?.WanderGoalMoved( guest );
+		return proposal with { Cell = trail[goal] };
+	}
+
+	/// <summary>A path cell as the comfort rule sees it: the litter in the cell and the eight around it (zero without any litter in the park: no cell is read) and the guests in the cell.</summary>
+	internal PathCellView PathCellOf( (int X, int Y) cell )
+	{
+		var units = 0;
+		if ( Litter is { Count: > 0 } litter )
+		{
+			for ( var y = cell.Y - 1; y <= cell.Y + 1; y++ )
+				for ( var x = cell.X - 1; x <= cell.X + 1; x++ )
+					units += SmarterPathComfort.LitterUnitsOf( litter.TypeAt( x, y ) );
+		}
+		return new PathCellView( cell.X, cell.Y, units, occupants.TryGetValue( cell, out var list ) ? list.Count : 0 );
 	}
 }

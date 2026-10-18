@@ -63,6 +63,9 @@ public sealed class ParkScenario
 		Things.Allocate( SaveThingModel.Attraction );
 		Things.Allocate( SaveThingModel.Attraction );
 		Guests.AttachThings( Things );
+		// [EXT:park-scenario] the litter variant: the guests drop and vomit litter on the paths, and a handyman proxy sweeps it (see ParkScenarioOptions.Litter)
+		if ( options.Litter )
+			Guests.Litter = new ParkLitter { Cells = Grid.Cells };
 		Scripts = new RideScriptWorld( seed.ScriptStream );
 		AddAttraction( "twin-a", RideVisitorKind.Ride, (10, 1), 60, options.TwinAHoldMilliseconds, GuestNeeds.None, 0 );
 		if ( !options.SingleRide )
@@ -126,6 +129,8 @@ public sealed class ParkScenario
 		var bridge = new RideVisitorBridge( Scripts.AllocateAttractionId(), role, kind, 1, excitement, 30, satisfies, price ) { EntranceCell = cell, ExitCell = cell };
 		if ( kind == RideVisitorKind.Shop )
 		{
+			// the default scenario's shops add no litter (its guests and pins are the baseline's); the litter variant gives them the shipped value
+			bridge.LitterEffect = Options.Litter ? Options.LitterEffect : 0;
 			// the price test's terms (QueueJoinRules.WillingnessToPay): a shop gives back what a guest lacks
 			bridge.InitCostOfGoods = 100;
 			bridge.ThirstEffect = satisfies.HasFlag( GuestNeeds.Thirst ) ? 50 : 0;
@@ -152,6 +157,8 @@ public sealed class ParkScenario
 		for ( long tick = 0; tick < ticks; tick++ )
 		{
 			var swept = Guests.NextTickStartsTurn;
+			if ( swept && Options.Litter && Guests.ParkTurn % Math.Max( 1, Options.HandymanTurns ) == 0 )
+				SweepOneLitter();
 			if ( swept )
 				Guests.BeginSweepTick( (float)Tick );
 			else
@@ -172,6 +179,33 @@ public sealed class ParkScenario
 			Things.DestroyQueued();
 			Guests.UpdateTurnEndArrivals();
 		}
+	}
+
+	/// <summary>The cell the handyman proxy swept last, as <c>x * 128 + y</c> in the original's search order; the next sweep takes the first littered cell after it, so the sweeping goes round the whole park.</summary>
+	private int sweepCursor = -1;
+
+	/// <summary>
+	/// The handyman proxy of the litter variant: removes one littered cell, the first after the one it swept last in the original's search order (<see cref="ParkLitter.Littered"/>), wrapping round. A real handyman walks to the
+	/// litter; this fixture only sets how fast the park is cleaned (<see cref="ParkScenarioOptions.HandymanTurns"/>), which is what the path rules are measured against.
+	/// </summary>
+	private void SweepOneLitter()
+	{
+		var litter = Guests.Litter;
+		if ( litter == null || litter.Count == 0 )
+			return;
+		(int X, int Y)? first = null, next = null;
+		foreach ( var cell in litter.Littered() )
+		{
+			first ??= cell;
+			if ( cell.X * ParkLitter.MapSize + cell.Y > sweepCursor )
+			{
+				next = cell;
+				break;
+			}
+		}
+		var target = next ?? first!.Value;
+		sweepCursor = target.X * ParkLitter.MapSize + target.Y;
+		litter.Remove( target.X, target.Y );
 	}
 
 	/// <summary>The canonical hash of the scenario's guests (docs/DETERMINISM.md).</summary>
@@ -198,6 +232,15 @@ public sealed record ParkScenarioOptions
 	/// so the default scenario, its report and its pins are the ones of the baseline.
 	/// </summary>
 	public bool FoodShop { get; init; }
+	/// <summary>
+	/// The litter variant (docs/SMARTER-GUESTS.md, phase 6): the guests' litter is dropped on the path cells (<see cref="GuestSimulation.Litter"/>; a vomit, a dropped piece when the litter meter is full) and a handyman proxy
+	/// sweeps one littered cell every <see cref="HandymanTurns"/> park turns. Off by default, so the default scenario, its report and its pins are the ones of the baseline.
+	/// </summary>
+	public bool Litter { get; init; }
+	/// <summary>The litter a use of a shop adds to the guest's litter meter in the litter variant; 5 is the shipped shops' value (<c>UsageInfo.LitterEffect</c> in every theme's Shops.sam).</summary>
+	public int LitterEffect { get; init; } = 5;
+	/// <summary>Park turns between two sweeps of the litter variant's handyman proxy; the fewer the handymen, the more turns.</summary>
+	public int HandymanTurns { get; init; } = 40;
 }
 
 /// <summary>The visitor script every scenario attraction runs: take a guest (VAR_LETMEON), hold it for the ride time, hand it back (VAR_LETMEOFF), the corpus shop protocol.</summary>

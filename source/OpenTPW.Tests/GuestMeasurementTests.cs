@@ -83,7 +83,7 @@ public class GuestMeasurementTests
 		Assert.AreNotEqual( ScenarioFixedRunHash, park.Hash, "the rules change the scenario's guests" );
 		Assert.AreEqual( ScenarioSmarterFixedRunHash, park.Hash, $"0x{park.Hash:X16}" );
 		// the phase 5 rules switched off are version 1.3.0's guests, so the pin of 1.3.0 holds for them as it was set
-		var phase4 = new ParkScenario( new WorldSeed( 1 ), decisions: new SmarterGuestDecisions( SmarterPlanningRules.None ) );
+		var phase4 = new ParkScenario( new WorldSeed( 1 ), decisions: new SmarterGuestDecisions( SmarterRuleSet.None ) );
 		phase4.Run( 12_000 );
 		Assert.AreEqual( ScenarioSmarterFixedRunHash, phase4.Hash, $"0x{phase4.Hash:X16}" );
 	}
@@ -101,7 +101,7 @@ public class GuestMeasurementTests
 		var park = new ParkScenario( new WorldSeed( 1 ), new ParkScenarioOptions { FoodShop = true } );
 		park.Run( 12_000 );
 		Assert.IsInstanceOfType( park.Guests.Decisions, typeof( SmarterGuestDecisions ) );
-		var phase4 = new ParkScenario( new WorldSeed( 1 ), new ParkScenarioOptions { FoodShop = true }, new SmarterGuestDecisions( SmarterPlanningRules.None ) );
+		var phase4 = new ParkScenario( new WorldSeed( 1 ), new ParkScenarioOptions { FoodShop = true }, new SmarterGuestDecisions( SmarterRuleSet.None ) );
 		phase4.Run( 12_000 );
 		Assert.AreNotEqual( phase4.Hash, park.Hash, "the phase 5 rules change the run once guests eat" );
 		Assert.IsTrue( park.Guests.SmarterGuests!.Meals.Count > 0 && phase4.Guests.SmarterGuests!.Meals.Count == 0, "the meal times are kept by 1.4.0 and not by 1.3.0's rules" );

@@ -1,7 +1,7 @@
 namespace OpenTPW;
 
 /// <summary>
-/// The policy of the <c>opentpw.smarter-guests</c> extension (docs/SMARTER-GUESTS.md). Version 1.4.0 adds planning needs (phase 5: a service whose need will cross its level before the guest is done with its ride is scored as if it had, a service on the guest's way gets a small detour step, and shortly after a meal a ride that would make the guest sick scores lower; see <see cref="SmarterGuestsRules.Planned"/> and <see cref="SmarterGuestsRules.TooMuchAfterMeal"/>); 1.3.0 adds queue patience (phase 4: a guest does not join a queue whose expected wait, counting only the queue ahead, exceeds its patience and gives up after waiting too long, each only when another ride it could choose is clearly quicker; see <see cref="SmarterGuestsRules.JoinPatienceTurns"/>); 1.2.0 adds spreading (phase 3: an expected-wait queue term for every attraction, a stable per-guest preference per attraction instance and hysteresis in the minor decision, see <see cref="SmarterGuestsRules.ExpectedWait256"/>); 1.1.0 is value for money (phase 2): a guest no longer walks to a shop or sideshow whose price it expects the stand to
+/// The policy of the <c>opentpw.smarter-guests</c> extension (docs/SMARTER-GUESTS.md). Version 1.5.0 adds clean and quiet paths (phase 6: a wander goal on or beside litter or in a crowd is swapped for a cleaner or quieter cell of the same walk, and a guest standing in litter or a crowd complains with a small, rate-limited happiness cost; see <see cref="SmarterPathComfort"/>); 1.4.0 adds planning needs (phase 5: a service whose need will cross its level before the guest is done with its ride is scored as if it had, a service on the guest's way gets a small detour step, and shortly after a meal a ride that would make the guest sick scores lower; see <see cref="SmarterGuestsRules.Planned"/> and <see cref="SmarterGuestsRules.TooMuchAfterMeal"/>); 1.3.0 adds queue patience (phase 4: a guest does not join a queue whose expected wait, counting only the queue ahead, exceeds its patience and gives up after waiting too long, each only when another ride it could choose is clearly quicker; see <see cref="SmarterGuestsRules.JoinPatienceTurns"/>); 1.2.0 adds spreading (phase 3: an expected-wait queue term for every attraction, a stable per-guest preference per attraction instance and hysteresis in the minor decision, see <see cref="SmarterGuestsRules.ExpectedWait256"/>); 1.1.0 is value for money (phase 2): a guest no longer walks to a shop or sideshow whose price it expects the stand to
 /// refuse (<see cref="SmarterGuestsRules.WouldRefuse"/>, with a per-guest price sensitivity trait), goes home after <see cref="SmarterGuestsRules.StallsBeforeGoingHome"/> decisions in a row that this rule emptied, and
 /// the booth weighs the entrance fee against a park value that counts the open rides and sideshows (<see cref="SmarterGuestsRules.BoothParkValue"/>). Everything else still delegates to
 /// <see cref="OriginalGuestDecisions"/>. Later phases add their rules here, each one bumping the extension's version, which is the algorithm identity a park save records. The policy draws nothing and holds no
@@ -12,14 +12,21 @@ public sealed class SmarterGuestDecisions : IGuestDecisions
 {
 	private readonly IGuestDecisions original = OriginalGuestDecisions.Instance;
 
-	/// <summary>Which phase 5 rules run: all of them in the shipped extension; fewer only in a measurement or a test (<see cref="SmarterPlanningRules"/>).</summary>
-	private readonly SmarterPlanningRules planning;
+	/// <summary>Which of the switchable rules (phases 5 and 6) run: all of them in the shipped extension; fewer only in a measurement or a test (<see cref="SmarterRuleSet"/>).</summary>
+	private readonly SmarterRuleSet rules;
 
-	public SmarterGuestDecisions() : this( SmarterPlanningRules.All )
+	/// <summary>The phase 5 part of <see cref="rules"/>.</summary>
+	private readonly SmarterRuleSet planning;
+
+	public SmarterGuestDecisions() : this( SmarterRuleSet.All )
 	{
 	}
 
-	public SmarterGuestDecisions( SmarterPlanningRules planning ) => this.planning = planning;
+	public SmarterGuestDecisions( SmarterRuleSet rules )
+	{
+		this.rules = rules;
+		planning = rules & SmarterRuleSet.Phase5;
+	}
 
 	public bool UsesExtensionState => true;
 
@@ -27,9 +34,11 @@ public sealed class SmarterGuestDecisions : IGuestDecisions
 
 	public bool UsesSpreading => true;
 
-	public bool UsesPlanning => planning != SmarterPlanningRules.None;
+	public bool UsesPlanning => planning != SmarterRuleSet.None;
 
-	public bool UsesPlanHorizon => planning.HasFlag( SmarterPlanningRules.Planning );
+	public bool UsesPathComfort => (rules & SmarterRuleSet.Paths) != 0;
+
+	public bool UsesPlanHorizon => planning.HasFlag( SmarterRuleSet.Planning );
 
 	/// <summary>The turn this guest's give-up test starts (its own patience band), so the host scans the park's rides for it only from then on.</summary>
 	public int AlternativeLookAfterTurns( in DecisionContext context, in GuestView guest ) =>
@@ -51,12 +60,12 @@ public sealed class SmarterGuestDecisions : IGuestDecisions
 		var score = SpreadScore( context, Seen( context, guest, attraction ), attraction );
 		score = score == 0 || !Refuses( context, guest, attraction ) ? score : 0;
 		// [EXT:smarter-guests-planning] shortly after a meal a ride that would make this guest sick scores lower (never below the choice floor when it was above it)
-		return planning.HasFlag( SmarterPlanningRules.MealTime ) && score >= AttractionScore.CandidateFloor && SmarterGuestsRules.TooMuchAfterMeal( context, guest, attraction ) ? SmarterGuestsRules.LowerAfterMeal( score ) : score;
+		return planning.HasFlag( SmarterRuleSet.MealTime ) && score >= AttractionScore.CandidateFloor && SmarterGuestsRules.TooMuchAfterMeal( context, guest, attraction ) ? SmarterGuestsRules.LowerAfterMeal( score ) : score;
 	}
 
 	/// <summary>The guest as it scores this attraction: planned and nudged for a service (<see cref="SmarterGuestsRules.Planned"/>), as it is otherwise.</summary>
 	private GuestView Seen( in DecisionContext context, in GuestView guest, in AttractionView attraction ) =>
-		UsesPlanning ? SmarterGuestsRules.Planned( guest, attraction, context.ParkTurn, planning.HasFlag( SmarterPlanningRules.Planning ), planning.HasFlag( SmarterPlanningRules.Detour ) ) : guest;
+		UsesPlanning ? SmarterGuestsRules.Planned( guest, attraction, context.ParkTurn, planning.HasFlag( SmarterRuleSet.Planning ), planning.HasFlag( SmarterRuleSet.Detour ) ) : guest;
 
 	/// <summary>
 	/// The original's score with the queue match replaced by the expected wait (every attraction, at any distance: guests ahead plus guests walking there, over the observed throughput), scaled by the guest's
@@ -136,6 +145,11 @@ public sealed class SmarterGuestDecisions : IGuestDecisions
 	}
 
 	public PostUseDecision RememberUse( in DecisionContext context, in GuestView guest, in AttractionView ride ) => original.RememberUse( context, guest, ride );
+
+	/// <summary>The wander goal weighted by the litter and the crowd on the cells of the walk, and a complaint of a guest standing in litter or a crowd.</summary>
+	// [EXT:smarter-guests-paths] the original's walk and draws are the host's; the policy only names a cleaner or quieter cell of that walk and a small, rate-limited complaint (SmarterPathComfort)
+	public PathDecision ChoosePath( in DecisionContext context, in GuestView guest, in WanderPathView path ) =>
+		SmarterPathComfort.Decide( context, guest, path, rules.HasFlag( SmarterRuleSet.Litter ), rules.HasFlag( SmarterRuleSet.Crowding ) );
 
 	public GuestWander.Destination ChooseWanderGoal( in DecisionContext context, in GuestView guest, in GuestWander.Destination proposal ) =>
 		original.ChooseWanderGoal( context, guest, proposal );

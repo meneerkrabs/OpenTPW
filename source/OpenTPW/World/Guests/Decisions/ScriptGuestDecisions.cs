@@ -44,6 +44,10 @@ internal sealed class ScriptGuestDecisions : IGuestDecisions
 
 	public bool UsesPlanHorizon => inner.UsesPlanHorizon;
 
+	public bool UsesPathComfort => inner.UsesPathComfort;
+
+	public PathDecision ChoosePath( in DecisionContext context, in GuestView guest, in WanderPathView path ) => inner.ChoosePath( context, guest, path );
+
 	public int AlternativeLookAfterTurns( in DecisionContext context, in GuestView guest ) => inner.AlternativeLookAfterTurns( context, guest );
 
 	public bool SwitchesTarget( in DecisionContext context, in GuestView guest, in AttractionView target, uint targetScore, in AttractionView candidate, uint candidateScore ) =>

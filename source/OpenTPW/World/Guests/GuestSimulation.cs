@@ -543,6 +543,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		// [EXT:smarter-guests-value] a departing guest's run of price-emptied decisions goes with it, so the bookkeeping is bounded by the guests in the park
 		SmarterGuests?.Stalls.Reset( guest.BirthId );
 		SmarterGuests?.Meals.Forget( guest.BirthId );
+		SmarterGuests?.Complaints.Forget( guest.BirthId );
 		// [BIN:TPW-EXE:0x0050B780 destroy request] a leaving guest asks for its destruction (0x0050B780 → 0x00516310); the id is freed at the park turn's end (0x00516641)
 		things.QueueDestroy( guest.Id );
 		byId.Remove( guest.Id );
@@ -1978,7 +1979,10 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			random.NextWord();
 			return GuestWander.OffPath( Grid, start, () => random.NextWord(), Route );
 		}
-		if ( GuestWander.Pick( Grid, start, () => random.NextWord() ) is not { } destination )
+		// [EXT:smarter-guests-paths] a policy that weighs the path's comfort gets the cells the original's walk visited (a copy: the walk and its draws are the same)
+		Span<(int X, int Y)> trail = decisions.UsesPathComfort ? stackalloc (int X, int Y)[GuestWander.TrailCapacity] : default;
+		var trailCount = 0;
+		if ( GuestWander.Pick( Grid, start, () => random.NextWord(), null, out _, trail, out trailCount ) is not { } destination )
 		{
 			// [BIN:TPW-EXE:0x004F9D6E stranded] a guest (not a staff member) whose cell has links but no candidate is "stranded at time": thought Confused and the mark, raised stamp counter
 			if ( (Grid.IsWalkable( start.X, start.Y ) || Grid.IsQueue( start.X, start.Y )) && GuestWander.OriginalCandidates( Grid, start ) == 0 && (cells.LinksAt( start.X, start.Y ) & 0x55) != 0 )
@@ -1989,6 +1993,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			return false;
 		}
 		// the search and its draws were the host's; the decision layer accepts the proposal or names another goal
+		if ( decisions.UsesPathComfort && trailCount > 0 )
+			destination = WeighPath( guest, destination, trail[..trailCount] );
 		destination = decisions.ChooseWanderGoal( ContextNow(), ViewOf( guest ), destination );
 		if ( !Grid.InBounds( destination.Cell.X, destination.Cell.Y ) || destination.ByteX is < 0 or > 255 || destination.ByteY is < 0 or > 255 )
 			throw PolicyError( $"returned the wander goal ({destination.Cell.X}, {destination.Cell.Y}) with bytes ({destination.ByteX}, {destination.ByteY}), outside the map" );

@@ -35,6 +35,12 @@ internal sealed record SmarterGuestsSaveData
 	/// </summary>
 	[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 	public IReadOnlyList<MealTime>? Meals { get; init; }
+	/// <summary>
+	/// The path rules' complaint times (<see cref="SmarterGuestsState.Complaints"/>, phase 6; the entries read "complained on turn"), in birth-id order; absent from the file while there are none, which keeps the section of
+	/// a park without any (an older version, a script-mod-only park, or an extension park whose guests have not complained) as it was.
+	/// </summary>
+	[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+	public IReadOnlyList<MealTime>? Complaints { get; init; }
 }
 
 /// <summary>
@@ -61,7 +67,8 @@ internal static class SmarterGuestsSave
 			Births = guests.Guests.Where( guest => guest.BirthId != 0 ).OrderBy( guest => guest.Id ).Select( guest => new SmarterGuestBirth( guest.Id, guest.BirthId ) ).ToArray(),
 			Stalls = state.Stalls.Count == 0 ? null : state.Stalls.Entries.ToArray(),
 			Throughputs = state.Throughputs.Count == 0 ? null : state.Throughputs.Entries.ToArray(),
-			Meals = state.Meals.Count == 0 ? null : state.Meals.Entries.ToArray()
+			Meals = state.Meals.Count == 0 ? null : state.Meals.Entries.ToArray(),
+			Complaints = state.Complaints.Count == 0 ? null : state.Complaints.Entries.ToArray()
 		};
 	}
 
@@ -79,8 +86,8 @@ internal static class SmarterGuestsSave
 		if ( !recorded && !scriptMods )
 			return $"the save has a SmarterGuests section but does not record {ExtensionId}";
 		// the extension's own state belongs to a save that records the extension: a script-mod-only park carries the identity half of the section and nothing else
-		if ( !recorded && (section.Stalls != null || section.Throughputs != null || section.Meals != null) )
-			return $"the SmarterGuests section holds extension state (stalls, throughputs or meals) but the save does not record {ExtensionId}";
+		if ( !recorded && (section.Stalls != null || section.Throughputs != null || section.Meals != null || section.Complaints != null) )
+			return $"the SmarterGuests section holds extension state (stalls, throughputs, meals or complaints) but the save does not record {ExtensionId}";
 		return SectionProblem( section, guestIds, attractionIds );
 	}
 
@@ -109,7 +116,7 @@ internal static class SmarterGuestsSave
 		}
 		if ( section.Bootstrapped && seenGuests.Count != holders.Count )
 			return $"the extension has run, but only {seenGuests.Count} of {holders.Count} guests have a birth id";
-		return StallsProblem( section.Stalls, seenIds ) ?? ThroughputsProblem( section.Throughputs, attractionIds ) ?? MealsProblem( section.Meals, seenIds );
+		return StallsProblem( section.Stalls, seenIds ) ?? ThroughputsProblem( section.Throughputs, attractionIds ) ?? TurnsProblem( section.Meals, seenIds, "meal", "a meal" ) ?? TurnsProblem( section.Complaints, seenIds, "complaint", "a complaint" );
 	}
 
 	/// <summary>
@@ -153,21 +160,21 @@ internal static class SmarterGuestsSave
 	/// The meal times' consistency: guests the section gives a birth id (<paramref name="births"/>), strictly ascending by birth id (so each guest once), each with a turn of 0 or more. A meal later than the saved
 	/// park's turn is refused at restore.
 	/// </summary>
-	private static string? MealsProblem( IReadOnlyList<MealTime>? meals, HashSet<ulong> births )
+	private static string? TurnsProblem( IReadOnlyList<MealTime>? meals, HashSet<ulong> births, string noun, string article )
 	{
 		if ( meals == null )
 			return null;
 		if ( meals.Count == 0 )
-			return "the SmarterGuests section holds an empty meal list (it is left out when there is none)";
+			return $"the SmarterGuests section holds an empty {noun} list (it is left out when there is none)";
 		ulong? previous = null;
 		foreach ( var entry in meals )
 		{
 			if ( !births.Contains( entry.BirthId ) )
-				return $"the meal times name birth id {entry.BirthId}, whom the section does not hold";
+				return $"the {noun} times name birth id {entry.BirthId}, whom the section does not hold";
 			if ( entry.Turn < 0 )
-				return $"birth id {entry.BirthId} has a meal on turn {entry.Turn}, below 0";
+				return $"birth id {entry.BirthId} has {article} on turn {entry.Turn}, below 0";
 			if ( previous is { } last && entry.BirthId <= last )
-				return "the meal times are not in strictly ascending birth id order";
+				return $"the {noun} times are not in strictly ascending birth id order";
 			previous = entry.BirthId;
 		}
 		return null;
@@ -214,6 +221,9 @@ internal static class SmarterGuestsSave
 		foreach ( var entry in section.Meals ?? [] )
 			if ( entry.Turn > guests.ParkTurn )
 				throw new InvalidDataException( $"The saved smarter-guests state is inconsistent: birth id {entry.BirthId} has a meal on turn {entry.Turn}, after the park's turn {guests.ParkTurn}." );
+		foreach ( var entry in section.Complaints ?? [] )
+			if ( entry.Turn > guests.ParkTurn )
+				throw new InvalidDataException( $"The saved smarter-guests state is inconsistent: birth id {entry.BirthId} has a complaint on turn {entry.Turn}, after the park's turn {guests.ParkTurn}." );
 		foreach ( var guest in guests.Guests )
 			guest.BirthId = 0;
 		var byId = guests.Guests.ToDictionary( guest => guest.Id );
@@ -226,5 +236,7 @@ internal static class SmarterGuestsSave
 			state.Throughputs.Load( throughputs );
 		if ( section.Meals is { Count: > 0 } meals )
 			state.Meals.Load( meals );
+		if ( section.Complaints is { Count: > 0 } complaints )
+			state.Complaints.Load( complaints );
 	}
 }

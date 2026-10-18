@@ -147,6 +147,42 @@ it and turn to the chat-mode windows instead.
   name and a click runs 0x4E15B0. While a ride is ridden both windows hide and the person's place
   is kept (0x4BD090 / 0x4BD260).
 
+## Riding in a visited park (tp.exe)
+
+A visitor rides from the chat mode or from the first-person walk, and the chat server hears of it
+through the movement's mode (`Chat::MovePlayer(x, y, z)`, imported from weachatr.dll at IAT 0x6FD4CC;
+a byte scan finds ten call sites, each pushing its mode as a constant).
+
+- **The click** (0x4BD7F4 in the panel handler 0x4BD4A0): over a thing of type 3 that is no add-on
+  (AddOn.UpgradesId, definition +0x284, 0) and of interface type 0 (Info.WhichUIType, +0x4AC), or 3
+  with the thing's choosable bit (+0x32 bit 0x10), the panel shows help 580 ("<ride>: Left-click to
+  ride", the ride's name in its parameter) and a click runs the ride window's Ride it! (0x4E15B0):
+  the camera takes the coaster, the track ride or the ride model as its source, the model's first
+  camera dummy (0x42A560, 0x44B220) and camera state 4 (0x42AB20). The camera-mode object stays
+  CMMOnline; a second call while riding leaves the view.
+- **Entering any first-person view** from the overview runs the chat hook 0x4BD090 (through
+  0x42AB20 → 0x481470 → 0x4A2AC0, only in the online game type): it hides both chat windows,
+  remembers the active one, hides the own person locally (0x4F9ED0), sends a teleport (mode 1) to
+  the ground point under the cursor (0x4EA240) and, for a ride, a hide (mode 2) at the same point
+  (0x4EA3F0). The first-person walk then sends a walk (mode 0) every tick its 8.8 place changes
+  (0x4EA370); stepping onto a ride's entrance from the walk (flag 0x400) sends a hide.
+- **Leaving**: 0x42A190 ends the view (Escape, the HUD's exit button, a right click with RMB cancel,
+  Ride it! again, the ride's removal, a load), not the ride's cycle. A ride entered from the walk ends
+  at the ride's exit cell (0x42A1D0, the thing's +0x38; +0x36 is the entrance), and the next tick
+  sends unhide-and-teleport (mode 3) there (0x4EA410). The return to the overview (0x4BD260) shows the
+  remembered window and the own person again (0x4F9E60) and sends only a teleport (mode 1) to the
+  camera's ground focus (0x4EA2D0).
+- **The others' view** (dispatcher case 0x22, 0x4E7265): mode 2 destroys the person's model (+0xC)
+  and its bubble (+0xB4) and leaves its walk and route running unseen; modes 0 and 1 still move a
+  hidden person; only mode 3 builds the model again and teleports it to the place, standing (walk
+  state 0, animation 3). Hidden has no flag of its own: it is the model handle 0, which the tick
+  (0x50B453 → 0x4FA870) and the renderer skip.
+
+So statically a ride boarded from the overview is never followed by mode 3, and the other visitors
+keep that player hidden afterwards, until a later walk-in ride's mode 3. Whether the original server
+repaired that (re-sending the players to a client) is not known. OpenTPW hides a riding player for
+the room and always shows them again when the ride ends (`EXT:online-ride-hiding`, docs/ONLINE.md).
+
 ## Ride cameras and riding
 
 The original's manual sells the feature directly: "When you need a break, you can ride any ride in the
@@ -195,6 +231,8 @@ absence is an observation of the traced flows, not proof: nothing here shows a b
   the park's published statistics read-only, and votes through the existing vote endpoint. The
   park's other visitors appear as figures that walk and teleport, with the original's avatar
   sparkle, and the park's room chats (docs/ONLINE.md, "Players in a visited park", October 18).
+  A click on a ride in the chat mode rides it, and a riding player's figure is hidden for the
+  others until it comes out at the ride's exit (protocol 5, October 18).
 
 ## Verification of the shared-park lane
 

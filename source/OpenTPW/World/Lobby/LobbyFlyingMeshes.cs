@@ -22,13 +22,6 @@ public sealed class LobbyFlyingMeshes
 	/// <summary>Height of the group's box centre above the island's camera target (0x5e36d8 subtracts −50.0).</summary>
 	public const float CentreHeight = 50f;
 
-	/// <summary>
-	/// The share of each group's count that is spawned, in percent: the group keeps count × this / 100, at least 1 and
-	/// at most the count (0x5d9e22, global [0x7858dc]).
-	/// </summary>
-	// [APPROX:UI-018] the count share [0x7858dc] lives in the .bss settings block 0x785840-0x785920 (zero at load, filled at runtime; its readers are 0x44d8f1-0x44dc51), so its value is not read statically; 100 keeps the authored counts. The video shows flocks of bats at Halloween World and butterflies at Lost Kingdom (0:40-1:10, 78:30-78:40) but they cannot be counted at 720p
-	public const int CountPercent = 100;
-
 	/// <summary>One flying instance: where it is, where it flies and the unit direction it faces.</summary>
 	public sealed class Instance
 	{
@@ -81,7 +74,17 @@ public sealed class LobbyFlyingMeshes
 	private readonly List<Group> groups = new();
 
 	/// <param name="draw">The lobby generator (<see cref="LobbyEffects.Draw"/>), which the islands' effects share.</param>
-	public LobbyFlyingMeshes( Func<uint> draw ) => this.draw = draw ?? throw new ArgumentNullException( nameof( draw ) );
+	/// <param name="countPercent">The share of each group's count that is spawned, in percent: the group keeps count x this / 100, at least 1 and at most the count.</param>
+	// [BIN:TPW-EXE:0x5d9e22 count share] the share is the global [0x7858dc], the LOBBYOBJECTS setting (entry 29 of the settings table at 0x7442c0, range 0 to 100); the graphics presets give 10, 70 and 100 (COMPATIBILITY.md)
+	// [BIN:TPW-EXE:0x5d9db0 flying-mesh group] count = count x [0x7858dc] / 100 with signed integer division, then at least 1 and at most the count
+	public LobbyFlyingMeshes( Func<uint> draw, int countPercent = 100 )
+	{
+		this.draw = draw ?? throw new ArgumentNullException( nameof( draw ) );
+		CountPercent = countPercent;
+	}
+
+	/// <summary>The share of each group's count that is spawned (LOBBYOBJECTS).</summary>
+	public int CountPercent { get; }
 
 	public IReadOnlyList<Group> Groups => groups;
 

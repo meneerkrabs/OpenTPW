@@ -366,6 +366,18 @@ public sealed class Sky : IDisposable
 			(offsetU[layer], offsetV[layer]) = Scroll( layer, offsetU[layer], offsetV[layer], frameSeconds );
 	}
 
+	/// <summary>
+	/// Gives every vertex of the cloud grid <paramref name="argb"/> (the lobby's sky colours its whole 16 x 16 grid with one colour each frame); the clouds are rebuilt on the next draw when it changed.
+	/// </summary>
+	// [BIN:TPW-EXE:0x5d96c0 lobby sky grid] the lobby fills the 256 entries of the engine sky's colour grid (0x8c2788) with one 0xFF:R:G:B each frame
+	public void SetGridColour( uint argb )
+	{
+		if ( colourGrid[0] == argb && colourGrid.All( colour => colour == argb ) )
+			return;
+		Array.Fill( colourGrid, argb );
+		staging.Invalidate();
+	}
+
 	/// <summary>Draws the sky behind everything else of the world pass: no depth test or write, centred on the camera.</summary>
 	public void Draw( float frameSeconds, SVector3? tint = null )
 	{
@@ -417,6 +429,9 @@ public sealed class Sky : IDisposable
 		private readonly SVector2[] scratch = new SVector2[GridSize * GridSize];
 		private Vertex[] staged = Array.Empty<Vertex>();
 		private int stagedLayers = -1, stagedClouds;
+
+		/// <summary>Builds the vertices again at the next update (the colour grid changed).</summary>
+		public void Invalidate() => stagedLayers = -1;
 
 		/// <summary>The vertices for <paramref name="layers"/> layers scrolled to the offsets, and how many of them are clouds.</summary>
 		public Vertex[] Update( int layers, float[] offsetU, float[] offsetV, out int clouds )

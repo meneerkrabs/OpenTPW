@@ -87,7 +87,7 @@ public sealed partial class OriginalObjectRuntime
 		};
 	}
 
-	// [APPROX:PTCL-908] EVENT 1/2, ADDOBJ and ADDOBJ_EXT 1/2, the stinkbomb litter's effect (ParkLitterEffects) and the per-type object effects (OriginalObjectRuntime.ObjectEffects.cs) start particles; a refusal (unresolved key, scoped effect, a type-2 effect with a negative key, headless runtime) starts nothing; the latest attempt stays as owner-local diagnostics, cleared on Stop, while the effect lives in the level's ParticleSystem (docs/PARTICLES.md)
+	// [APPROX:PTCL-908] EVENT 1/2, ADDOBJ and ADDOBJ_EXT 1/2, the stinkbomb litter's effect (ParkLitterEffects) and the per-type object effects (OriginalObjectRuntime.ObjectEffects.cs) start particles (the land effects, the rider and guest beams are in Level.PlacedParticles.cs and the bump and guest code); a refusal (unresolved key, scoped effect, a type-2 effect with a negative key, headless runtime) starts nothing; the latest attempt stays as owner-local diagnostics, cleared on Stop, while the effect lives in the level's ParticleSystem (docs/PARTICLES.md)
 	internal void ObserveParticleEvent(RideEffectCall call)
 	{
 		if (stopped || call.Opcode is not (Opcode.EVENT or Opcode.EVENT_EXT) || call.Argument(0) is not (1 or 2)) return;

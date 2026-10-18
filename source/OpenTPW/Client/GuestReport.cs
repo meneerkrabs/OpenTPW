@@ -24,6 +24,8 @@ public sealed record GuestReportOptions
 	public int LevelSeeds { get; init; } = 8;
 	/// <summary>Arrival.TimeBetweenArrivals of the level parks (the themes' 150 timer units would bring no group within a few days).</summary>
 	public int LevelArrivalTimeBetween { get; init; } = 20;
+	/// <summary>When above 0, the level parks get a litter bin on a path cell about every this many cells (a measurement proxy: the gate's parks place none; <c>--guest-level-bins</c>, phase 6b). 0, the default, places none.</summary>
+	public int LevelBinSpacing { get; init; }
 	public ParkScenarioOptions Scenario { get; init; } = new();
 	public GuestMetricsOptions Metrics { get; init; } = new();
 	/// <summary>Measure CPU and allocation per tick with the observer off and on; machine-dependent, so left out of the stable report text when false.</summary>
@@ -109,6 +111,29 @@ public static class GuestReport
 		return new SeedResult( seed, snapshot, hash ) { ScriptStats = stats };
 	}
 
+	/// <summary>
+	/// The litter bins of the level parks' measurement proxy (<see cref="GuestReportOptions.LevelBinSpacing"/>): path cells in row order, each at least <paramref name="spacing"/> cells (Chebyshev) from the bins before it,
+	/// each both the bin's cell and the cell a guest walks to. Recomputed when the map changes. No bin is an object: the proxy only gives the guests' bin search something to find.
+	/// </summary>
+	private static Func<IReadOnlyList<LitterBin>> LevelBins( GuestSimulation guests, int spacing )
+	{
+		IReadOnlyList<LitterBin> bins = Array.Empty<LitterBin>();
+		var version = -1;
+		return () =>
+		{
+			var cells = guests.Grid.Cells;
+			if ( cells.Version == version )
+				return bins;
+			version = cells.Version;
+			var list = new List<LitterBin>();
+			for ( var y = 0; y < guests.Grid.CountY; y++ )
+				for ( var x = 0; x < guests.Grid.CountX; x++ )
+					if ( guests.Grid.IsWalkable( x, y ) && list.All( bin => Math.Max( Math.Abs( bin.Cell.X - x ), Math.Abs( bin.Cell.Y - y ) ) >= spacing ) )
+						list.Add( new LitterBin( 1000 + y * guests.Grid.CountX + x, (x, y), (x, y) ) );
+			return bins = list;
+		};
+	}
+
 	/// <summary>One level park built by the level gate's builder (docs/M3-GATE.md), run for the same days.</summary>
 	internal static SeedResult RunLevel( string level, ulong seed, GuestReportOptions options )
 	{
@@ -119,7 +144,7 @@ public static class GuestReport
 		// the window closes after the last tick and before the gate stops its objects (a stopped ride turns its queue away)
 		var gate = new M3GateOptions
 		{
-			Level = level, Seed = new WorldSeed( seed ).GuestStream, WorldSeed = new WorldSeed( seed ), DeterminismProbe = false, SweptTurns = true, ArrivalTimeBetween = options.LevelArrivalTimeBetween, GuestObserver = metrics, GuestDecisions = Policy( options ),
+			Level = level, Seed = new WorldSeed( seed ).GuestStream, WorldSeed = new WorldSeed( seed ), DeterminismProbe = false, SweptTurns = true, ArrivalTimeBetween = options.LevelArrivalTimeBetween, GuestObserver = metrics, GuestDecisions = Policy( options ), GuestSetup = options.LevelBinSpacing > 0 ? guests => guests.Bins = LevelBins( guests, options.LevelBinSpacing ) : null,
 			BeforeTeardown = guests =>
 			{
 				snapshot = metrics.EndWindow();
@@ -333,6 +358,13 @@ public static class GuestReport
 			scenarioNode["litterEffect"] = options.Scenario.LitterEffect;
 			scenarioNode["handymanTurns"] = options.Scenario.HandymanTurns;
 		}
+		// the litter bins of phase 6b are a different park too
+		if ( options.Scenario.Bins )
+		{
+			scenarioNode["bins"] = true;
+			if ( options.Scenario.BinsAtShops )
+				scenarioNode["binsAtShops"] = true;
+		}
 		var root = new JsonObject
 		{
 			["schema"] = "opentpw.guest-report/1",
@@ -353,6 +385,11 @@ public static class GuestReport
 			["scenarios"] = scenarios,
 			["skipped"] = new JsonArray( result.Skipped.Select( item => (JsonNode)JsonValue.Create( item )! ).ToArray() )
 		};
+		if ( options.LevelBinSpacing > 0 )
+			((JsonObject)root["protocol"]!)["levelBinSpacing"] = options.LevelBinSpacing;
+		// the version of each extension the run switched on (the smarter-guests version is its algorithm identity)
+		if ( options.Extensions.Count > 0 )
+			root["extensionVersions"] = new JsonObject( ResolveExtensions( options.Extensions ).Select( id => new KeyValuePair<string, JsonNode?>( id, OfficialExtensions.Find( id )?.Version.ToString() ) ) );
 		// the report of a measurement that switched some phase 5 rules off says so (the shipped extension runs all three)
 		if ( options.Extensions.Count > 0 && options.Rules != SmarterRuleSet.All )
 			root["rules"] = options.Rules.ToString();
@@ -432,7 +469,7 @@ public static class GuestReport
 	}
 
 	/// <summary>
-	/// <c>--guest-rules</c>: <c>all</c> (version 1.5.0), <c>phase5</c> (version 1.4.0's rules), <c>none</c> (the rules of version 1.3.0), <c>paths</c> (both rules of phase 6), or a comma list of <c>planning</c>, <c>detour</c>,
+	/// <c>--guest-rules</c>: <c>all</c> (version 1.6.0), <c>phase6</c> (version 1.5.0's rules), <c>phase5</c> (version 1.4.0's rules), <c>none</c> (the rules of version 1.3.0), <c>paths</c> (both rules of phase 6), or a comma list of <c>planning</c>, <c>detour</c>,
 	/// <c>meal</c>, <c>litter</c> and <c>crowding</c>.
 	/// </summary>
 	public static SmarterRuleSet ParseRules( string text )
@@ -451,7 +488,9 @@ public static class GuestReport
 				"litter" => SmarterRuleSet.Litter,
 				"crowding" => SmarterRuleSet.Crowding,
 				"paths" => SmarterRuleSet.Paths,
-				_ => throw new ArgumentException( $"--guest-rules '{name}' is not all, none, phase5, paths, planning, detour, meal, litter or crowding." )
+				"bins" => SmarterRuleSet.Bins,
+				"phase6" => SmarterRuleSet.Phase6,
+				_ => throw new ArgumentException( $"--guest-rules '{name}' is not all, none, phase6, phase5, paths, planning, detour, meal, litter, crowding or bins." )
 			};
 		}
 		return rules;
@@ -484,6 +523,18 @@ public static class GuestReport
 		}
 		return values;
 	}
+
+	/// <summary>The scenario variants of the command line (<c>--guest-food</c>, <c>--guest-litter</c>, <c>--guest-bins</c>, <c>--guest-bins-shops</c>, <c>--guest-litter-effect</c>, <c>--guest-handyman-turns</c>, <c>--guest-scenario-arrivals</c>), shared by the report and the cost measurement.</summary>
+	internal static ParkScenarioOptions ScenarioOptions( string[] args ) => new()
+	{
+		FoodShop = args.Contains( "--guest-food" ),
+		Litter = args.Contains( "--guest-litter" ),
+		Bins = args.Contains( "--guest-bins" ) || args.Contains( "--guest-bins-shops" ),
+		BinsAtShops = args.Contains( "--guest-bins-shops" ),
+		LitterEffect = IntOption( args, "--guest-litter-effect", 0, new ParkScenarioOptions().LitterEffect ),
+		HandymanTurns = IntOption( args, "--guest-handyman-turns", 1, new ParkScenarioOptions().HandymanTurns ),
+		ArrivalTimeBetween = IntOption( args, "--guest-scenario-arrivals", 1, new ParkScenarioOptions().ArrivalTimeBetween )
+	};
 
 	private static int IntOption( string[] args, string name, int minimum, int fallback )
 	{
@@ -525,18 +576,12 @@ public static class GuestReport
 			Levels = Levels( args ),
 			LevelSeeds = IntOption( args, "--guest-level-seeds", 1, 8 ),
 			LevelArrivalTimeBetween = IntOption( args, "--guest-arrivals", 1, 20 ),
+			LevelBinSpacing = IntOption( args, "--guest-level-bins", 0, 0 ),
 			Performance = !args.Contains( "--guest-no-perf" ),
 			Extensions = ResolveExtensions( Options( args, "--guest-extension" ) ),
 			Mods = Options( args, "--guest-mod" ),
 			Rules = Option( args, "--guest-rules" ) is { } rules ? ParseRules( rules ) : SmarterRuleSet.All,
-			Scenario = new ParkScenarioOptions
-			{
-				FoodShop = args.Contains( "--guest-food" ),
-				Litter = args.Contains( "--guest-litter" ),
-				LitterEffect = IntOption( args, "--guest-litter-effect", 0, new ParkScenarioOptions().LitterEffect ),
-				HandymanTurns = IntOption( args, "--guest-handyman-turns", 1, new ParkScenarioOptions().HandymanTurns ),
-				ArrivalTimeBetween = IntOption( args, "--guest-scenario-arrivals", 1, new ParkScenarioOptions().ArrivalTimeBetween )
-			}
+			Scenario = ScenarioOptions( args )
 		};
 		// the level parks log their clock and script lines; the report's own output stays clean
 		var output = Console.Out;

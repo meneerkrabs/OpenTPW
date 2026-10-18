@@ -11,6 +11,8 @@ and walks guests through them under an explicit capability policy; since October
 
 For installation and launch steps, use the [static Theme Park Inc guide](https://opentpw.io/theme-park-inc.html), which covers the desktop edition chooser, the explicit command and the browser starts.
 
+The umbrellas and the brolly shop of Theme Park Inc (guest umbrella states, weather rule, settings addresses) are traced in [UMBRELLAS.md](UMBRELLAS.md), where they are planned as an official extension for Theme Park World parks.
+
 ## Sources
 
 - **Theme Park Inc:** the Dutch/Benelux retail CD (`Game.exe` PE timestamp

@@ -54,7 +54,10 @@ without requiring a website code change.
 ## Hourly releases
 
 `.github/workflows/release-train.yml` (**Actions → Hourly release**) wakes after a successful **Cross-platform build and CPU tests** push run on `main`, and keeps
-minute 17 of every hour as a recovery fallback. GitHub schedules can be delayed or dropped; the cron expression is
+minute 17 of every hour as a recovery fallback. At the end of a successful stable **Release builds** run dispatched
+on `main`, the release explicitly dispatches a catch-up train with its run ID. The train waits at most three minutes
+for that exact source run to finish successfully before planning, so green commits skipped while it was active
+are reconsidered without depending on a downstream `workflow_run` event (which GITHUB_TOKEN may suppress). GitHub schedules can be delayed or dropped; the cron expression is
 not an hourly delivery guarantee. When the train finds something new, it starts the normal release workflow for the next stable version. The result is a regular release
 that becomes the latest download, exactly like a manual one. Manual releases keep working as described above.
 
@@ -78,12 +81,17 @@ Each train (`tools/release_train.py`) takes the current commit of `main` and:
    with GitHub making a dispatched run visible.
 
 A completion event is only a wake-up, never proof that the current `main` is green: the planner always queries
-all matching push CI runs for the selected full SHA again. PR, fork, tag and manual-build events cannot use this
-trigger to start a release; the train checks out trusted `main`, never the event checkout or its artifacts.
+all matching push CI runs for the selected full SHA again. PR, fork, tag and manually dispatched CI-build events
+cannot use this trigger to start a release; the train checks out trusted `main`, never the event checkout or its artifacts.
 For a new release, if `main` moves during planning, the train starts nothing and lets a subsequent completion or
 fallback retry. Repairing an unfinished tagged release remains pinned to its older tagged commit.
 Manual **Only report** remains the default and never dispatches. The existing workflow name is retained so
-saved links and manual instructions still work.
+saved links and manual instructions still work. The internal **wait_for_release_run** input is normally left empty.
+A catch-up validates the source run as this repository's main-dispatched release, then uses the same planner:
+an already-tagged head or another active release is a no-op, and a new candidate needs its own green push CI.
+A failed/cancelled source, invalid ID, API error or wait timeout stops the train before planning; there is no blind
+retry chain. The existing hourly fallback remains available for missed dispatches. This uses the existing
+workflow token and action permissions, with no new credential.
 
 The release notes are GitHub's list of merged pull requests since the previous tag, plus links to the progress
 fragments (`docs/progress/`) added since then. A tag pushed with the workflow token would not start other workflows,

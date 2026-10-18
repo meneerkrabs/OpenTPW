@@ -222,9 +222,9 @@ public class AdvisorRestoredAdviceTests
 		foreach ( var key in new[] { OpenTpwText.ExtensionRestoredAdviceName, OpenTpwText.ExtensionRestoredAdviceDescription } )
 		{
 			var texts = SupplementaryStrings.SupportedLanguages.Select( language => SupplementaryStrings.Get( key, language ) ).ToList();
-			Assert.AreEqual( 9, texts.Count );
+			Assert.AreEqual( SupplementaryStrings.SupportedLanguages.Count, texts.Count );
 			Assert.IsTrue( texts.All( text => !string.IsNullOrWhiteSpace( text ) ) );
-			Assert.AreEqual( 9, texts.Distinct().Count(), $"{key}: every language has its own text" );
+			Assert.AreEqual( texts.Count, texts.Distinct().Count(), $"{key}: every language has its own text" );
 		}
 	}
 

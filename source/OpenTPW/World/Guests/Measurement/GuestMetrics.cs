@@ -59,7 +59,7 @@ public sealed record NeedsMetrics( long Vomits, long VomitsAfterMeal, long NeedT
 /// <param name="CrowdComplaints">Complaints about a crowd.</param>
 /// <param name="GoalsMoved">Wander goals the path rules moved to another cell of the walk.</param>
 public sealed record PathMetrics( long GuestTicks, long LitteredGuestTicks, long LitterNearGuestTicks, long PathGuestTicks, long CrowdedGuestTicks, double CrowdSum, long CrowdTicks, long LitterEncounters,
-	long LitterCellSum, long LitterComplaints, long CrowdComplaints, long GoalsMoved = 0 );
+	long LitterCellSum, long LitterComplaints, long CrowdComplaints, long GoalsMoved = 0, long LitterDropped = 0, long LitterBinned = 0 );
 
 public sealed record GuestMetricsSnapshot( long Admissions, double RevenueTotal, double RevenueEntrance, double RevenuePerAdmittedGuest, QueueOutcomeMetrics Queue,
 	double? GuestTimeHappiness, double? SurvivorHappiness, IReadOnlyList<CohortMetrics> Cohorts, DepartureMetrics Departures, IReadOnlyList<AttractionUse> Attractions,
@@ -127,6 +127,8 @@ public sealed record GuestMetricsSnapshot( long Admissions, double RevenueTotal,
 			list.Add( ("path.complaints.litter.perAdmission", Admissions == 0 ? 0 : (double)paths.LitterComplaints / Admissions) );
 			list.Add( ("path.complaints.crowd.perAdmission", Admissions == 0 ? 0 : (double)paths.CrowdComplaints / Admissions) );
 			list.Add( ("path.goalsMoved.perAdmission", Admissions == 0 ? 0 : (double)paths.GoalsMoved / Admissions) );
+			list.Add( ("path.litterDropped.perAdmission", Admissions == 0 ? 0 : (double)paths.LitterDropped / Admissions) );
+			list.Add( ("path.litterBinned.perAdmission", Admissions == 0 ? 0 : (double)paths.LitterBinned / Admissions) );
 			list.Add( ("path.litter.meanCells", Ticks == 0 ? 0 : (double)paths.LitterCellSum / Ticks) );
 		}
 		return list.Select( item => (item.Item1, item.Item2) ).ToList();
@@ -224,7 +226,7 @@ public sealed record GuestMetricsSnapshot( long Admissions, double RevenueTotal,
 			["paths"] = Paths is { } paths
 				? new JsonObject { ["guestTicks"] = paths.GuestTicks, ["litteredGuestTicks"] = paths.LitteredGuestTicks, ["litterNearGuestTicks"] = paths.LitterNearGuestTicks, ["allGuestTicks"] = paths.PathGuestTicks,
 					["crowdedGuestTicks"] = paths.CrowdedGuestTicks, ["crowdTicks"] = paths.CrowdTicks, ["litterEncounters"] = paths.LitterEncounters, ["litterCellSum"] = paths.LitterCellSum,
-					["litterComplaints"] = paths.LitterComplaints, ["crowdComplaints"] = paths.CrowdComplaints, ["goalsMoved"] = paths.GoalsMoved }
+					["litterComplaints"] = paths.LitterComplaints, ["crowdComplaints"] = paths.CrowdComplaints, ["goalsMoved"] = paths.GoalsMoved, ["litterDropped"] = paths.LitterDropped, ["litterBinned"] = paths.LitterBinned }
 				: null,
 			["needs"] = Needs is { } needs
 				? new JsonObject { ["vomits"] = needs.Vomits, ["vomitsAfterMeal"] = needs.VomitsAfterMeal, ["needThoughts"] = needs.NeedThoughts, ["departedWithUnmetNeeds"] = needs.DepartedWithUnmetNeeds, ["meanIllnessAtDeparture"] = N( needs.MeanIllnessAtDeparture ) }
@@ -293,7 +295,7 @@ public sealed class GuestMetrics : IGuestObserver
 	private long departures, departedAdmitted, depHappinessZero, depExitZero, depClosed, depBooth, depGuard, depOther;
 	private double depHappiness, depTurns, depRides, depIllness;
 	private long vomits, vomitsAfterMeal, needThoughts, depUnmet;
-	private long allGuestTicks, litteredGuestTicks, litterNearGuestTicks, pathCellGuestTicks, crowdedGuestTicks, crowdTicks, litterEncounters, litterCellSum, litterComplaints, crowdComplaints, goalsMoved;
+	private long allGuestTicks, litteredGuestTicks, litterNearGuestTicks, pathCellGuestTicks, crowdedGuestTicks, crowdTicks, litterEncounters, litterCellSum, litterComplaints, crowdComplaints, goalsMoved, litterDropped, litterBinned;
 	private double crowdSum;
 	private readonly Dictionary<(int X, int Y), int> cellCounts = new();
 
@@ -333,7 +335,7 @@ public sealed class GuestMetrics : IGuestObserver
 		departures = departedAdmitted = depHappinessZero = depExitZero = depClosed = depBooth = depGuard = depOther = 0;
 		depHappiness = depTurns = depRides = depIllness = 0;
 		vomits = vomitsAfterMeal = needThoughts = depUnmet = 0;
-		allGuestTicks = litteredGuestTicks = litterNearGuestTicks = pathCellGuestTicks = crowdedGuestTicks = crowdTicks = litterEncounters = litterCellSum = litterComplaints = crowdComplaints = goalsMoved = 0;
+		allGuestTicks = litteredGuestTicks = litterNearGuestTicks = pathCellGuestTicks = crowdedGuestTicks = crowdTicks = litterEncounters = litterCellSum = litterComplaints = crowdComplaints = goalsMoved = litterDropped = litterBinned = 0;
 		crowdSum = 0;
 		foreach ( var track in tracks.Values )
 		{
@@ -399,7 +401,7 @@ public sealed class GuestMetrics : IGuestObserver
 			guestSeconds > 0 ? happinessSeconds / guestSeconds : null, survivors.Count > 0 ? survivors.Average() : null, cohortList, departureMetrics, snapshotAttractions,
 			Gini( rideUses ), Gini( snapshotAttractions.Select( item => (double)item.Uses ).ToList() ), Gini( rideUsePerCapacity ), noChoiceEvents, stuck, guestSeconds,
 			ticks > 0 ? guestTickSum / ticks : 0, ticks, new NeedsMetrics( vomits, vomitsAfterMeal, needThoughts, depUnmet, departedAdmitted > 0 ? depIllness / departedAdmitted : null ),
-			new PathMetrics( allGuestTicks, litteredGuestTicks, litterNearGuestTicks, pathCellGuestTicks, crowdedGuestTicks, crowdSum, crowdTicks, litterEncounters, litterCellSum, litterComplaints, crowdComplaints, goalsMoved ) );
+			new PathMetrics( allGuestTicks, litteredGuestTicks, litterNearGuestTicks, pathCellGuestTicks, crowdedGuestTicks, crowdSum, crowdTicks, litterEncounters, litterCellSum, litterComplaints, crowdComplaints, goalsMoved, litterDropped, litterBinned ) );
 	}
 
 	private Track Get( Guest guest )
@@ -561,6 +563,18 @@ public sealed class GuestMetrics : IGuestObserver
 			litterComplaints++;
 		else if ( complaint == PathComplaint.Crowd )
 			crowdComplaints++;
+	}
+
+	public void LitterDropped( Guest guest )
+	{
+		if ( recording )
+			litterDropped++;
+	}
+
+	public void LitterBinned( Guest guest )
+	{
+		if ( recording )
+			litterBinned++;
 	}
 
 	public void WanderGoalMoved( Guest guest )

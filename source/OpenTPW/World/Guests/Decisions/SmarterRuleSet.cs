@@ -20,6 +20,10 @@ public enum SmarterRuleSet
 	Litter = 8,
 	/// <summary>Crowding: a wander goal in a crowd is swapped for a quieter cell of the walk, and a guest standing in a crowd complains (phase 6).</summary>
 	Crowding = 16,
+	/// <summary>Litter-aware routes: a route that crosses litter is walked round it when a few cells more avoid it (phase 6b).</summary>
+	Routes = 32,
+	/// <summary>Bins: a guest with a full litter meter looks further for a bin before it drops the litter (phase 6b).</summary>
+	Bins = 64,
 	/// <summary>The three rules of phase 5: version 1.4.0.</summary>
 	Phase5 = Planning | Detour | MealTime,
 	/// <summary>The two rules of phase 6.</summary>

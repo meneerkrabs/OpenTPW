@@ -129,4 +129,10 @@ public interface IGuestObserver
 
 	/// <summary>The path rules moved a guest's wander goal to another cell of its walk (phase 6). Additive: a default that ignores it.</summary>
 	void WanderGoalMoved( Guest guest ) { }
+
+	/// <summary>A guest's litter landed on the path (phase 6b; passive: the drop of a piece, a vomit or a prank that found its cell free).</summary>
+	void LitterDropped( Guest guest ) { }
+
+	/// <summary>A guest threw its litter into a bin (phase 6b; passive).</summary>
+	void LitterBinned( Guest guest ) { }
 }

@@ -98,6 +98,7 @@ public sealed partial class GuestSimulation
 	private bool RouteToPoint( Guest guest, (int X, int Y) cell, int byteX, int byteY )
 	{
 		var (x, y) = GuestNavigation.BytePoint( cell, byteX, byteY );
+		guest.Navigation.RouteAdjuster = RouteAdjuster;
 		var found = guest.Navigation.Navigate( Grid.Cells, x, y );
 		guest.HasWaypoint = true;
 		return found;

@@ -451,6 +451,8 @@ public static class GuestReport
 				"litter" => SmarterRuleSet.Litter,
 				"crowding" => SmarterRuleSet.Crowding,
 				"paths" => SmarterRuleSet.Paths,
+				"routes" => SmarterRuleSet.Routes,
+				"bins" => SmarterRuleSet.Bins,
 				_ => throw new ArgumentException( $"--guest-rules '{name}' is not all, none, phase5, paths, planning, detour, meal, litter or crowding." )
 			};
 		}
@@ -533,6 +535,9 @@ public static class GuestReport
 			{
 				FoodShop = args.Contains( "--guest-food" ),
 				Litter = args.Contains( "--guest-litter" ),
+				WideStreet = args.Contains( "--guest-wide" ),
+				Bins = args.Contains( "--guest-bins" ) || args.Contains( "--guest-bins-shops" ),
+				BinsAtShops = args.Contains( "--guest-bins-shops" ),
 				LitterEffect = IntOption( args, "--guest-litter-effect", 0, new ParkScenarioOptions().LitterEffect ),
 				HandymanTurns = IntOption( args, "--guest-handyman-turns", 1, new ParkScenarioOptions().HandymanTurns ),
 				ArrivalTimeBetween = IntOption( args, "--guest-scenario-arrivals", 1, new ParkScenarioOptions().ArrivalTimeBetween )
@@ -551,6 +556,7 @@ public static class GuestReport
 			Console.SetOut( output );
 		}
 		Console.Write( ToTable( result ) );
+		Console.WriteLine( $"routes: calls {RouteDetour.DbgCalls} costed {RouteDetour.DbgCosted} detours {RouteDetour.DbgDetours} endpoint {RouteDetour.DbgEndpoint} noRoute {RouteDetour.DbgNoRoute} notCheaper {RouteDetour.DbgNotCheaper}" );
 		if ( Option( args, "--guest-report-json" ) is { } path )
 		{
 			File.WriteAllText( path, ToJson( result ) + "\n" );

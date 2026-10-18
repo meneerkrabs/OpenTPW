@@ -40,6 +40,8 @@ public sealed class ParkScenario
 	private const double Tick = 1d / FixedStepClock.TicksPerSecond;
 	/// <summary>The street's row and its length in cells.</summary>
 	public const int StreetRow = 5, StreetLength = 40;
+	/// <summary>The street columns of the bin variant's bins.</summary>
+	public static readonly int[] BinColumns = { 5, 20, 24, 34 };
 	/// <summary>The toilet stands on the street far from the gate: the long walk of the scenario.</summary>
 	public const int ToiletColumn = 28;
 	/// <summary>The column of the food shop's branch (<see cref="ParkScenarioOptions.FoodShop"/>), beside the other shops'.</summary>
@@ -66,6 +68,14 @@ public sealed class ParkScenario
 		// [EXT:park-scenario] the litter variant: the guests drop and vomit litter on the paths, and a handyman proxy sweeps it (see ParkScenarioOptions.Litter)
 		if ( options.Litter )
 			Guests.Litter = new ParkLitter { Cells = Grid.Cells };
+		// [EXT:park-scenario] the bin variant: litter bins on the street's upper side (see ParkScenarioOptions.Bins)
+		if ( options.Bins )
+		{
+			var bins = options.BinsAtShops
+				? new[] { new LitterBin( 1000, (15, 2), (14, 2) ), new LitterBin( 1001, (17, 2), (16, 2) ), new LitterBin( 1002, (15, 8), (14, 8) ) }
+				: BinColumns.Select( ( column, index ) => new LitterBin( 1000 + index, (column, StreetRow - (options.WideStreet ? 2 : 1)), (column, StreetRow) ) ).ToArray();
+			Guests.Bins = () => bins;
+		}
 		Scripts = new RideScriptWorld( seed.ScriptStream );
 		AddAttraction( "twin-a", RideVisitorKind.Ride, (10, 1), 60, options.TwinAHoldMilliseconds, GuestNeeds.None, 0 );
 		if ( !options.SingleRide )
@@ -106,7 +116,15 @@ public sealed class ParkScenario
 	{
 		var grid = new GuestPathGrid( StreetLength, 12 );
 		for ( var x = 0; x < StreetLength; x++ )
+		{
 			grid.SetPath( x, StreetRow, true );
+			// [EXT:park-scenario] the wide variant: a street of three rows, so a guest can walk round a cell (see ParkScenarioOptions.WideStreet)
+			if ( options.WideStreet )
+			{
+				grid.SetPath( x, StreetRow - 1, true );
+				grid.SetPath( x, StreetRow + 1, true );
+			}
+		}
 		foreach ( var column in options.FoodShop ? new[] { 10, 12, 14, FoodColumn } : new[] { 10, 12, 14 } )
 			for ( var y = 1; y <= 9; y++ )
 				grid.SetPath( column, y, true );
@@ -291,6 +309,15 @@ public sealed record ParkScenarioOptions
 	/// sweeps one littered cell every <see cref="HandymanTurns"/> park turns. Off by default, so the default scenario, its report and its pins are the ones of the baseline.
 	/// </summary>
 	public bool Litter { get; init; }
+	/// <summary>
+	/// The wide variant (docs/SMARTER-GUESTS.md, phase 6b): the street is three cells wide instead of one, so a guest has a path cell beside any littered one. Off by default, so the default scenario, its report and its pins are
+	/// the ones of the baseline.
+	/// </summary>
+	public bool WideStreet { get; init; }
+	/// <summary>The bin variant (phase 6b): four litter bins stand beside the street; a guest with a full litter meter walks to one within the original's three cells (or the policy's radius) instead of dropping it.</summary>
+	public bool Bins { get; init; }
+	/// <summary>With <see cref="Bins"/>: three bins beside the shops' branches instead of four along the street (a player's usual place for them).</summary>
+	public bool BinsAtShops { get; init; }
 	/// <summary>The litter a use of a shop adds to the guest's litter meter in the litter variant; 5 is the shipped shops' value (<c>UsageInfo.LitterEffect</c> in every theme's Shops.sam).</summary>
 	public int LitterEffect { get; init; } = 5;
 	/// <summary>Park turns between two sweeps of the litter variant's handyman proxy; the fewer the handymen, the more turns.</summary>

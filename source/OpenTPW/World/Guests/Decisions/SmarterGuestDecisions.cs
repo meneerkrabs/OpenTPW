@@ -38,6 +38,18 @@ public sealed class SmarterGuestDecisions : IGuestDecisions
 
 	public bool UsesPathComfort => (rules & SmarterRuleSet.Paths) != 0;
 
+	public bool UsesLitterRoutes => rules.HasFlag( SmarterRuleSet.Routes );
+
+	public bool UsesBinCarry => rules.HasFlag( SmarterRuleSet.Bins );
+
+	// [EXT:smarter-guests-litter] the original's bin search and walk, over a larger radius
+	public int BinSearchRadius( in DecisionContext context, in GuestView guest ) => SmarterPathComfort.BinRadius;
+
+	// [EXT:smarter-guests-litter] the route search stays the original's; the policy prices a littered cell and bounds the detour (SmarterPathComfort)
+	public int RouteCellCost( in DecisionContext context, in RouteCellView cell ) => SmarterPathComfort.RouteCellCost( cell );
+
+	public int RouteMaxExtraCells( in DecisionContext context ) => SmarterPathComfort.RouteMaxExtraCells;
+
 	public bool UsesPlanHorizon => planning.HasFlag( SmarterRuleSet.Planning );
 
 	/// <summary>

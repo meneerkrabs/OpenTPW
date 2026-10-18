@@ -153,13 +153,15 @@ public partial class Level
 		if ( waterTracks == null || !trackStations.TryGetValue( item, out var station ) || BuilderOf( item ) is not { } builder )
 			return;
 		// both the replays and the charge run only for a type with a queue (Info.HasQueue, def +0x40: 0x527F5B..0x52817E)
-		if ( !item.Entry.HasQueue || Park?.Economy is not { } economy || GetEconomyInstance( item ) is not int instance )
+		if ( !item.Entry.HasQueue )
 			return;
+		// the replays do not depend on the economy (a level without one, the sandbox, still clears its circuit, or the tiles would stay with no way to take them away); only the refunds and the charge do
 		foreach ( var _ in TrackEditorOf( item, station, builder ).Demolish() )
 		{
 			// the refund of each cleared tile is the editor's hook (TrackEditHooksOf)
 		}
-		economy.ChargeTrackDemolition( builder.Purchase, instance );
+		if ( Park?.Economy is { } economy && GetEconomyInstance( item ) is int instance )
+			economy.ChargeTrackDemolition( builder.Purchase, instance );
 	}
 
 	private TrackEditor TrackEditorOf( OriginalObject item, TrackStation station, TrackBuilder builder ) => new( builder, station, TrackEditHooksOf( item, builder ) );

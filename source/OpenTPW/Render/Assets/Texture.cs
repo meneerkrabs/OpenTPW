@@ -347,6 +347,8 @@ public partial class Texture : Asset
 			NativeTextureView = cachedTexture!.NativeTextureView;
 			Width = cachedTexture.Width;
 			Height = cachedTexture.Height;
+			// shares the cached texture's GPU objects, so ReleaseOwned must leave it alone
+			Path = debugName;
 
 			return;
 		}

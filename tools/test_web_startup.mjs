@@ -114,7 +114,8 @@ test('only explicit themes dispatch the experimental entry point; TPW retains it
 // Execute the actual page module and its registered folder handler. DOM and .NET exports
 // are synthetic; this protects their wiring, not browser APIs, graphics or native data.
 const pageSource = (await readFile(new URL('../source/OpenTPW.Web/wwwroot/main.js', import.meta.url), 'utf8')).replace(/^import .*;\r?\n/gm, '');
-async function page(theme, active = false) {
+async function page(theme, active = false, frame = () => false) {
+	let released = 0;
 	const calls = [], files = new Map([['Data/old.wad', 9]]), elements = new Map(), witnesses = [];
 	const element = id => {
 		if (!elements.has(id)) elements.set(id, { value: id === 'edition' ? theme : '', textContent: '', handlers: new Map(),
@@ -126,14 +127,14 @@ async function page(theme, active = false) {
 		AddFile(path, bytes) { calls.push(['file', path]); files.set(path, bytes[0]); },
 		LevelLoaded(value) { calls.push(['ready', value]); },
 		StartExperimental(origin, value) { calls.push(['experimental', value]); }, Start() { calls.push(['lobby']); },
-		ReadFile() { throw new Error('no saved language'); }, Frame() { return false; },
+		ReadFile() { throw new Error('no saved language'); }, Frame() { return frame(); },
 	};
 	const store = { manifest: null, bytes: { stored: 0 }, begin() { calls.push(['cache-begin']); }, async flush() {} };
 	const environment = {
 		dotnet: { async create() { return { setModuleImports() {}, async getAssemblyExports() { return { OpenTPW: { Program: program } }; },
 			getConfig() { return { mainAssemblyName: 'synthetic' }; }, async runMain() {} }; } },
-		webgl: {}, audio: {}, storage: { async restore() {}, async sync() {} },
-		originals: { supported() { return true; }, MODES: ['lazy', 'all', 'off'], async openOriginalStore() { return store; } },
+		webgl: {}, audio: {}, text: {}, storage: { async restore() {}, async sync() {} },
+		originals: { supported() { return true; }, async claimKeeping() { return { acquired: true, unavailable: false, release() { released++; } }; }, MODES: ['lazy', 'all', 'off'], async openOriginalStore() { return store; } },
 		...startup, inputs, document: { getElementById: element, addEventListener() {} },
 		location: { search: '', hostname: 'test.invalid', origin: 'https://test.invalid' },
 		navigator: { locks: { async request(name, options, callback) { callback({}); } }, storage: { async getDirectory() { return {}; } } },
@@ -143,7 +144,7 @@ async function page(theme, active = false) {
 	};
 	const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
 	await new AsyncFunction(...Object.keys(environment), pageSource)(...Object.values(environment));
-	return { calls, files, witnesses, element, choose(sources) { element('folder').handlers.get('change')({ target: { files: sources } }); } };
+	return { calls, files, witnesses, element, get released() { return released; }, choose(sources) { element('folder').handlers.get('change')({ target: { files: sources } }); } };
 }
 const folderFile = (path, value = 1, fail = false) => ({ webkitRelativePath: `synthetic/${path}`, size: 1,
 	async arrayBuffer() { if (fail) throw new Error('synthetic read failure'); return new Uint8Array([value]).buffer; } });
@@ -159,6 +160,17 @@ test('the actual folder handler loads the selected theme before its experimental
 	assert.deepEqual(context.calls, [['reset'], ['file', 'Data/Ver.txt'], ['file', 'Data/levels/water/a.wad'], ['ready', 'water'], ['experimental', 'water']]);
 	assert.equal(context.files.has('Data/old.wad'), false);
 	assert.equal(context.files.has('Data/levels/science/b.wad'), false);
+});
+
+test('a game that stops on an error gives the kept-files lock back, a normal start does not', async () => {
+	const running = await page('');
+	running.choose([folderFile('Data/global/a.sam')]);
+	await settled(() => running.calls.some(([kind]) => kind === 'lobby'));
+	assert.equal(running.released, 0);
+	const stopped = await page('', false, () => { throw new Error('synthetic stop'); });
+	stopped.choose([folderFile('Data/global/a.sam')]);
+	await settled(() => stopped.element('status').textContent.includes('The game stopped'));
+	await settled(() => stopped.released === 1);
 });
 
 test('the actual folder handler refuses partial imports then retries without stale files or readiness', async () => {

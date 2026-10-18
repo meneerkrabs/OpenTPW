@@ -53,10 +53,10 @@ public static partial class OpcodeHandlers
 			dest.Value = value;
 		}
 
-		[OpcodeHandler( Opcode.BOUNCESETNODE, RideOpcodeStatus.Hooked, "TPW-EXE 0x5555D9 (`node`, raw): stores the raw operand word at +0x70, the base of the node number each BOUNCE entry records (+0x70 + entry index); only the render pass reads the nodes: no effect on the simulation" )]
+		[OpcodeHandler( Opcode.BOUNCESETNODE, RideOpcodeStatus.Hooked, "TPW-EXE 0x5555D9 (`node`, raw): stores the raw operand word at +0x70, the base of the node number each BOUNCE entry records (+0x70 + entry index); only the per-frame script pass 0x557AB0 reads the nodes (a bouncing rider is drawn on the node of its slot): no effect on the simulation" )]
 		public static void BounceSetNode( RideVM vm, Operand node ) => vm.Effect( Opcode.BOUNCESETNODE, new[] { node } );
 
-		[OpcodeHandler( Opcode.BOUNCESETBASE, RideOpcodeStatus.Hooked, "TPW-EXE 0x555618 (`base`): only a variable operand does anything (its value's low 16 bits go to +0x6E, a literal is ignored); read by the render pass only: no effect on the simulation" )]
+		[OpcodeHandler( Opcode.BOUNCESETBASE, RideOpcodeStatus.Hooked, "TPW-EXE 0x555618 (`base`): a variable operand's value or a literal sign-extended from 16 bits is stored as its low 16 bits at +0x6E, the base height added under the bouncing riders; read by the per-frame script pass 0x557AB0 only (the bounce height): no effect on the simulation" )]
 		public static void BounceSetBase( RideVM vm, Operand @base ) => vm.Effect( Opcode.BOUNCESETBASE, new[] { @base } );
 
 		[OpcodeHandler( Opcode.BOUNCE, RideOpcodeStatus.Hooked, "TPW-EXE 0x555674 (`visitor seconds`, resolved): the first free entry (visitor word 0) of the script's bounce table (+0x28, 16-byte entries, header bounce size at +0x64) takes the visitor, the node +0x70 + index, the deadline clock + seconds x 1000 and the start clock; the count at +0x6C goes up; result 1 in the flags, 0 with a full table (nothing stored); STP-PPC 0xadf40" )]

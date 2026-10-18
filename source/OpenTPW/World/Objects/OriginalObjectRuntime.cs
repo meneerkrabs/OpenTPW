@@ -144,7 +144,7 @@ public sealed partial class OriginalObjectRuntime
 		return System.Numerics.Vector3.Distance( transforms[from.Value].Translation, transforms[to.Value].Translation );
 	}
 
-	private int? FindDummyNode( int mask, int number )
+	internal int? FindDummyNode( int mask, int number )
 	{
 		for ( var index = 0; index < Model.DummyAttributes.Count; index++ )
 		{

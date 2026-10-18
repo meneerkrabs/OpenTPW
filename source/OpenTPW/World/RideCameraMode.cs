@@ -55,6 +55,9 @@ public sealed class RideCameraMode : CameraMode
 	/// <summary>The look angles of the last frame in radians: yaw (positive turns right) and pitch (positive looks down).</summary>
 	public (float Yaw, float Pitch) LastLook { get; private set; }
 
+	/// <summary>The world matrix of the seat the view rides now (the ride model's camera seat, a coaster's camera car), null while it follows the fallback frame (<see cref="Frame"/>).</summary>
+	internal Matrix4x4? CurrentSeat => seat?.Invoke();
+
 	private static Func<Matrix4x4?>? DefaultSeat( OriginalObject? ride )
 	{
 		if ( ride?.Runtime == null || ride.Runtime.Coaster != null )

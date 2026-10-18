@@ -271,11 +271,13 @@ public sealed class ChatHub
 				return;
 			// The server relays the player's movement to everyone in the chat park (manual p. 68: players walk
 			// and teleport around a park they are in together). The first movement also marks this connection as
-			// one that draws movement, and the answer to it carries where everyone else already stands — so a
-			// joiner sees the park's players at their places, and an older client (v0.7.x) never receives a frame
-			// it would draw as an empty line.
+			// one that draws movement, and the answer to the first movement in each room carries where everyone
+			// else already stands — so a joiner sees the park's players at their places, also in the second park
+			// a connection walks in, and an older client (v0.7.x) never receives a frame it would draw as an
+			// empty line.
 			var position = (request.X!.Value, request.Y!.Value);
-			var first = !session.ReceivesMovement;
+			// entering a room forgets the player's place there (EnterRoom), so no place yet is the first movement in this room
+			var first = session.Position == null;
 			session.Position = position;
 			session.ReceivesMovement = true;
 			var moved = new ChatEvent( ChatEventKind.Move, session.Name, session.Room, X: position.Item1, Y: position.Item2 );

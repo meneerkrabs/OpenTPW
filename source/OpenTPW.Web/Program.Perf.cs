@@ -85,6 +85,16 @@ public static partial class Program
 		return true;
 	}
 
+	/// <summary>Holds the park camera at a zoom value (the wide range reaches 40..300 with the option on) and returns the zoom it ended at; -1 outside a park.</summary>
+	[JSExport]
+	public static double PerfZoom( double zoom )
+	{
+		if ( Camera.Mode is not ParkCameraMode camera )
+			return -1;
+		camera.SetPose( camera.Target, (float)zoom, camera.Yaw );
+		return camera.Height;
+	}
+
 	/// <summary>The items of a buy-window category (Rides, Shops, Sideshows, Features) as JSON: archive name and shown name.</summary>
 	[JSExport]
 	public static string PerfBuyItems( string category )

@@ -68,8 +68,9 @@ shares one stream:
   original's projections of one draw (`0x55398A`, `0x5560CB`, `0x554CB5`), and the bump and tour rides their own;
 - the arrival vehicle's pick when a leaving guest calls one (`0x51A34B`).
 
-Presentation (particles, voices, the sound chooser, the weather's visuals, the advisor, animation and the texture roll of
-PATH-014) stays off it; `WorldRngTests.PresentationCodeNeverReachesTheWorldGenerator` checks the folders. The explicit
+Presentation (particles, voices, the sound chooser, the weather's visuals, the advisor, animation, the texture roll of
+PATH-014 and the online players of a visited park) stays off it; `WorldRngTests.PresentationCodeNeverReachesTheWorldGenerator`
+checks the folders and files. The explicit
 seeds remain for what the original seeds explicitly or OpenTPW seeds for itself: the coaster LCG, the weather, the sound
 chooser and a script made with a seed.
 

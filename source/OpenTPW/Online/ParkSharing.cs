@@ -12,6 +12,11 @@ public sealed record ParkVisitInfo(
 {
 	public string Level => Payload.Level;
 	public bool IsSandbox => Payload.Source == MinimalParkPayload.SourceSandbox;
+	/// <summary>
+	/// The server's id of the published park this visit was downloaded from, whose chat room the visit joins (<see cref="ParkPresence"/>); null for a
+	/// park file opened from disk.
+	/// </summary>
+	public string? OnlineParkId { get; init; }
 }
 
 /// <summary>File-based sharing: export the current park to <c>.tpwpark</c> and prepare visits.</summary>

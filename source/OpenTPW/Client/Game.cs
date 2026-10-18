@@ -363,6 +363,9 @@ internal static class Game
 			int? perfArrivals = null;
 			if ( GetOption( args, "--perf-arrivals", "turns between arrivals" ) is { } arrivalText )
 				perfArrivals = int.TryParse( arrivalText, out var parsedArrivals ) && parsedArrivals > 0 ? parsedArrivals : throw new ArgumentException( "--perf-arrivals expects a positive number of turns." );
+			float? perfZoom = null;
+			if ( GetOption( args, "--perf-zoom", "the park camera's zoom value" ) is { } zoomText )
+				perfZoom = float.TryParse( zoomText, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var parsedZoom ) && float.IsFinite( parsedZoom ) ? parsedZoom : throw new ArgumentException( "--perf-zoom expects a zoom value, for example 300." );
 			int perfWarmup = 0, perfDone = 0;
 			var perfOpened = false;
 			Render.PostUpdate += () =>
@@ -378,6 +381,9 @@ internal static class Game
 					perfPark.Economy.Speed = (GameSpeed)perfSpeed;
 					// a park started from the front end hides the developer panels
 					perfLevel.ShowDeveloperPanels = false;
+					// [EXT:perf-run] --perf-zoom <value> holds the park camera at that zoom value for the whole run (the wide range of GameOptions.WideZoom reaches 40..300)
+					if ( perfZoom is { } zoom && Camera.Mode is ParkCameraMode perfCamera )
+						perfCamera.SetPose( perfCamera.Target, zoom, perfCamera.Yaw );
 					if ( perfArrivals is { } arrivals && perfLevel.Guests != null )
 						perfLevel.Guests.Settings.ArrivalTimeBetween = arrivals;
 				}
@@ -795,7 +801,9 @@ internal static class Game
 			Render.OnRender += advisor.Render;
 		if ( visit != null && smoke )
 		{
-			using var visitSmokeTest = new VisitSmokeTest( level, flow.Hud );
+			// --smoke-presence adds scripted online players round the park entrance (VisitPresenceSmoke)
+			using var visitSmokeTest = new VisitSmokeTest( level, flow.Hud, input => flow.InjectedInput = input,
+				args.Contains( "--smoke-presence" ) ? visited => VisitPresenceSmoke.Attach( visited, flow.AttachPresence ) : null );
 			Render.PostUpdate += visitSmokeTest.Update;
 			Render.Run();
 			visitSmokeTest.VerifyCompleted();

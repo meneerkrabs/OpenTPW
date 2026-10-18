@@ -251,11 +251,13 @@ public class SmarterGuestsPatienceTests
 				Assert.IsFalse( Smarter.DecideQueuePatience( Context( turn ), guest, Queue( ride, 0, 8, 0 ) ).Leave, $"turn {turn} of {quiet}: inside the window the answer is the original's" );
 			Assert.IsTrue( Smarter.DecideQueuePatience( Context( quiet ), guest, Queue( ride, 0, 8, 0 ) ).Leave, "the first turn outside it can give up" );
 		}
-		// a run in which the host never skips (a spy that always says -1) is the run in which it does
-		var skipping = new ParkScenario( new WorldSeed( 2 ), decisions: new SmarterGuestDecisions() );
-		skipping.Run( 20_000 );
-		var asked = new ParkScenario( new WorldSeed( 2 ), decisions: new Spy( -1 ) );
-		asked.Run( 20_000 );
+		// a run in which the host never skips (the same policy with only the quiet window switched off) is the run in which it does, in a park where guests do give up
+		var slow = new ParkScenarioOptions { TwinAHoldMilliseconds = 30_000, ArrivalTimeBetween = 6 };
+		var (skipping, skippingEnds) = Run( slow, 2, 60_000, new OriginalChoice() );
+		var (asked, askedEnds) = Run( slow, 2, 60_000, new AlwaysAsked() );
+		var gaveUp = skippingEnds.Ends.Count( end => end.Reason == QueueEndReason.Impatient );
+		Assert.IsTrue( gaveUp > 0, "guests give up in this park" );
+		Assert.AreEqual( gaveUp, askedEnds.Ends.Count( end => end.Reason == QueueEndReason.Impatient ), "the same give-ups" );
 		Assert.AreEqual( asked.Hash, skipping.Hash, "the guests" );
 		Assert.AreEqual( asked.Guests.RandomState, skipping.Guests.RandomState, "the draws" );
 		// and a policy that is asked less often sees fewer calls than one that is always asked
@@ -266,6 +268,13 @@ public class SmarterGuestsPatienceTests
 		Assert.IsTrue( quietSpy.Calls > 0 && quietSpy.Calls < counting.Patience.Count / 2, $"{quietSpy.Calls} calls against {counting.Patience.Count}" );
 		Assert.AreEqual( 0, quietSpy.WithWalkers, "the queue hook's view carries no walkers (counting them outside a decision scans every guest, and the hook does not read them)" );
 		Assert.AreEqual( quietSpy.Calls, quietSpy.WithEstimate, "but it still carries the throughput estimate the give-up test reads" );
+	}
+
+	/// <summary><see cref="OriginalChoice"/> that is asked about patience on every turn: only the quiet window differs, every other member is forwarded.</summary>
+	private sealed class AlwaysAsked() : SmarterGuestsTests.DelegatingDecisions( new SmarterGuestDecisions() )
+	{
+		public override uint ScoreAttraction( in DecisionContext context, in GuestView guest, in AttractionView attraction ) => OriginalGuestDecisions.Instance.ScoreAttraction( context, guest, attraction );
+		public override int QueuePatienceQuietTurns( in DecisionContext context, ulong birthId ) => -1;
 	}
 
 	private sealed class QuietSpy() : SmarterGuestsTests.DelegatingDecisions( new SmarterGuestDecisions() )

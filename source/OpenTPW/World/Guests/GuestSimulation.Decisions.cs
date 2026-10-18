@@ -48,21 +48,6 @@ public sealed partial class GuestSimulation
 			attraction.IsIndoors, attraction.GoldenTicketCost, attraction.UpgradeCost, attraction.IsOpen, attraction.IsBrokenDown, sameType, price, willingness, walkers, interval, cycle );
 	}
 
-	/// <summary>
-	/// <paramref name="view"/> with what the spreading rules read (docs/SMARTER-GUESTS.md, phase 3): the guests, other than <paramref name="guest"/>, walking to the attraction (their target, not yet in its queue) and the
-	/// attraction's observed time per guest (<see cref="RideThroughputs"/>, the cold start without a measurement). Pure: it records and changes nothing.
-	/// </summary>
-	// [EXT:smarter-guests-spread] host-computed facts for the policy; the throughput bookkeeping is the host's (NoteBoarding, ObserveThroughputs)
-	private AttractionView WithSpreading( AttractionView view, IRideVisitorBridge attraction, Guest guest, bool withReservations = true )
-	{
-		if ( SmarterGuests is not { } smarter )
-			return view;
-		// the queue hooks' views carry no walkers: outside a decision counting them is a scan of every guest, and neither hook reads them (the smarter policy zeroes them in the admission)
-		var reservations = withReservations ? ReservationsOf( attraction.AttractionId, guest ) : 0;
-		var interval = smarter.Throughputs.IntervalFor( attraction.AttractionId, attraction.Kind, attraction.LiveCapacity, attraction.Speed, ParkTurn, attraction.QueueLength );
-		return view with { Reservations = reservations, TurnsPerGuest256 = interval, CycleTurns256 = SmarterGuestsRules.CycleTurns256Of( interval, attraction.LiveCapacity ) };
-	}
-
 	/// <summary>The walkers per attraction, counted once at the start of a decision (<see cref="BeginReservations"/>); null outside one.</summary>
 	private Dictionary<int, int>? reservationCounts;
 
@@ -207,7 +192,8 @@ public sealed partial class GuestSimulation
 	{
 		var context = ContextNow();
 		// a guest that has not waited long enough for the policy to answer anything but the original's "stay" is not asked, and no view is built for it (nearly every queued guest on nearly every turn)
-		if ( guest.QueueJoinTurn >= 0 && ParkTurn - guest.QueueJoinTurn < decisions.QueuePatienceQuietTurns( context, guest.BirthId ) )
+		var quiet = decisions.QueuePatienceQuietTurns( context, guest.BirthId );
+		if ( quiet >= 0 && guest.QueueJoinTurn >= 0 && ParkTurn - guest.QueueJoinTurn < quiet )
 			return false;
 		var view = ViewOf( guest );
 		// the alternatives are scanned only for a guest that is not at the front and has waited long enough for the policy's own give-up test to start
@@ -241,7 +227,7 @@ public sealed partial class GuestSimulation
 			{
 				if ( other.AttractionId == excludeAttractionId || !CouldJoinRide( other, type ) )
 					continue;
-				var view = WithSpreading( ViewOf( other, guest ), other, guest );
+				var view = ViewOf( other, guest );
 				if ( SmarterGuestsRules.IsUnusedAdmissibleRide( context, guestView, view ) && SmarterGuestsRules.ExpectedWait256( view ) is { } wait && (best < 0 || wait < best) )
 					best = wait;
 			}
@@ -260,13 +246,16 @@ public sealed partial class GuestSimulation
 	/// cooldown. Reads the litter map and the cell lists only; the neighbourhoods are the nine cells around the walk's at most <see cref="GuestWander.TrailCapacity"/> + 1 cells.
 	/// </summary>
 	// [EXT:smarter-guests-paths] no draw is taken here and the original's route request is made afterwards, for whatever goal results
-	private GuestWander.Destination WeighPath( Guest guest, GuestWander.Destination proposal, ReadOnlySpan<(int X, int Y)> trail )
+	internal GuestWander.Destination WeighPath( Guest guest, GuestWander.Destination proposal, ReadOnlySpan<(int X, int Y)> trail )
 	{
 		// the candidates: the cells of the original's walk, then the linked path cells beside its goal that the walk did not visit, then the goal itself (always last)
 		Span<(int X, int Y)> cells = stackalloc (int X, int Y)[trail.Length + 4];
 		var count = 0;
+		var start = (X: guest.CellX, Y: guest.CellY);
+		// never the guest's own cell (the walk may pass back through it; staying put is not a goal), and only path cells (a walk that starts on a queue cell can enter queue cells); the original's goal stays whatever it is
 		for ( var index = 0; index < trail.Length - 1; index++ )
-			cells[count++] = trail[index];
+			if ( trail[index] != start && Grid.IsWalkable( trail[index].X, trail[index].Y ) )
+				cells[count++] = trail[index];
 		var goalCell = trail[^1];
 		{
 			var links = Grid.Cells.LinksAt( goalCell.X, goalCell.Y );
@@ -274,7 +263,7 @@ public sealed partial class GuestSimulation
 			{
 				var (dx, dy) = GuestPathGrid.Directions[direction];
 				var next = (X: goalCell.X + dx, Y: goalCell.Y + dy);
-				if ( (links & GuestPathGrid.LinkValue( direction )) == 0 || !Grid.IsWalkable( next.X, next.Y ) || cells[..count].Contains( next ) )
+				if ( (links & GuestPathGrid.LinkValue( direction )) == 0 || next == start || !Grid.IsWalkable( next.X, next.Y ) || cells[..count].Contains( next ) )
 					continue;
 				cells[count++] = next;
 			}
@@ -285,9 +274,9 @@ public sealed partial class GuestSimulation
 		{
 			// the walk often steps back over a cell it has been on: that cell's view is the same
 			var seen = cells[..index].IndexOf( cells[index] );
-			walk[index] = seen >= 0 ? walk[seen] : PathCellOf( cells[index] );
+			walk[index] = seen >= 0 ? walk[seen] : PathCellOf( cells[index], guest );
 		}
-		var decision = decisions.ChoosePath( ContextNow(), ViewOf( guest ), new WanderPathView( PathCellOf( (guest.CellX, guest.CellY) ), walk ) );
+		var decision = decisions.ChoosePath( ContextNow(), ViewOf( guest ), new WanderPathView( PathCellOf( start, guest ), walk ) );
 		if ( decision.GoalIndex < -1 || decision.GoalIndex >= walk.Length )
 			throw PolicyError( $"returned the walk cell {decision.GoalIndex} of {walk.Length}" );
 		if ( decision.Complaint != PathComplaint.None )
@@ -310,7 +299,7 @@ public sealed partial class GuestSimulation
 	}
 
 	/// <summary>A path cell as the comfort rule sees it: the litter in the cell and the eight around it (zero without any litter in the park: no cell is read) and the guests in the cell.</summary>
-	internal PathCellView PathCellOf( (int X, int Y) cell )
+	internal PathCellView PathCellOf( (int X, int Y) cell, Guest? asking = null )
 	{
 		var units = 0;
 		if ( Litter is { Count: > 0 } litter )
@@ -324,6 +313,15 @@ public sealed partial class GuestSimulation
 				for ( var x = cell.X - 1; x <= cell.X + 1; x++ )
 					if ( (x != cell.X || y != cell.Y) && occupants.TryGetValue( (x, y), out var around ) )
 						near += around.Count;
-		return new PathCellView( cell.X, cell.Y, units, occupants.TryGetValue( cell, out var list ) ? list.Count : 0, near );
+		var here = occupants.TryGetValue( cell, out var list ) ? list.Count : 0;
+		// the asking guest is not a crowd to itself: it stands in one of these cells and is taken out of the count
+		if ( asking?.OccupiedCell is { } mine && Math.Abs( mine.X - cell.X ) <= 1 && Math.Abs( mine.Y - cell.Y ) <= 1 )
+		{
+			if ( mine == cell )
+				here--;
+			else
+				near--;
+		}
+		return new PathCellView( cell.X, cell.Y, units, Math.Max( 0, here ), Math.Max( 0, near ) );
 	}
 }

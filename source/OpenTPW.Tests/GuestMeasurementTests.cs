@@ -75,7 +75,7 @@ public class GuestMeasurementTests
 	private const ulong ScenarioSmarterFixedRunHash = 0xF4F3CD74CD7253ABUL;
 
 	/// <summary>The same run with the path rules of 1.5.0 (phase 6) on, the shipped extension. Moved from <see cref="ScenarioSmarterFixedRunHash"/> (1.4.0's, which the rule sets without the path rules still reproduce) because the scenario's guests crowd the street and the rules move wander goals and complain; the stronger rule of the final sweep acts in this 12,000-tick run, which the first version did not.</summary>
-	private const ulong ScenarioSmarterPathsFixedRunHash = 0x4568E8BDD6DB96EAUL;
+	private const ulong ScenarioSmarterPathsFixedRunHash = 0xDA1A5CD6C526A112UL;
 
 	[TestMethod]
 	public void ParkScenarioFixedRunHashWithTheSmarterGuestsExtensionOnIsPinned()
@@ -92,10 +92,10 @@ public class GuestMeasurementTests
 	}
 
 	/// <summary>
-	/// The scenario with its food shop (<see cref="ParkScenarioOptions.FoodShop"/>) and the extension (1.4.0) on: guests eat, so the meal rule (docs/SMARTER-GUESTS.md, phase 5) acts. The on-path pin of phase 5, which the scenario
+	/// The scenario with its food shop (<see cref="ParkScenarioOptions.FoodShop"/>) and the extension on (1.5.0, the path rules included, so the pin moved from main's 1.4.0 value with them): guests eat, so the meal rule (docs/SMARTER-GUESTS.md, phase 5) acts. The on-path pin of phase 5, which the scenario
 	/// pin above cannot be: it did not move, because the rules of phase 5 need a meal or a meter near a level. A deliberate change of a phase 5 constant changes this value (and bumps the extension's version).
 	/// </summary>
-	private const ulong ScenarioFoodSmarterFixedRunHash = 0x8902B29D497F6074UL;
+	private const ulong ScenarioFoodSmarterFixedRunHash = 0x083802FC438DC19CUL;
 
 	[TestMethod]
 	public void ParkScenarioWithAFoodShopAndTheSmarterGuestsExtensionOnIsPinned()

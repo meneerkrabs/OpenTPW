@@ -2,7 +2,7 @@ namespace OpenTPW;
 
 /// <summary>
 /// The pure rules of the clean and quiet paths (docs/SMARTER-GUESTS.md, phase 6): the wander goal is weighted by the litter and the crowd around it, and a guest standing in litter or in a crowd complains with a tiny
-/// happiness cost, at most once per visit. Every number is OpenTPW's own: the thresholds come from the original's, the weights, the margin and the neighbour term were chosen by the sweep of docs/SMARTER-GUESTS.md (phase 6).
+/// happiness cost, at most once per 480 turns (about a visit). Every number is OpenTPW's own: the thresholds come from the original's, the weights, the margin and the neighbour term were chosen by the sweep of docs/SMARTER-GUESTS.md (phase 6).
 /// </summary>
 // [EXT:smarter-guests-paths] OpenTPW's own rules; the original wander ignores litter and crowding
 public static class SmarterPathComfort
@@ -31,7 +31,7 @@ public static class SmarterPathComfort
 	/// </summary>
 	public const int SwitchMargin = CrowdWeight;
 
-	/// <summary>The park turns between two complaints of one guest: a whole visit (the exit counter, 480 turns, is about 21 days), so a guest complains at most once per visit.</summary>
+	/// <summary>The park turns between two complaints of one guest: a whole visit (the exit counter, 480 turns, is about 21 days), so a guest complains at most once per 480 turns, about a visit. (One cooldown for both kinds. A guest in a level park stays longer than 480 turns, which is why the report counts 1.4 to 1.7 complaints per admitted guest there.)</summary>
 	public const int ComplaintCooldownTurns = 480;
 
 	/// <summary>The happiness a complaint costs is the original's smallest happiness step divided by this: a fiftieth (0.1 of the shipped 5), the cost of being noticed and not of being hurt.</summary>

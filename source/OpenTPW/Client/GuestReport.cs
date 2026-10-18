@@ -40,8 +40,8 @@ public sealed record GuestReportOptions
 	/// </summary>
 	public IReadOnlyList<string> Mods { get; init; } = Array.Empty<string>();
 	/// <summary>
-	/// Which phase 5 rules the smarter-guests policy runs in this report (<c>--guest-rules</c>): all by default; <see cref="SmarterRuleSet.None"/> measures the behaviour of version 1.3.0 from the same build, and a single rule measures
-	/// that rule alone (docs/SMARTER-GUESTS.md, phase 5). Only read when the extension is on.
+	/// Which of the switchable rules (phases 5 and 6) the smarter-guests policy runs in this report (<c>--guest-rules</c>): all by default; <see cref="SmarterRuleSet.Phase5"/> measures the behaviour of version 1.4.0 and <see cref="SmarterRuleSet.None"/> that of 1.3.0 from the same build, and a single rule measures
+	/// that rule alone (docs/SMARTER-GUESTS.md, phases 5 and 6). Only read when the extension is on.
 	/// </summary>
 	public SmarterRuleSet Rules { get; init; } = SmarterRuleSet.All;
 }

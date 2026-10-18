@@ -58,7 +58,6 @@ public static class GuestCost
 		var table = new StringBuilder();
 		table.AppendLine( $"Guest cost: {days} in-game days ({ticks} ticks), {seeds} seeds x {repeats} repeats = {seeds * repeats} runs per variant, medians{(options.FoodShop ? ", scenario with the food shop" : "")}" );
 		table.AppendLine( $"{"variant",-9} {"total ms",9} {"cpu ms",9} {"guest ms",9} {"guests/turn",11} {"ns/guest-turn",13} {"B/guest-turn",12}  {"total x",8} {"cpu x",8} {"guest x",8} {"per guest-turn x",16}" );
-		Sample[] Medians( string name ) => [Median( results[name] )];
 		var baseline = Median( results[variants[0].Name] );
 		foreach ( var variant in variants )
 		{

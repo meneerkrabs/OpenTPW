@@ -791,7 +791,7 @@ public class SmarterGuestsTests
 			script[RideVariables.VAR_LETMEON] = attraction.LetMeOnWritten ? attraction.CalledGuest : 0;
 		}
 		Assert.AreEqual( Hash( park ), Hash( resumed ), "the resumed park hashes like the saved one, extension state included" );
-		var last = tick + 1500;
+		var last = tick + 4000;
 		for ( ; tick <= last; tick++ )
 		{
 			park.Step();

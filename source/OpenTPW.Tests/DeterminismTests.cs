@@ -483,10 +483,10 @@ public class DeterminismTests
 	/// <summary>
 	/// The pinned hash of the same run with <c>opentpw.smarter-guests</c> on (docs/SMARTER-GUESTS.md): in this run, whose one drinks shop is cheap enough that no guest is refused and which has no second attraction to choose
 	/// between, the smarter rules of phases 2 to 5 (1.4.0) change no guest: <see cref="GuestSimulation.ComputeStateHash"/> equals the off run's. What moved from 1.1.0's value is the extension's own state, which joins the world hash: the
-	/// shop's throughput estimate (phase 3: its average, samples and silence clock) next to the birth ids. The scenario's pin (GuestMeasurementTests) is where the rules act. 1.5.0 (phase 6, clean and quiet paths) moved this pin from 0x64340E899EC258EB (1.4.0) to 0x00ADEF2E451729B9: the cross park's few path cells crowd (five guests in one cell), so guests complain of the crowd and the wander goal moves to a quieter cell of its walk, which changes guest happiness and walks; the state the extension adds (complaint times) joins the hash too. A deliberate change of the
+	/// shop's throughput estimate (phase 3: its average, samples and silence clock) next to the birth ids. The scenario's pin (GuestMeasurementTests) is where the rules act. 1.5.0 (phase 6, clean and quiet paths) moved this pin from main's value for the 1.4.0 rules: the cross park's few path cells crowd (five guests in one cell), so guests complain of the crowd and the wander goal moves to a quieter candidate, which changes happiness and walks, and the complaint times join the hash (docs/DETERMINISM.md). A deliberate change of the
 	/// extension's state, of the rules or of a constant changes this value (and bumps the extension's version).
 	/// </summary>
-	internal const ulong SmarterGuestsFixedRunHash = 0xE34B28A7D63A3B5FUL;
+	internal const ulong SmarterGuestsFixedRunHash = 0xE7D4BED7787E4748UL;
 
 	[TestMethod]
 	public void SmarterGuestsFixedRunHashIsTheSameInEveryProcess()

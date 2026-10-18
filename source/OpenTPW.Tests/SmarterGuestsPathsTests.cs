@@ -191,6 +191,7 @@ public class SmarterGuestsPathsTests
 	{
 		public readonly List<(PathCellView Here, PathCellView[] Walk, long ComplaintTurn)> Seen = [];
 		public readonly List<GuestWander.Destination> Proposals = [];
+		public Action<GuestView, GuestWander.Destination>? OnGoal;
 		public override bool UsesPathComfort => true;
 		public override PathDecision ChoosePath( in DecisionContext context, in GuestView guest, in WanderPathView path )
 		{
@@ -200,6 +201,7 @@ public class SmarterGuestsPathsTests
 		public override GuestWander.Destination ChooseWanderGoal( in DecisionContext context, in GuestView guest, in GuestWander.Destination proposal )
 		{
 			Proposals.Add( proposal );
+			OnGoal?.Invoke( guest, proposal );
 			return base.ChooseWanderGoal( context, guest, proposal );
 		}
 	}
@@ -247,9 +249,9 @@ public class SmarterGuestsPathsTests
 		{
 			foreach ( var cell in path.Walk.ToArray().Append( path.Here ) )
 			{
-				var live = scenario!.Guests.Guests.Count( other => other.State != GuestState.Gone && other.CellX == cell.X && other.CellY == cell.Y );
+				var live = scenario!.Guests.Guests.Count( other => other.Id != guest.Id && other.State != GuestState.Gone && other.CellX == cell.X && other.CellY == cell.Y );
 				Assert.AreEqual( live, cell.Crowd, $"cell ({cell.X}, {cell.Y})" );
-				var around = scenario.Guests.Guests.Count( other => other.State != GuestState.Gone && Math.Abs( other.Navigation.Cell.X - cell.X ) <= 1 && Math.Abs( other.Navigation.Cell.Y - cell.Y ) <= 1 ) - scenario.Guests.Guests.Count( other => other.State != GuestState.Gone && other.Navigation.Cell == (cell.X, cell.Y) );
+				var around = scenario.Guests.Guests.Count( other => other.Id != guest.Id && other.State != GuestState.Gone && Math.Abs( other.Navigation.Cell.X - cell.X ) <= 1 && Math.Abs( other.Navigation.Cell.Y - cell.Y ) <= 1 ) - scenario.Guests.Guests.Count( other => other.Id != guest.Id && other.State != GuestState.Gone && other.Navigation.Cell == (cell.X, cell.Y) );
 				Assert.AreEqual( around, cell.NearCrowd, $"the eight cells around ({cell.X}, {cell.Y})" );
 				checkedCells++;
 			}
@@ -344,25 +346,69 @@ public class SmarterGuestsPathsTests
 		public void PathComplained( Guest guest, PathComplaint complaint ) => counts[complaint] = counts.GetValueOrDefault( complaint ) + 1;
 	}
 
-	[TestMethod]
-	public void AGoalMoveNamesACellOfTheWalkAndKeepsTheOriginalsSubCellBytes()
+	/// <summary>A guest of a running scenario on a path cell with a linked path cell beside it, and that neighbour.</summary>
+	private static (Guest Guest, (int X, int Y) Beside) GuestOnAStreet( ParkScenario park )
 	{
-		var originalBytes = new List<(int X, int Y)>();
-		var spy = new PathSpy( ( path, guest ) => path.Walk.Length > 1 ? new PathDecision( 0 ) : PathDecision.Keep );
-		var park = Run( spy, 6000 );
-		var moved = 0;
-		for ( var index = 0; index < spy.Seen.Count; index++ )
+		foreach ( var guest in park.Guests.Guests )
 		{
-			var walk = spy.Seen[index].Walk;
-			if ( walk.Length <= 1 )
+			if ( !park.Grid.IsWalkable( guest.CellX, guest.CellY ) )
 				continue;
-			moved++;
-			Assert.AreEqual( (walk[0].X, walk[0].Y), spy.Proposals[index].Cell, "the goal the later hook sees is the named cell" );
-			Assert.IsTrue( spy.Proposals[index].ByteX is >= GuestWander.MinimumByte and <= GuestWander.MaximumByte && spy.Proposals[index].ByteY is >= GuestWander.MinimumByte and <= GuestWander.MaximumByte, "the original's sub-cell bytes" );
-			originalBytes.Add( (spy.Proposals[index].ByteX, spy.Proposals[index].ByteY) );
+			foreach ( var next in new[] { (guest.CellX + 1, guest.CellY), (guest.CellX - 1, guest.CellY) } )
+				if ( park.Grid.IsWalkable( next.Item1, next.Item2 ) && park.Grid.AreConnected( guest.CellX, guest.CellY, GuestPathGrid.DirectionBetween( guest.CellX, guest.CellY, next.Item1, next.Item2 ) ) )
+					return (guest, next);
 		}
-		Assert.IsTrue( moved > 20, $"{moved} goals moved" );
-		_ = park;
+		throw new AssertFailedException( "no guest on a street" );
+	}
+
+	[TestMethod]
+	public void AGoalMoveNamesACandidateAndKeepsTheOriginalsSubCellBytesAndTheOriginalGoalWhenKept()
+	{
+		var spy = new PathSpy( ( path, guest ) => path.Walk.Length > 1 ? new PathDecision( 0 ) : PathDecision.Keep );
+		var park = Run( spy, 3000 );
+		var (guest, beside) = GuestOnAStreet( park );
+		var far = (X: guest.CellX < 20 ? 30 : 5, Y: guest.CellY);
+		var proposal = new GuestWander.Destination( far, 77, 99 );
+		var moved = park.Guests.WeighPath( guest, proposal, [beside, far] );
+		Assert.AreEqual( beside, moved.Cell, "the candidate the policy named" );
+		Assert.AreEqual( (77, 99), (moved.ByteX, moved.ByteY), "the original's sub-cell bytes" );
+		var kept = new ParkScenario( new WorldSeed( 1 ), decisions: new PathSpy( ( _, _ ) => PathDecision.Keep ) );
+		kept.Run( 3000 );
+		var (other, otherBeside) = GuestOnAStreet( kept );
+		Assert.AreEqual( proposal with { }, kept.Guests.WeighPath( other, proposal, [otherBeside, far] ), "a kept goal is the proposal itself" );
+	}
+
+	[TestMethod]
+	public void NoCandidateAndNoMoveIsEverTheGuestsOwnCellAndOnlyPathCellsAreOffered()
+	{
+		var spy = new PathSpy( ( path, guest ) => path.Walk.Length > 1 ? new PathDecision( 0 ) : PathDecision.Keep );
+		var park = Run( spy, 3000 );
+		var (guest, beside) = GuestOnAStreet( park );
+		var start = (X: guest.CellX, Y: guest.CellY);
+		// a walk that passes back through the start cell, with the goal next to it: neither the start nor a non-path cell is offered
+		var offGrid = (X: 0, Y: 11);
+		Assert.IsFalse( park.Grid.IsWalkable( offGrid.X, offGrid.Y ) );
+		spy.Seen.Clear();
+		_ = park.Guests.WeighPath( guest, new GuestWander.Destination( beside, 64, 64 ), [start, offGrid, beside, start, beside] );
+		var walk = spy.Seen.Single().Walk;
+		Assert.IsTrue( walk.SkipLast( 1 ).All( cell => (cell.X, cell.Y) != start && park.Grid.IsWalkable( cell.X, cell.Y ) ), "no start cell and no off-path cell among the candidates" );
+		Assert.AreEqual( beside, (walk[^1].X, walk[^1].Y), "the goal stays last" );
+		// over a whole run no moved goal is the start cell
+		var starts = new List<((int X, int Y) Start, (int X, int Y) Goal)>();
+		var recording = new PathSpy( ( path, g ) => path.Walk.Length > 1 ? new PathDecision( 0 ) : PathDecision.Keep );
+		recording.OnGoal = ( g, proposal ) => starts.Add( ((g.CellX, g.CellY), proposal.Cell) );
+		var run = Run( recording, 9000 );
+		var movedGoals = 0;
+		for ( var index = 0; index < recording.Seen.Count; index++ )
+		{
+			var seen = recording.Seen[index];
+			if ( seen.Walk.Length > 1 )
+			{
+				movedGoals++;
+				Assert.AreNotEqual( (seen.Here.X, seen.Here.Y), starts[index].Goal, "a moved goal is never the cell the guest stands on" );
+			}
+		}
+		Assert.IsTrue( movedGoals > 50, $"{movedGoals} moves" );
+		_ = run;
 	}
 
 	[TestMethod]
@@ -394,7 +440,7 @@ public class SmarterGuestsPathsTests
 			var park = new ParkScenario( new WorldSeed( 3 ), options, new SmarterGuestDecisions( rules ) );
 			var counter = new ComplaintCounterWithMoves();
 			park.Guests.Observer = counter;
-			park.Run( GuestReport.TicksForDays( 40 ) );
+			park.Run( GuestReport.TicksForDays( 90 ) );
 			counts = counter.Counts;
 			moved = counter.Moved;
 			return park.Hash;

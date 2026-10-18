@@ -53,7 +53,7 @@ public static class GuestReportCompare
 		static string Extensions( JsonObject report ) => report["extensions"] is JsonArray { Count: > 0 } list ? string.Join( ", ", list.Select( item => (string)item! ) ) : "none";
 		if ( Extensions( baseline ) != Extensions( candidate ) )
 			notes.AppendLine( $"extensions: baseline {Extensions( baseline )}, candidate {Extensions( candidate )}" );
-		static string Rules( JsonObject report ) => (string?)report["rules"] ?? "All";
+		static string Rules( JsonObject report ) => (string?)report["rules"] ?? (string?)report["planningRules"] ?? "All";
 		if ( Rules( baseline ) != Rules( candidate ) )
 			notes.AppendLine( $"smarter-guests rules: baseline {Rules( baseline )}, candidate {Rules( candidate )}" );
 		static string Mods( JsonObject report ) => report["mods"] is JsonArray { Count: > 0 } list ? string.Join( ", ", list.Select( item => (string)item! ) ) : "none";

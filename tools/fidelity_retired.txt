@@ -267,6 +267,7 @@ TOUR-002 docs/TOURS.md
 TOUR-003 docs/TOURS.md
 TOUR-004 docs/PROGRESS.md
 TOUR-007 docs/TOURS.md
+TOUR-008 docs/TOURS.md
 TOUR-009 docs/PROGRESS.md
 TOUR-010 docs/PROGRESS.md
 TRACK-003 docs/TRACKS.md
@@ -352,5 +353,6 @@ WALK-001 docs/progress/2026-10-16-ride-shop-and-sideshow-settings.md
 WALK-002 docs/GUESTS.md
 WALK-004 docs/GUESTS.md
 WALK-006 docs/GUESTS.md
+WALK-007 docs/GUESTS.md
 WALK-008 docs/GUESTS.md
 WALK-009 docs/GUESTS.md

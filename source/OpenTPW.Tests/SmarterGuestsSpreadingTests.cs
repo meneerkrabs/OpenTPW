@@ -752,11 +752,11 @@ public class SmarterGuestsSpreadingTests
 	public void TheSpreadingRulesActInTheScenarioRunAndTheOffRunDoesNotSeeThem()
 	{
 		var off = new ParkScenario( new WorldSeed( 1 ) );
-		off.Run( 12_000 );
+		off.Run( 16_000 );
 		using var scope = OpenTpwExtensions.Use( SmarterGuestsTests.On() );
 		var on = new ParkScenario( new WorldSeed( 1 ) );
 		Assert.IsInstanceOfType( on.Guests.Decisions, typeof( SmarterGuestDecisions ) );
-		on.Run( 12_000 );
+		on.Run( 16_000 );
 		var estimates = on.Guests.SmarterGuests!.Throughputs;
 		Assert.IsTrue( estimates.Count >= 4, "the estimator ran for the rides and the shops" );
 		Assert.IsTrue( estimates.Entries.Any( entry => entry.Samples >= 10 ), "and learned" );

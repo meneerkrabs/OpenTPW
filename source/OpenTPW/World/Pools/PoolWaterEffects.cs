@@ -54,10 +54,10 @@ public sealed class PoolWaterEffects : IPoolActivity, IPoolAmbient, IPoolCurrent
 		return cache.Settings;
 	}
 
-	/// <summary>[EXT:pools-waves] The push of the waves of the swimmer's pool on this turn (<see cref="PoolWaves.Push"/>, from the swimmer's cell), or none when the pool has no waves.</summary>
+	/// <summary>[EXT:pools-waves] The push of the waves of the swimmer's pool on this turn (<see cref="PoolWaves.Push"/>, at the swimmer's point, where the drawn crest is), or none when the pool has no waves.</summary>
 	public (int X, int Y) Current( GuestSimulation simulation, Guest guest, PoolSwimRegion region ) =>
 		WavesOf( sites, simulation.Grid.Cells, region ) is { } waves
-			? PoolWaves.Push( waves, simulation.ParkTurn, guest.Navigation.X >> 16, guest.Navigation.Y >> 16 )
+			? PoolWaves.Push( waves, simulation.ParkTurn, guest.Navigation.X, guest.Navigation.Y )
 			: (0, 0);
 
 	public void Ambient( GuestSimulation simulation, Guest guest, PoolSwimRegion region )

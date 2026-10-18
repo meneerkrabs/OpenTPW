@@ -379,7 +379,8 @@ public sealed partial class GuestSimulation
 		};
 		var (fromX, fromY, fromDistance) = (guest.X, guest.Y, guest.DistanceWalked);
 		var moved = PoolSwimming.Step( region, ref body, others, guest.BaseSpeed * PoolSwimSettings.SpeedPerBaseSpeed, ignoreOthers );
-		moved |= PoolSwimming.Drift( region, ref body, pushX, pushY, others );
+		// the drift carries the swimmer but is no stroke: a swimmer only carried does not count distance (its stroke animation stays where it was)
+		PoolSwimming.Drift( region, ref body, pushX, pushY, others );
 		(navigation.X, navigation.Y) = (body.X, body.Y);
 		(guest.SwimHeading, guest.SwimGoalX, guest.SwimGoalY, guest.SwimHasGoal, guest.SwimRandom) = (body.Heading, body.GoalX, body.GoalY, body.HasGoal, body.Random);
 		SetSwimCell( guest );

@@ -1008,28 +1008,37 @@ public class PoolsAttractionsTests
 	{
 		var high = new PoolWaveSettings( true, 3, 0 );
 		var low = new PoolWaveSettings( true, 1, 0 );
-		var crests = 0;
-		for ( var turn = 0L; turn < PoolWaves.CycleTurns( high ) * 2; turn++ )
+		// a point in the middle of a cell, where the drawn crest is the swimmer's own (SmoothWave takes the point in cells)
+		foreach ( var (cellX, cellY) in new[] { (3.5f, 4.25f), (0.1f, 0.9f), (7.75f, 2.5f) } )
 		{
-			var push = PoolWaves.Push( high, turn, 3, 4 );
-			Assert.AreEqual( push.X, push.Y, "along the diagonal" );
-			Assert.IsTrue( push.X >= 0 && push.X <= PoolWaves.MaxPush, $"turn {turn}: {push.X}" );
-			if ( !PoolWaves.IsRunning( high, turn ) )
-				Assert.AreEqual( (0, 0), push, "nothing in a rest" );
-			if ( push.X > 0 )
+			var (x, y) = ((int)(cellX * Fixed16.One), (int)(cellY * Fixed16.One));
+			for ( var run = 0; run < 2; run++ )
 			{
-				crests++;
-				Assert.IsTrue( PoolWaves.SmoothWave( high, turn, 3, 4 ) > 0f, $"turn {turn}: only while the crest is up" );
-				var weak = PoolWaves.Push( low, turn, 3, 4 ).X;
-				Assert.IsTrue( weak > 0 && weak < push.X, "lower waves push less" );
+				var crests = 0;
+				for ( var turn = run * (long)PoolWaves.CycleTurns( high ); turn < (run + 1) * (long)PoolWaves.CycleTurns( high ); turn++ )
+				{
+					var push = PoolWaves.Push( high, turn, x, y );
+					Assert.AreEqual( push.X, push.Y, "along the diagonal" );
+					Assert.IsTrue( push.X >= 0 && push.X <= PoolWaves.MaxPush, $"turn {turn}: {push.X}" );
+					if ( !PoolWaves.IsRunning( high, turn ) )
+						Assert.AreEqual( (0, 0), push, "nothing in a rest" );
+					if ( push.X > 0 )
+					{
+						crests++;
+						Assert.IsTrue( PoolWaves.SmoothWave( high, turn, cellX, cellY ) > 0f, $"({cellX}, {cellY}) turn {turn}: only while the drawn crest at the point is up" );
+						var weak = PoolWaves.Push( low, turn, x, y ).X;
+						Assert.IsTrue( weak > 0 && weak < push.X, "lower waves push less" );
+					}
+				}
+				// the crest is up for about half of every period of the 120-turn run (less while it swells in and out)
+				Assert.IsTrue( crests >= 45 && crests <= 60, $"({cellX}, {cellY}) run {run}: {crests} turns of push" );
 			}
 		}
-		Assert.IsTrue( crests > PoolWaves.RunTurns / 2 - 12, $"{crests} turns of push" );
 		var middle = PoolWaves.RunTurns / 2;
-		var peak = Enumerable.Range( 0, PoolWaves.PeriodTurns ).Max( offset => PoolWaves.Push( high, middle + offset, 3, 4 ).X );
+		var peak = Enumerable.Range( 0, PoolWaves.PeriodTurns ).Max( offset => PoolWaves.Push( high, middle + offset, 3 * Fixed16.One, 4 * Fixed16.One ).X );
 		Assert.IsTrue( peak > PoolWaves.MaxPush * 6 / 10, $"a full crest at height 3 pushes about MaxPush times cos 45 ({peak})" );
-		Assert.AreEqual( (0, 0), PoolWaves.Push( new PoolWaveSettings( false, 3, 0 ), middle, 3, 4 ), "off" );
-		// the drift stops at the wall and at another body, and moves where there is room
+		Assert.AreEqual( (0, 0), PoolWaves.Push( new PoolWaveSettings( false, 3, 0 ), middle, 3 * Fixed16.One, 4 * Fixed16.One ), "off" );
+		// the drift stops at the wall and at another body, and moves where there is room, also away from a body it is already too close to
 		var region = new Rig().Region;
 		var start = PoolSwimRegion.Centre( region.Access );
 		var body = new PoolSwimBody { X = start.X, Y = start.Y };
@@ -1040,6 +1049,31 @@ public class PoolsAttractionsTests
 		Assert.AreEqual( (body.X, body.Y), (blocked.X, blocked.Y) );
 		var crowd = new[] { (body.X + 2000, body.Y + 2000) };
 		Assert.IsFalse( PoolSwimming.Drift( region, ref blocked, 1500, 1500, crowd ), "not into another body" );
+		Assert.IsTrue( PoolSwimming.Drift( region, ref blocked, -1500, -1500, crowd ), "but away from it" );
+	}
+
+	[TestMethod]
+	public void ASaveWhileTheWavesPushASwimmerRestoresAndContinuesIdentically()
+	{
+		var settings = new PoolWaveSettings( true, 3, 0 );
+		var (rig, guest) = EffectsRig( settings );
+		// in the middle of a run, while a swimmer is being pushed
+		rig.Until( () => guest.IsSwimming && PoolWaves.IsRunning( settings, rig.Simulation.ParkTurn ) && PoolWaves.Envelope( settings, rig.Simulation.ParkTurn ) == 64
+			&& PoolWaves.Push( settings, rig.Simulation.ParkTurn, guest.Navigation.X, guest.Navigation.Y ).X > 0, 2000 );
+		Assert.IsTrue( guest.IsSwimming );
+		var snapshot = ParkResumeJson.Deserialize<GuestSimulationSnapshot>( ParkResumeJson.Serialize( rig.Simulation.CaptureSnapshot() ) );
+		Assert.IsTrue( rig.Simulation.ValidateSnapshot( snapshot ).IsValid, string.Join( "; ", rig.Simulation.ValidateSnapshot( snapshot ).Errors ) );
+		var (copy, _) = EffectsRig( settings );
+		copy.Simulation.RestoreSnapshot( snapshot );
+		var twin = copy.Simulation.Guests.Single( other => other.Id == guest.Id );
+		Assert.AreEqual( HashOf( rig ), HashOf( copy ) );
+		for ( var tick = 0; tick < 3000 && (guest.IsSwimming || twin.IsSwimming); tick++ )
+		{
+			rig.Simulation.Tick( 1f / FixedStepClock.TicksPerSecond );
+			copy.Simulation.Tick( 1f / FixedStepClock.TicksPerSecond );
+			Assert.AreEqual( (guest.State, guest.Navigation.X, guest.Navigation.Y, guest.SwimRandom), (twin.State, twin.Navigation.X, twin.Navigation.Y, twin.SwimRandom), $"tick {tick}" );
+		}
+		Assert.AreEqual( HashOf( rig ), HashOf( copy ) );
 	}
 
 	[TestMethod]

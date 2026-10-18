@@ -82,7 +82,7 @@ public readonly record struct PoolWaveSettings( bool On, int Height, int Interva
 
 /// <summary>
 /// The waves of a pool, a function of the park turn and the settings of its wave machine (docs/POOLS.md, "Wave machine"; docs/DETERMINISM.md). What the simulation reads is only turn counts and
-/// integer arithmetic: whether the waves run (<see cref="IsRunning"/>), their strength (<see cref="Envelope"/>) and the happiness paid once per period (<see cref="HappinessGain"/>). A machine runs for
+/// integer arithmetic: whether the waves run (<see cref="IsRunning"/>), their strength (<see cref="Envelope"/>), the happiness paid once per period (<see cref="HappinessGain"/>) and the push on the free swimmers (<see cref="Push"/>). A machine runs for
 /// <see cref="RunTurns"/>, rests for the interval's turns and runs again; a run swells in and out over <see cref="SwellTurns"/>. The surface (the pool water shader, which raises and lowers the water mesh) and the swimmers' bob
 /// draw the same plane wave (<see cref="SmoothWave"/>, floating point at the time of the frame, presentation only): the bob only moves a swimmer's drawn height, never its position, state or hash.
 /// </summary>
@@ -142,22 +142,24 @@ public static class PoolWaves
 	public static float SmoothBob( PoolWaveSettings settings, double turn, float cellX, float cellY ) => SmoothWave( settings, turn, cellX, cellY ) * BobHeights[Math.Clamp( settings.Height, 1, 3 ) - 1];
 
 	/// <summary>
-	/// How far a crest at full swell carries a free swimmer per park turn at height 3, in 16.16 cells (0.12 cell, more than half the slowest stroke): the waves push swimmers along +x +y while
-	/// their crest passes, and the swimmers steer back towards their goals.
+	/// How far a crest at full swell carries a free swimmer per park turn at height 3, in 16.16 cells (0.12 cell; about 0.085 on each axis, about the slowest stroke, 60 x 90 / 65536 = 0.082 cell a turn):
+	/// at the crest a slow swimmer heading against the waves is carried back a little. Over a whole period the push averages about a third of it, less than the slowest stroke, so every swimmer still
+	/// reaches its goals.
 	/// </summary>
 	public const int MaxPush = (int)(0.12 * Fixed16.One);
 
 	/// <summary>
-	/// The push of the waves on a free swimmer in cell (<paramref name="cellX"/>, <paramref name="cellY"/>) on a park turn, in 16.16 cells along +x and +y: the integer form of <see cref="SmoothWave"/>
-	/// (the phase in 64 steps of a period, the sine from the swimmers' heading table) where the crest is up, times the envelope and the height share of <see cref="MaxPush"/>; nothing in a trough, in a rest or
+	/// The push of the waves on a free swimmer at (<paramref name="x"/>, <paramref name="y"/>) (16.16 cells) on a park turn, in 16.16 cells along +x and +y: the integer form of <see cref="SmoothWave"/> at that point
+	/// (the phase in 64 steps of a period, the sine from the swimmers' heading table) while its crest is up, times the envelope and the height share of <see cref="MaxPush"/>; nothing in a trough, in a rest or
 	/// with the waves off. Integers only, so every machine agrees (docs/DETERMINISM.md).
 	/// </summary>
-	public static (int X, int Y) Push( PoolWaveSettings settings, long turn, int cellX, int cellY )
+	public static (int X, int Y) Push( PoolWaveSettings settings, long turn, int x, int y )
 	{
 		var envelope = Envelope( settings, turn );
 		if ( envelope == 0 )
 			return (0, 0);
-		var phase = (int)(turn % PeriodTurns) * 64 / PeriodTurns - (cellX + cellY) * PhasePerCell;
+		// SmoothWave's cycles are turn / 24 - (x + y) x 21/64; in 64ths of a period the point's share is (x + y) x 21 in 16.16, shifted down
+		var phase = (int)(turn % PeriodTurns) * 64 / PeriodTurns - (int)(((long)x + y) * PhasePerCell >> 16);
 		var sine = PoolSwimming.Direction( phase & 63 ).Y;
 		if ( sine <= 0 )
 			return (0, 0);

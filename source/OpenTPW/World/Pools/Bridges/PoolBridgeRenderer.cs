@@ -52,7 +52,8 @@ public sealed class PoolBridgeRenderer : Entity
 		asset = PoolBridgeAsset.Load( Path.Combine( directory, "bridge.json" ) );
 		foreach ( var part in asset.Parts )
 		{
-			var material = new Material<ObjectUniformBuffer>( "content/shaders/pool-deck.shader", MaterialFlags.None );
+			// Blender triangles follow outward normals, not the engine's clockwise front-face convention (as with pool meshes).
+			var material = new Material<ObjectUniformBuffer>( "content/shaders/pool-deck.shader", MaterialFlags.DoubleSided );
 			material.Set( "Color", new Texture( Path.Combine( directory, part.Texture ), TextureFlags.Wrap ) );
 			materials.Add( material );
 			parts.Add( new PoolPartEntity { Deep = style.WaterDeep.ToVector(), Shallow = style.WaterShallow.ToVector(), Glow = 0, IsWater = false, PartMaterial = material } );

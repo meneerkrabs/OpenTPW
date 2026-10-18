@@ -191,6 +191,7 @@ public partial class Level
 		// The coasters go last: their stations were placed above (each placement reset the track to its station
 		// node), and this restores the saved tracks, controller state, trains and riders over them.
 		RestoreCoastersSnapshot( snapshot.Coasters );
+		ValidateResumeBridgeCoasterGeometry( PoolBridges, Coasters );
 		RestoreTracksSnapshot( snapshot.Tracks );
 		// [EXT:pools-slides] the slides go back over their towers and the pool cells the layout restored
 		PoolSlides?.RestoreSnapshot( snapshot.PoolSlides );
@@ -249,6 +250,16 @@ public partial class Level
 		if ( saved.Runtime.HasScript && !saved.Runtime.Stopped )
 			roots.Add( saved.RootScriptId, ride.Runtime.Script! );
 		return ride;
+	}
+
+	/// <summary>Coaster nodes are restored after bridges; reject overlaps that the live placement tools would refuse.</summary>
+	internal static void ValidateResumeBridgeCoasterGeometry( PoolBridgeWorld? world, IEnumerable<CoasterRide> coasters )
+	{
+		if ( world is not { Count: > 0 } ) return;
+		foreach ( var ride in coasters )
+			foreach ( var node in ride.Track.Nodes )
+				if ( world.Reserves( node.X, node.Y ) )
+					throw new InvalidDataException( $"A saved coaster node at {node.X},{node.Y} overlaps a pool bridge or its end connection." );
 	}
 
 	/// <summary>Restore the elevated graph before validating queues: an underlying path may no longer accept a queue join.</summary>

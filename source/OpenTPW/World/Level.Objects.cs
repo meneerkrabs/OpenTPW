@@ -1478,9 +1478,9 @@ public partial class Level
 	/// </summary>
 	private void ImportOriginalScripts()
 	{
-		if ( resumeState != null || OriginalPark?.Save is not { Rsse: { } rsse } )
+		if ( resumeState != null || OriginalPark?.Save is not { Rsse: { } rsse } save )
 			return;
-		foreach ( var line in Objects.ImportOriginalScripts( rsse ) )
+		foreach ( var line in Objects.ImportOriginalScripts( rsse, save.RuntimeBlocks?.ClockWords[0] ) )
 		{
 			Park?.Import?.Report( line );
 			Log.Trace( $"Park script import: {line}" );

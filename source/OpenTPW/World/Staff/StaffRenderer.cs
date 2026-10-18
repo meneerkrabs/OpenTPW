@@ -17,10 +17,10 @@ public sealed class StaffRenderer : Entity
 	/// <summary>A park turn in seconds (the simulation's 248 ms).</summary>
 	private const float ParkTurnSeconds = 0.248f;
 	/// <summary>Height of the dangling sprite above the mouse's world point, in original units.</summary>
-	// [BIN:TPW-EXE:0x0046C480 tool frame] every frame the tool's sprite is placed at the mouse's world point (0x0045D610 returns 0x007A1C90) 5 units up, with sprite direction 4 (0x00475480 stores x, y + 5, z at +0x88..+0x90 and the direction at +0xC0)
+	// [BIN:TPW-EXE:0x0046C480 tool frame] every frame the tool's sprite is placed at the mouse's world point (0x0045D610 returns 0x007A1C90) 5 units up, with heading 4 (0x00475480 stores x, y + 5, z at +0x88..+0x90 and the heading byte at +0xC0)
 	public const float DangleLift = 5f;
-	/// <summary>The sprite direction the tools draw their dangling person with (tp.exe 0x0046C480): facing the player.</summary>
-	public const int DangleDirection = 4;
+	/// <summary>The heading sector of the tools' dangling person (tp.exe 0x0046C480); the sprite pass adds the camera's yaw sector (0x00542010), so the person turns with the camera.</summary>
+	public const int DangleHeading = 4;
 
 	private sealed class MemberView
 	{
@@ -264,8 +264,10 @@ public sealed class StaffRenderer : Entity
 		{
 			var atlas = sprites.Atlases[atlasIndex];
 			var (slot, step) = StaffSpriteRules.Resolve( StaffSpriteRules.Dangle, now, atlas.Animations.Animations );
-			var frameIndex = atlas.GetFrame( slot, DangleDirection, step );
-			AddSprite( ref count, atlasIndex, frameIndex, false, GuestRenderer.CellToEngine( field, danglingX, danglingY, DangleLift ), right, up, forward );
+			// [BIN:TPW-EXE:0x00542010 direction] the heading byte plus the camera's yaw sector, mirrored past the last stored direction, as for any sprite (the tool's sprite has no flag 0x40000: 0x004758F0 clears +0xC4)
+			var (direction, mirror) = GuestSpriteAtlas.SelectOriginalDirection( DangleHeading, GuestSpriteAtlas.CameraYaw( right, forward, Camera.Mode is ParkCameraMode ), atlas.DirectionsOf( slot ) );
+			var frameIndex = atlas.GetFrame( slot, direction, step );
+			AddSprite( ref count, atlasIndex, frameIndex, mirror, GuestRenderer.CellToEngine( field, danglingX, danglingY, DangleLift ), right, up, forward );
 			DrewDangling = true;
 			DangleAt = (danglingX, danglingY);
 			DangleFrameSize = (atlas.Frames[frameIndex].Width, atlas.Frames[frameIndex].Height);

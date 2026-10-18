@@ -91,9 +91,9 @@ sprite-detail flag 0x8768FC are both set, else `.tpc`. The flag's only writer, 0
 argument, and both of its calls pass 0 (0x54E688, 0x54ED2C; TPI's Game.exe likewise: 0x68E240 from 0x6A3768), so the
 PC game draws the TPC of every set and never opens an FPC (an earlier reading took the start-up call's second
 argument, 1, for the flag). OpenTPW draws the FPC of the 27 sets with 0x10C = 1 (`SpriteAnimationFile.BankExtension`,
-`GUEST-022`) and the TPC of the others (Jungle SPR_EX and Space SPR_SK ship an FPC too), except the four frames of the
-staff tools' dangling slot 6 that they draw (direction 4), which every staff FPC holds as 2 × 2 pixel placeholders: those come
-from the TPC (`GuestSpriteAtlas.LoadSets`, [STAFF-PLACEMENT.md](STAFF-PLACEMENT.md#drawing)).
+`GUEST-022`) and the TPC of the others (Jungle SPR_EX and Space SPR_SK ship an FPC too), except the staff tools'
+dangling slot 6, which every staff FPC holds as 2 × 2 pixel placeholders: it comes from the TPC
+(`GuestSpriteAtlas.LoadSets`, [STAFF-PLACEMENT.md](STAFF-PLACEMENT.md#drawing)).
 
 **`.ESP` animation table** (350 bytes): magic `ESP_FILE2.00`, NUL-terminated bank
 name (`SPR_BE.TPS`), zero padding, two flag bytes at `0x10C`, then 20 slots of

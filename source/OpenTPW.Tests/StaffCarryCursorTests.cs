@@ -89,11 +89,11 @@ public class StaffCarryCursorTests
 	public void TheDanglingFramesAreTakenFromTheLowDetailBankWithItsOwnPalette()
 	{
 		var esp = new SpriteAnimationFile( new System.IO.MemoryStream( EspBytes( 1 ) ) );
-		var dangle = (StaffSpriteRules.Dangle.Slot, StaffRenderer.DangleDirection);
+		var dangle = StaffSpriteRules.Dangle.Slot;
 		var atlas = new GuestSpriteAtlas( "SPR_ZZ", Bank( 0, Placeholders ), esp, Bank( 255, Art ), dangle, "staff-test" );
 		Assert.AreEqual( (4, 4), (atlas.Frames[0].Width, atlas.Frames[0].Height), "the other slots keep the chosen bank's frames" );
-		Assert.AreEqual( (7, 6), (atlas.Frames[5].Width, atlas.Frames[5].Height), "the drawn direction (4) comes from the low-detail bank" );
-		Assert.AreEqual( (2, 2), (atlas.Frames[1].Width, atlas.Frames[1].Height), "only the direction the tools draw is taken" );
+		Assert.AreEqual( (5, 6), (atlas.Frames[1].Width, atlas.Frames[1].Height), "every direction of the slot comes from the low-detail bank" );
+		Assert.AreEqual( (7, 6), (atlas.Frames[5].Width, atlas.Frames[5].Height) );
 		byte[] Pixel( int frame ) => atlas.Pixels.AsSpan( (atlas.Frames[frame].Y * atlas.Width + atlas.Frames[frame].X) * 4, 4 ).ToArray();
 		CollectionAssert.AreEqual( new byte[] { 255, 0, 0, 255 }, Pixel( 0 ), "the chosen bank's palette (red)" );
 		CollectionAssert.AreEqual( new byte[] { 0, 0, 255, 255 }, Pixel( 5 ), "a taken frame decodes with the low-detail bank's palette (blue)" );
@@ -104,6 +104,14 @@ public class StaffCarryCursorTests
 		Assert.AreEqual( (2, 2), (otherLayout.Frames[5].Width, otherLayout.Frames[5].Height), "a low-detail bank with other frames is not mixed in" );
 		var plain = new GuestSpriteAtlas( "SPR_ZZ", Bank( 0, Placeholders ), esp, "staff-test" );
 		Assert.AreEqual( (2, 2), (plain.Frames[5].Width, plain.Frames[5].Height), "without a low-detail bank nothing changes" );
+	}
+
+	[TestMethod]
+	public void TheDanglingPersonTurnsWithTheCamera()
+	{
+		// heading 4 (0x46C480) plus the camera's yaw sector (0x542010): the person keeps its heading in the world while the camera goes round it
+		var seen = new[] { 0f, MathF.PI / 2, MathF.PI, 3 * MathF.PI / 2 }.Select( yaw => GuestSpriteAtlas.SelectOriginalDirection( StaffRenderer.DangleHeading, yaw, 5 ) ).ToArray();
+		CollectionAssert.AreEqual( new[] { (4, false), (2, false), (0, false), (2, true) }, seen );
 	}
 
 	[TestMethod]
@@ -130,14 +138,14 @@ public class StaffCarryCursorTests
 			Write( "Broken", "SPR_ZZ.FPC", BankBytes( 0, Placeholders ) );
 			Write( "Broken", "SPR_ZZ.TPC", new byte[] { 1, 2, 3 } );
 			FileSystem = new BaseFileSystem( root );
-			var dangle = (StaffSpriteRules.Dangle.Slot, StaffRenderer.DangleDirection);
+			var dangle = StaffSpriteRules.Dangle.Slot;
 
-			var full = GuestSpriteAtlas.LoadSets( "/Full", "staff-test", lowDetailFrames: dangle ).Single();
+			var full = GuestSpriteAtlas.LoadSets( "/Full", "staff-test", lowDetailSlot: dangle ).Single();
 			Assert.AreEqual( (7, 6), (full.Frames[5].Width, full.Frames[5].Height), "the FPC's placeholder is filled from the TPC" );
 			Assert.AreEqual( (4, 4), (full.Frames[0].Width, full.Frames[0].Height), "the rest stays the FPC's" );
 			Assert.AreEqual( (2, 2), (GuestSpriteAtlas.LoadSets( "/Full", "staff-test" ).Single().Frames[5].Width, 2), "only when asked for" );
-			Assert.AreEqual( (2, 2), (GuestSpriteAtlas.LoadSets( "/Low", "staff-test", lowDetailFrames: dangle ).Single().Frames[5].Width, 2), "a set drawing its TPC keeps it" );
-			Assert.AreEqual( (2, 2), (GuestSpriteAtlas.LoadSets( "/Broken", "staff-test", lowDetailFrames: dangle ).Single().Frames[5].Width, 2), "a broken TPC is not used" );
+			Assert.AreEqual( (2, 2), (GuestSpriteAtlas.LoadSets( "/Low", "staff-test", lowDetailSlot: dangle ).Single().Frames[5].Width, 2), "a set drawing its TPC keeps it" );
+			Assert.AreEqual( (2, 2), (GuestSpriteAtlas.LoadSets( "/Broken", "staff-test", lowDetailSlot: dangle ).Single().Frames[5].Width, 2), "a broken TPC is not used" );
 		}
 		finally
 		{

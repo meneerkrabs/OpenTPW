@@ -52,12 +52,13 @@ public class StaffSpriteAssetTests
 				var animations = atlas.Animations.Animations;
 				Assert.IsFalse( animations[StaffSpriteRules.Dangle.Slot].IsEmpty, $"{atlas.Name}: slot 6 (dangling)" );
 				Assert.IsTrue( animations[StaffSpriteRules.Dangle.Slot].FramesPerDirection >= 4 && animations[6].Directions == 5, $"{atlas.Name}: 4 frames x 5 directions" );
-				// the hire and carry tools draw script 0x15 on this slot in direction 4 (0x46C730, 0x46C480); the FPC banks hold it as 2 x 2 placeholders, the TPC (what tp.exe draws) has the art
-				for ( var step = 0; step < 4; step++ )
-				{
-					var frame = atlas.Frames[atlas.GetFrame( StaffSpriteRules.Dangle.Slot, StaffRenderer.DangleDirection, step )];
-					Assert.IsTrue( frame.Width > 16 && frame.Height > 16, $"{atlas.Name}: dangling frame {step} has art ({frame.Width} x {frame.Height})" );
-				}
+				// the hire and carry tools draw script 0x15 on this slot (0x46C730), in every direction as the camera turns (0x542010); the FPC banks hold it as 2 x 2 placeholders, the TPC (what tp.exe draws) has the art
+				for ( var direction = 0; direction < 5; direction++ )
+					for ( var step = 0; step < 4; step++ )
+					{
+						var frame = atlas.Frames[atlas.GetFrame( StaffSpriteRules.Dangle.Slot, direction, step )];
+						Assert.IsTrue( frame.Width > 16 && frame.Height > 16, $"{atlas.Name}: dangling frame {step} of direction {direction} has art ({frame.Width} x {frame.Height})" );
+					}
 				Assert.IsFalse( animations[StaffSpriteRules.Stand.Slot].IsEmpty || animations[StaffSpriteRules.Walk.Slot].IsEmpty, $"{atlas.Name}: stand and walk" );
 				Assert.AreEqual( 8, animations[StaffSpriteRules.Walk.Slot].FramesPerDirection, $"{atlas.Name}: the 8-frame walk" );
 				Assert.IsTrue( atlas.Pixels.Where( ( value, index ) => index % 4 == 3 ).Any( value => value == 255 ), $"{atlas.Name} decodes to pixels" );

@@ -172,6 +172,8 @@ public partial class Level : IDisposable
 	public BalloonRenderer? BalloonRenderer { get; private set; }
 	/// <summary>[EXT:umbrellas-draw] The guests' open umbrellas (<see cref="UmbrellaRenderer"/>); null without the extension, its content or guests.</summary>
 	public UmbrellaRenderer? UmbrellaRenderer { get; private set; }
+	/// <summary>[EXT:winter-draw] The warm items the guests wear (<see cref="WarmItemRenderer"/>); null without the extension, its content or guests.</summary>
+	public WarmItemRenderer? WarmItemRenderer { get; private set; }
 	/// <summary>Draws the guests' and the staff's thought bubbles.</summary>
 	public ThoughtRenderer? ThoughtRenderer { get; private set; }
 	/// <summary>The litter sprites lying on the park's cells (null without a park economy).</summary>
@@ -593,6 +595,10 @@ public partial class Level : IDisposable
 		UmbrellaRenderer = null;
 		if ( UmbrellaSprites.Load() is { Count: > 0 } umbrellaSets && UmbrellaContent.Directory is { } umbrellaFolder )
 			UmbrellaRenderer = new UmbrellaRenderer( Guests, park.Heightfield, umbrellaSets, new[] { GuestRenderer, CostumeRenderer }.OfType<GuestRenderer>().ToArray(), UmbrellaAnchors.Load( umbrellaFolder ) );
+		// [EXT:winter-draw] the warm items (hat, earmuffs, mittens) at the guests' heads and hands; parks without the extension or its content have none
+		WarmItemRenderer = null;
+		if ( WinterSprites.Load() is { Count: > 0 } winterSets && WinterContent.Directory is { } winterFolder )
+			WarmItemRenderer = new WarmItemRenderer( Guests, winterSets, new[] { GuestRenderer, CostumeRenderer }.OfType<GuestRenderer>().ToArray(), WinterAnchorTable.Load( winterFolder ) );
 		ThoughtRenderer = new ThoughtRenderer( Guests, park.Heightfield, GuestSpriteAtlas.LoadThoughts(),
 			() => Park?.Economy.Staff.Members ?? (IReadOnlyList<StaffMember>)Array.Empty<StaffMember>(),
 			member => member.State != StaffState.PickedUp && StaffRenderer != null && StaffRenderer.TryGetDrawCell( member, out var x, out var y ) ? (x, y) : null )

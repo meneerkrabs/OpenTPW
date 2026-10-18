@@ -232,8 +232,10 @@ simulations are not synchronized multiplayer: each visitor's guests and rides ar
 own, and only the players themselves are shared ([below](#players-in-a-visited-park)). A
 package carries no guests, so a visit starts empty and fills from its own arrivals, which
 read the park turn of the save the visit is built on (`EXT:online-visit-arrivals`): the
-visit of a Jungle park sends its first group at once, as an own park started from the
-shipped save (Instant Action) does. Counted from turn 0, the first group would wait until
+visit of a Jungle park sends its first group at once, as OpenTPW's own park started from the
+shipped save (Instant Action) does. The original reads that save's arrival timer (`mTimeSig`,
+661 in the Jungle, `0x4cf050`/`0x41a860`), so there the first group comes at turn 1264; OpenTPW
+ignores it (SAVE-010), and the visit's at-once start is OpenTPW's own choice. Counted from turn 0, the first group would wait until
 turn 604, about 150 s into the visit, with nobody before it to ride a ride such as the
 Belly Bounce. A visit cannot
 place or remove rides, build paths or save, load or export the sandbox. The panel and

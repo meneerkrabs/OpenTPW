@@ -277,8 +277,10 @@ thing to be the Traffic Lights fixed item at `+0x1da734`; that offset was miscal
 500 instead of 1,500; OpenTPW applies that to a visit of another player's park (`OnlineVisit`): tp.exe sets GameType 1 when a
 published park is entered (`0x4c0830`) and runs the arrival step there. A visit still reads `Standard.sam` instead of the original's
 `online_Standard.sam` and counts no park points (ARRIVAL-002). Having no economy, a visit's arrival timer reads the park turn of the save
-the visit is built on (`EXT:online-visit-arrivals`, `Level.VisitArrivalClock`), so its first group comes at once, as in an Instant Action
-start of the level. Both cuts compare unsigned, and a group cut with more
+the visit is built on (`EXT:online-visit-arrivals`, `Level.VisitArrivalClock`), so its first group comes at once, as in OpenTPW's own Instant Action
+start of the level. That start is OpenTPW's: the original reads the save's arrival timer `mTimeSig` (`0x4cf050` → `0x41a860`;
+661 in the shipped Jungle against GameTick 755), so its first group is due only at turn 1264, while OpenTPW ignores the saved
+arrival bytes (SAVE-010, ARRIVAL-001). The visit's at-once start is OpenTPW's own choice. Both cuts compare unsigned, and a group cut with more
 guests than the limit becomes negative, in OpenTPW as in the original (tp.exe `0x4cf6e5`, no floor). Executing the update
 routine `0xcb2ac` over repeated calls (F11) shows that a group at or below 0 creates no guest and, at the next stop of the
 arrival vehicle, restarts the timer and clears the active byte exactly as an empty group does; on the PC every other reader

@@ -583,7 +583,7 @@ public partial class Level : IDisposable
 	/// <summary>
 	/// The park turn the arrivals of a read-only visit read: the turn of the save the visit is built on (the level's shipped save) plus the turns its guests have run since; null without
 	/// a save (the guests' own turns, as in a park started without one). An own park started from that save (Instant Action, or the save loaded directly) reads its economy's turn, which
-	/// starts at the save's turn (755 in the shipped Jungle), so its first group is due at once (<see cref="GuestSettings.ArrivalTimeBetween"/>, 150 units of four turns); counted from
+	/// starts at the save's turn (755 in the shipped Jungle), so in OpenTPW its first group is due at once (the original also reads the save's arrival timer mTimeSig, 661 there, 0x4cf050/0x41a860, so its first group comes at turn 1264; OpenTPW ignores it, SAVE-010) (<see cref="GuestSettings.ArrivalTimeBetween"/>, 150 units of four turns); counted from
 	/// turn 0, a visit's first group would come at turn 604, about 150 s in, with no guest before it to ride rides such as the Belly Bounce, which bounces only with riders aboard.
 	/// </summary>
 	// [EXT:online-visit-arrivals] the original's visit loaded the owner's uploaded save, a running park (docs/reverse/ONLINE-VISIT.md); a package carries the layout without the guests and the arrival timer, so a visit's arrivals start as those of an own park started from the save the visit is built on

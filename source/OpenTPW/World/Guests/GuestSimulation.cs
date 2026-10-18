@@ -1662,7 +1662,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	// [BIN:TPW-EXE:0x00501020 nearest show] the objects chain (world +0x1DA746, next +0xC) is walked for a thing with flag +0x32 bit 0x80 (UsageInfo.IsFireworks, 0x4DB46F) whose script variable 0 is 0; the squared cell distance must be below 5 and below the best so far (a tie keeps the first)
 	// [BIN:TPW-EXE:0x004FEF25 show turn] a found show with an offset sum (dx + dy, unsigned test) of 0 goes on to step 6, else the heading +0x1C takes the angle of the offset (0x6E7074) and the call ends
 	// [BIN:TPW-EXE:0x004FEFF4 performer turn] with a thing of type 6 within one cell (0x4C8EB0, the cells x ± 1, y ± 1) the nearest member of the staff list (0x500F00, world +0x1DA740, next +0x210, no distance cap) must be in state 14 (0x4FF04A); the same offset sum test, event 0xE recorded for the debug dump, the same heading and end
-	// [APPROX:GUEST-010] the heading is the unit vector of the offset, where the original writes the 11-bit angle of 0x6E7074 into +0x1C
+	// [BIN:TPW-EXE:0x006E7074 heading angle] the heading is the 11-bit angle of the offset (HeadingAngle), kept as its direction vector
 	private bool TurnToShowOrPerformer( Guest guest )
 	{
 		var (gx, gy) = (guest.CellX, guest.CellY);
@@ -1700,9 +1700,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	{
 		if ( dx + dy == 0 )
 			return false;
-		var length = MathF.Sqrt( dx * dx + dy * dy );
-		guest.HeadingX = dx / length;
-		guest.HeadingY = dy / length;
+		(guest.HeadingX, guest.HeadingY) = HeadingAngle.Facing( dx, dy );
 		return true;
 	}
 

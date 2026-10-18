@@ -600,6 +600,16 @@ public sealed class CoasterTrack
 		return true;
 	}
 
+	/// <summary>Opens a closed, incomplete fresh circuit again without removing a pylon (<see cref="CoasterBuilder.OpenFailingClosure"/>).</summary>
+	internal bool OpenClosure()
+	{
+		if ( !IsClosed || IsComplete || CutAfter != null )
+			return false;
+		IsClosed = false;
+		Version++;
+		return true;
+	}
+
 	/// <summary>Removes every pylon (the station's three nodes stay) and opens the track.</summary>
 	internal void Clear()
 	{

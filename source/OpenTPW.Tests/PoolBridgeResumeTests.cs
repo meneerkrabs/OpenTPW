@@ -1,3 +1,5 @@
+using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -89,6 +91,57 @@ public class PoolBridgeResumeTests
 		Assert.IsTrue( used.Contains( OfficialExtensions.Pools.Id ) );
 		var recorded = ParkResumeMods.Capture( PoolsTests.PoolsSet( true ), used );
 		Assert.IsTrue( recorded!.Any( mod => mod.Id == OfficialExtensions.Pools.Id ) );
+		Assert.IsNull( PoolBridgeWorld.ShapeProblem( world.CaptureSnapshot(), recorded ) );
+	}
+
+	[TestMethod]
+	public void EmptyBridgeLayerPreservesEnvelopeBytesWithUmbrellasEnabledAndInUse()
+	{
+		foreach ( var umbrellasEnabled in new[] { false, true } )
+		foreach ( var umbrellasInUse in new[] { false, true } )
+		{
+			if ( umbrellasInUse && !umbrellasEnabled ) continue;
+			var cells = new ParkCellMap( 20, 20 );
+			ModSet Active( bool pools ) => ModSet.Resolve( Array.Empty<DiscoveredMod>(),
+				new ModSettings { Enabled = new Dictionary<string, bool>
+				{
+					[OfficialExtensions.Pools.Id] = pools,
+					[OfficialExtensions.Umbrellas.Id] = umbrellasEnabled
+				} }, null, GameEdition.ThemeParkWorld, OfficialExtensions.All );
+			var used = ParkResumeMods.InUse( cells, poolsObjects: false, umbrellas: umbrellasInUse );
+			var envelope = ParkResumeSaveFileTests.Envelope() with { Mods = ParkResumeMods.Capture( Active( false ), used ) };
+			var world = new PoolBridgeWorld( cells );
+			var withEmptyLayer = envelope with
+			{
+				PoolBridges = world.CaptureSnapshot(),
+				Mods = ParkResumeMods.Capture( Active( true ), used )
+			};
+			CollectionAssert.AreEqual( ParkResumeJson.Serialize( envelope ), ParkResumeJson.Serialize( withEmptyLayer ) );
+			Assert.AreEqual( umbrellasInUse, withEmptyLayer.Mods?.Any( mod => mod.Id == OfficialExtensions.Umbrellas.Id ) == true );
+			Assert.IsFalse( withEmptyLayer.Mods?.Any( mod => mod.Id == OfficialExtensions.Pools.Id ) == true );
+			Assert.AreEqual( 0, ParkResumeMods.Unmet( withEmptyLayer.Mods, Active( false ) ).Count );
+			Assert.AreEqual( 0, ParkResumeMods.Unmet( withEmptyLayer.Mods, Active( true ) ).Count );
+		}
+	}
+
+	[TestMethod]
+	public void BridgeWaterAndUmbrellasRecordBothUsedOnlyExtensionsWithoutPoolObjects()
+	{
+		var cells = new ParkCellMap( 20, 20 );
+		cells.SetType( 1, 3, ParkCellType.Path );
+		cells.SetType( 9, 3, ParkCellType.Path );
+		for ( var x = 4; x <= 6; x++ ) cells.SetType( x, 3, ParkCellType.PoolWater );
+		var world = new PoolBridgeWorld( cells );
+		Assert.AreEqual( PoolBridgeResult.Ok, world.TryAdd( 2, 3, 1 ) );
+		var active = ModSet.Resolve( Array.Empty<DiscoveredMod>(), new ModSettings { Enabled = new Dictionary<string, bool>
+		{
+			[OfficialExtensions.Pools.Id] = true,
+			[OfficialExtensions.Umbrellas.Id] = true
+		} }, null, GameEdition.ThemeParkWorld, OfficialExtensions.All );
+		var recorded = ParkResumeMods.Capture( active, ParkResumeMods.InUse( cells, poolsObjects: false, umbrellas: true ) );
+		Assert.IsTrue( recorded!.Any( mod => mod.Id == OfficialExtensions.Pools.Id ) );
+		Assert.IsTrue( recorded.Any( mod => mod.Id == OfficialExtensions.Umbrellas.Id ) );
+		Assert.AreEqual( 0, ParkResumeMods.Unmet( recorded, active ).Count );
 		Assert.IsNull( PoolBridgeWorld.ShapeProblem( world.CaptureSnapshot(), recorded ) );
 	}
 

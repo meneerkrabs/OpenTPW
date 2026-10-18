@@ -320,6 +320,10 @@ internal static class ParkResumeSaveFile
 		if ( snapshot.Layout?.Cells?.Cells?.Any( cell => cell?.Type == ParkCellTypes.PoolWater ) == true
 			&& snapshot.Mods?.Any( mod => mod?.Id == OfficialExtensions.Pools.Id ) != true )
 			Require( false, $"the layout has pool cells but the save does not record {OfficialExtensions.Pools.Id}" );
+		// [EXT:umbrellas-save] a park with a guest who has an umbrella records the umbrellas extension (a park without one does not), so a save cannot hide the umbrella state from the mod check
+		if ( snapshot.Guests?.Guests?.Any( guest => guest != null && guest.UmbrellaState != 0 ) == true
+			&& snapshot.Mods?.Any( mod => mod?.Id == OfficialExtensions.Umbrellas.Id ) != true )
+			Require( false, $"a guest has an umbrella but the save does not record {OfficialExtensions.Umbrellas.Id}" );
 		// [EXT:smarter-guests] the extension's section: present exactly when the extension is recorded, with ids that fit the guests the save holds
 		if ( SmarterGuestsSave.ShapeProblem( snapshot.SmarterGuests, snapshot.Guests?.Guests?.Select( guest => guest.Id ), snapshot.Mods, snapshot.ScriptMods != null, snapshot.Guests?.Attractions?.Select( attraction => attraction.AttractionId ) ) is { } smarterProblem )
 			Require( false, smarterProblem );

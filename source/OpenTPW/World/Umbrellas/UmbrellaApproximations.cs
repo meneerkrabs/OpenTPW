@@ -1,0 +1,15 @@
+namespace OpenTPW;
+
+/// <summary>
+/// The umbrellas extension's approximation register (docs/UMBRELLAS.md). Each entry is tagged <c>[APPROX:UMB-NNN]</c> at its code site; the words before the colon name the topic. Everything else of the extension is
+/// traced from the Theme Park Inc no-CD <c>Game.exe</c> (<c>[BIN:TPI-EXE:0x...]</c> labels) or is OpenTPW's own, with <c>[EXT:umbrellas-*]</c> labels; it is not Theme Park World's behaviour, which has no umbrellas.
+/// </summary>
+public static class UmbrellaApproximations
+{
+	public static readonly IReadOnlyList<(string Id, string Rule)> Entries = new[]
+	{
+		("UMB-001", "UMB-DELAY: the reaction delay of a scheduled open or close is below SlowestWeatherChangeResponse (3) guest updates in the original, from the C runtime's rand() (0x870D38, called by the scheduling 0x613EA0); the delay's lengthening by the held balloon's share of life x DiscardBalloonPctModifier / 100 is the original's, the draw is not: a SplitMix64 hash of the guest's id and the park turn replaces rand() (the same bound, no draw from the shared world or guest streams, so a purchase's colour stays the only draw the extension takes), so the same park turn and guest give one fixed delay where the original's depended on the C runtime's hidden state"),
+		("UMB-002", "UMB-VIEW: the scheduling (0x613EA0) and the carrying out of a pending change (0x614010) both stand down while a view condition holds (two thing calls, 0x40A344 on the guest's cell record and 0x405F01 on a record beside it, whose callees 0x67F890 and 0x685680 the trace read as 'the guest is not identified'; low confidence); OpenTPW's guests have no such state, so nothing holds an umbrella change back but the day gate, the due time and the guest being inside an attraction"),
+		("UMB-003", "UMB-INSIDE: the scheduling and the carrying out also stand down while the guest's words +0x38 and +0x3C are set (the original sets +0x3C when the guest enters an attraction in 0x61A540 and +0x38 for a type whose flag +0x42 has 0x20; medium confidence about which attractions count); OpenTPW's in-attraction states stand in for them: a guest using a ride or shop, or in a changing room's swim session. The day gate's age is the guest's time since creation as OpenTPW keeps it (TimeInParkSeconds, GUEST-920: the seconds over the 248 ms turn, floored), where the original subtracts two integer world turns; the conversion of an age to game days (3750 seconds a turn, as Theme Park World's calendar) is read from the clock's use, not from its scale word +0x1C, which the trace did not find read (medium confidence)"),
+	};
+}

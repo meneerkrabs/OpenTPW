@@ -278,18 +278,11 @@ public sealed partial class GuestSimulation
 		if ( TryOfferActivity( guest, region ) )
 			return;
 		// [EXT:pools-activities] the ambient effects of the registered activities (a wave, a jet) act on a swimmer that took no offer
-		// [EXT:pools-waves] and the currents of the water (the waves) carry it after its stroke
-		var (pushX, pushY) = (0, 0);
 		foreach ( var activity in poolActivities )
-		{
 			if ( activity is IPoolAmbient ambient )
 				ambient.Ambient( this, guest, region );
-			if ( activity is IPoolCurrent current )
-			{
-				var push = current.Current( this, guest, region );
-				(pushX, pushY) = (pushX + push.X, pushY + push.Y);
-			}
-		}
+		// [EXT:pools-waves] and the currents of the water (the waves) carry it after its stroke
+		var (pushX, pushY) = PoolCurrent( guest, region );
 		SwimStep( guest, region, ignoreOthers: false, pushX, pushY );
 	}
 
@@ -359,6 +352,22 @@ public sealed partial class GuestSimulation
 		// a guest with balloon life gets its balloon back on stepping out, as it does when it leaves a ride (the swim put it away, like a ride does)
 		if ( guest.BalloonLife > 0 )
 			guest.HasBalloon = true;
+	}
+
+	/// <summary>
+	/// [EXT:pools-waves] The push of the water's currents (the registered <see cref="IPoolCurrent"/>s: the waves) on a body in the water of <paramref name="region"/> this turn, in 16.16 cells; zero for none.
+	/// Integers only; the free swimmers' step and the lazy river's floaters add it.
+	/// </summary>
+	internal (int X, int Y) PoolCurrent( Guest guest, PoolSwimRegion region )
+	{
+		var (x, y) = (0, 0);
+		foreach ( var activity in poolActivities )
+			if ( activity is IPoolCurrent current )
+			{
+				var push = current.Current( this, guest, region );
+				(x, y) = (x + push.X, y + push.Y);
+			}
+		return (x, y);
 	}
 
 	/// <summary>One steering step of a swimmer; the others are the swimmers of the same changing room. A push (16.16 cells, the waves) then carries it where there is room.</summary>

@@ -344,6 +344,7 @@ public class TrackAssetTests
 				for ( var head = 1; head <= item.Heads; head++ )
 					Assert.IsTrue( RideHeadSpace.NodeForHead( model, head ) >= 0, $"{name}: a rider seat dummy {head}" );
 				Assert.AreEqual( RideHeadSpace.NoRecord, RideHeadSpace.NodeForHead( model, item.Heads + 1 ), $"{name}: no more seats than the ride's riders per car" );
+				Assert.AreEqual( item.Heads, TrackRenderer.SeatHeads( model, ModelAnimationPlayer.ComputeRestTransforms( model ) ).Nodes.Count( node => node != null ), $"{name}: a head per seat" );
 				Assert.IsTrue( model.DummyAttributes.Any( attribute => attribute.Type == 0x131 && attribute.Value == 1 ), $"{name}: the sparks node" );
 			}
 			if ( template.Type is -9 or -10 )
@@ -359,6 +360,27 @@ public class TrackAssetTests
 			Assert.AreEqual( item.Type, runtime.Bump.Type );
 			runtime.Stop();
 		}
+	}
+
+	/// <summary>
+	/// Every vehicle hangs rider k on its head dummy k (tp.exe 0x00549C60, called by the vehicle creation 0x00549DB0 for every family): the water rides' wr_ring boats have five seats with a head
+	/// each, at five different places.
+	/// </summary>
+	[TestMethod]
+	public void EveryWaterRidesBoatSeatsFiveRidersWithAHeadEach()
+	{
+		var boats = 0;
+		foreach ( var entry in TrackRides( 2 ) )
+		{
+			var path = entry.FileSystem.GetFiles( entry.ArchivePath ).First( file => string.Equals( Path.GetFileName( file ), "wr_ring.md2", StringComparison.OrdinalIgnoreCase ) );
+			var model = ObjectAssets.LoadModel( entry.FileSystem, path );
+			var nodes = TrackRenderer.SeatHeads( model, ModelAnimationPlayer.ComputeRestTransforms( model ) ).Nodes;
+			Assert.AreEqual( 5, nodes.Length, entry.DisplayName );
+			Assert.IsTrue( nodes.All( node => node != null ), $"{entry.DisplayName}: every seat has a head node" );
+			Assert.AreEqual( 5, nodes.Select( node => node!.Value.Translation ).Distinct().Count(), $"{entry.DisplayName}: five places" );
+			boats++;
+		}
+		Assert.AreEqual( 4, boats, "one water ride per theme" );
 	}
 
 	/// <summary>The jungle Dino Karts script against its controller: it opens, boards guests, parks the karts on the grid, starts the race, ends it and hands the guests back.</summary>

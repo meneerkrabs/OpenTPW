@@ -498,7 +498,7 @@ public partial class Level
 	}
 }
 
-/// <summary>The riders of the go-karts as head sources: every kart's riders hang from the head dummies of the kart mesh (<see cref="TrackRenderer.CollectHeads"/>).</summary>
+/// <summary>The riders of the track rides as head sources: every kart's, boat's and bumper car's riders hang from the head dummies of its mesh (<see cref="TrackRenderer.CollectHeads"/>).</summary>
 internal sealed class TrackHeadSources : IHeadSourceProvider
 {
 	private readonly Func<IEnumerable<TrackRenderer>> renderers;
@@ -507,10 +507,8 @@ internal sealed class TrackHeadSources : IHeadSourceProvider
 
 	public void Collect( List<HeadSource> sources, int? onlyAttraction )
 	{
+		// [BIN:TPW-EXE:0x00549DB0 vehicle creation] the karts, the water rides' boats and the bumper cars are all made here, and it hangs every rider's head (0x00549C60)
 		foreach ( var renderer in renderers() )
-		{
-			if ( renderer.Family is TrackFamily.Kart or TrackFamily.Bumper )
-				renderer.CollectHeads( sources, onlyAttraction );
-		}
+			renderer.CollectHeads( sources, onlyAttraction );
 	}
 }

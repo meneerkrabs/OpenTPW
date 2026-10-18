@@ -44,3 +44,45 @@ Relative paths below are inside the supplied local Data tree. SHA-256 pins audit
 - `levels/hallow/features/end.wad`: 58013 bytes; SHA-256 `3d662ee2fe0a5ad35229b068926565aefbb43b5d8ff8da7ea765c1eb658a703f`.
 - `levels/fantasy/features/end.wad`: 58011 bytes; SHA-256 `2efaf470cd6c5f6769a64b779caac607ef1a4b5fbb472cde24acf56611ec5ee8`.
 - `levels/space/features/end.wad`: 58011 bytes; SHA-256 `4aa636170895a090e24d27f92dec3284e1a563eb74bd415c06ac122e310f5fc2`.
+
+## Full-register coverage addendum (October 18, 2026)
+
+This reviewed addendum extends the bounded initial plan to cover the remaining registered residuals. All acceptance work remains pending. Source snapshot independently verified by the proposal coordinator: `5ccddcab56ffb9bda4ded1821988a8492bee8943`.
+
+
+## Status and classification
+- Classification: missing.
+- Plan-only addendum: no runtime implementation, annotation retirement or merge performed.
+- Existing PR: #443; residual addendum only.
+- Draft eligibility: evidence/scope gates below must remain visible; this is not a completed feature.
+
+## Current residual
+End is not created: the original creates it through 0x516b00 from the lab's message handler 0x503d40 (message 0x11) when the last research item completes, by the GameType word DAT_00fb3b7c (2: Instant Action at once; 0: Full Simulation once every online park record is done, 0x5b0c40; 1: never), after posting the advisor message 0xa7
+
+## Source inspection
+- `source/OpenTPW/World/Objects/ParkObjects.cs:624`: 625: public int AddDefaultFixedItems() => AddDefaultFixedItemSteps().LastOrDefault().Placed;; 628: internal IEnumerable<(int Placed, float Share)> AddDefaultFixedItemSteps(); 629: {; 631: var entries = Catalog.Entries.Where( entry => entry.IsFixedItem && (entry.SettingsName is "Gates" or "Lights" || GameEditions.IsThemeParkInc && entry.SettingsName == "Bus") ).ToList();
+
+## Bounded work
+Addendum to #443: Full Simulation End creation needs all-online-park research ledger; exclude covered Instant Action.
+- Preserve already-implemented behavior described above; restrict future changes to the named residual.
+- For evidence-only items, establish an oracle first and file implementation only if a behavioral difference is proven.
+
+## Missing evidence
+Decode 0x5B0C40 per-park flags, current park identity and persistence; depend on player-ledger work.
+- Source annotations record prior reverse engineering; this audit checked adjacent implementation but did not execute the original.
+
+## Acceptance cases
+1. Type 0 with last local item but another incomplete park creates no End.
+2. Type 0 with all records complete creates End once after advisor 0xa7; game type 1 never does.
+3. Add a reproducible synthetic fixture or reference trace identifying input, expected output, and affected function; a passing build alone is insufficient.
+4. Re-run focused regression tests for the listed source owner and document what remains unproven.
+
+## Dependencies and ownership
+- World/audio implementation owner to be assigned; no runtime ownership claimed.
+- Original-executable or reference-capture evidence is unavailable in this read-only source audit; unresolved claims are hypotheses.
+- Review existing PR #443 current head; use residual addendum, not duplicate proposal.
+
+## Review boundary
+- Stop at a reviewable design/evidence package; this draft authorizes no tag removal or parity claim.
+- Do not publish original media or private game data in fixtures, screenshots, or commits.
+- A future implementation needs its own reviewed evidence and acceptance results; do not treat this proposal as merge-ready.

@@ -21,11 +21,11 @@ public class TextureDecoderIndexingCorpusTests
 
 	private static readonly CorpusPin[] PinnedWadTextures =
 	{
-		new( "ui.wad", "stexture/button_text1.wct", 128, 128, "9872660AF09B28066D71851E4EB22C8B6F82A13DB93D33701C5A98C8FB4F262D" ),
-		new( "ui.wad", "stexture/Cash_alpha.wct", 64, 64, "07DC5E1DD6B40468D41FA43722397EDCF2184D9E4FEFF2599BFFFD8A0D542911" ),
-		new( "ui.wad", "stexture/I_Mail.wct", 32, 32, "27A99C7E8779FF90F561D67E9391190064198D72AB9CE8DCA9D681B61AE3BBE8" ),
-		new( "ui.wad", "stexture/b_1person.wct", 51, 51, "D4EAC494635854D9046B0C404DB507A5EAFE5B9EB8D1502B4C6657C75C3BF679" ),
-		new( "ui.wad", "stexture/b_allstaff.wct", 26, 26, "FBBFF0C20C1EAA84F4D45798E08181A003512B3CB27EEDFC8144DCB5077CB682" ),
+		new( "ui.wad", "stexture/button_text1.wct", 128, 128, "6BDA7C5DC1697DEB21FC3FB3235BD2057C8C5BE12AEA3C519145277E41C381CE" ),
+		new( "ui.wad", "stexture/Cash_alpha.wct", 64, 64, "51AD21417AE2A065071D838C51192E9B41679DDE65F18F56AF72BEC291E2C1EC" ),
+		new( "ui.wad", "stexture/I_Mail.wct", 32, 32, "695BCF4D27C608E8658D7B9DDC7A5D6C2C2B1D3ACC41DFB879D880EC8C2DB3CE" ),
+		new( "ui.wad", "stexture/b_1person.wct", 51, 51, "35B8BA586EE747038288E90605C610D87946889256C630C0FC2D9AE48F7D58E9" ),
+		new( "ui.wad", "stexture/b_allstaff.wct", 26, 26, "8E1EFA41C8425C4B7AC21D530ABE030FA0845E33F9292AC50EB3BC562FCA3FB8" ),
 		new( "lobby.wad", "terrain/textures/sgr_top2.wct", 128, 128, "7176E6E1BA50809089F771442D8AA6644F6B0C28EEB608B6A964E64CB18A4C8F" ),
 		new( "lobby.wad", "terrain/stexture/GK_top.wct", 8, 8, "B11C00E0553A56EEDF74184BD14E8C2FA20D03E39010E04D310D1025E872EFDB" ),
 		new( "levels/hallow/features/gates.wad", "textures/sign.wct", 256, 128, "0067E340A79308AC967D3D58D7D95FCBA39CF7F072D3C233B8A1FF9804F4982B" ),
@@ -43,10 +43,10 @@ public class TextureDecoderIndexingCorpusTests
 		new( "levels/space/queue.wad", "textures/jpa_que1.wct", 128, 128, "21D9F9F3BE8338C600F60F7EC5A9CF9EBFCF6F2BB6BC5103B67129EF17FB98CD" ),
 		new( "levels/space/rides/scentro.wad", "textures/Sp_Botplate1b.wct", 127, 128, "F3F94915E7C37818C9EF9C221570FB85C443A0032ECB53F7484D2854A387D28E" ), // re-recorded when the chroma planes took each other's header scale (the only pinned texture whose two scales differ)
 		// Pinned with the chroma planes taking each other's header scale; the two scales differ in these (about a quarter of the corpus), so a swap back changes the bytes.
-		new( "ui.wad", "textures/pipe.wct", 64, 64, "06AD465F80977022A3EF8D801A8C1C1D8CC2785CC590C538087D402A9A3C1CEB" ),
-		new( "ui.wad", "textures/b_1person.wct", 64, 64, "417203C4C7F1456B24592941CEE51871DF45256FA6C2924347F83B53407C40E5" ),
-		new( "ui.wad", "stexture/ridestatbar.wct", 32, 32, "F6B1B4F6F7CA737B37949B4AE814320B1207186D7F7CAA26E25E896425EE15DE" ),
-		new( "global/advisor.wad", "textures/Gold_Ticket.wct", 128, 128, "B70DA0C7D427ADC78BE18BC91F080C7B886A511411461DA26BCA5E3C082D47C6" ),
+		new( "ui.wad", "textures/pipe.wct", 64, 64, "C10119EE78140FDF7E4EBB42F1D658458D97205D139CDFA9C0285F7A03FAAA66" ),
+		new( "ui.wad", "textures/b_1person.wct", 64, 64, "1C552E6EF7865B41CCFA3BBEDD93503B4A5265F03E4CE09D99F50A102C77DB12" ),
+		new( "ui.wad", "stexture/ridestatbar.wct", 32, 32, "62BF4812B9735FBA3B0D92A6BA18096D1B60618C629544590CC862C964A0A296" ),
+		new( "global/advisor.wad", "textures/Gold_Ticket.wct", 128, 128, "5C141CDE99579DAB5AD8B891AF4B635FCCF7C8B3B0DA6CB2B14CC7934E643DE7" ),
 	};
 
 	private readonly record struct LoosePin( string Path, int Width, int Height, string Sha );

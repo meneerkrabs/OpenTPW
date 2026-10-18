@@ -9,6 +9,7 @@ public partial class TextureFile
 
 		Compressed = 0b10000,
 		Unknown    = 0b00010,
-		FullScale   = 0b00001
+		// Bit 0 set (0x13, the world textures): scale/wavelet pairs interleaved in each row; clear (0x12, the interface art): planar rows.
+		InterleavedRows = 0b00001
 	}
 }

@@ -47,6 +47,23 @@ public class UmbrellaDrawingTests
 	}
 
 	[TestMethod]
+	public void ThePullIsAMarginOverTheGuestsOwnDepthNotAShareOfTheDistanceSoScenerySkippingRoofsStaysInFront()
+	{
+		float DepthOf( float zoom ) => zoom * ObjectPlacement.ModelScale;
+		var guestOwnPull = SpriteScale.PulledDepthShare( DepthOf( 80f ) / ObjectPlacement.ModelScale );
+		Assert.AreEqual( 1.5f * ObjectPlacement.ModelScale / DepthOf( 80f ), UmbrellaRenderer.PullShare( DepthOf( 80f ) ), 1e-6f, "1.5 units at the zoom value 80, not 10 % (8 units)" );
+		Assert.AreEqual( 0f, UmbrellaRenderer.PullShare( -1f ), "behind the eye: none" );
+		for ( var zoom = 40f; zoom <= 300f; zoom += 10f )
+		{
+			var units = UmbrellaRenderer.PullShare( DepthOf( zoom ) ) * DepthOf( zoom ) / ObjectPlacement.ModelScale;
+			Assert.AreEqual( UmbrellaRenderer.MaxPullUnits, units, 1e-3f, $"zoom {zoom}: the same pull in units at every zoom" );
+		}
+		Assert.IsTrue( UmbrellaRenderer.MaxPullUnits <= 3.5f, "less than the guest's own pull: a roof that hides the guest hides the umbrella" );
+		Assert.IsTrue( UmbrellaRenderer.MaxPullUnits > 0f && guestOwnPull < 1f );
+		Assert.IsTrue( UmbrellaRenderer.SizeScale is > 0.5f and <= 1f );
+	}
+
+	[TestMethod]
 	public void AHandIsReadPerSlotDirectionAndStepAndMirroredWithX()
 	{
 		const string json = """{"schema":1,"pixelsPerUnit":128,"sets":{"SPR_X":{"stand":{"slot":0,"frames":[[[4,-8]],[[3,-7]],[[1,-6]],[[-3,-7]],[[-4,-8]]]},"walk":{"slot":1,"frames":[[[2,-10],[4,-6]],[[1,-1],[1,-1]],[[1,-1],[1,-1]],[[1,-1],[1,-1]],[[1,-1],[1,-1]]]}}}}""";

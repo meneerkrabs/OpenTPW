@@ -537,9 +537,10 @@ public sealed class ThemeParkIncHud
 		else if ( inPark && level.BuildEntry is { } entry && cursorX >= 0 )
 		{
 			// the footprint's own terrain and occupancy check decides the colour (the purchase is checked when the click places it)
-			var allowed = level.CheckObject( entry, cursorX, cursorY, level.BuildRotation ) == OriginalPlacementResult.Allowed;
+			var placementResult = level.CheckObject( entry, cursorX, cursorY, level.BuildRotation );
+			var allowed = placementResult == OriginalPlacementResult.Allowed;
 			var anchor = Level.GetCentredAnchor( entry, cursorX, cursorY, level.BuildRotation );
-			var footprint = BlueprintGhosts.Footprint( entry.Shape, anchor.X, anchor.Y, level.BuildRotation, allowed );
+			var footprint = level.ObjectBlueprint( entry, anchor.X, anchor.Y, level.BuildRotation, placementResult, allowed );
 			cells.AddRange( footprint.Cells );
 			directions = footprint.Directions;
 		}

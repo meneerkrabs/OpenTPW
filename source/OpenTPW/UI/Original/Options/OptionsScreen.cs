@@ -305,8 +305,9 @@ public static class OptionsScreen
 			() => Math.Max( 0, steps.ToList().IndexOf( state.Preset ) ),
 			index => state.Preset = steps[index], steps.Count > 1, () => steps.Select( preset => strings[UIStrings.GraphicsQuality] + QualityLabel( strings, preset ) ).Append( strings[UIStrings.GraphicsQuality] + QualityLabel( strings, state.Preset ) ) );
 		SliderRow( "audio", "f_optpanel3", 638, 57, 1289, 787, 691, 735, 677, 748, 646, 782, 679, 747,
-			() => strings[UIStrings.AudioQuality] + Percent( GameOptions.MaximumVolume ),
-			() => GameOptions.MaximumVolume + 1, () => GameOptions.MaximumVolume, _ => { }, false );
+			() => strings[UIStrings.AudioQuality] + Percent( GameAudio.ResolveSoundQuality( options ) ),
+			() => GameOptions.MaximumVolume + 1, () => GameAudio.ResolveSoundQuality( options ), value => options.SoundQuality = value, true,
+			() => new[] { strings[UIStrings.AudioQuality] + Percent( GameOptions.MaximumVolume ) } );
 
 		// Volume rows (f_optpanel2) with a mute toggle (b_on).
 		void VolumeRow( string id, UIStrings text, float panelTop, float panelBottom, float toggleTop, float toggleBottom, float trackTop, float trackBottom,

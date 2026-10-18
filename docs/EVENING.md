@@ -48,9 +48,9 @@ The fixed paces skip the clock: **always day** is daylight 1, **always dusk** da
 
 | Channel | Day | Dusk (d = 0.5) | Night |
 | --- | --- | --- | --- |
-| Sun colour (the directional term; fades with daylight to the power 1.5) | 1, 1, 1 | 0.41, 0.24, 0.18 (warm) | 0.08, 0.14, 0.40 (moonlight) |
-| Ambient level (of the original's 0.4) | 1 | 0.675 | 0.35 |
-| Ambient tint in `test.shader` (times the level) | 1, 1, 1 | 0.78, 0.65, 0.61 (warm) | 0.55, 0.80, 1.35 (blue) |
+| Sun colour (the directional term; fades with daylight to the power 1.8, tinted orange by the glow) | 1, 1, 1 | 0.62, 0.33, 0.17 (orange) | 0.08, 0.14, 0.40 (moonlight) |
+| Ambient level (of the original's 0.4; `0.35 + 0.65 d^1.4`) | 1 | 0.60 | 0.35 |
+| Ambient tint in `test.shader` (times the level) | 1, 1, 1 | 0.78, 0.58, 0.52 (warm) | 0.55, 0.80, 1.35 (blue) |
 | Sky tint (clouds and cylinder) | 1, 1, 1 | 0.54, 0.32, 0.26 (orange) | 0.07, 0.09, 0.22 |
 | Fog and backdrop colour | 1, 1, 1 | 0.53, 0.33, 0.28 | 0.05, 0.07, 0.16 |
 | Guest, staff and litter sprites | 1, 1, 1 | 0.67, 0.54, 0.50 | 0.34, 0.38, 0.60 |
@@ -61,7 +61,7 @@ The **lamp level** is `1 - smoothstep((d - 0.35) / 0.4)`: 0 while it is light (d
 fade out again at dawn. **At full day every value is exactly the original's** (`EveningLook.Day`: the sun white, the ambient uniform 0, no tint, no lamp), the shaders read a zero as "unchanged", and the draw's uniform block is byte for byte
 what it was without the extension (a test compares the bytes).
 
-The values were tuned by eye on offscreen captures of the jungle park and a pool (October 18, 2026, see [Tuning](#tuning)).
+The values were tuned by eye on offscreen captures of the jungle park and a pool (October 18, 2026, see [Tuning](#tuning)); the dusk was retuned the same day (open point 1, below: a stronger orange sun and a warmer, lower ambient, so green ground reads as a warm, darker evening).
 
 ## What gets dark
 
@@ -72,10 +72,12 @@ The values were tuned by eye on offscreen captures of the jungle park and a pool
 - **The sky** (`Sky.cs`: the cloud layers and the backdrop cylinder): `particle.shader` multiplies the vertex colour by the light colour of its uniform block when that is not zero; only the sky ever sets it, so every other particle draw is as before.
 - **The fog and the backdrop**: the viewport clear and the engine fog colour (`RenderFog.WorldColour`) are the level's own fog colour (`Level.BackdropColour`) times the fog tint (`Level.WorldBackdropColour`), so the world fades into a dark
   blue at night, and the sky's haze still ends in the same colour.
+- **A soft shoulder at dusk and night** (`test.shader`, only when the tinted ambient is set): a surface whose brightest channel exceeds 0.4 keeps 25 % of the excess (all three channels scaled alike, so the hue stays). It keeps a near-white surface next to a lamp, such as the ticket booths' panels, from burning out to flat white; everything below 0.4 is unchanged, and day and extension-off draws skip it.
 - **The pre-rendered sprites** (guests, staff, ride heads, guest balloons, upgrade balloons, litter): they are not lit, as in the original, so they get a tint instead (`sprite.shader` multiplies by the otherwise unused light colour when it is not zero). They
   do not brighten near a lamp.
 - **The pool water** is unlit; its two colours are multiplied by the water tint on the CPU (`PoolRenderer`).
-- **Not changed**: the interface, the thought bubbles (they stay as bright as the interface), the build tools' placement markers (`BlueprintMarkers`, so they stay readable), the particles (smoke, fire, fireworks), the rain and snow, the advisor, the sun's direction (the renderer's fixed light position), and the text. There are no stars and no moon in the sky.
+- **The particles**: the pools' spray droplets (`PoolSpray`) and the world's alpha-blended particles (smoke, dust, steam; `ParticleRenderer`, run kind 0) take the sprite tint through the light colour `particle.shader` multiplies in when it is not zero. The additive and one-plus-one ones (fire, sparks, fireworks) give off light and stay as they are, and so do the screen-space ones.
+- **Not changed**: the interface, the thought bubbles (they stay as bright as the interface), the build tools' placement markers (`BlueprintMarkers`, so they stay readable), the additive particles (fire, fireworks), the rain and snow, the advisor, the sun's direction (the renderer's fixed light position), and the text. There are no stars and no moon in the sky.
 
 ## Lamps
 
@@ -100,8 +102,8 @@ colour times the lamp level.
 
 | Object | Lights |
 | --- | --- |
-| Pool lamp (`Pools.Extra` 5, all themes) | one warm light under the top of the lamp head, radius 55 |
-| Underwater light (`Pools.Extra` 6, all themes) | one aqua light on the pool side of the disc, radius 50 |
+| Pool lamp (`Pools.Extra` 5, all themes) | one warm light under the top of the lamp head, radius 42 |
+| Underwater light (`Pools.Extra` 6, all themes) | one aqua light 14 model units into the pool from the disc and 6 below the object's ground level, radius 26 |
 | The *Lights* feature of the four themes (the four lamp heads along the entrance road) | four warm street lamps, radius 45 |
 | The *Gates* of the four themes | one light on the arch or sign: warm (jungle), violet (hallow), cyan (space), peach (fantasy); radius 60 |
 | Hallow: Giant Pumpkin, Demon Statue, Haunted Tower | an orange glow inside the pumpkin, the statue's flames, a window light |
@@ -132,15 +134,24 @@ padding is named), the lamp table is embedded with the other `content/data` file
 
 Captures of the jungle park (the entrance, with the gate's and the lamp posts' lamps) and of a painted pool with swimmers at day, dusk and night were looked at and the look adjusted: the moonlight became bluer (0.08, 0.14, 0.40), the ambient got its own tint
 (blue at night, warm at dusk) because a scalar ambient left the green grass green, the sun now fades faster than the daylight so dusk is clearly dimmer than day, and the sprites and the water were darkened a little. At night the ground and objects are dark and bluish and the
-gate and the lamp posts light their surroundings clearly. Still open: the sky (the park camera never shows it at its normal angles, so its tint was not judged), the lamps of the pools extension (no pool lamp was placed in a capture), the ticket-booth
-doors at the entrance (they stay bright at night), and the strength of dusk on green ground (the grass is green, so a warm sun shows mostly on paths, bricks and stone).
+gate and the lamp posts light their surroundings clearly. 
+
+### The open points round (October 18, 2026)
+
+Offscreen, silent captures, `reports/evening/open-points` (untracked), 3024 x 1686, Debug build (the pool options are Debug-only):
+
+1. **Dusk on green ground.** The old dusk (sun 0.41, 0.24, 0.18; ambient 0.675) left grass dark green with only the paths warm. The terrain uses the same `test.shader` arithmetic as objects (the ground, paths and objects all go through one lit shader), so nothing there was different; the values were. The sun now fades with the power 1.8 and is tinted (1.8, 0.85, 0.30) by the glow (an orange of 0.62, 0.33, 0.17 at the middle of the dusk), the ambient level is `0.35 + 0.65 d^1.4` (0.60) and its warm tint is (1.0, 0.64, 0.44). Paths and bricks glow orange, the lawns turn olive gold and the grass is a clearly darker, warmer green than day (`dusk-before.png`, `dusk-after.png`). Full day is exactly unchanged (every term is 1 at d = 1; the day capture and an extension-off capture have identical ground pixels, the guests differ only in where they walk), and night is the approved look (the sun and ambient at d = 0 are the same numbers; the shoulder below touches only lamp-lit highlights).
+2. **The ticket-booth doors.** They are not self-lit. The booths are a mesh of the park's `base.MD2` (`ticket_booths`), drawn like all terrain meshes by `test.shader` with its plain alpha blend; their materials are `gte_rof1`, `gte_rof2` (the glass, flag `TRANSPARENT`, mean alpha 121 of 255), `gte_rof3`, `gte_wal1` and `gte_wal2`, with no unlit or additive flag. The bright panels are the opaque `gte_rof3` roof panels, albedo 221, 221, 228 of 255: the lightest texture in the entrance, so at night the moon and ambient give them a blue-grey (`night-no-lamps-doors-albedo.png`), and the street lamps beside them add 1.0 of warm light on top, which clips a near-white surface to flat white. So they do follow the time of day, but a white albedo under a lamp saturates. The fix is the soft shoulder in `test.shader` (see "What gets dark"): at night the panels' pixel went from about 170, 169, 203 to about 106, 104, 126 (`night-before-doors.png`, `night-after-doors.png`). Every other draw of `test.shader` gets the same shoulder, which only matters where a lamp or a white texture pushes a channel past 0.4.
+3. **The pool lamp and the underwater light.** They had never been captured because `--debug-light` and `--debug-pool` are Debug-only and `--debug-light` placed its light relative to the live camera, which has not yet moved to the capture camera when the light is added. `--debug-light` now takes the held `--capture-camera` ground target as its origin (like `--debug-pool`), and `--debug-extras` logs each extra's engine position. A capture setup that needs no new option: `--debug-pool default --debug-swimmers 6 --debug-pool-offset 3,3 --debug-extras --capture-camera 36,-46,70,-90 --evening-pace night|dusk` (`pool-lights-*.png`). Findings: both lights switch on at dusk and night and the lamp follows the lamp level; the lamp's radius 55 lit a huge area of the lawn and the underwater light's radius 50 flooded the dry grass beside the pool with aqua, because a point light has no occlusion. Fixed in the table: the lamp is radius 42 and (0.95, 0.78, 0.48), the underwater light sits 14 model units into the pool and 6 below ground level with radius 26 and (0.30, 0.85, 1.0), so it lights the basin walls and the water's edge and only a little of the grass (`pool-lights-night-before.png`, `pool-lights-night-after.png`, `pool-lights-dusk-after.png`). The water itself stays unlit (its basin shows through it and carries the glow); making the water surface read the lights is not done.
+4. **Hundreds of lamps in the browser.** Measured, see [The browser](#the-browser): no change needed.
+5. **Particles and the sky.** The spray droplets and the world's alpha particles take the sprite tint (above). The park sky is never in view: captures at the camera's two extremes (zoom 40 at night, zoom 300 at dusk, `zoom*-no-sky.png`) show only ground, and [the wide-zoom check](progress/2026-10-18-wide-zoom.md) found the view stays at least 8 degrees below the horizon, so the sky tint cannot be judged from any park camera angle and needs no change; the lobby and park-info scenes are not park levels and the extension does not touch them.
 
 ## Command-line options
 
 Both work in Release builds as well (unlike most debug options) because performance runs use them:
 
 - `--evening-pace <minutes10|minutes20|minutes40|day|dusk|night>` sets the pace for this run only: it is a run-scoped override in `Level` that is read instead of the option and never written to `GameOptions.Current`, so nothing is saved. It needs the extension on, which it is by default.
-- `--debug-evening-lamps <n>` adds `n` lamp lights (the pool lamp's colour and radius) on a square grid 40 engine units (20 cells) across around the park camera's target, so they crowd into the view, that follow the lamp level, for measuring many lamps. The `--perf-run` log lines now also say how many point lights are in view.
+- `--debug-evening-lamps <n>` adds `n` lamp lights (the pool lamp's colour and radius) on a square grid 40 engine units (20 cells) across around the park camera's target, so they crowd into the view, that follow the lamp level, for measuring many lamps. The `--perf-run` log lines now also say how many point lights are in view. The browser twin is `--evening-lamps <n>` of `tools/web-perf/run.mjs` ([The browser](#the-browser)).
 
 ## Performance
 
@@ -197,8 +208,19 @@ Release build, Chrome 155 headless, Apple M5 through ANGLE/Metal, 1280 x 900, Ju
 | Day (extension on) | 11.9 % | 59.99 | 1.6 ms | 1.9 ms | 2.3 ms | 0 |
 | Extension off | 13.7 % | 60.03 | 1.8 ms | 2.6 ms | 3.3 ms | 0 |
 
-Night costs the browser nothing measurable: the frame is no longer than at day and inside the spread of the runs (the off runs happened to be the noisiest), with no long task. No shader change was needed; the GLES shaders are untouched. Not measured in the browser: hundreds of lamps (the harness has no
-equivalent of `--debug-evening-lamps`).
+Night costs the browser nothing measurable: the frame is no longer than at day and inside the spread of the runs (the off runs happened to be the noisiest), with no long task. That first set needed no shader change. The shoulder of the open-points round (below) changed `test.shader`, so `content/shaders/web/test.json` was regenerated from it (`WebShaderTests`, the generated JSON stays the desktop shader's twin).
+
+**Hundreds of lamps in the browser (open point 4).** The harness now has the twin of `--debug-evening-lamps`: `tools/web-perf/run.mjs --scenarios jungle --window 20 --evening night --evening-lamps <n>` adds `n` lamp lights on the same 40-unit grid around the park camera's target before the second window (hook `PerfEveningLamps`, exported from `Program.Perf.cs`, built on `Level.SetDebugEveningLamps`, which the native option now shares). Measured on the published AOT build (`-p:RunAOTCompilation=true`, as the live page is built), Chrome 155 headless, Apple M5, 1280 x 900, Jungle, a 20-second window after the steady one, medians of 3 runs per row, on a machine with a load average of 9 to 22 (so read the differences with care):
+
+| Window | Main thread busy | fps | Frame p50 | Frame p95 | Frame p99 | Long tasks |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Extension off | 8.3 % | 59.99 | 1.1 ms | 1.5 ms | 1.9 ms | 0 |
+| Night, the park's own lamps | 8.5 % | 59.99 | 1.2 ms | 1.5 ms | 1.8 ms | 0 |
+| Night, +50 lamps | 8.3 % | 59.99 | 1.2 ms | 1.4 ms | 1.6 ms | 0 |
+| Night, +200 lamps | 8.5 % | 60.01 | 1.2 ms | 1.5 ms | 1.6 ms | 0 |
+| Night, +500 lamps | 11.7 % | 59.99 | 1.6 ms | 2.7 ms | 3.1 ms | 0 |
+
+Up to 200 extra lamps cost nothing measurable. With 500 the frame is about 0.4 ms (p50) and 1.2 ms (p95) longer and the main thread about 3 points busier; the same session's own steady window before the lamps read 10.6 % busy and a p95 of 2.0 ms against about 8.9 % and 1.5 ms in the other sessions, so about half of that is the loaded machine. It is not clearly slower (60 fps held, no long task, p99 3.1 ms of a 16.7 ms frame), so no code was changed. (An interpreter build, which is what a plain local `dotnet publish` gives, is slower with any extra lamps in view: p50 2.4 to 3.3 to 3.7 ms for 0, 50 and 500, busy 18.9, 24.1 and 25.2 %; that build is not what the page ships, and no lamp count changes its p95 past 5.6 ms.) A real park has a few dozen lamps at most.
 
 ## Determinism
 
@@ -217,9 +239,8 @@ and, with the game's data, that every row of the shipped table matches an origin
 
 ## Not done
 
-- **Only partly looked at.** The park and pool captures above were; the colours and strengths of the table above, the lamp radii and positions, how dark the ground and the sprites should be at night, whether the sprites are too bright or
-  too dark next to the lit ground, the sky's and the fog's night colours, and whether the underwater lights and the pool water look right still need a human eye (`--evening-pace dusk` and `night` show them).
+- **Only partly looked at.** The captures above were looked at by the implementer only; the dusk and night values, how dark the sprites should be next to the lit ground, the fog's night colour, the shoulder's strength and the pool lights' look still need a human eye (`--evening-pace dusk` and `night` show them).
 - The sun's direction does not change and there is no moon or stars; the shaders' light position is a fixed one.
 - The sprites do not brighten near a lamp, the pool water is not lit by the lamps, and lamps do not change the ambient.
 - Which original objects get a lamp is a short, hand-picked list (above); shops, sideshows and most rides have none.
-- Particles are not tinted by the light: the pools' splash rings and droplets (`PoolSpray`) and the other particles stay full bright at night (an N2 item).
+- The additive particles (fire, sparks, fireworks) are not tinted, on purpose. The pool water surface is not lit by the underwater light (its basin shows through it). The park sky has no judged tint because no park camera shows it.

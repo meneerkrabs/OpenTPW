@@ -425,13 +425,8 @@ internal static class Game
 					return;
 				Render.PostUpdate -= AddDebugEveningLamps;
 				var columns = (int)MathF.Ceiling( MathF.Sqrt( lampCount ) );
-				// the grid is 40 engine units (20 cells) across whatever the count, so the lamps crowd into the view
 				var spacing = 40f / columns;
-				var centre = new System.Numerics.Vector3( park.Target.X, park.Target.Y, park.Target.Z );
-				var lamps = new List<PointLight>();
-				for ( var index = 0; index < lampCount; index++ )
-					lamps.Add( new PointLight( centre + new System.Numerics.Vector3( ( index % columns - columns / 2 ) * spacing, ( index / columns - columns / 2 ) * spacing, 2.2f ), new System.Numerics.Vector3( 1.0f, 0.84f, 0.55f ), PointLightMath.ModelUnitsToEngine( 55 ) ) );
-				level.PointLights.Add( new DebugEveningLampSource( lamps, () => level.Look.LampLevel ) );
+				level.SetDebugEveningLamps( lampCount, new System.Numerics.Vector3( park.Target.X, park.Target.Y, park.Target.Z ) );
 				Log.Trace( $"--debug-evening-lamps: {lampCount} lamp lights on a {columns} x {columns} grid, {spacing:0.##} engine units apart, around the camera target." );
 			}
 		}
@@ -602,7 +597,11 @@ internal static class Game
 					return;
 				Render.PostUpdate -= AddDebugLight;
 				var colour = lightValues.Length == 7 ? new System.Numerics.Vector3( lightValues[4], lightValues[5], lightValues[6] ) : System.Numerics.Vector3.One;
-				var light = new PointLight( new System.Numerics.Vector3( park.Target.X + lightValues[0], park.Target.Y + lightValues[1], park.Target.Z + lightValues[2] ), colour, lightValues[3] );
+				// with --capture-camera the held camera's ground target is the origin (the live camera may still be elsewhere when the light is added), as for --debug-pool
+				var lightCamera = GetOption( args, "--capture-camera", "x,y,height,yaw" )?.Split( ',' ).Select( value => float.Parse( value, System.Globalization.CultureInfo.InvariantCulture ) ).ToArray();
+				var lightX = lightCamera is { Length: >= 2 } ? lightCamera[0] : park.Target.X;
+				var lightY = lightCamera is { Length: >= 2 } ? lightCamera[1] : park.Target.Y;
+				var light = new PointLight( new System.Numerics.Vector3( lightX + lightValues[0], lightY + lightValues[1], park.Target.Z + lightValues[2] ), colour, lightValues[3] );
 				level.PointLights.Add( new FixedPointLightSource( light ) );
 				Log.Trace( FormattableString.Invariant( $"--debug-light: a point light at {light.Position.X:0.##},{light.Position.Y:0.##},{light.Position.Z:0.##}, radius {light.Radius:0.##}, colour {colour.X:0.##},{colour.Y:0.##},{colour.Z:0.##}." ) );
 			}
@@ -1266,7 +1265,7 @@ internal static class Game
 		// [EXT:debug-pool] --debug-extras: one of each pool extra beside the pool (the shower needs the room first)
 		if ( extras )
 			foreach ( var extra in level.BuildPoolExtrasBeside( pool ) )
-				Log.Trace( $"--debug-extras: built the {extra.Entry.DisplayName} at {extra.Placement.X},{extra.Placement.Y} rotation {extra.Placement.Rotation}." );
+				Log.Trace( FormattableString.Invariant( $"--debug-extras: built the {extra.Entry.DisplayName} at {extra.Placement.X},{extra.Placement.Y} rotation {extra.Placement.Rotation}, engine {extra.Placement.ModelToEngine.M41:0.#},{extra.Placement.ModelToEngine.M42:0.#}." ) );
 		var started = level.Guests.DebugStartSwimmers( placed.Visitors, swimmers );
 		if ( extras )
 		{

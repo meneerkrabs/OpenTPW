@@ -5,12 +5,12 @@
     {
       "note": "Pools extension: the pool lamp (Pools.Extra 5), a warm light at the top of the lamp head",
       "match": { "poolsExtra": 5 },
-      "lights": [ { "node": "lamp", "anchor": "top", "offset": [0, 0, -1.5], "colour": [1.0, 0.84, 0.55], "radius": 55 } ]
+      "lights": [ { "node": "lamp", "anchor": "top", "offset": [0, 0, -1.5], "colour": [0.95, 0.78, 0.48], "radius": 42 } ]
     },
     {
       "note": "Pools extension: the underwater light (Pools.Extra 6), an aqua light on the pool side of the disc, which also makes the basin glow",
       "match": { "poolsExtra": 6 },
-      "lights": [ { "node": "light", "anchor": "centre", "offset": [0, 4.5, 0], "colour": [0.35, 0.9, 1.0], "radius": 50 } ]
+      "lights": [ { "node": "light", "anchor": "centre", "offset": [0, 14, -6], "colour": [0.3, 0.85, 1.0], "radius": 26 } ]
     },
     {
       "note": "The Lights feature of all four themes (the four lamp heads along the entrance road): warm street lamps",

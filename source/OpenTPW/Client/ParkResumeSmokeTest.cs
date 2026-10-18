@@ -19,8 +19,8 @@ namespace OpenTPW;
 /// the normal update/render hooks and the intro branch; the harness then owns the loop: it registers its own update
 /// (the only simulation driver — controlled 1/60 advances through <see cref="Level.AdvanceSimulation"/>) and the real
 /// <see cref="GameFlow.Render"/> for draw verification, runs <see cref="Renderer.Run"/> itself and closes the window
-/// when done. Run with <c>--mute --no-advisor</c> for a controlled clock; active screams and spoken advice cannot be
-/// saved and fail the capture with the production reason.
+/// when done. Run with <c>--mute --no-advisor</c> for a controlled clock; spoken advice cannot be saved and fails the
+/// capture with the production reason, and held screams are saved as the scripts hold them, with or without audio.
 /// </summary>
 internal sealed partial class ParkResumeSmokeTest : IDisposable
 {
@@ -231,7 +231,7 @@ internal sealed partial class ParkResumeSmokeTest : IDisposable
 			"the saved file round-trips byte-identically through the own codec" );
 		savedPrototype = SmokePrototypeOf( ParkResumeSaveFile.Load( savePath ).Prototype, level.PlacedRide );
 		Log.Trace( $"Park-resume capture: saved {bytes.Length} bytes ({boundarySample.Counters.Objects} objects, {boundarySample.Counters.Guests} guests, "
-			+ $"{boundarySample.Counters.QueuedGuests} queued, {boundarySample.Counters.Riders} riding, balance ${boundarySample.Counters.Balance})." );
+			+ $"{boundarySample.Counters.QueuedGuests} queued, {boundarySample.Counters.Riders} riding, balance ${boundarySample.Counters.Balance}, {HeldScreams().Length} held scream(s))." );
 		CaptureFrame( "park-resume-capture-saved.png" );
 		stage = Stage.Continuation;
 	}
@@ -277,6 +277,7 @@ internal sealed partial class ParkResumeSmokeTest : IDisposable
 		VerifyTourRestored();
 		VerifyBumperRestored();
 		VerifyPoolsRestored();
+		VerifyScreamsResumed();
 		if ( PrototypeVariant )
 		{
 			var totem = level.PlacedRide;
@@ -294,6 +295,27 @@ internal sealed partial class ParkResumeSmokeTest : IDisposable
 		pendingCapture = "park-resume-restored.png";
 		captureAtFrame = frame + WarmUpFrames;
 		stage = Stage.Boundary;
+	}
+
+	/// <summary>The runtimes whose scripts hold a scream with a band (one that plays a chain while the park's audio runs).</summary>
+	private OriginalObjectRuntime[] HeldScreams() => level.Objects.Objects.Select( item => item.Runtime )
+		.Concat( level.PlacedRide is { } totem ? new[] { totem.Runtime } : Array.Empty<OriginalObjectRuntime>() ).Distinct()
+		.Where( runtime => runtime.Effects.ScriptHoldsScream && runtime.Effects.HeldScreamBand != 0 ).ToArray();
+
+	/// <summary>
+	/// The resumed park's held screams come back as the scripts held them (the boundary compares that state) and play again once the park's audio
+	/// runs: the candidate starts no sound, and entering the park's audio stops every chain of the park it replaces.
+	/// </summary>
+	private void VerifyScreamsResumed()
+	{
+		var held = HeldScreams();
+		if ( held.Length == 0 )
+			return;
+		// a scream can play when the sound service runs and its band's event is in cat_kids
+		var playable = GameAudio.Events == null ? Array.Empty<OriginalObjectRuntime>()
+			: held.Where( runtime => GameAudio.ScreamBandEvent( runtime.Effects.HeldScreamBand ) is { } id && GameAudio.Kids?.Catalog.Find( id ) != null ).ToArray();
+		Require( playable.All( runtime => runtime.Effects.PlaysHeldScream ), $"the resumed park's {playable.Length} playable held scream(s) play again once its audio runs" );
+		Log.Trace( $"Park-resume restore: {held.Length} held scream(s) restored, {playable.Count( runtime => runtime.Effects.PlaysHeldScream )} playing again." );
 	}
 
 	/// <summary>First recapture proves the manifest recomputes identically; the later ones carry it as the verified manifest.</summary>
@@ -764,10 +786,42 @@ internal sealed partial class ParkResumeSmokeTest : IDisposable
 			var problems = VerifyEvidencePair( capture!, Evidence( completed: true, failure: null ) );
 			Require( problems.Count == 0, $"the evidence pair verifies ({problems.Count} problems; first: {problems.FirstOrDefault() ?? "none"})" );
 		}
+		VerifyAutosave();
 		VerifyRestart();
 		Log.Trace( summary );
 		stage = Stage.Done;
 		Render.Window.SdlWindow.Close();
+	}
+
+	/// <summary>
+	/// [EXT:periodic-autosave] The periodic autosave on the real park: five minutes of play time (counted in quarter-second frames) take one capture between ticks, which is written into the
+	/// theme's own autosave slot (never the manual or checkpoint slot), reads back as a continuation entry and leaves the simulation, every random stream and the state hash exactly as they were.
+	/// The capture, serialization and write times of this park are logged.
+	/// </summary>
+	private void VerifyAutosave()
+	{
+		var hash = level.ComputeStateHash(); var random = level.CaptureRandomState();
+		var manual = SaveFileSystem.GetAbsolutePath( $"opentpw-{level.LevelName}-world.json" );
+		var manualBytes = File.Exists( manual ) ? File.ReadAllBytes( manual ) : null;
+		flow.Autosave.Reset();
+		var result = AutosaveResult.NotDue;
+		for ( var frame = 0; frame < 4000 && result != AutosaveResult.Saved; frame++ ) result = flow.RunAutosave( level, 0.25, true );
+		Require( result == AutosaveResult.Saved, "five minutes of play time took the periodic autosave" );
+		flow.Autosave.Flush();
+		var entry = AutomaticThemeContinuation.Probe( SaveFileSystem, level.LevelName, AutomaticSlotKind.Autosave );
+		Require( entry != null && entry.Kind == AutomaticSlotKind.Autosave, "the autosave slot holds a readable continuation entry" );
+		Require( AutomaticThemeContinuation.Read( SaveFileSystem, entry! ).Guests.Guests.Length == level.Guests!.CaptureSnapshot().Guests.Length, "the autosave holds this park's guests" );
+		Require( manualBytes == null ? !File.Exists( manual ) : File.ReadAllBytes( manual ).AsSpan().SequenceEqual( manualBytes ), "the autosave left the manual save untouched" );
+		Require( level.ComputeStateHash() == hash && level.CaptureRandomState() == random, "the autosave left the simulation and its random streams as they were" );
+		// the sliced serialization writes the manual save's bytes, and the captured snapshot is a detached copy that the running park cannot change
+		var detached = level.CaptureResumeSnapshot( Advisor, "park-resume smoke", verifiedAssets, savedUtc: DateTimeOffset.UnixEpoch );
+		var expected = ParkResumeSaveFile.Serialize( detached ); var sliced = ParkResumeSaveFile.BeginSlicedSerialize( detached );
+		while ( !sliced.Run( TimeSpan.FromMilliseconds( 1 ) ) ) { }
+		Require( sliced.Bytes.AsSpan().SequenceEqual( expected ), $"the sliced serialization ({sliced.Slices} slices) wrote the bytes of the manual save's serializer" );
+		for ( var tick = 0; tick < 300; tick++ ) level.AdvanceSimulation( FixedStepClock.TickDuration );
+		Require( ParkResumeSaveFile.Serialize( detached ).AsSpan().SequenceEqual( expected ), "the captured snapshot did not change while the park ran on for five simulated seconds" );
+		var autosave = flow.Autosave;
+		Log.Trace( $"Periodic autosave of the smoke park: {autosave.LastBytes / 1024.0:0} KiB, capture {autosave.LastCaptureMilliseconds:0.0} ms, serialize {autosave.LastSerializeMilliseconds:0.0} ms in {autosave.LastSlices} slices (longest {autosave.LastLongestSliceMilliseconds:0.0} ms), write {autosave.LastWriteMilliseconds:0.0} ms." );
 	}
 
 	/// <summary>

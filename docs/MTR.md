@@ -1,10 +1,11 @@
 # MTR: mesh companion files on the install media
 
-October 9, 2026. Status: strict reader; the table is **decoded as mesh topology that is
+October 9, 2026. Status: observed structure, no consumer found. The table is **decoded as mesh topology that is
 fully redundant with the paired banner `.MD2`** and the floats as nine 4×4 matrices
 (two equal the MD2 node matrix), verified for all 11 files. MTR is not a material format,
-adds no geometry the MD2 lacks and is not rendered. Static searches found no evidence the
-game opens it, so it is treated as unused unless contrary evidence appears. No original data
+adds no geometry the MD2 lacks and is not rendered. Open, and unprovable from the files alone:
+(a) no reader found in any allowed binary, a runtime-built filename can't be fully excluded;
+(b) why `s` is 0.66596/0.80645/1 and what `M7` is, since no placement code exists. No original data
 is in the repository.
 
 ## Where the data is
@@ -28,7 +29,9 @@ not re-run in this pass:
 | `Swedish/…/congrats.mtr` | 14,676 | `715608a5046c11c767763f489444f3a9c310041f2c5b13233ff3c7c67f8503c3` |
 | `Swedish/…/paused.mtr` | 7,816 | `7273e32dbe6b8c4d8f99faddb92bfedfa04fda72f9f2edacb307427c47dccd30` |
 
-That is 9 distinct files. French has no MTR. English has no `paused.mtr`, although `paused.MD2` exists.
+That is 9 distinct files. An independent corpus check on 2026-10-18: all 11 `.mtr` files from the PC CD
+match the 9 distinct pinned SHA-256 hashes in docs/MTR.md. French has no MTR. English has no `paused.mtr`,
+although `paused.MD2` exists.
 The English ISO `Meshes/English/*.MD2` files are byte-identical to the installed
 `Data/Language/English/*.MD2`. The installed `Data` tree therefore holds the MD2 banners but no
 MTR files, while the install media carries both. This is an absence from the installed tree,
@@ -167,7 +170,8 @@ values stored compressed or RefPack-wrapped. The WAD scan above covers WAD membe
 The Mac file-extension list around `SimThemePark.data` offset ≈2,006,300 (`.fpc .ffn … .TPWS .TPWI .LAYS *.md2 *.ESP`)
 has no `.mtr` (checked in an earlier pass, not re-run here).
 
-**Conclusion:** no evidence of use; MTR is treated as unused unless contrary evidence appears.
+**Conclusion:** no consumer found. Open: (a) no reader found in any allowed binary, a runtime-built filename can't be fully excluded;
+(b) why `s` is 0.66596/0.80645/1 and what `M7` is, since no placement code exists.
 
 **Decrypted PC executable (October 16, 2026).** The decrypted `tp.exe` (SHA-256 `5472f97b…`, code and data
 readable) has 0 occurrences of `.mtr` (ASCII or UTF-16) and 0 of the magic in either byte order, including as a
@@ -201,9 +205,11 @@ the MD2 files' use (and therefore any use of the MTR sidecars made for them) is 
 
 ## Remaining gates
 
-- Whether the game ever opens MTR at all: no consumer found in any allowed binary (tp.exe, the TPI Game.exe, the Mac PEFs and every
-  shipped DLL; the TPI and PEF results are weak). A name built at runtime remains the only way one could still be read.
-- Why `s` is 0.66596/0.80645/1 and what `M7` is: no placement code exists to read. The data shows `s` baked into the MD2 and `M7` unrelated to it (above).
+Status: observed structure, no consumer found.
+
+- No reader found in any allowed binary (tp.exe, the TPI Game.exe, the Mac PEFs and every
+  shipped DLL; the TPI and PEF results are weak). A runtime-built filename can't be fully excluded.
+- Why `s` is 0.66596/0.80645/1 and what `M7` is, since no placement code exists. The data shows `s` baked into the MD2 and `M7` unrelated to it (above).
 - No further work is planned.
 
 Banner rendering belongs to the MD2 renderer and needs no MTR data.

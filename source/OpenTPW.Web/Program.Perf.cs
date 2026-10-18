@@ -136,6 +136,41 @@ public static partial class Program
 		return true;
 	}
 
+	private static Action? winterHook;
+
+	/// <summary>
+	/// [EXT:debug-winter] The browser twin of the desktop's Debug-build <c>--debug-winter</c> (a capture aid for tools/web-perf, scenario <c>winter</c>): dresses every guest in a head item (by its id) and mittens (all but every fourth guest) every frame,
+	/// and when <paramref name="zoom"/> is above zero holds the park camera on the lowest-numbered visible guest at that zoom value and <paramref name="yaw"/> (degrees). The guests' item field is written directly, so a run that calls this is not the
+	/// park's own simulation and nothing may be saved from it. Returns false outside a park or when the winter extension has no renderer.
+	/// </summary>
+	[JSExport]
+	public static bool PerfWinter( double zoom, double yaw )
+	{
+		if ( flow?.Level is not { WarmItemRenderer: not null } || renderer == null )
+			return false;
+		if ( winterHook != null )
+			renderer.PostUpdate -= winterHook;
+		winterHook = () =>
+		{
+			if ( flow?.Level is not { Guests: { } simulation } level )
+				return;
+			if ( zoom > 0 && Camera.Mode is ParkCameraMode camera && level.OriginalPark is { } park )
+				if ( simulation.Guests.Where( candidate => candidate.IsVisible && float.IsFinite( candidate.DrawX ) ).OrderBy( candidate => candidate.Id ).FirstOrDefault() is { } followed )
+				{
+					var spot = GuestRenderer.CellToEngine( park.Heightfield, followed.DrawX, followed.DrawY );
+					camera.SetPose( new System.Numerics.Vector3( spot.X, spot.Y, 0 ), (float)zoom, (float)yaw );
+				}
+			foreach ( var guest in simulation.Guests )
+				guest.WarmItems = WinterRules.HeadItemOf( guest.Id ) | (guest.Id % 4 == 3 ? 0 : WinterRules.Mittens);
+		};
+		renderer.PostUpdate += winterHook;
+		return true;
+	}
+
+	/// <summary>How many warm items the renderer drew in the last frame, or -1 without one.</summary>
+	[JSExport]
+	public static int PerfDrawnWinterItems() => flow?.Level?.WarmItemRenderer?.DrawnItems ?? -1;
+
 	/// <summary>How many umbrellas the renderer drew in the last frame, or -1 without one.</summary>
 	[JSExport]
 	public static int PerfDrawnUmbrellas() => flow?.Level?.UmbrellaRenderer?.DrawnUmbrellas ?? -1;

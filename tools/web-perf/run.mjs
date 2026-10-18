@@ -79,7 +79,7 @@ function usage() {
   --memory-minutes <n>    memory scenario length (default 10)
   --music                 keep music and speech on (default: muted, effects on, as on 11 October)
   --size <w>x<h>          window size (default 1280x900)
-  --shot <file>           umbrellas: where the screenshot goes
+  --shot <file>           umbrellas, winter: where the screenshot goes
   --zoom <value>          jungle: after the steady window, hold the park camera at this zoom value (40..300 with the wide zoom option) and measure a second window
   --evening <mode>        jungle: after the steady window, hold the evening look (night, dusk, day) or switch the extension off, and measure a second window
   --keep <mode>           keep the game files in the browser on the first visit: lazy, all or off (default off)
@@ -294,6 +294,27 @@ const scenarios = {
 		const file = options.shot ?? path.join(os.tmpdir(), 'opentpw-umbrellas.png');
 		await fs.writeFile(file, Buffer.from(shot.data, 'base64'));
 		return { zoom, drawnUmbrellas: drawn, screenshot: file };
+	},
+
+	/** [EXT:debug-winter] After jungle: every guest gets warm items, the camera follows the first one, and a screenshot is saved (--shot, default opentpw-winter.png in the temp dir). */
+	async winter(page, options) {
+		if (!(await page.state()).hud)
+			throw new Error('The winter scenario needs a park: run it after jungle');
+		const zoom = options.zoom ?? 80;
+		await page.call('PerfWinter', zoom, 35);
+		// A new park has no guests until the gate has been open for a while: wait until an item is drawn (at most three minutes).
+		let drawn = 0;
+		for (let waited = 0; waited < 180000 && drawn < 1; waited += 1000) {
+			await sleep(1000);
+			drawn = await page.eval('opentpwPerf.program.PerfDrawnWinterItems()');
+		}
+		// let the followed guest walk clear of the entrance before the shot
+		await sleep(10000);
+		drawn = await page.eval('opentpwPerf.program.PerfDrawnWinterItems()');
+		const shot = await page.send('Page.captureScreenshot', { format: 'png' });
+		const file = options.shot ?? path.join(os.tmpdir(), 'opentpw-winter.png');
+		await fs.writeFile(file, Buffer.from(shot.data, 'base64'));
+		return { zoom, drawnWinterItems: drawn, screenshot: file };
 	},
 
 	async buy(page) {

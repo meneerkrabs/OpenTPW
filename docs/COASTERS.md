@@ -260,7 +260,7 @@ there (`0x440c10`; E stands on S0, so the pair repeats S0 → S1), so the list e
 and the train ahead is slower, the two speeds become `(T + 2·O)/3` and `(O + 2·T)/3` and the train ahead is flagged `0x40` (no station
 braking until it is past the window). Flag `0x80` clears at the end of the tick when the time to the train ahead (the samples between them
 times spacing over the speed of the sample whose index is the train's own index, `0x43d85f`) reaches `uiTrainReleaseRate`. The crash
-effect `0x439840` (sound and particles) is not reproduced.
+effect `0x439840` plays its sound (AUDIO.md, "Finishing pass") when the two new speeds differ by more than 1.0: `cat_rides` 0xC at the bump (`CoasterRide.Crashed`); its particles are not reproduced.
 
 The station commands follow the Windows twins (tp.exe `0x43b1f0..0x43b330`, which agree with the Mac readings).
 `COAST 5` is gated: argument 0 opens (state 4) only from state 8 or 2, a nonzero argument closes (state 8) only from

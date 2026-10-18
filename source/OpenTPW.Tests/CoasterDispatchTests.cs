@@ -240,6 +240,7 @@ public class CoasterDispatchTests
 	[TestMethod]
 	public void AFasterTrainThatCatchesUpWithTheOneAheadExchangesSpeedAndBumpsIt()
 	{
+		var crashes = new List<System.Numerics.Vector3>();
 		(CoasterTrain Behind, CoasterTrain Ahead) Setup( float gap )
 		{
 			var ride = NewRide( settings =>
@@ -248,6 +249,7 @@ public class CoasterDispatchTests
 				settings["sCoasterType.uiTrainReleaseRate"] = "1000";
 			} );
 			Assert.AreEqual( 2, ride.Trains.Count );
+			ride.Crashed += crashes.Add;
 			var (behind, ahead) = (ride.Trains[0], ride.Trains[1]);
 			// In the brake zone: the bumped flag clears again only past the window and before the braking start (0x43d578), which is the rest of the track.
 			behind.Position = ride.BrakingStart + 1f;
@@ -263,8 +265,13 @@ public class CoasterDispatchTests
 		var (behind, ahead) = Setup( 2f );
 		Assert.IsTrue( ahead.Flags.HasFlag( CoasterTrainFlags.Bumped ), "the train ahead is flagged 0x40" );
 		Assert.IsFalse( behind.Flags.HasFlag( CoasterTrainFlags.Bumped ) );
+		// [BIN:TPW-EXE:0x43ce00 crash threshold] the new speeds (T + 2.O)/3 and (O + 2.T)/3 differ by more than 1.0: the crash sound's place is raised, in whole units
+		Assert.IsTrue( crashes.Count > 0, "a hard bump raises the crash" );
+		Assert.IsTrue( crashes.All( place => place.X == MathF.Truncate( place.X ) && place.Y == MathF.Truncate( place.Y ) && place.Z == MathF.Truncate( place.Z ) ), "the place is truncated to whole units (__ftol)" );
+		var raised = crashes.Count;
 		// A control run with the train ahead far away shows what the hops alone do to the two speeds.
 		var (controlBehind, controlAhead) = Setup( 200f );
+		Assert.AreEqual( raised, crashes.Count, "trains far apart do not bump and raise nothing" );
 		Assert.IsFalse( controlAhead.Flags.HasFlag( CoasterTrainFlags.Bumped ) );
 		Assert.IsTrue( behind.Speed < controlBehind.Speed && ahead.Speed > controlAhead.Speed, $"speeds {behind.Speed}, {ahead.Speed} against {controlBehind.Speed}, {controlAhead.Speed}: (T + 2·O)/3 and (O + 2·T)/3" );
 	}

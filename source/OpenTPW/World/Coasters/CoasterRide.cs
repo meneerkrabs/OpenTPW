@@ -1130,6 +1130,33 @@ public sealed class CoasterRide
 		train.Speed = (own - -2f * ahead) * Third;
 		other.Speed = (ahead - -2f * own) * Third;
 		other.Flags |= CoasterTrainFlags.Bumped;
+		// [BIN:TPW-EXE:0x43ce00 crash threshold] the crash effect 0x439840 runs when the new speeds differ by more than 1.0 (0x6fe020; a NaN difference skips it)
+		if ( MathF.Abs( other.Speed - train.Speed ) > 1f && Crashed is { } crashed && CrashPlace( train ) is { } place )
+			crashed( place );
+	}
+
+	/// <summary>Raised when two trains bump hard: the whole-unit place of the bump, for the crash sound (<see cref="GameAudio.CoasterCrashEvent"/>).</summary>
+	public event Action<System.Numerics.Vector3>? Crashed;
+
+	/// <summary>
+	/// The place the crash effect plays at: the bumping train's front on the track samples, <c>fmod(front, samples)</c> split into a sample and a fraction
+	/// (<c>0x43c000</c> interpolates the two samples' positions), each coordinate truncated toward zero (<c>__ftol</c>, <c>0x439842</c>-<c>0x4398c2</c>).
+	/// </summary>
+	// [BIN:TPW-EXE:0x439840 crash place] fmod (0x67b24a) of train +0x20 by the sample count (ctl +0xa8), modf (0x67b280) into sample and fraction, 0x43c000(ctl, sample, fraction, out) = lerp of the +4/+8/+0xC positions of that sample and the next (stride 0x38), then three truncations; the next sample past the last is read beyond the array by the original, the first sample here (a closed circuit)
+	private System.Numerics.Vector3? CrashPlace( CoasterTrain train )
+	{
+		var count = samples.Length;
+		if ( count == 0 || !float.IsFinite( train.Front ) )
+			return null;
+		var wrapped = train.Front % count;
+		var index = (int)wrapped;
+		if ( index < 0 || index >= count )
+			return null;
+		var fraction = wrapped - index;
+		var from = samples[index].Position;
+		var to = samples[(index + 1) % count].Position;
+		var place = from * (1f - fraction) + to * fraction;
+		return new System.Numerics.Vector3( (int)place.X, (int)place.Y, (int)place.Z );
 	}
 
 	/// <summary>

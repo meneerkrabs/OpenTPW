@@ -74,7 +74,7 @@ public class UiScreen
 
 	/// <summary>Whether <paramref name="point"/> lies on any visible element (used to keep clicks off the park).</summary>
 	public bool Covers( UiCanvas canvas, NVector2 point ) =>
-		Modal || elements.Any( element => element.Visible && element.ScreenRect( canvas ).Contains( point ) );
+		Modal || elements.Any( element => element.Visible && element.CoversPoint( canvas, point ) );
 
 	/// <summary>Handles one frame of input; returns true when the input was consumed.</summary>
 	// [EXT:ui-modal-right-click-back] hover focus follows the pointer, and the right click backs out of a modal screen when the RMBCancelOn option (+0x39, default 1) is set; the option's only direct readers in the original are the park view 0x4881a0, the camcorder 0x488aa1 and the ride view 0x48a7ab/0x48aadb, so this is OpenTPW's uniform back-out
@@ -90,8 +90,12 @@ public class UiScreen
 		context.HoverHelp = hit?.CurrentHelp;
 		// A text field keeps the keyboard focus while the mouse merely passes over other elements.
 		var typing = Focused is UiTextField { Visible: true, Enabled: true };
-		if ( hit != null && (input.LeftPressed || input.LeftReleased || hit != Focused && !typing) && input.Mouse.X >= 0 )
+		// a field over the park view (the chat entry) takes the keys only when clicked, and the pointer resting on it leaves nothing else focused, so Enter there
+		// does not press the button the pointer crossed before
+		if ( hit != null && (input.LeftPressed || input.LeftReleased || hit != Focused && !typing && hit is not UiTextField { OverView: true }) && input.Mouse.X >= 0 )
 			Focused = hit;
+		else if ( hit is UiTextField { OverView: true } && !typing && input.Mouse.X >= 0 )
+			Focused = null;
 		if ( input.LeftPressed && hit == null && typing && input.Mouse.X >= 0 )
 			Focused = null;
 		// [BIN:TPW-EXE:0x6656a0 list hover] a list with attribute 0x80 selects the row under the pointer when the pointer moves; the list decides what a hover does: the buy, loans and hire lists select, the others only highlight (the Load Park list does not, EXT:load-list-select-then-load)
@@ -155,7 +159,8 @@ public class UiScreen
 				field.Activate();
 			if ( IsRemoved )
 				return true;
-			if ( input.Has( UiKeys.Back ) || (RightCancels( input ) && Modal) )
+			// a right click a list handled (a row's popup) is no back-out, as below
+			if ( input.Has( UiKeys.Back ) || (RightCancels( input ) && Modal && !rightHandled) )
 				Back?.Invoke();
 			// Typed keys belong to the field, not to navigation or to the park below.
 			return true;
@@ -240,7 +245,8 @@ public class UiScreen
 
 	public void MoveFocus( int direction, Func<UiElement, bool>? filter = null )
 	{
-		var focusable = FocusableElements.Where( element => filter == null || filter( element ) ).ToList();
+		// a field over the park view takes the keys only from a click or Enter: the arrows (the camera's keys) and Tab pass it by
+		var focusable = FocusableElements.Where( element => element is not UiTextField { OverView: true } && (filter == null || filter( element )) ).ToList();
 		if ( focusable.Count == 0 )
 			return;
 		var index = Focused == null ? (direction > 0 ? -1 : 0) : focusable.IndexOf( Focused );

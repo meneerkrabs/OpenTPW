@@ -97,13 +97,18 @@ public sealed class ParkPresenceState
 	public const float KeyframeSeconds = 10f;
 	/// <summary>How far round an impassable clicked cell the walk looks for a passable one, in cells.</summary>
 	public const int GoalSearchRadius = 3;
-	/// <summary>Cells the route search expands at most before it gives up and walks straight.</summary>
+	/// <summary>
+	/// Cells the route search expands at most before it gives up and walks straight. A spot that cannot be reached at all (an island, a fenced corner) is
+	/// answered without a search, by the ground's connected areas (<see cref="RouteSearch"/>).
+	/// </summary>
 	public const int RouteSearchLimit = 40000;
 
 	private readonly IPresenceGround ground;
 	private readonly List<PresenceAvatar> others = new();
 	private readonly HashSet<string> present = new( StringComparer.OrdinalIgnoreCase );
 	private readonly Queue<(float X, float Y)> route = new();
+	/// <summary>The route search's arrays and the ground's areas, made once for the park (a visit's ground does not change) and reused by every click.</summary>
+	private RouteSearch? routeSearch;
 	private (float X, float Y) lastSent;
 	private bool sentOnce;
 	private float sinceSent = float.PositiveInfinity;
@@ -175,7 +180,8 @@ public sealed class ParkPresenceState
 			goal = nearer;
 			(goalX, goalY) = (goal.Item1 + 0.5f, goal.Item2 + 0.5f);
 		}
-		var cells = Route( ground, start, goal );
+		routeSearch ??= new RouteSearch( ground.Width, ground.Height );
+		var cells = routeSearch.Find( ground, start, goal );
 		if ( cells != null )
 			foreach ( var cell in Simplify( cells ) )
 				if ( cell != start && cell != goal )
@@ -313,66 +319,156 @@ public sealed class ParkPresenceState
 	/// without cutting a blocked corner, shortest by the octile distance (a straight step 2, a diagonal one 3); the start cell is always left.
 	/// Null when there is none or the search exceeds <see cref="RouteSearchLimit"/>.
 	/// </summary>
-	public static IReadOnlyList<(int X, int Y)>? Route( IPresenceGround ground, (int X, int Y) from, (int X, int Y) to )
+	public static IReadOnlyList<(int X, int Y)>? Route( IPresenceGround ground, (int X, int Y) from, (int X, int Y) to ) =>
+		new RouteSearch( ground.Width, ground.Height ).Find( ground, from, to );
+
+	/// <summary>
+	/// The route search (A* with the octile distance) over flat arrays the size of the park, made once and reused: a search marks the cells it reaches
+	/// with its own number, so no array is cleared between clicks. The ground's connected areas are labelled on the first search, so a goal outside the
+	/// start's area is answered at once; the ground must not change while the search is kept.
+	/// </summary>
+	internal sealed class RouteSearch
 	{
-		int width = ground.Width, height = ground.Height;
-		bool Inside( int x, int y ) => (uint)x < (uint)width && (uint)y < (uint)height;
-		if ( !Inside( from.X, from.Y ) || !Inside( to.X, to.Y ) || !ground.IsPassable( to.X, to.Y ) )
-			return null;
-		if ( from == to )
-			return new[] { from };
-		int Index( int x, int y ) => y * width + x;
-		int Heuristic( int x, int y )
+		private readonly int width, height;
+		private readonly int[] cost, parent, reached, closed;
+		private readonly PriorityQueue<int, int> open = new();
+		/// <summary>Each cell's connected area (0: a blocked cell), labelled once.</summary>
+		private int[]? areas;
+		private int search;
+
+		public RouteSearch( int width, int height )
 		{
-			int ax = Math.Abs( x - to.X ), ay = Math.Abs( y - to.Y );
-			return 2 * (ax + ay) - Math.Min( ax, ay );
+			this.width = Math.Max( 0, width );
+			this.height = Math.Max( 0, height );
+			var cells = this.width * this.height;
+			cost = new int[cells];
+			parent = new int[cells];
+			reached = new int[cells];
+			closed = new int[cells];
 		}
-		var cost = new Dictionary<int, int> { [Index( from.X, from.Y )] = 0 };
-		var parent = new Dictionary<int, int>();
-		var open = new PriorityQueue<int, int>();
-		open.Enqueue( Index( from.X, from.Y ), Heuristic( from.X, from.Y ) );
-		var closed = new HashSet<int>();
-		var expanded = 0;
-		while ( open.TryDequeue( out var current, out _ ) )
+
+		/// <summary>The cells the last search expanded.</summary>
+		public int Expanded { get; private set; }
+
+		private bool Inside( int x, int y ) => (uint)x < (uint)width && (uint)y < (uint)height;
+
+		/// <summary>Whether a figure may step from (<paramref name="x"/>, <paramref name="y"/>) by (<paramref name="dx"/>, <paramref name="dy"/>): onto a free cell, and diagonally only with both cells beside the step free.</summary>
+		private bool Steps( IPresenceGround ground, int x, int y, int dx, int dy )
 		{
-			if ( !closed.Add( current ) )
-				continue;
-			if ( ++expanded > RouteSearchLimit )
+			int nx = x + dx, ny = y + dy;
+			if ( !Inside( nx, ny ) || !ground.IsPassable( nx, ny ) )
+				return false;
+			// a diagonal step needs both cells beside it free, so a figure does not squeeze between two blocked corners
+			return dx == 0 || dy == 0 || (ground.IsPassable( x + dx, y ) && ground.IsPassable( x, y + dy ));
+		}
+
+		public IReadOnlyList<(int X, int Y)>? Find( IPresenceGround ground, (int X, int Y) from, (int X, int Y) to, int limit = RouteSearchLimit )
+		{
+			Expanded = 0;
+			if ( ground.Width != width || ground.Height != height || !Inside( from.X, from.Y ) || !Inside( to.X, to.Y ) || !ground.IsPassable( to.X, to.Y ) )
 				return null;
-			int cx = current % width, cy = current / width;
-			if ( cx == to.X && cy == to.Y )
+			if ( from == to )
+				return new[] { from };
+			if ( !Reaches( ground, from, to ) )
+				return null;
+			if ( ++search == int.MaxValue )
 			{
-				var cells = new List<(int X, int Y)>();
-				for ( var at = current; ; at = parent[at] )
-				{
-					cells.Add( (at % width, at / width) );
-					if ( !parent.ContainsKey( at ) )
-						break;
-				}
-				cells.Reverse();
-				return cells;
+				// the marks wrap after two billion searches: start them over
+				Array.Clear( reached );
+				Array.Clear( closed );
+				search = 1;
 			}
+			int Heuristic( int x, int y )
+			{
+				int ax = Math.Abs( x - to.X ), ay = Math.Abs( y - to.Y );
+				return 2 * (ax + ay) - Math.Min( ax, ay );
+			}
+			open.Clear();
+			var first = from.Y * width + from.X;
+			cost[first] = 0;
+			parent[first] = -1;
+			reached[first] = search;
+			open.Enqueue( first, Heuristic( from.X, from.Y ) );
+			while ( open.TryDequeue( out var current, out _ ) )
+			{
+				if ( closed[current] == search )
+					continue;
+				closed[current] = search;
+				if ( ++Expanded > limit )
+					return null;
+				int cx = current % width, cy = current / width;
+				if ( cx == to.X && cy == to.Y )
+				{
+					var cells = new List<(int X, int Y)>();
+					for ( var at = current; at >= 0; at = parent[at] )
+						cells.Add( (at % width, at / width) );
+					cells.Reverse();
+					return cells;
+				}
+				for ( var dy = -1; dy <= 1; dy++ )
+					for ( var dx = -1; dx <= 1; dx++ )
+					{
+						if ( (dx == 0 && dy == 0) || !Steps( ground, cx, cy, dx, dy ) )
+							continue;
+						var next = (cy + dy) * width + cx + dx;
+						var nextCost = cost[current] + (dx != 0 && dy != 0 ? 3 : 2);
+						if ( reached[next] == search && cost[next] <= nextCost )
+							continue;
+						reached[next] = search;
+						cost[next] = nextCost;
+						parent[next] = current;
+						open.Enqueue( next, nextCost + Heuristic( cx + dx, cy + dy ) );
+					}
+			}
+			return null;
+		}
+
+		/// <summary>Whether <paramref name="to"/> lies in an area the figure at <paramref name="from"/> can walk into (from a blocked cell: by any step out of it).</summary>
+		private bool Reaches( IPresenceGround ground, (int X, int Y) from, (int X, int Y) to )
+		{
+			areas ??= Label( ground );
+			var goal = areas[to.Y * width + to.X];
+			if ( goal == 0 )
+				return false;
+			if ( areas[from.Y * width + from.X] == goal )
+				return true;
 			for ( var dy = -1; dy <= 1; dy++ )
 				for ( var dx = -1; dx <= 1; dx++ )
-				{
-					if ( dx == 0 && dy == 0 )
-						continue;
-					int nx = cx + dx, ny = cy + dy;
-					if ( !Inside( nx, ny ) || !ground.IsPassable( nx, ny ) )
-						continue;
-					// a diagonal step needs both cells beside it free, so a figure does not squeeze between two blocked corners
-					if ( dx != 0 && dy != 0 && (!ground.IsPassable( cx + dx, cy ) || !ground.IsPassable( cx, cy + dy )) )
-						continue;
-					var next = Index( nx, ny );
-					var nextCost = cost[current] + (dx != 0 && dy != 0 ? 3 : 2);
-					if ( cost.TryGetValue( next, out var known ) && known <= nextCost )
-						continue;
-					cost[next] = nextCost;
-					parent[next] = current;
-					open.Enqueue( next, nextCost + Heuristic( nx, ny ) );
-				}
+					if ( (dx != 0 || dy != 0) && Steps( ground, from.X, from.Y, dx, dy ) && areas[(from.Y + dy) * width + from.X + dx] == goal )
+						return true;
+			return false;
 		}
-		return null;
+
+		/// <summary>Numbers the ground's connected areas by the search's own steps (one flood per area).</summary>
+		private int[] Label( IPresenceGround ground )
+		{
+			var labels = new int[width * height];
+			var queue = new Queue<int>();
+			var area = 0;
+			for ( var start = 0; start < labels.Length; start++ )
+			{
+				if ( labels[start] != 0 || !ground.IsPassable( start % width, start / width ) )
+					continue;
+				labels[start] = ++area;
+				queue.Enqueue( start );
+				while ( queue.TryDequeue( out var current ) )
+				{
+					int cx = current % width, cy = current / width;
+					for ( var dy = -1; dy <= 1; dy++ )
+						for ( var dx = -1; dx <= 1; dx++ )
+						{
+							if ( (dx == 0 && dy == 0) || !Steps( ground, cx, cy, dx, dy ) )
+								continue;
+							var next = (cy + dy) * width + cx + dx;
+							if ( labels[next] != 0 )
+								continue;
+							labels[next] = area;
+							queue.Enqueue( next );
+						}
+				}
+			}
+			return labels;
+		}
 	}
 
 	/// <summary>The route without the cells in the middle of a straight run (the figure walks the same line through fewer points).</summary>

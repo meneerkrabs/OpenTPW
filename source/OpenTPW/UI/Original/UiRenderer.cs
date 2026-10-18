@@ -26,6 +26,7 @@ internal sealed class UiRenderer : IDisposable
 	private readonly ShaderInfo shader;
 	private readonly ResourceLayout resourceLayout;
 	private readonly Pipeline pipeline;
+	private readonly Pipeline invertPipeline;
 	private readonly Dictionary<object, (Veldrid.Texture Texture, ResourceSet Set)> textures = new();
 	// Sets for textures rendered by their owners; the textures themselves are not the UI's to dispose.
 	private readonly Dictionary<Veldrid.Texture, ResourceSet> renderedSets = new();
@@ -48,12 +49,23 @@ internal sealed class UiRenderer : IDisposable
 			[resourceLayout],
 			outputs,
 			ResourceBindingModel.Improved ) );
+		// [BIN:TPW-EXE:0x57ed75 lightning flash blend] the flash quad's state 0x9A1 sets the source blend to INVDESTCOLOR (0xA, 0x5679B0 high nibble) and the destination blend to ZERO (low nibble 1), so a white quad turns the screen into its negative
+		invertPipeline = Device.ResourceFactory.CreateGraphicsPipeline( new GraphicsPipelineDescription(
+			new BlendStateDescription( RgbaFloat.Clear, new BlendAttachmentDescription( true, BlendFactor.InverseDestinationColor, BlendFactor.Zero, BlendFunction.Add, BlendFactor.One, BlendFactor.Zero, BlendFunction.Add ) ),
+			DepthStencilStateDescription.Disabled,
+			RasterizerStateDescription.CullNone,
+			PrimitiveTopology.TriangleList,
+			new ShaderSetDescription( [VertexLayout], shader.ShaderProgram ),
+			[resourceLayout],
+			outputs,
+			ResourceBindingModel.Improved ) );
 	}
 
 	/// <summary>Call once per frame before the first <see cref="Draw"/>.</summary>
 	public void BeginFrame() => frameBuffers = 0;
 
-	public void Draw( CommandList commands, UiBatch batch, uint framebufferWidth, uint framebufferHeight )
+	/// <param name="invert">Draws with the lightning flash's blend: the destination colour inverted by the batch's (white) coverage.</param>
+	public void Draw( CommandList commands, UiBatch batch, uint framebufferWidth, uint framebufferHeight, bool invert = false )
 	{
 		var count = 0;
 		foreach ( var draw in batch.Draws )
@@ -85,7 +97,7 @@ internal sealed class UiRenderer : IDisposable
 		}
 		var buffer = slot[frameBuffers++];
 		Device.UpdateBuffer( buffer, 0, ref vertices[0], bytes );
-		commands.SetPipeline( pipeline );
+		commands.SetPipeline( invert ? invertPipeline : pipeline );
 		commands.SetVertexBuffer( 0, buffer );
 		var start = 0u;
 		foreach ( var draw in batch.Draws )

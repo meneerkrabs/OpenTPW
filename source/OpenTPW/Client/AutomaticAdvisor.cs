@@ -295,6 +295,10 @@ internal sealed partial class AutomaticAdvisor : IDisposable
 	{
 		if ( level == null )
 			return;
+		// [BIN:TPW-EXE:0x005F0B91 map / 0x004A3A92 options] these builders call the silent stop path 0x5996D0, before their window help is served.
+		// Kill also hides a response in its delayed start or animation tail, when no speech sound is active.
+		if ( window is Hud.ParkHud.MapScreenName or "options" )
+			StopSpeechSilently();
 		// the object window builders (0x4AF980, 0x4B0E30, 0x4B2430) only build the window and post its help; whether the window creator 0x48CEA0 changes the interface mode is not read, so the tools' help stays
 		if ( !window.StartsWith( ObjectInfoHelp.Prefix, StringComparison.Ordinal ) )
 			OnModeChanged();
@@ -389,7 +393,9 @@ internal sealed partial class AutomaticAdvisor : IDisposable
 	}
 
 	/// <summary>One controller update; call once per frame while a level runs.</summary>
-	public void Update( bool gamePaused = false )
+	/// <param name="gamePaused">The existing advisor-clock pause gate; some ordinary HUD windows set it without stopping the park.</param>
+	/// <param name="parkPaused">The park turn is stopped; queue service must wait even if a modal has just killed its speech.</param>
+	public void Update( bool gamePaused = false, bool parkPaused = false )
 	{
 		clock.SetPaused( gamePaused );
 		if ( level == null )
@@ -403,6 +409,8 @@ internal sealed partial class AutomaticAdvisor : IDisposable
 		if ( !GameOptions.Current.Advisor )
 		{
 			presentation?.Kill();
+			if ( parkPaused )
+				return;
 			Controller.Update( () => AdvisorClock, () => GameTick, responseId =>
 			{
 				PostCaption( responseId );
@@ -411,6 +419,9 @@ internal sealed partial class AutomaticAdvisor : IDisposable
 			return;
 		}
 		presentation?.Update();
+		// [BIN:TPW-EXE:0x0059A550 advisor queue] service belongs to the park turn; a paused modal must not start another response after its stop.
+		if ( parkPaused )
+			return;
 		Controller.Update( () => AdvisorClock, () => GameTick, Play );
 	}
 
@@ -510,6 +521,12 @@ internal sealed partial class AutomaticAdvisor : IDisposable
 	{
 		if ( !IsSpeechActive )
 			return;
+		StopSpeechSilently();
+	}
+
+	/// <summary>The silent stop path; unlike a help withdrawal, it never plays a slap or draws its sound variant.</summary>
+	private void StopSpeechSilently()
+	{
 		if ( endSpeech != null ) endSpeech(); else presentation?.Kill();
 	}
 

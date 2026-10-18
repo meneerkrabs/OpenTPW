@@ -611,7 +611,7 @@ internal sealed partial class GameFlow : IDisposable
 			Level.SimulationTimeScale = parkBuild != null ? 0 : Hud.SimulationTimeScale;
 			Level.Update();
 			presence?.Update( Time.Delta );
-			Advisor?.Update( Hud.Paused );
+			Advisor?.Update( Hud.Paused, parkPaused: Level.SimulationTimeScale <= 0 );
 			UpdateAutosave( Level, Hud );
 			var parkLost = Level.Park?.Economy.IsBankrupt == true;
 			GameAudio.Update( Level.Guests?.GetStatistics().InPark, parkLost );

@@ -2,7 +2,7 @@
 
 ## Status and boundary
 
-Plan only, October 18, 2026. No gameplay implementation or runtime tests are delivered by this draft. Do not merge as an implemented feature; keep this PR draft until the implementation/evidence gates below are met and independently reviewed. No approximation ID is retired and no platform/original-fidelity qualification is claimed.
+Partial implementation, October 18, 2026. The map/options silent stop and actual-park-pause queue gate are now implemented with regression tests; C# execution and runtime playback validation remain pending. Other ADVISOR-017 residuals below remain planned. Do not merge as an implemented feature; keep this PR draft until the implementation/evidence gates below are met and independently reviewed. No approximation ID is retired and no platform/original-fidelity qualification is claimed.
 
 Source baseline: `4c87d5f4b657278578c77730524bc69f9002270e`. Re-check current main and active work before implementation. Register IDs: ADVISOR-017.
 
@@ -82,3 +82,9 @@ Decode pause enable nesting and message-box/deactivation paths; reconcile older 
 ## Ownership update (October 18, 2026)
 
 Verified #433 (park information/lobby UI) and #423 (languages) are merged. The UI owner confirms no remaining HUD ownership blocker for this proposal. Runtime work can be scoped once the evidence/acceptance gates above are met; this update does not implement the feature. Coordinate any guest, snapshot/resume or shared simulation changes with the remaining umbrella U2–U4 work (Guest*, RideVisitorBridge, Level/Resume, ParkResumeMods/SaveFile, ObjectCatalog, OriginalObjectRuntime, official-extension gates/content roots and World/Umbrellas; U4 also adds a rain-mood option). Do not duplicate that work.
+
+## Implementation checkpoint: map/options lifecycle slice
+
+The existing window-open event now invokes the silent stop before mode-help withdrawal for map and options. Existing Kill clears active/delayed/trailing presentation and its effect group without a slap. Queue service now receives the actual park pause separately from the existing HUD advisor-clock pause, preserving queued advice in ordinary finance/research/loan windows. Controller reservation/history behavior is retained; this does not implement per-turn queue scheduling or deactivation/message-box lifecycle gaps.
+
+Added AdvisorModalStopTests for active/inactive sound, ordinary and detached windows, real pending queue pause boundaries, ordinary-window queue consumption, preserved normal-response reservation/history, and stop-before-tool-withdrawal ordering with map help still posted. Independent source/test review passed. Local diff, fidelity/progress and 54 supporting Python checks passed; the evidence runner passed 1,537 tests with 595 skips and 7 expected failures. No C# build/test or runtime playback pass is claimed; exact-head CI is pending. Keep draft and ADVISOR-017 open.

@@ -23,10 +23,27 @@ public sealed class UmbrellaAnchors
 	/// <summary>One set's points: per slot name (0 stand, 1 walk, 14 wait), per direction, per step.</summary>
 	private sealed class SetTable
 	{
-		public readonly Dictionary<int, (float X, float Y)[][]> Slots = new();
+		public readonly Dictionary<int, Animation> Slots = new();
+	}
+
+	/// <summary>One animation's points per direction and step, with the steady hand (the mean over the steps) of each direction computed once, when the table loads.</summary>
+	private sealed class Animation
+	{
+		public readonly (float X, float Y)[][] Points;
+		public readonly (float X, float Y)[] Means;
+
+		public Animation( (float X, float Y)[][] points )
+		{
+			Points = points;
+			Means = points.Select( steps => (steps.Average( point => point.X ), steps.Average( point => point.Y )) ).ToArray();
+		}
 	}
 
 	private readonly Dictionary<(string Set, int PixelsPerUnit), SetTable> sets = new();
+	// The last set asked for: a frame asks for the same few sets again and again, so the string-keyed lookup is skipped when the name is the same instance.
+	private string? lastSet;
+	private int lastPixelsPerUnit;
+	private SetTable? lastTable;
 
 	/// <summary>The number of sets the tables hold.</summary>
 	public int Count => sets.Count;
@@ -87,7 +104,7 @@ public sealed class UmbrellaAnchors
 					.Select( point => (point[0].GetSingle(), point[1].GetSingle()) ).ToArray() ).ToArray();
 				if ( directions.Length == 0 || directions.Any( steps => steps.Length == 0 ) || directions.SelectMany( steps => steps ).Any( point => !float.IsFinite( point.Item1 ) || !float.IsFinite( point.Item2 ) ) )
 					throw new InvalidDataException( $"{origin}: the set {set.Name} has an empty or invalid {name} table." );
-				table.Slots[slot] = directions;
+				table.Slots[slot] = new Animation( directions );
 			}
 			if ( table.Slots.Count > 0 )
 				sets[(setName( set.Name ), pixelsPerUnit)] = table;
@@ -101,12 +118,21 @@ public sealed class UmbrellaAnchors
 	/// </summary>
 	public (float X, float Y)? Hand( string set, int pixelsPerUnit, int slot, int direction, int step, bool mirror, bool steady )
 	{
-		if ( !sets.TryGetValue( (set, pixelsPerUnit), out var table ) )
+		SetTable? table;
+		if ( ReferenceEquals( set, lastSet ) && pixelsPerUnit == lastPixelsPerUnit )
+			table = lastTable;
+		else
+		{
+			sets.TryGetValue( (set, pixelsPerUnit), out table );
+			(lastSet, lastPixelsPerUnit, lastTable) = (set, pixelsPerUnit, table);
+		}
+		if ( table == null )
 			return null;
-		if ( !table.Slots.TryGetValue( TableSlot( slot ), out var directions ) && !table.Slots.TryGetValue( GuestSpriteAtlas.StandSlot, out directions ) )
+		if ( !table.Slots.TryGetValue( TableSlot( slot ), out var animation ) && !table.Slots.TryGetValue( GuestSpriteAtlas.StandSlot, out animation ) )
 			return null;
-		var steps = directions[Math.Clamp( direction, 0, directions.Length - 1 )];
-		var (x, y) = steady ? (steps.Average( point => point.X ), steps.Average( point => point.Y )) : steps[(int)((uint)Math.Max( step, 0 ) % (uint)steps.Length)];
+		var index = Math.Clamp( direction, 0, animation.Points.Length - 1 );
+		var steps = animation.Points[index];
+		var (x, y) = steady ? animation.Means[index] : steps[(int)((uint)Math.Max( step, 0 ) % (uint)steps.Length)];
 		return ((float)(mirror ? -x : x), (float)y);
 	}
 }

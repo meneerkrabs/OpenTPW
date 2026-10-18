@@ -67,6 +67,22 @@ public class TrackSaveTests
 	}
 
 	[TestMethod]
+	public void ATeleportsPassingFlagIsWrittenOnlyWhenSetAndSurvivesTheCodec()
+	{
+		var plain = System.Text.Encoding.UTF8.GetString( ParkResumeSaveFile.Serialize( WithTracks() ) );
+		Assert.IsFalse( plain.Contains( "AddOnPassing" ), "a section without the flag is written as before, so earlier saves and their hashes stay as they were" );
+		var passing = WithTracks( part => part with
+		{
+			Controllers = part.Controllers.Select( controller => controller with { Sections = controller.Sections.Select( section => section with { AddOnPassing = true } ).ToList() } ).ToList()
+		} );
+		var json = System.Text.Encoding.UTF8.GetString( ParkResumeSaveFile.Serialize( passing ) );
+		StringAssert.Contains( json, "\"AddOnPassing\":true" );
+		var restored = ParkResumeSaveFile.Deserialize( ParkResumeSaveFile.Serialize( passing ) );
+		Assert.IsTrue( restored.Tracks!.Controllers.Single().Sections.Single().AddOnPassing );
+		Assert.IsFalse( ParkResumeSaveFile.Deserialize( System.Text.Encoding.UTF8.GetBytes( plain ) ).Tracks!.Controllers.Single().Sections.Single().AddOnPassing, "an earlier save reads without it" );
+	}
+
+	[TestMethod]
 	public void ASaveWithoutTracksStaysWithoutTracks()
 	{
 		var snapshot = ParkResumeSaveFileTests.Envelope();

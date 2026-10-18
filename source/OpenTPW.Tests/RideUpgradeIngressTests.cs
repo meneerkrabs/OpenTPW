@@ -196,6 +196,22 @@ public class RideUpgradeIngressTests
 	}
 
 	[TestMethod]
+	public void TheStepArrowsSkipAddOnsAndAnAddOnOpensOnlyItsRidesWindow()
+	{
+		var hud = FixtureWith( AddOnPark(), BuildCategory.Rides, out var level, out _, out var owner, out var other, out _, catalog: new[] { AddOnEntry() } );
+		var addOn = new OriginalObject( AddOnEntry(), new ObjectPlacement( 3, 3, 0, N.Vector2.Zero, 0 ), level.Objects.ScriptWorld );
+		((List<OriginalObject>)level.Objects.Objects).Insert( 1, addOn );
+		// tp.exe's walks over the objects of a type skip an add-on (0x004828F0: AddOn.UpgradesId through 0x004E2710)
+		hud.CycleSelectedObject( 1 ); Assert.AreSame( other, hud.SelectedObject );
+		hud.CycleSelectedObject( 1 ); Assert.AreSame( owner, hud.SelectedObject );
+		// 0x00486920: an add-on opens the window of the ride its placement linked (+0x30) and none without one; any other object opens its own
+		Set( level, "trackStations", new Dictionary<OriginalObject, TrackStation>() );
+		Assert.IsNull( level.WindowTarget( addOn ), "an add-on on no ride's track opens nothing" );
+		Assert.AreSame( owner, level.WindowTarget( owner ) );
+		Assert.IsNull( level.WindowTarget( null ) );
+	}
+
+	[TestMethod]
 	public void OnlyTheRidesOwnResearchedAddOnsAreListed()
 	{
 		// an add-on of another ride (AddOn.UpgradesId 1180), one the park's catalogue lacks (1502) and an unresearched one (1503, research cost 1000) are not listed

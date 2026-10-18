@@ -534,9 +534,17 @@ public partial class Level
 			if ( shared ? entry.IsTrackValid && !circuit.IsValid : circuit.IsValid != entry.IsTrackValid )
 				throw new InvalidDataException( $"Attraction {entry.AttractionId}'s circuit walks {(circuit.IsValid ? "valid" : "invalid")}, the save says {(entry.IsTrackValid ? "valid" : "invalid")}." );
 			var rebuilt = bump.Sections.Select( section => new TrackSectionSaveData( section.Kind, section.NoBuoy, section.X, section.Y, section.Segment ) ).ToList();
-			if ( !rebuilt.SequenceEqual( entry.Sections ) )
+			if ( !rebuilt.SequenceEqual( entry.Sections.Select( section => section with { AddOnPassing = false } ) ) )
 				throw new InvalidDataException( $"Attraction {entry.AttractionId}'s walked sections do not match the saved ones." );
 			bump.Restore( entry );
+			for ( var index = 0; index < entry.Sections.Count; index++ )
+			{
+				if ( !entry.Sections[index].AddOnPassing )
+					continue;
+				if ( bump.Sections[index].AddOn == null )
+					throw new InvalidDataException( $"Attraction {entry.AttractionId}'s section {index} waits for an add-on's clip, but no add-on stands on it." );
+				bump.Sections[index].AddOnPassing = true;
+			}
 			station.Runtime.ResumeBumpEffects();
 		}
 	}

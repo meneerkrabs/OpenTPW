@@ -5,7 +5,7 @@ namespace OpenTPW;
 /// collision objects and buoys, the guests waiting to board and to leave, and the vehicles. It runs the module's integer physics once per 31 ms
 /// world substep (about 32.26 per second) and answers the ride script's <c>BUMP</c> commands. It runs water boats (types −5, −8, −12, −13), go-karts (types −4,
 /// −7, −9, −10: the grid start, the race, the finish and the kart effects) and bumper cars (types −1, −6, −11, −14: cars that wander an arena
-/// and hand their riders over when the session's countdown ends); the add-ons' vehicle hook (0x00548E80: the Space Racers Teleport hides a vehicle between its two tiles) is TRACK-008.
+/// and hand their riders over when the session's countdown ends), with the add-ons' vehicle hook (the Space Racers Teleport hides a vehicle between its two tiles, <see cref="PassAddOn"/>).
 /// </summary>
 // [EXT:bump-pre-shared-save-order] a park-resume save from before the shared pools restores their order from the restore (controllers by attraction id), where the original's pools only ever fill in build order; kept so older saves load; [EXT:bump-foreign-object-forget] a vehicle whose foreign object is rebuilt loses it (BumpWorld.ForgetObjectsOf)
 
@@ -1793,6 +1793,8 @@ public sealed class BumpController
 			hash.Add( section.KindWord );
 			hash.Add( section.X );
 			hash.Add( section.Y );
+			if ( section.AddOn != null )
+				hash.Add( section.AddOnPassing );
 		}
 		hash.Add( Pending.Count );
 		foreach ( var guest in Pending )

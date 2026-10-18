@@ -221,7 +221,7 @@ public class ObjectAccessCellsTests
 		Assert.AreEqual( 0x40, ObjectFootprint.RotateDirectionByte( 0x01, 90 ) );
 	}
 
-	// ---------------------------------------------------------------- add-ons (RIDES-011, TRACK-008) and track ends
+	// ---------------------------------------------------------------- add-ons (RIDES-011, docs/TRACKS.md "Add-ons") and track ends
 
 	/// <summary>The eight-tile water loop of the circuit tests on a rig's cell map (station placed at (10, 9), whose first tile is (10, 10)), corners (14, 10), (14, 12), (8, 12), (8, 10); the straights (12, 12) and (10, 12) lie between the corners.</summary>
 	private static (TrackBuilder Builder, TrackStation Station, int Owner) Loop( ParkCellMap cells )

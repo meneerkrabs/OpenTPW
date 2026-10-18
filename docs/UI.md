@@ -491,6 +491,10 @@ glyph in all 14 UI fonts of each language.
   reliability is `100 - trunc(9 × wear)` of `0x4df640` at the window's speed and capacity, and repair and remaining life are the truncated floats at `+0x44` and
   `+0x48`; the shop and sideshow windows' local happiness gauge is the mean happiness byte of the guests on the 3 x 3 cells around the object (`0x4cd880`).
   The queue (`b_queue`), track (`b_track`) and apply-all (`b_applyall`) buttons start the queue tool, the coaster or water track tool, and copy the window's settings to every object of the type (`0x4b0ae0`, `0x4b20f0`).
+  The upgrade button (`b_upgrade`, enabled in every ride window but mode 3, `0x4ad6b4`) opens the ride's upgrade list (`0x4ae560`), laid out from table `0x755750`: `wdialogw`
+  (500,233)-(1516,830), the title UITEXT 31 "Buy Upgrades", the list `upgrades` (603,406)-(1334,731) whose rows the pointer selects (attribute 0x81) in font slot 7 with the
+  name left and the price right, its scroll bar (`b_up`, `b_scroller`, `b_down`) and `b_exit` (rows: [ECONOMY.md](ECONOMY.md#ride-upgrades)). A click on a track add-on in the
+  park opens its ride's window, and the arrows skip add-ons (`0x486920`, [TRACKS.md](TRACKS.md#add-ons)).
   **The Move tool** (`b_move`, controls `0x3e2c`, `0xc080` and `0xa0a8`; UI-104 retired; `Level.BeginMove`, `ParkHud.MoveObject`). The ride window's refresh (`0x4ad4e0`) enables the button
   with `0x52c2b0`: always, except for a kart or water ride (type track word `+0x9c` 1 or 2), whose two tiles beside the station (the thing's cell plus the exit offset (4, 1), (1, -5),
   (-5, -2) or (-2, 4), and the entry offset (-2, 1), (1, 1), (1, -2) or (-2, -2) by the angle) must each hold exactly one arm (`0x522790`: the set bits of the cell's connection byte, `Level.MoveEnabled`);

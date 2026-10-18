@@ -401,14 +401,26 @@ old saves seed their rings from (`[EXT:ring-month-sums]`).
 - The money block before the loan table (87,987 / 87,787 / −12,013), the extra words around the
   challenge table (`09 00 0b 00`, floats 100.0) and the last loan-record word.
 
-### Selected ride upgrade confirmation
+### Ride upgrades
 
-The selected ordinary TPW ride detail offers **Buy upgrades** when its factory-owned catalogue defaults support the exact next SAM tier. The confirmation previews the existing economy catalogue's next-tier price; accepting calls the unchanged `TryBuyUpgrade` API for that live instance. Research, Instant Action, pending work, bankruptcy and available-money refusals remain model decisions. A successful request needs a balance greater than the cost and debits nothing: like tp.exe (buy handler `0x4af480`, installation `0x4df8f0`), the mechanic who installs the upgrade debits its cost to Other Costs, whatever the balance by then; the request waits for a mechanic, including when none is hired. A save written while OpenTPW charged at purchase keeps such a pending upgrade paid. Cancel never buys, and there is no cancellation/refund API for already queued work.
+The ride window's `b_upgrade` opens the ride's upgrade list (tp.exe `0x4AE560`, rows `0x4AE140`; [UI.md](UI.md), "Object window"). Outside Instant Action it lists:
 
-Open and confirm recheck unique object/economy ownership, the current tier, factory parameter identity and current cost. Sparse/custom/stopped/faulted runtimes, coasters, prototypes, TPI, read-only visits and missing economies refuse before charging. Captured mouse gestures cannot open or confirm on a later held release. UI-935 qualifies this host confirmation and placement; native upgrade-window geometry is not established. Completion applies only the existing minimum catalogue-default contract: live CAP/DUR remain authored, with no native reset or full performance claim. Synthetic HUD, ledger, queued-no-mechanic and completion controls do not qualify original assets or rendering.
+- every add-on of the ride the park may buy (its `AddOn.UpgradesId` is the ride's type and its research is done), with its name and price `Upgrades[0].CostOfUpgrade`.
+  A click arms the build tool with the add-on when the price is at most the balance, and the placement charges it ([TRACKS.md](TRACKS.md#add-ons));
+- the ride's next level, while the ride is not waiting for one, its level is below 2 and research has reached the next: UITEXT 29 with the 1-based next level and the
+  price `Upgrades[level + 1].CostOfUpgrade`. A click requests the upgrade only when the cost is below the balance and debits nothing: like tp.exe (buy handler `0x4af480`,
+  installation `0x4df8f0`), the mechanic who installs the upgrade debits its cost to Other Costs, whatever the balance by then; the request waits for a mechanic, including
+  when none is hired. `[EXT:upgrade-tier-runtime]` lists the level only for a tier the ride's catalogue defaults and runtime can install;
+- while the ride waits for its upgrade, the cancel row (UITEXT 30, no price): a click drops the request (`0x4E0050(0)`: the job is released, the ride opens again and
+  nothing is charged; `ParkEconomy.TryCancelUpgrade`, event `UpgradeCancelled`).
 
-Independent synthetic actual-HUD controls verify the exact localized next-tier cost preview, refuse a cost or economy change during confirmation without charging, and require a fresh confirmation at the new cost. Authored CAP9/DUR77, an active WAIT deadline and occupied rider/head slots survive HUD purchase and mechanic completion; the other instance remains at its prior fallback capacity. These are host integration controls, not native upgrade performance or seat-count qualification.
-
+A list without rows shows its message instead (UITEXT 27 in Instant Action, 28 at level 2, 26 otherwise), one line per row, which a click ignores. The ride window's
+refresh fills the list again while it is open (`0x4ADE40`), and the list closes when its ride is no longer the selected one or loses its economy record, so a row acts
+only on the ride it was opened for (`ParkHud.UpgradeListCurrent`). The button shows for a Theme Park World ride with an economy record outside a read-only visit; sparse, custom,
+stopped or faulted runtimes, coasters and prototypes get no level row. A save written while OpenTPW charged at purchase keeps such a pending upgrade paid. Completion
+applies only the existing minimum catalogue-default contract: live CAP/DUR remain authored, with no native reset or full performance claim. Authored CAP9/DUR77, an active
+WAIT deadline and occupied rider/head slots survive a purchase from the list and the mechanic's completion; the other instance keeps its prior fallback capacity
+(`RideUpgradeIngressTests`, `RideUpgradeReviewTests`: synthetic HUD, ledger, queued-no-mechanic and completion controls, which do not qualify original assets or rendering).
 
 ### Mechanic arrival and own-save work phase
 

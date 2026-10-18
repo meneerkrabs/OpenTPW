@@ -139,6 +139,13 @@ public partial class Level
 		return null;
 	}
 
+	/// <summary>
+	/// The object whose window a click on <paramref name="item"/> opens: a track add-on opens its ride's window (the ride under it, <see cref="RideUnder"/>) and none when it stands
+	/// on no ride's track; any other object opens its own.
+	/// </summary>
+	// [BIN:TPW-EXE:0x00486920 object window] a ride-type object (+0x4AC 0) that is not an add-on of AddOn.UpgradeType 2: an object whose word +0x30 names a thing (0x004E0DF0) opens that thing's ride window (0x004AF980); the placement sets +0x30 to the clicked tile's ride for an add-on placed with the upgrade selection (0x0052A023 → 0x004E0DE0) and to 0 for anything else; without it an add-on (AddOn.UpgradesId, 0x004E2710) opens nothing and any other ride its own window
+	public OriginalObject? WindowTarget( OriginalObject? item ) => item is { IsDeleted: false } addOn && TrackAddOns.IsTrackAddOn( addOn.Entry ) ? RideUnder( addOn ) : item;
+
 	/// <summary>The track add-on standing on cell (x, y), or null.</summary>
 	private OriginalObject? AddOnAt( int x, int y ) => Objects.FindAt( x, y ) is { IsDeleted: false } item && TrackAddOns.IsTrackAddOn( item.Entry ) ? item : null;
 

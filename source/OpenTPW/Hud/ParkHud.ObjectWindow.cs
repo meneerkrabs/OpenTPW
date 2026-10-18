@@ -295,11 +295,12 @@ public sealed partial class ParkHud
 
 	/// <summary>Moves the selection to the next (<paramref name="direction"/> 1) or previous placed object of the selected one's category, wrapping around.</summary>
 	// [BIN:TPW-EXE:0x755150 b_arup/b_ardown] the two round arrows (help 21 and 20) at the top of the right column step through the objects of the window's type
+	// [BIN:TPW-EXE:0x004828F0 next object of a type] the window code's walks over the objects of a type (the next one after a given object, 0x004824D0 → 0x004828F0, and the counts 0x00481E40) skip every add-on (AddOn.UpgradesId through 0x004E2710, 0x00482972), and a click on an add-on never opens its own window (Level.WindowTarget): the arrows skip them too
 	public void CycleSelectedObject( int direction )
 	{
 		if ( selectedObject is not { IsDeleted: false } current )
 			return;
-		var same = level.Objects.Objects.Where( item => !item.IsDeleted && item.Entry.WhichUIType == current.Entry.WhichUIType ).ToList();
+		var same = level.Objects.Objects.Where( item => !item.IsDeleted && item.Entry.WhichUIType == current.Entry.WhichUIType && !TrackAddOns.IsAddOn( item.Entry ) ).ToList();
 		var index = same.IndexOf( current );
 		if ( same.Count < 2 || index < 0 )
 			return;

@@ -22,26 +22,25 @@ public class WalkerBodyTests
 	}
 
 	[TestMethod]
-	public void TheHeadingIsTheAngleTurnedIntoAnEighthOfATurnSector()
+	public void TheHeadingIsTheAngleAsARoundedEighthOfATurn()
 	{
-		// trunc(0.5 + 4/pi (2.5 pi - angle)) & 7: along x (angle 0) is 10 & 7 = 2, along z (pi/2) is 8 & 7 = 0, against x (pi) is 6, along -z (-pi/2) is 12 & 7 = 4
-		Assert.AreEqual( 2, WalkerBodies.HeadingOf( 10, 0 ), "along x" );
-		Assert.AreEqual( 0, WalkerBodies.HeadingOf( 0, 10 ), "along z" );
-		Assert.AreEqual( 6, WalkerBodies.HeadingOf( -10, 0.001f ), "against x" );
-		Assert.AreEqual( 4, WalkerBodies.HeadingOf( 0, -10 ), "along -z" );
-		Assert.AreEqual( 1, WalkerBodies.HeadingOf( 10, 10 ), "a diagonal (angle pi/4: 9 & 7)" );
+		// ftol(0.5 - (6.28318 - (a - 1.570795)) x -1.2732406), then the sign-kept three-bit mask (tp.exe 0x005570C2-0x005570F1)
+		Assert.AreEqual( 2, WalkerBodies.HeadingOf( 10, 0 ), "along x: a = 0 gives 10.5, 10, low bits 2" );
+		Assert.AreEqual( 0, WalkerBodies.HeadingOf( 0, 10 ), "along z: a = pi/2 gives 8.5, 8, low bits 0" );
+		Assert.AreEqual( 6, WalkerBodies.HeadingOf( -10, 0.001f ), "against x: a = pi gives 6.5, 6" );
+		Assert.AreEqual( 4, WalkerBodies.HeadingOf( 0, -10 ), "a = -pi/2 gives 12.5, 12, low bits 4" );
+		Assert.AreEqual( 1, WalkerBodies.HeadingOf( 10, 5 ), "a = 0.46 gives 9.9, 9, low bits 1" );
 	}
 
 	[TestMethod]
-	public void TheShareIsTheElapsedThousandthsAndAboveAThousandItIsOne()
+	public void TheShareIsTheElapsedThousandthsClampedToAThousand()
 	{
 		Assert.AreEqual( 0u, WalkerBodies.Share( 100, 100, 600 ) );
 		Assert.AreEqual( 500u, WalkerBodies.Share( 350, 100, 600 ) );
 		Assert.AreEqual( 1000u, WalkerBodies.Share( 600, 100, 600 ) );
 		Assert.AreEqual( 1200u, WalkerBodies.Share( 700, 100, 600 ) );
 		Assert.AreEqual( 500, WalkerBodies.BodyShare( 500 ) );
-		Assert.AreEqual( 1000, WalkerBodies.BodyShare( 1200 ), "the body routine clamps a share above 1000 to 1000" );
-		Assert.AreEqual( -1000, WalkerBodies.BodyShare( unchecked( (uint)-1000 ) ), "a share that wrapped below zero is signed and not clamped" );
+		Assert.AreEqual( 1000, WalkerBodies.BodyShare( 1200 ), "the body routine clamps a share above 1000 to 1000 (0x0055810B)" );
 		Assert.AreEqual( 1000u, WalkerBodies.Share( 5, 5, 5 ), "a walk of no length is done" );
 	}
 

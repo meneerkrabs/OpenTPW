@@ -100,5 +100,7 @@ try {
 } finally {
 	cdp?.close();
 	await stopChrome(chrome);
-	await fs.rm(profile, { recursive: true, force: true });
+	// Chrome's child processes can briefly finish writing after its main process exits.
+	// Retry transient profile-directory races, but still fail if cleanup cannot complete.
+	await fs.rm(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
 }

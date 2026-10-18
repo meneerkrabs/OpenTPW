@@ -271,8 +271,14 @@ const scenarios = {
 			throw new Error('The umbrellas scenario needs a park: run it after jungle');
 		const zoom = options.zoom ?? 80;
 		await page.call('PerfUmbrellas', zoom, 35);
-		await sleep(4000);
-		const drawn = await page.eval('opentpwPerf.program.PerfDrawnUmbrellas()');
+		// A new park has no guests until the gate has been open for a while: wait until an umbrella is drawn (at most three minutes).
+		let drawn = 0;
+		for (let waited = 0; waited < 180000 && drawn < 1; waited += 1000) {
+			await sleep(1000);
+			drawn = await page.eval('opentpwPerf.program.PerfDrawnUmbrellas()');
+		}
+		await sleep(2000);
+		drawn = await page.eval('opentpwPerf.program.PerfDrawnUmbrellas()');
 		const shot = await page.send('Page.captureScreenshot', { format: 'png' });
 		const file = options.shot ?? path.join(os.tmpdir(), 'opentpw-umbrellas.png');
 		await fs.writeFile(file, Buffer.from(shot.data, 'base64'));

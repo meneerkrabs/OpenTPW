@@ -5,24 +5,16 @@ namespace OpenTPW.UI.Original;
 
 /// <summary>
 /// The red-to-green gauge bar of the original windows (the type-9 controls: the hire window's skill, the ride and buy windows' excitement,
-/// reliability, repair and life): a dark track, filled from the left by a fixed gradient that is cut off at the value, so a low value shows only the red and
-/// orange end and a full bar reaches green.
+/// reliability, repair and life): the art <c>ridestatbar.wct</c> (32 x 32 texels), whose top half is the gradient bar and whose bottom half is the dark track.
+/// The track fills the control's bar rectangle and the bar is the art cut off at the value (its u runs 0 to the value, not stretched).
 /// </summary>
-// [APPROX:UI-046] the gradient stops and the track colours are read off the 720p video frames (buy window 1:50, hire window 12:00: a 70 % bar runs red, orange, yellow to lime green; a 12 % bar is red/orange)
+// [BIN:TPW-EXE:0x477ff0 gauge model] the gauge's two models are built from the texture ridestatbar.wct (string 0x750e00, used by the builders of the buy, ride, shop, sideshow, attractions, visitors, employee and staff windows); the draw cuts the bar quad at value / 1024 of its width with the texture's u at the same share (0x478400, see FullValue), so the colours are the art's: red at the left end running through orange and yellow to green (a 20 % bar of the hire window shows red to orange, as the video's guard candidate of 12:00 does)
 public static class UiGauge
 {
-	private static readonly (float At, RgbaByte Colour)[] Stops =
-	{
-		(0.00f, new( 255, 40, 0, 255 )),
-		(0.15f, new( 255, 100, 0, 255 )),
-		(0.35f, new( 255, 200, 0, 255 )),
-		(0.50f, new( 230, 225, 0, 255 )),
-		(0.72f, new( 130, 215, 0, 255 )),
-		(1.00f, new( 90, 205, 0, 255 )),
-	};
-	private const int Segments = 32;
-
-	/// <summary>The range of a type-9 gauge's value (0x66d885 clamps it to 0..0x400).</summary>
+	/// <summary>The gauge art (the original's <c>ridestatbar.wct</c>), 32 x 32 texels: rows 0-15 the bar, rows 16-31 the track.</summary>
+	public const string ArtPath = "/ui/textures/ridestatbar.wct";
+	private const float ArtSize = 32f;
+/// <summary>The range of a type-9 gauge's value (0x66d885 clamps it to 0..0x400).</summary>
 	public const int FullValue = 1024;
 
 	/// <summary>
@@ -31,25 +23,6 @@ public static class UiGauge
 	/// </summary>
 	// [BIN:TPW-EXE:0x66d885 gauge SetValue] the value is clamped to 0..0x400 and sent to the gauge's two models with message 8, whose handler (0x478400) turns it into value / 1024 × 100 percent of the bar's width: vertices 1, 2, 4 and 5 move to that percent and the texture's u of the fill quad to percent / 100 (0x4785a2..0x478675), so the fill is the art cut off at the value, not stretched
 	public static float OfPercent( int percent ) => Math.Clamp( (int)(((long)percent << 10) / 100), 0, FullValue ) / (float)FullValue;
-
-	/// <summary>The track behind the fill.</summary>
-	public static readonly RgbaByte Track = new( 62, 62, 72, 255 );
-
-	/// <summary>The gradient colour at <paramref name="t"/> (0 = red end, 1 = green end) of the full gauge width.</summary>
-	public static RgbaByte ColourAt( float t )
-	{
-		t = Math.Clamp( t, 0f, 1f );
-		for ( var index = 1; index < Stops.Length; index++ )
-		{
-			if ( t > Stops[index].At )
-				continue;
-			var (from, to) = (Stops[index - 1], Stops[index]);
-			var k = (t - from.At) / (to.At - from.At);
-			byte Mix( byte a, byte b ) => (byte)MathF.Round( a + (b - a) * k );
-			return new RgbaByte( Mix( from.Colour.R, to.Colour.R ), Mix( from.Colour.G, to.Colour.G ), Mix( from.Colour.B, to.Colour.B ), 255 );
-		}
-		return Stops[^1].Colour;
-	}
 
 	/// <summary>
 	/// The vertical inset of a gauge's bar in its control's rectangle, in virtual canvas units: each window's builder calls <c>0x485e30(gauge, 0, 10)</c> on the gauge control, which
@@ -66,26 +39,16 @@ public static class UiGauge
 	/// <summary>Draws a gauge in <paramref name="track"/> filled to <paramref name="fraction"/> (0..1); null or 0 draws the empty track.</summary>
 	public static void Draw( UiBatch batch, UiRect track, float? fraction )
 	{
-		batch.AddRectangle( track, Track );
+		var texture = UiTexture.Image( ArtPath );
+		// Half a texel inside each half keeps the linear filter from mixing the bar's last row with the track's first.
+		const float barTop = 0.5f / ArtSize, barBottom = 15.5f / ArtSize, trackTop = 16.5f / ArtSize, trackBottom = 31.5f / ArtSize;
+		batch.AddQuad( texture, track, new NVector2( 0.5f / ArtSize, trackTop ), new NVector2( 31.5f / ArtSize, trackBottom ), RgbaByte.White );
 		var value = Math.Clamp( fraction ?? 0f, 0f, 1f );
 		if ( value <= 0 )
 			return;
-		var fillWidth = track.Width * value;
-		var count = Math.Max( 1, (int)MathF.Ceiling( Segments * value ) );
-		for ( var index = 0; index < count; index++ )
-		{
-			var left = fillWidth * index / count;
-			var right = fillWidth * (index + 1) / count;
-			var leftColour = ColourAt( left / track.Width );
-			var rightColour = ColourAt( right / track.Width );
-			var (x0, x1, y0, y1) = (track.X + left, track.X + right, track.Y, track.Bottom);
-			var topLeft = new UiVertex( new NVector2( x0, y0 ), NVector2.Zero, leftColour );
-			var bottomLeft = new UiVertex( new NVector2( x0, y1 ), NVector2.Zero, leftColour );
-			var topRight = new UiVertex( new NVector2( x1, y0 ), NVector2.Zero, rightColour );
-			var bottomRight = new UiVertex( new NVector2( x1, y1 ), NVector2.Zero, rightColour );
-			batch.AddTriangle( UiTexture.Solid, topLeft, bottomLeft, topRight );
-			batch.AddTriangle( UiTexture.Solid, topRight, bottomLeft, bottomRight );
-		}
+		var bar = new UiRect( track.X, track.Y, track.Width * value, track.Height );
+		var uEnd = (0.5f + 31f * value) / ArtSize;
+		batch.AddQuad( texture, bar, new NVector2( 0.5f / ArtSize, barTop ), new NVector2( uEnd, barBottom ), RgbaByte.White );
 	}
 }
 

@@ -368,7 +368,7 @@ public sealed partial class ParkHud
 			var gaugeRow = owner.buy.SelectedItem?.Category == BuildCategory.Rides ? row is 1 or 3 or 4 : row == 1;
 			if ( !gaugeRow )
 				return;
-			// [DATA:video 1:50 buy window] the type-9 value cells are red-to-green gradient gauges (UiGauge; the gradient colours are the UI-046 approximation); the bar fills the cell less 10 units top and bottom (0x4ab9dd)
+			// [DATA:video 1:50 buy window] the type-9 value cells are the ridestatbar.wct gauges (UiGauge); the bar fills the cell less 10 units top and bottom (0x4ab9dd)
 			UiGauge.Draw( context.Batch, UiGauge.BarRect( rect, context.Canvas ), stat.Gauge );
 		}
 	}

@@ -16,28 +16,24 @@ public class HudVideoRoundTests
 	private static ParkHud Hud() => (ParkHud)RuntimeHelpers.GetUninitializedObject( typeof( ParkHud ) );
 
 	[TestMethod]
-	public void TheGaugeGradientRunsFromRedToGreen()
+	public void AGaugeDrawsTheArtOfRidestatbarCutOffAtTheValue()
 	{
-		var red = UiGauge.ColourAt( 0 );
-		var green = UiGauge.ColourAt( 1 );
-		Assert.IsTrue( red.R > 200 && red.G < 80, "the low end is red" );
-		Assert.IsTrue( green.G > 180 && green.R < 150, "the high end is green" );
-		var middle = UiGauge.ColourAt( 0.45f );
-		Assert.IsTrue( middle.R > 200 && middle.G > 190, "the middle is yellow" );
-	}
-
-	[TestMethod]
-	public void AGaugeFillsFromTheLeftAndTheEmptyTrackHasNoFill()
-	{
+		// [BIN:TPW-EXE:0x478400] the bar is the art's top half cut off at value / 1024 of its width, the track its bottom half behind the whole bar
 		var batch = new UiBatch();
 		UiGauge.Draw( batch, new UiRect( 0, 0, 100, 10 ), null );
 		Assert.AreEqual( 6, batch.Draws.Sum( draw => draw.Vertices.Count ), "only the track quad (two triangles)" );
+		Assert.IsTrue( batch.Draws.All( draw => draw.Texture.ImagePath == UiGauge.ArtPath ), "the gauge draws the art, not flat colours" );
+		var track = batch.Draws.SelectMany( draw => draw.Vertices ).ToList();
+		Assert.IsTrue( track.All( vertex => vertex.TexCoords.Y > 0.5f ), "the track is the lower half of the art" );
 		batch.Clear();
 		UiGauge.Draw( batch, new UiRect( 0, 0, 100, 10 ), 0.5f );
-		var maximumX = batch.Draws.SelectMany( draw => draw.Vertices ).Max( vertex => vertex.Position.X );
-		Assert.AreEqual( 100f, maximumX, 0.01f, "the track spans the whole width" );
-		var fill = batch.Draws.SelectMany( draw => draw.Vertices ).Where( vertex => vertex.Color != UiGauge.Track ).Max( vertex => vertex.Position.X );
-		Assert.AreEqual( 50f, fill, 0.01f, "half the value fills half the track" );
+		var vertices = batch.Draws.SelectMany( draw => draw.Vertices ).ToList();
+		Assert.AreEqual( 12, vertices.Count, "the track quad and the bar quad" );
+		Assert.AreEqual( 100f, vertices.Max( vertex => vertex.Position.X ), 0.01f, "the track spans the whole width" );
+		var bar = vertices.Skip( 6 ).ToList();
+		Assert.AreEqual( 50f, bar.Max( vertex => vertex.Position.X ), 0.01f, "half the value fills half the track" );
+		Assert.IsTrue( bar.All( vertex => vertex.TexCoords.Y < 0.5f ), "the bar is the upper half of the art" );
+		Assert.AreEqual( 0.5f, bar.Max( vertex => vertex.TexCoords.X ), 0.03f, "the art is cut off at the value, not stretched" );
 	}
 
 	[TestMethod]
@@ -149,8 +145,10 @@ public class HudVideoRoundTests
 	public void TheSkillGaugeIsTheGradeOverFive()
 	{
 		Assert.IsNull( ParkHud.SkillGauge( null ) );
-		Assert.AreEqual( 0.2f, ParkHud.SkillGauge( new StaffCandidate( 1, StaffType.Guard, 0, 0, 0 ) )!.Value, 1e-6f );
-		Assert.AreEqual( 1f, ParkHud.SkillGauge( new StaffCandidate( 1, StaffType.Guard, 0, 4, 0 ) )!.Value, 1e-6f );
+		Assert.AreEqual( 0f, ParkHud.SkillGauge( new StaffCandidate( 1, StaffType.Guard, 0, 0, 0 ) )!.Value, 1e-6f );
+		// the video's guard candidates (12:00, Easy_Standard wages 3, 4, 5, 7 x 15): $60 is grade 1 and shows a fifth, $75 grade 2 and $105 grade 3
+		Assert.AreEqual( 204 / 1024f, ParkHud.SkillGauge( new StaffCandidate( 1, StaffType.Guard, 0, 1, 0 ) )!.Value, 1e-6f, "(1 << 10) / 5 of 1024" );
+		Assert.AreEqual( 819 / 1024f, ParkHud.SkillGauge( new StaffCandidate( 1, StaffType.Guard, 0, 4, 0 ) )!.Value, 1e-6f );
 	}
 
 	[TestMethod]

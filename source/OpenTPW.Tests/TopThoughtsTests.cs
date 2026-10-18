@@ -293,7 +293,7 @@ public class TopThoughtsTests
 		foreach ( var key in new[] { OpenTpwText.RefusalsTitle, OpenTpwText.RefusalTooExpensive, OpenTpwText.RefusalQueueTooLong, OpenTpwText.RefusalTooScary, OpenTpwText.RefusalTooBoring, OpenTpwText.RefusalRideUnavailable } )
 		{
 			var texts = SupplementaryStrings.SupportedLanguages.Select( language => SupplementaryStrings.Get( key, language ) ).ToList();
-			Assert.AreEqual( 9, texts.Distinct().Count(), $"{key}: nine different texts" );
+			Assert.AreEqual( texts.Count, texts.Distinct().Count(), $"{key}: a different text per language" );
 			Assert.IsTrue( texts.All( text => text.Length is > 0 and < 60 ), $"{key}: short enough for the narrow column" );
 		}
 	}

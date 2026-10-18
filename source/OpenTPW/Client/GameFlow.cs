@@ -355,6 +355,7 @@ internal sealed partial class GameFlow : IDisposable
 		if ( level.Guests == null )
 			return;
 		level.Guests.Voiced += ( guest, eventId ) => GameAudio.PlayGuestVoice( eventId, new Vector3( guest.X * 10, 0, guest.Y * 10 ) );
+		level.Guests.Teleported += level.StartGuestBeam;
 		level.Guests.Pranked += ( guest, prank ) =>
 		{
 			if ( prank == GuestDecision.Prank.Stinkbomb )
@@ -417,7 +418,7 @@ internal sealed partial class GameFlow : IDisposable
 			Log.Trace( dropped );
 		}
 		AttachProgress( level );
-		if ( original && visit == null ) TakeRestartSnapshot( level );
+		if ( original && visit == null ) TakeRestartSnapshot( level, overFrames: true );
 		return level;
 	}
 
@@ -486,6 +487,7 @@ internal sealed partial class GameFlow : IDisposable
 	private void TearDown( bool applyPendingLanguage = true )
 	{
 		RequireProgressSaved();
+		FlushRestartSnapshot();
 		DetachProgress();
 		AbandonParkBuild();
 		presence?.Dispose();
@@ -539,6 +541,7 @@ internal sealed partial class GameFlow : IDisposable
 
 	public void Update()
 	{
+		PumpRestartSnapshot();
 		// [EXT:texture-pack] the pack switch belongs to the game loop, not to its loading screen
 		PumpProgress();
 		TexturePackSwitch.PumpCurrent();
@@ -683,6 +686,7 @@ internal sealed partial class GameFlow : IDisposable
 			var strings = UiStringTable.Load( language );
 			var fonts = UiFonts.Load( language );
 			GameLanguage.Current = language;
+			LanguageInterfaceArchive.Apply( FileSystem, language );
 			Strings = strings;
 			Context = new UiContext( strings, fonts, Context.Models );
 			Log.Trace( $"Language: {language}" );
@@ -1072,6 +1076,7 @@ internal sealed partial class GameFlow : IDisposable
 
 	public void Dispose()
 	{
+		FlushRestartSnapshot();
 		// a window closed past the in-app Quit's check still writes earned awards a failed save left behind
 		if ( progressOwner is { Dirty: true } owner && !owner.TryFlush() )
 			Log.Warning( $"OpenTPW progress could not be saved on exit: {owner.Error}" );

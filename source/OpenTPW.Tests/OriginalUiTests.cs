@@ -693,7 +693,10 @@ public class OriginalUiTests
 	[TestMethod]
 	public void SupplementaryStringsAreTranslatedForEveryShippedLanguageWithMatchingPlaceholders()
 	{
-		CollectionAssert.AreEquivalent( GameLanguage.ShippedLanguages.ToArray(), SupplementaryStrings.SupportedLanguages.ToArray() );
+		// Every verified language has a column, US English and the fan Russian use English's
+		CollectionAssert.AreEquivalent( GameLanguage.ShippedLanguages.Concat( new[] { "Italian", "Hebrew" } ).ToArray(), SupplementaryStrings.SupportedLanguages.ToArray() );
+		Assert.AreEqual( SupplementaryStrings.Get( OpenTpwText.Back, "English" ), SupplementaryStrings.Get( OpenTpwText.Back, "American" ) );
+		Assert.AreEqual( SupplementaryStrings.Get( OpenTpwText.Back, "English" ), SupplementaryStrings.Get( OpenTpwText.Back, "Russian" ) );
 		foreach ( var key in Enum.GetValues<OpenTpwText>() )
 		{
 			var english = SupplementaryStrings.Get( key, "English" );

@@ -3,10 +3,12 @@
 Theme Park World shipped text, fonts, speech and banner meshes in at least nine
 languages: English, Danish, French, German and Swedish on the European CD, Dutch (and
 Polish and Italian) on the Benelux CD, Spanish on the Spanish CD, and Korean on the EA Slim
-Pack CD. OpenTPW can show the text of English, Danish, Dutch, French, German, Korean, Polish,
-Spanish and Swedish. Language selection is folder-based, so other retail languages should work the
-same way once their data is available, but only these nine are verified (Italian loads, but it is not
-among them). Original data is never part of this repository.
+Pack CD; US English (Sim Theme Park) and Hebrew are known from the localisation pack (below).
+OpenTPW verifies twelve: English, US English, Danish, Dutch, French, German, Hebrew, Italian, Korean,
+Polish, Spanish and Swedish. A fan-made Russian translation loads too and is labelled as one; it is
+not an official release. tp.exe's language table also names Japanese, Traditional and Simplified
+Chinese and Thai, for which no data is available ("The original's language table"). Language
+selection is folder-based. Original data is never part of this repository.
 
 ## Where the data lives
 
@@ -81,8 +83,8 @@ under Options → Game files) serves as the language overlay when it holds more 
 the installed game, so its languages appear in the options' language list.
 A game folder copied from the CD rather than installed (with `Data` beside the CD's
 `<Lang>` folders) counts as such a CD folder without being chosen separately. Only languages
-whose `MBToUni.dat` OpenTPW can read are offered (all nine verified ones, Polish and Korean through the two-byte
-layout below, and Italian, which loads but is not among the verified languages).
+whose `MBToUni.dat` OpenTPW can read are offered (all twelve verified ones, Polish, Korean and Hebrew through the two-byte
+layout below, and the fan Russian).
 Desktop and browser choose their start-up language with the same code (`LanguageStartup`); the
 browser reads `/config/language.json`, falls back to the default with a warning when the saved
 language is missing, and copies the CD languages' text and banners, and the chosen language's speech
@@ -221,6 +223,136 @@ Sign text is laid out as for Latin (what tp.exe and the shipped `usp10.dll` say,
   `0x6510EB3E`), where OpenTPW scales the `hmtx` advance. That is the width rounding of `APPROX:COMPAT-002` for Latin and now also for Hangul with Gulim's hinting
   (`APPROX:COMPAT-033`). A missing glyph uses the cmap's default (glyph 0, .notdef here), as for the other fonts.
 
+## The original's language table
+
+tp.exe selects its language from the registry value `Language` (a DWORD under
+`HKLM\Software\Bullfrog Productions Ltd\Theme Park World`, default `0x809`) through a switch at `0x5c0d00`: each known value sets one
+bit, the lowest set bit indexes a table of sixteen names (`0x4193d0`, one copy per translation unit), and that name is the folder
+`Data\Language\<Name>` (`0x419710` opens it) and the suffix of the loading-screen pictures. Any other value stores `0x809` (English).
+`GameLanguage.OriginalLanguageTable` holds the table; the save container's language byte is a separate, shorter list (`SaveContainerFields`).
+
+| Index | Name (folder) | `Language` value | OpenTPW | Data |
+|---|---|---|---|---|
+| 0 | English | `0x809` | verified | European CD, every CD's English, pack |
+| 1 | French | `0x40C` | verified | European CD, pack |
+| 2 | German | `0x07` | verified | European CD, pack |
+| 3 | Spanish | `0x0A` | verified | Spanish CD, pack |
+| 4 | Swedish | `0x1D` | verified | European CD, pack |
+| 5 | Italian | `0x10` | verified | Benelux CD (`Italian/data`), pack |
+| 6 | Dutch | `0x13` | verified | Benelux CD, pack |
+| 7 | Polish | `0x15` | verified | Benelux/Polish CD, pack |
+| 8 | Danish | `0x06` | verified | European CD, pack |
+| 9 | Japanese | `0x11` | no data | not available |
+| 10 | TraditionalChinese | `0x404` | no data | not available (the pack has only a `.reg` file) |
+| 11 | SimplifiedChinese | `0x804` | no data | not available |
+| 12 | Thai | `0x41E` | no data | not available |
+| 13 | Korean | `0x412` | verified | Korean EA Slim Pack CD, pack |
+| 14 | Hebrew | `0x40D` | verified (right to left) | pack |
+| 15 | American | `0x409` | verified (US English) | pack (`USEnglish`) |
+
+Some values are full language ids (`0x809`, `0x40C`, `0x412`), others primary language ids (`0x07` German, `0x10` Italian); the pack's `.reg`
+files use exactly these. The full Italian id `0x410` or a Russian id would select English. The fan Russian has no entry: it replaces
+the American folder and is selected with `0x409`. The language word is also read by the online code (`0x41a830`; untouched here) and by
+`0x41a850`, which tests for Hebrew (`0x40D`).
+
+## The localisation pack
+
+The ModDB "Sim Theme Park World Localization Files" pack holds one folder per language with a `data` folder to copy over the game's
+and a `.reg` file that sets `Language`: `English`, `USEnglish`, `Danish`, `Dutch`, `French`, `German`, `Hebrew`, `Italian`, `Korean`,
+`Polish`, `Russian`, `Spanish`, `Swedish`. Each `data` holds `Language/<Name>` (US English and Russian in `language/american` and
+`language/American`), `Init/<width>/` pictures (not for Korean), `ui.wad`, `postcard/tpwlogo.tga` and the global and per-level speech.
+Read it as data only; nothing in it is run (the German folder contains an `ip.exe`).
+
+```sh
+bash scripts/run.sh --game-path '/path/to/Theme Park World' --language Hebrew --language-data /path/to/tpw-language-pack
+```
+
+`--language-data` takes the pack's root (every language), one of its folders (`.../tpw-language-pack/USEnglish`) or that folder's
+`data`. A pack folder whose language folder has another name is named by its language folder (`USEnglish` → `American`, also accepted
+as `--language USEnglish` or `"English (US)"`), except a fan translation, which keeps its own name ([EXT:fan-translations]): the
+`Russian` folder is the language `Russian`, whose files are the `American` folder's. The options list it as "Russian (fan
+translation)" in every interface language. A game folder into which the Russian data was copied cannot be told from US English and
+shows as US English.
+
+### Files beside the text: ui.wad, Init and postcard
+
+tp.exe reads these from fixed paths below its one data folder: `data\ui.wad` with `data\ui`, `data\language.wad` and
+`data\Postcard(.wad)` (the folder table at `0x747c84`), and the loading screen's pictures `data\init\<width>\splash_<Name>.tga`,
+`legal_<Name>.tga`, `welcome_<Name>.tga` and `welcome.tga` (`0x587380`, called by the start-up routine `0x54dcf0` and the main state
+machine `0x54e360` with the table name of `0x41a820`; the width folder is the screen width when it is 400, 512, 640, 800 or 1024, else
+640). The splash shows first at start-up, then `welcome.tga` with the legal notice; later loading screens show `welcome.tga` with
+`welcome_<Name>`; a missing picture is simply not shown. So a language's own copies are used when its data was copied over the game's.
+
+| Source | `ui.wad` | `Init` | `postcard` |
+|---|---|---|---|
+| Benelux and Spanish CDs | one, the European one | `Data/Init` holds Splash, Legal and Welcome pictures for nine languages and `Welcome_Hebrew`; the overlays (`Dutch/data`) have none | one |
+| Korean CD | its own: another logo, an IME list frame (`f_imelist.md2`) | `Welcome.tga` only | the European one |
+| Localisation pack | per language; US English's differs only in `tpw_logo.wct` (Sim Theme Park, both texture sizes), the others are the European one | per language, named with the table name (`Splash_American`); Hebrew has only `Welcome_Hebrew`, Korean none | per language; US English's logo differs |
+
+OpenTPW layers the language's data over the game's as before (overlay first, then the game): `GameLanguage.ResolveInitImage` and
+`ResolvePostcardFile` resolve these files, and a language whose overlay has its own `ui.wad` (`OwnInterfaceArchive`) replaces the
+game's for every `/ui/...` read (`LanguageInterfaceArchive`, `BaseFileSystem.ArchiveRedirect`), at start-up and on a live switch
+(interface images reload). In US English the lobby's and the player screen's logo is Sim Theme Park's. OpenTPW draws no loading
+screen and does not compose the original postcard picture, so the Init and postcard files are resolved but not shown yet.
+
+### US English
+
+Tables, fonts and fonts' glyphs as the UK English (21 tables, 2,365 entries, 248-character table; the only non-ASCII character used is
+`é`), with the US speech bank (Terry McGovern; the UK voice is Lewis Macleod), its own ui.wad, Init pictures and postcard logo. It is
+offered as "English (US)" and uses the English OpenTPW labels.
+
+### Italian
+
+Italian (Benelux CD and pack, identical language folders): 21 tables, 2,365 entries, the 248-character table, non-ASCII `° à è é ì ò ù`,
+37 fonts with a glyph for every used character, 637 lip-sync lines. `KEYBOARD.str` differs from the other languages in two letters
+(`BHIASVFLTGRCSVCHKO,.P`). OpenTPW's own labels are translated (no native speaker has reviewed them).
+
+### Hebrew
+
+Hebrew is right to left. What tp.exe does, read statically:
+
+- **Table.** `MBToUni.dat` is the one-lead-byte layout of the Polish table (254 single bytes, 75 trails of lead `0xFF`, 329 characters):
+  U+0001..U+00FF plus the rest of the code page 1255 repertoire (the Hebrew points and letters, ₪, the direction marks LRM and RLM and
+  the Windows punctuation). The codes are Bullfrog's indices, not Windows-1255 bytes; the Hebrew letters are single bytes, the ASCII
+  capitals sit behind the lead byte. `UniToMB.dat` round-trips every string.
+- **Order.** The string tables keep Hebrew in logical order (`UITEXT` "Go Online" is `התחבר לרשת`, first letter first), with Latin words
+  in their own order (`DirectX`).
+- **Drawing.** The text library turns every laid-out line that holds a character U+05B1..U+05EA into visual order (`0x6ae4b0`, called
+  for each line by the only drawing loop `0x6ae550`): it reverses the line (without the spaces a wrap consumed), then reverses back each
+  word that has no Hebrew letter (a word is a run of characters other than space and comma, `0x6ae3d0`, `0x6ae390`), and a Hebrew word
+  that now starts with a parenthesis has it swapped with its partner inside the word (`0x6ae300`). There is no bidi algorithm: words are
+  not regrouped, so two Latin words in a Hebrew line trade places ("Direct Draw" shows as "Draw Direct"), and a parenthesis around
+  several words is not mirrored. `TextVisualOrder` ports this and `TextLayout` applies it to every line, in any language (only Hebrew
+  triggers it). usp10 plays no part in interface text.
+- **Alignment.** Both interface text helpers (`0x492750`, `0x4929f0`, the only callers of the library's draw) swap left and right
+  alignment when `0x41a850` reports Hebrew; `0x4925a0` does the same for an alignment a caller keeps. `UiContext.DrawText`/`DrawTextAt`
+  do this (`UiContext.RightToLeft`), so labels that are left aligned elsewhere stand at the right, as the cash in the HUD.
+- **Keyboard.** The window procedure maps each typed character from 0x20 up through a fixed table (`0x46b460`, called at `0x46b8c5`):
+  the lower-case Latin letters and `' , . / ; ` ` ` become the Hebrew letters on the same keys of the Israeli layout (`t` aleph,
+  `c` bet). `HebrewKeyboard` ports it for typed text. The interface library's edit fields also swap the arrow keys and stop placing the
+  caret by mouse when the flag at `0xfaa56c` is set (`0x667a72`, `0x668269`, `0x6668e9`); OpenTPW's text fields have no caret to move,
+  so this is not ported.
+- **Fonts.** The Hebrew folder has 32 fonts: no GAMEBOLD9/10/12 and no MATISSE18/36 (as Korean), and the CASH, DATE, SESH, CONSOLE6 and
+  COURIER8 fonts have no Hebrew letter. The GAME, MENU, TITLE and POSTCARD fonts have the letters but not the accented Latin letters of the
+  table (so "Français" shows as "French" in the language list). `UiFonts` gives a heading or date font without Hebrew letters the label
+  font's role, as it does for Korean ([EXT:ui-font-korean-heading], [EXT:ui-font-korean-date]).
+- **Signs.** Sign text goes through usp10 (`ScriptStringAnalyse`, which resolves bidi), not through the pass above. None of the 17 fonts of
+  `fonts.wad` has a Hebrew glyph, so a Hebrew gate name is a row of `.notdef` boxes, in logical order in OpenTPW ([APPROX:COMPAT-034]).
+- **Init.** The pack has only `Welcome_Hebrew.tga`, so tp.exe shows no splash and no legal notice in Hebrew.
+
+OpenTPW's own labels are translated into Hebrew with ASCII punctuation only and without words that mix Hebrew and Latin letters (the
+pass above would reverse the Latin part), and multi-word Latin names are joined with no-break spaces (`Theme Park Inc`) so they keep
+their order. No native speaker has reviewed them.
+
+### Russian (fan translation)
+
+The pack's Russian replaces the American folder: the same 248-character Latin table as US English, but its strings are Windows-1251
+bytes, so they decode to Latin-1 look-alikes (`Ïîòåðÿíîå Êîðîëåâñòâî` for `Потеряное Королевство`), and its fonts draw Cyrillic shapes
+at those Latin positions. That is how the original shows it too, and OpenTPW draws it the same way with no new code: the interface table
+`UITEXT` is untranslated (English), the names, objects, staff states and messages are Russian; the speech bank and `Welcome.tga` are its
+own. Sign fonts and OpenTPW's own labels have no such Cyrillic positions, so signs show the Latin look-alikes and the labels stay English.
+Text in logs and saves is the Latin form.
+
 ## Theme Park Inc
 
 Theme Park Inc ships its own language folders (`Data/Language/{Dutch,English,French,German,Swedish}`: 37 string tables and the fonts each, 3,775 entries per language,
@@ -260,6 +392,12 @@ code (2,358 / 2,365 / 2,358 entries; the character inventories), sample strings,
 Korean and Polish table layouts, the glyphs of every used character in every font, `UiFonts` in all tiers, speech, lip-sync and banners, edition detection from
 the autorun cabinets, both overlay forms, and for Korean the sign fonts (gulim.ttc, all signs' faces) and a sign with Hangul text. Synthetic tests
 (`MultiByteLanguageTests`) cover the lead/trail layout, malformed codes, the two-byte codec, CD folder detection and the TrueType collection without any data.
+`LanguagePackDataTests` (`OPENTPW_LANGUAGE_PACK`, the pack's root; with `OPENTPW_GAME_PATH` the pack goes over that game) cover US English,
+Hebrew, Italian and the fan Russian: all 21 tables decode (2,365 entries, the character inventories), sample strings, the KEYBOARD
+letters, `UniToMB.dat` round trips, the Hebrew table's layout and repertoire, the fonts' glyphs, `UiFonts` in every tier, the language
+list in all thirteen pack languages, Hebrew drawn right to left and right aligned, US English's ui.wad, Init pictures and postcard
+(and its own voice), the Init names, speech and lip-sync; `LanguagePackTests` cover the language table, the right-to-left pass, the
+alignment swap, the Hebrew keyboard, the Init paths, the pack's folder names and a language's own ui.wad without any data.
 `ThemeParkIncLanguageTests` (`OPENTPW_TPI_PATH`) decode all 37 tables in all five Theme Park Inc languages and pin Dutch, French, German and Swedish strings and names.
 
 ```sh
@@ -285,4 +423,8 @@ files, online screens, HUD, buy window, finance, research and staff windows are 
 - The browser build is not verified with the Spanish and Korean CD layouts or the Korean fonts' size (docs/WEB.md).
 - The account e-mails of the online server (`EmailTexts`) and the OpenTPW labels were translated for the new languages, but no native speaker has reviewed the Spanish, Korean, Polish or Theme Park Inc HUD translations; the PR lists the uncertain ones.
 - Theme Park Inc's string tables beyond the object names and the OpenTPW HUD (its UITEXT numbering is its own; the original advisor and mission texts) are not used by the slice.
-- The CDs examined are `TPWORLD.ISO` (European), the Benelux/Polish CD, `Theme Park World_1.iso` (Spanish), `TPWorld-KR.iso` (Korean EA Slim Pack) and the extracted Theme Park Inc CD; other editions/patches are unverified.
+- OpenTPW draws no loading screen (the `Init` pictures) and does not compose the original postcard picture; both resolve per language.
+- Italian and Hebrew have OpenTPW labels but the online labels (`OnlineStrings`) stay English for them, US English and the fan Russian.
+- The Hebrew edit-field behaviour (arrow keys, caret) and a Hebrew sign font are not available; Hebrew signs draw boxes (`APPROX:COMPAT-034`).
+- The browser build is not verified with the localisation pack.
+- The CDs examined are `TPWORLD.ISO` (European), the Benelux/Polish CD, the localisation pack, `Theme Park World_1.iso` (Spanish), `TPWorld-KR.iso` (Korean EA Slim Pack) and the extracted Theme Park Inc CD; other editions/patches are unverified.

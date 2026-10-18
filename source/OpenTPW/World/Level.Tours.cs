@@ -10,13 +10,28 @@ public partial class Level
 		if ( OriginalPark?.Heightfield is not { } field )
 			return;
 		// the cars also clear the height map of the object that stands on a cell (TOUR-005)
-		tours.ObjectHeight = ( x, y ) => Objects.FindAt( x, y ) is { } item ? tourHeightMaps.Height( item, x, y ) : null;
+		tours.ObjectHeight = TourObjectGround;
 		tours.MapWidth = field.CellCountX;
 		tours.MapHeight = field.CellCountZ;
 		tours.CellHeight = ( x, y ) => field.GetCornerHeight( Math.Clamp( x, 0, field.CellCountX ), Math.Clamp( y, 0, field.CellCountZ ) );
 	}
 
 	private readonly ObjectHeightMaps tourHeightMaps = new();
+
+	/// <summary>The ground a cell's mesh instance gives the tour cars: the second layer's piece instance first (a track tile), else the object that owns the cell (TOUR-005).</summary>
+	// [BIN:TPW-EXE:0x00452AE0 cell ground] the second-layer mesh instance (0x0053BF30) answers before the cell's owner object does
+	private float? TourObjectGround( int x, int y )
+	{
+		if ( waterTracks?.Tracks is { } layer )
+		{
+			foreach ( var renderer in trackRenderers.Values )
+			{
+				if ( renderer.PieceGround( layer, x, y ) is { } piece )
+					return piece;
+			}
+		}
+		return Objects.FindAt( x, y ) is { } item ? tourHeightMaps.Height( item, x, y ) : null;
+	}
 	private TourRenderer? tourRenderer;
 	private bool tourRenderFailed;
 

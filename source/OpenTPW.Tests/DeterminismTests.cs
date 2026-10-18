@@ -24,7 +24,7 @@ public class DeterminismTests
 	/// Economy, guests, a shop script and an unseeded RAND script wired like Level: guests pay into the
 	/// economy and every stream comes from one <see cref="WorldSeed"/>. Ticks run in Level.Update's order.
 	/// </summary>
-	private sealed class SyntheticPark
+	internal sealed class SyntheticPark
 	{
 		private readonly GuestEconomyBridge payments;
 		private readonly RideVisitorBridge shop;
@@ -35,7 +35,7 @@ public class DeterminismTests
 		private readonly RideVM? brollyScript;
 		private readonly List<RideVM> dice = new();
 
-		public SyntheticPark( WorldSeed seed, IGuestObserver? observer = null, Action<ParkCellMap>? prepareCells = null, bool changingRoom = false, Action<GuestSimulation>? prepareGuests = null, IGuestDecisions? decisions = null, bool brollyShop = false )
+		public SyntheticPark( WorldSeed seed, IGuestObserver? observer = null, Action<ParkCellMap>? prepareCells = null, bool changingRoom = false, Action<GuestSimulation>? prepareGuests = null, IGuestDecisions? decisions = null, bool brollyShop = false, int brollyKidScore = 75 )
 		{
 			Seed = seed;
 			Economy = EconomyTestData.Park( seed: seed.EconomyStream );
@@ -80,12 +80,13 @@ public class DeterminismTests
 				GuestTests.LayStandCell( Guests.Grid, room );
 			}
 			// [EXT:umbrellas-extension] a brolly shop near the top end of the path column (10, 1), paid through the economy like the drinks shop, and a weather that rains for forty seconds and clears for forty, again and again:
-			// guests buy umbrellas in the rain, keep them through rides closed and let them go when it clears (docs/UMBRELLAS.md, docs/DETERMINISM.md)
+			// guests buy umbrellas in the rain, keep them through rides closed and let them go when it clears (docs/UMBRELLAS.md, docs/DETERMINISM.md). brollyKidScore defaults to the shipped
+			// GenerationModifier.KidScorePercentage, 75, Theme Park Inc's value per the owner's decision, so a run that does not pass one mirrors the shops' .sam data.
 			if ( brollyShop )
 			{
 				brolly = new RideVisitorBridge( Scripts.AllocateAttractionId(), "Brolly Shop", RideVisitorKind.Shop, 1, 60, 30, GuestNeeds.None )
 				{
-					EntranceCell = (10, 1), ExitCell = (10, 1), AppearanceEffect = UmbrellaRules.ShopAppearanceEffect, UmbrellaTerms = new UmbrellaShopTerms( 200, 200, 150, 5, 100 )
+					EntranceCell = (10, 1), ExitCell = (10, 1), AppearanceEffect = UmbrellaRules.ShopAppearanceEffect, UmbrellaTerms = new UmbrellaShopTerms( 200, 200, 150, 5, brollyKidScore )
 				};
 				brollyScript = GuestTests.CreateShopScript( new VisitorRideScriptEffects( brolly, UnimplementedRideScriptEffects.Instance ), Scripts, seed: null );
 				brolly.Attach( brollyScript, () => true );
@@ -412,6 +413,7 @@ public class DeterminismTests
 	internal static (ulong Hash, int Buyers, HashSet<int> States, int Admissions) RunFixedParkWithABrollyShopInTheRain()
 	{
 		var park = new SyntheticPark( WorldSeed.Default, brollyShop: true );
+		Assert.AreEqual( 75, park.Brolly!.UmbrellaTerms!.Value.KidScorePercentage, "the synthetic brolly shop mirrors the shipped KidScorePercentage" );
 		var buyers = new HashSet<int>();
 		var states = new HashSet<int>();
 		for ( var chunk = 0; chunk < PinnedRunTicks / 60; chunk++ )
@@ -623,7 +625,7 @@ public class DeterminismTests
 	}
 
 	/// <summary>[EXT:pools-attractions] The pinned hash of <see cref="RunFixedParkWithWaterAttractions"/> (docs/DETERMINISM.md, "Pools").</summary>
-	internal const ulong PoolsAttractionsFixedRunHash = 0x5232DC9F32832BC6UL;
+	internal const ulong PoolsAttractionsFixedRunHash = 0x2D7EE079E5A9B09FUL;
 
 	[TestMethod]
 	public void FixedRunWithWaterAttractionsIsTheSameInEveryProcessAndSwimmersUseThem()

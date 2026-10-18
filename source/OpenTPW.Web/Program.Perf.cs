@@ -89,6 +89,10 @@ public static partial class Program
 	[JSExport]
 	public static bool PerfEvening( string mode ) => Level.PerfEvening( mode );
 
+	/// <summary>Adds <paramref name="count"/> debug lamp lights around the park camera's target (the browser twin of <c>--debug-evening-lamps</c>); 0 removes them; -1 outside a park (see <c>Level.PerfEveningLamps</c>).</summary>
+	[JSExport]
+	public static int PerfEveningLamps( int count ) => Level.PerfEveningLamps( count );
+
 	/// <summary>Holds the park camera at a zoom value (the wide range reaches 40..300 with the option on) and returns the zoom it ended at; -1 outside a park.</summary>
 	[JSExport]
 	public static double PerfZoom( double zoom )
@@ -139,6 +143,23 @@ public static partial class Program
 	/// <summary>How many umbrellas the renderer drew in the last frame, or -1 without one.</summary>
 	[JSExport]
 	public static int PerfDrawnUmbrellas() => flow?.Level?.UmbrellaRenderer?.DrawnUmbrellas ?? -1;
+
+	/// <summary>
+	/// [EXT:umbrellas-tuning] Fills the park with up to <paramref name="crowd"/> extra guests, applies the weather quality (30 is rain) and gives every guest an open umbrella, or none: the umbrellaCost scenario of the harness
+	/// (<see cref="UmbrellaPerf"/>). Returns the result as JSON; the park is no longer a real run afterwards.
+	/// </summary>
+	[JSExport]
+	public static string PerfUmbrellaCrowd( int crowd, int quality, bool umbrellas )
+	{
+		if ( flow?.Level is not { Guests: { } guests } level )
+			return "null";
+		var result = UmbrellaPerf.Stage( guests, level.Weather, crowd, quality, umbrellas );
+		return new JsonObject { ["guests"] = result.Guests, ["spawned"] = result.Spawned, ["umbrellas"] = result.Umbrellas, ["rain"] = result.Rain, ["renderer"] = level.UmbrellaRenderer != null }.ToJsonString();
+	}
+
+	/// <summary>[EXT:umbrellas-tuning] Umbrellas drawn in the last frame (0 without the umbrella renderer).</summary>
+	[JSExport]
+	public static int PerfUmbrellaCrowdDrawn() => flow?.Level?.UmbrellaRenderer?.DrawnUmbrellas ?? 0;
 
 	/// <summary>The items of a buy-window category (Rides, Shops, Sideshows, Features) as JSON: archive name and shown name.</summary>
 	[JSExport]

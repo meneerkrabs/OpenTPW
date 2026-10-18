@@ -664,6 +664,8 @@ public partial class Level : IDisposable
 				Gate?.DoorMoved( item.Kind == ParkEventKind.ParkClosed );
 			else if ( item.Kind == ParkEventKind.Bankrupt )
 				Gate?.ParkLost();
+			else if ( item.Kind == ParkEventKind.ResearchAllDone )
+				StartResearchFinale();
 			else if ( item.Kind == ParkEventKind.RideScriptVariable && Enum.IsDefined( (RideVariables)item.InfoId ) )
 				AttractionRuntimeOf( item.InstanceId )?.SetVariable( ((RideVariables)item.InfoId).ToString(), (int)item.Amount );
 			else if ( item.Kind == ParkEventKind.RideRepaired )
@@ -710,6 +712,7 @@ public partial class Level : IDisposable
 	/// <summary>The park door over the current economy; rebuilt by <see cref="LoadPark"/>, which replaces the economy.</summary>
 	private void BuildParkGate()
 	{
+		BindResearchFinale();
 		Gate = ParkGate.ForLevel( Park!.Economy, Objects, Guests, () => Park.Economy.Staff.Members, () => PlacedRide?.Runtime, EconomyStateOf );
 		// A park that starts open commands its gate open once at setup, the way the original's gate lookup
 		// writes the command from mParkClosed (Mac 0x104500 writes the gate handle and the closed flag together);

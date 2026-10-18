@@ -494,8 +494,8 @@ public static class ServerProgram
 				throw new StoreException( StatusCodes.Status400BadRequest, "The postcard sender must be the logged-in player." );
 			RequireClean( filter, card.Manifest.Title, "Postcard title" );
 			RequireClean( filter, card.Manifest.Text, "Postcard text" );
-			var (id, delivered) = store.SendPostcard( user, card, bytes );
-			return Ok( new PostcardSent( id, delivered ), StatusCodes.Status201Created );
+			var sent = await store.SendPostcardAsync( user, card, emailSender, context.RequestAborted );
+			return Ok( sent, StatusCodes.Status201Created );
 		} ) ) ).RequireRateLimiting( "upload" );
 
 		app.MapGet( ApiRoutes.Inbox, Handler( context => Guarded( context, store, true, user =>

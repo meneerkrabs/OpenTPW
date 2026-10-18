@@ -7,8 +7,8 @@ namespace OpenTPW;
 /// <summary>
 /// Draws the guests' open umbrellas (docs/UMBRELLAS.md, "Drawing"): one camera-facing quad of the extension's own umbrella sprite (<c>content/umbrellas/esprites/Umbrellas/SPR_UM</c>: three colours, five directions mirrored to
 /// eight) for each guest whose umbrella is open or open until a close that is due (states 4 and 1, <see cref="Shows"/>), beside <see cref="BalloonRenderer"/>. The sprite's hotspot, the handle's tip, goes to the guest's
-/// hand: the point of the hand anchor table for the sprite set, slot, direction and step the guest is drawn with (<see cref="UmbrellaAnchors"/>), then the whole sprite is pulled <see cref="CameraPull"/> of the
-/// way to the camera, more than the guests' own depth pull, so it is drawn in front of the guest it covers. Presentation only: nothing here touches the simulation, no random stream is read, and a guest the
+/// hand: the point of the hand anchor table for the sprite set, slot, direction and step the guest is drawn with (<see cref="UmbrellaAnchors"/>), then the whole sprite is pulled towards the camera by
+/// <see cref="PullShare"/> (<c>min(0.1, 1.5 * ModelScale / depth)</c>), so it is drawn in front of the guest it covers. Presentation only: nothing here touches the simulation, no random stream is read, and a guest the
 /// guest renderers do not draw (a swimmer, a rider, one in an attraction) has no umbrella shown.
 /// </summary>
 // [BIN:TPI-EXE:0x60ae35 umbrella drawn] the per-frame guest placement 0x60AE00 takes the umbrella state (+0x238): 4 or 1 sets the flag that places the sprite and raises the thought bubble, every other state draws nothing (a closed umbrella, state 2, has no sprite)
@@ -24,6 +24,20 @@ public sealed class UmbrellaRenderer : Entity
 	// [APPROX:UMB-004] [EXT:umbrellas-draw] the pull runs along the sight line to the camera instead (the screen position of the hand stays, the quad is scaled down by the same share, as the guests' own pull is done), so TPI's lift, whose value is not
 	// known here, is not needed to keep the umbrella over the hand
 	public const float CameraPull = 0.1f;
+	/// <summary>
+	/// The most the umbrella is pulled towards the camera, in original units: 1.5, enough to beat the depth of its own guest's quad (which is itself pulled 3.5 to 3.9 units towards the camera) and of the ground, and no more. The
+	/// pull only has to win a depth test against what is drawn at the guest's own depth. With the share TPI uses (10 % of the distance: 8 units at the zoom value 80, 13 at 130, 30 at the wide range's 300) the umbrella of a guest
+	/// who stands behind a booth, a shelter or a ride came out nearer to the camera than that scenery's roof and was drawn over it while the guest was hidden (capture of the Jungle bus shelter, October 18, 2026), and the umbrella
+	/// of a guest drew over neighbours up to a cell nearer to the camera.
+	/// </summary>
+	// [EXT:umbrellas-pull-cap] the sight-line pull stays (TPI's share of 10 % is the upper limit), but OpenTPW's depth buffer needs only a margin: TPI's own pull (0x60b236) moves the sprite 10 % of the way to the camera in the ground plane and lifts it, in TPI's own sprite ordering, which is not reproduced here
+	public const float MaxPullUnits = 1.5f;
+	/// <summary>
+	/// The size of the umbrella's quad relative to its sprite's own extents. The set was drawn so that the canopy is 0.8 of a kid's standing height across, but the camera looks down at 45 degrees and shortens a standing kid
+	/// by cos 45 while the canopy's width stays whole, so on screen the canopy was 1.2 times a kid's height and hid its head from every side. 0.85 brings it to about the kid's height.
+	/// </summary>
+	// [EXT:umbrellas-size] a tuning from captures (docs/UMBRELLAS.md, "Tuning"): the scale is about the hotspot, the handle's tip, which stays in the hand
+	public const float SizeScale = 0.85f;
 	/// <summary>The thought bubble's height above a guest while its umbrella shows, in original units (TPI 6.0 instead of <see cref="ThoughtRenderer.Lift"/>'s 2.5).</summary>
 	// [BIN:TPI-EXE:0x60b0a4 bubble height] the bubble's height is the word at 0x9CFB38 (6.0) when the umbrella flag is set, else 0x9CFB34 (2.5), added to the guest's height for the bubble's placement (call 0x40A722)
 	public const float BubbleLift = 6.0f;
@@ -102,13 +116,17 @@ public sealed class UmbrellaRenderer : Entity
 	/// <summary>The thought bubble's height above the guest: <see cref="BubbleLift"/> while the umbrella shows, else <see cref="ThoughtRenderer.Lift"/>.</summary>
 	public static float BubbleHeight( bool umbrellaShows ) => umbrellaShows ? BubbleLift : ThoughtRenderer.Lift;
 
+	/// <summary>The share of its distance to the eye an umbrella at <paramref name="depth"/> (engine units along the view direction) is pulled: <see cref="CameraPull"/>, but never more than <see cref="MaxPullUnits"/>.</summary>
+	public static float PullShare( float depth ) => depth > 0f ? MathF.Min( CameraPull, MaxPullUnits * ObjectPlacement.ModelScale / depth ) : 0f;
+
 	/// <summary>A point pulled the given share of its way to the eye along the sight line; a point on the eye's far side is not.</summary>
 	internal static SVector3 PullToEye( SVector3 point, SVector3 eye, SVector3 forward, float share ) =>
 		SVector3.Dot( point - eye, forward ) > 0f ? point + (eye - point) * share : point;
 
 	/// <summary>
 	/// The umbrella's hotspot (the handle's tip), the scale of its quad and its colour slot for a guest drawn as <paramref name="mount"/>, in the engine. The hand's point from the anchor table (pixels of the guest's frame:
-	/// converted with the frame's own scale, x negated when the frame is mirrored) is added to the guest's pulled hotspot at that pull's share, then the whole is pulled <see cref="CameraPull"/> further;
+	/// converted with the frame's own scale, x negated when the frame is mirrored) is added to the guest's pulled hotspot at that pull's share, then the whole is pulled further by <see cref="PullShare"/>
+	/// (<c>min(0.1, 1.5 * ModelScale / depth)</c>);
 	/// a set without a table is held straight above the guest's position at <see cref="UmbrellaAnchors.FallbackLift"/>.
 	/// </summary>
 	internal (SVector3 Hotspot, float Scale) Place( Guest guest, in GuestMount mount, SVector3 right, SVector3 up, SVector3 forward, SVector3 eye )
@@ -124,8 +142,9 @@ public sealed class UmbrellaRenderer : Entity
 			var above = GuestRenderer.CellToEngine( field, guest.DrawX, guest.DrawY, UmbrellaAnchors.FallbackLift );
 			hand = mount.Share < 1f && SVector3.Dot( above - eye, forward ) > 0f ? eye + (above - eye) * mount.Share : above;
 		}
-		var pulled = PullToEye( hand, eye, forward, CameraPull );
-		return (pulled, SVector3.Dot( hand - eye, forward ) > 0f ? mount.Share * (1f - CameraPull) : mount.Share);
+		var share = PullShare( SVector3.Dot( hand - eye, forward ) );
+		var pulled = PullToEye( hand, eye, forward, share );
+		return (pulled, mount.Share * (1f - share) * SizeScale);
 	}
 
 	protected override void OnRender()

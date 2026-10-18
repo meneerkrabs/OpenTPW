@@ -6,7 +6,7 @@ namespace OpenTPW;
 /// <c>--frame-stats</c>: logs frame timing, garbage collections and allocation rate every few seconds, so
 /// render changes can be compared run against run (use <c>--no-vsync</c> to see frames above the display rate).
 /// </summary>
-internal sealed class FrameStats
+internal sealed class FrameStats : IDisposable
 {
 	private static readonly TimeSpan Interval = TimeSpan.FromSeconds( 5 );
 
@@ -43,6 +43,9 @@ internal sealed class FrameStats
 		Active = true;
 		(updateTicks, simulationTicks, renderTicks, overlayTicks, submitTicks, fenceTicks, totalTicks) = (0, 0, 0, 0, 0, 0, 0);
 	}
+
+	/// <summary>Switches the phase timers off.</summary>
+	public void Dispose() => Active = false;
 
 	/// <summary>Call once per presented frame.</summary>
 	public void FrameEnded()

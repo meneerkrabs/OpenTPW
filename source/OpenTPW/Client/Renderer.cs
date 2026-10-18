@@ -481,7 +481,11 @@ public partial class Renderer : IDisplaySettings
 	}
 
 	/// <summary>Ends a run started with <see cref="Start"/>.</summary>
-	public void Stop() => SaveDisplaySettings();
+	public void Stop()
+	{
+		FrameStats?.Dispose();
+		SaveDisplaySettings();
+	}
 
 	/// <summary>Saves the confirmed settings (a pending, unconfirmed change saves what it would revert to).</summary>
 	private void SaveDisplaySettings()

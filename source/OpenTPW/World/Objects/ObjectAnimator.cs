@@ -87,6 +87,8 @@ public sealed class ObjectAnimator
 	private int updateEffects;
 	/// <summary>True after an update that changed nothing: with no channel advancing, the next update would change nothing either, so <see cref="Advance"/> skips it.</summary>
 	private bool settled;
+	/// <summary>Test-only: runs the update on every <see cref="Advance"/> as before the settle skip existed, to compare the two.</summary>
+	internal bool DisableSettleSkip { get; set; }
 	private readonly Matrix4x4[] rest;
 	private readonly (NVector3 Scale, Quaternion Rotation, NVector3 Translation)[] restComponents;
 	private readonly Matrix4x4[] world;
@@ -471,7 +473,7 @@ public sealed class ObjectAnimator
 		// With every channel ended (or none) the pose is the one the last update made; the first update that finds nothing to change settles it, and the ticks after it skip the walk over every node
 		if ( advanced )
 			Update();
-		else if ( !settled )
+		else if ( !settled || DisableSettleSkip )
 		{
 			var effects = updateEffects;
 			Update();

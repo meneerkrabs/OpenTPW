@@ -51,12 +51,8 @@ public sealed class Sky : IDisposable
 	private readonly uint[] colourGrid = new uint[GridSize * GridSize];
 	private readonly float[] offsetU = new float[MaximumLayers];
 	private readonly float[] offsetV = new float[MaximumLayers];
-	private readonly List<Vertex> vertices = new();
 	/// <summary>The sky's vertices for the layer count last drawn (the layers' cloud triangles, then the cylinder's): positions and tints are fixed, so a frame only rewrites the clouds' texture coordinates.</summary>
-	private Vertex[] staged = Array.Empty<Vertex>();
-	private int stagedLayers = -1, stagedClouds;
-	private readonly int[] cloudCorners;
-	private readonly SVector2[] layerTexCoords = new SVector2[GridSize * GridSize];
+	private readonly Staging staging;
 	private static readonly uint VertexStride = Vertex.SizeInBytes;
 	private readonly (int V0, int V1, int V2)[] cloudTriangles;
 	private readonly (int V0, int V1, int V2)[] cylinderTriangles;
@@ -80,7 +76,7 @@ public sealed class Sky : IDisposable
 				cylinderPositions[column * CylinderRings + ring] = ToEngine( CylinderPosition( column, ring ) );
 		cloudTriangles = CloudTriangles().ToArray();
 		cylinderTriangles = CylinderTriangles().ToArray();
-		cloudCorners = cloudTriangles.SelectMany( triangle => new[] { triangle.V0, triangle.V1, triangle.V2 } ).ToArray();
+		staging = new Staging( cloudPositions, colourGrid, cloudTriangles, cylinderPositions, cylinderTriangles );
 
 		const MaterialFlags flags = MaterialFlags.DisableDepth | MaterialFlags.DoubleSided;
 		cloudMaterial = new Material<ObjectUniformBuffer>( "content/shaders/particle.shader", flags );
@@ -293,22 +289,64 @@ public sealed class Sky : IDisposable
 
 	private static SVector3 Tint( byte red, byte green, byte blue, byte alpha ) => new( red, green, blue + 256f * alpha );
 
-	private SVector3 CloudTint( int layer, int xi, int zi )
+	private static SVector3 CloudTint( uint[] colourGrid, int layer, int xi, int zi )
 	{
 		// [BIN:TPW-EXE:0x5863C0 cloud colour] the vertex colour is the layer's 0xCFFFFFFF - 0x38000000 * layer ANDed with the grid colour at index column + 16 * row
 		var colour = colourGrid[zi * GridSize + xi];
 		return Tint( (byte)(colour >> 16), (byte)(colour >> 8), (byte)colour, LayerAlpha( layer ) );
 	}
 
-	private void AddCloud( int layer, int index )
+	/// <summary>
+	/// Every vertex of <paramref name="layers"/> cloud layers (each layer's triangles in order) followed by the cylinder's, built from scratch with the given scroll offsets;
+	/// <paramref name="clouds"/> is the number of cloud vertices.
+	/// </summary>
+	internal static Vertex[] BuildVertices( int layers, SVector3[] cloudPositions, uint[] colourGrid, (int V0, int V1, int V2)[] cloudTriangles, SVector3[] cylinderPositions,
+		(int V0, int V1, int V2)[] cylinderTriangles, float[] offsetU, float[] offsetV, out int clouds )
 	{
-		var xi = index / GridSize;
-		var zi = index % GridSize;
-		vertices.Add( new Vertex( cloudPositions[index], CloudTint( layer, xi, zi ), Upload( LayerTexCoord( layer, xi, zi, offsetU[layer], offsetV[layer] ) ) ) );
+		var vertices = new List<Vertex>();
+		void AddCloud( int layer, int index )
+		{
+			var xi = index / GridSize;
+			var zi = index % GridSize;
+			vertices.Add( new Vertex( cloudPositions[index], CloudTint( colourGrid, layer, xi, zi ), Upload( LayerTexCoord( layer, xi, zi, offsetU[layer], offsetV[layer] ) ) ) );
+		}
+		void AddCylinder( int index, SVector3 tint ) =>
+			vertices.Add( new Vertex( cylinderPositions[index], tint, Upload( CylinderTexCoord( index / CylinderRings, index % CylinderRings ) ) ) );
+		for ( var layer = 0; layer < layers; layer++ )
+		{
+			foreach ( var (v0, v1, v2) in cloudTriangles )
+			{
+				AddCloud( layer, v0 );
+				AddCloud( layer, v1 );
+				AddCloud( layer, v2 );
+			}
+		}
+		clouds = vertices.Count;
+		var white = Tint( 255, 255, 255, 255 );
+		foreach ( var (v0, v1, v2) in cylinderTriangles )
+		{
+			AddCylinder( v0, white );
+			AddCylinder( v1, white );
+			AddCylinder( v2, white );
+		}
+		return vertices.ToArray();
 	}
 
-	private void AddCylinder( int index, SVector3 tint ) =>
-		vertices.Add( new Vertex( cylinderPositions[index], tint, Upload( CylinderTexCoord( index / CylinderRings, index % CylinderRings ) ) ) );
+	/// <summary>Rewrites the clouds' texture coordinates of vertices built by <see cref="BuildVertices"/>: one coordinate per grid vertex and layer, then every triangle corner takes its vertex's.</summary>
+	internal static void ScrollTexCoords( Vertex[] staged, int layers, int[] cloudCorners, float[] offsetU, float[] offsetV, SVector2[] scratch )
+	{
+		for ( var layer = 0; layer < layers; layer++ )
+		{
+			for ( var index = 0; index < scratch.Length; index++ )
+				scratch[index] = Upload( LayerTexCoord( layer, index / GridSize, index % GridSize, offsetU[layer], offsetV[layer] ) );
+			var first = layer * cloudCorners.Length;
+			for ( var corner = 0; corner < cloudCorners.Length; corner++ )
+				staged[first + corner].TexCoords = scratch[cloudCorners[corner]];
+		}
+	}
+
+	/// <summary>The triangle corners of the cloud grid in drawing order, as <see cref="ScrollTexCoords"/> reads them.</summary>
+	internal static int[] CornersOf( (int V0, int V1, int V2)[] triangles ) => triangles.SelectMany( triangle => new[] { triangle.V0, triangle.V1, triangle.V2 } ).ToArray();
 
 	/// <summary>
 	/// The coordinate for OpenTPW's decoded image, which is top-down: the sky's TGA files are stored bottom-up and the engine addresses them in file order
@@ -339,18 +377,7 @@ public sealed class Sky : IDisposable
 			return;
 		Advance( frameSeconds );
 
-		if ( stagedLayers != layers )
-			Stage( layers );
-		// the texture coordinate of each grid vertex once per layer (a vertex is a corner of up to six triangles), then every triangle corner takes its vertex's
-		for ( var layer = 0; layer < layers; layer++ )
-		{
-			for ( var index = 0; index < layerTexCoords.Length; index++ )
-				layerTexCoords[index] = Upload( LayerTexCoord( layer, index / GridSize, index % GridSize, offsetU[layer], offsetV[layer] ) );
-			var first = layer * cloudCorners.Length;
-			for ( var corner = 0; corner < cloudCorners.Length; corner++ )
-				staged[first + corner].TexCoords = layerTexCoords[cloudCorners[corner]];
-		}
-		var cloudCount = stagedClouds;
+		var staged = staging.Update( layers, offsetU, offsetV, out var cloudCount );
 
 		var size = (uint)staged.Length * VertexStride;
 		if ( vertexBuffer == null || vertexBuffer.SizeInBytes < size )
@@ -381,30 +408,26 @@ public sealed class Sky : IDisposable
 		DrawRange( commandList, cylinderMaterial, cloudCount, staged.Length - cloudCount );
 	}
 
-	/// <summary>Builds the vertices of <paramref name="layers"/> cloud layers and the cylinder; the clouds' texture coordinates are written by each frame's draw.</summary>
-	private void Stage( int layers )
+	/// <summary>The sky's vertices for the layer count last drawn: built once per layer count, then only the clouds' texture coordinates are rewritten per frame.</summary>
+	internal sealed class Staging( SVector3[] cloudPositions, uint[] colourGrid, (int V0, int V1, int V2)[] cloudTriangles, SVector3[] cylinderPositions, (int V0, int V1, int V2)[] cylinderTriangles )
 	{
-		vertices.Clear();
-		for ( var layer = 0; layer < layers; layer++ )
+		private readonly int[] cloudCorners = CornersOf( cloudTriangles );
+		private readonly SVector2[] scratch = new SVector2[GridSize * GridSize];
+		private Vertex[] staged = Array.Empty<Vertex>();
+		private int stagedLayers = -1, stagedClouds;
+
+		/// <summary>The vertices for <paramref name="layers"/> layers scrolled to the offsets, and how many of them are clouds.</summary>
+		public Vertex[] Update( int layers, float[] offsetU, float[] offsetV, out int clouds )
 		{
-			foreach ( var (v0, v1, v2) in cloudTriangles )
+			if ( stagedLayers != layers )
 			{
-				AddCloud( layer, v0 );
-				AddCloud( layer, v1 );
-				AddCloud( layer, v2 );
+				staged = BuildVertices( layers, cloudPositions, colourGrid, cloudTriangles, cylinderPositions, cylinderTriangles, offsetU, offsetV, out stagedClouds );
+				stagedLayers = layers;
 			}
+			ScrollTexCoords( staged, layers, cloudCorners, offsetU, offsetV, scratch );
+			clouds = stagedClouds;
+			return staged;
 		}
-		stagedClouds = vertices.Count;
-		var white = Tint( 255, 255, 255, 255 );
-		foreach ( var (v0, v1, v2) in cylinderTriangles )
-		{
-			AddCylinder( v0, white );
-			AddCylinder( v1, white );
-			AddCylinder( v2, white );
-		}
-		staged = vertices.ToArray();
-		vertices.Clear();
-		stagedLayers = layers;
 	}
 
 	private static void DrawRange( CommandList commandList, Material<ObjectUniformBuffer> material, int first, int count )

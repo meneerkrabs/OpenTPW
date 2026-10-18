@@ -82,11 +82,96 @@ public class ObjectAnimatorSettleTests
 		for ( var step = 0; step < 300; step++ )
 			animator.Advance( Tick );
 		Assert.IsFalse( animator.IsPlaying );
+		// the test is only meaningful if each clip alone leaves the opposite flag on the same node
+		var longAlone = new ObjectAnimator( Geometry() );
+		longAlone.Play( 0, Vertex( 30 ), "long", loop: false );
+		var shortAlone = new ObjectAnimator( Geometry() );
+		shortAlone.Play( 0, Vertex( 5 ), "short", loop: false );
+		for ( var step = 0; step < 300; step++ )
+		{
+			longAlone.Advance( Tick );
+			shortAlone.Advance( Tick );
+		}
+		Assert.AreNotEqual( longAlone.GetNodeStateBit( 0 ), shortAlone.GetNodeStateBit( 0 ), "the two clips end with opposite flags on node 0" );
 		var hidden = animator.HiddenVersion;
 		var pose = animator.PoseVersion;
 		animator.Advance( Tick );
 		animator.Advance( Tick );
 		Assert.AreNotEqual( pose, animator.PoseVersion, "the update still runs" );
 		Assert.AreNotEqual( hidden, animator.HiddenVersion, "and still toggles the bit it always toggled" );
+	}
+
+	/// <summary>Seeded random drives of two animators, one with the settle skip and one without, agree after every step in everything an update can touch.</summary>
+	[TestMethod]
+	[DataRow( 1 )]
+	[DataRow( 2 )]
+	[DataRow( 3 )]
+	[DataRow( 4 )]
+	[DataRow( 5 )]
+	[DataRow( 6 )]
+	public void TheSettleSkipChangesNothingUnderRandomDrives( int seed )
+	{
+		var clips = new System.Collections.Generic.Dictionary<string, ModelAnimation>
+		{
+			["rigid"] = Rigid(), ["vertex30"] = Vertex( 30 ), ["vertex5"] = Vertex( 5 ),
+			["uv"] = Clip( Md2VertexAnimationTests.CreateUvAnimation() ), ["rotation"] = Clip( Md2AnimationTests.CreateRotationOnlyAnimation() ),
+		};
+		var names = clips.Keys.ToArray();
+		var model = Geometry();
+		var fast = new ObjectAnimator( model );
+		var slow = new ObjectAnimator( model ) { DisableSettleSkip = true };
+		var random = new System.Random( seed );
+		ResolvedAnimatorClip? Resolve( AnimatorClipIdentity identity ) => clips.TryGetValue( identity.Name, out var clip ) ? new ResolvedAnimatorClip( identity.Name, clip ) : null;
+
+		for ( var step = 0; step < 600; step++ )
+		{
+			var operation = random.Next( 16 );
+			var channel = random.Next( 3 );
+			var name = names[random.Next( names.Length )];
+			var loop = random.Next( 2 ) == 0;
+			var stopAll = random.Next( 8 ) == 0;
+			var seconds = operation == 7 ? 0 : random.Next( 1, 4 ) * Tick * 3;
+			foreach ( var animator in new[] { fast, slow } )
+			{
+				switch ( operation )
+				{
+					case 0: animator.Play( channel, clips[name], name, loop ); break;
+					case 1: animator.Trigger( channel, clips[name], name, 5 + channel, 0, loop, defer: true ); break;
+					case 2: animator.Stop( channel ); break;
+					case 3: animator.Flush( channel ); break;
+					case 4 when stopAll: animator.StopAll(); break;
+					case 5: animator.RestoreSnapshot( animator.CaptureSnapshot(), Resolve ); break;
+					case 6:
+						for ( var slot = 0; slot < model.Textures.Count; slot++ )
+							if ( model.Textures[slot].FrameNames.Count > 1 )
+								animator.SetTextureFrameAvailability( slot, Enumerable.Range( 0, model.Textures[slot].FrameNames.Count ).Select( frame => frame % 2 == 0 ).ToArray() );
+						break;
+					default: animator.Advance( seconds ); break;
+				}
+			}
+			AssertSame( fast, slow, model, $"seed {seed}, step {step}, operation {operation}" );
+		}
+		Assert.IsTrue( fast.PoseVersion <= slow.PoseVersion, "the skip never updates more often" );
+	}
+
+	private static void AssertSame( ObjectAnimator a, ObjectAnimator b, ModelFile model, string where )
+	{
+		CollectionAssert.AreEqual( a.NodeTransforms.ToArray(), b.NodeTransforms.ToArray(), where );
+		for ( var node = 0; node < model.Nodes.Count; node++ )
+			Assert.AreEqual( a.GetNodeStateBit( node ), b.GetNodeStateBit( node ), $"{where}, node {node}" );
+		for ( var slot = 0; slot < model.Textures.Count; slot++ )
+			Assert.AreEqual( a.GetTextureFrame( slot ), b.GetTextureFrame( slot ), $"{where}, slot {slot}" );
+		for ( var mesh = 0; mesh < model.Meshes.Count; mesh++ )
+		{
+			Assert.AreEqual( a.GetVertexVersion( mesh ), b.GetVertexVersion( mesh ), $"{where}, mesh {mesh} version" );
+			CollectionAssert.AreEqual( a.GetVertexPositions( mesh )?.ToArray(), b.GetVertexPositions( mesh )?.ToArray(), $"{where}, mesh {mesh} positions" );
+			CollectionAssert.AreEqual( a.GetTexCoords( mesh )?.ToArray(), b.GetTexCoords( mesh )?.ToArray(), $"{where}, mesh {mesh} texture coordinates" );
+		}
+		Assert.AreEqual( a.HiddenVersion, b.HiddenVersion, where );
+		Assert.AreEqual( a.TextureFrameVersion, b.TextureFrameVersion, where );
+		var (hashA, hashB) = (new StateHasher(), new StateHasher());
+		a.AddCanonicalState( hashA );
+		b.AddCanonicalState( hashB );
+		Assert.AreEqual( hashA.Value, hashB.Value, where );
 	}
 }

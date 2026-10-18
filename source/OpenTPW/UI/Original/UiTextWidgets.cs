@@ -115,6 +115,17 @@ public interface IUiDragTarget
 	void DragEnd( UiCanvas canvas, System.Numerics.Vector2 point ) { }
 }
 
+/// <summary>
+/// Opts into a qualified completed click delivered to the original press recipient and point, even if the pointer has left it.
+/// The screen calls this after DragEnd instead of its default click/activation path. Disabled, hidden, removed and NotClick targets are excluded.
+/// </summary>
+public interface IUiCapturedClickTarget
+{
+	void ClickCaptured( UiCanvas canvas, System.Numerics.Vector2 pressPoint );
+	/// <summary>The host lost, removed, hid or disabled this press before its qualified click.</summary>
+	void CancelCapturedClick() { }
+}
+
 /// <summary>A drag target that wants to know where the press landed, before the first <see cref="IUiDragTarget.DragTo"/> of that press.</summary>
 public interface IUiDragStart
 {

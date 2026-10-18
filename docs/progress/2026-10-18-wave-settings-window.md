@@ -6,7 +6,7 @@ settings window of its own (`ParkHud.OpenWaveSettings`, `[EXT:pools-waves]`). Th
 opens the window. It is OpenTPW's own size (`UiDialogs.CenteredWindow`) in the original's `w_dialog` frame, with the original's `b_ltoggle` toggles (they play `cat_ui` 0xBD, as the original's
 radio groups do): waves on or off, the height (low, medium, high) and the interval (short, regular, long: a rest of 40, 100 or 200 turns), with the machine's current settings selected. The choices
 edit the window's copy; the tick writes them to the machine through the new `Level.SetPoolWaves`, and the cross, Escape or a right click leave the machine as it was. The window does not open in a
-read-only visit or over another window. Its eight new texts are in all eleven languages. `Level.CyclePoolWaves` keeps stepping the presets for scripted use, now on top of
+read-only visit, in the chat mode or over another window. Its eight new texts are in all eleven languages. `Level.CyclePoolWaves` keeps stepping the presets for scripted use, now on top of
 `Level.PoolWavesOf`/`SetPoolWaves`. The settings live where they did (the flags of the machine's access cell), so saves, the validator and every determinism pin are unchanged.
 
 Checked in the game with silent Jungle interface captures (`--debug-pool 0,0,8,6 --debug-attractions wavemachine --debug-pool-lead 190 --debug-hud waves`, and `waves:select` for the object

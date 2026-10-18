@@ -172,8 +172,8 @@ public sealed partial class ParkHud
 
 	private bool IsWaveMachine( OriginalObject? item ) => item is { IsDeleted: false } && level.Objects.Objects.Contains( item ) && level.PoolWavesOf( item ) is not null;
 
-	/// <summary>The settings window may change a machine: not in a read-only visit, not while another window covers the park.</summary>
-	private bool WaveSettingsAllowed => !level.IsReadOnlyVisit && Stack.Screens.Count == 1;
+	/// <summary>The settings window may change a machine: not in a read-only visit, not in the chat mode (which has no object window), not while another window covers the park.</summary>
+	private bool WaveSettingsAllowed => !level.IsReadOnlyVisit && !ChatMode && Stack.Screens.Count == 1;
 
 	private void UpdateWaveSettingsButton()
 	{

@@ -295,11 +295,18 @@ public sealed class ChatHub
 	/// <summary>
 	/// Places <paramref name="session"/> in <paramref name="room"/>: the joiner sees the room's roster and where
 	/// everyone stands, everyone else sees the new roster (the original's "see players join and the list of players
-	/// in the session"), and the joiner's online buddies are told which park they entered.
+	/// in the session"), and the joiner's online buddies are told which park they entered. A join of the room the
+	/// player is already in (a retried join whose answer came late) only answers the roster: the player keeps their
+	/// place and nobody is told again.
 	/// </summary>
 	private void EnterRoom( ChatSession session, string room )
 	{
 		var left = session.Room;
+		if ( left == room )
+		{
+			Send( session, RoomEvent( room ) );
+			return;
+		}
 		session.Room = room;
 		session.Position = null;
 		Send( session, RoomEvent( room ) );

@@ -179,6 +179,104 @@ public class RainMoodTests
 	}
 
 	[TestMethod]
+	public void OnlyAnUmbrellaThatWasAlreadyOpenWhenTheStepBeganSoftensTheLoss()
+	{
+		// [BIN:TPI-EXE:0x611334] the switch on the state: state 4 is the modifier (0x6111BE), state 1 sets 4 (0x6111E3) and a due 3 calls 0x402d8d; none of those reaches the modifier in the same call
+		float Loss( int umbrellaState )
+		{
+			var rain = new Rig( true );
+			var dry = new Rig( false );
+			var a = Aged( rain, 0.1 );
+			var b = Aged( dry, 0.1 );
+			rain.Simulation.SetUmbrellaStateForTest( a, umbrellaState );
+			dry.Simulation.SetUmbrellaStateForTest( b, umbrellaState );
+			rain.Weather = dry.Weather = UmbrellaRules.WeatherRain;
+			rain.RunTurns( 4 );
+			dry.RunTurns( 4 );
+			Assert.AreEqual( b.UmbrellaState, a.UmbrellaState, $"the umbrella step is the same with the mood rule on, from state {umbrellaState}" );
+			return b.Happiness - a.Happiness;
+		}
+		Assert.AreEqual( 0f, Loss( UmbrellaRules.StateOpen ), 1e-4, "already open: no loss" );
+		Assert.AreEqual( 1f, Loss( UmbrellaRules.StateClosing ), 1e-4, "state 1 becomes 4 in the umbrella step, after the modifier's case: the guest still loses 1" );
+		Assert.AreEqual( 1f, Loss( UmbrellaRules.StateOpening ), 1e-4, "a pending open that is due opens in the step, and the guest still loses 1" );
+		Assert.AreEqual( 1f, Loss( UmbrellaRules.StateClosed ), 1e-4, "closed: loses 1" );
+	}
+
+	[TestMethod]
+	public void AnImportedGuestWithoutATimeInTheParkCountsItsRainMoodAgeFromTheLoad()
+	{
+		// [EXT:rain-mood-imported-age] user-approved 2026-10-18 ("Tellen vanaf het laden")
+		var rig = new Rig( true );
+		var guest = rig.Simulation.SpawnInPark( 6, 5 );
+		(guest.Happiness, guest.Thirst, guest.Hunger) = (70f, 40f, 40f);
+		guest.TimeInParkSeconds = null;
+		guest.RainMoodAgeStartTurn = rig.Simulation.ParkTurn;
+		rig.Weather = UmbrellaRules.WeatherRain;
+		rig.RunTurns( 8 );
+		Assert.AreEqual( 1L, guest.RainMoodDay, "the load day counts as day 0 and applies once" );
+		var before = guest.Happiness;
+		rig.RunTurns( 40 );
+		Assert.AreEqual( 1L, guest.RainMoodDay, "days 1 to 3 after the load do not qualify" );
+		Assert.AreEqual( before, guest.Happiness, 1e-3, "and cost nothing, the umbrella-less guest's needs step aside" );
+		rig.RunTurns( 60 );
+		Assert.AreEqual( 5L, guest.RainMoodDay, "four days after the load the rule applies again, as it does to any guest" );
+		guest.RainMoodAgeStartTurn = null;
+		Assert.AreEqual( 0L, rig.Simulation.RainMoodAgeTurnsOf( guest ), "a guest with neither a time nor a stamp counts as new" );
+	}
+
+	[TestMethod]
+	public void TheLoadTurnOfAnImportedGuestIsRecordedOnlyWithTheExtensionOnAndRoundTripsThroughASave()
+	{
+		static Guest Import( bool rainMood, uint arrivalDate = 9000 )
+		{
+			var rig = new Rig( rainMood );
+			var body = SaveTestPayloads.Guest( new SaveTestPayloads.GuestFields { Position = (6 * 256 + 128, 5 * 256 + 128), State = 7, PersonType = 0, ArrivalDate = arrivalDate } );
+			var payload = new byte[8 + body.Length];
+			body.CopyTo( payload, 8 );
+			var saved = SaveGuest.Read( payload, new SaveThing( 30, SaveThingModel.Guest, 0, 0, 8, body.Length ) );
+			rig.Simulation.ImportOriginal( new[] { saved }, 755, _ => 0, _ => 0 );
+			return rig.Simulation.Guests.Single();
+		}
+		var on = Import( true );
+		Assert.IsNull( on.TimeInParkSeconds, "a stamp after the save's own turn is no date: no known time in the park" );
+		Assert.AreEqual( 0L, on.RainMoodAgeStartTurn, "the park turn of the load" );
+		Assert.IsNull( Import( false ).RainMoodAgeStartTurn, "extension off: nothing recorded, saves keep their bytes" );
+		Assert.IsNull( Import( true, 100 ).RainMoodAgeStartTurn, "a guest with a known arrival counts from it, as before" );
+		var rig = new Rig( true );
+		var guest = rig.Simulation.SpawnInPark( 6, 5 );
+		guest.TimeInParkSeconds = null;
+		guest.RainMoodAgeStartTurn = 12;
+		var snapshot = rig.Simulation.CaptureSnapshot();
+		Assert.IsTrue( rig.Simulation.ValidateSnapshot( snapshot ).IsValid );
+		StringAssert.Contains( JsonSerializer.Serialize( snapshot.Guests.Single() ), "\"RainMoodAgeStartTurn\":12" );
+		Assert.IsFalse( JsonSerializer.Serialize( snapshot.Guests.Single() with { RainMoodAgeStartTurn = null } ).Contains( "RainMoodAgeStartTurn", StringComparison.Ordinal ), "a guest without it has no such field" );
+		var restored = new Rig( true );
+		restored.Simulation.RestoreSnapshot( snapshot );
+		Assert.AreEqual( 12L, restored.Simulation.Guests.Single().RainMoodAgeStartTurn );
+		Assert.AreEqual( JsonSerializer.Serialize( snapshot ), JsonSerializer.Serialize( restored.Simulation.CaptureSnapshot() ) );
+		Assert.IsFalse( rig.Simulation.ValidateSnapshot( snapshot with { Guests = snapshot.Guests.Select( g => g with { RainMoodAgeStartTurn = -1 } ).ToArray() } ).IsValid, "negative" );
+		Assert.IsFalse( rig.Simulation.ValidateSnapshot( snapshot with { Guests = snapshot.Guests.Select( g => g with { TimeInParkSeconds = 5 } ).ToArray() } ).IsValid, "a stamp with a known time is refused" );
+		ulong Hash( long? start )
+		{
+			var other = new Rig( true, 9 );
+			var one = other.Simulation.SpawnInPark( 6, 5 );
+			one.TimeInParkSeconds = null;
+			one.RainMoodAgeStartTurn = start;
+			return other.Simulation.ComputeStateHash();
+		}
+		Assert.AreNotEqual( Hash( null ), Hash( 0 ), "a set stamp counts" );
+		Assert.AreNotEqual( Hash( 0 ), Hash( 4 ) );
+	}
+
+	[TestMethod]
+	public void TheLevelLeavesTheRuleOffByDefaultAndHandsTheShippedRowsWhileTheGateIsOn()
+	{
+		Assert.IsNull( Level.RainMoodFor( FeatureGates.RainMood ), "the extension is off in a default run: the guests never run the rule" );
+		Assert.IsNull( Level.RainMoodFor( false ) );
+		Assert.AreEqual( RainMoodSettings.Default, Level.RainMoodFor( true ) );
+	}
+
+	[TestMethod]
 	public void GuestsInsideAnAttractionAreAffectedToo()
 	{
 		var rule = new Rig( true );
@@ -312,12 +410,25 @@ public class RainMoodTests
 			try
 			{
 				GameEditions.Select( GameEdition.ThemeParkInc );
-				Assert.IsFalse( FeatureGates.RainMood, "Theme Park Inc has the original rule itself" );
+				Assert.IsFalse( FeatureGates.RainMood, "the extension is not offered in a Theme Park Inc run (OpenTPW does not implement the rule there)" );
 			}
 			finally
 			{
 				GameEditions.Select( edition );
 			}
+			// [EXT:rain-mood-extension] a Theme Park Inc run with the extension switched on has the gate off, so it records nothing and refuses nothing for it
+			try
+			{
+				GameEditions.Select( GameEdition.ThemeParkInc );
+				Assert.IsFalse( ( ParkResumeMods.Capture( OpenTpwExtensions.Active, ParkResumeMods.InUse( null, false, false ) ) ?? Array.Empty<ParkModRecord>() ).Any( mod => mod.Id == extension.Id ), "not recorded while the edition gate is off" );
+				Assert.IsNull( ParkSharing.ModsRefusal(), "and no export refusal on its account" );
+				Assert.AreEqual( 0, ParkResumeMods.Unmet( null, OpenTpwExtensions.Active ).Count, "nor an unmet requirement" );
+			}
+			finally
+			{
+				GameEditions.Select( edition );
+			}
+			Assert.IsNotNull( ParkSharing.ModsRefusal(), "in a Theme Park World run the extension is a simulation change an export refuses" );
 		}
 		using ( OpenTpwExtensions.Use( Set( false, GameEdition.ThemeParkWorld ) ) )
 			Assert.IsFalse( ( ParkResumeMods.Capture( OpenTpwExtensions.Active, ParkResumeMods.InUse( null, false, false ) ) ?? Array.Empty<ParkModRecord>() ).Any( mod => mod.Id == extension.Id ) );

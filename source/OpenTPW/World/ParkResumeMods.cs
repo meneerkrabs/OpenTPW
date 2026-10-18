@@ -30,13 +30,21 @@ internal static class ParkResumeMods
 	public static IReadOnlySet<string> UsedOnlyExtensionIds { get; } = new HashSet<string>( StringComparer.Ordinal ) { OfficialExtensions.Pools.Id, OfficialExtensions.Umbrellas.Id };
 
 	/// <summary>
+	/// The simulation-changing mods of <paramref name="active"/> that a save or an export counts: all of them, except that <c>opentpw.rain-mood</c> is left out in a Theme Park Inc run, where its edition gate is off
+	/// (<see cref="FeatureGates.RainMood"/>) and it changes nothing, so recording it would only refuse a load or an export for no reason.
+	/// </summary>
+	// [EXT:rain-mood-extension] the extension is not offered in a Theme Park Inc run, so an enabled flag there must not leave a trace in what is recorded
+	public static IEnumerable<SimulationMod> RecordableMods( ModSet active ) =>
+		active.SimulationMods.Where( mod => mod.Id != OfficialExtensions.RainMood.Id || !GameEditions.IsThemeParkInc );
+
+	/// <summary>
 	/// The records of the simulation-changing mods in <paramref name="active"/> in load order, or null when it has none. A used-only extension
 	/// (<see cref="UsedOnlyExtensionIds"/>) is left out unless its id is in <paramref name="inUse"/>.
 	/// </summary>
 	public static IReadOnlyList<ParkModRecord>? Capture( ModSet active, IReadOnlySet<string>? inUse = null )
 	{
 		ArgumentNullException.ThrowIfNull( active );
-		var recorded = active.SimulationMods.Where( mod => !UsedOnlyExtensionIds.Contains( mod.Id ) || inUse?.Contains( mod.Id ) == true ).ToArray();
+		var recorded = RecordableMods( active ).Where( mod => !UsedOnlyExtensionIds.Contains( mod.Id ) || inUse?.Contains( mod.Id ) == true ).ToArray();
 		if ( recorded.Length == 0 )
 			return null;
 		return recorded.Select( mod => new ParkModRecord( mod.Id, mod.Version.ToString(), mod.ContentSha256 ) ).ToArray();
@@ -136,7 +144,7 @@ internal static class ParkResumeMods
 	{
 		ArgumentNullException.ThrowIfNull( active );
 		var reasons = new List<string>();
-		var current = active.SimulationMods.ToDictionary( mod => mod.Id, StringComparer.Ordinal );
+		var current = RecordableMods( active ).ToDictionary( mod => mod.Id, StringComparer.Ordinal );
 		var recordedIds = new HashSet<string>( StringComparer.Ordinal );
 		foreach ( var record in saved ?? Array.Empty<ParkModRecord>() )
 		{
@@ -153,10 +161,10 @@ internal static class ParkResumeMods
 				reasons.Add( $"needs {record.Id} {record.Version} with the content it was saved with (its files changed)" );
 		}
 		// a used-only extension that is on but not recorded is fine: the save has no use of it (a save that does use it must record it: ParkResumeSaveFile.ValidateShape refuses pool cells without the record)
-		foreach ( var mod in active.SimulationMods )
+		foreach ( var mod in RecordableMods( active ) )
 			if ( !recordedIds.Contains( mod.Id ) && !UsedOnlyExtensionIds.Contains( mod.Id ) )
 				reasons.Add( $"was saved without {mod.Id} {mod.Version}, which changes the simulation; turn it off to load this park" );
-		var expectedOrder = active.SimulationMods.Where( mod => !UsedOnlyExtensionIds.Contains( mod.Id ) || recordedIds.Contains( mod.Id ) ).Select( mod => mod.Id );
+		var expectedOrder = RecordableMods( active ).Where( mod => !UsedOnlyExtensionIds.Contains( mod.Id ) || recordedIds.Contains( mod.Id ) ).Select( mod => mod.Id );
 		if ( reasons.Count == 0 && saved != null && !saved.Select( record => record.Id ).SequenceEqual( expectedOrder, StringComparer.Ordinal ) )
 			reasons.Add( $"needs its mods in the order {string.Join( ", ", saved.Select( record => record.Id ) )}" );
 		return reasons;
@@ -180,7 +188,7 @@ internal static class ParkResumeMods
 		ArgumentNullException.ThrowIfNull( active );
 		if ( saved == null )
 			return null;
-		var current = active.SimulationMods.ToDictionary( mod => mod.Id, StringComparer.Ordinal );
+		var current = RecordableMods( active ).ToDictionary( mod => mod.Id, StringComparer.Ordinal );
 		var needed = saved.Where( record => !current.TryGetValue( record.Id, out var mod ) || mod.Version.ToString() != record.Version || mod.ContentSha256 != record.ContentSha256 )
 			.Select( record => $"{record.Id} {record.Version}" ).ToList();
 		return needed.Count == 0 ? null : string.Join( ", ", needed );

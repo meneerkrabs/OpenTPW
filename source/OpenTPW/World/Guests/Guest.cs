@@ -193,6 +193,11 @@ public sealed class Guest
 	/// so the extension keeps its own to apply the rule once per qualifying day.
 	/// </summary>
 	public long RainMoodDay { get; internal set; }
+	/// <summary>
+	/// [EXT:rain-mood-imported-age] The park turn an imported original guest without a known time in the park was loaded at, while the rain mood extension is on; its age for the rain mood's day gate counts from it. Null for every
+	/// other guest (they have their time in the park) and in every park without the extension.
+	/// </summary>
+	public long? RainMoodAgeStartTurn { get; internal set; }
 	/// <summary>Whether the guest wears a costume (guest <c>+0x24</c> == 2): a costume shop puts one on, and the next visit to one returns it.</summary>
 	public bool InCostume { get; internal set; }
 	public int Money { get; internal set; }

@@ -465,7 +465,7 @@ public class DeterminismTests
 	internal const ulong RainMoodFixedRunHash = 0x3697B9094432D152UL;
 
 	/// <summary>[EXT:rain-mood-extension] The pinned hash of <see cref="RunFixedParkInTheRainWithRainMood"/> with the brolly shop: the umbrellas and the rain mood rule both on (docs/DETERMINISM.md, "Rain mood").</summary>
-	internal const ulong RainMoodWithUmbrellasFixedRunHash = 0xF599E7E8B09C0FB7UL;
+	internal const ulong RainMoodWithUmbrellasFixedRunHash = 0xADEE2FA6AFC2ACE3UL;
 
 	[TestMethod]
 	public void FixedRunInTheRainWithRainMoodIsTheSameInEveryProcessAndMovesTheRun()
@@ -489,14 +489,14 @@ public class DeterminismTests
 	}
 
 	[TestMethod]
-	public void EveryExistingPinIsUnchangedWithTheRainMoodExtensionOffAndItsOwnPinNeedsItOn()
+	public void EveryExistingPinIsUnchangedWhateverTheRainMoodSwitchWhileTheSyntheticParksSetTheRuleByHand()
 	{
 		foreach ( var enabled in new[] { false, true } )
 		{
 			using var scope = OpenTPW.Mods.OpenTpwExtensions.Use( OpenTPW.Mods.ModSet.Resolve( Array.Empty<OpenTPW.Mods.DiscoveredMod>(),
 				new OpenTPW.Mods.ModSettings { Enabled = new Dictionary<string, bool> { [OpenTPW.Mods.OfficialExtensions.RainMood.Id] = enabled } }, null, GameEdition.ThemeParkWorld, OpenTPW.Mods.OfficialExtensions.All ) );
 			Assert.AreEqual( enabled, FeatureGates.RainMood );
-			// the synthetic parks set the rule on their guests by hand (Level does it from the gate), so the extension's switch alone changes none of these pins
+			// the synthetic parks set the rule on their guests by hand (Level does it from the gate: RainMoodTests.TheLevelLeavesTheRuleOffByDefault...), so this checks that the switch alone changes none of these pins, not the level's wiring
 			Assert.AreEqual( FixedRunHash, RunFixedPark(), $"the fixed run, rain mood {enabled}" );
 			Assert.AreEqual( PoolsChangingRoomFixedRunHash, RunFixedParkWithPoolsAndAChangingRoom().Hash, $"the changing room run, rain mood {enabled}" );
 			Assert.AreEqual( UmbrellasFixedRunHash, RunFixedParkWithABrollyShopInTheRain().Hash, $"the umbrellas run, rain mood {enabled}" );

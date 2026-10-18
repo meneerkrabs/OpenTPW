@@ -533,11 +533,13 @@ Review fixes of the same phase did not move `UmbrellasFixedRunHash` (still `0xE9
 ## Rain mood
 
 The `opentpw.rain-mood` extension ([UMBRELLAS.md](UMBRELLAS.md#the-rain-mood-rule-phase-u4), `[EXT:rain-mood-once-per-day]`) is off by default. The level hands the rule to the guest simulation only while the extension is on (`GuestSimulation.RainMood`, null otherwise), so with it off nothing runs, no draw is taken
-and no hash part is added: **every existing pin stands, including `UmbrellasFixedRunHash`** (`DeterminismTests.EveryExistingPinIsUnchangedWithTheRainMoodExtensionOffAndItsOwnPinNeedsItOn`, and `RainMoodTests.WithTheRuleOffTheWeatherChangesNothingAboutAGuestWithoutAnUmbrella`). The rule itself draws from no stream; it only moves happiness, thirst
+and no hash part is added: **every existing pin stands, including `UmbrellasFixedRunHash`** (`DeterminismTests.EveryExistingPinIsUnchangedWhateverTheRainMoodSwitchWhileTheSyntheticParksSetTheRuleByHand`, and `RainMoodTests.WithTheRuleOffTheWeatherChangesNothingAboutAGuestWithoutAnUmbrella`). The rule itself draws from no stream; it only moves happiness, thirst
 and hunger, which moves the decisions and so the run. The guest's last rule day (`Guest.RainMoodDay`) joins the canonical hash and the guests' own digest only once it is set, and the snapshot writes it only then.
 
 Two new pins cover the rule, on the same fixed synthetic run and the weather of the umbrellas pin (rain from the 20th to the 80th second and from the 140th to the 200th): `DeterminismTests.RainMoodFixedRunHash` = `0x3697B9094432D152` (the fixed run, no brolly shop, the rule on; 102 guests changed by it) and
-`DeterminismTests.RainMoodWithUmbrellasFixedRunHash` = `0xF599E7E8B09C0FB7` (the brolly shop of the umbrellas pin and the rule both on; 104 guests changed). A park saved mid-rain and resumed into a fresh instance continues with the same hash (`RainMoodTests.AParkSavedMidRainContinuesIdenticallyAfterAResume`).
+`DeterminismTests.RainMoodWithUmbrellasFixedRunHash` = `0xADEE2FA6AFC2ACE3` (the brolly shop of the umbrellas pin and the rule both on; 104 guests changed). A park saved mid-rain and resumed into a fresh instance continues with the same hash (`RainMoodTests.AParkSavedMidRainContinuesIdenticallyAfterAResume`).
+
+Review fix of the umbrella modifier: in Theme Park Inc only a guest who is already open (state 4) when the rule starts gets it (`TPI-EXE:0x611334`), not one whose umbrella the same step opens (1 to 4 at `0x6111E3`, a due 3 through `0x402d8d`). That moved `RainMoodWithUmbrellasFixedRunHash` from `0xF599E7E8B09C0FB7` to `0xADEE2FA6AFC2ACE3` (104 guests changed, as before); `RainMoodFixedRunHash` (no shop, so no umbrella) and every other pin stand. The optional `Guest.RainMoodAgeStartTurn` (the load turn of an imported guest without a time in the park, `[EXT:rain-mood-imported-age]`) joins the canonical hash and the guests' own digest only when set, which only an import with the extension on does, so no pin is affected.
 
 ## Tests
 

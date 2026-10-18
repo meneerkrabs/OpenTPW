@@ -95,6 +95,23 @@ public static partial class Program
 		return camera.Height;
 	}
 
+	/// <summary>
+	/// [EXT:umbrellas-tuning] Fills the park with up to <paramref name="crowd"/> extra guests, applies the weather quality (30 is rain) and gives every guest an open umbrella, or none: the umbrellas scenario of the harness
+	/// (<see cref="UmbrellaPerf"/>). Returns the result as JSON; the park is no longer a real run afterwards.
+	/// </summary>
+	[JSExport]
+	public static string PerfUmbrellas( int crowd, int quality, bool umbrellas )
+	{
+		if ( flow?.Level is not { Guests: { } guests } level )
+			return "null";
+		var result = UmbrellaPerf.Stage( guests, level.Weather, crowd, quality, umbrellas );
+		return new JsonObject { ["guests"] = result.Guests, ["spawned"] = result.Spawned, ["umbrellas"] = result.Umbrellas, ["rain"] = result.Rain, ["renderer"] = level.UmbrellaRenderer != null }.ToJsonString();
+	}
+
+	/// <summary>[EXT:umbrellas-tuning] Umbrellas drawn in the last frame (0 without the umbrella renderer).</summary>
+	[JSExport]
+	public static int PerfUmbrellasDrawn() => flow?.Level?.UmbrellaRenderer?.DrawnUmbrellas ?? 0;
+
 	/// <summary>The items of a buy-window category (Rides, Shops, Sideshows, Features) as JSON: archive name and shown name.</summary>
 	[JSExport]
 	public static string PerfBuyItems( string category )

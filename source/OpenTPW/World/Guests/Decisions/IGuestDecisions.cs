@@ -40,6 +40,12 @@ public interface IGuestDecisions
 	bool UsesPlanning => false;
 
 	/// <summary>
+	/// The planning rule itself is on (phase 5): the host then also looks at the rides for <see cref="GuestView.PlanTurns256"/>. A policy with only the meal or detour rule leaves it false and pays nothing for the scan.
+	/// Needs <see cref="UsesPlanning"/>. A policy that wraps another forwards it.
+	/// </summary>
+	bool UsesPlanHorizon => false;
+
+	/// <summary>
 	/// The queue patience rules look at the alternatives (additive, phase 4): -1 (the default) means the host does not look for this guest. Otherwise the host fills <see cref="AdmissionView.BestAlternativeWait256"/> at every
 	/// admission and <see cref="QueuePatienceView.BestAlternativeWait256"/> once the guest, not at the front of its queue, has waited at least this many park turns (the policy returns the turn its own give-up test starts, so the
 	/// scan of the park's rides is not paid before it can matter). Needs <see cref="UsesSpreading"/> (the estimates). A policy that wraps another forwards it.

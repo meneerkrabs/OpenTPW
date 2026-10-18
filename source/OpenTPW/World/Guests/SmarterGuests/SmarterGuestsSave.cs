@@ -78,6 +78,9 @@ internal static class SmarterGuestsSave
 			return recorded ? $"the save records {ExtensionId} but has no SmarterGuests section" : scriptMods ? "the save has a ScriptMods section but no SmarterGuests section" : null;
 		if ( !recorded && !scriptMods )
 			return $"the save has a SmarterGuests section but does not record {ExtensionId}";
+		// the extension's own state belongs to a save that records the extension: a script-mod-only park carries the identity half of the section and nothing else
+		if ( !recorded && (section.Stalls != null || section.Throughputs != null || section.Meals != null) )
+			return $"the SmarterGuests section holds extension state (stalls, throughputs or meals) but the save does not record {ExtensionId}";
 		return SectionProblem( section, guestIds, attractionIds );
 	}
 

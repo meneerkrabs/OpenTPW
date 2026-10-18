@@ -201,10 +201,24 @@ public static class SmarterGuestsRules
 	public const int FullNeedLevel = 100;
 
 	/// <summary>
-	/// What the detour adds to the need a service on the guest's way serves, in meter points: one step of the original's hunger and thirst match table, which reads the need in tens
-	/// (<see cref="AttractionScore.NeedMatch"/>). At a need of 60 and a shop effect of 40 that is about 1 to 2 points of score; below a need of 20 it is none.
+	/// What the detour adds to the hunger or thirst a service on the guest's way serves, in meter points: one step of the original's match table, which reads the need in tens (<see cref="AttractionScore.NeedMatch"/>).
+	/// At a need of 60 and a shop effect of 40 that is about 1 to 2 points of score; below a need of 20 it is none.
 	/// </summary>
 	public const int DetourStep = 10;
+
+	/// <summary>
+	/// What the detour adds to the toilet a relief object on the guest's way serves: one step of the relief curve, which the original indexes in fives (<c>(byte + 4) / 5</c>, <see cref="AttractionScore.ReliefMatch"/>), so 5 and not
+	/// the 10 of the tens table (which would move two entries of the curve, 60 to 100 at a need of 81).
+	/// </summary>
+	public const int ReliefDetourStep = 5;
+
+	/// <summary>
+	/// The cycle of an attraction for the plan, in 1/256 turn: its time per guest times its capacity, capped at a nominal cycle (<see cref="RideThroughputs.DefaultCycleTurns"/>). The product overestimates for a ride that
+	/// boards partly loaded or has stalled (the interval is then the gap per guest of a half-empty cycle, or the silence since the last boarding), and the plan is a lower bound on how long the guest is busy: it errs short, so
+	/// the rule acts only when even that leaves a need to cross. A ride whose real cycle is longer than the nominal one is therefore read short too.
+	/// </summary>
+	public static long CycleTurns256Of( long interval256, int capacity ) =>
+		Math.Min( interval256 * Math.Max( 1, capacity ), RideThroughputs.DefaultCycleTurns * 256L );
 
 	/// <summary>
 	/// How long after a meal the stomach is still full, in park turns: the 20 hunger points a typical meal takes off (the shipped Fries Shop's <c>HungerEffect</c>; burgers and restaurants 25, ice cream 15) grow back at the
@@ -219,7 +233,7 @@ public static class SmarterGuestsRules
 	/// </summary>
 	public const int MealGainLimit = 25;
 
-	/// <summary>How much a ride that is too much after a meal has its score divided by: 2, the weakest of the original's own history divisors (the used history's fourth slot divides by 2).</summary>
+	/// <summary>The divisor of a ride's excess over the choice floor when it is too much after a meal: 2, the weakest of the original's own history divisors (the used history's fourth slot divides by 2).</summary>
 	public const uint MealScoreDivisor = 2;
 
 	/// <summary>The attraction serves a need the planning looks at: a shop with a thirst or hunger effect, or a relief object.</summary>
@@ -231,7 +245,7 @@ public static class SmarterGuestsRules
 	/// <summary>A toilet meter that is at or below the toilet level now and above it then.</summary>
 	public static bool CrossesToiletLevel( float now, float then ) => MeterMath.Byte( now ) <= ToiletSeekLevel && MeterMath.Byte( then ) > ToiletSeekLevel;
 
-	/// <summary>The meters of <paramref name="guest"/> after <paramref name="turns"/> more park turns of the needs block's growth (<see cref="NeedsUpdate.GrowthSteps"/>), from the park turn <paramref name="fromTurn"/>.</summary>
+	/// <summary>The meters of <paramref name="guest"/> (the growth of the needs block only: the projection leaves out the environment words of the guest's cell that the same block adds to hunger, illness and happiness (RegionFX entertainers, vomit and the like), which are 0 on most cells and of either sign where they are not, so the projection can err either way there and the plan is approximate) after <paramref name="turns"/> more park turns of the needs block's growth (<see cref="NeedsUpdate.GrowthSteps"/>), from the park turn <paramref name="fromTurn"/>.</summary>
 	public static (float Thirst, float Hunger, float Toilet) ProjectedMeters( in GuestView guest, long fromTurn, long turns )
 	{
 		var steps = NeedsUpdate.GrowthSteps( guest.Id, fromTurn, turns );
@@ -240,8 +254,8 @@ public static class SmarterGuestsRules
 
 	/// <summary>
 	/// Whether any meter of the guest will cross the level the planning looks at within the longest look ahead (<see cref="PlanningCapTurns"/>). The host asks it before it scans the park's rides for a commitment,
-	/// so the scan is paid only by a guest the rule can act on: with the needs block's growth that is a guest whose id is a multiple of 4 and whose hunger or thirst is within 22 of 100 or whose toilet is within
-	/// 11 of 80, and nobody else.
+	/// so the scan is paid only by a guest the rule can act on: with the needs block's growth that is a guest whose id is a multiple of 4 and whose hunger or thirst is within 22 to 24 of 100 or whose toilet is within
+	/// 11 to 12 of 80 (11 or 12 growth steps in 180 turns, by where the multiples of 16 fall), and nobody else.
 	/// </summary>
 	public static bool MayCross( in GuestView guest, long parkTurn )
 	{
@@ -282,7 +296,7 @@ public static class SmarterGuestsRules
 			if ( attraction.HungerEffect > 0 )
 				hunger = MeterMath.Add( hunger, DetourStep );
 			if ( attraction.ProvidesRelief )
-				toilet = MeterMath.Add( toilet, DetourStep );
+				toilet = MeterMath.Add( toilet, ReliefDetourStep );
 		}
 		return thirst == guest.Thirst && hunger == guest.Hunger && toilet == guest.Toilet ? guest : guest with { Thirst = thirst, Hunger = hunger, Toilet = toilet };
 	}
@@ -299,9 +313,9 @@ public static class SmarterGuestsRules
 		ride.Kind == RideVisitorKind.Ride && InMealWindow( context.ParkTurn, guest.MealTurn ) && RideIllnessGain( context, guest, ride ) >= MealGainLimit;
 
 	/// <summary>
-	/// A score divided by <see cref="MealScoreDivisor"/>, never below the choice floor when it was at or above it (a guest that has nothing else to do still rides, as in the other rules that lower a score), and
-	/// never above the score it had. Monotone: a higher score never ends below a lower one.
+	/// A score brought halfway (<see cref="MealScoreDivisor"/>) to the choice floor: <c>floor + (score - floor) / 2</c> for a score at or above it, so a candidate stays a candidate (a guest that has nothing else to do still
+	/// rides, as in the other rules that lower a score), never ends above the score it had, and two rides keep their order (a score of 40 ends at 25, 50 at 30). A score below the floor was nothing to keep and stays.
 	/// </summary>
 	public static uint LowerAfterMeal( uint score ) =>
-		score < AttractionScore.CandidateFloor ? score : Math.Max( AttractionScore.CandidateFloor, score / MealScoreDivisor );
+		score < AttractionScore.CandidateFloor ? score : AttractionScore.CandidateFloor + (score - AttractionScore.CandidateFloor) / MealScoreDivisor;
 }

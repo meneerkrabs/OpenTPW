@@ -69,7 +69,7 @@ public class GuestMeasurementTests
 	}
 
 	/// <summary>
-	/// The scenario's guests with <c>opentpw.smarter-guests</c> 1.4.0 on (docs/SMARTER-GUESTS.md, phases 2 to 5; this scenario has no food shop and nobody near a need level at a decision, so phase 5 does not act in it and the pin is 1.3.0's). The scenario's dear shop (value for money) and its four rides (the queue estimate, the preference, the queue patience and the
+	/// The scenario's guests with <c>opentpw.smarter-guests</c> 1.4.0 on (docs/SMARTER-GUESTS.md, phases 2 to 5; this scenario has no food shop and nobody near a need level at a decision, so phase 5 does not act in it; the pin has held since 1.2.0, because the queue patience rules of 1.3.0 do not act in this 12,000-tick run either). The scenario's dear shop (value for money) and its four rides (the queue estimate, the preference, the queue patience and the
 	/// hysteresis) are where the rules act, so unlike the synthetic park's pin this one moves with the rules: it is the on-path pin of the behaviour. A deliberate change of a rule constant changes this value (and bumps the extension's version).
 	/// </summary>
 	private const ulong ScenarioSmarterFixedRunHash = 0xC0344925E23A32C1UL;

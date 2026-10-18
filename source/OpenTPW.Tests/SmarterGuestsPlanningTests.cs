@@ -48,6 +48,8 @@ public class SmarterGuestsPlanningTests
 		Assert.AreEqual( 11, NeedsUpdate.GrowthSteps( Grower, 800, 180 ), "the planning's longest look ahead" );
 		Assert.AreEqual( 0, NeedsUpdate.GrowthSteps( Grower, 800, 0 ) );
 		Assert.AreEqual( 0, NeedsUpdate.GrowthSteps( Grower, 800, -5 ) );
+		Assert.AreEqual( 3, NeedsUpdate.GrowthSteps( Grower, -20, 40 ), "turns -16, 0 and 16 are multiples of 16 (floor division before the park starts)" );
+		Assert.AreEqual( 1, NeedsUpdate.GrowthSteps( Grower, -1, 2 ) );
 	}
 
 	[TestMethod]
@@ -160,7 +162,7 @@ public class SmarterGuestsPlanningTests
 		Assert.AreEqual( guest.Hunger, seen.Hunger, "only the need the shop serves" );
 		var food = SmarterGuestsRules.Planned( guest, Shop( hungerEffect: 25, onTheWay: true ), 800, false, true );
 		Assert.AreEqual( 100f, food.Hunger, "a meter stays inside 0..100" );
-		Assert.AreEqual( 50f, SmarterGuestsRules.Planned( guest, Shop( relief: true, onTheWay: true ), 800, false, true ).Toilet );
+		Assert.AreEqual( 45f, SmarterGuestsRules.Planned( guest, Shop( relief: true, onTheWay: true ), 800, false, true ).Toilet, "one step of the relief curve, which is indexed in fives" );
 		Assert.AreEqual( guest, SmarterGuestsRules.Planned( guest, Shop( thirstEffect: 40 ), 800, false, true ), "not on the way: no step" );
 		Assert.AreEqual( guest, SmarterGuestsRules.Planned( guest, drink, 800, planning: false, detour: false ), "the rule switched off" );
 		Assert.AreEqual( guest, SmarterGuestsRules.Planned( guest, Ride() with { OnTheWay = true }, 800, true, true ), "a ride on the way is a ride" );
@@ -236,10 +238,11 @@ public class SmarterGuestsPlanningTests
 	}
 
 	[TestMethod]
-	public void LoweringAScoreHalvesItButKeepsAWinnerAtTheChoiceFloorAndNeverRaisesAnything()
+	public void LoweringAScoreBringsItHalfwayToTheChoiceFloorKeepsTheOrderAndNeverRaisesAnything()
 	{
-		Assert.AreEqual( 20u, SmarterGuestsRules.LowerAfterMeal( 40 ) );
-		Assert.AreEqual( 10u, SmarterGuestsRules.LowerAfterMeal( 20 ) );
+		Assert.AreEqual( 25u, SmarterGuestsRules.LowerAfterMeal( 40 ) );
+		Assert.AreEqual( 15u, SmarterGuestsRules.LowerAfterMeal( 20 ) );
+		Assert.AreEqual( 10u, SmarterGuestsRules.LowerAfterMeal( 10 ) );
 		Assert.AreEqual( 0u, SmarterGuestsRules.LowerAfterMeal( 0 ) );
 		Assert.AreEqual( 9u, SmarterGuestsRules.LowerAfterMeal( 9 ), "below the floor there was nothing to keep" );
 		for ( uint score = 0; score < 400; score++ )
@@ -249,11 +252,10 @@ public class SmarterGuestsPlanningTests
 			if ( score >= AttractionScore.CandidateFloor )
 				Assert.IsTrue( lowered >= AttractionScore.CandidateFloor, $"{score} -> {lowered}: a candidate stays a candidate" );
 			if ( score > 0 )
-				Assert.IsTrue( lowered >= SmarterGuestsRules.LowerAfterMeal( score - 1 ) || score - 1 < AttractionScore.CandidateFloor, "monotone" );
+				Assert.IsTrue( lowered >= SmarterGuestsRules.LowerAfterMeal( score - 1 ), "monotone" );
 		}
-		Assert.AreEqual( 10u, SmarterGuestsRules.LowerAfterMeal( 12 ), "a score of 12 halves to 6, under the floor: the floor" );
-		Assert.AreEqual( 10u, SmarterGuestsRules.LowerAfterMeal( 21 ) );
-		Assert.AreEqual( 11u, SmarterGuestsRules.LowerAfterMeal( 22 ) );
+		// two rides that scored 40 and 50 still rank in that order after the lowering (no tie at the floor)
+		Assert.IsTrue( SmarterGuestsRules.LowerAfterMeal( 50 ) > SmarterGuestsRules.LowerAfterMeal( 40 ) );
 	}
 
 	[TestMethod]
@@ -386,6 +388,13 @@ public class SmarterGuestsPlanningTests
 		StringAssert.Contains( Problem( new MealTime( births[1], 5 ), new MealTime( births[1], 6 ) )!, "ascending", "a guest twice" );
 		StringAssert.Contains( Problem( new MealTime( births[0], -1 ) )!, "below 0" );
 		StringAssert.Contains( Problem()!, "empty meal list" );
+		// extension state needs the extension recorded: a save that only carries script mods holds the identity half and nothing else
+		var record = new[] { new ParkModRecord( "opentpw.smarter-guests", "1.4.0", ModSet.NoFilesSha256 ) };
+		var withMeals = section with { Meals = [new MealTime( births[0], 5 )] };
+		Assert.IsNull( SmarterGuestsSave.ShapeProblem( withMeals, ids, record, false, attractions ) );
+		StringAssert.Contains( SmarterGuestsSave.ShapeProblem( withMeals, ids, null, true, attractions )!, "does not record" );
+		StringAssert.Contains( SmarterGuestsSave.ShapeProblem( section with { Stalls = [new PriceStall( births[0], 1 )] }, ids, null, true, attractions )!, "does not record" );
+		Assert.IsNull( SmarterGuestsSave.ShapeProblem( section with { Meals = null, Stalls = null, Throughputs = null }, ids, null, true, attractions ) );
 		// a meal after the park's own turn is not a state the park can have been in
 		using var scope = OpenTpwExtensions.Use( SmarterGuestsTests.On() );
 		var fresh = SmarterGuestsTests.Fresh( park );
@@ -395,15 +404,41 @@ public class SmarterGuestsPlanningTests
 		Assert.AreEqual( 0, fresh.Guests.SmarterGuests!.Meals.Count, "nothing was half-restored" );
 	}
 
+	[TestMethod]
+	public void TheCycleIsTheTimePerGuestTimesTheCapacityCappedAtTheNominalCycle()
+	{
+		Assert.AreEqual( 12 * 256 * 3, SmarterGuestsRules.CycleTurns256Of( 12 * 256, 3 ) );
+		Assert.AreEqual( 60 * 256, SmarterGuestsRules.CycleTurns256Of( 12 * 256, 20 ), "a ride of capacity 20 at 12 turns a guest is a stalled or half-empty one: the nominal cycle" );
+		Assert.AreEqual( 60 * 256, SmarterGuestsRules.CycleTurns256Of( 1_000_000, 1 ) );
+		Assert.AreEqual( 64, SmarterGuestsRules.CycleTurns256Of( 64, 0 ), "a capacity below 1 reads as 1" );
+	}
+
+	[TestMethod]
+	public void ThePriceRuleAndTheScoreAgreeOnWhichStandsThePriceEmptied()
+	{
+		// a dear drink the grower cannot afford: the real guest's willingness decides the refusal, the planned guest's score decides whether the guest would have chosen it
+		var guest = Guest( thirst: 96, plan: 100 * 256 );
+		var dear = Shop( thirstEffect: 40 ) with { Price = 500, Willingness = 100 };
+		Assert.AreEqual( 0u, Smarter.ScoreAttraction( Context(), guest, dear ), "the price zeroes it" );
+		var seen = SmarterGuestsRules.Planned( guest, dear, 800, true, false );
+		Assert.AreEqual( OriginalGuestDecisions.Instance.ScoreAttraction( Context(), seen, dear ) >= AttractionScore.CandidateFloor, Smarter.PriceTurnedAway( Context(), guest, dear ), "judged on the guest the score sees" );
+		Assert.IsFalse( Smarter.PriceTurnedAway( Context(), guest, Shop( thirstEffect: 40 ) ), "an unpriced shop is never turned away" );
+	}
+
 	// ---- The host -----------------------------------------------------------------------------------
 
 	/// <summary>Records what the policy is given: the guests' meal turns and plans, and which candidates the host calls a stop on the way.</summary>
 	private sealed class Spy( SmarterPlanningRules rules ) : SmarterGuestsTests.DelegatingDecisions( new SmarterGuestDecisions( rules ) )
 	{
 		public readonly List<(int GuestId, long Meal, long Plan, bool Service, bool OnTheWay)> Views = new();
+		public readonly List<AttractionView> Rides = new();
+		public GuestView LastGuest;
 		public override uint ScoreAttraction( in DecisionContext context, in GuestView guest, in AttractionView attraction )
 		{
 			Views.Add( (guest.Id, guest.MealTurn, guest.PlanTurns256, SmarterGuestsRules.ServesNeed( attraction ), attraction.OnTheWay) );
+			LastGuest = guest;
+			if ( attraction.Kind == RideVisitorKind.Ride )
+				Rides.Add( attraction );
 			return base.ScoreAttraction( context, guest, attraction );
 		}
 	}
@@ -456,12 +491,49 @@ public class SmarterGuestsPlanningTests
 		}
 		Assert.IsTrue( spy.Views.Count > 0 && spy.Views.All( view => view.Plan == -1 ), "a guest that never grows is not scanned for, however full" );
 		spy.Views.Clear();
+		spy.Rides.Clear();
 		var grower = growers[0];
 		grower.Hunger = 96;
 		park.Guests.PeekChoice( grower );
 		Assert.IsTrue( spy.Views.Count > 0 && spy.Views.All( view => view.GuestId == grower.Id && view.Plan >= 0 ), "a grower close to full gets a plan" );
-		var cold = RideThroughputs.ColdStartInterval256( 1 );
-		Assert.IsTrue( spy.Views.All( view => view.Plan >= cold ), "at least one cycle of the quickest ride" );
+		// the join test's excitement gate, which the host applies to the rides it considers
+		static bool Admitted( ParkScenario park, GuestView guest, AttractionView ride )
+		{
+			var bridge = park.Guests.Attractions.Single( attraction => attraction.AttractionId == ride.Id );
+			return QueueJoinRules.Refusal( bridge.StaticExcitementLevel, bridge.JoinDifference( park.Settings.Types[Math.Min( guest.Type, park.Settings.Types.Count - 1 )].PreferredExcitement ) ) == null;
+		}
+		// the plan is the quickest choosable ride's wait plus its (capped) cycle, recomputed here from the views the policy was given
+		long Expected( Spy seen ) => seen.Rides.Where( ride => ride.IsOpen && !ride.IsBrokenDown && ride.QueueLength < ride.QueueLimit && Admitted( park, seen.LastGuest, ride ) && SmarterGuestsRules.IsUnusedAdmissibleRide( Context( park.Guests.ParkTurn ), seen.LastGuest, ride ) )
+			.Min( ride => SmarterGuestsRules.ExpectedWait256( ride )!.Value + ride.CycleTurns256 );
+		Assert.IsTrue( spy.Rides.All( ride => ride.CycleTurns256 <= RideThroughputs.DefaultCycleTurns * 256 && ride.CycleTurns256 > 0 ), "the cycle is capped at the nominal one" );
+		var plan = spy.Views[0].Plan;
+		Assert.AreEqual( Expected( spy ), plan );
+		// a ride the guest has used or was just turned away from is not a ride it could choose: the plan then comes from the others
+		var quickest = spy.Rides.Where( ride => ride.IsOpen && !ride.IsBrokenDown && ride.QueueLength < ride.QueueLimit && Admitted( park, spy.LastGuest, ride ) && SmarterGuestsRules.IsUnusedAdmissibleRide( Context( park.Guests.ParkTurn ), spy.LastGuest, ride ) )
+			.OrderBy( ride => SmarterGuestsRules.ExpectedWait256( ride )!.Value + ride.CycleTurns256 ).First();
+		var others = spy.Rides.Count( ride => ride.Id != quickest.Id && ride.IsOpen && !ride.IsBrokenDown && ride.QueueLength < ride.QueueLimit && Admitted( park, spy.LastGuest, ride ) && SmarterGuestsRules.IsUnusedAdmissibleRide( Context( park.Guests.ParkTurn ), spy.LastGuest, ride ) );
+		Assert.IsTrue( others > 0, "another ride remains to plan from" );
+		foreach ( var history in new[] { grower.UsedHistory, grower.TemporaryHistory } )
+		{
+			Array.Clear( grower.UsedHistory );
+			Array.Clear( grower.TemporaryHistory );
+			history[1] = quickest.Id;
+			spy.Views.Clear();
+			spy.Rides.Clear();
+			park.Guests.PeekChoice( grower );
+			Assert.AreEqual( Expected( spy ), spy.Views[0].Plan, "planned from the rides left" );
+			Assert.IsTrue( spy.Views[0].Plan >= plan, "never quicker than with the ride in reach" );
+		}
+		Array.Clear( grower.UsedHistory );
+		Array.Clear( grower.TemporaryHistory );
+		// the minor decision plans from the ride the guest is walking to
+		var target = park.Guests.Attractions.First( ride => ride.Kind == RideVisitorKind.Ride && ride.JoinCell != null );
+		var viewOfTarget = park.Guests.ViewOf( target, grower );
+		var withPlan = park.Guests.WithPlanHorizon( park.Guests.ViewOf( grower ), grower, target );
+		Assert.AreEqual( SmarterGuestsRules.ExpectedWait256( viewOfTarget )!.Value + viewOfTarget.CycleTurns256, withPlan.PlanTurns256 );
+		grower.Hunger = 20;
+		Assert.AreEqual( -1, park.Guests.WithPlanHorizon( park.Guests.ViewOf( grower ), grower, target ).PlanTurns256, "no meter near a level: no plan" );
+		grower.Hunger = 96;
 		spy.Views.Clear();
 		grower.Hunger = 20;
 		park.Guests.PeekChoice( grower );
@@ -520,12 +592,27 @@ public class SmarterGuestsPlanningTests
 		Assert.AreEqual( SmarterPlanningRules.All, GuestReport.ParsePlanningRules( "all" ) );
 		Assert.AreEqual( SmarterPlanningRules.Planning | SmarterPlanningRules.MealTime, GuestReport.ParsePlanningRules( "planning, meal" ) );
 		Assert.ThrowsException<ArgumentException>( () => GuestReport.ParsePlanningRules( "everything" ) );
-		var options = new GuestReportOptions { Seeds = new ulong[] { 1, 2 }, WarmupDays = 5, MeasuredDays = 10, Performance = false, Extensions = GuestReport.ResolveExtensions( new[] { "smarter-guests" } ) };
-		var all = GuestReport.ToJsonObject( GuestReport.Run( options ) );
+		var options = new GuestReportOptions
+		{
+			Seeds = new ulong[] { 4 }, WarmupDays = 20, MeasuredDays = 60, Performance = false, Scenario = new ParkScenarioOptions { FoodShop = true },
+			Extensions = GuestReport.ResolveExtensions( new[] { "smarter-guests" } )
+		};
+		ulong Reported( GuestReportOptions run ) => GuestReport.Run( run ).Scenarios.Single( scenario => scenario.Name == GuestReport.ScenarioName ).Seeds.Single().StateHash;
+		ulong Explicit( SmarterPlanningRules rules )
+		{
+			var park = new ParkScenario( new WorldSeed( 4 ), options.Scenario, new SmarterGuestDecisions( rules ) );
+			park.Run( GuestReport.TicksForDays( 80 ) );
+			return park.Hash;
+		}
 		var none = GuestReport.ToJsonObject( GuestReport.Run( options with { PlanningRules = SmarterPlanningRules.None } ) );
+		var all = GuestReport.ToJsonObject( GuestReport.Run( options ) );
 		Assert.IsFalse( all.ContainsKey( "planningRules" ), "the shipped extension's report says nothing extra" );
 		Assert.AreEqual( "None", (string)none["planningRules"]! );
-		Assert.AreEqual( SmarterPlanningRules.All, GuestSimulation.PlanningRulesForMeasurement, "the switch is put back after the run" );
+		// the run really used the rules it says: its end state is an explicit run's, and not the other's
+		Assert.AreEqual( Explicit( SmarterPlanningRules.None ), Reported( options with { PlanningRules = SmarterPlanningRules.None } ), "the report's run with the rules off is the explicit run with them off" );
+		Assert.AreEqual( Explicit( SmarterPlanningRules.All ), Reported( options ), "and the default is all three" );
+		Assert.AreNotEqual( Explicit( SmarterPlanningRules.None ), Explicit( SmarterPlanningRules.All ), "which differ in this scenario" );
+		Assert.ThrowsException<ArgumentException>( () => GuestReport.Run( options with { PlanningRules = SmarterPlanningRules.None, Mods = ["x"] } ) );
 		StringAssert.Contains( GuestReportCompare.Compare( all, none, [] ).Notes, "phase 5 rules: baseline All, candidate None" );
 	}
 }

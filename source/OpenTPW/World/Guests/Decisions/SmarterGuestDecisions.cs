@@ -29,6 +29,8 @@ public sealed class SmarterGuestDecisions : IGuestDecisions
 
 	public bool UsesPlanning => planning != SmarterPlanningRules.None;
 
+	public bool UsesPlanHorizon => planning.HasFlag( SmarterPlanningRules.Planning );
+
 	/// <summary>The turn this guest's give-up test starts (its own patience band), so the host scans the park's rides for it only from then on.</summary>
 	public int AlternativeLookAfterTurns( in DecisionContext context, in GuestView guest ) =>
 		(int)Math.Min( int.MaxValue, SmarterGuestsRules.PatienceTurns256( SmarterGuestsRules.GiveUpTurns, SmarterGuestsRules.PatiencePercent( context.Trait( guest, SmarterGuestsRules.PatienceTrait ) ) ) / 256 );
@@ -46,12 +48,15 @@ public sealed class SmarterGuestDecisions : IGuestDecisions
 	public uint ScoreAttraction( in DecisionContext context, in GuestView guest, in AttractionView attraction )
 	{
 		// [EXT:smarter-guests-planning] a service is scored on the needs the guest will have (planning) or has one step more of when the stop is on its way (detour); a ride, and a service no rule concerns, on the guest as it is
-		var seen = UsesPlanning ? SmarterGuestsRules.Planned( guest, attraction, context.ParkTurn, planning.HasFlag( SmarterPlanningRules.Planning ), planning.HasFlag( SmarterPlanningRules.Detour ) ) : guest;
-		var score = SpreadScore( context, seen, attraction );
+		var score = SpreadScore( context, Seen( context, guest, attraction ), attraction );
 		score = score == 0 || !Refuses( context, guest, attraction ) ? score : 0;
 		// [EXT:smarter-guests-planning] shortly after a meal a ride that would make this guest sick scores lower (never below the choice floor when it was above it)
 		return planning.HasFlag( SmarterPlanningRules.MealTime ) && score >= AttractionScore.CandidateFloor && SmarterGuestsRules.TooMuchAfterMeal( context, guest, attraction ) ? SmarterGuestsRules.LowerAfterMeal( score ) : score;
 	}
+
+	/// <summary>The guest as it scores this attraction: planned and nudged for a service (<see cref="SmarterGuestsRules.Planned"/>), as it is otherwise.</summary>
+	private GuestView Seen( in DecisionContext context, in GuestView guest, in AttractionView attraction ) =>
+		UsesPlanning ? SmarterGuestsRules.Planned( guest, attraction, context.ParkTurn, planning.HasFlag( SmarterPlanningRules.Planning ), planning.HasFlag( SmarterPlanningRules.Detour ) ) : guest;
 
 	/// <summary>
 	/// The original's score with the queue match replaced by the expected wait (every attraction, at any distance: guests ahead plus guests walking there, over the observed throughput), scaled by the guest's
@@ -87,9 +92,12 @@ public sealed class SmarterGuestDecisions : IGuestDecisions
 		SmarterGuestsRules.IsPriced( attraction )
 		&& SmarterGuestsRules.WouldRefuse( attraction, guest.Money, SmarterGuestsRules.SensitivityPercent( context.Trait( guest, SmarterGuestsRules.PriceSensitivityTrait ) ) );
 
-	/// <summary>True for a stand the price rule zeroed that the original would have let the guest choose (it scores at least the choice floor).</summary>
+	/// <summary>
+	/// True for a stand the price rule zeroed that the original would have let the guest choose (it scores at least the choice floor). Judged on the guest as <see cref="ScoreAttraction"/> sees it (planned), so the two agree on
+	/// which stands the price emptied; the price itself is the real guest's (the host computed the willingness from its real meters, which is what the stand-point test uses).
+	/// </summary>
 	public bool PriceTurnedAway( in DecisionContext context, in GuestView guest, in AttractionView attraction ) =>
-		Refuses( context, guest, attraction ) && original.ScoreAttraction( context, guest, attraction ) >= AttractionScore.CandidateFloor;
+		Refuses( context, guest, attraction ) && original.ScoreAttraction( context, Seen( context, guest, attraction ), attraction ) >= AttractionScore.CandidateFloor;
 
 	/// <summary>Goes home, thinking the original's "too expensive" thought, once the run of price-emptied decisions reaches the limit.</summary>
 	// [EXT:smarter-guests-value] the original guest, refused at the stand, loses happiness until it leaves; this one is not sent to the stand and, with nothing else to do, leaves with the same thought (thought 6, [BIN:TPW-EXE:0x00500756 price refusal])

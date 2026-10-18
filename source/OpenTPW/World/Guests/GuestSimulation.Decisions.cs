@@ -10,7 +10,7 @@ public sealed partial class GuestSimulation
 	private InvalidOperationException PolicyError( string what ) => new( $"The guest decision policy {decisions.GetType().Name} {what}." );
 
 	/// <summary>A copy of the fields of <paramref name="guest"/> the decisions read; the histories are views of the guest's arrays, unchanged while a decision runs.</summary>
-	private GuestView ViewOf( Guest guest ) => new( guest.Id, guest.BirthId, guest.Type, guest.Happiness, guest.Thirst, guest.Hunger, guest.Toilet, guest.Nausea, guest.Money,
+	internal GuestView ViewOf( Guest guest ) => new( guest.Id, guest.BirthId, guest.Type, guest.Happiness, guest.Thirst, guest.Hunger, guest.Toilet, guest.Nausea, guest.Money,
 		guest.CellX, guest.CellY, Array.AsReadOnly( guest.UsedHistory ), Array.AsReadOnly( guest.TemporaryHistory ),
 		// [EXT:smarter-guests-planning] the guest's last meal comes from the extension's state, for a policy that plans
 		decisions.UsesPlanning && SmarterGuests is { } smarter ? smarter.Meals.Of( guest.BirthId ) : -1 );
@@ -19,7 +19,7 @@ public sealed partial class GuestSimulation
 	/// <paramref name="attraction"/> as <paramref name="guest"/> sees it: every value the original score reads, taken now. An attraction without a join cell carries identity and flags only
 	/// (the original scores it 0 without reading anything else).
 	/// </summary>
-	private AttractionView ViewOf( IRideVisitorBridge attraction, Guest guest )
+	internal AttractionView ViewOf( IRideVisitorBridge attraction, Guest guest )
 	{
 		if ( attraction.JoinCell == null )
 			return new AttractionView( attraction.AttractionId, attraction.TypeId, attraction.Kind, false, default, attraction.EntranceCell, 0, attraction.QueueLength, attraction.QueueSizeInCells,
@@ -46,7 +46,7 @@ public sealed partial class GuestSimulation
 			return view;
 		var reservations = ReservationsOf( attraction.AttractionId, guest );
 		var interval = smarter.Throughputs.IntervalFor( attraction.AttractionId, attraction.Kind, attraction.LiveCapacity, attraction.Speed, ParkTurn, attraction.QueueLength );
-		return view with { Reservations = reservations, TurnsPerGuest256 = interval, CycleTurns256 = interval * Math.Max( 1, attraction.LiveCapacity ) };
+		return view with { Reservations = reservations, TurnsPerGuest256 = interval, CycleTurns256 = SmarterGuestsRules.CycleTurns256Of( interval, attraction.LiveCapacity ) };
 	}
 
 	/// <summary>The walkers per attraction, counted once at the start of a decision (<see cref="BeginReservations"/>); null outside one.</summary>
@@ -135,9 +135,9 @@ public sealed partial class GuestSimulation
 	/// quickest ride it could choose. A guest with no meter that close pays nothing, which is nearly every guest. Pure: it records and changes nothing.
 	/// </summary>
 	// [EXT:smarter-guests-planning] the expected wait is the phase 3 estimate (queue ahead plus walkers over the observed throughput), the ride time its cycle
-	private GuestView WithPlanHorizon( GuestView view, Guest guest, IRideVisitorBridge? target )
+	internal GuestView WithPlanHorizon( GuestView view, Guest guest, IRideVisitorBridge? target )
 	{
-		if ( !decisions.UsesPlanning || !decisions.UsesSpreading || !SmarterGuestsRules.MayCross( view, ParkTurn ) )
+		if ( !decisions.UsesPlanHorizon || !decisions.UsesSpreading || !SmarterGuestsRules.MayCross( view, ParkTurn ) )
 			return view;
 		var turns = target != null ? CommitmentTurns256( ViewOf( target, guest ) ) : BestCommitment256( guest );
 		return turns < 0 ? view : view with { PlanTurns256 = turns };
@@ -164,7 +164,7 @@ public sealed partial class GuestSimulation
 			{
 				if ( !CouldJoinRide( other, type ) )
 					continue;
-				var view = WithSpreading( ViewOf( other, guest ), other, guest );
+				var view = ViewOf( other, guest );
 				if ( SmarterGuestsRules.IsUnusedAdmissibleRide( context, guestView, view ) && CommitmentTurns256( view ) is var turns and >= 0 && (best < 0 || turns < best) )
 					best = turns;
 			}

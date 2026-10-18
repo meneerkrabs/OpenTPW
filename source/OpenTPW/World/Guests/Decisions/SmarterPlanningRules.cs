@@ -2,7 +2,7 @@ namespace OpenTPW;
 
 /// <summary>
 /// The three rules of phase 5 of the smarter guests (docs/SMARTER-GUESTS.md, "Phase 5: Planning needs"), as switches. The shipped extension (version 1.4.0) has all of them on; the switches exist so a measurement can run
-/// "1.3.0 behaviour" and each rule alone from the same build (<c>--guest-rules</c>, <see cref="GuestSimulation.PlanningRulesForMeasurement"/>) and so tests can show what each one does. They are not a player setting: a park
+/// "1.3.0 behaviour" and each rule alone from the same build (<c>--guest-rules</c>) and so tests can show what each one does. They are not a player setting: a park
 /// records the extension's version as its algorithm identity, which means all three on.
 /// </summary>
 [Flags]

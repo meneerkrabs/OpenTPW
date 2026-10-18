@@ -88,7 +88,7 @@ public static class GuestReport
 
 	internal static GuestMetricsSnapshot RunScenario( ulong seed, GuestReportOptions options, out ulong hash, out IReadOnlyList<ScriptModStats> scriptStats )
 	{
-		var park = new ParkScenario( new WorldSeed( seed ), options.Scenario );
+		var park = new ParkScenario( new WorldSeed( seed ), options.Scenario, Policy( options ) );
 		var metrics = new GuestMetrics( options.Metrics );
 		metrics.Attach( park.Guests );
 		var warmup = TicksForDays( options.WarmupDays );
@@ -119,7 +119,7 @@ public static class GuestReport
 		// the window closes after the last tick and before the gate stops its objects (a stopped ride turns its queue away)
 		var gate = new M3GateOptions
 		{
-			Level = level, Seed = new WorldSeed( seed ).GuestStream, WorldSeed = new WorldSeed( seed ), DeterminismProbe = false, SweptTurns = true, ArrivalTimeBetween = options.LevelArrivalTimeBetween, GuestObserver = metrics,
+			Level = level, Seed = new WorldSeed( seed ).GuestStream, WorldSeed = new WorldSeed( seed ), DeterminismProbe = false, SweptTurns = true, ArrivalTimeBetween = options.LevelArrivalTimeBetween, GuestObserver = metrics, GuestDecisions = Policy( options ),
 			BeforeTeardown = guests =>
 			{
 				snapshot = metrics.EndWindow();
@@ -143,21 +143,20 @@ public static class GuestReport
 		names.Select( name => ReportExtensions.TryGetValue( name, out var extension ) ? extension.Id
 			: throw new ArgumentException( $"--guest-extension '{name}' is not one a guest report can switch on (smarter-guests)." ) ).Distinct( StringComparer.Ordinal ).ToArray();
 
+	/// <summary>
+	/// The policy a report with some phase 5 rules switched off builds its simulations with, passed to each one explicitly (no process-wide state: nothing but the simulation it is given to can see it). Null takes the gate's
+	/// policy, which is the shipped extension with all of them on.
+	/// </summary>
+	private static IGuestDecisions? Policy( GuestReportOptions options ) =>
+		options.PlanningRules != SmarterPlanningRules.All && ResolveExtensions( options.Extensions ).Contains( OfficialExtensions.SmarterGuests.Id ) ? new SmarterGuestDecisions( options.PlanningRules ) : null;
+
 	public static GuestReportResult Run( GuestReportOptions options, Action<string>? progress = null )
 	{
+		if ( options.PlanningRules != SmarterPlanningRules.All && options.Mods.Count > 0 )
+			throw new ArgumentException( "--guest-rules cannot be combined with --guest-mod: a script mod wraps the extension's own policy." );
 		if ( options.Extensions.Count == 0 && options.Mods.Count == 0 )
 			return RunSeeds( options, progress );
-		// the phase 5 rules a measurement switches off are read when each policy is built, and put back afterwards
-		var previousRules = GuestSimulation.PlanningRulesForMeasurement;
-		GuestSimulation.PlanningRulesForMeasurement = options.PlanningRules;
-		try
-		{
-			return RunWithExtensions( options, progress );
-		}
-		finally
-		{
-			GuestSimulation.PlanningRulesForMeasurement = previousRules;
-		}
+		return RunWithExtensions( options, progress );
 	}
 
 	private static GuestReportResult RunWithExtensions( GuestReportOptions options, Action<string>? progress )
@@ -261,7 +260,7 @@ public static class GuestReport
 		{
 			var best = double.MaxValue;
 			var bytes = 0d;
-			var park = new ParkScenario( new WorldSeed( seed ), options.Scenario );
+			var park = new ParkScenario( new WorldSeed( seed ), options.Scenario, Policy( options ) );
 			// [EXT:guest-insights] the figures compare the measurement collector alone, so the extension's refusal counters (on when the run asks for the extension) stay out of both sides
 			park.Guests.DisableRefusalCounters();
 			if ( observed )

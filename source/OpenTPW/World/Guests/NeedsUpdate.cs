@@ -40,8 +40,9 @@ public static class NeedsUpdate
 	{
 		if ( turns <= 0 || (guestId & PhaseMask) != 0 )
 			return 0;
-		var last = fromTurn + turns;
-		return (int)Math.Min( int.MaxValue, Math.Max( 0, Math.DivRem( last, GrowthMask + 1, out _ ) - Math.DivRem( fromTurn, GrowthMask + 1, out _ ) ) );
+		// floor division, so a turn before 0 (a park that has not started) counts its multiples of 16 as the others do
+		static long Floor( long value ) => value >= 0 ? value / (GrowthMask + 1) : -((-value + GrowthMask) / (GrowthMask + 1));
+		return (int)Math.Min( int.MaxValue, Math.Max( 0, Floor( fromTurn + turns ) - Floor( fromTurn ) ) );
 	}
 
 	/// <summary>

@@ -95,15 +95,9 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	// [EXT:script-mods] the wrapper runs the enabled script mods' hooks over the base policy's answers
 	private static IGuestDecisions DefaultPolicy()
 	{
-		IGuestDecisions policy = FeatureGates.SmarterGuests ? new SmarterGuestDecisions( PlanningRulesForMeasurement ) : OriginalGuestDecisions.Instance;
+		IGuestDecisions policy = FeatureGates.SmarterGuests ? new SmarterGuestDecisions() : OriginalGuestDecisions.Instance;
 		return ScriptModRuntime.ForActive( OpenTpwExtensions.Active ) is { } scriptMods ? new ScriptGuestDecisions( policy, scriptMods ) : policy;
 	}
-
-	/// <summary>
-	/// Which phase 5 rules a smarter-guests policy built by the gate runs (docs/SMARTER-GUESTS.md). <see cref="SmarterPlanningRules.All"/>, version 1.4.0, always, except while the headless guest report
-	/// measures a rule on its own or against the rules off (<c>--guest-rules</c>); read once when a simulation is built, like the gate. A park saved under a subset would not be version 1.4.0's: nothing but the report sets it.
-	/// </summary>
-	internal static SmarterPlanningRules PlanningRulesForMeasurement { get; set; } = SmarterPlanningRules.All;
 
 	private readonly IGuestDecisions decisions;
 
@@ -2111,7 +2105,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	{
 		// the host runs the choice loop: the policy scores and compares, the route request below is the host's alone (made exactly as the original makes it, for a candidate that beats the best)
 		var context = ContextNow();
-		var view = WithPlanHorizon( ViewOf( guest ), guest, null );
+		var view = ViewOf( guest );
 		uint best = 0;
 		var chosen = 0;
 		choiceEmptiedByPrice = false;
@@ -2120,6 +2114,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		BeginReservations();
 		try
 		{
+		// the plan's scan of the rides shares the decision's walker count
+		view = WithPlanHorizon( view, guest, null );
 		foreach ( var attraction in NewestFirst() )
 		{
 			// an attraction without a back-of-queue cell is never a candidate
@@ -2311,7 +2307,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		var distance = (guest.CellX - back.X) * (guest.CellX - back.X) + (guest.CellY - back.Y) * (guest.CellY - back.Y);
 		// the window's candidates in the original's order (x outer, y inner, newest attraction first), scored by the policy and compared by its rule; the host keeps the best
 		var context = ContextNow();
-		var view = WithPlanHorizon( ViewOf( guest ), guest, target );
+		var view = ViewOf( guest );
 		IRideVisitorBridge? best = null;
 		uint bestScore = 0;
 		var keeps = false;
@@ -2319,6 +2315,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		BeginReservations();
 		try
 		{
+		view = WithPlanHorizon( view, guest, target );
 		for ( var x = guest.CellX - 2; x < guest.CellX + 2; x++ )
 		{
 			for ( var y = guest.CellY - 2; y < guest.CellY + 2; y++ )

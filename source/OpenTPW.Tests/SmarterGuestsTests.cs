@@ -146,6 +146,7 @@ public class SmarterGuestsTests
 		public virtual bool UsesValueForMoney => inner.UsesValueForMoney;
 		public virtual bool UsesSpreading => inner.UsesSpreading;
 		public virtual bool UsesPlanning => inner.UsesPlanning;
+		public virtual bool UsesPlanHorizon => inner.UsesPlanHorizon;
 		public virtual int AlternativeLookAfterTurns( in DecisionContext context, in GuestView guest ) => inner.AlternativeLookAfterTurns( context, guest );
 		public virtual bool SwitchesTarget( in DecisionContext context, in GuestView guest, in AttractionView target, uint targetScore, in AttractionView candidate, uint candidateScore ) =>
 			inner.SwitchesTarget( context, guest, target, targetScore, candidate, candidateScore );

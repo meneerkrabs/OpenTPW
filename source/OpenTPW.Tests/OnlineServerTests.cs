@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Net;
@@ -1066,6 +1067,56 @@ public class OnlineServerTests
 			await bob.MoveAsync( 0.6f, 0.4f );
 			var annStands = await NextAsync( bob, item => item.Kind == ChatEventKind.Move && item.From == "Ann" );
 			Assert.AreEqual( (second, 0.25f, 0.75f), (annStands.Room, annStands.X, annStands.Y) );
+		}
+		finally { server.DeleteData(); }
+	}
+
+	[TestMethod]
+	public async Task JoiningTheRoomAgainKeepsThePlaceAndTellsNobody()
+	{
+		await using var server = await LoopbackServer.StartAsync( options => options.ChatBurst = 50 );
+		try
+		{
+			using var annClient = await server.LoginAsync( "Ann" );
+			using var bobClient = await server.LoginAsync( "Bob" );
+			await using var ann = await annClient.ConnectChatAsync();
+			await NextAsync( ann, item => item.Kind == ChatEventKind.Room );
+			await using var bob = await bobClient.ConnectChatAsync();
+			await NextAsync( bob, item => item.Kind == ChatEventKind.Room );
+			var room = ChatProtocol.SatelliteRoom( 1 );
+			await ann.JoinAsync( room );
+			await NextAsync( ann, item => item.Kind == ChatEventKind.Room && item.Room == room );
+			await ann.MoveAsync( 0.25f, 0.75f );
+			await bob.JoinAsync( room );
+			await NextAsync( bob, item => item.Kind == ChatEventKind.Room && item.Room == room );
+			await NextAsync( ann, item => item.Kind == ChatEventKind.Room && item.Room == room );
+			await bob.MoveAsync( 0.5f, 0.5f );
+			await NextAsync( bob, item => item.Kind == ChatEventKind.Move && item.From == "Ann" );
+			await NextAsync( ann, item => item.Kind == ChatEventKind.Move && item.From == "Bob" );
+			// a retried join of the room Bob is in answers him the roster and nothing else
+			await bob.JoinAsync( room );
+			Assert.AreEqual( "Ann,Bob", string.Join( ",", (await NextAsync( bob, item => item.Kind == ChatEventKind.Room )).Args! ) );
+			await bob.MoveAsync( 0.6f, 0.4f );
+			await bob.SendAsync( ChatCommand.Say, "after" );
+			// Bob keeps his place: his next movement is no first one, so Ann's place is not sent again
+			var bobSees = new List<ChatEvent>();
+			for ( var item = await NextAsync( bob ); item.Kind != ChatEventKind.Say; item = await NextAsync( bob ) )
+				bobSees.Add( item );
+			Assert.IsFalse( bobSees.Any( item => item.Kind == ChatEventKind.Move ), string.Join( " | ", bobSees.Select( item => item.Kind ) ) );
+			// and Ann is told nothing of the join: no roster before Bob's next step
+			var annSees = new List<ChatEvent>();
+			for ( var item = await NextAsync( ann ); item.Kind != ChatEventKind.Move; item = await NextAsync( ann ) )
+				annSees.Add( item );
+			Assert.AreEqual( 0, annSees.Count, string.Join( " | ", annSees.Select( item => item.Kind ) ) );
+			var annHears = await NextAsync( ann );
+			Assert.AreEqual( (ChatEventKind.Say, "Bob"), (annHears.Kind, annHears.From), "Ann hears Bob's line next" );
+			// a goto to a player in the same room is the same: Bob is told, keeps his place, and Ann hears nothing of it
+			await bob.SendAsync( ChatCommand.Goto, "Ann" );
+			await NextAsync( bob, IsNotice( ChatNotice.YouGoTo ) );
+			await NextAsync( bob, item => item.Kind == ChatEventKind.Room );
+			await bob.MoveAsync( 0.7f, 0.3f );
+			var annAfterGoto = await NextAsync( ann );
+			Assert.AreEqual( (ChatEventKind.Move, "Bob"), (annAfterGoto.Kind, annAfterGoto.From), "no roster went to Ann" );
 		}
 		finally { server.DeleteData(); }
 	}

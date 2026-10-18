@@ -26,11 +26,13 @@ public class PostcardEmailTests
 		public List<EmailMessage> Attempts { get; } = new();
 		public List<EmailMessage> Accepted { get; } = new();
 		public string? Refuse { get; set; }
+		public Action<EmailMessage>? AfterAccept { get; set; }
 		public Task SendAsync( EmailMessage message, CancellationToken cancel = default )
 		{
 			Attempts.Add( message );
 			if ( message.To == Refuse ) throw new EmailException( "Synthetic mail failure." );
-			Accepted.Add( message );
+			if ( message.IdempotencyKey == null || !Accepted.Any( accepted => accepted.IdempotencyKey == message.IdempotencyKey ) ) Accepted.Add( message );
+			AfterAccept?.Invoke( message );
 			return Task.CompletedTask;
 		}
 	}
@@ -256,6 +258,111 @@ public class PostcardEmailTests
 			Assert.AreEqual( 1, store.Inbox( reader ).Count );
 			await store.SendPostcardAsync( sender, card, null );
 			Assert.AreEqual( 1, store.Inbox( reader ).Count );
+		}
+		finally { Directory.Delete( directory, true ); }
+	}
+
+
+	public sealed record LegacyPostcardResult( string Id, IReadOnlyList<string> DeliveredTo );
+
+	[TestMethod]
+	public void SuccessfulResponsesStillDeserializeWithTheLegacyStrictContract()
+	{
+		var bytes = StrictJson.Serialize( new PostcardSent( "id", new[] { "Reader" } ) );
+		var legacy = StrictJson.Deserialize<LegacyPostcardResult>( bytes, "Legacy postcard result" );
+		CollectionAssert.AreEqual( new[] { "Reader" }, legacy.DeliveredTo.ToArray() );
+		Assert.IsFalse( Encoding.UTF8.GetString( bytes ).Contains( "error" ) );
+	}
+
+	[TestMethod]
+	public async Task AcceptedMailWithAFailedReceiptWriteRetriesTheSameProviderKeyAfterRestart()
+	{
+		var directory = Directory.CreateTempSubdirectory( "opentpw-card-acceptance-" ).FullName;
+		var options = new ServerOptions { DataDirectory = directory, PasswordIterations = 1000, RequireTotp = false };
+		try
+		{
+			var store = new ServerStore( options );
+			var sender = store.Register( "Sender", "correct horse" );
+			var card = Card( "a@example.test" );
+			var ledger = Path.Combine( directory, "postcard-deliveries.json" );
+			byte[]? pending = null;
+			var mail = new FakeMail { AfterAccept = _ =>
+			{
+				// Preserve the last durable state, then make only the confirmation write fail.
+				pending = File.ReadAllBytes( ledger );
+				File.Delete( ledger );
+				Directory.CreateDirectory( ledger );
+			} };
+			try
+			{
+				await store.SendPostcardAsync( sender, card, mail );
+				Assert.Fail( "The synthetic receipt write should fail." );
+			}
+			catch ( Exception exception ) when ( exception is IOException or UnauthorizedAccessException ) { }
+			Directory.Delete( ledger );
+			File.WriteAllBytes( ledger, pending! );
+			mail.AfterAccept = null;
+			store = new ServerStore( options );
+			await store.SendPostcardAsync( sender, card, mail );
+			Assert.AreEqual( 2, mail.Attempts.Count );
+			Assert.AreEqual( 1, mail.Accepted.Count, "The fake provider honors the same idempotency contract as Resend." );
+			Assert.AreEqual( mail.Attempts[0].IdempotencyKey, mail.Attempts[1].IdempotencyKey );
+			store = new ServerStore( options );
+			await store.SendPostcardAsync( sender, card, mail );
+			Assert.AreEqual( 2, mail.Attempts.Count, "The confirmed receipt survives another restart." );
+		}
+		finally { Directory.Delete( directory, true ); }
+	}
+
+	private sealed class BlockingMail : IEmailSender
+	{
+		public TaskCompletionSource<bool> Started { get; } = new( TaskCreationOptions.RunContinuationsAsynchronously );
+		public TaskCompletionSource<bool> Release { get; } = new( TaskCreationOptions.RunContinuationsAsynchronously );
+		public async Task SendAsync( EmailMessage message, CancellationToken cancel = default )
+		{
+			Started.TrySetResult( true );
+			await Release.Task.WaitAsync( TimeSpan.FromSeconds( 5 ) );
+		}
+	}
+
+	[TestMethod]
+	public async Task ConcurrentRequestsFromOneAccountCannotRaceTheDeliveryLedger()
+	{
+		var directory = Directory.CreateTempSubdirectory( "opentpw-card-concurrent-" ).FullName;
+		var mail = new BlockingMail();
+		try
+		{
+			var store = new ServerStore( new ServerOptions { DataDirectory = directory, PasswordIterations = 1000, RequireTotp = false } );
+			var sender = store.Register( "Sender", "correct horse" );
+			var card = Card( "a@example.test" );
+			var first = store.SendPostcardAsync( sender, card, mail );
+			await mail.Started.Task.WaitAsync( TimeSpan.FromSeconds( 5 ) );
+			Assert.AreEqual( 409, (await Assert.ThrowsExceptionAsync<StoreException>( () => store.SendPostcardAsync( sender, card, mail ) )).Status );
+			mail.Release.TrySetResult( true );
+			Assert.AreEqual( 1, (await first).DeliveredTo.Count );
+			Assert.AreEqual( 1, (await store.SendPostcardAsync( sender, card, mail )).DeliveredTo.Count );
+		}
+		finally { mail.Release.TrySetResult( true ); Directory.Delete( directory, true ); }
+	}
+
+	[TestMethod]
+	public async Task UncertainTombstonesHaveAPerAccountBound()
+	{
+		var directory = Directory.CreateTempSubdirectory( "opentpw-card-tombstones-" ).FullName;
+		var options = new ServerOptions { DataDirectory = directory, PasswordIterations = 1000, RequireTotp = false };
+		try
+		{
+			var store = new ServerStore( options );
+			var sender = store.Register( "Sender", "correct horse" );
+			var principal = ParkPackage.Hash( Encoding.UTF8.GetBytes( sender.Key + "\n" + sender.CreatedUtc.ToString( "O" ) ) );
+			var old = DateTimeOffset.UtcNow - TimeSpan.FromDays( 40 );
+			var tombstones = Enumerable.Range( 0, ServerStore.MaximumUnconfirmedPostcardsPerSender ).ToDictionary( index => index.ToString(),
+				_ => new ServerStore.PostcardDeliveryRecord { Sender = principal, StartedUtc = old } );
+			File.WriteAllBytes( Path.Combine( directory, "postcard-deliveries.json" ), JsonSerializer.SerializeToUtf8Bytes( tombstones, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase } ) );
+			store = new ServerStore( options );
+			var mail = new FakeMail();
+			Assert.AreEqual( 429, (await Assert.ThrowsExceptionAsync<StoreException>( () => store.SendPostcardAsync( sender, Card( "a@example.test" ), mail ) )).Status );
+			Assert.AreEqual( 0, mail.Attempts.Count );
 		}
 		finally { Directory.Delete( directory, true ); }
 	}

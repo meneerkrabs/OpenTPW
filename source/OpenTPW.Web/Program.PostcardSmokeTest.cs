@@ -85,10 +85,10 @@ public static partial class Program
 			}
 			int Stored() => folders.List( folders.Outbox ).Count;
 
-			var draft = Compose( "Alice; Bob Smith" );
+			var draft = Compose( "Alice; Bob Smith, card@example.test" );
 			Click( draft, "ok" );
 			var saved = folders.List( folders.Outbox ).Single().Card!;
-			Check( stack.Top?.Name == "smokeHud" && saved.Manifest.To.SequenceEqual( new[] { "Alice", "Bob Smith" } )
+			Check( stack.Top?.Name == "smokeHud" && saved.Manifest.To.SequenceEqual( new[] { "Alice", "Bob Smith", "card@example.test" } )
 				&& saved.Manifest.Title == "Postcard from Theme Park World" && saved.Manifest.Text == "Greetings from Theme Park World!",
 				"send-handler-defaults-and-outbox" );
 

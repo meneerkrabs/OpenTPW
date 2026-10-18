@@ -258,6 +258,8 @@ public sealed partial class ParkHud
 		{
 			CoasterPlaceResult.NotEnoughMoney => OpenTpwText.NotEnoughMoney,
 			CoasterPlaceResult.InvalidNodes => OpenTpwText.CoasterInvalidPylons,
+			// no pylon to close from: the closing message would name a last pylon that does not exist
+			CoasterPlaceResult.NotEditable => OpenTpwText.CannotBuildHere,
 			_ when closing => OpenTpwText.CoasterCannotClose,
 			_ => OpenTpwText.CannotBuildHere,
 		} ) );

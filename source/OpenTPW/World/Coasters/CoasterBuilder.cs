@@ -219,7 +219,7 @@ public sealed class CoasterBuilder
 	/// Opens a closed, incomplete circuit whose closing link fails the validator (closed before OpenTPW checked the closing link), so building goes on from its last pylon; false when
 	/// there is none.
 	/// </summary>
-	// [EXT:coaster-failing-closure-opens] such a circuit could never complete and took no new pylon: the tool's entry opens it again
+	// [EXT:coaster-closing-check] such a circuit could never complete and took no new pylon: the tool's entry opens it again
 	public bool OpenFailingClosure()
 	{
 		if ( !Track.IsClosed || Track.IsComplete || Track.IsCut || Track.CheckClosure() == CoasterPlaceResult.Ok )

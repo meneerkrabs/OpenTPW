@@ -119,7 +119,7 @@ same frame from its cells (`CoasterStationLayout.FromCells`, `[EXT:coaster-stati
   hovered closing target is already marked refused, and the HUD says why ("The track can't be completed from the last pylon…",
   "Move the pylons marked red…"). A closed circuit whose closing link fails (closed by an earlier build, or a pylon moved
   after the closing) can never complete and takes no new pylon; entering the tool opens it again
-  (`[EXT:coaster-failing-closure-opens]`), so it is built on from its last pylon. The ride window shows such a coaster as
+  (`[EXT:coaster-closing-check]`), so it is built on from its last pylon. The ride window shows such a coaster as
   TRACK INCOMPLETE and greys its door ([UI.md](UI.md)); the reopening guard's coaster test is the guests' predicate
   (complete, not crossing itself, not in the tool, `0x441970`).
 

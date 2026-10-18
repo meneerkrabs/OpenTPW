@@ -5,7 +5,7 @@ cell from the station and was marked invalid, so the completion click and every 
 The closing click on the station end now tests the closing link and the pylons first, for a fresh circuit as already for one the demolish button cut open
 (`[EXT:coaster-completion-click]`); the hovered closing target shows the refusal before the click. A refused click leaves the circuit open and the HUD says why,
 in all eleven languages: the track can't be completed from the last pylon, or the pylons marked red must move. A closed circuit whose closing link fails (closed by
-an earlier build, or a pylon moved after the closing) opens again when the track tool is entered (`[EXT:coaster-failing-closure-opens]`), so it is built on from its
+an earlier build, or a pylon moved after the closing) opens again when the track tool is entered (`[EXT:coaster-closing-check]`), so it is built on from its
 last pylon. The reopening guard's coaster test, and the reopening after a repair, take the guests' predicate (complete, not crossing itself, not in the tool;
 tp.exe `0x441970`) instead of the trains' state.
 
@@ -21,3 +21,4 @@ Tests: `ObjectWindowStatusTests` (the ride window's banner, colour and door thro
 condemned ride's hidden buttons and a condemned shop's door; the shop window's banner and its door during a call), `RideStateRulesTests.TheStatusBannerTakesTheFirstStatusThatApplies`,
 and `CoasterTests` (`ClosingThenCompletingAppendsTheStationEndNodes` with a refused closing, `ACircuitClosedThroughAFailingLinkOpensAgainForTheTool`,
 `TheClosingTargetShowsWhatItsClickAnswers`).
+- Review follow-up: reopening a circuit whose closing link fails is part of the existing `[EXT:coaster-closing-check]` rather than a new label, and a refused closing click with no pylon says the cell cannot be built on instead of naming a last pylon.

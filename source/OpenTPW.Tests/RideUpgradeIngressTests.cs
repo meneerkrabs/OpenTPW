@@ -196,6 +196,22 @@ public class RideUpgradeIngressTests
 	}
 
 	[TestMethod]
+	public void ABrokenDownRideWhoseUpgradeWaitsListsNeitherItsLevelNorTheCancel()
+	{
+		Fixture( BuildCategory.Rides, out var level, out var economy, out var owner, out _, out _ );
+		Research( economy );
+		economy.TryGetObject( level.GetEconomyInstance( owner )!.Value, out var state );
+		Assert.AreEqual( ParkEconomy.PurchaseResult.Ok, economy.TryBuyUpgrade( state.Id ) );
+		Assert.AreEqual( RideUpgradeRowKind.CancelLevel, level.UpgradeOffer( owner ).Rows.Single().Kind, "a waiting ride lists its cancel row (state 2)" );
+		// OpenTPW's state keeps a breakdown and the waiting upgrade together, the original's one state word either: the level was asked for already
+		state.IsBrokenDown = true;
+		Assert.AreEqual( RideObjectStates.BrokenDown, ParkEconomy.ObjectState( state ) );
+		var offer = level.UpgradeOffer( owner );
+		Assert.AreEqual( 0, offer.Rows.Count );
+		Assert.AreEqual( UIStrings.NoUpgrades, offer.Message );
+	}
+
+	[TestMethod]
 	public void TheStepArrowsSkipAddOnsAndAnAddOnOpensOnlyItsRidesWindow()
 	{
 		var hud = FixtureWith( AddOnPark(), BuildCategory.Rides, out var level, out _, out var owner, out var other, out _, catalog: new[] { AddOnEntry() } );

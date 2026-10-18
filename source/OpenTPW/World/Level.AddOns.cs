@@ -28,8 +28,8 @@ public partial class Level
 	private OriginalObject? buildAddOnRide;
 	/// <summary>The ride the armed build tool places an add-on for (an add-on row of its upgrade list), or null.</summary>
 	public OriginalObject? BuildAddOnRide => BuildEntry != null ? buildAddOnRide : null;
-	/// <summary>The ride an add-on being removed stood on, from <see cref="ParkObjects.ObjectRemoving"/> to <see cref="ParkObjects.ObjectRemoved"/>.</summary>
-	private OriginalObject? addOnRemovalRide;
+	/// <summary>An add-on being removed and the ride it stood on, from <see cref="ParkObjects.ObjectRemoving"/> to <see cref="ParkObjects.ObjectRemoved"/>.</summary>
+	private (OriginalObject AddOn, OriginalObject Ride)? addOnRemoval;
 	private readonly Dictionary<ObjectCatalogEntry, TrackSurface?> addOnSurfaces = new();
 
 	/// <summary>
@@ -58,7 +58,8 @@ public partial class Level
 			level = state.Level;
 			if ( ParkEconomy.ObjectState( state ) == RideObjectStates.Upgrading )
 				rows.Add( new RideUpgradeRow( RideUpgradeRowKind.CancelLevel, null, level + 1, 0 ) );
-			else if ( level < 2 && level + 1 < info.Upgrades.Count && info.Upgrades[level + 1].Level == level + 1 && economy.Research.IsAvailable( state.InfoId, level + 1 )
+			// a broken-down ride whose upgrade waits (OpenTPW's state keeps both, the original's one state word either) lists neither row: its level is asked for already
+			else if ( state.PendingLevel <= state.Level && level < 2 && level + 1 < info.Upgrades.Count && info.Upgrades[level + 1].Level == level + 1 && economy.Research.IsAvailable( state.InfoId, level + 1 )
 				&& !ride.IsDeleted && CanBuyCatalogueUpgrade( ride, state ) )
 				rows.Add( new RideUpgradeRow( RideUpgradeRowKind.Level, null, level + 1, info.Upgrades[level + 1].CostOfUpgrade ) );
 		}
@@ -144,22 +145,29 @@ public partial class Level
 	/// on no ride's track; any other object opens its own.
 	/// </summary>
 	// [BIN:TPW-EXE:0x00486920 object window] a ride-type object (+0x4AC 0) that is not an add-on of AddOn.UpgradeType 2: an object whose word +0x30 names a thing (0x004E0DF0) opens that thing's ride window (0x004AF980); the placement sets +0x30 to the clicked tile's ride for an add-on placed with the upgrade selection (0x0052A023 → 0x004E0DE0) and to 0 for anything else; without it an add-on (AddOn.UpgradesId, 0x004E2710) opens nothing and any other ride its own window
-	public OriginalObject? WindowTarget( OriginalObject? item ) => item is { IsDeleted: false } addOn && TrackAddOns.IsTrackAddOn( addOn.Entry ) ? RideUnder( addOn ) : item;
+	public OriginalObject? WindowTarget( OriginalObject? item ) => item is not { IsDeleted: false } ? null : TrackAddOns.IsTrackAddOn( item.Entry ) ? RideUnder( item ) : item;
 
 	/// <summary>The track add-on standing on cell (x, y), or null.</summary>
 	private OriginalObject? AddOnAt( int x, int y ) => Objects.FindAt( x, y ) is { IsDeleted: false } item && TrackAddOns.IsTrackAddOn( item.Entry ) ? item : null;
 
-	private void OnAddOnRemoving( OriginalObject item ) => addOnRemovalRide = TrackAddOns.IsTrackAddOn( item.Entry ) && resumeState == null ? RideUnder( item ) : null;
+	private void OnAddOnRemoving( OriginalObject item ) =>
+		addOnRemoval = TrackAddOns.IsTrackAddOn( item.Entry ) && resumeState == null && RideUnder( item ) is { } ride ? (item, ride) : null;
 
-	/// <summary>A sold track add-on: its ride's circuit is walked again, so its tiles take their pieces and plain sections back.</summary>
-	// [EXT:addon-sale-walk] the original's demolition 0x00527EE0 clears the add-on flag of the track cells under a sold add-on (0x0052851E) but neither makes their pieces (0x0053AFA0) nor walks the circuit: the pieces come back with the circuit's next walk (0x0052B18E makes the piece of a plain tile that has none) and until then the sections keep the add-on's kind; OpenTPW walks at once
+	/// <summary>
+	/// A removed track add-on: its tiles lose the add-on flag and its ride's circuit is walked again as after a placement (<see cref="WalkAfterAddOn"/>), so the tiles take their
+	/// pieces and plain sections back; the walk ends the vehicles' runs, as every walk does, and opens a valid ride.
+	/// </summary>
+	// [EXT:addon-sale-walk] the original's demolition 0x00527EE0 clears the add-on flag of the track cells under a sold add-on (0x0052851E) but neither makes their pieces (0x0053AFA0) nor walks the circuit: the pieces come back with the circuit's next walk (0x0052B18E makes the piece of a plain tile that has none) and until then the sections keep the add-on's kind, which a save of OpenTPW's could not restore (the restore walks the cells); OpenTPW walks at once
 	private void OnAddOnRemoved( OriginalObject item )
 	{
-		if ( addOnRemovalRide is not { } ride )
+		if ( addOnRemoval is not { } removal || !ReferenceEquals( removal.AddOn, item ) )
 			return;
-		addOnRemovalRide = null;
-		if ( !ride.IsDeleted )
-			RewalkTrack( ride, TrackWalkCause.AddOn );
+		addOnRemoval = null;
+		if ( removal.Ride.IsDeleted || Guests?.Grid.Cells is not { } cells )
+			return;
+		// the flags come off before the walk reads them, whichever removal handler runs first (the footprint's own handler takes them off again)
+		cells.ClearFootprint( item.Cells.Where( cell => cell.Cell.CellType is ObjectShapeSymbols.TypeUpgrade or ObjectShapeSymbols.TypeHash ) );
+		WalkAfterAddOn( removal.Ride );
 	}
 
 	/// <summary>
@@ -173,7 +181,7 @@ public partial class Level
 		foreach ( var section in bump.Sections )
 		{
 			if ( section.Kind is 12 or 13 && AddOnAt( section.X / TrackSections.Cell, section.Y / TrackSections.Cell ) is { } addOn )
-				section.AddOn = new AddOnLink( addOn );
+				section.AddOn = new AddOnLink( addOn.Runtime );
 		}
 		foreach ( var ends in TrackAddOns.OpenEndsOf( builder.Tracks, circuit.Steps, ( x, y ) => AddOnAt( x, y ) != null ) )
 		{
@@ -215,12 +223,12 @@ public partial class Level
 	}
 
 	/// <summary>A placed track add-on as its sections see it (section +0xC, +0x10): its type and its animation channel 0.</summary>
-	private sealed class AddOnLink( OriginalObject item ) : ITrackAddOn
+	internal sealed class AddOnLink( OriginalObjectRuntime runtime ) : ITrackAddOn
 	{
-		public int TypeId => item.Entry.InfoId;
-		public int Animation => item.Runtime.Animator.GetAnimationId( OriginalObjectEffects.MainChannel );
-		public int DeferredAnimation => item.Runtime.Animator.GetDeferredAnimationId( OriginalObjectEffects.MainChannel );
-		public void FlushDeferred() => item.Runtime.Animator.Flush( OriginalObjectEffects.MainChannel );
-		public void Queue( int animation, bool loop ) => item.Runtime.TriggerAnimation( animation, 0, OriginalObjectEffects.MainChannel, loop, 1f, defer: true );
+		public int TypeId => runtime.Entry.InfoId;
+		public int Animation => runtime.Animator.GetAnimationId( OriginalObjectEffects.MainChannel );
+		public int DeferredAnimation => runtime.Animator.GetDeferredAnimationId( OriginalObjectEffects.MainChannel );
+		public void FlushDeferred() => runtime.Animator.Flush( OriginalObjectEffects.MainChannel );
+		public void Queue( int animation, bool loop ) => runtime.TriggerAnimation( animation, 0, OriginalObjectEffects.MainChannel, loop, 1f, defer: true );
 	}
 }

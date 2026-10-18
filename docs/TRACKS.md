@@ -266,7 +266,7 @@ animation 5 (start) or 12 (stop), flags 7 (loop, at once; on a stop the tile kee
 
 | Caller | Valid circuit | Invalid circuit |
 | --- | --- | --- |
-| ride placement walk (`0x524D0A`) | start, forward | stop, both walks |
+| an add-on's placement walk (`0x524D0A`; OpenTPW's walk of a fresh station takes the same rule, `[EXT:track-placement-walk]`: the original's ride placement walks nothing) | start, forward | stop, both walks |
 | a track line ends (`0x526F02`) | stop, forward | stop, both walks |
 | edit sub-modes 0xE/0x13 (`0x526BD0`) | start, forward | stop, both walks (no OpenTPW counterpart, TRACK-018) |
 | `BUMP 17` (`0x5549ED`) | 0: start, other: stop, both walks | same |
@@ -341,7 +341,7 @@ exist (the hash schema stays at 14). The digest covers every restored boat field
 `TrackSelectorTests` (the 16 masks, adjustments, tables, templates), `TrackCircuitTests` (tool, cost, clearing, closed loop, open track, tee refusal, crossing,
 bridges), `BumpControllerTests` (sine table, section and buoy geometry golden values, commands, a golden boat run, determinism, collisions, saves),
 `TrackPieceAnimationTests` (the two piece walks, the clip state, the walk causes and BUMP 17's stored word), `TrackRegisterRoundTests` (the 31 ms tick, start headings, the crossing flag and its effect on boat collisions, spray, engine voice and unload cues, the break smoke emitter, the unclamped bank), `HmpFileTests`, `TrackSaveTests` (shape check, codec, round trip, hash gating), `TrackAddOnTests` (the add-on tool's hover, the walk's run counter and open ends, the Teleport's hook) and, with `OPENTPW_GAME_PATH`, `TrackAssetTests` (the kits and profiles of all eight
-ride archives, the arm masks and water clips of the jungle kit, the real `Wateride.RSE` against the controller) and `TrackAddOnDataTests` (the ten shipped add-ons: their rides, footprints, open ends and surfaces). The native smoke run lays a small closed circuit on the Jungle level and runs a boat, and the park-resume smoke with `OPENTPW_SMOKE_WATER=1` (both phases) buys the ride, saves a park with a boat on the water, restores it through the menu load and matches 600 continuation ticks of canonical hashes.
+ride archives, the arm masks and water clips of the jungle kit, the real `Wateride.RSE` against the controller) and `TrackAddOnDataTests` (the ten shipped add-ons: their rides, footprints, open ends and surfaces). The native smoke run lays a small closed circuit on the Jungle level and runs a boat, and the park-resume smoke with `OPENTPW_SMOKE_WATER=1` (both phases) buys the ride, saves a park with a boat on the water, restores it through the menu load and matches 600 continuation ticks of canonical hashes; with `OPENTPW_SMOKE_ADDON=1` as well it buys the ride's add-on from its upgrade list, sells it and buys it again before the boats run, and the restore walks the add-on's sections back. `TrackAddOnLevelTests` places, links and sells a jump on a level assembled without assets.
 The golden values freeze this implementation of the traced rules; they are not captures of the original game.
 
 ## Design decisions and retired items (October 14 register round)
@@ -389,7 +389,8 @@ captures a ride with an add-on through `--debug-kart-track` or `--debug-water-tr
   passes 0x10B/0x110, 0x20B/0x210 in the validator's add-on mode, `0x535953`–`0x5359B3`: the head's owner word is the ride's, no corner, no junction, no flag 0x10 on
   the cell yet), its other cells on free ground, and placing the object writes the cell's flags word to 0x10 (`0x53A510`, also on the second-layer cell). A flagged
   tile gets no piece instance (`0x53AFA0`): the add-on's mesh replaces it. `TrackBuilder.CanStandAddOn`, `ParkObjects.AddOnCellRule`, `ParkCellMap.WriteFootprint`,
-  `Level.CheckAddOn`, `Level.PlaceAddOn`.
+  `Level.CheckAddOn`, `Level.PlaceAddOn`. `[EXT:addon-not-on-station]`: the original's track test (`0x53AD30`) counts the station tiles (types 13 and 18) as track,
+  so an add-on could take the ride's own station cells, which its sale would then leave empty; OpenTPW refuses a '+' or '#' cell another object holds.
 - **Click** (`0x524B45`): the build click places the add-on and charges it; the ride's vehicles end (the re-walk's section reset `0x545450`), the circuit is walked
   again (`0x524D0A`), the pieces' clips start forward on a valid circuit and stop on an invalid one, and a valid ride opens when its guard allows; only exactly Ctrl
   keeps the tool. `Level.WalkAfterAddOn`, `TrackWalkCause.AddOn`.
@@ -408,7 +409,8 @@ captures a ride with an add-on through `--debug-kart-track` or `--debug-water-tr
 - **Window** (`0x486920`): the placement links an add-on to the clicked tile's ride (thing +0x30, `0x52A023`), and a click on the add-on opens that ride's window; the
   window code's walks over the objects of a type skip add-ons (`0x4E2710`), so the window's arrows do too. `Level.WindowTarget`.
 - **Removal**: an add-on is removed as any object; the demolition `0x527EE0` clears the flag under it but makes no pieces and walks nothing (the pieces come back with the
-  circuit's next walk, until then the sections keep the add-on's kind). `[EXT:addon-sale-walk]`: OpenTPW walks the circuit at once.
+  circuit's next walk, until then the sections keep the add-on's kind). `[EXT:addon-sale-walk]`: OpenTPW clears the flag and walks the circuit at once, as after a placement
+  (the walk ends the vehicles' runs and opens a valid ride), because a save of the stale sections could not be restored: the restore walks the cells.
 
 Not traced: whether a ride's demolition takes the add-ons on its track with it (OpenTPW leaves them standing, without a window), and the Extra Tube's window (the
 dispatcher opens `0x4B6AE0` for an add-on of type 2; OpenTPW shows the ride window).

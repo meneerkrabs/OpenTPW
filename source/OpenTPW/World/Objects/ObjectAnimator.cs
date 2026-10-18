@@ -603,6 +603,7 @@ public sealed class ObjectAnimator
 			KeepsPoseOnClipChange = keepsPoseOnClipChange,
 			Channels = capturedChannels,
 			NodeStateBits = (bool[])nodeStateBit.Clone(),
+			PinnedNodes = nodePinned.Contains( true ) ? Enumerable.Range( 0, nodePinned.Length ).Where( node => nodePinned[node] ).ToArray() : null,
 			TextureFrames = new AnimatorTextureFrameSnapshot
 			{
 				Frames = (int[])frameBySlot.Clone(),
@@ -632,6 +633,8 @@ public sealed class ObjectAnimator
 			throw new InvalidDataException( "animator fixed-item pose retention does not match the snapshot." );
 		if ( snapshot.NodeStateBits.Length != nodeStateBit.Length )
 			throw new InvalidDataException( $"animator has {nodeStateBit.Length} nodes, the snapshot stores {snapshot.NodeStateBits.Length} node-state bits." );
+		if ( snapshot.PinnedNodes is { Length: > 0 } pinned && pinned[^1] >= nodePinned.Length )
+			throw new InvalidDataException( $"animator has {nodePinned.Length} nodes, the snapshot pins node {pinned[^1]}." );
 		if ( snapshot.Meshes.Count != vertexVersions.Length || snapshot.Meshes.Where( ( cached, index ) => cached.Mesh != index ).Any() )
 			throw new InvalidDataException( $"animator has {vertexVersions.Length} meshes, the snapshot does not describe exactly those, in order." );
 		if ( snapshot.TextureFrames is { } frameHistory )
@@ -673,6 +676,9 @@ public sealed class ObjectAnimator
 			channels[index] = state;
 		ChannelsChanged();
 		Array.Copy( snapshot.NodeStateBits, nodeStateBit, nodeStateBit.Length );
+		Array.Clear( nodePinned );
+		foreach ( var node in snapshot.PinnedNodes ?? Array.Empty<int>() )
+			nodePinned[node] = true;
 		Array.Clear( frameBySlot );
 		Array.Clear( slotAnimated );
 		textureFrameVersion = 0;

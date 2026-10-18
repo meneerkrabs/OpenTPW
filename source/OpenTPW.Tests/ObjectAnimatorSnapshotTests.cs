@@ -62,6 +62,25 @@ public class ObjectAnimatorSnapshotTests
 	}
 
 	[TestMethod]
+	public void AnEndNodeTheWalkPinnedStaysPinnedThroughARestore()
+	{
+		var (entry, _, _, _, _) = TotemClip();
+		var animator = new OriginalObjectRuntime( entry, new RideScriptWorld(), seed: 1 ).Animator;
+		var restored = new OriginalObjectRuntime( entry, new RideScriptWorld(), seed: 1 ).Animator;
+		Assert.IsNull( animator.CaptureSnapshot().PinnedNodes );
+		Assert.IsFalse( System.Text.Encoding.UTF8.GetString( ParkResumeJson.Serialize( animator.CaptureSnapshot() ) ).Contains( "PinnedNodes" ), "an object no walk touched is saved as before" );
+		// the walk hides an add-on's end with |= 0x80000010 and shows it with &= ~0x10 (0x0052B06D, 0x0052AFCC): the pin, bit 31, stays
+		animator.SetNodeHidden( 0, true );
+		animator.SetNodeHidden( 0, false );
+		var snapshot = ParkResumeJson.Deserialize<ObjectAnimatorSnapshot>( ParkResumeJson.Serialize( animator.CaptureSnapshot() ) );
+		CollectionAssert.AreEqual( new[] { 0 }, snapshot.PinnedNodes );
+		restored.RestoreSnapshot( snapshot, identity => Resolve( entry, identity ) );
+		CollectionAssert.AreEqual( new[] { 0 }, restored.CaptureSnapshot().PinnedNodes );
+		Assert.IsFalse( restored.GetNodeStateBit( 0 ) );
+		Assert.ThrowsException<InvalidDataException>( () => restored.RestoreSnapshot( snapshot with { PinnedNodes = new[] { 1, 0 } }, identity => Resolve( entry, identity ) ), "pins out of order" );
+	}
+
+	[TestMethod]
 	public void ChannelTickAndDeferredClipSurviveARestore()
 	{
 		var (entry, animation, variant, clip, name) = TotemClip();

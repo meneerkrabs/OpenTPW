@@ -49,6 +49,30 @@ public class TrackAddOnDataTests
 	}
 
 	[TestMethod]
+	public void TheTeleportsLinkStartsItsPassClipQueuesTheIdleLoopBehindItAndDropsAQueuedClip()
+	{
+		var entry = TrackAddOnEntries().Single( candidate => candidate.InfoId == TrackAddOns.TeleportTypeId );
+		var teleport = new OriginalObjectRuntime( entry, new RideScriptWorld(), seed: 1 );
+		ITrackAddOn link = new Level.AddOnLink( teleport );
+		Assert.AreEqual( TrackAddOns.TeleportTypeId, link.TypeId );
+		// the hook's trigger has no at-once flag (0x004732A0 with flags 0): on an idle channel it starts at once
+		link.FlushDeferred();
+		link.Queue( TrackAddOns.PassAnimation, loop: false );
+		Assert.AreEqual( TrackAddOns.PassAnimation, link.Animation, "the m clip plays" );
+		Assert.AreEqual( ObjectAnimator.NoAnimation, link.DeferredAnimation );
+		// behind a running clip it waits (the deferred slot +0x24), and the flush (0x00473270) drops it
+		link.Queue( TrackAddOns.IdleAnimation, loop: true );
+		Assert.AreEqual( (TrackAddOns.PassAnimation, TrackAddOns.IdleAnimation), (link.Animation, link.DeferredAnimation) );
+		link.FlushDeferred();
+		Assert.AreEqual( ObjectAnimator.NoAnimation, link.DeferredAnimation );
+		link.Queue( TrackAddOns.IdleAnimation, loop: true );
+		for ( var tick = 0; tick < 3000 && link.Animation != TrackAddOns.IdleAnimation; tick++ )
+			teleport.Animator.Advance( FixedStepClock.TickDuration );
+		Assert.AreEqual( TrackAddOns.IdleAnimation, link.Animation, "the queued idle loop (the i clip) follows the pass clip" );
+		Assert.AreEqual( ObjectAnimator.NoAnimation, link.DeferredAnimation );
+	}
+
+	[TestMethod]
 	public void EveryTrackAddOnHasItsTwoOpenEndsAndASurface()
 	{
 		foreach ( var entry in TrackAddOnEntries() )

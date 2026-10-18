@@ -69,6 +69,7 @@ public partial class Level
 		if ( resumeState != null )
 			return;
 		BuilderOf( item )!.PlaceStation( station );
+		// [EXT:track-placement-walk] the original's placement lays the station (0x0052A1A0 from 0x00529E10) and walks nothing; OpenTPW walks the fresh station so its controller has the station's sections and verdict at once, and the pieces take the add-on walk's rule (TrackPieceAnimations.ForWalk), which on the station's open circuit stops clips none of them plays yet
 		RewalkTrack( item, TrackWalkCause.Placement );
 	}
 

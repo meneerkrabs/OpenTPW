@@ -285,6 +285,24 @@ public class ObjectAccessCellsTests
 	}
 
 	[TestMethod]
+	public void AnAddOnCellThatAnotherObjectHoldsIsRefused()
+	{
+		var jump = Entry( 1500, 3, false, "++", "++" );
+		var ride = Entry( 1150, 3, false, "**", "**" );
+		var rig = new Rig( jump, ride );
+		var (builder, _, owner) = Loop( rig.Cells );
+		rig.Objects.AddOnCellRule = ( x, y ) => builder.CanStandAddOn( x, y, owner );
+		// the original's track test 0x53AD30 counts the station tiles (types 13 and 18) as track, so the add-on rule alone passes the first station tile (10, 10)
+		Assert.IsTrue( builder.CanStandAddOn( 10, 10, owner ) );
+		Assert.AreEqual( OriginalPlacementResult.Allowed, rig.Objects.Check( jump, 10, 10, 0 ) );
+		// [EXT:addon-not-on-station] the ride's own footprint holds its station cells: an add-on may not take them
+		var holder = rig.Objects.AddRestored( ride, 10, 10, 0, true, 1, 1 );
+		Assert.AreSame( holder, rig.Objects.FindAt( 10, 10 ) );
+		Assert.AreEqual( OriginalPlacementResult.Occupied, rig.Objects.Check( jump, 10, 10, 0 ) );
+		Assert.AreEqual( OriginalPlacementResult.Allowed, rig.Objects.Check( jump, 12, 12, 0 ), "a straight that no object holds still takes it" );
+	}
+
+	[TestMethod]
 	public void ATrackEndNeedsTheCellBeyondItOnTheMap()
 	{
 		// [BIN:TPW-EXE:0x005295A8 track end beyond cell] a coaster station "<*>" on one row: '<' opens towards −X, '>' towards +X

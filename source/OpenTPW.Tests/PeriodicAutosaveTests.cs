@@ -356,6 +356,61 @@ public class PeriodicAutosaveTests
 		finally { fixture.Cleanup(); }
 	}
 
+	/// <summary>Every object a snapshot or the live park reaches by its fields, by identity (strings, types, delegates and enums are not followed).</summary>
+	private static Dictionary<object, string> Reach( object root )
+	{
+		var seen = new Dictionary<object, string>( ReferenceEqualityComparer.Instance ); var stack = new Stack<(object, string)>(); stack.Push( (root, root.GetType().Name) );
+		while ( stack.Count > 0 )
+		{
+			var (current, path) = stack.Pop(); var type = current.GetType();
+			if ( type.IsPrimitive || type.IsEnum || current is string || current is Type || current is Delegate || current is System.Reflection.MemberInfo || current is Thread || current is Task || type.IsPointer ) continue;
+			if ( !type.IsValueType && !seen.TryAdd( current, path ) ) continue;
+			if ( current is Array array )
+			{
+				if ( !array.GetType().GetElementType()!.IsPrimitive ) foreach ( var item in array ) if ( item != null ) stack.Push( (item, path + "[]") );
+				continue;
+			}
+			for ( var t = type; t != null && t != typeof( object ); t = t.BaseType )
+				foreach ( var field in t.GetFields( BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly ) )
+				{
+					if ( field.FieldType.IsPointer || field.FieldType.IsPrimitive || field.FieldType.IsEnum || field.FieldType == typeof( string ) ) continue;
+					object? value; try { value = field.GetValue( current ); } catch { continue; }
+					if ( value != null ) stack.Push( (value, path + "." + field.Name) );
+				}
+		}
+		return seen;
+	}
+
+	[TestMethod]
+	public void CapturedSnapshotSharesNoMutableStateWithTheRunningParkAndStaysStableWhileSliced()
+	{
+		using var renderer = new AutomaticCheckpointCpuRendererScope();
+		var fixture = new UpgradeCatalogueDefaultsTests(); fixture.Setup();
+		try
+		{
+			var type = typeof( UpgradeCatalogueDefaultsTests );
+			var world = ((Level Level, ParkEconomy Economy, OriginalObject One, OriginalObject Two, ParkObjectState State))type.GetMethod( "World", BindingFlags.Instance | BindingFlags.NonPublic )!.Invoke( fixture, new object[] { "", 0, false } )!;
+			var assets = (Dictionary<string, string>)type.GetMethod( "PrepareCapture", BindingFlags.Static | BindingFlags.NonPublic )!.Invoke( null, new object[] { world } )!;
+			typeof( Level ).GetMethod( "SetupStaff", BindingFlags.Instance | BindingFlags.NonPublic )!.Invoke( world.Level, null );
+			typeof( Level ).GetMethod( "SetupParkGate", BindingFlags.Instance | BindingFlags.NonPublic )!.Invoke( world.Level, null );
+			var guests = world.Level.Guests!; var grid = guests.Grid;
+			for ( var y = 0; y < 30; y++ ) for ( var x = 0; x < 30; x++ ) grid.SetPath( x, y, true );
+			try { for ( var i = 0; i < 200; i++ ) guests.SpawnInPark( i % 30, i / 30 % 30 ); } catch ( InvalidOperationException ) { }
+			for ( var tick = 0; tick < 300; tick++ ) world.Level.AdvanceSimulation( FixedStepClock.TickDuration );
+			var snapshot = world.Level.CaptureResumeSnapshotUnchecked( null, "jungle", out var check, assets, Noon ); check();
+			var reference = ParkResumeSaveFile.Serialize( snapshot );
+			var captured = Reach( snapshot ); var live = Reach( world.Level );
+			var shared = captured.Keys.Where( live.ContainsKey ).Where( item => item is not Array { Length: 0 } ).Where( item => item is Array || item is System.Collections.IList || item is System.Collections.IDictionary || ( !item.GetType().IsValueType && item.GetType().GetMethod( "<Clone>$" ) == null && item.GetType().GetProperties().Any( p => p.SetMethod is { IsPublic: true } && !p.SetMethod.ReturnParameter.GetRequiredCustomModifiers().Any() ) ) ).ToList();
+			Assert.AreEqual( 0, shared.Count, "the snapshot aliases live mutable state: " + string.Join( " | ", shared.Take( 20 ).Select( item => captured[item] + " == " + live[item] ) ) );
+			// the park runs on between the slices of the serialization
+			var sliced = ParkResumeSaveFile.BeginSlicedSerialize( snapshot, check ); var frames = 0;
+			while ( !sliced.Run( TimeSpan.Zero ) ) { frames++; for ( var tick = 0; tick < 3; tick++ ) world.Level.AdvanceSimulation( FixedStepClock.TickDuration ); }
+			Assert.IsTrue( frames > 10, "serialization took several slices" );
+			CollectionAssert.AreEqual( reference, sliced.Bytes, "a park that kept running between the slices did not tear the save" );
+		}
+		finally { fixture.Cleanup(); }
+	}
+
 	// Measurement, not a check: OPENTPW_AUTOSAVE_BENCH=<guests> prints the capture, serialization and write time of a park with that many guests (docs/PARK-SAVES.md)
 	[TestMethod]
 	public void MeasureCaptureSerializeAndWriteOfALargePark()

@@ -86,10 +86,10 @@ original-format save behavior is involved.
 `[EXT:periodic-autosave]` (user-approved 2026-10-18). A browser player lost a park to a crash because the only automatic save was the checkpoint of Exit To Lobby
 ([AUTOMATIC-CHECKPOINT-INGRESS.md](AUTOMATIC-CHECKPOINT-INGRESS.md)). OpenTPW now also saves a park in play on a timer, so a crash costs at most a few minutes.
 
-- **What the original does.** Checked statically in tp.exe (REA, 2026-10-18): the park-save writer `0x5AC610` has three callers. The park state machine `0x54E360` calls it in state 0xB,
+- **What the original does.** Checked statically in tp.exe (REA, 2026-10-18): the park-save writer `0x5AC610` has four callers. The park state machine `0x54E360` calls it in state 0xB,
   and only when the game type is not the online visit (`0x54E360` case 0xB: `if (DAT_00fb3b7c != 1) FUN_005ac610(&DAT_00877c60)`); the main running state (0xA) reaches state 0xB only
-  when the exit request word `DAT_00879088` is 2 or 3 (the pause menu's Exit To Lobby and its relatives) or, in the online visit, when the chat session ends. The other two callers are the quick-save command
-  `0x40BF90` (it logs "QuickSave_OK" or "Quicksave failed") and `0x49E9B0`, a save-screen action; neither has a static caller (they run from the UI's callbacks). No timer, frame counter or periodic call to
+  when the exit request word `DAT_00879088` is 2 or 3 (the pause menu's Exit To Lobby and its relatives) or, in the online visit, when the chat session ends. The other three callers are the quick-save command
+  `0x40BF90` (it logs "QuickSave_OK" or "Quicksave failed"), `0x49E9B0`, a save-screen action, and a menu callback at `0x424BB0` (code Ghidra has not defined as a function; it stores request 2 through `0x5508B0` and then saves at `0x424BD7`); none has a direct static caller (they run from the UI's callbacks and callback tables). No timer, frame counter or periodic call to
   the writer was found, so the original's per-theme `autosave.TPWS` (Mac evidence: ECONOMY.md, "Original flow that OpenTPW does not reproduce") is written when a park is left, not periodically. The file name
   itself is built from a buffer (`0x877C60`) filled at run time, so the PC name was not resolved statically. A timer reached through an indirect call, which the static callers do not list, cannot be ruled out
   from the executable alone; the periodic save is therefore an OpenTPW extension, not a reproduction.

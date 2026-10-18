@@ -54,10 +54,6 @@
 		     read from content/pools below the program folder like on the desktop. The sprite sets themselves (esprites/, about 8.8 MB: the 2x guests and swimwear) are NOT embedded: they would cost every browser user about 6.5 MB Brotli even with the
 		     extension off. They are published as static files below pools-sprites/ (see below) and fetched in the background while the extension is on; the game keeps a file only when the manifest pins it (Browser delivery in docs/POOLS.md). -->
 		<EmbeddedResource Include="../../content/pools/**/*" Exclude="../../content/pools/esprites/**/*" LogicalName="content/pools/%(RecursiveDir)%(Filename)%(Extension)" />
-		<!-- The HD interface art (docs/TEXTURE-PACKS.md) is NOT embedded as the PNGs here: the browser ships the
-		     predecoded RGBA siblings staged by the PredecodeHeroArt target below instead (~+1.7 MB for skipping
-		     PNG decode on a first menu open; UiImages/Texture load them through PredecodedUiArt). Desktop builds
-		     keep the PNGs, and the two representations never coexist in one build. -->
 	</ItemGroup>
 
 	<!-- The pools sprite sets as static files of the site (wwwroot/pools-sprites/..., the same origin as the page). The page fetches them after the start (wwwroot/opentpw-pool-sprites.js). -->
@@ -65,36 +61,6 @@
 	<ItemGroup>
 		<Content Include="../../content/pools/esprites/**/*" Link="wwwroot/pools-sprites/%(RecursiveDir)%(Filename)%(Extension)" />
 	</ItemGroup>
-
-	<!-- Stages the predecoded hero art the browser embeds instead of content/hero-art's PNGs. The generator
-	     (tools/hero-art) always runs and rewrites only changed files, so additions, removals and content or
-	     tool changes take effect on the next build without timestamp tracking; the staging directory lives
-	     under obj, outside git. -->
-	<PropertyGroup>
-		<!-- Under obj (outside git), per configuration so Debug and Release each keep their own staged set.
-		     BaseIntermediateOutputPath is used because this SDK only sets IntermediateOutputPath later in the build. -->
-		<PredecodedHeroArtStaging>$(BaseIntermediateOutputPath)predecoded-hero-art/$(Configuration)/</PredecodedHeroArtStaging>
-	</PropertyGroup>
-	<Target Name="PredecodeHeroArt" BeforeTargets="AssignTargetPaths">
-		<PropertyGroup>
-			<!-- NetCoreRoot is set when dotnet drives the build; plain msbuild takes dotnet from PATH. -->
-			<_PredecodeDotnet Condition="'$(NetCoreRoot)' != '' And Exists('$(NetCoreRoot)dotnet')">"$(NetCoreRoot)dotnet"</_PredecodeDotnet>
-			<_PredecodeDotnet Condition="'$(_PredecodeDotnet)' == ''">dotnet</_PredecodeDotnet>
-		</PropertyGroup>
-		<MakeDir Directories="$(PredecodedHeroArtStaging)" />
-		<Exec StandardOutputImportance="high" Command="$(_PredecodeDotnet) build &quot;$(MSBuildThisFileDirectory)../../tools/hero-art/PredecodeHeroArt.csproj&quot; -c $(Configuration) --nologo -v:quiet" />
-		<Exec StandardOutputImportance="high" Command="$(_PredecodeDotnet) &quot;$(MSBuildThisFileDirectory)../../tools/hero-art/bin/$(Configuration)/net11.0/PredecodeHeroArt.dll&quot; --source &quot;$(MSBuildThisFileDirectory)../../content/hero-art&quot; --staging &quot;$(PredecodedHeroArtStaging.TrimEnd('/\'))&quot;" />
-		<ItemGroup>
-			<_PredecodedHeroArt Include="$(PredecodedHeroArtStaging)**/*" />
-		</ItemGroup>
-		<ItemGroup>
-			<!-- Inside a target, an item's own metadata is not yet readable, so the logical names are attached in a second step. -->
-			<_PredecodedHeroArt Update="@(_PredecodedHeroArt)" LogicalName="content/hero-art/%(RecursiveDir)%(Filename)%(Extension)" />
-		</ItemGroup>
-		<ItemGroup>
-			<EmbeddedResource Include="@(_PredecodedHeroArt)" />
-		</ItemGroup>
-	</Target>
 
 	<!-- The file system creates archive handlers by reflection; keep the game whole when trimming. -->
 	<ItemGroup>

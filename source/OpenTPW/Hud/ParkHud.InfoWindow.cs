@@ -21,6 +21,7 @@ public sealed partial class ParkHud
 	private bool[] parkInfoIconHidden => parkInfoIcons ??= new bool[3];
 	private UiScreen? parkInfoScreen;
 	// [BIN:TPW-EXE:0x753C48 series mask] the graph's series mask and the period (0x7CB39C) are globals the window procedure keeps across openings; they start at the people-in-park series and 1 year
+	// [APPROX:UI-914] the choice is kept across openings within a park (it lives on the park's HUD), where tp.exe's two globals persist for the whole process and so carry over to the next park
 	private ParkInfoSeries? parkInfoSeriesChoice;
 	private ParkInfoSeries parkInfoSeries { get => parkInfoSeriesChoice ?? ParkInfoGraph.InitialSeries; set => parkInfoSeriesChoice = value; }
 	private int parkInfoPeriod;
@@ -56,9 +57,6 @@ public sealed partial class ParkHud
 
 	/// <summary>The <c>ti_hungry</c> frame the icon of <paramref name="slot"/> shows, or -1 while it draws nothing (empty, or hidden earlier and never shown again).</summary>
 	public int ParkInfoIconFrame( int slot ) => parkInfoIconHidden[slot] ? -1 : parkInfoTop.FrameAt( slot );
-
-	/// <summary>The THOUGHTS.str entry every shown icon's hover text names: the icon's frame getter returns 0, so entry 0 + 1.</summary>
-	public const int ParkInfoIconHelpThought = 1;
 
 	/// <summary>Reads the Top 3 Thoughts again, as the window's one-second timer does.</summary>
 	// [BIN:TPW-EXE:0x004A4AB0 thoughts refresh] 0x4C8430 fills three bytes from the guests now; the icons take them as a whole, so the three always belong to one reading
@@ -143,10 +141,10 @@ public sealed partial class ParkHud
 		{
 			var icon = table.Control( control );
 			var shown = slot;
-			// [BIN:TPW-EXE:0x004A4700 icon hover] message 0xC calls the icon's vtable +0x20 (slot 8 of 0x7059F0, 0x661596), adds 1 and takes that entry of the THOUGHTS.str table 0x78BA9C (0x6ACE60) as its text
-			// [BIN:TPW-EXE:0x661596 frame getter] the getter is 'return 0' (the setter 0x661525 only forwards message 0x80 to the control's two models and stores no frame), so every icon that is shown names THOUGHTS.str entry 1, whatever frame it shows
+			// [BIN:TPW-EXE:0x004A4700 icon hover] message 0xC calls the icon's vtable +0x20, adds 1 and takes that entry of the THOUGHTS.str table 0x78BA9C (0x6ACE60) as its text
+			// [BIN:TPW-EXE:0x0066DA4D frame setter] the icons are control type 6 of table 0x7537D0 (factory 0x65DD7B, case 0x65E057, constructor 0x66D9E0, vtable 0x705C58): slot 7 (+0x1C, 0x66DA4D), which 0x4A4AB0 calls with the thought id less 1, stores the frame at +0x13C before the base setter 0x661525, and slot 8 (+0x20, 0x66DAD2) returns it, so each icon names the THOUGHTS.str entry of its own frame plus 1
 			screen.Add( new FrameIcon { Id = $"thought{slot}", Model = icon.Model!, Frame = () => ParkInfoIconFrame( shown ),
-				HelpSource = () => ParkInfoIconFrame( shown ) >= 0 ? strings.Thought( ParkInfoIconHelpThought ) : null, Bounds = icon.Rect, Anchor = UiAnchor.Center } );
+				HelpSource = () => ParkInfoIconFrame( shown ) is var frame and >= 0 ? strings.Thought( frame + 1 ) : null, Bounds = icon.Rect, Anchor = UiAnchor.Center } );
 		}
 		var okay = table.Model( "b_okay" );
 		screen.Add( new UiButton { Id = "close", Model = okay.Model, Help = strings.Help( okay.Help ), Clicked = CloseParkInfoWindow, Bounds = okay.Rect, Anchor = UiAnchor.Center } );

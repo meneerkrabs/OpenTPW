@@ -463,7 +463,7 @@ public sealed class UiImageElement : UiElement
 }
 
 /// <summary>The timer of a repeating button: after <see cref="Delay"/> held it calls <see cref="Start"/>, then <see cref="Tick"/> every time more than <see cref="Interval"/> has passed.</summary>
-// [BIN:TPW-EXE:0x668dd9 button hold timer] the per-frame message 0x1e of a pressed button with style bit 0x20 (+0x48): state +0x15a 1 waits until now - +0x144 >= +0x13c (the delay), then sets state 2 and posts 0x10009 to the parent; state 2 posts 0x10008 each time now - +0x144 > +0x140 (the interval); both only while the button's pressed bit (+0x138 & 2) is set, and they restart +0x144; the ctor 0x6688b3 stores the delay and the interval (scroll arrows: +0x13c = 500 ms, +0x140 = 0x7d = 125 ms); the press 0x668ecf sets state 1 and +0x144, the release 0x668eff clears the state and the click (0x100) follows only when it was not 2
+// [BIN:TPW-EXE:0x668dd9 button hold timer] the per-frame message 0x1e of a pressed button with style bit 0x20 (+0x48): state +0x15a 1 waits until now - +0x144 >= +0x13c (the delay), then sets state 2 and posts 0x10009 to the parent; state 2 posts 0x10008 each time now - +0x144 > +0x140 (the interval); both only while the button's pressed bit (+0x138 & 2) is set, and they restart +0x144; the ctor 0x6688b3 stores +0x13c = 500 ms and +0x140 = 0x7d = 125 ms for every button, and only a button with style bit 0x20 repeats (the scroll arrows are style 0x21); the press 0x668ecf sets state 1 and +0x144, the release 0x668eff clears the state and the click (0x100) follows only when it was not 2
 public sealed record UiButtonRepeat( float Delay, float Interval, Action Start, Action Tick );
 
 /// <summary>
@@ -495,7 +495,7 @@ public sealed class UiButton : UiElement
 	/// plays <see cref="GameAudio.SelectClickEvent"/> (<see cref="LayoutTable.ClickSoundFor"/>).
 	/// </summary>
 	public uint ClickSound { get; set; } = GameAudio.ClickEvent;
-	/// <summary>First repeat of a held scroll arrow, in seconds (button ctor <c>0x6688b3</c> stores +0x13c = 500).</summary>
+	/// <summary>First repeat of a held scroll arrow, in seconds (button ctor <c>0x6688b3</c> stores +0x13c = 500 for every button; only style bit 0x20 repeats).</summary>
 	public const float ScrollArrowDelay = 0.5f;
 	/// <summary>Later repeats of a held scroll arrow, in seconds (the same ctor stores +0x140 = 0x7d = 125).</summary>
 	public const float ScrollArrowInterval = 0.125f;
@@ -532,7 +532,7 @@ public sealed class UiButton : UiElement
 	{
 		if ( !Enabled || Inert )
 			return;
-		// [BIN:TPW-EXE:0x485780 UI message hook] installed once by the UI init 0x489ca0 (via 0x6590ea, stored at 0xfaa5fc) and called for every control message by the dispatcher 0x658d9f and the queue pump 0x658e42 (the call at 0x658eb2) before the control's own procedure. Message 0x100 plays cat_ui 0x1F, or 0xBD when the receiver's style word +0x48 has bit 0x10 (the choice at 0x4857cb). The button class 0x668f9c is the only sender of 0x100: it posts to the button's parent ([+0x60]) at 0x6691eb through the queue 0x658ccc, on a release over the button that was pressed. A release after auto-repeat has started (hold state +0x15a is 2, 0x668eff) returns false and posts no 0x100, so the sound is skipped then too.
+		// [BIN:TPW-EXE:0x485780 UI message hook] installed once by the UI init 0x489ca0 (via 0x6590ea, stored at 0xfaa5fc) and called for every control message by the dispatcher 0x658d9f and the queue pump 0x658e42 (the call at 0x658eb2) before the control's own procedure. Message 0x100 plays cat_ui 0x1F, or 0xBD when the receiver's style word +0x48 has bit 0x10 (the choice at 0x4857cb). The button class 0x668f9c is the only sender of 0x100 for a mouse release over a button: it posts to the button's parent ([+0x60]) at 0x6691eb through the queue 0x658ccc, on a release over the button that was pressed. Window procedures also send 0x100 to their own window (0x48d83b, 0x49973e, 0x49ec53, 0x4a6df5 (via the dispatcher 0x658d9f), 0x4b640a, 0x4b9f06, 0x4bb020 and 0x4bfc29; ids -1, -2 and 0xe059, some on 0x802 or 0x804), and the hook clicks for those too by that window's own style; whether OpenTPW's keyboard paths match those clicks is not read. A release after auto-repeat has started (hold state +0x15a is 2, 0x668eff) returns false and posts no 0x100, so the sound is skipped then too.
 		if ( HoldState != 2 )
 			GameAudio.PlayUi( ClickSound );
 		Clicked?.Invoke();

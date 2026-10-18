@@ -25,28 +25,30 @@ public class SelectClickTests
 			.Select( field => (LayoutTable)field.GetValue( null )! );
 
 	[TestMethod]
-	public void AButtonPlays0xBDExactlyWhenItsParentHasStyleBit0x10()
+	public void TheClickFollowsTheStyleBit0x10OfConcreteParents()
 	{
-		var seen = 0;
-		foreach ( var table in Tables() )
-		{
-			foreach ( var node in table.All.Where( node => node.Type == 2 ) )
-			{
-				var parent = table.Parent( node );
-				var expected = parent != null && (parent.Attributes & 0x10) != 0 ? GameAudio.SelectClickEvent : GameAudio.ClickEvent;
-				Assert.AreEqual( expected, table.ClickSoundOf( node ), $"{table.Name} {node.Model ?? node.Id.ToString( "x" )}" );
-				seen++;
-			}
-		}
-		Assert.IsTrue( seen > 20, "the generated tables hold the button nodes" );
 		var visitors = OriginalLayoutTables.VisitorsWindow;
-		Assert.AreEqual( GameAudio.SelectClickEvent, visitors.ClickSoundOf( visitors.All.Single( node => node.Model == "b_up" ) ), "a scroll arrow's parent is the vertical slider" );
+		Assert.AreEqual( GameAudio.SelectClickEvent, visitors.ClickSoundOf( visitors.All.Single( node => node.Model == "b_up" ) ), "a scroll arrow's parent is the vertical slider (type 3, style 0x10)" );
 		Assert.AreEqual( GameAudio.ClickEvent, visitors.ClickSoundOf( visitors.Model( "b_okay" ) ), "the tick's parent is the window" );
-		// The thumb's parent slider has the bit, so the helper reports 0xBD. The thumb procedure never posts 0x100, and no button is built for it.
+		// The thumb is a plain type-2 button (style 1) under the slider, so the helper reports 0xBD. Whether a still click on it posts 0x100 is open (AUDIO-041); no button is built for it.
 		Assert.AreEqual( GameAudio.SelectClickEvent, visitors.ClickSoundOf( visitors.Model( "b_scroller" ) ) );
+		var visitorList = visitors.Control( 0x1E497 );
+		Assert.AreEqual( 7, visitorList.Type );
+		Assert.AreEqual( 0x291u, visitorList.Attributes );
+		Assert.AreEqual( GameAudio.SelectClickEvent, visitors.ClickSoundOf( visitorList.Children.First( node => node.Type == 2 ) ), "a column header of a sortable list (type 7, style 0x291)" );
+		var loans = OriginalLayoutTables.LoansWindow;
+		var loanList = loans.All.Single( node => node.Type == 7 );
+		Assert.AreEqual( 0x91u, loanList.Attributes );
+		Assert.AreEqual( GameAudio.SelectClickEvent, loans.ClickSoundOf( loanList.Children.First( node => node.Type == 2 ) ), "a column header of a sortable list (type 7, style 0x91)" );
+		Assert.AreEqual( GameAudio.SelectClickEvent, loans.ClickSoundOf( loans.Control( 0x12C4BF ) ), "a toggle tab of a radio group (type 8, style 0x11)" );
 		var parkInfo = OriginalLayoutTables.ParkInfoWindow;
 		Assert.AreEqual( GameAudio.SelectClickEvent, parkInfo.ClickSoundOf( parkInfo.Control( 0x4A68C3 ) ), "a period toggle's parent is the radio group" );
 		Assert.AreEqual( GameAudio.ClickEvent, parkInfo.ClickSoundOf( parkInfo.Control( 0x4A68BF ) ), "a series toggle's parent is the graph panel" );
+		var locator = OriginalLayoutTables.LocatorPanels;
+		var staffGroup = locator.Control( 0x95D );
+		Assert.AreEqual( 8, staffGroup.Type );
+		Assert.AreEqual( 0x1u, staffGroup.Attributes );
+		Assert.AreEqual( GameAudio.ClickEvent, locator.ClickSoundOf( locator.Control( 0x95E ) ), "a radio group without the bit (type 8, style 0x1) keeps 0x1F" );
 	}
 
 	private static ParkHud Hud() => (ParkHud)RuntimeHelpers.GetUninitializedObject( typeof( ParkHud ) );

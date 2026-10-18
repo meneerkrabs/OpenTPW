@@ -112,9 +112,12 @@ public sealed class LayoutTable
 	/// The <c>cat_ui</c> event a button plays when <paramref name="parent"/> receives message 0x100.
 	/// The hook <c>0x485780</c> chooses <see cref="GameAudio.SelectClickEvent"/> when that receiver's style has bit 0x10
 	/// (the test at <c>0x4857cb</c>) and <see cref="GameAudio.ClickEvent"/> otherwise. The button class <c>0x668f9c</c> is the
-	/// only sender of 0x100: it posts to its parent (<c>[+0x60]</c>) at <c>0x6691eb</c> through the queue <c>0x658ccc</c>, and the
-	/// pump <c>0x658e42</c> calls the hook at <c>0x658eb2</c> (the dispatcher <c>0x658d9f</c> does too). <see cref="LayoutNode.IsToggle"/>
-	/// is this same bit on the control itself; the sound follows the parent.
+	/// only sender of 0x100 for a mouse release over a button: it posts to its parent (<c>[+0x60]</c>) at <c>0x6691eb</c> through the
+	/// queue <c>0x658ccc</c>, and the pump <c>0x658e42</c> calls the hook at <c>0x658eb2</c> (the dispatcher <c>0x658d9f</c> does too).
+	/// Window procedures also send 0x100 to their own window (<c>0x48d83b</c>, <c>0x49973e</c>, <c>0x49ec53</c>, <c>0x4a6df5</c> (via the dispatcher <c>0x658d9f</c>), <c>0x4b640a</c>, <c>0x4b9f06</c>, <c>0x4bb020</c> and <c>0x4bfc29</c>;
+	/// ids -1, -2 and 0xe059, some on 0x802 or 0x804), and the hook clicks for those too by that window's own style; whether
+	/// OpenTPW's keyboard paths match those clicks is not read. <see cref="LayoutNode.IsToggle"/> is this same bit on the control
+	/// itself; the sound follows the parent.
 	/// </summary>
 	public static uint ClickSoundFor( LayoutNode? parent ) =>
 		parent != null && (parent.Attributes & 0x10) != 0 ? GameAudio.SelectClickEvent : GameAudio.ClickEvent;

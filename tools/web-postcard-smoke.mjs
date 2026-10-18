@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Runs the actual Send Postcard handler and package round trips in the published .NET/WASM page, without original
-// game assets, account credentials or server writes. CI runs this against the image it is about to publish.
+// game assets, account credentials or server writes. Also checks the browser-only settings boundary and canonical text
+// operations. CI runs this against the image it is about to publish.
 // Usage: node tools/web-postcard-smoke.mjs http://127.0.0.1:8080 [Chrome executable]
 import assert from 'node:assert/strict';
 import { promises as fs } from 'node:fs';
@@ -27,6 +28,11 @@ const expectedChecks = [
 	'compatibility-duplicates-rejected', 'postcard-create-write-read', 'send-handler-defaults-and-outbox',
 	'send-handler-unicode-outbox', 'duplicate-send-preserves-draft', 'duplicate-send-can-retry',
 	'platform-failure-preserves-draft', 'platform-failure-can-retry', 'temporary-state-cleaned',
+];
+const expectedPlatformChecks = [
+	'no-legacy-game-path', 'desktop-settings-and-cursor-excluded', 'no-configuration-manager-reference',
+	'catalog-canonical-accent-folding', 'catalog-keeps-compatibility-distinctions', 'catalog-keeps-non-decomposing-letters',
+	'mod-path-canonical-identity', 'catalog-matches-split-canonical-name', 'platform-temporary-state-cleaned',
 ];
 const profile = await fs.mkdtemp(path.join(os.tmpdir(), 'opentpw-postcard-browser-'));
 const errors = [];
@@ -65,7 +71,7 @@ try {
 	for (;;) {
 		let ready = false;
 		try {
-			ready = await evaluate('typeof globalThis.opentpwPerf?.program?.PostcardSmokeTest === "function"');
+			ready = await evaluate('typeof globalThis.opentpwPerf?.program?.PostcardSmokeTest === "function" && typeof globalThis.opentpwPerf?.program?.BrowserPlatformSmokeTest === "function"');
 		} catch (error) {
 			// Navigation may replace the initial about:blank context between the CDP command and its execution.
 			if (!/Execution context was destroyed|Cannot find context with specified id|Cannot find default execution context/.test(error.message))
@@ -80,6 +86,8 @@ try {
 		await sleep(100);
 	}
 	assert.equal(await evaluate('opentpwPerf.state().started'), false, 'The smoke check must not start a game.');
+	// Boot from loopback, then run every check offline. No server or original installation can mask a platform failure.
+	await send('Network.emulateNetworkConditions', { offline: true, latency: 0, downloadThroughput: 0, uploadThroughput: 0 });
 	const persistentBefore = await evaluate('opentpwPerf.program.PersistentFiles()');
 	const results = [];
 	// A second call proves the hook restored the shared state and left no test outbox behind.
@@ -87,12 +95,15 @@ try {
 		const result = JSON.parse(await evaluate('opentpwPerf.program.PostcardSmokeTest()'));
 		assert.equal(result.runtime, 'browser');
 		assert.deepEqual(result.checks, expectedChecks);
-		results.push(result);
+		const platform = JSON.parse(await evaluate('opentpwPerf.program.BrowserPlatformSmokeTest()'));
+		assert.equal(platform.runtime, 'browser');
+		assert.deepEqual(platform.checks, expectedPlatformChecks);
+		results.push({ postcard: result, platform });
 	}
 	assert.deepEqual(await evaluate('opentpwPerf.program.PersistentFiles()'), persistentBefore, 'Player saves and settings must stay unchanged.');
 	assert.equal(await evaluate('opentpwPerf.state().started'), false);
 	assert.deepEqual(errors, [], 'The browser must not report an unhandled runtime failure.');
-	console.log(JSON.stringify({ passed: true, url: url.href, iterations: results.length, checks: expectedChecks }, null, 2));
+	console.log(JSON.stringify({ passed: true, url: url.href, iterations: results.length, offline: true, checks: expectedChecks, platformChecks: expectedPlatformChecks }, null, 2));
 } catch (error) {
 	console.error(diagnostics.slice(-30).join('\n'));
 	console.error(error.stack ?? error);

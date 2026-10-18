@@ -122,7 +122,7 @@ public class ChatPanelTests
 		Assert.IsNull( Element( "chatEntry" ).CurrentHelp, "the help box would cover the entry" );
 		Assert.IsTrue( panel.Entry.OverView, "the entry takes the keys on a click, not when the pointer crosses it" );
 		Assert.AreEqual( GameAudio.SelectClickEvent, ((UiButton)Element( "chatPeopleTab" )).ClickSound, "the tab group is a radio group (style bit 0x10)" );
-		Assert.AreEqual( GameAudio.ClickEvent, ((UiButton)Element( "chatVote" )).ClickSound );
+		Assert.AreEqual( ChatPanel.Table.ClickSoundOf( ChatPanel.Table.Control( 0xC3129 ) ), ((UiButton)Element( "chatVote" )).ClickSound, "each button clicks by its parent's style" );
 		Assert.IsNotNull( ((UiButton)Element( "chatPeopleUp" )).Repeat, "the list's arrows repeat while held" );
 	}
 

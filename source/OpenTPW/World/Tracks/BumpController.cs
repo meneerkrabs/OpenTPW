@@ -692,10 +692,23 @@ public sealed class BumpController
 		vehicle.Riders.AddRange( Pending );
 		RiderCount += Pending.Count;
 		Pending.Clear();
+		// [BIN:TPW-EXE:0x00549B80 load vehicle] the loading hangs the riders' heads with the beam flag (0x549C60(vehicle, 1)): each rider whose seat has a head dummy gets particle 0x13 at the vehicle's drawn place (its root matrix translation times 1024); the creation (0x549DB0) hangs with 0, no beam
+		RaiseRiderBeams( vehicle, vehicle.Riders.Count );
 		vehicle.Flags |= BumpVehicle.Steerable | BumpVehicle.Slowed;
 		vehicle.Laps = Laps;
 		Relaunch( vehicle );
 		return true;
+	}
+
+	/// <summary>One beam (particle 19) for each of the first <paramref name="count"/> riders of <paramref name="vehicle"/> whose seat has a head dummy.</summary>
+	private void RaiseRiderBeams( BumpVehicle vehicle, int count )
+	{
+		for ( var seat = 0; seat < count; seat++ )
+		{
+			if ( vehicle.SeatHeads is { } seats && (seat >= seats.Length || !seats[seat]) )
+				continue;
+			Raise( BumpEffectKind.Particle, vehicle, BumpEffects.ParticleBeamUp );
+		}
 	}
 
 	/// <summary>BUMP 16: unloads the first boat without guests, else the first boat.</summary>
@@ -1387,6 +1400,8 @@ public sealed class BumpController
 	// [BIN:TPW-EXE:0x005474B0 bumper unload] the 0x20 branch for types −1, −6, −11, −14 calls 0x0054AC70 (riders to the front of the leaving list one by one, the rider count +0x60 falls, the head sprite goes); when the controller has no rider left its phase becomes 1 ("loading"), the car's flags &amp;= 0xFFFFFF81 (no more wandering or unloading) and its animation 12; otherwise the car repeats the call at its next step, so the last car's step ends the session for every car
 	private void EndBumperSession( BumpVehicle vehicle )
 	{
+		// [BIN:TPW-EXE:0x005474B0 bumper unload] 0x54AC70(vehicle, 1) takes the riders one by one and, for each one whose head was hung, raises particle 0x13 at the vehicle's drawn place (0x54acdb-0x54ad24); the retire (0x54AE50) passes 0 and raises none
+		RaiseRiderBeams( vehicle, vehicle.Riders.Count );
 		foreach ( var guest in vehicle.Riders )
 		{
 			Leaving.Insert( 0, guest );

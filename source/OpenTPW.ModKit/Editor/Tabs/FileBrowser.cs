@@ -62,7 +62,7 @@ internal sealed class FileBrowser : BaseTab
 				".lips" => "Lip Sync Data",
 				".md2" => "M3D2 Model",
 				".map" => "Sound Map",
-				".mtr" => "Banner mesh companion",
+				".mtr" => "Banner Mesh Companion",
 				".rse" => "Ride Script (Compiled)",
 				".rss" => "Ride Script (Source)",
 				".sdt" => "Sound Data",

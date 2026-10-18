@@ -2,7 +2,8 @@
 
 October 9, 2026. Status: observed structure, no consumer found. The table is **decoded as mesh topology that is
 fully redundant with the paired banner `.MD2`** and the floats as nine 4×4 matrices
-(two equal the MD2 node matrix), verified for all 11 files. MTR is not a material format,
+(two equal the MD2 node matrix), verified for the 11 pinned copies (9 distinct) of the English, Danish, German
+and Swedish media; 6 more copies (Italian and Spanish, below) decode with the same topology but are not pinned. MTR is not a material format,
 adds no geometry the MD2 lacks and is not rendered. Open, and unprovable from the files alone:
 (a) no reader found in any allowed binary, a runtime-built filename can't be fully excluded;
 (b) why `s` is 0.66596/0.80645/1 and what `M7` is, since no placement code was found in the inspected binaries. No original data
@@ -35,6 +36,11 @@ That is 9 distinct files. The 2026-10-18 docs pass did not re-hash the PC CD cop
 `.mtr` files match the 9 pinned SHA-256 hashes. The sentence above the table is the earlier
 re-hash note; no command output for it is recorded in the repository. French has no MTR.
 English has no `paused.mtr`, although `paused.MD2` exists.
+
+More copies exist outside the European CD: the Italian `bankrupt`, `congrats` and `paused.mtr` (on the PC CD that also
+carries Dutch and Polish) and the Spanish ones (Spanish CD), all also in the ModDB localisation pack (17 copies, 15 distinct files
+in all). These 6 files match none of the 9 pinned hashes. The topology test decodes all 17; the pinned-hash and copy-count tests
+cover only the 11 above, and the Italian `bankrupt` breaks the thickness relation below.
 The English ISO `Meshes/English/*.MD2` files are byte-identical to the installed
 `Data/Language/English/*.MD2`. The installed `Data` tree therefore holds the MD2 banners but no
 MTR files, while the install media carries both. This is an absence from the installed tree,
@@ -98,7 +104,8 @@ all 11), and the banners are screen-sized slabs: bankrupt and paused span exactl
 (x 174–1,874, y −1,000…−500 and −900…−500), congrats about 1,843 wide.
 
 - **`s` is already baked into the MD2 vertices.** The mesh-local thickness of every bankrupt and paused slab is exactly `30·s`
-  (19.979 = 30 × 0.66596 and 24.194 = 30 × 0.80645, all 4 + 3 files that have a thickness check), and `M0` is the *unscaled* node
+  (19.979 = 30 × 0.66596 and 24.194 = 30 × 0.80645, all 4 + 3 pinned files that have a thickness check; it does not hold for every
+  observed file: the Italian `bankrupt` slab is 24.266 thick where 30·s gives 19.392), and `M0` is the *unscaled* node
   matrix. So `M2 = s·M0` is the node as it stood before the scale was baked into the vertices, and `M5 = M6 = s·I` the baked scale itself.
   The unscaled authoring depth was therefore 30 (congrats has `s = 1`: depth 30 in Danish, 30.75 in English, German and Swedish). `s` is
   per banner design, identical in every language (bankrupt 0.66596, paused 0.80645, congrats 1); why those values, e.g. 1/1.24 for
@@ -212,7 +219,7 @@ Status: observed structure, no consumer found.
 
 - No reader found in any allowed binary (tp.exe, the TPI Game.exe, the Mac PEFs and every
   shipped DLL; the TPI and PEF results are weak). A runtime-built filename can't be fully excluded.
-- Why `s` is 0.66596/0.80645/1 and what `M7` is, since no placement code was found in the inspected binaries. The data shows `s` baked into the MD2 and `M7` unrelated to it (above).
+- Why `s` is 0.66596/0.80645/1 and what `M7` is, since no placement code was found in the inspected binaries. The pinned files show `s` baked into the MD2 (not the Italian `bankrupt`) and `M7` unrelated to it (above).
 - No further work is planned.
 
 Banner rendering belongs to the MD2 renderer and needs no MTR data.

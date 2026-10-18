@@ -170,23 +170,29 @@ public sealed partial class ParkHud
 		infoElements.Add( waveSettingsButton );
 	}
 
-	private bool IsWaveMachine( OriginalObject? item ) => item is { IsDeleted: false } && level.Objects.Objects.Contains( item ) && level.PoolWavesOf( item ) is not null;
+	private bool IsWaveMachine( OriginalObject? item ) => item is { IsDeleted: false } && FeatureGates.Pools && PoolAttractions.KindOf( item.Entry ) == PoolAttractionKind.WaveMachine
+		&& level.Objects.Objects.Contains( item ) && level.PoolWavesOf( item ) is not null;
 
-	/// <summary>The settings window may change a machine: not in a read-only visit, not in the chat mode (which has no object window), not while another window covers the park.</summary>
-	private bool WaveSettingsAllowed => !level.IsReadOnlyVisit && !ChatMode && Stack.Screens.Count == 1;
+	/// <summary>
+	/// The settings window may change a machine: not in a read-only visit, not in the chat mode (which has no object window), not while another window covers the park, a tool is armed, the camera
+	/// rides or text is typed (as the shop price editor, <see cref="PriceViewAllowed"/>); paused is fine.
+	/// </summary>
+	private bool WaveSettingsAllowed => !level.IsReadOnlyVisit && !ChatMode && Stack.Screens.Count == 1 && !Input.TextEntryActive && PriceViewAllowed;
 
 	private void UpdateWaveSettingsButton()
 	{
 		if ( waveSettingsButton == null )
 			return;
-		waveSettingsButton.Visible = InfoArmOpen && IsWaveMachine( selectedObject );
+		// hidden in a visit like the object window's other settings controls; a mod's wave machine in the shop or sideshow category keeps that window's own controls in this row
+		waveSettingsButton.Visible = InfoArmOpen && !level.IsReadOnlyVisit && IsWaveMachine( selectedObject )
+			&& selectedObject!.Entry.WhichUIType is not ((int)BuildCategory.Shops or (int)BuildCategory.Sideshows);
 		waveSettingsButton.Enabled = waveSettingsButton.Visible && WaveSettingsAllowed;
 	}
 
 	/// <summary>
 	/// [EXT:pools-waves] The wave machine's settings window: waves on or off, the height (low, medium, high: <see cref="PoolWaveSettings.Height"/> 1 to 3) and the rest between two runs (short, normal,
 	/// long: <see cref="PoolWaveSettings.Interval"/> 0 to 2, <see cref="PoolWaves.RestTurns"/>). The choices edit the window's own copy; the tick writes them to the machine (<see cref="Level.SetPoolWaves"/>),
-	/// the cross, Escape or a right click leave it as it was. RCT3 keeps these settings in a window of the pool; OpenTPW's own window size (<see cref="UiDialogs.CenteredWindow"/>).
+	/// the cross, Escape or a right click leave it as it was. The window is OpenTPW's own (<see cref="UiDialogs.CenteredWindow"/>), titled with the machine's name; RCT3 keeps these settings in the changing room's window.
 	/// </summary>
 	internal void OpenWaveSettings( OriginalObject item )
 	{
@@ -195,7 +201,7 @@ public sealed partial class ParkHud
 		var chosen = current;
 		var screen = new ShopPriceScreen( "waveSettings" );
 		var window = UiDialogs.CenteredWindow( 1400, 1050 );
-		UiDialogs.AddWindow( screen, window, "w_dialog", () => strings.Extra( OpenTpwText.PoolWavesWindow ) );
+		UiDialogs.AddWindow( screen, window, "w_dialog", () => EntryName( item.Entry ) );
 		// the frame's right side is thicker than its left, so the content centres a little left of the window's middle, where the title is
 		const float Toggle = 350, Gap = 25, Height = 71;
 		var middle = window.X + window.Width * 0.48f;
@@ -230,7 +236,8 @@ public sealed partial class ParkHud
 			if ( Stack.Top != screen )
 				return;
 			// the machine may have gone while the window was open (a visit's owner cannot reach it; a demolition clears the selection)
-			if ( IsWaveMachine( item ) )
+			// an unchanged choice writes nothing, so a machine still running the default keeps its cell as it was
+			if ( IsWaveMachine( item ) && level.PoolWavesOf( item ) != chosen )
 				level.SetPoolWaves( item, chosen );
 			Close();
 		}

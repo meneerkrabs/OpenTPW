@@ -1369,6 +1369,7 @@ public class PoolsAttractionsLevelTests
 	{
 		var wave = Entry( 1309, "wavemachine", "N", "**" );
 		var swing = Entry( 1310, "ropeswing", "N", "*" );
+		using var camera = ParkCamera();
 		With( () =>
 		{
 			level.PoolBuilder!.PaintCells( PoolBuilder.Rectangle( (4, 12), (9, 14) ) );
@@ -1392,6 +1393,12 @@ public class PoolsAttractionsLevelTests
 			Assert.AreNotSame( screen, hud.Stack.Top, "the tick closes the window" );
 			Assert.AreEqual( new PoolWaveSettings( true, 3, 0 ), level.PoolWavesOf( machine ) );
 			Assert.AreEqual( new PoolWaveSettings( true, 3, 0 ), PoolWaveSettings.ActiveIn( level.PoolSites, Cells, region ), "the pool runs them" );
+
+			// an unchanged tick writes nothing
+			var flags = Cells.FlagsAt( level.PoolSites.Find( machine.ThingId )!.Access.X, level.PoolSites.Find( machine.ThingId )!.Access.Y );
+			hud.OpenWaveSettings( machine );
+			hud.Stack.Top!.Find( "apply" )!.Activate();
+			Assert.AreEqual( flags, Cells.FlagsAt( level.PoolSites.Find( machine.ThingId )!.Access.X, level.PoolSites.Find( machine.ThingId )!.Access.Y ) );
 
 			// off and a long rest, then the cross: nothing changes
 			hud.OpenWaveSettings( machine );
@@ -1424,6 +1431,7 @@ public class PoolsAttractionsLevelTests
 	public void TheWaveMachineWindowsChoicesFitItAndAreNamedInEveryLanguage()
 	{
 		var wave = Entry( 1311, "wavemachine", "N", "**" );
+		using var camera = ParkCamera();
 		With( () =>
 		{
 			level.PoolBuilder!.PaintCells( PoolBuilder.Rectangle( (4, 12), (9, 14) ) );
@@ -1440,7 +1448,7 @@ public class PoolsAttractionsLevelTests
 			}
 			return 0;
 		} );
-		var keys = new[] { OpenTpwText.PoolWavesWindow, OpenTpwText.PoolWavesSettings, OpenTpwText.PoolWavesLow, OpenTpwText.PoolWavesMedium, OpenTpwText.PoolWavesHigh,
+		var keys = new[] { OpenTpwText.PoolWavesSettings, OpenTpwText.PoolWavesLow, OpenTpwText.PoolWavesMedium, OpenTpwText.PoolWavesHigh,
 			OpenTpwText.PoolWavesShort, OpenTpwText.PoolWavesNormal, OpenTpwText.PoolWavesLong };
 		foreach ( var language in SupplementaryStrings.SupportedLanguages )
 			foreach ( var key in keys )
@@ -1450,6 +1458,19 @@ public class PoolsAttractionsLevelTests
 				Assert.IsTrue( text.Length <= 24, $"{language} {key}: '{text}' fits a toggle" );
 			}
 	}
+
+	/// <summary>The park camera the settings window wants (it does not open while the camera rides or walks), restored on dispose.</summary>
+	private IDisposable ParkCamera()
+	{
+		// the fixture's level is made without its constructor; the window's input gate asks the cell tool whether it is armed
+		if ( level.CellTool == null )
+			typeof( Level ).GetField( "<CellTool>k__BackingField", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic )!.SetValue( level, new CellBuildTool() );
+		var previous = Camera.Mode;
+		Camera.Mode = new ParkCameraMode();
+		return new Restore( () => Camera.Mode = previous );
+	}
+
+	private sealed class Restore( Action action ) : IDisposable { public void Dispose() => action(); }
 
 	private static bool Selected( UiScreen screen, string id ) => ((UiButton)screen.Find( id )!).Selected!();
 

@@ -143,7 +143,6 @@ public enum OpenTpwText
 	PoolWavesOff,
 	PoolWavesHeight,
 	PoolWavesInterval,
-	PoolWavesWindow,
 	PoolWavesSettings,
 	PoolWavesLow,
 	PoolWavesMedium,
@@ -544,15 +543,14 @@ public static class SupplementaryStrings
 		[OpenTpwText.PoolWavesOff] = new[] { "Waves off", "Bølger fra", "Golven uit", "Vagues désactivées", "Wellen aus", "파도 끔", "Fale wyłączone", "Olas desactivadas", "Vågor av", "Onde spente", "גלים כבויים" },
 		[OpenTpwText.PoolWavesHeight] = new[] { "Wave height", "Bølgehøjde", "Golfhoogte", "Hauteur des vagues", "Wellenhöhe", "파도 높이", "Wysokość fal", "Altura de las olas", "Våghöjd", "Altezza delle onde", "גובה הגלים" },
 		[OpenTpwText.PoolWavesInterval] = new[] { "Wave interval", "Bølgeinterval", "Golfinterval", "Intervalle des vagues", "Wellenabstand", "파도 간격", "Odstęp między falami", "Intervalo de las olas", "Vågintervall", "Intervallo delle onde", "מרווח בין גלים" },
-		// [EXT:pools-waves] the wave machine's settings window: its title, the object window's button that opens it, and the choices of height and of the rest between two runs
-		[OpenTpwText.PoolWavesWindow] = new[] { "Wave machine", "Bølgemaskine", "Golfslagmachine", "Machine à vagues", "Wellenmaschine", "파도 기계", "Maszyna do fal", "Máquina de olas", "Vågmaskin", "Macchina delle onde", "מכונת גלים" },
+		// [EXT:pools-waves] the wave machine's settings window (titled with the machine's name): the object window's button that opens it, and the choices of height and of the rest between two runs
 		[OpenTpwText.PoolWavesSettings] = new[] { "Wave settings", "Bølgeindstillinger", "Golfinstellingen", "Réglages des vagues", "Welleneinstellungen", "파도 설정", "Ustawienia fal", "Ajustes de olas", "Våginställningar", "Impostazioni onde", "הגדרות גלים" },
 		[OpenTpwText.PoolWavesLow] = new[] { "Low", "Lav", "Laag", "Basse", "Niedrig", "낮음", "Niska", "Baja", "Låg", "Bassa", "נמוך" },
 		[OpenTpwText.PoolWavesMedium] = new[] { "Medium", "Middel", "Gemiddeld", "Moyenne", "Mittel", "보통", "Średnia", "Media", "Medel", "Media", "בינוני" },
 		[OpenTpwText.PoolWavesHigh] = new[] { "High", "Høj", "Hoog", "Haute", "Hoch", "높음", "Wysoka", "Alta", "Hög", "Alta", "גבוה" },
-		[OpenTpwText.PoolWavesShort] = new[] { "Short", "Kort", "Kort", "Rapproché", "Kurz", "짧게", "Krótki", "Corto", "Kort", "Breve", "קצר" },
+		[OpenTpwText.PoolWavesShort] = new[] { "Short", "Kort", "Kort", "Rapproché", "Kurz", "짧은", "Krótki", "Corto", "Kort", "Breve", "קצר" },
 		[OpenTpwText.PoolWavesNormal] = new[] { "Regular", "Normal", "Normaal", "Normal", "Normal", "보통", "Normalny", "Normal", "Normal", "Normale", "רגיל" },
-		[OpenTpwText.PoolWavesLong] = new[] { "Long", "Lang", "Lang", "Espacé", "Lang", "길게", "Długi", "Largo", "Lång", "Lungo", "ארוך" },
+		[OpenTpwText.PoolWavesLong] = new[] { "Long", "Lang", "Lang", "Espacé", "Lang", "긴", "Długi", "Largo", "Lång", "Lungo", "ארוך" },
 		[OpenTpwText.NotAvailable] = new[] { "Not available yet", "Endnu ikke tilgængelig", "Nog niet beschikbaar", "Pas encore disponible", "Noch nicht verfügbar", "아직 이용할 수 없음", "Jeszcze niedostępne", "Aún no disponible", "Inte tillgänglig ännu", "Non ancora disponibile", "עדיין לא זמין" },
 		// [EXT:forecast-wording] the weather forecast's own words (no weather text exists in the shipped string tables); {0} is the kind, {1} when it comes
 		[OpenTpwText.WeatherThunderstorms] = new[] { "thunderstorms", "tordenvejr", "onweer", "des orages", "Gewitter", "뇌우", "burze", "tormentas", "åskväder", "temporali", "סופות רעמים" },

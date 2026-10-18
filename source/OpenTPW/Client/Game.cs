@@ -449,6 +449,31 @@ internal static class Game
 				Log.Trace( $"--debug-weather: quality {debugQuality} applied (snow {weather.Snow}, rain {weather.Rain}, lightning {weather.Lightning}, target {weather.TargetDrops} drops)." );
 			}
 		}
+		// [EXT:debug-umbrellas] smoke-only (Debug builds): gives every guest an open umbrella (colour from its id, so all three show) and keeps it open, so a capture shows the umbrellas without a brolly shop,
+		// a rain spell (use it with --debug-weather) or a lucky guest. It writes the guests' umbrella fields directly (a debug aid: the simulation of such a run is not the park's own, nothing is saved from it).
+		// --debug-umbrellas-follow zoom,yaw holds the park camera on the lowest-numbered guest in view at that zoom value and yaw (degrees) for a close look at one umbrella.
+		var followText = GetOption( args, "--debug-umbrellas-follow", "zoom,yaw for the camera that follows the first guest" )?.Split( ',' ).Select( value => float.Parse( value, System.Globalization.CultureInfo.InvariantCulture ) ).ToArray();
+		if ( args.Contains( "--debug-umbrellas" ) )
+			Render.PostUpdate += GiveEveryGuestAnUmbrella;
+		void GiveEveryGuestAnUmbrella()
+		{
+			if ( flow.Level?.Guests is not { } umbrellaGuests )
+				return;
+			if ( followText is [var followZoom, var followYaw] && Camera.Mode is ParkCameraMode followCamera && flow.Level.OriginalPark is { } followPark )
+				if ( umbrellaGuests.Guests.Where( candidate => candidate.IsVisible && float.IsFinite( candidate.DrawX ) ).OrderBy( candidate => candidate.Id ).FirstOrDefault() is { } followed )
+				{
+					var spot = GuestRenderer.CellToEngine( followPark.Heightfield, followed.DrawX, followed.DrawY );
+					followCamera.SetPose( new System.Numerics.Vector3( spot.X, spot.Y, 0 ), followZoom, followYaw );
+				}
+			foreach ( var umbrellaGuest in umbrellaGuests.Guests )
+			{
+				if ( umbrellaGuest.UmbrellaState == UmbrellaRules.StateOpen )
+					continue;
+				umbrellaGuest.UmbrellaState = UmbrellaRules.StateOpen;
+				umbrellaGuest.UmbrellaType = umbrellaGuest.Id % UmbrellaRules.Colours;
+				umbrellaGuest.UmbrellaDueTurn = 0;
+			}
+		}
 		// [EXT:debug-particle] smoke-only: once the original level is up, starts template effects (ids, comma separated) at an engine position
 		// (--debug-particle-at x,y,z, Z up; default the park camera's target) through the same starter an ADDOBJ uses, so captures can show smoke or fireworks
 		// without waiting for a ride script to fire them (docs/PARTICLES.md).

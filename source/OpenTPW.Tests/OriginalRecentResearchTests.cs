@@ -96,6 +96,8 @@ public class OriginalRecentResearchTests
 	private static OriginalSavePayload Template( BalanceSettings settings )
 	{
 		var template = OriginalSavePayloadFixtures.Blank( settings );
+		// The payload model stores the used/free/first-free counters after the length word.
+		template.RideSystem = SaveTestPayloads.EmptyRideSystem[4..];
 		var things = template.World.Things;
 		things[0].Next = 2;
 		things.Add( new SaveThingEntry { Id = 2, Next = 3, Model = SaveThingModel.ResearchLab, Body = new byte[SaveResearchLab.Bytes] } );
@@ -150,9 +152,13 @@ public class OriginalRecentResearchTests
 		foreach ( var id in new ushort[] { 0, 1, 99 } )
 		{
 			var bad = Template( park.Settings ); bad.World.Variables = bad.World.Variables with { ParkAnalyser = id };
-			Assert.ThrowsException<InvalidDataException>( () => OriginalParkExport.Export( bad, ParkSaveFile.Capture( park ), out _, new OriginalParkExportOptions( Research: park.Research ) ) );
+			var exportError = Assert.ThrowsException<InvalidDataException>( () => OriginalParkExport.Export( bad, ParkSaveFile.Capture( park ), out _, new OriginalParkExportOptions( Research: park.Research ) ) );
+			StringAssert.Contains( exportError.Message, "park analyser" );
 			if ( id != 0 )
-				Assert.ThrowsException<InvalidDataException>( () => OriginalParkImport.Import( bad.Write(), OriginalParkImportTests.CreateMap( 128, 128, ( _, _ ) => 0 ) ) );
+			{
+				var importError = Assert.ThrowsException<InvalidDataException>( () => OriginalParkImport.Import( bad.Write(), OriginalParkImportTests.CreateMap( 128, 128, ( _, _ ) => 0 ) ) );
+				StringAssert.Contains( importError.Message, "park analyser" );
+			}
 		}
 	}
 }

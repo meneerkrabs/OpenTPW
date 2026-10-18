@@ -84,8 +84,9 @@ public class BuyRecentResearchTests
 		CollectionAssert.AreEqual( new[] { 0, 1, 2 }, DrawFrames( list, context ), "the production row DrawModel path selects all three real frame indices" );
 		foreach ( var draw in context.Batch.Draws.Where( draw => draw.Texture.ImagePath?.StartsWith( "frame-", StringComparison.Ordinal ) == true ) )
 		{
-			Assert.AreEqual( 51f, draw.Vertices.Max( vertex => vertex.Position.X ) - draw.Vertices.Min( vertex => vertex.Position.X ) );
-			Assert.AreEqual( 51f, draw.Vertices.Max( vertex => vertex.Position.Y ) - draw.Vertices.Min( vertex => vertex.Position.Y ) );
+			// Allow subpixel rounding from the float canvas/model transforms.
+			Assert.AreEqual( 51f, draw.Vertices.Max( vertex => vertex.Position.X ) - draw.Vertices.Min( vertex => vertex.Position.X ), 0.001f );
+			Assert.AreEqual( 51f, draw.Vertices.Max( vertex => vertex.Position.Y ) - draw.Vertices.Min( vertex => vertex.Position.Y ), 0.001f );
 		}
 		Assert.AreEqual( 0, hud.BuyItemState( ParkHud.BuyLandRow ) );
 		Assert.AreEqual( 0, hud.BuyItemState( ParkHud.ClearLandRow ) );

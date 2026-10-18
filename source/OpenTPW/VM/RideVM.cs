@@ -376,6 +376,8 @@ public sealed partial class RideVM
 	{
 		ProgramCounter = -10000;
 		State = RideVMState.Halted;
+		// [BIN:TPW-EXE:0x551ABC script end] the pass destroys a script whose program counter went negative; its destructor (0x558500) ends the records the script still holds
+		( Effects as IRideScriptLifetime )?.ScriptDestroyed( this );
 	}
 
 	/// <summary>Sends the music duck request word to the host's sound service (the original's 0x51E710): a presentation effect, never part of the simulation.</summary>
@@ -396,6 +398,7 @@ public sealed partial class RideVM
 		World.Unregister( this );
 		if ( State != RideVMState.Faulted )
 			State = RideVMState.Halted;
+		( Effects as IRideScriptLifetime )?.ScriptDestroyed( this );
 	}
 
 	// ---- Park-resume snapshot (docs in RideVMSnapshot) ----

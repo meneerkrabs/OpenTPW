@@ -59,6 +59,16 @@ public interface IRideAnimationQuery
 	}
 }
 
+/// <summary>
+/// Implemented by effects that keep per-script records (the object list of tp.exe's scripts, +0xB0): told when a script is destroyed, so its records end with it.
+/// </summary>
+// [BIN:TPW-EXE:0x558703 script destructor] 0x558500 ends every record the script still holds (types 1-2 through 0x51FF70(handle, -2), 3-10 through 0x51C2C0) and frees it; the pass destroys a script whose program counter has gone negative (END, 0x551ABC -> 0x559060) and a removed or stopped script is destroyed the same way
+public interface IRideScriptLifetime
+{
+	/// <summary>The script ended or was stopped: its records end now. Called again for a script already destroyed, which does nothing.</summary>
+	void ScriptDestroyed( RideVM vm );
+}
+
 /// <summary>Implemented by effects whose state later script steps read back; hashed with the root script.</summary>
 public interface IRideCanonicalEffects
 {
@@ -66,7 +76,7 @@ public interface IRideCanonicalEffects
 }
 
 /// <summary>
-/// Default effects: nothing in OpenTPW implements these game systems yet. Each call is counted in
+/// Default effects: nothing is implemented behind them (a bare VM, or an opcode no host game system serves). Each call is counted in
 /// <see cref="RideVM.UnimplementedEffects"/>, logged once per VM and opcode, and returns 0
 /// (no visitor, no animation time, nothing queued).
 /// </summary>

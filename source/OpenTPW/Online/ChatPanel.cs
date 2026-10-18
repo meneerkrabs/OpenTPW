@@ -60,23 +60,29 @@ public sealed class ChatPanel
 		var peopleTab = tabs.Children.Single( node => node.Id == 0xC3126 );
 		var buddyTabNode = tabs.Children.Single( node => node.Id == 0xC3127 );
 		// [BIN:TPW-EXE:0x4BE820 tabs] message 0x101 of the tab group: the people tab (0xC3126) fills the list with the park's people (0x4EE8D0), the other with the buddies (0x4EE9E0)
-		Add( new UiButton { Id = "chatPeopleTab", Model = peopleTab.Model, Help = strings.Help( 402 ), Bounds = peopleTab.Rect,
+		// the tab group is a radio group (style bit 0x10), so its tabs click with cat_ui 0xBD (LayoutTable.ClickSoundFor)
+		Add( new UiButton { Id = "chatPeopleTab", Model = peopleTab.Model, Help = strings.Help( 402 ), Bounds = peopleTab.Rect, ClickSound = Table.ClickSoundOf( peopleTab ),
 			Selected = () => !buddyTab, Clicked = () => ShowTab( buddies: false ) } );
-		Add( new UiButton { Id = "chatBuddyTab", Model = buddyTabNode.Model, Help = strings.Help( 403 ), Bounds = buddyTabNode.Rect,
+		Add( new UiButton { Id = "chatBuddyTab", Model = buddyTabNode.Model, Help = strings.Help( 403 ), Bounds = buddyTabNode.Rect, ClickSound = Table.ClickSoundOf( buddyTabNode ),
 			Selected = () => buddyTab, Clicked = () => ShowTab( buddies: true ) } );
 		people = Add( new PeopleList( this ) { Id = "chatPeople", Bounds = PeopleRows } );
 		var peopleSlider = PeopleNode.Children.Single( node => node.Type == 3 );
 		Add( new Scroller( people, peopleSlider ) { Id = "chatPeopleScroll", Bounds = peopleSlider.Rect, Help = strings.Help( 422 ) } );
-		Add( new UiButton { Id = "chatPeopleUp", Model = "b_up", Clicked = () => people.Scroll( -1 ), Bounds = peopleSlider.Children.Single( node => node.Model == "b_up" ).Rect } );
-		Add( new UiButton { Id = "chatPeopleDown", Model = "b_down", Clicked = () => people.Scroll( 1 ), Bounds = peopleSlider.Children.Single( node => node.Model == "b_down" ).Rect } );
+		var upNode = peopleSlider.Children.Single( node => node.Model == "b_up" );
+		var downNode = peopleSlider.Children.Single( node => node.Model == "b_down" );
+		// the slider's arrows repeat while held, as the original's scroll arrows do (UiButton.ScrollArrowRepeat)
+		Add( new UiButton { Id = "chatPeopleUp", Model = "b_up", Clicked = () => people.Scroll( -1 ), Repeat = UiButton.ScrollArrowRepeat( () => people.Scroll( -1 ) ),
+			ClickSound = Table.ClickSoundOf( upNode ), Bounds = upNode.Rect } );
+		Add( new UiButton { Id = "chatPeopleDown", Model = "b_down", Clicked = () => people.Scroll( 1 ), Repeat = UiButton.ScrollArrowRepeat( () => people.Scroll( 1 ) ),
+			ClickSound = Table.ClickSoundOf( downNode ), Bounds = downNode.Rect } );
 		// [BIN:TPW-EXE:0x4BE820 player buttons] message 0x100: 0xC312A runs the postcard 0x4A9380, 0xC3129 votes (0x4EB300) and disables itself, 0xC3128 turns the earmuffs on (0x4EBEE0) or off (0x4EBEF0) by its toggle state
 		var postcard = Table.Control( 0xC312A );
-		Add( new UiButton { Id = "chatPostcard", Model = postcard.Model, Help = strings.Help( 480 ), Bounds = postcard.Rect, Clicked = () => Postcard?.Invoke() } );
+		Add( new UiButton { Id = "chatPostcard", Model = postcard.Model, Help = strings.Help( 480 ), Bounds = postcard.Rect, ClickSound = Table.ClickSoundOf( postcard ), Clicked = () => Postcard?.Invoke() } );
 		var vote = Table.Control( 0xC3129 );
-		Add( new UiButton { Id = "chatVote", Model = vote.Model, Help = strings.Help( 461 ), Bounds = vote.Rect, Clicked = Vote } );
+		Add( new UiButton { Id = "chatVote", Model = vote.Model, Help = strings.Help( 461 ), Bounds = vote.Rect, ClickSound = Table.ClickSoundOf( vote ), Clicked = Vote } );
 		var earmuffs = Table.Control( 0xC3128 );
 		// [BIN:TPW-EXE:0x4BD400 earmuffs state] the server's earmuffs answer sets the toggle (0x668bec)
-		Add( new UiButton { Id = "chatEarmuffs", Model = earmuffs.Model, HelpSource = () => strings.Help( Source?.Earmuffs == true ? 419 : 418 ), Bounds = earmuffs.Rect,
+		Add( new UiButton { Id = "chatEarmuffs", Model = earmuffs.Model, HelpSource = () => strings.Help( Source?.Earmuffs == true ? 419 : 418 ), Bounds = earmuffs.Rect, ClickSound = Table.ClickSoundOf( earmuffs ),
 			Selected = () => Source?.Earmuffs == true, Clicked = () => Source?.SendCommand( ChatCommand.Earmuffs, "" ) } );
 		messages = Add( new MessageList( this ) { Id = "chatMessages", Bounds = MessageRowsRect } );
 		var messageSlider = MessagesNode.Children.Single( node => node.Type == 3 );
@@ -194,6 +200,7 @@ public sealed class ChatPanel
 				Selected = ignore ? () => Source?.Ignored.Contains( person.Name, StringComparer.OrdinalIgnoreCase ) == true : null,
 				Bounds = bounds,
 				Anchor = UiAnchor.TopLeft,
+				ClickSound = table.ClickSoundOf( node ),
 				Clicked = () => RunPopupAction( action, person.Name ),
 			} );
 		}

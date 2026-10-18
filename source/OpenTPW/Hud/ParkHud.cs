@@ -834,8 +834,7 @@ public sealed partial class ParkHud
 			}
 		}
 
-		// [BIN:TPW-EXE:0x485780 UI message hook] a 0x100 (activated) message plays cat_ui event 0x1F, or 0xBD when the control's construction style (+0x48) has bit 0x10 (0x4857cb)
-		// [APPROX:AUDIO-004] the controls created with style bit 0x10 are the list row templates and the table builder's type 3 controls, the lists' sliders (docs/AUDIO.md); whether a press on them sends the activate message is not read, so the view always plays 0x1F
+		// The park view's own click is not a button-class 0x100. The hook 0x485780 plays cat_ui 0xBD only when the receiver of 0x100 has style bit 0x10 (the choice at 0x4857cb); this click stays 0x1F.
 		if ( !overUi && !consumed && input.LeftPressed )
 			GameAudio.PlayUi( ParkViewClickEvent );
 

@@ -278,6 +278,12 @@ seed at entry, so headless (`--mute`) runs and tests start from a known state, a
 stays out of the canonical hash and out of the resume smoke test's composite hash
 (DET-plan §3 D9, §4.5).
 
+The sounds of the October 18 finishing pass (the coaster trains' crash, the track and coaster tool clicks, the pause menu's
+backdrop click, the rectangle ambients and the reverb) draw only from this sound chooser, as the original's sound library
+does (all its draws are the one shared `0xfb1f20` state), and the reverb draws nothing. None of them touches the world stream,
+the script stream or any hashed state, so no pin moves. The coaster crash is raised by the train collision exchange
+(`CoasterRide.Crashed`) after the exchange has run; its subscriber only plays a sound.
+
 A park started from an original save (SAVE-I, docs/ECONOMY.md "Original save
 import") sets the economy's tick, bank, loans, objects and staff before its first
 tick. All of it is in the economy digest, and the run that the pinned hash

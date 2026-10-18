@@ -71,7 +71,7 @@ public class PlacedAmbientTests
 	}
 
 	[TestMethod]
-	public void ARectangleRecordKeepsItsRectangleAndIsNotAPlacedSound()
+	public void ARectangleRecordKeepsItsRectangle()
 	{
 		var file = new PlacedObjectsFile( Build( new[] { new[] { 3, 0, 0, 1024 * 10, 0, 1024 * 20, 0, 1024 * 4, 1024 * 6 } } ) );
 

@@ -199,6 +199,7 @@ public sealed partial class ParkHud
 				ReportCoasterResult( level.CoasterClick( cursorX, cursorY ) );
 				// [BIN:TPW-EXE:0x52644c coaster tool click] the tool's click handler 0x524960 in mode 0x15 posts help 0xCD (205) after every click's action (the release 0x446300 with 0 for the edit buttons)
 				PostToolHelp( AdvisorToolHelp.CoasterToolClick );
+				PlayCoasterToolClick( cursorX, cursorY );
 				coasterPress = true;
 				consumed = true;
 			}
@@ -218,7 +219,10 @@ public sealed partial class ParkHud
 			if ( result == CoasterPanelResult.Reopened )
 				PostMessage( strings.Help( 0x125 ) );
 			if ( inPark )
+			{
 				PostToolHelp( AdvisorToolHelp.CoasterToolClick );
+				PlayCoasterToolClick( cursorX, cursorY );
+			}
 			consumed = true;
 		}
 		if ( input.LeftReleased )
@@ -234,6 +238,13 @@ public sealed partial class ParkHud
 			toolPress = true;
 		return consumed;
 	}
+
+	/// <summary>
+	/// The coaster tool's click sound: the path tool's laying cue (<see cref="GameAudio.CoasterToolClickEvent"/>) at the clicked cell, for every release in tool mode 0x15
+	/// (a build click and the end of an edit-button action alike), before the action's result is known.
+	/// </summary>
+	// [BIN:TPW-EXE:0x526423 coaster click sound] 0x524960 submits cat_ui 0x65 at (x*10, 0, z*10) in mode 0x15 right before the coaster release 0x446300 and the help 0xCD
+	private static void PlayCoasterToolClick( int cellX, int cellY ) => GameAudio.PlayUiAt( GameAudio.CoasterToolClickEvent, GameAudio.CellSoundPosition( cellX, cellY ) );
 
 	private void ReportCoasterResult( CoasterPlaceResult result )
 	{

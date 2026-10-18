@@ -310,7 +310,7 @@ What the shipped corpus does with them is pinned in `RideOperandCorpusTests`: th
 literal 0, the query destinations are variables (or literal 0 / 10000 where only the flags matter), BOUNCE always passes VAR_LETMEON and VAR_DURATION, REPAIREFFECT is 0 or 1, SETREVERB 0 to 10 (0, 1, 3, 8, 9 occur),
 DIPMUSIC only 1 (End.RSE and Gates.RSE), SCREAMLEVEL 10 to 100, the scream band a variable (VAR_ONRIDE in 81 of 86 uses) and SPARK has one use.
 
-Still unread or not modelled: the object type's own list (type 10, `0x557686`) and the walking body's drawing (TOUR-011). SETREVERB's reader and DIPMUSIC's sound-service reader are
+Still unread or not modelled: the object type's own list (type 10, `0x557686`; its custom sound bank is read, AUDIO.md "Custom-bank EVENT type 10", and no shipped script uses it) and the walking body's drawing (TOUR-011). SETREVERB's reader and DIPMUSIC's sound-service reader are
 built ([below](#dipmusic-and-setreverb-the-sound-service-readers)).
 
 ## DIPMUSIC and SETREVERB: the sound-service readers
@@ -335,7 +335,7 @@ the ride camera, the default `0x78578C` (0) goes to `0x51C8D0`. That call holds 
 the second backend's vtable slot `0x50` (QMixer.dll exports `QSWaveMixSetReverb*`). The shipped levels are 0, 1, 3, 8 and 9 (`SndReverb.map` holds 15 of 32 entries: records 1 to 8 and 11 to 14 are identical, 0 differs from them in two words, 9 and 10 are their own).
 
 OpenTPW: `RideVM.ReverbLevel`, `ReverbSelector` (called each park frame with the ride view's ride, like the main loop), `GameAudio.SelectReverb`/`ReverbPreset` (sent only on change) and `SndReverbMap` (the file's format). The reverb itself
-is not mixed (`APPROX:AUDIO-039`): the DSP is the EAX hardware's or QMixer's.
+is a stand-in (`APPROX:AUDIO-039`, `ReverbUnit`, AUDIO.md "Reverb"): the original's DSP is the EAX hardware's or a COM object's behind QMixer.dll, whose exports hold no reverb code.
 
 ## EVENT_EXT, the ride lights and GETCUSTPTCLCODE
 
@@ -709,7 +709,7 @@ handler attributes diverge.
 | 100 | `HOUR` | 1 | hooked | host-local civil hour: tp.exe 0x5566AC calls time/localtime and stores tm_hour in the result register; a variable operand receives it, a literal only sets the flags; the TPW runtime samples host time (PPC-clock.md) |
 | 101 | `MIN` | 1 | hooked | host-local civil minute (tm_min), as HOUR: tp.exe 0x5566FF calls time/localtime and stores tm_min in the result register; corpus `MIN 0; BRANCH_NZ` uses a literal dest for flags only |
 | 102 | `SEC` | 1 | hooked | host-local civil second (tm_sec), as HOUR: tp.exe 0x55674E calls time/localtime and stores tm_sec in the result register; corpus `SEC 0; BRANCH_NZ` |
-| 103 | `SETREVERB` | 21 | hooked | TPW-EXE 0x55649C (`level`, resolved): stores the operand as a dword at +0xD8 and nothing else; the reader is the main loop's 0x55A470, which sets the sound service's reverb preset (0x51C8D0, an index into SndReverb.map) from the root script of the ride being ridden whose level is not 0 (built: ReverbSelector; the DSP is AUDIO-039); the corpus uses 0, 1, 3, 8 and 9 |
+| 103 | `SETREVERB` | 21 | hooked | TPW-EXE 0x55649C (`level`, resolved): stores the operand as a dword at +0xD8 and nothing else; the reader is the main loop's 0x55A470, which sets the sound service's reverb preset (0x51C8D0, an index into SndReverb.map) from the root script of the ride being ridden whose level is not 0 (built: ReverbSelector; the mixed reverb is a stand-in, AUDIO-039); the corpus uses 0, 1, 3, 8 and 9 |
 | 104 | `DIPMUSIC` | 8 | hooked | TPW-EXE 0x5564C0 (`on`, resolved): stores the low byte at +0xB9 and calls 0x51E710(on), which writes the global duck request word 0x803AD0 (and the sound service's dirty flag 0x803AC8); the sound service (0x51BD70, from the main loop) then sets the music channel's volume to 0 while the word is non-zero (0x51BE5A..0x51BE9B, 0x51BDC2..0x51BDEC; built: AudioMixer.MusicDuckRequest); the script's destruction writes 0 again when the byte was set (0x558513); End.RSE and Gates.RSE use it (8 uses) |
 | 105 | `SPARK` | 1 | implemented | TPW-EXE 0x5564ED (`a b c d`, resolved): stores a and b as words at +0xDC and +0xDE, looks the two key nodes (class 0x100) up and logs them; c and d are dropped; nothing reads the words, so no game effect (1 corpus use, Plasma) |
 

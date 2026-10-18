@@ -40,7 +40,7 @@ public class AudioRegisterRound2Tests
 		foreach ( var name in new[] { "Ui", "Ambient", "Rides", "Kids", "Staff", "LevelAmbient", "LevelRides" } )
 			Field( $"<{name}>k__BackingField", null );
 		Field( "startupPlayed", false );
-		foreach ( var name in new[] { "rain", "weatherRain", "placedAmbients", "placedSentences", "crowd", "music" } )
+		foreach ( var name in new[] { "rain", "weatherRain", "placedAmbients", "placedSentences", "rectangleSounds", "crowd", "music" } )
 			Field( name, null );
 		AudioListener.Update( Vector3.Zero, new Vector3( 0, 0, 1 ) );
 	}
@@ -394,5 +394,84 @@ public class AudioRegisterRound2Tests
 		new UiButton { Bounds = new UiRect( 0, 0, 10, 10 ), Enabled = false }.Activate();
 		Assert.AreEqual( 3, mixer.Voices.Count, "a disabled control sends no message" );
 		Assert.IsTrue( mixer.Voices.All( voice => voice.Position == null ), "flat" );
+	}
+
+	// ---- finish: the sounds read last (docs/AUDIO.md "Finishing pass") ----
+
+	private static void FollowRectangleSounds() =>
+		typeof( GameAudio ).GetMethod( "FollowRectangleSounds", BindingFlags.Static | BindingFlags.NonPublic )!.Invoke( null, null );
+
+	[TestMethod]
+	public void TheRectangleClampPutsTheSoundAtTheListenerOrTheNearestPointOfTheRectangle()
+	{
+		// [BIN:TPW-EXE:0x6bd5f0] x clamps into [x1, x2]; z is capped at z1 and then raised to z2 (the shipped records run z down from z1); y is the listener's. The jungle record: x 353..450, z 31 down to -66
+		Assert.AreEqual( new Vector3( 400, 7, 0 ), GameAudio.RectangleSoundPlace( 353, 31, 450, -66, new Vector3( 400, 7, 0 ) ), "inside: on the listener" );
+		Assert.AreEqual( new Vector3( 353, 0, 31 ), GameAudio.RectangleSoundPlace( 353, 31, 450, -66, new Vector3( 100, 0, 500 ) ), "left of it and past z1" );
+		Assert.AreEqual( new Vector3( 450, 2, -66 ), GameAudio.RectangleSoundPlace( 353, 31, 450, -66, new Vector3( 900, 2, -500 ) ), "right of it and past z2" );
+	}
+
+	[TestMethod]
+	public void ARectangleSoundIsStartedAndFollowsTheListenerEveryFrame()
+	{
+		// [BIN:TPW-EXE:0x550e00] a type 3 record: 0x51bfc0(0, global cat_ambient, word 2, x, y, z) bound by 0x51c5d0 to the rectangle x..x+w7, z..z+w8 (w8 negative in every shipped record)
+		temporary = Directory.CreateTempSubdirectory( "opentpw-placed-rectangle-" ).FullName;
+		Directory.CreateDirectory( Path.Combine( temporary, "levels", "x" ) );
+		var words = new[] { new[] { 3, 0, 8, 10 * 1024, 0, 20 * 1024, 0, 4 * 1024, -6 * 1024 } };
+		var data = new byte[12 + words.Length * 60 + 4];
+		BinaryPrimitives.WriteUInt32LittleEndian( data, 0x5F4A424F );
+		BinaryPrimitives.WriteInt32LittleEndian( data.AsSpan( 4 ), words.Length );
+		BinaryPrimitives.WriteInt32LittleEndian( data.AsSpan( 8 ), 60 );
+		for ( var word = 0; word < words[0].Length; word++ )
+			BinaryPrimitives.WriteInt32LittleEndian( data.AsSpan( 12 + word * 4 ), words[0][word] );
+		File.WriteAllBytes( Path.Combine( temporary, "levels", "x", "scape.omp" ), data );
+		FileSystem = new BaseFileSystem( temporary );
+		Use( "Ambient", Category( (8, 0x9, 4) ) );
+		AudioListener.Update( new Vector3( 12, 5, 17 ), new Vector3( 0, 0, 1 ) );
+
+		GameAudio.StartPlacedAmbients( "x" );
+		system.Pump();
+		system.Pump();
+
+		var voice = mixer.Voices.Single();
+		Assert.AreEqual( new Vector3( 12, 5, 17 ), voice.Position, "started on the listener inside the rectangle" );
+		AudioListener.Update( new Vector3( 0, 0, 0 ), new Vector3( 0, 0, 1 ) );
+		FollowRectangleSounds();
+		Assert.AreEqual( new Vector3( 10, 0, 14 ), voice.Position, "outside: the nearest point (x1, z2)" );
+		AudioListener.Update( new Vector3( 100, 3, 100 ), new Vector3( 0, 0, 1 ) );
+		FollowRectangleSounds();
+		Assert.AreEqual( new Vector3( 14, 3, 20 ), voice.Position, "beyond x2 and z1" );
+		GameAudio.StopPlacedAmbients();
+		Assert.IsTrue( voice.IsFinished, "the park's end stops it" );
+	}
+
+	[TestMethod]
+	public void TheTrackAndCoasterToolClicksAndThePauseBackdropClickUseTheTracedEvents()
+	{
+		// [BIN:TPW-EXE:0x526ce9] cat_ui 0xCE (track modes 0xB and 0x10), [BIN:TPW-EXE:0x526423] cat_ui 0x65 (mode 0x15), [BIN:TPW-EXE:0x492d9c] cat_ui 0xC1 (the pause menu's backdrop), [BIN:TPW-EXE:0x4398c8] cat_rides 0xC (the coaster crash)
+		Assert.AreEqual( 0xCEu, GameAudio.TrackToolClickEvent );
+		Assert.AreEqual( 0x65u, GameAudio.CoasterToolClickEvent );
+		Assert.AreEqual( 0xC1u, GameAudio.PauseBackdropEvent );
+		Assert.AreEqual( 0xCu, GameAudio.CoasterCrashEvent );
+		Use( "Ui", Category( (0xCE, 0x1, 4) ) );
+		GameAudio.PlayUiAt( GameAudio.TrackToolClickEvent, GameAudio.CellSoundPosition( 3, 4 ) );
+		Assert.AreEqual( new Vector3( 30, 0, 40 ), mixer.Voices.Single().Position, "(x * 10, 0, z * 10) of the clicked cell" );
+	}
+
+	[TestMethod]
+	public void AClickOnThePauseMenuBackdropPlaysCatUi0xC1ButAClickOnALineDoesNot()
+	{
+		Use( "Ui", Category( (0xC1, 0x200, 40) ) );
+		var clicked = 0;
+		var screen = UiDialogs.TextMenu( "pause", new (string Id, Func<string> Text, Action Clicked, bool Enabled)[] { ("resume", () => "Resume", () => clicked++, true) }, () => { }, "resume" );
+		var context = new UiContext( OriginalUiTests.FakeStrings(), null!, new UiModels( name => throw new FileNotFoundException( name ) ) ) { Canvas = new UiCanvas( 2048, 1536 ) };
+		var line = screen.Elements.OfType<UiMenuItem>().Single();
+		var inside = line.ScreenRect( context.Canvas ).Center;
+
+		screen.Update( context, UiInput.Click( new System.Numerics.Vector2( 3, 3 ) ) );
+		Assert.AreEqual( 1, mixer.Voices.Count, "a left click outside the lines is a backdrop click" );
+		screen.Update( context, UiInput.Click( inside ) );
+		Assert.AreEqual( 1, mixer.Voices.Count, "a click on a line is the line's" );
+		screen.Update( context, UiInput.Idle( new System.Numerics.Vector2( 3, 3 ) ) );
+		Assert.AreEqual( 1, mixer.Voices.Count, "no click, no sound" );
 	}
 }

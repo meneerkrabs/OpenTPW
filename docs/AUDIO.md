@@ -1,15 +1,19 @@
 # Sound: catalogues, mixer and park music
 
-October 14, 2026. Status: the original sound catalogues are read, a software mixer plays
-through SDL, the park plays its original music, the front end plays its original lobby
-music and ambience, control clicks, the map/research drawer, error feedback, ride-script
-sounds (RSE EVENT and REPAIREFFECT), the crowd sentence and the advisor's speech play
-through the mixer. The park's weather plays its rain and thunder, the level's placed
-ambients (scape.omp) play with the mixer's distance law, ride screams play, the staff's
-walking and idle voices play, the path tool's laying and refused clicks play, a queue joining a path
-plays `cat_ui` 139, Backspace over a path cell (and, as an extension, a queue cell) plays `cat_ui` 95 as it removes the cell, and opening a
-visitor's details plays the visitor click (`cat_kids` 129). Still silent: the second source of 139 (a
-laid path cell linking to a queue) and the events listed in "Event coverage (round 7)". No original data is in the repository.
+October 18, 2026. Status: the original sound catalogues are read, a software mixer plays through SDL, and every sound the
+original submits through its sound entry (`0x51bfc0`) and its placed twin (`0x51c130`) that can be read statically is
+played, bar the few listed under "Still not played" below. The park plays its original music; the front end its lobby
+music and ambience; controls click (including the pause menu's backdrop); the map/research drawer, error feedback, the message
+tube, the postcard and the research window play their cues; the build tools play their size-classed placement and demolition cues and
+their click sounds (path, queue, coaster and kart/water track tool); ride scripts play their EVENT and REPAIREFFECT sounds
+and screams through the positional API (the census over 262 shipped objects and 308 scripts finds every node key resolving);
+coaster trains that bump hard crash; the weather plays its rain and thunder; the level's placed ambients (`scape.omp`, types 1 and
+3) play with the mixer's distance law; the crowd sentence, the guests' and the staff's voices (walking, idle and work sounds from their
+state machines), the visitor click, the queue-joins-a-path cue and the advisor's speech and its two key sounds play; and the positioned
+effects go through a software reverb that follows the ridden ride's `SndReverb.map` preset (a stand-in, AUDIO-039). Still not played: the
+reverb's exact sound (the original hands the record to hardware or to a COM object), `cat_ui` `0xBD` (AUDIO-004: which control reaches it is
+not settled), the custom-bank EVENT type 10 (no shipped script uses it) and the slap reactions (OpenTPW has no slap). No original data is
+in the repository.
 
 The integration regressions force a rainy storm, pass its rain level and due thunder
 through the live audio callbacks, and assert nonzero decoded PCM. They also exercise
@@ -45,8 +49,8 @@ for every sound type (`0x5575c7` on; tp.exe):
 * an **unknown key** logs `RSSE: Invalid Node ID` (`0x556d2c`), returns 0 and plays **nothing**
   (`0x5575e5`). OpenTPW used to fall back to flat.
 
-Headless runtimes (no placement) and a nonfinite result keep the flat path. Types 0, 1, 2 and 10 never
-sample an audio origin or produce sound through this route. The dispatcher truncates the three
+Headless runtimes (no placement) and a nonfinite result keep the flat path. Types 0, 1 and 2 never
+sample an audio origin or produce sound through this route. Type 10 does in tp.exe (see "Custom-bank EVENT type 10" below), but no shipped script uses it. The dispatcher truncates the three
 coordinates to whole units before the submit (`__ftol` in `0x5573d0`, as the REPAIREFFECT sounds do), and
 OpenTPW does the same; the footprint middle's height is the root node's `+0x44`, the object's own height
 that `0x556a80` also reads, which is the base height here (AUDIO-908 is retired).
@@ -300,7 +304,7 @@ option volumes. While speech plays, music and effects are lowered to
 sync and sentences still advance. `--mute` turns sound off.
 
 A ride script's `DIPMUSIC` sets the sound service's music duck request (`0x51E710`): while it is non-zero the music channel is silent (`AudioMixer.MusicDuckRequest`, `0x51BE5A`),
-which the end-of-park sequence of `Gates.RSE` uses. `SETREVERB` chooses the reverb preset of the ridden ride (`ReverbSelector`, `0x55A470`); the preset is held but not mixed (AUDIO-039).
+which the end-of-park sequence of `Gates.RSE` uses. `SETREVERB` chooses the reverb preset of the ridden ride (`ReverbSelector`, `0x55A470`); the preset drives the effects channel's reverb, a stand-in (AUDIO-039).
 Both are described in [RSE-VM.md](RSE-VM.md#dipmusic-and-setreverb-the-sound-service-readers).
 
 The advisor plays its clip on the speech channel; its lip-sync position is the mixer
@@ -327,6 +331,11 @@ global `cat_globallobbysfx` at 40, `0x100BC4C0` a level's `cat_locallobbymusic`/
 | Map/research drawer | `cat_ui` 0x1C open, 0x1C then 0xC2 close | the map and research windows | tp.exe `0x4a14f0` (open `0x4a1737`, close `0x4a186f`, slide end `0x4a1947`) |
 | Error feedback | `cat_ui` 0x1D | a rejected purchase or placement | `0x10139A40` (buy window callers `0x10163AFC`/`0x10163BFC`) |
 | Path tool | `cat_ui` 101 lay, 175 refused | a committed path line; a click on a refused path or queue ghost (or a refused track commit), at the clicked cell (x * 10, 0, z * 10) | `0x10070DE0` (commit), tp.exe `0x52496e` (refused `0xAF`, `0x524a80`, at the release that follows a park-view press (byte `0x8186d8`, set by the press handler `0x524790`) outside a layout replay (`0x785a2c`); AUDIO-022 is retired) |
+| Track and coaster tool clicks | `cat_ui` 0xCE (kart and water track tools), 0x65 (coaster tool) | every release of the tool's click, at the clicked cell (x * 10, 0, z * 10) | tp.exe `0x526cb3` (0xCE, submit `0x526ce9`), `0x5263df` (0x65, submit `0x526423`) |
+| Pause menu backdrop | `cat_ui` 0xC1, flat | a click on the pause menu's backdrop outside its lines | tp.exe `0x492d80` (via `0x485aa0`) |
+| Coaster crash | `cat_rides` 0xC (global) at the bump | two trains bumping with new speeds more than 1.0 apart | tp.exe `0x43cd60` -> `0x439840` (submit `0x4398cd`) |
+| Advisor key sounds | `cat_ui` 0xC5 at a golden-ticket clip's start, 0xC6 once per response at its key timer, both flat | the advisor presentation | tp.exe `0x598F1C`, `0x5999C4` |
+| Rectangle ambients | global `cat_ambient` 2 or 3 at the listener's clamp into a rectangle | the level's `scape.omp` type 3 records, for the park's lifetime | tp.exe `0x550e00`, `0x51c5d0`, `0x6bd5f0` |
 | Ride-script sounds | any event of the routed category | an RSE `EVENT type key id` instruction: type 3 level `cat_rides` (no fallback to the global one: an id the level lacks is silent, `0x6c5870`; AUDIO-011 is retired), 4 level `cat_ambient` (likewise), 5 global `cat_rides`, 6 `cat_kids`, 7 `cat_staff`, 8 `cat_ambient`, 9 `cat_ui` | `0x100AE930` (dispatcher, guard `bgt` 10 at `0x100AE938`); tp.exe `0x5575c7` (anchored at the key's model node, the footprint middle for a negative key, nothing for an unknown key; see "Placed sound EVENT origins") |
 | Ride screams | `cat_kids` 71–74 held per ride (STARTSCREAM), STOPSCREAM stops it; `cat_kids` 75–109 one-shot (SINGLESCREAM) | a ride script's scream instructions; band 1 → 71, 2–3 → 72, 4–7 → 73, 8+ → 74; parameter (level + 50) / 2 (parameter 6 on the PC); **positioned at the ride's footprint middle** | `0x100B19DC` (STARTSCREAM), `0x100B1A74` (STOPSCREAM), `0x100B1A90` (SINGLESCREAM), `0x100ACA38`, `0x100ACB7C`, `0x100ACC24`, `0x100ACE68`; tp.exe `0x551130` (STARTSCREAM submit: positioned, 0x47-0x4A at (x, y, z), parameter 6 = clamp((a + b) / 2, 0, 100)), `0x555edb`, `0x555f1b` -> `0x556af0` -> `0x551320` |
 | Repair sounds | `cat_rides` 111 and 211 for a non-zero value; `cat_kids` 75 (families 75–90, by the script's variable 5) for 0 | an RSE `REPAIREFFECT 1/0` instruction, both at the object | tp.exe `0x5562C5` (the compare), `0x5562CD`–`0x556351` (the pair), `0x55635F` / `0x551320` (the band sound); Mac `0x100B1EC0`, `0x100B1F00` (pair), `0x100B1F78` (band) |
@@ -374,54 +383,66 @@ capacity, so OpenTPW's band equals the original's for the same riders; whether t
 (boarding and queue pace) is the guest slice's question, not the band's. Near a full ride a band of 4 or more picks the
 0-500 ms and 100-1000 ms event (73, 74) in 43 % of the starts of the jungle run, as in the original's busiest minutes.
 
-Traced in the binary but not triggered yet:
+Traced in the binary and played:
 
-* The custom-bank type 10 is not routed. Type 0 is the dispatcher's default/unsupported path.
-  `EVENT` types 1 and 2 create **particles**, not positioned sound loops; see the particle section above.
-* Staff chase (`cat_staff` 136, `0x100D49F8`), catch (137, `0x100D516C`), the researching turn (138,
-  `0x100F05EC`) and a performance's end (135, `0x100D2D98`): the events are traced, but OpenTPW has no
-  chase, catch, performance or per-turn research action to hang them on.
-* `cat_ui` 139 is the sound of a queue joining a path, not a path-tool link-end. Its first source plays now: the queue tool's
+* `EVENT` types 1 and 2 create **particles**, not positioned sound loops; see the particle section above.
+* `cat_ui` 139 is the sound of a queue joining a path, not a path-tool link-end. Its first source is the queue tool's
   commit when the line ends on a path cell, money on (`0x100711CC`, tp.exe `0x527587`; the validator `0x84154` returns code
-  8 for that line, which is also no longer treated as a refusal). Its second source plays too: the link writer (tp.exe
-  `0x5348D0`, `PathLinkWriter`) reports a laid path cell beside a queue cell whose link byte points back at it (a path laid
+  8 for that line, which is also no longer treated as a refusal). Its second source is the link writer (tp.exe
+  `0x5348D0`, `PathLinkWriter`): it reports a laid path cell beside a queue cell whose link byte points back at it (a path laid
   over the queue's join cell, or over the queue's end), and the sound plays at (10x, 0, 10x): tp.exe takes both coordinates
   from the cell's x (`0x5348E0`). The count-classed removal sounds `cat_ui` 141–144 and 150–153
   (`0x10075618`, `0x100748A0`) are demolish sounds, not path-tool sounds.
-* `cat_ui` 95 is the "backtrack" key command (Backspace, `0x10112430`, tp.exe `0x40BDA0`), and it plays now: with no tool on and
+* `cat_ui` 95 is the "backtrack" key command (Backspace, `0x10112430`, tp.exe `0x40BDA0`): with no tool on and
   a path cell under the cursor it plays at that cell, then that cell loses one placement (ClearCell's counted path case,
   tp.exe `0x40BE8B`) and goes only when it was laid once; the sound plays even when the cell stays. Over a queue cell OpenTPW plays it too and takes the queue back from that cell
   (`[EXT:queue-backtrack]`; the original's key does nothing there). Inside the path tool the original's Backspace is Back (tp.exe `0x52FE50`): it takes the last segment back without
   a refund and plays no sound, as OpenTPW's segment undo does.
-* The weather's own visuals are drawn now, as procedural approximations (AUDIO-900..902, 904,
+* The weather's own visuals are drawn as procedural approximations (AUDIO-900..902, 904,
   "Weather visuals" below); the forecast's warning is shown as an OpenTPW extension (banner, wording
   and cadence are `[EXT:forecast-banner]`, `[EXT:forecast-wording]`, `[EXT:forecast-cadence]`): the PC has
   no forecast message (event type 2 has a single subscriber, the weather thing itself, `0x511fa9`/`0x511fb8`).
-* The placed records of type 3 (a sound that follows the listener in a rectangle: the original submits
-  `0x51bfc0` and binds the rectangle with `0x51c5d0`) are counted, not played.
 * The visitor click (`cat_kids` 129, flat) plays whenever a visitor's details open: the status panel's open routine
   (`0x1010B808`, tp.exe `0x4B79B0`) plays it unconditionally, for a click on a visitor in the park, a roster row's
   activation, the map's visitor markers and the selection strip. OpenTPW plays it for the park click and the roster
   activation; it has no separate status panel and no map markers or strip yet.
-* Entertainers and guards in a level play their work sounds from their state machines: `cat_staff` 135 at the end of a
-  performance (tp.exe `0x4D4810`), 136 when a guard sets off after a prankster (`0x4D6260`) and 137 when he catches it
-  (`0x4D6790`), and `cat_kids` 128 when he sets the guest down (`0x4FEB50`). A researcher at work plays `cat_staff` 138 on one draw in sixteen
-  (`0x5029F0`, state 15).
+* Entertainers, guards and researchers in a level play their work sounds from their state machines: `cat_staff` 135 at the end of a
+  performance (tp.exe `0x4D4810`), 136 (staff chase) when a guard sets off after a prankster (`0x4D6260`), 137 (catch) when he catches it
+  (`0x4D6790`) and `cat_kids` 128 when he sets the guest down (`0x4FEB50`); a researcher at work plays `cat_staff` 138 (researching turn)
+  on one draw in sixteen (`0x5029F0`, state 15). (Until October 18 this list said the chase, catch, researching and performance cues had nothing to hang on;
+  the state machines exist since the staff work and they play.)
 * A prankster's stinkbomb plays `cat_kids` 207 (0xCF) at the prankster (tp.exe `0x4FF289`, through the thing sound
   `0x4FAA00`). A guest's litter going into a bin plays no sound of its own: it sets the bin script's variable 0
   (`VAR_TRIGGER`) to 1 (`0x4FFF20`, `0x55A0B0`), and the bin's script does the rest.
-* Global lobby effects now play (see "Lobby effects" below): the thunder (`cat_globallobbysfx` 1) with the lobby's
+* Global lobby effects play (see "Lobby effects" below): the thunder (`cat_globallobbysfx` 1) with the lobby's
   lightning, the globe's music and ambience (2, 3) and the enter-park sound (4).
-* The advisor controller's own effects, `cat_ui` 197/0xC5 (`0x100069DC`) and
-  198/0xC6 (`0x100075DC`): which advisor state plays them is not traced.
-* The slap reactions 639–641 of `cat_speech` (`0x10007068`): OpenTPW has no slap
-  interaction.
-* `cat_ui` 0xBD: a control whose construction style (`+0x48`, the base window constructor `0x65bcad`'s second
-  argument) has bit `0x10` plays 0xBD instead of 0x1F (`0x4857cb`; the Mac's "bits outside 24-26" is a
-  big-endian rendering of the same test). The creation sites are the list row templates and the table
-  builder's type 3 controls (AUDIO-004); whether a press on them sends the activate message `0x100` is not
-  read (the senders at `0x658683`, `0x65f5dc`, `0x65f623`, `0x6691eb` and `0x66fa2c` were located, not read),
-  so no OpenTPW control plays it.
+* The advisor controller's key sounds `cat_ui` 0xC5 and 0xC6 (Mac `0x100069DC` / `0x100075DC`) are the advisor presentation's own,
+  not the controller's: tp.exe `0x598F1C` (in `0x598DC0`) plays 0xC5 when a response's clip starts whose table flags carry the
+  golden-ticket close-up bit (`flags & 0x3E0000 == 0x40000`, with a response active), and `0x5999C4` (in `0x599880`) plays 0xC6 once per response when
+  its timer entry (sequence 28 or 29) comes due, together with the Key particle. Both are one-shots submitted flat at the origin
+  (`0x51BFC0(0, cat_ui, id, 0, 0, 0)`), their handles dropped. `Advisor.Update` plays them (`AdvisorAccessories.KeySound`, `AdvisorSequences.TimerSound`).
+* The track tools' click sounds. The kart (mode 0xB) and water (mode 0x10) track tools play `cat_ui` 0xCE at the clicked cell
+  (x * 10, 0, z * 10) for every release, the first click included and also after a refused ghost's 0xAF (tp.exe `0x526cb3`; the release handler
+  `0x524960` reaches it from its mode tests `0x525a1c`/`0x525a2e`, the submit is `0x526ce9`). The coaster tool (mode 0x15) plays the path tool's
+  laying sound `cat_ui` 0x65 at the clicked cell for every release, build click and edit-button release alike, before the coaster release `0x446300` and its help 0xCD
+  (`0x5263df`-`0x526423`). `ParkHud` plays both next to the places that already post the tool help. Nothing else in the build tools' code
+  submits a sound (`0x524960`-`0x535100`: 0xAF, 0x65, 0xCE, 0x8B, 0x97-0x99, 0x90).
+* The coaster trains' crash. The collision exchange `0x43cd60` calls the crash effect `0x439840` when the two trains' new speeds differ by more than 1.0:
+  `cat_rides` 0xC (global, the same sound as the karts' crunch) at the point the bumping train's front lies at on the track samples (`fmod(front, samples)` split by
+  `modf`, `0x43c000` interpolates the two samples' positions, each coordinate truncated). `CoasterRide.Crashed` raises it and `OriginalObjectRuntime` plays it; the
+  effect's particles are not reproduced (COASTERS.md).
+* The pause menu's backdrop. The menu's full-canvas window (`0x492e80`, procedure `0x492d80`) answers a click (message `0x10006`, either button) by playing `cat_ui` 0xC1 flat
+  (through the helper `0x485aa0`) and sending the activate message `0x100001` to its owner; `0xC1` is the only sound that procedure plays. `TextMenuScreen` plays it
+  for a click that hits no line (both menus: the park's pause menu and the front end's). What the pause callback `0x48b6a0` does with `0x100001` for the backdrop is
+  not read, so OpenTPW keeps its own right-click Back and adds no left-click Back.
+* The level's rectangle ambients (`scape.omp` type 3): see "Rectangle ambients" below.
+* Reverb: see "Reverb" below.
+
+Not played:
+
+* The custom-bank `EVENT` type 10: see "Custom-bank EVENT type 10" below. Type 0 is the dispatcher's default/unsupported path.
+* The slap reactions 639–641 of `cat_speech` (`0x10007068`): OpenTPW has no slap interaction.
+* `cat_ui` 0xBD (AUDIO-004): see the register row.
 
 ### Event coverage (round 7)
 
@@ -433,9 +454,53 @@ the research window's two hums 0x9A/0x9B and the effort slider 0x9C with its par
 `0x4a9a53`), the stop-guard cue, and the guests' till (0xD0), drink (0x83), meal (0x84), toilet thought (0x85), pause (0x7E),
 vomit (0xCC) and ride-removed (0x80) voices (`0x4fe1cb`, `0x4fe303`, `0x4fca3e`, `0x4fc83a`, `0x4fed86`, `0x4fb3f5`).
 The staff's walking and idle voices were already wired. Script-driven events (the ride scripts' sound
-instructions) play through the ride script system. Still not played: the unmapped UI events 0xC1 and 0xCE,
-the advisor's 0xC5/0xC6 (advisor-owned), the track tool's sounds, and events whose only callers are in systems OpenTPW
-does not have (slap, the second source of 139).
+instructions) play through the ride script system. The UI events that round left open are settled: 0xC1 is the pause menu's backdrop click and 0xCE the
+kart and water track tools' click (see "Finishing pass"), 0xC5 and 0xC6 are the advisor presentation's key sounds, and the track tool's other
+sounds are the coaster tool's 0x65 click and the trains' crash. Still not played: 0xBD (AUDIO-004) and the slap reactions.
+
+## Finishing pass (October 18)
+
+### Rectangle ambients (`scape.omp` type 3)
+
+The level loader `0x550e00` handles three record types (the file opens `OBJ_`, a count and a record size; the first 15 words of a record are kept).
+Type 1 is the ranged placed sound (`0x51c130`), type 2 a particle effect, and **type 3** a sound that follows the listener inside a rectangle: it submits
+`0x51bfc0(0, cat, word 2, word 3/1024, word 4/1024, word 5/1024)` (the category is the global `cat_ambient` for word 1 = 0, the level's otherwise) and binds the returned handle with
+`0x51c5d0(handle, x, z, w7/1024, w8/1024)`, which stores the rectangle in the voice (`0x6b64b0`: `+0x4C`, flag `0x1000` on `+0x30`). Every tick of the voice (`0x6bca10`) tests the flag, which is never
+cleared, and runs `0x6bd5f0`: the voice is put at the listener's place clamped into the rectangle (x into [x1, x2]; z capped at z1 and then raised to z2, the shipped records running z down from z1 because
+their extent word is negative; y is the listener's), and the mixer is told. The ordinary range test follows, so the sound is on the listener inside the rectangle and
+at its nearest point (turned down by the distance law, silent past its range) outside. The shipped files hold five such records, all global `cat_ambient` events 2 or 3
+(jungle two, the other three themes one each, at x 353 to 373, z 21 to 32, 97 to 195 units wide). `GameAudio.StartRectangleSound` starts each as a placed one-shot or sentence at the
+clamp of the listener and `GameAudio.Update` moves it every frame (`RectangleSoundPlace`). Not verified against a capture: how audible the five ambients are (their events' own
+ranges decide).
+
+### Custom-bank EVENT type 10
+
+The dispatcher `0x5573d0` accepts types 1 to 10. Case 10 reads the thing type from `+0xAC`, takes the type's custom bank (`0x4145e0`: slot 5 of the per-type table at `+0x4DC`, filled by `0x414420`
+from the numbered files in the thing type's folder), logs `RSSE: Tried to trigger a custom effect with no registered custom sound bank` (`0x765E18`) and returns 0 when there is none, and
+otherwise submits `0x51bfc0(0, bank, id, x, y, z)` with the key resolved by `0x556b90` as for types 3 to 9. The census over every shipped script (308 scripts, `EventKeyCensusTests`) finds the type
+operand literal everywhere and the counts type 1: 67, type 2: 104, type 3: 251, type 4: 13, type 5: 67, type 6: 25; **no script uses type 10** (or 7, 8, 9, 0), so the unrouted type 10 loses no
+shipped sound and the path is documented, not built.
+
+### Reverb (AUDIO-039)
+
+The original does not mix reverb in software. `SndReverb.map` (file version 2000, 32 entries, 15 present, 820 bytes) holds 13-dword records that tp.exe sends, in `0x6C46B0`, to the audio device as an EAX 2.0
+listener property set (property 1 of the listener set, 0x38 bytes) in the order lRoom (word 3), lRoomHF (4), flRoomRolloffFactor (11), flDecayTime (5), flDecayHFRatio (6), lReflections (7), flReflectionsDelay (8), lReverb (9),
+flReverbDelay (10), dwEnvironment (0), flEnvironmentSize (1), flEnvironmentDiffusion (2), flAirAbsorptionHF (12) and the flags 9 (an immediate), or, when the device has no EAX path, to the backend's vtable slot `0x50`. QMixer.dll's
+five reverb exports (`Environment`, `DecayTime`, `DampingFactor`, `Mix`, `Volume`; setters at `0x18003ED0`, `0x18003F40`, `0x18003FB0`) range-check their argument, store it and forward it to a COM object (`+0x10C`, made
+by `0x1800B530`) through its vtable slot `+0x38`; the DLL contains no delay line, comb, allpass or reverb constant. There is therefore no software algorithm to port. The shipped presets:
+
+| Entries | Size | Diffusion | Room | Decay | Decay HF | Reflections | Reverb | Rolloff | Air absorption |
+| --- | ---: | ---: | ---: | ---: | ---: | --- | ---: | ---: | ---: |
+| 0 | 7.5 | 0.65 | 0 mB | 1.0 s | 0.3 | 0 mB at 0 s | 0 mB | 0 | -5 dB |
+| 1-8, 11-14 | 7.5 | 0.65 | 0 mB | 4.0 s | 0.3 | 0 mB at 0 s | +600 mB | 0 | -5 dB |
+| 9 | 1.5 | 0.5 | -500 mB | 5.0 s | 0.1 | +500 mB at 0.15 s | 0 mB | 10 | -100 dB |
+| 10 | 1.5 | 0.5 | -500 mB | 12.0 s | 0.1 | 0 mB at 0 s | 0 mB | 0 | -5 dB |
+
+OpenTPW builds `ReverbUnit` (`source/OpenTPW/Audio/ReverbUnit.cs`), a Freeverb-style network (eight damped combs and four allpasses per side, a mono send, Freeverb's published lengths scaled to 22,050 Hz) whose parameters follow the
+held record: the comb feedback gives the tail the record's decay time (10^(-3 D / T)), a one-pole damping gives the high-frequency decay ratio, the allpass gain follows the diffusion, the lengths follow sqrt(size / 7.5) within a factor of two,
+the return level is 0.25 x 10^((room + reverb) / 2000), the pre-delay is the reverb delay and three early taps start at the reflections delay. `AudioMixer` sends the **positioned voices of the effects channel** through it (interface clicks and other flat voices, speech and music stay dry) and adds the return before
+the 16-bit conversion; no preset (no `SndReverb.map` in the game folder, which sits beside `Data`, or the preset of a level the map lacks) means no send at all. `GameAudio.SelectReverb` hands the held preset's record to the unit and `GameAudio.LoadReverbMap`
+reads the file when the sound service starts. This is a stand-in, not a port (AUDIO-039): the constants, the size mapping and which voices the original's device reverbs (3D buffers only, or all) are OpenTPW's choices.
 
 ## QMixer.dll (original mixer, static)
 
@@ -443,7 +508,7 @@ does not have (slap, the second source of 139).
 [BIN:QMIXER-DLL:0x18005830] Every voice runs in the software channel stage (mode `0x1000000`); the volume
 table is at `0x782e40` in `tp.exe`, the pool holds 12 voices (5 in the other mode). Volume and pan laws and the
 distance law are in the AUDIO-018 row and the AUDIO-033 note above and are implemented by `AudioListener` and
-`AudioMixer` (`AudioMixerLawTests`). Not read: reverb application, the `SetPosition` integer message for flat
+`AudioMixer` (`AudioMixerLawTests`). The reverb exports hold no DSP: they forward to a COM object (see "Reverb (AUDIO-039)"). Not read: the `SetPosition` integer message for flat
 voices, and ducking beyond the speech duck of `sound.sam`.
 
 AUDIO-009 is retired: the build tools never refuse with a sound (`0x524960`-`0x535100`, and none of the sound entry's
@@ -647,14 +712,14 @@ implemented yet.
 
 | ID | Approximation | Evidence needed |
 | --- | --- | --- |
-| AUDIO-003 | The pitch is applied: every sample playback draws a step `min + r % (max - min)` from the signed range of its sound (after the volume draw, from the shared chooser) and plays at ratio 1 for step 0, otherwise 2^(sign x (\|step\| + 1) / 96) (tp.exe `0x6bc170`, mixer wrapper `0x6d2820`, float tables `0x782f40`/`0x783540`); 141 playbacks in the original's video sit on exactly the six ratios of the range 0..6. A parameter-bound pitch slot is applied to every playback (sentences, one-shots and chains) through its placeholder table (`0x6bbf60`, `0x6bc040`, `0x6bc170`). The fixed-pitch flag (`0x10000`, `0x6bc484`) is unreachable: nothing in the library sets it and the events' flags are 16-bit. The delay of every sample start is drawn after the volume and the pitch (`min + r % (max - min)`, `0x6bc2d0`, stored at `+0x3c` by `0x6bc4fa`): a chain waits it between children (milliseconds, video 2026-10-15), any other voice keeps its place in the voice pool until its sample's nominal end plus 250 ms plus the delay (`0x6bc01b`, `0x6bcb60`, the tick `0x6b62b0`; events flagged `0x4` or `0x8` are exempt, `0x6bbe90`). Not applied: reverb (`SndReverb.map`, loaded at `0x6c5d20`; `tp.exe` imports none of QMixer's reverb calls); position is applied only by the positioned playback path | How `SndReverb.map` is applied |
-| AUDIO-004 | `0xBD` plays for a control whose construction style (`+0x48`, `0x65bcad` arg 2, the factory `0x65dd7b` arg 2) has bit `0x10` (`0x4857cb`). The creation sites with that bit are read: type 1 and type 9 children of the row templates `0x4938c0` (visitors list), `0x4944d0` (attractions lists), `0x496cea`/`0x496cff` and `0x4b4c70`, and the table builder's type 3 controls (styles `0x10`/`0x11`, `0x6604a1`, `0x66051a`, `0x6610b6`, `0x661144`), which builder case 9 (`0x65fd58`) makes inside list containers of types 4 and 7: the lists' sliders (the Type 3 nodes of OpenTPW's visitor and attraction list nodes); the traced button-like sites (types 1 and 2 with styles `0`, `1`, `0x21`) play `0x1F`. No OpenTPW control plays `0xBD` | Whether a press on a list slider or on a row's children sends the activate message `0x100` (the slider and row classes' procedures) |
+| AUDIO-003 | The pitch is applied: every sample playback draws a step `min + r % (max - min)` from the signed range of its sound (after the volume draw, from the shared chooser) and plays at ratio 1 for step 0, otherwise 2^(sign x (\|step\| + 1) / 96) (tp.exe `0x6bc170`, mixer wrapper `0x6d2820`, float tables `0x782f40`/`0x783540`); 141 playbacks in the original's video sit on exactly the six ratios of the range 0..6. A parameter-bound pitch slot is applied to every playback (sentences, one-shots and chains) through its placeholder table (`0x6bbf60`, `0x6bc040`, `0x6bc170`). The fixed-pitch flag (`0x10000`, `0x6bc484`) is unreachable: nothing in the library sets it and the events' flags are 16-bit. The delay of every sample start is drawn after the volume and the pitch (`min + r % (max - min)`, `0x6bc2d0`, stored at `+0x3c` by `0x6bc4fa`): a chain waits it between children (milliseconds, video 2026-10-15), any other voice keeps its place in the voice pool until its sample's nominal end plus 250 ms plus the delay (`0x6bc01b`, `0x6bcb60`, the tick `0x6b62b0`; events flagged `0x4` or `0x8` are exempt, `0x6bbe90`). Reverb is AUDIO-039 (`SndReverb.map`, loaded at `0x6c5d20`; `tp.exe` imports none of QMixer's reverb calls); position is applied only by the positioned playback path | none left of it (reverb is AUDIO-039) |
+| AUDIO-004 | `0xBD` plays instead of `0x1F` when the receiver of the control message `0x100` has style bit `0x10` (`0x4857cb`): the global hook `0x485780` is called from `0x658d9f` (indirect call at `0x658dd0`, before the target's own handler) with the **receiving window** as its first argument, and the receiver of a button-class release (`0x10004` handler `0x668f9c`, send site `0x6691eb`, queued through `0x658ccc`) is the pressed control's **parent** (`this+0x60`, set by AddChild `0x65f447`), not the control. `0x658683` is not a sender (it sizes the message ring); `0x65f5dc`/`0x65f623` (notify A/B on `+0x9c`/`+0x98`) and `0x66fa2c` (the list class) are synchronous notifies whose receivers' classes are not decoded. The creation sites with the bit are read (type 1 and type 9 children of the row templates `0x4938c0` (the visitors list: the row, style 0, holds children styled 1, 1, `0x11`, 1 and `0x11`, so a press on a child reaches the row, which lacks the bit), `0x4944d0`, `0x496cea`/`0x496cff` and `0x4b4c70`, and the table builder's type 3 controls `0x10`/`0x11` at `0x6604a1`, `0x66051a`, `0x6610b6`, `0x661144`, made by builder case 9 (`0x65fd58`) inside list containers of types 4 and 7: the lists' sliders). No OpenTPW control plays `0xBD` | Which window receives `0x100` for a press on a list slider or on a row's child (the ring consumer behind `0x658ccc` and the slider and row classes' vtable slots), i.e. whether any receiver has the bit; a hook log of the original would settle it |
 | AUDIO-018 | A positioned **mono** voice follows QMixer.dll's software channel stage, which `tp.exe` selects for every voice: the request flag 1 is ORed in unconditionally (`0x6bc61b`, after both the flat and the positioned branch of the sample start `0x6bc410`), so `0x6d23ab`-`0x6d23bb` hands `QSWaveMixConfigureChannel` the mode `0x1000000`, whose buffers have no DirectSound 3D object (that is mode `0x2000000`, `0x18005056`, `0x18005915`). The offset to the source is rotated into the listener's basis (the camera matrix rows `0x7909b0` front and `0x7909a0` up through `0x51c1d0`; QMixer normalises both, right = up × front, up' = front × right, `0x1800ce70`, `0x1800cf10`), the azimuth is `atan2(x, z)` in degrees (`0x18009dc0` → `0x1800cb10`, `fpatan` at `0x1800c7b0`), the DirectSound pan is 44.444 hundredths of a dB per degree, mirrored behind the listener so it stays within ±4000 (`0x18005730`), the gain becomes 2000·log10(gain) hundredths of a dB rounded (`0x1800ca40`; 1 → 0, 0 or less → −10000), and `0x18005830` calls SetVolume (`+0x3c`) and SetPan (`+0x40`) only when the wave format table `0x1803c6b4` says one channel (`0x18005982`; the table is {0,1,1,1,2,2,2,4,4,4} by format index, with the bits per sample {0,8,16,32,8,16,32,8,16,32} at `0x1803c6dc`): the louder channel keeps the level, the other is 10^(−\|pan\|/2000) of it (at 90° 0.01), so the centre is not 3 dB down (`AudioListener.DirectSoundPan`, `PanGains`, `Azimuth`; the park, free-walk and ride cameras pass their up vector so the pitch counts) | The axis mapping of the camera rows into QMixer (the tp.exe adapters `0x6d2aec` and `0x6d2c68` swap two components by the driver's byte +8, not read) and how QMixer places the flat voices that `tp.exe` positions at (0,1,0) (`0x6bc51d`; `SetPosition` `0x6d2640` against `SetSourcePosition`; QMixer's `SetPosition` message 6 reads integers, `0x18007abd`): flat voices keep both channels at the voice's gain |
 | AUDIO-900 | The rain is one camera-following wrapping drop field of straight falling streaks, its count the simulated current drops, its parallax the original's absolute `-factor x camera position` on a 1/16384 grid (`0x57efd0`, `0x580013`-`0x5800b7`), its states decoded (`0x567620`: rain and bolts `0x200D52`, snow `0x556`, alpha test at 0x10/255); the factor 0.3 (`0x58000b`) applies in the free-walk and ride cameras (the listener's mapping of camera-state bits `0x16`) | What bits `0x2`, `0x4` and `0x10` of `0x790ab0` select in the original (which views): `0x42AB20` toggles `0x2` and `0x4` from input events 2 and 4, `0x576a00` turns any of them into render flag `0x100` of `0x8bd508`, nothing sets `0x10` alone |
 | AUDIO-901 | Snow is the jitter version (((rand & 31) - 16) / 2048 a frame on every axis), the only one the PC draws (the swirl flag `0x8bcbc8` bit `0x100` is never set), each flake one triangle over its atlas quadrant (`0x57f490`), its depth moved by the original's w term 0.1501; the depth-buffer value (z + 0.1) / (z + 0.1501) is not written (`[EXT:snow-depth-value]`: the precompiled browser shader has no clip-space vertex path) | The space of the flake's z + 0.1 and fourth word z + 0.1501 (camera or clip); whether the base half-width h x `0x8bcbcc` (height / width) equals OpenTPW's h under its aspect-correct projection |
 | AUDIO-902 | The bolt follows tp.exe: ground point and offset sky point (`0x512C50`), the midpoint displacement and branch heading on the CRain stream (`0x57E4B0`, `0x57E810`: stop threshold tested on each half, branch 9/512, depth limit 4), the pulse colour (`0x57EE30`: 255 - trunc((0.9 - x) x 71.04) below x = 0.9 else 192 + trunc((1 - x) x 640), plus rand & 63, wrapping at 256) and the 2000 ms life; the ribbon is a camera-facing world quad per segment | The ribbon emitter `0x57DD10` is read in outline: per depth it keeps the previous projected point, its direction scaled to 1.3 / (depth + 1) clip units and the corner pair; a joint's corners are the point plus and minus the perpendicular of the normalised sum of the two directions around it (clip z and w of the point kept), the start corners use the first direction and the end corners the last, and a quad is emitted when the point after next arrives, the closing call (`0x57EC50` → `0x57DD10(0, end)`) emitting the last one from the corners two points back; not matched: the projection `FUN_00578d20` and the quad's winding |
 | AUDIO-904 | The scene camera's 0.1 near plane (0.5 original units) clips the nearest drops; the original's near plane is 0.1 original units (`0x54e86f`, `0x42a990` -> `0x578be0`) and its clipper cuts the streaks there; the weather keeps the scene's near plane and a vertex buffer sized once (`[EXT:weather-near-plane]`) | A near clip of 0.1 original units for the weather without changing the scene's depth mapping |
-| AUDIO-039 | SETREVERB's preset is selected as the original selects it (the ridden ride's root script level, else 0; `0x55A470` -> `0x51C8D0`, sent only on a change) and its `SndReverb.map` record is kept (`0x6C5D20`, `0x6C6000`), but no reverb is mixed: the original hands the record (13 dwords) to the audio device as an EAX 2.0 listener property set (`0x6C46B0`) or to the second backend (vtable slot `0x50`; QMixer.dll exports `QSWaveMixSetReverb*`), whose DSP OpenTPW does not reproduce. | The QMixer.dll reverb stage and the word-to-field order of `0x6C46B0` ([RSE-VM.md](RSE-VM.md), "DIPMUSIC and SETREVERB") |
+| AUDIO-039 | SETREVERB's preset is selected as the original selects it (the ridden ride's root script level, else 0; `0x55A470` -> `0x51C8D0`, sent only on a change) and its `SndReverb.map` record is mixed by `ReverbUnit`, an OpenTPW Freeverb-style network on the positioned effects (flat voices, speech and music dry) with the record's decay time, high-frequency ratio, diffusion, size, levels and delays mapped as in "Reverb (AUDIO-039)". The original has no software reverb to port: it sends the record (13 dwords, EAX 2.0 listener order, `0x6C46B0`) to the audio device, or to the backend's vtable slot `0x50` (QMixer.dll's `QSWaveMixSetReverb*` forward to a COM object and hold no DSP) | Which voices the original's device reverb covers (3D buffers only, or every effect), the real return levels and the room's character, which need the device or a capture of the original |
 | AUDIO-038 | The voice pool of 12 (tp.exe `0x6b62b0`) ranks the held chains (screams) with the running sentences, placed sounds and one-shots of the event system by priority and ground distance (`0x6bb9f0`); a voice enters only while its rank exceeds the pool's lowest (`0x6b6bc0` compares strictly) and among equal ranks the newer voice keeps its slot (`0x6b6a80` links a new voice at the head of the voice list, the tick `0x6b62b0` meets it first, `ComparePoolOrder`); out-of-range voices without the any-distance flag have their sample stopped (`0x6bca70` → `0x6b8d60` → `0x6bb7c0`) and keep their handle at `+0x24`; OpenTPW stops one-shots and sentence segments and a chain starts no new child, but looping voices and a chain's playing children are not stopped | What restarts a stopped loop (the waterfall resumes) and how a stopped sentence resumes; the children of a chain and the mixer's other voices do not compete in OpenTPW's pool |
 
 ### Register round 2 (October 14)

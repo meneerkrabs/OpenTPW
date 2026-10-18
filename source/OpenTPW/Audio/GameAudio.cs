@@ -143,6 +143,24 @@ public static class GameAudio
 	// [BIN:STP-PPC:0x10073D1C refused click] cat_ui 175 behind the latch test; [BIN:TPW-EXE:0x524a80] the release handler 0x524960 plays cat_ui 0xAF at (x*10, 0, z*10) of the clicked cell (0x524a80-0x524aae) before its tool switch, while tool 0x38 is off, the refusal latch (0x816d48) is set, no layout replay runs (0x785a2c == 0) and the park view's press handler ran since the last release (0x8186d8, PathRefusalClick)
 	public const uint PathRefusedEvent = 175;
 	/// <summary>
+	/// The track tools' click: <c>cat_ui</c> 0xCE at the clicked cell (x*10, 0, z*10) for every release in the kart (0xB) and water (0x10) track modes, the first click included.
+	/// </summary>
+	// [BIN:TPW-EXE:0x526cb3 track click] the release handler 0x524960 reaches 0x526cb3 from its mode tests 0xB (0x525a1c) and 0x10 (0x525a2e) and, unless a layout replays (0x785a2c), submits 0x51bfc0(0, cat_ui 0x803a2c, 0xCE, x*10, 0, z*10) at 0x526ce9 before the start/line logic; the refused-ghost cue 0xAF (0x524aae) does not stop it (the mode switch follows at 0x524ab6)
+	public const uint TrackToolClickEvent = 0xCE;
+	/// <summary>
+	/// The coaster tool's click: the path tool's laying sound <c>cat_ui</c> 101 at the clicked cell for every release in mode 0x15, building or editing.
+	/// </summary>
+	// [BIN:TPW-EXE:0x5263df coaster click] the release handler 0x524960 tests mode 0x15 at 0x5263e1 and, unless a layout replays (0x785a2c), submits cat_ui 0x65 at (x*10, 0, z*10) at 0x526423 before the coaster release 0x446300(0) and help 0xCD
+	public const uint CoasterToolClickEvent = PathLayEvent;
+	/// <summary>
+	/// The pause menu's backdrop click: <c>cat_ui</c> 0xC1, flat.
+	/// </summary>
+	// [BIN:TPW-EXE:0x492d80 pause backdrop] the procedure of the pause menu's full-canvas window (made by 0x492e80 for the menu 0x48c150; parent callback 0x48b6a0) answers a click (message 0x10006) by playing 0xC1 through the cat_ui helper 0x485aa0 (flat, at the origin) and sending the activate message 0x100001 to its owner
+	public const uint PauseBackdropEvent = 0xC1;
+	/// <summary>Two coaster trains bumping hard: the global <c>cat_rides</c> crash sound 12 (the kart crunch).</summary>
+	// [BIN:TPW-EXE:0x439840 coaster crash] the collision exchange 0x43cd60 calls the crash effect when the two trains' new speeds differ by more than 1.0 (0x6fe020): 0x51bfc0(0, cat_rides 0x803a28, 0xC, x, y, z) at 0x4398cd, the point the front of the train lies at on the track samples (fmod of +0x20 by the sample count, 0x43c000 interpolates the sample +4/+8/+0xC positions), each coordinate truncated
+	public const uint CoasterCrashEvent = 12;
+	/// <summary>
 	/// A queue joined to a path: <c>cat_ui</c> 139 at the cell. The queue tool's commit plays it at the clicked end when the
 	/// line's last cell lies on a path (the validator's code 8 sets the flag it reads), on every commit click including the
 	/// ending one, while the park's money is on.
@@ -214,6 +232,8 @@ public static class GameAudio
 		mixer.DuckingLevel = ReadDuckingLevel() / 100f;
 		mixer.MusicDuckRequest = MusicDuckRequest;
 		ResetReverb();
+		if ( ReverbMap == null && !string.IsNullOrEmpty( Settings.Default.GamePath ) )
+			LoadReverbMap( Settings.Default.GamePath );
 		// [BIN:STP-PPC:0x100BC6F0 sound manager] global categories registered at sound-manager offsets 12 (cat_ui), 20 (cat_speech), 0 (cat_ambient), 8 (cat_rides), 4 (cat_kids), 16 (cat_staff)
 		Ui = SoundCategory.TryLoad( FileSystem, "/global/sound", "cat_ui" );
 		Speech = SoundCategory.TryLoad( FileSystem, "/global/Speech", "cat_speech" );
@@ -286,7 +306,7 @@ public static class GameAudio
 	/// <summary>The reverb preset the sound service holds (the original's 0x803AB4); -1 until the first <see cref="SelectReverb"/>.</summary>
 	public static int ReverbPreset { get; private set; } = -1;
 
-	/// <summary>The presets of <c>SndReverb.map</c>, when the host loaded the file from the game folder (it is not part of the mounted data); no mixer consumes them yet (AUDIO-039).</summary>
+	/// <summary>The presets of <c>SndReverb.map</c>, when the host loaded the file from the game folder (it is not part of the mounted data); the mixer's ReverbUnit follows the held preset (AUDIO-039).</summary>
 	public static SndReverbMap? ReverbMap { get; set; }
 
 	/// <summary>The record of the held preset, when the map has one (the original refuses a preset the map lacks).</summary>
@@ -299,13 +319,37 @@ public static class GameAudio
 	/// Holds a reverb preset (tp.exe <c>0x51C8D0</c>): a preset other than the held one is sent to the reverb device, the same one again is not.
 	/// </summary>
 	// [BIN:TPW-EXE:0x51C8D0 reverb preset] when the sound service is up and the preset differs from the held one (0x803AB4, -1 at start, 0 once the service started with sound on) the held one is replaced and the preset sent as a mixer command (0x700B30 → 0x6C6000, which fetches the SndReverb.map record and refuses an absent one)
-	// [APPROX:AUDIO-039] the held preset and its record are kept, but no reverb is mixed: the original hands the record to the audio device's EAX 2.0 listener property set or to QMixer.dll's software reverb, neither of which OpenTPW reproduces
+	// [APPROX:AUDIO-039] the held preset's record drives ReverbUnit, an OpenTPW network on the positioned effects: the original hands the record to the audio device's EAX 2.0 listener property set or to a COM object behind QMixer.dll (which holds no reverb DSP), neither of which OpenTPW reproduces
 	public static void SelectReverb( int preset )
 	{
 		if ( preset == ReverbPreset )
 			return;
 		ReverbPreset = preset;
 		ReverbChanges++;
+		ApplyReverb();
+	}
+
+	/// <summary>Hands the held preset's record to the mixer's reverb (none for a preset the map lacks, or without a map).</summary>
+	private static void ApplyReverb() => AudioMixer.Current?.Reverb.Set( ReverbSettings.FromRecord( ReverbRecord ) );
+
+	/// <summary>
+	/// Loads <c>SndReverb.map</c> from the game folder (it sits beside <c>Data</c>, not inside it, so the mounted data does not hold it); a missing or damaged file leaves the reverb off.
+	/// </summary>
+	// [BIN:TPW-EXE:0x6C5D20 SndReverb.map loader] the sound service reads the file once while it starts
+	public static void LoadReverbMap( string gameRoot )
+	{
+		try
+		{
+			if ( GameLanguage.FindEntry( gameRoot, "SndReverb.map", false ) is { } path )
+			{
+				ReverbMap = SndReverbMap.Read( File.ReadAllBytes( path ) );
+				ApplyReverb();
+			}
+		}
+		catch ( Exception exception ) when ( exception is IOException or InvalidDataException or UnauthorizedAccessException )
+		{
+			Log.Warning( $"SndReverb.map ignored: {exception.Message}" );
+		}
 	}
 
 	/// <summary>Forgets the held preset (a new sound service starts at -1).</summary>
@@ -340,7 +384,7 @@ public static class GameAudio
 	/// Starts the land's own ambient sounds: the type 1 records of the level's <c>scape.omp</c>, each an effect of the
 	/// global <c>cat_ambient</c> (word 1 nought) or of the level's own category, played at its place with its range
 	/// so the mixer's distance law turns it down. Type 3 records (a sound that follows the listener inside a rectangle)
-	/// are counted, not played.
+	/// start at the listener's nearest point of the rectangle and move with it every frame (<see cref="FollowRectangleSounds"/>).
 	/// </summary>
 	// [DATA:levels/*/scape.omp] type 1 records: word 1 the category (nought: global cat_ambient), word 2 the effect, words 3-5 the place, word 6 the range (x2/1024)
 	// [BIN:TPW-EXE:0x550e00 scape.omp loader] type 1 records go to the placed submit 0x51c130(0, global or level ambient, effect, x/1024, y/1024, z/1024, range*2/1024), each coordinate divided toward zero (0x550f1c-0x550f4d): the same play message as 0x51bfc0 plus a range, so the library picks its player from the event flags and a sentence plays as a positioned sentence; the returned handle is discarded; type 3 records submit 0x51bfc0 and then bind a rectangle (0x51c5d0)
@@ -355,11 +399,13 @@ public static class GameAudio
 		var voices = new List<PlacedSound>();
 		var sentences = new List<SoundSentence>();
 		var type3 = 0;
+		var rectangles = new List<RectangleSound>();
 		foreach ( var record in file.Records )
 		{
 			if ( record.Type == PlacedObjectsFile.RectangleSoundType )
 			{
 				type3++;
+				StartRectangleSound( record, rectangles );
 				continue;
 			}
 			if ( record.Type != PlacedObjectsFile.RangedSoundType )
@@ -382,12 +428,68 @@ public static class GameAudio
 		}
 		placedAmbients = voices;
 		placedSentences = sentences;
-		Log.Trace( $"Sound: {level} placed ambients {voices.Count} starting, {sentences.Count} placed sentences, {type3} rectangle sounds not played (scape.omp type 3)." );
+		rectangleSounds = rectangles;
+		Log.Trace( $"Sound: {level} placed ambients {voices.Count} starting, {sentences.Count} placed sentences, {type3} rectangle sounds ({rectangles.Count} started, scape.omp type 3)." );
+	}
+
+	private static List<RectangleSound>? rectangleSounds;
+
+	/// <summary>One type 3 record's sound: its rectangle (x from <c>X1</c> up to <c>X2</c>; z down from <c>Z1</c> to <c>Z2</c>) and whichever player it started.</summary>
+	private sealed record RectangleSound( int X1, int Z1, int X2, int Z2, PlacedSound? Placed, SoundSentence? Sentence );
+
+	/// <summary>
+	/// The place a rectangle sound plays at for a listener at <paramref name="listener"/>: the listener's place clamped into the rectangle on x and z, its height kept.
+	/// </summary>
+	// [BIN:TPW-EXE:0x6bd5f0 rectangle clamp] every tick of a voice with flag 0x1000 (set by the bind 0x6b64b0, never cleared; 0x6bca10 tests it before the range test) the voice is put at the listener's place (listener object +0x60) clamped: x below x1 becomes x1 and above x2 becomes x2; z above z1 becomes z1 and, otherwise, below z2 becomes z2 (the shipped records run z down from z1, their extent word being negative); y is the listener's
+	public static Vector3 RectangleSoundPlace( int x1, int z1, int x2, int z2, Vector3 listener )
+	{
+		var x = listener.X < x1 ? x1 : listener.X > x2 ? x2 : listener.X;
+		var z = listener.Z > z1 ? z1 : listener.Z < z2 ? z2 : listener.Z;
+		return new Vector3( x, listener.Y, z );
+	}
+
+	// [BIN:TPW-EXE:0x550e00 scape.omp type 3] the loader submits 0x51bfc0(0, global (word 1 nought) or level cat_ambient, word 2, words 3-5 / 1024) and binds the returned handle with 0x51c5d0(handle, x, z, w7 / 1024, w8 / 1024): the voice then plays at the clamp of the listener's place into [x, x + w7] by [z, z + w8] (RectangleSoundPlace)
+	private static void StartRectangleSound( PlacedObjectsFile.Record record, List<RectangleSound> started )
+	{
+		var category = record.Category == 0 ? Ambient : LevelAmbient;
+		var ((x1, z1), (x2, z2)) = record.Rectangle;
+		var place = RectangleSoundPlace( x1, z1, x2, z2, AudioListener.Position );
+		PlacedSound? placed = null;
+		SoundSentence? sentence = null;
+		if ( category?.Catalog.Find( (uint)record.Sound ) is { Player: not SoundEventPlayer.OneShot } )
+			sentence = events!.StartSentence( category, (uint)record.Sound, AudioChannel.Effects, null, place, null );
+		else
+			placed = events!.PlayAtWhenDecoded( category, (uint)record.Sound, AudioChannel.Effects, place );
+		if ( placed != null || sentence != null )
+			started.Add( new RectangleSound( x1, z1, x2, z2, placed, sentence ) );
+	}
+
+	/// <summary>Moves every rectangle sound to the listener's clamped place (once a frame, before the voices are pumped).</summary>
+	private static void FollowRectangleSounds()
+	{
+		if ( rectangleSounds is not { Count: > 0 } sounds )
+			return;
+		var listener = AudioListener.Position;
+		foreach ( var sound in sounds )
+		{
+			var place = RectangleSoundPlace( sound.X1, sound.Z1, sound.X2, sound.Z2, listener );
+			sound.Placed?.MoveTo( place );
+			sound.Sentence?.MoveTo( place );
+		}
 	}
 
 	/// <summary>Stops the land's own ambient voices (the level's <c>scape.omp</c> records).</summary>
 	public static void StopPlacedAmbients()
 	{
+		if ( rectangleSounds != null )
+		{
+			foreach ( var sound in rectangleSounds )
+			{
+				sound.Placed?.Stop();
+				sound.Sentence?.Stop();
+			}
+			rectangleSounds = null;
+		}
 		if ( placedSentences != null )
 		{
 			foreach ( var sentence in placedSentences )
@@ -792,6 +894,13 @@ public static class GameAudio
 		Log.Trace( $"Sound: cat_ui {eventId} at a cell {(voice == null ? "not available" : "played")}." );
 	}
 
+	/// <summary>A global <c>cat_rides</c> sound at a park position (the coaster trains' crash, <see cref="CoasterCrashEvent"/>).</summary>
+	public static void PlayRidesAt( uint eventId, Vector3 position )
+	{
+		var voice = events?.PlayAt( Rides, eventId, AudioChannel.Effects, position );
+		Log.Trace( $"Sound: cat_rides {eventId} at a place {(voice == null ? "not available" : "played")}." );
+	}
+
 	/// <summary>A stinkbomb's sound (<see cref="StinkbombEvent"/>) at a park position.</summary>
 	public static void PlayStinkbomb( Vector3 position )
 	{
@@ -951,6 +1060,7 @@ public static class GameAudio
 				music.Resume();
 			}
 		}
+		FollowRectangleSounds();
 		events.Pump();
 		mixer.Pump();
 	}

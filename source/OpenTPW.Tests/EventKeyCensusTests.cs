@@ -80,4 +80,51 @@ public class EventKeyCensusTests
 			FileSystem = previous;
 		}
 	}
+
+	/// <summary>
+	/// Census of the EVENT instruction's type operand over every shipped script: the custom-bank type 10 (tp.exe 0x5573d0 case 10: the thing type's own numbered bank, slot 5, found by
+	/// 0x4145e0) has no shipped user, so the port's unrouted type 10 loses no sound. Skips without <c>OPENTPW_GAME_PATH</c>.
+	/// </summary>
+	[TestMethod]
+	public void NoShippedScriptSubmitsAnEventOfTheCustomBankType10()
+	{
+		if ( ObjectCatalogCorpusTests.UseOriginalData( out var previous ) == null )
+			Assert.Inconclusive( "Set OPENTPW_GAME_PATH to the original game." );
+		try
+		{
+			var types = new SortedDictionary<int, int>();
+			var variableTypes = 0;
+			var scripts = 0;
+			foreach ( var theme in ObjectCatalog.Themes )
+			{
+				foreach ( var entry in ObjectCatalog.Load( theme ).Entries )
+				{
+					foreach ( var path in (entry.ScriptPath == null ? Array.Empty<string>() : new[] { entry.ScriptPath }).Concat( entry.Scripts ).Distinct() )
+					{
+						RideScriptFile script;
+						using ( var stream = entry.FileSystem.OpenRead( path ) )
+							script = new RideScriptFile( stream );
+						scripts++;
+						foreach ( var instruction in script.Instructions.Where( item => item.Opcode == (ushort)Opcode.EVENT && item.Operands.Count >= 3 ) )
+						{
+							var type = instruction.Operands[0];
+							if ( type.Kind != RideScriptOperandKind.Literal )
+							{
+								variableTypes++;
+								continue;
+							}
+							types[type.Value] = types.GetValueOrDefault( type.Value ) + 1;
+						}
+					}
+				}
+			}
+			Console.WriteLine( $"EVENT type census: {scripts} scripts; " + string.Join( ", ", types.Select( pair => $"type {pair.Key}: {pair.Value}" ) ) + $"; variable types {variableTypes}" );
+			Assert.AreEqual( 0, variableTypes, "the type operand is a literal in every shipped script" );
+			Assert.IsFalse( types.ContainsKey( 10 ), "a shipped script submits an EVENT of the custom-bank type 10" );
+		}
+		finally
+		{
+			FileSystem = previous;
+		}
+	}
 }

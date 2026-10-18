@@ -172,6 +172,7 @@ public sealed class AudioMixer : IDisposable
 	private readonly float[] channelGains = { 1, 1, 1 };
 	private readonly System.Diagnostics.Stopwatch wallClock = new();
 	private float[] mix = Array.Empty<float>();
+	private float[] reverbSend = Array.Empty<float>();
 	private short[] pcm = Array.Empty<short>();
 	private long mixedFrames;
 	private bool started;
@@ -209,6 +210,11 @@ public sealed class AudioMixer : IDisposable
 	public ushort MusicDuckRequest { get; set; }
 
 	public IReadOnlyList<AudioVoice> Voices => voices;
+
+	/// <summary>
+	/// The reverb of the held <c>SndReverb.map</c> preset ([APPROX:AUDIO-039]): the positioned voices of the effects channel are sent through it and its return is added to the mix; flat voices, speech and music stay dry.
+	/// </summary>
+	public ReverbUnit Reverb { get; } = new( OutputRate );
 
 	/// <summary>Output frames the listener has been given (the device's played frames, or the wall clock without a device).</summary>
 	public long PlayedFrames => output?.PlayedFrames ?? (long)(wallClock.Elapsed.TotalSeconds * OutputRate);
@@ -276,6 +282,14 @@ public sealed class AudioMixer : IDisposable
 		// [BIN:STP-PPC:0x100BB18C sound service] while speech plays (and speech is on with a volume above 0) music and the second user volume are set to volume × SoundInfo.DUCKINGLEVEL / 100
 		var speaking = voices.Any( voice => voice.Channel == AudioChannel.Speech && !voice.IsFinished ) && channelGains[(int)AudioChannel.Speech] > 0;
 		mixing = true;
+		var reverbOn = Reverb.Active;
+		if ( reverbOn )
+		{
+			if ( reverbSend.Length < frames * 2 )
+				reverbSend = new float[frames * 2];
+			reverbSend.AsSpan( 0, frames * 2 ).Clear();
+		}
+		var send = reverbSend.AsSpan( 0, reverbOn ? frames * 2 : 0 );
 		// Index loop: a voice that completes may start its successor, which is mixed from the frame where it ended.
 		for ( var index = 0; index < voices.Count; index++ )
 		{
@@ -292,7 +306,8 @@ public sealed class AudioMixer : IDisposable
 			// [BIN:STP-PPC:0x100BB18C speech ducking] while speech plays, Music = settings+0x20 × duck / 100 and User2 = settings+0x1C × duck / 100 (TbSysCommand::SetMusicVolume / SetUser2Volume); +0x1C is fed from the SFX slider (profile +0x10, PC serializer 0x423E90), so the ducked second volume is the effects channel; master and speech stay
 			if ( speaking && voice.Channel != AudioChannel.Speech )
 				gain *= DuckingLevel;
-			var used = voice.MixInto( buffer[(offset * 2)..], frames - offset, gain );
+			// the positioned effects (rides, screams, staff, guests, placed ambients) go to the reverb send instead of straight into the mix; the send is added back below. Flat voices (interface clicks, the weather's own rain) stay dry
+			var used = voice.MixInto( (reverbOn && voice.Channel == AudioChannel.Effects && voice.Position != null ? send : buffer)[(offset * 2)..], frames - offset, gain );
 			if ( voice.IsFinished )
 			{
 				completionOffset = offset + used;
@@ -300,6 +315,12 @@ public sealed class AudioMixer : IDisposable
 			}
 		}
 		mixing = false;
+		if ( reverbOn )
+		{
+			for ( var index = 0; index < send.Length; index++ )
+				buffer[index] += send[index];
+			Reverb.Process( send, buffer, frames );
+		}
 		voices.RemoveAll( voice => voice.IsFinished );
 		var output16 = pcm.AsSpan( 0, frames * 2 );
 		for ( var index = 0; index < buffer.Length; index++ )

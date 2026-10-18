@@ -165,13 +165,17 @@ public static class UiDialogs
 	{
 		public override bool Update( UiContext context, UiInput input )
 		{
-			if ( !context.HasFonts )
-				return base.Update( context, input );
-			var items = Elements.OfType<UiMenuItem>().ToArray();
-			var sizes = items.Select( item => context.Layout( item.Font( context.Fonts ), item.Text() ) ).Select( layout => (layout.Width, layout.Height) ).ToArray();
-			var lines = TextMenuLines( sizes, context.Canvas.TextScale, context.Canvas.Scale );
-			for ( var index = 0; index < items.Length; index++ )
-				items[index].Bounds = lines[index];
+			if ( context.HasFonts )
+			{
+				var items = Elements.OfType<UiMenuItem>().ToArray();
+				var sizes = items.Select( item => context.Layout( item.Font( context.Fonts ), item.Text() ) ).Select( layout => (layout.Width, layout.Height) ).ToArray();
+				var lines = TextMenuLines( sizes, context.Canvas.TextScale, context.Canvas.Scale );
+				for ( var index = 0; index < items.Length; index++ )
+					items[index].Bounds = lines[index];
+			}
+			// [BIN:TPW-EXE:0x492d80 pause backdrop click] a click (message 0x10006, either button) on the menu's full-canvas window outside its lines plays cat_ui 0xC1 flat, then sends the activate message 0x100001 to the window's owner; the window is made with parent 0 (0x492ef0), so the owner is probably none and 0x658d9f returns at once (what the pause menu's callback 0x48b6a0 does with 0x100001 for the backdrop is not read, so no OpenTPW rule follows from it); a click on a line goes to the line
+			if ( input.Mouse.X >= 0 && (input.LeftReleased && !input.NotClick || input.RightPressed) && HitTest( context.Canvas, input.Mouse ) == null )
+				GameAudio.PlayUi( GameAudio.PauseBackdropEvent );
 			return base.Update( context, input );
 		}
 	}

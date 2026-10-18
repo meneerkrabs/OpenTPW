@@ -1007,6 +1007,9 @@ public sealed partial class ParkHud
 		{
 			cellToolClicking = false;
 		}
+		// [BIN:TPW-EXE:0x526cb3 track click] every release in the kart (0xB) or water (0x10) track mode plays cat_ui 0xCE at the clicked cell, the first click included and whatever the line then does
+		if ( modeBefore is CellToolMode.KartTrack or CellToolMode.WaterTrack )
+			GameAudio.PlayUiAt( GameAudio.TrackToolClickEvent, GameAudio.CellSoundPosition( cursorX, cursorY ) );
 		if ( result is not { GhostRefused: true } )
 			ReportCellToolClick( hadStart, modeBefore, tool, queueJoin != null, interfaceBefore );
 		ResolveQueueRearm( result );

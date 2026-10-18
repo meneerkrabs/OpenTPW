@@ -265,6 +265,7 @@ public sealed class EveningLampSource : IPointLightSource
 	private readonly Func<float> lampLevel;
 	private readonly Dictionary<ObjectCatalogEntry, IReadOnlyList<ResolvedEveningLamp>> resolved = new( ReferenceEqualityComparer.Instance );
 	private readonly HashSet<string> warned = new( StringComparer.Ordinal );
+	private bool reported;
 
 	/// <summary>The lights this source put into the last frame's list (for tests and the performance notes).</summary>
 	public int LastCount { get; private set; }
@@ -316,6 +317,11 @@ public sealed class EveningLampSource : IPointLightSource
 			}
 		}
 		LastCount = into.Count - start;
+		if ( LastCount > 0 && !reported )
+		{
+			reported = true;
+			Log.Trace( $"Evening lamps: {LastCount} lights from the placed objects the lamp table names ({table.Rules.Count} rows)." );
+		}
 	}
 }
 

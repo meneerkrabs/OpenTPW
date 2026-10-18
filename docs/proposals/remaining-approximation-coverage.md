@@ -83,7 +83,7 @@ New plan links identify their reviewed draft PRs. Existing links and alias/stale
 | Domain | ID | Category | Coverage destination | Bounded residual / decision |
 | --- | --- | --- | --- | --- |
 | world | ADVISOR-005 | evidence-only | [#542](https://github.com/meneerkrabs/OpenTPW/pull/542) | Map frontend states to ambient and fog settings, preserving ordinary-park lighting. |
-| world | ADVISOR-009 | approximation | [#558](https://github.com/meneerkrabs/OpenTPW/pull/558) | Inventory the 96 non-stub unported score callbacks and unbound help/game posts; stage implementations by callback family. |
+| world | ADVISOR-009 | approximation | [#558](https://github.com/meneerkrabs/OpenTPW/pull/558), [#631](https://github.com/meneerkrabs/OpenTPW/pull/631) | Owner's 38-staff-message implementation published at e609ced3, pending independent review and exact-head CI; not merged. Its optional HaveEverTrained state is separate from visitor presentation. Rows 12, 19, 21, 22, 27 and 98 remain blocked on coverage/prank counters; other callback families and help/game posts remain staged. |
 | world | ADVISOR-012 | evidence-only | [#559](https://github.com/meneerkrabs/OpenTPW/pull/559) | Resolve flat speech coordinate frame and channel-mode selection before changing mono duplication. |
 | world | ADVISOR-017 | approximation | [#444](https://github.com/meneerkrabs/OpenTPW/pull/444) — proposed addendum | Addendum to #444: queue service per park turn, focus/modal clock pause; exclude map/options speech-stop already covered. |
 | world | ADVISOR-025 | missing | [#562](https://github.com/meneerkrabs/OpenTPW/pull/562) | Add missing island-lobby key display and timer-triggered refresh; retain park behavior. |

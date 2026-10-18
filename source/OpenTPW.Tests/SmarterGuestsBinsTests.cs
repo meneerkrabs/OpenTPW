@@ -33,10 +33,12 @@ public class SmarterGuestsBinsTests
 	}
 
 	/// <summary>A guest at (2, 5) with a full meter and a bin whose access cell is (<paramref name="column"/>, 5); the bins the guest threw its litter into and the litter left on the path.</summary>
-	private static (List<int> Binned, int Litter, bool Emptied) Run( IGuestDecisions? decisions, int column )
+	private static (List<int> Binned, int Litter, bool Emptied) Run( IGuestDecisions? decisions, int column ) => Run( decisions, new LitterBin( 9, (column, 6), (column, 5) ) );
+
+	private static (List<int> Binned, int Litter, bool Emptied) Run( IGuestDecisions? decisions, LitterBin bin )
 	{
 		var litter = new ParkLitter();
-		var simulation = Row( decisions, litter, [new LitterBin( 9, (column, 6), (column, 5) )] );
+		var simulation = Row( decisions, litter, [bin] );
 		var binned = new List<int>();
 		simulation.LitterBinned += ( _, bin ) => binned.Add( bin );
 		var guest = simulation.SpawnInPark( 2, 5 );
@@ -73,7 +75,7 @@ public class SmarterGuestsBinsTests
 		Assert.IsFalse( new SmarterGuestDecisions( SmarterRuleSet.None ).UsesBinCarry );
 		Assert.AreEqual( SmarterRuleSet.Phase6 | SmarterRuleSet.Bins, SmarterRuleSet.All, "the shipped rules: the five of 1.5.0 and the bins" );
 		Assert.AreEqual( new ModVersion( 1, 6, 0 ), OfficialExtensions.SmarterGuests.Version );
-		Assert.IsFalse( OfficialExtensions.SmarterGuests.PlayerSelectable, "the release stays the user's decision" );
+		Assert.IsFalse( OfficialExtensions.SmarterGuests.PlayerSelectable, "kept hidden: the CPU gate was not re-confirmed on a quiet machine (docs/SMARTER-GUESTS.md, Cost and release)" );
 	}
 
 	// ---- The host ----------------------------------------------------------------------------------
@@ -100,9 +102,60 @@ public class SmarterGuestsBinsTests
 		var policy = new SmarterGuestDecisions( SmarterRuleSet.All );
 		// the bin's cell is one row off the street: distance squared = (column - 2)^2 + 1 against 8 * 8 = 64
 		Assert.AreEqual( 1, Run( policy, 9 ).Binned.Count, "(9 - 2)^2 + 1 = 50 is below 64" );
-		Assert.AreEqual( 1, Run( policy, 9 ).Binned.Count );
 		Assert.AreEqual( 0, Run( policy, 10 ).Binned.Count, "(10 - 2)^2 + 1 = 65 is not" );
 		Assert.AreEqual( 1, Run( policy, 10 ).Litter, "no bin in reach: the original's drop" );
+	}
+
+	[TestMethod]
+	public void ASquaredDistanceOfExactlySixtyFourIsNotInReach()
+	{
+		var policy = new SmarterGuestDecisions( SmarterRuleSet.All );
+		// the bin's own cell is on the street, eight cells from the guest at (2, 5): 8 * 8 + 0 = 64, not below it
+		Assert.AreEqual( 0, Run( policy, new LitterBin( 9, (10, 5), (10, 5) ) ).Binned.Count );
+		Assert.AreEqual( 1, Run( policy, new LitterBin( 9, (9, 5), (9, 5) ) ).Binned.Count, "49 is below 64" );
+	}
+
+	[TestMethod]
+	public void ABinBehindAWallIsNotWalkedToWhenTheRouteIsLongButTheStraightLineIsShort()
+	{
+		// two streets joined only at their far end: the bin at (6, 8) is 5 cells away in a straight line (25) and 20 cells away on foot
+		ParkLitter litter = new();
+		GuestSimulation Park( IGuestDecisions? policy )
+		{
+			var grid = new GuestPathGrid( 16, 16 );
+			for ( var x = 0; x < 14; x++ )
+			{
+				grid.SetPath( x, 5, true );
+				grid.SetPath( x, 7, true );
+			}
+			grid.SetPath( 13, 6, true );
+			var settings = GuestTests.CreateSettings();
+			settings.ExitLevelSeconds = 10_000;
+			settings.SmallHappinessChange = 0;
+			litter.Cells = grid.Cells;
+			LitterBin[] bins = [new LitterBin( 9, (6, 8), (6, 7) )];
+			return new GuestSimulation( grid, settings, 3, policy ) { ArrivalsEnabled = false, Litter = litter, Bins = () => bins };
+		}
+		var simulation = Park( new SmarterGuestDecisions( SmarterRuleSet.All ) );
+		var binned = 0;
+		simulation.LitterBinned += ( _, _ ) => binned++;
+		var guest = simulation.SpawnInPark( 2, 5 );
+		guest.Litter = 95;
+		for ( var tick = 0; tick < 120 * 60 && guest.Litter != 0; tick++ )
+			simulation.Tick( Tick );
+		Assert.AreEqual( 0, binned, "the walk is longer than twice the radius" );
+		Assert.AreEqual( 1, litter.Count, "the litter falls where the guest stands" );
+		Assert.AreEqual( 0, guest.BinId );
+		Assert.AreEqual( 2 * SmarterBinCarry.SearchRadius, SmarterBinCarry.MaxRouteCells );
+		// the policy without the bound (a spy that only widens the radius) does walk it
+		var unbounded = Park( new CountingPolicy { Radius = 8 } );
+		var walked = 0;
+		unbounded.LitterBinned += ( _, _ ) => walked++;
+		var other = unbounded.SpawnInPark( 2, 5 );
+		other.Litter = 95;
+		for ( var tick = 0; tick < 120 * 60 && other.Litter != 0; tick++ )
+			unbounded.Tick( Tick );
+		Assert.AreEqual( 1, walked, "no bound: the long walk is taken" );
 	}
 
 	[TestMethod]
@@ -244,6 +297,7 @@ public class SmarterGuestsBinsTests
 		public int Radius { get; init; } = GuestSimulation.BinRadius;
 		public int Asked;
 		public bool UsesBinCarry => true;
+		public int BinMaxRouteCells( in DecisionContext context, in GuestView guest ) => int.MaxValue;
 		public int BinSearchRadius( in DecisionContext context, in GuestView guest ) { Asked++; return Radius; }
 		public BoothDecision DecideBooth( in DecisionContext context, in GuestView guest, in BoothView booth ) => original.DecideBooth( context, guest, booth );
 		public uint ScoreAttraction( in DecisionContext context, in GuestView guest, in AttractionView attraction ) => original.ScoreAttraction( context, guest, attraction );

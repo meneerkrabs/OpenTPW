@@ -9,11 +9,17 @@ namespace OpenTPW;
 public static class SmarterBinCarry
 {
 	/// <summary>
-	/// How far, in cells, a guest looks for a bin: eight, a little more than two and a half times the original's three. The sweep of docs/SMARTER-GUESTS.md (phase 6b: 5, 6, 8 and 12) gave a weak effect at 5 and 6 and the whole gain at 8, which a larger radius (12) does not improve in the scenario's layout (four bins
-	/// along the street, 4 to 15 cells apart). The walk is the original's bin
-	/// walk, so a guest never goes further than eight cells out of its way, a few park turns.
+	/// How far, in straight-line cells, a guest looks for a bin: eight, a little more than two and a half times the original's three. The sweep of docs/SMARTER-GUESTS.md (phase 6b: 5, 6, 8 and 12) gave a weak effect at 5 and 6
+	/// and the whole gain at 8, which a larger radius (12) does not improve in the scenario's layout (four bins along the street, 4 to 15 cells apart). The distance is a straight line to the bin; the route to it is bounded
+	/// separately (<see cref="MaxRouteCells"/>), and the walk is the original's bin walk.
 	/// </summary>
 	public const int SearchRadius = 8;
+
+	/// <summary>
+	/// The longest route, in cells, to a bin beyond the original's three cells: twice the radius, so a bin across a hedge or a river (a straight line of 8 and a walk of 30) is not chosen. The test runs on the route the host
+	/// already searches for the candidate, before the route request, so a skipped bin retargets nothing. A bin within the original's reach is not tested.
+	/// </summary>
+	public const int MaxRouteCells = 2 * SearchRadius;
 
 	/// <summary>The radius within which this guest looks for a bin.</summary>
 	public static int Radius( in GuestView guest ) => SearchRadius;

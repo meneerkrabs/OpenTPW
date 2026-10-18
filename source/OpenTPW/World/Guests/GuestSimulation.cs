@@ -1826,6 +1826,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			if ( radius < 0 || radius > MaxBinRadius )
 				throw PolicyError( $"returned the bin radius {radius}" );
 		}
+		var maxRoute = decisions.UsesBinCarry ? Math.Max( 0, decisions.BinMaxRouteCells( ContextNow(), ViewOf( guest ) ) ) : int.MaxValue;
 		var bestDistance = radius * radius;
 		var lastFailed = false;
 		foreach ( var bin in bins )
@@ -1836,6 +1837,9 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			if ( distance >= bestDistance )
 				continue;
 			var route = Grid.FindPath( guest.CellX, guest.CellY, bin.Access.X, bin.Access.Y );
+			// [EXT:smarter-guests-litter] a bin beyond the original's reach is walked to only when the route there is short: the radius is a straight line, and a hedge or a river can make it a long walk (skipped before the route request, so nothing is retargeted)
+			if ( maxRoute < int.MaxValue && distance >= BinRadius * BinRadius && (route == null || route.Count == 0 || route.Count > maxRoute) )
+				continue;
 			if ( !RequestRoute( guest, bin.Access, route ) )
 			{
 				lastFailed = true;

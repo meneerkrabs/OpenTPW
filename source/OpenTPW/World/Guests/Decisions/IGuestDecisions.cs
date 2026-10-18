@@ -62,6 +62,13 @@ public interface IGuestDecisions
 	int BinSearchRadius( in DecisionContext context, in GuestView guest ) => GuestSimulation.BinRadius;
 
 	/// <summary>
+	/// The longest route, in cells, to a bin the guest may walk to when the bin lies beyond the original's reach (squared distance of <see cref="GuestSimulation.BinRadius"/> squared or more): the straight-line radius says nothing
+	/// about a bin across a hedge or a river. A longer route (or none) skips the candidate before any route request, so it has no side effect. A bin within the original's reach is never skipped. Asked only of a policy that
+	/// <see cref="UsesBinCarry"/>; the default is no bound.
+	/// </summary>
+	int BinMaxRouteCells( in DecisionContext context, in GuestView guest ) => int.MaxValue;
+
+	/// <summary>
 	/// The queue patience rules look at the alternatives (additive, phase 4): -1 (the default) means the host does not look for this guest. Otherwise the host fills <see cref="AdmissionView.BestAlternativeWait256"/> at every
 	/// admission and <see cref="QueuePatienceView.BestAlternativeWait256"/> once the guest, not at the front of its queue, has waited at least this many park turns (the policy returns the turn its own give-up test starts, so the
 	/// scan of the park's rides is not paid before it can matter). Needs <see cref="UsesSpreading"/> (the estimates). A policy that wraps another forwards it.

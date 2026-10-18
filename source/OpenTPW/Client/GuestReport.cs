@@ -129,7 +129,7 @@ public static class GuestReport
 			for ( var y = 0; y < guests.Grid.CountY; y++ )
 				for ( var x = 0; x < guests.Grid.CountX; x++ )
 					if ( guests.Grid.IsWalkable( x, y ) && list.All( bin => Math.Max( Math.Abs( bin.Cell.X - x ), Math.Abs( bin.Cell.Y - y ) ) >= spacing ) )
-						list.Add( new LitterBin( 1000 + list.Count, (x, y), (x, y) ) );
+						list.Add( new LitterBin( 1000 + y * guests.Grid.CountX + x, (x, y), (x, y) ) );
 			return bins = list;
 		};
 	}
@@ -358,6 +358,13 @@ public static class GuestReport
 			scenarioNode["litterEffect"] = options.Scenario.LitterEffect;
 			scenarioNode["handymanTurns"] = options.Scenario.HandymanTurns;
 		}
+		// the litter bins of phase 6b are a different park too
+		if ( options.Scenario.Bins )
+		{
+			scenarioNode["bins"] = true;
+			if ( options.Scenario.BinsAtShops )
+				scenarioNode["binsAtShops"] = true;
+		}
 		var root = new JsonObject
 		{
 			["schema"] = "opentpw.guest-report/1",
@@ -378,6 +385,11 @@ public static class GuestReport
 			["scenarios"] = scenarios,
 			["skipped"] = new JsonArray( result.Skipped.Select( item => (JsonNode)JsonValue.Create( item )! ).ToArray() )
 		};
+		if ( options.LevelBinSpacing > 0 )
+			((JsonObject)root["protocol"]!)["levelBinSpacing"] = options.LevelBinSpacing;
+		// the version of each extension the run switched on (the smarter-guests version is its algorithm identity)
+		if ( options.Extensions.Count > 0 )
+			root["extensionVersions"] = new JsonObject( ResolveExtensions( options.Extensions ).Select( id => new KeyValuePair<string, JsonNode?>( id, OfficialExtensions.Find( id )?.Version.ToString() ) ) );
 		// the report of a measurement that switched some phase 5 rules off says so (the shipped extension runs all three)
 		if ( options.Extensions.Count > 0 && options.Rules != SmarterRuleSet.All )
 			root["rules"] = options.Rules.ToString();

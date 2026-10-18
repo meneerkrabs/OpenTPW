@@ -148,6 +148,9 @@ public class SmarterGuestsTests
 		public virtual bool UsesPlanning => inner.UsesPlanning;
 		public virtual bool UsesPlanHorizon => inner.UsesPlanHorizon;
 		public virtual bool UsesPathComfort => inner.UsesPathComfort;
+		public virtual bool UsesBinCarry => inner.UsesBinCarry;
+		public virtual int BinSearchRadius( in DecisionContext context, in GuestView guest ) => inner.BinSearchRadius( context, guest );
+		public virtual int BinMaxRouteCells( in DecisionContext context, in GuestView guest ) => inner.BinMaxRouteCells( context, guest );
 		public virtual PathDecision ChoosePath( in DecisionContext context, in GuestView guest, in WanderPathView path ) => inner.ChoosePath( context, guest, path );
 		public virtual int AlternativeLookAfterTurns( in DecisionContext context, in GuestView guest ) => inner.AlternativeLookAfterTurns( context, guest );
 		public virtual int QueuePatienceQuietTurns( in DecisionContext context, ulong birthId ) => inner.QueuePatienceQuietTurns( context, birthId );

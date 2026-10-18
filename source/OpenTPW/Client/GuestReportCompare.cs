@@ -56,6 +56,16 @@ public static class GuestReportCompare
 		static string Rules( JsonObject report ) => (string?)report["rules"] ?? (string?)report["planningRules"] ?? "All";
 		if ( Rules( baseline ) != Rules( candidate ) )
 			notes.AppendLine( $"smarter-guests rules: baseline {Rules( baseline )}, candidate {Rules( candidate )}" );
+		// the phase 6b variants and the extension versions change the park or the rules the numbers belong to: name them when they differ
+		static string Variants( JsonObject report )
+		{
+			var protocol = report["protocol"] as JsonObject;
+			var scenario = protocol?["scenario"] as JsonObject;
+			var versions = report["extensionVersions"] as JsonObject;
+			return $"bins {scenario?["bins"] is not null}, bins at shops {scenario?["binsAtShops"] is not null}, level bins {(int?)protocol?["levelBinSpacing"] ?? 0}, versions {(versions == null ? "unrecorded" : string.Join( ", ", versions.Select( pair => $"{pair.Key} {pair.Value}" ) ))}";
+		}
+		if ( Variants( baseline ) != Variants( candidate ) )
+			notes.AppendLine( $"variants: baseline ({Variants( baseline )}), candidate ({Variants( candidate )})" );
 		static string Mods( JsonObject report ) => report["mods"] is JsonArray { Count: > 0 } list ? string.Join( ", ", list.Select( item => (string)item! ) ) : "none";
 		if ( Mods( baseline ) != Mods( candidate ) )
 			notes.AppendLine( $"mods: baseline {Mods( baseline )}, candidate {Mods( candidate )}" );

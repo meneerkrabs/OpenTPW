@@ -43,6 +43,8 @@ public sealed class SmarterGuestDecisions : IGuestDecisions
 	// [EXT:smarter-guests-litter] the original's bin search and walk, over a larger radius
 	public int BinSearchRadius( in DecisionContext context, in GuestView guest ) => SmarterBinCarry.Radius( guest );
 
+	public int BinMaxRouteCells( in DecisionContext context, in GuestView guest ) => SmarterBinCarry.MaxRouteCells;
+
 	public bool UsesPlanHorizon => planning.HasFlag( SmarterRuleSet.Planning );
 
 	/// <summary>

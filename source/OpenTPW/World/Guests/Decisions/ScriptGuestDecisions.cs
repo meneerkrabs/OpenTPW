@@ -50,6 +50,8 @@ internal sealed class ScriptGuestDecisions : IGuestDecisions
 
 	public int BinSearchRadius( in DecisionContext context, in GuestView guest ) => inner.BinSearchRadius( context, guest );
 
+	public int BinMaxRouteCells( in DecisionContext context, in GuestView guest ) => inner.BinMaxRouteCells( context, guest );
+
 	/// <summary>A mod's <c>leaveQueue</c> hook can answer at any time, so the host asks every turn; without one the base policy's answer stands.</summary>
 	public int QueuePatienceQuietTurns( in DecisionContext context, ulong birthId ) => Runtime.Runs( ScriptHooks.LeaveQueue ) ? -1 : inner.QueuePatienceQuietTurns( context, birthId );
 

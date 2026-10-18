@@ -312,6 +312,12 @@ public class UmbrellasContentTests
 	public void NothingOfTheContentIsWiredIntoTheGameYet()
 	{
 		Assert.IsNull( OfficialExtensions.All.FirstOrDefault( extension => extension.Id == ModId ), "the extension itself comes with phase U2; the content only sits in content/umbrellas" );
+		// the production path: the catalog roots of a default run (every official extension at its default) and the catalogs built from them name no brolly shop
+		var roots = ModContentRoots.CatalogRoots( ModSet.Defaults( OfficialExtensions.All ) );
+		Assert.IsFalse( roots.Any( root => root.Objects.Any( definition => definition.InfoId is >= 64500 and <= 64999 ) ), "no catalog root of a default run lists a brolly shop" );
+		using ( ModContentRoots.Use( ModSet.Defaults( OfficialExtensions.All ), null ) )
+			foreach ( var theme in Themes )
+				Assert.IsFalse( ObjectCatalog.Load( theme ).Entries.Any( entry => entry.InfoId is >= 64500 and <= 64999 ), $"{theme}: no brolly shop in the catalog of a default run" );
 		ObjectCatalog.SetContentRoots( Array.Empty<CatalogContentRoot>() );
 		foreach ( var theme in Themes )
 			Assert.IsFalse( ObjectCatalog.Load( theme ).Entries.Any( entry => entry.InfoId is >= 64500 and <= 64999 ), $"{theme}: no brolly shop in a catalog without the test's own root" );

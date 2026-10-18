@@ -31,7 +31,7 @@ States: 0 none, 1 open and about to close, 2 owned and closed (not drawn), 3 clo
 
 **Demand** (`0x6101E0`, the attraction score, Theme Park Inc's twin of Theme Park World's `AttractionScore`). An umbrella shop scores 0 for a guest who already has an umbrella (any state) and in any weather but rain, storm or snow.
 Every object's score is multiplied by its `WeatherModifier` percentage of the current weather (when nonzero), then by the generation's `GenerationModifier` percentage. A guest holding a balloon scores an umbrella shop lower:
-factor = 100 - life x 100 / 255 (balloon life `+0x298`), scaled by `DiscardBalloonPctModifier`/100; a factor of exactly 0 (a full-life balloon) skips the cut, a quirk. A balloon shop scores 0 for a guest with an open or opening umbrella.
+factor = 100 - life x 100 / 255 (balloon life `+0x298`), scaled by `DiscardBalloonPctModifier`/100; a factor of exactly 0 (a full-life balloon) skips the cut, a quirk. A balloon shop scores 0 for a guest who already holds a balloon (`+0x294` nonzero or life `+0x298` above 0) and for a guest with an open or opening umbrella (states 3, 4).
 Theme Park Inc's `DecisionVariable3` (indoor x5) is marked unused in its data. `[BIN:TPI-EXE:0x6101e0]`
 
 **Purchase** (`0x612740`, the use outcome, `AppearanceEffect` 3): the colour is one world-generator draw, (draw >> 2) mod 3; the umbrella opens at once (state 4, sprite object created) whatever the weather; the sale's other effects are a
@@ -82,7 +82,7 @@ weather Rain/Storm 200 (science 250), Snow 150, HeatWave 5. Weather spells (`0x6
 | --- | --- | --- |
 | U0 | the trace in this page, `[BIN:TPI-EXE]` labels | done |
 | U1 | art and data pipeline: umbrella sprites, anchors from the rig, the four shop models, `.sam`, RSE, `content/umbrellas` | done (original-set anchors left to U3) |
-| U2 | simulation behind `opentpw.umbrellas`: purchase, states, scoring gate, balloon trade, attraction close, saves, pins | planned |
+| U2 | simulation behind `opentpw.umbrellas`: purchase, states, scoring gate, balloon trade, attraction close, saves, pins; also a catalog root for the extension in `ModContentRoots.CatalogRoots` and its id in the `ObjectCatalog` cache key (`ObjectCatalog.cs`, where only the pools' root is named today), or a park would reuse a catalog built without the shops | planned |
 | U3 | drawing: `UmbrellaRenderer`, anchors for the original sets, pull, bubble lift, browser delivery, captures | planned |
 | U4 | `opentpw.rain-mood` with its pins and the measurement that decides its variant | planned |
 | U5 | tuning from captures; the first-person placement if a walk-around camera lands | planned |
@@ -95,7 +95,7 @@ Open questions: Theme Park Inc's kid score 75 % or our 100 % (decide from captur
 
 - `objects.json`: four brolly shops, one per Theme Park World theme, ids **64500 to 64503** inside the extension's own range **64500 to 64999** (below the pools' 65000..65535, above the Theme Park Inc rides' 40000..40499), category `shops`, `"research": false`.
   The extension's id is `opentpw.umbrellas`, so a park save would name the files `mod:opentpw.umbrellas:/...` (as [POOLS.md](POOLS.md#content-extpools-content)).
-- `objects/<theme>/brolly/`: `brolly.MD2`, eight 64 x 64 TGA textures, `Brolly.sam` and `Brolly.RSE`. The model is a **2 x 2 booth** (Theme Park Inc's is 3 x 3; smaller suits a stall) whose entrance is the lower left cell:
+- `objects/<theme>/brolly/`: `brolly.MD2`, eight 64 x 64 TGA textures (nine in space: an extra light strip), `Brolly.sam` and `Brolly.RSE`. The model is a **2 x 2 booth** (Theme Park Inc's is 3 x 3; smaller suits a stall) whose entrance is the lower left cell:
   a back wall, two side walls, a counter with three open umbrellas on it and an umbrella-shaped roof (eight panels in two alternating textures, a finial). Themed textures as the pool cabins: bamboo and thatch (jungle), mossy stone and purple shingles (hallow),
   riveted metal with cyan strips (space), pastel candy (fantasy). The walls, counter and posts keep at least 1 unit (1.6 by construction) from the footprint edge at a walker's height (the pools lesson, `[EXT:pools-model-inset]`); the roof reaches 1.0 from it.
 - The **`.sam`** (`tools/umbrellas/brolly.sam`, built from the keys of the original balloon shop): `AppearanceEffect` 3, `ShopType` 1 (a gift shop's kind, OpenTPW's own choice), price 30 and cost of goods 13 (Theme Park Inc: 10 to 15), `HappinessEffect` 20, `LitterEffect` 15,

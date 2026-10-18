@@ -27,6 +27,7 @@ ARRIVAL-004 docs/progress/2026-10-15-arrival-and-save-rules-settled-against-tp-e
 ARRIVAL-005 docs/GUESTS.md
 ARRIVAL-007 docs/progress/2026-10-15-arrival-and-save-rules-settled-against-tp-exe.md
 AUDIO-002 docs/AUDIO.md
+AUDIO-004 docs/AUDIO.md
 AUDIO-008 docs/AUDIO.md
 AUDIO-009 docs/AUDIO.md
 AUDIO-011 docs/AUDIO.md

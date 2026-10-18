@@ -1143,9 +1143,10 @@ public sealed class OnlineScreens
 		var view = screen.Add( new UiChatParkView( Session ) { Id = "park", Bounds = new UiRect( 543, 30, 1462, 1120 ), Anchor = UiAnchor.TopLeft } );
 		// The two tabs of the people panel: the park's players and the online buddies.
 		var buddies = false;
-		screen.Add( new UiButton { Id = "peopleTab", Text = () => OnlineStrings.Ui( OnlineStrings.PlayersAtThePark, "Players at the park" ),
+		// The people panel's two toggles are a radio group, so they play cat_ui 0xBD (parent style bit 0x10, hook 0x485780 at 0x4857cb). The online tables are not generated.
+		screen.Add( new UiButton { Id = "peopleTab", Text = () => OnlineStrings.Ui( OnlineStrings.PlayersAtThePark, "Players at the park" ), ClickSound = GameAudio.SelectClickEvent,
 			Clicked = () => buddies = false, Bounds = new UiRect( 129, 28, 103, 102 ), Anchor = UiAnchor.TopLeft } );
-		screen.Add( new UiButton { Id = "buddyTab", Text = () => OnlineStrings.Get( OnlineLabel.BuddyList ),
+		screen.Add( new UiButton { Id = "buddyTab", Text = () => OnlineStrings.Get( OnlineLabel.BuddyList ), ClickSound = GameAudio.SelectClickEvent,
 			Clicked = () => { buddies = true; Guard( Session.AskBuddies ); }, Bounds = new UiRect( 244, 28, 103, 102 ), Anchor = UiAnchor.TopLeft } );
 		var people = screen.Add( new UiScrollList
 		{

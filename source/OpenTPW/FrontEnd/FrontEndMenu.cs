@@ -178,6 +178,8 @@ public sealed partial class FrontEndMenu
 				Text = () => strings[entry.Label],
 				Font = fonts => fonts.Label,
 				Help = strings.Help( entry.Help ),
+				// Group 0x70c is type 8 style 0x11, so these toggles play 0xBD (the parent's style bit, hook 0x485780 at 0x4857cb).
+				ClickSound = table.ClickSoundOf( toggles[index] ),
 				Selected = () => chosen == entry.Mode,
 				Clicked = () => { chosen = entry.Mode; joyImage.Visible = entry.Mode == GameMode.InstantAction; },
 				Bounds = toggles[index].Rect,
@@ -260,6 +262,7 @@ public sealed partial class FrontEndMenu
 			Enabled = parks.Length != 0,
 			Visible = parks.Length != 0,
 			ClicksOnActivate = false,
+			// [APPROX:AUDIO-041] the original load list posts 0x400, not 0x100, so the hook may play nothing; this click stays cat_ui 0x1F. Left open (UiScrollList).
 			RowActivated = index => { if ( screen.TryBeginActivation() ) { GameAudio.PlayUi( GameAudio.ClickEvent ); load( parks[index] ); } },
 			RowHeight = OpenTPW.Hud.ParkHud.BuyRowHeight,
 			Margin = 0,
@@ -275,8 +278,15 @@ public sealed partial class FrontEndMenu
 		screen.Add( new LoadScrollBar( list, slider.Rect, knob.Rect, slider.Model2!, knob.Model! ) { Id = "loadScroll", Bounds = slider.Rect, Anchor = UiAnchor.Center, Visible = Scrolls() } );
 		var up = table.Model( "b_up" );
 		var down = table.Model( "b_down" );
-		screen.Add( new UiButton { Id = "scrollUp", Model = up.Model, Clicked = () => list.Scroll( -1 ), Bounds = up.Rect, Anchor = UiAnchor.Center, Visible = Scrolls() } );
-		screen.Add( new UiButton { Id = "scrollDown", Model = down.Model, Clicked = () => list.Scroll( 1 ), Bounds = down.Rect, Anchor = UiAnchor.Center, Visible = Scrolls() } );
+		// The arrows' parent is the type 3 slider (style 0x10) inside the load list, so they play 0xBD and repeat at 500 ms then 125 ms.
+		void ScrollArrow( LayoutNode node, int step )
+		{
+			void Scroll() => list.Scroll( step );
+			screen.Add( new UiButton { Id = step < 0 ? "scrollUp" : "scrollDown", Model = node.Model, ClickSound = table.ClickSoundOf( node ),
+				Clicked = Scroll, Repeat = UiButton.ScrollArrowRepeat( Scroll ), Bounds = node.Rect, Anchor = UiAnchor.Center, Visible = Scrolls() } );
+		}
+		ScrollArrow( up, -1 );
+		ScrollArrow( down, 1 );
 		// [EXT:load-chooser] a text button that loads the selected row, at the place of the name field the load hides; the original loads only by activating a row
 		screen.Add( new UiButton
 		{

@@ -14,7 +14,7 @@
   ],
   "cannot": [
     {"text": "Load an original save game completely: its staff, guests (except those queueing, boarding or riding) and research load, but the random state and some script, particle and sound blocks do not.", "href": "docs/TPWS-PAYLOAD.html", "matrix": ["Versioned saves and original read-only import"]},
-    {"text": "Hear every sound exactly: the room reverb is only an approximation, the advisor cannot be slapped, and one list-click variant of the interface is not played.", "matrix": ["Audio, music, video and first-person/ride cameras"]},
+    {"text": "Hear every sound exactly: the room reverb is only an approximation, and the advisor cannot be slapped.", "matrix": ["Audio, music, video and first-person/ride cameras"]},
     {"text": "Build a park together with other players: a shared park is a snapshot, and its visitors walk it together but cannot change it.", "href": "docs/ONLINE.html"},
     {"text": "Rely on the original's exact numbers everywhere: some rules still use a documented approximation.", "href": "docs/FIDELITY-REGISTER.html", "matrix": ["Visitors, needs, routing and queues", "Economy, shops, toilets and staffing"]}
   ],

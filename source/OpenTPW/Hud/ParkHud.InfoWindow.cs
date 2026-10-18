@@ -171,16 +171,18 @@ public sealed partial class ParkHud
 		{
 			var node = table.Control( control );
 			var shown = series;
+			// The series toggles' parent is the graph panel (type 1, style 0x1), which lacks bit 0x10, so they play 0x1F.
 			screen.Add( new UiButton { Id = $"series{series}", Model = node.Model, Text = () => strings[label], Font = fonts => fonts.Small, Help = strings.Help( node.Help ),
-				Selected = () => parkInfoSeries.HasFlag( shown ), Clicked = () => SetParkInfoSeries( shown, !parkInfoSeries.HasFlag( shown ) ), Bounds = node.Rect, Anchor = UiAnchor.Center } );
+				ClickSound = table.ClickSoundOf( node ), Selected = () => parkInfoSeries.HasFlag( shown ), Clicked = () => SetParkInfoSeries( shown, !parkInfoSeries.HasFlag( shown ) ), Bounds = node.Rect, Anchor = UiAnchor.Center } );
 		}
 		// [BIN:TPW-EXE:0x004A52A0 period buttons] 0x4A68C3 (period 0, UITEXT 0x16A), 0x4A68C4 (period 1, 0x16B) and 0x4A68C2 (period 2, 0x16C), each b_stoggle with help 183, 184 and 185 and font slot 6; the one the period names starts pressed (0x66A295)
 		foreach ( var (control, period) in new[] { (0x4A68C3u, 0), (0x4A68C4u, 1), (0x4A68C2u, 2) } )
 		{
 			var node = table.Control( control );
 			var shown = period;
+			// The period buttons' parent is radio group 0x4A68C1 (type 8, style 0x11), so they play 0xBD.
 			screen.Add( new UiButton { Id = $"period{period}", Model = node.Model, Text = () => strings[UIStrings.Year1 + (shown == 0 ? 0 : shown == 1 ? 1 : 2)], Font = fonts => fonts.Small, Help = strings.Help( node.Help ),
-				Selected = () => parkInfoPeriod == shown, Clicked = () => SetParkInfoPeriod( shown ), Bounds = node.Rect, Anchor = UiAnchor.Center } );
+				ClickSound = table.ClickSoundOf( node ), Selected = () => parkInfoPeriod == shown, Clicked = () => SetParkInfoPeriod( shown ), Bounds = node.Rect, Anchor = UiAnchor.Center } );
 		}
 		// [EXT:guest-insights] with the extension on, the refusal-reason counters stand in the two free strips beside the window's title, clear of the plot and the toggles: a title and the first two reasons on the left, the other three on the right; the counters are the simulation's passive observer, never saved, and a visit has none
 		if ( FeatureGates.GuestInsights && level.Guests?.RefusalCounters is { } counters )

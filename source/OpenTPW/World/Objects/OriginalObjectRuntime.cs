@@ -584,7 +584,7 @@ public sealed partial class OriginalObjectRuntime
 			EntryCellStandPos = (StandFraction( settings, "UsageInfo.EntryCellStandPosX" ), StandFraction( settings, "UsageInfo.EntryCellStandPosY" )),
 			// [EXT:pools-changing-room] OpenTPW's own key: the object is a pool complex's changing room (docs/POOLS.md)
 			IsChangingRoom = FeatureGates.Pools && PoolChangingRooms.IsChangingRoom( entry ),
-			// [EXT:umbrellas-weather-map] the umbrellas extension's own objects carry Theme Park Inc's weather and generation percentages, which the host score applies for them alone; every other object keeps the game's score
+			// [EXT:umbrellas-extension] the umbrellas extension's own objects carry Theme Park Inc's weather and generation percentages, which the host score applies for them alone; every other object keeps the game's score
 			UmbrellaTerms = UmbrellaShopTermsOf( entry )
 		};
 	}

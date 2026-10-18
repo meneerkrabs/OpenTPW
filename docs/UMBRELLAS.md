@@ -13,6 +13,7 @@ or number table of Theme Park Inc is copied: the sprites and models are drawn in
 
 - `opentpw.umbrellas` is **on by default** and recorded in a save only for parks that use it (a brolly shop or a guest with an umbrella: the pools rule, [POOLS.md](POOLS.md#the-extension-and-the-save-rule)); other parks save identically on or off. Not offered in a Theme Park Inc run (it has its own shop and art).
 - `opentpw.rain-mood` (the weather happiness, hunger and thirst rule) is **off by default** and applies **once per qualifying day**: Theme Park Inc's every-update behaviour comes from a stored day that is never read (`[EXT:rain-mood-once-per-day]`; the literal rule is not offered).
+- **User approval of the three U2 extensions (2026-10-18, asked directly in the coordinating session):** the question was "U2 heeft drie eigen keuzes gemaakt bij de paraplu's. Akkoord als uitbreiding (EXT)?" and the answer was "Alle drie akkoord", the options naming 1) the weather mapping (`[EXT:umbrellas-weather-map]`), 2) the saved pending open/close turn (`[EXT:umbrellas-save-due]`), 3) the balloon shop refusing balloon holders only in parks with umbrellas (`[EXT:umbrellas-balloon-gate]`).
 - Umbrellas are **available from the start** (no research item), price 30 as in Theme Park Inc. A closed umbrella is not drawn (no furled sprite), as in Theme Park Inc.
 
 ## What Theme Park Inc does (static trace)
@@ -90,9 +91,9 @@ weather Rain/Storm 200 (science 250), Snow 150, HeatWave 5. Weather spells (`0x6
   `WeatherModifier.*Percentage` of the current weather when that is nonzero, then (brolly shop) by the balloon factor `100 - life x 100 / 255` scaled by `DiscardBalloonPctModifier` (100), skipped when it is exactly 0 (a full-life balloon: the original's
   quirk, kept) or the life is 0, then by `GenerationModifier.KidScorePercentage` (`[BIN:TPI-EXE:0x6101e0]`, `0x6109d0`, `0x610af1`, `0x610b59`; signed integer division by 100 as the original; the key defaults to 100 when a .sam leaves it out). Every other
   object keeps the game's score: the weather and generation keys are read for the extension's own objects only. A balloon shop scores 0 for a guest with a balloon (the model, or a life above 0) and for a guest with an open or opening umbrella (states 3 and 4,
-  `[BIN:TPI-EXE:0x6103ec]`). tp.exe's own score reads no appearance word, so the balloon half applies only in a park that uses umbrellas (a brolly shop registered, or a guest with an umbrella): `[EXT:umbrellas-balloon-gate]`, so every other park keeps its balloon shops as they were.
+  `[BIN:TPI-EXE:0x6103ec]`). tp.exe's own score reads no appearance word, so the balloon half applies only in a park that uses umbrellas (a brolly shop registered, or any guest in the park with an umbrella, counted per park by the simulation, not per scored guest): `[EXT:umbrellas-balloon-gate]`, so every other park keeps its balloon shops as they were.
 - **The weather** is mapped from `ParkWeather`'s flags (lightning is a storm, snow is snow, rain without lightning is rain, else none; no heat wave): `UmbrellaRules.WeatherStateOf`, wired by `Level` as `GuestSimulation.UmbrellaWeatherState`. `[EXT:umbrellas-weather-map]`
-- **The purchase** (the shop's `UsageInfo.AppearanceEffect` 3, `[BIN:TPI-EXE:0x612ea9]`): the umbrella opens at once (state 4), whatever the weather, in a colour `(draw >> 2) mod 3` from **one** draw of the world generator (`0x690370`); the shop's other effects are a shop's.
+- **The purchase** (the shop's `UsageInfo.AppearanceEffect` 3, `[BIN:TPI-EXE:0x612ea9]`): the umbrella opens at once (state 3 is written first and becomes 4 when no sprite exists; entering the shop has closed any drawn umbrella, so a purchase always ends in 4), whatever the weather, in a colour `(draw >> 2) mod 3` from **one** draw of the world generator (`0x690370`); the shop's other effects are a shop's.
   A guest's creation reseeds the generator with its id (tp.exe `0x516370`), so the colour is a function of the guest's id, as the balloon's is. The draw is taken only at a brolly shop, so a park without one takes none.
 - **The states** 0 none, 1 open and about to close, 2 closed, 3 closed and about to open, 4 open, with the weather rule on the guest's own update (every fourth park turn, `turn & 3 == id & 3`, before its needs; `[BIN:TPI-EXE:0x611050]`, called by `0x619B50`),
   only on a qualifying day: the guest's age in game days (3750 game seconds a park turn, the turns cut to a multiple of four) is a multiple of `WeatherModifierFrequency` (4), so the whole first day of a visit and then one day in four. Bad weather: a closed
@@ -144,7 +145,7 @@ change by the guest generation's row, and an **open** umbrella (state 4 only) ad
 | U4 | `opentpw.rain-mood` with its pins and the measurement of what it costs a kid | done ([below](#the-rain-mood-rule-phase-u4)) |
 | U5 | tuning from captures, the umbrella's frame cost, the kid score measurement | done ([below](#tuning-phase-u5)); the first-person placement waits for a walk-around camera |
 
-Open questions: Theme Park Inc's kid score 75 % or our 100 % (decide from captures in U5); the shop's `ISIndoors` 0 where Theme Park Inc's is 1 (it keeps the indoor-in-rain x5 off the weather percentages, which U2 now scores); the user's approval of `[EXT:umbrellas-weather-map]`, `[EXT:umbrellas-save-due]` and `[EXT:umbrellas-balloon-gate]`, which U2 implements and which are not yet in the decisions above. The smarter-guests seam (`IGuestDecisions`) was not touched: the umbrella gate and the weather percentages live in the host score, for the extension's own objects only.
+Open questions: Theme Park Inc's kid score 75 % or our 100 % (decide from captures in U5); the shop's `ISIndoors` 0 where Theme Park Inc's is 1 (it keeps the indoor-in-rain x5 off the weather percentages, which U2 now scores); the three U2 extensions are user-approved (see the decisions above). The smarter-guests seam (`IGuestDecisions`) was not touched: the umbrella gate and the weather percentages live in the host score, for the extension's own objects only.
 
 ## Content (`[EXT:umbrellas-content]`)
 
@@ -178,7 +179,7 @@ the script, the sprite banks (slots, directions, 256 ppu, hotspots at the tip) a
 | Label | What |
 | --- | --- |
 | `[EXT:umbrellas-content]` | the extension's own shipped content (`content/umbrellas`) and the pipeline that builds it |
-| `[EXT:umbrellas-extension]` | the extension itself: its registration, its gate and the host rules (U2) |
+| `[EXT:umbrellas-extension]` | the extension itself: its registration, its gate, the host rules (U2), the objects' weather and generation terms, and its screen texts in the eleven languages |
 | `[EXT:umbrellas-weather-map]` | the mapping of `ParkWeather` to Theme Park Inc's weather states (U2; user-approved 2026-10-18) |
 | `[EXT:umbrellas-save]` | the save rule: recorded only while the park has a brolly shop or an umbrella, the placed shops' asset keys, the optional guest fields (U2) |
 | `[EXT:umbrellas-save-due]` | the saved pending-change turn (U2; user-approved 2026-10-18) |

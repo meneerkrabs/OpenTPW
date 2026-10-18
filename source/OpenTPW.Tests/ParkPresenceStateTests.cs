@@ -60,6 +60,53 @@ public class ParkPresenceStateTests
 		Assert.IsNull( ParkPresenceState.Route( ground, (2, 2), (5, 2) ), "a blocked goal has no route" );
 	}
 
+	/// <summary>A pocket of free cells walled in on all sides round <paramref name="centre"/> (radius 1 inside, the wall at radius 2).</summary>
+	private static IEnumerable<(int, int)> Pocket( (int X, int Y) centre ) =>
+		from y in Enumerable.Range( centre.Y - 2, 5 )
+		from x in Enumerable.Range( centre.X - 2, 5 )
+		where Math.Max( Math.Abs( x - centre.X ), Math.Abs( y - centre.Y ) ) == 2
+		select (x, y);
+
+	[TestMethod]
+	public void TheRouteSearchOfTheLargestParkAnswersUnreachableSpotsAtOnceAndFindsLongDetours()
+	{
+		// the largest park map: 256 x 256 cells
+		var open = new Ground( 256, 256 );
+		var search = new ParkPresenceState.RouteSearch( 256, 256 );
+		var across = search.Find( open, (0, 0), (255, 255) );
+		Assert.AreEqual( 256, across!.Count, "the diagonal across the whole park" );
+		Assert.IsTrue( search.Expanded < 2000, $"the heuristic leads straight there ({search.Expanded} cells)" );
+		// a spot walled in, near or far: the ground's areas answer at once, without flooding the park
+		var walled = new Ground( 256, 256, Pocket( (12, 10) ).Concat( Pocket( (250, 250) ) ) );
+		var pockets = new ParkPresenceState.RouteSearch( 256, 256 );
+		Assert.IsNull( pockets.Find( walled, (5, 10), (12, 10) ) );
+		Assert.AreEqual( 0, pockets.Expanded, "a near spot that cannot be reached costs no search" );
+		Assert.IsNull( pockets.Find( walled, (1, 1), (250, 250) ) );
+		Assert.AreEqual( 0, pockets.Expanded, "nor does a far one" );
+		// the same arrays serve the next search: nothing of the others is left in them
+		var again = pockets.Find( walled, (1, 1), (240, 200) );
+		Assert.AreEqual( (1, 1), again![0] );
+		Assert.AreEqual( (240, 200), again[^1] );
+		Assert.AreEqual( 240, again.Count, "the octile route: 199 diagonal steps and 40 straight ones" );
+		// a short distance behind a long wall: the route goes round its far end instead of straight through it
+		var wall = new Ground( 256, 256, Enumerable.Range( 0, 250 ).Select( y => (128, y) ) );
+		var detour = new ParkPresenceState.RouteSearch( 256, 256 ).Find( wall, (124, 10), (132, 10) );
+		Assert.IsNotNull( detour, "the long way round is found" );
+		Assert.IsTrue( detour!.Any( cell => cell.Y >= 250 ), "round the wall's end" );
+		Assert.IsTrue( detour.All( cell => wall.IsPassable( cell.X, cell.Y ) ) );
+	}
+
+	[TestMethod]
+	public void AFigureOnABlockedCellLeavesItByAnyFreeStep()
+	{
+		// the figure stands on a blocked cell beside the walled area's way out
+		var ground = new Ground( 20, 20, new[] { (5, 5) }.Concat( Enumerable.Range( 0, 20 ).Select( y => (10, y) ) ) );
+		var route = ParkPresenceState.Route( ground, (5, 5), (2, 2) );
+		Assert.AreEqual( (5, 5), route![0] );
+		Assert.AreEqual( (2, 2), route[^1] );
+		Assert.IsNull( ParkPresenceState.Route( ground, (5, 5), (15, 5) ), "across the wall there is no route" );
+	}
+
 	[TestMethod]
 	public void AWalkFollowsTheRouteAndEndsAtTheClickedPoint()
 	{

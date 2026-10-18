@@ -51,6 +51,7 @@ public static class ModsScreen
 		[OfficialExtensions.SmarterGuests.Id] = (OpenTpwText.ExtensionSmarterGuestsName, OpenTpwText.ExtensionSmarterGuestsDescription),
 		[OfficialExtensions.GuestInsights.Id] = (OpenTpwText.ExtensionGuestInsightsName, OpenTpwText.ExtensionGuestInsightsDescription),
 		[OfficialExtensions.PoolGuestArt.Id] = (OpenTpwText.ExtensionPoolGuestArtName, OpenTpwText.ExtensionPoolGuestArtDescription),
+		[OfficialExtensions.Umbrellas.Id] = (OpenTpwText.ExtensionUmbrellasName, OpenTpwText.ExtensionUmbrellasDescription),
 		[OfficialExtensions.RainMood.Id] = (OpenTpwText.ExtensionRainMoodName, OpenTpwText.ExtensionRainMoodDescription),
 		[OfficialExtensions.RestoredAdvice.Id] = (OpenTpwText.ExtensionRestoredAdviceName, OpenTpwText.ExtensionRestoredAdviceDescription),
 		[OfficialExtensions.Evening.Id] = (OpenTpwText.ExtensionEveningName, OpenTpwText.ExtensionEveningDescription),

@@ -16,6 +16,14 @@ public sealed class UiTextField : UiElement
 	public float TextInset { get; set; }
 	/// <summary>Background model frame; null draws the plain help-box colour.</summary>
 	public string? Model { get; set; }
+	/// <summary>Whether a field without a model draws the plain box (off where the field lies on art of its own, the chat frame's entry).</summary>
+	public bool Background { get; set; } = true;
+	public Func<UiFonts, FontAtlas> Font { get; set; } = fonts => fonts.Label;
+	/// <summary>
+	/// Whether the field lies over the park view (the chat entry): the pointer resting on it takes the keys from nothing (only a click or Enter gives it
+	/// them), neither the arrows nor Tab move the focus onto it, and while it has the keys the screen leaves the pointer to the park outside its controls.
+	/// </summary>
+	public bool OverView { get; init; }
 	/// <summary>Text shown, dimmed, while the field is empty (the original's prompt texts); never part of <see cref="Text"/>.</summary>
 	public string? Placeholder { get; set; }
 	/// <summary>Called with Enter.</summary>
@@ -62,7 +70,7 @@ public sealed class UiTextField : UiElement
 	{
 		var rect = ScreenRect( context.Canvas );
 		// [EXT:ONLINE-UI] text field art and caret are OpenTPW's; the original field template is not decoded
-		if ( Model == null || !context.DrawModel( Model, 0, rect, focused ? new RgbaByte( 255, 255, 220, 255 ) : null ) )
+		if ( Model == null ? Background : !context.DrawModel( Model, 0, rect, focused ? new RgbaByte( 255, 255, 220, 255 ) : null ) )
 			context.Batch.AddRectangle( rect, focused ? new RgbaByte( 40, 50, 110, 220 ) : UiColors.HelpBackground );
 		var prompt = Text.Length == 0 && Placeholder is { Length: > 0 };
 		var shown = prompt ? Placeholder! : Password ? new string( '*', Text.Length ) : Text;
@@ -71,7 +79,7 @@ public sealed class UiTextField : UiElement
 			shown += "_";
 		var scale = rect.Height / Bounds.Height;
 		var inset = MathF.Max( rect.Height * 0.25f, TextInset * scale );
-		context.DrawText( context.Fonts.Label, shown, new UiRect( rect.X + inset, rect.Y, rect.Width - inset - rect.Height * 0.25f, rect.Height ), Enabled && !prompt ? UiColors.Value : UiColors.Disabled );
+		context.DrawText( Font( context.Fonts ), shown, new UiRect( rect.X + inset, rect.Y, rect.Width - inset - rect.Height * 0.25f, rect.Height ), Enabled && !prompt ? UiColors.Value : UiColors.Disabled );
 	}
 }
 

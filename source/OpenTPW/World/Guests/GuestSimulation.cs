@@ -569,6 +569,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		LeaveCellLists( guest );
 		byId.Remove( guest.Id );
 		guests.Remove( guest );
+		if ( guest.UmbrellaState != UmbrellaRules.StateNone && umbrellaHolders > 0 )
+			umbrellaHolders--;
 		Departed++;
 	}
 
@@ -4057,6 +4059,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		RestoreThings( snapshot, restored );
 		guests.Clear();
 		guests.AddRange( restored );
+		umbrellaHolders = restored.Count( guest => guest.UmbrellaState != UmbrellaRules.StateNone );
 		byId.Clear();
 		foreach ( var (guestId, guest) in restoredById )
 			byId.Add( guestId, guest );

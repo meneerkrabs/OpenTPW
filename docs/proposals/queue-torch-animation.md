@@ -45,3 +45,45 @@ Relative paths below are inside the supplied local Data tree. SHA-256 pins audit
 - `levels/hallow/queue.wad`: 71938 bytes; SHA-256 `06dc7df1b7d50e0f7515a73ff26f166c894ad2692d20db61e04a30275a770ec2`.
 - `levels/fantasy/queue.wad`: 150264 bytes; SHA-256 `2b51f5e5de61052ee36123cf3ee926be5f987ee0bbe6f3f3820904d81e6e72c5`.
 - `levels/space/queue.wad`: 64453 bytes; SHA-256 `bf645dd6592aefda4abbe0c44c4c75a5d4660e0a8ae3d96e7237cc640a47721a`.
+
+## Full-register coverage addendum (October 18, 2026)
+
+This reviewed addendum extends the bounded initial plan to cover the remaining registered residuals. All acceptance work remains pending. Source snapshot independently verified by the proposal coordinator: `5ccddcab56ffb9bda4ded1821988a8492bee8943`.
+
+
+## Status and classification
+- Classification: approximation.
+- Plan-only addendum: no runtime implementation, annotation retirement or merge performed.
+- Existing PR: #440; residual addendum only.
+- Draft eligibility: evidence/scope gates below must remain visible; this is not a completed feature.
+
+## Current residual
+QUEUE-MODELS: queue cells carry the theme's queue models as tp.exe places them (chooser 0x535dd0 class 2 from the cell's link byte, table 0x7630b0; models of 0x522900 at yaw 360 minus the rotation, 0x5229e0; no ground tile, 0x5365d0), baked into the path layer with each vertex on the drawn ground under it (lifted as the path layer), without the ground deformation of their .hmp files, the animation of their texture frames (the fire0 torches) and the load flag 0x100000 of the two quedead entries
+
+## Source inspection
+- `source/OpenTPW/World/Original/OriginalTerrain.cs:265`: 266: private void BuildQueueModels( Dictionary<string, Texture> textures, List<(int X, int Y, QueueModelTile Tile)> queues ); 267: {; 268: QueueModelCount = 0;; 269: if ( queues.Count == 0 )
+
+## Bounded work
+Addendum mapping: #440 owns torch animation, #446 owns ground deformation; unresolved quedead load flag 0x100000 remains evidence-gated.
+- Preserve already-implemented behavior described above; restrict future changes to the named residual.
+- For evidence-only items, establish an oracle first and file implementation only if a behavioral difference is proven.
+
+## Missing evidence
+Decode flag 0x100000 consumer and prove its effect on the two quedead models.
+- Source annotations record prior reverse engineering; this audit checked adjacent implementation but did not execute the original.
+
+## Acceptance cases
+1. Torch texture frames follow clip timing under #440 without geometry rebuilding.
+2. Compare queue on sloped ground after #446 and test both quedead entries with flag toggled against traced behavior.
+3. Add a reproducible synthetic fixture or reference trace identifying input, expected output, and affected function; a passing build alone is insufficient.
+4. Re-run focused regression tests for the listed source owner and document what remains unproven.
+
+## Dependencies and ownership
+- World/audio implementation owner to be assigned; no runtime ownership claimed.
+- Original-executable or reference-capture evidence is unavailable in this read-only source audit; unresolved claims are hypotheses.
+- Review existing PR #440 current head; use residual addendum, not duplicate proposal.
+
+## Review boundary
+- Stop at a reviewable design/evidence package; this draft authorizes no tag removal or parity claim.
+- Do not publish original media or private game data in fixtures, screenshots, or commits.
+- A future implementation needs its own reviewed evidence and acceptance results; do not treat this proposal as merge-ready.

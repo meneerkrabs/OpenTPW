@@ -1,6 +1,10 @@
 # COAST-034: Align coaster car animation lifecycle
 
-## Status and classification
+## Implementation update (October 18, 2026)
+
+Wheel animation epochs now belong to train slots and reset at the bounded state/rating initialization boundaries, independently of visibility and renderer lifetime. Independent source review passed. Added CPU lifecycle and optional asset-UV regressions, including direct existing-slot state reset. C# compilation/tests remain pending because local dotnet is unavailable; exact-head CI and GPU evidence are not yet established. COAST-034 stays open for bend endpoints, flume clips and rider sockets. The historical plan below preserves the remaining scope.
+
+## Historical status and classification
 - Classification: approximation.
 - Plan-only local proposal: no runtime implementation, annotation retirement, publication or merge performed.
 - Snapshot supplied as main 5ccddcab (export has no .git; commit not independently verified).

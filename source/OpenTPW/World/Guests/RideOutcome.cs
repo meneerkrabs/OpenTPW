@@ -42,8 +42,16 @@ public static class RideOutcome
 			happiness = MeterMath.Add( happiness, goodRide );
 		else if ( difference < 40 )
 			happiness = MeterMath.Add( happiness, okRide );
+		return (happiness, MeterMath.Add( illness, IllnessGain( hunger, live, vomitDivisor ) ));
+	}
+
+	/// <summary>
+	/// The illness a ride of live excitement <paramref name="live"/> (a byte) adds: <c>trunc(live / vomitDivisor) · trunc((100 − byte(hunger)) / 20)</c>. Shared by the outcome and by the smarter guests' meal rule
+	/// (docs/SMARTER-GUESTS.md, phase 5), which predicts it.
+	/// </summary>
+	public static int IllnessGain( float hunger, int live, int vomitDivisor )
+	{
 		var fed = (100 - MeterMath.Byte( hunger )) / 20;
-		var gain = unchecked( live / vomitDivisor * fed );
-		return (happiness, MeterMath.Add( illness, gain ));
+		return unchecked( (live & 0xFF) / vomitDivisor * fed );
 	}
 }

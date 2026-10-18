@@ -92,4 +92,6 @@ public sealed class GuestObserverChain : IGuestObserver
 	public void Recalled( Guest guest ) { first.Recalled( guest ); second.Recalled( guest ); }
 	public void Restored( GuestSimulation simulation ) { first.Restored( simulation ); second.Restored( simulation ); }
 	public void Ticked( GuestSimulation simulation, float deltaSeconds ) { first.Ticked( simulation, deltaSeconds ); second.Ticked( simulation, deltaSeconds ); }
+	public void Vomited( Guest guest ) { first.Vomited( guest ); second.Vomited( guest ); }
+	public void Thought( Guest guest, GuestThought thought ) { first.Thought( guest, thought ); second.Thought( guest, thought ); }
 }

@@ -47,15 +47,19 @@ public class UmbrellaDrawingTests
 	}
 
 	[TestMethod]
-	public void ThePullStopsGrowingAtTheOriginalsFarthestZoomSoTheWideRangeDoesNotDrawUmbrellasOverNearerObjects()
+	public void ThePullIsAMarginOverTheGuestsOwnDepthNotAShareOfTheDistanceSoScenerySkippingRoofsStaysInFront()
 	{
 		float DepthOf( float zoom ) => zoom * ObjectPlacement.ModelScale;
-		Assert.AreEqual( 0.1f, UmbrellaRenderer.PullShare( DepthOf( 40f ) ), 1e-6f, "wide near end: the full 10 %" );
-		Assert.AreEqual( 0.1f, UmbrellaRenderer.PullShare( DepthOf( 130f ) ), 1e-6f, "the original's far end: the full 10 %" );
-		Assert.AreEqual( 13f / 300f, UmbrellaRenderer.PullShare( DepthOf( 300f ) ), 1e-6f, "wide far end: 13 units, not 30" );
+		var guestOwnPull = SpriteScale.PulledDepthShare( DepthOf( 80f ) / ObjectPlacement.ModelScale );
+		Assert.AreEqual( 1.5f * ObjectPlacement.ModelScale / DepthOf( 80f ), UmbrellaRenderer.PullShare( DepthOf( 80f ) ), 1e-6f, "1.5 units at the zoom value 80, not 10 % (8 units)" );
 		Assert.AreEqual( 0f, UmbrellaRenderer.PullShare( -1f ), "behind the eye: none" );
 		for ( var zoom = 40f; zoom <= 300f; zoom += 10f )
-			Assert.IsTrue( UmbrellaRenderer.PullShare( DepthOf( zoom ) ) * DepthOf( zoom ) <= UmbrellaRenderer.MaxPullUnits * ObjectPlacement.ModelScale + 1e-4f, $"zoom {zoom}" );
+		{
+			var units = UmbrellaRenderer.PullShare( DepthOf( zoom ) ) * DepthOf( zoom ) / ObjectPlacement.ModelScale;
+			Assert.AreEqual( UmbrellaRenderer.MaxPullUnits, units, 1e-3f, $"zoom {zoom}: the same pull in units at every zoom" );
+		}
+		Assert.IsTrue( UmbrellaRenderer.MaxPullUnits <= 3.5f, "less than the guest's own pull: a roof that hides the guest hides the umbrella" );
+		Assert.IsTrue( UmbrellaRenderer.MaxPullUnits > 0f && guestOwnPull < 1f );
 		Assert.IsTrue( UmbrellaRenderer.SizeScale is > 0.5f and <= 1f );
 	}
 

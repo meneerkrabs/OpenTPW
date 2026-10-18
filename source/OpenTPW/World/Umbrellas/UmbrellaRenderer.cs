@@ -25,11 +25,13 @@ public sealed class UmbrellaRenderer : Entity
 	// known here, is not needed to keep the umbrella over the hand
 	public const float CameraPull = 0.1f;
 	/// <summary>
-	/// The most the umbrella is pulled towards the camera, in original units: 13, what 10 % comes to at the original's farthest zoom value (130, where the eye is 130 units from its target). The share is relative in TPI, and tp.exe's own zoom has
-	/// no value beyond 130; in the wide zoom range (up to 300) 10 % would be up to 30 units and draw an umbrella over objects a whole cell nearer the camera than its guest, so the pull stops growing there.
+	/// The most the umbrella is pulled towards the camera, in original units: 1.5, enough to beat the depth of its own guest's quad (which is itself pulled 3.5 to 3.9 units towards the camera) and of the ground, and no more. The
+	/// pull only has to win a depth test against what is drawn at the guest's own depth. With the share TPI uses (10 % of the distance: 8 units at the zoom value 80, 13 at 130, 30 at the wide range's 300) the umbrella of a guest
+	/// who stands behind a booth, a shelter or a ride came out nearer to the camera than that scenery's roof and was drawn over it while the guest was hidden (capture of the Jungle bus shelter, October 18, 2026), and the umbrella
+	/// of a guest drew over neighbours up to a cell nearer to the camera.
 	/// </summary>
-	// [EXT:umbrellas-pull-cap] TPI's pull is a share of the distance (0x60b236); tp.exe's zoom stops at 130 without the flag 0x200 (0x42c621: 70..130), where the share is 13 units; OpenTPW's wide zoom (EXT:wide-zoom, 40..300) keeps the absolute pull of that end
-	public const float MaxPullUnits = 13f;
+	// [EXT:umbrellas-pull-cap] the sight-line pull stays (TPI's share of 10 % is the upper limit), but OpenTPW's depth buffer needs only a margin: TPI's own pull (0x60b236) moves the sprite 10 % of the way to the camera in the ground plane and lifts it, in TPI's own sprite ordering, which is not reproduced here
+	public const float MaxPullUnits = 1.5f;
 	/// <summary>
 	/// The size of the umbrella's quad relative to its sprite's own extents. The set was drawn so that the canopy is 0.8 of a kid's standing height across, but the camera looks down at 45 degrees and shortens a standing kid
 	/// by cos 45 while the canopy's width stays whole, so on screen the canopy was 1.2 times a kid's height and hid its head from every side. 0.85 brings it to about the kid's height.

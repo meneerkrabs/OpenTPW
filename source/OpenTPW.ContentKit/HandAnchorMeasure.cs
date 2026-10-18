@@ -189,8 +189,10 @@ public static class MeasureAnchorsCommand
 		foreach ( var kid in KidNames )
 		{
 			var (animations, bank) = Open( wad, $"Generic/Kids/SPR_{kid}" );
-			var redrawAnimations = new SpriteAnimationFile( File.OpenRead( Path.Combine( pools, $"SPR_{kid}.ESP" ) ) );
-			var redrawBank = new SpriteBankFile( File.OpenRead( Path.Combine( pools, $"SPR_{kid}.TPC" ) ) );
+			using var animationStream = File.OpenRead( Path.Combine( pools, $"SPR_{kid}.ESP" ) );
+			var redrawAnimations = new SpriteAnimationFile( animationStream );
+			using var bankStream = File.OpenRead( Path.Combine( pools, $"SPR_{kid}.TPC" ) );
+			var redrawBank = new SpriteBankFile( bankStream );
 			var set = anchors.RootElement.GetProperty( "sets" ).GetProperty( kid );
 			var frames = new Dictionary<int, HandAnchorMeasure.Point[][]>();
 			var samples = new List<Sample>();

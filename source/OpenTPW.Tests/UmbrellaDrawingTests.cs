@@ -41,7 +41,7 @@ public class UmbrellaDrawingTests
 		var point = new System.Numerics.Vector3( 1, 100, 2 );
 		var pulled = UmbrellaRenderer.PullToEye( point, eye, forward, UmbrellaRenderer.CameraPull );
 		Assert.AreEqual( 0.9f * point, pulled );
-		Assert.AreEqual( point, UmbrellaRenderer.PullToEye( new System.Numerics.Vector3( 0, -5, 0 ), eye, forward, 0.1f ) * 0 + point, "a point behind the eye stays" );
+		Assert.AreEqual( new System.Numerics.Vector3( 0, -5, 0 ), UmbrellaRenderer.PullToEye( new System.Numerics.Vector3( 0, -5, 0 ), eye, forward, 0.1f ), "a point behind the eye stays" );
 		var guestShare = SpriteScale.PulledDepthShare( 100f / ObjectPlacement.ModelScale );
 		Assert.IsTrue( 1f - UmbrellaRenderer.CameraPull < guestShare, "the umbrella is nearer the camera than the guest it covers" );
 	}

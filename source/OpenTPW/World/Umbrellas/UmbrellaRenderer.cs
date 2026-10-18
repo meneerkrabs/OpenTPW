@@ -45,13 +45,15 @@ public sealed class UmbrellaRenderer : Entity
 	private readonly GuestSimulation simulation;
 	private readonly ModelHeightfield field;
 	private readonly GuestSpriteAtlas? atlas;
-	private readonly GuestRenderer[] guests;
+	private readonly IReadOnlyList<GuestRenderer> guests;
 	private readonly UmbrellaAnchors anchors;
 	private readonly Material<ObjectUniformBuffer>? material;
 	private Texture? texture;
 	private DeviceBuffer? vertexBuffer;
 	private Vertex[] vertices = Array.Empty<Vertex>();
 	private bool deleted;
+	// The guests whose umbrella was drawn in the last frame (reused, so a frame allocates nothing for it): the thought bubble rises only for these.
+	private readonly HashSet<Guest> drawnGuests = new();
 
 	public bool Visible { get; set; } = true;
 	/// <summary>
@@ -70,7 +72,7 @@ public sealed class UmbrellaRenderer : Entity
 	{
 		this.simulation = simulation;
 		this.field = field;
-		guests = guestRenderers.ToArray();
+		guests = guestRenderers;
 		this.anchors = anchors;
 		Name = "Umbrellas";
 		atlas = atlases.FirstOrDefault();
@@ -108,6 +110,9 @@ public sealed class UmbrellaRenderer : Entity
 	/// <summary>Whether the guest's umbrella is drawn.</summary>
 	public static bool Shows( Guest guest ) => ShowsState( guest.UmbrellaState );
 
+	/// <summary>Whether the guest's bubble is raised: the umbrella was drawn on it in the last frame, so a hidden renderer or a guest that is not drawn keeps the bubble at its usual height.</summary>
+	public bool ShowsBubble( Guest guest ) => Visible && !deleted && drawnGuests.Contains( guest );
+
 	/// <summary>The thought bubble's height above the guest: <see cref="BubbleLift"/> while the umbrella shows, else <see cref="ThoughtRenderer.Lift"/>.</summary>
 	public static float BubbleHeight( bool umbrellaShows ) => umbrellaShows ? BubbleLift : ThoughtRenderer.Lift;
 
@@ -144,6 +149,7 @@ public sealed class UmbrellaRenderer : Entity
 	protected override void OnRender()
 	{
 		DrawnUmbrellas = 0;
+		drawnGuests.Clear();
 		if ( !Visible || material == null || atlas == null || deleted )
 			return;
 		var view = Camera.ViewMatrix;
@@ -153,20 +159,23 @@ public sealed class UmbrellaRenderer : Entity
 		var eye = GuestRenderer.Eye( view );
 		var yaw = GuestSpriteAtlas.CameraYaw( right, forward, Camera.Mode is ParkCameraMode );
 		var count = 0;
-		foreach ( var guest in simulation.Guests )
+		var allGuests = simulation.Guests;
+		for ( var index = 0; index < allGuests.Count; ++index )
 		{
+			var guest = allGuests[index];
 			if ( !Shows( guest ) || !float.IsFinite( guest.DrawX ) || !float.IsFinite( guest.DrawY ) )
 				continue;
 			GuestMount mount = default;
 			var mounted = false;
-			for ( var index = 0; index < guests.Length && !mounted; index++ )
-				mounted = guests[index].TryMount( guest, right, up, forward, eye, out mount );
+			for ( var renderer = 0; renderer < guests.Count && !mounted; ++renderer )
+				mounted = guests[renderer].TryMount( guest, right, up, forward, eye, out mount );
 			if ( !mounted )
 				continue;
 			var slot = atlas.HasArt( guest.UmbrellaType ) ? guest.UmbrellaType : GuestSpriteAtlas.StandSlot;
 			var (direction, mirror) = GuestSpriteAtlas.SelectOriginalDirection( guest.HeadingX, guest.HeadingY, yaw, atlas.DirectionsOf( slot ) );
 			var (hotspot, scale) = Place( guest, mount, right, up, forward, eye );
 			AddSprite( ref count, atlas.Frames[atlas.GetFrame( slot, direction, 0 )], mirror, hotspot, scale, right, up, forward );
+			drawnGuests.Add( guest );
 		}
 		if ( count == 0 )
 			return;

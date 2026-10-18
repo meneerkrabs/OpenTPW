@@ -31,7 +31,7 @@ public sealed class ThoughtRenderer : Entity
 
 	public bool Visible { get; set; } = true;
 	/// <summary>
-	/// Whether a guest's umbrella is drawn (<see cref="UmbrellaRenderer.Shows"/> while the umbrella renderer exists); its bubble hangs <see cref="UmbrellaRenderer.BubbleLift"/> units above it instead of <see cref="Lift"/>, over
+	/// Whether a guest's umbrella is drawn (<see cref="UmbrellaRenderer.ShowsBubble"/> while the umbrella renderer exists and drew it in the last frame); its bubble hangs <see cref="UmbrellaRenderer.BubbleLift"/> units above it instead of <see cref="Lift"/>, over
 	/// the canopy. Null: no umbrellas, every bubble at <see cref="Lift"/>.
 	/// </summary>
 	public Func<Guest, bool>? UmbrellaShown { get; set; }

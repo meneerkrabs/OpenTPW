@@ -12,6 +12,7 @@ or number table of Theme Park Inc is copied: the sprites and models are drawn in
 
 ## Decisions (October 18, 2026)
 
+- **User decisions of phase U5 (2026-10-18, asked directly in the coordinating session):** the kid score stays at Theme Park Inc's 75 % (answer: "75%, zoals TPI"); `[EXT:umbrellas-size]` (canopy 0.85) and `[EXT:umbrellas-pull-cap]` (fixed 1.5 unit pull) are both approved (answer: "Beide akkoord").
 - `opentpw.umbrellas` is **on by default** and recorded in a save only for parks that use it (a brolly shop or a guest with an umbrella: the pools rule, [POOLS.md](POOLS.md#the-extension-and-the-save-rule)); other parks save identically on or off. Not offered in a Theme Park Inc run (it has its own shop and art).
 - **User approval of the rain mood extension and its imported-age rule (2026-10-18, asked directly):** the user approved `opentpw.rain-mood` as an extension, default off (`[EXT:rain-mood-extension]`), and, asked what an imported original guest's age should be for the rule's day gate, chose "Tellen vanaf het laden": the age counts from the load (the import turn), so the rule then applies normally every fourth day instead of age 0 forever (`[EXT:rain-mood-imported-age]`). The once-per-day rule was approved earlier the same day (`[EXT:rain-mood-once-per-day]`).
 - `opentpw.rain-mood` (the weather happiness, hunger and thirst rule) is **off by default** and applies **once per qualifying day**: Theme Park Inc's every-update behaviour comes from a stored day that is never read (`[EXT:rain-mood-once-per-day]`; the literal rule is not offered).
@@ -151,7 +152,7 @@ change by the guest generation's row, and an umbrella that is **already open** (
 | U4 | `opentpw.rain-mood` with its pins and the measurement of what it costs a kid | done ([below](#the-rain-mood-rule-phase-u4)) |
 | U5 | tuning from captures, the umbrella's frame cost, the kid score measurement | done ([below](#tuning-phase-u5)); the first-person placement waits for a walk-around camera |
 
-Open questions: Theme Park Inc's kid score 75 % or our 100 % (decide from captures in U5); the shop's `ISIndoors` 0 where Theme Park Inc's is 1 (it keeps the indoor-in-rain x5 off the weather percentages, which U2 now scores); the three U2 extensions are user-approved (see the decisions above). The smarter-guests seam (`IGuestDecisions`) was not touched: the umbrella gate and the weather percentages live in the host score, for the extension's own objects only.
+Open questions: Theme Park Inc's kid score is decided: 75 %, as in Theme Park Inc (U5); the shop's `ISIndoors` 0 where Theme Park Inc's is 1 (it keeps the indoor-in-rain x5 off the weather percentages, which U2 now scores); the three U2 extensions are user-approved (see the decisions above). The smarter-guests seam (`IGuestDecisions`) was not touched: the umbrella gate and the weather percentages live in the host score, for the extension's own objects only.
 
 ## Content (`[EXT:umbrellas-content]`)
 
@@ -264,7 +265,7 @@ How often it would apply here: in 12 simulated park minutes of Jungle (a guest s
 - **Sales and revenue.** A brolly shop sells to about a third of the guests of a rainy week (13 of 39); at the shop's price a week of rain brings about 13 sales, and 100 % instead of 75 % adds about 1.3 sales (+10 %, about $40 here). With nobody holding a balloon the two scores sell the same (the shop is the only candidate whose score changes, and the guests choose the best of the others), so the choice only matters through the balloon holders.
 - **Happiness.** The umbrella lifts a buyer well above a non-buyer (buyers 62 against 52 with 75 %). The rain mood rule costs everyone about 1 over the week with or without a shop (a kid loses 1 on each qualifying rainy day, `opentpw.rain-mood`), and a buyer loses about 1.3 of it too: the rule fires once on the first rainy update of a qualifying day, most likely before a guest has reached the shop, so the umbrella's protection (`UmbrellaModifier`) only shows on later qualifying days (not isolated here).
 - **Balloon releases.** Each buyer who holds a balloon lets it go (`-15` happiness, `MediumHappinessChange`): 4 per week at 75 % and 7 at 100 % in this park. That is why 100 % lowers the week's mean happiness (51.50) below a park with no shop at all (52.02), while 75 % leaves it above (52.86).
-- **Recommendation (awaiting the user's choice, not applied).** Keep Theme Park Inc's **75 %**: 100 % sells about a tenth more umbrellas, but the extra sales are balloon holders trading a balloon for an umbrella at -15 happiness each, which more than cancels the umbrella's gain in the mean, and where nobody holds a balloon the two values are the same. The data keeps 75 % until the user decides (`KidScorePercentage` in the four `Brolly.sam`); the numbers above would change with the balloon share of a real park, which this fixture sets at one guest in two.
+- **Decided by the user (2026-10-18: "75%, zoals TPI").** Keep Theme Park Inc's **75 %**: 100 % sells about a tenth more umbrellas, but the extra sales are balloon holders trading a balloon for an umbrella at -15 happiness each, which more than cancels the umbrella's gain in the mean, and where nobody holds a balloon the two values are the same. The data keeps 75 % (`KidScorePercentage` in the four `Brolly.sam`); the numbers above would change with the balloon share of a real park, which this fixture sets at one guest in two.
 
 ### Frame cost
 
@@ -289,6 +290,6 @@ How often it would apply here: in 12 simulated park minutes of Jungle (a guest s
 
 | Label | What |
 | --- | --- |
-| `[EXT:umbrellas-size]` | the canopy scaled 0.85 about the hotspot (a Theme Park World tuning from captures) |
-| `[EXT:umbrellas-pull-cap]` | the pull towards the camera limited to a margin of 1.5 units (TPI's 10 % of the distance drew umbrellas over roofs that hide their guests) |
+| `[EXT:umbrellas-size]` | (user-approved 2026-10-18) the canopy scaled 0.85 about the hotspot (a Theme Park World tuning from captures) |
+| `[EXT:umbrellas-pull-cap]` | (user-approved 2026-10-18) the pull towards the camera limited to a margin of 1.5 units (TPI's 10 % of the distance drew umbrellas over roofs that hide their guests) |
 | `[EXT:umbrellas-tuning]` | the measurement aids: the headless harness (`UmbrellasTuningMeasureTests`) and the browser scenario (`UmbrellaPerf`) |

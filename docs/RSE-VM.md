@@ -446,6 +446,30 @@ including the Totem's `TRIGANIM_CH` channel clips (`totemm2â€¦10`); the ANIM_* â
 member mapping, channels and the corpus run of all 262 object scripts are in
 [OBJECTS.md](OBJECTS.md).
 
+## Bounce opcodes
+
+BOUNCESETNODE and BOUNCESETBASE configure how the riders of a script's BOUNCE table are drawn; they do not touch the simulation. The visitor bridge keeps their two
+values (`RideVisitorBridge.BounceNodeBase`, `BounceBaseHeight`): the handlers `0x5555D9` and `0x555618` store them at script `+0x70` and `+0x6E`, and script creation
+(`0x558C45`) starts the node base at 1 and leaves the base height at 0. BOUNCESETNODE stores the raw operand word (a variable operand stores its code word, `0x40000000`
+plus the index, not its value). BOUNCESETBASE stores the low 16 bits of a variable's value, or of a literal sign-extended from 16 bits (`0x555653`, `0x555665`; an earlier
+reading that a literal is ignored was wrong). The values are part of the saved script struct, so a park save keeps them (only when they differ from the creation values), but
+they are presentation state: they stay out of the canonical hash.
+
+Shipped use: all four BOUNCE scripts call BOUNCESETBASE once, before their first BOUNCE (Bouncy in the jungle 8, Brain Buster 6, Bouncy in space 16, Jelly Bounce 12);
+only Jelly Bounce calls BOUNCESETNODE (3), the other three keep the node base 1. A slot `n` of the BOUNCE table holds the node `base + n` (`0x555742` records it when the slot is filled).
+
+The only reader is the per-frame script pass `0x557AB0`, which the main loop calls once per rendered frame (the walk update `0x557D80` follows it per script). For every
+occupied slot it looks the node up in the ride's model (class `0x800`, `0x44B220`; a slot whose node the model lacks is skipped) and calls the visitor's sprite routine
+`0x4F9E60` with the node's position, a height, a heading byte and a template:
+
+- ride running (script variable 7, `VAR_BROKEN`, is 0): template 2 (the run animation, slot 2), heading byte = the time since BOUNCE in half seconds (`& 7` by the sprite pass),
+  height = the larger of the node's height and `(visitor mod 7 + 12) * sin(phase) + ride height + base height`. The phase is `ftol((0.8 + 0.005 * speed word) * elapsed ms) mod 1000`
+  times 0.003125 radians (0 to 3.125, a hump once per scaled second; the speed word is the script's `SpeedBias`, 50 at creation), looked up in a 4096-entry sine table;
+- ride broken: template 3 (standing), the node's position unchanged, heading byte = the visitor mod 7.
+
+OpenTPW: `BounceRiders` (GPU-free rule, `BounceRiderTests`) and `FlatRideBounceRiders` (the park source); `GuestRenderer` draws a Using guest that a bounce slot holds from the
+pose instead of skipping it. Approximated: the run animation's frame interval (HEADS-007) and the node taken from the current base (HEADS-008).
+
 ## Original interpreter internals
 
 Read from tp.exe (the interpreter `0x551CB0` executes one instruction and
@@ -676,8 +700,8 @@ handler attributes diverge.
 | 67 | `GETVARINCHILD` | 9 | implemented | TPW-EXE 0x555349 (`dest variable`: the destination raw, the variable resolved): reads the child's variable into the flags and a variable destination (a literal destination, no child or an index at or above its variable count: nothing, no flags) |
 | 68 | `SETVARINPARENT` | 0 | implemented | TPW-EXE 0x555402 (`variable value`, resolved): SETVARINCHILD for the parent (the script id at +0x10); no corpus use |
 | 69 | `GETVARINPARENT` | 10 | implemented | TPW-EXE 0x5554F2 (`dest variable`): GETVARINCHILD for the parent (the script id at +0x10) |
-| 70 | `BOUNCESETNODE` | 1 | hooked | TPW-EXE 0x5555D9 (`node`, raw): stores the raw operand word at +0x70, the base of the node number each BOUNCE entry records (+0x70 + entry index); only the render pass reads the nodes: no effect on the simulation |
-| 71 | `BOUNCESETBASE` | 4 | hooked | TPW-EXE 0x555618 (`base`): only a variable operand does anything (its value's low 16 bits go to +0x6E, a literal is ignored); read by the render pass only: no effect on the simulation |
+| 70 | `BOUNCESETNODE` | 1 | hooked | TPW-EXE 0x5555D9 (`node`, raw): stores the raw operand word at +0x70, the base of the node number each BOUNCE entry records (+0x70 + entry index); only the per-frame script pass 0x557AB0 reads the nodes (a bouncing rider is drawn on the node of its slot): no effect on the simulation |
+| 71 | `BOUNCESETBASE` | 4 | hooked | TPW-EXE 0x555618 (`base`): a variable operand's value or a literal sign-extended from 16 bits is stored as its low 16 bits at +0x6E, the base height added under the bouncing riders; read by the per-frame script pass 0x557AB0 only (the bounce height): no effect on the simulation |
 | 72 | `BOUNCE` | 4 | hooked | TPW-EXE 0x555674 (`visitor seconds`, resolved): the first free entry (visitor word 0) of the script's bounce table (+0x28, 16-byte entries, header bounce size at +0x64) takes the visitor, the node +0x70 + index, the deadline clock + seconds x 1000 and the start clock; the count at +0x6C goes up; result 1 in the flags, 0 with a full table (nothing stored); STP-PPC 0xadf40 |
 | 73 | `UNBOUNCE` | 4 | hooked | TPW-EXE 0x5557A3 (`dest`, raw): the first entry whose deadline is below the clock (signed) and whose time since the bounce is inside the first 200 ms of a second (the remainder of elapsed / 1000, divided by 200, is 0) is freed (count - 1) and its visitor goes to the flags and a variable destination; none: 0; STP-PPC 0xae020 |
 | 74 | `FORCEUNBOUNCE` | 8 | hooked | TPW-EXE 0x555842 (`dest`, raw): UNBOUNCE without the deadline test: the first entry inside the 200 ms window of its second is freed and handed back, none: 0 |

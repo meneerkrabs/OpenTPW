@@ -344,7 +344,7 @@ public sealed class TrackRenderer : IDisposable
 			vehicle.SparksNode = sparks > 0 && VehicleMesh( vehicle.Variant ) is { SparksNodes: var nodes } && nodes[sparks] is { } rest
 				? System.Numerics.Vector3.Transform( System.Numerics.Vector3.Zero, ObjectPlacement.SwapAxes( rest ) * transform )
 				: null;
-			vehicle.SeatHeads = VehicleMesh( vehicle.Variant ) is { HeadNodes: var seatNodes } ? seatNodes.Select( node => node != null ).ToArray() : null;
+			vehicle.SeatHeads = SeatHeadFlags( vehicle.Variant );
 			visual.Vehicle = vehicle;
 			visual.Controller = controller;
 			visual.Hover = hover;
@@ -522,6 +522,38 @@ public sealed class TrackRenderer : IDisposable
 		return geometry;
 	}
 
+	private readonly Dictionary<int, bool[]?> seatHeadFlags = new();
+
+	/// <summary>Which seats of a variant's mesh have a head dummy, cached per variant (the head dummies are fixed on the mesh), or null when the mesh is missing.</summary>
+	private bool[]? SeatHeadFlags( int variant )
+	{
+		if ( !seatHeadFlags.TryGetValue( variant, out var flags ) )
+			seatHeadFlags[variant] = flags = VehicleMesh( variant ) is { HeadNodes: var nodes } ? nodes.Select( node => node != null ).ToArray() : null;
+		return flags;
+	}
+
+	/// <summary>
+	/// The seat head flags of a ride's vehicle variant read from the archive's mesh without building drawables, for the controller's loading beams (null when the mesh is missing or unreadable).
+	/// </summary>
+	internal static bool[]? ReadSeatHeadFlags( ObjectCatalogEntry entry, int variant )
+	{
+		var name = entry.Settings[$"SupplementalMeshes[{variant}].FileName"] ?? (variant == 0 ? "wr_ring.md2" : null);
+		try
+		{
+			var path = name == null ? null : entry.FileSystem.GetFiles( entry.ArchivePath ).FirstOrDefault( file => string.Equals( Path.GetFileName( file ), name.Trim( '"', ' ' ), StringComparison.OrdinalIgnoreCase ) );
+			if ( path == null )
+				return null;
+			var model = ObjectAssets.LoadModel( entry.FileSystem, path );
+			return model.Kind == ModelFileKind.Geometry
+				? SeatHeads( model, ModelAnimationPlayer.ComputeRestTransforms( model ) ).Nodes.Select( node => node != null ).ToArray()
+				: null;
+		}
+		catch ( Exception exception ) when ( exception is InvalidDataException or NotSupportedException or IOException )
+		{
+			return null;
+		}
+	}
+
 	/// <summary>The mesh of a vehicle variant: the ride's supplemental mesh <c>n</c> (<c>wr_ring.md2</c>, <c>gk_blue.md2</c>, …), or null when the archive lacks it.</summary>
 	private PieceGeometry? VehicleMesh( int variant )
 	{
@@ -691,5 +723,6 @@ public sealed class TrackRenderer : IDisposable
 		}
 		pieces.Clear();
 		vehicleMeshes.Clear();
+		seatHeadFlags.Clear();
 	}
 }

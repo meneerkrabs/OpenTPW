@@ -151,6 +151,7 @@ public class OriginalObject : Entity
 				},
 				() => Placement.GridOrigin );
 			Runtime.SetTourStation( ComputeTourStation );
+			Runtime.SetNodeEngine( GetNodeTransform );
 			BuildModels();
 			UpdateTransforms();
 		}

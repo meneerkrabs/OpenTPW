@@ -312,7 +312,7 @@ What the shipped corpus does with them is pinned in `RideOperandCorpusTests`: th
 literal 0, the query destinations are variables (or literal 0 / 10000 where only the flags matter), BOUNCE always passes VAR_LETMEON and VAR_DURATION, REPAIREFFECT is 0 or 1, SETREVERB 0 to 10 (0, 1, 3, 8, 9 occur),
 DIPMUSIC only 1 (End.RSE and Gates.RSE), SCREAMLEVEL 10 to 100, the scream band a variable (VAR_ONRIDE in 81 of 86 uses) and SPARK has one use.
 
-Still unread or not modelled: the object type's own list (type 10, `0x557686`; its custom sound bank is read, AUDIO.md "Custom-bank EVENT type 10", and no shipped script uses it) and the walking body's drawing (TOUR-011). SETREVERB's reader and DIPMUSIC's sound-service reader are
+Still unread or not modelled: the object type's own list (type 10, `0x557686`; its custom sound bank is read, AUDIO.md "Custom-bank EVENT type 10", and no shipped script uses it) and the frame steppers of the walking bodies' templates (TOUR-011). SETREVERB's reader and DIPMUSIC's sound-service reader are
 built ([below](#dipmusic-and-setreverb-the-sound-service-readers)).
 
 ## DIPMUSIC and SETREVERB: the sound-service readers
@@ -581,8 +581,8 @@ The unit tests are `RideVMInternalsTests`.
   ([below](#original-interpreter-internals)).
 - The ride lights (82–85, tp.exe `0x555C7A`–`0x555D9A`) have no light system to act on in OpenTPW (`APPROX:RIDES-046`); they are unimplemented effects that do not fault.
 - Visitor opcodes work for every placed original object (its `RideVisitorBridge`);
-  riders are not drawn walking along the ride nodes (the walk table and its times are the original's, [TOURS.md](TOURS.md), TOUR-011), and a bounce
-  rider is not yet drawn at its bounce node. The TOUR, BUMP and COAST commands go to their controllers ([TOURS.md](TOURS.md), [TRACKS.md](TRACKS.md), [COASTERS.md](COASTERS.md)).
+  riders are drawn walking along the ride nodes and standing, cheering or floating on board as the walk update draws them (the walk table, its times and its bodies, [TOURS.md](TOURS.md), TOUR-011 narrowed), and a bounce
+  rider is drawn at its bounce node. The TOUR, BUMP and COAST commands go to their controllers ([TOURS.md](TOURS.md), [TRACKS.md](TRACKS.md), [COASTERS.md](COASTERS.md)).
   WALKST_FLOAT, WALKFLOATSTAT and WALKFLOATSTOP are the script's own state in the original and in the VM.
 - Animation playback only through the objects' effects (OBJECTS.md; rigid node
   tracks, vertex animation not decoded). EVENT types 1-2 and ADDOBJ types 1-2 start particles (PARTICLES.md), EVENT types 3-9, ADDOBJ types 3-9 and REPAIREFFECT play

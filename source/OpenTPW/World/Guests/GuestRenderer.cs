@@ -240,7 +240,7 @@ public sealed class GuestRenderer : Entity
 		if ( rider is { } bouncing )
 		{
 			// [BIN:TPW-EXE:0x00557CFC bounce template] the bouncing body is the run animation (template 0x0074DBC0, slot 2), the broken ride's the standing one (template 0x0074DC20, slot 0); the heading byte is the pose's own
-			(slot, step) = (bouncing.Broken ? GuestSpriteAtlas.StandSlot : GuestSpriteAtlas.RunSlot, bouncing.Step);
+			(slot, step) = (bouncing.Slot >= 0 ? (atlas.HasArt( bouncing.Slot ) ? bouncing.Slot : GuestSpriteAtlas.StandSlot) : bouncing.Broken ? GuestSpriteAtlas.StandSlot : GuestSpriteAtlas.RunSlot, bouncing.Step);
 			heading = default;
 		}
 		else if ( SlotChooser?.Invoke( guest ) is { } chosen )

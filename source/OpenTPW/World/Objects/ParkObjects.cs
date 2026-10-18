@@ -608,8 +608,8 @@ public sealed class ParkObjects
 	}
 
 	/// <summary>Gives the imported objects' scripts the ids, list order and pass counter of an original save's RSSE block (<see cref="SavedScriptImport"/>, DET-013); returns the report lines.</summary>
-	public IReadOnlyList<string> ImportOriginalScripts( SaveRsseBlock rsse ) =>
-		SavedScriptImport.Apply( ScriptWorld, rsse, objects.Where( item => item.Script != null ).Select( item => new SavedScriptImport.Candidate( item.ThingId, item.Entry, item.Script! ) ) );
+	public IReadOnlyList<string> ImportOriginalScripts( SaveRsseBlock rsse, uint? clockWord = null ) =>
+		SavedScriptImport.Apply( ScriptWorld, rsse, objects.Where( item => item.Script != null ).Select( item => new SavedScriptImport.Candidate( item.ThingId, item.Entry, item.Script! ) ), clockWord );
 
 	/// <summary>
 	/// For levels without an original save: the fixed items the original creates at world setup, Gates and Lights, in park space.

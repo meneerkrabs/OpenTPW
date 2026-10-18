@@ -75,7 +75,7 @@ chooser and a script made with a seed.
 
 What is still unlike the original, and recorded in DET-013 to DET-015: the guest and staff sites with no counterpart here
 (the arrival lane picks of later states, the gate wait, the won sideshow's tail, the staff constructors' draws), the
-scripts of an imported original save (their saved run state, below), scripts created with an explicit seed (tests and
+scripts of an imported original save (the animations, nodes and child scripts of their records, below), scripts created with an explicit seed (tests and
 older saves), and the weather, which keeps its own stream (`[EXT:weather-stream]`). The advisor takes no draw: its pick is
 sequential for every message (below).
 

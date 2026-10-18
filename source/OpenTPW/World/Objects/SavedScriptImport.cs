@@ -13,7 +13,7 @@ public static class SavedScriptImport
 	public readonly record struct Candidate( int ThingId, ObjectCatalogEntry Entry, RideVM Script );
 
 	/// <summary>Applies the save's RSSE block to <paramref name="world"/>; returns the report lines.</summary>
-	public static IReadOnlyList<string> Apply( RideScriptWorld world, SaveRsseBlock rsse, IEnumerable<Candidate> candidates )
+	public static IReadOnlyList<string> Apply( RideScriptWorld world, SaveRsseBlock rsse, IEnumerable<Candidate> candidates, uint? clockWord = null )
 	{
 		ArgumentNullException.ThrowIfNull( world );
 		ArgumentNullException.ThrowIfNull( rsse );
@@ -37,7 +37,30 @@ public static class SavedScriptImport
 		if ( matched.Count == 0 || ids.Count != ids.Distinct().Count() || ids.Any( id => id <= 0 ) || rsse.NextScriptId == 0 || rsse.NextScriptId > int.MaxValue )
 			return new[] { $"[APPROX:DET-013] The save's {rsse.Records.Count} RSSE scripts were not imported: {(matched.Count == 0 ? "none belongs to an imported object" : "their ids are not a unique positive set")}; the scripts keep OpenTPW's ids and the pass counter starts at 0." };
 		world.ImportSaved( matched, usedRecords.Select( record => (int)record.ScriptId ).ToList(), (int)rsse.NextScriptId, rsse.TickCounter );
-		return new[] { $"RSSE scripts imported: {matched.Count} of {rsse.Records.Count} took their saved ids ({string.Join( "/", ids )}), the pass counter {rsse.TickCounter} and next id {Math.Max( (int)rsse.NextScriptId, ids.Max() + 1 )}; the list walks in reverse of the saved order, as the original's loader leaves it{(unmatched.Count == 0 ? "" : $"; left out: {string.Join( ", ", unmatched )}")}." };
+		var runState = clockWord is { } clock ? ApplyRunState( world, matched, usedRecords, clock ) : Array.Empty<string>();
+		return new[] { $"RSSE scripts imported: {matched.Count} of {rsse.Records.Count} took their saved ids ({string.Join( "/", ids )}), the pass counter {rsse.TickCounter} and next id {Math.Max( (int)rsse.NextScriptId, ids.Max() + 1 )}; the list walks in reverse of the saved order, as the original's loader leaves it{(unmatched.Count == 0 ? "" : $"; left out: {string.Join( ", ", unmatched )}")}." }.Concat( runState ).ToList();
+	}
+
+	/// <summary>
+	/// Gives each matched script its saved run state (<see cref="RideVM.ImportSavedRunState"/>) on the saved game clock, which every absolute deadline of the records counts from. A script whose record does
+	/// not fit this install's script keeps its fresh state and is named in the report.
+	/// </summary>
+	private static IReadOnlyList<string> ApplyRunState( RideScriptWorld world, IReadOnlyList<(RideVM Vm, int SavedId)> matched, IReadOnlyList<SaveRsseRecord> records, uint clockWord )
+	{
+		if ( !world.ImportClock( clockWord ) )
+			return new[] { $"[APPROX:DET-013] The saved game clock {clockWord} was not applied: a script of this world had already run; the scripts restart from their first instruction." };
+		var restored = new List<string>();
+		var refused = new List<string>();
+		for ( var index = 0; index < matched.Count; index++ )
+		{
+			var record = records[index];
+			var reason = matched[index].Vm.ImportSavedRunState( record, clockWord );
+			if ( reason == null )
+				restored.Add( $"{matched[index].SavedId}@{record.ProgramCounter}{(record.WaitDeadline != 0 ? $" (waiting until {record.WaitDeadline})" : "")}" );
+			else
+				refused.Add( $"script {matched[index].SavedId}: {reason}" );
+		}
+		return new[] { $"RSSE run state imported on the saved game clock {clockWord}: {restored.Count} of {matched.Count} scripts resume at their saved program counter with their stack, variables, limbo table, result register, waits and timers ({string.Join( ", ", restored )}){(refused.Count == 0 ? "" : $"; kept fresh: {string.Join( "; ", refused )}")}." };
 	}
 
 	private static string FolderName( string folder ) => folder.TrimEnd( '\\', '/' ).Split( '\\', '/' ).LastOrDefault() ?? folder;

@@ -429,6 +429,20 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			yield return guest;
 	}
 
+	/// <summary>Fills <paramref name="into"/> with the guests in the park's thing-list order (newest first), as <see cref="GuestsInThingListOrder"/> does, for the renderers that walk the people list.</summary>
+	internal void FillInThingListOrder( List<Guest> into )
+	{
+		into.Clear();
+		foreach ( var slot in things.UsedNewestFirst() )
+			if ( slot.Model == SaveThingModel.Guest && byId.TryGetValue( slot.Id, out var guest ) )
+				into.Add( guest );
+		if ( into.Count == guests.Count )
+			return;
+		foreach ( var guest in GuestsInThingListOrder().Skip( into.Count ) )
+			if ( !into.Contains( guest ) )
+				into.Add( guest );
+	}
+
 	/// <summary>A stable offset inside a cell (±0.25 of a cell each way) from the guest id alone: the start point of a guest that was not made by the arrival constructor.</summary>
 	private static (float X, float Y) PlacementJitter( int id )
 	{

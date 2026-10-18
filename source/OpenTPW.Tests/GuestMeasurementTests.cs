@@ -112,6 +112,36 @@ public class GuestMeasurementTests
 		Assert.AreEqual( ScenarioFoodSmarterFixedRunHash, hash, $"0x{hash:X16} (the guests' own hash is 0x{park.Hash:X16})" );
 	}
 
+	/// <summary>
+	/// The scenario's litter variant with four litter bins on the street (<see cref="ParkScenarioOptions.Bins"/>, a litter effect of 25 and a handyman proxy every 400 turns: the guests fill their litter meters) with the extension
+	/// on (1.6.0: the bin rule, phase 6b) and with 1.5.0's rules, which look three cells around for a bin where 1.6.0 looks eight. The bins stand beyond three cells of where the guests litter, so 1.5.0's guests drop everything; the pin of the
+	/// shipped rules is where the bin rule is held. A deliberate change of the radius changes it (and bumps the extension's version). Moved by nothing else: no other scenario, level or save has a bin the rule can reach.
+	/// </summary>
+	private const ulong ScenarioBinsSmarterFixedRunHash = 0xF43AEA85CC6DB665UL, ScenarioBinsPhase6FixedRunHash = 0x8E13F761512B0043UL;
+
+	[TestMethod]
+	public void ParkScenarioWithBinsAndTheSmarterGuestsExtensionOnIsPinned()
+	{
+		var options = new ParkScenarioOptions { FoodShop = true, Litter = true, Bins = true, LitterEffect = 25, HandymanTurns = 400, ArrivalTimeBetween = 10 };
+		(ulong Hash, long Binned) Run( SmarterRuleSet rules )
+		{
+			var park = new ParkScenario( new WorldSeed( 1 ), options, new SmarterGuestDecisions( rules ) );
+			var binned = 0L;
+			park.Guests.LitterBinned += ( _, _ ) => binned++;
+			park.Run( 24_000 );
+			return (park.Hash, binned);
+		}
+		var shipped = Run( SmarterRuleSet.All );
+		var before = Run( SmarterRuleSet.Phase6 );
+		Assert.IsTrue( shipped.Binned > 0 && before.Binned == 0, "only the bin rule reaches the bins" );
+		Assert.AreEqual( ScenarioBinsSmarterFixedRunHash, shipped.Hash, $"0x{shipped.Hash:X16}" );
+		Assert.AreEqual( ScenarioBinsPhase6FixedRunHash, before.Hash, $"0x{before.Hash:X16}" );
+		// bins beyond the original's reach change nothing for the original's radius: the same run without any bin
+		var withoutBins = new ParkScenario( new WorldSeed( 1 ), new ParkScenarioOptions { FoodShop = true, Litter = true, LitterEffect = 25, HandymanTurns = 400, ArrivalTimeBetween = 10 }, new SmarterGuestDecisions( SmarterRuleSet.Phase6 ) );
+		withoutBins.Run( 24_000 );
+		Assert.AreEqual( before.Hash, withoutBins.Hash, "1.5.0's guests never reach these bins" );
+	}
+
 	[TestMethod]
 	public void TurningTheObserverOnDoesNotChangeTheHashesOfAFixedRun()
 	{

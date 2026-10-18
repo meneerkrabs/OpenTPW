@@ -24,10 +24,10 @@ public static class GuestCost
 		var days = Int( "--guest-cost-days", 250 );
 		var seeds = Int( "--guest-cost-seeds", 3 );
 		var repeats = Int( "--guest-cost-repeats", 7 );
-		var options = new ParkScenarioOptions { FoodShop = args.Contains( "--guest-food" ) };
+		var options = GuestReport.ScenarioOptions( args );
 		var only = Option( args, "--guest-cost-variants" )?.Split( ',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries );
 		var variants = new List<Variant> { new( "original", seed => new ParkScenario( new WorldSeed( seed ), options ) ) };
-		foreach (var (name, rules) in new[] { ("1.3.0", SmarterRuleSet.None), ("1.4.0", SmarterRuleSet.Phase5), ("1.5.0", SmarterRuleSet.All) } )
+		foreach (var (name, rules) in new[] { ("1.3.0", SmarterRuleSet.None), ("1.4.0", SmarterRuleSet.Phase5), ("1.5.0", SmarterRuleSet.Phase6), ("1.6.0", SmarterRuleSet.All) } )
 			variants.Add( new Variant( name, seed => new ParkScenario( new WorldSeed( seed ), options, new SmarterGuestDecisions( rules ) ) ) );
 		if ( only != null )
 			variants = variants.Where( variant => only.Contains( variant.Name ) ).ToList();
@@ -56,7 +56,7 @@ public static class GuestCost
 			}
 		}
 		var table = new StringBuilder();
-		table.AppendLine( $"Guest cost: {days} in-game days ({ticks} ticks), {seeds} seeds x {repeats} repeats = {seeds * repeats} runs per variant, medians{(options.FoodShop ? ", scenario with the food shop" : "")}" );
+		table.AppendLine( $"Guest cost: {days} in-game days ({ticks} ticks), {seeds} seeds x {repeats} repeats = {seeds * repeats} runs per variant, medians{(options.FoodShop ? ", scenario with the food shop" : "")}{(options.Litter ? ", litter variant" : "")}{(options.Bins ? ", with litter bins" : "")}" );
 		table.AppendLine( $"{"variant",-9} {"total ms",9} {"cpu ms",9} {"guest ms",9} {"guests/turn",11} {"ns/guest-turn",13} {"B/guest-turn",12}  {"total x",8} {"cpu x",8} {"guest x",8} {"per guest-turn x",16}" );
 		var baseline = Median( results[variants[0].Name] );
 		foreach ( var variant in variants )

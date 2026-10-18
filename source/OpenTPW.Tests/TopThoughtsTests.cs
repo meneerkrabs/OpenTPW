@@ -166,7 +166,7 @@ public class TopThoughtsTests
 		hud.Stack.Pop();
 		hud.OpenParkInfoWindow();
 		Assert.AreEqual( 1, hud.ParkInfoIconFrame( 2 ), "a new window shows it" );
-		Assert.AreEqual( OriginalUiTests.FakeStrings().Thought( (int)GuestThought.Thirsty ), hud.Stack.Top!.Find( "thought2" )!.CurrentHelp, "the hover text is the THOUGHTS.str entry of the frame plus 1" );
+		Assert.AreEqual( OriginalUiTests.FakeStrings().Thought( ParkHud.ParkInfoIconHelpThought ), hud.Stack.Top!.Find( "thought2" )!.CurrentHelp, "the hover text is THOUGHTS.str entry 1: the frame getter 0x661596 returns 0" );
 	}
 
 	// ---- The guest-insights counters -------------------------------------------------------------
@@ -285,6 +285,14 @@ public class TopThoughtsTests
 		var names = Enumerable.Range( 0, 5 ).Select( index => ((UiLabel)screen.Find( $"refusal{index}" )!).Text() ).ToArray();
 		Assert.AreEqual( 5, names.Distinct().Count() );
 		Assert.IsTrue( names.All( name => name.Length > 0 ) );
+		// the counters stand clear of the graph's plot and the toggles column
+		var graph = screen.Find( "graph" )!.Bounds;
+		foreach ( var id in new[] { "refusalsTitle" }.Concat( Enumerable.Range( 0, 5 ).SelectMany( index => new[] { $"refusal{index}", $"refusalCount{index}" } ) ) )
+		{
+			var box = screen.Find( id )!.Bounds;
+			var overlaps = box.X < graph.X + graph.Width && graph.X < box.X + box.Width && box.Y < graph.Y + graph.Height && graph.Y < box.Y + box.Height;
+			Assert.IsFalse( overlaps, $"{id} must not overlap the graph" );
+		}
 	}
 
 	[TestMethod]
@@ -293,7 +301,7 @@ public class TopThoughtsTests
 		foreach ( var key in new[] { OpenTpwText.RefusalsTitle, OpenTpwText.RefusalTooExpensive, OpenTpwText.RefusalQueueTooLong, OpenTpwText.RefusalTooScary, OpenTpwText.RefusalTooBoring, OpenTpwText.RefusalRideUnavailable } )
 		{
 			var texts = SupplementaryStrings.SupportedLanguages.Select( language => SupplementaryStrings.Get( key, language ) ).ToList();
-			Assert.AreEqual( 9, texts.Distinct().Count(), $"{key}: nine different texts" );
+			Assert.AreEqual( texts.Count, texts.Distinct().Count(), $"{key}: a different text per language" );
 			Assert.IsTrue( texts.All( text => text.Length is > 0 and < 60 ), $"{key}: short enough for the narrow column" );
 		}
 	}

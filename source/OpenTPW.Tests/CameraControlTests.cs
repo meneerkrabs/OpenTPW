@@ -11,7 +11,8 @@ public class CameraControlTests
 		HasFocus = true, LogicalSize = new Point2( 1000, 600 ), MousePosition = new Vector2( x, y ), DeltaSeconds = 0.1f
 	};
 	private static ParkCameraMode Camera() { ParkCameraMode.TargetExtent = 32; ParkCameraMode.InitialTarget = Vector3.Zero; return new(); }
-	private static GameOptions Options( ScrollMode scroll = ScrollMode.Pushscroll ) => new() { Scroll = scroll };
+	// the tests of this file are about the original's range, 70..130 (the wide zoom range has its own tests: WideZoomTests)
+	private static GameOptions Options( ScrollMode scroll = ScrollMode.Pushscroll ) => new() { Scroll = scroll, WideZoom = false };
 
 	[TestMethod]
 	public void EdgesMoveAndCornersHaveTheSameSpeed()

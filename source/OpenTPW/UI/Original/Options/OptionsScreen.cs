@@ -513,12 +513,19 @@ public static class OptionsScreen
 				direction => { state.TexturePackSelected = true; state.TexturePack = CycleWrap( PackChoices(), state.TexturePack, direction ); }, strings.Extra( OpenTpwText.TexturePackHelp ) );
 		// [EXT:language] language row (original installs had one language; OpenTPW reads CD overlays)
 		// a language's own name (Korean "한국어") is shown only when the font in use draws it; otherwise its English name
-		var drawable = GameLanguage.IsSelected ? new HashSet<char>( GameLanguage.Current.CharacterTable.Characters ) : null;
-		string LanguageName( string language ) => " " + SupplementaryStrings.DisplayName( language, drawable == null ? null : drawable.Contains );
+		var drawable = GameLanguage.IsSelected ? SupplementaryStrings.DrawableCharacters( GameLanguage.Current ) : null;
+		// [EXT:fan-translations] a fan translation is offered with its label ("Russian (fan translation)"), never as an official language
+		string LanguageName( string language ) => " " + (GameLanguage.IsFanTranslationName( language )
+			? string.Format( strings.Extra( OpenTpwText.FanTranslation ), SupplementaryStrings.DisplayName( language, drawable == null ? null : drawable.Contains ) )
+			: SupplementaryStrings.DisplayName( language, drawable == null ? null : drawable.Contains ));
 		Row( "language", () => Prefix( OpenTpwText.Language ) + LanguageName( state.Language ),
 			() => services.Languages.Select( language => Prefix( OpenTpwText.Language ) + LanguageName( language ) ),
 			direction => state.Language = CycleWrap( services.Languages, state.Language, direction ) );
 
+		// [EXT:wide-zoom] the park camera's zoom range: off 70..130, on the original's own 40..300 (tp.exe's flag 0x200); user-approved 2026-10-18
+		Row( "wideZoom", () => Prefix( OpenTpwText.WideZoom ) + strings[services.Options.WideZoom ? UIStrings.On : UIStrings.Off],
+			() => new[] { true, false }.Select( on => Prefix( OpenTpwText.WideZoom ) + strings[on ? UIStrings.On : UIStrings.Off] ),
+			_ => services.Options.WideZoom = !services.Options.WideZoom, strings.Extra( OpenTpwText.WideZoomHelp ) );
 		// [EXT:periodic-autosave] on/off row for the periodic autosave (on by default); the pending value is the shared options object, which Cancel restores
 		Row( "autosave", () => Prefix( OpenTpwText.AutosaveOption ) + strings[services.Options.Autosave ? UIStrings.On : UIStrings.Off],
 			() => new[] { UIStrings.On, UIStrings.Off }.Select( value => Prefix( OpenTpwText.AutosaveOption ) + strings[value] ),
@@ -542,8 +549,8 @@ public static class OptionsScreen
 			Color = UiColors.OptionText,
 			Shadow = false,
 			Wrap = true,
-			// Below the fourth row of the left column (y 635..784), with or without the graphics rows on the right.
-			Bounds = Rect( 57, 835, 1964, 1035 ),
+			// Below the fifth row of the right column (y 791..940, the last with the graphics rows and the wide zoom and autosave rows), above the buttons at y 1330.
+			Bounds = Rect( 57, 975, 1964, 1275 ),
 			Anchor = UiAnchor.Center
 		} );
 

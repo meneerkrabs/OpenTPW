@@ -339,6 +339,8 @@ public class OriginalUiTests
 		Assert.AreEqual( 90f, island.Angle );
 		Assert.AreEqual( 12.5f, island.Height );
 		Assert.AreEqual( ((byte)243, (byte)203, (byte)191), island.SkyColour );
+		Assert.IsTrue( island.HasSkyColour );
+		Assert.IsFalse( new LobbyDefinition().ParseTheme( "space", "ISLAND(3,\"data\\lobby\\terrain\",\"s_isle\",\"s_gate\",\"Space Zone\",0.0,1.0)\r\n" )!.HasSkyColour, "a file without SKYCOLOUR keeps the constructor's random target" );
 		CollectionAssert.AreEqual( new[] { "bfly_PINK" }, island.FlyingMeshes.ToArray() );
 		Assert.IsTrue( island.Rainy );
 		Assert.AreEqual( 63, island.Lightning );
@@ -643,6 +645,46 @@ public class OriginalUiTests
 		Assert.AreEqual( GraphicsPreset.Medium, graphics.Current.Preset, "nothing applied before OK" );
 	}
 
+	/// <summary>[EXT:wide-zoom] the OpenTPW page's Wide zoom row toggles GameOptions.WideZoom, OK saves it and Cancel restores it.</summary>
+	[TestMethod]
+	public void TheOpenTpwPageHasAWideZoomRowThatOkSavesAndCancelRestores()
+	{
+		var stack = new UiScreenStack();
+		var options = new GameOptions();
+		var display = new StubDisplaySettings( DisplaySettings.Default with { Width = 1280, Height = 720 } );
+		var saved = 0;
+		UiScreen Open()
+		{
+			var screen = OptionsScreen.Create( stack, FakeStrings(), OptionsServicesFor( options, display, () => saved++ ), () => { } );
+			stack.Push( screen );
+			return screen;
+		}
+		var main = Open();
+		main.Find( "openTpw" )!.Activate();
+		var page = stack.Top!;
+		var label = (UiLabel)page.Find( "wideZoomLabel" )!;
+		var on = label.Text();
+		StringAssert.StartsWith( on, "Wide zoom:" );
+		Assert.IsTrue( options.WideZoom );
+		((UiButton)page.Find( "wideZoom" )!).Activate();
+		Assert.IsFalse( options.WideZoom );
+		Assert.AreNotEqual( on, label.Text(), "the label shows the other value" );
+		((UiButton)page.Find( "wideZoom" )!).Adjust( -1 );
+		Assert.IsTrue( options.WideZoom, "the row cycles back" );
+		((UiButton)page.Find( "wideZoom" )!).Activate();
+		stack.Update( FakeContext(), UiInput.Key( UiKeys.Back ) );
+		main.Find( "ok" )!.Activate();
+		Assert.AreEqual( (1, false), (saved, options.WideZoom) );
+		// Cancel puts the saved value back
+		main = Open();
+		main.Find( "openTpw" )!.Activate();
+		((UiButton)stack.Top!.Find( "wideZoom" )!).Activate();
+		Assert.IsTrue( options.WideZoom );
+		stack.Update( FakeContext(), UiInput.Key( UiKeys.Back ) );
+		main.Find( "cancel" )!.Activate();
+		Assert.IsFalse( options.WideZoom );
+	}
+
 	[TestMethod]
 	public void GameOptionsRoundTripClampAndDefaultNewFields()
 	{
@@ -693,7 +735,10 @@ public class OriginalUiTests
 	[TestMethod]
 	public void SupplementaryStringsAreTranslatedForEveryShippedLanguageWithMatchingPlaceholders()
 	{
-		CollectionAssert.AreEquivalent( GameLanguage.ShippedLanguages.ToArray(), SupplementaryStrings.SupportedLanguages.ToArray() );
+		// Every verified language has a column, US English and the fan Russian use English's
+		CollectionAssert.AreEquivalent( GameLanguage.ShippedLanguages.Concat( new[] { "Italian", "Hebrew" } ).ToArray(), SupplementaryStrings.SupportedLanguages.ToArray() );
+		Assert.AreEqual( SupplementaryStrings.Get( OpenTpwText.Back, "English" ), SupplementaryStrings.Get( OpenTpwText.Back, "American" ) );
+		Assert.AreEqual( SupplementaryStrings.Get( OpenTpwText.Back, "English" ), SupplementaryStrings.Get( OpenTpwText.Back, "Russian" ) );
 		foreach ( var key in Enum.GetValues<OpenTpwText>() )
 		{
 			var english = SupplementaryStrings.Get( key, "English" );

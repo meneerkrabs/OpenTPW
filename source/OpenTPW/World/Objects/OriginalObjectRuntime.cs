@@ -58,12 +58,22 @@ public sealed partial class OriginalObjectRuntime
 			world.Bumpers.Add( Bump );
 			// every family's effects are played: the karts' and bumper cars' cues, the boats' spray, engine voice and unload particle (0x547F50, 0x54A909, 0x54AE50)
 			Bump.Effect += OnBumpEffect;
+			// the loading beams need the head dummies of the vehicle mesh before any draw (0x549C60 reads them from the loaded model)
+			var seatHeads = new Dictionary<int, bool[]?>();
+			Bump.SeatHeadSource = variant =>
+			{
+				if ( !seatHeads.TryGetValue( variant, out var flags ) )
+					seatHeads[variant] = flags = TrackRenderer.ReadSeatHeadFlags( entry, variant );
+				return flags;
+			};
 			Visitors.ExcitementBase = Bump.ExcitementBase;
 		}
 		Model = ObjectAssets.LoadModel( entry.FileSystem, entry.ModelPath );
 		if ( Model.Kind != ModelFileKind.Geometry )
 			throw new InvalidDataException( $"{entry.ModelPath} is not a geometry model." );
 		Visitors.Heads = RideHeadSpace.Create( Model, world.NextWorldDraw );
+		// [EXT:object-lights] the light dummies of the model (none in any shipped model), with the object's .sam keys over them
+		Lights = ObjectLightBank.Create( Model, entry.Settings, entry.DisplayName );
 		// Fixed items keep their last vertex pose when a clip ends (ObjectAnimator.UpdateVertices).
 		Animator = new ObjectAnimator( Model, keepsPoseOnClipChange: entry.IsFixedItem, holdsLastFrameAtClipEnd: ObjectAnimations.HasOnlyBaseClips( entry.Animations ) );
 		effects = new OriginalObjectEffects( this );
@@ -100,6 +110,7 @@ public sealed partial class OriginalObjectRuntime
 			// [BIN:TPW-EXE:0x00556F40 WALKON] the walk-on's nodes are looked up in the ride model the same way (the first node of class 0x800, the second of class 0x80 for the head action 4, else 0x800), for every object that walks riders
 			Visitors.WalkNodeDistance = WalkNodeDistance;
 			Visitors.WalkNodeClassDistance = WalkNodeDistance;
+			Visitors.WalkNodeHeading = WalkHeadingOf;
 			if ( UsesTour )
 			{
 				Visitors.WalkOffMilliseconds = 1000;
@@ -144,6 +155,21 @@ public sealed partial class OriginalObjectRuntime
 		return System.Numerics.Vector3.Distance( transforms[from.Value].Translation, transforms[to.Value].Translation );
 	}
 
+	private Func<int, System.Numerics.Matrix4x4>? nodeEngine;
+
+	/// <summary>Gives the runtime the engine-space matrix of a model node (the placed object's <c>GetNodeTransform</c>), which the heading of a walking body is taken from. Presentation only.</summary>
+	internal void SetNodeEngine( Func<int, System.Numerics.Matrix4x4> transform ) => nodeEngine = transform;
+
+	/// <summary>The heading byte WALKON stores for a walk from the first node to the second (<see cref="WalkerBodies.HeadingOf"/> of their engine-space offset); null when either node is missing or the object is not placed.</summary>
+	// [BIN:TPW-EXE:0x00556F40 WALKON heading] the angle of the nodes' world offset (the original's x and z, which are the engine's X and Y), through the sprite heading rule
+	internal int? WalkHeadingOf( int fromMask, int fromNumber, int toMask, int toNumber )
+	{
+		if ( nodeEngine == null || FindDummyNode( fromMask, fromNumber ) is not { } from || FindDummyNode( toMask, toNumber ) is not { } to )
+			return null;
+		var offset = nodeEngine( to ).Translation - nodeEngine( from ).Translation;
+		return WalkerBodies.HeadingOf( offset.X, offset.Y );
+	}
+
 	internal int? FindDummyNode( int mask, int number )
 	{
 		for ( var index = 0; index < Model.DummyAttributes.Count; index++ )
@@ -175,6 +201,11 @@ public sealed partial class OriginalObjectRuntime
 	/// </summary>
 	public BumpController? LiveBump => Bump != null && !stopped && scriptWorld.Bumpers.Controllers.Contains( Bump ) ? Bump : null;
 	public ModelFile Model { get; }
+	/// <summary>
+	/// [EXT:object-lights] The object's lights (docs/LIGHTS.md), or null when its model has no light dummy. Presentation only: not part of the canonical state a hash reads, saved with the runtime snapshot.
+	/// </summary>
+	public ObjectLightBank? Lights { get; }
+	private bool noLightsLogged;
 	public ObjectAnimator Animator { get; }
 	/// <summary>The object's original script, or null for the few objects without one.</summary>
 	public RideVM? Script { get; }
@@ -321,6 +352,24 @@ public sealed partial class OriginalObjectRuntime
 		scriptWorld.Bumpers.Remove( Bump );
 	}
 
+	/// <summary>
+	/// [EXT:object-lights] ENABLELIGHT, DISABLELIGHT, SETLIGHT and COLOURLIGHT. A light the model does not have is a no-op logged once per opcode and number, never a fault: the original
+	/// looks the dummy up and uses the result without a check (0x555C7A..0x555D9A), and its instance builder never fills the light pointer of a dummy (0x44A870), so there it would fault.
+	/// </summary>
+	internal void PerformLight( RideEffectCall call )
+	{
+		var number = call.Argument( 0 );
+		var argument = call.OperandCount > 1 ? call.Argument( 1 ) : 0;
+		var second = call.OperandCount > 2 ? call.Argument( 2 ) : 0;
+		var third = call.OperandCount > 3 ? call.Argument( 3 ) : 0;
+		if ( Lights?.Apply( call.Opcode, number, argument, second, third ) == true )
+			return;
+		var first = Lights == null ? !noLightsLogged : Lights.NoteMissing( call.Opcode, number );
+		noLightsLogged = true;
+		if ( first )
+			Log?.Warning( $"{Entry.DisplayName}: {call.Opcode} {number} names a light the model does not have; nothing changes (the original would fault)" );
+	}
+
 	/// <summary>The performance (0..100) the script's speed bias gives the controller; the creation bias is 50.</summary>
 	// [BIN:TPW-EXE:0x005516B0 RSSE tick] every script tick pushes the script performance (+0x30, 0..100, default 50) to the controller (0x00545180); the ride's InitSpeed bias is the same word (RIDES-033)
 	// [BIN:TPW-EXE:0x5516b0 bumper performance] the script loop pushes the script's speed bias (RideVM.SpeedBias, the ride's InitSpeed; 50 at creation) to the bumper controller every pass (0x545180)
@@ -377,7 +426,8 @@ public sealed partial class OriginalObjectRuntime
 			ScriptHoldsScream = effects.ScriptHoldsScream,
 			RideSpeed = speedWord,
 			RideCapacity = capacityWord,
-			RideDuration = durationWord
+			RideDuration = durationWord,
+			Lights = Lights?.Capture()
 		};
 	}
 
@@ -435,6 +485,13 @@ public sealed partial class OriginalObjectRuntime
 		if ( !snapshot.Stopped )
 			effects.RestoreScreams( snapshot.ScriptHoldsScream ?? snapshot.HeldScream, snapshot.HeldScreamBand, snapshot.HeldScreamLevel, snapshot.HeldScreamSpeed, snapshot.OwnedScreamCount );
 		RestoreSettingWords( snapshot.RideSpeed, snapshot.RideCapacity, snapshot.RideDuration );
+		// [EXT:object-lights] the lights' on/off and colour; a number this model no longer has is reported, a model without lights ignores the list
+		if ( snapshot.Lights is { } savedLights )
+		{
+			var unknownLights = Lights?.Restore( savedLights ) ?? savedLights.Select( record => record.Number ).ToArray();
+			if ( unknownLights.Count > 0 )
+				gaps.Add( $"'{Entry.ArchivePath}': saved light(s) {string.Join( ", ", unknownLights )} are not in the model any more and were dropped." );
+		}
 		CompletedCycles = snapshot.CompletedCycles;
 		AnimationsPlayed = snapshot.AnimationsPlayed;
 		unresolvedAnimations.Clear();
@@ -518,6 +575,8 @@ public sealed partial class OriginalObjectRuntime
 			GoldenTicketCost = settings.GetInt( "UsageInfo.GoldenTicketCost" ),
 			UpgradeCost = entry.Upgrades.FirstOrDefault( upgrade => upgrade.Level == 0 )?.GetInt( "CostOfUpgrade" ) ?? 0,
 			IsIndoors = settings.GetInt( "UsageInfo.ISIndoors" ) != 0,
+			// [BIN:TPW-EXE:0x745a60 schema RequiresTeleport] the key after ChillsYouOut (+0xFC) is type record +0x100, which the guest state setter 0x501db0 tests in states 15 and 16
+			RequiresTeleport = settings.GetInt( "UsageInfo.RequiresTeleport" ) != 0,
 			TypeId = entry.InfoId,
 			// [DATA:<object>.sam:UsageInfo.InitCostOfGoods/InitPricePerUse/InitChanceOfLoosing] the sideshow words of the join excitement (0xdff70); the level mirrors the live economy values over them
 			Sideshow = new SideshowTerms( settings.GetInt( "UsageInfo.InitCostOfGoods" ), settings.GetInt( "UsageInfo.InitPricePerUse" ), settings.GetInt( "UsageInfo.InitChanceOfLoosing" ) ),
@@ -623,7 +682,7 @@ public sealed partial class OriginalObjectRuntime
 /// <see cref="RideVisitorBridge"/> (guests slice). EVENT and REPAIREFFECT play their original sounds and particles, STARTSCREAM/STOPSCREAM/SCREAMLEVEL/SINGLESCREAM
 /// the screams. ADDOBJ keeps the particle effects (types 1-2) and sounds (types 3-9) it starts under its slot (<see cref="OriginalObjectRuntime"/>), KILLOBJ and FADEOBJ end them, SETOBJPARAM
 /// gives the sounds a parameter, and a script's end ends what it still holds (<see cref="IRideScriptLifetime"/>). TPW YEAR/MONTH/DAY/HOUR/MIN/SEC sample host civil time. The ride-type controllers
-/// TOUR/BUMP/COAST go to their controllers. What stays an unimplemented effect (<see cref="RideVM.UnimplementedEffects"/>): the ride lights, the bounce rider opcodes where their object has no bounce
+/// TOUR/BUMP/COAST go to their controllers. The ride lights (ENABLELIGHT, DISABLELIGHT, SETLIGHT, COLOURLIGHT) act on the model's light dummies when it has them (<see cref="OriginalObjectRuntime.Lights"/>, docs/LIGHTS.md) and are a logged no-op when it does not. What stays an unimplemented effect (<see cref="RideVM.UnimplementedEffects"/>): the bounce rider opcodes where their object has no bounce
 /// rider rendering, and ADDOBJ/EVENT type 10 (the object type's own sound list). DIPMUSIC sets the sound service's music duck request; SETREVERB's level is read by <see cref="ReverbSelector"/>.
 /// </summary>
 public sealed class OriginalObjectEffects : IRideScriptEffects, IRideAnimationQuery, IRideCanonicalEffects, IRideScriptLifetime
@@ -709,6 +768,13 @@ public sealed class OriginalObjectEffects : IRideScriptEffects, IRideAnimationQu
 	{
 		switch ( call.Opcode )
 		{
+			case Opcode.ENABLELIGHT:
+			case Opcode.DISABLELIGHT:
+			case Opcode.SETLIGHT:
+			case Opcode.COLOURLIGHT:
+				// [EXT:object-lights] the model's light dummies; the original's own lights are never created (docs/LIGHTS.md)
+				ride.PerformLight( call );
+				return 0;
 			case Opcode.YEAR:
 			case Opcode.MONTH:
 			case Opcode.DAY:

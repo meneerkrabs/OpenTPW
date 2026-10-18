@@ -275,6 +275,11 @@ files, the caps (8 files, 256 KiB of source in all, 64 KiB each), safe mode and 
 are in [SCRIPT-MODS.md](SCRIPT-MODS.md#loading-and-the-manifest). A mod with scripts changes the simulation (next sections), and the mods
 screen says "Contains scripts" for it. The shipped example is `opentpw.example.patient-guests` (off by default; not in the web build).
 
+A second shipped example is a **data mod with a light**, `opentpw.example.lamp-lights` (off by default; not in the web build): a lamp post object whose model carries a light dummy and whose RSE script pulses, flickers and
+colour-cycles the light with the `ENABLELIGHT`, `DISABLELIGHT`, `SETLIGHT` and `COLOURLIGHT` opcodes. To add lights to your own object, give its model light dummies (the content kit writes them from glTF point lights or
+`ModelBuilder.AddLight`), tune them with the `Lights[n].*` keys of the object's `.sam` and drive them from the object's script; the lights are presentation only and are not part of a save's simulation state
+([LIGHTS.md](LIGHTS.md), [CONTENT-KIT.md](CONTENT-KIT.md#lights)).
+
 ## Resolution
 
 At startup, right after the compatibility settings, OpenTPW resolves the run's set once (`ModStartup`, `ModSet.Resolve`):
@@ -316,9 +321,9 @@ without pool cells saves, loads and exports identically with it on or off ([POOL
 
 ## Smarter guests and guest insights (`opentpw.smarter-guests`, `opentpw.guest-insights`)
 
-Two official extensions for the park visitors ([SMARTER-GUESTS.md](SMARTER-GUESTS.md) has the plan, the architecture and the measurement): guest insights at version 1.0.0 and smarter guests at version 1.5.0. **Guest insights can be switched on** (it has its first
-feature, phase 1); **smarter guests cannot yet**: its rule set (phases 2 to 6) is built and measured, but a player cannot switch it on until phase 6 shows a measurable positive effect, so a save does not break for nothing. It is registered for tests and development, hidden from the Extensions and mods screen, and a `mods.json` entry or
-`--enable-mod` for it is ignored with a log line.
+Two official extensions for the park visitors ([SMARTER-GUESTS.md](SMARTER-GUESTS.md) has the plan, the architecture and the measurement): guest insights at version 1.0.0 and smarter guests at version 1.6.0. **Both can be switched on** on the Extensions and mods screen, in
+`mods.json` or with `--enable-mod`, and both are off by default. Guest insights has its first feature (phase 1). Smarter guests was released as opt-in in 1.6.0, once its rule set (phases 2 to 6b) had a
+measurable effect (less crowding, less litter) and its CPU cost per guest-turn met the gate of at most 1.10 times the original guests' (SMARTER-GUESTS.md, "Cost and release").
 
 - **`opentpw.smarter-guests`** changes the simulation (`AffectsSimulation`), so a park saved with it records it (id, version, no files) and loads only with it on, in the same version; a park saved without it
   loads only with it off. **The extension's version is the algorithm identity**: every release that changes how guests decide bumps it, and a park saved by another version is refused with

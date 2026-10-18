@@ -4,8 +4,57 @@ import { mkdtemp, mkdir, rm, symlink, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { keyMetrics, listFiles, mainThreadBusy, median, medianResults, percentile, safeResolve, startServer, summarizeFrames } from './web-perf/lib.mjs';
+import { markdown } from './web-perf/report.mjs';
 
-// The browser performance harness (tools/web-perf/run.mjs) without a browser: its server, path handling and statistics.
+// The browser performance harness (tools/web-perf/run.mjs) without a browser: its server, path handling, statistics and reports.
+
+const reportHeader = '## test — 2026-10-18T00:00:00.000Z (Chrome/test, renderer unknown)\n';
+const format = results => markdown({ label: 'test', date: '2026-10-18T00:00:00.000Z', chrome: 'Chrome/test', results });
+const start = { firstFrameMs: 100, lobbyMs: 200 };
+const steady = { mainThreadBusyPercent: 20, fps: 60, p95Ms: 5, largestGapMs: 17, longTasks: 0 };
+const startLine = '- Start: first frame 100 ms, lobby 200 ms';
+const steadyLine = name => `- ${name} steady: main thread busy 20%, 60 fps, frame p95 5 ms, largest gap 17 ms, long tasks 0`;
+
+for (const [name, results, lines] of [
+	['no scenarios', {}, []],
+	['start only', { start }, [startLine]],
+	['lobby only', { lobby: steady }, [steadyLine('Lobby')]],
+	['start and lobby', { start, lobby: steady }, [startLine, steadyLine('Lobby')]],
+	['failed start', { start: { error: 'startup failed' } }, ['- start: FAILED — startup failed']],
+	['failed Jungle', { start, jungle: { error: 'park failed' } }, [startLine, '- jungle: FAILED — park failed']],
+	['Jungle without cold results', { jungle: { steady } }, [steadyLine('Jungle')]],
+]) {
+	test(`the Markdown report handles ${name}`, () => {
+		assert.equal(format(results), reportHeader + (lines.length ? '\n' + lines.join('\n') : ''));
+	});
+}
+
+test('the Markdown report retains Jungle construction frames, steady windows and profiles', () => {
+	const results = {
+		start, lobby: steady,
+		jungle: {
+			cold: {
+				readyMs: 300, maxFrameMs: 60, longFramesMs: [60, 50], buildFramesMs: [60, 50, 20],
+				startProfile: { build: { ms: 130, count: 3 } }, profile: { build: { ms: 135, count: 4 } },
+			},
+			steady, zoomed: { ...steady, zoom: 300 },
+		},
+	};
+	assert.equal(format(results), reportHeader + '\n' + [
+		startLine, steadyLine('Lobby'), steadyLine('Jungle'), steadyLine('Jungle at zoom 300'),
+		'- Jungle cold: ready in 300 ms, largest frame 60 ms; frames over 50 ms: 60, 50',
+		'- Jungle built over 3 frames, construction ms per frame (the last enters the park): 60, 50, 20',
+		'- Jungle load profile until ready (ms, count; nested sections overlap): build 130 (3)',
+		'- Jungle load profile including 5 s after: build 135 (4)',
+	].join('\n'));
+});
+
+test('the Markdown report omits absent or empty Jungle construction frame lists', () => {
+	for (const buildFramesMs of [undefined, []]) {
+		assert.equal(format({ jungle: { cold: { readyMs: 30, maxFrameMs: 10, buildFramesMs } } }),
+			reportHeader + '\n- Jungle cold: ready in 30 ms, largest frame 10 ms');
+	}
+});
 
 test('safeResolve keeps paths below the root', () => {
 	const root = path.resolve(os.tmpdir(), 'opentpw-root');

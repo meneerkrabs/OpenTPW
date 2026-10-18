@@ -73,6 +73,14 @@ public class BaseFileSystem
 	// [EXT:mods] OpenTPW's own mod system; the original game had no mods
 	public IFileOverrides? Overrides { get; set; }
 
+	/// <summary>
+	/// Archives of this root that another archive file stands in for: called with the absolute path of an archive found below the root (e.g.
+	/// <c>…/data/ui.wad</c>), it returns the archive to read instead (the selected language's own <c>ui.wad</c>, docs/LANGUAGES.md) or null for the
+	/// root's own. Every read, listing and size of a path inside the archive goes to the replacement. Null (the default) changes nothing. Call
+	/// <see cref="InvalidateLookups"/> after changing it.
+	/// </summary>
+	public Func<string, string?>? ArchiveRedirect { get; set; }
+
 	private string? Overridden( string relativePath ) =>
 		Overrides != null && Overrides.TryGetFile( GetRelativePath( GetAbsolutePath( relativePath ) ), out var file ) ? file : null;
 
@@ -271,7 +279,7 @@ public class BaseFileSystem
 				var explicitMatch = (includeExplicitRoot || remainingPath.Length > 0) && string.Equals( Path.GetFileName( candidate ), part, StringComparison.OrdinalIgnoreCase );
 				if ( extensionlessMatch || explicitMatch )
 				{
-					return (candidate, remainingPath);
+					return (ArchiveRedirect?.Invoke( candidate ) ?? candidate, remainingPath);
 				}
 			}
 		}

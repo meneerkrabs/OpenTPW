@@ -72,6 +72,20 @@ files, not symbolic links: ASP.NET reports a link's own size.
   | ImGui developer panels, the editor, SDL audio | `Browser/DeveloperPanels.cs`, `Browser/DesktopOnly.cs`: silent stand-ins |
   | `Program.cs`, `Client/Game.cs` (command line, setup window) | `Program.cs`: `AddFile`, `Start` and `Frame` for the page |
 
+  The legacy `Settings.Designer.cs`, `Client/GameDir.cs`, `Client/LegacySettings.cs` and unused
+  `UI/Cursor.cs` are also excluded. The browser's `Browser/LegacySettings.cs` always returns no
+  legacy game path, so shared audio and game-files callers use their existing fallback without
+  loading `System.Configuration.ConfigurationManager`. `GameDir.GetPath` was only called by that
+  old cursor; the active park cursor uses `ParkHud.Cursor.cs`. Desktop setup keeps its own settings.
+
+  Canonical Unicode normalization remains in .NET: object-name matching uses FormD to remove
+  accents and punctuation, and mod path keys use FormC. These forms work in browser .NET; unlike
+  the online NFKC identity rule, they must not fold compatibility characters such as ligatures.
+  `tools/web-postcard-smoke.mjs` exercises both exports in the published WASM runtime, twice and
+  offline after boot, with synthetic object names and no original assets. It checks the settings
+  boundary, split-name matching, mod path keys, postcard identity and unchanged persistent files.
+  This is focused platform coverage, not a claim that every shared desktop API is browser-safe.
+
   The desktop code itself only skips two things in the browser: watching shader files and
   colouring console output. The browser has no `graphics.json`, so it uses the default Original
   world textures; a locally built texture pack does not exist there (docs/TEXTURE-PACKS.md).
@@ -317,6 +331,8 @@ short frame and the JSON is serialized in slices of 2 ms per frame (`SlicedJsonS
 inline into the in-memory folder. A browser killed inside the five-second window loses the autosave of that
 window (the previous one stays); the page mirrors again when it is hidden, which is when a tab is usually
 closed. Native tests compile and run the same code path; a real browser run of the autosave is not done here.
+The restart snapshot and its `.pending.json` recovery marker also live in `/save` and are mirrored together by the same IndexedDB transaction. While restart JSON is being serialized, a marker prevents an earlier park's restart file from being treated as the new entry state. Once the final JSON exists, its digest in the marker permits recovery after replacement even if marker cleanup was interrupted (see [PARK-SAVES.md](PARK-SAVES.md#restart-snapshot-persistence)). Browser copy/hash work runs in bounded 64 KiB steps after serialization; final writes remain in-memory. An abrupt page/process loss before a completed storage sync can still lose that window's changes. This does not add a separate durable write or a browser worker.
+
 The player's game files are not uploaded.
 
 ### Shaders

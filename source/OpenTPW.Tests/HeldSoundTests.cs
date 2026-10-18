@@ -472,8 +472,12 @@ public class HeldSoundTests
 			.I( Opcode.SETOBJPARAM, 2, 20, 5 ).I( Opcode.FADEOBJ, 2 ).I( Opcode.KILLOBJ, 3 ).I( Opcode.KILLOBJ, 1 ) );
 		Assert.AreEqual( 0, vm.UnimplementedEffects.Count, string.Join( ", ", vm.UnimplementedEffects ) );
 		var rest = Script( placed.Runtime, a => a
-			.I( Opcode.ADDOBJ, 10, -1, 43, 1 ).I( Opcode.EVENT, 10, -1, 43 )
+			.I( Opcode.ADDOBJ, 10, -1, 43, 1 ).I( Opcode.EVENT, 10, -1, 43 ) );
+		CollectionAssert.AreEquivalent( new[] { "ADDOBJ=1", "EVENT=1" }, rest.UnimplementedEffects.Select( x => $"{x.Key}={x.Value}" ).ToArray() );
+		// the light opcodes are served ([EXT:object-lights]): on an object whose model has no light dummy they change nothing and are not counted as unimplemented
+		var lights = Script( placed.Runtime, a => a
 			.I( Opcode.ENABLELIGHT, 1 ).I( Opcode.DISABLELIGHT, 1 ).I( Opcode.SETLIGHT, 1, 50 ).I( Opcode.COLOURLIGHT, 1, 10, 20, 30 ) );
-		CollectionAssert.AreEquivalent( new[] { "ADDOBJ=1", "EVENT=1", "ENABLELIGHT=1", "DISABLELIGHT=1", "SETLIGHT=1", "COLOURLIGHT=1" }, rest.UnimplementedEffects.Select( x => $"{x.Key}={x.Value}" ).ToArray() );
+		Assert.AreEqual( 0, lights.UnimplementedEffects.Count, string.Join( ", ", lights.UnimplementedEffects ) );
+		Assert.IsNull( placed.Runtime.Lights );
 	}
 }

@@ -41,37 +41,69 @@ internal sealed partial class GameFlow
 		ObjectCatalog.Themes.Contains( level.LevelName, StringComparer.Ordinal );
 
 	/// <summary>
-	/// Writes the restart snapshot of a park that has just started or just been loaded: the original takes it in state 15, right after the
+	/// Captures the restart snapshot of a park that has just started or just been loaded: the original takes it in state 15, right after the
 	/// level start 0x407E00 (which loads the quick save when 0x788160 is set) and never after a restart's own reload.
 	/// </summary>
 	// [BIN:TPW-EXE:0x54f3f7 restart snapshot] state 15 calls 0x550B30 once per park start or load: it builds <save>\restart.INTS from the folder global 0x878F18, the name "restart" (0x878A68) and the extension ".INTS" (0x877F38), and saves the park through 0x5AC630 with the save extension 0xF7ADF8 (writer 0x5ac780, the loader's twin)
 	// [EXT:restart-snapshot-per-start] OpenTPW retakes the snapshot at every park start and load, so Restart Park returns to the park being played (user-approved 2026-10-17); the original opens restart.INTS for reading first (0x550c0f, mode 0x80000000) and saves only when that fails (0x550c14), and nothing deletes it between parks, so it keeps the first park of a theme folder as the restart point forever
 	// [APPROX:SAVE-012] the snapshot is OpenTPW's park-resume file (opentpw-<theme>-restart.json), not the original's <save>\restart.INTS written through 0x550B30 and loaded by 0x414D40; an original-format writer exists (SaveContainerWriter, OriginalSavePayload, OriginalParkExport) but only exports the economy, the research lab and the object controls' researched bytes onto a template save, so a park with placed objects, paths, staff or guests cannot be snapshotted in the original's format yet
-	internal void TakeRestartSnapshot( Level level, IReadOnlyDictionary<string, string>? verifiedAssets = null )
+	/// <param name="overFrames">Serialize the detached copy on later updates; the live capture still finishes before this call returns.</param>
+	internal void TakeRestartSnapshot( Level level, IReadOnlyDictionary<string, string>? verifiedAssets = null, bool overFrames = false )
 	{
 		if ( !TakesRestartSnapshot( level ) )
 			return;
+		FlushRestartSnapshot();
 		var started = System.Diagnostics.Stopwatch.GetTimestamp();
 		try
 		{
 			using ( LoadProfile.Measure( "restart-snapshot" ) )
 			{
 				// [EXT:periodic-autosave] the manifest hashed for this snapshot is the one the periodic autosave reuses
-				if ( RestartCaptureOverride == null ) verifiedAssets = level.AutosaveAssets( verifiedAssets );
-				var snapshot = RestartCaptureOverride != null ? RestartCaptureOverride( level ) :
-					level.CaptureResumeSnapshot( Advisor?.IsAttached == true ? Advisor : null, level.LevelName, verifiedAssets );
-				ParkResumeSaveFile.Save( RestartSnapshotPath( level ), snapshot );
+				using ( LoadProfile.Measure( "restart-assets" ) )
+					if ( RestartCaptureOverride == null ) verifiedAssets = level.AutosaveAssets( verifiedAssets );
+				ParkResumeSnapshot snapshot;
+				using ( LoadProfile.Measure( "restart-capture" ) )
+					snapshot = RestartCaptureOverride != null ? RestartCaptureOverride( level ) :
+						level.CaptureResumeSnapshot( Advisor?.IsAttached == true ? Advisor : null, level.LevelName, verifiedAssets );
+				restartWrite = new RestartSnapshotWrite( RestartSnapshotPath( level ), snapshot );
+				if ( !overFrames ) FlushRestartSnapshot();
 			}
-			Log.Trace( $"Restart snapshot of the {level.LevelName} park written in {System.Diagnostics.Stopwatch.GetElapsedTime( started ).TotalMilliseconds:0} ms." );
+			Log.Trace( $"Restart snapshot of the {level.LevelName} park captured in {System.Diagnostics.Stopwatch.GetElapsedTime( started ).TotalMilliseconds:0} ms." );
 		}
 		catch ( Exception error ) when ( error is IOException or InvalidDataException or UnauthorizedAccessException or InvalidOperationException
 			or NotSupportedException or ArgumentException )
 		{
 			// a park that cannot be captured must not leave an earlier park's snapshot behind to be restarted into
-			Log.Warning( $"Restart snapshot not written ({error.Message}); Restart Park falls back to a new park start." );
+			Log.Warning( $"Restart snapshot not written ({error.Message}); Restart Park can start a new Instant Action park; other modes report that the snapshot is unavailable." );
 			try { File.Delete( RestartSnapshotPath( level ) ); }
 			catch ( Exception deleteError ) when ( deleteError is IOException or UnauthorizedAccessException ) { }
 		}
+	}
+
+	private RestartSnapshotWrite? restartWrite;
+	internal bool RestartSnapshotPending => restartWrite != null;
+
+	/// <summary>One serialization slice per frame, after a capture on an earlier frame.</summary>
+	internal void PumpRestartSnapshot( TimeSpan? budget = null )
+	{
+		if ( restartWrite == null ) return;
+		try
+		{
+			if ( restartWrite.Run( budget ?? TimeSpan.FromMilliseconds( 2 ) ) ) restartWrite = null;
+		}
+		catch ( Exception error ) when ( error is IOException or InvalidDataException or UnauthorizedAccessException or InvalidOperationException
+			or NotSupportedException or ArgumentException or System.Text.Json.JsonException )
+		{
+			restartWrite = null;
+			// Retain the prior file and pending marker for diagnosis; Load must not use that prior park as the restart point.
+			Log.Warning( $"Restart snapshot not committed ({error.Message}); Restart Park can start a new Instant Action park; other modes report that the snapshot is unavailable." );
+		}
+	}
+
+	/// <summary>Restart, park replacement and orderly shutdown finish the detached job before changing its owner or save root.</summary>
+	internal void FlushRestartSnapshot()
+	{
+		while ( restartWrite != null ) PumpRestartSnapshot( TimeSpan.MaxValue );
 	}
 
 	/// <summary>
@@ -87,7 +119,8 @@ internal sealed partial class GameFlow
 		ParkResumeSnapshot? snapshot = null;
 		try
 		{
-			snapshot = ParkResumeSaveFile.Load( RestartSnapshotPath( level ) );
+			FlushRestartSnapshot();
+			snapshot = RestartSnapshotWrite.Load( RestartSnapshotPath( level ) );
 			if ( !string.Equals( snapshot.Theme, level.LevelName, StringComparison.Ordinal ) )
 				throw new InvalidDataException( "The restart snapshot belongs to another theme." );
 			// a snapshot taken with the advisor attached cannot resume once the player has switched the advisor off

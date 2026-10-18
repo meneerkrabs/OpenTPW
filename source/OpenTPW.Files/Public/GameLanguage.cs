@@ -22,6 +22,52 @@ public sealed class GameLanguage
 	/// </summary>
 	public static readonly IReadOnlyList<string> ShippedLanguages = new[] { "English", "Danish", "Dutch", "French", "German", "Korean", "Polish", "Spanish", "Swedish" };
 
+	/// <summary>
+	/// Languages verified later from the localisation pack (docs/LANGUAGES.md): US English (tp.exe's <c>American</c>, its folder in the pack's <c>USEnglish</c>),
+	/// Hebrew (right to left) and Italian (also on the Benelux CD).
+	/// </summary>
+	public static readonly IReadOnlyList<string> AdditionalLanguages = new[] { "American", "Hebrew", "Italian" };
+
+	/// <summary>
+	/// Fan translations OpenTPW can load when the player points at them, with the language folder each one replaces: the Russian of the
+	/// localisation pack ships as <c>Russian/data/language/American</c>. They are not official releases (docs/LANGUAGES.md).
+	/// </summary>
+	// [EXT:fan-translations] a fan translation is selectable and labelled as such; the original only knew the folder of its table entry (American)
+	public static readonly IReadOnlyDictionary<string, string> FanTranslations = new Dictionary<string, string>( StringComparer.OrdinalIgnoreCase ) { ["Russian"] = "American" };
+
+	/// <summary>Every language name OpenTPW knows (verified ones first), in their shipped capitalization.</summary>
+	public static IEnumerable<string> KnownLanguages => ShippedLanguages.Concat( AdditionalLanguages ).Concat( FanTranslations.Keys );
+
+	/// <summary>Whether <paramref name="name"/> is a fan translation rather than an official release.</summary>
+	public static bool IsFanTranslationName( string name ) => FanTranslations.ContainsKey( name );
+
+	/// <summary>
+	/// tp.exe's language table, in its order: the name is the <c>Data\Language\&lt;Name&gt;</c> folder and the suffix of the <c>Init</c> pictures, the id the
+	/// registry's <c>Language</c> value that selects it (docs/LANGUAGES.md, "The original's language table").
+	/// </summary>
+	// [BIN:TPW-EXE:0x4193d0 language names] sixteen string objects of 0x14 bytes from 0x78b3d8 (one copy per translation unit): English, French, German,
+	// Spanish, Swedish, Italian, Dutch, Polish, Danish, Japanese, TraditionalChinese, SimplifiedChinese, Thai, Korean, Hebrew, American.
+	// [BIN:TPW-EXE:0x5c0d00 registry language] HKLM\Software\Bullfrog Productions Ltd\Theme Park World "Language" (default 0x809) is switched to one bit per
+	// table entry (0x809 bit 0, 0x40c 1, 7 2, 0xa 3, 0x1d 4, 0x10 5, 0x13 6, 0x15 7, 6 8, 0x11 9, 0x404 10, 0x804 11, 0x41e 12, 0x412 13, 0x40d 14, 0x409 15); any other
+	// value stores the word 0x809, whose lowest set bit is English's; the lowest set bit indexes the table and its name is copied to 0xf7f230 (read by 0x41a820)
+	public static readonly IReadOnlyList<(string Name, int LanguageId)> OriginalLanguageTable = new (string, int)[]
+	{
+		("English", 0x809), ("French", 0x40C), ("German", 0x07), ("Spanish", 0x0A), ("Swedish", 0x1D), ("Italian", 0x10), ("Dutch", 0x13), ("Polish", 0x15),
+		("Danish", 0x06), ("Japanese", 0x11), ("TraditionalChinese", 0x404), ("SimplifiedChinese", 0x804), ("Thai", 0x41E), ("Korean", 0x412), ("Hebrew", 0x40D),
+		("American", 0x409),
+	};
+
+	/// <summary>The table name tp.exe selects for the registry value <paramref name="languageId"/>: an unknown value selects English.</summary>
+	public static string OriginalLanguageName( int languageId ) =>
+		OriginalLanguageTable.FirstOrDefault( entry => entry.LanguageId == languageId ).Name ?? DefaultLanguage;
+
+	/// <summary>The registry value that selects the table entry <paramref name="name"/> (case-insensitive), or null for a folder the table lacks.</summary>
+	public static int? OriginalLanguageId( string name ) =>
+		OriginalLanguageTable.Where( entry => string.Equals( entry.Name, name, StringComparison.OrdinalIgnoreCase ) ).Select( entry => (int?)entry.LanguageId ).FirstOrDefault();
+
+	/// <summary>The id of the one right-to-left language, Hebrew.</summary>
+	public const int HebrewLanguageId = 0x40D;
+
 	private static GameLanguage? current;
 	private readonly string[] searchDirectories;
 	private BFMUReader? characterTable;
@@ -107,7 +153,30 @@ public sealed class GameLanguage
 		BaseDataDirectory = baseDataDirectory;
 		OverlayDataDirectory = overlayDataDirectory;
 		searchDirectories = meshDirectory == null ? new[] { directory } : new[] { directory, meshDirectory };
+		var folder = Path.GetFileName( Path.TrimEndingDirectorySeparator( directory ) );
+		OriginalName = OriginalLanguageTable.Select( entry => entry.Name ).FirstOrDefault( entry => string.Equals( entry, folder, StringComparison.OrdinalIgnoreCase ) ) ?? folder;
+		LanguageId = OriginalLanguageId( OriginalName );
 	}
+
+	/// <summary>
+	/// The name tp.exe gives this language: its <c>Language</c> folder as the original's table spells it (<c>American</c> for US English and for the fan
+	/// Russian that replaces it). The <c>Init</c> pictures carry it (<c>Splash_American.tga</c>).
+	/// </summary>
+	public string OriginalName { get; }
+
+	/// <summary>The registry value that selects this language in tp.exe (0x40D Hebrew, 0x409 American, 0x809 English); null for a folder its table lacks.</summary>
+	public int? LanguageId { get; }
+
+	/// <summary>
+	/// Whether tp.exe treats the language as right to left: Hebrew. Its interface draws text through two helpers that swap left and right
+	/// alignment then (docs/LANGUAGES.md, "Hebrew").
+	/// </summary>
+	// [BIN:TPW-EXE:0x41a850 is Hebrew] the language word compared with 0x40d; called by the text helpers 0x492750 and 0x4929f0, the alignment helper 0x4925a0,
+	// the window procedure's WM_CHAR mapping (0x46b8c5) and the interface library's set-up (0x489ca0 -> 0x6584df, which keeps the flag at 0xfaa56c)
+	public bool IsRightToLeft => LanguageId == HebrewLanguageId;
+
+	/// <summary>Whether this language is a fan translation (<see cref="FanTranslations"/>) rather than an official release.</summary>
+	public bool IsFanTranslation => IsFanTranslationName( Name );
 
 	/// <summary>The language's own <c>MBToUni.dat</c> character table.</summary>
 	public BFMUReader CharacterTable
@@ -226,6 +295,52 @@ public sealed class GameLanguage
 		return FindEntry( BaseDataDirectory, relativePath, false );
 	}
 
+	/// <summary>The pictures of tp.exe's loading screen (<see cref="InitImagePath"/>).</summary>
+	public enum InitImage { Splash, Legal, Welcome, Background }
+
+	/// <summary>The screen widths that have their own <c>Init</c> folder; any other width uses 640's.</summary>
+	public static readonly IReadOnlyList<int> InitWidths = new[] { 400, 512, 640, 800, 1024 };
+
+	/// <summary>
+	/// The path below <c>data</c> of a loading-screen picture as tp.exe builds it: <c>init/&lt;width&gt;/splash_&lt;Name&gt;.tga</c> (shown first at start-up),
+	/// <c>legal_&lt;Name&gt;.tga</c> (the notice on the start-up screen), <c>welcome_&lt;Name&gt;.tga</c> (on every later loading screen) and the
+	/// language-independent background <c>welcome.tga</c>.
+	/// </summary>
+	// [BIN:TPW-EXE:0x587380 loading screen] the start-up routine 0x54dcf0 and the main state machine 0x54e360 call it with the language name of 0x41a820,
+	// "data\init" and 500; it appends "\" and "%d\" of the screen width when that is 400, 512, 640, 800 or 1024 (else "640\"), then builds
+	// "splash_" + name + ".tga", "legal_" + name + ".tga", "welcome_" + name + ".tga" and "welcome.tga" (0x768dcc, 0x768dc4, 0x768db8, 0x768dac); a null name is "english"
+	public static string InitImagePath( InitImage image, int screenWidth, string originalName )
+	{
+		var folder = $"init/{(InitWidths.Contains( screenWidth ) ? screenWidth : 640)}/";
+		return image switch
+		{
+			InitImage.Splash => $"{folder}splash_{originalName}.tga",
+			InitImage.Legal => $"{folder}legal_{originalName}.tga",
+			InitImage.Welcome => $"{folder}welcome_{originalName}.tga",
+			_ => $"{folder}welcome.tga",
+		};
+	}
+
+	/// <summary>
+	/// The loading-screen picture of this language for a screen <paramref name="screenWidth"/> wide, from the overlay's <c>data</c> first, then the game's;
+	/// null when neither has it (tp.exe then shows no splash: the Hebrew pack has only <c>welcome_Hebrew.tga</c>, the Korean CD no <c>Init</c> folder).
+	/// </summary>
+	public string? ResolveInitImage( InitImage image, int screenWidth ) => ResolveDataFile( InitImagePath( image, screenWidth, OriginalName ) );
+
+	/// <summary>A file of the postcard folder (<c>data/Postcard</c>, e.g. <c>tpwlogo.tga</c>), overlay first; null when missing.</summary>
+	// [BIN:TPW-EXE:0x747d18 postcard folder] "data\Postcard" and "data\Postcard.wad" sit in the table of data folders with "data\ui.wad" (0x747c84): fixed paths below
+	// the one data folder, so a language's own copy is the one the player's data folder holds
+	public string? ResolvePostcardFile( string fileName ) => ResolveDataFile( "postcard/" + fileName );
+
+	/// <summary>
+	/// The language's own interface archive (<c>ui.wad</c>) when its overlay has one, else null (the game's own <c>data/ui.wad</c> is used). The US English
+	/// archive differs from the others only in the logo texture (<c>tpw_logo.wct</c> in <c>textures</c> and <c>stexture</c>), Sim Theme Park's.
+	/// </summary>
+	// [BIN:TPW-EXE:0x747c84 ui archive] tp.exe mounts the fixed "data\ui.wad" (with "data\ui", "data\language.wad", "data\Postcard.wad" in the same table) and
+	// has no per-language lookup; [EXT:language-settings] a language whose overlay data folder has its own ui.wad uses it, modelling an install the pack's
+	// data folder was copied over (or a single-language CD's own Data folder, such as the Korean CD's)
+	public string? OwnInterfaceArchive => OverlayDataDirectory != null ? FindEntry( OverlayDataDirectory, "ui.wad", false ) : null;
+
 	/// <summary>
 	/// Languages available in <paramref name="dataDirectory"/> and the optional overlay, using shipped
 	/// capitalization, without duplicates.
@@ -306,8 +421,24 @@ public sealed class GameLanguage
 	}
 
 	/// <summary>Maps a name to the shipped capitalization when it is a shipped language.</summary>
-	public static string CanonicalName( string name ) =>
-		ShippedLanguages.FirstOrDefault( language => string.Equals( language, name, StringComparison.OrdinalIgnoreCase ) ) ?? name;
+	public static string CanonicalName( string name )
+	{
+		// The localisation pack's folder and its usual spellings name tp.exe's American entry.
+		if ( name.Replace( " ", "" ) is var compact && (string.Equals( compact, "USEnglish", StringComparison.OrdinalIgnoreCase ) || string.Equals( compact, "English(US)", StringComparison.OrdinalIgnoreCase )) )
+			return "American";
+		return KnownLanguages.FirstOrDefault( language => string.Equals( language, name, StringComparison.OrdinalIgnoreCase ) ) ?? name;
+	}
+
+	/// <summary>
+	/// The language a folder <paramref name="folderName"/> holding the language folder <paramref name="languageFolder"/> stands for: a fan translation when the
+	/// outer folder names one that replaces this language folder (the pack's <c>Russian</c> folder holds <c>language/American</c>), else the language folder's own.
+	/// </summary>
+	private static string PackLanguageName( string? folderName, string languageFolder )
+	{
+		if ( folderName != null && FanTranslations.TryGetValue( folderName, out var replaced ) && string.Equals( replaced, languageFolder, StringComparison.OrdinalIgnoreCase ) )
+			return CanonicalName( folderName );
+		return CanonicalName( languageFolder );
+	}
 
 	private static IEnumerable<string> BaseLanguages( string dataDirectory )
 	{
@@ -357,12 +488,22 @@ public sealed class GameLanguage
 			// The full Data folder of the Spanish and Korean CDs: the CD's own language has a folder beside Data, and the English
 			// folder that stays in Data is not the CD's English (its speech is the CD's), so only languages with such a folder count.
 			var ownFolders = parent == null ? Array.Empty<string>() : directories.Where( directory => FindEntry( parent, CanonicalName( Path.GetFileName( directory ) ), true ) != null ).ToArray();
+			var parentName = parent == null ? null : Path.GetFileName( parent );
 			foreach ( var directory in ownFolders.Length > 0 ? ownFolders : directories )
 			{
-				var name = CanonicalName( Path.GetFileName( directory ) );
+				var name = PackLanguageName( parentName, Path.GetFileName( directory ) );
 				var meshes = parent == null ? null : FindEntry( parent, Path.Combine( "Meshes", name ), true ) ?? FindEntry( parent, Path.Combine( name, "Meshes", name ), true );
 				yield return new OverlayLanguage( name, directory, overlayPath, meshes );
 			}
+			yield break;
+		}
+
+		// One folder of the localisation pack: "<Lang>/data/Language/<Folder>" (Hebrew/data/Language/Hebrew, USEnglish/data/language/american).
+		if ( FindEntry( overlayPath, "data", true ) is { } packData && FindEntry( packData, "Language", true ) is { } packLanguages
+			&& System.IO.Directory.EnumerateDirectories( overlayPath ).All( entry => string.Equals( Path.GetFileName( entry ), Path.GetFileName( packData ), StringComparison.Ordinal ) ) )
+		{
+			foreach ( var language in OverlayLanguages( packData ) )
+				yield return language;
 			yield break;
 		}
 
@@ -372,6 +513,13 @@ public sealed class GameLanguage
 			var name = CanonicalName( Path.GetFileName( languageFolder ) );
 			var dataDirectory = FindEntry( languageFolder, "data", true );
 			var directory = dataDirectory == null ? null : FindEntry( dataDirectory, Path.Combine( "Language", name ), true );
+			// The localisation pack names some folders otherwise than their language folder: USEnglish holds language/american, the fan Russian language/American.
+			if ( directory == null && dataDirectory != null && FindEntry( dataDirectory, "Language", true ) is { } languages
+				&& System.IO.Directory.GetDirectories( languages ) is [var only] )
+			{
+				name = PackLanguageName( Path.GetFileName( languageFolder ), Path.GetFileName( only ) );
+				directory = only;
+			}
 			if ( directory == null )
 				continue;
 			yield return new OverlayLanguage( name, directory, dataDirectory!, FindEntry( languageFolder, Path.Combine( "Meshes", name ), true ) );

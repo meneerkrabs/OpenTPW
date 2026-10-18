@@ -42,6 +42,8 @@ public static class BumpEffects
 	public const int ParticleSmoke = 2;
 	public const int ParticleExhaustPuff = 10;
 	public const int ParticleBeamUpCar = 15;
+	/// <summary>The beam of a rider boarding or leaving a vehicle: library id 19, P_EFFECT_BeamUp.</summary>
+	public const int ParticleBeamUp = 19;
 	/// <summary>The boats' spray: library id 96, P_EFFECT_SmallSplash.</summary>
 	public const int ParticleSmallSplash = 96;
 	/// <summary>Global <c>cat_rides</c> sounds the effect player submits: 12 for a crash, 24 for the exhaust puff.</summary>

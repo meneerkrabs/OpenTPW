@@ -170,7 +170,7 @@ internal sealed partial class GameFlow : IDisposable
 		TearDown();
 		enterHold = false;
 		lobbyDefinition ??= LobbyDefinition.Load();
-		Lobby = new LobbyScene( lobbyDefinition, generator: lobbyEffects.Draw );
+		Lobby = new LobbyScene( lobbyDefinition, generator: lobbyEffects.Draw, flyerPercent: LobbyObjectsPercent );
 		LobbyCameraMode.Radius = lobbyDefinition.SpinRadius;
 		LobbyCameraMode.VerticalOffset = lobbyDefinition.VerticalOffset;
 		LobbyCameraMode.SpinSpeed = lobbyDefinition.SpinSpeed;
@@ -355,6 +355,7 @@ internal sealed partial class GameFlow : IDisposable
 		if ( level.Guests == null )
 			return;
 		level.Guests.Voiced += ( guest, eventId ) => GameAudio.PlayGuestVoice( eventId, new Vector3( guest.X * 10, 0, guest.Y * 10 ) );
+		level.Guests.Teleported += level.StartGuestBeam;
 		level.Guests.Pranked += ( guest, prank ) =>
 		{
 			if ( prank == GuestDecision.Prank.Stinkbomb )
@@ -417,7 +418,7 @@ internal sealed partial class GameFlow : IDisposable
 			Log.Trace( dropped );
 		}
 		AttachProgress( level );
-		if ( original && visit == null ) TakeRestartSnapshot( level );
+		if ( original && visit == null ) TakeRestartSnapshot( level, overFrames: true );
 		return level;
 	}
 
@@ -486,6 +487,7 @@ internal sealed partial class GameFlow : IDisposable
 	private void TearDown( bool applyPendingLanguage = true )
 	{
 		RequireProgressSaved();
+		FlushRestartSnapshot();
 		DetachProgress();
 		AbandonParkBuild();
 		presence?.Dispose();
@@ -539,6 +541,7 @@ internal sealed partial class GameFlow : IDisposable
 
 	public void Update()
 	{
+		PumpRestartSnapshot();
 		// [EXT:texture-pack] the pack switch belongs to the game loop, not to its loading screen
 		PumpProgress();
 		TexturePackSwitch.PumpCurrent();
@@ -683,6 +686,7 @@ internal sealed partial class GameFlow : IDisposable
 			var strings = UiStringTable.Load( language );
 			var fonts = UiFonts.Load( language );
 			GameLanguage.Current = language;
+			LanguageInterfaceArchive.Apply( FileSystem, language );
 			Strings = strings;
 			Context = new UiContext( strings, fonts, Context.Models );
 			Log.Trace( $"Language: {language}" );
@@ -847,6 +851,10 @@ internal sealed partial class GameFlow : IDisposable
 			Lobby.Visible = wanted == Backdrop.Lobby;
 	}
 
+	/// <summary>The LOBBYOBJECTS setting in effect (the share of the lobby's flyers that is spawned); 100 without graphics settings.</summary>
+	// [BIN:TPW-EXE:0x5d9e22 lobby objects] the flying-mesh groups scale their counts by the settings' LOBBYOBJECTS value ([0x7858dc]) in percent
+	private static int LobbyObjectsPercent => IGraphicsSettings.Instance?.Detail.LobbyObjects ?? 100;
+
 	/// <summary>The front end's island effects (sky, rain, lightning and the island one-shots), seeded once from the clock like the original's.</summary>
 	private readonly LobbyEffects lobbyEffects = new( (uint)DateTimeOffset.UtcNow.ToUnixTimeSeconds() );
 
@@ -855,9 +863,14 @@ internal sealed partial class GameFlow : IDisposable
 	{
 		if ( Lobby == null )
 			return;
+		lobbyEffects.EasedSky = CompatibilityRuntime.RenderQuality.SkyLayers > 1;
 		if ( backdrop == Backdrop.Globe )
 		{
-			// [APPROX:UI-018] while the globe is up the lobby scene is not stepped, so its flyers and island clips hold still; the original's lobby update 0x5d5c50 has no globe branch (the main state stays 2, 0x54e6c7), so its flying-mesh system and islands probably keep running behind the globe; whether the lobby scene is drawn then is not traced
+			// [BIN:TPW-EXE:0x5d5c50 lobby frame] the lobby update has no globe branch (the main state stays 2, 0x54e6c7): its flying-mesh system and island clips keep running while the globe is up, so the scene steps as in the lobby
+			// [APPROX:UI-018] the islands component (0x5e0470) probably runs too, with its lightning, thunder and nearest-island sky target, before the globe component sets the sky target and no rain each frame; whether it does (the registration order of the globe component against it) and whether the lobby scene is drawn behind the globe are not traced, so only the flyers and clips step and the effects keep the globe's own easing
+			for ( var frames = lobbyFrames.Advance( Time.Delta ); frames > 0; frames-- )
+				Lobby.StepFrame( ReferenceFrameClock.FrameSeconds );
+			Lobby.Animate( Time.Delta );
 			lobbyEffects.StepGlobe( Time.Delta );
 			return;
 		}
@@ -918,7 +931,7 @@ internal sealed partial class GameFlow : IDisposable
 			var themes = islands.Select( park => Lobby!.Definition.Islands.FirstOrDefault( island => string.Equals( island.Level, park.Level, StringComparison.OrdinalIgnoreCase ) ) ).ToList();
 			try
 			{
-				cityScene = new LobbyScene( Lobby!.Definition, themes, lobbyEffects.Draw );
+				cityScene = new LobbyScene( Lobby!.Definition, themes, lobbyEffects.Draw, LobbyObjectsPercent );
 				cityScene.Visible = backdrop == Backdrop.City;
 			}
 			catch ( Exception exception ) when ( exception is IOException or InvalidDataException or InvalidOperationException )
@@ -932,6 +945,21 @@ internal sealed partial class GameFlow : IDisposable
 			if ( selected.Island != null )
 				LobbyCameraMode.Target = cityScene.Target( selected.Island, selected.Slot );
 		}
+	}
+
+	private Sky? lobbyCloudLayer;
+	private bool lobbyCloudLayerLoaded;
+
+	/// <summary>The lobby's cloud layer: the engine sky of the fantasy level's sky files (null where the install has none).</summary>
+	// [BIN:TPW-EXE:0x5d8b50 lobby sky] the lobby init loads the engine sky from "Data\Levels\fantasy" (0x5852b0); its draw colours the cloud grid with the colour 0x5d96c0 writes
+	private Sky? LobbySky()
+	{
+		if ( !lobbyCloudLayerLoaded )
+		{
+			lobbyCloudLayerLoaded = true;
+			lobbyCloudLayer = Sky.TryCreate( "fantasy" );
+		}
+		return lobbyCloudLayer;
 	}
 
 	/// <summary>World pass (internal render size): the level, or the lobby sky and 3D scene.</summary>
@@ -959,21 +987,37 @@ internal sealed partial class GameFlow : IDisposable
 		{
 			// The lobby's backdrop. The original clears the screen to the lobby's fog colour (LobbyEffects.ClearColour) and tints only its
 			// cloud layer with the island's eased colour (LobbyEffects.Sky); until that layer is drawn, the backdrop shows the cloud colour flat.
-			// [APPROX:UI-018] stand-in for the cloud layer: the whole backdrop is painted with the cloud grid's colour (LobbyEffects.Sky) instead of the fog colour under tinted clouds; the engine sky (0x8c1828) loads <level>\sky\sky.tga for the lobby (0x5852b0 from 0x5d8b50, "Data\Levels\fantasy") and its draw (0x585ee0-0x586a00) colours it from the 16×16 grid at +0xf60 that LobbyEffects.Sky fills; that draw and the scene's fog (50 to 300) are not traced
+			// [BIN:TPW-EXE:0x5d8b50 lobby sky] the lobby loads the engine sky (0x8c1828) from "Data\Levels\fantasy" (0x5852b0: sky.tga, sky_cyl.tga) and its draw (0x5863c0) colours the clouds from the 16 x 16 grid at +0xf60 that 0x5d96c0 fills with one colour each frame (the eased island colour, else the fog colour); the world pass is cleared to the fog colour
+			// [APPROX:UI-018] the lobby's own fog (50 to 300 units) is not applied: OpenTPW's world shaders keep their shared fog range (UI-107), and the scene's sky flags (0x5863c0 is gated on bit 0x10 of the scene flags, 0x576a00) are taken as set, as the video's clouds show
 			backgroundBatch.Clear();
 			var sky = lobbyEffects.Sky;
 			// [EXT:tpi-front-end-phase1] the Theme Park Inc Personnel File stands on a flat dark backdrop; the original's 3D intro world (wIntro) is not drawn
-			var backdropColour = IncFrontEnd != null ? new RgbaByte( 14, 18, 38, 255 ) : new RgbaByte( sky.R, sky.G, sky.B, 255 );
+			var cloudLayer = IncFrontEnd == null ? LobbySky() : null;
+			var backdropColour = IncFrontEnd != null ? new RgbaByte( 14, 18, 38, 255 )
+				: cloudLayer != null ? new RgbaByte( LobbyEffects.ClearColour.R, LobbyEffects.ClearColour.G, LobbyEffects.ClearColour.B, 255 ) : new RgbaByte( sky.R, sky.G, sky.B, 255 );
 			backgroundBatch.AddRectangle( new UiRect( 0, 0, framebuffer.Width, framebuffer.Height ), backdropColour );
 			backgroundRenderer.Draw( global::Global.Render.CommandList, backgroundBatch, framebuffer.Width, framebuffer.Height );
+			if ( cloudLayer != null )
+			{
+				cloudLayer.SetGridColour( 0xFF000000u | (uint)sky.R << 16 | (uint)sky.G << 8 | sky.B );
+				cloudLayer.Draw( Time.Delta );
+			}
 			foreach ( var entity in Entity.All.ToArray() )
 				entity.Render();
+			// [BIN:TPW-EXE:0x57ee30 lightning flash] the lightning draw tests the flash flag (+4) first and draws one full-screen quad (0x57ed50: corners -1..1, vertex colour 0xFFFFFFFF, state 0x9A1) before it steps the bolts
+			// [BIN:TPW-EXE:0x57ed75 flash state] 0x9A1: alpha blend on (bit 0x100), z write off (bit 0x800), source blend INVDESTCOLOR and destination ZERO (low byte 0xA1), so the quad inverts the picture for the frame
+			if ( lobbyEffects.Flash && IncFrontEnd == null )
+			{
+				backgroundBatch.Clear();
+				backgroundBatch.AddRectangle( new UiRect( 0, 0, framebuffer.Width, framebuffer.Height ), RgbaByte.White );
+				backgroundRenderer.Draw( global::Global.Render.CommandList, backgroundBatch, framebuffer.Width, framebuffer.Height, invert: true );
+			}
 		}
 		Context.Canvas = CurrentCanvas();
 		Context.Batch.Clear();
 		// [BIN:STP-PPC:engine_shared 0x1D4B4 lightning flash] LightningFlash() sets a flag; the rain render then draws one full-screen white quad for exactly one frame and clears it (lobby only)
 		// [DATA:video 78:47-78:48] the capture shows the bolt with no full-screen flash: the top third's mean luminance stays at 143-149 over 4729.4-4730.8
-		// [APPROX:UI-018] the flash's blend flags (0x9A1) are not decoded and the capture shows no flash, so none is drawn (the opaque white quad is gone); the flag is still consumed each frame
+		// [BIN:TPW-EXE:0x57ee30 flash flag] the flag is cleared once the quad is drawn: it lasts one frame
 		if ( Level == null && lobbyEffects.Flash )
 			lobbyEffects.Flash = false;
 		if ( Hud != null )
@@ -1079,6 +1123,7 @@ internal sealed partial class GameFlow : IDisposable
 
 	public void Dispose()
 	{
+		FlushRestartSnapshot();
 		// a window closed past the in-app Quit's check still writes earned awards a failed save left behind
 		if ( progressOwner is { Dirty: true } owner && !owner.TryFlush() )
 			Log.Warning( $"OpenTPW progress could not be saved on exit: {owner.Error}" );

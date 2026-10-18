@@ -8,10 +8,16 @@ public class ParkCameraMode : CameraMode
 	// Host interaction tuning: the edge band and the right-button drag (the original's own pan model is not ported).
 	public const float HostEdgeFraction = 0.015f;
 	/// <summary>The original's zoom value at its own range's near end (<see cref="Height"/>).</summary>
-	// [BIN:TPW-EXE:0x42b1c0 zoom range] without the flag 0x200 the zoom value (0x7909ec) is clamped to 70..130 (0x42c621-0x42c6a1: 70.0 at 0x6fde08, 130.0 at 0x6fde0c; the flag 0x200 swaps in 40..300 from 0x74c9d8/0x74c9dc, a flag whose setter was not found: 0x42aa6e only keeps it), so the camera never gets nearer or farther than these
+	// [BIN:TPW-EXE:0x42b1c0 zoom range] without the flag 0x200 the zoom value (0x7909ec) is clamped to 70..130 (0x42c621-0x42c6a1: 70.0 at 0x6fde08, 130.0 at 0x6fde0c; the flag 0x200 swaps in 40..300 from 0x74c9d8/0x74c9dc, a flag toggled by 0x42a520, a key handler of the 25-entry camera key set (0x748158, entry 0x748298: key byte 0x20, modifier word 0x3f, whose reachability in the retail game is not verified); 0x42aa6e only keeps it), so the camera never gets nearer or farther than these
 	public const float MinimumHeight = 70f;
 	/// <summary>The original's zoom value at its far end.</summary>
 	public const float MaximumHeight = 130f;
+	/// <summary>The zoom value at the near end of the wide range (<see cref="GameOptions.WideZoom"/>): tp.exe's own flag-0x200 minimum.</summary>
+	// [BIN:TPW-EXE:0x42c631 wide zoom range] with the mode flag 0x200 (0x42c62c: TEST BH, 2) the clamp compares the zoom value with 40.0 (0x74c9d8) and 300.0 (0x74c9dc) instead of 70.0 and 130.0; the pitch (0x42c742) and the eye (0x42c96d) are computed from the zoom value alone, so the same formulas run unchanged over the wider range
+	// [EXT:wide-zoom] the original sets the flag only through a hidden camera key binding (0x42a520 from entry 0x748298 of the camera key set; key byte 0x20, modifier word 0x3f, not shown to be reachable in retail) and has no option for it; OpenTPW offers that range as an option, on by default (user-approved 2026-10-18, GameOptions.WideZoom)
+	public const float WideMinimumHeight = 40f;
+	/// <summary>The zoom value at the far end of the wide range: tp.exe's own flag-0x200 maximum.</summary>
+	public const float WideMaximumHeight = 300f;
 	/// <summary>The zoom value of the Home pose and of a new camera (<c>0x42A990</c>: 110.0).</summary>
 	public const float HomeHeight = 110f;
 	/// <summary>The Home target's x and z in original units (<c>0x42A990</c>: 475.0 and 175.0, the middle of the entrance cells (47, 17) and (48, 17)).</summary>
@@ -36,6 +42,11 @@ public class ParkCameraMode : CameraMode
 	/// <see cref="EyeOffset"/>). Not a height above the ground in engine units.
 	/// </summary>
 	public float Height { get; private set; } = HomeHeight;
+	private bool wideZoom = GameOptions.Current.WideZoom;
+	/// <summary>The nearest zoom value the camera allows: 70 (tp.exe's normal range) or 40 with <see cref="GameOptions.WideZoom"/>.</summary>
+	public float MinimumZoom => wideZoom ? WideMinimumHeight : MinimumHeight;
+	/// <summary>The farthest zoom value the camera allows: 130 (tp.exe's normal range) or 300 with <see cref="GameOptions.WideZoom"/>.</summary>
+	public float MaximumZoom => wideZoom ? WideMaximumHeight : MaximumHeight;
 	/// <summary>The bearing of the eye from the target in degrees (the eye is at <c>Target + (cos, sin) * distance</c>); the original's yaw 0 is -90 here (<see cref="OriginalYaw"/>).</summary>
 	public float Yaw { get; private set; } = HomeYaw;
 	/// <summary>The yaw of the Home pose: the original's yaw 0 looks along +Y (its +z), so the eye sits to the -Y side of the target.</summary>
@@ -67,7 +78,7 @@ public class ParkCameraMode : CameraMode
 	/// <summary>Places the camera at a fixed pose (screenshots): ground target, height and yaw in degrees.</summary>
 	public void SetPose( Vector3 target, float height, float yaw )
 	{
-		Height = float.IsFinite( height ) ? Math.Clamp( height, MinimumHeight, MaximumHeight ) : Height;
+		Height = float.IsFinite( height ) ? Math.Clamp( height, MinimumZoom, MaximumZoom ) : Height;
 		Yaw = float.IsFinite( yaw ) ? yaw % 360 : Yaw;
 		Focus( target );
 		smoothedGround = GroundAtTarget();
@@ -115,6 +126,13 @@ public class ParkCameraMode : CameraMode
 
 	private void Step( CameraControlInput input, GameOptions options )
 	{
+		// The wide range follows the option live: switching it off while zoomed out brings the zoom back inside 70..130.
+		if ( wideZoom != options.WideZoom )
+		{
+			wideZoom = options.WideZoom;
+			var clamped = Math.Clamp( Height, MinimumZoom, MaximumZoom );
+			if ( clamped != Height ) { Height = clamped; UpdateTransform(); }
+		}
 		var inside = input.LogicalSize.X > 0 && input.LogicalSize.Y > 0
 			&& input.MousePosition.X >= 0 && input.MousePosition.Y >= 0
 			&& input.MousePosition.X < input.LogicalSize.X && input.MousePosition.Y < input.LogicalSize.Y;
@@ -128,7 +146,7 @@ public class ParkCameraMode : CameraMode
 				? ((input.RotateRight ? 1 : 0) - (input.RotateLeft ? 1 : 0)) * RotationSpeed * dt
 				: ((input.RotateRightPressed ? 1 : 0) - (input.RotateLeftPressed ? 1 : 0)) * 90;
 			Yaw = (Yaw + rotation) % 360;
-			Height = Math.Clamp( Height - input.Zoom * ZoomSpeed * dt, MinimumHeight, MaximumHeight );
+			Height = Math.Clamp( Height - input.Zoom * ZoomSpeed * dt, MinimumZoom, MaximumZoom );
 		}
 		Yaw = (Yaw + MiddleTurn( input, dt )) % 360;
 		var radians = Yaw.DegreesToRadians();
@@ -138,7 +156,7 @@ public class ParkCameraMode : CameraMode
 		var mouse = !input.CaptureMouse && !input.TextEntry;
 		if ( mouse )
 		{
-			Height = Math.Clamp( Height - input.Wheel * WheelStep, MinimumHeight, MaximumHeight );
+			Height = Math.Clamp( Height - input.Wheel * WheelStep, MinimumZoom, MaximumZoom );
 			if ( options.Scroll != ScrollMode.Pushscroll && input.RightButton && dragging )
 				Target += (right * input.MouseDelta.X / input.LogicalSize.X - forward * input.MouseDelta.Y / input.LogicalSize.Y) * HorizontalSpan( Height );
 		}
@@ -189,7 +207,10 @@ public class ParkCameraMode : CameraMode
 	/// <summary>The ground distance the right-button drag covers for a whole screen width at a zoom value (host choice: about the width of the view at the target).</summary>
 	public static float HorizontalSpan( float zoom ) => 2f * zoom * UnitScale;
 
-	/// <summary>The pitch of the camera in radians for a zoom value: from 45 degrees at 70 to 65 degrees at 130 (1.134464 rad).</summary>
+	/// <summary>
+	/// The pitch of the camera in radians for a zoom value: from 45 degrees at 70 to 65 degrees at 130 (1.134464 rad). Outside 70..130 the line keeps going
+	/// (35 degrees at 40) until the original's clamp to 0..1.4707963 (84.3 degrees, reached at a zoom value of about 188 and kept up to 300).
+	/// </summary>
 	// [BIN:TPW-EXE:0x42b1c0 pitch] t = (zoom - 70) / 60 (0x42c742: 70.0 at 0x6fde08, 0.016666668 at 0x6fde14); pitch (0x790a3c) = (1 - t) x 0.7853982 - t x -1.134464 (0x6fde18), clamped to 0..1.4707963 (0x42c7c0)
 	public static float PitchOf( float zoom )
 	{

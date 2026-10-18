@@ -52,7 +52,10 @@ internal sealed class SlicedJsonSerializer
 	}
 
 	/// <summary>The complete JSON; only after <see cref="Run"/> returned true.</summary>
-	internal byte[] Bytes => Done ? buffer.WrittenSpan.ToArray() : throw new InvalidOperationException( "The serialization is not finished." );
+	internal byte[] Bytes => WrittenMemory.ToArray();
+
+	/// <summary>The completed immutable buffer, held by this serializer until its detached consumer finishes.</summary>
+	internal ReadOnlyMemory<byte> WrittenMemory => Done ? buffer.WrittenMemory : throw new InvalidOperationException( "The serialization is not finished." );
 
 	private IEnumerable<bool> Steps( object value, JsonTypeInfo info, Action? first )
 	{

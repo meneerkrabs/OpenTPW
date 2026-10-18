@@ -284,3 +284,9 @@ staff actor position/fraction supports mid-travel resume; no world binding means
 pending work waits rather than becoming a headless repair. The binding is rebuilt
 by the Level staff setup. This is an additive own-format phase, not a native staff
 field or a save-format version change; canonical gameplay hash schema14 includes it.
+
+## Restart snapshot persistence
+
+Each owned park start/load captures its restart point once, before play advances. Capture, asset hashing and validation stay on the game thread. The detached JSON is serialized in soft 2 ms slices. Desktop completion copies the immutable buffer, hashes it and performs the atomic writes on a worker; immediate Restart, park replacement and orderly shutdown wait for that job. The browser copies and hashes at most 64 KiB per copy/hash step, then writes into its in-memory filesystem. Allocation, an individual serializer step and the final browser write can still exceed the soft budget; this is not a hard frame-time bound.
+
+`opentpw-<theme>-restart.json.pending.json` is an internal recovery marker, not a park save. It initially contains `"pending"`; before replacement it contains the completed JSON's SHA256. The previous restart JSON is retained during this work but is not accepted as the new park's restart point. A process interrupted before replacement leaves the prior file retained and unavailable through Restart; an interruption after replacement but before marker cleanup can recover the new file if its hash matches. A file with no marker keeps the existing format compatibility. The initial marker and target-digest marker retain the same flushed temporary-file/atomic-rename protocol as the snapshot; no durability barrier is removed. On failure, Instant Action can start a new park, while other modes display the load-failed message. The browser's durability boundary is its transactional IndexedDB mirror, described in [WEB.md](WEB.md#saves-and-settings).

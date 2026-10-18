@@ -119,6 +119,41 @@ public class ArrivalVehicleTests
 		public int Arrived => Simulation.Guests.Count;
 	}
 
+	/// <summary>
+	/// A read-only visit has no economy: its arrivals read the turn of the save it is built on plus its guests' own turns (<see cref="Level.VisitArrivalClock"/>), so the visit of a park
+	/// built on the shipped Jungle save (turn 755) sends its first group at once, as an own park started from that save does; counted from turn 0, the timer of 150 units of four turns
+	/// would hold the first group back until turn 604, and no guest would arrive for the first two and a half minutes.
+	/// </summary>
+	[TestMethod]
+	public void AVisitBuiltOnASaveSendsItsFirstGroupAtOnce()
+	{
+		(GuestSimulation Simulation, FakeVehicles Vehicles) Visit( long? savedTurn )
+		{
+			var settings = GuestTests.CreateSettings();
+			settings.ArrivalTimeBetween = 150; // [DATA:Standard.sam:Arrival.TimeBetweenArrivals]
+			var vehicles = new FakeVehicles();
+			var simulation = new GuestSimulation( GuestTests.CreateCross(), settings, 1 ) { OnlineVisit = true, ArrivalVehicles = vehicles };
+			simulation.ArrivalClock = Level.VisitArrivalClock( simulation, savedTurn );
+			return (simulation, vehicles);
+		}
+		void Turns( GuestSimulation simulation, int count )
+		{
+			for ( var tick = 0; tick < count * 15; tick++ )
+				simulation.Tick( Tick );
+		}
+
+		var saved = Visit( 755 );
+		Turns( saved.Simulation, 2 );
+		CollectionAssert.AreEqual( new[] { ArrivalVehicleKind.Bus }, saved.Vehicles.Created, "turn 755 is past the timer (755 >> 2 = 188 > 150): the first turn sends the bus" );
+
+		var unsaved = Visit( null );
+		Assert.IsNull( unsaved.Simulation.ArrivalClock, "without a save the guests' own turns count, as in a park started without one" );
+		Turns( unsaved.Simulation, 590 );
+		Assert.AreEqual( 0, unsaved.Vehicles.Created.Count, "from turn 0 no group is due before turn 604 (604 >> 2 = 151 > 150)" );
+		Turns( unsaved.Simulation, 20 );
+		CollectionAssert.AreEqual( new[] { ArrivalVehicleKind.Bus }, unsaved.Vehicles.Created );
+	}
+
 	[TestMethod]
 	public void NoGuestStepsOffBeforeTheVehicleReportsItsStop()
 	{

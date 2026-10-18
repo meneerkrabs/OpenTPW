@@ -167,6 +167,8 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	public (int X, int Y) ExitCell { get; set; }
 	/// <summary>[EXT:pools-swim] The object is a changing room (<c>Pools.ChangingRoom</c>); set when the level creates the bridge.</summary>
 	public bool IsChangingRoom { get; set; }
+	/// <summary><c>UsageInfo.RequiresTeleport</c> (type record +0x100): a guest boarding or leaving beams (particle 19); set when the runtime creates the bridge.</summary>
+	public bool RequiresTeleport { get; set; }
 	/// <summary>[EXT:pools-swim] Set by the runtime when it stops (demolition) before it releases the guests, so a changing room's guests do not start a swim; not saved (a stopped runtime restores stopped).</summary>
 	public bool IsStopped { get; set; }
 	/// <summary>[EXT:pools-swim] The cells beyond the back of a changing room; set when the level registers it (geometry only: whether one is a pool cell is read when a guest swims).</summary>
@@ -1198,6 +1200,32 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		public int State { get; set; } = state;
 		public double Began { get; set; } = began;
 		public double Ends { get; set; } = ends;
+		/// <summary>The sprite heading byte of the walking body (+0x14): set at WALKON from the walk's direction, then by the walk update's drawing. Presentation only: not saved, not hashed, null until known.</summary>
+		public int? Heading { get; set; }
+	}
+
+	/// <summary>One walk table entry as the walk update's drawing reads it (<see cref="CollectWalkers"/>).</summary>
+	internal readonly record struct WalkerView( int Guest, int State, int Mode, int U1, int U2, int U3, int U4, int Extra, double Began, double Ends, int? Heading );
+
+	/// <summary>
+	/// The sprite heading byte WALKON stores in its entry (+0x14), from the walk-on's two nodes' class masks and numbers.
+	/// Set by the ride's runtime for every object with a placed model; without it the heading stays unknown (0 when drawn).
+	/// </summary>
+	public Func<int, int, int, int, int?>? WalkNodeHeading { get; set; }
+
+	/// <summary>The live entries of the walk table in table order, for the drawing of the walking bodies (the walk update 0x00557D80 draws each one it passes).</summary>
+	internal void CollectWalkers( List<WalkerView> into )
+	{
+		foreach ( var entry in walkTable )
+			if ( entry is { State: >= 1 } )
+				into.Add( new WalkerView( entry.Guest, entry.State, entry.Mode, entry.Via, entry.Target, entry.From, entry.To, entry.Extra, entry.Began, entry.Ends, entry.Heading ) );
+	}
+
+	/// <summary>Stores the heading byte the walk update's drawing wrote into the rider's entry (+0x14).</summary>
+	internal void SetWalkHeading( int guest, int heading )
+	{
+		if ( FindWalkSlot( guest ) is { } found )
+			found.Entry.Heading = heading;
 	}
 
 	/// <summary>
@@ -1319,7 +1347,7 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 				MarkBoarded( guest );
 				// [BIN:TPW-EXE:0x00555963 WALKON operands] seven values, each a signed word or a variable's value: the rider, the walk-on's first node (u1), its second node (u2), the nodes WALKOFF walks between (u3, u4), the walk action and a last word the handler stores and nothing reads here (0x00556F40: u1 and u2 at +0x00 and +0x02, u3 and u4 at +0x04 and +0x06, the rider at +0x10, the action at +0x16, the last word at +0x1A)
 				// [BIN:TPW-EXE:0x00556F40 WALKON slot] the entry takes the first free table entry (state 0) of the header walk size; with none free the handler logs and stores nothing, so the rider is never handed out by WALKGET. Its state becomes 1 with the start now and the end now + ftol(the distance between u1 (class 0x800) and u2 (class 0x80 for the head action 4, else 0x800)) x 100 ms (100 ms for 0); state 2 follows at the frame update 0x00557D80 once the end has passed, WALKOFF's state 3 overrides either
-				// [APPROX:TOUR-011] the walk update that moves state 1 to 2 runs once per rendered frame in the original (0x00557AB0, run by the main loop pass 0x0054E360 at 0x0054FA08) and also draws the walking body between u1 and u2; the bridge makes the change in its host step (UpdateWalkers), and the body is not drawn
+				// [APPROX:TOUR-011] the walk update that moves state 1 to 2 runs once per rendered frame in the original (0x00557AB0, run by the main loop pass 0x0054E360 at 0x0054FA08) and draws the walking body of every entry (0x005580A0); the bridge makes the state changes in its host step (UpdateWalkers) and the bodies are drawn from the table by FlatRideBounceRiders.CollectWalkers, whose steps, terrain height and missing-node cases are the rest of this approximation
 				if ( guest <= 0 )
 					return true;
 				var capacity = Math.Max( 0, call.VM.Script.WalkSize );
@@ -1331,6 +1359,8 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 				if ( WalkNodeClassDistance?.Invoke( 0x800, call.Argument( 1 ), headAction ? 0x80 : 0x800, call.Argument( 2 ) ) is { } onDistance )
 					onDuration = WalkOffDuration( onDistance );
 				var entry = new WalkRecord( guest, call.Argument( 1 ), call.Argument( 2 ), call.Argument( 3 ), call.Argument( 4 ), call.Argument( 5 ), call.Argument( 6 ), 1, now, now + onDuration );
+				// [BIN:TPW-EXE:0x00556F40 WALKON heading] the entry's heading word (+0x14) is the truncated angle atan2(z2 - z1, x2 - x1) of the two nodes, in radians, with its sign kept and its magnitude masked to three bits
+				entry.Heading = WalkNodeHeading?.Invoke( 0x800, call.Argument( 1 ), headAction ? 0x80 : 0x800, call.Argument( 2 ) );
 				SetWalkSlot( slot, entry );
 				return true;
 			}

@@ -152,4 +152,22 @@ public class SkyTests
 			}
 		}
 	}
+
+	/// <summary>The lobby recolours the whole grid each frame: an invalidated staging builds the clouds again with the new colour.</summary>
+	[TestMethod]
+	public void AnInvalidatedStagingTakesTheNewGridColour()
+	{
+		var cloudPositions = Enumerable.Range( 0, Sky.GridSize * Sky.GridSize ).Select( index => Sky.ToEngine( Sky.CloudPosition( index / Sky.GridSize, index % Sky.GridSize ) ) ).ToArray();
+		var cylinderPositions = Enumerable.Range( 0, Sky.CylinderColumns * Sky.CylinderRings ).Select( index => Sky.ToEngine( Sky.CylinderPosition( index / Sky.CylinderRings, index % Sky.CylinderRings ) ) ).ToArray();
+		var colours = Enumerable.Repeat( 0xFF102030u, Sky.GridSize * Sky.GridSize ).ToArray();
+		var staging = new Sky.Staging( cloudPositions, colours, Sky.CloudTriangles().ToArray(), cylinderPositions, Sky.CylinderTriangles().ToArray() );
+		var offsets = new float[Sky.MaximumLayers];
+		var before = staging.Update( 1, offsets, offsets, out _ )[0].Normal;
+		Array.Fill( colours, 0xFF405060u );
+		Assert.AreEqual( before, staging.Update( 1, offsets, offsets, out _ )[0].Normal, "the staged vertices keep the old tint until invalidated" );
+		staging.Invalidate();
+		var after = staging.Update( 1, offsets, offsets, out _ )[0].Normal;
+		Assert.AreNotEqual( before, after );
+		Assert.AreEqual( 0x40, (int)after.X );
+	}
 }

@@ -44,6 +44,20 @@ public class LobbyEffectsTests
 	}
 
 	[TestMethod]
+	public void TheCloudGridKeepsTheFogColourWhileSkyQualityIsBelowTwo()
+	{
+		// 0x5d96c0: the eased colour needs SKYQUALITY ([0x785888]) above 1; otherwise the grid is the fog colour and the easing does not step
+		var effects = new LobbyEffects( 7 ) { EasedSky = false };
+		var jungle = new LobbyEffects.Island( Island( "jungle", (243, 203, 191) ), 0, 0 );
+		for ( var tick = 0; tick < 50; tick++ )
+			effects.Step( LobbyEffects.TickSeconds, new[] { jungle }, 0, 0 );
+		Assert.AreEqual( LobbyEffects.ClearColour, effects.Sky );
+		effects.EasedSky = true;
+		effects.Step( LobbyEffects.TickSeconds, new[] { jungle }, 0, 0 );
+		Assert.AreEqual( ((byte)11, (byte)12, (byte)11), effects.Sky, "the easing starts from black when the gate opens: it did not step while closed" );
+	}
+
+	[TestMethod]
 	public void TheSkyEasesASixteenthOfTheWayWithTheRedChannelTowardTheBlueTarget()
 	{
 		var effects = new LobbyEffects( 7 );

@@ -122,6 +122,9 @@ smarter-guests ratio of the synthetic scenario (`--guest-report … --guest-exte
 cannot be separated from noise on this machine (1.1 to 1.4 µs per tick both ways, the pinned 1.08 in SMARTER-GUESTS.md
 stands); on the Jungle park it is the +6 % above. The guest code itself (`GuestSimulation`) was not changed.
 
+Point lights (October 18, 2026, [LIGHTS.md](LIGHTS.md)) were added to the per-draw uniform upload rather than as another upload: a draw with no light uploads the same 272 bytes as before and the frame's cost with no
+light in the park did not move (whole update call 1.91 to 2.17 ms before and 1.90 to 2.16 ms after in four alternating runs); a light adds 32 bytes to the draws it reaches.
+
 ## What is left
 
 1. **Per-draw uniform uploads (about 30 to 40 % of the frame's CPU).** `Material.Set` writes the object uniforms through
@@ -148,3 +151,22 @@ stands); on the Jungle park it is the +6 % above. The guest code itself (`GuestS
    would remove the last of the per-frame garbage that is not Veldrid's.
 8. **The browser.** None of the above was measured there. `tools/web-perf` (BROWSER-PERFORMANCE.md) runs the same
    simulation as its `digest` scenario; the object phase is the part most likely to show.
+
+
+## Frame time at the wide zoom (October 18, 2026)
+
+The wide zoom option (`GameOptions.WideZoom`, UI.md) lets the park camera go out to the zoom value 300, where much more of the park is in view. Measured on the same Mac (Apple silicon, Release
+build, other sessions running), Jungle, `--offscreen --silent --mute --no-advisor --no-vsync --frame-stats --perf-run 1500 --perf-arrivals 3 --perf-zoom <value>`, two rounds, offscreen 1512 x 843:
+
+| Zoom value | Frame average (ms) | World render (ms) | GPU wait (ms) | Model parts drawn / outside the view |
+| ---: | ---: | ---: | ---: | ---: |
+| 40 | 3.31 (one round) | 0.92 | 0.46 | 27 / 54 |
+| 110 (Home) | 4.02, 3.53 | 1.01, 0.89 | 0.56, 0.68 | 35 / 46 |
+| 130 | 3.83, 3.93 | 0.96, 1.05 | 0.67, 0.60 | 37 / 44 |
+| 200 | 3.76, 4.06 | 0.94, 1.06 | 0.74, 0.64 | 38 / 43 |
+| 300 | 6.68, 6.78 | 1.58, 1.52 | 1.43, 1.51 | 72 / 9 |
+
+Longer runs (9000 frames, a guest arriving every turn, 20 to 25 guests in the park) gave 1.7 to 3.4 ms at zoom 110 and 3.4 to 3.7 ms at zoom 300 (150 to 290 frames a second without the
+display's 60 Hz pacing). So zooming all the way out costs about 1.7 times the frame time of the Home view in this park, an extra 2 to 3 ms of drawing (the park's whole object set is now in view
+and the terrain fills the screen), and stays far inside the 16.7 ms of 60 Hz. The run is unthrottled, so the numbers carry the other sessions' load; the Jungle park has few guests, so a crowded
+park costs more (guest sprites in view scale with the guests), which this run did not measure. Nothing caps the frame rate or the draw distance at the wide zoom.

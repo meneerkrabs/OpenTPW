@@ -21,6 +21,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { Cdp, launchChrome, mainThreadBusy, medianResults, sleep, startServer, stopChrome, summarizeFrames } from './lib.mjs';
+import { markdown } from './report.mjs';
 
 const DEFAULT_CHROME = {
 	darwin: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
@@ -35,7 +36,7 @@ const SELECTIONS = [['Rides', 'Belly Bounce'], ['Shops', 'Balloon Shop'], ['Shop
 function parseArguments(argv) {
 	const options = {
 		web: null, game: null, label: 'unlabelled', out: null, chrome: process.env.CHROME ?? DEFAULT_CHROME, headed: false,
-		scenarios: ['start', 'lobby', 'jungle', 'buy', 'digest'], window: 30, memoryMinutes: 10, music: false, width: 1280, height: 900, runs: 1, frameCap: 0, keep: 'off',
+		scenarios: ['start', 'lobby', 'jungle', 'buy', 'digest'], window: 30, memoryMinutes: 10, music: false, width: 1280, height: 900, runs: 1, frameCap: 0, keep: 'off', zoom: null,
 	};
 	for (let index = 2; index < argv.length; index++) {
 		const [flag, inline] = argv[index].split(/=(.*)/s);
@@ -55,6 +56,7 @@ function parseArguments(argv) {
 			case '--runs': options.runs = Math.max(1, Number(value()) || 1); break;
 			case '--frame-cap': options.frameCap = Number(value()); break;
 			case '--keep': options.keep = value(); break;
+			case '--zoom': options.zoom = Number(value()); break;
 			case '--help': case '-h': console.log(usage()); process.exit(0);
 			default: throw new Error(`Unknown option ${flag}\n${usage()}`);
 		}
@@ -75,6 +77,7 @@ function usage() {
   --memory-minutes <n>    memory scenario length (default 10)
   --music                 keep music and speech on (default: muted, effects on, as on 11 October)
   --size <w>x<h>          window size (default 1280x900)
+  --zoom <value>          jungle: after the steady window, hold the park camera at this zoom value (40..300 with the wide zoom option) and measure a second window
   --keep <mode>           keep the game files in the browser on the first visit: lazy, all or off (default off)
   --frame-cap <fps>       the display settings' frame cap (0 off, 30, 60; default 0)
   --runs <n>              repeat the whole session n times, each in a fresh profile, and report the medians (default 1)
@@ -251,7 +254,13 @@ const scenarios = {
 		cold.profile = JSON.parse(await page.eval('opentpwPerf.program.PerfLoadProfile()'));
 		await page.eval('opentpwPerf.program.PerfProfile(false)');
 		const steady = await page.steady(options.window * 1000);
-		return { cold, steady };
+		if (options.zoom == null)
+			return { cold, steady };
+		// [wide zoom] the same park with the camera held at another zoom value (tp.exe's own range is 70..130; the option widens it to 40..300)
+		const reached = await page.eval(`opentpwPerf.program.PerfZoom(${options.zoom})`);
+		await sleep(2000);
+		const zoomed = { zoom: options.zoom, reached, ...await page.steady(options.window * 1000) };
+		return { cold, steady, zoomed };
 	},
 
 	async buy(page) {
@@ -428,44 +437,6 @@ function gitCommit(directory) {
 	} catch {
 		return null;
 	}
-}
-
-function markdown(report) {
-	const lines = [`## ${report.label} — ${report.date} (${report.chrome}, ${report.renderer ?? 'renderer unknown'})`, ''];
-	const results = report.results;
-	if (results.start && !results.start.error)
-		lines.push(`- Start: first frame ${results.start.firstFrameMs} ms, lobby ${results.start.lobbyMs} ms`);
-	for (const [name, steady] of [['Lobby', results.lobby], ['Jungle', results.jungle?.steady]])
-		if (steady && !steady.error)
-			lines.push(`- ${name} steady: main thread busy ${steady.mainThreadBusyPercent}%, ${steady.fps} fps, frame p95 ${steady.p95Ms} ms, largest gap ${steady.largestGapMs} ms, long tasks ${steady.longTasks}`);
-	if (results.jungle?.cold)
-		lines.push(`- Jungle cold: ready in ${results.jungle.cold.readyMs} ms, largest frame ${results.jungle.cold.maxFrameMs} ms`
-			+ (results.jungle.cold.longFramesMs?.length ? `; frames over 50 ms: ${results.jungle.cold.longFramesMs.join(', ')}` : ''));
-		if (results.jungle.cold.buildFramesMs?.length)
-			lines.push(`- Jungle built over ${results.jungle.cold.buildFramesMs.length} frames, construction ms per frame (the last enters the park): ${results.jungle.cold.buildFramesMs.join(', ')}`);
-	const describe = profile => Object.entries(profile).map(([name, entry]) => `${name} ${entry.ms} (${entry.count})`).join(', ');
-	if (results.jungle?.cold?.startProfile)
-		lines.push(`- Jungle load profile until ready (ms, count; nested sections overlap): ${describe(results.jungle.cold.startProfile)}`);
-	if (results.jungle?.cold?.profile)
-		lines.push(`- Jungle load profile including 5 s after: ${describe(results.jungle.cold.profile)}`);
-	if (results.buy && !results.buy.error) {
-		lines.push('', '| First action | Largest frame (ms) | Frames ≥ 50 ms |', '| --- | ---: | ---: |');
-		for (const [name, entry] of Object.entries(results.buy))
-			lines.push(entry.missing ? `| ${name} | not listed | |` : `| ${name === 'openMenu' ? `Open buy menu / ${entry.selected ?? ''}` : name} | ${entry.maxFrameMs} | ${entry.over50Ms} |`);
-	}
-	if (results.revisit && !results.revisit.error)
-		lines.push(`- Revisit from kept files (${results.revisit.kept}): Play shown after ${results.revisit.playShownMs} ms, first frame ${results.revisit.firstFrameMs} ms and lobby ${results.revisit.lobbyMs} ms after the click, Jungle ready in ${results.revisit.jungleReadyMs} ms`);
-	if (results.digest?.simulationHash)
-		lines.push('', `- Digest: ${results.digest.textures} textures in ${results.digest.textureMs} ms (hash ${results.digest.textureHash}); fixed park run in ${results.digest.simulationMs} ms (hash ${results.digest.simulationHash})`);
-	if (results.switch?.steps)
-		lines.push('', '| Step | Wasm MB | Live managed MB | Levels alive | Entities | Textures held | Archive files read MB | Archive members MB | Decoded sound MB | JS heap MB |', '| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |',
-			...results.switch.steps.map(step => `| ${step.step} | ${(step.wasmBytes / 1048576).toFixed(0)} | ${(step.managedBytes / 1048576).toFixed(0)} | ${step.levelsAlive} | ${step.entities} | ${step.texturesHeld} | ${(step.archiveBytes / 1048576).toFixed(0)} | ${(step.archiveMemberBytes / 1048576).toFixed(0)} | ${(step.decodedSampleBytes / 1048576).toFixed(0)} | ${(step.jsHeapBytes / 1048576).toFixed(0)} |`));
-	if (results.memory && !results.memory.error)
-		lines.push('', `- Memory over ${results.memory.minutes} min: wasm +${(results.memory.wasmGrowthBytes / 1048576).toFixed(1)} MB (peak ${(results.memory.peakWasmBytes / 1048576).toFixed(0)} MB), managed +${(results.memory.managedGrowthBytes / 1048576).toFixed(1)} MB`);
-	for (const [name, entry] of Object.entries(results))
-		if (entry?.error)
-			lines.push(`- ${name}: FAILED — ${entry.error}`);
-	return lines.join('\n');
 }
 
 /** One session in a fresh Chrome profile: the scenarios in order, their results and the page's uncaught errors. */

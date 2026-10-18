@@ -3,7 +3,7 @@
 #	A warm spiced drink with no drunk effects: Theme Park World has no intoxication state and none is added ([EXT:winter-gluehwein-no-drunk]).
 #	Every number marked "OpenTPW's own value" is a choice of this extension (docs/WINTER.md). Nothing is read from Theme Park World's or Theme Park Inc's data.
 #
-Info.Id			64001		placeholder: objects.json replaces it with the object's own id
+Info.Id			64011		placeholder: objects.json replaces it with the object's own id
 Info.Name		"Gluehwein Stall"
 Info.IsChoosable	1
 Info.HasQueue		0		a shop: guests walk to it and buy, no queue
@@ -40,7 +40,7 @@ UsageInfo.ISIndoors			0
 
 UsageInfo.ThirstEffect		30		OpenTPW's own value (the original drinks shops: 40)
 UsageInfo.HungerEffect		5		OpenTPW's own value
-UsageInfo.VomitEffect		5		half a drinks shop's 10: no drunk effects, nobody is made sick by a warm drink
+UsageInfo.VomitEffect		5		half a drinks shop's 10: no drunk effects, and a warm drink adds half a drinks shop's vomit
 UsageInfo.HappinessEffect		15		OpenTPW's own value
 UsageInfo.LitterEffect		40		OpenTPW's own value (mugs)
 

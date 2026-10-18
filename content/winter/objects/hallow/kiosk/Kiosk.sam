@@ -2,7 +2,7 @@
 #	OpenTPW winter extension: the winter kiosk (modelled on the keys of the original balloon shop, a shop). It sells a head item (a bobble hat or earmuffs) and then mittens.
 #	Every number marked "OpenTPW's own value" is a choice of this extension (docs/WINTER.md, [EXT:winter-kiosk]). Nothing is read from Theme Park World's or Theme Park Inc's data.
 #
-Info.Id			64000		placeholder: objects.json replaces it with the object's own id
+Info.Id			64010		placeholder: objects.json replaces it with the object's own id
 Info.Name		"Winter Kiosk"
 Info.IsChoosable	1
 Info.HasQueue		0		a shop: guests walk to it and buy, no queue

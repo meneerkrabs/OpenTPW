@@ -74,8 +74,8 @@ All labels below are ours; nothing here is built yet except the content.
 - **Glühwein stall** `[EXT:winter-gluehwein]`. A drinks shop as the originals are (`ShopType 4`, `SpecialIngredient 3`, so the drinks code path, challenge and price statistics apply); the slider is labelled "Spices" for this object only
   `[EXT:winter-spice-label]`; `VomitEffect` 5, no new guest state, speech or animation `[EXT:winter-gluehwein-no-drunk]`. Demand: no gate; snow 250 %, rain and storm 130 %, winter months 150 %, spring and autumn 60 %, summer 20 %. With
   `opentpw.winter-cold` on, a glühwein warms the guest for one game day.
-- **Cold mood** (`opentpw.winter-cold`, off by default). Once per qualifying day per guest, in snow only: happiness += -2, +1 for a head item, +1 for mittens, +1 while warmed, capped at 0. With `opentpw.rain-mood` also on the two add up,
-  so an undressed kid nets -1 a qualifying day and a dressed one +1; this deviates from Theme Park Inc's +1 alone and is an open question.
+- **Cold mood** (`opentpw.winter-cold`, off by default). Once per qualifying day per guest, in snow only: happiness += -2, +1 for a head item, +1 for mittens, +1 while warmed, capped at 0. With `opentpw.rain-mood` also on, the cold rule
+  replaces the rain mood's snow +1 (the user's decision), so an undressed kid nets -2 a qualifying day and a dressed one 0.
 - **Wintry Decembers** `[EXT:winter-weather]` (an option): December's rolls in jungle and fantasy give snow instead of thunderstorms; its own pin.
 - **Saves and determinism.** Snow cover: no hash part, no draw from any stream, no mod-set record. Winter: optional guest fields `WarmItems` and `WarmUntilDay` written and hashed only when set, so older JSON and every park without the extension
   stay byte-equal; off, or on without shops and items, every pin is unchanged. New pins arrive with W3 and W5.
@@ -102,7 +102,7 @@ repository; nothing in it comes from Theme Park World or Theme Park Inc, and no 
 - `objects.json`: eight shops, one **winter kiosk** and one **glühwein stall** per Theme Park World theme, ids **64010 to 64017** inside the extension's own range **64010 to 64499** (jungle kiosk 64010, jungle stall 64011, hallow 64012 and
   64013, space 64014 and 64015, fantasy 64016 and 64017), category `shops`, `"research": false`. The range sits below the umbrellas' 64500..64999 and the pools' 65000..65535 and above the Theme Park Inc rides' 40000..40499. The
   first ten ids of the 64000 block, 64000 to 64009, belong to the example lamp mod (`content/mods/opentpw.example.lamp-lights`), which is why the winter range starts at 64010. The extension's id is `opentpw.winter`, so a park save will name
-  the files `mod:opentpw.winter:/...` (as [POOLS.md](POOLS.md#content-extpools-content)). Names in nine languages.
+  the files `mod:opentpw.winter:/...` (as [POOLS.md](POOLS.md#content-extpools-content)). Names in the eleven interface languages.
 - `objects/<theme>/<shop>/` (`kiosk` and `gluehwein`): the MD2 model, 8 or 9 64 x 64 TGA textures (`wk_` and `wg_` prefixes), `Kiosk.sam` / `Gluehwein.sam` and the shop script. Both are **2 x 2 market huts** whose entrance is the lower left cell:
   a back wall, two side walls whose tops follow the roof, a counter, two front posts and a **pitched roof** (a closed prism with the ridge over X = 10, so the front is an open gable and the counter shows; the slopes face up, so the snow cover
   lands on them with no extra work). The kiosk has a hat rack on the back wall with bobble hats on pegs, a mitten garland under the roof's front and folded scarves on the counter; the stall has a copper pot on a stove, mugs, a lit sign and a chimney.

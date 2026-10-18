@@ -27,7 +27,7 @@ source_config="${OPENTPW_SMOKE_CONFIG_SOURCE:-$HOME/Library/Application Support/
 for file in "$source_config"/*.json; do
   [[ -f "$file" && "$(basename "$file")" != mods.json ]] && cp "$file" "$work/config/"
 done
-for folder in art hero-art texture-packs; do
+for folder in art texture-packs; do
   [[ -d "$source_config/$folder" ]] && ln -s "$source_config/$folder" "$work/config/$folder"
 done
 export OPENTPW_CONFIG_DIR="$work/config"

@@ -151,17 +151,23 @@ public sealed class HermiteCoasterCurve : ICoasterCurve
 		return (position + -direction * back / 3f, position + direction * forward / 3f);
 	}
 
-	/// <summary>The loop-pylon tangent factor K = (C(1 − x²) + 2.1x²)(1 − w) + 2.1w (<c>0x3232c..0x325d0</c>).</summary>
-	// [BIN:STP-PPC:0x1003232C loop knot factor] x = clamp(|heading · yaw axis|, 0, 1); w = (1 + cos 2πu)/2 with u = clamp(2·fmod(loop rotate, 0.5), 0, 1); table trigonometry
+	/// <summary>The loop-pylon tangent factor K = (1 − w)·((1 − x²)·C + 2.1·x²) + 2.1·w (<c>0x432430</c>).</summary>
+	// [BIN:TPW-EXE:0x43255c loop knot factor] x = clamp(|heading · yaw axis|, 0, 1); k = f32((1 − x²)·C − x²·f32(−2.1)) stored as single (0x4325b4..0x4325d0, constant 0x6fdec4); w = (T + 1)·0.5 with T the PC table entry at the nearest index (fistp) of (2π·u − (−π/2))·scale, u = clamp(2·fmod(loop rotate, 0.5), 0, 1) (0x4325d9..0x43264a, the sum carried unrounded); K = f32((1 − w)·k − w·f32(−2.1)) (0x432650..0x432665)
 	public static float LoopKnotFactor( float curviness, float side, float loopRotate )
 	{
 		var x = Math.Clamp( MathF.Abs( side ), 0f, 1f );
-		var x2 = x * x;
-		var k = MathF.FusedMultiplyAdd( curviness, 1f - x2, LoopTangent * x2 );
+		double x2 = (double)x * x;
+		var k = (float)((1.0 - x2) * curviness - x2 * LoopTangentConstant);
 		var u = Math.Clamp( 2f * (loopRotate % 0.5f), 0f, 1f );
-		var w = (1f + CoasterTrig.Sin( MathF.FusedMultiplyAdd( CoasterTrig.TwoPi, u, CoasterTrig.HalfPi ) )) * 0.5f;
-		return MathF.FusedMultiplyAdd( k, 1f - w, LoopTangent * w );
+		var index = (int)MathF.Round( (float)((u * (double)TwoPiSingle - MinusHalfPiSingle) * CoasterTrig.PcScale) ) & (CoasterTrig.Size - 1);
+		var w = ((double)CoasterTrig.PcEntry( index ) - -1.0) * 0.5;
+		return (float)((1.0 - w) * k - w * LoopTangentConstant);
 	}
+
+	/// <summary>The constant at <c>0x6fdec4</c>, f32(−2.1).</summary>
+	private const float LoopTangentConstant = -2.1f;
+	private const float TwoPiSingle = 6.2831855f;
+	private const float MinusHalfPiSingle = -1.5707964f;
 
 	/// <summary>One axis of the cubic Bézier <c>0x41b00</c> in its power-form operation order.</summary>
 	// [BIN:STP-PPC:0x10041B00 segment curve] Q(t) = P0 + t(3P1 − 3P0) + t²(3P0 − 6P1 + 3P2) + t³(−P0 + 3P1 − 3P2 + P3), fused single operations
@@ -381,7 +387,8 @@ public sealed class HermiteCoasterCurve : ICoasterCurve
 			}
 			var next = NextKnot( pair );
 			var tangent = Derivative( knots[pair].Position, controls[pair].Forward, controls[next].Back, knots[next].Position, Math.Clamp( t, 0f, 1f ) );
-			var (yaw, pitch) = Orientation( tangent );
+			// [BIN:TPW-EXE:0x4411db sample angles] the sampler stores the sample's yaw and pitch through 0x43e590, whose table lookups round to the nearest index (fistp under the default control word)
+			var (yaw, pitch) = tangent.LengthSquared() > 0 ? CoasterTrack.PcOrientation( tangent ) : (0f, 0f);
 			// [BIN:TPW-EXE:0x440c10 closing sample roll] the sample taken on the closing pair (no next node, 0x440c10 line `local_a0 = 0` before 0x43e590) gets roll 0, whatever the rolls of the end node and S1 are
 			// [BIN:TPW-EXE:0x440c10 sample roll] every other sample's roll (+0x18) is the second rail's roll about the slice tangent: the second rail's point at the sample's t on the pair (0x43e1b0 over the second records) relative to the sample's own point, turned by −yaw and −pitch of the tangent (0x43e590) and atan2(−x, y) (0x46f230); the node's tag roll (+0xe4) is not added here, only in the slice frames 0x43e6b0
 			var roll = 0f;

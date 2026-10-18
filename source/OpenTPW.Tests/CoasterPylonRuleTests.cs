@@ -171,4 +171,27 @@ public class CoasterPylonRuleTests
 		ride.AddCanonicalState( expected );
 		Assert.AreEqual( expected.Value, hash.Value, "the migrated track is the freshly completed one" );
 	}
+
+	[TestMethod]
+	public void ASaveFromBeforeTheKeptWinchMarkGetsItOnTheStationsFirstTwoNodes()
+	{
+		var (builder, ride) = NewCoaster();
+		builder.Height = 40;
+		foreach ( var (dx, dy) in CoasterTests.Circuit )
+			Assert.AreEqual( CoasterPlaceResult.Ok, builder.Place( 20 + dx, 20 + dy ) );
+		Assert.AreEqual( CoasterPlaceResult.Ok, CoasterTests.CloseAndComplete( builder ) );
+		var captured = CoasterSave.CaptureRide( ride, 5 );
+		var oldNodes = captured.Track.Nodes.Select( node => node with { Flags = node.Flags & ~(uint)CoasterNodeFlags.WinchKept } ).ToList();
+		var old = captured with { Track = captured.Track with { Nodes = oldNodes } };
+		var restored = new CoasterRide( ride.Definition, new CoasterWorld( 1 ), "Test Coaster" );
+		restored.RestoreSnapshot( old );
+		Assert.AreEqual( CoasterNodeFlags.WinchKept, restored.Track.Nodes[0].Flags & CoasterNodeFlags.WinchKept );
+		Assert.AreEqual( CoasterNodeFlags.WinchKept, restored.Track.Nodes[1].Flags & CoasterNodeFlags.WinchKept );
+		Assert.AreEqual( CoasterNodeFlags.None, restored.Track.Nodes[2].Flags & CoasterNodeFlags.WinchKept );
+		var hash = new StateHasher();
+		restored.AddCanonicalState( hash );
+		var expected = new StateHasher();
+		ride.AddCanonicalState( expected );
+		Assert.AreEqual( expected.Value, hash.Value, "the migrated track equals the freshly built one" );
+	}
 }

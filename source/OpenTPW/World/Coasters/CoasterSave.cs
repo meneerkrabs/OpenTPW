@@ -79,7 +79,7 @@ internal static class CoasterSave
 	/// <summary>Bound on one train's cars in the saved part (the catalog check is exact: the definition's <c>uiMaxCars</c>, 6 for the largest shipped train).</summary>
 	public const int MaximumCarsPerTrain = 32;
 	/// <summary>The node flag bits a save may carry; anything else is a format this code does not know, and load refuses it.</summary>
-	public const uint KnownNodeFlags = (uint)(CoasterNodeFlags.NoAutoBank | CoasterNodeFlags.LoopMark | CoasterNodeFlags.Loop | CoasterNodeFlags.LoopFirst | CoasterNodeFlags.ZeroBank | CoasterNodeFlags.Winch | CoasterNodeFlags.Invalid
+	public const uint KnownNodeFlags = (uint)(CoasterNodeFlags.NoAutoBank | CoasterNodeFlags.LoopMark | CoasterNodeFlags.Loop | CoasterNodeFlags.LoopFirst | CoasterNodeFlags.ZeroBank | CoasterNodeFlags.Winch | CoasterNodeFlags.WinchKept | CoasterNodeFlags.Invalid
 		| CoasterNodeFlags.StationTail | CoasterNodeFlags.StationHead | CoasterNodeFlags.NoPreviousLink | CoasterNodeFlags.NoNextLink | CoasterNodeFlags.EndNextIsSecond
 		| CoasterNodeFlags.ManualYaw | CoasterNodeFlags.ManualIncline | CoasterNodeFlags.CutEnd | CoasterNodeFlags.CutStart | CoasterNodeFlags.TurnedBack);
 

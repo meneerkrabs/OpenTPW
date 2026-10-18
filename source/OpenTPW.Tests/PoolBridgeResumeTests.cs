@@ -16,7 +16,7 @@ public class PoolBridgeResumeTests
 		var cells = rig.Grid.Cells;
 		rig.Ride.QueueFrontCell = (4, 4);
 		rig.Ride.QueueEntranceDirection = 0;
-		rig.Grid.SetQueue( 4, 4, 0 );
+		Assert.AreEqual( QueueBuildResult.Ok, QueuePaths.TryExtend( rig.Grid, rig.Ride, 4, 4 ) );
 		rig.Grid.SetPath( 4, 5, true );
 		Assert.IsTrue( QueuePaths.Connect( rig.Grid, rig.Ride, (4, 4), (4, 5) ) );
 		Assert.AreEqual( (4, 5), rig.Ride.JoinCell );

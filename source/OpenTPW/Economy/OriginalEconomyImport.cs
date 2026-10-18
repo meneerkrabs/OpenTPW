@@ -400,6 +400,8 @@ public sealed class OriginalEconomyImport
 			// [BIN:TPW-EXE:0x50c800 training split] budget word k serves the role of thing model 5, 4, 6, 7 and 8 for k = 0..4 (handyman, mechanic, entertainer, guard, researcher: StaffType's order), shared by its role's headcount at month end
 			for ( var role = 0; role < BalanceSettings.StaffTypeCount && role < hq.TrainingBudgets.Count; role++ )
 				economy.Staff.SetTrainingBudget( (StaffType)role, hq.TrainingBudgets[role] );
+			// [BIN:TPW-EXE:0x0059FB10 train staff general] the byte mHaveEverTrained (+0x20 of the HQ's budget record) is read by the advisor's train-your-staff line; the save's value replaces what the budgets above implied
+			economy.Staff.RestoreHaveEverTrained( hq.Trained != 0 );
 			// [BIN:TPW-EXE:0x508f70 strike step] each role's 12-byte strike record holds its level (+0, 0-4) and its active word (+4); 0x508e70 stamps the third word (+8) with the turn the role was last considered
 			var levels = new int[BalanceSettings.StaffTypeCount];
 			var active = new bool[BalanceSettings.StaffTypeCount];
@@ -413,8 +415,8 @@ public sealed class OriginalEconomyImport
 			economy.Staff.Strikes.Restore( levels, active, turns );
 			evidence.Add( $"Staff HQ imported: training budgets {string.Join( ", ", hq.TrainingBudgets )} (handyman, mechanic, entertainer, guard, researcher), strike levels {string.Join( "/", levels )}, active {string.Join( "/", active.Select( flag => flag ? 1 : 0 ) )}, last considered on turns {string.Join( "/", turns )}." );
 			// [EXT:staff-pickup-reconcile] a member saved in state 7 (picked up) with the staff HQ's picked-up id (+0x60) naming him is imported idle (StaffPlacement.Reconcile) instead of reproducing the original's limbo (its only reader of the id is the drop 0x509AF0 from the carry tool's exit 0x46CC40, which also clears it, and no carry tool exists after a load, so the original keeps him in state 7 for good, the pick-up guard 0x505BD0 refusing state 7, loader 0x508BB0): a member nobody can ever move again would be a defect, user-approved 2026-10-17
-			// [BIN:TPW-EXE:0x5089C0 staff HQ constructor] the force strike (+0x64) is written only by the HQ constructor (0) and the save loader 0x508BB0, so the month gate 0x508E70 and the grievance 0x509360 see 0 in play as OpenTPW does; the trained byte (mHaveEverTrained, training +0x14) is only cleared (0x50C620) and serialized (0x50C640), never read
-			evidence.Add( $"Staff HQ values read, nothing to import: force strike {hq.ForceStrike}, trained {hq.Trained} (no reader after the load)." );
+			// [BIN:TPW-EXE:0x5089C0 staff HQ constructor] the force strike (+0x64) is written only by the HQ constructor (0) and the save loader 0x508BB0, so the month gate 0x508E70 and the grievance 0x509360 see 0 in play as OpenTPW does; the trained byte (mHaveEverTrained, training +0x14) is cleared (0x50C620), serialized (0x50C640), set by the training window (0x4B25D0) and read only by the advisor's train-your-staff line (0x59FB3B), so it is imported above
+			evidence.Add( $"Staff HQ values read, nothing to import: force strike {hq.ForceStrike}, trained {hq.Trained} (the trained byte is the advisor's train-your-staff flag, imported above; nothing reads the force strike after the load)." );
 			if ( hq.PickedUp != 0 )
 				evidence.Add( $"[EXT:staff-pickup-reconcile] Staff HQ thing {hq.Id} saved member {hq.PickedUp} as picked up: he is imported idle, where the original keeps him in state 7 for good (no carry tool exists after a load to drop him)." );
 		}

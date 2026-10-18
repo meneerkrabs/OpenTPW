@@ -280,7 +280,22 @@ public sealed class ParkStaff
 
 	public long GetTrainingBudget( StaffType type ) => trainingBudget[(int)type];
 
-	public void SetTrainingBudget( StaffType type, long monthlyBudget ) => trainingBudget[(int)type] = Math.Max( 0, monthlyBudget );
+	/// <summary>
+	/// Whether any training budget has ever been set above 0 (the staff HQ's <c>mHaveEverTrained</c>, the byte at <c>+0x20</c> of the thing <c>0x519450</c> returns). It stays set once set: setting a budget back to 0 leaves it,
+	/// and only the advisor's "train your staff" line reads it (<c>0x59FB10</c>).
+	/// </summary>
+	public bool HaveEverTrained { get; private set; }
+
+	// [BIN:TPW-EXE:0x004B25D0 training budget window] the window stores the budget (a negative one as 0) and sets the HQ's byte +0x20 to 1 only when the value is above 0
+	public void SetTrainingBudget( StaffType type, long monthlyBudget )
+	{
+		trainingBudget[(int)type] = Math.Max( 0, monthlyBudget );
+		if ( monthlyBudget > 0 )
+			HaveEverTrained = true;
+	}
+
+	/// <summary>Restores the flag of a loaded park: from the original save's staff HQ (<c>mHaveEverTrained</c>) or from an OpenTPW save.</summary>
+	internal void RestoreHaveEverTrained( bool haveEverTrained ) => HaveEverTrained = haveEverTrained;
 
 	/// <summary>Skill shown for an employee: 20 × (grade + training percentage / 100), truncated, in single precision as in the original (0x100F41DC).</summary>
 	public static int StaffSkill( StaffMember member ) => (int)(20f * (float)(member.Grade + member.TrainingPoints / 100.0));

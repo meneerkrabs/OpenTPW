@@ -555,8 +555,23 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 		{
 			if ( card == null || (files != null && files.Count > 0 && !files.Contains( file )) )
 				continue;
-			await client.SendPostcardAsync( card );
-			File.Move( file, Path.Combine( Folders.Sent, Path.GetFileName( file ) ), true );
+			var result = await client.SendPostcardAsync( card );
+			var delivered = result.DeliveredTo.Select( PostcardRecipient.Key ).ToHashSet( StringComparer.Ordinal );
+			var remaining = card.Manifest.To.Where( recipient => !delivered.Contains( PostcardRecipient.Key( recipient ) ) ).ToArray();
+			if ( remaining.Length == 0 )
+				File.Move( file, Path.Combine( Folders.Sent, Path.GetFileName( file ) ), true );
+			else
+			{
+				var confirmed = card.Manifest.To.Where( recipient => delivered.Contains( PostcardRecipient.Key( recipient ) ) ).ToArray();
+				if ( confirmed.Length > 0 )
+				{
+					// Stable subset names make repeating a local save safe; never mark a failed recipient as sent.
+					var suffix = ParkPackage.Hash( StrictJson.Serialize( card.Manifest with { To = confirmed } ) )[..16];
+					Folders.Store( Folders.Sent, card with { Manifest = card.Manifest with { To = confirmed } }, $"sent-{card.Id:N}-{suffix}" );
+					(card with { Manifest = card.Manifest with { To = remaining } }).Save( file );
+				}
+				throw new InvalidDataException( result.Error ?? "Some postcard recipients could not be reached; they remain in the outbox." );
+			}
 			sent++;
 		}
 		return $"{OnlineStrings.Ui( OnlineStrings.SendingOutbox, "Sending mails from outbox" )} {sent}";

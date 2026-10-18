@@ -108,14 +108,16 @@ public readonly record struct EveningLook(
 	private static readonly SVector3 FogNight = new( 0.05f, 0.07f, 0.16f );
 	private static readonly SVector3 SpriteNight = new( 0.34f, 0.38f, 0.60f );
 	private static readonly SVector3 AmbientNight = new( 0.55f, 0.80f, 1.35f );
-	private static readonly SVector3 AmbientWarm = new( 1.00f, 0.72f, 0.52f );
+	private static readonly SVector3 AmbientWarm = new( 1.00f, 0.64f, 0.44f );
 	private static readonly SVector3 WaterNight = new( 0.20f, 0.28f, 0.46f );
 	// what a low sun does to each: multiplied in with the weight of the dusk glow (0 at full day and at full night, 1 at the middle of the dusk)
-	private static readonly SVector3 SunWarm = new( 1.00f, 0.55f, 0.30f );
+	private static readonly SVector3 SunWarm = new( 1.80f, 0.85f, 0.30f );
 	private static readonly SVector3 SkyWarm = new( 1.00f, 0.58f, 0.42f );
 	private static readonly SVector3 FogWarm = new( 1.00f, 0.62f, 0.48f );
 	private static readonly SVector3 SpriteWarm = new( 1.00f, 0.78f, 0.62f );
 	private static readonly SVector3 WaterWarm = new( 1.00f, 0.85f, 0.78f );
+	/// <summary>The power of the daylight that fades the sun (above 1, so dusk is dimmer than day; the low dusk sun stays strong enough to turn green ground warm).</summary>
+	public const float SunFadePower = 1.8f;
 	/// <summary>The ambient fraction left at full night: 0.35 of the original's 0.4, so the ground stays readable under the moon and the lamps.</summary>
 	public const float NightAmbient = 0.35f;
 
@@ -130,8 +132,8 @@ public readonly record struct EveningLook(
 		return new EveningLook(
 			daylight,
 			// the sun fades faster than the daylight (to the power 1.5), so the dusk is clearly dimmer than the day
-			Vector3Lerp( Moon, SVector3.One, MathF.Pow( daylight, 1.5f ) ) * Vector3Lerp( SVector3.One, SunWarm, glow ),
-			Lerp( NightAmbient, 1f, daylight ),
+			Vector3Lerp( Moon, SVector3.One, MathF.Pow( daylight, SunFadePower ) ) * Vector3Lerp( SVector3.One, SunWarm, glow ),
+			Lerp( NightAmbient, 1f, MathF.Pow( daylight, 1.4f ) ),
 			Blend( SkyNight, SkyWarm ),
 			Blend( FogNight, FogWarm ),
 			Blend( SpriteNight, SpriteWarm ),

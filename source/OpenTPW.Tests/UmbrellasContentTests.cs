@@ -105,7 +105,7 @@ public class UmbrellasContentTests
 			Assert.AreEqual( 1, settings.GetInt( "UsageInfo.RideHandlesSprite" ) );
 			Assert.AreEqual( 0, settings.GetInt( "UsageInfo.ISIndoors", -1 ), "not indoors, so the original's indoor-in-rain bonus does not stack on the 200 %" );
 			Assert.AreEqual( (200, 200, 150, 5), (settings.GetInt( "WeatherModifier.RainPercentage" ), settings.GetInt( "WeatherModifier.StormPercentage" ), settings.GetInt( "WeatherModifier.SnowPercentage" ), settings.GetInt( "WeatherModifier.HeatWavePercentage" )) );
-			Assert.AreEqual( 100, settings.GetInt( "GenerationModifier.KidScorePercentage" ), "OpenTPW's own value: every Theme Park World guest is a kid" );
+			Assert.AreEqual( 75, settings.GetInt( "GenerationModifier.KidScorePercentage" ), "Theme Park Inc's value, per the owner's decision" );
 			Assert.AreEqual( 30, entry.Economy.PricePerUse, "as Theme Park Inc" );
 			Assert.AreEqual( 13, entry.Economy.CostOfGoods );
 			Assert.AreEqual( 1000, entry.BuildCost );
@@ -380,7 +380,7 @@ public class UmbrellasContentTests
 		var shop = ObjectCatalog.Load( "jungle" ).Entries.Single( entry => entry.ModId == ModId );
 		var bridge = OriginalObjectRuntime.CreateVisitorBridge( shop, 7 );
 		Assert.IsTrue( ((IRideVisitorBridge)bridge).IsUmbrellaShop );
-		Assert.AreEqual( new UmbrellaShopTerms( 200, 200, 150, 5, 100 ), bridge.UmbrellaTerms );
+		Assert.AreEqual( new UmbrellaShopTerms( 200, 200, 150, 5, 75 ), bridge.UmbrellaTerms );
 		var totem = ObjectCatalog.Load( "jungle" ).Entries.First( entry => entry.ModId == null );
 		Assert.IsNull( OriginalObjectRuntime.CreateVisitorBridge( totem, 8 ).UmbrellaTerms, "an original object keeps the game's score: the keys are read for the extension's objects only" );
 	}

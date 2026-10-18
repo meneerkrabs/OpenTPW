@@ -89,6 +89,10 @@ public static partial class Program
 	[JSExport]
 	public static bool PerfEvening( string mode ) => Level.PerfEvening( mode );
 
+	/// <summary>Adds <paramref name="count"/> debug lamp lights around the park camera's target (the browser twin of <c>--debug-evening-lamps</c>); 0 removes them; -1 outside a park (see <c>Level.PerfEveningLamps</c>).</summary>
+	[JSExport]
+	public static int PerfEveningLamps( int count ) => Level.PerfEveningLamps( count );
+
 	/// <summary>Holds the park camera at a zoom value (the wide range reaches 40..300 with the option on) and returns the zoom it ended at; -1 outside a park.</summary>
 	[JSExport]
 	public static double PerfZoom( double zoom )

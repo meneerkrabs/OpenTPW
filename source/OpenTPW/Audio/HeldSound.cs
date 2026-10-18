@@ -10,9 +10,17 @@ public sealed class HeldSound
 	private readonly SoundSentence? sentence;
 	private readonly PlacedSound? placed;
 
-	internal HeldSound( SoundSentence sentence ) => this.sentence = sentence;
+	internal HeldSound( SoundSentence sentence, HeldSoundService service, AudioChannel channel )
+	{ this.sentence = sentence; this.service = service; Channel = channel; }
 
-	internal HeldSound( PlacedSound placed ) => this.placed = placed;
+	internal HeldSound( PlacedSound placed, HeldSoundService service, AudioChannel channel )
+	{ this.placed = placed; this.service = service; Channel = channel; }
+
+	private readonly HeldSoundService service;
+	internal AudioChannel Channel { get; }
+	internal HeldSoundLifetime Lifetime => (sentence?.Lifetime ?? placed?.Lifetime)!;
+	/// <summary>Releases a quality-enabled tail to the sound service; posting does not change its volume.</summary>
+	public void Fade() => service.Fade( this );
 
 	/// <summary>The sentence of a repeating event, null for a one-shot.</summary>
 	public SoundSentence? Sentence => sentence;
@@ -24,7 +32,7 @@ public sealed class HeldSound
 	public Vector3? Position => sentence != null ? sentence.Position : placed!.Position;
 
 	/// <summary>Whether the sound has ended (stopped, or a one-shot that has played out); the library then no longer finds its handle, so later calls do nothing.</summary>
-	public bool IsFinished => sentence != null ? sentence.IsStopped : placed!.IsFinished;
+	public bool IsFinished => Lifetime.Terminal || (sentence != null ? sentence.IsStopped : placed!.IsFinished);
 
 	/// <summary>Moves the sound to <paramref name="place"/> (the original's 0x51C270, which hands the new place to the voice).</summary>
 	public void MoveTo( Vector3 place )

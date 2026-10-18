@@ -24,7 +24,7 @@ In code the system is called `OpenTPW.Mods` / "extensions"; `OpenTPW.ModKit` is 
 
 - manifests are parsed and validated, mod folders are discovered, `mods.json` is read and the run's set of extensions
   and mods is resolved once at startup;
-- the official extensions are `opentpw.online`, `opentpw.cross-edition-objects`, `opentpw.smarter-guests`, `opentpw.guest-insights` and `opentpw.restored-advice` (below), `opentpw.pools-guest-art` (presentation only, on by default: with the pools extension on, land guests use OpenTPW's own 2x kids, off shows the original guests; [POOLS.md](POOLS.md)), and `opentpw.pools`, on by default (not in a Theme Park Inc run), in which the player paints
+- the official extensions are `opentpw.online`, `opentpw.cross-edition-objects`, `opentpw.smarter-guests`, `opentpw.guest-insights` and `opentpw.restored-advice` (below), `opentpw.evening` (presentation only, on by default: a day and night cycle with lamps that light at dusk; [EVENING.md](EVENING.md)), `opentpw.pools-guest-art` (presentation only, on by default: with the pools extension on, land guests use OpenTPW's own 2x kids, off shows the original guests; [POOLS.md](POOLS.md)), `opentpw.rain-mood`, off by default (not in a Theme Park Inc run; [UMBRELLAS.md](UMBRELLAS.md#the-rain-mood-rule-phase-u4): guests lose or gain happiness, thirst and hunger in rain, storm and snow once per qualifying day, and an open umbrella softens the loss; recorded in every save while it is on), `opentpw.umbrellas`, on by default (not in a Theme Park Inc run; [UMBRELLAS.md](UMBRELLAS.md): the brolly shops and the umbrella rules, recorded in a save only while the park has a shop or an umbrella), and `opentpw.pools`, on by default (not in a Theme Park Inc run), in which the player paints
   pool water cells (see [POOLS.md](POOLS.md)); a park save records `opentpw.pools` only when the park has pool cells;
 - park saves record the mods that change the simulation and refuse a mismatched set (below);
 - the **Extensions and mods screen** (below) edits `mods.json`;
@@ -46,7 +46,10 @@ Changes to `mods.json` apply at the next start; nothing is swapped while the gam
 | `opentpw.online` | yes | yes | no | [Online play](ONLINE.md); no network request until the player acts |
 | `opentpw.pools` | **yes** | yes | yes (recorded in a save only while the park has pool cells or a changing room) | [Swimming pools](POOLS.md); not in a Theme Park Inc run |
 | `opentpw.pools-guest-art` | yes | yes | no | OpenTPW's own 2x kid and head sprites for land guests while pools is on; switch it off for the original guests |
+| `opentpw.umbrellas` | **yes** | yes | yes (recorded in a save only while the park has a brolly shop or a guest with an umbrella) | [Umbrellas](UMBRELLAS.md): a brolly shop per theme and guests who carry an open umbrella in the rain; not in a Theme Park Inc run; simulation only until its art lands |
+| `opentpw.rain-mood` | no | yes | yes (recorded in every save while it is on) | [Rain mood](UMBRELLAS.md#the-rain-mood-rule-phase-u4): guests lose or gain happiness, thirst and hunger in rain, storm and snow, once per qualifying day; an open umbrella softens the loss; not in a Theme Park Inc run |
 | `opentpw.restored-advice` | yes | yes | no | advisor lines in the shipped data that the original never plays |
+| `opentpw.evening` | **yes** | yes | no | [Evening and night](EVENING.md): a day and night cycle on play time with lamps that light at dusk; presentation only |
 | `opentpw.guest-insights` | no | yes | no | refusal counters in the park information window |
 | `opentpw.cross-edition-objects` | no | yes | yes | engine support for mods that bring Theme Park Inc attractions into Theme Park World |
 | `opentpw.smarter-guests` | no | **no, not yet** | yes | guests that decide better; selectable once phase 6 shows an effect |
@@ -89,7 +92,7 @@ Standard.sam)", "This folder holds Theme Park World data, not Theme Park Inc", "
 the wrong edition is not saved. Saved folders go to `inputs` in `mods.json`.
 
 **OK** writes `mods.json` (only when a choice changed) and shows a restart notice; **Cancel** and Escape discard the edits.
-Nothing is applied while the game runs. The screen's own texts are in the nine languages (`OpenTpwText`, `SupplementaryStrings`). The name and description of four extensions (smarter guests, guest insights, pool guest art, restored advice) are translated too; the other extensions (online, cross-edition objects, pools) and every mod show the name and description from their code or manifest, which are English. In the
+Nothing is applied while the game runs. The screen's own texts are in the eleven interface languages (`OpenTpwText`, `SupplementaryStrings`). The name and description of five extensions (smarter guests, guest insights, pool guest art, restored advice, evening and night) are translated too; the other extensions (online, cross-edition objects, pools) and every mod show the name and description from their code or manifest, which are English. In the
 browser build the community list holds the mods shipped with the page, and an input is the copy of your own game files that the
 page keeps in the browser: **Change...** opens the browser's folder dialog (a typed path or **Remove** would mean nothing there), and
 the copy is replaced only before a mod reads it (see [Mods in the browser](WEB.md#mods-in-the-browser)).
@@ -321,9 +324,9 @@ without pool cells saves, loads and exports identically with it on or off ([POOL
 
 ## Smarter guests and guest insights (`opentpw.smarter-guests`, `opentpw.guest-insights`)
 
-Two official extensions for the park visitors ([SMARTER-GUESTS.md](SMARTER-GUESTS.md) has the plan, the architecture and the measurement): guest insights at version 1.0.0 and smarter guests at version 1.6.0. **Guest insights can be switched on** (it has its first
-feature, phase 1); **smarter guests cannot yet**: its rule set (phases 2 to 6) is built and measured, but a player cannot switch it on until phase 6 shows a measurable positive effect, so a save does not break for nothing. It is registered for tests and development, hidden from the Extensions and mods screen, and a `mods.json` entry or
-`--enable-mod` for it is ignored with a log line.
+Two official extensions for the park visitors ([SMARTER-GUESTS.md](SMARTER-GUESTS.md) has the plan, the architecture and the measurement): guest insights at version 1.0.0 and smarter guests at version 1.6.0. **Both can be switched on** on the Extensions and mods screen, in
+`mods.json` or with `--enable-mod`, and both are off by default. Guest insights has its first feature (phase 1). Smarter guests was released as opt-in in 1.6.0, once its rule set (phases 2 to 6b) had a
+measurable effect (less crowding, less litter) and its CPU cost per guest-turn met the gate of at most 1.10 times the original guests' (SMARTER-GUESTS.md, "Cost and release").
 
 - **`opentpw.smarter-guests`** changes the simulation (`AffectsSimulation`), so a park saved with it records it (id, version, no files) and loads only with it on, in the same version; a park saved without it
   loads only with it off. **The extension's version is the algorithm identity**: every release that changes how guests decide bumps it, and a park saved by another version is refused with

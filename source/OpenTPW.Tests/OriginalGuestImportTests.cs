@@ -74,6 +74,8 @@ public class OriginalGuestImportTests
 			Decode( new SaveTestPayloads.GuestFields { Position = (At( 8 ), At( 5 )), State = 18 }, 40 ),
 		};
 		var report = simulation.ImportOriginal( saved, 755, thing => thing == 15 ? 3 : 0, thing => thing == 17 ? 21 : 0, visitorsToDate: 9 );
+		Assert.IsTrue( simulation.Guests.All( guest => guest.BodySpriteHistoryReconstructed ) );
+		Assert.IsTrue( simulation.Guests.All( guest => guest.BodySprite.Player?.Output == null ), "import never claims a connected original sprite history" );
 		CollectionAssert.AreEqual( new[] { 36, 38, 39, 40, 41 }, simulation.Guests.Select( guest => guest.Id ).ToArray(), "thing ids, in ascending order" );
 		Assert.AreEqual( random, simulation.CaptureSnapshot().RandomState, "the import draws nothing from the guest stream" );
 		Guest Of( int id ) => simulation.Guests.Single( guest => guest.Id == id );

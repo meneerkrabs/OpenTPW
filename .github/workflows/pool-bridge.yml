@@ -32,6 +32,13 @@ jobs:
           name: pool-bridge-linux-${{ github.event.pull_request.head.sha }}
           path: bridge-runtime/
           retention-days: 3
+      - name: Package browser build for private runtime verification
+        run: dotnet publish source/OpenTPW.Web/OpenTPW.Web.csproj --configuration Release --output bridge-web --nologo -p:SourceRevisionId=${{ github.event.pull_request.head.sha }}
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: pool-bridge-web-${{ github.event.pull_request.head.sha }}
+          path: bridge-web/wwwroot/
+          retention-days: 3
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:

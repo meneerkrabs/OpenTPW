@@ -1,5 +1,3 @@
-vertex "content/shaders/includes/3d.vert"
-
 common {
   layout( set = 0, binding = 0 ) uniform ObjectUniformBuffer {
     mat4 g_mModel;
@@ -23,6 +21,57 @@ common {
     vec3 g_vFogColor;
     float g_flGlow;
   } g_oUbo;
+
+  // [EXT:pools-waves] a plane wave running along +x +y (PoolWaves: one period is 24 park turns, the wave front advances 21/64 of a period per cell, a cell is 2 engine units wide), the
+  // same function the swimmers bob on, -1 to 1 times the strength; flat (strength 0) while the machine rests or the pool has none
+  const float kWavePi = 3.14159265359;
+  const float kWaveNumber = 21.0 / 128.0;
+  // the surface's rise at full strength in engine units (PoolWaves.MaxHeave, which the swimmers' bob also reaches): below the 0.12 the water lies under the lowest deck
+  const float kMaxHeave = 0.105;
+
+  float poolWaveArgument( vec2 p )
+  {
+    return 2.0 * kWavePi * ( g_oUbo.g_flWavePhase - ( p.x + p.y ) * kWaveNumber );
+  }
+
+  float poolWave( vec2 p )
+  {
+    return sin( poolWaveArgument( p ) ) * g_oUbo.g_flWaveAmp;
+  }
+
+  // the slope of the heaved surface along x (the same along y): the derivative of kMaxHeave * poolWave
+  float poolWaveSlope( vec2 p )
+  {
+    return -cos( poolWaveArgument( p ) ) * 2.0 * kWavePi * kWaveNumber * g_oUbo.g_flWaveAmp * kMaxHeave;
+  }
+}
+
+vertex {
+  // the shared 3d vertex shader (includes/3d.vert) with the water surface raised and lowered by the wave ([EXT:pools-waves]); flat water (strength 0) is left where it was
+  layout( location = 0 ) in vec3 position;
+  layout( location = 1 ) in vec3 normal;
+  layout( location = 2 ) in vec2 texCoords;
+
+  layout( location = 0 ) out struct VS_OUT {
+    vec2 vTexCoords;
+    vec3 vNormal;
+    vec3 vPosition;
+    vec3 vPositionWs;
+    vec3 vPositionVs;
+  } vs_out;
+
+  void main()
+  {
+    vec4 pos = g_oUbo.g_mModel * vec4( position, 1.0 );
+    pos.z += poolWave( pos.xy ) * kMaxHeave;
+
+    vs_out.vTexCoords = texCoords;
+    vs_out.vNormal = normal;
+    vs_out.vPosition = pos.xyz;
+    vs_out.vPositionVs = vec3( g_oUbo.g_mView * pos );
+    vs_out.vPositionWs = pos.xyz;
+    gl_Position = g_oUbo.g_mProj * g_oUbo.g_mView * pos;
+  }
 }
 
 fragment {
@@ -63,10 +112,9 @@ fragment {
   {
     vec2 p = vs_out.vPosition.xy;
     float t = g_oUbo.g_flTime;
-    float pi = 3.14159265359;
-    // [EXT:pools-waves] a plane wave running along +x +y (PoolWaves: one period is 24 park turns, the wave front advances 21/64 of a period per cell, a cell is 2 engine units wide),
-    // the same function the swimmers bob on; flat (amplitude 0) while the machine rests or the pool has none
-    float wave = sin( 2.0 * pi * ( g_oUbo.g_flWavePhase - ( p.x + p.y ) * ( 21.0 / 128.0 ) ) ) * g_oUbo.g_flWaveAmp;
+    float pi = kWavePi;
+    // [EXT:pools-waves] the wave the vertex shader raised the surface by, here per pixel for its shading
+    float wave = poolWave( p );
     // [EXT:pools-river] the current of a lazy river cell rides in the x and y of the normal (zero elsewhere): the surface slides along it
     vec2 flow = vs_out.vNormal.xy;
     vec2 drift = flow * t * 0.45;
@@ -84,9 +132,22 @@ fragment {
     float lane = step( 0.5, length( flow ) );
     float streak = 0.5 + 0.5 * sin( 2.0 * pi * ( dot( p, flow ) * 0.8 - t * 0.7 ) );
     colour = mix( colour, shallow, lane * ( 0.14 + 0.26 * streak ) );
-    // the crests of a wave are lighter and the troughs darker
+    // [EXT:pools-waves] the crests of a wave are lighter and the troughs darker
     colour = mix( colour, shallow, clamp( wave * 0.55, 0.0, 0.6 ) ) * ( 1.0 + min( wave, 0.0 ) * 0.35 );
-    float alpha = mix( 0.72, 0.42, edge ) - wave * 0.12;
+    // the slopes of the heaved surface catch a fixed light from over the wave's back: the faces turned to it lighter, the far faces darker, and a glint where it reflects to the camera.
+    // The normal is steepened for the shading only (the rise itself is a tenth of a unit), and flat water (slope 0, strength 0) keeps its colour.
+    float slope = poolWaveSlope( p ) * 4.0;
+    vec3 waveNormal = normalize( vec3( -slope, -slope, 1.0 ) );
+    vec3 waveLight = normalize( vec3( -0.45, -0.45, 0.77 ) );
+    colour *= 1.0 + dot( waveNormal.xy, waveLight.xy ) * 1.2;
+    vec3 toCamera = normalize( g_oUbo.g_vCameraPos - vs_out.vPositionWs );
+    float glint = pow( max( dot( reflect( -waveLight, waveNormal ), toCamera ), 0.0 ), 24.0 ) * clamp( g_oUbo.g_flWaveAmp * 3.0, 0.0, 1.0 );
+    colour += vec3( glint * 0.45 );
+    // a band of white water rides each crest, broken up by the caustic texture
+    float crest = g_oUbo.g_flWaveAmp > 0.001 ? smoothstep( 0.55, 0.95, wave / g_oUbo.g_flWaveAmp ) * g_oUbo.g_flWaveAmp : 0.0;
+    float foam = crest * clamp( 0.45 + layerA * 0.9, 0.0, 1.0 );
+    colour = mix( colour, vec3( 0.93, 0.97, 1.0 ), clamp( foam * 0.75, 0.0, 0.75 ) );
+    float alpha = clamp( mix( 0.72, 0.42, edge ) - wave * 0.12 + foam * 0.35 + glint * 0.2, 0.0, 0.95 );
     fragColor = vec4( applyFog( colour ), alpha );
   }
 }

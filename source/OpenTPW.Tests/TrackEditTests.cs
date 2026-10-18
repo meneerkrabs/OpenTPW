@@ -247,6 +247,55 @@ public class TrackEditTests
 		Assert.AreEqual( 0, rig.Tracks.Get( 12, 12 ).Overlap, "a straight counts 0" );
 	}
 
+	// ---- The demolition replays (TRACK-007) ---------------------------------------------------------------
+
+	[TestMethod]
+	public void TheReplaysClearAClosedLoopAndRefundEveryTileOnce()
+	{
+		var rig = new Rig();
+		var cleared = rig.Editor.Demolish();
+		Assert.AreEqual( 6, cleared.Distinct().Count(), "the six laid tiles go" );
+		Assert.AreEqual( 6, rig.Refunded.Count, "each refunds once" );
+		Assert.AreEqual( 2, rig.Tracks.Cells().Count( item => item.Cell.IsOrigin ), "only the two station tiles are left for the ride's removal" );
+		rig.Builder.RemoveStation( rig.Station );
+		Assert.AreEqual( 0, rig.Tracks.Count );
+	}
+
+	[TestMethod]
+	public void ATileNoReplayReachesStaysAndRefundsNothing()
+	{
+		var rig = new Rig();
+		var owner = rig.Builder.OwnerOf( rig.Station );
+		Assert.IsTrue( new TrackLineWriter( rig.Builder, owner: owner ).Commit( (20, 20), (20, 24) ).Completed, "a detached piece of the same ride" );
+		Assert.IsTrue( new TrackLineWriter( rig.Builder, owner: owner ).Commit( (12, 12), (12, 14) ).Completed, "a branch off the loop" );
+		rig.Editor.Demolish();
+		Assert.IsTrue( rig.Laid( 20, 20 ) && rig.Laid( 20, 22 ) && rig.Laid( 20, 24 ), "the detached piece stays" );
+		Assert.IsTrue( rig.Laid( 12, 14 ), "so does the branch tile" );
+		Assert.AreEqual( 0, rig.Tracks.Get( 12, 14 ).Mask, "with the arm toward the cleared junction gone" );
+		Assert.AreEqual( 6, rig.Refunded.Count, "the loop's six tiles (the junction among them) refund; the branch and the detached piece do not" );
+		Assert.IsFalse( rig.Refunded.Contains( (12, 14) ) || rig.Refunded.Contains( (20, 20) ) );
+	}
+
+	[TestMethod]
+	public void AnOpenTrackIsClearedFromBothSidesOfTheStation()
+	{
+		var rig = new Rig( loop: false );
+		var writer = new TrackLineWriter( rig.Builder, owner: rig.Builder.OwnerOf( rig.Station ) );
+		Assert.IsTrue( writer.Commit( (14, 10), (14, 14) ).Completed, "a line from the exit side" );
+		Assert.IsTrue( writer.Commit( (8, 10), (8, 14) ).Completed, "a line from the entry side" );
+		var cleared = rig.Editor.Demolish();
+		Assert.AreEqual( 6, cleared.Count );
+		Assert.AreEqual( 2, rig.Tracks.Cells().Count( item => item.Cell.IsOrigin ), "both lines are gone, the station tiles remain" );
+	}
+
+	[TestMethod]
+	public void ARideWithoutAnyTrackDemolishesNothing()
+	{
+		var rig = new Rig( loop: false );
+		Assert.AreEqual( 0, rig.Editor.Demolish().Count );
+		Assert.AreEqual( 0, rig.Refunded.Count );
+	}
+
 	// ---- The tool inside the cell build tool ------------------------------------------------------------
 
 	[TestMethod]

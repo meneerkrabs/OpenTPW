@@ -197,6 +197,65 @@ public sealed class TrackEditor
 
 	private static bool IsTrackType( TrackCell cell ) => TrackCellTypes.IsWalkable( cell.Type );
 
+	// ---- The demolition replay ------------------------------------------------------------------------
+
+	/// <summary>
+	/// The clearing of a demolished ride's track (the two replays of <c>0x527EE0</c>): the walk from the tile after the station along the flow to the open end (<see cref="FindOpenEnd"/>) and then
+	/// the walk from the tile before the station against the flow, each clearing the tiles it passes with the replay flag set (<c>0x81B46C</c>): a tile whose pass counter goes below zero
+	/// is cleared and refunds, a junction loses one pass only, and a tile that no walk reaches (a branch, a detached piece) stays and refunds nothing. Returns the tiles it cleared.
+	/// </summary>
+	// [BIN:TPW-EXE:0x00527EE0 demolition replays] for a ride with a queue and track type 1 or 2: 0x530830 (the forward corner collector, which resets the pass counters along the chain: 1 at a corner or junction, else 0, 0x5228A0), the tool mode 0xB or 0x10, the flag 0x81B46C = 1 and 0x52FE50 until it answers 0 (each pop replays the click handler in mode 0x35 over the line between two corner points, clearing it with 0x53B280), then 0x530B70 (the same from the tile before the station, against the flow) and the same replay; 0x52FB60 or 0x52FB80 gives the cell cost the refund and the one charge use
+	// [EXT:track-open-end-guard] a walk stops at the last laid tile when the next cell holds no track, where the original would walk on over empty cells; a chain that leaves a closed circuit's cleared tiles behind it simply ends
+	public IReadOnlyList<(int X, int Y)> Demolish()
+	{
+		var cleared = new List<(int X, int Y)>();
+		Replay( station.Exit, station.Heading, cleared );
+		Replay( station.Entry, Opposite( station.Heading ), cleared );
+		return cleared;
+	}
+
+	private void Replay( (int X, int Y) start, byte heading, List<(int X, int Y)> cleared )
+	{
+		// the walk that collects the corners also resets the pass counters (corner or junction 1, any other tile 0) before the lines are replayed
+		var chain = new List<(int X, int Y)>();
+		var position = start;
+		var limit = Tracks.Count + 16;
+		for ( var steps = 0; steps < limit; steps++ )
+		{
+			var cell = Tracks.Get( position.X, position.Y );
+			if ( !IsLaidTile( cell ) )
+				break;
+			var stop = false;
+			if ( IsCorner( cell.Mask ) )
+			{
+				heading = (byte)(cell.Mask ^ Opposite( heading ));
+				cell.Overlap = 1;
+			}
+			else
+			{
+				cell.Overlap = IsJunction( cell.Mask ) ? (short)1 : (short)0;
+				stop = (heading & cell.Mask) == 0;
+			}
+			Tracks.Set( position.X, position.Y, cell );
+			chain.Add( position );
+			if ( heading == 0 || stop )
+				break;
+			var next = Step( position, heading );
+			if ( Origin( next ) is { } ahead && Tracks.Get( ahead.X, ahead.Y ) is var after && TrackCellTypes.IsStation( after.Type ) && (after.Mask & Opposite( heading )) != 0 )
+				break;
+			position = next;
+		}
+		foreach ( var tile in chain )
+		{
+			var cell = Tracks.Get( tile.X, tile.Y );
+			if ( !cell.IsOrigin )
+				continue;
+			// a corner is an end of two replayed lines, so it is visited twice and its counter of 1 runs out; a plain tile is cleared on its one visit
+			if ( ClearCell( tile, pass: IsJunction( cell.Mask ), replay: true ) )
+				cleared.Add( tile );
+		}
+	}
+
 	// ---- The cut --------------------------------------------------------------------------------------
 
 	/// <summary>

@@ -665,7 +665,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	// restarts the timer (0x0041A960), clears the active byte and dispatches with 0; the status 6 branch (0x004CF475) is unreachable, 0x0051A690 turning 6 into -1
 	// [BIN:TPW-EXE:0x004CF4B6 pick-up] then, when a leaving guest waits at the stop (0x0051A9D0), status -1 or 0, or 2 with the group exactly 0 (test at
 	// 0x004CF4E1), dispatches with 0; with none waiting, status 4 does
-	// [APPROX:ARRIVAL-001] a cell's thing list is OpenTPW's occupant list (WALK-003); a swept turn runs this update after the thing sweep and the turn's destroys, as the original does (the end of 0x516380, Level.RunThingSweep); an imported original save starts with no vehicle at work — evidence needed: the saved word +0x1DA72A and the places the world variables keep the vehicle handles
+	// [APPROX:ARRIVAL-001] a cell's thing list holds OpenTPW's guests only (WALK-003); a swept turn runs this update after the thing sweep and the turn's destroys, as the original does (the end of 0x516380, Level.RunThingSweep); an imported original save starts with no vehicle at work — evidence needed: the saved word +0x1DA72A and the places the world variables keep the vehicle handles
 	private void UpdateArrivalVehicle()
 	{
 		var turn = ArrivalClock?.Invoke() ?? ParkTurn;
@@ -849,7 +849,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			UpdateNeedsTurn( guest );
 			// The leaving test itself runs in state 6 (UpdateDeciding). Closing the park pulls nobody out of a queue or a booking here.
 			// [BIN:TPW-EXE:0x00519EF0 park door closes the rides] the door closes every openable object (0x004DF300: open word 0, loading slot cleared; ParkGate.DoorMoved), and a closed ride's update dismisses its queue head, one per turn (RideVisitorBridge.HostStep, 0x004E1220 → 0x004E0450 → 0x005012F0), after which state 6 sends the guest home; a guest walking to a ride drops its target in state 10 (UpdateGoingToRide, 0x004FFEB9)
-			// [APPROX:GUEST-011] the close 0x4DF300 clears the call of a guest on its way to the stand point at once, where OpenTPW withdraws it at the ride's next update (the head dismissal); whether shops and stalls carry the openable flag 4 of +0x32 (type record word +0x3C) is not read
+			// [APPROX:GUEST-011] the close 0x4DF300 clears the call of a guest on its way to the stand point at once, where OpenTPW withdraws it at the ride's next update (the head dismissal); shops and stalls carry the openable flag 4 of +0x32 (type record word +0x3C, Info.IsChoosable, 1 in the four Shops.sam)
 			// The state-18 recall (0xedc98): the leaving handler's opening test sends a guest whose counter is above 0, happiness byte nonzero and park
 			// open back to deciding, so a closed-park dismissal unwinds when the park reopens. The three leaving causes all fail it in the same turn.
 			// [BIN:TPW-EXE:0x00500A50 recall cell test] the recall also demands the guest's own cell pass 0x4FA990 (cell types 0, 1, 3, 9 and 10, 0x536310..0x536390, the set of ParkGate.CountsCellType): the walk out of the park crosses the gate's walkway cells (type 0x1E, 7 outside the terrain) and a guest on one cannot change its mind; the booth refusal and a closed park's state 3 enter state 18 with a zeroed counter (0x4FF9D0, 0x4FF7F0) and are never recalled
@@ -2141,7 +2141,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// </summary>
 	// [BIN:STP-PPC:0x100E9164 attraction score] executed by the PowerPC oracle (attraction-score, 578 inputs; C# agrees)
 	// [BIN:STP-PPC:0x100E9388 cell modifier] the environment record's component 4 (+8) at the back-of-queue cell divides the distance match; only the fireworks' RegionFX row 7 writes it (Attraction 10 in the shipped Standard.sam; tp.exe 0x004DB48C), so it is 0 everywhere else
-	// [APPROX:GUEST-002] the back-of-queue cell is the original's (tp.exe 0x4DE130, recomputed after each queue edit 0x4DE1F0), but the queue count is OpenTPW's whole queue list where 0x4DDF50 stops after the first listed guest outside the queue states (0x502430: 11..14, or 8 with the saved state +0x224 in 11..14) and counts it; a back cell with no join cell is scored 0 here, where 0x4FCB10 scores it and its route request to the back cell (0x4FA530, RouteToCell) then fails on the edge test — evidence needed: whether a listed guest can leave states 11..14
+	// [APPROX:GUEST-002] the back-of-queue cell is the original's (tp.exe 0x4DE130, recomputed after each queue edit 0x4DE1F0) and the queue count is the whole queue list, which is what 0x4DDF50 counts because every listed guest is in a queue state (it stops after the first listed guest outside the states 0x502430 allows; a save holds queue membership and state together both ways), but a back cell with no join cell is scored 0 here, where 0x4FCB10 scores it and its route request to the back cell (0x4FA530, RouteToCell) then fails on the edge test — evidence needed: the walk onto the back cell (QUEUE-003)
 	public uint ScoreAttraction( Guest guest, IRideVisitorBridge attraction )
 	{
 		if ( attraction.JoinCell == null )

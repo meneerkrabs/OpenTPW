@@ -1443,7 +1443,7 @@ internal sealed class M3GateRun
 	/// per cell (25 crossings 358). Under the first enumeration over OpenTPW's former per-cell search C was 9.
 	/// Holds under W2 (the guest is at least 15 updates old).
 	/// </summary>
-	// [APPROX:GATE-006] C = 27 bounds tp.exe's walk as OpenTPW ports it, an enumeration and not a proof: avoid_walls' corner branches are ported (WALK-002 is retired) but the neighbour query order of the separation (WALK-003) is not matched to the instruction, and the enumeration puts the neighbours' cells as the only blockers — evidence needed: those traced, then C re-derived
+	// [APPROX:GATE-006] C = 27 bounds tp.exe's walk as OpenTPW ports it, an enumeration and not a proof: avoid_walls' corner branches are ported (WALK-002 is retired) and the separation's neighbours come in the original's chain order for the guests (WALK-003: head first; the staff's place in the chain is open), but the enumeration's separation is off or at its maximum and puts the neighbours' cells as the only blockers — evidence needed: the staff's entry order and the thing position of riding and held guests (WALK-003), then C re-derived
 	internal const long QueueCellWalkTurns = 27;
 
 	/// <summary>One queue walk crossing <paramref name="cells"/> cells to a slot: k × C + w₂ updates.</summary>

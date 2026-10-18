@@ -252,7 +252,7 @@ checked); and a sideshow-category object has no headless park test (the gate pla
 
 ## Content shipped with the game: pools
 
-The official `opentpw.pools` extension ships its changing rooms and swim sprites as committed generated files in `content/pools` (our own art, nothing from the original game). `tools/pools/build-content.sh` regenerates them (Blender 5.x, the .NET SDK, python3; about 30 minutes, nearly all of it the sprite renders; the kid sets keep only slots 0, 1 and 14, the ones the land renderers draw; env `KIT_ARTIFACTS`, `WORK`, `FORCE_SPRITES`): the cabin model comes from `tools/blender/opentpw_changing_room.py` through `GltfModelConverter` and `opentpw-kit object` with `tools/pools/cabin.sam` and `cabin.rse`, the guests from `opentpw_guest_sprites.py --scale 2 --part pool` (the swimwear sets, `content/pools/esprites/Swim`) and `--part land,heads` (the clothes sets and heads that replace the game's while the extension is on, `esprites/Generic/Kids` and `Kidsheads`), packed by `tools/pools/pack_sprite_sets.py` through `opentpw-kit sprites`. All of it is drawn at 2x (8.84 MB of sprites). The pool extras (ladder, diving board, shower, lounger, lamp, underwater light) are built the same way from `tools/blender/opentpw_pool_extras.py` with `tools/pools/extra-*.sam` and `extra.rse` (step 2b). See [POOLS.md](POOLS.md#content-extpools-content) and [Extras](POOLS.md#extras-phase-p3-extpools-extras).
+The official `opentpw.pools` extension ships its changing rooms and swim sprites as committed generated files in `content/pools` (our own art, nothing from the original game). `tools/pools/build-content.sh` regenerates them (Blender 5.x, the .NET SDK, python3; about 30 minutes, nearly all of it the sprite renders; the kid sets keep only slots 0, 1 and 14, the ones the land renderers draw; env `KIT_ARTIFACTS`, `WORK`, `FORCE_SPRITES`): the cabin model comes from `tools/blender/opentpw_changing_room.py` through `GltfModelConverter` and `opentpw-kit object` with `tools/pools/cabin.sam` and `cabin.rse`, the guests from `opentpw_guest_sprites.py --scale 2 --part pool` (the swimwear sets, `content/pools/esprites/Swim`) and `--part land,heads` (the clothes sets and heads that replace the game's while the extension is on, `esprites/Generic/Kids` and `Kidsheads`), packed by `tools/pools/pack_sprite_sets.py` through `opentpw-kit sprites`. All of it is drawn at 2x (8.25 MB of sprites). The pool extras (ladder, diving board, shower, lounger, lamp, underwater light) are built the same way from `tools/blender/opentpw_pool_extras.py` with `tools/pools/extra-*.sam` and `extra.rse` (step 2b). See [POOLS.md](POOLS.md#content-extpools-content) and [Extras](POOLS.md#extras-phase-p3-extpools-extras).
 
 ## What is unverified
 
@@ -325,7 +325,8 @@ right (0.5) and a rim from behind and above (2.0, it only catches edges), plus a
 palette-quantised frames (below), the per-region pixel statistics of the standing frames against the originals (direction
 4) are: luminance spread 45-80 vs 40-70, 90th percentile 130-250 vs 130-220, local contrast (mean absolute difference of
 neighbouring pixels inside the figure) 19-33 horizontally vs 19-37 in the originals, saturation 0.2-0.8 vs 0.4-0.6. Our
-vertical local contrast is about 20 % higher; mean colours differ because ours wear swimwear and the originals clothes.
+vertical local contrast is about 20 % higher; mean colours differ because ours wear swimwear and the originals clothes (these
+statistics are from the earlier 27 degree camera).
 
 Directions 0 to 4 put the camera at azimuth
 `-45 * direction` (0 looks at the kid's back, 2 sees it facing screen right, 4 facing the camera); the game mirrors the
@@ -333,32 +334,46 @@ rest.
 
 | Constant | TPW | TPI |
 | --- | --- | --- |
-| Camera elevation | 27 degrees (was 32; the originals' side views look like 25-30) | 25 degrees (was 34, and 42 before that) |
-| Pixels per unit (full detail, `.FPC`, what the game draws) | 11.7 | 14.4 |
-| Pixels per unit (low detail, `.TPC`, the calibration reference) | 9.36 | 11.52 |
+| Camera elevation | 45 degrees, measured (it was 27, set by eye against the FPC) | 25 degrees, set by eye against the FPC (not measured) |
+| Pixels per unit | 11.1, measured (it was 11.7) | 14.4 |
 | Calibration reference cell / standing hotspot | 48 x 56, feet at (24, 53) | 64 x 80, feet at (32, 70) |
 | Swim frame canvas / hotspot | 80 x 60, (40, 34) | 100 x 80, (50, 45) |
 
-The guest sets ship their art twice: a low-detail `.TPC` bank and the full-detail `.FPC` bank the game opens (ESP byte 0x10C,
-[GUESTS.md](GUESTS.md)). The FPC frames are 1.25 times the size of the TPC ones (a kid stands 40 to 42 px tall in the FPC, 32 to
-37 in the TPC). The reference sheets the calibration was done against came from the TPC (`ppu_tpc`); every sprite the generators
-write is rendered at the FPC scale (`ppu`, 1.25 times larger), and `opentpw_kid_calibrate.py` keeps comparing at the TPC scale.
+The guest sets ship their art twice: the `.TPC` bank the game draws and, for the sets with ESP byte 0x10C, an `.FPC` bank of the
+same art seen from a lower camera, which the game never opens ([GUESTS.md](GUESTS.md)). The FPC frames are about as wide and taller
+(a kid stands 40 to 42 px tall in the FPC, 32 to 37 in the TPC). `tools/blender/opentpw_kid_elevation.py` measures the camera: it renders
+the standing kid of every set over a sweep of elevations and scales and scores each by the mean intersection over union of our five
+silhouettes with the original's, placed by their hotspots (the originals come from a local export, never committed). Against the TPC the
+score peaks at 44 to 48 degrees and pixels per unit 11.0 to 11.2 (IoU 0.77); against the FPC at 15 degrees or lower and 11.7, so the two banks
+differ in camera, not in scale. The TPW constants were 27 degrees and 11.7 (with a "TPC scale" of 11.7 / 1.25 = 9.36 for the comparison),
+calibrated by eye against the FPC on the reading that the game draws it; our guests looked filmed from the side next to the originals.
 
-`tools/blender/opentpw_kid_calibrate.py` renders the standing kid in the original's cell for every set and, given a
-reference sheet of the original standing frames (viewed locally only), writes a side-by-side comparison (original left,
-ours right) and prints heights. Standing height in pixels (direction 4), ours vs original, at the TPC scale of the reference sheets (the FPC-scale sets of the next section are 1.25 times larger):
+Standing frames at 45 degrees and 11.1 pixels per unit (`opentpw_kid_elevation.py` at its best), height x width per direction (0 to 4),
+ours / the original TPC:
 
-| TPW | BE | BI | CH | FR | KI | SA | SU | TA |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| ours | 32 | 32 | 31 | 32 | 32 | 30 | 31 | 32 |
-| original | 32 | 32 | 34 | 31 | 34 | 30 | 34 | 32 |
+| TPW | d0 | d1 | d2 | d3 | d4 |
+| --- | --- | --- | --- | --- | --- |
+| BE | 32x28 / 37x26 | 34x21 / 36x21 | 35x17 / 34x21 | 35x21 / 34x21 | 34x28 / 32x26 |
+| BI | 32x28 / 37x26 | 34x21 / 36x22 | 35x17 / 34x21 | 36x21 / 34x21 | 35x28 / 32x26 |
+| CH | 31x28 / 33x27 | 36x21 / 36x21 | 39x18 / 40x16 | 37x21 / 39x21 | 33x28 / 34x25 |
+| FR | 32x28 / 36x26 | 34x21 / 36x21 | 35x17 / 34x18 | 35x21 / 33x21 | 34x28 / 31x26 |
+| KI | 31x28 / 33x27 | 36x21 / 37x22 | 39x18 / 40x16 | 37x21 / 39x21 | 33x28 / 34x27 |
+| SA | 31x28 / 33x25 | 33x21 / 34x19 | 33x18 / 34x18 | 34x21 / 33x20 | 33x28 / 30x25 |
+| SU | 31x28 / 33x27 | 36x21 / 37x22 | 39x17 / 40x16 | 37x21 / 39x21 | 33x28 / 34x27 |
+| TA | 31x28 / 32x25 | 33x21 / 33x20 | 35x18 / 34x17 | 35x21 / 34x20 | 34x28 / 32x26 |
+
+Heights are within 3 pixels except the back view (direction 0, 1 to 5 short); ours are 1 to 3 pixels wider from the front and back, and
+from the side up to 4 narrower (BE, BI) or 2 wider (CH, KI). The heads keep their own scale (`HEAD_PPU`, 11.7 for TPW): rendered at the
+bodies' 11.1 they come out 6 % smaller than the original head sets, which they matched at 11.7. `tools/blender/opentpw_kid_calibrate.py` still renders the standing kid in the original's cell for
+every set and, given a reference sheet of the original standing frames (viewed locally only), writes a side-by-side comparison (original
+left, ours right). The TPI standing heights below (direction 4, in pixels, ours and the original's) are from the earlier calibration, at the old camera:
 
 | TPI | BD | GB | GK | KB | FA | MO | GM | GR |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | ours | 39 | 39 | 37 | 40 | 50 | 48 | 41 | 37 |
 | original | 40 | 41 | 38 | 43 | 50 | 48 | 42 | 38 |
 
-All within 3 pixels for TPW and within 4 for TPI (the TPI kids come out a little short), most within 2. The proportions follow the originals more closely since October 17, 2026:
+All within 4 pixels for TPI (the TPI kids come out a little short), most within 2. The proportions follow the originals more closely since October 17, 2026:
 - smaller eyes set higher in the face, with the forehead visible under the hair;
 - a smaller kid head (scale 1.0, was 1.14);
 - a longer torso and longer legs for kids and adults;
@@ -408,13 +423,14 @@ generator): per set a 1x and a 4x band with old | new for the crawl from two dir
 
 For the swimming-pool mod every guest is drawn in our own style, not only the swimmers. The mod's `overrides` folder replaces any
 game file by its data-relative path, WAD members included ([MODS.md](MODS.md#overrides)), and `GuestSpriteAtlas` reads the guest
-sets as `/esprites/Generic/<Folder>/<NAME>.ESP` plus the bank its ESP selects, so a replacement set ships at the original paths:
+sets as `/esprites/Generic/<Folder>/<NAME>.ESP` plus its `.TPC`, the bank the game draws (an `.FPC` beside it is never opened), so a
+replacement set ships at the original paths:
 
 ```
-data/esprites/Generic/Kids/SPR_BE.ESP        .FPC   .TPC        (TPW kids; TPI: SPR_BD, SPR_GB, SPR_GK, SPR_KB)
-data/esprites/Generic/Parents/SPR_FA.ESP     .FPC   .TPC        (TPI: SPR_FA, SPR_MO)
-data/esprites/Generic/Grandparents/SPR_GM.ESP .FPC  .TPC        (TPI: SPR_GM, SPR_GR)
-data/esprites/Generic/Kidsheads/SPR_BE.ESP   .TPC               (the head sets ship a .TPC only; also Parentsheads, Grandparentsheads)
+data/esprites/Generic/Kids/SPR_BE.ESP        .TPC        (TPW kids; TPI: SPR_BD, SPR_GB, SPR_GK, SPR_KB)
+data/esprites/Generic/Parents/SPR_FA.ESP     .TPC        (TPI: SPR_FA, SPR_MO)
+data/esprites/Generic/Grandparents/SPR_GM.ESP .TPC       (TPI: SPR_GM, SPR_GR)
+data/esprites/Generic/Kidsheads/SPR_BE.ESP   .TPC        (also Parentsheads, Grandparentsheads)
 ```
 
 The path is the WAD member path below `esprites` with the archive's name dropped, compared without case (the TPI members
@@ -441,16 +457,17 @@ set quantised to one 255-colour palette, median cut as `SpriteSetBuilder` does) 
                "frames": [ [ { "file": "slot01_d0_f0.png", "originX": -13, "originY": -39, "width": 22, "height": 40 }, "..." ], "..." ] } ] }
 ```
 
-`name` is the set's member name; `fullDetail` is the ESP byte 0x10C (true: the game opens the `.FPC`, and both banks are written with the
-same content, as the shipped full-detail sets do; false for the heads); `kidFlag` is ESP byte 0x10D (1 for the girls); `frames` are
+`name` is the set's member name; `fullDetail` is the ESP byte 0x10C (true: the set ships an `.FPC` too, written with the same content as the
+`.TPC`, as the shipped full-detail sets do, though the game draws the `.TPC` either way; false for the heads); `kidFlag` is ESP byte 0x10D (1 for the girls); `frames` are
 listed direction-major, as the bank stores them. Heads have `source` `heads`, one slot 0 of 7 directions (elevation rows) by 8 frames
 (azimuths).
 
 ### Resolution
 
-`--scale N` renders every frame at N times the pixel size: canvas, hotspot offsets and pixels per Blender unit are N times larger (`setup_scene(..., scale=N)`), the supersampling drops from 6 to 4 at 2x (the frame is rendered 8 times its pixel size), and `set.json` gets `"pixelsPerUnit": 128 * N`. The packer (`opentpw-kit sprites`, `pixelsPerUnit` of its `set.json`) writes that into every frame's two pixels-per-unit words, and the game scales a quad by 128 / the word ([GUESTS.md](GUESTS.md#pixels-per-unit-and-resolution)), so a 2x frame is drawn at the world size of the 1x frame it replaces with twice the detail. Hotspot offsets are in the set's own pixels (a 1x offset of -39 is -78 at 2x), and `LAND_HOTSPOT_DROP` is 1 px at 1x, 2 at 2x.
+`--scale N` renders every frame at N times the pixel size: canvas, hotspot offsets and pixels per Blender unit are N times larger (`setup_scene(..., scale=N)`), the supersampling drops from 6 to 4 at 2x (the frame is rendered 8 times its pixel size), and `set.json` gets `"pixelsPerUnit": 128 * N`. The packer (`opentpw-kit sprites`, `pixelsPerUnit` of its `set.json`) writes that into every frame's two pixels-per-unit words, and the game scales a quad by 128 / the word ([GUESTS.md](GUESTS.md#pixels-per-unit-and-resolution)), so a 2x frame is drawn at the world size of the 1x frame it replaces with twice the detail. Hotspot offsets are in the set's own pixels (a 1x offset of -39 is -78 at 2x), and `LAND_HOTSPOT_DROP` counts 1x pixels (doubled at 2x;
+0 since October 18, 2026).
 
-Quantisation at 2x (one 255-colour palette per set, as at 1x): measured on all 175 frames of TA, the mean largest-channel error of the quantised frames against the unquantised ones is 2.9 of 255 and 2.6 % of the pixels are off by more than 16, with no visible banding beyond what the unquantised render already has. A light ordered dither (`--dither 0.03` or 0.06) raises the error to 4.0 or 5.7 and shows only as grain, so none is used. Sizes: a TPW kid set in clothes is 0.46 MB with every slot (175 frames; the shipped 55-frame version with slots 0, 1 and 14 is 0.15 MB), its heads 0.13 MB (56), a swimwear set 0.82 MB (295), all `.TPC` only; the 24 shipped sets are 8.84 MB. `tools/blender/opentpw_guest_hires_compare.py --compare` draws 1x against 2x (`reports/guests-hires-compare.png`) and `--sheet` a contact sheet of any generated set.
+Quantisation at 2x (one 255-colour palette per set, as at 1x): measured on all 175 frames of TA, the mean largest-channel error of the quantised frames against the unquantised ones is 2.9 of 255 and 2.6 % of the pixels are off by more than 16, with no visible banding beyond what the unquantised render already has. A light ordered dither (`--dither 0.03` or 0.06) raises the error to 4.0 or 5.7 and shows only as grain, so none is used. Sizes: a TPW kid set in clothes is 0.12 to 0.14 MB as shipped (55 frames, slots 0, 1 and 14; with every slot, 175 frames, it was 0.46 MB at the earlier camera), its heads 0.12 to 0.14 MB (56), a swimwear set 0.75 to 0.78 MB (295), all `.TPC` only; the 24 shipped sets are 8.25 MB. `tools/blender/opentpw_guest_hires_compare.py --compare` draws 1x against 2x (`reports/guests-hires-compare.png`) and `--sheet` a contact sheet of any generated set.
 
 ### Swimwear slots
 
@@ -479,20 +496,27 @@ Slots whose hotspot is the torso centre may point up or down the frame (the dive
 
 `originX`/`originY` follow the reader (`SpriteFrame.OriginX/OriginY`): the offset of the frame's top-left pixel from the hotspot, the
 quad spanning `originX` to `originX + width` (and likewise vertically) in 1/128 units. The hotspot of a standing, walking, running
-or gesturing guest is on the floor between the feet; ours is the world origin pixel of the render, moved one pixel lower
-(`LAND_HOTSPOT_DROP`), because our soles reach 1 to 2 pixels lower than the originals' (the originals' soles end 1 to 2 pixels below
-the hotspot). A swimmer's hotspot is the centre of the torso at the water line (slots 8 to 10), a head's the centre of the skull. All of
-a set's frames of one slot share one hotspot, so the guest does not jump between frames. Frame content against the originals' FPC
-frames (ours / original, in pixels; `top`/`bottom` are `originY` and `originY + height`):
+or gesturing guest is on the floor between the feet; ours is the world origin pixel of the render (`LAND_HOTSPOT_DROP` 0). From the
+TPC's camera the originals' soles end 3 to 5 pixels below the hotspot when standing, and ours 2 to 5 (a mean of 3.9 against 4.0 to 4.2).
+Until October 18, 2026 the hotspot was one pixel lower, to match the FPC, whose soles end 1 to 2 pixels below it. A swimmer's hotspot
+is the centre of the torso at the water line (slots 8 to 10), a head's the centre of the skull. All of a set's frames of one slot share
+one hotspot, so the guest does not jump between frames. Frame content of the shipped TPW kid sets against the originals' TPC frames
+(ours, the 2x frames halved / original, in pixels; `top`/`bottom` are `originY` and `originY + height`):
 
 | Set | Slot | Width | Height | Top | Bottom |
 | --- | --- | --- | --- | --- | --- |
-| BE | 0 | 21 to 26 / 20 to 27 | 38 to 42 / 40 to 42 | -39 to -37 / -41 to -38 | 1 to 3 / 1 to 2 |
-| BE | 1 | 22 to 28 / 17 to 32 | 36 to 42 / 38 to 43 | -39 to -36 / -41 to -38 | 0 to 5 / 0 to 2 |
-| BE | 12 | 20 to 26 / 19 to 33 | 37 to 42 / 40 to 45 | -43 to -37 / -43 to -38 | -3 to 3 / 1 to 2 |
-| TA | 0 | 22 to 26 / 17 to 26 | 39 to 41 / 38 to 41 | -38 to -38 / -39 to -37 | 1 to 3 / 1 to 2 |
-| TA | 1 | 22 to 28 / 16 to 31 | 36 to 42 / 36 to 41 | -39 to -35 / -39 to -35 | 0 to 5 / 1 to 2 |
-| TA | 12 | 22 to 26 / 17 to 32 | 35 to 42 / 37 to 41 | -42 to -36 / -39 to -36 | -3 to 3 / 1 to 2 |
+| BE | 0 | 17 to 24 / 21 to 26 | 32 to 36 / 32 to 37 | -31 to -30 / -34 to -29 | 2 to 5 / 3 to 5 |
+| BE | 1 | 17 to 27 / 18 to 32 | 31 to 36 / 29 to 40 | -32 to -26 / -34 to -27 | 2 to 9 / 2 to 7 |
+| BE | 14 | 17 to 30 / 19 to 25 | 32 to 36 / 33 to 37 | -31 to -30 / -34 to -29 | 2 to 6 / 3 to 5 |
+| TA | 0 | 19 to 24 / 17 to 26 | 31 to 35 / 32 to 34 | -30 to -29 / -29 to -29 | 2 to 5 / 3 to 5 |
+| TA | 1 | 18 to 27 / 16 to 31 | 31 to 36 / 30 to 35 | -32 to -26 / -29 to -27 | 2 to 9 / 2 to 8 |
+| TA | 14 | 18 to 30 / 16 to 34 | 31 to 36 / 27 to 35 | -31 to -29 / -31 to -24 | 2 to 6 / 3 to 5 |
+
+The TPI sets as measured before (at 25 degrees, the hotspot one pixel lower, against the originals' FPC frames; TPI's Game.exe draws the
+TPC too, so they are not calibrated against the bank it draws yet):
+
+| Set | Slot | Width | Height | Top | Bottom |
+| --- | --- | --- | --- | --- | --- |
 | BD | 0 | 27 to 30 / 21 to 32 | 46 to 49 / 47 to 50 | -45 to -45 / -49 to -49 | 1 to 4 / -2 to 1 |
 | BD | 1 | 27 to 34 / 19 to 38 | 44 to 49 / 45 to 50 | -46 to -42 / -48 to -46 | 0 to 7 / -2 to 3 |
 | BD | 12 | 26 to 30 / 21 to 38 | 42 to 50 / 45 to 50 | -50 to -42 / -49 to -47 | -3 to 4 / -3 to 1 |
@@ -559,7 +583,7 @@ rendered at 1 / 0.685 of the body's pixel scale (the game draws a head sprite at
 | Measure | Before | After | Original |
 | --- | --- | --- | --- |
 | TPI camera elevation | 34 degrees | 25 | matches widths and heights best |
-| TPW camera elevation | 32 degrees | 27 | 25-30 by eye |
+| TPW camera elevation | 32 degrees | 27 | 25-30 by eye (45 since October 18, 2026, measured against the TPC) |
 | Walk foot spread, direction 2, contact frame (px; BE / BD / FA) | 22 / 26 / 39 | 28 / 34 / 40 | 28 / 33 / 38 |
 | Walk foot spread at the passing frame (px; BE / BD / FA) | 14 / 15 / 20 | 12 / 14 / 18 | 11 / 15 / 20 |
 | Run foot spread at contact (px; BE / BD) | 25 / 30 | 28 / 35 | 33 / 41 |

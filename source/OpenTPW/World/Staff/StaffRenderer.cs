@@ -8,7 +8,7 @@ namespace OpenTPW;
 /// <summary>
 /// Draws every placed staff member as a camera-facing quad of its original sprite (<c>esprites.wad</c>, tp.exe body sprite 0x4d4140), the way
 /// <see cref="GuestRenderer"/> draws the kids: one draw call, one dynamic vertex buffer, the same sprite shader and atlas loading, the hotspot on the terrain.
-/// A member in the player's hand is not drawn; the tool's dangling sprite (slot 6, frames 0-3 looping, from the bank's .TPC) hangs at the pointer's ground point instead.
+/// A member in the player's hand is not drawn; the tool's dangling sprite (slot 6, frames 0-3 looping) hangs at the pointer's ground point instead.
 /// Nothing is allocated per frame once the members have been seen.
 /// </summary>
 public sealed class StaffRenderer : Entity
@@ -237,6 +237,7 @@ public sealed class StaffRenderer : Entity
 		var right = new SVector3( view.M11, view.M21, view.M31 );
 		var up = new SVector3( view.M12, view.M22, view.M32 );
 		var forward = -new SVector3( view.M13, view.M23, view.M33 );
+		var eye = GuestRenderer.Eye( view );
 		var needed = (list.Count + 1) * VerticesPerSprite;
 		if ( vertices.Length < needed )
 			vertices = new Vertex[Math.Max( needed, 16 * VerticesPerSprite ) * 2];
@@ -254,7 +255,9 @@ public sealed class StaffRenderer : Entity
 			memberView.Player.Tick( nowMs );
 			if ( Select( member, memberView, now, right, forward ) is not { } chosen )
 				continue;
-			AddSprite( ref count, chosen.Atlas, chosen.Frame, chosen.Mirror, GuestRenderer.CellToEngine( field, memberView.X, memberView.Y ), right, up, forward );
+			// a member's sprite is pickable, so the original pulls it towards the camera like a visitor's (SpriteScale.PulledDepthShare)
+			var (feet, share) = GuestRenderer.PullTowardsEye( GuestRenderer.CellToEngine( field, memberView.X, memberView.Y ), eye, forward );
+			AddSprite( ref count, chosen.Atlas, chosen.Frame, chosen.Mirror, feet, right * share, up * share, forward );
 			DrawnStaff++;
 		}
 		if ( ++frames % 256 == 0 && views.Count > list.Count )
@@ -267,6 +270,8 @@ public sealed class StaffRenderer : Entity
 			// [BIN:TPW-EXE:0x00542010 direction] the heading byte plus the camera's yaw sector, mirrored past the last stored direction, as for any sprite (the tool's sprite has no flag 0x40000: 0x004758F0 clears +0xC4)
 			var (direction, mirror) = GuestSpriteAtlas.SelectOriginalDirection( DangleHeading, GuestSpriteAtlas.CameraYaw( right, forward, Camera.Mode is ParkCameraMode ), atlas.DirectionsOf( slot ) );
 			var frameIndex = atlas.GetFrame( slot, direction, step );
+			// not pulled: the tool's sprite is made with cleared flags (0x00475A10 through 0x004758F0), and neither the tool's enter 0x0046C730 nor its frame 0x0046C480 (0x00475480 sets
+			// only the position and heading) gives it the pick flag 0x200 that 0x00589B50 pulls
 			AddSprite( ref count, atlasIndex, frameIndex, mirror, GuestRenderer.CellToEngine( field, danglingX, danglingY, DangleLift ), right, up, forward );
 			DrewDangling = true;
 			DangleAt = (danglingX, danglingY);

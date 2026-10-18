@@ -84,16 +84,16 @@ a signed control `c < 0` repeats the next byte `−c` times, `c > 0` copies `c`
 literal bytes. Pixel index 0 is transparent; index `n ≥ 1` is palette entry
 `n − 1` (tp.exe's loader 0x587DB0 reads the `u32 0` as palette entry 0 of 256, so index n is entry n there;
 the first u16 is the format, 3 = paletted, and the second is ignored). Every row decodes to exactly `width` pixels and every bank ends exactly
-after its last frame (121/121 members). `.FPC` frames are slightly larger than
-`.TPC` (kids: up to 37×45 vs 36×43) and drawn from a lower camera (a standing handyman is 58 to 62 px tall in
-the FPC, 49 to 53 in the TPC). The ESP chooses (tp.exe 0x5410D3): `.fpc` when its byte 0x10C and the
+after its last frame (121/121 members). `.FPC` frames are taller than
+`.TPC` frames and about as wide (the kids' reach 37×45 in the FPC, 36×43 in the TPC): the same art drawn from a lower camera (a standing
+handyman is 58 to 62 px tall in the FPC, 49 to 53 in the TPC). The ESP chooses (tp.exe 0x5410D3): `.fpc` when its byte 0x10C and the
 sprite-detail flag 0x8768FC are both set, else `.tpc`. The flag's only writer, 0x540900, stores its first
 argument, and both of its calls pass 0 (0x54E688, 0x54ED2C; TPI's Game.exe likewise: 0x68E240 from 0x6A3768), so the
 PC game draws the TPC of every set and never opens an FPC (an earlier reading took the start-up call's second
-argument, 1, for the flag). OpenTPW draws the FPC of the 27 sets with 0x10C = 1 (`SpriteAnimationFile.BankExtension`,
-`GUEST-022`) and the TPC of the others (Jungle SPR_EX and Space SPR_SK ship an FPC too), except the staff tools'
-dangling slot 6, which every staff FPC holds as 2 × 2 pixel placeholders: it comes from the TPC
-(`GuestSpriteAtlas.LoadSets`, [STAFF-PLACEMENT.md](STAFF-PLACEMENT.md#drawing)).
+argument, 1, for the flag). OpenTPW draws the TPC of every set too (`SpriteAnimationFile.BankExtension`). Until October 18,
+2026 it drew the FPC of the 27 sets with 0x10C = 1, so its people looked filmed from the side, and the staff tools' dangling
+slot 6, which every staff FPC holds as 2 × 2 pixel placeholders, was invisible ([STAFF-PLACEMENT.md](STAFF-PLACEMENT.md#drawing)).
+The texture-pack key of such a set's atlas ends in `.tpc.atlas` ([TEXTURE-PACKS.md](TEXTURE-PACKS.md)).
 
 **`.ESP` animation table** (350 bytes): magic `ESP_FILE2.00`, NUL-terminated bank
 name (`SPR_BE.TPS`), zero padding, two flag bytes at `0x10C`, then 20 slots of
@@ -108,8 +108,8 @@ starts a performance as script 13 + (r mod (n − 1)), or 13 for one entry (scri
 0x475B80 plays it. Exactly the twelve entertainer banks have one: `01 05 00 00` (program 0 on slot 4) in eleven and
 `01 05 02 28` in Hallow SPR_DR, so every entertainer performs slot 4; the program's registers 0x11 and 0x12 are SPR_DR's 2 and 40: frames 0-2 once, then for ever the frames from 2 on and 41 steps of frame 0 (`StaffScripts.PerformanceFrame`, GUEST-015).
 
-**Writing a sprite set** (`SpriteBankWriter`, `SpriteAnimationWriter`, `SpriteSetBuilder`). A usable set is the `.ESP` plus the bank its byte
-0x10C selects for OpenTPW (`.FPC` when set, else `.TPC`; `GuestSpriteAtlas.LoadSets` opens exactly those; the game itself draws the `.TPC`, `GUEST-022`). The `.FPS`/`.TPS` files the ESP names are never shipped and
+**Writing a sprite set** (`SpriteBankWriter`, `SpriteAnimationWriter`, `SpriteSetBuilder`). A usable set is the `.ESP` plus its `.TPC`, the
+bank the game and OpenTPW draw (`GuestSpriteAtlas.LoadSets`); a set with byte 0x10C also ships an `.FPC`, which nothing opens. The `.FPS`/`.TPS` files the ESP names are never shipped and
 never opened, so nothing else is needed. The writers rewrite **all 75 banks (29 FPC, 46 TPC) and all 46 ESP files of `esprites.wad` byte for byte**
 (`SpriteBankWriterCorpusTests`). What is written, field by field:
 
@@ -151,7 +151,7 @@ frame of 128 is drawn exactly as before (the factor is 1.0, the multiplication l
 hash, save or determinism pin reads them. Particle sprites (`ParticleSpriteAtlas`) are drawn by the particle system's own size rules and do not read the fields; no shipped bank would show a difference.
 
 The 1024-pixel atlas width of `GuestSpriteAtlas` suffices for every shipped set (corpus-tested: all are 1024 wide, at most 512 rows). A set drawn at 2x needs up to 2048 rows in 1024 columns; beyond `MaximumHeight` (2048, which is also what WebGL2 guarantees)
-an atlas is packed into the next power of two wider (2048, then 4096) instead of a taller texture, a frame wider than the row widens it too, and a set that fits no 4096 x 4096 atlas is refused (skipped with a warning in `LoadSets`). Frames drawn at more than 128 pixels per unit get 4 pixels of padding instead of 2 so mip levels do not bleed into the next frame. The pools extension's sets (docs/POOLS.md): 1024 x 256 to 1024 x 512 for the kids and heads, 1024 x 2048 for the swimwear sets, 90 MiB of RGBA in all and about 120 MiB on the GPU with mip levels (pinned by `PoolsContentTests.TheShippedAtlasSizesArePinned`); the decoded pixels are released after the upload.
+an atlas is packed into the next power of two wider (2048, then 4096) instead of a taller texture, a frame wider than the row widens it too, and a set that fits no 4096 x 4096 atlas is refused (skipped with a warning in `LoadSets`). Frames drawn at more than 128 pixels per unit get 4 pixels of padding instead of 2 so mip levels do not bleed into the next frame. The pools extension's sets (docs/POOLS.md): 1024 x 256 for the kids, 1024 x 256 to 1024 x 512 for the heads, 1024 x 2048 for the swimwear sets, 83 MiB of RGBA in all and about 110 MiB on the GPU with mip levels (pinned by `PoolsContentTests.TheShippedAtlasSizesArePinned`); the decoded pixels are released after the upload.
 
 Kid slots (identical in all 8 sets; labels from viewing the frames, not traced):
 
@@ -968,13 +968,27 @@ point (guests pay when boarding, see Money), save/load of queues, and the import
 per visible guest (both windings), feet on the bilinear heightfield corner
 heights (also over heightfield holes such as the entrance road), one draw call
 with up to eight kid atlases (`GuestSpriteAtlas`, 1024-wide RGBA, built on the
-CPU from `.FPC`). Direction comes from the guest's heading relative to the
+CPU from `.TPC`). Direction comes from the guest's heading relative to the
 camera; the walk frame advances 20 frames per cell walked (10 running). Sprite world size
 is read from the original: one pixel is 20 / 128 x sqrt(2) = 0.2210 world units (ten a cell), 0.0442 engine units (`SpriteScale`: the quad placement 0x5890E0 adds 20 sprite extent units a sprite unit
 of 128 pixels in clip space, and the projection builder 0x578BE0 runs a 90 degree field of view with the clip x and y scaled by cos 45 degrees); a kid of 43 pixels stands 0.95 cell.
 A kid's set is the original's own draw at its creation, the world generator reseeded with its thing id and the first draw shifted right by 2 modulo the 8 sets (`GuestAppearance.KidSet`), not its peep type;
 a walking kid steps its 8-frame walk 20 times a cell (0x4FA2A0: the interval is 62 ms over twice the speed).
 Not drawn: shadows, riders' bodies on a ride (their heads are drawn, see below).
+
+**Depth.** The quad is camera-facing, so all of it lies at the depth of the hotspot, and seen from above the ground just in front of the
+feet is nearer the camera than the hotspot: it hides whatever hangs below the hotspot. In the `.TPC` the soles of a standing kid end 3 to 5
+pixels below it (up to 8 in a stride). The original pulls such sprites towards the camera once their quad is placed: in its sprite pass
+(0x589B50) a sprite flagged 0x200 gets the clip z of its four vertices moved to z - 0.2 / (z + 1), x, y and w kept, unless engine flag
+0x2000 is set, which only the front end's 3D scenes do (0x5D9680). 0x200 is the pick flag that the pick of 0x5890E0 tests, the way the
+original selects visitors and staff, so it is their sprites that are pulled; the shadow copies clear it (0x475CF0, 0x475E10), and the staff
+tools' dangling person keeps the flags its creation clears (0x4758F0). Under the projection 0x578BE0 (clip z = a (v - n), w = s v, with
+s = sin 45 degrees, a = s / (1 - n / f), near 0.1 and far 1000) the pulled depth is that of the view depth v / (1 + 0.2 / (n a (a (v - n) + 1))),
+3.5 to 3.9 world units nearer at the park view's depths of 40 to 250. OpenTPW moves the hotspot along its view ray by that share and shrinks
+the quad by it (`SpriteScale.PulledDepthShare`, `GuestRenderer.PullTowardsEye`), so it covers the same pixels nearer the camera: the kids,
+the costumes and the staff members, not the dangling person, balloons, thoughts, litter or riders' heads. At the lowest camera pitch, 45 degrees,
+that keeps soles up to 16 pixels below the hotspot clear of flat ground. Before October 18, 2026 OpenTPW drew them at the hotspot's
+depth, which cut the soles of the original kids and hid the shoes of the pools' 45 degree kids altogether.
 
 **Costumes.** A guest in costume is drawn by a second `GuestRenderer` with the theme's costume set (`esprites.wad/<theme>/Costumes`: Jungle
 `SPR_TI`, Fantasy `SPR_BK`, Hallow `SPR_HK`, Space `SPR_SK`; one set per theme, so the original's draw among them, `0x541f70(2)`, always

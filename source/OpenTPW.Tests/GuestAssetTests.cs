@@ -40,7 +40,8 @@ public class GuestAssetTests
 			var used = kid.Animations.Animations.Where( slot => !slot.IsEmpty ).SelectMany( slot => Enumerable.Range( slot.FirstFrame, slot.FrameCount ) ).OrderBy( x => x ).ToArray();
 			CollectionAssert.AreEqual( Enumerable.Range( 0, 175 ).ToArray(), used, $"{kid.Name}: the slots cover every frame exactly once" );
 			var walkFrames = Enumerable.Range( walk.FirstFrame, walk.FrameCount ).Select( index => kid.Frames[index] );
-			Assert.IsTrue( walkFrames.All( frame => frame.OriginY < 0 && -frame.OriginY <= frame.Height && -frame.OriginY >= frame.Height - 6 ), "walk-frame hotspot at the feet" );
+			// the TPC is drawn from above: the nearer foot reaches 1 to 8 pixels below the hotspot (the FPC, from a lower camera, 0 to 3)
+			Assert.IsTrue( walkFrames.All( frame => frame.OriginY < 0 && -frame.OriginY <= frame.Height && -frame.OriginY >= frame.Height - 8 ), "walk-frame hotspot at the feet" );
 			Assert.IsTrue( kid.Pixels.Where( ( value, index ) => index % 4 == 3 ).Any( value => value == 255 ) );
 		}
 		CollectionAssert.AreEqual( new[] { 0, 0, 1, 0, 1, 1, 1, 0 }, kids.Select( kid => (int)kid.Animations.FlagB ).ToArray() );
@@ -64,9 +65,9 @@ public class GuestAssetTests
 	}
 
 	/// <summary>
-	/// Every ESP's byte 0x10C picks its bank as the game does (0x5410D3): sets with 1 open their FPC, which each of them ships; the
-	/// others their TPC. Jungle SPR_EX and Space SPR_SK ship an FPC too but say 0, so their TPC is drawn. Every frame's two header
-	/// words (pixels per sprite unit, 0x5890E0) are 128.
+	/// Every set is drawn from its TPC, as the game does (0x5410D3 opens the FPC only with the sprite-detail flag, which the PC never sets), and every
+	/// ESP has one. The 27 sets with byte 0x10C = 1 ship an FPC too, as do Jungle SPR_EX and Space SPR_SK with 0. Every frame's two header words
+	/// (pixels per sprite unit, 0x5890E0) are 128 in both banks.
 	/// </summary>
 	[TestMethod]
 	public void EveryEspChoosesTheBankTheGameOpens()
@@ -102,17 +103,20 @@ public class GuestAssetTests
 				}
 				else if ( Has( ".FPC" ) )
 					partialWithFpc.Add( name );
-				if ( !Has( animations.BankExtension ) )
-					continue;
+				Assert.AreEqual( ".TPC", animations.BankExtension, name );
+				Assert.IsTrue( Has( ".TPC" ), $"{name}: the bank the game draws" );
 				checkedSets++;
-				using var bank = FileSystem.OpenRead( $"{directory}/{stem}{animations.BankExtension}" );
-				Assert.IsTrue( new SpriteBankFile( bank ).Frames.All( frame => frame.PixelsPerUnitX == 128 && frame.PixelsPerUnitY == 128 ), name );
+				foreach ( var extension in new[] { ".TPC", ".FPC" }.Where( Has ) )
+				{
+					using var bank = FileSystem.OpenRead( $"{directory}/{stem}{extension}" );
+					Assert.IsTrue( new SpriteBankFile( bank ).Frames.All( frame => frame.PixelsPerUnitX == 128 && frame.PixelsPerUnitY == 128 ), name + extension );
+				}
 				Assert.AreEqual( 16, animations.ExtraSlotBytes.Length );
 			}
 		}
 		Assert.AreEqual( 27, full.Count, string.Join( ", ", full ) );
 		CollectionAssert.AreEquivalent( new[] { "SPR_EX", "SPR_SK" }, partialWithFpc.Select( name => name[(name.LastIndexOf( '/' ) + 1)..].ToUpperInvariant() ).ToArray() );
-		Assert.IsTrue( checkedSets >= 44, $"{checkedSets} sets" );
+		Assert.AreEqual( 46, checkedSets, "every ESP of esprites.wad" );
 		Assert.AreEqual( 12, entertainerBanks, "four themes, three entertainers each" );
 	}
 

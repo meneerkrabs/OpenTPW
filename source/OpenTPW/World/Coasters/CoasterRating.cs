@@ -280,8 +280,8 @@ public sealed class CoasterRating
 	/// <summary>The suspended cars' swing: each sample's roll follows the force plus gravity in the sample frame, fading over the braking zone.</summary>
 	// [BIN:TPW-EXE:0x43c76c suspended swing] (0x43c76c..0x43ca45, definition flag 0x8, sample stride 0x38) per sample with prev starting at π: F = sample force (+0x20..+0x28) + definition gravity (+0x60..+0x68); F is rotated into the sample frame by the angles −yaw (+0x10, X/Z), −pitch (+0x14, Y/Z) and −old roll (+0x18, X/Y) through the runtime sine table (0x7b0968, mask 0x7b0960, scale 0x7b095c); θ = atan2(−X, Y) (0x46f230); d = fmod(θ − prev + 3π, 2π) − π; rate = min(|F′|·definition +0x6C fForceMultiplier, 1); w = fmod(prev + d·rate + 3π, 2π) − π; roll = w − π (+2π when below −π); past the braking start (controller +0x134, computed just before from the tail node's sample) roll ×= 1 − clamp((i − b)/(n − b), 0, 1); prev = w. The Mac rule (0x100400D8..0x10040438) is the same restated; COAST-018 narrowed
 	// [BIN:TPW-EXE:0x4708d0 swing table] the runtime table is 4096 entries T[k] = f32(fsin(k/4096 · f32(2π))) with scale f32(4096 · f32(1/2π)) and mask 4095 (CoasterTrig.PcSin/PcCos); the index is fistp of the scaled angle, rounded to nearest even (0x43c7be..0x43c7cd, 0x43c7d0..0x43c7e5)
-	// [APPROX:COAST-032] the x87 intermediates of the rotation (80-bit, stored as single at 0x43c816, 0x43c824 and the like) are carried in double here and rounded to single where the original stores; the control word of the simulation is not read back: tp.exe's SetCooperativeLevel calls (0x563914 with 0x851, 0x563B92 with 0x808) carry DDSCL_FPUSETUP (0x800) and not FPUPRESERVE (0x1000), which would leave DirectDraw's single precision on the thread, but the renderer 0x576ec0 saves the word, clears the precision bits at 0x591220 and restores it at 0x577304/0x577310 (forced to 64 bits when bit 2 of 0x8bd508 is set), which suggests a wider default outside it — evidence needed: the FPU control word of a running tp.exe or an x87-exact oracle of 0x43c450
-	private static void Swing( CoasterDefinition definition, CoasterSample[] samples, float brakingStart, float totalSamples )
+	// [BIN:TPW-EXE:0x0043c7ff rotation steps] each rotation is the x87 sequence on the stack: sin·z + cos·x stored as x (0x43c816) and cos·z − x·sin stored as z (0x43c824) from the old x, then cos·y − sin·z and cos·z + y·sin, then cos·x − sin·y and cos·y + x·sin, every multiply, add and subtract rounded to a single (the thread's 24-bit precision, [BIN:TPW-EXE:0x00563914 control word]); θ − prev takes the unrounded fpatan result (0x43c918 stores a copy only), the sums with 3π (a double constant, 0x6fe048) are single-rounded and fmod is exact (0x67b24a)
+	internal static void Swing( CoasterDefinition definition, CoasterSample[] samples, float brakingStart, float totalSamples )
 	{
 		var total = totalSamples;
 		var previous = MathF.PI;
@@ -291,38 +291,54 @@ public sealed class CoasterRating
 			var x = sample.Force.X + definition.GravityX;
 			var y = sample.Force.Y + definition.GravityY;
 			var z = sample.Force.Z + definition.GravityZ;
-			double sin = CoasterTrig.PcSin( -sample.Yaw );
-			double cos = CoasterTrig.PcCos( -sample.Yaw );
-			(x, z) = ((float)(sin * z + cos * x), (float)(cos * z - sin * x));
-			sin = CoasterTrig.PcSin( -sample.Pitch );
-			cos = CoasterTrig.PcCos( -sample.Pitch );
-			(y, z) = ((float)(cos * y - sin * z), (float)(sin * y + cos * z));
-			sin = CoasterTrig.PcSin( -sample.Bank );
-			cos = CoasterTrig.PcCos( -sample.Bank );
-			(x, y) = ((float)(cos * x - sin * y), (float)(sin * x + cos * y));
-			var target = (float)Math.Atan2( -x, y );
-			var difference = (float)(((target - (double)previous + ThreePi) % TwoPiDouble) - MathF.PI);
-			var rate = (float)Math.Sqrt( (double)x * x + (double)y * y + (double)z * z ) * definition.ForceMultiplier;
+			var sinYaw = CoasterTrig.PcSin( -sample.Yaw );
+			var cosYaw = CoasterTrig.PcCos( -sample.Yaw );
+			var oldX = x;
+			x = sinYaw * z + cosYaw * x;
+			z = cosYaw * z - oldX * sinYaw;
+			var sinPitch = CoasterTrig.PcSin( -sample.Pitch );
+			var cosPitch = CoasterTrig.PcCos( -sample.Pitch );
+			var oldY = y;
+			y = cosPitch * y - sinPitch * z;
+			z = cosPitch * z + oldY * sinPitch;
+			var sinBank = CoasterTrig.PcSin( -sample.Bank );
+			var cosBank = CoasterTrig.PcCos( -sample.Bank );
+			oldX = x;
+			x = cosBank * x - sinBank * y;
+			y = cosBank * y + oldX * sinBank;
+			// fpatan hands its result on unrounded; the store at 0x43c918 only copies it
+			var target = Math.Atan2( -x, y );
+			var turned = (float)((double)(float)(target - previous) + ThreePi);
+			var difference = (float)(turned % TwoPiDouble - MathF.PI);
+			float squares = x * x;
+			squares += y * y;
+			squares += z * z;
+			var rate = MathF.Sqrt( squares ) * definition.ForceMultiplier;
 			if ( rate > 1f )
 				rate = 1f;
-			var swing = ((difference * (double)rate + previous + ThreePi) % TwoPiDouble) - MathF.PI;
+			var scaled = difference * rate;
+			scaled += previous;
+			var wrapped = (float)((double)scaled + ThreePi);
+			var swing = (float)(wrapped % TwoPiDouble - MathF.PI);
 			var roll = -(MathF.PI - swing);
-			var stored = (float)(roll < -MathF.PI ? roll + TwoPiDouble : roll);
+			var stored = roll < -MathF.PI ? roll + TwoPiSingle : roll;
 			if ( index > brakingStart )
 			{
 				var fraction = (index - brakingStart) / (total - brakingStart);
-				if ( !(fraction < 1f) )
+				if ( fraction >= 1f )
 					fraction = 1f;
 				if ( !(fraction > 0f) )
 					fraction = 0f;
 				stored *= 1f - fraction;
 			}
 			sample.Bank = stored;
-			previous = (float)swing;
+			previous = swing;
 		}
 	}
 
 	/// <summary>The double constants 0x6fe048 (−3π, subtracted) and 0x6fe050 (2π): three and two times the single-precision π.</summary>
 	private const double ThreePi = 9.42477822303772;
 	private const double TwoPiDouble = 6.2831854820251465;
+	/// <summary>The single the roll's fix-up adds (<c>0x6fe058</c> = −2π, subtracted).</summary>
+	private const float TwoPiSingle = 6.2831855f;
 }

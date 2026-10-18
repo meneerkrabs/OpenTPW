@@ -32,7 +32,17 @@ public static class OnlineText
 	}
 
 	/// <summary>Case-insensitive identity of a player name.</summary>
-	public static string NormalizeName( string name ) => name.Normalize( NormalizationForm.FormKC ).ToUpperInvariant();
+	public static string NormalizeName( string name )
+	{
+		if ( OperatingSystem.IsBrowser() )
+		{
+			// Browser .NET omits compatibility normalization. Keep its Unicode validation before
+			// using the browser's NFKC implementation; JavaScript alone accepts lone surrogates.
+			_ = name.IsNormalized( NormalizationForm.FormC );
+			return BrowserText.NormalizeCompatibility( name ).ToUpperInvariant();
+		}
+		return name.Normalize( NormalizationForm.FormKC ).ToUpperInvariant();
+	}
 
 	/// <summary>Text with a length cap; control characters are rejected except newlines when allowed.</summary>
 	public static string RequireText( string? text, int maximumLength, bool allowNewlines, bool allowEmpty, string what )

@@ -72,7 +72,7 @@ jobs:
       - name: Check patch comparison tool
         run: dotnet run --project tools/patch-analysis/PatchAnalysis.csproj --configuration Release -- --self-test
       - name: Check the browser page helpers, the kept game files and the performance harness
-        run: node --test tools/test_web_perf.mjs tools/test_web_originals.mjs tools/test_web_startup.mjs tools/test_web_inputs.mjs tools/test_web_pool_sprites.mjs
+        run: node --test tools/test_web_perf.mjs tools/test_web_originals.mjs tools/test_web_startup.mjs tools/test_web_inputs.mjs tools/test_web_pool_sprites.mjs tools/test_web_text.mjs
   server-image:
     # Builds the self-hosting image, browser game included, and checks that it serves the page and the API.
     # It is also the only place CI compiles the browser build (OpenTPW.Web is not in the solution).
@@ -103,6 +103,8 @@ jobs:
             [ "$(sha256sum "$RUNNER_TEMP/sprite" | cut -d' ' -f1)" = "$want_hash" ] || { echo "::error::$sprite has the wrong SHA-256"; exit 1; }
           done
           docker logs opentpw
+      - name: Run postcard regression checks in the published browser runtime
+        run: node --experimental-websocket tools/web-postcard-smoke.mjs http://127.0.0.1:8080
       - name: Publish to GitHub Container Registry
         if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
         env:

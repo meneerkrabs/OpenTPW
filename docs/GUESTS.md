@@ -1034,6 +1034,19 @@ Approximations ([HEADS register](https://opentpw.io/docs/FIDELITY-REGISTER.html)
 Riders of coaster, tour and track cars hang from their car's head dummies through the same renderer: a coaster rider from the socket of its index in the car's seated list (`CoasterHeadSources`, [COASTERS.md](COASTERS.md)), a tour rider from a head node of the flying car (`TourHeadSources`, [TOURS.md](TOURS.md)), and rider k of a go-kart, a water ride's boat or a bumper car from the vehicle mesh's head dummy k (`TrackHeadSources`, tp.exe `0x00549C60` called by the vehicle creation `0x00549DB0`: the karts carry heads 1 and 2, the `wr_ring` boats 1 to 5; [TRACKS.md](TRACKS.md)). The boats' riders are drawn since October 18, 2026. Rides that run no `ADDHEAD` can still show their riders' heads through WALKON's head action 4 (The Firepit, Inca Totem, Aztec Mayhem, Hover Bot Havoc, Rock 'n Roll): the rider's head hangs on head id u2 (the second node operand, a rider counter in these scripts) and WALKOFF takes it down (tp.exe `0x00557D80` walk state 1 to 2 calls the hang `0x0044B410`; `0x005571A0` calls `0x0044B4C0`). `RideVisitorBridge` hangs it through `RideHeadSpace.Hang` at once, without the walk-on time and the walking body ([APPROX:TOUR-011]); the walk slot keeps the action so the head comes down at WALKOFF and a park save keeps both.
 Other root scripts without `ADDHEAD` and without that action do not enable this renderer; this does not establish that the original cannot show heads through vehicle/controller paths. Native head atlas reload and repeated park entry/exit checks cover Asset.All removal and scheduled GPU texture/material/shader disposal.
 
+### Bouncing riders
+
+The bounce rides (Bouncy in the jungle and in space, Brain Buster, Jelly Bounce) show no heads: their riders are bodies. tp.exe's per-frame script pass `0x557AB0` draws the
+guest in each occupied BOUNCE slot with its own kid sprite, in the run animation, on the slot's node (the node base BOUNCESETNODE set plus the slot index, class `0x800`),
+and bounces it up from the ride height plus the BOUNCESETBASE height along a half sine hump once per second of the ride's speed-scaled time, never below the node; the sprite
+turns one heading step (45 degrees) every half second. While the ride is broken the riders stand on their nodes, each facing the visitor id modulo 7. Details, constants and
+the opcodes in [RSE-VM.md](RSE-VM.md), "Bounce opcodes".
+
+OpenTPW (`BounceRiders`, `FlatRideBounceRiders`, `GuestRenderer.BounceRiders`): a guest in the Using state that its ride's bounce table holds is drawn by the kid renderer
+(or the costume renderer for a guest in costume) at that pose, through the same direction rule as any guest (`SelectOriginalDirection` with the pose's heading byte). Riders of
+other rides stay hidden as before. Approximations: HEADS-007 (the run animation's frame interval is not decoded; 100 ms is used) and HEADS-008 (the node is derived from the
+current base at draw time). Jelly Bounce's slots 7 to 9 sit on nodes its model lacks, so, as in the original, those riders are not drawn.
+
 ## Tests and evidence
 
 - `QueueTests` (no assets): queue-cell links and recompute after edits, build

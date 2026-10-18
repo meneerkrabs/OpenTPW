@@ -44,6 +44,13 @@ internal sealed class ScriptGuestDecisions : IGuestDecisions
 
 	public bool UsesPlanHorizon => inner.UsesPlanHorizon;
 
+	public bool UsesPathComfort => inner.UsesPathComfort;
+
+	/// <summary>A mod's <c>leaveQueue</c> hook can answer at any time, so the host asks every turn; without one the base policy's answer stands.</summary>
+	public int QueuePatienceQuietTurns( in DecisionContext context, ulong birthId ) => Runtime.Runs( ScriptHooks.LeaveQueue ) ? -1 : inner.QueuePatienceQuietTurns( context, birthId );
+
+	public PathDecision ChoosePath( in DecisionContext context, in GuestView guest, in WanderPathView path ) => inner.ChoosePath( context, guest, path );
+
 	public int AlternativeLookAfterTurns( in DecisionContext context, in GuestView guest ) => inner.AlternativeLookAfterTurns( context, guest );
 
 	public bool SwitchesTarget( in DecisionContext context, in GuestView guest, in AttractionView target, uint targetScore, in AttractionView candidate, uint candidateScore ) =>

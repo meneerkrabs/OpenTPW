@@ -40,10 +40,10 @@ public sealed record GuestReportOptions
 	/// </summary>
 	public IReadOnlyList<string> Mods { get; init; } = Array.Empty<string>();
 	/// <summary>
-	/// Which phase 5 rules the smarter-guests policy runs in this report (<c>--guest-rules</c>): all by default; <see cref="SmarterPlanningRules.None"/> measures the behaviour of version 1.3.0 from the same build, and a single rule measures
-	/// that rule alone (docs/SMARTER-GUESTS.md, phase 5). Only read when the extension is on.
+	/// Which of the switchable rules (phases 5 and 6) the smarter-guests policy runs in this report (<c>--guest-rules</c>): all by default; <see cref="SmarterRuleSet.Phase5"/> measures the behaviour of version 1.4.0 and <see cref="SmarterRuleSet.None"/> that of 1.3.0 from the same build, and a single rule measures
+	/// that rule alone (docs/SMARTER-GUESTS.md, phases 5 and 6). Only read when the extension is on.
 	/// </summary>
-	public SmarterPlanningRules PlanningRules { get; init; } = SmarterPlanningRules.All;
+	public SmarterRuleSet Rules { get; init; } = SmarterRuleSet.All;
 }
 
 /// <param name="StateHash">The guests' state hash at the end of the run: two seeds with the same hash ran the same park (the guests' generator is reseeded with each new guest's id, so streams can merge).</param>
@@ -148,11 +148,11 @@ public static class GuestReport
 	/// policy, which is the shipped extension with all of them on.
 	/// </summary>
 	private static IGuestDecisions? Policy( GuestReportOptions options ) =>
-		options.PlanningRules != SmarterPlanningRules.All && ResolveExtensions( options.Extensions ).Contains( OfficialExtensions.SmarterGuests.Id ) ? new SmarterGuestDecisions( options.PlanningRules ) : null;
+		options.Rules != SmarterRuleSet.All && ResolveExtensions( options.Extensions ).Contains( OfficialExtensions.SmarterGuests.Id ) ? new SmarterGuestDecisions( options.Rules ) : null;
 
 	public static GuestReportResult Run( GuestReportOptions options, Action<string>? progress = null )
 	{
-		if ( options.PlanningRules != SmarterPlanningRules.All && options.Mods.Count > 0 )
+		if ( options.Rules != SmarterRuleSet.All && options.Mods.Count > 0 )
 			throw new ArgumentException( "--guest-rules cannot be combined with --guest-mod: a script mod wraps the extension's own policy." );
 		if ( options.Extensions.Count == 0 && options.Mods.Count == 0 )
 			return RunSeeds( options, progress );
@@ -327,6 +327,12 @@ public static class GuestReport
 		// a scenario with the food shop is a different park: say so, and leave the default report's text as it was
 		if ( options.Scenario.FoodShop )
 			scenarioNode["foodShop"] = true;
+		if ( options.Scenario.Litter )
+		{
+			scenarioNode["litter"] = true;
+			scenarioNode["litterEffect"] = options.Scenario.LitterEffect;
+			scenarioNode["handymanTurns"] = options.Scenario.HandymanTurns;
+		}
 		var root = new JsonObject
 		{
 			["schema"] = "opentpw.guest-report/1",
@@ -348,8 +354,8 @@ public static class GuestReport
 			["skipped"] = new JsonArray( result.Skipped.Select( item => (JsonNode)JsonValue.Create( item )! ).ToArray() )
 		};
 		// the report of a measurement that switched some phase 5 rules off says so (the shipped extension runs all three)
-		if ( options.Extensions.Count > 0 && options.PlanningRules != SmarterPlanningRules.All )
-			root["planningRules"] = options.PlanningRules.ToString();
+		if ( options.Extensions.Count > 0 && options.Rules != SmarterRuleSet.All )
+			root["rules"] = options.Rules.ToString();
 		if ( result.Performance is { } performance )
 		{
 			root["performance"] = new JsonObject
@@ -388,10 +394,12 @@ public static class GuestReport
 		var options = result.Options;
 		if ( options.Extensions.Count > 0 )
 			text.AppendLine( $"Extensions on: {string.Join( ", ", options.Extensions )}" );
-		if ( options.Extensions.Count > 0 && options.PlanningRules != SmarterPlanningRules.All )
-			text.AppendLine( $"Phase 5 rules: {options.PlanningRules}" );
+		if ( options.Extensions.Count > 0 && options.Rules != SmarterRuleSet.All )
+			text.AppendLine( $"Smarter-guests rules: {options.Rules}" );
 		if ( options.Scenario.FoodShop )
 			text.AppendLine( "Scenario with the food shop." );
+		if ( options.Scenario.Litter )
+			text.AppendLine( $"Scenario with litter: shops add {options.Scenario.LitterEffect} to the litter meter, one cell swept every {options.Scenario.HandymanTurns} park turns, a group arrives every {options.Scenario.ArrivalTimeBetween} timer units." );
 		if ( options.Mods.Count > 0 )
 			text.AppendLine( $"Mods on: {string.Join( ", ", options.Mods.Select( name => Path.GetFileName( name.TrimEnd( '/', '\\' ) ) ) )}" );
 		text.AppendLine( $"Guest report: {options.Seeds.Count} seeds (the band is 3 standard errors of a difference of two means of that many seeds), {options.WarmupDays} warm-up days + {options.MeasuredDays} measured days ({TicksForDays( options.MeasuredDays )} ticks)" );
@@ -423,20 +431,27 @@ public static class GuestReport
 		return text.ToString();
 	}
 
-	/// <summary><c>--guest-rules</c>: <c>all</c>, <c>none</c> (the rules of version 1.3.0), or a comma list of <c>planning</c>, <c>detour</c> and <c>meal</c>.</summary>
-	public static SmarterPlanningRules ParsePlanningRules( string text )
+	/// <summary>
+	/// <c>--guest-rules</c>: <c>all</c> (version 1.5.0), <c>phase5</c> (version 1.4.0's rules), <c>none</c> (the rules of version 1.3.0), <c>paths</c> (both rules of phase 6), or a comma list of <c>planning</c>, <c>detour</c>,
+	/// <c>meal</c>, <c>litter</c> and <c>crowding</c>.
+	/// </summary>
+	public static SmarterRuleSet ParseRules( string text )
 	{
-		var rules = SmarterPlanningRules.None;
+		var rules = SmarterRuleSet.None;
 		foreach ( var name in text.Split( ',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries ) )
 		{
 			rules |= name switch
 			{
-				"all" => SmarterPlanningRules.All,
-				"none" => SmarterPlanningRules.None,
-				"planning" => SmarterPlanningRules.Planning,
-				"detour" => SmarterPlanningRules.Detour,
-				"meal" => SmarterPlanningRules.MealTime,
-				_ => throw new ArgumentException( $"--guest-rules '{name}' is not all, none, planning, detour or meal." )
+				"all" => SmarterRuleSet.All,
+				"none" => SmarterRuleSet.None,
+				"planning" => SmarterRuleSet.Planning,
+				"detour" => SmarterRuleSet.Detour,
+				"meal" => SmarterRuleSet.MealTime,
+				"phase5" => SmarterRuleSet.Phase5,
+				"litter" => SmarterRuleSet.Litter,
+				"crowding" => SmarterRuleSet.Crowding,
+				"paths" => SmarterRuleSet.Paths,
+				_ => throw new ArgumentException( $"--guest-rules '{name}' is not all, none, phase5, paths, planning, detour, meal, litter or crowding." )
 			};
 		}
 		return rules;
@@ -497,6 +512,9 @@ public static class GuestReport
 	/// </summary>
 	public static int RunCommand( string[] args )
 	{
+		// the cost measurement of the guests (docs/SMARTER-GUESTS.md, "Cost"): --guest-report --guest-cost
+		if ( args.Contains( "--guest-cost" ) )
+			return GuestCost.RunCommand( args );
 		var extended = Option( args, "--guest-scale" ) is { } scale ? scale == "extended" ? true : scale == "plan" ? false : throw new ArgumentException( "--guest-scale is 'plan' or 'extended'." ) : false;
 		var seedCount = IntOption( args, "--guest-seeds", 1, 8 );
 		var options = new GuestReportOptions
@@ -510,8 +528,15 @@ public static class GuestReport
 			Performance = !args.Contains( "--guest-no-perf" ),
 			Extensions = ResolveExtensions( Options( args, "--guest-extension" ) ),
 			Mods = Options( args, "--guest-mod" ),
-			PlanningRules = Option( args, "--guest-rules" ) is { } rules ? ParsePlanningRules( rules ) : SmarterPlanningRules.All,
-			Scenario = new ParkScenarioOptions { FoodShop = args.Contains( "--guest-food" ) }
+			Rules = Option( args, "--guest-rules" ) is { } rules ? ParseRules( rules ) : SmarterRuleSet.All,
+			Scenario = new ParkScenarioOptions
+			{
+				FoodShop = args.Contains( "--guest-food" ),
+				Litter = args.Contains( "--guest-litter" ),
+				LitterEffect = IntOption( args, "--guest-litter-effect", 0, new ParkScenarioOptions().LitterEffect ),
+				HandymanTurns = IntOption( args, "--guest-handyman-turns", 1, new ParkScenarioOptions().HandymanTurns ),
+				ArrivalTimeBetween = IntOption( args, "--guest-scenario-arrivals", 1, new ParkScenarioOptions().ArrivalTimeBetween )
+			}
 		};
 		// the level parks log their clock and script lines; the report's own output stays clean
 		var output = Console.Out;

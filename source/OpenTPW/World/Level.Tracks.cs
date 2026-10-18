@@ -21,7 +21,7 @@ public partial class Level
 	public TrackBuilder? BuilderOf( OriginalObject station ) => station.Runtime.Bump?.Template.Family == TrackFamily.Kart ? kartTracks : waterTracks;
 	private OriginalObject? trackToolStation;
 	/// <summary>The water ride whose track the track tool lays, or null when the tool is off.</summary>
-	public OriginalObject? TrackToolStation => CellTool.Writer is TrackLineWriter ? trackToolStation : null;
+	public OriginalObject? TrackToolStation => CellTool.Writer is TrackLineWriter or TrackEditWriter ? trackToolStation : null;
 	/// <summary>The stations of the level's water rides with their tile layout.</summary>
 	public IReadOnlyDictionary<OriginalObject, TrackStation> TrackStations => trackStations;
 	/// <summary>Tile and boat instances the track renderer holds.</summary>
@@ -141,32 +141,37 @@ public partial class Level
 	}
 
 	/// <summary>
-	/// The money side of a kart or water ride's demolition, while its tiles are still laid: every tile laid for the ride refunds the track cell cost × the ride's
-	/// scrap percentage / 100 and the demolition then charges twice that cost × the percentage / 100 once. A park load or clear removes nothing through here.
+	/// The demolition of a kart or water ride's track while its tiles are still laid: the two replays clear the chains of tiles from both sides of the station, each cleared tile refunds
+	/// the track cell cost × the ride's scrap percentage / 100, and the demolition then charges twice that cost × the percentage / 100 once. A park load or clear removes nothing through here.
 	/// </summary>
 	// [BIN:STP-PPC:0x100748A0 ride demolition] the demolition replays the queue tool and the kart/water track tool from both station sides to clear the circuit, with one Spend of 2 × cell cost × 0x100E2424() / 100
 	// [BIN:TPW-EXE:0x00527EE0 ride demolition] the replays run with flag 0x81B46C = 1, so ClearCell 0x53B280 refunds every cleared kart or water tile (0x53B54A..0x53B57F: a tile whose overlap word +0x20 went negative is cleared and refunds unless it is an end of the replayed line while the flag is clear; the flag is set, the type 0x19 and online cases aside), and 0x5280F0..0x528179 then debits twice the cell cost × the scrap percentage / 100 once
-	// [APPROX:TRACK-007] every tile the ride owns refunds once, where the original refunds and clears only what its two walks from the station reach (0x530830 and 0x530B70 collect the circuit's corner points, at most 0x401, and 0x52FE50 replays the lines between them), so a tile cut off from its station stays and refunds nothing there; a tile written again refunds on its last clearing visit
+	// [BIN:TPW-EXE:0x00527EE0 demolition replays] the two replays of the track tool clear the chain of tiles from the station's exit to the open end of the track (0x530830, then the lines between its corner points) and the chain from the tile before the station (0x530B70), as TrackEditor.Demolish does: a tile no chain reaches stays in the park and refunds nothing, a tile a chain passes with a pass counter left (a junction) loses one pass only
+	// [APPROX:TRACK-007] the replay clears each line between two corner points through the click handler's mode 0x35, whose per-tile arm writes for the line's step (0x53B280 with the line's (±2, 0) or (0, ±2): the arm the line used goes, the other arm stays when a pass remains, a corner's second arm after its second visit) are modelled as one clear per tile in chain order; what a junction's remaining pass keeps in its arms and link after the replay is the pass rule of the cut (0x53B280 with (−1, −1)), not the line step's
 	private void OnTrackStationRemoving( OriginalObject item )
 	{
 		if ( waterTracks == null || !trackStations.TryGetValue( item, out var station ) || BuilderOf( item ) is not { } builder )
 			return;
-		// both the refunds and the charge run only for a type with a queue (Info.HasQueue, def +0x40: 0x527F5B..0x52817E)
-		if ( !item.Entry.HasQueue || Park?.Economy is not { } economy || GetEconomyInstance( item ) is not int instance )
+		// both the replays and the charge run only for a type with a queue (Info.HasQueue, def +0x40: 0x527F5B..0x52817E)
+		if ( !item.Entry.HasQueue )
 			return;
-		var tiles = builder.OwnedTileCount( builder.OwnerOf( station ) );
-		for ( var tile = 0; tile < tiles; tile++ )
-			economy.RefundTrackTile( builder.Purchase, instance );
-		economy.ChargeTrackDemolition( builder.Purchase, instance );
+		// the replays do not depend on the economy (a level without one, the sandbox, still clears its circuit, or the tiles would stay with no way to take them away); only the refunds and the charge do
+		foreach ( var _ in TrackEditorOf( item, station, builder ).Demolish() )
+		{
+			// the refund of each cleared tile is the editor's hook (TrackEditHooksOf)
+		}
+		if ( Park?.Economy is { } economy && GetEconomyInstance( item ) is int instance )
+			economy.ChargeTrackDemolition( builder.Purchase, instance );
 	}
 
+	private TrackEditor TrackEditorOf( OriginalObject item, TrackStation station, TrackBuilder builder ) => new( builder, station, TrackEditHooksOf( item, builder ) );
+
 	/// <summary>
-	/// Removes the track of a station: every tile laid for its ride (TRACK-021), then the station tiles. The money was settled by <see cref="OnTrackStationRemoving"/>.
+	/// Removes the station tiles of a ride; the tiles its replays cleared are gone already (<see cref="OnTrackStationRemoving"/>) and a tile no replay reached stays, as in the original.
+	/// A type without a queue runs no replay and leaves its whole track.
 	/// </summary>
 	private void DemolishTrack( TrackStation station, TrackBuilder builder )
 	{
-		// exactly the tiles laid for this ride go, so a neighbouring ride's circuit that touches it stays
-		builder.RemoveOwned( builder.OwnerOf( station ) );
 		builder.RemoveStation( station );
 	}
 
@@ -193,7 +198,8 @@ public partial class Level
 		{
 			CellTool.Cancel();
 			trackToolStation = null;
-			if ( item.Entry.HasQueue && item.Runtime.IsAttraction && item.Visitors.HasCells )
+			// [BIN:TPW-EXE:0x00526C70 edit walk end] a cut that leaves a valid circuit ends the tool (0x52F580(0), 0x526C6E): no queue tool follows, as it does a line that closes the circuit
+			if ( cause != TrackWalkCause.Edit && item.Entry.HasQueue && item.Runtime.IsAttraction && item.Visitors.HasCells )
 				EnterQueueTool( item.Visitors );
 		}
 		return circuit;
@@ -244,8 +250,13 @@ public partial class Level
 		return placed;
 	}
 
-	/// <summary>Starts the water track tool on a station: the line starts at the tile after the station's exit.</summary>
-	// [APPROX:TRACK-018] the original's track button (0x4af200: tool 0xE for karts, 0x13 for water) opens the edit sub-modes, which cut a closed circuit between two clicked tiles and continue an open one from its last tile (0x530830, 0x524960 at 0x526801 and 0x526B5E); this entry always starts a line at the station's exit
+	/// <summary>
+	/// The ride window's track button for a kart or water ride (tool 0xE or 0x13): a closed circuit opens the edit tool (two clicks cut the track between two tiles), an open one
+	/// the line tool from the end of its track (the exit cell when no track is laid).
+	/// </summary>
+	// [BIN:TPW-EXE:0x004AF200 track button] the button sets the cursor of tool 0xE (type 1) or 0x13 (type 2) and calls the click handler; the hover 0x527960 puts the tool in that mode
+	// [BIN:TPW-EXE:0x00526800 edit click] with the ride's circuit word (+0x2C) zero the click walks the track to its open end (0x530830) and the tool becomes the line tool 0xB or 0x10 (0x526C36, 0x526C50) starting there; with a closed circuit the click picks tiles for the cut
+	// [APPROX:TRACK-018] the open end's corner points are not pushed onto the tool's undo stack (0x530830 fills the stack that Backspace pops, replaying the click handler in mode 0x35 over the existing track), so Backspace takes back only the lines this tool lays; the ride is not reopened when a cut leaves a valid circuit (0x4DF290 → 0x4DF390 follow the walk, as they do after a line)
 	public bool EnterTrackTool( OriginalObject station )
 	{
 		if ( IsReadOnlyVisit || waterTracks == null || !trackStations.TryGetValue( station, out var layout ) )
@@ -253,9 +264,61 @@ public partial class Level
 		StaffPlacement?.Cancel();
 		var builder = BuilderOf( station )!;
 		CellTool.Cancel();
-		CellTool.Enter( new TrackLineWriter( builder, () => RewalkTrack( station, TrackWalkCause.Line ), builder.OwnerOf( layout ) ), layout.Exit );
+		var editor = new TrackEditor( builder, layout, TrackEditHooksOf( station, builder ) );
+		if ( station.Runtime.Bump is { IsTrackValid: true } )
+		{
+			CellTool.Enter( new TrackEditWriter( editor, builder.Family, second => FinishTrackEdit( station, editor, second ), CancelTrackTool ), null );
+		}
+		else
+		{
+			CellTool.Enter( TrackLineWriterOf( station, layout, builder ), editor.FindOpenEnd().End );
+		}
 		trackToolStation = station;
 		return true;
+	}
+
+	private TrackLineWriter TrackLineWriterOf( OriginalObject station, TrackStation layout, TrackBuilder builder ) =>
+		new( builder, () => RewalkTrack( station, TrackWalkCause.Line ), builder.OwnerOf( layout ) );
+
+	private void CancelTrackTool()
+	{
+		CellTool.Cancel();
+		trackToolStation = null;
+	}
+
+	/// <summary>The money and the add-ons of a cut: each cleared tile refunds the track cell cost × the ride's scrap percentage / 100, an add-on standing on one is demolished.</summary>
+	private TrackEditHooks TrackEditHooksOf( OriginalObject ride, TrackBuilder builder ) => new()
+	{
+		TileCleared = _ =>
+		{
+			if ( Park?.Economy is { } economy && GetEconomyInstance( ride ) is int instance )
+				economy.RefundTrackTile( builder.Purchase, instance );
+		},
+		RemoveAddOn = at =>
+		{
+			foreach ( var (x, y) in TrackStation.TileCellsOf( at.X, at.Y ) )
+			{
+				if ( Objects.FindAt( x, y ) is { IsDeleted: false } addOn && addOn != ride )
+				{
+					Objects.Remove( addOn );
+					return;
+				}
+			}
+		}
+	};
+
+	/// <summary>
+	/// After a committed cut: the walk of the circuit again (the controller closes, the pieces start or stop) and, when the circuit is open, the line tool from the end of the track.
+	/// </summary>
+	// [BIN:TPW-EXE:0x00526BD0 cut finish] 0x52FC80(0) repairs the station, the picks are cleared, the new start is the second click's tile (0x81EDE4/E8), then the walk 0x52A970(0) sets the circuit word: valid, 0x52A490(ride, 1) starts the pieces and the tool ends; invalid, 0x52A490 and 0x52A700 stop them, 0x530830 finds the open end and the tool becomes the line tool (0x526C19..0x526C54)
+	private void FinishTrackEdit( OriginalObject station, TrackEditor editor, (int X, int Y) second )
+	{
+		var circuit = RewalkTrack( station, TrackWalkCause.Edit );
+		if ( circuit is not { IsValid: false } || !trackStations.TryGetValue( station, out var layout ) || BuilderOf( station ) is not { } builder )
+			return;
+		CellTool.Cancel();
+		CellTool.Enter( TrackLineWriterOf( station, layout, builder ), editor.FindOpenEnd().End );
+		trackToolStation = station;
 	}
 
 	/// <summary>Ends the track tool.</summary>

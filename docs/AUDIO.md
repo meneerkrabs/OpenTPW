@@ -105,6 +105,16 @@ nonfinite origins, show controls, owner/fault teardown and narrow capture policy
 Only existing managed PCM and synthetic model/catalog data are used. Loop positions remain the sampled
 instruction-time positions, rather than following later provider movement.
 
+## Held ADDOBJ sounds
+
+An `ADDOBJ` or `ADDOBJ_EXT` of type 3-9 starts its event like an `EVENT` of that type and keeps the sound under its slot, so a script can end it
+(`KILLOBJ`, `FADEOBJ`), give it a parameter (`SETOBJPARAM`) and have the object pass move it (every eighth scheduler pass, keyed records only).
+`GameAudio.StartHeldRseEvent` starts it through `SoundEventSystem.PlayHeld`: a repeating event (flags 0x4) as a positioned `SoundSentence`, a one-shot as a `PlacedSound` that starts
+when its sample is decoded (flat without a placement); `HeldSound` is the handle the runtime keeps (`MoveTo`, `SetParameter`, `Stop`). The parameter call on a placed one-shot
+is the sentence's (`PlacedSoundParameters`: the code's value byte into the voice's table, re-evaluating volume and pitch through slots 1-3). The records, the opcodes' tp.exe evidence, the
+save and resume decision (nothing is saved, as the original's loader starts no sound) and `FADEOBJ` (a stop at SoundQuality 0, `APPROX:AUDIO-040`) are in
+[RSE-VM.md](RSE-VM.md#the-sounds-an-addobj-keeps). Tests: `HeldSoundTests`, `HeldSoundCorpusTests`.
+
 ## RSE particle events are outside the sound service
 
 Static inspection of the identified Feral Mac application corrects the earlier
@@ -139,8 +149,7 @@ volume, loop flags or SDT member IDs. TPI particle parity is not established.
 
 `GameAudio.RseEventCategory` and `FindRseEvent` intentionally return null for
 1/2, even when an audio catalog contains a numerically matching ID. The generic
-object-effects hook still records these requests as unimplemented for the audio
-service; the particle side is described in [PARTICLES.md](PARTICLES.md): a
+object-effects hook no longer counts them as unimplemented effects (since October 18, 2026, EVENT types 1-2 are served by the particle system); the particle side is described in [PARTICLES.md](PARTICLES.md): a
 prepared EVENT 1/2 request (the owner-local preparation in
 [PARTICLE-KEYS.md](PARTICLE-KEYS.md#latest-owner-local-event-preparation))
 starts an effect in the level's own particle pool. No fake sound or audio
@@ -382,6 +391,21 @@ do. The bands run from 0 to the ride's capacity (5 for Belly Bounce, `Upgrades[0
 capacity, so OpenTPW's band equals the original's for the same riders; whether the original seats as many riders as OpenTPW
 (boarding and queue pace) is the guest slice's question, not the band's. Near a full ride a band of 4 or more picks the
 0-500 ms and 100-1000 ms event (73, 74) in 43 % of the starts of the jungle run, as in the original's busiest minutes.
+
+**Held screams in a park save (October 18).** The script's handle is state, not sound. `OriginalObjectEffects` keeps whether the
+script holds a handle, the STARTSCREAM band, level and speed word, the level of the last SCREAMLEVEL while the handle is held,
+and how many handles refused starts lost. A run without audio (headless, `--mute`) gets the same values as a run with a sound
+service, and a park save stores them, so its snapshot and hashes do not depend on audio. The refusal is decided by the script's
+handle. Both STARTSCREAM operands and SCREAMLEVEL's operand are resolved whether or not a handle is held (tp.exe `0x555E5E`,
+`0x555FDA`). The chain only plays the held scream. This deliberately models tp.exe with its sound running: without a sound
+device its chain start `0x51bfc0` returns 0 (`DAT_00802bc8`/`DAT_00802bd4` unset or a failed play), so the original then holds
+no handle, never refuses and a SCREAMLEVEL (`0x51bc40`, which returns 0 the same way) clears it. OpenTPW keeps the sound-on
+behaviour for every run so that saves do not depend on audio.
+
+A restore brings the state back exactly and starts no sound, so a candidate park that a failed load rejects leaves no chain in
+the live park. Once `GameFlow.ResumePark` has entered the park's audio, `Level.ResumeHeldScreams` starts each held scream's
+chain from its operands. Entering the park's audio stops every chain of the park it replaces, so a chain started earlier
+would go silent at once. A lost handle is restored only as a count: its chain does not scream again.
 
 Traced in the binary and played:
 
@@ -720,6 +744,7 @@ implemented yet.
 | AUDIO-902 | The bolt follows tp.exe: ground point and offset sky point (`0x512C50`), the midpoint displacement and branch heading on the CRain stream (`0x57E4B0`, `0x57E810`: stop threshold tested on each half, branch 9/512, depth limit 4), the pulse colour (`0x57EE30`: 255 - trunc((0.9 - x) x 71.04) below x = 0.9 else 192 + trunc((1 - x) x 640), plus rand & 63, wrapping at 256) and the 2000 ms life; the ribbon is a camera-facing world quad per segment | The ribbon emitter `0x57DD10` is read in outline: per depth it keeps the previous projected point, its direction scaled to 1.3 / (depth + 1) clip units and the corner pair; a joint's corners are the point plus and minus the perpendicular of the normalised sum of the two directions around it (clip z and w of the point kept), the start corners use the first direction and the end corners the last, and a quad is emitted when the point after next arrives, the closing call (`0x57EC50` → `0x57DD10(0, end)`) emitting the last one from the corners two points back; not matched: the projection `FUN_00578d20` and the quad's winding |
 | AUDIO-904 | The scene camera's 0.1 near plane (0.5 original units) clips the nearest drops; the original's near plane is 0.1 original units (`0x54e86f`, `0x42a990` -> `0x578be0`) and its clipper cuts the streaks there; the weather keeps the scene's near plane and a vertex buffer sized once (`[EXT:weather-near-plane]`) | A near clip of 0.1 original units for the weather without changing the scene's depth mapping |
 | AUDIO-039 | SETREVERB's preset is selected as the original selects it (the ridden ride's root script level, else 0; `0x55A470` -> `0x51C8D0`, sent only on a change) and its `SndReverb.map` record is mixed by `ReverbUnit` (only presets above 0: the default stays dry), an OpenTPW Freeverb-style network on the positioned effects (flat voices, speech and music dry) with the record's decay time, high-frequency ratio, diffusion, size, levels and delays mapped as in "Reverb (AUDIO-039)". The original has no software reverb to port: it sends the record (13 dwords, EAX 2.0 listener order, `0x6C46B0`) to the audio device, or to the backend's vtable slot `0x50` (QMixer.dll's `QSWaveMixSetReverb*` forward to a COM object and hold no DSP) | Which voices the original's device reverb covers (3D buffers only, or every effect), the real return levels and the room's character, which need the device or a capture of the original |
+| AUDIO-040 | FADEOBJ on a script's sound records stops the sound exactly as KILLOBJ does (tp.exe 0x5523D0 -> 0x51C300 -> 0x6B8930 takes the stop call 0x6B89B0 unless bit 0x400 of the sound library's settings word is set), which is the original's behaviour at SoundQuality 0: the bit is `SoundQuality > [0x785920]` (0x51B920, sent from the options apply 0x4237F0 and the sound start 0x54DE0E) and the threshold and the default [0x78591C] are never written (BSS), so the bit is clear in a fresh install; with SoundQuality above 0 the call is the voice's vf+0x30 (0x6B7130), which only stores 0x3C as the fixed volume (placeholder +0x44) and sets the flag 0x400, the manager tick (0x6B62B0) re-applies 60 % to the playing sample (vf+0x2C, 0x6BCB80, while the manager byte +0x50 is set) and the voice, whose record is freed, plays on dimmed instead of ending; OpenTPW has no SoundQuality option | The values the options screen offers for SoundQuality (the handler 0x4A3087 -> 0x423B40) and the retail default of the key `SoundQuality` in the options file (the unwritten 0x78591C is only the in-memory default), the writer of the manager byte +0x50, and whether a looping ambient the dimmed voice keeps is ever ended again (the library's stop-all, 0x6B6550 with 0) |
 | AUDIO-038 | The voice pool of 12 (tp.exe `0x6b62b0`) ranks the held chains (screams) with the running sentences, placed sounds and one-shots of the event system by priority and ground distance (`0x6bb9f0`); a voice enters only while its rank exceeds the pool's lowest (`0x6b6bc0` compares strictly) and among equal ranks the newer voice keeps its slot (`0x6b6a80` links a new voice at the head of the voice list, the tick `0x6b62b0` meets it first, `ComparePoolOrder`); out-of-range voices without the any-distance flag have their sample stopped (`0x6bca70` → `0x6b8d60` → `0x6bb7c0`) and keep their handle at `+0x24`; OpenTPW stops one-shots and sentence segments and a chain starts no new child, but looping voices and a chain's playing children are not stopped | What restarts a stopped loop (the waterfall resumes) and how a stopped sentence resumes; the children of a chain and the mixer's other voices do not compete in OpenTPW's pool |
 
 ### Register round 2 (October 14)

@@ -13,6 +13,9 @@ internal static class ParkResumeJson
 		UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow
 	};
 
+	/// <summary>[EXT:periodic-autosave] The same bytes as <see cref="Serialize"/>, produced in time-boxed slices (<see cref="SlicedJsonSerializer"/>).</summary>
+	public static SlicedJsonSerializer Slice<T>( T snapshot, Action? first = null ) where T : notnull => new( snapshot, typeof( T ), options, first );
+
 	public static byte[] Serialize<T>( T snapshot ) => JsonSerializer.SerializeToUtf8Bytes( snapshot, options );
 
 	public static T Deserialize<T>( ReadOnlySpan<byte> bytes ) =>

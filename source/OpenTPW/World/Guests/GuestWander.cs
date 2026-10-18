@@ -106,9 +106,21 @@ public static class GuestWander
 	/// <see cref="Pick(GuestPathGrid, (int X, int Y), Func{uint}, Func{int, int, bool}?)"/>; <paramref name="areaBlocked"/> is true when a step had
 	/// candidates but <paramref name="inArea"/> removed them all (a staff member at its patrol rectangle's edge; the original then looks for a cell inside it).
 	/// </summary>
-	public static Destination? Pick( GuestPathGrid grid, (int X, int Y) start, Func<uint> draw, Func<int, int, bool>? inArea, out bool areaBlocked )
+	public static Destination? Pick( GuestPathGrid grid, (int X, int Y) start, Func<uint> draw, Func<int, int, bool>? inArea, out bool areaBlocked ) =>
+		Pick( grid, start, draw, inArea, out areaBlocked, default, out _ );
+
+	/// <summary>The most cells of a walk <see cref="Pick(GuestPathGrid, (int X, int Y), Func{uint}, Func{int, int, bool}?, out bool, Span{ValueTuple{int, int}}, out int)"/> reports; a longer walk reports its last ones.</summary>
+	public const int TrailCapacity = 8;
+
+	/// <summary>
+	/// <see cref="Pick(GuestPathGrid, (int X, int Y), Func{uint}, Func{int, int, bool}?, out bool)"/> that also reports the cells the random walk stood on after each step, in order, the destination cell last
+	/// (<paramref name="trail"/> receives at most its length of them; a walk longer than that reports its last ones). The walk, its draws and its result are the original's, whether the caller wants the trail or not:
+	/// the trail is only a copy of cells the search already visited (docs/SMARTER-GUESTS.md, phase 6). <paramref name="trailCount"/> is 0 for a start without links, which has no walk.
+	/// </summary>
+	public static Destination? Pick( GuestPathGrid grid, (int X, int Y) start, Func<uint> draw, Func<int, int, bool>? inArea, out bool areaBlocked, Span<(int X, int Y)> trail, out int trailCount )
 	{
 		areaBlocked = false;
+		trailCount = 0;
 		var remaining = draw() % 5;
 		// [APPROX:GUEST-010] a linked start cell that is no path cell finds no destination here (a start without links takes the off-path search, OffPath, and a linked path or queue cell the link walk below), where the original walks the links of a linked cell of any type (0x4F9490); OpenTPW's routes start on path cells
 		// [BIN:TPW-EXE:0x004F9490 queue start] the link walk starts from any cell that has links, a queue cell (type 3) included: a guest the queue let go stands on its queue cell and wanders from there (QUEUE-010)
@@ -163,6 +175,15 @@ public static class GuestWander
 			}
 			var (stepX, stepY) = GuestPathGrid.Directions[candidates[chosen]];
 			cell = (cell.X + stepX, cell.Y + stepY);
+			if ( !trail.IsEmpty )
+			{
+				if ( trailCount == trail.Length )
+				{
+					trail[1..].CopyTo( trail );
+					trailCount--;
+				}
+				trail[trailCount++] = cell;
+			}
 			back = (chosen + 2) & 3;
 			if ( cell == start && remaining == 0 )
 				remaining = 1;

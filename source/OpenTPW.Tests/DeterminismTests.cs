@@ -33,11 +33,11 @@ public class DeterminismTests
 		private readonly RideVM? roomScript;
 		private readonly List<RideVM> dice = new();
 
-		public SyntheticPark( WorldSeed seed, IGuestObserver? observer = null, Action<ParkCellMap>? prepareCells = null, bool changingRoom = false, Action<GuestSimulation>? prepareGuests = null )
+		public SyntheticPark( WorldSeed seed, IGuestObserver? observer = null, Action<ParkCellMap>? prepareCells = null, bool changingRoom = false, Action<GuestSimulation>? prepareGuests = null, IGuestDecisions? decisions = null )
 		{
 			Seed = seed;
 			Economy = EconomyTestData.Park( seed: seed.EconomyStream );
-			Guests = new GuestSimulation( GuestTests.CreateCross(), GuestTests.CreateSettings(), seed.GuestStream ) { Observer = observer };
+			Guests = new GuestSimulation( GuestTests.CreateCross(), GuestTests.CreateSettings(), seed.GuestStream, decisions ) { Observer = observer };
 			// [EXT:pools-save] a fixture that lays cells of its own before the first tick (the pool pin)
 			prepareCells?.Invoke( Guests.Grid.Cells );
 			// the park's one thing pool as Level builds it: the world's ten singletons, then the gates and the lights (things 1 to 12), so the first guest is thing 13 (WALK-010)
@@ -482,11 +482,11 @@ public class DeterminismTests
 
 	/// <summary>
 	/// The pinned hash of the same run with <c>opentpw.smarter-guests</c> on (docs/SMARTER-GUESTS.md): in this run, whose one drinks shop is cheap enough that no guest is refused and which has no second attraction to choose
-	/// between, the smarter rules (1.2.0) change no guest: <see cref="GuestSimulation.ComputeStateHash"/> equals the off run's. What moved from 1.1.0's value is the extension's own state, which joins the world hash: the
-	/// shop's throughput estimate (phase 3: its average, samples and silence clock) next to the birth ids. The scenario's pin (GuestMeasurementTests) is where the rules act. A deliberate change of the
+	/// between, the smarter rules of phases 2 to 5 (1.4.0) change no guest: <see cref="GuestSimulation.ComputeStateHash"/> equals the off run's. What moved from 1.1.0's value is the extension's own state, which joins the world hash: the
+	/// shop's throughput estimate (phase 3: its average, samples and silence clock) next to the birth ids. The scenario's pin (GuestMeasurementTests) is where the rules act. 1.5.0 (phase 6, clean and quiet paths) moved this pin from main's value for the 1.4.0 rules: the cross park's few path cells crowd (five guests in one cell), so guests complain of the crowd and the wander goal moves to a quieter candidate, which changes happiness and walks, and the complaint times join the hash (docs/DETERMINISM.md). A deliberate change of the
 	/// extension's state, of the rules or of a constant changes this value (and bumps the extension's version).
 	/// </summary>
-	internal const ulong SmarterGuestsFixedRunHash = 0xF0B3F8366E2B73E4UL;
+	internal const ulong SmarterGuestsFixedRunHash = 0xE7D4BED7787E4748UL;
 
 	[TestMethod]
 	public void SmarterGuestsFixedRunHashIsTheSameInEveryProcess()
@@ -560,14 +560,54 @@ public class DeterminismTests
 		Assert.IsTrue( on.Guests.ScriptMods!.Stats().Single().Calls > 50 );
 	}
 
-	/// <summary>In the synthetic park the shipped rules never act, so the guests and the economy are the off run's, tick for tick; only the world hash differs, by the extension's state.</summary>
+	/// <summary>In the synthetic park the rules of phases 2 to 5 never act, so the guests and the economy are the off run's, tick for tick; only the world hash differs, by the extension's state.</summary>
 	[TestMethod]
-	public void SmarterGuestsOnWithTheDelegatingPolicyLeavesEveryGuestVisibleValueAsItWasOff()
+	public void SmarterGuestsPhaseFiveRulesLeaveEveryGuestVisibleValueAsItWasOff()
 	{
 		var off = new SyntheticPark( WorldSeed.Default );
-		SyntheticPark on;
-		using ( OpenTPW.Mods.OpenTpwExtensions.Use( SmarterGuestsTests.On() ) )
-			on = new SyntheticPark( WorldSeed.Default );
+		var on = new SyntheticPark( WorldSeed.Default, decisions: new SmarterGuestDecisions( SmarterRuleSet.Phase5 ) );
+		AssertSameGuests( off, on );
+		Assert.AreEqual( FixedRunHash, off.Hash );
+		Assert.AreNotEqual( off.Hash, on.Hash, "the world hash carries the extension's state" );
+		Assert.IsNotNull( on.Guests.SmarterGuests );
+		Assert.IsNull( off.Guests.SmarterGuests );
+	}
+
+	private sealed class PathCounter : IGuestObserver
+	{
+		public int Litter, Crowd, Moved;
+		public void Admitted( Guest guest, int fee ) { }
+		public void Spent( Guest guest, int amount, int attractionId ) { }
+		public void QueueRejected( Guest guest, IRideVisitorBridge attraction, QueueEndReason reason ) { }
+		public void QueueJoined( Guest guest, IRideVisitorBridge attraction ) { }
+		public void QueueBoarded( Guest guest, IRideVisitorBridge attraction, long waitTurns ) { }
+		public void QueueEnded( Guest guest, int attractionId, QueueEndReason reason, long waitTurns ) { }
+		public void Decided( Guest guest, bool chose ) { }
+		public void Leaving( Guest guest, DepartureCause cause ) { }
+		public void Departed( Guest guest ) { }
+		public void Recalled( Guest guest ) { }
+		public void Restored( GuestSimulation simulation ) { }
+		public void Ticked( GuestSimulation simulation, float deltaSeconds ) { }
+		public void PathComplained( Guest guest, PathComplaint complaint ) { if ( complaint == PathComplaint.Litter ) Litter++; else Crowd++; }
+		public void WanderGoalMoved( Guest guest ) => Moved++;
+	}
+
+	/// <summary>The path rules (phase 6) act in the synthetic cross park, where its few path cells crowd: the counters prove the pinned run exercises the crowd complaint and the goal move (it has no litter map worth the name).</summary>
+	[TestMethod]
+	public void SmarterGuestsPathRulesActInTheSyntheticParkAndItsPinnedRunDiffersFromPhaseFive()
+	{
+		var counter = new PathCounter();
+		var all = new SyntheticPark( WorldSeed.Default, counter, decisions: new SmarterGuestDecisions( SmarterRuleSet.All ) );
+		all.Run( PinnedRunTicks );
+		Assert.IsTrue( counter.Crowd > 0 && counter.Moved > 0, $"crowd complaints {counter.Crowd}, goals moved {counter.Moved}" );
+		var phase5 = new SyntheticPark( WorldSeed.Default, decisions: new SmarterGuestDecisions( SmarterRuleSet.Phase5 ) );
+		phase5.Run( PinnedRunTicks );
+		Assert.AreNotEqual( phase5.Hash, all.Hash, "the path rules change this run" );
+		Assert.AreEqual( SmarterGuestsFixedRunHash, all.Hash, $"0x{all.Hash:X16}" );
+	}
+
+	private static void AssertSameGuests( SyntheticPark off, SyntheticPark on )
+	{
 		for ( var chunk = 0; chunk < PinnedRunTicks / 1200; chunk++ )
 		{
 			off.Run( 1200 );
@@ -579,10 +619,6 @@ public class DeterminismTests
 			Assert.AreEqual( System.Text.Json.JsonSerializer.Serialize( off.Guests.CaptureSnapshot() ), System.Text.Json.JsonSerializer.Serialize( on.Guests.CaptureSnapshot() ), $"guest snapshot after {off.Ticks} ticks" );
 			Assert.AreEqual( ParkSaveJson( off ), ParkSaveJson( on ), $"economy after {off.Ticks} ticks" );
 		}
-		Assert.AreEqual( FixedRunHash, off.Hash );
-		Assert.AreNotEqual( off.Hash, on.Hash, "the world hash carries the extension's state" );
-		Assert.IsNotNull( on.Guests.SmarterGuests );
-		Assert.IsNull( off.Guests.SmarterGuests );
 	}
 
 	private static string ParkSaveJson( SyntheticPark park ) => System.Text.Json.JsonSerializer.Serialize( ParkSaveFile.Capture( park.Economy ) );

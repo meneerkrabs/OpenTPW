@@ -94,4 +94,6 @@ public sealed class GuestObserverChain : IGuestObserver
 	public void Ticked( GuestSimulation simulation, float deltaSeconds ) { first.Ticked( simulation, deltaSeconds ); second.Ticked( simulation, deltaSeconds ); }
 	public void Vomited( Guest guest ) { first.Vomited( guest ); second.Vomited( guest ); }
 	public void Thought( Guest guest, GuestThought thought ) { first.Thought( guest, thought ); second.Thought( guest, thought ); }
+	public void WanderGoalMoved( Guest guest ) { first.WanderGoalMoved( guest ); second.WanderGoalMoved( guest ); }
+	public void PathComplained( Guest guest, PathComplaint complaint ) { first.PathComplained( guest, complaint ); second.PathComplained( guest, complaint ); }
 }

@@ -228,7 +228,8 @@ rather than every byte, and a read that overlaps a replacement may simply not be
 and runs in the background with at most 64 MB waiting afterwards (one larger file can exceed it);
 the manifest is written every 25 files and whenever the queue empties. A page closed before that
 keeps less, and the next visit asks for the folder for what is missing. Only one tab keeps files (a Web
-Lock); a second tab plays without them. **Remove kept files** deletes them (saves stay). Browsers
+Lock); a second tab plays without them. A game that stops on an error leaves its tab open on the message, so that tab writes the list of
+what it kept and gives the lock back at once; a restart in a new tab then starts from the kept files instead of asking for the folder again. **Remove kept files** deletes them (saves stay). Browsers
 without writable OPFS streams, or whose storage does not open, keep nothing and show no choice.
 
 Content hashing succeeds before a kept file is changed. Replacing a previously kept path first
@@ -308,6 +309,14 @@ IndexedDB every five seconds and when the page is hidden or closed, and puts the
 game starts. Whole-park saves (`opentpw-<theme>-world.json`, docs/PARK-SAVES.md) live in `/save`
 too: a park saved in the browser is still on the Load screen after a page or runtime reload, and
 resuming it asks for the game folder to be chosen again, because the original files are not kept.
+The periodic autosave (`[EXT:periodic-autosave]`, every 5 minutes of play, on by default) writes
+`opentpw-<theme>-autosave-world.json` into the same folder, so the mirror carries it to IndexedDB with
+the next five-second sync, and a crashed or closed tab offers "Continue autosave" in the theme menu on the
+next visit once the game folder is chosen again. The page's only thread does the work: the capture is one
+short frame and the JSON is serialized in slices of 2 ms per frame (`SlicedJsonSerializer`), the write goes
+inline into the in-memory folder. A browser killed inside the five-second window loses the autosave of that
+window (the previous one stays); the page mirrors again when it is hidden, which is when a tab is usually
+closed. Native tests compile and run the same code path; a real browser run of the autosave is not done here.
 The player's game files are not uploaded.
 
 ### Shaders

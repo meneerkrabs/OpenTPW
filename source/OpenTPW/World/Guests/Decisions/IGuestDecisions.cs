@@ -46,11 +46,25 @@ public interface IGuestDecisions
 	bool UsesPlanHorizon => false;
 
 	/// <summary>
+	/// The policy weighs the comfort of the path (docs/SMARTER-GUESTS.md, phase 6; additive): the host then keeps the cells of the wander's random walk, counts the litter and the crowd on them and asks <see cref="ChoosePath"/>
+	/// before <see cref="ChooseWanderGoal"/>, and fills <see cref="GuestView.ComplaintTurn"/> from the extension's state. A policy that does not leaves it false and the host does none of this, so the original path does no
+	/// extra work. A policy that wraps another forwards it.
+	/// </summary>
+	bool UsesPathComfort => false;
+
+	/// <summary>
 	/// The queue patience rules look at the alternatives (additive, phase 4): -1 (the default) means the host does not look for this guest. Otherwise the host fills <see cref="AdmissionView.BestAlternativeWait256"/> at every
 	/// admission and <see cref="QueuePatienceView.BestAlternativeWait256"/> once the guest, not at the front of its queue, has waited at least this many park turns (the policy returns the turn its own give-up test starts, so the
 	/// scan of the park's rides is not paid before it can matter). Needs <see cref="UsesSpreading"/> (the estimates). A policy that wraps another forwards it.
 	/// </summary>
 	int AlternativeLookAfterTurns( in DecisionContext context, in GuestView guest ) => -1;
+
+	/// <summary>
+	/// How many park turns a queued guest must have waited before <see cref="DecideQueuePatience"/> can answer anything but what <see cref="OriginalGuestDecisions"/> answers (additive, phase 6 release work): the host skips the
+	/// hook, and the views it would have built, for a guest that has waited fewer turns (a guest whose join turn is not recorded is always asked). -1, the default, is "never skip". The answer may depend on the
+	/// park seed and the guest's birth id only: the host asks every turn of every queued guest and the policy keeps no state. A policy that wraps another forwards it, or answers -1 while a hook of its own may answer earlier.
+	/// </summary>
+	int QueuePatienceQuietTurns( in DecisionContext context, ulong birthId ) => -1;
 
 	/// <summary>
 	/// The minor decision's hysteresis (additive, phase 3): whether the best window candidate (<paramref name="candidate"/>, scoring <paramref name="candidateScore"/>) replaces the target the guest is walking to
@@ -121,4 +135,10 @@ public interface IGuestDecisions
 	/// the result; the policy returns the goal the guest walks to (the original: the proposal).
 	/// </summary>
 	GuestWander.Destination ChooseWanderGoal( in DecisionContext context, in GuestView guest, in GuestWander.Destination proposal );
+
+	/// <summary>
+	/// The comfort of the wander's goal (additive, phase 6; asked only of a policy that <see cref="UsesPathComfort"/>, after the original's search and its draws, before <see cref="ChooseWanderGoal"/>): the cell the guest
+	/// stands on and the cells the random walk visited. The policy may name another cell of the walk as the goal and may make the guest complain; the host performs both. The default keeps the goal and complains of nothing.
+	/// </summary>
+	PathDecision ChoosePath( in DecisionContext context, in GuestView guest, in WanderPathView path ) => PathDecision.Keep;
 }

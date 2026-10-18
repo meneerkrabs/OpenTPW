@@ -44,9 +44,26 @@ public sealed record DepartureMetrics( long Total, long Admitted, long NeverAdmi
 /// <param name="MeanIllnessAtDeparture">The mean illness meter of the admitted guests that left, or null with none.</param>
 public sealed record NeedsMetrics( long Vomits, long VomitsAfterMeal, long NeedThoughts, long DepartedWithUnmetNeeds, double? MeanIllnessAtDeparture );
 
+/// <summary>
+/// What the paths looked like to the guests in the window (docs/SMARTER-GUESTS.md, phase 6). Passive counts only, read from the litter map and the guests' cells.
+/// </summary>
+/// <param name="GuestTicks">The guest-ticks counted: every tick, every paid guest in the park.</param>
+/// <param name="LitteredGuestTicks">Guest-ticks standing on a cell that holds litter.</param>
+/// <param name="LitterNearGuestTicks">Guest-ticks with <see cref="SmarterPathComfort.LitterComplaintUnits"/> or more litter units in the nine cells around (the level at which a guest complains).</param>
+/// <param name="PathGuestTicks">Guest-ticks standing on a path cell (the crowd's denominator).</param>
+/// <param name="CrowdedGuestTicks">Path guest-ticks in a cell with <see cref="SmarterPathComfort.CrowdComplaintGuests"/> or more guests.</param>
+/// <param name="CrowdSum">The sum over the ticks of the guests on path cells per occupied path cell (<paramref name="CrowdTicks"/> ticks had any).</param>
+/// <param name="LitterEncounters">Times an admitted guest stepped onto a littered cell from a clean one.</param>
+/// <param name="LitterCellSum">The sum over the ticks of the cells holding litter.</param>
+/// <param name="LitterComplaints">Complaints about litter (a thought of "Too messy" with a happiness cost).</param>
+/// <param name="CrowdComplaints">Complaints about a crowd.</param>
+/// <param name="GoalsMoved">Wander goals the path rules moved to another cell of the walk.</param>
+public sealed record PathMetrics( long GuestTicks, long LitteredGuestTicks, long LitterNearGuestTicks, long PathGuestTicks, long CrowdedGuestTicks, double CrowdSum, long CrowdTicks, long LitterEncounters,
+	long LitterCellSum, long LitterComplaints, long CrowdComplaints, long GoalsMoved = 0 );
+
 public sealed record GuestMetricsSnapshot( long Admissions, double RevenueTotal, double RevenueEntrance, double RevenuePerAdmittedGuest, QueueOutcomeMetrics Queue,
 	double? GuestTimeHappiness, double? SurvivorHappiness, IReadOnlyList<CohortMetrics> Cohorts, DepartureMetrics Departures, IReadOnlyList<AttractionUse> Attractions,
-	double GiniRides, double GiniAll, double GiniRidesPerCapacity, long NoChoiceEvents, long StuckGuests, double GuestSeconds, double MeanGuestsInPark, long Ticks, NeedsMetrics? Needs = null )
+	double GiniRides, double GiniAll, double GiniRidesPerCapacity, long NoChoiceEvents, long StuckGuests, double GuestSeconds, double MeanGuestsInPark, long Ticks, NeedsMetrics? Needs = null, PathMetrics? Paths = null )
 {
 	/// <summary>
 	/// Guest time per ride boarding: the guest-seconds of the window over the boardings of rides in it (NaN with none). The pooled form of "time between a guest's boardings": a wait cut bought with refusals shows
@@ -97,6 +114,20 @@ public sealed record GuestMetricsSnapshot( long Admissions, double RevenueTotal,
 			list.Add( ("needs.thoughts.perAdmission", Admissions == 0 ? 0 : (double)needs.NeedThoughts / Admissions) );
 			list.Add( ("departures.unmetNeeds.perAdmission", Admissions == 0 ? 0 : (double)needs.DepartedWithUnmetNeeds / Admissions) );
 			list.Add( ("departures.meanIllness", needs.MeanIllnessAtDeparture ?? double.NaN) );
+		}
+		// phase 6: what the paths looked like; appended after the older metrics so their order stays
+		if ( Paths is { } paths )
+		{
+			double Share( long part, long whole ) => whole == 0 ? 0 : (double)part / whole;
+			list.Add( ("path.littered.timeShare", Share( paths.LitteredGuestTicks, paths.GuestTicks )) );
+			list.Add( ("path.litterNear.timeShare", Share( paths.LitterNearGuestTicks, paths.GuestTicks )) );
+			list.Add( ("path.litterEncounters.perAdmission", Admissions == 0 ? 0 : (double)paths.LitterEncounters / Admissions) );
+			list.Add( ("path.crowd.guestsPerOccupiedCell", paths.CrowdTicks == 0 ? 0 : paths.CrowdSum / paths.CrowdTicks) );
+			list.Add( ("path.crowded.timeShare", Share( paths.CrowdedGuestTicks, paths.PathGuestTicks )) );
+			list.Add( ("path.complaints.litter.perAdmission", Admissions == 0 ? 0 : (double)paths.LitterComplaints / Admissions) );
+			list.Add( ("path.complaints.crowd.perAdmission", Admissions == 0 ? 0 : (double)paths.CrowdComplaints / Admissions) );
+			list.Add( ("path.goalsMoved.perAdmission", Admissions == 0 ? 0 : (double)paths.GoalsMoved / Admissions) );
+			list.Add( ("path.litter.meanCells", Ticks == 0 ? 0 : (double)paths.LitterCellSum / Ticks) );
 		}
 		return list.Select( item => (item.Item1, item.Item2) ).ToList();
 	}
@@ -190,6 +221,11 @@ public sealed record GuestMetricsSnapshot( long Admissions, double RevenueTotal,
 				["perAdmittedGuest"] = N( RevenuePerAdmittedGuest )
 			},
 			["noChoice"] = new JsonObject { ["events"] = NoChoiceEvents, ["stuckGuests"] = StuckGuests },
+			["paths"] = Paths is { } paths
+				? new JsonObject { ["guestTicks"] = paths.GuestTicks, ["litteredGuestTicks"] = paths.LitteredGuestTicks, ["litterNearGuestTicks"] = paths.LitterNearGuestTicks, ["allGuestTicks"] = paths.PathGuestTicks,
+					["crowdedGuestTicks"] = paths.CrowdedGuestTicks, ["crowdTicks"] = paths.CrowdTicks, ["litterEncounters"] = paths.LitterEncounters, ["litterCellSum"] = paths.LitterCellSum,
+					["litterComplaints"] = paths.LitterComplaints, ["crowdComplaints"] = paths.CrowdComplaints, ["goalsMoved"] = paths.GoalsMoved }
+				: null,
 			["needs"] = Needs is { } needs
 				? new JsonObject { ["vomits"] = needs.Vomits, ["vomitsAfterMeal"] = needs.VomitsAfterMeal, ["needThoughts"] = needs.NeedThoughts, ["departedWithUnmetNeeds"] = needs.DepartedWithUnmetNeeds, ["meanIllnessAtDeparture"] = N( needs.MeanIllnessAtDeparture ) }
 				: null
@@ -222,6 +258,8 @@ public sealed class GuestMetrics : IGuestObserver
 		public bool Stuck;
 		/// <summary>The park turn of the guest's latest use of an attraction with a hunger effect, -1 for none.</summary>
 		public long LastMealTurn = -1;
+		/// <summary>Whether the guest stood on a littered cell at the last tick (a step onto litter from a clean cell is an encounter).</summary>
+		public bool OnLitter;
 	}
 
 	private sealed class Cohort
@@ -255,6 +293,9 @@ public sealed class GuestMetrics : IGuestObserver
 	private long departures, departedAdmitted, depHappinessZero, depExitZero, depClosed, depBooth, depGuard, depOther;
 	private double depHappiness, depTurns, depRides, depIllness;
 	private long vomits, vomitsAfterMeal, needThoughts, depUnmet;
+	private long allGuestTicks, litteredGuestTicks, litterNearGuestTicks, pathCellGuestTicks, crowdedGuestTicks, crowdTicks, litterEncounters, litterCellSum, litterComplaints, crowdComplaints, goalsMoved;
+	private double crowdSum;
+	private readonly Dictionary<(int X, int Y), int> cellCounts = new();
 
 	public GuestMetrics( GuestMetricsOptions? options = null ) => this.options = options ?? new GuestMetricsOptions();
 
@@ -292,6 +333,8 @@ public sealed class GuestMetrics : IGuestObserver
 		departures = departedAdmitted = depHappinessZero = depExitZero = depClosed = depBooth = depGuard = depOther = 0;
 		depHappiness = depTurns = depRides = depIllness = 0;
 		vomits = vomitsAfterMeal = needThoughts = depUnmet = 0;
+		allGuestTicks = litteredGuestTicks = litterNearGuestTicks = pathCellGuestTicks = crowdedGuestTicks = crowdTicks = litterEncounters = litterCellSum = litterComplaints = crowdComplaints = goalsMoved = 0;
+		crowdSum = 0;
 		foreach ( var track in tracks.Values )
 		{
 			if ( track.Attempt != null )
@@ -355,7 +398,8 @@ public sealed class GuestMetrics : IGuestObserver
 		return new GuestMetricsSnapshot( admissions, revenue, entranceRevenue, admissions == 0 ? 0 : revenue / admissions, queue,
 			guestSeconds > 0 ? happinessSeconds / guestSeconds : null, survivors.Count > 0 ? survivors.Average() : null, cohortList, departureMetrics, snapshotAttractions,
 			Gini( rideUses ), Gini( snapshotAttractions.Select( item => (double)item.Uses ).ToList() ), Gini( rideUsePerCapacity ), noChoiceEvents, stuck, guestSeconds,
-			ticks > 0 ? guestTickSum / ticks : 0, ticks, new NeedsMetrics( vomits, vomitsAfterMeal, needThoughts, depUnmet, departedAdmitted > 0 ? depIllness / departedAdmitted : null ) );
+			ticks > 0 ? guestTickSum / ticks : 0, ticks, new NeedsMetrics( vomits, vomitsAfterMeal, needThoughts, depUnmet, departedAdmitted > 0 ? depIllness / departedAdmitted : null ),
+			new PathMetrics( allGuestTicks, litteredGuestTicks, litterNearGuestTicks, pathCellGuestTicks, crowdedGuestTicks, crowdSum, crowdTicks, litterEncounters, litterCellSum, litterComplaints, crowdComplaints, goalsMoved ) );
 	}
 
 	private Track Get( Guest guest )
@@ -509,6 +553,22 @@ public sealed class GuestMetrics : IGuestObserver
 			needThoughts++;
 	}
 
+	public void PathComplained( Guest guest, PathComplaint complaint )
+	{
+		if ( !recording )
+			return;
+		if ( complaint == PathComplaint.Litter )
+			litterComplaints++;
+		else if ( complaint == PathComplaint.Crowd )
+			crowdComplaints++;
+	}
+
+	public void WanderGoalMoved( Guest guest )
+	{
+		if ( recording )
+			goalsMoved++;
+	}
+
 	public void Leaving( Guest guest, DepartureCause cause ) => Get( guest ).LastCause = cause;
 
 	public void Recalled( Guest guest ) => Get( guest ).LastCause = DepartureCause.None;
@@ -578,11 +638,15 @@ public sealed class GuestMetrics : IGuestObserver
 			return;
 		ticks++;
 		var inPark = 0;
+		var litter = sim.Litter;
+		cellCounts.Clear();
+		litterCellSum += litter?.Count ?? 0;
 		foreach ( var guest in sim.Guests )
 		{
 			if ( !guest.Paid || guest.State == GuestState.Gone || !tracks.TryGetValue( guest, out var track ) )
 				continue;
 			inPark++;
+			SamplePath( sim, litter, guest, track );
 			guestSeconds += deltaSeconds;
 			happinessSeconds += guest.Happiness * deltaSeconds;
 			var cohort = CohortOf( track.Cohort );
@@ -590,6 +654,44 @@ public sealed class GuestMetrics : IGuestObserver
 			cohort.HappinessSeconds += guest.Happiness * deltaSeconds;
 		}
 		guestTickSum += inPark;
+		if ( cellCounts.Count > 0 )
+		{
+			var guestsOnPaths = 0;
+			foreach (var count in cellCounts.Values)
+				guestsOnPaths += count;
+			crowdSum += (double)guestsOnPaths / cellCounts.Count;
+			crowdTicks++;
+			foreach ( var count in cellCounts.Values )
+				if ( count >= SmarterPathComfort.CrowdComplaintGuests )
+					crowdedGuestTicks += count;
+			pathCellGuestTicks += guestsOnPaths;
+		}
+	}
+
+	/// <summary>The guest's cell for the path metrics: the litter on it and around it, and the path cell it counts into the crowd (a guest in a queue, a ride or off the path counts into none).</summary>
+	private void SamplePath( GuestSimulation sim, ParkLitter? litter, Guest guest, Track track )
+	{
+		allGuestTicks++;
+		var cell = (guest.CellX, guest.CellY);
+		var onLitter = litter != null && litter.Count > 0 && litter.TypeAt( cell.CellX, cell.CellY ) != LitterType.None;
+		if ( onLitter )
+		{
+			litteredGuestTicks++;
+			if ( !track.OnLitter && track.Admitted && sim.Grid.IsWalkable( cell.CellX, cell.CellY ) )
+				litterEncounters++;
+		}
+		track.OnLitter = onLitter;
+		if ( litter != null && litter.Count > 0 )
+		{
+			var units = 0;
+			for ( var y = cell.CellY - 1; y <= cell.CellY + 1; y++ )
+				for ( var x = cell.CellX - 1; x <= cell.CellX + 1; x++ )
+					units += SmarterPathComfort.LitterUnitsOf( litter.TypeAt( x, y ) );
+			if ( units >= SmarterPathComfort.LitterComplaintUnits )
+				litterNearGuestTicks++;
+		}
+		if ( guest.State is GuestState.WalkingAround or GuestState.DoingNothing or GuestState.GoingToRide or GuestState.LeavingPark && sim.Grid.IsWalkable( cell.CellX, cell.CellY ) )
+			cellCounts[cell] = cellCounts.GetValueOrDefault( cell ) + 1;
 	}
 
 	/// <summary>Nearest-rank percentile of an ascending list (null when empty).</summary>

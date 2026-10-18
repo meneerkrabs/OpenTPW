@@ -144,7 +144,7 @@ public sealed partial class OriginalObjectRuntime
 		return System.Numerics.Vector3.Distance( transforms[from.Value].Translation, transforms[to.Value].Translation );
 	}
 
-	private int? FindDummyNode( int mask, int number )
+	internal int? FindDummyNode( int mask, int number )
 	{
 		for ( var index = 0; index < Model.DummyAttributes.Count; index++ )
 		{
@@ -269,6 +269,8 @@ public sealed partial class OriginalObjectRuntime
 		}
 		// the object pass then moves the kept ADDOBJ effects to their keys ([BIN:TPW-EXE:0x55189D ADDOBJ follow])
 		FollowParticleObjects();
+		// and the kept sounds, every eighth pass per script ([BIN:TPW-EXE:0x551A1C sound follow])
+		FollowHeldSounds( substep );
 		if ( substep is { } step )
 		{
 			// [BIN:TPW-EXE:0x54F5D7 tour cars] the tour tick runs after the script pass on the even substeps only
@@ -294,6 +296,7 @@ public sealed partial class OriginalObjectRuntime
 		footprintMiddle = null;
 		eventSoundSpace = null;
 		ClearParticleRequests();
+		StopHeldSounds();
 		effects.StopSounds();
 		Visitors.IsStopped = true;
 		Visitors.ReleaseAll();
@@ -363,11 +366,11 @@ public sealed partial class OriginalObjectRuntime
 			CompletedCycles = CompletedCycles,
 			AnimationsPlayed = AnimationsPlayed,
 			UnresolvedAnimations = unresolvedAnimations.ToArray(),
-			HeldScream = effects.HoldsScream,
+			HeldScream = effects.ScriptHoldsScream,
 			HeldScreamBand = effects.HeldScreamBand,
 			HeldScreamLevel = effects.HeldScreamLevel,
 			HeldScreamSpeed = effects.HeldScreamSpeed,
-			OwnedScreamCount = effects.OwnedScreamCount,
+			OwnedScreamCount = effects.LeakedScreamCount,
 			StoppedScriptFault = stopped && Script is { State: RideVMState.Faulted } ? Script.FaultMessage : null,
 			ParticleObjects = CaptureParticleObjects(),
 			RepairParticle = CaptureRepairParticle(),
@@ -383,8 +386,9 @@ public sealed partial class OriginalObjectRuntime
 	/// attraction id, seed and open flag). Validates the entry and script identity first and throws
 	/// <see cref="InvalidDataException"/> — without changing the candidate — on a mismatch. A stopped snapshot
 	/// replays <see cref="Stop"/>'s teardown (a fresh
-	/// candidate has no riders, chains or trains to lose). Returns the explicit gaps: live audio state (held/owned
-	/// scream chains) cannot cross a restart and is reported, never silently dropped.
+	/// candidate has no riders, chains or trains to lose). Starts no sound: a held scream comes back as the script's
+	/// state and plays again from <see cref="ResumeHeldScream"/> once the park's audio runs. Returns the explicit gaps
+	/// (none so far).
 	/// </summary>
 	public IReadOnlyList<string> RestoreSnapshot( OriginalObjectRuntimeSnapshot snapshot )
 	{
@@ -425,7 +429,11 @@ public sealed partial class OriginalObjectRuntime
 		wasRunning = snapshot.WasRunning;
 		RestoreParticleObjects( snapshot.Stopped ? null : snapshot.ParticleObjects );
 		RestoreRepairParticle( snapshot.Stopped ? 0 : snapshot.RepairParticle );
-		effects.ScriptHoldsScream = snapshot.ScriptHoldsScream ?? snapshot.HeldScream;
+		// The scream is the script's state: its handle, operands and lost handles come back exactly, whether or not either run had audio (an older save
+		// without the script's own view of the handle falls back to the chain's). Its sound is not: see ResumeHeldScream. A stopped object's script
+		// holds none (the teardown above cleared it), whatever an older or edited save says.
+		if ( !snapshot.Stopped )
+			effects.RestoreScreams( snapshot.ScriptHoldsScream ?? snapshot.HeldScream, snapshot.HeldScreamBand, snapshot.HeldScreamLevel, snapshot.HeldScreamSpeed, snapshot.OwnedScreamCount );
 		RestoreSettingWords( snapshot.RideSpeed, snapshot.RideCapacity, snapshot.RideDuration );
 		CompletedCycles = snapshot.CompletedCycles;
 		AnimationsPlayed = snapshot.AnimationsPlayed;
@@ -435,14 +443,19 @@ public sealed partial class OriginalObjectRuntime
 		if ( snapshot.Heads != null )
 			Visitors.Heads!.RestoreSnapshot( snapshot.Heads );
 		Animator.RestoreSnapshot( snapshot.Animator, ResolveSnapshotClip );
-		// Screams are presentation: a held scream starts again from its STARTSCREAM operands (the script still holds a handle,
-		// so its STOPSCREAM and a refused second STARTSCREAM behave as before); chains the script had lost track of are not
-		// carried over, the original's own unreferenced chains end with the program too.
-		if ( snapshot.HeldScream )
-			effects.RestoreHeldScream( snapshot.HeldScreamBand, snapshot.HeldScreamLevel, snapshot.HeldScreamSpeed );
-		if ( snapshot.OwnedScreamCount > 0 )
-			Log.Trace( $"{Entry.ArchivePath}: {snapshot.OwnedScreamCount} unreferenced scream chain(s) at capture are not resumed." );
+		if ( !snapshot.Stopped && snapshot.OwnedScreamCount > 0 )
+			Log?.Trace( $"{Entry.ArchivePath}: {snapshot.OwnedScreamCount} lost scream handle(s) at capture are counted, their chains do not scream again." );
 		return gaps;
+	}
+
+	/// <summary>
+	/// Plays the script's held scream again once the park's audio runs: a restored handle comes back without its chain (the flow calls
+	/// <see cref="Level.ResumeHeldScreams"/> after <see cref="GameAudio.EnterPark"/>). A stopped object holds none.
+	/// </summary>
+	internal void ResumeHeldScream()
+	{
+		if ( !stopped )
+			effects.ResumeHeldScream();
 	}
 
 	/// <summary>Snapshot-clip resolver through this object's own archive and clip cache (no saved paths).</summary>
@@ -607,28 +620,36 @@ public sealed partial class OriginalObjectRuntime
 /// their channel operand; triggers return the trigger's millisecond result, which <see cref="OpcodeHandlers.Animation"/>
 /// turns into the script's waits; FLUSHANIM(_CH) clears only the deferred clip; GETANIM(_CH) report the AnimID or −1.
 /// COAST goes to the station's <see cref="CoasterRide"/>. Visitor opcodes go to the object's
-/// <see cref="RideVisitorBridge"/> (guests slice). EVENT and REPAIREFFECT play their original sounds (their other
-/// effects stay unimplemented). TPW YEAR/MONTH/DAY/HOUR/MIN/SEC sample host civil time.
-/// Everything else (objects/particles, the ride-type controllers TOUR/BUMP,
-/// screams, the ride lights) stays an unimplemented effect. DIPMUSIC sets the sound service's music duck request; SETREVERB's level is read by <see cref="ReverbSelector"/>.
+/// <see cref="RideVisitorBridge"/> (guests slice). EVENT and REPAIREFFECT play their original sounds and particles, STARTSCREAM/STOPSCREAM/SCREAMLEVEL/SINGLESCREAM
+/// the screams. ADDOBJ keeps the particle effects (types 1-2) and sounds (types 3-9) it starts under its slot (<see cref="OriginalObjectRuntime"/>), KILLOBJ and FADEOBJ end them, SETOBJPARAM
+/// gives the sounds a parameter, and a script's end ends what it still holds (<see cref="IRideScriptLifetime"/>). TPW YEAR/MONTH/DAY/HOUR/MIN/SEC sample host civil time. The ride-type controllers
+/// TOUR/BUMP/COAST go to their controllers. What stays an unimplemented effect (<see cref="RideVM.UnimplementedEffects"/>): the ride lights, the bounce rider opcodes where their object has no bounce
+/// rider rendering, and ADDOBJ/EVENT type 10 (the object type's own sound list). DIPMUSIC sets the sound service's music duck request; SETREVERB's level is read by <see cref="ReverbSelector"/>.
 /// </summary>
-public sealed class OriginalObjectEffects : IRideScriptEffects, IRideAnimationQuery, IRideCanonicalEffects
+public sealed class OriginalObjectEffects : IRideScriptEffects, IRideAnimationQuery, IRideCanonicalEffects, IRideScriptLifetime
 {
 	/// <summary>Channel of the plain animation opcodes: channel 0, the same record a _CH opcode addresses with channel 0.</summary>
 	// [BIN:STP-PPC:0x100A6CC0 animation trigger] the channel record is model +0x10 + channel × 0x38; TRIGANIM (0x100AFB10), WAITANIM (0x100AFC68), LOOPANIM (0x100AFD7C) and TRIGANIMSPEED (0x100B005C) pass channel 0, TRIGANIM_CH (0x100B01C4) its operand
 	public const int MainChannel = OpcodeHandlers.Animation.MainChannel;
 
 	private readonly OriginalObjectRuntime ride;
-	/// <summary>The ride script's held scream (the original's handle, refused while one is held).</summary>
-	private SoundChain? screamChain;
+	/// <summary>
+	/// The ride script's scream handle as the script sees it (the original's handle at the VM's +208): a STARTSCREAM with a band takes it, and a second
+	/// one is refused while it is held. This, the operands and <see cref="leakedScreams"/> are the scream's state, the same with or without audio, and a
+	/// park save keeps them; <see cref="screamChain"/> only plays the held scream.
+	/// </summary>
 	private bool scriptHoldsScream;
+	/// <summary>Handles a refused STARTSCREAM lost: each leaves its chain screaming unreferenced until the object stops.</summary>
+	private int leakedScreams;
+	/// <summary>The chain that plays the held scream: null without audio, before a resumed park's audio starts, or for a band without an event.</summary>
+	private SoundChain? screamChain;
 	private readonly List<SoundChain> ownedScreams = new();
 	// Positioned EVENT and repair-hide flag-0x8 voices share the existing exact-runtime cleanup ledger.
 	private readonly List<AudioVoice> ownedEventLoops = new();
 
 	public OriginalObjectEffects( OriginalObjectRuntime ride ) => this.ride = ride;
 
-	/// <summary>Stops this runtime's chains, including handles lost by a refused STARTSCREAM, when the object is removed.</summary>
+	/// <summary>Stops this runtime's chains, including handles lost by a refused STARTSCREAM, when the object is removed; its script holds no scream any more.</summary>
 	internal void StopSounds()
 	{
 		foreach ( var chain in ownedScreams )
@@ -637,35 +658,48 @@ public sealed class OriginalObjectEffects : IRideScriptEffects, IRideAnimationQu
 		foreach (var voice in ownedEventLoops) voice.Stop();
 		ownedEventLoops.Clear();
 		screamChain = null;
+		scriptHoldsScream = false;
+		leakedScreams = 0;
+		(HeldScreamBand, HeldScreamLevel, HeldScreamSpeed) = (0, 0, 0);
 	}
 
-	/// <summary>Whether the script holds a STARTSCREAM chain (park resume starts it again from its operands).</summary>
-	internal bool HoldsScream => screamChain != null;
-	/// <summary>The script's own view of its scream handle (set by a STARTSCREAM with a band, cleared by STOPSCREAM or a refusal), kept for the scream diagnostics.</summary>
+	/// <summary>Whether the script holds a scream handle (set by a STARTSCREAM with a band, cleared by STOPSCREAM, a refusal or the object's stop), with or without audio; the scream diagnostics follow it.</summary>
 	internal bool ScriptHoldsScream { get => scriptHoldsScream; set => scriptHoldsScream = value; }
-	/// <summary>The held scream's STARTSCREAM band, level and script speed word (0 without a held scream).</summary>
+	/// <summary>The held scream's STARTSCREAM band, level (the last SCREAMLEVEL's while it is held) and script speed word; 0 without a held scream.</summary>
 	internal int HeldScreamBand { get; private set; }
 	internal int HeldScreamLevel { get; private set; }
 	internal int HeldScreamSpeed { get; private set; }
+	/// <summary>Handles a refused STARTSCREAM lost (their chains scream on unreferenced until the object stops), counted with or without audio.</summary>
+	internal int LeakedScreamCount => leakedScreams;
+	/// <summary>Whether a live chain plays the held scream (presentation, never saved).</summary>
+	internal bool PlaysHeldScream => screamChain is { IsStopped: false };
 
-	/// <summary>Live chains the script no longer holds (a refused STARTSCREAM leaves the held one screaming unreferenced).</summary>
-	internal int OwnedScreamCount
+	/// <summary>
+	/// Park resume: the saved handle, its operands and the count of lost handles come back as they were, with or without audio. No chain starts here
+	/// (any this runtime played stops): a candidate park makes no sound before it replaces the live one; <see cref="ResumeHeldScream"/> plays the held
+	/// scream once the park's audio runs.
+	/// </summary>
+	internal void RestoreScreams( bool held, int band, int level, int speed, int leaked )
 	{
-		get
-		{
-			var count = 0;
-			foreach ( var chain in ownedScreams )
-				if ( !chain.IsStopped && !ReferenceEquals( chain, screamChain ) )
-					count++;
-			return count;
-		}
+		foreach ( var chain in ownedScreams )
+			chain.Stop();
+		ownedScreams.Clear();
+		screamChain = null;
+		scriptHoldsScream = held;
+		(HeldScreamBand, HeldScreamLevel, HeldScreamSpeed) = (band, level, speed);
+		leakedScreams = leaked;
 	}
 
-	/// <summary>Park resume: starts the held scream again from its saved operands.</summary>
-	internal void RestoreHeldScream( int band, int level, int speed )
+	/// <summary>
+	/// Plays the held scream from its operands when no chain plays it: a resumed park's handle comes back without one, and leaving the previous park stops
+	/// every chain. The lost handles are not screamed again; the original's unreferenced chains end with the program too.
+	/// </summary>
+	internal void ResumeHeldScream()
 	{
-		screamChain = GameAudio.StartScream( () => null, band, level, ride.ReadFootprintMiddle(), speed );
-		(HeldScreamBand, HeldScreamLevel, HeldScreamSpeed) = (band, level, speed);
+		if ( !scriptHoldsScream || PlaysHeldScream )
+			return;
+		ownedScreams.RemoveAll( chain => chain.IsStopped );
+		screamChain = GameAudio.StartScream( HeldScreamBand, HeldScreamLevel, ride.ReadFootprintMiddle(), HeldScreamSpeed );
 		if ( screamChain != null )
 			ownedScreams.Add( screamChain );
 	}
@@ -731,20 +765,28 @@ public sealed class OriginalObjectEffects : IRideScriptEffects, IRideAnimationQu
 			return ride.PerformTour( call );
 		if ( ride.Visitors.TryPerform( call, out var visitorResult ) )
 			return visitorResult;
-		// Routed EVENT and repair-hide sounds can use the placed origin; scream/show placement and reverb remain unimplemented.
+		// Routed EVENT, held ADDOBJ and repair-hide sounds use the placed origin; the screams sit at the footprint middle (0x556AF0); reverb is the sound service's (SETREVERB).
 		// [BIN:STP-PPC:0x100B19DC STARTSCREAM] the scream is held by the ride's script (the handle at the VM's +208); STOPSCREAM stops the handle, SINGLESCREAM is a one-shot with no handle
 		if ( call.Opcode == Opcode.STARTSCREAM )
 		{
-			// the diagnostics follow the script's own view of its handle, so a headless run without audio counts the same refusals (a chain, and so a handle, exists whenever the band is not 0)
+			// the handle, the refusal and the diagnostics follow the script's own view (in tp.exe with its sound running a chain, and so a handle, exists whenever the band is not 0; without a sound device 0x51bfc0 returns 0 and no handle is held, which OpenTPW deliberately does not model), so a run without audio holds, refuses and saves the same screams
+			var (band, level) = (call.Argument( 0 ), call.Argument( 1 ));
 			var refused = scriptHoldsScream;
-			GameAudio.Screams.NoteStart( ride.Entry.DisplayName, call.Argument( 0 ), refused );
-			scriptHoldsScream = !refused && call.Argument( 0 ) != 0;
-			screamChain = GameAudio.StartScream( () => screamChain, call.Argument( 0 ), call.Argument( 1 ), ride.ReadFootprintMiddle(), call.VM.SpeedBias );
-			(HeldScreamBand, HeldScreamLevel, HeldScreamSpeed) = screamChain != null ? (call.Argument( 0 ), call.Argument( 1 ), call.VM.SpeedBias) : (0, 0, 0);
+			GameAudio.Screams.NoteStart( ride.Entry.DisplayName, band, refused );
+			if ( refused )
+			{
+				// [BIN:STP-PPC:0x100B19DC refusal] a ride already holding a scream handle refuses: the engine logs "Started screaming without stopping first." and overwrites the handle with 0, so the held chain screams on unreferenced
+				Log?.Trace( "RSSE: Started screaming without stopping first." );
+				leakedScreams++;
+			}
 			ownedScreams.RemoveAll( chain => chain.IsStopped );
+			// band 0 plays nothing and gives no handle (0x551130 returns 0)
+			scriptHoldsScream = !refused && band != 0;
+			(HeldScreamBand, HeldScreamLevel, HeldScreamSpeed) = scriptHoldsScream ? (band, level, call.VM.SpeedBias) : (0, 0, 0);
+			screamChain = scriptHoldsScream ? GameAudio.StartScream( band, level, ride.ReadFootprintMiddle(), HeldScreamSpeed ) : null;
 			if ( screamChain != null )
 				ownedScreams.Add( screamChain );
-			return UnimplementedRideScriptEffects.Instance.Perform( call );
+			return 0;
 		}
 		if ( call.Opcode == Opcode.STOPSCREAM )
 		{
@@ -755,33 +797,48 @@ public sealed class OriginalObjectEffects : IRideScriptEffects, IRideAnimationQu
 			screamChain = null;
 			(HeldScreamBand, HeldScreamLevel, HeldScreamSpeed) = (0, 0, 0);
 			ownedScreams.RemoveAll( chain => chain.IsStopped );
-			return UnimplementedRideScriptEffects.Instance.Perform( call );
+			return 0;
 		}
 		if ( call.Opcode == Opcode.SINGLESCREAM )
 		{
 			GameAudio.SingleScream( call.Argument( 0 ), (short)call.Argument( 1 ), ride.ReadFootprintMiddle(), call.VM.SpeedBias );
-			return UnimplementedRideScriptEffects.Instance.Perform( call );
+			return 0;
 		}
 		if ( call.Opcode == Opcode.SCREAMLEVEL )
 		{
 			// [BIN:TPW-EXE:0x555FDA SCREAMLEVEL] one resolved operand: 0x551290(the script's scream handle (+0xD0), level, the script speed word) does nothing without a handle and otherwise sets the held voice's parameter 6 (the one the chain's links are matched against, as at STARTSCREAM) to clamp((level + speed) / 2, 0, 100), truncating toward zero (0x5512A0..0x5512B7); the script keeps the handle the call returns. A script without a held scream is untouched
-			if ( screamChain is { IsStopped: false } held )
+			var level = call.Argument( 0 );
+			// the held operands follow the script's handle, with or without audio; the chain, when one plays, takes the new parameter
+			if ( scriptHoldsScream )
 			{
-				held.Parameter = GameAudio.ScreamParameter( call.Argument( 0 ), call.VM.SpeedBias );
-				(HeldScreamLevel, HeldScreamSpeed) = (call.Argument( 0 ), call.VM.SpeedBias);
+				(HeldScreamLevel, HeldScreamSpeed) = (level, call.VM.SpeedBias);
+				if ( screamChain is { IsStopped: false } held )
+					held.Parameter = GameAudio.ScreamParameter( level, HeldScreamSpeed );
 			}
 			return 0;
 		}
-		// ADDOBJ and ADDOBJ_EXT type 1/2 start particle effects that KILLOBJ ends (docs/PARTICLES.md); the other object types stay unimplemented effects
+		// ADDOBJ and ADDOBJ_EXT of type 1/2 start particle effects (docs/PARTICLES.md) and of types 3-9 sounds, each kept under the record's slot; KILLOBJ and FADEOBJ end the records of the slot (type 10, the object type's own sound list, is the one that stays an unimplemented effect)
 		if ( call.Opcode is Opcode.ADDOBJ or Opcode.ADDOBJ_EXT )
 		{
+			// [BIN:TPW-EXE:0x5573D0 object dispatcher] type 10 takes the object type's own sound bank (0x557686, 0x4145E0); no type outside 1-10 is served (0x557931 logs, the handle is 0 and the record is freed)
+			if ( call.OperandCount > 0 && call.Argument( 0 ) == 10 )
+				return UnimplementedRideScriptEffects.Instance.Perform( call );
 			ride.ObserveParticleObject(call);
-			return UnimplementedRideScriptEffects.Instance.Perform( call );
+			ride.ObserveHeldSound(call);
+			return 0;
 		}
-		if ( call.Opcode == Opcode.KILLOBJ )
+		if ( call.Opcode is Opcode.KILLOBJ or Opcode.FADEOBJ )
 		{
+			// [BIN:TPW-EXE:0x5522C5 KILLOBJ] [BIN:TPW-EXE:0x5523D0 FADEOBJ] every record with the slot ends: types 1-2 through 0x51FF70(handle, -2), types 3-10 through the immediate stop (FADEOBJ's fade branch is never taken here, see OriginalObjectRuntime.EndHeldSounds)
 			ride.KillParticleObjects(call.Argument(0));
-			return UnimplementedRideScriptEffects.Instance.Perform( call );
+			ride.EndHeldSounds(call.VM.ScriptId, call.Argument(0));
+			return 0;
+		}
+		if ( call.Opcode == Opcode.SETOBJPARAM )
+		{
+			// [BIN:TPW-EXE:0x5524D9 SETOBJPARAM] the sound records of the slot get the parameter call (code, value); the particle records are skipped
+			ride.SetHeldSoundParameter(call.VM.ScriptId, call.Argument(0), call.Argument(1), call.Argument(2));
+			return 0;
 		}
 		if ( call.Opcode is Opcode.EVENT or Opcode.EVENT_EXT )
 		{
@@ -800,7 +857,8 @@ public sealed class OriginalObjectEffects : IRideScriptEffects, IRideAnimationQu
 				voice = GameAudio.PlayRseEvent(type, unchecked((uint)call.Argument(2)), null, ride.SoundSource);
 			ownedEventLoops.RemoveAll(loop => loop.IsFinished);
 			if (voice is { Loops: true }) ownedEventLoops.Add(voice);
-			return UnimplementedRideScriptEffects.Instance.Perform( call );
+			// [BIN:TPW-EXE:0x557686 EVENT type 10] the object type's own sound list is not served; it is the one EVENT part that stays an unimplemented effect (types 0 and above 10 only log in the original)
+			return type == 10 ? UnimplementedRideScriptEffects.Instance.Perform( call ) : 0;
 		}
 		if ( call.Opcode == Opcode.DIPMUSIC )
 		{
@@ -824,10 +882,13 @@ public sealed class OriginalObjectEffects : IRideScriptEffects, IRideAnimationQu
 				if ( voices.First is { Loops: true } ) ownedEventLoops.Add( voices.First );
 				if ( voices.Second is { Loops: true } ) ownedEventLoops.Add( voices.Second );
 			}
-			return UnimplementedRideScriptEffects.Instance.Perform( call );
+			return 0;
 		}
 		return UnimplementedRideScriptEffects.Instance.Perform( call );
 	}
+
+	/// <summary>A script of this object ended or was stopped: the sounds its ADDOBJ records hold end with it.</summary>
+	public void ScriptDestroyed( RideVM vm ) => ride.EndScriptSounds( vm.ScriptId );
 
 	public int GetAnimationId( RideVM vm, int channel ) => ride.Animator.GetAnimationId( channel );
 

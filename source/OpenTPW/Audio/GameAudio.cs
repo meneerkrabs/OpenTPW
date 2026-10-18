@@ -737,24 +737,20 @@ public static class GameAudio
 	}
 
 	/// <summary>
-	/// A ride script's <c>STARTSCREAM</c>: the band operand picks the held-chain event, the level operand (with the
-	/// script's speed) its parameter. Returns the chain, or null when the band is zero (nothing plays) or a scream is
-	/// already held — the original refuses then, logs its line, and leaves the held chain screaming unreferenced.
+	/// The chain of a ride script's held scream (<c>STARTSCREAM</c>, or a resumed park's held scream once its audio
+	/// runs): the band operand picks the held-chain event, the level operand (with the script's speed) its parameter.
+	/// Returns the chain, or null when the band is zero (nothing plays) or the sound service is off. Refusing a second
+	/// start while a scream is held is the script's (<see cref="OriginalObjectEffects"/>), with or without audio.
 	/// </summary>
 	// [BIN:STP-PPC:0x100B19DC STARTSCREAM] operand 1 is the band itself (no visitor lookup), operand 2 the level; the handle is kept in the ride's VM at +208
 	// [BIN:STP-PPC:0x100ACA38 scream event] band 0 plays nothing; 1 plays cat_kids 71; 2-3 play 72 (negative bands too); 4-7 play 73; 8 and above play 74
 	// [BIN:STP-PPC:0x100ACB7C scream parameter] parameter = (level + speed) / 2 clamped to 0..100 (signed shift); the speed is the ride VM's word at +192, default 50 (0x100B3154, 0x100B318C)
-	// [BIN:STP-PPC:0x100B19DC refusal] a ride already holding a scream handle refuses: the engine logs "Started screaming without stopping first." and overwrites the handle with 0, so the held chain screams on unreferenced
 	// [BIN:TPW-EXE:0x551130 STARTSCREAM submit] the held scream is positioned: cat_kids 0x47-0x4A at (x, y, z) with parameter 6 = clamp((a + b) / 2, 0, 100); the place is the ride's footprint middle (0x555edb -> 0x551130, SINGLESCREAM 0x555f1b -> 0x556af0 -> 0x551320; 0x466b70 reads the footprint rectangle at object +0xC0/+0xC4, scaled x10)
 	// [BIN:TPW-EXE:0x5516b0 script speed word] the speed word is the script's speed bias (RideVM.SpeedBias, the ride's InitSpeed; default 50 at 0x558c3c), the same short the script loop pushes to the ride every pass
-	public static SoundChain? StartScream( Func<SoundChain?> held, int band, int level, Vector3? position, int scriptSpeed = 50 )
+	public static SoundChain? StartScream( int band, int level, Vector3? position, int scriptSpeed = 50 )
 	{
-		if ( events == null || held() != null )
-		{
-			if ( held() != null )
-				Log.Trace( "RSSE: Started screaming without stopping first." );
+		if ( events == null )
 			return null;
-		}
 		if ( ScreamBandEvent( band ) is not { } eventId )
 			return null;
 		var parameter = ScreamParameter( level, scriptSpeed );
@@ -983,6 +979,19 @@ public static class GameAudio
 			return null;
 		// The traced switch submits every routed event at the object's position; the sound's own range applies when the object has one.
 		return position == null ? events.Play( sound.Value.Category, eventId, AudioChannel.Effects ) : events.PlayAt( sound.Value.Category, eventId, AudioChannel.Effects, position.Value );
+	}
+
+	/// <summary>
+	/// Starts an event for a script's <c>ADDOBJ</c> record (types 3-9): the same category lookup and submit as <see cref="PlayRseEvent"/>, but the sound is kept so the script can
+	/// move, parameterise and end it; null when the event is missing or no sound system runs (the original's submit returns handle 0, so the record is freed).
+	/// </summary>
+	// [BIN:TPW-EXE:0x557970 ADDOBJ record] the dispatcher 0x5573D0 returns the submit's handle (0x51BFC0, 0 for event 0 or with the sound system off, 0x802BC8/0x802BD4) and 0x557970 keeps the record only when it is not 0
+	public static HeldSound? StartHeldRseEvent( int type, uint eventId, Vector3? position = null, RseSoundSource? source = null )
+	{
+		var sound = FindRseEvent( type, eventId, source );
+		if ( sound == null || events == null )
+			return null;
+		return events.PlayHeld( sound.Value.Category, eventId, AudioChannel.Effects, position );
 	}
 
 	/// <summary>

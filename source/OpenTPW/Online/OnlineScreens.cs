@@ -923,7 +923,7 @@ public sealed class OnlineScreens
 				localStatus = OnlineStrings.Get( OnlineLabel.SavedTo ) + Session.Folders.Store( Session.Folders.Outbox, card );
 				Close();
 			}
-			catch ( Exception exception ) when ( exception is IOException or InvalidDataException or ArgumentException or InvalidOperationException or UnauthorizedAccessException )
+			catch ( Exception exception ) when ( exception is IOException or InvalidDataException or ArgumentException or InvalidOperationException or UnauthorizedAccessException or PlatformNotSupportedException )
 			{
 				// the window has no status line: a refused card or a failed store is shown in a message box and the window stays
 				stack.Push( UiDialogs.Message( "postcardFailed", () => exception.Message, (() => strings.Extra( OpenTpwText.Back ), stack.Pop) ) );

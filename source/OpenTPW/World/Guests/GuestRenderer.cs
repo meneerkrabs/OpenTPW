@@ -102,6 +102,12 @@ public sealed class GuestRenderer : Entity
 	/// kids and the costumes, whose hotspot is the feet.
 	/// </summary>
 	public IReadOnlySet<int>? BottomAnchoredSlots { get; init; }
+	/// <summary>
+	/// The riders of the flat rides' bounce tables, whose bodies the original's script pass draws on the ride (<see cref="BounceRiders"/>); a guest in the Using state whose ride keeps it in a bounce slot is
+	/// drawn at the pose it gives instead of being skipped. Null: no rider is drawn.
+	/// </summary>
+	internal IBounceRiderSource? BounceRiders { get; set; }
+	private readonly Dictionary<int, BounceRiderPose> bounceRiders = new();
 	/// <summary>Guests drawn in the last frame.</summary>
 	public int DrawnGuests { get; private set; }
 
@@ -234,7 +240,7 @@ public sealed class GuestRenderer : Entity
 		return (atlas, frame, mirror);
 	}
 
-	private (int Atlas, int Frame, bool Mirror, int Slot, int Direction, float Rotation) SelectSpriteAndSlot( Guest guest, SVector3 cameraRight, SVector3 cameraForward, SVector3 cameraUp = default )
+	private (int Atlas, int Frame, bool Mirror, int Slot, int Direction, float Rotation) SelectSpriteAndSlot( Guest guest, SVector3 cameraRight, SVector3 cameraForward, SVector3 cameraUp = default, BounceRiderPose? rider = null )
 	{
 		// [BIN:TPW-EXE:0x004FB19E guest sprite variant] the kid set is the guest's own draw at its creation, a function of its thing id alone (GuestAppearance.KidSet), not of its peep type
 		var atlasIndex = GuestAppearance.KidSet( guest.Id, atlases.Count );
@@ -245,7 +251,13 @@ public sealed class GuestRenderer : Entity
 		int direction;
 		bool mirror;
 		int slot, step;
-		if ( SlotChooser?.Invoke( guest ) is { } chosen )
+		if ( rider is { } bouncing )
+		{
+			// [BIN:TPW-EXE:0x00557CFC bounce template] the bouncing body is the run animation (template 0x0074DBC0, slot 2), the broken ride's the standing one (template 0x0074DC20, slot 0); the heading byte is the pose's own
+			(slot, step) = (bouncing.Broken ? GuestSpriteAtlas.StandSlot : GuestSpriteAtlas.RunSlot, bouncing.Step);
+			heading = default;
+		}
+		else if ( SlotChooser?.Invoke( guest ) is { } chosen )
 			(slot, step) = (SwimSlotFallback ? atlas.UsableSlot( chosen.Slot ) : chosen.Slot, chosen.Step);
 		else if ( guest.IsMoving )
 		{
@@ -262,8 +274,13 @@ public sealed class GuestRenderer : Entity
 			slot = GuestSpriteAtlas.StandSlot;
 			step = 0;
 		}
-		step %= atlas.FramesPerDirection( slot );
-		if ( ExactDirections )
+		step %= Math.Max( 1, atlas.FramesPerDirection( slot ) );
+		if ( rider is { } turned )
+		{
+			var yaw = GuestSpriteAtlas.CameraYaw( cameraRight, cameraForward, Camera.Mode is ParkCameraMode );
+			(direction, mirror) = GuestSpriteAtlas.SelectOriginalDirection( turned.Sector, yaw, atlas.DirectionsOf( slot ) );
+		}
+		else if ( ExactDirections )
 			(direction, mirror) = GuestSpriteAtlas.SelectDirection( SVector2.Dot( heading, rightFlat ), SVector2.Dot( heading, forwardFlat ) );
 		else
 		{
@@ -372,14 +389,18 @@ public sealed class GuestRenderer : Entity
 		if ( vertices.Length < needed )
 			vertices = new Vertex[Math.Max( needed, 64 * VerticesPerGuest ) * 2];
 		var count = 0;
+		bounceRiders.Clear();
+		BounceRiders?.Collect( bounceRiders );
 		foreach ( var guest in simulation.Guests )
 		{
-			if ( !guest.IsVisible || Draws?.Invoke( guest ) == false )
+			// a guest on a bounce ride is hidden like any rider, and drawn from the ride's own pose (a stale slot of another attraction never draws it)
+			BounceRiderPose? rider = bounceRiders.Count > 0 && bounceRiders.TryGetValue( guest.Id, out var pose ) && RideHeadRenderer.CanDraw( guest, pose.AttractionId ) ? pose : null;
+			if ( !guest.IsVisible && rider == null || Draws?.Invoke( guest ) == false )
 				continue;
-			var (atlasIndex, frameIndex, mirror, slot, direction, rotation) = SelectSpriteAndSlot( guest, right, forward, up );
+			var (atlasIndex, frameIndex, mirror, slot, direction, rotation) = SelectSpriteAndSlot( guest, right, forward, up, rider );
 			var atlas = atlases[atlasIndex];
 			var frame = atlas.Frames[frameIndex];
-			var feet = (FeetChooser?.Invoke( guest ) ?? CellToEngine( field, guest.DrawX, guest.DrawY )) + up * AnchorLift( atlasIndex, slot, direction ) - forward * (DepthPullChooser?.Invoke( guest ) ?? 0f);
+			var feet = (rider?.Feet ?? FeetChooser?.Invoke( guest ) ?? CellToEngine( field, guest.DrawX, guest.DrawY )) + up * AnchorLift( atlasIndex, slot, direction ) - forward * (DepthPullChooser?.Invoke( guest ) ?? 0f);
 			var share = 1f;
 			if ( DepthPulledSlots?.Invoke( slot ) != false )
 				(feet, share) = PullTowardsEye( feet, eye, forward );

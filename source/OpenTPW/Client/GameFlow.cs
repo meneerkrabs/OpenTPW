@@ -609,6 +609,7 @@ internal sealed partial class GameFlow : IDisposable
 			Level.Update();
 			presence?.Update( Time.Delta );
 			Advisor?.Update( Hud.Paused );
+			UpdateAutosave( Level, Hud );
 			var parkLost = Level.Park?.Economy.IsBankrupt == true;
 			GameAudio.Update( Level.Guests?.GetStatistics().InPark, parkLost );
 			ReverbSelector.Update( Level.RideView?.Ride );

@@ -35,9 +35,14 @@ internal static class WalkerBodies
 	// [BIN:TPW-EXE:0x00557E38 heading word] ((|value| & 7) with the sign put back), written at +0x14 of the entry
 	public static int SignedLow3( int value ) => value < 0 ? -(-value & 7) : value & 7;
 
-	/// <summary>The heading byte for an offset of the original's two ground axes (<paramref name="dx"/> along x, <paramref name="dz"/> along z): the angle atan2(dz, dx) in radians, truncated to an integer (so -3 to 3), then <see cref="SignedLow3"/>.</summary>
-	// [BIN:TPW-EXE:0x00556F40 walk heading] fpatan of (z2 - z1, x2 - x1) then __ftol, with the sign-keeping three-bit mask; the sprite pass keeps the low three bits (0x00542010)
-	public static int HeadingOf( float dx, float dz ) => SignedLow3( (int)Math.Atan2( dz, dx ) );
+	/// <summary>The heading byte for an offset of the original's two ground axes (<paramref name="dx"/> along x, <paramref name="dz"/> along z): the angle atan2(dz, dx) turned into a sector count <c>trunc(0.5 + 1.2732406201955062 x (6.28318 - (angle - 1.570795)))</c> (6 to 14), then <see cref="SignedLow3"/>.</summary>
+	// [BIN:TPW-EXE:0x005570C2 walk heading] fpatan of (z2 - z1, x2 - x1), then fsub 1.570795 (0x00700FE8), fsubr 6.28318 (0x00700FF0), fmul -1.2732406201955062 (0x00700FF8), fsubr 0.5 (0x00701000), __ftol (0x0067A830) and the sign-keeping three-bit mask; the same chain runs at 0x00557F52 for a body on board
+	public static int HeadingOf( float dx, float dz )
+	{
+		var angle = Math.Atan2( dz, dx );
+		var sectors = 0.5 - (6.28318 - (angle - 1.570795)) * -1.2732406201955062;
+		return SignedLow3( (int)sectors );
+	}
 
 	/// <summary>The sprite sector a heading byte selects: its low three bits (a negative heading wraps).</summary>
 	public static int SectorOf( int heading ) => heading & 7;

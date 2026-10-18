@@ -22,13 +22,14 @@ public class WalkerBodyTests
 	}
 
 	[TestMethod]
-	public void TheHeadingIsTheTruncatedAngleOfTheOffsetInRadians()
+	public void TheHeadingIsTheAngleTurnedIntoAnEighthOfATurnSector()
 	{
-		Assert.AreEqual( 0, WalkerBodies.HeadingOf( 10, 0 ), "along x: angle 0" );
-		Assert.AreEqual( 1, WalkerBodies.HeadingOf( 0, 10 ), "along z: 1.57 truncates to 1" );
-		Assert.AreEqual( 3, WalkerBodies.HeadingOf( -10, 0.001f ), "against x: 3.14 truncates to 3" );
-		Assert.AreEqual( -1, WalkerBodies.HeadingOf( 0, -10 ), "-1.57 truncates to -1" );
-		Assert.AreEqual( 0, WalkerBodies.HeadingOf( 10, 5 ), "0.46 truncates to 0" );
+		// trunc(0.5 + 4/pi (2.5 pi - angle)) & 7: along x (angle 0) is 10 & 7 = 2, along z (pi/2) is 8 & 7 = 0, against x (pi) is 6, along -z (-pi/2) is 12 & 7 = 4
+		Assert.AreEqual( 2, WalkerBodies.HeadingOf( 10, 0 ), "along x" );
+		Assert.AreEqual( 0, WalkerBodies.HeadingOf( 0, 10 ), "along z" );
+		Assert.AreEqual( 6, WalkerBodies.HeadingOf( -10, 0.001f ), "against x" );
+		Assert.AreEqual( 4, WalkerBodies.HeadingOf( 0, -10 ), "along -z" );
+		Assert.AreEqual( 1, WalkerBodies.HeadingOf( 10, 10 ), "a diagonal (angle pi/4: 9 & 7)" );
 	}
 
 	[TestMethod]

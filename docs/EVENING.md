@@ -160,6 +160,46 @@ render (the per-draw selection and the 32 bytes of upload per light; the growth 
 source returns at once and no draw carries a light, so the cost is one extension check, the clock step and a few uniform writes a frame. A first set of runs taken while the machine's load average was 20 to 40 had a spread (1.4 to 2.2 ms for the same
 configuration) larger than any of these differences and is not used. Per-draw cost and the 16-light limit are explained in [LIGHTS.md](LIGHTS.md#the-renderer); the many-lamp figures above are an upper bound, since a real park has a few dozen lamps at most.
 
+### The lamp cache and the browser (N2)
+
+The lamp source used to walk every placed object on every night frame and look each one up in a table of resolved lamps. It now keeps a list of the lamp-bearing objects and rebuilds it only when the park's object set changes (`ParkObjects.Version` counts placements and
+removals; a host without a counter is caught by the list length), so a night frame touches only the objects that carry lamps, in the same order as before, and allocates nothing. `EveningTests` cover that the cache follows placement and removal, resolves each object once per
+rebuild and allocates nothing while the set is unchanged. (An `OriginalObject` needs a graphics device, so those tests use stub objects and a resolver seam; the lights themselves are unchanged code, and the with-data runs below show the same number of lights in view before and after.)
+
+Cost of the lamp source per night frame, measured with a temporary stopwatch around `AppendPointLights` (not committed) in the jungle park, Release, `--evening-pace night`, six runs of 3000 frames per cell on a machine with a load average of 20 to 40 (so read the ratios, not the
+microseconds). The jungle park has only 14 placed objects, so the placed list was padded with repeats of its own objects (14, 420 and 1400 objects carrying 5, 150 and 500 lamp lights) to stand in for a big park with many lamps:
+
+| Placed objects (lamp lights) | Before: min / median (us per frame) | After: min / median (us per frame) |
+| --- | --- | --- |
+| 14 (5) | 3.0 / 6.4 | 1.3 / 3.4 |
+| 420 (150) | 36 / 67 | 12 / 41 |
+| 1400 (500) | 84 / 128 | 45 / 99 |
+
+What stays is the per-lamp work (the node pose and one matrix transform per light). The saving is at most about 0.1 ms a frame in the extreme case, and a few microseconds in a real park: below the noise of a frame.
+
+The whole frame, jungle at night with the park's own lamps (3 lights in view), `--no-vsync --frame-stats --perf-run 3000 --perf-arrivals 3`, three alternating rounds on the same loaded machine, frame average in ms (median of three; the first round of each cell ran into other load):
+
+| Configuration | Frame average (ms), 3 rounds | Median | World render, median |
+| --- | --- | --- | --- |
+| extension off, before | 3.42, 3.55, 3.01 | 3.42 | 1.19 |
+| extension off, after | 3.93, 3.53, 2.80 | 3.53 | 1.19 |
+| night, before | 6.72, 3.65, 3.55 | 3.65 | 1.25 |
+| night, after | 4.93, 3.30, 3.09 | 3.30 | 1.15 |
+
+Night against off is inside the spread of the runs both before and after (the earlier quiet-machine table above has the same shape: 1.37 ms at night against 1.40 ms off).
+
+**Browser.** `tools/web-perf/run.mjs --scenarios jungle --window 20 --evening night|day|off` measures a second 20-second window after the cold start with the evening look held at night or day, or the extension switched off (hook `Level.PerfEvening`, exported as `PerfEvening`). Published
+Release build, Chrome 155 headless, Apple M5 through ANGLE/Metal, 1280 x 900, Jungle, three runs per mode, medians:
+
+| Window | Main thread busy | fps | Frame p50 | Frame p95 | Frame p99 | Long tasks |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Night | 12.4 % | 59.99 | 1.6 ms | 2.1 ms | 2.8 ms | 0 |
+| Day (extension on) | 11.9 % | 59.99 | 1.6 ms | 1.9 ms | 2.3 ms | 0 |
+| Extension off | 13.7 % | 60.03 | 1.8 ms | 2.6 ms | 3.3 ms | 0 |
+
+Night costs the browser nothing measurable: the frame is no longer than at day and inside the spread of the runs (the off runs happened to be the noisiest), with no long task. No shader change was needed; the GLES shaders are untouched. Not measured in the browser: hundreds of lamps (the harness has no
+equivalent of `--debug-evening-lamps`).
+
 ## Determinism
 
 The cycle reads the frame time and the pause state and writes only the renderer's inputs. Two kinds of evidence: the unit tests run the cycle beside an economy run and beside the full synthetic park of `DeterminismTests` (which have no level, so they prove that

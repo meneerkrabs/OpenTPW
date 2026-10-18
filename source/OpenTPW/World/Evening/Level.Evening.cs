@@ -1,3 +1,5 @@
+using OpenTPW.Mods;
+
 namespace OpenTPW;
 
 // [EXT:evening] The park's time of day (docs/EVENING.md): presentation only. The clock advances with the play time, the look it gives (the sun, the ambient, the tints) is read by the renderer, and
@@ -11,6 +13,25 @@ public partial class Level
 	/// [EXT:debug-evening] A pace chosen on the command line (<c>--evening-pace</c>) for this run only: read instead of the option, and never written to <see cref="GameOptions.Current"/>, so it is never saved.
 	/// </summary>
 	internal static EveningPace? EveningPaceOverride { get; set; }
+
+	/// <summary>
+	/// [EXT:perf-run] Performance hook of the browser harness (<c>tools/web-perf</c>): "night", "dusk" or "day" hold the evening look for the rest of the session (a run-scoped override like <c>--evening-pace</c>, never saved),
+	/// "off" switches the evening extension off for the session, "on" switches it back on and clears the override. Returns false for another value.
+	/// </summary>
+	public static bool PerfEvening( string mode )
+	{
+		var enabled = mode != "off";
+		OpenTpwExtensions.Activate( ModSet.Resolve( Array.Empty<DiscoveredMod>(),
+			new ModSettings { Enabled = new Dictionary<string, bool> { [OfficialExtensions.Evening.Id] = enabled } }, null, GameEdition.ThemeParkWorld, OfficialExtensions.All ) );
+		switch ( mode )
+		{
+			case "night": EveningPaceOverride = EveningPace.AlwaysNight; return true;
+			case "dusk": EveningPaceOverride = EveningPace.AlwaysDusk; return true;
+			case "day": EveningPaceOverride = EveningPace.AlwaysDay; return true;
+			case "on": case "off": EveningPaceOverride = null; return true;
+			default: return false;
+		}
+	}
 
 	private EveningClock? eveningClock;
 	private EveningLook? eveningLook;
@@ -48,7 +69,7 @@ public partial class Level
 			SunLight.Color = look.SunColour;
 		if ( eveningLamps == null && Objects != null && PointLights != null )
 		{
-			eveningLamps = new EveningLampSource( EveningLampTable.Shipped, () => Objects?.Objects ?? Array.Empty<OriginalObject>(), () => Look.LampLevel );
+			eveningLamps = new EveningLampSource( EveningLampTable.Shipped, () => Objects?.Objects ?? Array.Empty<OriginalObject>(), () => Look.LampLevel, () => Objects?.Version ?? 0 );
 			PointLights.Add( eveningLamps );
 		}
 	}

@@ -44,3 +44,45 @@ Relative paths below are inside the supplied local Data tree. SHA-256 pins audit
 - `levels/hallow/queue.wad`: 71938 bytes; SHA-256 `06dc7df1b7d50e0f7515a73ff26f166c894ad2692d20db61e04a30275a770ec2`.
 - `levels/fantasy/queue.wad`: 150264 bytes; SHA-256 `2b51f5e5de61052ee36123cf3ee926be5f987ee0bbe6f3f3820904d81e6e72c5`.
 - `levels/space/queue.wad`: 64453 bytes; SHA-256 `bf645dd6592aefda4abbe0c44c4c75a5d4660e0a8ae3d96e7237cc640a47721a`.
+
+## Full-register coverage addendum (October 18, 2026)
+
+This reviewed addendum extends the bounded initial plan to cover the remaining registered residuals. All acceptance work remains pending. Source snapshot independently verified by the proposal coordinator: `5ccddcab56ffb9bda4ded1821988a8492bee8943`.
+
+
+## Status and classification
+- Classification: approximation.
+- Plan-only addendum: no runtime implementation, annotation retirement or merge performed.
+- Existing PR: #446; residual addendum only.
+- Draft eligibility: evidence/scope gates below must remain visible; this is not a completed feature.
+
+## Current residual
+base height = (lowest + highest terrain vertex) / 2 under the footprint's shape cells as the original's 0x466D70; the ground under the ride is not blended flat as the original does (0x467030), and the instance words +0xF0/+0xF4 are taken as the shape size
+
+## Source inspection
+- `source/OpenTPW/World/Objects/ParkObjects.cs:470`: 471: public float GetBaseHeight( ObjectCatalogEntry entry, int anchorX, int anchorY, int rotation ) => GetBaseHeight( entry.Shape, Grid, anchorX, anchorY, rotation );; 474: internal static float GetBaseHeight( ObjectShape shape, IParkGrid grid, int anchorX, int anchorY, int rotation ); 475: {; 476: var lowest = float.PositiveInfinity;
+
+## Bounded work
+Existing #446 owns footprint ground flatten/blend; coordinate queue deformation dependency PATH-015.
+- Preserve already-implemented behavior described above; restrict future changes to the named residual.
+- For evidence-only items, establish an oracle first and file implementation only if a behavioral difference is proven.
+
+## Missing evidence
+Decode 0x467030 influence area and instance +0xF0/+0xF4 meaning before implementation.
+- Source annotations record prior reverse engineering; this audit checked adjacent implementation but did not execute the original.
+
+## Acceptance cases
+1. Irregular footprint on sloped terrain gets original blended boundary and base midpoint.
+2. Preview/cancel must not deform terrain; committed build and save/load preserve resulting heights.
+3. Add a reproducible synthetic fixture or reference trace identifying input, expected output, and affected function; a passing build alone is insufficient.
+4. Re-run focused regression tests for the listed source owner and document what remains unproven.
+
+## Dependencies and ownership
+- World/audio implementation owner to be assigned; no runtime ownership claimed.
+- Original-executable or reference-capture evidence is unavailable in this read-only source audit; unresolved claims are hypotheses.
+- Review existing PR #446 current head; use residual addendum, not duplicate proposal.
+
+## Review boundary
+- Stop at a reviewable design/evidence package; this draft authorizes no tag removal or parity claim.
+- Do not publish original media or private game data in fixtures, screenshots, or commits.
+- A future implementation needs its own reviewed evidence and acceptance results; do not treat this proposal as merge-ready.

@@ -101,6 +101,12 @@ public sealed class TrackRenderer : IDisposable
 	}
 
 	public TrackFamily Family => kit?.Family ?? TrackFamily.Bumper;
+
+	/// <summary>
+	/// The add-on standing on an add-on tile's cell, for the vehicles' height probes: the sampler surface of its model, the matrix from model units of the grid (the probes' x and y)
+	/// to its model's own ground plane, and its base height in model units; null when no add-on object stands on the cell (the tile's piece is sampled then).
+	/// </summary>
+	public Func<int, int, (TrackSurface Surface, Matrix4x4 GridToModel, float BaseHeight)?>? AddOnSurfaceAt { get; set; }
 	/// <summary>Tile instances drawn after the last <see cref="Update"/>.</summary>
 	public int TileCount => tiles.Count;
 	/// <summary>Vehicle instances drawn after the last <see cref="Update"/>.</summary>
@@ -141,7 +147,8 @@ public sealed class TrackRenderer : IDisposable
 		{
 			foreach ( var (x, y, cell) in layer.Cells() )
 			{
-				if ( !cell.IsOrigin || cell.Piece == 0 || cell.Family != (int)kit.Family )
+				// [BIN:TPW-EXE:0x0053AFA0 piece instancer] a tile whose flag word has the add-on bit 0x10 gets no piece instance (+4 = 0): the add-on standing on it is drawn instead
+				if ( !cell.IsOrigin || cell.Piece == 0 || cell.Family != (int)kit.Family || (cell.Flags & TrackCell.FlagAddOn) != 0 )
 					continue;
 				var geometry = GeometryOf( cell.Piece );
 				if ( geometry == null )
@@ -341,6 +348,12 @@ public sealed class TrackRenderer : IDisposable
 			visual.Controller = controller;
 			visual.Hover = hover;
 			Place( visual.Body, transform );
+			// a vehicle in the teleport is hidden with its shadow (0x00548E80)
+			var hidden = (vehicle.Flags & BumpVehicle.Hidden) != 0;
+			foreach ( var entity in visual.Body )
+				entity.Hidden = hidden;
+			foreach ( var entity in visual.Shadow )
+				entity.Hidden = hidden;
 		}
 	}
 
@@ -403,6 +416,9 @@ public sealed class TrackRenderer : IDisposable
 			if ( visual.Vehicle is not { } vehicle || visual.Controller is not { AttractionId: >= 0 } controller || onlyAttraction is { } only && only != controller.AttractionId
 				|| VehicleMesh( vehicle.Variant ) is not { } geometry )
 				continue;
+			// a hidden vehicle's riders are taken down with it (0x00548E80 → 0x0044B4C0) and hung again when it shows
+			if ( (vehicle.Flags & BumpVehicle.Hidden) != 0 )
+				continue;
 			for ( var seat = 0; seat < vehicle.Riders.Count && seat < geometry.HeadNodes.Length; seat++ )
 			{
 				if ( geometry.HeadNodes[seat] is not { } rest )
@@ -437,6 +453,15 @@ public sealed class TrackRenderer : IDisposable
 			return Terrain();
 		var (ox, oy) = cell.IsExtension ? layer.CellOf( cell.Parent ) : (cellX, cellY);
 		var tile = layer.Get( ox, oy );
+		// [BIN:TPW-EXE:0x00452A60 add-on surface] a track cell whose tile has no piece instance (an add-on's tile) gives the cell's owner thing (0x00527E80), and an object (thing type 3) is sampled through its own instance +0x20, so the vehicles drive on the add-on's model
+		if ( (tile.Flags & TrackCell.FlagAddOn) != 0 && AddOnSurfaceAt?.Invoke( cellX, cellY ) is { } addOn )
+		{
+			// the add-on's own sampler (0x00450EA0): the landscape at the probe plus its header's +0xA0, or its surface faces above its base
+			if ( addOn.Surface is { Mode: TrackSamplerMode.Terrain, TerrainOffset: { } offset } )
+				return Terrain() + offset;
+			var local = System.Numerics.Vector3.Transform( new System.Numerics.Vector3( x, y, 0 ), addOn.GridToModel );
+			return addOn.Surface.HeightAt( local.X, local.Y ) is { } height ? addOn.BaseHeight + height : null;
+		}
 		var baseHeight = TileHeight( ox, oy ) / ObjectPlacement.ModelScale;
 		if ( TrackCellTypes.IsStation( tile.Type ) )
 		{

@@ -91,7 +91,9 @@ public enum ParkEventKind
 	/// state change (<c>0x004E0E60</c>) sends the breakdown message the advisor answers, unlike <see cref="RideBrokeDown"/>, which is the earlier breakdown request.
 	/// <see cref="ParkEvent.InstanceId"/> the ride.
 	/// </summary>
-	RideEnteredBrokenState
+	RideEnteredBrokenState,
+	/// <summary>The player cancelled the upgrade a ride waited for (the upgrade list's "Cancel level" row, tp.exe 0x004E0050(0)): the ride opens. <see cref="ParkEvent.InstanceId"/> the ride.</summary>
+	UpgradeCancelled
 }
 
 /// <summary>

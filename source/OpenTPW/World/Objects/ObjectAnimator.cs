@@ -101,6 +101,8 @@ public sealed class ObjectAnimator
 	private readonly (long Serial, float Tick)[] vertexSources;
 	private readonly (long Serial, float Tick)[] uvSources;
 	private readonly bool[] nodeStateBit;
+	/// <summary>Per node: bit 31 of the instance's node state, set by <see cref="SetNodeHidden"/>; a clip's node list leaves such a node alone.</summary>
+	private readonly bool[] nodePinned;
 	private readonly int[] frameBySlot;
 	private readonly int[] sampledFrameBySlot;
 	private readonly bool[]?[] availableFramesBySlot;
@@ -197,6 +199,7 @@ public sealed class ObjectAnimator
 		slotAddressed = new bool[model.Textures.Count];
 		// Node-state bit 0x10 starts as stored (clear in every corpus mesh record).
 		nodeStateBit = model.Nodes.Select( node => (node.Type & ModelAnimationTrack.ToggledNodeStateBit) != 0 ).ToArray();
+		nodePinned = new bool[model.Nodes.Count];
 	}
 
 	public IReadOnlyList<Matrix4x4> RestTransforms => rest;
@@ -248,6 +251,20 @@ public sealed class ObjectAnimator
 	/// </summary>
 	// [BIN:TPW-EXE:0x0057A5E3 hidden node mesh] the model draw walk 0x57a530 (and 0x57b610 at 0x57b664) skips a node's own mesh when its state word has any of 0x8210 (0x10 the toggled bit, 0x200 every dummy, 0x8000) but still walks its children (only bit 0x20 prunes the subtree), so bit 0x10 hides exactly that mesh
 	public bool IsNodeHidden( int node ) => meshByNode[node] >= 0 && nodeStateBit[node];
+
+	/// <summary>
+	/// Hides or shows a node's mesh from outside the clips, as the circuit walk does with a track add-on's open ends: hiding sets node-state bit 0x10 together with bit 31,
+	/// so no clip's node list sets the node again (<see cref="ApplyNodeList"/>), and showing clears bit 0x10 only.
+	/// </summary>
+	// [BIN:TPW-EXE:0x0052B06D add-on end hide] the walk hides an end with node state |= 0x80000010 (0x0052B06D, 0x0052B120, 0x0052B16B) and shows one with &= ~0x10 (0x0052AFCC, 0x0052B0A8)
+	public void SetNodeHidden( int node, bool hidden )
+	{
+		if ( (uint)node >= (uint)nodeStateBit.Length )
+			throw new ArgumentOutOfRangeException( nameof( node ) );
+		if ( hidden )
+			nodePinned[node] = true;
+		SetNodeStateBit( node, hidden );
+	}
 
 	/// <summary>Changes whenever <see cref="IsNodeHidden"/> of some node changes.</summary>
 	public int HiddenVersion => hiddenVersion;
@@ -586,6 +603,7 @@ public sealed class ObjectAnimator
 			KeepsPoseOnClipChange = keepsPoseOnClipChange,
 			Channels = capturedChannels,
 			NodeStateBits = (bool[])nodeStateBit.Clone(),
+			PinnedNodes = nodePinned.Contains( true ) ? Enumerable.Range( 0, nodePinned.Length ).Where( node => nodePinned[node] ).ToArray() : null,
 			TextureFrames = new AnimatorTextureFrameSnapshot
 			{
 				Frames = (int[])frameBySlot.Clone(),
@@ -615,6 +633,8 @@ public sealed class ObjectAnimator
 			throw new InvalidDataException( "animator fixed-item pose retention does not match the snapshot." );
 		if ( snapshot.NodeStateBits.Length != nodeStateBit.Length )
 			throw new InvalidDataException( $"animator has {nodeStateBit.Length} nodes, the snapshot stores {snapshot.NodeStateBits.Length} node-state bits." );
+		if ( snapshot.PinnedNodes is { Length: > 0 } pinned && pinned[^1] >= nodePinned.Length )
+			throw new InvalidDataException( $"animator has {nodePinned.Length} nodes, the snapshot pins node {pinned[^1]}." );
 		if ( snapshot.Meshes.Count != vertexVersions.Length || snapshot.Meshes.Where( ( cached, index ) => cached.Mesh != index ).Any() )
 			throw new InvalidDataException( $"animator has {vertexVersions.Length} meshes, the snapshot does not describe exactly those, in order." );
 		if ( snapshot.TextureFrames is { } frameHistory )
@@ -656,6 +676,9 @@ public sealed class ObjectAnimator
 			channels[index] = state;
 		ChannelsChanged();
 		Array.Copy( snapshot.NodeStateBits, nodeStateBit, nodeStateBit.Length );
+		Array.Clear( nodePinned );
+		foreach ( var node in snapshot.PinnedNodes ?? Array.Empty<int>() )
+			nodePinned[node] = true;
 		Array.Clear( frameBySlot );
 		Array.Clear( slotAnimated );
 		textureFrameVersion = 0;
@@ -726,7 +749,7 @@ public sealed class ObjectAnimator
 	{
 		foreach ( var node in clip.NodeList )
 		{
-			if ( node >= nodeStateBit.Length || (model.Nodes[node].Type & 0x80000000u) != 0 )
+			if ( node >= nodeStateBit.Length || (model.Nodes[node].Type & 0x80000000u) != 0 || nodePinned[node] )
 				continue;
 			SetNodeStateBit( node, true );
 		}

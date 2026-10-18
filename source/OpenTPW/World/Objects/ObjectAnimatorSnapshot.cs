@@ -105,12 +105,19 @@ public sealed record ObjectAnimatorSnapshot
 	public required IReadOnlyList<string> VertexLimitations { get; init; }
 	/// <summary>Optional for older saves; absent history starts at frame 0, then samples restored channels.</summary>
 	public AnimatorTextureFrameSnapshot? TextureFrames { get; init; }
+	/// <summary>
+	/// The nodes a track add-on's walk pinned (bit 31 of their node state, <see cref="ObjectAnimator.SetNodeHidden"/>), ascending; absent when none is, so the snapshots of
+	/// every other object are written as before.
+	/// </summary>
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
+	public int[]? PinnedNodes { get; init; }
 
 	/// <summary>Deep copy.</summary>
 	public ObjectAnimatorSnapshot DeepCopy() => this with
 	{
 		Channels = Channels.Select( channel => channel with { Deferred = channel.Deferred } ).ToArray(),
 		NodeStateBits = (bool[])NodeStateBits.Clone(),
+		PinnedNodes = (int[]?)PinnedNodes?.Clone(),
 		TextureFrames = TextureFrames == null ? null : TextureFrames with
 		{
 			Frames = (int[])TextureFrames.Frames.Clone(),
@@ -168,6 +175,8 @@ public sealed record ObjectAnimatorSnapshot
 					throw new InvalidDataException( $"channel {channel.ChannelIndex} deferred clip length {deferred.ClipDurationTicks} is negative." );
 			}
 		}
+		if ( PinnedNodes != null && PinnedNodes.Where( ( node, index ) => node < 0 || index > 0 && node <= PinnedNodes[index - 1] ).Any() )
+			throw new InvalidDataException( "animator pinned nodes are not ascending non-negative node indices." );
 		if ( TextureFrames is { } frames )
 		{
 			if ( frames.Frames == null || frames.AnimatedSlots == null || frames.Frames.Length != frames.AnimatedSlots.Length

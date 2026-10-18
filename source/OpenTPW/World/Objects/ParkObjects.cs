@@ -163,7 +163,7 @@ public sealed class ParkObjects
 	public Func<int, int, bool?>? PathRuleAllows { get; set; }
 	/// <summary>
 	/// The rule for the '+' and '#' cells of an add-on (<see cref="TrackBuilder.CanStandAddOn"/> for the ride it is for): such a cell lies on its ride's track instead of free ground, so the
-	/// occupancy rules do not apply to it and this one does. Null: they are ordinary object cells.
+	/// occupancy rules do not apply to it and this one does, besides a cell another object already holds (the ride's own station tiles). Null: they are ordinary object cells.
 	/// </summary>
 	public Func<int, int, bool>? AddOnCellRule { get; set; }
 	/// <summary>
@@ -251,6 +251,9 @@ public sealed class ParkObjects
 					return terrain;
 				if ( !AddOnCellRule( x, y ) )
 					return OriginalPlacementResult.Blocked;
+				// [EXT:addon-not-on-station] the original's add-on test counts the station tiles as track (types 13 and 18, 0x0053AD30) and would let an add-on take the ride's own cells, which its sale then leaves empty under the station; OpenTPW refuses a cell another object holds
+				if ( FindAt( x, y ) != null )
+					return OriginalPlacementResult.Occupied;
 				continue;
 			}
 			var result = CheckObjectCell( entry, x, y, overwritten );

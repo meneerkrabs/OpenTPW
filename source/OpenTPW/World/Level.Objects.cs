@@ -15,8 +15,9 @@ public partial class Level
 			if ( value != null )
 				StaffPlacement?.Cancel();
 			buildEntry = value;
-			// any other way of arming or leaving the build tool ends the Move tool (interface mode 0x3b); BeginMove sets the flag after it armed the entry
+			// any other way of arming or leaving the build tool ends the Move tool (interface mode 0x3b) and the add-on mode; BeginMove and BeginAddOn set theirs after they armed the entry
 			IsMoving = false;
+			buildAddOnRide = null;
 		}
 	}
 
@@ -1374,7 +1375,10 @@ public partial class Level
 			KeepBuildToolOnPlace = KeepsBuildTool( clickModifierMask );
 			try
 			{
-				PlaceObject( BuildEntry!, x, y, BuildRotation );
+				// a track add-on goes to its hover position on its ride's track, at the angle of the tile's flow (TrackAddOns.HoverTarget); anything else stays at the cell
+				var (targetX, targetY, rotation) = BuildTarget( BuildEntry!, x, y );
+				SetBuildRotation( rotation );
+				PlaceBuildTarget( BuildEntry!, targetX, targetY, rotation );
 			}
 			finally
 			{

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
@@ -27,32 +28,32 @@ public class RideUpgradeReviewTests
 	private static UiContext Context() => (UiContext)CallStatic( "Context" )!;
 	private static void Open( ParkHud hud, UiContext context ) => CallStatic( "Open", hud, context );
 
+	private static IReadOnlyList<ParkHud.UpgradeListRow> Rows( ParkHud hud ) => hud.UpgradeListRows();
+
 	[TestMethod]
-	public void PreviewCostIsExactAndChangedCostRequiresFreshConfirmation()
+	public void TheLevelRowShowsTheNextLevelsCostAndFollowsAChangeWhileOpen()
 	{
 		var w = World(); var context = Context(); CallStatic( "Research", w.Economy ); var cash = w.Economy.Balance;
 		Open( w.Hud, context ); var screen = w.Hud.Stack.Top!;
-		Assert.AreEqual( $"{context.Strings[UIStrings.UpgradeToLevel]} 1\n{context.Strings[UIStrings.EstimatedPrice]} {context.Strings[UIStrings.Dollar]}400", ((UiLabel)screen.Find( "preview" )!).Text() );
+		Assert.AreEqual( $"{context.Strings[UIStrings.Dollar]}400", Rows( w.Hud ).Single().Price );
 		Assert.IsTrue( w.Economy.Catalog.TryGet( 1100, out var info ) );
 		var tiers = (UpgradeLevelInfo[])info.Upgrades; tiers[1] = tiers[1] with { CostOfUpgrade = 450 };
-		w.Hud.Update( context, UiInput.Key( UiKeys.Accept ), false, false, false );
-		Assert.AreSame( screen, w.Hud.Stack.Top ); Assert.AreEqual( cash, w.Economy.Balance );
-		Assert.IsTrue( ((UiLabel)screen.Find( "error" )!).Text().Length > 0 );
-		screen.Back!(); Open( w.Hud, context );
-		Assert.AreEqual( $"{context.Strings[UIStrings.UpgradeToLevel]} 1\n{context.Strings[UIStrings.EstimatedPrice]} {context.Strings[UIStrings.Dollar]}450", ((UiLabel)w.Hud.Stack.Top!.Find( "preview" )!).Text() );
+		// the ride window's refresh fills the open list again (0x004ADE40), so the row shows the price the click will be judged by
+		Assert.AreSame( screen, w.Hud.Stack.Top ); Assert.AreEqual( $"{context.Strings[UIStrings.Dollar]}450", Rows( w.Hud ).Single().Price );
 		long requested = 0; w.Economy.EventRaised += item => { if ( item.Kind == ParkEventKind.UpgradeBought ) requested = item.Amount; };
 		w.Hud.Update( context, UiInput.Key( UiKeys.Accept ), false, false, false ); Assert.AreEqual( 450L, requested ); Assert.AreEqual( cash, w.Economy.Balance, "the request debits nothing (0x4af480)" );
 	}
 
 	[TestMethod]
-	public void EconomyReplacementWhileConfirmingCannotChargeEitherPark()
+	public void EconomyReplacementWhileTheListIsOpenClosesItAndChargesNeitherPark()
 	{
 		var w = World(); var context = Context(); CallStatic( "Research", w.Economy ); Open( w.Hud, context );
 		var replacement = EconomyTestData.Park(); var oldCash = w.Economy.Balance; var newCash = replacement.Balance;
+		var requests = 0; w.Economy.EventRaised += item => { if ( item.Kind == ParkEventKind.UpgradeBought ) requests++; }; replacement.EventRaised += item => { if ( item.Kind == ParkEventKind.UpgradeBought ) requests++; };
 		typeof( ParkHud ).GetField( "<Status>k__BackingField", Private )!.SetValue( w.Hud, new EconomyParkStatus( () => replacement ) );
 		w.Hud.Update( context, UiInput.Key( UiKeys.Accept ), false, false, false );
-		Assert.AreEqual( oldCash, w.Economy.Balance ); Assert.AreEqual( newCash, replacement.Balance );
-		Assert.AreEqual( "rideUpgrade", w.Hud.Stack.Top!.Name );
+		Assert.AreEqual( oldCash, w.Economy.Balance ); Assert.AreEqual( newCash, replacement.Balance ); Assert.AreEqual( 0, requests );
+		Assert.AreEqual( "hud", w.Hud.Stack.Top!.Name, "the list belongs to the park it was opened in" );
 	}
 
 	[TestMethod]

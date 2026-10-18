@@ -71,6 +71,12 @@ public sealed class TrackSection
 	public int X { get; init; }
 	public int Y { get; init; }
 	public int Segment { get; init; }
+	/// <summary>The tile's place in its run of add-on tiles (+8): 0 for the first add-on tile, 1 for the second; 0 off an add-on.</summary>
+	public int AddOnRun { get; init; }
+	/// <summary>The add-on standing on an add-on section's tile (+0xC its instance, +0x10 its type id), linked by the level after the walk; null off an add-on.</summary>
+	public ITrackAddOn? AddOn { get; internal set; }
+	/// <summary>Bit 2 of the section's flag word: a vehicle set the teleport's pass animation going and its idle loop is still to be queued (0x00548D80).</summary>
+	public bool AddOnPassing { get; internal set; }
 	public List<CollisionObject> Objects { get; } = new();
 	public Buoy? Buoy { get; internal set; }
 	public int KindWord => Kind | (NoBuoy ? NoBuoyBit : 0);
@@ -129,7 +135,7 @@ public static class TrackSections
 				truncated = true;
 				break;
 			}
-			var section = new TrackSection { Kind = kind, NoBuoy = noBuoy, X = x0, Y = y0, Segment = step.Segment };
+			var section = new TrackSection { Kind = kind, NoBuoy = noBuoy, X = x0, Y = y0, Segment = step.Segment, AddOnRun = step.AddOn ? step.AddOnRun : 0 };
 			sections.Add( section );
 			var made = Geometry( section, slack, water );
 			foreach ( var item in made.Objects )

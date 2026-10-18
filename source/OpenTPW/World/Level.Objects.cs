@@ -545,6 +545,7 @@ public partial class Level
 		{
 			// [EXT:pools-slides] a rider inside a closed tube is not drawn (presentation only)
 			Draws = guest => (guest.IsSwimming || guest.InPoolActivity) && !PoolSlideActivity.IsInsideTube( guests, guest ),
+			ExactDirections = true,
 			SwimSlotFallback = true,
 			BottomAnchoredSlots = PoolSwimSlots.BottomAnchored,
 			RotatedSlots = PoolSwimSlots.Rotated,
@@ -1183,6 +1184,22 @@ public partial class Level
 		return float.IsFinite( screen.X ) && float.IsFinite( screen.Y );
 	}
 
+	/// <summary>
+	/// The continuous cell coordinates of the terrain point under the pointer (cell units, 0.5 = a cell's centre), clamped to the grid; false when the ray misses the ground.
+	/// Unlike <see cref="TryGetGridCell(System.Numerics.Vector2, System.Numerics.Vector2, out int, out int)"/> it does not snap to a cell and does not need a cell under the pointer.
+	/// </summary>
+	// [BIN:TPW-EXE:0x45d610 mouse ground point] the staff tools read the exact world point under the mouse (0x7a1c90: x, y, z floats), not the hover cell
+	public bool TryGetGroundCell( System.Numerics.Vector2 mousePosition, System.Numerics.Vector2 viewportSize, out float cellX, out float cellY )
+	{
+		cellX = cellY = 0;
+		if ( !TryGetGroundHit( mousePosition, viewportSize, out var ground ) || !float.IsFinite( ground.X ) || !float.IsFinite( ground.Y ) )
+			return false;
+		var origin = Objects.Grid.Origin;
+		cellX = Math.Clamp( (ground.X - origin.X) / ObjectPlacement.CellSize, 0f, Objects.Grid.Width - 0.001f );
+		cellY = Math.Clamp( (ground.Y - origin.Y) / ObjectPlacement.CellSize, 0f, Objects.Grid.Height - 0.001f );
+		return true;
+	}
+
 	public bool TryGetGridCell( float engineX, float engineY, out int x, out int y )
 	{
 		var origin = Objects.Grid.Origin;
@@ -1227,18 +1244,33 @@ public partial class Level
 		// [BIN:TPW-EXE:0x004DB712 built ride closes] the constructor opens the object (open word +0x68 = 1, 0x4DB3B9) and then, for a type with Info.HasQueue (flag 8 at 0x4DB420), logs "Object %d Closing", clears the open word and writes VAR_RIDECLOSED = 1 (script variable 6, 0x55A070/0x55A0B0), so a built ride with a queue waits closed until the player opens it
 		layingAccessCells = true;
 		OriginalObject placed;
+		// the object is in the park from Register on, and so are the economy record bought for it: whatever throws after that (an ObjectPlaced handler, the effect, the cue) must not leave the object unbound
+		OriginalObject? registered = null;
 		try
 		{
-			placed = Objects.TryPlace( entry, anchor.X, anchor.Y, rotation, out _, open: BuiltObjectStartsOpen( entry ) )!;
+			try
+			{
+				placed = Objects.TryPlace( entry, anchor.X, anchor.Y, rotation, out _, open: BuiltObjectStartsOpen( entry ), registered: item => registered = item )!;
+			}
+			finally
+			{
+				layingAccessCells = false;
+			}
+			// [BIN:TPW-EXE:0x558e7c build effect] the type's CreateParticleEffect starts when the new object's script attaches, not when a park loads
+			placed.Runtime.StartObjectEffect( ObjectParticleEffect.Create );
+			// [BIN:TPW-EXE:0x528e30 placement cue] the commit pass of the placement plays its size-classed cat_ui cue
+			PlayPlacementCue( entry, x, y, rotation );
 		}
-		finally
+		catch ( Exception error )
 		{
-			layingAccessCells = false;
+			if ( bought != null && registered is { IsDeleted: false } stranded && !economyInstances.ContainsKey( stranded ) )
+			{
+				Log.Warning( $"Building {entry.DisplayName} failed after it was placed ({error.GetType().Name}: {error.Message}); binding it to the economy record it was bought with." );
+				try { LinkEconomy( stranded, bought.Id ); }
+				catch ( Exception linkError ) { Log.Warning( $"Binding {entry.DisplayName} to its economy record failed too: {linkError.Message}" ); }
+			}
+			throw;
 		}
-		// [BIN:TPW-EXE:0x558e7c build effect] the type's CreateParticleEffect starts when the new object's script attaches, not when a park loads
-		placed.Runtime.StartObjectEffect( ObjectParticleEffect.Create );
-		// [BIN:TPW-EXE:0x528e30 placement cue] the commit pass of the placement plays its size-classed cat_ui cue
-		PlayPlacementCue( entry, x, y, rotation );
 		if ( bought != null )
 			LinkEconomy( placed, bought.Id );
 		LastActionMessage = bought != null

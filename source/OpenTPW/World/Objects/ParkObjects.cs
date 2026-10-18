@@ -370,7 +370,7 @@ public sealed class ParkObjects
 	/// <summary>Places an object when the build rules allow it.</summary>
 	// [BIN:TPW-EXE:0x5344E5 overwrite] the commit runs cell op 0x87 on every footprint cell first (0x528D2C, 0x5290FA): with 0x818C14 below 0x818C10 an object cell's owner is demolished whole (0x527EE0, which credits its scrap value), before the new footprint is written
 	// [BIN:TPW-EXE:0x52910C footprint clear] each footprint cell then gets ClearCell 0x5367A0(0, 0) before its type is written (op 4 / 9 / 10, then the link op 0x81)
-	public OriginalObject? TryPlace( ObjectCatalogEntry entry, int anchorX, int anchorY, int rotation, out OriginalPlacementResult result, bool open = true )
+	public OriginalObject? TryPlace( ObjectCatalogEntry entry, int anchorX, int anchorY, int rotation, out OriginalPlacementResult result, bool open = true, Action<OriginalObject>? registered = null )
 	{
 		result = Check( entry, anchorX, anchorY, rotation, out var plan );
 		if ( result != OriginalPlacementResult.Allowed )
@@ -382,7 +382,7 @@ public sealed class ParkObjects
 			Remove( victim );
 		foreach ( var (x, y) in plan.ClearedPaths )
 			ClearPath?.Invoke( x, y );
-		return Register( item );
+		return Register( item, registered: registered );
 	}
 
 	/// <summary>Places an object without build rules (imported original records and fixed items).</summary>
@@ -413,7 +413,8 @@ public sealed class ParkObjects
 	/// <param name="item">The object to register.</param>
 	/// <param name="thingId">A thing id the object keeps (a save's, adopted from the pool); 0 takes the next slot of the pool.</param>
 	// [BIN:TPW-EXE:0x004DB090 object constructor] the attraction's constructor takes its thing id through the base constructor 0x50AFE0 and the pool's allocator (0x516270), the same pool as every other kind of thing
-	private OriginalObject Register( OriginalObject item, int thingId = 0 )
+	/// <param name="registered">Called once the object is in the park, before <see cref="ObjectPlaced"/> runs its handlers: a caller that must know the object even when a handler throws (the build flow's economy binding) takes it here.</param>
+	private OriginalObject Register( OriginalObject item, int thingId = 0, Action<OriginalObject>? registered = null )
 	{
 		if ( Things is { } pool )
 		{
@@ -427,6 +428,7 @@ public sealed class ParkObjects
 		objects.Add( item );
 		foreach ( var (x, y, _) in item.Cells )
 			occupied[(x, y)] = item;
+		registered?.Invoke( item );
 		ObjectPlaced?.Invoke( item );
 		return item;
 	}

@@ -58,7 +58,8 @@ public sealed class GuestSpriteAtlas
 	public GuestAtlasFrame[] Frames { get; }
 	public int Width { get; }
 	public int Height { get; }
-	private readonly SpriteBankFile bank;
+	/// <summary>Each frame and the bank (palette) it decodes from: the set's bank, or its <c>.TPC</c> for a slot taken from there (<see cref="LoadSets"/>).</summary>
+	private readonly (SpriteBankFile Bank, SpriteFrame Frame)[] sources;
 	private readonly object pixelsGate = new();
 	private byte[]? pixels;
 	/// <summary>
@@ -74,8 +75,8 @@ public sealed class GuestSpriteAtlas
 				if ( pixels == null )
 				{
 					var decoded = new byte[Width * Height * 4];
-					for ( var index = 0; index < bank.Frames.Count; index++ )
-						bank.DecodeRgba( bank.Frames[index], decoded, Width * 4, Frames[index].X, Frames[index].Y );
+					for ( var index = 0; index < sources.Length; index++ )
+						sources[index].Bank.DecodeRgba( sources[index].Frame, decoded, Width * 4, Frames[index].X, Frames[index].Y );
 					pixels = decoded;
 				}
 				return pixels;
@@ -95,21 +96,34 @@ public sealed class GuestSpriteAtlas
 	/// <param name="packFolder">Folder of the set under <c>esprites/&lt;packRoot&gt;</c> for the texture pack key (<c>kids</c>, <c>kidsheads</c>, <c>costumes</c>, ...).</param>
 	/// <param name="packRoot">The <c>esprites</c> folder the set lives in: <c>generic</c>, or a theme for the costumes.</param>
 	public GuestSpriteAtlas( string name, SpriteBankFile bank, SpriteAnimationFile animations, string packFolder = "kids", string packRoot = "generic" )
+		: this( name, bank, animations, null, -1, packFolder, packRoot )
+	{
+	}
+
+	/// <param name="lowDetail">The set's <c>.TPC</c> bank when the frames of <paramref name="lowDetailSlot"/> are taken from it instead of <paramref name="bank"/>; null for none.</param>
+	/// <param name="lowDetailSlot">The animation slot whose frames <paramref name="lowDetail"/> supplies (the frame numbers are the same in both banks of a set).</param>
+	internal GuestSpriteAtlas( string name, SpriteBankFile bank, SpriteAnimationFile animations, SpriteBankFile? lowDetail, int lowDetailSlot, string packFolder = "kids", string packRoot = "generic" )
 	{
 		Name = name;
 		Animations = animations;
-		this.bank = bank;
+		sources = bank.Frames.Select( frame => (bank, frame) ).ToArray();
+		if ( lowDetail != null && lowDetailSlot >= 0 && lowDetailSlot < animations.Animations.Count && animations.Animations[lowDetailSlot] is { IsEmpty: false } slot )
+		{
+			var end = Math.Min( slot.FirstFrame + slot.FrameCount, Math.Min( sources.Length, lowDetail.Frames.Count ) );
+			for ( var index = slot.FirstFrame; index < end; index++ )
+				sources[index] = (lowDetail, lowDetail.Frames[index]);
+		}
 		PackKey = $"esprites/{packRoot.ToLowerInvariant()}/{packFolder}/{name.ToLowerInvariant()}.atlas";
-		Frames = new GuestAtlasFrame[bank.Frames.Count];
-		var padding = bank.Frames.Any( frame => frame.PixelsPerUnitX > GuestAtlasFrame.ReferencePixelsPerUnit || frame.PixelsPerUnitY > GuestAtlasFrame.ReferencePixelsPerUnit ) ? HighResolutionPadding : Padding;
+		Frames = new GuestAtlasFrame[sources.Length];
+		var padding = sources.Any( source => source.Frame.PixelsPerUnitX > GuestAtlasFrame.ReferencePixelsPerUnit || source.Frame.PixelsPerUnitY > GuestAtlasFrame.ReferencePixelsPerUnit ) ? HighResolutionPadding : Padding;
 		// Every shipped set fits 1024 pixels across and at most 2048 down; a set drawn at twice the size or more is packed into a wider atlas rather than a very tall one,
 		// and a frame wider than the atlas row makes the atlas wider too.
 		var width = AtlasWidth;
-		var widest = bank.Frames.Count == 0 ? 0 : bank.Frames.Max( frame => frame.Width );
+		var widest = sources.Length == 0 ? 0 : sources.Max( source => source.Frame.Width );
 		while ( width < widest + 2 * padding && width < MaximumWidth )
 			width *= 2;
 		int needed;
-		while ( (needed = Pack( bank, Frames, width, padding )) > MaximumHeight && width < MaximumWidth )
+		while ( (needed = Pack( sources, Frames, width, padding )) > MaximumHeight && width < MaximumWidth )
 			width *= 2;
 		if ( needed > MaximumWidth || width < widest + 2 * padding )
 			throw new InvalidDataException( $"Sprite set {name} does not fit a {MaximumWidth} x {MaximumWidth} atlas ({widest} px wide frames, {needed} rows at {width} across)." );
@@ -120,14 +134,14 @@ public sealed class GuestSpriteAtlas
 	}
 
 	/// <summary>Places the frames in rows of <paramref name="width"/> pixels and returns the height the rows need; fills <paramref name="frames"/>.</summary>
-	private static int Pack( SpriteBankFile bank, GuestAtlasFrame[] frames, int width, int padding )
+	private static int Pack( (SpriteBankFile Bank, SpriteFrame Frame)[] sources, GuestAtlasFrame[] frames, int width, int padding )
 	{
 		var x = padding;
 		var y = padding;
 		var rowHeight = 0;
-		for ( var index = 0; index < bank.Frames.Count; index++ )
+		for ( var index = 0; index < sources.Length; index++ )
 		{
-			var frame = bank.Frames[index];
+			var frame = sources[index].Frame;
 			if ( x + frame.Width + padding > width )
 			{
 				x = padding;
@@ -141,8 +155,8 @@ public sealed class GuestSpriteAtlas
 		return y + rowHeight + padding;
 	}
 
-	/// <summary>Atlas frame for an animation slot, a sprite direction (0–4) and a step; falls back to slot 0.</summary>
-	public int GetFrame( int slot, int direction, int step )
+	/// <summary>The animation a slot is drawn with: the slot itself, else the standing slot, else the first slot that has art (the empty animation when the set has none).</summary>
+	private SpriteAnimation AnimationFor( int slot )
 	{
 		var animation = Animations.Animations[slot];
 		if ( animation.IsEmpty )
@@ -150,6 +164,16 @@ public sealed class GuestSpriteAtlas
 		// [EXT:pools-activities] a swim set has art for some slots only (the strokes): a slot without art falls back to the first slot that has some
 		if ( animation.IsEmpty )
 			animation = Animations.Animations.FirstOrDefault( candidate => !candidate.IsEmpty );
+		return animation;
+	}
+
+	/// <summary>How many directions the art a slot is drawn with stores (5 in every walking set; 0 for a slot without directions).</summary>
+	public int DirectionsOf( int slot ) => AnimationFor( slot ).Directions;
+
+	/// <summary>Atlas frame for an animation slot, a sprite direction (0–4) and a step; falls back to slot 0.</summary>
+	public int GetFrame( int slot, int direction, int step )
+	{
+		var animation = AnimationFor( slot );
 		if ( animation.IsEmpty )
 			return 0;
 		var frame = animation.GetFrame( direction, step );
@@ -190,6 +214,49 @@ public sealed class GuestSpriteAtlas
 		return (Math.Clamp( direction, 0, 4 ), angle < 0 && direction is > 0 and < 4);
 	}
 
+	/// <summary>
+	/// The 45 degree sector of a heading as the original keeps it: the thing's angle is the arc tangent of the last step (<c>0x004FA2A0</c>, 2048 to the turn, 0 when the step runs towards +Y), the draw takes
+	/// <c>(angle - 0x380) &amp; 0x7FF &gt;&gt; 8</c> (<c>0x004FA030</c>), so sector 0 runs 22.5 degrees either side of +Y and the sectors turn towards +X. The heading is in map coordinates.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004FA2A0 heading] FUN_006e7074(oldX - newX, newY - oldY) is 180 degrees plus the angle of the step measured from +Y towards +X; [BIN:TPW-EXE:0x004FA030 sector] minus 0x380 (157.5 degrees) and the shift by 8 leave floor((angle + 22.5 degrees) / 45 degrees)
+	public static int HeadingSector( float headingX, float headingY ) =>
+		(int)MathF.Floor( (MathF.Atan2( headingX, headingY ) + MathF.PI / 8) / (MathF.PI / 4) ) & 7;
+
+	/// <summary>
+	/// The camera's yaw as the sprite pass reads it, in radians from +Y towards +X: the park camera's own yaw wrapped to 0 to 2 pi (<c>0x00540AB0</c>), any other camera (a ride or the walk) the arc tangent of
+	/// its forward vector, or of its right vector when it looks steeply up or down (<c>0x0046F1C0</c>). <paramref name="right"/> and <paramref name="forward"/> are in engine space, whose horizontal axes are the map's.
+	/// </summary>
+	// [BIN:TPW-EXE:0x0046F1C0 camera yaw] atan2(forward x, forward z) while the forward vector's height is within +-0.9 (0x006FEB78, 0x006FEB7C), else atan2(-right z, right x); [BIN:TPW-EXE:0x00540AB0 sprite yaw] the park camera's yaw 0x00790A38 modulo 2 pi (0x00700E68), plus 2 pi when below 0
+	public static float CameraYaw( System.Numerics.Vector3 right, System.Numerics.Vector3 forward, bool parkCamera )
+	{
+		var yaw = MathF.Abs( forward.Z ) > 0.9f ? MathF.Atan2( -right.Y, right.X ) : MathF.Atan2( forward.X, forward.Y );
+		if ( !parkCamera )
+			return yaw;
+		yaw %= 2 * MathF.PI;
+		return yaw < 0 ? yaw + 2 * MathF.PI : yaw;
+	}
+
+	/// <summary>
+	/// How many sectors the camera's yaw turns the sprites: the original takes <c>trunc((yaw + pi / 8) / 2 pi * 8)</c> (<c>0x00542010</c>: the yaw minus the constant <c>0x00700E74</c>, which is -pi / 8; then the factors <c>0x00700E78</c>,
+	/// <c>0x00700E7C</c>) and keeps <c>8 - (n &amp; 7)</c>. The park camera's yaw is wrapped to 0 to 2 pi first, so the term is never negative and the truncation is a floor: the sectors are centred on the 45 degree steps of the yaw.
+	/// Only another camera's yaw (negative, from the arc tangent) is truncated towards zero, which makes -67.5 to -22.5 degrees sector 0.
+	/// </summary>
+	// [BIN:TPW-EXE:0x00542010 camera sector] ftol((yaw - (-0.3926991)) * 0.1591549 * 8.0) & 7 subtracted from 8 (FSUB m32 at 0x0054219E, bytes D8 25 74 0E 70 00); the draw adds the heading sector and keeps the low three bits
+	public static int CameraSector( float yaw ) => 8 - ((int)((yaw + 0.3926991f) * 0.1591549f * 8f) & 7);
+
+	/// <summary>
+	/// The direction and mirroring of a sprite the way the original's sprite pass picks them: the heading sector plus the camera sector, modulo 8, and for a slot with fewer directions than 8 the sectors beyond the
+	/// last stored direction are the mirrored ones (8 minus the sector). No pitch or elevation enters: the art of every direction is pre-rendered from the one angle, and a slot without directions shows direction 0.
+	/// </summary>
+	// [BIN:TPW-EXE:0x00542010 direction] (camera sector + the sprite's heading byte) & 7; when the slot's direction count (ESP byte 3 of the slot) minus 1 is below it, the draw is mirrored (flag 0x10) and the direction is 8 minus it; frame = first frame of the slot + frames per direction x direction + step
+	public static (int Direction, bool Mirror) SelectOriginalDirection( float headingX, float headingY, float cameraYaw, int directions )
+	{
+		if ( directions <= 0 )
+			return (0, false);
+		var sector = (CameraSector( cameraYaw ) + HeadingSector( headingX, headingY )) & 7;
+		return sector > directions - 1 ? (8 - sector, true) : (sector, false);
+	}
+
 	/// <summary>Loads every kid set under <c>esprites/Generic/Kids</c> (sorted by name), or none when absent.</summary>
 	public static List<GuestSpriteAtlas> LoadKids() => LoadSets( "/esprites/Generic/Kids", "kids" );
 
@@ -227,8 +294,12 @@ public sealed class GuestSpriteAtlas
 	// [DATA:esprites.wad/Generic/SpecialFX/SPR_SF.ESP+TPC] one 32 x 39 frame (slot 0) whose hotspot lies 85 pixels below its top edge: a blue balloon with a yellow up arrow
 	public static List<GuestSpriteAtlas> LoadSpecialEffects() => LoadSets( "/esprites/Generic/SpecialFX", "specialfx" );
 
-	/// <summary>Each set's ESP chooses its bank (<see cref="SpriteAnimationFile.BankExtension"/>): the FPC when it has one at full detail, else the TPC.</summary>
-	internal static List<GuestSpriteAtlas> LoadSets( string directory, string packFolder, string packRoot = "generic" )
+	/// <summary>
+	/// Each set's ESP chooses its bank (<see cref="SpriteAnimationFile.BankExtension"/>): the FPC when it has one at full detail, else the TPC. With <paramref name="lowDetailSlot"/>
+	/// the frames of that slot come from the set's TPC whatever the ESP chooses: the staff tools' dangling sprite, which the FPC banks hold as 2 x 2 pixel placeholders.
+	/// </summary>
+	// [APPROX:GUEST-022] tp.exe draws the .tpc of every set (the detail flag its ESP loader 0x540D90 tests is never set, SpriteAnimationFile.FlagA); OpenTPW draws the .fpc of the sets with byte 0x10C = 1, and the .tpc only for a slot asked for here
+	internal static List<GuestSpriteAtlas> LoadSets( string directory, string packFolder, string packRoot = "generic", int lowDetailSlot = -1 )
 	{
 		var sets = new List<GuestSpriteAtlas>();
 		string[] files;
@@ -252,7 +323,7 @@ public sealed class GuestSpriteAtlas
 			using var bankStream = FileSystem.OpenRead( $"{directory}/{bank}" );
 			try
 			{
-				sets.Add( new GuestSpriteAtlas( stem, new SpriteBankFile( bankStream ), animations, packFolder, packRoot ) );
+				sets.Add( new GuestSpriteAtlas( stem, new SpriteBankFile( bankStream ), animations, LowDetailBank( directory, files, stem, bank, lowDetailSlot ), lowDetailSlot, packFolder, packRoot ) );
 			}
 			catch ( InvalidDataException exception ) when ( exception.Message.StartsWith( "Sprite set ", StringComparison.Ordinal ) )
 			{
@@ -260,5 +331,23 @@ public sealed class GuestSpriteAtlas
 			}
 		}
 		return sets;
+	}
+
+	/// <summary>The set's TPC when a slot is to be taken from it and the chosen bank is another one; null when there is none or it does not decode.</summary>
+	private static SpriteBankFile? LowDetailBank( string directory, string[] files, string stem, string chosen, int slot )
+	{
+		if ( slot < 0 || chosen.EndsWith( ".TPC", StringComparison.OrdinalIgnoreCase )
+			|| files.FirstOrDefault( file => string.Equals( file, stem + ".TPC", StringComparison.OrdinalIgnoreCase ) ) is not { } tpc )
+			return null;
+		try
+		{
+			using var stream = FileSystem.OpenRead( $"{directory}/{tpc}" );
+			return new SpriteBankFile( stream );
+		}
+		catch ( InvalidDataException exception )
+		{
+			Log?.Warning( $"The low-detail bank {tpc} in {directory} is not used: {exception.Message}" );
+			return null;
+		}
 	}
 }

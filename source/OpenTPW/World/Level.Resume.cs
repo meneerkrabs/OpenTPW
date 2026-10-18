@@ -12,12 +12,39 @@ public partial class Level
 	/// <summary>Set by the particle module: gives the level the pool of an original save's Particles block (the state's emitters and effectors, the post-load pass applied).</summary>
 	internal static Action<Level, SaveParticlesBlock>? ParticlesImported { get; set; }
 
+	/// <summary>
+	/// Gives every placed object the economy catalogue knows an economy record before a save is captured: a save must hold a binding for each of them (<see cref="ParkResumeSaveFile.ValidateSnapshot"/>).
+	/// Every build path binds the object it places (<see cref="PlaceObject"/> does so even when a placement handler throws), so this only repairs a park that lost a binding anyway, and says so in the log.
+	/// The object adopts the lowest-numbered record of its type no other object holds: that is the record its own purchase made, which a failed build left unowned. Only when no such record exists is an
+	/// uncharged one registered, as the original-save import does (<see cref="ParkEconomy.RegisterExisting"/>), because nothing was bought for the object that the books could still refund or count.
+	/// </summary>
+	private void RepairMissingEconomyBindings()
+	{
+		if ( Park == null )
+			return;
+		foreach ( var item in Objects.Objects.ToArray() )
+		{
+			if ( item.IsDeleted || item is PrototypeRide || economyInstances.ContainsKey( item ) || (PlacedRide != null && ReferenceEquals( item, PlacedRide ))
+				|| !Park.Economy.Catalog.TryGet( item.Entry.InfoId, out _ ) )
+				continue;
+			var held = economyInstances.Values.ToHashSet();
+			if ( prototypeInstance is int prototype )
+				held.Add( prototype );
+			var state = Park.Economy.Objects.Where( candidate => candidate.InfoId == item.Entry.InfoId && !held.Contains( candidate.Id ) ).OrderBy( candidate => candidate.Id ).FirstOrDefault();
+			var adopted = state != null;
+			state ??= Park.Economy.RegisterExisting( item.Entry.InfoId );
+			Log.Warning( $"{item.Entry.DisplayName} (attraction {item.Visitors.AttractionId}) had no economy binding; it {(adopted ? "adopts the unowned" : "gets a new uncharged")} economy record {state.Id} so the park can be saved." );
+			LinkEconomy( item, state.Id );
+		}
+	}
+
 	/// <summary>Captures a writable fixed-ride park between simulation ticks, including its direct instance links.</summary>
 	internal ParkResumeSnapshot CaptureResumeSnapshot( AutomaticAdvisor? advisor, string displayName,
 		IReadOnlyDictionary<string, string>? verifiedAssets = null, DateTimeOffset? savedUtc = null, bool advisorMaySpeak = false )
 	{
 		if ( IsReadOnlyVisit || GameEditions.IsThemeParkInc || OriginalPark == null || Park == null || Guests == null )
 			throw new InvalidOperationException( "Only a writable Theme Park World park can be saved here." );
+		RepairMissingEconomyBindings();
 		RequireResumableCatalogueDefaults();
 		StaffPlacement?.PrepareForSave();
 		var prototype = CapturePrototypeSnapshot();

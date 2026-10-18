@@ -85,11 +85,15 @@ literal bytes. Pixel index 0 is transparent; index `n ≥ 1` is palette entry
 `n − 1` (tp.exe's loader 0x587DB0 reads the `u32 0` as palette entry 0 of 256, so index n is entry n there;
 the first u16 is the format, 3 = paletted, and the second is ignored). Every row decodes to exactly `width` pixels and every bank ends exactly
 after its last frame (121/121 members). `.FPC` frames are slightly larger than
-`.TPC` (kids: up to 37×45 vs 36×43). The ESP chooses (tp.exe 0x5410D3): `.fpc` when its byte 0x10C and
-the sprite-detail flag are both set, else `.tpc`. The detail flag is set to 1 at start-up (0x54E688), so the
-PC draws the FPC of every set with 0x10C = 1 (27 sets, each shipping one) and the TPC of the others; Jungle
-SPR_EX and Space SPR_SK ship an FPC the game never opens. OpenTPW follows this
-(`SpriteAnimationFile.BankExtension`); before October 16 it drew Space's costume set SPR_SK from its FPC.
+`.TPC` (kids: up to 37×45 vs 36×43) and drawn from a lower camera (a standing handyman is 58 to 62 px tall in
+the FPC, 49 to 53 in the TPC). The ESP chooses (tp.exe 0x5410D3): `.fpc` when its byte 0x10C and the
+sprite-detail flag 0x8768FC are both set, else `.tpc`. The flag's only writer, 0x540900, stores its first
+argument, and both of its calls pass 0 (0x54E688, 0x54ED2C; TPI's Game.exe likewise: 0x68E240 from 0x6A3768), so the
+PC game draws the TPC of every set and never opens an FPC (an earlier reading took the start-up call's second
+argument, 1, for the flag). OpenTPW draws the FPC of the 27 sets with 0x10C = 1 (`SpriteAnimationFile.BankExtension`,
+`GUEST-022`) and the TPC of the others (Jungle SPR_EX and Space SPR_SK ship an FPC too), except the staff tools'
+dangling slot 6, which every staff FPC holds as 2 × 2 pixel placeholders: it comes from the TPC
+(`GuestSpriteAtlas.LoadSets`, [STAFF-PLACEMENT.md](STAFF-PLACEMENT.md#drawing)).
 
 **`.ESP` animation table** (350 bytes): magic `ESP_FILE2.00`, NUL-terminated bank
 name (`SPR_BE.TPS`), zero padding, two flag bytes at `0x10C`, then 20 slots of
@@ -105,7 +109,7 @@ starts a performance as script 13 + (r mod (n − 1)), or 13 for one entry (scri
 `01 05 02 28` in Hallow SPR_DR, so every entertainer performs slot 4; the program's registers 0x11 and 0x12 are SPR_DR's 2 and 40: frames 0-2 once, then for ever the frames from 2 on and 41 steps of frame 0 (`StaffScripts.PerformanceFrame`, GUEST-015).
 
 **Writing a sprite set** (`SpriteBankWriter`, `SpriteAnimationWriter`, `SpriteSetBuilder`). A usable set is the `.ESP` plus the bank its byte
-0x10C selects (`.FPC` when set, else `.TPC`; `GuestSpriteAtlas.LoadSets` opens exactly those). The `.FPS`/`.TPS` files the ESP names are never shipped and
+0x10C selects for OpenTPW (`.FPC` when set, else `.TPC`; `GuestSpriteAtlas.LoadSets` opens exactly those; the game itself draws the `.TPC`, `GUEST-022`). The `.FPS`/`.TPS` files the ESP names are never shipped and
 never opened, so nothing else is needed. The writers rewrite **all 75 banks (29 FPC, 46 TPC) and all 46 ESP files of `esprites.wad` byte for byte**
 (`SpriteBankWriterCorpusTests`). What is written, field by field:
 
@@ -123,6 +127,16 @@ more go through median cut with nearest-entry mapping. Defaults of a new set, an
 `FullDetail` true (flag 0x10C = 1, FPC and TPC written with the same content, as every full-detail set ships both), kid flag 0, both unit words 128 (every
 shipped frame), no performance entries. Unverified against tp.exe: whether the original's loader accepts a bank with unused zero palette entries or frames wider than any shipped
 one (they decode here), and how the game blends the palette's alpha (the readers treat it as straight alpha).
+
+### Which direction is drawn
+
+Guests and staff go through one sprite pass in tp.exe (`0x518F90` calls `0x4FA030` for the things of classes 1 and 4 to 8 on every rendered frame, `0x542010` picks the frame). The only things it reads are the sprite's script frame, its heading and the camera's yaw; **the camera's pitch and the distance never enter**, and no bank holds a second elevation: every walking set stores 5 directions (the kid sets, the handyman `SPR_HA`, the mechanics `SPR_FA` and `SPR_OM`, the guard `SPR_GU`, the researcher `SPR_RE`; the entertainers likewise) pre-rendered from one angle, the other three are the mirrored ones. A staff member therefore looks "more from above" in the original only through the camera pose (45 to 65 degrees pitch for the zoom values 70 to 130) and through the way the yaw is turned into a direction:
+
+- the heading is the angle of the last walking step from +Y towards +X (`0x4FA2A0` stores `FUN_006E7074` of the step), and the draw keeps it in 45 degree sectors, `((angle - 0x380) & 0x7FF) >> 8`: sector 0 is +Y, sector 2 is +X;
+- the camera adds a sector count of its own (`0x542010`): `n = trunc((yaw + pi / 8) / 2 pi x 8)` (the code subtracts the constant `0x700E74`, which is -pi / 8), the sector is `8 - (n & 7)`, with the park camera's yaw wrapped to 0 to 2 pi (`0x540AB0`; the other cameras use the arc tangent of their forward vector, or of the right vector when it looks steeply up or down, `0x46F1C0`). The wrapped yaw keeps the term positive, so the truncation is a floor and the sectors are centred on the 45 degree steps of the yaw: a camera turned by 45 degrees turns the sprites by one sector, and a figure walking along the view axis is drawn from behind or in front at every multiple of 45 degrees. Only the other cameras' negative yaw is truncated towards zero (-67.5 to -22.5 degrees count as sector 0);
+- direction = (camera sector + heading sector) & 7; a slot with fewer than 8 directions draws the sectors above its last stored direction mirrored, as 8 minus the sector (`SpriteAnimation.Directions` is 5, so sectors 5 to 7 are 3 to 1 mirrored).
+
+`GuestSpriteAtlas.SelectOriginalDirection` is this rule (`HeadingSector`, `CameraSector`, `CameraYaw`); the kid, costume and staff renderers use it. Before October 17 they took the nearest 45 degrees of the exact camera-relative angle; the original quantises the heading and the yaw separately, so the two differ between the sector borders. The swimmers' renderer (`[EXT:pools-swim]`, lying poses turned by the residual of the exact snap) keeps the exact angle.
 
 ### Pixels per unit and resolution
 

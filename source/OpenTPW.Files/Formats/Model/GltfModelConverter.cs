@@ -167,50 +167,42 @@ public static class GltfModelConverter
 	private readonly record struct LightDummy( int Number, NVector3 Colour, int RadiusModelUnits );
 
 	/// <summary>
-	/// [EXT:object-lights] The point lights of the scene as light dummies (docs/LIGHTS.md): the glTF colour is the base colour, the <c>range</c> (or the node extra <c>opentpw_light_radius</c>) is the radius in
-	/// model units (one scene unit is one model unit), none meaning the default of 100; the number is the node extra <c>opentpw_light</c> or the lowest free number in node order. The glTF intensity is not
-	/// carried (its unit, candela or lux, differs between exporters): scale the colour, and a script's SETLIGHT dims it. Spot and directional lights have no counterpart and are skipped with a warning.
+	/// [EXT:object-lights] The point lights of the scene as light dummies (docs/LIGHTS.md). Only a point light on a node with the extra <c>opentpw_light</c> (the light number, an integer from 0) becomes a dummy:
+	/// an exporter writes every light of a scene (Blender's default scene has one) and most are lights for looking at the model, not lights of the object. A point light without the extra is skipped with a
+	/// warning. The glTF colour is the base colour, the <c>range</c> (or the extra <c>opentpw_light_radius</c>) the radius in model units (one scene unit is one model unit), none meaning the default of 100. The
+	/// glTF intensity is not carried (its unit, candela or lux, differs between exporters): scale the colour, and a script's SETLIGHT dims it. Spot and directional lights have no counterpart and are skipped
+	/// with a warning.
 	/// </summary>
 	private static Dictionary<int, LightDummy> CheckLights( GltfScene scene, Dictionary<int, int> heads, List<string> warnings )
 	{
 		var result = new Dictionary<int, LightDummy>();
-		var explicitNumbers = new Dictionary<int, int>();
-		foreach ( var node in scene.Nodes )
-		{
-			if ( !node.Extras.TryGetValue( LightExtra, out var value ) )
-				continue;
-			if ( node.Light == null )
-				throw new InvalidDataException( $"Node '{node.Name}': {LightExtra} needs a KHR_lights_punctual point light on the node." );
-			if ( value.ValueKind != JsonValueKind.Number || !value.TryGetInt32( out var number ) || number < 0 || number > short.MaxValue )
-				throw new InvalidDataException( $"Node '{node.Name}': {LightExtra} must be an integer from 0 to 32767." );
-			explicitNumbers[node.Index] = number;
-		}
 		var used = new HashSet<int>();
-		foreach ( var (index, number) in explicitNumbers )
-			if ( scene.Nodes[index].Light is { Type: "point" } && !used.Add( number ) )
-				throw new InvalidDataException( $"Light number {number} is used by two nodes; light numbers must be unique." );
-		var next = 0;
 		var intensityWarned = false;
 		foreach ( var node in scene.Nodes )
 		{
+			var hasNumber = node.Extras.TryGetValue( LightExtra, out var value );
 			if ( node.Light is not { } light )
+			{
+				if ( hasNumber )
+					throw new InvalidDataException( $"Node '{node.Name}': {LightExtra} needs a KHR_lights_punctual point light on the node." );
 				continue;
+			}
 			if ( !string.Equals( light.Type, "point", StringComparison.Ordinal ) )
 			{
 				warnings.Add( $"Node '{node.Name}': a {light.Type} light is skipped; only point lights become light dummies." );
 				continue;
 			}
+			if ( !hasNumber )
+			{
+				warnings.Add( $"Node '{node.Name}': a point light without the extra {LightExtra} is skipped; give it the light number (an integer from 0) to make it a light of the object." );
+				continue;
+			}
+			if ( value.ValueKind != JsonValueKind.Number || !value.TryGetInt32( out var number ) || number < 0 || number > short.MaxValue )
+				throw new InvalidDataException( $"Node '{node.Name}': {LightExtra} must be an integer from 0 to 32767." );
+			if ( !used.Add( number ) )
+				throw new InvalidDataException( $"Light number {number} is used by two nodes; light numbers must be unique." );
 			if ( heads.ContainsKey( node.Index ) )
 				throw new InvalidDataException( $"Node '{node.Name}' is a rider head and a light; a node has one attribute record." );
-			int number;
-			if ( explicitNumbers.TryGetValue( node.Index, out var chosen ) )
-				number = chosen;
-			else
-			{
-				while ( !used.Add( next ) )
-					next++;
-				number = next;
-			}
 			var radius = 0;
 			if ( node.Extras.TryGetValue( LightRadiusExtra, out var radiusValue ) )
 			{
@@ -219,14 +211,14 @@ public static class GltfModelConverter
 			}
 			else if ( light.Range is { } range )
 			{
-				if ( range <= 0 )
-					warnings.Add( $"Node '{node.Name}': the light range {range} is not positive; the default radius of 100 model units is used." );
+				if ( range < 1 )
+					warnings.Add( $"Node '{node.Name}': the light range {range} is below one model unit; the default radius of 100 model units is used." );
 				else
 					radius = (int)Math.Clamp( MathF.Round( range ), 1f, ushort.MaxValue );
 			}
 			var colour = new NVector3( Math.Clamp( light.Colour.X, 0f, 1f ), Math.Clamp( light.Colour.Y, 0f, 1f ), Math.Clamp( light.Colour.Z, 0f, 1f ) );
 			if ( colour != light.Colour )
-				warnings.Add( $"Node '{node.Name}': the light colour is outside 0..1 and is clamped." );
+				warnings.Add( $"Node '{node.Name}': the light colour is outside 0..1 and is clamped (a model's base colour has channels from 0 to 1; a script's SETLIGHT and COLOURLIGHT can go beyond)." );
 			if ( !intensityWarned && light.Intensity != 1f )
 			{
 				intensityWarned = true;

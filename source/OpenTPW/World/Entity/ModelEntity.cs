@@ -79,10 +79,13 @@ public partial class ModelEntity : Entity
 		if ( material.ReceivesPointLights && Level?.PointLights is { Count: > 0 } lights && Model.Bounds is { } bounds )
 		{
 			PointLightSet.TransformBox( bounds.Min, bounds.Max, model, out var boxMin, out var boxMax );
-			var lit = new LitObjectUniformBuffer { Base = uniforms };
-			var count = lights.Select( boxMin, boxMax, Camera.Position.GetSystemVector3(), lit.Lights );
+			Span<PointLightGpu> chosen = stackalloc PointLightGpu[PointLightSet.MaxPerDraw];
+			var count = lights.Select( boxMin, boxMax, Camera.Position.GetSystemVector3(), chosen );
 			if ( count > 0 )
 			{
+				// the 784-byte block is built only for a draw that a light reaches
+				var lit = new LitObjectUniformBuffer { Base = uniforms };
+				chosen[..count].CopyTo( lit.Lights );
 				material.Set( "ObjectUniformBuffer", ref lit, count );
 				return;
 			}

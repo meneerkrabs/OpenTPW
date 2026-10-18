@@ -105,8 +105,13 @@ public sealed class GltfScene
 			Refuse( "skins", "skinned meshes" );
 			Refuse( "animations", "animations" );
 			// KHR_lights_punctual is read (point lights become light dummies, docs/LIGHTS.md); any other required extension is refused
-			if ( root.TryGetProperty( "extensionsRequired", out var required ) && required.EnumerateArray().Any( extension => extension.GetString() != LightsExtension ) )
-				throw new InvalidDataException( $"glTF requires extensions OpenTPW does not read: {required}." );
+			if ( root.TryGetProperty( "extensionsRequired", out var required ) )
+			{
+				if ( required.ValueKind != JsonValueKind.Array )
+					throw new InvalidDataException( "glTF extensionsRequired is not an array." );
+				if ( required.EnumerateArray().Any( extension => extension.ValueKind != JsonValueKind.String || extension.GetString() != LightsExtension ) )
+					throw new InvalidDataException( $"glTF requires extensions OpenTPW does not read: {required}." );
+			}
 			if ( root.TryGetProperty( "buffers", out var buffers ) )
 			{
 				if ( buffers.GetArrayLength() != 1 || buffers[0].TryGetProperty( "uri", out _ ) )
@@ -201,19 +206,44 @@ public sealed class GltfScene
 		private List<GltfLight> ReadLights()
 		{
 			var lights = new List<GltfLight>();
-			if ( !root.TryGetProperty( "extensions", out var extensions ) || !extensions.TryGetProperty( LightsExtension, out var extension ) || !extension.TryGetProperty( "lights", out var list ) )
+			if ( !root.TryGetProperty( "extensions", out var extensions ) )
 				return lights;
+			if ( extensions.ValueKind != JsonValueKind.Object )
+				throw new InvalidDataException( "glTF extensions is not an object." );
+			if ( !extensions.TryGetProperty( LightsExtension, out var extension ) )
+				return lights;
+			if ( extension.ValueKind != JsonValueKind.Object || !extension.TryGetProperty( "lights", out var list ) || list.ValueKind != JsonValueKind.Array )
+				throw new InvalidDataException( $"glTF {LightsExtension} needs a lights array." );
 			foreach ( var light in list.EnumerateArray() )
 			{
-				var type = light.TryGetProperty( "type", out var typeValue ) ? typeValue.GetString() ?? "" : "";
-				var colour = Floats( light, "color", 3, [1, 1, 1] );
-				var intensity = light.TryGetProperty( "intensity", out var intensityValue ) ? intensityValue.GetSingle() : 1f;
-				float? range = light.TryGetProperty( "range", out var rangeValue ) ? rangeValue.GetSingle() : null;
-				if ( type.Length == 0 || colour.Any( channel => !float.IsFinite( channel ) ) || !float.IsFinite( intensity ) || ( range is { } value && !float.IsFinite( value ) ) )
-					throw new InvalidDataException( $"glTF light {lights.Count} is malformed (a type and finite colour, intensity and range are needed)." );
-				lights.Add( new GltfLight( type, new NumericsVector3( colour[0], colour[1], colour[2] ), intensity, range ) );
+				var index = lights.Count;
+				if ( light.ValueKind != JsonValueKind.Object )
+					throw new InvalidDataException( $"glTF light {index} is not an object." );
+				if ( !light.TryGetProperty( "type", out var typeValue ) || typeValue.ValueKind != JsonValueKind.String || string.IsNullOrEmpty( typeValue.GetString() ) )
+					throw new InvalidDataException( $"glTF light {index} needs a type." );
+				float[] colour = [1, 1, 1];
+				if ( light.TryGetProperty( "color", out var colourValue ) )
+				{
+					if ( colourValue.ValueKind != JsonValueKind.Array || colourValue.GetArrayLength() != 3 || colourValue.EnumerateArray().Any( channel => channel.ValueKind != JsonValueKind.Number ) )
+						throw new InvalidDataException( $"glTF light {index} has a color that is not three numbers." );
+					colour = colourValue.EnumerateArray().Select( channel => channel.GetSingle() ).ToArray();
+				}
+				var intensity = Number( light, "intensity", index ) ?? 1f;
+				var range = Number( light, "range", index );
+				if ( colour.Any( channel => !float.IsFinite( channel ) ) || !float.IsFinite( intensity ) || ( range is { } value && !float.IsFinite( value ) ) )
+					throw new InvalidDataException( $"glTF light {index} is malformed (a finite colour, intensity and range are needed)." );
+				lights.Add( new GltfLight( typeValue.GetString()!, new NumericsVector3( colour[0], colour[1], colour[2] ), intensity, range ) );
 			}
 			return lights;
+		}
+
+		private static float? Number( JsonElement light, string property, int index )
+		{
+			if ( !light.TryGetProperty( property, out var value ) )
+				return null;
+			if ( value.ValueKind != JsonValueKind.Number )
+				throw new InvalidDataException( $"glTF light {index} has a {property} that is not a number." );
+			return value.GetSingle();
 		}
 
 		private List<GltfNode> ReadNodes( int meshCount, List<GltfLight> lights )
@@ -239,9 +269,10 @@ public sealed class GltfScene
 				if ( mesh >= meshCount )
 					throw new InvalidDataException( $"glTF node {i} names mesh {mesh}, which does not exist." );
 				GltfLight? light = null;
-				if ( element.TryGetProperty( "extensions", out var nodeExtensions ) && nodeExtensions.TryGetProperty( LightsExtension, out var nodeLight ) )
+				if ( element.TryGetProperty( "extensions", out var nodeExtensions ) && ( nodeExtensions.ValueKind != JsonValueKind.Object ? throw new InvalidDataException( $"glTF node {i} has extensions that are not an object." ) : nodeExtensions.TryGetProperty( LightsExtension, out var nodeLight ) ) )
 				{
-					var lightIndex = nodeLight.TryGetProperty( "light", out var lightValue ) ? lightValue.GetInt32() : -1;
+					if ( nodeLight.ValueKind != JsonValueKind.Object || !nodeLight.TryGetProperty( "light", out var lightValue ) || lightValue.ValueKind != JsonValueKind.Number || !lightValue.TryGetInt32( out var lightIndex ) )
+						throw new InvalidDataException( $"glTF node {i} has a {LightsExtension} extension without an integer light." );
 					if ( lightIndex < 0 || lightIndex >= lights.Count )
 						throw new InvalidDataException( $"glTF node {i} names light {lightIndex}, which does not exist." );
 					light = lights[lightIndex];

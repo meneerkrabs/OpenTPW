@@ -26,6 +26,7 @@ public static class ModelLights
 	{
 		ArgumentNullException.ThrowIfNull( model );
 		var lights = new List<ModelLightDummy>();
+		var seen = new HashSet<int>();
 		var first = model.Counts.Unknown46;
 		if ( first == 0xFFFF )
 			return lights;
@@ -35,7 +36,7 @@ public static class ModelLights
 			if ( (attribute.Type & ModelDummyAttribute.LightFlag) == 0 || attribute.Value > short.MaxValue )
 				continue;
 			var node = first + index;
-			if ( node >= model.Nodes.Count || lights.Any( light => light.Number == (int)attribute.Value ) )
+			if ( node >= model.Nodes.Count || !seen.Add( (int)attribute.Value ) )
 				continue;
 			NVector3? colour = null;
 			int? radius = null;

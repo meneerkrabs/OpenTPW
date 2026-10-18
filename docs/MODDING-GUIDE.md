@@ -150,7 +150,7 @@ An object of your own can carry **lights**: a lamp, a ride's bulbs, a glowing si
 presentation only (they never change the simulation or a save's mod record) and the original game never creates one, so this is an OpenTPW addition ([LIGHTS.md](LIGHTS.md)).
 
 1. **In the model.** Put an empty at the light's place in your glTF (or Blender scene) and give it a `KHR_lights_punctual` point light (in Blender: a point light object). Its colour is the light's base colour; its `range`
-   (or the custom property `opentpw_light_radius`) is the radius in model units, 10 units to a cell (the default is 100, ten cells). `opentpw_light` numbers the light (0, 1, ...). The content kit's `object` command writes it as a
+   (or the custom property `opentpw_light_radius`) is the radius in model units, 10 units to a cell (the default is 100, ten cells). `opentpw_light` (0, 1, ...) is required: it marks the light as the object's and numbers it. The content kit's `object` command writes it as a
    light dummy ([CONTENT-KIT.md](CONTENT-KIT.md#lights)).
 2. **In the `.sam`.** Optional: `Lights[0].Red`, `.Green`, `.Blue` (percent), `Lights[0].Radius` (model units) and `Lights[0].On` (0 starts it off) tune light 0 without touching the model.
 3. **In the script.** `ENABLELIGHT n`, `DISABLELIGHT n`, `SETLIGHT n level` (the base colour times level per cent) and `COLOURLIGHT n red green blue` (percent) switch and colour it; naming a light the

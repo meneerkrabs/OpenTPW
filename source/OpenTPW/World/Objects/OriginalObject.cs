@@ -457,11 +457,14 @@ public class OriginalObject : Entity, IPointLightSource
 	/// [EXT:object-lights] The lights that are on, at their dummy nodes' world transforms at the current pose (so a light on a moving part moves with it), in engine units: the position from the node's
 	/// engine matrix, the radius from model units at <see cref="ObjectPlacement.ModelScale"/>, the colour the opcodes last set.
 	/// </summary>
+	private Func<int, bool>? hiddenTest;
+
 	void IPointLightSource.AppendPointLights( List<PointLight> into )
 	{
 		if ( deleted || Runtime.Lights is not { } bank )
 			return;
-		bank.AppendTo( into, NodeTransforms, Placement.ModelToEngine );
+		hiddenTest ??= Runtime.Animator.IsNodeHidden;
+		bank.AppendTo( into, NodeTransforms, Placement.ModelToEngine, hiddenTest );
 	}
 
 	protected override void OnDelete()

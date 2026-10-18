@@ -22,7 +22,7 @@ public sealed class ObjectLight
 	public required float RadiusModelUnits { get; init; }
 	/// <summary>Whether the light shines (the original's off flag 0x10000000 is clear).</summary>
 	public bool On { get; internal set; }
-	/// <summary>The colour the light shines with now (linear 0..1 channels).</summary>
+	/// <summary>The colour the light shines with now (linear channels, usually 0..1; unclamped like the original's, bounded to +-4).</summary>
 	public SVector3 Colour { get; internal set; }
 }
 
@@ -43,7 +43,8 @@ public sealed record ObjectLightRecord
 /// <remarks>
 /// <b><c>.sam</c> keys</b> (all optional, per light number <c>n</c>): <c>Lights[n].Red</c>, <c>.Green</c>, <c>.Blue</c> the base colour in percent (0..100, the scale COLOURLIGHT uses; a key replaces
 /// that channel of the model's colour, the default is white), <c>Lights[n].Radius</c> the radius in model units (a positive number; default 100; 0.2 engine units a model unit), and
-/// <c>Lights[n].On</c> (1 or 0, default 1) whether the light starts on. The key values are single numbers, as in every <c>.sam</c>.
+/// <c>Lights[n].On</c> (1 or 0, default 1) whether the light starts on. The key values are single numbers, as in every <c>.sam</c>. A radius below one model unit is ignored, and a percentage is held to
+/// +-<see cref="PointLightMath.ColourBound"/> (400).
 /// </remarks>
 public sealed class ObjectLightBank
 {
@@ -76,7 +77,7 @@ public sealed class ObjectLightBank
 			colour = new SVector3( Percent( settings, prefix + ".Red", colour.X ), Percent( settings, prefix + ".Green", colour.Y ), Percent( settings, prefix + ".Blue", colour.Z ) );
 			var radius = dummy.RadiusModelUnits ?? PointLightMath.OriginalRadiusModelUnits;
 			var configured = settings.GetFloat( prefix + ".Radius", 0f );
-			if ( float.IsFinite( configured ) && configured > 0f )
+			if ( float.IsFinite( configured ) && configured >= PointLightMath.MinimumRadiusModelUnits )
 				radius = MathF.Min( configured, 65535f );
 			var on = settings.GetBool( prefix + ".On", true );
 			lights.Add( new ObjectLight
@@ -93,7 +94,7 @@ public sealed class ObjectLightBank
 	}
 
 	private static float Percent( ObjectSettings settings, string key, float fallback ) =>
-		settings.Has( key ) ? Math.Clamp( settings.GetFloat( key, fallback * 100f ) * 0.01f, 0f, 1f ) : fallback;
+		settings.Has( key ) && float.IsFinite( settings.GetFloat( key, fallback * 100f ) ) ? Bound( settings.GetFloat( key, fallback * 100f ) * 0.01f ) : fallback;
 
 	public ObjectLight? Find( int number )
 	{
@@ -105,10 +106,12 @@ public sealed class ObjectLightBank
 
 	/// <summary>
 	/// Applies one of the four opcodes. ENABLELIGHT clears and DISABLELIGHT sets the off flag; SETLIGHT sets the colour to the base colour times <c>level x 0.01</c>; COLOURLIGHT sets it to
-	/// the three operands times 0.01 (each channel of the result held to 0..1, as the packed ARGB word the original stores caps it). Returns false, changing nothing, when the light does not exist.
+	/// the three operands times 0.01. The colour is a float, unclamped as the original keeps it (an over-bright or a negative, darkening light is possible; the packed ARGB word the original also stores
+	/// is truncated and is not what its lighting reads); [EXT:object-lights] only a bound of +-<see cref="PointLightMath.ColourBound"/> per channel keeps a huge operand finite and sane. Returns false, changing
+	/// nothing, when the light does not exist.
 	/// </summary>
 	// [BIN:TPW-EXE:0x555C7A ENABLELIGHT] the light dummy (class 0x20000, number `light`) is looked up with 0x44B220 and its record taken with 0x4587B0; the off flag 0x10000000 of the record's type word is cleared (ENABLELIGHT) or set (DISABLELIGHT 0x555CCD, 0x458940), then the model's lights are marked dirty
-	// [BIN:TPW-EXE:0x555D20 SETLIGHT] colour = base colour x level x 0.01 for red, green and blue, alpha 1.0 (0x4587E0), stored with the packed ARGB word at +0x54; COLOURLIGHT 0x555D9A (0x458890): each operand x 0.01
+	// [BIN:TPW-EXE:0x555D20 SETLIGHT] colour = base colour x level x 0.01 for red, green and blue, alpha 1.0 (0x4587E0), stored as floats at +0x04..+0x10 (which 0x5741B0 reads) and as a packed ARGB word at +0x54; COLOURLIGHT 0x555D9A (0x458890): each operand x 0.01
 	public bool Apply( Opcode opcode, int number, int a = 0, int b = 0, int c = 0 )
 	{
 		if ( Find( number ) is not { } light )
@@ -122,10 +125,10 @@ public sealed class ObjectLightBank
 				light.On = false;
 				break;
 			case Opcode.SETLIGHT:
-				light.Colour = Clamp( light.BaseColour * ( a * 0.01f ) );
+				light.Colour = Bound( light.BaseColour * ( a * 0.01f ) );
 				break;
 			case Opcode.COLOURLIGHT:
-				light.Colour = Clamp( new SVector3( a * 0.01f, b * 0.01f, c * 0.01f ) );
+				light.Colour = Bound( new SVector3( a * 0.01f, b * 0.01f, c * 0.01f ) );
 				break;
 			default:
 				throw new ArgumentOutOfRangeException( nameof( opcode ) );
@@ -137,18 +140,21 @@ public sealed class ObjectLightBank
 	/// Adds the lights that are on to <paramref name="into"/> in engine units: each at the world transform of its dummy node (<paramref name="nodeTransforms"/> are the animator's model-space node matrices,
 	/// <paramref name="placement"/> is <see cref="ObjectPlacement.ModelToEngine"/>), the radius from model units at <see cref="ObjectPlacement.ModelScale"/>, the colour the opcodes last set.
 	/// </summary>
-	internal void AppendTo( List<PointLight> into, IReadOnlyList<System.Numerics.Matrix4x4> nodeTransforms, System.Numerics.Matrix4x4 placement )
+	internal void AppendTo( List<PointLight> into, IReadOnlyList<System.Numerics.Matrix4x4> nodeTransforms, System.Numerics.Matrix4x4 placement, Func<int, bool>? isHidden = null )
 	{
 		foreach ( var light in lights )
 		{
-			if ( !light.On || light.NodeIndex >= nodeTransforms.Count )
+			// a dummy hidden by its node state (the animator's hidden bit) puts its light out with it
+			if ( !light.On || light.NodeIndex >= nodeTransforms.Count || isHidden?.Invoke( light.NodeIndex ) == true )
 				continue;
 			var world = ObjectPlacement.SwapAxes( nodeTransforms[light.NodeIndex] ) * placement;
 			into.Add( new PointLight( world.Translation, light.Colour, PointLightMath.ModelUnitsToEngine( light.RadiusModelUnits ) ) );
 		}
 	}
 
-	private static SVector3 Clamp( SVector3 colour ) => SVector3.Clamp( colour, SVector3.Zero, SVector3.One );
+	private static SVector3 Bound( SVector3 colour ) => SVector3.Clamp( colour, new SVector3( -PointLightMath.ColourBound ), new SVector3( PointLightMath.ColourBound ) );
+
+	private static float Bound( float channel ) => Math.Clamp( channel, -PointLightMath.ColourBound, PointLightMath.ColourBound );
 
 	/// <summary>True the first time <paramref name="opcode"/> misses <paramref name="number"/> on this object, so the caller logs it once.</summary>
 	public bool NoteMissing( Opcode opcode, int number ) => missing.Add( $"{opcode}:{number}" );
@@ -163,6 +169,7 @@ public sealed class ObjectLightBank
 	/// <summary>Restores saved states; the numbers this object no longer has are returned (the model changed since the save), the others keep their settings state.</summary>
 	public IReadOnlyList<int> Restore( IReadOnlyList<ObjectLightRecord> records )
 	{
+		ValidateRecords( records );
 		var unknown = new List<int>();
 		foreach ( var record in records )
 		{
@@ -190,8 +197,8 @@ public sealed class ObjectLightBank
 			if ( record.Number < 0 || record.Number > short.MaxValue || !seen.Add( record.Number ) )
 				throw new InvalidDataException( $"runtime snapshot has a light number {record.Number} that is out of range or repeated." );
 			foreach ( var channel in new[] { record.Red, record.Green, record.Blue } )
-				if ( !float.IsFinite( channel ) || channel < 0f || channel > 1f )
-					throw new InvalidDataException( $"runtime snapshot light {record.Number} has a colour channel outside 0..1." );
+				if ( !float.IsFinite( channel ) || MathF.Abs( channel ) > PointLightMath.ColourBound )
+					throw new InvalidDataException( $"runtime snapshot light {record.Number} has a colour channel that is not finite or beyond +-{PointLightMath.ColourBound}." );
 		}
 	}
 }

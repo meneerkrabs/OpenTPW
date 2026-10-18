@@ -31,6 +31,8 @@ def export(out, collection=None):
 		for problem in problems:
 			print(f"opentpw_export: {problem}", file=sys.stderr)
 		return False
+	for warning in conventions.light_warnings(objects):
+		print(f"opentpw_export: warning: {warning}", file=sys.stderr)
 	if collection:
 		layer = bpy.context.view_layer.layer_collection.children[collection]
 		bpy.context.view_layer.active_layer_collection = layer

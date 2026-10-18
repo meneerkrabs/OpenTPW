@@ -155,7 +155,7 @@ public class ObjectLightTests
 	[TestMethod]
 	public void APointLightOfTheGltfBecomesALightDummyWithItsColourAndRangeInModelUnits()
 	{
-		var conversion = Convert( ( glb, _ ) => new[] { glb.AddNode( "light0", -1, new NVector3( 5, 17, -5 ), null, null, null, glb.AddLight( "point", new NVector3( 1, 0.85f, 0.55f ), 1f, 60f ) ) } );
+		var conversion = Convert( ( glb, _ ) => new[] { glb.AddNode( "light0", -1, new NVector3( 5, 17, -5 ), null, null, "\"opentpw_light\": 0", glb.AddLight( "point", new NVector3( 1, 0.85f, 0.55f ), 1f, 60f ) ) } );
 		var model = conversion.Model.Build();
 		var light = ModelLights.Read( model ).Single();
 		Assert.AreEqual( 0, light.Number );
@@ -168,18 +168,18 @@ public class ObjectLightTests
 	}
 
 	[TestMethod]
-	public void LightNumbersTakeTheExtraOrTheLowestFreeNumberInNodeOrder()
+	public void OnlyAPointLightWithTheNumberExtraBecomesADummyAndTheOthersAreSkippedWithAWarning()
 	{
 		var conversion = Convert( ( glb, _ ) => new[]
 		{
-			glb.AddNode( "a", -1, null, null, null, null, glb.AddLight() ),
-			glb.AddNode( "b", -1, null, null, null, "\"opentpw_light\": 0", glb.AddLight() ),
-			glb.AddNode( "c", -1, null, null, null, null, glb.AddLight() ),
+			glb.AddNode( "default_light", -1, null, null, null, null, glb.AddLight() ),
+			glb.AddNode( "b", -1, null, null, null, "\"opentpw_light\": 4", glb.AddLight() ),
 			glb.AddNode( "d", -1, null, null, null, "\"opentpw_light\": 5", glb.AddLight() ),
 		} );
 		var model = conversion.Model.Build();
 		var numbers = ModelLights.Read( model ).ToDictionary( light => model.Nodes[light.NodeIndex].Name, light => light.Number );
-		CollectionAssert.AreEquivalent( new Dictionary<string, int> { ["a"] = 1, ["b"] = 0, ["c"] = 2, ["d"] = 5 }.ToArray(), numbers.ToArray() );
+		CollectionAssert.AreEquivalent( new Dictionary<string, int> { ["b"] = 4, ["d"] = 5 }.ToArray(), numbers.ToArray() );
+		Assert.AreEqual( 1, conversion.Warnings.Count( warning => warning.Contains( "'default_light'" ) && warning.Contains( "without the extra opentpw_light" ) ) );
 	}
 
 	[TestMethod]
@@ -187,9 +187,9 @@ public class ObjectLightTests
 	{
 		var conversion = Convert( ( glb, _ ) => new[]
 		{
-			glb.AddNode( "ranged", -1, null, null, null, null, glb.AddLight( range: 40 ) ),
-			glb.AddNode( "extra", -1, null, null, null, "\"opentpw_light_radius\": 75", glb.AddLight( range: 40 ) ),
-			glb.AddNode( "open", -1, null, null, null, null, glb.AddLight() ),
+			glb.AddNode( "ranged", -1, null, null, null, "\"opentpw_light\": 0", glb.AddLight( range: 40 ) ),
+			glb.AddNode( "extra", -1, null, null, null, "\"opentpw_light\": 1, \"opentpw_light_radius\": 75", glb.AddLight( range: 40 ) ),
+			glb.AddNode( "open", -1, null, null, null, "\"opentpw_light\": 2", glb.AddLight() ),
 		} );
 		var model = conversion.Model.Build();
 		var radii = ModelLights.Read( model ).ToDictionary( light => model.Nodes[light.NodeIndex].Name, light => light.RadiusModelUnits );
@@ -205,8 +205,8 @@ public class ObjectLightTests
 		{
 			glb.AddNode( "spot", -1, null, null, null, null, glb.AddLight( "spot" ) ),
 			glb.AddNode( "sun", -1, null, null, null, null, glb.AddLight( "directional" ) ),
-			glb.AddNode( "bright", -1, null, null, null, null, glb.AddLight( intensity: 800 ) ),
-			glb.AddNode( "bright2", -1, null, null, null, null, glb.AddLight( intensity: 800 ) ),
+			glb.AddNode( "bright", -1, null, null, null, "\"opentpw_light\": 0", glb.AddLight( intensity: 800 ) ),
+			glb.AddNode( "bright2", -1, null, null, null, "\"opentpw_light\": 1", glb.AddLight( intensity: 800 ) ),
 		} );
 		var model = conversion.Model.Build();
 		Assert.AreEqual( 2, ModelLights.Read( model ).Count );
@@ -218,7 +218,7 @@ public class ObjectLightTests
 	[TestMethod]
 	public void AColourOutsideZeroToOneIsClampedWithAWarning()
 	{
-		var conversion = Convert( ( glb, _ ) => new[] { glb.AddNode( "hot", -1, null, null, null, null, glb.AddLight( colour: new NVector3( 2f, 0.5f, -0.5f ) ) ) } );
+		var conversion = Convert( ( glb, _ ) => new[] { glb.AddNode( "hot", -1, null, null, null, "\"opentpw_light\": 0", glb.AddLight( colour: new NVector3( 2f, 0.5f, -0.5f ) ) ) } );
 		Assert.AreEqual( new NVector3( 1f, 0.5f, 0f ), ModelLights.Read( conversion.Model.Build() ).Single().Colour );
 		Assert.IsTrue( conversion.Warnings.Any( warning => warning.Contains( "clamped" ) ) );
 	}
@@ -234,8 +234,8 @@ public class ObjectLightTests
 		Refused( glb => new[] { glb.AddNode( "x", -1, null, null, null, "\"opentpw_light\": 1", glb.AddLight() ), glb.AddNode( "y", -1, null, null, null, "\"opentpw_light\": 1", glb.AddLight() ) }, "used by two nodes" );
 		Refused( glb => new[] { glb.AddNode( "x", -1, null, null, null, "\"opentpw_light\": 1" ) }, "needs a KHR_lights_punctual point light" );
 		Refused( glb => new[] { glb.AddNode( "x", -1, null, null, null, "\"opentpw_light\": -2", glb.AddLight() ) }, "integer from 0 to 32767" );
-		Refused( glb => new[] { glb.AddNode( "x", -1, null, null, null, "\"opentpw_light_radius\": 0", glb.AddLight() ) }, "opentpw_light_radius" );
-		Refused( glb => new[] { glb.AddNode( "x", -1, null, null, null, "\"opentpw_head\": 1", glb.AddLight() ) }, "rider head and a light" );
+		Refused( glb => new[] { glb.AddNode( "x", -1, null, null, null, "\"opentpw_light\": 0, \"opentpw_light_radius\": 0", glb.AddLight() ) }, "opentpw_light_radius" );
+		Refused( glb => new[] { glb.AddNode( "x", -1, null, null, null, "\"opentpw_head\": 1, \"opentpw_light\": 0", glb.AddLight() ) }, "rider head and a light" );
 	}
 
 	[TestMethod]
@@ -245,6 +245,36 @@ public class ObjectLightTests
 		Assert.AreEqual( 3, GltfScene.Read( scene ).Nodes.Count );
 		Assert.ThrowsException<InvalidDataException>( () => GltfScene.Read( GltfSceneTests.Triangle( "", ", \"extensionsRequired\": [ \"KHR_draco_mesh_compression\" ]" ) ) );
 		Assert.ThrowsException<InvalidDataException>( () => GltfScene.Read( GltfSceneTests.Triangle( "", ", \"extensionsRequired\": [ \"KHR_lights_punctual\", \"KHR_materials_unlit\" ]" ) ) );
+	}
+
+	[TestMethod]
+	public void WronglyTypedLightJsonIsAnInvalidDataExceptionNotACrash()
+	{
+		void Bad( string extensions, string nodeExtension = "" )
+		{
+			var json = $$"""
+			{ "asset": { "version": "2.0" }, "scene": 0, "scenes": [ { "nodes": [ 0 ] } ], {{extensions}}
+			  "nodes": [ { "name": "n"{{nodeExtension}} } ] }
+			""";
+			Assert.ThrowsException<InvalidDataException>( () => GltfScene.Read( GltfSceneTests.Glb( json, Array.Empty<byte>() ) ), json );
+		}
+		Bad( "\"extensions\": 5," );
+		Bad( "\"extensions\": { \"KHR_lights_punctual\": 5 }," );
+		Bad( "\"extensions\": { \"KHR_lights_punctual\": { \"lights\": 5 } }," );
+		Bad( "\"extensions\": { \"KHR_lights_punctual\": { \"lights\": [ 5 ] } }," );
+		Bad( "\"extensions\": { \"KHR_lights_punctual\": { \"lights\": [ { \"type\": 3 } ] } }," );
+		Bad( "\"extensions\": { \"KHR_lights_punctual\": { \"lights\": [ { \"type\": \"point\", \"color\": [ 1, \"x\", 1 ] } ] } }," );
+		Bad( "\"extensions\": { \"KHR_lights_punctual\": { \"lights\": [ { \"type\": \"point\", \"color\": 1 } ] } }," );
+		Bad( "\"extensions\": { \"KHR_lights_punctual\": { \"lights\": [ { \"type\": \"point\", \"range\": \"far\" } ] } }," );
+		Bad( "\"extensions\": { \"KHR_lights_punctual\": { \"lights\": [ { \"type\": \"point\", \"intensity\": [ 1 ] } ] } }," );
+		const string valid = "\"extensions\": { \"KHR_lights_punctual\": { \"lights\": [ { \"type\": \"point\" } ] } },";
+		Bad( valid, ", \"extensions\": 4" );
+		Bad( valid, ", \"extensions\": { \"KHR_lights_punctual\": 4 }" );
+		Bad( valid, ", \"extensions\": { \"KHR_lights_punctual\": { \"light\": \"0\" } }" );
+		Bad( valid, ", \"extensions\": { \"KHR_lights_punctual\": { } }" );
+		Bad( valid, ", \"extensions\": { \"KHR_lights_punctual\": { \"light\": 3 } }" );
+		Bad( "\"extensionsRequired\": \"KHR_lights_punctual\"," );
+		Bad( "\"extensionsRequired\": [ 7 ]," );
 	}
 
 	// ---- the object's light bank ----
@@ -277,6 +307,19 @@ public class ObjectLightTests
 	}
 
 	[TestMethod]
+	public void ARadiusBelowOneModelUnitInTheSamIsIgnoredAndTheLightIsUnusableBelowTheMinimum()
+	{
+		var (model, settings) = Pair( "Lights[0].Radius\t0.5\nLights[7].Radius\t-3\n" );
+		var bank = ObjectLightBank.Create( model, settings, "Lamp" )!;
+		Assert.AreEqual( 60f, bank.Find( 0 )!.RadiusModelUnits, "the model's radius stays" );
+		Assert.AreEqual( PointLightMath.OriginalRadiusModelUnits, bank.Find( 7 )!.RadiusModelUnits );
+		Assert.AreEqual( 1f, PointLightMath.MinimumRadiusModelUnits );
+		Assert.IsFalse( new PointLight( NVector3.Zero, NVector3.One, 0.05f ).IsUsable, "a radius under one model unit (0.2 engine units) would make 1 / r2 explode" );
+		Assert.IsTrue( new PointLight( NVector3.Zero, NVector3.One, PointLightMath.MinimumRadius ).IsUsable );
+		Assert.IsTrue( new PointLight( NVector3.Zero, new NVector3( -1, 0, 0 ), 5f ).IsUsable, "a negative colour darkens" );
+	}
+
+	[TestMethod]
 	public void TheFourOpcodesSwitchDimAndColourTheLightLikeTheOriginalsHandlers()
 	{
 		var (model, settings) = Pair( "" );
@@ -301,13 +344,20 @@ public class ObjectLightTests
 		Assert.AreEqual( new NVector3( 1f, 0.8f, 0.4f ), light.BaseColour );
 		Assert.IsTrue( bank.Apply( Opcode.SETLIGHT, 0, 100 ) );
 		Assert.AreEqual( new NVector3( 1f, 0.8f, 0.4f ), light.Colour );
-		// over-bright and negative operands are held to 0..1 (the packed ARGB the original stores has bytes)
+		// the colour is a float, unclamped like the original's (0x4587E0, 0x458890): over-bright and negative, darkening operands pass
 		Assert.IsTrue( bank.Apply( Opcode.SETLIGHT, 0, 300 ) );
-		Assert.AreEqual( new NVector3( 1f, 1f, 1f ), light.Colour );
+		Assert.AreEqual( 3f, light.Colour.X, 1e-6f );
+		Assert.AreEqual( 2.4f, light.Colour.Y, 1e-5f );
+		Assert.AreEqual( 1.2f, light.Colour.Z, 1e-5f );
 		Assert.IsTrue( bank.Apply( Opcode.COLOURLIGHT, 0, -10, 250, 5 ) );
-		Assert.AreEqual( 0f, light.Colour.X );
-		Assert.AreEqual( 1f, light.Colour.Y );
+		Assert.AreEqual( -0.1f, light.Colour.X, 1e-6f );
+		Assert.AreEqual( 2.5f, light.Colour.Y, 1e-6f );
 		Assert.AreEqual( 0.05f, light.Colour.Z, 1e-6f );
+		// only the +-4 bound keeps a huge operand finite and sane
+		Assert.IsTrue( bank.Apply( Opcode.SETLIGHT, 0, 32767 ) );
+		Assert.AreEqual( new NVector3( PointLightMath.ColourBound ), light.Colour );
+		Assert.IsTrue( bank.Apply( Opcode.COLOURLIGHT, 0, -32768, 0, 0 ) );
+		Assert.AreEqual( -PointLightMath.ColourBound, light.Colour.X );
 		// the other light is untouched
 		Assert.AreEqual( NVector3.One, bank.Find( 7 )!.Colour );
 	}
@@ -350,6 +400,13 @@ public class ObjectLightTests
 		lights.Clear();
 		bank.AppendTo( lights, nodes, placement );
 		Assert.AreEqual( 1, lights.Count, "an off light is not given to the renderer" );
+		// a dummy hidden by its node state puts its light out
+		bank.Apply( Opcode.ENABLELIGHT, 0 );
+		lights.Clear();
+		bank.AppendTo( lights, nodes, placement, node => node == bank.Find( 0 )!.NodeIndex );
+		Assert.AreEqual( 1, lights.Count );
+		Assert.AreEqual( 4f + 6 * 0.2f, lights[0].Position.Z, 1e-4f, "only the other light (l7, at the same height) is left" );
+		Assert.AreEqual( 100f + (4 + 30) * 0.2f, lights[0].Position.X, 1e-4f );
 		// a light whose node is not in the pose list is skipped rather than faulting
 		lights.Clear();
 		bank.AppendTo( lights, nodes.Take( 1 ).ToList(), placement );
@@ -373,6 +430,9 @@ public class ObjectLightTests
 		Assert.IsTrue( fresh.Find( 0 )!.On );
 		Assert.IsFalse( fresh.Find( 7 )!.On );
 		Assert.AreEqual( new NVector3( 1f, 0.8f, 0.4f ), fresh.Find( 0 )!.BaseColour, "the base colour is the model's, not saved" );
+		// Restore applies the same validation as the snapshot's
+		Assert.ThrowsException<InvalidDataException>( () => fresh.Restore( new[] { new ObjectLightRecord { Number = 0, On = true, Red = float.NaN, Green = 1, Blue = 1 } } ) );
+		Assert.ThrowsException<InvalidDataException>( () => fresh.Restore( new[] { new ObjectLightRecord { Number = 0, Red = 1, Green = 1, Blue = 1 }, new ObjectLightRecord { Number = 0, Red = 1, Green = 1, Blue = 1 } } ) );
 		// a number the model no longer has is reported, not an error
 		CollectionAssert.AreEqual( new[] { 42 }, fresh.Restore( new[] { new ObjectLightRecord { Number = 42, On = true, Red = 1, Green = 1, Blue = 1 } } ).ToArray() );
 
@@ -381,7 +441,9 @@ public class ObjectLightTests
 		Invalid( new ObjectLightRecord { Number = -1, Red = 1, Green = 1, Blue = 1 } );
 		Invalid( new ObjectLightRecord { Number = 40000, Red = 1, Green = 1, Blue = 1 } );
 		Invalid( new ObjectLightRecord { Number = 1, Red = 1, Green = 1, Blue = 1 }, new ObjectLightRecord { Number = 1, Red = 1, Green = 1, Blue = 1 } );
-		Invalid( new ObjectLightRecord { Number = 1, Red = 2, Green = 1, Blue = 1 } );
+		Invalid( new ObjectLightRecord { Number = 1, Red = 4.5f, Green = 1, Blue = 1 } );
+		Invalid( new ObjectLightRecord { Number = 1, Red = -5, Green = 1, Blue = 1 } );
+		ObjectLightBank.ValidateRecords( new[] { new ObjectLightRecord { Number = 1, Red = -2, Green = 3.5f, Blue = 1 } } );
 		Invalid( new ObjectLightRecord { Number = 1, Red = float.NaN, Green = 1, Blue = 1 } );
 		Invalid( Enumerable.Range( 0, ObjectLightBank.MaximumLights + 1 ).Select( number => new ObjectLightRecord { Number = number, Red = 1, Green = 1, Blue = 1 } ).ToArray() );
 	}

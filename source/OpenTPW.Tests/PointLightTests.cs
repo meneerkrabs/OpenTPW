@@ -208,6 +208,85 @@ public class PointLightTests
 		Assert.AreEqual( 9f, PointLightSet.BoxDistanceSquared( min, max, new SVector3( 7, 21, 31 ) ) );
 	}
 
+	[TestMethod]
+	public void TheBoxOfARotatedModelIsTheBoxOfItsTransformedCorners()
+	{
+		var random = new Random( 5 );
+		for ( var trial = 0; trial < 50; trial++ )
+		{
+			var matrix = Matrix4x4.CreateScale( 0.2f + (float)random.NextDouble() ) * Matrix4x4.CreateFromYawPitchRoll( (float)random.NextDouble() * 6, (float)random.NextDouble() * 6, (float)random.NextDouble() * 6 ) * Matrix4x4.CreateTranslation( random.Next( -50, 50 ), random.Next( -50, 50 ), random.Next( -50, 50 ) );
+			var min = new SVector3( -random.Next( 1, 9 ), -random.Next( 1, 9 ), -random.Next( 1, 9 ) );
+			var max = new SVector3( random.Next( 1, 9 ), random.Next( 1, 9 ), random.Next( 1, 9 ) );
+			PointLightSet.TransformBox( min, max, matrix, out var low, out var high );
+			var expectedLow = new SVector3( float.MaxValue );
+			var expectedHigh = new SVector3( float.MinValue );
+			for ( var corner = 0; corner < 8; corner++ )
+			{
+				var point = SVector3.Transform( new SVector3( ( corner & 1 ) != 0 ? max.X : min.X, ( corner & 2 ) != 0 ? max.Y : min.Y, ( corner & 4 ) != 0 ? max.Z : min.Z ), matrix );
+				expectedLow = SVector3.Min( expectedLow, point );
+				expectedHigh = SVector3.Max( expectedHigh, point );
+			}
+			Assert.IsTrue( SVector3.Distance( expectedLow, low ) < 1e-3f && SVector3.Distance( expectedHigh, high ) < 1e-3f, $"trial {trial}" );
+		}
+	}
+
+	private static PointLightSet RandomScene( Random random, int lights, float size )
+	{
+		var set = new PointLightSet();
+		set.Add( new FixedSource( Enumerable.Range( 0, lights ).Select( _ => new PointLight( new SVector3( (float)random.NextDouble() * size, (float)random.NextDouble() * size, (float)random.NextDouble() * 6 ),
+			new SVector3( 1, 0.5f, 0.25f ), 4f + (float)random.NextDouble() * 20f ) ).ToArray() ) );
+		set.Gather( null );
+		return set;
+	}
+
+	[TestMethod]
+	public void TheGridGivesTheSameLightsInTheSameOrderAsScanningEveryLight()
+	{
+		var random = new Random( 11 );
+		foreach ( var (lights, size) in new[] { (7, 100f), (8, 100f), (40, 300f), (64, 600f), (200, 150f), (64, 40f) } )
+		{
+			var set = RandomScene( random, lights, size );
+			var viaGrid = new PointLightGpu[PointLightSet.MaxPerDraw];
+			var viaScan = new PointLightGpu[PointLightSet.MaxPerDraw];
+			for ( var draw = 0; draw < 400; draw++ )
+			{
+				var min = new SVector3( (float)random.NextDouble() * size - 10, (float)random.NextDouble() * size - 10, 0 );
+				var extent = new SVector3( 0.5f + (float)random.NextDouble() * ( draw % 7 == 0 ? size : 8 ), 0.5f + (float)random.NextDouble() * ( draw % 7 == 0 ? size : 8 ), 3 );
+				var camera = new SVector3( size / 2, size / 2, 60 );
+				var a = set.Select( min, min + extent, camera, viaGrid );
+				var b = set.SelectByScan( min, min + extent, camera, viaScan );
+				Assert.AreEqual( b, a, $"{lights} lights, draw {draw}" );
+				for ( var slot = 0; slot < a; slot++ )
+					Assert.AreEqual( viaScan[slot], viaGrid[slot], $"{lights} lights, draw {draw}, slot {slot}" );
+			}
+		}
+	}
+
+	[TestMethod]
+	public void SelectionCostWithSixtyFourLightsAndThousandsOfDrawsIsMeasured()
+	{
+		var random = new Random( 3 );
+		var set = RandomScene( random, 64, 400f );
+		var boxes = Enumerable.Range( 0, 4000 ).Select( _ => new SVector3( (float)random.NextDouble() * 400f, (float)random.NextDouble() * 400f, 0 ) ).ToArray();
+		var output = new PointLightGpu[PointLightSet.MaxPerDraw];
+		var camera = new SVector3( 200, 200, 80 );
+		long reached = 0;
+		double Time( bool grid )
+		{
+			var watch = System.Diagnostics.Stopwatch.StartNew();
+			for ( var round = 0; round < 25; round++ )
+				foreach ( var min in boxes )
+					reached += grid ? set.Select( min, min + new SVector3( 6, 6, 3 ), camera, output ) : set.SelectByScan( min, min + new SVector3( 6, 6, 3 ), camera, output );
+			return watch.Elapsed.TotalMilliseconds * 1000.0 / ( 25 * boxes.Length );
+		}
+		Time( true );
+		Time( false );
+		var scan = Time( false );
+		var grid = Time( true );
+		Console.WriteLine( $"64 lights over 400 x 400 units, 4000 small draw boxes: scan {scan:0.00} us per draw, grid {grid:0.00} us per draw ({reached} lights handed out)." );
+		Assert.IsTrue( reached > 0 );
+	}
+
 	// ---- the shaders ----
 
 	private static string ShaderText( string shader )

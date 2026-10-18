@@ -44,7 +44,7 @@ Blender scene --opentpw_export.py--> pool.glb --opentpw-kit object--> archive fo
   the game culls back faces, and a double-sided glTF material makes the converter warn.
 - **Lights.** A point light on a node (`KHR_lights_punctual`, in Blender a point light object) becomes a light dummy, the place a ride script's `ENABLELIGHT`, `DISABLELIGHT`, `SETLIGHT` and `COLOURLIGHT`
   switch and colour, and the renderer's point light ([LIGHTS.md](LIGHTS.md)). The custom properties `opentpw_light` (the light number, an integer from 0) and `opentpw_light_radius` (the radius in model units) go on
-  the light object; without a number the lights take the lowest free numbers in node order. The exporter writes lights (`export_lights`), the other light kinds are skipped.
+  the light object. Only a point light with `opentpw_light` becomes a light dummy (Blender's default scene has a light that is not the object's; the exporter warns about a point light without the property). The exporter writes lights (`export_lights`), the other light kinds are skipped.
 - **Textures.** The image name becomes the texture name, `<name>.tga` in the object's `textures/` folder. MD2 texture
   names are 20-byte fields, so a name may have at most 15 characters before `.tga`. tp.exe tries `<name>.wct` and then
   `<name>.tga` in the archive's `textures` folder ([ObjectAssets](../source/OpenTPW/World/Objects/ObjectAssets.cs)),
@@ -141,9 +141,9 @@ shape text, because the engine frame equals Blender's) follows from the same equ
 
 ### Lights
 
-A `KHR_lights_punctual` light of type `point` on a node → `AddLight( number, colour, radius )` on that node's dummy (`[EXT:object-lights]`, [LIGHTS.md](LIGHTS.md#the-model-format)): the light's `color`
+A `KHR_lights_punctual` light of type `point` on a node with `opentpw_light` → `AddLight( number, colour, radius )` on that node's dummy (`[EXT:object-lights]`, [LIGHTS.md](LIGHTS.md#the-model-format)): the light's `color`
   is the base colour (clamped to 0..1 with a warning), its `range` the radius in model units (a scene unit is one model unit; rounded, 1 to 65535; no `range` means the engine's default of 100), the node extra `opentpw_light` = n
-  the light number (else the lowest free number in node order, after the explicit ones) and `opentpw_light_radius` = r a radius that beats the range. The glTF `intensity` is **not carried** (candela or lux, its unit differs
+  the light number (**required**: a point light without it is skipped with a warning, because exporters write every light of a scene) and `opentpw_light_radius` = r a radius that beats the range. The glTF `intensity` is **not carried** (candela or lux, its unit differs
   between exporters; one warning per file when it is not 1): scale the colour, and a script's `SETLIGHT` dims the base colour at run time. Spot and directional lights are skipped with a warning. `KHR_lights_punctual` may be listed
   as a required extension (any other required extension is still refused). A node that is a rider head cannot also be a light, and numbers must be unique.
 - **Textures.** The glTF image's name without a known image extension is the texture name; it must be at most 15 printable ASCII characters, unique without case,

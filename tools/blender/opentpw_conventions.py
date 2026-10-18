@@ -12,10 +12,11 @@ Custom properties understood by the OpenTPW importer (written to glTF `extras`):
 - on a material: ``opentpw_wrap`` (bool, default True) wraps the texture in U and V (MD2 slot flag 0x10), else clamp;
   ``opentpw_self_lit`` (bool, default False) draws the mesh in one constant colour instead of per-vertex lighting
   (MD2 material word +0xC bit 0x1, used by the original for water, signs and glow);
-- on a point light object: ``opentpw_light`` (int 0..32767, optional) is the light number a script's ENABLELIGHT,
-  DISABLELIGHT, SETLIGHT and COLOURLIGHT address (without it the lights take the lowest free numbers in node order) and
-  ``opentpw_light_radius`` (int 1..65535, optional) the radius in model units (default 100); the light's colour is its
-  base colour and its intensity is not carried (docs/LIGHTS.md). Spot and sun lights are skipped.
+- on a point light object: ``opentpw_light`` (int 0..32767) makes it a light of the object, with the light number a
+  script's ENABLELIGHT, DISABLELIGHT, SETLIGHT and COLOURLIGHT address; a point light without it (Blender's default
+  scene has one) is not exported as a light dummy. ``opentpw_light_radius`` (int 1..65535, optional) is the radius in
+  model units (default 100); the light's colour is its base colour and its intensity is not carried (docs/LIGHTS.md).
+  Spot and sun lights are skipped.
 """
 
 CELL_UNITS = 10.0
@@ -25,6 +26,15 @@ WRAP_PROPERTY = "opentpw_wrap"
 SELF_LIT_PROPERTY = "opentpw_self_lit"
 LIGHT_PROPERTY = "opentpw_light"
 LIGHT_RADIUS_PROPERTY = "opentpw_light_radius"
+
+
+def light_warnings(objects):
+	"""Point lights without ``opentpw_light``: the converter skips them (they are not lights of the object)."""
+	return [
+		f"{obj.name}: a point light without {LIGHT_PROPERTY} is not exported as a light dummy"
+		for obj in objects
+		if obj.type == "LIGHT" and obj.data.type == "POINT" and LIGHT_PROPERTY not in obj.keys()
+	]
 
 
 def validate_scene(objects):

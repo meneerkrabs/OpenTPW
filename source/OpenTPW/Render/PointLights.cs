@@ -16,9 +16,12 @@ namespace OpenTPW;
 /// </summary>
 public readonly record struct PointLight( SVector3 Position, SVector3 Colour, float Radius )
 {
-	/// <summary>Whether the light can brighten anything: a finite position and a positive finite radius and a colour with a positive channel.</summary>
-	public bool IsUsable => float.IsFinite( Radius ) && Radius > 0f && float.IsFinite( Position.X ) && float.IsFinite( Position.Y ) && float.IsFinite( Position.Z )
-		&& float.IsFinite( Colour.X ) && float.IsFinite( Colour.Y ) && float.IsFinite( Colour.Z ) && ( Colour.X > 0f || Colour.Y > 0f || Colour.Z > 0f );
+	/// <summary>
+	/// Whether the light can change anything: a finite position, a finite radius of at least <see cref="PointLightMath.MinimumRadius"/> (a smaller one makes 1 / r2 overflow) and a finite colour
+	/// with a non-zero channel (a negative channel darkens, as the original's unclamped float colour would).
+	/// </summary>
+	public bool IsUsable => float.IsFinite( Radius ) && Radius >= PointLightMath.MinimumRadius && float.IsFinite( Position.X ) && float.IsFinite( Position.Y ) && float.IsFinite( Position.Z )
+		&& float.IsFinite( Colour.X ) && float.IsFinite( Colour.Y ) && float.IsFinite( Colour.Z ) && ( Colour.X != 0f || Colour.Y != 0f || Colour.Z != 0f );
 }
 
 /// <summary>Something that owns point lights (a placed object with light dummies): asked once per frame for the lights it shows now.</summary>
@@ -81,6 +84,18 @@ public static class PointLightMath
 	/// engine units (a cell is 10 model units).
 	/// </summary>
 	public static float ModelUnitsToEngine( float modelUnits ) => modelUnits * ObjectPlacement.ModelScale;
+
+	/// <summary>The smallest radius a light can have: one model unit (0.2 engine units). A smaller radius would make 1 / r2 overflow and the falloff NaN.</summary>
+	public const float MinimumRadiusModelUnits = 1f;
+
+	/// <summary>The smallest radius in engine units.</summary>
+	public static float MinimumRadius => ModelUnitsToEngine( MinimumRadiusModelUnits );
+
+	/// <summary>
+	/// The bound on each channel of a light colour, 4 either way. The original keeps the colour as unclamped floats (0x4587E0, 0x458890: an over-bright light and a negative, darkening one are
+	/// possible), so OpenTPW does not clamp to 0..1; the bound only keeps a huge operand (SETLIGHT 32767) from reaching the shader as a number of thousands.
+	/// </summary>
+	public const float ColourBound = 4f;
 
 	/// <summary>The default radius in engine units (20, ten cells).</summary>
 	public static float DefaultRadius => ModelUnitsToEngine( OriginalRadiusModelUnits );
@@ -145,6 +160,19 @@ public sealed class PointLightSet
 	private int count;
 	private readonly Candidate[] candidates = new Candidate[MaxPerDraw];
 
+	// The coarse XY grid of this frame's lights (built by Gather): every light is listed in each cell its sphere's XY box overlaps, so a draw only looks at the lights of the cells its own box covers.
+	private const int MaximumGridCells = 64;
+	private const int GridMinimumLights = 8;
+	private const int GridQueryLimit = 16;
+	private bool gridValid;
+	private float gridMinX, gridMinY, gridInverseCell;
+	private int gridWidth, gridHeight;
+	private int[] cellStart = Array.Empty<int>();
+	private int[] cellItems = Array.Empty<int>();
+	private int[] cellFill = Array.Empty<int>();
+	private int[] stamp = Array.Empty<int>();
+	private int queryId;
+
 	private struct Candidate
 	{
 		public float BoxDistanceSquared;
@@ -199,35 +227,144 @@ public sealed class PointLightSet
 				continue;
 			lights[count++] = light;
 		}
+		BuildGrid();
 	}
+
+	/// <summary>Lists every light in the grid cells its sphere overlaps (a counting sort into flat arrays; nothing is allocated once the arrays are big enough). Few lights keep the plain scan.</summary>
+	private void BuildGrid()
+	{
+		gridValid = false;
+		if ( count < GridMinimumLights )
+			return;
+		float minX = float.MaxValue, minY = float.MaxValue, maxX = float.MinValue, maxY = float.MinValue;
+		for ( var index = 0; index < count; index++ )
+		{
+			var light = lights[index];
+			minX = MathF.Min( minX, light.Position.X - light.Radius );
+			minY = MathF.Min( minY, light.Position.Y - light.Radius );
+			maxX = MathF.Max( maxX, light.Position.X + light.Radius );
+			maxY = MathF.Max( maxY, light.Position.Y + light.Radius );
+		}
+		var cell = MathF.Max( MathF.Max( maxX - minX, maxY - minY ) / MaximumGridCells, 1f );
+		gridMinX = minX;
+		gridMinY = minY;
+		gridInverseCell = 1f / cell;
+		gridWidth = Math.Min( (int)( ( maxX - minX ) * gridInverseCell ) + 1, MaximumGridCells );
+		gridHeight = Math.Min( (int)( ( maxY - minY ) * gridInverseCell ) + 1, MaximumGridCells );
+		var cells = gridWidth * gridHeight;
+		if ( cellStart.Length < cells + 1 )
+		{
+			cellStart = new int[cells + 1];
+			cellFill = new int[cells + 1];
+		}
+		Array.Clear( cellStart, 0, cells + 1 );
+		for ( var pass = 0; pass < 2; pass++ )
+		{
+			for ( var index = 0; index < count; index++ )
+			{
+				var (x0, y0, x1, y1) = CellRange( lights[index].Position.X - lights[index].Radius, lights[index].Position.Y - lights[index].Radius, lights[index].Position.X + lights[index].Radius, lights[index].Position.Y + lights[index].Radius );
+				for ( var y = y0; y <= y1; y++ )
+					for ( var x = x0; x <= x1; x++ )
+					{
+						var at = y * gridWidth + x;
+						if ( pass == 0 )
+							cellStart[at + 1]++;
+						else
+							cellItems[cellFill[at]++] = index;
+					}
+			}
+			if ( pass == 0 )
+			{
+				for ( var at = 0; at < cells; at++ )
+					cellStart[at + 1] += cellStart[at];
+				if ( cellItems.Length < cellStart[cells] )
+					cellItems = new int[cellStart[cells]];
+				Array.Copy( cellStart, cellFill, cells );
+			}
+		}
+		if ( stamp.Length < count )
+			stamp = new int[Math.Max( count, stamp.Length * 2 )];
+		gridValid = true;
+	}
+
+	private (int X0, int Y0, int X1, int Y1) CellRange( float minX, float minY, float maxX, float maxY ) => (
+		Math.Clamp( (int)MathF.Floor( ( minX - gridMinX ) * gridInverseCell ), 0, gridWidth - 1 ),
+		Math.Clamp( (int)MathF.Floor( ( minY - gridMinY ) * gridInverseCell ), 0, gridHeight - 1 ),
+		Math.Clamp( (int)MathF.Floor( ( maxX - gridMinX ) * gridInverseCell ), 0, gridWidth - 1 ),
+		Math.Clamp( (int)MathF.Floor( ( maxY - gridMinY ) * gridInverseCell ), 0, gridHeight - 1 ) );
 
 	/// <summary>
 	/// The lights for a draw whose world-space box is (<paramref name="boxMin"/>, <paramref name="boxMax"/>): the nearest <see cref="MaxPerDraw"/> that reach it, written to
-	/// <paramref name="output"/> (at least <see cref="MaxPerDraw"/> long). Returns how many.
+	/// <paramref name="output"/> (at least <see cref="MaxPerDraw"/> long). Returns how many. With enough lights a coarse XY grid limits the look to the cells the box covers (the
+	/// result is the same as scanning every light: the order below is total).
 	/// </summary>
 	internal int Select( SVector3 boxMin, SVector3 boxMax, SVector3 camera, Span<PointLightGpu> output )
 	{
 		var chosen = 0;
-		for ( var index = 0; index < count; index++ )
+		if ( gridValid )
 		{
-			var light = lights[index];
-			var boxDistance = BoxDistanceSquared( boxMin, boxMax, light.Position );
-			if ( boxDistance >= light.Radius * light.Radius )
-				continue;
-			var cameraDistance = SVector3.DistanceSquared( camera, light.Position );
-			// insertion into the sorted candidates; a full list drops its worst when the newcomer beats it
-			var at = chosen;
-			while ( at > 0 && Before( boxDistance, cameraDistance, index, candidates[at - 1] ) )
-				at--;
-			if ( at >= MaxPerDraw )
-				continue;
-			var last = chosen < MaxPerDraw ? chosen : MaxPerDraw - 1;
-			for ( var move = last; move > at; move-- )
-				candidates[move] = candidates[move - 1];
-			candidates[at] = new Candidate { BoxDistanceSquared = boxDistance, CameraDistanceSquared = cameraDistance, Index = index };
-			if ( chosen < MaxPerDraw )
-				chosen++;
+			var (x0, y0, x1, y1) = CellRange( boxMin.X, boxMin.Y, boxMax.X, boxMax.Y );
+			if ( ( x1 - x0 + 1 ) * ( y1 - y0 + 1 ) <= GridQueryLimit )
+			{
+				if ( ++queryId == int.MaxValue )
+				{
+					Array.Clear( stamp );
+					queryId = 1;
+				}
+				for ( var y = y0; y <= y1; y++ )
+					for ( var x = x0; x <= x1; x++ )
+					{
+						var at = y * gridWidth + x;
+						for ( var item = cellStart[at]; item < cellStart[at + 1]; item++ )
+						{
+							var index = cellItems[item];
+							if ( stamp[index] != queryId )
+							{
+								stamp[index] = queryId;
+								Consider( index, boxMin, boxMax, camera, ref chosen );
+							}
+						}
+					}
+				return Emit( chosen, output );
+			}
 		}
+		for ( var index = 0; index < count; index++ )
+			Consider( index, boxMin, boxMax, camera, ref chosen );
+		return Emit( chosen, output );
+	}
+
+	/// <summary>Selection by scanning every light, whatever the grid says (the reference the grid is tested against).</summary>
+	internal int SelectByScan( SVector3 boxMin, SVector3 boxMax, SVector3 camera, Span<PointLightGpu> output )
+	{
+		var chosen = 0;
+		for ( var index = 0; index < count; index++ )
+			Consider( index, boxMin, boxMax, camera, ref chosen );
+		return Emit( chosen, output );
+	}
+
+	private void Consider( int index, SVector3 boxMin, SVector3 boxMax, SVector3 camera, ref int chosen )
+	{
+		var light = lights[index];
+		var boxDistance = BoxDistanceSquared( boxMin, boxMax, light.Position );
+		if ( boxDistance >= light.Radius * light.Radius )
+			return;
+		var cameraDistance = SVector3.DistanceSquared( camera, light.Position );
+		// insertion into the sorted candidates; a full list drops its worst when the newcomer beats it
+		var at = chosen;
+		while ( at > 0 && Before( boxDistance, cameraDistance, index, candidates[at - 1] ) )
+			at--;
+		if ( at >= MaxPerDraw )
+			return;
+		var last = chosen < MaxPerDraw ? chosen : MaxPerDraw - 1;
+		for ( var move = last; move > at; move-- )
+			candidates[move] = candidates[move - 1];
+		candidates[at] = new Candidate { BoxDistanceSquared = boxDistance, CameraDistanceSquared = cameraDistance, Index = index };
+		if ( chosen < MaxPerDraw )
+			chosen++;
+	}
+
+	private int Emit( int chosen, Span<PointLightGpu> output )
+	{
 		for ( var slot = 0; slot < chosen; slot++ )
 			output[slot] = PointLightMath.ToGpu( lights[candidates[slot].Index] );
 		return chosen;
@@ -249,17 +386,17 @@ public sealed class PointLightSet
 		return SVector3.DistanceSquared( clamped, point );
 	}
 
-	/// <summary>The world-space box of a model-space box under <paramref name="model"/>.</summary>
+	/// <summary>The world-space box of a model-space box under <paramref name="model"/>: the centre moved, the half extents widened by the absolute matrix (the exact box of the transformed corners of an affine matrix).</summary>
 	internal static void TransformBox( SVector3 min, SVector3 max, in Matrix4x4 model, out SVector3 worldMin, out SVector3 worldMax )
 	{
-		worldMin = new SVector3( float.MaxValue );
-		worldMax = new SVector3( float.MinValue );
-		for ( var corner = 0; corner < 8; corner++ )
-		{
-			var point = SVector3.Transform( new SVector3( ( corner & 1 ) != 0 ? max.X : min.X, ( corner & 2 ) != 0 ? max.Y : min.Y, ( corner & 4 ) != 0 ? max.Z : min.Z ), model );
-			worldMin = SVector3.Min( worldMin, point );
-			worldMax = SVector3.Max( worldMax, point );
-		}
+		var centre = SVector3.Transform( ( min + max ) * 0.5f, model );
+		var half = ( max - min ) * 0.5f;
+		var extent = new SVector3(
+			MathF.Abs( model.M11 ) * half.X + MathF.Abs( model.M21 ) * half.Y + MathF.Abs( model.M31 ) * half.Z,
+			MathF.Abs( model.M12 ) * half.X + MathF.Abs( model.M22 ) * half.Y + MathF.Abs( model.M32 ) * half.Z,
+			MathF.Abs( model.M13 ) * half.X + MathF.Abs( model.M23 ) * half.Y + MathF.Abs( model.M33 ) * half.Z );
+		worldMin = centre - extent;
+		worldMax = centre + extent;
 	}
 
 	/// <summary>

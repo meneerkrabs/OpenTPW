@@ -17,7 +17,7 @@ as before.
 tp.exe has a CPU, per-vertex light system (`TPLight.cpp`; the Mac build's `CLight`, `CLightParallel` and `CLightPoint`):
 
 - The factory `0x457E70` builds a light of type 1 (ambient), 2 (directional, `CLightParallel`) or 3 (point, `CLightPoint`). A point light's defaults are a **radius of 100.0** (record +0x44), its square (+0x48) and one over
-  the square (+0x4C); an **off flag** `0x10000000` sits in the type word (+0x50) and the colour is a packed ARGB word at +0x54.
+  the square (+0x4C); an **off flag** `0x10000000` sits in the type word (+0x50) and the colour is four floats at +0x04..+0x10 (which the lighting `0x5741B0` reads; a packed ARGB word at +0x54 is a second copy for other users).
 - `0x5744D0` links the lights without the off flag, `0x5743A0` moves them into a model's space, and the vertex lighting `0x5741B0` sums them per vertex: the ambient colour, the directional lights (`N . L`), the
   **point lights** (the vertex's squared distance `d2` to the light is compared with `r2`; a vertex at or beyond the radius gets nothing, else `(r2 - d2) x (1 / r2)` times the light colour is added, **with no normal
   term**) and a sixth type. `0x574530` packs the vertex colours, `0x5836B0` marks lighting dirty (the meshes `0x57AA10` and the terrain `0x56EF10` are relit).
@@ -28,7 +28,7 @@ tp.exe has a CPU, per-vertex light system (`TPLight.cpp`; the Mac build's `CLigh
 ## The renderer
 
 **Model.** Every lit draw (the ground, placed objects, coasters, tracks, tours, the pool deck and basin) can carry up to **16 point lights** (`PointLightSet.MaxPerDraw`). A light is a position in engine units, a
-colour (linear 0..1 channels) and a radius in engine units. The shader adds, per pixel, for each light
+colour (linear channels, normally 0..1) and a radius in engine units. The shader adds, per pixel, for each light
 
 ```
 share  = max( (r2 - d2) * (1 / r2), 0 )        r2 = radius^2, d2 = squared distance from the pixel's world position to the light
@@ -45,7 +45,7 @@ original's default radius of 100 is **20 engine units, ten cells**. The light's 
 
 1. Sources register once (a placed object with light dummies implements `IPointLightSource`). At the start of every frame `Level.Render` calls `Gather`, which asks each source for the lights that are on and drops
    those that are unusable or whose sphere lies wholly outside the view frustum (left, right, bottom, top and near planes of the view-projection).
-2. Each draw of a lit material takes its model's bounds, transforms the eight corners to a world box and calls `Select`: lights whose sphere does not reach the box (`distance(box, light) >= radius`) are
+2. Each draw of a lit material takes its model's bounds, moves the box to world space (the centre moved, the half extents widened by the absolute matrix) and calls `Select`: lights whose sphere does not reach the box (`distance(box, light) >= radius`) are
    rejected, the rest are ordered by the squared distance from the light to the box (0 inside it), then by the squared distance to the camera, then by the order the sources gave them, and the nearest 16
    are kept. The order is deterministic for a given camera. A big draw, such as the ground (one mesh), gets the 16 lights nearest the camera among those in view; farther ones do not light it until the
    camera moves (the limit of one uniform array per draw). With no light in view a draw does no light work at all.
@@ -65,16 +65,14 @@ particles are pre-rendered sprites or unlit billboards (as in the original) and 
 **No lights, no change.** A draw without lights takes the same code path as before the lights existed: the same shader source apart from a branch on `g_flLightCount > 0.5` that adds nothing, the same 272-byte
 upload with a zero in a padding slot that was always zero (the pool parts' wave phase moved to the water only) and the same texture and fog arithmetic. `PointLightTests` checks the layout (offsets,
 sizes, upload size 272), that the byte image of a lit draw's block differs from a plain one only in the count, that the CPU falloff (`PointLightMath.Sum`, the same expression the shaders use, which the
-tests compare with the shader text) of no light is exactly zero, and which lights reach which box. There is no pixel comparison in the test suite (it needs a GPU window). It was measured once by hand, on Metal: a native
-offscreen `--capture-world` of the jungle park at frame 200 from a build before this change and one after it. Below the sky (rows 349 to 842 of 843: the ground, the objects, the pools' place) the two images are
-pixel for pixel identical; above it the sky differs, but it differs just as much between two runs of the *same* build (its clouds scroll with the wall clock: 1,003 differing pixels between two runs of the old build,
-about 1,800 between old and new). The captures were not kept.
+tests compare with the shader text) of no light is exactly zero, and which lights reach which box. There is no pixel comparison in the test suite (it needs a GPU window), and no capture of the renderer
+was taken for this feature: the identity rests on the CPU-side facts above and on the shader text.
 
 **Looking at a light.** `--debug-light x,y,height,radius[,red,green,blue]` (smoke-only, `[EXT:debug-light]`) adds one fixed light a few frames after the original level is up, at x, y, height relative to
-the park camera's target in engine units (a cell is 2) and a radius in engine units (the default radius is 20); the colour is three 0..1 channels (white without). With `--capture-world` it shows what a light does
-without placing an object: `--debug-light 0,0,6,24,1,0.5,0.2 --capture-world light.png --capture-frames 200` changed about 11,000 more pixels than the sky's own noise on the same park.
+the park camera's target in engine units (a cell is 2) and a radius in engine units (the default radius is 20); the colour is three 0..1 channels (white without). It lets someone look at what a light does
+without placing an object.
 
-**Cost.** `Gather` runs once a frame and does nothing without sources. A draw's `Select` is a loop over the lights in view with a box-distance test and, per kept light, one insertion into 16 slots; the
+**Cost.** `Gather` runs once a frame and does nothing without sources. `Gather` also sorts the lights into a coarse XY grid (at most 64 x 64 cells, each light in every cell its sphere overlaps; from 8 lights up). A draw's `Select` looks only at the lights of the cells its box covers (a box covering more than 16 cells, such as the ground, scans every light) with a box-distance test and, per kept light, one insertion into 16 slots; the result is the same as scanning every light (a test checks it on random scenes). The draw's box is moved to world space as centre plus the absolute matrix times the half extents, and the 784-byte block is built only for a draw that a light reaches. The
 upload grows by 32 bytes per light. Nothing is allocated after the first frame. The per-pixel cost is a loop of at most 16 iterations of a dot product and a multiply-add, skipped by a uniform branch when
 the count is zero. Measured on one Apple-silicon Mac while it was shared with other builds (a Release build, the jungle park of `ENGINE-PERFORMANCE.md`, `--no-vsync --perf-run 3000 --perf-arrivals 3`, four
 alternating runs of the build before and the build after this change, no light in the park): the whole `Renderer.Update` call 1.91, 2.01, 2.01 and 2.17 ms before, 1.93, 1.96, 1.90 and 2.16 ms after; the world
@@ -120,25 +118,25 @@ They behave as the original's handlers (`0x555C7A` to `0x555D9A`), with one deli
 | --- | --- | --- |
 | `ENABLELIGHT` | `light` | clears the light's off flag (the light shines) |
 | `DISABLELIGHT` | `light` | sets the off flag (the light is dark; the colour is kept) |
-| `SETLIGHT` | `light level` | colour = **base colour** x `level` x 0.01 (so 100 is the full base colour, 50 half, 200 twice, held to 1 per channel) |
-| `COLOURLIGHT` | `light red green blue` | colour = each operand x 0.01 (held to 0..1 per channel); a later `SETLIGHT` scales the base colour again, not this colour |
+| `SETLIGHT` | `light level` | colour = **base colour** x `level` x 0.01 (so 100 is the full base colour, 50 half, 200 twice) |
+| `COLOURLIGHT` | `light red green blue` | colour = each operand x 0.01; a later `SETLIGHT` scales the base colour again, not this colour |
 
-None of them touches the script's flags. **A missing light is a safe no-op.** The original looks the dummy up and uses the result without a check, and its instance builder (`0x44A870`) never fills the light pointer of a
+The colour is a float and is **not clamped to 0..1**, as the original keeps it (`0x4587E0`, `0x458890` store floats; the packed ARGB word they also write is truncated and is not what the lighting reads): `SETLIGHT 200` is twice the base colour and a negative operand darkens. OpenTPW only bounds each channel to +-4 so a huge operand stays finite (`PointLightMath.ColourBound`); the model's own base colour (the data block, the glTF colour) has channels from 0 to 1. A light's radius is at least one model unit (a smaller `.sam` radius is ignored). A dummy hidden by its node-state bit (the animator's hidden bit) puts its light out. None of them touches the script's flags. **A missing light is a safe no-op.** The original looks the dummy up and uses the result without a check, and its instance builder (`0x44A870`) never fills the light pointer of a
 dummy, so a script that used a light there would fault; here a number the model does not have changes nothing and is logged once per object, opcode and number (`OriginalObjectRuntime.PerformLight`). The four are no
 longer unimplemented effects (`APPROX:RIDES-046` is retired); a bare `RideVM` with no game systems still counts them as unimplemented, as for any opcode with no host.
 
 ### Saves
 
-The state of each light (on or off, the current colour as three 0..1 channels) is saved in the object's runtime snapshot (`OriginalObjectRuntimeSnapshot.Lights`), so a resumed park shows the same lights. An
+The state of each light (on or off, the current colour as three channels from -4 to 4) is saved in the object's runtime snapshot (`OriginalObjectRuntimeSnapshot.Lights`), so a resumed park shows the same lights. An
 object whose model has no light writes no `Lights` member, so every saved park of the original objects is byte for byte what it was. The member is optional and validated on load (at most 64 lights, unique numbers
-in range, finite channels from 0 to 1); a saved number that the model no longer has is dropped with a note (the model changed since the save), never an error. The base colour and radius are not saved: they come from the model and
+in range, finite channels within +-4); a saved number that the model no longer has is dropped with a note (the model changed since the save), never an error. The base colour and radius are not saved: they come from the model and
 the `.sam` again. No state hash reads the lights (`OriginalObjectEffects.AddCanonicalState` hashes the animator only), and the determinism pins (`DeterminismTests`, the fixed-run hashes, the park-resume tests) are unchanged.
 
 ### The content kit
 
 `ModelBuilder` writes light dummies: `node.AddLight( number, colour, radiusModelUnits )` on a dummy node (numbers unique, a node has one attribute record, so a light and a rider head cannot share a node). The glTF
 converter reads `KHR_lights_punctual` **point lights** on nodes into dummies ([CONTENT-KIT.md](CONTENT-KIT.md#lights)): the light's colour is the base colour, its `range` is the radius in model units (a scene unit is a model unit),
-the node extras `opentpw_light` (the number) and `opentpw_light_radius` set the number and the radius by hand (Blender's lights have no range). The glTF intensity is not carried (its unit differs between exporters) and spot
+only a point light on a node with the extra `opentpw_light` (the number) becomes a dummy (an exporter writes every light of a scene, and Blender's default scene has one; a point light without the extra is skipped with a warning, and the Blender exporter warns too), and `opentpw_light_radius` sets the radius by hand (Blender's lights have no range). The glTF intensity is not carried (its unit differs between exporters) and spot
 and directional lights are skipped with a warning.
 
 ## The example mod
@@ -151,8 +149,7 @@ browser ships no `opentpw.example.*` mod).
 
 ## Not done
 
-- How a light *looks* was not judged: the captures above were compared by numbers only and thrown away, so the falloff against the sun and the 0.4 ambient, the example's radius and colours and the 16-light limit on the
+- How a light *looks* was not judged: nothing was looked at on screen, so the falloff against the sun and the 0.4 ambient, the example's radius and colours and the 16-light limit on the
   one-mesh ground are a first guess for someone to look at (`--debug-light`, or the example mod).
 - The sprites (guests, staff) and particles are not lit, as in the original; the pool water is not lit.
-- A light dummy's node being hidden by a node-state bit does not hide its light.
 - The renderer has no shadows and no light on the sky; the evening and night extension that would use these lights (lamps switching on at dusk, ride bulbs) is not built.

@@ -243,6 +243,48 @@ public class SnowCoverTests
 		Assert.AreEqual( Hash( extensionOn: false, forcedSnow: false ), Hash( extensionOn: true, forcedSnow: false ) );
 	}
 
+	[TestMethod]
+	public void TheWeatherAndItsSnapshotAreIdenticalWithAndWithoutTheCoverSubscribed()
+	{
+		// the weather is what the simulation reads (arrivals, the gate): a subscribed cover must leave its whole state and every later random draw as they were
+		string Run( bool withCover )
+		{
+			var weather = new ParkWeather( Hallow(), 5, 10, 10 );
+			SnowCover? cover = withCover ? new SnowCover() : null;
+			if ( cover != null )
+				weather.TurnStepped += w => cover.Step( w );
+			weather.AdvanceTo( 0 );
+			weather.ApplyQuality( 8 );
+			var trace = new StringBuilder();
+			for ( var turn = 1; turn <= 400; turn++ )
+			{
+				weather.AdvanceTo( ParkCalendar.TickOfTurn( turn ) );
+				cover?.Ease( 0.1 );
+				trace.Append( weather.Snow ).Append( weather.Rain ).Append( weather.CurrentDrops ).Append( ',' );
+			}
+			return trace + System.Text.Json.JsonSerializer.Serialize( weather.CaptureSnapshot() );
+		}
+		Assert.AreEqual( Run( false ), Run( true ) );
+	}
+
+	[TestMethod]
+	public void NoSimulationSourceReadsTheSnowCover()
+	{
+		// the cover may be read by the renderer and the save only; a reference from the economy, guests, rides, staff or the weather itself would let it into the simulation
+		var root = new DirectoryInfo( AppContext.BaseDirectory );
+		while ( root != null && !Directory.Exists( Path.Combine( root.FullName, "source", "OpenTPW", "World" ) ) )
+			root = root.Parent;
+		var world = Path.Combine( root?.FullName ?? throw new DirectoryNotFoundException( "source/OpenTPW/World" ), "source", "OpenTPW", "World" );
+		var allowed = new[] { "Winter", "Entity", "Objects", "Original", "Tracks", "Coasters" };
+		var offenders = Directory.EnumerateFiles( world, "*.cs", SearchOption.AllDirectories )
+			.Select( file => (file, relative: Path.GetRelativePath( world, file )) )
+			.Where( item => !allowed.Any( folder => item.relative.StartsWith( folder + Path.DirectorySeparatorChar ) ) )
+			.Where( item => !new[] { "Level.Resume.cs", "ParkResumeSaveFile.cs", "ParkResumeSnapshot.cs", "Level.Simulation.cs", "Level.cs" }.Contains( Path.GetFileName( item.file ) ) )
+			.Where( item => File.ReadAllLines( item.file ).Where( line => !line.TrimStart().StartsWith( "//" ) ).Any( line => line.Contains( "SnowCover" ) || line.Contains( "SnowUniform" ) ) )
+			.Select( item => item.relative ).ToList();
+		CollectionAssert.AreEqual( Array.Empty<string>(), offenders, "files outside the presentation and save paths that mention the snow cover: " + string.Join( ", ", offenders ) );
+	}
+
 	// ---- the uniform and the shaders ----
 
 	[TestMethod]

@@ -169,10 +169,14 @@ fragment {
       float n = snowNoise( q ) * 0.65 + snowNoise( q * 2.7 + vec2( 7.3, 3.1 ) ) * 0.35;
       float m = smoothstep( n - 0.08, n + 0.08, amount * slope * 1.15 );
       float luma = dot( albedo, vec3( 0.299, 0.587, 0.114 ) );
+      // full cover keeps a trace of the surface under it: the snow's brightness follows the albedo's relief (planks, stones, tufts show as a soft shade), a fine grain breaks up the flat white,
+      // and a twentieth of the albedo still shows through (the cover mix tops out below 1), so a covered meadow or kart track does not read as one featureless plane
+      float grain = snowNoise( q * 11.0 );
+      float relief = clamp( luma * 1.6, 0.0, 1.0 );
       vec3 snowColour = slush
         ? vec3( 0.46, 0.46, 0.43 ) * ( 0.75 + 0.5 * luma ) / lightLevel
-        : vec3( 0.90, 0.93, 1.0 ) * ( 0.84 + 0.16 * clamp( luma * 1.6, 0.0, 1.0 ) ) * ( 0.94 + 0.12 * n ) / lightLevel;
-      return mix( albedo, snowColour, m * ( slush ? 0.8 : 1.0 ) );
+        : vec3( 0.90, 0.93, 1.0 ) * ( 0.76 + 0.24 * relief ) * ( 0.93 + 0.12 * n ) * ( 0.96 + 0.08 * grain ) / lightLevel;
+      return mix( albedo, snowColour, m * ( slush ? 0.8 : 0.95 ) );
     }
 
     void main() 

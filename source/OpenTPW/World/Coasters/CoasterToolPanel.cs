@@ -178,7 +178,8 @@ public sealed class CoasterToolPanel
 			return;
 		if ( Track.IsChainStart( x, y ) && (!Track.IsComplete || Track.IsCut) )
 		{
-			var closing = Track.IsCut ? Track.CheckClosure() : Track.IsClosed ? builder.CheckComplete() : Track.CheckClosure();
+			// [EXT:coaster-completion-click] the closing target shows what its click answers: a pylon marked invalid elsewhere refuses the closing as well
+			var closing = Track.IsClosed && !Track.IsCut ? builder.CheckComplete() : builder.CheckClose();
 			Cursor = new CoasterCursor( x, y, closing, 0, true );
 			return;
 		}

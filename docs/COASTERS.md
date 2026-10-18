@@ -114,7 +114,14 @@ same frame from its cells (`CoasterStationLayout.FromCells`, `[EXT:coaster-stati
   `0x80000` and `0x100000` (`0x434060`): it is no loop node, its tangent has no previous neighbour and its next is S1, and
   it starts no link. OpenTPW completes only a closed circuit without invalid marks, in
   two clicks (`[EXT:coaster-completion-click]`); the original completes on one click on any
-  cell of type 4, 9 or 10 and refuses nothing (`0x435570`, cell evaluator `0x5345b8`).
+  cell of type 4, 9 or 10 and refuses nothing (`0x435570`, cell evaluator `0x5345b8`). The closing click is refused while
+  the closing link from the last pylon fails the validator or a pylon is still marked invalid: the circuit stays open, the
+  hovered closing target is already marked refused, and the HUD says why ("The track can't be completed from the last pylon…",
+  "Move the pylons marked red…"). A closed circuit whose closing link fails (closed by an earlier build, or a pylon moved
+  after the closing) can never complete and takes no new pylon; entering the tool opens it again
+  (`[EXT:coaster-failing-closure-opens]`), so it is built on from its last pylon. The ride window shows such a coaster as
+  TRACK INCOMPLETE and greys its door ([UI.md](UI.md)); the reopening guard's coaster test is the guests' predicate
+  (complete, not crossing itself, not in the tool, `0x441970`).
 
 Headless API (tests, the M3/M4 gates):
 

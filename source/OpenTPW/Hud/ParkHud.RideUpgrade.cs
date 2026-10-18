@@ -64,7 +64,8 @@ public sealed partial class ParkHud
 	private void UpdateRideUpgradeButton( UiInput input )
 	{
 		if ( rideUpgradeButton == null ) return;
-		rideUpgradeButton.Visible = InfoArmOpen && IsUpgradeListTarget( selectedObject );
+		// a condemned ride's window hides its upgrade button (0x4ad4e0, ApplyObjectStatus)
+		rideUpgradeButton.Visible = InfoArmOpen && IsUpgradeListTarget( selectedObject ) && !objectCondemned;
 		if ( (input.LeftDown || input.LeftPressed || input.LeftReleased)
 			&& (rideUpgradeButton.Visible || Stack.Top is RideUpgradeScreen) && UpgradeInputCaptured() )
 			upgradeMouseGestureBlocked = true;

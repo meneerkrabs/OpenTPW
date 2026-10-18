@@ -35,7 +35,7 @@ public static class FeatureGates
 
 	/// <summary>
 	/// [EXT:rain-mood-extension] The <c>opentpw.rain-mood</c> extension is on for this run: guests lose or gain happiness, thirst and hunger in rain, storm and snow (docs/UMBRELLAS.md). Off by default, and not in a Theme Park Inc
-	/// run, which has the original rule itself.
+	/// run, where OpenTPW does not implement the weather rule (the extension is only offered for Theme Park World parks).
 	/// </summary>
 	public static bool RainMood => OpenTpwExtensions.IsEnabled( OfficialExtensions.RainMood ) && !GameEditions.IsThemeParkInc;
 

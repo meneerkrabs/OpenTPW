@@ -12,18 +12,26 @@ public sealed partial class GuestSimulation
 
 	/// <summary>
 	/// The rain mood step of one guest on its own update (every fourth park turn, before the needs step): in rain, storm or snow, on the first update of a qualifying day, the guest's happiness, thirst and hunger get the
-	/// generation row's deltas and an open umbrella softens a happiness loss (<see cref="RainMoodRules.Apply"/>). Every guest is touched, queued or riding ones too.
+	/// generation row's deltas and an umbrella that was already open when the step began softens a happiness loss (<see cref="RainMoodRules.Apply"/>). Every guest is touched, queued or riding ones too.
 	/// </summary>
 	// [BIN:TPI-EXE:0x611050 weather rule] called from the guest update 0x619B50 for every guest, wherever it is; the day gate, the weather word +0x70 and the clamped sums are the original's
 	// [EXT:rain-mood-once-per-day] once per qualifying day instead of on every update of it: the original writes its day (+0x2E8) and never reads it, so the rule hits on every update of those days (about six a game day)
-	// [EXT:rain-mood-imported-age] a guest without a known time in the park (an imported original guest) counts as new, so its day is 0 for good and the rule applies once to it
-	private void UpdateRainMood( Guest guest, RainMoodSettings settings )
+	// [BIN:TPI-EXE:0x611334 modifier] the umbrella modifier (0x6111BE to 0x6111D3) belongs to the state the guest has when the rule starts (the switch's case 4), so umbrellaWasOpen is read before the umbrella step turns 1 into 4 or a due 3 into 4
+	private void UpdateRainMood( Guest guest, RainMoodSettings settings, bool umbrellaWasOpen )
 	{
 		var weather = UmbrellaWeatherState?.Invoke() ?? UmbrellaRules.WeatherNone;
-		var age = AgeTurnsOf( guest );
+		var age = RainMoodAgeTurnsOf( guest );
 		if ( !RainMoodRules.Applies( age, weather, guest.RainMoodDay ) )
 			return;
-		(guest.Happiness, guest.Thirst, guest.Hunger) = RainMoodRules.Apply( guest.Happiness, guest.Thirst, guest.Hunger, weather, guest.UmbrellaState == UmbrellaRules.StateOpen, settings );
+		(guest.Happiness, guest.Thirst, guest.Hunger) = RainMoodRules.Apply( guest.Happiness, guest.Thirst, guest.Hunger, weather, umbrellaWasOpen, settings );
 		guest.RainMoodDay = RainMoodRules.DayOf( age ) + 1;
 	}
+
+	/// <summary>
+	/// The guest's age in park turns for the rain mood's day gate: its time in the park, or, for an imported original guest without one, the turns since the import (<see cref="Guest.RainMoodAgeStartTurn"/>), so the rule applies to it
+	/// normally from then on. A guest with neither counts as new (age 0).
+	/// </summary>
+	// [EXT:rain-mood-imported-age] user-approved 2026-10-18 ("Tellen vanaf het laden"): an imported original guest's age counts from the load (the import turn), so the day gate then opens every fourth day instead of staying at age 0 for good
+	internal long RainMoodAgeTurnsOf( Guest guest ) =>
+		guest.TimeInParkSeconds != null || guest.RainMoodAgeStartTurn is not { } start ? AgeTurnsOf( guest ) : Math.Max( 0, ParkTurn - start );
 }

@@ -895,12 +895,14 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	private void UpdateNeedsTurn( Guest guest )
 	{
 		var turn = (uint)ParkTurn;
+		// [BIN:TPI-EXE:0x611334 umbrella switch] the switch on the state reads it once at the top of the rule: only a guest who is already open (4) when the rule starts gets the happiness modifier, never one the step below opens (1 to 4 at 0x6111E3, a due 3 at 0x611206)
+		var umbrellaWasOpen = guest.UmbrellaState == UmbrellaRules.StateOpen;
 		// [EXT:umbrellas-extension] the umbrella rule runs first on the guest's own phase, as Theme Park Inc's weather rule opens its needs block; only a guest who owns an umbrella is touched
 		if ( guest.UmbrellaState != UmbrellaRules.StateNone && NeedsUpdate.IsPhase( turn, guest.Id ) )
 			UpdateUmbrella( guest, turn );
 		// [EXT:rain-mood-extension] the mood rule follows the umbrella step on the same phase, for every guest in every state (Theme Park Inc's rule runs for all of them); off unless the extension sets the settings
 		if ( RainMood != null && NeedsUpdate.IsPhase( turn, guest.Id ) )
-			UpdateRainMood( guest, RainMood );
+			UpdateRainMood( guest, RainMood, umbrellaWasOpen );
 		var cell = Litter?.Environment.At( guest.CellX, guest.CellY ) ?? default;
 		var result = NeedsUpdate.Apply( new GuestMeters( guest.Happiness, guest.Thirst, guest.Hunger, guest.Toilet, guest.Nausea ), guest.ExitLevel, turn, guest.Id,
 			cell.Happiness, cell.Illness, cell.Hunger );
@@ -3543,6 +3545,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			UmbrellaType = guest.UmbrellaType,
 			UmbrellaDueTurn = guest.UmbrellaDueTurn,
 			RainMoodDay = guest.RainMoodDay,
+			RainMoodAgeStartTurn = guest.RainMoodAgeStartTurn,
 			QueueJoinHappiness = guest.QueueJoinHappiness,
 			QueueCellIndex = guest.QueueCellIndex,
 			QueueTargetIndex = guest.QueueTargetIndex,
@@ -3812,6 +3815,9 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			// [EXT:rain-mood-once-per-day] the optional day of the rule's last application: never negative
 			if ( guest.RainMoodDay < 0 )
 				Error( $"Guest {guest.Id} rain mood day {guest.RainMoodDay} is negative." );
+			// [EXT:rain-mood-imported-age] the optional load turn of an imported guest: never negative, and only for a guest without a time in the park
+			if ( guest.RainMoodAgeStartTurn is { } ageStart && (ageStart < 0 || guest.TimeInParkSeconds != null) )
+				Error( $"Guest {guest.Id} rain mood age start {ageStart} is negative or set for a guest with a known time in the park." );
 			if ( guest.BinId < 0 || (guest.BinId != 0) != (guest.State == GuestState.ThrowingAwayLitter) )
 				Error( $"Guest {guest.Id} bin {guest.BinId} does not match its state {guest.State}." );
 			Bounded( guest.Id, guest.QueueJoinHappiness, nameof( guest.QueueJoinHappiness ), 0, 100 );
@@ -4196,6 +4202,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		guest.UmbrellaType = snapshot.UmbrellaType;
 		guest.UmbrellaDueTurn = snapshot.UmbrellaDueTurn;
 		guest.RainMoodDay = snapshot.RainMoodDay;
+		guest.RainMoodAgeStartTurn = snapshot.RainMoodAgeStartTurn;
 		guest.QueueJoinHappiness = snapshot.QueueJoinHappiness;
 		guest.QueueCellIndex = snapshot.QueueCellIndex;
 		guest.QueueTargetIndex = snapshot.QueueTargetIndex;
@@ -4342,6 +4349,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			// [EXT:rain-mood-once-per-day] the day of the rule's last application joins the digest only once it has applied (every park without the extension keeps its pins)
 			if ( guest.RainMoodDay != 0 )
 				hash.Add( 0x5241494EL + guest.RainMoodDay );
+			if ( guest.RainMoodAgeStartTurn is { } rainMoodAgeStart )
+				hash.Add( 0x52414153L + rainMoodAgeStart );
 			hash.Add( guest.QueuePosition );
 			hash.Add( guest.QueueJoinTurn );
 			hash.Add( guest.LastQueueWaitTurns );
@@ -4453,6 +4462,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			}
 			if ( guest.RainMoodDay != 0 )
 				Add( 0x5241494EL + guest.RainMoodDay );
+			if ( guest.RainMoodAgeStartTurn is { } rainMoodAgeStart )
+				Add( 0x52414153L + rainMoodAgeStart );
 			AddFloat( guest.Happiness );
 			Add( guest.ExitLevel );
 			Add( guest.Money );

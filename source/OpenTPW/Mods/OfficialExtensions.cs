@@ -70,7 +70,7 @@ public static class OfficialExtensions
 	public static IOpenTpwExtension Umbrellas { get; } = new OpenTpwExtension( "opentpw.umbrellas", "Umbrellas", new ModVersion( 1, 0, 0 ), DefaultEnabled: true, AffectsSimulation: true );
 
 	/// <summary>
-	/// The rain mood extension (docs/UMBRELLAS.md, "The rain mood penalty"): Theme Park Inc's weather rule for the guests' meters, which Theme Park World does not have. In rain, storm and snow a guest's happiness, thirst and hunger change
+	/// The rain mood extension (docs/UMBRELLAS.md, "The rain mood rule (phase U4)"): Theme Park Inc's weather rule for the guests' meters, which Theme Park World does not have. In rain, storm and snow a guest's happiness, thirst and hunger change
 	/// by the shipped kid row, once per qualifying day, and an open umbrella softens a happiness loss. Off by default; it changes every park with weather, so a save always records it while it is on
 	/// (it is not in <c>ParkResumeMods.UsedOnlyExtensionIds</c>) and its version is the rule identity. It does not need the umbrellas extension, and the umbrellas work without it.
 	/// </summary>

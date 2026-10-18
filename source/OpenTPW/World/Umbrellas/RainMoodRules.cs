@@ -37,7 +37,7 @@ public sealed record RainMoodSettings( RainMoodRow Kid, int UmbrellaModifier )
 }
 
 /// <summary>
-/// The rain mood rule as pure functions (docs/UMBRELLAS.md, "The rain mood penalty"): Theme Park Inc's weather rule changes a guest's happiness, thirst and hunger in rain, storm and snow, and an open umbrella softens a
+/// The rain mood rule as pure functions (docs/UMBRELLAS.md, "The rain mood rule (phase U4)"): Theme Park Inc's weather rule changes a guest's happiness, thirst and hunger in rain, storm and snow, and an open umbrella softens a
 /// happiness loss. Theme Park Inc applies it on every update of a qualifying day; this extension applies it once per qualifying day per guest.
 /// </summary>
 public static class RainMoodRules

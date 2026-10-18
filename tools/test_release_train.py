@@ -193,6 +193,76 @@ class WorkflowTests(unittest.TestCase):
         release = self.path.with_name('release.yml').read_text()
         self.assertIn('group: release-${{ inputs.version || github.ref_name }}', release)
 
+    def test_green_main_skipped_during_release_catches_up_once_after_completion(self):
+        tags = ['v0.8.6']
+        self.assertEqual(decide(tags, active=[{'status': 'in_progress'}])['action'], 'skip')
+        # Release A finishes on an older commit; its completion wakes the same planner for green main B.
+        tags.append('v0.8.7')
+        result = decide(tags)
+        self.assertEqual((result['action'], result['version'], result['commit']), ('release', 'v0.8.8', HEAD))
+        self.assertEqual(decide(tags, active=[{'status': 'queued'}])['action'], 'skip')
+        tags.append('v0.8.8')
+        self.assertEqual(decide(tags, at_head=['v0.8.8'])['action'], 'skip')
+        # Completion never substitutes for green main, and another active release still blocks it.
+        for runs in ([], [{'status': 'queued'}], [{'status': 'completed', 'conclusion': 'failure'}]):
+            self.assertEqual(decide(['v0.8.7'], runs=runs)['action'], 'skip')
+
+    def test_catchup_dispatch_contract_and_bounded_wait(self):
+        workflow = self.path.read_text()
+        self.assertIn("if: inputs.wait_for_release_run != ''", workflow)
+        self.assertIn('timeout-minutes: 3', workflow)
+        self.assertLess(workflow.index('name: Wait for the completed release'), workflow.index('uses: actions/checkout@'))
+        release = self.path.with_name('release.yml').read_text()
+        self.assertIn("github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && needs.configure.outputs.prerelease == 'false'", release)
+        self.assertIn('-f dry_run=false -f wait_for_release_run="$GITHUB_RUN_ID"', release)
+        self.assertLess(release.index('name: Create GitHub release'), release.index('name: Reconsider green main'))
+
+    @unittest.skipUnless(shutil.which('bash') and shutil.which('jq'), 'bash and jq needed for workflow shell test')
+    def test_actual_catchup_wait_rejects_wrong_source_or_unsuccessful_completion(self):
+        workflow = self.path.read_text()
+        section = workflow.split('      - name: Wait for the completed release\n', 1)[1]
+        script = section.split('        run: |\n', 1)[1].split('      - uses:', 1)[0]
+        script = '\n'.join(line[10:] for line in script.splitlines())
+        valid = dict(path='.github/workflows/release.yml', event='workflow_dispatch', head_branch='main',
+                     repository=dict(full_name='o/r'), status='completed', conclusion='success')
+        for changes, run_id, succeeds in (
+                ({}, '123', True),
+                ({'initial_status': 'in_progress'}, '123', True),
+                ({}, 'not-a-run', False),
+                ({'path': '.github/workflows/build.yml'}, '123', False),
+                ({'event': 'push'}, '123', False),
+                ({'head_branch': 'feature'}, '123', False),
+                ({'repository': {'full_name': 'fork/r'}}, '123', False),
+                ({'status': 'in_progress', 'conclusion': None}, '123', False),
+                ({'conclusion': 'failure'}, '123', False),
+                ({'conclusion': 'cancelled'}, '123', False)):
+            with self.subTest(changes=changes, run_id=run_id), tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+                (root / 'fixture.json').write_text(json.dumps(valid | changes))
+                env = dict(os.environ, RUNNER_TEMP=temp, RELEASE_RUN=run_id, GITHUB_REPOSITORY='o/r')
+                mocks = r'''gh() {
+  local first=false
+  if [[ ! -f "$RUNNER_TEMP/api-calls" ]]; then first=true; fi
+  printf '%s\n' "$@" >> "$RUNNER_TEMP/api-calls"
+  if [[ "$first" == true ]] && jq -e '.initial_status == "in_progress"' "$RUNNER_TEMP/fixture.json" > /dev/null; then
+    jq '.status = "in_progress" | .conclusion = null' "$RUNNER_TEMP/fixture.json"
+  else
+    cat "$RUNNER_TEMP/fixture.json"
+  fi
+}
+sleep() { :; }
+'''
+                result = subprocess.run(['bash', '-e', '-c', mocks + script], env=env, capture_output=True, text=True)
+                self.assertEqual(result.returncode == 0, succeeds, result.stderr)
+                if run_id == 'not-a-run':
+                    self.assertFalse((root / 'api-calls').exists())
+                elif changes.get('initial_status') == 'in_progress':
+                    self.assertEqual((root / 'api-calls').read_text().count('api\n'), 2)
+                elif changes.get('status') == 'in_progress':
+                    self.assertEqual((root / 'api-calls').read_text().count('api\n'), 31)
+                else:
+                    self.assertEqual((root / 'api-calls').read_text().count('api\n'), 1)
+
     @unittest.skipUnless(shutil.which('bash') and shutil.which('jq'), 'bash and jq needed for workflow shell test')
     def test_actual_dispatch_shell_rechecks_changed_plan_and_pins_commit(self):
         workflow = self.path.read_text()

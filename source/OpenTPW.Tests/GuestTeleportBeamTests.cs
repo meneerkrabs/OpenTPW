@@ -19,14 +19,12 @@ public class GuestTeleportBeamTests
 		var beamed = new List<int>();
 		rig.Simulation.Teleported += guest => beamed.Add( guest.Id );
 		var guest = rig.Send();
-		Assert.IsTrue( beamed.Count <= 1, "boarding may already have run inside Send" );
 		var host = (IRideVisitorHost)rig.Simulation;
-		var before = beamed.Count;
-		host.OnVisitorReleased( rig.Ride, guest.Id );
-		Assert.AreEqual( before + 1, beamed.Count, "leaving beams once" );
-		Assert.IsTrue( beamed.All( id => id == guest.Id ) );
 		host.OnVisitorBoarded( rig.Ride, guest.Id );
-		Assert.AreEqual( before + 2, beamed.Count, "boarding beams once" );
+		Assert.AreEqual( 1, beamed.Count, "boarding beams once" );
+		host.OnVisitorReleased( rig.Ride, guest.Id );
+		Assert.AreEqual( 2, beamed.Count, "leaving beams once" );
+		Assert.IsTrue( beamed.All( id => id == guest.Id ) );
 	}
 
 	[TestMethod]

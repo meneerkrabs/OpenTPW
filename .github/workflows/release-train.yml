@@ -13,6 +13,10 @@ on:
         description: 'Only report what the train would release; start nothing'
         default: true
         type: boolean
+      wait_for_release_run:
+        description: 'Internal catch-up: wait for this Release builds run to finish successfully'
+        default: ''
+        type: string
 # Two trains never overlap; a later train waits for the running one instead of cancelling it.
 concurrency:
   group: release-train
@@ -34,6 +38,34 @@ jobs:
       contents: read
       actions: write   # read the build runs and start Release builds (a tag pushed by GITHUB_TOKEN would start nothing)
     steps:
+      - name: Wait for the completed release
+        if: inputs.wait_for_release_run != ''
+        timeout-minutes: 3
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_RUN: ${{ inputs.wait_for_release_run }}
+        run: |
+          # Explicit dispatch works with GITHUB_TOKEN; its downstream workflow_run event may be suppressed.
+          # The source dispatch returns before its own final cleanup, so wait without holding up the source.
+          if [[ ! "$RELEASE_RUN" =~ ^[0-9]+$ ]]; then
+            echo 'The catch-up source must be a numeric release run ID.' >&2
+            exit 1
+          fi
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RELEASE_RUN" > "$RUNNER_TEMP/source-release.json"
+          jq -e --arg repo "$GITHUB_REPOSITORY" '
+            .path == ".github/workflows/release.yml" and .event == "workflow_dispatch" and
+            .head_branch == "main" and .repository.full_name == $repo
+          ' "$RUNNER_TEMP/source-release.json" > /dev/null
+          for attempt in $(seq 30); do
+            if [[ "$(jq -r .status "$RUNNER_TEMP/source-release.json")" == completed ]]; then
+              jq -e '.conclusion == "success"' "$RUNNER_TEMP/source-release.json" > /dev/null
+              exit 0
+            fi
+            sleep 5
+            gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RELEASE_RUN" > "$RUNNER_TEMP/source-release.json"
+          done
+          echo 'The source release did not complete within the catch-up wait; starting nothing.' >&2
+          exit 1
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           ref: main

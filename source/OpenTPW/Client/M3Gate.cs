@@ -47,6 +47,8 @@ public sealed record M3GateOptions
 	public IGuestDecisions? GuestDecisions { get; init; }
 	/// <summary>Called with the run's guests after the last tick and before the objects are stopped: stopping a ride turns its queue away, which a measurement must not count.</summary>
 	public Action<GuestSimulation>? BeforeTeardown { get; init; }
+	/// <summary>Called with the run's guests right after they are built, before anything runs (the guest report's litter-bin proxies, docs/SMARTER-GUESTS.md, phase 6b); null for the gate's own runs.</summary>
+	public Action<GuestSimulation>? GuestSetup { get; init; }
 }
 
 public sealed record M3GateReport( M3GateOptions Options, JsonObject TimeMapping, IReadOnlyList<M3GateRow> Rows, double WallSeconds )
@@ -322,6 +324,7 @@ internal sealed class M3GateRun
 		if ( options.ArrivalTimeBetween is int interval )
 			guestSettings.ArrivalTimeBetween = interval;
 		guests = new GuestSimulation( grid, guestSettings, options.Seed, options.GuestDecisions ) { Observer = options.GuestObserver };
+		options.GuestSetup?.Invoke( guests );
 		if ( options.SweptTurns )
 		{
 			// the park's one thing pool as Level builds it: the world's ten singletons, then the gate and the lights, so the first guest is thing 13

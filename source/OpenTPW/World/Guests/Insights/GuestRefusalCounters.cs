@@ -95,5 +95,9 @@ public sealed class GuestObserverChain : IGuestObserver
 	public void Vomited( Guest guest ) { first.Vomited( guest ); second.Vomited( guest ); }
 	public void Thought( Guest guest, GuestThought thought ) { first.Thought( guest, thought ); second.Thought( guest, thought ); }
 	public void WanderGoalMoved( Guest guest ) { first.WanderGoalMoved( guest ); second.WanderGoalMoved( guest ); }
+
+	public void LitterDropped( Guest guest ) { first.LitterDropped( guest ); second.LitterDropped( guest ); }
+
+	public void LitterBinned( Guest guest ) { first.LitterBinned( guest ); second.LitterBinned( guest ); }
 	public void PathComplained( Guest guest, PathComplaint complaint ) { first.PathComplained( guest, complaint ); second.PathComplained( guest, complaint ); }
 }

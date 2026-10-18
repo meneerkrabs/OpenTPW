@@ -56,7 +56,7 @@ public class GuestScreamTests
 	[TestMethod]
 	public void WithoutTheSoundServiceNoScreamStartsAndTheHandleIsRefused()
 	{
-		Assert.IsNull( GameAudio.StartScream( () => null, 2, 50, null ) );
+		Assert.IsNull( GameAudio.StartScream( 2, 50, null ) );
 		Assert.IsNull( GameAudio.SingleScream( 2, 50, null ) );
 	}
 

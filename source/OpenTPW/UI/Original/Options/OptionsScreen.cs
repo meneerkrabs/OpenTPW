@@ -519,6 +519,11 @@ public static class OptionsScreen
 			() => services.Languages.Select( language => Prefix( OpenTpwText.Language ) + LanguageName( language ) ),
 			direction => state.Language = CycleWrap( services.Languages, state.Language, direction ) );
 
+		// [EXT:periodic-autosave] on/off row for the periodic autosave (on by default); the pending value is the shared options object, which Cancel restores
+		Row( "autosave", () => Prefix( OpenTpwText.AutosaveOption ) + strings[services.Options.Autosave ? UIStrings.On : UIStrings.Off],
+			() => new[] { UIStrings.On, UIStrings.Off }.Select( value => Prefix( OpenTpwText.AutosaveOption ) + strings[value] ),
+			_ => services.Options.Autosave = !services.Options.Autosave, strings.Extra( OpenTpwText.AutosaveHelp ) );
+
 		// Effective size and fallback reason as small dark text in the free area below the rows.
 		screen.Add( new UiLabel
 		{

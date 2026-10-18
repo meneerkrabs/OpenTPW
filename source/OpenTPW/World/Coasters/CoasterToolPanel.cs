@@ -201,7 +201,7 @@ public sealed class CoasterToolPanel
 	/// </summary>
 	// [BIN:TPW-EXE:0x434f10 placement area] the box around the reference node (the last node, the node before the cut) has the half size trunc(sqrt(pylon +0xa0)) + 1 = the maximum place distance + 1 cells, clamped to the map; its upper edges are exclusive (0x5240c0..0x524470)
 	// [BIN:TPW-EXE:0x5243a6 area cell test] a cell is marked (face 0x11f) when the validator 0x434740 passes it, its cell flag 0x40 is clear, the object on it (or the parent of a type 0xc or 0x11 object) is not a ride (0x19) and has none of the types 0xb, 0xd, 0x10, 0x12, 0x19, the cell's own type is none of 9, 0xa, 3, 4, 7, 0x1e and it is not a type 1 cell with flag 0x20
-	// [APPROX:COAST-028] the cell test is OpenTPW's occupancy (no path, queue, ride, scenery or other object on the cell, supplied by the level) in place of the original's type numbers, whose meaning is only partly known — evidence needed: the cell types 3, 4, 7, 9, 10, 0x1e and the object types 0xb, 0xd, 0x10, 0x12
+	// [BIN:TPW-EXE:0x5243a6 area cell test] the level supplies the original's cell test (Level.IsCoasterAreaCell): cell flag 0x40, the second layer's track tiles and fence posts, the cell types 3, 4, 7, 9, 10 and 0x1e, a path with flag 0x20
 	public IReadOnlyList<(int X, int Y)> PlacementArea
 	{
 		get

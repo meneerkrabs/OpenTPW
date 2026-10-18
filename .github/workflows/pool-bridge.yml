@@ -25,8 +25,8 @@ jobs:
           dotnet-version: 11.0.100-rc.2.26504.105
       - name: Run CPU regression tests on the exact proposed commit
         run: dotnet test source/OpenTPW.Tests/OpenTPW.Tests.csproj --configuration Release --nologo --logger "trx;LogFileName=pool-bridge.trx"
-      - name: Package native build for private runtime verification
-        run: dotnet publish source/OpenTPW/OpenTPW.csproj --configuration Release --runtime linux-x64 --self-contained true --output bridge-runtime --nologo
+      - name: Package native debug build with smoke-scene controls
+        run: dotnet publish source/OpenTPW/OpenTPW.csproj --configuration Debug --runtime linux-x64 --self-contained true --output bridge-runtime --nologo
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: pool-bridge-linux-${{ github.event.pull_request.head.sha }}

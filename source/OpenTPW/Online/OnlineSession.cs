@@ -1059,6 +1059,10 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 		// a send already queued finds no place and clears its own flag
 		lock ( moveLock )
 			latestMove = null;
+		// still logged in, so a version already known stays; a read for the connection just closed must not answer the next one
+		protocolCurrent = false;
+		fetchingServerInfo = false;
+		serverInfoEpoch++;
 	}
 
 	/// <summary>The current server's protocol version (<see cref="FetchServerInfo"/>); null before it is known.</summary>
@@ -1136,7 +1140,9 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 			await Task.Delay( delay );
 			Post( () =>
 			{
-				if ( disposed || generation != generationAtFail || Client != client || Chat != connection || protocolCurrent )
+				// a read started during the wait already owns the answer; replacing it would drop that answer
+				if ( disposed || generation != generationAtFail || Client != client || Chat != connection || protocolCurrent
+					|| fetchingServerInfo || epoch != serverInfoEpoch )
 					return;
 				BeginServerInfo( refresh: true, attempt: next );
 			} );

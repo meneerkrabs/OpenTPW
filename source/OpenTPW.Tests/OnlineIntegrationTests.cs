@@ -633,7 +633,7 @@ public class OnlineIntegrationTests
 	}
 
 	[TestMethod]
-	public void AWalkKeepsAQueuedHideTeleportOrAppearance()
+	public async Task AWalkKeepsAQueuedHideTeleportOrAppearance()
 	{
 		Assert.AreEqual( ChatMoveMode.Hide, OnlineSession.KeepPlaceMode( ChatMoveMode.Walk, ChatMoveMode.Hide ) );
 		Assert.AreEqual( ChatMoveMode.Teleport, OnlineSession.KeepPlaceMode( ChatMoveMode.Walk, ChatMoveMode.Teleport ) );
@@ -642,6 +642,51 @@ public class OnlineIntegrationTests
 		// a later mode replaces a hide: the ride ending is an appearance, not a walk
 		Assert.AreEqual( ChatMoveMode.Unhide, OnlineSession.KeepPlaceMode( ChatMoveMode.Unhide, ChatMoveMode.Hide ) );
 		Assert.AreEqual( ChatMoveMode.Teleport, OnlineSession.KeepPlaceMode( ChatMoveMode.Teleport, ChatMoveMode.Hide ) );
+
+		await using var server = await LoopbackServer.StartAsync( options => options.ChatBurst = 50 );
+		var release = new TaskCompletionSource<int>( TaskCreationOptions.RunContinuationsAsynchronously );
+		var (ann, http) = GatedSession( server.Url, "Ann", respond: async () => ServerInfoResponse( await release.Task ) );
+		using var cancel = new CancellationTokenSource();
+		var seen = new List<ChatEvent>();
+		try
+		{
+			ann.Register( "Ann", "correct horse" );
+			await PumpUntilIdle( ann );
+			ann.ConnectChat();
+			await PumpUntil( ann, () => ann.Chat != null );
+			Assert.IsFalse( ann.ProtocolCurrent, "the version read is still in flight" );
+
+			using var bobClient = await server.LoginAsync( "Bob" );
+			await using var bob = await bobClient.ConnectChatAsync();
+			var reading = Collect( bob, seen, cancel.Token );
+			var room = ChatProtocol.SatelliteRoom( 1 );
+			ann.JoinRoom( room );
+			await bob.JoinAsync( room );
+			await bob.MoveAsync( 0.5f, 0.5f, ChatMoveMode.Walk );
+			await PumpUntil( ann, () => ann.CurrentRoom == room );
+			// the hide stays queued while this connection's version is unknown, and the walk keeps that mode at the new place
+			ann.MoveTo( 0.25f, 0.75f, ChatMoveMode.Hide );
+			ann.MoveTo( 0.5f, 0.25f );
+			Assert.AreEqual( (0.5f, 0.25f), ann.RoomPositions["Ann"] );
+			var held = DateTime.UtcNow.AddMilliseconds( 300 );
+			while ( DateTime.UtcNow < held ) { ann.Pump(); await Task.Delay( 20 ); }
+			Assert.AreEqual( 0, MovesOf( seen, "Ann" ).Count, "a walk replaced the queued hide with a place" );
+
+			release.SetResult( 5 );
+			await PumpUntil( ann, () => ann.ProtocolCurrent && ann.ServerProtocol == 5 );
+			Assert.IsTrue( await Until( ann, () => MovesOf( seen, "Ann" ).Any( item => item.Mode == ChatMoveMode.Hide && item.X == 0.5f && item.Y == 0.25f ) ),
+				"the queued hide was not sent at the walked place: " + string.Join( " | ", MovesOf( seen, "Ann" ).Select( item => $"{item.Mode} {item.X},{item.Y}" ) ) );
+			cancel.Cancel();
+			await reading;
+		}
+		finally
+		{
+			cancel.Cancel();
+			release.TrySetResult( 5 );
+			ann.Dispose();
+			http.Dispose();
+			server.DeleteData();
+		}
 	}
 
 	[TestMethod]
@@ -848,6 +893,114 @@ public class OnlineIntegrationTests
 		{
 			cancel.Cancel();
 			release.TrySetResult( 5 );
+			ann.Dispose();
+			http.Dispose();
+			server.DeleteData();
+		}
+	}
+
+	[TestMethod]
+	public async Task AVersionRetryDoesNotReplaceAReadStartedDuringTheWait()
+	{
+		await using var server = await LoopbackServer.StartAsync( options => options.ChatBurst = 50 );
+		var calls = 0;
+		var started = new TaskCompletionSource<int>( TaskCreationOptions.RunContinuationsAsynchronously );
+		var (ann, http) = GatedSession( server.Url, "Ann", respond: async () =>
+		{
+			var index = Interlocked.Increment( ref calls );
+			if ( index == 1 )
+				return new HttpResponseMessage( HttpStatusCode.ServiceUnavailable );
+			return ServerInfoResponse( await started.Task );
+		} );
+		try
+		{
+			ann.SetServerInfoRetryDelays( new[] { TimeSpan.FromMilliseconds( 1000 ) } );
+			ann.Register( "Ann", "correct horse" );
+			await PumpUntilIdle( ann );
+			ann.ConnectChat();
+			var sawFailure = DateTime.UtcNow;
+			await PumpUntil( ann, () => ann.Chat != null && Volatile.Read( ref calls ) >= 1 );
+			sawFailure = DateTime.UtcNow;
+			// the failed read clears its in-flight flag, then waits; a read started in that wait must stay the one that answers
+			var secondBy = DateTime.UtcNow.AddMilliseconds( 700 );
+			while ( Volatile.Read( ref calls ) < 2 && DateTime.UtcNow < secondBy )
+			{
+				ann.Pump();
+				ann.FetchServerInfo();
+				await Task.Delay( 15 );
+			}
+			Assert.AreEqual( 2, Volatile.Read( ref calls ), "the read during the backoff never started" );
+			while ( DateTime.UtcNow < sawFailure.AddMilliseconds( 1600 ) )
+			{
+				ann.Pump();
+				await Task.Delay( 20 );
+			}
+			ann.Pump();
+			Assert.AreEqual( 2, Volatile.Read( ref calls ), "the backoff replaced a read that started during the wait" );
+			started.SetResult( 5 );
+			await PumpUntil( ann, () => ann.ProtocolCurrent && ann.ServerProtocol == 5 );
+			Assert.AreEqual( 2, Volatile.Read( ref calls ), "the answered read was asked again" );
+		}
+		finally
+		{
+			started.TrySetResult( 5 );
+			ann.Dispose();
+			http.Dispose();
+			server.DeleteData();
+		}
+	}
+
+	[TestMethod]
+	public async Task ClosingTheChatIgnoresTheVersionReadInFlight()
+	{
+		await using var server = await LoopbackServer.StartAsync( options => options.ChatBurst = 50 );
+		var gates = new List<TaskCompletionSource<int>>();
+		var (ann, http) = GatedSession( server.Url, "Ann", respond: async () =>
+		{
+			var gate = new TaskCompletionSource<int>( TaskCreationOptions.RunContinuationsAsynchronously );
+			lock ( gates )
+				gates.Add( gate );
+			return ServerInfoResponse( await gate.Task );
+		} );
+		int Reads() { lock ( gates ) return gates.Count; }
+		TaskCompletionSource<int> Gate( int index ) { lock ( gates ) return gates[index]; }
+		try
+		{
+			ann.Register( "Ann", "correct horse" );
+			await PumpUntilIdle( ann );
+			ann.ConnectChat();
+			await PumpUntil( ann, () => ann.Chat != null && Reads() >= 1 );
+			ann.CloseChat();
+			ann.Pump();
+			Assert.IsNull( ann.Chat );
+			Assert.IsFalse( ann.ProtocolCurrent );
+			Assert.IsNull( ann.ServerProtocol );
+			// the closed connection's read must not answer, and a new one can start (the in-flight flag was cleared)
+			ann.FetchServerInfo();
+			await WaitUntil( () => Reads() >= 2 );
+			Gate( 0 ).SetResult( 4 );
+			var quiet = DateTime.UtcNow.AddMilliseconds( 300 );
+			while ( DateTime.UtcNow < quiet ) { ann.Pump(); await Task.Delay( 20 ); }
+			Assert.IsNull( ann.ServerProtocol, "a version read for the closed chat answered the next one" );
+			Assert.IsFalse( ann.ProtocolCurrent );
+			Gate( 1 ).SetResult( 5 );
+			await PumpUntil( ann, () => ann.ServerProtocol == 5 );
+			Assert.IsFalse( ann.ProtocolCurrent, "a read with no open chat is not that connection's version" );
+
+			ann.ConnectChat();
+			await PumpUntil( ann, () => ann.Chat != null && Reads() >= 3 );
+			Gate( 2 ).SetResult( 5 );
+			await PumpUntil( ann, () => ann.ProtocolCurrent );
+			ann.CloseChat();
+			ann.Pump();
+			Assert.IsFalse( ann.ProtocolCurrent, "a closed chat is not a connection whose version is known" );
+			Assert.AreEqual( 5, ann.ServerProtocol, "closing the chat stays logged in" );
+		}
+		finally
+		{
+			lock ( gates )
+				foreach ( var gate in gates )
+					gate.TrySetResult( 5 );
 			ann.Dispose();
 			http.Dispose();
 			server.DeleteData();

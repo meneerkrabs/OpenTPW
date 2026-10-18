@@ -1212,11 +1212,20 @@ public class OnlineServerTests
 			await bob.MoveAsync( 0.5f, 0.5f, ChatMoveMode.Walk );
 			await carol.MoveAsync( 0.6f, 0.4f );
 			await ann.MoveAsync( 0.2f, 0.3f, ChatMoveMode.Walk );
-			await NextAsync( bob, item => item.Kind == ChatEventKind.Move && item.From == "Ann" );
-			await NextAsync( carol, item => item.Kind == ChatEventKind.Move && item.From == "Ann" );
+			// once Ann knows where both stand (her first movement's answer, or their own movements), the server has handled their movements
+			var known = new HashSet<string>();
+			while ( known.Count < 2 )
+				known.Add( (await NextAsync( ann, item => item.Kind == ChatEventKind.Move )).From! );
+			// Bob's first place for Ann can be the modeless snapshot of that first movement (ReceivesMovement is set before ReceivesModes, and the
+			// snapshot carries no mode). A later place, matched by its coordinates, is the one that has to arrive as a hide.
+			await ann.MoveAsync( 0.25f, 0.35f, ChatMoveMode.Walk );
+			bool AnnAt( ChatEvent item, float x ) => item.Kind == ChatEventKind.Move && item.From == "Ann" && item.X == x;
+			Assert.AreEqual( ChatMoveMode.Walk, (await NextAsync( bob, item => AnnAt( item, 0.25f ) )).Mode );
+			Assert.IsNull( (await NextAsync( carol, item => AnnAt( item, 0.25f ) )).Mode, "an older client gets no mode" );
 
-			await ann.MoveAsync( 0.2f, 0.3f, ChatMoveMode.Hide );
-			Assert.AreEqual( ChatMoveMode.Hide, (await NextAsync( bob, item => item.Kind == ChatEventKind.Move && item.From == "Ann" )).Mode );
+			await ann.MoveAsync( 0.25f, 0.35f, ChatMoveMode.Hide );
+			var hidden = await NextAsync( bob, item => item.Kind == ChatEventKind.Move && item.From == "Ann" );
+			Assert.AreEqual( ChatMoveMode.Hide, hidden.Mode, hidden.ToString() );
 			await ann.SendAsync( ChatCommand.Say, "riding" );
 			Assert.AreEqual( ChatEventKind.Say, (await NextAsync( carol, item => item.From == "Ann" )).Kind, "no movement of Ann reached Carol before her line" );
 

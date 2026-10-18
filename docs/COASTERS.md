@@ -152,7 +152,7 @@ placed once on the release. Backspace waits for a drag; a drag let go while the 
   pair is pending) for an unfinished track and on height for a finished one (`0x4455c0`).
 - **Build and loop**: a click places a pylon (loop mode places a pair, `0x442cd0`); the cursor cell is a blue or red blueprint face, the cost shows beside
   it, and the **placement area** is the box of the maximum place distance + 1 cells around the last node (`0x434f10`) whose cells pass the validator and
-  hold nothing (`0x5243a6`), drawn yellow and black (`BlueprintMarker.Area`, `APPROX`: the cell types and the texture). Hovering the chain start marks it
+  pass the original's cell test (`0x5243a6`, `Level.IsCoasterAreaCell`: cell flag `0x40` clear, no track tile or fence post, none of the cell types 3, 4, 7, 9, 10 and `0x1e`, no path with flag `0x20`), drawn yellow and black (`BlueprintMarker.Area`, `APPROX`: the texture). Hovering the chain start marks it
   as the closing target; a click closes the circuit.
 - **Height** (`0x441a00`): a press on a pylon picks it up; the loft parameter follows the pointer at 0.005 per pixel upward within `[max(0, (fMinHeight − h0)/(h1 − h0)),
   t + (fMaxHeight − the stack top's height)/(h1 − h0)]`; a clamped value moves the drag's origin so the pointer has to come back; the release credits
@@ -175,7 +175,7 @@ placed once on the release. Backspace waits for a drag; a drag let go while the 
   link into it is drawn in a copy of the invalid cross section (the first section: no PC `coaster.sam` sets `uiInvalidCrossSection`)
   with every edge in `blue.tga`, or `red.tga` when the validator refuses the cell (the marker textures the loader appends after the
   coaster's own, `0x42f390`). A hovered chain start (the closing target) takes the node flag `0x800000`, or `0x804000` when the closing link is refused (`0x4360c4`), and the marker
-  textures draw that node's own tag pairs (`0x43f4e0` with both nodes the same); the rebuild `0x43eb70` draws no link into the start. `0x4360c0` also sets `0x200000` on the ends and their neighbours; its reader is not traced.
+  textures draw that node's own tag pairs (`0x43f4e0` with both nodes the same); the rebuild `0x43eb70` draws no link into the start. `0x4360c0` also sets `0x200000` on the ends and their neighbours: it is the mark that makes the self-intersection pass `0x439ab0` re-test a node (`0x439b6b`), redundant here because the pass runs over every node. The rebuild `0x43eb70` samples and tests every track it draws, so while a coaster is built (and while a pylon is dragged) a link that crosses the track, the cursor's link included, is drawn with the crossing marker.
 
 ## Running
 
@@ -455,7 +455,7 @@ the dummy its loft, incline and bank clips move) with the stack dummy `TrackHeig
 
 ## Approximation register
 
-`CoasterApproximations` lists every `[APPROX:COAST-NNN]` tag: twelve open
+`CoasterApproximations` lists every `[APPROX:COAST-NNN]` tag: ten open
 IDs. COAST-022 (the train layout, the hop queue and the placement by the release time) and COAST-023 (the seat types, COAST 6's bounds
 and the ring sizes) were retired by the coaster train round of October 15 (`[EXT:coaster-fixed-step]`, `[EXT:coaster-car-fallback]` and
 `[EXT:coaster-full-ring]` are its deliberate differences). COAST-012 (the controller states and the tool's entry and exit) and COAST-019 (the sampler's closing pair) were retired by the
@@ -517,3 +517,15 @@ stub at `0x402BFD`, so a reader reads fields a generic key loader filled), COAST
 knot pass does at `0x4313A5`; C#'s curve keeps two truncating Mac-table lookups), COAST-015 (the knot pass `0x430CA0` clamps the loft parameter and writes it back, which every node built here
 already has: `ClampHeight`, `StationHeight`), COAST-029 (the PC rating pass `0x43C450` only sets the node's winch mark `0x800` on a floor speed) and COAST-032 (tp.exe's `SetCooperativeLevel` calls
 `0x563914` and `0x563B92` carry `DDSCL_FPUSETUP` without `FPUPRESERVE`, so DirectDraw sets single precision for the thread; the control word itself is not read back).
+
+The fidelity round of October 18 (tp.exe) retired COAST-029 and narrowed COAST-004, 011, 014, 028, 032, 033, 034 and 035. COAST-029: the rebuild
+`0x43eb70` runs the knot pass `0x430ed0`, then `0x432b50`, which clears the winch mark `0x800` on every node without `0x1000`, then the sampler
+`0x440c10` and the rating pass `0x43c450`, which sets it again on a floor speed; the creation parameter `0x20` of S0 and S1 gives them `0x1800`, so
+the two keep their mark (`CoasterNodeFlags.WinchKept`; a save from before it gets the pair again on load). COAST-004: the pass re-tests only the nodes
+marked `0x200000`; a node dropped out of an overflowed holder's list re-marks the holder (`0x43ad50`), so the pass repeats until no mark is left, the cut-end
+skip `0x10000` is built, and the rebuild runs the sampler and the pass on an unfinished chain too, so the build cursor's link and a dragged pylon show the
+crossing marker live (`CoasterRide.ChainCrossings`). COAST-014: the sampler's sample angles (`0x4411db` -> `0x43e590`) and the loop knot factor (`0x432430`)
+round the sine-table index to the nearest (the Mac lookups truncated); only the x87 arithmetic (COAST-032) is left. COAST-028: the placement area's cell test
+(`Level.IsCoasterAreaCell`, `0x5243a6` with the predicates `0x535db0`, `0x536310`..`0x536450`) and the tilt drag's camera yaw (`0x443371`, the park camera's
+`OriginalYaw`) are the original's. COAST-011: the options table's accessor `0x402bf0` is a virtual method (vtable `0x6fd630`), which explains why no static reader
+was found.

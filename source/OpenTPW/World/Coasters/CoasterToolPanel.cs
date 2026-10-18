@@ -234,7 +234,7 @@ public sealed class CoasterToolPanel
 	// ---- Picking ------------------------------------------------------------------------------------------
 
 	/// <summary>The pylon nodes standing on cell (x, y), lowest stack piece first (<c>0x443ee0</c> finds the pylon model under the pointer; the HUD chooses among a stack's pieces).</summary>
-	// [APPROX:COAST-028] the original picks the pylon model under the pointer; OpenTPW picks by cell and, in a stack, by the pointer's nearness to each piece's projected position (the HUD) — evidence needed: the original's picking of stacked pieces
+	// [APPROX:COAST-028] the original picks the pylon model under the pointer (0x443ee0 maps the picked model handle through the table 0x7a4610 to the node, skipping cell descriptors with flag 1); OpenTPW picks by cell and, in a stack, by the pointer's nearness to each piece's projected position (the HUD) — evidence needed: the engine's model pick under the pointer
 	public IReadOnlyList<int> NodesAt( int x, int y ) => Enumerable.Range( 0, Track.Nodes.Count )
 		.Where( index => !Track.Nodes[index].IsPylonless && Track.Nodes[index].X == x && Track.Nodes[index].Y == y )
 		.OrderBy( index => Track.Nodes[index].StackIndex ).ToList();

@@ -296,7 +296,7 @@ public sealed class CoasterRide
 	/// The ride view of a train's camera car (<see cref="CoasterDefinition.RideCameraCar"/>): position from the interpolated sample, forward from the sample direction, roll from the car's frame (<see cref="CarPose"/>).
 	/// False without that train.
 	/// </summary>
-	// [APPROX:COAST-011] the settings FIRSTPERSONVIEWDISTANCE, COASTERSMOOTHNESS and Info.FirstPersonSprites are not read by the ride view: tp.exe's option table (0x7442c0, entries 17 and 22, 0x3C bytes each) has no reader that was found (no instruction addresses an entry, 0x402BF0 is only in a table of destructor-like stubs at 0x6FD618, so a reader would read the fields a generic key loader filled) — evidence needed: a runtime read of the option entries, or a capture of the original ride view at other distances
+	// [APPROX:COAST-011] the settings FIRSTPERSONVIEWDISTANCE, COASTERSMOOTHNESS and Info.FirstPersonSprites are not read by the ride view: tp.exe's option table (0x7442c0, entries 17 and 22, 0x3C bytes each, defaults 4 and 9 at +0x28) has no reader that was found: no instruction addresses an entry or a field, and the accessor 0x402bf0 is the first virtual method of the options class (vtable 0x6fd630, instance built in 0x423bc0 and its neighbours), so a reader would call it virtually — evidence needed: a runtime read of the option entries, or a capture of the original ride view at other distances
 	public bool TryGetRideView( int train, out System.Numerics.Vector3 position, out System.Numerics.Vector3 forward, out float roll )
 	{
 		position = forward = default;
@@ -373,7 +373,7 @@ public sealed class CoasterRide
 	/// drawn with the crossing marker while it is built.
 	/// </summary>
 	// [BIN:TPW-EXE:0x43eb70 rebuild order] the only caller of 0x430ed0 (knot pass), 0x440c10 (sampler) and 0x439ab0 (pass), called from 0x435a30, 0x447d30 and 0x447d60; the sampler treats the chain's last node as the end node whatever the chain is
-	// [APPROX:COAST-026] a chain cut open by the demolish button is not sampled here (the original's sampler across the cut ends is not traced) and shows no build-time crossings
+	// [APPROX:COAST-004] a chain cut open by the demolish button is not sampled here (the original's sampler across the cut ends is not traced) and shows no build-time crossings
 	internal static IReadOnlyList<IReadOnlyList<int>> ChainCrossings( ICoasterCurve curve, IReadOnlyList<CoasterNode> chain, CoasterKnotPass pass, CoasterDefinition definition )
 	{
 		if ( chain.Count < 3 || pass.Knots.Length < 3 || chain.Any( node => (node.Flags & (CoasterNodeFlags.CutEnd | CoasterNodeFlags.CutStart)) != 0 ) )

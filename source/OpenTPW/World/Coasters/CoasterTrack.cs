@@ -1072,7 +1072,7 @@ public sealed class CoasterTrack
 	/// neighbours present, a curve, not a loop pylon), else the flag the node holds from its last curve pass. <paramref name="write"/> stores the verdicts on the nodes.
 	/// </summary>
 	// [BIN:TPW-EXE:0x431660 kept half turn] the flag lives in the node (+8): the straight, loop-pylon and end branches of the tangent routine do not touch it, so such a node keeps the half turn of its last curve pass
-	// [APPROX:COAST-033] only the controller's rebuild of a finished track stores the verdicts; the original's edit step rebuilds the track every frame of the build (0x435d50 → 0x444700), so a node's kept half turn can also come from a cursor position — evidence needed: a capture of a suspended coaster built with the cursor passing its straight nodes
+	// [APPROX:COAST-033] only the controller's rebuild of a finished track stores the verdicts; the original's edit step rebuilds the track every frame of the build (0x435d50 -> 0x43eb70), so a node's kept half turn can also come from a cursor position — evidence needed: a capture of a suspended coaster built with the cursor passing its straight nodes
 	internal bool[] PylonsTurnedBack( IReadOnlyList<CoasterNode> chain, IReadOnlyList<SVector3> positions, bool write = false )
 	{
 		var count = chain.Count;

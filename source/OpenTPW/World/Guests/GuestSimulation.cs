@@ -1266,6 +1266,16 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		}
 	}
 
+	/// <summary>The guest that heads the thing list of a cell (the one that entered it last), or null (tests).</summary>
+	internal Guest? HeadOfCell( int x, int y ) => occupants.TryGetValue( (x, y), out var list ) && list.Count > 0 ? list[^1] : null;
+
+	/// <summary>Moves a guest to a path cell and files it in that cell's list as a step into it does (tests).</summary>
+	internal void PlaceForTest( Guest guest, int x, int y )
+	{
+		PlaceOnGrid( guest, x, y );
+		Occupy( guest );
+	}
+
 	/// <summary>Files every guest under its cell, oldest entry first (a restore: the saved entry numbers give the order).</summary>
 	private void RebuildOccupants()
 	{

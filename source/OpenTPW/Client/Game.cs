@@ -519,6 +519,27 @@ internal static class Game
 				}
 			}
 		}
+		// [EXT:debug-light] smoke-only: once the original level is up, adds one fixed point light (docs/LIGHTS.md) at x,y,height relative to the park camera's target, in engine units (a cell is 2), with a radius in
+		// engine units (the original engine's default of 100 model units is 20) and an optional colour of three 0..1 channels (default white), so a capture or a look at the park shows what a light does
+		var debugLight = GetOption( args, "--debug-light", "x,y,height,radius[,red,green,blue] relative to the camera target, in engine units" );
+		if ( debugLight != null )
+		{
+			var lightValues = debugLight.Split( ',' ).Select( value => float.Parse( value, System.Globalization.CultureInfo.InvariantCulture ) ).ToArray();
+			if ( lightValues.Length is not (4 or 7) )
+				throw new ArgumentException( "--debug-light needs x,y,height,radius or x,y,height,radius,red,green,blue." );
+			var lightFrames = 0;
+			Render.PostUpdate += AddDebugLight;
+			void AddDebugLight()
+			{
+				if ( flow.Level is not { OriginalPark: not null } level || Camera.Mode is not ParkCameraMode park || ++lightFrames < 5 )
+					return;
+				Render.PostUpdate -= AddDebugLight;
+				var colour = lightValues.Length == 7 ? new System.Numerics.Vector3( lightValues[4], lightValues[5], lightValues[6] ) : System.Numerics.Vector3.One;
+				var light = new PointLight( new System.Numerics.Vector3( park.Target.X + lightValues[0], park.Target.Y + lightValues[1], park.Target.Z + lightValues[2] ), colour, lightValues[3] );
+				level.PointLights.Add( new FixedPointLightSource( light ) );
+				Log.Trace( FormattableString.Invariant( $"--debug-light: a point light at {light.Position.X:0.##},{light.Position.Y:0.##},{light.Position.Z:0.##}, radius {light.Radius:0.##}, colour {colour.X:0.##},{colour.Y:0.##},{colour.Z:0.##}." ) );
+			}
+		}
 		// [EXT:debug-pool] smoke-only: once the original level is up and the opentpw.pools extension is on, paints pool cells through the pool tool's own builder
 		// (Level.PoolBuilder.PaintCells, charged as the tool does) at the first place near the camera target (--capture-camera's when given) where every cell of the shape can be painted, so a
 		// capture shows the water and the edges (docs/POOLS.md). The shape is rectangles "x,y,w,h" relative to that place, separated by ';' (default a 6 x 4 basin

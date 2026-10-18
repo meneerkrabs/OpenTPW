@@ -9,8 +9,7 @@ scripts contain — `WAITABS` (45) and `MULT` (48) — also have handlers now
 A bare `RideVM` is VM-level execution: its effects go through a hook that records them as
 unimplemented. In a park, every placed original object runs its scripts against the game systems they talk to: the visitors
 (`RideVisitorBridge`), the animation channels, the sounds (events, screams, held object records), the particles, the ride-type controllers (TOUR, BUMP, COAST) and
-the clock. What still goes to the unimplemented hook is small: the four light opcodes (no shipped script and no shipped model has a light,
-`APPROX:RIDES-046`) and the object type's own sound list (ADDOBJ and EVENT type 10, no shipped script). BOUNCESETNODE and
+the clock. What still goes to the unimplemented hook is small: the object type's own sound list (ADDOBJ and EVENT type 10, no shipped script). BOUNCESETNODE and
 BOUNCESETBASE are served by the visitor bridge and the bouncing riders are drawn at their nodes ([below](#bounce-opcodes)).
 Container format and static corpus inventory: [RSE-SCRIPTS.md](RSE-SCRIPTS.md).
 
@@ -347,8 +346,11 @@ None of them occurs in a shipped script, but a script mod can use them (the Scri
   and ignores it for the sounds. Built on the EVENT path: the particle request carries the control, the sounds play as for EVENT.
 - **ENABLELIGHT / DISABLELIGHT** (`0x555C7A`, `0x555CCD`, `light`) look the model's light dummy up (class `0x20000`, number `light`, `0x44B220`), take its light record (`0x4587B0`) and clear/set its off flag `0x10000000`. **SETLIGHT**
   (`0x555D20`, `light level`, two operands) sets the record's colour to the base colour times `level x 0.01` (`0x4587E0`); **COLOURLIGHT** (`0x555D9A`, `light red green blue`) sets it from the three operands times 0.01 (`0x458890`); both also
-  store the packed ARGB word at +0x54. None of the four touches the flags. They are real effects, but no model of the game has a light dummy (a census of the 274 object models of the four themes finds none with class `0x20000`) and OpenTPW
-  draws no per-object dynamic lights, so they are hooked opcodes whose effect is an unimplemented one (counted and logged once, the script goes on): `APPROX:RIDES-046`.
+  store the packed ARGB word at +0x54. None of the four touches the flags. In the original they are real effects with nothing behind them: no model of the game has a light dummy (a census of the 274 object models of the four
+  themes finds none with class `0x20000`), the instance builder `0x44A870` never fills the light pointer of such a dummy, so a script that used them would fault, and no shipped script does. **OpenTPW implements them as an
+  extension** (`[EXT:object-lights]`, [LIGHTS.md](LIGHTS.md)): a model of its own (the content kit writes them) can carry light dummies, the opcodes switch, dim (`SETLIGHT`: base colour x level x 0.01) and colour
+  (`COLOURLIGHT`: operands x 0.01) the light of the object's dummy number `light`, and the renderer draws it as a point light. A number the model does not have changes nothing and is logged once per object, opcode and
+  number: deliberately safer than the original, which would use the missing record. They are not unimplemented effects any more (`OriginalObjectEffects`); a bare `RideVM` without game systems still counts them.
 - **GETCUSTPTCLCODE** (`0x5563D5`, `dest in`) resolves its second operand, drops it and stores the constant 0 in the result word and a variable destination: a stub in the original, built as such.
 
 ## Corpus run (`RideVMCorpusTests`)
@@ -579,7 +581,7 @@ The unit tests are `RideVMInternalsTests`.
   `Advance` call. The slice budget, the critical
   flag, HUSH/HOP, JSR/RETURN/PUSH/POP, the limbo table and TURBO's byte are
   ([below](#original-interpreter-internals)).
-- The ride lights (82–85, tp.exe `0x555C7A`–`0x555D9A`) have no light system to act on in OpenTPW (`APPROX:RIDES-046`); they are unimplemented effects that do not fault.
+- The ride lights (82–85, tp.exe `0x555C7A`–`0x555D9A`) act on the light dummies of an OpenTPW object's own model (`[EXT:object-lights]`, [LIGHTS.md](LIGHTS.md)); a missing light is a logged no-op, never a fault.
 - Visitor opcodes work for every placed original object (its `RideVisitorBridge`);
   riders are not drawn walking along the ride nodes (the walk table and its times are the original's, [TOURS.md](TOURS.md), TOUR-011), and a bounce
   rider is not yet drawn at its bounce node. The TOUR, BUMP and COAST commands go to their controllers ([TOURS.md](TOURS.md), [TRACKS.md](TRACKS.md), [COASTERS.md](COASTERS.md)).
@@ -734,10 +736,10 @@ handler attributes diverge.
 | 79 | `WALKST_FLOAT` | 1 | implemented | TPW-EXE 0x555B72 (`seconds a b`, resolved): starts the script's float: start = clock, duration = seconds x 1000 ms, a and b kept as words (the body's swing, render only); no effect; 1 corpus use (ZeroG: `WALKST_FLOAT VAR_DURATION 1000 1000`) |
 | 80 | `WALKFLOATSTAT` | 1 | implemented | TPW-EXE 0x555BD8: the float's duration word (0 once start + duration has passed) into the flags and a variable destination; ZeroG loops `WALKFLOATSTAT 0; BRANCH_NZ` for VAR_DURATION seconds |
 | 81 | `WALKFLOATSTOP` | 1 | implemented | TPW-EXE 0x555C11: with a float running, start = clock - the share spent (thousandths of the duration) and duration = 1000 (the float settles over the rest); no operands, no flags, no effect |
-| 82 | `ENABLELIGHT` | 0 | hooked | TPW-EXE 0x555C7A (`light`, resolved): looks the light dummy (class 0x20000, number `light`) up in the object's model (0x44B220), takes its light record (0x4587B0) and clears the record's off flag 0x10000000 (0x458910); flags untouched; no corpus use, no light in any shipped model (RIDES-046) |
-| 83 | `DISABLELIGHT` | 0 | hooked | TPW-EXE 0x555CCD (`light`, resolved): as ENABLELIGHT but sets the record's off flag 0x10000000 (0x458940); flags untouched; no corpus use (RIDES-046) |
-| 84 | `SETLIGHT` | 0 | hooked | TPW-EXE 0x555D20 (`light level`, resolved): the light record's colour becomes the light's base colour times level x 0.01 (0x4587E0: red, green and blue, alpha 1.0, and the packed ARGB word); flags untouched; no corpus use (RIDES-046) |
-| 85 | `COLOURLIGHT` | 0 | hooked | TPW-EXE 0x555D9A (`light red green blue`, resolved): each channel times 0.01 becomes the light record's colour (alpha 1.0, packed ARGB word with each channel times 255 truncated, 0x458890); flags untouched; no corpus use (RIDES-046) |
+| 82 | `ENABLELIGHT` | 0 | hooked | TPW-EXE 0x555C7A (`light`, resolved): looks the light dummy (class 0x20000, number `light`) up in the object's model (0x44B220), takes its light record (0x4587B0) and clears the record's off flag 0x10000000 (0x458910); flags untouched; no corpus use, no light in any shipped model; OpenTPW switches the light of the object's own light dummy, and a missing light is a logged no-op (EXT:object-lights, docs/LIGHTS.md) |
+| 83 | `DISABLELIGHT` | 0 | hooked | TPW-EXE 0x555CCD (`light`, resolved): as ENABLELIGHT but sets the record's off flag 0x10000000 (0x458940); flags untouched; no corpus use; OpenTPW: EXT:object-lights |
+| 84 | `SETLIGHT` | 0 | hooked | TPW-EXE 0x555D20 (`light level`, resolved): the light record's colour becomes the light's base colour times level x 0.01 (0x4587E0: red, green and blue, alpha 1.0, and the packed ARGB word); flags untouched; no corpus use; OpenTPW: EXT:object-lights |
+| 85 | `COLOURLIGHT` | 0 | hooked | TPW-EXE 0x555D9A (`light red green blue`, resolved): each channel times 0.01 becomes the light record's colour (alpha 1.0, packed ARGB word with each channel times 255 truncated, 0x458890); flags untouched; no corpus use; OpenTPW: EXT:object-lights |
 | 86 | `STARTSCREAM` | 40 | hooked | TPW-EXE 0x555E5E (`band level`, resolved): 0x551130(handle +0xD0, band, level, script speed word, object position in whole units) gives the handle (kept at +0xD0 and in the flags); band 0 plays nothing, a start while a handle is held is refused; all 40 corpus uses pass VAR_ONRIDE as the band |
 | 87 | `STOPSCREAM` | 80 | hooked | TPW-EXE 0x555EF7 (no operands): with a handle (+0xD0) calls 0x51C300(handle), then clears the handle |
 | 88 | `SINGLESCREAM` | 46 | hooked | TPW-EXE 0x555F1B (`band level`, resolved): a one-shot at the object's position (0x556AF0): level below 0 (the corpus's 0xFFFF, 44 of 46 uses) calls 0x551560, else 0x551320(band, level, script speed word); no handle kept |

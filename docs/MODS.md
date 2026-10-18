@@ -275,6 +275,11 @@ files, the caps (8 files, 256 KiB of source in all, 64 KiB each), safe mode and 
 are in [SCRIPT-MODS.md](SCRIPT-MODS.md#loading-and-the-manifest). A mod with scripts changes the simulation (next sections), and the mods
 screen says "Contains scripts" for it. The shipped example is `opentpw.example.patient-guests` (off by default; not in the web build).
 
+A second shipped example is a **data mod with a light**, `opentpw.example.lamp-lights` (off by default; not in the web build): a lamp post object whose model carries a light dummy and whose RSE script pulses, flickers and
+colour-cycles the light with the `ENABLELIGHT`, `DISABLELIGHT`, `SETLIGHT` and `COLOURLIGHT` opcodes. To add lights to your own object, give its model light dummies (the content kit writes them from glTF point lights or
+`ModelBuilder.AddLight`), tune them with the `Lights[n].*` keys of the object's `.sam` and drive them from the object's script; the lights are presentation only and are not part of a save's simulation state
+([LIGHTS.md](LIGHTS.md), [CONTENT-KIT.md](CONTENT-KIT.md#lights)).
+
 ## Resolution
 
 At startup, right after the compatibility settings, OpenTPW resolves the run's set once (`ModStartup`, `ModSet.Resolve`):

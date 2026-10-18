@@ -71,6 +71,7 @@ FEATURED = [
     ("MODS.md", "Extensions and mods"),
     ("SCRIPT-MODS.md", "Script mods (TPW Script)"),
     ("POOLS.md", "Pools (on by default)"),
+    ("LIGHTS.md", "Point lights and object lights"),
     ("TEXTURE-PACKS.md", "Texture packs"),
     ("LANGUAGES.md", "Languages"),
     ("COMPATIBILITY.md", "Compatibility"),

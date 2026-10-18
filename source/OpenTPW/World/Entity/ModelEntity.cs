@@ -64,7 +64,32 @@ public partial class ModelEntity : Entity
 			_padding2 = ViewDistanceScale ?? CompatibilityRuntime.RenderQuality.ViewDistanceScale,
 		}.WithFog();
 
-		Model.Material.Set( "ObjectUniformBuffer", uniformBuffer );
+		SetObjectUniforms( uniformBuffer, model );
 		Model.Draw();
+	}
+
+	/// <summary>
+	/// Writes the draw's uniform block. A draw with point lights in reach (<see cref="PointLightSet.Select"/> over its world box) writes the lights in the same upload; with none
+	/// in view, or on a shader that does not read them, it is the plain block as it always was.
+	/// </summary>
+	// [EXT:point-lights] the original's engine supports point lights but never creates one (docs/LIGHTS.md)
+	private protected void SetObjectUniforms( in ObjectUniformBuffer uniforms, in System.Numerics.Matrix4x4 model )
+	{
+		var material = Model!.Material;
+		if ( material.ReceivesPointLights && Level?.PointLights is { Count: > 0 } lights && Model.Bounds is { } bounds )
+		{
+			PointLightSet.TransformBox( bounds.Min, bounds.Max, model, out var boxMin, out var boxMax );
+			Span<PointLightGpu> chosen = stackalloc PointLightGpu[PointLightSet.MaxPerDraw];
+			var count = lights.Select( boxMin, boxMax, Camera.Position.GetSystemVector3(), chosen );
+			if ( count > 0 )
+			{
+				// the 784-byte block is built only for a draw that a light reaches
+				var lit = new LitObjectUniformBuffer { Base = uniforms };
+				chosen[..count].CopyTo( lit.Lights );
+				material.Set( "ObjectUniformBuffer", ref lit, count );
+				return;
+			}
+		}
+		material.Set( "ObjectUniformBuffer", uniforms );
 	}
 }

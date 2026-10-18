@@ -54,6 +54,12 @@ public sealed record ModelDummyAttribute( uint Type, uint Value, byte[] Reserved
 {
 	/// <summary>Attribute type flag 0x40: the record has a data block.</summary>
 	public const uint DataFlag = 0x40;
+
+	/// <summary>
+	/// Attribute class 0x20000: a light dummy, the light number in <see cref="Value"/> (tp.exe looks it up with 0x44B220 for ENABLELIGHT, DISABLELIGHT, SETLIGHT and COLOURLIGHT, 0x555C7A..0x555D9A). No shipped
+	/// model has one; OpenTPW's own models do ([EXT:object-lights], <see cref="ModelLights"/>).
+	/// </summary>
+	public const uint LightFlag = 0x20000;
 }
 
 /// <summary>

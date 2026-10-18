@@ -35,7 +35,8 @@ public class BuyRecentResearchTests
 		var list = (UiElement)Activator.CreateInstance( type, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic, null, new object[] { hud }, null )!;
 		list.Bounds = new UiRect( 1009, 179, 804, 723 );
 		list.Anchor = UiAnchor.Center;
-		list.Id = "buyList";
+		// Opening the window finds this private list by its init-only ID.
+		typeof( UiElement ).GetProperty( nameof( UiElement.Id ) )!.SetValue( list, "buyList" );
 		var screen = new UiScreen( "buy" ); screen.Add( list ); Set( hud, "buyScreen", screen );
 		var level = (Level)typeof( ParkHud ).GetField( "level", BindingFlags.Instance | BindingFlags.NonPublic )!.GetValue( hud )!;
 		var font = new FontAtlas( FontAtlasTests.CreateFont( 8, new FontAtlasTests.SyntheticGlyph( 'A', 2, 2, 0, 0, 3 ) ) );

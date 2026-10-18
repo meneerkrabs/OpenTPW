@@ -169,6 +169,12 @@ public sealed record GuestSnapshot
 	/// <summary>[EXT:umbrellas-save] The park turn a pending open or close is due (<see cref="Guest.UmbrellaDueTurn"/>); only in states 1 and 3.</summary>
 	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault )]
 	public long UmbrellaDueTurn { get; init; }
+	/// <summary>[EXT:rain-mood-once-per-day] The game day plus one of the rain mood rule's last application to the guest (<see cref="Guest.RainMoodDay"/>); written only once it has applied, so a save without the extension has no such field.</summary>
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault )]
+	public long RainMoodDay { get; init; }
+	/// <summary>[EXT:rain-mood-imported-age] The park turn an imported guest without a known time in the park was loaded at (<see cref="Guest.RainMoodAgeStartTurn"/>); written only for such a guest while the extension is on, so every other save has no such field.</summary>
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
+	public long? RainMoodAgeStartTurn { get; init; }
 	public required float QueueJoinHappiness { get; init; }
 	public required int QueueCellIndex { get; init; }
 	public required int QueueTargetIndex { get; init; }

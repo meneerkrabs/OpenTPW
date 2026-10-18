@@ -1080,8 +1080,7 @@ internal static class Game
 		var interfaceUpscaler = args.Contains( "--texture-pack-no-interface" ) ? null : new RealEsrganUpscaler( upscaler, interfaceModel );
 		var options = new TexturePackBuildOptions { Subtree = subtree, InterfaceOnly = args.Contains( "--texture-pack-interface-only" ),
 			SpritesOnly = args.Contains( "--texture-pack-sprites-only" ), Merge = args.Contains( "--texture-pack-merge" ),
-			PrepassSprites = args.Contains( "--prepass-sprites" ),
-			HeroDirectory = GetOption( args, "--texture-pack-hero-dir", "a directory of hand-made replacement PNGs" ) ?? "" };
+			PrepassSprites = args.Contains( "--prepass-sprites" ) };
 		// Guest sprites are assembled into atlases from the sprite banks; they join the build under their pack keys.
 		var sprites = subtree.Length == 0
 			? GuestSpriteAtlas.LoadKids().Concat( GuestSpriteAtlas.LoadBalloons() ).Concat( GuestSpriteAtlas.LoadThoughts() )

@@ -52,7 +52,7 @@ internal static class CompatibilityStartup
 		var graphicsDiagnostics = new List<string>();
 		var graphicsPath = GraphicsSettings.GetDefaultPath();
 		// Smoke tests read back original pixels, including interface art.
-		var graphics = smokeTest ? GraphicsSettings.Default with { TexturePackName = "", EnhancedInterface = false } : GraphicsSettings.Load( graphicsPath, graphicsDiagnostics );
+		var graphics = smokeTest ? GraphicsSettings.Default with { TexturePackName = "" } : GraphicsSettings.Load( graphicsPath, graphicsDiagnostics );
 		var preset = GetOption( args, "--graphics-preset", "low, medium, high or enhanced" );
 		if ( preset != null )
 		{
@@ -67,7 +67,7 @@ internal static class CompatibilityStartup
 		IGraphicsSettings.Instance = service;
 		CompatibilityRuntime.RenderQuality = service.Effective;
 		service.Changed += () => CompatibilityRuntime.RenderQuality = CompatibilityRuntime.RenderQuality with { ViewDistanceScale = service.Effective.ViewDistanceScale, SkyLayers = service.Effective.SkyLayers };
-		TexturePack.Activate( service.Current.TexturePackName, graphicsDiagnostics, enhancedInterface: service.Current.EnhancedInterface == true );
+		TexturePack.Activate( service.Current.TexturePackName, graphicsDiagnostics );
 		foreach ( var diagnostic in graphicsDiagnostics.Concat( service.Diagnostics ) )
 			Log.Warning( $"Graphics settings: {diagnostic}" );
 

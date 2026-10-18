@@ -58,6 +58,14 @@ public sealed partial class OriginalObjectRuntime
 			world.Bumpers.Add( Bump );
 			// every family's effects are played: the karts' and bumper cars' cues, the boats' spray, engine voice and unload particle (0x547F50, 0x54A909, 0x54AE50)
 			Bump.Effect += OnBumpEffect;
+			// the loading beams need the head dummies of the vehicle mesh before any draw (0x549C60 reads them from the loaded model)
+			var seatHeads = new Dictionary<int, bool[]?>();
+			Bump.SeatHeadSource = variant =>
+			{
+				if ( !seatHeads.TryGetValue( variant, out var flags ) )
+					seatHeads[variant] = flags = TrackRenderer.ReadSeatHeadFlags( entry, variant );
+				return flags;
+			};
 			Visitors.ExcitementBase = Bump.ExcitementBase;
 		}
 		Model = ObjectAssets.LoadModel( entry.FileSystem, entry.ModelPath );

@@ -80,4 +80,48 @@ public sealed class LayoutTable
 	/// <summary>The control with this id; the table must have one (ids of the shared window buttons repeat, so use <see cref="Model"/> for those).</summary>
 	public LayoutNode Control( uint id ) => All.FirstOrDefault( node => node.Id == id )
 		?? throw new InvalidOperationException( $"Layout table {Name} has no control {id:x}." );
+
+	/// <summary>The control that contains <paramref name="node"/>, or null when <paramref name="node"/> is a root of this table.</summary>
+	public LayoutNode? Parent( LayoutNode node )
+	{
+		foreach ( var root in roots )
+		{
+			if ( ReferenceEquals( root, node ) )
+				return null;
+			var found = ParentIn( root, node );
+			if ( found != null )
+				return found;
+		}
+		return null;
+	}
+
+	private static LayoutNode? ParentIn( LayoutNode parent, LayoutNode node )
+	{
+		foreach ( var child in parent.Children )
+		{
+			if ( ReferenceEquals( child, node ) )
+				return parent;
+			var nested = ParentIn( child, node );
+			if ( nested != null )
+				return nested;
+		}
+		return null;
+	}
+
+	/// <summary>
+	/// The <c>cat_ui</c> event a button plays when <paramref name="parent"/> receives message 0x100.
+	/// The hook <c>0x485780</c> chooses <see cref="GameAudio.SelectClickEvent"/> when that receiver's style has bit 0x10
+	/// (the test at <c>0x4857cb</c>) and <see cref="GameAudio.ClickEvent"/> otherwise. The button class <c>0x668f9c</c> is the
+	/// only sender of 0x100 for a mouse release over a button: it posts to its parent (<c>[+0x60]</c>) at <c>0x6691eb</c> through the
+	/// queue <c>0x658ccc</c>, and the pump <c>0x658e42</c> calls the hook at <c>0x658eb2</c> (the dispatcher <c>0x658d9f</c> does too).
+	/// Window procedures also send 0x100 to their own window (<c>0x48d83b</c>, <c>0x49973e</c>, <c>0x49ec53</c>, <c>0x4a6df5</c> (via the dispatcher <c>0x658d9f</c>), <c>0x4b640a</c>, <c>0x4b9f06</c>, <c>0x4bb020</c> and <c>0x4bfc29</c>;
+	/// ids -1, -2 and 0xe059, some on 0x802 or 0x804), and the hook clicks for those too by that window's own style; whether
+	/// OpenTPW's keyboard paths match those clicks is not read. <see cref="LayoutNode.IsToggle"/> is this same bit on the control
+	/// itself; the sound follows the parent.
+	/// </summary>
+	public static uint ClickSoundFor( LayoutNode? parent ) =>
+		parent != null && (parent.Attributes & 0x10) != 0 ? GameAudio.SelectClickEvent : GameAudio.ClickEvent;
+
+	/// <summary>The click of <paramref name="button"/> from its parent's style bit 0x10 (<see cref="ClickSoundFor"/>).</summary>
+	public uint ClickSoundOf( LayoutNode button ) => ClickSoundFor( Parent( button ) );
 }

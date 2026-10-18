@@ -101,7 +101,7 @@ public sealed class ParkEconomy : IParkEconomy
 	public bool IsBankrupt { get; private set; }
 	/// <summary>
 	/// Whether a winning sequence is showing (tp.exe <c>0x00516C00</c>: the word <c>0x7CF4F4</c>, the thing the research completion's
-	/// <c>StartWinningSequence</c> 0x00516B00 creates); the bank's handler does not make such a park bankrupt. OpenTPW has no winning sequence, so null answers no.
+	/// <c>StartWinningSequence</c> 0x00516B00 creates); the bank's handler does not make such a park bankrupt. The TPW Instant Action host binds this to its live End object; null answers no.
 	/// </summary>
 	public Func<bool>? WinningSequenceActive { get; set; }
 	/// <summary>Whole 30-day months since the park went into the red, as the last month end counted them (0 in the black).</summary>

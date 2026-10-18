@@ -417,7 +417,7 @@ internal sealed partial class GameFlow : IDisposable
 			Log.Trace( dropped );
 		}
 		AttachProgress( level );
-		if ( original && visit == null ) TakeRestartSnapshot( level );
+		if ( original && visit == null ) TakeRestartSnapshot( level, overFrames: true );
 		return level;
 	}
 
@@ -486,6 +486,7 @@ internal sealed partial class GameFlow : IDisposable
 	private void TearDown( bool applyPendingLanguage = true )
 	{
 		RequireProgressSaved();
+		FlushRestartSnapshot();
 		DetachProgress();
 		AbandonParkBuild();
 		presence?.Dispose();
@@ -539,6 +540,7 @@ internal sealed partial class GameFlow : IDisposable
 
 	public void Update()
 	{
+		PumpRestartSnapshot();
 		// [EXT:texture-pack] the pack switch belongs to the game loop, not to its loading screen
 		PumpProgress();
 		TexturePackSwitch.PumpCurrent();
@@ -1072,6 +1074,7 @@ internal sealed partial class GameFlow : IDisposable
 
 	public void Dispose()
 	{
+		FlushRestartSnapshot();
 		// a window closed past the in-app Quit's check still writes earned awards a failed save left behind
 		if ( progressOwner is { Dirty: true } owner && !owner.TryFlush() )
 			Log.Warning( $"OpenTPW progress could not be saved on exit: {owner.Error}" );

@@ -153,6 +153,8 @@ internal sealed partial class ParkResumeSmokeTest : IDisposable
 		++frame;
 		try
 		{
+			// The harness replaces flow.Update, including the restart snapshot's per-frame serialization.
+			flow.PumpRestartSnapshot();
 			// The harness owns the update path flow.Update normally drives; the camera still needs its per-frame
 			// update for the view/projection the world pass draws with (the visit smoke test drives it the same way).
 			// the smoke searches the middle of the screen for free sites: scroll to the paths' centre at the original's farthest zoom, as a player can
@@ -832,6 +834,7 @@ internal sealed partial class ParkResumeSmokeTest : IDisposable
 	{
 		var expected = restoring ? boundarySample : startSample!;
 		var before = level;
+		flow.FlushRestartSnapshot(); // the immediate Restart path drains any final slice too
 		Require( File.Exists( SaveFileSystem.GetAbsolutePath( GameFlow.RestartSnapshotFileName( level.LevelName ) ) ), "the park start or load wrote the restart snapshot file" );
 		flow.RestartCurrentPark( before );
 		Require( flow.Level != null && !ReferenceEquals( flow.Level, before ), "Restart Park rebuilt the park from its snapshot" );

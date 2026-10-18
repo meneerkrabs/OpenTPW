@@ -290,7 +290,10 @@ import") sets the economy's tick, bank, loans, objects and staff before its firs
 tick. All of it is in the economy digest, and the run that the pinned hash
 covers starts no original save, so the pin is not affected by it. The
 save's `mRandomSeed` is imported (SAVE-001 retired): it is the state of the one world generator (`0x516330`, saved raw at world `+0x1DA708`,
-written at `0x517123` and read back at `0x517DFC`), and the park continues the saved stream.
+written at `0x517123` and read back at `0x517DFC`), and the park continues the saved stream. A saved WAIT4ANIM deadline
+that is not ahead of the saved clock imports as 0 (October 18; it was -1, which the script snapshot rejects): the script's
+hashed state differs from before until it next runs an animation opcode, and tp.exe treats 0 and a reached deadline alike
+(`0x5538EB`). Only Jungle's shipped save holds such a deadline, and no pinned run starts from it.
 
 Other OpenTPW state that is **not in the hash**:
 

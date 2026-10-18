@@ -39,7 +39,7 @@ public static class StaffPlacementRules
 	/// A cell a staff member may be put on: inside the map, owned, of a drop type and under no ride, shop or feature footprint
 	/// (<paramref name="occupied"/>: any placed object or the prototype ride).
 	/// </summary>
-	// [APPROX:GUEST-013] tp.exe's drop 0x46cc40 (and the place click 0x46c8e0, inlined) also refuses a cell whose track record ([0x8023a0] + 0x10ffd8 + 40 × the cell's id word, kind at +8) is of kind 11, 13, 16, 18 or 25, directly or through the parent (+0x10) of a kind 12 or 17 record (0x5363f0, 0x536450, 0x53ad30, 0x53ad60, 0x53ad90; the circuit walk 0x52a970 uses the same kind tests); OpenTPW has no track-record test (its track tiles carry map types the type test refuses) and refuses every cell under a placed object or the prototype ride by occupancy, its stand-in for the footprint cells the original refuses by cell type — evidence needed: the original's writer of an object footprint's cell type
+	// [APPROX:GUEST-013] tp.exe's drop 0x46cc40 (and the place click 0x46c8e0, inlined) also refuses a cell whose track record ([0x8023a0] + 0x10ffd8 + 40 × the cell's id word, kind at +8) is of kind 11, 13, 16, 18 or 25, directly or through the parent (+0x10) of a kind 12 or 17 record (0x5363f0, 0x536450, 0x53ad30, 0x53ad60, 0x53ad90; the circuit walk 0x52a970 uses the same kind tests); OpenTPW has no track-record test (its track tiles carry map types the type test refuses), and a park that types its footprint cells (ParkCellMap.WriteFootprint, 0x528A70: 4 and 10 refuse, the entrance's 9 takes a drop) needs no object list, while a world that keeps the cells it was given (a visit, a Theme Park Inc layout) refuses every cell under a placed object or the prototype ride by occupancy — evidence needed: the track records (TRACK-002)
 	public static bool IsValidDropCell( ParkCellMap cells, int x, int y, Func<int, int, bool>? occupied )
 	{
 		if ( !cells.InBounds( x, y ) || (cells.FlagsAt( x, y ) & ParkCellFlags.Unowned) != 0 )
@@ -203,7 +203,7 @@ public sealed class StaffPlacement
 				Cancel();
 				return StaffClickResult.None;
 			}
-			park.Staff.PendingPlacementId = 0;
+			park.Staff.EndPlacement( placed: true );
 			member = park.Hire( candidate.Id );
 			// [BIN:TPW-EXE:0x46c8e0 new member] position = cell centre (sub-cell 0x80), happiness and energy 100.0 (the member's own defaults), patrol rectangle = the whole map (+0x20a = 1, +0x20c = 0x4000: PatrolArea's default); each role then decides its first job (state 0 here, the state machines' search runs on the next update)
 			member.PatrolArea = (0, 0, ParkLitter.MapSize - 1, ParkLitter.MapSize - 1);
@@ -231,7 +231,7 @@ public sealed class StaffPlacement
 			PutDown( member, origin.X, origin.Y );
 		}
 		else if ( Kind == StaffToolKind.Place && economy() is { } pool )
-			pool.Staff.PendingPlacementId = 0;
+			pool.Staff.EndPlacement( placed: false );
 		End();
 	}
 

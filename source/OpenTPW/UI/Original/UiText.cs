@@ -86,6 +86,25 @@ public sealed class UiStringTable
 	public string Format( int index, params string[] values ) => index >= 0 && index < uiTemplates.Length
 		? uiTemplates[index].Fill( values ) : Get( uiText, index ) + string.Concat( values );
 
+	/// <summary>
+	/// UITEXT record <paramref name="index"/> with each parameter slot filled by the value for its <em>type</em> (the original's formatter matches the caller's typed 'MRAV' arguments to the record's
+	/// parameter chunks by type, 0x6acd60), so a language that orders the slots differently still gets each number in its place; a slot with no value for its type fills nothing.
+	/// </summary>
+	public string FormatByType( int index, IReadOnlyDictionary<int, string> valuesByType )
+	{
+		if ( index < 0 || index >= uiTemplates.Length )
+			return Get( uiText, index ) + string.Concat( valuesByType.Values );
+		var builder = new System.Text.StringBuilder();
+		foreach ( var part in uiTemplates[index].Parts )
+		{
+			if ( !part.IsParameter )
+				builder.Append( part.Text );
+			else if ( valuesByType.TryGetValue( part.ParameterType, out var value ) )
+				builder.Append( value );
+		}
+		return builder.ToString();
+	}
+
 	/// <summary>A UITEXT entry without the leading space the original uses for option values.</summary>
 	public string Value( UIStrings id ) => this[id].Trim();
 

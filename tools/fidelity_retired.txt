@@ -115,6 +115,7 @@ ECON-013 docs/reverse/APPROX-TRACE.md
 ECON-014 docs/ECONOMY.md
 ECON-015 docs/reverse/APPROX-TRACE.md
 ECON-016 docs/reverse/APPROX-TRACE.md
+ECON-017 docs/progress/2026-10-18-round8-saves-econ.md
 ECON-018 docs/reverse/APPROX-TRACE.md
 ECON-019 docs/reverse/APPROX-TRACE.md
 ECON-020 docs/ECONOMY.md
@@ -146,6 +147,7 @@ ECON-052 docs/PROGRESS.md
 ECON-054 docs/ECONOMY.md
 ECON-055 docs/ECONOMY.md
 ECON-056 docs/progress/2026-10-16-economy-and-saves-sweep.md
+ECON-057 docs/progress/2026-10-18-round8-saves-econ.md
 GATE-001 docs/M3-GATE.md
 GATE-002 docs/reverse/PATH-plan.md
 GATE-003 docs/reverse/BOARD-plan.md
@@ -257,6 +259,7 @@ RIDES-043 docs/OBJECTS.md
 RIDES-044 docs/RSE-VM.md
 SAVE-001 docs/DETERMINISM.md
 SAVE-003 docs/reverse/REVIEW-SAVE-2.md
+SAVE-004 docs/progress/2026-10-18-round8-saves-econ.md
 SAVE-005 docs/ECONOMY.md
 SAVE-008 docs/progress/2026-10-16-economy-and-saves-sweep.md
 SAVE-009 docs/SAVE-THINGS.md
@@ -268,6 +271,7 @@ TOUR-002 docs/TOURS.md
 TOUR-003 docs/TOURS.md
 TOUR-004 docs/PROGRESS.md
 TOUR-007 docs/TOURS.md
+TOUR-008 docs/TOURS.md
 TOUR-009 docs/PROGRESS.md
 TOUR-010 docs/PROGRESS.md
 TRACK-003 docs/TRACKS.md
@@ -356,5 +360,6 @@ WALK-001 docs/progress/2026-10-16-ride-shop-and-sideshow-settings.md
 WALK-002 docs/GUESTS.md
 WALK-004 docs/GUESTS.md
 WALK-006 docs/GUESTS.md
+WALK-007 docs/GUESTS.md
 WALK-008 docs/GUESTS.md
 WALK-009 docs/GUESTS.md

@@ -41,6 +41,7 @@ public class PathAssetTests
 	/// The guests' draws moved onto the original's one world generator (DET-013 to DET-015): it is reseeded with the guest's id at its creation and a new arrival takes its entrance from the creation draw, so the guests' offsets, lanes and walks move (22 → 21 admissions).
 	/// The booth walk's speed term (tp.exe 0x004FF730: 25 for a thing id with its low two bits 0, WALK-010) moved it again to 0x30F213E46933EB8C (21 admissions, as before).
 	/// The arrival walk over the cell map (WALK-008, ARRIVAL-001: guests made at the bus stop, state 3's wait and head-of-cell rule, tp.exe 0x004FF520 and the states around it) moved it to 0xBC02D81A5FC6621D (20 admissions).
+	/// Round 8 (the guests package: the booth's first verdict is the next turn's update, persistent head-first cell lists, the bin and prize rules) moved it to 0xBE549F10640102B9 and admits 22.
 	/// </summary>
 	[TestMethod]
 	public void OwnershipFlipKeepsTheJungleGuestRunIdentical()
@@ -53,8 +54,8 @@ public class PathAssetTests
 		var simulation = new GuestSimulation( GuestPathGrid.FromOriginal( park.Map, park.Save ), settings, 1 );
 		for ( var tick = 0; tick < 120 * 60; tick++ )
 			simulation.Tick( Tick );
-		Assert.AreEqual( 20, simulation.Admissions );
-		Assert.AreEqual( 0xBC02D81A5FC6621DUL, simulation.ComputeStateHash(), $"0x{simulation.ComputeStateHash():X16}" );
+		Assert.AreEqual( 22, simulation.Admissions );
+		Assert.AreEqual( 0xBE549F10640102B9UL, simulation.ComputeStateHash(), $"0x{simulation.ComputeStateHash():X16}" );
 	}
 
 	[TestMethod]

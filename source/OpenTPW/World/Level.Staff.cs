@@ -39,7 +39,7 @@ public partial class Level
 				StaffWorld?.ReportPrank( Park.Economy, guest.Id );
 		};
 		AttachStaffWorld();
-		StaffPlacement = new StaffPlacement( () => Park?.Economy, () => Guests?.Grid.Cells, IsPathBlocked );
+		StaffPlacement = new StaffPlacement( () => Park?.Economy, () => Guests?.Grid.Cells, IsStaffDropBlocked );
 		PatrolTool = new PatrolAreaTool( () => Park?.Economy );
 		if ( OriginalPark != null )
 		{
@@ -49,6 +49,15 @@ public partial class Level
 			StaffRenderer = new StaffRenderer( () => Park.Economy.Staff.Members, OriginalPark.Heightfield, sprites, StaffPlacement );
 		}
 	}
+
+	/// <summary>
+	/// The cells a staff member may not be put on besides what the cell types refuse (<see cref="StaffPlacementRules.IsValidDropCell"/>): where the placed objects type their footprint cells
+	/// (4, 9, 10), the types are the whole rule; a world that keeps the cells it was given (a visit, a Theme Park Inc layout) refuses every cell under an object.
+	/// </summary>
+	// [BIN:TPW-EXE:0x0046CC40 drop cells] the drop reads the cell's type (0, 1, 3 or 9 pass, 0x536390, 0x536310, 0x536320) and its flags, never an object list: a ride's footprint cells are refused as the types 4 and 10 the placement writes (ParkCellMap.WriteFootprint, 0x00528A70), its queue-end entrance cell (9) takes a drop
+	// [EXT:developer-prototype] the Sandbox Totem and the pool slides' reserved land have no cell types
+	private bool IsStaffDropBlocked( int x, int y ) =>
+		TypesFootprints ? IsReservedByPrototype( x, y ) || (Guests != null && PoolSlides?.ReservesLand( x, y, Guests.Grid.Cells ) == true) : IsPathBlocked( x, y );
 
 	/// <summary>One park tool at a time: ends the path, queue, track, coaster, placing and remove tools before a staff tool starts.</summary>
 	public void EndBuildTools()

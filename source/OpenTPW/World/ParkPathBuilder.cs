@@ -301,6 +301,9 @@ public sealed class ParkPathBuilder : ICellLineWriter
 		};
 	}
 
+	/// <summary>Raised with the owner word of a queue cell a path was laid over (the setter's queue edit 0x004DE1F0 of the ride that owns it).</summary>
+	public event Action<ushort>? QueueCellPaved;
+
 	/// <summary>The link writer's tile refreshes and queue-neighbour sound (the level's presentation), or none (headless).</summary>
 	public LinkEffects? Effects { get; set; }
 
@@ -316,7 +319,12 @@ public sealed class ParkPathBuilder : ICellLineWriter
 		if ( park != null && !park.CanSpendCell( CellPurchase.Path ) )
 			return false;
 		// [BIN:TPW-EXE:0x005346D0 SetCellType] type 1 over a type-3 cell (a queue end, code 8) passes rule 0x535600 and is charged the path cost (0x52FB20) like any path cell; the cell keeps its link byte, and the ride owning it (owner word +0x10, a type-4/9/10 cell) gets its queue edit 0x4DE1F0 at once, which OpenTPW's guests run with their queue recompute on this map edit
+		var wasQueue = Cells.TypeAt( x, y ) == ParkCellType.Queue;
+		var owner = Cells.OwnerAt( x, y );
 		Cells.SetType( x, y, ParkCellType.Path );
+		// [BIN:TPW-EXE:0x0053481F queue edit] the setter's queue branch (type 1 over type 3, the owner word's cell of type 4, 9 or 10, 0x005347E0..0x00534858) runs the owning ride's re-evaluation 0x004DE1F0: the queue is recomputed and its back cell stamped
+		if ( wasQueue && owner != 0 )
+			QueueCellPaved?.Invoke( owner );
 		// [BIN:TPW-EXE:0x534879 path Spend] SetCellType spends the path cost through 0x4D01F0, which adds it to the park's total costs (+0x1F5A0); the finance and hire panels show other costs as total costs minus staff costs (0x49BDD0, [0x7CA300]), so path spending is an other cost, as OpenTPW's OtherCosts within MoneyOut minus StaffCosts
 		park?.TrySpendCell( CellPurchase.Path );
 		return true;

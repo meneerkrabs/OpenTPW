@@ -95,18 +95,73 @@ public sealed class ParkResearch
 	// [BIN:TPW-EXE:0x00504580 upgrade level project] an object whose own category is not 4 takes its next level above the researched one (+0x14) that has a research cost (+0x180 + 0x40 × level) as a new project (category 4, group 0, the cost, no progress); levels without a cost are marked researched on the way; the lab's completion handler 0x00503D40 calls it at 0x00503D8C, the table fill at its end
 	private void AppendNextLevel( ResearchItem item )
 	{
-		if ( !catalog.TryGet( item.InfoId, out var info ) || info.ResearchCategory == ResearchCategory.Upgrade )
+		var project = NextLevelProject( item );
+		if ( project == null )
 			return;
+		var table = TableOf( ResearchCategory.Upgrade );
+		if ( !table.Contains( project ) )
+			table.Add( project );
+	}
+
+	/// <summary>The project 0x00504580 would add above a researched <paramref name="item"/>: the first level above it with a research cost, or null (an add-on, or no level left with a cost).</summary>
+	private ResearchItem? NextLevelProject( ResearchItem item )
+	{
+		if ( !catalog.TryGet( item.InfoId, out var info ) || info.ResearchCategory == ResearchCategory.Upgrade )
+			return null;
 		for ( var next = item.Level + 1; next < Math.Min( info.Upgrades.Count, 3 ); next++ )
 		{
 			if ( info.Upgrades[next].CostOfResearch <= 0 )
 				continue;
-			var project = items.FirstOrDefault( entry => entry.InfoId == item.InfoId && entry.Level == next );
-			var table = TableOf( ResearchCategory.Upgrade );
-			if ( project != null && !table.Contains( project ) )
-				table.Add( project );
-			return;
+			return items.FirstOrDefault( entry => entry.InfoId == item.InfoId && entry.Level == next );
 		}
+		return null;
+	}
+
+	/// <summary>
+	/// The upgrade level a researched object's control record holds in <c>+0x14</c> (null while its base is not researched): the project step 0x00504630 writes the finished project's level there and 0x00504580 moves it past
+	/// the levels without a research cost, so it is the highest level whose project is finished, a level without a cost counting as finished; an add-on has no level projects and stays 0.
+	/// </summary>
+	// [BIN:TPW-EXE:0x00504580 upgrade level project] with the control's level c below 2 the loop looks at level c + 1 up to 2: a level whose cost (+0x180 + 0x40 x level, 0 where the type has no row) is above 0 becomes the next project, a level without one is written into the control's +0x14 and passed; a type of category 4 is left alone
+	// [BIN:TPW-EXE:0x00504630 research step] when a project's points reach its cost the control's +0x10 becomes 1 and +0x14 the project's level
+	internal int? ResearchedLevel( int infoId )
+	{
+		if ( !completed.Contains( (infoId, 0) ) )
+			return null;
+		if ( !catalog.TryGet( infoId, out var info ) || info.ResearchCategory == ResearchCategory.Upgrade )
+			return 0;
+		var level = 0;
+		for ( var next = 1; next < 3; next++ )
+		{
+			var cost = next < info.Upgrades.Count ? info.Upgrades[next].CostOfResearch : 0;
+			if ( cost > 0 && !completed.Contains( (infoId, next) ) )
+				break;
+			level = next;
+		}
+		return level;
+	}
+
+	/// <summary>
+	/// The lab's project array in the original's order, which is what a save's lab holds: the fill's walk over the object scan (a base project with a research cost, or for a base without
+	/// one the first level project above it, at the base's turn) and then the level projects that completions appended, in the order they were appended. <paramref name="mostExpensive"/>
+	/// is how many leading projects the fill's walk added; the rest were appended by completions.
+	/// </summary>
+	// [BIN:TPW-EXE:0x005031A0 research table fill] the walk adds each choosable type's record at the count (id, category +0x17C, group +0x178, level 0, cost +0x180 as a float, done 0) when its cost is above 0, else marks the control researched and lets 0x00504580 add the next level project at that point; mMostExpensiveProject (+0x1464) takes the new record's index while the current one's cost is strictly below it, so the first of the highest costs
+	// [BIN:TPW-EXE:0x00504580 upgrade level project] a completion's next level project is added at the array's end, so completions keep their order after the walk's projects
+	internal IReadOnlyList<ResearchItem> LabTable( out int walkCount )
+	{
+		var table = new List<ResearchItem>();
+		foreach ( var item in items.Where( item => item.Level == 0 ) )
+		{
+			var project = item.Cost > 0 ? item : item.Category == ResearchCategory.Upgrade ? null : NextLevelProject( item );
+			if ( project == null )
+				continue;
+			table.Add( project );
+		}
+		walkCount = table.Count;
+		foreach ( var project in TableOf( ResearchCategory.Upgrade ) )
+			if ( project.Level > 0 && !table.Contains( project ) )
+				table.Add( project );
+		return table;
 	}
 
 	/// <summary>The category-4 table in order: the add-on projects and the level projects as they were appended (saved and restored with the lab).</summary>
@@ -242,7 +297,7 @@ public sealed class ParkResearch
 
 	/// <summary>The item a category is currently researching, or null when nothing is researchable.</summary>
 	// [BIN:STP-PPC:0x100F0EF0 research cursor] each category researches the first item in table order whose group is open and which is not yet researched; cost is never compared
-	// [APPROX:ECON-017] a new park's research table follows the original's object scan (Rides, Features, Upgrades, Shops, Sideshow, each directory in archive-name order: 0x413140, then the fill 0x5031A0 over 0x412E60 / 0x412E70 with no sort; the shipped Jungle Easymode lab's order matches), a level project joins the category-4 table at its end when the level below completes (0x503D40 → 0x504580 at 0x503D8C, or at the base's turn in the fill when the base is free), the cursor steps and moves on as the original's picker does (0x4AA0C0 → 0x5034F0 / 0x5036A0, 0x4AAEC0) and its add-on test holds a target with a golden-ticket cost to the ticket set (0x4D4B70 over 0x5AF780), but OpenTPW lists a project for every buyable object with research levels, where the fill skips a type whose word +0x508 is set (1 when the type's model load 0x4629D0 gave 0, 0x414305): the shipped Easymode lab holds 24 projects and none for the coasters 1185 and 1190, Sun God 1106 and seven of the features that OpenTPW lists, though the archives of all ten hold their main model (OpenTPW's catalogue needs it), so the loader's failure (0x004629D0 → the archive lookup 0x00461A60 and the parse 0x00461F10, stored at +0x490, then +0x508 = 1 at 0x00414305) is not a missing file — evidence needed: why those types have no model result in that game (the file names the object loader 0x00413C10 builds from the settings stack), and so which projects a normal game's lab holds
+	// [BIN:TPW-EXE:0x005031A0 research table fill] a new park's research table follows the original's object scan (Rides, Features, Upgrades, Shops, Sideshow, each directory in archive-name order: 0x413140, then the fill 0x5031A0 over 0x412E60 / 0x412E70 with no sort) and a level project joins the category-4 table at its end when the level below completes (0x503D40 → 0x504580 at 0x503D8C, or at the base's turn in the fill when the base is free); the cursor steps and moves on as the original's picker does (0x4AA0C0 → 0x5034F0 / 0x5036A0, 0x4AAEC0) and its add-on test holds a target with a golden-ticket cost to the ticket set (0x4D4B70 over 0x5AF780). The fill skips a type whose word +0x508 is set or whose WhichUIType (+0x4AC) is 4 or more; the four restart.INTS the original itself wrote at the start of a new park (Hallow, Jungle, Fantasy and Space: 48, 48, 44 and 46 projects) hold exactly OpenTPW's table for their theme, key for key and in order (OriginalResearchExportTests), so a normal game's fill skips no type OpenTPW lists. The shipped Easymode.TPWI lab (24 projects, none for the coasters 1185 and 1190, Sun God 1106 and seven features OpenTPW lists) is not a normal game's fill output: it differs from the Jungle restart save by 20 of 44 projects, which the fill's two gates only explain for a build that failed those types' model loads (0x004629D0 → 0x00461A60 / 0x00461F10, +0x508 = 1 at 0x00414305); the shipped data loads them all in OpenTPW.
 	// Host UI selection below retains the native default cursor; correspondence with native player selection remains unverified.
 	public ResearchItem? Current( ResearchCategory category )
 	{

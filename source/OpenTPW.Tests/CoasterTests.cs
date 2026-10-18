@@ -329,6 +329,43 @@ public class CoasterTests
 		Assert.AreEqual( 1f, builder.Track.Nodes[First].T );
 	}
 
+	[TestMethod]
+	public void TheCostHeightRoundsEveryOperationToASingleAsTheX87DoesAt24Bits()
+	{
+		// 0x4346a0: (h1 − h0) × t + h0 with a rounding after the subtraction, the product and the sum; the Mac's fused multiply-add differs in the last bit for these inputs
+		var pylon = new CoasterPylonControl { MeshHeightLow = 10f, MeshHeightHigh = 25f };
+		const float t = 0.5605103373527527f;
+		Assert.AreEqual( 18.40765380859375f, CoasterTrack.CostHeight( pylon, t ) );
+		Assert.AreNotEqual( CoasterTrack.CostHeight( pylon, t ), CoasterTrack.PylonHeight( pylon, t ), "the fused form of the Mac rounds once" );
+		var low = new CoasterPylonControl { MeshHeightLow = 5f, MeshHeightHigh = 40f };
+		Assert.AreEqual( 17.382545471191406f, CoasterTrack.CostHeight( low, 0.35378697514533997f ) );
+	}
+
+	[TestMethod]
+	public void TheCostLengthSumsTheSquaresInSinglePrecisionBeforeTheRoot()
+	{
+		// 0x4478e3..0x44791f: fsqrt(dz² + dx²), the squares and their sum single-rounded, the root rounded to a single
+		Assert.AreEqual( MathF.Sqrt( 200f ), CoasterTrack.CostLength( 10f, 10f ) );
+		var dx = 16777.217f;
+		var dz = 3.3333333f;
+		Assert.AreEqual( MathF.Sqrt( dx * dx + dz * dz ), CoasterTrack.CostLength( dx, dz ) );
+		Assert.AreEqual( 0f, CoasterTrack.CostLength( 0, 0 ) );
+	}
+
+	[TestMethod]
+	public void ThePylonCostMultipliesByAtenthAndAddsInTheRoutinesOrder()
+	{
+		// ((rate × (length × 0.1f)) + unit) + (rate × (height × 0.1f)), a rounding per operation
+		var definition = CoasterDefinition.FromValues( PcSettings() );
+		var pylon = definition.StandardPylon;
+		var length = 23.456789f;
+		var height = 17.382545f;
+		var expected = pylon.CostPer2DLength * (length * 0.1f);
+		expected += pylon.CostPerUnit;
+		expected += pylon.CostPerHeight * (height * 0.1f);
+		Assert.AreEqual( expected, CoasterTrack.PylonCost( pylon, length, height ) );
+	}
+
 	// ---- Cost 0x4b168 and rounding 0x41aa4 ------------------------------------------------------------------
 
 	[TestMethod]
@@ -853,8 +890,8 @@ public class CoasterTests
 		Assert.IsTrue( SVector3.Distance( back, new SVector3( -6.1803398f, 14.40983f, 5 ) ) < 1e-4f, $"{back}" );
 		Assert.IsTrue( SVector3.Distance( forward, new SVector3( 19.90712f, 27.45356f, 5 ) ) < 1e-4f, $"{forward}" );
 		Assert.AreEqual( 0x40066666u, Bits( HermiteCoasterCurve.LoopKnotFactor( 1.25f, 0, 0.5f ) ), "2.1" );
-		// the PC twin 0x432430 rounds the table index to the nearest (3482 here; the Mac lookup truncated to 3481 and gave 0x3FCDCC67); worked out apart from the C# code with single-precision steps
-		Assert.AreEqual( 0x3FCDD470u, Bits( HermiteCoasterCurve.LoopKnotFactor( 1.25f, 0.6f, 0.3f ) ) );
+		// the PC twin 0x432430 rounds the table index to the nearest (3482 here; the Mac lookup truncated to 3481 and gave 0x3FCDCC67) and rounds every operation to a single (24-bit precision, COAST-032): 0x3FCDD46F worked out apart from the C# code with one single rounding per operation (carrying x² and w in double gave 0x3FCDD470)
+		Assert.AreEqual( 0x3FCDD46Fu, Bits( HermiteCoasterCurve.LoopKnotFactor( 1.25f, 0.6f, 0.3f ) ) );
 	}
 
 	[TestMethod]
@@ -1053,6 +1090,79 @@ public class CoasterTests
 		// The cosine is the sine of the angle plus π/2, the sum carried unrounded by the swing and stored as single by the pass.
 		Assert.AreEqual( CoasterTrig.PcEntry( (int)Math.Round( (angle + 1.5707964f) * (double)CoasterTrig.PcScale ) ), CoasterTrig.PcCos( angle ), 1e-6f );
 		Assert.AreEqual( CoasterTrig.PcSin( -0.3f ), CoasterTrig.PcEntry( (int)Math.Round( -0.3f * CoasterTrig.PcScale ) ), "negative angles wrap by the mask" );
+	}
+
+	/// <summary>
+	/// A 24-bit x87 stack for the independent evaluation of the swing's instruction sequence: every register result is a single, as at the thread's precision control
+	/// (COAST-032); loads from memory and stores to memory are the singles themselves.
+	/// </summary>
+	private sealed class X87Stack
+	{
+		private readonly List<float> stack = new();
+		public void Fld( float value ) => stack.Add( value );
+		public void FldSt( int index ) => stack.Add( stack[stack.Count - 1 - index] );
+		public void FMul( float memory ) => stack[^1] = stack[^1] * memory;
+		public void FMulSt( int index ) => stack[^1] = stack[^1] * stack[stack.Count - 1 - index];
+		public void FAddp() { var top = stack[^1]; stack.RemoveAt( stack.Count - 1 ); stack[^1] = stack[^1] + top; }
+		public void FSubp() { var top = stack[^1]; stack.RemoveAt( stack.Count - 1 ); stack[^1] = stack[^1] - top; }
+		public void FXch() => (stack[^1], stack[^2]) = (stack[^2], stack[^1]);
+		public float Fstp() { var top = stack[^1]; stack.RemoveAt( stack.Count - 1 ); return top; }
+		public void Pop() => stack.RemoveAt( stack.Count - 1 );
+	}
+
+	/// <summary>The suspended swing at the thread's 24-bit precision (tp.exe 0x43c76c..0x43ca45): one sample with all three angles set, evaluated again as the instruction sequence on a stack of singles.</summary>
+	[TestMethod]
+	public void SuspendedSwingRoundsEveryX87OperationToASingle()
+	{
+		var settings = PcSettings();
+		settings["sCoasterType.bIsSuspendedCoaster"] = "1";
+		settings["sCoasterType.fGravityX"] = "0.3";
+		settings["sCoasterType.fGravityY"] = "-9.81";
+		settings["sCoasterType.fGravityZ"] = "0.1";
+		settings["sCoasterType.fForceMultiplier"] = "0.37";
+		var definition = CoasterDefinition.FromValues( settings );
+		var samples = new[] { new CoasterSample { Force = new SVector3( 1.37f, 4.21f, -2.19f ), Yaw = 0.81f, Pitch = -0.33f, Bank = 0.47f } };
+		var force = samples[0].Force;
+		CoasterRating.Swing( definition, samples, brakingStart: 100f, totalSamples: 1f );
+
+		const float Pi = MathF.PI;
+		var x = force.X + definition.GravityX;
+		var y = force.Y + definition.GravityY;
+		var z = force.Z + definition.GravityZ;
+		float sin = CoasterTrig.PcSin( -0.81f ), cos = CoasterTrig.PcCos( -0.81f );
+		var fpu = new X87Stack();
+		fpu.Fld( sin ); fpu.Fld( cos ); // st0 = cos, st1 = sin
+		fpu.Fld( x ); fpu.FldSt( 2 ); fpu.FMul( z ); fpu.FldSt( 2 ); fpu.FMul( x ); fpu.FAddp(); var newX = fpu.Fstp();
+		fpu.FXch(); fpu.FMul( z ); fpu.FXch(); fpu.FMulSt( 2 ); fpu.FSubp(); var newZ = fpu.Fstp(); fpu.Pop();
+		(x, z) = (newX, newZ);
+		sin = CoasterTrig.PcSin( 0.33f ); cos = CoasterTrig.PcCos( 0.33f );
+		fpu.Fld( sin ); fpu.Fld( cos );
+		fpu.Fld( y ); fpu.FldSt( 1 ); fpu.FMul( y ); fpu.FldSt( 3 ); fpu.FMul( z ); fpu.FSubp(); var newY = fpu.Fstp();
+		fpu.FXch(); fpu.FMul( z ); fpu.FXch(); fpu.FMulSt( 2 ); fpu.FAddp(); newZ = fpu.Fstp(); fpu.Pop();
+		(y, z) = (newY, newZ);
+		sin = CoasterTrig.PcSin( -0.47f ); cos = CoasterTrig.PcCos( -0.47f );
+		fpu.Fld( sin ); fpu.Fld( cos );
+		fpu.Fld( x ); fpu.FldSt( 1 ); fpu.FMul( x ); fpu.FldSt( 3 ); fpu.FMul( y ); fpu.FSubp(); newX = fpu.Fstp();
+		fpu.FXch(); fpu.FMul( y ); fpu.FXch(); fpu.FMulSt( 2 ); fpu.FAddp(); newY = fpu.Fstp(); fpu.Pop();
+		(x, y) = (newX, newY);
+
+		var squares = x * x;
+		squares = squares + y * y;
+		squares = squares + z * z;
+		var rate = MathF.Sqrt( squares ) * definition.ForceMultiplier;
+		rate = rate > 1f ? 1f : rate;
+		var theta = Math.Atan2( -x, y );
+		var turned = (float)(theta - Pi); // fsub of the unrounded fpatan result, rounded to a single
+		turned = (float)((double)turned + 9.42477822303772); // fsub qword [0x6fe048] (−3π)
+		var d = (float)(turned % 6.2831854820251465 - Pi); // fmod (exact), then fsub π rounded to a single
+		var weighted = d * rate;
+		weighted = weighted + Pi;
+		weighted = (float)((double)weighted + 9.42477822303772);
+		var w = (float)(weighted % 6.2831854820251465 - Pi);
+		var roll = -(Pi - w);
+		if ( roll < -Pi )
+			roll += 6.2831855f;
+		Assert.AreEqual( BitConverter.SingleToInt32Bits( roll ), BitConverter.SingleToInt32Bits( samples[0].Bank ) );
 	}
 
 	/// <summary>The suspended swing (tp.exe 0x43c76c..0x43ca45): with zero sample angles the roll is the wrapped approach of π toward atan2(−X, Y) at rate min(|F + g|·fForceMultiplier, 1).</summary>

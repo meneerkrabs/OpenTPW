@@ -115,7 +115,7 @@ ride's constructed cell and rotation, `+5/+7/+0x10`), and the controller referen
 (anchor + the type's `Bumper.*Adjust` + (4, 1), (1, −5), (−5, −2) or (−2, 4) by rotation; the kart and water types keep it as the station reference `+0x74/+0x78` without the arena's 0x600,
 `Level.TrackStationReference`). The finish buoy lies 0xC00 behind it (the first tile's centre), the kart grid around it. OpenTPW's earlier layout (the footprint's rows 0 and 1, the reference at the first
 tile's centre) is kept only for a ride restored from a park saved before (`BumpControllerSaveData.StationLayout` 0, `TrackStation.FromPlacementLegacy`, `[EXT:legacy-station-layout]`).
-The modes 0x80 and 0x83 of the line routine (0x82 is the flow link, TRACK-004) and what they write on the station tiles are not traced (TRACK-005). The heading
+The ops of the line routine `0x53AAC0` (read October 18): 0x80 (`0x539220`) writes the arms of a line, each cell after the first getting the arm toward the previous cell and the previous cell the arm back (the step of a line's first cell is zeroed by the sentinel `0x763B00` = 0x80 that every tool start sets), 0x82 the flow link (`0x539670`, TRACK-004) and 0x83 the origin word of the tile (`+0x10`, the ride) and its three type 12 extension cells (`0x538FC0(0xC)`). The placement (`0x524960` mode 4, `0x525254..0x525690`) goes on to lay a type 11 or 16 track tile at the exit cell and at the entry cell with the ops 0x87, the type op, 0x80, 0x82 and 0x83 (the entry's arm toward the station written by hand, `0x52563B..0x525690`), and makes the exit the tool's first vertex (`0x52FBF0`): OpenTPW writes both station tiles with both arms at once and lays those two tiles with the first and the last line, so the arms they hold before the circuit closes and what the placement charges for them are not reproduced (TRACK-005). The heading
 follows the rotation (0° +X, 90° −Y, 180° −X, 270° +Y). The tile before the first station tile (`Entry`) is where the player's loop returns; the tile after
 the second (`Exit`) is where the first line starts.
 
@@ -125,7 +125,7 @@ the second (`Exit`) is where the first line starts.
 two arms or no heading fails the walk; a corner (two perpendicular arms) takes the new heading `mask ^ opposite(heading)` (the heading itself when the opposite
 arm is missing) and rewrites the flow link `+0xD`; every other cell keeps the heading without testing its arms. A three-arm cell fails when the cell two ahead
 has type 0 or is a track cell without arms while the heading has bit 0x01 (a literal bit test, `0x52B234..0x52B280`); a four-arm cell has no rule. The walk
-writes the 0-based step to `+0x24` and has no step limit in the original (OpenTPW cuts it off after as many steps as the layer has tiles plus the station, `[EXT:track-walk-step-limit]`; the readers of the step number are the track tool's edit sub-modes, TRACK-014). The cells
+writes the 0-based step to `+0x24` and has no step limit in the original (OpenTPW cuts it off after as many steps as the layer has tiles plus the station, `[EXT:track-walk-step-limit]`; the step number's one reader is the getter `0x53AEC0`, whose callers are the track tool's edit sub-modes, built in `TrackEditor`: TRACK-014 retired). The cells
 are written in both of the original's modes. The flow link of a straight or junction is written at lay time by the line op (`0x539670`, op `0x82` of
 `0x53AAC0`): a tile with at most two arms takes the line's direction, a tile with more arms ORs it in (a crossing of two lines gets a two-bit link such as `0x14`, TRACK-004), and the
 station tiles take the heading of the rotation (`0x524F1E`), so a straight drawn against the flow keeps its drawing direction. The circuit is
@@ -268,28 +268,26 @@ animation 5 (start) or 12 (stop), flags 7 (loop, at once; on a stop the tile kee
 | --- | --- | --- |
 | an add-on's placement walk (`0x524D0A`; OpenTPW's walk of a fresh station takes the same rule, `[EXT:track-placement-walk]`: the original's ride placement walks nothing) | start, forward | stop, both walks |
 | a track line ends (`0x526F02`) | stop, forward | stop, both walks |
-| edit sub-modes 0xE/0x13 (`0x526BD0`) | start, forward | stop, both walks (no OpenTPW counterpart, TRACK-018) |
+| edit sub-modes 0xE/0x13 (`0x526BD0`) | start, forward | stop, both walks (`TrackWalkCause.Edit`; an add-on's placement runs the same walk, `0x524960`) |
 | `BUMP 17` (`0x5549ED`) | 0: start, other: stop, both walks | same |
 
 A new or re-chosen piece is a new instance without a clip (`0x53AFA0`), and the load creates every piece that way. `BUMP 17` compares its value with the word
 `+0xE6` of the ride's script, which the script attach (`0x558C71`) and the load's script restore (`0x5597A0`) set to −1, so the first `BUMP 17 0` of the water
 ride's loop starts the water and the later ones do nothing; a track edit stops it until the ride closes (`BUMP 17 1`) and opens again. The state is presentation only
 (`Level.TrackPieceAnimations`, a clock advanced with the world step, not saved or hashed); the renderer plays one animator per group of tiles of a piece that started
-(and froze) together and draws their moving meshes from one copy. The walks start at the station's exit and entry, the cells `0x52A490` and `0x52A700` compute ("The station"). Open (TRACK-018): the edit sub-modes ("The track edit sub-modes").
+(and froze) together and draws their moving meshes from one copy. The walks start at the station's exit and entry, the cells `0x52A490` and `0x52A700` compute ("The station"). The edit sub-modes are built ("The track edit sub-modes").
 
 **Texture-frame clips (settled, October 17, 2026).** The Crypt Karts' bridge pieces (`gk_trckH`, `_u`, `_d` and `_a`, ten table entries) are the only pieces whose `m` clip carries a texture-frame track: no node track,
 one track on slot 0 (`h_trkunder.tga`, a slot of one frame) with 20 keys that all name frame 0, so the clip update (`0xA56F8`) rewrites the frame the slot already shows; no other member of the archive
 animates the bridge's flame slot 7 (`fire0.tga` to `flame2.tga`, the Pgokarts prop's clip animates its own model's slot 11). The renderer's texture-coordinate tracks are everything the shipped clips need
 (`TrackPieceClipDataTests`).
 
-**The track edit sub-modes** (`0x524960`, read October 17, 2026; not built). The ride window's track button (`0x4AF200`) builds the tool 0xE for a type with track word 1 (karts) and 0x13 for 2 (water), and the
+**The track edit sub-modes** (`0x524960`, read October 17, built October 18, 2026: `TrackEditor`, `TrackEditWriter`, `Level.EnterTrackTool`). The ride window's track button (`0x4AF200`) builds the tool 0xE for a type with track word 1 (karts) and 0x13 for 2 (water), and the
 hover (`0x5234D0` through `0x527960`) keeps the sub-mode. The first click with the circuit open (the ride's word `+0x2C` zero, `0x530830` collects the track's corners from the station to its open end and sets the
-line start there) switches to the line tool 0xB or 0x10 at once. With the circuit closed, a click picks a track tile (an extension cell takes its origin, `0x53AD90`; a station tile is refused, `0x53ADB0`), orders it by
-its step number (`+0x24`, `0x53AEC0`) and tests it (`0x539760`, mode 0xE or 0x13); the second click does the same, and the pair, the lower step first, goes to `0x52B400` (last argument 1), which walks the flow from the first tile to
-the second clearing each tile between them (`0x53B280`), re-links the end tiles of the cut (`0x53BC60`: the arms, then the piece chooser `0x53AFA0`) and finds the cut's ends by equal step. A first click whose test answers 1 is dropped, a second whose test does not answer 9 leaves the tool (`0x52F200`). After the cut the walk `0x52A970` sets the ride's word:
-valid, `0x52A490` starts the pieces forward (the table above); invalid, `0x52A490` and `0x52A700` stop them and the tool continues as the line tool from the track's open end. OpenTPW's track button always
-starts the line tool at the station's exit: it has no cut and no continuation at the open end. Needed to build it: the pick tests of `0x539760`, the cut `0x52B400` with its re-links (the pieces' shape tests
-`0x53AE00`, a corner, `0x53AE50` and `0x53AE90`, by arm counts) and the corner collector `0x530830` with its undo stack.
+line start there) switches to the line tool 0xB or 0x10 at once (`Level.EnterTrackTool` on an invalid circuit: `TrackEditor.FindOpenEnd`, which also resets the pass counters, 1 at a corner or junction and else 0). With the circuit closed, a click picks a track tile (an extension cell takes its origin, `0x53AD90`; a station tile is refused, `0x53ADB0`), orders it by
+its step number (`+0x24`, `0x53AEC0`) and tests it (`0x539760`, mode 0xE or 0x13: a tile of the ride with fewer than three arms answers 9, every other track tile 1; `TrackEditor.Pick`); the second click does the same, and the pair, the lower step first, goes to `0x52B400` (last argument 1), which walks the flow from the first tile to
+the second writing the heading as each tile's flow link, finds the cut's ends by equal step (a junction before the step matches stands in for it), then walks from the first end to the second clearing each tile between them (`0x53B280`: a junction loses one pass, any other tile is cleared outright and refunds the track cell cost × the scrap percentage / 100; the first station tile and the tile before it are spared), re-links the end tiles of the cut (`0x53BC60`: the arms, then the piece chooser `0x53AFA0`) and the station repair `0x52FC80` follows. A first click whose test answers 1 is dropped, a second whose test does not answer 9 leaves the tool (`0x52F200`). After the cut the walk `0x52A970` sets the ride's word:
+valid, `0x52A490` starts the pieces forward (the table above) and the tool ends; invalid, `0x52A490` and `0x52A700` stop them and the tool continues as the line tool from the track's open end. The hover marks the tiles of the cut as plain blueprint cells. A tile the cut clears takes its add-on object with it (`0x53B6E5` → `0x527EE0`). Not built: Backspace's replay of the existing track's corner stack (`0x52FE50`), the cut's ghost op `0x10F`, and the ride's reopening after a valid walk (`0x4DF290` → `0x4DF390`).
 
 **Vehicle height** (TRACK-001 narrowed, TRACK-031 retired). Each probe of `0x546280` takes the object on its cell (`0x450AC0`: the cell's owner, a track cell through `0x53BF30`)
 and samples it in the mode `0x450EA0` chooses (`TrackSurface.FromObject`):
@@ -310,7 +308,7 @@ OpenTPW keeps the straight piece's floor for the Halloween and space kart statio
 
 Every tile records the ride it was laid for (`TrackCell.Owner`: the station's first-tile cell index plus one, saved and hashed; TRACK-021). A tile of one ride never
 connects to, links to or overwrites a tile of another, so two water rides can touch without sharing a circuit, and a demolition removes exactly the ride's own tiles
-and station. The demolition pays as the original's (`0x527EE0`, TRACK-007): every tile laid for the ride refunds the track cell cost × the ride's scrap percentage / 100 (`ClearCell` `0x53B280` credits it at `0x53B622`; the two replays run with flag `0x81B46C` = 1, so end tiles refund too, and with the queue flag `0x81D7A8` clear, so a tile another line still overlaps stays until its last clearing visit) and the demolition then charges 2 × the cell cost × the percentage / 100 once (`0x528157..0x528179`), both only for a type with a queue. A circuit that overflows the section, collision-object or buoy pool (1024, 2048, 1024) is invalid whatever the walk said, with no geometry and no boats
+and station. The demolition pays and clears as the original's (`0x527EE0`, TRACK-007): the two replays run the chain of tiles from the station's exit to the open end of the track (`0x530830`) and the chain from the tile before the station (`0x530B70`), with flag `0x81B46C` = 1 (end tiles clear too) and the queue flag `0x81D7A8` clear, so every tile a chain reaches refunds the track cell cost × the ride's scrap percentage / 100 (`ClearCell` `0x53B280` credits it at `0x53B622`) once its pass counter runs out (a junction a chain only passes keeps its other pass), a tile no chain reaches (a branch, a detached piece) stays in the park and refunds nothing, and the demolition then charges 2 × the cell cost × the percentage / 100 once (`0x528157..0x528179`), both only for a type with a queue (`TrackEditor.Demolish`). A circuit that overflows the section, collision-object or buoy pool (1024, 2048, 1024) is invalid whatever the walk said, with no geometry and no boats
 (TRACK-020). A controller counts as live while its runtime is not stopped and it is in the park's controller list; the park-resume capture and restore both use that
 one rule, so a faulted or removed ride is skipped by both.
 
@@ -362,6 +360,7 @@ OpenTPW decisions with no original rule (`[EXT:name]` at the code sites):
 - `[EXT:kart-roll-convention]`: the absolute sign of a kart's roll (above).
 
 Retired with a code change: TRACK-009 (snap), 011 (tick), 012 and 023 (start heading), 016 (boat spray, engine voice, unload), 017 (crossing flag), 024 (bank clamp), 029 (chase, already ported).
+October 18 (round 8, coasters-2): TRACK-014 retired (its readers, the edit sub-modes, are built); TRACK-018 and TRACK-007 narrowed to what the replays leave (Backspace, the per-line arm writes), TRACK-005 narrowed with the line ops read.
 October 16: `APPROX:TRACK-006` retired as already matching (the walk posts no message, above); TRACK-018 narrowed (arm masks and water clips built).
 October 16, second read round: `APPROX:TRACK-003` retired (the instancers `0x522B90` and `0x522D50` and the mesh creation `0x463060` → `0x466F90` offset a corner-pivoted piece by a whole tile, which is the tile turning about its centre; tested); TRACK-001 narrowed (the instance height is `0x466D70`'s midrange of the tile's 3 × 3 landscape vertices and the terrain mode samples `0x4527F0` at the probe); TRACK-002 narrowed to the other readers of the object height map; TRACK-005 narrowed (the station line, exit, piece walks and controller reference follow `0x52A1A0`, `0x52A490`, `0x52A700` and `0x529E10`); TRACK-026 narrowed (`0x44B410` is ADDHEAD's PC twin).
 Retired as already matching: TRACK-013 (worn is read only by the kart exhaust branch, `0x5486FC`). Narrowed: TRACK-002, 005, 019, 026, 030 (texts in the register); TRACK-025 and 031 were retired in a later round (below).
@@ -432,8 +431,8 @@ The slide's pieces are chosen from the cell sequence, as the kart and water piec
 
 ## Open points
 
-- The edit sub-modes (TRACK-018, "The track edit sub-modes"), the demolition's replayed action list, the station line's modes 0x80 and 0x83, the walk's
-  untraced junction conditions (see the `TRACK-` entries in [the register](https://opentpw.io/docs/FIDELITY-REGISTER.html)).
+- The edit sub-modes' Backspace replay and the ride's reopening (TRACK-018, "The track edit sub-modes"), the demolition's per-line arm writes (TRACK-007), the exit and entry tiles the placement lays
+  and the station line's arms (TRACK-005), the walk's untraced junction conditions (see the `TRACK-` entries in [the register](https://opentpw.io/docs/FIDELITY-REGISTER.html)).
 - What a ride's demolition does with the add-ons on its track, and the Extra Tube's own window ("Add-ons").
 - The script performance value is the ride's speed bias (`Script.SpeedBias`, 50 at creation), pushed to the controller every tick.
 

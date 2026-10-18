@@ -63,6 +63,9 @@ TABLES = [
     ('LoadDialog', 0x7523F0, 0x23BCDF, (248, 30, 1800, 1007), 0x752564, 10),
     ('PostcardWindow', 0x7540D8, 0x5D9D, (186, 30, 2018, 1007), 0x7542B4, 11),
     ('ParkInfoWindow', 0x7537D0, 0x4A68BA, (208, 30, 1840, 1007), 0x753C48, 28),
+    ('ChatOverlay', 0x758AE8, 0xC3122, (0, 0, 2048, 1536), 0x758CD6, 17),
+    ('ChatBuddyPopup', 0x758CD8, 0x1788, (0, 0, 2048, 1536), 0x758E14, 8),
+    ('ChatPlayerPopup', 0x758E18, 0x3002, (0, 0, 2048, 1536), 0x758F04, 6),
 ]
 # The second confirm-dialog table must be the same stream, byte for byte in its decoded tree.
 CONFIRM_TWIN = 0x7585A8
@@ -98,6 +101,9 @@ REQUIRED = {
     'LoadDialog': ['window2', 'f_load', '!frame', 'b_up', 'b_down', 'b_scroller', 'b_exit', 'b_okay'],
     'PostcardWindow': ['window4', '!frame', 'b_address', 'b_clear', 'b_preview', 'b_okay', 'b_exit'],
     'ParkInfoWindow': ['window3', 'b_okay', 'graphpark', 'toughts', 'ti_hungry', 'b_kids', 'b_allstaff', 'b_allthings'],
+    'ChatOverlay': ['chat', 'b_up', 'b_down', 'b_scroller', 'b_speeps', 'b_sbuddi', 'b_muff', 'b_vote', 'b_chtpcard'],
+    'ChatBuddyPopup': ['!f_plain', 'b_bmark', 'b_gopeep', 'b_ignore', 'b_unbuddi', 'b_peeploc', 'b_page'],
+    'ChatPlayerPopup': ['!f_plain', 'b_bmark', 'b_gopeep', 'b_ignore', 'b_unbuddi'],
 }
 
 LOADER = 0x4899C0

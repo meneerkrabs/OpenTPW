@@ -44,17 +44,36 @@ public partial class Level
 	}
 
 	/// <summary>
-	/// [EXT:pools-waves] A click on a wave machine: the settings of its pool take the next preset (<see cref="PoolWaveSettings.NextPreset"/>). Returns them, or null when the object is no wave machine with water beside it.
+	/// [EXT:pools-waves] The wave settings of a placed wave machine (the machine's own, in the flags of its access cell; a machine whose cell holds none runs <see cref="PoolWaveSettings.Default"/>), or null
+	/// when the object is no wave machine with water beside it or the pools extension is off.
+	/// </summary>
+	public PoolWaveSettings? PoolWavesOf( OriginalObject item ) =>
+		FeatureGates.Pools && Guests?.Grid.Cells is { } cells && PoolAttractions.KindOf( item.Entry ) == PoolAttractionKind.WaveMachine && PoolSites.Find( item.ThingId ) is { } site
+			? PoolWaveSettings.At( cells, site.Access )
+			: null;
+
+	/// <summary>
+	/// [EXT:pools-waves] Writes the wave settings of a placed wave machine (height 1 to 3 and interval 0 to 2 are clamped as the flags hold them). False, and nothing written, when the object is no wave machine
+	/// with water beside it.
+	/// </summary>
+	public bool SetPoolWaves( OriginalObject item, PoolWaveSettings settings )
+	{
+		if ( PoolWavesOf( item ) is null || Guests?.Grid.Cells is not { } cells || PoolSites.Find( item.ThingId ) is not { } site )
+			return false;
+		PoolWaveSettings.SetAt( cells, site.Access, new PoolWaveSettings( settings.On, Math.Clamp( settings.Height, 1, 3 ), Math.Clamp( settings.Interval, 0, 2 ) ) );
+		return true;
+	}
+
+	/// <summary>
+	/// [EXT:pools-waves] Steps a wave machine's settings to the next preset (<see cref="PoolWaveSettings.NextPreset"/>; a machine running the default moves on from it). Returns them, or null when the object is no
+	/// wave machine with water beside it. The HUD sets them in the machine's settings window (<see cref="SetPoolWaves"/>); this stays for scripted use.
 	/// </summary>
 	public PoolWaveSettings? CyclePoolWaves( OriginalObject item )
 	{
-		if ( !FeatureGates.Pools || Guests?.Grid.Cells is not { } cells || PoolAttractions.KindOf( item.Entry ) != PoolAttractionKind.WaveMachine
-			|| PoolSites.Find( item.ThingId ) is not { } site )
+		if ( PoolWavesOf( item ) is not { } current )
 			return null;
-		// the settings are the machine's own, in the flags of its access cell; a machine whose cell holds none runs the default, so the first click moves on from it
-		var next = PoolWaveSettings.NextPreset( PoolWaveSettings.At( cells, site.Access ) );
-		PoolWaveSettings.SetAt( cells, site.Access, next );
-		return next;
+		var next = PoolWaveSettings.NextPreset( current );
+		return SetPoolWaves( item, next ) ? next : null;
 	}
 
 	/// <summary>

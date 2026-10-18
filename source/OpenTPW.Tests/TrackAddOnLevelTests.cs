@@ -147,4 +147,99 @@ public class TrackAddOnLevelTests
 		Assert.IsNotNull( stray, "placed without the add-on rule, as an ordinary object on free ground" );
 		Assert.IsNull( level.WindowTarget( stray ), "an add-on on no ride's track opens nothing" );
 	}
+
+	// ---- TRACK-018: the same real-level fixture exercises the track edit door and the live tool ingress. ----
+
+	private static ParkObjectState AttachTrackEconomy( Level level, OriginalObject ride )
+	{
+		var economy = EconomyTestData.Park();
+		var state = economy.RegisterExisting( 1100 );
+		Set( level, "<Park>k__BackingField", ParkEconomyRuntime.ForResume( economy, ParkStartKind.FullSimulation ) );
+		Set( level, "economyInstances", new Dictionary<OriginalObject, int> { [ride] = state.Id } );
+		state.IsOpen = false;
+		ride.Close();
+		return state;
+	}
+
+	[DataTestMethod]
+	[DataRow( TrackWalkCause.Line, true )]
+	[DataRow( TrackWalkCause.Edit, true )]
+	[DataRow( TrackWalkCause.Restore, false )]
+	[DataRow( TrackWalkCause.Placement, false )]
+	[DataRow( TrackWalkCause.AddOn, false )]
+	public void OnlyExplicitLineAndEditWalksReopenAValidCircuit( TrackWalkCause cause, bool opens )
+	{
+		var (level, ride, _) = World();
+		var state = AttachTrackEconomy( level, ride );
+		Assert.IsTrue( level.RewalkTrack( ride, cause ) is { IsValid: true } );
+		Assert.AreEqual( opens, ride.IsOpen, "the model door follows the qualifying operation cause" );
+		Assert.AreEqual( opens, ride.Visitors.IsOpen, "the visitor bridge reads the same door and accepted circuit" );
+		Assert.AreEqual( opens, state.IsOpen, "the economy is synchronized before another simulation tick or save" );
+	}
+
+	[DataTestMethod]
+	[DataRow( "broken" )]
+	[DataRow( "condemned" )]
+	[DataRow( "upgrading" )]
+	[DataRow( "maintenance" )]
+	[DataRow( "script-broken" )]
+	[DataRow( "disconnected-queue" )]
+	public void AValidTrackEditHonoursTheOrdinaryAttractionReopenGuards( string blocker )
+	{
+		var (level, ride, _) = World();
+		var state = AttachTrackEconomy( level, ride );
+		if ( blocker is "broken" or "condemned" ) state.IsBrokenDown = true;
+		if ( blocker == "condemned" ) state.LifeGauge = 0;
+		if ( blocker == "upgrading" ) state.PendingLevel = state.Level + 1;
+		if ( blocker == "maintenance" ) state.MaintenanceRequested = true;
+		if ( blocker == "script-broken" ) ride.Runtime.SetVariable( nameof( RideVariables.VAR_BROKEN ), 1 );
+		if ( blocker == "disconnected-queue" )
+		{
+			ride.Visitors.Parameters = new QueueParameters( true, false, false, 130, 60, 60, 5, 30 );
+			ride.Visitors.QueueFrontCell = ride.Visitors.EntranceCell = (4, 4);
+			level.Guests!.Grid.Cells.SetType( 4, 4, ParkCellType.Queue );
+		}
+		Assert.IsTrue( level.RewalkTrack( ride, TrackWalkCause.Edit ) is { IsValid: true } );
+		Assert.IsFalse( ride.IsOpen || ride.Visitors.IsOpen || state.IsOpen, blocker );
+	}
+
+	[TestMethod]
+	public void CuttingARealLevelSeedsBackspaceAndMendingAfterUndoSynchronizesTheDoor()
+	{
+		var (level, ride, _) = World();
+		var state = AttachTrackEconomy( level, ride );
+		ride.Open();
+		state.IsOpen = true;
+		Assert.IsTrue( level.EnterTrackTool( ride ) );
+		Assert.AreEqual( CellToolMode.KartEdit, level.CellTool.Mode );
+		level.CellTool.Click( (24, 14) );
+		level.CellTool.Click( (22, 14) );
+		Assert.AreEqual( CellToolMode.KartTrack, level.CellTool.Mode );
+		Assert.AreEqual( (26, 14), level.CellTool.Start );
+		Assert.IsTrue( level.CellTool.SegmentCount > 0, "the surviving old corners are already undoable after a cut" );
+		Assert.IsFalse( ride.IsOpen || ride.Visitors.IsOpen || state.IsOpen, "a broken circuit is closed immediately" );
+		var beforeUndo = level.Park!.Economy.Balance;
+		Assert.IsTrue( level.CellTool.Undo(), "Backspace uses the live editor and its level refund hook" );
+		Assert.AreEqual( (30, 14), level.CellTool.Start );
+		Assert.AreEqual( beforeUndo + 2 * level.KartTracks!.TileCost, level.Park.Economy.Balance );
+		Assert.IsFalse( ride.IsOpen || ride.Visitors.IsOpen || state.IsOpen );
+		var mend = level.CellTool.Click( (20, 14) );
+		Assert.IsTrue( mend?.Completed == true );
+		Assert.IsTrue( ride.Runtime.Bump!.IsTrackValid );
+		Assert.IsTrue( ride.IsOpen && ride.Visitors.IsOpen && state.IsOpen );
+		Assert.IsFalse( level.CellTool.IsActive, "this queue-less synthetic ride has no next queue tool" );
+	}
+
+	[TestMethod]
+	public void ADeliberatelyClosedRideStaysClosedThroughTrackSnapshotRestore()
+	{
+		var (level, ride, _) = World();
+		var state = AttachTrackEconomy( level, ride );
+		var saved = level.CaptureTracksSnapshot();
+		Assert.IsNotNull( saved );
+		level.RestoreTracksSnapshot( saved );
+		Assert.IsTrue( ride.Runtime.Bump!.IsTrackValid );
+		Assert.IsFalse( ride.IsOpen || ride.Visitors.IsOpen || state.IsOpen );
+	}
+
 }

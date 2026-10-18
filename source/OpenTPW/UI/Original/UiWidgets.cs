@@ -303,6 +303,8 @@ public abstract class UiElement
 	public Func<string?>? HelpSource { get; set; }
 	public string? CurrentHelp => HelpSource?.Invoke() ?? Help;
 	public virtual bool Focusable => false;
+	/// <summary>Whether the element keeps a click at <paramref name="point"/> (framebuffer pixels) off the park: anywhere in its box, unless it is shaped.</summary>
+	public virtual bool CoversPoint( UiCanvas canvas, NVector2 point ) => ScreenRect( canvas ).Contains( point );
 
 	public UiRect ScreenRect( UiCanvas canvas ) => canvas.Map( Bounds, Anchor );
 	public abstract void Draw( UiContext context, bool focused, bool pressed );
@@ -372,6 +374,42 @@ public sealed class UiModelImage : UiElement
 	public RgbaByte? Tint { get; set; }
 	/// <summary>Name of a local art override (<see cref="UiArtOverrides"/>) drawn instead of the model when present.</summary>
 	public string? ArtOverride { get; set; }
+	/// <summary>
+	/// Whether the image keeps clicks off the park only on its model's triangles, not over its whole box (a frame round the park view: the chat frame's
+	/// panels, not its opening). The shape is the frame it last drew, so before its first draw, or without its model, it covers nothing.
+	/// </summary>
+	public bool CoversShape { get; init; }
+	private UiModelFrame? drawnShape;
+
+	public override bool CoversPoint( UiCanvas canvas, NVector2 point )
+	{
+		if ( !CoversShape )
+			return base.CoversPoint( canvas, point );
+		var rect = ScreenRect( canvas );
+		if ( drawnShape is not { Width: > 0, Height: > 0 } shape || rect.Width <= 0 || rect.Height <= 0 )
+			return false;
+		// the point in the model's own units, as DrawFrame maps the frame onto the box
+		var at = new NVector2( shape.MinX + (point.X - rect.X) * shape.Width / rect.Width, shape.MinY + (point.Y - rect.Y) * shape.Height / rect.Height );
+		foreach ( var part in shape.Parts )
+		{
+			for ( var index = 0; index + 2 < part.Indices.Count; index += 3 )
+			{
+				if ( InTriangle( at, part.Vertices[part.Indices[index]].Position, part.Vertices[part.Indices[index + 1]].Position, part.Vertices[part.Indices[index + 2]].Position ) )
+					return true;
+			}
+		}
+		return false;
+	}
+
+	/// <summary>Whether <paramref name="point"/> lies in the triangle or on its edge; a triangle without area holds no point.</summary>
+	private static bool InTriangle( NVector2 point, NVector2 a, NVector2 b, NVector2 c )
+	{
+		float Side( NVector2 from, NVector2 to ) => (to.X - from.X) * (point.Y - from.Y) - (to.Y - from.Y) * (point.X - from.X);
+		float ab = Side( a, b ), bc = Side( b, c ), ca = Side( c, a );
+		if ( ab == 0 && bc == 0 && ca == 0 )
+			return false;
+		return ab >= 0 && bc >= 0 && ca >= 0 || ab <= 0 && bc <= 0 && ca <= 0;
+	}
 
 	public override void Draw( UiContext context, bool focused, bool pressed )
 	{
@@ -387,6 +425,8 @@ public sealed class UiModelImage : UiElement
 		}
 		if ( !context.DrawModel( Model, Frame(), ScreenRect( context.Canvas ), Tint ) )
 			context.Batch.AddRectangle( ScreenRect( context.Canvas ), UiColors.HelpBackground );
+		else if ( CoversShape )
+			drawnShape = context.Models.Get( Model )?.GetFrame( Frame() );
 	}
 }
 

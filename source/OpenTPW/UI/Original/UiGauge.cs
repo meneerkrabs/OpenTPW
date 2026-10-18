@@ -18,7 +18,8 @@ public static class UiGauge
 	/// <summary>The happiness gauge art (<c>happygrad.wct</c>, blue through orange to yellow), laid out like <see cref="ArtPath"/>.</summary>
 	// [BIN:TPW-EXE:0x7508c0 happygrad.wct] the gauge model builder 0x477ff0 is given happygrad.wct instead of ridestatbar.wct by the happiness bars: the visitors list's happiness column (0x493bc5), the visitor window's (0x4b7205), the employee window's 0x513 (0x4b56f5) and the local-happiness rows of the shop and sideshow windows (0x4b018c, 0x4b1681), where the excitement, reliability, repair, life and satisfaction bars keep ridestatbar.wct
 	public const string HappinessArtPath = "/ui/textures/happygrad.wct";
-/// <summary>The range of a type-9 gauge's value (0x66d885 clamps it to 0..0x400).</summary>
+
+	/// <summary>The range of a type-9 gauge's value (0x66d885 clamps it to 0..0x400).</summary>
 	public const int FullValue = 1024;
 
 	/// <summary>

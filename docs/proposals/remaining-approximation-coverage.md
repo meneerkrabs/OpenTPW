@@ -8,6 +8,16 @@ The audited baseline contains **162 distinct registered IDs**. **AUDIO-041**, in
 
 Disposition: **152 new plan-only draft PRs**, **six addenda to existing drafts**, **six existing-PR coverage pointers**, **one stale-only record**, and **one alias**. These are coverage dispositions, not 163 missing features. All new links are populated from confirmed publication responses; runtime acceptance remains pending.
 
+## Implementation wave status (October 18, 2026)
+
+All coverage rows remain planned unless this ledger explicitly identifies implementation work. A proposal link alone never means the runtime behavior is complete. The current user request authorizes implementation; evidence-only and extension-policy outcomes still require a defensible decision rather than an invented replacement.
+
+| Topic | Existing PR | Current state | Review and tests | Runtime/browser evidence |
+| --- | --- | --- | --- | --- |
+| ADVISOR-017 map/options slice | [#444](https://github.com/meneerkrabs/OpenTPW/pull/444) | Partial implementation at `fafd7fc5ad0aa4d9a191e34a53a0108fba611d90`: silent window stop and actual-park-pause queue gate. Per-turn service and other lifecycle residuals remain. | Independent source/test review passed. 18 focused C# cases authored; exact-head cross-platform CI queued. Python/evidence checks pass with declared skips/expected failures. | Pending; no playback or browser pass claimed. |
+| TRACK-018 existing-track edit recovery | [#441](https://github.com/meneerkrabs/OpenTPW/pull/441) | Implementation in progress in an isolated checkout; original clear/replay branches under static evidence review. | Local regression cases and independent review pending. | Pending. |
+| UI-091 locator presentation | [#484](https://github.com/meneerkrabs/OpenTPW/pull/484) | Triage corrected mistaken sound wording: 0xC6/0x11F are existing advisor-help posts. Remaining locator behavior is planned. | Source cross-check completed; no runtime change. | Pending. |
+
 ## Category meanings
 
 - **Missing behavior:** a bounded behavior absent from the inspected source; implementation still requires the stated evidence and review gates.
@@ -204,7 +214,7 @@ New plan links identify their reviewed draft PRs. Existing links and alias/stale
 | ui | UI-064 | missing | [#487](https://github.com/meneerkrabs/OpenTPW/pull/487) | Ball dragging and workload arithmetic exist, but the exact saved press/release rectangle is not settled; two child model states are not drawn and track press recenters rather than original stepped movement. |
 | ui | UI-082 | approximation | [#488](https://github.com/meneerkrabs/OpenTPW/pull/488) | Hire portrait uses sprite-to-canvas scale 3.2; original screen-sprite scale 8 consumer is unknown, and employed-view portrait differs from applicant-only source behavior. |
 | ui | UI-086 | missing | [#481](https://github.com/meneerkrabs/OpenTPW/pull/481) | Map draws placed objects with plain color rather than original WhichUIType classes, statistic-dependent ramp and neighbor outlines. |
-| ui | UI-091 | missing | [#484](https://github.com/meneerkrabs/OpenTPW/pull/484) | Locator order uses IDs, follow snaps, patrol mark/slide/opener sounds are absent, and picked-up frame 9 falls back. |
+| ui | UI-091 | missing | [#484](https://github.com/meneerkrabs/OpenTPW/pull/484) | Resolve thing-list order, camera smoothing, patrol markers, panel sliding and frame-9 handling; existing 0xC6/0x11F advisor-help posts must not be relabeled as sounds without call-trace evidence. |
 | ui | UI-092 | missing | [#486](https://github.com/meneerkrabs/OpenTPW/pull/486) | Portrait phase lacks original record field; cycling uses hire order and locate is disabled while held; title-click target is unidentified, not proven rename. |
 | ui | UI-094 | approximation | [#492](https://github.com/meneerkrabs/OpenTPW/pull/492) | Ride camera exists and shares original projection; static duration is measured 0.33s, seat-forward axis/look signs remain inferred, prototype heading drops Z, the invisible original window is absent, and crowd counting keeps the pre-ride park target without a traced original target source. |
 | ui | UI-095 | missing | [#494](https://github.com/meneerkrabs/OpenTPW/pull/494) | Exit restores prior camera and recenters, but placed object link bytes are absent so original yaw rule never fires; host pose/smoothing also differs. |

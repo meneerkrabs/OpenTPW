@@ -262,3 +262,15 @@ test('the actual handler retains a filtered mixed-source witness without reading
 	assert.deepEqual(context.calls, [['reset'], ['file', 'Data/Ver.txt'], ['lobby']]);
 	assert.deepEqual(context.witnesses, [['Data/levels/water', 'Data/levels/space']]);
 });
+
+// Source contract, not a WebAssembly runtime smoke: shared audio must not read the desktop configuration store.
+test('browser audio startup only reads legacy settings through the browser-safe accessor', async () => {
+	const audio = await readFile(new URL('../source/OpenTPW/Audio/GameAudio.cs', import.meta.url), 'utf8');
+	const legacy = await readFile(new URL('../source/OpenTPW/Client/LegacySettings.cs', import.meta.url), 'utf8');
+	const ensureStarted = audio.slice(audio.indexOf('public static bool EnsureStarted()'), audio.indexOf('private static int ReadDuckingLevel()'));
+	assert.doesNotMatch(audio, /\bSettings\s*\.\s*Default\b/, 'shared audio cannot initialize System.Configuration');
+	assert.match(ensureStarted, /if\s*\(\s*ReverbMap\s*==\s*null\s*\)\s*\{\s*(?:\/\/[^\n]*\n\s*)*var\s+gamePath\s*=\s*LegacySettings\.GamePath\s*;/);
+	assert.equal((ensureStarted.match(/LegacySettings\.GamePath/g) ?? []).length, 1, 'read the optional path once');
+	assert.match(ensureStarted, /if\s*\(\s*!string\.IsNullOrEmpty\(\s*gamePath\s*\)\s*\)\s*LoadReverbMap\(\s*gamePath\s*\)/);
+	assert.match(legacy, /if\s*\(\s*OperatingSystem\.IsBrowser\(\)\s*\)\s*return null;\s*try\s*\{\s*return read\(\s*Settings\.Default\s*\)/, 'browser returns before the legacy settings are touched');
+});

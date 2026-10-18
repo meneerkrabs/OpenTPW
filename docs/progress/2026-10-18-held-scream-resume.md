@@ -30,3 +30,5 @@ the boundary and all 600 continuation ticks and logs "1 held scream(s) restored,
 scream does not play again after the load while the sound service runs. [AUDIO.md](../AUDIO.md) ("Held screams in a park save") and
 [PARK-SAVES.md](../PARK-SAVES.md) describe the behaviour; PARK-SAVES.md no longer says that a screaming ride or a speaking advisor
 blocks a save.
+AUDIO.md and the STARTSCREAM comment now say that this models tp.exe with its sound running: without a sound device its chain
+start (`0x51bfc0`) returns 0 and the original holds no handle.

@@ -383,12 +383,15 @@ capacity, so OpenTPW's band equals the original's for the same riders; whether t
 (boarding and queue pace) is the guest slice's question, not the band's. Near a full ride a band of 4 or more picks the
 0-500 ms and 100-1000 ms event (73, 74) in 43 % of the starts of the jungle run, as in the original's busiest minutes.
 
-**Held screams in a park save (October 18).** The script's handle is state, not sound. `OriginalObjectEffects` keeps whether
-the script holds a handle, the STARTSCREAM band, level and speed word, the level of the last SCREAMLEVEL while the handle is
-held, and how many handles refused starts lost. A run without audio (headless, `--mute`) gets the same values as a run with a
-sound service, and a park save stores them, so its snapshot and hashes do not depend on audio. The refusal is decided by the
-script's handle. Both STARTSCREAM operands and SCREAMLEVEL's operand are resolved whether or not a handle is held (tp.exe
-`0x555E5E`, `0x555FDA`). The chain only plays the held scream.
+**Held screams in a park save (October 18).** The script's handle is state, not sound. `OriginalObjectEffects` keeps whether the
+script holds a handle, the STARTSCREAM band, level and speed word, the level of the last SCREAMLEVEL while the handle is held,
+and how many handles refused starts lost. A run without audio (headless, `--mute`) gets the same values as a run with a sound
+service, and a park save stores them, so its snapshot and hashes do not depend on audio. The refusal is decided by the script's
+handle. Both STARTSCREAM operands and SCREAMLEVEL's operand are resolved whether or not a handle is held (tp.exe `0x555E5E`,
+`0x555FDA`). The chain only plays the held scream. This deliberately models tp.exe with its sound running: without a sound
+device its chain start `0x51bfc0` returns 0 (`DAT_00802bc8`/`DAT_00802bd4` unset or a failed play), so the original then holds
+no handle, never refuses and a SCREAMLEVEL (`0x51bc40`, which returns 0 the same way) clears it. OpenTPW keeps the sound-on
+behaviour for every run so that saves do not depend on audio.
 
 A restore brings the state back exactly and starts no sound, so a candidate park that a failed load rejects leaves no chain in
 the live park. Once `GameFlow.ResumePark` has entered the park's audio, `Level.ResumeHeldScreams` starts each held scream's

@@ -765,7 +765,7 @@ public sealed class OriginalObjectEffects : IRideScriptEffects, IRideAnimationQu
 		// [BIN:STP-PPC:0x100B19DC STARTSCREAM] the scream is held by the ride's script (the handle at the VM's +208); STOPSCREAM stops the handle, SINGLESCREAM is a one-shot with no handle
 		if ( call.Opcode == Opcode.STARTSCREAM )
 		{
-			// the handle, the refusal and the diagnostics follow the script's own view (a chain, and so a handle, exists whenever the band is not 0), so a run without audio holds, refuses and saves the same screams
+			// the handle, the refusal and the diagnostics follow the script's own view (in tp.exe with its sound running a chain, and so a handle, exists whenever the band is not 0; without a sound device 0x51bfc0 returns 0 and no handle is held, which OpenTPW deliberately does not model), so a run without audio holds, refuses and saves the same screams
 			var (band, level) = (call.Argument( 0 ), call.Argument( 1 ));
 			var refused = scriptHoldsScream;
 			GameAudio.Screams.NoteStart( ride.Entry.DisplayName, band, refused );

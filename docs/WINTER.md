@@ -1,7 +1,7 @@
 # Winter (`opentpw.winter`, planned)
 
-October 18, 2026. Status: **phase W0 (the research below and the decisions) and phase W2 (our own art and data pipeline, [Content](#content-extwinter-content)) are done; the extensions themselves are not written yet.**
-Nothing of it is visible in a park: `content/winter` is shipped but no catalog, renderer or rule reads it (phases W1, W3, W4 and W5 below).
+October 18, 2026. Status: **phases W0 (the research below and the decisions), W1 ([Settling snow](#settling-snow-extwinter-snow), `opentpw.winter-snow`, built) and W2 (our own art and data pipeline, [Content](#content-extwinter-content)) are done; the kiosk, the stall and the cold rule are not written yet.**
+The only visible part is the settling snow (W1); `content/winter` is shipped but no catalog, renderer or rule reads it yet (phases W3, W4 and W5 below).
 
 The request (user, 2026-10-18): three features of our own (`[EXT:winter-*]`), with no original art, script or number table copied: (1) snow that settles on the ground, roofs and objects during snowfall and
 melts afterwards; (2) a winter kiosk that sells hats, mittens and earmuffs, worn visibly by the guests; (3) a glühwein stall (the user's choice over hot chocolate; a warm drink with no drunk effects).
@@ -87,12 +87,33 @@ All labels below are ours; nothing here is built yet except the content.
 | Phase | What | State |
 | --- | --- | --- |
 | W0 | this page: the findings and decisions | done |
-| W1 | `opentpw.winter-snow`: `SnowCover`, the uniform slot, test.shader and its web JSON, per-entity surface factor, path slush, the optional save field, tests, hallow captures (after `opentpw.evening` merges) | planned |
+| W1 | `opentpw.winter-snow`: `SnowCover`, the uniform slot, test.shader and its web JSON, per-entity surface factor, path slush, the optional save field, tests, hallow captures | done ([Settling snow](#settling-snow-extwinter-snow), `opentpw.winter-snow` 1.0.0, on by default) |
 | W2 | art and data pipeline: the eight shop models, the two `.sam`, the shop scripts, the item sprites, the anchors, `content/winter`, `tools/winter/build-content.sh`, content tests; nothing wired | done |
 | W3 | simulation behind `opentpw.winter`: catalog root, `AppearanceEffect` 4, the kiosk gate and terms, the stall's terms, saves, the used-only rule, pins | planned |
 | W4 | drawing: the warm-item renderer (sharing the umbrellas' attachment code), original-set head anchors, costume exclusion, browser delivery, captures | planned |
 | W5 | `opentpw.winter-cold` with its measurement and pins | planned |
 | W6 | tuning from captures; optional hats on riders' heads, pool-deck snow, sheltered-ground masking | planned |
+
+## Settling snow (`[EXT:winter-snow]`)
+
+Phase W1 (October 18, 2026). `opentpw.winter-snow` 1.0.0 is a presentation-only extension (`AffectsSimulation` false, on by default, listed on the Extensions and mods screen in every interface language). It shows wherever the
+weather snows (under the shipped weather only the Halloween world, see above); `--debug-weather 8` forces snow for captures, and `--debug-snow-cover <0..1>` (`[EXT:debug-snow-cover]`) sets the cover directly.
+
+- **The cover** (`SnowCover`, `World/Winter/`) `[EXT:winter-snow-cover]`: one scalar 0..1, stepped once per park turn from the weather's own turn (`ParkWeather.TurnStepped`, so it freezes while the park is paused and runs with the speed).
+  While it snows with drops falling, `cover += Accumulate x CurrentDrops / MaxRaindrops` with `Accumulate` 1/35 (full cover after 35 turns of the full drop count, about 1.5 game days); otherwise `cover -= Melt` with `Melt` 1/70 (gone after
+  about 3 dry days), three times faster while it rains. The drawn value eases toward the turn value per frame (rate 3 per second, real time) so the 4 Hz turn steps do not show. No random number is drawn and nothing reads it back.
+- **The draw** `[EXT:winter-snow-surfaces]`: `ModelEntity.SnowSurface` (default 0) times the drawn cover goes into test.shader's `g_flSnowCover`, the last free float of the uniform block (`_padding6`, byte 268, after `g_vFogColor`; the point
+  lights still start at byte 272, the block did not grow). Ground, track and coaster pieces and every placed object (roofs, trees, rides) have factor 1; the path layer and queue models have -0.35 `[EXT:winter-snow-paths]` (negative = slush:
+  a wet greyish brown, so paths stay readable under snow, the user's decision); cars, markers, sign text, lobby scenes, water, sprites and the pools (their shaders keep the slot for the glow) have 0.
+- **The shader**: after the light is known, an albedo blend toward white (slush: grey brown) with two octaves of value noise on the world position (no texture, no binding) and a smoothstep on the world-space up component of the normal (walls and
+  cliffs stay bare), `m = smoothstep( n - 0.08, n + 0.08, cover x slope x 1.15 )`, so snow starts in patches and melts back into them. The target colour is divided by the draw's light level when that is above 1, so a lit white lands near 0.9
+  instead of burning out, while the evening's dark ambient still darkens it at night. Cover 0 skips all of it: a capture of the hallow park with the extension on and cover 0 is **byte-identical** to one with the extension off (`cmp`).
+  `content/shaders/web/test.json` is regenerated (`WebShaderTests`); the generated GLSL ES 3.00 compiles and links in Chrome's WebGL2 and its uniform block is 784 bytes (272 + 16 lights x 32).
+- **Saves** `[EXT:winter-snow-save]`: `ParkResumeSnapshot.SnowCover`, an optional `double`, written only while the extension is on and the cover is above 0 (otherwise the member is left out, so a park without snow saves the same bytes as
+  before), validated on load (above 0, at most 1, finite) and ignored while the extension is off. It is in no hash and no mod record.
+- **Determinism**: the world state hash at park tick 11800 of the hallow park (`--perf-run 9000 --perf-speed 1 --perf-hash-tick 11800`) is the same with the extension off, on, on at full cover and on in forced snow at full cover (values in the
+  W1 progress fragment); `SnowCoverTests` pin the same on the economy.
+- Not covered: sprites, lake and pool water, pool decks, the sky; ground under a roof whitens too (no occlusion data). Wintry Decembers (`[EXT:winter-weather]`) is W3.
 
 ## Content (`[EXT:winter-content]`)
 

@@ -24,7 +24,7 @@ In code the system is called `OpenTPW.Mods` / "extensions"; `OpenTPW.ModKit` is 
 
 - manifests are parsed and validated, mod folders are discovered, `mods.json` is read and the run's set of extensions
   and mods is resolved once at startup;
-- the official extensions are `opentpw.online`, `opentpw.cross-edition-objects`, `opentpw.smarter-guests`, `opentpw.guest-insights` and `opentpw.restored-advice` (below), `opentpw.evening` (presentation only, on by default: a day and night cycle with lamps that light at dusk; [EVENING.md](EVENING.md)), `opentpw.pools-guest-art` (presentation only, on by default: with the pools extension on, land guests use OpenTPW's own 2x kids, off shows the original guests; [POOLS.md](POOLS.md)), and `opentpw.pools`, on by default (not in a Theme Park Inc run), in which the player paints
+- the official extensions are `opentpw.online`, `opentpw.cross-edition-objects`, `opentpw.smarter-guests`, `opentpw.guest-insights` and `opentpw.restored-advice` (below), `opentpw.evening` (presentation only, on by default: a day and night cycle with lamps that light at dusk; [EVENING.md](EVENING.md)), `opentpw.winter-snow` (presentation only, on by default: snow settles on the ground, roofs and objects while it snows; [WINTER.md](WINTER.md)), `opentpw.pools-guest-art` (presentation only, on by default: with the pools extension on, land guests use OpenTPW's own 2x kids, off shows the original guests; [POOLS.md](POOLS.md)), and `opentpw.pools`, on by default (not in a Theme Park Inc run), in which the player paints
   pool water cells (see [POOLS.md](POOLS.md)); a park save records `opentpw.pools` only when the park has pool cells;
 - park saves record the mods that change the simulation and refuse a mismatched set (below);
 - the **Extensions and mods screen** (below) edits `mods.json`;
@@ -48,6 +48,7 @@ Changes to `mods.json` apply at the next start; nothing is swapped while the gam
 | `opentpw.pools-guest-art` | yes | yes | no | OpenTPW's own 2x kid and head sprites for land guests while pools is on; switch it off for the original guests |
 | `opentpw.restored-advice` | yes | yes | no | advisor lines in the shipped data that the original never plays |
 | `opentpw.evening` | **yes** | yes | no | [Evening and night](EVENING.md): a day and night cycle on play time with lamps that light at dusk; presentation only |
+| `opentpw.winter-snow` | **yes** | yes | no | [Settling snow](WINTER.md#settling-snow-extwinter-snow): snow settles on ground, roofs and objects while it snows and melts afterwards, paths turn to slush; presentation only |
 | `opentpw.guest-insights` | no | yes | no | refusal counters in the park information window |
 | `opentpw.cross-edition-objects` | no | yes | yes | engine support for mods that bring Theme Park Inc attractions into Theme Park World |
 | `opentpw.smarter-guests` | no | **no, not yet** | yes | guests that decide better; selectable once phase 6 shows an effect |

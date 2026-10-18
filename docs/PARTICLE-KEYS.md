@@ -70,8 +70,7 @@ clears the placement, cached resolver and latest attempt, and a stopped owner
 does not create new diagnostics. Children share their owning runtime's effects.
 The diagnostic is neither save state nor canonical simulation state.
 
-Every EVENT keeps its existing unimplemented return/count/log behavior, even
-when preparation succeeds. Each prepared request is also announced once to the
+An EVENT of type 1 or 2 returns 0 and is no longer counted as an unimplemented effect (October 18, 2026: the particle system serves it). Each prepared request is also announced once to the
 level's particle pool, which starts the effect (PARTICLES.md, PTCL-908 for the
 callers that are not wired); the latest-attempt diagnostic stays as described
 here. RSE `ADDOBJ` types 1 and 2 prepare the same request through

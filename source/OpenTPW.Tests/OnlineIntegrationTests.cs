@@ -67,6 +67,9 @@ public class OnlineIntegrationTests
 
 			ann.SendChatLine( "/buddy Bob" );
 			await PumpUntilIdle( ann );
+			// the server's answer, not the sent line, shows it keeps Bob as Ann's buddy: each connection's lines are handled on their own, so Bob's join
+			// could otherwise come first
+			Assert.IsTrue( await Until( ann, () => ann.Buddies.Any( buddy => buddy.Name == "Bob" ) ), string.Join( " | ", ann.ChatLines ) );
 			bob.JoinRoom( ChatProtocol.SatelliteRoom( 2 ) );
 			await PumpUntilIdle( bob );
 			Assert.IsTrue( await Until( ann, () => ann.ChatLines.Any( line => line.Contains( "has entered" ) ) ),

@@ -259,11 +259,11 @@ so the options row has no effect then.
   (`realesrgan-x4plus`: the sprites are rendered 3D figures, and the anime model drew outlines around
   hair and faces), edge-padded, under the pack key `esprites/generic/kids/<set>.tpc.atlas`. The balloons
   (`esprites/generic/balloons/spr_bl.atlas`) and every theme's costumes and costume heads
-  (`esprites/<theme>/costumes/<set>.tpc.atlas`, `esprites/<theme>/costumeheads/<set>.atlas`) are built the same way. The guest
-  renderers use the pack's atlas when its aspect ratio matches; frame UVs are relative. A set that also ships an `.FPC`
-  (ESP byte 0x10C: the kids and the costumes) has the `.tpc.atlas` key since October 18, 2026, when OpenTPW moved to the
-  `.TPC` the game draws ([GUESTS.md](GUESTS.md)); a pack built before then holds `.atlas` images of the FPC frames, which
-  no longer apply, so those guests show unupscaled until the pack is rebuilt.
+  (`esprites/<theme>/costumes/<set>.tpc.atlas`, but Space's `spr_sk.atlas`; `esprites/<theme>/costumeheads/<set>.atlas`) are built
+  the same way. The guest renderers use the pack's atlas when its aspect ratio matches; frame UVs are relative. A set with ESP byte
+  0x10C (here the kids and every costume but Space's SPR_SK, which says 0) has the `.tpc.atlas` key since October 18, 2026, when
+  OpenTPW moved from its `.FPC` to the `.TPC` the game draws ([GUESTS.md](GUESTS.md)); a pack built before then holds `.atlas` images
+  of the FPC frames, which no longer apply, so those guests show unupscaled until the pack is rebuilt.
 - Before upscaling interface art and sprites, fully transparent texels take the colour of their
   opaque neighbours (up to four texels out, alpha stays 0). The decoded textures leave white or black
   in empty texels, which the upscaler would otherwise blend into a light or dark fringe.

@@ -84,9 +84,9 @@ a signed control `c < 0` repeats the next byte `−c` times, `c > 0` copies `c`
 literal bytes. Pixel index 0 is transparent; index `n ≥ 1` is palette entry
 `n − 1` (tp.exe's loader 0x587DB0 reads the `u32 0` as palette entry 0 of 256, so index n is entry n there;
 the first u16 is the format, 3 = paletted, and the second is ignored). Every row decodes to exactly `width` pixels and every bank ends exactly
-after its last frame (121/121 members). `.FPC` frames are slightly larger than
-`.TPC` (kids: up to 37×45 vs 36×43): the same art drawn from a lower camera (the widths match; a standing handyman is
-58 to 62 px tall in the FPC, 49 to 53 in the TPC). The ESP chooses (tp.exe 0x5410D3): `.fpc` when its byte 0x10C and the
+after its last frame (121/121 members). `.FPC` frames are taller than
+`.TPC` frames and about as wide (the kids' reach 37×45 in the FPC, 36×43 in the TPC): the same art drawn from a lower camera (a standing
+handyman is 58 to 62 px tall in the FPC, 49 to 53 in the TPC). The ESP chooses (tp.exe 0x5410D3): `.fpc` when its byte 0x10C and the
 sprite-detail flag 0x8768FC are both set, else `.tpc`. The flag's only writer, 0x540900, stores its first
 argument, and both of its calls pass 0 (0x54E688, 0x54ED2C; TPI's Game.exe likewise: 0x68E240 from 0x6A3768), so the
 PC game draws the TPC of every set and never opens an FPC (an earlier reading took the start-up call's second
@@ -151,7 +151,7 @@ frame of 128 is drawn exactly as before (the factor is 1.0, the multiplication l
 hash, save or determinism pin reads them. Particle sprites (`ParticleSpriteAtlas`) are drawn by the particle system's own size rules and do not read the fields; no shipped bank would show a difference.
 
 The 1024-pixel atlas width of `GuestSpriteAtlas` suffices for every shipped set (corpus-tested: all are 1024 wide, at most 512 rows). A set drawn at 2x needs up to 2048 rows in 1024 columns; beyond `MaximumHeight` (2048, which is also what WebGL2 guarantees)
-an atlas is packed into the next power of two wider (2048, then 4096) instead of a taller texture, a frame wider than the row widens it too, and a set that fits no 4096 x 4096 atlas is refused (skipped with a warning in `LoadSets`). Frames drawn at more than 128 pixels per unit get 4 pixels of padding instead of 2 so mip levels do not bleed into the next frame. The pools extension's sets (docs/POOLS.md): 1024 x 256 to 1024 x 512 for the kids and heads, 1024 x 2048 for the swimwear sets, 90 MiB of RGBA in all and about 120 MiB on the GPU with mip levels (pinned by `PoolsContentTests.TheShippedAtlasSizesArePinned`); the decoded pixels are released after the upload.
+an atlas is packed into the next power of two wider (2048, then 4096) instead of a taller texture, a frame wider than the row widens it too, and a set that fits no 4096 x 4096 atlas is refused (skipped with a warning in `LoadSets`). Frames drawn at more than 128 pixels per unit get 4 pixels of padding instead of 2 so mip levels do not bleed into the next frame. The pools extension's sets (docs/POOLS.md): 1024 x 256 for the kids, 1024 x 256 to 1024 x 512 for the heads, 1024 x 2048 for the swimwear sets, 83 MiB of RGBA in all and about 110 MiB on the GPU with mip levels (pinned by `PoolsContentTests.TheShippedAtlasSizesArePinned`); the decoded pixels are released after the upload.
 
 Kid slots (identical in all 8 sets; labels from viewing the frames, not traced):
 
@@ -968,7 +968,7 @@ point (guests pay when boarding, see Money), save/load of queues, and the import
 per visible guest (both windings), feet on the bilinear heightfield corner
 heights (also over heightfield holes such as the entrance road), one draw call
 with up to eight kid atlases (`GuestSpriteAtlas`, 1024-wide RGBA, built on the
-CPU from `.FPC`). Direction comes from the guest's heading relative to the
+CPU from `.TPC`). Direction comes from the guest's heading relative to the
 camera; the walk frame advances 20 frames per cell walked (10 running). Sprite world size
 is read from the original: one pixel is 20 / 128 x sqrt(2) = 0.2210 world units (ten a cell), 0.0442 engine units (`SpriteScale`: the quad placement 0x5890E0 adds 20 sprite extent units a sprite unit
 of 128 pixels in clip space, and the projection builder 0x578BE0 runs a 90 degree field of view with the clip x and y scaled by cos 45 degrees); a kid of 43 pixels stands 0.95 cell.

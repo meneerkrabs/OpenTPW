@@ -8,8 +8,8 @@
 		},
 		{
 			"path": "Generic/Kids/SPR_BE.TPC",
-			"size": 150079,
-			"sha256": "56157b1bc82e3d7b891a1c1435076c3858384c8e01b49ab566990cd8cedce02e"
+			"size": 124568,
+			"sha256": "9e51195625af6ba7022f8e8a4fd5b60de7dd1fb87ae095866300d2cecf39bf2a"
 		},
 		{
 			"path": "Generic/Kids/SPR_BI.ESP",
@@ -18,8 +18,8 @@
 		},
 		{
 			"path": "Generic/Kids/SPR_BI.TPC",
-			"size": 149239,
-			"sha256": "803da0a3e217e136146733045074ef143f385f35030a00eee69e92f00c15dfe1"
+			"size": 123382,
+			"sha256": "80d0c66b5d9fb7909d487e7fc712af2b8589f6190db1c430140883079f40187a"
 		},
 		{
 			"path": "Generic/Kids/SPR_CH.ESP",
@@ -28,8 +28,8 @@
 		},
 		{
 			"path": "Generic/Kids/SPR_CH.TPC",
-			"size": 160154,
-			"sha256": "2f0166b735f2d1c9c34b40dc39d6e42638a6ca603e8b81279414ce75b938cc22"
+			"size": 137931,
+			"sha256": "c89305484d529759f077819ddddf960029ec12f410534663561fa01281c482e6"
 		},
 		{
 			"path": "Generic/Kids/SPR_FR.ESP",
@@ -38,8 +38,8 @@
 		},
 		{
 			"path": "Generic/Kids/SPR_FR.TPC",
-			"size": 149284,
-			"sha256": "fac3d7a1f17c8687aba6e60db999d6c338779bc87afdb8617f674a22cad16db7"
+			"size": 123943,
+			"sha256": "d78e845296c9fc70aadfb0b4d3b2c9993f638812585b28ae331e8fda3b70c695"
 		},
 		{
 			"path": "Generic/Kids/SPR_KI.ESP",
@@ -48,8 +48,8 @@
 		},
 		{
 			"path": "Generic/Kids/SPR_KI.TPC",
-			"size": 162845,
-			"sha256": "b9231414dccb8ae42c934fe265ef0b93633f2ee46c02fc4c5ed466f55ce9182a"
+			"size": 138052,
+			"sha256": "562c824392c8bd4603cb806c500f106a79694483d2486cd812155c50c3e6c07c"
 		},
 		{
 			"path": "Generic/Kids/SPR_SA.ESP",
@@ -58,8 +58,8 @@
 		},
 		{
 			"path": "Generic/Kids/SPR_SA.TPC",
-			"size": 153570,
-			"sha256": "6b50112923d6cd722196ba6b3161723a20b88856864683791096b7910d950a8b"
+			"size": 130444,
+			"sha256": "6b58153ec91b7aaa70b1583911386bc077a6a9a8528fbdeb544f1b6cb16cc7f5"
 		},
 		{
 			"path": "Generic/Kids/SPR_SU.ESP",
@@ -68,8 +68,8 @@
 		},
 		{
 			"path": "Generic/Kids/SPR_SU.TPC",
-			"size": 147944,
-			"sha256": "c716189b740cfc425c5a2297967caf816f6a7cb122545facd47cdbe6786ebfa9"
+			"size": 126453,
+			"sha256": "c02c53d60efd1b3125b2b72af662c84aa3df7c0d513659521992346d93a32772"
 		},
 		{
 			"path": "Generic/Kids/SPR_TA.ESP",
@@ -78,8 +78,8 @@
 		},
 		{
 			"path": "Generic/Kids/SPR_TA.TPC",
-			"size": 153589,
-			"sha256": "891e5001e63e5d9e7b54b41d32d977900bf0bee66b00c24b81f57e6b424180fd"
+			"size": 127460,
+			"sha256": "2fba11770ec3a4676bdd1f023823f4e7b06b6e65b2b240895e5196ec4bb192a1"
 		},
 		{
 			"path": "Generic/Kidsheads/SPR_BE.ESP",
@@ -168,8 +168,8 @@
 		},
 		{
 			"path": "Swim/SPR_BE.TPC",
-			"size": 813301,
-			"sha256": "a544e2e3ee68865dc5ff053c840c552cd0943aa88ac473269b3c5e1b9e4109c3"
+			"size": 765372,
+			"sha256": "9a6fa229a0ae21699d6b37ca14f3b0dfd06274e45aad1c1504950e0170a50ee4"
 		},
 		{
 			"path": "Swim/SPR_BI.ESP",
@@ -178,8 +178,8 @@
 		},
 		{
 			"path": "Swim/SPR_BI.TPC",
-			"size": 815834,
-			"sha256": "817f448fb6d9204e3c7eb705365298b8ced80dfbc84b4d66482a01f143387849"
+			"size": 766409,
+			"sha256": "4a46f082e0c51d9e4ea7a36c93417beab0abf89004c111e634b95d08e8ed7bec"
 		},
 		{
 			"path": "Swim/SPR_CH.ESP",
@@ -188,8 +188,8 @@
 		},
 		{
 			"path": "Swim/SPR_CH.TPC",
-			"size": 828132,
-			"sha256": "528a03626b17b5f85d031a79e93965ff25249eb119ddfd8b13ec4e192e6c63b4"
+			"size": 776757,
+			"sha256": "69da3c3ed7112066fbf37d116f05e049ab38d6f6b8481f26986ec2c1ff1cfe94"
 		},
 		{
 			"path": "Swim/SPR_FR.ESP",
@@ -198,8 +198,8 @@
 		},
 		{
 			"path": "Swim/SPR_FR.TPC",
-			"size": 806256,
-			"sha256": "8cee1395f4b5d1e5410c7ddc01afe58f5d6f4900feca8d3058c6cedea821032b"
+			"size": 754984,
+			"sha256": "9ce9870e17fb921a0397031e8f31cb9feee60966305800e2c58d530cb3be82d6"
 		},
 		{
 			"path": "Swim/SPR_KI.ESP",
@@ -208,8 +208,8 @@
 		},
 		{
 			"path": "Swim/SPR_KI.TPC",
-			"size": 838286,
-			"sha256": "c69707c606bfeaf74901a8c56248a192c9a6d6138216bfdc958b454b0f1e7944"
+			"size": 783464,
+			"sha256": "2ea2801e2b0775accf9cb33ca26a70a411d77c10d3d755c77ce607d5be7c4112"
 		},
 		{
 			"path": "Swim/SPR_SA.ESP",
@@ -218,8 +218,8 @@
 		},
 		{
 			"path": "Swim/SPR_SA.TPC",
-			"size": 799064,
-			"sha256": "3f370040fe1ce52e203d0aee47d308623ea5404b476432d2395ae83f4471a631"
+			"size": 753501,
+			"sha256": "6ffa2b7838b1736ade38bb6174b42b17cc0ee1cb0df399efd5d038bf26522ec4"
 		},
 		{
 			"path": "Swim/SPR_SU.ESP",
@@ -228,8 +228,8 @@
 		},
 		{
 			"path": "Swim/SPR_SU.TPC",
-			"size": 832709,
-			"sha256": "35dbfce89b6e609dc53d98ade7571e35f8c12bfff853cb0da74d681e2f542569"
+			"size": 783968,
+			"sha256": "61d40a4ad772441a783c475ad6c1948c2c2d7ca585f931fecf556447d55e9739"
 		},
 		{
 			"path": "Swim/SPR_TA.ESP",
@@ -238,8 +238,8 @@
 		},
 		{
 			"path": "Swim/SPR_TA.TPC",
-			"size": 820134,
-			"sha256": "3406637dc498abe72fa95e207c68e2f344b1a3a739315783e993121c2f5c7edb"
+			"size": 768887,
+			"sha256": "7e40356e58f6c99a14e745498ceb0e3e9edde4f13ece74fb42ca8071aa145698"
 		}
 	]
 }

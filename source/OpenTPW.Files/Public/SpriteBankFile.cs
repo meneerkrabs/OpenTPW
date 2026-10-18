@@ -60,10 +60,7 @@ public sealed class SpriteBankFile : BaseFormat
 	public SpriteBankFile( Stream stream ) => ReadFromStream( stream );
 
 	/// <summary>Writes the frame as RGBA (palette alpha kept; index 0 transparent).</summary>
-	public void DecodeRgba( SpriteFrame frame, Span<byte> destination, int destinationStride, int x, int y ) => DecodeRgba( Palette, frame, destination, destinationStride, x, y );
-
-	/// <summary>Writes a frame as RGBA with a bank's palette (<see cref="Palette"/>: BGRA entries, palette alpha kept; index 0 transparent).</summary>
-	public static void DecodeRgba( ReadOnlySpan<byte> palette, SpriteFrame frame, Span<byte> destination, int destinationStride, int x, int y )
+	public void DecodeRgba( SpriteFrame frame, Span<byte> destination, int destinationStride, int x, int y )
 	{
 		for ( var row = 0; row < frame.Height; row++ )
 		{
@@ -74,10 +71,10 @@ public sealed class SpriteBankFile : BaseFormat
 					continue;
 				var entry = (index - 1) * 4;
 				var target = (y + row) * destinationStride + (x + column) * 4;
-				destination[target] = palette[entry + 2];
-				destination[target + 1] = palette[entry + 1];
-				destination[target + 2] = palette[entry];
-				destination[target + 3] = palette[entry + 3];
+				destination[target] = Palette[entry + 2];
+				destination[target + 1] = Palette[entry + 1];
+				destination[target + 2] = Palette[entry];
+				destination[target + 3] = Palette[entry + 3];
 			}
 		}
 	}
@@ -202,14 +199,14 @@ public sealed class SpriteAnimationFile : BaseFormat
 	/// opens <c>.fpc</c> when this byte and the sprite-detail flag 0x8768FC are both non-zero, else <c>.tpc</c> (the <c>.fps</c>/<c>.tps</c>
 	/// pair of the other branch is never selected on the PC: 0x763F28 is 1 and only read). The flag's only writer 0x540900 stores its first
 	/// argument, which both of its calls pass as 0 (0x54E688: push ebx = 1, push esi = 0; 0x54ED2C: push edi, push edi = 0), so the PC game
-	/// draws the TPC of every set. 27 of the 27 sets with 1 ship an FPC; Jungle SPR_EX and Space SPR_SK ship one too but have 0.
+	/// draws the TPC of every set. All 27 sets with 1 ship an FPC; Jungle SPR_EX and Space SPR_SK ship one too but have 0.
 	/// </summary>
 	public byte FlagA { get; private set; }
 	/// <summary>Byte 0x10D: 1 for kid sets CH, KI, SA, SU and their heads. Stored by the ESP loader (object +0x206) but read nowhere in tp.exe.</summary>
 	public byte FlagB { get; private set; }
 	/// <summary>
 	/// The bank the game draws: the <c>.TPC</c> of every set, as the PC never sets the sprite-detail flag that would open the <c>.FPC</c> of a set with
-	/// <see cref="FlagA"/> (the FPC is the same art rendered from a lower camera: the same widths, taller frames).
+	/// <see cref="FlagA"/> (the FPC is the same art rendered from a lower camera: about as wide, taller frames).
 	/// </summary>
 	public string BankExtension => ".TPC";
 	/// <summary>The bank the loader would open with the sprite-detail flag set: <c>.FPC</c> for a set with <see cref="FlagA"/>, else <c>.TPC</c>.</summary>

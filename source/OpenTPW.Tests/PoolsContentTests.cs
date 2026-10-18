@@ -398,7 +398,7 @@ public class PoolsContentTests
 					for ( var step = 0; step < count; step++ )
 					{
 						var frame = set.Frames[set.GetFrame( slot, direction, step )];
-						// drawn at 256 pixels per unit: twice the pixels of a 1x frame (a standing frame is 20 to 27 x 38 to 43 px at 1x), at most 192 x 192 at 2x
+						// drawn at 256 pixels per unit: twice the pixels of a 1x frame (a standing frame is 17 to 24 x 31 to 39 px at 1x), at most 192 x 192 at 2x
 						Assert.AreEqual( (256, 256), (frame.PixelsPerUnitX, frame.PixelsPerUnitY), $"{set.Name} slot {slot}" );
 						Assert.IsTrue( frame.Width > 8 && frame.Height > 6 && frame.Width <= 192 && frame.Height <= 192, $"{set.Name} slot {slot} d{direction} f{step}: {frame.Width} x {frame.Height}" );
 						Assert.IsTrue( frame.OriginX <= 0 && frame.OriginX + frame.Width >= 0 && frame.OriginY < 0 && frame.OriginY + frame.Height >= -4, $"{set.Name} slot {slot} d{direction} f{step}: the hotspot (the feet: within two 1x pixels of the lowest sole in a stride; or the torso) lies in the frame ({frame.OriginX}, {frame.OriginY}, {frame.Width} x {frame.Height})" );
@@ -488,11 +488,11 @@ public class PoolsContentTests
 		var heads = Sizes( replacement.Heads );
 		var swimSizes = Sizes( swim );
 		long Bytes( IEnumerable<GuestSpriteAtlas> sets ) => sets.Sum( set => (long)set.Width * set.Height * 4 );
-		Assert.AreEqual( "1024x512 1024x512 1024x512 1024x512 1024x512 1024x256 1024x512 1024x512", kids );
+		Assert.AreEqual( "1024x256 1024x256 1024x256 1024x256 1024x256 1024x256 1024x256 1024x256", kids );
 		Assert.AreEqual( "1024x256 1024x256 1024x512 1024x256 1024x512 1024x256 1024x512 1024x256", heads );
 		Assert.AreEqual( "1024x2048 1024x2048 1024x2048 1024x2048 1024x2048 1024x2048 1024x2048 1024x2048", swimSizes );
 		const long MiB = 1024 * 1024;
-		Assert.AreEqual( (15 * MiB, 11 * MiB, 64 * MiB), (Bytes( replacement.Kids ), Bytes( replacement.Heads ), Bytes( swim )), "RGBA8 bytes of the kid, head and swim atlases (docs/POOLS.md): 90 MiB, about 120 MiB on the GPU with mip levels" );
+		Assert.AreEqual( (8 * MiB, 11 * MiB, 64 * MiB), (Bytes( replacement.Kids ), Bytes( replacement.Heads ), Bytes( swim )), "RGBA8 bytes of the kid, head and swim atlases (docs/POOLS.md): 83 MiB, about 110 MiB on the GPU with mip levels" );
 	}
 
 	[TestMethod]

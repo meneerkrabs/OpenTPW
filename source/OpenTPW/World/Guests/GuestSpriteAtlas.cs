@@ -99,7 +99,7 @@ public sealed class GuestSpriteAtlas
 		Name = name;
 		Animations = animations;
 		this.bank = bank;
-		// [EXT:texture-pack] a set that also ships an FPC (ESP byte 0x10C) was drawn from that bank before October 18, 2026; its key names the TPC, so a pack built from the FPC frames is not laid over the TPC's
+		// [EXT:texture-pack] a set with ESP byte 0x10C (it ships an FPC) was drawn from that bank before October 18, 2026; its key names the TPC, so a pack built from the FPC frames is not laid over the TPC's
 		PackKey = $"esprites/{packRoot.ToLowerInvariant()}/{packFolder}/{name.ToLowerInvariant()}{(animations.FlagA != 0 ? ".tpc" : "")}.atlas";
 		Frames = new GuestAtlasFrame[bank.Frames.Count];
 		var padding = bank.Frames.Any( frame => frame.PixelsPerUnitX > GuestAtlasFrame.ReferencePixelsPerUnit || frame.PixelsPerUnitY > GuestAtlasFrame.ReferencePixelsPerUnit ) ? HighResolutionPadding : Padding;
@@ -262,7 +262,7 @@ public sealed class GuestSpriteAtlas
 	/// Loads the theme's costume sets (<c>esprites/&lt;theme&gt;/Costumes</c>, one per theme), drawn for guests in costume (sprite category 2, tp.exe
 	/// <c>0x00541F70</c>), or none when absent. They share the kids' animation layout.
 	/// </summary>
-	// [DATA:esprites.wad/<theme>/Costumes/SPR_xx.ESP+FPC] Jungle SPR_TI, Fantasy SPR_BK, Hallow SPR_HK (175 frames like the kids), Space SPR_SK (135 frames, its own slot table)
+	// [DATA:esprites.wad/<theme>/Costumes/SPR_xx.ESP+TPC] Jungle SPR_TI, Fantasy SPR_BK, Hallow SPR_HK (175 frames like the kids), Space SPR_SK (135 frames, its own slot table)
 	public static List<GuestSpriteAtlas> LoadCostumes( string theme ) => LoadSets( $"/esprites/{theme}/Costumes", "costumes", theme );
 
 	/// <summary>Loads the theme's costume heads (<c>esprites/&lt;theme&gt;/Costumeheads</c>: Jungle and Space only), or none.</summary>
@@ -306,7 +306,12 @@ public sealed class GuestSpriteAtlas
 				animations = new SpriteAnimationFile( espStream );
 			var bank = files.FirstOrDefault( file => string.Equals( file, stem + animations.BankExtension, StringComparison.OrdinalIgnoreCase ) );
 			if ( bank == null )
+			{
+				// a set authored before OpenTPW drew the TPC may ship its FPC alone, which the game never opens
+				if ( files.Any( file => string.Equals( file, stem + animations.FullDetailBankExtension, StringComparison.OrdinalIgnoreCase ) ) )
+					Log?.Warning( $"The sprite set {stem} in {directory} is skipped: it has a {animations.FullDetailBankExtension} but no {animations.BankExtension}, the bank the game draws." );
 				continue;
+			}
 			using var bankStream = FileSystem.OpenRead( $"{directory}/{bank}" );
 			try
 			{

@@ -24,14 +24,14 @@ import numpy as np
 # ``elevation`` is the camera elevation above the ground plane in degrees, ``ppu`` the orthographic scale (sprite
 # pixels per Blender unit), ``cell`` the original's sprite cell and ``feet`` where the standing hotspot lands in it;
 # ``swim_canvas``/``swim_origin`` are the (larger) canvas and hotspot of our swimmer frames.
-# The guest sets ship a ``.TPC`` bank, which the game draws, and an ``.FPC`` of the same art from a lower camera (the same widths, taller
-# frames: kid standing frames 40-42 px against 32-37), which it never opens (docs/GUESTS.md). The output was set to 1.25 times the TPC
-# scale on the earlier reading that the game draws the FPC: ``ppu`` is that output scale, ``ppu_tpc`` (= ppu / 1.25) the TPC scale of
-# the calibration comparison; ``cell`` and ``feet`` describe the TPC reference sheet, ``swim_canvas``/``swim_origin`` our swimmer frames.
-FPC_SCALE = 1.25
+# The guest sets ship a ``.TPC`` bank, which the game draws, and an ``.FPC`` of the same art from a lower camera (about as wide, taller
+# frames), which it never opens (docs/GUESTS.md). opentpw_kid_elevation.py renders the standing kid over a sweep of elevations and scales
+# against the original standing frames: the TPC's silhouettes match best at 44 to 48 degrees (mean IoU 0.77 over the eight sets and five
+# directions), the FPC's at 15 degrees or lower, at nearly the same scale (``ppu`` 11.0 to 11.2 for the TPC, 11.7 for the FPC). TPW renders
+# at the TPC's 45 degrees and ``ppu`` 11.1 (it was 27 degrees and 11.7); the TPI constants are not measured yet (25 degrees was set by eye).
 EDITIONS = {
-	"TPW": dict(elevation=27.0, ppu=11.7, ppu_tpc=9.36, cell=(48, 56), feet=(24, 53), swim_canvas=(80, 60), swim_origin=(40, 34)),
-	"TPI": dict(elevation=25.0, ppu=14.4, ppu_tpc=11.52, cell=(64, 80), feet=(32, 70), swim_canvas=(100, 80), swim_origin=(50, 45)),
+	"TPW": dict(elevation=45.0, ppu=11.1, cell=(48, 56), feet=(24, 53), swim_canvas=(80, 60), swim_origin=(40, 34)),
+	"TPI": dict(elevation=25.0, ppu=14.4, cell=(64, 80), feet=(32, 70), swim_canvas=(100, 80), swim_origin=(50, 45)),
 }
 SUPERSAMPLE = 6              # the frame is rendered this many times larger and box-filtered down
 SHARPEN = 0.2                # unsharp-mask weight after the downsample (the originals are crisp)
@@ -730,7 +730,7 @@ class Stage:
 	pass
 
 
-def setup_scene(canvas, origin, edition="TPW", detail="fpc", scale=1):
+def setup_scene(canvas, origin, edition="TPW", scale=1):
 	"""Configures render settings, lights and an orthographic camera. ``canvas`` is the sprite size in pixels and
 	``origin`` the pixel (from the top left) where the world origin lands, both at 1x; ``scale`` renders at that many times the pixel
 	size (canvas, origin and pixels per Blender unit all scaled, so the picture is the same size in the world with ``scale`` times the
@@ -744,7 +744,7 @@ def setup_scene(canvas, origin, edition="TPW", detail="fpc", scale=1):
 	st.scene, st.canvas, st.origin = scene, canvas, origin
 	st.elevation = EDITIONS[edition]["elevation"]
 	st.scale = scale
-	st.ppu = EDITIONS[edition]["ppu" if detail == "fpc" else "ppu_tpc"] * scale
+	st.ppu = EDITIONS[edition]["ppu"] * scale
 	for engine in ("BLENDER_EEVEE", "BLENDER_EEVEE_NEXT"):
 		try:
 			scene.render.engine = engine

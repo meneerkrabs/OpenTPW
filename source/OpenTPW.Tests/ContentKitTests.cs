@@ -360,7 +360,7 @@ public class ContentKitTests
 		CollectionAssert.AreEquivalent( new[] { "SPR_HD.ESP", "SPR_HD.TPC", "SPR_BL.ESP", "SPR_BL.TPC" }, Directory.EnumerateFiles( Path2( "heads-out" ) ).Select( System.IO.Path.GetFileName ).ToArray() );
 
 		var esp = new SpriteAnimationFile( new MemoryStream( File.ReadAllBytes( Path2( "heads-out", "SPR_HD.ESP" ) ) ) );
-		Assert.AreEqual( ".TPC", esp.BankExtension );
+		Assert.AreEqual( ((byte)0, ".TPC"), (esp.FlagA, esp.FullDetailBankExtension), "a head set has no full-detail bank" );
 		Assert.AreEqual( new SpriteAnimation( 0, 0, 2, 7 ), esp.Animations[0] );
 		var bank = new SpriteBankFile( new MemoryStream( File.ReadAllBytes( Path2( "heads-out", "SPR_HD.TPC" ) ) ) );
 		Assert.AreEqual( 14, bank.Frames.Count );

@@ -133,7 +133,8 @@ public class SpriteSetBuilderTests
 			.AddAnimation( 0, new[] { new[] { new SpriteRgbaFrame( 32, 32, rgba, 0, 0 ) } } )
 			.Build();
 		CollectionAssert.AreEquivalent( new[] { ".ESP", ".TPC" }, set.Files.Keys.ToArray() );
-		Assert.AreEqual( ".TPC", new SpriteAnimationFile( new MemoryStream( set.Files[".ESP"] ) ).BankExtension );
+		var esp = new SpriteAnimationFile( new MemoryStream( set.Files[".ESP"] ) );
+		Assert.AreEqual( ((byte)0, ".TPC", ".TPC"), (esp.FlagA, esp.BankExtension, esp.FullDetailBankExtension), "a set without full detail ships the TPC only" );
 		var bank = new SpriteBankFile( new MemoryStream( set.Files[".TPC"] ) );
 		var decoded = new byte[rgba.Length];
 		bank.DecodeRgba( bank.Frames[0], decoded, 32 * 4, 0, 0 );

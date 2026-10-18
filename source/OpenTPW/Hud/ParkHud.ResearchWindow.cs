@@ -345,7 +345,7 @@ public sealed partial class ParkHud
 			Math.Clamp( (owner.ResearchEconomy?.Research.Workload ?? MinimumKnobWorkload) + direction, MinimumKnobWorkload, MaximumKnobWorkload ) );
 		// [BIN:TPW-EXE:0x66afe5 vertical slider drag] the value is read back from the ball: trunc((bottom - ball bottom) × (min - max) / (height - ball height)) + max
 		// [BIN:TPW-EXE:0x66b771 slider ball move] a drag translates the ball's rectangle by the pointer's movement and clamps it to the track (0x66b771 adds the delta to both ends, then pulls the ball back inside the limits), so the ball keeps the offset at which it was grabbed
-		// [APPROX:UI-064] the ball proc 0x66bb9b moves the ball from the rectangle saved at the press or release (0x65cf3d); that it is the ball's rectangle at the press, as done here, is not settled; a press in the track outside the ball puts the ball's centre under the pointer where the slider class pages by its step (0x66b8aa, 0x66b088 with the page word +0x148, whose value is not found); the knob's children 0xd2d12 and 0xd2d11 are not drawn
+		// [APPROX:UI-064] the ball proc 0x66bb9b moves the ball from the rectangle saved at the press or release (0x65cf3d); that it is the ball's rectangle at the press, as done here, is not settled; a press in the track outside the ball puts the ball's centre under the pointer where the slider class moves the value by its step +0x148 toward the pointer, one step per press (0x66b8aa picks mode 2 or 3 of 0x66b088 by the pointer's side of the thumb, flipped when the page word +0x144 is above 0; the knob's step value is not found); the knob's children 0xd2d12 and 0xd2d11 are not drawn
 		private float? ballCentre;
 		private float lastPointerY;
 

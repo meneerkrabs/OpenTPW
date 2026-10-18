@@ -22,6 +22,8 @@ public sealed partial class ParkHud
 	// [DATA:video 17:20 buy list] ten rows with no scrolling: a text pitch of 175 px / 9 = 19.4 px at 720p, 41.4 +- 1 virtual units; the first band starts at about 423 and the tenth ends at about 837, leaving about 34 units of the region empty
 	// [EXT:list-row-pitch] the pitch is a fixed 41.4 units (the video's measure; the original's 640×480 pitch is 41), a design choice: the original's pitch follows the font and the screen height (34 to 42 units by the formula above), which OpenTPW's resolution-independent output sizes cannot copy; the wheel steps one row
 	public const float BuyRowHeight = 41.4f;
+	/// <summary>The side of the i_boxtick model in canvas units (its frames span 664..715 by 51..102).</summary>
+	private const float TickBoxSize = 51f;
 	// [BIN:TPW-EXE:0x665a44 buy list sort] list 504 has attribute 0x91 including 0x10 (header sort): the same column toggles its direction, a new column starts ascending, and the sort word [0x755140] starts at 1 (column 0, ascending; 0x4ad057 → 0x6659af) and is written back on a change (0x4ac9dd), so the order survives reopening the window for the session (ListSortMemory); the table only gives column header buttons 16/17 without a model
 
 	// [DATA:Mac buy table 0x4cd94:507,506,509,508] category buttons with their help ids (command_17 140, 142, 141, 143)
@@ -35,7 +37,7 @@ public sealed partial class ParkHud
 
 	// [DATA:Mac buy table 0x4cd94:504] content region and the three columns (command_10/command_11)
 	private static readonly UiRect BuyContent = Rect( 1037, 427, 1727, 871 );
-	// [DATA:video 1:50 and 30:00 buy window] the third column (1673,1724) holds a tick box per row (UiTickBox); the control 491 is the footprint thumbnail (BuyFootprint)
+	// [DATA:video 1:50 and 30:00 buy window] the third column (1673,1724) holds the i_boxtick model per row; the control 491 is the footprint thumbnail (BuyFootprint)
 	private static readonly (float Left, float Right)[] BuyColumns = { (1039, 1447), (1460, 1664), (1673, 1724) };
 	// [DATA:Mac buy table 0x4cd94:500,499,497,502,503 and 501,494,498,495,496] label/value rows of the stats frame (493)
 	private static readonly (UiRect Label, UiRect Value)[] BuyStatRows =
@@ -368,7 +370,7 @@ public sealed partial class ParkHud
 			var gaugeRow = owner.buy.SelectedItem?.Category == BuildCategory.Rides ? row is 1 or 3 or 4 : row == 1;
 			if ( !gaugeRow )
 				return;
-			// [DATA:video 1:50 buy window] the type-9 value cells are red-to-green gradient gauges (UiGauge; the gradient colours are the UI-046 approximation); the bar fills the cell less 10 units top and bottom (0x4ab9dd)
+			// [DATA:video 1:50 buy window] the type-9 value cells are the ridestatbar.wct gauges (UiGauge); the bar fills the cell less 10 units top and bottom (0x4ab9dd)
 			UiGauge.Draw( context.Batch, UiGauge.BarRect( rect, context.Canvas ), stat.Gauge );
 		}
 	}
@@ -512,8 +514,11 @@ public sealed partial class ParkHud
 				}
 				context.DrawFittedText( context.Fonts.Label, owner.ListName( item ), Cell( 0 ), color, UiAlign.Left );
 				context.DrawFittedText( context.Fonts.Label, owner.PriceText( item ), Cell( 1 ), color, UiAlign.Right );
-				// [DATA:video 1:50 and 30:00 buy window] the third column (1673,1724) is a tick box per row: a green tick when the park owns at least one of the item, an empty box otherwise
-				UiTickBox.Draw( context.Batch, Cell( 2 ), owner.NumberOwned( item ) > 0 );
+				// [BIN:TPW-EXE:0x4ad340 row cell, 0x4aaf70 row state] the third column (1673,1724) is the model i_boxtick (frames: 0 the empty box, 1 the box with the tick, 2 the box with a star), drawn at the model's own 51 unit size; the row state is 1 when the park owns at least one of the item (0x4ca8c0), 0 otherwise
+				// [APPROX:UI-050] state 2 (the star: the item is one of the three most recent of its category, a per-category ring read by 0x4caa70 whose writer is not found) is not drawn; OpenTPW keeps no such ring
+				var boxCell = Cell( 2 );
+				var box = TickBoxSize * canvas.Scale;
+				context.DrawModel( "i_boxtick", owner.NumberOwned( item ) > 0 ? 1 : 0, new UiRect( boxCell.X + (boxCell.Width - box) / 2, boxCell.Y + (boxCell.Height - box) / 2, box, box ) );
 			}
 		}
 	}

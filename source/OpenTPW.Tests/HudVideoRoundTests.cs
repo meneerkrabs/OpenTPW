@@ -37,6 +37,19 @@ public class HudVideoRoundTests
 	}
 
 	[TestMethod]
+	public void AFinanceGraphMarkIsAHollowThreeByThreePixelBox()
+	{
+		// [BIN:TPW-EXE:0x47ffe0 graph sample mark] four one-pixel edges round the sample end
+		var batch = new UiBatch();
+		ParkHud.HollowMark( batch, 50, 50, 2, new Veldrid.RgbaByte( 255, 0, 0, 255 ) );
+		var vertices = batch.Draws.SelectMany( draw => draw.Vertices ).ToList();
+		Assert.AreEqual( 24, vertices.Count, "four rectangles" );
+		Assert.AreEqual( 47f, vertices.Min( vertex => vertex.Position.X ), 1e-4f );
+		Assert.AreEqual( 53f, vertices.Max( vertex => vertex.Position.X ), 1e-4f );
+		Assert.IsFalse( vertices.Chunk( 6 ).Any( quad => quad.Min( v => v.Position.X ) < 50 && quad.Max( v => v.Position.X ) > 50 && quad.Min( v => v.Position.Y ) < 50 && quad.Max( v => v.Position.Y ) > 50 ), "the middle pixel is empty" );
+	}
+
+	[TestMethod]
 	public void TheMessageTubeHoldsFiveMessagesAndOpeningOrDeletingRemovesThem()
 	{
 		var hud = Hud();

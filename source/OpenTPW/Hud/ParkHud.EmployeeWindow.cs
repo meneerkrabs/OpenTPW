@@ -11,7 +11,7 @@ namespace OpenTPW.Hud;
 // [BIN:TPW-EXE:0x004b6080 employee window] the opener stores the member, builds table 0x756f48 through 0x48cea0 (handler 0x4b5cb0, frames 0x511 and 0x512) and
 // posts help 0xc0; 0x48cea0 first closes the window that is open (0x485b40), so the All Staff list (0x496088, its row message 0x400) gives way to it
 // [BIN:TPW-EXE:0x00486920 thing info] a click on a staff thing (types 4-8) opens this window too; OpenTPW opens it from the staff list (no staff click in the park)
-// [APPROX:UI-092] the portrait frame (0x511) plays the employee's figure like the hire window's (UI-082 for its pixel size); the original's frame phase is the figure id + 1 of a record field (+0xE0) OpenTPW has no counterpart for; a click on the title does not rename the employee (0x48d2e0, help 85); the help 0xd4 the window posts while the employee has a patrol area (0x4b5ab0) is not posted; the arrows cycle the economy's member list, which stands for the thing list (0x7cf56c, newest first) — evidence needed: the rename (the title message 0x10006 is forwarded to a vtable slot +0x38 of the object 0x65e705(0) returns, not identified; 0x48d2e0 itself holds no rename dialog) and the thing-list order of staff loaded from a save
+// [APPROX:UI-092] the portrait frame (0x511) plays the employee's figure like the hire window's (UI-082 for its pixel size); the original's frame phase is the figure id + 1 of a record field (+0xE0) OpenTPW has no counterpart for; a click on the title does not rename the employee (0x48d2e0, help 85); the arrows cycle the economy's member list, which stands for the thing list (0x7cf56c, newest first) — evidence needed: the rename (the title message 0x10006 is forwarded to a vtable slot +0x38 of the object 0x65e705(0) returns, not identified; 0x48d2e0 itself holds no rename dialog) and the thing-list order of staff loaded from a save
 public sealed partial class ParkHud
 {
 	private static LayoutTable EmployeeTable => OriginalLayoutTables.EmployeeWindow;
@@ -65,6 +65,7 @@ public sealed partial class ParkHud
 	}
 
 	/// <summary>The window's refresh posts help 212 for an employee with an own patrol area.</summary>
+	// [BIN:TPW-EXE:0x4b5ab0 patrol help] the refresh posts help 0xd4 (0x486b00) when 0x506eb0 is non-zero, i.e. unless the area words +0x20a / +0x20c hold the default 1 / 0x4000, and sets the toggle 0x510 to the same state
 	// [BIN:TPW-EXE:0x004b5ab0 employee refresh] the refresh (vtable +4, run as the window is built by 0x48cea0 and by the cycle buttons) asks 0x506eb0 whether the selected staff has an own area (corner words +0x20a/+0x20c other than 1 and 0x4000) and then posts help 0xd4 (212) through 0x486b00 (0x4b5b03); the window's close handler withdraws it next to 0xc0 (0x4b5d05)
 	private void PostPatrolAreaHelp( StaffMember member )
 	{

@@ -31,9 +31,11 @@ public class DeterminismTests
 		private readonly RideVM shopScript;
 		private readonly RideVisitorBridge? room;
 		private readonly RideVM? roomScript;
+		private readonly RideVisitorBridge? brolly;
+		private readonly RideVM? brollyScript;
 		private readonly List<RideVM> dice = new();
 
-		public SyntheticPark( WorldSeed seed, IGuestObserver? observer = null, Action<ParkCellMap>? prepareCells = null, bool changingRoom = false, Action<GuestSimulation>? prepareGuests = null, IGuestDecisions? decisions = null )
+		public SyntheticPark( WorldSeed seed, IGuestObserver? observer = null, Action<ParkCellMap>? prepareCells = null, bool changingRoom = false, Action<GuestSimulation>? prepareGuests = null, IGuestDecisions? decisions = null, bool brollyShop = false )
 		{
 			Seed = seed;
 			Economy = EconomyTestData.Park( seed: seed.EconomyStream );
@@ -77,12 +79,28 @@ public class DeterminismTests
 				// the entrance cell below the path cell, as a placement lays it
 				GuestTests.LayStandCell( Guests.Grid, room );
 			}
+			// [EXT:umbrellas-extension] a brolly shop near the top end of the path column (10, 1), paid through the economy like the drinks shop, and a weather that rains for forty seconds and clears for forty, again and again:
+			// guests buy umbrellas in the rain, keep them through rides closed and let them go when it clears (docs/UMBRELLAS.md, docs/DETERMINISM.md)
+			if ( brollyShop )
+			{
+				brolly = new RideVisitorBridge( Scripts.AllocateAttractionId(), "Brolly Shop", RideVisitorKind.Shop, 1, 60, 30, GuestNeeds.None )
+				{
+					EntranceCell = (10, 1), ExitCell = (10, 1), AppearanceEffect = UmbrellaRules.ShopAppearanceEffect, UmbrellaTerms = new UmbrellaShopTerms( 200, 200, 150, 5, 100 )
+				};
+				brollyScript = GuestTests.CreateShopScript( new VisitorRideScriptEffects( brolly, UnimplementedRideScriptEffects.Instance ), Scripts, seed: null );
+				brolly.Attach( brollyScript, () => true );
+				Guests.Register( brolly );
+				Assert.AreEqual( ParkEconomy.PurchaseResult.Ok, Economy.TryBuild( 1203, out var boughtBrolly ) );
+				payments.Link( brolly.AttractionId, boughtBrolly!.Id );
+				Guests.UmbrellaWeatherState = () => Guests.TickCount is >= 1200 and < 4800 or >= 8400 and < 12000 ? UmbrellaRules.WeatherRain : UmbrellaRules.WeatherNone;
+			}
 			// [EXT:pools-attractions] a fixture that registers pool activities of its own (the water attractions pin)
 			prepareGuests?.Invoke( Guests );
 		}
 
 		public WorldSeed Seed { get; }
 		public RideVisitorBridge? Room => room;
+		public RideVisitorBridge? Brolly => brolly;
 		public ThingPool Things { get; }
 		public ParkEconomy Economy { get; private set; }
 		public GuestSimulation Guests { get; }
@@ -122,6 +140,11 @@ public class DeterminismTests
 					room.DefersAdmission = swept;
 					room.HostStep();
 				}
+				if ( brolly != null )
+				{
+					brolly.DefersAdmission = swept;
+					brolly.HostStep();
+				}
 				Economy.ThingSweep = swept ? new HarnessSweep( this ) : null;
 				try
 				{
@@ -149,6 +172,7 @@ public class DeterminismTests
 				economy.UpdateThings( turn );
 				park.shop.UpdateAdmission();
 				park.room?.UpdateAdmission();
+				park.brolly?.UpdateAdmission();
 				park.Things.DestroyQueued();
 				park.Guests.UpdateTurnEndArrivals();
 			}
@@ -378,6 +402,55 @@ public class DeterminismTests
 		Assert.IsTrue( most >= 1, $"swimmers were in the water ({most} at most at once)" );
 		Assert.AreEqual( hash, RunFixedParkWithPoolsAndAChangingRoom().Hash, "repeatable in the process" );
 		Assert.AreEqual( PoolsChangingRoomFixedRunHash, hash, $"0x{hash:X16} ({swims} swims, {most} at once, {admissions} admitted)" );
+	}
+
+	/// <summary>
+	/// [EXT:umbrellas-extension] The fixed run on the cross park with a brolly shop at (10, 1), near the top of the path column and a weather that rains from the 20th to the 80th second and from the 140th to the 200th and is clear in between (docs/UMBRELLAS.md,
+	/// docs/DETERMINISM.md, "Umbrellas"): guests buy umbrellas in the rain, close them in every attraction, open them again on qualifying days and let them go when it clears. Returns the hash, the guests who bought one, the
+	/// umbrella states seen (at one-second chunks) and the balloon-free sales the shop paid.
+	/// </summary>
+	internal static (ulong Hash, int Buyers, HashSet<int> States, int Admissions) RunFixedParkWithABrollyShopInTheRain()
+	{
+		var park = new SyntheticPark( WorldSeed.Default, brollyShop: true );
+		var buyers = new HashSet<int>();
+		var states = new HashSet<int>();
+		for ( var chunk = 0; chunk < PinnedRunTicks / 60; chunk++ )
+		{
+			park.Run( 60 );
+			foreach ( var guest in park.Guests.Guests.Where( guest => guest.UmbrellaState != 0 ) )
+			{
+				buyers.Add( guest.Id );
+				states.Add( guest.UmbrellaState );
+			}
+		}
+		return (park.Hash, buyers.Count, states, (int)park.Guests.Admissions);
+	}
+
+	/// <summary>[EXT:umbrellas-extension] The pinned hash of <see cref="RunFixedParkWithABrollyShopInTheRain"/> (docs/DETERMINISM.md, "Umbrellas").</summary>
+	internal const ulong UmbrellasFixedRunHash = 0xE912E7E5D5B6E612UL;
+
+	[TestMethod]
+	public void FixedRunWithABrollyShopInTheRainIsTheSameInEveryProcessAndGuestsCarryUmbrellas()
+	{
+		var (hash, buyers, states, admissions) = RunFixedParkWithABrollyShopInTheRain();
+		Assert.IsTrue( buyers >= 5, $"{buyers} guests bought an umbrella ({admissions} admitted)" );
+		CollectionAssert.IsSubsetOf( new[] { 1, 2, 3, 4 }, states.ToArray(), "every state of the machine was seen: " + string.Join( ", ", states.OrderBy( state => state ) ) );
+		Assert.AreEqual( hash, RunFixedParkWithABrollyShopInTheRain().Hash, "repeatable in the process" );
+		Assert.AreNotEqual( FixedRunHash, hash, "the shop, the weather and the colour draws change the run" );
+		Assert.AreEqual( UmbrellasFixedRunHash, hash, $"0x{hash:X16} ({buyers} buyers, {admissions} admitted)" );
+	}
+
+	[TestMethod]
+	public void EveryExistingPinIsUnchangedWithTheUmbrellasExtensionOnOrOffAndNoBrollyShop()
+	{
+		foreach ( var enabled in new[] { true, false } )
+		{
+			using var scope = OpenTPW.Mods.OpenTpwExtensions.Use( OpenTPW.Mods.ModSet.Resolve( Array.Empty<OpenTPW.Mods.DiscoveredMod>(),
+				new OpenTPW.Mods.ModSettings { Enabled = new Dictionary<string, bool> { [OpenTPW.Mods.OfficialExtensions.Umbrellas.Id] = enabled } }, null, GameEdition.ThemeParkWorld, OpenTPW.Mods.OfficialExtensions.All ) );
+			Assert.AreEqual( enabled, FeatureGates.Umbrellas );
+			Assert.AreEqual( FixedRunHash, RunFixedPark(), $"the fixed run, umbrellas {enabled}" );
+			Assert.AreEqual( PoolsChangingRoomFixedRunHash, RunFixedParkWithPoolsAndAChangingRoom().Hash, $"the changing room run, umbrellas {enabled}" );
+		}
 	}
 
 	/// <summary>

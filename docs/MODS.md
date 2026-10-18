@@ -24,7 +24,7 @@ In code the system is called `OpenTPW.Mods` / "extensions"; `OpenTPW.ModKit` is 
 
 - manifests are parsed and validated, mod folders are discovered, `mods.json` is read and the run's set of extensions
   and mods is resolved once at startup;
-- the official extensions are `opentpw.online`, `opentpw.cross-edition-objects`, `opentpw.smarter-guests`, `opentpw.guest-insights` and `opentpw.restored-advice` (below), `opentpw.evening` (presentation only, on by default: a day and night cycle with lamps that light at dusk; [EVENING.md](EVENING.md)), `opentpw.pools-guest-art` (presentation only, on by default: with the pools extension on, land guests use OpenTPW's own 2x kids, off shows the original guests; [POOLS.md](POOLS.md)), and `opentpw.pools`, on by default (not in a Theme Park Inc run), in which the player paints
+- the official extensions are `opentpw.online`, `opentpw.cross-edition-objects`, `opentpw.smarter-guests`, `opentpw.guest-insights` and `opentpw.restored-advice` (below), `opentpw.evening` (presentation only, on by default: a day and night cycle with lamps that light at dusk; [EVENING.md](EVENING.md)), `opentpw.pools-guest-art` (presentation only, on by default: with the pools extension on, land guests use OpenTPW's own 2x kids, off shows the original guests; [POOLS.md](POOLS.md)), `opentpw.umbrellas`, on by default (not in a Theme Park Inc run; [UMBRELLAS.md](UMBRELLAS.md): the brolly shops and the umbrella rules, recorded in a save only while the park has a shop or an umbrella), and `opentpw.pools`, on by default (not in a Theme Park Inc run), in which the player paints
   pool water cells (see [POOLS.md](POOLS.md)); a park save records `opentpw.pools` only when the park has pool cells;
 - park saves record the mods that change the simulation and refuse a mismatched set (below);
 - the **Extensions and mods screen** (below) edits `mods.json`;
@@ -46,6 +46,7 @@ Changes to `mods.json` apply at the next start; nothing is swapped while the gam
 | `opentpw.online` | yes | yes | no | [Online play](ONLINE.md); no network request until the player acts |
 | `opentpw.pools` | **yes** | yes | yes (recorded in a save only while the park has pool cells or a changing room) | [Swimming pools](POOLS.md); not in a Theme Park Inc run |
 | `opentpw.pools-guest-art` | yes | yes | no | OpenTPW's own 2x kid and head sprites for land guests while pools is on; switch it off for the original guests |
+| `opentpw.umbrellas` | **yes** | yes | yes (recorded in a save only while the park has a brolly shop or a guest with an umbrella) | [Umbrellas](UMBRELLAS.md): a brolly shop per theme and guests who carry an open umbrella in the rain; not in a Theme Park Inc run; simulation only until its art lands |
 | `opentpw.restored-advice` | yes | yes | no | advisor lines in the shipped data that the original never plays |
 | `opentpw.evening` | **yes** | yes | no | [Evening and night](EVENING.md): a day and night cycle on play time with lamps that light at dusk; presentation only |
 | `opentpw.guest-insights` | no | yes | no | refusal counters in the park information window |

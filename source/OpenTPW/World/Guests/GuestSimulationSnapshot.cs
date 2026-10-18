@@ -160,6 +160,15 @@ public sealed record GuestSnapshot
 	public bool HasBalloon { get; init; }
 	/// <summary>Whether the guest wears a costume. Absent before schema 6.</summary>
 	public bool InCostume { get; init; }
+	/// <summary>[EXT:umbrellas-save] The umbrella state (<see cref="Guest.UmbrellaState"/>, 0 to 4); written only while the guest has an umbrella, so a save without one has no such field and every older save loads as before.</summary>
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault )]
+	public int UmbrellaState { get; init; }
+	/// <summary>[EXT:umbrellas-save] The umbrella's colour (0 to 2); absent for colour 0 and without an umbrella.</summary>
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault )]
+	public int UmbrellaType { get; init; }
+	/// <summary>[EXT:umbrellas-save] The park turn a pending open or close is due (<see cref="Guest.UmbrellaDueTurn"/>); only in states 1 and 3.</summary>
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault )]
+	public long UmbrellaDueTurn { get; init; }
 	public required float QueueJoinHappiness { get; init; }
 	public required int QueueCellIndex { get; init; }
 	public required int QueueTargetIndex { get; init; }

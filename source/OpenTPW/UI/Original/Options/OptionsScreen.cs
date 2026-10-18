@@ -519,6 +519,11 @@ public static class OptionsScreen
 			() => services.Languages.Select( language => Prefix( OpenTpwText.Language ) + LanguageName( language ) ),
 			direction => state.Language = CycleWrap( services.Languages, state.Language, direction ) );
 
+		// [EXT:wide-zoom] the park camera's zoom range: off 70..130, on the original's own 40..300 (tp.exe's flag 0x200); user-approved 2026-10-18
+		Row( "wideZoom", () => Prefix( OpenTpwText.WideZoom ) + strings[services.Options.WideZoom ? UIStrings.On : UIStrings.Off],
+			() => new[] { true, false }.Select( on => Prefix( OpenTpwText.WideZoom ) + strings[on ? UIStrings.On : UIStrings.Off] ),
+			_ => services.Options.WideZoom = !services.Options.WideZoom, strings.Extra( OpenTpwText.WideZoomHelp ) );
+
 		// Effective size and fallback reason as small dark text in the free area below the rows.
 		screen.Add( new UiLabel
 		{

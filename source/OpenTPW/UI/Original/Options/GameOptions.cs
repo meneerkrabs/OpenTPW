@@ -56,6 +56,13 @@ public sealed class GameOptions
 	// [BIN:STP-PPC:0x10125B7C options defaults] RMBScrollOn = 0: push scrolling
 	public ScrollMode Scroll { get; set; } = ScrollMode.Pushscroll;
 
+	/// <summary>
+	/// The park camera's zoom range: on (the default) it is the original's own 40..300 (tp.exe's mode flag 0x200, <see cref="ParkCameraMode.WideMinimumHeight"/>), off the
+	/// normal 70..130. Files written before the option existed lack it and get the default.
+	/// </summary>
+	// [EXT:wide-zoom] the OpenTPW page's "Wide zoom" row; user-approved 2026-10-18
+	public bool WideZoom { get; set; } = true;
+
 	public static GameOptions Current { get; set; } = new();
 
 	/// <summary>Volume as a 0-1 gain.</summary>
@@ -91,6 +98,7 @@ public sealed class GameOptions
 		RmbCancel = other.RmbCancel;
 		Rotation = other.Rotation;
 		Scroll = other.Scroll;
+		WideZoom = other.WideZoom;
 	}
 
 	public static GameOptions Load( string path )

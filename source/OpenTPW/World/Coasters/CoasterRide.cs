@@ -366,10 +366,25 @@ public sealed class CoasterRide
 		return result.Trains;
 	}
 
+	/// <summary>
+	/// The crossing lists of a track still being built. The original's rebuild 0x43eb70 runs the knot pass, the sampler 0x440c10 and the
+	/// self-intersection pass 0x439ab0 on every track it draws, so a link of an unfinished chain (the cursor's included) that crosses another is
+	/// drawn with the crossing marker while it is built.
+	/// </summary>
+	// [BIN:TPW-EXE:0x43eb70 rebuild order] the only caller of 0x430ed0 (knot pass), 0x440c10 (sampler) and 0x439ab0 (pass), called from 0x435a30, 0x447d30 and 0x447d60; the sampler treats the chain's last node as the end node whatever the chain is
+	// [APPROX:COAST-026] a chain cut open by the demolish button is not sampled here (the original's sampler across the cut ends is not traced) and shows no build-time crossings
+	internal static IReadOnlyList<IReadOnlyList<int>> ChainCrossings( ICoasterCurve curve, IReadOnlyList<CoasterNode> chain, CoasterKnotPass pass, CoasterDefinition definition )
+	{
+		if ( chain.Count < 3 || pass.Knots.Length < 3 || chain.Any( node => (node.Flags & (CoasterNodeFlags.CutEnd | CoasterNodeFlags.CutStart)) != 0 ) )
+			return Array.Empty<IReadOnlyList<int>>();
+		var sampling = curve.Sample( pass.Knots, definition.Curviness );
+		return CoasterCollision.Run( NodesForCollision( chain, pass, sampling.KnotCoordinates, definition ), sampling.Samples ).Lists;
+	}
+
 	/// <summary>The nodes as the self-intersection pass sees them: the sample index of each node and the radius of its pylon control.</summary>
 	// [BIN:STP-PPC:0x100457A0 node sample index] node +252 = the truncated sampler coordinate when the walk reaches the node: the last sample before its knot, or the sample on the knot when its t is 0 (0x43a060 reads it as the node's first sample)
 	// [BIN:TPW-EXE:0x44167f node sample index] the walk stores ftol of the reached knot's coordinate (knot +8) in node +0xfc when that knot is the node's table centre ([node +0x74] +0), or the node has no pylon table or carries 0x2000; the walk starts on the first node's first knot, so a first node whose centre is that knot keeps 0
-	private static List<CoasterCollision.Node> NodesForCollision( IReadOnlyList<CoasterNode> nodes, CoasterKnotPass pass, IReadOnlyList<float> coordinates, CoasterDefinition definition )
+	internal static List<CoasterCollision.Node> NodesForCollision( IReadOnlyList<CoasterNode> nodes, CoasterKnotPass pass, IReadOnlyList<float> coordinates, CoasterDefinition definition )
 	{
 		var result = new List<CoasterCollision.Node>( nodes.Count );
 		for ( var index = 0; index < nodes.Count; index++ )
@@ -377,7 +392,7 @@ public sealed class CoasterRide
 			var knot = pass.CentreKnot[index];
 			var at = knot == 0 || knot >= coordinates.Count ? 0 : (int)coordinates[knot];
 			var node = nodes[index];
-			result.Add( new CoasterCollision.Node( at, node.IsPylonless ? null : definition.Pylon( node.LoopPylon ).CollisionPossibleRadius, node.IsPylonless ) );
+			result.Add( new CoasterCollision.Node( at, node.IsPylonless ? null : definition.Pylon( node.LoopPylon ).CollisionPossibleRadius, node.IsPylonless, (node.Flags & CoasterNodeFlags.CutEnd) != 0 ) );
 		}
 		return result;
 	}

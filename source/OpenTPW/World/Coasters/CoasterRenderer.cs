@@ -314,7 +314,7 @@ public sealed class CoasterRenderer : Entity
 				return;
 			var pass = track.BuildKnotPass( Ride.Site, chain, writeBanks: false );
 			var knots = pass.Knots;
-			var crossings = Ride.IsOperational ? Ride.CollisionLists : Array.Empty<IReadOnlyList<int>>();
+			var crossings = Ride.IsOperational ? Ride.CollisionLists : CoasterRide.ChainCrossings( Ride.Curve, chain, pass, definition );
 			var cursorValid = preview?.Valid ?? true;
 			int? Marker( int node, int next ) => LinkMarker( chain, crossings, cursorValid, node, next );
 			var matrix = owner.ToEngine();

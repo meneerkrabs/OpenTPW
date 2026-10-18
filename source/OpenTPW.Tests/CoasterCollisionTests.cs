@@ -180,6 +180,25 @@ public class CoasterCollisionTests
 	}
 
 	[TestMethod]
+	public void ALinkIntoTheBuildCursorThatCrossesTheTrackIsListedWhileTheTrackIsBuilt()
+	{
+		// COAST-004 / COAST-026: the original's rebuild 0x43eb70 runs the sampler and the pass on an unfinished track, so the cursor's link carries the crossing marker.
+		var ride = new CoasterRide( CoasterDefinition.FromValues( CoasterTests.PcSettings() ), new CoasterWorld( 1 ), "Test Coaster" );
+		var builder = new CoasterBuilder( ride, new CoasterSite( 64, 64 ) );
+		CoasterTests.PlaceStation( builder, (20, 20) );
+		builder.Height = 20;
+		foreach ( var (dx, dy) in FigureEight.Take( FigureEight.Length - 1 ) )
+			Assert.AreEqual( CoasterPlaceResult.Ok, builder.Place( 20 + dx, 20 + dy ) );
+		var last = FigureEight[^1];
+		var crossing = builder.Track.BuildPreviewChain( (20 + last.X, 20 + last.Y), 20, false )!.Value.Chain;
+		var lists = CoasterRide.ChainCrossings( ride.Curve, crossing, builder.Track.BuildKnotPass( builder.Site, crossing, writeBanks: false ), ride.Definition );
+		Assert.IsTrue( lists.Any( list => list.Count > 0 ), "the cursor's link crosses the first link" );
+		var apart = builder.Track.BuildPreviewChain( (20 + 6, 20 - 10), 20, false )!.Value.Chain;
+		var none = CoasterRide.ChainCrossings( ride.Curve, apart, builder.Track.BuildKnotPass( builder.Site, apart, writeBanks: false ), ride.Definition );
+		Assert.IsFalse( none.Any( list => list.Count > 0 ) );
+	}
+
+	[TestMethod]
 	public void TheCoasterTheToolEditsRefusesGuestsEvenWhileItsTrackStillRuns()
 	{
 		// 0x441970 also fails for the controller named by the global 0x790fec, the coaster the tool edits (set at the tool's entry 0x447520 through 0x430ac0, cleared at its exit)

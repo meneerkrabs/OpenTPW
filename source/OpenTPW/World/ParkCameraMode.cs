@@ -8,13 +8,13 @@ public class ParkCameraMode : CameraMode
 	// Host interaction tuning: the edge band and the right-button drag (the original's own pan model is not ported).
 	public const float HostEdgeFraction = 0.015f;
 	/// <summary>The original's zoom value at its own range's near end (<see cref="Height"/>).</summary>
-	// [BIN:TPW-EXE:0x42b1c0 zoom range] without the flag 0x200 the zoom value (0x7909ec) is clamped to 70..130 (0x42c621-0x42c6a1: 70.0 at 0x6fde08, 130.0 at 0x6fde0c; the flag 0x200 swaps in 40..300 from 0x74c9d8/0x74c9dc, a flag whose setter was not found: 0x42aa6e only keeps it), so the camera never gets nearer or farther than these
+	// [BIN:TPW-EXE:0x42b1c0 zoom range] without the flag 0x200 the zoom value (0x7909ec) is clamped to 70..130 (0x42c621-0x42c6a1: 70.0 at 0x6fde08, 130.0 at 0x6fde0c; the flag 0x200 swaps in 40..300 from 0x74c9d8/0x74c9dc, a flag toggled by 0x42a520, a key handler of the 25-entry camera key set (0x748158, entry 0x748298: key byte 0x20, modifier word 0x3f, whose reachability in the retail game is not verified); 0x42aa6e only keeps it), so the camera never gets nearer or farther than these
 	public const float MinimumHeight = 70f;
 	/// <summary>The original's zoom value at its far end.</summary>
 	public const float MaximumHeight = 130f;
 	/// <summary>The zoom value at the near end of the wide range (<see cref="GameOptions.WideZoom"/>): tp.exe's own flag-0x200 minimum.</summary>
 	// [BIN:TPW-EXE:0x42c631 wide zoom range] with the mode flag 0x200 (0x42c62c: TEST BH, 2) the clamp compares the zoom value with 40.0 (0x74c9d8) and 300.0 (0x74c9dc) instead of 70.0 and 130.0; the pitch (0x42c742) and the eye (0x42c96d) are computed from the zoom value alone, so the same formulas run unchanged over the wider range
-	// [EXT:wide-zoom] the original never sets the flag in the shipped game (its setter was not found; probably a developer mode); OpenTPW offers that range as an option, on by default (user-approved 2026-10-18, GameOptions.WideZoom)
+	// [EXT:wide-zoom] the original sets the flag only through a hidden camera key binding (0x42a520 from entry 0x748298 of the camera key set; key byte 0x20, modifier word 0x3f, not shown to be reachable in retail) and has no option for it; OpenTPW offers that range as an option, on by default (user-approved 2026-10-18, GameOptions.WideZoom)
 	public const float WideMinimumHeight = 40f;
 	/// <summary>The zoom value at the far end of the wide range: tp.exe's own flag-0x200 maximum.</summary>
 	public const float WideMaximumHeight = 300f;

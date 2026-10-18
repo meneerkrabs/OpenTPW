@@ -88,8 +88,26 @@ action 2 creates effect `0x13` at u2. WALKOFF (`0x005571A0`) finds the entry by 
 state 4 at the end, and WALKGET (`0x00557110`) hands out the first entry of the table in state 4 and frees it. The ride runtime measures the model's dummies for every object that walks riders
 (`OriginalObjectRuntime.WalkNodeDistance`; every literal node pair of the 47 shipped WALKON instructions exists in its model, `WalkNodeCorpusTests`), so a ride's riders now leave after the measured walk (a few hundred milliseconds to two seconds) and not at once; the Star and Tweety
 Tours' slots lie 10 model units apart, so both still ride 1000 ms (`TourAssetTests.TheTourWalkOffsSpanTheModelsSlotNodes`, `WalkOffTimingTests`, `WalkTableTests`). The slot order, a WALKOFF restart in any state, the table size and the unknown rider are tested in `WalkTableTests`. The bridge saves the table entry by entry
-(`WalkTable`, optional; a save from before restores its on-board riders and walkers into the table). Left under TOUR-011: the walking body is not drawn between the nodes, the update runs in the ride's host step where the original runs it once per rendered frame, and a node missing from the model takes
-no walk-on time and the ride's default walk-off time (the original logs and keeps its stack words).
+(`WalkTable`, optional; a save from before restores its on-board riders and walkers into the table). Left under TOUR-011 (the register text): the template frame steppers, the terrain height of a body without the height bit, the host-step state changes where the original runs the update once per rendered frame, and a node missing from the model, which takes
+no walk-on time, the ride's default walk-off time and draws no body (the original logs and keeps its stack words). The bodies themselves are the next section.
+
+## The walking body (TOUR-011)
+
+The walk update draws every entry it passes (`0x00557D80`, each through the body routine `0x005580A0`), so the riders of every ride that runs WALKON are seen (47 WALKON instructions in 38 shipped rides, not only the tours). `WalkerBodies` and
+`FlatRideBounceRiders.CollectWalkers` pose them for the guest renderers (the same path as the bounce riders):
+
+- **Walking on (state 1)** and **walking off (state 3)**: the body is between the two nodes of the state (u1 class 0x800 to u2, class 0x80 for the head action 4; u3 class 0x80 for the head action 4, else 0x800, to u4) by the share
+  `(now x 1000 - began x 1000) / (end - began)` in thousandths (unsigned; the body routine clamps a share above 1000 to 1000, a signed compare at `0x0055810B`), position `((b - a) x share - a x -1000) x 0.001` per axis, height from the nodes (every shipped script sets bit 0 of the last
+  WALKON word). **Ready (state 4)** stands at u4 until WALKGET hands the rider out. All three draw template 1, the walking slot (1), facing the entry's heading.
+- **Heading**: WALKON stores `atan2(z2 - z1, x2 - x1)` of its two nodes (`0x005570C2`: the original's `fpatan` of the angle a, then `ftol(0.5 - (6.28318 - (a - 1.570795)) x -1.2732406)`, a rounded eighth of a turn from 6 to 14, with the sign kept and the magnitude masked to three bits); the sprite pass keeps its low three bits. The original's x and z are the engine's X and Y.
+- **On board (state 2)**: the head actions 1, 2 and 4 draw no body (`0x004F9ED0`); the actions 3, 5 and 6 draw template 3 (standing, slot 0), 8 (the short gesture, slot 4: the strength games Strength Bird and Skull and Fruit Shy) and 5 (cheering, slot 12: the Mayan Spinner, Jungle Spray, Laughing Hyenas,
+  Devils Disc, Zero G, Martian Mooners and Aqua Spray) at node u2, with the heading taken every frame from the node's orientation row (`0x00556B90` output, x and z, the same rounding to an eighth of a turn and sign-kept mask, `0x00557F52`).
+- **Walk float** (WALKST_FLOAT, Zero G): while the script's float word is set the body on board swings about u2 in template 2 (running): with A = 0.4 + 0.1 (id & 7), B = 0.4 + 0.25 (id & 3), C = 0.5 + 0.01 x the speed bias and the two words a (swing) and b (height) x 0.001,
+  env = sin(pi x (clock - start) / duration) from the sine table, the offset is x = sin(f / 300) B env 3 a, z = sin(B clock C / 300 + pi / 2) A env 3 a and the height 12 + 3 sin(0.004 f) times env b (f = A clock C), and the heading adds `clock / ftol(B x 300)` (`0x005581D4`..`0x005583F5`).
+- The slot of a template is read from the template tables at `0x0075A418` (templates 1, 2, 3, 5 and 8 select the slots 1, 2, 0, 12 and 4 of the guest sprite sets; the table's other templates are not drawn by the walk update).
+
+Open under TOUR-011: the frame step of each template (the stepper handlers are not decoded, every body steps each 100 ms), the terrain-height form, the per-frame cadence of the state changes and the missing-node case. `WalkerBodyTests` pins the rules and a placed
+Mayan Spinner's table entries in every state; the native Jungle capture with a Mayan Spinner shows the body walking on and cheering on board.
 
 ## Pose sines (TOUR-008 narrowed)
 
@@ -97,7 +115,7 @@ The rotation builder behind the car pose (`0x0046F6F0`) reads sine and cosine fr
 
 ## Not done
 
-The mesh-derived and second-layer-owned ground (TOUR-005); see the register. There is no shadow under the cars in the original either (TOUR-008 retired: the car draw, the MESHSHADOW flag, the vertex writer and the batcher `0x00581DB0` show none).
+The hoarding posts' and station tiles' ground (TOUR-005); see the register. There is no shadow under the cars in the original either (TOUR-008 retired: the car draw, the MESHSHADOW flag, the vertex writer and the batcher `0x00581DB0` show none).
 
 ## Drawing
 
@@ -142,7 +160,11 @@ object's height (`+0x44` of its instance matrix). The table index is `width x ro
 turned by the instance rotation (0, 90, 180, 270 swap and reflect the two offsets, the `+10` terms being a cell's width). `ObjectHeightMaps` reads `<mesh>.hmp` of the catalogue entry and does the same
 from OpenTPW's placement: the instance position is the model-to-engine translation, the rotation the placement's. All 274 catalogue objects ship their map and every footprint cell of every one of
 them lies inside it at all four rotations (`TourAssetTests`, `TourRegisterRoundTests.TheMapIndexFollowsThePlacementsRotation`), which fixes the orientation. The object route is matched (the footprint cells
-are the typed cells of one owner word). Still terrain: cells with a second-layer mesh instance (a track piece of a kart or water ride, a park fence post), whose map and height the original reads, and objects whose map the original rebuilds from the mesh (`0x00451880`). The object's base height is RIDES-014's vertex midpoint.
+are the typed cells of one owner word). The second layer is read first, as the original does: a kart or water track tile's piece map (`TrackRenderer.PieceGround`). The tile's instance sits at the origin cell plus two cells of the engine rotation's offset (`360 - rotation`: 90 y + 1, 180 x + 1 and y + 1, 270 x + 1; added once by
+the instancer `0x00522B90` / `0x00522D50` and once by `0x00466F90`), its map is 2 x 2 cells indexed from that corner with the engine rotation, and its height is the tile height `0x00466D70` (the midrange of the 3 x 3 vertices); every shipped piece map holds the tile's four cells at all four rotations
+(`TrackAssetTests.EveryShippedPieceMapHoldsItsTilesFourCellsAtEveryRotation`). A tile with the add-on bit has no piece instance and falls through to the object (the add-on). The mesh loader `0x004629D0` rebuilds a map only when the file is missing, malformed or of another size than the object's shape
+(`0x00451640`), and every shipped object map has its shape's size (`TourAssetTests.EveryShippedHeightMapHasTheSizeOfItsObjectsShape`), so the rebuild never runs for the catalogue. Still terrain: the park fence's hoarding posts (second-layer type 0x19, instanced by `0x005229E0` from the table
+`0x00763388`, the cell offset added once, a 2 x 2 map) and station tiles. The object's base height is RIDES-014's vertex midpoint.
 
 ## Register changes (October 15 round)
 
@@ -151,7 +173,7 @@ are the typed cells of one owner word). Still terrain: cells with a second-layer
 - Reclassified: TOUR-006 is `[EXT:legacy-tour-save]`.
 - Reclassified: TOUR-002 is `[EXT:tour-thrown-riders-released]` (formerly `APPROX:TOUR-002`: riders a severe breakdown threw off are handed out through TOUR 4, which lowers VAR_ONRIDE; the original's loop in `0x0055DA70` discards the id `0x0055D720` returns, so the script never releases them and **thrown-off riders inflate the ride's rider count**, VAR_ONRIDE, for ever; OpenTPW fixes that on purpose).
 - Narrowed: TOUR-004 (all
-  triggers located, nothing played), TOUR-005 (implemented for the shipped maps), TOUR-008 (retired: the cars have no shadow in the original).
+  triggers located, nothing played), TOUR-005 (implemented for the shipped object maps and the track tiles' piece maps), TOUR-008 (retired: the cars have no shadow in the original).
 
 ## Verification
 

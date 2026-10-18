@@ -418,6 +418,12 @@ reopens, which changes a closing run. No `SchemaVersion` bump and no pinned hash
 A save from the 31 ms clock still restores (`TourController.MaximumSavedRemainder`, 62 ms). The wall-clock catch-up of the original's world loop (2 s clamp) and the parity phase of the tour tick
 against the script loop are not reproduced (`[EXT:tour-fixed-step]`). The drawn pose of a car (`TourCar.Drawn`, the head-node shuffle) is presentation state: not saved, not hashed, and it draws nothing from any stream.
 
+Tour ground (October 18, TOUR-005): a tour car's ground (`TourWorld.CellGround`) now reads a track tile's own piece height map The piece lookup is the level's own (`Level.TourGroundOf`, built from the family's first station), never the drawing's track renderer, which exists only after a frame has drawn the tracks, so the cars fly the same with or without rendering.
+(`0x00452AE0` asks `0x0053BF30` before `0x00527E80`), so the target heights and the clearance choices of `TourController` over kart
+and water track tiles change, and with them the tour part of the hash and the saved controller state of a park with a tour ride over
+such tiles. No pinned hash moved: nothing pins a park with a tour. The walking bodies of TOUR-011 are presentation state (not saved,
+not hashed).
+
 `GuestSimulation.ComputeStateHash` (the "raw guest hash") is unchanged. With
 per-park attraction ids it now gives the same value for a second run in the
 same process.

@@ -300,6 +300,25 @@ public class TourAssetTests
 		Assert.IsTrue( checkedObjects > 20, $"{theme}: {checkedObjects} objects checked" );
 	}
 
+	/// <summary>The mesh loader (0x004629D0) rebuilds a map whose size differs from the object's shape; every shipped map matches its shape, so the rebuild never runs for the catalogue (TOUR-005).</summary>
+	[DataTestMethod]
+	[DataRow( "jungle" )]
+	[DataRow( "hallow" )]
+	[DataRow( "space" )]
+	[DataRow( "fantasy" )]
+	public void EveryShippedHeightMapHasTheSizeOfItsObjectsShape( string theme )
+	{
+		var maps = new ObjectHeightMaps();
+		var mismatches = new List<string>();
+		foreach ( var entry in ObjectCatalog.Load( theme ).Entries.Where( item => !item.IsFixedItem ) )
+		{
+			var map = maps.MapOf( entry )!;
+			if ( (map.Width, map.Height) != (entry.Shape.Width, entry.Shape.Height) )
+				mismatches.Add( $"{entry.InfoId} map {map.Width}x{map.Height} shape {entry.Shape.Width}x{entry.Shape.Height}" );
+		}
+		Assert.AreEqual( 0, mismatches.Count, string.Join( "; ", mismatches ) );
+	}
+
 	/// <summary>A free 4 × 4 site on the park's land whose access cell is a path guests can walk, nearest the walkways.</summary>
 	private static (int X, int Y) FindSite( ObjectCatalogEntry entry, OriginalParkGrid terrain, GuestPathGrid grid )
 	{

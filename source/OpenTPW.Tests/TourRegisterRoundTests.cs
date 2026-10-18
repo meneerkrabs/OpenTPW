@@ -333,4 +333,33 @@ public class TourRegisterRoundTests
 		Assert.AreEqual( 24 * 300, world.CellGround( 40, 3 ), "an object's height truncated to whole units, times 300" );
 		Assert.AreEqual( 5 * 300, world.CellGround( 41, 3 ), "a cell without an object is the terrain" );
 	}
+
+	/// <summary>A track tile's 2 x 2 map is indexed from the instance corner with the engine rotation, so its four cells are four different map cells at every rotation (TOUR-005, second layer).</summary>
+	[TestMethod]
+	public void ATrackTilesFourCellsAreFourMapCellsAtEveryRotation()
+	{
+		var map = Hmp( 2, 2 );
+		foreach ( var rotation in new[] { 0, 90, 180, 270 } )
+		{
+			var (positionX, positionY) = TrackRenderer.PieceInstanceOrigin( 7, 4, rotation );
+			var seen = new HashSet<int>();
+			foreach ( var (dx, dy) in new[] { (0, 0), (1, 0), (0, 1), (1, 1) } )
+			{
+				var index = ObjectHeightMaps.CellIndex( map, ( 360 - rotation ) % 360, positionX, positionY, 7 + dx, 4 + dy );
+				Assert.IsNotNull( index, $"rotation {rotation}: tile cell ({dx}, {dy}) lies inside the map" );
+				seen.Add( index.Value );
+			}
+			Assert.AreEqual( 4, seen.Count, $"rotation {rotation}" );
+			Assert.IsNull( ObjectHeightMaps.CellIndex( map, ( 360 - rotation ) % 360, positionX, positionY, 9, 4 ), $"rotation {rotation}: the cell beside the tile is outside" );
+		}
+	}
+
+	[TestMethod]
+	public void ATrackPiecesInstanceSitsTwoCellsOverByTheEngineRotation()
+	{
+		Assert.AreEqual( (70, 40), TrackRenderer.PieceInstanceOrigin( 7, 4, 0 ) );
+		Assert.AreEqual( (90, 40), TrackRenderer.PieceInstanceOrigin( 7, 4, 90 ), "engine 270: x + 2" );
+		Assert.AreEqual( (90, 60), TrackRenderer.PieceInstanceOrigin( 7, 4, 180 ), "engine 180: x + 2, y + 2" );
+		Assert.AreEqual( (70, 60), TrackRenderer.PieceInstanceOrigin( 7, 4, 270 ), "engine 90: y + 2" );
+	}
 }

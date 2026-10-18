@@ -151,6 +151,7 @@ public class OriginalObject : Entity, IPointLightSource
 				},
 				() => Placement.GridOrigin );
 			Runtime.SetTourStation( ComputeTourStation );
+			Runtime.SetNodeEngine( GetNodeTransform );
 			BuildModels();
 			UpdateTransforms();
 			// [EXT:object-lights] an object whose model has light dummies shows them through its level's point lights

@@ -74,7 +74,7 @@ internal sealed partial class GameFlow
 			or NotSupportedException or ArgumentException )
 		{
 			// a park that cannot be captured must not leave an earlier park's snapshot behind to be restarted into
-			Log.Warning( $"Restart snapshot not written ({error.Message}); Restart Park falls back to a new park start." );
+			Log.Warning( $"Restart snapshot not written ({error.Message}); Restart Park can start a new Instant Action park; other modes report that the snapshot is unavailable." );
 			try { File.Delete( RestartSnapshotPath( level ) ); }
 			catch ( Exception deleteError ) when ( deleteError is IOException or UnauthorizedAccessException ) { }
 		}
@@ -96,7 +96,7 @@ internal sealed partial class GameFlow
 		{
 			restartWrite = null;
 			// Retain the prior file and pending marker for diagnosis; Load must not use that prior park as the restart point.
-			Log.Warning( $"Restart snapshot not committed ({error.Message}); Restart Park falls back to a new park start." );
+			Log.Warning( $"Restart snapshot not committed ({error.Message}); Restart Park can start a new Instant Action park; other modes report that the snapshot is unavailable." );
 		}
 	}
 

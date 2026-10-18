@@ -559,8 +559,25 @@ public sealed partial class OriginalObjectRuntime
 			// [DATA:<object>.sam:UsageInfo.EntryCellStandPosX/Y] the jungle Rides.sam default is (0.5, 0.5); 0xde1d8 checks the range [0, 1] (a value outside it keeps the default here)
 			EntryCellStandPos = (StandFraction( settings, "UsageInfo.EntryCellStandPosX" ), StandFraction( settings, "UsageInfo.EntryCellStandPosY" )),
 			// [EXT:pools-changing-room] OpenTPW's own key: the object is a pool complex's changing room (docs/POOLS.md)
-			IsChangingRoom = FeatureGates.Pools && PoolChangingRooms.IsChangingRoom( entry )
+			IsChangingRoom = FeatureGates.Pools && PoolChangingRooms.IsChangingRoom( entry ),
+			// [EXT:umbrellas-weather-map] the umbrellas extension's own objects carry Theme Park Inc's weather and generation percentages, which the host score applies for them alone; every other object keeps the game's score
+			UmbrellaTerms = UmbrellaShopTermsOf( entry )
 		};
+	}
+
+	/// <summary>
+	/// The weather and generation percentages of an object of the umbrellas extension (docs/UMBRELLAS.md, "Demand"): <c>WeatherModifier.Rain/Storm/Snow/HeatWavePercentage</c> and <c>GenerationModifier.KidScorePercentage</c> of
+	/// its .sam; null for any other object and while the extension is off. A key a .sam leaves out is 0 for the weather (no change); the kid percentage is then 100.
+	/// </summary>
+	// [BIN:TPI-EXE:0x6101e0 score multipliers] Theme Park Inc's keys, which tp.exe does not read: only the extension's own objects use them
+	private static UmbrellaShopTerms? UmbrellaShopTermsOf( ObjectCatalogEntry entry )
+	{
+		if ( !ParkResumeMods.IsUmbrellasObject( entry ) || !FeatureGates.Umbrellas )
+			return null;
+		var settings = entry.Settings;
+		int Percentage( string key, int fallback ) => settings.Has( key ) ? settings.GetInt( key ) : fallback;
+		return new UmbrellaShopTerms( Percentage( "WeatherModifier.RainPercentage", 0 ), Percentage( "WeatherModifier.StormPercentage", 0 ), Percentage( "WeatherModifier.SnowPercentage", 0 ),
+			Percentage( "WeatherModifier.HeatWavePercentage", 0 ), Percentage( "GenerationModifier.KidScorePercentage", 100 ) );
 	}
 
 	private static float StandFraction( ObjectSettings settings, string key ) =>

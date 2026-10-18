@@ -286,6 +286,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			return;
 		attraction.Host = this;
 		attractions.Add( attraction );
+		if ( attraction.IsUmbrellaShop )
+			umbrellaShops++;
 		attractions.Sort( ( a, b ) => a.AttractionId.CompareTo( b.AttractionId ) );
 		// A queue from a save made before queue cells were linked gets the links the queue tool writes (QueuePaths.RebuildMissingLinks).
 		if ( attraction is RideVisitorBridge ride && ride.HasQueue )
@@ -308,6 +310,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	{
 		if ( !attractions.Remove( attraction ) )
 			return;
+		if ( attraction.IsUmbrellaShop )
+			umbrellaShops--;
 		SmarterGuests?.Throughputs.Remove( attraction.AttractionId );
 		foreach ( var guest in guests )
 		{
@@ -885,6 +889,9 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	private void UpdateNeedsTurn( Guest guest )
 	{
 		var turn = (uint)ParkTurn;
+		// [EXT:umbrellas-extension] the umbrella rule runs first on the guest's own phase, as Theme Park Inc's weather rule opens its needs block; only a guest who owns an umbrella is touched
+		if ( guest.UmbrellaState != UmbrellaRules.StateNone && NeedsUpdate.IsPhase( turn, guest.Id ) )
+			UpdateUmbrella( guest, turn );
 		var cell = Litter?.Environment.At( guest.CellX, guest.CellY ) ?? default;
 		var result = NeedsUpdate.Apply( new GuestMeters( guest.Happiness, guest.Thirst, guest.Hunger, guest.Toilet, guest.Nausea ), guest.ExitLevel, turn, guest.Id,
 			cell.Happiness, cell.Illness, cell.Hunger );
@@ -2188,7 +2195,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	{
 		if ( attraction.JoinCell == null )
 			return 0;
-		return decisions.ScoreAttraction( ContextNow(), ViewOf( guest ), ViewOf( attraction, guest ) );
+		return HostScore( guest, attraction, decisions.ScoreAttraction( ContextNow(), ViewOf( guest ), ViewOf( attraction, guest ) ) );
 	}
 
 	/// <summary>
@@ -2221,7 +2228,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			if ( attraction.JoinCell == null )
 				continue;
 			var candidate = ViewOf( attraction, guest );
-			var score = decisions.ScoreAttraction( context, view, candidate );
+			var score = HostScore( guest, attraction, decisions.ScoreAttraction( context, view, candidate ) );
 			// [EXT:smarter-guests-value] a candidate the price rule turned away that the guest could otherwise have chosen: if nothing is chosen, the decision was emptied by price
 			if ( decisions.UsesValueForMoney && score < AttractionScore.CandidateFloor && attraction.IsOpen && !attraction.IsBrokenDown
 				&& attraction.QueueLength < RideVisitorBridge.PositionsPerCell * attraction.QueueSizeInCells && decisions.PriceTurnedAway( context, view, candidate ) )
@@ -2428,7 +2435,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 						continue;
 					// [EXT:smarter-guests-planning] a candidate in the window stands on the guest's way: a policy that plans is told so (the window's rule is the original's definition of "near the route")
 					var candidateView = ViewOf( candidate, guest );
-					var score = decisions.ScoreAttraction( context, view, decisions.UsesPlanning ? candidateView with { OnTheWay = true } : candidateView );
+					var score = HostScore( guest, candidate, decisions.ScoreAttraction( context, view, decisions.UsesPlanning ? candidateView with { OnTheWay = true } : candidateView ) );
 					if ( decisions.BeatsInMinorDecision( context, view, score, bestScore ) )
 						(best, bestScore) = (candidate, score);
 				}
@@ -2438,7 +2445,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		if ( best != null && decisions.UsesSpreading )
 		{
 			var targetView = ViewOf( target, guest );
-			keeps = !decisions.SwitchesTarget( context, view, targetView, decisions.ScoreAttraction( context, view, targetView ), ViewOf( best, guest ), bestScore );
+			keeps = !decisions.SwitchesTarget( context, view, targetView, HostScore( guest, target, decisions.ScoreAttraction( context, view, targetView ) ), ViewOf( best, guest ), bestScore );
 			if ( keeps )
 				TargetsKept++;
 			else
@@ -3093,6 +3100,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			Teleported?.Invoke( guest );
 		ClearQueueState( guest );
 		guest.State = GuestState.Using;
+		// [EXT:umbrellas-extension] a brolly shop takes a held balloon back for the happiness step, and any attraction closes an open umbrella (before the model of the balloon is put away as for every ride)
+		EnterAttraction( guest, ride );
 		// [BIN:TPW-EXE:0x00502156 state 16 entry] the balloon's model is destroyed (0x00475550) and +0x210 cleared; its life +0x214 stays; the thought bubble goes (0x0050C0D0)
 		guest.HasBalloon = false;
 		guest.BubbleThought = GuestThought.None;
@@ -3259,6 +3268,9 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 				break;
 		}
 		ApplyAppearance( guest, ride.AppearanceEffect, ride.QualityOfGoods );
+		// [EXT:umbrellas-extension] the brolly shop's AppearanceEffect 3: one world draw for the colour and an open umbrella (the shop's other effects are those of any shop)
+		if ( ride.IsUmbrellaShop )
+			GiveUmbrella( guest );
 		if ( ride.ProvidesRelief )
 		{
 			// [BIN:TPW-EXE:0x004FE1E0 relief visit] for an object with the relief flag: the toilet wears by the guest's toilet meter as a byte (0x004E2440), the meter goes to 0, and an illness byte above 90 goes to 0 as well
@@ -3485,6 +3497,9 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			BalloonLife = guest.BalloonLife,
 			HasBalloon = guest.HasBalloon,
 			InCostume = guest.InCostume,
+			UmbrellaState = guest.UmbrellaState,
+			UmbrellaType = guest.UmbrellaType,
+			UmbrellaDueTurn = guest.UmbrellaDueTurn,
 			QueueJoinHappiness = guest.QueueJoinHappiness,
 			QueueCellIndex = guest.QueueCellIndex,
 			QueueTargetIndex = guest.QueueTargetIndex,
@@ -3744,6 +3759,13 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 				Error( $"Guest {guest.Id} exit side {guest.ExitSide} is not 0 or 1." );
 			if ( guest.BalloonLife is < 0 or > GuestAppearance.MaximumBalloonLife || (guest.HasBalloon && guest.BalloonLife == 0) )
 				Error( $"Guest {guest.Id} balloon life {guest.BalloonLife} is outside 0..255 or holds a balloon at 0." );
+			// [EXT:umbrellas-save] the umbrella's optional fields: a state 0 to 4, a colour of the set, and a due turn (a multiple of four) only in the states that wait for one (1 and 3)
+			if ( guest.UmbrellaState is < UmbrellaRules.StateNone or > UmbrellaRules.StateOpen )
+				Error( $"Guest {guest.Id} umbrella state {guest.UmbrellaState} is not 0 to 4." );
+			if ( guest.UmbrellaType is < 0 or >= UmbrellaRules.Colours || (guest.UmbrellaState == UmbrellaRules.StateNone && guest.UmbrellaType != 0) )
+				Error( $"Guest {guest.Id} umbrella colour {guest.UmbrellaType} is not 0 to {UmbrellaRules.Colours - 1} (and 0 without an umbrella)." );
+			if ( guest.UmbrellaDueTurn < 0 || guest.UmbrellaDueTurn % 4 != 0 || (guest.UmbrellaDueTurn != 0 && guest.UmbrellaState is not (UmbrellaRules.StateClosing or UmbrellaRules.StateOpening)) )
+				Error( $"Guest {guest.Id} umbrella due turn {guest.UmbrellaDueTurn} is negative, not a multiple of four, or set without a pending open or close." );
 			if ( guest.BinId < 0 || (guest.BinId != 0) != (guest.State == GuestState.ThrowingAwayLitter) )
 				Error( $"Guest {guest.Id} bin {guest.BinId} does not match its state {guest.State}." );
 			Bounded( guest.Id, guest.QueueJoinHappiness, nameof( guest.QueueJoinHappiness ), 0, 100 );
@@ -4123,6 +4145,9 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		guest.BalloonLife = snapshot.BalloonLife;
 		guest.HasBalloon = snapshot.HasBalloon;
 		guest.InCostume = snapshot.InCostume;
+		guest.UmbrellaState = snapshot.UmbrellaState;
+		guest.UmbrellaType = snapshot.UmbrellaType;
+		guest.UmbrellaDueTurn = snapshot.UmbrellaDueTurn;
 		guest.QueueJoinHappiness = snapshot.QueueJoinHappiness;
 		guest.QueueCellIndex = snapshot.QueueCellIndex;
 		guest.QueueTargetIndex = snapshot.QueueTargetIndex;
@@ -4259,6 +4284,13 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			hash.Add( guest.BalloonLife );
 			hash.Add( guest.HasBalloon );
 			hash.Add( guest.InCostume );
+			// [EXT:umbrellas-save] the umbrella joins the digest only while a guest has one (every park without one keeps its pins)
+			if ( guest.UmbrellaState != UmbrellaRules.StateNone )
+			{
+				hash.Add( 0x554D4252L + guest.UmbrellaState );
+				hash.Add( guest.UmbrellaType );
+				hash.Add( guest.UmbrellaDueTurn );
+			}
 			hash.Add( guest.QueuePosition );
 			hash.Add( guest.QueueJoinTurn );
 			hash.Add( guest.LastQueueWaitTurns );
@@ -4361,6 +4393,13 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			Add( guest.BalloonLife );
 			Add( guest.HasBalloon ? 1 : 0 );
 			Add( guest.InCostume ? 1 : 0 );
+			// [EXT:umbrellas-save] only while a guest has an umbrella (every park without one keeps its pins)
+			if ( guest.UmbrellaState != UmbrellaRules.StateNone )
+			{
+				Add( 0x554D4252L + guest.UmbrellaState );
+				Add( guest.UmbrellaType );
+				Add( guest.UmbrellaDueTurn );
+			}
 			AddFloat( guest.Happiness );
 			Add( guest.ExitLevel );
 			Add( guest.Money );

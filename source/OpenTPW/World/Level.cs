@@ -482,6 +482,9 @@ public partial class Level : IDisposable
 			ConnectObjectsToGuests();
 			if ( Guests != null )
 				Guests.WeatherDropsFalling = () => Weather is { CurrentDrops: > 0 };
+			// [EXT:umbrellas-weather-map] rain without lightning is Theme Park Inc's rain, lightning a storm, snow snow (the flags of the park's weather, not its drops: the umbrella rules ask what the weather is, not how hard it falls)
+			if ( Guests != null )
+				Guests.UmbrellaWeatherState = () => Weather is { } weather ? UmbrellaRules.WeatherStateOf( weather.Rain, weather.Lightning, weather.Snow ) : UmbrellaRules.WeatherNone;
 			using var connectProfile = LoadProfile.Measure( "staff-gate-economy" );
 			ConnectObjectsToEconomy();
 			if ( Park != null )

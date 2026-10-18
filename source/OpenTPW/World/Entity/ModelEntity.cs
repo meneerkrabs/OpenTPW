@@ -58,7 +58,8 @@ public partial class ModelEntity : Entity
 			g_vCameraPos = Camera.Position,
 			g_flTime = Time.Now,
 
-			_padding0 = 0,
+			// [EXT:evening] g_flAmbientLevel: 0 (unchanged) unless the evening extension has darkened the park
+			_padding0 = Level?.Look.AmbientUniform ?? 0f,
 			_padding1 = 0,
 			// test.shader g_flViewDistanceScale: fog distance multiplier from the graphics settings (1 = unchanged).
 			_padding2 = ViewDistanceScale ?? CompatibilityRuntime.RenderQuality.ViewDistanceScale,

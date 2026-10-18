@@ -535,6 +535,38 @@ internal static class Game
 				Log.Trace( FormattableString.Invariant( $"--debug-light: a point light at {light.Position.X:0.##},{light.Position.Y:0.##},{light.Position.Z:0.##}, radius {light.Radius:0.##}, colour {colour.X:0.##},{colour.Y:0.##},{colour.Z:0.##}." ) );
 			}
 		}
+		// [EXT:debug-evening] smoke-only (docs/EVENING.md): --evening-pace <minutes10|minutes20|minutes40|day|dusk|night> sets the evening extension's day cycle for this run only (nothing is saved), and
+		// --debug-evening-lamps <n> adds n lamp-like lights (the pool lamp's colour and radius) on a grid around the park camera's target that follow the evening look's lamp level, so a performance run
+		// has many lamps to carry. Both need the extension on (--enable-mod opentpw.evening).
+		if ( GetOption( args, "--evening-pace", "minutes10, minutes20, minutes40, day, dusk or night" ) is { } paceText )
+			GameOptions.Current.Evening = paceText.ToLowerInvariant() switch
+			{
+				"day" or "alwaysday" => EveningPace.AlwaysDay,
+				"dusk" or "alwaysdusk" => EveningPace.AlwaysDusk,
+				"night" or "alwaysnight" => EveningPace.AlwaysNight,
+				var other when Enum.TryParse<EveningPace>( other, ignoreCase: true, out var parsedPace ) && Enum.IsDefined( parsedPace ) && !int.TryParse( other, out _ ) => parsedPace,
+				_ => throw new ArgumentException( "--evening-pace expects minutes10, minutes20, minutes40, day, dusk or night." )
+			};
+		var debugEveningLamps = GetOption( args, "--debug-evening-lamps", "a number of lamp lights" );
+		if ( debugEveningLamps != null )
+		{
+			var lampCount = int.TryParse( debugEveningLamps, out var parsedLamps ) && parsedLamps is > 0 and <= 4096 ? parsedLamps : throw new ArgumentException( "--debug-evening-lamps expects a number from 1 to 4096." );
+			var lampFrames = 0;
+			Render.PostUpdate += AddDebugEveningLamps;
+			void AddDebugEveningLamps()
+			{
+				if ( flow.Level is not { OriginalPark: not null } level || Camera.Mode is not ParkCameraMode park || ++lampFrames < 5 )
+					return;
+				Render.PostUpdate -= AddDebugEveningLamps;
+				var columns = (int)MathF.Ceiling( MathF.Sqrt( lampCount ) );
+				var centre = new System.Numerics.Vector3( park.Target.X, park.Target.Y, park.Target.Z );
+				var lamps = new List<PointLight>();
+				for ( var index = 0; index < lampCount; index++ )
+					lamps.Add( new PointLight( centre + new System.Numerics.Vector3( ( index % columns - columns / 2 ) * 6f, ( index / columns - columns / 2 ) * 6f, 2.2f ), new System.Numerics.Vector3( 1.0f, 0.84f, 0.55f ), PointLightMath.ModelUnitsToEngine( 55 ) ) );
+				level.PointLights.Add( new DebugEveningLampSource( lamps, () => level.Look.LampLevel ) );
+				Log.Trace( $"--debug-evening-lamps: {lampCount} lamp lights on a {columns} x {columns} grid of 3 cells around the camera target." );
+			}
+		}
 		// [EXT:debug-pool] smoke-only: once the original level is up and the opentpw.pools extension is on, paints pool cells through the pool tool's own builder
 		// (Level.PoolBuilder.PaintCells, charged as the tool does) at the first place near the camera target (--capture-camera's when given) where every cell of the shape can be painted, so a
 		// capture shows the water and the edges (docs/POOLS.md). The shape is rectangles "x,y,w,h" relative to that place, separated by ';' (default a 6 x 4 basin

@@ -942,14 +942,15 @@ internal sealed partial class GameFlow : IDisposable
 		var framebuffer = global::Global.Render.MultisampledFramebuffer;
 		// The engine fog every fogged shader blends into: the level's fog colour in a park, the lobby's clear colour otherwise (RenderFog).
 		// [BIN:TPW-EXE:0x4080e0 fog colour] [0x8bd47c] is the one colour of the viewport clear, the sky's haze and the distant vertices
-		RenderFog.WorldColour = RenderFog.ColourOf( Level?.BackdropColour ?? RenderFog.LobbyColour );
+		// [EXT:evening] at dusk and night the evening extension darkens it (the level's WorldBackdropColour; the same colour at day)
+		RenderFog.WorldColour = RenderFog.ColourOf( Level?.WorldBackdropColour ?? RenderFog.LobbyColour );
 		if ( Level != null )
 		{
 			// The park's backdrop: the level's fog colour (what the original's viewport clear and the sky's haze blend with), then the sky over it.
 			// [BIN:TPW-EXE:0x4080e0 fog colour] the level load copies ThemeEngine.FogColour into the fog colour [0x8bd47c]; [BIN:TPW-EXE:0x5737aa clear] the viewport clear uses it when render flags & 0x4002000, else black
 			// [APPROX:UI-107] the clear is always the fog colour, since the park's render flags (0x4002000 bits of [0x8bcbc8]) are not traced; the sky is Level.DrawSky (World/Sky.cs)
 			backgroundBatch.Clear();
-			backgroundBatch.AddRectangle( new UiRect( 0, 0, framebuffer.Width, framebuffer.Height ), Level.BackdropColour );
+			backgroundBatch.AddRectangle( new UiRect( 0, 0, framebuffer.Width, framebuffer.Height ), Level.WorldBackdropColour );
 			backgroundRenderer.Draw( global::Global.Render.CommandList, backgroundBatch, framebuffer.Width, framebuffer.Height );
 			Level.DrawSky();
 			Level.Render();

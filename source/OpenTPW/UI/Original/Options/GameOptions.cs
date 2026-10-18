@@ -65,6 +65,12 @@ public sealed class GameOptions
 	// [EXT:wide-zoom] the OpenTPW page's "Wide zoom" row; user-approved 2026-10-18
 	public bool WideZoom { get; set; } = true;
 
+	/// <summary>
+	/// [EXT:evening] How the evening and night extension's day cycle runs while that extension is on (docs/EVENING.md): a full day and night in 10, 20 or 40 minutes of play, or always day, dusk or night.
+	/// Presentation only. Files written before the option existed lack it and get the default; an unknown value is read as the default.
+	/// </summary>
+	public EveningPace Evening { get; set; } = EveningPaces.Default;
+
 	public static GameOptions Current { get; set; } = new();
 
 	/// <summary>Volume as a 0-1 gain.</summary>
@@ -102,6 +108,7 @@ public sealed class GameOptions
 		Scroll = other.Scroll;
 		WideZoom = other.WideZoom;
 		Autosave = other.Autosave;
+		Evening = other.Evening;
 	}
 
 	public static GameOptions Load( string path )
@@ -152,6 +159,7 @@ public sealed class GameOptions
 		MusicVolume = Math.Clamp( MusicVolume, 0, MaximumVolume );
 		SpeechVolume = Math.Clamp( SpeechVolume, 0, MaximumVolume );
 		MovieVolume = Math.Clamp( MovieVolume, 0, MaximumVolume );
+		Evening = EveningPaces.Validated( Evening );
 		return this;
 	}
 }

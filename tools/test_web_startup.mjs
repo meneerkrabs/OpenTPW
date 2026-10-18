@@ -133,7 +133,7 @@ async function page(theme, active = false, frame = () => false) {
 	const environment = {
 		dotnet: { async create() { return { setModuleImports() {}, async getAssemblyExports() { return { OpenTPW: { Program: program } }; },
 			getConfig() { return { mainAssemblyName: 'synthetic' }; }, async runMain() {} }; } },
-		webgl: {}, audio: {}, storage: { async restore() {}, async sync() {} },
+		webgl: {}, audio: {}, text: {}, storage: { async restore() {}, async sync() {} },
 		originals: { supported() { return true; }, async claimKeeping() { return { acquired: true, unavailable: false, release() { released++; } }; }, MODES: ['lazy', 'all', 'off'], async openOriginalStore() { return store; } },
 		...startup, inputs, document: { getElementById: element, addEventListener() {} },
 		location: { search: '', hostname: 'test.invalid', origin: 'https://test.invalid' },

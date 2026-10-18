@@ -5,6 +5,7 @@ import * as storage from './opentpw-storage.js';
 import * as originals from './opentpw-originals.js';
 import { plan, importStartup, startSelected } from './opentpw-startup.js';
 import * as inputs from './opentpw-inputs.js';
+import * as text from './opentpw-text.js';
 import { parseManifest, planSprites, fetchSprites } from './opentpw-pool-sprites.js';
 
 // The game in the browser (docs/WEB.md): the player's own files go into the runtime's memory, then
@@ -15,6 +16,7 @@ const { setModuleImports, getAssemblyExports, getConfig, runMain } = runtime;
 setModuleImports('opentpw-gl', webgl);
 setModuleImports('opentpw-page', { requestLevel, requestLanguage, chooseInput });
 setModuleImports('opentpw-audio', audio);
+setModuleImports('opentpw-text', text);
 const program = (await getAssemblyExports(getConfig().mainAssemblyName)).OpenTPW.Program;
 // runMain keeps the runtime alive after Main returns, so the exports stay callable.
 await runMain();

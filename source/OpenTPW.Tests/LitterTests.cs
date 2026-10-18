@@ -249,6 +249,38 @@ public class LitterTests
 	}
 
 	[TestMethod]
+	public void ACloserBinTestedAfterTheReachableOneThatFailsItsRouteLeavesTheWalkStuck()
+	{
+		// tp.exe 0x00500DC0: every candidate closer than the best makes its own route request, and a failed one (0x0050F8E0) leaves the walk stuck
+		var litter = new ParkLitter();
+		var simulation = Row( out _, litter );
+		var bins = new[] { new LitterBin( 9, (4, 6), (4, 5) ), new LitterBin( 8, (3, 4), (3, 3) ) };   // the second is closer, its access cell is no path
+		simulation.Bins = () => bins;
+		var binned = new List<int>();
+		simulation.LitterBinned += ( _, bin ) => binned.Add( bin );
+		var guest = simulation.SpawnInPark( 2, 5 );
+		guest.Litter = 90;
+		Assert.IsTrue( RunUntilEmpty( simulation, guest ) );
+		Assert.AreEqual( 0, binned.Count, "the stuck walk bins nothing" );
+		Assert.AreEqual( 1, litter.Count, "state 9 drops the litter on the cell" );
+	}
+
+	[TestMethod]
+	public void AClosestBinThatIsTestedFirstDoesNotSpoilALaterReachableOne()
+	{
+		var litter = new ParkLitter();
+		var simulation = Row( out _, litter );
+		var bins = new[] { new LitterBin( 8, (3, 4), (3, 3) ), new LitterBin( 9, (4, 6), (4, 5) ) };
+		simulation.Bins = () => bins;
+		var binned = new List<int>();
+		simulation.LitterBinned += ( _, bin ) => binned.Add( bin );
+		var guest = simulation.SpawnInPark( 2, 5 );
+		guest.Litter = 90;
+		Assert.IsTrue( RunUntilEmpty( simulation, guest ) );
+		CollectionAssert.AreEqual( new[] { 9 }, binned );
+	}
+
+	[TestMethod]
 	public void AWalkToABinThatLosesItsRouteDropsTheLitter()
 	{
 		var litter = new ParkLitter();

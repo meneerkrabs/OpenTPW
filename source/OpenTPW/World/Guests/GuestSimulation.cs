@@ -63,6 +63,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	private readonly Func<GuestNavigation, (int X, int Y)> separationForStep;
 	/// <summary>The guests standing in each cell, for separation's neighbour query; rebuilt at the start of every park turn.</summary>
 	private readonly Dictionary<(int X, int Y), List<Guest>> occupants = new();
+	private long cellSerial;   // the entry number the next guest to enter a cell takes (Guest.CellSerial), so the saved lists come back in their order
 	private readonly List<GuestNavigation> neighbours = new();
 
 	/// <param name="decisions">
@@ -498,7 +499,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		UpdateArrivals( deltaSeconds );
 		if ( turnStarted )
 		{
-			RebuildOccupants();
+			SyncOccupants();
 		}
 		// [APPROX:DET-014] without a host thing sweep (a simulation of its own, the ticks between park turns) the guests' draws interleave in this list order, not the original's newest-first thing sweep (DET-013), and the draws of the won sideshow's tail (0x004FE8D9) and the balloon model's recreation (0x0050205F) are not taken
 		for ( var index = 0; index < guests.Count; index++ )
@@ -544,6 +545,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		SmarterGuests?.Stalls.Reset( guest.BirthId );
 		// [BIN:TPW-EXE:0x0050B780 destroy request] a leaving guest asks for its destruction (0x0050B780 → 0x00516310); the id is freed at the park turn's end (0x00516641)
 		things.QueueDestroy( guest.Id );
+		LeaveCellLists( guest );
 		byId.Remove( guest.Id );
 		guests.Remove( guest );
 		Departed++;
@@ -564,7 +566,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		if ( !NextTickStartsTurn )
 			throw new InvalidOperationException( "A swept tick starts a park turn." );
 		BeginTick( deltaSeconds );
-		RebuildOccupants();
+		SyncOccupants();
 		sweptGuests.Clear();
 		sweepDelta = deltaSeconds;
 	}
@@ -1145,12 +1147,27 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// on the cell map from the guest's cell with its walk mask. False when the search fails; the walk then stands arrived and stuck
 	/// (<see cref="GuestNavigation.Stuck"/>), as the original leaves it.
 	/// </summary>
-	// [BIN:TPW-EXE:0x004FA530 route to a cell] the cell id minus 1 gives the cell bytes with the sub-cell byte 0x80 (bit 15 of x cleared), the walk's stamp wait +0x198 (0x004FA770, never set by OpenTPW's guests) is passed, then 0x00510100 with the position bytes << 8; its result is the search's success
+	// [BIN:TPW-EXE:0x004FA530 route to a cell] the cell id minus 1 gives the cell bytes with the sub-cell byte 0x80 (bit 15 of x cleared), the stranded mark +0x198 is tested first (RequestRoute), then 0x00510100 with the position bytes << 8; its result is the search's success
 	private bool RouteToCell( Guest guest, (int X, int Y) cell )
 	{
+		return RequestRoute( guest, cell, null );
+	}
+
+	/// <summary>
+	/// The route request <c>0x004FA530</c>: a guest marked stranded (+0x198) whose surroundings are still unstamped refuses at once and leaves its walk alone
+	/// (0x004FA770); else the mark clears and the walk is set up to the cell's centre. <paramref name="route"/> is the M3 gate's bookkeeping.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004FA530 stranded early exit] the stamp counter below the mark clears it (0x004D8C50 against +0x198); a mark still set and held (0x004FA770) returns 0 before anything is written; else the mark is cleared and 0x00510100 sets the walk up
+	private bool RequestRoute( Guest guest, (int X, int Y) cell, List<(int X, int Y)>? route )
+	{
 		var navigation = guest.Navigation;
+		if ( guest.StrandedMark != 0 && Grid.Cells.StampCounter + 1 < guest.StrandedMark )
+			guest.StrandedMark = 0;
+		if ( guest.StrandedMark != 0 && StrandedHolds( guest, (guest.CellX, guest.CellY) ) )
+			return false;
+		guest.StrandedMark = 0;
 		var (x, y) = GuestNavigation.BytePoint( cell, GuestWander.CentreByte, GuestWander.CentreByte );
-		var found = navigation.Navigate( Grid.Cells, x, y );
+		var found = route == null ? navigation.Navigate( Grid.Cells, x, y ) : SetDestination( guest, (x, y), route );
 		guest.HasWaypoint = true;
 		return found;
 	}
@@ -1188,7 +1205,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// separation's neighbours for the stepping guest (<c>0x10087c</c>): the guests and the staff standing in the 3 × 3 cells around its
 	/// cell, rows from the top and each row from the left, cells outside the map skipped (<c>0xd70d8</c>).
 	/// </summary>
-	// [APPROX:WALK-003] separation's neighbours are the guests outside rides and shops (not Using, HeldByGuard or Gone) followed by the staff on each cell; the original's query (tp.exe 0x5102f0, Mac 0x10087c) visits each cell's things in the order they were head-inserted when they entered it (0x50b6a0 via 0x4d91f0), keeps class-1 guests whatever their state, and also keeps staff (classes 4-8, kept here) and the online avatar (class 18, not kept); the neighbour position (thing +4/+6 = navigation position >> 8, written by 0x4fa2a0) matches OpenTPW's — still open: where the thing position of a guest on a ride, held or leaving lies
+	// [APPROX:WALK-003] separation's neighbours are the guests of each cell outside rides and shops (not Using, HeldByGuard or Gone), head first like the original's persistent chains (the guest that entered the cell last first), followed by the staff on the cell; the original's query (tp.exe 0x5102f0, Mac 0x10087c, at most five neighbours) walks one chain per cell that holds the guests whatever their state (class 1), the staff (classes 4-8, kept here) and the online avatar (class 18, not kept) interleaved by the time each entered; the neighbour position (thing +4/+6 = navigation position >> 8, written by 0x4fa2a0) matches OpenTPW's — still open: the entry order of the staff in the chain (they keep no cell list, so they follow the guests) and where the thing position of a guest on a ride, held or leaving lies
 	private (int X, int Y) SeparationForStep( GuestNavigation self )
 	{
 		neighbours.Clear();
@@ -1202,8 +1219,10 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 					continue;
 				if ( occupants.TryGetValue( (x, y), out var list ) )
 				{
-					foreach ( var other in list )
+					// the cell's things are visited head first, the one that entered last (0x5102F0 follows the chain from cell +0x24 by +10; 0x4D91F0 inserts at the head)
+					for ( var index = list.Count - 1; index >= 0; index-- )
 					{
+						var other = list[index];
 						if ( other.State is not (GuestState.Using or GuestState.HeldByGuard or GuestState.Gone) )
 							neighbours.Add( other.Navigation );
 					}
@@ -1221,17 +1240,33 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		return GuestNavigation.Separation( self, neighbours );
 	}
 
-	/// <summary>Files every guest under its cell, in list order.</summary>
-	// [EXT:guest-cell-lists] OpenTPW keeps its per-cell guest lists as a structure it rebuilds every park turn (guest order, movers appended), where the original's per-cell thing lists are persistent and head-inserted: a data-structure choice with no original behaviour to match (which things the lists hold and their query order are WALK-003)
+	/// <summary>Files the guests that are in no cell list yet, or in another cell's, under their cells; the lists keep the order the guests entered them in.</summary>
+	// [BIN:TPW-EXE:0x004D91F0 thing list insert] the cell's thing chain is persistent and a thing that enters a cell goes to its head (cell +0x24, next +10, previous +8; 0x0050B6A0 removes it from the old cell, 0x004D9280, and inserts it into the new one on every cell change of its position), so the lists are never rebuilt; a list here ends with the head
+	// [EXT:guest-cell-lists] OpenTPW keeps the guests of a cell in a list per cell (the staff are queried beside them); a cell change this simulation did not see (an edit that moves a guest) is filed at the next turn
+	private void SyncOccupants()
+	{
+		foreach ( var guest in guests )
+		{
+			if ( guest.State != GuestState.Gone && guest.OccupiedCell != guest.Navigation.Cell )
+				Occupy( guest );
+		}
+	}
+
+	/// <summary>Files every guest under its cell, oldest entry first (a restore: the saved entry numbers give the order).</summary>
 	private void RebuildOccupants()
 	{
 		foreach ( var list in occupants.Values )
 			list.Clear();
-		foreach ( var guest in guests )
+		var ranked = guests.Select( ( guest, index ) => (guest, index) ).OrderBy( item => item.guest.CellSerial ).ThenBy( item => item.index ).Select( item => item.guest );
+		foreach ( var guest in ranked )
 		{
 			guest.OccupiedCell = null;
+			var serial = guest.CellSerial;
 			Occupy( guest );
+			if ( serial != 0 )
+				guest.CellSerial = serial;
 		}
+		cellSerial = Math.Max( cellSerial, guests.Count == 0 ? 0 : guests.Max( guest => guest.CellSerial ) );
 	}
 
 	/// <summary>Moves a guest to the end of its current cell's list when it changed cell.</summary>
@@ -1251,6 +1286,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		if ( !occupants.TryGetValue( cell, out var list ) )
 			occupants[cell] = list = new List<Guest>();
 		list.Add( guest );
+		guest.CellSerial = ++cellSerial;
 		guest.OccupiedCell = cell;
 	}
 
@@ -1751,14 +1787,14 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// reaches; the guest then walks to the cell in front of it (state 9). False when there is none.
 	/// </summary>
 	// [BIN:TPW-EXE:0x00500DC0 bin search] the object list (game +0x1DA746, next at +0xC) in order; objects with flag +0x32 bit 0x40 (UsageInfo.HoldsLitter, type record +0xF8); dx² + dy² from the guest's cell to the object's below 9 and strictly below the best so far; the route test 0x004FA530 to the object's access cell +0x36 keeps it
-	// [APPROX:GUEST-005] OpenTPW keeps the reachable bin's route; in tp.exe the route request of an unreachable but closer bin tested later fails and marks the walk stuck (0x0050F8E0: walk +0xB8, guest +0x18C), so the walk step 0x004FA2A0 returns 2 at once (0x004FA301) and state 9 drops the litter on the cell — evidence needed: the route test's early exit (0x004FA530 through +0x198 and 0x004FA770)
+	// [BIN:TPW-EXE:0x00500DC0 bin walk] every candidate that is closer than the best so far makes its own route request (0x004FA530 → 0x00510100 → 0x0050F8E0), and a failed request leaves the walk retargeted to that bin, arrived and stuck (+0xB8 = 1) with the best bin's id in +0x1DC: a closer bin tested after the reachable one it does not reach turns the guest's walk to state 9 into a stuck walk, and the walk step 0x004FA2A0 returns 2 at once (0x004FA301), so state 9 drops the litter on the cell
 	private bool SeekBin( Guest guest )
 	{
 		if ( Bins?.Invoke() is not { Count: > 0 } bins )
 			return false;
 		LitterBin? best = null;
-		List<(int X, int Y)>? bestRoute = null;
 		var bestDistance = BinRadius * BinRadius;
+		var lastFailed = false;
 		foreach ( var bin in bins )
 		{
 			var dx = bin.Cell.X - guest.CellX;
@@ -1767,14 +1803,18 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			if ( distance >= bestDistance )
 				continue;
 			var route = Grid.FindPath( guest.CellX, guest.CellY, bin.Access.X, bin.Access.Y );
-			if ( route.Count == 0 )
+			if ( !RequestRoute( guest, bin.Access, route ) )
+			{
+				lastFailed = true;
 				continue;
-			(best, bestRoute, bestDistance) = (bin, route, distance);
+			}
+			(best, bestDistance, lastFailed) = (bin, distance, false);
 		}
 		if ( best is not { } found )
 			return false;
 		guest.BinId = found.Id;
-		SetDestination( guest, GuestNavigation.BytePoint( found.Access, GuestWander.CentreByte, GuestWander.CentreByte ), bestRoute! );
+		if ( lastFailed )
+			guest.HasWaypoint = false;
 		guest.State = GuestState.ThrowingAwayLitter;
 		return true;
 	}
@@ -1784,7 +1824,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// stuck drops the litter on the guest's cell instead (<c>1 + rand % 5</c>). Either way the meter empties and the guest decides again.
 	/// </summary>
 	// [BIN:TPW-EXE:0x004FFF20 state 9] the walk step 0x004FA2A0: 1 keeps walking; 0 with a bin triggers the bin's script (Level.TriggerBin); 2, or a bin id of 0, drops 1 + rand % 5 on the current cell (0x004D93B0); then the meter +0x1B4 = 0 and state 6
-	// [APPROX:GUEST-005] the walk ends stuck only when a grid edit takes a cell or link of its route (EndBrokenWalks) — evidence needed: none (read)
+	// [BIN:TPW-EXE:0x004FA2A0 walk result] the walk step answers 2 for a walk that is stuck (a failed set-up, 0x0050F8E0, or a reroute of follow_path that finds no way, GuestNavigation.Step); a route walk of an old OpenTPW save ends stuck when a grid edit takes a cell or link of its route (EndBrokenWalks, [EXT:legacy-save-route-walk])
 	private void UpdateThrowingAwayLitter( Guest guest )
 	{
 		if ( !turnStarted )
@@ -1805,14 +1845,23 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// A prank of an unhappy prankster (state 6, tp.exe <c>0x004FF0F5</c>): a stinkbomb or litter on its own cell, or a balloon burst; a prank raises
 	/// <see cref="Pranked"/> (the original's prank message to the advisor and the guards) and adds 1 to the prankster's happiness.
 	/// </summary>
-	// [APPROX:GUEST-007] PRANKS: the prank step (0x4FF0F5, x86 X18), its outcomes, the guard reply (0x508A30), the guard's set-down at the cell's centre with the side its world draw picks (0x4FEB50) and the advisor's prank lines (0x59B060: advice 0x7D, 0x7E or 0x7F by the message's kind word, the prankster's id modulo 3) match, the bus delivers the prank message at once (0x40FB10) and event 15 feeds only the debug dump 0x4FAA60; a balloon prankster's victim is the first balloon-holding other guest in OpenTPW's guest order, where the cell's thing list is head-inserted on every cell change (0x50B6A0, 0x4D91F0) so the original takes the one that entered last; and the queued advice keeps neither the prankster's id nor its cell (record words +0x0 and +0x4, 0x59B590); a set-down guest walks to its side's gate cell (0x4D86D0, the original's route) and on along OpenTPW's arrival lane (ARRIVAL-001), where the original's states 19 to 21 walk it to the arrival vehicle's stop cells — evidence needed: which guest states are on the cell thing lists, and what reads a queued advice record's id and cell words
+	// [APPROX:GUEST-007] PRANKS: the prank step (0x4FF0F5, x86 X18), its outcomes, the guard reply (0x508A30), the guard's set-down at the cell's centre with the side its world draw picks (0x4FEB50) and the advisor's prank lines (0x59B060: advice 0x7D, 0x7E or 0x7F by the message's kind word, the prankster's id modulo 3) match, the bus delivers the prank message at once (0x40FB10) and event 15 feeds only the debug dump 0x4FAA60; a balloon prankster's victim is the balloon-holding other guest that entered the cell last (the cell's thing list is head-inserted on every cell change, 0x50B6A0, 0x4D91F0); and the queued advice keeps neither the prankster's id nor its cell (record words +0x0 and +0x4, 0x59B590); a set-down guest walks to its side's gate cell (0x4D86D0, the original's route) and on along OpenTPW's arrival lane (ARRIVAL-001), where the original's states 19 to 21 walk it to the arrival vehicle's stop cells — evidence needed: which guest states are on the cell thing lists, and what reads a queued advice record's id and cell words
 	private bool Prank( Guest guest, GuestDecision.Prank prank, LitterType type )
 	{
 		if ( prank == GuestDecision.Prank.Balloon )
 		{
 			// [BIN:TPW-EXE:0x004FF1CD balloon prank] the first other guest (thing type 1) on the prankster's cell list whose +0x210 is set has its balloon burst (0x004FE950); without one there is no prank
-			var victim = guests.FirstOrDefault( other => other != guest && other.HasBalloon && other.OnGrid && other.Cell == guest.Cell
-				&& other.State is not (GuestState.Using or GuestState.HeldByGuard or GuestState.Gone) );
+			// the cell's list is walked head first (WALK-003): of the guests holding a balloon the one that entered the cell last is the victim
+			Guest? victim = null;
+			if ( occupants.TryGetValue( guest.Navigation.Cell, out var cellList ) )
+			{
+				for ( var index = cellList.Count - 1; index >= 0 && victim == null; index-- )
+				{
+					var other = cellList[index];
+					if ( other != guest && other.HasBalloon && other.OnGrid && other.State is not (GuestState.Using or GuestState.HeldByGuard or GuestState.Gone) )
+						victim = other;
+				}
+			}
 			if ( victim == null )
 				return false;
 			victim.HasBalloon = false;
@@ -3345,6 +3394,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			Paid = guest.Paid,
 			VisitorNumber = guest.VisitorNumber,
 			StrandedMark = guest.StrandedMark,
+			CellSerial = guest.CellSerial,
 			SwimHeading = guest.SwimHeading,
 			SwimTurns = guest.SwimTurns,
 			SwimStroke = guest.SwimStroke,
@@ -3982,6 +4032,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		guest.Paid = snapshot.Paid;
 		guest.VisitorNumber = Math.Max( 0, snapshot.VisitorNumber );
 		guest.StrandedMark = Math.Max( 0, snapshot.StrandedMark );
+		guest.CellSerial = Math.Max( 0, snapshot.CellSerial );
 		guest.SwimHeading = snapshot.SwimHeading;
 		guest.SwimTurns = snapshot.SwimTurns;
 		guest.SwimStroke = snapshot.SwimStroke;

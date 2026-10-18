@@ -1,0 +1,219 @@
+namespace OpenTPW;
+
+/// <summary>What a row of a ride's upgrade list does (tp.exe <c>0x004AE140</c> fills the list, <c>0x004AE430</c> answers a click).</summary>
+public enum RideUpgradeRowKind
+{
+	/// <summary>Buys an add-on of the ride: the build tool places it (the row's value is the add-on's type id).</summary>
+	AddOn,
+	/// <summary>Asks for the ride's next upgrade level (the row's value is minus that level).</summary>
+	Level,
+	/// <summary>Cancels the upgrade the ride waits for (the row's value is −12999).</summary>
+	CancelLevel,
+}
+
+/// <summary>
+/// A row of a ride's upgrade list: an add-on with its price, the next level (0-based <see cref="Level"/>) with its price, or the cancel row with the level the ride waits for.
+/// </summary>
+public readonly record struct RideUpgradeRow( RideUpgradeRowKind Kind, ObjectCatalogEntry? AddOn, int Level, long Price );
+
+/// <summary>A ride's upgrade list: its rows, or, when it has none, the UITEXT message the list shows line by line instead.</summary>
+public sealed record RideUpgradeOffer( IReadOnlyList<RideUpgradeRow> Rows, UIStrings? Message );
+
+/// <summary>
+/// The track add-ons (docs/TRACKS.md "Add-ons"): the add-on rows of a ride's upgrade list, the build tool's add-on mode, the circuit walks after an add-on's placement and
+/// sale, the add-on sections' links, the add-ons' open ends and the vehicles' surface on them.
+/// </summary>
+public partial class Level
+{
+	private OriginalObject? buildAddOnRide;
+	/// <summary>The ride the armed build tool places an add-on for (an add-on row of its upgrade list), or null.</summary>
+	public OriginalObject? BuildAddOnRide => BuildEntry != null ? buildAddOnRide : null;
+	/// <summary>The ride an add-on being removed stood on, from <see cref="ParkObjects.ObjectRemoving"/> to <see cref="ParkObjects.ObjectRemoved"/>.</summary>
+	private OriginalObject? addOnRemovalRide;
+	private readonly Dictionary<ObjectCatalogEntry, TrackSurface?> addOnSurfaces = new();
+
+	/// <summary>
+	/// The rows of <paramref name="ride"/>'s upgrade list: one per add-on of the ride that the park may buy (its <c>AddOn.UpgradesId</c> names the ride's type and it is
+	/// researched), priced at its build cost; then the next level with its cost while the ride waits for no upgrade, below level 2 and researched, or the cancel row while it waits
+	/// for one. Instant Action lists nothing and shows UITEXT 27; without rows the list shows UITEXT 28 at level 2 and UITEXT 26 otherwise.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004AE140 upgrade list] outside game type 2 (Instant Action, DAT_00FB3B7C): every type definition (0x00412E60/E70) whose model loaded (+0x508 = 0), whose +0x284 (AddOn.UpgradesId) is the ride's type and whose object control (0x004D3D10) has the researched byte +0x10 gets a row of its name (0x00412FB0) and the control's price +4, value = the type id; then, when the ride is not in state 2 (0x004E03E0) and its level byte +0x50 is below 2 and level + 1 is at most the control's researched level +0x14, a row of UITEXT 0x1D with level + 2 and the price at type +0x1B8 + 0x40 · (level + 1), value −(level + 1); in state 2 a row of UITEXT 0x1E with level + 2, price 0, value −12999 (0xFFFFCD39); a list without rows shows UITEXT 0x1B in Instant Action, 0x1C at level 2 and 0x1A otherwise, one row of value −7890 per line (0x0067C430 splits the text)
+	// [EXT:upgrade-tier-runtime] the level row is listed only for a tier the ride's catalogue defaults and runtime can install (the next tier's record, Level.CanBuyCatalogueUpgrade), an OpenTPW requirement the original has no counterpart of
+	public RideUpgradeOffer UpgradeOffer( OriginalObject ride )
+	{
+		ArgumentNullException.ThrowIfNull( ride );
+		var rows = new List<RideUpgradeRow>();
+		if ( Park?.Economy is not { } economy || !economy.Features.Upgrades )
+			return new RideUpgradeOffer( rows, UIStrings.UpgradesNotAvailable );
+		foreach ( var entry in Objects.Catalog?.Entries ?? Array.Empty<ObjectCatalogEntry>() )
+		{
+			if ( entry.Settings.GetInt( "AddOn.UpgradesId" ) != ride.Entry.InfoId || !economy.Catalog.TryGet( entry.InfoId, out var addOn ) )
+				continue;
+			if ( !economy.Rules.Research || economy.Research.IsAvailable( entry.InfoId ) )
+				rows.Add( new RideUpgradeRow( RideUpgradeRowKind.AddOn, entry, 0, addOn.PurchaseCost ) );
+		}
+		var level = 0;
+		if ( GetEconomyInstance( ride ) is int instance && economy.TryGetObject( instance, out var state ) && state.Kind == ParkObjectKind.Ride && economy.Catalog.TryGet( state.InfoId, out var info ) )
+		{
+			level = state.Level;
+			if ( ParkEconomy.ObjectState( state ) == RideObjectStates.Upgrading )
+				rows.Add( new RideUpgradeRow( RideUpgradeRowKind.CancelLevel, null, level + 1, 0 ) );
+			else if ( level < 2 && level + 1 < info.Upgrades.Count && info.Upgrades[level + 1].Level == level + 1 && economy.Research.IsAvailable( state.InfoId, level + 1 )
+				&& !ride.IsDeleted && CanBuyCatalogueUpgrade( ride, state ) )
+				rows.Add( new RideUpgradeRow( RideUpgradeRowKind.Level, null, level + 1, info.Upgrades[level + 1].CostOfUpgrade ) );
+		}
+		return rows.Count > 0 ? new RideUpgradeOffer( rows, null ) : new RideUpgradeOffer( rows, level == 2 ? UIStrings.RideFullyUpgraded : UIStrings.NoUpgrades );
+	}
+
+	/// <summary>
+	/// Arms the build tool with an add-on of <paramref name="ride"/> (an add-on row of its upgrade list): a track add-on is placed on the ride's track (<see cref="BuildTarget"/>),
+	/// any other add-on as an ordinary object.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004AF480 add-on row] a row with a type id builds the build tool 0x0046C5A0(4, type) when the object control's price +4 is at most the bank balance, holds the ride (0x0048C940) and takes its cell (0x005276D0); a dearer one plays the error cue 0x1D (0x00486AE0) and builds nothing
+	public bool BeginAddOn( ObjectCatalogEntry entry, OriginalObject ride )
+	{
+		ArgumentNullException.ThrowIfNull( entry );
+		ArgumentNullException.ThrowIfNull( ride );
+		if ( IsReadOnlyVisit || ride.IsDeleted || !TrackAddOns.IsAddOn( entry ) || entry.Settings.GetInt( "AddOn.UpgradesId" ) != ride.Entry.InfoId )
+			return false;
+		BuildEntry = entry;
+		buildAddOnRide = ride;
+		return true;
+	}
+
+	/// <summary>
+	/// The build click and angle for <paramref name="entry"/> with the pointer on cell (<paramref name="x"/>, <paramref name="y"/>): the track add-on of <see cref="BuildAddOnRide"/>
+	/// moves to its hover position on the ride's track (<see cref="TrackAddOns.HoverTarget"/>), any other entry keeps the cell and the build angle.
+	/// </summary>
+	public (int X, int Y, int Rotation) BuildTarget( ObjectCatalogEntry entry, int x, int y )
+	{
+		ArgumentNullException.ThrowIfNull( entry );
+		if ( BuildAddOnRide is { } ride && TrackAddOns.IsTrackAddOn( entry ) && BuilderOf( ride ) is { } builder )
+			return TrackAddOns.HoverTarget( entry.Settings, builder.Tracks, ride.Placement.X, ride.Placement.Y, ride.Placement.Rotation, x, y, BuildRotation );
+		return (x, y, BuildRotation);
+	}
+
+	/// <summary>The build rule at a build target (<see cref="BuildTarget"/>): a track add-on's for <see cref="BuildAddOnRide"/> (<see cref="CheckAddOn"/>), else the object's.</summary>
+	public OriginalPlacementResult CheckBuildTarget( ObjectCatalogEntry entry, int x, int y, int rotation ) =>
+		BuildAddOnRide is { } ride && TrackAddOns.IsTrackAddOn( entry ) ? CheckAddOn( entry, x, y, rotation, ride ) : CheckObject( entry, x, y, rotation );
+
+	/// <summary>Builds the armed entry at a build target: the track add-on of <see cref="BuildAddOnRide"/> through <see cref="PlaceAddOn"/>, anything else through <see cref="PlaceObject"/>.</summary>
+	private OriginalObject? PlaceBuildTarget( ObjectCatalogEntry entry, int x, int y, int rotation ) =>
+		BuildAddOnRide is { } ride && TrackAddOns.IsTrackAddOn( entry ) ? PlaceAddOn( entry, x, y, rotation, ride ) : PlaceObject( entry, x, y, rotation );
+
+	/// <summary>
+	/// After a placement of a track add-on for <paramref name="ride"/>: the circuit is walked again (the boats or karts leave, the sections take the add-on), the pieces' clips start
+	/// on a valid circuit and stop on an invalid one, and a valid ride opens when its state allows.
+	/// </summary>
+	// [BIN:TPW-EXE:0x00524B45 add-on click] with the upgrade selection set the build click finds the clicked tile's ride (its head's owner word, the thing table 0x7CFB90), ends its controller's vehicles (0x00545450), places the add-on (0x00528A70 with the type 4), walks the circuit (0x0052A970 at 0x00524D0A, the verdict to the ride's +0x2C), starts the pieces forward on a valid one (0x0052A490(ride, 1)) or stops them from both sides (0x0052A490 and 0x0052A700 with 0), and opens a valid ride whose guard allows it (0x004DF290, 0x004DF390); then a click without exactly Ctrl returns the tool to mode 0 and clears the selection (0x00524D6D..0x00524D81)
+	private void WalkAfterAddOn( OriginalObject ride )
+	{
+		if ( RewalkTrack( ride, TrackWalkCause.AddOn ) is not { IsValid: true } )
+			return;
+		if ( Gate?.MayOpen( ride.Runtime ) == true )
+		{
+			ride.Runtime.Open();
+			SyncOpenState( ride.Runtime );
+		}
+	}
+
+	/// <summary>The ride whose track holds the cell (x, y): the station whose owner id the tile's head carries (<see cref="TrackBuilder.OwnerOf"/>), or null.</summary>
+	private OriginalObject? TrackRideAt( int x, int y )
+	{
+		foreach ( var (ride, station) in trackStations )
+		{
+			if ( BuilderOf( ride ) is not { } builder || builder.OriginOf( x, y ) is not { } origin )
+				continue;
+			if ( builder.Tracks.Get( origin.X, origin.Y ).Owner == builder.OwnerOf( station ) )
+				return ride;
+		}
+		return null;
+	}
+
+	/// <summary>The ride a track add-on stands on: the ride of the track under its first '+' or '#' cell, or null.</summary>
+	private OriginalObject? RideUnder( OriginalObject addOn )
+	{
+		foreach ( var (x, y, cell) in addOn.Cells )
+			if ( cell.CellType is ObjectShapeSymbols.TypeUpgrade or ObjectShapeSymbols.TypeHash && TrackRideAt( x, y ) is { } ride )
+				return ride;
+		return null;
+	}
+
+	/// <summary>The track add-on standing on cell (x, y), or null.</summary>
+	private OriginalObject? AddOnAt( int x, int y ) => Objects.FindAt( x, y ) is { IsDeleted: false } item && TrackAddOns.IsTrackAddOn( item.Entry ) ? item : null;
+
+	private void OnAddOnRemoving( OriginalObject item ) => addOnRemovalRide = TrackAddOns.IsTrackAddOn( item.Entry ) && resumeState == null ? RideUnder( item ) : null;
+
+	/// <summary>A sold track add-on: its ride's circuit is walked again, so its tiles take their pieces and plain sections back.</summary>
+	// [EXT:addon-sale-walk] the original's demolition 0x00527EE0 clears the add-on flag of the track cells under a sold add-on (0x0052851E) but neither makes their pieces (0x0053AFA0) nor walks the circuit: the pieces come back with the circuit's next walk (0x0052B18E makes the piece of a plain tile that has none) and until then the sections keep the add-on's kind; OpenTPW walks at once
+	private void OnAddOnRemoved( OriginalObject item )
+	{
+		if ( addOnRemovalRide is not { } ride )
+			return;
+		addOnRemovalRide = null;
+		if ( !ride.IsDeleted )
+			RewalkTrack( ride, TrackWalkCause.AddOn );
+	}
+
+	/// <summary>
+	/// After a walk of <paramref name="ride"/>'s circuit: every add-on section is linked to the add-on standing on its tile (section +0xC and +0x10), and the add-ons' open ends
+	/// are shown or hidden (<see cref="TrackAddOns.OpenEndsOf"/>).
+	/// </summary>
+	private void LinkAddOns( OriginalObject ride, TrackCircuit circuit )
+	{
+		if ( BuilderOf( ride ) is not { } builder || ride.Runtime.Bump is not { } bump )
+			return;
+		foreach ( var section in bump.Sections )
+		{
+			if ( section.Kind is 12 or 13 && AddOnAt( section.X / TrackSections.Cell, section.Y / TrackSections.Cell ) is { } addOn )
+				section.AddOn = new AddOnLink( addOn );
+		}
+		foreach ( var ends in TrackAddOns.OpenEndsOf( builder.Tracks, circuit.Steps, ( x, y ) => AddOnAt( x, y ) != null ) )
+		{
+			if ( AddOnAt( ends.X, ends.Y ) is not { } addOn )
+				continue;
+			var model = addOn.Runtime.Model;
+			if ( TrackAddOns.EndNode( model, TrackAddOns.EndBehind ) is var behind and >= 0 )
+				addOn.Runtime.Animator.SetNodeHidden( behind, ends.HideBehind );
+			if ( TrackAddOns.EndNode( model, TrackAddOns.EndAhead ) is var ahead and >= 0 )
+				addOn.Runtime.Animator.SetNodeHidden( ahead, ends.HideAhead );
+		}
+	}
+
+	/// <summary>The add-on on an add-on tile's cell as the vehicles' height probes sample it (<see cref="TrackRenderer.AddOnSurfaceAt"/>).</summary>
+	private (TrackSurface Surface, System.Numerics.Matrix4x4 GridToModel, float BaseHeight)? AddOnSurfaceAt( int x, int y )
+	{
+		if ( AddOnAt( x, y ) is not { } addOn )
+			return null;
+		if ( !addOnSurfaces.TryGetValue( addOn.Entry, out var surface ) )
+		{
+			try
+			{
+				surface = TrackSurface.FromObject( addOn.Runtime.Model );
+			}
+			catch ( Exception exception ) when ( exception is InvalidDataException or NotSupportedException or IOException )
+			{
+				Log.Warning( $"The surface of {addOn.Entry.DisplayName} could not be read: {exception.Message}" );
+				surface = null;
+			}
+			addOnSurfaces[addOn.Entry] = surface;
+		}
+		if ( surface == null )
+			return null;
+		var placement = addOn.Placement;
+		var modelToGrid = ObjectPlacement.CellRotation( placement.Rotation ) * System.Numerics.Matrix4x4.CreateTranslation( placement.X * 10, placement.Y * 10, 0 );
+		return System.Numerics.Matrix4x4.Invert( modelToGrid, out var gridToModel )
+			? (surface, gridToModel, placement.BaseHeight / ObjectPlacement.ModelScale)
+			: null;
+	}
+
+	/// <summary>A placed track add-on as its sections see it (section +0xC, +0x10): its type and its animation channel 0.</summary>
+	private sealed class AddOnLink( OriginalObject item ) : ITrackAddOn
+	{
+		public int TypeId => item.Entry.InfoId;
+		public int Animation => item.Runtime.Animator.GetAnimationId( OriginalObjectEffects.MainChannel );
+		public int DeferredAnimation => item.Runtime.Animator.GetDeferredAnimationId( OriginalObjectEffects.MainChannel );
+		public void FlushDeferred() => item.Runtime.Animator.Flush( OriginalObjectEffects.MainChannel );
+		public void Queue( int animation, bool loop ) => item.Runtime.TriggerAnimation( animation, 0, OriginalObjectEffects.MainChannel, loop, 1f, defer: true );
+	}
+}

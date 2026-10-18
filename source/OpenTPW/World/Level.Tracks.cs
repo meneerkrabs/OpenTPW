@@ -40,6 +40,8 @@ public partial class Level
 		Objects.ObjectPlaced += OnTrackStationPlaced;
 		Objects.ObjectRemoving += OnTrackStationRemoving;
 		Objects.ObjectRemoved += OnTrackStationRemoved;
+		Objects.ObjectRemoving += OnAddOnRemoving;
+		Objects.ObjectRemoved += OnAddOnRemoved;
 		foreach ( var item in Objects.Objects )
 			OnTrackStationPlaced( item );
 	}
@@ -178,6 +180,7 @@ public partial class Level
 			return null;
 		var circuit = TrackCircuitWalker.WalkAndRefresh( BuilderOf( item )!, station );
 		bump.Rebuild( circuit );
+		LinkAddOns( item, circuit );
 		if ( TrackPieceAnimations.ForWalk( cause, circuit.IsValid ) is { } pieces )
 			trackPieceAnimations.TriggerTrack( BuilderOf( item )!.Tracks, station, pieces.Play, pieces.Backward );
 		if ( !circuit.IsValid )
@@ -217,23 +220,27 @@ public partial class Level
 
 	/// <summary>
 	/// Builds a track add-on for <paramref name="ride"/> (<see cref="PlaceObject"/> with the add-on rule of <see cref="CheckAddOn"/>): the placement writes the flag 0x10 on its '+' cells
-	/// and the track beneath (<see cref="ParkCellMap.WriteFootprint"/>), and the ride's next walk of the circuit reads it into its sections.
+	/// and the track beneath (<see cref="ParkCellMap.WriteFootprint"/>), and the circuit is walked again at once, so the sections take the add-on (<see cref="WalkAfterAddOn"/>).
+	/// The ride's upgrade list offers the add-on and the build tool calls this (<see cref="BeginAddOn"/>, <see cref="BuildTarget"/>).
 	/// </summary>
-	// OpenTPW's build panel does not offer add-ons (RIDES-017), so this is a headless API; the original's walk after the placement and the offer and sale of an add-on in the ride's object window are not traced (TRACK-008)
 	public OriginalObject? PlaceAddOn( ObjectCatalogEntry entry, int x, int y, int rotation, OriginalObject ride )
 	{
 		if ( !trackStations.TryGetValue( ride, out var station ) || BuilderOf( ride ) is not { } builder )
 			return null;
 		var owner = builder.OwnerOf( station );
 		Objects.AddOnCellRule = ( cx, cy ) => builder.CanStandAddOn( cx, cy, owner );
+		OriginalObject? placed;
 		try
 		{
-			return PlaceObject( entry, x, y, rotation );
+			placed = PlaceObject( entry, x, y, rotation );
 		}
 		finally
 		{
 			Objects.AddOnCellRule = null;
 		}
+		if ( placed != null )
+			WalkAfterAddOn( ride );
+		return placed;
 	}
 
 	/// <summary>Starts the water track tool on a station: the line starts at the tile after the station's exit.</summary>
@@ -307,7 +314,8 @@ public partial class Level
 				{
 					var entry = first.Entry;
 					var kit = family == TrackFamily.Bumper ? null : TrackPieceKit.Load( entry.FileSystem, entry.ArchivePath, family );
-					renderer = new TrackRenderer( entry, kit, () => Objects.Grid.Origin, ( x, y ) => Objects.Grid.GetCellHeight( x, y ), ( x, y ) => Objects.Grid.GetCornerHeight( x, y ), ( x, y ) => Objects.Grid.GetTerrainHeight( x, y ) );
+					renderer = new TrackRenderer( entry, kit, () => Objects.Grid.Origin, ( x, y ) => Objects.Grid.GetCellHeight( x, y ), ( x, y ) => Objects.Grid.GetCornerHeight( x, y ), ( x, y ) => Objects.Grid.GetTerrainHeight( x, y ) )
+						{ AddOnSurfaceAt = AddOnSurfaceAt };
 					trackRenderers[family] = renderer;
 				}
 				renderer.Update( waterTracks.Tracks, Objects.ScriptWorld.Bumpers.Controllers.Where( controller => controller.Template.RenderFamily == family ), trackPieceAnimations );
@@ -326,7 +334,7 @@ public partial class Level
 	/// and for the tiles). Null when no site has room.
 	/// </summary>
 	// [EXT:debug-water-track] developer/screenshot helper, not original behaviour: it clicks the track tool for the player
-	internal OriginalObject? BuildDemoTrackRide( int trackType = 2 )
+	internal OriginalObject? BuildDemoTrackRide( int trackType = 2, int? addOnId = null )
 	{
 		if ( IsReadOnlyVisit || waterTracks == null || Guests == null || OriginalPark == null )
 			return null;
@@ -340,21 +348,27 @@ public partial class Level
 		var path = Enumerable.Range( 0, Guests.Grid.CountX * Guests.Grid.CountY ).Select( index => (X: index % Guests.Grid.CountX, Y: index / Guests.Grid.CountX) ).Where( cell => Guests.Grid.IsWalkable( cell.X, cell.Y ) ).ToArray();
 		if ( path.Length > 0 )
 			near = (path.Sum( cell => cell.X ) / path.Length, path.Sum( cell => cell.Y ) / path.Length);
+		// an add-on two tiles long with a free cell on either side (the Teleport, the tunnels) needs a straight of two tiles clear of the station and free ground around the
+		// loop: the loop is a tile deeper then, with a cell of margin
+		var (depth, margin) = addOnId == null ? (4, 0) : (6, 1);
 		foreach ( var cell in Enumerable.Range( 0, grid.Width * grid.Height ).Select( index => (X: index % grid.Width, Y: index / grid.Width) )
 			.OrderBy( cell => Math.Abs( cell.X - near.X ) + Math.Abs( cell.Y - near.Y ) ).ThenBy( cell => cell.Y ).ThenBy( cell => cell.X ) )
 		{
 			var anchor = GetCentredAnchor( entry, cell.X, cell.Y, 0 );
 			if ( Objects.CheckFree( entry, anchor.X, anchor.Y, 0 ) != OriginalPlacementResult.Allowed
-				|| !Enumerable.Range( anchor.X - 2, 9 ).All( x => Enumerable.Range( anchor.Y - 1, 8 ).All( y => Free( x, y ) ) ) )
+				|| !Enumerable.Range( anchor.X - 2 - margin, 9 + 2 * margin ).All( x => Enumerable.Range( anchor.Y - 1 - margin, depth + 4 + 2 * margin ).All( y => Free( x, y ) ) ) )
 				continue;
 			var station = PlaceObject( entry, cell.X, cell.Y, 0 ) ?? Objects.TryPlace( entry, anchor.X, anchor.Y, 0, out _ );
 			if ( station == null || !trackStations.TryGetValue( station, out var layout ) || !EnterTrackTool( station ) )
 				return null;
 			// a built ride with a queue starts closed (RIDES-015, 0x4DB712): the capture helper opens it as the player's door button would
 			station.Open();
-			foreach ( var offset in new (int X, int Y)[] { (4, 4), (-2, 4), (-2, 0) } )
+			foreach ( var offset in new (int X, int Y)[] { (4, depth), (-2, depth), (-2, 0) } )
 				CellTool.Click( (layout.First.X + offset.X, layout.First.Y + offset.Y) );
 			CellTool.Cancel();
+			// --debug-track-addon: the add-on goes on the circuit's straight before the race starts (its walk would end the race)
+			if ( addOnId is { } id )
+				BuildDemoAddOn( station, id );
 			if ( trackType == 1 && station.Runtime.Bump is { IsTrackValid: true } karts )
 			{
 				// the kart script waits for real guests, so the capture helper plays its part: three karts with a rider each, on a long race
@@ -373,6 +387,66 @@ public partial class Level
 			return station;
 		}
 		return null;
+	}
+
+	/// <summary>
+	/// Places the track add-on <paramref name="infoId"/> of <paramref name="ride"/> on the first tile of its circuit where the build tool's hover position is allowed, as the
+	/// player's add-on row and click would (the debug flag <c>--debug-track-addon</c>, for captures). False when the ride has no such add-on or no tile takes it.
+	/// </summary>
+	// [EXT:debug-water-track] developer/screenshot helper, not original behaviour: it clicks the add-on tool for the player
+	internal bool BuildDemoAddOn( OriginalObject ride, int infoId )
+	{
+		if ( Objects.Catalog.Find( infoId ) is not { } entry || !TrackAddOns.IsTrackAddOn( entry ) || BuilderOf( ride ) is not { } builder || !BeginAddOn( entry, ride ) )
+		{
+			Log.Warning( $"--debug-track-addon: {ride.Entry.DisplayName} has no track add-on {infoId}." );
+			return false;
+		}
+		try
+		{
+			foreach ( var (x, y) in builder.Tiles().ToArray() )
+			{
+				// the pointer on the tile's far cell: the hover counts even cells from the ride's anchor, which puts a pointer on the head row or column of some tiles on the
+				// tile before them (TrackAddOns.HoverTarget)
+				var (targetX, targetY, rotation) = BuildTarget( entry, x + 1, y + 1 );
+				if ( CheckBuildTarget( entry, targetX, targetY, rotation ) != OriginalPlacementResult.Allowed )
+					continue;
+				SetBuildRotation( rotation );
+				// a park that has not researched the add-on gets it unpaid, as the demo ride's own placement falls back to an unpaid one
+				if ( (PlaceBuildTarget( entry, targetX, targetY, rotation ) ?? PlaceAddOnUnpaid( entry, targetX, targetY, rotation, ride )) is not { } placed )
+					continue;
+				Log.Trace( $"--debug-track-addon: {entry.DisplayName} at ({placed.Placement.X}, {placed.Placement.Y}) turned {rotation} on the tile ({x}, {y}); the circuit walks {(ride.Runtime.Bump?.IsTrackValid == true ? "valid" : "invalid")}." );
+				return true;
+			}
+			Log.Warning( $"--debug-track-addon: no tile of {ride.Entry.DisplayName}'s circuit takes {entry.DisplayName}." );
+			return false;
+		}
+		finally
+		{
+			BuildEntry = null;
+			ResetBuildRotation();
+		}
+	}
+
+	/// <summary>The debug helper's placement of an add-on the park cannot buy: the add-on rule and the walk of <see cref="PlaceAddOn"/> without the purchase.</summary>
+	private OriginalObject? PlaceAddOnUnpaid( ObjectCatalogEntry entry, int x, int y, int rotation, OriginalObject ride )
+	{
+		if ( !trackStations.TryGetValue( ride, out var station ) || BuilderOf( ride ) is not { } builder )
+			return null;
+		var owner = builder.OwnerOf( station );
+		Objects.AddOnCellRule = ( cx, cy ) => builder.CanStandAddOn( cx, cy, owner );
+		OriginalObject? placed;
+		try
+		{
+			var anchor = GetCentredAnchor( entry, x, y, rotation );
+			placed = Objects.TryPlace( entry, anchor.X, anchor.Y, rotation, out _ );
+		}
+		finally
+		{
+			Objects.AddOnCellRule = null;
+		}
+		if ( placed != null )
+			WalkAfterAddOn( ride );
+		return placed;
 	}
 
 	/// <summary>The water ride of <see cref="BuildDemoTrackRide"/>.</summary>
@@ -475,6 +549,7 @@ public partial class Level
 			return null;
 		var circuit = TrackCircuitWalker.WalkAndRefresh( BuilderOf( item )!, station );
 		bump.RestoreCircuit( circuit, entry.IsTrackValid, entry.ObjectSlots?.Count ?? -1, entry.BuoyCount );
+		LinkAddOns( item, circuit );
 		return circuit;
 	}
 

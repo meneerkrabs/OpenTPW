@@ -556,20 +556,21 @@ public sealed partial class OriginalObjectRuntime
 	/// <summary>
 	/// Triggers (animation, variant) on a channel (0xa6cc0 with flags 0, or 1 to loop) and returns the trigger's
 	/// result: the clip length in milliseconds, or <see cref="ObjectAnimator.MissingClipMilliseconds"/> when the
-	/// object has no such member (the channel then keeps its clip).
+	/// object has no such member (the channel then keeps its clip). With <paramref name="defer"/> a clip that still
+	/// runs on the channel keeps it and the new one waits behind it (<see cref="ObjectAnimator.Trigger"/>).
 	/// </summary>
-	internal int TriggerAnimation( int animation, int variant, int channel, bool loop, float speed )
+	internal int TriggerAnimation( int animation, int variant, int channel, bool loop, float speed, bool defer = false )
 	{
 		var file = Entry.ResolveAnimation( animation, variant );
 		var clip = file == null ? null : LoadClip( file.Path );
 		if ( clip == null )
 		{
 			unresolvedAnimations.Add( $"{animation}/{variant}" );
-			return Animator.Trigger( channel, null, "", animation, variant, loop, speed );
+			return Animator.Trigger( channel, null, "", animation, variant, loop, speed, defer );
 		}
 		try
 		{
-			var result = Animator.Trigger( channel, clip, file!.Name, animation, variant, loop, speed );
+			var result = Animator.Trigger( channel, clip, file!.Name, animation, variant, loop, speed, defer );
 			AnimationsPlayed++;
 			return result;
 		}
@@ -577,7 +578,7 @@ public sealed partial class OriginalObjectRuntime
 		{
 			unresolvedAnimations.Add( $"{animation}/{variant}" );
 			clips[file!.Path] = null;
-			return Animator.Trigger( channel, null, "", animation, variant, loop, speed );
+			return Animator.Trigger( channel, null, "", animation, variant, loop, speed, defer );
 		}
 	}
 

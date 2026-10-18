@@ -50,13 +50,18 @@ public class RideUpgradeIngressTests
 		var entry = new ObjectCatalogEntry( "jungle", category == BuildCategory.Shops ? ObjectCategory.Shop : category == BuildCategory.Sideshows ? ObjectCategory.Sideshow : ObjectCategory.Ride, "/synthetic", settings, new ObjectShape( new[] { "*" } ), "/model.MD2", null, "/script.RSE", Array.Empty<string>(), Array.Empty<ObjectAnimationFile>(), Array.Empty<string>(), Array.Empty<string>(), new BaseFileSystem( root ), null );
 		return new OriginalObject( entry, new ObjectPlacement( 1, 1, 0, N.Vector2.Zero, 0 ), world );
 	}
-	private ParkHud Fixture( BuildCategory category, out Level level, out ParkEconomy economy, out OriginalObject first, out OriginalObject second, out GuestEconomyBridge bridge, ParkGameMode mode = ParkGameMode.FullSimulation, string extra = "" )
+	private ParkHud Fixture( BuildCategory category, out Level level, out ParkEconomy economy, out OriginalObject first, out OriginalObject second, out GuestEconomyBridge bridge, ParkGameMode mode = ParkGameMode.FullSimulation, string extra = "" ) =>
+		FixtureWith( EconomyTestData.Park( mode: mode ), category, out level, out economy, out first, out second, out bridge, mode, extra );
+
+	/// <summary><see cref="Fixture"/> over a given economy and, when <paramref name="catalog"/> is given, an object catalog of those entries.</summary>
+	private ParkHud FixtureWith( ParkEconomy park, BuildCategory category, out Level level, out ParkEconomy economy, out OriginalObject first, out OriginalObject second, out GuestEconomyBridge bridge, ParkGameMode mode = ParkGameMode.FullSimulation, string extra = "", ObjectCatalogEntry[]? catalog = null )
 	{
 		VisitorWorldSelectionTests.Fixture( out var guests, out _ );
-		level = Empty<Level>(); var objects = new ParkObjects( null!, new SandboxParkGrid() );
+		level = Empty<Level>();
+		var objects = new ParkObjects( catalog == null ? null! : (ObjectCatalog)typeof( ObjectCatalog ).GetConstructor( BindingFlags.Instance | BindingFlags.NonPublic, null, new[] { typeof( string ), typeof( IReadOnlyList<ObjectCatalogEntry> ) }, null )!.Invoke( new object[] { "jungle", catalog } ), new SandboxParkGrid() );
 		Set( level, "<Objects>k__BackingField", objects ); Set( level, "<Guests>k__BackingField", guests ); Set( level, "<CellTool>k__BackingField", new CellBuildTool() ); Set( level, "<LastActionMessage>k__BackingField", "" );
 		Set( level, "<Paths>k__BackingField", new ParkPathBuilder( guests.Grid.Cells, guests.Grid, (ParkEconomy?)null, new SandboxParkGrid() ) );
-		economy = EconomyTestData.Park( mode: mode ); var info = category == BuildCategory.Shops ? 1203 : category == BuildCategory.Sideshows ? 1303 : 1100;
+		economy = park; var info = category == BuildCategory.Shops ? 1203 : category == BuildCategory.Sideshows ? 1303 : 1100;
 		first = Object( info, category, objects.ScriptWorld, extra ); second = Object( info, category, objects.ScriptWorld );
 		((List<OriginalObject>)objects.Objects).AddRange( new[] { first, second } );
 		var one = economy.RegisterExisting( info ); var two = economy.RegisterExisting( info );
@@ -80,15 +85,20 @@ public class RideUpgradeIngressTests
 		hud.Screen.Focus( button ); hud.Update( context, UiInput.Key( UiKeys.Accept ), false, false, false ); Assert.AreEqual( "rideUpgrade", hud.Stack.Top!.Name );
 	}
 
+	/// <summary>The rows the open upgrade list shows (ParkHud.UpgradeListRows).</summary>
+	private static IReadOnlyList<ParkHud.UpgradeListRow> Rows( ParkHud hud ) => hud.UpgradeListRows();
+
 	[TestMethod]
-	public void SelectedRideConfirmationQueuesExactOwnerAndMechanicAppliesDefaults()
+	public void TheSelectedRidesUpgradeListAsksForTheNextLevelOfExactlyThatRide()
 	{
 		var hud = Fixture( BuildCategory.Rides, out var level, out var economy, out var first, out var second, out _ ); var context = Context();
-		EconomyTestData.HireBest( economy, StaffType.Researcher ); economy.SetResearchEffort( ResearchCategory.Ride, 0 );
-		for ( var i = 0; i < 100 && !economy.Research.IsAvailable( 1100, 1 ); i++ ) economy.AdvanceDays( 1 );
-		Assert.IsTrue( economy.Research.IsAvailable( 1100, 1 ) ); var cash = economy.Balance; var ledger = economy.Ledger.CurrentTotals.GetValueOrDefault( LedgerCategory.OtherCosts );
-		Open( hud, context ); Assert.AreEqual( cash, economy.Balance ); StringAssert.Contains( ((UiLabel)hud.Stack.Top!.Find( "preview" )!).Text(), "ui29 1" ); StringAssert.Contains( ((UiLabel)hud.Stack.Top.Find( "preview" )!).Text(), "400" );
+		Research( economy ); var cash = economy.Balance; var ledger = economy.Ledger.CurrentTotals.GetValueOrDefault( LedgerCategory.OtherCosts );
+		Open( hud, context ); Assert.AreEqual( cash, economy.Balance );
+		// tp.exe 0x004AE140: the level row is UITEXT 0x1D with the ride's level byte + 2 (the 1-based next level) and the price Upgrades[level + 1].CostOfUpgrade
+		var row = Rows( hud ).Single();
+		Assert.AreEqual( context.Strings.Format( UIStrings.UpgradeToLevel, "2" ), row.Text ); StringAssert.Contains( row.Price, "400" ); Assert.AreEqual( RideUpgradeRowKind.Level, row.Row!.Value.Kind );
 		hud.Update( context, UiInput.Key( UiKeys.Accept ), false, false, false );
+		Assert.AreEqual( "hud", hud.Stack.Top!.Name, "a click on the level closes the list (0x004AE430)" );
 		economy.TryGetObject( level.GetEconomyInstance( first )!.Value, out var state ); economy.TryGetObject( level.GetEconomyInstance( second )!.Value, out var other );
 		// tp.exe 0x4af480 only requests the upgrade (0x4e0050(1)); the installation 0x4df8f0 debits it
 		Assert.AreEqual( cash, economy.Balance ); Assert.AreEqual( ledger, economy.Ledger.CurrentTotals.GetValueOrDefault( LedgerCategory.OtherCosts ) ); Assert.AreEqual( 0L, state.TotalSpent ); Assert.IsTrue( state.UpgradeCostDue ); Assert.AreEqual( 1, state.PendingLevel ); Assert.AreEqual( 0, state.Level ); Assert.AreEqual( 0, other.PendingLevel ); Assert.IsFalse( first.IsOpen ); Assert.IsTrue( second.IsOpen );
@@ -102,25 +112,103 @@ public class RideUpgradeIngressTests
 		for ( var i = 0; i < 100 && !economy.Research.IsAvailable( 1100, 1 ); i++ ) economy.AdvanceDays( 1 );
 		Assert.IsTrue( economy.Research.IsAvailable( 1100, 1 ) );
 	}
-	[DataTestMethod, DataRow( "research" ), DataRow( "instant" ), DataRow( "pending" ), DataRow( "funds" ), DataRow( "bankrupt" )]
-	public void ExistingPurchaseRefusalsLeaveLedgerAndDefaultsUnchanged( string refusal )
+	[DataTestMethod, DataRow( "research" ), DataRow( "instant" )]
+	public void AListWithoutRowsShowsItsMessageAndAClickOnItDoesNothing( string refusal )
 	{
 		var hud = Fixture( BuildCategory.Rides, out var level, out var economy, out var owner, out _, out _, refusal == "instant" ? ParkGameMode.InstantAction : ParkGameMode.FullSimulation ); var context = Context();
-		if ( refusal is "funds" or "bankrupt" ) Research( economy );
 		economy.TryGetObject( level.GetEconomyInstance( owner )!.Value, out var state );
-		if ( refusal == "pending" ) state.PendingLevel = 1;
+		var cash = economy.Balance; var p = owner.Visitors.Parameters; var vars = owner.Script!.Variables.ToArray();
+		Open( hud, context );
+		// tp.exe 0x004AE140: UITEXT 0x1B in Instant Action, 0x1A without a researched level, a row of value -7890 per line, which a click ignores (0x004AE430)
+		var message = context.Strings[refusal == "instant" ? UIStrings.UpgradesNotAvailable : UIStrings.NoUpgrades];
+		CollectionAssert.AreEqual( message.Split( '\n' ), Rows( hud ).Select( row => row.Text ).ToArray() ); Assert.IsTrue( Rows( hud ).All( row => row.Row == null && row.Price.Length == 0 ) );
+		hud.Update( context, UiInput.Key( UiKeys.Accept ), false, false, false );
+		Assert.AreEqual( "rideUpgrade", hud.Stack.Top!.Name ); Assert.AreEqual( cash, economy.Balance ); Assert.AreEqual( 0, state.PendingLevel ); Assert.AreSame( p, owner.Visitors.Parameters ); CollectionAssert.AreEqual( vars, owner.Script.Variables );
+	}
+	[DataTestMethod, DataRow( "funds" ), DataRow( "bankrupt" )]
+	public void ARefusedLevelLeavesLedgerAndDefaultsUnchangedAndClosesTheList( string refusal )
+	{
+		var hud = Fixture( BuildCategory.Rides, out var level, out var economy, out var owner, out _, out _ ); var context = Context(); Research( economy );
+		economy.TryGetObject( level.GetEconomyInstance( owner )!.Value, out var state );
 		if ( refusal == "funds" ) economy.Ledger.Post( LedgerCategory.OtherCosts, economy.Balance );
 		if ( refusal == "bankrupt" ) Set( economy, "<IsBankrupt>k__BackingField", true );
-		var cash = economy.Balance; var spent = state.TotalSpent; var p = owner.Visitors.Parameters; var vars = owner.Script!.Variables.ToArray(); var pending = state.PendingLevel;
-		Open( hud, context ); hud.Update( context, UiInput.Key( UiKeys.Accept ), false, false, false );
-		Assert.AreEqual( "rideUpgrade", hud.Stack.Top!.Name ); Assert.AreEqual( cash, economy.Balance ); Assert.AreEqual( spent, state.TotalSpent ); Assert.AreEqual( pending, state.PendingLevel ); Assert.AreSame( p, owner.Visitors.Parameters ); CollectionAssert.AreEqual( vars, owner.Script.Variables );
-		Assert.IsTrue( ((UiLabel)hud.Stack.Top.Find( "error" )!).Text().Length > 0 );
+		var cash = economy.Balance; var spent = state.TotalSpent; var p = owner.Visitors.Parameters; var vars = owner.Script!.Variables.ToArray();
+		Open( hud, context ); Assert.AreEqual( RideUpgradeRowKind.Level, Rows( hud ).Single().Row!.Value.Kind );
+		hud.Update( context, UiInput.Key( UiKeys.Accept ), false, false, false );
+		// tp.exe 0x004AF480 requests the level only while the balance is above its price, and the list closes either way
+		Assert.AreEqual( "hud", hud.Stack.Top!.Name ); Assert.AreEqual( cash, economy.Balance ); Assert.AreEqual( spent, state.TotalSpent ); Assert.AreEqual( 0, state.PendingLevel ); Assert.AreSame( p, owner.Visitors.Parameters ); CollectionAssert.AreEqual( vars, owner.Script.Variables );
 	}
+	[TestMethod]
+	public void ARideWaitingForAnUpgradeListsTheCancelRowWhichCancelsItAndOpensTheRide()
+	{
+		var hud = Fixture( BuildCategory.Rides, out var level, out var economy, out var owner, out _, out _ ); var context = Context(); Research( economy );
+		economy.TryGetObject( level.GetEconomyInstance( owner )!.Value, out var state );
+		Assert.AreEqual( ParkEconomy.PurchaseResult.Ok, economy.TryBuyUpgrade( state.Id ) ); Assert.IsFalse( owner.IsOpen, "the request closes the ride" );
+		var cash = economy.Balance; var cancelled = 0; economy.EventRaised += item => { if ( item.Kind == ParkEventKind.UpgradeCancelled ) cancelled++; };
+		Open( hud, context );
+		// tp.exe 0x004AE140: in state 2 the list has UITEXT 0x1E with level + 2, no price, value -12999, and a click cancels the request (0x004E0050(0)): state 0, the ride open
+		var row = Rows( hud ).Single();
+		Assert.AreEqual( context.Strings.Format( UIStrings.CancelLevel, "2" ), row.Text ); Assert.AreEqual( "", row.Price ); Assert.AreEqual( RideUpgradeRowKind.CancelLevel, row.Row!.Value.Kind );
+		hud.Update( context, UiInput.Key( UiKeys.Accept ), false, false, false );
+		Assert.AreEqual( "hud", hud.Stack.Top!.Name ); Assert.AreEqual( 1, cancelled ); Assert.AreEqual( 0, state.PendingLevel ); Assert.IsFalse( state.UpgradeCostDue ); Assert.AreEqual( cash, economy.Balance ); Assert.IsTrue( owner.IsOpen );
+		Assert.IsFalse( economy.TryCancelUpgrade( state.Id ), "nothing is left to cancel" );
+		Open( hud, context ); Assert.AreEqual( RideUpgradeRowKind.Level, Rows( hud ).Single().Row!.Value.Kind, "the level can be asked for again" );
+	}
+	/// <summary>An add-on of the ride (synthetic: Info.Id 1501, AddOn.UpgradesId 1100, a 2 x 2 track footprint) with a build cost of 750 and no research.</summary>
+	private ObjectCatalogEntry AddOnEntry( int id = 1501, int ride = 1100 )
+	{
+		var settings = new ObjectSettings( new[] { new ObjectSettingsFile( $"Info.Id {id}\nInfo.Name SyntheticJump\nInfo.WhichUIType 0\nAddOn.UpgradesId {ride}\nAddOn.UpgradeType 1\nBumper.WhichTrackType 1\n", $"addon{id}.sam" ) } );
+		return new ObjectCatalogEntry( "jungle", ObjectCategory.Upgrade, "/addon", settings, new ObjectShape( new[] { "++", "++" } ), "/model.MD2", null, "/script.RSE", Array.Empty<string>(), Array.Empty<ObjectAnimationFile>(), Array.Empty<string>(), Array.Empty<string>(), new BaseFileSystem( root ), null );
+	}
+
+	private static ParkEconomy AddOnPark( long cash = 50000 )
+	{
+		EconomyObjectInfo AddOn( int id, int research ) => new( id, "Synthetic Jump", ParkObjectKind.Upgrade, ResearchCategory.Upgrade, 0,
+			new[] { new UpgradeLevelInfo( 0, 750, research, 0, 0, new[] { 50, 30, 20, 10 }, 0, 0 ) }, null, null, null, 0, 0, 0, 1100, 0, 0, $"upgrades/synthetic{id}.wad" );
+		var items = EconomyTestData.Catalog().Objects.Append( AddOn( 1501, 0 ) ).Append( AddOn( 1503, 1000 ) );
+		return new ParkEconomy( EconomyTestData.Settings( (int)cash ), new EconomyObjectCatalog( items ), ParkGameMode.FullSimulation, 7 );
+	}
+
+	[DataTestMethod, DataRow( "afford" ), DataRow( "dear" )]
+	public void AnAddOnRowArmsTheBuildToolForTheRideAndClosesItsWindow( string money )
+	{
+		var entry = AddOnEntry();
+		var hud = FixtureWith( AddOnPark(), BuildCategory.Rides, out var level, out var economy, out var owner, out _, out _, catalog: new[] { entry } ); var context = Context();
+		if ( money == "dear" ) economy.Ledger.Post( LedgerCategory.OtherCosts, economy.Balance - 749 );
+		var cash = economy.Balance;
+		Open( hud, context );
+		// tp.exe 0x004AE140: the add-on row is its name and its object control's price, listed before the level
+		var row = Rows( hud ).First();
+		Assert.AreEqual( RideUpgradeRowKind.AddOn, row.Row!.Value.Kind ); Assert.AreSame( entry, row.Row.Value.AddOn ); StringAssert.Contains( row.Price, "750" );
+		hud.Update( context, UiInput.Key( UiKeys.Accept ), false, false, false );
+		Assert.AreEqual( "hud", hud.Stack.Top!.Name ); Assert.AreEqual( cash, economy.Balance, "the build tool charges on placement" );
+		if ( money == "afford" )
+		{
+			// 0x004AF480: a price at most the balance builds the tool 0x0046C5A0(4, type) for the ride and closes the ride window (0x0048CF70)
+			Assert.AreSame( entry, level.BuildEntry ); Assert.AreSame( owner, level.BuildAddOnRide ); Assert.IsFalse( hud.InfoArmOpen );
+			level.BuildEntry = null; Assert.IsNull( level.BuildAddOnRide, "leaving the build tool ends the add-on mode" );
+		}
+		else
+		{
+			// a dearer one plays the error cue 0x1D (0x00486AE0) and arms nothing
+			Assert.IsNull( level.BuildEntry ); Assert.IsNull( level.BuildAddOnRide ); Assert.IsTrue( hud.InfoArmOpen );
+		}
+	}
+
+	[TestMethod]
+	public void OnlyTheRidesOwnResearchedAddOnsAreListed()
+	{
+		// an add-on of another ride (AddOn.UpgradesId 1180), one the park's catalogue lacks (1502) and an unresearched one (1503, research cost 1000) are not listed
+		var hud = FixtureWith( AddOnPark(), BuildCategory.Rides, out _, out _, out _, out _, out _, catalog: new[] { AddOnEntry( ride: 1180 ), AddOnEntry( id: 1502 ), AddOnEntry( id: 1503 ) } ); var context = Context();
+		Open( hud, context );
+		Assert.IsFalse( Rows( hud ).Any( row => row.Row?.Kind == RideUpgradeRowKind.AddOn ) );
+	}
+
 	[DataTestMethod, DataRow( "custom" ), DataRow( "stop" ), DataRow( "sparse" ), DataRow( "coaster" ), DataRow( "prototype" ), DataRow( "tpi" ), DataRow( "readonly" ), DataRow( "noeconomy" ), DataRow( "delete" ), DataRow( "unmap" ), DataRow( "ambiguous" ), DataRow( "removedDuplicate" ), DataRow( "fault" ), DataRow( "tierMismatch" ), DataRow( "full" )]
 	public void UnsupportedTargetRefusesBeforeCharge( string gate )
 	{
 		if ( gate == "coaster" ) File.WriteAllBytes( Path.Combine( root, "script.RSE" ), new RideVMTests.Asm().I( Opcode.ENDSLICE ).Build( Enum.GetNames<RideVariables>() ) );
-		var hud = Fixture( BuildCategory.Rides, out var level, out var economy, out var owner, out var other, out _, extra: gate == "coaster" ? "Bumper.WhichTrackType 3\n" : "" ); var context = Context();
+		var hud = Fixture( BuildCategory.Rides, out var level, out var economy, out var owner, out var other, out _, extra: gate == "coaster" ? "Bumper.WhichTrackType 3\n" : "" ); var context = Context(); Research( economy );
 		economy.TryGetObject( level.GetEconomyInstance( owner )!.Value, out var state ); var map = (Dictionary<OriginalObject, int>)typeof( Level ).GetField( "economyInstances", BindingFlags.Instance | BindingFlags.NonPublic )!.GetValue( level )!;
 		if ( gate == "custom" ) owner.Visitors.Parameters = owner.Visitors.Parameters with { }; if ( gate == "stop" ) owner.Runtime.Stop(); if ( gate == "tpi" ) GameEditions.Select( GameEdition.ThemeParkInc );
 		if ( gate == "readonly" ) Set( level, "<Visit>k__BackingField", Empty<ParkVisitInfo>() ); if ( gate == "noeconomy" ) Set( hud, "<Status>k__BackingField", new NoEconomyStatus() ); if ( gate == "delete" ) owner.Delete(); if ( gate == "unmap" ) map.Remove( owner ); if ( gate is "ambiguous" or "removedDuplicate" ) map[other] = state.Id; if ( gate == "removedDuplicate" ) other.Delete(); if ( gate == "fault" ) owner.Script!.RestoreStoppedFault( "synthetic" );
@@ -129,7 +217,18 @@ public class RideUpgradeIngressTests
 		if ( gate == "coaster" ) Assert.IsNotNull( owner.Runtime.Coaster );
 		if ( gate == "prototype" ) { var prototype = Empty<PrototypeRide>(); typeof( OriginalObject ).GetField( "<Runtime>k__BackingField", BindingFlags.Instance | BindingFlags.NonPublic )!.SetValue( prototype, owner.Runtime ); hud.SelectObject( prototype ); }
 		var cash = economy.Balance; hud.Update( context, UiInput.Idle( new N.Vector2( 1500, 1000 ) ), false, false, false );
-		var button = (UiButton)hud.Screen.Find( "rideUpgrade" )!; if ( gate is not "ambiguous" and not "removedDuplicate" ) Assert.IsFalse( button.Visible && button.Enabled ); button.Activate(); Assert.AreEqual( "hud", hud.Stack.Top!.Name ); Assert.AreEqual( cash, economy.Balance ); Assert.AreEqual( 0, state.PendingLevel );
+		var button = (UiButton)hud.Screen.Find( "rideUpgrade" )!;
+		// tp.exe 0x004AD6B4 enables the button for every ride: a ride of this park opens its list, whose level row OpenTPW lists only for a tier the ride's runtime can install
+		if ( gate is "prototype" or "tpi" or "readonly" or "noeconomy" or "delete" or "unmap" )
+		{
+			Assert.IsFalse( button.Visible && button.Enabled ); button.Activate(); Assert.AreEqual( "hud", hud.Stack.Top!.Name );
+		}
+		else
+		{
+			Open( hud, context ); Assert.IsFalse( Rows( hud ).Any( row => row.Row?.Kind == RideUpgradeRowKind.Level ), "no level row" );
+			hud.Update( context, UiInput.Key( UiKeys.Accept ), false, false, false );
+		}
+		Assert.AreEqual( cash, economy.Balance ); Assert.AreEqual( 0, state.PendingLevel );
 	}
 	[TestMethod]
 	public void TheRideWindowsTrackButtonOpensTheCoasterToolOnASelectedCoasterAndOnlyThere()
@@ -157,20 +256,21 @@ public class RideUpgradeIngressTests
 		Assert.IsFalse( ((UiButton)hud.Screen.Find( "editTrack" )!).Visible );
 	}
 
-	[DataTestMethod, DataRow( "cancel" ), DataRow( "right" ), DataRow( "selection" ), DataRow( "delete" ), DataRow( "remap" ), DataRow( "replace" ), DataRow( "custom" ), DataRow( "stop" ), DataRow( "retired" ), DataRow( "otherTop" ), DataRow( "readonly" ), DataRow( "tool" ), DataRow( "camera" ), DataRow( "retract" ), DataRow( "capture" ), DataRow( "duplicate" ), DataRow( "removedDuplicate" )]
-	public void CancelOrStaleConfirmationNeverCharges( string gate )
+	[DataTestMethod, DataRow( "cancel" ), DataRow( "right" ), DataRow( "selection" ), DataRow( "delete" ), DataRow( "remap" ), DataRow( "custom" ), DataRow( "stop" ), DataRow( "retired" ), DataRow( "otherTop" ), DataRow( "readonly" ), DataRow( "tool" ), DataRow( "camera" ), DataRow( "retract" ), DataRow( "capture" ), DataRow( "duplicate" ), DataRow( "removedDuplicate" )]
+	public void CancelOrStaleListNeverCharges( string gate )
 	{
 		var hud = Fixture( BuildCategory.Rides, out var level, out var economy, out var owner, out var other, out _ ); var context = Context(); Research( economy );
-		economy.TryGetObject( level.GetEconomyInstance( owner )!.Value, out var state ); Open( hud, context ); var apply = (UiButton)hud.Stack.Top!.Find( "apply" )!; var cash = economy.Balance;
+		economy.TryGetObject( level.GetEconomyInstance( owner )!.Value, out var state ); Open( hud, context ); var list = hud.Stack.Top!.Find( "upgradeList" )!; var cash = economy.Balance;
 		if ( gate == "selection" ) hud.SelectObject( other ); if ( gate == "delete" ) owner.Delete(); if ( gate == "custom" ) owner.Visitors.Parameters = owner.Visitors.Parameters with { }; if ( gate == "stop" ) owner.Runtime.Stop();
 		if ( gate is "duplicate" or "removedDuplicate" ) { ((Dictionary<OriginalObject, int>)typeof( Level ).GetField( "economyInstances", BindingFlags.Instance | BindingFlags.NonPublic )!.GetValue( level )!)[other] = state.Id; if ( gate == "removedDuplicate" ) other.Delete(); }
 		if ( gate == "remap" ) ((Dictionary<OriginalObject, int>)typeof( Level ).GetField( "economyInstances", BindingFlags.Instance | BindingFlags.NonPublic )!.GetValue( level )!)[owner] = level.GetEconomyInstance( other )!.Value;
-		if ( gate == "replace" ) ((SortedDictionary<int, ParkObjectState>)typeof( ParkEconomy ).GetField( "objects", BindingFlags.Instance | BindingFlags.NonPublic )!.GetValue( economy )!)[state.Id] = new ParkObjectState { Id = state.Id, InfoId = state.InfoId, Kind = state.Kind };
 		if ( gate == "readonly" ) Set( level, "<Visit>k__BackingField", Empty<ParkVisitInfo>() ); if ( gate == "tool" ) level.IsPlacing = true; if ( gate == "camera" ) Camera.Mode = new CameraMode(); if ( gate == "retract" ) hud.SetInfoArm( false );
 		if ( gate == "retired" ) hud.Stack.Clear(); if ( gate == "otherTop" ) hud.Stack.Push( new UiScreen( "other" ) );
-		if ( gate is "retired" or "otherTop" ) apply.Activate(); else hud.Update( context, new UiInput( new N.Vector2( -1 ), false, false, false, gate == "right", UiKeys.Accept | (gate == "cancel" ? UiKeys.Back : UiKeys.None) ), gate == "capture", false, false );
+		// the list answers a click from its current state (0x004AE430 reads the row's value, 0x004AF480 the ride and the balance), so a stale list asks for nothing
+		if ( gate is "retired" or "otherTop" ) list.Activate(); else hud.Update( context, new UiInput( new N.Vector2( -1 ), false, false, false, gate == "right", UiKeys.Accept | (gate == "cancel" ? UiKeys.Back : UiKeys.None) ), gate == "capture", false, false );
 		Assert.AreEqual( cash, economy.Balance ); Assert.AreEqual( 0, state.PendingLevel ); Assert.AreEqual( 0, state.TotalSpent );
-		if ( gate is "cancel" or "right" ) { Assert.AreEqual( "hud", hud.Stack.Top!.Name ); apply.Activate(); Assert.AreEqual( cash, economy.Balance ); }
+		if ( gate == "remap" && economy.TryGetObject( level.GetEconomyInstance( other )!.Value, out var remapped ) ) Assert.AreEqual( 0, remapped.PendingLevel, "nor for the record the ride was remapped to" );
+		if ( gate is "cancel" or "right" or "selection" or "delete" or "readonly" or "tool" or "camera" or "retract" ) { Assert.IsFalse( hud.Stack.Screens.Any( screen => screen.Name == "rideUpgrade" ), "the list closes with its ride window" ); list.Activate(); Assert.AreEqual( cash, economy.Balance ); Assert.AreEqual( 0, state.PendingLevel ); }
 	}
 	[DataTestMethod, DataRow( "mouse" ), DataRow( "keyboard" ), DataRow( "text" ), DataRow( "overlay" ), DataRow( "retract" ), DataRow( "tool" )]
 	public void CapturedOrHiddenActionCannotOpen( string gate )
@@ -200,23 +300,26 @@ public class RideUpgradeIngressTests
 	}
 
 	[TestMethod]
-	public void SimultaneousMouseApplyAndAcceptPostsOnlyOneUpgrade()
+	public void SimultaneousRowClickAndAcceptPostsOnlyOneUpgrade()
 	{
 		var hud = Fixture( BuildCategory.Rides, out _, out var economy, out _, out _, out _ ); var context = Context(); Research( economy ); var cash = economy.Balance; Open( hud, context );
 		var requests = 0; economy.EventRaised += item => { if ( item.Kind == ParkEventKind.UpgradeBought ) requests++; };
-		var apply = (UiButton)hud.Stack.Top!.Find( "apply" )!; var at = apply.ScreenRect( context.Canvas ).Center;
+		var list = hud.Stack.Top!.Find( "upgradeList" )!; var rect = list.ScreenRect( context.Canvas ); var at = new N.Vector2( rect.X + rect.Width / 2, rect.Y + 10 );
 		hud.Update( context, new UiInput( at, true, true, false, false, UiKeys.None ), false, false, false );
 		hud.Update( context, new UiInput( at, false, false, true, false, UiKeys.Accept ), false, false, false );
 		Assert.AreEqual( cash, economy.Balance ); Assert.AreEqual( 1, requests ); Assert.AreEqual( "hud", hud.Stack.Top!.Name );
 	}
 	[TestMethod]
-	public void RefusedPurchaseCanRetryAfterResearchAndOldCallbacksCannotAffectFreshModal()
+	public void TheListFollowsResearchWhileOpenAndAReopenedListActsOnlyOnce()
 	{
-		var hud = Fixture( BuildCategory.Rides, out _, out var economy, out _, out _, out _ ); var context = Context(); Open( hud, context ); var old = hud.Stack.Top!;
-		hud.Update( context, UiInput.Key( UiKeys.Accept ), false, false, false ); Assert.AreSame( old, hud.Stack.Top );
+		var hud = Fixture( BuildCategory.Rides, out _, out var economy, out _, out _, out _ ); var context = Context(); Open( hud, context ); var list = hud.Stack.Top!;
+		hud.Update( context, UiInput.Key( UiKeys.Accept ), false, false, false ); Assert.AreSame( list, hud.Stack.Top, "a line of the message does nothing" );
 		var requests = 0; economy.EventRaised += item => { if ( item.Kind == ParkEventKind.UpgradeBought ) requests++; };
-		Research( economy ); var cash = economy.Balance; hud.Update( context, UiInput.Key( UiKeys.Accept ), false, false, false ); Assert.AreEqual( 1, requests ); Assert.AreEqual( cash, economy.Balance );
-		Open( hud, context ); var fresh = hud.Stack.Top!; ((UiButton)old.Find( "apply" )!).Activate(); old.Back!(); Assert.AreSame( fresh, hud.Stack.Top ); Assert.AreEqual( 1, requests ); Assert.AreEqual( cash, economy.Balance );
+		// the ride window's refresh fills the open list again (0x004ADE40), so the level appears once it is researched
+		Research( economy ); var cash = economy.Balance; Assert.AreEqual( RideUpgradeRowKind.Level, Rows( hud ).Single().Row!.Value.Kind );
+		hud.Update( context, UiInput.Key( UiKeys.Accept ), false, false, false ); Assert.AreEqual( 1, requests ); Assert.AreEqual( cash, economy.Balance ); Assert.AreEqual( "hud", hud.Stack.Top!.Name );
+		list.Find( "upgradeList" )!.Activate(); Assert.AreEqual( 1, requests, "a closed list acts on nothing" );
+		Open( hud, context ); Assert.AreEqual( RideUpgradeRowKind.CancelLevel, Rows( hud ).Single().Row!.Value.Kind ); list.Back!(); Assert.AreEqual( "hud", hud.Stack.Top!.Name ); Assert.AreEqual( 1, requests ); Assert.AreEqual( cash, economy.Balance );
 	}
 	[TestMethod]
 	public void CaptureHeldUntilReleaseCannotOpenTheActionAndShopSlotIsExclusive()

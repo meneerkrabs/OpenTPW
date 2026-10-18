@@ -1939,6 +1939,21 @@ public sealed class ParkEconomy : IParkEconomy
 	}
 
 	/// <summary>
+	/// Cancels the upgrade a ride waits for (the upgrade list's "Cancel level" row): a ride in the upgrading state, and not broken down, waits for no level any more, owes no
+	/// upgrade cost and opens (<see cref="ParkEventKind.UpgradeCancelled"/>). A mechanic on his way finds nothing to do when he arrives. False when there is nothing to cancel.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004E0050 upgrade cancel] with argument 0 a ride in state 2 logs "Cancelling request", drops the ride from the job list (0x004547C0), skips its open guard (state 2 is one of the refused states, so it only logs "Opening non-openable ride" five times), writes the open word +0x68 = 1 and script variable 6 (VAR_RIDECLOSED) = 0 and returns to state 0 (0x004E0E60(0)); in any other state it logs "Never requested upgrade" and does nothing
+	public bool TryCancelUpgrade( int instanceId )
+	{
+		if ( !objects.TryGetValue( instanceId, out var item ) || ObjectState( item ) != RideObjectStates.Upgrading )
+			return false;
+		item.PendingLevel = 0;
+		item.UpgradeCostDue = false;
+		Raise( ParkEventKind.UpgradeCancelled, 0, item.Id, item.InfoId );
+		return true;
+	}
+
+	/// <summary>
 	/// [EXT:pools-cost] The price of one pool water cell: 75, the figure of Roller Coaster Tycoon 3 Soaked!'s pool tiles. The original's balance files have no pool price, so it is a
 	/// constant of the extension rather than a <c>Costs.*</c> value (docs/POOLS.md).
 	/// </summary>

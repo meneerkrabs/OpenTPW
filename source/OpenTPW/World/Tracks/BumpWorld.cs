@@ -325,7 +325,7 @@ public sealed class BumpWorld
 		{
 			if ( vehicleSlots[slot] is not { IsLive: true } vehicle || vehicle.Controller is not { } owner )
 				continue;
-			if ( ((BumpController.ObjectOf( vehicle )?.Flags ?? 0) & CollisionObject.Crossing) == 0 && (vehicle.Flags & 0x200) == 0 )
+			if ( ((BumpController.ObjectOf( vehicle )?.Flags ?? 0) & CollisionObject.Crossing) == 0 && (vehicle.Flags & BumpVehicle.Hidden) == 0 )
 			{
 				for ( var otherSlot = 0; otherSlot < VehiclePool; otherSlot++ )
 				{

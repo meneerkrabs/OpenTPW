@@ -6,7 +6,8 @@ namespace OpenTPW;
 /// <param name="Mask">The tile's connection mask.</param>
 /// <param name="Segment">The 1-based position of the tile in the walk (+0x24).</param>
 /// <param name="AddOn">The tile carries an add-on (flag 0x10).</param>
-public readonly record struct TrackStep( int X, int Y, byte Entry, byte Exit, byte Mask, int Segment, bool AddOn )
+/// <param name="AddOnRun">The tile's place in its run of add-on tiles: 0 for the first, 1 for the next, …; 0 for every other tile (section +8).</param>
+public readonly record struct TrackStep( int X, int Y, byte Entry, byte Exit, byte Mask, int Segment, bool AddOn, int AddOnRun = 0 )
 {
 	/// <summary>The section kind the tile builds (<see cref="TrackSections"/>): 5–8 corners, 9/10 straights (12/13 add-on), 11 crossings.</summary>
 	public int Kind
@@ -63,6 +64,8 @@ public static class TrackCircuitWalker
 		var position = station.First;
 		var steps = new List<TrackStep>();
 		var limit = tracks.Count / 4 * 4 + 16;
+		// the run counter of add-on tiles ([esp+0x20] of 0x0052A970): a straight with flag 0x10 takes it and raises it, any other tile resets it
+		var run = 0;
 		string? failure = null;
 		while ( true )
 		{
@@ -100,7 +103,13 @@ public static class TrackCircuitWalker
 				tile.Piece = piece.Piece;
 				tile.Rotation = piece.Rotation;
 				tracks.Set( position.X, position.Y, tile );
-				steps.Add( new TrackStep( position.X, position.Y, entry, heading, mask, tile.Segment, (tile.Flags & TrackCell.FlagAddOn) != 0 ) );
+				var addOn = (tile.Flags & TrackCell.FlagAddOn) != 0;
+				var place = 0;
+				if ( addOn && mask is 0x44 or 0x11 )
+					place = run++;
+				else
+					run = 0;
+				steps.Add( new TrackStep( position.X, position.Y, entry, heading, mask, tile.Segment, addOn, place ) );
 			}
 			position = (position.X + TrackStation.TileCells * TrackHeading.Dx( heading ), position.Y + TrackStation.TileCells * TrackHeading.Dy( heading ));
 			if ( position == station.First )

@@ -379,7 +379,8 @@ public sealed class CoasterRide
 		if ( chain.Count < 3 || pass.Knots.Length < 3 || chain.Any( node => (node.Flags & (CoasterNodeFlags.CutEnd | CoasterNodeFlags.CutStart)) != 0 ) )
 			return Array.Empty<IReadOnlyList<int>>();
 		var sampling = curve.Sample( pass.Knots, definition.Curviness );
-		return CoasterCollision.Run( NodesForCollision( chain, pass, sampling.KnotCoordinates, definition ), sampling.Samples ).Lists;
+		// one sweep, as the original runs per frame: the live marker must stay cheap on a tangled chain (the repeats cost up to 16x)
+		return CoasterCollision.Run( NodesForCollision( chain, pass, sampling.KnotCoordinates, definition ), sampling.Samples, maxPasses: 1 ).Lists;
 	}
 
 	/// <summary>The nodes as the self-intersection pass sees them: the sample index of each node and the radius of its pylon control.</summary>

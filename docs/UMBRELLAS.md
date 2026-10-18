@@ -1,6 +1,7 @@
 # Umbrellas (`opentpw.umbrellas`, planned)
 
 October 18, 2026. Status: **phases U0 (the Theme Park Inc trace, below) and U1 (our own art and data pipeline, [Content](#content-extumbrellas-content)) are done; the extension itself is not wired into the game yet.**
+The winter extension ([WINTER.md](WINTER.md)) follows the same pipeline for its kiosk, glühwein stall and warm items.
 Nothing of it is visible in a park: `content/umbrellas` is shipped but no catalog, renderer or rule reads it (phases U2 to U5 below).
 
 The idea: bring the brolly shop and guests carrying open umbrellas in the rain of Theme Park Inc to Theme Park World parks as an official extension (docs/MODS.md), with OpenTPW's own art, so a player needs no Theme Park Inc

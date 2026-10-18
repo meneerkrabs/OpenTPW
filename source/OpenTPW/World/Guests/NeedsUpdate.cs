@@ -31,6 +31,20 @@ public static class NeedsUpdate
 	public static bool IsPhase( uint turn, int guestId ) => (guestId & PhaseMask) == (int)(turn & PhaseMask);
 
 	/// <summary>
+	/// How many fixed growth steps (<see cref="GrowthMask"/>) the needs block of guest <paramref name="guestId"/> takes on the park turns <c>fromTurn + 1 .. fromTurn + turns</c>: the growth runs on a turn that is a
+	/// multiple of 16 and on the guest's phase (<see cref="IsPhase"/>), and a multiple of 16 has its low two bits at 0, so only a guest whose thing id is a multiple of 4 ever grows; the others change only by what they
+	/// use. Each step adds <see cref="ToiletGrowth"/> to toilet and <see cref="ThirstHungerGrowth"/> to hunger and thirst. Pure arithmetic over <see cref="Apply"/>'s own rule, used by the smarter guests' planning
+	/// (docs/SMARTER-GUESTS.md, phase 5) to look ahead; it changes nothing.
+	/// </summary>
+	public static int GrowthSteps( int guestId, long fromTurn, long turns )
+	{
+		if ( turns <= 0 || (guestId & PhaseMask) != 0 )
+			return 0;
+		var last = fromTurn + turns;
+		return (int)Math.Min( int.MaxValue, Math.Max( 0, Math.DivRem( last, GrowthMask + 1, out _ ) - Math.DivRem( fromTurn, GrowthMask + 1, out _ ) ) );
+	}
+
+	/// <summary>
 	/// The result of a needs update: the meters, the exit counter and the toilet speed term (<c>+194</c>, 25 or 0), which is rewritten only on the guest's phase
 	/// (null otherwise).
 	/// </summary>

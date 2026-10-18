@@ -39,6 +39,11 @@ public sealed record GuestReportOptions
 	/// mods. A mod that cannot run is an error, not a silent baseline.
 	/// </summary>
 	public IReadOnlyList<string> Mods { get; init; } = Array.Empty<string>();
+	/// <summary>
+	/// Which phase 5 rules the smarter-guests policy runs in this report (<c>--guest-rules</c>): all by default; <see cref="SmarterPlanningRules.None"/> measures the behaviour of version 1.3.0 from the same build, and a single rule measures
+	/// that rule alone (docs/SMARTER-GUESTS.md, phase 5). Only read when the extension is on.
+	/// </summary>
+	public SmarterPlanningRules PlanningRules { get; init; } = SmarterPlanningRules.All;
 }
 
 /// <param name="StateHash">The guests' state hash at the end of the run: two seeds with the same hash ran the same park (the guests' generator is reseeded with each new guest's id, so streams can merge).</param>
@@ -142,6 +147,21 @@ public static class GuestReport
 	{
 		if ( options.Extensions.Count == 0 && options.Mods.Count == 0 )
 			return RunSeeds( options, progress );
+		// the phase 5 rules a measurement switches off are read when each policy is built, and put back afterwards
+		var previousRules = GuestSimulation.PlanningRulesForMeasurement;
+		GuestSimulation.PlanningRulesForMeasurement = options.PlanningRules;
+		try
+		{
+			return RunWithExtensions( options, progress );
+		}
+		finally
+		{
+			GuestSimulation.PlanningRulesForMeasurement = previousRules;
+		}
+	}
+
+	private static GuestReportResult RunWithExtensions( GuestReportOptions options, Action<string>? progress )
+	{
 		// the extensions and mods are on for every simulation the run builds (each reads the active set once when it is built) and off again afterwards
 		var enabled = ResolveExtensions( options.Extensions ).ToDictionary( id => id, _ => true );
 		var folders = options.Mods.Where( Directory.Exists ).ToArray();
@@ -298,6 +318,16 @@ public static class GuestReport
 				} ).ToArray() )
 			} );
 		}
+		var scenarioNode = new JsonObject
+		{
+			["arrivalTimeBetween"] = options.Scenario.ArrivalTimeBetween,
+			["admissionFee"] = options.Scenario.AdmissionFee,
+			["cheapPrice"] = options.Scenario.CheapPrice,
+			["dearPrice"] = options.Scenario.DearPrice
+		};
+		// a scenario with the food shop is a different park: say so, and leave the default report's text as it was
+		if ( options.Scenario.FoodShop )
+			scenarioNode["foodShop"] = true;
 		var root = new JsonObject
 		{
 			["schema"] = "opentpw.guest-report/1",
@@ -311,19 +341,16 @@ public static class GuestReport
 				["noChoiceTurns"] = options.Metrics.NoChoiceTurns,
 				["levelSeeds"] = options.LevelSeeds,
 				["levelArrivalTimeBetween"] = options.LevelArrivalTimeBetween,
-				["scenario"] = new JsonObject
-				{
-					["arrivalTimeBetween"] = options.Scenario.ArrivalTimeBetween,
-					["admissionFee"] = options.Scenario.AdmissionFee,
-					["cheapPrice"] = options.Scenario.CheapPrice,
-					["dearPrice"] = options.Scenario.DearPrice
-				}
+				["scenario"] = scenarioNode
 			},
 			["extensions"] = new JsonArray( options.Extensions.Select( id => (JsonNode)JsonValue.Create( id )! ).ToArray() ),
 			["mods"] = new JsonArray( options.Mods.Select( name => (JsonNode)JsonValue.Create( Path.GetFileName( name.TrimEnd( '/', '\\' ) ) )! ).ToArray() ),
 			["scenarios"] = scenarios,
 			["skipped"] = new JsonArray( result.Skipped.Select( item => (JsonNode)JsonValue.Create( item )! ).ToArray() )
 		};
+		// the report of a measurement that switched some phase 5 rules off says so (the shipped extension runs all three)
+		if ( options.Extensions.Count > 0 && options.PlanningRules != SmarterPlanningRules.All )
+			root["planningRules"] = options.PlanningRules.ToString();
 		if ( result.Performance is { } performance )
 		{
 			root["performance"] = new JsonObject
@@ -362,6 +389,10 @@ public static class GuestReport
 		var options = result.Options;
 		if ( options.Extensions.Count > 0 )
 			text.AppendLine( $"Extensions on: {string.Join( ", ", options.Extensions )}" );
+		if ( options.Extensions.Count > 0 && options.PlanningRules != SmarterPlanningRules.All )
+			text.AppendLine( $"Phase 5 rules: {options.PlanningRules}" );
+		if ( options.Scenario.FoodShop )
+			text.AppendLine( "Scenario with the food shop." );
 		if ( options.Mods.Count > 0 )
 			text.AppendLine( $"Mods on: {string.Join( ", ", options.Mods.Select( name => Path.GetFileName( name.TrimEnd( '/', '\\' ) ) ) )}" );
 		text.AppendLine( $"Guest report: {options.Seeds.Count} seeds (the band is 3 standard errors of a difference of two means of that many seeds), {options.WarmupDays} warm-up days + {options.MeasuredDays} measured days ({TicksForDays( options.MeasuredDays )} ticks)" );
@@ -391,6 +422,25 @@ public static class GuestReport
 			text.AppendLine( $"per tick over {performance.Ticks} ticks: observer off {F( performance.ObserverOffMicrosecondsPerTick, "0.00" )} us, {F( performance.ObserverOffBytesPerTick, "0" )} B; observer on {F( performance.ObserverOnMicrosecondsPerTick, "0.00" )} us, {F( performance.ObserverOnBytesPerTick, "0" )} B" );
 		}
 		return text.ToString();
+	}
+
+	/// <summary><c>--guest-rules</c>: <c>all</c>, <c>none</c> (the rules of version 1.3.0), or a comma list of <c>planning</c>, <c>detour</c> and <c>meal</c>.</summary>
+	public static SmarterPlanningRules ParsePlanningRules( string text )
+	{
+		var rules = SmarterPlanningRules.None;
+		foreach ( var name in text.Split( ',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries ) )
+		{
+			rules |= name switch
+			{
+				"all" => SmarterPlanningRules.All,
+				"none" => SmarterPlanningRules.None,
+				"planning" => SmarterPlanningRules.Planning,
+				"detour" => SmarterPlanningRules.Detour,
+				"meal" => SmarterPlanningRules.MealTime,
+				_ => throw new ArgumentException( $"--guest-rules '{name}' is not all, none, planning, detour or meal." )
+			};
+		}
+		return rules;
 	}
 
 	/// <summary>True when the command line asks for level parks, which need the game's data (so the command is dispatched after the data is set up).</summary>
@@ -460,7 +510,9 @@ public static class GuestReport
 			LevelArrivalTimeBetween = IntOption( args, "--guest-arrivals", 1, 20 ),
 			Performance = !args.Contains( "--guest-no-perf" ),
 			Extensions = ResolveExtensions( Options( args, "--guest-extension" ) ),
-			Mods = Options( args, "--guest-mod" )
+			Mods = Options( args, "--guest-mod" ),
+			PlanningRules = Option( args, "--guest-rules" ) is { } rules ? ParsePlanningRules( rules ) : SmarterPlanningRules.All,
+			Scenario = new ParkScenarioOptions { FoodShop = args.Contains( "--guest-food" ) }
 		};
 		// the level parks log their clock and script lines; the report's own output stays clean
 		var output = Console.Out;

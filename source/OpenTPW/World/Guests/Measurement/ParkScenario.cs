@@ -42,6 +42,8 @@ public sealed class ParkScenario
 	public const int StreetRow = 5, StreetLength = 40;
 	/// <summary>The toilet stands on the street far from the gate: the long walk of the scenario.</summary>
 	public const int ToiletColumn = 28;
+	/// <summary>The column of the food shop's branch (<see cref="ParkScenarioOptions.FoodShop"/>), beside the other shops'.</summary>
+	public const int FoodColumn = 16;
 
 	private readonly List<ScenarioAttraction> attractions = new();
 
@@ -50,7 +52,7 @@ public sealed class ParkScenario
 		options ??= new ParkScenarioOptions();
 		Seed = seed;
 		Options = options;
-		Grid = BuildGrid();
+		Grid = BuildGrid( options );
 		Settings = CreateSettings( options );
 		Guests = new GuestSimulation( Grid, Settings, seed.GuestStream, decisions );
 		if ( options.ParkPoints != 0 )
@@ -72,6 +74,9 @@ public sealed class ParkScenario
 		AddAttraction( "shop-cheap", RideVisitorKind.Shop, (14, 1), 60, 1000, GuestNeeds.Thirst, options.CheapPrice );
 		AddAttraction( "shop-dear", RideVisitorKind.Shop, (14, 9), 60, 1000, GuestNeeds.Thirst, options.DearPrice );
 		AddAttraction( "toilet", RideVisitorKind.Shop, (ToiletColumn, StreetRow), 0, 1500, GuestNeeds.Toilet, 0 );
+		// the food shop is the last attraction, so the others keep their ids and the default scenario's guests are untouched
+		if ( options.FoodShop )
+			AddAttraction( "shop-food", RideVisitorKind.Shop, (FoodColumn, 1), 0, 1500, GuestNeeds.Hunger, options.CheapPrice );
 	}
 
 	public WorldSeed Seed { get; }
@@ -94,12 +99,12 @@ public sealed class ParkScenario
 	public static int HoldJitterMilliseconds( WorldSeed seed ) => (int)(seed.Value * 97 % 400) - 200;
 
 	/// <summary>The street and the three branches, each an arm of 4 cells above and below the street; the attractions stand on the arm ends.</summary>
-	private static GuestPathGrid BuildGrid()
+	private static GuestPathGrid BuildGrid( ParkScenarioOptions options )
 	{
 		var grid = new GuestPathGrid( StreetLength, 12 );
 		for ( var x = 0; x < StreetLength; x++ )
 			grid.SetPath( x, StreetRow, true );
-		foreach ( var column in new[] { 10, 12, 14 } )
+		foreach ( var column in options.FoodShop ? new[] { 10, 12, 14, FoodColumn } : new[] { 10, 12, 14 } )
 			for ( var y = 1; y <= 9; y++ )
 				grid.SetPath( column, y, true );
 		return grid;
@@ -124,7 +129,9 @@ public sealed class ParkScenario
 			// the price test's terms (QueueJoinRules.WillingnessToPay): a shop gives back what a guest lacks
 			bridge.InitCostOfGoods = 100;
 			bridge.ThirstEffect = satisfies.HasFlag( GuestNeeds.Thirst ) ? 50 : 0;
-			bridge.HungerEffect = satisfies.HasFlag( GuestNeeds.Hunger ) ? 50 : 0;
+			// a food shop is the shipped Burger Shop's: 25 off hunger, 15 on illness (the thirst shops keep their effect of 50 and none on illness)
+			bridge.HungerEffect = satisfies.HasFlag( GuestNeeds.Hunger ) ? 25 : 0;
+			bridge.VomitEffect = satisfies.HasFlag( GuestNeeds.Hunger ) ? 15 : 0;
 		}
 		var script = ScenarioScripts.VisitorScript( new VisitorRideScriptEffects( bridge, UnimplementedRideScriptEffects.Instance ), Scripts, holdMilliseconds + HoldJitterMilliseconds( Seed ), 3 + attractions.Count );
 		bridge.Attach( script, () => true );
@@ -186,6 +193,11 @@ public sealed record ParkScenarioOptions
 	public int TwinAHoldMilliseconds { get; init; } = 6000;
 	/// <summary>A park with one ride only ("twin-a", no other ride), like the level parks: nothing for a guest to go to instead (tests of the queue patience rules). Off by default.</summary>
 	public bool SingleRide { get; init; }
+	/// <summary>
+	/// A fourth branch with a food shop (the shipped Burger Shop's effects: 25 off hunger, 15 on illness, at the cheap price): the scenario's guests can then eat, which the planning rules of docs/SMARTER-GUESTS.md (phase 5) need to act on. Off by default,
+	/// so the default scenario, its report and its pins are the ones of the baseline.
+	/// </summary>
+	public bool FoodShop { get; init; }
 }
 
 /// <summary>The visitor script every scenario attraction runs: take a guest (VAR_LETMEON), hold it for the ride time, hand it back (VAR_LETMEOFF), the corpus shop protocol.</summary>

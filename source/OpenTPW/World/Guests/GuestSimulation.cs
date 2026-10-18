@@ -95,9 +95,15 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	// [EXT:script-mods] the wrapper runs the enabled script mods' hooks over the base policy's answers
 	private static IGuestDecisions DefaultPolicy()
 	{
-		IGuestDecisions policy = FeatureGates.SmarterGuests ? new SmarterGuestDecisions() : OriginalGuestDecisions.Instance;
+		IGuestDecisions policy = FeatureGates.SmarterGuests ? new SmarterGuestDecisions( PlanningRulesForMeasurement ) : OriginalGuestDecisions.Instance;
 		return ScriptModRuntime.ForActive( OpenTpwExtensions.Active ) is { } scriptMods ? new ScriptGuestDecisions( policy, scriptMods ) : policy;
 	}
+
+	/// <summary>
+	/// Which phase 5 rules a smarter-guests policy built by the gate runs (docs/SMARTER-GUESTS.md). <see cref="SmarterPlanningRules.All"/>, version 1.4.0, always, except while the headless guest report
+	/// measures a rule on its own or against the rules off (<c>--guest-rules</c>); read once when a simulation is built, like the gate. A park saved under a subset would not be version 1.4.0's: nothing but the report sets it.
+	/// </summary>
+	internal static SmarterPlanningRules PlanningRulesForMeasurement { get; set; } = SmarterPlanningRules.All;
 
 	private readonly IGuestDecisions decisions;
 
@@ -542,6 +548,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		Observer?.Departed( guest );
 		// [EXT:smarter-guests-value] a departing guest's run of price-emptied decisions goes with it, so the bookkeeping is bounded by the guests in the park
 		SmarterGuests?.Stalls.Reset( guest.BirthId );
+		SmarterGuests?.Meals.Forget( guest.BirthId );
 		// [BIN:TPW-EXE:0x0050B780 destroy request] a leaving guest asks for its destruction (0x0050B780 → 0x00516310); the id is freed at the park turn's end (0x00516641)
 		things.QueueDestroy( guest.Id );
 		byId.Remove( guest.Id );
@@ -1534,6 +1541,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 				StartActivity( guest, GuestActivity.Cheering );
 				break;
 			case GuestDecision.Outcome.Vomit:
+				Observer?.Vomited( guest );
 				StartActivity( guest, GuestActivity.Vomiting );
 				DropLitter( guest, LitterType.Vomit );
 				guest.Nausea = 0;
@@ -2035,6 +2043,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	// Approximation (GUEST-006, registered at UpdateNeedsTurn): bubbles are always on; the original skips them in an online game (GameType 1) and while bits 0x16 of the flag word 0x00790AB0 are set, whose meaning is untraced
 	private void Think( Guest guest, GuestThought thought )
 	{
+		Observer?.Thought( guest, thought );
 		guest.Thought = thought;
 		guest.BubbleThought = GuestThought.None;
 		if ( !GuestThoughts.TakesBubble( (int)thought, ParkTurn, guest.BubbleTurn ) )
@@ -2102,7 +2111,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	{
 		// the host runs the choice loop: the policy scores and compares, the route request below is the host's alone (made exactly as the original makes it, for a candidate that beats the best)
 		var context = ContextNow();
-		var view = ViewOf( guest );
+		var view = WithPlanHorizon( ViewOf( guest ), guest, null );
 		uint best = 0;
 		var chosen = 0;
 		choiceEmptiedByPrice = false;
@@ -2302,7 +2311,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		var distance = (guest.CellX - back.X) * (guest.CellX - back.X) + (guest.CellY - back.Y) * (guest.CellY - back.Y);
 		// the window's candidates in the original's order (x outer, y inner, newest attraction first), scored by the policy and compared by its rule; the host keeps the best
 		var context = ContextNow();
-		var view = ViewOf( guest );
+		var view = WithPlanHorizon( ViewOf( guest ), guest, target );
 		IRideVisitorBridge? best = null;
 		uint bestScore = 0;
 		var keeps = false;
@@ -2321,7 +2330,9 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 					if ( candidate.EntranceCell != (x, y) || candidate.AttractionId == target.AttractionId || candidate.JoinCell == null
 						|| !candidate.IsOpen || candidate.IsBrokenDown || candidate.QueueLength >= RideVisitorBridge.PositionsPerCell * candidate.QueueSizeInCells )
 						continue;
-					var score = decisions.ScoreAttraction( context, view, ViewOf( candidate, guest ) );
+					// [EXT:smarter-guests-planning] a candidate in the window stands on the guest's way: a policy that plans is told so (the window's rule is the original's definition of "near the route")
+					var candidateView = ViewOf( candidate, guest );
+					var score = decisions.ScoreAttraction( context, view, decisions.UsesPlanning ? candidateView with { OnTheWay = true } : candidateView );
 					if ( decisions.BeatsInMinorDecision( context, view, score, bestScore ) )
 						(best, bestScore) = (candidate, score);
 				}
@@ -3110,6 +3121,9 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		var effects = UseEffects.Apply( new GuestMeters( guest.Happiness, guest.Thirst, guest.Hunger, guest.Toilet, guest.Nausea ),
 			ride.ThirstEffect, ride.HungerEffect, ride.VomitEffect, ride.HappinessEffect );
 		(guest.Happiness, guest.Thirst, guest.Hunger, _, guest.Nausea) = effects;
+		// [EXT:smarter-guests-planning] a use that takes hunger off is a meal; the extension remembers when (the original keeps nothing)
+		if ( ride.HungerEffect > 0 && decisions.UsesPlanning )
+			SmarterGuests?.Meals.Note( guest.BirthId, ParkTurn );
 		// [BIN:TPW-EXE:0x4fe303 drink or meal voice] after the thirst and hunger meters the use routine compares the type's thirst effect (+0x144) with its hunger effect (+0x148): the larger thirst plays cat_kids 0x83, the larger hunger 0x84, equal ones nothing
 		if ( ride.ThirstEffect != ride.HungerEffect )
 			Voiced?.Invoke( guest, ride.ThirstEffect > ride.HungerEffect ? DrinkVoiceEvent : MealVoiceEvent );

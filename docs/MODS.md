@@ -316,14 +316,14 @@ without pool cells saves, loads and exports identically with it on or off ([POOL
 
 ## Smarter guests and guest insights (`opentpw.smarter-guests`, `opentpw.guest-insights`)
 
-Two official extensions for the park visitors ([SMARTER-GUESTS.md](SMARTER-GUESTS.md) has the plan, the architecture and the measurement), both at version 1.0.0. **Guest insights can be switched on** (it has its first
-feature, phase 1); **smarter guests cannot yet**: it has no real rule, and a no-op version would lock saves to it. It is registered for tests and development, hidden from the Extensions and mods screen, and a `mods.json` entry or
-`--enable-mod` for it is ignored with a log line, until the first real rule ships (phase 2).
+Two official extensions for the park visitors ([SMARTER-GUESTS.md](SMARTER-GUESTS.md) has the plan, the architecture and the measurement): guest insights at version 1.0.0 and smarter guests at version 1.4.0. **Guest insights can be switched on** (it has its first
+feature, phase 1); **smarter guests cannot yet**: its rules (phases 2 to 5 so far) are built and measured, but a player cannot switch it on until the rule set is complete (phase 6), so a save does not break with every phase. It is registered for tests and development, hidden from the Extensions and mods screen, and a `mods.json` entry or
+`--enable-mod` for it is ignored with a log line.
 
 - **`opentpw.smarter-guests`** changes the simulation (`AffectsSimulation`), so a park saved with it records it (id, version, no files) and loads only with it on, in the same version; a park saved without it
   loads only with it off. **The extension's version is the algorithm identity**: every release that changes how guests decide bumps it, and a park saved by another version is refused with
-  `needs opentpw.smarter-guests <saved version>, not <current>`. In 1.0.0 the guests still decide exactly as the original (the policy delegates); what the extension adds is the seam (`IGuestDecisions`),
-  a birth id for every guest and its own park state, saved in an optional `SmarterGuests` section of the park save. A build from before that section refuses such a save. Switching it needs a
+  `needs opentpw.smarter-guests <saved version>, not <current>`. In 1.0.0 the guests still decided exactly as the original (the policy delegated); what the extension added is the seam (`IGuestDecisions`),
+  a birth id for every guest and its own park state, saved in an optional `SmarterGuests` section of the park save (since 1.1.0 also the price-stall runs, the attractions' throughput estimates and, in 1.4.0, the guests' meal times). A build from before that section refuses such a save. Switching it needs a
   restart like every extension, and a save made without it is refused while it is on.
   `FeatureGates.SmarterGuests` is read once when the guest simulation is built. `[EXT:smarter-guests]`.
 - **`opentpw.guest-insights`** only reads the park (`AffectsSimulation` false) and is listed on the Extensions and mods screen (`PlayerSelectable`). Switched on, the park information window gains a column of

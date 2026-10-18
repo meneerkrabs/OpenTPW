@@ -29,6 +29,12 @@ internal sealed record SmarterGuestsSaveData
 	/// </summary>
 	[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 	public IReadOnlyList<RideThroughput>? Throughputs { get; init; }
+	/// <summary>
+	/// The planning rules' meal times (<see cref="MealTimes"/>, phase 5), in birth-id order; absent from the file while there are none, which keeps the section of a park without any (an older version, a
+	/// script-mod-only park, or an extension park whose guests have not eaten) as it was.
+	/// </summary>
+	[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+	public IReadOnlyList<MealTime>? Meals { get; init; }
 }
 
 /// <summary>
@@ -54,7 +60,8 @@ internal static class SmarterGuestsSave
 			Bootstrapped = state.Bootstrapped,
 			Births = guests.Guests.Where( guest => guest.BirthId != 0 ).OrderBy( guest => guest.Id ).Select( guest => new SmarterGuestBirth( guest.Id, guest.BirthId ) ).ToArray(),
 			Stalls = state.Stalls.Count == 0 ? null : state.Stalls.Entries.ToArray(),
-			Throughputs = state.Throughputs.Count == 0 ? null : state.Throughputs.Entries.ToArray()
+			Throughputs = state.Throughputs.Count == 0 ? null : state.Throughputs.Entries.ToArray(),
+			Meals = state.Meals.Count == 0 ? null : state.Meals.Entries.ToArray()
 		};
 	}
 
@@ -99,7 +106,7 @@ internal static class SmarterGuestsSave
 		}
 		if ( section.Bootstrapped && seenGuests.Count != holders.Count )
 			return $"the extension has run, but only {seenGuests.Count} of {holders.Count} guests have a birth id";
-		return StallsProblem( section.Stalls, seenIds ) ?? ThroughputsProblem( section.Throughputs, attractionIds );
+		return StallsProblem( section.Stalls, seenIds ) ?? ThroughputsProblem( section.Throughputs, attractionIds ) ?? MealsProblem( section.Meals, seenIds );
 	}
 
 	/// <summary>
@@ -135,6 +142,30 @@ internal static class SmarterGuestsSave
 				return $"attraction {entry.AttractionId} has a silence clock at turn {entry.ClockTurn}, before its last boarding {entry.LastBoardTurn}";
 			if ( entry.Demand && entry.ClockTurn < 0 )
 				return $"attraction {entry.AttractionId} has demand without a silence clock";
+		}
+		return null;
+	}
+
+	/// <summary>
+	/// The meal times' consistency: guests the section gives a birth id (<paramref name="births"/>), strictly ascending by birth id (so each guest once), each with a turn of 0 or more. A meal later than the saved
+	/// park's turn is refused at restore.
+	/// </summary>
+	private static string? MealsProblem( IReadOnlyList<MealTime>? meals, HashSet<ulong> births )
+	{
+		if ( meals == null )
+			return null;
+		if ( meals.Count == 0 )
+			return "the SmarterGuests section holds an empty meal list (it is left out when there is none)";
+		ulong? previous = null;
+		foreach ( var entry in meals )
+		{
+			if ( !births.Contains( entry.BirthId ) )
+				return $"the meal times name birth id {entry.BirthId}, whom the section does not hold";
+			if ( entry.Turn < 0 )
+				return $"birth id {entry.BirthId} has a meal on turn {entry.Turn}, below 0";
+			if ( previous is { } last && entry.BirthId <= last )
+				return "the meal times are not in strictly ascending birth id order";
+			previous = entry.BirthId;
 		}
 		return null;
 	}
@@ -177,6 +208,9 @@ internal static class SmarterGuestsSave
 		foreach ( var entry in section.Throughputs ?? [] )
 			if ( Math.Max( entry.LastBoardTurn, entry.ClockTurn ) > guests.ParkTurn )
 				throw new InvalidDataException( $"The saved smarter-guests state is inconsistent: attraction {entry.AttractionId} has a turn {Math.Max( entry.LastBoardTurn, entry.ClockTurn )}, after the park's turn {guests.ParkTurn}." );
+		foreach ( var entry in section.Meals ?? [] )
+			if ( entry.Turn > guests.ParkTurn )
+				throw new InvalidDataException( $"The saved smarter-guests state is inconsistent: birth id {entry.BirthId} has a meal on turn {entry.Turn}, after the park's turn {guests.ParkTurn}." );
 		foreach ( var guest in guests.Guests )
 			guest.BirthId = 0;
 		var byId = guests.Guests.ToDictionary( guest => guest.Id );
@@ -187,5 +221,7 @@ internal static class SmarterGuestsSave
 			state.Stalls.Load( stalls );
 		if ( section.Throughputs is { Count: > 0 } throughputs )
 			state.Throughputs.Load( throughputs );
+		if ( section.Meals is { Count: > 0 } meals )
+			state.Meals.Load( meals );
 	}
 }

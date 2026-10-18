@@ -151,7 +151,8 @@ absence is an observation of the traced flows, not proof: nothing here shows a b
   `City::MarkParkVisited`. A ticket award can hook the accepted report (docs/SERVER.md).
 - **Visit**: the visitor's client rebuilds the exact published layout (digest-checked), walks it with
   the normal park camera, can ride rides (coaster trains along the published track, the prototype
-  Totem on its modelled motion), inspects objects (published open state, price, state of repair) and
+  Totem on its modelled motion and, since the ride view port of October 15, every ride whose model has
+  a camera seat), inspects objects (published open state, price, state of repair) and
   the park's published statistics read-only, and votes through the existing vote endpoint. The
   park's other visitors appear as figures that walk and teleport, with the original's avatar
   sparkle, and the park's room chats (docs/ONLINE.md, "Players in a visited park", October 18).

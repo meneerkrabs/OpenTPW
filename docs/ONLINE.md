@@ -175,8 +175,16 @@ imports create no downloaded park. Choose one export/import/visit action per inv
 
 `--visit-park <file> --smoke-test` performs a dedicated native read-only visit check:
 no economy runtime, rejected object/prototype building and removal, rejected save/load
-and export, followed by eight rendered frames and a GPU capture at
-`artifacts/native-smoke-online-visit.png`. It uses no sandbox build/save smoke steps.
+and export. After eight rendered frames it boards the park's first open rideable ride
+through the HUD and checks on every frame that the camera sits on the seat the view
+rides (the ride model's camera seat, a coaster's camera car) or, without one, follows
+the fallback frame, until simulation frames have moved it at least 0.25 units. It then
+leaves the ride, checks that the same park camera returns and that the published layout
+is unchanged, and captures `artifacts/native-smoke-online-visit.png`. A ride moves when
+its own script runs it: the original Jungle's Belly Bounce bounces only with riders
+aboard, so in a Jungle export the step waits for the visit's first guests (40 to 55 s).
+A step that stalls times out after two minutes with the ride's riders, queue and the
+guests in the park in its message. It uses no sandbox build/save smoke steps.
 
 ### The version 2 package and what a visit does
 
@@ -200,10 +208,12 @@ evidence shows (docs/reverse/ONLINE-VISIT.md, from the Mac online code, the manu
 the archived official pages):
 
 - **Walk**: the visitor views and walks the rebuilt park with the normal park camera.
-- **Ride**: the object panel of a visit offers *Ride* for a completed coaster or the
-  prototype ride; the camera rides the front car along the published track (or the
-  Totem's carriage motion). Escape, a right click or the button leaves the ride.
-  Flat rides have no traced seat motion in OpenTPW yet and cannot be ridden here.
+- **Ride**: the object panel of a visit offers *Ride* for a completed coaster, the
+  prototype ride and every ride whose model carries a camera seat (the Belly Bounce,
+  the bumper cars, the go-karts and others); the camera rides the seat, a coaster's
+  camera car along the published track. A ride moves when its own script runs it: the
+  Belly Bounce bounces only while the visit's guests ride it. Escape, a right click or
+  the button leaves the ride.
   Visits and editable parks use the same `Level.EnterRideView` / `ExitRideView`
   state and `RideCameraMode`; the visit's object-panel button enters that view.
   The original seat and mode details remain qualified by UI-094 and UI-095.
@@ -219,7 +229,13 @@ the archived official pages):
 
 Visitors and rides animate locally (the visited park's own scripts run); those
 simulations are not synchronized multiplayer: each visitor's guests and rides are their
-own, and only the players themselves are shared ([below](#players-in-a-visited-park)). A visit cannot
+own, and only the players themselves are shared ([below](#players-in-a-visited-park)). A
+package carries no guests, so a visit starts empty and fills from its own arrivals, which
+read the park turn of the save the visit is built on (`EXT:online-visit-arrivals`): the
+visit of a Jungle park sends its first group at once, as an own park started from the
+shipped save (Instant Action) does. Counted from turn 0, the first group would wait until
+turn 604, about 150 s into the visit, with nobody before it to ride a ride such as the
+Belly Bounce. A visit cannot
 place or remove rides, build paths or save, load or export the sandbox. The panel and
 startup log explicitly report mismatches, missing objects/bonus archives and terrain
 hash differences. Missing content is never downloaded automatically. Original
@@ -391,7 +407,7 @@ The package/protocol/server code owns tags 001–059. The game adapters own:
 | 071 | The five chat parks' default names; the original's room list is not recovered |
 | 072 | Walking in a chat park sends one position per step under its own rate limit (`MovementBurst`/`MovementsPerSecond`) |
 | 068 | The version 2 layout digest: FNV-1a 64 over the payload's cells, objects and coasters, written by the publisher and recomputed by the visit |
-| 069 | The visit's Ride action in the object panel (coasters and the prototype ride) and its exits |
+| 069 | The visit's Ride action in the object panel (coasters, the prototype ride and the rides with a camera seat) and its exits |
 | 074 | The visit's park information window showing the published statistics read-only |
 | 075 | The visit counter counts accepted visit reports, one per visit |
 | UI | Original-style online screens: window composition, places of code-positioned controls, text field art and caret, server address field, Inbox and Import screens, the News window title |

@@ -894,7 +894,9 @@ public partial class Level : IDisposable
 		RefreshRenderedCells();
 		RefreshPools();
 		SceneClock.Advance( Time.Delta * SimulationTimeScale );
+		var simulationStart = FrameStats.Begin();
 		AdvanceSimulation( Time.Delta * SimulationTimeScale );
+		FrameStats.EndSimulation( simulationStart );
 		foreach ( var entity in Entity.All.ToArray() )
 			entity.Update();
 		// Riding follows the frame just simulated; park-camera input is consumed only by the earlier update.

@@ -15,8 +15,27 @@ public class Model : Asset
 	private ModelVertexBuffer vertices = null!;
 	private bool released;
 
-	/// <summary>Model-space bounds of the vertex positions (null without vertices); used to skip draws outside the view.</summary>
-	public (System.Numerics.Vector3 Min, System.Numerics.Vector3 Max)? Bounds { get; private set; }
+	/// <summary>Model-space bounds of the vertex positions (null without vertices); used to skip draws outside the view. Replaced vertices are measured when the bounds are read, not on every replacement.</summary>
+	public (System.Numerics.Vector3 Min, System.Numerics.Vector3 Max)? Bounds
+	{
+		get
+		{
+			if ( unmeasured != null )
+			{
+				bounds = BoundsOf( unmeasured );
+				unmeasured = null;
+			}
+			return bounds;
+		}
+		private set
+		{
+			bounds = value;
+			unmeasured = null;
+		}
+	}
+
+	private (System.Numerics.Vector3, System.Numerics.Vector3)? bounds;
+	private Vertex[]? unmeasured;
 
 	public Model( Vertex[] vertices, uint[] indices, Material material ) : this( vertices, indices, material, false )
 	{
@@ -91,7 +110,7 @@ public class Model : Asset
 	public void UpdateVertices( Vertex[] vertices )
 	{
 		this.vertices.Set( vertices );
-		Bounds = BoundsOf( vertices );
+		unmeasured = vertices;
 	}
 
 	internal void Draw()

@@ -4,6 +4,9 @@ OpenTPW shares its game code between native builds and the browser. The browser'
 WebAssembly runtime and WebGL bridge run much of that work on the page's main thread.
 A task that occupies that thread also postpones drawing and input.
 
+The desktop engine's own CPU profile (simulation and frame, with the changes of 18 October that also remove
+garbage the browser pays for) is in [ENGINE-PERFORMANCE.md](ENGINE-PERFORMANCE.md).
+
 ## Measuring
 
 `tools/web-perf/run.mjs` repeats the measurements below with one command. It serves a published

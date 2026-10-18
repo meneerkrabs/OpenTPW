@@ -13,20 +13,33 @@ public sealed class ModelVertexGroup
 {
 	internal ModelVertexGroup( ushort[] vertexIndices, ushort[] ticks, uint[] packedKeys )
 	{
-		VertexIndices = vertexIndices;
-		Ticks = ticks;
-		PackedKeys = packedKeys;
+		indices = vertexIndices;
+		this.ticks = ticks;
+		packed = packedKeys;
+		// the sampler checks the indices against the mesh on every call; the largest one decides it for all of them
+		foreach ( var index in vertexIndices )
+			MaxIndex = Math.Max( MaxIndex, index );
 	}
 
-	public IReadOnlyList<ushort> VertexIndices { get; }
-	public IReadOnlyList<ushort> Ticks { get; }
-	public IReadOnlyList<uint> PackedKeys { get; }
+	// the arrays behind the public lists: the per-tick sampler reads them directly, an array walked through its interface is several times slower
+	private readonly ushort[] indices;
+	private readonly ushort[] ticks;
+	private readonly uint[] packed;
+
+	public IReadOnlyList<ushort> VertexIndices => indices;
+	public IReadOnlyList<ushort> Ticks => ticks;
+	public IReadOnlyList<uint> PackedKeys => packed;
+
+	/// <summary>The largest mesh position index the group lists, or -1 when it lists none.</summary>
+	internal int MaxIndex { get; } = -1;
+	internal ushort[] IndexArray => indices;
+	internal uint[] PackedArray => packed;
 
 	public uint PackedKey( int key, int vertex )
 	{
-		if ( (uint)key >= (uint)Ticks.Count || (uint)vertex >= (uint)VertexIndices.Count )
-			throw new ArgumentOutOfRangeException( (uint)key >= (uint)Ticks.Count ? nameof( key ) : nameof( vertex ) );
-		return PackedKeys[key * VertexIndices.Count + vertex];
+		if ( (uint)key >= (uint)ticks.Length || (uint)vertex >= (uint)indices.Length )
+			throw new ArgumentOutOfRangeException( (uint)key >= (uint)ticks.Length ? nameof( key ) : nameof( vertex ) );
+		return packed[key * indices.Length + vertex];
 	}
 
 	/// <summary>
@@ -49,14 +62,15 @@ public sealed class ModelVertexGroup
 	/// </summary>
 	public int AdvanceKey( ref int cursor, float time, out float fraction )
 	{
-		if ( float.IsNaN( time ) || Ticks.Count < 2 || time > Ticks[^1] )
+		var ticks = this.ticks;
+		if ( float.IsNaN( time ) || ticks.Length < 2 || time > ticks[^1] )
 			throw new ArgumentOutOfRangeException( nameof( time ), "Time lies outside the traced vertex-key domain." );
-		if ( (uint)cursor > (uint)(Ticks.Count - 2) )
+		if ( (uint)cursor > (uint)(ticks.Length - 2) )
 			throw new ArgumentOutOfRangeException( nameof( cursor ) );
-		while ( Ticks[cursor + 1] < time )
+		while ( ticks[cursor + 1] < time )
 			cursor++;
-		float start = Ticks[cursor];
-		fraction = (time - start) / (Ticks[cursor + 1] - start);
+		float start = ticks[cursor];
+		fraction = (time - start) / (ticks[cursor + 1] - start);
 		return cursor;
 	}
 }
@@ -97,6 +111,9 @@ public sealed class ModelVertexAnimation
 	public ModelVertexGroup? StaticGroup => HasStaticGroup ? Groups[1] : null;
 	public IEnumerable<ModelVertexGroup> AnimatedGroups => Groups.Skip( HasStaticGroup ? 2 : 1 );
 
+	/// <summary>The first group after group 0 and the static group.</summary>
+	private int FirstAnimatedGroup => HasStaticGroup ? 2 : 1;
+
 	/// <summary>Signed 10-bit X/Y/Z in little-endian bits 0–9/10–19/20–29; bits 30–31 are discarded.</summary>
 	public static (int X, int Y, int Z) Unpack( uint word ) =>
 		(SignExtend( word ), SignExtend( word >> 10 ), SignExtend( word >> 20 ));
@@ -134,10 +151,15 @@ public sealed class ModelVertexAnimation
 	{
 		var group = StaticGroup ?? throw new InvalidOperationException( "The block has no static group." );
 		RequireIndices( group, positions.Length );
-		for ( var vertex = 0; vertex < group.VertexIndices.Count; vertex++ )
+		var indices = group.IndexArray;
+		var packed = group.PackedArray;
+		// key 0 of a group that has at least one key is the first `indices.Length` words
+		if ( indices.Length > 0 && packed.Length < indices.Length )
+			throw new ArgumentOutOfRangeException( "key" );
+		for ( var vertex = 0; vertex < indices.Length; vertex++ )
 		{
-			var value = Dequantise( group.PackedKey( 0, vertex ) );
-			ref var target = ref positions[group.VertexIndices[vertex]];
+			var value = Dequantise( packed[vertex] );
+			ref var target = ref positions[indices[vertex]];
 			target = add ? target + value : value;
 		}
 	}
@@ -149,15 +171,25 @@ public sealed class ModelVertexAnimation
 	/// </summary>
 	public void ApplyAnimatedGroups( float time, Span<NVector3> positions, bool add )
 	{
-		foreach ( var group in AnimatedGroups )
-			RequireIndices( group, positions.Length );
-		foreach ( var group in AnimatedGroups )
+		var groups = Groups;
+		for ( var index = FirstAnimatedGroup; index < groups.Count; index++ )
+			RequireIndices( groups[index], positions.Length );
+		for ( var index = FirstAnimatedGroup; index < groups.Count; index++ )
 		{
+			var group = groups[index];
 			var key = group.FindKey( time, out var fraction );
-			for ( var vertex = 0; vertex < group.VertexIndices.Count; vertex++ )
+			var indices = group.IndexArray;
+			var packed = group.PackedArray;
+			var count = indices.Length;
+			// FindKey keeps key + 1 inside the group's ticks, whose keys fill `packed` (keys × vertices words)
+			var from = key * count;
+			var to = from + count;
+			if ( count > 0 && (long)(key + 2) * count > packed.Length )
+				throw new ArgumentOutOfRangeException( "key" );
+			for ( var vertex = 0; vertex < count; vertex++ )
 			{
-				var value = Lerp( Dequantise( group.PackedKey( key, vertex ) ), Dequantise( group.PackedKey( key + 1, vertex ) ), fraction );
-				ref var target = ref positions[group.VertexIndices[vertex]];
+				var value = Lerp( Dequantise( packed[from + vertex] ), Dequantise( packed[to + vertex] ), fraction );
+				ref var target = ref positions[indices[vertex]];
 				target = add ? target + value : value;
 			}
 		}
@@ -217,6 +249,8 @@ public sealed class ModelVertexAnimation
 
 	private static void RequireIndices( ModelVertexGroup group, int count )
 	{
+		if ( group.MaxIndex < count )
+			return;
 		foreach ( var index in group.VertexIndices )
 		{
 			if ( index >= count )

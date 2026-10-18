@@ -246,7 +246,7 @@ public sealed class CoasterRenderer : Entity
 		private readonly List<ModelEntity> entities = new();
 		private readonly List<Model> models = new();
 		private readonly List<CarInstance> cars = new();
-		private (int Version, bool Operational, int Samples, CoasterPreview? Preview) built = (-1, false, -1, null);
+		private (int Version, bool Operational, bool Edited, int Samples, CoasterPreview? Preview) built = (-1, false, false, -1, null);
 		private bool dirty = true;
 		private int carTrains = -1;
 		private bool carsOperational;
@@ -282,7 +282,7 @@ public sealed class CoasterRenderer : Entity
 			if ( disposed )
 				return;
 			var preview = Ride.IsOperational ? null : owner.previewOf( Ride );
-			var key = (Ride.Track.Version, Ride.IsOperational, Ride.Samples.Count, preview);
+			var key = (Ride.Track.Version, Ride.IsOperational, Ride.BeingEdited, Ride.Samples.Count, preview);
 			if ( dirty || key != built )
 			{
 				Rebuild( preview );
@@ -314,7 +314,8 @@ public sealed class CoasterRenderer : Entity
 				return;
 			var pass = track.BuildKnotPass( Ride.Site, chain, writeBanks: false );
 			var knots = pass.Knots;
-			var crossings = Ride.IsOperational ? Ride.CollisionLists : Array.Empty<IReadOnlyList<int>>();
+			// [BIN:TPW-EXE:0x43eb70 rebuild per frame] the original's rebuild runs the pass 0x439ab0 on every frame of an edit, so the crossing markers follow a drag live; the controller's own lists are refitted on the release
+			var crossings = Ride.IsOperational && !Ride.BeingEdited ? Ride.CollisionLists : CoasterRide.ChainCrossings( Ride.Curve, chain, pass, definition );
 			var cursorValid = preview?.Valid ?? true;
 			int? Marker( int node, int next ) => LinkMarker( chain, crossings, cursorValid, node, next );
 			var matrix = owner.ToEngine();

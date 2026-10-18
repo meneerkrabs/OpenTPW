@@ -72,7 +72,7 @@ public class TexturePackTests
 	}
 
 	[TestCleanup]
-	public void ResetActivePack() => TexturePack.Activate( "", new List<string>(), enhancedInterface: false );
+	public void ResetActivePack() => TexturePack.Activate( "", new List<string>() );
 
 	private static string FixturePack( string root, string name, params string[] gamePaths )
 	{
@@ -118,44 +118,6 @@ public class TexturePackTests
 	}
 
 	[TestMethod]
-	public void ShippedInterfaceArtComesFirstAndMissingPacksFallBack()
-	{
-		var root = TemporaryDirectory();
-		var previous = TexturePack.ShippedDirectory;
-		try
-		{
-			var local = Path.Combine( root, "config" );
-			var bundled = Path.Combine( root, "bundled" );
-			var pack = FixturePack( bundled, TexturePack.EnhancedName, "ui/textures/b_buy.wct", "levels/jungle/textures/grass.wct" );
-			var hero = FixturePack( root, "hero", "ui/textures/b_buy.wct", "ui/textures/b_info.wct" );
-			TexturePack.ShippedDirectory = Path.Combine( hero, "textures" );
-			TexturePack.Activate( TexturePack.EnhancedName, new List<string>(), local, bundled );
-			Assert.AreEqual( Path.Combine( hero, "textures", "ui/textures/b_buy.wct.png" ), TexturePack.Find( "ui/textures/b_buy.wct" ), "shipped hero art comes before the pack's interface art" );
-			Assert.AreEqual( Path.Combine( hero, "textures", "ui/textures/b_info.wct.png" ), TexturePack.Find( "ui/textures/b_info.wct" ) );
-			Assert.AreEqual( Path.Combine( pack, "textures", "levels/jungle/textures/grass.wct.png" ), TexturePack.Find( "levels/jungle/textures/grass.wct" ) );
-
-			Directory.Delete( pack, recursive: true );
-			TexturePack.Activate( TexturePack.EnhancedName, new List<string>(), local, bundled );
-			Assert.IsNull( TexturePack.Directory );
-			Assert.AreEqual( Path.Combine( hero, "textures", "ui/textures/b_buy.wct.png" ), TexturePack.Find( "ui/textures/b_buy.wct" ), "a missing pack keeps the shipped interface art" );
-			Assert.IsNull( TexturePack.Find( "levels/jungle/textures/grass.wct" ), "missing world textures stay original" );
-			var diagnostics = new List<string>();
-			TexturePack.Activate( "detailed", diagnostics, local, bundled );
-			StringAssert.Contains( diagnostics.Single(), "original world textures" );
-			TexturePack.Activate( "../enhanced", new List<string>(), local, bundled, enhancedInterface: false );
-			Assert.IsFalse( TexturePack.Enhanced, "invalid names cannot activate fallback art" );
-			Assert.IsNull( TexturePack.Find( "ui/textures/b_buy.wct" ) );
-			TexturePack.Activate( "", new List<string>(), local, bundled, enhancedInterface: false );
-			Assert.IsNull( TexturePack.Find( "ui/textures/b_buy.wct" ), "Original world and Original interface use neither pack nor hero art" );
-		}
-		finally
-		{
-			TexturePack.ShippedDirectory = previous;
-			Directory.Delete( root, recursive: true );
-		}
-	}
-
-	[TestMethod]
 	public void SavedClarityChoiceMigratesToOriginalAndIsSavedOnce()
 	{
 		var root = TemporaryDirectory();
@@ -166,7 +128,6 @@ public class TexturePackTests
 			var diagnostics = new List<string>();
 			var loaded = GraphicsSettings.Load( path, diagnostics );
 			Assert.AreEqual( "", loaded.TexturePackName, "the removed pack reads as Original world textures" );
-			Assert.AreEqual( true, loaded.EnhancedInterface, "the interface choice a Clarity player had is kept" );
 			Assert.AreEqual( GraphicsPreset.High, loaded.Preset );
 			StringAssert.Contains( diagnostics.Single(), "was removed" );
 			StringAssert.Contains( File.ReadAllText( path ), "\"TexturePack\": \"\"", "the migrated choice is written back" );
@@ -174,10 +135,6 @@ public class TexturePackTests
 			diagnostics.Clear();
 			Assert.AreEqual( "", GraphicsSettings.Load( path, diagnostics ).TexturePackName );
 			Assert.AreEqual( 0, diagnostics.Count, "the migration is logged once, not on every start" );
-
-			var explicitHud = GraphicsSettings.FromJson( "{\"TexturePack\":\"clarity-enhanced\",\"EnhancedInterface\":false}", new List<string>() );
-			Assert.AreEqual( "", explicitHud.TexturePackName );
-			Assert.AreEqual( false, explicitHud.EnhancedInterface, "an explicit Original HUD stays" );
 
 			TexturePack.Activate( loaded.TexturePackName, new List<string>(), root, root );
 			Assert.IsFalse( TexturePack.Enhanced );
@@ -220,24 +177,20 @@ public class TexturePackTests
 	{
 		var root = TemporaryDirectory();
 		var previous = Environment.GetEnvironmentVariable( "OPENTPW_TEXTURE_PACK" );
-		var previousHero = TexturePack.ShippedDirectory;
 		try
 		{
 			var pack = FixturePack( root, "override", "ui/textures/b_buy.wct" );
-			var hero = FixturePack( root, "hero", "ui/textures/b_buy.wct" );
-			TexturePack.ShippedDirectory = Path.Combine( hero, "textures" );
 			Environment.SetEnvironmentVariable( "OPENTPW_TEXTURE_PACK", Path.Combine( pack, "textures" ) );
 			foreach ( var choice in new[] { "", TexturePack.EnhancedName, "detailed" } )
 			{
 				TexturePack.Activate( choice, new List<string>(), root, Path.Combine( root, "missing" ) );
 				Assert.AreEqual( Path.Combine( pack, "textures" ), TexturePack.Directory );
-				Assert.AreEqual( Path.Combine( pack, "textures", "ui/textures/b_buy.wct.png" ), TexturePack.Find( "ui/textures/b_buy.wct" ), "the explicit override wins over choice and hero art" );
+				Assert.AreEqual( Path.Combine( pack, "textures", "ui/textures/b_buy.wct.png" ), TexturePack.Find( "ui/textures/b_buy.wct" ), "the explicit override wins over the choice" );
 			}
 		}
 		finally
 		{
 			Environment.SetEnvironmentVariable( "OPENTPW_TEXTURE_PACK", previous );
-			TexturePack.ShippedDirectory = previousHero;
 			Directory.Delete( root, recursive: true );
 		}
 	}
@@ -257,6 +210,36 @@ public class TexturePackTests
 		var manifest = System.Text.Json.JsonSerializer.Deserialize<TexturePackManifest>( "{\"Format\":1,\"Scale\":4,\"MixedScale\":true,\"RefinedWorldScale\":8}" );
 		Assert.IsTrue( manifest!.MixedScale, "mixed-size packs do not claim every replacement is 4x" );
 		Assert.AreEqual( 0, diagnostics.Count );
+	}
+
+	[TestMethod]
+	public void RemovedHudChoiceInOldSettingsFilesIsIgnored()
+	{
+		// The HUD/icons choice was removed on October 18, 2026; files that still carry its key load as before.
+		foreach ( var json in new[] { "{\"EnhancedInterface\":true}", "{\"EnhancedInterface\":false}", "{\"TexturePack\":\"detailed\",\"EnhancedInterface\":false,\"Preset\":\"High\"}" } )
+		{
+			var diagnostics = new List<string>();
+			var settings = GraphicsSettings.FromJson( json, diagnostics );
+			Assert.AreEqual( json.Contains( "detailed" ) ? "detailed" : "", settings.TexturePackName );
+			Assert.AreEqual( 0, diagnostics.Count );
+			Assert.IsFalse( settings.ToJson().Contains( "EnhancedInterface" ), "the obsolete key is not written back" );
+		}
+	}
+
+	[TestMethod]
+	public void OptionsOfferNoHudChoice()
+	{
+		var graphics = new GraphicsSettingsService( _ => null, GraphicsSettings.Default, null, () => CompatibilityFlags.Original );
+		var stack = new UiScreenStack();
+		var screen = OptionsScreen.Create( stack, OriginalUiTests.FakeStrings(), new OptionsServices
+		{
+			Display = new StubDisplaySettings( DisplaySettings.Default ), Options = new GameOptions(),
+			Languages = new[] { "English" }, CurrentLanguage = "English", Graphics = graphics
+		}, () => { } );
+		stack.Push( screen );
+		screen.Find( "openTpw" )!.Activate();
+		Assert.IsNull( stack.Top!.Find( "enhancedInterface" ) );
+		Assert.IsNotNull( stack.Top.Find( "enhancedTextures" ), "the world texture choice stays" );
 	}
 
 	[TestMethod]
@@ -282,120 +265,6 @@ public class TexturePackTests
 		TexturePack.Activate( graphics.Current.TexturePackName, new List<string>() );
 		Assert.IsNull( TexturePack.Directory );
 		Assert.IsFalse( TexturePack.Enhanced, "Original does not select a world pack" );
-		Assert.IsTrue( TexturePack.EnhancedInterface, "fresh HUD/icons are enhanced independently" );
-	}
-
-	[TestMethod]
-	public void FreshOriginalWorldUsesOnlyBundledHudArt()
-	{
-		var root = TemporaryDirectory();
-		var previous = TexturePack.ShippedDirectory;
-		try
-		{
-			var hero = FixturePack( root, "hero", "ui/textures/b_buy.wct", "levels/jungle/textures/grass.wct" );
-			TexturePack.ShippedDirectory = Path.Combine( hero, "textures" );
-			var settings = GraphicsSettings.FromJson( "{}", new List<string>() );
-			var diagnostics = new List<string>();
-			TexturePack.Activate( settings.TexturePackName, diagnostics, Path.Combine( root, "missing-config" ), Path.Combine( root, "missing-bundle" ), settings.EnhancedInterface == true );
-			Assert.AreEqual( Path.Combine( hero, "textures", "ui/textures/b_buy.wct.png" ), TexturePack.Find( "/UI/textures/B_BUY.wct" ), "fresh HUD art comes from files included with the executable" );
-			Assert.IsNull( TexturePack.Directory, "no world pack is selected or requested" );
-			Assert.IsNull( TexturePack.Find( "levels/jungle/textures/grass.wct" ), "the HUD option cannot enhance world art" );
-			Assert.AreEqual( 0, diagnostics.Count, "fresh Original world needs no pack manifest" );
-		}
-		finally
-		{
-			TexturePack.ShippedDirectory = previous;
-			Directory.Delete( root, recursive: true );
-		}
-	}
-
-	[TestMethod]
-	public void EnhancedWorldCanKeepTheOriginalInterfaceAndSwitchingWorldPreservesIt()
-	{
-		var root = TemporaryDirectory();
-		try
-		{
-			var pack = FixturePack( root, TexturePack.EnhancedName, "ui/textures/b_buy.wct", "levels/jungle/textures/grass.wct" );
-			TexturePack.Activate( TexturePack.EnhancedName, new List<string>(), root, Path.Combine( root, "missing-bundle" ), enhancedInterface: false );
-			Assert.IsNull( TexturePack.Find( "ui/textures/b_buy.wct" ), "Original interface excludes both the pack's UI and hero art" );
-			Assert.AreEqual( Path.Combine( pack, "textures", "levels/jungle/textures/grass.wct.png" ), TexturePack.Find( "levels/jungle/textures/grass.wct" ) );
-			var original = TexturePackSwitch.Begin( "", new List<string>(), root )!;
-			Assert.IsFalse( TexturePack.EnhancedInterface, "changing only world textures preserves the HUD choice" );
-			original.Cancel();
-			var enhancedHud = TexturePackSwitch.Begin( "", new List<string>(), root, enhancedInterface: true )!;
-			Assert.IsTrue( TexturePack.EnhancedInterface );
-			Assert.IsNull( TexturePack.Directory, "changing the HUD does not select a world pack" );
-			enhancedHud.Cancel();
-		}
-		finally
-		{
-			Directory.Delete( root, recursive: true );
-		}
-	}
-
-	[DataTestMethod]
-	[DataRow( "{}", true )]
-	[DataRow( "{\"TexturePack\":null}", true )]
-	[DataRow( "{\"EnhancedTextures\":false}", false )]
-	[DataRow( "{\"EnhancedTextures\":true}", true )]
-	[DataRow( "{\"TexturePack\":\"\"}", false )]
-	[DataRow( "{\"TexturePack\":\"enhanced\"}", true )]
-	[DataRow( "{\"TexturePack\":\"detailed\",\"EnhancedTextures\":false}", true )]
-	[DataRow( "{\"TexturePack\":\"\",\"EnhancedInterface\":true}", true )]
-	[DataRow( "{\"EnhancedTextures\":false,\"EnhancedInterface\":true}", true )]
-	[DataRow( "{\"TexturePack\":\"detailed\",\"EnhancedInterface\":false}", false )]
-	[DataRow( "{\"EnhancedInterface\":false}", false )]
-	public void InterfaceChoicePreservesOldOriginalIntentAndExplicitNewChoices( string json, bool expected )
-	{
-		var diagnostics = new List<string>();
-		var settings = GraphicsSettings.FromJson( json, diagnostics );
-		Assert.AreEqual( expected, settings.EnhancedInterface );
-		Assert.AreEqual( expected, GraphicsSettings.FromJson( settings.ToJson(), diagnostics ).EnhancedInterface, "the inferred or explicit choice is persisted" );
-		Assert.AreEqual( 0, diagnostics.Count );
-	}
-
-	[TestMethod]
-	public void HudOptionsApplyLocallyWithoutRequestingAWorldPackAndCancelDiscardsEdits()
-	{
-		foreach ( var world in new[] { "", TexturePack.EnhancedName } )
-		{
-			var graphics = new GraphicsSettingsService( _ => null, GraphicsSettings.Default with { TexturePackName = world }, null, () => CompatibilityFlags.Original );
-			var worlds = new List<string>();
-			var interfaces = new List<bool>();
-			OptionsServices services = new()
-			{
-				Display = new StubDisplaySettings( DisplaySettings.Default ), Options = new GameOptions(),
-				Languages = new[] { "English" }, CurrentLanguage = "English", Graphics = graphics,
-				BeginTexturePackSwitch = name => { worlds.Add( name ); return null; },
-				BeginInterfaceSwitch = enhanced => { interfaces.Add( enhanced ); return null; }
-			};
-			var stack = new UiScreenStack();
-			var screen = OptionsScreen.Create( stack, OriginalUiTests.FakeStrings(), services, () => { } );
-			stack.Push( screen );
-			screen.Find( "openTpw" )!.Activate();
-			var hudPage = stack.Top!;
-			Assert.AreEqual( "HUD and icons: Enhanced", ((UiLabel)hudPage.Find( "enhancedInterfaceLabel" )!).Text() );
-			Assert.IsTrue( hudPage.Find( "languagePanel" )!.Bounds.Bottom <= hudPage.Find( "enhancedInterfacePanel" )!.Bounds.Y, "the extra row does not overlap the language row" );
-			Assert.IsTrue( hudPage.Find( "enhancedInterfacePanel" )!.Bounds.Bottom <= hudPage.Find( "effective" )!.Bounds.Y, "the extra row does not overlap display information" );
-			hudPage.Find( "enhancedInterface" )!.Activate();
-			Assert.AreEqual( "HUD and icons: Original", ((UiLabel)hudPage.Find( "enhancedInterfaceLabel" )!).Text() );
-			stack.Pop();
-			screen.Find( "ok" )!.Activate();
-			Assert.AreEqual( world, graphics.Current.TexturePackName );
-			Assert.AreEqual( false, graphics.Current.EnhancedInterface );
-			Assert.AreEqual( 0, worlds.Count, "HUD-only changes cannot request a world download" );
-			CollectionAssert.AreEqual( new[] { false }, interfaces );
-
-			screen = OptionsScreen.Create( stack, OriginalUiTests.FakeStrings(), services, () => { } );
-			stack.Push( screen );
-			screen.Find( "openTpw" )!.Activate();
-			stack.Top!.Find( "enhancedInterface" )!.Activate();
-			stack.Pop();
-			screen.Back!();
-			Assert.AreEqual( false, graphics.Current.EnhancedInterface, "Cancel keeps the saved HUD choice" );
-			Assert.AreEqual( 1, interfaces.Count );
-			Assert.AreEqual( 0, worlds.Count );
-		}
 	}
 
 	[TestMethod]
@@ -604,33 +473,6 @@ public class TexturePackTests
 	}
 
 	[TestMethod]
-	public void ShippedInterfaceArtWinsOnlyWithAnEnhancedChoice()
-	{
-		var root = TemporaryDirectory();
-		var shipped = Path.Combine( root, "shipped" );
-		Directory.CreateDirectory( Path.Combine( shipped, "ui", "textures" ) );
-		File.WriteAllBytes( Path.Combine( shipped, "ui", "textures", "b_buy.wct.png" ), PngImage.EncodeRgba( 2, 2, new byte[16] ) );
-		var previous = TexturePack.ShippedDirectory;
-		try
-		{
-			TexturePack.ShippedDirectory = shipped;
-			var pack = Path.Combine( root, "enhanced" );
-			TexturePackBuilder.Build( new (string, Func<TextureData>)[] { ("ui/textures/b_buy.wct", () => Pattern( 32, 32 )), ("levels/a/textures/x.wct", () => Pattern( 32, 32 )) },
-				pack, new NearestUpscaler(), new TexturePackBuildOptions(), _ => { }, new NearestUpscaler() );
-			TexturePack.Activate( "enhanced", new List<string>(), root );
-			Assert.AreEqual( Path.Combine( shipped, "ui/textures/b_buy.wct.png" ), TexturePack.Find( "/ui/textures/B_BUY.wct" ), "shipped art before the pack" );
-			Assert.AreEqual( Path.Combine( pack, "textures", "levels/a/textures/x.wct.png" ), TexturePack.Find( "levels/a/textures/x.wct" ) );
-			TexturePack.Activate( "", new List<string>(), root, enhancedInterface: false );
-			Assert.IsNull( TexturePack.Find( "ui/textures/b_buy.wct" ), "Original interface uses neither" );
-		}
-		finally
-		{
-			TexturePack.ShippedDirectory = previous;
-			TexturePack.Activate( "", new List<string>() );
-		}
-	}
-
-	[TestMethod]
 	public void ActivationNeedsAPackNameAndAUsablePack()
 	{
 		var root = TemporaryDirectory();
@@ -639,7 +481,7 @@ public class TexturePackTests
 		TexturePack.Activate( "enhanced", diagnostics, root );
 		Assert.IsNull( TexturePack.Directory );
 		Assert.IsTrue( TexturePack.Enhanced );
-		Assert.AreEqual( 0, diagnostics.Count, "Enhanced works without a local pack (shipped interface art only)" );
+		Assert.AreEqual( 0, diagnostics.Count, "Enhanced works without a local pack" );
 		TexturePack.Activate( "detailed", diagnostics, root );
 		Assert.IsNull( TexturePack.Directory );
 		StringAssert.Contains( diagnostics.Single(), "--build-texture-pack" );
@@ -936,46 +778,6 @@ public class TexturePackTests
 	}
 
 	[TestMethod]
-	public void HeroArtReplacesTheUpscaleWhenTheAspectMatches()
-	{
-		var root = TemporaryDirectory();
-		var hero = Path.Combine( root, "hero" );
-		void Write( string key, int width, int height, byte value )
-		{
-			var path = Path.Combine( hero, key );
-			Directory.CreateDirectory( Path.GetDirectoryName( path )! );
-			var pixels = new byte[width * height * 4];
-			Array.Fill( pixels, value );
-			File.WriteAllBytes( path, PngImage.EncodeRgba( width, height, pixels ) );
-		}
-		Write( "ui/textures/b_buy.wct.png", 256, 256, 200 );      // 64x64 original: aspect matches, any size
-		Write( "ui/textures/wide.wct.png", 100, 50, 10 );         // original is square: skipped
-		Write( "ui/textures/nothing.wct.png", 64, 64, 10 );       // not a texture: skipped
-		Write( "levels/a/textures/x.wct.png", 96, 96, 77 );       // world texture, replaces the upscale
-		var textures = new (string, Func<TextureData>)[]
-		{
-			("ui/textures/b_buy.wct", () => Pattern( 64, 64 )),
-			("ui/textures/wide.wct", () => Pattern( 64, 64 )),
-			("levels/a/textures/x.wct", () => Pattern( 32, 32 ))
-		};
-		var log = new List<string>();
-		var pack = Path.Combine( root, "pack" );
-		var manifest = TexturePackBuilder.Build( textures, pack, new NearestUpscaler( 2 ), new TexturePackBuildOptions { HeroDirectory = hero }, log.Add, new NearestUpscaler( 2 ) );
-		Assert.AreEqual( 2, manifest.HeroTextures );
-		Assert.IsTrue( log.Any( line => line.Contains( "wide.wct.png" ) && line.Contains( "aspect" ) ) );
-		Assert.IsTrue( log.Any( line => line.Contains( "nothing.wct.png" ) ) );
-		ImageResult Read( string key ) => ImageResult.FromMemory( File.ReadAllBytes( Path.Combine( pack, "textures", key ) ), ColorComponents.RedGreenBlueAlpha );
-		Assert.AreEqual( (256, 256, (byte)200), (Read( "ui/textures/b_buy.wct.png" ).Width, Read( "ui/textures/b_buy.wct.png" ).Height, Read( "ui/textures/b_buy.wct.png" ).Data[0]) );
-		Assert.AreEqual( (96, 96), (Read( "levels/a/textures/x.wct.png" ).Width, Read( "levels/a/textures/x.wct.png" ).Height) );
-		Assert.AreEqual( (128, 128), (Read( "ui/textures/wide.wct.png" ).Width, Read( "ui/textures/wide.wct.png" ).Height), "the automatic upscale stays" );
-
-		// A rebuild without hero art starts from the automatic upscale again; merging keeps what is there.
-		var merged = TexturePackBuilder.Build( textures.Take( 1 ), pack, new NearestUpscaler( 2 ), new TexturePackBuildOptions { Merge = true }, _ => { }, new NearestUpscaler( 2 ) );
-		Assert.AreEqual( 0, merged.HeroTextures );
-		Assert.AreEqual( 96, Read( "levels/a/textures/x.wct.png" ).Width, "merge keeps earlier hero textures" );
-	}
-
-	[TestMethod]
 	public void WithoutAPrepassNothingChanges()
 	{
 		var root = TemporaryDirectory();
@@ -1149,30 +951,6 @@ public class TexturePackTests
 		Assert.IsTrue( Enumerable.Range( 0, result.Length ).All( i => Math.Abs( result[i] - expected[i] ) <= 1 ), "a 64 texel tile gets a smaller margin and still covers the image" );
 		Assert.ThrowsException<ArgumentException>( () => TiledPrepass.Plan( 100, 64, 32 ) );
 		Assert.ThrowsException<ArgumentException>( () => new TiledPrepass( new BoxBlurTile( 4 ), "tiny.onnx" ) );
-	}
-
-	[TestMethod]
-	public void HeroArtLandsForTexturesTheBuildSkipsAndLoadersThatDieWithTheirArchive()
-	{
-		var root = TemporaryDirectory();
-		var hero = Path.Combine( root, "hero" );
-		Directory.CreateDirectory( Path.Combine( hero, "ui/textures" ) );
-		File.WriteAllBytes( Path.Combine( hero, "ui/textures/tiny.wct.png" ), PngImage.EncodeRgba( 64, 64, new byte[64 * 64 * 4] ) );
-		File.WriteAllBytes( Path.Combine( hero, "ui/textures/UPPER.wct.png" ), PngImage.EncodeRgba( 32, 32, new byte[32 * 32 * 4] ) );
-		var closed = false;
-		IEnumerable<(string, Func<TextureData>)> Archive()
-		{
-			// Like EnumerateGameTextures: the loaders only work while the archive is open.
-			TextureData Read( TextureData data ) => closed ? throw new ObjectDisposedException( "archive" ) : data;
-			yield return ("ui/textures/tiny.wct", () => Read( Pattern( 16, 16 ) ));
-			yield return ("ui/textures/upper.wct", () => Read( Pattern( 16, 16 ) ));
-			closed = true;
-		}
-		var log = new List<string>();
-		var manifest = TexturePackBuilder.Build( Archive(), Path.Combine( root, "pack" ), new NearestUpscaler( 2 ), new TexturePackBuildOptions { HeroDirectory = hero }, log.Add );
-		Assert.AreEqual( 2, manifest.HeroTextures, string.Join( "\n", log ) );
-		Assert.IsTrue( File.Exists( Path.Combine( root, "pack", "textures", "ui/textures/tiny.wct.png" ) ) );
-		Assert.IsTrue( File.Exists( Path.Combine( root, "pack", "textures", "ui/textures/upper.wct.png" ) ), "hero file names are matched case-insensitively" );
 	}
 
 	[TestMethod]

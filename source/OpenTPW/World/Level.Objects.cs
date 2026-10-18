@@ -15,8 +15,9 @@ public partial class Level
 			if ( value != null )
 				StaffPlacement?.Cancel();
 			buildEntry = value;
-			// any other way of arming or leaving the build tool ends the Move tool (interface mode 0x3b); BeginMove sets the flag after it armed the entry
+			// any other way of arming or leaving the build tool ends the Move tool (interface mode 0x3b) and the add-on mode; BeginMove and BeginAddOn set theirs after they armed the entry
 			IsMoving = false;
+			buildAddOnRide = null;
 		}
 	}
 
@@ -620,6 +621,15 @@ public partial class Level
 			} ),
 			ObjectGivesWay = ( x, y ) => Objects.GivesWay( x, y, ParkObjects.PathOverwritePriority ),
 			DemolishObject = DemolishObjectAt
+		};
+		// [BIN:TPW-EXE:0x0053481F queue edit] a path laid over a queue cell edits the queue of the ride that owns the cell (owner word): its queue is recomputed, its back cell stamped and the re-evaluation 0x004DE1F0 run
+		Paths.QueueCellPaved += owner =>
+		{
+			if ( Guests is { } guests && guests.Attractions.OfType<RideVisitorBridge>().FirstOrDefault( ride => ride.HasQueue && ride.OwnerWord == owner ) is { } ride )
+			{
+				ride.RecomputeQueue( guests.Grid );
+				ride.NotifyQueueEdited( guests.Grid );
+			}
 		};
 		// [EXT:pools-tool] the pool builder and its paint tool share the cell map; they refuse every cell while the extension is off (FeatureGates.Pools)
 		if ( !IsReadOnlyVisit )
@@ -1365,7 +1375,10 @@ public partial class Level
 			KeepBuildToolOnPlace = KeepsBuildTool( clickModifierMask );
 			try
 			{
-				PlaceObject( BuildEntry!, x, y, BuildRotation );
+				// a track add-on goes to its hover position on its ride's track, at the angle of the tile's flow (TrackAddOns.HoverTarget); anything else stays at the cell
+				var (targetX, targetY, rotation) = BuildTarget( BuildEntry!, x, y );
+				SetBuildRotation( rotation );
+				PlaceBuildTarget( BuildEntry!, targetX, targetY, rotation );
 			}
 			finally
 			{
@@ -1478,9 +1491,9 @@ public partial class Level
 	/// </summary>
 	private void ImportOriginalScripts()
 	{
-		if ( resumeState != null || OriginalPark?.Save is not { Rsse: { } rsse } )
+		if ( resumeState != null || OriginalPark?.Save is not { Rsse: { } rsse } save )
 			return;
-		foreach ( var line in Objects.ImportOriginalScripts( rsse ) )
+		foreach ( var line in Objects.ImportOriginalScripts( rsse, save.RuntimeBlocks?.ClockWords[0] ) )
 		{
 			Park?.Import?.Report( line );
 			Log.Trace( $"Park script import: {line}" );

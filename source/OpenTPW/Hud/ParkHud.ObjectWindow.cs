@@ -133,6 +133,18 @@ public sealed partial class ParkHud
 		return rows;
 	}
 
+	/// <summary>The shop and sideshow windows' customers row: UITEXT record 0x1CC ("{0x19} of {0x1A}"), the 30-day customers of the first slot and the customers and walk-aways of the second.</summary>
+	// [BIN:TPW-EXE:0x4b01d0 shop window customers row] the row (0xc070) sums the customers ring (+0x1A8) and the walk-aways ring (+0x230) over their 30 days and formats record 0x1CC with the text variable 0x19 = the customers and 0x1A = the customers plus the walk-aways (0x4b0423); the sideshow window's first row (0xa09d) does the same (0x4b18e6)
+	internal static string CustomersText( UiStringTable strings, long customers, long walkAways ) =>
+		strings.FormatByType( CustomersOfTotalRecord, new Dictionary<int, string>
+		{
+			[0x19] = customers.ToString( System.Globalization.CultureInfo.InvariantCulture ),
+			[0x1A] = (customers + walkAways).ToString( System.Globalization.CultureInfo.InvariantCulture ),
+		} );
+
+	/// <summary>The index of UITEXT record 0x1CC in the table (the formatter takes the id one-based): the only record with the text variables 0x19 and 0x1A.</summary>
+	internal const int CustomersOfTotalRecord = 0x1CC - 1;
+
 	/// <summary>One stat of an object as its window shows it (the All Attractions list's bars use the same values).</summary>
 	private ObjectStat ObjectStatOf( OriginalObject item, ObjectRowKind kind, ParkObjectState? state, ParkEconomy? economy, UIStrings label = UIStrings.Blank, ObjectWindowSettings? window = null )
 	{
@@ -148,11 +160,12 @@ public sealed partial class ParkHud
 				: level.PublishedObjectState( item )?.Repair is { } repair ? UiGauge.OfPercent( RideBreakdownRules.GaugeByte( (float)repair ) ) : null, true ),
 			ObjectRowKind.Life => new ObjectStat( label, null, state?.LifeGauge is { } life ? UiGauge.OfPercent( RideBreakdownRules.GaugeByte( (float)life ) ) : null, true ),
 			// [BIN:TPW-EXE:0x4b1914 shop and sideshow refresh] the local happiness gauge (0xc07c, 0xa09e) is 0x4cd880 of the object's cell with radius 1 × 1024 / 100
-			ObjectRowKind.Happiness => new ObjectStat( label, null, LocalHappinessGauge( item ), true ),
+			ObjectRowKind.Happiness => new ObjectStat( label, null, LocalHappinessGauge( item ), true, true ),
 			// [BIN:TPW-EXE:0x4b1a89 customer satisfaction gauge] the shop and sideshow windows' gauge (0xc079, 0xa094) is 0x4e1e30 of the object's own 30-day history (50 plus the mean of the visits' happiness changes), (value << 10) / 100
 			ObjectRowKind.Satisfaction => new ObjectStat( label, null, state == null ? null : UiGauge.OfPercent( state.SatisfactionRing.Satisfaction ), true ),
 			ObjectRowKind.Winners => new ObjectStat( label, null, state == null ? null : WinnersGauge( state.WinnersLast30Days, state.CustomersLast30Days ), true ),
-			ObjectRowKind.Users or ObjectRowKind.Customers => new ObjectStat( label, state == null ? null : Number( state.CustomersLast30Days ) ),
+			ObjectRowKind.Users => new ObjectStat( label, state == null ? null : Number( state.CustomersLast30Days ) ),
+			ObjectRowKind.Customers => new ObjectStat( label, state == null ? null : CustomersText( strings, state.CustomersLast30Days, state.WalkAwayDays.Sum() ) ),
 			ObjectRowKind.Age => new ObjectStat( label, state == null || economy == null ? null
 				: string.Format( strings.Extra( OpenTpwText.AgeDays ), Number( Math.Max( 0, ParkCalendar.DayIndex( economy.Tick ) - ParkCalendar.DayIndex( state.BuiltTick ) ) ) ) ),
 			ObjectRowKind.Scrap => new ObjectStat( label, state == null || economy == null ? null : FormatMoney( economy.ScrapValue( state ) ) ),
@@ -282,11 +295,12 @@ public sealed partial class ParkHud
 
 	/// <summary>Moves the selection to the next (<paramref name="direction"/> 1) or previous placed object of the selected one's category, wrapping around.</summary>
 	// [BIN:TPW-EXE:0x755150 b_arup/b_ardown] the two round arrows (help 21 and 20) at the top of the right column step through the objects of the window's type
+	// [BIN:TPW-EXE:0x004828F0 next object of a type] the window code's walks over the objects of a type (the next one after a given object, 0x004824D0 → 0x004828F0, and the counts 0x00481E40) skip every add-on (AddOn.UpgradesId through 0x004E2710, 0x00482972), and a click on an add-on never opens its own window (Level.WindowTarget): the arrows skip them too
 	public void CycleSelectedObject( int direction )
 	{
 		if ( selectedObject is not { IsDeleted: false } current )
 			return;
-		var same = level.Objects.Objects.Where( item => !item.IsDeleted && item.Entry.WhichUIType == current.Entry.WhichUIType ).ToList();
+		var same = level.Objects.Objects.Where( item => !item.IsDeleted && item.Entry.WhichUIType == current.Entry.WhichUIType && !TrackAddOns.IsAddOn( item.Entry ) ).ToList();
 		var index = same.IndexOf( current );
 		if ( same.Count < 2 || index < 0 )
 			return;
@@ -390,7 +404,7 @@ public sealed partial class ParkHud
 			if ( owner.StatOfRow( row ) is not { IsGauge: true } stat )
 				return;
 			var rect = ScreenRect( context.Canvas );
-			UiGauge.Draw( context.Batch, UiGauge.BarRect( rect, context.Canvas ), stat.Gauge );
+			UiGauge.Draw( context.Batch, UiGauge.BarRect( rect, context.Canvas ), stat.Gauge, stat.IsHappiness ? UiGauge.HappinessArtPath : UiGauge.ArtPath );
 		}
 	}
 

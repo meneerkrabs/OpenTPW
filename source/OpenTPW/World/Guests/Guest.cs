@@ -284,6 +284,7 @@ public sealed class Guest
 	internal float StepFromY;
 	internal float StepFromDistance;
 	internal long StepTick = -1;      // tick of the last steering step (presentation)
+	internal long CellSerial;         // the number the guest took when it entered the cell list it stands in: a cell's list is ordered by it, newest at the head (saved)
 	internal (int X, int Y)? OccupiedCell; // the cell list separation finds the guest in (derived from Navigation, not hashed)
 	internal int CellX;
 	internal int CellY;

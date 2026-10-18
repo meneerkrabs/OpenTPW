@@ -152,14 +152,14 @@ public sealed class TrackPieceAnimations
 	}
 
 	/// <summary>
-	/// What the original's re-walks do to the pieces: the ride's placement starts them on a valid circuit and stops them from both sides on an invalid one; a
+	/// What the original's re-walks do to the pieces: an add-on's placement (and the ride's own) starts them on a valid circuit and stops them from both sides on an invalid one; a
 	/// laid track line stops them from the exit side, and from both sides on an invalid circuit; a restore leaves them alone (null).
 	/// </summary>
-	// [BIN:TPW-EXE:0x00524D0A placement walk] a valid circuit calls 0x0052A490(ride, 1), an invalid one 0x0052A490(ride, 0) and 0x0052A700(ride, 0)
+	// [BIN:TPW-EXE:0x00524D0A add-on placement walk] the walk after an add-on's placement: a valid circuit calls 0x0052A490(ride, 1), an invalid one 0x0052A490(ride, 0) and 0x0052A700(ride, 0); the ride's own placement (0x00528A70 → 0x00529E10) lays its station and walks nothing, and OpenTPW's walk of the fresh station ([EXT:track-placement-walk], Level.OnTrackStationPlaced) follows the same rule
 	// [BIN:TPW-EXE:0x00526F02 track line walk] when a line of the kart or water tool ends, 0x0052A490(ride, 0) runs whatever the verdict (0x00526F58, edi cleared at 0x00526EFF), and an invalid circuit also gets 0x0052A700(ride, 0)
 	public static (bool Play, bool Backward)? ForWalk( TrackWalkCause cause, bool valid ) => cause switch
 	{
-		TrackWalkCause.Placement => (valid, !valid),
+		TrackWalkCause.Placement or TrackWalkCause.AddOn => (valid, !valid),
 		TrackWalkCause.Line => (false, !valid),
 		_ => null
 	};
@@ -212,5 +212,7 @@ public enum TrackWalkCause
 	/// <summary>The ride was placed.</summary>
 	Placement,
 	/// <summary>A track line was laid.</summary>
-	Line
+	Line,
+	/// <summary>A track add-on was placed or sold.</summary>
+	AddOn
 }

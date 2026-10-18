@@ -114,18 +114,44 @@ public partial class Level
 		return null;
 	}
 
-	/// <summary>The camera's heading in the knot directions' yaw convention (atan2(x, z) of its forward direction in track coordinates), which turns the tilt drag to the view.</summary>
+	/// <summary>The camera's yaw as the original keeps it (0x790a38, radians): the tilt drag turns by it minus the pylon's yaw (<c>0x443340</c>).</summary>
+	// [BIN:TPW-EXE:0x443371 tilt drag yaw] the drag update reads the camera yaw global 0x790a38 and subtracts the selected node's yaw (+0xe0); the park camera's yaw maps onto that global by ParkCameraMode.OriginalYaw (the camera block of the saves, 0x42cec0), which is the atan2(x, z) heading of the forward direction in track coordinates
 	internal float CoasterCameraYaw
 	{
 		get
 		{
+			if ( Camera.Mode is ParkCameraMode park )
+				return ParkCameraMode.OriginalYaw( park.Yaw );
 			var forward = Camera.Rotation.Forward;
 			return MathF.Atan2( forward.X, forward.Y );
 		}
 	}
 
-	/// <summary>Whether a cell holds nothing but ground: no object, path or queue (the cells the placement area marks).</summary>
-	private bool IsCoasterCellFree( int x, int y ) => Objects.FindAt( x, y ) == null && Guests != null && Guests.Grid.Cells.RawTypeAt( x, y ) == 0;
+	/// <summary>Whether a cell passes the cell test of the coaster tool's placement area (<see cref="IsCoasterAreaCell"/>).</summary>
+	private bool IsCoasterCellFree( int x, int y ) => Guests != null && IsCoasterAreaCell( Guests.Grid.Cells, x, y );
+
+	/// <summary>
+	/// The cell test of the placement area besides the validator (tool mode 0x15, <c>0x5234d0</c>): the cell is unowned-clear (flag 0x40), holds no fence post or track tile,
+	/// is none of the types 9 and 10 (object entrance and exit), 3 (queue), 4 (object footprint), 7 (outside the park) and 0x1e (the approach road), and is not a path with flag 0x20.
+	/// </summary>
+	// [BIN:TPW-EXE:0x5243a6 area cell test] 0x535db0(0x40) on the cell flags, then the second layer's cell (0x4d0af0, or the owner of a type 0xc/0x11 extension): 0x53ad60 (type 0x19) and 0x53ad30 (types 0xb, 0xd, 0x10, 0x12, 0x19), then the cell's own type against 9, 0xa, 3, 4, 7 (0x536340, 0x536350, 0x536320, 0x536380, 0x536360) and 0x1e, and type 1 with flag 0x20 (0x5243f6..0x524445)
+	// [BIN:TPW-EXE:0x536320 cell predicates] 0x536310 type 1; 0x536320 types 3 and 9; 0x536340 type 9; 0x536350 type 10; 0x536360 types 7 and 0x1e; 0x536380 type 4: the cell type is the word at cell +8, the flags the word at +0xe
+	internal static bool IsCoasterAreaCell( ParkCellMap cells, int x, int y )
+	{
+		if ( !cells.InBounds( x, y ) )
+			return false;
+		var type = cells.RawTypeAt( x, y );
+		var flags = cells.FlagsAt( x, y );
+		if ( (flags & ParkCellFlags.Unowned) != 0 )
+			return false;
+		// the second layer: a track tile or fence post on the cell (an extension cell stands for its head tile, 0x536400)
+		if ( ParkCellTypes.IsTrackCell( type ) || (ParkCellTypes.IsTrackExtension( type ) && cells.OwnerAt( x, y ) != 0) )
+			return false;
+		// [EXT:pools-cell-type] a pool water cell is occupied ground like an object's cell; the original has no pools
+		if ( type is ParkCellTypes.Entrance or ParkCellTypes.Exit or (byte)ParkCellType.Queue or ParkCellTypes.Object or ParkCellTypes.NoTerrain or ParkCellTypes.FixedWalkway or ParkCellTypes.PoolWater )
+			return false;
+		return !(type == (byte)ParkCellType.Path && (flags & ParkCellFlags.NoModify) != 0);
+	}
 
 	/// <summary>
 	/// Screen position of a coaster-space point (original units: X, height, Z of the track), for picking the pylon piece under the pointer. False when the point is behind the camera.

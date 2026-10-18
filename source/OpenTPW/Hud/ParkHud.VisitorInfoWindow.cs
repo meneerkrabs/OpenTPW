@@ -215,7 +215,7 @@ public sealed partial class ParkHud
 	{
 		public Func<float?> Value { get; init; } = () => null;
 		public override void Draw( UiContext context, bool focused, bool pressed ) =>
-			UiGauge.Draw( context.Batch, UiGauge.BarRect( ScreenRect( context.Canvas ), context.Canvas ), Value() );
+			UiGauge.Draw( context.Batch, UiGauge.BarRect( ScreenRect( context.Canvas ), context.Canvas ), Value(), UiGauge.HappinessArtPath );
 	}
 }
 

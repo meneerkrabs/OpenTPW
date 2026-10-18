@@ -45,6 +45,13 @@ public static class ObjectRenderParts
 			foreach ( var node in clip.NodeList.Where( node => node < animated.Length ) )
 				animated[node] = true;
 		}
+		// A track add-on's open ends are shown and hidden by the circuit walk (TrackAddOns.OpenEndsOf), so they stay separate parts too.
+		if ( TrackAddOns.IsTrackAddOn( entry ) )
+		{
+			foreach ( var node in new[] { TrackAddOns.EndNode( model, TrackAddOns.EndBehind ), TrackAddOns.EndNode( model, TrackAddOns.EndAhead ) } )
+				if ( node >= 0 )
+					animated[node] = true;
+		}
 		// Children of animated nodes move with them.
 		var changed = true;
 		while ( changed )

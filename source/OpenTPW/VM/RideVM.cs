@@ -50,7 +50,7 @@ public sealed class RideVMOptions
 /// what lets the corpus's busy-wait loops (e.g. Totem's passenger loop) give time back to the game.
 /// Times (WAIT, GETTIME, SETTIMER) are milliseconds.
 /// </summary>
-public sealed class RideVM
+public sealed partial class RideVM
 {
 	/// <summary>
 	/// Stops a slice that never leaves a critical section.

@@ -1,0 +1,7 @@
+## The engine's CPU time was measured and its biggest per-tick waste removed (October 18, 2026)
+
+- New [ENGINE-PERFORMANCE.md](../ENGINE-PERFORMANCE.md): how to profile the simulation (the guest report's level parks, `dotnet-trace`) and a native frame (`--perf-run`, `--frame-stats`), where the time goes in a busy Jungle park, what changed and what is left.
+- `--frame-stats` now splits a frame into update (with the simulation), world drawing, interface overlay, submit and GPU wait; `--perf-run N` opens the park, runs it at up to four times the speed and closes the window after N frames.
+- Finding: the simulation costs 26 µs per tick (0.16 % of a core) in the Jungle park, two thirds of it object animation; a frame costs about 1 ms of main-thread time, 0.7 ms of it in the world drawing, mostly per-draw uniform uploads that restart the Metal render pass.
+- Object animation no longer walks a pose that cannot change, no longer allocates per node and tick (723 MB to 86 MB over 305 park days), samples vertex poses and track keys without LINQ, interfaces or closures, and still objects skip their parts' transforms. The simulation per tick is 26 % cheaper; results are identical (determinism pins, resume equivalence and the guest report's state hashes unchanged).
+- Per frame the sky rewrites only its texture coordinates (byte-identical buffer), the renderers read the vertex size once instead of through reflection, and text batches no longer allocate an enumerator: garbage per frame drops from 96 KB to 43 KB.

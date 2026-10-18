@@ -80,6 +80,15 @@ public sealed class ObjectAnimator
 
 	private readonly ModelFile model;
 	private readonly SortedDictionary<int, Channel> channels = new();
+	/// <summary>The channels in ascending channel order, as pairs and as channels; rebuilt after the dictionary changed so the per-tick walks allocate nothing (a sorted dictionary allocates an enumerator for every walk).</summary>
+	private KeyValuePair<int, Channel>[]? channelPairs;
+	private Channel[]? channelList;
+	/// <summary>Counts the effects an <see cref="Update"/> can have on what renderers read (hidden nodes, vertex and texture-coordinate caches, texture frames).</summary>
+	private int updateEffects;
+	/// <summary>True after an update that changed nothing: with no channel advancing, the next update would change nothing either, so <see cref="Advance"/> skips it.</summary>
+	private bool settled;
+	/// <summary>Test-only: runs the update on every <see cref="Advance"/> as before the settle skip existed, to compare the two.</summary>
+	internal bool DisableSettleSkip { get; set; }
 	private readonly Matrix4x4[] rest;
 	private readonly (NVector3 Scale, Quaternion Rotation, NVector3 Translation)[] restComponents;
 	private readonly Matrix4x4[] world;
@@ -92,6 +101,8 @@ public sealed class ObjectAnimator
 	private readonly (long Serial, float Tick)[] vertexSources;
 	private readonly (long Serial, float Tick)[] uvSources;
 	private readonly bool[] nodeStateBit;
+	/// <summary>Per node: bit 31 of the instance's node state, set by <see cref="SetNodeHidden"/>; a clip's node list leaves such a node alone.</summary>
+	private readonly bool[] nodePinned;
 	private readonly int[] frameBySlot;
 	private readonly int[] sampledFrameBySlot;
 	private readonly bool[]?[] availableFramesBySlot;
@@ -104,6 +115,7 @@ public sealed class ObjectAnimator
 	private long serial;
 	private double clockMilliseconds;
 	private int hiddenVersion;
+	private int poseVersion;
 
 	/// <summary>Clip ticks per second used by every channel this animator plays.</summary>
 	public float TicksPerSecond { get; }
@@ -187,13 +199,23 @@ public sealed class ObjectAnimator
 		slotAddressed = new bool[model.Textures.Count];
 		// Node-state bit 0x10 starts as stored (clear in every corpus mesh record).
 		nodeStateBit = model.Nodes.Select( node => (node.Type & ModelAnimationTrack.ToggledNodeStateBit) != 0 ).ToArray();
+		nodePinned = new bool[model.Nodes.Count];
 	}
 
 	public IReadOnlyList<Matrix4x4> RestTransforms => rest;
 	/// <summary>Model-space node matrices of the current pose.</summary>
 	public IReadOnlyList<Matrix4x4> NodeTransforms => world;
 	/// <summary>True while some channel plays a clip that has not ended.</summary>
-	public bool IsPlaying => channels.Values.Any( channel => !channel.Ended );
+	public bool IsPlaying
+	{
+		get
+		{
+			foreach ( var channel in ChannelList )
+				if ( !channel.Ended )
+					return true;
+			return false;
+		}
+	}
 	public int ActiveChannels => channels.Count;
 
 	/// <summary>
@@ -230,14 +252,47 @@ public sealed class ObjectAnimator
 	// [BIN:TPW-EXE:0x0057A5E3 hidden node mesh] the model draw walk 0x57a530 (and 0x57b610 at 0x57b664) skips a node's own mesh when its state word has any of 0x8210 (0x10 the toggled bit, 0x200 every dummy, 0x8000) but still walks its children (only bit 0x20 prunes the subtree), so bit 0x10 hides exactly that mesh
 	public bool IsNodeHidden( int node ) => meshByNode[node] >= 0 && nodeStateBit[node];
 
+	/// <summary>
+	/// Hides or shows a node's mesh from outside the clips, as the circuit walk does with a track add-on's open ends: hiding sets node-state bit 0x10 together with bit 31,
+	/// so no clip's node list sets the node again (<see cref="ApplyNodeList"/>), and showing clears bit 0x10 only.
+	/// </summary>
+	// [BIN:TPW-EXE:0x0052B06D add-on end hide] the walk hides an end with node state |= 0x80000010 (0x0052B06D, 0x0052B120, 0x0052B16B) and shows one with &= ~0x10 (0x0052AFCC, 0x0052B0A8)
+	public void SetNodeHidden( int node, bool hidden )
+	{
+		if ( (uint)node >= (uint)nodeStateBit.Length )
+			throw new ArgumentOutOfRangeException( nameof( node ) );
+		if ( hidden )
+			nodePinned[node] = true;
+		SetNodeStateBit( node, hidden );
+	}
+
 	/// <summary>Changes whenever <see cref="IsNodeHidden"/> of some node changes.</summary>
 	public int HiddenVersion => hiddenVersion;
+
+	/// <summary>Changes whenever the node transforms may have changed: every update that recomputed the pose. An object whose animator did not update has the same transforms as the last time they were read.</summary>
+	public int PoseVersion => poseVersion;
 
 	/// <summary>
 	/// True while some bound clip addresses a texture slot of this model with a texture-frame track
 	/// (trailer word 12 behind bit 0x2, clip update 0xa56f8), so <see cref="GetTextureFrame"/> can change.
 	/// </summary>
-	public bool HasTextureFrames => channels.Values.Any( channel => channel.FrameTracks.Length > 0 );
+	public bool HasTextureFrames
+	{
+		get
+		{
+			foreach ( var channel in ChannelList )
+				if ( channel.FrameTracks.Length > 0 )
+					return true;
+			return false;
+		}
+	}
+
+	private KeyValuePair<int, Channel>[] ChannelPairs => channelPairs ??= channels.ToArray();
+
+	private Channel[] ChannelList => channelList ??= channels.Values.ToArray();
+
+	/// <summary>The channel dictionary changed: the ordered copies are rebuilt on the next walk.</summary>
+	private void ChannelsChanged() => (channelPairs, channelList) = (null, null);
 
 	/// <summary>
 	/// The frame a texture slot of the model currently shows: 0 (the stored frame name) until a bound clip's
@@ -260,6 +315,7 @@ public sealed class ObjectAnimator
 	{
 		if ( (uint)slot >= (uint)frameBySlot.Length || available.Length != model.Textures[slot].FrameNames.Count )
 			throw new ArgumentException( "Texture-frame availability must match a model slot's frame names." );
+		settled = false;
 		availableFramesBySlot[slot] = (bool[])available.Clone();
 		if ( frameBySlot[slot] != 0 && !available[frameBySlot[slot]] )
 		{
@@ -368,13 +424,17 @@ public sealed class ObjectAnimator
 	public void Stop( int channel )
 	{
 		if ( channels.Remove( channel ) )
+		{
+			ChannelsChanged();
 			Update();
+		}
 	}
 
 	/// <summary>Removes every channel (object deletion).</summary>
 	public void StopAll()
 	{
 		channels.Clear();
+		ChannelsChanged();
 		Update();
 	}
 
@@ -385,10 +445,12 @@ public sealed class ObjectAnimator
 			throw new ArgumentOutOfRangeException( nameof( seconds ) );
 		clockMilliseconds += seconds * 1000.0;
 		var now = NowMilliseconds;
-		foreach ( var (index, channel) in channels.ToArray() )
+		var advanced = false;
+		foreach ( var (index, channel) in ChannelPairs )
 		{
 			if ( channel.Ended )
 				continue;
+			advanced = true;
 			var frame = GetFrame( now - channel.StartMilliseconds, channel.Clip.Speed );
 			float duration = channel.Clip.Animation.Duration;
 			// 0xa7360: past the end only when strictly greater, so a frame equal to the duration samples the last key.
@@ -425,7 +487,15 @@ public sealed class ObjectAnimator
 			}
 			channel.Player.SetTick( frame );
 		}
-		Update();
+		// With every channel ended (or none) the pose is the one the last update made; the first update that finds nothing to change settles it, and the ticks after it skip the walk over every node
+		if ( advanced )
+			Update();
+		else if ( !settled || DisableSettleSkip )
+		{
+			var effects = updateEffects;
+			Update();
+			settled = updateEffects == effects;
+		}
 	}
 
 	private void Start( int index, Clip clip, long now )
@@ -436,6 +506,7 @@ public sealed class ObjectAnimator
 		// A start without flag 0x2 leaves the deferred slot (+36) as it was.
 		state.Deferred = channels.TryGetValue( index, out var previous ) ? previous.Deferred : null;
 		channels[index] = state;
+		ChannelsChanged();
 		ApplyNodeList( clip.Animation );
 	}
 
@@ -532,6 +603,7 @@ public sealed class ObjectAnimator
 			KeepsPoseOnClipChange = keepsPoseOnClipChange,
 			Channels = capturedChannels,
 			NodeStateBits = (bool[])nodeStateBit.Clone(),
+			PinnedNodes = nodePinned.Contains( true ) ? Enumerable.Range( 0, nodePinned.Length ).Where( node => nodePinned[node] ).ToArray() : null,
 			TextureFrames = new AnimatorTextureFrameSnapshot
 			{
 				Frames = (int[])frameBySlot.Clone(),
@@ -561,6 +633,8 @@ public sealed class ObjectAnimator
 			throw new InvalidDataException( "animator fixed-item pose retention does not match the snapshot." );
 		if ( snapshot.NodeStateBits.Length != nodeStateBit.Length )
 			throw new InvalidDataException( $"animator has {nodeStateBit.Length} nodes, the snapshot stores {snapshot.NodeStateBits.Length} node-state bits." );
+		if ( snapshot.PinnedNodes is { Length: > 0 } pinned && pinned[^1] >= nodePinned.Length )
+			throw new InvalidDataException( $"animator has {nodePinned.Length} nodes, the snapshot pins node {pinned[^1]}." );
 		if ( snapshot.Meshes.Count != vertexVersions.Length || snapshot.Meshes.Where( ( cached, index ) => cached.Mesh != index ).Any() )
 			throw new InvalidDataException( $"animator has {vertexVersions.Length} meshes, the snapshot does not describe exactly those, in order." );
 		if ( snapshot.TextureFrames is { } frameHistory )
@@ -600,7 +674,11 @@ public sealed class ObjectAnimator
 		channels.Clear();
 		foreach ( var (index, state) in restored )
 			channels[index] = state;
+		ChannelsChanged();
 		Array.Copy( snapshot.NodeStateBits, nodeStateBit, nodeStateBit.Length );
+		Array.Clear( nodePinned );
+		foreach ( var node in snapshot.PinnedNodes ?? Array.Empty<int>() )
+			nodePinned[node] = true;
 		Array.Clear( frameBySlot );
 		Array.Clear( slotAnimated );
 		textureFrameVersion = 0;
@@ -671,7 +749,7 @@ public sealed class ObjectAnimator
 	{
 		foreach ( var node in clip.NodeList )
 		{
-			if ( node >= nodeStateBit.Length || (model.Nodes[node].Type & 0x80000000u) != 0 )
+			if ( node >= nodeStateBit.Length || (model.Nodes[node].Type & 0x80000000u) != 0 || nodePinned[node] )
 				continue;
 			SetNodeStateBit( node, true );
 		}
@@ -682,6 +760,7 @@ public sealed class ObjectAnimator
 		if ( nodeStateBit[node] == value )
 			return;
 		nodeStateBit[node] = value;
+		updateEffects++;
 		if ( meshByNode[node] >= 0 )
 			hiddenVersion++;
 	}
@@ -744,6 +823,9 @@ public sealed class ObjectAnimator
 
 	private void Update()
 	{
+		settled = false;
+		poseVersion++;
+		var channelsInOrder = ChannelList;
 		// [BIN:STP-PPC:0x100A7A5C object update channel order] 0xa7960 runs the channel updates in ascending channel order (stride 56, count +14), each sampling in set mode, so the highest channel that writes a component wins
 		foreach ( var node in order )
 		{
@@ -752,7 +834,7 @@ public sealed class ObjectAnimator
 			Matrix4x4? facing = null;
 			NVector3 facingScale = NVector3.One;
 			Channel? vertexWinner = null, uvWinner = null;
-			foreach ( var channel in channels.Values )
+			foreach ( var channel in channelsInOrder )
 			{
 				var track = channel.Tracks[node];
 				if ( track == null )
@@ -815,7 +897,7 @@ public sealed class ObjectAnimator
 			return;
 		Array.Clear( slotAddressed, 0, slotAddressed.Length );
 		Array.Copy( frameBySlot, sampledFrameBySlot, frameBySlot.Length );
-		foreach ( var channel in channels.Values )
+		foreach ( var channel in ChannelList )
 		{
 			foreach ( var track in channel.FrameTracks )
 			{
@@ -838,6 +920,7 @@ public sealed class ObjectAnimator
 			{
 				frameBySlot[slot] = sampledFrameBySlot[slot];
 				textureFrameVersion++;
+				updateEffects++;
 			}
 		}
 	}
@@ -884,7 +967,10 @@ public sealed class ObjectAnimator
 			changed = true;
 		}
 		if ( changed )
+		{
 			vertexVersions[mesh]++;
+			updateEffects++;
+		}
 	}
 
 	/// <summary>

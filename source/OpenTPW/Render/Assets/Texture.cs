@@ -194,12 +194,6 @@ public partial class Texture : Asset
 		using var profile = LoadProfile.Measure( "texture-decode" );
 		if ( TexturePack.Find( path ) is { } replacement )
 		{
-			// The browser's shipped art arrives predecoded (docs/WEB.md); it is stored unkeyed, like the original this returns.
-			if ( replacement.EndsWith( PredecodedUiArt.Extension, StringComparison.OrdinalIgnoreCase ) )
-			{
-				var (width, height, data) = PredecodedUiArt.Load( File.ReadAllBytes( replacement ) );
-				return (data, width, height);
-			}
 			var image = ImageResult.FromMemory( File.ReadAllBytes( replacement ), ColorComponents.RedGreenBlueAlpha );
 			return (image.Data, image.Width, image.Height);
 		}

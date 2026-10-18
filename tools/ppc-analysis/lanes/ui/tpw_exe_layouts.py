@@ -37,6 +37,7 @@ TPW_SHA = '5472f97b5eb28f58b5a49f3a15f6f66adffa6b2625a623f503202c9696d1b805'
 # name, address, root id, root rectangle, address after the last command of the stream, count of nodes
 TABLES = [
     ('RideWindow', 0x755150, 0x3E14, (248, 30, 1800, 1007), 0x755750, 42),
+    ('RideUpgradeDialog', 0x755750, 0x1F4C, (500, 233, 1516, 830), 0x75583A, 8),
     ('ShopWindow', 0x755908, 0xC066, (248, 30, 1800, 1007), 0x755E80, 41),
     ('SideshowWindow', 0x755E80, 0xA088, (248, 30, 1800, 1007), 0x7563FA, 40),
     ('MessagePanel', 0x7501A0, 0x10D2D, (458, 1101, 1073, 1442), 0x7502B2, 7),
@@ -70,6 +71,7 @@ CONFIRM_TWIN_END = 0x7586EC
 # Controls the C# reads by model name; a table that lacks one is an error.
 REQUIRED = {
     'RideWindow': ['b_queue', 'b_ride it!', 'b_callmech', 'b_upgrade', 'b_door', 'b_move', 'b_track', 'b_erase', 'b_allthings', 'b_arup', 'b_ardown', 'b_okay'],
+    'RideUpgradeDialog': ['wdialogw', 'b_exit', 'upgrades', 'b_up', 'b_down', 'b_scroller'],
     'ShopWindow': ['b_erase', 'b_move', 'b_applyall', 'b_door', 'b_allthings', 'b_arup', 'b_ardown', 'b_okay'],
     'SideshowWindow': ['b_erase', 'b_move', 'b_applyall', 'b_door', 'b_allthings', 'b_arup', 'b_ardown', 'b_okay'],
     'MessagePanel': ['mb_erase'],

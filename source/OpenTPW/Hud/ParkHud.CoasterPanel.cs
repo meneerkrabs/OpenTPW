@@ -12,7 +12,7 @@ public sealed partial class ParkHud
 {
 	/// <summary>The panel's table rectangles are relative to the panel window; the window sits this far from them on the 2048 x 1536 canvas (measured from the original's video, 73:20).</summary>
 	// [BIN:TPW-EXE:0x751530 coaster panel table] root 0x17 (859, 916)-(1534, 1190) with !f_plain boxes 0x22 (859..1003) and 0x18 (1037..1407) and the nine buttons 0x19..0x21; the table holds no window position
-	// [APPROX:COAST-028] the offset (−372, +232) puts the left box 2.3 cells right of the main panel as the video shows it; the slide-out's own placement code is not traced and the panel appears at once instead of sliding out — evidence needed: the panel window's creation (0x4982a0's builder)
+	// [APPROX:COAST-028] the offset (-372, +232) puts the left box 2.3 cells right of the main panel as the video shows it; the table 0x751530 holds no window position, its handler is 0x4982a0 and its builder 0x498790 hands the table to the window code 0x65fd0e; the panel appears at once instead of sliding out — evidence needed: that window code's placement and slide
 	private const float CoasterPanelDx = -372, CoasterPanelDy = 232;
 
 	private static UiRect CoasterRect( float left, float top, float right, float bottom ) => Rect( left + CoasterPanelDx, top + CoasterPanelDy, right + CoasterPanelDx, bottom + CoasterPanelDy );
@@ -188,7 +188,7 @@ public sealed partial class ParkHud
 			panel.HoverNothing();
 		if ( panel.IsDragging )
 		{
-			// [APPROX:COAST-028] the camera's heading in the node-yaw convention (atan2(x, z) of the forward direction in track coordinates) turns the tilt drag; the original's camera yaw (0x790a38) convention is not matched
+			// [BIN:TPW-EXE:0x443371 tilt drag yaw] the camera yaw (0x790a38) minus the node's yaw turns the tilt drag
 			panel.Drag( pointer, level.CoasterCameraYaw, inPark ? (cursorX, cursorY) : null );
 			consumed = true;
 		}

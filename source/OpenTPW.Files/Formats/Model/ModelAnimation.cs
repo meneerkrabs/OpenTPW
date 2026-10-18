@@ -143,7 +143,7 @@ public sealed class ModelAnimationTrack
 			return null;
 		var times = Position.Times;
 		var points = Position.Points;
-		var segment = FindKey( times.Count, index => times[index], tick, out var fraction );
+		var segment = FindKey( new PositionTimes( times ), tick, out var fraction );
 		if ( segment < 0 )
 			return null;
 		if ( Position.IsBezier )
@@ -170,7 +170,7 @@ public sealed class ModelAnimationTrack
 	{
 		if ( Rotations.Count == 0 )
 			return null;
-		var segment = FindKey( Rotations.Count, index => Rotations[index].Time, tick, out var fraction );
+		var segment = FindKey( new RotationTimes( Rotations ), tick, out var fraction );
 		if ( segment < 0 )
 			return null;
 		var key = Rotations[segment];
@@ -186,7 +186,7 @@ public sealed class ModelAnimationTrack
 	{
 		if ( Scales.Count == 0 )
 			return null;
-		var segment = FindKey( Scales.Count, index => Scales[index].Time, tick, out var fraction );
+		var segment = FindKey( new ScaleTimes( Scales ), tick, out var fraction );
 		if ( segment < 0 )
 			return null;
 		if ( fraction <= 0 )
@@ -247,19 +247,45 @@ public sealed class ModelAnimationTrack
 
 	// Key search 0xa3ff0: the last key (scanning forward) whose tick is at most trunc(time), or -1
 	// before the first key. Fraction is 0 at the last key, where every channel here holds.
-	private static int FindKey( int count, Func<int, uint> time, float tick, out float fraction )
+	// The key times are read through a struct per key list instead of a delegate: the search runs for every track of every animated node on every tick, and a delegate over a captured list allocates on each call.
+	private interface IKeyTimes
+	{
+		int Count { get; }
+		uint TimeAt( int index );
+	}
+
+	private readonly struct PositionTimes( IReadOnlyList<uint> times ) : IKeyTimes
+	{
+		public int Count => times.Count;
+		public uint TimeAt( int index ) => times[index];
+	}
+
+	private readonly struct RotationTimes( IReadOnlyList<ModelRotationKey> keys ) : IKeyTimes
+	{
+		public int Count => keys.Count;
+		public uint TimeAt( int index ) => keys[index].Time;
+	}
+
+	private readonly struct ScaleTimes( IReadOnlyList<ModelScaleKey> keys ) : IKeyTimes
+	{
+		public int Count => keys.Count;
+		public uint TimeAt( int index ) => keys[index].Time;
+	}
+
+	private static int FindKey<TTimes>( TTimes time, float tick, out float fraction ) where TTimes : struct, IKeyTimes
 	{
 		if ( !(tick >= 0) )
 			throw new ArgumentOutOfRangeException( nameof( tick ), "Negative or NaN ticks are outside the traced clock domain." );
 		var whole = TruncateTick( tick );
+		var count = time.Count;
 		var key = -1;
-		while ( key + 1 < count && time( key + 1 ) <= whole )
+		while ( key + 1 < count && time.TimeAt( key + 1 ) <= whole )
 			key++;
 		fraction = 0;
 		if ( key >= 0 && key + 1 < count )
 		{
-			float start = time( key );
-			fraction = (tick - start) / (time( key + 1 ) - start);
+			float start = time.TimeAt( key );
+			fraction = (tick - start) / (time.TimeAt( key + 1 ) - start);
 		}
 		return key;
 	}

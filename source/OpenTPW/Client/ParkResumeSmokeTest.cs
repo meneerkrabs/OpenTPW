@@ -660,7 +660,8 @@ internal sealed partial class ParkResumeSmokeTest : IDisposable
 	{
 		Require( expected.FullTypedSha256 == actual.FullTypedSha256,
 			$"{what}: full typed hash {actual.FullTypedSha256[^12..]} is not the capture's {expected.FullTypedSha256[^12..]} "
-			+ $"({actual.Counters.Guests} guests, {actual.Counters.Riders} riding, balance ${actual.Counters.Balance})" );
+			+ $"({actual.Counters.Guests} guests, {actual.Counters.Riders} riding, balance ${actual.Counters.Balance}; sections that differ: "
+			+ $"{string.Join( ", ", expected.Sections.Where( pair => actual.Sections.GetValueOrDefault( pair.Key ) != pair.Value ).Select( pair => pair.Key ).DefaultIfEmpty( "none" ) )})" );
 		foreach ( var (name, hash) in expected.Sections )
 		{
 			var other = actual.Sections.GetValueOrDefault( name );

@@ -56,7 +56,7 @@ public interface IBuildCatalog
 }
 
 /// <summary>One statistic of a selected object (label from UITEXT; null value = not simulated). A gauge row (<paramref name="IsGauge"/>) is a red-to-green bar of <paramref name="Gauge"/> (0..1; null draws the empty track) instead of text.</summary>
-public readonly record struct ObjectStat( UIStrings Label, string? Value, float? Gauge = null, bool IsGauge = false );
+public readonly record struct ObjectStat( UIStrings Label, string? Value, float? Gauge = null, bool IsGauge = false, bool IsHappiness = false );
 
 /// <summary>Info panel contents for a selected park object.</summary>
 public sealed record ObjectInfo( int ObjectNameIndex, bool IsOpen, bool CanOpen, IReadOnlyList<ObjectStat> Stats, string? DisplayName = null );

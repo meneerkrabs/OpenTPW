@@ -689,4 +689,33 @@ public class Md2VertexAnimationTests
 		var allocated = Allocated( () => Rejects( huge ) );
 		Assert.IsTrue( allocated < 1 << 20, $"{allocated} bytes allocated" );
 	}
+
+	/// <summary>The sampler reads the groups' arrays directly; it must give exactly the values (Vector3 equality is exact) of the plain definition (dequantise both keys, blend in single precision, fused) at every time of the clip.</summary>
+	[TestMethod]
+	public void AnimatedGroupsMatchThePlainDefinitionBitForBit()
+	{
+		var vertex = Read( CreateAnimation() ).Tracks[0].VertexAnimation!;
+		for ( var time = 0f; time <= 10f; time += 0.37f )
+		{
+			var actual = Mesh();
+			vertex.ApplyPose( time, actual );
+			var expected = Mesh();
+			var staticGroup = vertex.StaticGroup!;
+			for ( var index = 0; index < staticGroup.VertexIndices.Count; index++ )
+				expected[staticGroup.VertexIndices[index]] = vertex.Dequantise( staticGroup.PackedKey( 0, index ) );
+			foreach ( var group in vertex.AnimatedGroups )
+			{
+				var key = group.FindKey( time, out var fraction );
+				var inverse = 1 - fraction;
+				for ( var index = 0; index < group.VertexIndices.Count; index++ )
+				{
+					var from = vertex.Dequantise( group.PackedKey( key, index ) );
+					var to = vertex.Dequantise( group.PackedKey( key + 1, index ) );
+					expected[group.VertexIndices[index]] = new NVector3( MathF.FusedMultiplyAdd( from.X, inverse, to.X * fraction ),
+						MathF.FusedMultiplyAdd( from.Y, inverse, to.Y * fraction ), MathF.FusedMultiplyAdd( from.Z, inverse, to.Z * fraction ) );
+				}
+			}
+			CollectionAssert.AreEqual( expected, actual, $"time {time}" );
+		}
+	}
 }

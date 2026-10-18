@@ -851,7 +851,8 @@ public sealed partial class ParkHud
 				// [EXT:pools-waves] a deliberate second click on the wave machine that is already selected steps its wave settings; selecting it (here or from the attractions list) changes nothing (ParkHud.Pools.cs)
 				if ( clicked != null && clicked == selectedObject && FeatureGates.Pools && PoolAttractions.KindOf( clicked.Entry ) == PoolAttractionKind.WaveMachine )
 					StepPoolWaves( clicked );
-				SelectObject( clicked );
+				// a click on a track add-on opens its ride's window (Level.WindowTarget)
+				SelectObject( level.WindowTarget( clicked ) );
 			}
 		if ( input.LeftReleased )
 		{
@@ -1102,9 +1103,11 @@ public sealed partial class ParkHud
 		}
 		else if ( inPark && level.BuildEntry is { } entry && cursorX >= 0 )
 		{
-			var rotation = level.BuildRotation;
-			var anchor = Level.GetCentredAnchor( entry, cursorX, cursorY, rotation );
-			var allowed = level.CheckObject( entry, cursorX, cursorY, rotation ) == OriginalPlacementResult.Allowed
+			// a track add-on's ghost goes to its hover position on its ride's track, turned to the tile's flow, and keeps that angle (TrackAddOns.HoverTarget, 0x0052F1B0)
+			var (targetX, targetY, rotation) = level.BuildTarget( entry, cursorX, cursorY );
+			level.SetBuildRotation( rotation );
+			var anchor = Level.GetCentredAnchor( entry, targetX, targetY, rotation );
+			var allowed = level.CheckBuildTarget( entry, targetX, targetY, rotation ) == OriginalPlacementResult.Allowed
 				&& (level.Park == null || level.Park.Economy.CheckBuild( entry.InfoId, level.IsMoving ) == ParkEconomy.PurchaseResult.Ok);
 			placementRefused = !allowed;
 			var footprint = BlueprintGhosts.Footprint( entry.Shape, anchor.X, anchor.Y, rotation, allowed );

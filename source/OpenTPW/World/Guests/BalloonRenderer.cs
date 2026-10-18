@@ -69,6 +69,7 @@ public sealed class BalloonRenderer : Entity
 	private Texture? texture;
 	private readonly Dictionary<Guest, BalloonView> views = new( ReferenceEqualityComparer.Instance );
 	private readonly HashSet<Guest> seen = new( ReferenceEqualityComparer.Instance );
+	private readonly List<Guest> order = new();
 	private readonly List<Guest> stale = new();
 	private int bobPhase;
 	private float bobAccumulator;
@@ -135,14 +136,16 @@ public sealed class BalloonRenderer : Entity
 		if ( !Visible || material == null || atlas == null || deleted )
 			return;
 		var now = Time.Now;
-		// [APPROX:GUEST-017] the balloons are placed in OpenTPW's guest order, where tp.exe walks its people list (0x00518F90), so which balloon takes which bob phase differs; the burst's first frame shows at the burst, where the script starts at its next tick
+		// [BIN:TPW-EXE:0x00518F90 people list] the balloons are placed in the order tp.exe walks its live thing list (head 0x7CF56C, the newest thing first, class 1, 4 to 8 and 18 call the placement 0x004FA030), so each balloon takes the bob phase the original gives it
+		// [APPROX:GUEST-017] the burst's first frame shows at the burst, where the original's script starts at its next tick (evidence needed: when the sprite script player ticks a script started in the same frame)
 		var view = Camera.ViewMatrix;
 		var right = new SVector3( view.M11, view.M21, view.M31 );
 		var up = new SVector3( view.M12, view.M22, view.M32 );
 		var forward = -new SVector3( view.M13, view.M23, view.M33 );
 		seen.Clear();
 		var count = 0;
-		foreach ( var guest in simulation.Guests )
+		simulation.FillInThingListOrder( order );
+		foreach ( var guest in order )
 		{
 			seen.Add( guest );
 			if ( !views.TryGetValue( guest, out var balloon ) )
@@ -192,7 +195,7 @@ public sealed class BalloonRenderer : Entity
 		if ( count == 0 )
 			return;
 
-		var stride = (uint)Marshal.SizeOf<Vertex>();
+		var stride = Vertex.SizeInBytes;
 		var bytes = (uint)vertices.Length * stride;
 		if ( vertexBuffer == null || vertexBuffer.SizeInBytes < bytes )
 		{

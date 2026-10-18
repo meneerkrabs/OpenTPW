@@ -635,7 +635,7 @@ public partial class Level : IDisposable
 				CloseForUpgrade( item.InstanceId );
 			else if ( item.Kind == ParkEventKind.MaintenanceCancelled )
 				OpenAfterCancelledCall( item.InstanceId );
-			else if ( item.Kind == ParkEventKind.ToiletCleaned )
+			else if ( item.Kind is ParkEventKind.ToiletCleaned or ParkEventKind.UpgradeCancelled )
 				OpenAfterClean( item.InstanceId );
 			else if ( item.Kind == ParkEventKind.UpgradeCompleted )
 			{
@@ -894,7 +894,9 @@ public partial class Level : IDisposable
 		RefreshRenderedCells();
 		RefreshPools();
 		SceneClock.Advance( Time.Delta * SimulationTimeScale );
+		var simulationStart = FrameStats.Begin();
 		AdvanceSimulation( Time.Delta * SimulationTimeScale );
+		FrameStats.EndSimulation( simulationStart );
 		foreach ( var entity in Entity.All.ToArray() )
 			entity.Update();
 		// Riding follows the frame just simulated; park-camera input is consumed only by the earlier update.

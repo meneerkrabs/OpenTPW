@@ -345,6 +345,43 @@ internal static class Game
 				? (Count: count, Interval: interval) : sequenceText == null ? (Count: 1, Interval: 1) : throw new ArgumentException( "--capture-sequence expects count,interval, for example 120,2." );
 			Render.PostUpdate += new WorldCapture( capturePath, frames, args.Contains( "--capture-interface" ), pose, sequence.Count, sequence.Interval ).Update;
 		}
+		// [EXT:perf-run] performance runs (docs/ENGINE-PERFORMANCE.md): once the original level is up, hides the developer panels as a front-end park does, opens the park door as the player's button
+		// would and runs the simulation at --perf-speed (1, 2 or 4; default 4), with a guest arriving every --perf-arrivals N turns when given. The window closes after that many frames; the guests and
+		// the park clock are logged every 600 frames. Combine it with --frame-stats and, for CPU-bound frames, --no-vsync. Nothing else changes.
+		if ( GetOption( args, "--perf-run", "a frame count" ) is { } perfText )
+		{
+			if ( !int.TryParse( perfText, out var perfFrames ) || perfFrames < 1 )
+				throw new ArgumentException( "--perf-run expects a frame count, for example 3600." );
+			var perfSpeed = 4;
+			if ( GetOption( args, "--perf-speed", "1, 2 or 4" ) is { } speedText )
+				perfSpeed = int.TryParse( speedText, out var parsedSpeed ) && parsedSpeed is 1 or 2 or 4 ? parsedSpeed : throw new ArgumentException( "--perf-speed expects 1, 2 or 4." );
+			int? perfArrivals = null;
+			if ( GetOption( args, "--perf-arrivals", "turns between arrivals" ) is { } arrivalText )
+				perfArrivals = int.TryParse( arrivalText, out var parsedArrivals ) && parsedArrivals > 0 ? parsedArrivals : throw new ArgumentException( "--perf-arrivals expects a positive number of turns." );
+			int perfWarmup = 0, perfDone = 0;
+			var perfOpened = false;
+			Render.PostUpdate += () =>
+			{
+				if ( flow.Level is not { OriginalPark: not null, Park: { } perfPark } perfLevel )
+					return;
+				if ( !perfOpened )
+				{
+					if ( ++perfWarmup < 30 )
+						return;
+					perfOpened = true;
+					perfPark.Economy.OpenPark();
+					perfPark.Economy.Speed = (GameSpeed)perfSpeed;
+					// a park started from the front end hides the developer panels
+					perfLevel.ShowDeveloperPanels = false;
+					if ( perfArrivals is { } arrivals && perfLevel.Guests != null )
+						perfLevel.Guests.Settings.ArrivalTimeBetween = arrivals;
+				}
+				if ( ++perfDone % 600 == 0 )
+					Log.Trace( $"--perf-run: frame {perfDone}: {perfLevel.Guests?.Guests.Count} guests, park tick {perfPark.Economy.Tick}, {(perfPark.Economy.IsParkOpen ? "open" : "closed")}, {perfPark.Economy.Counters[ParkCounters.Admissions]} admissions, balance ${perfPark.Economy.Balance}." );
+				if ( perfDone >= perfFrames )
+					Render.Window.SdlWindow.Close();
+			};
+		}
 #if DEBUG
 		// [EXT:debug-water-track] smoke-only (Debug builds; --debug-kart-track places the go-kart ride instead): once the original level is up, places a track ride with a closed circuit near the
 		// park's paths and points the camera at it, so captures show the track tiles and a boat (docs/TRACKS.md).
@@ -352,13 +389,15 @@ internal static class Game
 		{
 			var demoFrames = 0;
 			var demoType = args.Contains( "--debug-kart-track" ) ? 1 : 2;
+			// --debug-track-addon <Info.Id> also places that add-on of the ride on its circuit (docs/TRACKS.md "Add-ons")
+			var demoAddOn = GetOption( args, "--debug-track-addon", "a track add-on's Info.Id" ) is { } addOnText && int.TryParse( addOnText, out var parsedAddOn ) ? parsedAddOn : (int?)null;
 			Render.PostUpdate += BuildTrackDemo;
 			void BuildTrackDemo()
 			{
 				if ( flow.Level is not { WaterTracks: not null } demoLevel || ++demoFrames < 30 )
 					return;
 				Render.PostUpdate -= BuildTrackDemo;
-				if ( demoLevel.BuildDemoTrackRide( demoType ) == null )
+				if ( demoLevel.BuildDemoTrackRide( demoType, demoAddOn ) == null )
 					Log.Warning( "--debug-water-track / --debug-kart-track: no site with room for a track ride and its circuit." );
 			}
 		}
@@ -1080,8 +1119,7 @@ internal static class Game
 		var interfaceUpscaler = args.Contains( "--texture-pack-no-interface" ) ? null : new RealEsrganUpscaler( upscaler, interfaceModel );
 		var options = new TexturePackBuildOptions { Subtree = subtree, InterfaceOnly = args.Contains( "--texture-pack-interface-only" ),
 			SpritesOnly = args.Contains( "--texture-pack-sprites-only" ), Merge = args.Contains( "--texture-pack-merge" ),
-			PrepassSprites = args.Contains( "--prepass-sprites" ),
-			HeroDirectory = GetOption( args, "--texture-pack-hero-dir", "a directory of hand-made replacement PNGs" ) ?? "" };
+			PrepassSprites = args.Contains( "--prepass-sprites" ) };
 		// Guest sprites are assembled into atlases from the sprite banks; they join the build under their pack keys.
 		var sprites = subtree.Length == 0
 			? GuestSpriteAtlas.LoadKids().Concat( GuestSpriteAtlas.LoadBalloons() ).Concat( GuestSpriteAtlas.LoadThoughts() )

@@ -1,10 +1,16 @@
+using System.Text.Json.Serialization;
+
 namespace OpenTPW;
 
 /// <summary>One saved track cell: the map position and the layer record's fields (the cell index and the mesh instance are not saved).</summary>
 internal sealed record TrackCellSaveData( int X, int Y, byte Type, byte Mask, byte Link, byte Flags, int Parent, int Family, int Piece, int Rotation, short Overlap, short AltMask, int Segment, int Owner = 0 );
 
-/// <summary>One saved section (the circuit walk rebuilds the sections, so they are verified against the walk on load, never trusted).</summary>
-internal sealed record TrackSectionSaveData( int Kind, bool NoBuoy, int X, int Y, int Segment );
+/// <summary>
+/// One saved section (the circuit walk rebuilds the sections, so they are verified against the walk on load, never trusted), with the one runtime flag a section carries: a
+/// Space Racers Teleport waiting to go back to its idle clip (<see cref="TrackSection.AddOnPassing"/>, written only when set).
+/// </summary>
+internal sealed record TrackSectionSaveData( int Kind, bool NoBuoy, int X, int Y, int Segment,
+	[property: JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingDefault )] bool AddOnPassing = false );
 
 /// <summary>One saved boat or kart: every integer field of the vehicle record and the guests aboard; the trailing fields are the kart's drawn heading, yaw, animation, effect latch and the vehicle's last drawn height. The height is presentation state written by
 /// TrackRenderer for every family (zero in a headless run and in saves from before the kart rides) and not hashed: a rendered and a headless run of the same simulation
@@ -63,7 +69,7 @@ internal static class TrackSave
 	internal static BumpControllerSaveData CaptureController( BumpController controller, int attractionId ) => new(
 		attractionId, controller.Type, controller.Laps, controller.Performance, controller.Phase, controller.State, controller.TickCount, controller.TickRemainder,
 		controller.WaterRunning, controller.IsTrackValid, controller.Pending.ToList(), controller.Leaving.ToList(),
-		controller.Sections.Select( section => new TrackSectionSaveData( section.Kind, section.NoBuoy, section.X, section.Y, section.Segment ) ).ToList(),
+		controller.Sections.Select( section => new TrackSectionSaveData( section.Kind, section.NoBuoy, section.X, section.Y, section.Segment, section.AddOnPassing ) ).ToList(),
 		controller.Vehicles.Select( vehicle => new BumpVehicleSaveData( vehicle.Slot, vehicle.Flags, vehicle.Variant, vehicle.X, vehicle.Y, vehicle.VX, vehicle.VY, vehicle.VX0, vehicle.VY0,
 			vehicle.Speed, vehicle.Heading, vehicle.Spin, vehicle.Roll, vehicle.Radius, vehicle.AccelBonus, vehicle.TargetX, vehicle.TargetY, vehicle.JitterX, vehicle.JitterY,
 			vehicle.TargetBuoy, vehicle.Laps, vehicle.BuoyCountdown, vehicle.Age, vehicle.ObjectIndex, vehicle.WallHits, vehicle.WallWindow, vehicle.Sprays, vehicle.Riders.ToList(), vehicle.VisualHeading, vehicle.YawRate, vehicle.YawDelta, vehicle.Animation, vehicle.EffectRequest, vehicle.EffectLatch, vehicle.Height, vehicle.ChaseTarget, vehicle.Engine, vehicle.Smoke, vehicle.ObjectOwner?.AttractionId ?? -1 ) ).ToList(),

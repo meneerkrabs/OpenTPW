@@ -198,6 +198,10 @@ public sealed class Guest
 	/// but 0 into it, and nothing takes an item off: the guest keeps it until it leaves, whatever the weather. The colours are a function of the guest id and the item, so they are not kept.
 	/// </summary>
 	public int WarmItems { get; internal set; }
+	/// <summary>[EXT:winter-items] The guest's head item: <see cref="WinterRules.Hat"/>, <see cref="WinterRules.Earmuffs"/> or 0.</summary>
+	public int HeadItem => WarmItems & WinterRules.HeadItems;
+	/// <summary>[EXT:winter-items] Whether the guest wears mittens.</summary>
+	public bool HasMittens => (WarmItems & WinterRules.Mittens) != 0;
 	/// <summary>
 	/// [EXT:winter-gluehwein] The park calendar day (<see cref="ParkCalendar.DayIndex"/>) the guest's warmth from a glühwein lasts until, exclusive: the guest counts as warmed while the park's day index is below it; 0 while it never was.
 	/// Phase W3 only carries the field (saved, validated, hashed when set); the cold rule of phase W5 (<c>opentpw.winter-cold</c>) writes and reads it, and nothing in W3 does.

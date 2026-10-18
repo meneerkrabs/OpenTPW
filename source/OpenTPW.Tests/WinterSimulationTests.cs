@@ -153,6 +153,22 @@ public class WinterSimulationTests
 	}
 
 	[TestMethod]
+	public void TheSpriteSlotsFollowTheItemBankOfTheContent()
+	{
+		Assert.AreEqual( (0, 3, 5), (WinterRules.FirstSlotOf( WinterRules.Hat ), WinterRules.FirstSlotOf( WinterRules.Earmuffs ), WinterRules.FirstSlotOf( WinterRules.Mittens )) );
+		var slots = new HashSet<int>();
+		for ( var id = 1; id <= 300; id++ )
+			foreach ( var item in new[] { WinterRules.Hat, WinterRules.Earmuffs, WinterRules.Mittens } )
+				slots.Add( WinterRules.SpriteSlotOf( id, item ) );
+		CollectionAssert.AreEquivalent( Enumerable.Range( 0, 8 ).ToArray(), slots.ToArray(), "the eight slots of the bank, and nothing outside it" );
+		var guest = new Rig().Simulation.SpawnInPark( 6, 5 );
+		guest.WarmItems = WinterRules.Earmuffs | WinterRules.Mittens;
+		Assert.AreEqual( (WinterRules.Earmuffs, true), (guest.HeadItem, guest.HasMittens) );
+		guest.WarmItems = WinterRules.Hat;
+		Assert.AreEqual( (WinterRules.Hat, false), (guest.HeadItem, guest.HasMittens) );
+	}
+
+	[TestMethod]
 	public void OnlyTheDefinedItemCombinationsAreValid()
 	{
 		CollectionAssert.AreEqual( new[] { 0, 1, 2, 4, 5, 6 }, Enumerable.Range( -2, 14 ).Where( WinterRules.IsValidItems ).ToArray(), "no hat with earmuffs, nothing above bit 4" );

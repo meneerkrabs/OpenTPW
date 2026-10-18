@@ -123,6 +123,13 @@ public static class WinterRules
 	// [EXT:winter-item-colour] a pure function of guest id and item (as the balloon's colour is of the guest id), so a purchase takes no extra random draw
 	public static int ColourOf( int guestId, int item ) => ColoursOf( item ) is var colours and > 0 ? (int)(Mix( Seed( guestId, (uint)item ) ) % (uint)colours) : 0;
 
+	/// <summary>The first sprite slot of each item in the item bank (<c>content/winter/esprites/Winter/SPR_WI</c>): bobble hats 0 to 2, earmuffs 3 and 4, mittens 5 to 7. 0 for anything that is not one item.</summary>
+	// [EXT:winter-content] the slot order of tools/blender/opentpw_winter_items.py (docs/WINTER.md, "Content")
+	public static int FirstSlotOf( int item ) => item switch { Hat => 0, Earmuffs => HatColours, Mittens => HatColours + EarmuffColours, _ => 0 };
+
+	/// <summary>The sprite slot of a guest's <paramref name="item"/>: <see cref="FirstSlotOf"/> plus <see cref="ColourOf"/>. Frame 0 of a mitten slot is the right mitten and frame 1 the left.</summary>
+	public static int SpriteSlotOf( int guestId, int item ) => FirstSlotOf( item ) + ColourOf( guestId, item );
+
 	/// <summary>Whether <paramref name="items"/> is a valid <see cref="Guest.WarmItems"/>: only the defined bits, and at most one head item.</summary>
 	public static bool IsValidItems( int items ) => items is >= 0 and <= AllItems && (items & HeadItems) != HeadItems;
 

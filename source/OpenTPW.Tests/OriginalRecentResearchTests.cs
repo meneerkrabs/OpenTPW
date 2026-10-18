@@ -153,11 +153,12 @@ public class OriginalRecentResearchTests
 		{
 			var bad = Template( park.Settings ); bad.World.Variables = bad.World.Variables with { ParkAnalyser = id };
 			var exportError = Assert.ThrowsException<InvalidDataException>( () => OriginalParkExport.Export( bad, ParkSaveFile.Capture( park ), out _, new OriginalParkExportOptions( Research: park.Research ) ) );
-			StringAssert.Contains( exportError.Message, "park analyser" );
+			// Both the typed World guard (ParkAnalyser) and ring codec (park analyser) name this boundary.
+			StringAssert.Contains( exportError.Message.Replace( " ", "" ).ToLowerInvariant(), "parkanalyser" );
 			if ( id != 0 )
 			{
 				var importError = Assert.ThrowsException<InvalidDataException>( () => OriginalParkImport.Import( bad.Write(), OriginalParkImportTests.CreateMap( 128, 128, ( _, _ ) => 0 ) ) );
-				StringAssert.Contains( importError.Message, "park analyser" );
+				StringAssert.Contains( importError.Message.Replace( " ", "" ).ToLowerInvariant(), "parkanalyser" );
 			}
 		}
 	}

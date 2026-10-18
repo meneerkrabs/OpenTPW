@@ -269,6 +269,8 @@ public sealed partial class OriginalObjectRuntime
 		}
 		// the object pass then moves the kept ADDOBJ effects to their keys ([BIN:TPW-EXE:0x55189D ADDOBJ follow])
 		FollowParticleObjects();
+		// and the kept sounds, every eighth pass per script ([BIN:TPW-EXE:0x551A1C sound follow])
+		FollowHeldSounds( substep );
 		if ( substep is { } step )
 		{
 			// [BIN:TPW-EXE:0x54F5D7 tour cars] the tour tick runs after the script pass on the even substeps only
@@ -294,6 +296,7 @@ public sealed partial class OriginalObjectRuntime
 		footprintMiddle = null;
 		eventSoundSpace = null;
 		ClearParticleRequests();
+		StopHeldSounds();
 		effects.StopSounds();
 		Visitors.IsStopped = true;
 		Visitors.ReleaseAll();
@@ -607,12 +610,13 @@ public sealed partial class OriginalObjectRuntime
 /// their channel operand; triggers return the trigger's millisecond result, which <see cref="OpcodeHandlers.Animation"/>
 /// turns into the script's waits; FLUSHANIM(_CH) clears only the deferred clip; GETANIM(_CH) report the AnimID or −1.
 /// COAST goes to the station's <see cref="CoasterRide"/>. Visitor opcodes go to the object's
-/// <see cref="RideVisitorBridge"/> (guests slice). EVENT and REPAIREFFECT play their original sounds (their other
-/// effects stay unimplemented). TPW YEAR/MONTH/DAY/HOUR/MIN/SEC sample host civil time.
-/// Everything else (objects/particles, the ride-type controllers TOUR/BUMP,
-/// screams, the ride lights) stays an unimplemented effect. DIPMUSIC sets the sound service's music duck request; SETREVERB's level is read by <see cref="ReverbSelector"/>.
+/// <see cref="RideVisitorBridge"/> (guests slice). EVENT and REPAIREFFECT play their original sounds and particles, STARTSCREAM/STOPSCREAM/SCREAMLEVEL/SINGLESCREAM
+/// the screams. ADDOBJ keeps the particle effects (types 1-2) and sounds (types 3-9) it starts under its slot (<see cref="OriginalObjectRuntime"/>), KILLOBJ and FADEOBJ end them, SETOBJPARAM
+/// gives the sounds a parameter, and a script's end ends what it still holds (<see cref="IRideScriptLifetime"/>). TPW YEAR/MONTH/DAY/HOUR/MIN/SEC sample host civil time. The ride-type controllers
+/// TOUR/BUMP/COAST go to their controllers. What stays an unimplemented effect (<see cref="RideVM.UnimplementedEffects"/>): the ride lights, the bounce rider opcodes where their object has no bounce
+/// rider rendering, and ADDOBJ/EVENT type 10 (the object type's own sound list). DIPMUSIC sets the sound service's music duck request; SETREVERB's level is read by <see cref="ReverbSelector"/>.
 /// </summary>
-public sealed class OriginalObjectEffects : IRideScriptEffects, IRideAnimationQuery, IRideCanonicalEffects
+public sealed class OriginalObjectEffects : IRideScriptEffects, IRideAnimationQuery, IRideCanonicalEffects, IRideScriptLifetime
 {
 	/// <summary>Channel of the plain animation opcodes: channel 0, the same record a _CH opcode addresses with channel 0.</summary>
 	// [BIN:STP-PPC:0x100A6CC0 animation trigger] the channel record is model +0x10 + channel × 0x38; TRIGANIM (0x100AFB10), WAITANIM (0x100AFC68), LOOPANIM (0x100AFD7C) and TRIGANIMSPEED (0x100B005C) pass channel 0, TRIGANIM_CH (0x100B01C4) its operand
@@ -731,7 +735,7 @@ public sealed class OriginalObjectEffects : IRideScriptEffects, IRideAnimationQu
 			return ride.PerformTour( call );
 		if ( ride.Visitors.TryPerform( call, out var visitorResult ) )
 			return visitorResult;
-		// Routed EVENT and repair-hide sounds can use the placed origin; scream/show placement and reverb remain unimplemented.
+		// Routed EVENT, held ADDOBJ and repair-hide sounds use the placed origin; the screams sit at the footprint middle (0x556AF0); reverb is the sound service's (SETREVERB).
 		// [BIN:STP-PPC:0x100B19DC STARTSCREAM] the scream is held by the ride's script (the handle at the VM's +208); STOPSCREAM stops the handle, SINGLESCREAM is a one-shot with no handle
 		if ( call.Opcode == Opcode.STARTSCREAM )
 		{
@@ -744,7 +748,7 @@ public sealed class OriginalObjectEffects : IRideScriptEffects, IRideAnimationQu
 			ownedScreams.RemoveAll( chain => chain.IsStopped );
 			if ( screamChain != null )
 				ownedScreams.Add( screamChain );
-			return UnimplementedRideScriptEffects.Instance.Perform( call );
+			return 0;
 		}
 		if ( call.Opcode == Opcode.STOPSCREAM )
 		{
@@ -755,12 +759,12 @@ public sealed class OriginalObjectEffects : IRideScriptEffects, IRideAnimationQu
 			screamChain = null;
 			(HeldScreamBand, HeldScreamLevel, HeldScreamSpeed) = (0, 0, 0);
 			ownedScreams.RemoveAll( chain => chain.IsStopped );
-			return UnimplementedRideScriptEffects.Instance.Perform( call );
+			return 0;
 		}
 		if ( call.Opcode == Opcode.SINGLESCREAM )
 		{
 			GameAudio.SingleScream( call.Argument( 0 ), (short)call.Argument( 1 ), ride.ReadFootprintMiddle(), call.VM.SpeedBias );
-			return UnimplementedRideScriptEffects.Instance.Perform( call );
+			return 0;
 		}
 		if ( call.Opcode == Opcode.SCREAMLEVEL )
 		{
@@ -772,16 +776,28 @@ public sealed class OriginalObjectEffects : IRideScriptEffects, IRideAnimationQu
 			}
 			return 0;
 		}
-		// ADDOBJ and ADDOBJ_EXT type 1/2 start particle effects that KILLOBJ ends (docs/PARTICLES.md); the other object types stay unimplemented effects
+		// ADDOBJ and ADDOBJ_EXT of type 1/2 start particle effects (docs/PARTICLES.md) and of types 3-9 sounds, each kept under the record's slot; KILLOBJ and FADEOBJ end the records of the slot (type 10, the object type's own sound list, is the one that stays an unimplemented effect)
 		if ( call.Opcode is Opcode.ADDOBJ or Opcode.ADDOBJ_EXT )
 		{
+			// [BIN:TPW-EXE:0x5573D0 object dispatcher] type 10 takes the object type's own sound bank (0x557686, 0x4145E0); no type outside 1-10 is served (0x557931 logs, the handle is 0 and the record is freed)
+			if ( call.OperandCount > 0 && call.Argument( 0 ) == 10 )
+				return UnimplementedRideScriptEffects.Instance.Perform( call );
 			ride.ObserveParticleObject(call);
-			return UnimplementedRideScriptEffects.Instance.Perform( call );
+			ride.ObserveHeldSound(call);
+			return 0;
 		}
-		if ( call.Opcode == Opcode.KILLOBJ )
+		if ( call.Opcode is Opcode.KILLOBJ or Opcode.FADEOBJ )
 		{
+			// [BIN:TPW-EXE:0x5522C5 KILLOBJ] [BIN:TPW-EXE:0x5523D0 FADEOBJ] every record with the slot ends: types 1-2 through 0x51FF70(handle, -2), types 3-10 through the immediate stop (FADEOBJ's fade branch is never taken here, see OriginalObjectRuntime.EndHeldSounds)
 			ride.KillParticleObjects(call.Argument(0));
-			return UnimplementedRideScriptEffects.Instance.Perform( call );
+			ride.EndHeldSounds(call.VM.ScriptId, call.Argument(0));
+			return 0;
+		}
+		if ( call.Opcode == Opcode.SETOBJPARAM )
+		{
+			// [BIN:TPW-EXE:0x5524D9 SETOBJPARAM] the sound records of the slot get the parameter call (code, value); the particle records are skipped
+			ride.SetHeldSoundParameter(call.VM.ScriptId, call.Argument(0), call.Argument(1), call.Argument(2));
+			return 0;
 		}
 		if ( call.Opcode is Opcode.EVENT or Opcode.EVENT_EXT )
 		{
@@ -800,7 +816,8 @@ public sealed class OriginalObjectEffects : IRideScriptEffects, IRideAnimationQu
 				voice = GameAudio.PlayRseEvent(type, unchecked((uint)call.Argument(2)), null, ride.SoundSource);
 			ownedEventLoops.RemoveAll(loop => loop.IsFinished);
 			if (voice is { Loops: true }) ownedEventLoops.Add(voice);
-			return UnimplementedRideScriptEffects.Instance.Perform( call );
+			// [BIN:TPW-EXE:0x557686 EVENT type 10] the object type's own sound list is not served; it is the one EVENT part that stays an unimplemented effect (types 0 and above 10 only log in the original)
+			return type == 10 ? UnimplementedRideScriptEffects.Instance.Perform( call ) : 0;
 		}
 		if ( call.Opcode == Opcode.DIPMUSIC )
 		{
@@ -824,10 +841,13 @@ public sealed class OriginalObjectEffects : IRideScriptEffects, IRideAnimationQu
 				if ( voices.First is { Loops: true } ) ownedEventLoops.Add( voices.First );
 				if ( voices.Second is { Loops: true } ) ownedEventLoops.Add( voices.Second );
 			}
-			return UnimplementedRideScriptEffects.Instance.Perform( call );
+			return 0;
 		}
 		return UnimplementedRideScriptEffects.Instance.Perform( call );
 	}
+
+	/// <summary>A script of this object ended or was stopped: the sounds its ADDOBJ records hold end with it.</summary>
+	public void ScriptDestroyed( RideVM vm ) => ride.EndScriptSounds( vm.ScriptId );
 
 	public int GetAnimationId( RideVM vm, int channel ) => ride.Animator.GetAnimationId( channel );
 

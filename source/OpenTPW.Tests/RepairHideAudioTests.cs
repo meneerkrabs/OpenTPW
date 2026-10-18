@@ -54,7 +54,7 @@ public class RepairHideAudioTests
 	{
 		using var data = new MemoryStream( new RideVMTests.Asm().I( Opcode.CMP, 1, 2 ).I( Opcode.REPAIREFFECT, show ).I( Opcode.ENDSLICE ).Build( Enum.GetNames<RideVariables>() ) );
 		var vm = new RideVM( data, new RideVMOptions { Effects = owner.Script!.Effects } ); vm.Variables[5] = band; vm.Advance( FixedStepClock.TickDuration );
-		Assert.AreNotEqual( RideVMState.Faulted, vm.State ); Assert.AreEqual( RideVM.VMFlags.Sign, vm.Flags, "The partial effect must preserve incoming flags." ); Assert.AreEqual( 1, vm.UnimplementedEffects[Opcode.REPAIREFFECT] ); vm.Stop();
+		Assert.AreNotEqual( RideVMState.Faulted, vm.State ); Assert.AreEqual( RideVM.VMFlags.Sign, vm.Flags, "REPAIREFFECT must preserve incoming flags." ); Assert.AreEqual( 0, vm.UnimplementedEffects.Count, "REPAIREFFECT is fully served: its particle and its sounds" ); vm.Stop();
 	}
 	[DataTestMethod]
 	[DataRow( false )]
@@ -65,7 +65,7 @@ public class RepairHideAudioTests
 		if ( imported ) { field = new ModelHeightfield( 4, 4, 10, 10, 0, 0, Array.Empty<uint>(), new float[25], new uint[16] ); var park = Empty<OriginalPark>(); Set( park, "Heightfield", field ); var level = Empty<Level>(); Set( level, "OriginalPark", park ); Level.Current = level; origin = -OriginalParkPlacement.GetOrigin( field ); }
 		var placed = new OriginalObject( entry, new ObjectPlacement( 7, 9, 90, origin, 3 ) );
 		GameAudio.UpdateListener( placed.Position.GetSystemVector3(), new System.Numerics.Vector3( 0, 1, 0 ), field );
-		placed.Runtime.Simulate( FixedStepClock.TickDuration ); Assert.AreEqual( 1, placed.Script!.UnimplementedEffects[Opcode.REPAIREFFECT] ); Assert.AreEqual( RideVM.VMFlags.Sign, placed.Script.Flags );
+		placed.Runtime.Simulate( FixedStepClock.TickDuration ); Assert.AreEqual( 0, placed.Script!.UnimplementedEffects.Count ); Assert.AreEqual( RideVM.VMFlags.Sign, placed.Script.Flags );
 		Assert.AreEqual( 2, mixer.Voices.Count ); foreach ( var voice in mixer.Voices ) { Assert.AreEqual( AudioListener.Position, voice.Position ); Assert.AreEqual( 100f, voice.Range ); Assert.IsTrue( voice.Loops ); }
 		var source = AudioListener.Position; GameAudio.UpdateListener( placed.Position.GetSystemVector3() + new System.Numerics.Vector3( 6, 0, 0 ), new System.Numerics.Vector3( 0, 1, 0 ), field );
 		using var reference = new AudioMixer( null ); reference.Play( Pcm( 1000 ), AudioChannel.Effects, 1, position: source, range: 100 ); reference.Play( Pcm( 2000 ), AudioChannel.Effects, 1, position: source, range: 100 );
@@ -236,7 +236,7 @@ public class RepairHideAudioTests
 		var childEntry = new ObjectCatalogEntry( entry.Theme, entry.Category, entry.ArchivePath, entry.Settings, entry.Shape, entry.ModelPath, null, entry.ScriptPath, new[] { "/child.RSE" }, entry.Animations, entry.AuxiliaryModels, entry.Models, entry.FileSystem, null );
 		var placed = new OriginalObject( childEntry, new ObjectPlacement( 1, 2, 0, System.Numerics.Vector2.Zero, 0 ) );
 		placed.Script!.SpawnChild( "child.RSE", sound: false ); placed.Runtime.Simulate( FixedStepClock.TickDuration );
-		Assert.AreSame( placed.Script.Effects, placed.Script.Child!.Effects ); Assert.AreEqual( 1, placed.Script.Child.UnimplementedEffects[Opcode.REPAIREFFECT] );
+		Assert.AreSame( placed.Script.Effects, placed.Script.Child!.Effects ); Assert.AreEqual( 0, placed.Script.Child.UnimplementedEffects.Count );
 		Assert.AreEqual( 2, mixer.Voices.Count ); Assert.IsTrue( mixer.Voices.All( voice => voice.Position == new Vector3( 10, 0, 20 ) && voice.Loops ) );
 		Assert.ThrowsException<NotSupportedException>( () => placed.Runtime.CaptureSnapshot() ); placed.Delete(); Assert.IsTrue( mixer.Voices.All( voice => voice.IsFinished ) );
 	}

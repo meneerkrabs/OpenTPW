@@ -75,7 +75,7 @@ public class SmarterGuestsBinsTests
 		Assert.IsFalse( new SmarterGuestDecisions( SmarterRuleSet.None ).UsesBinCarry );
 		Assert.AreEqual( SmarterRuleSet.Phase6 | SmarterRuleSet.Bins, SmarterRuleSet.All, "the shipped rules: the five of 1.5.0 and the bins" );
 		Assert.AreEqual( new ModVersion( 1, 6, 0 ), OfficialExtensions.SmarterGuests.Version );
-		Assert.IsFalse( OfficialExtensions.SmarterGuests.PlayerSelectable, "kept hidden: the CPU gate was not re-confirmed on a quiet machine (docs/SMARTER-GUESTS.md, Cost and release)" );
+		Assert.IsTrue( OfficialExtensions.SmarterGuests.PlayerSelectable, "released as opt-in: the CPU gate was confirmed on a hosted runner (docs/SMARTER-GUESTS.md, Cost and release)" );
 	}
 
 	// ---- The host ----------------------------------------------------------------------------------

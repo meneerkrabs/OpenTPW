@@ -92,7 +92,7 @@ public sealed partial class GuestSimulation
 	/// imported original guest) counts as new, which opens the gate.
 	/// </summary>
 	// [BIN:TPW-EXE:0x4FD950 turns in park] the original subtracts two world turns (the stamp +0x1D4 never rewritten); OpenTPW keeps the seconds (APPROX:GUEST-920) and the turn count is their floor over the turn's 248 ms
-	private static long AgeTurnsOf( Guest guest ) =>
+	internal static long AgeTurnsOf( Guest guest ) =>
 		guest.TimeInParkSeconds is { } seconds ? (long)Math.Floor( seconds * 1000.0 / ParkCalendar.TurnMilliseconds ) : 0;
 
 	/// <summary>

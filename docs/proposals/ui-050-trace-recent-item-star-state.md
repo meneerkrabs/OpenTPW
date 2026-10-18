@@ -1,48 +1,34 @@
-# UI-050: Trace recent-item star state
+# UI-050: recent-research stars in the buy list
 
-## Status and classification
-- Plan-only draft proposal; no implementation, tests-run claim, retirement or merge.
-- Classification: `missing_behavior`.
-- Baseline: `meneerkrabs/OpenTPW` main `5ccddcab` (2026-10-18).
-- One ID per proposal; shared dependencies are coordination edges, not duplicated ownership.
+## Implementation scope and status
 
-## Source-verified residual
-BuyWindow displays i_boxtick frames 0/1 only; recent-unowned state 2 is absent and its ring writer is unknown.
+The two original evidence gates have been resolved by static inspection. The TPW implementation and synthetic regressions have passed independent source review. Exact-head CI remains required before merge; the implementation retires the resolved UI-050 declaration. This note claims neither original execution nor rendered-pixel equivalence.
 
-## Source sites
-- `source/OpenTPW/Hud/ParkHud.BuyWindow.cs:518` — APPROX annotation and adjacent implementation inspected.
+## Corrected behavior
 
-## Implementation cross-check
-- `source/OpenTPW/Hud/ParkHud.BuyWindow.cs:519`: `var boxCell = Cell( 2 );`
-- Existing behavior described above was checked against implementation, not only the register summary.
-- The presence of an APPROX marker alone is not evidence of an absent feature.
+Research project completion (`0x504630`) constructs event `0x11` (`0x40F580`). The analyser handler (`0x4C7370`, writer `0x4C73AB`) appends the completed item's ID to a capacity-three ring selected by its descriptor's `WhichUIType`, not its research category. Four rings cover rides, shops, sideshows and features. Upgrade-level completions may append the same ID repeatedly; paid add-ons also consume a slot in their own UI category. There is no deduplication. Initial free items and propagated free completions do not send this event.
 
-## Evidence needed
-- Recent-category ring writer and cell message 0xc00 frame mapping.
-- Available private Data contains assets, not an original executable; no new binary trace was obtained in this audit.
-- Existing address annotations are provenance leads, not a claim that this audit independently verified instructions.
-- Any original captures/assets remain private; fixtures should be synthetic or references/hashes, not redistributed game media.
+The buy-list filler (`0x4AAF70`) chooses state 1 when ownership is positive, otherwise state 2 when one of three newest entries matches, otherwise state 0. Ownership masks the star without consuming history, so selling the last copy may reveal it again. Auxiliary tool rows keep state 0.
 
-## Bounded investigation and implementation plan
-1. Confirm current ownership and rebase the proposal against the latest main before runtime changes.
-2. Specify ring lifecycle and owned-over-recent precedence; implement star only after state-to-frame mapping is verified.
-3. Turn each verified behavioral distinction into a small deterministic regression fixture before editing runtime paths.
-4. Keep unknown behavior explicitly unresolved; an evidence-only outcome is valid if no mismatch is established.
-5. Submit any later implementation with exact evidence, changed scope and test output for review.
+The numeric list cell calls its model-state setter (`0x66DA4D`); the geometry handler (`0x476F10` / `0x476E80`) selects the root followed by that many next-node links. Thus states 0/1/2 select model frames 0/1/2. The earlier `0xC00` lead concerns text alignment, not icon-state selection. Independent UI model transform/depth approximations remain separate.
 
-## Acceptance tests to author and run later
-- Three recent ids; wrap/capacity; newly owned override; sale back to unowned; category separation; list refresh.
-- Run the nearest existing unit suite plus targeted integration/visual checks for changed behavior.
-- Compare baseline and candidate with identical inputs; label screenshots by platform, display settings and state.
-- Report unsupported/corpus-external cases separately; synthetic consistency alone is not original-fidelity proof.
+## Persistence and defensive bounds
 
-## Ownership and overlap
-- Consult: Research completion and buy-window owners.
-- Do not overwrite another worker's runtime edits or duplicate an existing active implementation PR.
-- Merged UI #433 and languages #423 are baseline work, not open implementation dependencies.
-- Evening #439 is an extension and is not proof of original lighting or behavior.
+The original analyser serializer (`0x4C5D70`, ring helper `0x4CDB80`) persists all four rings. The existing TPW analyser layout places them at body offset 62,492, four 17-byte records: head i32, capacity i32, wrapped u8, temporary u16 and three physical u16 entries. Preserve temporary words and unused entries as well as active history.
 
-## Completion boundary
-- This deliverable is a documentation proposal only; no gameplay source files are changed by this PR.
-- Runtime work remains blocked on the evidence/ownership decisions listed above where applicable.
-- No approximation is retired by creating this plan; no PR is claimed implemented or ready to merge.
+The implementation adds optional own-format presentation state, empty for older saves without that field. Completed-project order cannot reconstruct chronology. Native TPW import uses the world-referenced analyser and verifies its type and bounds. Export with explicit research state patches only the 68-byte ring range; absent research options retain template history. Reject malformed present capacity/head/wrapped/state lengths using bounded validation, explicitly a defensive host policy rather than the original unchecked loader's behavior.
+
+Only the new presentation property is excluded from the canonical gameplay hash. Research completion, progress, effort and other gameplay state remain hashed. Theme Park Inc behavior and offsets are not established by this TPW trace and must not be silently inferred.
+
+## Verification coverage and remaining execution
+
+- Actual research completion path: paid/free distinction, duplicate upgrades, add-ons, cross-category isolation and four-event eviction.
+- Actual buy-list DrawModel frames 0/1/2, ownership priority, selling, pseudo rows and unchanged sizing/sort behavior.
+- Own-save continuation, old-save fallback, malformed-state rejection, deep copies and opaque unused values.
+- Native typed-reference/model/bounds validation; exact ring round-trip including temporary words; byte preservation everywhere outside the 68-byte region.
+- Ring-only save changes preserve canonical hashes; separate completion and progress controls still change them.
+- Independent source review and full exact-head build/test checks. Synthetic tests do not constitute original runtime or rendered fidelity proof.
+
+The implementation keeps unrelated research arithmetic, selection, scoring, RNG, UI geometry and other owners' work unchanged.
+
+The focused C# tests cover these cases, but local execution was unavailable because this environment has no .NET SDK. CI results are recorded in the pull request; this note does not imply a successful run before those checks complete.

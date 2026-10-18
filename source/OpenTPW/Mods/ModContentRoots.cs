@@ -111,6 +111,9 @@ public static class ModContentRoots
 		// [EXT:pools-content] the pools extension's own objects (the changing rooms) follow the mods' as a root of the id opentpw.pools while the extension is on
 		if ( PoolContent.CatalogRoot( set ) is { } pools )
 			roots.Add( pools );
+		// [EXT:umbrellas-content] the umbrellas extension's own objects (the brolly shops) follow as a root of the id opentpw.umbrellas while the extension is on
+		if ( UmbrellaContent.CatalogRoot( set ) is { } umbrellas )
+			roots.Add( umbrellas );
 		return roots;
 	}
 

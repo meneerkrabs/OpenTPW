@@ -28,6 +28,8 @@ public sealed record SoundEntry( byte MinimumVolume, byte MaximumVolume, sbyte M
 /// <summary>A sound event (20 bytes in the file): the id the game sends, its flags (which select the player type) and its sounds.</summary>
 public sealed record SoundEvent( uint Id, uint Priority, ushort Flags, ushort Extra, IReadOnlyList<SoundEntry> Sounds )
 {
+	/// <summary>Category group bits: master, music, speech, effects (category record +8).</summary>
+	public uint GroupMask { get; init; }
 	/// <summary>The player the original creates for this event (<c>CAudioPlaceHolderList::CreatePlaceHolder</c>).</summary>
 	public SoundEventPlayer Player =>
 		(Flags & 0x4) == 0 ? SoundEventPlayer.OneShot
@@ -81,15 +83,15 @@ public sealed class SoundCatalog
 		if ( categoryCount > 64 )
 			throw new InvalidDataException( $"Sound catalogue claims {categoryCount} categories." );
 		var position = HeaderBytes;
-		var eventCounts = new List<uint>();
+		var eventCounts = new List<(uint Count, uint GroupMask)>();
 		for ( var category = 0; category < categoryCount; category++ )
 		{
 			Require( data, position, CategoryBytes );
-			eventCounts.Add( U32( data, position ) );
+			eventCounts.Add( (U32( data, position ), U32( data, position + 8 )) );
 			position += CategoryBytes;
 		}
 		var events = new List<SoundEvent>();
-		foreach ( var eventCount in eventCounts )
+		foreach ( var (eventCount, groupMask) in eventCounts )
 		{
 			var headers = new List<(uint Id, uint SoundCount, uint Priority, ushort Flags, ushort Extra)>();
 			for ( var index = 0; index < eventCount; index++ )
@@ -124,7 +126,7 @@ public sealed class SoundCatalog
 					entries.Add( new SoundEntry( raw[12], raw[13], (sbyte)raw[14], (sbyte)raw[15], U16( raw, 16 ), U16( raw, 18 ), U32( raw, 30 ),
 						BinaryPrimitives.ReadSingleLittleEndian( raw.AsSpan( 34 ) ), samples, links, raw ) );
 				}
-				events.Add( new SoundEvent( header.Id, header.Priority, header.Flags, header.Extra, entries ) );
+				events.Add( new SoundEvent( header.Id, header.Priority, header.Flags, header.Extra, entries ) { GroupMask = groupMask } );
 			}
 		}
 		if ( position != data.Length )

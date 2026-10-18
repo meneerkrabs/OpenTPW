@@ -228,7 +228,7 @@ public class SmarterGuestsPatienceTests
 
 		var silent = new Spy( -1 );
 		var plain = new ParkScenario( new WorldSeed( 1 ), decisions: silent );
-		plain.Run( 6_000 );
+		plain.Run( 9_000 );
 		Assert.IsTrue( silent.Admissions.Count > 0 && silent.Admissions.All( admission => admission.Alternative == -1 ), "a policy that does not ask is given -1: the original path does no extra work" );
 		Assert.IsTrue( silent.Patience.Count > 0 && silent.Patience.All( call => call.Alternative == -1 ) );
 	}

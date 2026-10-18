@@ -149,6 +149,21 @@ public class BalloonCostumeTests
 	}
 
 	[TestMethod]
+	public void TheBalloonPranksterTakesTheBalloonOfTheGuestThatEnteredTheCellLast()
+	{
+		// the cell's thing list is head-inserted on every cell change (0x0050B6A0, 0x004D91F0) and the prank takes the first balloon holder on it (0x004FF1CD)
+		var rig = new Rig();
+		var prankster = rig.Simulation.SpawnInPark( 6, 5 );
+		var older = rig.Simulation.SpawnInPark( 6, 5 );
+		var newer = rig.Simulation.SpawnInPark( 6, 5 );
+		foreach ( var holder in new[] { older, newer, prankster } )
+			(holder.HasBalloon, holder.BalloonLife) = (true, 50);
+		var prank = typeof( GuestSimulation ).GetMethod( "Prank", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance )!;
+		Assert.IsTrue( (bool)prank.Invoke( rig.Simulation, [prankster, GuestDecision.Prank.Balloon, LitterType.None] )! );
+		Assert.AreEqual( (true, false), (older.HasBalloon, newer.HasBalloon), "the later entrant loses its balloon" );
+	}
+
+	[TestMethod]
 	public void AHeldGuestLosesItsBalloonAndTheStateIsSaved()
 	{
 		var rig = new Rig();

@@ -659,6 +659,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		pendingArrivals--;
 		if ( guests.Count < Settings.MaximumGuests )
 			SpawnArrival();
+		// [BIN:TPW-EXE:0x004CF3E0 arrivals counter] the analyser's running arrivals (+0x20CC0) rise by one for every step of the group, after the guest is created and the group counts down (the park information window's arrival series)
+		Payments?.ArrivalCreated();
 	}
 
 	/// <summary>
@@ -695,6 +697,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 					if ( guests.Count < Settings.MaximumGuests )
 						SpawnArrival();
 					pendingArrivals--;
+					// [BIN:TPW-EXE:0x004CF3E0 arrivals counter] +0x20CC0 rises by one after the guest is created and the group counts down
+					Payments?.ArrivalCreated();
 					break;
 				case 2:
 					arrivalTimerStart = turn;
@@ -1488,19 +1492,29 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		guest.State = GuestState.WalkingToVehicle;
 	}
 
+	/// <summary>Sets state 21 (the guest waits at the stop to leave) and, for a guest that paid, stores its stay in the analyser's stay ring.</summary>
+	// [BIN:TPW-EXE:0x00502333 state 21] the state setter's case 0x15 stores the stay (0x004C7600: the turns since the arrival stamp 0x004FD950, in whole four-turn steps, as days) when the guest's paid flag +0x204 is set, then sets the thing's state 3 (0x004217F0)
+	// [APPROX:UI-914] the stay comes from the visitor's elapsed simulated seconds (GUEST-920), where the original subtracts two integer world turns (the arrival stamp +0x1D4, 0x4FD950)
+	private void EnterWaitingToGoHome( Guest guest )
+	{
+		guest.State = GuestState.WaitingToGoHome;
+		if ( guest.Paid && guest.TimeInParkSeconds is { } elapsed )
+			Payments?.StayEnded( ParkStatisticsHistory.StayDays( (long)Math.Floor( elapsed * 1000 / ParkCalendar.TurnMilliseconds ) ) );
+	}
+
 	/// <summary>State 20 (tp.exe <c>0x005019F0</c> case 0x14): one step of the walk to the stop; arriving is state 21; a stuck walk stays where it is.</summary>
 	// [BIN:TPW-EXE:0x005019F0 state 20] the walk step 0x004FA2A0: 0 sets the heading (0x7FF when the vehicle at work is not the bus, 0x400 otherwise) and SetState(0x15); 2 logs "Got stuck walking around outside" and stays
 	private void UpdateWalkToVehicle( Guest guest )
 	{
 		if ( !guest.HasWaypoint )
 		{
-			guest.State = GuestState.WaitingToGoHome;
+			EnterWaitingToGoHome( guest );
 			return;
 		}
 		var result = MoveAlongStep( guest );
 		if ( result == WalkResult.Arrived )
 		{
-			guest.State = GuestState.WaitingToGoHome;
+			EnterWaitingToGoHome( guest );
 			guest.StateTimer = WaitForBusSeconds;
 		}
 		else if ( result == WalkResult.Stuck )
@@ -3368,6 +3382,29 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	// [BIN:TPW-EXE:0x004C8430 top three thoughts] every thing of type 1 on a cell the predicate 0x004FA990 accepts counts, whatever its state: a guest in the booth queue or on the road home stands on a non-park cell and does not
 	public TopThoughts GetTopThoughts() =>
 		TopThoughtRanking.Rank( guests.Where( guest => guest.State != GuestState.Gone && IsCountedInPark( guest ) ).Select( guest => (int)guest.Thought ) );
+
+	/// <summary>
+	/// The park information window's happiness levels: the percent of the guests on park cells whose happiness byte is below 33 (sad) and the percent whose byte is above 66 (happy). A read of the guests only.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004C9750 sad percent] every guest thing (type 1) on a cell the predicate 0x004FA990 accepts counts; the happiness (+0x19C) truncated to a byte is compared strictly below the argument (0x21 = 33), and the result is count x 100 / guests, truncated, 0 without guests
+	// [BIN:TPW-EXE:0x004C9670 happy percent] the same count with the byte strictly above the argument (0x42 = 66)
+	public (int Sad, int Happy) GetHappinessLevels() => HappinessLevels( guests.Where( guest => guest.State != GuestState.Gone && IsCountedInPark( guest ) ).Select( guest => guest.Happiness ) );
+
+	/// <summary>The sad and happy percents of the guests' happiness values (<see cref="GetHappinessLevels"/>).</summary>
+	public static (int Sad, int Happy) HappinessLevels( IEnumerable<float> happiness )
+	{
+		int total = 0, sad = 0, happy = 0;
+		foreach ( var value in happiness )
+		{
+			total++;
+			var level = (int)value & 0xff;
+			if ( level < 33 )
+				sad++;
+			if ( 66 < level )
+				happy++;
+		}
+		return total > 0 ? (sad * 100 / total, happy * 100 / total) : (0, 0);
+	}
 
 	// ---- Snapshots (park save/load) ------------------------------------------------------------
 

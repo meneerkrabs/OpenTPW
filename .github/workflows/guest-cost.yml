@@ -1,0 +1,68 @@
+name: Smarter guests CPU cost
+# The CPU gate of the smarter-guests extension (docs/SMARTER-GUESTS.md, "Cost and release"): at most 1.10 times the original
+# guests' update time per guest-turn. It needs a machine nobody else is using, which a hosted runner is for the length of the
+# job. The scenarios are synthetic (ParkScenario), so no game data is needed. Run it by hand, or by a pull request that
+# changes this file.
+on:
+  workflow_dispatch:
+    inputs:
+      repeats:
+        description: 'Repeats per seed (3 seeds each)'
+        required: false
+        default: '11'
+        type: string
+      variants:
+        description: 'Variants to time (original is the baseline)'
+        required: false
+        default: 'original,1.5.0,1.6.0'
+        type: string
+  pull_request:
+    paths:
+      - .github/workflows/guest-cost.yml
+permissions:
+  contents: read
+concurrency:
+  group: guest-cost-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  cost:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9
+        with:
+          dotnet-version: 11.0.100-rc.2.26504.105
+      - run: dotnet build source/OpenTPW/OpenTPW.csproj --configuration Release --nologo
+      - name: Time the guests per guest-turn in four scenarios
+        env:
+          REPEATS: ${{ inputs.repeats || '11' }}
+          VARIANTS: ${{ inputs.variants || 'original,1.5.0,1.6.0' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! "$REPEATS" =~ ^[0-9]+$ ]] || [[ ! "$VARIANTS" =~ ^[a-z0-9.,]+$ ]]; then
+            echo 'repeats is a number and variants a comma list such as original,1.5.0,1.6.0.' >&2
+            exit 1
+          fi
+          dll=source/OpenTPW/bin/Release/net11.0/OpenTPW.dll
+          {
+            echo "## Smarter guests CPU cost (${{ matrix.os }}, $(nproc 2>/dev/null || sysctl -n hw.ncpu) CPUs)"
+            echo 'Gate: the "per guest-turn x" column of each extension variant is at most 1.10.'
+          } >> "$GITHUB_STEP_SUMMARY"
+          for scenario in "default:" "food shop:--guest-food" "litter and bins:--guest-litter --guest-bins" "litter, bins and food:--guest-litter --guest-bins --guest-food"; do
+            name=${scenario%%:*}
+            flags=${scenario#*:}
+            echo "::group::$name"
+            # shellcheck disable=SC2086 # the flags are a fixed list above
+            out=$(OPENTPW_SILENT=1 dotnet "$dll" --guest-report --guest-cost --guest-cost-variants "$VARIANTS" --guest-cost-repeats "$REPEATS" $flags)
+            echo "$out"
+            echo '::endgroup::'
+            printf '\n### %s\n```\n%s\n```\n' "$name" "$out" >> "$GITHUB_STEP_SUMMARY"
+          done

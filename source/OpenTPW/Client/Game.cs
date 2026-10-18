@@ -750,6 +750,9 @@ internal static class Game
 					switch ( name )
 					{
 						case "staff": hud.OpenStaffWindow(); break;
+						case "info": hud.OpenParkInfoWindow(); break;
+						case "infoseries": hud.SetParkInfoSeries( (OpenTPW.Hud.ParkInfoSeries)0x1f, false ); hud.SetParkInfoSeries( (OpenTPW.Hud.ParkInfoSeries)int.Parse( argument ), true ); break;
+						case "infoperiod": hud.SetParkInfoPeriod( int.Parse( argument ) ); break;
 						case "buy": hud.OpenBuyWindow(); break;
 						case "msg": hud.PostGameMessage( argument ); break;
 						case "openmsg": hud.OpenPendingMessage( 0 ); break;

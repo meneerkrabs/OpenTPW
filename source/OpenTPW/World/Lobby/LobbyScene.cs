@@ -24,10 +24,11 @@ public sealed class LobbyScene : OriginalModelScene
 	/// </summary>
 	// [BIN:TPW-EXE:0x005E3210 lobby island] islands are built from a theme's ISLAND entry at the caller's slot counter, at that slot's ISLANDCAMERAPOSITION and the ISLAND height and angle
 	/// <param name="generator">The lobby generator (<see cref="LobbyEffects.Draw"/>) the flying meshes draw from; without it none fly.</param>
-	public LobbyScene( LobbyDefinition definition, IReadOnlyList<LobbyIslandInfo?>? slots = null, Func<uint>? generator = null )
+	/// <param name="flyerPercent">The share of each group's flyers that is spawned (the LOBBYOBJECTS option, 0x7858dc); 100 keeps the authored counts.</param>
+	public LobbyScene( LobbyDefinition definition, IReadOnlyList<LobbyIslandInfo?>? slots = null, Func<uint>? generator = null, int flyerPercent = 100 )
 	{
 		Definition = definition;
-		FlyingMeshes = generator == null ? null : new LobbyFlyingMeshes( generator );
+		FlyingMeshes = generator == null ? null : new LobbyFlyingMeshes( generator, flyerPercent );
 		var placed = slots == null
 			? definition.Islands.Select( island => (Island: (LobbyIslandInfo?)island, Slot: island.Index) ).ToList()
 			: slots.Select( ( island, slot ) => (Island: island, Slot: slot) ).ToList();
@@ -39,8 +40,11 @@ public sealed class LobbyScene : OriginalModelScene
 				AddHeightfield( terrain );
 			foreach ( var (candidate, slot) in placed )
 			{
-				if ( candidate is not { } island )
+				if ( candidate is not { } parsed )
 					continue;
+				// [BIN:TPW-EXE:0x5dfb4a island constructor] the constructor draws three rand() values (each & 0xFF, shifted left 16) into the sky target +0x64, +0x68 and +0x6c before the file's SKYCOLOUR line is read; a file without one keeps them
+				var (randomRed, randomGreen, randomBlue) = ((byte)(Rand() & 0xFF), (byte)(Rand() & 0xFF), (byte)(Rand() & 0xFF));
+				var island = parsed.HasSkyColour ? parsed : parsed with { SkyColour = (randomRed, randomGreen, randomBlue), HasSkyColour = true };
 				var (x, z) = definition.PositionOf( slot );
 				var placement = NMatrix4x4.CreateRotationY( island.Angle * MathF.PI / 180 ) * NMatrix4x4.CreateTranslation( x, 0, z );
 				// [BIN:TPW-EXE:0x5dfa60 island models] the island and its gate are animated lobby models (0x5d8870; the island with two animation channels, the gate with one), both at (x, 0, z) turned by the ISLAND angle
@@ -89,7 +93,8 @@ public sealed class LobbyScene : OriginalModelScene
 	/// its own seeded from the clock (the original's stream is shared with the rest of the game, so its values cannot be
 	/// reproduced). Presentation only.
 	/// </summary>
-	// [APPROX:UI-018] the island clips are picked with rand() & 1 (0x5e11ea, CRT rand 0x67b5c0), whose process-wide stream is replaced by a local clock-seeded stand-in; the original also spends three rand() calls per island in its constructor (0x5dfb4a-0x5dfb7b, the default sky target), which the stand-in does not mirror; no world or guest stream is used
+	// [BIN:TPW-EXE:0x5e11ea island clip] the island clips are picked with rand() & 1 (CRT rand 0x67b5c0), and each island's constructor spends three rand() calls on its default sky target (0x5dfb4a-0x5dfb7b), which this stream mirrors
+	// [EXT:presentation-rand] the CRT's process-wide stream is replaced by a local clock-seeded stand-in (the original's is shared with the rest of the game and cannot be reproduced); no world or guest stream is used
 	private uint crtRand = (uint)Environment.TickCount;
 	private int Rand()
 	{

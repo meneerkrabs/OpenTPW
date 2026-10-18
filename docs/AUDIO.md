@@ -659,10 +659,14 @@ which were searched):
 * A park entered or loaded with weather on screen says so once: "The weather: rain." for six
   seconds of simulation time (a dry, quiet park stays silent). A paused park freezes the line
   mid-display; leaving the park or loading another ends it with the entity.
-* A pending forecast shows the countdown "Forecast: thunderstorms in 4 days." (tomorrow/today on the
-  last days) from the apply day and the current simulation day, and posts the same line as a message
-  to the log. One message when the forecast appears, one when it applies — never per step, so no
-  spam; a park resumed mid-warning announces the pending forecast once.
+* A pending forecast of another kind of weather than the current one shows the countdown
+  "Forecast: thunderstorms in 4 days." (tomorrow/today on the last days) from the apply day and the
+  current simulation day, and posts the same line as a message to the log. One message when such a
+  forecast appears, one when the kind of weather changes — never per step, and nothing for a
+  forecast or an apply that keeps the kind of weather: the original rolls a forecast every cycle
+  whatever the weather (tp.exe `0x512880`), so dry weather would otherwise be announced as a change
+  to dry weather every week. A change and the next forecast in one update post both; a park resumed
+  mid-warning announces the pending forecast once.
 * The forecast's kind classifies the pending quality by the converter's bands: the snow/rain tie is
   still undecided ("snow or rain") because the apply-time draw has not happened, and the lightning
   band composes "thunderstorms". The apply message names the resolved weather ("The weather has

@@ -254,8 +254,9 @@ public class CoasterPanelTests
 		var ride = new CoasterRide( CoasterDefinition.FromValues( CoasterTests.PcSettings() ), new CoasterWorld( 1 ), "Test Coaster" );
 		var builder = new CoasterBuilder( ride, new CoasterSite( 64, 64 ), () => economy, () => state!.Id );
 		CoasterTests.PlaceStation( builder, (20, 20) );
-		builder.LoopMode = true;
 		Assert.AreEqual( CoasterPlaceResult.Ok, builder.Place( 24, 20 ) );
+		builder.LoopMode = true;
+		Assert.AreEqual( CoasterPlaceResult.Ok, builder.Place( 24, 26 ) );
 		var panel = new CoasterToolPanel( builder );
 		Assert.AreEqual( 0, builder.UpgradeLevel );
 		Assert.IsTrue( panel.PairPending );

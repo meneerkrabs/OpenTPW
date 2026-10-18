@@ -321,9 +321,9 @@ without pool cells saves, loads and exports identically with it on or off ([POOL
 
 ## Smarter guests and guest insights (`opentpw.smarter-guests`, `opentpw.guest-insights`)
 
-Two official extensions for the park visitors ([SMARTER-GUESTS.md](SMARTER-GUESTS.md) has the plan, the architecture and the measurement): guest insights at version 1.0.0 and smarter guests at version 1.6.0. **Guest insights can be switched on** (it has its first
-feature, phase 1); **smarter guests cannot yet**: its rule set (phases 2 to 6) is built and measured, but a player cannot switch it on until phase 6 shows a measurable positive effect, so a save does not break for nothing. It is registered for tests and development, hidden from the Extensions and mods screen, and a `mods.json` entry or
-`--enable-mod` for it is ignored with a log line.
+Two official extensions for the park visitors ([SMARTER-GUESTS.md](SMARTER-GUESTS.md) has the plan, the architecture and the measurement): guest insights at version 1.0.0 and smarter guests at version 1.6.0. **Both can be switched on** on the Extensions and mods screen, in
+`mods.json` or with `--enable-mod`, and both are off by default. Guest insights has its first feature (phase 1). Smarter guests was released as opt-in in 1.6.0, once its rule set (phases 2 to 6b) had a
+measurable effect (less crowding, less litter) and its CPU cost per guest-turn met the gate of at most 1.10 times the original guests' (SMARTER-GUESTS.md, "Cost and release").
 
 - **`opentpw.smarter-guests`** changes the simulation (`AffectsSimulation`), so a park saved with it records it (id, version, no files) and loads only with it on, in the same version; a park saved without it
   loads only with it off. **The extension's version is the algorithm identity**: every release that changes how guests decide bumps it, and a park saved by another version is refused with

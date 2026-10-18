@@ -85,7 +85,7 @@ public sealed class BumpVehicle
 	/// presentation state set by the renderer (the break smoke sits there). Not saved, not part of the digest.
 	/// </summary>
 	public System.Numerics.Vector3? SparksNode { get; set; }
-	/// <summary>Which seats of the vehicle's mesh have a head dummy (seat k - 1 holds rider k), set by the renderer from the model; null where nothing draws (every rider counts as seated).</summary>
+	/// <summary>Which seats of the vehicle's mesh have a head dummy (seat k - 1 holds rider k), set by the renderer from the model; null before the first draw (the controller's SeatHeadSource then answers, and without one no rider is seated).</summary>
 	public bool[]? SeatHeads { get; set; }
 	/// <summary>The controller the vehicle belongs to (+0x9C).</summary>
 	public BumpController? Controller { get; internal set; }

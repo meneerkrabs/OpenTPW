@@ -10,9 +10,12 @@ and screams through the positional API (the census over 262 shipped objects and 
 coaster trains that bump hard crash; the weather plays its rain and thunder; the level's placed ambients (`scape.omp`, types 1 and
 3) play with the mixer's distance law; the crowd sentence, the guests' and the staff's voices (walking, idle and work sounds from their
 state machines), the visitor click, the queue-joins-a-path cue and the advisor's speech and its two key sounds play; and the positioned
-effects go through a software reverb that follows the ridden ride's `SndReverb.map` preset (a stand-in, AUDIO-039). A button plays `cat_ui` 0xBD instead of 0x1F when its parent has style bit 0x10 (AUDIO-004 is retired; see "Triggered sounds"). Still not played: the
-reverb's exact sound (the original hands the record to hardware or to a COM object), the custom-bank EVENT type 10 (no shipped script uses it) and the slap reactions (OpenTPW has no slap). No original data is
-in the repository.
+effects go through a software reverb that follows the ridden ride's `SndReverb.map` preset (a stand-in, AUDIO-039). A button plays `cat_ui` 0xBD instead of 0x1F when its parent has style bit 0x10 (AUDIO-004 is retired; see "Triggered sounds"). Still not played:
+the reverb's exact sound (the original hands the record to hardware or to a COM object) and the custom-bank EVENT type 10 (no shipped script
+uses it). A list-row click plays 0x1F where the original may play nothing (AUDIO-041, open). The slap reactions 639–641 of `cat_speech` are played by the
+cut-off path in `AutomaticAdvisor.CutOffSpeech`: withdrawing a help message while its speech is still playing cuts the speech off and plays
+one of the three (`cat_speech` 0x27F + `rand() % 3`; tp.exe `0x5994E0`/`0x5995A4`;
+`AdvisorHelpTests.ACutOffSlapsOnlyWhileTheSpeechPlays`). No original data is in the repository.
 
 The integration regressions force a rainy storm, pass its rain level and due thunder
 through the live audio callbacks, and assert nonzero decoded PCM. They also exercise
@@ -460,11 +463,13 @@ Traced in the binary and played:
   not read, so OpenTPW keeps its own right-click Back and adds no left-click Back.
 * The level's rectangle ambients (`scape.omp` type 3): see "Rectangle ambients" below.
 * Reverb: see "Reverb" below.
+* The slap reactions 639–641 of `cat_speech` (`0x10007068`). Withdrawing a help message while its speech is still playing cuts the speech off
+  and plays one of the three (`cat_speech` 0x27F + `rand() % 3`; tp.exe `0x5994E0`/`0x5995A4`). `AutomaticAdvisor.CutOffSpeech` plays it;
+  `AdvisorHelpTests.ACutOffSlapsOnlyWhileTheSpeechPlays` covers the choice, and a cut-off after the speech sound has ended plays nothing.
 
 Not played:
 
 * The custom-bank `EVENT` type 10: see "Custom-bank EVENT type 10" below. Type 0 is the dispatcher's default/unsupported path.
-* The slap reactions 639–641 of `cat_speech` (`0x10007068`): OpenTPW has no slap interaction.
 
 ### Event coverage (round 7)
 
@@ -478,7 +483,9 @@ vomit (0xCC) and ride-removed (0x80) voices (`0x4fe1cb`, `0x4fe303`, `0x4fca3e`,
 The staff's walking and idle voices were already wired. Script-driven events (the ride scripts' sound
 instructions) play through the ride script system. The UI events that round left open are settled: 0xC1 is the pause menu's backdrop click and 0xCE the
 kart and water track tools' click (see "Finishing pass"), 0xC5 and 0xC6 are the advisor presentation's key sounds, and the track tool's other
-sounds are the coaster tool's 0x65 click and the trains' crash. Still not played: the slap reactions. `cat_ui` 0xBD plays for the three button families in the control-click row (AUDIO-004 is retired).
+sounds are the coaster tool's 0x65 click and the trains' crash. `cat_ui` 0xBD plays for the three button families in the control-click row (AUDIO-004 is retired). The slap reactions 639–641 of `cat_speech`
+are played by the cut-off path in `AutomaticAdvisor.CutOffSpeech` (`cat_speech` 0x27F + `rand() % 3`; tp.exe `0x5994E0`/`0x5995A4`;
+`AdvisorHelpTests.ACutOffSlapsOnlyWhileTheSpeechPlays`).
 
 ## Finishing pass (October 18)
 

@@ -149,7 +149,7 @@ public sealed class UiScrollList : UiElement, IUiRowList
 	public int Selected { get; set; } = -1;
 	public Action<int>? SelectionChanged { get; set; }
 	public Action<int>? RowActivated { get; set; }
-	/// <summary>Whether an activation plays the control click before <see cref="RowActivated"/>; off for an owner that may refuse and clicks itself.</summary>
+	/// <summary>Whether an activation plays the control click before <see cref="RowActivated"/>; off for proved silent-row owners or an owner that handles its own sound.</summary>
 	public bool ClicksOnActivate { get; set; } = true;
 	/// <summary>Whether new rows keep the view at the bottom (chat).</summary>
 	public bool FollowEnd { get; set; }
@@ -194,8 +194,8 @@ public sealed class UiScrollList : UiElement, IUiRowList
 	{
 		if ( Selected < 0 || Selected >= Rows().Count || RowActivated == null )
 			return;
-		// [BIN:TPW-EXE:0x6655a2 list click] a row click posts 0x400-0x406 to the list's owner, not message 0x100, so the hook 0x485780 (the 0xBD/0x1F choice at 0x4857cb) may play nothing for it. The button class 0x668f9c is the only sender of 0x100 for a mouse release over a button; window procedures also send 0x100 to their own window (0x48d83b, 0x49973e, 0x49ec53, 0x4a6df5 (via the dispatcher 0x658d9f), 0x4b640a, 0x4b9f06, 0x4bb020 and 0x4bfc29).
-		// [APPROX:AUDIO-041] left open: this still plays cat_ui 0x1F on row activation. Do not change it to silence or to 0xBD until that question is read.
+		// [BIN:TPW-EXE:0x665c35 type-7 procedure] row helpers notify the owner (activation 0x400), not the hook's button message 0x100. Load (0x49e880), Find Parks (0x4bf9f0) and Other Parks (0x4c1a10) add no intrinsic row sound and explicitly disable this click; their base/override routes and immediate downstream UI path are traced (docs/AUDIO.md).
+		// [APPROX:AUDIO-041] retain the default 0x1F policy for untraced/extension callers. Other owners/custom row classes, still-thumb activation and general keyboard/shortcut self-0x100 routing remain open; these three owners do not justify globally silencing lists or their separate buttons.
 		if ( ClicksOnActivate )
 			GameAudio.PlayUi( GameAudio.ClickEvent );
 		RowActivated( Selected );

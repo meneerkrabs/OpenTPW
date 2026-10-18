@@ -54,6 +54,24 @@ public sealed class CoasterBuilder
 	/// <summary>The loop edit mode is on and the next pylon is the first of the pair (the counter 0x79c664 is still 2).</summary>
 	public bool FirstOfPair => loopMode && loopPylonsLeft == LoopPair;
 
+	/// <summary>The editable chain endpoint still needs the second pylon of a loop pair, even after the loop tool has been left.</summary>
+	// [BIN:TPW-EXE:0x444c00 pending loop endpoint] an incomplete track tests its tail (+0x58), a complete cut track its cut predecessor (+0x60), and a complete uncut track returns false; only node flag 0x80 is tested, independently of mode bit 0x40
+	public bool LoopPairPending => (!Track.IsComplete || Track.IsCut) && Track.LastIndex >= 0
+		&& (Track.Nodes[Track.LastIndex].Flags & CoasterNodeFlags.LoopFirst) != 0;
+
+	/// <summary>Resumes the endpoint's pending second loop pylon, or starts a new pair unless loop mode is already active.</summary>
+	// [BIN:TPW-EXE:0x442d10 resume loop pair] a pending endpoint sets counter 0x79c664 to 1 and mode bit 0x40; the loop selection then calls 0x442cd0, which starts at 2 only when that mode bit is clear
+	internal void StartOrResumeLoopPair()
+	{
+		if ( LoopPairPending )
+		{
+			loopMode = true;
+			loopPylonsLeft = 1;
+		}
+		else
+			LoopMode = true;
+	}
+
 	/// <summary>Loop pylons a loop edit mode places before it ends.</summary>
 	public const int LoopPair = 2;
 	/// <summary>The requested height of the next pylon (world units above the ground; clamped when placed).</summary>

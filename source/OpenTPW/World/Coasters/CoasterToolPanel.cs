@@ -113,9 +113,13 @@ public sealed class CoasterToolPanel
 	/// <summary>The loop button exists: the coaster has a loop pylon and its ride is upgraded to level 1 or more (a station without an economy counts as unlocked).</summary>
 	public bool LoopUnlocked => builder.Ride.Definition.HasLoopPylon && (builder.UpgradeLevel is not int level || level >= 1);
 
-	/// <summary>Whether the last node is the first pylon of a loop pair: the second one is still to place and only the loop button builds.</summary>
-	public bool PairPending => Track.LastIndex >= CoasterTrack.StationNodeCount && Track.Nodes[Track.LastIndex] is { } last && (last.Flags & CoasterNodeFlags.LoopFirst) != 0 && (last.Flags & CoasterNodeFlags.Loop) != 0
-		&& builder.LoopMode;
+	/// <summary>Whether the chain endpoint is the first pylon of a loop pair: leaving loop mode does not remove the pending second pylon.</summary>
+	public bool PairPending => builder.LoopPairPending;
+
+	/// <summary>The opening selection, keeping an edit button available when a pending pair's loop control is locked or absent.</summary>
+	private CoasterToolButton OpeningButton => IsFinished ? CoasterToolButton.Height
+		: IsEnabled( CoasterToolButton.Build ) ? CoasterToolButton.Build
+		: IsEnabled( CoasterToolButton.Loop ) ? CoasterToolButton.Loop : CoasterToolButton.Height;
 
 	public bool IsEnabled( CoasterToolButton button ) => (EnabledMask & button) != 0;
 
@@ -130,7 +134,7 @@ public sealed class CoasterToolPanel
 		DragCost = null;
 		Selected = CoasterToolButton.None;
 		builder.LoopMode = false;
-		Select( IsFinished ? CoasterToolButton.Height : PairPending ? CoasterToolButton.Loop : CoasterToolButton.Build );
+		Select( OpeningButton );
 	}
 
 	/// <summary>A click on a button (<c>0x446fa0</c> with param 1): leaves the old sub-mode and starts the new one. A disabled button does nothing.</summary>
@@ -140,7 +144,6 @@ public sealed class CoasterToolPanel
 			return false;
 		EndDragWithoutCommit();
 		cutStart = null;
-		var wasLoop = Selected == CoasterToolButton.Loop;
 		Selected = button;
 		Cursor = null;
 		switch ( button )
@@ -150,9 +153,8 @@ public sealed class CoasterToolPanel
 				builder.LoopMode = false;
 				break;
 			case CoasterToolButton.Loop:
-				// [BIN:TPW-EXE:0x442cd0 loop mode] the loop button sets the pair counter 0x79c664 to 2 and the loop edit flag 0x40 (a pair already begun continues)
-				if ( !wasLoop && !PairPending )
-					builder.LoopMode = true;
+				// 0x446fa0 -> 0x447135 -> 0x442d10 resumes the endpoint before 0x4445b0(2) starts or preserves loop mode.
+				builder.StartOrResumeLoopPair();
 				break;
 			default:
 				builder.LoopMode = false;
@@ -182,7 +184,8 @@ public sealed class CoasterToolPanel
 			return;
 		if ( Track.IsChainStart( x, y ) && (!Track.IsComplete || Track.IsCut) )
 		{
-			var closing = Track.IsCut ? Track.CheckClosure() : Track.IsClosed ? builder.CheckComplete() : Track.CheckClosure();
+			// [EXT:coaster-completion-click] the closing target shows what its click answers: a pylon marked invalid elsewhere refuses the closing as well
+			var closing = Track.IsClosed && !Track.IsCut ? builder.CheckComplete() : builder.CheckClose();
 			Cursor = new CoasterCursor( x, y, closing, 0, true );
 			return;
 		}
@@ -522,7 +525,7 @@ public sealed class CoasterToolPanel
 		if ( Selected == CoasterToolButton.None || IsEnabled( Selected ) )
 			return;
 		drag = null;
-		Select( IsFinished ? CoasterToolButton.Height : CoasterToolButton.Build );
+		Select( OpeningButton );
 	}
 
 	/// <summary>The tool ends: a drag in progress is released where it stands.</summary>

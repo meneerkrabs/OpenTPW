@@ -64,18 +64,16 @@ public sealed partial class OriginalObjectRuntime
 	/// <c>KILLOBJ</c> and <c>FADEOBJ</c> on a slot: every sound record of the script with the slot ends and is freed.
 	/// </summary>
 	// [BIN:TPW-EXE:0x5522C5 KILLOBJ] types 3-10 call 0x51C2C0(handle): the library finds the voice by its handle (0x6B6830) and stops it at once (the type-3 message, 0x6B89B0), a handle already gone does nothing
-	// [BIN:TPW-EXE:0x5523D0 FADEOBJ] types 3-10 call 0x51C300(handle): message 0x700BAC {handle, 0x3C} runs 0x6B8930, which takes the "fade" call (0x6B65A0 -> the voice's vf+0x30; base entry 0x6B7130, sentence dispatch still unresolved) only while bit 0x400 of the sound library's settings word (+0x28 of the object at library +0x24) is set, and otherwise the stop above (the library's vf+0x18 = 0x6B89B0, the very call KILLOBJ makes); particle types take 0x51FF70(handle, -2) as KILLOBJ does
-	// [BIN:TPW-EXE:0x51B920 SoundQuality] the options apply and sound-start paths select library bit 0x400 when quality is greater than the threshold at 0x785920; its zero-initialized storage supports the quality-zero stop branch, but does not establish the retail persisted default.
-	// [BIN:TPW-EXE:0x6B7130 base voice fade] stores ratio 60 at placeholder +0x44 and sets flag 0x400. The base update 0x6BCB80 sends request mask 0x80000 through 0x6C50D0; 0x6C570B..0x6C5737 replaces the sample volume with its current effective integer volume multiplied by 60 / 100. At zero the updater marks stop (0x6BCC6E..0x6BCC77), which the manager dispatches at 0x6B6320. This is repeated decay, not an absolute 60-percent gain.
-	// [APPROX:AUDIO-040] OpenTPW still stops both KILLOBJ and FADEOBJ and has no SoundQuality option. Positive-quality decay timing, sentence subtype dispatch, pending-play ordering, group-gain interaction and the retail persisted default remain unresolved; the script record is released independently of the voice lifetime.
-	internal void EndHeldSounds( int scriptId, int slot )
+	// [BIN:TPW-EXE:0x5523D0 FADEOBJ,0x6B8930] quality > the configured threshold posts ratio 60; otherwise stop immediately.
+	// Both opcodes free every matching script record. The service owns any released fade independently.
+	internal void EndHeldSounds( int scriptId, int slot, bool fade = false )
 	{
 		for ( var index = heldSounds.Count - 1; index >= 0; index-- )
 		{
 			var record = heldSounds[index];
 			if ( record.ScriptId != scriptId || record.Slot != slot )
 				continue;
-			record.Sound.Stop();
+			if ( fade ) record.Sound.Fade(); else record.Sound.Stop();
 			heldSounds.RemoveAt( index );
 		}
 	}

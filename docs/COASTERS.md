@@ -114,7 +114,14 @@ same frame from its cells (`CoasterStationLayout.FromCells`, `[EXT:coaster-stati
   `0x80000` and `0x100000` (`0x434060`): it is no loop node, its tangent has no previous neighbour and its next is S1, and
   it starts no link. OpenTPW completes only a closed circuit without invalid marks, in
   two clicks (`[EXT:coaster-completion-click]`); the original completes on one click on any
-  cell of type 4, 9 or 10 and refuses nothing (`0x435570`, cell evaluator `0x5345b8`).
+  cell of type 4, 9 or 10 and refuses nothing (`0x435570`, cell evaluator `0x5345b8`). The closing click is refused while
+  the closing link from the last pylon fails the validator or a pylon is still marked invalid: the circuit stays open, the
+  hovered closing target is already marked refused, and the HUD says why ("The track can't be completed from the last pylon…",
+  "Move the pylons marked red…"). A closed circuit whose closing link fails (closed by an earlier build, or a pylon moved
+  after the closing) can never complete and takes no new pylon; entering the tool opens it again
+  (`[EXT:coaster-failing-closure-opens]`), so it is built on from its last pylon. The ride window shows such a coaster as
+  TRACK INCOMPLETE and greys its door ([UI.md](UI.md)); the reopening guard's coaster test is the guests' predicate
+  (complete, not crossing itself, not in the tool, `0x441970`).
 
 Headless API (tests, the M3/M4 gates):
 
@@ -176,6 +183,8 @@ placed once on the release. Backspace waits for a drag; a drag let go while the 
   with every edge in `blue.tga`, or `red.tga` when the validator refuses the cell (the marker textures the loader appends after the
   coaster's own, `0x42f390`). A hovered chain start (the closing target) takes the node flag `0x800000`, or `0x804000` when the closing link is refused (`0x4360c4`), and the marker
   textures draw that node's own tag pairs (`0x43f4e0` with both nodes the same); the rebuild `0x43eb70` draws no link into the start. `0x4360c0` also sets `0x200000` on the ends and their neighbours: it is the mark that makes the self-intersection pass `0x439ab0` re-test a node (`0x439b6b`), redundant here because the pass runs over every node. The rebuild `0x43eb70` samples and tests every track it draws, so while a coaster is built (and while a pylon is dragged) a link that crosses the track, the cursor's link included, is drawn with the crossing marker.
+
+The loop tool resumes a pending pair from the open chain endpoint after closing/reopening the panel or using an edit button: the second pylon keeps counter 1, its cursor omits `LoopFirst`, and placing it ends loop mode. The endpoint is the incomplete chain's tail or a completed cut circuit's predecessor, not an arbitrary picked pylon. Build stays disabled while that endpoint carries `0x80`, independently of the active tool. Availability and upgrade gates remain in force. See [loop-pair resumption](COASTER-LOOP-RESUMPTION.md) for the static evidence, synthetic coverage and remaining COAST-035 dispatch/loader qualifications.
 
 ## Running
 

@@ -701,7 +701,7 @@ public sealed partial class ParkHud
 		{
 			// a visit reads the published state while drawing instead (the snapshot stays empty)
 			infoNow = level.IsReadOnlyVisit ? null : SelectedInfo;
-			openButton.Enabled = !level.IsReadOnlyVisit && infoNow?.CanOpen == true;
+			openButton.Enabled = !level.IsReadOnlyVisit && infoNow?.CanOpen == true && objectDoorAllowed;
 		}
 		if ( hud.Find( "deleteRide" ) is UiButton deleteButton )
 			deleteButton.Enabled = !level.IsReadOnlyVisit && selectedObject is { IsDeleted: false } item && !item.Entry.IsFixedItem;

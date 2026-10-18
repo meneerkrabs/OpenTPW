@@ -799,7 +799,7 @@ public partial class Level : IDisposable
 		if ( AttractionRuntimeOf( instance ) is not { } runtime )
 			return;
 		var coaster = runtime.Coaster != null;
-		if ( RideRepair.OpensAfterRepair( coaster ? RideOpening.CoasterTrackType : 0, !coaster || runtime.Coaster!.IsOperational ) )
+		if ( RideRepair.OpensAfterRepair( coaster ? RideOpening.CoasterTrackType : 0, !coaster || runtime.Coaster!.AcceptsGuests ) )
 			runtime.Open();
 		else
 			runtime.Close();

@@ -262,7 +262,7 @@ public static class UiColors
 	public static readonly RgbaByte Negative = new( 255, 40, 40, 255 );
 	/// <summary>Dark label text inside the light-green option bars (near-black navy).</summary>
 	// [BIN:TPW-EXE:0x4a43b0 options labels] the original's options labels (and the slider labels, 0x4a4490) get the colour (0,0,0,255) (0x4a441e, 0x4a44fe) and font slot 6 ([0x7537b4])
-	// [APPROX:UI-037] option bar label colour (16,16,48) read off a capture by eye; how the control's colour tints its white glyph bitmap when drawn is not traced — evidence needed: the text bitmap's sprite draw (0x48f410 → 0x588c20 is only the release of the control's sprite quads, and the text control's vtable 0x6ff350 has no draw slot of its own (slot 2 is a bare return), so the control's sprite quads are drawn by the engine's sprite pass, where no reader of the colour at +0x78 was found)
+	// [APPROX:UI-037] option bar label colour (16,16,48) read off a capture by eye; the control's colour (0,0,0,255) at +0x78 is the diffuse colour of its quads in the sprite draw 0x58a010 (0x58a019) — evidence needed: the blend and texture-stage state that combines it with the grey glyph bitmap)
 	public static readonly RgbaByte OptionText = new( 16, 16, 48, 255 );
 	public static readonly RgbaByte Shadow = new( 0, 0, 40, 200 );
 	public static readonly RgbaByte Backdrop = new( 0, 0, 30, 120 );

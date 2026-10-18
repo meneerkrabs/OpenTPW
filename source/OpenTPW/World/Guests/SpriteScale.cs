@@ -24,6 +24,30 @@ public static class SpriteScale
 	/// <summary>Engine units of one pixel of a camera-facing sprite at scale 1 (the original's world units times <see cref="ObjectPlacement.ModelScale"/>).</summary>
 	public static readonly float EngineUnitsPerPixel = BillboardPixel * ObjectPlacement.ModelScale;
 
+	/// <summary>The near and far planes the park camera gives the projection builder (<c>0x0042A990</c> to <c>0x00578BE0</c>), in the original's world units.</summary>
+	public const float ProjectionNear = 0.1f;
+	/// <inheritdoc cref="ProjectionNear"/>
+	public const float ProjectionFar = 1000f;
+
+	/// <summary>
+	/// The share of its view depth a visitor's or a staff member's sprite is drawn at. The original pulls these sprites towards the camera in depth once
+	/// their quad is placed: the quad keeps its place and size on screen, and the ground in front of the hotspot, which a sprite's feet hang over when the
+	/// camera looks down, no longer covers them. <paramref name="viewDepth"/> is the hotspot's view depth in the original's world units; at the park view's
+	/// depths (40 to 250 units) the pull is 3.5 to 3.9 units (0.7 to 0.8 engine units), which keeps soles up to 16 pixels below the hotspot clear of the ground at
+	/// the lowest camera pitch, 45 degrees.
+	/// </summary>
+	// [BIN:TPW-EXE:0x00589B50 sprite depth pull] after 0x005890E0 places a camera-facing quad, a sprite flagged 0x200 (the pickable ones: 0x005890E0's pick tests that flag, and it is how the original
+	// selects visitors and staff, UI-930; the shadow copies 0x00475CF0 and 0x00475E10 clear it) has the clip z of all four vertices moved to z - 0.2 / (z + 1), unless engine flag 0x2000 is set
+	// (only the front end's 3D scenes set it, through 0x005D9680); x, y and w stay. The projection 0x00578BE0 gives z = a (v - n) and w = s v (s = sin 45 degrees, a = s / (1 - n / f),
+	// the screen matrix 0x0087B0D0 leaves both), so the pulled depth is that of the view depth v / (1 + 0.2 / (n a (a (v - n) + 1)))
+	public static float PulledDepthShare( float viewDepth )
+	{
+		if ( !(viewDepth > ProjectionNear) )
+			return 1f;
+		var a = MathF.Sin( HalfFieldOfView ) / (1f - ProjectionNear / ProjectionFar);
+		return 1f / (1f + 0.2f / (ProjectionNear * a * (a * (viewDepth - ProjectionNear) + 1f)));
+	}
+
 	/// <summary>
 	/// The display's height over its width, which the flat quad's width takes (DAT_008BCBCC, 0x00582EB0): 0.75 in every 4:3 mode the original offers (640 × 480, 800 × 600, 1024 × 768).
 	/// OpenTPW draws the flat decals with that value whatever the window.

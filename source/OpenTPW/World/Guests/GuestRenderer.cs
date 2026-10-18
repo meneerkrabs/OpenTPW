@@ -8,7 +8,8 @@ namespace OpenTPW;
 /// <summary>
 /// Draws every visible guest as a camera-facing quad of its original kid sprite (one draw call, one dynamic
 /// vertex buffer). Direction and walk-cycle frame come from <see cref="GuestSpriteAtlas"/>; the sprite's
-/// hotspot (its feet) sits on the terrain heightfield. The world size of a sprite pixel is an approximation.
+/// hotspot (its feet) sits on the terrain heightfield, and the quad is pulled towards the camera as the original pulls a visitor's sprite
+/// (<see cref="PullTowardsEye"/>), so the ground in front of the feet does not hide them.
 /// </summary>
 public sealed class GuestRenderer : Entity
 {
@@ -40,6 +41,12 @@ public sealed class GuestRenderer : Entity
 	public Func<Guest, bool>? Draws { get; init; }
 	/// <summary>[EXT:pools-swim] Chooses the animation slot and step of a guest instead of the walking, waiting and standing rules (the swimmers' renderer: the swim strokes); null for the kids and the costumes.</summary>
 	public Func<Guest, (int Slot, int Step)?>? SlotChooser { get; init; }
+	/// <summary>
+	/// The slots drawn with the original's depth pull of a visitor's sprite (<see cref="SpriteScale.PulledDepthShare"/>); null: every slot (the kids and the costumes). The swimmers' renderer
+	/// limits it to the slots whose hotspot is the feet (<see cref="PoolSwimSlots.FeetAnchored"/>).
+	/// </summary>
+	public Func<int, bool>? DepthPulledSlots { get; init; }
+
 	/// <summary>[EXT:pools-swim] Where a guest's hotspot lies in the engine instead of on the ground (the swimmers' renderer: on the water); null for the kids and the costumes.</summary>
 	public Func<Guest, SVector3>? FeetChooser { get; init; }
 
@@ -190,6 +197,22 @@ public sealed class GuestRenderer : Entity
 		return OriginalParkPlacement.ToEngine( field, new SVector3( cellX * field.CellSizeX, height + lift, cellY * field.CellSizeZ ) );
 	}
 
+	/// <summary>The camera's position in engine space, from its view matrix.</summary>
+	internal static SVector3 Eye( System.Numerics.Matrix4x4 view ) => System.Numerics.Matrix4x4.Invert( view, out var inverse ) ? inverse.Translation : SVector3.Zero;
+
+	/// <summary>
+	/// A visitor's or a staff member's sprite after the original's depth pull (<see cref="SpriteScale.PulledDepthShare"/>): the hotspot moves along its view ray towards the
+	/// <paramref name="eye"/> and the quad's extents shrink by the same share, so the quad covers the same pixels, nearer the camera. A hotspot behind the eye stays.
+	/// </summary>
+	internal static (SVector3 Feet, float Share) PullTowardsEye( SVector3 feet, SVector3 eye, SVector3 forward )
+	{
+		var depth = SVector3.Dot( feet - eye, forward );
+		if ( !(depth > 0f) )
+			return (feet, 1f);
+		var share = SpriteScale.PulledDepthShare( depth / ObjectPlacement.ModelScale );
+		return (eye + (feet - eye) * share, share);
+	}
+
 	/// <summary>Atlas, frame and mirroring for a guest seen with the given camera axes (engine space).</summary>
 	public (int Atlas, int Frame, bool Mirror) SelectSprite( Guest guest, SVector3 cameraRight, SVector3 cameraForward )
 	{
@@ -311,6 +334,7 @@ public sealed class GuestRenderer : Entity
 		var right = new SVector3( view.M11, view.M21, view.M31 );
 		var up = new SVector3( view.M12, view.M22, view.M32 );
 		var forward = -new SVector3( view.M13, view.M23, view.M33 );
+		var eye = Eye( view );
 		var needed = simulation.Guests.Count * VerticesPerGuest;
 		if ( vertices.Length < needed )
 			vertices = new Vertex[Math.Max( needed, 64 * VerticesPerGuest ) * 2];
@@ -323,6 +347,9 @@ public sealed class GuestRenderer : Entity
 			var atlas = atlases[atlasIndex];
 			var frame = atlas.Frames[frameIndex];
 			var feet = (FeetChooser?.Invoke( guest ) ?? CellToEngine( field, guest.DrawX, guest.DrawY )) + up * AnchorLift( atlasIndex, slot, direction ) - forward * (DepthPullChooser?.Invoke( guest ) ?? 0f);
+			var share = 1f;
+			if ( DepthPulledSlots?.Invoke( slot ) != false )
+				(feet, share) = PullTowardsEye( feet, eye, forward );
 			var (x0, x1, yTop, yBottom) = frame.Extents( mirror, UnitsPerPixel );
 			var u0 = frame.X / (float)atlas.Width;
 			var u1 = (frame.X + frame.Width) / (float)atlas.Width;
@@ -332,7 +359,7 @@ public sealed class GuestRenderer : Entity
 			var v1 = (frame.Y + frame.Height) / (float)atlas.Height;
 			// a lying pose may be turned in its own plane about the hotspot (RotatedSlots); (sin, cos) of the clockwise screen angle
 			var (sin, cos) = MathF.SinCos( rotation );
-			SVector3 Corner( float x, float y ) => feet + right * (x * cos + y * sin) + up * (-x * sin + y * cos);
+			SVector3 Corner( float x, float y ) => feet + (right * (x * cos + y * sin) + up * (-x * sin + y * cos)) * share;
 			var topLeft = new Vertex( Corner( x0, yTop ), -forward, new SVector2( u0, v0 ) ) { TexIndex = atlasIndex };
 			var topRight = new Vertex( Corner( x1, yTop ), -forward, new SVector2( u1, v0 ) ) { TexIndex = atlasIndex };
 			var bottomLeft = new Vertex( Corner( x0, yBottom ), -forward, new SVector2( u0, v1 ) ) { TexIndex = atlasIndex };

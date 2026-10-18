@@ -146,7 +146,12 @@ October 17, 2026. Static analysis of tp.exe (`[BIN:TPW-EXE:...]`), the PC twin o
   hold one blitter per pixel format. The 5-5-5 blitter (`0x6b0760`) blends per channel as `dst + ((src - dst) * c) / 15` with signed
   division on 5-bit channels and keeps the destination's alpha bit: no gamma. It differs from the Mac 8888 path above, whose unsigned
   arithmetic wraps. White on the cleared bitmap gives grey levels with alpha bit 0, so how coverage turns into screen alpha depends on
-  the sprite draw's state (`UI-007`, `UI-037`); the 565, 8888 and 4444 blitters and that state are not yet read.
+  the sprite draw's state (`UI-007`, `UI-037`). The 32-bit blitter (`0x6b15f0`) blends the same way per channel and also keeps the
+  destination's alpha byte. A default run does not use the 5-5-5 format: the texture format index `[0x8bd554]` is 2 (4-4-4-4) or 3
+  (8-8-8-8) by option bit `0x400000` of `[0x7a1a8c]` (table `0x7015f8`: 0 = 5-6-5, 1 = 1-5-5-5, 2 = 4-4-4-4, 3 = 8-8-8-8). The control is a
+  sprite object (record at control +0x54, colour at record +0x24 = control +0x78) drawn by the sprite draw `0x58a010` as pre-transformed
+  quads whose single diffuse colour is that colour, with the alpha test state word `0x400`; the 565 and 4444 blitters and the blend and
+  texture-stage state of those quads are not yet read.
 - **Control text box** (`0x48f830`). Horizontal alignment byte +0xd8 (0 left, 1 centre, 2 right) and vertical byte +0xd9 (0 top, 1 centre, 2 bottom;
   constructor default centre) select the library's modes; margins +0xde and +0xe0 are in 2048 x 1536 units scaled by the screen
   size words `0xfaa5c4` and `0xfaa5c0`; without the wrap byte (+0xda) the box is 0x4000 wide. The bitmap's quad is placed in canvas

@@ -1,0 +1,7 @@
+## Visitors and staff show their feet: the original's sprite depth pull (October 18, 2026)
+
+The player noticed that the pools' kids, re-rendered from the original's 45 degree camera, had lost their shoes. The frames hold them; the ground hid them. A camera-facing sprite lies at the depth of its hotspot, and seen from above the ground just in front of the hotspot is nearer the camera, so it covered everything below the hotspot. In the `.TPC` the soles end 3 to 5 pixels below it, so the original kids lost part of their feet too.
+
+tp.exe pulls these sprites towards the camera. In its sprite pass (0x589B50) a sprite with the pick flag 0x200, which visitors and staff carry, has its clip depth moved to z - 0.2 / (z + 1). Under the original's projection that is 3.5 to 3.9 world units nearer in the park view. OpenTPW now moves the quad of a kid, a costume or a staff member that much along its view rays, so it covers the same pixels nearer the camera (`SpriteScale.PulledDepthShare`, `GuestRenderer.PullTowardsEye`). The staff tools' dangling person, balloons, thoughts, litter and riders' heads keep their depth, as they have no pick flag. Among the swimmers only the slots whose hotspot is the feet are pulled, so a swimmer is not drawn over a pool's near wall.
+
+A jungle capture compares the same guests before and after: the shoes of the pools' kids and of the original kids are back, and a researcher's coat is no longer cut flat at the bottom.

@@ -154,15 +154,21 @@ public static class PoolSwimSlots
 	/// <summary>Frames per direction of each slot in the shipped sets (0 for the empty ones).</summary>
 	public static readonly IReadOnlyList<int> FramesPerDirection = new[] { 1, 8, 0, 4, 4, 2, 4, 2, 8, 8, 4, 4, 2, 4, 4, 0 };
 
+	/// <summary>The slots drawn turned in their own plane by the residual of the 45 degree direction snap (<see cref="GuestRenderer.RotatedSlots"/>): the flat poses only, never the upright ones.</summary>
+	public static readonly IReadOnlySet<int> Rotated = new HashSet<int> { Sliding };
+
 	/// <summary>
 	/// The slots whose hotspot is the centre of the torso out of the water (the ladder, the dive, lying, sliding and the rope swing): the swimmers' renderer draws them with their bottom edge at the guest's
 	/// point (<see cref="GuestRenderer.BottomAnchoredSlots"/>), so <see cref="IPoolActivity.FeetHeight"/> always gives where the body rests. The strokes, the splash, the spa and the ring keep their water-line
 	/// hotspot, and standing, walking and the shower their feet.
 	/// </summary>
-	/// <summary>The slots drawn turned in their own plane by the residual of the 45 degree direction snap (<see cref="GuestRenderer.RotatedSlots"/>): the flat poses only, never the upright ones.</summary>
-	public static readonly IReadOnlySet<int> Rotated = new HashSet<int> { Sliding };
-
 	public static readonly IReadOnlySet<int> BottomAnchored = new HashSet<int> { LadderClimb, Dive, Lying, Sliding, RopeSwing };
+
+	/// <summary>
+	/// [EXT:pools-render] The slots whose hotspot is the feet on the ground or the deck (standing, walking, the shower): the swimmers' renderer draws them with the depth pull of a visitor's sprite on
+	/// land (<see cref="GuestRenderer.DepthPulledSlots"/>), so their feet show as the kids' do. The water-line and torso slots keep their depth, so a swimmer is not drawn over a pool's near wall.
+	/// </summary>
+	public static readonly IReadOnlySet<int> FeetAnchored = new HashSet<int> { Stand, Walk, Shower };
 }
 
 /// <summary>The activities a park's swim sessions offer (<see cref="GuestSimulation.PoolActivities"/>); Level registers these while the pools extension is on.</summary>

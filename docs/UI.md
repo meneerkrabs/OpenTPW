@@ -279,7 +279,7 @@ four display rows, window mode (windowed / borderless / exclusive "Full screen")
 (Native/Linear/Nearest), render scale (Native, presets 77/67/59/50 %, others labelled with the
 original " Custom") and the frame rate limit (the original " Off", 30 or 60 fps; `FrameLimiter`
 caps drawing only, the simulation keeps its fixed clock); the right column interface scale
-(Automatic or 1x-8x), enhanced textures (see below), language and wide zoom (`wideZoom`, `[EXT:wide-zoom]`: the park camera's zoom range, On or Off). Clicking the button or wheel up/Right cycles
+(Automatic or 1x-8x), enhanced textures (see below), language, wide zoom (`wideZoom`, `[EXT:wide-zoom]`: the park camera's zoom range, On or Off) and, `[EXT:periodic-autosave]`, "Autosave: On/Off" (the periodic autosave, on by default; `GameOptions.Autosave`, stored with the other game options). Clicking the button or wheel up/Right cycles
 forward, wheel down/Left backward, both wrapping. The effective internal/output size and
 fallback reason are small dark text below the rows. Game files is a purple button where the
 main page has its OpenTPW button, and Back is the `b_okay` button in the OK place on the
@@ -344,7 +344,7 @@ as its logical size with every glyph texel a pixel-exact 2×2 block (verified wi
 ### OpenTPW supplementary strings
 
 Labels the original tables lack (window mode, upscaling, render/interface scale,
-frame rate limit, language, back, date format, read-only/save/build messages, "not simulated yet")
+frame rate limit, language, autosave, back, date format, read-only/save/build messages, "not simulated yet")
 are in `UI/Original/SupplementaryStrings.cs`: repository-owned, clearly OpenTPW
 additions, translated for English, Danish, Dutch, French, German and Swedish
 (native-language names for the language row). They render with the original BF4
@@ -915,7 +915,9 @@ Independent scratch tests compare every visitor state/thought and fixed-point ed
 
 ### Explicit theme continuation
 
-Entering a TPW theme with a readable matching application-owned world save now offers **Continue saved park**, **New park**, and **Back** (`[EXT:theme-continue]`, host UI). Continue uses the existing `opentpw-{theme}-world.json` manual slot, preserving its start kind, Full Simulation/Instant Action mode and easy-layer choice. New opens the existing mode chooser and leaves that file alone until a later explicit manual Save. A theme without a valid matching slot keeps the existing new-game mode flow. There is no autosave, profile progression/key gate or native-save writer in this ingress.
+Entering a TPW theme with a readable matching application-owned world save now offers **Continue saved park**, **New park**, and **Back** (`[EXT:theme-continue]`, host UI). Continue uses the existing `opentpw-{theme}-world.json` manual slot, preserving its start kind, Full Simulation/Instant Action mode and easy-layer choice. New opens the existing mode chooser and leaves that file alone until a later explicit manual Save. A theme without a valid matching slot keeps the existing new-game mode flow. There is no profile progression/key gate or native-save writer in this ingress.
+
+`[EXT:periodic-autosave]` (user-approved 2026-10-18): the automatic entry between Continue saved park and New park reads the newer of two own slots. After Exit To Lobby it is "Continue automatic save" (`opentpw-{theme}-automatic-world.json`, the exit checkpoint). After a crash or a closed window the park may hold a [periodic autosave](PARK-SAVES.md#periodic-autosave) (`opentpw-{theme}-autosave-world.json`, written every 5 minutes of play) that is newer than that checkpoint and than the manual save; the entry then reads "Continue autosave" and activates that slot through the same staged resume. An autosave that is not newer than the manual save is not offered (the manual save is the player's latest word), and a damaged one is skipped. The label comes from `OpenTpwText.ContinueAutosavePark`, translated into all nine languages.
 
 The menu reads the existing own codec's structural metadata; it does not load or hash game assets. Activation re-reads the trusted generated slot and rejects missing/corrupt files or changed theme/start/mode/easy metadata. The existing `ResumePark` performs complete trusted-asset validation and builds the staged candidate before old-world retirement. Failure shows the existing-style error dialog and preserves the live world and manual slot; it never silently starts an empty park. The ordinary Load picker and native original-reference import remain separate. TPI's layout checkpoint continues to start a new experimental session and is never offered as TPW continuation.
 

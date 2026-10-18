@@ -4,7 +4,7 @@
     {"text": "Start from the original CD launcher, watch the intro movies and walk into the 3D lobby.", "href": "docs/AUTORUN.html"},
     {"text": "Pick any of the four worlds (Lost Kingdom, Wonder Land, Space Zone, Halloween World) and build a park there, or open the jungle sandbox with --sandbox.", "href": "docs/RUNNING.html"},
     {"text": "Place any of the 274 original rides, shops, sideshows and features; they run their original scripts and animations.", "href": "docs/OBJECTS.html"},
-    {"text": "Run a park with guests, staff, money, loans, research, objectives, golden tickets and keys, and save it and resume it later (the app and the browser).", "href": "docs/PARK-SAVES.html"},
+    {"text": "Run a park with guests, staff, money, loans, research, objectives, golden tickets and keys, and save it and resume it later (the app and the browser); a park in play is also autosaved every five minutes.", "href": "docs/PARK-SAVES.html"},
     {"text": "Build your own roller coaster: pylons, closed circuits, original cost, rating and train motion.", "href": "docs/COASTERS.html"},
     {"text": "Build go-kart and water ride tracks and add their jumps, tunnels and the Space Racers teleport from the ride's upgrade list.", "href": "docs/TRACKS.html"},
     {"text": "Hear the advisor, the park music and nearly every ride, weather, guest, staff and interface sound, and play the game in nine languages at any resolution.", "href": "docs/AUDIO.html"},

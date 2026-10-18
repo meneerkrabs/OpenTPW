@@ -262,9 +262,9 @@ public class ObjectParticleEffectTests
 			candidate.SetRepairParticle( false );
 			CollectionAssert.AreEqual( new[] { handle }, killed, "REPAIREFFECT 0 ends the restored effect" );
 
-			// an older save has neither field: no repair effect, and the scream view follows the held chain
+			// an older save has neither field: no repair effect, and the scream view follows the chain flag it saved
 			var older = OriginalObjectRuntime.CreateForRestore( entryWithKeys, new RideScriptWorld(), seed: 1, open: true, attractionId: runtime.AttractionId );
-			older.RestoreSnapshot( snapshot with { RepairParticle = 0, ScriptHoldsScream = null } );
+			older.RestoreSnapshot( snapshot with { RepairParticle = 0, ScriptHoldsScream = null, HeldScream = false } );
 			Assert.AreEqual( 0, older.RepairParticleHandle );
 			Assert.IsFalse( older.Effects.ScriptHoldsScream );
 

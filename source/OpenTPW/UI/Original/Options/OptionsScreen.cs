@@ -523,6 +523,10 @@ public static class OptionsScreen
 		Row( "wideZoom", () => Prefix( OpenTpwText.WideZoom ) + strings[services.Options.WideZoom ? UIStrings.On : UIStrings.Off],
 			() => new[] { true, false }.Select( on => Prefix( OpenTpwText.WideZoom ) + strings[on ? UIStrings.On : UIStrings.Off] ),
 			_ => services.Options.WideZoom = !services.Options.WideZoom, strings.Extra( OpenTpwText.WideZoomHelp ) );
+		// [EXT:periodic-autosave] on/off row for the periodic autosave (on by default); the pending value is the shared options object, which Cancel restores
+		Row( "autosave", () => Prefix( OpenTpwText.AutosaveOption ) + strings[services.Options.Autosave ? UIStrings.On : UIStrings.Off],
+			() => new[] { UIStrings.On, UIStrings.Off }.Select( value => Prefix( OpenTpwText.AutosaveOption ) + strings[value] ),
+			_ => services.Options.Autosave = !services.Options.Autosave, strings.Extra( OpenTpwText.AutosaveHelp ) );
 
 		// Effective size and fallback reason as small dark text in the free area below the rows.
 		screen.Add( new UiLabel
@@ -542,8 +546,8 @@ public static class OptionsScreen
 			Color = UiColors.OptionText,
 			Shadow = false,
 			Wrap = true,
-			// Below the fourth row of the left column (y 635..784), with or without the graphics rows on the right.
-			Bounds = Rect( 57, 835, 1964, 1035 ),
+			// Below the fifth row of the right column (y 791..940, the last with the graphics rows and the wide zoom and autosave rows), above the buttons at y 1330.
+			Bounds = Rect( 57, 975, 1964, 1275 ),
 			Anchor = UiAnchor.Center
 		} );
 

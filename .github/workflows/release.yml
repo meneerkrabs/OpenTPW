@@ -60,11 +60,13 @@ jobs:
         with:
           ref: ${{ steps.version.outputs.commit }}
           fetch-depth: 0
-      - name: Require a requested commit to be on main
-        if: ${{ inputs.commit != '' }}
+          persist-credentials: false
+      # Every job below runs code from this commit (the native build scripts, the publish), so only a commit on main is built:
+      # a dispatch from another branch, a requested commit or a tag on an unmerged commit is refused before any of it runs.
+      - name: Require the commit to be on main
         run: |
           git fetch --no-tags origin main
-          git merge-base --is-ancestor HEAD FETCH_HEAD || { echo 'The requested commit is not on main.' >&2; exit 1; }
+          git merge-base --is-ancestor HEAD FETCH_HEAD || { echo 'The commit to build is not on main.' >&2; exit 1; }
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
         with:
           python-version: '3.12'
@@ -91,6 +93,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           ref: ${{ needs.configure.outputs.commit }}
+          persist-credentials: false
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
         with:
           python-version: '3.12'
@@ -120,6 +123,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           ref: ${{ needs.configure.outputs.commit }}
+          persist-credentials: false
       - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9
         with:
           global-json-file: global.json
@@ -160,6 +164,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           ref: ${{ needs.configure.outputs.commit }}
+          persist-credentials: false
           fetch-depth: 0
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:

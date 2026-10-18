@@ -42,6 +42,27 @@ struct ObjectUniformBuffer
 		set => _padding1 = value;
 	}
 
+	/// <summary>
+	/// [EXT:evening] The share of the original's 0.4 ambient light the lit shaders keep (<c>g_flAmbientLevel</c>, the padding after the sun position): 0 means unchanged, which is what the
+	/// zeroed padding always meant. The pool water's shader keeps this slot for its wave strength and does not read it as an ambient level.
+	/// </summary>
+	public float AmbientLevel
+	{
+		readonly get => _padding0;
+		set => _padding0 = value;
+	}
+
+	/// <summary>
+	/// [EXT:evening] The tint the evening extension gives a pre-rendered sprite at dusk and night, through the light colour the sprite shader never used (all zero: no tint). At full day the buffer
+	/// is returned as it was.
+	/// </summary>
+	public ObjectUniformBuffer WithSpriteTint( in EveningLook look )
+	{
+		if ( !look.IsDay )
+			g_vLightColor = look.SpriteTint;
+		return this;
+	}
+
 	/// <summary>The buffer with the engine fog colour (<see cref="RenderFog"/>), which every fogged shader (test, water, sprite, 3d) blends distant pixels into.</summary>
 	public ObjectUniformBuffer WithFog()
 	{

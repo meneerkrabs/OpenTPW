@@ -126,8 +126,16 @@ public static class OfficialExtensions
 	// [EXT:winter-weather] OpenTPW's own option; Theme Park World's jungle and fantasy parks never snow (their snow band is -1..-1)
 	public static IOpenTpwExtension WinterWeather { get; } = new OpenTpwExtension( "opentpw.winter-weather", "Wintry Decembers", new ModVersion( 1, 0, 0 ), DefaultEnabled: false, AffectsSimulation: true );
 
+	/// <summary>
+	/// The cold rule (docs/WINTER.md, "Cold mood"): in snow a guest loses happiness once per qualifying day (the rain mood's gate), softened by a head item, mittens and a recent glühwein, never above 0. With it on it replaces the rain mood's
+	/// snow happiness (+1 in Theme Park Inc's kid row). It changes the simulation, so a save always records it while it is on and its version is the rule identity (the numbers are code defaults). Off by default, because it is an option,
+	/// and not in a Theme Park Inc run, which has no such weather.
+	/// </summary>
+	// [EXT:winter-cold] OpenTPW's own rule; Theme Park World has no cold and Theme Park Inc's snow cheers kids
+	public static IOpenTpwExtension WinterCold { get; } = new OpenTpwExtension( "opentpw.winter-cold", "Cold mood", new ModVersion( 1, 0, 0 ), DefaultEnabled: false, AffectsSimulation: true );
+
 	/// <summary>All official extensions, in declaration order.</summary>
-	public static IReadOnlyList<IOpenTpwExtension> All { get; } = new[] { Online, CrossEditionObjects, SmarterGuests, GuestInsights, Pools, PoolGuestArt, Umbrellas, RainMood, Winter, WinterWeather, RestoredAdvice, Evening };
+	public static IReadOnlyList<IOpenTpwExtension> All { get; } = new[] { Online, CrossEditionObjects, SmarterGuests, GuestInsights, Pools, PoolGuestArt, Umbrellas, RainMood, Winter, WinterWeather, WinterCold, RestoredAdvice, Evening };
 
 	public static IOpenTpwExtension? Find( string id ) => All.FirstOrDefault( extension => extension.Id == id );
 }

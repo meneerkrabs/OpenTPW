@@ -51,6 +51,12 @@ public static class FeatureGates
 	/// </summary>
 	public static bool WinterWeather => OpenTpwExtensions.IsEnabled( OfficialExtensions.WinterWeather ) && !GameEditions.IsThemeParkInc;
 
+	/// <summary>
+	/// [EXT:winter-cold] The <c>opentpw.winter-cold</c> option is on for this run: snow costs guests happiness once per qualifying day unless they are dressed warmly (docs/WINTER.md, "Cold mood"). Off by default, and not in a Theme Park Inc
+	/// run, which has no Theme Park World weather.
+	/// </summary>
+	public static bool WinterCold => OpenTpwExtensions.IsEnabled( OfficialExtensions.WinterCold ) && !GameEditions.IsThemeParkInc;
+
 	/// <summary>The <c>opentpw.pools-guest-art</c> extension is on: the land guests use the pools extension's 2x kid and head sets (docs/POOLS.md), when the pools extension is on too.</summary>
 	public static bool PoolGuestArt => OpenTpwExtensions.IsEnabled( OfficialExtensions.PoolGuestArt );
 

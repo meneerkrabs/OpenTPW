@@ -9,7 +9,7 @@ public sealed partial class ParkHud
 
 	/// <summary>The finale owns input until it is dismissed, without stopping the simulation that runs its looping script.</summary>
 	// [BIN:TPW-EXE:0x0048AE70 winning screen] exits the prior camera mode, hides the HUD, constructs a full-screen window and installs 0x48A970 as its focused handler.
-	// [APPROX:RIDES-019] the bounded screen hides the HUD and blocks park tools/camera input, but does not reproduce the winning-camera follow or original panel; the Resume Game button is an explicit OpenTPW fallback using an existing localized label.
+	// RIDES-019 (see ParkFinale): the bounded screen hides the HUD and blocks park tools/camera input, but does not reproduce the winning-camera follow or original panel; the Resume Game button is an explicit OpenTPW fallback using an existing localized label.
 	private bool UpdateResearchFinale( UiContext context, UiInput input, bool? mouseCaptured, bool? keyboardCaptured, bool? textCaptured )
 	{
 		if ( !level.ResearchFinaleActive )

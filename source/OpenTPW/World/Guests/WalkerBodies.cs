@@ -32,18 +32,20 @@ internal static class WalkerBodies
 	};
 
 	/// <summary>A heading byte as the walk code keeps it: the sign of the value with its magnitude masked to three bits.</summary>
-	// [BIN:TPW-EXE:0x00557E38 heading word] ((|value| & 7) with the sign put back), written at +0x14 of the entry
+	// [BIN:TPW-EXE:0x00557F74 heading word] ((|value| & 7) with the sign put back; also 0x005570E1), written at +0x14 of the entry
 	public static int SignedLow3( int value ) => value < 0 ? -(-value & 7) : value & 7;
 
-	/// <summary>The heading byte for an offset of the original's two ground axes (<paramref name="dx"/> along x, <paramref name="dz"/> along z): the angle atan2(dz, dx) in radians, truncated to an integer (so -3 to 3), then <see cref="SignedLow3"/>.</summary>
-	// [BIN:TPW-EXE:0x00556F40 walk heading] fpatan of (z2 - z1, x2 - x1) then __ftol, with the sign-keeping three-bit mask; the sprite pass keeps the low three bits (0x00542010)
-	public static int HeadingOf( float dx, float dz ) => SignedLow3( (int)Math.Atan2( dz, dx ) );
+	/// <summary>The heading byte for an offset of the original's two ground axes (<paramref name="dx"/> along x, <paramref name="dz"/> along z): the angle a = atan2(dz, dx) turned into a
+	/// rounded eighth of a turn, ftol(0.5 - (6.28318 - (a - 1.570795)) x -1.2732406) (6 to 14), then <see cref="SignedLow3"/>.</summary>
+	// [BIN:TPW-EXE:0x005570C2 walk heading] fpatan of (z2 - z1, x2 - x1), fsub 1.570795 (0x700FE8), fsubr 6.28318 (0x700FF0), fmul -1.2732406 (0x700FF8, -4/pi), fsubr 0.5 (0x701000),
+	// __ftol, then the sign-keeping three-bit mask (0x005570E1); the on-board heading does the same (0x00557F52, mask 0x00557F74); the sprite pass keeps the low three bits (0x00542010)
+	public static int HeadingOf( float dx, float dz ) => SignedLow3( (int)(0.5 - (6.28318 - (Math.Atan2( dz, dx ) - 1.570795)) * -1.2732406201955062) );
 
 	/// <summary>The sprite sector a heading byte selects: its low three bits (a negative heading wraps).</summary>
 	public static int SectorOf( int heading ) => heading & 7;
 
 	/// <summary>The walk's share in thousandths, as the update computes it: <c>(now x 1000 - began x 1000) / (end - began)</c> in unsigned 32-bit arithmetic (a walk of no length counts as done).</summary>
-	// [BIN:TPW-EXE:0x00557DAB walk share] uint((now x 1000 + began x -1000) / (end - began)); 0x005580A0 replaces a share above 1000 by 1 before it moves the body
+	// [BIN:TPW-EXE:0x00557DAB walk share] uint((now x 1000 + began x -1000) / (end - began)); 0x0055810B clamps a share above 1000 (signed compare) to 1000 before it moves the body
 	public static uint Share( double now, double began, double ends )
 	{
 		var length = unchecked( (uint)((int)ends - (int)began) );
@@ -52,8 +54,8 @@ internal static class WalkerBodies
 		return unchecked( (uint)((int)now * 1000 + (int)began * -1000) ) / length;
 	}
 
-	/// <summary>The share the body routine moves by: the share, or 1 when it is above 1000.</summary>
-	public static int BodyShare( uint share ) => share > 1000 ? 1 : (int)share;
+	/// <summary>The share the body routine moves by: the share, clamped to 1000 when it is above (a signed compare, 0x0055810B).</summary>
+	public static int BodyShare( uint share ) => (int)share > 1000 ? 1000 : (int)share;
 
 	/// <summary>The body's point between two node positions for a share in thousandths: <c>((b - a) x share - a x -1000) x 0.001</c> on every axis.</summary>
 	// [BIN:TPW-EXE:0x005580FF body position] the nodes' positions by the elapsed share, a float expression per axis

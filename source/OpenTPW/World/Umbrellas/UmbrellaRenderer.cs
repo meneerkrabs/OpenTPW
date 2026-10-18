@@ -24,6 +24,18 @@ public sealed class UmbrellaRenderer : Entity
 	// [EXT:umbrellas-draw] the pull runs along the sight line to the camera instead (the screen position of the hand stays, the quad is scaled down by the same share, as the guests' own pull is done), so TPI's lift, whose value is not
 	// known here, is not needed to keep the umbrella over the hand
 	public const float CameraPull = 0.1f;
+	/// <summary>
+	/// The most the umbrella is pulled towards the camera, in original units: 13, what 10 % comes to at the original's farthest zoom value (130, where the eye is 130 units from its target). The share is relative in TPI, which has
+	/// no zoom beyond 130; in the wide zoom range (up to 300) 10 % would be up to 30 units and draw an umbrella over objects a whole cell nearer the camera than its guest, so the pull stops growing there.
+	/// </summary>
+	// [EXT:umbrellas-pull-cap] TPI's pull is a share of the distance because its zoom stops at 130 (0x42c621: 70..130 without the flag 0x200); OpenTPW's wide zoom (EXT:wide-zoom, 40..300) takes the absolute pull of that end
+	public const float MaxPullUnits = 13f;
+	/// <summary>
+	/// The size of the umbrella's quad relative to its sprite's own extents. The set was drawn so that the canopy is 0.8 of a kid's standing height across, but the camera looks down at 45 degrees and shortens a standing kid
+	/// by cos 45 while the canopy's width stays whole, so on screen the canopy was 1.2 times a kid's height and hid its head from every side. 0.85 brings it to about the kid's height.
+	/// </summary>
+	// [EXT:umbrellas-size] a tuning from captures (docs/UMBRELLAS.md, "Tuning"): the scale is about the hotspot, the handle's tip, which stays in the hand
+	public const float SizeScale = 0.85f;
 	/// <summary>The thought bubble's height above a guest while its umbrella shows, in original units (TPI 6.0 instead of <see cref="ThoughtRenderer.Lift"/>'s 2.5).</summary>
 	// [BIN:TPI-EXE:0x60b0a4 bubble height] the bubble's height is the word at 0x9CFB38 (6.0) when the umbrella flag is set, else 0x9CFB34 (2.5), added to the guest's height for the bubble's placement (call 0x40A722)
 	public const float BubbleLift = 6.0f;
@@ -97,6 +109,9 @@ public sealed class UmbrellaRenderer : Entity
 	/// <summary>The thought bubble's height above the guest: <see cref="BubbleLift"/> while the umbrella shows, else <see cref="ThoughtRenderer.Lift"/>.</summary>
 	public static float BubbleHeight( bool umbrellaShows ) => umbrellaShows ? BubbleLift : ThoughtRenderer.Lift;
 
+	/// <summary>The share of its distance to the eye an umbrella at <paramref name="depth"/> (engine units along the view direction) is pulled: <see cref="CameraPull"/>, but never more than <see cref="MaxPullUnits"/>.</summary>
+	public static float PullShare( float depth ) => depth > 0f ? MathF.Min( CameraPull, MaxPullUnits * ObjectPlacement.ModelScale / depth ) : 0f;
+
 	/// <summary>A point pulled the given share of its way to the eye along the sight line; a point on the eye's far side is not.</summary>
 	internal static SVector3 PullToEye( SVector3 point, SVector3 eye, SVector3 forward, float share ) =>
 		SVector3.Dot( point - eye, forward ) > 0f ? point + (eye - point) * share : point;
@@ -119,8 +134,9 @@ public sealed class UmbrellaRenderer : Entity
 			var above = GuestRenderer.CellToEngine( field, guest.DrawX, guest.DrawY, UmbrellaAnchors.FallbackLift );
 			hand = mount.Share < 1f && SVector3.Dot( above - eye, forward ) > 0f ? eye + (above - eye) * mount.Share : above;
 		}
-		var pulled = PullToEye( hand, eye, forward, CameraPull );
-		return (pulled, SVector3.Dot( hand - eye, forward ) > 0f ? mount.Share * (1f - CameraPull) : mount.Share);
+		var share = PullShare( SVector3.Dot( hand - eye, forward ) );
+		var pulled = PullToEye( hand, eye, forward, share );
+		return (pulled, mount.Share * (1f - share) * SizeScale);
 	}
 
 	protected override void OnRender()

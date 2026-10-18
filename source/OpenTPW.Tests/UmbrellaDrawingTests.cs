@@ -47,6 +47,19 @@ public class UmbrellaDrawingTests
 	}
 
 	[TestMethod]
+	public void ThePullStopsGrowingAtTheOriginalsFarthestZoomSoTheWideRangeDoesNotDrawUmbrellasOverNearerObjects()
+	{
+		float DepthOf( float zoom ) => zoom * ObjectPlacement.ModelScale;
+		Assert.AreEqual( 0.1f, UmbrellaRenderer.PullShare( DepthOf( 40f ) ), 1e-6f, "wide near end: the full 10 %" );
+		Assert.AreEqual( 0.1f, UmbrellaRenderer.PullShare( DepthOf( 130f ) ), 1e-6f, "the original's far end: the full 10 %" );
+		Assert.AreEqual( 13f / 300f, UmbrellaRenderer.PullShare( DepthOf( 300f ) ), 1e-6f, "wide far end: 13 units, not 30" );
+		Assert.AreEqual( 0f, UmbrellaRenderer.PullShare( -1f ), "behind the eye: none" );
+		for ( var zoom = 40f; zoom <= 300f; zoom += 10f )
+			Assert.IsTrue( UmbrellaRenderer.PullShare( DepthOf( zoom ) ) * DepthOf( zoom ) <= UmbrellaRenderer.MaxPullUnits * ObjectPlacement.ModelScale + 1e-4f, $"zoom {zoom}" );
+		Assert.IsTrue( UmbrellaRenderer.SizeScale is > 0.5f and <= 1f );
+	}
+
+	[TestMethod]
 	public void AHandIsReadPerSlotDirectionAndStepAndMirroredWithX()
 	{
 		const string json = """{"schema":1,"pixelsPerUnit":128,"sets":{"SPR_X":{"stand":{"slot":0,"frames":[[[4,-8]],[[3,-7]],[[1,-6]],[[-3,-7]],[[-4,-8]]]},"walk":{"slot":1,"frames":[[[2,-10],[4,-6]],[[1,-1],[1,-1]],[[1,-1],[1,-1]],[[1,-1],[1,-1]],[[1,-1],[1,-1]]]}}}}""";

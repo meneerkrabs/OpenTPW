@@ -94,7 +94,7 @@ public class WinterContentTests
 		CollectionAssert.AreEqual( Enumerable.Range( FirstId, 8 ).ToArray(), file.Objects.Select( item => item.InfoId ).ToArray(), "a kiosk and a stall for each theme, in order" );
 		CollectionAssert.AreEqual( Themes.SelectMany( theme => new[] { theme, theme } ).ToArray(), file.Objects.Select( item => item.Theme ).ToArray() );
 		Assert.IsTrue( file.Objects.All( item => item.Category == ObjectCategory.Shop && item.Input == null && !item.Research ), "shops, our own files, no research item (decision of October 18, 2026)" );
-		Assert.IsTrue( file.Objects.All( item => item.Names.Count == 9 ), "a name for each of the nine languages" );
+		Assert.IsTrue( file.Objects.All( item => item.Names.Count == 11 ), "a name for each of the eleven interface languages" );
 		Assert.IsTrue( file.Objects.Where( ( item, index ) => index % 2 == 0 ).All( item => item.Names["English"] == "Winter Kiosk" ) );
 		Assert.IsTrue( file.Objects.Where( ( item, index ) => index % 2 == 1 ).All( item => item.Names["English"] == "Gl\u00fchwein Stall" ) );
 	}

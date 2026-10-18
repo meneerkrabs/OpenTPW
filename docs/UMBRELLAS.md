@@ -1,8 +1,8 @@
 # Umbrellas (`opentpw.umbrellas`)
 
-October 18, 2026. Status: **phases U0 (the Theme Park Inc trace, below), U1 (our own art and data pipeline, [Content](#content-extumbrellas-content)) and U2 (the simulation, [below](#the-simulation-phase-u2)) are done.**
+October 18, 2026. Status: **phases U0 (the Theme Park Inc trace, below), U1 (our own art and data pipeline, [Content](#content-extumbrellas-content)), U2 (the simulation, [below](#the-simulation-phase-u2)) and U4 (the rain mood rule, [below](#the-rain-mood-rule-phase-u4)) are done.**
 The extension is registered, on by default, lists the four brolly shops in the Theme Park World catalogs and runs their rules: a guest buys an umbrella in the rain and carries it through the five states. Nothing is drawn yet:
-the umbrellas are simulation state only until phase U3 (`UmbrellaRenderer`), and the rain mood rule (`opentpw.rain-mood`) is phase U4.
+the umbrellas are simulation state only until phase U3 (`UmbrellaRenderer`), and the rain mood rule (`opentpw.rain-mood`, off by default) is its own extension.
 
 The idea: bring the brolly shop and guests carrying open umbrellas in the rain of Theme Park Inc to Theme Park World parks as an official extension (docs/MODS.md), with OpenTPW's own art, so a player needs no Theme Park Inc
 data. The behaviour comes from a static trace of the Theme Park Inc no-CD `Game.exe` (SHA-256 `77ea0c41...`, `[BIN:TPI-EXE:0x...]` below; nothing was run). Theme Park World's `tp.exe` has none of it: no umbrella strings, no
@@ -111,6 +111,28 @@ weather Rain/Storm 200 (science 250), Snow 150, HeatWave 5. Weather spells (`0x6
   `UMB-003` "inside" is OpenTPW's in-attraction states (using a ride or shop, or a changing room's swim session), and the day gate's age is the guest's time since creation (`TimeInParkSeconds`, GUEST-920), whose game-day conversion is the calendar's 3750 seconds a turn.
   None of the three can be retired: the first needs the C runtime's hidden state and by design takes no draw, the other two are state OpenTPW's guests do not have.
 
+## The rain mood rule (phase U4)
+
+`opentpw.rain-mood` (1.0.0, off by default, `AffectsSimulation`, not in a Theme Park Inc run) is the part of Theme Park Inc's weather rule (`0x611050`) that Theme Park World does not have: in rain, storm and snow a guest's happiness, thirst and hunger
+change by the guest generation's row, and an **open** umbrella (state 4 only) adds `UmbrellaModifier` (1) to a negative happiness delta. It lives in `RainMoodRules` (pure) and `GuestSimulation.RainMood` (the host step); the level sets that from
+`FeatureGates.RainMood`, and the weather comes from `UmbrellaWeatherState` (the same mapping as the umbrellas).
+
+- **Where.** In `UpdateNeedsTurn`, on the guest's phase (turn & 3 == id & 3), after the umbrella step and before `NeedsUpdate.Apply`; for **every** guest in every state (queued, riding, swimming), as the original runs it for every guest. The umbrella
+  transitions of the same original rule stay in `UpdateUmbrella` (the umbrellas extension) and run with the rain mood off.
+- **The numbers.** Theme Park Inc's shipped kid row is the default (all Theme Park World guests are kids): happiness rain -1, storm -1, snow +1 (heat wave +1, never used here); thirst snow -1; hunger snow +1; rain and storm change neither. The rows are `RainMoodSettings.Kid`
+  (the settings of the extension), the meters are single floats clamped to 0..100 (`MeterMath.Add`), the order is the original's: the umbrella modifier first, then the clamped sums. Checked again against the no-CD `Game.exe`: the row addresses `0xA01B88` (happiness), `0xA01BBC`
+  (thirst) and `0xA01BF0` (hunger) at 16 bytes per age, the test "delta below zero" before the `fild` of `0xA01B5C`, and the three clamped stores to `+0x1BC`, `+0x1CC` and `+0x1C8`.
+- **Once per qualifying day.** `[EXT:rain-mood-once-per-day]` The original stores the guest's day (`+0x2E8`) at every qualifying update and never reads it, so its rule hits on every update of a qualifying day (the whole first day, then every fourth day). The extension applies it once per qualifying day
+  and guest, when the weather is bad: the first update of that day at which it rains, storms or snows (rain that starts late in a day still counts that day). `Guest.RainMoodDay` (the game day plus one; 0 never) holds the day, is saved only once set (optional `RainMoodDay`, validated non-negative,
+  hashed only when set, so older saves and every park without the extension are byte-equal) and keeps a resumed park on the same run. An imported original guest has no time in the park and counts as new, so the rule applies to it once (`[EXT:rain-mood-imported-age]`).
+- **Independent of `opentpw.umbrellas`.** The penalty without a shop is allowed (nobody has an umbrella, everyone pays), and umbrellas without the rule are mood items only (purchase happiness, the balloon trade).
+- **Recorded.** A save records `opentpw.rain-mood` always while it is on (it is not in `UsedOnlyExtensionIds`: it changes every park with weather); a recorded extension that is off or in another version refuses the load, like any simulation extension.
+- **Measured** (headless park, one kid on a path, 7 park days = 161 turns of constant weather, rule on against rule off, same seed, the needs step unchanged): rain or storm costs **2 happiness in the week** without an umbrella (days 0 and 4 qualify, once each) and **0 with an open umbrella**; snow gives
+  **+2** with or without one (an umbrella only softens a loss), with thirst -2 and hunger +2. The first day of a visit costs 1. Theme Park Inc's literal rule would hit on **11 updates in the same week (6 on the first day)**: -11 for the week, about -6 on a first rainy day, 0 with an umbrella.
+  (The plan's earlier guess of about 23 a day forgot that the rule runs on a guest's own phase, every fourth park turn.) A guest who stays a day or two loses about 1 happiness to rain, so the once-per-day rule is mild: the penalty is a hint to build a brolly shop, not a threat to a park's happiness.
+- **Tests.** `RainMoodTests` (the kid row, the umbrella modifier, the clamp, the heat wave exclusion, the day gate and the once-a-day rule, a kid losing exactly 1, rain that starts late, a closed umbrella protecting nothing, a rider, the hash with the rule off, the umbrella states with it on and off, the snapshot, the
+  resume, the extension's registration and its gate), the extension row in `ModsScreenTests`, and the determinism pins ([DETERMINISM.md](DETERMINISM.md#rain-mood)). The extension's name and description are in all eleven interface languages.
+
 ## Phases
 
 | Phase | What | State |
@@ -119,7 +141,7 @@ weather Rain/Storm 200 (science 250), Snow 150, HeatWave 5. Weather spells (`0x6
 | U1 | art and data pipeline: umbrella sprites, anchors from the rig, the four shop models, `.sam`, RSE, `content/umbrellas` | done (original-set anchors left to U3) |
 | U2 | simulation behind `opentpw.umbrellas`: purchase, states, scoring gate, balloon trade, attraction close, saves, pins; also a catalog root for the extension in `ModContentRoots.CatalogRoots` and its id in the `ObjectCatalog` cache key (`ObjectCatalog.cs`, where only the pools' root was named), or a park would reuse a catalog built without the shops | done |
 | U3 | drawing: `UmbrellaRenderer`, anchors for the original sets, pull, bubble lift, browser delivery, captures | planned |
-| U4 | `opentpw.rain-mood` with its pins and the measurement that decides its variant | planned |
+| U4 | `opentpw.rain-mood` with its pins and the measurement of what it costs a kid | done ([below](#the-rain-mood-rule-phase-u4)) |
 | U5 | tuning from captures; the first-person placement if a walk-around camera lands | planned |
 
 Open questions: Theme Park Inc's kid score 75 % or our 100 % (decide from captures in U5); the shop's `ISIndoors` 0 where Theme Park Inc's is 1 (it keeps the indoor-in-rain x5 off the weather percentages, which U2 now scores); the user's approval of `[EXT:umbrellas-weather-map]`, `[EXT:umbrellas-save-due]` and `[EXT:umbrellas-balloon-gate]`, which U2 implements and which are not yet in the decisions above. The smarter-guests seam (`IGuestDecisions`) was not touched: the umbrella gate and the weather percentages live in the host score, for the extension's own objects only.
@@ -161,5 +183,7 @@ the script, the sprite banks (slots, directions, 256 ppu, hotspots at the tip) a
 | `[EXT:umbrellas-save]` | the save rule: recorded only while the park has a brolly shop or an umbrella, the placed shops' asset keys, the optional guest fields (U2) |
 | `[EXT:umbrellas-save-due]` | the saved pending-change turn (U2; awaiting the user's approval) |
 | `[EXT:umbrellas-balloon-gate]` | a balloon shop's refusal of a balloon holder, applied only in a park that uses umbrellas (U2; awaiting the user's approval) |
-| `[EXT:rain-mood-once-per-day]` | the weather mood rule applied once per qualifying day (planned, U4) |
+| `[EXT:rain-mood-once-per-day]` | the weather mood rule applied once per qualifying day, with the saved day of the last application (U4; awaiting the user's approval) |
+| `[EXT:rain-mood-extension]` | the extension itself: its registration, its gate (`FeatureGates.RainMood`), off by default, always recorded while on (U4; awaiting the user's approval) |
+| `[EXT:rain-mood-imported-age]` | an imported original guest without a known time in the park counts as new, so its rule day is 0 for good (U4) |
 | `[BIN:TPI-EXE:0x...]` | the Theme Park Inc `Game.exe` address a rule was traced to (this page) |

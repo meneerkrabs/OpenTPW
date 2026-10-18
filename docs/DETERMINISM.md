@@ -523,6 +523,15 @@ that rains from the 20th to the 80th second and from the 140th to the 200th (`Gu
 and **one world draw per purchase** for the umbrella's colour (taken only at a brolly shop); the reaction delay is a per-guest hash of (guest id, park turn) and takes no draw (`APPROX:UMB-001`). A park saved mid-rain with umbrellas in every state and resumed into a fresh instance continues with the same hash tick by tick
 (`UmbrellasSimulationTests.AParkSavedMidRainWithUmbrellasInEveryStateContinuesIdenticallyAfterAResume`).
 
+## Rain mood
+
+The `opentpw.rain-mood` extension ([UMBRELLAS.md](UMBRELLAS.md#the-rain-mood-rule-phase-u4), `[EXT:rain-mood-once-per-day]`) is off by default. The level hands the rule to the guest simulation only while the extension is on (`GuestSimulation.RainMood`, null otherwise), so with it off nothing runs, no draw is taken
+and no hash part is added: **every existing pin stands, including `UmbrellasFixedRunHash`** (`DeterminismTests.EveryExistingPinIsUnchangedWithTheRainMoodExtensionOffAndItsOwnPinNeedsItOn`, and `RainMoodTests.WithTheRuleOffTheWeatherChangesNothingAboutAGuestWithoutAnUmbrella`). The rule itself draws from no stream; it only moves happiness, thirst
+and hunger, which moves the decisions and so the run. The guest's last rule day (`Guest.RainMoodDay`) joins the canonical hash and the guests' own digest only once it is set, and the snapshot writes it only then.
+
+Two new pins cover the rule, on the same fixed synthetic run and the weather of the umbrellas pin (rain from the 20th to the 80th second and from the 140th to the 200th): `DeterminismTests.RainMoodFixedRunHash` = `0x3697B9094432D152` (the fixed run, no brolly shop, the rule on; 102 guests changed by it) and
+`DeterminismTests.RainMoodWithUmbrellasFixedRunHash` = `0xF599E7E8B09C0FB7` (the brolly shop of the umbrellas pin and the rule both on; 104 guests changed). A park saved mid-rain and resumed into a fresh instance continues with the same hash (`RainMoodTests.AParkSavedMidRainContinuesIdenticallyAfterAResume`).
+
 ## Tests
 
 `DeterminismTests` (no game data needed):

@@ -153,6 +153,31 @@ public class PoolsAttractionsTests
 	}
 
 	[TestMethod]
+	public void TheWaterSurfaceRisesWithTheWaveAndTheSwimmersRideIt()
+	{
+		// the shader raises the water mesh by kMaxHeave times its strength (the envelope times height / 3); a swimmer bobs by the same height, and a crest stays under the deck
+		Assert.IsTrue( PoolWaves.MaxHeave > 0f && PoolWaves.MaxHeave < PoolMeshOptions.Default.WaterDrop, "a crest never tops the coping" );
+		for ( var height = 1; height <= 3; height++ )
+			Assert.AreEqual( PoolWaves.MaxHeave * height / 3f, PoolWaves.BobHeights[height - 1], 1e-6f, $"height {height}: the bob is the surface's own rise" );
+		var shader = WaterShaderText();
+		StringAssert.Contains( shader, $"const float kMaxHeave = {PoolWaves.MaxHeave.ToString( System.Globalization.CultureInfo.InvariantCulture )};" );
+		StringAssert.Contains( shader, "pos.z += poolWave( pos.xy ) * kMaxHeave;", "the vertex shader heaves the surface" );
+		Assert.IsFalse( shader.Contains( "vertex \"" ), "the water has its own vertex shader, not the shared include" );
+		// the wave number per engine unit is the phase per cell over a period's 64 steps and the cell's width
+		StringAssert.Contains( shader, "const float kWaveNumber = 21.0 / 128.0;" );
+		Assert.AreEqual( 21.0 / 128.0, PoolWaves.PhasePerCell / 64.0 / OriginalParkPlacement.CellSize, 1e-9 );
+	}
+
+	private static string WaterShaderText()
+	{
+		var directory = new System.IO.DirectoryInfo( AppContext.BaseDirectory );
+		while ( directory != null && !System.IO.File.Exists( System.IO.Path.Combine( directory.FullName, "content", "shaders", "pool-water.shader" ) ) )
+			directory = directory.Parent;
+		Assert.IsNotNull( directory, "Repository shader assets must be available for this test." );
+		return System.IO.File.ReadAllText( System.IO.Path.Combine( directory!.FullName, "content", "shaders", "pool-water.shader" ) ).Replace( "\r\n", "\n" );
+	}
+
+	[TestMethod]
 	public void TheWaveHappinessIsPaidOncePerPeriodWhileTheWavesRun()
 	{
 		var settings = new PoolWaveSettings( true, 2, 1 );
@@ -1023,6 +1048,11 @@ public class PoolsAttractionsTests
 		still.Until( () => sitter.IsSwimming, 400 );
 		Assert.AreEqual( 0f, PoolWaterEffects.Bob( still.Simulation, sitter, EffectSites ), "a pool without waves" );
 		Assert.AreEqual( 0f, PoolWaterEffects.Bob( rig.Simulation, new Guest( 999, 0 ), EffectSites ), "a guest who is not swimming" );
+		// the water level an activity draws its swimmer at rises with the same surface as a free swimmer's bob, and not without a region
+		var region = PoolActivityHelpers.RegionOf( rig.Simulation, guest );
+		Assert.IsNotNull( region );
+		Assert.AreEqual( PoolWaterEffects.Bob( rig.Simulation, guest, EffectSites ), PoolWaterEffects.SurfaceRise( rig.Simulation, guest, region, EffectSites ), 1e-6f );
+		Assert.AreEqual( 0f, PoolWaterEffects.SurfaceRise( rig.Simulation, guest, null, EffectSites ) );
 	}
 }
 

@@ -517,7 +517,7 @@ internal static class Game
 			}
 		}
 		// [EXT:debug-winter] smoke-only (Debug builds): dresses every guest in warm items. --debug-winter alone gives a head item by the guest's id (HeadItemOf) and mittens on all but every fourth guest, so a capture shows hats, earmuffs,
-		// mittens and the head item alone; --debug-winter hat|earmuffs|head|mittens|all forces one look (all: the guest's own head item and mittens). With --debug-umbrellas-follow zoom,yaw it holds the park camera on the lowest-numbered guest
+		// mittens and the head item alone; --debug-winter hat|earmuffs|head|mittens|all|costume forces one look (costume: every second guest in costume) (all: the guest's own head item and mittens). With --debug-umbrellas-follow zoom,yaw it holds the park camera on the lowest-numbered guest
 		// in view, as --debug-umbrellas does (when both are given the umbrellas' hook moves the camera). It writes the guests' item field directly (a debug aid: the simulation of such a run is not the park's own, nothing is saved from it).
 		var winterIndex = Array.IndexOf( args, "--debug-winter" );
 		var winterLook = winterIndex >= 0 && winterIndex + 1 < args.Length && !args[winterIndex + 1].StartsWith( "--", StringComparison.Ordinal ) ? args[winterIndex + 1] : "";
@@ -534,6 +534,9 @@ internal static class Game
 					winterCamera.SetPose( new System.Numerics.Vector3( spot.X, spot.Y, 0 ), winterZoom, winterYaw );
 				}
 			foreach ( var winterGuest in winterGuests.Guests )
+			{
+				if ( winterLook == "costume" )
+					winterGuest.InCostume = winterGuest.Id % 2 == 0;
 				winterGuest.WarmItems = winterLook switch
 				{
 					"hat" => WinterRules.Hat | WinterRules.Mittens,
@@ -541,8 +544,10 @@ internal static class Game
 					"head" => WinterRules.HeadItemOf( winterGuest.Id ),
 					"mittens" => WinterRules.Mittens,
 					"all" => WinterRules.HeadItemOf( winterGuest.Id ) | WinterRules.Mittens,
+					"costume" => WinterRules.HeadItemOf( winterGuest.Id ) | WinterRules.Mittens,
 					_ => WinterRules.HeadItemOf( winterGuest.Id ) | (winterGuest.Id % 4 == 3 ? 0 : WinterRules.Mittens)
 				};
+			}
 		}
 		// [EXT:debug-particle] smoke-only: once the original level is up, starts template effects (ids, comma separated) at an engine position
 		// (--debug-particle-at x,y,z, Z up; default the park camera's target) through the same starter an ADDOBJ uses, so captures can show smoke or fireworks

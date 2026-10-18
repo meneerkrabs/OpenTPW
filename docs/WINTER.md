@@ -70,7 +70,7 @@ All labels below are ours; nothing here is built yet except the content.
   are not covered. `[EXT:winter-snow-surfaces]`, `[EXT:winter-snow-paths]`, `[EXT:winter-snow-save]` (an optional, unhashed saved cover).
 - **Winter kiosk** `[EXT:winter-kiosk]`. A new `AppearanceEffect` value **4** `[EXT:winter-items]`. A guest has two item slots (`WarmItems` bits: 1 hat, 2 earmuffs, 4 mittens): a purchase fills the head slot first (hat or earmuffs, by a hash of
   the guest id, about 2 hats to 1 earmuffs), then the hands (mittens). Colours are a hash of guest id and item (as the balloon's), so a purchase takes **no extra draw** from any stream `[EXT:winter-item-colour]`. The score is 0 for a guest whose slots are
-  full and 0 unless it snows or the month is December to February `[EXT:winter-kiosk-gate]`. Not drawn on costumed guests (their sets have no anchors).
+  full and 0 unless it snows or the month is December to February `[EXT:winter-kiosk-gate]`. Drawn on costumed guests too (head item only, from the measured head anchors of the costume sets; [Drawing](#drawing-phase-w4)).
 - **Glühwein stall** `[EXT:winter-gluehwein]`. A drinks shop as the originals are (`ShopType 4`, `SpecialIngredient 3`, so the drinks code path, challenge and price statistics apply); the slider is labelled "Spices" for this object only
   `[EXT:winter-spice-label]`; `VomitEffect` 5, no new guest state, speech or animation `[EXT:winter-gluehwein-no-drunk]`. Demand: no gate; snow 250 %, rain and storm 130 %, winter months 150 %, spring and autumn 60 %, summer 20 %. With
   `opentpw.winter-cold` on, a glühwein warms the guest for one game day.
@@ -90,7 +90,7 @@ All labels below are ours; nothing here is built yet except the content.
 | W1 | `opentpw.winter-snow`: `SnowCover`, the uniform slot, test.shader and its web JSON, per-entity surface factor, path slush, the optional save field, tests, hallow captures (after `opentpw.evening` merges) | planned |
 | W2 | art and data pipeline: the eight shop models, the two `.sam`, the shop scripts, the item sprites, the anchors, `content/winter`, `tools/winter/build-content.sh`, content tests; nothing wired | done |
 | W3 | simulation behind `opentpw.winter`: catalog root, `AppearanceEffect` 4, the kiosk gate and terms, the stall's terms, saves, the used-only rule, pins | planned |
-| W4 | drawing: the warm-item renderer (sharing the umbrellas' attachment code), original-set head anchors, costume exclusion, browser delivery, captures | planned |
+| W4 | drawing: the warm-item renderer (`WarmItemRenderer`, sharing the umbrellas' `TryMount` and pull code), head anchors of the original kid and costume sets, browser delivery, captures | done |
 | W5 | `opentpw.winter-cold` with its measurement and pins | planned |
 | W6 | tuning from captures; optional hats on riders' heads, pool-deck snow, sheltered-ground masking | planned |
 
@@ -121,7 +121,7 @@ repository; nothing in it comes from Theme Park World or Theme Park Inc, and no 
 - `anchors.json`, **schema 2**: for each of the eight 2x kid sets and **every land slot, frame and direction 0 to 4** (35 x 5 records) the head-top point, the head centre, both hand end points with the forearm's screen angle, and a visibility flag
   per hand (a ray from the hand towards the camera against the body), plus the head's yaw and pitch per frame; pixels at 256 per unit from the feet hotspot. Written by `opentpw_guest_sprites.py --emit-winter-anchors` into its own file: the
   umbrellas' schema 1 `anchors.json` and the `--emit-anchors` code path that writes it are unchanged and byte-identical (a test also checks that the winter table's right hand agrees with it). Directions 5 to 7 mirror 3 to 1: negate every x
-  and angle, keep the hand's identity. Exact by construction (the same camera as the frames), rounded to 0.1 pixel; 108 KB. The anchors of the original (1x) kid sets and of the costume sets are not here (W4, a local measuring script that
+  and angle, keep the hand's identity. Exact by construction (the same camera as the frames), rounded to 0.1 pixel; 108 KB. The anchors of the original (1x) kid sets and of the costume sets are in `anchors-original.json` (W4, `opentpw-kit measure-head-anchors`, see [Drawing](#drawing-phase-w4)), a measuring tool that
   writes numbers only; mittens stay invisible on those).
 - Rebuild: `tools/winter/build-content.sh` (Blender 5.x, the .NET SDK and python3; about a minute): the shop models (`opentpw_winter_shops.py`, which reuses the pool cabin's textures and geometry builder), the kit's `object` command, the item sprites,
   `tools/winter/pack_sprites.py` (the pools' set converter, `detailFlag` 0) and the anchors.
@@ -129,6 +129,32 @@ repository; nothing in it comes from Theme Park World or Theme Park Inc, and no 
 `WinterContentTests` load the committed files through the game's own pipelines (the object catalog with a content root made by the test, the sprite readers, the ride script VM) and check the ids and that no other content range overlaps, the `.sam`
 keys, the models, textures, footprint and wall gaps, the scripts, the sprite banks (slots, directions, frames, 256 ppu, hotspots inside the frames), the anchor table (every set, slot, frame and direction, agreement with the umbrellas' table, hands and
 head inside the shipped kid frames) and that nothing is wired into the game.
+
+## Drawing (phase W4)
+
+`WarmItemRenderer` (`World/Winter`), created by `Level` beside `UmbrellaRenderer` while the extension is on and its content is there, draws one camera-facing quad of `SPR_WI` for each item a guest wears: a hat at the **head top**, earmuffs at the **head centre**, mittens at the
+two **hands**. The item's hotspot is its attach point, so it is put at the anchor of the frame the guest is drawn with (`GuestRenderer.TryMount`: set, slot, direction, step, the guest's own depth pull and mirroring), then pulled `WarmItemRenderer.CameraPull` (1 %) of the way to the camera along
+the sight line, which is enough to draw in front of the guest it sits on and far less than the umbrella's 10 %, so a guest's umbrella covers its hat and another guest standing right in front still covers the wearer. Presentation only: no random draw, no pin or save change, nothing
+about a guest is read but `WarmItems` (`ShownItems` drops an undefined value) and a guest the guest renderers do not draw (a swimmer, a rider, one in an attraction) shows nothing. `[EXT:winter-draw]`
+
+- **Anchors** (`WinterAnchorTable`, parsed into arrays at load so a frame allocates nothing; `anchors.json` schema 2 for the 2x kids and `anchors-original.json` for the rest). The head follows the walk's bob step by step, a mitten its hand's step and the forearm's angle
+  (`ForearmTurn`, the sprite is turned about its hotspot like a lying guest) and is drawn only while its hand is seen (the table's visibility bits, which keep their hand's identity when a direction is mirrored). A slot without a table (running, a ride's pose) follows walking.
+- **Original sets** (`content/winter/anchors-original.json`, **numbers only**, user-approved 2026-10-18: committing measured numbers is allowed, never pixels). `opentpw-kit measure-head-anchors --data <Data> --anchors content/winter/anchors.json --pools content/pools/esprites/Generic/Kids --out <file>`
+  (a maintainers' tool; a test reproduces the committed table from the local game frames) reads the game's frames as `measure-anchors` does for the umbrellas: each 1x kid set has a 2x redraw of the same pose, so its head top and centre are the rig's at half the pixels, moved sideways
+  by the difference of the two silhouettes' mean x and, where the head is the top of the redraw (arms down), up or down by the difference of the top edges (at most 4 pixels). The four costume sets have no redraw: a rule fitted on the kids gives each point's height above the
+  silhouette's bottom edge and distance from the box's centre per slot and direction (leaving each kid set out in turn predicts the head top to 2.04 pixels on average, largest 5.59, over 440 frames). The tables cover the standing, walking and waiting slots, the only ones a guest in
+  the park is drawn with, for the eight kid sets (1x, 128 pixels per unit) and the four costume sets. **Mittens are not drawn on the original sets** (user-approved: no reliable hand point), so a costumed or original-art guest shows a hat or earmuffs only.
+- **Draw order.** Depth decides: the item is pulled 1 %, an umbrella 10 %, so umbrella over hat over guest; the item sprites use `sprite.shader` with the same fog and **evening sprite tint** as the guests (`WithSpriteTint`; the umbrellas' renderer lacked it and now has it too), so a hat dims at night with its wearer; balloons, the
+  thought bubble (which hangs above the head) and the pool water are unchanged (swimmers are drawn by the pools' own renderer and carry no item).
+- **Browser.** `OpenTPW.Web.csproj` embeds the whole of `content/winter` like the umbrellas' folder: 1,322,442 bytes in 97 files, about 406 KB deflated (zlib -9 per file); every browser user downloads it with the build, also with the extension off. Nothing is fetched later. A real Chrome screenshot of
+  the published build comes from `tools/web-perf/run.mjs --scenarios jungle,winter --zoom 70 --shot <file>`: the hook `PerfWinter` stands in for `--debug-winter` (docs/BROWSER-PERFORMANCE.md).
+- **Captures** (Debug builds): `--debug-winter [hat|earmuffs|head|mittens|all|costume]` dresses every guest (by default a head item by the guest's id and mittens on all but every fourth guest; `costume` puts every second guest in costume) and writes the guests' item field directly, so nothing may be saved from such a run;
+  `--debug-umbrellas-follow zoom,yaw` holds the camera on the first guest; with `--debug-weather 8`, `--debug-sim-minutes 3`, `--capture-world`. `[EXT:debug-winter]`
+
+| Label | What |
+| --- | --- |
+| `[EXT:winter-draw]` | the drawing: the renderer, the placement from the tables, the 1 % pull, the forearm turn of a mitten, hats and earmuffs on costumed guests; awaiting the user (our own values) |
+| `[EXT:debug-winter]` | (debug-only test hook) `--debug-winter` and the browser harness hook `PerfWinter` |
 
 ## Approval of the labels
 
@@ -149,7 +175,8 @@ Status of every `[EXT:winter-*]` label against the user's decisions of October 1
 | `[EXT:winter-season-terms]` | our own `SeasonModifier.*` demand keys and the stall's demand numbers | awaiting | our detail (prices 25 and 30 are coordinator defaults too) |
 | `[EXT:winter-cold]` | the cold mood rule (W5) | approved | "Cold is a separate option, `opentpw.winter-cold`, default off" with the stated -2 / +1 numbers |
 | `[EXT:winter-weather]` | the wintry Decembers option | approved | "**Wintry Decembers** are an option (its own toggle)" |
-| `[EXT:winter-anchors]` | the schema 2 head and hand anchors | approved | the data the approved hats, earmuffs and mittens attach to |
+| `[EXT:winter-anchors]` | the schema 2 head and hand anchors, and the measured head-only anchors of the original sets (numbers only; mittens stay invisible there) | approved | the data the approved hats, earmuffs and mittens attach to; "committing measured numbers is allowed, never pixels" and "mittens are invisible on the original sets" (2026-10-18) |
+| `[EXT:winter-draw]` | how the items are drawn: the 1 % camera pull, the mitten's forearm turn, items on costumed guests | awaiting | our own values (phase W4) |
 | `[EXT:pools-model-inset]` | the walls' gap from the footprint edge (the pools' rule) | existing | not a winter label |
 | `[BIN:TPW-EXE:0x...]` | the Theme Park World `tp.exe` address a finding was traced to (this page) | n/a | evidence |
 

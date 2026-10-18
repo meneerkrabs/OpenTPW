@@ -17,7 +17,7 @@ public class UmbrellaBridgeFallbackTests
 		{
 			var field = new ModelHeightfield( 10, 10, 10, 10, 0, 0, Array.Empty<uint>(), new float[121], new uint[100] );
 			var renderer = new UmbrellaRenderer( null!, field, Array.Empty<GuestSpriteAtlas>(), Array.Empty<GuestRenderer>(), new UmbrellaAnchors() );
-			var guest = new Guest();
+			var guest = new Guest( 1, 0 );
 			var terrainFeet = GuestRenderer.CellToEngine( field, guest.DrawX, guest.DrawY );
 			var mount = new GuestMount( terrainFeet, .8f, "unanchored-custom-set", new GuestAtlasFrame( 0, 0, 1, 1, 0, 0 ), 0, 0, 0, false );
 			var eye = new SVector3( 0, -100, 10 );

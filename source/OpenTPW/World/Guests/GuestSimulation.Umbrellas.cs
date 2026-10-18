@@ -13,6 +13,16 @@ public sealed partial class GuestSimulation
 	/// <summary>The brolly shops registered (maintained by <see cref="Register"/> and <see cref="Unregister"/>): the park uses the umbrellas extension while there is one.</summary>
 	private int umbrellaShops;
 
+	/// <summary>The guests in the park who own an umbrella (any nonzero state). Only a purchase makes a guest one, and a departure or a restore changes the count, so the park-wide test below needs no scan.</summary>
+	private int umbrellaHolders;
+
+	/// <summary>Sets a guest's umbrella state the way a test needs it, keeping the park's holder count in step (the simulation's own writes do it at the purchase, the departure and the restore).</summary>
+	internal void SetUmbrellaStateForTest( Guest guest, int state )
+	{
+		umbrellaHolders += (state != UmbrellaRules.StateNone ? 1 : 0) - (guest.UmbrellaState != UmbrellaRules.StateNone ? 1 : 0);
+		guest.UmbrellaState = state;
+	}
+
 	/// <summary>
 	/// What the host does to the policy's score of <paramref name="attraction"/> for <paramref name="guest"/> (the decision interface is untouched): for a brolly shop, 0 for a guest who has an umbrella or in weather that is not
 	/// rain, storm or snow, else the weather percentage, the held balloon's cut and the generation percentage in that order; for a balloon shop in a park that uses umbrellas, 0 for a guest with a balloon or an open or opening umbrella.
@@ -33,7 +43,7 @@ public sealed partial class GuestSimulation
 				score = UmbrellaRules.ApplyBalloonFactor( score, guest.HasBalloon, guest.BalloonLife );
 			return UmbrellaRules.Percent( score, terms.KidScorePercentage );
 		}
-		if ( attraction.AppearanceEffect == GuestAppearance.Balloon && (umbrellaShops > 0 || guest.UmbrellaState != UmbrellaRules.StateNone)
+		if ( attraction.AppearanceEffect == GuestAppearance.Balloon && (umbrellaShops > 0 || umbrellaHolders > 0)
 			&& UmbrellaRules.BalloonShopScoresZero( guest.HasBalloon, guest.BalloonLife, guest.UmbrellaState ) )
 			return 0;
 		return score;
@@ -43,10 +53,18 @@ public sealed partial class GuestSimulation
 	/// A purchase at a brolly shop: the umbrella opens at once, whatever the weather, in a colour from one draw of the world generator. A guest who already has one (it was bought in the queue's time, the score gate only
 	/// keeps it from choosing a second shop) gets a new colour and an open umbrella again.
 	/// </summary>
-	// [BIN:TPI-EXE:0x612ea9 umbrella purchase] AppearanceEffect 3 in the use routine: state 3, the colour from 0x690370 (one world draw), the sprite created if there is none, state 4; the balloon is not touched
-	private void GiveUmbrella( Guest guest )
+	// [BIN:TPI-EXE:0x612ea9 umbrella purchase] AppearanceEffect 3 in the use routine: state 3, the colour from 0x690370 (one world draw), then only when no sprite exists (+0x240 == 0, else jne 0x612f0a) the sprite is created and the state is 4; the balloon is not touched
+	internal void GiveUmbrella( Guest guest )
 	{
 		guest.UmbrellaType = UmbrellaRules.Colour( random.NextWord() );
+		if ( guest.UmbrellaState == UmbrellaRules.StateNone )
+			umbrellaHolders++;
+		// State 3 is written first and moves to 4 only when no sprite exists: a guest whose umbrella is drawn (states 1 and 4) stays in state 3 and keeps its due turn, as the original does (the guard cannot trigger in play: entering the shop closes a drawn umbrella first, 0x61a7b5)
+		if ( UmbrellaRules.HasSprite( guest.UmbrellaState ) )
+		{
+			guest.UmbrellaState = UmbrellaRules.StateOpening;
+			return;
+		}
 		guest.UmbrellaState = UmbrellaRules.StateOpen;
 		guest.UmbrellaDueTurn = 0;
 	}

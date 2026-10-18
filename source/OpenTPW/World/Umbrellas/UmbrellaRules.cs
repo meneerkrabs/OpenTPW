@@ -176,6 +176,10 @@ public static class UmbrellaRules
 	// [BIN:TPI-EXE:0x6142e0 close umbrella] only while the sprite object +0x240 exists: state := 2 and the sprite is destroyed; the caller 0x61A7EA runs it for every nonzero state
 	public static int StateAfterEntering( int state ) => state is StateOpen or StateClosing ? StateClosed : state;
 
+	/// <summary>Whether the umbrella has a sprite in <paramref name="state"/> (open, or open until a due close: states 4 and 1).</summary>
+	// [BIN:TPI-EXE:0x612ed0 sprite test] the purchase tests +0x240 (the sprite object), which exists exactly in these two states
+	public static bool HasSprite( int state ) => state is StateOpen or StateClosing;
+
 	/// <summary>
 	/// The walking speed term (the guest's +0xC2: 25 or 50, set by a toilet need, a relief visit or the walk to the booth) for a guest in umbrella <paramref name="state"/>: 0 while the umbrella is open or pending (states 1, 3 and 4);
 	/// the term as it is otherwise, and a term of 0 stays 0.

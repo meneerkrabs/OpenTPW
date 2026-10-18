@@ -96,8 +96,9 @@ Inside the visited park (trace strings and classes):
   type ([0xFB3B7C] = 1), 0x4F7C60 and the person's walk state machine 0x4F7C90 (arrival → animation
   state 3; "The person has become stuck on their way to the destination" → state 3, animation 5).
   0x4F7C60 starts particle effect 0x35 (*Avatar*) for the player's own person (+0x3A0 set) and 0x39
-  (*OtherAvatar*) for any other through 0x4FA470, at the person's ground position times 1024 (the
-  pool's create 0x521E60). Both `Tp2.plb` templates live 7 ticks with particles of about 30, so each
+  (*OtherAvatar*) for any other through 0x4FA470, at the person's position (0x4754E0) moved by the two
+  world offsets 0x519410 (`DAT_00785584`) and 0x519420 (`DAT_00785588`), each times 10, on the x and z
+  axes, at the terrain height there (0x4527F0), times 1024 (the pool's create 0x521E60). Both `Tp2.plb` templates live 7 ticks with particles of about 30, so each
   person sparkles continuously. Outside the online game type the tick logs the
   `MODEL_ONLINE_PERSON` warning instead.
 - The park's own menu is the online one: the online game type's pause menu at 0x10197D90 offers only
@@ -107,6 +108,44 @@ Inside the visited park (trace strings and classes):
   UI (sub_11AE290, which also routes `Chat::Say` and the other chat actions) — voting is a separate
   service connection from the city server, and the vote button exists only inside the visited park.
 - Postcards can be sent "from the park you are visiting" (manual p. 51).
+
+## Chat mode in the visited park (tp.exe)
+
+Entering a park online builds its chat mode (0x4BF460) instead of the park's HUD: the HUD object
+(0x7CB2AC) does not exist then, and the routines that reach the HUD (0x4814A0, 0x4862A0) check for
+it and turn to the chat-mode windows instead.
+
+- **The overlay** (0x7CC8BC) is table 0x758AE8 with the handler 0x4BD4A0: the chat frame `f_chat`
+  (panel 0xC3123, which takes the name popups' handler 0x4BE290), the people list 0xC3124 (row
+  template 0x4BF740, its text in font slot 7 as high as the font plus 4 units, 0x4BF760; colours
+  0x4BE730), its tab group 0xC3125 starting on the people tab 0xC3126, the postcard 0xC312A, vote
+  0xC3129 and earmuffs 0xC3128 buttons (handler 0x4BE820), the message list 0xC312B (row template
+  0x4BF8B0, colours 0x4BE7C0) and the entry 0xC312C (key handler 0x4BE3A0, font slot 7, at most 255
+  characters). A bare full-screen panel (0x7CC8C0, 0x65DD7B over 0-2047 × 0-1535) stands in for
+  the overlay while it is off; both take the park's clicks through 0x4BD4A0.
+- **Keys** (0x4BE3A0, the entry's key message 0x1000B): Enter says the line (0x4EA490), Tab takes
+  the focus off the entry, F4 (0x73) switches the overlay and the bare panel (flag 0x7CC8B4);
+  other keys go to the game's key table (0x40C870).
+- **The people list**: the people tab lists every person in the park (0x4EE8D0), the buddy tab
+  every buddy (0x4EE9E0), each name with its flags (0x4EE5C0): bit 0 a buddy, bit 1 the buddy is
+  online, bit 2 the buddy is in this park, bit 3 the player ignores the name. A non-buddy is white
+  (0x758F30), a buddy red while offline (0x758F3C), blue online elsewhere (0x758F34) and green in
+  this park (0x758F38). Single rows are added, removed and re-flagged as the server reports
+  (0x4BEB60-0x4BED00).
+- **Name popups**: a right click on a row (0x402, 0x4BE290) opens nothing for the player's own
+  row (0x4EA9A0), the six-button popup 0x758CD8 for a buddy and the four-button popup 0x758E18 for
+  anyone else, placed at the pointer (0x4BF370) with the ignore toggle set from bit 3. Their buttons
+  (0x4BEDE0) black-mark, go to, ignore or stop, add or remove the buddy, locate and page.
+- **Player buttons** (0x4BE820): earmuffs on or off by the toggle (0x4EBEE0 / 0x4EBEF0), the vote
+  (0x4EB300, then the button disables itself), and the postcard (0x4A9380). The server's answers
+  set the earmuffs toggle (0x4BD400) and the vote button's state (0x4BD450).
+- **Messages** (0x4BE970): a line is cut where its characters' widths reach the list column's
+  width and each piece is a row; the list keeps 20 rows (0x758F0C) and shows its last. A row's
+  colour is its kind's from 0x758F10 (0x4BE7C0); the kinds come with the lines (0x4EA890).
+- **The park** (0x4BD4A0): over the ground the panel shows help 401 ("Left-click to walk to this
+  point") and a click walks; over a rideable ride (thing type 3) it shows help 580 with the ride's
+  name and a click runs 0x4E15B0. While a ride is ridden both windows hide and the person's place
+  is kept (0x4BD090 / 0x4BD260).
 
 ## Ride cameras and riding
 

@@ -125,6 +125,9 @@ public static class ChatCommands
 		_ => null,
 	};
 
+	/// <summary>A player name as a command's first argument: in quotes when it holds a space, as <see cref="SplitName"/> reads it (a name holds no quote).</summary>
+	public static string NameArgument( string name ) => name.Contains( ' ' ) ? $"\"{name}\"" : name;
+
 	/// <summary>Splits "name rest" or "\"two words\" rest" into a player name and the remaining text.</summary>
 	public static (string? Name, string Remainder) SplitName( string argument )
 	{

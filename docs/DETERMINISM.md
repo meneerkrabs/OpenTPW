@@ -528,6 +528,8 @@ that rains from the 20th to the 80th second and from the 140th to the 200th (`Gu
 and **one world draw per purchase** for the umbrella's colour (taken only at a brolly shop); the reaction delay is a per-guest hash of (guest id, park turn) and takes no draw (`APPROX:UMB-001`). A park saved mid-rain with umbrellas in every state and resumed into a fresh instance continues with the same hash tick by tick
 (`UmbrellasSimulationTests.AParkSavedMidRainWithUmbrellasInEveryStateContinuesIdenticallyAfterAResume`).
 
+Review fixes of the same phase did not move `UmbrellasFixedRunHash` (still `0xE912E7E5D5B6E612`): the balloon gate is now per park (a holder count the simulation keeps, no scan), and the purchase mirrors the state-3-then-4 sprite test of `TPI-EXE:0x612ea9`, a branch the run never reaches because entering the shop closes a drawn umbrella first.
+
 ## Rain mood
 
 The `opentpw.rain-mood` extension ([UMBRELLAS.md](UMBRELLAS.md#the-rain-mood-rule-phase-u4), `[EXT:rain-mood-once-per-day]`) is off by default. The level hands the rule to the guest simulation only while the extension is on (`GuestSimulation.RainMood`, null otherwise), so with it off nothing runs, no draw is taken

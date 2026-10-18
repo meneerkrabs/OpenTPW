@@ -176,18 +176,18 @@ public class UmbrellasSimulationTests
 		holder.BalloonLife = 0;
 		foreach ( var state in new[] { 1, 2, 3, 4 } )
 		{
-			holder.UmbrellaState = state;
+			park.Simulation.SetUmbrellaStateForTest( holder, state );
 			Assert.AreEqual( state is 3 or 4 ? 0u : 27u, park.Simulation.ScoreAttraction( holder, twin ), $"umbrella state {state}: refused only while open or opening" );
 		}
 		park.Simulation.Unregister( brolly );
-		holder.UmbrellaState = 0;
+		park.Simulation.SetUmbrellaStateForTest( holder, 0 );
 		holder.HasBalloon = true;
 		holder.BalloonLife = 100;
 		Assert.AreEqual( 27u, park.Simulation.ScoreAttraction( holder, twin ), "the brolly shop gone and no umbrella left: the balloon shop is the game's again" );
-		holder.UmbrellaState = 2;
+		park.Simulation.SetUmbrellaStateForTest( holder, 2 );
 		holder.HasBalloon = false;
 		holder.BalloonLife = 0;
-		holder.UmbrellaState = 4;
+		park.Simulation.SetUmbrellaStateForTest( holder, 4 );
 		Assert.AreEqual( 0u, park.Simulation.ScoreAttraction( holder, twin ), "a guest who still has an umbrella keeps the rule even when the shop is gone" );
 	}
 
@@ -234,6 +234,49 @@ public class UmbrellasSimulationTests
 		park.Visit( other, notBrolly );
 		Assert.AreEqual( 0, other.UmbrellaState, "AppearanceEffect 3 without the extension's terms is no umbrella" );
 		Assert.AreEqual( draws, park.Simulation.RandomState, "and takes no draw" );
+	}
+
+	[TestMethod]
+	public void APurchaseWritesState3AndOnlyOpensItWhenTheGuestHasNoSpriteYet()
+	{
+		// [BIN:TPI-EXE:0x612ea9] state 3 first, then the sprite and state 4 only when +0x240 is 0 (cmp [esi+0x240],0; jne 0x612f0a): states 1 and 4 have a sprite, so a second purchase leaves them in 3
+		foreach ( var (before, expected) in new[] { (0, 4), (2, 4), (3, 4), (4, 3), (1, 3) } )
+		{
+			var rig = new Rig();
+			var guest = rig.Simulation.SpawnInPark( 6, 5 );
+			rig.Simulation.SetUmbrellaStateForTest( guest, before );
+			guest.UmbrellaDueTurn = before == 1 ? 400 : 0;
+			rig.Simulation.GiveUmbrella( guest );
+			Assert.AreEqual( (expected, before == 1 ? 400L : 0L), (guest.UmbrellaState, guest.UmbrellaDueTurn), $"bought from state {before}" );
+		}
+		// in play entering the shop closes a drawn umbrella first (0x61a7b5 -> 0x6142e0), so a purchase ends in 4 from any state
+		foreach ( var before in new[] { 1, 2, 3, 4 } )
+		{
+			var rig = new Rig();
+			var guest = rig.Simulation.SpawnInPark( 6, 5 );
+			rig.Simulation.SetUmbrellaStateForTest( guest, before );
+			guest.UmbrellaDueTurn = before == 1 ? 400 : 0;
+			rig.Visit( guest, Rig.Brolly() );
+			Assert.AreEqual( (4, 0L), (guest.UmbrellaState, guest.UmbrellaDueTurn), $"visit from state {before}" );
+		}
+	}
+
+	[TestMethod]
+	public void TheBalloonGateIsPerParkAndFollowsTheHoldersThroughDepartureAndRestore()
+	{
+		// [EXT:umbrellas-balloon-gate] a park uses umbrellas while a brolly shop is registered or any guest holds an umbrella, whichever guest is being scored
+		var rig = new Rig( crossPark: true, settings: settings => settings.Types = new() { new GuestType( 60, 300, 1000 ) } );
+		var balloons = new RideVisitorBridge( 2, "Balloons", RideVisitorKind.Shop, 1, 60, 30 ) { AppearanceEffect = GuestAppearance.Balloon, EntranceCell = (10, 9), ExitCell = (10, 9) };
+		rig.Simulation.Register( balloons );
+		var holder = rig.Simulation.SpawnInPark( balloons.JoinCell!.Value.X, balloons.JoinCell!.Value.Y );
+		var other = rig.Simulation.SpawnInPark( balloons.JoinCell!.Value.X, balloons.JoinCell!.Value.Y );
+		holder.HasBalloon = true;
+		holder.BalloonLife = 100;
+		Assert.AreEqual( 27u, rig.Simulation.ScoreAttraction( holder, balloons ), "no brolly shop, no umbrella in the park" );
+		rig.Simulation.SetUmbrellaStateForTest( other, UmbrellaRules.StateClosed );
+		Assert.AreEqual( 0u, rig.Simulation.ScoreAttraction( holder, balloons ), "another guest's umbrella makes it an umbrella park for the balloon holder too" );
+		rig.Simulation.SetUmbrellaStateForTest( other, UmbrellaRules.StateNone );
+		Assert.AreEqual( 27u, rig.Simulation.ScoreAttraction( holder, balloons ) );
 	}
 
 	[TestMethod]

@@ -189,6 +189,8 @@ public partial class Level
 		LinkAddOns( item, circuit );
 		if ( TrackPieceAnimations.ForWalk( cause, circuit.IsValid ) is { } pieces )
 			trackPieceAnimations.TriggerTrack( BuilderOf( item )!.Tracks, station, pieces.Play, pieces.Backward );
+		if ( cause is TrackWalkCause.Line or TrackWalkCause.Edit )
+			UpdateTrackOpenState( item, bump.IsTrackValid );
 		if ( !circuit.IsValid )
 			return circuit;
 		LastActionMessage = $"The track is complete: {circuit.Steps.Count} tiles.";
@@ -203,6 +205,30 @@ public partial class Level
 				EnterQueueTool( item.Visitors );
 		}
 		return circuit;
+	}
+
+	/// <summary>A committed line or cut updates the attraction door through the ordinary reopen guard. Restore and placement never call this.</summary>
+	// [BIN:TPW-EXE:0x004DF290 track edit reopen] after the circuit walk, a qualifying edit asks the opening guard before 0x4DF390 opens the attraction
+	private void UpdateTrackOpenState( OriginalObject item, bool valid )
+	{
+		var runtime = item.Runtime;
+		if ( item.IsDeleted || !runtime.IsAttraction )
+			return;
+		// [EXT:track-edit-invalid-close] keep the model and economy door consistent with an edited circuit the controller cannot accept
+		if ( !valid )
+		{
+			runtime.Close();
+			SyncOpenState( runtime );
+			return;
+		}
+		var record = EconomyStateOf( runtime );
+		var state = runtime.GetVariable( RideVariables.VAR_BROKEN ) != 0 ? RideObjectStates.BrokenDown
+			: record != null ? ParkEconomy.ObjectState( record ) : RideObjectStates.Idle;
+		if ( !RideOpening.MayOpen( state, record?.MaintenanceRequested == true,
+			Guests == null || ParkGate.QueueConnected( Guests.Grid, item.Visitors ), 0, true ) )
+			return;
+		runtime.Open();
+		SyncOpenState( runtime );
 	}
 
 	/// <summary>
@@ -256,7 +282,6 @@ public partial class Level
 	/// </summary>
 	// [BIN:TPW-EXE:0x004AF200 track button] the button sets the cursor of tool 0xE (type 1) or 0x13 (type 2) and calls the click handler; the hover 0x527960 puts the tool in that mode
 	// [BIN:TPW-EXE:0x00526800 edit click] with the ride's circuit word (+0x2C) zero the click walks the track to its open end (0x530830) and the tool becomes the line tool 0xB or 0x10 (0x526C36, 0x526C50) starting there; with a closed circuit the click picks tiles for the cut
-	// [APPROX:TRACK-018] the open end's corner points are not pushed onto the tool's undo stack (0x530830 fills the stack that Backspace pops, replaying the click handler in mode 0x35 over the existing track), so Backspace takes back only the lines this tool lays; the ride is not reopened when a cut leaves a valid circuit (0x4DF290 → 0x4DF390 follow the walk, as they do after a line)
 	public bool EnterTrackTool( OriginalObject station )
 	{
 		if ( IsReadOnlyVisit || waterTracks == null || !trackStations.TryGetValue( station, out var layout ) )
@@ -271,14 +296,11 @@ public partial class Level
 		}
 		else
 		{
-			CellTool.Enter( TrackLineWriterOf( station, layout, builder ), editor.FindOpenEnd().End );
+			editor.EnterLineTool( CellTool, () => RewalkTrack( station, TrackWalkCause.Line ) );
 		}
 		trackToolStation = station;
 		return true;
 	}
-
-	private TrackLineWriter TrackLineWriterOf( OriginalObject station, TrackStation layout, TrackBuilder builder ) =>
-		new( builder, () => RewalkTrack( station, TrackWalkCause.Line ), builder.OwnerOf( layout ) );
 
 	private void CancelTrackTool()
 	{
@@ -314,10 +336,10 @@ public partial class Level
 	private void FinishTrackEdit( OriginalObject station, TrackEditor editor, (int X, int Y) second )
 	{
 		var circuit = RewalkTrack( station, TrackWalkCause.Edit );
-		if ( circuit is not { IsValid: false } || !trackStations.TryGetValue( station, out var layout ) || BuilderOf( station ) is not { } builder )
+		if ( circuit is not { IsValid: false } || !trackStations.ContainsKey( station ) || BuilderOf( station ) == null )
 			return;
 		CellTool.Cancel();
-		CellTool.Enter( TrackLineWriterOf( station, layout, builder ), editor.FindOpenEnd().End );
+		editor.EnterLineTool( CellTool, () => RewalkTrack( station, TrackWalkCause.Line ) );
 		trackToolStation = station;
 	}
 

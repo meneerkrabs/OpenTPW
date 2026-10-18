@@ -11,7 +11,7 @@ namespace OpenTPW.Tests;
 
 /// <summary>
 /// The umbrellas extension's shipped content (docs/UMBRELLAS.md): <c>content/umbrellas</c> holds the brolly shop of each theme, the umbrella sprite set and the hand anchors of the 2x kid sets, made by
-/// <c>tools/umbrellas/build-content.sh</c>. The content is not wired into the game yet (phase U2), so these tests load the committed files through the game's own pipelines (the object catalog, the sprite
+/// <c>tools/umbrellas/build-content.sh</c>. Most of these tests load the committed files through the game's own pipelines (the object catalog, the sprite
 /// readers, the ride script VM) with a content root made here, without any original game data.
 /// </summary>
 // [EXT:umbrellas-content] OpenTPW's own shipped content; neither Theme Park World nor Theme Park Inc ships anything of it
@@ -306,20 +306,82 @@ public class UmbrellasContentTests
 		}
 	}
 
-	// ---- The inert rule --------------------------------------------------------------------------------------------
+	// ---- The wiring ------------------------------------------------------------------------------------------------
+
+	private static ModSet UmbrellasSet( bool enabled ) => ModSet.Resolve( Array.Empty<DiscoveredMod>(),
+		new ModSettings { Enabled = new Dictionary<string, bool> { [ModId] = enabled } }, null, GameEdition.ThemeParkWorld, OfficialExtensions.All );
 
 	[TestMethod]
-	public void NothingOfTheContentIsWiredIntoTheGameYet()
+	public void TheExtensionIsRegisteredOnByDefaultAndRecordedLikeThePools()
 	{
-		Assert.IsNull( OfficialExtensions.All.FirstOrDefault( extension => extension.Id == ModId ), "the extension itself comes with phase U2; the content only sits in content/umbrellas" );
-		// the production path: the catalog roots of a default run (every official extension at its default) and the catalogs built from them name no brolly shop
-		var roots = ModContentRoots.CatalogRoots( ModSet.Defaults( OfficialExtensions.All ) );
-		Assert.IsFalse( roots.Any( root => root.Objects.Any( definition => definition.InfoId is >= 64500 and <= 64999 ) ), "no catalog root of a default run lists a brolly shop" );
-		using ( ModContentRoots.Use( ModSet.Defaults( OfficialExtensions.All ), null ) )
-			foreach ( var theme in Themes )
-				Assert.IsFalse( ObjectCatalog.Load( theme ).Entries.Any( entry => entry.InfoId is >= 64500 and <= 64999 ), $"{theme}: no brolly shop in the catalog of a default run" );
-		ObjectCatalog.SetContentRoots( Array.Empty<CatalogContentRoot>() );
-		foreach ( var theme in Themes )
-			Assert.IsFalse( ObjectCatalog.Load( theme ).Entries.Any( entry => entry.InfoId is >= 64500 and <= 64999 ), $"{theme}: no brolly shop in a catalog without the test's own root" );
+		var extension = OfficialExtensions.All.Single( candidate => candidate.Id == ModId );
+		Assert.AreSame( OfficialExtensions.Umbrellas, extension );
+		Assert.AreEqual( "1.0.0", extension.Version.ToString() );
+		Assert.IsTrue( extension.DefaultEnabled && extension.AffectsSimulation && extension.PlayerSelectable, "on by default, a simulation rule, selectable (decision of October 18, 2026)" );
+		Assert.IsTrue( ParkResumeMods.UsedOnlyExtensionIds.Contains( ModId ), "a save records it only while the park uses it (the pools rule)" );
+		using var scope = OpenTpwExtensions.Use( ModSet.Defaults( OfficialExtensions.All ) );
+		Assert.IsTrue( FeatureGates.Umbrellas );
+	}
+
+	[TestMethod]
+	public void TheBrollyShopsAreListedInEveryThemeCatalogWhileTheExtensionIsOnAndOnlyThen()
+	{
+		UmbrellaContent.DirectoryOverride = Folder;
+		try
+		{
+			foreach ( var enabled in new[] { true, false } )
+			{
+				var set = UmbrellasSet( enabled );
+				using var scope = OpenTpwExtensions.Use( set );
+				using var roots = ModContentRoots.Use( set, null );
+				foreach ( var theme in Themes )
+				{
+					var shops = ObjectCatalog.Load( theme ).Entries.Where( entry => entry.ModId == ModId ).ToArray();
+					if ( !enabled )
+					{
+						Assert.AreEqual( 0, shops.Length, $"{theme}: the extension is off, so the catalog lists no brolly shop (and is not the cached catalog of the run with it on)" );
+						continue;
+					}
+					Assert.AreEqual( 1, shops.Length, theme );
+					Assert.AreEqual( 64500 + Array.IndexOf( Themes, theme ), shops[0].InfoId );
+					Assert.AreEqual( 3, shops[0].Settings.GetInt( "UsageInfo.AppearanceEffect" ) );
+				}
+			}
+		}
+		finally
+		{
+			UmbrellaContent.DirectoryOverride = null;
+		}
+	}
+
+	[TestMethod]
+	public void AThemeParkIncRunHasNoBrollyShopEvenWithTheExtensionOn()
+	{
+		UmbrellaContent.DirectoryOverride = Folder;
+		var edition = GameEditions.Current;
+		try
+		{
+			using var scope = OpenTpwExtensions.Use( UmbrellasSet( true ) );
+			Assert.IsNotNull( UmbrellaContent.CatalogRoot( OpenTpwExtensions.Active ) );
+			GameEditions.Select( GameEdition.ThemeParkInc );
+			Assert.IsFalse( FeatureGates.Umbrellas, "Theme Park Inc has its own shop, art and rules" );
+			Assert.IsNull( UmbrellaContent.CatalogRoot( OpenTpwExtensions.Active ), "no brolly shop in a Theme Park Inc catalog" );
+		}
+		finally
+		{
+			GameEditions.Select( edition );
+			UmbrellaContent.DirectoryOverride = null;
+		}
+	}
+
+	[TestMethod]
+	public void ABrollyShopsBridgeCarriesItsWeatherAndGenerationPercentagesAndNoOtherObjectDoes()
+	{
+		var shop = ObjectCatalog.Load( "jungle" ).Entries.Single( entry => entry.ModId == ModId );
+		var bridge = OriginalObjectRuntime.CreateVisitorBridge( shop, 7 );
+		Assert.IsTrue( ((IRideVisitorBridge)bridge).IsUmbrellaShop );
+		Assert.AreEqual( new UmbrellaShopTerms( 200, 200, 150, 5, 100 ), bridge.UmbrellaTerms );
+		var totem = ObjectCatalog.Load( "jungle" ).Entries.First( entry => entry.ModId == null );
+		Assert.IsNull( OriginalObjectRuntime.CreateVisitorBridge( totem, 8 ).UmbrellaTerms, "an original object keeps the game's score: the keys are read for the extension's objects only" );
 	}
 }

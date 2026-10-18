@@ -23,6 +23,8 @@ public readonly struct RideEffectCall
 
 	public int Argument( int index ) => operands[index].Value;
 	public bool IsVariable( int index ) => operands[index].IsVariable;
+	/// <summary>The operand's code word as the original stores a raw operand: the low 16 bits, and 0x40000000 on top for a variable (an operand the handler does not resolve).</summary>
+	public int RawWord( int index ) => operands[index].IsVariable ? 0x4000_0000 | operands[index].Raw : operands[index].Raw;
 	public void SetOutput( int index, int value ) => operands[index].Value = value;
 
 	public override string ToString() => $"{Opcode} {string.Join( " ", operands.Select( x => x.Value ) )}".TrimEnd();

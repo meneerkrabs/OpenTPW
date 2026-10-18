@@ -564,7 +564,7 @@ public static class OptionsScreen
 			Shadow = false,
 			Wrap = true,
 			// Below the fifth row of the right column (y 791..940, the last with the graphics rows and the wide zoom and autosave rows), above the buttons at y 1330.
-			// narrower than the page's left half so the sixth row of the right column (the day cycle, y 947..1096) is clear of it
+			// about two thirds of the page wide (1300 of 2048) so the sixth row of the right column (the day cycle, y 947..1096) is clear of it
 			Bounds = Rect( 57, 975, 1300, 1275 ),
 			Anchor = UiAnchor.Center
 		} );

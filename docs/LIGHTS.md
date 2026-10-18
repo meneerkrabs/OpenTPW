@@ -153,5 +153,5 @@ browser ships no `opentpw.example.*` mod).
 - How a light *looks* was not judged: nothing was looked at on screen, so the falloff against the sun and the 0.4 ambient, the example's radius and colours and the 16-light limit on the
   one-mesh ground are a first guess for someone to look at (`--debug-light`, or the example mod).
 - The sprites (guests, staff) and particles are not lit, as in the original; the pool water is not lit.
-- The renderer has no shadows and no light on the sky. The evening and night extension (`opentpw.evening`, off by default) uses these lights for lamps that switch on at dusk, from a data table, and darkens the sun, the ambient, the sky and
+- The renderer has no shadows and no light on the sky. The evening and night extension (`opentpw.evening`, on by default) uses these lights for lamps that switch on at dusk, from a data table, and darkens the sun, the ambient, the sky and
   the sprites with the time of day: [EVENING.md](EVENING.md).

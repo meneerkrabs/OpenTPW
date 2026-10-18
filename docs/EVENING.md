@@ -16,7 +16,7 @@ state hashes and the determinism pins are exactly the same (`AffectsSimulation` 
 
 ## Using it
 
-- Switch the extension on in **Options > OpenTPW > Extensions and mods** ("Evening and night"; the change applies at the next start, [MODS.md](MODS.md)) or for one run with `--enable-mod opentpw.evening`.
+- The extension is on by default. Switch it off in **Options > OpenTPW > Extensions and mods** ("Evening and night"; the change applies at the next start, [MODS.md](MODS.md)) or for one run with `--disable-extension opentpw.evening`.
 - Pick the pace on **Options > OpenTPW > Day cycle**: **10, 20 or 40 minutes** for one full day and night (20 is the default), or **always day**, **always dusk** or **always night**. The row's help text says it only matters while the
   extension is on. Its name, description and values are translated in all eleven interface languages like the other OpenTPW rows.
 - Always day is the original's look exactly (the extension then changes nothing and the lamps stay off).
@@ -139,7 +139,7 @@ doors at the entrance (they stay bright at night), and the strength of dusk on g
 
 Both work in Release builds as well (unlike most debug options) because performance runs use them:
 
-- `--evening-pace <minutes10|minutes20|minutes40|day|dusk|night>` sets the pace for this run only: it is a run-scoped override in `Level` that is read instead of the option and never written to `GameOptions.Current`, so nothing is saved. It needs the extension on (`--enable-mod opentpw.evening`).
+- `--evening-pace <minutes10|minutes20|minutes40|day|dusk|night>` sets the pace for this run only: it is a run-scoped override in `Level` that is read instead of the option and never written to `GameOptions.Current`, so nothing is saved. It needs the extension on, which it is by default.
 - `--debug-evening-lamps <n>` adds `n` lamp lights (the pool lamp's colour and radius) on a square grid 40 engine units (20 cells) across around the park camera's target, so they crowd into the view, that follow the lamp level, for measuring many lamps. The `--perf-run` log lines now also say how many point lights are in view.
 
 ## Performance
@@ -182,4 +182,4 @@ and, with the game's data, that every row of the shipped table matches an origin
 - The sun's direction does not change and there is no moon or stars; the shaders' light position is a fixed one.
 - The sprites do not brighten near a lamp, the pool water is not lit by the lamps, and lamps do not change the ambient.
 - Which original objects get a lamp is a short, hand-picked list (above); shops, sideshows and most rides have none.
-- The default stays off until the user decides.
+- Particles are not tinted by the light: the pools' splash rings and droplets (`PoolSpray`) and the other particles stay full bright at night (an N2 item).

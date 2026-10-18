@@ -3,10 +3,12 @@ using OpenTPW.UI.Original;
 namespace OpenTPW;
 
 /// <summary>
-/// The selected language's own interface archive (<c>ui.wad</c>) in place of the game's, as tp.exe reads the <c>data\ui.wad</c> of the data folder the
-/// language was copied into (docs/LANGUAGES.md, "Files beside the text"). Only the localisation pack's languages ship one; US English's differs only in
-/// <c>tpw_logo.wct</c> (both sizes), the Sim Theme Park logo of the lobby and the player screen.
+/// The selected language's own interface archive (<c>ui.wad</c>) in place of the game's. tp.exe itself only reads the fixed <c>data\ui.wad</c> of its one
+/// data folder; this models the language pack's install instruction (copy the language's <c>data</c> folder over the game's) and a single-language CD's
+/// own <c>Data</c> folder (docs/LANGUAGES.md, "Files beside the text"). The pack's US English archive differs only in <c>tpw_logo.wct</c> (both sizes),
+/// the Sim Theme Park logo of the lobby and the player screen; the Korean CD's has its own logo and an IME list frame.
 /// </summary>
+// [EXT:language-settings] swapping the archive per selected language, and on a live switch, is OpenTPW's: the original has one install and one data\ui.wad
 public static class LanguageInterfaceArchive
 {
 	/// <summary>Raised when the archive in use changes (a live language switch): drawn interface images are reloaded.</summary>

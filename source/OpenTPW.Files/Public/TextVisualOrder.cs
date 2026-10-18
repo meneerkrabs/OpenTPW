@@ -12,7 +12,7 @@ namespace OpenTPW;
 /// places ("Direct Draw" shows as "Draw Direct"), as in the original.
 /// </remarks>
 // [BIN:TPW-EXE:0x6ae4b0 line reorder] called for every line by the drawing loop 0x6ae550 (the only drawer, from 0x6ae0f0 and 0x6ae1c0, behind the
-// interface helpers 0x492750 and 0x4929f0); it leaves out the trailing records that the wrapper 0x6add90 marked 0x40 (the spaces a wrap consumed:
+// interface helpers 0x492750 and 0x4929f0 and a few direct widget calls at 0x48fbb0, 0x491e1a, 0x491e84, 0x491680); it leaves out the trailing records that the wrapper 0x6add90 marked 0x40 (the spaces a wrap consumed:
 // OpenTPW's wrap drops those), reverses the rest (0x6ae440) and walks the words (0x6ae3d0 next word start, 0x6ae390 word end)
 public static class TextVisualOrder
 {

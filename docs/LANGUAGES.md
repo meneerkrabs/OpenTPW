@@ -281,7 +281,8 @@ tp.exe reads these from fixed paths below its one data folder: `data\ui.wad` wit
 `legal_<Name>.tga`, `welcome_<Name>.tga` and `welcome.tga` (`0x587380`, called by the start-up routine `0x54dcf0` and the main state
 machine `0x54e360` with the table name of `0x41a820`; the width folder is the screen width when it is 400, 512, 640, 800 or 1024, else
 640). The splash shows first at start-up, then `welcome.tga` with the legal notice; later loading screens show `welcome.tga` with
-`welcome_<Name>`; a missing picture is simply not shown. So a language's own copies are used when its data was copied over the game's.
+`welcome_<Name>`; a missing picture is simply not shown. tp.exe has no per-language lookup for any of these: a language's own copies are
+used only because its data was copied over the game's, as the localisation pack's readme instructs.
 
 | Source | `ui.wad` | `Init` | `postcard` |
 |---|---|---|---|
@@ -292,7 +293,9 @@ machine `0x54e360` with the table name of `0x41a820`; the width folder is the sc
 OpenTPW layers the language's data over the game's as before (overlay first, then the game): `GameLanguage.ResolveInitImage` and
 `ResolvePostcardFile` resolve these files, and a language whose overlay has its own `ui.wad` (`OwnInterfaceArchive`) replaces the
 game's for every `/ui/...` read (`LanguageInterfaceArchive`, `BaseFileSystem.ArchiveRedirect`), at start-up and on a live switch
-(interface images reload). In US English the lobby's and the player screen's logo is Sim Theme Park's. OpenTPW draws no loading
+(interface images reload). That swap is OpenTPW's (`[EXT:language-settings]`): it models an install the language's data was copied over.
+It also applies to Korean loaded from the Korean CD's own `Data` folder, which now uses that CD's `ui.wad` (its own logo, the IME list
+frame `f_imelist.md2` and its own `qickload.txt`), as a Korean install would; the Spanish CD's `ui.wad` is the European one. In US English the lobby's and the player screen's logo is Sim Theme Park's. OpenTPW draws no loading
 screen and does not compose the original postcard picture, so the Init and postcard files are resolved but not shown yet.
 
 ### US English
@@ -324,7 +327,7 @@ Hebrew is right to left. What tp.exe does, read statically:
   not regrouped, so two Latin words in a Hebrew line trade places ("Direct Draw" shows as "Draw Direct"), and a parenthesis around
   several words is not mirrored. `TextVisualOrder` ports this and `TextLayout` applies it to every line, in any language (only Hebrew
   triggers it). usp10 plays no part in interface text.
-- **Alignment.** Both interface text helpers (`0x492750`, `0x4929f0`, the only callers of the library's draw) swap left and right
+- **Alignment.** Both interface text helpers (`0x492750`, `0x4929f0`; other widget draws call the library's draw `0x6ae0f0` and measure `0x6ae1c0` directly, at `0x48fbb0`, `0x491e1a`, `0x491e84` and `0x491680`, and keep an alignment swapped by `0x4925a0`) swap left and right
   alignment when `0x41a850` reports Hebrew; `0x4925a0` does the same for an alignment a caller keeps. `UiContext.DrawText`/`DrawTextAt`
   do this (`UiContext.RightToLeft`), so labels that are left aligned elsewhere stand at the right, as the cash in the HUD.
 - **Keyboard.** The window procedure maps each typed character from 0x20 up through a fixed table (`0x46b460`, called at `0x46b8c5`):

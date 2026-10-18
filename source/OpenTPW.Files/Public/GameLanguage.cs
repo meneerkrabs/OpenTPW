@@ -336,8 +336,9 @@ public sealed class GameLanguage
 	/// The language's own interface archive (<c>ui.wad</c>) when its overlay has one, else null (the game's own <c>data/ui.wad</c> is used). The US English
 	/// archive differs from the others only in the logo texture (<c>tpw_logo.wct</c> in <c>textures</c> and <c>stexture</c>), Sim Theme Park's.
 	/// </summary>
-	// [BIN:TPW-EXE:0x747c84 ui archive] tp.exe mounts the fixed "data\ui.wad" (with "data\ui", "data\language.wad", "data\Postcard.wad" in the same table): the archive
-	// of the data folder the language was copied into, so a language that ships its own ui.wad replaces the game's
+	// [BIN:TPW-EXE:0x747c84 ui archive] tp.exe mounts the fixed "data\ui.wad" (with "data\ui", "data\language.wad", "data\Postcard.wad" in the same table) and
+	// has no per-language lookup; [EXT:language-settings] a language whose overlay data folder has its own ui.wad uses it, modelling an install the pack's
+	// data folder was copied over (or a single-language CD's own Data folder, such as the Korean CD's)
 	public string? OwnInterfaceArchive => OverlayDataDirectory != null ? FindEntry( OverlayDataDirectory, "ui.wad", false ) : null;
 
 	/// <summary>

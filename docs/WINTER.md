@@ -91,8 +91,37 @@ All labels below are ours; nothing here is built yet except the content.
 | W2 | art and data pipeline: the eight shop models, the two `.sam`, the shop scripts, the item sprites, the anchors, `content/winter`, `tools/winter/build-content.sh`, content tests; nothing wired | done |
 | W3 | simulation behind `opentpw.winter`: catalog root, `AppearanceEffect` 4, the kiosk gate and terms, the stall's terms, saves, the used-only rule, pins | planned |
 | W4 | drawing: the warm-item renderer (sharing the umbrellas' attachment code), original-set head anchors, costume exclusion, browser delivery, captures | planned |
-| W5 | `opentpw.winter-cold` with its measurement and pins | planned |
+| W5 | `opentpw.winter-cold` with its measurement and pins | done (see [Cold mood](#cold-mood-extwinter-cold-phase-w5)) |
 | W6 | tuning from captures; optional hats on riders' heads, pool-deck snow, sheltered-ground masking | planned |
+
+## Cold mood (`[EXT:winter-cold]`, phase W5)
+
+`opentpw.winter-cold` is off by default, always recorded in a save while it is on and not offered in a Theme Park Inc run. Code: `World/Winter/WinterColdRules.cs` (the pure rules), `GuestSimulation.WinterCold.cs` (the step and the warmth), `GuestSimulation.cs` (`UpdateNeedsTurn`).
+
+- **The step.** Right after the rain mood step, on the same phase gate (every fourth park turn, for every guest in every state), in snow only (`UmbrellaRules.WeatherSnow`: lightning wins, so thunder-snow is a storm and does not count): once per qualifying day,
+  happiness += `ColdHappiness` (-2) + `HeadItemBonus` (1, hat or earmuffs) + `MittenBonus` (1) + `WarmBonus` (1, warmed by a glühwein), the sum capped at 0, then clamped to 0..100 as a float (`MeterMath.Add`). A fully dressed guest is
+  neither cooled nor cheered. Thirst and hunger are not touched.
+- **Day gate.** The rain mood's: a guest's age counts from its time in the park, an imported original guest's from the load (`RainMoodAgeTurnsOf`; the import marks it while either rule is on), and `UmbrellaRules.DayGateOpen` lets the whole first day through and then every
+  fourth day. The mark is the guest's own `ColdMoodDay` (day + 1 of the last application), so the rule runs with or without the rain mood. `[EXT:winter-cold]`
+- **Replaces the rain mood's snow cheer.** With both on, `RainMoodRules.Apply` leaves out the snow row's happiness (+1); its thirst -1 and hunger +1 stay, rain and storm are untouched. An undressed kid nets -2 a qualifying day, a dressed one 0.
+  `[EXT:winter-cold-replaces-snow-cheer]`
+- **A recent glühwein.** At a glühwein stall (a winter shop that is not the kiosk, with the Ice ingredient) a guest's `WarmUntilDay` becomes the park's `ParkCalendar.DayIndex` + 1 + `WarmEffectDays` (1) if that is later than what it had: warmed for the
+  rest of the drink's day and the next game day. Only with the rule on, so a park with the rule off keeps its saves and hashes. No random draw. `[EXT:winter-cold-warm-window]`
+- **Measured.** A headless kid (`WinterColdTests.ASnowyWeekCostsAKidWhatTheDocumentationSays`) over a snowy week (7 game days, 162 park turns of snow, a visit that starts at the first snowflake, so the gate opens on days 0 and 4: two applications), happiness lost or gained
+  against the same kid with no rule:
+
+| Protections | Cold alone | Cold + rain mood | Rain mood alone (today) |
+| --- | --- | --- | --- |
+| none | -4 | -4 | +2 |
+| head item | -2 | -2 | +2 |
+| head item + mittens | 0 | 0 | +2 |
+| head item + mittens + glühwein | 0 | 0 | +2 |
+
+  So one protection halves the cold, two remove it, and the third (or the glühwein in place of a garment) only matters for a guest that lost one of the other two. The rule is gentle: -4 happiness in a week of snow, while the needs step moves a guest by
+  tens of points over the same time, and snow only falls about 42 days a year, in the Halloween world only (see above). The numbers are the extension's code defaults and its version (1.0.0) is the rule identity.
+- **Saves and determinism.** `ColdMoodDay` is an optional guest field written, validated (never negative) and hashed only once set; `WarmUntilDay` and the items are W3's. Rule off: every pin stands (`DeterminismTests.EveryExistingPinIsUnchangedWhateverTheColdSwitch...`). New pins:
+  `WinterColdFixedRunHash` and `WinterColdEverythingFixedRunHash` ([DETERMINISM.md](DETERMINISM.md#winter-cold)). A park saved mid-snow resumes with the same hash (`WinterColdTests.AParkSavedMidSnowContinuesIdenticallyAfterAResume`).
+- **Options row.** "Cold mood" with its description in all eleven interface languages, between the wintry Decembers and the restored advice.
 
 ## Content (`[EXT:winter-content]`)
 
@@ -148,6 +177,8 @@ Status of every `[EXT:winter-*]` label against the user's decisions of October 1
 | `[EXT:winter-spice-label]` | the "Spices" slider keeps Ice's mechanics | awaiting | coordinator default |
 | `[EXT:winter-season-terms]` | our own `SeasonModifier.*` demand keys and the stall's demand numbers | awaiting | our detail (prices 25 and 30 are coordinator defaults too) |
 | `[EXT:winter-cold]` | the cold mood rule (W5) | approved | "Cold is a separate option, `opentpw.winter-cold`, default off" with the stated -2 / +1 numbers |
+| `[EXT:winter-cold-replaces-snow-cheer]` | with the cold rule on, the rain mood's snow happiness (+1) is left out; its thirst and hunger columns stay | approved | "with it on it replaces rain mood's snow +1" |
+| `[EXT:winter-cold-warm-window]` | a glühwein counts as "recent" for the rest of its day and the next game day (`WarmEffectDays` 1) | awaiting | the decision says "a recent glühwein" without a length; the window is the coordinator's reading of the plan's "one game day" |
 | `[EXT:winter-weather]` | the wintry Decembers option | approved | "**Wintry Decembers** are an option (its own toggle)" |
 | `[EXT:winter-anchors]` | the schema 2 head and hand anchors | approved | the data the approved hats, earmuffs and mittens attach to |
 | `[EXT:pools-model-inset]` | the walls' gap from the footprint edge (the pools' rule) | existing | not a winter label |

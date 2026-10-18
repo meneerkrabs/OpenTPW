@@ -193,6 +193,8 @@ public sealed class Guest
 	/// so the extension keeps its own to apply the rule once per qualifying day.
 	/// </summary>
 	public long RainMoodDay { get; internal set; }
+	/// <summary>[EXT:winter-cold] The game day plus one of the cold rule's last application to the guest (as <see cref="RainMoodDay"/>); written only once it has applied, so a save without <c>opentpw.winter-cold</c> has no such field.</summary>
+	public long ColdMoodDay { get; internal set; }
 	/// <summary>
 	/// [EXT:winter-items] The warm items the guest wears (the winter extension, docs/WINTER.md): bit 1 a hat, bit 2 earmuffs, bit 4 mittens (<see cref="WinterRules"/>); at most one head item. Only a purchase at a winter kiosk writes anything
 	/// but 0 into it, and nothing takes an item off: the guest keeps it until it leaves, whatever the weather. The colours are a function of the guest id and the item, so they are not kept.

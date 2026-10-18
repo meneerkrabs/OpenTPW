@@ -160,7 +160,7 @@ public sealed partial class GuestSimulation
 			else
 				ImportOnMap( guest, save, cell, destination, adjusted );
 			// [EXT:rain-mood-imported-age] a guest the save gives no time in the park counts its age for the rain mood from this turn (user-approved 2026-10-18, "Tellen vanaf het laden"); recorded only while the extension is on, so other saves keep their bytes
-			if ( RainMood != null && guest.TimeInParkSeconds == null )
+			if ( (RainMood != null || WinterCold != null) && guest.TimeInParkSeconds == null )
 				guest.RainMoodAgeStartTurn = ParkTurn;
 			(guest.StepFromX, guest.StepFromY, guest.StepFromDistance, guest.StepTick) = (guest.X, guest.Y, guest.DistanceWalked, TickCount);
 			UpdatePresentation( guest );

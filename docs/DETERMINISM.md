@@ -541,6 +541,16 @@ Two new pins cover the rule, on the same fixed synthetic run and the weather of 
 
 Review fix of the umbrella modifier: in Theme Park Inc only a guest who is already open (state 4) when the rule starts gets it (`TPI-EXE:0x611334`), not one whose umbrella the same step opens (1 to 4 at `0x6111E3`, a due 3 through `0x402d8d`). That moved `RainMoodWithUmbrellasFixedRunHash` from `0xF599E7E8B09C0FB7` to `0xADEE2FA6AFC2ACE3` (104 guests changed, as before); `RainMoodFixedRunHash` (no shop, so no umbrella) and every other pin stand. The optional `Guest.RainMoodAgeStartTurn` (the load turn of an imported guest without a time in the park, `[EXT:rain-mood-imported-age]`) joins the canonical hash and the guests' own digest only when set, which only an import with the extension on does, so no pin is affected.
 
+## Winter cold
+
+The `opentpw.winter-cold` extension ([WINTER.md](WINTER.md#cold-mood-extwinter-cold-phase-w5), `[EXT:winter-cold]`) is off by default. The level hands the rule to the guest simulation only while the extension is on (`GuestSimulation.WinterCold`, null otherwise), so with it off nothing runs, no draw is taken and no hash part is added: **every existing pin stands**
+(`DeterminismTests.EveryExistingPinIsUnchangedWhateverTheColdSwitchWhileTheSyntheticParksSetTheRuleByHand`). The rule draws from no stream; it only moves happiness (and, through the glühwein stall, `WarmUntilDay`), which moves the decisions and so the run. The guest's last rule day (`Guest.ColdMoodDay`)
+joins the canonical hash and the guests' own digest only once it is set, and the snapshot writes it only then.
+
+Two new pins on the fixed synthetic run, in a weather that snows from the 20th to the 80th second and from the 140th to the 200th: `DeterminismTests.WinterColdFixedRunHash` = `0x9E74A906AB249401` (no shop, the rule on; 97 guests changed by it) and `DeterminismTests.WinterColdEverythingFixedRunHash` = `0xBD102CFA2057A4C6` (the rule, the rain mood, the brolly shop and the winter
+shops on: a kiosk at (10, 3) and a glühwein stall at (10, 7) with December as the month; 106 guests changed, 83 wore an item or were warmed). With the rain mood on, the cold rule replaces its snow happiness, so this run differs from a plain sum of the two. A park saved mid-snow and resumed into a fresh instance continues with the same hash
+(`WinterColdTests.AParkSavedMidSnowContinuesIdenticallyAfterAResume`).
+
 ## Tests
 
 `DeterminismTests` (no game data needed):

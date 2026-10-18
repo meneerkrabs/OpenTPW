@@ -33,9 +33,11 @@ public class DeterminismTests
 		private readonly RideVM? roomScript;
 		private readonly RideVisitorBridge? brolly;
 		private readonly RideVM? brollyScript;
+		private readonly List<RideVisitorBridge> winter = new();
+		private readonly List<RideVM> winterScripts = new();
 		private readonly List<RideVM> dice = new();
 
-		public SyntheticPark( WorldSeed seed, IGuestObserver? observer = null, Action<ParkCellMap>? prepareCells = null, bool changingRoom = false, Action<GuestSimulation>? prepareGuests = null, IGuestDecisions? decisions = null, bool brollyShop = false )
+		public SyntheticPark( WorldSeed seed, IGuestObserver? observer = null, Action<ParkCellMap>? prepareCells = null, bool changingRoom = false, Action<GuestSimulation>? prepareGuests = null, IGuestDecisions? decisions = null, bool brollyShop = false, bool winterShops = false )
 		{
 			Seed = seed;
 			Economy = EconomyTestData.Park( seed: seed.EconomyStream );
@@ -94,6 +96,29 @@ public class DeterminismTests
 				payments.Link( brolly.AttractionId, boughtBrolly!.Id );
 				Guests.UmbrellaWeatherState = () => Guests.TickCount is >= 1200 and < 4800 or >= 8400 and < 12000 ? UmbrellaRules.WeatherRain : UmbrellaRules.WeatherNone;
 			}
+			// [EXT:winter-extension] a winter kiosk at (10, 3) and a glühwein stall at (10, 7) on the path column, paid through the economy like the other shops
+			if ( winterShops )
+			{
+				var kiosk = new RideVisitorBridge( Scripts.AllocateAttractionId(), "Winter Kiosk", RideVisitorKind.Shop, 1, 60, 30, GuestNeeds.None )
+				{
+					EntranceCell = (10, 3), ExitCell = (10, 3), AppearanceEffect = WinterRules.KioskAppearanceEffect, WinterTerms = new WinterShopTerms( 0, 0, 200, 100, 0, 0, 0 )
+				};
+				var stall = new RideVisitorBridge( Scripts.AllocateAttractionId(), "Gluehwein Stall", RideVisitorKind.Shop, 1, 60, 30, GuestNeeds.Thirst )
+				{
+					EntranceCell = (10, 7), ExitCell = (10, 7), SpecialIngredient = 3, WinterTerms = new WinterShopTerms( 130, 130, 250, 150, 60, 20, 60 )
+				};
+				foreach ( var winterShop in new[] { kiosk, stall } )
+				{
+					var script = GuestTests.CreateShopScript( new VisitorRideScriptEffects( winterShop, UnimplementedRideScriptEffects.Instance ), Scripts, seed: null );
+					winterShop.Attach( script, () => true );
+					Guests.Register( winterShop );
+					Assert.AreEqual( ParkEconomy.PurchaseResult.Ok, Economy.TryBuild( 1203, out var boughtWinter ) );
+					payments.Link( winterShop.AttractionId, boughtWinter!.Id );
+					winter.Add( winterShop );
+					winterScripts.Add( script );
+				}
+				Guests.WinterMonth = () => 12;
+			}
 			// [EXT:pools-attractions] a fixture that registers pool activities of its own (the water attractions pin)
 			prepareGuests?.Invoke( Guests );
 		}
@@ -145,6 +170,11 @@ public class DeterminismTests
 					brolly.DefersAdmission = swept;
 					brolly.HostStep();
 				}
+				foreach ( var winterShop in winter )
+				{
+					winterShop.DefersAdmission = swept;
+					winterShop.HostStep();
+				}
 				Economy.ThingSweep = swept ? new HarnessSweep( this ) : null;
 				try
 				{
@@ -173,6 +203,8 @@ public class DeterminismTests
 				park.shop.UpdateAdmission();
 				park.room?.UpdateAdmission();
 				park.brolly?.UpdateAdmission();
+				foreach ( var winterShop in park.winter )
+					winterShop.UpdateAdmission();
 				park.Things.DestroyQueued();
 				park.Guests.UpdateTurnEndArrivals();
 			}
@@ -500,6 +532,80 @@ public class DeterminismTests
 			Assert.AreEqual( FixedRunHash, RunFixedPark(), $"the fixed run, rain mood {enabled}" );
 			Assert.AreEqual( PoolsChangingRoomFixedRunHash, RunFixedParkWithPoolsAndAChangingRoom().Hash, $"the changing room run, rain mood {enabled}" );
 			Assert.AreEqual( UmbrellasFixedRunHash, RunFixedParkWithABrollyShopInTheRain().Hash, $"the umbrellas run, rain mood {enabled}" );
+		}
+	}
+
+	/// <summary>
+	/// [EXT:winter-cold] The fixed run on the cross park in a weather that snows from the 20th to the 80th second and from the 140th to the 200th and is clear in between, with the cold rule on (docs/WINTER.md, docs/DETERMINISM.md,
+	/// "Winter cold"). With <paramref name="everything"/> the rain mood, the brolly shop and the winter shops (a kiosk and a glühwein stall, December) are on as well: the cold rule replaces the rain mood's snow happiness, the stall warms
+	/// and the kiosk dresses guests. Returns the hash, how many guests the cold rule changed and how many bought a warm item or a glühwein.
+	/// </summary>
+	internal static (ulong Hash, int Affected, int Dressed) RunFixedParkInTheSnowWithCold( bool everything )
+	{
+		var park = new SyntheticPark( WorldSeed.Default, brollyShop: everything, winterShops: everything, prepareGuests: guests =>
+		{
+			guests.WinterCold = WinterColdSettings.Default;
+			guests.WinterDay = () => ParkCalendar.DayIndex( guests.TickCount );
+			if ( everything )
+				guests.RainMood = RainMoodSettings.Default;
+			guests.UmbrellaWeatherState = () => guests.TickCount is >= 1200 and < 4800 or >= 8400 and < 12000 ? UmbrellaRules.WeatherSnow : UmbrellaRules.WeatherNone;
+		} );
+		var affected = new HashSet<int>();
+		var dressed = new HashSet<int>();
+		for ( var chunk = 0; chunk < PinnedRunTicks / 60; chunk++ )
+		{
+			park.Run( 60 );
+			foreach ( var guest in park.Guests.Guests )
+			{
+				if ( guest.ColdMoodDay != 0 )
+					affected.Add( guest.Id );
+				if ( guest.HoldsWinter )
+					dressed.Add( guest.Id );
+			}
+		}
+		return (park.Hash, affected.Count, dressed.Count);
+	}
+
+	/// <summary>[EXT:winter-cold] The pinned hash of <see cref="RunFixedParkInTheSnowWithCold"/> with only the cold rule on (docs/DETERMINISM.md, "Winter cold").</summary>
+	internal const ulong WinterColdFixedRunHash = 0x9E74A906AB249401UL;
+
+	/// <summary>[EXT:winter-cold] The pinned hash of <see cref="RunFixedParkInTheSnowWithCold"/> with the cold rule, the rain mood, the brolly shop and the winter shops all on (docs/DETERMINISM.md, "Winter cold").</summary>
+	internal const ulong WinterColdEverythingFixedRunHash = 0xBD102CFA2057A4C6UL;
+
+	[TestMethod]
+	public void FixedRunInTheSnowWithColdIsTheSameInEveryProcessAndMovesTheRun()
+	{
+		var (hash, affected, _) = RunFixedParkInTheSnowWithCold( everything: false );
+		Assert.IsTrue( affected >= 5, $"{affected} guests were changed by the rule" );
+		Assert.AreEqual( hash, RunFixedParkInTheSnowWithCold( everything: false ).Hash, "repeatable in the process" );
+		Assert.AreNotEqual( FixedRunHash, hash, "the rule changes the run" );
+		Assert.AreEqual( WinterColdFixedRunHash, hash, $"0x{hash:X16} ({affected} affected)" );
+	}
+
+	[TestMethod]
+	public void FixedRunInTheSnowWithColdRainMoodUmbrellasAndWinterShopsIsTheSameInEveryProcess()
+	{
+		var (hash, affected, dressed) = RunFixedParkInTheSnowWithCold( everything: true );
+		Assert.IsTrue( affected >= 5, $"{affected} guests were changed by the rule" );
+		Assert.IsTrue( dressed >= 1, $"{dressed} guests wore an item or were warmed" );
+		Assert.AreEqual( hash, RunFixedParkInTheSnowWithCold( everything: true ).Hash, "repeatable in the process" );
+		Assert.AreNotEqual( RunFixedParkInTheSnowWithCold( everything: false ).Hash, hash, "the other extensions change the run again" );
+		Assert.AreEqual( WinterColdEverythingFixedRunHash, hash, $"0x{hash:X16} ({affected} affected, {dressed} dressed)" );
+	}
+
+	[TestMethod]
+	public void EveryExistingPinIsUnchangedWhateverTheColdSwitchWhileTheSyntheticParksSetTheRuleByHand()
+	{
+		foreach ( var enabled in new[] { false, true } )
+		{
+			using var scope = OpenTPW.Mods.OpenTpwExtensions.Use( OpenTPW.Mods.ModSet.Resolve( Array.Empty<OpenTPW.Mods.DiscoveredMod>(),
+				new OpenTPW.Mods.ModSettings { Enabled = new Dictionary<string, bool> { [OpenTPW.Mods.OfficialExtensions.WinterCold.Id] = enabled } }, null, GameEdition.ThemeParkWorld, OpenTPW.Mods.OfficialExtensions.All ) );
+			Assert.AreEqual( enabled, FeatureGates.WinterCold );
+			// the synthetic parks set the rule on their guests by hand (Level does it from the gate: WinterColdTests), so this checks that the switch alone changes none of these pins
+			Assert.AreEqual( FixedRunHash, RunFixedPark(), $"the fixed run, cold {enabled}" );
+			Assert.AreEqual( PoolsChangingRoomFixedRunHash, RunFixedParkWithPoolsAndAChangingRoom().Hash, $"the changing room run, cold {enabled}" );
+			Assert.AreEqual( UmbrellasFixedRunHash, RunFixedParkWithABrollyShopInTheRain().Hash, $"the umbrellas run, cold {enabled}" );
+			Assert.AreEqual( RainMoodFixedRunHash, RunFixedParkInTheRainWithRainMood( brollyShop: false ).Hash, $"the rain mood run, cold {enabled}" );
 		}
 	}
 

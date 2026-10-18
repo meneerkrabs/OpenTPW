@@ -169,8 +169,7 @@ public partial class Level
 		// and the guest restore to see it).
 		PlacedRide = RestorePrototypeRideSnapshot( snapshot.Prototype, roots );
 		Objects.ScriptWorld.RestoreSnapshot( snapshot.Scripts, roots );
-		ValidateResumeQueueGeometry( snapshot.Guests, Guests );
-		PoolBridges?.RestoreSnapshot( snapshot.PoolBridges );
+		RestoreResumeRoutingGeometry( snapshot.Guests, snapshot.PoolBridges, Guests );
 		Guests.RestoreSnapshot( snapshot.Guests );
 		// [EXT:smarter-guests] the extension's birth ids, keyed by the guest ids the restore just rebuilt
 		SmarterGuestsSave.Restore( Guests, snapshot.SmarterGuests );
@@ -250,6 +249,22 @@ public partial class Level
 		if ( saved.Runtime.HasScript && !saved.Runtime.Stopped )
 			roots.Add( saved.RootScriptId, ride.Runtime.Script! );
 		return ride;
+	}
+
+	/// <summary>Restore the elevated graph before validating queues: an underlying path may no longer accept a queue join.</summary>
+	internal static void RestoreResumeRoutingGeometry( GuestSimulationSnapshot snapshot, PoolBridgesSaveData? bridgeData, GuestSimulation target )
+	{
+		var world = target.Grid.Cells.PoolBridges;
+		if ( bridgeData != null )
+		{
+			if ( world == null ) throw new InvalidDataException( "The saved park's pool bridge world is unavailable." );
+			world.RestoreSnapshot( bridgeData );
+			foreach ( var ride in target.Attractions.OfType<RideVisitorBridge>() )
+				ride.RecomputeQueue( target.Grid );
+		}
+		ValidateResumeQueueGeometry( snapshot, target );
+		// Keep the original empty-bridge validation and restore order, including the saved map version.
+		if ( bridgeData == null ) world?.RestoreSnapshot( null );
 	}
 
 	/// <summary>Current cached queues must agree with the restored cells; a cache from before the last edit refreshes on the next tick.</summary>

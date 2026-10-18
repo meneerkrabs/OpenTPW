@@ -95,16 +95,19 @@ public class OnlineIntegrationTests
 		return new ParkPresence( session, parkId, session.Settings.PlayerName!, new OpenGround(), start, () => clock.Elapsed.TotalSeconds );
 	}
 
-	/// <summary>Pumps both sessions and updates both visits until <paramref name="condition"/> holds, or ten seconds pass.</summary>
+	/// <summary>
+	/// Pumps both sessions and updates both visits until <paramref name="condition"/> holds, or twenty seconds pass. Each round advances the visits by a
+	/// quarter of a second of walking, so a walk does not take its real time on a slow machine (the network still runs in real time).
+	/// </summary>
 	private static async Task<bool> Until( OnlineSession first, ParkPresence firstVisit, OnlineSession second, ParkPresence secondVisit, Func<bool> condition )
 	{
-		var until = DateTime.UtcNow.AddSeconds( 10 );
+		var until = DateTime.UtcNow.AddSeconds( 20 );
 		while ( DateTime.UtcNow < until )
 		{
 			first.Pump();
 			second.Pump();
-			firstVisit.Update( 0.02f );
-			secondVisit.Update( 0.02f );
+			firstVisit.Update( 0.25f );
+			secondVisit.Update( 0.25f );
 			if ( condition() )
 				return true;
 			await Task.Delay( 20 );

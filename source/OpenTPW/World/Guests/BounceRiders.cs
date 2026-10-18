@@ -12,7 +12,8 @@ namespace OpenTPW;
 /// <param name="Sector">The sprite's heading byte: the 45 degree sector the body faces before the camera's yaw is added (<see cref="GuestSpriteAtlas.SelectOriginalDirection(int, float, int)"/>).</param>
 /// <param name="Broken">The ride is broken down (script variable VAR_BROKEN set): the rider stands, otherwise it runs on the spot.</param>
 /// <param name="Step">The animation step of the body in its slot.</param>
-internal readonly record struct BounceRiderPose( int Visitor, int AttractionId, SVector3 Feet, int Sector, bool Broken, int Step );
+/// <param name="Slot">The sprite slot of the body's template, or -1 for the bounce's own (the run slot, the stand slot while broken); a walking body names its template's slot (<see cref="WalkerBodies.SlotOf"/>).</param>
+internal readonly record struct BounceRiderPose( int Visitor, int AttractionId, SVector3 Feet, int Sector, bool Broken, int Step, int Slot = -1 );
 
 /// <summary>A producer of bouncing riders (the flat rides' bounce tables).</summary>
 internal interface IBounceRiderSource
@@ -42,7 +43,7 @@ public static class BounceRiders
 	/// <summary>Entry <paramref name="index"/> of the sine table (test seam).</summary>
 	internal static float SineAt( int index ) => Sine[index];
 
-	private static readonly float IndexScale = SineTableSize * 0.15915493667125702f;
+	internal static readonly float IndexScale = SineTableSize * 0.15915493667125702f;
 
 	/// <summary>The table entry the bounce reads for a rider that bounced <paramref name="elapsedMilliseconds"/> ago on a script with the speed bias <paramref name="speedBias"/> (script +0xC0).</summary>
 	// [BIN:TPW-EXE:0x00557C03 bounce phase] the elapsed time is scaled by 0.8 + 0.005 x the speed word (constants 0x00701008, 0x00701010), truncated, taken modulo 1000 and turned into radians by 0.003125 (0x00701018); the table index is that angle x the index scale, rounded to nearest and masked
@@ -98,15 +99,103 @@ internal sealed class FlatRideBounceRiders : IBounceRiderSource
 	private const int WalkNodeClass = 0x800;
 	private readonly ParkObjects objects;
 	private readonly List<(int Guest, int Node, double Start)> scratch = new();
+	private readonly List<RideVisitorBridge.WalkerView> walkers = new();
 
 	public FlatRideBounceRiders( ParkObjects objects ) => this.objects = objects;
 
 	public void Collect( Dictionary<int, BounceRiderPose> poses )
 	{
 		foreach ( var ride in objects.Objects )
-			if ( !ride.IsDeleted )
-				Collect( poses, ride.Runtime, node => ride.GetNodeTransform( node ).Translation, ride.Placement.ModelToEngine.Translation.Z, scratch );
+		{
+			if ( ride.IsDeleted )
+				continue;
+			Collect( poses, ride.Runtime, node => ride.GetNodeTransform( node ).Translation, ride.Placement.ModelToEngine.Translation.Z, scratch );
+			CollectWalkers( poses, ride.Runtime, ride.GetNodeTransform, walkers );
+		}
 	}
+
+	/// <summary>
+	/// The bodies of one ride's walk table: the walk update (tp.exe 0x00557D80) draws every entry it passes, in the pose <see cref="WalkerBodies"/> describes.
+	/// <paramref name="nodeWorld"/> is the engine-space matrix of a model node.
+	/// </summary>
+	// [BIN:TPW-EXE:0x00557D80 walk update drawing] each entry draws its body through 0x005580A0 between the nodes of its state, by the share of the state's time spent, in template 1 (walking) while it walks on or off or waits at the fourth node; on board the head actions draw none and the actions 3, 5 and 6 draw templates 3, 8 and 5 at the second node
+	// [BIN:TPW-EXE:0x005580A0 body position] each node's position is read (0x00556B90: the class mask and number's first dummy, its matrix words +0x30..+0x38), and with bit 0 of the entry's last word (+0x1A, set by every shipped script) the height is taken from the nodes, else from the terrain (0x004511A0)
+	// [APPROX:TOUR-011] a body whose WALKON leaves bit 0 of its last word clear stands on the terrain in the original (0x004511A0, whose result is not modelled here: the bodies are drawn from the nodes' own heights), and the template steppers are not decoded (WalkerBodies.StepOf)
+	internal static void CollectWalkers( Dictionary<int, BounceRiderPose> poses, OriginalObjectRuntime runtime, Func<int, System.Numerics.Matrix4x4> nodeWorld, List<RideVisitorBridge.WalkerView> scratch )
+	{
+		if ( runtime.Script is not { } script )
+			return;
+		scratch.Clear();
+		runtime.Visitors.CollectWalkers( scratch );
+		if ( scratch.Count == 0 )
+			return;
+		var now = script.TimeMilliseconds;
+		var scale = ObjectPlacement.ModelScale;
+		SVector3? Position( int mask, int number ) => runtime.FindDummyNode( mask, number ) is { } node ? nodeWorld( node ).Translation : null;
+		// [BIN:TPW-EXE:0x00556B90 node orientation] the node's third matrix row (+0x20..+0x28, the engine's second row after the axes swap), whose x and z give a body on board its heading
+		int? Orientation( int number ) => runtime.FindDummyNode( WalkerBodies.WalkClass, number ) is { } node ? WalkerBodies.HeadingOf( nodeWorld( node ).M21, nodeWorld( node ).M22 ) : null;
+		foreach ( var walker in scratch )
+		{
+			var head = walker.Mode == 4;
+			var heading = walker.Heading ?? runtime.WalkHeadingOf( WalkerBodies.WalkClass, walker.U1, head ? WalkerBodies.HeadClass : WalkerBodies.WalkClass, walker.U2 ) ?? 0;
+			SVector3? feet;
+			var template = 1;
+			switch ( walker.State )
+			{
+				case 1:
+					feet = Between( Position( WalkerBodies.WalkClass, walker.U1 ), Position( head ? WalkerBodies.HeadClass : WalkerBodies.WalkClass, walker.U2 ), WalkerBodies.BodyShare( WalkerBodies.Share( now, walker.Began, walker.Ends ) ) );
+					break;
+				case 3:
+					feet = Between( Position( head ? WalkerBodies.HeadClass : WalkerBodies.WalkClass, walker.U3 ), Position( WalkerBodies.WalkClass, walker.U4 ), WalkerBodies.BodyShare( WalkerBodies.Share( now, walker.Began, walker.Ends ) ) );
+					break;
+				case 4:
+					feet = Between( Position( WalkerBodies.WalkClass, walker.U4 ), Position( WalkerBodies.WalkClass, walker.U4 ), 0 );
+					break;
+				case 2:
+				{
+					var (start, duration, words) = script.WalkFloat;
+					var floating = duration != 0 && !(unchecked( start + (uint)duration ) < script.ClockMilliseconds32);
+					var hides = WalkerBodies.HidesOnBoard( walker.Mode );
+					// [BIN:TPW-EXE:0x00557F4E body on board heading] an action other than 1, 2 and 4 takes its heading from the second node's orientation every frame
+					if ( !hides && Orientation( walker.U2 ) is { } oriented )
+						heading = oriented;
+					if ( floating )
+					{
+						feet = walker.Mode switch
+						{
+							4 => Between( Position( WalkerBodies.WalkClass, walker.U1 ), Position( WalkerBodies.HeadClass, walker.U2 ), 1 ),
+							1 or 2 => Between( Position( WalkerBodies.WalkClass, walker.U1 ), Position( WalkerBodies.WalkClass, walker.U2 ), 1 ),
+							_ => Between( Position( WalkerBodies.WalkClass, walker.U2 ), Position( WalkerBodies.WalkClass, walker.U2 ), 0 )
+						};
+						if ( feet is { } floated )
+						{
+							var (dx, dz, up) = WalkerBodies.FloatOffset( walker.Guest, script.ClockMilliseconds32, start, duration, words, (short)script.SpeedBias );
+							feet = floated + new SVector3( dx * scale, dz * scale, up * scale );
+						}
+						heading = WalkerBodies.FloatHeading( walker.Guest, script.ClockMilliseconds32, heading );
+						template = 2;
+					}
+					else
+					{
+						if ( hides || WalkerBodies.Template( walker.Mode ) is not (> 0 and var chosen) )
+							continue;
+						template = chosen;
+						feet = Between( Position( WalkerBodies.WalkClass, walker.U2 ), Position( WalkerBodies.WalkClass, walker.U2 ), 0 );
+					}
+					break;
+				}
+				default:
+					continue;
+			}
+			if ( feet is not { } point )
+				continue;
+			runtime.Visitors.SetWalkHeading( walker.Guest, heading );
+			poses[walker.Guest] = new BounceRiderPose( walker.Guest, runtime.Visitors.AttractionId, point, WalkerBodies.SectorOf( heading ), false, WalkerBodies.StepOf( now, walker.Began ), WalkerBodies.SlotOf( template ) );
+		}
+	}
+
+	/// <summary>The body routine's point between two nodes, or null when one is missing (the original logs and leaves its stack words as they were).</summary>
+	private static SVector3? Between( SVector3? from, SVector3? to, int share ) => from is { } a && to is { } b ? WalkerBodies.Between( a, b, share ) : null;
 
 	/// <summary>The riders of one ride's bounce table; <paramref name="nodeWorld"/> is the engine position of a model node, <paramref name="rideHeight"/> the engine height of the ride's origin.</summary>
 	internal static void Collect( Dictionary<int, BounceRiderPose> poses, OriginalObjectRuntime runtime, Func<int, SVector3> nodeWorld, float rideHeight, List<(int Guest, int Node, double Start)> scratch )

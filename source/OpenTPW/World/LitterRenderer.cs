@@ -155,7 +155,7 @@ public sealed class LitterRenderer : Entity
 			DrawnLitter++;
 		}
 
-		var stride = (uint)Marshal.SizeOf<Vertex>();
+		var stride = Vertex.SizeInBytes;
 		var bytes = (uint)vertices.Length * stride;
 		if ( vertexBuffer == null || vertexBuffer.SizeInBytes < bytes )
 		{

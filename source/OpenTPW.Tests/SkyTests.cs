@@ -125,4 +125,31 @@ public class SkyTests
 			Assert.AreEqual( layers, GraphicsPresets.ToRenderQuality( detail with { SkyQuality = setting }, 16, 1 ).SkyLayers, $"SKYQUALITY {setting}" );
 		Assert.AreEqual( 4, RenderQuality.Legacy.SkyLayers );
 	}
+
+	/// <summary>The staged vertices of a frame equal a full rebuild at the same scroll, for every layer count and across layer-count changes.</summary>
+	[TestMethod]
+	public void StagedVerticesEqualAFullRebuildForEveryLayerCount()
+	{
+		var cloudPositions = Enumerable.Range( 0, Sky.GridSize * Sky.GridSize ).Select( index => Sky.ToEngine( Sky.CloudPosition( index / Sky.GridSize, index % Sky.GridSize ) ) ).ToArray();
+		var cylinderPositions = Enumerable.Range( 0, Sky.CylinderColumns * Sky.CylinderRings ).Select( index => Sky.ToEngine( Sky.CylinderPosition( index / Sky.CylinderRings, index % Sky.CylinderRings ) ) ).ToArray();
+		var colours = Enumerable.Range( 0, Sky.GridSize * Sky.GridSize ).Select( index => 0xFF000000u | (uint)index * 0x010203u ).ToArray();
+		var cloudTriangles = Sky.CloudTriangles().ToArray();
+		var cylinderTriangles = Sky.CylinderTriangles().ToArray();
+		var staging = new Sky.Staging( cloudPositions, colours, cloudTriangles, cylinderPositions, cylinderTriangles );
+		var random = new Random( 7 );
+		foreach ( var layers in new[] { 1, 2, 4, 2, 4, 1, 4 } )
+		{
+			for ( var frame = 0; frame < 3; frame++ )
+			{
+				var offsetU = Enumerable.Range( 0, Sky.MaximumLayers ).Select( _ => (float)(random.NextDouble() * 2 - 1) ).ToArray();
+				var offsetV = Enumerable.Range( 0, Sky.MaximumLayers ).Select( _ => (float)(random.NextDouble() * 2 - 1) ).ToArray();
+				var staged = staging.Update( layers, offsetU, offsetV, out var clouds );
+				var expected = Sky.BuildVertices( layers, cloudPositions, colours, cloudTriangles, cylinderPositions, cylinderTriangles, offsetU, offsetV, out var expectedClouds );
+				Assert.AreEqual( expectedClouds, clouds, $"{layers} layers" );
+				Assert.AreEqual( layers * cloudTriangles.Length * 3, clouds );
+				CollectionAssert.AreEqual( System.Runtime.InteropServices.MemoryMarshal.AsBytes( expected.AsSpan() ).ToArray(),
+					System.Runtime.InteropServices.MemoryMarshal.AsBytes( staged.AsSpan() ).ToArray(), $"{layers} layers, frame {frame}" );
+			}
+		}
+	}
 }

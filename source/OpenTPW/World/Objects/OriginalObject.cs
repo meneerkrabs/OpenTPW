@@ -93,6 +93,7 @@ public class OriginalObject : Entity
 	private int textureFrameVersion = -1;
 	private bool deleted;
 	private int hiddenVersion = -1;
+	private int poseVersion = -1;
 
 	public OriginalObject( ObjectCatalogEntry entry, ObjectPlacement placement, RideScriptWorld? world = null, int? seed = null, bool open = true )
 		: this( entry, placement, world, seed, open, attractionId: null, seedScript: true )
@@ -384,8 +385,12 @@ public class OriginalObject : Entity
 	{
 		UpdateVertices();
 		UpdateTextures();
-		var placement = Placement.ModelToEngine;
 		var animator = Runtime.Animator;
+		// the parts' transforms follow the animator's pose and the object's placement, which never changes: a tick on which the animator did not update leaves them as they are
+		if ( animator.PoseVersion == poseVersion )
+			return;
+		poseVersion = animator.PoseVersion;
+		var placement = Placement.ModelToEngine;
 		var nodes = animator.NodeTransforms;
 		var hidden = animator.HiddenVersion != hiddenVersion;
 		hiddenVersion = animator.HiddenVersion;

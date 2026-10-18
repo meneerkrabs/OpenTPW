@@ -117,14 +117,14 @@ public partial class TextureFile : BaseFormat
 		var outputA = new float[size * size];
 		Array.Fill( outputA, 255f );
 
-		var isHalfScale = !fileData.Flags.HasFlag( TextureFlags.FullScale );
+		var planarRows = !fileData.Flags.HasFlag( TextureFlags.InterleavedRows );
 		var state = new ImageDecodeState( size );
-		DecodeChannel( ref state, size, ref colorData, outputY, ComputeDequantizationScaleY( fileData.YChannelQuantizationScale ), isHalfScale );
-		DecodeChannel( ref state, size / 2, ref colorData, outputCb, ComputeDequantizationScaleCbCr( fileData.CbChannelQuantizationScale ), isHalfScale );
-		DecodeChannel( ref state, size / 2, ref colorData, outputCr, ComputeDequantizationScaleCbCr( fileData.CrChannelQuantizationScale ), isHalfScale );
+		DecodeChannel( ref state, size, ref colorData, outputY, ComputeDequantizationScaleY( fileData.YChannelQuantizationScale ), planarRows );
+		DecodeChannel( ref state, size / 2, ref colorData, outputCb, ComputeDequantizationScaleCbCr( fileData.CbChannelQuantizationScale ), planarRows );
+		DecodeChannel( ref state, size / 2, ref colorData, outputCr, ComputeDequantizationScaleCbCr( fileData.CrChannelQuantizationScale ), planarRows );
 
 		if ( fileData.HasAlphaChannel )
-			DecodeChannel( ref state, size, ref alphaData, outputA, ComputeDequantizationScaleA( fileData.AChannelQuantizationScale ), isHalfScale, true );
+			DecodeChannel( ref state, size, ref alphaData, outputA, ComputeDequantizationScaleA( fileData.AChannelQuantizationScale ), planarRows );
 
 		// The colour conversion is the other browser cold path next to the wavelet
 		// loops, so it reads the decoded planes straight into the final byte

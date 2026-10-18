@@ -1,8 +1,8 @@
 # Umbrellas (`opentpw.umbrellas`)
 
-October 18, 2026. Status: **phases U0 (the Theme Park Inc trace, below), U1 (our own art and data pipeline, [Content](#content-extumbrellas-content)), U2 (the simulation, [below](#the-simulation-phase-u2)) and U4 (the rain mood rule, [below](#the-rain-mood-rule-phase-u4)) are done.**
-The extension is registered, on by default, lists the four brolly shops in the Theme Park World catalogs and runs their rules: a guest buys an umbrella in the rain and carries it through the five states. Nothing is drawn yet:
-the umbrellas are simulation state only until phase U3 (`UmbrellaRenderer`), and the rain mood rule (`opentpw.rain-mood`, off by default) is its own extension.
+October 18, 2026. Status: **phases U0 (the Theme Park Inc trace, below), U1 (our own art and data pipeline, [Content](#content-extumbrellas-content)), U2 (the simulation, [below](#the-simulation-phase-u2)), U3 (the drawing, [below](#drawing-phase-u3)) and U4 (the rain mood rule, [below](#the-rain-mood-rule-phase-u4)) are done.**
+The extension is registered, on by default, lists the four brolly shops in the Theme Park World catalogs and runs their rules: a guest buys an umbrella in the rain and carries it through the five states. Guests carrying an open umbrella are drawn (phase U3);
+the rain mood rule (`opentpw.rain-mood`, off by default) is its own extension.
 The winter extension ([WINTER.md](WINTER.md)) follows the same pipeline for its kiosk, glühwein stall and warm items.
 
 The idea: bring the brolly shop and guests carrying open umbrellas in the rain of Theme Park Inc to Theme Park World parks as an official extension (docs/MODS.md), with OpenTPW's own art, so a player needs no Theme Park Inc
@@ -16,6 +16,9 @@ or number table of Theme Park Inc is copied: the sprites and models are drawn in
 - **User approval of the rain mood extension and its imported-age rule (2026-10-18, asked directly):** the user approved `opentpw.rain-mood` as an extension, default off (`[EXT:rain-mood-extension]`), and, asked what an imported original guest's age should be for the rule's day gate, chose "Tellen vanaf het laden": the age counts from the load (the import turn), so the rule then applies normally every fourth day instead of age 0 forever (`[EXT:rain-mood-imported-age]`). The once-per-day rule was approved earlier the same day (`[EXT:rain-mood-once-per-day]`).
 - `opentpw.rain-mood` (the weather happiness, hunger and thirst rule) is **off by default** and applies **once per qualifying day**: Theme Park Inc's every-update behaviour comes from a stored day that is never read (`[EXT:rain-mood-once-per-day]`; the literal rule is not offered).
 - **User approval of the three U2 extensions (2026-10-18, asked directly in the coordinating session):** the question was "U2 heeft drie eigen keuzes gemaakt bij de paraplu's. Akkoord als uitbreiding (EXT)?" and the answer was "Alle drie akkoord", the options naming 1) the weather mapping (`[EXT:umbrellas-weather-map]`), 2) the saved pending open/close turn (`[EXT:umbrellas-save-due]`), 3) the balloon shop refusing balloon holders only in parks with umbrellas (`[EXT:umbrellas-balloon-gate]`).
+- **User approval of the three U3 choices (2026-10-18, asked directly in the coordinating session):** (1) the sight-line pull instead of TPI's ground pull and `YAdjustCamera` lift is registered as an approximation, `APPROX:UMB-004`; the answer was "Als benadering (APPROX:UMB-004)". (2) `[EXT:umbrellas-draw]`, including the steady hand (the umbrella stays at the mean hand position over the walk steps), is approved; the answer was "Akkoord". (3) Committing `content/umbrellas/anchors-original.json` is approved: numbers only, measured from the user's own game frames, no pixels or bytes; the answer was "Ja, getallen mogen".
+- **Two more `[EXT:umbrellas-draw]` choices are ours, covered by the plan the user approved on 2026-10-18 (answer "doe het allemaal" after a plan summary that named "5 richtingen gespiegeld naar 8" and "handposities uit het skelet"):** (1) TPI's umbrella has no directions (`0x614320` passes direction 0 to `0x4E3D10`), so OpenTPW's facing, the five stored directions mirrored to eight by the guests' own sectors, is our own. (2) TPI's anchor is straight above the guest at the set's Y (`0x60B29B`), so OpenTPW's hand anchors from the guest rig are our own.
+- `[EXT:debug-umbrellas]` (the `--debug-umbrellas` flags and the `PerfUmbrellas` hook) is a **Debug-only test hook**: it exists for captures and smokes in Debug builds only, and a player never turns it on.
 - Umbrellas are **available from the start** (no research item), price 30 as in Theme Park Inc. A closed umbrella is not drawn (no furled sprite), as in Theme Park Inc.
 
 ## What Theme Park Inc does (static trace)
@@ -74,7 +77,7 @@ weather Rain/Storm 200 (science 250), Snow 150, HeatWave 5. Weather spells (`0x6
 - **Generation:** every Theme Park World guest is a kid, so the kid rows apply (rain -1, storm -1, snow +1 happiness, snow thirst -1, hunger +1); kept as data.
 - **Faithful:** the shop gate, the weather and generation multipliers, the balloon factor with its zero quirk, purchase opens at once, the five states and their transitions, the day gate (the whole first day, then every fourth), the delay bounds, the
   balloon release with -15, closing on entering an attraction, no reopening on leaving, no speed term, no cheer.
-- **Approximated** (registered as `APPROX:UMB-001` to `UMB-003`, [below](#the-simulation-phase-u2)): the reaction delay uses a per-guest hash of (guest id, park turn), not CRT `rand()` (no draw from any shared stream; UMB-001); the view condition is dropped (UMB-002);
+- **Approximated** (registered as `APPROX:UMB-001` to `UMB-004`, [below](#the-simulation-phase-u2)): the reaction delay uses a per-guest hash of (guest id, park turn), not CRT `rand()` (no draw from any shared stream; UMB-001); the view condition is dropped (UMB-002);
   "inside" = OpenTPW's in-attraction states (UMB-003); the pending change turn is saved, unlike Theme Park Inc (`[EXT:umbrellas-save-due]`). The colour keeps Theme Park Inc's one world draw at purchase.
 - **Not ported:** the first-person `FP*` placement (no walk-around camera yet; the formula and its radian truncation are recorded above), the season roller (Theme Park World keeps its own weather), Theme Park Inc's log lines.
 - **Saves** (done in U2): optional guest fields `UmbrellaState` (0..4), `UmbrellaType` (0..2), `UmbrellaDueTurn` written only when the state is not 0, so every older JSON is byte-equal; the sprite object is rebuilt from the state on load.
@@ -87,7 +90,7 @@ weather Rain/Storm 200 (science 250), Snow 150, HeatWave 5. Weather spells (`0x6
 
 - **The catalog.** `UmbrellaContent.CatalogRoot` is a root of the id `opentpw.umbrellas` in `ModContentRoots.CatalogRoots` after the pools' root, so the four brolly shops (ids 64500 to 64503, shops, no research) are listed in the
   theme catalogs of a Theme Park World run while the extension is on; `ObjectCatalog`'s cache key names the root, so a park never reuses a catalog built without the shops. In a Theme Park Inc run, with the extension off or without the
-  folder there is no root. In the browser build the folder is not embedded yet (U3 decides how the sprites travel), so there is no shop there until then. `[EXT:umbrellas-content]`
+  folder there is no root. The browser build embeds the folder (U3), so the shops are there too. `[EXT:umbrellas-content]`
 - **The score** (`GuestSimulation.HostScore`, applied after the decision policy's score at every call of `ScoreAttraction`: the major decision, the minor decision and its hysteresis; `IGuestDecisions` and the smarter guests are untouched).
   For an object of the extension: a brolly shop scores 0 for a guest with an umbrella of any state and in any weather but rain, storm or snow (`[BIN:TPI-EXE:0x61038e]`); then the score is multiplied by the object's
   `WeatherModifier.*Percentage` of the current weather when that is nonzero, then (brolly shop) by the balloon factor `100 - life x 100 / 255` scaled by `DiscardBalloonPctModifier` (100), skipped when it is exactly 0 (a full-life balloon: the original's
@@ -112,7 +115,8 @@ weather Rain/Storm 200 (science 250), Snow 150, HeatWave 5. Weather spells (`0x6
   `DeterminismTests.UmbrellasFixedRunHash` covers the fixed run plus a brolly shop at (10, 1) and a rain that comes and goes (see [DETERMINISM.md](DETERMINISM.md#umbrellas)).
 - **Approximated, registered** (`UmbrellaApproximations`): `UMB-001` the reaction delay is a SplitMix64 hash of (guest id, park turn) with the original's bound, not the C runtime's `rand()`; `UMB-002` the view condition of the scheduling and of the carrying out is dropped (low confidence in what it is);
   `UMB-003` "inside" is OpenTPW's in-attraction states (using a ride or shop, or a changing room's swim session), and the day gate's age is the guest's time since creation (`TimeInParkSeconds`, GUEST-920), whose game-day conversion is the calendar's 3750 seconds a turn.
-  None of the three can be retired: the first needs the C runtime's hidden state and by design takes no draw, the other two are state OpenTPW's guests do not have.
+  `UMB-004` the umbrella is pulled towards the camera along the sight line, not by TPI's ground pull and `YAdjustCamera` height lift (the value is unknown, so is the original's screen-space placement).
+  None of the first three can be retired: the first needs the C runtime's hidden state and by design takes no draw, the other two are state OpenTPW's guests do not have.
 
 ## The rain mood rule (phase U4)
 
@@ -143,7 +147,7 @@ change by the guest generation's row, and an umbrella that is **already open** (
 | U0 | the trace in this page, `[BIN:TPI-EXE]` labels | done |
 | U1 | art and data pipeline: umbrella sprites, anchors from the rig, the four shop models, `.sam`, RSE, `content/umbrellas` | done (original-set anchors left to U3) |
 | U2 | simulation behind `opentpw.umbrellas`: purchase, states, scoring gate, balloon trade, attraction close, saves, pins; also a catalog root for the extension in `ModContentRoots.CatalogRoots` and its id in the `ObjectCatalog` cache key (`ObjectCatalog.cs`, where only the pools' root was named), or a park would reuse a catalog built without the shops | done |
-| U3 | drawing: `UmbrellaRenderer`, anchors for the original sets, pull, bubble lift, browser delivery, captures | planned |
+| U3 | drawing: `UmbrellaRenderer`, anchors for the original sets, pull, bubble lift, browser delivery, captures | done |
 | U4 | `opentpw.rain-mood` with its pins and the measurement of what it costs a kid | done ([below](#the-rain-mood-rule-phase-u4)) |
 | U5 | tuning from captures; the first-person placement if a walk-around camera lands | planned |
 
@@ -151,7 +155,7 @@ Open questions: Theme Park Inc's kid score 75 % or our 100 % (decide from captur
 
 ## Content (`[EXT:umbrellas-content]`)
 
-`content/umbrellas` (copied next to the program with the rest of `content/`; not yet embedded in the browser build, phase U3 decides how the sprites travel: the set is 29 KB) holds, all our own, generated from code and committed (CI has no Blender):
+`content/umbrellas` (copied next to the program with the rest of `content/`; embedded in the browser build as a whole, about 0.7 MB before compression, the sprite set being 29 KB) holds, all our own, generated from code and committed (CI has no Blender):
 
 The content is our own (modelled and textured in Blender from the scripts in `tools/`), MIT-licensed like the rest of the repository; nothing in it comes from Theme Park Inc or Theme Park World.
 
@@ -171,7 +175,7 @@ The content is our own (modelled and textured in Blender from the scripts in `to
 - `anchors.json`: the **hand anchors** of the eight 2x kid sets, from the rig (`tools/blender/opentpw_guest_sprites.py --emit-anchors`): per set and direction 0 to 4, where the kid's right hand lands in the land frames, in pixels (256 per unit) from the feet hotspot, x right and y down, for the
   standing frame, every walking frame and the waiting frames, plus the hand's height above the feet. Exact by construction (the same camera as the frames; nothing is rendered, the table takes seconds). The umbrella is placed by putting its hotspot at the anchor
   (then pulled towards the camera, U3). Directions 5 to 7 are the mirror of 3 to 1: the game flips the frame, so the anchor's x is negated. The hand is a little in front of the body's axis, so the side views are not exact mirrors (within 2 pixels).
-  The anchors of the original (1x) kid sets and the four costume sets are **not** here: they need a local measuring script that reads the player's own game frames and writes numbers only; that belongs to phase U3, together with the table of those numbers.
+  The anchors of the original (1x) kid sets and the four costume sets are in `anchors-original.json` (phase U3, [below](#drawing-phase-u3)).
 - Rebuild: `tools/umbrellas/build-content.sh` (Blender 5.x, the .NET SDK and python3; about 20 seconds): the shop models (`opentpw_brolly_shop.py`, which reuses the pool cabin's textures and geometry builder), the kit's `object` command, the umbrella sprites,
   `tools/umbrellas/pack_sprites.py` (which reuses the pools' set converter, `detailFlag` 0) and the anchors.
 
@@ -190,3 +194,30 @@ the script, the sprite banks (slots, directions, 256 ppu, hotspots at the tip) a
 | `[EXT:rain-mood-extension]` | the extension itself: its registration, its gate (`FeatureGates.RainMood`), off by default, always recorded while on (U4; user-approved 2026-10-18) |
 | `[EXT:rain-mood-imported-age]` | an imported original guest without a known time in the park counts its rain mood age from the load, with the saved load turn (U4; user-approved 2026-10-18, "Tellen vanaf het laden") |
 | `[BIN:TPI-EXE:0x...]` | the Theme Park Inc `Game.exe` address a rule was traced to (this page) |
+
+## Drawing (phase U3)
+
+`UmbrellaRenderer` (`World/Umbrellas`), created by `Level` beside `BalloonRenderer` while the extension is on and its content is there, draws one camera-facing quad of `SPR_UM` for every guest whose umbrella is **open or open until a due close** (states 4 and 1; a closed one, state 2, has no
+sprite: `[BIN:TPI-EXE:0x60ae35]`, the placement routine `0x60AE00` compares the state with 4 and 1, re-read statically from the no-CD `Game.exe`). Presentation only: no random stream is read, nothing is saved, no pin moves. `[EXT:umbrellas-draw]`
+
+- **Placement.** The sprite's hotspot, the handle's tip, goes to the guest's hand: the point of the hand anchor table for the sprite set, animation slot (stand, walk, wait; running follows walking), stored direction and step the guest is drawn with
+  (`GuestRenderer.TryMount` returns those, after the guest's own depth pull; mirrored directions negate x). A walking guest's hand swings by up to 12 pixels with its arm, which would shake the umbrella, so the walking and waiting hands are the mean over the
+  animation's steps (`SteadyHand`; checked in captures). A set without a table gets TPI's rule: straight above the guest at 5.7 units (`[BIN:TPI-EXE:0x60b29b]`: the set's Y, 5.5 to 6.5 in TPI's data, is added to the guest's height).
+- **Pull.** TPI's default placement moves the hotspot 10 % (`GenericUmbrellaModifiers` X/ZAdjustCamera, `[BIN:TPI-EXE:0x60b236]`) of the way to the camera along the ground and lifts it by `YAdjustCamera` x (camera height - 40) (the 40.0 is `0x93E5B0`), so that it covers the guest.
+  OpenTPW pulls along the sight line instead, as the guests' own depth pull is done (the screen position stays and the quad shrinks by the same share), because the lift's value is not known here. The guests' pull is 3.5 to 3.9 units, under 5 % of the park view's distances, so
+  the umbrella is in front of the guest it covers. Not modelled: TPI's ground-plane pull and height lift, registered as `APPROX:UMB-004` (unknown: the `YAdjustCamera` value and so the resulting screen-space placement).
+- **Direction and colour.** The five stored directions are mirrored to eight by the same heading sector and camera sector as the guests (`GuestSpriteAtlas.SelectOriginalDirection`); the colour is the guest's `UmbrellaType` (the sprite slot).
+- **Close under a track (TPI only, not modelled here).** TPI's draw routine also closes the umbrella (`[BIN:TPI-EXE:0x60AF32]`, reached from the test at `0x60AEDC`). With the guest's tile index `[+7] * 128 + [+5] + 1`, it calls `0x40A344` (to `0x67F890`) on the tile's 72-byte cell record and, when that holds, `0x405F01` (to `0x685680`) on the 40-byte record of the same index at game +`0x11FFD8`; when both are true it calls `0x4055AB` (to `0x6142E0`): state (`+0x238`) 2, the sprite handle (`+0x240`) destroyed through `0x4E3E90` and cleared, and the local "umbrella shown" byte (`[esp+0x13]`) zeroed, so the bubble of that frame hangs at 2.5 and not 6.0 (`0x60B0A4`). `0x685680` accepts the record types 0xB, 0xC, 0x10 and 0x11, which are the **track cell types** of docs/TRACKS.md (11 kart origin, 12 extension, 16 water origin, 17 water extension, low confidence for 17); `0x67F890` follows the cell record's word to a track record (an extension, 12 or 17, goes on to its origin) and accepts the types the track walk accepts (0xB, 0xD, 0x10, 0x12, 0x19: kart and water tiles and stations, plus 25). So a guest standing on a kart or water ride's track cell loses the umbrella at once. This changes the simulation (the state), so it belongs to U2 and is **not implemented**; the drawn umbrella here follows the state. Also see `UMB-002`.
+- **Thought bubble.** While the umbrella shows, the guest's bubble hangs 6.0 units above it instead of 2.5 (`ThoughtRenderer.UmbrellaShown`, `[BIN:TPI-EXE:0x60b0a4]`: the word at `0x9CFB38` is 6.0, `0x9CFB34` is 2.5, chosen by the same flag).
+- **Hand anchors of the original sets** (`content/umbrellas/anchors-original.json`, numbers only). `opentpw-kit measure-anchors --data <Data> --anchors content/umbrellas/anchors.json --pools content/pools/esprites/Generic/Kids --out <file>` (a maintainers' tool; the table is committed and a test
+  reproduces it from the local game frames) reads the game's own frames. The eight 1x kid sets have a 2x redraw of the same pose, so their anchor is the 2x rig anchor at half the pixels, moved sideways by the difference of the two silhouettes' mean x (the redraws match the originals
+  within about a pixel). The four costume sets have no redraw: a rule fitted on the kids gives the hand's height as a share of the silhouette's height above its bottom edge and its x as a share of half the box's width, per slot and direction. Leaving each kid set out in turn
+  predicts its anchors to 3.55 pixels on average (largest 9.7; a kid is 37 pixels tall, and most of it is the swinging walking hand the umbrella does not follow). The 2x sets of the pools guest art use the rig table; the table follows the frame's pixels per unit.
+- **Browser capture.** A real Chrome screenshot of the published browser build (Jungle, zoom 80, four umbrellas drawn) comes from `tools/web-perf/run.mjs --scenarios jungle,umbrellas`: the browser has no command line, so the hook `PerfUmbrellas` stands in for `--debug-umbrellas`.
+- **Browser.** The whole folder (shops, the 29 KB sprite set, the tables) is embedded (`OpenTPW.Web.csproj`), 544,475 bytes, about 190 KB deflated (gzip -9 per file); every browser user downloads it with the build, also with the extension off. There is nothing else to fetch.
+- **Captures** (Debug builds): `--debug-umbrellas` gives every guest an open umbrella, colour by id, and keeps it open; `--debug-umbrellas-follow zoom,yaw` holds the park camera on the first guest; with `--debug-weather 8` and `--capture-world`. `[EXT:debug-umbrellas]`
+
+| Label | What |
+| --- | --- |
+| `[EXT:umbrellas-draw]` | the drawing: the renderer, its placement from the tables, the five stored directions mirrored to eight (TPI has no directions), the hand anchors (TPI anchors straight above the guest), the sight-line pull, the steady hand; user-approved (see the decisions) |
+| `[EXT:debug-umbrellas]` | (debug-only test hook) the Debug-build capture flags and the browser harness hook `PerfUmbrellas` (`tools/web-perf/run.mjs --scenarios jungle,umbrellas`, docs/BROWSER-PERFORMANCE.md) |

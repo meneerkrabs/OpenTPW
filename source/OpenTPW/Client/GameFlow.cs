@@ -170,7 +170,7 @@ internal sealed partial class GameFlow : IDisposable
 		TearDown();
 		enterHold = false;
 		lobbyDefinition ??= LobbyDefinition.Load();
-		Lobby = new LobbyScene( lobbyDefinition, generator: lobbyEffects.Draw );
+		Lobby = new LobbyScene( lobbyDefinition, generator: lobbyEffects.Draw, flyerPercent: LobbyObjectsPercent );
 		LobbyCameraMode.Radius = lobbyDefinition.SpinRadius;
 		LobbyCameraMode.VerticalOffset = lobbyDefinition.VerticalOffset;
 		LobbyCameraMode.SpinSpeed = lobbyDefinition.SpinSpeed;
@@ -847,6 +847,10 @@ internal sealed partial class GameFlow : IDisposable
 			Lobby.Visible = wanted == Backdrop.Lobby;
 	}
 
+	/// <summary>The LOBBYOBJECTS setting in effect (the share of the lobby's flyers that is spawned); 100 without graphics settings.</summary>
+	// [BIN:TPW-EXE:0x5d9e22 lobby objects] the flying-mesh groups scale their counts by the settings' LOBBYOBJECTS value ([0x7858dc]) in percent
+	private static int LobbyObjectsPercent => IGraphicsSettings.Instance?.Detail.LobbyObjects ?? 100;
+
 	/// <summary>The front end's island effects (sky, rain, lightning and the island one-shots), seeded once from the clock like the original's.</summary>
 	private readonly LobbyEffects lobbyEffects = new( (uint)DateTimeOffset.UtcNow.ToUnixTimeSeconds() );
 
@@ -855,6 +859,7 @@ internal sealed partial class GameFlow : IDisposable
 	{
 		if ( Lobby == null )
 			return;
+		lobbyEffects.EasedSky = CompatibilityRuntime.RenderQuality.SkyLayers > 1;
 		if ( backdrop == Backdrop.Globe )
 		{
 			// [APPROX:UI-018] while the globe is up the lobby scene is not stepped, so its flyers and island clips hold still; the original's lobby update 0x5d5c50 has no globe branch (the main state stays 2, 0x54e6c7), so its flying-mesh system and islands probably keep running behind the globe; whether the lobby scene is drawn then is not traced
@@ -918,7 +923,7 @@ internal sealed partial class GameFlow : IDisposable
 			var themes = islands.Select( park => Lobby!.Definition.Islands.FirstOrDefault( island => string.Equals( island.Level, park.Level, StringComparison.OrdinalIgnoreCase ) ) ).ToList();
 			try
 			{
-				cityScene = new LobbyScene( Lobby!.Definition, themes, lobbyEffects.Draw );
+				cityScene = new LobbyScene( Lobby!.Definition, themes, lobbyEffects.Draw, LobbyObjectsPercent );
 				cityScene.Visible = backdrop == Backdrop.City;
 			}
 			catch ( Exception exception ) when ( exception is IOException or InvalidDataException or InvalidOperationException )

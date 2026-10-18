@@ -166,7 +166,7 @@ public class TopThoughtsTests
 		hud.Stack.Pop();
 		hud.OpenParkInfoWindow();
 		Assert.AreEqual( 1, hud.ParkInfoIconFrame( 2 ), "a new window shows it" );
-		Assert.AreEqual( OriginalUiTests.FakeStrings().Thought( (int)GuestThought.Thirsty ), hud.Stack.Top!.Find( "thought2" )!.CurrentHelp, "the hover text is the THOUGHTS.str entry of the frame plus 1" );
+		Assert.AreEqual( OriginalUiTests.FakeStrings().Thought( ParkHud.ParkInfoIconHelpThought ), hud.Stack.Top!.Find( "thought2" )!.CurrentHelp, "the hover text is THOUGHTS.str entry 1: the frame getter 0x661596 returns 0" );
 	}
 
 	// ---- The guest-insights counters -------------------------------------------------------------

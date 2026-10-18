@@ -975,26 +975,71 @@ public class PoolsAttractionsTests
 	}
 
 	[TestMethod]
-	public void TheWavesPayASwimmerAndChangeNeitherItsMovementNorItsRandomStream()
+	public void TheWavesPayAndPushASwimmerAndWavesThatAreOffDoNothing()
 	{
 		var (waves, swimmerWaves) = EffectsRig( new PoolWaveSettings( true, 3, 0 ) );
 		var (flat, swimmerFlat) = EffectsRig( null );
 		var (off, swimmerOff) = EffectsRig( new PoolWaveSettings( false, 3, 0 ) );
-		var paid = 0f;
+		var apart = 0;
 		for ( var turn = 0; turn < 500; turn++ )
 		{
 			waves.Turns( 1 );
 			flat.Turns( 1 );
 			off.Turns( 1 );
+			if ( swimmerFlat.IsSwimming )
+				Assert.AreEqual( (swimmerFlat.Navigation.X, swimmerFlat.Navigation.Y, swimmerFlat.SwimRandom, swimmerFlat.Happiness),
+					(swimmerOff.Navigation.X, swimmerOff.Navigation.Y, swimmerOff.SwimRandom, swimmerOff.Happiness), $"turn {turn}: waves that are off move nobody, draw nothing and pay nothing" );
 			if ( swimmerWaves.IsSwimming )
 			{
-				Assert.AreEqual( (swimmerFlat.Navigation.X, swimmerFlat.Navigation.Y, swimmerFlat.SwimRandom), (swimmerWaves.Navigation.X, swimmerWaves.Navigation.Y, swimmerWaves.SwimRandom), $"turn {turn}: the waves move nobody and draw nothing" );
-				Assert.AreEqual( swimmerFlat.Happiness, swimmerOff.Happiness, "waves that are off pay nothing" );
+				Assert.IsTrue( waves.Region.IsWater( swimmerWaves.Navigation.X, swimmerWaves.Navigation.Y ), $"turn {turn}: the push keeps the swimmer in the water" );
+				if ( (swimmerWaves.Navigation.X, swimmerWaves.Navigation.Y) != (swimmerFlat.Navigation.X, swimmerFlat.Navigation.Y) )
+					apart++;
 			}
 		}
-		paid = swimmerWaves.Happiness - swimmerFlat.Happiness;
-		Assert.IsTrue( paid > 0.5f && paid < 12f, $"the waves paid {paid}" );
+		Assert.IsTrue( apart > 50, $"the waves move the swimmer ({apart} turns apart from the flat pool)" );
+		// at most 1.2 per 24 turns while they run (120 of every 160 turns): 500 turns pay at most about 18, and the pushed swimmer's other happiness may differ from the flat pool's
+		var paid = swimmerWaves.Happiness - swimmerFlat.Happiness;
+		Assert.IsTrue( paid > 0.5f && paid < 20f, $"the waves paid {paid}" );
 		Assert.AreEqual( 0, flat.Simulation.PoolActivities.Count( activity => activity.Id != PoolWaterEffects.ActivityId ) );
+	}
+
+	[TestMethod]
+	public void TheWavesPushAlongTheirWayOnTheCrestByHeightAndEnvelopeAndNotInATroughOrARest()
+	{
+		var high = new PoolWaveSettings( true, 3, 0 );
+		var low = new PoolWaveSettings( true, 1, 0 );
+		var crests = 0;
+		for ( var turn = 0L; turn < PoolWaves.CycleTurns( high ) * 2; turn++ )
+		{
+			var push = PoolWaves.Push( high, turn, 3, 4 );
+			Assert.AreEqual( push.X, push.Y, "along the diagonal" );
+			Assert.IsTrue( push.X >= 0 && push.X <= PoolWaves.MaxPush, $"turn {turn}: {push.X}" );
+			if ( !PoolWaves.IsRunning( high, turn ) )
+				Assert.AreEqual( (0, 0), push, "nothing in a rest" );
+			if ( push.X > 0 )
+			{
+				crests++;
+				Assert.IsTrue( PoolWaves.SmoothWave( high, turn, 3, 4 ) > 0f, $"turn {turn}: only while the crest is up" );
+				var weak = PoolWaves.Push( low, turn, 3, 4 ).X;
+				Assert.IsTrue( weak > 0 && weak < push.X, "lower waves push less" );
+			}
+		}
+		Assert.IsTrue( crests > PoolWaves.RunTurns / 2 - 12, $"{crests} turns of push" );
+		var middle = PoolWaves.RunTurns / 2;
+		var peak = Enumerable.Range( 0, PoolWaves.PeriodTurns ).Max( offset => PoolWaves.Push( high, middle + offset, 3, 4 ).X );
+		Assert.IsTrue( peak > PoolWaves.MaxPush * 6 / 10, $"a full crest at height 3 pushes about MaxPush times cos 45 ({peak})" );
+		Assert.AreEqual( (0, 0), PoolWaves.Push( new PoolWaveSettings( false, 3, 0 ), middle, 3, 4 ), "off" );
+		// the drift stops at the wall and at another body, and moves where there is room
+		var region = new Rig().Region;
+		var start = PoolSwimRegion.Centre( region.Access );
+		var body = new PoolSwimBody { X = start.X, Y = start.Y };
+		Assert.IsTrue( PoolSwimming.Drift( region, ref body, 1000, 1000, ReadOnlySpan<(int X, int Y)>.Empty ) );
+		Assert.AreEqual( (start.X + 1000, start.Y + 1000), (body.X, body.Y) );
+		var blocked = body;
+		Assert.IsFalse( PoolSwimming.Drift( region, ref blocked, 40 * Fixed16.One, 0, ReadOnlySpan<(int X, int Y)>.Empty ), "not through the wall" );
+		Assert.AreEqual( (body.X, body.Y), (blocked.X, blocked.Y) );
+		var crowd = new[] { (body.X + 2000, body.Y + 2000) };
+		Assert.IsFalse( PoolSwimming.Drift( region, ref blocked, 1500, 1500, crowd ), "not into another body" );
 	}
 
 	[TestMethod]

@@ -141,6 +141,32 @@ public static class PoolWaves
 	/// <summary>The drawn-height offset of a point (cells) at a fractional park turn, in engine units (<see cref="SmoothWave"/> times the bob height). Presentation only.</summary>
 	public static float SmoothBob( PoolWaveSettings settings, double turn, float cellX, float cellY ) => SmoothWave( settings, turn, cellX, cellY ) * BobHeights[Math.Clamp( settings.Height, 1, 3 ) - 1];
 
+	/// <summary>
+	/// How far a crest at full swell carries a free swimmer per park turn at height 3, in 16.16 cells (0.12 cell, more than half the slowest stroke): the waves push swimmers along +x +y while
+	/// their crest passes, and the swimmers steer back towards their goals.
+	/// </summary>
+	public const int MaxPush = (int)(0.12 * Fixed16.One);
+
+	/// <summary>
+	/// The push of the waves on a free swimmer in cell (<paramref name="cellX"/>, <paramref name="cellY"/>) on a park turn, in 16.16 cells along +x and +y: the integer form of <see cref="SmoothWave"/>
+	/// (the phase in 64 steps of a period, the sine from the swimmers' heading table) where the crest is up, times the envelope and the height share of <see cref="MaxPush"/>; nothing in a trough, in a rest or
+	/// with the waves off. Integers only, so every machine agrees (docs/DETERMINISM.md).
+	/// </summary>
+	public static (int X, int Y) Push( PoolWaveSettings settings, long turn, int cellX, int cellY )
+	{
+		var envelope = Envelope( settings, turn );
+		if ( envelope == 0 )
+			return (0, 0);
+		var phase = (int)(turn % PeriodTurns) * 64 / PeriodTurns - (cellX + cellY) * PhasePerCell;
+		var sine = PoolSwimming.Direction( phase & 63 ).Y;
+		if ( sine <= 0 )
+			return (0, 0);
+		var magnitude = (int)((long)MaxPush * Math.Clamp( settings.Height, 1, 3 ) * envelope * sine / (3L * 64 * Fixed16.One));
+		// along the diagonal: both axes take cos 45 degrees of it (heading 8 of the table)
+		var along = Fixed16.Mul( magnitude, PoolSwimming.Direction( 8 ).X );
+		return (along, along);
+	}
+
 	/// <summary>The happiness a swimmer in the waves is paid on a turn: <see cref="HappinessPerHeight"/> times the height once per period while the waves run, else 0.</summary>
 	public static float HappinessGain( PoolWaveSettings settings, long turn ) =>
 		IsRunning( settings, turn ) && turn % PeriodTurns == 0 ? HappinessPerHeight * Math.Clamp( settings.Height, 1, 3 ) : 0f;

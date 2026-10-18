@@ -278,10 +278,19 @@ public sealed partial class GuestSimulation
 		if ( TryOfferActivity( guest, region ) )
 			return;
 		// [EXT:pools-activities] the ambient effects of the registered activities (a wave, a jet) act on a swimmer that took no offer
+		// [EXT:pools-waves] and the currents of the water (the waves) carry it after its stroke
+		var (pushX, pushY) = (0, 0);
 		foreach ( var activity in poolActivities )
+		{
 			if ( activity is IPoolAmbient ambient )
 				ambient.Ambient( this, guest, region );
-		SwimStep( guest, region, ignoreOthers: false );
+			if ( activity is IPoolCurrent current )
+			{
+				var push = current.Current( this, guest, region );
+				(pushX, pushY) = (pushX + push.X, pushY + push.Y);
+			}
+		}
+		SwimStep( guest, region, ignoreOthers: false, pushX, pushY );
 	}
 
 	/// <summary>State 23: swimming to the pool-side cell; the crowd at the steps is ignored within <see cref="PoolSwimSettings.CrowdedRadius"/> of it. Then the guest changes back.</summary>
@@ -352,8 +361,8 @@ public sealed partial class GuestSimulation
 			guest.HasBalloon = true;
 	}
 
-	/// <summary>One steering step of a swimmer; the others are the swimmers of the same changing room.</summary>
-	private void SwimStep( Guest guest, PoolSwimRegion region, bool ignoreOthers )
+	/// <summary>One steering step of a swimmer; the others are the swimmers of the same changing room. A push (16.16 cells, the waves) then carries it where there is room.</summary>
+	private void SwimStep( Guest guest, PoolSwimRegion region, bool ignoreOthers, int pushX = 0, int pushY = 0 )
 	{
 		var navigation = guest.Navigation;
 		// the water may have changed since the last turn (a cell erased beside the swimmer): a swimmer outside it is put back at the middle of its cell, or at the steps
@@ -370,6 +379,7 @@ public sealed partial class GuestSimulation
 		};
 		var (fromX, fromY, fromDistance) = (guest.X, guest.Y, guest.DistanceWalked);
 		var moved = PoolSwimming.Step( region, ref body, others, guest.BaseSpeed * PoolSwimSettings.SpeedPerBaseSpeed, ignoreOthers );
+		moved |= PoolSwimming.Drift( region, ref body, pushX, pushY, others );
 		(navigation.X, navigation.Y) = (body.X, body.Y);
 		(guest.SwimHeading, guest.SwimGoalX, guest.SwimGoalY, guest.SwimHasGoal, guest.SwimRandom) = (body.Heading, body.GoalX, body.GoalY, body.HasGoal, body.Random);
 		SetSwimCell( guest );

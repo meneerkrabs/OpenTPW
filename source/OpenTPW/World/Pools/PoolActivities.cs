@@ -25,6 +25,16 @@ public interface IPoolAmbient
 }
 
 /// <summary>
+/// [EXT:pools-waves] A current of the water that carries a free swimmer (the waves of a wave machine): its push for this park turn, in 16.16 cells, which the swim step adds after the stroke where the water and
+/// the other bodies leave room (<see cref="PoolSwimming.Drift"/>). Integers only; a pool without one pushes nothing and hashes nothing new.
+/// </summary>
+public interface IPoolCurrent
+{
+	/// <summary>The push on one free swimmer of the region this turn (zero for none).</summary>
+	(int X, int Y) Current( GuestSimulation simulation, Guest guest, PoolSwimRegion region );
+}
+
+/// <summary>
 /// One usable instance of an activity offered to a swimmer: the thing id (<c>OriginalObject.ThingId</c>) of the object that provides it, for every activity (0 for none, such as a river or a spot of water), and the cell
 /// where the swimmer leaves the water for it (or does it).
 /// </summary>

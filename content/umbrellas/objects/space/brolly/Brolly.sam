@@ -1,0 +1,63 @@
+#
+#	OpenTPW umbrellas: the brolly shop (modelled on the keys of the original balloon shop, a shop)
+#	Every number marked "OpenTPW's own value" is a choice of this extension. The values that come from the Theme Park Inc brolly shops
+#	(price 30, goods 10 to 15, happiness 20, litter 10 to 20, rain and storm 200 %, snow 150 %, heat wave 5 %; docs/UMBRELLAS.md) are marked "as Theme Park Inc".
+#
+Info.Id			64500		placeholder: objects.json replaces it with the object's own id
+Info.Name		"Brolly Shop"
+Info.IsChoosable	1
+Info.HasQueue		0		a shop: guests walk to it and buy, no queue
+Info.WhichUIType	1		a shop (the build menu's Shops tab)
+
+# A 2 x 2 booth. The entrance '2' (where the customer stands, facing the counter) is the lower left cell.
+Info.Shape
+---
+**
+2*
+---
+
+# The construction fence for 2 x 2 cells: the four corner pieces
+Info.Hoarding
+---
+F7
+LJ
+---
+
+# 1 = a gift shop's kind (the closest of the original shop kinds; OpenTPW's own value)
+UsageInfo.ShopType			1
+UsageInfo.InitCostOfGoods		13		as Theme Park Inc (10 to 15)
+UsageInfo.InitPricePerUse		30		as Theme Park Inc
+UsageInfo.EntryCellStandPosX	0.5
+UsageInfo.EntryCellStandPosY	0.5
+UsageInfo.ExitCellAppearPosX	0.5
+UsageInfo.ExitCellAppearPosY	0.5
+UsageInfo.RideHandlesSprite	1		the shop's script hides the customer while serving (as the balloon shop)
+UsageInfo.MinCapacity		0		always zero for shops
+UsageInfo.MaxCapacity		0		always zero for shops
+
+# Not indoors: the umbrella's own weather percentages below are what makes guests seek it in the rain, so the original's indoor-in-rain bonus must not stack on them
+UsageInfo.ISIndoors			0
+
+UsageInfo.ThirstEffect		0
+UsageInfo.HungerEffect		0
+UsageInfo.VomitEffect		0
+UsageInfo.HappinessEffect		20		as Theme Park Inc
+UsageInfo.LitterEffect		15		as Theme Park Inc (10 to 20)
+
+# 3 = the guest gets an open umbrella (1 balloon and 2 costume are the original's; 3 is Theme Park Inc's and this extension's)
+UsageInfo.AppearanceEffect		3
+
+# Weather and generation multipliers (Theme Park Inc's keys; the original does not read them, the umbrellas extension reads them for its own objects only), percent of the attraction score
+WeatherModifier.RainPercentage		200		as Theme Park Inc
+WeatherModifier.StormPercentage	200		as Theme Park Inc
+WeatherModifier.SnowPercentage		150		as Theme Park Inc
+WeatherModifier.HeatWavePercentage	5		as Theme Park Inc; Theme Park World has no heat wave
+GenerationModifier.KidScorePercentage	100		OpenTPW's own value (Theme Park Inc's is 75; every Theme Park World guest is a kid)
+
+Research.Group		0		available from the start, no research
+Info.PreviewAnimNum		0
+
+Upgrades[0].InitCapacity		10		as Theme Park Inc (5 or 10)
+Upgrades[0].CostOfUpgrade		1000		OpenTPW's own value
+Upgrades[0].CostOfResearch		0		An object without research cost starts researched
+Upgrades[0].RunningCost		35		OpenTPW's own value (a Theme Park Inc key; the original does not read it)

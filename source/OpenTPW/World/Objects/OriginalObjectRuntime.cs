@@ -102,6 +102,7 @@ public sealed partial class OriginalObjectRuntime
 			// [BIN:TPW-EXE:0x00556F40 WALKON] the walk-on's nodes are looked up in the ride model the same way (the first node of class 0x800, the second of class 0x80 for the head action 4, else 0x800), for every object that walks riders
 			Visitors.WalkNodeDistance = WalkNodeDistance;
 			Visitors.WalkNodeClassDistance = WalkNodeDistance;
+			Visitors.WalkNodeHeading = WalkHeadingOf;
 			if ( UsesTour )
 			{
 				Visitors.WalkOffMilliseconds = 1000;
@@ -144,6 +145,21 @@ public sealed partial class OriginalObjectRuntime
 			return null;
 		var transforms = Animator.NodeTransforms;
 		return System.Numerics.Vector3.Distance( transforms[from.Value].Translation, transforms[to.Value].Translation );
+	}
+
+	private Func<int, System.Numerics.Matrix4x4>? nodeEngine;
+
+	/// <summary>Gives the runtime the engine-space matrix of a model node (the placed object's <c>GetNodeTransform</c>), which the heading of a walking body is taken from. Presentation only.</summary>
+	internal void SetNodeEngine( Func<int, System.Numerics.Matrix4x4> transform ) => nodeEngine = transform;
+
+	/// <summary>The heading byte WALKON stores for a walk from the first node to the second (<see cref="WalkerBodies.HeadingOf"/> of their engine-space offset); null when either node is missing or the object is not placed.</summary>
+	// [BIN:TPW-EXE:0x00556F40 WALKON heading] the angle of the nodes' world offset (the original's x and z, which are the engine's X and Y), through the sprite heading rule
+	internal int? WalkHeadingOf( int fromMask, int fromNumber, int toMask, int toNumber )
+	{
+		if ( nodeEngine == null || FindDummyNode( fromMask, fromNumber ) is not { } from || FindDummyNode( toMask, toNumber ) is not { } to )
+			return null;
+		var offset = nodeEngine( to ).Translation - nodeEngine( from ).Translation;
+		return WalkerBodies.HeadingOf( offset.X, offset.Y );
 	}
 
 	internal int? FindDummyNode( int mask, int number )
@@ -551,6 +567,8 @@ public sealed partial class OriginalObjectRuntime
 			GoldenTicketCost = settings.GetInt( "UsageInfo.GoldenTicketCost" ),
 			UpgradeCost = entry.Upgrades.FirstOrDefault( upgrade => upgrade.Level == 0 )?.GetInt( "CostOfUpgrade" ) ?? 0,
 			IsIndoors = settings.GetInt( "UsageInfo.ISIndoors" ) != 0,
+			// [BIN:TPW-EXE:0x745a60 schema RequiresTeleport] the key after ChillsYouOut (+0xFC) is type record +0x100, which the guest state setter 0x501db0 tests in states 15 and 16
+			RequiresTeleport = settings.GetInt( "UsageInfo.RequiresTeleport" ) != 0,
 			TypeId = entry.InfoId,
 			// [DATA:<object>.sam:UsageInfo.InitCostOfGoods/InitPricePerUse/InitChanceOfLoosing] the sideshow words of the join excitement (0xdff70); the level mirrors the live economy values over them
 			Sideshow = new SideshowTerms( settings.GetInt( "UsageInfo.InitCostOfGoods" ), settings.GetInt( "UsageInfo.InitPricePerUse" ), settings.GetInt( "UsageInfo.InitChanceOfLoosing" ) ),

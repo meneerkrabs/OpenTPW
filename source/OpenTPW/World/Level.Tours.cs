@@ -10,13 +10,54 @@ public partial class Level
 		if ( OriginalPark?.Heightfield is not { } field )
 			return;
 		// the cars also clear the height map of the object that stands on a cell (TOUR-005)
-		tours.ObjectHeight = ( x, y ) => Objects.FindAt( x, y ) is { } item ? tourHeightMaps.Height( item, x, y ) : null;
+		tours.ObjectHeight = TourObjectGround;
 		tours.MapWidth = field.CellCountX;
 		tours.MapHeight = field.CellCountZ;
 		tours.CellHeight = ( x, y ) => field.GetCornerHeight( Math.Clamp( x, 0, field.CellCountX ), Math.Clamp( y, 0, field.CellCountZ ) );
 	}
 
 	private readonly ObjectHeightMaps tourHeightMaps = new();
+
+	/// <summary>The ground a cell's mesh instance gives the tour cars: the second layer's piece instance first (a track tile), else the object that owns the cell (TOUR-005).</summary>
+	// [BIN:TPW-EXE:0x00452AE0 cell ground] the second-layer mesh instance (0x0053BF30) answers before the cell's owner object does
+	private float? TourObjectGround( int x, int y )
+	{
+		if ( waterTracks?.Tracks is { } layer )
+		{
+			foreach ( var family in TrackFamilies )
+			{
+				if ( family != TrackFamily.Bumper && TourGroundOf( family ) is { } renderer && renderer.PieceGround( layer, x, y ) is { } piece )
+					return piece;
+			}
+		}
+		return Objects.FindAt( x, y ) is { } item ? tourHeightMaps.Height( item, x, y ) : null;
+	}
+
+	/// <summary>
+	/// The piece lookup of a track family for the tour cars' ground. It is the simulation's own (never the drawing's renderer, which exists only once a frame has drawn the tracks), so the cars fly the same
+	/// with or without rendering; built from the family's first station when one exists, and never drawn or updated.
+	/// </summary>
+	private TrackRenderer? TourGroundOf( TrackFamily family )
+	{
+		if ( tourTrackGround.TryGetValue( family, out var known ) )
+			return known;
+		var station = trackStations.Keys.FirstOrDefault( item => !item.IsDeleted && item.Runtime.Bump?.Template.Family == family );
+		if ( station == null )
+			return null;
+		TrackRenderer? created = null;
+		try
+		{
+			created = new TrackRenderer( station.Entry, TrackPieceKit.Load( station.Entry.FileSystem, station.Entry.ArchivePath, family ), () => Objects.Grid.Origin, ( x, y ) => Objects.Grid.GetCellHeight( x, y ), ( x, y ) => Objects.Grid.GetCornerHeight( x, y ), ( x, y ) => Objects.Grid.GetTerrainHeight( x, y ) );
+		}
+		catch ( Exception exception ) when ( exception is InvalidDataException or IOException or NotSupportedException )
+		{
+			Log.Warning( $"The tour ground of the {family} tracks reads the objects only: {exception.Message}" );
+		}
+		tourTrackGround[family] = created;
+		return created;
+	}
+
+	private readonly Dictionary<TrackFamily, TrackRenderer?> tourTrackGround = new();
 	private TourRenderer? tourRenderer;
 	private bool tourRenderFailed;
 

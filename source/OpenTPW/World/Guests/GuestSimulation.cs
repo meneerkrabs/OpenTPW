@@ -222,6 +222,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	public Func<IReadOnlyList<LitterBin>>? Bins { get; set; }
 	/// <summary>Squared distance in cells below which a bin is in reach (tp.exe <c>0x00500DC0</c>, radius 3).</summary>
 	public const int BinRadius = 3;
+	/// <summary>The largest radius a policy may ask for (<see cref="IGuestDecisions.BinSearchRadius"/>).</summary>
+	public const int MaxBinRadius = 16;
 	/// <summary>A guest reached its bin and threw its litter away (the level triggers the bin's script; tp.exe <c>0x004FFF20</c>).</summary>
 	public event Action<Guest, int>? LitterBinned;
 	/// <summary>Where guests pay (the park economy). Null: the standalone <see cref="GuestSettings.AdmissionFee"/> and attraction prices apply and no money is booked anywhere.</summary>
@@ -1817,7 +1819,15 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		if ( Bins?.Invoke() is not { Count: > 0 } bins )
 			return false;
 		LitterBin? best = null;
-		var bestDistance = BinRadius * BinRadius;
+		var radius = BinRadius;
+		if ( decisions.UsesBinCarry )
+		{
+			radius = decisions.BinSearchRadius( ContextNow(), ViewOf( guest ) );
+			if ( radius < 0 || radius > MaxBinRadius )
+				throw PolicyError( $"returned the bin radius {radius}" );
+		}
+		var maxRoute = decisions.UsesBinCarry ? Math.Max( 0, decisions.BinMaxRouteCells( ContextNow(), ViewOf( guest ) ) ) : int.MaxValue;
+		var bestDistance = radius * radius;
 		var lastFailed = false;
 		foreach ( var bin in bins )
 		{
@@ -1827,6 +1837,9 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			if ( distance >= bestDistance )
 				continue;
 			var route = Grid.FindPath( guest.CellX, guest.CellY, bin.Access.X, bin.Access.Y );
+			// [EXT:smarter-guests-litter] a bin beyond the original's reach is walked to only when the route there is short: the radius is a straight line, and a hedge or a river can make it a long walk (skipped before the route request, so nothing is retargeted)
+			if ( maxRoute < int.MaxValue && distance >= BinRadius * BinRadius && (route == null || route.Count == 0 || route.Count > maxRoute) )
+				continue;
 			if ( !RequestRoute( guest, bin.Access, route ) )
 			{
 				lastFailed = true;
@@ -1857,7 +1870,10 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		if ( guest.HasWaypoint && !(arrived = MoveAlong( guest )) )
 			return;
 		if ( arrived && !guest.Navigation.Stuck && guest.BinId != 0 && Bins?.Invoke() is { } bins && bins.Any( bin => bin.Id == guest.BinId ) )
+		{
+			Observer?.LitterBinned( guest );
 			LitterBinned?.Invoke( guest, guest.BinId );
+		}
 		else
 			DropLitter( guest, (LitterType)(1 + random.NextWord() % ParkLitter.OrdinaryKinds) );
 		guest.Litter = 0;
@@ -1907,6 +1923,9 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// </summary>
 	public event Action<Guest, uint>? Voiced;
 
+	/// <summary>Raised when a guest beams in or out of a ride that requires teleporting (boarding and leaving); presentation only, the particle starts at the guest's place.</summary>
+	public event Action<Guest>? Teleported;
+
 	/// <summary>The <c>cat_kids</c> event of a guest dismissed from a queue: the sound <c>0x0050133D</c> plays for one thing id in eight (0x80).</summary>
 	public const uint DismissalVoiceEvent = 0x80;
 
@@ -1917,7 +1936,11 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	private static bool VoiceGate( Guest guest ) => (guest.Id & 0xF) == 0;
 
 	/// <summary>Litter of <paramref name="type"/> on the guest's cell (lost when the cell already holds some).</summary>
-	private void DropLitter( Guest guest, LitterType type ) => Litter?.Drop( guest.CellX, guest.CellY, type );
+	private void DropLitter( Guest guest, LitterType type )
+	{
+		if ( Litter?.Drop( guest.CellX, guest.CellY, type ) == true )
+			Observer?.LitterDropped( guest );
+	}
 
 	/// <summary>
 	/// After a grid edit, a wander walk whose route ahead lost a path cell or a link ends where the guest stands, as the original's walk
@@ -3065,6 +3088,9 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		Observer?.QueueBoarded( guest, ride, guest.QueueJoinTurn >= 0 ? ParkTurn - guest.QueueJoinTurn : -1 );
 		if ( decisions.UsesSpreading )
 			NoteBoarding( ride );
+		// [BIN:TPW-EXE:0x501db0 state 16 entry] a ride whose type record +0x100 (UsageInfo.RequiresTeleport) is set starts particle 0x13 at the guest's place (0x4fa470) before its model is taken down
+		if ( ride.RequiresTeleport )
+			Teleported?.Invoke( guest );
 		ClearQueueState( guest );
 		guest.State = GuestState.Using;
 		// [BIN:TPW-EXE:0x00502156 state 16 entry] the balloon's model is destroyed (0x00475550) and +0x210 cleared; its life +0x214 stays; the thought bubble goes (0x0050C0D0)
@@ -3101,6 +3127,9 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			guest.State = GuestState.ExitingRide;
 			guest.StateTimer = ExitRideSeconds;
 		}
+		// [BIN:TPW-EXE:0x501db0 state 15 entry] the same beam when the guest is back on the ground (after 0x4fa030 placed its model)
+		if ( ride.RequiresTeleport )
+			Teleported?.Invoke( guest );
 		guest.LastAttractionId = ride.AttractionId;
 		guest.SecondsSinceRide = 0;
 		// [BIN:TPW-EXE:0x4FD9B1 visit count] the use routine 0x4FD970 sorts a finished visit by the type's Info.WhichUIType (+0x4AC): 0 raises the rides ridden (+0x1C4), 1 the shops visited (+0x1C8), 2 the sideshows played (+0x1CC), won or lost; any other kind (toilets, bins) counts none

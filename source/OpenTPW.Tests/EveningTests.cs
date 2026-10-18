@@ -357,14 +357,14 @@ public class EveningTests
 	}
 
 	[TestMethod]
-	public void TheModsScreenListsTheExtensionWithItsNameAndDescriptionInAllNineLanguages()
+	public void TheModsScreenListsTheExtensionWithItsNameAndDescriptionInEveryLanguage()
 	{
 		foreach ( var key in new[] { OpenTpwText.ExtensionEveningName, OpenTpwText.ExtensionEveningDescription, OpenTpwText.EveningOption, OpenTpwText.EveningHelp } )
 		{
 			var texts = SupplementaryStrings.SupportedLanguages.Select( language => SupplementaryStrings.Get( key, language ) ).ToList();
-			Assert.AreEqual( 9, texts.Count, $"{key}: nine languages" );
+			Assert.AreEqual( SupplementaryStrings.SupportedLanguages.Count, texts.Count, $"{key}: every interface language" );
 			Assert.IsTrue( texts.All( text => !string.IsNullOrWhiteSpace( text ) ), $"{key} has a text in every language" );
-			Assert.AreEqual( 9, texts.Distinct().Count(), $"{key}: every language has its own text" );
+			Assert.AreEqual( texts.Count, texts.Distinct().Count(), $"{key}: every language has its own text" );
 		}
 		var stack = new UiScreenStack();
 		var screen = ModsScreen.Create( stack, OriginalUiTests.FakeStrings(), new ModsServices

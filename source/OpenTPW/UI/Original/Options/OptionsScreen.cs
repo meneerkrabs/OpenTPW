@@ -522,8 +522,11 @@ public static class OptionsScreen
 				direction => { state.TexturePackSelected = true; state.TexturePack = CycleWrap( PackChoices(), state.TexturePack, direction ); }, strings.Extra( OpenTpwText.TexturePackHelp ) );
 		// [EXT:language] language row (original installs had one language; OpenTPW reads CD overlays)
 		// a language's own name (Korean "한국어") is shown only when the font in use draws it; otherwise its English name
-		var drawable = GameLanguage.IsSelected ? new HashSet<char>( GameLanguage.Current.CharacterTable.Characters ) : null;
-		string LanguageName( string language ) => " " + SupplementaryStrings.DisplayName( language, drawable == null ? null : drawable.Contains );
+		var drawable = GameLanguage.IsSelected ? SupplementaryStrings.DrawableCharacters( GameLanguage.Current ) : null;
+		// [EXT:fan-translations] a fan translation is offered with its label ("Russian (fan translation)"), never as an official language
+		string LanguageName( string language ) => " " + (GameLanguage.IsFanTranslationName( language )
+			? string.Format( strings.Extra( OpenTpwText.FanTranslation ), SupplementaryStrings.DisplayName( language, drawable == null ? null : drawable.Contains ) )
+			: SupplementaryStrings.DisplayName( language, drawable == null ? null : drawable.Contains ));
 		Row( "language", () => Prefix( OpenTpwText.Language ) + LanguageName( state.Language ),
 			() => services.Languages.Select( language => Prefix( OpenTpwText.Language ) + LanguageName( language ) ),
 			direction => state.Language = CycleWrap( services.Languages, state.Language, direction ) );

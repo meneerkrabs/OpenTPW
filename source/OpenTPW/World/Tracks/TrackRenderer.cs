@@ -265,6 +265,37 @@ public sealed class TrackRenderer : IDisposable
 		return (low + high) / 2;
 	}
 
+	/// <summary>
+	/// The ground the cell lookup 0x00452AE0 gives for a map cell that holds a piece instance of this renderer's family, in model units: the byte of the piece's height
+	/// map (<c>.hmp</c>) x 100/255 plus the instance height. Null for a cell without a piece instance (no track, an add-on's tile, a station, another family's tile)
+	/// or outside the map, where the caller takes the object on the cell or the terrain.
+	/// </summary>
+	// [BIN:TPW-EXE:0x0053BF30 second-layer instance] the lookup asks the cell's second-layer mesh instance first and follows an extension cell (types 0xC and 0x11) to its tile's origin cell; the piece instance (0x00522B90 / 0x00522D50 through 0x00463060) carries the piece's own map (+0xCC), read as an object's
+	// [BIN:TPW-EXE:0x00466F90 instance position] the instance sits at the origin cell plus the cell offset of the engine rotation (360 - rotation: 90 y+1, 180 x+1 and y+1, 270 x+1) added twice, once by the instancer and once by 0x00466F90, so the map's 2 x 2 cells are indexed from that corner with the engine rotation
+	public float? PieceGround( TrackCellLayer layer, int cellX, int cellY )
+	{
+		if ( kit == null || !layer.InBounds( cellX, cellY ) )
+			return null;
+		var cell = layer.Get( cellX, cellY );
+		if ( cell.Type == 0 )
+			return null;
+		var (originX, originY) = cell.IsExtension ? layer.CellOf( cell.Parent ) : (cellX, cellY);
+		var tile = layer.Get( originX, originY );
+		if ( !tile.IsOrigin || tile.Piece == 0 || tile.Family != (int)kit.Family || (tile.Flags & TrackCell.FlagAddOn) != 0 || kit.GetHeightProfile( tile.Piece ) is not { } map )
+			return null;
+		var (positionX, positionY) = PieceInstanceOrigin( originX, originY, tile.Rotation );
+		return ObjectHeightMaps.CellIndex( map, (360 - tile.Rotation) % 360, positionX, positionY, cellX, cellY ) is { } index
+			? map.CellMaxima.Span[index] * ObjectHeightMaps.ByteScale + TileHeight( originX, originY ) / ObjectPlacement.ModelScale
+			: null;
+	}
+
+	/// <summary>The instance position of a piece on the map's two ground axes, in model units: the origin cell plus two cells of the engine rotation's offset.</summary>
+	internal static (int X, int Y) PieceInstanceOrigin( int x, int y, int rotation )
+	{
+		(int offsetX, int offsetY) = ((360 - rotation) % 360) switch { 90 => (0, 1), 180 => (1, 1), 270 => (1, 0), _ => (0, 0) };
+		return ((x + 2 * offsetX) * 10, (y + 2 * offsetY) * 10);
+	}
+
 	private void UpdateVehicles( TrackCellLayer layer, IEnumerable<BumpController> controllers )
 	{
 		// one reused list: the vehicles of every controller in order, without a new array per update
@@ -344,6 +375,7 @@ public sealed class TrackRenderer : IDisposable
 			vehicle.SparksNode = sparks > 0 && VehicleMesh( vehicle.Variant ) is { SparksNodes: var nodes } && nodes[sparks] is { } rest
 				? System.Numerics.Vector3.Transform( System.Numerics.Vector3.Zero, ObjectPlacement.SwapAxes( rest ) * transform )
 				: null;
+			vehicle.SeatHeads = VehicleMesh( vehicle.Variant ) is { HeadNodes: var seatNodes } ? seatNodes.Select( node => node != null ).ToArray() : null;
 			visual.Vehicle = vehicle;
 			visual.Controller = controller;
 			visual.Hover = hover;

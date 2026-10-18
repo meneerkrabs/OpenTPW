@@ -52,26 +52,29 @@ public static class TextLayout
 		ArgumentNullException.ThrowIfNull( atlas );
 		ArgumentNullException.ThrowIfNull( text );
 		var missing = new List<char>();
-		var lines = new List<List<FontAtlasGlyph>>();
+		var lines = new List<List<Placed>>();
 		foreach ( var hardLine in text.Replace( "\r\n", "\n" ).Replace( '\r', '\n' ).Split( '\n' ) )
 		{
-			var glyphs = new List<FontAtlasGlyph>( hardLine.Length );
+			var glyphs = new List<Placed>( hardLine.Length );
 			foreach ( var character in hardLine )
 			{
 				if ( atlas.TryGetGlyph( character, out var glyph ) )
 				{
-					glyphs.Add( glyph );
+					glyphs.Add( new Placed( character, glyph ) );
 					continue;
 				}
 				missing.Add( character );
 				if ( atlas.TryGetGlyph( fallback, out var replacement ) )
-					glyphs.Add( replacement );
+					glyphs.Add( new Placed( character, replacement ) );
 			}
 			if ( maximumWidth > 0 )
 				lines.AddRange( Wrap( glyphs, maximumWidth ) );
 			else
 				lines.Add( glyphs );
 		}
+		// [BIN:TPW-EXE:0x6ae4b0 line reorder] each laid-out line that holds Hebrew is drawn in visual order (TextVisualOrder); the line's width is unchanged
+		foreach ( var line in lines )
+			TextVisualOrder.ReorderLine( line, item => item.Source );
 
 		var placed = new List<TextLayoutGlyph>();
 		var lineWidths = new List<int>( lines.Count );
@@ -79,7 +82,7 @@ public static class TextLayout
 		for ( var line = 0; line < lines.Count; line++ )
 		{
 			var pen = 0;
-			foreach ( var glyph in lines[line] )
+			foreach ( var (_, glyph) in lines[line] )
 			{
 				if ( glyph.Width > 0 && glyph.Height > 0 )
 					placed.Add( new TextLayoutGlyph( glyph.Character, pen + glyph.OffsetX, line * atlas.LineHeight + glyph.OffsetY, glyph, line ) );
@@ -94,9 +97,16 @@ public static class TextLayout
 	// [BIN:TPW-EXE:0x6aeab0 glyph class] the original flags only space and tab (0x12) as break opportunities; a hyphen or any other character does not break
 	private static bool IsSpace( char character ) => character is ' ' or '\t';
 
-	private static IEnumerable<List<FontAtlasGlyph>> Wrap( List<FontAtlasGlyph> glyphs, int maximumWidth )
+	/// <summary>A glyph with the character it stands for (the fallback glyph keeps the missing character).</summary>
+	private readonly record struct Placed( char Source, FontAtlasGlyph Glyph )
 	{
-		var line = new List<FontAtlasGlyph>();
+		public char Character => Glyph.Character;
+		public int Advance => Glyph.Advance;
+	}
+
+	private static IEnumerable<List<Placed>> Wrap( List<Placed> glyphs, int maximumWidth )
+	{
+		var line = new List<Placed>();
 		var lineWidth = 0;
 		var index = 0;
 		while ( index < glyphs.Count )
@@ -114,7 +124,7 @@ public static class TextLayout
 				if ( line.Count > 0 && wordEnd > spaceEnd && lineWidth + spaceWidth + wordWidth > maximumWidth )
 				{
 					yield return line;
-					line = new List<FontAtlasGlyph>();
+					line = new List<Placed>();
 					lineWidth = 0;
 					index = spaceEnd;
 					continue;
@@ -130,7 +140,7 @@ public static class TextLayout
 			if ( line.Count > 0 && lineWidth + glyph.Advance > maximumWidth )
 			{
 				yield return line;
-				line = new List<FontAtlasGlyph>();
+				line = new List<Placed>();
 				lineWidth = 0;
 			}
 			line.Add( glyph );

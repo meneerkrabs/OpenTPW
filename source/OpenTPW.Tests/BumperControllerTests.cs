@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
@@ -305,5 +306,36 @@ public class BumperControllerTests
 		}
 		CollectionAssert.AreEqual( Trace( 5 ), Trace( 5 ) );
 		CollectionAssert.AreNotEqual( Trace( 5 ), Trace( 6 ) );
+	}
+
+	[TestMethod]
+	public void EveryRiderLoadedAndEveryRiderHandedBackRaisesTheBeamUpParticle()
+	{
+		var controller = Create();
+		var beams = new List<BumpEffect>();
+		controller.Effect += effect => { if ( effect.Kind == BumpEffectKind.Particle && effect.Id == BumpEffects.ParticleBeamUp ) beams.Add( effect ); };
+		LoadAndStart( controller, 4, 20 );
+		Assert.AreEqual( 4, beams.Count, "the cars' creation hangs no heads with a beam (0x549DB0 passes 0), each BUMP 12 load does (0x549B80 passes 1): one per rider" );
+		Run( controller, 20 * 30 + 4 );
+		Assert.AreEqual( BumpController.PhaseLoading, controller.Phase );
+		Assert.AreEqual( 8, beams.Count, "the session's end takes each rider off with the beam (0x5474B0 -> 0x54AC70 with 1)" );
+		Assert.AreEqual( 19, BumpEffects.ParticleBeamUp );
+	}
+
+	[TestMethod]
+	public void ASeatWithoutAHeadDummyGetsNoBeamAndARetiredCarRaisesNone()
+	{
+		var controller = Create();
+		controller.Command( 7, 0 );
+		controller.Command( 4, 0 );
+		controller.Vehicles[0].SeatHeads = new[] { false };
+		var beams = 0;
+		controller.Effect += effect => { if ( effect.Kind == BumpEffectKind.Particle && effect.Id == BumpEffects.ParticleBeamUp ) beams++; };
+		controller.Command( 1, 100 );
+		controller.Command( 12, 0 );
+		Assert.AreEqual( 0, beams, "0x549C60 beams only the riders whose head dummy exists" );
+		controller.Vehicles[0].SeatHeads = new[] { true };
+		controller.Retire( controller.Vehicles[0] );
+		Assert.AreEqual( 0, beams, "the retire 0x54AE50 passes 0 to 0x54AC70: no rider beam" );
 	}
 }

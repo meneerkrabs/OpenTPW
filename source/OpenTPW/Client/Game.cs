@@ -155,7 +155,12 @@ internal static class Game
 		LanguageStartup.Apply( dataDirectory, language, languageData,
 			GetOption( args, "--cd-data", "the original CD's folder" ) ?? Environment.GetEnvironmentVariable( "OPENTPW_CD_DATA" ), false, Log.Warning );
 		if ( GameLanguage.IsSelected )
+		{
 			Log.Trace( $"Language: {GameLanguage.Current}" );
+			LanguageInterfaceArchive.Apply( FileSystem, GameLanguage.Current );
+			if ( LanguageInterfaceArchive.Current != null )
+				Log.Trace( $"Interface archive: {LanguageInterfaceArchive.Current} (the language's own ui.wad)" );
+		}
 
 		// Compatibility: --cd-data overlay, media diagnostics, profile/fixes, graphics preset (docs/COMPATIBILITY.md)
 		CompatibilityStartup.Initialize( args, dataDirectory );

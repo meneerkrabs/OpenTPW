@@ -35,7 +35,7 @@ public sealed class GuestRenderer : Entity
 	/// Walk-cycle steps per cell walked: the walk step sets the sprite's interval to 62 ms over twice the speed (the walk script doubles it, the run does not), so a sprite steps
 	/// 248 / (62 / (2 v)) times in a turn it covers v / 2.5098 cells in: 20.08 a cell, a run 10.04. The 8 frames of the walk script therefore span 0.4 cell.
 	/// </summary>
-	// [BIN:TPW-EXE:0x004FA2A0 walk step] v = step length (16.16 per turn) x 3.829657e-05 (0x007006E8), doubled unless the guest runs (a smoothed speed word above 0, thing types 1 and 7); 0x004D41D0 sets the interval to trunc(62 / v) ms (0x007003A0), at most 250, applied by 0x004D4190; the sprite player 0x00475360 runs one script step per interval
+	// [BIN:TPW-EXE:0x004FA2A0 walk step] v = step length (16.16 per turn) x 3.829657e-05 (0x007006E8), doubled unless the guest runs (the unsigned purpose-speed word +0xC2 above 0, thing types 1 and 7); 0x004D41D0 sets the interval to trunc(62 / v) ms (0x007003A0), at most 250, applied by 0x004D4190; the sprite player 0x00475360 runs one script step per interval
 	public const float WalkFramesPerCell = 20.078f;
 	private const int VerticesPerGuest = 12;
 
@@ -51,6 +51,10 @@ public sealed class GuestRenderer : Entity
 	public bool Visible { get; set; } = true;
 	/// <summary>Which guests this renderer draws (null: all): the kids' renderer leaves guests in costume to the costume renderer.</summary>
 	public Func<Guest, bool>? Draws { get; init; }
+	/// <summary>Consumer selection for stateful ride bodies, whose category was copied at player creation. Ordinary walking retains Draws.</summary>
+	public Func<Guest, bool>? DrawsRideBody { get; init; }
+
+	internal bool AcceptsBodyConsumer( Guest guest, bool statefulRideBody ) => (statefulRideBody ? DrawsRideBody ?? Draws : Draws)?.Invoke( guest ) != false;
 	/// <summary>[EXT:pools-swim] Chooses the animation slot and step of a guest instead of the walking, waiting and standing rules (the swimmers' renderer: the swim strokes); null for the kids and the costumes.</summary>
 	public Func<Guest, (int Slot, int Step)?>? SlotChooser { get; init; }
 	/// <summary>
@@ -420,7 +424,7 @@ public sealed class GuestRenderer : Entity
 		{
 			// a guest on a bounce ride is hidden like any rider, and drawn from the ride's own pose (a stale slot of another attraction never draws it)
 			BounceRiderPose? rider = bounceRiders.Count > 0 && bounceRiders.TryGetValue( guest.Id, out var pose ) && RideHeadRenderer.CanDraw( guest, pose.AttractionId ) ? pose : null;
-			if ( !guest.IsVisible && rider == null || Draws?.Invoke( guest ) == false )
+			if ( !guest.IsVisible && rider == null || rider is { Visible: false } || !AcceptsBodyConsumer( guest, rider?.UsesSpriteState == true ) )
 				continue;
 			var (atlasIndex, frameIndex, mirror, slot, direction, rotation, _) = SelectSpriteAndSlot( guest, right, forward, up, rider );
 			var atlas = atlases[atlasIndex];

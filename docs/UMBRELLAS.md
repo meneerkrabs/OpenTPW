@@ -14,6 +14,8 @@ or number table of Theme Park Inc is copied: the sprites and models are drawn in
 - `opentpw.umbrellas` is **on by default** and recorded in a save only for parks that use it (a brolly shop or a guest with an umbrella: the pools rule, [POOLS.md](POOLS.md#the-extension-and-the-save-rule)); other parks save identically on or off. Not offered in a Theme Park Inc run (it has its own shop and art).
 - `opentpw.rain-mood` (the weather happiness, hunger and thirst rule) is **off by default** and applies **once per qualifying day**: Theme Park Inc's every-update behaviour comes from a stored day that is never read (`[EXT:rain-mood-once-per-day]`; the literal rule is not offered).
 - **User approval of the three U2 extensions (2026-10-18, asked directly in the coordinating session):** the question was "U2 heeft drie eigen keuzes gemaakt bij de paraplu's. Akkoord als uitbreiding (EXT)?" and the answer was "Alle drie akkoord", the options naming 1) the weather mapping (`[EXT:umbrellas-weather-map]`), 2) the saved pending open/close turn (`[EXT:umbrellas-save-due]`), 3) the balloon shop refusing balloon holders only in parks with umbrellas (`[EXT:umbrellas-balloon-gate]`).
+- **User approval of the three U3 choices (2026-10-18, asked directly in the coordinating session):** (1) the sight-line pull instead of TPI's ground pull and `YAdjustCamera` lift is registered as an approximation, `APPROX:UMB-004`; the answer was "Als benadering (APPROX:UMB-004)". (2) `[EXT:umbrellas-draw]`, including the steady hand (the umbrella stays at the mean hand position over the walk steps), is approved; the answer was "Akkoord". (3) Committing `content/umbrellas/anchors-original.json` is approved: numbers only, measured from the user's own game frames, no pixels or bytes; the answer was "Ja, getallen mogen".
+- `[EXT:debug-umbrellas]` (the `--debug-umbrellas` flags and the `PerfUmbrellas` hook) is a **Debug-only test hook**: it exists for captures and smokes in Debug builds only, and a player never turns it on.
 - Umbrellas are **available from the start** (no research item), price 30 as in Theme Park Inc. A closed umbrella is not drawn (no furled sprite), as in Theme Park Inc.
 
 ## What Theme Park Inc does (static trace)
@@ -72,7 +74,7 @@ weather Rain/Storm 200 (science 250), Snow 150, HeatWave 5. Weather spells (`0x6
 - **Generation:** every Theme Park World guest is a kid, so the kid rows apply (rain -1, storm -1, snow +1 happiness, snow thirst -1, hunger +1); kept as data.
 - **Faithful:** the shop gate, the weather and generation multipliers, the balloon factor with its zero quirk, purchase opens at once, the five states and their transitions, the day gate (the whole first day, then every fourth), the delay bounds, the
   balloon release with -15, closing on entering an attraction, no reopening on leaving, no speed term, no cheer.
-- **Approximated** (registered as `APPROX:UMB-001` to `UMB-003`, [below](#the-simulation-phase-u2)): the reaction delay uses a per-guest hash of (guest id, park turn), not CRT `rand()` (no draw from any shared stream; UMB-001); the view condition is dropped (UMB-002);
+- **Approximated** (registered as `APPROX:UMB-001` to `UMB-004`, [below](#the-simulation-phase-u2)): the reaction delay uses a per-guest hash of (guest id, park turn), not CRT `rand()` (no draw from any shared stream; UMB-001); the view condition is dropped (UMB-002);
   "inside" = OpenTPW's in-attraction states (UMB-003); the pending change turn is saved, unlike Theme Park Inc (`[EXT:umbrellas-save-due]`). The colour keeps Theme Park Inc's one world draw at purchase.
 - **Not ported:** the first-person `FP*` placement (no walk-around camera yet; the formula and its radian truncation are recorded above), the season roller (Theme Park World keeps its own weather), Theme Park Inc's log lines.
 - **Saves** (done in U2): optional guest fields `UmbrellaState` (0..4), `UmbrellaType` (0..2), `UmbrellaDueTurn` written only when the state is not 0, so every older JSON is byte-equal; the sprite object is rebuilt from the state on load.
@@ -110,7 +112,8 @@ weather Rain/Storm 200 (science 250), Snow 150, HeatWave 5. Weather spells (`0x6
   `DeterminismTests.UmbrellasFixedRunHash` covers the fixed run plus a brolly shop at (10, 1) and a rain that comes and goes (see [DETERMINISM.md](DETERMINISM.md#umbrellas)).
 - **Approximated, registered** (`UmbrellaApproximations`): `UMB-001` the reaction delay is a SplitMix64 hash of (guest id, park turn) with the original's bound, not the C runtime's `rand()`; `UMB-002` the view condition of the scheduling and of the carrying out is dropped (low confidence in what it is);
   `UMB-003` "inside" is OpenTPW's in-attraction states (using a ride or shop, or a changing room's swim session), and the day gate's age is the guest's time since creation (`TimeInParkSeconds`, GUEST-920), whose game-day conversion is the calendar's 3750 seconds a turn.
-  None of the three can be retired: the first needs the C runtime's hidden state and by design takes no draw, the other two are state OpenTPW's guests do not have.
+  `UMB-004` the umbrella is pulled towards the camera along the sight line, not by TPI's ground pull and `YAdjustCamera` height lift (the value is unknown, so is the original's screen-space placement).
+  None of the first three can be retired: the first needs the C runtime's hidden state and by design takes no draw, the other two are state OpenTPW's guests do not have.
 
 ## Phases
 
@@ -175,7 +178,7 @@ sprite: `[BIN:TPI-EXE:0x60ae35]`, the placement routine `0x60AE00` compares the 
   animation's steps (`SteadyHand`; checked in captures). A set without a table gets TPI's rule: straight above the guest at 5.7 units (`[BIN:TPI-EXE:0x60b29b]`: the set's Y, 5.5 to 6.5 in TPI's data, is added to the guest's height).
 - **Pull.** TPI's default placement moves the hotspot 10 % (`GenericUmbrellaModifiers` X/ZAdjustCamera, `[BIN:TPI-EXE:0x60b236]`) of the way to the camera along the ground and lifts it by `YAdjustCamera` x (camera height - 40) (the 40.0 is `0x93E5B0`), so that it covers the guest.
   OpenTPW pulls along the sight line instead, as the guests' own depth pull is done (the screen position stays and the quad shrinks by the same share), because the lift's value is not known here. The guests' pull is 3.5 to 3.9 units, under 5 % of the park view's distances, so
-  the umbrella is in front of the guest it covers. Not modelled: TPI's ground-plane pull and height lift (candidate `UMB-004`, to register if the difference shows).
+  the umbrella is in front of the guest it covers. Not modelled: TPI's ground-plane pull and height lift, registered as `APPROX:UMB-004` (unknown: the `YAdjustCamera` value and so the resulting screen-space placement).
 - **Direction and colour.** The five stored directions are mirrored to eight by the same heading sector and camera sector as the guests (`GuestSpriteAtlas.SelectOriginalDirection`); the colour is the guest's `UmbrellaType` (the sprite slot).
 - **Thought bubble.** While the umbrella shows, the guest's bubble hangs 6.0 units above it instead of 2.5 (`ThoughtRenderer.UmbrellaShown`, `[BIN:TPI-EXE:0x60b0a4]`: the word at `0x9CFB38` is 6.0, `0x9CFB34` is 2.5, chosen by the same flag).
 - **Hand anchors of the original sets** (`content/umbrellas/anchors-original.json`, numbers only). `opentpw-kit measure-anchors --data <Data> --anchors content/umbrellas/anchors.json --pools content/pools/esprites/Generic/Kids --out <file>` (a maintainers' tool; the table is committed and a test
@@ -189,4 +192,4 @@ sprite: `[BIN:TPI-EXE:0x60ae35]`, the placement routine `0x60AE00` compares the 
 | Label | What |
 | --- | --- |
 | `[EXT:umbrellas-draw]` | the drawing: the renderer, its placement from the tables, the sight-line pull, the steady hand |
-| `[EXT:debug-umbrellas]` | the Debug-build capture flags and the browser harness hook `PerfUmbrellas` (`tools/web-perf/run.mjs --scenarios jungle,umbrellas`, docs/BROWSER-PERFORMANCE.md) |
+| `[EXT:debug-umbrellas]` | (debug-only test hook) the Debug-build capture flags and the browser harness hook `PerfUmbrellas` (`tools/web-perf/run.mjs --scenarios jungle,umbrellas`, docs/BROWSER-PERFORMANCE.md) |

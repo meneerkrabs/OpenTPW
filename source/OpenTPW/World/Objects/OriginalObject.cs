@@ -155,7 +155,7 @@ public class OriginalObject : Entity, IPointLightSource
 			UpdateTransforms();
 			// [EXT:object-lights] an object whose model has light dummies shows them through its level's point lights
 			if ( Runtime.Lights != null )
-				Level?.PointLights.Add( this );
+				Level?.PointLights?.Add( this );
 		}
 		catch
 		{
@@ -470,7 +470,7 @@ public class OriginalObject : Entity, IPointLightSource
 	protected override void OnDelete()
 	{
 		deleted = true;
-		Level?.PointLights.Remove( this );
+		Level?.PointLights?.Remove( this );
 		Runtime?.Stop();
 		foreach ( var (entity, _) in parts )
 			entity.Delete();

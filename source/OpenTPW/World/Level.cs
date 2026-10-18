@@ -1132,7 +1132,7 @@ public partial class Level : IDisposable
 	public void Render()
 	{
 		// [EXT:point-lights] the lights of the objects that have any, for every draw of this frame
-		PointLights.Gather( Camera.ViewMatrix * Camera.ProjMatrix );
+		PointLights?.Gather( Camera.ViewMatrix * Camera.ProjMatrix );
 		foreach ( var entity in Entity.All.ToArray() )
 			entity.Render();
 	}

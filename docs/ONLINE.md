@@ -38,7 +38,7 @@ contents follow the original online screens mapped from the Mac binary in
 | Park details | The original details dialog (Mac table `data:0x51150`): eight label rows, description, enter-park and the owner's un-publish | `w_big` |
 | Other Parks | The city's outside-the-top-10 chart (Mac table `data:0x5137e`, "Other Parks In …", UITEXT 446) | `w_big`, `list_findprks` |
 | Publish Park | Publish Park form (Mac table `data:0x514de`); OpenTPW adds the website opt-in (off by default) | `w_med` |
-| Send Postcard | tp.exe's postcard window (table `0x7540d8`, `0x4a8c00`/`0x4a7d70`): photo frame, message, title and recipients fields with their prompts (shown while a field is empty) and lengths (the title at most the card format's 64 characters), clear, tick (unedited title and message take the defaults UITEXT 215/216; no recipient shows 213) and X; the preview and address book are disabled (UI-042); recipients are player names split at `;`, `,` and newlines, not spaces (`[EXT:postcard-player-names]`) | `window4`, `!frame`, `b_clear`, `b_okay`, `b_exit` |
+| Send Postcard | tp.exe's postcard window (table `0x7540d8`, `0x4a8c00`/`0x4a7d70`): photo frame, message, title and recipients fields with their prompts (shown while a field is empty) and lengths (the title at most the card format's 64 characters), clear, tick (unedited title and message take the defaults UITEXT 215/216; no recipient shows 213) and X; the preview and address book are disabled (UI-042); recipients are player names and e-mail addresses split at `;`, `,` and newlines, not spaces (`[EXT:postcard-player-names]`) | `window4`, `!frame`, `b_clear`, `b_okay`, `b_exit` |
 | Unsent Postcards | Unsent Postcards (outbox) screen in its original composition (Mac table `data:0x508bc`): Title/Date/Send/Delete columns and the mark buttons | `list_outbox`, `b_sendall` |
 | Inbox | (OpenTPW) | `list_outbox` |
 | Chat | The original chat overlay (tp.exe table `0x758ae8`): chat frame, people list with its two tabs and slider, postcard, vote and earmuffs buttons, message list with its slider, text entry, and the name popups (tables `0x758cd8`, `0x758e18`) — over the chat park view | `chat` (`f_chat`), `b_speeps`, `b_sbuddi`, `b_chtpcard`, `b_vote`, `b_muff`, `!f_plain`, `b_bmark`, `b_gopeep`, `b_ignore`, `b_unbuddi`, `b_peeploc`, `b_page` |
@@ -183,6 +183,59 @@ passwords and session tokens are not persisted. The `parks`, `visited`, and
 `postcards/{inbox,outbox,sent}` folders hold locally exported/downloaded files.
 Malformed local postcards are reported. A conflicting or damaged existing inbox file
 is retained and prevents deletion of that incoming postcard from the server.
+
+
+### Postcard recipients and delivery
+
+[EXT:postcard-player-names] The recipient field accepts a mixture such as
+`Bob Smith; friend@example.test, Alice`. Semicolons, commas and newlines separate
+recipients; spaces stay inside player names. Tokens containing `@` must be plain
+ASCII mailbox addresses (no display names, comments or quoted local parts); all
+other tokens use the existing player-name rules. The shared package/client/server
+validator rejects malformed or duplicate recipients and caps a card at ten. The
+composer uses the original localized UITEXT 213 refusal and preserves the draft.
+
+Composition is still offline: the tick saves to Outbox. **Send All** requires login.
+Player names go to that server's Inbox; addresses go through its already configured
+`IEmailSender` / Resend transport, using `EmailFrom` and `EmailReplyTo`. The e-mail
+contains the title, sender's player name and message, plus `postcard.png` when the
+card has an image. It does not disclose the sender's recovery address. Each inbox
+copy lists only its own recipient, and each e-mail has a single recipient.
+Unknown players are reported as player recipients, not unknown e-mail recipients.
+A server without mail configuration continues player delivery and reports that
+addresses cannot be delivered. No client-side SMTP or new mail credentials are used.
+
+Partial responses list only confirmed recipients. Send All records that subset in
+Sent and atomically rewrites the Outbox card with the unconfirmed recipients, so a
+failed address, unknown player or full inbox is not silently discarded. A failed
+request leaves its local card in Outbox. Successful delivery here means an inbox
+write or mail-provider acceptance, not a guarantee that an external mailbox received
+or displayed the message. Old clients can still send fully successful player cards;
+partial-result handling requires this client version.
+
+The server persists hashed account/content/recipient receipts separately from inbox
+files, and uses deterministic inbox delivery ids. Retrying the same immutable card
+also after a restart or local recipient-list reduction does not resend a confirmed
+recipient within the 30-day receipt lifetime. Reusing a client-chosen card id with
+different content is a different delivery. Confirmed receipts expire after 30 days;
+this is bounded deduplication, not a permanent exactly-once guarantee.
+
+For e-mail, the same hashed key is sent as Resend's `Idempotency-Key` header
+([provider contract](https://resend.com/docs/dashboard/emails/idempotency-keys)).
+Because that provider retains keys for 24 hours, an unconfirmed attempt may be
+retried for at most 23 hours. Afterward the server reports an uncertain result and
+requires the player to check with the recipient before composing a new card.
+Uncertain tombstones do not expire automatically, and are capped at 256 per sender;
+further new e-mails then require operator attention. A process or storage failure
+between the provider's acceptance and the local receipt write is explicitly
+uncertain, never reported as guaranteed exactly-once delivery.
+
+The existing upload/address rate limiter remains. `PostcardRecipientsPerHour`
+(default 20) additionally limits recipient delivery attempts per authenticated
+account, and `PostcardEmailsPerAddressPerHour` (default 3) limits attempts to the
+same address across accounts. Failed mail attempts count; confirmed retries do not.
+These one-hour attempt counters survive restart. Their persisted records and the
+receipt ledger contain hashes and timestamps, not raw e-mail addresses or messages.
 
 Export/import works without an account or a server. The Online panel inspects a local
 `.tpwpark` and reports required content and layout warnings. Downloading a shared park

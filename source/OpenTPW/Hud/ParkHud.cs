@@ -603,7 +603,7 @@ public sealed partial class ParkHud
 	{
 		if ( Paused )
 			return;
-		// [BIN:TPW-EXE:0x48c830 pause menu] the in-park pause menu has no window and no title: its lines are, in order, Load, Save, Restart Park, Publish Park, Options, Resume Game, Exit To Lobby and Quit Game (UITEXT 3, 4, 10, 5, 6, 7, 12, 8)
+		// [BIN:TPW-EXE:0x48c830 pause menu] the ordinary in-park pause menu has no window and no title: its lines are, in order, Load, Save, Restart Park, Publish Park, Options, Resume Game, Exit To Lobby and Quit Game (UITEXT 3, 4, 10, 5, 6, 7, 12, 8)
 		// [DATA:video 27:42-27:47] large cyan text lines, white while focused, over the dimmed park: Laden, Opslaan, Park Herstarten, Park Publiceren, Opties, Spel Hervatten, Terug naar de Lobby, Spel Stoppen
 		// [EXT:pause-menu-go-online] the Go Online line (UITEXT 1) after Options is OpenTPW's: the original reaches the online world from the lobby's pause menu only
 		UiScreen? menu = null;
@@ -621,10 +621,14 @@ public sealed partial class ParkHud
 			(UIStrings.QuitGame, () => Stack.Push( UiDialogs.Message( "confirmQuit", () => strings[UIStrings.ConfirmQuit],
 				(() => strings.Value( UIStrings.Yes ), host.Quit), (() => strings.Value( UIStrings.No ), Stack.Pop) ) )),
 		};
-		// [BIN:STP-PPC:0x10197D90 online pause menu] the online game type's pause menu offers only Resume Game, Exit To Lobby
-		// and Quit Game; a read-only visit of a shared park uses it (no Save, Load, Options or Go Online).
+		// [BIN:TPW-EXE:0x48c150 pause menu selection] game type 1 (0x48c1e3) selects the three online entries before the
+		// world-state-4 test (0x48c27a). Otherwise a lost park gets Load, Restart, Resume, Exit To Lobby and Quit, in that order.
+		// The loss Load row uses UITEXT 3 and command 22, not text 22. Its 0x49efb0 argument is unused; the extra 0x5da3c0
+		// calls on loss Restart/Exit/Quit return immediately, so the existing callbacks and confirmations are shared (0x48b6a0).
 		if ( level.IsReadOnlyVisit )
 			entries.RemoveAll( entry => entry.Label is not (UIStrings.ResumeGame or UIStrings.ExitToLobby or UIStrings.QuitGame) );
+		else if ( level.Park?.Economy.IsBankrupt == true )
+			entries.RemoveAll( entry => entry.Label is not (UIStrings.Load or UIStrings.RestartPark or UIStrings.ResumeGame or UIStrings.ExitToLobby or UIStrings.QuitGame) );
 		if ( host.GoOnline == null )
 			entries.RemoveAll( entry => entry.Label == UIStrings.GoOnline );
 		var items = entries.Select( entry => (Id: entry.Label.ToString(), Text: (Func<string>)(() => strings[entry.Label]), entry.Clicked,

@@ -179,6 +179,11 @@ public interface IParkGuestStatistics
 	/// Statistics that do not tell it answer <see cref="AverageHappiness"/>.
 	/// </summary>
 	float CensusHappiness => AverageHappiness;
+	/// <summary>
+	/// The percent of the census guests whose happiness, truncated to its low byte, is strictly below <paramref name="happiness"/> (tp.exe <c>0x004C9750</c>: the count x 100 divided by the census guests, signed,
+	/// 0 without any). The advisor's entertainer line reads it with 30. Statistics without guests answer 0.
+	/// </summary>
+	int CensusPercentBelowHappiness( int happiness ) => 0;
 }
 
 /// <summary>The guest need meters the advisor counts guests by (the offsets of the original's guest: <c>+0x1A4</c> thirst, <c>+0x1A8</c> hunger, <c>+0x1AC</c> toilet).</summary>

@@ -175,6 +175,29 @@ public sealed class Guest
 	public int BalloonLife { get; internal set; }
 	/// <summary>Whether the guest holds a balloon (guest <c>+0x210</c>, the balloon's model <c>mBalloonScript</c>): put away on a ride, back after it while it has life.</summary>
 	public bool HasBalloon { get; internal set; }
+	/// <summary>
+	/// [EXT:umbrellas-extension] The guest's umbrella state (the umbrellas extension, docs/UMBRELLAS.md; Theme Park Inc's guest word <c>+0x238</c>): 0 none, 1 open and about to close, 2 owned and closed, 3 closed and
+	/// about to open, 4 open (<see cref="UmbrellaRules"/>). Only a purchase at a brolly shop writes anything but 0 into it, and nothing writes 0 again.
+	/// </summary>
+	// [BIN:TPI-EXE:0x60d260 guest field names] mUmbrellaState +0x238, mUmbrellaType +0x244 (the colour), mUmbrellaScript +0x240 (the sprite object, rebuilt from the state on load here)
+	public int UmbrellaState { get; internal set; }
+	/// <summary>[EXT:umbrellas-extension] The umbrella's colour, the sprite slot 0 to 2 (<see cref="UmbrellaRules.Colours"/>); 0 while there is no umbrella.</summary>
+	public int UmbrellaType { get; internal set; }
+	/// <summary>
+	/// [EXT:umbrellas-save-due] The park turn a scheduled change (state 1 or 3) is due, a multiple of four; 0 in every other state. Theme Park Inc's <c>+0x23C</c> is not saved; the extension saves it so a resumed park
+	/// continues the same run.
+	/// </summary>
+	public long UmbrellaDueTurn { get; internal set; }
+	/// <summary>
+	/// [EXT:rain-mood-once-per-day] The game day plus one on which the rain mood rule (<c>opentpw.rain-mood</c>) last changed this guest's meters; 0 while it never has. Theme Park Inc stores its day at <c>+0x2E8</c> and never reads it,
+	/// so the extension keeps its own to apply the rule once per qualifying day.
+	/// </summary>
+	public long RainMoodDay { get; internal set; }
+	/// <summary>
+	/// [EXT:rain-mood-imported-age] The park turn an imported original guest without a known time in the park was loaded at, while the rain mood extension is on; its age for the rain mood's day gate counts from it. Null for every
+	/// other guest (they have their time in the park) and in every park without the extension.
+	/// </summary>
+	public long? RainMoodAgeStartTurn { get; internal set; }
 	/// <summary>Whether the guest wears a costume (guest <c>+0x24</c> == 2): a costume shop puts one on, and the next visit to one returns it.</summary>
 	public bool InCostume { get; internal set; }
 	public int Money { get; internal set; }

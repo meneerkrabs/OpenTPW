@@ -268,17 +268,19 @@ public class OriginalObjectRuntimeSnapshotTests
 	[TestMethod]
 	public void AHeldScreamRestoresWithoutAGapAndKeepsItsOperands()
 	{
-		// Screams no longer block a save: a held scream is started again from its STARTSCREAM operands (silent without
-		// an audio system), and unreferenced chains are only counted.
+		// Screams do not block a save: the held scream is the script's state (its handle and STARTSCREAM operands, and the
+		// handles a refused start lost), restored exactly; its chain plays again once the park's audio runs.
 		var world = new RideScriptWorld();
 		var runtime = new OriginalObjectRuntime( Totem(), world, seed: 5, open: true );
-		var snapshot = runtime.CaptureSnapshot() with { HeldScream = true, HeldScreamBand = 3, HeldScreamLevel = 40, HeldScreamSpeed = 60, OwnedScreamCount = 2 };
+		var snapshot = runtime.CaptureSnapshot() with { HeldScream = true, ScriptHoldsScream = true, HeldScreamBand = 3, HeldScreamLevel = 40, HeldScreamSpeed = 60, OwnedScreamCount = 2 };
 		snapshot.ValidateSnapshot();
 		var candidate = OriginalObjectRuntime.CreateForRestore( Totem(), new RideScriptWorld(), seed: 5, open: true, attractionId: snapshot.AttractionId );
 		var gaps = candidate.RestoreSnapshot( snapshot );
 		Assert.AreEqual( 0, gaps.Count, string.Join( "; ", gaps ) );
+		Assert.IsFalse( candidate.Effects.PlaysHeldScream, "the restore starts no sound" );
 		var again = candidate.CaptureSnapshot();
-		Assert.AreEqual( 0, again.OwnedScreamCount, "unreferenced chains are not carried over" );
+		Assert.AreEqual( (true, (bool?)true, 3, 40, 60), (again.HeldScream, again.ScriptHoldsScream, again.HeldScreamBand, again.HeldScreamLevel, again.HeldScreamSpeed), "the held scream keeps its operands" );
+		Assert.AreEqual( 2, again.OwnedScreamCount, "the lost handles are carried over as a count; their chains do not scream again" );
 	}
 
 	[TestMethod]

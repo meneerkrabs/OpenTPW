@@ -71,6 +71,8 @@ internal sealed partial class GameFlow
 			{
 				GameAudio.EnterPark( snapshot.Theme, snapshot.SoundSeed );
 				GameAudio.Events?.Reseed( snapshot.SoundSeed );
+				// the restored scream handles had no chain in the candidate: they scream again now that the park's audio runs
+				candidate.ResumeHeldScreams();
 			}
 			catch ( Exception error ) when ( error is IOException or InvalidDataException or InvalidOperationException or NotSupportedException )
 			{

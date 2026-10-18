@@ -30,6 +30,7 @@ node tools/web-perf/run.mjs --web out/web/wwwroot --game "/path/to/Theme Park Wo
 | `memory` | wasm memory, managed heap and JS heap every 10 s over `--memory-minutes` |
 | `switch` | memory across park changes (Jungle, the lobby, the next island's park, the lobby, Jungle again), each point after a full collection: wasm, live managed memory, live parks, entities, live textures by source, archive and sound bytes, and in the lobby the static fields that hold the most |
 | `revisit` | with `--keep lazy` or `--keep all`: the same profile reopened without the served folder; Play, the lobby, then Jungle from the kept files (fails if it asks for the folder) |
+| `umbrellaCost` | (after `jungle`) the frame cost of a staged crowd (`--crowd`, default 400 extra guests) in rain, a steady window without and one with an open umbrella over every guest, at the Home and the farthest zoom (`Program.PerfUmbrellaCrowd`, loopback `?perf=1` only; docs/UMBRELLAS.md "Tuning") |
 | `digest` | deterministic work that must give the same result in every build, timed: every texture of the theme decoded and hashed, and the fixed park run of the original-data determinism test (seed 2026, 3000 ticks at the fastest speed; economy and guests) reduced to its world state hash. It blocks the page while it runs, so it comes last |
 
 `tools/web-perf/compare.mjs --a <reports> --b <reports>` prints the medians of two builds side by

@@ -18,9 +18,9 @@ values are game data: the inventory stores the `TAG_SYSTEM.str` entry numbers an
 
 | Status | Messages | Meaning |
 | --- | ---: | --- |
-| wired | 133 | OpenTPW produces the message today |
-| ready | 100 | every input exists in OpenTPW (the inventory names the class or field); only the producer is missing |
-| blocked | 13 | an input is missing or approximated |
+| wired | 165 | OpenTPW produces the message today |
+| ready | 69 | every input exists in OpenTPW (the inventory names the class or field); only the producer is missing |
+| blocked | 12 | an input is missing or approximated |
 | none | 105 | nothing to produce: 21 are scored by the scan but their callback is the constant-zero stub, 84 have no producer in `tp.exe` at all |
 
 | Kind | Messages | Producer |
@@ -41,15 +41,16 @@ values are game data: the inventory stores the `TAG_SYSTEM.str` entry numbers an
 | Staff | 25 | 38 | 6 | 0 | 69 |
 | Research | 10 | 9 | 0 | 0 | 19 |
 | Weather | 0 | 0 | 0 | 0 | 0 |
-| Challenges and golden tickets | 5 | 24 | 0 | 0 | 29 |
-| Tutorial and help | 43 | 2 | 3 | 37 | 85 |
-| Other | 3 | 5 | 1 | 68 | 77 |
-| Total | 133 | 100 | 13 | 105 | 351 |
+| Challenges and golden tickets | 29 | 0 | 0 | 0 | 29 |
+| Tutorial and help | 45 | 0 | 3 | 37 | 85 |
+| Other | 9 | 0 | 0 | 68 | 77 |
+| Total | 165 | 69 | 12 | 105 | 351 |
 
 Weather has no message: no score callback reads weather or season state, no poster is a weather event, and no `TAG_SYSTEM.str` caption
-of the advisor mentions rain, storm or snow. The "about 91" messages with a producer: **133** produce advice today: 53 posted by game code (0, 323, 106, 128, 129, 33-57, 66, 68-70, 93-97,
-125-127, 133-136, 167, 234-237, 258, 271), 42 help messages of windows and tools OpenTPW has, and 38 scored by the ported scan (the money batch: 100-105 and 107, and the 31 park
-callbacks of the rides, cleanliness and guest mood batches: 3-10, 60, 62, 71, 73-75, 77-79, 81, 82, 85-89, 145, 158, 159 and 259-262).
+of the advisor mentions rain, storm or snow. The "about 91" messages with a producer: **165** produce advice today: 67 posted by game code (every `event` row: 0, 323, 106, 128, 129, 33-57, 66,
+68-70, 93-97, 125-127, 133-136, 167, 215-217, 220-222, 225-227, 234-237, 258, 270-273, 311 and 315), 42 help messages of windows and tools OpenTPW has, and 56 scored by the ported scan (the money
+batch: 100-105 and 107; the 31 park callbacks of the rides, cleanliness and guest mood batches: 3-10, 60, 62, 71, 73-75, 77-79, 81, 82, 85-89, 145, 158, 159 and 259-262; and the 18 callbacks
+of the park-opening, congratulation, tutorial and golden ticket group: 1, 2, 124, 140, 156, 157, 185, 274-276, 278-282, 314, 316 and 317, see "Challenges and golden tickets").
 `AutomaticAdvisor.GlobalTicketMovedMessage` posts 234-237 when a global golden ticket moves here, and `AdvisorTables` now defines them (the four rows
 `(234-237, "AwardMoved.Score")` in `EventScoreKeys`; their group 2 controls are read when the settings file has them). 66, 68, 69 and 258 are posted by the ride events
 (`AdvisorRideEvents`, see "Park callbacks").
@@ -95,7 +96,7 @@ park clock `0x4F8800` (`world + 0x2A0`); the money helpers use the bank's turn-e
 
 ## Advisor.sam object layout
 
-The schema `0x72E124` (records of 60 bytes: a type word, the key name at `+4`) lays the object out as: `MinTimeAnyMessage`,
+The schema `0x72E124` (records of 60 bytes: a type word, the key name at `+4`; the record that names a group of keys comes **after** its keys, as the trailer of the run) lays the object out as: `MinTimeAnyMessage`,
 `MinTimeSameMessage` and `MinScoreForConsideration` at `+0x18`/`+0x1C`/`+0x20`, ten message groups of three words from `+0x24`, then
 **every further key takes four bytes in schema order from `+0xA0`** (bytes are padded to four). Reading the 358 leaf keys this way puts
 `HelpMessage.Score` at `+0x328`, `HelpMessage.ContextHelpScore` `+0x32C`, `WealthHigh.MoreMoneyThan` `+0x330`, `RidesBreakdownImminent.Score`
@@ -110,13 +111,13 @@ Confidence: high = whole body read, medium = shape read and role inferred from t
 | Helper | Role | Conf. |
 | --- | --- | --- |
 | `0x4C7BB0` / `0x4C7CC0` | mean happiness of the guests in the park / of the staff (0 while closed or empty) | high |
-| `0x4C7DB0` | park value (cell and ride values, cached for a second) | medium |
+| `0x4C7DB0(age)` | park value (cell points and ride values; the count is cached at `+0x1F0EC` with a stamp and counted again only when the cache is older than the argument: 10 for the congratulations 156/157, 20 for the loan test, 0 for the month sample) | high |
 | `0x4C7FA0`, `0x4C9130` | guests in the park (the predicate `0x4FA990`: cell types 0, 1, 3, 9, 10) | high |
 | `0x4C81E0` | "busy points": guests in the park / 2, capped at 100 | high |
 | `0x4C81B0` | developed cells (the 1024 map blocks via `0x4C8C40`) | medium |
 | `0x4C9050` | the park is open (`0x51A280` clear) | high |
 | `0x4C9070` / `0x4C90D0` | days since the object stamp `+0x21C30` (rewritten by every object construction, `0x4DB090` calling `0x4C7680`: the newest, not the first) / the hire stamp `+0x21C38` (rewritten by every staff thing init, `0x504B90` calling `0x4C76D0`) | high |
-| `0x4C91C0` | guests in state 3 (paid, waiting at the gate) at the two ticket-booth cells | medium |
+| `0x4C91C0` | guests in state 3 (waiting at the booth) on the two ticket-booth cells (`0x4D8610` of sides 0 and 1, counted once per side) | high |
 | `0x4C9290` / `0x4C9340` / `0x4C93F0` | guests in the park whose toilet (`+0x1AC`) / hunger (`+0x1A8`) / thirst (`+0x1A4`) byte is **strictly above** the argument | high |
 | `0x4C94A0(flag)` | the park counters `+0x21BFC` (flag 0) / `+0x21C00` (flag 1): pranks and escaped pranksters | medium |
 | `0x4C94C0`, `0x4C94D0` | visitors ever (`+0x21C08`) and visitors since n months | high |
@@ -133,7 +134,7 @@ Confidence: high = whole body read, medium = shape read and role inferred from t
 | `0x4CA310`, `0x4CA3A0(pct)` | rides broken down (state 1) / rides broken or below a condition percent | high |
 | `0x4CA450`, `0x4CA4C0`, `0x4CA510`, `0x4CA570`, `0x4CA5D0` | object types available to build (rides, upgrades, shops, sideshows, features) | medium |
 | `0x4CA630`-`0x4CA690`, `0x503B30`, `0x503980` | research outstanding per category, research progress percent | medium |
-| `0x4CA740` | percent of buildable object types researched | medium |
+| `0x4CA740` | percent of the object types **with a golden ticket cost** (`+0xC4` above 0) whose control's built count (`+0x18`, never lowered) is above 0, `built x 100 / types` (signed), 0 without such a type: the share of the ticket items ever built, not a research share | high |
 | `0x4CA7B0(kind)`, `0x4CA8E0(kind, level)`, `0x4CA9B0(kind)` | built types / built objects (level at least n) / closed objects of a kind (0 ride, 1 shop, 2 sideshow, 3 feature) | high |
 | `0x4CAAE0`-`0x4CC090` | the worst/best **value** and **satisfaction** of shops of a stock type (2 food, 3 restaurant, 4 drinks), of retail shops and of sideshows: a scan of attractions with more than 30 customers over their customer, walk-away and satisfaction rings, returning a 0-100 figure and the attraction's handle | medium |
 | `0x4CCA40`, `0x4CCB00`, `0x4CCBF0`, `0x4CCD10`, `0x4CCDF0` | a per-toilet mean (unresolved), unconnected queue test, mean and maximum ride fear (`0x4E0860`), litter points | medium/low |
@@ -402,44 +403,72 @@ events) and `AdvisorProducerInventoryTests` (every ported callback is "wired"). 
 
 ## Challenges and golden tickets
 
+Ported by `AdvisorChallengeCallbacks` and `AdvisorChallengeMessages` (`source/OpenTPW/World/AdvisorScanChallenges.cs`) for the scan, and `AutomaticAdvisor.Challenges.cs` for the posts. 32 messages are wired here (the rows below
+with 1, 2, 124, 140, 156, 157 and 185 and 282 of the other batches), by what reading the bytes showed:
+
+- **The ring `+0x216D8` is the five-entry ring of the last arrival group sizes**, not the monthly visitors the first mapping took it for: the arrival update `0x4CF3E0` pushes the size of a group
+  (`0x4CF5B0`, the log "Bus about to arrive with %d people") into it as the group starts (`0x4CF42A`; capacity 5 at `+0x216F4`, index `+0x216F0`, filled flag `+0x216F8`). `0x59F220` (124, hype fades:
+  the park is younger than `HypeNewpark.MaxMonths`, at least two groups, the newest smaller than the one before by more than `DroppedPercent`), `0x59F440` (140, a big busload) and `0x5A0780` (281,
+  exactly one group has come) read it. OpenTPW keeps it as the advisor's own record (`AdvisorArrivalRing`, fed by `GuestSimulation.ArrivalGroupStarted`, saved in the advisor snapshot), like the
+  object and hire stamps; an original save's ring is not parsed, so a loaded park starts with an empty one.
+- **`0x4CA740` counts ticket items built**, not research: the types with a golden ticket cost that were built at least once, as a percent. 278-280 are three bands of it (above the group's threshold and not
+  above the next group's; the last has no upper bound) while the park is open. 274-276 compare the guests in the park x 100 / `GoldenTicketLocal.PeopleInPark` (the runtime word `0x785794`; 0 gives no
+  line), cut to 100, with the thresholds of A, B and C (all three can hold at once).
+- **The ticket hints** (314, 316, 317) read the level's ticket thresholds (`0x785790` visitors, `0x785794` people, `0x785798` happiness, `0x78579C` guests; the `GoldenTicketLocal` words) times the single
+  multiplier, rounded to a single and truncated; 314 needs the player to hold no ticket at all (`0x4D4AC0` = `0x5AF4A0`: the four global tickets and every park's local ones, the secret ones left out), 316 and
+  317 need the park's own visitors (index 0) or happiness (index 2) ticket not won; each scores its flat `Score`.
+- **A ticket win posts one of three messages by the key rule**: after the ticket's flag is set, the sum of all tickets (`0x5AF530`: global, local of every park and the two secret ones) / 3 plus the starting
+  keys must be above 0 and the sum a multiple of 3 for a key outcome; the outcome is 3 when those keys equal what one of the player's parks costs to enter (`Keys.CostToEnter`), 2 when none does and 1 otherwise.
+  Local tickets (`0x4D4FA0`) post 215, 216 or 217, global ones (`0x4D5270`, first win) 220-222, the secret camera ticket (`0x4D5870`) 225-227, each with the **ticket's type as the response variant** (the fourth
+  argument of `0x59B590`: 6 local, 4 global and 2 secret responses). Every ticket event then runs `0x4D5B30`, which with exactly one ticket in all posts 311 (first golden ticket) and 315 (the clues, one point
+  below it in `Advisor.sam`); the moved outcome of a global ticket posts 234 + type first. OpenTPW reads the player's ledger through `AutomaticAdvisor.PlayerTickets` (`PlayerTicketLedger.AdvisorView`: the
+  ledger and the park's own tickets counted once, so the order of the ledger's own update does not matter) and, without a ledger, the park's own tickets with the one starting key.
+- **The challenge system posts three lines and the first-offer line.** The offer message builder `0x4D2C50` posts 270 for every offer (a follow-up's too, `0x4D2B60`), but **344** (a help descriptor of the
+  tutorial group, `HelpMessage.Score`) in place of 270 when the offer is the first, the one that switches the system on (`0x4D2A70` called with 1 at `0x4D1F4B`); `ParkObjectives.LastOfferSwitchedOn` says which.
+  The win routine `0x4D2FB0` pays or offers the follow-up, then `0x4D1A00` marks the slot now current as won and posts **272** when that slot has no follow-up type (the won challenge, or the follow-up offered in
+  its place); the loss routine `0x4D3140` counts the loss and posts **273** through `0x4D1AE0`. 271 is the existing time-short warning.
+
+Tests: `AdvisorScanChallengesTests` (every callback at, below and above its thresholds, the queue through a whole scan pass, the statistics over a real economy and guest simulation, the key rule, the posts
+through the economy's events, the arrival ring and the snapshot).
+
 | Msg | Status | Producer | Condition and score | TAG_SYSTEM caption |
 | ---: | --- | --- | --- | --- |
-| 215 | ready | golden ticket won, 0x4D4FA0 group 1..3 (0x4D51AD, 0x4D50F2, 0x4D5037), called from 0x4D4BF0 | a local ticket is won (visitors, people, happiness, profit ...) | 180, 181, 182, 183, 184, 185 |
-| 216 | ready | golden ticket won, 0x4D4FA0 group 1..3 (0x4D51AD, 0x4D50F2, 0x4D5037), called from 0x4D4BF0 | a local ticket is won (visitors, people, happiness, profit ...) | 180, 181, 182, 183, 184, 185 |
-| 217 | ready | golden ticket won, 0x4D4FA0 group 1..3 (0x4D51AD, 0x4D50F2, 0x4D5037), called from 0x4D4BF0 | a local ticket is won (visitors, people, happiness, profit ...) | 180, 181, 182, 183, 184, 185 |
-| 220 | ready | golden ticket won, 0x4D5270 group 1..3 (0x4D52F3, 0x4D53B4, 0x4D546F) | a global ticket is won | 186, 187, 188, 189 |
-| 221 | ready | golden ticket won, 0x4D5270 group 1..3 (0x4D52F3, 0x4D53B4, 0x4D546F) | a global ticket is won | 186, 187, 188, 189 |
-| 222 | ready | golden ticket won, 0x4D5270 group 1..3 (0x4D52F3, 0x4D53B4, 0x4D546F) | a global ticket is won | 186, 187, 188, 189 |
-| 225 | ready | golden ticket won, 0x4D58F0 group 1..3 (0x4D5A7D, 0x4D59C2, 0x4D5907): the secret tickets | a secret ticket is won | 190, 191 |
-| 226 | ready | golden ticket won, 0x4D58F0 group 1..3 (0x4D5A7D, 0x4D59C2, 0x4D5907): the secret tickets | a secret ticket is won | 190, 191 |
-| 227 | ready | golden ticket won, 0x4D58F0 group 1..3 (0x4D5A7D, 0x4D59C2, 0x4D5907): the secret tickets | a secret ticket is won | 190, 191 |
-| 234 | ready | 0x4D5270 case 4 (0x4D554A-0x4D578A): a global ticket moved to this park, 0xEA + type | a global ticket moved here; OpenTPW posts it (AutomaticAdvisor.GlobalTicketMovedMessage) but AdvisorTables has no definition of 234-237, so Controller.Advise returns null: add (234-237, AwardMoved.Score) to EventScoreKeys | speech only |
-| 235 | ready | 0x4D5270 case 4 (0x4D554A-0x4D578A): a global ticket moved to this park, 0xEA + type | a global ticket moved here; OpenTPW posts it (AutomaticAdvisor.GlobalTicketMovedMessage) but AdvisorTables has no definition of 234-237, so Controller.Advise returns null: add (234-237, AwardMoved.Score) to EventScoreKeys | speech only |
-| 236 | ready | 0x4D5270 case 4 (0x4D554A-0x4D578A): a global ticket moved to this park, 0xEA + type | a global ticket moved here; OpenTPW posts it (AutomaticAdvisor.GlobalTicketMovedMessage) but AdvisorTables has no definition of 234-237, so Controller.Advise returns null: add (234-237, AwardMoved.Score) to EventScoreKeys | speech only |
-| 237 | ready | 0x4D5270 case 4 (0x4D554A-0x4D578A): a global ticket moved to this park, 0xEA + type | a global ticket moved here; OpenTPW posts it (AutomaticAdvisor.GlobalTicketMovedMessage) but AdvisorTables has no definition of 234-237, so Controller.Advise returns null: add (234-237, AwardMoved.Score) to EventScoreKeys | speech only |
-| 270 | ready | CMsgChallenge (type 25) from the challenge offer 0x4D2C50 (0x4D2D73); 0x59B060 forwards the id (0x59B489, id < 0x160) | a challenge is offered | speech only |
+| 215 | wired | golden ticket won, 0x4D4FA0 group 1..3 (0x4D51AD, 0x4D50F2, 0x4D5037), called from 0x4D4BF0 | a local ticket (visitors, people, happiness, all items, profit, recent visitors) is won and the key rule gives outcome 1, no new key: the ticket's type 0-5 picks the response; 216 is outcome 2 (a key is earned), 217 outcome 3 (the keys equal what a park costs to enter) | 180, 181, 182, 183, 184, 185 |
+| 216 | wired | golden ticket won, 0x4D4FA0 group 1..3 (0x4D51AD, 0x4D50F2, 0x4D5037), called from 0x4D4BF0 | a local ticket is won and the key rule gives outcome 2: the tickets are a multiple of 3 and the player has a key, but no park costs that many keys to enter; the ticket's type 0-5 picks the response | 180, 181, 182, 183, 184, 185 |
+| 217 | wired | golden ticket won, 0x4D4FA0 group 1..3 (0x4D51AD, 0x4D50F2, 0x4D5037), called from 0x4D4BF0 | a local ticket is won and the key rule gives outcome 3: the keys now equal what one of the player's parks costs to enter; the ticket's type 0-5 picks the response | 180, 181, 182, 183, 184, 185 |
+| 220 | wired | golden ticket won, 0x4D5270 group 1..3 (0x4D52F3, 0x4D53B4, 0x4D546F) | a global ticket (coaster height, go-kart excitement, water length, big park) is won for the first time and the key rule gives outcome 1; the global type 0-3 picks the response (221 outcome 2, 222 outcome 3) | 186, 187, 188, 189 |
+| 221 | wired | golden ticket won, 0x4D5270 group 1..3 (0x4D52F3, 0x4D53B4, 0x4D546F) | a global ticket is won for the first time and the key rule gives outcome 2; the global type picks the response | 186, 187, 188, 189 |
+| 222 | wired | golden ticket won, 0x4D5270 group 1..3 (0x4D52F3, 0x4D53B4, 0x4D546F) | a global ticket is won for the first time and the key rule gives outcome 3; the global type picks the response | 186, 187, 188, 189 |
+| 225 | wired | golden ticket won, 0x4D58F0 group 1..3 (0x4D5A7D, 0x4D59C2, 0x4D5907): the secret tickets | the secret camera ticket is won and the key rule gives outcome 1 (226 outcome 2, 227 outcome 3); the secret type is the response | 190, 191 |
+| 226 | wired | golden ticket won, 0x4D58F0 group 1..3 (0x4D5A7D, 0x4D59C2, 0x4D5907): the secret tickets | the secret camera ticket is won and the key rule gives outcome 2 | 190, 191 |
+| 227 | wired | golden ticket won, 0x4D58F0 group 1..3 (0x4D5A7D, 0x4D59C2, 0x4D5907): the secret tickets | the secret camera ticket is won and the key rule gives outcome 3 | 190, 191 |
+| 234 | wired | 0x4D5270 case 4 (0x4D554A-0x4D578A): a global ticket moved to this park, 0xEA + type | a global ticket moved to this park (the outcome 4 of 0x5AF940): AutomaticAdvisor.GlobalTicketMovedMessage posts 234 + type and AdvisorTables defines the four rows (AwardMoved.Score); 0x4D5B30 follows, like after every ticket outcome | speech only |
+| 235 | wired | 0x4D5270 case 4 (0x4D554A-0x4D578A): a global ticket moved to this park, 0xEA + type | a global ticket moved to this park (the outcome 4 of 0x5AF940): AutomaticAdvisor.GlobalTicketMovedMessage posts 234 + type and AdvisorTables defines the four rows (AwardMoved.Score); 0x4D5B30 follows, like after every ticket outcome | speech only |
+| 236 | wired | 0x4D5270 case 4 (0x4D554A-0x4D578A): a global ticket moved to this park, 0xEA + type | a global ticket moved to this park (the outcome 4 of 0x5AF940): AutomaticAdvisor.GlobalTicketMovedMessage posts 234 + type and AdvisorTables defines the four rows (AwardMoved.Score); 0x4D5B30 follows, like after every ticket outcome | speech only |
+| 237 | wired | 0x4D5270 case 4 (0x4D554A-0x4D578A): a global ticket moved to this park, 0xEA + type | a global ticket moved to this park (the outcome 4 of 0x5AF940): AutomaticAdvisor.GlobalTicketMovedMessage posts 234 + type and AdvisorTables defines the four rows (AwardMoved.Score); 0x4D5B30 follows, like after every ticket outcome | speech only |
+| 270 | wired | CMsgChallenge (type 25) from the challenge offer 0x4D2C50 (0x4D2D73); 0x59B060 forwards the id (0x59B489, id < 0x160) | a challenge is offered, every offer but the park's first (that one posts 344 instead): the offer of a follow-up challenge too | speech only |
 | 271 | wired | CMsgChallenge from 0x4D1FF0 (0x4D223C) when the time left reaches ShortTimeLeftWarningAt | time-short warning of the running challenge | speech only |
-| 272 | ready | CMsgChallenge from 0x4D1A30 (0x4D1A5B) | challenge outcome (probably accepted or completed; the writer was not traced further) | speech only |
-| 273 | ready | CMsgChallenge from 0x4D1AE0 (0x4D1B42), the challenge-lost routine | a challenge is lost (loss count +0x24 raised) | speech only |
-| 274 | ready | cb 0x5A08B0 | park open and the ticket gate open (0x51A280 clear): guests x 100 / the level target (runtime setting 0x785794, capped at 100 percent) > HigherPctThanThis: flat GTAmountVisitorsA.Score | speech only |
-| 275 | ready | cb 0x5A0930 | park open and the ticket gate open (0x51A280 clear): guests x 100 / the level target (runtime setting 0x785794, capped at 100 percent) > HigherPctThanThis: flat GTAmountVisitorsB.Score | speech only |
-| 276 | ready | cb 0x5A09B0 | park open and the ticket gate open (0x51A280 clear): guests x 100 / the level target (runtime setting 0x785794, capped at 100 percent) > HigherPctThanThis: flat GTAmountVisitorsC.Score | speech only |
-| 278 | ready | cb 0x5A07D0 | park open: percent of object types researched (0x4CA740) above this threshold and not above the next GTAllResearched threshold: flat Score | speech only |
-| 279 | ready | cb 0x5A0820 | park open: percent of object types researched (0x4CA740) above this threshold and not above the next GTAllResearched threshold: flat Score | speech only |
-| 280 | ready | cb 0x5A0870 | park open: percent of object types researched (0x4CA740) above this threshold and not above the next GTAllResearched threshold: flat Score | speech only |
-| 281 | ready | cb 0x5A0780 | the visitor counter (+0x216D8) equals 1: flat GoldTicketExplanation.Score (the first guest) | speech only |
-| 311 | ready | 0x4D5B30 (0x4D5BB6) after the first golden ticket was won | first golden ticket of the player | speech only |
-| 314 | ready | cb 0x5A0530 | visitors ever (0x4C94C0) above GoldTicketNearToFirstOne.PeopleMultiplier x the first ticket target: flat Score | speech only |
-| 315 | ready | 0x4D5B30 (0x4D5C47) clues for the remaining tickets | after a ticket is won | speech only |
-| 316 | ready | cb 0x5A05A0 | visitors ever above PeopleMultiplier x target and the visitors ticket (0x5AF7F0 flag 0) not won: flat GoldTicketNearToXPeeps.Score | speech only |
-| 317 | ready | cb 0x5A05F0 | average happiness above HappinessMultiplier x target, guests above the target and the happiness ticket (flag 2) not won: flat Score | speech only |
+| 272 | wired | CMsgChallenge from 0x4D1A30 (0x4D1A5B) | a challenge is won and the slot current afterwards (the won one, or the follow-up that was offered) has no follow-up type: the final win of a chain, after the follow-up's offer line | speech only |
+| 273 | wired | CMsgChallenge from 0x4D1AE0 (0x4D1B42), the challenge-lost routine | a challenge is lost: its time ran out unmet (0x4D3140 raises the slot's loss count +0x24 through 0x4D1AE0) | speech only |
+| 274 | wired | cb 0x5A08B0 | park open (0x51A280 clear) and GoldenTicketLocal.PeopleInPark (0x785794) nonzero: guests in the park x 100 / that threshold, cut to 100, > GTAmountVisitorsA.HigherPctThanThis: flat GTAmountVisitorsA.Score | speech only |
+| 275 | wired | cb 0x5A0930 | park open and GoldenTicketLocal.PeopleInPark nonzero: guests in the park x 100 / that threshold, cut to 100, > GTAmountVisitorsB.HigherPctThanThis: flat GTAmountVisitorsB.Score | speech only |
+| 276 | wired | cb 0x5A09B0 | park open and GoldenTicketLocal.PeopleInPark nonzero: guests in the park x 100 / that threshold, cut to 100, > GTAmountVisitorsC.HigherPctThanThis: flat GTAmountVisitorsC.Score | speech only |
+| 278 | wired | cb 0x5A07D0 | park open: the share of the object types with a golden ticket cost that were built at least once (0x4CA740) above GTAllResearchedA.HigherPctThanThis and not above the B threshold: flat GTAllResearchedA.Score | speech only |
+| 279 | wired | cb 0x5A0820 | park open: that share above GTAllResearchedB.HigherPctThanThis and not above the C threshold: flat GTAllResearchedB.Score | speech only |
+| 280 | wired | cb 0x5A0870 | park open: that share above GTAllResearchedC.HigherPctThanThis: flat GTAllResearchedC.Score | speech only |
+| 281 | wired | cb 0x5A0780 | the ring of arrival group sizes (+0x216D8) holds exactly one: flat GoldTicketExplanation.Score (the first arrival group has started) | speech only |
+| 311 | wired | 0x4D5B30 (0x4D5BB6) after the first golden ticket was won | a golden ticket is won and the player's tickets in all, the secret ones too (0x5AF530), are exactly one: the first-ticket line; the clues line 315 follows at once | speech only |
+| 314 | wired | cb 0x5A0530 | the player holds no golden ticket (0x4D4AC0) and the visitors ever (0x4C94C0) are above GoldenTicketLocal.Visitors (0x785790) x GoldTicketNearToFirstOne.PeopleMultiplier, truncated: flat Score | speech only |
+| 315 | wired | 0x4D5B30 (0x4D5C47) clues for the remaining tickets | a golden ticket is won and the player's tickets in all are exactly one: posted right after 311 | speech only |
+| 316 | wired | cb 0x5A05A0 | visitors ever above PeopleMultiplier x target and the visitors ticket (0x5AF7F0 flag 0) not won: flat GoldTicketNearToXPeeps.Score | speech only |
+| 317 | wired | cb 0x5A05F0 | average happiness above HappinessMultiplier x target, guests above the target and the happiness ticket (flag 2) not won: flat Score | speech only |
 
 ## Tutorial and help
 
 | Msg | Status | Producer | Condition and score | TAG_SYSTEM caption |
 | ---: | --- | --- | --- | --- |
-| 185 | ready | cb 0x5A06C0 | game days between TutorialUIPanel.AfterTime and CutoffTime: flat Score | speech only |
-| 282 | ready | cb 0x5A0720 | game days between TutorialExplainTooltips.AfterTime and CutoffTime: flat Score | speech only |
+| 185 | wired | cb 0x5A06C0 | game days between TutorialUIPanel.AfterTime and CutoffTime: flat Score | speech only |
+| 282 | wired | cb 0x5A0720 | game days between TutorialExplainTooltips.AfterTime and CutoffTime: flat Score | speech only |
 | 323 | wired | same handler 0x59AE43 posts advice 323 (0x59AEC1) when the game mode word 0xFB3B7C is 2 (Instant Action) | flat PrebuiltPark.Score | speech only |
 
 Help messages (score callback `0x59E8C0`, `HelpMessage.Score`) are posted by window and tool code through `0x486B00` and withdrawn through
@@ -457,14 +486,14 @@ counted with and without 291.
 | Msg | Status | Producer | Condition and score | TAG_SYSTEM caption |
 | ---: | --- | --- | --- | --- |
 | 0 | wired | CMsgEvent 0 sent by the main loop 0x54ED70 (0x54F2D7) at every level start; handler 0x59AE43 posts advice 0 | flat Welcome.Score; no state read | speech only |
-| 1 | ready | cb 0x59C8D0 | 0 while the park is open or while no ride and no sideshow is built (0x4CA8E0 kinds 0 and 2); else guests in state 3 at the gate (0x4C91C0) x OpenPark.ScorePerWaitingPerson | 7 |
-| 2 | ready | cb 0x59C960 | park open and neither a ride nor a sideshow built: flat ClosePark.Score; else 0 | 8 |
-| 124 | ready | cb 0x59F220 | park older than 1 month and younger than HypeNewpark.MaxMonths: visitor drop (0x216D8 ring) above DroppedPercent: flat Score | speech only |
+| 1 | wired | cb 0x59C8D0 | 0 while the park is open or while no ride and no sideshow is built (0x4CA8E0 kinds 0 and 2); else the guests in state 3 on the two ticket booth cells (0x4C91C0) x OpenPark.ScorePerWaitingPerson | 7 |
+| 2 | wired | cb 0x59C960 | park open and neither a ride nor a sideshow built: flat ClosePark.Score; else 0 | 8 |
+| 124 | wired | cb 0x59F220 | park younger than HypeNewpark.MaxMonths months and at least two arrival groups in the ring of the last five group sizes (+0x216D8): the newest group smaller than the one before by more than DroppedPercent percent (100 - newest x 100 / previous, the previous nonzero): flat Score | speech only |
 | 128 | wired | CMsgEvent 3 from the open/close button routine 0x519EF0 (0x51A037); handler 0x59AF02 posts 128 | posted at every press of the open button, also when already open | 149 |
 | 129 | wired | CMsgEvent 4 from 0x519EF0 (0x51A1C6); handler 0x59AF31 posts 129 | posted at every press of the close button, also when already closed | 150 |
-| 140 | blocked | cb 0x59F440 | the last arrival wave (0x4D8650) larger than HowBigIsBig: flat BigBusloadArrived.Score | 158 |
-| 156 | ready | cb 0x59F860 | park value (0x4C7DB0) > ValueBetterThan, guests > VisitorsMoreThan, average happiness > HappinessGreaterThan: flat Score | speech only |
-| 157 | ready | cb 0x59F8D0 | park value (0x4C7DB0) > ValueBetterThan, guests > VisitorsMoreThan, average happiness > HappinessGreaterThan: flat Score | speech only |
+| 140 | wired | cb 0x59F440 | the newest arrival group size in the ring (+0x216D8) larger than HowBigIsBig: flat BigBusloadArrived.Score | 158 |
+| 156 | wired | cb 0x59F860 | park value (0x4C7DB0, read with age 10) > ValueBetterThan, guests in the park > VisitorsMoreThan, average happiness (0x4C7BB0) > HappinessGreaterThan: flat Score | speech only |
+| 157 | wired | cb 0x59F8D0 | park value (0x4C7DB0, read with age 10) > ValueBetterThan, guests in the park > VisitorsMoreThan, average happiness (0x4C7BB0) > HappinessGreaterThan: flat Score | speech only |
 
 ## Messages nothing produces
 
@@ -556,8 +585,7 @@ stranded-people and condemned keys); else the extension's own constant, document
 - The poster search lists every caller of `0x59B590`, `0x59A940`, `0x486B00` and the seven bus message types the controller registers
   (5, 8, 14, 17, 19, 23, 25 - `0x59B060` dispatch table). The constant-id scan inside the posting functions agrees; an id computed at run time
   from a table would not show up, so "no producer" means "no producer found".
-- `0x4D4FA0` / `0x4D5270` / `0x4D58F0` (golden tickets) take a group 1-3; whether groups 4 and 5 (218-219, 223-224, 228-229) are reachable was not traced.
-- 272 (`0x4D1A30`) is a challenge outcome; whether it is "accepted" or "completed" was not traced (273 is the lost-challenge routine, `0x4D1AE0`).
+- `0x4D4FA0` / `0x4D5270` / `0x4D5870` (golden tickets) post the outcomes 1-3 only (215-217, 220-222, 225-227); 218-219, 223-224 and 228-229 have no caller. 272 is the win of the last part of a challenge chain (`0x4D1A00`), 273 the loss (`0x4D1AE0`); 344 is posted by the first challenge offer (`0x4D2C50` with a nonzero argument) although its inventory row stays `unused` (the row model has no help descriptor posted by an event).
 - Status "ready" says the input state exists, not that the formula is trivial; it also needs the scan driver (cursor, one descriptor per update, `MinScoreForConsideration`).
 
 ## Implementation order
@@ -569,5 +597,5 @@ stranded-people and condemned keys); else the extension's own constant, document
 5. **Guest mood** (3, 4, 82, 145, 158, 159): done (the census members are on `IParkGuestStatistics`); 141 and 264 stay blocked.
 6. **Staff** (11, 13, 14, 18, 20, 23, 26, 28-32, 108-123, 144, 146-150, 169-172) and **research** (15-17, 61, 63, 64, 72, 76, 80).
 7. **Prices** (91, 92, then 238-257): the price ring exists; the shop value and satisfaction scans need the line-by-line port.
-8. **Challenges and golden tickets** (270, 272, 273, 215-229, 311, 315, 274-281, 314-318).
-9. **Blocked**: coverage (19, 21, 27), pranks (12, 22, 98, 264), queue links (113), ride fear (141), arrivals (140), and the three help windows.
+8. **Challenges and golden tickets** (270, 272, 273, 215-227, 311, 315, 274-281, 314, 316, 317) and the park-opening, congratulation and tutorial callbacks (1, 2, 124, 140, 156, 157, 185, 282): done (see "Challenges and golden tickets"); 277 and 318 (the profit hints) stay with the restored advice.
+9. **Blocked**: coverage (19, 21, 27), pranks (12, 22, 98, 264), queue links (113), ride fear (141), and the three help windows.

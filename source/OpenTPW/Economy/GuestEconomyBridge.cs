@@ -142,6 +142,9 @@ public sealed class GuestEconomyBridge : IGuestPayments, IParkGuestStatistics, I
 		return CensusGuests.Count( guest => MeterMath.Byte( meter switch { GuestNeedMeter.Thirst => guest.Thirst, GuestNeedMeter.Hunger => guest.Hunger, _ => guest.Toilet } ) > limit );
 	}
 
+	// [BIN:TPW-EXE:0x004C91C0 guests at the gate] the guests waiting at the booth (state 3) on the two ticket booth cells
+	public int GuestsAtGate => Guests.GuestsWaitingAtBooths();
+
 	// [BIN:TPW-EXE:0x004C9530 balloons] the census guests with +0x210 nonzero
 	public int GuestsWithBalloons => CensusGuests.Count( guest => guest.HasBalloon );
 

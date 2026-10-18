@@ -618,6 +618,12 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		Observer?.Ticked( this, sweepDelta );
 	}
 
+	/// <summary>
+	/// A group of arriving guests starts, with its size (the guests it will drop off: 0 in a lost park): the advisor keeps the last five sizes.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004CF3E0 arrival group start] the call that starts a group (the timer test, 0x004CF5B0 giving the size, the log "Bus about to arrive with %d people") pushes the size into the five-entry ring at park +0x216D8 (0x004CF42A-0x004CF451), which the advisor's callbacks 0x59F220, 0x59F440 and 0x5A0780 read
+	public event Action<int>? ArrivalGroupStarted;
+
 	/// <summary>The arrival update at the world turn's tail (0x004CF3E0 through 0x004D7B20, after the destroys of the turn): a group starts, a guest steps off the vehicle.</summary>
 	public void UpdateTurnEndArrivals() => UpdateArrivals( sweepDelta );
 
@@ -647,6 +653,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		if ( !deliveringArrivals && (turn >> 2) - (arrivalTimerStart >> 2) > Settings.ArrivalTimeBetween )
 		{
 			pendingArrivals = ArrivalGroupSize();
+			ArrivalGroupStarted?.Invoke( pendingArrivals );
 			deliveringArrivals = true;
 			return;   // this turn's call only sends the bus
 		}
@@ -686,6 +693,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		if ( !deliveringArrivals && (turn >> 2) - (arrivalTimerStart >> 2) > Settings.ArrivalTimeBetween )
 		{
 			pendingArrivals = ArrivalGroupSize();
+			ArrivalGroupStarted?.Invoke( pendingArrivals );
 			deliveringArrivals = true;
 		}
 		if ( deliveringArrivals )

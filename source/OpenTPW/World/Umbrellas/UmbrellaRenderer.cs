@@ -21,7 +21,7 @@ public sealed class UmbrellaRenderer : Entity
 	/// guest.
 	/// </summary>
 	// [BIN:TPI-EXE:0x60b236 umbrella pull] a horizontal coordinate v' = v - (v - the camera's) x GenericUmbrellaModifiers[1] (0xA01E0C), the other with [3] (0xA01E14), and the height y' = y + (the camera's height 0xA14584 - 40.0 at 0x93E5B0) x [2] (0xA01E10); the settings' shipped values (X/ZAdjustCamera 0.1) are the U0 trace's (docs/UMBRELLAS.md)
-	// [EXT:umbrellas-draw] the pull runs along the sight line to the camera instead (the screen position of the hand stays, the quad is scaled down by the same share, as the guests' own pull is done), so TPI's lift, whose value is not
+	// [APPROX:UMB-004] [EXT:umbrellas-draw] the pull runs along the sight line to the camera instead (the screen position of the hand stays, the quad is scaled down by the same share, as the guests' own pull is done), so TPI's lift, whose value is not
 	// known here, is not needed to keep the umbrella over the hand
 	public const float CameraPull = 0.1f;
 	/// <summary>

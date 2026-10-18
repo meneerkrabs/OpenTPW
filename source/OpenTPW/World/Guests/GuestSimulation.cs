@@ -1485,6 +1485,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 
 	/// <summary>Sets state 21 (the guest waits at the stop to leave) and, for a guest that paid, stores its stay in the analyser's stay ring.</summary>
 	// [BIN:TPW-EXE:0x00502333 state 21] the state setter's case 0x15 stores the stay (0x004C7600: the turns since the arrival stamp 0x004FD950, in whole four-turn steps, as days) when the guest's paid flag +0x204 is set, then sets the thing's state 3 (0x004217F0)
+	// [APPROX:UI-914] the stay comes from the visitor's elapsed simulated seconds (GUEST-920), where the original subtracts two integer world turns (the arrival stamp +0x1D4, 0x4FD950)
 	private void EnterWaitingToGoHome( Guest guest )
 	{
 		guest.State = GuestState.WaitingToGoHome;

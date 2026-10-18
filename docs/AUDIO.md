@@ -561,8 +561,8 @@ stepped by `LobbyEffects` at the 60 Hz reference rate (`[EXT:frame-driven-at-60h
   sky's cloud layer starts black and eases toward the island's `SKYCOLOUR` each tick by (target − current) >> 4 in 16.16
   fixed point, the red channel toward the *blue* target (`0x1008FAA0`, tp.exe `0x5D96C0`); while it equals its target the
   layer takes the fog colour. The capture's cloud layer is tinted that way (grey over Lost Kingdom, pink over Wonderland,
-  dark over Halloween World and Space Zone). The cloud layer itself is not drawn yet, so OpenTPW paints the whole backdrop
-  with that colour as a stand-in; two settings gate the eased colour whose runtime values are not read (UI-018).
+  dark over Halloween World and Space Zone). The cloud layer is the engine sky of the fantasy level's sky files (`World/Sky.cs`), drawn over the fog-coloured clear with its
+  whole grid in that colour; SKYQUALITY 0 or 1 keeps the fog colour (`0x5D96C0`); the lobby's own fog range is not applied (UI-018).
 * **The globe** (`0x100923A8`) sets the rain to 0 and the sky target to (243, 203, 191) and starts its music
   (`cat_globallobbysfx` 2) and ambience (3), stopped when it closes; OpenTPW stops the lobby's own music meanwhile (`EXT:online-globe-audio`).
 * **Entering a park** (`0x10183CC0`, PC `0x4b8fd0`) plays `cat_globallobbysfx` 4 flat; the original skips it for game type 2. Before the sound the PC routine starts the screen-space particle effect 0x62 over the key panel (`0x521e60` is the particle creator, not a sound), which OpenTPW does too (`LobbyEnterEffect`, docs/PARTICLES.md); Instant Action skips both.

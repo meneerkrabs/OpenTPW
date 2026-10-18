@@ -92,6 +92,7 @@ public sealed class HistoryRing
 /// The park analyser's monthly statistics that the park information window graphs: the guests dropped off by the bus, the mean happiness, the mean stay,
 /// the guests in the park and (read from the ledger, which stores the same value at the same close) the park rating. Nothing here is read by the simulation.
 /// </summary>
+// [APPROX:UI-914] a park from an original save starts with these rings empty: the analyser's rings (0x4C5D70, +0x205D0..+0x213B0) are not read from the save into the history, so the graph begins at the load
 public sealed class ParkStatisticsHistory
 {
 	/// <summary>The entries of a monthly ring (0x90).</summary>

@@ -228,7 +228,8 @@ rather than every byte, and a read that overlaps a replacement may simply not be
 and runs in the background with at most 64 MB waiting afterwards (one larger file can exceed it);
 the manifest is written every 25 files and whenever the queue empties. A page closed before that
 keeps less, and the next visit asks for the folder for what is missing. Only one tab keeps files (a Web
-Lock); a second tab plays without them. **Remove kept files** deletes them (saves stay). Browsers
+Lock); a second tab plays without them. A game that stops on an error leaves its tab open on the message, so that tab writes the list of
+what it kept and gives the lock back at once; a restart in a new tab then starts from the kept files instead of asking for the folder again. **Remove kept files** deletes them (saves stay). Browsers
 without writable OPFS streams, or whose storage does not open, keep nothing and show no choice.
 
 Content hashing succeeds before a kept file is changed. Replacing a previously kept path first

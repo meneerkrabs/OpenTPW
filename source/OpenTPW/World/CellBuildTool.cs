@@ -8,8 +8,12 @@ public enum CellToolMode : byte
 	Queue = 3,
 	/// <summary>The kart track tool: the mode is the origin cell type the line writes (docs/TRACKS.md).</summary>
 	KartTrack = 11,
+	/// <summary>The kart track edit tool (tool 0xE, the ride window's track button for a kart ride): two clicks cut a closed circuit (<see cref="TrackEditWriter"/>).</summary>
+	KartEdit = 14,
 	/// <summary>The water track tool (origin cell type 16).</summary>
 	WaterTrack = 16,
+	/// <summary>The water track edit tool (tool 0x13, the track button for a water ride).</summary>
+	WaterEdit = 19,
 	/// <summary>[EXT:pools-tool] The pool paint tool of the <c>opentpw.pools</c> extension: the mode is the cell type it writes, as for the other tools (docs/POOLS.md).</summary>
 	Pool = ParkCellTypes.PoolWater
 }
@@ -26,6 +30,8 @@ public interface ICellLineWriter
 	void Undo( SegmentResult segment );
 	/// <summary>The start check of a click without a start (tp.exe <c>0x535670(mode, 0)</c>): false when it refuses the cell; a writer without one accepts every cell.</summary>
 	bool CanStart( (int X, int Y) cell ) => true;
+	/// <summary>Whether a click is snapped to the line's axis (the line tools); the track edit tools take the clicked cell as it is.</summary>
+	bool SnapsToLine => true;
 }
 
 /// <summary>
@@ -116,7 +122,7 @@ public sealed class CellBuildTool
 			return null;
 		if ( Start is not { } start )
 			return ClickWithoutStart( cell );
-		var end = ParkPathBuilder.SnapEnd( start, cell );
+		var end = Writer.SnapsToLine ? ParkPathBuilder.SnapEnd( start, cell ) : cell;
 		// [BIN:TPW-EXE:0x524A63 refused ghost] a click while the ghost of the line has a refused cell (0x816D48, set at 0x533933 when the preview's validator 0x535670 refuses a cell) ends the path or queue tool and lays nothing (mode table 0x52766C: SetMode(0, 0) at 0x5266A3)
 		// A ghost stopped only by the back-of-queue walk's bound is not a refusal of the original's validator: the click commits up to the cap
 		if ( Mode is CellToolMode.Path or CellToolMode.Queue && Writer.Preview( start, end ) is { Completed: false, StoppedByOwnLimit: false } refused )

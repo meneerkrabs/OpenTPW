@@ -36,6 +36,10 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	private readonly List<WalkRecord?> walkTable = new();
 	private readonly List<(int Guest, double Until, double Start)> bouncing = new(); // BOUNCE slot table in index order: visitor (0 = free), deadline, start; trailing free slots are trimmed
 	private readonly List<(int X, int Y)> queueCells = new();
+	// [BIN:TPW-EXE:0x00558C45 script creation] the base of the node numbers BOUNCE entries take (script +0x70) starts at 1; the base height (+0x6E, a signed word) is not set there, so it starts at the block's 0
+	public const int DefaultBounceNodeBase = 1;
+	private int bounceNodeBase = DefaultBounceNodeBase;
+	private short bounceBaseHeight;
 	private RideVM? vm;
 	private int called;       // ride +104: the pending visitor
 	private bool letMeOnWritten;
@@ -320,6 +324,8 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	/// </summary>
 	public RideVisitorBridgeSnapshot CaptureSnapshot() => new()
 	{
+		BounceNodeBase = bounceNodeBase != DefaultBounceNodeBase ? bounceNodeBase : null,
+		BounceBaseHeight = bounceBaseHeight != 0 ? bounceBaseHeight : null,
 		AttractionId = AttractionId,
 		Queue = Queue.ToArray(),
 		OnRide = onRide.ToArray(),
@@ -520,6 +526,8 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		RestoreWalkTable( snapshot );
 		bouncing.Clear();
 		bouncing.AddRange( snapshot.Bounce );
+		bounceNodeBase = snapshot.BounceNodeBase ?? DefaultBounceNodeBase;
+		bounceBaseHeight = snapshot.BounceBaseHeight ?? 0;
 		called = snapshot.CalledGuest;
 		letMeOnWritten = snapshot.LetMeOnWritten;
 		lastAdmissionTurn = snapshot.LastAdmissionTurn;
@@ -1281,6 +1289,23 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 			SetWalkSlot( slot++, new WalkRecord( snapshot.WalkingOff[index], 0, 0, 0, 0, 0, 0, 3, 0, snapshot.WalkingOffReady?[index] ?? 0 ) );
 	}
 
+	/// <summary>The node base BOUNCESETNODE set (script +0x70, 1 until then): slot <c>n</c> of the bounce table bounces its rider on the node numbered base + n.</summary>
+	public int BounceNodeBase => bounceNodeBase;
+
+	/// <summary>The base height BOUNCESETBASE set (script +0x6E, 0 until then), in the original's model units, added to the ride's height under the bouncing riders.</summary>
+	public short BounceBaseHeight => bounceBaseHeight;
+
+	/// <summary>
+	/// The riders the bounce table holds, in slot order: the visitor, the node number of its slot (the node base plus the slot index) and the script clock reading it bounced at.
+	/// </summary>
+	// [APPROX:HEADS-008] the original stores each entry's node number when BOUNCE fills the slot (0x00555742: +0x70 plus the index); the node here is the current base plus the slot index, which differs only when a script sets the base while riders bounce (none of the four shipped scripts does)
+	internal void CollectBouncing( List<(int Guest, int Node, double Start)> into )
+	{
+		for ( var index = 0; index < bouncing.Count; index++ )
+			if ( bouncing[index].Guest != 0 )
+				into.Add( (bouncing[index].Guest, bounceNodeBase + index, bouncing[index].Start) );
+	}
+
 	/// <summary>Performs a visitor opcode; false for opcodes the bridge does not own.</summary>
 	public bool TryPerform( RideEffectCall call, out int result )
 	{
@@ -1339,6 +1364,14 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 				result = TakeWalker( now );
 				return true;
 			}
+			case Opcode.BOUNCESETNODE:
+				// [BIN:TPW-EXE:0x005555E9 BOUNCESETNODE] the raw operand word, unresolved, goes to script +0x70 (a variable operand stores its code word, not its value); the one shipped script that sets it (Jelly Bounce) passes the literal 3
+				bounceNodeBase = call.RawWord( 0 );
+				return true;
+			case Opcode.BOUNCESETBASE:
+				// [BIN:TPW-EXE:0x00555653 BOUNCESETBASE] a variable operand stores its value's low 16 bits at +0x6E, any other operand its low 16 bits sign-extended (0x00555665): the shipped scripts pass the literals 6, 8, 12 and 16
+				bounceBaseHeight = unchecked( (short)call.Argument( 0 ) );
+				return true;
 			case Opcode.BOUNCE:
 			{
 				var guest = call.Argument( 0 );

@@ -109,6 +109,8 @@ public partial class Texture : Asset
 			NativeTextureView = cached.NativeTextureView;
 			Width = cached.Width;
 			Height = cached.Height;
+			// a texture that shares the cached one's GPU objects is a path texture too: ReleaseOwned must leave it alone, or it disposes what the first owner still draws
+			Path = path;
 			return;
 		}
 
@@ -177,6 +179,8 @@ public partial class Texture : Asset
 			NativeTextureView = cached.NativeTextureView;
 			Width = cached.Width;
 			Height = cached.Height;
+			// a texture that shares the cached one's GPU objects is a path texture too: ReleaseOwned must leave it alone, or it disposes what the first owner still draws
+			Path = path;
 			return;
 		}
 
@@ -343,6 +347,8 @@ public partial class Texture : Asset
 			NativeTextureView = cachedTexture!.NativeTextureView;
 			Width = cachedTexture.Width;
 			Height = cachedTexture.Height;
+			// shares the cached texture's GPU objects, so ReleaseOwned must leave it alone
+			Path = debugName;
 
 			return;
 		}

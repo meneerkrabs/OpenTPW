@@ -357,6 +357,12 @@ public sealed record RideVisitorBridgeSnapshot
 	public required (int Guest, double Until)[] Limbo { get; init; }
 	/// <summary>BOUNCE slot table in index order; interior free slots (guest 0) keep their place.</summary>
 	public required (int Guest, double Until, double Start)[] Bounce { get; init; }
+	/// <summary>The node base BOUNCESETNODE set (script +0x70); null or absent while it is the creation value 1. Presentation only: not part of the canonical hash.</summary>
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
+	public int? BounceNodeBase { get; init; }
+	/// <summary>The base height BOUNCESETBASE set (script +0x6E); null or absent while it is the creation value 0. Presentation only: not part of the canonical hash.</summary>
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
+	public short? BounceBaseHeight { get; init; }
 	/// <summary>The pending visitor (ride +104), 0 when none; stays in <see cref="Queue"/> until the script takes it.</summary>
 	public required int CalledGuest { get; init; }
 	/// <summary>True when the called guest's id is written to the script's VAR_LETMEON.</summary>

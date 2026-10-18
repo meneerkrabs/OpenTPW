@@ -285,6 +285,14 @@ public class TopThoughtsTests
 		var names = Enumerable.Range( 0, 5 ).Select( index => ((UiLabel)screen.Find( $"refusal{index}" )!).Text() ).ToArray();
 		Assert.AreEqual( 5, names.Distinct().Count() );
 		Assert.IsTrue( names.All( name => name.Length > 0 ) );
+		// the counters stand clear of the graph's plot and the toggles column
+		var graph = screen.Find( "graph" )!.Bounds;
+		foreach ( var id in new[] { "refusalsTitle" }.Concat( Enumerable.Range( 0, 5 ).SelectMany( index => new[] { $"refusal{index}", $"refusalCount{index}" } ) ) )
+		{
+			var box = screen.Find( id )!.Bounds;
+			var overlaps = box.X < graph.X + graph.Width && graph.X < box.X + box.Width && box.Y < graph.Y + graph.Height && graph.Y < box.Y + box.Height;
+			Assert.IsFalse( overlaps, $"{id} must not overlap the graph" );
+		}
 	}
 
 	[TestMethod]

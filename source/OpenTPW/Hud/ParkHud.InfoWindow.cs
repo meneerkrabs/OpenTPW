@@ -182,11 +182,11 @@ public sealed partial class ParkHud
 			screen.Add( new UiButton { Id = $"period{period}", Model = node.Model, Text = () => strings[UIStrings.Year1 + (shown == 0 ? 0 : shown == 1 ? 1 : 2)], Font = fonts => fonts.Small, Help = strings.Help( node.Help ),
 				Selected = () => parkInfoPeriod == shown, Clicked = () => SetParkInfoPeriod( shown ), Bounds = node.Rect, Anchor = UiAnchor.Center } );
 		}
-		// [EXT:guest-insights] with the extension on, the refusal-reason counters are written over the plot's top left: a title and one count per reason; the counters are the simulation's passive observer, never saved, and a visit has none
+		// [EXT:guest-insights] with the extension on, the refusal-reason counters stand in the two free strips beside the window's title, clear of the plot and the toggles: a title and the first two reasons on the left, the other three on the right; the counters are the simulation's passive observer, never saved, and a visit has none
 		if ( FeatureGates.GuestInsights && level.Guests?.RefusalCounters is { } counters )
 		{
 			screen.Add( new UiLabel { Id = "refusalsTitle", Text = () => strings.Extra( OpenTpwText.RefusalsTitle ), Font = fonts => fonts.Label, Color = UiColors.Text, Align = UiAlign.Left, Fit = true,
-				Bounds = new UiRect( graph.X + 24, graph.Y + 16, 380, 50 ), Anchor = UiAnchor.Center } );
+				Bounds = new UiRect( 291, 78, 420, 28 ), Anchor = UiAnchor.Center } );
 			var reasons = new (RefusalReason Reason, OpenTpwText Text)[]
 			{
 				(RefusalReason.TooExpensive, OpenTpwText.RefusalTooExpensive), (RefusalReason.QueueTooLong, OpenTpwText.RefusalQueueTooLong), (RefusalReason.TooScary, OpenTpwText.RefusalTooScary),
@@ -195,11 +195,13 @@ public sealed partial class ParkHud
 			for ( var index = 0; index < reasons.Length; index++ )
 			{
 				var (reason, text) = reasons[index];
-				var top = graph.Y + 70 + index * 46;
+				// the first two reasons sit under the title on the left, the other three in a column on the right (table coordinates)
+				var x = index < 2 ? 291f : 1230f;
+				var top = index < 2 ? 106f + index * 28 : 78f + (index - 2) * 28;
 				screen.Add( new UiLabel { Id = $"refusal{index}", Text = () => strings.Extra( text ), Font = fonts => fonts.Label, Color = UiColors.Text, Fit = true,
-					Bounds = new UiRect( graph.X + 24, top, 330, 42 ), Anchor = UiAnchor.Center } );
+					Bounds = new UiRect( x, top, 300, 26 ), Anchor = UiAnchor.Center } );
 				screen.Add( new UiLabel { Id = $"refusalCount{index}", Text = () => counters.Count( reason ).ToString( System.Globalization.CultureInfo.InvariantCulture ), Font = fonts => fonts.Label,
-					Color = UiColors.Value, Align = UiAlign.Right, Fit = true, Bounds = new UiRect( graph.X + 364, top, 120, 42 ), Anchor = UiAnchor.Center } );
+					Color = UiColors.Text, Align = UiAlign.Right, Fit = true, Bounds = new UiRect( x + 310, top, 100, 26 ), Anchor = UiAnchor.Center } );
 			}
 		}
 	}

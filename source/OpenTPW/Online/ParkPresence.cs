@@ -5,16 +5,16 @@ using SVector3 = System.Numerics.Vector3;
 
 namespace OpenTPW;
 
-/// <summary>What <see cref="ParkPresence"/> uses of the online session: the login, the chat connection and the room's players and places.</summary>
-public interface IPresenceSession
+/// <summary>What <see cref="ParkPresence"/> uses of the online session: the login, the chat connection, the room's players and places, and the chat overlay's state.</summary>
+public interface IPresenceSession : IChatPanelSource
 {
 	bool IsLoggedIn { get; }
-	/// <summary>The logged-in player's name.</summary>
-	string? PlayerName { get; }
 	/// <summary>The open chat connection (its identity tells a reconnection apart), or null.</summary>
 	object? Connection { get; }
 	/// <summary>A connection is being opened or requests are on their way (<see cref="OnlineSession.ChatBusy"/>).</summary>
 	bool ChatBusy { get; }
+	/// <summary>A chat connection is being opened (the first one or a reconnection, <see cref="OnlineSession.ChatConnecting"/>).</summary>
+	bool ChatConnecting { get; }
 	string CurrentRoom { get; }
 	/// <summary>The room the session is in or on its way to (<see cref="OnlineSession.WantedRoom"/>).</summary>
 	string WantedRoom { get; }
@@ -23,15 +23,11 @@ public interface IPresenceSession
 	/// <summary>The server's protocol version, or null before it is known (<see cref="OnlineSession.FetchServerInfo"/>).</summary>
 	int? ServerProtocol { get; }
 	IReadOnlyDictionary<string, (float X, float Y)> RoomPositions { get; }
-	IReadOnlyList<string> RoomPlayers { get; }
-	/// <summary>The chat lines, oldest first.</summary>
-	IReadOnlyList<string> ChatLines { get; }
 	void ConnectChat();
 	void CloseChat();
 	void FetchServerInfo();
 	void JoinRoom( string room );
 	void MoveTo( float x, float y );
-	void SendChatLine( string line );
 }
 
 /// <summary>
@@ -42,7 +38,7 @@ public interface IPresenceSession
 /// time, whatever the park's speed or pause: the others keep walking while the park stands.
 /// </summary>
 // [EXT:online-visit-presence] the visit joins the park's room of OpenTPW's chat server and draws its players (ParkPresenceState)
-public sealed class ParkPresence : IVisitPresence, IDisposable
+public sealed class ParkPresence : IVisitPresence, IChatPanelSource, IDisposable
 {
 	/// <summary>The server protocol that relays movement in park rooms and answers each room's first movement (OpenTPW.Server ProtocolVersion 4).</summary>
 	public const int MovementProtocol = 4;
@@ -68,8 +64,11 @@ public sealed class ParkPresence : IVisitPresence, IDisposable
 
 	private readonly IPresenceSession session;
 	private readonly Func<double> clock;
-	/// <summary>The session had no chat connection when the visit began: leaving the park closes the one the visit opened.</summary>
-	private readonly bool opensConnection;
+	/// <summary>
+	/// The visit opened the chat connection: the session had none, open or opening, when the visit began, or the visit opened it later (after the online
+	/// screens' attempt failed). Leaving the park closes it again.
+	/// </summary>
+	private bool opensConnection;
 	private object? announcedOn;
 	private bool wasInRoom;
 	private double nextConnect;
@@ -87,7 +86,8 @@ public sealed class ParkPresence : IVisitPresence, IDisposable
 		ParkId = parkId;
 		Room = ChatProtocol.ParkRoom( parkId );
 		State = new ParkPresenceState( ground, playerName, start );
-		opensConnection = session.Connection == null;
+		// a connection the online screens are still opening is theirs: leaving the park keeps it
+		opensConnection = session.Connection == null && !session.ChatConnecting;
 		session.JoinRoom( Room );
 		session.FetchServerInfo();
 	}
@@ -128,6 +128,26 @@ public sealed class ParkPresence : IVisitPresence, IDisposable
 	/// <summary>The server refused the park's room (the park was unpublished): the visit stops asking for it.</summary>
 	public bool Refused => session.RefusedRoom == Room;
 	public IReadOnlyList<string> ChatLines => session.ChatLines;
+	/// <summary>The park room's chat for the chat overlay: the session's, sending only while the visit is in the room.</summary>
+	public IChatPanelSource Chat => this;
+	string? IChatPanelSource.PlayerName => session.PlayerName;
+	bool IChatPanelSource.ChatOpen => CanChat;
+	IReadOnlyList<string> IChatPanelSource.RoomPlayers => InRoom ? session.RoomPlayers : Array.Empty<string>();
+	IReadOnlyList<(string Name, bool Online)> IChatPanelSource.Buddies => session.Buddies;
+	IReadOnlyCollection<string> IChatPanelSource.Ignored => session.Ignored;
+	bool IChatPanelSource.Earmuffs => session.Earmuffs;
+	bool IChatPanelSource.CanVote => CanChat && session.CanVote;
+	void IChatPanelSource.SendChatLine( string line ) => Say( line );
+	void IChatPanelSource.SendCommand( ChatCommand command, string argument )
+	{
+		if ( CanChat )
+			session.SendCommand( command, argument );
+	}
+	void IChatPanelSource.AskBuddies()
+	{
+		if ( CanChat )
+			session.AskBuddies();
+	}
 	/// <summary>Sparkle effects started so far (0 without drawing).</summary>
 	public int Sparkles => visuals?.SparklesStarted ?? 0;
 
@@ -145,6 +165,20 @@ public sealed class ParkPresence : IVisitPresence, IDisposable
 	{
 		if ( !disposed )
 			State.Click( cellX, cellY, clock() );
+	}
+
+	/// <summary>
+	/// A name popup's goto: the player's figure appears at the other player's place when they are in the park (the server's goto keeps the player in
+	/// the park's room).
+	/// </summary>
+	// [EXT:online-chat-goto] the figure teleports to the player it went to; the original server's answer to a goto (command 0x13) is not read
+	public void GoTo( string name )
+	{
+		if ( disposed || !Walks )
+			return;
+		var other = State.Others.FirstOrDefault( avatar => avatar.Name.Equals( name, StringComparison.OrdinalIgnoreCase ) );
+		if ( other != null )
+			State.TeleportTo( other.X, other.Y );
 	}
 
 	/// <summary>Says a line in the park's room (or runs a chat command), as the chat overlay's entry does.</summary>
@@ -202,7 +236,11 @@ public sealed class ParkPresence : IVisitPresence, IDisposable
 		{
 			if ( !session.ChatBusy && now >= nextConnect )
 			{
-				try { session.ConnectChat(); }
+				try
+				{
+					session.ConnectChat();
+					opensConnection = true;
+				}
 				catch ( InvalidOperationException ) { }
 				nextConnect = now + connectWait;
 				connectWait = Math.Min( connectWait * 2, MaximumConnectWait );

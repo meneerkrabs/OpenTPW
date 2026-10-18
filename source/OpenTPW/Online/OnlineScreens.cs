@@ -859,8 +859,8 @@ public sealed class OnlineScreens
 	// without clearing the flags; the tick (-1) takes UITEXT 0xd9 for an unedited message and 0xd8 for an unedited title (0x4a7ee1, 0x4a7f07), splits the recipients at
 	// ';', ',', ' ' and newlines (0x754448) and, when there is none or one is refused, shows message box 0x47f020 with UITEXT 0xd6 and keeps the window; otherwise it sends
 	// (0x4a8600: to the outbox while offline) and closes the window; b_exit closes it
-	// [EXT:postcard-player-names] OpenTPW's postcards go to player names through its online service, so a recipient is not checked for an e-mail address (the original
-	// refuses a token without an '@' followed, beyond its next character, by a '.', 0x4a7f6c)
+	// [EXT:postcard-player-names] OpenTPW accepts player names and e-mail addresses together. Tokens with '@' use the shared address validator;
+	// other tokens use the player-name rules (the original only accepted addresses, 0x4a7f6c).
 	// [APPROX:UI-042] the photo frame stays empty and the preview and address book buttons are disabled: the 640x240 camcorder photo (0x4a9280), its preview redraw
 	// (0x4a84c0) and the address book window (table 0x7542b8, 0x4a8140) are not ported
 	public void ShowSendPostcard()
@@ -912,7 +912,8 @@ public sealed class OnlineScreens
 		void Send()
 		{
 			var recipients = PostcardRecipients( to.Text );
-			if ( recipients.Length == 0 )
+			try { PostcardRecipient.RequireValid( recipients ); }
+			catch ( Exception exception ) when ( exception is InvalidDataException or ArgumentException )
 			{
 				stack.Push( UiDialogs.Message( "postcardRecipients", () => OnlineStrings.Ui( OnlineStrings.InvalidEmailAddresses, "Invalid email addresses in the send to field" ),
 					(() => strings.Extra( OpenTpwText.Back ), stack.Pop) ) );

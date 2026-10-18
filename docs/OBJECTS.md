@@ -3,10 +3,9 @@
 October 9, 2026. Status: **every original ride, shop, sideshow, feature, fixed
 item and track upgrade of the four themes is catalogued, every one can be
 placed with its original model, and every object script runs in the RSE VM
-with its original animations.** This is not original gameplay: visitors,
-particles/EVENT objects, ride-type controllers (coasters, karts, tours,
-bumpers) and the economy are not implemented, so many rides
-only play their create/idle clips. Everything below is read-only analysis of
+with its original animations.** (Updated October 18, 2026: the scripts' other
+effects are served as well, visitors, particles, sounds and their object records, and the ride-type controllers; what is
+left is listed with the corpus run below.) Everything below is read-only analysis of
 the local original files; the original executable is encrypted (`TP.ICD`
 strings are not readable) and was never run.
 
@@ -224,9 +223,10 @@ scripts declare different subsets.
 Corpus run (`EveryObjectScriptRunsInItsParkWithOriginalAnimations`): all 262
 scripted objects, every theme in one shared world, 60 s at 60 Hz: no faults,
 258 played original clips (1,451 plays). EVENT and REPAIREFFECT play their
-original sounds ([AUDIO.md](AUDIO.md)); their other effects stay unimplemented
-(the unimplemented-effect hook still records them): ADDOBJ/KILLOBJ particles and
-objects, TOUR and kart BUMP controllers (a water ride's BUMP goes to its controller, [TRACKS.md](TRACKS.md)), park clock, screams, light opcodes (DIPMUSIC and SETREVERB act through the sound service, [RSE-VM.md](RSE-VM.md)).
+original sounds ([AUDIO.md](AUDIO.md)); ADDOBJ keeps the particles (types 1-2) and sounds (types 3-9) it starts under their slots and KILLOBJ, FADEOBJ,
+SETOBJPARAM and a script's end reach them ([RSE-VM.md](RSE-VM.md), "The sounds an ADDOBJ keeps"); the screams, the TOUR, BUMP and COAST controllers ([TOURS.md](TOURS.md), [TRACKS.md](TRACKS.md),
+[COASTERS.md](COASTERS.md)), DIPMUSIC and SETREVERB (through the sound service) are served. What the unimplemented-effect hook still records
+(`RideVM.UnimplementedEffects`): the light opcodes (`RIDES-046`), the bounce riders' node and base words where the rider is not rendered at its node, and ADDOBJ/EVENT type 10 (the object type's own sound list, no shipped script).
 
 ## Building (`ParkObjects`)
 

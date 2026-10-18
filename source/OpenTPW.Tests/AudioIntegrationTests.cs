@@ -325,7 +325,7 @@ public class AudioIntegrationTests
 	}
 
 	[TestMethod]
-	public void OriginalParticleEventInstructionsRemainUnimplementedWithoutCreatingAudio()
+	public void OriginalParticleEventInstructionsAreServedWithoutCreatingAudio()
 	{
 		// [BIN:STP-PPC:0x100AE97C particle EVENT] types 1/2 resolve model keys and allocate particle pool handles, never sound voices
 		// Inject shipped EVENT operands through the VM handler and real object-effects hook; do not run unrelated ride triggers.
@@ -366,7 +366,7 @@ public class AudioIntegrationTests
 						var vm = new RideVM( injected, new RideVMOptions { Effects = owner.Script!.Effects, Seed = 1 } );
 						// Variable operands remain zero-initialized; this check qualifies dispatch/refusal, not particle identity or transform parity.
 						vm.Advance( FixedStepClock.TickDuration );
-						Assert.AreEqual( 1, vm.UnimplementedEffects[Opcode.EVENT], item.ScriptPath );
+						Assert.AreEqual( 0, vm.UnimplementedEffects.Count, item.ScriptPath );
 						Assert.AreNotEqual( RideVMState.Faulted, vm.State, item.ScriptPath );
 						Assert.IsNull( GameAudio.RseEventCategory( type.Value ) );
 						Assert.IsNull( GameAudio.FindRseEvent( type.Value, 43 ), "matching numeric catalog IDs cannot turn particles into sounds" );

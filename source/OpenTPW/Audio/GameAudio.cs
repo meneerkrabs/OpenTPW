@@ -986,6 +986,19 @@ public static class GameAudio
 	}
 
 	/// <summary>
+	/// Starts an event for a script's <c>ADDOBJ</c> record (types 3-9): the same category lookup and submit as <see cref="PlayRseEvent"/>, but the sound is kept so the script can
+	/// move, parameterise and end it; null when the event is missing or no sound system runs (the original's submit returns handle 0, so the record is freed).
+	/// </summary>
+	// [BIN:TPW-EXE:0x557970 ADDOBJ record] the dispatcher 0x5573D0 returns the submit's handle (0x51BFC0, 0 for event 0 or with the sound system off, 0x802BC8/0x802BD4) and 0x557970 keeps the record only when it is not 0
+	public static HeldSound? StartHeldRseEvent( int type, uint eventId, Vector3? position = null, RseSoundSource? source = null )
+	{
+		var sound = FindRseEvent( type, eventId, source );
+		if ( sound == null || events == null )
+			return null;
+		return events.PlayHeld( sound.Value.Category, eventId, AudioChannel.Effects, position );
+	}
+
+	/// <summary>
 	/// Starts a held RSE event voice that takes parameters and moves (a ride vehicle's engine): a sentence event runs as a sentence
 	/// (<see cref="SoundSentence.SetParameter"/>, <see cref="SoundSentence.MoveTo"/>); null when the event is missing or is not a repeating sentence (play those with <see cref="PlayRseEvent"/>).
 	/// </summary>

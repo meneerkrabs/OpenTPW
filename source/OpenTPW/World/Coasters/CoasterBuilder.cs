@@ -315,7 +315,7 @@ public sealed class CoasterBuilder
 	/// Revalidates after an edit. While a drag runs the controller is not fitted again (that resamples, rates and checks the whole circuit): the renderer draws the nodes as they are, and
 	/// <see cref="FinishEdit"/> fits the track once on the release.
 	/// </summary>
-	// [APPROX:COAST-028] the original rebuilds the track every frame of a drag (0x4346c0); OpenTPW fits the curve, rates the track and replaces the trains once, on the release, and draws the nodes meanwhile
+	// [APPROX:COAST-028] the original rebuilds the track every frame of a drag (0x43eb70); OpenTPW draws the track and its crossing markers live and fits the curve, rates the track and replaces the trains once, on the release
 	private void AfterEdit( bool deferRebuild )
 	{
 		Track.Revalidate( Site, Ride.World, Ride );

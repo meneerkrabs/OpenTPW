@@ -48,8 +48,6 @@ public enum OpenTpwText
 	NotAvailable,
 	MessageTubeHelp,
 	EnhancedTextures,
-	EnhancedInterface,
-	EnhancedInterfaceHelp,
 	TexturePackMissing,
 	TexturePackOriginal,
 	TexturePackEnhanced,
@@ -357,19 +355,6 @@ public static class SupplementaryStrings
 		[OpenTpwText.PatrolAreaHint] = new[] { "Click two opposite corners of the patrol area; right click to cancel.", "Klik på to modsatte hjørner af patruljeområdet; højreklik for at annullere.", "Klik op twee tegenoverliggende hoeken van het patrouillegebied; klik met rechts om te annuleren.", "Cliquez sur deux coins opposés de la zone de patrouille ; clic droit pour annuler.", "Klicke auf zwei gegenüberliegende Ecken des Streifgebiets; Rechtsklick bricht ab.", "순찰 범위의 대각 모서리 두 곳을 클릭하십시오. 오른쪽 클릭하면 취소됩니다.", "Kliknij dwa przeciwległe rogi obszaru patrolu; PPM anuluje.", "Haz clic en dos esquinas opuestas del área de patrulla; clic derecho para cancelar.", "Klicka på två motsatta hörn av patrullområdet; högerklicka för att avbryta." },
 		[OpenTpwText.NotEnoughMoney] = new[] { "Not enough money", "Ikke penge nok", "Niet genoeg geld", "Pas assez d'argent", "Nicht genug Geld", "돈이 부족합니다", "Za mało pieniędzy", "No hay suficiente dinero", "Inte tillräckligt med pengar" },
 		[OpenTpwText.EnhancedTextures] = new[] { "Enhanced textures:", "Forbedrede teksturer:", "Verbeterde textures:", "Textures améliorées :", "Verbesserte Texturen:", "향상된 텍스처:", "Ulepszone tekstury:", "Texturas mejoradas:", "Förbättrade texturer:" },
-		[OpenTpwText.EnhancedInterface] = new[] { "HUD and icons:", "HUD og ikoner:", "HUD en pictogrammen:", "HUD et icônes :", "HUD und Symbole:", "HUD와 아이콘:", "HUD i ikony:", "HUD e iconos:", "HUD och ikoner:" },
-		[OpenTpwText.EnhancedInterfaceHelp] = new[]
-		{
-			"Enhanced uses the HD HUD and menu icons included with OpenTPW. Original uses the game's own interface. This choice is separate from world textures.",
-			"Forbedret bruger HD-HUD og menuikoner, der følger med OpenTPW. Oprindelig bruger spillets egen brugerflade. Dette valg er uafhængigt af verdensteksturer.",
-			"Verbeterd gebruikt de HD-HUD en menupictogrammen die bij OpenTPW zitten. Origineel gebruikt de eigen interface van het spel. Deze keuze staat los van de wereldtextures.",
-			"Amélioré utilise le HUD HD et les icônes de menu inclus avec OpenTPW. D'origine utilise l'interface du jeu. Ce choix est indépendant des textures du monde.",
-			"Erweitert nutzt das HD-HUD und die mit OpenTPW gelieferten Menüsymbole. Ursprünglich nutzt die Oberfläche des Spiels. Diese Auswahl ist unabhängig von den Welttexturen.",
-			"향상은 OpenTPW에 포함된 HD HUD와 메뉴 아이콘을 사용합니다. 원본은 게임 자체 인터페이스를 사용합니다. 이 선택은 월드 텍스처와 별개입니다.",
-			"Ulepszony używa HUD i ikon menu HD z OpenTPW. Oryginalny używa interfejsu gry. Ten wybór jest niezależny od tekstur świata.",
-			"Mejorado usa el HUD y los iconos de menú en HD incluidos con OpenTPW. Original usa la interfaz propia del juego. Esta opción es independiente de las texturas del mundo.",
-			"Förbättrad använder HD-HUD och menyikoner som följer med OpenTPW. Ursprunglig använder spelets eget gränssnitt. Detta val är separat från världens texturer."
-		},
 		[OpenTpwText.TexturePackMissing] = new[] { "No pack built", "Ingen pakke bygget", "Geen pakket gebouwd", "Aucun pack créé", "Kein Paket erstellt", "팩 없음", "Brak zbudowanego pakietu", "Paquete sin crear", "Inget paket byggt" },
 		[OpenTpwText.TexturePackOriginal] = new[] { "Original", "Oprindelig", "Origineel", "D'origine", "Ursprünglich", "원본", "Oryginalne", "Original", "Ursprunglig" },
 		[OpenTpwText.TexturePackEnhanced] = new[] { "Enhanced", "Forbedret", "Verbeterd", "Amélioré", "Verbessert", "향상", "Ulepszone", "Mejorado", "Förbättrad" },

@@ -12,9 +12,9 @@
     </p>
 </p>
 
-![A resumed Jungle park with fixed rides, shops and the bundled Enhanced HUD](website/images/shot-current.png)
+![A resumed Jungle park with fixed rides and shops](website/images/shot-current.png)
 
-Actual browser gameplay after loading an own-format park save, with the bundled Enhanced HUD and icons.
+Actual browser gameplay after loading an own-format park save.
 
 ## About this fork
 
@@ -32,8 +32,7 @@ For Theme Park Inc / Sim Coaster, use the [static launch and installation guide]
 
 OpenTPW runs Theme Park World on modern systems with a new engine. It reads the data of your own
 copy of the original game. The engine does not ship the original executable or a playable set of
-game files, and nothing from your installation is uploaded when you play in the browser. Releases
-include redrawn HD interface art ([Legal](#legal)).
+game files, and nothing from your installation is uploaded when you play in the browser.
 
 **To run OpenTPW you need a full, legal copy of the original game** (an installation or the CD).
 
@@ -74,7 +73,7 @@ What works today, with your own original game data:
   start-up movies, Bullfrog logo included ([autorun](https://opentpw.io/docs/AUTORUN.html); `--no-autorun`, `--no-intro`).
 - **Front end and HUD:** the original 3D lobby with its islands, menus, the original-layout Game
   Options screen (OpenTPW's own settings sit on a separate page) and the in-game HUD, built from the
-  original models, fonts and strings, with bundled Enhanced interface art enabled by default
+  original models, fonts and strings
   ([UI](https://opentpw.io/docs/UI.html)).
 - **Languages:** nine: English, Danish, Dutch, French, German, Korean, Polish, Spanish and Swedish, and the
   language of your CD once you choose its folder ([languages](https://opentpw.io/docs/LANGUAGES.html)).
@@ -121,10 +120,8 @@ What works today, with your own original game data:
 - **Modern systems:** native builds for Windows, macOS and Linux; any resolution and aspect ratio
   with a HiDPI-aware interface scale; button labels fitted per language; compatibility fixes from
   the community ([compatibility](https://opentpw.io/docs/COMPATIBILITY.html)).
-- **Enhanced HUD and optional textures:** fresh settings use **Original world textures** plus the
-  **Enhanced HUD and icons included with OpenTPW**. The interface needs no download and has its own
-  Original/Enhanced toggle. You can build an optional world-texture pack from your own copy on the
-  desktop and switch to it in the options without a restart
+- **Optional textures:** fresh settings use **Original world textures**. You can build an optional
+  world-texture pack from your own copy on the desktop and switch to it in the options without a restart
   ([texture packs](https://opentpw.io/docs/TEXTURE-PACKS.html)). OpenTPW distributes no texture pack.
 - **Extensions and mods:** OpenTPW's own additions (online play, swimming pools, restored advisor lines)
   are official extensions you can switch off, and data mods, sandboxed script mods and local texture
@@ -270,9 +267,7 @@ your own edition of the game.
 OpenTPW is not affiliated with or endorsed by Electronic Arts or Bullfrog Productions. Theme Park
 World and Sim Theme Park are trademarks of their respective owners. OpenTPW contains no original
 executable code or playable original-game installation; you need your own legal copy of the game
-to play. The bundled HD HUD and menu art in `content/hero-art` is AI recreation of the original
-icons, made with Google Gemini and fitted to the original layout. Local pack-building tools
-remain available ([texture packs](https://opentpw.io/docs/TEXTURE-PACKS.html)). The engine's MIT licence does not grant rights to the
+to play. Local pack-building tools remain available ([texture packs](https://opentpw.io/docs/TEXTURE-PACKS.html)). The engine's MIT licence does not grant rights to the
 original game assets or trademarks.
 
 ## License

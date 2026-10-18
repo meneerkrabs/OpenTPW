@@ -102,6 +102,30 @@ public class CoasterCollisionTests
 	}
 
 	[TestMethod]
+	public void AnOverflowedHoldersRemarkReachesAFixedPointWhoseCountMatchesTheLists()
+	{
+		// COAST-004 (0x43ad50): a node that drops out of an overflowed holder's list marks the holder 0x200000 and the pass re-tests it, so the
+		// final lists are the fixed point of the pass; the controller count is the number of list entries (0x439c40 adds one per entry).
+		var samples = new List<CoasterSample>();
+		var nodes = new List<CoasterCollision.Node> { new( 0, 5f, false ) };
+		samples.AddRange( Straight( new SVector3( -50, 20, 0 ), new SVector3( 50, 20, 0 ), 0 ) );
+		for ( var crosser = 0; crosser < 12; crosser++ )
+		{
+			var x = -45f + crosser * 8f;
+			nodes.Add( new CoasterCollision.Node( samples.Count, 5f, false ) );
+			samples.AddRange( Straight( new SVector3( x, 20, 20 ), new SVector3( x, 20, -20 ), nodes.Count - 1 ) );
+		}
+		nodes.Add( new CoasterCollision.Node( samples.Count, 5f, false ) );
+		samples.Add( new CoasterSample { Position = new SVector3( 0, 20, 0 ), Section = nodes.Count - 1 } );
+		var result = CoasterCollision.Run( nodes, samples );
+		Assert.IsTrue( result.Overflow[0] );
+		Assert.AreEqual( result.Lists.Sum( list => list.Count ), result.Count, "the count is the sum of the lists" );
+		for ( var node = 0; node < nodes.Count; node++ )
+			foreach ( var partner in result.Lists[node] )
+				Assert.IsTrue( result.Lists[partner].Contains( node ) || result.Overflow[partner], $"node {node} lists {partner}, which lists it back or overflowed" );
+	}
+
+	[TestMethod]
 	public void ThePoseTurnsTheProfileByRollPitchAndYawWithTheTruncatingTable()
 	{
 		// Zero angles: the profile (x, y, 0) at the sample position.
@@ -153,6 +177,25 @@ public class CoasterCollisionTests
 		// Taking the track apart clears the count: the crossing is gone with the samples.
 		builder.Delete();
 		Assert.AreEqual( 0, ride.IntersectionCount );
+	}
+
+	[TestMethod]
+	public void ALinkIntoTheBuildCursorThatCrossesTheTrackIsListedWhileTheTrackIsBuilt()
+	{
+		// COAST-004 / COAST-026: the original's rebuild 0x43eb70 runs the sampler and the pass on an unfinished track, so the cursor's link carries the crossing marker.
+		var ride = new CoasterRide( CoasterDefinition.FromValues( CoasterTests.PcSettings() ), new CoasterWorld( 1 ), "Test Coaster" );
+		var builder = new CoasterBuilder( ride, new CoasterSite( 64, 64 ) );
+		CoasterTests.PlaceStation( builder, (20, 20) );
+		builder.Height = 20;
+		foreach ( var (dx, dy) in FigureEight.Take( FigureEight.Length - 1 ) )
+			Assert.AreEqual( CoasterPlaceResult.Ok, builder.Place( 20 + dx, 20 + dy ) );
+		var last = FigureEight[^1];
+		var crossing = builder.Track.BuildPreviewChain( (20 + last.X, 20 + last.Y), 20, false )!.Value.Chain;
+		var lists = CoasterRide.ChainCrossings( ride.Curve, crossing, builder.Track.BuildKnotPass( builder.Site, crossing, writeBanks: false ), ride.Definition );
+		Assert.IsTrue( lists.Any( list => list.Count > 0 ), "the cursor's link crosses the first link" );
+		var apart = builder.Track.BuildPreviewChain( (20 + 6, 20 - 10), 20, false )!.Value.Chain;
+		var none = CoasterRide.ChainCrossings( ride.Curve, apart, builder.Track.BuildKnotPass( builder.Site, apart, writeBanks: false ), ride.Definition );
+		Assert.IsFalse( none.Any( list => list.Count > 0 ) );
 	}
 
 	[TestMethod]

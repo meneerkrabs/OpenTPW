@@ -78,3 +78,7 @@ Decode pause enable nesting and message-box/deactivation paths; reconcile older 
 - Stop at a reviewable design/evidence package; this draft authorizes no tag removal or parity claim.
 - Do not publish original media or private game data in fixtures, screenshots, or commits.
 - A future implementation needs its own reviewed evidence and acceptance results; do not treat this proposal as merge-ready.
+
+## Ownership update (October 18, 2026)
+
+Verified #433 (park information/lobby UI) and #423 (languages) are merged. The UI owner confirms no remaining HUD ownership blocker for this proposal. Runtime work can be scoped once the evidence/acceptance gates above are met; this update does not implement the feature. Coordinate any guest, snapshot/resume or shared simulation changes with the remaining umbrella U2–U4 work (Guest*, RideVisitorBridge, Level/Resume, ParkResumeMods/SaveFile, ObjectCatalog, OriginalObjectRuntime, official-extension gates/content roots and World/Umbrellas; U4 also adds a rain-mood option). Do not duplicate that work.

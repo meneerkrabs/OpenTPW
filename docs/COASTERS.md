@@ -529,3 +529,11 @@ round the sine-table index to the nearest (the Mac lookups truncated); only the 
 (`Level.IsCoasterAreaCell`, `0x5243a6` with the predicates `0x535db0`, `0x536310`..`0x536450`) and the tilt drag's camera yaw (`0x443371`, the park camera's
 `OriginalYaw`) are the original's. COAST-011: the options table's accessor `0x402bf0` is a virtual method (vtable `0x6fd630`), which explains why no static reader
 was found.
+
+The fidelity round 8 of October 18 (tp.exe, coasters-2) retired COAST-011 and narrowed COAST-014 and COAST-032. COAST-011: the options table `0x7442C0` has no reader at all, neither a direct
+one nor one through the virtual accessor `0x402bf0` (vtable `0x6fd630`): the instance `0x785868` is built by `0x401030` and filled by the loader `0x401650`/`0x4017a0`, and no
+code reads the values of FIRSTPERSONVIEWDISTANCE, COASTERSMOOTHNESS or `Info.FirstPersonSprites`, so the ride view's fixed parameters are the original's. COAST-032: the thread's x87 precision is 24 bits
+(DDSCL_FPUSETUP at `0x563914`/`0x563B92`, then the shipped D3DIM device creation sets the control word 0x7F and nothing restores it), so every PC multiply, add, subtract and square root
+rounds to a single, which C#'s single arithmetic does one operation at a time. The pylon cost (`0x447830`, `0x4346a0`), the suspended swing (`0x43C76C`), its cosine index (`0x43C7D0`) and the loop
+knot factor (`0x432430`) are now built from the instruction sequences (`fpatan` and `fmod` are exact, the subtractions with the double constants round to a single); the knot chord, the knot norms
+and tangents and the self-intersection pass are still to be read on the PC side.

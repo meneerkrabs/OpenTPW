@@ -264,7 +264,7 @@ public sealed class TrackEditor
 	/// tiles it passes, as the hover does.
 	/// </summary>
 	// [BIN:TPW-EXE:0x0052B400 cut] the first walk (heading = the first tile's flow link, a corner turning to mask ^ the reversed heading from the second tile on) ends at the second pick and, committing, writes the heading as each tile's flow link (ORed on a junction) and finds the cut's ends by equal step number (a junction before the step matches stands in for it); the second walk clears the tiles from the first end to the second (a junction loses one pass: 0x53B280(−1, −1), any other straight, corner or stub is cleared: 0x53B280(0, 0)); the tail re-links the ends (0x53BC60) when the first tile survived as a straight or corner
-	// [APPROX:TRACK-014] the walks end at the second tile only; the original has no limit and would not leave a flow that never reaches it (OpenTPW's walks are cut off after the layer's tile count)
+	// [EXT:track-walk-step-limit] the walks of the cut are cut off after as many tiles as the layer holds plus the station, where the original has no limit and would not leave a flow that never reaches the second tile
 	public TrackCutResult Cut( (int X, int Y) first, (int X, int Y) second, bool commit )
 	{
 		var path = new List<(int X, int Y)>();

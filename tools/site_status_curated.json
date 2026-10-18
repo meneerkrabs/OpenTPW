@@ -12,7 +12,7 @@
     {"text": "Go online: publish and visit parks, vote, send postcards and chat, on the official server or your own.", "href": "docs/ONLINE.html"}
   ],
   "cannot": [
-    {"text": "Add jumps and tunnels to go-kart tracks and water rides (you can build those tracks and the rides run), or see the riders' heads on coaster and tour cars.", "matrix": ["Coaster construction, ride behavior and rating"]},
+    {"text": "Add jumps and tunnels to go-kart tracks and water rides (you can build those tracks and the rides run).", "matrix": ["Coaster construction, ride behavior and rating"]},
     {"text": "Load an original save game completely: its staff, guests (except those queueing, boarding or riding) and research load, but the random state and some script, particle and sound blocks do not.", "href": "docs/TPWS-PAYLOAD.html", "matrix": ["Versioned saves and original read-only import"]},
     {"text": "Hear every sound exactly: the room reverb is only an approximation, the advisor cannot be slapped, and one list-click variant of the interface is not played.", "matrix": ["Audio, music, video and first-person/ride cameras"]},
     {"text": "See other players or share a park together: a shared park is a snapshot, visits are read-only.", "href": "docs/ONLINE.html"},

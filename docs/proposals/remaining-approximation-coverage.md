@@ -4,7 +4,7 @@
 
 Proposal coverage and implementation ledger, audited 2026-10-18 against independently verified main snapshot `5ccddcab56ffb9bda4ded1821988a8492bee8943`. This index records proposals, evidence work and scope decisions, not implemented gameplay or original-fidelity completion. No approximation is retired by this index.
 
-The audited baseline contains **162 distinct registered IDs**. **AUDIO-041**, introduced by existing implementation PR #448, adds one explicitly identified follow-on residual. A subsequent read of stacked #598 identified UMB-001/002/003 on its U2 base. The index therefore has **166 distinct rows**, with no omissions, extra baseline IDs or duplicate IDs: UI 51, simulation/economy 57, world/audio 55, later umbrella extension3.
+The audited baseline contains **162 distinct registered IDs**. **AUDIO-041**, introduced by existing implementation PR #448, adds one explicitly identified follow-on residual. A subsequent read of stacked #598 identified UMB-001/002/003 on its U2 base. Merged #609 subsequently declared UMB-004. The index therefore has **167 distinct rows**, with no omissions, extra baseline IDs or duplicate IDs: UI 51, simulation/economy 57, world/audio 55, later umbrella extension 4.
 
 Disposition: **152 new plan-only draft PRs**, **six addenda to existing drafts**, **six existing-PR coverage pointers**, **one stale-only record**, and **one alias**. These are coverage dispositions, not 163 missing features. All new links are populated from confirmed publication responses; runtime acceptance remains pending.
 
@@ -28,7 +28,7 @@ All coverage rows remain planned unless this ledger explicitly identifies implem
 
 CI support: [#608](https://github.com/meneerkrabs/OpenTPW/pull/608) merged at `09ea94624eddb34959198fadd5717722642c1163` after independent review and full exact-head checks. Only proposal/progress Markdown-only PR diffs use lightweight validation; all implementation/mixed/unknown diffs retain full CI.
 
-New ownership observation: [#609](https://github.com/meneerkrabs/OpenTPW/pull/609) owns umbrella drawing and mentions candidate UMB-004, explicitly not yet registered. It is tracked as an owner follow-up, not counted as a new declared ID or duplicated here.
+Updated ownership observation: merged [#609](https://github.com/meneerkrabs/OpenTPW/pull/609) declares UMB-004 in the umbrella register. Its documented user-approved sight-line approximation remains owner-covered; the missing original YAdjustCamera value is an evidence gap, not grounds for a guessed rendering change.
 
 ## Category meanings
 
@@ -246,6 +246,7 @@ New plan links identify their reviewed draft PRs. Existing links and alias/stale
 | umbrella | UMB-001 | extension-policy decision / outside original TPW parity | [#603](https://github.com/meneerkrabs/OpenTPW/pull/603) | Adjudicate whether the TPW umbrella extension should keep this deterministic policy or offer a separately evidenced compatibility mode. Do not silently replace it or consume the shared simulation RNG. Establish original CRT seed, algorithm, consumption order and save-state ownership before designing compatibility behavior. |
 | umbrella | UMB-002 | evidence-only | [#602](https://github.com/meneerkrabs/OpenTPW/pull/602) | Trace the two predicates and their owning records before introducing state. Do not substitute frustum visibility, guest selection or online identification merely because the label sounds plausible. If the condition is an unavailable TPI-only subsystem, record an explicit extension policy rather than fake fidelity. |
 | umbrella | UMB-003 | approximation | [#604](https://github.com/meneerkrabs/OpenTPW/pull/604) | Create an attraction/state matrix and a separately bounded age/day-gate qualification. Coordinate with GUEST-920 rather than invent another arrival timestamp. Preserve the extension’s pending-change save policy. Only narrow or widen inside states after proving the original flags for the relevant attraction categories. |
+| umbrella | UMB-004 | approved approximation / evidence-only residual | [#609](https://github.com/meneerkrabs/OpenTPW/pull/609) — merged owner implementation | User-approved sight-line pull differs from the original ground-plane pull and YAdjustCamera lift. Establish the missing modifier value and resulting screen-space placement before proposing a compatibility change; preserve the approved extension and avoid duplicate owner work. |
 
 ## Documentation validation
 
@@ -253,4 +254,4 @@ All 163 IDs were independently reviewed against the pinned source snapshot. The 
 
 Final remote verification: all 149 newly published proposal heads were fetched and match the reviewed proposal/progress contents exactly, with no runtime-file changes. Main was rechecked at `a21bf922e25751e2f9f6c4b2ce2d6565f3cf7bad`; intervening #434/#438 changes add no new register IDs. DET-013’s saved-child wording correction is consistent with its evidence-gated plan.
 
-The later umbrella proposals were independently reviewed and passed documentation consistency checks; all three acceptance suites are still planned. Current total:166 tracked IDs,152 new topic drafts plus the eight initial drafts, existing implementation pointers, one stale record and one alias. The table is cross-branch coverage, not a declaration or reservation of identifiers on main.
+The later umbrella proposals were independently reviewed and passed documentation consistency checks; all three acceptance suites are still planned. Current total:167 tracked IDs,152 new topic drafts plus the eight initial drafts, existing implementation pointers, one stale record and one alias. The table is cross-branch coverage, not a declaration or reservation of identifiers on main.

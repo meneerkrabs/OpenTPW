@@ -330,6 +330,7 @@ public class PathBuilderTests
 	/// The guests' draws moved onto the original's one world generator (DET-013 to DET-015): it is reseeded with the guest's id at its creation and a new arrival takes its entrance from the creation draw, so the guests' offsets, lanes and walks move (61 → 60 admissions).
 	/// The booth walk's speed term (tp.exe 0x004FF730: 25 for a thing id with its low two bits 0, WALK-010) moved it again (60 → 61 admissions, 0x397F3EC43F6F70C8).
 	/// The arrival walk over the cell map (WALK-008, ARRIVAL-001) moved the hash to 0x7E11BFA00FE093FD (61 admissions, as before).
+	/// Round 8 (the guests package) moved it to 0x9D34C006E9694818 and the admissions to 62: the booth's first verdict is the next turn's update (ARRIVAL-006), so guests reach the park sooner; the cell lists keep their order across the turns (WALK-003), the bin search makes a request per candidate (GUEST-005), a show turn writes the 11-bit heading angle (GUEST-010) and a won sideshow pays its prize (GUEST-005).
 	/// </summary>
 	[TestMethod]
 	public void OwnershipFlipKeepsGuestPathingIdentical()
@@ -337,9 +338,9 @@ public class PathBuilderTests
 		var simulation = new GuestSimulation( GuestTests.CreateCross(), GuestTests.CreateSettings(), 5 );
 		for ( var tick = 0; tick < 120 * 60; tick++ )
 			simulation.Tick( Tick );
-		Assert.AreEqual( 61, simulation.Admissions, $"{simulation.Admissions}" );
+		Assert.AreEqual( 62, simulation.Admissions, $"{simulation.Admissions}" );
 		// the guests walk whole walks to the ride (0x4FFBC0 -> 0x510100) and out of the park, which moves the run's hash (admissions stay 60) from 0x4AFCF82F0A7796C1
-		Assert.AreEqual( 0x7E11BFA00FE093FDUL, simulation.ComputeStateHash(), $"0x{simulation.ComputeStateHash():X16}" );
+		Assert.AreEqual( 0x9D34C006E9694818UL, simulation.ComputeStateHash(), $"0x{simulation.ComputeStateHash():X16}" );
 	}
 
 	[TestMethod]

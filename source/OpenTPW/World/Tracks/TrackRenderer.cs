@@ -16,8 +16,11 @@ public sealed class TrackRenderer : IDisposable
 	/// <summary>Section units per MD2 unit: one cell is 0xC00 = 10 × 307.2.</summary>
 	public const float UnitsPerModelUnit = 307.2f;
 
-	/// <summary>A drawable mesh set with the surface it provides and, for a vehicle mesh, the rest transforms and flags of its rider head dummies (head 1, head 2).</summary>
-	private sealed record PieceGeometry( List<Model> Models, TrackSurface Surface, Matrix4x4[] HeadNodes, uint[] HeadFlags, Matrix4x4?[] SparksNodes )
+	/// <summary>
+	/// A drawable mesh set with the surface it provides and, for a vehicle mesh, the rest transforms and flags of its rider head dummies by seat (head 1, 2, ...;
+	/// null where the model has no record for a seat).
+	/// </summary>
+	private sealed record PieceGeometry( List<Model> Models, TrackSurface Surface, Matrix4x4?[] HeadNodes, uint[] HeadFlags, Matrix4x4?[] SparksNodes )
 	{
 		/// <summary>The drawable parts with the mesh each came from (one per model of <see cref="Models"/>, same order).</summary>
 		public List<PiecePart> Parts { get; init; } = new();
@@ -401,7 +404,8 @@ public sealed class TrackRenderer : IDisposable
 	}
 
 	/// <summary>
-	/// The rider heads of the vehicles: each rider hangs from the kart mesh's head dummy of its seat (class 0x100000B1, number 1, and 2 in the Halloween karts).
+	/// The rider heads of the vehicles: each rider hangs from the vehicle mesh's head dummy of its seat (class 0x100000B1: number 1, and 2 in the Halloween karts; 1 to 5 in the
+	/// water rides' <c>wr_ring</c> boats).
 	/// </summary>
 	// [BIN:TPW-EXE:0x0044B410 head draw] the seat's dummy node is found by class 0x80 and its number (0x0044B220); each rider is drawn as the guest's head sprite at that node (0x00475A10), the ADDHEAD mechanism
 	// [APPROX:TRACK-026] the head sprites hang from the dummies through the ride-head renderer (seat order as traced: [BIN:TPW-EXE:0x00549C60] gives rider i of the car's rider list dummy i); 0x44B410 is the PC twin of ADDHEAD (it marks the head record and has 0x475A10 create the head thing; the sprite draw is the shared thing renderer, sizes under the HEADS entries) and the boarding guest drawn between BUMP 1 and the car's creation is not traced
@@ -417,7 +421,9 @@ public sealed class TrackRenderer : IDisposable
 				continue;
 			for ( var seat = 0; seat < vehicle.Riders.Count && seat < geometry.HeadNodes.Length; seat++ )
 			{
-				var node = ObjectPlacement.SwapAxes( geometry.HeadNodes[seat] ) * visual.Transform;
+				if ( geometry.HeadNodes[seat] is not { } rest )
+					continue;
+				var node = ObjectPlacement.SwapAxes( rest ) * visual.Transform;
 				sources.Add( new HeadSource( vehicle.Riders[seat], controller.AttractionId, ObjectPlacement.SwapAxes( node ), geometry.HeadFlags[seat] ) );
 			}
 		}
@@ -604,23 +610,35 @@ public sealed class TrackRenderer : IDisposable
 				parts.Add( new PiecePart( drawable, meshIndex, vertices, indices, material ) );
 			}
 		}
-		var heads = new List<Matrix4x4>();
-		var flags = new List<uint>();
-		for ( var id = 1; id <= 2; id++ )
-		{
-			var node = RideHeadSpace.NodeForHead( model, id );
-			if ( node < 0 || node >= rest.Length )
-				break;
-			heads.Add( rest[node] );
-			flags.Add( model.Nodes[node].Type );
-		}
+		var (heads, flags) = SeatHeads( model, rest );
 		var sparks = new Matrix4x4?[3];
 		for ( var number = 1; number <= 2; number++ )
 		{
 			var node = SparksNode( model, number );
 			sparks[number] = node >= 0 && node < rest.Length ? rest[node] : null;
 		}
-		return new PieceGeometry( models, surface ?? TrackSurface.FromObject( model ), heads.ToArray(), flags.ToArray(), sparks ) { Parts = parts, Mesh = model };
+		return new PieceGeometry( models, surface ?? TrackSurface.FromObject( model ), heads, flags, sparks ) { Parts = parts, Mesh = model };
+	}
+
+	/// <summary>
+	/// The rest transforms and node flags of a vehicle mesh's rider head dummies by seat: seat k - 1 holds the head of rider k, null where the model has no usable record for it.
+	/// </summary>
+	// [BIN:TPW-EXE:0x00549C60 seat heads] the vehicle creation 0x00549DB0 hangs rider k of the car's rider list (k = 1, 2, ...) on the dummy with flag 0x80 and number k (0x0044B220); a rider
+	// whose number has no usable record gets no head. Every vehicle family takes this path: the karts carry heads 1 and 2, the water rides' wr_ring boats 1 to 5
+	internal static (Matrix4x4?[] Nodes, uint[] Flags) SeatHeads( ModelFile model, Matrix4x4[] rest )
+	{
+		var last = model.DummyAttributes.Where( attribute => (attribute.Type & RideHeadSpace.HeadFlag) != 0 ).Select( attribute => (int)Math.Min( attribute.Value, 64u ) ).DefaultIfEmpty( 0 ).Max();
+		var nodes = new Matrix4x4?[last];
+		var flags = new uint[last];
+		for ( var id = 1; id <= last; id++ )
+		{
+			var node = RideHeadSpace.NodeForHead( model, id );
+			if ( node < 0 || node >= rest.Length )
+				continue;
+			nodes[id - 1] = rest[node];
+			flags[id - 1] = model.Nodes[node].Type;
+		}
+		return (nodes, flags);
 	}
 
 	/// <summary>The model node of a vehicle's sparks dummy: the first dummy record with class bit 0x100 and the number, or −1.</summary>

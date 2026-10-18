@@ -2,7 +2,9 @@ namespace OpenTPW;
 
 /// <summary>What the exporter takes from outside the economy snapshot.</summary>
 /// <param name="VisitorsToDate">The guest simulation's count of visitors (<c>mNumberOfVisitorsToDate</c>); null keeps the template's.</param>
-public sealed record OriginalParkExportOptions( uint? VisitorsToDate = null );
+/// <param name="Research">The park's research; when given, the research lab thing and the object controls' researched bytes are written from it (<see cref="OriginalResearchExport"/>), else the template's stay.</param>
+/// <param name="Researchers">The number of hired researchers (the lab's active byte is set while there are any).</param>
+public sealed record OriginalParkExportOptions( uint? VisitorsToDate = null, ParkResearch? Research = null, int Researchers = 0 );
 
 /// <summary>
 /// Writes an OpenTPW park's economy back into an original-format park (the twin of <see cref="OriginalEconomyImport"/>): the park turn and calendar, the world generator
@@ -10,7 +12,8 @@ public sealed record OriginalParkExportOptions( uint? VisitorsToDate = null );
 /// <em>template</em>, an original save of the same level (the shipped <c>Easymode.TPWI</c>, a park the player loaded, or a <c>restart.INTS</c>).
 /// <para>
 /// What is not exported, because OpenTPW cannot yet produce the original's bytes for it: placed objects and their attraction things, the cell map's built cells (paths,
-/// footprints), the RideSystem scene records, staff, guests, the research lab's projects, the advisor, the weather and the engine blocks. Exporting a park that built
+/// footprints), the RideSystem scene records, staff, guests, the advisor, the weather and the engine blocks. The research lab and the object controls' researched bytes are written when
+/// the caller passes the park's research (<see cref="OriginalParkExportOptions.Research"/>). Exporting a park that built
 /// something the template lacks therefore keeps the template's version of it, and <see cref="Export"/> says which values it took. The writer never runs the original game; the
 /// result is checked by reading it back through <see cref="OriginalParkImport"/> and <see cref="OriginalEconomyImport"/> (docs/TPWS-PAYLOAD.md, "Writing original-format saves").
 /// </para>
@@ -48,6 +51,8 @@ public static class OriginalParkExport
 		ExportCalendar( world, park, turn, lines );
 		ExportBank( world, park, lines );
 		ExportFirstPurchases( world, park, lines );
+		if ( options.Research != null )
+			OriginalResearchExport.Apply( world, options.Research, options.Researchers, lines );
 		evidence = lines.AsReadOnly();
 		return result;
 	}

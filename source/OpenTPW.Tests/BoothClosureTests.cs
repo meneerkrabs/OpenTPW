@@ -80,6 +80,32 @@ public class BoothClosureTests
 		Assert.IsTrue( waiting.TimeInParkSeconds is not null, "the admission was taken" );
 	}
 	[TestMethod]
+	public void TheBoothsFirstVerdictIsTheNextParkTurnsUpdate()
+	{
+		// tp.exe 0x004FF730 makes state 4 on the walk's arrival and 0x004FF9D0 weighs the fee in the next update (the wait +0x200 is 0), not after a second
+		var gate = new Gate();
+		var simulation = Simulation( gate );
+		Guest? waiting = null;
+		for ( var tick = 0; tick < 90 * 60 && waiting == null; tick++ )
+		{
+			simulation.Tick( GuestSnapshotTests.Tick );
+			waiting = simulation.Guests.FirstOrDefault( guest => guest.State == GuestState.AtTicketBooth );
+		}
+		Assert.IsNotNull( waiting );
+		var ticks = 0;
+		var startsTurn = false;
+		while ( waiting.State == GuestState.AtTicketBooth && ticks < 60 )
+		{
+			startsTurn = simulation.NextTickStartsTurn;
+			simulation.Tick( GuestSnapshotTests.Tick );
+			ticks++;
+		}
+		Assert.IsTrue( startsTurn, "the verdict runs on a park turn's first tick" );
+		Assert.IsTrue( ticks <= 15, $"the verdict came {ticks} ticks after the arrival" );
+		Assert.AreNotEqual( GuestState.AtTicketBooth, waiting.State );
+	}
+
+	[TestMethod]
 	public void APaidVisitorWaitsNoLongerThanTheGateIsShutAndIsSentHome()
 	{
 		// tp.exe's state 3 (0x004FF7F0) walks a paid guest in only while the entrance gate's script variable 1 is 1 (0x0051A290), else it takes the way home as at a closed park

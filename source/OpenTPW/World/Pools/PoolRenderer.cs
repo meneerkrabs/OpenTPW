@@ -24,23 +24,27 @@ internal sealed class PoolPartEntity : ModelEntity
 		if ( Cullable && Model.Bounds is { } bounds && Frustum.IsOutside( bounds.Min, bounds.Max, model * Camera.ViewMatrix * Camera.ProjMatrix ) )
 			return;
 		var sun = Level?.SunLight;
+		// [EXT:evening] at dusk and night the lit parts keep a share of the ambient and the water's colours darken; at day (or with the extension off) all of this is as it was
+		var look = Level?.Look ?? EveningLook.Day;
+		var shallow = look.IsDay ? Shallow : Shallow * look.WaterTint;
+		var deep = look.IsDay ? Deep : Deep * look.WaterTint;
 		var uniformBuffer = new ObjectUniformBuffer
 		{
 			g_mModel = model,
 			g_mView = Camera.ViewMatrix,
 			g_mProj = Camera.ProjMatrix,
-			g_vLightPos = IsWater ? Shallow : sun?.Position ?? System.Numerics.Vector3.Zero,
+			g_vLightPos = IsWater ? shallow : sun?.Position ?? System.Numerics.Vector3.Zero,
 			g_vLightColor = sun?.Color ?? System.Numerics.Vector3.One,
 			g_vCameraPos = Camera.Position,
-			_padding0 = WaveAmplitude,
+			_padding0 = IsWater ? WaveAmplitude : look.AmbientUniform,
 			// [EXT:point-lights] the deck and basin shaders read this slot as the light count, so only the water (whose shader never lights) carries a phase
 			_padding1 = IsWater ? WavePhase : 0f,
 			g_flTime = Time.Now,
 			// the graphics settings' view distance, which the park's own shader (test.shader) applies to its fog
 			_padding2 = CompatibilityRuntime.RenderQuality.ViewDistanceScale,
-			_padding3 = Deep.X,
-			_padding4 = Deep.Y,
-			_padding5 = Deep.Z,
+			_padding3 = deep.X,
+			_padding4 = deep.Y,
+			_padding5 = deep.Z,
 			_padding6 = Glow
 		}.WithFog();
 		// [EXT:point-lights] the deck and the basin take the park's point lights; the water's shader keeps its padding for the wave and the colours

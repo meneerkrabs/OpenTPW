@@ -310,6 +310,9 @@ graphics change that needs a restart) shows UITEXT 402 (RESTART GAME). `StubDisp
 is only for tests/headless use. Audio code reads volumes via `GameOptions.Current`
 (`MovieGain` etc.).
 
+The sixth row of the OpenTPW page's right column is **Day cycle** (`[EXT:evening]`, `GameOptions.Evening`, saved with the other options): the pace of the evening and night extension's day cycle, 10, 20 or 40
+minutes of play or always day, dusk or night ([EVENING.md](EVENING.md)). The page's "effective size" text is narrower (to x 1300 of the 2048-wide authored layout) so the row's panel, which ends at y 1096, does not cover it.
+
 ### Local art overrides
 
 `UiArtOverrides` (`[EXT:art-override]`) lets a player replace an original UI element with their own

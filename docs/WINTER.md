@@ -130,14 +130,27 @@ repository; nothing in it comes from Theme Park World or Theme Park Inc, and no 
 keys, the models, textures, footprint and wall gaps, the scripts, the sprite banks (slots, directions, frames, 256 ppu, hotspots inside the frames), the anchor table (every set, slot, frame and direction, agreement with the umbrellas' table, hands and
 head inside the shipped kid frames) and that nothing is wired into the game.
 
-| Label | What |
-| --- | --- |
-| `[EXT:winter-content]` | the extension's own shipped content (`content/winter`) and the pipeline that builds it |
-| `[EXT:winter-snow]`, `[EXT:winter-snow-cover]`, `[EXT:winter-snow-surfaces]`, `[EXT:winter-snow-paths]`, `[EXT:winter-snow-save]` | settling snow (W1) |
-| `[EXT:winter-extension]`, `[EXT:winter-items]`, `[EXT:winter-item-colour]`, `[EXT:winter-kiosk]`, `[EXT:winter-kiosk-gate]` | the winter kiosk and the warm items (W3, W4) |
-| `[EXT:winter-gluehwein]`, `[EXT:winter-gluehwein-no-drunk]`, `[EXT:winter-spice-label]`, `[EXT:winter-season-terms]` | the glühwein stall (W3) |
-| `[EXT:winter-cold]` | the cold mood rule (W5) |
-| `[EXT:winter-weather]` | the wintry Decembers option |
-| `[EXT:winter-anchors]` | the schema 2 head and hand anchors |
-| `[EXT:pools-model-inset]` | the walls' gap from the footprint edge (the pools' rule) |
-| `[BIN:TPW-EXE:0x...]` | the Theme Park World `tp.exe` address a finding was traced to (this page) |
+## Approval of the labels
+
+Status of every `[EXT:winter-*]` label against the user's decisions of October 18, 2026 (see "Decisions" above). **Approved** means the label implements something the user decided or asked for, quoted in the last column.
+**Awaiting** labels are the coordinator's defaults or details of ours that the user has not been asked about yet; they stay open until the user confirms or changes them (they do not block W3).
+
+| Label | What | Status | Basis |
+| --- | --- | --- | --- |
+| `[EXT:winter-content]` | the extension's own shipped content (`content/winter`) and the pipeline that builds it | approved | the winter kiosks and the glühwein stall the user asked for |
+| `[EXT:winter-snow]`, `[EXT:winter-snow-cover]`, `[EXT:winter-snow-surfaces]` | settling snow (W1) | approved | "settling snow ... on (presentation only)" |
+| `[EXT:winter-snow-paths]` | paths under snow look like slush | approved | "Paths under snow look like **slush** (greyish and wet)" |
+| `[EXT:winter-snow-save]` | the optional, unhashed saved cover | awaiting | coordinator default ("the snow cover is saved as an optional unhashed field") |
+| `[EXT:winter-extension]`, `[EXT:winter-items]`, `[EXT:winter-kiosk]` | the winter kiosk, the warm items (hat, earmuffs, mittens) and the extension that carries them (W3, W4) | approved | "winter kiosks **on** (recorded in a save only for parks that use them)"; the request for a kiosk "that sells hats, mittens and earmuffs" |
+| `[EXT:winter-item-colour]` | item colour as a hash of guest id and item | awaiting | our detail |
+| `[EXT:winter-kiosk-gate]` | the kiosk sells only in snow or December to February | awaiting | coordinator default |
+| `[EXT:winter-gluehwein]`, `[EXT:winter-gluehwein-no-drunk]` | the glühwein stall, a warm drink with no drunk effects | approved | "Glühwein, not hot chocolate: a warm drink with **no drunk effects**" |
+| `[EXT:winter-spice-label]` | the "Spices" slider keeps Ice's mechanics | awaiting | coordinator default |
+| `[EXT:winter-season-terms]` | our own `SeasonModifier.*` demand keys and the stall's demand numbers | awaiting | our detail (prices 25 and 30 are coordinator defaults too) |
+| `[EXT:winter-cold]` | the cold mood rule (W5) | approved | "Cold is a separate option, `opentpw.winter-cold`, default off" with the stated -2 / +1 numbers |
+| `[EXT:winter-weather]` | the wintry Decembers option | approved | "**Wintry Decembers** are an option (its own toggle)" |
+| `[EXT:winter-anchors]` | the schema 2 head and hand anchors | approved | the data the approved hats, earmuffs and mittens attach to |
+| `[EXT:pools-model-inset]` | the walls' gap from the footprint edge (the pools' rule) | existing | not a winter label |
+| `[BIN:TPW-EXE:0x...]` | the Theme Park World `tp.exe` address a finding was traced to (this page) | n/a | evidence |
+
+Still awaiting the user: the three coordinator defaults above that touch behaviour (`winter-snow-save`, `winter-kiosk-gate`, `winter-spice-label`), the two details of ours (`winter-item-colour`, `winter-season-terms`) and the id range 64010..64499 (the example lamp mod holds 64000..64009).

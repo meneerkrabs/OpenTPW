@@ -81,6 +81,49 @@ flush-failure injection, a concurrent directory/permission change that prevents
 cleanup, or crash recovery of interrupted temporary files. No original data or
 original-format save behavior is involved.
 
+## Periodic autosave
+
+`[EXT:periodic-autosave]` (user-approved 2026-10-18). A browser player lost a park to a crash because the only automatic save was the checkpoint of Exit To Lobby
+([AUTOMATIC-CHECKPOINT-INGRESS.md](AUTOMATIC-CHECKPOINT-INGRESS.md)). OpenTPW now also saves a park in play on a timer, so a crash costs at most a few minutes.
+
+- **What the original does.** Checked statically in tp.exe (REA, 2026-10-18): the park-save writer `0x5AC610` has four callers. The park state machine `0x54E360` calls it in state 0xB,
+  and only when the game type is not the online visit (`0x54E360` case 0xB: `if (DAT_00fb3b7c != 1) FUN_005ac610(&DAT_00877c60)`); the main running state (0xA) reaches state 0xB only
+  when the exit request word `DAT_00879088` is 2 or 3 (the pause menu's Exit To Lobby and its relatives) or, in the online visit, when the chat session ends. The other three callers are the quick-save command
+  `0x40BF90` (it logs "QuickSave_OK" or "Quicksave failed"), `0x49E9B0`, a save-screen action, and a menu callback at `0x424BB0` (code Ghidra has not defined as a function; it stores request 2 through `0x5508B0` and then saves at `0x424BD7`); none has a direct static caller (they run from the UI's callbacks and callback tables). No timer, frame counter or periodic call to
+  the writer was found, so the original's per-theme `autosave.TPWS` (Mac evidence: ECONOMY.md, "Original flow that OpenTPW does not reproduce") is written when a park is left, not periodically. The file name
+  itself is built from a buffer (`0x877C60`) filled at run time, so the PC name was not resolved statically. A timer reached through an indirect call, which the static callers do not list, cannot be ruled out
+  from the executable alone; the periodic save is therefore an OpenTPW extension, not a reproduction.
+- **When it saves.** After every 5 minutes of play time (`PeriodicAutosave.IntervalSeconds`) in a park the player owns: a Theme Park World Full Simulation or Instant Action park of one of the four themes
+  (the same eligibility as the Exit To Lobby checkpoint). It never runs in a read-only visit, the front end, the sandbox or a Theme Park Inc park. Play time is the real time of frames in which the park
+  simulates: while the pause menu, the map window or a texture-pack download holds the park, or while the next park is being built, nothing counts, so a long pause delays the save rather than triggering
+  one the moment play resumes; a frame of a suspended machine counts at most a quarter of a second. Changing the park (a new or resumed one) starts the count again.
+- **Refused captures are retried soon.** The capture follows the manual save's rules and refusals (`Level.CaptureResumeSnapshot`, the same validation against the catalogue, balance and assets). While the
+  advisor is speaking the capture refuses (its speech has no snapshot seam), and so does a park with a staff member in hand or a hire being placed (the capture would cancel it, as the manual save does at the
+  pause menu); the autosave tries again after 15 seconds, not after another 5 minutes, and logs the first refusal of a run once. After 8 refusals in a row (a park that can never be captured) it waits a full
+  interval. A failed write is retried the same way, and the previous autosave stays.
+- **Where it saves.** `save/opentpw-<theme>-autosave-world.json`, its own slot per theme, in the same own format as every world save. It never touches the manual `opentpw-<theme>-world.json` or the Exit To Lobby
+  checkpoint `opentpw-<theme>-automatic-world.json`. The write is atomic like the manual save's (`ParkResumeSaveFile.SaveBytes`: a complete temporary file is flushed and moved over the slot), so a crash during the
+  write leaves the previous autosave intact; a temporary file a dead process left behind is removed by the next write. Unlike the exit checkpoint, the autosave does not flush the ticket progress and does not
+  retire the park.
+- **No hitch.** The capture runs in one frame between two simulation ticks (it must see one consistent park), and takes 1.3 ms for a park of 1500 guests and 3.3 ms for the smoke's real park (measurements below); its closing
+  validation, the JSON serialization and the file write are moved out of that frame. The snapshot is a detached copy of the park (every capture clones its mutable arrays), so
+  `SlicedJsonSerializer` walks its top levels through the serializer's own contract metadata and serializes it in slices of 2 ms per frame, producing the same bytes as the manual save's serializer; the browser
+  has no second thread, so the slices work everywhere. The file write runs on a worker thread on the desktop and inline in the browser, where `/save` is an in-memory folder that the page mirrors to IndexedDB
+  ([WEB.md](WEB.md#saves-and-settings)). The asset manifest, which hashes every simulation asset and would dominate a capture, is hashed once per park (the park start already does it for its restart snapshot) and
+  kept; it is hashed again when the catalogue changes.
+- **No gameplay change.** The capture draws from no random stream and changes nothing the simulation reads (`StaffPlacement.PrepareForSave` is the one capture step that does, so the autosave refuses instead of
+  cancelling a tool in hand). `PeriodicAutosaveTests` check that the state hash, which covers every random stream, is the same after repeated captures, and that a captured snapshot serializes to the same bytes
+  after the park has run on; the park-resume smoke does both on a real park. Determinism pins do not move.
+- **Recovery.** When the player enters a theme, the continuation menu offers "Continue autosave" in place of "Continue automatic save" when the autosave is newer than the Exit To Lobby checkpoint and than the
+  manual save ([UI.md](UI.md#explicit-theme-continuation)). Continuing reads and validates it like any resume.
+- **Option.** OpenTPW page of the options, "Autosave: On/Off" (`GameOptions.Autosave`, on by default).
+
+**Measured** (2026-10-18, Apple silicon, .NET 11 RC2, debug build, with other work running on the machine). A real jungle park of the park-resume smoke (14 guests, 0.85 to 0.92 MB, two runs): capture on the game
+thread 3.3 ms, then validation and serialization 9.4 to 9.8 ms over 4 frames (the longest 5.1 to 5.5 ms is the validation, which is one step), file write 4.8 to 6.5 ms on the worker; before the validation moved out of
+the capture, the capture alone took 7.8 to 8.7 ms. A synthetic fixture of two rides and a 30 x 30 path block, which makes the guests the whole cost (`OPENTPW_AUTOSAVE_BENCH=<guests> dotnet test source/OpenTPW.Tests
+--filter MeasureCaptureSerializeAndWriteOfALargePark` prints it): 1500 guests, a 2.7 MB save: capture 1.3 ms (median, 3.5 ms at worst), validation 4 ms, serialization 2 ms per frame over 4 frames, file write
+6 ms on the worker. Serializing in one piece would have cost 8 to 20 ms for that park in one frame. At 60 Hz a frame is 16.7 ms. Browser (WebAssembly) timings are not measured here.
+
 ## Loading
 
 **Load** (lobby or pause menu) lists your saved parks by name and theme above the shipped original
@@ -226,7 +269,7 @@ WebAssembly restart. The 600-tick equality check above was performed in the nati
 
 ## Continuing a theme from the lobby
 
-The explicit Continue choice described in [UI.md](UI.md#explicit-theme-continuation) reuses the existing manual own-world slot and staged resume. It does not create an automatic save, rewrite a manual checkpoint, change saved game mode or resume a TPI layout checkpoint. New Park remains a distinct action. A readable matching save makes Continue available; trusted game-asset and full candidate validation still happen on activation, and failures preserve the existing world instead of falling back to New.
+The explicit Continue choice described in [UI.md](UI.md#explicit-theme-continuation) reuses the existing manual own-world slot and staged resume. It does not create an automatic save, rewrite a manual checkpoint, change saved game mode or resume a TPI layout checkpoint. The automatic entry next to it reads the Exit To Lobby checkpoint or, after a crash, the newer [periodic autosave](#periodic-autosave), through the same staged resume. New Park remains a distinct action. A readable matching save makes Continue available; trusted game-asset and full candidate validation still happen on activation, and failures preserve the existing world instead of falling back to New.
 
 
 New live-world mechanic dispatch may persist `AwaitingJobArrival` in the embedded

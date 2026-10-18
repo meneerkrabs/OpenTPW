@@ -123,4 +123,10 @@ public interface IGuestObserver
 
 	/// <summary>A guest thought <paramref name="thought"/> (<see cref="GuestSimulation"/>'s <c>Think</c>, whether or not a bubble showed it). Additive, phase 5: a default that ignores it.</summary>
 	void Thought( Guest guest, GuestThought thought ) { }
+
+	/// <summary>A guest complained about its path (phase 6): the thought and the happiness cost follow. Additive: a default that ignores it.</summary>
+	void PathComplained( Guest guest, PathComplaint complaint ) { }
+
+	/// <summary>The path rules moved a guest's wander goal to another cell of its walk (phase 6). Additive: a default that ignores it.</summary>
+	void WanderGoalMoved( Guest guest ) { }
 }

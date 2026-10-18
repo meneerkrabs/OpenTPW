@@ -11,15 +11,17 @@ public sealed partial class GuestSimulation
 
 	/// <summary>A copy of the fields of <paramref name="guest"/> the decisions read; the histories are views of the guest's arrays, unchanged while a decision runs.</summary>
 	internal GuestView ViewOf( Guest guest ) => new( guest.Id, guest.BirthId, guest.Type, guest.Happiness, guest.Thirst, guest.Hunger, guest.Toilet, guest.Nausea, guest.Money,
-		guest.CellX, guest.CellY, Array.AsReadOnly( guest.UsedHistory ), Array.AsReadOnly( guest.TemporaryHistory ),
+		guest.CellX, guest.CellY, guest.UsedHistoryView, guest.TemporaryHistoryView,
 		// [EXT:smarter-guests-planning] the guest's last meal comes from the extension's state, for a policy that plans
-		decisions.UsesPlanning && SmarterGuests is { } smarter ? smarter.Meals.Of( guest.BirthId ) : -1 );
+		decisions.UsesPlanning && SmarterGuests is { } smarter ? smarter.Meals.Of( guest.BirthId ) : -1, -1,
+		// [EXT:smarter-guests-paths] the guest's last complaint about its path, for a policy that weighs the path's comfort
+		decisions.UsesPathComfort && SmarterGuests is { } paths ? paths.Complaints.Of( guest.BirthId ) : -1 );
 
 	/// <summary>
 	/// <paramref name="attraction"/> as <paramref name="guest"/> sees it: every value the original score reads, taken now. An attraction without a join cell carries identity and flags only
 	/// (the original scores it 0 without reading anything else).
 	/// </summary>
-	internal AttractionView ViewOf( IRideVisitorBridge attraction, Guest guest )
+	internal AttractionView ViewOf( IRideVisitorBridge attraction, Guest guest, bool reservations = true )
 	{
 		if ( attraction.JoinCell == null )
 			return new AttractionView( attraction.AttractionId, attraction.TypeId, attraction.Kind, false, default, attraction.EntranceCell, 0, attraction.QueueLength, attraction.QueueSizeInCells,
@@ -27,30 +29,30 @@ public sealed partial class GuestSimulation
 		var sameType = guest.UsedHistory[0] != 0 && FindAttraction( guest.UsedHistory[0] ) is { } last && last.TypeId == attraction.TypeId;
 		var back = attraction.QueueCells[^1];
 		var modifier = Litter?.Environment.At( back.X, back.Y ).Attraction ?? 0;
-		var view = new AttractionView( attraction.AttractionId, attraction.TypeId, attraction.Kind, true, back, attraction.EntranceCell, modifier, attraction.QueueLength, attraction.QueueSizeInCells,
+		// [EXT:smarter-guests-value] the price and the guest's willingness for a shop or sideshow with a price, for a policy that weighs prices
+		var (price, willingness) = decisions.UsesValueForMoney ? PriceFacts( attraction, guest ) : (0, 0u);
+		// [EXT:smarter-guests-spread] the walkers (none in a queue hook's view), the observed time per guest and the cycle, for a policy that spreads guests
+		int walkers = 0;
+		long interval = 0, cycle = 0;
+		if ( decisions.UsesSpreading && SmarterGuests is { } smarter )
+		{
+			// the queue hooks' views carry no walkers: outside a decision counting them is a scan of every guest, and neither hook reads them (the smarter policy zeroes them in the admission)
+			walkers = reservations ? ReservationsOf( attraction.AttractionId, guest ) : 0;
+			var capacity = attraction.LiveCapacity;
+			interval = smarter.Throughputs.IntervalFor( attraction.AttractionId, attraction.Kind, capacity, attraction.Speed, ParkTurn, attraction.QueueLength );
+			cycle = SmarterGuestsRules.CycleTurns256Of( interval, capacity );
+		}
+		// built once, whatever the policy asks for: the view is a large struct and a copy per rule is a cost per candidate per decision
+		return new AttractionView( attraction.AttractionId, attraction.TypeId, attraction.Kind, true, back, attraction.EntranceCell, modifier, attraction.QueueLength, attraction.QueueSizeInCells,
 			attraction.QueueLimit, attraction.LiveExcitement, attraction.StaticExcitementLevel, attraction.ThirstEffect, attraction.HungerEffect, attraction.ProvidesRelief, attraction.AgeDays,
-			attraction.IsIndoors, attraction.GoldenTicketCost, attraction.UpgradeCost, attraction.IsOpen, attraction.IsBrokenDown, sameType );
-		if ( decisions.UsesValueForMoney )
-			view = WithPrice( view, attraction, guest );
-		return decisions.UsesSpreading ? WithSpreading( view, attraction, guest ) : view;
-	}
-
-	/// <summary>
-	/// <paramref name="view"/> with what the spreading rules read (docs/SMARTER-GUESTS.md, phase 3): the guests, other than <paramref name="guest"/>, walking to the attraction (their target, not yet in its queue) and the
-	/// attraction's observed time per guest (<see cref="RideThroughputs"/>, the cold start without a measurement). Pure: it records and changes nothing.
-	/// </summary>
-	// [EXT:smarter-guests-spread] host-computed facts for the policy; the throughput bookkeeping is the host's (NoteBoarding, ObserveThroughputs)
-	private AttractionView WithSpreading( AttractionView view, IRideVisitorBridge attraction, Guest guest )
-	{
-		if ( SmarterGuests is not { } smarter )
-			return view;
-		var reservations = ReservationsOf( attraction.AttractionId, guest );
-		var interval = smarter.Throughputs.IntervalFor( attraction.AttractionId, attraction.Kind, attraction.LiveCapacity, attraction.Speed, ParkTurn, attraction.QueueLength );
-		return view with { Reservations = reservations, TurnsPerGuest256 = interval, CycleTurns256 = SmarterGuestsRules.CycleTurns256Of( interval, attraction.LiveCapacity ) };
+			attraction.IsIndoors, attraction.GoldenTicketCost, attraction.UpgradeCost, attraction.IsOpen, attraction.IsBrokenDown, sameType, price, willingness, walkers, interval, cycle );
 	}
 
 	/// <summary>The walkers per attraction, counted once at the start of a decision (<see cref="BeginReservations"/>); null outside one.</summary>
 	private Dictionary<int, int>? reservationCounts;
+
+	/// <summary>The dictionary behind <see cref="reservationCounts"/>, kept between decisions (a decision does not nest in another, so one is enough).</summary>
+	private Dictionary<int, int>? reservationScratch;
 
 	/// <summary>
 	/// Counts, once, the guests walking to each attraction, for the candidates of the decision that follows (<see cref="EndReservations"/> ends it). The candidate loops change no guest's state or target, so the count is
@@ -60,7 +62,8 @@ public sealed partial class GuestSimulation
 	{
 		if ( !decisions.UsesSpreading || reservationCounts != null )
 			return;
-		reservationCounts = new Dictionary<int, int>();
+		reservationCounts = reservationScratch ??= new Dictionary<int, int>();
+		reservationCounts.Clear();
 		foreach ( var other in guests )
 			if ( other.State == GuestState.GoingToRide )
 				reservationCounts[other.AttractionId] = reservationCounts.GetValueOrDefault( other.AttractionId ) + 1;
@@ -99,19 +102,18 @@ public sealed partial class GuestSimulation
 	}
 
 	/// <summary>
-	/// <paramref name="view"/> with what the value-for-money rule reads (docs/SMARTER-GUESTS.md, phase 2): for a shop or sideshow with a price, the price, the guest's willingness to pay right now (the stand-point
-	/// test's word, <see cref="QueueJoinRules.WillingnessToPay"/>, computed here without recording a statistic: <see cref="TooExpensive"/> stays the only place that does)  Rides and free stands carry nothing.
+	/// What the value-for-money rule reads of <paramref name="attraction"/> (docs/SMARTER-GUESTS.md, phase 2): for a shop or sideshow with a price, the price and the guest's willingness to pay right now (the stand-point
+	/// test's word, <see cref="QueueJoinRules.WillingnessToPay"/>, computed here without recording a statistic: <see cref="TooExpensive"/> stays the only place that does). Rides and free stands carry nothing.
 	/// </summary>
 	// [EXT:smarter-guests-value] host-computed facts for the policy; the stand-point test and its statistics are unchanged
-	private AttractionView WithPrice( AttractionView view, IRideVisitorBridge attraction, Guest guest )
+	private static (int Price, uint Willingness) PriceFacts( IRideVisitorBridge attraction, Guest guest )
 	{
 		if ( attraction.Kind is not (RideVisitorKind.Shop or RideVisitorKind.Sideshow) )
-			return view;
+			return (0, 0);
 		var terms = PriceTermsOf( attraction );
 		if ( terms.Price == 0 )
-			return view;
-		var willingness = QueueJoinRules.WillingnessToPay( terms, guest.Happiness, guest.Thirst, guest.Hunger, guest.Nausea );
-		return view with { Price = terms.Price, Willingness = willingness };
+			return (0, 0);
+		return (terms.Price, QueueJoinRules.WillingnessToPay( terms, guest.Happiness, guest.Thirst, guest.Hunger, guest.Nausea ));
 	}
 
 	/// <summary>
@@ -188,11 +190,16 @@ public sealed partial class GuestSimulation
 	/// </summary>
 	private bool QueuePatienceLeaves( Guest guest, IRideVisitorBridge attraction, int position )
 	{
-		var (context, view) = (ContextNow(), ViewOf( guest ));
+		var context = ContextNow();
+		// a guest that has not waited long enough for the policy to answer anything but the original's "stay" is not asked, and no view is built for it (nearly every queued guest on nearly every turn)
+		var quiet = decisions.QueuePatienceQuietTurns( context, guest.BirthId );
+		if ( quiet >= 0 && guest.QueueJoinTurn >= 0 && ParkTurn - guest.QueueJoinTurn < quiet )
+			return false;
+		var view = ViewOf( guest );
 		// the alternatives are scanned only for a guest that is not at the front and has waited long enough for the policy's own give-up test to start
 		var look = decisions.AlternativeLookAfterTurns( context, view );
 		var alternative = look >= 0 && position > 0 && guest.QueueJoinTurn >= 0 && ParkTurn - guest.QueueJoinTurn >= look ? BestAlternativeWait256( guest, attraction.AttractionId ) : -1;
-		var decision = decisions.DecideQueuePatience( context, view, new QueuePatienceView( ViewOf( attraction, guest ), guest.QueueJoinTurn, position, attraction.QueueLength, alternative ) );
+		var decision = decisions.DecideQueuePatience( context, view, new QueuePatienceView( ViewOf( attraction, guest, reservations: false ), guest.QueueJoinTurn, position, attraction.QueueLength, alternative ) );
 		if ( !decision.Leave )
 			return false;
 		DismissFromQueue( guest, attraction, decision.Thought, QueueEndReason.Impatient );
@@ -220,7 +227,7 @@ public sealed partial class GuestSimulation
 			{
 				if ( other.AttractionId == excludeAttractionId || !CouldJoinRide( other, type ) )
 					continue;
-				var view = WithSpreading( ViewOf( other, guest ), other, guest );
+				var view = ViewOf( other, guest );
 				if ( SmarterGuestsRules.IsUnusedAdmissibleRide( context, guestView, view ) && SmarterGuestsRules.ExpectedWait256( view ) is { } wait && (best < 0 || wait < best) )
 					best = wait;
 			}
@@ -231,5 +238,90 @@ public sealed partial class GuestSimulation
 			if ( counted )
 				EndReservations();
 		}
+	}
+
+	/// <summary>
+	/// The comfort of the wander's goal (docs/SMARTER-GUESTS.md, phase 6): hands the policy the cell the guest stands on and the cells the original's random walk visited (the goal last), each with the litter around it and
+	/// the guests standing in it, and performs the verdict: the goal moves to the named cell of the walk (the goal's own sub-cell bytes stay) and a complaint is thought, taken off the guest's happiness and noted for the
+	/// cooldown. Reads the litter map and the cell lists only; the neighbourhoods are the nine cells around the walk's at most <see cref="GuestWander.TrailCapacity"/> + 1 cells.
+	/// </summary>
+	// [EXT:smarter-guests-paths] no draw is taken here and the original's route request is made afterwards, for whatever goal results
+	internal GuestWander.Destination WeighPath( Guest guest, GuestWander.Destination proposal, ReadOnlySpan<(int X, int Y)> trail )
+	{
+		// the candidates: the cells of the original's walk, then the linked path cells beside its goal that the walk did not visit, then the goal itself (always last)
+		Span<(int X, int Y)> cells = stackalloc (int X, int Y)[trail.Length + 4];
+		var count = 0;
+		var start = (X: guest.CellX, Y: guest.CellY);
+		// never the guest's own cell (the walk may pass back through it; staying put is not a goal), and only path cells (a walk that starts on a queue cell can enter queue cells); the original's goal stays whatever it is
+		for ( var index = 0; index < trail.Length - 1; index++ )
+			if ( trail[index] != start && Grid.IsWalkable( trail[index].X, trail[index].Y ) )
+				cells[count++] = trail[index];
+		var goalCell = trail[^1];
+		{
+			var links = Grid.Cells.LinksAt( goalCell.X, goalCell.Y );
+			for ( var direction = 0; direction < 4; direction++ )
+			{
+				var (dx, dy) = GuestPathGrid.Directions[direction];
+				var next = (X: goalCell.X + dx, Y: goalCell.Y + dy);
+				if ( (links & GuestPathGrid.LinkValue( direction )) == 0 || next == start || !Grid.IsWalkable( next.X, next.Y ) || cells[..count].Contains( next ) )
+					continue;
+				cells[count++] = next;
+			}
+		}
+		cells[count++] = goalCell;
+		Span<PathCellView> walk = stackalloc PathCellView[count];
+		for ( var index = 0; index < count; index++ )
+		{
+			// the walk often steps back over a cell it has been on: that cell's view is the same
+			var seen = cells[..index].IndexOf( cells[index] );
+			walk[index] = seen >= 0 ? walk[seen] : PathCellOf( cells[index], guest );
+		}
+		var decision = decisions.ChoosePath( ContextNow(), ViewOf( guest ), new WanderPathView( PathCellOf( start, guest ), walk ) );
+		if ( decision.GoalIndex < -1 || decision.GoalIndex >= walk.Length )
+			throw PolicyError( $"returned the walk cell {decision.GoalIndex} of {walk.Length}" );
+		if ( decision.Complaint != PathComplaint.None )
+		{
+			if ( !Enum.IsDefined( decision.Complaint ) || !Enum.IsDefined( decision.Thought ) || decision.Thought == GuestThought.None || !float.IsFinite( decision.HappinessCost ) || decision.HappinessCost < 0 || decision.HappinessCost > Settings.BigHappinessChange )
+				throw PolicyError( $"returned the complaint {decision.Complaint} with thought {(int)decision.Thought} and happiness cost {decision.HappinessCost}" );
+			Observer?.PathComplained( guest, decision.Complaint );
+			Think( guest, decision.Thought );
+			guest.Happiness = MeterMath.Add( guest.Happiness, -decision.HappinessCost );
+			SmarterGuests?.Complaints.Note( guest.BirthId, ParkTurn );
+		}
+		else if ( decision.Thought != GuestThought.None || decision.HappinessCost != 0 )
+		{
+			throw PolicyError( $"returned thought {(int)decision.Thought} and happiness cost {decision.HappinessCost} without a complaint" );
+		}
+		if ( decision.GoalIndex is not (>= 0 and var goal) || goal == walk.Length - 1 )
+			return proposal;
+		Observer?.WanderGoalMoved( guest );
+		return proposal with { Cell = cells[goal] };
+	}
+
+	/// <summary>A path cell as the comfort rule sees it: the litter in the cell and the eight around it (zero without any litter in the park: no cell is read) and the guests in the cell.</summary>
+	internal PathCellView PathCellOf( (int X, int Y) cell, Guest? asking = null )
+	{
+		var units = 0;
+		if ( Litter is { Count: > 0 } litter )
+		{
+			for ( var y = cell.Y - 1; y <= cell.Y + 1; y++ )
+				for ( var x = cell.X - 1; x <= cell.X + 1; x++ )
+					units += SmarterPathComfort.LitterUnitsOf( litter.TypeAt( x, y ) );
+		}
+		var near = 0;
+		for ( var y = cell.Y - 1; y <= cell.Y + 1; y++ )
+				for ( var x = cell.X - 1; x <= cell.X + 1; x++ )
+					if ( (x != cell.X || y != cell.Y) && occupants.TryGetValue( (x, y), out var around ) )
+						near += around.Count;
+		var here = occupants.TryGetValue( cell, out var list ) ? list.Count : 0;
+		// the asking guest is not a crowd to itself: it stands in one of these cells and is taken out of the count
+		if ( asking?.OccupiedCell is { } mine && Math.Abs( mine.X - cell.X ) <= 1 && Math.Abs( mine.Y - cell.Y ) <= 1 )
+		{
+			if ( mine == cell )
+				here--;
+			else
+				near--;
+		}
+		return new PathCellView( cell.X, cell.Y, units, Math.Max( 0, here ), Math.Max( 0, near ) );
 	}
 }

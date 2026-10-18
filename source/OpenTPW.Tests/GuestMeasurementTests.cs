@@ -74,6 +74,9 @@ public class GuestMeasurementTests
 	/// </summary>
 	private const ulong ScenarioSmarterFixedRunHash = 0xF4F3CD74CD7253ABUL;
 
+	/// <summary>The same run with the path rules of 1.5.0 (phase 6) on, the shipped extension. Moved from <see cref="ScenarioSmarterFixedRunHash"/> (1.4.0's, which the rule sets without the path rules still reproduce) because the scenario's guests crowd the street and the rules move wander goals and complain; the stronger rule of the final sweep acts in this 12,000-tick run, which the first version did not.</summary>
+	private const ulong ScenarioSmarterPathsFixedRunHash = 0xDA1A5CD6C526A112UL;
+
 	[TestMethod]
 	public void ParkScenarioFixedRunHashWithTheSmarterGuestsExtensionOnIsPinned()
 	{
@@ -81,18 +84,18 @@ public class GuestMeasurementTests
 		var park = ScenarioRun( 1, null, 12_000 );
 		Assert.IsInstanceOfType( park.Guests.Decisions, typeof( SmarterGuestDecisions ) );
 		Assert.AreNotEqual( ScenarioFixedRunHash, park.Hash, "the rules change the scenario's guests" );
-		Assert.AreEqual( ScenarioSmarterFixedRunHash, park.Hash, $"0x{park.Hash:X16}" );
+		Assert.AreEqual( ScenarioSmarterPathsFixedRunHash, park.Hash, $"0x{park.Hash:X16}" );
 		// the phase 5 rules switched off are version 1.3.0's guests, so the pin of 1.3.0 holds for them as it was set
-		var phase4 = new ParkScenario( new WorldSeed( 1 ), decisions: new SmarterGuestDecisions( SmarterPlanningRules.None ) );
+		var phase4 = new ParkScenario( new WorldSeed( 1 ), decisions: new SmarterGuestDecisions( SmarterRuleSet.None ) );
 		phase4.Run( 12_000 );
 		Assert.AreEqual( ScenarioSmarterFixedRunHash, phase4.Hash, $"0x{phase4.Hash:X16}" );
 	}
 
 	/// <summary>
-	/// The scenario with its food shop (<see cref="ParkScenarioOptions.FoodShop"/>) and the extension (1.4.0) on: guests eat, so the meal rule (docs/SMARTER-GUESTS.md, phase 5) acts. The on-path pin of phase 5, which the scenario
+	/// The scenario with its food shop (<see cref="ParkScenarioOptions.FoodShop"/>) and the extension on (1.5.0, the path rules included, so the pin moved from main's 1.4.0 value with them): guests eat, so the meal rule (docs/SMARTER-GUESTS.md, phase 5) acts. The on-path pin of phase 5, which the scenario
 	/// pin above cannot be: it did not move, because the rules of phase 5 need a meal or a meter near a level. A deliberate change of a phase 5 constant changes this value (and bumps the extension's version).
 	/// </summary>
-	private const ulong ScenarioFoodSmarterFixedRunHash = 0x30C8AF969CFEF592UL;
+	private const ulong ScenarioFoodSmarterFixedRunHash = 0x083802FC438DC19CUL;
 
 	[TestMethod]
 	public void ParkScenarioWithAFoodShopAndTheSmarterGuestsExtensionOnIsPinned()
@@ -101,7 +104,7 @@ public class GuestMeasurementTests
 		var park = new ParkScenario( new WorldSeed( 1 ), new ParkScenarioOptions { FoodShop = true } );
 		park.Run( 12_000 );
 		Assert.IsInstanceOfType( park.Guests.Decisions, typeof( SmarterGuestDecisions ) );
-		var phase4 = new ParkScenario( new WorldSeed( 1 ), new ParkScenarioOptions { FoodShop = true }, new SmarterGuestDecisions( SmarterPlanningRules.None ) );
+		var phase4 = new ParkScenario( new WorldSeed( 1 ), new ParkScenarioOptions { FoodShop = true }, new SmarterGuestDecisions( SmarterRuleSet.None ) );
 		phase4.Run( 12_000 );
 		Assert.AreNotEqual( phase4.Hash, park.Hash, "the phase 5 rules change the run once guests eat" );
 		Assert.IsTrue( park.Guests.SmarterGuests!.Meals.Count > 0 && phase4.Guests.SmarterGuests!.Meals.Count == 0, "the meal times are kept by 1.4.0 and not by 1.3.0's rules" );

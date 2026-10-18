@@ -56,7 +56,7 @@ public static class ChatFormatter
 /// Client-side online state for the in-game panel: the opt-in server, login, park list, postcards and
 /// chat. Network work runs on background tasks; results are applied on the game thread by <see cref="Pump"/>.
 /// </summary>
-public sealed class OnlineSession : IDisposable, IPresenceSession
+public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSource
 {
 	public const int MaximumChatLines = 200;
 	private readonly ConcurrentQueue<(int Generation, Action Action, Action? Discard)> mainThread = new();
@@ -128,6 +128,8 @@ public sealed class OnlineSession : IDisposable, IPresenceSession
 	/// a second, which must not hold up a vote or a download.
 	/// </summary>
 	public bool ChatBusy => chatConnecting || Volatile.Read( ref pendingChatSends ) > 0;
+	/// <summary>A chat connection is being opened (the first one or a reconnection).</summary>
+	public bool ChatConnecting => chatConnecting;
 	public IReadOnlyList<ParkSummary> Parks { get; private set; } = Array.Empty<ParkSummary>();
 	public IReadOnlyList<PostcardSummary> Inbox { get; private set; } = Array.Empty<PostcardSummary>();
 	/// <summary>Cities of the current server's online world; empty before fetching or when the server has none.</summary>
@@ -157,14 +159,40 @@ public sealed class OnlineSession : IDisposable, IPresenceSession
 	public PlayerProfile? Profile { get; private set; }
 	/// <summary>
 	/// The buddies of the last <c>/buddy</c> answer and whether each was online then (the manual's buddy list: "Lists
-	/// your park buddies who are currently online"); empty before the first answer.
+	/// your park buddies who are currently online"); asked when the chat connection opens, empty until the first answer comes, and kept while a new ask
+	/// is out.
 	/// </summary>
 	public IReadOnlyList<(string Name, bool Online)> Buddies => buddies;
 	private readonly List<(string Name, bool Online)> buddies = new();
+	/// <summary>The buddy answers now coming are the overlay's own asks (<see cref="AskBuddies"/>), kept off the chat lines; a typed <c>/buddy</c> shows them.</summary>
+	private bool quietBuddyAnswers;
+	/// <summary>An ask for the buddy list is out: its first answer replaces <see cref="Buddies"/>, which stands as it was until then.</summary>
+	private bool buddyAnswerPending;
+	/// <summary>When the last ask for the buddy list went out on this connection, typed or the overlay's (<see cref="Environment.TickCount64"/>).</summary>
+	private long? buddyAskedAt;
+	/// <summary>
+	/// The overlay asks for the buddy list at most once in this many milliseconds, a typed <c>/buddy</c> included: each ask spends the connection's shared
+	/// request allowance, and an ask of the overlay right after a typed one would keep the typed one's answer off the chat lines. An ask that got no
+	/// answer in that time is taken as dropped.
+	/// </summary>
+	internal int BuddyAskIntervalMilliseconds { get; set; } = 5000;
+	/// <summary>The players this chat connection ignores, from the server's answers (it keeps the list per connection).</summary>
+	public IReadOnlyCollection<string> Ignored => ignored;
+	private readonly HashSet<string> ignored = new( StringComparer.OrdinalIgnoreCase );
+	/// <summary>Whether the player's earmuffs are on, from the server's last answer (off on a new connection).</summary>
+	public bool Earmuffs { get; private set; }
+	/// <summary>The park rooms the server took a vote for from this login, or refused one for (the player's own park, a vote already given today).</summary>
+	private readonly HashSet<string> votedRooms = new( StringComparer.Ordinal );
+	/// <summary>The server refused a vote for the day's limit, which counts the votes for every park.</summary>
+	private bool voteLimitReached;
+	/// <summary>The chat connection is open.</summary>
+	public bool ChatOpen => Chat != null;
+	/// <summary>The player is in a published park's room that the server has not taken a vote for from this login: the chat overlay's vote button works.</summary>
+	public bool CanVote => Chat != null && CurrentRoom.StartsWith( ChatProtocol.ParkRoomPrefix, StringComparison.Ordinal ) && !votedRooms.Contains( CurrentRoom ) && !voteLimitReached;
 	public bool IsLoggedIn => Client?.Session != null;
-	string? IPresenceSession.PlayerName => Settings.PlayerName;
+	string? IChatPanelSource.PlayerName => Settings.PlayerName;
 	object? IPresenceSession.Connection => Chat;
-	IReadOnlyList<string> IPresenceSession.ChatLines => ChatLines;
+	IReadOnlyList<string> IChatPanelSource.ChatLines => ChatLines;
 	/// <summary>A two-step setup waiting for its first code (after registering, or a login after an operator reset).</summary>
 	public TotpEnrollment? Enrollment { get; internal set; }
 	/// <summary>The last login asked for an authenticator code (missing or wrong).</summary>
@@ -386,6 +414,14 @@ public sealed class OnlineSession : IDisposable, IPresenceSession
 		positions.Clear();
 		Profile = null;
 		ChatLines.Clear();
+		buddies.Clear();
+		quietBuddyAnswers = false;
+		buddyAnswerPending = false;
+		buddyAskedAt = null;
+		ignored.Clear();
+		Earmuffs = false;
+		votedRooms.Clear();
+		voteLimitReached = false;
 	}
 
 	/// <summary>
@@ -615,6 +651,11 @@ public sealed class OnlineSession : IDisposable, IPresenceSession
 		}
 		Chat = chat;
 		chatCancel = cancel;
+		// the server keeps the ignore list and the earmuffs per connection: a new one starts without them
+		ignored.Clear();
+		Earmuffs = false;
+		// an ask on the old connection gets no answer on this one
+		buddyAskedAt = null;
 		_ = Task.Run( () => ReceiveLoopAsync( chat, cancel.Token ) );
 		if ( joinPending && requestedRoom is { } room )
 		{
@@ -623,6 +664,8 @@ public sealed class OnlineSession : IDisposable, IPresenceSession
 			else
 				SendJoin( chat, room );
 		}
+		// [EXT:online-chat-person-flags] the overlay colours the buddies and offers the right name popup from the start, so the list is asked at once
+		AskBuddies();
 	}
 
 	private void SendJoin( ChatConnection chat, string room )
@@ -672,6 +715,15 @@ public sealed class OnlineSession : IDisposable, IPresenceSession
 				{
 					if ( Chat != chat )
 						return;
+					if ( buddyAnswerPending && IsBuddyAnswer( item ) )
+					{
+						// the first answer to an ask replaces the list, so a buddy removed elsewhere drops out
+						buddies.Clear();
+						buddyAnswerPending = false;
+					}
+					else if ( buddyAnswerPending && item.Kind == ChatEventKind.System && item.Text == "rate-limited" )
+						// the server dropped a request, perhaps the ask: the list stands as it was
+						buddyAnswerPending = false;
 					if ( item.Kind == ChatEventKind.Room && item.Room != null )
 					{
 						if ( item.Room != CurrentRoom )
@@ -707,14 +759,9 @@ public sealed class OnlineSession : IDisposable, IPresenceSession
 					}
 					else if ( item.Kind == ChatEventKind.Move && item.From != null )
 						positions[item.From] = (item.X ?? 0, item.Y ?? 0);
-					else if ( item.Kind == ChatEventKind.Notice && item.Notice is (int)ChatNotice.YourBuddyOnline or (int)ChatNotice.YourBuddyOffline
-						&& item.Args is { Count: >= 1 } args )
-					{
-						// A /buddy answer: remember it for the chat overlay's buddy tab.
-						buddies.RemoveAll( entry => entry.Name.Equals( args[0], StringComparison.OrdinalIgnoreCase ) );
-						buddies.Add( (args[0], item.Notice == (int)ChatNotice.YourBuddyOnline) );
-					}
-					if ( item.Kind != ChatEventKind.Move )
+					else if ( item.Kind == ChatEventKind.Notice )
+						Remember( (ChatNotice)(item.Notice ?? 0), item.Args );
+					if ( item.Kind != ChatEventKind.Move && !(quietBuddyAnswers && IsBuddyAnswer( item )) )
 						AddChatLine( line );
 				} );
 			}
@@ -747,6 +794,45 @@ public sealed class OnlineSession : IDisposable, IPresenceSession
 			}
 		} );
 	}
+
+	/// <summary>Keeps what the chat overlay shows of the server's answers: the buddy list, the ignored players, the earmuffs and the votes.</summary>
+	private void Remember( ChatNotice notice, IReadOnlyList<string>? args )
+	{
+		var name = args is { Count: >= 1 } ? args[0] : null;
+		switch ( notice )
+		{
+			case ChatNotice.YourBuddyOnline or ChatNotice.YourBuddyOffline or ChatNotice.YouMakeBuddy when name != null:
+				// a /buddy answer, or a buddy just added: the overlay's buddy tab lists them
+				var online = notice == ChatNotice.YourBuddyOnline || (notice == ChatNotice.YouMakeBuddy && RoomPlayers.Contains( name, StringComparer.OrdinalIgnoreCase ));
+				buddies.RemoveAll( entry => entry.Name.Equals( name, StringComparison.OrdinalIgnoreCase ) );
+				buddies.Add( (name, online) );
+				break;
+			case ChatNotice.YourBuddyRemoved when name != null:
+				buddies.RemoveAll( entry => entry.Name.Equals( name, StringComparison.OrdinalIgnoreCase ) );
+				break;
+			case ChatNotice.YouIgnore when name != null:
+				ignored.Add( name );
+				break;
+			case ChatNotice.YouNoLongerIgnore when name != null:
+				ignored.Remove( name );
+				break;
+			case ChatNotice.EarmuffsOn or ChatNotice.EarmuffsOff:
+				Earmuffs = notice == ChatNotice.EarmuffsOn;
+				break;
+			case ChatNotice.VotedForPark or ChatNotice.VoteFailed when CurrentRoom.StartsWith( ChatProtocol.ParkRoomPrefix, StringComparison.Ordinal ):
+				// a refusal (the player's own park, a vote already given today) would be refused again
+				votedRooms.Add( CurrentRoom );
+				break;
+			case ChatNotice.VoteLimitReached:
+				voteLimitReached = true;
+				break;
+		}
+	}
+
+	/// <summary>An answer to <c>/buddy</c> without a name: a buddy online or offline, or that there are none.</summary>
+	private static bool IsBuddyAnswer( ChatEvent item ) =>
+		item.Kind == ChatEventKind.Notice && item.Notice is (int)ChatNotice.YourBuddyOnline or (int)ChatNotice.YourBuddyOffline
+		|| item.Kind == ChatEventKind.System && item.Text == "buddy-list";
 
 	/// <summary>Waits between attempts to reconnect the chat after a server restart.</summary>
 	internal static readonly TimeSpan[] ReconnectDelays = { TimeSpan.FromSeconds( 1 ), TimeSpan.FromSeconds( 2 ), TimeSpan.FromSeconds( 4 ), TimeSpan.FromSeconds( 8 ), TimeSpan.FromSeconds( 15 ), TimeSpan.FromSeconds( 30 ) };
@@ -831,6 +917,13 @@ public sealed class OnlineSession : IDisposable, IPresenceSession
 			AddChatLine( OnlineStrings.ChatNotice( (int)ChatNotice.NoSuchCommand, null ) );
 			return;
 		}
+		if ( command is ChatCommand.Buddy or ChatCommand.Friend && ChatCommands.SplitName( argument ).Name == null )
+		{
+			// a typed /buddy lists the buddies in the chat lines, and its answer replaces the list as an ask's does
+			buddyAnswerPending = true;
+			quietBuddyAnswers = false;
+			buddyAskedAt = Environment.TickCount64;
+		}
 		SendOnChat( chat, ChatRequest.ForCommand( command, argument ) );
 	}
 
@@ -884,6 +977,9 @@ public sealed class OnlineSession : IDisposable, IPresenceSession
 		CurrentRoom = ChatProtocol.LobbyRoom;
 		RoomPlayers = Array.Empty<string>();
 		positions.Clear();
+		// the server forgets the connection's ignore list and earmuffs with it
+		ignored.Clear();
+		Earmuffs = false;
 		requestedRoom = null;
 		joinPending = false;
 		joinSentAt = null;
@@ -954,8 +1050,31 @@ public sealed class OnlineSession : IDisposable, IPresenceSession
 		} );
 	}
 
-	/// <summary>Asks the server for the buddy list (the original's <c>/buddy</c> answer lists each buddy as online or offline).</summary>
-	public void AskBuddies() => SendChatLine( "/" + ChatCommands.CanonicalName( ChatCommand.Buddy ) );
+	/// <summary>
+	/// Asks for the buddy list afresh, for the overlay: the answers (each buddy online or offline) rebuild <see cref="Buddies"/>, so a buddy removed elsewhere
+	/// drops out, and stay off the chat lines. The old list stands until the first answer, so a dropped ask leaves no buddy looking like a stranger. Nothing
+	/// is asked within <see cref="BuddyAskIntervalMilliseconds"/> of the last ask (<see cref="BuddyAskDue"/>).
+	/// </summary>
+	// [EXT:online-chat-person-flags] the overlay keeps its buddy list from asks of its own, one in five seconds at most; the original kept the flags from the server's buddy messages (0x4EE5C0)
+	public void AskBuddies()
+	{
+		if ( Chat == null || !BuddyAskDue( buddyAskedAt, Environment.TickCount64, BuddyAskIntervalMilliseconds ) )
+			return;
+		buddyAnswerPending = true;
+		quietBuddyAnswers = true;
+		buddyAskedAt = Environment.TickCount64;
+		SendCommand( ChatCommand.Buddy, "" );
+	}
+
+	/// <summary>Whether a new ask for the buddy list may go out at <paramref name="now"/>: none was sent yet, or the last at least <paramref name="interval"/> milliseconds ago.</summary>
+	internal static bool BuddyAskDue( long? askedAt, long now, int interval ) => askedAt is not { } asked || now - asked >= interval;
+
+	/// <summary>Sends one chat command (the chat overlay's buttons and popups), whatever the language's command words.</summary>
+	public void SendCommand( ChatCommand command, string argument )
+	{
+		if ( Chat is { } chat )
+			SendOnChat( chat, ChatRequest.ForCommand( command, argument ) );
+	}
 
 	/// <summary>Fetches the logged-in player's own page: their parks, their ranks and their Platinum Tickets.</summary>
 	public void FetchProfile() => WithClient( async client =>

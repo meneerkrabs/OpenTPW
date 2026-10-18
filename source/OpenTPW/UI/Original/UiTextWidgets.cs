@@ -16,6 +16,14 @@ public sealed class UiTextField : UiElement
 	public float TextInset { get; set; }
 	/// <summary>Background model frame; null draws the plain help-box colour.</summary>
 	public string? Model { get; set; }
+	/// <summary>Whether a field without a model draws the plain box (off where the field lies on art of its own, the chat frame's entry).</summary>
+	public bool Background { get; set; } = true;
+	public Func<UiFonts, FontAtlas> Font { get; set; } = fonts => fonts.Label;
+	/// <summary>
+	/// Whether the field lies over the park view (the chat entry): the pointer resting on it takes the keys from nothing (only a click or Enter gives it
+	/// them), neither the arrows nor Tab move the focus onto it, and while it has the keys the screen leaves the pointer to the park outside its controls.
+	/// </summary>
+	public bool OverView { get; init; }
 	/// <summary>Text shown, dimmed, while the field is empty (the original's prompt texts); never part of <see cref="Text"/>.</summary>
 	public string? Placeholder { get; set; }
 	/// <summary>Called with Enter.</summary>
@@ -62,7 +70,7 @@ public sealed class UiTextField : UiElement
 	{
 		var rect = ScreenRect( context.Canvas );
 		// [EXT:ONLINE-UI] text field art and caret are OpenTPW's; the original field template is not decoded
-		if ( Model == null || !context.DrawModel( Model, 0, rect, focused ? new RgbaByte( 255, 255, 220, 255 ) : null ) )
+		if ( Model == null ? Background : !context.DrawModel( Model, 0, rect, focused ? new RgbaByte( 255, 255, 220, 255 ) : null ) )
 			context.Batch.AddRectangle( rect, focused ? new RgbaByte( 40, 50, 110, 220 ) : UiColors.HelpBackground );
 		var prompt = Text.Length == 0 && Placeholder is { Length: > 0 };
 		var shown = prompt ? Placeholder! : Password ? new string( '*', Text.Length ) : Text;
@@ -71,7 +79,7 @@ public sealed class UiTextField : UiElement
 			shown += "_";
 		var scale = rect.Height / Bounds.Height;
 		var inset = MathF.Max( rect.Height * 0.25f, TextInset * scale );
-		context.DrawText( context.Fonts.Label, shown, new UiRect( rect.X + inset, rect.Y, rect.Width - inset - rect.Height * 0.25f, rect.Height ), Enabled && !prompt ? UiColors.Value : UiColors.Disabled );
+		context.DrawText( Font( context.Fonts ), shown, new UiRect( rect.X + inset, rect.Y, rect.Width - inset - rect.Height * 0.25f, rect.Height ), Enabled && !prompt ? UiColors.Value : UiColors.Disabled );
 	}
 }
 
@@ -186,7 +194,8 @@ public sealed class UiScrollList : UiElement, IUiRowList
 	{
 		if ( Selected < 0 || Selected >= Rows().Count || RowActivated == null )
 			return;
-		// [BIN:TPW-EXE:0x485780 UI message hook] a row activation is a control message like any other, so it clicks (unless the owner clicks itself once its activation is accepted)
+		// [BIN:TPW-EXE:0x6655a2 list click] a row click posts 0x400-0x406 to the list's owner, not message 0x100, so the hook 0x485780 (the 0xBD/0x1F choice at 0x4857cb) may play nothing for it. The button class 0x668f9c is the only sender of 0x100 for a mouse release over a button; window procedures also send 0x100 to their own window (0x48d83b, 0x49973e, 0x49ec53, 0x4a6df5 (via the dispatcher 0x658d9f), 0x4b640a, 0x4b9f06, 0x4bb020 and 0x4bfc29).
+		// [APPROX:AUDIO-041] left open: this still plays cat_ui 0x1F on row activation. Do not change it to silence or to 0xBD until that question is read.
 		if ( ClicksOnActivate )
 			GameAudio.PlayUi( GameAudio.ClickEvent );
 		RowActivated( Selected );

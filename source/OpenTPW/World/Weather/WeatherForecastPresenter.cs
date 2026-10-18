@@ -8,10 +8,10 @@ namespace OpenTPW;
 /// and the transient changed/current lines of <see cref="WeatherForecastState"/>, drawn as one banner line at
 /// the top centre of the screen. The entity is created with the weather itself (<see cref="ParkWeather.Created"/>)
 /// and reads the simulation each frame — the forecast, its apply day, the current day and the weather's bands —
-/// so pause, park end and reload follow the weather's own state. The banner is an OpenTPW presentation
-/// (AUDIO-905): the original's forecast message handler is not traced.
+/// so pause, park end and reload follow the weather's own state. The banner is an OpenTPW presentation: the
+/// original shows no forecast ([EXT:forecast-presentation]).
 /// </summary>
-// [EXT:forecast-banner] the forecast shows as a banner line at the top centre, drawn in the overlay pass with the original GAME8AA BF4 font above every screen (the chat overlay's channel); which surface the original warned on is unknown — evidence needed: the original's forecast message handler
+// [EXT:forecast-banner] the forecast shows as a banner line at the top centre, drawn in the overlay pass with the original GAME8AA BF4 font above every screen (the chat overlay's channel); the original warns on no surface: its forecast event's only subscriber, the weather's handler 0x5127a0, posts nothing
 public sealed class WeatherForecastPresenter : Entity
 {
 	/// <summary>Upper bound of one step's delta, so a hitch after a stall cannot jump the transient line's clock.</summary>

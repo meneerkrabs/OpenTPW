@@ -440,7 +440,7 @@ public sealed class GuestRenderer : Entity
 			g_mProj = Camera.ProjMatrix,
 			g_vCameraPos = Camera.Position,
 			g_flTime = Time.Now
-		}.WithFog() );
+		}.WithFog().WithSpriteTint( Level?.Look ?? EveningLook.Day ) );
 		commandList.SetVertexBuffer( 0, vertexBuffer );
 		commandList.SetPipeline( material.Pipeline );
 		var resourceSets = material.GetResourceSets();

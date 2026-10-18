@@ -153,13 +153,15 @@ public sealed class TrackPieceAnimations
 
 	/// <summary>
 	/// What the original's re-walks do to the pieces: the ride's placement starts them on a valid circuit and stops them from both sides on an invalid one; a
-	/// laid track line stops them from the exit side, and from both sides on an invalid circuit; a restore leaves them alone (null).
+	/// laid track line stops them from the exit side, and from both sides on an invalid circuit; the edit sub-modes' cut starts them on a valid circuit and stops them from
+	/// both sides on an invalid one, as the placement does; a restore leaves them alone (null).
 	/// </summary>
 	// [BIN:TPW-EXE:0x00524D0A placement walk] a valid circuit calls 0x0052A490(ride, 1), an invalid one 0x0052A490(ride, 0) and 0x0052A700(ride, 0)
 	// [BIN:TPW-EXE:0x00526F02 track line walk] when a line of the kart or water tool ends, 0x0052A490(ride, 0) runs whatever the verdict (0x00526F58, edi cleared at 0x00526EFF), and an invalid circuit also gets 0x0052A700(ride, 0)
+	// [BIN:TPW-EXE:0x00526BD0 edit walk] after a cut the walk 0x52A970(0) is followed on a valid circuit by 0x0052A490(ride, 1) (0x526BEF) and on an invalid one by 0x0052A490(ride, 0) and 0x0052A700(ride, 0) (0x526BFD, 0x526C0D)
 	public static (bool Play, bool Backward)? ForWalk( TrackWalkCause cause, bool valid ) => cause switch
 	{
-		TrackWalkCause.Placement => (valid, !valid),
+		TrackWalkCause.Placement or TrackWalkCause.Edit => (valid, !valid),
 		TrackWalkCause.Line => (false, !valid),
 		_ => null
 	};
@@ -212,5 +214,7 @@ public enum TrackWalkCause
 	/// <summary>The ride was placed.</summary>
 	Placement,
 	/// <summary>A track line was laid.</summary>
-	Line
+	Line,
+	/// <summary>The track edit tool cut the circuit (<see cref="TrackEditor"/>).</summary>
+	Edit
 }

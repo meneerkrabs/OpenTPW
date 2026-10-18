@@ -21,7 +21,7 @@ public partial class Level
 	public TrackBuilder? BuilderOf( OriginalObject station ) => station.Runtime.Bump?.Template.Family == TrackFamily.Kart ? kartTracks : waterTracks;
 	private OriginalObject? trackToolStation;
 	/// <summary>The water ride whose track the track tool lays, or null when the tool is off.</summary>
-	public OriginalObject? TrackToolStation => CellTool.Writer is TrackLineWriter ? trackToolStation : null;
+	public OriginalObject? TrackToolStation => CellTool.Writer is TrackLineWriter or TrackEditWriter ? trackToolStation : null;
 	/// <summary>The stations of the level's water rides with their tile layout.</summary>
 	public IReadOnlyDictionary<OriginalObject, TrackStation> TrackStations => trackStations;
 	/// <summary>Tile and boat instances the track renderer holds.</summary>
@@ -189,7 +189,8 @@ public partial class Level
 		{
 			CellTool.Cancel();
 			trackToolStation = null;
-			if ( item.Entry.HasQueue && item.Runtime.IsAttraction && item.Visitors.HasCells )
+			// [BIN:TPW-EXE:0x00526C70 edit walk end] a cut that leaves a valid circuit ends the tool (0x52F580(0), 0x526C6E): no queue tool follows, as it does a line that closes the circuit
+			if ( cause != TrackWalkCause.Edit && item.Entry.HasQueue && item.Runtime.IsAttraction && item.Visitors.HasCells )
 				EnterQueueTool( item.Visitors );
 		}
 		return circuit;
@@ -236,8 +237,13 @@ public partial class Level
 		}
 	}
 
-	/// <summary>Starts the water track tool on a station: the line starts at the tile after the station's exit.</summary>
-	// [APPROX:TRACK-018] the original's track button (0x4af200: tool 0xE for karts, 0x13 for water) opens the edit sub-modes, which cut a closed circuit between two clicked tiles and continue an open one from its last tile (0x530830, 0x524960 at 0x526801 and 0x526B5E); this entry always starts a line at the station's exit
+	/// <summary>
+	/// The ride window's track button for a kart or water ride (tool 0xE or 0x13): a closed circuit opens the edit tool (two clicks cut the track between two tiles), an open one
+	/// the line tool from the end of its track (the exit cell when no track is laid).
+	/// </summary>
+	// [BIN:TPW-EXE:0x004AF200 track button] the button sets the cursor of tool 0xE (type 1) or 0x13 (type 2) and calls the click handler; the hover 0x527960 puts the tool in that mode
+	// [BIN:TPW-EXE:0x00526800 edit click] with the ride's circuit word (+0x2C) zero the click walks the track to its open end (0x530830) and the tool becomes the line tool 0xB or 0x10 (0x526C36, 0x526C50) starting there; with a closed circuit the click picks tiles for the cut
+	// [APPROX:TRACK-018] the open end's corner points are not pushed onto the tool's undo stack (0x530830 fills the stack that Backspace pops, replaying the click handler in mode 0x35 over the existing track), so Backspace takes back only the lines this tool lays; the ride is not reopened when a cut leaves a valid circuit (0x4DF290 → 0x4DF390 follow the walk, as they do after a line)
 	public bool EnterTrackTool( OriginalObject station )
 	{
 		if ( IsReadOnlyVisit || waterTracks == null || !trackStations.TryGetValue( station, out var layout ) )
@@ -245,9 +251,61 @@ public partial class Level
 		StaffPlacement?.Cancel();
 		var builder = BuilderOf( station )!;
 		CellTool.Cancel();
-		CellTool.Enter( new TrackLineWriter( builder, () => RewalkTrack( station, TrackWalkCause.Line ), builder.OwnerOf( layout ) ), layout.Exit );
+		var editor = new TrackEditor( builder, layout, TrackEditHooksOf( station, builder ) );
+		if ( station.Runtime.Bump is { IsTrackValid: true } )
+		{
+			CellTool.Enter( new TrackEditWriter( editor, builder.Family, second => FinishTrackEdit( station, editor, second ), CancelTrackTool ), null );
+		}
+		else
+		{
+			CellTool.Enter( TrackLineWriterOf( station, layout, builder ), editor.FindOpenEnd().End );
+		}
 		trackToolStation = station;
 		return true;
+	}
+
+	private TrackLineWriter TrackLineWriterOf( OriginalObject station, TrackStation layout, TrackBuilder builder ) =>
+		new( builder, () => RewalkTrack( station, TrackWalkCause.Line ), builder.OwnerOf( layout ) );
+
+	private void CancelTrackTool()
+	{
+		CellTool.Cancel();
+		trackToolStation = null;
+	}
+
+	/// <summary>The money and the add-ons of a cut: each cleared tile refunds the track cell cost × the ride's scrap percentage / 100, an add-on standing on one is demolished.</summary>
+	private TrackEditHooks TrackEditHooksOf( OriginalObject ride, TrackBuilder builder ) => new()
+	{
+		TileCleared = _ =>
+		{
+			if ( Park?.Economy is { } economy && GetEconomyInstance( ride ) is int instance )
+				economy.RefundTrackTile( builder.Purchase, instance );
+		},
+		RemoveAddOn = at =>
+		{
+			foreach ( var (x, y) in TrackStation.TileCellsOf( at.X, at.Y ) )
+			{
+				if ( Objects.FindAt( x, y ) is { IsDeleted: false } addOn && addOn != ride )
+				{
+					Objects.Remove( addOn );
+					return;
+				}
+			}
+		}
+	};
+
+	/// <summary>
+	/// After a committed cut: the walk of the circuit again (the controller closes, the pieces start or stop) and, when the circuit is open, the line tool from the end of the track.
+	/// </summary>
+	// [BIN:TPW-EXE:0x00526BD0 cut finish] 0x52FC80(0) repairs the station, the picks are cleared, the new start is the second click's tile (0x81EDE4/E8), then the walk 0x52A970(0) sets the circuit word: valid, 0x52A490(ride, 1) starts the pieces and the tool ends; invalid, 0x52A490 and 0x52A700 stop them, 0x530830 finds the open end and the tool becomes the line tool (0x526C19..0x526C54)
+	private void FinishTrackEdit( OriginalObject station, TrackEditor editor, (int X, int Y) second )
+	{
+		var circuit = RewalkTrack( station, TrackWalkCause.Edit );
+		if ( circuit is not { IsValid: false } || !trackStations.TryGetValue( station, out var layout ) || BuilderOf( station ) is not { } builder )
+			return;
+		CellTool.Cancel();
+		CellTool.Enter( TrackLineWriterOf( station, layout, builder ), editor.FindOpenEnd().End );
+		trackToolStation = station;
 	}
 
 	/// <summary>Ends the track tool.</summary>

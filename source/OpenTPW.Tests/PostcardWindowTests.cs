@@ -12,7 +12,7 @@ namespace OpenTPW.Tests;
 [TestClass, DoNotParallelize]
 public class PostcardWindowTests
 {
-	private static void WithScreens( Action<OnlineScreens, OnlineSession, UiScreenStack> test )
+	private static void WithScreens( Action<OnlineScreens, OnlineSession, UiScreenStack> test, Func<Level?>? level = null )
 	{
 		var root = Directory.CreateTempSubdirectory( "opentpw-postcard-window-" ).FullName;
 		var previousFiles = OpenTPW.Common.GlobalNamespace.FileSystem;
@@ -24,7 +24,7 @@ public class PostcardWindowTests
 			using var session = new OnlineSession( folders );
 			var stack = new UiScreenStack();
 			stack.Push( new UiScreen( "hud" ) );
-			var screens = new OnlineScreens( stack, OriginalUiTests.FakeStrings(), new UiModels( name => throw new FileNotFoundException( name ) ), new OnlineHost { Session = session } );
+			var screens = new OnlineScreens( stack, OriginalUiTests.FakeStrings(), new UiModels( name => throw new FileNotFoundException( name ) ), new OnlineHost { Session = session, Level = level ?? (() => null) } );
 			test( screens, session, stack );
 		}
 		finally { OpenTPW.Common.GlobalNamespace.FileSystem = previousFiles; Directory.Delete( root, recursive: true ); }
@@ -89,4 +89,24 @@ public class PostcardWindowTests
 	[TestMethod]
 	public void RecipientsSplitAtTheOriginalSeparators() =>
 		CollectionAssert.AreEqual( new[] { "a", "b", "c d", "e" }, OnlineScreens.PostcardRecipients( "a;b, c d\ne ;" ) );
+
+	[TestMethod]
+	public void UnsupportedPlatformOperationPreservesTheDraftAndAllowsClosing() => WithScreens( ( screens, session, stack ) =>
+	{
+		screens.ShowSendPostcard();
+		var screen = stack.Top!;
+		((UiTextField)screen.Find( "to" )!).Text = "Bob";
+		((UiTextField)screen.Find( "title" )!).Text = "Keep this title";
+		((UiTextField)screen.Find( "message" )!).Text = "Keep this message";
+		((UiButton)screen.Find( "ok" )!).Clicked!();
+		Assert.AreEqual( "postcardFailed", stack.Top!.Name );
+		Assert.AreEqual( 0, session.Folders.List( session.Folders.Outbox ).Count );
+		stack.Pop();
+		Assert.AreSame( screen, stack.Top );
+		Assert.AreEqual( "Bob", ((UiTextField)screen.Find( "to" )!).Text );
+		Assert.AreEqual( "Keep this title", ((UiTextField)screen.Find( "title" )!).Text );
+		Assert.AreEqual( "Keep this message", ((UiTextField)screen.Find( "message" )!).Text );
+		((UiButton)screen.Find( "back" )!).Clicked!();
+		Assert.AreEqual( "hud", stack.Top!.Name );
+	}, () => throw new PlatformNotSupportedException( "A postcard operation is unavailable." ) );
 }

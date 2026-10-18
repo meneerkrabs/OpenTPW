@@ -31,13 +31,18 @@ public static class OnlineText
 		return name!;
 	}
 
-	/// <summary>
-	/// Case-insensitive identity of a player name. The browser runtime has no compatibility normalization (FormKC and FormKD
-	/// throw there), so the browser client folds with FormC; the server, which runs with full normalization, stays the authority
-	/// for identities, and the client only uses the key to skip duplicate postcard recipients.
-	/// </summary>
-	public static string NormalizeName( string name ) =>
-		name.Normalize( OperatingSystem.IsBrowser() ? NormalizationForm.FormC : NormalizationForm.FormKC ).ToUpperInvariant();
+	/// <summary>Case-insensitive identity of a player name.</summary>
+	public static string NormalizeName( string name )
+	{
+		if ( OperatingSystem.IsBrowser() )
+		{
+			// Browser .NET omits compatibility normalization. Keep its Unicode validation before
+			// using the browser's NFKC implementation; JavaScript alone accepts lone surrogates.
+			_ = name.IsNormalized( NormalizationForm.FormC );
+			return BrowserText.NormalizeCompatibility( name ).ToUpperInvariant();
+		}
+		return name.Normalize( NormalizationForm.FormKC ).ToUpperInvariant();
+	}
 
 	/// <summary>Text with a length cap; control characters are rejected except newlines when allowed.</summary>
 	public static string RequireText( string? text, int maximumLength, bool allowNewlines, bool allowEmpty, string what )

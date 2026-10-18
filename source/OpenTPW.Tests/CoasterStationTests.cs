@@ -44,6 +44,23 @@ public class CoasterStationTests
 	// ---- The station's three nodes -----------------------------------------------------------------------
 
 	[TestMethod]
+	public void TheStationsFirstTwoNodesKeepTheirWinchMarkThroughTheRebuild()
+	{
+		// 0x432b50 clears 0x800 on every node without 0x1000 at each rebuild; the rating pass sets it again where the speed sits on the floor. Creation parameter 0x20 (S0, S1) gives 0x1800.
+		var (builder, ride) = NewCoaster();
+		builder.Height = 40;
+		foreach ( var (dx, dy) in CoasterTests.Circuit )
+			Assert.AreEqual( CoasterPlaceResult.Ok, builder.Place( 20 + dx, 20 + dy ) );
+		Assert.AreEqual( CoasterPlaceResult.Ok, CoasterTests.CloseAndComplete( builder ) );
+		var nodes = ride.Track.Nodes;
+		var kept = CoasterNodeFlags.Winch | CoasterNodeFlags.WinchKept;
+		Assert.AreEqual( kept, nodes[0].Flags & kept );
+		Assert.AreEqual( kept, nodes[1].Flags & kept );
+		Assert.AreEqual( CoasterNodeFlags.None, nodes[2].Flags & CoasterNodeFlags.WinchKept, "S2 has no winch creation bits" );
+		Assert.AreEqual( CoasterNodeFlags.None, nodes[^1].Flags & CoasterNodeFlags.WinchKept, "the end node's creation parameters 0x144 have no 0x20" );
+	}
+
+	[TestMethod]
 	public void TheStationIsTwoStdPylonNodesAndAPylonLessOneWithTheOriginalsFlags()
 	{
 		var (builder, _) = NewCoaster();
@@ -55,9 +72,9 @@ public class CoasterStationTests
 		Assert.IsFalse( nodes[0].IsPylonless );
 		Assert.IsTrue( nodes[1].IsPylonless && nodes[1].ExactPosition is not null );
 		Assert.IsFalse( nodes[2].IsPylonless );
-		// 0x274: 0x400 | winch | 0x80000; 0x3c: 0x200 | 0x400 | winch; 0x28c: 0x200 | 0x40000.
-		Assert.AreEqual( CoasterNodeFlags.StationHead | CoasterNodeFlags.Winch | CoasterNodeFlags.NoPreviousLink, nodes[0].Flags );
-		Assert.AreEqual( CoasterNodeFlags.StationHead | CoasterNodeFlags.StationTail | CoasterNodeFlags.Winch, nodes[1].Flags );
+		// 0x274: 0x400 | 0x1800 | 0x80000; 0x3c: 0x200 | 0x400 | 0x1800; 0x28c: 0x200 | 0x40000.
+		Assert.AreEqual( CoasterNodeFlags.StationHead | CoasterNodeFlags.Winch | CoasterNodeFlags.WinchKept | CoasterNodeFlags.NoPreviousLink, nodes[0].Flags );
+		Assert.AreEqual( CoasterNodeFlags.StationHead | CoasterNodeFlags.StationTail | CoasterNodeFlags.Winch | CoasterNodeFlags.WinchKept, nodes[1].Flags );
 		Assert.AreEqual( CoasterNodeFlags.StationTail | CoasterNodeFlags.NoNextLink, nodes[2].Flags );
 		Assert.AreEqual( 0, builder.Track.PylonCount, "the station's nodes are not the player's pylons" );
 		Assert.AreEqual( 0L, builder.BuildCost, "the station is paid with the station" );

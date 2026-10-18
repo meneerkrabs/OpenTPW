@@ -246,6 +246,27 @@ public sealed class ParkStaff
 	/// </summary>
 	public int PendingPlacementId { get; set; }
 
+	/// <summary>
+	/// A candidate an original save held with its on-pointer byte set (<c>+0xB</c>) and no carry tool to end it: it does not expire and stays in the pool until the next tool exit clears the flag
+	/// (<see cref="EndPlacement"/>). 0 when none. Not saved with an OpenTPW park: a resumed park keeps the candidate as an ordinary one.
+	/// </summary>
+	// [BIN:TPW-EXE:0x5084f0 staff pool update] the expiry loop skips a candidate whose +0xB is set (it tests +0xB == 0 before it clears the valid byte), and the census counts it as valid; [BIN:TPW-EXE:0x5083b0 tool exit] every flagged candidate loses the flag, and with a 0 argument (the placement was made) its valid byte too
+	public int StaleOnPointerId { get; private set; }
+
+	/// <summary>
+	/// A placement tool ended (<c>0x5083b0</c>): the pending candidate is no longer being placed and a candidate the load left flagged loses its flag; when <paramref name="placed"/> the flagged candidate is
+	/// removed from the pool (the placed one is hired by its caller).
+	/// </summary>
+	public void EndPlacement( bool placed )
+	{
+		var placing = PendingPlacementId;
+		PendingPlacementId = 0;
+		// the candidate being hired goes through the hire path, not this one
+		if ( StaleOnPointerId != 0 && placed && StaleOnPointerId != placing )
+			candidates.RemoveAll( candidate => candidate.Id == StaleOnPointerId );
+		StaleOnPointerId = 0;
+	}
+
 	/// <summary>Park turns per unit of <c>TimeBetweenStaffUpdates</c> and <c>StaffTimeoutTime</c>: the pool compares elapsed turns with four times them.</summary>
 	public const int TurnsPerPoolUnit = 4;
 	// [BIN:TPW-EXE:0x5084f0 staff pool update] a candidate whose turns since its stamp (+0xc, 0x41a970) exceed 4 × its timeout (+0x10) leaves unless it is being placed; the pool refills once the turns since its own stamp exceed 4 × TimeBetweenStaffUpdates (0x785304)
@@ -290,7 +311,7 @@ public sealed class ParkStaff
 	// [BIN:STP-PPC:0x100F6E24 staff pool update] draw = rand() % total shortfall picks the role whose share it falls in; each added candidate lowers that role's shortfall and the per-update cap (also limited by the 32 free slots); 0x100F65E8 drops roles whose hired count reached Max*InPark; 0x100F6790 then tops every role up to Min*InPool counting hired and pooled staff
 	public void UpdatePool( WorldRng random, long tick )
 	{
-		candidates.RemoveAll( candidate => candidate.ExpiresTick <= tick && candidate.Id != PendingPlacementId );
+		candidates.RemoveAll( candidate => candidate.ExpiresTick <= tick && candidate.Id != PendingPlacementId && candidate.Id != StaleOnPointerId );
 		if ( tick < NextPoolUpdateTick )
 			return;
 		NextPoolUpdateTick = TickAfterUnits( tick, settings.TimeBetweenStaffUpdates );
@@ -475,15 +496,21 @@ public sealed class ParkStaff
 	/// Replaces the pool with an original save's candidates (role, name index, grade, the turn it was made and its timeout in units of four turns) and
 	/// sets the next refill from the turn of the pool's last one; each candidate leaves on the first turn past its timeout.
 	/// </summary>
-	internal void RestoreOriginalPool( IEnumerable<(StaffType Type, int NameIndex, int Grade, long MadeTurn, long Timeout, int SubType)> saved, long lastRefillTurn )
+	internal void RestoreOriginalPool( IEnumerable<(StaffType Type, int NameIndex, int Grade, long MadeTurn, long Timeout, int SubType)> saved, long lastRefillTurn, IReadOnlyList<bool>? onPointer = null )
 	{
 		candidates.Clear();
 		PendingPlacementId = 0;
+		StaleOnPointerId = 0;
+		var position = 0;
 		foreach ( var (type, name, grade, made, timeout, subType) in saved.Take( PoolSlots ) )
 		{
 			// [BIN:TPW-EXE:0x00507600 staff candidate] the sub-type (+9) is the sprite variant the placement object takes when the candidate is picked up (0x507BF0); one past the role's banks is no variant this install can draw
 			var banks = StaffSpriteRules.Banks( type, settings.Theme )?.Banks.Count ?? 0;
 			candidates.Add( new StaffCandidate( AllocateId(), type, name, grade, TickAfterUnits( ParkCalendar.TickOfTurn( made ), timeout ), subType >= 0 && subType < banks ? subType : -1 ) );
+			// the carry tool holds one candidate: the first flagged one is kept by the flag
+			if ( StaleOnPointerId == 0 && onPointer != null && position < onPointer.Count && onPointer[position] )
+				StaleOnPointerId = candidates[^1].Id;
+			position++;
 		}
 		NextPoolUpdateTick = TickAfterUnits( ParkCalendar.TickOfTurn( lastRefillTurn ), settings.TimeBetweenStaffUpdates );
 	}

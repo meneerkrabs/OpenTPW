@@ -428,17 +428,18 @@ public sealed class OriginalEconomyImport
 				.Select( candidate => ((StaffType)candidate.Type, (int)(candidate.Name % ParkStaff.NameTableSize), Math.Min( (int)candidate.Grade, BalanceSettings.GradeCount - 1 ),
 					(long)candidate.TimeSig, (long)candidate.Timeout, (int)candidate.SubType) )
 				.ToList();
-			economy.Staff.RestoreOriginalPool( saved, pool.TimeSig );
+			economy.Staff.RestoreOriginalPool( saved, pool.TimeSig, pool.Candidates.Where( candidate => candidate.Valid ).Select( candidate => candidate.OnPointer ).ToList() );
 			evidence.Add( $"Staff pool imported: {saved.Count} candidates ({string.Join( ", ", saved.Select( item => $"{item.Item1} grade {item.Item3} made on turn {item.Item4} for {item.Item5}" ) )}), last refill on turn {pool.TimeSig}." );
 			// [BIN:TPW-EXE:0x507600 staff candidate] a candidate's sub-type (+9) is its sprite variant, drawn at its creation (0x507600 → 0x541F70: (R >> 2) % the category's loaded bank count, the table 0x763F88 of 12-byte entries) and handed to the placement object 0x46C6D0 when it is picked up (0x507BF0): imported as the candidate's variant, which the member hired from it keeps (StaffSpriteRules.KeyOf)
 			// [BIN:TPW-EXE:0x508000 staff census] the people-in-category counts and stop-producing flags are recomputed from the park's staff before every read (the refill 0x5084F0, its top-up 0x508170 and the pick-up 0x507BF0), as UpdatePool counts the hired staff; the opening-pool flag only gates the opening pool 0x5087D0, which OpenTPW draws for a new park only
 			evidence.Add( $"Staff pool sub-types imported as the candidates' sprite variants: {string.Join( "/", economy.Staff.Candidates.Select( candidate => candidate.Variant ) )} (-1: a sub-type past the role's banks); the counts in category {string.Join( "/", pool.PeopleInCategory )}, stop producing {string.Join( "/", pool.StopProducing.Select( flag => flag ? 1 : 0 ) )} and the opening-pool flag {pool.OpeningPoolGenerated} are recomputed from the park's staff." );
-			// [APPROX:SAVE-004] a candidate saved with its on-pointer byte set (+0xB: picked up for placement) is imported as an ordinary pool candidate: the placement object in the player's hand is not saved or recreated, where the original keeps the flag until the carry tool ends (0x5083B0 then removes the candidate) — evidence needed: what the hire list and the refill do with a flagged candidate while no placement exists (none in the corpus: every saved on-pointer byte is 0)
-			if ( pool.Candidates.Any( candidate => candidate.Valid && candidate.OnPointer ) )
-				evidence.Add( $"[APPROX:SAVE-004] {pool.Candidates.Count( candidate => candidate.Valid && candidate.OnPointer )} saved candidates were on the pointer (picked up for placement); they are imported as ordinary pool candidates." );
+			// [BIN:TPW-EXE:0x5083B0 tool exit] a candidate saved with its on-pointer byte set (+0xB: picked up for placement) keeps the flag, as the original does until a carry tool ends: the refill 0x5084F0 never expires a flagged candidate, the census counts it as valid, and the next tool exit clears the flag (0x5083B0: with the placement made it also removes the flagged candidate); the carry tool itself is not saved or recreated (ParkStaff.StaleOnPointerId)
+			var flagged = pool.Candidates.Count( candidate => candidate.Valid && candidate.OnPointer );
+			if ( flagged > 0 )
+				evidence.Add( $"{flagged} saved candidates were on the pointer (picked up for placement); the first stays in the pool without expiring until the next placement tool ends." );
 		}
 		else
-			evidence.Add( $"[APPROX:SAVE-004] The save's hiring pool does not read before the calendar ({save.World.OpaqueMacroAiLength} macro-AI bytes); {economy.Staff.Candidates.Count} candidates were drawn." );
+			evidence.Add( $"The save's hiring pool does not read before the calendar ({save.World.OpaqueMacroAiLength} macro-AI bytes); {economy.Staff.Candidates.Count} candidates were drawn." );
 		return imported;
 	}
 

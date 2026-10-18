@@ -203,7 +203,7 @@ public sealed class StaffPlacement
 				Cancel();
 				return StaffClickResult.None;
 			}
-			park.Staff.PendingPlacementId = 0;
+			park.Staff.EndPlacement( placed: true );
 			member = park.Hire( candidate.Id );
 			// [BIN:TPW-EXE:0x46c8e0 new member] position = cell centre (sub-cell 0x80), happiness and energy 100.0 (the member's own defaults), patrol rectangle = the whole map (+0x20a = 1, +0x20c = 0x4000: PatrolArea's default); each role then decides its first job (state 0 here, the state machines' search runs on the next update)
 			member.PatrolArea = (0, 0, ParkLitter.MapSize - 1, ParkLitter.MapSize - 1);
@@ -231,7 +231,7 @@ public sealed class StaffPlacement
 			PutDown( member, origin.X, origin.Y );
 		}
 		else if ( Kind == StaffToolKind.Place && economy() is { } pool )
-			pool.Staff.PendingPlacementId = 0;
+			pool.Staff.EndPlacement( placed: false );
 		End();
 	}
 

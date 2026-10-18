@@ -145,6 +145,13 @@ public enum OpenTpwText
 	PoolWavesOff,
 	PoolWavesHeight,
 	PoolWavesInterval,
+	PoolWavesSettings,
+	PoolWavesLow,
+	PoolWavesMedium,
+	PoolWavesHigh,
+	PoolWavesShort,
+	PoolWavesNormal,
+	PoolWavesLong,
 	PoolExtraNeedsEdge,
 	PoolExtraNeedsWater,
 	WeatherThunderstorms,
@@ -263,6 +270,15 @@ public enum OpenTpwText
 	AutosaveHelp,
 	/// <summary>The language list's label of a fan translation: "{0} (fan translation)".</summary>
 	FanTranslation,
+	// [EXT:evening] the evening and night extension: its name and description on the mods screen and the OpenTPW page's day cycle row (docs/EVENING.md)
+	ExtensionEveningName,
+	ExtensionEveningDescription,
+	EveningOption,
+	EveningHelp,
+	EveningMinutes,
+	EveningAlwaysDay,
+	EveningAlwaysDusk,
+	EveningAlwaysNight,
 }
 
 public static class SupplementaryStrings
@@ -532,6 +548,14 @@ public static class SupplementaryStrings
 		[OpenTpwText.PoolWavesOff] = new[] { "Waves off", "Bølger fra", "Golven uit", "Vagues désactivées", "Wellen aus", "파도 끔", "Fale wyłączone", "Olas desactivadas", "Vågor av", "Onde spente", "גלים כבויים" },
 		[OpenTpwText.PoolWavesHeight] = new[] { "Wave height", "Bølgehøjde", "Golfhoogte", "Hauteur des vagues", "Wellenhöhe", "파도 높이", "Wysokość fal", "Altura de las olas", "Våghöjd", "Altezza delle onde", "גובה הגלים" },
 		[OpenTpwText.PoolWavesInterval] = new[] { "Wave interval", "Bølgeinterval", "Golfinterval", "Intervalle des vagues", "Wellenabstand", "파도 간격", "Odstęp między falami", "Intervalo de las olas", "Vågintervall", "Intervallo delle onde", "מרווח בין גלים" },
+		// [EXT:pools-waves] the wave machine's settings window (titled with the machine's name): the object window's button that opens it, and the choices of height and of the rest between two runs
+		[OpenTpwText.PoolWavesSettings] = new[] { "Wave settings", "Bølgeindstillinger", "Golfinstellingen", "Réglages des vagues", "Welleneinstellungen", "파도 설정", "Ustawienia fal", "Ajustes de olas", "Våginställningar", "Impostazioni onde", "הגדרות גלים" },
+		[OpenTpwText.PoolWavesLow] = new[] { "Low", "Lav", "Laag", "Basse", "Niedrig", "낮음", "Niska", "Baja", "Låg", "Bassa", "נמוך" },
+		[OpenTpwText.PoolWavesMedium] = new[] { "Medium", "Middel", "Gemiddeld", "Moyenne", "Mittel", "보통", "Średnia", "Media", "Medel", "Media", "בינוני" },
+		[OpenTpwText.PoolWavesHigh] = new[] { "High", "Høj", "Hoog", "Haute", "Hoch", "높음", "Wysoka", "Alta", "Hög", "Alta", "גבוה" },
+		[OpenTpwText.PoolWavesShort] = new[] { "Short", "Kort", "Kort", "Rapproché", "Kurz", "짧은", "Krótki", "Corto", "Kort", "Breve", "קצר" },
+		[OpenTpwText.PoolWavesNormal] = new[] { "Regular", "Normal", "Normaal", "Normal", "Normal", "보통", "Normalny", "Normal", "Normal", "Normale", "רגיל" },
+		[OpenTpwText.PoolWavesLong] = new[] { "Long", "Lang", "Lang", "Espacé", "Lang", "긴", "Długi", "Largo", "Lång", "Lungo", "ארוך" },
 		[OpenTpwText.NotAvailable] = new[] { "Not available yet", "Endnu ikke tilgængelig", "Nog niet beschikbaar", "Pas encore disponible", "Noch nicht verfügbar", "아직 이용할 수 없음", "Jeszcze niedostępne", "Aún no disponible", "Inte tillgänglig ännu", "Non ancora disponibile", "עדיין לא זמין" },
 		// [EXT:forecast-wording] the weather forecast's own words (no weather text exists in the shipped string tables); {0} is the kind, {1} when it comes
 		[OpenTpwText.WeatherThunderstorms] = new[] { "thunderstorms", "tordenvejr", "onweer", "des orages", "Gewitter", "뇌우", "burze", "tormentas", "åskväder", "temporali", "סופות רעמים" },
@@ -666,9 +690,36 @@ public static class SupplementaryStrings
 			"5분 플레이마다 공원을 별도 슬롯에 저장합니다. 직접 저장한 파일은 바뀌지 않습니다.",
 			"Zapisuje park w osobnym miejscu co 5 minut gry. Twój ręczny zapis pozostaje nietknięty.",
 			"Guarda el parque en su propia ranura cada 5 minutos de juego. Tu guardado manual nunca se toca.",
-			"Sparar parken på en egen plats var 5:e speltminut. Din manuella sparning rörs aldrig.",
+			"Sparar parken på en egen plats var 5:e spelminut. Din manuella sparning rörs aldrig.",
 			"Salva il parco in uno spazio tutto suo ogni 5 minuti di gioco. Il tuo salvataggio manuale non viene mai toccato.",
 			"שומר את הפארק במקום משלו כל 5 דקות משחק. השמירה הידנית שלך אף פעם לא משתנה." },
+		// [EXT:evening] the evening and night extension (docs/EVENING.md)
+		[OpenTpwText.ExtensionEveningName] = new[] { "Evening and night", "Aften og nat", "Avond en nacht", "Soir et nuit", "Abend und Nacht", "저녁과 밤", "Wieczór i noc", "Tarde y noche", "Kväll och natt", "Sera e notte", "ערב ולילה" },
+		[OpenTpwText.ExtensionEveningDescription] = new[] {
+			"A day and night cycle: the sun sets, the sky, ground and water darken, and lamps and pool lights switch on at dusk. It follows play time, not park speed, and pauses with the game. Display only.",
+			"En dag- og natcyklus: solen går ned, himlen, jorden og vandet bliver mørkere, og lamper og poollys tændes i skumringen. Følger spilletiden, ikke parkens hastighed, og står stille ved pause. Kun visning.",
+			"Een dag- en nachtcyclus: de zon gaat onder, lucht, grond en water worden donkerder en lampen en zwembadlichten gaan aan in de schemering. Volgt de speeltijd, niet de parksnelheid, en pauzeert met het spel. Alleen weergave.",
+			"Un cycle jour et nuit : le soleil se couche, le ciel, le sol et l'eau s'assombrissent, et les lampes et lumières de piscine s'allument au crépuscule. Suit le temps de jeu, pas la vitesse du parc, et s'arrête en pause. Affichage seulement.",
+			"Ein Tag-und-Nacht-Zyklus: Die Sonne geht unter, Himmel, Boden und Wasser werden dunkler, Lampen und Poolbeleuchtung gehen in der Dämmerung an. Folgt der Spielzeit, nicht der Parkgeschwindigkeit, und pausiert mit dem Spiel. Nur Anzeige.",
+			"낮과 밤의 주기: 해가 지면 하늘과 땅, 물이 어두워지고 해질녘에 가로등과 수영장 조명이 켜집니다. 공원 속도가 아니라 플레이 시간을 따르며 일시 정지하면 멈춥니다. 표시만 바꿉니다.",
+			"Cykl dnia i nocy: słońce zachodzi, niebo, ziemia i woda ciemnieją, a lampy i światła basenów zapalają się o zmierzchu. Zależy od czasu gry, nie od prędkości parku, i staje przy pauzie. Tylko wygląd.",
+			"Un ciclo de día y noche: el sol se pone, el cielo, el suelo y el agua se oscurecen, y las lámparas y luces de piscina se encienden al atardecer. Sigue el tiempo de juego, no la velocidad del parque, y se detiene en pausa. Solo visual.",
+			"En dag- och nattcykel: solen går ner, himlen, marken och vattnet blir mörkare, och lampor och poolbelysning tänds i skymningen. Följer speltiden, inte parkens hastighet, och står still vid paus. Bara visning.", "Un ciclo di giorno e notte: il sole tramonta, cielo, terreno e acqua si scuriscono, e lampioni e luci delle piscine si accendono al crepuscolo. Segue il tempo di gioco, non la velocità del parco, e si ferma in pausa. Solo aspetto.", "מחזור של יום ולילה: השמש שוקעת, השמיים, הקרקע והמים מחשיכים, ומנורות ואורות הבריכות נדלקים בשקיעה. עוקב אחרי זמן המשחק, לא אחרי מהירות הפארק, ונעצר בהשהיה. תצוגה בלבד." },
+		[OpenTpwText.EveningOption] = new[] { "Day cycle:", "Dagscyklus:", "Dagcyclus:", "Cycle du jour :", "Tageszyklus:", "낮밤 주기:", "Cykl dnia:", "Ciclo del día:", "Dygnscykel:", "Ciclo del giorno:", "מחזור יום:" },
+		[OpenTpwText.EveningHelp] = new[] {
+			"How long a full day and night lasts in minutes of play, or a fixed look. Used only while the Evening and night extension is on (Extensions and mods).",
+			"Hvor længe en hel dag og nat varer i spilminutter, eller et fast udseende. Bruges kun, mens udvidelsen Aften og nat er slået til (Udvidelser og mods).",
+			"Hoe lang een hele dag en nacht duurt in speelminuten, of een vaste weergave. Wordt alleen gebruikt als de uitbreiding Avond en nacht aan staat (Uitbreidingen en mods).",
+			"La durée d'un jour et d'une nuit complets en minutes de jeu, ou un aspect fixe. Utilisé seulement quand l'extension Soir et nuit est activée (Extensions et mods).",
+			"Wie lange ein ganzer Tag und eine ganze Nacht dauern, in Spielminuten, oder ein fester Zustand. Wird nur verwendet, solange die Erweiterung Abend und Nacht an ist (Erweiterungen und Mods).",
+			"하루와 밤 한 주기가 플레이 시간으로 몇 분인지, 또는 고정된 모습을 정합니다. 확장 기능 저녁과 밤이 켜져 있을 때만 쓰입니다(확장 기능 및 모드).",
+			"Jak długo trwa pełny dzień i noc w minutach gry albo stały wygląd. Używane tylko przy włączonym rozszerzeniu Wieczór i noc (Rozszerzenia i mody).",
+			"Cuánto dura un día y una noche completos en minutos de juego, o un aspecto fijo. Solo se usa mientras la extensión Tarde y noche está activada (Extensiones y mods).",
+			"Hur länge en hel dag och natt varar i spelminuter, eller ett fast utseende. Används bara när tillägget Kväll och natt är på (Tillägg och mods).", "Quanto dura un giorno e una notte completi in minuti di gioco, oppure un aspetto fisso. Usato solo mentre l'estensione Sera e notte è attiva (Estensioni e mod).", "כמה זמן נמשכים יום ולילה שלמים בדקות משחק, או מראה קבוע. בשימוש רק כשההרחבה ערב ולילה מופעלת (הרחבות ומודים)." },
+		[OpenTpwText.EveningMinutes] = new[] { "{0} minutes", "{0} minutter", "{0} minuten", "{0} min", "{0} Minuten", "{0}분", "{0} minut", "{0} minutos", "{0} minuter", "{0} minuti", "{0} דקות" },
+		[OpenTpwText.EveningAlwaysDay] = new[] { "Always day", "Altid dag", "Altijd dag", "Toujours jour", "Immer Tag", "항상 낮", "Zawsze dzień", "Siempre de día", "Alltid dag", "Sempre giorno", "תמיד יום" },
+		[OpenTpwText.EveningAlwaysDusk] = new[] { "Always dusk", "Altid skumring", "Altijd schemer", "Toujours crépuscule", "Immer Dämmerung", "항상 해질녘", "Zawsze zmierzch", "Siempre atardecer", "Alltid skymning", "Sempre crepuscolo", "תמיד שקיעה" },
+		[OpenTpwText.EveningAlwaysNight] = new[] { "Always night", "Altid nat", "Altijd nacht", "Toujours nuit", "Immer Nacht", "항상 밤", "Zawsze noc", "Siempre de noche", "Alltid natt", "Sempre notte", "תמיד לילה" },
 	};
 
 	public static IReadOnlyList<string> SupportedLanguages => Languages;

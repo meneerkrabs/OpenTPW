@@ -10,11 +10,15 @@ vertex {
         mat4 g_mView;
         mat4 g_mProj;
         vec3 g_vLightPos;
+        float g_flAmbientLevel; // [EXT:evening] the share of the original 0.4 ambient that is left (0 = unchanged: the extension is off or it is day); the padding after the sun position
         vec3 g_vLightColor;
         float g_flLightCount; // [EXT:point-lights] the number of lights after the block (the padding after the light colour)
         vec3 g_vCameraPos;
         float g_flTime;
         float g_flViewDistanceScale;
+        float g_flAmbientR; // [EXT:evening] the tinted ambient (the free padding after the view distance); all zero = unchanged
+        float g_flAmbientG;
+        float g_flAmbientB;
         vec3 g_vFogColor;
         vec4 g_vPointLight[32]; // [EXT:point-lights] 16 lights x 2 vec4, from byte 272; only the lights of a draw are uploaded
     } g_oUbo;
@@ -62,11 +66,15 @@ fragment {
         mat4 g_mView;
         mat4 g_mProj;
         vec3 g_vLightPos;
+        float g_flAmbientLevel; // [EXT:evening] the share of the original 0.4 ambient that is left (0 = unchanged: the extension is off or it is day); the padding after the sun position
         vec3 g_vLightColor;
         float g_flLightCount; // [EXT:point-lights] the number of lights after the block (the padding after the light colour)
         vec3 g_vCameraPos;
         float g_flTime;
         float g_flViewDistanceScale;
+        float g_flAmbientR; // [EXT:evening] the tinted ambient (the free padding after the view distance); all zero = unchanged
+        float g_flAmbientG;
+        float g_flAmbientB;
         vec3 g_vFogColor;
         vec4 g_vPointLight[32]; // [EXT:point-lights] 16 lights x 2 vec4, from byte 272; only the lights of a draw are uploaded
     } g_oUbo;
@@ -148,7 +156,9 @@ fragment {
         vec3 L = normalize(g_oUbo.g_vLightPos - vs_out.vWorldPosition);
         
         vec3 vDiffuse = max(dot(N, L), 0.0) * g_oUbo.g_vLightColor;
-        vec3 vAmbient = vec3(0.4);
+        // [EXT:evening] the evening extension lowers the ambient at dusk and night (g_flAmbientLevel; 0 keeps the original's 0.4 exactly)
+        vec3 vAmbientTint = vec3( g_oUbo.g_flAmbientR, g_oUbo.g_flAmbientG, g_oUbo.g_flAmbientB );
+        vec3 vAmbient = vec3(0.4) * ( vAmbientTint.x + vAmbientTint.y + vAmbientTint.z > 0.0 ? vAmbientTint : vec3( g_oUbo.g_flAmbientLevel > 0.0 ? g_oUbo.g_flAmbientLevel : 1.0 ) );
 
         vec4 vTextureSample = vec4(1, 0, 1, 1);
         bool clampEdges = (outMatFlags & FLAG_CLAMP) != 0u;

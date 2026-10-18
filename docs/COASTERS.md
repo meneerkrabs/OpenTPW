@@ -498,6 +498,17 @@ position (controller `+0x124`, `0x43d7dd`) and its car 0, or car 1 behind a fron
 car model's camera seat; `CoasterRide.TryGetRideView` gives the same car's pose. `FIRSTPERSONVIEWDISTANCE`, `COASTERSMOOTHNESS` and
 `Info.FirstPersonSprites` have no reader in tp.exe that was found (COAST-011).
 
+The wheel-lifecycle slice of October 18 moves the looping wheel clip's start time from the first renderer update to train-slot
+setup (`0x43be10`: id 5, sub 0, loop flag 1, initial speed 1.0). The rating pass sets up only newly activated slots
+(`0x43cad6`); existing slots keep their start through re-rating and speed changes. The state setter's incomplete → built
+transition (`0x435730`, 1 → 2) starts every slot again, while opening, closing, entering the tool, changing capacity and
+changing power do not. A replacement renderer reads the same live slot epoch; a removed and reactivated slot gets a fresh
+one. The existing `WheelTick` arithmetic and its current-speed multiplier are unchanged. This is presentation-only state,
+excluded from the simulation hash and save format: restoring a park initializes fresh clips at the restored controller time,
+without promising wheel-phase continuity across saves. COAST-034 remains open for bend sampling/endpoints, the untraced flume
+clip invocation and unbent rider sockets. CPU phase-query and private-asset UV fixtures cover this slice; they do not establish
+GPU or full original-game visual parity.
+
 The pylon tag round of October 16 built the knot pass over the pylon models' posed track tags (COAST-015 narrowed to the
 knot pass's write-back of the clamped height parameter and the no-model fallback; COAST-028's guessed clip angles apply only
 without the model; COAST-029 lost its middle-knot height-adjust clause, the knots taking no `fTrackHeightAdjust`). Saves record

@@ -80,6 +80,10 @@ public sealed class CoasterToolPanel
 	/// <summary>The cost change a drag shows in the HUD's cost text (<c>0x52fba0</c>), or null.</summary>
 	public long? DragCost { get; private set; }
 
+	/// <summary>Whether the selected original tool mode exposes the HUD cost: build/move tools, or an active height drag in the edit mode.</summary>
+	// [BIN:TPW-EXE:0x498337 coaster cost modes] Build/Loop call 0x497D20 and Move calls 0x497E10 (tool mode 3); other buttons call 0x497BC0 (mode 8). Cash refresh 0x4A0CEE gates mode 8 on 0x447990, bit 0 of 0x79C658, set/cleared by height handler 0x441A00; rotate/tilt use other bits.
+	public bool ShowsActionCost => IsBuilding || Selected == CoasterToolButton.Move || drag?.Kind == CoasterToolButton.Height;
+
 	/// <summary>The track is complete and not cut open (controller flags 1 set, 2 clear): the build buttons are off and the demolish button is on.</summary>
 	private bool IsFinished => Track.IsComplete && !Track.IsCut;
 

@@ -5,6 +5,8 @@ using System.Linq;
 using System.Text;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using OpenTPW.Mods;
+using OpenTPW.UI.Original;
+using OpenTPW.Hud;
 using static OpenTPW.Tests.PoolsSwimSessionTests;
 
 namespace OpenTPW.Tests;
@@ -150,6 +152,31 @@ public class PoolsAttractionsTests
 		}
 		Assert.IsTrue( seen.Count > 30 && seen.Min() < -40 && seen.Max() > 40, $"the wave swings both ways ({seen.Count} values)" );
 		Assert.AreNotEqual( PoolWaves.SmoothWave( high, 60.0, 5f, 5f ), PoolWaves.SmoothWave( high, 60.0, 8f, 5f ), "the front travels: two points differ in phase" );
+	}
+
+	[TestMethod]
+	public void TheWaterSurfaceRisesWithTheWaveAndTheSwimmersRideIt()
+	{
+		// the shader raises the water mesh by kMaxHeave times its strength (the envelope times height / 3); a swimmer bobs by the same height, and a crest stays under the deck
+		Assert.IsTrue( PoolWaves.MaxHeave > 0f && PoolWaves.MaxHeave < PoolMeshOptions.Default.WaterDrop, "a crest never tops the coping" );
+		for ( var height = 1; height <= 3; height++ )
+			Assert.AreEqual( PoolWaves.MaxHeave * height / 3f, PoolWaves.BobHeights[height - 1], 1e-6f, $"height {height}: the bob is the surface's own rise" );
+		var shader = WaterShaderText();
+		StringAssert.Contains( shader, $"const float kMaxHeave = {PoolWaves.MaxHeave.ToString( System.Globalization.CultureInfo.InvariantCulture )};" );
+		StringAssert.Contains( shader, "pos.z += poolWave( pos.xy ) * kMaxHeave;", "the vertex shader heaves the surface" );
+		Assert.IsFalse( shader.Contains( "vertex \"" ), "the water has its own vertex shader, not the shared include" );
+		// the wave number per engine unit is the phase per cell over a period's 64 steps and the cell's width
+		StringAssert.Contains( shader, "const float kWaveNumber = 21.0 / 128.0;" );
+		Assert.AreEqual( 21.0 / 128.0, PoolWaves.PhasePerCell / 64.0 / OriginalParkPlacement.CellSize, 1e-9 );
+	}
+
+	private static string WaterShaderText()
+	{
+		var directory = new System.IO.DirectoryInfo( AppContext.BaseDirectory );
+		while ( directory != null && !System.IO.File.Exists( System.IO.Path.Combine( directory.FullName, "content", "shaders", "pool-water.shader" ) ) )
+			directory = directory.Parent;
+		Assert.IsNotNull( directory, "Repository shader assets must be available for this test." );
+		return System.IO.File.ReadAllText( System.IO.Path.Combine( directory!.FullName, "content", "shaders", "pool-water.shader" ) ).Replace( "\r\n", "\n" );
 	}
 
 	[TestMethod]
@@ -1023,6 +1050,11 @@ public class PoolsAttractionsTests
 		still.Until( () => sitter.IsSwimming, 400 );
 		Assert.AreEqual( 0f, PoolWaterEffects.Bob( still.Simulation, sitter, EffectSites ), "a pool without waves" );
 		Assert.AreEqual( 0f, PoolWaterEffects.Bob( rig.Simulation, new Guest( 999, 0 ), EffectSites ), "a guest who is not swimming" );
+		// the water level an activity draws its swimmer at rises with the same surface as a free swimmer's bob, and not without a region
+		var region = PoolActivityHelpers.RegionOf( rig.Simulation, guest );
+		Assert.IsNotNull( region );
+		Assert.AreEqual( PoolWaterEffects.Bob( rig.Simulation, guest, EffectSites ), PoolWaterEffects.SurfaceRise( rig.Simulation, guest, region, EffectSites ), 1e-6f );
+		Assert.AreEqual( 0f, PoolWaterEffects.SurfaceRise( rig.Simulation, guest, null, EffectSites ) );
 	}
 }
 
@@ -1331,6 +1363,118 @@ public class PoolsAttractionsLevelTests
 		} );
 		Assert.IsNull( level.CyclePoolWaves( one ), "and an ordinary object neither" );
 	}
+
+	[TestMethod]
+	public void TheWaveMachineWindowSetsOnOffHeightAndIntervalAndCancelLeavesThemAsTheyWere()
+	{
+		var wave = Entry( 1309, "wavemachine", "N", "**" );
+		var swing = Entry( 1310, "ropeswing", "N", "*" );
+		using var camera = ParkCamera();
+		With( () =>
+		{
+			level.PoolBuilder!.PaintCells( PoolBuilder.Rectangle( (4, 12), (9, 14) ) );
+			var machine = level.Objects.TryPlace( wave, 5, 15, 0, out _ )!;
+			var rope = level.Objects.TryPlace( swing, 8, 15, 0, out _ )!;
+			var region = PoolSwimRegion.Build( Cells, (4, 12) )!;
+			var hud = new ParkHud( level, OriginalUiTests.FakeStrings(), new EconomyParkStatus( () => null ), new UiTestCatalog(), new HudHost() );
+			Assert.AreEqual( PoolWaveSettings.Default, level.PoolWavesOf( machine ) );
+
+			// the window opens on the machine's settings, the choices show them, and the tick writes the edited copy to the machine
+			hud.SelectObject( machine );
+			hud.OpenWaveSettings( machine );
+			var screen = hud.Stack.Top!;
+			Assert.AreEqual( "waveSettings", screen.Name );
+			Assert.IsTrue( Selected( screen, "wavesOn" ) && Selected( screen, "height2" ) && Selected( screen, "interval1" ) );
+			Assert.IsFalse( Selected( screen, "wavesOff" ) || Selected( screen, "height3" ) || Selected( screen, "interval0" ) );
+			screen.Find( "height3" )!.Activate();
+			screen.Find( "interval0" )!.Activate();
+			Assert.AreEqual( PoolWaveSettings.Default, level.PoolWavesOf( machine ), "nothing is written before the tick" );
+			screen.Find( "apply" )!.Activate();
+			Assert.AreNotSame( screen, hud.Stack.Top, "the tick closes the window" );
+			Assert.AreEqual( new PoolWaveSettings( true, 3, 0 ), level.PoolWavesOf( machine ) );
+			Assert.AreEqual( new PoolWaveSettings( true, 3, 0 ), PoolWaveSettings.ActiveIn( level.PoolSites, Cells, region ), "the pool runs them" );
+
+			// an unchanged tick writes nothing
+			var flags = Cells.FlagsAt( level.PoolSites.Find( machine.ThingId )!.Access.X, level.PoolSites.Find( machine.ThingId )!.Access.Y );
+			hud.OpenWaveSettings( machine );
+			hud.Stack.Top!.Find( "apply" )!.Activate();
+			Assert.AreEqual( flags, Cells.FlagsAt( level.PoolSites.Find( machine.ThingId )!.Access.X, level.PoolSites.Find( machine.ThingId )!.Access.Y ) );
+
+			// off and a long rest, then the cross: nothing changes
+			hud.OpenWaveSettings( machine );
+			screen = hud.Stack.Top!;
+			screen.Find( "wavesOff" )!.Activate();
+			screen.Find( "interval2" )!.Activate();
+			screen.Find( "cancel" )!.Activate();
+			Assert.AreEqual( new PoolWaveSettings( true, 3, 0 ), level.PoolWavesOf( machine ), "the cross leaves them as they were" );
+			hud.OpenWaveSettings( machine );
+			screen = hud.Stack.Top!;
+			screen.Find( "wavesOff" )!.Activate();
+			screen.Find( "height1" )!.Activate();
+			screen.Find( "interval2" )!.Activate();
+			screen.Find( "apply" )!.Activate();
+			Assert.AreEqual( new PoolWaveSettings( false, 1, 2 ), level.PoolWavesOf( machine ) );
+			Assert.IsNull( PoolWaveSettings.ActiveIn( level.PoolSites, Cells, region ), "off: no waves" );
+
+			// only a wave machine has the window
+			var screens = hud.Stack.Screens.Count;
+			hud.OpenWaveSettings( rope );
+			hud.OpenWaveSettings( one );
+			Assert.AreEqual( screens, hud.Stack.Screens.Count );
+			Assert.IsNull( level.PoolWavesOf( rope ) );
+			Assert.IsFalse( level.SetPoolWaves( rope, PoolWaveSettings.Default ) );
+			return 0;
+		} );
+	}
+
+	[TestMethod]
+	public void TheWaveMachineWindowsChoicesFitItAndAreNamedInEveryLanguage()
+	{
+		var wave = Entry( 1311, "wavemachine", "N", "**" );
+		using var camera = ParkCamera();
+		With( () =>
+		{
+			level.PoolBuilder!.PaintCells( PoolBuilder.Rectangle( (4, 12), (9, 14) ) );
+			var machine = level.Objects.TryPlace( wave, 5, 15, 0, out _ )!;
+			var hud = new ParkHud( level, OriginalUiTests.FakeStrings(), new EconomyParkStatus( () => null ), new UiTestCatalog(), new HudHost() );
+			hud.OpenWaveSettings( machine );
+			var screen = hud.Stack.Top!;
+			var canvas = new UiCanvas( 2048, 1536 );
+			var window = screen.Find( "window" )!.ScreenRect( canvas );
+			foreach ( var element in screen.Elements.Where( element => element.Id != "window" ) )
+			{
+				var rect = element.ScreenRect( canvas );
+				Assert.IsTrue( rect.X >= window.X && rect.Y >= window.Y && rect.Right <= window.Right && rect.Bottom <= window.Bottom, $"{element.Id} lies inside the window" );
+			}
+			return 0;
+		} );
+		var keys = new[] { OpenTpwText.PoolWavesSettings, OpenTpwText.PoolWavesLow, OpenTpwText.PoolWavesMedium, OpenTpwText.PoolWavesHigh,
+			OpenTpwText.PoolWavesShort, OpenTpwText.PoolWavesNormal, OpenTpwText.PoolWavesLong };
+		foreach ( var language in SupplementaryStrings.SupportedLanguages )
+			foreach ( var key in keys )
+			{
+				var text = SupplementaryStrings.Get( key, language );
+				Assert.IsFalse( string.IsNullOrWhiteSpace( text ), $"{language} {key}" );
+				Assert.IsTrue( text.Length <= 24, $"{language} {key}: '{text}' fits a toggle" );
+			}
+	}
+
+	/// <summary>The park camera the settings window wants (it does not open while the camera rides or walks), restored on dispose.</summary>
+	private IDisposable ParkCamera()
+	{
+		// the fixture's level is made without its constructor; the window's input gate asks the cell tool whether it is armed
+		if ( level.CellTool == null )
+			typeof( Level ).GetField( "<CellTool>k__BackingField", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic )!.SetValue( level, new CellBuildTool() );
+		var previous = Camera.Mode;
+		Camera.Mode = new ParkCameraMode();
+		return new Restore( () => Camera.Mode = previous );
+	}
+
+	private sealed class Restore( Action action ) : IDisposable { public void Dispose() => action(); }
+
+	private static bool Selected( UiScreen screen, string id ) => ((UiButton)screen.Find( id )!).Selected!();
+
+	private sealed class UiTestCatalog : IBuildCatalog { public IReadOnlyList<BuildItem> GetItems( BuildCategory category ) => Array.Empty<BuildItem>(); }
 
 	[TestMethod]
 	public void TheSpaCellIsKeptWhileUsedAndRemovingTheSpaSendsItsGuestOut()

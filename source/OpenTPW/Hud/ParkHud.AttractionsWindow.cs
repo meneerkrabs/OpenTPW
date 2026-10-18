@@ -14,7 +14,7 @@ namespace OpenTPW.Hud;
 // [BIN:TPW-EXE:0x4955e0 list refresh, 0x66403b sorted row insert] the 2000 ms refresh rewrites the cells in place and never moves a row, a new row goes in by the list's sorted insert (ListRowOrder), and the first row added selects row 0 (0x66525c)
 // [EXT:list-row-pitch] the list's row pitch is the row item's height (0x4944d0: font slot 7's height scaled to the canvas + 6), taken as the list's pitch, a design choice: the original's pitch follows the screen mode's font bank (0x663718 into +0x170), which resolution-independent output sizes do not have (UI-002)
 // [EXT:list-selection-by-id] the selected row follows its attraction while rows are added or removed, where the original keeps the selected position (+0x14c) — a design choice that keeps a live list from highlighting another attraction
-// [APPROX:UI-905] the bars take the object window's values (the gauge rows of the ride window) and the satisfaction bar reads the object's visit history as the window does (UI-024) — evidence needed: whether the list's bars are scaled as the object window's gauges are
+// [BIN:TPW-EXE:0x4955e0 list refresh bars] the list's bar cells are scaled as the object windows' gauges are: ((value & 0xff) << 10) / 100 of the 0..1024 range, for the excitement (0x4e0860), repair (the __ftol of the repair), life (0x4dd6d0) and satisfaction (0x4e1e30) columns of the ride, shop and sideshow lists; OpenTPW feeds them the object window's gauge values (ObjectStatOf), the satisfaction one from the visit history as the window does
 public sealed partial class ParkHud
 {
 	/// <summary>The round entry button of the All Attractions window in the buy and staff windows: the window's own rides tab icon.</summary>

@@ -144,7 +144,7 @@ view, a visit with other players over the visited park ([Players in a visited pa
   limit holds for every park). A chat park has no vote.
 - **Message list** along the bottom: the room's lines cut into rows at the list's width, the last
   twenty rows, following the newest (0x4BE970).
-- **Entry** under the messages: a click gives it the keys, and so does Enter while nothing else
+- **Entry** under the messages, up to 255 characters: a click gives it the keys, and so does Enter while nothing else
   has the focus; the pointer passing over it does not, and neither do the arrows or Tab. Enter says
   the line and Tab leaves the entry (0x4BE3A0). While it has the keys, the camera still takes the
   wheel, the edges and the drag over the park, and no hover help covers the entry while a line is
@@ -165,7 +165,8 @@ enter a park (in OpenTPW's own words, [EXT:online-buddy-enters-text](#online-des
 | EXT label | OpenTPW decision | Known original evidence (not reproduced) |
 | --- | --- | --- |
 | `online-chat-help` | The overlay's controls show UIHELPTEXT 402-409, 418, 419, 422, 461 and 480 by their wording (tabs, names, earmuffs, scrollers, vote, postcard). The entry shows none: the help box over it would cover UIHELPTEXT 420 and the typed line. | The overlay's table carries no help ids; where the original took its controls' help from is not read. |
-| `online-chat-person-flags` | The overlay asks for the buddy list as the chat connection opens and on the buddy tab, keeping those answers out of the message list. A buddy counts as online and in this park while the room's roster names them; otherwise as the last answer says. | The original kept both flags per buddy from the server's buddy messages (0x4EE5C0, buddy record +0x1C and +0x1D). |
+| `online-chat-person-flags` | The overlay asks for the buddy list as the chat connection opens and on the buddy tab, at most once in five seconds counting a typed `/buddy`, and keeps those answers out of the message list. A buddy counts as online and in this park while the room's roster names them; otherwise as the last answer says. | The original kept both flags per buddy from the server's buddy messages (0x4EE5C0, buddy record +0x1C and +0x1D). |
+| `online-chat-line-limit` | A chat line carries up to 256 characters; the overlay's entry takes 255, as the original's. | The original entry's limit is 255 (0x4BF460); the original server's limit is not known. |
 | `online-chat-row-highlight` | The chosen name is marked with a bar. | The list's highlight art (`hilight`, set by 0x4BF460) is not drawn. |
 | `online-chat-popup-place` | A name popup's corner is at the pointer, kept inside the screen. | 0x4BF370 places it at the pointer with an offset that is not read. |
 

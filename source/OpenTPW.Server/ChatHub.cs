@@ -313,9 +313,8 @@ public sealed class ChatHub
 		foreach ( var other in sessions.Values.Where( other => other.Room == room && other != session ) )
 			Send( other, RoomEvent( room ) );
 		// The park the player walked out of gets its roster without them, as when they disconnect.
-		if ( left != room )
-			foreach ( var other in sessions.Values.Where( other => other.Room == left ) )
-				Send( other, RoomEvent( left ) );
+		foreach ( var other in sessions.Values.Where( other => other.Room == left ) )
+			Send( other, RoomEvent( left ) );
 		NotifyBuddiesOfEntry( session );
 	}
 

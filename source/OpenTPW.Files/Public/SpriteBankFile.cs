@@ -60,7 +60,10 @@ public sealed class SpriteBankFile : BaseFormat
 	public SpriteBankFile( Stream stream ) => ReadFromStream( stream );
 
 	/// <summary>Writes the frame as RGBA (palette alpha kept; index 0 transparent).</summary>
-	public void DecodeRgba( SpriteFrame frame, Span<byte> destination, int destinationStride, int x, int y )
+	public void DecodeRgba( SpriteFrame frame, Span<byte> destination, int destinationStride, int x, int y ) => DecodeRgba( Palette, frame, destination, destinationStride, x, y );
+
+	/// <summary>Writes a frame as RGBA with a bank's palette (<see cref="Palette"/>: BGRA entries, palette alpha kept; index 0 transparent).</summary>
+	public static void DecodeRgba( ReadOnlySpan<byte> palette, SpriteFrame frame, Span<byte> destination, int destinationStride, int x, int y )
 	{
 		for ( var row = 0; row < frame.Height; row++ )
 		{
@@ -71,10 +74,10 @@ public sealed class SpriteBankFile : BaseFormat
 					continue;
 				var entry = (index - 1) * 4;
 				var target = (y + row) * destinationStride + (x + column) * 4;
-				destination[target] = Palette[entry + 2];
-				destination[target + 1] = Palette[entry + 1];
-				destination[target + 2] = Palette[entry];
-				destination[target + 3] = Palette[entry + 3];
+				destination[target] = palette[entry + 2];
+				destination[target + 1] = palette[entry + 1];
+				destination[target + 2] = palette[entry];
+				destination[target + 3] = palette[entry + 3];
 			}
 		}
 	}

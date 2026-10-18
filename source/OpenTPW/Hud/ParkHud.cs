@@ -898,7 +898,7 @@ public sealed partial class ParkHud
 	/// The staff tools' HUD side (hire placement and carrying): the cursor, the hovered cell, right click leaves, a left click on a valid cell completes it.
 	/// A click on an invalid cell does nothing and the tool stays; the park view's other clicks (guest selection, the path tool) wait while it runs.
 	/// </summary>
-	// [EXT:software-pointers] the original loads its cursors from Data/ui/cursors/*.ani with LoadCursorFromFileA (0x489639, IAT 0x6fd314) into a cursor object (0x661935): OS animated cursors drawn at the pointer hot spot (a software cursor path, "bwcursor", also exists); OpenTPW has no .ani loader (the platforms cannot load animated Windows cursors), so the tools' cursor 9 (c_carry.ani) is the closest cursor it has, Input.CursorTypes.Carry (Ccar.tga); the person in hand still hangs at the exact mouse ground point, as in the original (0x46c480)
+	// [EXT:software-pointers] the original loads its cursors from Data/ui/cursors/*.ani with LoadCursorFromFileA (0x489639, IAT 0x6fd314) into a cursor object (0x661935): OS animated cursors drawn at the pointer hot spot (a software cursor path, "bwcursor", also exists); OpenTPW has no .ani loader (the platforms cannot load animated Windows cursors), so the tools' cursor 9 (c_carry.ani) is the closest cursor it has, Input.CursorTypes.Carry (Ccar.tga); the person in hand still hangs at the exact mouse ground point, where tp.exe's tool frame places it (0x46c480, GUEST-021)
 	private bool UpdateStaffTool( UiInput input, bool inPark, NVector2 viewport )
 	{
 		var tool = level.StaffPlacement;
@@ -919,16 +919,20 @@ public sealed partial class ParkHud
 			tool.Cancel();
 			return toolPress = true;
 		}
-		// the sprite hangs at the exact ground point under the pointer every frame, also while the pointer is over the HUD (the original reads the mouse's world point, not the hover cell)
+		// the sprite hangs at the exact ground point under the pointer every frame, also while the pointer is over the HUD (the original reads the mouse's world point, not the hover cell);
+		// a frame without a pointer (a key alone) keeps the last one
 		// [APPROX:GUEST-021] the terrain point only: tp.exe's picker (0x45BF90) takes the nearer hit on an object's model when there is one
-		if ( input.Mouse.X >= 0 && input.Mouse.Y >= 0 && level.TryGetGroundCell( input.Mouse, viewport, out var groundX, out var groundY ) )
-			tool.SetCursor( groundX, groundY );
-		else
-			tool.SetCursor( null, null );
-		if ( inPark )
-			tool.Hover( cursorX, cursorY );
-		else
-			tool.Hover( null, null );
+		if ( input.Mouse.X >= 0 && input.Mouse.Y >= 0 )
+		{
+			if ( level.TryGetGroundCell( input.Mouse, viewport, out var groundX, out var groundY ) )
+				tool.SetCursor( groundX, groundY );
+			else
+				tool.SetCursor( null, null );
+			if ( inPark )
+				tool.Hover( cursorX, cursorY );
+			else
+				tool.Hover( null, null );
+		}
 		if ( !inPark || !input.LeftPressed )
 			return false;
 		// a click on an invalid cell only logs in the original ("Can't put staff here"): no player text, the tool stays

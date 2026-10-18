@@ -3092,11 +3092,14 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// type's own effects (<see cref="UseEffects"/>): thirst and hunger fall, illness and happiness rise. A relief object still sets the toilet meter to 0.
 	/// </summary>
 	// [BIN:STP-PPC:0x100EA318 ride outcome] executed by the PowerPC oracle (ride-outcome, 561 inputs; C# agrees)
-	// [APPROX:GUEST-005] the use routine 0x004FE1E0 is followed in its order except a won sideshow's tail (0x004FE802..0x004FE8D9, type kind +0x4AC 2: happiness += trunc(medium step × log2(object +0x188 / object +0x194)), "Sideshow won - happiness up", then one discarded world draw), the thirst or hunger sound (0x004FAA00, cat_kids 0x83 when ThirstEffect is above HungerEffect, 0x84 when below) and its guest event records (0x0050C100: 8, 0x11, 0x12; read only by the debug dump 0x004FAA60); the small-portion draws are taken (0x004FE43C, 0x004FE48E) but the tail's one (0x004FE8D9) is not — evidence needed: none (read)
+	// [BIN:TPW-EXE:0x004FE1E0 use routine] followed in its order: the sideshow prize into the purse (0x004FE231), the outcome, the effects, the small-portion draws (0x004FE43C, 0x004FE48E), the appearance step and, for a won sideshow, the tail (0x004FE802..0x004FE8D9: happiness += trunc(medium step × log2(prize / price)) and one discarded world draw); the guest event records 8, 0x11 and 0x12 (0x0050C100) are read only by the debug dump 0x004FAA60 ([EXT:guest-event-ring])
 	private void ApplyVisit( Guest guest, IRideVisitorBridge ride )
 	{
 		var type = Settings.Types[Math.Min( guest.Type, Settings.Types.Count - 1 )];
 		var before = guest.Happiness;
+		// [BIN:TPW-EXE:0x004FE231 sideshow prize] a won play (the lost ones skip this routine) puts the prize, the sideshow's cost of goods, into the guest's purse before the outcome
+		if ( ride.Kind == RideVisitorKind.Sideshow )
+			guest.Money = SideshowWin.Purse( guest.Money, ride.Sideshow.CostOfGoods );
 		(guest.Happiness, guest.Nausea) = RideOutcome.Apply( guest.Happiness, guest.Hunger, guest.Nausea, type.PreferredExcitement, ride.LiveExcitement,
 			Settings.PerfectRide, Settings.GoodRide, Settings.OkRide, Settings.RideVomitDivisor );
 		// [BIN:TPW-EXE:0x004FDB66 sideshow thought] only a sideshow (thing kind 2) sets a thought at the end of a use: 5 after a win, 6 after a loss (0x004FDC25); rides and shops set none
@@ -3149,6 +3152,12 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 				guest.Nausea = 0;
 			// [BIN:TPW-EXE:0x004FE7F5 relief speed term] the block ends by setting the toilet speed term +0xC2 to 25 (word 0x0075C7F2), until the guest's next needs phase rewrites it
 			guest.ToiletBonus = GuestSpeed.ToiletBonus;
+		}
+		// [BIN:TPW-EXE:0x004FE802 sideshow win tail] a won sideshow's routine ends with happiness += trunc(medium step × log2(prize / price)), clamped to 0..100 ("Sideshow won - happiness up"), and one world draw whose value nothing reads (0x004FE8D9 → 0x00516330)
+		if ( ride.Kind == RideVisitorKind.Sideshow )
+		{
+			guest.Happiness = MeterMath.Add( guest.Happiness, SideshowWin.HappinessGain( ride.Sideshow.CostOfGoods, ride.Sideshow.PricePerUse, Settings.MediumHappinessChange ) );
+			random.NextWord();
 		}
 	}
 

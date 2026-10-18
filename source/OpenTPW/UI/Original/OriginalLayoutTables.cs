@@ -66,6 +66,25 @@ public static class OriginalLayoutTables
 		} ),
 	} );
 
+	/// <summary>[BIN:TPW-EXE:0x755750] layout table RideUpgradeDialog.</summary>
+	public static readonly LayoutTable RideUpgradeDialog = new( "RideUpgradeDialog", 0x755750, new LayoutNode[]
+	{
+		new( 1, 0x1u, 0x1F4Cu, 500, 233, 1516, 830, -1, -1, "wdialogw", null, null, new LayoutNode[]
+		{
+			new( 2, 0x1u, 0xFFFFFFFEu, 1387, 613, 1470, 696, -1, -1, "b_exit", null, null, System.Array.Empty<LayoutNode>() ),
+			new( 7, 0x81u, 0x1F4Du, 603, 406, 1334, 731, -1, -1, "upgrades", null, new[] { 633, 429, 1238, 700 }, new LayoutNode[]
+			{
+				new( 3, 0x10u, 0x1u, 1258, 475, 1317, 649, -1, -1, null, "!slider", new[] { 1258, 475, 1317, 649 }, new LayoutNode[]
+				{
+					new( 2, 0x21u, 0x2u, 1258, 654, 1318, 714, -1, -1, "b_down", null, null, System.Array.Empty<LayoutNode>() ),
+					new( 2, 0x1u, 0x3u, 1250, 528, 1317, 596, -1, -1, "b_scroller", null, null, System.Array.Empty<LayoutNode>() ),
+					new( 2, 0x21u, 0x1u, 1258, 410, 1318, 470, -1, -1, "b_up", null, null, System.Array.Empty<LayoutNode>() ),
+				} ),
+			} ),
+			new( 1, 0x1u, 0x1F4Eu, 743, 298, 1215, 378, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+		} ),
+	} );
+
 	/// <summary>[BIN:TPW-EXE:0x755908] layout table ShopWindow.</summary>
 	public static readonly LayoutTable ShopWindow = new( "ShopWindow", 0x755908, new LayoutNode[]
 	{

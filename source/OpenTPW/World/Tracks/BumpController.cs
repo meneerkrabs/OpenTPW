@@ -5,7 +5,7 @@ namespace OpenTPW;
 /// collision objects and buoys, the guests waiting to board and to leave, and the vehicles. It runs the module's integer physics once per 31 ms
 /// world substep (about 32.26 per second) and answers the ride script's <c>BUMP</c> commands. It runs water boats (types −5, −8, −12, −13), go-karts (types −4,
 /// −7, −9, −10: the grid start, the race, the finish and the kart effects) and bumper cars (types −1, −6, −11, −14: cars that wander an arena
-/// and hand their riders over when the session's countdown ends); the add-ons' vehicle hook (0x00548E80: the Space Racers Teleport hides a vehicle between its two tiles) is TRACK-008.
+/// and hand their riders over when the session's countdown ends), with the add-ons' vehicle hook (the Space Racers Teleport hides a vehicle between its two tiles, <see cref="PassAddOn"/>).
 /// </summary>
 // [EXT:bump-pre-shared-save-order] a park-resume save from before the shared pools restores their order from the restore (controllers by attraction id), where the original's pools only ever fill in build order; kept so older saves load; [EXT:bump-foreign-object-forget] a vehicle whose foreign object is rebuilt loses it (BumpWorld.ForgetObjectsOf)
 
@@ -1020,7 +1020,59 @@ public sealed class BumpController
 	/// <summary>The first half of a vehicle's module tick: its step (0x5474B0); <see cref="IntegrateVehicle"/> follows while it lives.</summary>
 	internal void StepVehicle( BumpVehicle vehicle ) => Step( vehicle );
 
-	internal void IntegrateVehicle( BumpVehicle vehicle ) => Integrate( vehicle );
+	internal void IntegrateVehicle( BumpVehicle vehicle )
+	{
+		Integrate( vehicle );
+		PassAddOn( vehicle );
+	}
+
+	/// <summary>
+	/// The tail of every vehicle's integration: the add-on hook. Only the Space Racers Teleport (<see cref="TrackAddOns.TeleportTypeId"/>) has one: in its first tile a vehicle
+	/// within <see cref="TrackAddOns.TeleportReach"/> of the centre along the tile's axis vanishes, remembering the side it came from, and the teleport queues its pass animation
+	/// and then its idle loop; past that reach on the far side of the second tile the vehicle shows again, as it does wherever it sits in no add-on's object.
+	/// </summary>
+	// [BIN:TPW-EXE:0x00548C81 add-on hook] after the drawn heading (0x00548C70, the tail every vehicle family reaches) the vehicle's object +0x98 is tested: none ends the hook; without flag 0x100 a hidden vehicle (0x200) shows (0x00548E12); with it the section +0x18 must have the type id 0xDAC at +0x10 (0x00548CA5); d = x − the object's centre x when the kind word +4 is 0xC, else y − centre y; on the section's first tile (+8 = 0) a vehicle that is not hidden and within (−0x4B0, 0x4B0) takes flag 0x800000 for d &lt; 0 (clears it otherwise) and hides (0x00548E80(v, 1)); if the instance's channel 0 does not play animation 5 (0x00473FB0), its queued clip is dropped (0x00473270), animation 5 is triggered with flags 0 (0x004732A0: it waits behind a clip that still runs) and the section takes flag 2; on any later tile a hidden vehicle shows once d &gt; 0x4B0 with flag 0x800000 or d &lt; −0x4B0 without it; while the section has flag 2 and channel 0 has nothing queued (+0x24 = 0xC, 0x00473FF0), animation 2 is triggered with flags 1 (the loop) and flag 2 clears (0x00548DFC)
+	private static void PassAddOn( BumpVehicle vehicle )
+	{
+		if ( ObjectOf( vehicle ) is not { } item )
+			return;
+		if ( (item.Flags & CollisionObject.AddOn) == 0 )
+		{
+			if ( (vehicle.Flags & BumpVehicle.Hidden) != 0 )
+				Show( vehicle, false );
+			return;
+		}
+		if ( item.Section is not { AddOn: { TypeId: TrackAddOns.TeleportTypeId } addOn } section )
+			return;
+		// the kind word is compared whole, so an add-on among the first two straights (no-buoy bit 0x10000) measures along y whatever its axis
+		var offset = section.KindWord == 12 ? vehicle.X - item.X : vehicle.Y - item.Y;
+		if ( section.AddOnRun == 0 )
+		{
+			if ( (vehicle.Flags & BumpVehicle.Hidden) == 0 && offset is < TrackAddOns.TeleportReach and > -TrackAddOns.TeleportReach )
+			{
+				vehicle.Flags = offset < 0 ? vehicle.Flags | BumpVehicle.FromNegative : vehicle.Flags & ~BumpVehicle.FromNegative;
+				Show( vehicle, true );
+				if ( addOn.Animation != TrackAddOns.PassAnimation )
+				{
+					addOn.FlushDeferred();
+					addOn.Queue( TrackAddOns.PassAnimation, loop: false );
+					section.AddOnPassing = true;
+				}
+			}
+		}
+		else if ( (vehicle.Flags & BumpVehicle.Hidden) != 0
+			&& ((vehicle.Flags & BumpVehicle.FromNegative) != 0 ? offset > TrackAddOns.TeleportReach : offset < -TrackAddOns.TeleportReach) )
+			Show( vehicle, false );
+		if ( section.AddOnPassing && addOn.DeferredAnimation == ObjectAnimator.NoAnimation )
+		{
+			addOn.Queue( TrackAddOns.IdleAnimation, loop: true );
+			section.AddOnPassing = false;
+		}
+	}
+
+	/// <summary>Hides or shows a vehicle (0x00548E80): the flag the renderer, the riders' heads and the vehicle collisions read.</summary>
+	// [BIN:TPW-EXE:0x00548E80 vehicle hide] hiding sets flag 0x200 and hides the vehicle's instance, its shadow instance (flags 0x2002000 with +0xC) and its riders' heads (0x0044B4C0 for every rider of the list +0x30); showing clears the flag, shows both instances and hangs the heads again (0x0044B410); either does nothing when the flag already says so
+	private static void Show( BumpVehicle vehicle, bool hide ) => vehicle.Flags = hide ? vehicle.Flags | BumpVehicle.Hidden : vehicle.Flags & ~BumpVehicle.Hidden;
 
 	/// <summary>The rest of a vehicle's module tick after its collisions: the stuck check, the walls, the keep-out circles and the effect player.</summary>
 	internal void FinishVehicle( BumpVehicle vehicle )
@@ -1539,7 +1591,7 @@ public sealed class BumpController
 	// [BIN:TPW-EXE:0x00546E52 shared pass] the pair loop runs over the whole module pool: the restitution is the other vehicle's controller's (+0x9C → +0x2C) and the crash code this vehicle's controller type, so vehicles of neighbouring rides push each other
 	internal void Collide( BumpVehicle vehicle, BumpVehicle other )
 	{
-		if ( other == vehicle || !other.IsLive || ((ObjectOf( other )?.Flags ?? 0) & CollisionObject.Crossing) != 0 || (other.Flags & 0x200) != 0 )
+		if ( other == vehicle || !other.IsLive || ((ObjectOf( other )?.Flags ?? 0) & CollisionObject.Crossing) != 0 || (other.Flags & BumpVehicle.Hidden) != 0 )
 			return;
 		var restitution = other.Controller?.Restitution ?? Restitution;
 		var dx = other.X - vehicle.X;
@@ -1741,6 +1793,8 @@ public sealed class BumpController
 			hash.Add( section.KindWord );
 			hash.Add( section.X );
 			hash.Add( section.Y );
+			if ( section.AddOn != null )
+				hash.Add( section.AddOnPassing );
 		}
 		hash.Add( Pending.Count );
 		foreach ( var guest in Pending )

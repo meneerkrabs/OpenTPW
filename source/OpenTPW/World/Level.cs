@@ -635,7 +635,7 @@ public partial class Level : IDisposable
 				CloseForUpgrade( item.InstanceId );
 			else if ( item.Kind == ParkEventKind.MaintenanceCancelled )
 				OpenAfterCancelledCall( item.InstanceId );
-			else if ( item.Kind == ParkEventKind.ToiletCleaned )
+			else if ( item.Kind is ParkEventKind.ToiletCleaned or ParkEventKind.UpgradeCancelled )
 				OpenAfterClean( item.InstanceId );
 			else if ( item.Kind == ParkEventKind.UpgradeCompleted )
 			{

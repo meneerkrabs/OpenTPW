@@ -6,7 +6,8 @@ namespace OpenTPW;
 /// <param name="Mask">The tile's connection mask.</param>
 /// <param name="Segment">The 1-based position of the tile in the walk (+0x24).</param>
 /// <param name="AddOn">The tile carries an add-on (flag 0x10).</param>
-public readonly record struct TrackStep( int X, int Y, byte Entry, byte Exit, byte Mask, int Segment, bool AddOn )
+/// <param name="AddOnRun">The tile's place in its run of add-on tiles: 0 for the first, 1 for the next, …; 0 for every other tile (section +8).</param>
+public readonly record struct TrackStep( int X, int Y, byte Entry, byte Exit, byte Mask, int Segment, bool AddOn, int AddOnRun = 0 )
 {
 	/// <summary>The section kind the tile builds (<see cref="TrackSections"/>): 5–8 corners, 9/10 straights (12/13 add-on), 11 crossings.</summary>
 	public int Kind
@@ -53,8 +54,7 @@ public static class TrackCircuitWalker
 	// [EXT:track-walk-step-limit] the walk is cut off after as many steps as the layer has tiles plus the station; the original 0x52A970 has no step limit and would hang on a flow that never returns to the start
 	// [BIN:TPW-EXE:0x0053AEE6 step number readers] the step number the walk writes to +0x24 (0-based) has one reader, the getter 0x53AEC0 (an extension cell reads its origin's), whose callers are the track tool's edit sub-modes 0xE and 0x13 (0x524960 orders its two picks by step, 0x527960 hovers, 0x52B400 finds the cut's end tiles by equal steps): TrackEditor reads TrackCell.Segment the same way; an arrival at the start from any side ends the walk as in the original
 	// [BIN:TPW-EXE:0x00528A70 add-on placement] an object whose footprint has code 0xB or 0x10 (the track add-ons) must stand on a straight, unflagged tile of its ride's kart or water track (validator passes 0x10B/0x110, 0x20B/0x210 in add-on mode, 0x535953..0x5359B3) and its placement writes cell flags 0x10 (0x53A510 at 0x529511 and 0x52951C); a flagged tile gets no piece instance (0x0053AFA0 skips +0xE & 0x10)
-	// [BIN:TPW-EXE:0x0052AC68 add-on sections] a straight with flag 0x10 builds kind 12 (0x44) or 13 (0x11) with +8 = its place in the run of add-on tiles (0 for the first, reset by any other tile), +0xC = the add-on's instance (thing +0x20) and +0x10 = its type id (0x4DD4E0 +0x10); the vehicle hook is the Space Racers Teleport only (type 0xDAC, 3500): [BIN:TPW-EXE:0x00548CA5] within ±0x4B0 of the first tile's centre a vehicle is hidden (0x548E80: flag 0x200, its instance, shadow and riders' heads) and the teleport plays animation 5, past 0x4B0 on the far side of the second tile it shows again
-	// [APPROX:TRACK-008] the add-on flag is stamped by the placement and read into the kind 12 and 13 sections (TrackBuilder.CanStandAddOn, ParkCellMap.WriteFootprint, Level.PlaceAddOn: a headless API, as OpenTPW's build panel does not offer add-ons, RIDES-017); not built: the run counters and values of the add-on sections (+8 the place in the run of add-on tiles, +0xC the add-on's instance, +0x10 its type id, 0x52AC68), the show and hide of the add-on's class-1 dummies 1 and 0x10 on the run's second tile, the Space Racers Teleport's vehicle hook (0x548CA5 → 0x548E80), the walk after an add-on's placement, and where the original offers and sells a ride's add-ons (the object window code 0x481BC0..0x486D90 reads an add-on's ride through 0x4E2710) — evidence needed: that window code
+	// [BIN:TPW-EXE:0x0052AC68 add-on sections] a straight with flag 0x10 builds kind 12 (0x44) or 13 (0x11) with +8 = its place in the run of add-on tiles (0 for the first, reset by any other tile), +0xC = the add-on's instance (thing +0x20) and +0x10 = its type id (0x4DD4E0 +0x10; Level.LinkAddOns links them after the walk, TrackAddOns.OpenEndsOf the open ends of 0x0052ADE3); the vehicle hook is the Space Racers Teleport only (type 0xDAC, 3500): [BIN:TPW-EXE:0x00548CA5] within ±0x4B0 of the first tile's centre a vehicle is hidden (0x548E80: flag 0x200, its instance, shadow and riders' heads) and the teleport plays animation 5, past 0x4B0 on the far side of the second tile it shows again
 	public static TrackCircuit Walk( TrackBuilder builder, TrackStation station )
 	{
 		ArgumentNullException.ThrowIfNull( builder );
@@ -63,6 +63,8 @@ public static class TrackCircuitWalker
 		var position = station.First;
 		var steps = new List<TrackStep>();
 		var limit = tracks.Count / 4 * 4 + 16;
+		// the run counter of add-on tiles ([esp+0x20] of 0x0052A970): a straight with flag 0x10 takes it and raises it, any other tile resets it
+		var run = 0;
 		string? failure = null;
 		while ( true )
 		{
@@ -100,7 +102,13 @@ public static class TrackCircuitWalker
 				tile.Piece = piece.Piece;
 				tile.Rotation = piece.Rotation;
 				tracks.Set( position.X, position.Y, tile );
-				steps.Add( new TrackStep( position.X, position.Y, entry, heading, mask, tile.Segment, (tile.Flags & TrackCell.FlagAddOn) != 0 ) );
+				var addOn = (tile.Flags & TrackCell.FlagAddOn) != 0;
+				var place = 0;
+				if ( addOn && mask is 0x44 or 0x11 )
+					place = run++;
+				else
+					run = 0;
+				steps.Add( new TrackStep( position.X, position.Y, entry, heading, mask, tile.Segment, addOn, place ) );
 			}
 			position = (position.X + TrackStation.TileCells * TrackHeading.Dx( heading ), position.Y + TrackStation.TileCells * TrackHeading.Dy( heading ));
 			if ( position == station.First )

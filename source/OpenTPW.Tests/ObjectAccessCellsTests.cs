@@ -221,7 +221,7 @@ public class ObjectAccessCellsTests
 		Assert.AreEqual( 0x40, ObjectFootprint.RotateDirectionByte( 0x01, 90 ) );
 	}
 
-	// ---------------------------------------------------------------- add-ons (RIDES-011, TRACK-008) and track ends
+	// ---------------------------------------------------------------- add-ons (RIDES-011, docs/TRACKS.md "Add-ons") and track ends
 
 	/// <summary>The eight-tile water loop of the circuit tests on a rig's cell map (station placed at (10, 9), whose first tile is (10, 10)), corners (14, 10), (14, 12), (8, 12), (8, 10); the straights (12, 12) and (10, 12) lie between the corners.</summary>
 	private static (TrackBuilder Builder, TrackStation Station, int Owner) Loop( ParkCellMap cells )
@@ -282,6 +282,24 @@ public class ObjectAccessCellsTests
 		foreach ( var (x, y) in TrackStation.TileCellsOf( 12, 12 ) )
 			Assert.AreEqual( 0, rig.Cells.Tracks.Get( x, y ).Flags & TrackCell.FlagAddOn, "selling the add-on takes the flag off the tile" );
 		Assert.AreEqual( 9, TrackCircuitWalker.Walk( builder, station ).Steps.Single( step => (step.X, step.Y) == (12, 12) ).Kind );
+	}
+
+	[TestMethod]
+	public void AnAddOnCellThatAnotherObjectHoldsIsRefused()
+	{
+		var jump = Entry( 1500, 3, false, "++", "++" );
+		var ride = Entry( 1150, 3, false, "**", "**" );
+		var rig = new Rig( jump, ride );
+		var (builder, _, owner) = Loop( rig.Cells );
+		rig.Objects.AddOnCellRule = ( x, y ) => builder.CanStandAddOn( x, y, owner );
+		// the original's track test 0x53AD30 counts the station tiles (types 13 and 18) as track, so the add-on rule alone passes the first station tile (10, 10)
+		Assert.IsTrue( builder.CanStandAddOn( 10, 10, owner ) );
+		Assert.AreEqual( OriginalPlacementResult.Allowed, rig.Objects.Check( jump, 10, 10, 0 ) );
+		// [EXT:addon-not-on-station] the ride's own footprint holds its station cells: an add-on may not take them
+		var holder = rig.Objects.AddRestored( ride, 10, 10, 0, true, 1, 1 );
+		Assert.AreSame( holder, rig.Objects.FindAt( 10, 10 ) );
+		Assert.AreEqual( OriginalPlacementResult.Occupied, rig.Objects.Check( jump, 10, 10, 0 ) );
+		Assert.AreEqual( OriginalPlacementResult.Allowed, rig.Objects.Check( jump, 12, 12, 0 ), "a straight that no object holds still takes it" );
 	}
 
 	[TestMethod]

@@ -21,8 +21,10 @@ Code: `source/OpenTPW/World/Tracks/`, the track layer in `ParkCellMap`, the tool
   launches boats (`BUMP 4`) and hands guests back (`BUMP 2`). Boats run the traced integer physics around the loop and unload at the station.
 - Pieces are drawn from the ride's `wr_trck*.md2` meshes, boats from the supplemental mesh `wr_ring.md2`; rider k of a boat hangs its head from the boat's head dummy k (1 to 5, `0x549C60`, TRACK-026), as a kart's riders do.
 - The cells, the controller and its boats are saved in the park-resume envelope (optional `Tracks` part) and restored exactly.
+- Jumps, tunnels and the Space Racers Teleport ("Add-ons"): a kart or water ride's upgrade list offers its researched add-ons, the build tool puts one on the
+  ride's straight track in place of its pieces, and the vehicles drive over or through it (the Teleport hides them between its two gates).
 
-Not in phases 1 and 2: jumps and tunnels (add-ons); the three other themes' water rides were checked for data only (the
+Not in phases 1 and 2: jumps and tunnels (add-ons, built later: "Add-ons"); the three other themes' water rides were checked for data only (the
 tables and kits load for all four; only the Jungle ride was run). The pieces' arm masks and their water clips came later ("Piece animation and arm masks").
 
 ## Cells
@@ -37,7 +39,7 @@ low confidence); 17 has no known writer; the walk accepts 11, 13, 16, 18 and 25.
 | type | +8 | cell type (above); the map's own type byte stays in sync, so guests and the object rules see an occupied cell |
 | mask | +0xC | connections: 0x01 −Y, 0x04 +X, 0x10 +Y, 0x40 −X |
 | link | +0xD | flow heading bit: the line's drawing direction at lay time (ORed on a tile with more than two arms), rewritten by the walk at corners |
-| flags | +0xE | bits 0–3 the bridge state, 0x10 add-on (TRACK-008); OpenTPW keeps 0x20 for "replaced path cells" (TRACK-010) |
+| flags | +0xE | bits 0–3 the bridge state, 0x10 add-on ("Add-ons"); OpenTPW keeps 0x20 for "replaced path cells" (TRACK-010) |
 | parent | +0x10 | origin cell index in an extension cell |
 | family/piece/rotation | +0x14/+0x18/+0x1C | the chosen piece |
 | overlap | +0x20 | how often the same tile was written again (free of charge) |
@@ -264,7 +266,7 @@ animation 5 (start) or 12 (stop), flags 7 (loop, at once; on a stop the tile kee
 
 | Caller | Valid circuit | Invalid circuit |
 | --- | --- | --- |
-| ride placement walk (`0x524D0A`) | start, forward | stop, both walks |
+| an add-on's placement walk (`0x524D0A`; OpenTPW's walk of a fresh station takes the same rule, `[EXT:track-placement-walk]`: the original's ride placement walks nothing) | start, forward | stop, both walks |
 | a track line ends (`0x526F02`) | stop, forward | stop, both walks |
 | edit sub-modes 0xE/0x13 (`0x526BD0`) | start, forward | stop, both walks (`TrackWalkCause.Edit`; an add-on's placement runs the same walk, `0x524960`) |
 | `BUMP 17` (`0x5549ED`) | 0: start, other: stop, both walks | same |
@@ -327,7 +329,7 @@ original keeps its stale pointer). The drop-in overlap test walks the whole vehi
 ## Saves and determinism
 
 The envelope's optional `Tracks` part holds the cell layer, every controller (scalars, tick clock, waiting and leaving guests, the sections for
-verification, every boat field and its riders) joined by attraction id, and the cosmetic generator. On load the cells are restored, each circuit is walked again
+verification, with the Space Racers Teleport's passing flag where it is set, every boat field and its riders) joined by attraction id, and the cosmetic generator. On load the cells are restored, each circuit is walked again
 and must reproduce the saved validity and sections, then the controller state is restored. The shape check refuses a save whose guests are not the park's (or are listed twice), whose boats lie outside the park or carry velocities and scalars outside fixed bounds, whose tick remainder is not within one tick, or whose cells carry a piece, rotation, link or owner the layer cannot hold; the restore refuses boats that aim at a buoy or sit in an object the walked circuit does not have. The collision objects and buoys are rebuilt, not saved (as in the
 original). A park without a track and a controller writes no part and hashes as before: the track layer and the controllers join the canonical hash only while they
 exist (the hash schema stays at 14). The digest covers every restored boat field (targets, jitter, velocities before collision, object index, wall counters, riders), the tick clock and each tile's owner. Boats draw jitter from the park's seeded world stream, which therefore advances with boats.
@@ -336,8 +338,8 @@ exist (the hash schema stays at 14). The digest covers every restored boat field
 
 `TrackSelectorTests` (the 16 masks, adjustments, tables, templates), `TrackCircuitTests` (tool, cost, clearing, closed loop, open track, tee refusal, crossing,
 bridges), `BumpControllerTests` (sine table, section and buoy geometry golden values, commands, a golden boat run, determinism, collisions, saves),
-`TrackPieceAnimationTests` (the two piece walks, the clip state, the walk causes and BUMP 17's stored word), `TrackRegisterRoundTests` (the 31 ms tick, start headings, the crossing flag and its effect on boat collisions, spray, engine voice and unload cues, the break smoke emitter, the unclamped bank), `HmpFileTests`, `TrackSaveTests` (shape check, codec, round trip, hash gating) and, with `OPENTPW_GAME_PATH`, `TrackAssetTests` (the kits and profiles of all eight
-ride archives, the arm masks and water clips of the jungle kit, the real `Wateride.RSE` against the controller). The native smoke run lays a small closed circuit on the Jungle level and runs a boat, and the park-resume smoke with `OPENTPW_SMOKE_WATER=1` (both phases) buys the ride, saves a park with a boat on the water, restores it through the menu load and matches 600 continuation ticks of canonical hashes.
+`TrackPieceAnimationTests` (the two piece walks, the clip state, the walk causes and BUMP 17's stored word), `TrackRegisterRoundTests` (the 31 ms tick, start headings, the crossing flag and its effect on boat collisions, spray, engine voice and unload cues, the break smoke emitter, the unclamped bank), `HmpFileTests`, `TrackSaveTests` (shape check, codec, round trip, hash gating), `TrackAddOnTests` (the add-on tool's hover, the walk's run counter and open ends, the Teleport's hook) and, with `OPENTPW_GAME_PATH`, `TrackAssetTests` (the kits and profiles of all eight
+ride archives, the arm masks and water clips of the jungle kit, the real `Wateride.RSE` against the controller) and `TrackAddOnDataTests` (the ten shipped add-ons: their rides, footprints, open ends and surfaces). The native smoke run lays a small closed circuit on the Jungle level and runs a boat, and the park-resume smoke with `OPENTPW_SMOKE_WATER=1` (both phases) buys the ride, saves a park with a boat on the water, restores it through the menu load and matches 600 continuation ticks of canonical hashes; with `OPENTPW_SMOKE_ADDON=1` as well it buys the ride's add-on from its upgrade list, sells it and buys it again before the boats run, and the restore walks the add-on's sections back. `TrackAddOnLevelTests` places, links and sells a jump on a level assembled without assets.
 The golden values freeze this implementation of the traced rules; they are not captures of the original game.
 
 ## Design decisions and retired items (October 14 register round)
@@ -362,30 +364,55 @@ October 18 (round 8, coasters-2): TRACK-014 retired (its readers, the edit sub-m
 October 16: `APPROX:TRACK-006` retired as already matching (the walk posts no message, above); TRACK-018 narrowed (arm masks and water clips built).
 October 16, second read round: `APPROX:TRACK-003` retired (the instancers `0x522B90` and `0x522D50` and the mesh creation `0x463060` → `0x466F90` offset a corner-pivoted piece by a whole tile, which is the tile turning about its centre; tested); TRACK-001 narrowed (the instance height is `0x466D70`'s midrange of the tile's 3 × 3 landscape vertices and the terrain mode samples `0x4527F0` at the probe); TRACK-002 narrowed to the other readers of the object height map; TRACK-005 narrowed (the station line, exit, piece walks and controller reference follow `0x52A1A0`, `0x52A490`, `0x52A700` and `0x529E10`); TRACK-026 narrowed (`0x44B410` is ADDHEAD's PC twin).
 Retired as already matching: TRACK-013 (worn is read only by the kart exhaust branch, `0x5486FC`). Narrowed: TRACK-002, 005, 019, 026, 030 (texts in the register); TRACK-025 and 031 were retired in a later round (below).
+October 18: `APPROX:TRACK-008` retired with a code change: the add-ons are built through their whole cycle ("Add-ons": the upgrade list, the tool's hover, the placement, the click and its walk, the run counter and open ends, the Teleport's hook, the surface and the window), with `[EXT:addon-sale-walk]` for the walk after a removal.
 
-## Add-ons (placement built, the rest read: TRACK-008)
+## Add-ons
 
 The track add-ons are objects of the Upgrades category with `AddOn.UpgradesId` = their ride and `AddOn.UpgradeType` 1: Dino Karts Jump 1500 and Tunnel 1501,
 Splish Splash Tunnel 1502, CryptKarts Chopper 2500 and Jump 2501, Ooze Crooz Ogre 2502, Space Racers Teleport 3500, Blobulator Tunnel 3501, Bumble Buggies Jump
-4500 and Tunnel 4501 (Tubes Of Zob Extra Tube 3502 is type 2). Each has its own script, an `m` clip and footprint codes 0xB (kart) or 0x10 (water track). What the original
-does with them (`TPW-EXE`):
+4500 and Tunnel 4501 (Tubes Of Zob Extra Tube 3502 is type 2 and is placed as an ordinary object). Each has its own script, an `m` clip and footprint codes 0xB (kart) or
+0x10 (water track). OpenTPW follows `tp.exe` (`TPW-EXE`) through the whole cycle (`TrackAddOnTests`, `TrackAddOnDataTests`, `RideUpgradeIngressTests`; a Debug build
+captures a ride with an add-on through `--debug-kart-track` or `--debug-water-track` with `--debug-track-addon <Info.Id>`):
 
-- **Placement** (`0x528A70`): a footprint cell with code 0xB or 0x10 must lie on a straight, unflagged tile of the selected ride's kart or water track (validator passes 0x10B/0x110,
-  0x20B/0x210 in the validator's add-on mode, `0x535953`–`0x5359B3`: the head's owner word is the ride's, no corner, no junction, no flag 0x10 on the cell yet), and placing the object writes the cell's flags word to 0x10
-  (`0x53A510`, also on the second-layer cell). A flagged tile gets no piece instance (`0x53AFA0`): the add-on's mesh replaces it. OpenTPW: `TrackBuilder.CanStandAddOn` is the rule, `ParkObjects.AddOnCellRule`
-  applies it to the '+' and '#' cells, `ParkCellMap.WriteFootprint` and `ClearFootprint` write and take off the flag on both layers (selling the add-on is the ordinary removal), and `Level.CheckAddOn` and
-  `Level.PlaceAddOn` are the headless entry points (the build panel does not offer add-ons, RIDES-017). The next circuit walk reads the flag into kind 12 and 13 sections.
-- **Walk** (`0x52A970`): a flagged straight builds section kind 12 (0x44) or 13 (0x11) with +8 = its place in the run of add-on tiles (0, 1, …; any other tile resets it),
-  +0xC = the add-on's instance and +0x10 = its type id; on the run's second tile it shows or hides the add-on's class-1 dummies 1 and 0x10 (its open ends) by whether the
-  tiles ahead and behind are plain pieces or stations ("Found upgrade... modify?").
-- **Vehicles** (end of `0x547F50`, `0x548CA5`): only the Space Racers Teleport (type 0xDAC) has a hook. In its first tile a vehicle within ±0x4B0 of the centre along the
-  section's axis is hidden (`0x548E80`: flag 0x200, the vehicle's instance, its shadow and its riders' heads), remembering the side it came from (0x800000), and the
-  teleport plays animation 5 and then animation 2 looping; past 0x4B0 on the far side of the second tile the vehicle shows again, as it does on leaving add-on objects.
+- **Offer** (`0x4AE560`, rows `0x4AE140`): the ride window's `b_upgrade` (every ride window but mode 3, `0x4AD6B4`) opens the upgrade list, laid out from the
+  original's table `0x755750` (`wdialogw`, the list `upgrades` whose rows the pointer selects, its scroll bar, the title UITEXT 31 "Buy Upgrades"). Outside Instant
+  Action it lists every add-on whose `AddOn.UpgradesId` is the ride's type and whose research is done, with its name and price (`Upgrades[0].CostOfUpgrade`), then the
+  ride's next level or its cancel row ([ECONOMY.md](ECONOMY.md#ride-upgrades)). A click on an add-on row arms the build tool with the add-on for that ride and closes
+  the ride window when the price is at most the balance (`0x4AF480`), else plays the error cue 0x1D. `Level.UpgradeOffer`, `Level.BeginAddOn`, `ParkHud.RideUpgrade.cs`.
+- **Hover** (`0x5236B0`): the pointer's cell snaps to the even cells counted from the ride's anchor (a pointer on the first row or column of some tiles so takes the tile
+  before them), the angle follows the flow link of the tile there (0x01 → 0, 0x04 → 270, 0x10 → 180, 0x40 → 90; a straight's link is the direction its line was drawn
+  in, the walk rewrites only the corners'), then the cell moves by the add-on's `Bumper.*Adjust` of that angle (North at 0, West at 90, South at 180, East at 270) and by
+  the ride's own rotation; the placement centres the footprint there. Off the 128 × 128 map nothing moves. `TrackAddOns.HoverTarget`, `Level.BuildTarget` (the ghost
+  shows the same target).
+- **Placement** (`0x528A70`): a footprint cell with code 0xB or 0x10 must lie on a straight, unflagged tile of the selected ride's kart or water track (validator
+  passes 0x10B/0x110, 0x20B/0x210 in the validator's add-on mode, `0x535953`–`0x5359B3`: the head's owner word is the ride's, no corner, no junction, no flag 0x10 on
+  the cell yet), its other cells on free ground, and placing the object writes the cell's flags word to 0x10 (`0x53A510`, also on the second-layer cell). A flagged
+  tile gets no piece instance (`0x53AFA0`): the add-on's mesh replaces it. `TrackBuilder.CanStandAddOn`, `ParkObjects.AddOnCellRule`, `ParkCellMap.WriteFootprint`,
+  `Level.CheckAddOn`, `Level.PlaceAddOn`. `[EXT:addon-not-on-station]`: the original's track test (`0x53AD30`) counts the station tiles (types 13 and 18) as track,
+  so an add-on could take the ride's own station cells, which its sale would then leave empty; OpenTPW refuses a '+' or '#' cell another object holds.
+- **Click** (`0x524B45`): the build click places the add-on and charges it; the ride's vehicles end (the re-walk's section reset `0x545450`), the circuit is walked
+  again (`0x524D0A`), the pieces' clips start forward on a valid circuit and stop on an invalid one, and a valid ride opens when its guard allows; only exactly Ctrl
+  keeps the tool. `Level.WalkAfterAddOn`, `TrackWalkCause.AddOn`.
+- **Walk** (`0x52A970`): a flagged straight builds section kind 12 (0x44) or 13 (0x11) with +8 = its place in the run of add-on tiles (a counter that a flagged
+  straight takes and raises and any other tile resets), +0xC = the add-on's instance and +0x10 = its type id. On a run's second tile (`0x52ADE3`) the walk shows or
+  hides the add-on's class-1 dummies 1 (its end behind) and 0x10 (its end ahead): an end is hidden when the tile two cells beyond it along the tile's link is a track
+  tile with a piece of its own or a station. The walk gathers these neighbour bits over all its tiles and never clears them, so a later run takes an earlier run's bits
+  too, and a one-tile add-on (the jumps) never reaches a second tile and keeps both ends. `TrackCircuitWalker`, `TrackAddOns.OpenEndsOf`, `Level.LinkAddOns`.
+- **Vehicles** (`0x548C81`, the tail every vehicle family reaches): a hidden vehicle whose current collision object is no add-on's shows again. Only the Space Racers
+  Teleport (type 0xDAC) has a hook: in its first tile a vehicle within ±0x4B0 of the centre along the section's axis (x for the kind word 12, else y, so an add-on among
+  the first two straights, whose kind word carries the no-buoy bit, measures along y) is hidden (`0x548E80`: flag 0x200, its instance, its shadow and its riders' heads)
+  and remembers the side it came from (0x800000); the Teleport drops its queued clip and queues animation 5, and once nothing waits it queues animation 2 looping; past
+  0x4B0 on the far side of a later tile the vehicle shows again. `BumpController.PassAddOn`; the section's waiting flag is saved.
+- **Surface** (`0x452A60`): a track cell whose tile has no piece instance gives the vehicles' height probes its owner object, sampled in that object's own mode (TRACK-001):
+  the surface records of the kart add-ons, the terrain mode of the water tunnels. `TrackRenderer.AddOnSurfaceAt`.
+- **Window** (`0x486920`): the placement links an add-on to the clicked tile's ride (thing +0x30, `0x52A023`), and a click on the add-on opens that ride's window; the
+  window code's walks over the objects of a type skip add-ons (`0x4E2710`), so the window's arrows do too. `Level.WindowTarget`.
+- **Removal**: an add-on is removed as any object; the demolition `0x527EE0` clears the flag under it but makes no pieces and walks nothing (the pieces come back with the
+  circuit's next walk, until then the sections keep the add-on's kind). `[EXT:addon-sale-walk]`: OpenTPW clears the flag and walks the circuit at once, as after a placement
+  (the walk ends the vehicles' runs and opens a valid ride), because a save of the stale sections could not be restored: the restore walks the cells.
 
-The walk after a placement (read October 18, built): the upgrade placement of `0x524960` (the add-on mode `0x8187F8`) places the object (`0x528A70`, mode 4), re-reads the ride's cell and runs `0x52A970(0)`; a valid circuit starts the pieces forward (`0x52A490(ride, 1)`) and may open the ride (`0x4DF290` → `0x4DF390`), an invalid one stops them from both sides: `Level.PlaceAddOn` re-walks with `TrackWalkCause.Edit`.
-
-Not traced: where a ride's add-ons are offered and sold (the object window code around `0x481BC0..0x486D90` reads an add-on's ride through `0x4E2710`). Not built: the sections'
-run counters and values, the dummies' show and hide and the Teleport's vehicle hook.
+Not traced: whether a ride's demolition takes the add-ons on its track with it (OpenTPW leaves them standing, without a window), and the Extra Tube's window (the
+dispatcher opens `0x4B6AE0` for an add-on of type 2; OpenTPW shows the ride window).
 
 ## Slides: open tracks ending in a pool
 
@@ -404,9 +431,9 @@ The slide's pieces are chosen from the cell sequence, as the kart and water piec
 
 ## Open points
 
-- Jumps and tunnels (TRACK-008: the add-ons' placement and the walk after it are built headless; their offer and sale, section values and the teleport hook are not, see "Add-ons"), the edit
-  sub-modes' Backspace replay and the ride's reopening (TRACK-018, "The track edit sub-modes"), the demolition's per-line arm writes (TRACK-007), the exit and entry tiles the placement lays
+- The edit sub-modes' Backspace replay and the ride's reopening (TRACK-018, "The track edit sub-modes"), the demolition's per-line arm writes (TRACK-007), the exit and entry tiles the placement lays
   and the station line's arms (TRACK-005), the walk's untraced junction conditions (see the `TRACK-` entries in [the register](https://opentpw.io/docs/FIDELITY-REGISTER.html)).
+- What a ride's demolition does with the add-ons on its track, and the Extra Tube's own window ("Add-ons").
 - The script performance value is the ride's speed bias (`Script.SpeedBias`, 50 at creation), pushed to the controller every tick.
 
 ## Go-karts (phase 2)
@@ -504,7 +531,7 @@ script through a race). The native smoke test has a kart phase: the circuit from
 
 The trace's corrections: `BUMP 5` reads the track-valid flag, `BUMP 8` has no return value, `BUMP 17` 1 stops the pieces; the × ¾ corner thrust applies to any vehicle whose
 object lacks all four quadrant bits. The lap count of a kart script is `VAR_DURATION`, which the ride's `InitDuration` (3) sets at creation
-(`[TPW-EXE:0x4db565]`). Still open: the `cat_rides` catalogue ids, the add-ons' vehicle hook `0x548E80` (the Space Racers Teleport hides a vehicle between its two tiles, TRACK-008), what else besides `BUMP 9` sets the worn state, and whether
+(`[TPW-EXE:0x4db565]`). Still open: the `cat_rides` catalogue ids, what else besides `BUMP 9` sets the worn state, and whether
 the late-to-grid extra lap is observable (the code reproduces it as written).
 
 ## Bumper cars (October 14)

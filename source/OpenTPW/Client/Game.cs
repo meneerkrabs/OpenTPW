@@ -389,13 +389,15 @@ internal static class Game
 		{
 			var demoFrames = 0;
 			var demoType = args.Contains( "--debug-kart-track" ) ? 1 : 2;
+			// --debug-track-addon <Info.Id> also places that add-on of the ride on its circuit (docs/TRACKS.md "Add-ons")
+			var demoAddOn = GetOption( args, "--debug-track-addon", "a track add-on's Info.Id" ) is { } addOnText && int.TryParse( addOnText, out var parsedAddOn ) ? parsedAddOn : (int?)null;
 			Render.PostUpdate += BuildTrackDemo;
 			void BuildTrackDemo()
 			{
 				if ( flow.Level is not { WaterTracks: not null } demoLevel || ++demoFrames < 30 )
 					return;
 				Render.PostUpdate -= BuildTrackDemo;
-				if ( demoLevel.BuildDemoTrackRide( demoType ) == null )
+				if ( demoLevel.BuildDemoTrackRide( demoType, demoAddOn ) == null )
 					Log.Warning( "--debug-water-track / --debug-kart-track: no site with room for a track ride and its circuit." );
 			}
 		}

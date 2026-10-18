@@ -12,9 +12,9 @@
     </p>
 </p>
 
-![A resumed Jungle park with fixed rides and shops](website/images/shot-current.png)
+![The Lost Kingdom entrance with guests arriving, the original interface and the Belly Bounce ride beyond](website/images/shot-current.png)
 
-Actual browser gameplay after loading an own-format park save.
+A native OpenTPW capture of the Lost Kingdom with the original textures and interface, rendered offscreen from the original game data.
 
 ## About this fork
 
@@ -79,13 +79,14 @@ What works today, with your own original game data:
   language of your CD once you choose its folder ([languages](https://opentpw.io/docs/LANGUAGES.html)).
 - **Parks:** the four worlds with their original terrain; all 274 original objects can be built
   and run their original ride scripts and animations, and the official bonus objects can be added;
-  players build their own roller coasters ([objects](https://opentpw.io/docs/OBJECTS.html), [ride scripts](https://opentpw.io/docs/RSE-VM.html),
-  [coasters](https://opentpw.io/docs/COASTERS.html)).
+  players build their own roller coasters, and go-kart and water ride tracks with their jumps, tunnels and the Space Racers teleport
+  ([objects](https://opentpw.io/docs/OBJECTS.html), [ride scripts](https://opentpw.io/docs/RSE-VM.html),
+  [coasters](https://opentpw.io/docs/COASTERS.html), [tracks](https://opentpw.io/docs/TRACKS.html)).
 - **Guests, economy and staff:** guests arrive, walk the paths and use rides, shops, sideshows and
   toilets. The 31 root scripts that use ADDHEAD in the fantasy, hallow, jungle and space themes can
-  show riders' heads at the nodes the model's head records name, with the traced frame and roll; the
-  head size, depth and slot stream remain qualified (HEADS-001, 004, 005), and coaster and tour cars do not show riders
-  yet. Money, loans, wages, research, objectives, golden tickets and keys run on the original
+  show riders' heads at the nodes the model's head records name, with the traced frame and roll, and so do the
+  coaster trains, tour cars, karts, boats and bumper cars; the head size, depth and slot stream remain qualified
+  (HEADS-001, 004, 005). Money, loans, wages, research, objectives, golden tickets and keys run on the original
   settings files ([guests](https://opentpw.io/docs/GUESTS.html), [economy](https://opentpw.io/docs/ECONOMY.html)). A hired staff member is
   placed with a click on the park, can be picked up and moved from the staff window, and is drawn with the original sprites
   ([staff placement](https://opentpw.io/docs/STAFF-PLACEMENT.html)).
@@ -128,8 +129,7 @@ What works today, with your own original game data:
   packs change the game without code ([below](#extensions-and-mods)).
 - **Extras:** viewing and exporting the PlayStation 2 disc data (`--export-ps2`, [PS2](https://opentpw.io/docs/PS2.html)).
 
-Not done yet: the jumps and tunnels of the water and go-kart rides (the water rides and the go-karts have a track tool, run their original controllers and save their tracks;
-Splish Splash and the Dino Karts are checked end to end, the other themes use the same tables and kits, [tracks](https://opentpw.io/docs/TRACKS.html)), rider heads on coaster and tour cars, tour-car sounds (the four tour rides board, fly and release riders, [tours](https://opentpw.io/docs/TOURS.html)), the particle effects of the other
+Not done yet: tour-car sounds (the four tour rides board, fly and release riders, [tours](https://opentpw.io/docs/TOURS.html)), the particle effects of the other
 callers (ride smoke, litter; RSE EVENT types 1 and 2 are drawn, [particles](https://opentpw.io/docs/PARTICLES.html)),
 additional staff actions (the guards' chase and escort, entertainer shows) and their sounds, the path tool's link-end and undo sounds, and the exact original rules in places where
 OpenTPW still uses a documented approximation. The

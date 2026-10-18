@@ -1,50 +1,28 @@
 # UI-025: Restore message admission and actions
 
-## Status and classification
-- Plan-only draft proposal; no implementation, tests-run claim, retirement or merge.
-- Classification: `missing_behavior`.
-- Baseline: `meneerkrabs/OpenTPW` main `5ccddcab` (2026-10-18).
-- One ID per proposal; shared dependencies are coordination edges, not duplicated ownership.
+## Status
+This remains a plan-only draft for the residual tube behavior. Progress rows were implemented in #442; the bounded terminal lifecycle is implemented in #623 and awaiting its full CI. Neither change closes UI-025.
 
-## Source-verified residual
-MessageTubeCapacity is five with oldest-drop policy; original has eight slots, per-type caps and priority replacement; most action kinds lack events.
+## Corrected evidence
+The original tube insertion at 0x48EB20 scans ten reusable item slots. The advisor's eight-slot advice queue at 0x59A940 is a different structure. The earlier version of this proposal incorrectly assigned that advisor capacity, priority replacement and per-type caps to the message tube; those are not acceptance requirements for this ID without separate tube evidence.
 
-## Source sites
-- `source/OpenTPW/Hud/ParkHud.MessageTube.cs:16` — APPROX annotation and adjacent implementation inspected.
-- `source/OpenTPW/Hud/ParkHud.cs:263` — APPROX annotation and adjacent implementation inspected.
+Current OpenTPW keeps a five-slot tube and generic oldest-item eviction. New challenge progress and terminal rows refuse full occupancy. Progress refreshes matching tag/context rows without another insertion sound. Terminal instances retain read/closed rows, cancel timers on first read, and keep hidden occupancy until delayed final release. The exact implemented scope and native ownership/queue residuals are documented in docs/reverse/CHALLENGE-TERMINALS.md.
 
-## Implementation cross-check
-- `source/OpenTPW/Hud/ParkHud.MessageTube.cs:17`: `public const int MessageTubeCapacity = 5;`
-- `source/OpenTPW/Hud/ParkHud.cs:264`: `hud.Add( new UiButton { Id = "messageDelete", Model = "mb_erase", Clicked = CloseMessagePanel, Bounds = OriginalLayoutTables.MessagePanel.Model( "mb_erase" ).Rect, Anchor = UiAnchor.BottomLeft, Visible = false } );`
-- Existing behavior described above was checked against implementation, not only the register summary.
-- The presence of an APPROX marker alone is not evidence of an absent feature.
+## Remaining bounded investigation
+1. Trace the complete tube allocation, slot reuse and layout behavior before changing the host capacity or compaction policy.
+2. Map remaining original action kinds to their owners and safe missing-target behavior. Preserve challenge gameplay action guards.
+3. Trace original pending-message serialization and restoration separately. The current host does not save the tube; that is a residual, not proof the original omitted it.
+4. Keep generic message read/removal policy and existing extensions explicit. Do not copy advisor admission rules into the tube.
 
-## Evidence needed
-- Priority/cap registry mapping and message-kind event handlers beyond challenge accept/decline.
-- Available private Data contains assets, not an original executable; no new binary trace was obtained in this audit.
-- Existing address annotations are provenance leads, not a claim that this audit independently verified instructions.
-- Any original captures/assets remain private; fixtures should be synthetic or references/hashes, not redistributed game media.
+## Acceptance cases
+- Ten-slot allocation and an eleventh insertion, using the proven tube policy rather than guessed priorities.
+- Hidden removal-pending occupancy, slot reuse, selection and same-tag duplicate instance ownership.
+- Read, close, right-click/delete, synchronous replacement and delayed release.
+- Missing action targets, read-only gameplay guards and challenge offer/result ordering.
+- Save/load behavior only after its native contract is traced; synthetic tests must not stand in for that evidence.
+- Original art and rendered layout require separate visual validation.
 
-## Bounded investigation and implementation plan
-1. Confirm current ownership and rebase the proposal against the latest main before runtime changes.
-2. Design pure admission policy and typed action routing, preserving explicit art/status-line extensions and original no-pending-message-save behavior.
-3. Turn each verified behavioral distinction into a small deterministic regression fixture before editing runtime paths.
-4. Keep unknown behavior explicitly unresolved; an evidence-only outcome is valid if no mismatch is established.
-5. Submit any later implementation with exact evidence, changed scope and test output for review.
+## Ownership and completion
+Coordinate with active message, challenge and online owners only where files or behavior overlap. Reuse #442 and #623 rather than duplicating their work. UI particles 90/91 remain under PTCL-908.
 
-## Acceptance tests to author and run later
-- Eight slots; ninth higher/equal/lower priority; per-type caps; deletion; challenge actions; missing target actions fail safely; no pending-message serialization.
-- Run the nearest existing unit suite plus targeted integration/visual checks for changed behavior.
-- Compare baseline and candidate with identical inputs; label screenshots by platform, display settings and state.
-- Report unsupported/corpus-external cases separately; synthetic consistency alone is not original-fidelity proof.
-
-## Ownership and overlap
-- Consult: Advisor producers, challenges and online/message owner.
-- Do not overwrite another worker's runtime edits or duplicate an existing active implementation PR.
-- Merged UI #433 and languages #423 are baseline work, not open implementation dependencies.
-- Evening #439 is an extension and is not proof of original lighting or behavior.
-
-## Completion boundary
-- This deliverable is a documentation proposal only; no gameplay source files are changed by this PR.
-- Runtime work remains blocked on the evidence/ownership decisions listed above where applicable.
-- No approximation is retired by creating this plan; no PR is claimed implemented or ready to merge.
+No original assets, strings, binaries or private input metadata are included. This proposal changes no gameplay code and remains draft. Publish any later implementation with its specific evidence, independent review and actual test results; retire no whole ID based on a partial slice.

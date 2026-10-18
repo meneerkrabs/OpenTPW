@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises';
 
 // The page module as shipped, without a package.json or a test dependency.
 const source = await readFile(new URL('../source/OpenTPW.Web/wwwroot/opentpw-originals.js', import.meta.url), 'utf8');
-const { MODES, openOriginalStore, supported } = await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`);
+const { MODES, claimKeeping, openOriginalStore, supported } = await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`);
 const startupSource = await readFile(new URL('../source/OpenTPW.Web/wwwroot/opentpw-startup.js', import.meta.url), 'utf8');
 const { plan, importStartup } = await import(`data:text/javascript;base64,${Buffer.from(startupSource).toString('base64')}`);
 
@@ -592,4 +592,40 @@ test('a filtered actual directory witness survives cache reopening without cache
 		for (const [, read] of sources) assert.equal((await read()).byteLength, 1);
 	});
 	assert.deepEqual(witnesses, reopened.themeDirectories); assert.deepEqual(loaded, []);
+});
+
+// A stand-in for navigator.locks: one holder per name, `ifAvailable` answers null when it is taken, a lock lasts until its callback's promise settles.
+class FakeLocks {
+	constructor() { this.held = new Set(); }
+	async request(name, options, callback) {
+		if (this.held.has(name))
+			return callback(null);
+		this.held.add(name);
+		try { return await callback({ name }); } finally { this.held.delete(name); }
+	}
+}
+
+test('a stopped page gives the keeping lock back so another tab can claim it', async () => {
+	const locks = new FakeLocks();
+	const first = await claimKeeping(locks);
+	assert.equal(first.acquired, true);
+	const second = await claimKeeping(locks);
+	assert.equal(second.acquired, false);
+	assert.equal(second.unavailable, false);
+	second.release();
+	assert.equal((await claimKeeping(locks)).acquired, false, 'a tab that never held the lock cannot free it');
+	first.release();
+	await new Promise(resolve => setImmediate(resolve));
+	const third = await claimKeeping(locks);
+	assert.equal(third.acquired, true);
+	third.release();
+});
+
+test('keeping is reported unavailable without Web Locks, and a failing request does not hang', async () => {
+	assert.deepEqual({ ...await claimKeeping(null), release: undefined }, { acquired: false, release: undefined, unavailable: true });
+	const broken = await claimKeeping({ request: async () => { throw new Error('denied'); } });
+	assert.equal(broken.acquired, false);
+	assert.equal(broken.unavailable, false);
+	const throwing = await claimKeeping({ request() { throw new Error('denied'); } });
+	assert.equal(throwing.acquired, false);
 });

@@ -9,8 +9,15 @@ namespace OpenTPW;
 
 /// <summary>One node of a <see cref="GltfScene"/>: its parent-relative transform, optional mesh and the string, number and boolean <c>extras</c>.</summary>
 /// <param name="Local">Parent-relative transform, row-vector convention (<c>world = local × parent world</c>, as MD2 nodes).</param>
+/// <param name="Light">The <c>KHR_lights_punctual</c> light on this node, or null.</param>
 public sealed record GltfNode( int Index, string Name, int Parent, IReadOnlyList<int> Children, Matrix4x4 Local, int Mesh,
-	IReadOnlyDictionary<string, JsonElement> Extras );
+	IReadOnlyDictionary<string, JsonElement> Extras, GltfLight? Light = null );
+
+/// <summary>
+/// A <c>KHR_lights_punctual</c> light: its <c>type</c> (<c>point</c>, <c>spot</c> or <c>directional</c>), linear colour (default white), <c>intensity</c> (the file's unit, candela or lux, kept as written)
+/// and <c>range</c> in scene units (null when the file gives none, which glTF reads as unbounded).
+/// </summary>
+public sealed record GltfLight( string Type, NumericsVector3 Colour, float Intensity, float? Range );
 
 /// <summary>One triangle list of a mesh, with per-vertex position, normal and first UV set.</summary>
 public sealed record GltfPrimitive( NumericsVector3[] Positions, NumericsVector3[]? Normals, NumericsVector2[]? TexCoords, int[] Indices, int Material );
@@ -32,6 +39,8 @@ public sealed record GltfImage( string Name, string MimeType, byte[] Data );
 public sealed class GltfScene
 {
 	public const int MaximumFileBytes = 64 * 1024 * 1024;
+	/// <summary>The one glTF extension the reader accepts, as optional or required: point lights on nodes.</summary>
+	public const string LightsExtension = "KHR_lights_punctual";
 	private const uint GlbMagic = 0x46546C67; // "glTF"
 	private const uint JsonChunk = 0x4E4F534A;
 	private const uint BinaryChunk = 0x004E4942;
@@ -95,7 +104,8 @@ public sealed class GltfScene
 		{
 			Refuse( "skins", "skinned meshes" );
 			Refuse( "animations", "animations" );
-			if ( root.TryGetProperty( "extensionsRequired", out var required ) && required.GetArrayLength() > 0 )
+			// KHR_lights_punctual is read (point lights become light dummies, docs/LIGHTS.md); any other required extension is refused
+			if ( root.TryGetProperty( "extensionsRequired", out var required ) && required.EnumerateArray().Any( extension => extension.GetString() != LightsExtension ) )
 				throw new InvalidDataException( $"glTF requires extensions OpenTPW does not read: {required}." );
 			if ( root.TryGetProperty( "buffers", out var buffers ) )
 			{
@@ -108,7 +118,8 @@ public sealed class GltfScene
 			var images = Array( "images" ).Select( ( image, index ) => ReadImage( image, index ) ).ToList();
 			var materials = Array( "materials" ).Select( ( material, index ) => ReadMaterial( material, index, images.Count ) ).ToList();
 			var meshes = Array( "meshes" ).Select( ( mesh, index ) => ReadMesh( mesh, index, materials.Count ) ).ToList();
-			var nodes = ReadNodes( meshes.Count );
+			var lights = ReadLights();
+			var nodes = ReadNodes( meshes.Count, lights );
 			var roots = ReadRoots( nodes );
 			return new GltfScene( nodes, roots, meshes, materials, images );
 		}
@@ -186,7 +197,26 @@ public sealed class GltfScene
 			return new GltfMesh( Name( mesh, $"mesh{index}" ), primitives );
 		}
 
-		private List<GltfNode> ReadNodes( int meshCount )
+		/// <summary>The scene's <c>KHR_lights_punctual</c> light definitions, in file order (empty without the extension).</summary>
+		private List<GltfLight> ReadLights()
+		{
+			var lights = new List<GltfLight>();
+			if ( !root.TryGetProperty( "extensions", out var extensions ) || !extensions.TryGetProperty( LightsExtension, out var extension ) || !extension.TryGetProperty( "lights", out var list ) )
+				return lights;
+			foreach ( var light in list.EnumerateArray() )
+			{
+				var type = light.TryGetProperty( "type", out var typeValue ) ? typeValue.GetString() ?? "" : "";
+				var colour = Floats( light, "color", 3, [1, 1, 1] );
+				var intensity = light.TryGetProperty( "intensity", out var intensityValue ) ? intensityValue.GetSingle() : 1f;
+				float? range = light.TryGetProperty( "range", out var rangeValue ) ? rangeValue.GetSingle() : null;
+				if ( type.Length == 0 || colour.Any( channel => !float.IsFinite( channel ) ) || !float.IsFinite( intensity ) || ( range is { } value && !float.IsFinite( value ) ) )
+					throw new InvalidDataException( $"glTF light {lights.Count} is malformed (a type and finite colour, intensity and range are needed)." );
+				lights.Add( new GltfLight( type, new NumericsVector3( colour[0], colour[1], colour[2] ), intensity, range ) );
+			}
+			return lights;
+		}
+
+		private List<GltfNode> ReadNodes( int meshCount, List<GltfLight> lights )
 		{
 			var elements = Array( "nodes" ).ToList();
 			var parents = Enumerable.Repeat( -1, elements.Count ).ToArray();
@@ -208,7 +238,15 @@ public sealed class GltfScene
 				var mesh = element.TryGetProperty( "mesh", out var meshIndex ) ? meshIndex.GetInt32() : -1;
 				if ( mesh >= meshCount )
 					throw new InvalidDataException( $"glTF node {i} names mesh {mesh}, which does not exist." );
-				nodes.Add( new GltfNode( i, Name( element, $"node{i}" ), parents[i], children[i], LocalTransform( element ), mesh, Extras( element ) ) );
+				GltfLight? light = null;
+				if ( element.TryGetProperty( "extensions", out var nodeExtensions ) && nodeExtensions.TryGetProperty( LightsExtension, out var nodeLight ) )
+				{
+					var lightIndex = nodeLight.TryGetProperty( "light", out var lightValue ) ? lightValue.GetInt32() : -1;
+					if ( lightIndex < 0 || lightIndex >= lights.Count )
+						throw new InvalidDataException( $"glTF node {i} names light {lightIndex}, which does not exist." );
+					light = lights[lightIndex];
+				}
+				nodes.Add( new GltfNode( i, Name( element, $"node{i}" ), parents[i], children[i], LocalTransform( element ), mesh, Extras( element ), light ) );
 			}
 			return nodes;
 		}

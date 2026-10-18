@@ -42,6 +42,9 @@ Blender scene --opentpw_export.py--> pool.glb --opentpw-kit object--> archive fo
   `opentpw_self_lit` (default false) draws the mesh in one constant colour instead of per-vertex lighting (material
   word +0xC bit 0x1, which the original uses for water, signs and glow). Turn on **backface culling** for every material:
   the game culls back faces, and a double-sided glTF material makes the converter warn.
+- **Lights.** A point light on a node (`KHR_lights_punctual`, in Blender a point light object) becomes a light dummy, the place a ride script's `ENABLELIGHT`, `DISABLELIGHT`, `SETLIGHT` and `COLOURLIGHT`
+  switch and colour, and the renderer's point light ([LIGHTS.md](LIGHTS.md)). The custom properties `opentpw_light` (the light number, an integer from 0) and `opentpw_light_radius` (the radius in model units) go on
+  the light object; without a number the lights take the lowest free numbers in node order. The exporter writes lights (`export_lights`), the other light kinds are skipped.
 - **Textures.** The image name becomes the texture name, `<name>.tga` in the object's `textures/` folder. MD2 texture
   names are 20-byte fields, so a name may have at most 15 characters before `.tga`. tp.exe tries `<name>.wct` and then
   `<name>.tga` in the archive's `textures` folder ([ObjectAssets](../source/OpenTPW/World/Objects/ObjectAssets.cs)),
@@ -134,6 +137,15 @@ shape text, because the engine frame equals Blender's) follows from the same equ
   material are de-duplicated on position, normal and UV, and equal positions share one stored position. A mesh without normals gets flat face normals.
 - **Materials.** `opentpw_wrap` → slot flags (0x31 wrap, 0x1 clamp); `opentpw_self_lit` → material word +0xC bit 0x1 (`ModelMaterialBuilder.SelfLit`); both accept `true`/`false` or `1`/`0`.
 - **Heads.** Node extra `opentpw_head` = n → `AddHead( n )` with the default type 0xB1 (0xF1 is not used: it needs the 16-byte attribute data block the builder does not write).
+- **Lights.** A `KHR_lights_punctual` point light becomes a light dummy ([Lights](#lights)).
+
+### Lights
+
+A `KHR_lights_punctual` light of type `point` on a node → `AddLight( number, colour, radius )` on that node's dummy (`[EXT:object-lights]`, [LIGHTS.md](LIGHTS.md#the-model-format)): the light's `color`
+  is the base colour (clamped to 0..1 with a warning), its `range` the radius in model units (a scene unit is one model unit; rounded, 1 to 65535; no `range` means the engine's default of 100), the node extra `opentpw_light` = n
+  the light number (else the lowest free number in node order, after the explicit ones) and `opentpw_light_radius` = r a radius that beats the range. The glTF `intensity` is **not carried** (candela or lux, its unit differs
+  between exporters; one warning per file when it is not 1): scale the colour, and a script's `SETLIGHT` dims the base colour at run time. Spot and directional lights are skipped with a warning. `KHR_lights_punctual` may be listed
+  as a required extension (any other required extension is still refused). A node that is a rider head cannot also be a light, and numbers must be unique.
 - **Textures.** The glTF image's name without a known image extension is the texture name; it must be at most 15 printable ASCII characters, unique without case,
   and the image PNG or JPEG.
 - **Refused, naming the node, material or image:** a primitive without a material, a material without a base-colour texture, no UVs (`TEXCOORD_0`), more than 65,535 corners (counted after splitting
@@ -250,6 +262,12 @@ guest is never released. Real swimming comes later, in an extension.
 What is missing: a placement as an `OriginalObject` entity (it builds renderer entities and needs a GPU context, so the real draw of the converted model, its texture orientation and its mirror state in the game are not
 checked); and a sideshow-category object has no headless park test (the gate places rides only, and a sideshow guest needs the live sideshow terms the runtime derives).
 
+## An example with a light: the lamp post
+
+`tools/lights/build-example-mod.sh` builds the example mod `content/mods/opentpw.example.lamp-lights` (python3 and the .NET SDK, no Blender): `make_example_lamp.py` writes a glTF lamp with a point light node, `opentpw-kit object` converts it with
+`tools/lights/lamp.sam` (which tunes the light with the `Lights[n]` keys) and `tools/lights/lamp.rse` (a script that uses the four light opcodes), and the mod's two documents are written by the script (the kit's `mod` command writes community
+mods only, and this one is official). See [LIGHTS.md](LIGHTS.md#the-example-mod).
+
 ## Content shipped with the game: pools
 
 The official `opentpw.pools` extension ships its changing rooms and swim sprites as committed generated files in `content/pools` (our own art, nothing from the original game). `tools/pools/build-content.sh` regenerates them (Blender 5.x, the .NET SDK, python3; about 30 minutes, nearly all of it the sprite renders; the kid sets keep only slots 0, 1 and 14, the ones the land renderers draw; env `KIT_ARTIFACTS`, `WORK`, `FORCE_SPRITES`): the cabin model comes from `tools/blender/opentpw_changing_room.py` through `GltfModelConverter` and `opentpw-kit object` with `tools/pools/cabin.sam` and `cabin.rse`, the guests from `opentpw_guest_sprites.py --scale 2 --part pool` (the swimwear sets, `content/pools/esprites/Swim`) and `--part land,heads` (the clothes sets and heads that replace the game's while the extension is on, `esprites/Generic/Kids` and `Kidsheads`), packed by `tools/pools/pack_sprite_sets.py` through `opentpw-kit sprites`. All of it is drawn at 2x (8.25 MB of sprites). The pool extras (ladder, diving board, shower, lounger, lamp, underwater light) are built the same way from `tools/blender/opentpw_pool_extras.py` with `tools/pools/extra-*.sam` and `extra.rse` (step 2b). See [POOLS.md](POOLS.md#content-extpools-content) and [Extras](POOLS.md#extras-phase-p3-extpools-extras).
@@ -267,6 +285,7 @@ The official `opentpw.pools` extension ships its changing rooms and swim sprites
 - `GltfSceneTests`: hand-built files for the reader's fields, transforms and each refusal; with Blender installed, `ReadsTheBlenderSamplePool` also runs the sample script.
 - `GltfModelConverterTests`: the conventions (position mirror, V flip, winding and face normals, the engine-frame reading of a plain, a rotated and a nested quad), hierarchy, materials, extras, heads, textures and every refusal.
 - `TgaWriterTests`: the variant, stb read-back and the 155-file corpus identity. `Md2ConventionCorpusTests`: the sign-face evidence above.
+- `ObjectLightTests`: light dummies through the builder and the writer, the converter's lights (number, range, extras, warnings, refusals), the light bank, the opcodes and the example mod end to end.
 - `ContentKitTests`: the three commands, their errors, the sprite sets (a kid-set folder through the readers and `GuestSpriteAtlas`, head and balloon sets, an override into the real `esprites.wad`) and the end-to-end flow above.
 
 ## Swimmer sprites

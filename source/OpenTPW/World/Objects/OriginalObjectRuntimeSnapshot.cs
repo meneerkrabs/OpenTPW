@@ -78,6 +78,12 @@ public sealed record OriginalObjectRuntimeSnapshot
 	public int? RideCapacity { get; init; }
 	[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 	public int? RideDuration { get; init; }
+	/// <summary>
+	/// [EXT:object-lights] The on/off state and colour of the object's lights (docs/LIGHTS.md), or null for an object whose model has none (every original object: such a snapshot is byte-identical to one
+	/// written before lights existed). Presentation only; no hash reads it.
+	/// </summary>
+	[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+	public IReadOnlyList<ObjectLightRecord>? Lights { get; init; }
 	/// <summary>Whether the script's own view of its scream handle is set (the scream diagnostics follow it, with or without audio); null in older saves, which fall back to <see cref="HeldScream"/>.</summary>
 	public bool? ScriptHoldsScream { get; init; }
 
@@ -87,7 +93,8 @@ public sealed record OriginalObjectRuntimeSnapshot
 		Animator = Animator.DeepCopy(),
 		Heads = Heads?.DeepCopy(),
 		UnresolvedAnimations = UnresolvedAnimations.ToArray(),
-		ParticleObjects = ParticleObjects?.ToArray()
+		ParticleObjects = ParticleObjects?.ToArray(),
+		Lights = Lights?.ToArray()
 	};
 
 	/// <summary>Pure structural validation; throws <see cref="InvalidDataException"/> on any violation.</summary>
@@ -118,6 +125,8 @@ public sealed record OriginalObjectRuntimeSnapshot
 		// the SPEED word +0x58 is a full dword (any int; only the script's bias word +0xc0 is a short), CAPACITY and DURATION are bytes
 		if ( RideCapacity is < 0 or > byte.MaxValue || RideDuration is < 0 or > byte.MaxValue )
 			throw new InvalidDataException( "runtime snapshot has a ride capacity or duration word outside 0..255." );
+		if ( Lights != null )
+			ObjectLightBank.ValidateRecords( Lights );
 		if ( StoppedScriptFault != null && ( !Stopped || !HasScript ) )
 			throw new InvalidDataException( "runtime snapshot carries a stopped script fault without a stopped scripted runtime." );
 	}

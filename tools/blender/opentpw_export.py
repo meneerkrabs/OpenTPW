@@ -42,7 +42,7 @@ def export(out, collection=None):
 		export_apply=True,
 		export_extras=True,
 		export_cameras=False,
-		export_lights=False,
+		export_lights=True,  # point lights become light dummies (docs/LIGHTS.md); other kinds are skipped by the converter with a warning
 		export_animations=False,
 		export_image_format="AUTO",
 	)

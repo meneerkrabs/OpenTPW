@@ -57,7 +57,7 @@ public readonly record struct ObjectPlacement( int X, int Y, int Rotation, Syste
 /// A placed original ride, shop, sideshow, feature or fixed item: its original model hierarchy rendered
 /// with original textures, animated by its original RSE script (<see cref="OriginalObjectRuntime"/>).
 /// </summary>
-public class OriginalObject : Entity
+public class OriginalObject : Entity, IPointLightSource
 {
 	/// <summary>The material's texture-array binding the object renderer uses (BuildModels).</summary>
 	private const string TextureArrayName = "Color";
@@ -153,6 +153,9 @@ public class OriginalObject : Entity
 			Runtime.SetTourStation( ComputeTourStation );
 			BuildModels();
 			UpdateTransforms();
+			// [EXT:object-lights] an object whose model has light dummies shows them through its level's point lights
+			if ( Runtime.Lights != null )
+				Level?.PointLights.Add( this );
 		}
 		catch
 		{
@@ -450,9 +453,21 @@ public class OriginalObject : Entity
 		}
 	}
 
+	/// <summary>
+	/// [EXT:object-lights] The lights that are on, at their dummy nodes' world transforms at the current pose (so a light on a moving part moves with it), in engine units: the position from the node's
+	/// engine matrix, the radius from model units at <see cref="ObjectPlacement.ModelScale"/>, the colour the opcodes last set.
+	/// </summary>
+	void IPointLightSource.AppendPointLights( List<PointLight> into )
+	{
+		if ( deleted || Runtime.Lights is not { } bank )
+			return;
+		bank.AppendTo( into, NodeTransforms, Placement.ModelToEngine );
+	}
+
 	protected override void OnDelete()
 	{
 		deleted = true;
+		Level?.PointLights.Remove( this );
 		Runtime?.Stop();
 		foreach ( var (entity, _) in parts )
 			entity.Delete();

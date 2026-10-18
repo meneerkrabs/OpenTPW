@@ -56,6 +56,10 @@ public sealed class GltfConversionOptions
 public static class GltfModelConverter
 {
 	public const string HeadExtra = "opentpw_head";
+	/// <summary>[EXT:object-lights] Node extra: the light number of a <c>KHR_lights_punctual</c> point light's dummy (an integer from 0); without it the lights take the lowest free numbers in node order.</summary>
+	public const string LightExtra = "opentpw_light";
+	/// <summary>[EXT:object-lights] Node extra: the radius of that light in model units (1 to 65535), for exporters that cannot write a glTF <c>range</c> (Blender's lights have none).</summary>
+	public const string LightRadiusExtra = "opentpw_light_radius";
 	public const string WrapExtra = "opentpw_wrap";
 	public const string SelfLitExtra = "opentpw_self_lit";
 	private const int MaximumCount = ushort.MaxValue;
@@ -83,6 +87,7 @@ public static class GltfModelConverter
 		var warnings = new List<string>();
 		var names = CheckNodeNames( scene );
 		var heads = CheckHeads( scene );
+		var lights = CheckLights( scene, heads, warnings );
 		var textures = new TextureTable( scene );
 
 		var model = new ModelBuilder { SourceName = options.SourceName };
@@ -113,6 +118,8 @@ public static class GltfModelConverter
 			}
 			if ( heads.TryGetValue( node.Index, out var head ) )
 				built.AddHead( head );
+			if ( lights.TryGetValue( node.Index, out var light ) )
+				built.AddLight( light.Number, light.Colour, light.RadiusModelUnits );
 			foreach ( var child in node.Children )
 				Add( scene.Nodes[child], built );
 		}
@@ -155,6 +162,79 @@ public static class GltfModelConverter
 				throw new InvalidDataException( $"Head ids must be unique and run from 1 without a gap (the ride script counts them from 1 until one is missing); found {string.Join( ", ", ids )}." );
 		}
 		return heads;
+	}
+
+	private readonly record struct LightDummy( int Number, NVector3 Colour, int RadiusModelUnits );
+
+	/// <summary>
+	/// [EXT:object-lights] The point lights of the scene as light dummies (docs/LIGHTS.md): the glTF colour is the base colour, the <c>range</c> (or the node extra <c>opentpw_light_radius</c>) is the radius in
+	/// model units (one scene unit is one model unit), none meaning the default of 100; the number is the node extra <c>opentpw_light</c> or the lowest free number in node order. The glTF intensity is not
+	/// carried (its unit, candela or lux, differs between exporters): scale the colour, and a script's SETLIGHT dims it. Spot and directional lights have no counterpart and are skipped with a warning.
+	/// </summary>
+	private static Dictionary<int, LightDummy> CheckLights( GltfScene scene, Dictionary<int, int> heads, List<string> warnings )
+	{
+		var result = new Dictionary<int, LightDummy>();
+		var explicitNumbers = new Dictionary<int, int>();
+		foreach ( var node in scene.Nodes )
+		{
+			if ( !node.Extras.TryGetValue( LightExtra, out var value ) )
+				continue;
+			if ( node.Light == null )
+				throw new InvalidDataException( $"Node '{node.Name}': {LightExtra} needs a KHR_lights_punctual point light on the node." );
+			if ( value.ValueKind != JsonValueKind.Number || !value.TryGetInt32( out var number ) || number < 0 || number > short.MaxValue )
+				throw new InvalidDataException( $"Node '{node.Name}': {LightExtra} must be an integer from 0 to 32767." );
+			explicitNumbers[node.Index] = number;
+		}
+		var used = new HashSet<int>();
+		foreach ( var (index, number) in explicitNumbers )
+			if ( scene.Nodes[index].Light is { Type: "point" } && !used.Add( number ) )
+				throw new InvalidDataException( $"Light number {number} is used by two nodes; light numbers must be unique." );
+		var next = 0;
+		var intensityWarned = false;
+		foreach ( var node in scene.Nodes )
+		{
+			if ( node.Light is not { } light )
+				continue;
+			if ( !string.Equals( light.Type, "point", StringComparison.Ordinal ) )
+			{
+				warnings.Add( $"Node '{node.Name}': a {light.Type} light is skipped; only point lights become light dummies." );
+				continue;
+			}
+			if ( heads.ContainsKey( node.Index ) )
+				throw new InvalidDataException( $"Node '{node.Name}' is a rider head and a light; a node has one attribute record." );
+			int number;
+			if ( explicitNumbers.TryGetValue( node.Index, out var chosen ) )
+				number = chosen;
+			else
+			{
+				while ( !used.Add( next ) )
+					next++;
+				number = next;
+			}
+			var radius = 0;
+			if ( node.Extras.TryGetValue( LightRadiusExtra, out var radiusValue ) )
+			{
+				if ( radiusValue.ValueKind != JsonValueKind.Number || !radiusValue.TryGetInt32( out radius ) || radius < 1 || radius > ushort.MaxValue )
+					throw new InvalidDataException( $"Node '{node.Name}': {LightRadiusExtra} must be an integer from 1 to 65535 (model units)." );
+			}
+			else if ( light.Range is { } range )
+			{
+				if ( range <= 0 )
+					warnings.Add( $"Node '{node.Name}': the light range {range} is not positive; the default radius of 100 model units is used." );
+				else
+					radius = (int)Math.Clamp( MathF.Round( range ), 1f, ushort.MaxValue );
+			}
+			var colour = new NVector3( Math.Clamp( light.Colour.X, 0f, 1f ), Math.Clamp( light.Colour.Y, 0f, 1f ), Math.Clamp( light.Colour.Z, 0f, 1f ) );
+			if ( colour != light.Colour )
+				warnings.Add( $"Node '{node.Name}': the light colour is outside 0..1 and is clamped." );
+			if ( !intensityWarned && light.Intensity != 1f )
+			{
+				intensityWarned = true;
+				warnings.Add( "The glTF light intensity is not carried (its unit differs between exporters); the colour is the light's base colour and a script's SETLIGHT dims it." );
+			}
+			result[node.Index] = new LightDummy( number, colour, radius );
+		}
+		return result;
 	}
 
 	private static void BuildMesh( GltfScene scene, GltfNode node, ModelNodeBuilder built, TextureTable textures, HashSet<int> warnedMaterials, List<string> warnings )

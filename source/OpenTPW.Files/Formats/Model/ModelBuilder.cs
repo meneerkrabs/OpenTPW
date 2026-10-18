@@ -29,6 +29,8 @@ public sealed class ModelBuilder
 	public const uint SlotWrapFlags = 0x30;
 	/// <summary>The default head record type: 0xB1 (487 corpus records; flag 0x80 = head record, 0x30 = has a world matrix).</summary>
 	public const uint DefaultHeadType = 0xB1;
+	/// <summary>[EXT:object-lights] The type word of a light dummy's attribute record: class 0x20000 and a data block (<see cref="ModelLights"/>).</summary>
+	public const uint LightType = ModelDummyAttribute.LightFlag | ModelDummyAttribute.DataFlag;
 	/// <summary>The longest source name (the header field is 20 bytes with a terminating NUL).</summary>
 	public const int MaximumSourceNameLength = 19;
 	/// <summary>The longest texture name without its <c>.tga</c> extension: the slot name field is 20 bytes with a terminating NUL.</summary>
@@ -260,7 +262,8 @@ public sealed class ModelBuilder
 	private static ModelDummyAttribute[] BuildAttributes( List<ModelNodeBuilder> ordered, Dictionary<ModelNodeBuilder, int> indexOf, int meshCount, out ushort unknown46 )
 	{
 		var heads = ordered.Where( node => node.HeadId != null ).ToList();
-		if ( heads.Count == 0 )
+		var lights = ordered.Where( node => node.LightNumber != null ).ToList();
+		if ( heads.Count == 0 && lights.Count == 0 )
 		{
 			unknown46 = 0xFFFF;
 			return Array.Empty<ModelDummyAttribute>();
@@ -271,8 +274,16 @@ public sealed class ModelBuilder
 			if ( ids[index] != index + 1 )
 				throw new InvalidOperationException( "Head ids must be unique and run from 1 without a gap (the ride script counts them from 1 until one is missing)." );
 		}
-		var first = Math.Min( meshCount, heads.Min( node => indexOf[node] ) );
-		var last = heads.Max( node => indexOf[node] );
+		// [EXT:object-lights] light numbers are unique (the original's lookup takes the first dummy of the number) and start anywhere from 0; a script names them
+		var numbers = lights.Select( node => node.LightNumber!.Value ).OrderBy( number => number ).ToArray();
+		for ( var index = 1; index < numbers.Length; index++ )
+		{
+			if ( numbers[index] == numbers[index - 1] )
+				throw new InvalidOperationException( $"Light number {numbers[index]} is used by two nodes; light numbers must be unique." );
+		}
+		var recorded = heads.Concat( lights ).ToList();
+		var first = Math.Min( meshCount, recorded.Min( node => indexOf[node] ) );
+		var last = recorded.Max( node => indexOf[node] );
 		unknown46 = (ushort)first;
 		var attributes = new ModelDummyAttribute[last - first + 1];
 		for ( var index = 0; index < attributes.Length; index++ )
@@ -280,7 +291,9 @@ public sealed class ModelBuilder
 			var node = ordered[first + index];
 			attributes[index] = node.HeadId is { } id
 				? new ModelDummyAttribute( node.HeadType, (uint)id, new byte[12], node.HeadData )
-				: new ModelDummyAttribute( 0x1, 0, new byte[12] );
+				: node.LightNumber is { } number
+					? new ModelDummyAttribute( LightType, (uint)number, new byte[12], node.LightData )
+					: new ModelDummyAttribute( 0x1, 0, new byte[12] );
 		}
 		return attributes;
 	}
@@ -376,9 +389,38 @@ public sealed class ModelNodeBuilder
 		}
 		if ( HeadId != null )
 			throw new InvalidOperationException( $"Node '{Name}' already has head record {HeadId}." );
+		if ( LightNumber != null )
+			throw new InvalidOperationException( $"Node '{Name}' is already light {LightNumber}; a node has one attribute record." );
 		HeadId = headId;
 		HeadType = type;
 		HeadData = data;
+		return this;
+	}
+
+	/// <summary>[EXT:object-lights] The light number of this node's light dummy record, or null.</summary>
+	public int? LightNumber { get; private set; }
+	/// <summary>[EXT:object-lights] The data block of the light record: colour in X, Y, Z and the radius in model units in the word (0 = the default 100).</summary>
+	public ModelAttributeData? LightData { get; private set; }
+
+	/// <summary>
+	/// [EXT:object-lights] Makes this node a light dummy (docs/LIGHTS.md): attribute class 0x20000 with the light number as value, which the four light opcodes address, and a data
+	/// block that carries the base <paramref name="colour"/> (linear 0..1 channels) and the <paramref name="radiusModelUnits"/> (1 to 65535 model units; 0 keeps the engine default of
+	/// 100, the original's point-light radius). The node's world transform places the light. A node has at most one attribute record, and light numbers are unique.
+	/// </summary>
+	public ModelNodeBuilder AddLight( int number, NVector3 colour, int radiusModelUnits = 0 )
+	{
+		if ( number < 0 || number > short.MaxValue )
+			throw new ArgumentOutOfRangeException( nameof( number ), "Light numbers run from 0 to 32767 (a script operand is 16 bits)." );
+		if ( !ModelBuilder.IsFinite( colour ) || colour.X < 0 || colour.Y < 0 || colour.Z < 0 || colour.X > 1 || colour.Y > 1 || colour.Z > 1 )
+			throw new ArgumentException( "A light colour has three channels from 0 to 1.", nameof( colour ) );
+		if ( radiusModelUnits < 0 || radiusModelUnits > ushort.MaxValue )
+			throw new ArgumentOutOfRangeException( nameof( radiusModelUnits ), "The radius is 1 to 65535 model units, or 0 for the default." );
+		if ( LightNumber != null )
+			throw new InvalidOperationException( $"Node '{Name}' is already light {LightNumber}." );
+		if ( HeadId != null )
+			throw new InvalidOperationException( $"Node '{Name}' already has head record {HeadId}; a node has one attribute record." );
+		LightNumber = number;
+		LightData = new ModelAttributeData( (uint)radiusModelUnits, colour.X, colour.Y, colour.Z );
 		return this;
 	}
 }

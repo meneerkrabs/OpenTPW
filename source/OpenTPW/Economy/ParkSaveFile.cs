@@ -263,6 +263,9 @@ public static class ParkSaveFile
 		public required List<long> TrainingBudgets { get; init; }
 		public required int NextId { get; init; }
 		public required long NextPoolUpdateTick { get; init; }
+		/// <summary>The staff HQ's mHaveEverTrained flag (the advisor's train-your-staff line reads it); absent while no budget has ever been set above 0 and in older saves, which derive it from the budgets.</summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public bool? HaveEverTrained { get; init; }
 		/// <summary>The strike levels (ECON-014); absent in saves written before strikes and while no role has ever been considered.</summary>
 		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 		public StrikeData? Strikes { get; init; }
@@ -723,6 +726,7 @@ public static class ParkSaveFile
 				TrainingBudgets = Enum.GetValues<StaffType>().Select( park.Staff.GetTrainingBudget ).ToList(),
 				NextId = park.Staff.NextId,
 				NextPoolUpdateTick = park.Staff.NextPoolUpdateTick,
+				HaveEverTrained = park.Staff.HaveEverTrained ? true : null,
 				Strikes = CaptureStrikes( park.Staff.Strikes )
 			},
 			Research = new ResearchData
@@ -1056,6 +1060,7 @@ public static class ParkSaveFile
 			CellY = member.CellY,
 			TravelSeconds = member.TravelSeconds
 		} ), data.Staff.Candidates, data.Staff.TrainingBudgets, data.Staff.NextId, data.Staff.NextPoolUpdateTick );
+		park.Staff.RestoreHaveEverTrained( data.Staff.HaveEverTrained ?? data.Staff.TrainingBudgets.Any( budget => budget > 0 ) );
 		foreach ( var saved in data.Staff.Members.Where( member => member.WorldState != null ) )
 			saved.WorldState!.Apply( park.Staff.Members.Single( member => member.Id == saved.Id ) );
 		park.ApplyStaffEffects();

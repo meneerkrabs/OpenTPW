@@ -313,6 +313,7 @@ public partial class Level
 		CellTool.Cancel();
 		station.Close();
 		builder.Ride.EnterTool();
+		builder.OpenFailingClosure();
 		SetCoasterToolStation( station );
 		CoasterPanel = new CoasterToolPanel( builder, IsCoasterCellFree );
 		return true;
@@ -346,6 +347,7 @@ public partial class Level
 		var count = track.Nodes.Count;
 		var result = builder.Place( x, y );
 		LastActionMessage = closing && track.IsClosed ? "Closed the circuit; click the station end again to complete the coaster."
+			: closing ? $"The circuit stays open: {result}."
 			: track.Nodes.Count == count ? $"Cannot build a pylon here: {result}."
 			: result == CoasterPlaceResult.Ok ? $"Placed a pylon (track cost so far ${builder.BuildCost})."
 			: $"Placed a pylon marked invalid: {result}.";

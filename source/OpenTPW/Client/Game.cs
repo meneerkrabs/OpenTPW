@@ -361,6 +361,9 @@ internal static class Game
 			float? perfZoom = null;
 			if ( GetOption( args, "--perf-zoom", "the park camera's zoom value" ) is { } zoomText )
 				perfZoom = float.TryParse( zoomText, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var parsedZoom ) && float.IsFinite( parsedZoom ) ? parsedZoom : throw new ArgumentException( "--perf-zoom expects a zoom value, for example 300." );
+			// [EXT:perf-run] --perf-hash-tick <tick> logs the park's world state hash (Level.ComputeStateHash) at the frame whose park tick is exactly that one, so two runs (the evening extension on and off, say)
+			// can be compared on a real level with its placed objects; use --perf-speed 1 so no frame steps over the tick
+			long? perfHashTick = GetOption( args, "--perf-hash-tick", "a park tick" ) is { } hashTickText && long.TryParse( hashTickText, out var parsedHashTick ) && parsedHashTick > 0 ? parsedHashTick : null;
 			int perfWarmup = 0, perfDone = 0;
 			var perfOpened = false;
 			Render.PostUpdate += () =>
@@ -382,17 +385,22 @@ internal static class Game
 					if ( perfArrivals is { } arrivals && perfLevel.Guests != null )
 						perfLevel.Guests.Settings.ArrivalTimeBetween = arrivals;
 				}
+				if ( perfHashTick is { } hashTick && perfPark.Economy.Tick == hashTick )
+				{
+					perfHashTick = null;
+					Log.Trace( $"--perf-run: world state hash {perfLevel.ComputeStateHash():x16} at park tick {hashTick}, {perfLevel.PointLights.Count} point lights in view." );
+				}
 				if ( ++perfDone % 600 == 0 )
 					Log.Trace( $"--perf-run: frame {perfDone}: {perfLevel.Guests?.Guests.Count} guests, park tick {perfPark.Economy.Tick}, {(perfPark.Economy.IsParkOpen ? "open" : "closed")}, {perfPark.Economy.Counters[ParkCounters.Admissions]} admissions, balance ${perfPark.Economy.Balance}, {perfLevel.PointLights.Count} point lights in view." );
 				if ( perfDone >= perfFrames )
 					Render.Window.SdlWindow.Close();
 			};
 		}
-		// [EXT:debug-evening] smoke and performance runs (docs/EVENING.md; also in Release builds, unlike most debug options): --evening-pace <minutes10|minutes20|minutes40|day|dusk|night> sets the evening extension's day cycle for this run only (nothing is saved), and
+		// [EXT:debug-evening] smoke and performance runs (docs/EVENING.md; also in Release builds, unlike most debug options): --evening-pace <minutes10|minutes20|minutes40|day|dusk|night> sets the evening extension's day cycle for this run only (a run-scoped override in Level, never written to the options, so never saved), and
 		// --debug-evening-lamps <n> adds n lamp-like lights (the pool lamp's colour and radius) on a grid around the park camera's target that follow the evening look's lamp level, so a performance run
 		// has many lamps to carry. Both need the extension on (--enable-mod opentpw.evening).
 		if ( GetOption( args, "--evening-pace", "minutes10, minutes20, minutes40, day, dusk or night" ) is { } paceText )
-			GameOptions.Current.Evening = paceText.ToLowerInvariant() switch
+			Level.EveningPaceOverride = paceText.ToLowerInvariant() switch
 			{
 				"day" or "alwaysday" => EveningPace.AlwaysDay,
 				"dusk" or "alwaysdusk" => EveningPace.AlwaysDusk,

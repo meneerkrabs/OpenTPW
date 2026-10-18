@@ -82,10 +82,11 @@ public readonly record struct EveningLook(
 	SVector3 FogTint,
 	SVector3 SpriteTint,
 	SVector3 WaterTint,
-	float LampLevel )
+	float LampLevel,
+	SVector3 AmbientTint )
 {
 	/// <summary>Full daylight: the sun white, the whole ambient, no tint anywhere, the lamps off.</summary>
-	public static EveningLook Day { get; } = new( 1f, SVector3.One, 1f, SVector3.One, SVector3.One, SVector3.One, SVector3.One, 0f );
+	public static EveningLook Day { get; } = new( 1f, SVector3.One, 1f, SVector3.One, SVector3.One, SVector3.One, SVector3.One, 0f, SVector3.One );
 
 	/// <summary>Whether this is full daylight, which the renderer draws exactly as the original does (every uniform stays as it was).</summary>
 	public bool IsDay => Daylight >= 1f;
@@ -95,14 +96,22 @@ public readonly record struct EveningLook(
 	/// </summary>
 	public float AmbientUniform => IsDay ? 0f : AmbientLevel;
 
+	/// <summary>
+	/// The tinted ambient for <c>test.shader</c>'s <c>g_flAmbientR/G/B</c> (the padding after the time and the view distance): the share of the 0.4 per channel, so dusk is warm and night is blue. All zero at full
+	/// daylight, which the shader reads as "unchanged"; a channel is never exactly 0 otherwise.
+	/// </summary>
+	public SVector3 AmbientColourUniform => IsDay ? SVector3.Zero : SVector3.Max( AmbientTint * AmbientLevel, new SVector3( 0.001f ) );
+
 	// the moon's directional colour (the shaders' diffuse term at night) and the night floors of the tints; all linear 0..1 and tuned by eye later (docs/EVENING.md, "Tuning")
-	private static readonly SVector3 Moon = new( 0.12f, 0.16f, 0.34f );
+	private static readonly SVector3 Moon = new( 0.08f, 0.14f, 0.40f );
 	private static readonly SVector3 SkyNight = new( 0.07f, 0.09f, 0.22f );
 	private static readonly SVector3 FogNight = new( 0.05f, 0.07f, 0.16f );
-	private static readonly SVector3 SpriteNight = new( 0.40f, 0.44f, 0.64f );
-	private static readonly SVector3 WaterNight = new( 0.24f, 0.32f, 0.52f );
+	private static readonly SVector3 SpriteNight = new( 0.34f, 0.38f, 0.60f );
+	private static readonly SVector3 AmbientNight = new( 0.55f, 0.80f, 1.35f );
+	private static readonly SVector3 AmbientWarm = new( 1.00f, 0.72f, 0.52f );
+	private static readonly SVector3 WaterNight = new( 0.20f, 0.28f, 0.46f );
 	// what a low sun does to each: multiplied in with the weight of the dusk glow (0 at full day and at full night, 1 at the middle of the dusk)
-	private static readonly SVector3 SunWarm = new( 1.00f, 0.62f, 0.40f );
+	private static readonly SVector3 SunWarm = new( 1.00f, 0.55f, 0.30f );
 	private static readonly SVector3 SkyWarm = new( 1.00f, 0.58f, 0.42f );
 	private static readonly SVector3 FogWarm = new( 1.00f, 0.62f, 0.48f );
 	private static readonly SVector3 SpriteWarm = new( 1.00f, 0.78f, 0.62f );
@@ -120,13 +129,15 @@ public readonly record struct EveningLook(
 		SVector3 Blend( SVector3 night, SVector3 warm ) => SVector3.Lerp( night, SVector3.One, daylight ) * SVector3.Lerp( SVector3.One, warm, glow );
 		return new EveningLook(
 			daylight,
-			Blend( Moon, SunWarm ),
+			// the sun fades faster than the daylight (to the power 1.5), so the dusk is clearly dimmer than the day
+			Vector3Lerp( Moon, SVector3.One, MathF.Pow( daylight, 1.5f ) ) * Vector3Lerp( SVector3.One, SunWarm, glow ),
 			Lerp( NightAmbient, 1f, daylight ),
 			Blend( SkyNight, SkyWarm ),
 			Blend( FogNight, FogWarm ),
 			Blend( SpriteNight, SpriteWarm ),
 			Blend( WaterNight, WaterWarm ),
-			LampLevelAt( daylight ) );
+			LampLevelAt( daylight ),
+			Blend( AmbientNight, AmbientWarm ) );
 	}
 
 	/// <summary>The weight of the dusk glow: 0 at full day and at full night, 1 at <c>daylight</c> 0.5 (a bell, 4 d (1 - d)).</summary>
@@ -134,6 +145,8 @@ public readonly record struct EveningLook(
 
 	/// <summary>How strongly the lamps shine: 0 while it is light (<c>daylight</c> 0.75 and more), growing smoothly to 1 at <c>daylight</c> 0.35 and less, so they come on as it gets dark and fade out at dawn.</summary>
 	public static float LampLevelAt( float daylight ) => 1f - SmoothStep( ( daylight - 0.35f ) / 0.4f );
+
+	private static SVector3 Vector3Lerp( SVector3 a, SVector3 b, float t ) => SVector3.Lerp( a, b, t );
 
 	private static float Lerp( float a, float b, float t ) => a + ( b - a ) * t;
 

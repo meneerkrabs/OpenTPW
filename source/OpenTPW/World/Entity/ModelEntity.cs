@@ -34,6 +34,11 @@ public partial class ModelEntity : Entity
 
 	}
 
+	/// <summary>
+	/// [EXT:evening] Whether the evening extension darkens this entity at dusk and night (the sun colour and the ambient it draws with). The build tools' placement markers say no, so they stay readable.
+	/// </summary>
+	protected virtual bool FollowsTimeOfDay => true;
+
 	protected override void OnRender()
 	{
 		if ( Model == null || Hidden )
@@ -54,15 +59,19 @@ public partial class ModelEntity : Entity
 			g_mView = Camera.ViewMatrix,
 			g_mProj = Camera.ProjMatrix,
 			g_vLightPos = LightPosition ?? Level?.SunLight?.Position ?? Vector3.Zero,
-			g_vLightColor = Level?.SunLight?.Color ?? Vector3.One,
+			g_vLightColor = FollowsTimeOfDay ? Level?.SunLight?.Color ?? Vector3.One : Vector3.One,
 			g_vCameraPos = Camera.Position,
 			g_flTime = Time.Now,
 
 			// [EXT:evening] g_flAmbientLevel: 0 (unchanged) unless the evening extension has darkened the park
-			_padding0 = Level?.Look.AmbientUniform ?? 0f,
+			_padding0 = FollowsTimeOfDay ? Level?.Look.AmbientUniform ?? 0f : 0f,
 			_padding1 = 0,
 			// test.shader g_flViewDistanceScale: fog distance multiplier from the graphics settings (1 = unchanged).
 			_padding2 = ViewDistanceScale ?? CompatibilityRuntime.RenderQuality.ViewDistanceScale,
+			// [EXT:evening] test.shader's tinted ambient (zero at day and with the extension off)
+			_padding3 = FollowsTimeOfDay ? ( Level?.Look.AmbientColourUniform.X ?? 0f ) : 0f,
+			_padding4 = FollowsTimeOfDay ? ( Level?.Look.AmbientColourUniform.Y ?? 0f ) : 0f,
+			_padding5 = FollowsTimeOfDay ? ( Level?.Look.AmbientColourUniform.Z ?? 0f ) : 0f,
 		}.WithFog();
 
 		SetObjectUniforms( uniformBuffer, model );

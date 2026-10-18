@@ -50,7 +50,13 @@ public sealed class EveningLampTable
 	public const float MaximumRadiusModelUnits = 200f;
 
 	private static EveningLampTable? shipped;
-	private readonly Dictionary<ObjectCatalogEntry, EveningLampRule?> found = new( ReferenceEqualityComparer.Instance );
+	// weak: a park's catalog entries go away with the park, so nothing grows across parks
+	private readonly System.Runtime.CompilerServices.ConditionalWeakTable<ObjectCatalogEntry, Found> found = new();
+
+	private sealed class Found( EveningLampRule? rule )
+	{
+		public EveningLampRule? Rule { get; } = rule;
+	}
 
 	public EveningLampTable( IReadOnlyList<EveningLampRule> rules ) => Rules = rules;
 
@@ -63,11 +69,7 @@ public sealed class EveningLampTable
 	public EveningLampRule? Find( ObjectCatalogEntry entry )
 	{
 		lock ( found )
-		{
-			if ( !found.TryGetValue( entry, out var rule ) )
-				found[entry] = rule = Rules.FirstOrDefault( candidate => candidate.Matches( entry ) );
-			return rule;
-		}
+			return found.GetValue( entry, key => new Found( Rules.FirstOrDefault( candidate => candidate.Matches( key ) ) ) ).Rule;
 	}
 
 	private static EveningLampTable LoadShipped()
@@ -263,7 +265,7 @@ public sealed class EveningLampSource : IPointLightSource
 	private readonly EveningLampTable table;
 	private readonly Func<IReadOnlyList<OriginalObject>> objects;
 	private readonly Func<float> lampLevel;
-	private readonly Dictionary<ObjectCatalogEntry, IReadOnlyList<ResolvedEveningLamp>> resolved = new( ReferenceEqualityComparer.Instance );
+	private readonly System.Runtime.CompilerServices.ConditionalWeakTable<ObjectCatalogEntry, IReadOnlyList<ResolvedEveningLamp>> resolved = new();
 	private readonly HashSet<string> warned = new( StringComparer.Ordinal );
 	private bool reported;
 
@@ -291,7 +293,7 @@ public sealed class EveningLampSource : IPointLightSource
 			foreach ( var node in missing.Where( node => warned.Add( entry.ArchivePath + ":" + node ) ) )
 				Log.Warning( $"Evening lamp of {entry.SettingsName}: the model has no node \"{node}\"; that light is left out." );
 		}
-		resolved[entry] = lamps;
+		resolved.AddOrUpdate( entry, lamps );
 		return lamps;
 	}
 
@@ -302,14 +304,18 @@ public sealed class EveningLampSource : IPointLightSource
 		if ( !( level > 0.002f ) )
 			return;
 		var start = into.Count;
-		foreach ( var item in objects() )
+		// indexed loops: foreach over an interface list boxes an enumerator every frame
+		var placed = objects();
+		for ( var objectIndex = 0; objectIndex < placed.Count; objectIndex++ )
 		{
+			var item = placed[objectIndex];
 			var lamps = LampsOf( item );
 			if ( lamps.Count == 0 )
 				continue;
 			var nodes = item.NodeTransforms;
-			foreach ( var lamp in lamps )
+			for ( var lampIndex = 0; lampIndex < lamps.Count; lampIndex++ )
 			{
+				var lamp = lamps[lampIndex];
 				if ( lamp.NodeIndex >= nodes.Count || item.Runtime.Animator.IsNodeHidden( lamp.NodeIndex ) )
 					continue;
 				var world = ObjectPlacement.SwapAxes( nodes[lamp.NodeIndex] ) * item.Placement.ModelToEngine;

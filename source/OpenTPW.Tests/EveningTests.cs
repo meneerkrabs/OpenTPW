@@ -108,6 +108,19 @@ public class EveningTests
 	}
 
 	[TestMethod]
+	public void TheTintedAmbientIsZeroAtDayBlueAtNightAndWarmAtDusk()
+	{
+		Assert.AreEqual( NVector3.Zero, EveningLook.Day.AmbientColourUniform, "all zero reads as unchanged in test.shader" );
+		var night = EveningLook.At( 0f ).AmbientColourUniform;
+		Assert.IsTrue( night.Z > night.Y && night.Y > night.X && MinOf( night ) > 0f && MaxOf( night ) < 0.6f, "a dim blue ambient" );
+		var dusk = EveningLook.At( 0.5f ).AmbientColourUniform;
+		Assert.IsTrue( dusk.X > dusk.Z && MinOf( dusk ) > 0f, "a warm ambient" );
+		Assert.IsTrue( dusk.X > night.X, "dusk is brighter than night" );
+		for ( var step = 0; step < 100; step++ )
+			Assert.IsTrue( MinOf( EveningLook.At( step / 100f ).AmbientColourUniform ) > 0f, "a channel is never 0 outside full day (0 would read as unchanged)" );
+	}
+
+	[TestMethod]
 	public void NightIsDarkBlueAndTheLampsAreFullDuskIsWarmAndTheLampsFade()
 	{
 		var night = EveningLook.At( 0f );
@@ -293,6 +306,14 @@ public class EveningTests
 	private static string Text( OpenTpwText key ) => SupplementaryStrings.Get( key, "English" );
 
 	[TestMethod]
+	public void TheExtensionDescriptionIsShortEnoughForTheDetailsLabelInEveryLanguage()
+	{
+		// the mods screen's details label is a small-font wrapped label of 1934 authored units that also holds the name, version and flags: about 300 characters of description fit
+		foreach ( var language in SupplementaryStrings.SupportedLanguages )
+			Assert.IsTrue( SupplementaryStrings.Get( OpenTpwText.ExtensionEveningDescription, language ).Length <= 300, $"{language}: {SupplementaryStrings.Get( OpenTpwText.ExtensionEveningDescription, language ).Length} characters" );
+	}
+
+	[TestMethod]
 	public void TheRowLabelsNameTheMinutesAndTheFixedLooksInEveryLanguage()
 	{
 		foreach ( var language in SupplementaryStrings.SupportedLanguages )
@@ -364,8 +385,9 @@ public class EveningTests
 	// ---- the world is untouched ----
 
 	[TestMethod]
-	public void TheExtensionChangesNoWorldStateHash()
+	public void TheExtensionChangesNoWorldStateHashOfAnEconomyRun()
 	{
+		// the economy beside a bare level's presentation step: this proves only that the cycle shares no state with the economy; the real-level proof is the --perf-hash-tick run (docs/EVENING.md, "Determinism")
 		ulong Hash( bool extensionOn )
 		{
 			using var scope = OpenTpwExtensions.Use( Set( extensionOn ) );
@@ -390,6 +412,7 @@ public class EveningTests
 	{
 		Assert.AreEqual( 204, (int)Marshal.OffsetOf<ObjectUniformBuffer>( nameof( ObjectUniformBuffer._padding0 ) ), "a float after a vec3 at 192 packs at 204 in std140" );
 		Assert.AreEqual( 272, Unsafe.SizeOf<ObjectUniformBuffer>(), "the block did not grow" );
+		Assert.AreEqual( 244, (int)Marshal.OffsetOf<ObjectUniformBuffer>( nameof( ObjectUniformBuffer._padding3 ) ), "test.shader's tinted ambient: three floats after the view distance at 240" );
 		var plain = new ObjectUniformBuffer { g_mModel = Matrix4x4.CreateTranslation( 1, 2, 3 ), g_vLightPos = new NVector3( 4, 5, 6 ), g_vLightColor = NVector3.One, g_flTime = 7 }.WithFog();
 		var day = plain;
 		day.AmbientLevel = EveningLook.Day.AmbientUniform;
@@ -418,6 +441,7 @@ public class EveningTests
 			StringAssert.Contains( text, "g_oUbo.g_flAmbientLevel > 0.0 ? g_oUbo.g_flAmbientLevel : 1.0", $"{name}: 0 keeps the original ambient" );
 		}
 		StringAssert.Contains( ShaderText( "test.shader" ), "vec3 vAmbient = vec3(0.4) * (" );
+		Assert.AreEqual( 2, System.Text.RegularExpressions.Regex.Matches( ShaderText( "test.shader" ), @"float g_flViewDistanceScale;\s*float g_flAmbientR;[^\n]*\n\s*float g_flAmbientG;\s*float g_flAmbientB;\s*vec3 g_vFogColor;" ).Count, "the tinted ambient fills the padding before the fog colour in both blocks" );
 		// the water keeps the slot for its wave strength and does not read an ambient level
 		Assert.IsFalse( ShaderText( "pool-water.shader" ).Contains( "g_flAmbientLevel" ) );
 		// the tints ride in the light colour of the sprite and particle shaders, which no draw ever filled

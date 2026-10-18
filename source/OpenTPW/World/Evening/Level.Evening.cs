@@ -7,6 +7,11 @@ public partial class Level
 	/// <summary>The longest frame the cycle counts as play time (a long hitch or a load must not jump the sun).</summary>
 	internal const double EveningMaximumFrameSeconds = 0.25;
 
+	/// <summary>
+	/// [EXT:debug-evening] A pace chosen on the command line (<c>--evening-pace</c>) for this run only: read instead of the option, and never written to <see cref="GameOptions.Current"/>, so it is never saved.
+	/// </summary>
+	internal static EveningPace? EveningPaceOverride { get; set; }
+
 	private EveningClock? eveningClock;
 	private EveningLook? eveningLook;
 	private EveningLampSource? eveningLamps;
@@ -21,7 +26,7 @@ public partial class Level
 	internal EveningLampSource? EveningLampLights => eveningLamps;
 
 	/// <summary>This frame's step of the day cycle, from the extension switch, the pace option, the frame time and the pause state.</summary>
-	private void UpdateEvening() => AdvanceEvening( FeatureGates.Evening, GameOptions.Current.Evening, Time.Delta, SimulationTimeScale > 0f );
+	private void UpdateEvening() => AdvanceEvening( FeatureGates.Evening, EveningPaceOverride ?? GameOptions.Current.Evening, Time.Delta, SimulationTimeScale > 0f );
 
 	/// <summary>
 	/// Advances the day cycle by <paramref name="frameSeconds"/> of real time when the park is <paramref name="playing"/> (a paused park, whatever its speed setting, stands still; the cycle

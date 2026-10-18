@@ -262,9 +262,31 @@ public sealed partial class GuestSimulation
 	// [EXT:smarter-guests-paths] no draw is taken here and the original's route request is made afterwards, for whatever goal results
 	private GuestWander.Destination WeighPath( Guest guest, GuestWander.Destination proposal, ReadOnlySpan<(int X, int Y)> trail )
 	{
-		Span<PathCellView> walk = stackalloc PathCellView[trail.Length];
-		for ( var index = 0; index < trail.Length; index++ )
-			walk[index] = PathCellOf( trail[index] );
+		// the candidates: the cells of the original's walk, then the linked path cells beside its goal that the walk did not visit, then the goal itself (always last)
+		Span<(int X, int Y)> cells = stackalloc (int X, int Y)[trail.Length + 4];
+		var count = 0;
+		for ( var index = 0; index < trail.Length - 1; index++ )
+			cells[count++] = trail[index];
+		var goalCell = trail[^1];
+		{
+			var links = Grid.Cells.LinksAt( goalCell.X, goalCell.Y );
+			for ( var direction = 0; direction < 4; direction++ )
+			{
+				var (dx, dy) = GuestPathGrid.Directions[direction];
+				var next = (X: goalCell.X + dx, Y: goalCell.Y + dy);
+				if ( (links & GuestPathGrid.LinkValue( direction )) == 0 || !Grid.IsWalkable( next.X, next.Y ) || cells[..count].Contains( next ) )
+					continue;
+				cells[count++] = next;
+			}
+		}
+		cells[count++] = goalCell;
+		Span<PathCellView> walk = stackalloc PathCellView[count];
+		for ( var index = 0; index < count; index++ )
+		{
+			// the walk often steps back over a cell it has been on: that cell's view is the same
+			var seen = cells[..index].IndexOf( cells[index] );
+			walk[index] = seen >= 0 ? walk[seen] : PathCellOf( cells[index] );
+		}
 		var decision = decisions.ChoosePath( ContextNow(), ViewOf( guest ), new WanderPathView( PathCellOf( (guest.CellX, guest.CellY) ), walk ) );
 		if ( decision.GoalIndex < -1 || decision.GoalIndex >= walk.Length )
 			throw PolicyError( $"returned the walk cell {decision.GoalIndex} of {walk.Length}" );
@@ -284,7 +306,7 @@ public sealed partial class GuestSimulation
 		if ( decision.GoalIndex is not (>= 0 and var goal) || goal == walk.Length - 1 )
 			return proposal;
 		Observer?.WanderGoalMoved( guest );
-		return proposal with { Cell = trail[goal] };
+		return proposal with { Cell = cells[goal] };
 	}
 
 	/// <summary>A path cell as the comfort rule sees it: the litter in the cell and the eight around it (zero without any litter in the park: no cell is read) and the guests in the cell.</summary>
@@ -297,6 +319,11 @@ public sealed partial class GuestSimulation
 				for ( var x = cell.X - 1; x <= cell.X + 1; x++ )
 					units += SmarterPathComfort.LitterUnitsOf( litter.TypeAt( x, y ) );
 		}
-		return new PathCellView( cell.X, cell.Y, units, occupants.TryGetValue( cell, out var list ) ? list.Count : 0 );
+		var near = 0;
+		for ( var y = cell.Y - 1; y <= cell.Y + 1; y++ )
+				for ( var x = cell.X - 1; x <= cell.X + 1; x++ )
+					if ( (x != cell.X || y != cell.Y) && occupants.TryGetValue( (x, y), out var around ) )
+						near += around.Count;
+		return new PathCellView( cell.X, cell.Y, units, occupants.TryGetValue( cell, out var list ) ? list.Count : 0, near );
 	}
 }

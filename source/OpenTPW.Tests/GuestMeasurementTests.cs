@@ -74,6 +74,9 @@ public class GuestMeasurementTests
 	/// </summary>
 	private const ulong ScenarioSmarterFixedRunHash = 0xF4F3CD74CD7253ABUL;
 
+	/// <summary>The same run with the path rules of 1.5.0 (phase 6) on, the shipped extension. Moved from <see cref="ScenarioSmarterFixedRunHash"/> (1.4.0's, which the rule sets without the path rules still reproduce) because the scenario's guests crowd the street and the rules move wander goals and complain; the stronger rule of the final sweep acts in this 12,000-tick run, which the first version did not.</summary>
+	private const ulong ScenarioSmarterPathsFixedRunHash = 0x4568E8BDD6DB96EAUL;
+
 	[TestMethod]
 	public void ParkScenarioFixedRunHashWithTheSmarterGuestsExtensionOnIsPinned()
 	{
@@ -81,7 +84,7 @@ public class GuestMeasurementTests
 		var park = ScenarioRun( 1, null, 12_000 );
 		Assert.IsInstanceOfType( park.Guests.Decisions, typeof( SmarterGuestDecisions ) );
 		Assert.AreNotEqual( ScenarioFixedRunHash, park.Hash, "the rules change the scenario's guests" );
-		Assert.AreEqual( ScenarioSmarterFixedRunHash, park.Hash, $"0x{park.Hash:X16}" );
+		Assert.AreEqual( ScenarioSmarterPathsFixedRunHash, park.Hash, $"0x{park.Hash:X16}" );
 		// the phase 5 rules switched off are version 1.3.0's guests, so the pin of 1.3.0 holds for them as it was set
 		var phase4 = new ParkScenario( new WorldSeed( 1 ), decisions: new SmarterGuestDecisions( SmarterRuleSet.None ) );
 		phase4.Run( 12_000 );
@@ -92,7 +95,7 @@ public class GuestMeasurementTests
 	/// The scenario with its food shop (<see cref="ParkScenarioOptions.FoodShop"/>) and the extension (1.4.0) on: guests eat, so the meal rule (docs/SMARTER-GUESTS.md, phase 5) acts. The on-path pin of phase 5, which the scenario
 	/// pin above cannot be: it did not move, because the rules of phase 5 need a meal or a meter near a level. A deliberate change of a phase 5 constant changes this value (and bumps the extension's version).
 	/// </summary>
-	private const ulong ScenarioFoodSmarterFixedRunHash = 0x30C8AF969CFEF592UL;
+	private const ulong ScenarioFoodSmarterFixedRunHash = 0x8902B29D497F6074UL;
 
 	[TestMethod]
 	public void ParkScenarioWithAFoodShopAndTheSmarterGuestsExtensionOnIsPinned()

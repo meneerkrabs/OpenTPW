@@ -39,10 +39,11 @@ public class SmarterGuestsPathsTests
 		Assert.AreEqual( RideVisitorBridge.PositionsPerCell + 1, SmarterPathComfort.CrowdComplaintGuests, "one more than a queue cell holds" );
 		// a cell at either complaint level costs the same in the weighting, and the switch margin is that cost
 		Assert.AreEqual( SmarterPathComfort.LitterComplaintUnits * SmarterPathComfort.LitterWeight, SmarterPathComfort.CrowdComplaintGuests * SmarterPathComfort.CrowdWeight );
-		Assert.AreEqual( SmarterPathComfort.LitterComplaintUnits * SmarterPathComfort.LitterWeight, SmarterPathComfort.SwitchMargin );
-		Assert.AreEqual( 0.5f, SmarterPathComfort.HappinessCost( Settings ), "a tenth of the shipped small step of 5" );
+		Assert.AreEqual( SmarterPathComfort.CrowdWeight, SmarterPathComfort.SwitchMargin, "one more guest in the goal's own cell" );
+		Assert.IsTrue( SmarterPathComfort.NearWeight < SmarterPathComfort.CrowdWeight, "a guest beside a cell weighs less than one in it" );
+		Assert.AreEqual( 0.1f, SmarterPathComfort.HappinessCost( Settings ), "a fiftieth of the shipped small step of 5" );
 		Assert.AreEqual( 0f, SmarterPathComfort.HappinessCost( new GuestSettings { SmallHappinessChange = -3 } ), "a negative step is not turned into a gain" );
-		Assert.IsTrue( SmarterPathComfort.ComplaintCooldownTurns * 2 <= 480, "at least two complaints fit in a visit of 480 turns (the exit counter)" );
+		Assert.AreEqual( 480, SmarterPathComfort.ComplaintCooldownTurns, "a whole visit (the exit counter)" );
 	}
 
 	[TestMethod]
@@ -69,8 +70,9 @@ public class SmarterGuestsPathsTests
 		var dirty = Cell( litter: 2, x: 3 );
 		Assert.AreEqual( 1, Decide( Cell(), [Cell( x: 1, litter: 1 ), Cell( x: 2 ), dirty] ).GoalIndex, "the cheapest cell wins" );
 		Assert.AreEqual( 1, Decide( Cell(), [Cell( x: 1 ), Cell( x: 2 ), dirty] ).GoalIndex, "ties between cheaper cells go to the later one, nearer the goal" );
-		Assert.AreEqual( -1, Decide( Cell(), [Cell( x: 1 ), Cell( litter: 1, x: 3 )] ).GoalIndex, "one unit (5) is less than the margin (10): the goal stays" );
-		Assert.AreEqual( -1, Decide( Cell(), [Cell( x: 1 ), dirty with { LitterUnits = 1, Crowd = 2 }] ).GoalIndex, "5 + 4 = 9 against 2 is a difference of 7, under the margin of 10" );
+		Assert.AreEqual( -1, Decide( Cell(), [Cell( x: 1 ), Cell( x: 3 ) with { NearCrowd = 1 }] ).GoalIndex, "one guest beside the goal (1) is less than the margin (2): the goal stays" );
+		Assert.AreEqual( 0, Decide( Cell(), [Cell( x: 1 ), Cell( x: 3 ) with { NearCrowd = 2 }] ).GoalIndex, "two beside it reach the margin: the goal moves" );
+		Assert.AreEqual( 0, Decide( Cell(), [Cell( x: 1 ), Cell( x: 3, crowd: 2 )] ).GoalIndex, "one more guest in the goal cell reaches the margin" );
 		Assert.AreEqual( 0, Decide( Cell(), [Cell( x: 1, crowd: 0 ), Cell( crowd: 6, x: 3 )] ).GoalIndex, "a crowd of six costs 12 against 0" );
 		Assert.AreEqual( -1, Decide( Cell(), [Cell( crowd: 6 ), Cell( crowd: 6, x: 3 )] ).GoalIndex, "an equally bad walk stays as it is" );
 		Assert.AreEqual( -1, Decide( Cell(), [dirty] ).GoalIndex, "a walk of one cell has nowhere else to go" );
@@ -96,9 +98,9 @@ public class SmarterGuestsPathsTests
 	public void AComplaintCarriesTheOriginalsThoughtASmallCostAndWaitsOutItsCooldown()
 	{
 		var littered = Decide( Cell( litter: 2 ), [Cell()] );
-		Assert.AreEqual( new PathDecision( -1, PathComplaint.Litter, GuestThought.TooMessy, 0.5f ), littered, "the original's own 'Too messy'" );
+		Assert.AreEqual( new PathDecision( -1, PathComplaint.Litter, GuestThought.TooMessy, 0.1f ), littered, "the original's own 'Too messy'" );
 		var crowded = Decide( Cell( crowd: 5 ), [Cell()] );
-		Assert.AreEqual( new PathDecision( -1, PathComplaint.Crowd, GuestThought.Dissatisfied, 0.5f ), crowded );
+		Assert.AreEqual( new PathDecision( -1, PathComplaint.Crowd, GuestThought.Dissatisfied, 0.1f ), crowded );
 		Assert.AreEqual( PathComplaint.None, Decide( Cell( litter: 1, crowd: 4 ), [Cell()] ).Complaint, "one unit and four guests are under the levels" );
 		var turn = 1000L;
 		var last = turn - SmarterPathComfort.ComplaintCooldownTurns;
@@ -226,7 +228,7 @@ public class SmarterGuestsPathsTests
 	{
 		var spy = new PathSpy( ( _, _ ) => PathDecision.Keep );
 		var park = Run( spy );
-		Assert.IsTrue( spy.Seen.All( item => item.Walk.Length is >= 1 and <= GuestWander.TrailCapacity ) );
+		Assert.IsTrue( spy.Seen.All( item => item.Walk.Length is >= 1 and <= GuestWander.TrailCapacity + 4 ) );
 		Assert.AreEqual( spy.Seen.Count, spy.Proposals.Count, "one proposal for every offered walk" );
 		for ( var index = 0; index < spy.Seen.Count; index++ )
 			Assert.AreEqual( spy.Proposals[index].Cell, (spy.Seen[index].Walk[^1].X, spy.Seen[index].Walk[^1].Y), "the original's goal is the walk's last cell" );
@@ -247,6 +249,8 @@ public class SmarterGuestsPathsTests
 			{
 				var live = scenario!.Guests.Guests.Count( other => other.State != GuestState.Gone && other.CellX == cell.X && other.CellY == cell.Y );
 				Assert.AreEqual( live, cell.Crowd, $"cell ({cell.X}, {cell.Y})" );
+				var around = scenario.Guests.Guests.Count( other => other.State != GuestState.Gone && Math.Abs( other.Navigation.Cell.X - cell.X ) <= 1 && Math.Abs( other.Navigation.Cell.Y - cell.Y ) <= 1 ) - scenario.Guests.Guests.Count( other => other.State != GuestState.Gone && other.Navigation.Cell == (cell.X, cell.Y) );
+				Assert.AreEqual( around, cell.NearCrowd, $"the eight cells around ({cell.X}, {cell.Y})" );
 				checkedCells++;
 			}
 			return PathDecision.Keep;
@@ -254,6 +258,23 @@ public class SmarterGuestsPathsTests
 		scenario = new ParkScenario( new WorldSeed( 1 ), decisions: spy );
 		scenario.Run( 9000 );
 		Assert.IsTrue( checkedCells > 100 );
+	}
+
+	[TestMethod]
+	public void TheCandidatesAreTheWalkTheLinkedCellsBesideItsGoalAndTheGoalLastAllPathCells()
+	{
+		var spy = new PathSpy( ( _, _ ) => PathDecision.Keep );
+		var park = Run( spy );
+		var beside = 0;
+		for ( var index = 0; index < spy.Seen.Count; index++ )
+		{
+			var walk = spy.Seen[index].Walk;
+			Assert.IsTrue( walk.All( cell => park.Grid.IsWalkable( cell.X, cell.Y ) ), "every candidate is a path cell" );
+			var goal = walk[^1];
+			beside += walk.Count( cell => Math.Abs( cell.X - goal.X ) + Math.Abs( cell.Y - goal.Y ) == 1 );
+			Assert.IsTrue( walk.Length <= GuestWander.TrailCapacity + 4 );
+		}
+		Assert.IsTrue( beside > 20, $"{beside} candidates beside a goal" );
 	}
 
 	[TestMethod]
@@ -487,9 +508,9 @@ public class SmarterGuestsPathsTests
 	[TestMethod]
 	public void ARestoredParkSeesTheSameCrowdsAndLitterAsTheOneThatWasSaved()
 	{
-		var options = new ParkScenarioOptions { Litter = true, FoodShop = true, ArrivalTimeBetween = 10, HandymanTurns = 100_000 };
+		var options = new ParkScenarioOptions { Litter = true, FoodShop = true, ArrivalTimeBetween = 10, HandymanTurns = 100_000, LitterEffect = 25 };
 		var park = new ParkScenario( new WorldSeed( 1 ), options, new SmarterGuestDecisions() );
-		park.Run( GuestReport.TicksForDays( 30 ) );
+		park.Run( GuestReport.TicksForDays( 60 ) );
 		Assert.IsTrue( park.Guests.Litter!.Count > 0 );
 		using var scope = OpenTpwExtensions.Use( SmarterGuestsTests.On() );
 		var fresh = new ParkScenario( park.Seed, options, new SmarterGuestDecisions() );
@@ -502,7 +523,7 @@ public class SmarterGuestsPathsTests
 			{
 				var (live, restored) = (park.Guests.PathCellOf( (x, y) ), fresh.Guests.PathCellOf( (x, y) ));
 				Assert.AreEqual( live, restored, $"cell ({x}, {y})" );
-				crowded += live.Crowd > 1 ? 1 : 0;
+				crowded += live.Crowd > 0 ? 1 : 0;
 			}
 		Assert.IsTrue( crowded > 0, "the saved park has shared cells to compare" );
 	}

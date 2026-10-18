@@ -1,8 +1,8 @@
 namespace OpenTPW;
 
 /// <summary>
-/// The pure rules of the clean and quiet paths (docs/SMARTER-GUESTS.md, phase 6): the wander goal is weighted by the litter and the crowd around it, and a guest standing in litter or in a crowd complains with a small
-/// happiness cost, at most once per cooldown. Every number is OpenTPW's own and is derived from a number of the original or from another constant here; none is tuned (the page lists the sources).
+/// The pure rules of the clean and quiet paths (docs/SMARTER-GUESTS.md, phase 6): the wander goal is weighted by the litter and the crowd around it, and a guest standing in litter or in a crowd complains with a tiny
+/// happiness cost, at most once per visit. Every number is OpenTPW's own: the thresholds come from the original's, the weights, the margin and the neighbour term were chosen by the sweep of docs/SMARTER-GUESTS.md (phase 6).
 /// </summary>
 // [EXT:smarter-guests-paths] OpenTPW's own rules; the original wander ignores litter and crowding
 public static class SmarterPathComfort
@@ -22,17 +22,20 @@ public static class SmarterPathComfort
 	/// <summary>What one guest in the cell costs it: <see cref="LitterComplaintUnits"/> (see <see cref="LitterWeight"/>).</summary>
 	public const int CrowdWeight = LitterComplaintUnits;
 
+	/// <summary>What one guest in the cells around a candidate costs it (the crowd a guest walks into on its way there): one, against <see cref="CrowdWeight"/> for the cell itself.</summary>
+	public const int NearWeight = 1;
+
 	/// <summary>
-	/// How much cheaper the cleaner cell must be before the wander goal moves to it: the cost of one complaint level (<see cref="LitterComplaintUnits"/> x <see cref="LitterWeight"/> = 10). A goal is changed only
-	/// when it is at least a complaint's worth worse than another cell of the same walk, so the rule leaves a clean park's wander alone.
+	/// How much cheaper another candidate must be before the wander goal moves to it: <see cref="CrowdWeight"/>, one more guest in the goal's own cell. The sweep (margins 1, 2, 3 and 10) is in the page: 10 (one complaint level)
+	/// moves too few goals to change anything measurable, 1 lowers happiness a little, 2 keeps the crowd gain and leaves happiness inside the noise.
 	/// </summary>
-	public const int SwitchMargin = LitterComplaintUnits * LitterWeight;
+	public const int SwitchMargin = CrowdWeight;
 
-	/// <summary>The park turns between two complaints of one guest: half a visit (the exit counter, 480 turns, is about 21 days), so a guest complains at most twice in a visit and never twice in a row.</summary>
-	public const int ComplaintCooldownTurns = 240;
+	/// <summary>The park turns between two complaints of one guest: a whole visit (the exit counter, 480 turns, is about 21 days), so a guest complains at most once per visit.</summary>
+	public const int ComplaintCooldownTurns = 480;
 
-	/// <summary>The happiness a complaint costs is the original's smallest happiness step divided by this: a tenth (0.5 of the shipped 5), the cost of being noticed and not of being hurt.</summary>
-	public const int CostDivisor = 10;
+	/// <summary>The happiness a complaint costs is the original's smallest happiness step divided by this: a fiftieth (0.1 of the shipped 5), the cost of being noticed and not of being hurt.</summary>
+	public const int CostDivisor = 50;
 
 	/// <summary>The litter units of one cell's litter: 1 for a piece (the ordinary kinds and the fallback), 2 for vomit and for a stinkbomb (the two kinds that also spread a region effect over the cells around them), 0 for none.</summary>
 	public static int LitterUnitsOf( LitterType type ) => type switch
@@ -42,8 +45,9 @@ public static class SmarterPathComfort
 		_ => 1
 	};
 
-	/// <summary>The cost of a cell in the goal weighting, counting only the kinds the rule set switched on.</summary>
-	public static int CostOf( in PathCellView cell, bool litter, bool crowd ) => (litter ? cell.LitterUnits * LitterWeight : 0) + (crowd ? cell.Crowd * CrowdWeight : 0);
+	/// <summary>The cost of a candidate in the goal weighting, counting only the kinds the rule set switched on: the litter around it, the guests in it and the guests around it.</summary>
+	public static int CostOf( in PathCellView cell, bool litter, bool crowd ) =>
+		(litter ? cell.LitterUnits * LitterWeight : 0) + (crowd ? cell.Crowd * CrowdWeight + cell.NearCrowd * NearWeight : 0);
 
 	/// <summary>The happiness a complaint costs under these settings.</summary>
 	public static float HappinessCost( GuestSettings settings ) => Math.Max( 0, settings.SmallHappinessChange ) / (float)CostDivisor;

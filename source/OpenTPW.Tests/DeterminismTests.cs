@@ -486,7 +486,7 @@ public class DeterminismTests
 	/// shop's throughput estimate (phase 3: its average, samples and silence clock) next to the birth ids. The scenario's pin (GuestMeasurementTests) is where the rules act. 1.5.0 (phase 6, clean and quiet paths) moved this pin from 0x64340E899EC258EB (1.4.0) to 0x00ADEF2E451729B9: the cross park's few path cells crowd (five guests in one cell), so guests complain of the crowd and the wander goal moves to a quieter cell of its walk, which changes guest happiness and walks; the state the extension adds (complaint times) joins the hash too. A deliberate change of the
 	/// extension's state, of the rules or of a constant changes this value (and bumps the extension's version).
 	/// </summary>
-	internal const ulong SmarterGuestsFixedRunHash = 0xEDE9564A8193B6CAUL;
+	internal const ulong SmarterGuestsFixedRunHash = 0xE34B28A7D63A3B5FUL;
 
 	[TestMethod]
 	public void SmarterGuestsFixedRunHashIsTheSameInEveryProcess()

@@ -771,7 +771,7 @@ public class SmarterGuestsTests
 		park.Simulation.SmarterGuests.Meals.Note( counting[0].BirthId, park.Simulation.ParkTurn - 100 );
 		park.Simulation.SmarterGuests.Meals.Note( counting[1].BirthId, park.Simulation.ParkTurn );
 		// and the path rules' complaint times (phase 6): one guest complained a while ago (its cooldown has passed), one just now (its cooldown keeps it quiet in both parks alike)
-		park.Simulation.SmarterGuests.Complaints.Note( counting[0].BirthId, park.Simulation.ParkTurn - SmarterPathComfort.ComplaintCooldownTurns - 1 );
+		park.Simulation.SmarterGuests.Complaints.Note( counting[0].BirthId, Math.Max( 0, park.Simulation.ParkTurn - SmarterPathComfort.ComplaintCooldownTurns - 1 ) );
 		park.Simulation.SmarterGuests.Complaints.Note( counting[1].BirthId, park.Simulation.ParkTurn );
 		var snapshot = park.Simulation.CaptureSnapshot();
 		var section = ParkResumeJson.Deserialize<SmarterGuestsSaveData>( ParkResumeJson.Serialize( SmarterGuestsSave.Capture( park.Simulation )! ) );

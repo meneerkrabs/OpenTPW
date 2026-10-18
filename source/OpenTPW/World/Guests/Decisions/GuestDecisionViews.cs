@@ -132,7 +132,8 @@ public readonly record struct PostUseDecision( bool PushUsedHistory );
 /// <param name="Y">The cell's row.</param>
 /// <param name="LitterUnits">The litter in the cell and the eight around it: 1 for each piece, 2 for each vomit or stinkbomb (<see cref="SmarterGuestsRules.LitterUnitsOf"/>); 0 when the park has no litter.</param>
 /// <param name="Crowd">The guests standing in the cell (the asking guest included when it stands there).</param>
-public readonly record struct PathCellView( int X, int Y, int LitterUnits, int Crowd );
+/// <param name="NearCrowd">The guests standing in the eight cells around it (the crowd a guest walks into on its way there).</param>
+public readonly record struct PathCellView( int X, int Y, int LitterUnits, int Crowd, int NearCrowd = 0 );
 
 /// <summary>
 /// What the wander's comfort rule reads: the cell the guest stands on and the cells the original's random walk visited on its way to the proposed goal, in order, the goal itself last (a copy of cells the

@@ -16,7 +16,7 @@ quantised to one 255-colour palette) and ``set.json`` describing the set for the
 ``originX``/``originY`` follow the sprite reader's convention (``SpriteFrame.OriginX/Y``): the offset of the frame's top left pixel
 from the hotspot, so ``(-12, -37)`` means the frame starts 12 pixels left of and 37 above the hotspot. Standing sprites have the
 hotspot between the feet on the floor, swimmers the torso centre at the water line, heads the centre of the skull. Frames are
-listed direction-major, as the bank stores them. ``fullDetail`` is the ESP byte 0x10C (the game opens the ``.FPC`` bank).
+listed direction-major, as the bank stores them. ``fullDetail`` is the ESP byte 0x10C (the set ships an ``.FPC`` too; the game draws the ``.TPC``).
 
 ``--scale N`` renders every frame at N times the pixel size (canvas, hotspot offsets and pixels per Blender unit all N times larger, so the
 sprite covers the same world area with N times the detail) and writes ``"pixelsPerUnit": 128 * N`` into ``set.json``; the packer puts that

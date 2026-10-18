@@ -334,15 +334,16 @@ rest.
 | Constant | TPW | TPI |
 | --- | --- | --- |
 | Camera elevation | 27 degrees (was 32; the originals' side views look like 25-30) | 25 degrees (was 34, and 42 before that) |
-| Pixels per unit (full detail, `.FPC`, what the game draws) | 11.7 | 14.4 |
-| Pixels per unit (low detail, `.TPC`, the calibration reference) | 9.36 | 11.52 |
+| Pixels per unit (output, 1.25 x the TPC) | 11.7 | 14.4 |
+| Pixels per unit (`.TPC`, the bank the game draws, the calibration reference) | 9.36 | 11.52 |
 | Calibration reference cell / standing hotspot | 48 x 56, feet at (24, 53) | 64 x 80, feet at (32, 70) |
 | Swim frame canvas / hotspot | 80 x 60, (40, 34) | 100 x 80, (50, 45) |
 
-The guest sets ship their art twice: a low-detail `.TPC` bank and the full-detail `.FPC` bank the game opens (ESP byte 0x10C,
-[GUESTS.md](GUESTS.md)). The FPC frames are 1.25 times the size of the TPC ones (a kid stands 40 to 42 px tall in the FPC, 32 to
-37 in the TPC). The reference sheets the calibration was done against came from the TPC (`ppu_tpc`); every sprite the generators
-write is rendered at the FPC scale (`ppu`, 1.25 times larger), and `opentpw_kid_calibrate.py` keeps comparing at the TPC scale.
+The guest sets ship their art twice: the `.TPC` bank the game draws and, for the sets with ESP byte 0x10C, an `.FPC` bank of the
+same art seen from a lower camera, which the game never opens ([GUESTS.md](GUESTS.md)). The widths match and the FPC frames are taller
+(a kid stands 40 to 42 px tall in the FPC, 32 to 37 in the TPC). The reference sheets the calibration was done against came from the
+TPC (`ppu_tpc`), but the generators write at 1.25 times that scale (`ppu`), on the earlier reading that the game draws the FPC, and at
+27 degrees, a lower camera than the TPC's: their guests are larger and seen more from the side than the originals.
 
 `tools/blender/opentpw_kid_calibrate.py` renders the standing kid in the original's cell for every set and, given a
 reference sheet of the original standing frames (viewed locally only), writes a side-by-side comparison (original left,
@@ -441,8 +442,8 @@ set quantised to one 255-colour palette, median cut as `SpriteSetBuilder` does) 
                "frames": [ [ { "file": "slot01_d0_f0.png", "originX": -13, "originY": -39, "width": 22, "height": 40 }, "..." ], "..." ] } ] }
 ```
 
-`name` is the set's member name; `fullDetail` is the ESP byte 0x10C (true: the game opens the `.FPC`, and both banks are written with the
-same content, as the shipped full-detail sets do; false for the heads); `kidFlag` is ESP byte 0x10D (1 for the girls); `frames` are
+`name` is the set's member name; `fullDetail` is the ESP byte 0x10C (true: the set ships an `.FPC` too, written with the same content as the
+`.TPC`, as the shipped full-detail sets do, though the game draws the `.TPC` either way; false for the heads); `kidFlag` is ESP byte 0x10D (1 for the girls); `frames` are
 listed direction-major, as the bank stores them. Heads have `source` `heads`, one slot 0 of 7 directions (elevation rows) by 8 frames
 (azimuths).
 

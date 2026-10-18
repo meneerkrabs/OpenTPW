@@ -40,7 +40,8 @@ public class GuestAssetTests
 			var used = kid.Animations.Animations.Where( slot => !slot.IsEmpty ).SelectMany( slot => Enumerable.Range( slot.FirstFrame, slot.FrameCount ) ).OrderBy( x => x ).ToArray();
 			CollectionAssert.AreEqual( Enumerable.Range( 0, 175 ).ToArray(), used, $"{kid.Name}: the slots cover every frame exactly once" );
 			var walkFrames = Enumerable.Range( walk.FirstFrame, walk.FrameCount ).Select( index => kid.Frames[index] );
-			Assert.IsTrue( walkFrames.All( frame => frame.OriginY < 0 && -frame.OriginY <= frame.Height && -frame.OriginY >= frame.Height - 6 ), "walk-frame hotspot at the feet" );
+			// the TPC is drawn from above: the nearer foot reaches 1 to 8 pixels below the hotspot (the FPC, from a lower camera, 0 to 3)
+			Assert.IsTrue( walkFrames.All( frame => frame.OriginY < 0 && -frame.OriginY <= frame.Height && -frame.OriginY >= frame.Height - 8 ), "walk-frame hotspot at the feet" );
 			Assert.IsTrue( kid.Pixels.Where( ( value, index ) => index % 4 == 3 ).Any( value => value == 255 ) );
 		}
 		CollectionAssert.AreEqual( new[] { 0, 0, 1, 0, 1, 1, 1, 0 }, kids.Select( kid => (int)kid.Animations.FlagB ).ToArray() );

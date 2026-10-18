@@ -24,10 +24,10 @@ import numpy as np
 # ``elevation`` is the camera elevation above the ground plane in degrees, ``ppu`` the orthographic scale (sprite
 # pixels per Blender unit), ``cell`` the original's sprite cell and ``feet`` where the standing hotspot lands in it;
 # ``swim_canvas``/``swim_origin`` are the (larger) canvas and hotspot of our swimmer frames.
-# The sprite banks come in two detail levels: the game draws the full-detail ``.FPC`` of the guest sets, which is 1.25 times
-# the size of the low-detail ``.TPC`` the calibration was first done against (kid standing frames 40-42 px against 32-37). ``ppu``
-# is the FPC scale used for all output; ``ppu_tpc`` (= ppu / 1.25) is the TPC scale of the calibration comparison; ``cell`` and
-# ``feet`` describe that TPC reference sheet, ``swim_canvas``/``swim_origin`` our FPC-scale swimmer frames.
+# The guest sets ship a ``.TPC`` bank, which the game draws, and an ``.FPC`` of the same art from a lower camera (the same widths, taller
+# frames: kid standing frames 40-42 px against 32-37), which it never opens (docs/GUESTS.md). The output was set to 1.25 times the TPC
+# scale on the earlier reading that the game draws the FPC: ``ppu`` is that output scale, ``ppu_tpc`` (= ppu / 1.25) the TPC scale of
+# the calibration comparison; ``cell`` and ``feet`` describe the TPC reference sheet, ``swim_canvas``/``swim_origin`` our swimmer frames.
 FPC_SCALE = 1.25
 EDITIONS = {
 	"TPW": dict(elevation=27.0, ppu=11.7, ppu_tpc=9.36, cell=(48, 56), feet=(24, 53), swim_canvas=(80, 60), swim_origin=(40, 34)),

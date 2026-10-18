@@ -208,10 +208,12 @@ public sealed class SpriteAnimationFile : BaseFormat
 	/// <summary>Byte 0x10D: 1 for kid sets CH, KI, SA, SU and their heads. Stored by the ESP loader (object +0x206) but read nowhere in tp.exe.</summary>
 	public byte FlagB { get; private set; }
 	/// <summary>
-	/// The bank the loader opens with the sprite-detail flag set (<see cref="FlagA"/>): <c>.FPC</c> or <c>.TPC</c>. The PC game never sets the flag and
-	/// draws the TPC; OpenTPW still draws this one (GUEST-022).
+	/// The bank the game draws: the <c>.TPC</c> of every set, as the PC never sets the sprite-detail flag that would open the <c>.FPC</c> of a set with
+	/// <see cref="FlagA"/> (the FPC is the same art rendered from a lower camera: the same widths, taller frames).
 	/// </summary>
-	public string BankExtension => FlagA != 0 ? ".FPC" : ".TPC";
+	public string BankExtension => ".TPC";
+	/// <summary>The bank the loader would open with the sprite-detail flag set: <c>.FPC</c> for a set with <see cref="FlagA"/>, else <c>.TPC</c>.</summary>
+	public string FullDetailBankExtension => FlagA != 0 ? ".FPC" : ".TPC";
 	/// <summary>
 	/// The 16 bytes after the 16 animation slots (entries 16–19 of the 4-byte grid): the four <see cref="Performances"/>, raw. The loader
 	/// 0x540D90 reads them as four separate bytes per entry, not as animations; entry 16 is <c>01 05 00 00</c> in 11 files and

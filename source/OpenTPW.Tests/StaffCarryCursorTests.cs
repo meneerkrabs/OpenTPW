@@ -69,7 +69,6 @@ public class StaffCarryCursorTests
 		return SpriteBankWriter.Write( palette, frames );
 	}
 
-	private static SpriteBankFile Bank( byte blue, params (int Width, int Height)[] sizes ) => new( new System.IO.MemoryStream( BankBytes( blue, sizes ) ) );
 
 	/// <summary>An ESP whose slot 0 is frame 0 and whose dangling slot 6 is frames 1-5, one frame for each of five directions.</summary>
 	private static byte[] EspBytes( byte fullDetail )
@@ -86,27 +85,6 @@ public class StaffCarryCursorTests
 	private static readonly (int Width, int Height)[] Art = { (3, 3), (5, 6), (5, 6), (5, 6), (5, 6), (7, 6) };
 
 	[TestMethod]
-	public void TheDanglingFramesAreTakenFromTheLowDetailBankWithItsOwnPalette()
-	{
-		var esp = new SpriteAnimationFile( new System.IO.MemoryStream( EspBytes( 1 ) ) );
-		var dangle = StaffSpriteRules.Dangle.Slot;
-		var atlas = new GuestSpriteAtlas( "SPR_ZZ", Bank( 0, Placeholders ), esp, Bank( 255, Art ), dangle, "staff-test" );
-		Assert.AreEqual( (4, 4), (atlas.Frames[0].Width, atlas.Frames[0].Height), "the other slots keep the chosen bank's frames" );
-		Assert.AreEqual( (5, 6), (atlas.Frames[1].Width, atlas.Frames[1].Height), "every direction of the slot comes from the low-detail bank" );
-		Assert.AreEqual( (7, 6), (atlas.Frames[5].Width, atlas.Frames[5].Height) );
-		byte[] Pixel( int frame ) => atlas.Pixels.AsSpan( (atlas.Frames[frame].Y * atlas.Width + atlas.Frames[frame].X) * 4, 4 ).ToArray();
-		CollectionAssert.AreEqual( new byte[] { 255, 0, 0, 255 }, Pixel( 0 ), "the chosen bank's palette (red)" );
-		CollectionAssert.AreEqual( new byte[] { 0, 0, 255, 255 }, Pixel( 5 ), "a taken frame decodes with the low-detail bank's palette (blue)" );
-
-		var ownArt = new GuestSpriteAtlas( "SPR_ZZ", Bank( 0, (4, 4), (9, 9), (9, 9), (9, 9), (9, 9), (9, 9) ), esp, Bank( 255, Art ), dangle, "staff-test" );
-		Assert.AreEqual( (9, 9), (ownArt.Frames[5].Width, ownArt.Frames[5].Height), "a bank with art of its own in the slot keeps it" );
-		var otherLayout = new GuestSpriteAtlas( "SPR_ZZ", Bank( 0, Placeholders ), esp, Bank( 255, Art.Append( (8, 8) ).ToArray() ), dangle, "staff-test" );
-		Assert.AreEqual( (2, 2), (otherLayout.Frames[5].Width, otherLayout.Frames[5].Height), "a low-detail bank with other frames is not mixed in" );
-		var plain = new GuestSpriteAtlas( "SPR_ZZ", Bank( 0, Placeholders ), esp, "staff-test" );
-		Assert.AreEqual( (2, 2), (plain.Frames[5].Width, plain.Frames[5].Height), "without a low-detail bank nothing changes" );
-	}
-
-	[TestMethod]
 	public void TheDanglingPersonTurnsWithTheCamera()
 	{
 		// heading 4 (0x46C480) plus the camera's yaw sector (0x542010): the person keeps its heading in the world while the camera goes round it
@@ -115,10 +93,10 @@ public class StaffCarryCursorTests
 	}
 
 	[TestMethod]
-	public void LoadSetsFindsTheLowDetailBankBesideTheChosenOne()
+	public void EverySetIsDrawnFromItsTpcAsTheGameDoes()
 	{
 		var previous = FileSystem;
-		var root = System.IO.Path.Combine( System.IO.Path.GetTempPath(), $"opentpw-staff-banks-{Guid.NewGuid():N}" );
+		var root = System.IO.Path.Combine( System.IO.Path.GetTempPath(), $"opentpw-sprite-banks-{Guid.NewGuid():N}" );
 		try
 		{
 			void Write( string folder, string file, byte[] bytes )
@@ -126,26 +104,23 @@ public class StaffCarryCursorTests
 				System.IO.Directory.CreateDirectory( System.IO.Path.Combine( root, folder ) );
 				System.IO.File.WriteAllBytes( System.IO.Path.Combine( root, folder, file ), bytes );
 			}
-			// a full-detail set (byte 0x10C = 1): the FPC is chosen and its placeholders are filled from the TPC
+			// a full-detail set (byte 0x10C = 1) with both banks: the FPC holds the slot as placeholders, as every staff FPC does, the TPC has the art
 			Write( "Full", "SPR_ZZ.ESP", EspBytes( 1 ) );
 			Write( "Full", "SPR_ZZ.FPC", BankBytes( 0, Placeholders ) );
 			Write( "Full", "SPR_ZZ.TPC", BankBytes( 255, Art ) );
-			// a set that already draws its TPC
+			// a set with only an FPC is not drawn (the game opens the TPC)
+			Write( "FpcOnly", "SPR_ZZ.ESP", EspBytes( 1 ) );
+			Write( "FpcOnly", "SPR_ZZ.FPC", BankBytes( 0, Placeholders ) );
 			Write( "Low", "SPR_ZZ.ESP", EspBytes( 0 ) );
-			Write( "Low", "SPR_ZZ.TPC", BankBytes( 0, Placeholders ) );
-			// a TPC that does not decode is left out, the set still loads
-			Write( "Broken", "SPR_ZZ.ESP", EspBytes( 1 ) );
-			Write( "Broken", "SPR_ZZ.FPC", BankBytes( 0, Placeholders ) );
-			Write( "Broken", "SPR_ZZ.TPC", new byte[] { 1, 2, 3 } );
+			Write( "Low", "SPR_ZZ.TPC", BankBytes( 255, Art ) );
 			FileSystem = new BaseFileSystem( root );
-			var dangle = StaffSpriteRules.Dangle.Slot;
 
-			var full = GuestSpriteAtlas.LoadSets( "/Full", "staff-test", lowDetailSlot: dangle ).Single();
-			Assert.AreEqual( (7, 6), (full.Frames[5].Width, full.Frames[5].Height), "the FPC's placeholder is filled from the TPC" );
-			Assert.AreEqual( (4, 4), (full.Frames[0].Width, full.Frames[0].Height), "the rest stays the FPC's" );
-			Assert.AreEqual( (2, 2), (GuestSpriteAtlas.LoadSets( "/Full", "staff-test" ).Single().Frames[5].Width, 2), "only when asked for" );
-			Assert.AreEqual( (2, 2), (GuestSpriteAtlas.LoadSets( "/Low", "staff-test", lowDetailSlot: dangle ).Single().Frames[5].Width, 2), "a set drawing its TPC keeps it" );
-			Assert.AreEqual( (2, 2), (GuestSpriteAtlas.LoadSets( "/Broken", "staff-test", lowDetailSlot: dangle ).Single().Frames[5].Width, 2), "a broken TPC is not used" );
+			var full = GuestSpriteAtlas.LoadSets( "/Full", "staff-test" ).Single();
+			Assert.AreEqual( (7, 6), (full.Frames[5].Width, full.Frames[5].Height), "the TPC is drawn, with the dangling art" );
+			Assert.AreEqual( "esprites/generic/staff-test/spr_zz.tpc.atlas", full.PackKey, "a set that also ships an FPC names the TPC in its texture-pack key" );
+			CollectionAssert.AreEqual( new byte[] { 0, 0, 255, 255 }, full.Pixels.AsSpan( (full.Frames[5].Y * full.Width + full.Frames[5].X) * 4, 4 ).ToArray(), "the TPC's palette" );
+			Assert.AreEqual( 0, GuestSpriteAtlas.LoadSets( "/FpcOnly", "staff-test" ).Count );
+			Assert.AreEqual( "esprites/generic/staff-test/spr_zz.atlas", GuestSpriteAtlas.LoadSets( "/Low", "staff-test" ).Single().PackKey, "a TPC-only set keeps its key" );
 		}
 		finally
 		{

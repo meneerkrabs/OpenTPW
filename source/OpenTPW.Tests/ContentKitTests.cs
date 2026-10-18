@@ -306,7 +306,7 @@ public class ContentKitTests
 		CollectionAssert.AreEquivalent( new[] { "SPR_QQ.ESP", "SPR_QQ.FPC", "SPR_QQ.TPC" }, Directory.EnumerateFiles( Path2( "packed" ) ).Select( System.IO.Path.GetFileName ).ToArray() );
 
 		var esp = new SpriteAnimationFile( new MemoryStream( File.ReadAllBytes( Path2( "packed", "SPR_QQ.ESP" ) ) ) );
-		Assert.AreEqual( ".FPC", esp.BankExtension, "detailFlag 1: the game opens the FPC" );
+		Assert.AreEqual( (".TPC", ".FPC"), (esp.BankExtension, esp.FullDetailBankExtension), "detailFlag 1: the set ships an FPC too, and the game still draws the TPC" );
 		Assert.AreEqual( (byte)1, esp.FlagB, "kidFlag" );
 		// slots keep their numbers; frames are stored slot by slot, direction-major
 		Assert.AreEqual( new SpriteAnimation( 0, 0, 1, 5 ), esp.Animations[0] );

@@ -47,7 +47,7 @@ public class SpriteSetBuilderTests
 		var esp = new SpriteAnimationFile( new MemoryStream( set.Files[".ESP"] ) );
 		Assert.AreEqual( "SPR_ZZ.TPS", esp.BankName );
 		Assert.AreEqual( ((byte)1, (byte)1), (esp.FlagA, esp.FlagB) );
-		Assert.AreEqual( ".FPC", esp.BankExtension );
+		Assert.AreEqual( (".TPC", ".FPC"), (esp.BankExtension, esp.FullDetailBankExtension), "a full-detail set ships an FPC too; the game draws the TPC" );
 		Assert.AreEqual( new SpriteAnimation( 0, 0, 1, 1 ), esp.Animations[0] );
 		Assert.AreEqual( new SpriteAnimation( 3, 1, 2, 2 ), esp.Animations[3] );
 		Assert.IsTrue( esp.Animations.Where( x => x.Slot is not (0 or 3) ).All( x => x.IsEmpty ) );

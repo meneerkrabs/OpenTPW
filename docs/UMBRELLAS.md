@@ -87,11 +87,13 @@ weather Rain/Storm 200 (science 250), Snow 150, HeatWave 5. Weather spells (`0x6
 | U4 | `opentpw.rain-mood` with its pins and the measurement that decides its variant | planned |
 | U5 | tuning from captures; the first-person placement if a walk-around camera lands | planned |
 
-Open questions: Theme Park Inc's kid score 75 % or our 100 % (decide from captures in U5); the umbrella gate and weather percentages live in the host score for extension objects only, so the smarter-guests seam (`IGuestDecisions`) needs a word before it is touched.
+Open questions: Theme Park Inc's kid score 75 % or our 100 % (decide from captures in U5); the shop's `ISIndoors` 0 where Theme Park Inc's is 1 (it keeps the indoor-in-rain x5 off the weather percentages once U2 scores rain); the user's approval of `[EXT:umbrellas-weather-map]` and `[EXT:umbrellas-save-due]`, which are planned for U2 and not yet in the decisions above; the umbrella gate and weather percentages live in the host score for extension objects only, so the smarter-guests seam (`IGuestDecisions`) needs a word before it is touched.
 
 ## Content (`[EXT:umbrellas-content]`)
 
 `content/umbrellas` (copied next to the program with the rest of `content/`; not yet embedded in the browser build, phase U3 decides how the sprites travel: the set is 29 KB) holds, all our own, generated from code and committed (CI has no Blender):
+
+The content is our own (modelled and textured in Blender from the scripts in `tools/`), MIT-licensed like the rest of the repository; nothing in it comes from Theme Park Inc or Theme Park World.
 
 - `objects.json`: four brolly shops, one per Theme Park World theme, ids **64500 to 64503** inside the extension's own range **64500 to 64999** (below the pools' 65000..65535, above the Theme Park Inc rides' 40000..40499), category `shops`, `"research": false`.
   The extension's id is `opentpw.umbrellas`, so a park save would name the files `mod:opentpw.umbrellas:/...` (as [POOLS.md](POOLS.md#content-extpools-content)).
@@ -119,7 +121,7 @@ the script, the sprite banks (slots, directions, 256 ppu, hotspots at the tip) a
 | Label | What |
 | --- | --- |
 | `[EXT:umbrellas-content]` | the extension's own shipped content (`content/umbrellas`) and the pipeline that builds it |
-| `[EXT:umbrellas-weather-map]` | the mapping of `ParkWeather` to Theme Park Inc's weather states (planned, U2) |
-| `[EXT:umbrellas-save-due]` | the saved pending-change turn (planned, U2) |
+| `[EXT:umbrellas-weather-map]` | the mapping of `ParkWeather` to Theme Park Inc's weather states (planned, U2; needs the user's approval before U2) |
+| `[EXT:umbrellas-save-due]` | the saved pending-change turn (planned, U2; needs the user's approval before U2) |
 | `[EXT:rain-mood-once-per-day]` | the weather mood rule applied once per qualifying day (planned, U4) |
 | `[BIN:TPI-EXE:0x...]` | the Theme Park Inc `Game.exe` address a rule was traced to (this page) |

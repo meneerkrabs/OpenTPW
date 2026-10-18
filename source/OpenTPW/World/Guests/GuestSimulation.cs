@@ -1923,6 +1923,9 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// </summary>
 	public event Action<Guest, uint>? Voiced;
 
+	/// <summary>Raised when a guest beams in or out of a ride that requires teleporting (boarding and leaving); presentation only, the particle starts at the guest's place.</summary>
+	public event Action<Guest>? Teleported;
+
 	/// <summary>The <c>cat_kids</c> event of a guest dismissed from a queue: the sound <c>0x0050133D</c> plays for one thing id in eight (0x80).</summary>
 	public const uint DismissalVoiceEvent = 0x80;
 
@@ -3085,6 +3088,9 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		Observer?.QueueBoarded( guest, ride, guest.QueueJoinTurn >= 0 ? ParkTurn - guest.QueueJoinTurn : -1 );
 		if ( decisions.UsesSpreading )
 			NoteBoarding( ride );
+		// [BIN:TPW-EXE:0x501db0 state 16 entry] a ride whose type record +0x100 (UsageInfo.RequiresTeleport) is set starts particle 0x13 at the guest's place (0x4fa470) before its model is taken down
+		if ( ride.RequiresTeleport )
+			Teleported?.Invoke( guest );
 		ClearQueueState( guest );
 		guest.State = GuestState.Using;
 		// [BIN:TPW-EXE:0x00502156 state 16 entry] the balloon's model is destroyed (0x00475550) and +0x210 cleared; its life +0x214 stays; the thought bubble goes (0x0050C0D0)
@@ -3121,6 +3127,9 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			guest.State = GuestState.ExitingRide;
 			guest.StateTimer = ExitRideSeconds;
 		}
+		// [BIN:TPW-EXE:0x501db0 state 15 entry] the same beam when the guest is back on the ground (after 0x4fa030 placed its model)
+		if ( ride.RequiresTeleport )
+			Teleported?.Invoke( guest );
 		guest.LastAttractionId = ride.AttractionId;
 		guest.SecondsSinceRide = 0;
 		// [BIN:TPW-EXE:0x4FD9B1 visit count] the use routine 0x4FD970 sorts a finished visit by the type's Info.WhichUIType (+0x4AC): 0 raises the rides ridden (+0x1C4), 1 the shops visited (+0x1C8), 2 the sideshows played (+0x1CC), won or lost; any other kind (toilets, bins) counts none

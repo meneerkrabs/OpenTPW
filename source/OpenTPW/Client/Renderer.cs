@@ -750,6 +750,21 @@ public partial class Renderer : IDisplaySettings
 			SubmitUniform( buffer, value );
 	}
 
+	/// <summary>
+	/// [EXT:point-lights] Records the first <paramref name="sizeInBytes"/> bytes of <paramref name="value"/> as a per-draw uniform upload: a block followed by the draw's point
+	/// lights, uploaded in one call like the block alone (the lights ride in the same upload, never a second one).
+	/// </summary>
+	internal void UpdateUniform<T>( DeviceBuffer buffer, ref T value, uint sizeInBytes ) where T : unmanaged
+	{
+		if ( IsFrameRecording )
+		{
+			CommandList.UpdateBuffer( buffer, 0, ref value, sizeInBytes );
+			return;
+		}
+		var bytes = System.Runtime.InteropServices.MemoryMarshal.AsBytes( new ReadOnlySpan<T>( in value ) )[..(int)sizeInBytes].ToArray();
+		ImmediateSubmit( commands => commands.UpdateBuffer( buffer, 0, bytes ) );
+	}
+
 	// Keep the rare immediate-upload closure out of the per-draw allocation path.
 	private void SubmitUniform<T>( DeviceBuffer buffer, T value ) where T : unmanaged =>
 		ImmediateSubmit( commands => commands.UpdateBuffer( buffer, 0, value ) );

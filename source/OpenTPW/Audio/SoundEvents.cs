@@ -92,6 +92,7 @@ public sealed class SoundEventSystem
 {
 	private readonly AudioMixer mixer;
 	private readonly Dictionary<(SoundCategory, int, uint), Mp2Audio?> decoded = new();
+	private readonly Dictionary<(SoundCategory, int, uint), Lazy<Task<Mp2Audio?>>> decoding = new();
 	private readonly LinkedList<(SoundCategory, int, uint)> longDecodedOrder = new();
 	private long retainedSentenceBytes;
 	private uint seed;
@@ -532,17 +533,45 @@ public sealed class SoundEventSystem
 		return RememberDecoded( category, sample, audio, retainLong );
 	}
 
+	/// <summary>Shares one pending decode per sample; each caller still owns its playback and random draws.</summary>
 	internal Task<Mp2Audio?> DecodeSentenceAsync( SoundCategory category, SoundSample sample, bool? cooperative = null, Func<Task>? yieldBatch = null )
 	{
-		if ( TryDecoded( category, sample, out var cached ) )
-			return Task.FromResult( cached );
-		return (cooperative ?? OperatingSystem.IsBrowser())
-			? DecodeCooperatively( category, sample, yieldBatch )
-			: Task.Run( () => Decode( category, sample, retainLong: true ) );
+		var key = (category, (int)sample.BankNumber, sample.SampleNumber);
+		Lazy<Task<Mp2Audio?>> flight;
+		lock ( decoded )
+		{
+			if ( TryDecoded( category, sample, out var cached ) )
+				return Task.FromResult( cached );
+			if ( !decoding.TryGetValue( key, out flight! ) )
+			{
+				flight = new Lazy<Task<Mp2Audio?>>( DecodeOnce );
+				decoding.Add( key, flight );
+			}
+		}
+		// Do not run the decoder or the scheduler callback under the cache lock. Lazy publishes the same task
+		// even when another native caller reaches Value first or a synthetic scheduler completes synchronously.
+		return flight.Value;
+
+		async Task<Mp2Audio?> DecodeOnce()
+		{
+			try
+			{
+				return (cooperative ?? OperatingSystem.IsBrowser())
+					? await DecodeCooperatively( category, sample, yieldBatch )
+					: await Task.Run( () => Decode( category, sample, retainLong: true ) );
+			}
+			finally
+			{
+				// Faults and cancellation may be retried. Forget still prevents late results from entering the cache.
+				lock ( decoded ) decoding.Remove( key );
+			}
+		}
 	}
 
 	private async Task<Mp2Audio?> DecodeCooperatively( SoundCategory category, SoundSample sample, Func<Task>? yieldBatch )
 	{
+		// Return to the browser before bank I/O and the first MPEG batch, not only between later batches.
+		await (yieldBatch?.Invoke() ?? Task.Delay( 1 ));
 		Mp2Audio? audio = null;
 		var bank = category.GetBank( sample.BankNumber );
 		var rejectedPayloadBytes = 0;

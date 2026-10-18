@@ -9,6 +9,9 @@ public partial class Level : IDisposable
 	public RootPanel Hud { get; set; }
 	public Sun SunLight { get; set; }
 
+	/// <summary>[EXT:point-lights] The level's point lights (docs/LIGHTS.md): placed objects with light dummies register here; the original engine supports them but never creates one.</summary>
+	public PointLightSet PointLights { get; } = new();
+
 	public SettingsFile Global { get; private init; }
 	private ParkLayout parkLayout = null!;
 	internal SandboxTextOverlay TextOverlay { get; private set; } = null!;
@@ -494,6 +497,7 @@ public partial class Level : IDisposable
 			ImportOriginalGuests();
 			ImportOriginalRideSettings();
 			ImportOriginalScripts();
+			StartPlacedParticles();
 			ImportOriginalParticles();
 			if ( resumeState == null && !GameEditions.IsThemeParkInc && OriginalPark.Save != null && visitLayout == null )
 				ReleaseUnimportedThings();
@@ -531,6 +535,9 @@ public partial class Level : IDisposable
 			? new BuyLandTool( () => Guests?.Grid.Cells, () => Park?.Economy, ( x, y ) => ParkLand.IsBarrier( park.Map, park.Heightfield, x, y ) )
 			: null;
 		Guests = new GuestSimulation( grid, settings, Seed.GuestStream ) { OnlineVisit = Visit != null };
+		// a visit has no economy, whose turn an own park's arrivals read (ParkEconomyRuntime.AttachGuests): its arrivals read the turn of the save it is built on
+		if ( Visit != null )
+			Guests.ArrivalClock = VisitArrivalClock( Guests, park.Save?.World.Variables.GameTick );
 		Guests.AttachThings( Things );
 		RegisterPoolActivities();
 		List<GuestSpriteAtlas> sprites;
@@ -576,6 +583,15 @@ public partial class Level : IDisposable
 			member => member.State != StaffState.PickedUp && StaffRenderer != null && StaffRenderer.TryGetDrawCell( member, out var x, out var y ) ? (x, y) : null );
 		Log.Trace( $"Guests: {grid.WalkableCount} walkable path cells, {gameKidCount} original kid sprite sets{(poolGuestSprites != null ? $" (replaced by the pools extension's {sprites.Count} 2x sets)" : "")}, {costumes.Count} costume sets, {Guests.Settings.Types.Count} .sam peep types." );
 	}
+
+	/// <summary>
+	/// The park turn the arrivals of a read-only visit read: the turn of the save the visit is built on (the level's shipped save) plus the turns its guests have run since; null without
+	/// a save (the guests' own turns, as in a park started without one). An own park started from that save (Instant Action, or the save loaded directly) reads its economy's turn, which
+	/// starts at the save's turn (755 in the shipped Jungle), so its first group is due at once (<see cref="GuestSettings.ArrivalTimeBetween"/>, 150 units of four turns); counted from
+	/// turn 0, a visit's first group would come at turn 604, about 150 s in, with no guest before it to ride rides such as the Belly Bounce, which bounces only with riders aboard.
+	/// </summary>
+	// [EXT:online-visit-arrivals] the original's visit loaded the owner's uploaded save, a running park (docs/reverse/ONLINE-VISIT.md); a package carries the layout without the guests and the arrival timer, so a visit's arrivals start as those of an own park started from the save the visit is built on
+	internal static Func<long>? VisitArrivalClock( GuestSimulation guests, long? savedTurn ) => savedTurn is { } start ? () => start + guests.ParkTurn : null;
 
 	/// <summary>The Buy Land tool (tp.exe mouse mode 0x39); null for a level without land (no Hoardings.sam, Theme Park Inc, a visit).</summary>
 	public BuyLandTool? BuyLandTool { get; private set; }
@@ -1128,6 +1144,8 @@ public partial class Level : IDisposable
 
 	public void Render()
 	{
+		// [EXT:point-lights] the lights of the objects that have any, for every draw of this frame
+		PointLights?.Gather( Camera.ViewMatrix * Camera.ProjMatrix );
 		foreach ( var entity in Entity.All.ToArray() )
 			entity.Render();
 	}

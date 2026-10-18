@@ -155,7 +155,12 @@ internal static class Game
 		LanguageStartup.Apply( dataDirectory, language, languageData,
 			GetOption( args, "--cd-data", "the original CD's folder" ) ?? Environment.GetEnvironmentVariable( "OPENTPW_CD_DATA" ), false, Log.Warning );
 		if ( GameLanguage.IsSelected )
+		{
 			Log.Trace( $"Language: {GameLanguage.Current}" );
+			LanguageInterfaceArchive.Apply( FileSystem, GameLanguage.Current );
+			if ( LanguageInterfaceArchive.Current != null )
+				Log.Trace( $"Interface archive: {LanguageInterfaceArchive.Current} (the language's own ui.wad)" );
+		}
 
 		// Compatibility: --cd-data overlay, media diagnostics, profile/fixes, graphics preset (docs/COMPATIBILITY.md)
 		CompatibilityStartup.Initialize( args, dataDirectory );
@@ -358,6 +363,9 @@ internal static class Game
 			int? perfArrivals = null;
 			if ( GetOption( args, "--perf-arrivals", "turns between arrivals" ) is { } arrivalText )
 				perfArrivals = int.TryParse( arrivalText, out var parsedArrivals ) && parsedArrivals > 0 ? parsedArrivals : throw new ArgumentException( "--perf-arrivals expects a positive number of turns." );
+			float? perfZoom = null;
+			if ( GetOption( args, "--perf-zoom", "the park camera's zoom value" ) is { } zoomText )
+				perfZoom = float.TryParse( zoomText, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var parsedZoom ) && float.IsFinite( parsedZoom ) ? parsedZoom : throw new ArgumentException( "--perf-zoom expects a zoom value, for example 300." );
 			int perfWarmup = 0, perfDone = 0;
 			var perfOpened = false;
 			Render.PostUpdate += () =>
@@ -373,6 +381,9 @@ internal static class Game
 					perfPark.Economy.Speed = (GameSpeed)perfSpeed;
 					// a park started from the front end hides the developer panels
 					perfLevel.ShowDeveloperPanels = false;
+					// [EXT:perf-run] --perf-zoom <value> holds the park camera at that zoom value for the whole run (the wide range of GameOptions.WideZoom reaches 40..300)
+					if ( perfZoom is { } zoom && Camera.Mode is ParkCameraMode perfCamera )
+						perfCamera.SetPose( perfCamera.Target, zoom, perfCamera.Yaw );
 					if ( perfArrivals is { } arrivals && perfLevel.Guests != null )
 						perfLevel.Guests.Settings.ArrivalTimeBetween = arrivals;
 				}
@@ -506,6 +517,27 @@ internal static class Game
 					Log.Trace( $"--debug-object-effect: demolished {built.Entry.DisplayName} (effect {built.Entry.DestroyParticleEffect}): {level.RemoveObjectAt( built.Placement.X, built.Placement.Y )}." );
 					Render.PostUpdate -= RunDebugObjectEffect;
 				}
+			}
+		}
+		// [EXT:debug-light] smoke-only: once the original level is up, adds one fixed point light (docs/LIGHTS.md) at x,y,height relative to the park camera's target, in engine units (a cell is 2), with a radius in
+		// engine units (the original engine's default of 100 model units is 20) and an optional colour of three 0..1 channels (default white), so a capture or a look at the park shows what a light does
+		var debugLight = GetOption( args, "--debug-light", "x,y,height,radius[,red,green,blue] relative to the camera target, in engine units" );
+		if ( debugLight != null )
+		{
+			var lightValues = debugLight.Split( ',' ).Select( value => float.Parse( value, System.Globalization.CultureInfo.InvariantCulture ) ).ToArray();
+			if ( lightValues.Length is not (4 or 7) )
+				throw new ArgumentException( "--debug-light needs x,y,height,radius or x,y,height,radius,red,green,blue." );
+			var lightFrames = 0;
+			Render.PostUpdate += AddDebugLight;
+			void AddDebugLight()
+			{
+				if ( flow.Level is not { OriginalPark: not null } level || Camera.Mode is not ParkCameraMode park || ++lightFrames < 5 )
+					return;
+				Render.PostUpdate -= AddDebugLight;
+				var colour = lightValues.Length == 7 ? new System.Numerics.Vector3( lightValues[4], lightValues[5], lightValues[6] ) : System.Numerics.Vector3.One;
+				var light = new PointLight( new System.Numerics.Vector3( park.Target.X + lightValues[0], park.Target.Y + lightValues[1], park.Target.Z + lightValues[2] ), colour, lightValues[3] );
+				level.PointLights.Add( new FixedPointLightSource( light ) );
+				Log.Trace( FormattableString.Invariant( $"--debug-light: a point light at {light.Position.X:0.##},{light.Position.Y:0.##},{light.Position.Z:0.##}, radius {light.Radius:0.##}, colour {colour.X:0.##},{colour.Y:0.##},{colour.Z:0.##}." ) );
 			}
 		}
 		// [EXT:debug-pool] smoke-only: once the original level is up and the opentpw.pools extension is on, paints pool cells through the pool tool's own builder
@@ -790,7 +822,9 @@ internal static class Game
 			Render.OnRender += advisor.Render;
 		if ( visit != null && smoke )
 		{
-			using var visitSmokeTest = new VisitSmokeTest( level, flow.Hud );
+			// --smoke-presence adds scripted online players round the park entrance (VisitPresenceSmoke)
+			using var visitSmokeTest = new VisitSmokeTest( level, flow.Hud, input => flow.InjectedInput = input,
+				args.Contains( "--smoke-presence" ) ? visited => VisitPresenceSmoke.Attach( visited, flow.AttachPresence ) : null );
 			Render.PostUpdate += visitSmokeTest.Update;
 			Render.Run();
 			visitSmokeTest.VerifyCompleted();

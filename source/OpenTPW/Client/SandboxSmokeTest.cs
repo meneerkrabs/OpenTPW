@@ -320,7 +320,7 @@ internal sealed partial class SandboxSmokeTest : IDisposable
 	internal static (byte[] Pixels, int Width, int Height) CaptureFrame( string name ) => Capture( Render.ResolveColorTexture, name );
 
 	/// <summary>End-to-end readback of the output after world scaling and the BF4 UI (ImGui excluded).</summary>
-	private static (byte[] Pixels, int Width, int Height) CaptureOutputFrame( string name ) => Capture( Render.OutputCaptureTexture!, name );
+	internal static (byte[] Pixels, int Width, int Height) CaptureOutputFrame( string name ) => Capture( Render.OutputCaptureTexture!, name );
 
 	private static (byte[] Pixels, int Width, int Height) Capture( Veldrid.Texture source, string name )
 	{

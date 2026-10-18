@@ -48,7 +48,8 @@ public class RuntimeSoundInputPreflightTests
 	public async Task OversizedRuntimeSampleIsNullLoggedAndNeverAllocatesOrReadsPayload( bool cooperative )
 	{
 		var sparse = new SparseBank( Mp2Decoder.MaximumInputBytes + 1 ); var category = Category( sparse.OpenBank() ); using var mixer = new AudioMixer( null ); var system = new SoundEventSystem( mixer, 7 ); var sample = new SoundSample( 1, 65535, 0, 1, 0 );
-		var before = GC.GetAllocatedBytesForCurrentThread(); var audio = cooperative ? await system.DecodeSentenceAsync( category, sample, cooperative: true ) : system.Decode( category, sample ); var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+		// Keep this allocation measurement on one thread; StartupAudioSchedulingTests checks the real asynchronous yield.
+		var before = GC.GetAllocatedBytesForCurrentThread(); var audio = cooperative ? await system.DecodeSentenceAsync( category, sample, cooperative: true, yieldBatch: () => Task.CompletedTask ) : system.Decode( category, sample ); var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
 		Console.WriteLine( $"Oversized {(cooperative ? "cooperative" : "synchronous")}: allocated {allocated} bytes, payload read {sparse.PayloadBytes} bytes." ); Assert.IsNull( audio ); Assert.AreEqual( 0L, sparse.PayloadBytes ); Assert.IsTrue( allocated < 128 * 1024, $"Runtime refused only after allocating {allocated} bytes." ); Assert.IsTrue( messages.Any( text => text.Contains( "cat_test" ) && text.Contains( "input bound" ) ) ); Assert.AreEqual( 0, mixer.Voices.Count );
 		var opens = sparse.Opens; Assert.IsNull( await system.DecodeSentenceAsync( category, sample, cooperative: true, yieldBatch: () => throw new AssertFailedException( "Cached refusal must not decode again." ) ) ); Assert.AreEqual( opens, sparse.Opens );
 	}

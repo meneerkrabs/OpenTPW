@@ -1760,7 +1760,8 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 				VerifyText( capture, flow.Strings[UIStrings.GameOptions], $"Game Options title in {to}" );
 				// The tables of the two languages must differ somewhere visible, or this check would pass on a stale table.
 				var shown = new[] { UIStrings.GameOptions, UIStrings.Options, UIStrings.ExitToLobby, UIStrings.Paused };
-				if ( to == other )
+				// US English (American) shares the UK tables word for word, so that pair is told apart by the language alone.
+				if ( to == other && !new[] { first, other }.All( name => name is "English" or "American" ) )
 					Require( shown.Any( id => flow.Strings[id] != firstStrings[id] ), $"{first} and {to} differ in the checked labels" );
 				flow.InjectedInput = UiInput.Key( UiKeys.Back );
 			} );

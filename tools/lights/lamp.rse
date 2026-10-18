@@ -1,0 +1,50 @@
+; Lamp post (OpenTPW example mod, docs/LIGHTS.md): pulses its light, flickers it once and cycles its colour with the four light
+; opcodes. ENABLELIGHT / DISABLELIGHT switch light 0, SETLIGHT scales the model's base colour (100 = full), COLOURLIGHT sets the
+; three channels in percent. Nothing here touches the simulation; the lamp is a feature nobody walks into.
+.stack 4
+.timeslice 50
+.limbo 0
+.bounce 0
+.walk 0
+
+.var VAR_LETMEON
+.var VAR_LETMEOFF
+.var VAR_CAPACITY
+.var VAR_DURATION
+.var VAR_BREAKSTAT
+.var VAR_ONRIDE
+.var VAR_RIDECLOSED
+
+	NAME "Lamp Post"
+	ENABLELIGHT 0
+cycle:
+	; the warm light breathes: base colour at 100, 80, 60, 80 per cent
+	SETLIGHT 0 100
+	WAIT 400
+	SETLIGHT 0 80
+	WAIT 400
+	SETLIGHT 0 60
+	WAIT 400
+	SETLIGHT 0 80
+	WAIT 400
+	SETLIGHT 0 100
+	WAIT 800
+	; one flicker
+	DISABLELIGHT 0
+	WAIT 150
+	ENABLELIGHT 0
+	WAIT 150
+	DISABLELIGHT 0
+	WAIT 100
+	ENABLELIGHT 0
+	WAIT 1200
+	; a colour cycle: red, green, blue, then back to the model's colour
+	COLOURLIGHT 0 100 20 20
+	WAIT 1500
+	COLOURLIGHT 0 20 100 20
+	WAIT 1500
+	COLOURLIGHT 0 20 20 100
+	WAIT 1500
+	SETLIGHT 0 100
+	WAIT 1500
+	BRANCH @cycle

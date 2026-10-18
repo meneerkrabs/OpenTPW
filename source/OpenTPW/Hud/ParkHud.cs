@@ -48,6 +48,8 @@ public sealed class HudHost
 	public Func<bool>? AdvisorSaysStaffMessages { get; init; }
 	/// <summary>F1 was pressed in a HUD window that passes keys to the original's default window procedure; the advisor repeats the last tutorial advice.</summary>
 	public Action? HelpKeyPressed { get; init; }
+	/// <summary>The online players of a visited park, while there are any (a visit of a downloaded park while logged in); null otherwise.</summary>
+	public Func<IVisitPresence?>? Presence { get; init; }
 }
 
 /// <summary>
@@ -118,7 +120,7 @@ public sealed partial class ParkHud
 	public OriginalObject? SelectedObject => selectedObject;
 	/// <summary>True while a menu is on top of the HUD; the buy, staff, attractions and visitors windows do not pause.</summary>
 	public bool Paused => Stack.Screens.Any( screen => screen != hud && screen != rideScreen && screen != buyScreen && screen != staffScreen
-		&& screen != attractionScreen && screen != visitorScreen );
+		&& screen != attractionScreen && screen != visitorScreen && screen.Name != VisitChatScreen );
 	public IReadOnlyList<string> Messages => messages.Select( message => message.Text ).ToArray();
 	/// <summary>The park simulation's time scale for the screens now open (see <see cref="TimeScaleFor"/>).</summary>
 	public float SimulationTimeScale => TimeScaleFor( Status.TimeScale, Stack.Screens.Select( screen => screen.Name ) );
@@ -717,7 +719,14 @@ public sealed partial class ParkHud
 		SampleHappiness( context.Delta );
 		var paused = Paused;
 		var overUi = Stack.Covers( context.Canvas, input.Mouse ) || Stack.Screens.Count > 1;
-		var consumed = Stack.Update( context, input );
+		// Enter over the park opens a visit's chat line before the HUD sees the key, which would otherwise press the button the pointer last rested on
+		var chatLine = VisitChatLineWanted( context, input );
+		var consumed = Stack.Update( context, chatLine != null ? input with { Pressed = input.Pressed & ~UiKeys.Accept } : input );
+		if ( chatLine != null )
+		{
+			OpenVisitChatLine( chatLine );
+			overUi = consumed = true;
+		}
 		// [BIN:TPW-EXE:0x488aa1 RMBCancelOn] the original's screens read the option (+0x39) before a right click leaves them; the object window leaves on it too
 		if ( InfoArmOpen && Stack.Screens.Count == 1 && !IsRiding && input.RightPressed && GameOptions.Current.RmbCancel && !Input.TextEntryActive )
 		{
@@ -853,6 +862,10 @@ public sealed partial class ParkHud
 					StepPoolWaves( clicked );
 				// a click on a track add-on opens its ride's window (Level.WindowTarget)
 				SelectObject( level.WindowTarget( clicked ) );
+				// [EXT:online-avatar-click] in a visit with other players a click on the ground that hits no object walks the player's figure there (manual p. 68: "Left click to walk to destination")
+				if ( clicked == null && level.IsReadOnlyVisit && !input.NotClick && host?.Presence?.Invoke() is { Walks: true } presence
+					&& level.TryGetGroundCell( input.Mouse, new NVector2( context.Canvas.Width, context.Canvas.Height ), out var groundX, out var groundY ) )
+					presence.Click( groundX, groundY );
 			}
 		if ( input.LeftReleased )
 		{
@@ -956,7 +969,13 @@ public sealed partial class ParkHud
 			|| level.PatrolTool is { IsActive: true } || level.StaffPlacement is { IsActive: true } || level.BuyLandTool is { IsActive: true }
 			|| level.AreaClearTool is { IsActive: true } || level.PoolTool is { IsActive: true } )
 			return false;
-		if ( inPark && tool.HoverHelpId( level.Paths, cursorX, cursorY ) is int help )
+		// [EXT:online-avatar-click] a visit builds no paths: its ground's help says that a click walks the player's figure there while other players are shown
+		if ( inPark && level.IsReadOnlyVisit )
+		{
+			if ( host?.Presence?.Invoke() is { Walks: true } && level.Objects.FindAt( cursorX, cursorY ) == null )
+				context.HoverHelp = OnlineStrings.Get( OnlineLabel.WalkHint );
+		}
+		else if ( inPark && tool.HoverHelpId( level.Paths, cursorX, cursorY ) is int help )
 			context.HoverHelp = strings.Help( help );
 		if ( !tool.IsActive )
 		{
@@ -1175,8 +1194,10 @@ public sealed partial class ParkHud
 	{
 		DrawCellToolGhost( context );
 		DrawCoasterGhost( context );
+		DrawVisitNames( context );
 		if ( debugHelp != null )
 			context.HoverHelp = debugHelp;
+		DrawVisitChat( context );
 		Stack.Draw( context, HelpBarVisible );
 		if ( debugModels is { Length: > 0 } )
 			DrawDebugModels( context );

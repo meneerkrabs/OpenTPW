@@ -30,12 +30,26 @@ public class WorldCaptureTests
 	[TestMethod]
 	public void SetPoseClampsHeightAndKeepsTargetOnTheGround()
 	{
-		var camera = new ParkCameraMode();
-		camera.SetPose( new Vector3( 3, 4, 9 ), 1, 405 );
-		Assert.AreEqual( new Vector3( 3, 4, 0 ), camera.Target );
-		Assert.AreEqual( 70f, camera.Height, "the original's nearest zoom" );
-		Assert.AreEqual( 45f, camera.Yaw );
-		camera.SetPose( new Vector3( 3, 4, 9 ), 500, 0 );
-		Assert.AreEqual( 130f, camera.Height, "and its farthest" );
+		var previous = GameOptions.Current;
+		try
+		{
+			// the normal range, with the wide zoom option off
+			GameOptions.Current = new GameOptions { WideZoom = false };
+			var camera = new ParkCameraMode();
+			camera.SetPose( new Vector3( 3, 4, 9 ), 1, 405 );
+			Assert.AreEqual( new Vector3( 3, 4, 0 ), camera.Target );
+			Assert.AreEqual( 70f, camera.Height, "the original's nearest zoom" );
+			Assert.AreEqual( 45f, camera.Yaw );
+			camera.SetPose( new Vector3( 3, 4, 9 ), 500, 0 );
+			Assert.AreEqual( 130f, camera.Height, "and its farthest" );
+			// [EXT:wide-zoom] the default option widens it to the original's own flag-0x200 range
+			GameOptions.Current = new GameOptions();
+			var wide = new ParkCameraMode();
+			wide.SetPose( new Vector3( 3, 4, 9 ), 1, 405 );
+			Assert.AreEqual( 40f, wide.Height );
+			wide.SetPose( new Vector3( 3, 4, 9 ), 500, 0 );
+			Assert.AreEqual( 300f, wide.Height );
+		}
+		finally { GameOptions.Current = previous; }
 	}
 }

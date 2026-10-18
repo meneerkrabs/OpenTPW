@@ -117,8 +117,8 @@ public sealed partial class GuestSimulation
 	/// The weather step of a guest who owns an umbrella, on the guest's own update (every fourth park turn, before its needs): on a qualifying day (<see cref="UmbrellaRules.DayGateOpen"/>) the weather opens or closes the umbrella
 	/// through the states of <see cref="UmbrellaRules.WeatherAction"/>. The mood part of Theme Park Inc's rule (happiness, thirst and hunger in bad weather) is the <c>opentpw.rain-mood</c> extension's, not this one's.
 	/// </summary>
-	// [BIN:TPI-EXE:0x611050 weather rule] called from the guest update 0x619B50 at the top of the needs phase (turn & 3 == id & 3) for every guest; the view condition of the scheduling (0x67F890 / 0x685680) is dropped
-	// [APPROX:UMB-002] the scheduling and the carrying out test a view condition (the guest "not identified": two thing calls the trace could not name); OpenTPW has none, so a guest is never held back by it
+	// [BIN:TPI-EXE:0x611050 weather rule] called from the guest update 0x619B50 at the top of the needs phase (turn & 3 == id & 3) for every guest; the track-cell test of the scheduling (0x67F890 / 0x685680) is dropped
+	// [APPROX:UMB-002] the scheduling (0x613EA0) and the carrying out (0x614010) stand down for a guest on a kart or water track cell (0x67F890 on the 40-byte record found through the tile record's first word, 0x685680 on the record of the same cell index); OpenTPW's walking guests never stand on one, so a guest is never held back by it
 	private void UpdateUmbrella( Guest guest, long turn )
 	{
 		if ( !UmbrellaRules.DayGateOpen( AgeTurnsOf( guest ) ) )

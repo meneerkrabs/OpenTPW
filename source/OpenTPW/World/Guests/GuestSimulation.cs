@@ -34,7 +34,6 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	public const int FacingChangeRange = 800;
 	public const float LeaveHappiness = 10;
 	public const float ToiletLeaveLevel = 80;
-	public const float TicketBoothSeconds = 1.0f;
 	public const float ExitRideSeconds = 1.0f;
 	public const float WaitForBusSeconds = 3.0f;
 
@@ -968,8 +967,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 						PayAdmission( guest );
 					break;
 				}
-				guest.StateTimer -= dt;
-				if ( guest.StateTimer <= 0 )
+				// [BIN:TPW-EXE:0x004FF9D0 booth first verdict] the walk's arrival makes state 4 (0x004FF730) and the booth's update, the first verdict (the wait +0x200 is 0), runs in the guest's next turn
+				if ( turnStarted )
 					PayAdmission( guest );
 				break;
 			case GuestState.WaitingToGoHome:
@@ -1342,7 +1341,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			guest.Happiness = MeterMath.Add( guest.Happiness, -Settings.MediumHappinessChange );
 			if ( ((int)guest.Happiness & 0xFF) != 0 )
 			{
-				// [APPROX:ARRIVAL-006] the wait is counted in executed park turns, but OpenTPW's fixed-step loop drops none (the original's loop drops at most 3 per pass, 0x0054F680); the booth's first verdict follows the walk to it after TicketBoothSeconds, not at the next update
+				// [APPROX:ARRIVAL-006] the wait is counted in executed park turns, but OpenTPW's fixed-step loop drops none (the original's loop drops at most 3 per pass, 0x0054F680)
 				guest.BoothWait = wait;
 				return;
 			}

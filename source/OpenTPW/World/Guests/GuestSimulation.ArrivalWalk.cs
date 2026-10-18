@@ -171,9 +171,9 @@ public sealed partial class GuestSimulation
 			EnterWaitingAtBooth( guest );
 			return;
 		}
-		// [APPROX:ARRIVAL-006] the booth's first verdict follows the walk to it after TicketBoothSeconds, not at the next update
+		// [BIN:TPW-EXE:0x004FF730 state 2 arrival] the walk's result 0 with the park open is SetState(4) (0x00501DB0 case 4: the animation 3 and, on the booth cell 0x004D8610(0), the facing 0x200); the verdict is the next update's
 		guest.State = GuestState.AtTicketBooth;
-		guest.StateTimer = TicketBoothSeconds;
+		guest.StateTimer = 0;
 	}
 
 	/// <summary>SetState(3) (tp.exe <c>0x00501DB0</c> case 3): the wait <c>+0x200</c> is <c>R % 150 + 200</c>.</summary>

@@ -263,9 +263,9 @@ public sealed partial class GuestSimulation
 			case 4:
 				guest.State = GuestState.AtTicketBooth;
 				guest.Paid = save.PaidAdmission != 0;
-				// an expensive verdict's wait is kept; a guest that has not been weighed yet waits OpenTPW's booth time (ARRIVAL-006)
+				// an expensive verdict's wait is kept; a guest that has not been weighed yet is weighed at its next update
 				guest.BoothWait = (int)Math.Min( save.ParkOpeningWaitingTime, 2 * BoothVerdict.ExpensiveWaitBase );
-				guest.StateTimer = guest.BoothWait == 0 ? TicketBoothSeconds : 0;
+				guest.StateTimer = 0;
 				break;
 			case 5:
 				guest.State = GuestState.EnteringPark;

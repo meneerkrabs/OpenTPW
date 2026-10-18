@@ -110,7 +110,7 @@ public class ServerBuildInfoTests
 			using var existing = await http.GetAsync( "/api/v1/server" );
 			using var serverInfo = JsonDocument.Parse( await existing.Content.ReadAsStringAsync() );
 			Assert.AreEqual( "1.0", serverInfo.RootElement.GetProperty( "version" ).GetString() );
-			Assert.AreEqual( 3, serverInfo.RootElement.GetProperty( "protocolVersion" ).GetInt32() );
+			Assert.AreEqual( ServerProgram.ProtocolVersion, serverInfo.RootElement.GetProperty( "protocolVersion" ).GetInt32() );
 			CollectionAssert.AreEqual( filesBefore, Directory.GetFiles( server.Directory, "*", SearchOption.AllDirectories ).OrderBy( path => path ).ToArray(), "inspection never creates server data or deployment requests" );
 		}
 		finally { server.DeleteData(); }

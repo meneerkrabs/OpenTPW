@@ -35,7 +35,7 @@ const SELECTIONS = [['Rides', 'Belly Bounce'], ['Shops', 'Balloon Shop'], ['Shop
 function parseArguments(argv) {
 	const options = {
 		web: null, game: null, label: 'unlabelled', out: null, chrome: process.env.CHROME ?? DEFAULT_CHROME, headed: false,
-		scenarios: ['start', 'lobby', 'jungle', 'buy', 'digest'], window: 30, memoryMinutes: 10, music: false, width: 1280, height: 900, runs: 1, frameCap: 0, keep: 'off',
+		scenarios: ['start', 'lobby', 'jungle', 'buy', 'digest'], window: 30, memoryMinutes: 10, music: false, width: 1280, height: 900, runs: 1, frameCap: 0, keep: 'off', zoom: null,
 	};
 	for (let index = 2; index < argv.length; index++) {
 		const [flag, inline] = argv[index].split(/=(.*)/s);
@@ -55,6 +55,7 @@ function parseArguments(argv) {
 			case '--runs': options.runs = Math.max(1, Number(value()) || 1); break;
 			case '--frame-cap': options.frameCap = Number(value()); break;
 			case '--keep': options.keep = value(); break;
+			case '--zoom': options.zoom = Number(value()); break;
 			case '--help': case '-h': console.log(usage()); process.exit(0);
 			default: throw new Error(`Unknown option ${flag}\n${usage()}`);
 		}
@@ -75,6 +76,7 @@ function usage() {
   --memory-minutes <n>    memory scenario length (default 10)
   --music                 keep music and speech on (default: muted, effects on, as on 11 October)
   --size <w>x<h>          window size (default 1280x900)
+  --zoom <value>          jungle: after the steady window, hold the park camera at this zoom value (40..300 with the wide zoom option) and measure a second window
   --keep <mode>           keep the game files in the browser on the first visit: lazy, all or off (default off)
   --frame-cap <fps>       the display settings' frame cap (0 off, 30, 60; default 0)
   --runs <n>              repeat the whole session n times, each in a fresh profile, and report the medians (default 1)
@@ -251,7 +253,13 @@ const scenarios = {
 		cold.profile = JSON.parse(await page.eval('opentpwPerf.program.PerfLoadProfile()'));
 		await page.eval('opentpwPerf.program.PerfProfile(false)');
 		const steady = await page.steady(options.window * 1000);
-		return { cold, steady };
+		if (options.zoom == null)
+			return { cold, steady };
+		// [wide zoom] the same park with the camera held at another zoom value (tp.exe's own range is 70..130; the option widens it to 40..300)
+		const reached = await page.eval(`opentpwPerf.program.PerfZoom(${options.zoom})`);
+		await sleep(2000);
+		const zoomed = { zoom: options.zoom, reached, ...await page.steady(options.window * 1000) };
+		return { cold, steady, zoomed };
 	},
 
 	async buy(page) {
@@ -435,7 +443,7 @@ function markdown(report) {
 	const results = report.results;
 	if (results.start && !results.start.error)
 		lines.push(`- Start: first frame ${results.start.firstFrameMs} ms, lobby ${results.start.lobbyMs} ms`);
-	for (const [name, steady] of [['Lobby', results.lobby], ['Jungle', results.jungle?.steady]])
+	for (const [name, steady] of [['Lobby', results.lobby], ['Jungle', results.jungle?.steady], ['Jungle at zoom ' + results.jungle?.zoomed?.zoom, results.jungle?.zoomed]])
 		if (steady && !steady.error)
 			lines.push(`- ${name} steady: main thread busy ${steady.mainThreadBusyPercent}%, ${steady.fps} fps, frame p95 ${steady.p95Ms} ms, largest gap ${steady.largestGapMs} ms, long tasks ${steady.longTasks}`);
 	if (results.jungle?.cold)

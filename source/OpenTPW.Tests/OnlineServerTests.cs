@@ -146,7 +146,7 @@ public class OnlineServerTests
 		{
 			using var client = new OnlineClient( server.Url );
 			var info = await client.GetServerInfoAsync();
-			Assert.AreEqual( 3, info.ProtocolVersion );
+			Assert.AreEqual( 4, info.ProtocolVersion );
 			Assert.IsFalse( info.WordFilterLoaded );
 			await client.RegisterAsync( "Alice", "correct horse" );
 			Assert.AreEqual( HttpStatusCode.Conflict, (await Fails( () => client.RegisterAsync( "ALICE", "another one" ) )).Status );
@@ -1036,6 +1036,38 @@ public class OnlineServerTests
 		await ann.SendAsync( ChatCommand.Say, "after" );
 		var next = await NextAsync( bob, item => item.Kind is ChatEventKind.Move or ChatEventKind.Say );
 		Assert.AreEqual( (ChatEventKind.Say, "after"), (next.Kind, next.Text) );
+	}
+
+	[TestMethod]
+	public async Task EachRoomsFirstMovementAnswersWhereEveryoneStands()
+	{
+		await using var server = await LoopbackServer.StartAsync( options => options.ChatBurst = 50 );
+		try
+		{
+			using var annClient = await server.LoginAsync( "Ann" );
+			using var bobClient = await server.LoginAsync( "Bob" );
+			await using var ann = await annClient.ConnectChatAsync();
+			await NextAsync( ann, item => item.Kind == ChatEventKind.Room );
+			await using var bob = await bobClient.ConnectChatAsync();
+			await NextAsync( bob, item => item.Kind == ChatEventKind.Room );
+			// Bob walks in one park first, so his connection already draws movement
+			var first = ChatProtocol.SatelliteRoom( 1 );
+			await bob.JoinAsync( first );
+			await NextAsync( bob, item => item.Kind == ChatEventKind.Room && item.Room == first );
+			await bob.MoveAsync( 0.5f, 0.5f );
+			// Ann stands in a second park
+			var second = ChatProtocol.SatelliteRoom( 2 );
+			await ann.JoinAsync( second );
+			await NextAsync( ann, item => item.Kind == ChatEventKind.Room && item.Room == second );
+			await ann.MoveAsync( 0.25f, 0.75f );
+			// Bob's first movement in the second park is answered with where Ann stands, though his connection walked before
+			await bob.JoinAsync( second );
+			await NextAsync( bob, item => item.Kind == ChatEventKind.Room && item.Room == second );
+			await bob.MoveAsync( 0.6f, 0.4f );
+			var annStands = await NextAsync( bob, item => item.Kind == ChatEventKind.Move && item.From == "Ann" );
+			Assert.AreEqual( (second, 0.25f, 0.75f), (annStands.Room, annStands.X, annStands.Y) );
+		}
+		finally { server.DeleteData(); }
 	}
 
 	[TestMethod]

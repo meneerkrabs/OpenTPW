@@ -523,7 +523,9 @@ public partial class Renderer : IDisplaySettings
 
 		// Render level to MSAA buffer
 		CommandList.PushDebugGroup( "Main Render" );
+		var renderStart = FrameStats.Begin();
 		OnRender?.Invoke();
+		FrameStats.EndRender( renderStart );
 		CommandList.PopDebugGroup();
 
 		// Resolve MSAA to non-MSAA texture
@@ -542,8 +544,10 @@ public partial class Renderer : IDisplaySettings
 		IsFrameRecording = false;
 
 		var fence = frameFences[SlotOf( FrameNumber )];
+		var submitStart = FrameStats.Begin();
 		Device.SubmitCommands( CommandList, fence );
 		Target.Present();
+		FrameStats.EndSubmit( submitStart );
 		FrameStats?.FrameEnded();
 		AdvanceFrame();
 	}
@@ -553,8 +557,10 @@ public partial class Renderer : IDisplaySettings
 	{
 		FrameNumber++;
 		var fence = frameFences[SlotOf( FrameNumber )];
+		var fenceStart = FrameStats.Begin();
 		Device.WaitForFence( fence );
 		Device.ResetFence( fence );
+		FrameStats.EndFence( fenceStart );
 	}
 
 	private void Compose( Framebuffer target )
@@ -568,12 +574,27 @@ public partial class Renderer : IDisplaySettings
 		CommandList.SetGraphicsResourceSet( 0, _blitResourceSet );
 		CommandList.Draw( 3, 1, 0, 0 );
 		OverlayFramebuffer = target;
+		var overlayStart = FrameStats.Begin();
 		OnOverlayRender?.Invoke();
+		FrameStats.EndOverlay( overlayStart );
 		CommandList.PopDebugGroup();
 	}
 
 	/// <summary>One update and draw; false when the window closed or drawing is paused, so nothing was drawn.</summary>
 	private bool Update()
+	{
+		var totalStart = FrameStats.Begin();
+		try
+		{
+			return UpdateFrame();
+		}
+		finally
+		{
+			FrameStats.EndTotal( totalStart );
+		}
+	}
+
+	private bool UpdateFrame()
 	{
 		var currentFrame = Stopwatch.GetTimestamp();
 		float deltaTime = (float)Stopwatch.GetElapsedTime( _lastFrame, currentFrame ).TotalSeconds;
@@ -612,7 +633,9 @@ public partial class Renderer : IDisplaySettings
 		{
 			PreRender();
 			PreUpdate?.Invoke();
+			var updateStart = FrameStats.Begin();
 			OnUpdate?.Invoke();
+			FrameStats.EndUpdate( updateStart );
 			PostRender();
 		}
 		finally

@@ -10,6 +10,25 @@ internal sealed class FrameStats
 {
 	private static readonly TimeSpan Interval = TimeSpan.FromSeconds( 5 );
 
+	/// <summary>True while a <see cref="FrameStats"/> run is on; the phase timers below cost nothing otherwise.</summary>
+	public static bool Active { get; private set; }
+
+	/// <summary>Stopwatch ticks of the current window spent in the frame's phases: the update (the simulation included), the simulation alone, the world drawing, the interface overlay, submit plus present, the GPU wait for the frame slot and the whole of Renderer.Update.</summary>
+	private static long updateTicks, simulationTicks, renderTicks, overlayTicks, submitTicks, fenceTicks, totalTicks;
+
+	/// <summary>The timestamp to hand to the phase methods, or 0 when no frame statistics are on.</summary>
+	public static long Begin() => Active ? Stopwatch.GetTimestamp() : 0;
+
+	public static void EndUpdate( long start ) { if ( start != 0 ) updateTicks += Stopwatch.GetTimestamp() - start; }
+	public static void EndSimulation( long start ) { if ( start != 0 ) simulationTicks += Stopwatch.GetTimestamp() - start; }
+	public static void EndRender( long start ) { if ( start != 0 ) renderTicks += Stopwatch.GetTimestamp() - start; }
+	public static void EndOverlay( long start ) { if ( start != 0 ) overlayTicks += Stopwatch.GetTimestamp() - start; }
+	public static void EndTotal( long start ) { if ( start != 0 ) totalTicks += Stopwatch.GetTimestamp() - start; }
+	public static void EndSubmit( long start ) { if ( start != 0 ) submitTicks += Stopwatch.GetTimestamp() - start; }
+	public static void EndFence( long start ) { if ( start != 0 ) fenceTicks += Stopwatch.GetTimestamp() - start; }
+
+	private static double Milliseconds( long ticks, int frames ) => Stopwatch.GetElapsedTime( 0, ticks ).TotalMilliseconds / frames;
+
 	private readonly List<double> frameMilliseconds = new();
 	private long windowStart = Stopwatch.GetTimestamp();
 	private long lastFrame = Stopwatch.GetTimestamp();
@@ -18,6 +37,12 @@ internal sealed class FrameStats
 	private int gen1AtStart = GC.CollectionCount( 1 );
 	private int gen2AtStart = GC.CollectionCount( 2 );
 	private TimeSpan cpuAtStart = Process.GetCurrentProcess().TotalProcessorTime;
+
+	public FrameStats()
+	{
+		Active = true;
+		(updateTicks, simulationTicks, renderTicks, overlayTicks, submitTicks, fenceTicks, totalTicks) = (0, 0, 0, 0, 0, 0, 0);
+	}
 
 	/// <summary>Call once per presented frame.</summary>
 	public void FrameEnded()
@@ -42,9 +67,11 @@ internal sealed class FrameStats
 			$"CPU {cpuSeconds / seconds:F2} cores ({cpuSeconds * 1000 / count:F2} ms per frame); " +
 			$"allocated {(allocated - allocatedAtStart) / seconds / 1e6:F1} MB/s ({(allocated - allocatedAtStart) / 1024.0 / count:F0} KB per frame); " +
 			$"GC gen0/1/2 {GC.CollectionCount( 0 ) - gen0AtStart}/{GC.CollectionCount( 1 ) - gen1AtStart}/{GC.CollectionCount( 2 ) - gen2AtStart}; " +
+			$"per frame update {Milliseconds( updateTicks, count ):F2} ms (simulation {Milliseconds( simulationTicks, count ):F2}), world render {Milliseconds( renderTicks, count ):F2}, interface overlay {Milliseconds( overlayTicks, count ):F2}, submit+present {Milliseconds( submitTicks, count ):F2}, GPU wait {Milliseconds( fenceTicks, count ):F2}, whole update call {Milliseconds( totalTicks, count ):F2}; " +
 			$"model parts per frame {(double)ModelEntity.DrawnParts / count:F0} drawn, {(double)ModelEntity.CulledParts / count:F0} outside the view." );
 		ModelEntity.DrawnParts = 0;
 		ModelEntity.CulledParts = 0;
+		(updateTicks, simulationTicks, renderTicks, overlayTicks, submitTicks, fenceTicks, totalTicks) = (0, 0, 0, 0, 0, 0, 0);
 
 		frameMilliseconds.Clear();
 		windowStart = now;

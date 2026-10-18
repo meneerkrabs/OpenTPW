@@ -242,7 +242,14 @@ separate rate limit. `GET /api/v1/chat-parks` (public) lists them with their pla
 operator renames them with `chatparks.json` in the data directory, an array of
 `{"id", "name"}` (ids 1-5, names at most 32 characters); it is re-read when the file changes and
 invalid entries fall back to the defaults. Parks published by players keep their own chat rooms
-(`park:<id>`) with the same behaviour.
+(`park:<id>`) with the same behaviour; a visit of a published park joins its room and shows the
+other visitors walking (docs/ONLINE.md, "Players in a visited park").
+
+Movement is relayed only inside a park's room (the lobby's are dropped) and only to connections
+that have moved, so a client without a walking view never receives it. A player's first movement
+in each room is answered with where everyone else in the room stands; entering a room forgets the
+player's place there. Protocol version 4 (`GET /api/v1/server`) marks a server that answers each
+room's first movement this way; visits draw figures only on such a server.
 
 Publishing a park masks swear words in its **name** with the server's word filter — the original
 showed them as asterisks — while a filtered **description** is refused outright. The publish limit

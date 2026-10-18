@@ -56,7 +56,7 @@ public static class ChatFormatter
 /// Client-side online state for the in-game panel: the opt-in server, login, park list, postcards and
 /// chat. Network work runs on background tasks; results are applied on the game thread by <see cref="Pump"/>.
 /// </summary>
-public sealed class OnlineSession : IDisposable
+public sealed class OnlineSession : IDisposable, IPresenceSession
 {
 	public const int MaximumChatLines = 200;
 	private readonly ConcurrentQueue<(int Generation, Action Action, Action? Discard)> mainThread = new();
@@ -64,6 +64,25 @@ public sealed class OnlineSession : IDisposable
 	private int generation;
 	private bool disposed;
 	private CancellationTokenSource? chatCancel;
+	/// <summary>The chat requests in the order the game made them (joins, places, lines), sent one after another.</summary>
+	private Task chatSends = Task.CompletedTask;
+	private int pendingChatSends;
+	/// <summary>A chat connection is being opened (the first one or a reconnection).</summary>
+	private bool chatConnecting;
+	/// <summary>Counts <see cref="CloseChat"/> and <see cref="Disconnect"/>: a connection opened under an older count is not installed.</summary>
+	private int chatEpoch;
+	/// <summary>The room <see cref="JoinRoom"/> asked for last, and whether the server has not confirmed it yet.</summary>
+	private string? requestedRoom;
+	private bool joinPending;
+	/// <summary>When the pending join was sent (<see cref="Environment.TickCount64"/>), or null while it waits for a connection.</summary>
+	private long? joinSentAt;
+	/// <summary>A join the server neither confirms nor refuses within this long is sent again (the chat rate limit drops requests over it).</summary>
+	internal const int JoinAnswerMilliseconds = 5000;
+	/// <summary>The newest place <see cref="MoveTo"/> was given and not sent yet with its connection, and whether a send of it is queued.</summary>
+	private (ChatConnection Chat, float X, float Y)? latestMove;
+	private bool moveQueued;
+	private readonly object moveLock = new();
+	private bool fetchingServerInfo;
 
 	public OnlineSession( OnlineFolders folders )
 	{
@@ -103,6 +122,12 @@ public sealed class OnlineSession : IDisposable
 	public ChatConnection? Chat { get; private set; }
 	public string Status { get; private set; } = "";
 	public int Busy { get; private set; }
+	/// <summary>
+	/// A chat connection is being opened or chat requests are still on their way. Chat traffic does not take the operation slot (<see cref="Busy"/>):
+	/// a visit joins its park's room while the download that started it still holds the slot, and a walking player sends a place several times
+	/// a second, which must not hold up a vote or a download.
+	/// </summary>
+	public bool ChatBusy => chatConnecting || Volatile.Read( ref pendingChatSends ) > 0;
 	public IReadOnlyList<ParkSummary> Parks { get; private set; } = Array.Empty<ParkSummary>();
 	public IReadOnlyList<PostcardSummary> Inbox { get; private set; } = Array.Empty<PostcardSummary>();
 	/// <summary>Cities of the current server's online world; empty before fetching or when the server has none.</summary>
@@ -137,6 +162,9 @@ public sealed class OnlineSession : IDisposable
 	public IReadOnlyList<(string Name, bool Online)> Buddies => buddies;
 	private readonly List<(string Name, bool Online)> buddies = new();
 	public bool IsLoggedIn => Client?.Session != null;
+	string? IPresenceSession.PlayerName => Settings.PlayerName;
+	object? IPresenceSession.Connection => Chat;
+	IReadOnlyList<string> IPresenceSession.ChatLines => ChatLines;
 	/// <summary>A two-step setup waiting for its first code (after registering, or a login after an operator reset).</summary>
 	public TotpEnrollment? Enrollment { get; internal set; }
 	/// <summary>The last login asked for an authenticator code (missing or wrong).</summary>
@@ -144,6 +172,9 @@ public sealed class OnlineSession : IDisposable
 
 	public void Pump()
 	{
+		// a join the server dropped (over the chat rate limit) is asked again
+		if ( joinPending && Chat is { } chat && joinSentAt is { } sent && Environment.TickCount64 - sent >= JoinAnswerMilliseconds && requestedRoom is { } room )
+			SendJoin( chat, room );
 		while ( mainThread.TryDequeue( out var item ) )
 		{
 			if ( disposed || item.Generation != generation )
@@ -171,6 +202,9 @@ public sealed class OnlineSession : IDisposable
 		discard?.Invoke();
 	}
 
+	private static string ConnectError( HttpRequestException exception ) =>
+		OnlineStrings.Error( OnlineStrings.ErrorConnect, "Error: Couldn't connect to server" ) + $" ({exception.Message})";
+
 	/// <summary>Runs network work in the background and reports the outcome in <see cref="Status"/>.</summary>
 	public void Run( Func<Task<string?>> work )
 	{
@@ -186,7 +220,7 @@ public sealed class OnlineSession : IDisposable
 			string? message;
 			try { message = await work(); }
 			catch ( OnlineException exception ) { message = exception.Message; }
-			catch ( HttpRequestException exception ) { message = OnlineStrings.Error( OnlineStrings.ErrorConnect, "Error: Couldn't connect to server" ) + $" ({exception.Message})"; }
+			catch ( HttpRequestException exception ) { message = ConnectError( exception ); }
 			catch ( Exception exception ) when ( exception is InvalidDataException or IOException or TaskCanceledException or ArgumentException or InvalidOperationException or System.Net.WebSockets.WebSocketException or ObjectDisposedException )
 			{ message = exception.Message; }
 			// Anything else must still end the operation, or every online button stays disabled.
@@ -328,6 +362,17 @@ public sealed class OnlineSession : IDisposable
 		chatCancel = null;
 		Chat?.Dispose();
 		Chat = null;
+		chatConnecting = false;
+		Interlocked.Increment( ref chatEpoch );
+		requestedRoom = null;
+		joinPending = false;
+		joinSentAt = null;
+		RefusedRoom = null;
+		// a send already queued finds no place and clears its own flag
+		lock ( moveLock )
+			latestMove = null;
+		ServerProtocol = null;
+		fetchingServerInfo = false;
 		Client?.Dispose();
 		Client = null;
 		Parks = Array.Empty<ParkSummary>();
@@ -505,25 +550,113 @@ public sealed class OnlineSession : IDisposable
 		return $"{OnlineStrings.Get( OnlineLabel.Inbox )}: {inbox.Postcards.Count}" + (failed > 0 ? $" (!{failed})" : "");
 	} );
 
-	public void ConnectChat() => WithClient( async client =>
+	/// <summary>
+	/// Opens the chat connection, once: while it opens or is open a second call does nothing. When it is open the room <see cref="JoinRoom"/>
+	/// asked for meanwhile is joined. It does not take the operation slot (<see cref="ChatBusy"/>).
+	/// </summary>
+	public void ConnectChat()
+	{
+		var client = Require();
+		if ( disposed || Chat != null || chatConnecting )
+			return;
+		chatConnecting = true;
+		var startedGeneration = generation;
+		var epoch = chatEpoch;
+		_ = Task.Run( async () =>
+		{
+			operationGeneration.Value = startedGeneration;
+			ChatConnection chat;
+			try
+			{
+				chat = await client.ConnectChatAsync();
+			}
+			catch ( Exception exception )
+			{
+				var message = exception is HttpRequestException http ? ConnectError( http ) : exception.Message;
+				if ( exception is not (OnlineException or HttpRequestException or System.Net.WebSockets.WebSocketException or IOException
+					or InvalidDataException or TaskCanceledException or InvalidOperationException or ObjectDisposedException) )
+					Log.Warning( $"Chat connection failed: {exception}" );
+				Post( () =>
+				{
+					if ( epoch != chatEpoch )
+						return;
+					chatConnecting = false;
+					Status = message;
+				} );
+				return;
+			}
+			var cancel = new CancellationTokenSource();
+			Post( () =>
+			{
+				// the chat was closed while this connection opened: it is not used
+				if ( epoch != chatEpoch )
+				{
+					cancel.Dispose();
+					chat.Dispose();
+					return;
+				}
+				chatConnecting = false;
+				Install( chat, cancel );
+			}, () => { cancel.Dispose(); chat.Dispose(); } );
+		} );
+	}
+
+	/// <summary>
+	/// Makes <paramref name="chat"/> the session's connection and starts reading it; a new connection starts in the Online World, so a room asked for
+	/// and not yet confirmed is joined now. Runs on the game thread.
+	/// </summary>
+	private void Install( ChatConnection chat, CancellationTokenSource cancel )
 	{
 		if ( Chat != null )
-			return null;
-		var chat = await client.ConnectChatAsync();
-		if ( disposed || operationGeneration.Value != generation )
 		{
-			await chat.DisposeAsync();
-			return null;
+			cancel.Dispose();
+			chat.Dispose();
+			return;
 		}
-		var cancel = new CancellationTokenSource();
-		Post( () =>
-		{
-			Chat = chat;
-			chatCancel = cancel;
-		}, () => { cancel.Cancel(); cancel.Dispose(); chat.Dispose(); } );
+		Chat = chat;
+		chatCancel = cancel;
 		_ = Task.Run( () => ReceiveLoopAsync( chat, cancel.Token ) );
-		return null;
-	} );
+		if ( joinPending && requestedRoom is { } room )
+		{
+			if ( room == ChatProtocol.LobbyRoom )
+				joinPending = false;
+			else
+				SendJoin( chat, room );
+		}
+	}
+
+	private void SendJoin( ChatConnection chat, string room )
+	{
+		joinSentAt = Environment.TickCount64;
+		SendOnChat( chat, ChatRequest.ForJoin( room ) );
+	}
+
+	/// <summary>
+	/// Sends <paramref name="request"/> after every chat request made before it, without taking the operation slot. A failed send is dropped: a lost
+	/// connection ends the receive loop, which reconnects and rejoins the room.
+	/// </summary>
+	private void SendOnChat( ChatConnection chat, ChatRequest request ) => Chain( () => chat.SendAsync( request ) );
+
+	/// <summary>Runs <paramref name="send"/> after every chat send queued before it (one sender at a time: the connection's send lock has no timeout).</summary>
+	private void Chain( Func<Task> send )
+	{
+		Interlocked.Increment( ref pendingChatSends );
+		chatSends = chatSends.ContinueWith( async _ =>
+		{
+			try
+			{
+				await send();
+			}
+			catch ( Exception exception ) when ( exception is System.Net.WebSockets.WebSocketException or IOException or ObjectDisposedException
+				or OperationCanceledException or InvalidOperationException )
+			{
+			}
+			finally
+			{
+				Interlocked.Decrement( ref pendingChatSends );
+			}
+		}, CancellationToken.None, TaskContinuationOptions.None, TaskScheduler.Default ).Unwrap();
+	}
 
 	private async Task ReceiveLoopAsync( ChatConnection chat, CancellationToken cancel )
 	{
@@ -541,11 +674,36 @@ public sealed class OnlineSession : IDisposable
 						return;
 					if ( item.Kind == ChatEventKind.Room && item.Room != null )
 					{
+						if ( item.Room != CurrentRoom )
+						{
+							// The new room's places arrive with the player's first movement there; the old room's
+							// places mean nothing in it.
+							positions.Clear();
+						}
+						else if ( item.Args is { } roster && !(roster.Count > 0 && roster[^1].StartsWith( "+", StringComparison.Ordinal )) )
+						{
+							// A roster of the room the player is already in (someone came or went) keeps the places of those who
+							// stay; a roster cut short with "+N" (ChatHub.RosterEvent) does not tell who left.
+							foreach ( var name in positions.Keys.Where( name => !roster.Contains( name, StringComparer.OrdinalIgnoreCase ) ).ToArray() )
+								positions.Remove( name );
+						}
 						CurrentRoom = item.Room;
 						RoomPlayers = item.Args ?? Array.Empty<string>();
-						// The new room's places arrive with the player's first movement there; the old room's
-						// places mean nothing in it.
-						positions.Clear();
+						if ( joinPending && item.Room == requestedRoom )
+						{
+							joinPending = false;
+							joinSentAt = null;
+						}
+					}
+					// a NoPark answer to another command (a vote outside a park) is not the join's
+					else if ( item.Kind == ChatEventKind.Notice && item.Notice == (int)ChatNotice.NoPark && joinPending && joinSentAt is { } asked
+						&& Environment.TickCount64 - asked < JoinAnswerMilliseconds )
+					{
+						// The park's room was refused (it was unpublished): the player stays where they are.
+						RefusedRoom = requestedRoom;
+						joinPending = false;
+						joinSentAt = null;
+						requestedRoom = CurrentRoom;
 					}
 					else if ( item.Kind == ChatEventKind.Move && item.From != null )
 						positions[item.From] = (item.X ?? 0, item.Y ?? 0);
@@ -575,7 +733,17 @@ public sealed class OnlineSession : IDisposable
 				chatCancel?.Dispose();
 				chatCancel = null;
 				if ( lost && IsLoggedIn && Client is { } client )
-					ReconnectChat( client, CurrentRoom );
+				{
+					// The new connection returns to the room the player was in, or to the one they were on their way to.
+					if ( !joinPending )
+					{
+						requestedRoom = CurrentRoom;
+						joinPending = CurrentRoom != ChatProtocol.LobbyRoom;
+					}
+					// the new connection sends the join itself (Install)
+					joinSentAt = null;
+					ReconnectChat( client );
+				}
 			}
 		} );
 	}
@@ -583,47 +751,55 @@ public sealed class OnlineSession : IDisposable
 	/// <summary>Waits between attempts to reconnect the chat after a server restart.</summary>
 	internal static readonly TimeSpan[] ReconnectDelays = { TimeSpan.FromSeconds( 1 ), TimeSpan.FromSeconds( 2 ), TimeSpan.FromSeconds( 4 ), TimeSpan.FromSeconds( 8 ), TimeSpan.FromSeconds( 15 ), TimeSpan.FromSeconds( 30 ) };
 
-	private void ReconnectChat( OnlineClient client, string room )
+	private void ReconnectChat( OnlineClient client )
 	{
 		var startedGeneration = generation;
+		var epoch = chatEpoch;
+		chatConnecting = true;
 		_ = Task.Run( async () =>
 		{
 			operationGeneration.Value = startedGeneration;
 			foreach ( var delay in ReconnectDelays )
 			{
 				await Task.Delay( delay );
-				if ( disposed || startedGeneration != generation || Client != client || !IsLoggedIn )
-					return;
+				if ( disposed || startedGeneration != generation || Client != client || !IsLoggedIn || epoch != Volatile.Read( ref chatEpoch ) )
+					break;
 				ChatConnection chat;
 				try
 				{
 					chat = await client.ConnectChatAsync();
 				}
-				catch ( Exception exception ) when ( exception is OnlineException or HttpRequestException or System.Net.WebSockets.WebSocketException or IOException or InvalidDataException or TaskCanceledException )
+				catch ( Exception exception )
 				{
+					if ( exception is not (OnlineException or HttpRequestException or System.Net.WebSockets.WebSocketException or IOException or InvalidDataException
+						or TaskCanceledException or InvalidOperationException or ObjectDisposedException) )
+						Log.Warning( $"Chat reconnection failed: {exception}" );
 					continue;
-				}
-				if ( room != ChatProtocol.LobbyRoom )
-				{
-					try { await chat.JoinAsync( room ); }
-					catch ( Exception exception ) when ( exception is System.Net.WebSockets.WebSocketException or IOException ) { }
 				}
 				var cancel = new CancellationTokenSource();
 				Post( () =>
 				{
-					if ( Chat != null )
+					// the chat was closed during the wait (the player left the visit that opened it): it stays closed
+					if ( epoch != chatEpoch )
 					{
 						cancel.Dispose();
 						chat.Dispose();
 						return;
 					}
-					Chat = chat;
-					chatCancel = cancel;
-					AddChatLine( OnlineStrings.Get( OnlineLabel.ChatReconnected ) );
-					_ = Task.Run( () => ReceiveLoopAsync( chat, cancel.Token ) );
+					chatConnecting = false;
+					var installed = Chat == null;
+					// Install joins the room the player is to return to.
+					Install( chat, cancel );
+					if ( installed )
+						AddChatLine( OnlineStrings.Get( OnlineLabel.ChatReconnected ) );
 				}, () => { cancel.Dispose(); chat.Dispose(); } );
 				return;
 			}
+			Post( () =>
+			{
+				if ( epoch == chatEpoch )
+					chatConnecting = false;
+			} );
 		} );
 	}
 
@@ -655,22 +831,92 @@ public sealed class OnlineSession : IDisposable
 			AddChatLine( OnlineStrings.ChatNotice( (int)ChatNotice.NoSuchCommand, null ) );
 			return;
 		}
-		Run( async () =>
-		{
-			await chat.SendAsync( command, argument );
-			return null;
-		} );
+		SendOnChat( chat, ChatRequest.ForCommand( command, argument ) );
 	}
 
+	/// <summary>
+	/// Goes to a room: the Online World, a chat park or a published park. Asked before the chat connection is open (a visit asks as it starts),
+	/// the room is joined once it is; a reconnection returns to it too.
+	/// </summary>
 	public void JoinRoom( string room )
 	{
-		var chat = Chat;
-		if ( chat != null )
-			Run( async () =>
+		if ( !ChatProtocol.IsValidRoom( room ) )
+			return;
+		if ( room == RefusedRoom )
+			RefusedRoom = null;
+		if ( Chat is { } chat )
+		{
+			// already there, or on the way
+			if ( room == WantedRoom )
+				return;
+			requestedRoom = room;
+			joinPending = true;
+			SendJoin( chat, room );
+			return;
+		}
+		// a new connection starts in the Online World and joins this room once it is open (Install)
+		requestedRoom = room;
+		joinPending = true;
+		joinSentAt = null;
+	}
+
+	/// <summary>The room the session is in or on its way to (<see cref="JoinRoom"/>'s last room until the server confirms or refuses it).</summary>
+	public string WantedRoom => joinPending && requestedRoom != null ? requestedRoom : CurrentRoom;
+
+	/// <summary>The last room the server refused to let the player into ("NO SUCH PARK": the park was unpublished), until it is asked for again.</summary>
+	public string? RefusedRoom { get; private set; }
+
+	/// <summary>
+	/// Closes the chat connection and forgets its lines, staying logged in (a visit closes the connection it opened when the park is left, so the chat
+	/// overlay does not follow the player into their own park). Nothing reconnects it; the online screens open it again.
+	/// </summary>
+	public void CloseChat()
+	{
+		// a connection or a reconnection on its way is not installed
+		Interlocked.Increment( ref chatEpoch );
+		chatConnecting = false;
+		ChatLines.Clear();
+		chatCancel?.Cancel();
+		chatCancel?.Dispose();
+		chatCancel = null;
+		Chat?.Dispose();
+		Chat = null;
+		CurrentRoom = ChatProtocol.LobbyRoom;
+		RoomPlayers = Array.Empty<string>();
+		positions.Clear();
+		requestedRoom = null;
+		joinPending = false;
+		joinSentAt = null;
+		// a send already queued finds no place and clears its own flag
+		lock ( moveLock )
+			latestMove = null;
+	}
+
+	/// <summary>The current server's protocol version (<see cref="FetchServerInfo"/>); null before it is known.</summary>
+	public int? ServerProtocol { get; private set; }
+
+	/// <summary>Asks the server for its version once (no login needed), beside the operation slot; <see cref="ServerProtocol"/> holds the answer.</summary>
+	public void FetchServerInfo()
+	{
+		if ( disposed || fetchingServerInfo || ServerProtocol != null || Client is not { } client )
+			return;
+		fetchingServerInfo = true;
+		var startedGeneration = generation;
+		_ = Task.Run( async () =>
+		{
+			operationGeneration.Value = startedGeneration;
+			try
 			{
-				await chat.JoinAsync( room );
-				return null;
-			} );
+				var info = await client.GetServerInfoAsync();
+				Post( () => { fetchingServerInfo = false; ServerProtocol = info.ProtocolVersion; } );
+			}
+			catch ( Exception exception )
+			{
+				if ( exception is not (OnlineException or HttpRequestException or IOException or InvalidDataException or TaskCanceledException or InvalidOperationException) )
+					Log.Warning( $"Server version request failed: {exception}" );
+				Post( () => fetchingServerInfo = false );
+			}
+		} );
 	}
 
 	/// <summary>
@@ -686,10 +932,25 @@ public sealed class OnlineSession : IDisposable
 		var name = Settings.PlayerName;
 		if ( name != null )
 			positions[name] = (x, y);
-		Run( async () =>
+		// One send of the newest place waits in the chain at a time: a connection that cannot keep up skips the places in between, never the last one.
+		lock ( moveLock )
 		{
-			await chat.MoveAsync( x, y );
-			return null;
+			latestMove = (chat, x, y);
+			if ( moveQueued )
+				return;
+			moveQueued = true;
+		}
+		Chain( () =>
+		{
+			(ChatConnection Chat, float X, float Y)? place;
+			lock ( moveLock )
+			{
+				place = latestMove;
+				latestMove = null;
+				moveQueued = false;
+			}
+			// the newest place goes out on the connection it was meant for (a reconnection's announcement on the new one)
+			return place is { } move ? move.Chat.SendAsync( ChatRequest.ForMove( move.X, move.Y ) ) : Task.CompletedTask;
 		} );
 	}
 

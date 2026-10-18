@@ -1,6 +1,29 @@
 namespace OpenTPW.Hud;
 
 /// <summary>
+/// The online players of a visited park, as the visit's HUD uses them (<see cref="ParkPresence"/>): a click on the park's ground walks the player's
+/// figure, and Enter opens a chat line to the park's room.
+/// </summary>
+public interface IVisitPresence
+{
+	/// <summary>A click on the park's ground at (<paramref name="cellX"/>, <paramref name="cellY"/>) that hit no object: the figure walks there, or teleports on a double click.</summary>
+	void Click( float cellX, float cellY );
+	/// <summary>Whether a chat line can be said now (connected and in the park's room).</summary>
+	bool CanChat { get; }
+	/// <summary>Whether the figures are shown and a ground click walks the player's (the server relays movement in park rooms).</summary>
+	bool Walks { get; }
+	/// <summary>Says a chat line (or runs a chat command) in the park's room.</summary>
+	void Say( string line );
+	/// <summary>The players' names and where their figures stand, drawn by the HUD under its windows.</summary>
+	IEnumerable<VisitPresenceName> Names { get; }
+	/// <summary>The park room's chat lines, oldest first.</summary>
+	IReadOnlyList<string> ChatLines { get; }
+}
+
+/// <summary>A player's name over their figure in a visited park: the player's own name or another's, and the figure's feet (engine position).</summary>
+public readonly record struct VisitPresenceName( string Name, bool Own, System.Numerics.Vector3 Feet );
+
+/// <summary>
 /// What the HUD shows and does with the park's money and time (<see cref="ParkDate"/> and
 /// <see cref="GameSpeed"/> are the economy slice's). The game binds it to <see cref="Level.Park"/>
 /// (<see cref="EconomyParkStatus"/>); <see cref="StubParkStatus"/> exists for tests.

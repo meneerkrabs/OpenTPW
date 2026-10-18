@@ -33,7 +33,8 @@ internal sealed class PoolPartEntity : ModelEntity
 			g_vLightColor = sun?.Color ?? System.Numerics.Vector3.One,
 			g_vCameraPos = Camera.Position,
 			_padding0 = WaveAmplitude,
-			_padding1 = WavePhase,
+			// [EXT:point-lights] the deck and basin shaders read this slot as the light count, so only the water (whose shader never lights) carries a phase
+			_padding1 = IsWater ? WavePhase : 0f,
 			g_flTime = Time.Now,
 			// the graphics settings' view distance, which the park's own shader (test.shader) applies to its fog
 			_padding2 = CompatibilityRuntime.RenderQuality.ViewDistanceScale,
@@ -42,7 +43,8 @@ internal sealed class PoolPartEntity : ModelEntity
 			_padding5 = Deep.Z,
 			_padding6 = Glow
 		}.WithFog();
-		Model.Material.Set( "ObjectUniformBuffer", uniformBuffer );
+		// [EXT:point-lights] the deck and the basin take the park's point lights; the water's shader keeps its padding for the wave and the colours
+		SetObjectUniforms( uniformBuffer, model );
 		Model.Draw();
 	}
 }

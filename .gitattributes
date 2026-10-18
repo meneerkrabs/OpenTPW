@@ -9,3 +9,9 @@ content/mods/** text eol=lf
 
 # Progress fragments must be LF (tools/progress.py checks it): keep LF in a Windows checkout.
 docs/progress/*.md text eol=lf
+
+# The example lamp mod's generated binaries (tools/lights/build-example-mod.sh) are not text, whatever the rule above says.
+content/mods/opentpw.example.lamp-lights/**/*.[mM][dD]2 -text
+content/mods/opentpw.example.lamp-lights/**/*.[rR][sS][eE] -text
+content/mods/opentpw.example.lamp-lights/**/*.[tT][gG][aA] -text
+content/mods/opentpw.example.lamp-lights/**/*.[wW][cC][tT] -text

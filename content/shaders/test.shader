@@ -11,10 +11,12 @@ vertex {
         mat4 g_mProj;
         vec3 g_vLightPos;
         vec3 g_vLightColor;
+        float g_flLightCount; // [EXT:point-lights] the number of lights after the block (the padding after the light colour)
         vec3 g_vCameraPos;
         float g_flTime;
         float g_flViewDistanceScale;
         vec3 g_vFogColor;
+        vec4 g_vPointLight[32]; // [EXT:point-lights] 16 lights x 2 vec4, from byte 272; only the lights of a draw are uploaded
     } g_oUbo;
 
     layout(location = 0) out VS_OUT {
@@ -61,10 +63,12 @@ fragment {
         mat4 g_mProj;
         vec3 g_vLightPos;
         vec3 g_vLightColor;
+        float g_flLightCount; // [EXT:point-lights] the number of lights after the block (the padding after the light colour)
         vec3 g_vCameraPos;
         float g_flTime;
         float g_flViewDistanceScale;
         vec3 g_vFogColor;
+        vec4 g_vPointLight[32]; // [EXT:point-lights] 16 lights x 2 vec4, from byte 272; only the lights of a draw are uploaded
     } g_oUbo;
 
     layout( set = 1, binding = 0 ) uniform texture2D Color0;
@@ -110,6 +114,24 @@ fragment {
 
     #define SAMPLE_SLOT( tex ) ( clampEdges ? textureGrad( sampler2D( tex, s_Color ), ClampToEdge( finalTexCoords, vec2( textureSize( sampler2D( tex, s_Color ), 0 ) ), uvDx, uvDy ), uvDx, uvDy ) : texture( sampler2D( tex, s_Color ), finalTexCoords ) )
 
+    // [EXT:point-lights] The park's point lights (docs/LIGHTS.md): what the lit uniform block carries after g_vFogColor, g_flLightCount lights of two vec4 each (the position and the squared
+    // radius; the colour and one over the squared radius). The original engine's falloff, (r2 - d2) x (1 / r2) added to the lit colour with no normal term, full at the centre and nothing
+    // at the radius (tp.exe 0x5741B0). The world position is the model-space position the shader gets from g_mModel. With no light (count 0) nothing is added, so such a draw shades as before.
+    vec3 pointLights( vec3 positionWs )
+    {
+      vec3 sum = vec3( 0.0 );
+      int count = min( int( g_oUbo.g_flLightCount ), 16 );
+      for ( int i = 0; i < count; i++ )
+      {
+        vec4 a = g_oUbo.g_vPointLight[i * 2];
+        vec4 b = g_oUbo.g_vPointLight[i * 2 + 1];
+        vec3 d = positionWs - a.xyz;
+        float share = ( a.w - dot( d, d ) ) * b.w;
+        sum += b.xyz * max( share, 0.0 );
+      }
+      return sum;
+    }
+
     void main() 
     {
         vec2 finalTexCoords = vs_out.vTexCoords;
@@ -151,6 +173,9 @@ fragment {
         if ( texIndex == 15 ) vTextureSample = SAMPLE_SLOT( Color15 );
 
         vec3 vShading = vDiffuse + vAmbient;
+        // [EXT:point-lights] lights in reach add to the shading like the sun and the ambient (0x5741B0 sums them into one vertex colour)
+        if ( g_oUbo.g_flLightCount > 0.5 )
+            vShading += pointLights( vs_out.vPosition );
         vec3 vOutColor;
 
         // Apply Gouraud shading if the flag is set, otherwise use flat shading

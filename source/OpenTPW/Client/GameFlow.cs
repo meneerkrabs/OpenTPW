@@ -24,6 +24,8 @@ internal sealed partial class GameFlow : IDisposable
 	private (int Requested, int Fitted)? reportedUiScale;
 	private OnlineSession? onlineSession;
 	private UI.ChatOverlay? chatOverlay;
+	/// <summary>The online players of the visited park, while a visit of a downloaded park runs with a login (docs/ONLINE.md).</summary>
+	private ParkPresence? presence;
 
 	public GameFlow()
 	{
@@ -391,6 +393,9 @@ internal sealed partial class GameFlow : IDisposable
 		IHudParkStatus status = level.Park != null ? EconomyParkStatus.ForLevel( level, PlayerKeys ) : new NoEconomyStatus();
 		using ( LoadProfile.Measure( "park-hud" ) )
 			Hud = CreateParkHud( level, status );
+		// [EXT:online-visit-presence] a visit of a downloaded park joins its chat room and draws its players while logged in
+		if ( visit != null && FeatureGates.Online )
+			presence = ParkPresence.TryCreate( onlineSession, level );
 		// [EXT:online-visit] read-only visits of shared parks get no advisor (the original has no visits)
 		// [EXT:sandbox] the generic sandbox (not an original level) gets no automatic advisor either; only original levels raise its game events
 		if ( AutomaticAdvisorEnabled && original && visit == null && !advisorUnavailable )
@@ -450,6 +455,7 @@ internal sealed partial class GameFlow : IDisposable
 		ModeChanged = () => Advisor?.OnModeChanged(),
 		AdvisorSaysStaffMessages = () => Advisor != null,
 		HelpKeyPressed = () => Advisor?.OnHelpKeyPressed(),
+		Presence = () => presence,
 	};
 
 	/// <summary>
@@ -482,6 +488,8 @@ internal sealed partial class GameFlow : IDisposable
 		RequireProgressSaved();
 		DetachProgress();
 		AbandonParkBuild();
+		presence?.Dispose();
+		presence = null;
 		Hud?.Stack.Clear();
 		Menu?.Stack.Clear();
 		IncFrontEnd?.Stack.Clear();
@@ -599,6 +607,7 @@ internal sealed partial class GameFlow : IDisposable
 			// The park being left waits too while the next one is built.
 			Level.SimulationTimeScale = parkBuild != null ? 0 : Hud.SimulationTimeScale;
 			Level.Update();
+			presence?.Update( Time.Delta );
 			Advisor?.Update( Hud.Paused );
 			UpdateAutosave( Level, Hud );
 			var parkLost = Level.Park?.Economy.IsBankrupt == true;
@@ -1018,11 +1027,22 @@ internal sealed partial class GameFlow : IDisposable
 			if ( onlineSession == null )
 			{
 				onlineSession = new OnlineSession( OnlineFolders ?? global::OpenTPW.OnlineFolders.FromEnvironment() );
-				chatOverlay = new UI.ChatOverlay( onlineSession );
+				chatOverlay = new UI.ChatOverlay( onlineSession ) { Hidden = () => presence != null };
 				global::Global.Render.OnOverlayRender += chatOverlay.Draw;
 			}
 			return onlineSession;
 		}
+	}
+
+	/// <summary>The visit's online players (null: none).</summary>
+	internal ParkPresence? Presence => presence;
+
+	/// <summary>Replaces the visit's presence (the visit smoke's scripted players): the flow updates and disposes it as its own.</summary>
+	internal void AttachPresence( ParkPresence attached )
+	{
+		if ( !ReferenceEquals( presence, attached ) )
+			presence?.Dispose();
+		presence = attached;
 	}
 
 	/// <summary>Go Online: the original-style online screens on <paramref name="stack"/> (docs/ONLINE.md).</summary>
@@ -1057,6 +1077,8 @@ internal sealed partial class GameFlow : IDisposable
 			Log.Warning( $"OpenTPW progress could not be saved on exit: {owner.Error}" );
 		DetachProgress();
 		AbandonParkBuild();
+		presence?.Dispose();
+		presence = null;
 		Advisor?.Dispose();
 		GameAudio.Shutdown();
 		Hud?.Stack.Clear();

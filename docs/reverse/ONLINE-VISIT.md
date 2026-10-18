@@ -83,6 +83,23 @@ Inside the visited park (trace strings and classes):
   ("Capping the number of people in online park", sub_0CB4E8; "Denied because the park is full").
 - Movement is relayed by the chat server (`Chat::MovePlayer(int, int, int)`; the app decodes
   `BOSS_CHAT_MOVE` with an x/y/z the app validates: "Unrecognised Z value in online BOSS_CHAT_MOVE").
+  The PC executable's handler (tp.exe 0x4E7265 in the message dispatcher 0x4E6E80) finds the online
+  person by name (0x4F7D70 compares the name at +0x19C; the player's own person is skipped), takes x
+  and y as 8.8 cell positions, and reads z as a mode: 0 walks the person there (0x4F7DE0 → 0x4FA5F0,
+  which stores the target and plans the route through 0x510100 → 0x50F8E0; animation state 1), 1
+  teleports it ("Pos for teleport", 0x4F7E20: walking stops, animation state 3, 0x4FA930 sets the
+  place), 2 hides it (0x4F9ED0) and 3 unhides and teleports it ("Pos before unhide", "Pos for
+  unhide", "Pos after unhide & teleport"). So every client walked a relayed person itself; the
+  route search 0x511420 goes cell by cell with the octile distance (|dx| + |dy| − min / 2, at most
+  0xFC steps) and the person moves straight to the point when it finds none (0x70000000).
+- Every world turn the person tick's case for a thing of type 0x12 (0x50B453) runs, in the online game
+  type ([0xFB3B7C] = 1), 0x4F7C60 and the person's walk state machine 0x4F7C90 (arrival → animation
+  state 3; "The person has become stuck on their way to the destination" → state 3, animation 5).
+  0x4F7C60 starts particle effect 0x35 (*Avatar*) for the player's own person (+0x3A0 set) and 0x39
+  (*OtherAvatar*) for any other through 0x4FA470, at the person's ground position times 1024 (the
+  pool's create 0x521E60). Both `Tp2.plb` templates live 7 ticks with particles of about 30, so each
+  person sparkles continuously. Outside the online game type the tick logs the
+  `MODEL_ONLINE_PERSON` warning instead.
 - The park's own menu is the online one: the online game type's pause menu at 0x10197D90 offers only
   Resume Game, Exit To Lobby and Quit Game (already traced, ParkHud).
 - The chat overlay offers the vote for the visited park (manual's Chat screen: "Click this to cast your
@@ -134,9 +151,11 @@ absence is an observation of the traced flows, not proof: nothing here shows a b
   `City::MarkParkVisited`. A ticket award can hook the accepted report (docs/SERVER.md).
 - **Visit**: the visitor's client rebuilds the exact published layout (digest-checked), walks it with
   the normal park camera, can ride rides (coaster trains along the published track, the prototype
-  Totem on its modelled motion), inspects objects (published open state, price, state of repair) and
-  the park's published statistics read-only, and votes through the existing vote endpoint. Chat and
-  other players in the park are not implemented (the chat-park lane).
+  Totem on its modelled motion and, since the ride view port of October 15, every ride whose model has
+  a camera seat), inspects objects (published open state, price, state of repair) and
+  the park's published statistics read-only, and votes through the existing vote endpoint. The
+  park's other visitors appear as figures that walk and teleport, with the original's avatar
+  sparkle, and the park's room chats (docs/ONLINE.md, "Players in a visited park", October 18).
 
 ## Verification of the shared-park lane
 

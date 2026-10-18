@@ -67,17 +67,17 @@ public static partial class OpcodeHandlers
 		[OpcodeHandler( Opcode.SPARK, RideOpcodeStatus.Implemented, "TPW-EXE 0x5564ED (`a b c d`, resolved): stores a and b as words at +0xDC and +0xDE, looks the two key nodes (class 0x100) up and logs them; c and d are dropped; nothing reads the words, so no game effect (1 corpus use, Plasma)" )]
 		public static void Spark( RideVM vm, Operand a, Operand b, Operand c, Operand d ) { }
 
-		// [APPROX:RIDES-046] the ride lights have no target in OpenTPW: no model has a light dummy (class 0x20000) and no scene draws dynamic lights, so the effect is an unimplemented one (counted and logged once, the script goes on)
-		[OpcodeHandler( Opcode.ENABLELIGHT, RideOpcodeStatus.Hooked, "TPW-EXE 0x555C7A (`light`, resolved): looks the light dummy (class 0x20000, number `light`) up in the object's model (0x44B220), takes its light record (0x4587B0) and clears the record's off flag 0x10000000 (0x458910); flags untouched; no corpus use, no light in any shipped model (RIDES-046)" )]
+		// [EXT:object-lights] the four light opcodes act on the light dummies (class 0x20000) of an OpenTPW object's own model (docs/LIGHTS.md): no shipped model has one and the original's instance builder never creates the light (0x44A870), so the original would fault where a model has none; here a missing light is a logged no-op
+		[OpcodeHandler( Opcode.ENABLELIGHT, RideOpcodeStatus.Hooked, "TPW-EXE 0x555C7A (`light`, resolved): looks the light dummy (class 0x20000, number `light`) up in the object's model (0x44B220), takes its light record (0x4587B0) and clears the record's off flag 0x10000000 (0x458910); flags untouched; no corpus use, no light in any shipped model; OpenTPW switches the light of the object's own light dummy, and a missing light is a logged no-op (EXT:object-lights, docs/LIGHTS.md)" )]
 		public static void EnableLight( RideVM vm, Operand light ) => vm.Effect( Opcode.ENABLELIGHT, new[] { light } );
 
-		[OpcodeHandler( Opcode.DISABLELIGHT, RideOpcodeStatus.Hooked, "TPW-EXE 0x555CCD (`light`, resolved): as ENABLELIGHT but sets the record's off flag 0x10000000 (0x458940); flags untouched; no corpus use (RIDES-046)" )]
+		[OpcodeHandler( Opcode.DISABLELIGHT, RideOpcodeStatus.Hooked, "TPW-EXE 0x555CCD (`light`, resolved): as ENABLELIGHT but sets the record's off flag 0x10000000 (0x458940); flags untouched; no corpus use; OpenTPW: EXT:object-lights" )]
 		public static void DisableLight( RideVM vm, Operand light ) => vm.Effect( Opcode.DISABLELIGHT, new[] { light } );
 
-		[OpcodeHandler( Opcode.SETLIGHT, RideOpcodeStatus.Hooked, "TPW-EXE 0x555D20 (`light level`, resolved): the light record's colour becomes the light's base colour times level x 0.01 (0x4587E0: red, green and blue, alpha 1.0, and the packed ARGB word); flags untouched; no corpus use (RIDES-046)" )]
+		[OpcodeHandler( Opcode.SETLIGHT, RideOpcodeStatus.Hooked, "TPW-EXE 0x555D20 (`light level`, resolved): the light record's colour becomes the light's base colour times level x 0.01 (0x4587E0: red, green and blue, alpha 1.0, and the packed ARGB word); flags untouched; no corpus use; OpenTPW: EXT:object-lights" )]
 		public static void SetLight( RideVM vm, Operand light, Operand level ) => vm.Effect( Opcode.SETLIGHT, new[] { light, level } );
 
-		[OpcodeHandler( Opcode.COLOURLIGHT, RideOpcodeStatus.Hooked, "TPW-EXE 0x555D9A (`light red green blue`, resolved): each channel times 0.01 becomes the light record's colour (alpha 1.0, packed ARGB word with each channel times 255 truncated, 0x458890); flags untouched; no corpus use (RIDES-046)" )]
+		[OpcodeHandler( Opcode.COLOURLIGHT, RideOpcodeStatus.Hooked, "TPW-EXE 0x555D9A (`light red green blue`, resolved): each channel times 0.01 becomes the light record's colour (alpha 1.0, packed ARGB word with each channel times 255 truncated, 0x458890); flags untouched; no corpus use; OpenTPW: EXT:object-lights" )]
 		public static void ColourLight( RideVM vm, Operand light, Operand red, Operand green, Operand blue ) => vm.Effect( Opcode.COLOURLIGHT, new[] { light, red, green, blue } );
 
 		// [BIN:TPW-EXE:0x5563D5 GETCUSTPTCLCODE] reads its destination raw, resolves the second operand and drops it, then stores the constant 0 (the interpreter's zero register) in the result word and the variable destination; the object type's custom particle code (0x4145E0 reads another field, the sound list EVENT type 10 uses) is not consulted

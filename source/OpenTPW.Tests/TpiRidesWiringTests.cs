@@ -274,7 +274,7 @@ public class TpiRidesWiringTests
 		using ( ModContentRoots.Use( Resolve( Install(), extension: true ), FileSystem ) )
 		{
 			var catalog = EconomyObjectCatalog.Load( "jungle", false );
-			// the umbrellas extension (64500 and up) and the pools extension (65000 and up), both on by default, list their own objects in the same catalog
+			// the umbrellas (64500 and up) and pools (65000 and up) extensions, on by default, list their own objects in the same catalog
 			CollectionAssert.AreEqual( new[] { 1110, 40001 }, catalog.Objects.Select( info => info.InfoId ).Where( id => id < UmbrellaContent.FirstReservedId ).ToArray(), "after the game's own objects" );
 			var info = catalog[40001];
 			Assert.AreEqual( 700, info.PurchaseCost );

@@ -172,7 +172,7 @@ public class ModsInBrowserTests
 		Assert.AreEqual( 0, set.Mods.Count );
 		Assert.IsTrue( ModStartup.Discovered.Any( mod => mod.Id == TpiRidesFixture.Id && mod.IsValid && mod.Source == ModSource.Program ) );
 		Assert.IsFalse( set.IsEnabled( OfficialExtensions.CrossEditionObjects.Id ) );
-		// pools and umbrellas are on by default, so their own content roots (the changing rooms, embedded in the browser build, and the brolly shops) are the only roots
+		// pools is on by default, so its own content root (the changing rooms, embedded in the browser build) is the only root
 		Assert.IsTrue( ObjectCatalog.ContentRoots.All( contentRoot => contentRoot.ModId == OfficialExtensions.Pools.Id || contentRoot.ModId == OfficialExtensions.Umbrellas.Id ) );
 		Assert.IsTrue( set.IsEnabled( OfficialExtensions.Pools.Id ), "pools is on in the browser with no saved choice" );
 		Assert.IsTrue( ObjectCatalog.ContentRoots.Sum( contentRoot => contentRoot.Objects.Count ) >= 4, "the pools objects (changing rooms and extras) are in the catalogs" );

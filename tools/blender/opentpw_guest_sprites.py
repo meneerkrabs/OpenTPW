@@ -4,7 +4,7 @@ parametric people of ``opentpw_kid.py``, ready to be packed into ``.ESP``/``.TPC
 Usage:
   Blender -b --factory-startup --python tools/blender/opentpw_guest_sprites.py -- --out /tmp/swimart/guests \
       [--edition TPW|TPI] [--sets BE,CH] [--part land,swim,pool,heads] [--slots walk,run] [--outfit clothes|swim] [--no-quantise] \
-      [--scale 2] [--supersample 4] [--dither 0.05]
+      [--scale 2] [--supersample 4] [--dither 0.05] [--emit-anchors]
 
 Output, per set: ``<out>/<edition>/<Folder>/<SET>/slot<NN>_d<d>_f<f>.png`` (RGBA, trimmed to the frame's content, the whole set
 quantised to one 255-colour palette) and ``set.json`` describing the set for the packer:
@@ -23,6 +23,12 @@ sprite covers the same world area with N times the detail) and writes ``"pixelsP
 into every frame's pixels-per-unit fields (``SpriteFrame.PixelsPerUnitX/Y``) and the game scales its quad by 128 / the field, so a 2x set
 is drawn at the same size as the 1x one. ``--part pool`` renders the swimwear table of the pools mod (``opentpw_pool_poses.POOL_SLOTS``: stand,
 walk, ladder, dive, lying, shower, slide, the three strokes, splash-down, spa sitting, ring floating, rope swing) into ``<out>/<edition>/Pool/<SET>/``.
+
+``--emit-anchors`` (umbrellas extension, docs/UMBRELLAS.md) additionally writes ``<out>/<edition>/anchors.json``: for every kid set and direction 0 to 4 the point where the
+kid's right hand (the rig's ``handEnd`` end point) lands in the land frames, in sprite pixels from the feet hotspot at the set's pixels per unit (x to the right, y down, so a hand above the
+feet has a negative y), for the standing frame (slot 0), every walking frame (slot 1) and the waiting frames (slot 14), plus the hand's height above the feet in Blender units. It is the same camera
+as the frames, so the numbers are exact by construction; nothing is rendered (``--part none --emit-anchors`` writes only the table, in seconds). Directions 5 to 7 are the mirror of 3 to 1 (the game flips the
+frame), so their hand x is the negated one.
 
 Slots: the original table's slots keep their numbers, frame counts and directions (see ``opentpw_guest_anims.py``); the swimmers
 take the free slots 8 (front crawl, 8 frames), 9 (breaststroke, 8) and 10 (treading water, 4), all with 5 directions. Heads
@@ -72,11 +78,12 @@ HEAD_MEMBER = {"BD": "Spr_bd", "GB": "Spr_gb"}      # the TPI kid heads of BD an
 
 def parse():
 	a = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
-	o = dict(out="/tmp/swimart/guests", edition="TPW", sets=None, part="land,swim,heads", slots=None, outfit="clothes", quantise=True, dither=None, scale=1, supersample=None)
+	o = dict(out="/tmp/swimart/guests", edition="TPW", sets=None, part="land,swim,heads", slots=None, outfit="clothes", quantise=True, dither=None, scale=1, supersample=None, emit_anchors=False)
 	i = 0
 	while i < len(a):
 		k = a[i]
 		if k == "--no-quantise": o["quantise"] = False; i += 1
+		elif k == "--emit-anchors": o["emit_anchors"] = True; i += 1
 		elif k in ("--out", "--edition", "--sets", "--part", "--slots", "--outfit", "--dither", "--scale", "--supersample"):
 			v = a[i + 1]
 			o[k[2:]] = v.split(",") if k in ("--sets", "--part", "--slots") else (float(v) if k == "--dither" else (int(v) if k in ("--scale", "--supersample") else v))
@@ -273,6 +280,48 @@ def render_heads(st, name, tmp):
 	return out
 
 
+ANCHOR_SLOTS = {0: "stand", 1: "walk", 14: "wait"}   # the land slots the umbrella follows: standing, walking, waiting in a queue
+ANCHOR_HAND = 1                                     # the rig's +X hand: the right hand of a kid facing +Y
+
+
+def hand_anchor(st, kid):
+	"""Where the hand end point of the current pose lands, from the feet hotspot (the world origin), in the frame's pixels at the stage's scale: (dx right, dy down)."""
+	rot = st.cam.matrix_world.to_3x3()
+	v = kid.ends[f"hand{ANCHOR_HAND}"].matrix_world.translation
+	right, up = rot @ mathutils.Vector((1, 0, 0)), rot @ mathutils.Vector((0, 1, 0))
+	return round(st.ppu * v.dot(right), 2), round(-st.ppu * v.dot(up), 2)
+
+
+def emit_anchors(st, names, edition, scale):
+	"""The hand anchors of the land kids (``stand``, ``walk`` and ``wait`` slots, five directions, every frame) of the given sets: the numbers of ``hand_anchor`` for the poses the
+	land frames use, nothing rendered. The table also names the camera, so a stale table is detectable."""
+	sets = {}
+	for name in names:
+		kid = K.build_kid(name, underwater=False, outfit="clothes")
+		per_slot = {}
+		height = None
+		for slot, slot_name, n in LAYOUT[name][2]:
+			if slot not in ANCHOR_SLOTS:
+				continue
+			fn = A.SLOT_POSES[slot_name]
+			frames = []
+			for f in range(n):
+				K.apply_pose(kid, fn(kid, f, n))
+				if slot == 0:
+					height = round(kid.ends[f"hand{ANCHOR_HAND}"].matrix_world.translation.z, 3)
+				row = []
+				for d in range(DIRECTIONS):
+					K.aim_camera(st, d)
+					row.append(list(hand_anchor(st, kid)))
+				frames.append(row)
+			per_slot[ANCHOR_SLOTS[slot]] = {"slot": slot, "frames": [[frames[f][d] for f in range(n)] for d in range(DIRECTIONS)]}
+		sets[name] = {"handHeight": height, **per_slot}
+		K.clear_kid(kid)
+	return {"schema": 1, "generator": "tools/blender/opentpw_guest_sprites.py --emit-anchors", "edition": edition, "pixelsPerUnit": 128 * scale, "scale": scale, "elevation": st.elevation,
+		"directions": DIRECTIONS, "hand": "right", "units": "pixels at pixelsPerUnit from the feet hotspot, x right and y down; handHeight in Blender units above the feet; directions 5 to 7 mirror 3 to 1 with x negated",
+		"sets": sets}
+
+
 def write_set(base, name, edition, folder, member, frames, slot_meta, quantise, dither, scale=1, folder_label=None):
 	"""Quantises (one palette for the set), trims and writes the frames and set.json."""
 	os.makedirs(base, exist_ok=True)
@@ -313,6 +362,15 @@ def main():
 	sets = o["sets"] or K.sets_of(edition)
 	tmp = os.path.join(o["out"], f"tmp-{os.getpid()}.png")
 	os.makedirs(o["out"], exist_ok=True)
+	if o["emit_anchors"]:
+		canvas, origin = LAND_CANVAS[edition]
+		st = K.setup_scene(canvas, origin, edition, scale=S)
+		anchors = emit_anchors(st, [name for name in sets if K.PRESETS[name]["edition"] == edition and LAYOUT[name][0] == "Kids"], edition, S)
+		os.makedirs(os.path.join(o["out"], edition.lower()), exist_ok=True)
+		with open(os.path.join(o["out"], edition.lower(), "anchors.json"), "w") as handle:
+			json.dump(anchors, handle, indent=1)
+			handle.write("\n")
+		print("anchors", len(anchors["sets"]), "sets", flush=True)
 	for name in sets:
 		folder, heads_folder, table = LAYOUT[name]
 		if "land" in o["part"] or "swim" in o["part"]:

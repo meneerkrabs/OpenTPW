@@ -187,3 +187,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_VERSION: ${{ needs.configure.outputs.version }}
         run: gh workflow run build.yml --repo "$GITHUB_REPOSITORY" --ref "$RELEASE_VERSION"
+      # Explicitly wake the train: workflow_run can be suppressed for a GITHUB_TOKEN-dispatched release.
+      # The train waits for this exact run to finish, then applies its normal fresh-main/CI/active-run gates.
+      - name: Reconsider green main after this release
+        if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && needs.configure.outputs.prerelease == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run release-train.yml --repo "$GITHUB_REPOSITORY" --ref main \
+            -f dry_run=false -f wait_for_release_run="$GITHUB_RUN_ID"

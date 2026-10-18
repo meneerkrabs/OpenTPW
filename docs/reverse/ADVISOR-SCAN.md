@@ -18,8 +18,8 @@ values are game data: the inventory stores the `TAG_SYSTEM.str` entry numbers an
 
 | Status | Messages | Meaning |
 | --- | ---: | --- |
-| wired | 171 | OpenTPW produces the message today |
-| ready | 62 | every input exists in OpenTPW (the inventory names the class or field); only the producer is missing |
+| wired | 202 | OpenTPW produces the message today |
+| ready | 31 | every input exists in OpenTPW (the inventory names the class or field); only the producer is missing |
 | blocked | 13 | an input is missing or approximated |
 | none | 105 | nothing to produce: 21 are scored by the scan but their callback is the constant-zero stub, 84 have no producer in `tp.exe` at all |
 
@@ -36,21 +36,22 @@ values are game data: the inventory stores the `TAG_SYSTEM.str` entry numbers an
 | Money | 8 | 0 | 0 | 0 | 8 |
 | Cleanliness | 8 | 0 | 0 | 0 | 8 |
 | Rides, shops, sideshows and features | 22 | 0 | 0 | 0 | 22 |
-| Queues and prices | 0 | 22 | 1 | 0 | 23 |
+| Queues and prices | 22 | 0 | 1 | 0 | 23 |
 | Guest mood and thoughts | 9 | 0 | 2 | 0 | 11 |
 | Staff | 63 | 0 | 6 | 0 | 69 |
-| Research | 10 | 9 | 0 | 0 | 19 |
+| Research | 19 | 0 | 0 | 0 | 19 |
 | Weather | 0 | 0 | 0 | 0 | 0 |
 | Challenges and golden tickets | 5 | 24 | 0 | 0 | 29 |
 | Tutorial and help | 43 | 2 | 3 | 37 | 85 |
 | Other | 3 | 5 | 1 | 68 | 77 |
-| Total | 171 | 62 | 13 | 105 | 351 |
+| Total | 202 | 31 | 13 | 105 | 351 |
 
 Weather has no message: no score callback reads weather or season state, no poster is a weather event, and no `TAG_SYSTEM.str` caption
-of the advisor mentions rain, storm or snow. The "about 91" messages with a producer: **171** produce advice today: 53 posted by game code (0, 323, 106, 128, 129, 33-57, 66, 68-70, 93-97,
-125-127, 133-136, 167, 234-237, 258, 271), 42 help messages of windows and tools OpenTPW has, and 76 scored by the ported scan (the money batch: 100-105 and 107, the 31 park
-callbacks of the rides, cleanliness and guest mood batches: 3-10, 60, 62, 71, 73-75, 77-79, 81, 82, 85-89, 145, 158, 159 and 259-262, and the 38 staff callbacks: 11, 13, 14, 18, 20, 23, 26, 28-32,
-108-112, 114-123, 144, 146-150, 169-172 and 263).
+of the advisor mentions rain, storm or snow. The "about 91" messages with a producer: **202** produce advice today: 53 posted by game code (0, 323, 106, 128, 129, 33-57, 66, 68-70, 93-97,
+125-127, 133-136, 167, 234-237, 258, 271), 42 help messages of windows and tools OpenTPW has, and 107 scored by the ported scan (the money batch: 100-105 and 107, the 31 park
+callbacks of the rides, cleanliness and guest mood batches: 3-10, 60, 62, 71, 73-75, 77-79, 81, 82, 85-89, 145, 158, 159 and 259-262, the 38 staff callbacks: 11, 13, 14, 18, 20, 23, 26, 28-32,
+108-112, 114-123, 144, 146-150, 169-172 and 263, and the 31 callbacks of the queues, prices and
+research batches: 15-17, 61, 63, 64, 72, 76, 80, 91, 92 and 238-257).
 `AutomaticAdvisor.GlobalTicketMovedMessage` posts 234-237 when a global golden ticket moves here, and `AdvisorTables` now defines them (the four rows
 `(234-237, "AwardMoved.Score")` in `EventScoreKeys`; their group 2 controls are read when the settings file has them). 66, 68, 69 and 258 are posted by the ride events
 (`AdvisorRideEvents`, see "Park callbacks").
@@ -127,16 +128,16 @@ Confidence: high = whole body read, medium = shape read and role inferred from t
 | `0x4C9960(role)`, `0x4C9A10` | staff of a role (thing model 4 mechanic, 5 handyman, 6 entertainer, 7 guard, 8 researcher) / all staff | high |
 | `0x4C9AA0`, `0x4C9B40(role)` | tired staff (`0x506680`) / staff with a patrol area set (`0x506EB0`) | high |
 | `0x4C9C00(role)` | mean training percent of a role | high |
-| `0x4C9E40`, `0x4C9E60`, `0x4C9ED0` | research counters: count, cost researched, total | medium |
+| `0x4C9E40`, `0x4C9E60`, `0x4C9ED0` | researchers waiting in the hiring pool of a type (`0x508380`), the researchers' ability summed by grade, the research capacity (`MaxResearchersInPark` x the best ability) | high |
 | `0x4C9EE0`, `0x4C9F90` | toilets (relief features, bit 1 of `+0x32`), closed toilets | high |
 | `0x4CA030`, `0x4CA0C0` | staff rooms (bit 2 of `+0x32`), closed staff rooms | high |
 | `0x4CA160`, `0x4CA220` | mean toilet filth (100 - condition `+0x44`), the worst toilet and its handle | high |
 | `0x4CA310`, `0x4CA3A0(pct)` | rides broken down (state 1) / rides broken or below a condition percent | high |
-| `0x4CA450`, `0x4CA4C0`, `0x4CA510`, `0x4CA570`, `0x4CA5D0` | object types available to build (rides, upgrades, shops, sideshows, features) | medium |
-| `0x4CA630`-`0x4CA690`, `0x503B30`, `0x503980` | research outstanding per category, research progress percent | medium |
+| `0x4CA450`, `0x4CA4C0`, `0x4CA510`, `0x4CA570`, `0x4CA5D0` | object types available to build (rides, shops, sideshows, features); `0x4CA4C0` counts the ride types with a researched upgrade level | high |
+| `0x4CA630`-`0x4CA690`, `0x503B30`, `0x503980` | unfinished research projects of a category (ride, shop, sideshow, feature), a category's research rate (share x staffing percent) | high |
 | `0x4CA740` | percent of buildable object types researched | medium |
 | `0x4CA7B0(kind)`, `0x4CA8E0(kind, level)`, `0x4CA9B0(kind)` | built types / built objects (level at least n) / closed objects of a kind (0 ride, 1 shop, 2 sideshow, 3 feature) | high |
-| `0x4CAAE0`-`0x4CC090` | the worst/best **value** and **satisfaction** of shops of a stock type (2 food, 3 restaurant, 4 drinks), of retail shops and of sideshows: a scan of attractions with more than 30 customers over their customer, walk-away and satisfaction rings, returning a 0-100 figure and the attraction's handle | medium |
+| `0x4CAAE0`-`0x4CC090` | the worst/best **value** and **satisfaction** of shops of a stock type (2 food, 3 restaurant, 4 drinks), of retail shops and of sideshows: a scan of attractions older than 30 days over their customer, walk-away and satisfaction rings, returning a figure and the attraction's handle (see "Queues, prices and research callbacks") | high |
 | `0x4CCA40`, `0x4CCB00`, `0x4CCBF0`, `0x4CCD10`, `0x4CCDF0` | a per-toilet mean (unresolved), unconnected queue test, mean and maximum ride fear (`0x4E0860`), litter points | medium/low |
 | `0x4CD500(role, mode)` | percent of path cells not covered by a staff role's patrol | medium |
 | `0x4D0260`, `0x4D0690`, `0x4D0810`, `0x4D0970`, `0x4D09A0`, `0x4D0A00`, `0x4D09F0` | months in the red, loans taken, a loan can be taken, repayment of a loan, the cheapest loan, total debt, year profit | high |
@@ -148,9 +149,9 @@ response is speech only. Texts are paraphrased.
 
 | Line | Message | Producer | Status |
 | --- | --- | --- | --- |
-| Prices are too high (food, shops, restaurant, drinks, sideshows) | 238-242 (responses 478-482, speech only, samples 506-510; the unreferenced `TAG_SYSTEM` texts 96 food, 100 shops, 102 restaurant, 99 drinks and 111 sideshows read as these lines) | scan, callbacks `0x59FB60`-`0x59FD20`: the worst value among the shops of a stock type with more than 30 customers falls below `<Type>PoorValue.ValueWorseThan`; score = (threshold - value) x `ScorePerPoint` | ready |
-| Satisfaction is poor (same five shops) | 243-247 (responses 483-487, speech only) | scan, `0x59FD90`-`0x59FF50`, same scan over the satisfaction ring | ready |
-| Ticket price too high / too cheap | 91 / 92 (caption 94 / 95) | scan, `0x59E730` / `0x59E790`: the category-0 price ring holds 50 values and its mean satisfaction is below `TicketSatisfactionUnder` / above `TicketSatisfactionOver` | ready (`ParkPriceStatistics` exists; check that the booth records category 0) |
+| Prices are too high (food, shops, restaurant, drinks, sideshows) | 238-242 (responses 478-482, speech only, samples 506-510; the unreferenced `TAG_SYSTEM` texts 96 food, 100 shops, 102 restaurant, 99 drinks and 111 sideshows read as these lines) | scan, callbacks `0x59FB60`-`0x59FD20`: the lowest value among the attractions of the group older than 30 days (walk-aways x 100 / customers) falls below `<Type>PoorValue.ValueWorseThan`; score = (value - threshold) x `ScorePerPoint`, negative for a positive multiplier, so the line never passes | wired (never passes) |
+| Satisfaction is poor (same five shops) | 243-247 (responses 483-487, speech only) | scan, `0x59FD90`-`0x59FF50`, the same scan over the satisfaction ring; 247 calls the sideshow value helper; the score is negative as above | wired (never passes) |
+| Ticket price too high / too cheap | 91 / 92 (caption 94 / 95) | scan, `0x59E730` / `0x59E790`: perception ring 0 (the booth verdict's opinion of the entrance fee, `0x4FF5B0`) holds 50 values and its mean is below `TicketSatisfactionUnder` / above `TicketSatisfactionOver` | wired |
 | Queues are too long | 58 (caption 63: bored in long queues) and 59 (caption 64: reduce ride duration) | the scan reaches them but both callbacks are `0x5D60C0` (constant 0) and nothing posts them: **dead in v2.0**. The only queue line that can play is 113 (a queue not connected to a path, caption 134, `0x59EF60`, blocked: `queueLinks`) | none / blocked |
 | The park is dirty | 8, 9, 10 (captions 14, 15, 16) for litter without enough handymen; 86-89 (captions 89-92) for dirty toilets | scan, `0x59CB40`, `0x59CBB0`, `0x59CC20` (litter points, developed cells per handyman) and `0x59E450`-`0x59E680` (mean toilet filth in four bands, with and without cleaners) | wired |
 | Guests' thoughts | 3 thirsty (caption 9), 4 hungry (10), 82 no toilets (86), 141 too scared (159), 14 entertainers needed (20), 145 visitors happy (no caption) | scan; the advisor reads the guests' **need meters** (thirst, hunger, toilet, happiness bytes), not the thought ids of `THOUGHTS.str` (those feed the park window's Top 3 Thoughts only) | wired (141 blocked: `rideFear`) |
@@ -217,7 +218,44 @@ Event posts: **66** is raised by the wear step (`ParkEconomy.Wear`, `ParkEventKi
 `+0x250` and `+0x578` (`RideCondemned.Score`, added to `EventScoreKeys`).
 
 Tests: `AdvisorScanParkTests` (each callback at its thresholds over hand-built states, the real queue through a whole scan pass, the statistics over a real `ParkEconomy`, the guest bridge, the ride
-events) and `AdvisorProducerInventoryTests` (every ported callback is "wired"). 117 scanned callbacks remain unported (21 constant-zero stubs, 96 computed).
+events) and `AdvisorProducerInventoryTests` (every ported callback is "wired"). 117 scanned callbacks remained unported then (21 constant-zero stubs, 96 computed); the queues, prices and research batch ported 31 of the 96, so, with the 38 staff callbacks, 27 computed ones remain.
+
+## Queues, prices and research callbacks
+
+Ported by `AdvisorQueuesCallbacks` (`source/OpenTPW/World/AdvisorScanQueues.cs`) over `IAdvisorParkState` and the new `IAdvisorQueuesState`, which `EconomyParkState` also implements (a partial class; the scan reaches it
+through the park state it already gets). 31 callbacks: the researchers 15, 16, 17; research more 61, 72, 76, 80; upgrades 63, 64; the ticket price 91, 92; the shop value and satisfaction lines 238-257. Their thresholds
+are words of the `Advisor.sam` object (`AdvisorQueuesCallbacks.IntegerKeys`, added to `AdvisorScan.IntegerParameterKeys`); a key the file lacks, or a park state without the queues view, leaves a callback at 0.
+
+| Helper | OpenTPW | Reading |
+| --- | --- | --- |
+| `0x4C9830`, `0x4C9920` | `ParkPriceStatistics` (`PriceRingMean`, `PriceRingHoldsFifty`) | the integer mean (truncated, a byte) of a ring's held values; 50 held values |
+| `0x4FF5B0` | `BoothVerdict.Opinion`, recorded by `GuestSimulation.PayAdmission` | the booth verdict records the byte of `PeepInfo.OpinionForMuchTooHigh`, `OpinionForTooHigh`, `OpinionForTooLow` or `OpinionForAboutRight` (`0x7850CC`-`0x7850D8`, key records `0x740430`-`0x7404E4`) in category 0 of the park's perception rings for the verdicts far too expensive, expensive, cheap and fair; the early fair exit (a park value and a fee both at or below the minimum entry fee) records nothing |
+| `0x4CADF0`, `0x4CB640`, `0x4CC090` | `WorstValue` | the attractions of the group (`UsageInfo.ShopType` 2, 3, 4; 1, 5 or 6 for the retail shops; type kind 2 for the sideshows) older than 30 days (`0x4DD670`: the clock less the build time, in days) whose customers ring (`+0x1A8`) sums to more than 0: the sum of the walk-away ring (`+0x230`) x 100 / that sum, unsigned; the lowest, the first of equals, and its handle |
+| `0x4CAAE0`, `0x4CB300`, `0x4CBBA0` | `BestValue` | the same value, the highest |
+| `0x4CB200`, `0x4CBA90`, `0x4CB100`, `0x4CB980`, `0x4CBEC0` | `WorstSatisfaction`, `BestSatisfaction` | 50 plus the mean of the satisfaction ring (`0x4E1E30`) of the group's attractions older than 30 days, the lowest or the highest; the sideshows' best (`0x4CBEC0`) also needs a customers sum above 0 |
+| `0x503B30`, `0x4CA630`-`0x4CA690` | `ResearchOutstanding` | the lab's projects of a category (ride, shop, sideshow, feature) that are not finished |
+| `0x503980` | `ResearchRate` | a category's share of the research (`ResearchFluid.Rate` without the lab's current-project test) |
+| `0x4C9E40(4)`, `0x508380` | `ResearcherCandidates` | the valid slots of the 32-slot hiring pool whose type is 4 (`StaffType.Researcher`) |
+| `0x4C9E60`, `0x4C9ED0` | `ResearchDone`, `ResearchCapacity` | the researchers' ability summed by grade; `MaxResearchersInPark` x the best grade's ability |
+| `0x4CA4C0` | `ResearchedUpgradeTypes` | the ride types whose control's researched level (`+0x14`) is above 0, a ride type without upgrade rows counting once its base is researched (`ParkResearch.ResearchedLevel`) |
+
+What reading the bytes corrected from the first mapping (the tables carry the corrected formulas):
+
+- The shop figures count only attractions **older than 30 days**, not shops with more than 30 customers: `0x4DD670` returns the age in days. The value helpers also skip an attraction whose customers sum is 0.
+- The "value" is the **walk-aways x 100 / customers** over the 30-day rings, so a higher figure means more refusals; the callbacks compare it as if higher were better.
+- Every callback scores **(figure - threshold) x ScorePerPoint** with the figure first. For the great lines (figure above the threshold) that is positive; for the poor lines (figure below it) it is **negative for a positive `ScorePerPoint`**, which the shipped file has, so
+  the ten poor lines can never pass `MinScoreForConsideration` and are "wired" as ports of callbacks that never pass. With a negative multiplier they would speak.
+- 247 (sideshows, poor satisfaction) calls the sideshow **value** helper `0x4CC090`, as 242 does; the other four poor satisfaction lines call a satisfaction helper.
+- Each shop callback also keeps the picked handle (word `+4` of the object) and figure (`+8`); `0x59B590` copies them into the queued advice through `0x59C0A0`. OpenTPW has no reader of the handle (the lines are speech only).
+- 91 and 92 read ring **0**, which neither the price test `0x4FDE50` (rings 1-4, 6, 7, 9) nor the guest happiness recorder `0x4FD970` writes: only the booth verdict `0x4FF5B0` does. OpenTPW's booth now records it
+  (`PeepInfo.OpinionFor*`, read into `GuestSettings` only when the file has the keys), so the ring fills as the original's does.
+- 15 needs **no** researcher and every other research line needs one; 16 has no test for 0 available ride types where 15 has; 61, 72, 76 and 80 test **no park-open state**; 80 (features) is the only one of the four that does not test the research rate.
+- 17 needs a researcher hired **and** one waiting in the hiring pool, the clock's months at least `MonthsIntoGameForConsideration`, and the research done x 100 / the research capacity (unsigned) below `SlowerThan`.
+- 63 and 64 test the upgrade research rate (`0x503980` of 4) for 0 and the upgraded ride types (`0x4CA4C0`): none for 63, above 0 and at most `LessAvailableThan` for 64.
+- 61, 63, 64, 72, 76 and 80 are game-mode selector 0 (the full simulation only); 15, 16, 17, 91, 92 and 238-257 always.
+
+Tests: `AdvisorScanQueuesTests` (each callback below, at and above its thresholds over hand-built states, the real queue through a whole scan pass, the statistics over a real `ParkEconomy`, the booth's opinion bytes) and
+`AdvisorProducerInventoryTests` (every ported callback is "wired").
 
 ## Cleanliness
 
@@ -263,29 +301,29 @@ events) and `AdvisorProducerInventoryTests` (every ported callback is "wired"). 
 
 | Msg | Status | Producer | Condition and score | TAG_SYSTEM caption |
 | ---: | --- | --- | --- | --- |
-| 91 | ready | cb 0x59E730 | ticket price ring (category 0, 0x4C9830) holds 50 values (0x4C9920) and its mean satisfaction is below TicketSatisfactionUnder: flat PricingTicketTooExpensive.Score | 94 |
-| 92 | ready | cb 0x59E790 | same ring, mean satisfaction above TicketSatisfactionOver: flat PricingTicketTooCheap.Score | 95 |
+| 91 | wired | cb 0x59E730 | perception ring 0 (the booth's opinion of the entrance fee: 0x4FF5B0 records the PeepInfo.OpinionFor* byte of its verdict) holds 50 values (0x4C9920) and its mean (0x4C9830, a byte) is below TicketSatisfactionUnder: flat PricingTicketTooExpensive.Score | 94 |
+| 92 | wired | cb 0x59E790 | same ring, mean above TicketSatisfactionOver: flat PricingTicketTooCheap.Score | 95 |
 | 113 | blocked | cb 0x59EF60 | a queue that no path reaches (0x4CCB00): flat QueueUnconnected.Score | 134 |
-| 238 | ready | cb 0x59FB60 | Food: the worst value (customers/walk-away rings, 0x4CADF0 style scan of shops with more than 30 customers) below ValueWorseThan: (ValueWorseThan - value) x ScorePerPoint (the price is too high for the quality) | speech only |
-| 239 | ready | cb 0x59FBD0 | Shops: the worst value (customers/walk-away rings, 0x4CADF0 style scan of shops with more than 30 customers) below ValueWorseThan: (ValueWorseThan - value) x ScorePerPoint (the price is too high for the quality) | speech only |
-| 240 | ready | cb 0x59FC40 | Restaurant: the worst value (customers/walk-away rings, 0x4CADF0 style scan of shops with more than 30 customers) below ValueWorseThan: (ValueWorseThan - value) x ScorePerPoint (the price is too high for the quality) | speech only |
-| 241 | ready | cb 0x59FCB0 | Drinks: the worst value (customers/walk-away rings, 0x4CADF0 style scan of shops with more than 30 customers) below ValueWorseThan: (ValueWorseThan - value) x ScorePerPoint (the price is too high for the quality) | speech only |
-| 242 | ready | cb 0x59FD20 | Sideshows: the worst value (customers/walk-away rings, 0x4CADF0 style scan of shops with more than 30 customers) below ValueWorseThan: (ValueWorseThan - value) x ScorePerPoint (the price is too high for the quality) | speech only |
-| 243 | ready | cb 0x59FD90 | Food: the worst satisfaction (0x4CB200 style scan, SatisfactionRing) below SatisfactionWorseThan: (threshold - value) x ScorePerPoint | speech only |
-| 244 | ready | cb 0x59FE00 | Shops: the worst satisfaction (0x4CB200 style scan, SatisfactionRing) below SatisfactionWorseThan: (threshold - value) x ScorePerPoint | speech only |
-| 245 | ready | cb 0x59FE70 | Restaurant: the worst satisfaction (0x4CB200 style scan, SatisfactionRing) below SatisfactionWorseThan: (threshold - value) x ScorePerPoint | speech only |
-| 246 | ready | cb 0x59FEE0 | Drinks: the worst satisfaction (0x4CB200 style scan, SatisfactionRing) below SatisfactionWorseThan: (threshold - value) x ScorePerPoint | speech only |
-| 247 | ready | cb 0x59FF50 | Sideshows: the worst satisfaction (0x4CB200 style scan, SatisfactionRing) below SatisfactionWorseThan: (threshold - value) x ScorePerPoint | speech only |
-| 248 | ready | cb 0x59FFC0 | Food: the best value above ValueBetterThan: (value - threshold) x ScorePerPoint (praise for a fair price) | speech only |
-| 249 | ready | cb 0x5A0010 | Shops: the best value above ValueBetterThan: (value - threshold) x ScorePerPoint (praise for a fair price) | speech only |
-| 250 | ready | cb 0x5A0060 | Restaurant: the best value above ValueBetterThan: (value - threshold) x ScorePerPoint (praise for a fair price) | speech only |
-| 251 | ready | cb 0x5A00B0 | Drinks: the best value above ValueBetterThan: (value - threshold) x ScorePerPoint (praise for a fair price) | speech only |
-| 252 | ready | cb 0x5A0100 | Sideshows: the best value above ValueBetterThan: (value - threshold) x ScorePerPoint (praise for a fair price) | speech only |
-| 253 | ready | cb 0x5A0150 | Food: the best satisfaction above SatisfactionBetterThan: (value - threshold) x ScorePerPoint | speech only |
-| 254 | ready | cb 0x5A01A0 | Shops: the best satisfaction above SatisfactionBetterThan: (value - threshold) x ScorePerPoint | speech only |
-| 255 | ready | cb 0x5A01F0 | Restaurant: the best satisfaction above SatisfactionBetterThan: (value - threshold) x ScorePerPoint | speech only |
-| 256 | ready | cb 0x5A0240 | Drinks: the best satisfaction above SatisfactionBetterThan: (value - threshold) x ScorePerPoint | speech only |
-| 257 | ready | cb 0x5A0290 | Sideshows: the best satisfaction above SatisfactionBetterThan: (value - threshold) x ScorePerPoint | speech only |
+| 238 | wired | cb 0x59FB60 | Food: the lowest value (walk-aways of the 30-day ring x 100 / customers of the customers ring, 0x4CADF0) among attractions older than 30 days with customers, below ValueWorseThan: (value - ValueWorseThan) x ScorePerPoint, value first, so negative for a positive ScorePerPoint and never passing | speech only |
+| 239 | wired | cb 0x59FBD0 | Shops: the lowest value (walk-aways of the 30-day ring x 100 / customers of the customers ring, 0x4CB640) among attractions older than 30 days with customers, below ValueWorseThan: (value - ValueWorseThan) x ScorePerPoint, value first, so negative for a positive ScorePerPoint and never passing | speech only |
+| 240 | wired | cb 0x59FC40 | Restaurant: the lowest value (walk-aways of the 30-day ring x 100 / customers of the customers ring, 0x4CADF0) among attractions older than 30 days with customers, below ValueWorseThan: (value - ValueWorseThan) x ScorePerPoint, value first, so negative for a positive ScorePerPoint and never passing | speech only |
+| 241 | wired | cb 0x59FCB0 | Drinks: the lowest value (walk-aways of the 30-day ring x 100 / customers of the customers ring, 0x4CADF0) among attractions older than 30 days with customers, below ValueWorseThan: (value - ValueWorseThan) x ScorePerPoint, value first, so negative for a positive ScorePerPoint and never passing | speech only |
+| 242 | wired | cb 0x59FD20 | Sideshows: the lowest value (walk-aways of the 30-day ring x 100 / customers of the customers ring, 0x4CC090) among attractions older than 30 days with customers, below ValueWorseThan: (value - ValueWorseThan) x ScorePerPoint, value first, so negative for a positive ScorePerPoint and never passing | speech only |
+| 243 | wired | cb 0x59FD90 | Food: the lowest satisfaction (0x4CB200, 50 + mean of the satisfaction ring) among attractions older than 30 days, below SatisfactionWorseThan: (satisfaction - threshold) x ScorePerPoint, negative for a positive ScorePerPoint | speech only |
+| 244 | wired | cb 0x59FE00 | Shops: the lowest satisfaction (0x4CBA90, 50 + mean of the satisfaction ring) among attractions older than 30 days, below SatisfactionWorseThan: (satisfaction - threshold) x ScorePerPoint, negative for a positive ScorePerPoint | speech only |
+| 245 | wired | cb 0x59FE70 | Restaurant: the lowest satisfaction (0x4CB200, 50 + mean of the satisfaction ring) among attractions older than 30 days, below SatisfactionWorseThan: (satisfaction - threshold) x ScorePerPoint, negative for a positive ScorePerPoint | speech only |
+| 246 | wired | cb 0x59FEE0 | Drinks: the lowest satisfaction (0x4CB200, 50 + mean of the satisfaction ring) among attractions older than 30 days, below SatisfactionWorseThan: (satisfaction - threshold) x ScorePerPoint, negative for a positive ScorePerPoint | speech only |
+| 247 | wired | cb 0x59FF50 | Sideshows: calls the sideshow value helper 0x4CC090 as 242 does, not a satisfaction helper; the lowest value below SatisfactionWorseThan: (value - threshold) x ScorePerPoint, negative for a positive ScorePerPoint | speech only |
+| 248 | wired | cb 0x59FFC0 | Food: the highest value (0x4CAAE0) among attractions older than 30 days with customers, above ValueBetterThan: (value - ValueBetterThan) x ScorePerPoint | speech only |
+| 249 | wired | cb 0x5A0010 | Shops: the highest value (0x4CB300) among attractions older than 30 days with customers, above ValueBetterThan: (value - ValueBetterThan) x ScorePerPoint | speech only |
+| 250 | wired | cb 0x5A0060 | Restaurant: the highest value (0x4CAAE0) among attractions older than 30 days with customers, above ValueBetterThan: (value - ValueBetterThan) x ScorePerPoint | speech only |
+| 251 | wired | cb 0x5A00B0 | Drinks: the highest value (0x4CAAE0) among attractions older than 30 days with customers, above ValueBetterThan: (value - ValueBetterThan) x ScorePerPoint | speech only |
+| 252 | wired | cb 0x5A0100 | Sideshows: the highest value (0x4CBBA0) among attractions older than 30 days with customers, above ValueBetterThan: (value - ValueBetterThan) x ScorePerPoint | speech only |
+| 253 | wired | cb 0x5A0150 | Food: the highest satisfaction (0x4CB100, 50 + mean of the satisfaction ring) among attractions older than 30 days, above SatisfactionBetterThan: (satisfaction - threshold) x ScorePerPoint | speech only |
+| 254 | wired | cb 0x5A01A0 | Shops: the highest satisfaction (0x4CB980, 50 + mean of the satisfaction ring) among attractions older than 30 days, above SatisfactionBetterThan: (satisfaction - threshold) x ScorePerPoint | speech only |
+| 255 | wired | cb 0x5A01F0 | Restaurant: the highest satisfaction (0x4CB100, 50 + mean of the satisfaction ring) among attractions older than 30 days, above SatisfactionBetterThan: (satisfaction - threshold) x ScorePerPoint | speech only |
+| 256 | wired | cb 0x5A0240 | Drinks: the highest satisfaction (0x4CB100, 50 + mean of the satisfaction ring) among attractions older than 30 days, above SatisfactionBetterThan: (satisfaction - threshold) x ScorePerPoint | speech only |
+| 257 | wired | cb 0x5A0290 | Sideshows: the highest satisfaction (0x4CBEC0) among sideshows older than 30 days with customers, above SatisfactionBetterThan: (satisfaction - threshold) x ScorePerPoint | speech only |
 
 ## Guest mood and thoughts
 
@@ -402,15 +440,15 @@ bit 2 of `+0x32`) whose open word is 0. The coverage rows (19, 21, 27) and the p
 
 | Msg | Status | Producer | Condition and score | TAG_SYSTEM caption |
 | ---: | --- | --- | --- | --- |
-| 15 | ready | cb 0x59CEA0 | park open, no researcher, ride research outstanding, built ride types x 100 / available ride types above StaffHireResearchers1.Most: excess x PointsPerExtraPct | 21 |
-| 16 | ready | cb 0x59CF50 | park open, no researcher, ride research outstanding, every available ride type already built: flat StaffHireResearchers2.Score | 22 |
-| 17 | ready | cb 0x59CFE0 | park open, a researcher exists, months into the game >= MonthsIntoGameForConsideration, research cost done (0x4C9E60) x 100 / total below SlowerThan: flat StaffHireResearchers3.Score | 23 |
-| 61 | ready | cb 0x59DA30 | a researcher, a ride built, ride research outstanding, research progress (0x503980) low, every available ride type built: flat RidesResearchMore.Score | 66 |
-| 63 | ready | cb 0x59DB40 | months >= threshold, a researcher, no ride upgrade available (0x4CA4C0), upgrade research progress low: flat RidesNoUpgrades.Score | 68 |
-| 64 | ready | cb 0x59DBF0 | a researcher, upgrades available > 0 but <= LessAvailableThan, upgrade research progress low: flat RidesMoreUpgrades.Score | 69 |
-| 72 | ready | cb 0x59DD40 | a researcher, a ride built, shop research outstanding and low, every available shop type built: flat Score | 76 |
-| 76 | ready | cb 0x59DFD0 | a researcher, a ride built, sideshow research outstanding and low, every available sideshow type built: flat Score | 80 |
-| 80 | ready | cb 0x59E260 | a researcher, a ride built, feature research outstanding and low, every available feature type built: flat Score | 84 |
+| 15 | wired | cb 0x59CEA0 | park open, no researcher (0x4C9960 of 8), ride research outstanding (0x4CA630), ride types available (0x4CA450) above 0 and not all built (0x4CA7B0), built x 100 / available (signed) above StaffHireResearchers1.Most: excess x PointsPerExtraPct | 21 |
+| 16 | wired | cb 0x59CF50 | park open, no researcher, ride research outstanding, built ride types equal to the available ones (no zero test): flat StaffHireResearchers2.Score | 22 |
+| 17 | wired | cb 0x59CFE0 | park open, research total (0x4C9ED0) above 0, months into the game >= MonthsIntoGameForConsideration, a researcher hired and one waiting in the hiring pool (0x4C9E40 of 4), research done (0x4C9E60) x 100 / total (unsigned) below SlowerThan: flat StaffHireResearchers3.Score | 23 |
+| 61 | wired | cb 0x59DA30 | a researcher hired, a ride type built (0x4CA7B0), ride research outstanding, ride research rate (0x503980 of 0) 0, built ride types equal to the available ones: flat RidesResearchMore.Score; no park-open test | 66 |
+| 63 | wired | cb 0x59DB40 | months into the game >= MonthsIntoGameForConsideration, a researcher hired, no ride type with a researched upgrade level (0x4CA4C0), upgrade research rate (0x503980 of 4) 0: flat RidesNoUpgrades.Score | 68 |
+| 64 | wired | cb 0x59DBF0 | a researcher hired, ride types with a researched upgrade level (0x4CA4C0) above 0 and not above LessAvailableThan, upgrade research rate 0: flat RidesMoreUpgrades.Score | 69 |
+| 72 | wired | cb 0x59DD40 | a researcher hired, a shop type built, shop research outstanding (0x4CA650), shop research rate 0, built shop types equal to the available ones (0x4CA510): flat ShopsResearchMore.Score; no park-open test | 76 |
+| 76 | wired | cb 0x59DFD0 | a researcher hired, a sideshow type built, sideshow research outstanding (0x4CA670), sideshow research rate 0, built sideshow types equal to the available ones (0x4CA570): flat SideshowsResearchMore.Score | 80 |
+| 80 | wired | cb 0x59E260 | a researcher hired, a feature type built, feature research outstanding (0x4CA690), built feature types equal to the available ones (0x4CA5D0): flat FeaturesResearchMore.Score; the only one of the four with no research rate test | 84 |
 | 93 | wired | CMsgResearchCompleted (type 0x11) sent by 0x504630; 0x59B060 posts 93-97 by category (0x59B0E6-0x59B1CE) | ride 93, add-on 94, shop 95, sideshow 96, feature 97 | 114 |
 | 94 | wired | CMsgResearchCompleted (type 0x11) sent by 0x504630; 0x59B060 posts 93-97 by category (0x59B0E6-0x59B1CE) | ride 93, add-on 94, shop 95, sideshow 96, feature 97 | 115 |
 | 95 | wired | CMsgResearchCompleted (type 0x11) sent by 0x504630; 0x59B060 posts 93-97 by category (0x59B0E6-0x59B1CE) | ride 93, add-on 94, shop 95, sideshow 96, feature 97 | 116 |
@@ -574,7 +612,7 @@ stranded-people and condemned keys); else the extension's own constant, document
 ## Confidence and open points
 
 - Every address and callback was read from the bytes of `tp.exe`; the polarity of the gates (a jump over a `ret 0` or into it) was checked against the
-  captions. Formulas are readings of the instruction sequence; the exact per-shop value of `0x4CAAE0`-`0x4CC090`, the coverage `0x4CD500` still needs a line-by-line port from the bytes before it is implemented (`0x4CCA40` is computed and discarded by 85; the litter points `0x4CCDF0` and the other helpers below are ported).
+  captions. Formulas are readings of the instruction sequence; the coverage `0x4CD500` still needs a line-by-line port from the bytes before it is implemented (`0x4CCA40` is computed and discarded by 85; the litter points `0x4CCDF0` and the other helpers below are ported).
 - The poster search lists every caller of `0x59B590`, `0x59A940`, `0x486B00` and the seven bus message types the controller registers
   (5, 8, 14, 17, 19, 23, 25 - `0x59B060` dispatch table). The constant-id scan inside the posting functions agrees; an id computed at run time
   from a table would not show up, so "no producer" means "no producer found".
@@ -589,7 +627,7 @@ stranded-people and condemned keys); else the extension's own constant, document
 3. **Rides and breakdowns** (5, 6, 7, 60, 62, 66, 68, 69, 71, 73-75, 77-79, 81, 85, 258-261): done (see "Park callbacks"); 70 was already wired.
 4. **Cleanliness** (8, 9, 10, 86-89, 262): done.
 5. **Guest mood** (3, 4, 82, 145, 158, 159): done (the census members are on `IParkGuestStatistics`); 141 and 264 stay blocked.
-6. **Staff** (11, 13, 14, 18, 20, 23, 26, 28-32, 108-112, 114-123, 144, 146-150, 169-172, 263): done (see "Staff callbacks"); **research** (15-17, 61, 63, 64, 72, 76, 80) is next.
-7. **Prices** (91, 92, then 238-257): the price ring exists; the shop value and satisfaction scans need the line-by-line port.
+6. **Staff** (11, 13, 14, 18, 20, 23, 26, 28-32, 108-112, 114-123, 144, 146-150, 169-172, 263): done (see "Staff callbacks"); **research** (15-17, 61, 63, 64, 72, 76, 80): done (see "Queues, prices and research callbacks").
+7. **Prices** (91, 92, then 238-257): done (see "Queues, prices and research callbacks"); the booth fills ring 0.
 8. **Challenges and golden tickets** (270, 272, 273, 215-229, 311, 315, 274-281, 314-318).
 9. **Blocked**: coverage (19, 21, 27), pranks (12, 22, 98, 264), queue links (113), ride fear (141), arrivals (140), and the three help windows.

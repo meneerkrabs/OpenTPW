@@ -1387,9 +1387,15 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	private void PayAdmission( Guest guest )
 	{
 		// the verdict's draw is the host's, taken first; the decision layer weighs the fee (BoothVerdict.Decide in the original)
-		var verdict = decisions.DecideBooth( ContextNow(), ViewOf( guest ), new BoothView( (uint)Math.Max( 0, ParkPoints?.Invoke() ?? 0 ), (uint)Math.Max( 0, AdmissionFee ), random.NextWord(), OpenAttractionCount() ) ).Verdict;
+		var boothContext = ContextNow();
+		var boothGuest = ViewOf( guest );
+		var booth = new BoothView( (uint)Math.Max( 0, ParkPoints?.Invoke() ?? 0 ), (uint)Math.Max( 0, AdmissionFee ), random.NextWord(), OpenAttractionCount() );
+		var verdict = decisions.DecideBooth( boothContext, boothGuest, booth ).Verdict;
 		if ( !Enum.IsDefined( verdict ) )
 			throw PolicyError( $"returned the booth verdict {(int)verdict}" );
+		// [BIN:TPW-EXE:0x004FF5B0 booth opinion] every verdict but the fair one of a park value and a fee both at or below the minimum records the opinion byte of its band in the park's perception ring 0, which the advisor's ticket price lines read
+		if ( Payments != null && BoothVerdict.Opinion( verdict, Settings ) is { } opinion && BoothVerdict.RecordsOpinion( BoothVerdict.ParkValue( booth.ParkPoints, booth.Draw, Settings ), booth.Fee, Settings ) )
+			Payments.PriceTested( BoothVerdict.OpinionCategory, opinion );
 		if ( verdict == BoothVerdictKind.FarTooExpensive )
 		{
 			Think( guest, GuestThought.Dissatisfied );

@@ -700,12 +700,22 @@ public sealed class BumpController
 		return true;
 	}
 
+	/// <summary>
+	/// Which seats of a vehicle variant's mesh have a head dummy (seat k - 1 holds rider k), set by the host from the model so the loading beams do not wait for a draw;
+	/// null where no host resolves meshes (a host that never loads the model, such as a bare simulation).
+	/// </summary>
+	public Func<int, bool[]?>? SeatHeadSource { get; set; }
+
 	/// <summary>One beam (particle 19) for each of the first <paramref name="count"/> riders of <paramref name="vehicle"/> whose seat has a head dummy.</summary>
+	// [BIN:TPW-EXE:0x00549C60 beam flag] the beam is raised only for a rider whose head dummy handle is not -1; where the dummies are not known (no model resolved, no draw yet) no rider is assumed seated, so no beam is raised
 	private void RaiseRiderBeams( BumpVehicle vehicle, int count )
 	{
+		var seats = vehicle.SeatHeads ?? SeatHeadSource?.Invoke( vehicle.Variant );
+		if ( seats == null )
+			return;
 		for ( var seat = 0; seat < count; seat++ )
 		{
-			if ( vehicle.SeatHeads is { } seats && (seat >= seats.Length || !seats[seat]) )
+			if ( seat >= seats.Length || !seats[seat] )
 				continue;
 			Raise( BumpEffectKind.Particle, vehicle, BumpEffects.ParticleBeamUp );
 		}

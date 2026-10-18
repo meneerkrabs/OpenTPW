@@ -14,6 +14,35 @@ export function supported(storage = globalThis.navigator?.storage, fileHandle = 
 	return typeof storage?.getDirectory === 'function' && typeof fileHandle?.prototype?.createWritable === 'function';
 }
 
+/**
+ * Claims the right to keep files for this page: one tab at a time may (a Web Lock held until `release()`), because tabs share the
+ * store and two of them could otherwise mix two installations. `acquired` is false when another tab holds it or locks are
+ * unavailable; `release()` lets another tab claim it (a page that has stopped must not keep it for as long as it stays open).
+ */
+export async function claimKeeping(locks = globalThis.navigator?.locks, name = 'opentpw-originals') {
+	let release = () => {};
+	if (!locks)
+		return { acquired: false, release: () => {}, unavailable: true };
+	const acquired = await new Promise(resolve => {
+		let request;
+		try {
+			request = locks.request(name, { ifAvailable: true }, lock => {
+				resolve(lock !== null);
+				return lock ? new Promise(done => release = done) : undefined;
+			});
+		} catch (error) {
+			console.warn('The lock for the kept game files is not available', error);
+			resolve(false);
+			return;
+		}
+		Promise.resolve(request).catch(error => {
+			console.warn('The lock for the kept game files is not available', error);
+			resolve(false);
+		});
+	});
+	return { acquired, release: () => release(), unavailable: false };
+}
+
 async function sha256(bytes) {
 	const digest = await crypto.subtle.digest('SHA-256', bytes);
 	return [...new Uint8Array(digest)].map(value => value.toString(16).padStart(2, '0')).join('');

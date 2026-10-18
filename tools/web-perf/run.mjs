@@ -36,7 +36,7 @@ const SELECTIONS = [['Rides', 'Belly Bounce'], ['Shops', 'Balloon Shop'], ['Shop
 function parseArguments(argv) {
 	const options = {
 		web: null, game: null, label: 'unlabelled', out: null, chrome: process.env.CHROME ?? DEFAULT_CHROME, headed: false,
-		scenarios: ['start', 'lobby', 'jungle', 'buy', 'digest'], window: 30, memoryMinutes: 10, music: false, width: 1280, height: 900, runs: 1, frameCap: 0, keep: 'off', zoom: null, shot: null,
+		scenarios: ['start', 'lobby', 'jungle', 'buy', 'digest'], window: 30, memoryMinutes: 10, music: false, width: 1280, height: 900, runs: 1, frameCap: 0, keep: 'off', zoom: null, shot: null, evening: null,
 	};
 	for (let index = 2; index < argv.length; index++) {
 		const [flag, inline] = argv[index].split(/=(.*)/s);
@@ -58,6 +58,7 @@ function parseArguments(argv) {
 			case '--keep': options.keep = value(); break;
 			case '--zoom': options.zoom = Number(value()); break;
 			case '--shot': options.shot = value(); break;
+			case '--evening': options.evening = value(); break;
 			case '--help': case '-h': console.log(usage()); process.exit(0);
 			default: throw new Error(`Unknown option ${flag}\n${usage()}`);
 		}
@@ -80,6 +81,7 @@ function usage() {
   --size <w>x<h>          window size (default 1280x900)
   --shot <file>           umbrellas: where the screenshot goes
   --zoom <value>          jungle: after the steady window, hold the park camera at this zoom value (40..300 with the wide zoom option) and measure a second window
+  --evening <mode>        jungle: after the steady window, hold the evening look (night, dusk, day) or switch the extension off, and measure a second window
   --keep <mode>           keep the game files in the browser on the first visit: lazy, all or off (default off)
   --frame-cap <fps>       the display settings' frame cap (0 off, 30, 60; default 0)
   --runs <n>              repeat the whole session n times, each in a fresh profile, and report the medians (default 1)
@@ -256,13 +258,22 @@ const scenarios = {
 		cold.profile = JSON.parse(await page.eval('opentpwPerf.program.PerfLoadProfile()'));
 		await page.eval('opentpwPerf.program.PerfProfile(false)');
 		const steady = await page.steady(options.window * 1000);
+		const result = { cold, steady };
+		// [evening] the same park with the evening extension held at night, dusk or day, or switched off (night, dusk, day, off), measured in a second window
+		if (options.evening != null) {
+			const accepted = await page.eval(`opentpwPerf.program.PerfEvening(${JSON.stringify(options.evening)})`);
+			if (!accepted)
+				throw new Error(`--evening expects night, dusk, day, off or on, not ${options.evening}`);
+			await sleep(2000);
+			result.evening = { mode: options.evening, ...await page.steady(options.window * 1000) };
+		}
 		if (options.zoom == null)
-			return { cold, steady };
+			return result;
 		// [wide zoom] the same park with the camera held at another zoom value (tp.exe's own range is 70..130; the option widens it to 40..300)
 		const reached = await page.eval(`opentpwPerf.program.PerfZoom(${options.zoom})`);
 		await sleep(2000);
 		const zoomed = { zoom: options.zoom, reached, ...await page.steady(options.window * 1000) };
-		return { cold, steady, zoomed };
+		return { ...result, zoomed };
 	},
 
 	/** [EXT:debug-umbrellas] After jungle: every guest gets an open umbrella, the camera follows the first one, and a screenshot is saved (--shot, default opentpw-umbrellas.png in the temp dir). */

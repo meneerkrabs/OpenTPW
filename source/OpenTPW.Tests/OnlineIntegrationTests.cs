@@ -251,11 +251,15 @@ public class OnlineIntegrationTests
 			Assert.IsTrue( await Until( ann, annVisit, bob, bobVisit, () => ChatPanelModel.Person( chat, "Bob" ).Flags == (ChatPersonFlags.Buddy | ChatPersonFlags.Online | ChatPersonFlags.InPark) ),
 				"the buddy is green before the buddy tab was opened" );
 			Assert.IsFalse( ann.ChatLines.Contains( BuddyLine( "Bob", true ) ), string.Join( " | ", ann.ChatLines ) );
-			// the buddy tab asks afresh, quietly too; a typed /buddy lists them in the chat lines
+			// the buddy tab asks afresh, quietly too; a typed /buddy lists them in the chat lines, also when the buddy tab opens right after it (no
+			// overlay ask within five seconds of the last one, which would keep the typed one's answer off the lines)
+			ann.BuddyAskIntervalMilliseconds = 0;
 			chat.AskBuddies();
 			Assert.IsTrue( await Until( ann, annVisit, bob, bobVisit, () => chat.Buddies.Any( buddy => buddy.Name == "Bob" && buddy.Online ) ) );
 			Assert.IsFalse( ann.ChatLines.Contains( BuddyLine( "Bob", true ) ) );
+			ann.BuddyAskIntervalMilliseconds = 5000;
 			chat.SendChatLine( "/buddy" );
+			chat.AskBuddies();
 			Assert.IsTrue( await Until( ann, annVisit, bob, bobVisit, () => ann.ChatLines.Contains( BuddyLine( "Bob", true ) ) ), string.Join( " | ", ann.ChatLines ) );
 			chat.SendCommand( ChatCommand.Buddy, "Bob" );
 			Assert.IsTrue( await Until( ann, annVisit, bob, bobVisit, () => chat.Buddies.Count == 0 ), "a removed buddy leaves the list" );
@@ -306,6 +310,8 @@ public class OnlineIntegrationTests
 			// the lines use up the burst, so the server drops the ask after them: Bob stays a buddy, and his popup stays the buddy's
 			for ( var index = 0; index < 12; index++ )
 				chat.SendChatLine( $"line {index}" );
+			// the connection asked as it opened: let the ask out at once
+			ann.BuddyAskIntervalMilliseconds = 0;
 			chat.AskBuddies();
 			Assert.IsTrue( ChatPanelModel.Person( chat, "Bob" ).Flags.HasFlag( ChatPersonFlags.Buddy ), "the list stands while the ask is out" );
 			Assert.IsTrue( await Until( ann, annVisit, bob, bobVisit, () => ann.ChatLines.Contains( OnlineStrings.Get( OnlineLabel.RateLimited ) ) ), string.Join( " | ", ann.ChatLines ) );

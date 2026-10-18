@@ -80,6 +80,14 @@ public class ChatPanelTests
 	}
 
 	[TestMethod]
+	public void TheOverlayAsksForTheBuddyListAtMostOnceInItsInterval()
+	{
+		Assert.IsTrue( OnlineSession.BuddyAskDue( null, 100, 5000 ), "the first ask goes out" );
+		Assert.IsFalse( OnlineSession.BuddyAskDue( 100, 4_000, 5000 ), "an ask is out, or its answer came a moment ago" );
+		Assert.IsTrue( OnlineSession.BuddyAskDue( 100, 5_100, 5000 ), "an ask without an answer in the interval is taken as dropped" );
+	}
+
+	[TestMethod]
 	public void MessageRowsAreCutAtCharactersAndKeepTheLastTwenty()
 	{
 		static float Measure( string text ) => text.Length * 10;
@@ -87,6 +95,10 @@ public class ChatPanelTests
 			"cut where the characters reach the width, not at a word" );
 		CollectionAssert.AreEqual( new[] { "" }, ChatPanelModel.MessageRowsOf( new[] { "" }, Measure, 95 ).ToArray() );
 		CollectionAssert.AreEqual( new[] { "a", "b" }, ChatPanelModel.MessageRowsOf( new[] { "ab" }, Measure, 5 ).ToArray(), "a row holds one character at least" );
+		// a surrogate pair is one character: no row ends between its halves, also where a row holds one character only
+		CollectionAssert.AreEqual( new[] { "Hi ", "\U0001F600!" }, ChatPanelModel.MessageRowsOf( new[] { "Hi \U0001F600!" }, Measure, 45 ).ToArray() );
+		CollectionAssert.AreEqual( new[] { "\U0001F600", "\U0001F600" }, ChatPanelModel.MessageRowsOf( new[] { "\U0001F600\U0001F600" }, Measure, 5 ).ToArray() );
+		CollectionAssert.AreEqual( new[] { "a\uD83D", "b" }, ChatPanelModel.MessageRowsOf( new[] { "a\uD83Db" }, Measure, 25 ).ToArray(), "a lone high surrogate is a character of its own" );
 		var lines = Enumerable.Range( 0, 25 ).Select( index => $"line {index}" ).ToArray();
 		var rows = ChatPanelModel.MessageRowsOf( lines, Measure, 1000 );
 		Assert.AreEqual( ChatPanelModel.MessageRows, rows.Count );
@@ -179,7 +191,8 @@ public class ChatPanelTests
 		panel.Entry.Text = "   ";
 		panel.Entry.Activate();
 		Assert.AreEqual( 1, chat.Said.Count, "a blank line is not said" );
-		Assert.AreEqual( ChatCommands.MaximumLineLength, panel.Entry.MaximumLength );
+		Assert.AreEqual( 255, panel.Entry.MaximumLength, "the original's entry takes 255 characters (0x4BF460)" );
+		Assert.IsTrue( panel.Entry.MaximumLength < ChatCommands.MaximumLineLength, "a full entry fits a chat line" );
 	}
 
 	[TestMethod]

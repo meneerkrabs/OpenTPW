@@ -90,10 +90,13 @@ public sealed class ChatPanel
 		// [BIN:TPW-EXE:0x4BE3A0 entry keys] Enter (0xD) says the typed line (0x4EA490) and empties the entry
 		// the entry takes the keys on a click, not when the pointer crosses it on its way over the park; its help (UIHELPTEXT 420) is not shown, as the help box
 		// lies over it
-		Entry = Add( new UiTextField { Id = "chatEntry", MaximumLength = ChatCommands.MaximumLineLength, Background = false, Font = fonts => fonts.Small,
+		Entry = Add( new UiTextField { Id = "chatEntry", MaximumLength = EntryMaximumLength, Background = false, Font = fonts => fonts.Small,
 			OverView = true, Bounds = EntryRect } );
 		Entry.Submitted = Say;
 	}
+
+	/// <summary>The most characters the entry takes (0x4BF460 creates it with 255), one fewer than a chat line may carry (<see cref="ChatCommands.MaximumLineLength"/>).</summary>
+	public const int EntryMaximumLength = 255;
 
 	/// <summary>The panel's elements, in drawing order, for the screen that shows it.</summary>
 	public IReadOnlyList<UiElement> Elements => elements;

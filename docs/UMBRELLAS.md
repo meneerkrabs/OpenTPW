@@ -3,6 +3,7 @@
 October 18, 2026. Status: **phases U0 (the Theme Park Inc trace, below), U1 (our own art and data pipeline, [Content](#content-extumbrellas-content)), U2 (the simulation, [below](#the-simulation-phase-u2)) and U3 (the drawing, [below](#drawing-phase-u3)) are done.**
 The extension is registered, on by default, lists the four brolly shops in the Theme Park World catalogs and runs their rules: a guest buys an umbrella in the rain and carries it through the five states. Guests carrying an open umbrella are drawn (phase U3);
 the rain mood rule (`opentpw.rain-mood`) is phase U4.
+The winter extension ([WINTER.md](WINTER.md)) follows the same pipeline for its kiosk, glühwein stall and warm items.
 
 The idea: bring the brolly shop and guests carrying open umbrellas in the rain of Theme Park Inc to Theme Park World parks as an official extension (docs/MODS.md), with OpenTPW's own art, so a player needs no Theme Park Inc
 data. The behaviour comes from a static trace of the Theme Park Inc no-CD `Game.exe` (SHA-256 `77ea0c41...`, `[BIN:TPI-EXE:0x...]` below; nothing was run). Theme Park World's `tp.exe` has none of it: no umbrella strings, no

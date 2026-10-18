@@ -85,6 +85,10 @@ public static partial class Program
 		return true;
 	}
 
+	/// <summary>Holds the evening look for the session ("night", "dusk", "day"), or switches the evening extension "off" or "on"; false for another value (see <c>Level.PerfEvening</c>).</summary>
+	[JSExport]
+	public static bool PerfEvening( string mode ) => Level.PerfEvening( mode );
+
 	/// <summary>Holds the park camera at a zoom value (the wide range reaches 40..300 with the option on) and returns the zoom it ended at; -1 outside a park.</summary>
 	[JSExport]
 	public static double PerfZoom( double zoom )

@@ -146,20 +146,27 @@ public static class ChatPanelModel
 		return rows.Count > MessageRows ? rows.GetRange( rows.Count - MessageRows, MessageRows ) : rows;
 	}
 
-	/// <summary>Cuts <paramref name="line"/> into rows no wider than <paramref name="width"/>, each as many characters as fit (at least one).</summary>
+	/// <summary>
+	/// Cuts <paramref name="line"/> into rows no wider than <paramref name="width"/>, each as many characters as fit (at least one). A surrogate pair counts as one
+	/// character, so a row never ends between its halves (the original's text is single-byte).
+	/// </summary>
 	// [BIN:TPW-EXE:0x4BE970 message rows] the line is cut where the sum of its characters' widths (the font's vfunc +0xC) reaches the list column's width ((right − left) × screen width / 2048): characters, not words
 	internal static void Wrap( string line, Func<string, float> measure, float width, List<string> rows )
 	{
 		var start = 0;
 		while ( start < line.Length )
 		{
-			var end = start + 1;
-			while ( end < line.Length && measure( line[start..(end + 1)] ) <= width )
-				end++;
+			var end = After( line, start );
+			while ( end < line.Length && measure( line[start..After( line, end )] ) <= width )
+				end = After( line, end );
 			rows.Add( line[start..end] );
 			start = end;
 		}
 		if ( line.Length == 0 )
 			rows.Add( line );
 	}
+
+	/// <summary>The index after the character at <paramref name="index"/>: past both halves of a surrogate pair.</summary>
+	private static int After( string line, int index ) =>
+		index + (char.IsHighSurrogate( line[index] ) && index + 1 < line.Length && char.IsLowSurrogate( line[index + 1] ) ? 2 : 1);
 }

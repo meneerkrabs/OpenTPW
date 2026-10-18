@@ -95,7 +95,8 @@ public static class ChatCommands
 	public const int CommandCount = 43;
 	public const int LocalizedNamesOffset = 0;
 	public const int CanonicalNamesOffset = 43;
-	// [EXT:ONLINE-030] OpenTPW chat line limit; the original limit is unknown.
+	// [EXT:online-chat-line-limit] the protocol's chat line limit: one more than the original chat entry's 255 characters (tp.exe 0x4BF460, ChatPanel.EntryMaximumLength), so the
+	// lines of older OpenTPW clients still pass; the original server's limit is unknown
 	public const int MaximumLineLength = 256;
 
 	public static string CanonicalName( ChatCommand command ) => CanonicalNames[(int)command];

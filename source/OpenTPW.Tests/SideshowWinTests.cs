@@ -17,11 +17,23 @@ public class SideshowWinTests
 	}
 
 	[TestMethod]
-	public void AZeroQuotientGivesTheX87IndefiniteInteger()
+	public void AnInfiniteOrZeroQuotientStoresTheIndefiniteQuadwordAndGivesZero()
 	{
-		Assert.AreEqual( int.MinValue, SideshowWin.HappinessGain( 10, 0, 5 ), "a free play: the division is infinite, __ftol answers 0x80000000" );
-		Assert.AreEqual( int.MinValue, SideshowWin.HappinessGain( 0, 10, 5 ), "a prize of 0: log of 0 is -infinity" );
-		Assert.AreEqual( int.MinValue, SideshowWin.HappinessGain( 0, 0, 5 ) );
+		Assert.AreEqual( 0, SideshowWin.HappinessGain( 10, 0, 5 ), "a free play: the division is infinite, fistp stores 0x8000000000000000 and __ftol returns its low dword" );
+		Assert.AreEqual( 0, SideshowWin.HappinessGain( 0, 10, 5 ), "a prize of 0: log of 0 is -infinity" );
+		Assert.AreEqual( 0, SideshowWin.HappinessGain( 0, 0, 5 ) );
+		Assert.AreEqual( 0, SideshowWin.HappinessGain( 10, 10, 0 ) );
+	}
+
+	[TestMethod]
+	public void FtolKeepsTheLowDwordOfTheTruncatedQuadword()
+	{
+		Assert.AreEqual( -3, SideshowWin.Ftol( -3.9 ) );
+		Assert.AreEqual( 7, SideshowWin.Ftol( 7.99 ) );
+		Assert.AreEqual( int.MinValue, SideshowWin.Ftol( 2147483648d ), "2^31 truncated to a quadword has the low dword 0x80000000" );
+		Assert.AreEqual( 0, SideshowWin.Ftol( 4294967296d ), "2^32 has the low dword 0" );
+		Assert.AreEqual( 0, SideshowWin.Ftol( double.PositiveInfinity ) );
+		Assert.AreEqual( 0, SideshowWin.Ftol( double.NaN ) );
 	}
 
 	[TestMethod]

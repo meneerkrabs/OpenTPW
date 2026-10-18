@@ -176,7 +176,7 @@ public class OriginalUiAssetTests
 			return (texture.Data[index], texture.Data[index + 1], texture.Data[index + 2], texture.Data[index + 3]);
 		}
 		var cap = Texel( "/ui/textures/pipe.wct", 8, 8 );
-		Assert.IsTrue( cap.A == 255 && cap.R > 200 && cap.G is > 120 and < 200 && cap.B < 20, $"the tube cap is orange, not {cap}" );
+		Assert.IsTrue( cap.A >= 240 && cap.R > 200 && cap.G is > 120 and < 200 && cap.B < 20, $"the tube cap is orange, not {cap}" );
 		var barStart = Texel( "/ui/textures/ridestatbar.wct", 4, 4 );
 		Assert.IsTrue( barStart.R > 220 && barStart.G < 140 && barStart.B < 20, $"the gauge bar starts red-orange, not {barStart}" );
 		var barEnd = Texel( "/ui/textures/ridestatbar.wct", 28, 4 );

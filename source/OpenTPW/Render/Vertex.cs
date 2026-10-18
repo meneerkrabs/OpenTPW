@@ -12,6 +12,9 @@ public struct Vertex
 	public int TexIndex { get; set; }
 	public uint MatFlags { get; set; }
 
+	/// <summary>The size of one vertex in bytes, read once: <c>Marshal.SizeOf</c> reflects over the type on every call, and each renderer asks for it every frame.</summary>
+	public static readonly uint SizeInBytes = (uint)Marshal.SizeOf<Vertex>();
+
 	public static VertexElementDescription[] VertexElementDescriptions = new[]
 	{
 		new VertexElementDescription( "vPosition", VertexElementSemantic.TextureCoordinate, VertexElementFormat.Float3 ),

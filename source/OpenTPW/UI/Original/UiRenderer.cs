@@ -12,6 +12,9 @@ namespace OpenTPW.UI.Original;
 /// </summary>
 internal sealed class UiRenderer : IDisposable
 {
+	/// <summary>The vertex size in bytes, read once: <c>Marshal.SizeOf</c> reflects over the type on every call.</summary>
+	private static readonly int GpuVertexSize = Marshal.SizeOf<GpuVertex>();
+
 	[StructLayout( LayoutKind.Sequential )]
 	private readonly record struct GpuVertex( System.Numerics.Vector2 Position, System.Numerics.Vector2 TexCoords, System.Numerics.Vector4 Color );
 
@@ -69,7 +72,7 @@ internal sealed class UiRenderer : IDisposable
 				vertices[offset++] = new GpuVertex( position, vertex.TexCoords, color );
 			}
 		}
-		var bytes = (uint)(count * Marshal.SizeOf<GpuVertex>());
+		var bytes = (uint)(count * GpuVertexSize);
 		// Written straight into GPU memory: an update recorded into the command list would end the render pass on Metal.
 		var slot = buffers[Renderer.SlotOf( Render.FrameNumber )];
 		if ( frameBuffers == slot.Count )

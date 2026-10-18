@@ -9,6 +9,9 @@ namespace OpenTPW;
 /// </summary>
 internal sealed class TextRenderer : IDisposable
 {
+	/// <summary>The vertex size in bytes, read once: <c>Marshal.SizeOf</c> reflects over the type on every call.</summary>
+	private static readonly int TextVertexSize = Marshal.SizeOf<TextVertex>();
+
 	[StructLayout( LayoutKind.Sequential )]
 	private readonly record struct TextVertex( System.Numerics.Vector2 Position, System.Numerics.Vector2 TexCoords, System.Numerics.Vector4 Color );
 
@@ -55,7 +58,7 @@ internal sealed class TextRenderer : IDisposable
 		for ( var index = 0; index < quads.Count; index++ )
 			WriteQuad( quads[index], framebufferWidth, framebufferHeight, index * 6 );
 
-		var bytes = (uint)(vertexCount * Marshal.SizeOf<TextVertex>());
+		var bytes = (uint)(vertexCount * TextVertexSize);
 		if ( vertexBuffer == null || vertexBuffer.SizeInBytes < bytes )
 		{
 			vertexBuffer?.Dispose();

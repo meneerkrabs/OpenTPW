@@ -148,8 +148,11 @@ public sealed class UiBatch
 		scale = Math.Max( 1, scale );
 		var texture = UiTexture.Font( atlas, scale );
 		var firstGlyph = glyphs.Count;
-		foreach ( var glyph in layout.Glyphs )
+		// indexed rather than foreach: the layout's list is read through its interface, whose enumerator is allocated on every call
+		var layoutGlyphs = layout.Glyphs;
+		for ( var index = 0; index < layoutGlyphs.Count; index++ )
 		{
+			var glyph = layoutGlyphs[index];
 			var quad = new UiGlyphQuad( atlas, x + glyph.X * scale, y + glyph.Y * scale, glyph.Glyph.Width * scale, glyph.Glyph.Height * scale, glyph.Glyph.X, glyph.Glyph.Y, scale, color );
 			glyphs.Add( quad );
 			AddQuad( texture, new UiRect( quad.X, quad.Y, quad.Width, quad.Height ),

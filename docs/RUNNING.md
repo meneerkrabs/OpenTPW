@@ -391,7 +391,9 @@ every typed section hash and the composite world hash against the capture run at
 then runs post-load economy checks (admission booked once, a sale credited once with its links
 removed, a new placement, wages charged once, payment bindings one-to-one). The evidence directory
 holds the phase evidence (hashes and counters only, never asset bytes), the corrupted probe files
-and captures; `--park-resume-file` accepts the own-format `.json`/`.otpw` suffix only. These are
+and captures; `--park-resume-file` accepts the own-format `.json`/`.otpw` suffix only. Each phase also takes the periodic autosave
+(`[EXT:periodic-autosave]`, [PARK-SAVES.md](PARK-SAVES.md#periodic-autosave)) of its park at the end: five minutes of play time in quarter-second frames, a readable autosave slot, the manual save untouched,
+the sliced serialization equal to the manual serializer's bytes, a captured snapshot unchanged while the park runs on, and the state hash and random streams unchanged; the capture, serialization and write times are logged. These are
 controlled, accelerated, seeded fixtures that validate persistence of current OpenTPW behaviour,
 not original-game fidelity.
 

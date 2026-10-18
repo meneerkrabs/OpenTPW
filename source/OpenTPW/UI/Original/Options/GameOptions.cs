@@ -55,6 +55,8 @@ public sealed class GameOptions
 	public RotationMode Rotation { get; set; } = RotationMode.Ninety;
 	// [BIN:STP-PPC:0x10125B7C options defaults] RMBScrollOn = 0: push scrolling
 	public ScrollMode Scroll { get; set; } = ScrollMode.Pushscroll;
+	/// <summary>[EXT:periodic-autosave] saves an owned park to its own autosave slot every 5 minutes of play (<see cref="PeriodicAutosave"/>); on by default, not an original option.</summary>
+	public bool Autosave { get; set; } = true;
 
 	public static GameOptions Current { get; set; } = new();
 
@@ -91,6 +93,7 @@ public sealed class GameOptions
 		RmbCancel = other.RmbCancel;
 		Rotation = other.Rotation;
 		Scroll = other.Scroll;
+		Autosave = other.Autosave;
 	}
 
 	public static GameOptions Load( string path )

@@ -764,10 +764,42 @@ internal sealed partial class ParkResumeSmokeTest : IDisposable
 			var problems = VerifyEvidencePair( capture!, Evidence( completed: true, failure: null ) );
 			Require( problems.Count == 0, $"the evidence pair verifies ({problems.Count} problems; first: {problems.FirstOrDefault() ?? "none"})" );
 		}
+		VerifyAutosave();
 		VerifyRestart();
 		Log.Trace( summary );
 		stage = Stage.Done;
 		Render.Window.SdlWindow.Close();
+	}
+
+	/// <summary>
+	/// [EXT:periodic-autosave] The periodic autosave on the real park: five minutes of play time (counted in quarter-second frames) take one capture between ticks, which is written into the
+	/// theme's own autosave slot (never the manual or checkpoint slot), reads back as a continuation entry and leaves the simulation, every random stream and the state hash exactly as they were.
+	/// The capture, serialization and write times of this park are logged.
+	/// </summary>
+	private void VerifyAutosave()
+	{
+		var hash = level.ComputeStateHash(); var random = level.CaptureRandomState();
+		var manual = SaveFileSystem.GetAbsolutePath( $"opentpw-{level.LevelName}-world.json" );
+		var manualBytes = File.Exists( manual ) ? File.ReadAllBytes( manual ) : null;
+		flow.Autosave.Reset();
+		var result = AutosaveResult.NotDue;
+		for ( var frame = 0; frame < 4000 && result != AutosaveResult.Saved; frame++ ) result = flow.RunAutosave( level, 0.25, true );
+		Require( result == AutosaveResult.Saved, "five minutes of play time took the periodic autosave" );
+		flow.Autosave.Flush();
+		var entry = AutomaticThemeContinuation.Probe( SaveFileSystem, level.LevelName, AutomaticSlotKind.Autosave );
+		Require( entry != null && entry.Kind == AutomaticSlotKind.Autosave, "the autosave slot holds a readable continuation entry" );
+		Require( AutomaticThemeContinuation.Read( SaveFileSystem, entry! ).Guests.Guests.Length == level.Guests!.CaptureSnapshot().Guests.Length, "the autosave holds this park's guests" );
+		Require( manualBytes == null ? !File.Exists( manual ) : File.ReadAllBytes( manual ).AsSpan().SequenceEqual( manualBytes ), "the autosave left the manual save untouched" );
+		Require( level.ComputeStateHash() == hash && level.CaptureRandomState() == random, "the autosave left the simulation and its random streams as they were" );
+		// the sliced serialization writes the manual save's bytes, and the captured snapshot is a detached copy that the running park cannot change
+		var detached = level.CaptureResumeSnapshot( Advisor, "park-resume smoke", verifiedAssets, savedUtc: DateTimeOffset.UnixEpoch );
+		var expected = ParkResumeSaveFile.Serialize( detached ); var sliced = ParkResumeSaveFile.BeginSlicedSerialize( detached );
+		while ( !sliced.Run( TimeSpan.FromMilliseconds( 1 ) ) ) { }
+		Require( sliced.Bytes.AsSpan().SequenceEqual( expected ), $"the sliced serialization ({sliced.Slices} slices) wrote the bytes of the manual save's serializer" );
+		for ( var tick = 0; tick < 300; tick++ ) level.AdvanceSimulation( FixedStepClock.TickDuration );
+		Require( ParkResumeSaveFile.Serialize( detached ).AsSpan().SequenceEqual( expected ), "the captured snapshot did not change while the park ran on for five simulated seconds" );
+		var autosave = flow.Autosave;
+		Log.Trace( $"Periodic autosave of the smoke park: {autosave.LastBytes / 1024.0:0} KiB, capture {autosave.LastCaptureMilliseconds:0.0} ms, serialize {autosave.LastSerializeMilliseconds:0.0} ms in {autosave.LastSlices} slices (longest {autosave.LastLongestSliceMilliseconds:0.0} ms), write {autosave.LastWriteMilliseconds:0.0} ms." );
 	}
 
 	/// <summary>

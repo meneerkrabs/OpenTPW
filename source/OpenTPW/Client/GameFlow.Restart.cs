@@ -56,6 +56,8 @@ internal sealed partial class GameFlow
 		{
 			using ( LoadProfile.Measure( "restart-snapshot" ) )
 			{
+				// [EXT:periodic-autosave] the manifest hashed for this snapshot is the one the periodic autosave reuses
+				if ( RestartCaptureOverride == null ) verifiedAssets = level.AutosaveAssets( verifiedAssets );
 				var snapshot = RestartCaptureOverride != null ? RestartCaptureOverride( level ) :
 					level.CaptureResumeSnapshot( Advisor?.IsAttached == true ? Advisor : null, level.LevelName, verifiedAssets );
 				ParkResumeSaveFile.Save( RestartSnapshotPath( level ), snapshot );

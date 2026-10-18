@@ -38,8 +38,43 @@ public partial class Level
 		}
 	}
 
+	private IReadOnlyDictionary<string, string>? autosaveAssets;
+	private int autosaveAssetEntries = -1;
+	private ObjectCatalog? autosaveCatalog;
+
+	/// <summary>
+	/// [EXT:periodic-autosave] The asset manifest of this park, hashed once and kept: it covers the whole pinned catalogue and balance files, which do not change while a park is played,
+	/// and hashing them again for every autosave would be the most expensive part of a capture (the park start hashes them anyway, for its restart snapshot, and hands the result in as
+	/// <paramref name="known"/>). The manifest is taken again when the catalogue or its entry count changed (the pools extension adds its objects while the player uses it).
+	/// </summary>
+	internal IReadOnlyDictionary<string, string> AutosaveAssets( IReadOnlyDictionary<string, string>? known = null )
+	{
+		var catalog = Objects.Catalog; var entries = catalog.Entries.Count;
+		if ( autosaveAssets == null || autosaveAssetEntries != entries || !ReferenceEquals( autosaveCatalog, catalog ) )
+		{
+			autosaveAssets = known ?? ParkResumeAssetManifest.Capture( Objects.Catalog, Park?.Economy.Settings ?? throw new InvalidOperationException( "Only a writable Theme Park World park can be saved here." ) );
+			autosaveAssetEntries = entries; autosaveCatalog = catalog;
+		}
+		return autosaveAssets;
+	}
+
+	/// <summary>Drops the kept manifest, so the next <see cref="AutosaveAssets"/> hashes the files again.</summary>
+	internal void ForgetAutosaveAssets() => autosaveAssets = null;
+
 	/// <summary>Captures a writable fixed-ride park between simulation ticks, including its direct instance links.</summary>
 	internal ParkResumeSnapshot CaptureResumeSnapshot( AutomaticAdvisor? advisor, string displayName,
+		IReadOnlyDictionary<string, string>? verifiedAssets = null, DateTimeOffset? savedUtc = null, bool advisorMaySpeak = false )
+	{
+		var snapshot = CaptureResumeSnapshotUnchecked( advisor, displayName, out var validate, verifiedAssets, savedUtc, advisorMaySpeak );
+		validate();
+		return snapshot;
+	}
+
+	/// <summary>
+	/// The capture of <see cref="CaptureResumeSnapshot"/> without its closing validation, which is handed back as <paramref name="validate"/> instead. The validation reads only the captured copy
+	/// and the trusted catalogue and balance, so the periodic autosave runs it in a later frame than the capture, which alone has to see the park between two ticks.
+	/// </summary>
+	internal ParkResumeSnapshot CaptureResumeSnapshotUnchecked( AutomaticAdvisor? advisor, string displayName, out Action validate,
 		IReadOnlyDictionary<string, string>? verifiedAssets = null, DateTimeOffset? savedUtc = null, bool advisorMaySpeak = false )
 	{
 		if ( IsReadOnlyVisit || GameEditions.IsThemeParkInc || OriginalPark == null || Park == null || Guests == null )
@@ -97,7 +132,8 @@ public partial class Level
 			ScriptMods = ScriptModsSave.Capture( Guests ),
 			AssetHashes = assets
 		};
-		ParkResumeSaveFile.ValidateSnapshot( snapshot, Objects.Catalog, Park.Economy.Settings, Park.Economy.Catalog, assets );
+		var catalogue = Objects.Catalog; var settings = Park.Economy.Settings; var economyCatalog = Park.Economy.Catalog;
+		validate = () => ParkResumeSaveFile.ValidateSnapshot( snapshot, catalogue, settings, economyCatalog, assets );
 		return snapshot;
 	}
 

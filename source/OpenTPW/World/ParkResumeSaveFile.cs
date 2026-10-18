@@ -37,6 +37,16 @@ internal static class ParkResumeSaveFile
 	}
 
 	/// <summary>
+	/// [EXT:periodic-autosave] Starts the time-boxed serialization of a snapshot: <paramref name="validate"/> (default: the shape check of <see cref="Serialize"/>) is its first step, then the bytes
+	/// are the same as <see cref="Serialize"/>'s, produced a slice per frame. The size limit applies to the result (<see cref="CheckSize"/>).
+	/// </summary>
+	internal static SlicedJsonSerializer BeginSlicedSerialize( ParkResumeSnapshot snapshot, Action? validate = null ) =>
+		ParkResumeJson.Slice( snapshot, validate ?? ( () => ValidateShape( snapshot ) ) );
+
+	/// <summary>The size limit of <see cref="Serialize"/> for bytes serialized in slices.</summary>
+	internal static byte[] CheckSize( byte[] bytes ) => bytes.Length > MaximumFileSize ? throw new InvalidDataException( "World save exceeds the size limit." ) : bytes;
+
+	/// <summary>
 	/// Parses a world save: the size is checked before parsing, the format and version before anything is used,
 	/// then the whole envelope's shape (header, embedded economy, layout, script world, runtime and binding joins,
 	/// guests, optional parts, asset manifest). Malformed input becomes <see cref="InvalidDataException"/>;
@@ -71,8 +81,14 @@ internal static class ParkResumeSaveFile
 	public static void Save( string path, ParkResumeSnapshot snapshot )
 	{
 		ArgumentNullException.ThrowIfNull( snapshot );
+		SaveBytes( path, Serialize( snapshot ) );
+	}
+
+	/// <summary>The atomic write of <see cref="Save"/> for bytes that <see cref="Serialize"/> already produced (the periodic autosave serializes on the game thread and writes in the background).</summary>
+	public static void SaveBytes( string path, byte[] bytes )
+	{
+		ArgumentNullException.ThrowIfNull( bytes );
 		var destination = GetPath( path, forWriting: true );
-		var bytes = Serialize( snapshot );
 		var temporary = destination + "." + Guid.NewGuid().ToString( "N" ) + ".tmp";
 		var ownsTemporary = false;
 		try

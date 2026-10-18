@@ -24,7 +24,7 @@ public class DeterminismTests
 	/// Economy, guests, a shop script and an unseeded RAND script wired like Level: guests pay into the
 	/// economy and every stream comes from one <see cref="WorldSeed"/>. Ticks run in Level.Update's order.
 	/// </summary>
-	private sealed class SyntheticPark
+	internal sealed class SyntheticPark
 	{
 		private readonly GuestEconomyBridge payments;
 		private readonly RideVisitorBridge shop;
@@ -35,7 +35,7 @@ public class DeterminismTests
 		private readonly RideVM? brollyScript;
 		private readonly List<RideVM> dice = new();
 
-		public SyntheticPark( WorldSeed seed, IGuestObserver? observer = null, Action<ParkCellMap>? prepareCells = null, bool changingRoom = false, Action<GuestSimulation>? prepareGuests = null, IGuestDecisions? decisions = null, bool brollyShop = false )
+		public SyntheticPark( WorldSeed seed, IGuestObserver? observer = null, Action<ParkCellMap>? prepareCells = null, bool changingRoom = false, Action<GuestSimulation>? prepareGuests = null, IGuestDecisions? decisions = null, bool brollyShop = false, int brollyKidScore = 100 )
 		{
 			Seed = seed;
 			Economy = EconomyTestData.Park( seed: seed.EconomyStream );
@@ -85,7 +85,7 @@ public class DeterminismTests
 			{
 				brolly = new RideVisitorBridge( Scripts.AllocateAttractionId(), "Brolly Shop", RideVisitorKind.Shop, 1, 60, 30, GuestNeeds.None )
 				{
-					EntranceCell = (10, 1), ExitCell = (10, 1), AppearanceEffect = UmbrellaRules.ShopAppearanceEffect, UmbrellaTerms = new UmbrellaShopTerms( 200, 200, 150, 5, 100 )
+					EntranceCell = (10, 1), ExitCell = (10, 1), AppearanceEffect = UmbrellaRules.ShopAppearanceEffect, UmbrellaTerms = new UmbrellaShopTerms( 200, 200, 150, 5, brollyKidScore )
 				};
 				brollyScript = GuestTests.CreateShopScript( new VisitorRideScriptEffects( brolly, UnimplementedRideScriptEffects.Instance ), Scripts, seed: null );
 				brolly.Attach( brollyScript, () => true );

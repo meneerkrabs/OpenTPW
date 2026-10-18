@@ -95,7 +95,7 @@ internal sealed partial class GameFlow
 	{
 		automaticOffer = null;
 		if ( Level != null || progressOwner?.Dirty == true ) return null; // Menu probing is read-only.
-		var entry = AutomaticThemeContinuation.Probe( SaveFileSystem, theme ); if ( entry == null ) return null;
+		var entry = AutomaticThemeContinuation.Newest( SaveFileSystem, theme ); if ( entry == null ) return null;
 		try { automaticOffer = (entry, new( SaveFileSystem, theme, () => SaveFileSystem, () => true ), Menu); return entry; }
 		catch ( Exception error ) when ( ProgressFailure( error ) ) { Log.Warning( $"Automatic continuation unavailable: {error.Message}" ); return null; }
 	}

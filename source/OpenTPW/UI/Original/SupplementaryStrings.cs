@@ -253,6 +253,10 @@ public enum OpenTpwText
 	RefusalTooScary,
 	RefusalTooBoring,
 	RefusalRideUnavailable,
+	// [EXT:periodic-autosave] the autosave option and the theme menu's recovery entry (docs/PARK-SAVES.md)
+	ContinueAutosavePark,
+	AutosaveOption,
+	AutosaveHelp,
 }
 
 public static class SupplementaryStrings
@@ -629,6 +633,18 @@ public static class SupplementaryStrings
 			"W tej wersji można postawić tylko jedną atrakcję",
 			"En esta versión solo se puede colocar una atracción",
 			"Endast en attraktion kan placeras i den här versionen" },
+		[OpenTpwText.ContinueAutosavePark] = new[] { "Continue autosave", "Fortsæt autogemning", "Autosave hervatten", "Continuer l'autosauvegarde", "Autospeicherung fortsetzen", "자동 저장본 계속", "Kontynuuj z autozapisu", "Continuar autoguardado", "Fortsätt autosparning" },
+		[OpenTpwText.AutosaveOption] = new[] { "Autosave:", "Autogem:", "Auto-opslaan:", "Sauvegarde auto :", "Autospeichern:", "자동 저장:", "Autozapis:", "Autoguardado:", "Autosparning:" },
+		[OpenTpwText.AutosaveHelp] = new[] {
+			"Saves the park to its own slot every 5 minutes of play. Your manual save is never touched.",
+			"Gemmer parken i sin egen plads hver 5. spilminut. Din manuelle gemning berøres aldrig.",
+			"Slaat het park elke 5 minuten spelen op in een eigen slot. Je handmatige opslag blijft onaangeroerd.",
+			"Sauvegarde le parc dans son propre emplacement toutes les 5 minutes de jeu. Votre sauvegarde manuelle n'est jamais modifiée.",
+			"Speichert den Park alle 5 Spielminuten in einem eigenen Platz. Dein manueller Spielstand bleibt unberührt.",
+			"5분 플레이마다 공원을 별도 슬롯에 저장합니다. 직접 저장한 파일은 바뀌지 않습니다.",
+			"Zapisuje park w osobnym miejscu co 5 minut gry. Twój ręczny zapis pozostaje nietknięty.",
+			"Guarda el parque en su propia ranura cada 5 minutos de juego. Tu guardado manual nunca se toca.",
+			"Sparar parken på en egen plats var 5:e speltminut. Din manuella sparning rörs aldrig." },
 	};
 
 	public static IReadOnlyList<string> SupportedLanguages => Languages;

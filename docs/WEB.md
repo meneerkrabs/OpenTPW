@@ -331,6 +331,8 @@ short frame and the JSON is serialized in slices of 2 ms per frame (`SlicedJsonS
 inline into the in-memory folder. A browser killed inside the five-second window loses the autosave of that
 window (the previous one stays); the page mirrors again when it is hidden, which is when a tab is usually
 closed. Native tests compile and run the same code path; a real browser run of the autosave is not done here.
+The restart snapshot and its `.pending.json` recovery marker also live in `/save` and are mirrored together by the same IndexedDB transaction. While restart JSON is being serialized, a marker prevents an earlier park's restart file from being treated as the new entry state. Once the final JSON exists, its digest in the marker permits recovery after replacement even if marker cleanup was interrupted (see [PARK-SAVES.md](PARK-SAVES.md#restart-snapshot-persistence)). Browser copy/hash work runs in bounded 64 KiB steps after serialization; final writes remain in-memory. An abrupt page/process loss before a completed storage sync can still lose that window's changes. This does not add a separate durable write or a browser worker.
+
 The player's game files are not uploaded.
 
 ### Shaders

@@ -264,7 +264,8 @@ choices of `/config/mods.json`. The browser has no folders for community mods. T
 
 - **Settings.** `/config/mods.json` is one of the files the page keeps (the `/config` folder is mirrored into IndexedDB every five seconds
   and when the page is hidden, and put back before the game starts), so the choices of the **Extensions and mods** screen
-  (Options > OpenTPW) survive a reload. Changes apply at the next start, which in the browser means a reload.
+  (Options > OpenTPW) survive a reload. Official extensions switched there apply to the next park started or loaded, as on the desktop (the page then fetches the pools sprite sets if
+  pools came on); a change to a mod or its input applies at the next start, which in the browser means a reload ([MODS.md](MODS.md#when-a-change-applies)).
 - **The `tpi` input.** A mod input is a folder of the player's own files on the desktop. The browser holds the files of one original game
   beside the Theme Park World files in `/game`: the page copies them into the runtime's memory below `/inputs/theme-park-inc/Data/...`
   (`Program.AddInputFile`, validated by `BrowserModInputs`: only `Data/...` paths without `..`, at most 20000 files and 256 MB) and a mod's

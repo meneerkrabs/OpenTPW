@@ -462,6 +462,24 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			VerifyText( capture, flow.Strings.Extra( OpenTpwText.ModsCommunity ), "community column" );
 			Click( mods, "cancel" );
 		} );
+		// [EXT:save-extension-switch] the load dialog for a park whose extensions differ: a rule played with that is off now, a rule on now it was played without, and a content extension to turn on
+		Do( "open extension switch", () =>
+		{
+			var active = OpenTPW.Mods.ModSet.Resolve( Array.Empty<OpenTPW.Mods.DiscoveredMod>(), new OpenTPW.Mods.ModSettings { Enabled = new Dictionary<string, bool>
+				{ [OpenTPW.Mods.OfficialExtensions.Pools.Id] = false, [OpenTPW.Mods.OfficialExtensions.RainMood.Id] = true } }, null, GameEdition.ThemeParkWorld, OpenTPW.Mods.OfficialExtensions.All );
+			var saved = new[] { new ParkModRecord( OpenTPW.Mods.OfficialExtensions.Pools.Id, "1.0.0", OpenTPW.Mods.ModSet.NoFilesSha256 ), new ParkModRecord( OpenTPW.Mods.OfficialExtensions.WinterCold.Id, "1.0.0", OpenTPW.Mods.ModSet.NoFilesSha256 ) };
+			var plan = ParkExtensionSwitch.Plan( saved, active, Array.Empty<string>() );
+			Require( plan is { CanSwitch: true } && plan.TurnOn.Count == 1 && plan.ContinueWith.Count == 1 && plan.ContinueWithout.Count == 1, "the switch dialog's plan turns pools on and switches two rules" );
+			flow.Menu!.Stack.Push( ExtensionSwitchDialog.Create( flow.Menu.Stack, flow.Strings, plan!, () => { } ) );
+		} );
+		Wait( "extension switch renders", 3 );
+		Do( "extension switch capture", () =>
+		{
+			Require( flow.Menu!.Stack.Top?.Name == "extensionSwitch", "the extension switch dialog opens" );
+			var capture = CaptureFrame( "extension-switch.png" );
+			VerifyText( capture, flow.Strings.Extra( OpenTpwText.ModsExtensions ), "extension switch caption" );
+			flow.Menu.Stack.Pop();
+		} );
 		Wait( "mods cancel", 3 );
 		Do( "mods closed", () => Require( flow.Menu!.Stack.Top?.Name != "mods", "cancel leaves the mods screen" ) );
 		PlanTexturePackSwitch();

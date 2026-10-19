@@ -25,6 +25,8 @@ internal sealed partial class GameFlow
 	/// <param name="extensionSwitch">[EXT:save-extension-switch] The extension switch the player confirmed for this load (<see cref="ResumeSwitched"/>); null loads strictly, as every replay and check does.</param>
 	internal Level ResumePark( ParkResumeSnapshot snapshot, bool restart = false, ParkExtensionSwitch? extensionSwitch = null )
 	{
+		// a Theme Park Inc run refuses before a switch or a waiting extension choice is applied
+		if ( GameEditions.IsThemeParkInc ) throw new NotSupportedException( "Theme Park Inc park saves are not supported." );
 		Level Resume() => extensionSwitch == null ? ResumeStrict( snapshot, restart ) : ResumeSwitched( snapshot, restart, extensionSwitch );
 		// [EXT:extensions-apply-at-load] extension choices made in the park being left apply to the park this load builds (a restart reloads the same park and keeps its set); a failed load keeps them waiting
 		if ( restart || pendingExtensions is not { } next )

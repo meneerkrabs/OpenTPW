@@ -55,6 +55,14 @@ public class ExtensionsApplyAtLoadTests
 		Directory.Delete( root, true );
 	}
 
+	/// <summary>Removes the test's mods.json (its folder may not exist yet: <see cref="File.Delete"/> throws for a missing folder on Windows).</summary>
+	private void ForgetSettings()
+	{
+		var path = Path.Combine( root, "config", "mods.json" );
+		if ( File.Exists( path ) )
+			File.Delete( path );
+	}
+
 	private static string Text( OpenTpwText key ) => OriginalUiTests.FakeStrings().Extra( key );
 	private static void Click( UiScreen screen, string id ) => ((UiButton)screen.Find( id )!).Clicked!();
 	private static string Message( UiScreen screen ) => ((UiLabel)screen.Find( "caption" )!).Text() + "\n\n" + ((UiLabel)screen.Find( "message" )!).Text();
@@ -114,7 +122,7 @@ public class ExtensionsApplyAtLoadTests
 		var asked = new List<IReadOnlyDictionary<string, bool>>();
 		foreach ( var (timing, notice) in new[] { (ExtensionChoiceTiming.NextPark, OpenTpwText.ModsSavedNextPark), (ExtensionChoiceTiming.AfterThisPark, OpenTpwText.ModsSavedAfterThisPark), (ExtensionChoiceTiming.NextStart, OpenTpwText.ModsSaved) } )
 		{
-			File.Delete( Path.Combine( root, "config", "mods.json" ) );
+			ForgetSettings();
 			asked.Clear();
 			var stack = new UiScreenStack();
 			Assert.AreEqual( Text( notice ), SwitchAndAccept( stack, Services( changes => { asked.Add( changes ); return timing; } ), OfficialExtensions.RainMood ) );
@@ -137,7 +145,7 @@ public class ExtensionsApplyAtLoadTests
 		Assert.AreEqual( Text( OpenTpwText.ModsSaved ), notice );
 		Assert.AreEqual( 0, asked, "a community mod needs the next start, and so does everything switched with it" );
 		// without the flow (tests, the front-end smoke) every change keeps the restart notice
-		File.Delete( Path.Combine( root, "config", "mods.json" ) );
+		ForgetSettings();
 		Assert.AreEqual( Text( OpenTpwText.ModsSaved ), SwitchAndAccept( new UiScreenStack(), Services( null ), OfficialExtensions.RainMood ) );
 	}
 

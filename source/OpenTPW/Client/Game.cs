@@ -984,22 +984,15 @@ internal static class Game
 
 	/// <summary>The CD launcher screen for the game's language, or null when it is disabled or the CD's Autorun files are absent.</summary>
 	/// <summary>
-	/// [EXT:silent-automated-runs] every automated run opens no audio device, so tests and agents on a developer machine make no sound:
-	/// smokes (<c>--smoke-test</c>, <c>--tpi-smoke-test</c>, <c>--park-resume-smoke</c>, <c>--smoke-presence</c>), captures (<c>--capture-*</c>), perf runs
-	/// (<c>--perf-*</c>), gates, guest reports, every <c>--debug-*</c> option (they exist for smoke captures and agent runs, none is a player option), <c>--offscreen</c> and <c>--headless</c>. <c>--smoke-audio</c> or <c>--audible</c>
-	/// opts back in to sound; <c>--silent</c> or <c>OPENTPW_SILENT=1</c> silences any run. A plain interactive launch is never silenced. The game logic
-	/// and its timing are unchanged.
+	/// The automated modes that [EXT:silent-automated-runs] and [EXT:offscreen-automated-runs] share, so the two rules cannot drift apart: smokes
+	/// (<c>--smoke-test</c>, <c>--tpi-smoke-test</c>, <c>--park-resume-smoke</c>, <c>--smoke-presence</c>), captures (<c>--capture-*</c>), perf runs
+	/// (<c>--perf-*</c>), gates, guest reports, asset validation, every <c>--debug-*</c> option (they exist for smoke captures and agent runs, none is a
+	/// player option), <c>--offscreen</c> and <c>--headless</c>. A plain interactive launch (the front end, <c>--sandbox</c>, <c>--load-original-level</c>,
+	/// <c>--play-movie</c> without <c>--smoke-test</c>, <c>--setup</c>) is none of them.
 	/// </summary>
-	internal static bool IsSilentRun( string[] args, string? silentEnvironment, string? offscreenEnvironment = null )
-	{
-		if ( args.Contains( "--silent" ) || silentEnvironment == "1" )
-			return true;
-		if ( args.Contains( "--smoke-audio" ) || args.Contains( "--audible" ) )
-			return false;
-		return args.Any( arg => arg.StartsWith( "--capture-", StringComparison.Ordinal ) || arg.StartsWith( "--perf-", StringComparison.Ordinal ) || arg.StartsWith( "--debug-", StringComparison.Ordinal ) )
-			|| args.Intersect( AutomatedFlags ).Any()
-			|| (offscreenEnvironment == "1" && !args.Contains( "--no-offscreen" ));
-	}
+	internal static bool IsAutomatedRun( string[] args ) =>
+		args.Any( arg => arg.StartsWith( "--capture-", StringComparison.Ordinal ) || arg.StartsWith( "--perf-", StringComparison.Ordinal ) || arg.StartsWith( "--debug-", StringComparison.Ordinal ) )
+		|| args.Intersect( AutomatedFlags ).Any();
 
 	private static readonly string[] AutomatedFlags =
 	{
@@ -1008,17 +1001,37 @@ internal static class Game
 	};
 
 	/// <summary>
-	/// [EXT:offscreen-automated-runs] smokes (<c>--smoke-test</c>, <c>--tpi-smoke-test</c>, <c>--park-resume-smoke</c>) create their window hidden and render into
-	/// an offscreen framebuffer, so no window appears, focus is not stolen and a locked screen does not matter. <c>--offscreen</c> or
-	/// <c>OPENTPW_OFFSCREEN=1</c> does the same for any run; <c>OPENTPW_OFFSCREEN=0</c> or <c>--no-offscreen</c> keeps the visible window.
+	/// [EXT:silent-automated-runs] every automated run (<see cref="IsAutomatedRun"/>) opens no audio device, so tests and agents on a developer machine make
+	/// no sound. <c>--smoke-audio</c> or <c>--audible</c> opts back in to sound; <c>--silent</c> or <c>OPENTPW_SILENT=1</c> silences any run, and so does
+	/// <c>OPENTPW_OFFSCREEN=1</c> unless the window is made visible. A plain interactive launch is never silenced. The game logic and its timing are unchanged.
+	/// </summary>
+	internal static bool IsSilentRun( string[] args, string? silentEnvironment, string? offscreenEnvironment = null )
+	{
+		if ( args.Contains( "--silent" ) || silentEnvironment == "1" )
+			return true;
+		if ( args.Contains( "--smoke-audio" ) || args.Contains( "--audible" ) )
+			return false;
+		return IsAutomatedRun( args ) || (offscreenEnvironment == "1" && !WantsVisibleWindow( args ));
+	}
+
+	/// <summary>
+	/// [EXT:offscreen-automated-runs] every automated run (<see cref="IsAutomatedRun"/>: smokes, captures, perf runs, debug runs, gates and the rest) creates
+	/// its window hidden and renders into an offscreen framebuffer, so no window appears on the developer's display, focus is not stolen and a locked
+	/// screen does not matter (the user's request of 2026-10-19: smoke tests and agent runs on a virtual screen; macOS has no Xvfb, the hidden window and
+	/// its framebuffer are that virtual screen). Captures read the same render textures either way, and perf runs are paced at the 60 Hz the documented
+	/// baselines were measured with (docs/ENGINE-PERFORMANCE.md). <c>--offscreen</c> or <c>OPENTPW_OFFSCREEN=1</c> does the same for any run;
+	/// <c>--no-offscreen</c>, its alias <c>--visible</c> (the window's counterpart of <c>--audible</c>), or <c>OPENTPW_OFFSCREEN=0</c> keeps the visible
+	/// window. Sound is a separate choice (<see cref="IsSilentRun"/>): <c>--audible</c> does not show the window and <c>--visible</c> does not unmute.
 	/// </summary>
 	internal static bool IsOffscreenRun( string[] args, string? offscreenEnvironment )
 	{
-		if ( args.Contains( "--no-offscreen" ) || offscreenEnvironment == "0" )
+		if ( WantsVisibleWindow( args ) || offscreenEnvironment == "0" )
 			return false;
-		return args.Contains( "--offscreen" ) || offscreenEnvironment == "1"
-			|| args.Contains( "--smoke-test" ) || args.Contains( "--tpi-smoke-test" ) || args.Contains( "--park-resume-smoke" );
+		return offscreenEnvironment == "1" || IsAutomatedRun( args );
 	}
+
+	/// <summary>The opt-out of <see cref="IsOffscreenRun"/>: <c>--no-offscreen</c> or <c>--visible</c>.</summary>
+	private static bool WantsVisibleWindow( string[] args ) => args.Contains( "--no-offscreen" ) || args.Contains( "--visible" );
 
 	private static AutorunScreen? CreateAutorun( string[] args, SetupSettings settings, string dataDirectory )
 	{

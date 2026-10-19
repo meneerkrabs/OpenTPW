@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, rm, symlink, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { keyMetrics, listFiles, mainThreadBusy, median, medianResults, percentile, safeResolve, startServer, summarizeFrames } from './web-perf/lib.mjs';
+import { chromeArguments, keyMetrics, listFiles, mainThreadBusy, median, medianResults, percentile, safeResolve, startServer, summarizeFrames } from './web-perf/lib.mjs';
 import { markdown } from './web-perf/report.mjs';
 
 // The browser performance harness (tools/web-perf/run.mjs) without a browser: its server, path handling, statistics and reports.
@@ -158,4 +158,13 @@ test('the server lists the game folder and serves it beside the page, nothing ou
 	} finally {
 		await rm(base, { recursive: true, force: true });
 	}
+});
+
+test('Chrome starts muted and headless unless a run asks for sound or a window', () => {
+	const muted = chromeArguments('/tmp/profile');
+	assert.ok(muted.includes('--mute-audio'));
+	assert.ok(muted.includes('--headless=new'));
+	const audible = chromeArguments('/tmp/profile', { audible: true, headed: true });
+	assert.ok(!audible.includes('--mute-audio'));
+	assert.ok(!audible.includes('--headless=new'));
 });

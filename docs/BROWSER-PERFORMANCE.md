@@ -9,7 +9,7 @@ garbage the browser pays for) is in [ENGINE-PERFORMANCE.md](ENGINE-PERFORMANCE.m
 
 ## Measuring
 
-`tools/web-perf/run.mjs` repeats the measurements below with one command. It serves a published
+`tools/web-perf/run.mjs` repeats the measurements below with one command. Chrome runs with `--mute-audio` (also headed, and for `tools/web-postcard-smoke.mjs`), so measurement runs make no sound; `--audible` lets a human listen. `--music` is unaffected: it switches the game's own music and speech on, and Web Audio still decodes them while the speakers are muted. It serves a published
 `wwwroot` and the player's own game folder on 127.0.0.1 (the page's `?data=` route), opens them
 in a fresh headless Chrome profile through the DevTools Protocol, drives the game through the
 same UI calls as the native front-end smoke test and writes a JSON report plus a Markdown summary.

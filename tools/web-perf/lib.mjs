@@ -130,15 +130,24 @@ export class Cdp {
 	close() { this.#socket.close(); }
 }
 
-/** Starts Chrome with a fresh profile and its DevTools port; resolves with the process and the browser WebSocket URL. */
-export async function launchChrome(executable, profile, { headed = false, width = 1280, height = 900 } = {}) {
+/** Chrome's command line for a fresh profile: headless and muted unless asked otherwise. */
+export function chromeArguments(profile, { headed = false, audible = false, width = 1280, height = 900 } = {}) {
 	const args = [
 		`--user-data-dir=${profile}`, '--remote-debugging-port=0', '--no-first-run', '--no-default-browser-check',
 		'--autoplay-policy=no-user-gesture-required', `--window-size=${width},${height}`, '--disable-background-timer-throttling',
 		'--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows', 'about:blank',
 	];
+	// Muting only silences the speakers; Web Audio still decodes, so --music timings are unchanged.
+	if (!audible)
+		args.push('--mute-audio');
 	if (!headed)
 		args.unshift('--headless=new');
+	return args;
+}
+
+/** Starts Chrome with a fresh profile and its DevTools port; resolves with the process and the browser WebSocket URL. */
+export async function launchChrome(executable, profile, options = {}) {
+	const args = chromeArguments(profile, options);
 	const chrome = spawn(executable, args, { stdio: ['ignore', 'ignore', 'ignore'] });
 	let failure = null;
 	chrome.on('error', error => failure = error);

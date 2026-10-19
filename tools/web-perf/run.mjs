@@ -37,7 +37,7 @@ const SELECTIONS = [['Rides', 'Belly Bounce'], ['Shops', 'Balloon Shop'], ['Shop
 
 function parseArguments(argv) {
 	const options = {
-		web: null, game: null, label: 'unlabelled', out: null, chrome: process.env.CHROME ?? DEFAULT_CHROME, headed: false,
+		web: null, game: null, label: 'unlabelled', out: null, chrome: process.env.CHROME ?? DEFAULT_CHROME, headed: false, audible: false,
 		scenarios: ['start', 'lobby', 'jungle', 'buy', 'digest'], window: 30, memoryMinutes: 10, music: false, width: 1280, height: 900, runs: 1, frameCap: 0, keep: 'off', zoom: null, shot: null, follow: null, crowd: 400, cover: 1, evening: null, eveningLamps: 0,
 	};
 	for (let index = 2; index < argv.length; index++) {
@@ -50,6 +50,7 @@ function parseArguments(argv) {
 			case '--out': options.out = value(); break;
 			case '--chrome': options.chrome = value(); break;
 			case '--headed': options.headed = true; break;
+			case '--audible': options.audible = true; break;
 			case '--scenarios': options.scenarios = value().split(',').map(item => item.trim()).filter(Boolean); break;
 			case '--window': options.window = Number(value()); break;
 			case '--memory-minutes': options.memoryMinutes = Number(value()); break;
@@ -96,6 +97,7 @@ function usage() {
   --frame-cap <fps>       the display settings' frame cap (0 off, 30, 60; default 0)
   --runs <n>              repeat the whole session n times, each in a fresh profile, and report the medians (default 1)
   --headed                show the browser window
+  --audible               let Chrome play sound (default: --mute-audio; --music still measures decoding)
   --chrome <path>         Chrome executable (default: the platform's Chrome, or $CHROME)`;
 }
 

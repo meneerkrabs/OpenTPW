@@ -213,10 +213,23 @@ public class EmployeeLivePortraitTests
 		rig.Prepare( 0.14f );
 		var expected = rig.Expected( 1, 1, -1, 0 );
 		var world = Get<Vertex[]>( rig.Renderer, "vertices" )[0].TexCoords;
+		Assert.AreEqual( (directions == 8 ? 6 : 2, directions < 8), GuestSpriteAtlas.SelectOriginalDirection( -1f, 0f, 0f, directions ) );
 		Assert.AreEqual( expected, rig.Renderer.EmployeeFrame( member )!.Value );
-		Camera.ViewMatrix = N.Matrix4x4.CreateRotationZ( MathF.PI / 2 );
+		// A positive quarter-turn maps heading sector 6 to sector 4. For three directions, mirrored
+		// direction 4 clamps to 2 and legitimately repeats the initial UV. The negative turn reaches
+		// sector 7 instead: stored direction 1 mirrored, or direction 7 in the full eight-direction bank.
+		Camera.ViewMatrix = N.Matrix4x4.CreateRotationZ( -MathF.PI / 2 );
+		var view = Camera.ViewMatrix;
+		var yaw = GuestSpriteAtlas.CameraYaw( new N.Vector3( view.M11, view.M21, view.M31 ), -new N.Vector3( view.M13, view.M23, view.M33 ), parkCamera: false );
+		Assert.AreEqual( -MathF.PI / 2, yaw, 0.0001f );
+		var (direction, mirror) = GuestSpriteAtlas.SelectOriginalDirection( -1f, 0f, yaw, directions );
+		Assert.AreEqual( (directions == 8 ? 7 : 1, directions < 8), (direction, mirror) );
 		rig.Prepare( 0.14f ); // Same clock: camera only, no extra player step.
-		Assert.AreNotEqual( world, Get<Vertex[]>( rig.Renderer, "vertices" )[0].TexCoords );
+		var rotated = Get<Vertex[]>( rig.Renderer, "vertices" )[0].TexCoords;
+		Assert.AreNotEqual( world, rotated );
+		var frame = rig.Atlas.Frames[rig.Atlas.GetFrame( 1, direction, 1 )];
+		Assert.AreEqual( (frame.X + (mirror ? frame.Width : 0)) / (float)rig.Atlas.Width, rotated.X, "actual world quad uses the rotated bank and mirror" );
+		Assert.AreEqual( frame.Y / (float)rig.Atlas.Height, rotated.Y );
 		Assert.AreEqual( expected, rig.Renderer.EmployeeFrame( member )!.Value );
 		Assert.AreEqual( directions < 8, expected.Mirror );
 	}

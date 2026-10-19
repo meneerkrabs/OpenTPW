@@ -46,3 +46,10 @@ HUD ticket count and spending use park state instead of global player earned-min
 - This deliverable is a documentation proposal only; no gameplay source files are changed by this PR.
 - Runtime work remains blocked on the evidence/ownership decisions listed above where applicable.
 - No approximation is retired by creating this plan; no PR is claimed implemented or ready to merge.
+
+## Current-source reconciliation (2026-10-19)
+At public main `fd8ff52eec12354fba02f23d23c5a217b2515a3b`, a global `PlayerTicketLedger` already exists, but its spent-ticket value is currently restored rather than used as the live purchase debit. The actual key callback is wired by `GameFlow` through `EconomyParkStatus.ForLevel(level, PlayerKeys)`; key display is not an unproven hypothetical caller.
+
+The purchase route is also present: `Level.Objects` calls `Park.Economy.TryBuild`; `CheckBuild` refuses a cost above park `GoldenTicketsAvailable`, and successful `TryBuild` increases park `TicketsSpent` and records the ticket-bought item. Thus park-local spending remains a substantive residual. The HUD ticket count also remains park-local. Do not add an early-placement refusal test as though commit-time refusal were absent.
+
+The next bounded design must define global ledger transaction ownership, cross-park ticket-bought items, failed-placement/rollback behavior and save continuation, using the existing ledger and economy ticket tests. Coordinate with the current command/build owner (#696) before implementation. No live transaction route is changed by this documentation reconciliation; original global/local/secret-ticket equivalence remains subject to the evidence gate above. No new native verification or executed-test claim.

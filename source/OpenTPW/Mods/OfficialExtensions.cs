@@ -103,11 +103,13 @@ public static class OfficialExtensions
 
 	/// <summary>
 	/// The evening and night extension (docs/EVENING.md): a day and night cycle on the play time (not the park speed), with a darker sky, ground and water at night and lamps that light up at
-	/// dusk (the pools extension's lamps and underwater lights, lamp-like original features and a few ride lights, from <c>content/data/evening-lights.json</c>). Presentation only:
-	/// <c>AffectsSimulation</c> is false, so it is not recorded in park saves and changes no hash. On by default; the pace is set on the OpenTPW options page.
+	/// dusk (the pools extension's lamps and underwater lights, lamp-like original features and a few ride lights, from <c>content/data/evening-lights.json</c>). The cycle and the lamps are presentation only and change no hash.
+	/// Since version 1.1.0 the extension also brings a buildable torch per Theme Park World theme (<c>content/evening</c>, <see cref="EveningContent"/>): an object with a price is a simulation change, so <c>AffectsSimulation</c> is true,
+	/// but a park save records the extension only while the park holds a torch (<c>ParkResumeMods.UsedOnlyExtensionIds</c>), so any other park saves byte-identically whether the extension is on or off. On by default; the pace is set on the OpenTPW options page.
 	/// </summary>
 	// [EXT:evening] OpenTPW's own extension; the original game's parks are always in daylight
-	public static IOpenTpwExtension Evening { get; } = new OpenTpwExtension( "opentpw.evening", "Evening and night", new ModVersion( 1, 0, 0 ), DefaultEnabled: true, AffectsSimulation: false, PlayerSelectable: true );
+	// [EXT:evening-torches] user-approved 2026-10-19 ("Onderdeel van de avondextensie"): the torches belong to this extension, which therefore changes the simulation while a park holds one
+	public static IOpenTpwExtension Evening { get; } = new OpenTpwExtension( "opentpw.evening", "Evening and night", new ModVersion( 1, 1, 0 ), DefaultEnabled: true, AffectsSimulation: true, PlayerSelectable: true );
 
 	/// <summary>
 	/// The winter extension (docs/WINTER.md): a winter kiosk and a glühwein stall per Theme Park World theme. The kiosk sells a warm item (a hat or earmuffs first, then mittens) all year, its demand following the season and the snow; the stall

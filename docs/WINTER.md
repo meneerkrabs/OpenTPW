@@ -199,7 +199,7 @@ October 19, 2026. `opentpw.winter-always` 1.0.0 is an option, **off by default**
 repository; nothing in it comes from Theme Park World or Theme Park Inc, and no original bytes or derived pixels are read at any step.
 
 - `objects.json`: eight shops, one **winter kiosk** and one **glühwein stall** per Theme Park World theme, ids **64010 to 64017** inside the extension's own range **64010 to 64499** (jungle kiosk 64010, jungle stall 64011, hallow 64012 and
-  64013, space 64014 and 64015, fantasy 64016 and 64017), category `shops`, `"research": false`. The range sits below the umbrellas' 64500..64999 and the pools' 65000..65535 and above the Theme Park Inc rides' 40000..40499. The
+  64013, space 64014 and 64015, fantasy 64016 and 64017), category `shops`, `"research": false`. The range sits below the umbrellas' 64500..64999 and the pools' 65000..65535 and above the evening extension's torches' 63900..63999 ([EVENING.md](EVENING.md#torches)) and the Theme Park Inc rides' 40000..40499. The
   first ten ids of the 64000 block, 64000 to 64009, belong to the example lamp mod (`content/mods/opentpw.example.lamp-lights`), which is why the winter range starts at 64010. The extension's id is `opentpw.winter`, so a park save will name
   the files `mod:opentpw.winter:/...` (as [POOLS.md](POOLS.md#content-extpools-content)). Names in the eleven interface languages.
 - `objects/<theme>/<shop>/` (`kiosk` and `gluehwein`): the MD2 model, 8 or 9 64 x 64 TGA textures (`wk_` and `wg_` prefixes), `Kiosk.sam` / `Gluehwein.sam` and the shop script. Both are **2 x 2 market huts** whose entrance is the lower left cell:

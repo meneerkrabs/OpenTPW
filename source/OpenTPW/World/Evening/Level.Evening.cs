@@ -3,7 +3,7 @@ using OpenTPW.Mods;
 namespace OpenTPW;
 
 // [EXT:evening] The park's time of day (docs/EVENING.md): presentation only. The clock advances with the play time, the look it gives (the sun, the ambient, the tints) is read by the renderer, and
-// the lamps are one more point-light source. None of it is read by the simulation, saved in a park, or part of a state hash.
+// the lamps are one more point-light source. None of it is read by the simulation, saved in a park, or part of a state hash (the extension's torches are objects of the catalog, EveningContent).
 public partial class Level
 {
 	/// <summary>The longest frame the cycle counts as play time (a long hitch or a load must not jump the sun).</summary>
@@ -15,20 +15,25 @@ public partial class Level
 	internal static EveningPace? EveningPaceOverride { get; set; }
 
 	/// <summary>
+	/// [EXT:perf-run] A run-scoped switch of the browser harness: while it is set the day cycle and its lamps are skipped as if the extension were off, but the extension stays in the mod set (it changes the
+	/// simulation since its torches, so the set cannot change during a run). Never saved.
+	/// </summary>
+	internal static bool EveningLookOff { get; set; }
+
+	/// <summary>
 	/// [EXT:perf-run] Performance hook of the browser harness (<c>tools/web-perf</c>): "night", "dusk" or "day" hold the evening look for the rest of the session (a run-scoped override like <c>--evening-pace</c>, never saved),
-	/// "off" switches the evening extension off for the session, "on" switches it back on and clears the override. Returns false for another value.
+	/// "off" skips the cycle and the lamps for the session as if the extension were off (<see cref="EveningLookOff"/>; the mod set, and so the catalog with its torches, stays as it is), "on" brings them back and clears the override.
+	/// The held looks need the extension on, which it is by default. Returns false for another value.
 	/// </summary>
 	public static bool PerfEvening( string mode )
 	{
-		// only the evening extension is switched: the other extensions and the mods of the session stay as they are
-		if ( mode is "night" or "dusk" or "day" or "on" or "off" )
-			OpenTpwExtensions.Activate( OpenTpwExtensions.Active.WithPresentationExtension( OfficialExtensions.Evening, mode != "off" ) );
 		switch ( mode )
 		{
-			case "night": EveningPaceOverride = EveningPace.AlwaysNight; return true;
-			case "dusk": EveningPaceOverride = EveningPace.AlwaysDusk; return true;
-			case "day": EveningPaceOverride = EveningPace.AlwaysDay; return true;
-			case "on": case "off": EveningPaceOverride = null; return true;
+			case "night": EveningLookOff = false; EveningPaceOverride = EveningPace.AlwaysNight; return true;
+			case "dusk": EveningLookOff = false; EveningPaceOverride = EveningPace.AlwaysDusk; return true;
+			case "day": EveningLookOff = false; EveningPaceOverride = EveningPace.AlwaysDay; return true;
+			case "on": EveningLookOff = false; EveningPaceOverride = null; return true;
+			case "off": EveningLookOff = true; EveningPaceOverride = null; return true;
 			default: return false;
 		}
 	}
@@ -75,7 +80,10 @@ public partial class Level
 	internal EveningLampSource? EveningLampLights => eveningLamps;
 
 	/// <summary>This frame's step of the day cycle, from the extension switch, the pace option, the frame time and the pause state.</summary>
-	private void UpdateEvening() => AdvanceEvening( FeatureGates.Evening, EveningPaceOverride ?? GameOptions.Current.Evening, Time.Delta, SimulationTimeScale > 0f );
+	private void UpdateEvening() => AdvanceEvening( EveningOn, EveningPaceOverride ?? GameOptions.Current.Evening, Time.Delta, SimulationTimeScale > 0f );
+
+	/// <summary>Whether the day cycle and its lamps run: the extension is on and the browser harness has not turned the look off for the run (<see cref="EveningLookOff"/>).</summary>
+	internal static bool EveningOn => FeatureGates.Evening && !EveningLookOff;
 
 	/// <summary>
 	/// Advances the day cycle by <paramref name="frameSeconds"/> of real time when the park is <paramref name="playing"/> (a paused park, whatever its speed setting, stands still; the cycle

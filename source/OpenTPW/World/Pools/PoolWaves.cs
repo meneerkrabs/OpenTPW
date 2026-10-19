@@ -153,7 +153,15 @@ public static class PoolWaves
 	/// (the phase in 64 steps of a period, the sine from the swimmers' heading table) while its crest is up, times the envelope and the height share of <see cref="MaxPush"/>; nothing in a trough, in a rest or
 	/// with the waves off. Integers only, so every machine agrees (docs/DETERMINISM.md).
 	/// </summary>
-	public static (int X, int Y) Push( PoolWaveSettings settings, long turn, int x, int y )
+	public static (int X, int Y) Push( PoolWaveSettings settings, long turn, int x, int y ) => Carry( settings, turn, x, y, swaying: false );
+
+	/// <summary>
+	/// [EXT:pools-waves] The sway of the waves on a body that floats on them (the wave pool's ring floaters): the same as <see cref="Push"/> while the crest is up, and as much back along -x -y while the
+	/// trough passes, so a floater rocks to and fro with the swell instead of being carried away. Integers only.
+	/// </summary>
+	public static (int X, int Y) Sway( PoolWaveSettings settings, long turn, int x, int y ) => Carry( settings, turn, x, y, swaying: true );
+
+	private static (int X, int Y) Carry( PoolWaveSettings settings, long turn, int x, int y, bool swaying )
 	{
 		var envelope = Envelope( settings, turn );
 		if ( envelope == 0 )
@@ -161,7 +169,7 @@ public static class PoolWaves
 		// SmoothWave's cycles are turn / 24 - (x + y) x 21/64; in 64ths of a period the point's share is (x + y) x 21 in 16.16, shifted down
 		var phase = (int)(turn % PeriodTurns) * 64 / PeriodTurns - (int)(((long)x + y) * PhasePerCell >> 16);
 		var sine = PoolSwimming.Direction( phase & 63 ).Y;
-		if ( sine <= 0 )
+		if ( sine <= 0 && !swaying )
 			return (0, 0);
 		var magnitude = (int)((long)MaxPush * Math.Clamp( settings.Height, 1, 3 ) * envelope * sine / (3L * 64 * Fixed16.One));
 		// along the diagonal: both axes take cos 45 degrees of it (heading 8 of the table)

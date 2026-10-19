@@ -155,7 +155,7 @@ public static class PoolSwimSlots
 	public const int SplashDown = 11;
 	/// <summary>Sitting in the water, knees up, an arm on the rim (2 frames): the spa.</summary>
 	public const int SittingInWater = 12;
-	/// <summary>Floating in an inflatable ring, paddling (4 frames): the lazy river.</summary>
+	/// <summary>Floating in an inflatable ring, paddling (4 frames): the lazy river and the wave pool's ring floaters.</summary>
 	public const int FloatingInRing = 13;
 	/// <summary>Swinging on a rope with both hands overhead (4 frames).</summary>
 	public const int RopeSwing = 14;
@@ -201,6 +201,8 @@ public static class PoolActivityRegistry
 			yield return new RopeSwingActivity( attractions );
 			yield return new JetsActivity( attractions );
 			yield return new SpaActivity( attractions );
+			// [EXT:pools-waves] ring floaters in a wave pool, offered only while its waves run
+			yield return new WaveRingActivity( attractions );
 		}
 		yield return new RiverActivity();
 		yield return new PoolWaterEffects( attractions );

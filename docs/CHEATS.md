@@ -200,12 +200,42 @@ extension record, so such a park loads with the extension off.
   - `[EXT:cheats-turn-boundary]`: every cheat applies at the next park turn (K1), so after the secret name the keys work from the next turn on.
   - The message of type `0x15` is not posted (its listeners are unknown, COMPAT-007).
 
+## The cheats window (K3)
+
+`opentpw.cheats` is selectable from K3 on (off by default). With it on, **Alt+C** opens and closes the cheats window (`ParkHud.CreateCheatsWindow`, `[EXT:cheats-window]`) in a Theme Park
+World park of the player's own (not a read-only visit, not in a Theme Park Inc run). The window is built from the options pages' pieces (an `f_screen` page, `f_optpanel` rows, `b_on2`
+buttons, the `b_okay` button) and every button queues a cheat for the next park turn; opening it marks nothing.
+
+- **Cheat mode.** The first row turns the original's cheat mode on (`CheatKind.Mode`, as the secret name does). The other actions are enabled once the mode is on or waiting for the next
+  turn, so the window does what the secret name allows and nothing more without it.
+- **Visitors by vehicle** `[EXT:cheats-arrival]`. The row cycles bus, plane and boat (the theme's `bus`, `seaplane` and `ferry` archives); "Send visitors" queues `CheatKind.Arrival`.
+  At the turn it applies, `GuestSimulation.TryStartCheatArrival` starts a group now: its size is the next natural group's size (the weather factor, the park's points and the minimum; no
+  draw) moved into the vehicle's band, which is the dispatch's own (`[BIN:TPW-EXE:0x4CF3E0]`, bus up to 35, plane 36 to 60, boat 61 or more), then cut by the park limit as every
+  group is (a lost park's group is empty). The chosen vehicle brings it whatever the cut size, and it is delivered as a natural group: the advisor's arrival ring sees its size, one guest
+  steps off per turn, and the turn that finds it empty restarts the arrival timer. While a group is being delivered or a vehicle is at work the cheat waits, unrecorded, for a later turn;
+  only one arrival cheat may wait at a time.
+- **Weather** `[EXT:cheats-weather]`. Clear, rain, thunderstorm or snow, in every theme (snow too: it is a cheat). "Change weather" queues `CheatKind.Weather`, which
+  `ParkWeather.ApplyCheat` applies as a forecast with no warning: the pending forecast is dropped, the change is now, and the next natural roll comes `DaysBetweenChanges - DaysOfWarning`
+  days later, as after a natural change. The original's converter (`0x512F00`) derives the kind from a rolled quality and the park's bands, which can tie-break with a draw and gives
+  snow only where the park's snow band holds a quality (not in the jungle or fantasy); the cheat sets the kind explicitly with a fixed quality (the middle of the park's band for that kind, or 30 for rain, 10 for a thunderstorm and 20 for snow when
+  the park has no such band) and a drop target (clear none and quality 100, rain and snow half the maximum, a thunderstorm three quarters with lightning). The drops ramp toward the target
+  at the usual speed. It waits while the park's weather has not taken its first step.
+- **Golden ticket.** The row cycles the ten tickets that have an original cheat, each shown with its Alt key; "Award ticket" queues the same `CheatKind.Ticket` as the key (K2), so the
+  award, its silence and its provenance are the original cheat's.
+- **Money and research.** "Add 10,000" and "Build everything" queue the Alt+1 and Alt+R cheats (K2), with their keys beside them.
+- **Status.** Below the right column: whether the park is already marked as cheated or will be, and how many cheats wait for the next turn.
+
+The weather and arrival cheats are the extension's own (`ParkCheats.IsExtensionKind`): they need the extension on and a level (`ParkEconomy.CheatHost`, the level as `IParkCheatHost`; a
+headless economy refuses them), and once one applied the world save records `opentpw.cheats` (K1). The money, research, ticket and mode buttons are the original's cheats and record
+nothing, so a park cheated only through them loads with the extension off. All of them go through the turn-boundary queue and take no draw; the pinned run with a scripted sequence is
+`CheatsExtensionTests.CheatsFixedRunHash` ([DETERMINISM.md](DETERMINISM.md#cheats)).
+
 ## Phases
 
 - **K0** (this document): the trace, the capacity data, COMPAT-007 and SAVE-010 narrowed.
 - **K1** (built): the extension (off, not yet selectable), the park's cheat record in the save, the used-only and sticky recording, the turn-boundary queue, the cheated mark shown.
 - **K2** (built): the original cheat mode: the secret name in `Level.RenamePark`, the cheat key context, Alt+R, Alt+1, the ten tickets, the import of `CHTS` and the original-format export's own `CHTS`
   (moved from K1: the export round trip of the corpus saves needs the import).
-- **K3**: the cheats window (Alt+C): arrival vehicles, weather, the ticket dropdown; `CheatsFixedRunHash`.
+- **K3** (built): the extension becomes selectable; the cheats window (Alt+C): the cheat mode, arrivals by vehicle, the weather, a chosen ticket, money and research; `CheatsFixedRunHash`.
 - **K4**: the ride vehicle limit for bump rides and tours; captures.
 - **K5** (optional, not planned): coaster trains.

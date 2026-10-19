@@ -172,7 +172,7 @@ public sealed class ParkWeather
 	/// replaced, the change is now, and the next roll comes <c>DaysBetweenChanges - DaysOfWarning</c> days later). The kind is set explicitly in every theme, snow too, with no tie-break draw; the drops
 	/// ramp toward the target at the usual <c>SpeedOfChange</c> a turn and lightning strikes on its own clock. False while the weather has not taken its first step.
 	/// </summary>
-	// [EXT:cheats-weather] the original's converter (0x512f00) derives the kind from a rolled quality and the park's bands (snow only in Halloween); the cheat sets the kind and a fixed quality and drop target instead: clear 100 and none, rain half the drops, a thunderstorm three quarters with lightning, snow half
+	// [EXT:cheats-weather] the original's converter (0x512f00) derives the kind from a rolled quality and the park's bands (snow only where the park's snow band holds a quality, not in the jungle or fantasy); the cheat sets the kind and a fixed quality and drop target instead: clear 100 and none, rain half the drops, a thunderstorm three quarters with lightning, snow half
 	internal bool ApplyCheat( CheatWeather kind, long tick )
 	{
 		if ( !started || !Enum.IsDefined( kind ) )

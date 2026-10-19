@@ -30,6 +30,7 @@ node tools/web-perf/run.mjs --web out/web/wwwroot --game "/path/to/Theme Park Wo
 | `memory` | wasm memory, managed heap and JS heap every 10 s over `--memory-minutes` |
 | `switch` | memory across park changes (Jungle, the lobby, the next island's park, the lobby, Jungle again), each point after a full collection: wasm, live managed memory, live parks, entities, live textures by source, archive and sound bytes, and in the lobby the static fields that hold the most |
 | `revisit` | with `--keep lazy` or `--keep all`: the same profile reopened without the served folder; Play, the lobby, then Jungle from the kept files (fails if it asks for the folder) |
+| `umbrellaCost` | (after `jungle`) the frame cost of a staged crowd (`--crowd`, default 400 extra guests) in rain, a steady window without and one with an open umbrella over every guest, at the Home and the farthest zoom (`Program.PerfUmbrellaCrowd`, loopback `?perf=1` only; docs/UMBRELLAS.md "Tuning") |
 | `digest` | deterministic work that must give the same result in every build, timed: every texture of the theme decoded and hashed, and the fixed park run of the original-data determinism test (seed 2026, 3000 ticks at the fastest speed; economy and guests) reduced to its world state hash. It blocks the page while it runs, so it comes last |
 
 `tools/web-perf/compare.mjs --a <reports> --b <reports>` prints the medians of two builds side by
@@ -493,6 +494,8 @@ See [browser setup and limitations](WEB.md), [audio](AUDIO.md) and
 ## Wide zoom (October 18, 2026)
 
 The wide zoom option lets the park camera go out to the zoom value 300 (UI.md). `tools/web-perf/run.mjs --scenarios jungle --window 20 --zoom 300` measures a second steady window with the
+
+`tools/web-perf/run.mjs --scenarios jungle,umbrellas --zoom 80 --shot umbrellas.png` is a capture aid for the umbrellas extension (docs/UMBRELLAS.md): after the Jungle start it calls the harness hook `PerfUmbrellas`, which gives every guest an open umbrella and keeps the camera on the first visible guest, waits until the renderer draws one (a new park has no guests for a while) and saves a screenshot. It is the browser twin of the desktop's Debug-build `--debug-umbrellas`, not a measurement; the guests' fields are written directly, so nothing from such a run may be saved.
 park camera held at that zoom value (hook `PerfZoom`); the control run with `--zoom 110` shows what the second window costs by itself (the first window follows the park's cold start). Published build of this branch (`dotnet publish -c Release`), Chrome 155 headless, Apple M5 through ANGLE/Metal, 1280 x 900, Jungle, 20 s windows, one run each:
 
 | Window | Main thread busy | fps | Frame p95 | Largest gap | Long tasks |

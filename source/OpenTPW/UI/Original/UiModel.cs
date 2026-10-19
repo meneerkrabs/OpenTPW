@@ -21,6 +21,24 @@ public sealed record UiModelFrame( string NodeName, IReadOnlyList<UiModelPart> P
 	public float Width => MaxX - MinX;
 	public float Height => MaxY - MinY;
 	public NVector2 Center => new( (MinX + MaxX) / 2, (MinY + MaxY) / 2 );
+
+	/// <summary>
+	/// Selected mesh's stored bound endpoints, transformed and ordered in the same y-down space as
+	/// the vertices. Used only to fit a control and invert its shape pick; geometric bounds stay separate.
+	/// </summary>
+	public UiRect? FitBounds { get; init; }
+
+	/// <summary>Shared drawing/picking fit, with geometric fallback for manual frames or unusable stored bounds.</summary>
+	internal bool TryGetFitBounds( out UiRect bounds )
+	{
+		// Host robustness, not a claim about the original's malformed-input behavior. Do not impose
+		// an epsilon on small positive extents or change signed destination-rectangle drawing.
+		static bool Usable( UiRect rect ) => float.IsFinite( rect.X ) && float.IsFinite( rect.Y )
+			&& float.IsFinite( rect.Width ) && float.IsFinite( rect.Height ) && rect.Width > 0 && rect.Height > 0
+			&& float.IsFinite( rect.Right ) && float.IsFinite( rect.Bottom );
+		bounds = FitBounds is { } fit && Usable( fit ) ? fit : new UiRect( MinX, MinY, Width, Height );
+		return Usable( bounds );
+	}
 }
 
 /// <summary>
@@ -28,11 +46,10 @@ public sealed record UiModelFrame( string NodeName, IReadOnlyList<UiModelPart> P
 /// full-screen frames span x 0..2048 and y 0..−1536, so the authoring space is a 2048×1536 virtual
 /// screen with y pointing up; HUD and lobby models are stored at their on-screen place (the root
 /// node translation), generic buttons and windows at the origin. Child nodes are alternative state
-/// frames: each child is translated one button width further along x from its parent in the authoring
-/// scene, so neither composed nor uncomposed matrices place it on screen. A child frame is therefore
-/// drawn with its own rotation/scale but the root's pose, which puts every state exactly over the root
-/// mesh. (The header bounds of UI files equal the box of each node's matrix applied alone, which is
-/// what docs/MD2-MODELS.md recorded as "matching uncomposed matrices".) Texture V runs bottom-up
+/// frames. Native drawing composes ancestors, then fits the selected mesh's stored bound endpoints
+/// to the control; a common XY translation of geometry and endpoints cancels in that fit. OpenTPW
+/// retains the root-pose shortcut for geometry and transforms the selected bounds identically;
+/// full ancestor/control-rotation parity remains open (UI-003). Texture V runs bottom-up
 /// (as in the 3D shaders): button art occupies the top-left of its texture while the UVs span
 /// v 0.42..1, so V is flipped here.
 /// </summary>
@@ -65,7 +82,7 @@ public sealed class UiModel
 		{
 			if ( node.MeshIndex < 0 || node.MeshIndex >= model.Meshes.Count )
 				continue;
-			// [APPROX:UI-003] state frames use the root pose (child translation dropped) — evidence needed: the node walk that submits the triangles of a control's model (the setter 0x65d070 is found, the draw is not)
+			// [APPROX:UI-003] selected-mesh endpoint fitting is retained, but state geometry still uses the root-pose shortcut; full ancestor composition, general state traversal and control rotation remain unimplemented — evidence needed: corpus-external hierarchy/rotation validation and rendered comparison
 			var transform = node.Index == root.Index ? root.Transform : WithoutTranslation( node.Transform ) * root.Transform;
 			var frame = Flatten( model.Meshes[node.MeshIndex], node.Name, transform );
 			if ( frame != null )
@@ -161,6 +178,15 @@ public sealed class UiModel
 			return (Depth: triangles.Average( triangle => triangle.Depth ), Part: new UiModelPart( group.Key, vertices,
 				triangles.SelectMany( triangle => new[] { triangle.A, triangle.B, triangle.C } ).ToArray(), transparent.Contains( group.Key ) ));
 		} ).OrderBy( part => part.Depth ).Select( part => part.Part ).ToArray();
-		return new UiModelFrame( nodeName, parts, minX, minY, maxX, maxY );
+		// [BIN:TPW-EXE:0x476fd3..0x47708f selected-mesh fitting] transform only the two stored
+		// endpoints, then order X/Y. This is not the header box, a corner AABB or an eight-corner box.
+		// Keep them in exactly the same flattened space as the vertices above (UI-003 still applies).
+		var first = NVector3.Transform( mesh.BoundsMin.GetSystemVector3(), transform );
+		var second = NVector3.Transform( mesh.BoundsMax.GetSystemVector3(), transform );
+		return new UiModelFrame( nodeName, parts, minX, minY, maxX, maxY )
+		{
+			FitBounds = new UiRect( Math.Min( first.X, second.X ), Math.Min( -first.Y, -second.Y ),
+				Math.Abs( second.X - first.X ), Math.Abs( second.Y - first.Y ) )
+		};
 	}
 }

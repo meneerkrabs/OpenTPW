@@ -415,6 +415,9 @@ public sealed class ChatConnection : IAsyncDisposable, IDisposable
 	/// <summary>Moves the player's avatar in the chat park: a position in the park, both axes 0 to 1.</summary>
 	public Task MoveAsync( float x, float y, CancellationToken cancel = default ) => SendAsync( ChatRequest.ForMove( x, y ), cancel );
 
+	/// <summary>Moves the player's avatar with a mode (a server of <see cref="ChatProtocol.MoveModesVersion"/> or later): a walk, a teleport, hidden or shown again.</summary>
+	public Task MoveAsync( float x, float y, ChatMoveMode mode, CancellationToken cancel = default ) => SendAsync( ChatRequest.ForMove( x, y, mode ), cancel );
+
 	public async Task SendAsync( ChatRequest request, CancellationToken cancel = default )
 	{
 		var bytes = StrictJson.Serialize( request );

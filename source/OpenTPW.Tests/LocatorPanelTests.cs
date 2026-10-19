@@ -147,7 +147,7 @@ public class LocatorPanelTests
 	}
 
 	[TestMethod]
-	public void StaffStepNewestFirstAndVisitorsByIdAmongActorsInTheWorld()
+	public void StaffRetainsItsExistingSnapshotOrderUntilRoleChainsArePersisted()
 	{
 		var staff = new[]
 		{

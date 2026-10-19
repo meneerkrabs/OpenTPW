@@ -1690,6 +1690,7 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 
 	public void Update()
 	{
+		RequireStaffResourceObservation();
 		++frame;
 		if ( staffSmokeActive ) Require( ++staffSmokeFrames <= MaximumStaffSmokeFrames, $"staff owner smoke finishes within {MaximumStaffSmokeFrames} normal outer frames" );
 		Require( frame - speechFrames - loadFrames - staffSmokeFrames < MaximumFrames, $"finish within {MaximumFrames} frames (stuck at '{(steps.Count > 0 ? steps.Peek().Name : "end")}')" );
@@ -1699,6 +1700,7 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			if ( flow.InjectedInput != null )
 				break;
 		}
+		RequireStaffResourceObservation();
 	}
 
 	/// <summary>

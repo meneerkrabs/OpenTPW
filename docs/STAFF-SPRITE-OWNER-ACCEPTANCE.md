@@ -111,7 +111,7 @@ Method references use the following class aliases. All files are under
 | D03 | Absent-source performance loop can remain Screen and draw: `EO.SourceLossInsidePerformanceLoopStaysScreenUntilAnActualFlagInstruction`; `LP.AbsentSourcePerformanceLoopKeepsDrawingItsIndependentScreenClone` | CPU owner + actual HUD Draw | A |
 | D04 | Return partial restores Screen on same clone: `EO.ActualSourceDeletionKeepsIndependentCloneAndReturnCopiesIntoSameEpochAndTicket`; `LP.SourceLossWorldRouteSuppressesActualHudQuadAndReturnRestoresSameClone` | CPU + actual HUD/Draw | A |
 | D05 | Strict slot/direction/frame/range rejection including Performance1 frameCount: `DR.InvalidOutputNeverFallsBackClampsOrWraps`; `DR.MirroredDirectionOutsideStoredRangeIsRejected`; `DR.PerformanceOneActuallyYieldsFrameCountAndStrictResolverRejectsIt` | CPU strict resolver, no fallback/modulo/clamp | A |
-| D06 | Current texture handle and immutable bank identity: `LP.MatchingTextureRecoveryRequiresNoWorldPassAndNeverMutatesVmHistory`; `LP.ResourceIdentityAndLayoutMismatchAreRejectedWithoutHotFillingCatalog`; `LP.RendererDeletionClearsHandlesAndDoesNotRetireCpuSourceOrClone` | Actual resolver/replacement/delete with managed sentinels; live GPU reload pending | A/P |
+| D06 | Current texture handle and immutable bank identity: `LP.MatchingTextureRecoveryRequiresNoWorldPassAndNeverMutatesVmHistory`; `LP.ResourceIdentityAndLayoutMismatchAreRejectedWithoutHotFillingCatalog`; `LP.RendererDeletionClearsHandlesAndDoesNotRetireCpuSourceOrClone`; [mandatory handyman Stand GPU resource lane](STAFF-SPRITE-OWNER-GPU-SMOKE.md#d06-bounded-live-gpu-resource-lifetime) | CPU managed sentinels plus authored live-GPU unavailable fixture, targeted current-atlas reload and real retirement; exact-artifact execution/capture review pending | A/P |
 | D07 | Named unsupported transforms/resources leave words untouched: `DR.NondefaultAppearanceIsExplicitlyUnsupportedWithoutChangingWords`; `DR.UnsupportedMultipartAndNonfinitePoseRemainExplicit`; `LP.UnsupportedTransformProducesNoActualHudQuadAndKeepsRawWords` | CPU resolver + actual HUD no-quad assertion | A |
 | D08 | Employee feet/2.4 scale, asymmetric origin, mirror and pixel factors: `EG.ActualCallbackDrawsIndependentNonWalkCloneBeforeWorldDrawAndAfterSourceLoss`; `EG.ActualThreeWidgetsAndDefaultDrawKeepIndependentBoundsFeetAndScale`; `HU.HudAuthoredRawCloneCoordinatesArePreservedByPeriodicCopy` | Actual CPU quad geometry; authored depth slot 1 (0.975), not native raster/depth proof | A |
 | M01 | Missing bank still constructs/schedules ordinary source and clone: `MT.MissingMetadataStillConstructsAndSchedulesBothOwnersWithoutReplayOrHotFill` | CPU metadata/owners, output may become valid while draw stays unavailable | A |
@@ -125,10 +125,21 @@ Method references use the following class aliases. All files are under
 
 ## Outstanding execution and fidelity gates
 
-D06 remains narrower than a live graphics-device reload: its tests invoke the
-actual resolver, managed-handle replacement and deletion routes, without a GPU
-upload or native texture disposal. The CPU edge and reconstruction routes are
-now mapped to existing methods. No existing method name stands in for an
+D06's CPU tests invoke the actual resolver, managed-handle replacement and
+deletion routes without GPU upload or native disposal. The authored GPU harness
+adds one mandatory handyman Stand lane in both full and bounded modes: an
+explicit disposed-test-handle unavailable fixture while the real original
+allocation remains alive, followed by genuine targeted current-atlas reload and
+verified original/scratch retirement. The selected normalized `PackKey` must be
+unique among loaded atlases. All eight material slots, unchanged complete owner
+observations, unrelated resource identities and absent/recovered world/portrait
+controls are required. No global pack switch or game-data file writes occur.
+This is not hardware device loss or original-executable raster parity. Live GPU
+execution and manual capture review remain pending until the exact artifact
+runs successfully; source tests alone do not close D06.
+
+The CPU edge and reconstruction routes are mapped to existing methods.
+No existing method name stands in for an
 unimplemented route, and no row is marked accepted merely because it is mapped.
 Full-world reconstruction calls the actual restore/initialize stages after a
 real host-envelope round trip, excluding the GPU/menu construction shell. The
@@ -138,8 +149,9 @@ it neither executes original software nor restores native VM history.
 All 65 vectors still require exact-head C# execution. The following are separate
 from synthetic coverage and cannot be closed by passing a structural guard:
 
-- Live GPU texture reload and lawful all-role visual smoke, including source
-  loss/return, rename and pause. Lawful host visual/GPU smoke remains pending.
+- Exact-artifact execution and manual inspection of the authored D06 live GPU
+  resource lane and lawful all-role visual smoke, including source loss/return,
+  rename and pause. Lawful host visual/GPU smoke remains pending.
 - Host allocation/per-frame layout-validation cost measurement.
 - Native full-event ordering and modal/control eligibility. Current behavior is
   immediate host full refresh plus post-simulation partial-before-heading, with

@@ -4,7 +4,10 @@ namespace OpenTPW;
 /// <param name="VisitorsToDate">The guest simulation's count of visitors (<c>mNumberOfVisitorsToDate</c>); null keeps the template's.</param>
 /// <param name="Research">The park's research; when given, the research lab, object controls' researched bytes and analyser's recent-research rings are written from it (<see cref="OriginalResearchExport"/>), else the template's stay.</param>
 /// <param name="Researchers">The number of hired researchers (the lab's active byte is set while there are any).</param>
-public sealed record OriginalParkExportOptions( uint? VisitorsToDate = null, ParkResearch? Research = null, int Researchers = 0 );
+/// <param name="RidesAboveOriginalLimits">[EXT:cheats-ride-vehicles] How many of the park's rides the vehicle cheat raised and that run above their type's original capacity maximum
+/// (<c>Level.RidesAboveOriginalLimits</c>, which the caller passes: the economy snapshot holds no rides): such a park is refused, because the original keeps a ride's capacity in a byte and
+/// clamps it to its type's own maximum. A raised ride whose capacity stays within the original's maximum is no obstacle.</param>
+public sealed record OriginalParkExportOptions( uint? VisitorsToDate = null, ParkResearch? Research = null, int Researchers = 0, int RidesAboveOriginalLimits = 0 );
 
 /// <summary>
 /// Writes an OpenTPW park's economy back into an original-format park (the twin of <see cref="OriginalEconomyImport"/>): the park turn and calendar, the world generator
@@ -32,6 +35,9 @@ public static class OriginalParkExport
 		ArgumentNullException.ThrowIfNull( template );
 		ArgumentNullException.ThrowIfNull( park );
 		options ??= new OriginalParkExportOptions();
+		// [EXT:cheats-export] the user's decision: a park whose rides hold more vehicles than the original's limits is not written in the original's format
+		if ( options.RidesAboveOriginalLimits > 0 )
+			throw new InvalidDataException( $"The park has {options.RidesAboveOriginalLimits} ride(s) whose vehicle limit a cheat raised and whose capacity is above the original's limit; the original game cannot hold them (docs/CHEATS.md)." );
 		var lines = new List<string>();
 		// a deep copy: the template's own bytes through the writer and reader
 		var result = OriginalSavePayload.Read( template.Write() );

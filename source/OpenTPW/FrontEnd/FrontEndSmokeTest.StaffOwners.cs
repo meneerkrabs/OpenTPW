@@ -77,11 +77,11 @@ internal sealed partial class FrontEndSmokeTest
 			staffSmokePresentation.Registry.Scheduled += StaffSmokeScheduled;
 			flow.Hud!.CloseStaffWindow();
 			staffSmokeBuyOpen = flow.Hud.BuyWindowOpen; flow.Hud.CloseBuyWindow();
-			camera.SetPose( flow.Level.PathFocus, ParkCameraMode.MinimumHeight, ParkCameraMode.HomeYaw );
+			camera.SetPose( flow.Level.PathFocus, ParkCameraMode.MaximumHeight, ParkCameraMode.HomeYaw );
 			Directory.CreateDirectory( Path.GetDirectoryName( StaffEvidencePath )! );
 			File.WriteAllText( StaffEvidencePath, "" );
 			StaffEvidence( "scope", "start", new { Backend = Device.BackendType.ToString(),
-				Assembly = typeof( FrontEndSmokeTest ).Assembly.GetName().Version?.ToString(),
+				Assembly = typeof( FrontEndSmokeTest ).Assembly.GetName().Version?.ToString(), CameraHeight = camera.Height, CameraYaw = camera.Yaw,
 				Qualification = "OpenTPW GPU smoke; request fixtures do not prove natural work triggers or original raster parity. Build checkout and driver provenance are supplied by the runner." } );
 		} );
 		Wait( "staff smoke camera settles", 3 );
@@ -90,6 +90,7 @@ internal sealed partial class FrontEndSmokeTest
 			Do( $"staff owner hire {role}", () => HireStaffSmoke( role ) );
 			WaitStaffOwner( $"{role} actual placement initializes navigation", () => staffSmokeMember!.Navigation != null );
 			PlanStaffProgram( role, "stand", StaffSpriteProgram.Stand );
+			if ( role == StaffType.Handyman ) PlanStaffTextureReload();
 			PlanStaffProgram( role, "walk-request", StaffSpriteProgram.Walk );
 			switch ( role )
 			{
@@ -124,33 +125,44 @@ internal sealed partial class FrontEndSmokeTest
 		var hud = flow.Hud!; var level = flow.Level!; var placement = level.StaffPlacement!;
 		StaffEconomy.Speed = GameSpeed.Normal;
 		hud.OpenStaffWindow(); hud.FilterStaff( role ); hud.ShowEmployedStaff( false ); hud.SelectStaff( 0 );
-		Require( hud.StaffCandidates.Count > 0 && hud.HireSelectedStaff(), $"required {role} applicant can be hired" );
+		Require( hud.StaffCandidates.Count > 0 && hud.SelectedCandidate != null, $"required {role} applicant exists" );
+		var bank = staffSmokePresentation!.Catalog.Select( role, StaffSpriteRules.KeyOf( hud.SelectedCandidate! ) );
+		Require( bank.Available && !bank.Multipart, $"required {role} bank is available and supported; otherwise the GPU gate remains open" );
+		Require( hud.HireSelectedStaff(), $"required {role} applicant can be hired" );
 		var cells = level.Guests!.Grid.Cells;
-		// Reserve a conservative quad envelope below the authored employee window and clear of every active UI element.
-		// Exact frame geometry and every other staff quad are checked again once the normal owner has published output.
+		// Use the entire selected bank (all frames and both mirrors), actual interpolated ground and the same
+		// billboard projection as the final draw check. A fixed pixel envelope or mean cell height is insufficient.
+		var envelope = StaffFrameEnvelope( bank.Frames );
 		var employeeBounds = OriginalLayoutTables.EmployeeWindow.All.Select( node => Context.Canvas.Map( node.Rect, UiAnchor.Center ) ).ToArray();
-		var marginScale = Context.Canvas.Height / 800f;
-		bool ClearPlacement( NVector2 point )
-		{
-			var envelope = new UiRect( point.X - 40 * marginScale, point.Y - 100 * marginScale, 80 * marginScale, 108 * marginScale );
-			return envelope.X >= 0 && envelope.Right <= Context.Canvas.Width && envelope.Y >= 0 && envelope.Bottom <= Context.Canvas.Height
-				&& employeeBounds.All( rect => StaffRectsSeparate( envelope, rect ) ) && StaffUiClear( envelope );
-		}
+		bool ClearPlacement( UiRect rect ) => rect.Width > 0 && rect.Height > 0 && rect.X >= 0 && rect.Right <= Context.Canvas.Width
+			&& rect.Y >= 0 && rect.Bottom <= Context.Canvas.Height
+			&& employeeBounds.All( bounds => StaffRectsSeparate( rect, bounds ) ) && StaffUiClear( rect );
 		(int X, int Y)? chosen = null;
 		for ( var y = 0; y < cells.Height && chosen == null; y++ )
 			for ( var x = 0; x < cells.Width && chosen == null; x++ )
-				if ( placement.IsValid( x, y ) && level.TryProjectCell( x, y, new( Context.Canvas.Width, Context.Canvas.Height ), out var point )
-					&& point.X > Context.Canvas.Width * 0.2f && point.X < Context.Canvas.Width * 0.8f
-					&& point.Y > Context.Canvas.Height * 0.6f && point.Y < Context.Canvas.Height * 0.88f && ClearPlacement( point )
+			{
+				if ( !placement.IsValid( x, y ) ) continue;
+				var feet = GuestRenderer.CellToEngine( level.OriginalPark!.Heightfield, x + 0.5f, y + 0.5f );
+				if ( StaffProjectFrameRect( feet, envelope, Camera.ViewMatrix, Camera.ProjMatrix,
+					Context.Canvas.Width, Context.Canvas.Height, pulled: true ) is not { } rect ) continue;
+				if ( ClearPlacement( rect )
 					&& StaffEconomy.Staff.Members.All( member => member.CellX == null || Math.Abs( member.CellX.Value - x ) + Math.Abs( member.CellY!.Value - y ) > 6 ) ) chosen = (x, y);
+			}
+		if ( chosen == null )
+		{
+			StaffEvidence( "placement-failure", role.ToString(), new { Envelope = new[] { envelope.Left, envelope.Right, envelope.Top, envelope.Bottom },
+				Context.Canvas.Width, Context.Canvas.Height, CameraHeight = ((ParkCameraMode)Camera.Mode).Height } );
+			CaptureFrame( "staff-placement-failure.png" );
+		}
 		Require( chosen != null, $"an isolated visible placement cell exists for required {role}" );
 		Require( placement.Click( chosen!.Value.X, chosen.Value.Y ) == StaffClickResult.Placed, $"actual placement hires {role}" );
 		staffSmokeMember = placement.LastPlaced!;
 		Require( staffSmokeMember.Type == role && staffSmokeMember.BodySprite?.SourceTicket != null, $"{role} has its actual source owner" );
-		var bank = staffSmokePresentation!.Catalog.Select( role, StaffSpriteRules.KeyOf( staffSmokeMember ) );
-		Require( bank.Available && !bank.Multipart, $"required {role} bank is available and supported; otherwise the GPU gate remains open" );
+		// The same labelled idle request-fixture setup is installed before the first navigation turn, avoiding placement drift.
+		staffSmokeMember.Job = StaffJob.Idle; staffSmokeMember.State = StaffState.Idle; staffSmokeMember.IdleStamp = StaffEconomy.Turn + 100_000;
 		Require( hud.OpenEmployeeWindow( staffSmokeMember ), "actual employee root opens" );
 		StaffEvidence( "lifecycle", $"{role}-hire-place", new { staffSmokeMember.Id, staffSmokeMember.ThingId, bank.Kind, bank.Variant, Slots = bank.Slots.Count, Frames = bank.Frames.Count } );
+		StaffEvidence( "request-fixture", $"{role}-placement-idle", new { IdleSetupOnly = true, RandomDrawAdded = false } );
 	}
 
 	private void PlanStaffProgram( StaffType role, string label, StaffSpriteProgram? program, bool request = true )
@@ -223,7 +235,8 @@ internal sealed partial class FrontEndSmokeTest
 		} );
 	}
 
-	private void PlanStaffPair( string name, bool portrait, bool expectContribution = true )
+	private void PlanStaffPair( string name, bool portrait, bool expectContribution = true, Func<UiRect>? fixedRoi = null,
+		Action<(byte[] Pixels, int Width, int Height)>? observeVisible = null )
 	{
 		string? before = null; UiRect roi = default;
 		(byte[] Pixels, int Width, int Height) visible = default, hidden = default;
@@ -232,11 +245,14 @@ internal sealed partial class FrontEndSmokeTest
 			try
 			{
 				Require( restoreStaffVisibility == null, "one visibility pair owns its restoration" );
-				roi = portrait ? expectContribution ? StaffPortraitRect() : StaffFigure.ScreenRect( Context.Canvas ) : StaffWorldRect( staffSmokeMember! );
+				roi = StaffEvidenceRect( fixedRoi?.Invoke(), () => portrait ? expectContribution ? StaffPortraitRect() : StaffFigure.ScreenRect( Context.Canvas ) : StaffWorldRect( staffSmokeMember! ) );
 				Require( roi.Width > 0 && roi.Height > 0 && roi.X >= 0 && roi.Y >= 0 && roi.Right <= Context.Canvas.Width && roi.Bottom <= Context.Canvas.Height,
 					$"{name} expected sprite ROI is wholly visible" );
 				if ( !portrait ) RequireIsolatedStaffRect( roi );
-				before = StaffObservation(); visible = CaptureFrame( name + "-visible.png" );
+				before = staffResourceObservation ?? StaffObservation();
+				Require( before == StaffObservation(), $"{name} retains the original resource-sequence baseline" );
+				visible = CaptureFrame( name + "-visible.png" );
+				observeVisible?.Invoke( visible );
 				Require( before == StaffObservation(), $"{name} GPU readback does not mutate owners or gameplay" );
 				if ( portrait )
 				{
@@ -262,7 +278,7 @@ internal sealed partial class FrontEndSmokeTest
 				Require( before == StaffObservation(), $"{name} hidden readback is observational" );
 				var changed = StaffPixelChanges( visible, hidden, roi );
 				Require( expectContribution ? changed > 0 : changed == 0,
-					$"{name} {(expectContribution ? "contributes nonzero pixels" : "contributes no unsupported world-route pixels")} inside its expected ROI" );
+					$"{name} {(expectContribution ? "contributes nonzero pixels" : "contributes no pixels")} inside its expected ROI" );
 			}
 			finally { RestoreStaffVisibility(); }
 		} );
@@ -449,34 +465,66 @@ internal sealed partial class FrontEndSmokeTest
 	private UiRect StaffWorldRect( StaffMember member )
 	{
 		var record = member.BodySprite?.DrawRecord; Require( record != null && record.Route == StaffSpriteRoute.World, "required world source has output" );
-		var view = Camera.ViewMatrix; var right = new NVector3( view.M11, view.M21, view.M31 ); var up = new NVector3( view.M12, view.M22, view.M32 );
+		var view = Camera.ViewMatrix; var right = new NVector3( view.M11, view.M21, view.M31 );
 		var forward = -new NVector3( view.M13, view.M23, view.M33 );
 		var resolved = StaffRenderer.ResolveRecord( record!, GuestSpriteAtlas.CameraYaw( right, forward, true ) );
 		Require( resolved.CanDraw, $"required source resource resolves ({resolved.Diagnostic})" );
 		var feet = GuestRenderer.CellToEngine( flow.Level!.OriginalPark!.Heightfield, record!.PositionX, record.PositionY, record.PositionZ );
-		var share = 1f; if ( (record.Flags & 0x200) != 0 ) (feet, share) = GuestRenderer.PullTowardsEye( feet, GuestRenderer.Eye( view ), forward );
-		var (left, rightEdge, top, bottom) = resolved.Frame.Extents( resolved.Mirror, GuestRenderer.UnitsPerPixel );
-		NVector2 Project( float x, float y )
+		var rect = StaffProjectFrameRect( feet, resolved.Frame.Extents( resolved.Mirror, GuestRenderer.UnitsPerPixel ), view, Camera.ProjMatrix,
+			Context.Canvas.Width, Context.Canvas.Height, (record.Flags & 0x200) != 0 );
+		Require( rect != null, "source quad is finite and in front of the camera" );
+		return rect!.Value;
+	}
+
+	internal static (float Left, float Right, float Top, float Bottom) StaffFrameEnvelope( IReadOnlyList<GuestAtlasFrame> frames )
+	{
+		Require( frames.Count > 0, "placement envelope requires a real bank" );
+		var extents = frames.SelectMany( value => new[] { value.Extents( false, GuestRenderer.UnitsPerPixel ), value.Extents( true, GuestRenderer.UnitsPerPixel ) } ).ToArray();
+		return (extents.Min( value => value.X0 ), extents.Max( value => value.X1 ), extents.Max( value => value.Top ), extents.Min( value => value.Bottom ));
+	}
+
+	internal static UiRect? StaffProjectFrameRect( NVector3 feet, (float Left, float Right, float Top, float Bottom) extents,
+		NMatrix view, NMatrix projection, int width, int height, bool pulled )
+	{
+		var right = new NVector3( view.M11, view.M21, view.M31 ); var up = new NVector3( view.M12, view.M22, view.M32 );
+		var forward = -new NVector3( view.M13, view.M23, view.M33 );
+		var share = 1f; if ( pulled ) (feet, share) = GuestRenderer.PullTowardsEye( feet, GuestRenderer.Eye( view ), forward );
+		NVector2? Project( float x, float y )
 		{
-			var clip = NVector4.Transform( new NVector4( feet + right * (x * share) + up * (y * share), 1 ), view * Camera.ProjMatrix );
-			Require( clip.W > 0, "source quad is in front of the camera" );
-			return new( (clip.X / clip.W + 1) * 0.5f * Context.Canvas.Width, (1 - clip.Y / clip.W) * 0.5f * Context.Canvas.Height );
+			var clip = NVector4.Transform( new NVector4( feet + right * (x * share) + up * (y * share), 1 ), view * projection );
+			if ( !(clip.W > 0) ) return null;
+			var point = new NVector2( (clip.X / clip.W + 1) * 0.5f * width, (1 - clip.Y / clip.W) * 0.5f * height );
+			return float.IsFinite( point.X ) && float.IsFinite( point.Y ) ? point : null;
 		}
-		var corners = new[] { Project( left, top ), Project( rightEdge, top ), Project( left, bottom ), Project( rightEdge, bottom ) };
-		var x0 = corners.Min( point => point.X ); var y0 = corners.Min( point => point.Y );
-		return new( x0, y0, corners.Max( point => point.X ) - x0, corners.Max( point => point.Y ) - y0 );
+		var corners = new[] { Project( extents.Left, extents.Top ), Project( extents.Right, extents.Top ), Project( extents.Left, extents.Bottom ), Project( extents.Right, extents.Bottom ) };
+		if ( corners.Any( point => point == null ) ) return null;
+		var x0 = corners.Min( point => point!.Value.X ); var y0 = corners.Min( point => point!.Value.Y );
+		return new( x0, y0, corners.Max( point => point!.Value.X ) - x0, corners.Max( point => point!.Value.Y ) - y0 );
 	}
 
 	private void RequireIsolatedStaffRect( UiRect target )
 	{
 		Require( flow.Level!.StaffPlacement!.Kind == StaffToolKind.None, "world contribution pair excludes the dangling sprite" );
+		var staff = new List<object>();
 		foreach ( var other in StaffEconomy.Staff.Members.Where( member => member != staffSmokeMember ) )
 		{
 			if ( other.BodySprite?.DrawRecord is not { Route: StaffSpriteRoute.World } record || !StaffRenderer.ResolveRecord( record ).CanDraw ) continue;
 			var rect = StaffWorldRect( other );
-			Require( rect.Right < target.X - 2 || rect.X > target.Right + 2 || rect.Bottom < target.Y - 2 || rect.Y > target.Bottom + 2,
-				"no other staff quad overlaps the target ROI when the whole staff renderer is hidden" );
+			if ( !(rect.Right < target.X - 2 || rect.X > target.Right + 2 || rect.Bottom < target.Y - 2 || rect.Y > target.Bottom + 2) )
+				staff.Add( new { other.Id, other.ThingId, Rect = rect } );
 		}
+		var ui = flow.Hud!.Stack.Screens.SelectMany( screen => screen.Elements.Where( element => element.Visible )
+			.Select( element => new { Screen = screen.Name, Element = element.Id, Type = element.GetType().Name, Rect = element.ScreenRect( Context.Canvas ) } ) )
+			.Where( element => !StaffRectsSeparate( target, element.Rect ) ).ToArray();
+		if ( staff.Count > 0 || ui.Length > 0 )
+		{
+			var details = new { Roi = target, Staff = staff, Ui = ui };
+			StaffEvidence( "isolation-failure", "world", details );
+			Log.Warning( $"Staff world ROI isolation failed: {JsonSerializer.Serialize( details )}" );
+			try { CaptureFrame( "staff-isolation-failure.png" ); }
+			catch ( Exception exception ) { Log.Warning( $"Could not retain staff isolation failure capture: {exception.Message}" ); }
+		}
+		Require( staff.Count == 0, "no other staff quad overlaps the target ROI when the whole staff renderer is hidden" );
 		Require( StaffUiClear( target ), "no active window or HUD element overlaps the isolated world sprite ROI" );
 	}
 
@@ -536,6 +584,7 @@ internal sealed partial class FrontEndSmokeTest
 		try { RestoreStaffVisibility(); }
 		finally
 		{
+			RestoreStaffResources();
 			if ( staffSmokeActive )
 			{
 				if ( staffSmokePresentation != null ) staffSmokePresentation.Registry.Scheduled -= StaffSmokeScheduled;

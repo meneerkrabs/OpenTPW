@@ -67,6 +67,16 @@ public sealed class StaffRenderer : Entity
 		TexturePackSwitch.PackChanged += ReloadAtlases;
 	}
 
+	/// <summary>Loaded atlas keys in owned-texture order for targeted resource-lifetime checks.</summary>
+	internal IReadOnlyList<string> AtlasPackKeys => sprites.Atlases.Take( textures.Count ).Select( atlas => atlas.PackKey ).ToArray();
+
+	/// <summary>Runs the existing targeted current-resource reload without raising a global pack event.</summary>
+	internal void ReloadAtlas( int index )
+	{
+		if ( (uint)index >= (uint)textures.Count ) throw new ArgumentOutOfRangeException( nameof( index ) );
+		ReloadAtlases( new[] { sprites.Atlases[index].PackKey } );
+	}
+
 	private void ReloadAtlases() => ReloadAtlases( null );
 
 	/// <summary>[EXT:texture-pack] Rebuilds the atlas textures after a pack change or a lazy download (all of them, or those the paths name), as the guests' do.</summary>

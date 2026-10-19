@@ -6,6 +6,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 SMOKE = "source/OpenTPW/FrontEnd/FrontEndSmokeTest.StaffOwners.cs"
 PLAN = "source/OpenTPW/FrontEnd/FrontEndSmokeTest.cs"
+RESOURCES = "source/OpenTPW/FrontEnd/FrontEndSmokeTest.StaffResources.cs"
 GUIDE = "docs/STAFF-SPRITE-OWNER-GPU-SMOKE.md"
 
 
@@ -105,9 +106,12 @@ class StaffSpriteOwnerGpuSmokeContract(unittest.TestCase):
                            "placement.Click(", "StaffClickResult.Placed", "SourceTicket != null",
                            "Require( bank.Available && !bank.Multipart", "hud.OpenEmployeeWindow(",
                            "OriginalLayoutTables.EmployeeWindow.All.Select(", "Context.Canvas.Map( node.Rect, UiAnchor.Center )",
-                           "Context.Canvas.Height / 800f", "80 * marginScale, 108 * marginScale",
-                           "employeeBounds.All( rect => StaffRectsSeparate( envelope, rect ) )", "StaffUiClear( envelope )",
-                           "point.Y > Context.Canvas.Height * 0.6f", "point.Y < Context.Canvas.Height * 0.88f", "ClearPlacement( point )")
+                           "StaffFrameEnvelope( bank.Frames )", "GuestRenderer.CellToEngine( level.OriginalPark!.Heightfield, x + 0.5f, y + 0.5f )",
+                           "employeeBounds.All( bounds => StaffRectsSeparate( rect, bounds ) )", "StaffUiClear( rect )",
+                           "ClearPlacement( rect )",
+                           "StaffProjectFrameRect(", "pulled: true", "staffSmokeMember.IdleStamp = StaffEconomy.Turn + 100_000")
+        self.assertNotIn("rect.Center", hire)  # Side gaps stay eligible; strict full-quad/UI checks decide.
+        self.assertIn("ParkCameraMode.MaximumHeight", body(self.code, "private void PlanStaffOwners()"))
         program = body(self.code, "private void PlanStaffProgram(")
         self.assert_tokens(program, "member.BodySprite!.RequestTemplate(",
                            "Require( bank.TryPerformance(", "member.BodySprite!.RequestPerformance(",
@@ -119,7 +123,7 @@ class StaffSpriteOwnerGpuSmokeContract(unittest.TestCase):
                            "StabilizeStaffOwner( name )", "portrait: false", "portrait: true")
 
     def test_fixture_cannot_directly_schedule_publish_or_patch_vm_state(self):
-        code = mask(self.smoke)
+        code = mask(self.smoke + read(RESOURCES))
         for token in (".Schedule(", ".Tick(", ".ApplyPending(", ".PresentStaffSprites(",
                       ".RefreshEmployeePortrait(", ".Publish(", ".AdvanceSimulation("):
             self.assertNotIn(token, code)
@@ -163,7 +167,7 @@ class StaffSpriteOwnerGpuSmokeContract(unittest.TestCase):
     def test_pair_captures_preserve_positive_and_negative_visibility_controls(self):
         pair = body(self.code, "private void PlanStaffPair(")
         self.assert_tokens(pair, "StaffPortraitRect()", "StaffWorldRect( staffSmokeMember! )",
-                           "RequireIsolatedStaffRect( roi )", "before = StaffObservation()",
+                           "RequireIsolatedStaffRect( roi )", "before = staffResourceObservation ?? StaffObservation()",
                            'CaptureFrame( name + "-visible.png" )', 'CaptureFrame( name + "-hidden.png" )',
                            'CaptureFrame( name + "-restored.png" )', "figure.Visible = false", "renderer.Visible = false",
                            "restoreStaffVisibility = () => figure.Visible = wasVisible",
@@ -190,11 +194,13 @@ class StaffSpriteOwnerGpuSmokeContract(unittest.TestCase):
         world = body(self.code, "private UiRect StaffWorldRect(")
         self.assert_tokens(world, "record.Route == StaffSpriteRoute.World", "StaffRenderer.ResolveRecord(",
                            "Require( resolved.CanDraw", "Camera.ViewMatrix", "Camera.ProjMatrix",
-                           "resolved.Frame.Extents(", "Require( clip.W > 0")
+                           "resolved.Frame.Extents(", "StaffProjectFrameRect(", "Require( rect != null")
         isolated = body(self.code, "private void RequireIsolatedStaffRect(")
         self.assert_tokens(isolated, "StaffToolKind.None", "member != staffSmokeMember",
                            "var rect = StaffWorldRect( other )", "target.X - 2", "target.Right + 2",
-                           "target.Y - 2", "target.Bottom + 2", "Require( StaffUiClear( target )")
+                           "target.Y - 2", "target.Bottom + 2", "Require( StaffUiClear( target )",
+                           'StaffEvidence( "isolation-failure", "world", details )',
+                           'CaptureFrame( "staff-isolation-failure.png" )', "Screen = screen.Name", "Element = element.Id")
         start = self.code.index("private bool StaffUiClear(")
         end = self.code.index("internal static int StaffPixelChanges(", start)
         ui = self.code[start:end]
@@ -286,6 +292,106 @@ class StaffSpriteOwnerGpuSmokeContract(unittest.TestCase):
                            "JsonSerializer.Deserialize<JsonElement>( observation ?? StaffObservation() )")
         self.assertIn('test_staff_sprite_owner_gpu_smoke_contract.py', read(".github/workflows/build.yml"))
         self.assertIn("StaffOwners.cs", read("tools/test_staff_sprite_vm_contract.py"))
+
+    def test_exact_placement_geometry_shares_draw_projection_and_covers_large_frames(self):
+        envelope = body(self.code, "internal static (float Left, float Right, float Top, float Bottom) StaffFrameEnvelope(")
+        self.assert_tokens(envelope, "value.Extents( false", "value.Extents( true", "extents.Min( value => value.X0 )",
+                           "extents.Max( value => value.X1 )", "extents.Max( value => value.Top )", "extents.Min( value => value.Bottom )")
+        project = body(self.code, "internal static UiRect? StaffProjectFrameRect(")
+        self.assert_tokens(project, "GuestRenderer.PullTowardsEye(", "right * (x * share)", "up * (y * share)",
+                           "if ( !(clip.W > 0) ) return null", "float.IsFinite( point.X ) && float.IsFinite( point.Y )",
+                           "if ( corners.Any( point => point == null ) ) return null")
+        tests = read("source/OpenTPW.Tests/StaffOwnerGpuSmokeEvidenceTests.cs")
+        self.assert_tokens(tests, "RealFrameEnvelopeRejectsOverlapThatTheOldPixelHeuristicMissed",
+                           "SharedWorldProjectionPreservesPulledPixelBoundsAndRejectsBehindOrNonfinitePoints",
+                           "actual.Width > oldGuess.Width && actual.Height > oldGuess.Height",
+                           "Assert.IsFalse( FrontEndSmokeTest.StaffRectsSeparate( actual, window )")
+
+    def test_d06_runs_once_on_handyman_stand_and_keeps_one_observation(self):
+        resources = read(RESOURCES)
+        plan = body(self.code, "private void PlanStaffOwners()")
+        self.assertIn("if ( role == StaffType.Handyman ) PlanStaffTextureReload();", plan)
+        self.assertLess(plan.index('"stand", StaffSpriteProgram.Stand'), plan.index("PlanStaffTextureReload();"))
+        self.assertLess(plan.index("PlanStaffTextureReload();"), plan.index('"walk-request"'))
+        self.assertEqual(1, resources.count("staffResourceObservation = StaffObservation();"))
+        update = body(read(PLAN), "public void Update()")
+        self.assertEqual(2, update.count("RequireStaffResourceObservation();"))
+        self.assert_tokens(resources, "staffResourceObservation == StaffObservation()", "restoreStaffResources = lease.Restore;",
+                           "TexturePackSwitch.Current == null", "RequireIsolatedStaffRect( world )",
+                           "resolved.CanDraw", "clone.Route == StaffSpriteRoute.Screen",
+                           "OutputValid != 0", "StaffSpriteDiagnostic.TextureUnavailable", "StaffFigure.Frame() == null")
+        self.assertLess(resources.index("restoreStaffResources = lease.Restore;"), resources.index("lease!.MakeUnavailable();"))
+        for state in ("available", "unavailable", "recovered"):
+            for route in ("world", "portrait"):
+                self.assertIn(f'"d06-{state}-{route}"', resources)
+        self.assertEqual(2, resources.count("expectContribution: false"))
+        self.assertEqual(3, resources.count("fixedRoi: () => world"))
+        self.assertEqual(3, resources.count("fixedRoi: () => portrait"))
+        self.assert_tokens(resources, "StaffPixelChanges( worldBefore, capture, world ) > 0",
+                           "StaffPixelChanges( portraitBefore, capture, portrait ) > 0",
+                           "StaffPixelChanges( worldBefore, capture, world ) == 0",
+                           "StaffPixelChanges( portraitBefore, capture, portrait ) == 0",
+                           'StaffEvidence( "resource-fault-fixture", "d06-unavailable"',
+                           'StaffEvidence( "resource-reload", "d06-recovered"',
+                           'StaffEvidence( "resource-cleanup", "d06-scratch-retired"')
+        self.assertNotIn("StabilizeStaffOwner(", resources)  # Never rebaseline after injecting a fault.
+
+    def test_d06_targets_one_actual_atlas_and_rebinds_all_eight_aliases(self):
+        resources = read(RESOURCES)
+        renderer = read("source/OpenTPW/World/Staff/StaffRenderer.cs")
+        self.assert_tokens(renderer, "AtlasPackKeys => sprites.Atlases.Take( textures.Count )",
+                           ".Select( atlas => atlas.PackKey ).ToArray()",
+                           "internal void ReloadAtlas( int index )", "(uint)index >= (uint)textures.Count",
+                           "ReloadAtlases( new[] { sprites.Atlases[index].PackKey } )")
+        unique = body(resources, "internal static string StaffUniqueAtlasKey(")
+        self.assert_tokens(unique, "TexturePack.RelativeFileName( keys[selected] )",
+                           "keys.Count( value => TexturePack.RelativeFileName( value ) == key ) == 1")
+        self.assert_tokens(resources, "StaffUniqueAtlasKey( renderer.AtlasPackKeys, atlas )",
+                           "Enumerable.Range( 0, 8 )", "Math.Min( slot, count - 1 )",
+                           "Aliases.All( slot => ReferenceEquals( bindings[slot], scratch ) )")
+        bind = body(resources, "private void BindCurrent()")
+        self.assert_tokens(bind, "renderer.OwnedAssets.OfType<Texture>().ToArray()",
+                           "current.All( texture => !texture.NativeTexture.IsDisposed )", 'material.Set( "Color", bindings )',
+                           "material.GetResourceSets()", "bindings.Length == 8", "!ReferenceEquals( texture, scratch )")
+        for token in ("TexturePackSwitch.Begin(", "PackChanged", "GetField(", "System.Reflection", "File.Write", "Texture.Replace("):
+            self.assertNotIn(token, mask(resources))
+
+    def test_d06_cleanup_handles_partial_reload_without_double_disposal(self):
+        resources = read(RESOURCES)
+        fault = body(resources, "public void MakeUnavailable()")
+        self.assert_tokens(fault, "Device.ResourceFactory.CreateTexture(", "Device.ResourceFactory.CreateTextureView( faultNative )",
+                           "catch { DisposeFault(); throw; }", "Require( faultNative.IsDisposed", "Device.WaitForIdle()",
+                           'material.Set( "Color", bindings )', "quarantineSets = material.GetResourceSets().ToArray()")
+        self.assertLess(fault.index('material.Set( "Color", bindings )'), fault.index("original.NativeTexture = faultNative"))
+        reload = body(resources, "public void Reload()")
+        self.assertLess(reload.index("original.NativeTexture = originalNative"), reload.index("renderer.ReloadAtlas( Atlas )"))
+        cleanup = body(resources, "public void Restore()")
+        self.assert_tokens(cleanup, "ReferenceEquals( Current, original )", "original.NativeTexture = originalNative",
+                           "BindCurrent()", "!ReferenceEquals( Current, original ) && Asset.All.Contains( original )",
+                           "original.ReleaseOwned()", "scratchRetirementQueued = true", "scratch.ReleaseOwned()")
+        self.assertLess(cleanup.index("BindCurrent()"), cleanup.index("scratch.ReleaseOwned()"))
+        self.assertNotIn("reloadSucceeded", resources)
+        dispose = body(resources, "internal static void StaffDisposeOnce(")
+        self.assertLess(dispose.index("disposed = true"), dispose.index("resource.Dispose()"))
+        self.assert_tokens(resources, "StaffDisposeOnce( faultView, ref faultViewDisposed )",
+                           "StaffDisposeOnce( faultNative, ref faultNativeDisposed )", "GameFlow.Quit(); throw;")
+        verify = body(resources, "public void VerifyReload()")
+        self.assert_tokens(verify, "originalNative.IsDisposed", "AtlasViewReleased( original )",
+                           "oldSets.Concat( quarantineSets ).All( set => set.IsDisposed )",
+                           "otherObjects.SequenceEqual( ResourceObjects( others ) )", "AssetsLive( others )")
+        self.assertIn("RestoreStaffResources();", body(self.code, "private void RestoreStaffSmoke()"))
+
+    def test_d06_cpu_helpers_cover_faults_but_do_not_claim_gpu_execution(self):
+        tests = read("source/OpenTPW.Tests/StaffOwnerGpuSmokeEvidenceTests.cs")
+        self.assert_tokens(tests, "AtlasSlotsCoverEveryPaddedAliasForOneThroughEightLoadedTextures",
+                           "TargetedReloadRequiresOneNormalizedLoadedPackKey",
+                           "UnavailableEvidenceKeepsThePreviousValidRoiWithoutResolvingAMissingFrame",
+                           "FaultHandleCleanupDisposesPartialAndAlreadyDisposedAllocationsOnlyOnce",
+                           "count <= 8", "9 - count", "new[] { -1, 0, 9 }", "Throw = true")
+        self.assertNotIn("Device.", mask(tests))
+        guide = read(GUIDE)
+        for token in ("resource-fault-fixture", "resource-reload", "resource-cleanup", "unique", "all eight"):
+            self.assertIn(token, guide)
 
     def test_guide_keeps_source_structure_and_host_evidence_separate(self):
         guide = read(GUIDE)

@@ -320,7 +320,9 @@ public sealed class ParkEconomy : IParkEconomy
 	/// </summary>
 	// [EXT:cheats-extension] Theme Park World parks only: the cheats are tp.exe's (docs/CHEATS.md); Theme Park Inc's executable was not searched for any
 	// [EXT:cheats-window] the extension's own cheats (the weather, the arrivals) need the extension on and a level to act on
-	public bool QueueCheat( CheatAction action ) => !Rules.ThemeParkInc && (!ParkCheats.IsExtensionKind( action.Kind ) || FeatureGates.Cheats && CheatHost != null) && Cheats.Queue( action );
+	// [EXT:cheats-ride-vehicles] a ride's vehicle limit only for a ride the level can raise now
+	public bool QueueCheat( CheatAction action ) => !Rules.ThemeParkInc && (!ParkCheats.IsExtensionKind( action.Kind ) || FeatureGates.Cheats && CheatHost != null)
+		&& (action.Kind != CheatKind.RideVehicles || CheatHost!.CanRaiseRideVehicles( action.Argument )) && Cheats.Queue( action );
 
 	/// <summary>
 	/// The level's side of the park's cheats (the arrivals and the weather, <see cref="IParkCheatHost"/>); null in a headless economy, which then refuses those cheats. A saved park whose
@@ -355,6 +357,9 @@ public sealed class ParkEconomy : IParkEconomy
 			case CheatKind.Arrival:
 				// [EXT:cheats-arrival] a group by the chosen vehicle, sized for it; it waits while a group or a vehicle is at work
 				return CheatHost?.TryStartArrival( action.Argument ) == true ? "" : null;
+			case CheatKind.RideVehicles:
+				// [EXT:cheats-ride-vehicles] the ride raised at once; one removed since it was asked for leaves the cheat recorded with no effect
+				return CheatHost is not { } host ? null : host.TryRaiseRideVehicles( action.Argument ) ? "" : "unavailable";
 			default:
 				throw new InvalidOperationException( $"The cheat {action.Kind} is not applied by the economy." );
 		}

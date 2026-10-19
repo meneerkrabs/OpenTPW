@@ -97,7 +97,8 @@ public sealed partial class ParkHud
 			var words = item.Runtime.Settings;
 			pending.Ride = new RideSettingWords(
 				SliderPosition( words.Speed, Setting( item, "UsageInfo.MinSpeed" ), Setting( item, "UsageInfo.MaxSpeed" ) ),
-				SliderPosition( words.Capacity, Setting( item, "UsageInfo.MinCapacity" ), Setting( item, "UsageInfo.MaxCapacity" ) ),
+				// [EXT:cheats-ride-vehicles] a ride whose vehicle limit the cheat raised has a larger capacity maximum (OriginalObjectRuntime.MaximumCapacity)
+				SliderPosition( words.Capacity, Setting( item, "UsageInfo.MinCapacity" ), item.Runtime.MaximumCapacity ),
 				SliderPosition( words.Duration, Setting( item, "UsageInfo.MinDuration" ), Setting( item, "UsageInfo.MaxDuration" ) ) );
 			return;
 		}
@@ -228,7 +229,7 @@ public sealed partial class ParkHud
 		UiLabel Label( string id, Func<string> text ) => Info( new UiLabel { Id = id, Text = text, Font = fonts => fonts.Small, Color = UiColors.Text, Align = UiAlign.Center, Fit = true } );
 
 		(int, int) Speeds( OriginalObject item ) => (Setting( item, "UsageInfo.MinSpeed" ), Setting( item, "UsageInfo.MaxSpeed" ));
-		(int, int) Capacities( OriginalObject item ) => (Setting( item, "UsageInfo.MinCapacity" ), Setting( item, "UsageInfo.MaxCapacity" ));
+		(int, int) Capacities( OriginalObject item ) => (Setting( item, "UsageInfo.MinCapacity" ), item.Runtime.MaximumCapacity);
 		(int, int) Durations( OriginalObject item ) => (Setting( item, "UsageInfo.MinDuration" ), Setting( item, "UsageInfo.MaxDuration" ));
 
 		rideSpeedSlider = Slider( "rideSpeed", Speeds, () => pending.Ride.Speed, value => pending.Ride = pending.Ride with { Speed = value } );

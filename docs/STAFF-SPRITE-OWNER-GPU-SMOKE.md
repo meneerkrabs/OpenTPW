@@ -10,7 +10,8 @@ and [running guide](RUNNING.md).
 ## Evidence status and scope
 
 The smoke and its structural guard are authored. No SDK build, C# execution,
-GPU run, capture inspection, or performance result is claimed by this document.
+GPU run, capture inspection, or performance result for this revision is claimed
+by this document.
 Those results must be recorded for the exact tested commit and artifact. A
 passing Python guard establishes only source structure; it does not establish
 that C# compiles, assertions run, or pixels were rendered.
@@ -80,7 +81,8 @@ with the `native-smoke-<language>-` prefix. This slice also writes
 `Category`, `Stage`, `OuterFrame`, `Details`, and the complete `Observation`
 fingerprint; the file is reset at the start of this slice. Categories include
 `scope`, `lifecycle`, `request-fixture`, `observation`, `normal-scheduler`,
-`gpu-pair`, `rename`, `rename-pause`, and `microbenchmark`. A `scope/complete`
+`gpu-pair`, `resource-fault-fixture`, `resource-reload`, `resource-cleanup`,
+`rename`, `rename-pause`, and `microbenchmark`. A `scope/complete`
 entry completes only the staff slice. In bounded mode, require the final bounded
 success log, successful `VerifyCompleted`, and normal process exit. In full mode,
 the subsequent front-end plan must also finish successfully.
@@ -110,7 +112,7 @@ previously open. Every role is required:
 
 | Role | Required evidence |
 |---|---|
-| Handyman | `stand`, `walk-request`, `sweep-request`, and `stand-before-pickup`; rename/pause and Stand source loss. |
+| Handyman | `stand`, `walk-request`, `sweep-request`, and `stand-before-pickup`; mandatory Stand resource-unavailable/reload lane, rename/pause and Stand source loss. |
 | Mechanic | `stand`, `walk-request`, and `repair-request`. |
 | Researcher | `stand`, `walk-request`, and `research-request`. |
 | Entertainer | `stand`, `walk-request`, and `performance-request`; source-absent retained Screen behavior separately. |
@@ -156,12 +158,30 @@ necessary even when the employee portrait uses literal camera yaw zero.
 
 For world evidence, choose an on-screen region containing the selected employee
 and ensure that other staff cannot contribute pixels to that region. Placement
-searches the lower visible band and reserves an 80-by-108-pixel envelope scaled
-to an 800-pixel-high canvas. That envelope must clear the mapped authored
-employee-window rectangles and every visible element in every active HUD stack
-screen, with the two-pixel separation rule. This is only a conservative
-placement precheck: after normal source publication, the exact projected quad
-must again clear all other staff quads and all visible stack elements.
+searches valid cells across the visible viewport at the ordinary maximum camera height (130),
+set through the existing camera API before baseline stabilization. For each
+selected role bank, it projects the union of every frame's extents and both
+mirrors at the actual interpolated terrain point, using the same billboard axes,
+pull-to-eye share, finite-coordinate and positive-W checks as the final world
+ROI. There is no central-band restriction: a fully isolated side gap beside the
+employee root remains eligible. The envelope must clear mapped authored employee-window rectangles and
+every visible element in every active HUD stack screen, with the two-pixel
+separation rule. The idle request-fixture setup is installed immediately after
+real placement, before its first navigation turn. After normal publication, the
+exact current quad must still clear all other staff quads and visible stack
+elements. A failure logs the actual target and every overlapping staff/UI
+rectangle (screen, element ID and type), and retains `staff-isolation-failure.png`.
+
+The previous head `dff71ffc` passed full CPU CI on all three platforms. Its first
+bounded Vulkan run failed the initial handyman Stand world-ROI/UI-overlap guard,
+before contribution captures: the actual quad was 145.58 by 155.07 pixels,
+exceeding the previous 80-by-108 estimate and overlapping the employee root by
+18.64 pixels. The
+terrain there was flat; interpolation was not the cause of that incident. The
+shared geometry precheck replaces that underestimated envelope. This revision
+also adds D06; neither its corrected fixture nor its new resource lane has an
+executed result yet. Exact-artifact execution remains required.
+
 Underlying windows and distant staff are not assumed harmless without those
 checks. Require
 the selected source to resolve and contribute world geometry. Compare the
@@ -186,6 +206,81 @@ cleanup closes the employee root, returns any carried member and fires only the
 fixture. `Dispose` also invokes restoration if a step fails. The pair comparison
 is not a whole-frame equality claim: unrelated scenery, effects, or UI may repaint
 outside the isolated regions.
+
+## D06: bounded live GPU resource lifetime
+
+Both full and staff-only modes require one resource lane immediately after the
+handyman's initial Stand world/portrait controls. It uses the current level's
+staff renderer, current texture pack, supported frozen bank, live source and
+Screen clone. The selected normalized `PackKey` must be unique among all loaded
+staff atlases; an ambiguous key fails rather than reloading multiple atlases.
+The hire window, carry tool and any texture-pack switch must be inactive.
+
+After normal paused P/H stabilization, retain one complete `StaffObservation`
+for the entire sequence, including all source/clone words, tickets and epochs,
+pending fields, heading, clock/scheduler counts, gameplay/RNG, matrices,
+world/output viewports and employee layout/text. Require equality across normal
+frames and immediately around resource changes; do not replace the baseline
+after a fault or reload. Output validity remains nonzero throughout.
+
+The unavailable interval is an explicit resource-fault fixture. After waiting
+for GPU idle, the selected atlas wrapper temporarily references separately
+created, genuinely disposed test-native texture/view handles. Its real original
+native allocation remains alive in local custody. The disposed handles are
+never bound or submitted. A live transparent scratch texture quarantines every
+material slot referring to that atlas, including padded aliases: each of the
+eight slots maps to atlas `min(slot, atlasCount - 1)`. This fixture does not claim
+that destruction of the original atlas caused the unavailable interval.
+
+Require actual source and clone resolution to report `TextureUnavailable` and
+the actual employee figure callback to return no frame. Keep the previously
+validated, isolated world and portrait ROIs; an unavailable frame cannot supply
+new drawable geometry. Each negative visible/hidden/restored triple must have
+zero toggle-induced RGB changes, while its unavailable visible image must
+differ from the original positive visible image in the same ROI. Restore each
+visibility toggle even on failure. A disabled visibility flag is not evidence of
+resource unavailability.
+
+Recovery restores the original live handles and immediately invokes the narrow
+selected-atlas reload, with no draw or observer between those operations. This
+uses the existing matching-current-atlas loader and frozen-layout checks,
+rebuilds all eight material bindings and schedules the actual original native
+allocation for retirement. It neither switches the global texture pack nor
+writes original or replacement game-data files. After normal retirement frames
+and GPU idle, require:
+
+- A different, live, owned current wrapper/native allocation; the old wrapper
+  removed from `Asset.All`, its original real texture disposed, and its view
+  released under the existing Metal full-view alias qualification.
+- Retirement of the old material resource sets, unchanged staff
+  material/shader/pipeline, and unchanged, live identities for other staff atlases
+  and guest/head renderer resources.
+- The actual employee frame to reference the new current native texture, never
+  the old or fault handle; drawable source and clone; positive recovered world
+  and portrait controls whose visible ROIs exactly equal the original stable
+  visible ROIs.
+- Every material slot restored from the current owned atlas list before scratch
+  release, no bound scratch alias or quarantine resource set, and completion of
+  submitted use before the scratch is released exactly once. Normal retirement
+  must remove its owned wrapper and dispose its native texture/view as well.
+
+Exception-safe restoration is armed before the first change. Before reload it
+can restore the original live allocation; after successful reload it uses the
+new current owned atlas list and never resurrects the retired wrapper. A failed
+recovery fails the smoke. The lane does not mutate VM words, submit work-program
+requests, schedule owners, rebuild the catalog or reconstruct the level.
+
+Resource evidence must distinguish the injected unavailable fixture,
+current-handle recovery and actual old/scratch resource retirement from
+work-request and gameplay-lifecycle evidence. Require the category/stage entries
+`resource-fault-fixture/d06-unavailable`, `resource-reload/d06-recovered`, and
+`resource-cleanup/d06-scratch-retired`. Resource GPU-pair names are
+`d06-<available|unavailable|recovered>-<world|portrait>`; their PNGs use the same
+name with `-<visible|hidden|restored>.png`. Queuing deletion is not proof of native
+disposal. This route does not simulate hardware device loss or validate
+hot-filling a `MetadataUnavailable` bank. D06 live-GPU execution remains pending
+until the exact artifact exits successfully with all required evidence and the
+original, unavailable and recovered world/portrait captures are inspected.
 
 ## Lifecycle, rename, and pause
 
@@ -273,7 +368,7 @@ needed before making those broader claims.
 
 ## Source map
 
-The implementation is
+The shared owner lane is in
 [`FrontEndSmokeTest.StaffOwners.cs`](../source/OpenTPW/FrontEnd/FrontEndSmokeTest.StaffOwners.cs):
 
 - `PlanStaffOwnerOnly` selects the real single-park startup and terminal exit.
@@ -282,12 +377,21 @@ The implementation is
 - `StabilizeStaffOwner`, `StaffObservation`, `StaffWords`, and `StaffTicket`
   define the state baseline; `StaffWords` retains all 70 words.
 - `PlanStaffPair`, `StaffPortraitRect`, `StaffWorldRect`,
-  `RequireIsolatedStaffRect`, `StaffUiClear`, `StaffRectsSeparate`, and
+  `StaffFrameEnvelope`, `StaffProjectFrameRect`, `RequireIsolatedStaffRect`,
+  `StaffUiClear`, `StaffRectsSeparate`, and
   `StaffPixelChanges` define the placement, occlusion and pixel controls.
 - `PlanStaffLoss` and `PlanStaffRename` drive lifecycle and captured callbacks.
 - `MeasureStaffObservers` emits the scoped measurements through `StaffEvidence`.
 - `RestoreStaffVisibility` and `RestoreStaffSmoke` own restoration; the existing
   front-end `Dispose` calls the latter as well.
+
+The resource lane is `PlanStaffTextureReload` in
+[`FrontEndSmokeTest.StaffResources.cs`](../source/OpenTPW/FrontEnd/FrontEndSmokeTest.StaffResources.cs).
+Its helpers `StaffAtlasSlots`, `StaffUniqueAtlasKey`, `StaffEvidenceRect` and
+`StaffDisposeOnce` cover all-slot aliasing, unique normalized keys, the fixed
+unavailable ROI and exactly-once fault-handle cleanup.
+`StaffRenderer.ReloadAtlas(index)` forwards to the existing targeted reload;
+`AtlasPackKeys` supplies a defensive snapshot of loaded atlas keys.
 
 ## Review and remaining gates
 
@@ -303,9 +407,12 @@ The asset-free C# helper suite
 [`StaffOwnerGpuSmokeEvidenceTests`](../source/OpenTPW.Tests/StaffOwnerGpuSmokeEvidenceTests.cs)
 authors independent checks of the 70-word snapshot/deep-copy result and
 positive/zero/fractional/clipped ROI comparisons, including mismatched viewport
-rejection. A fourth CPU test checks overlap and the two-pixel separation boundary
-used by placement and final isolation. These CPU checks do not render a GPU frame. Their compilation and
-execution are not implied by passing the structural guard.
+rejection. CPU tests also check overlap and the two-pixel separation boundary
+used by placement and final isolation, all-eight-slot atlas aliases, normalized
+key uniqueness, fixed unavailable ROIs, partial/throwing disposal, oversized
+frame rejection and pull-preserving/invalid-point projection. These CPU checks do not render a GPU
+frame. Their compilation and execution are not implied by passing the structural
+guard.
 
 The final-head C# build/tests and existing staff, hire/carry, guest, control,
 save, and canonical-hash regressions remain required. Review every expected
@@ -315,10 +422,12 @@ private captures and original assets outside the committed evidence; a public
 report can identify the tested revision, host, case names and measured results
 without redistributing either.
 
-This bounded smoke does not itself close live staff GPU texture-reload/disposal,
-original-executable raster/control-depth parity, native full-event/modal order,
-clone-world projection/submission/culling, nondefault transforms, multipart
-resources, saved VM/window-history persistence, or floating-environment
+The authored D06 lane provides a bounded live staff GPU texture-reload/disposal
+route; source guards and CPU helpers do not close its execution or capture-review
+gate. This smoke does not itself close original-executable raster/control-depth
+parity, native full-event/modal order, clone-world projection/submission/culling,
+nondefault transforms, multipart resources, saved VM/window-history persistence,
+or floating-environment
 provenance. Those gates remain as qualified in the acceptance map. No measured
 result or acceptance status should be upgraded until the corresponding exact
 artifact actually runs and the evidence is reviewed.

@@ -791,6 +791,37 @@ internal static class Game
 				Log.Warning( "--debug-pool: no place near the camera target takes the whole shape." );
 			}
 		}
+		// [EXT:online-coop-commands] --record-commands <file> records the current park's commands and its world-hash checkpoints into a command log (docs/COOP.md, "Recording and replay"),
+		// written every ten seconds and when the park changes; each new park starts a new recording in the same file
+		if ( GetOption( args, "--record-commands", "a command log file to write" ) is { } recordPath )
+		{
+			Level? recording = null;
+			var frames = 0;
+			void WriteLog( Level level )
+			{
+				if ( level.CommandLog() is not { } log )
+					return;
+				var full = Path.GetFullPath( recordPath );
+				var temporary = full + ".tmp";
+				File.WriteAllBytes( temporary, log.Serialize() );
+				File.Move( temporary, full, overwrite: true );
+			}
+			Render.PostUpdate += () =>
+			{
+				var current = flow.Level is { OriginalPark: not null, IsReadOnlyVisit: false } live ? live : null;
+				if ( !ReferenceEquals( current, recording ) )
+				{
+					if ( recording != null )
+						WriteLog( recording );
+					recording = current;
+					recording?.StartCommandRecording();
+					frames = 0;
+				}
+				if ( recording != null && ++frames % 600 == 0 )
+					WriteLog( recording );
+			};
+			AppDomain.CurrentDomain.ProcessExit += ( _, _ ) => { if ( recording != null ) WriteLog( recording ); };
+		}
 		// [EXT:debug-sim-minutes] smoke-only: once the original level is up, runs its fixed-step simulation (guests, ride scripts, economy) for that many park minutes
 		// as fast as it goes and prints the scream statistics (docs/AUDIO.md "Scream diagnostics"); use it with --capture-world, which ends the run afterwards.
 		var debugSim = GetOption( args, "--debug-sim-minutes", "park minutes to simulate for the audio diagnostics" );

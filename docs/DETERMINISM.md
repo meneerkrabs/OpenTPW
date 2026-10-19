@@ -648,7 +648,7 @@ A park's cheats ([CHEATS.md](CHEATS.md), `ParkCheats`) live in the park economy:
 counted) and the actions waiting for the next turn. Every cheat the player asks for, through the original's secret park name and Alt keys or the extension's window, is **queued and applied at the start of the next park turn**
 (`ParkEconomy.AdvanceTurn`, before the turn's thing sweep with its weather and arrival updates; in a level whose turns are not swept, a paused economy's or one without pooled guests, the tick's guests and objects have run
 before the economy's turn, and only the weather follows), in a fixed order of kinds (`CheatKind`), and **takes no draw from any random stream** (`[EXT:cheats-turn-boundary]`). So a run with the same
-cheats at the same turns is the same run; the record in the save names those turns. OpenTPW has no input log for other player actions, and the record does not replay itself.
+cheats at the same turns is the same run; the record in the save names those turns. The record does not replay itself; the park's other edits have a command log ([Commands](#commands)).
 
 The record is part of the park save (`ParkSaveFile.Data.Cheats`) only when the park has cheated or has a cheat waiting; otherwise it is left out, so **a park that never cheated keeps its save bytes and its hash** whether the
 `opentpw.cheats` extension is on or off. Because the economy digest of the canonical hash is that save's text, the record joins the hash exactly when it is present; `WorldStateHash.SchemaVersion` did not move.
@@ -675,6 +675,16 @@ The ride vehicle cheat (K4) raises a ride's limit at a turn boundary with no dra
 ride, and the runtime snapshot, the track and the tour parts write the raised state only then, so every other park keeps its pins and save bytes. A pin covers the scenario:
 `CheatsRideVehicleTests.CheatsBumperRaisedRunHash` = `0xDF2C86E99A8FB3C0`, the jungle bumper controller (template -1, world generator of seed 99) raised to 32 cars, loaded with 32 guests,
 run through a 30-second session and 600 more ticks.
+
+## Commands
+
+`[EXT:online-coop-commands]` The park's edits are commands ([COOP.md](COOP.md), `ParkCommands`): each applies before a stated simulation tick, the next one the fixed-step clock runs. In single
+player a command runs at once in the input handler, between two ticks before the frame's simulation, exactly where the edit ran before the command layer, so **no pin moved** and no
+save byte changed (the layer adds no saved or hashed state; the Move tool's carried entry is session state, not saved). Held commands (`ParkCommands.Schedule`, a replayed log) apply at
+the start of their tick inside `Level.AdvanceSimulation`, before the tick's economy sync. A command's executor reads only the command and the world, never a tool's state, and draws no
+random stream of its own beyond what the edit itself draws (a placement's script seed, as before). `ParkCommandLevelTests` records a build session on a no-data level and replays it on a
+twin with the same `WorldStateHash` after every tick. A replay runs one tick per `AdvanceSimulation` call; the work a frame does outside its ticks (pool refresh, evening, snow, the scene
+clock, the body poses prepared after a frame's ticks) is not replayed, which C1b audits.
 
 ## Tests
 

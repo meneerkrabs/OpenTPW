@@ -296,6 +296,7 @@ stations. Run it on the desktop with `--determinism-digest [--out native.json]` 
 | Asset-free pins in the browser, Mono AOT (29 s of tests) | 631 passed, 0 failed (7 inconclusive for want of data, 2 skipped) | 632 passed, 0 failed (the new source scan is inconclusive without sources) |
 | Asset-free pins in the browser, interpreter | 631 passed, 0 failed | 632 passed, 0 failed |
 | With data, four themes, browser AOT against desktop: fixed run, with staff, weather, M4 (692, 692, 677, 659 state hashes) | identical | identical |
+| The same with data, browser interpreter against desktop | not run | identical |
 | Desktop pins (2,050 tests of the simulation classes) | pass | pass, no pin moved |
 
 The desktop digests are the same before and after: jungle `ECB0C5BC6BFC46B9`, hallow `4B56CE11D7E43D7A`, space `69BBE374CB405BD0`,

@@ -220,7 +220,8 @@ buttons, the `b_okay` button) and every button queues a cheat for the next park 
   draw) moved into the vehicle's band, which is the dispatch's own (`[BIN:TPW-EXE:0x4CF3E0]`, bus up to 35, plane 36 to 60, boat 61 or more), then cut by the park limit as every
   group is (a lost park's group is empty). The chosen vehicle brings it whatever the cut size, and it is delivered as a natural group: the advisor's arrival ring sees its size, one guest
   steps off per turn, and the turn that finds it empty restarts the arrival timer. While a group is being delivered or a vehicle is at work the cheat waits, unrecorded, for a later turn;
-  only one arrival cheat may wait at a time.
+  only one arrival cheat may wait at a time. While it waits no natural group starts and no vehicle is called for guests leaving the park (a vehicle standing at the stop is still sent on
+  with them), so the vehicle at work finishes and the cheat's group comes next; without this hold a park whose leaving guests keep calling vehicles never had a free turn.
 - **Weather** `[EXT:cheats-weather]`. Clear, rain, thunderstorm or snow, in every theme (snow too: it is a cheat). "Change weather" queues `CheatKind.Weather`, which
   `ParkWeather.ApplyCheat` applies as a forecast with no warning: the pending forecast is dropped, the change is now, and the next natural roll comes `DaysBetweenChanges - DaysOfWarning`
   days later, as after a natural change. The original's converter (`0x512F00`) derives the kind from a rolled quality and the park's bands, which can tie-break with a draw and gives

@@ -182,6 +182,11 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// <summary>True while no group arrives (a bankrupt park).</summary>
 	public Func<bool>? ArrivalsHalted { get; set; }
 	/// <summary>
+	/// [EXT:cheats-arrival] True while an arrival cheat waits for the vehicles to be free (<see cref="ParkCheats.ArrivalPending"/>): no natural group starts and no vehicle is called for
+	/// leaving guests, so the vehicle at work finishes and the cheat's group comes at a following turn. A vehicle already at work completes as usual.
+	/// </summary>
+	public Func<bool>? ArrivalHeldForCheat { get; set; }
+	/// <summary>
 	/// True while the park's weather has drops falling (<see cref="ParkWeather.CurrentDrops"/> above 0). The group size then uses 0.8
 	/// instead of 1.2. The original reads the signed 32-bit word at +48 of the weather thing (game +0x1DA724, saved as mWeather; the
 	/// weather object's mCurrentDrops, the drops the weather ramps toward its target) and uses 0.8 when it is positive. Null (no
@@ -661,7 +666,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		// A save loaded from an earlier turn replaces the clock: the timer starts unset again, as in a freshly started park.
 		if ( turn < arrivalTimerStart )
 			arrivalTimerStart = 0;
-		if ( !deliveringArrivals && (turn >> 2) - (arrivalTimerStart >> 2) > Settings.ArrivalTimeBetween )
+		var held = ArrivalHeldForCheat?.Invoke() == true;
+		if ( !deliveringArrivals && !held && (turn >> 2) - (arrivalTimerStart >> 2) > Settings.ArrivalTimeBetween )
 		{
 			pendingArrivals = ArrivalGroupSize();
 			ArrivalGroupStarted?.Invoke( pendingArrivals );
@@ -701,7 +707,9 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		var turn = ArrivalClock?.Invoke() ?? ParkTurn;
 		if ( turn < arrivalTimerStart )
 			arrivalTimerStart = 0;
-		if ( !deliveringArrivals && (turn >> 2) - (arrivalTimerStart >> 2) > Settings.ArrivalTimeBetween )
+		// [EXT:cheats-arrival] a waiting arrival cheat holds the natural group and the pick-ups below
+		var held = ArrivalHeldForCheat?.Invoke() == true;
+		if ( !deliveringArrivals && !held && (turn >> 2) - (arrivalTimerStart >> 2) > Settings.ArrivalTimeBetween )
 		{
 			pendingArrivals = ArrivalGroupSize();
 			ArrivalGroupStarted?.Invoke( pendingArrivals );
@@ -731,7 +739,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		if ( LeavingGuestWaits() )
 		{
 			var status = ReadArrivalVehicle();
-			if ( status is -1 or 0 || status == 2 && pendingArrivals == 0 )
+			// [EXT:cheats-arrival] a held arrival calls no vehicle, but one standing at the stop is still sent on with the leaving guests
+			if ( (status is -1 or 0) && !held || status == 2 && pendingArrivals == 0 )
 				DispatchArrivalVehicle( 0 );
 		}
 		else if ( ReadArrivalVehicle() == 4 )

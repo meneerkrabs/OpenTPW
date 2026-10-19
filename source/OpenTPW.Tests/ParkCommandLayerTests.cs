@@ -64,10 +64,14 @@ public class ParkCommandLayerTests
 		(new( "Ride window settings", Call( "ApplyRideWindow" ), "SetRideSettings" ), "C1 part 2 (economy)"),
 		(new( "Staff rename", @"\bStaff\.Rename\s*\(", "RenameStaff" ), "C1 part 2 (economy)"),
 		(new( "Game speed", @"\beconomy\.Speed\s*=[^=]", "SetSpeed" ), "C1 part 2 (economy)"),
+		(new( "Developer prototype run", @"\bPlacedRide\??\.(Start|Stop)\s*\(", "SetPrototypeRunning" ), "C1 part 2 (economy)"),
 		(new( "Land", @"\.(ChargeLand|TryBuyCells|SetLand)\s*\(", "BuyLand" ), "C1 part 3 (tools)"),
 		(new( "Pools", @"\.(SetPoolWaves|CyclePoolWaves|PaintCells|EraseCells|Paint|Erase)\s*\(", "PaintPool" ), "C1 part 3 (tools)"),
 		(new( "Staff placement and patrol areas", @"\.(EndPlacement|SetPatrolArea)\s*\(|\bPendingPlacementId\s*=[^=]", "PlaceStaff" ), "C1 part 3 (tools)"),
 		(new( "Coasters", Call( "CoasterClick" ), "CoasterClick" ), "C1 part 3 (tools)"),
+		(new( "Coaster panel edits", @"\bbuilder\.RemoveLast\s*\(", "CoasterClick" ), "C1 part 3 (tools)"),
+		(new( "Pool slides", @"\bSlides\??!?\.(AddCell|RemoveLastPiece)\s*\(", "LaySlidePiece" ), "C1 part 3 (tools)"),
+		(new( "Pool bridges", @"\bBridges\??!?\.(TryAdd|RemoveAt)\s*\(", "PlacePoolBridge" ), "C1 part 3 (tools)"),
 	};
 
 	/// <summary>The starts of a bare call: a line start, an operator or bracket, or a keyword before an expression (a declaration has a type before the name instead).</summary>

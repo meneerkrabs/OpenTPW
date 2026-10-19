@@ -269,7 +269,8 @@ public sealed class CoasterTrack
 		var la = MathF.Sqrt( ax * ax + ay * ay );
 		var lb = MathF.Sqrt( bx * bx + by * by );
 		var dot = MathF.FusedMultiplyAdd( ax / la, bx / lb, ay / la * (by / lb) );
-		return MathF.Acos( Math.Clamp( dot, -1f, 1f ) );
+		// [EXT:deterministic-math] the runtime's acos in IEEE double by DetMath, the same bits on every runtime, not in x87 extended precision (docs/DETERMINISM.md, "Browser and native")
+		return DetMathF.Acos( Math.Clamp( dot, -1f, 1f ) );
 	}
 
 	/// <summary>
@@ -1033,7 +1034,8 @@ public sealed class CoasterTrack
 		var la = MathF.Sqrt( a.X * a.X + a.Z * a.Z );
 		var lb = MathF.Sqrt( b.X * b.X + b.Z * b.Z );
 		float ax = a.X / la, az = a.Z / la, bx = b.X / lb, bz = b.Z / lb;
-		var turn = MathF.Acos( Math.Clamp( ax * bx + az * bz, -1f, 1f ) );
+		// [EXT:deterministic-math] the runtime's acos in IEEE double by DetMath, the same bits on every runtime, not in x87 extended precision (docs/DETERMINISM.md, "Browser and native")
+		var turn = DetMathF.Acos( Math.Clamp( ax * bx + az * bz, -1f, 1f ) );
 		return az * bx - ax * bz < 0 ? -turn : turn;
 	}
 
@@ -1291,7 +1293,8 @@ public sealed class CoasterTrack
 			{
 				// [BIN:TPW-EXE:0x4324a0 loop knot side] the loop factor's side term is the node's rotate parameter (+0xec, the yaw's turn fraction) against the heading of its neighbour
 				var heading = Next( index ) is int towards ? new SVector3( positions[towards].X - positions[index].X, 0, positions[towards].Z - positions[index].Z ) : SVector3.Zero;
-				var axis = applyManual || (node.Flags & CoasterNodeFlags.ManualYaw) == 0 ? new SVector3( MathF.Sin( yaw ), 0, MathF.Cos( yaw ) ) : new SVector3( MathF.Sin( yaws[index] ), 0, MathF.Cos( yaws[index] ) );
+				// [EXT:deterministic-math] the x87's sine in IEEE double by DetMath, the same bits on every runtime, not in x87 extended precision (docs/DETERMINISM.md, "Browser and native")
+				var axis = applyManual || (node.Flags & CoasterNodeFlags.ManualYaw) == 0 ? new SVector3( DetMathF.Sin( yaw ), 0, DetMathF.Cos( yaw ) ) : new SVector3( DetMathF.Sin( yaws[index] ), 0, DetMathF.Cos( yaws[index] ) );
 				var side = heading.LengthSquared() > 0 ? SVector3.Dot( SVector3.Normalize( heading ), axis ) : 0;
 				factor = HermiteCoasterCurve.LoopKnotFactor( Definition.Curviness, side, node.LoopRotate );
 			}
@@ -1391,9 +1394,10 @@ public sealed class CoasterTrack
 		var forward = new SVector3( tag.M31, tag.M32, tag.M33 );
 		up = TurnY( up, -yaw );
 		forward = TurnY( forward, -yaw );
-		var pitch = MathF.Atan2( -forward.Y, forward.Z );
+		// [EXT:deterministic-math] the x87's fpatan in IEEE double by DetMath, the same bits on every runtime, not in x87 extended precision (docs/DETERMINISM.md, "Browser and native")
+		var pitch = DetMathF.Atan2( -forward.Y, forward.Z );
 		up = TurnX( up, -pitch );
-		return MathF.Atan2( -up.X, up.Y );
+		return DetMathF.Atan2( -up.X, up.Y );
 	}
 
 	/// <summary>A vector turned about Y with the PC table (<c>0x431570</c>): x′ = x cos a + sin a·z, z′ = cos a·z − sin a·x.</summary>
@@ -1418,9 +1422,10 @@ public sealed class CoasterTrack
 	// [BIN:TPW-EXE:0x43e590 tangent angles] yaw = fpatan(T.x, T.z) (0x46f220); z′ = cos(−yaw)·z − x·sin(−yaw) with the nearest-index table lookups; pitch = fpatan(−T.y, z′) (0x46f210)
 	public static (float Yaw, float Pitch) PcOrientation( SVector3 tangent )
 	{
-		var yaw = MathF.Atan2( tangent.X, tangent.Z );
+		// [EXT:deterministic-math] the x87's fpatan in IEEE double by DetMath, the same bits on every runtime, not in x87 extended precision (docs/DETERMINISM.md, "Browser and native")
+		var yaw = DetMathF.Atan2( tangent.X, tangent.Z );
 		var z = CoasterTrig.PcCos( -yaw ) * tangent.Z - tangent.X * CoasterTrig.PcSin( -yaw );
-		return (yaw, MathF.Atan2( -tangent.Y, z ));
+		return (yaw, DetMathF.Atan2( -tangent.Y, z ));
 	}
 
 	/// <summary>
@@ -1433,12 +1438,13 @@ public sealed class CoasterTrack
 		if ( (node.Flags & (CoasterNodeFlags.ManualYaw | CoasterNodeFlags.ManualIncline)) == 0 )
 			return direction;
 		var heading = MathF.Sqrt( direction.X * direction.X + direction.Z * direction.Z );
-		var yaw = (node.Flags & CoasterNodeFlags.ManualYaw) != 0 ? node.Yaw : MathF.Atan2( direction.X, direction.Z );
-		var pitch = MathF.Atan2( direction.Y, heading );
+		// [EXT:deterministic-math] the x87's fpatan, fsin and fcos in IEEE double by DetMath, the same bits on every runtime, not in x87 extended precision (docs/DETERMINISM.md, "Browser and native")
+		var yaw = (node.Flags & CoasterNodeFlags.ManualYaw) != 0 ? node.Yaw : DetMathF.Atan2( direction.X, direction.Z );
+		var pitch = DetMathF.Atan2( direction.Y, heading );
 		if ( (node.Flags & CoasterNodeFlags.ManualIncline) != 0 )
 			pitch = Math.Clamp( pitch + node.Incline * 0.5f, -1.5f, 1.5f );
-		var level = MathF.Cos( pitch );
-		return new SVector3( MathF.Sin( yaw ) * level, MathF.Sin( pitch ), MathF.Cos( yaw ) * level );
+		var level = DetMathF.Cos( pitch );
+		return new SVector3( DetMathF.Sin( yaw ) * level, DetMathF.Sin( pitch ), DetMathF.Cos( yaw ) * level );
 	}
 
 	/// <summary>

@@ -57,15 +57,17 @@ public sealed partial class OriginalEconomyImport
 	}
 
 	/// <summary>Imports the original save of <paramref name="park"/>'s level.</summary>
-	public static OriginalEconomyImport Apply( ParkEconomy economy, OriginalPark park )
+	/// <param name="shippedSeed">The save is the level's shipped seed (<c>Easymode.TPWI</c>) that starts a new park, not a player's park: its cheat bytes are not applied (<see cref="ImportCheatMode"/>).</param>
+	public static OriginalEconomyImport Apply( ParkEconomy economy, OriginalPark park, bool shippedSeed = false )
 	{
 		ArgumentNullException.ThrowIfNull( park );
 		if ( park.Save == null )
 			throw new InvalidOperationException( $"The {park.LevelName} level has no original save." );
-		return Apply( economy, park.Save );
+		return Apply( economy, park.Save, shippedSeed );
 	}
 
-	public static OriginalEconomyImport Apply( ParkEconomy economy, OriginalParkImport save )
+	/// <param name="shippedSeed">The save is the level's shipped seed (<c>Easymode.TPWI</c>) that starts a new park, not a player's park: its cheat bytes are not applied (<see cref="ImportCheatMode"/>).</param>
+	public static OriginalEconomyImport Apply( ParkEconomy economy, OriginalParkImport save, bool shippedSeed = false )
 	{
 		ArgumentNullException.ThrowIfNull( economy );
 		ArgumentNullException.ThrowIfNull( save );
@@ -92,11 +94,33 @@ public sealed partial class OriginalEconomyImport
 		// after the objects: the carried object of a follow-up is one of their thing ids
 		ImportChallenges( economy, save.Economy.ChallengeSystem, world.Calendar.FunnyTimeStart, things, evidence );
 		var staff = ImportStaff( economy, save, things, evidence );
+		ImportCheatMode( economy, save, shippedSeed, evidence );
 		ReportNotImported( save, evidence );
 		// [BIN:STP-PPC:0x10106708 world reader] mParkClosed is restored with the world variables (0 = open)
 		var closed = world.Variables.ParkClosed != 0;
 		evidence.Add( $"Park {(closed ? "closed" : "open")} (mParkClosed {world.Variables.ParkClosed}), {world.Variables.NumberOfVisitorsToDate} visitors to date (the guest simulation's count)." );
 		return new OriginalEconomyImport( save.Economy, closed, objects, fixedItems, staff, evidence, things.ToDictionary( pair => pair.Key, pair => pair.Value.Id ) );
+	}
+
+	/// <summary>The cheat mode of the save's <c>CHTS</c> chunk (docs/CHEATS.md): byte 0 on marks the park as cheated, with or without the cheats extension; a Theme Park Inc park keeps it unapplied.</summary>
+	// [BIN:TPW-EXE:0x405570 cheat load] the CHTS chunk's two bytes go to +0xA (the cheat mode, tested whole by 0x405560) and +0xB of the cheat object 0xFB3520; loading a save replaces the mode, so a park saved with it on is a cheated park
+	private static void ImportCheatMode( ParkEconomy economy, OriginalParkImport save, bool shippedSeed, List<string> evidence )
+	{
+		if ( save.RuntimeBlocks is not { Cheats: { Length: > 0 } cheats } )
+			return;
+		if ( economy.Rules.ThemeParkInc )
+		{
+			evidence.Add( $"Cheat bytes {Convert.ToHexString( cheats )} not applied: Theme Park Inc's cheat mode is not traced (docs/CHEATS.md)." );
+			return;
+		}
+		// [EXT:cheats-shipped-seed] the jungle's shipped Easymode.TPWI was saved with the cheat mode on (CHTS 01 01), so in the original every park started from it (an Instant Action player's copy, 0x137600 on the Mac) inherits the mode; OpenTPW starts such a park unmarked, so a player who never cheated has a park that saves and hashes as before and is not shown as cheated
+		if ( shippedSeed )
+		{
+			evidence.Add( $"Cheat bytes {Convert.ToHexString( cheats )} of the shipped seed not applied: a new park starts without the cheat mode ([EXT:cheats-shipped-seed], docs/CHEATS.md)." );
+			return;
+		}
+		economy.Cheats.ImportMode( cheats[0] != 0 );
+		evidence.Add( $"Cheat mode {(cheats[0] != 0 ? "on: the park is marked as cheated" : "off")} (CHTS byte 0 = {cheats[0]}){(cheats.Length > 1 ? $"; byte 1 = {cheats[1]}, which no tp.exe code writes, is not kept (APPROX:SAVE-010)" : "")}." );
 	}
 
 	private static void ImportTurn( ParkEconomy economy, SaveWorld world, List<string> evidence )
@@ -781,7 +805,7 @@ public sealed partial class OriginalEconomyImport
 		var byState = string.Join( ", ", save.Guests.GroupBy( guest => guest.State ).OrderBy( group => group.Key ).Select( group => $"{group.Count()} in state {group.Key}" ) );
 		evidence.Add( $"{save.GuestCount} saved guests{(byState.Length == 0 ? "" : $" ({byState})")} are imported by the guest simulation when a level attaches it." );
 		// [EXT:original-engine-state-dumps] the raw dumps of the original's own engine structures that OpenTPW's engines have no counterpart for (the Scripts SCPT records: the sprite scripts of the saved guests and litter, which OpenTPW animates from their state and the cell; the RSSE scripts' object lists, node, bounce and walk tables, whose saved ids, list order, pass counter and run state are imported, RideScriptWorld.ImportSaved and RideVM.ImportSavedRunState; the Sound mixer state: the sound system's handles and volumes and QMixer's chunk; the message-centre lists and the Track and Flying ride chunks) are not restored: OpenTPW has different engines that restart from the archives; the widths are traced (SaveBlockWidths) to split the save; the Particles block's pool is restored (SAVE-013)
-		// [APPROX:SAVE-010] the advisor presentation block, the second clock word (the advisor clock, applied when the automatic advisor attaches; the first, the game clock the saved scripts' waits count from, is applied with their run state when the level imports its objects, SavedScriptImport), vanilla time, game-system words, cheat bytes (the cheat mode +0xA and the byte +0xB, which no tp.exe code writes, of the cheat object 0xFB3520, saver 0x4055D0, loader 0x405570; OpenTPW has no cheat mode yet, docs/CHEATS.md), advisor scoring and UI record count (SaveRuntimeBlocks), the weather, park analyser apart from its recent-research rings, five monthly graph rings, live arrivals and recent stays, tag system, mechanic HQ and UI message receiver things, the world state, arrival vehicle handles and bytes (the saved scripts of the arrival vehicles resume on their own, but the arrival scheduler's words that point at them are not imported) and the calendar session start and the advisor controller's time signature, sound, three raw words, mRequestedLastTutorial and mMessagePlaying are not imported (its current record is imported as the last tutorial advice when an automatic advisor attaches), nor are its pending advice and history when no automatic advisor is attached; the camera is imported (zoom, yaw and the required point of interest, loader 0x42CEC0) without the loader's yaw correction by the word 0x78D912; of the cell map the path cells, occupancy, MAP attributes, each path cell's texture and turn and the litter (type, claim) are read, and a saved path tile is drawn only while the cell's path neighbours equal the saved ones and its turn is 0/90/180/270 (otherwise the tile is chosen from the neighbours) — evidence needed: how the world state and arrival words (the current arrival vehicle's handle and the arrival bytes) steer the original's arrival update beyond what OpenTPW's arrival scheduler rebuilds, the camera's yaw correction word and the sound chunk
+		// [APPROX:SAVE-010] the advisor presentation block, the second clock word (the advisor clock, applied when the automatic advisor attaches; the first, the game clock the saved scripts' waits count from, is applied with their run state when the level imports its objects, SavedScriptImport), vanilla time, game-system words, the cheat chunk's second byte (+0xB of the cheat object 0xFB3520, loader 0x405570, which no tp.exe code writes; the first, the cheat mode, is imported, docs/CHEATS.md), advisor scoring and UI record count (SaveRuntimeBlocks), the weather, park analyser apart from its recent-research rings, five monthly graph rings, live arrivals and recent stays, tag system, mechanic HQ and UI message receiver things, the world state, arrival vehicle handles and bytes (the saved scripts of the arrival vehicles resume on their own, but the arrival scheduler's words that point at them are not imported) and the calendar session start and the advisor controller's time signature, sound, three raw words, mRequestedLastTutorial and mMessagePlaying are not imported (its current record is imported as the last tutorial advice when an automatic advisor attaches), nor are its pending advice and history when no automatic advisor is attached; the camera is imported (zoom, yaw and the required point of interest, loader 0x42CEC0) without the loader's yaw correction by the word 0x78D912; of the cell map the path cells, occupancy, MAP attributes, each path cell's texture and turn and the litter (type, claim) are read, and a saved path tile is drawn only while the cell's path neighbours equal the saved ones and its turn is 0/90/180/270 (otherwise the tile is chosen from the neighbours) — evidence needed: how the world state and arrival words (the current arrival vehicle's handle and the arrival bytes) steer the original's arrival update beyond what OpenTPW's arrival scheduler rebuilds, the camera's yaw correction word and the sound chunk
 		var engineDumps = save.Layout.Blocks.Where( block => block.Block is SaveBlock.Scripts or SaveBlock.MessageCentre or SaveBlock.TrackRides or SaveBlock.FlyingRides or SaveBlock.Rsse or SaveBlock.Sound ).ToList();
 		evidence.Add( $"[EXT:original-engine-state-dumps] Not restored (OpenTPW's engines restart from the archives): {string.Join( ", ", engineDumps.Select( block => $"{block.Block} {block.Length} bytes" ) )}; the Rsse block's script ids, list order, pass counter and run state are imported when the level attaches its objects, the Particles block's pool when the level builds its particle system." );
 		evidence.Add( $"[APPROX:SAVE-010] Not imported: {string.Join( ", ", save.Layout.Blocks.Where( block => block.Block is not (SaveBlock.ActionRecording or SaveBlock.World or SaveBlock.RideSystem or SaveBlock.Particles or SaveBlock.Camera) && !engineDumps.Contains( block ) ).Select( block => $"{block.Block} {block.Length} bytes" ) )}; {Things( save.World, SaveThingModel.Weather, SaveThingModel.TagSystem, SaveThingModel.MechanicHq, SaveThingModel.UIMsgReceiver )}; park analyser apart from its recent-research rings, five monthly graph rings, live arrivals and recent stays." );
@@ -789,7 +813,7 @@ public sealed partial class OriginalEconomyImport
 		{
 			var camera = blocks.Camera;
 			evidence.Add( $"Camera imported (a level starts it there): zoom {camera.Zoom}, yaw {camera.YRotation}, required point of interest ({camera.RequiredPoi.X}, {camera.RequiredPoi.Y}, {camera.RequiredPoi.Z}); the saved point ({camera.SavedPoi.X}, {camera.SavedPoi.Y}, {camera.SavedPoi.Z}), saved yaw {camera.SavedYRotation} and flags 0x{camera.Flags:X} (cleared by the loader) are not used." );
-			evidence.Add( $"[APPROX:SAVE-010] Runtime blocks decoded, not applied: clock words {string.Join( "/", blocks.ClockWords )} (the first is applied to the scripts with their run state, the second to the automatic advisor when it attaches), vanilla time {blocks.VanillaTime}, game system words {string.Join( "/", blocks.GameSystemWords )}, cheats {Convert.ToHexString( blocks.Cheats )}, advisor scoring {blocks.AdvisorScoring}, UI window records {blocks.UiRecords}." );
+			evidence.Add( $"[APPROX:SAVE-010] Runtime blocks decoded, not applied: clock words {string.Join( "/", blocks.ClockWords )} (the first is applied to the scripts with their run state, the second to the automatic advisor when it attaches), vanilla time {blocks.VanillaTime}, game system words {string.Join( "/", blocks.GameSystemWords )}, cheat byte 1 {(blocks.Cheats.Length > 1 ? blocks.Cheats[1].ToString() : "absent")}, advisor scoring {blocks.AdvisorScoring}, UI window records {blocks.UiRecords}." );
 		}
 		var variables = save.World.Variables;
 		evidence.Add( $"[APPROX:SAVE-010] World values not imported: world state {variables.WorldState}, arrival vehicle sizes {variables.ArrivalVehicleSize1}/{variables.ArrivalVehicleSize2}/{variables.ArrivalVehicleSize3}, current arrival vehicle thing {variables.CurrentArrivalVehicle} (its script state is not restored, [EXT:original-engine-state-dumps]), arrival bytes {Convert.ToHexString( save.World.Arrivals )}, calendar session start {save.World.Calendar.SessionStart}." );

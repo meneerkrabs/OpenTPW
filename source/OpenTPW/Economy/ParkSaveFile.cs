@@ -608,6 +608,10 @@ public static class ParkSaveFile
 		/// <summary>Each category's highest open group (SAVE-007) where it differs from what the completed projects give; absent in older saves and otherwise.</summary>
 		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 		public List<int>? HighestGroups { get; init; }
+		/// <summary>The objects the research cheat made available without researching them (<see cref="ParkResearch.CheatAvailable"/>), by Info.Id; absent in a park that never used it.</summary>
+		// [EXT:cheats-save] the original keeps the available byte in the object control record (+0x10, saved with the control table); OpenTPW keeps the cheat's objects apart from its completions
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public List<int>? CheatAvailable { get; init; }
 	}
 
 	public sealed class ObjectivesData
@@ -785,7 +789,8 @@ public static class ParkSaveFile
 				Current = park.Research.CurrentEntries.Any() ? park.Research.CurrentEntries.Select( entry => new[] { (int)entry.Category, entry.InfoId, entry.Level } ).ToList() : null,
 				Workload = park.Research.Workload == Math.Clamp( park.Settings.ResearchStartingWorkLoad, 0, 100 ) ? null : park.Research.Workload,
 				UpgradeOrder = park.Research.UpgradeTableToSave?.Select( key => new[] { key.InfoId, key.Level } ).ToList(),
-				HighestGroups = park.Research.HighestGroupsToSave?.ToList()
+				HighestGroups = park.Research.HighestGroupsToSave?.ToList(),
+				CheatAvailable = park.Research.CheatAvailable.Count == 0 ? null : park.Research.CheatAvailable.ToList()
 			},
 			Objectives = new ObjectivesData
 			{
@@ -993,6 +998,7 @@ public static class ParkSaveFile
 			SaveRecentResearch.Validate( recentItems );
 		Require( (data.Research.HighestGroups == null || data.Research.HighestGroups.Count == Enum.GetValues<ResearchCategory>().Length && data.Research.HighestGroups.All( group => group is >= 0 and <= ParkResearch.MaximumOpenGroup )) && (data.Research.Workload == null || data.Research.Workload is >= 0 and <= 100) && (data.Research.Current == null || data.Research.Current.All( entry => entry.Length == 3 && Enum.IsDefined( (ResearchCategory)entry[0] ) )) && data.Research.Effort.Count == 5 && data.Research.Completed.All( key => key.Length == 2 ) && (data.Research.UpgradeOrder?.All( key => key is { Length: 2 } ) ?? true) && data.Research.Progress.All( entry => entry.Length == 3 && entry[2] >= 0 ), "research" );
 		Require( data.MechanicCursor >= 0, "mechanic cursor" );
+		Require( data.Research.CheatAvailable is not { } cheatAvailable || cheatAvailable.Count > 0 && cheatAvailable.Distinct().Count() == cheatAvailable.Count, "research cheat" );
 		Require( data.PriceStatistics is null || data.PriceStatistics.All( ring => ring?.Values is not null )
 			&& ParkPriceStatistics.IsValid( data.PriceStatistics.Select( ring => new PriceStatisticRing( ring.Category, ring.Head, ring.Full, ring.Values ) ).ToList() ), "price statistics" );
 		Require( data.StatisticsHistory is null || data.StatisticsHistory.IsValid, "statistics history" );
@@ -1129,6 +1135,7 @@ public static class ParkSaveFile
 			data.Research.Progress.Select( entry => (((int)entry[0], (int)entry[1]), entry[2]) ), data.Research.Effort,
 			data.Research.Current?.Select( entry => ((ResearchCategory)entry[0], entry[1], entry[2]) ), data.Research.UpgradeOrder?.Select( key => (key[0], key[1]) ).ToList() );
 		park.Research.RestoreRecentItems( data.Research.RecentItems );
+		park.Research.RestoreCheatAvailable( data.Research.CheatAvailable );
 		if ( data.Research.HighestGroups is { } highestGroups )
 			park.Research.RestoreHighestGroups( highestGroups );
 		if ( data.Research.Workload is int workload )

@@ -819,6 +819,9 @@ public sealed partial class ParkHud
 		// The original window keys (the key table the InputButton defaults document; the research and map buttons'
 		// own help rows name "(R)" and "(Space)"), the time keys and the blueprint-turn keys.
 		HandleScreenShortcuts( shortcutsAllowed && !camcorderOwnsInput );
+		// the original's cheat keys, consulted after the shortcuts (docs/CHEATS.md), and the short note of every cheat the park applied
+		HandleCheatKeys( shortcutsAllowed && !camcorderOwnsInput && !IsRiding );
+		PostCheatNotes();
 		if ( TryOpenPostcard( shortcutsAllowed && !overUi && !consumed && !mouseCaptured.Value && input.Text.Length == 0 && !ridingAtStart ) )
 		{
 			overUi = consumed = true;

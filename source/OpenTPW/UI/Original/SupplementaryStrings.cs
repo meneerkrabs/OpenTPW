@@ -291,6 +291,14 @@ public enum OpenTpwText
 	EveningAlwaysNight,
 	/// <summary>[EXT:cheats-publish] The load menu's mark of a cheated park, after its name.</summary>
 	CheatedPark,
+	/// <summary>The HUD's note when the park's cheat mode turns on (the secret park name).</summary>
+	CheatModeOn,
+	/// <summary>The HUD's note of the money cheat (Alt+1).</summary>
+	CheatMoney,
+	/// <summary>The HUD's note of the research cheat (Alt+R).</summary>
+	CheatResearch,
+	/// <summary>The HUD's note of a golden ticket cheat (Alt+G, Alt+Num1..9).</summary>
+	CheatTicket,
 }
 
 public static class SupplementaryStrings
@@ -756,6 +764,10 @@ public static class SupplementaryStrings
 		[OpenTpwText.EveningAlwaysDusk] = new[] { "Always dusk", "Altid skumring", "Altijd schemer", "Toujours crépuscule", "Immer Dämmerung", "항상 해질녘", "Zawsze zmierzch", "Siempre atardecer", "Alltid skymning", "Sempre crepuscolo", "תמיד שקיעה" },
 		[OpenTpwText.EveningAlwaysNight] = new[] { "Always night", "Altid nat", "Altijd nacht", "Toujours nuit", "Immer Nacht", "항상 밤", "Zawsze noc", "Siempre de noche", "Alltid natt", "Sempre notte", "תמיד לילה" },
 		[OpenTpwText.CheatedPark] = new[] { "cheated", "snydt", "vals gespeeld", "avec triche", "mit Cheats", "치트 사용", "z kodami", "con trucos", "fuskad", "con trucchi", "עם צ'יטים" },
+		[OpenTpwText.CheatModeOn] = new[] { "Cheat mode on", "Snydetilstand slået til", "Valsspeelmodus aan", "Mode triche activé", "Cheat-Modus an", "치트 모드 켜짐", "Tryb kodów włączony", "Modo trucos activado", "Fuskläge på", "Modalità trucchi attiva", "מצב צ'יטים פועל" },
+		[OpenTpwText.CheatMoney] = new[] { "Cheat: 10,000 added", "Snyd: 10.000 tilføjet", "Valsspelen: 10.000 erbij", "Triche : 10 000 ajoutés", "Cheat: 10.000 gutgeschrieben", "치트: 10,000 추가", "Kod: dodano 10 000", "Truco: 10.000 añadidos", "Fusk: 10 000 tillagt", "Trucco: 10.000 aggiunti", "צ'יט: נוספו 10,000" },
+		[OpenTpwText.CheatResearch] = new[] { "Cheat: everything can be built", "Snyd: alt kan bygges", "Valsspelen: alles is te bouwen", "Triche : tout peut être construit", "Cheat: alles kann gebaut werden", "치트: 모든 것을 지을 수 있음", "Kod: wszystko można zbudować", "Truco: se puede construir todo", "Fusk: allt kan byggas", "Trucco: si può costruire tutto", "צ'יט: אפשר לבנות הכול" },
+		[OpenTpwText.CheatTicket] = new[] { "Cheat: golden ticket", "Snyd: gylden billet", "Valsspelen: gouden kaartje", "Triche : ticket d'or", "Cheat: goldenes Ticket", "치트: 황금 티켓", "Kod: złoty bilet", "Truco: billete dorado", "Fusk: gyllene biljett", "Trucco: biglietto d'oro", "צ'יט: כרטיס זהב" },
 	};
 
 	public static IReadOnlyList<string> SupportedLanguages => Languages;

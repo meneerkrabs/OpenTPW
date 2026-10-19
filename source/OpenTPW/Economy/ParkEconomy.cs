@@ -321,6 +321,32 @@ public sealed class ParkEconomy : IParkEconomy
 	// [EXT:cheats-extension] Theme Park World parks only: the cheats are tp.exe's (docs/CHEATS.md); Theme Park Inc's executable was not searched for any
 	public bool QueueCheat( CheatAction action ) => !Rules.ThemeParkInc && Cheats.Queue( action );
 
+	/// <summary>What one cheat does to the park (called by <see cref="ParkCheats.ApplyPending"/> at the turn boundary); returns its outcome for the record's event (empty when there is none to tell).</summary>
+	internal string ApplyCheat( CheatAction action )
+	{
+		switch ( action.Kind )
+		{
+			case CheatKind.Mode:
+				// [BIN:TPW-EXE:0x4053C0 cheat mode] the mode byte only (ParkCheats sets it); the message of type 0x15 it posts is not traced and not posted
+				return "";
+			case CheatKind.Money:
+				// [BIN:TPW-EXE:0x40C450 money cheat] the bank's credit 0x4D0190(10000), the path of a challenge prize: the balance (+0xC), money in (park +0x1FC90) and the year's profit (+0x124), so it counts toward the profit ticket
+				Post( LedgerCategory.OtherIncome, ParkCheats.MoneyAmount );
+				return "";
+			case CheatKind.Research:
+				// [BIN:TPW-EXE:0x40C430 research cheat] the research manager's 0x503FF0 sets every research item's object control available (+0x10 = 1); progress and completion are not touched
+				return Research.MakeEveryItemAvailable().ToString( System.Globalization.CultureInfo.InvariantCulture );
+			case CheatKind.Ticket:
+				// [BIN:TPW-EXE:0x40C6C0 ticket cheats] the handlers call the player ledger directly (0x409410 → 0x5AF810 / 0x5AF940): no advisor message, no first-ticket lines, no log
+				return Objectives.AwardCheatTicket( (GoldenTicketKind)action.Argument ).ToString();
+			default:
+				throw new InvalidOperationException( $"The cheat {action.Kind} is not applied by the economy." );
+		}
+	}
+
+	/// <summary>Tells the listeners (the player's ticket ledger, the HUD) that a cheat was applied: <see cref="ParkEvent.InfoId"/> the <see cref="CheatKind"/>, <see cref="ParkEvent.Amount"/> its argument, <see cref="ParkEvent.Detail"/> its outcome.</summary>
+	internal void RaiseCheatApplied( CheatAction action, string outcome ) => Raise( ParkEventKind.CheatApplied, action.Argument, 0, (int)action.Kind, outcome );
+
 	private void AdvanceTurn( long previousTurn, long turn )
 	{
 		crowdPhaseTurn ??= previousTurn;

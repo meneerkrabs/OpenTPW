@@ -100,7 +100,7 @@ The ranges do not overlap. In every run both builds gave the same digest, textur
 same two hashes for the same work, as does an AOT build made in the Linux server image. That
 covers decoding the theme's 1,698 textures and the fixed park run, which exercises the economy and
 the guests but not the rides, object scripts, weather or staff; within that coverage AOT changed
-the speed, not the result. These are three runs per build on one machine: they show a large
+the speed, not the result (the check now covers rides, object scripts, weather and staff as well and runs in CI: docs/DETERMINISM.md, "Browser and native"). These are three runs per build on one machine: they show a large
 improvement there, not a speed guarantee for every device.
 
 The cost is the build: the native module grows from 2.9 to 32.6 MB, the Brotli-compressed

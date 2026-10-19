@@ -2,7 +2,7 @@ name: Browser determinism
 # The cross-runtime determinism gate (docs/DETERMINISM.md, "Browser and native"; co-op lockstep needs the browser and the desktop to compute
 # the same simulation bits): the asset-free unit tests that pin simulation digests run inside the browser build, in headless and muted
 # Chrome, against the constants the desktop test runs assert. The AOT leg compiles like the published page (Mono AOT); the interpreter leg
-# like a local publish. A separate workflow, so the six-minute AOT compile runs beside the main build instead of after it.
+# like a local publish. A separate workflow, so the AOT publish (about 15 minutes on ubuntu-latest) runs beside the main build instead of after it.
 on:
   push:
     branches: [main]

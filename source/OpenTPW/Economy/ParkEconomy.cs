@@ -311,9 +311,47 @@ public sealed class ParkEconomy : IParkEconomy
 
 	public long Turn => ParkCalendar.Turn( Tick );
 
+	/// <summary>The park's cheats (docs/CHEATS.md): the cheat mode, the record of applied cheats and the actions waiting for the next turn.</summary>
+	public ParkCheats Cheats { get; } = new();
+
+	/// <summary>
+	/// Queues a cheat for the start of the next park turn (<see cref="ParkCheats"/>). False when the park cannot cheat (a Theme Park Inc economy: only Theme Park World's cheats are traced), the action is not
+	/// valid or the queue is full. The caller refuses read-only visits and online sessions.
+	/// </summary>
+	// [EXT:cheats-extension] Theme Park World parks only: the cheats are tp.exe's (docs/CHEATS.md); Theme Park Inc's executable was not searched for any
+	public bool QueueCheat( CheatAction action ) => !Rules.ThemeParkInc && Cheats.Queue( action );
+
+	/// <summary>What one cheat does to the park (called by <see cref="ParkCheats.ApplyPending"/> at the turn boundary); returns its outcome for the record's event (empty when there is none to tell).</summary>
+	internal string ApplyCheat( CheatAction action )
+	{
+		switch ( action.Kind )
+		{
+			case CheatKind.Mode:
+				// [BIN:TPW-EXE:0x4053C0 cheat mode] the mode byte only (ParkCheats sets it); the message of type 0x15 it posts is not traced and not posted
+				return "";
+			case CheatKind.Money:
+				// [BIN:TPW-EXE:0x40C450 money cheat] the bank's credit 0x4D0190(10000), the path of a challenge prize: the balance (+0xC), money in (park +0x1FC90) and the year's profit (+0x124), so it counts toward the profit ticket
+				Post( LedgerCategory.OtherIncome, ParkCheats.MoneyAmount );
+				return "";
+			case CheatKind.Research:
+				// [BIN:TPW-EXE:0x40C430 research cheat] the research manager's 0x503FF0 sets every research item's object control available (+0x10 = 1); progress and completion are not touched
+				return Research.MakeEveryItemAvailable().ToString( System.Globalization.CultureInfo.InvariantCulture );
+			case CheatKind.Ticket:
+				// [BIN:TPW-EXE:0x40C6C0 ticket cheats] the handlers call the player ledger directly (0x409410 → 0x5AF810 / 0x5AF940): no advisor message, no first-ticket lines, no log
+				return Objectives.AwardCheatTicket( (GoldenTicketKind)action.Argument ).ToString();
+			default:
+				throw new InvalidOperationException( $"The cheat {action.Kind} is not applied by the economy." );
+		}
+	}
+
+	/// <summary>Tells the listeners (the player's ticket ledger, the HUD) that a cheat was applied: <see cref="ParkEvent.InfoId"/> the <see cref="CheatKind"/>, <see cref="ParkEvent.Amount"/> its argument, <see cref="ParkEvent.Detail"/> its outcome.</summary>
+	internal void RaiseCheatApplied( CheatAction action, string outcome ) => Raise( ParkEventKind.CheatApplied, action.Argument, 0, (int)action.Kind, outcome );
+
 	private void AdvanceTurn( long previousTurn, long turn )
 	{
 		crowdPhaseTurn ??= previousTurn;
+		// [EXT:cheats-turn-boundary] the queued cheats apply first, before the turn's thing sweep (its weather update and arrival update) and the calendar; a park without any skips this
+		Cheats.ApplyPending( this, turn );
 		// [BIN:TPW-EXE:0x00516380 world update] the thing loop (staff, rides, guests, the challenge system: 0x0050B360 by thing type) runs only while the world state (+0x1DA738) is not 4;
 		// the turn counter before it and the calendar, staff pool, bank and golden-ticket step after it (0x004D7B20) run in every state
 		// [EXT:headless-economy] without a host sweep (the headless economy of tests and tools, which has no thing pool of guests, rides and staff to visit) the thing update runs in a fixed order of its own, staff, research, rides, challenges, where a level's park turn visits one list newest first (IThingSweep)

@@ -11,7 +11,8 @@ public enum GameMode { InstantAction, FullSimulation }
 
 /// <summary>A park that can be loaded from the Load Park screen.</summary>
 /// <param name="Sandbox">True for the OpenTPW sandbox save (jungle sandbox), false for an original read-only park.</param>
-public sealed record ParkLoadEntry( string Level, int ThemeNameIndex, bool Sandbox, string? OwnSavePath = null, string? DisplayName = null, DateTime? SavedAt = null, string? Requires = null );
+/// <param name="Cheated">[EXT:cheats-publish] The saved park is marked as cheated (docs/CHEATS.md); the menu says so after its name.</param>
+public sealed record ParkLoadEntry( string Level, int ThemeNameIndex, bool Sandbox, string? OwnSavePath = null, string? DisplayName = null, DateTime? SavedAt = null, string? Requires = null, bool Cheated = false );
 
 /// <summary>What the front-end screens ask of the game.</summary>
 public sealed class FrontEndActions
@@ -235,6 +236,9 @@ public sealed partial class FrontEndMenu
 	internal static string RequiresSuffix( UiStringTable strings, string? requires ) =>
 		requires == null ? "" : " (" + string.Format( strings.Extra( OpenTpwText.RequiresMod ), requires ) + ")";
 
+	/// <summary>[EXT:cheats-publish] " (cheated)" after the name of a park marked as cheated (docs/CHEATS.md), else nothing.</summary>
+	internal static string CheatedSuffix( UiStringTable strings, bool cheated ) => cheated ? " (" + strings.Extra( OpenTpwText.CheatedPark ) + ")" : "";
+
 	// [EXT:list-row-pitch] the rows take the buy list's fixed pitch, a design choice (see ParkHud.BuyRowHeight)
 	public static UiScreen CreateLoadScreen( UiScreenStack stack, UiStringTable strings, IReadOnlyList<ParkLoadEntry> entries, Action<ParkLoadEntry> load )
 	{
@@ -253,7 +257,7 @@ public sealed partial class FrontEndMenu
 		var list = screen.Add( new UiScrollList
 		{
 			Id = "parks",
-			Rows = () => parks.Select( entry => entry.OwnSavePath != null ? (entry.DisplayName ?? entry.Level) + RequiresSuffix( strings, entry.Requires ) : entry.Sandbox ? strings.Extra( OpenTpwText.SandboxParkEntry )
+			Rows = () => parks.Select( entry => entry.OwnSavePath != null ? (entry.DisplayName ?? entry.Level) + CheatedSuffix( strings, entry.Cheated ) + RequiresSuffix( strings, entry.Requires ) : entry.Sandbox ? strings.Extra( OpenTpwText.SandboxParkEntry )
 				: string.Format( strings.Extra( OpenTpwText.OriginalParkEntry ), entry.ThemeNameIndex >= 0 ? strings.Theme( entry.ThemeNameIndex ) : entry.Level ) ).ToArray(),
 			Trailing = index => parks[index].SavedAt is { } saved
 				? strings.Format( UiTextRecord.SaveDate, saved.Day.ToString(), saved.Month.ToString(), saved.Year.ToString() ) + $" {saved.Hour:00}:{saved.Minute:00}" : "",

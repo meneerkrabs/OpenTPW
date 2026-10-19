@@ -57,6 +57,7 @@ Changes to `mods.json` apply at the next start; nothing is swapped while the gam
 | `opentpw.guest-insights` | no | yes | no | refusal counters in the park information window |
 | `opentpw.cross-edition-objects` | no | yes | yes | engine support for mods that bring Theme Park Inc attractions into Theme Park World |
 | `opentpw.smarter-guests` | no | **no, not yet** | yes | guests that decide better; selectable once phase 6 shows an effect |
+| `opentpw.cheats` | no | **no, not yet** | yes (recorded in a save only once the park has used one of its own cheats) | [Cheats](CHEATS.md): the Alt+C cheats window (arrivals, weather, a ride's vehicle limit, a chosen golden ticket); Theme Park World parks only; selectable from phase K3. The original's own cheat mode (the secret park name and the Alt keys) is not part of it |
 
 Mods are off until switched on. Switch an extension off (or a mod on) for one run with `--disable-extension <id>` and `--enable-mod <id>`, or
 permanently on the Extensions and mods screen or in `mods.json` ([below](#settings-modsjson)).

@@ -25,9 +25,10 @@ internal static class ParkResumeMods
 	/// <summary>
 	/// [EXT:pools-extension] The extensions a save records only while the park actually uses them: <c>opentpw.pools</c>, recorded when the park has pool cells or a changing room, and
 	/// [EXT:umbrellas-save] <c>opentpw.umbrellas</c>, recorded when the park has a brolly shop or a guest with an umbrella, and [EXT:winter-save] <c>opentpw.winter</c>, recorded when the park has a winter kiosk or a glühwein stall or a guest
-	/// with a warm item. A park that does not use one saves byte-identically whether it is on or off, and loads whether it is on or off (docs/POOLS.md, docs/UMBRELLAS.md, docs/WINTER.md, docs/MODS.md).
+	/// with a warm item, and [EXT:cheats-save] <c>opentpw.cheats</c>, recorded once the park has used one of the extension's own cheats (<see cref="ParkCheats.UsesExtension"/>; a park cheated only through the original's cheats
+	/// does not record it). A park that does not use one saves byte-identically whether it is on or off, and loads whether it is on or off (docs/POOLS.md, docs/UMBRELLAS.md, docs/WINTER.md, docs/CHEATS.md, docs/MODS.md).
 	/// </summary>
-	public static IReadOnlySet<string> UsedOnlyExtensionIds { get; } = new HashSet<string>( StringComparer.Ordinal ) { OfficialExtensions.Pools.Id, OfficialExtensions.Umbrellas.Id, OfficialExtensions.Winter.Id };
+	public static IReadOnlySet<string> UsedOnlyExtensionIds { get; } = new HashSet<string>( StringComparer.Ordinal ) { OfficialExtensions.Pools.Id, OfficialExtensions.Umbrellas.Id, OfficialExtensions.Winter.Id, OfficialExtensions.Cheats.Id };
 
 	/// <summary>
 	/// The simulation-changing mods of <paramref name="active"/> that a save or an export counts: all of them, except that <c>opentpw.rain-mood</c>, <c>opentpw.winter-weather</c>, <c>opentpw.winter-cold</c> and <c>opentpw.winter-always</c> are left out in a Theme Park Inc run, where their
@@ -56,7 +57,8 @@ internal static class ParkResumeMods
 	/// <paramref name="umbrellas"/>: the park holds one of the extension's own objects (a brolly shop) or a guest with an umbrella (<see cref="UmbrellasInUse"/>). [EXT:winter-save] <c>opentpw.winter</c> when <paramref name="winter"/>:
 	/// the park holds a winter kiosk or a glühwein stall or a guest with a warm item (<see cref="WinterInUse"/>).
 	/// </summary>
-	public static IReadOnlySet<string> InUse( ParkCellMap? cells, bool poolsObjects = false, bool umbrellas = false, bool winter = false )
+	/// <param name="cheats">[EXT:cheats-save] The park has used one of the cheats extension's own cheats or has one waiting (<see cref="ParkCheats.UsesExtension"/>).</param>
+	public static IReadOnlySet<string> InUse( ParkCellMap? cells, bool poolsObjects = false, bool umbrellas = false, bool winter = false, bool cheats = false )
 	{
 		var used = new HashSet<string>( StringComparer.Ordinal );
 		if ( poolsObjects || (cells != null && cells.CountOf( ParkCellType.PoolWater ) > 0) )
@@ -65,6 +67,8 @@ internal static class ParkResumeMods
 			used.Add( OfficialExtensions.Umbrellas.Id );
 		if ( winter )
 			used.Add( OfficialExtensions.Winter.Id );
+		if ( cheats )
+			used.Add( OfficialExtensions.Cheats.Id );
 		return used;
 	}
 

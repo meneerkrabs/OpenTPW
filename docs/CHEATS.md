@@ -1,7 +1,8 @@
 # Cheats: the original cheat mode and `opentpw.cheats`
 
-October 19, 2026. Status: **phase K0** (this trace, the ride capacity data and the decisions). Nothing is built yet: the original cheat mode comes in K2, the
-extension's window in K3 and the ride vehicle limit in K4. The plan is `OpenTPW-notes/plans/cheats-plan.md`.
+October 19, 2026. Status: **phases K0** (this trace, the ride capacity data and the decisions), **K1** (the park's cheat record, the turn-boundary queue, the save, the
+extension's recording and the cheated mark; [below](#the-parks-cheat-record-k1)) and **K2** (the original cheat mode: the secret park name, the twelve Alt keys and the `CHTS` chunk in
+and out; [below](#the-original-cheat-mode-k2)). The extension's window comes in K3 and the ride vehicle limit in K4. The plan is `OpenTPW-notes/plans/cheats-plan.md`.
 
 The request (user, 2026-10-19): a cheats extension with (1) a button that makes visitors arrive by bus, plane or boat, (2) a way to change the weather, (3) a way to raise the
 cars-per-ride limit and (4) a button that awards a golden ticket. Evidence: a static trace of the decrypted Windows `tp.exe` v2.0 (SHA-256 `5472f97b...`), through the shared REA
@@ -151,11 +152,67 @@ Consequences for the vehicle limit (K4):
   Star Tours) through it; the ceiling of 40 cars needs `CarSlots` 40 and either a capacity above 255 or a car override. K4 decides which.
 - Coaster trains are derived from the release rate and are out of scope (K5).
 
+## The park's cheat record (K1)
+
+- **Where it lives.** `ParkCheats` (`source/OpenTPW/Economy/ParkCheats.cs`) is part of the park economy (`ParkEconomy.Cheats`): the cheat mode (`[BIN:TPW-EXE:0x4053C0]`, the original's `+0xA`), a
+  record of every applied cheat (park turn, kind, argument; at most 4,096 entries, the oldest dropped and counted), the actions waiting for the next turn (at most 16) and a sticky flag for the
+  extension's own cheats.
+- **The turn boundary** `[EXT:cheats-turn-boundary]`. Every cheat is queued (`ParkEconomy.QueueCheat`) and applied at the start of the next park turn, before the turn's thing sweep (its
+  weather and arrival updates; in a level whose turns are not swept, the tick's guests and objects run before the economy's turn), in the order of `CheatKind`, with no random draw. Applying any cheat turns the mode on; nothing turns it off (the original never calls `0x4053C0(0)`). A
+  Theme Park Inc economy refuses cheats: only Theme Park World's are traced. The mode's message of type `0x15` is not posted.
+- **The save** `[EXT:cheats-save]`. `ParkSaveFile.Data.Cheats` holds the record only for a park that has cheated or has a cheat waiting, so every other park saves (and hashes) as before; it is
+  validated on load (known kinds and arguments, turns in order and not after the park turn, a mode that is on when cheats were applied). See [DETERMINISM.md](DETERMINISM.md#cheats).
+- **The extension's recording.** `opentpw.cheats` is a used-only extension: a world save records it once the park has used one of its own cheats (or has one waiting), and such a save needs it to
+  load. A park cheated through the original's cheat mode alone does not record it and loads with the extension off, because the user's decision makes that mode independent of the extension.
+  Until K3 the extension is registered but not selectable, and no kind of its own exists.
+- **The cheated mark** `[EXT:cheats-publish]`. The load and continue menus write "(cheated)" after a cheated park's name (in all eleven UI languages), and a cheated park's shared package
+  carries the flag `cheated`, which a visit lists with the package's other flags. Exporting, publishing and ranking are not refused: `ParkSharing.ModsRefusal` does not count the cheats
+  extension (it is used-only and the sharing code does not report it in use) and the server's acceptance is unchanged; the flag is informational and well-formed for every client and server
+  version (any flag matching the package's pattern is accepted).
+- **The original-format export** writes the park's own `CHTS` bytes since K2, which also reads them on import (in K1 an exported park kept the template's bytes).
+
+## The original cheat mode (K2)
+
+A faithful port of the original's cheat mode. It works whether `opentpw.cheats` is on or off (the user's decision), in Theme Park World parks that are not a read-only visit, and leaves no
+extension record, so such a park loads with the extension off.
+
+- **The secret name** `[BIN:TPW-EXE:0x4993E0]`. `Level.RenamePark` stores the lines and redraws the sign as before, then compares them as the OK handler does: each line through
+  `SecretParkName.Transform` (unit `i` XOR `i`, the length read again after every unit) against the stored `Kdtjj%rom` / `Cnqnmf&Dg~`, exact and case-sensitive. A match queues
+  `CheatKind.Mode`. The sign keeps the name.
+- **The keys** `[BIN:TPW-EXE:0x7484D0, 0x488991]`. `ParkHud.CheatKeys` is the table: R, the top row's 1, G and the keypad's 1..9, each with Alt alone (the Mac's Option is Alt). They are
+  consulted after the HUD's shortcuts and only while the park's cheat mode is on, and a cheat **fires when its key is released** with Alt alone held (`0x40C990` runs the `+0xC` handler
+  on the release message), once per release. The plain shortcuts no longer fire with Alt held (the dispatcher's exact mask match), so Alt+R and Alt+G do not open the research and entry
+  price windows. A keyboard without a keypad has no Alt+Num keys; the extension's window (K3) offers every ticket.
+  - `[EXT:cheats-key-release]`: OpenTPW samples the keys once a frame, so a frame that sees the key and Alt released together cannot tell which went first; it takes the previous frame's
+    mask, so a quick release with Alt still fires.
+  - With Alt alone held the keypad's 4 and 6 do not scroll the camera: the dispatcher matches a context entry on the exact key and mask (`[BIN:TPW-EXE:0x40C900]`), and the camera
+    context's table `0x748158` holds VK_NUMPAD4 and VK_NUMPAD6 with mask 0, so Alt+Num4 and Alt+Num6 reach only the cheat context.
+- **Alt+R** `[BIN:TPW-EXE:0x503FF0]`: every research item's object becomes available to build (`ParkResearch.MakeEveryItemAvailable`, kept in the save as `Research.CheatAvailable`).
+  Nothing is researched: the lab keeps its items and progress, no group opens, `IsAllResearched` and the AllResearchedAndBuilt ticket (`0x4CA6B0` reads the items left and the built
+  counts) do not change, and an upgrade level stays a research project (its item names the ride's own object control).
+- **Alt+1** `[BIN:TPW-EXE:0x4D0190]`: +10,000 through the prize credit: the balance, money in and the year's profit (so it counts toward the profit ticket).
+- **Alt+G, Alt+Num1..9** `[BIN:TPW-EXE:0x5AF810, 0x5AF940]`: the six local tickets join the park's set, the four global ones go through the player's holder rule with record 100. The award
+  is silent: `ParkEventKind.CheatApplied`, never `GoldenTicketWon`, so the advisor says nothing. No game mode or `CanEarnTickets` check, as in the original (an Instant Action park gets
+  the ticket in its own set; the player's ledger takes Full Simulation parks whose rules can earn tickets only, as for any ticket). The HUD writes one short note per applied cheat (a ticket the park already held
+  writes none). The player's progress file records that a cheat awarded the ticket ([PLAYER-TICKET-LEDGER.md](PLAYER-TICKET-LEDGER.md#tickets-a-cheat-awarded-docscheatsmd)).
+- **The `CHTS` chunk** `[BIN:TPW-EXE:0x405570, 0x4055D0]`. Importing a player's original save applies byte 0: nonzero marks the park as cheated (mode on, empty record); byte 1 is reported
+  and not kept (SAVE-010). The export writes the park's own chunk, `01 01` for a cheated park and `00 00` otherwise (`[EXT:cheats-export]`), whatever the template holds.
+- **Alt+R in an original save** `[BIN:TPW-EXE:0x503FF0]`. The cheat writes the object controls' researched byte `+0x10` for every research item's object and leaves the projects as they
+  are. Importing a cheated save (byte 0 nonzero) therefore takes an object marked researched whose project is unfinished as the cheat's (`Research.CheatAvailable`); in a clean save such a
+  flag stays a disagreement (SAVE-007). The research export writes `+0x10` for the objects the cheat made available.
+- **Port decisions.**
+  - `[EXT:cheats-shipped-seed]`: the jungle's shipped `Easymode.TPWI` carries `01 01`. A park started from it (an Instant Action jungle park, the reference path) is **not** marked: in the
+    original it would start in cheat mode, but here a player who never cheated keeps an unmarked park whose save and hash are as before.
+  - `[EXT:cheats-park-mode]`: the original's three first-use guards that clear the mode once per process run (above) are not reproduced; the mode belongs to the park.
+  - `[EXT:cheats-turn-boundary]`: every cheat applies at the next park turn (K1), so after the secret name the keys work from the next turn on.
+  - The message of type `0x15` is not posted (its listeners are unknown, COMPAT-007).
+
 ## Phases
 
 - **K0** (this document): the trace, the capacity data, COMPAT-007 and SAVE-010 narrowed.
-- **K1**: the extension (off), the park's cheat record in the save, the used-only and sticky recording, the turn-boundary queue, the cheated mark shown, the TPWS export's own `CHTS`.
-- **K2**: the original cheat mode: the secret name in `Level.RenamePark`, the cheat key context, Alt+R, Alt+1, the ten tickets, the import of `CHTS`.
+- **K1** (built): the extension (off, not yet selectable), the park's cheat record in the save, the used-only and sticky recording, the turn-boundary queue, the cheated mark shown.
+- **K2** (built): the original cheat mode: the secret name in `Level.RenamePark`, the cheat key context, Alt+R, Alt+1, the ten tickets, the import of `CHTS` and the original-format export's own `CHTS`
+  (moved from K1: the export round trip of the corpus saves needs the import).
 - **K3**: the cheats window (Alt+C): arrival vehicles, weather, the ticket dropdown; `CheatsFixedRunHash`.
 - **K4**: the ride vehicle limit for bump rides and tours; captures.
 - **K5** (optional, not planned): coaster trains.

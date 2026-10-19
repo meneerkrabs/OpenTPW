@@ -112,7 +112,7 @@ public sealed class ParkEconomyRuntime
 		var start = ParkStart.Resolve( kind, park.Save != null, BalanceSettings.HasEasyLayer( park.LevelName ) );
 		var easy = start.EasyBalance;
 		var economy = ParkEconomy.CreateForTheme( park.LevelName, easy, start.Mode, (seed ?? WorldSeed.Default).EconomyStream );
-		var import = start.ImportShippedSave ? OriginalEconomyImport.Apply( economy, park ) : null;
+		var import = start.ImportShippedSave ? OriginalEconomyImport.Apply( economy, park, shippedSeed: true ) : null;
 		Log.Trace( $"Park economy: {kind} start, {start.Mode} rules; {park.LevelName} {(easy ? "easy" : "standard")} balance from {string.Join( ", ", economy.Settings.Standard.Sources )}; "
 			+ $"cash ${economy.Balance}, entrance fee ${economy.EntranceFee}, {economy.Catalog.Objects.Count} catalogue objects, {economy.Research.Items.Count} research items." );
 		foreach ( var line in import?.Evidence ?? Array.Empty<string>() )

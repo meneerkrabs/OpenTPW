@@ -58,6 +58,26 @@ public partial class Level
 		return autosaveAssets;
 	}
 
+	/// <summary>
+	/// <see cref="AutosaveAssets"/> hashed in steps (one catalogue archive each) for a park about to be entered, so its restart snapshot finds the manifest ready instead of
+	/// hashing it all in the entering frame (docs/BROWSER-PERFORMANCE.md "Event hitches"); the result is the same dictionary the one-go call makes, kept the same way.
+	/// </summary>
+	internal IEnumerable<bool> PrepareAutosaveAssets()
+	{
+		var catalog = Objects.Catalog; var entries = catalog.Entries.Count;
+		if ( autosaveAssets != null && autosaveAssetEntries == entries && ReferenceEquals( autosaveCatalog, catalog ) )
+			yield break;
+		var settings = Park?.Economy.Settings ?? throw new InvalidOperationException( "Only a writable Theme Park World park can be saved here." );
+		var manifest = new SortedDictionary<string, string>( StringComparer.Ordinal );
+		foreach ( var step in ParkResumeAssetManifest.CaptureSteps( catalog, settings.Theme, settings.IsEasy, manifest ) )
+			yield return step;
+		// the catalogue did not change while the steps ran between frames
+		if ( catalog.Entries.Count == entries && ReferenceEquals( Objects.Catalog, catalog ) )
+		{
+			autosaveAssets = manifest; autosaveAssetEntries = entries; autosaveCatalog = catalog;
+		}
+	}
+
 	/// <summary>Drops the kept manifest, so the next <see cref="AutosaveAssets"/> hashes the files again.</summary>
 	internal void ForgetAutosaveAssets() => autosaveAssets = null;
 

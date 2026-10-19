@@ -109,8 +109,15 @@ public static class OfficialExtensions
 	// [EXT:evening] OpenTPW's own extension; the original game's parks are always in daylight
 	public static IOpenTpwExtension Evening { get; } = new OpenTpwExtension( "opentpw.evening", "Evening and night", new ModVersion( 1, 0, 0 ), DefaultEnabled: true, AffectsSimulation: false, PlayerSelectable: true );
 
+	/// <summary>
+	/// The settling snow extension (docs/WINTER.md, phase W1): snow that settles on the park's ground, roofs and objects while it snows and melts afterwards, with the paths turning to slush. Presentation only:
+	/// <c>AffectsSimulation</c> is false, so it is not recorded in park saves and changes no hash (a save keeps the cover as an optional unhashed field). On by default; it shows wherever the weather snows (the Halloween world).
+	/// </summary>
+	// [EXT:winter-snow] OpenTPW's own extension; the original game has no ground snow
+	public static IOpenTpwExtension WinterSnow { get; } = new OpenTpwExtension( "opentpw.winter-snow", "Settling snow", new ModVersion( 1, 0, 0 ), DefaultEnabled: true, AffectsSimulation: false, PlayerSelectable: true );
+
 	/// <summary>All official extensions, in declaration order.</summary>
-	public static IReadOnlyList<IOpenTpwExtension> All { get; } = new[] { Online, CrossEditionObjects, SmarterGuests, GuestInsights, Pools, PoolGuestArt, Umbrellas, RainMood, RestoredAdvice, Evening };
+	public static IReadOnlyList<IOpenTpwExtension> All { get; } = new[] { Online, CrossEditionObjects, SmarterGuests, GuestInsights, Pools, PoolGuestArt, Umbrellas, RainMood, RestoredAdvice, Evening, WinterSnow };
 
 	public static IOpenTpwExtension? Find( string id ) => All.FirstOrDefault( extension => extension.Id == id );
 }

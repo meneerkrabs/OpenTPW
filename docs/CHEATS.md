@@ -262,12 +262,15 @@ records `opentpw.cheats`. The ride keeps the raised limit until it is removed; i
   in the loading phase, so it waits at the station reference where it was created and races from there when the race starts; 32 karts on the test loop all come home and every racer is
   handed back.
 - **What does not follow the raised maximum.** The economy's wear reads the riders against the type's own `UsageInfo.MaxCapacity` (clamped in `ParkEconomy`), so a raised ride's wear is that
-  of a full ride; the reliability gauge of the ride window reads the raised maximum.
+  of a full ride; the ride window's reliability gauge, which predicts that wear, reads a raised capacity above the type's maximum as that maximum.
 - **Saves.** The runtime snapshot writes `VehiclesRaised` only for a raised ride, the bump controller its `VehicleLimit` and the tour controller its `CarSlots` only when raised, so every other
-  save keeps its bytes; the load checks that the three agree and that a raised ride's capacity is within its raised maximum. The raised limit and the tour's extra slots join the hash only
+  save keeps its bytes; the load checks that the three agree (a live raised bumper or kart ride must carry its controller with the raised limit) and that a raised ride's capacity is
+  within its raised maximum. The raised limit and the tour's extra slots join the hash only
   for a raised ride.
-- **The original-format export** refuses a park with a raised ride (`OriginalParkExportOptions.RaisedRides`, the level's count, `[EXT:cheats-export]`): the original keeps a ride's
-  capacity in a byte and clamps it to its type's maximum.
+- **The original-format export** refuses a park with a raised ride whose capacity is above its type's original maximum (`OriginalParkExportOptions.RidesAboveOriginalLimits`,
+  `[EXT:cheats-export]`, the user's decision "refuses rides above the original limits"): the original keeps a ride's capacity in a byte and clamps it to its type's maximum. A raised ride
+  still within the original's maximum is no obstacle. The export reads only the economy snapshot, which holds no rides, so its caller passes the level's count
+  (`Level.RidesAboveOriginalLimits`); OpenTPW has no in-game caller of the export yet (the tests and tools call it).
 - **Pin.** `CheatsRideVehicleTests.CheatsBumperRaisedRunHash` pins the jungle bumper controller raised to 32 cars, loaded with 32 guests and run through a 30-second session
   ([DETERMINISM.md](DETERMINISM.md#cheats)).
 

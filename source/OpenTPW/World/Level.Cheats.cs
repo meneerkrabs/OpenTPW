@@ -20,8 +20,14 @@ public partial class Level : IParkCheatHost
 	/// <summary>[EXT:cheats-ride-vehicles] The placed rides the cheat could raise or has raised, in attraction order (the cheats window's ride row).</summary>
 	internal IReadOnlyList<OriginalObject> CheatRides => Objects.Objects.Where( item => !item.IsDeleted && (item.Runtime.CanRaiseVehicles || item.Runtime.VehiclesRaised) ).OrderBy( item => item.Runtime.AttractionId ).ToArray();
 
-	/// <summary>[EXT:cheats-ride-vehicles] How many placed rides the cheat raised: the original-format export refuses such a park (<see cref="OriginalParkExportOptions.RaisedRides"/>).</summary>
+	/// <summary>[EXT:cheats-ride-vehicles] How many placed rides the cheat raised.</summary>
 	internal int RaisedRideCount => Objects.Objects.Count( item => !item.IsDeleted && item.Runtime.VehiclesRaised );
+
+	/// <summary>
+	/// [EXT:cheats-ride-vehicles] How many placed rides the cheat raised and run above their type's original capacity maximum: the original-format export refuses such a park
+	/// (<see cref="OriginalParkExportOptions.RidesAboveOriginalLimits"/>).
+	/// </summary>
+	internal int RidesAboveOriginalLimits => Objects.Objects.Count( item => !item.IsDeleted && item.Runtime.VehiclesRaised && item.Runtime.Settings.Capacity > item.Entry.Settings.GetInt( "UsageInfo.MaxCapacity" ) );
 
 	/// <summary>Gives the park's economy (whichever the runtime holds now: a load replaces it) the level as its cheat host.</summary>
 	private void AttachCheatHost()

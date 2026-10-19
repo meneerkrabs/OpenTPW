@@ -382,6 +382,9 @@ public class CheatsRideVehicleTests
 			Assert.AreEqual( 32, second.Runtime.MaximumCapacity );
 			Assert.AreEqual( "Vehicles raised to 32", Text( "rideVehicles" ) );
 			Assert.AreEqual( 1, level.RaisedRideCount );
+			Assert.AreEqual( 0, level.RidesAboveOriginalLimits, "raised, but its capacity is still within the original's eight: the original format could hold it" );
+			second.Runtime.SetCapacity( 32 );
+			Assert.AreEqual( 1, level.RidesAboveOriginalLimits, "above the original's eight: the export refuses the park" );
 			Assert.IsTrue( economy.Cheats.UsesExtension );
 		}
 		finally
@@ -452,9 +455,9 @@ public class CheatsRideVehicleTests
 		var settings = OriginalSaveImportTests.Settings();
 		var economy = new ParkEconomy( settings, EconomyTestData.Catalog(), ParkGameMode.FullSimulation, 1 );
 		var template = OriginalSavePayloadFixtures.Blank( settings );
-		OriginalParkExport.Export( template, ParkSaveFile.Capture( economy ), out _, new OriginalParkExportOptions( RaisedRides: 0 ) );
-		var refused = Assert.ThrowsException<InvalidDataException>( () => OriginalParkExport.Export( template, ParkSaveFile.Capture( economy ), out _, new OriginalParkExportOptions( RaisedRides: 1 ) ) );
-		StringAssert.Contains( refused.Message, "vehicle limit a cheat raised" );
+		OriginalParkExport.Export( template, ParkSaveFile.Capture( economy ), out _, new OriginalParkExportOptions( RidesAboveOriginalLimits: 0 ) );
+		var refused = Assert.ThrowsException<InvalidDataException>( () => OriginalParkExport.Export( template, ParkSaveFile.Capture( economy ), out _, new OriginalParkExportOptions( RidesAboveOriginalLimits: 1 ) ) );
+		StringAssert.Contains( refused.Message, "vehicle limit a cheat raised and whose capacity is above the original's limit" );
 	}
 
 	[TestMethod]

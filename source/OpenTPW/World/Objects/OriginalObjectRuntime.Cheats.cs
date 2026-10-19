@@ -23,15 +23,15 @@ public sealed partial class OriginalObjectRuntime
 	/// The ride's capacity maximum: <c>UsageInfo.MaxCapacity</c>, or, once raised, the capacity that fills the raised vehicles: the shipped maximum times raised vehicles over shipped vehicles
 	/// (a bumper ride 8 → 32, CryptKarts 16 → 64, a tour 27 → 360, Star Tours 24 → 320). The ride window's capacity slider and the capacity setter use it.
 	/// </summary>
-	public int MaximumCapacity
+	public int MaximumCapacity => CapacityMaximum( VehiclesRaised );
+
+	/// <summary>The capacity maximum the ride has unraised (<c>UsageInfo.MaxCapacity</c>) or raised.</summary>
+	private int CapacityMaximum( bool raised )
 	{
-		get
-		{
-			var shipped = Entry.Settings.GetInt( "UsageInfo.MaxCapacity" );
-			if ( !VehiclesRaised )
-				return shipped;
-			return Bump is { } bump ? shipped * BumpController.RaisedVehicleLimit / Math.Max( 1, bump.Template.MaxVehicles ) : shipped * TourController.RaisedCarSlots / TourCarsAtShippedMaximum;
-		}
+		var shipped = Entry.Settings.GetInt( "UsageInfo.MaxCapacity" );
+		if ( !raised )
+			return shipped;
+		return Bump is { } bump ? shipped * BumpController.RaisedVehicleLimit / Math.Max( 1, bump.Template.MaxVehicles ) : shipped * TourController.RaisedCarSlots / TourCarsAtShippedMaximum;
 	}
 
 	/// <summary>
@@ -48,11 +48,17 @@ public sealed partial class OriginalObjectRuntime
 		return true;
 	}
 
-	/// <summary>Park resume: the saved flag; the controllers bring their own raised limits (<see cref="BumpControllerSaveData.VehicleLimit"/>, <see cref="TourControllerSaveData.CarSlots"/>).</summary>
-	private void RestoreVehiclesRaised( bool raised )
+	/// <summary>
+	/// Park resume: a raised snapshot must belong to a ride the cheat can raise, and its capacity must stay within the ride's maximum (the raised one, else the original's byte). The controllers
+	/// bring their own raised limits (<see cref="BumpControllerSaveData.VehicleLimit"/>, <see cref="TourControllerSaveData.CarSlots"/>).
+	/// </summary>
+	private void CheckRaisedSnapshot( OriginalObjectRuntimeSnapshot snapshot )
 	{
+		var raised = snapshot.VehiclesRaised == true;
 		if ( raised && !(Bump?.CanRaiseVehicleLimit == true || Bump == null && UsesTour) )
 			throw new InvalidDataException( $"'{Entry.ArchivePath}': the snapshot raised the vehicle limit of a ride the cheat cannot raise." );
-		VehiclesRaised = raised;
+		var maximum = raised ? CapacityMaximum( true ) : byte.MaxValue;
+		if ( snapshot.RideCapacity > maximum )
+			throw new InvalidDataException( $"'{Entry.ArchivePath}': the saved capacity {snapshot.RideCapacity} is above the ride's maximum {maximum}." );
 	}
 }

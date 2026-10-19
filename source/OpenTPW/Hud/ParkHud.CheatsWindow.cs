@@ -53,27 +53,31 @@ public sealed partial class ParkHud
 
 	internal static OpenTpwText TicketText( GoldenTicketKind kind ) => OpenTpwText.CheatTicketVisitors + ((int)kind - (int)GoldenTicketKind.Visitors);
 
-	/// <summary>[EXT:cheats-ride-vehicles] The ride the vehicle row shows: the one chosen, or the park's first such ride.</summary>
-	private OriginalObject? CheatRide()
-	{
-		var rides = level.CheatRides;
-		return rides.FirstOrDefault( ride => ride.Runtime.AttractionId == cheatRide ) ?? rides.FirstOrDefault();
-	}
+	/// <summary>[EXT:cheats-ride-vehicles] The ride the vehicle row shows among <paramref name="rides"/>: the one chosen, or the park's first such ride.</summary>
+	private OriginalObject? CheatRide( IReadOnlyList<OriginalObject> rides ) =>
+		rides.FirstOrDefault( ride => ride.Runtime.AttractionId == cheatRide ) ?? rides.FirstOrDefault();
 
 	/// <summary>Moves the vehicle row's ride <paramref name="direction"/> steps through the park's rides, wrapping.</summary>
-	private void StepCheatRide( int direction )
+	private void StepCheatRide( IReadOnlyList<OriginalObject> rides, int direction )
 	{
-		var rides = level.CheatRides;
 		if ( rides.Count == 0 )
 			return;
-		var index = CheatRide() is { } current ? rides.ToList().IndexOf( current ) : 0;
+		var index = CheatRide( rides ) is { } current ? Math.Max( 0, IndexOf( rides, current ) ) : 0;
 		cheatRide = rides[((index + direction) % rides.Count + rides.Count) % rides.Count].Runtime.AttractionId;
 	}
 
-	/// <summary>The ride's name, numbered when the park has more than one of the same kind ("Jurassic Tours 2").</summary>
-	private string CheatRideName( OriginalObject ride )
+	private static int IndexOf( IReadOnlyList<OriginalObject> rides, OriginalObject ride )
 	{
-		var same = level.CheatRides.Where( other => other.Entry.InfoId == ride.Entry.InfoId ).ToList();
+		for ( var index = 0; index < rides.Count; index++ )
+			if ( ReferenceEquals( rides[index], ride ) )
+				return index;
+		return -1;
+	}
+
+	/// <summary>The ride's name, numbered when the park has more than one of the same kind ("Jurassic Tours 2").</summary>
+	private static string CheatRideName( IReadOnlyList<OriginalObject> rides, OriginalObject ride )
+	{
+		var same = rides.Where( other => other.Entry.InfoId == ride.Entry.InfoId ).ToList();
 		var name = ride.Entry.DisplayName ?? ride.Entry.ArchiveName;
 		return same.Count > 1 ? $"{name} {same.IndexOf( ride ) + 1}" : name;
 	}
@@ -140,10 +144,11 @@ public sealed partial class ParkHud
 			() => Queue( new CheatAction( CheatKind.Money ) ), Allowed );
 		Row( "research", () => Extra( OpenTpwText.CheatBuildEverything ) + CheatKeyHint( new CheatAction( CheatKind.Research ) ),
 			() => Queue( new CheatAction( CheatKind.Research ) ), Allowed );
-		// [EXT:cheats-ride-vehicles] a ride of the park (bumper cars, karts or a tour) and its vehicle limit
-		OriginalObject? Ride() => CheatRide();
-		Row( "ride", () => Extra( OpenTpwText.CheatRideLabel ) + (Ride() is { } ride ? " " + CheatRideName( ride ) : Extra( OpenTpwText.CheatRideNone )),
-			() => StepCheatRide( 1 ), () => level.CheatRides.Count > 1, StepCheatRide );
+		// [EXT:cheats-ride-vehicles] a ride of the park (bumper cars, karts or a tour) and its vehicle limit; the park's rides are listed once a frame (Updating below)
+		var rides = level.CheatRides;
+		OriginalObject? Ride() => CheatRide( rides );
+		Row( "ride", () => Extra( OpenTpwText.CheatRideLabel ) + (Ride() is { } ride ? " " + CheatRideName( rides, ride ) : Extra( OpenTpwText.CheatRideNone )),
+			() => StepCheatRide( rides, 1 ), () => rides.Count > 1, direction => StepCheatRide( rides, direction ) );
 		Row( "rideVehicles", () => Ride() is { } ride
 				? string.Format( Extra( ride.Runtime.VehiclesRaised ? OpenTpwText.CheatVehiclesRaised : OpenTpwText.CheatRaiseVehicles ), ride.Runtime.RaisedVehicleCount )
 				: string.Format( Extra( OpenTpwText.CheatRaiseVehicles ), BumpController.RaisedVehicleLimit ),
@@ -173,6 +178,7 @@ public sealed partial class ParkHud
 		screen.Add( new UiButton { Id = "ok", Model = "b_okay", Clicked = () => { if ( Stack.Top == screen ) Stack.Pop(); }, Bounds = OptionsScreen.PageBuilder.Rect( 1853, 1340, 1936, 1424 ), Anchor = UiAnchor.Center } );
 		screen.Updating += _ =>
 		{
+			rides = level.CheatRides;
 			foreach ( var (button, enabled) in buttons )
 				button.Enabled = enabled();
 			// the park may stop being one the window works in (a visit replaced it): the window closes

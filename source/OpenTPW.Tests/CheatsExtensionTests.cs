@@ -271,6 +271,7 @@ public class CheatsExtensionTests
 		{
 			var language = GameLanguage.Resolve( data!, name, pack );
 			var uiText = language.LoadStrings( "UITEXT.str" );
+			var objectNames = language.LoadStrings( "OBJECT_NAMES.str" ).Entries;
 			string Text( OpenTPW.UI.Original.OpenTpwText key ) => OpenTPW.UI.Original.SupplementaryStrings.Get( key, name );
 			// the window's rows (ParkHud.CreateCheatsWindow) with every text each can show
 			var rows = new Dictionary<string, string[]>
@@ -284,8 +285,13 @@ public class CheatsExtensionTests
 				["ticket"] = OpenTPW.Hud.ParkHud.CheatTickets.Select( kind => Text( OpenTPW.UI.Original.OpenTpwText.CheatAwardTicket ) + OpenTPW.Hud.ParkHud.CheatKeyHint( new CheatAction( CheatKind.Ticket, (int)kind ) ) ).ToArray(),
 				["money"] = new[] { Text( OpenTPW.UI.Original.OpenTpwText.CheatAddMoney ) + OpenTPW.Hud.ParkHud.CheatKeyHint( new CheatAction( CheatKind.Money ) ) },
 				["research"] = new[] { Text( OpenTPW.UI.Original.OpenTpwText.CheatBuildEverything ) + OpenTPW.Hud.ParkHud.CheatKeyHint( new CheatAction( CheatKind.Research ) ) },
-				// the ride row's own label (the ride's name comes from the language's object names)
-				["ride"] = new[] { Text( OpenTPW.UI.Original.OpenTpwText.CheatRideLabel ) + Text( OpenTPW.UI.Original.OpenTpwText.CheatRideNone ) },
+				// the ride row with every shipped bumper, kart and tour ride's name in the language's object names (OBJECT_NAMES, as the catalogue binds it), numbered as a second ride of its kind
+				["ride"] = new[] { 1140, 2140, 4140, 3140, 1150, 2150, 4150, 3150, 1170, 2170, 4170, 3170 }
+					.Select( infoId => ObjectNameTable.TryGet( infoId, out var first, out var second )
+						? ObjectNames.Join( objectNames.Skip( first ).Take( second == ObjectNameTable.EmptyIndex ? 1 : 2 ) ) : "" )
+					.Where( rideName => rideName.Length > 0 )
+					.Select( rideName => Text( OpenTPW.UI.Original.OpenTpwText.CheatRideLabel ) + " " + rideName + " 2" )
+					.Append( Text( OpenTPW.UI.Original.OpenTpwText.CheatRideLabel ) + Text( OpenTPW.UI.Original.OpenTpwText.CheatRideNone ) ).ToArray(),
 				["rideVehicles"] = new[] { OpenTPW.UI.Original.OpenTpwText.CheatRaiseVehicles, OpenTPW.UI.Original.OpenTpwText.CheatVehiclesRaised }
 					.SelectMany( key => new[] { BumpController.RaisedVehicleLimit, TourController.RaisedCarSlots }.Select( count => string.Format( Text( key ), count ) ) ).ToArray(),
 			};

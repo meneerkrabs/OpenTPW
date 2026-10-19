@@ -456,6 +456,8 @@ public sealed partial class OriginalObjectRuntime
 		if ( ( Visitors.Heads != null ) != ( snapshot.Heads != null ) )
 			throw new InvalidDataException( $"'{Entry.ArchivePath}': head-space presence does not match the snapshot." );
 
+		// [EXT:cheats-ride-vehicles] the raised flag and the capacity it allows, checked before anything of the candidate changes
+		CheckRaisedSnapshot( snapshot );
 		var gaps = new List<string>();
 		if ( snapshot.Stopped )
 		{
@@ -485,9 +487,7 @@ public sealed partial class OriginalObjectRuntime
 		// holds none (the teardown above cleared it), whatever an older or edited save says.
 		if ( !snapshot.Stopped )
 			effects.RestoreScreams( snapshot.ScriptHoldsScream ?? snapshot.HeldScream, snapshot.HeldScreamBand, snapshot.HeldScreamLevel, snapshot.HeldScreamSpeed, snapshot.OwnedScreamCount );
-		RestoreVehiclesRaised( snapshot.VehiclesRaised == true );
-		if ( snapshot.RideCapacity > (VehiclesRaised ? MaximumCapacity : byte.MaxValue) )
-			throw new InvalidDataException( $"'{Entry.ArchivePath}': the saved capacity {snapshot.RideCapacity} is above the ride's maximum {(VehiclesRaised ? MaximumCapacity : byte.MaxValue)}." );
+		VehiclesRaised = snapshot.VehiclesRaised == true;
 		RestoreSettingWords( snapshot.RideSpeed, snapshot.RideCapacity, snapshot.RideDuration );
 		// [EXT:object-lights] the lights' on/off and colour; a number this model no longer has is reported, a model without lights ignores the list
 		if ( snapshot.Lights is { } savedLights )

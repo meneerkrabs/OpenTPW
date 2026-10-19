@@ -207,6 +207,10 @@ internal static class ParkResumeSaveFile
 				liveTrackRides[record.AttractionId] = template;
 		}
 		var savedControllers = snapshot.Tracks?.Controllers ?? new List<BumpControllerSaveData>();
+		// [EXT:cheats-ride-vehicles] a live raised bumper or kart ride carries its raised limit in its saved controller (a kart ride may lack a controller only in a save from before them, which no raised ride is)
+		foreach ( var (id, template) in liveTrackRides )
+			if ( raisedRides.Contains( id ) )
+				Require( savedControllers.Any( controller => controller.AttractionId == id && controller.VehicleLimit != null ), $"raised ride {id} has no saved controller with its raised vehicle limit" );
 		Require( TrackControllersMatch( liveTrackRides, savedControllers.Select( controller => controller.AttractionId ).ToList() ),
 			$"the save holds {savedControllers.Count} track controllers, but the park places {liveTrackRides.Count} live track rides" );
 		foreach ( var controller in savedControllers )

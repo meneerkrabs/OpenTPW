@@ -133,7 +133,7 @@ public sealed record OriginalObjectRuntimeSnapshot
 		// the SPEED word +0x58 is a full dword (any int; only the script's bias word +0xc0 is a short), CAPACITY and DURATION are bytes
 		// a raised ride's capacity may pass the byte (OriginalObjectRuntime.MaximumCapacity, checked against the entry on restore)
 		if ( RideCapacity < 0 || RideCapacity > (VehiclesRaised == true ? OriginalObjectRuntime.MaximumRaisedCapacity : byte.MaxValue) || RideDuration is < 0 or > byte.MaxValue )
-			throw new InvalidDataException( "runtime snapshot has a ride capacity or duration word outside 0..255." );
+			throw new InvalidDataException( "runtime snapshot has a ride capacity word outside 0..255 (a raised ride's up to 4095) or a duration word outside 0..255." );
 		if ( VehiclesRaised == false )
 			throw new InvalidDataException( "runtime snapshot writes a vehicle limit that was not raised." );
 		if ( Lights != null )

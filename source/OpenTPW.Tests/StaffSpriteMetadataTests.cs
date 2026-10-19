@@ -90,7 +90,7 @@ public class StaffSpriteMetadataTests
 	{
 		var member = new StaffMember { Id = 1, ThingId = 11, Type = StaffType.Handyman, Variant = 0, NameIndex = 0, Grade = 1, CellX = 3, CellY = 4 };
 		var roster = new List<StaffMember> { member };
-		var catalog = new StaffSpriteMetadataCatalog( new[] { StaffSpriteBankMetadata.Unavailable( 5, 0, "SPR_TEST" ) } );
+		var catalog = new StaffSpriteMetadataCatalog( new[] { StaffSpriteBankMetadata.Unavailable( 5, 0, "SPR_TST" ) } );
 		using var presentation = new StaffSpritePresentation( catalog, () => roster );
 		var body = member.BodySprite!; body.CreateSource();
 		var firstTicket = body.SourceTicket; var source = body.ReadSourceState()!;

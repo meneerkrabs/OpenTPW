@@ -218,7 +218,7 @@ public class EmployeeLivePortraitTests
 	public void ResourceIdentityAndLayoutMismatchAreRejectedWithoutHotFillingCatalog()
 	{
 		using var rig = new Rig(); rig.Start(); var before = rig.State();
-		Set( rig.Renderer, "sprites", SetOf( StaffSpriteDrawRecordTests.Atlas( "SPR_OTHER" ) ) );
+		Set( rig.Renderer, "sprites", SetOf( StaffSpriteDrawRecordTests.Atlas( "SPR_OTH" ) ) );
 		Assert.AreEqual( StaffSpriteDiagnostic.ResourceMismatch, rig.Renderer.ResolveRecord( rig.Portrait.DrawRecord! ).Diagnostic ); Assert.IsNull( rig.Frame() );
 		Set( rig.Renderer, "sprites", rig.Sprites ); rig.Atlas.Frames[0] = rig.Atlas.Frames[0] with { OriginX = 17 };
 		Assert.AreEqual( StaffSpriteDiagnostic.ResourceMismatch, rig.Renderer.ResolveRecord( rig.Portrait.DrawRecord! ).Diagnostic );

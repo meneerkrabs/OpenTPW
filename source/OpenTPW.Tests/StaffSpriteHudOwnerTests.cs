@@ -61,6 +61,41 @@ public class StaffSpriteHudOwnerTests
 		confirmed.Find( "apply" )!.Activate(); Assert.AreEqual( epoch + 1, owner.Epoch, "stale child callback cannot repeat the event" );
 	}
 
+	[DataTestMethod]
+	[DataRow( false )]
+	[DataRow( true )]
+	public void CapturedRenameSurvivesSelectionChangesAndFullyRefreshesOnlyTheCurrentSelection( bool selectedSourceAbsent )
+	{
+		using var rig = new Rig(); var owner = rig.Hud.EmployeePortrait!;
+		var second = StaffOwnerFixture.Member( 2 ); ((List<StaffMember>)rig.Economy.Staff.Members).Add( second ); rig.Presentation.Attach( second ).CreateSource();
+		var child = rig.Rename(); ((UiTextField)child.Find( "name" )!).Text = "Captured";
+		var epoch = owner.Epoch;
+		Assert.IsTrue( rig.Hud.CycleEmployee( true ) ); Assert.AreSame( second, rig.Hud.Employee );
+		Assert.AreEqual( epoch + 1, owner.Epoch ); Assert.AreSame( child, rig.Hud.Stack.Top );
+		child.Update( Context(), UiInput.Idle( new( -1 ) ) ); Assert.AreSame( child, rig.Hud.Stack.Top, "the still-live captured target survives a modal update" );
+		Assert.IsTrue( second.BodySprite!.TryResolve( out var source ) ); source.Interval = 91; source.Due = 12345; source[StaffSpriteRegister.Heading] = 6;
+		var selectedWords = StaffOwnerFixture.Words( source ); var capturedWords = StaffOwnerFixture.Words( rig.Member.BodySprite!.ReadSourceState()! );
+		var oldTicket = owner.CloneTicket;
+		if ( selectedSourceAbsent ) second.BodySprite.DeleteSource();
+		child.Find( "apply" )!.Activate();
+		Assert.AreEqual( "Captured", rig.Member.Name ); Assert.IsNull( second.Name ); Assert.AreSame( second, rig.Hud.Employee );
+		Assert.AreEqual( "employee", rig.Hud.Stack.Top!.Name ); Assert.AreEqual( epoch + 2, owner.Epoch ); Assert.AreNotEqual( oldTicket, owner.CloneTicket );
+		CollectionAssert.AreEqual( capturedWords, StaffOwnerFixture.Words( rig.Member.BodySprite.ReadSourceState()! ) );
+		if ( selectedSourceAbsent )
+		{
+			Assert.AreEqual( EmployeePortraitState.OpenUnbound, owner.State ); Assert.IsNull( owner.CloneTicket ); Assert.IsNull( owner.BoundIdentity );
+		}
+		else
+		{
+			Assert.AreSame( second, owner.BoundIdentity!.Member );
+			var clone = owner.ReadCloneState()!;
+			Assert.AreEqual( 91, clone.Interval ); Assert.AreEqual( 12345, clone.Due ); Assert.AreEqual( 6u, clone[StaffSpriteRegister.Heading] );
+			CollectionAssert.AreEqual( selectedWords, StaffOwnerFixture.Words( second.BodySprite.ReadSourceState()! ) );
+		}
+		var next = rig.Rename(); ((UiTextField)child.Find( "name" )!).Text = "Stale"; child.Find( "apply" )!.Activate();
+		Assert.AreSame( next, rig.Hud.Stack.Top ); Assert.AreEqual( "Captured", rig.Member.Name ); Assert.IsNull( second.Name ); Assert.AreEqual( epoch + 2, owner.Epoch );
+	}
+
 	[TestMethod]
 	public void PausedOuterCoordinatorCopiesUnderRenameWithoutSchedulingAndRepaintMutatesNothing()
 	{

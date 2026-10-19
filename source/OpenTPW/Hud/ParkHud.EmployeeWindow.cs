@@ -73,7 +73,6 @@ public sealed partial class ParkHud
 	{
 		if ( !EmployeeWindowOpen || !StaffMembers.Contains( member ) ) return false;
 		if ( ReferenceEquals( Employee, member ) ) return true;
-		CloseEmployeeRenameDialog();
 		CaptureEmployee( member );
 		FullRefreshEmployee();
 		PostPatrolAreaHelp( member );

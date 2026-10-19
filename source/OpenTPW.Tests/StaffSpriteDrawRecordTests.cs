@@ -11,7 +11,7 @@ namespace OpenTPW.Tests;
 [TestClass]
 public class StaffSpriteDrawRecordTests
 {
-	internal static GuestSpriteAtlas Atlas( string name = "SPR_TEST", int directions = 5, int pixelX = 128, int pixelY = 128 )
+	internal static GuestSpriteAtlas Atlas( string name = "SPR_TST", int directions = 5, int pixelX = 128, int pixelY = 128 )
 	{
 		var data = Files( name, directions );
 		var atlas = new GuestSpriteAtlas( name, new SpriteBankFile( new MemoryStream( data[".TPC"] ) ),
@@ -21,7 +21,7 @@ public class StaffSpriteDrawRecordTests
 		return atlas;
 	}
 
-	internal static IReadOnlyDictionary<string, byte[]> Files( string name = "SPR_TEST", int directions = 5 )
+	internal static IReadOnlyDictionary<string, byte[]> Files( string name = "SPR_TST", int directions = 5 )
 	{
 		var builder = new SpriteSetBuilder( name ) { FullDetail = false };
 		foreach ( var (slot, count) in new[] { (0, 1), (1, 8), (2, 8), (3, 1), (4, 8), (5, 4), (6, 4), (7, 8), (8, 8) } )

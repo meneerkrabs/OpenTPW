@@ -21,7 +21,9 @@ public sealed partial class ParkHud
 		if ( level.IsReadOnlyVisit || Employee is not { } member || Status.EconomySource is not ParkEconomy economy
 			|| Stack.Top != employeeScreen || employeeRenameScreen != null ) return;
 		var parent = employeeScreen;
+		var staffId = member.Id;
 		var thingId = member.ThingId;
+		var session = level.StaffSprites;
 		var screen = new ShopPriceScreen( "employeeRename" );
 		var table = OriginalLayoutTables.EmployeeRenameDialog;
 		screen.Add( new UiModelImage { Id = "window", Model = table.Root.Model!, Bounds = table.Root.Rect, Anchor = UiAnchor.Center } );
@@ -30,8 +32,8 @@ public sealed partial class ParkHud
 		var field = screen.Add( new UiTextField { Id = "name", Text = StaffName( member ), MaximumLength = StaffMember.MaximumNameLength,
 			Model = table.Control( 0x5DAB ).Model, Bounds = table.Control( 0x5DAB ).Rect, Anchor = UiAnchor.Center } );
 		bool TargetExists() => EmployeeWindowOpen && ReferenceEquals( employeeScreen, parent )
-			&& ReferenceEquals( Status.EconomySource, economy ) && ReferenceEquals( Employee, member )
-			&& member.ThingId == thingId && economy.Staff.Members.Contains( member );
+			&& ReferenceEquals( Status.EconomySource, economy ) && ReferenceEquals( level.StaffSprites, session ) && session?.IsDisposed != true
+			&& member.Id == staffId && member.ThingId == thingId && economy.Staff.Members.Contains( member );
 		void Cancel()
 		{
 			if ( ReferenceEquals( employeeRenameScreen, screen ) ) CloseEmployeeRenameDialog();
@@ -42,6 +44,7 @@ public sealed partial class ParkHud
 			if ( Stack.Top != screen || !ReferenceEquals( employeeRenameScreen, screen ) ) return;
 			if ( level.IsReadOnlyVisit || !TargetExists() ) { Cancel(); return; }
 			if ( !economy.Staff.Rename( member, field.Text ) ) return;
+			// The child keeps its captured rename target; the parent refreshes its current selection and clone.
 			FullRefreshEmployee();
 			Cancel();
 		}

@@ -7,7 +7,7 @@
 - One ID per proposal; shared dependencies are coordination edges, not duplicated ownership.
 
 ## Source-verified residual
-LocalHappiness already counts a radius-one neighborhood, but its input filters IsOnParkCell and uses placement anchor instead of traced thing-cell lists; previews are an explicit CPU extension.
+LocalHappiness already counts a radius-one neighborhood. The host anchors at object placement X/Y and filters guests through IsOnParkCell rather than walking native thing-cell lists; anchor equivalence and membership equivalence remain distinct evidence questions. Previews are a separate CPU extension.
 
 ## Source sites
 - `source/OpenTPW/Hud/ParkHud.ObjectGauges.cs:73` — APPROX annotation and adjacent implementation inspected.
@@ -32,8 +32,9 @@ LocalHappiness already counts a radius-one neighborhood, but its input filters I
 4. Keep unknown behavior explicitly unresolved; an evidence-only outcome is valid if no mismatch is established.
 5. Submit any later implementation with exact evidence, changed scope and test output for review.
 
-## Acceptance tests to author and run later
-- Neighbor and boundary cells; zero guests; byte truncation; multi-cell object anchor; queued/riding/held guests.
+## Acceptance coverage and remaining cases
+- Existing `RideWindowGaugeTests` covers neighbor/boundary cells, zero guests and byte conversion; preserve this coverage.
+- Remaining evidence-gated cases: multi-cell object anchor and queued/riding/held guest membership; author new fixtures only for an established uncovered contract.
 - Run the nearest existing unit suite plus targeted integration/visual checks for changed behavior.
 - Compare baseline and candidate with identical inputs; label screenshots by platform, display settings and state.
 - Report unsupported/corpus-external cases separately; synthetic consistency alone is not original-fidelity proof.
@@ -48,3 +49,10 @@ LocalHappiness already counts a radius-one neighborhood, but its input filters I
 - This deliverable is a documentation proposal only; no gameplay source files are changed by this PR.
 - Runtime work remains blocked on the evidence/ownership decisions listed above where applicable.
 - No approximation is retired by creating this plan; no PR is claimed implemented or ready to merge.
+
+## Current-source reconciliation (2026-10-19)
+At public main `fd8ff52eec12354fba02f23d23c5a217b2515a3b`, the host caller is present: `ParkHud.SelectedInfo` constructs `ObjectInfo` with `ObjectStats(item)`; the Happiness row calls `LocalHappinessGauge`, then `UiGauge.OfPercent`. The gauge uses the object's placement X/Y as its anchor, filters guests using `IsOnParkCell` (navigation-cell membership), and samples their `CellX`/`CellY` and happiness.
+
+`RideWindowGaugeTests.TheLocalHappinessIsTheAverageHappinessByteOfTheGuestsOnTheThreeByThreeCells` already covers radius inclusion/exclusion, integer averaging, an empty neighborhood, the upper cell boundary and negative-value low-byte conversion. `UiGauge.OfPercent` scales with `(long)percent << 10` divided by 100 and clamps the result. These existing tests must not be recreated as missing averaging coverage.
+
+No runtime defect was established by this public-source review. The unresolved native contract is equivalence of thing-cell list membership and object anchoring, especially for queued, riding, held and multi-cell cases. Public annotations are evidence leads, not a new native verification. Any additional host integration fixture should first establish an uncovered null-versus-zero or state/cell-membership contract; previews remain a separate residual. The historical baseline above is retained. No C# or GPU execution was performed for this reconciliation.

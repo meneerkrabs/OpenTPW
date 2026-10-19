@@ -50,8 +50,10 @@ public sealed class ParkEconomy : IParkEconomy
 		World = new WorldRng( WorldRng.StateFromSeed( seed ) );
 		Ledger = new ParkLedger( settings.InitialCash );
 		Staff = new ParkStaff( settings );
-		Research = new ParkResearch( settings, catalog ) { OwnsTicketItem = infoId => ticketItems.Contains( infoId ) };
+		Research = new ParkResearch( settings, catalog, trackRecentItems: !Rules.ThemeParkInc ) { OwnsTicketItem = infoId => ticketItems.Contains( infoId ) };
 		Objectives = new ParkObjectives( settings, catalog );
+		Counters.Added += ( key, amount ) => Objectives.AccumulateCounter( key, amount, id => objects.GetValueOrDefault( id )?.InfoId ?? 0 );
+		Counters.Restored += () => Objectives.RestoreLegacyRawValue( MeasureChallenge, id => objects.GetValueOrDefault( id )?.InfoId ?? 0 );
 		EntranceFee = settings.InitialAdmissionFee;
 		Litter.Environment.Effects = RegionEffect.Load( settings.Standard );
 		Litter.World = () => World;
@@ -101,7 +103,7 @@ public sealed class ParkEconomy : IParkEconomy
 	public bool IsBankrupt { get; private set; }
 	/// <summary>
 	/// Whether a winning sequence is showing (tp.exe <c>0x00516C00</c>: the word <c>0x7CF4F4</c>, the thing the research completion's
-	/// <c>StartWinningSequence</c> 0x00516B00 creates); the bank's handler does not make such a park bankrupt. OpenTPW has no winning sequence, so null answers no.
+	/// <c>StartWinningSequence</c> 0x00516B00 creates); the bank's handler does not make such a park bankrupt. The TPW Instant Action host binds this to its live End object; null answers no.
 	/// </summary>
 	public Func<bool>? WinningSequenceActive { get; set; }
 	/// <summary>Whole 30-day months since the park went into the red, as the last month end counted them (0 in the black).</summary>
@@ -309,9 +311,68 @@ public sealed class ParkEconomy : IParkEconomy
 
 	public long Turn => ParkCalendar.Turn( Tick );
 
+	/// <summary>The park's cheats (docs/CHEATS.md): the cheat mode, the record of applied cheats and the actions waiting for the next turn.</summary>
+	public ParkCheats Cheats { get; } = new();
+
+	/// <summary>
+	/// Queues a cheat for the start of the next park turn (<see cref="ParkCheats"/>). False when the park cannot cheat (a Theme Park Inc economy: only Theme Park World's cheats are traced), the action is not
+	/// valid or the queue is full. The caller refuses read-only visits and online sessions.
+	/// </summary>
+	// [EXT:cheats-extension] Theme Park World parks only: the cheats are tp.exe's (docs/CHEATS.md); Theme Park Inc's executable was not searched for any
+	// [EXT:cheats-window] the extension's own cheats (the weather, the arrivals) need the extension on and a level to act on
+	// [EXT:cheats-ride-vehicles] a ride's vehicle limit only for a ride the level can raise now
+	public bool QueueCheat( CheatAction action ) => !Rules.ThemeParkInc && (!ParkCheats.IsExtensionKind( action.Kind ) || FeatureGates.Cheats && CheatHost != null)
+		&& (action.Kind != CheatKind.RideVehicles || CheatHost!.CanRaiseRideVehicles( action.Argument )) && Cheats.Queue( action );
+
+	/// <summary>
+	/// The level's side of the park's cheats (the arrivals and the weather, <see cref="IParkCheatHost"/>); null in a headless economy, which then refuses those cheats. A saved park whose
+	/// arrival or weather cheat still waits keeps it waiting in a headless economy: only a level applies it.
+	/// </summary>
+	public IParkCheatHost? CheatHost { get; set; }
+
+	/// <summary>
+	/// What one cheat does to the park (called by <see cref="ParkCheats.ApplyPending"/> at the turn boundary); returns its outcome for the record's event (empty when there is none to tell), or null when
+	/// the park cannot take it now and it waits for the next turn.
+	/// </summary>
+	internal string? ApplyCheat( CheatAction action )
+	{
+		switch ( action.Kind )
+		{
+			case CheatKind.Mode:
+				// [BIN:TPW-EXE:0x4053C0 cheat mode] the mode byte only (ParkCheats sets it); the message of type 0x15 it posts is not traced and not posted
+				return "";
+			case CheatKind.Money:
+				// [BIN:TPW-EXE:0x40C450 money cheat] the bank's credit 0x4D0190(10000), the path of a challenge prize: the balance (+0xC), money in (park +0x1FC90) and the year's profit (+0x124), so it counts toward the profit ticket
+				Post( LedgerCategory.OtherIncome, ParkCheats.MoneyAmount );
+				return "";
+			case CheatKind.Research:
+				// [BIN:TPW-EXE:0x40C430 research cheat] the research manager's 0x503FF0 sets every research item's object control available (+0x10 = 1); progress and completion are not touched
+				return Research.MakeEveryItemAvailable().ToString( System.Globalization.CultureInfo.InvariantCulture );
+			case CheatKind.Ticket:
+				// [BIN:TPW-EXE:0x40C6C0 ticket cheats] the handlers call the player ledger directly (0x409410 → 0x5AF810 / 0x5AF940): no advisor message, no first-ticket lines, no log
+				return Objectives.AwardCheatTicket( (GoldenTicketKind)action.Argument ).ToString();
+			case CheatKind.Weather:
+				// [EXT:cheats-weather] a forecast with no warning: it replaces the pending one and applies now, with the kind set explicitly (no tie-break draw); the natural schedule goes on from it
+				return CheatHost?.TryApplyWeather( (CheatWeather)action.Argument, Tick ) == true ? "" : null;
+			case CheatKind.Arrival:
+				// [EXT:cheats-arrival] a group by the chosen vehicle, sized for it; it waits while a group or a vehicle is at work
+				return CheatHost?.TryStartArrival( action.Argument ) == true ? "" : null;
+			case CheatKind.RideVehicles:
+				// [EXT:cheats-ride-vehicles] the ride raised at once; one removed since it was asked for leaves the cheat recorded with no effect
+				return CheatHost is not { } host ? null : host.TryRaiseRideVehicles( action.Argument ) ? "" : "unavailable";
+			default:
+				throw new InvalidOperationException( $"The cheat {action.Kind} is not applied by the economy." );
+		}
+	}
+
+	/// <summary>Tells the listeners (the player's ticket ledger, the HUD) that a cheat was applied: <see cref="ParkEvent.InfoId"/> the <see cref="CheatKind"/>, <see cref="ParkEvent.Amount"/> its argument, <see cref="ParkEvent.Detail"/> its outcome.</summary>
+	internal void RaiseCheatApplied( CheatAction action, string outcome ) => Raise( ParkEventKind.CheatApplied, action.Argument, 0, (int)action.Kind, outcome );
+
 	private void AdvanceTurn( long previousTurn, long turn )
 	{
 		crowdPhaseTurn ??= previousTurn;
+		// [EXT:cheats-turn-boundary] the queued cheats apply first, before the turn's thing sweep (its weather update and arrival update) and the calendar; a park without any skips this
+		Cheats.ApplyPending( this, turn );
 		// [BIN:TPW-EXE:0x00516380 world update] the thing loop (staff, rides, guests, the challenge system: 0x0050B360 by thing type) runs only while the world state (+0x1DA738) is not 4;
 		// the turn counter before it and the calendar, staff pool, bank and golden-ticket step after it (0x004D7B20) run in every state
 		// [EXT:headless-economy] without a host sweep (the headless economy of tests and tools, which has no thing pool of guests, rides and staff to visit) the thing update runs in a fixed order of its own, staff, research, rides, challenges, where a level's park turn visits one list newest first (IThingSweep)
@@ -1166,7 +1227,7 @@ public sealed class ParkEconomy : IParkEconomy
 	{
 		if ( !Features.Challenges )
 			return;
-		foreach ( var (kind, index, amount, detail) in Objectives.Update( turn * ParkCalendar.SecondsPerTurn, turn, MeasureChallenge, IsParkOpen, BestObjectOf ).ToList() )
+		foreach ( var (kind, index, amount, detail) in Objectives.Update( turn * ParkCalendar.SecondsPerTurn, turn, MeasureChallenge, IsParkOpen, BestObjectOf, () => guestStatistics.GuestCensus ).ToList() )
 		{
 			if ( kind == ParkEventKind.ChallengeCompleted )
 				Post( LedgerCategory.OtherIncome, amount );
@@ -1277,8 +1338,9 @@ public sealed class ParkEconomy : IParkEconomy
 		// [BIN:TPW-EXE:0x004C7720 month sample] the same handler reads the cached census with age 0 first (0x004C78C1); the month message goes to the things in id order (the listener tree walked by 0x0040FB10, dispatching through 0x0050B550) and the world constructor 0x005156A0 creates the staff manager (type 9) before the analyser (type 13), so the gate above has already read its count
 		var census = CachedGuestCensus( 0 );
 		// [BIN:TPW-EXE:0x004C7720 month sample] the same handler fills the statistics rings the park information window graphs: the arrivals, the guests in the park (this census), the mean happiness (0x4C7BB0) and the mean stay
-		StatisticsHistory.CloseMonth( guestStatistics.CensusHappiness, census );
-		var closed = Ledger.CloseMonth( nextMonthIndex, ParkRating, NetWorth( 0 ) );
+		var rating = ParkRating;
+		StatisticsHistory.CloseMonth( guestStatistics.CensusHappiness, census, rating );
+		var closed = Ledger.CloseMonth( nextMonthIndex, rating, NetWorth( 0 ) );
 		Raise( ParkEventKind.MonthEnded, closed.ClosingBalance, 0, 0, $"in ${closed.MoneyIn}, out ${closed.MoneyOut}" );
 		if ( nextMonthIndex % ParkCalendar.MonthsPerYear == 0 )
 		{
@@ -1336,7 +1398,7 @@ public sealed class ParkEconomy : IParkEconomy
 	// [BIN:TPW-EXE:0x004D0370 bank month] the routine compares the months in the red only with 5 (above it posts type 2 at 0x004D0557): it gives no warnings before
 	// [BIN:TPW-EXE:0x0054F8BB lost park sound] the main loop's sound update sends the music parameter and the crowd count as 0 while the world state is 4 (0x0054F86D, 0x0054F8BD), which GameAudio does for a bankrupt park
 	// [BIN:TPW-EXE:0x0059B620 advisor caption] the advice 106 the bank's message brings says the responses 274 and 275, whose tag 128 shows TAG_SYSTEM entry 127 ("the banks have closed your park") in the message tube (AutomaticAdvisor.PostCaption); the money warnings are the captions of the advice messages 102 to 105 (entries 123 to 126)
-	// [APPROX:ECON-030] the lost park follows the bank's handler and the world update (the thing loop stops, the arrival target 0x004CF5B0 is 0 and the music and crowd are silent in state 4), and the advisor plays its advice 106 for every bank message (game event 2, AutomaticAdvisor) with its caption, but OpenTPW has not the panel tp.exe builds in state 4 (0x005168F0 → 0x00481B50 → 0x0048AC40 closes the current tool, hides the HUD windows and builds the panel window 0x7472, with 0x004815E0 → 0x0048ADB0 and the state-4 branch of 0x0048C150 with UITEXT group 3, id 0x16), the money warnings (advice messages 102 to 105, whose scores compute the months in the red) have no producer (ADVISOR-009), and tp.exe's interface tests world state 4 only at 0x004815F0, 0x0048C27A, 0x004A2925 (a function not read) and 0x004A2AC9 (the pause and play buttons are left alone), none of them a purchase, hiring or opening test found, so OpenTPW's refusal of those in state 4 is not shown to be the original's — evidence needed: the panel window 0x7472 (its layout and the handler 0x0048A740 of its tick button) and the function around 0x004A2925
+	// [APPROX:ECON-030] the lost park follows the bank handler, thing-loop stop, zero arrival target and silent music/crowd; AutomaticAdvisor already produces money advice 102-105 through AdvisorScan (102 needs a loan available; 103-105 use the months in red with none) and captions advice 106 on each bank message. The pause menu now selects the online/visit branch first, then the five loss entries (0x48C150: UITEXT 3 is Load, command 22), preserving the existing callbacks. The initial loss gate camera and root 0x7472 (0x5168F0 -> 0x481B50 -> 0x48AC40), its dismissal into the hidden-HUD overlay (0x4A29D0), and loaded-loss restoration without that camera (0x4815E0 -> 0x48ADB0) remain unported. Handler 0x48A740 has Escape and delayed right-release exits, no explicit tick-button action; layout 0x74FB20 has an unresolved drawing-resource binding and is not proved empty. The overlay state-4 key branch 0x4A2925 permits Escape to the menu, and 0x4A2AC9 skips pause/play work; neither establishes purchase, hiring or opening refusals, so OpenTPW's direct economic guards remain unproved — evidence needed: loss-layout drawing resource and banner lifetime, property-table animation, gate camera/seat and root ownership, load/restore and default input dispatch, plus a separate audit of direct economic guards
 	private void HandleBankruptcyMessage()
 	{
 		if ( IsBankrupt || WinningSequenceActive?.Invoke() == true )
@@ -2518,10 +2580,10 @@ public sealed class ParkEconomy : IParkEconomy
 			var baseline = ParkObjectives.IsCountSinceAcceptance( definition.Type ) ? MeasureChallenge( definition ) - value : ParkObjectives.IsDailyAverage( definition.Type ) ? value : 0;
 			var endSeconds = deadlineSeconds ?? deadlineDay * ParkCalendar.SecondsPerDay;
 			var start = (endSeconds - definition.TargetTime * ParkCalendar.SecondsPerDay) / ParkCalendar.SecondsPerDay;
-			current = new ActiveChallenge( running, start, true, start, endSeconds / ParkCalendar.SecondsPerDay, baseline, endSeconds );
+			current = new ActiveChallenge( running, start, true, start, endSeconds / ParkCalendar.SecondsPerDay, baseline, endSeconds, unchecked( (int)value ) );
 		}
 		else if ( offeredIndex is int offered && Settings.Challenges.ContainsKey( offered ) )
-			current = new ActiveChallenge( offered, ParkCalendar.DayIndex( Tick ), false, 0, 0, 0 );
+			current = new ActiveChallenge( offered, ParkCalendar.DayIndex( Tick ), false, 0, 0, 0, RawValue: unchecked( (int)value ) );
 		Objectives.Restore( nextOfferDay, nextListPosition, current, declines, finished, Objectives.GoldenTickets, switchedOn, actualThing, carriedThings, nextOfferSeconds );
 	}
 

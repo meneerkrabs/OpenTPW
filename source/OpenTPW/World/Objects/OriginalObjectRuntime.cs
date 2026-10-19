@@ -427,6 +427,7 @@ public sealed partial class OriginalObjectRuntime
 			RideSpeed = speedWord,
 			RideCapacity = capacityWord,
 			RideDuration = durationWord,
+			VehiclesRaised = VehiclesRaised ? true : null,
 			Lights = Lights?.Capture()
 		};
 	}
@@ -455,6 +456,8 @@ public sealed partial class OriginalObjectRuntime
 		if ( ( Visitors.Heads != null ) != ( snapshot.Heads != null ) )
 			throw new InvalidDataException( $"'{Entry.ArchivePath}': head-space presence does not match the snapshot." );
 
+		// [EXT:cheats-ride-vehicles] the raised flag and the capacity it allows, checked before anything of the candidate changes
+		CheckRaisedSnapshot( snapshot );
 		var gaps = new List<string>();
 		if ( snapshot.Stopped )
 		{
@@ -484,6 +487,7 @@ public sealed partial class OriginalObjectRuntime
 		// holds none (the teardown above cleared it), whatever an older or edited save says.
 		if ( !snapshot.Stopped )
 			effects.RestoreScreams( snapshot.ScriptHoldsScream ?? snapshot.HeldScream, snapshot.HeldScreamBand, snapshot.HeldScreamLevel, snapshot.HeldScreamSpeed, snapshot.OwnedScreamCount );
+		VehiclesRaised = snapshot.VehiclesRaised == true;
 		RestoreSettingWords( snapshot.RideSpeed, snapshot.RideCapacity, snapshot.RideDuration );
 		// [EXT:object-lights] the lights' on/off and colour; a number this model no longer has is reported, a model without lights ignores the list
 		if ( snapshot.Lights is { } savedLights )
@@ -577,14 +581,49 @@ public sealed partial class OriginalObjectRuntime
 			IsIndoors = settings.GetInt( "UsageInfo.ISIndoors" ) != 0,
 			// [BIN:TPW-EXE:0x745a60 schema RequiresTeleport] the key after ChillsYouOut (+0xFC) is type record +0x100, which the guest state setter 0x501db0 tests in states 15 and 16
 			RequiresTeleport = settings.GetInt( "UsageInfo.RequiresTeleport" ) != 0,
+			RideHandlesSprite = settings.GetInt( "UsageInfo.RideHandlesSprite" ) != 0,
 			TypeId = entry.InfoId,
 			// [DATA:<object>.sam:UsageInfo.InitCostOfGoods/InitPricePerUse/InitChanceOfLoosing] the sideshow words of the join excitement (0xdff70); the level mirrors the live economy values over them
 			Sideshow = new SideshowTerms( settings.GetInt( "UsageInfo.InitCostOfGoods" ), settings.GetInt( "UsageInfo.InitPricePerUse" ), settings.GetInt( "UsageInfo.InitChanceOfLoosing" ) ),
 			// [DATA:<object>.sam:UsageInfo.EntryCellStandPosX/Y] the jungle Rides.sam default is (0.5, 0.5); 0xde1d8 checks the range [0, 1] (a value outside it keeps the default here)
 			EntryCellStandPos = (StandFraction( settings, "UsageInfo.EntryCellStandPosX" ), StandFraction( settings, "UsageInfo.EntryCellStandPosY" )),
 			// [EXT:pools-changing-room] OpenTPW's own key: the object is a pool complex's changing room (docs/POOLS.md)
-			IsChangingRoom = FeatureGates.Pools && PoolChangingRooms.IsChangingRoom( entry )
+			IsChangingRoom = FeatureGates.Pools && PoolChangingRooms.IsChangingRoom( entry ),
+			// [EXT:umbrellas-extension] the umbrellas extension's own objects carry Theme Park Inc's weather and generation percentages, which the host score applies for them alone; every other object keeps the game's score
+			UmbrellaTerms = UmbrellaShopTermsOf( entry ),
+			// [EXT:winter-extension] likewise the winter extension's own objects carry weather and season percentages for the host score
+			WinterTerms = WinterShopTermsOf( entry )
 		};
+	}
+
+	/// <summary>
+	/// The weather and generation percentages of an object of the umbrellas extension (docs/UMBRELLAS.md, "Demand"): <c>WeatherModifier.Rain/Storm/Snow/HeatWavePercentage</c> and <c>GenerationModifier.KidScorePercentage</c> of
+	/// its .sam; null for any other object and while the extension is off. A key a .sam leaves out is 0 for the weather (no change); the kid percentage is then 100.
+	/// </summary>
+	// [BIN:TPI-EXE:0x6101e0 score multipliers] Theme Park Inc's keys, which tp.exe does not read: only the extension's own objects use them
+	private static UmbrellaShopTerms? UmbrellaShopTermsOf( ObjectCatalogEntry entry )
+	{
+		if ( !ParkResumeMods.IsUmbrellasObject( entry ) || !FeatureGates.Umbrellas )
+			return null;
+		var settings = entry.Settings;
+		int Percentage( string key, int fallback ) => settings.Has( key ) ? settings.GetInt( key ) : fallback;
+		return new UmbrellaShopTerms( Percentage( "WeatherModifier.RainPercentage", 0 ), Percentage( "WeatherModifier.StormPercentage", 0 ), Percentage( "WeatherModifier.SnowPercentage", 0 ),
+			Percentage( "WeatherModifier.HeatWavePercentage", 0 ), Percentage( "GenerationModifier.KidScorePercentage", 100 ) );
+	}
+
+	/// <summary>
+	/// The weather and season percentages of an object of the winter extension (docs/WINTER.md, "Demand"): <c>WeatherModifier.Rain/Storm/SnowPercentage</c> and <c>SeasonModifier.Winter/Spring/Summer/AutumnPercentage</c> of its .sam; null
+	/// for any other object and while the extension is off. A key a .sam leaves out is 0 (no change).
+	/// </summary>
+	// [EXT:winter-season-terms] the weather keys are Theme Park Inc's names (tp.exe does not read them), the season keys are the extension's own: only the extension's objects use them
+	private static WinterShopTerms? WinterShopTermsOf( ObjectCatalogEntry entry )
+	{
+		if ( !ParkResumeMods.IsWinterObject( entry ) || !FeatureGates.Winter )
+			return null;
+		var settings = entry.Settings;
+		int Percentage( string key ) => settings.Has( key ) ? settings.GetInt( key ) : 0;
+		return new WinterShopTerms( Percentage( "WeatherModifier.RainPercentage" ), Percentage( "WeatherModifier.StormPercentage" ), Percentage( "WeatherModifier.SnowPercentage" ),
+			Percentage( "SeasonModifier.WinterPercentage" ), Percentage( "SeasonModifier.SpringPercentage" ), Percentage( "SeasonModifier.SummerPercentage" ), Percentage( "SeasonModifier.AutumnPercentage" ) );
 	}
 
 	private static float StandFraction( ObjectSettings settings, string key ) =>
@@ -895,9 +934,9 @@ public sealed class OriginalObjectEffects : IRideScriptEffects, IRideAnimationQu
 		}
 		if ( call.Opcode is Opcode.KILLOBJ or Opcode.FADEOBJ )
 		{
-			// [BIN:TPW-EXE:0x5522C5 KILLOBJ] [BIN:TPW-EXE:0x5523D0 FADEOBJ] every record with the slot ends: types 1-2 through 0x51FF70(handle, -2), types 3-10 through the immediate stop (FADEOBJ's fade branch is never taken here, see OriginalObjectRuntime.EndHeldSounds)
+			// [BIN:TPW-EXE:0x5522C5 KILLOBJ] [BIN:TPW-EXE:0x5523D0 FADEOBJ] every record with the slot ends: types 1-2 through 0x51FF70(handle, -2), types 3-10 stop or release a quality-enabled fade tail (OriginalObjectRuntime.EndHeldSounds)
 			ride.KillParticleObjects(call.Argument(0));
-			ride.EndHeldSounds(call.VM.ScriptId, call.Argument(0));
+			ride.EndHeldSounds(call.VM.ScriptId, call.Argument(0), call.Opcode == Opcode.FADEOBJ);
 			return 0;
 		}
 		if ( call.Opcode == Opcode.SETOBJPARAM )

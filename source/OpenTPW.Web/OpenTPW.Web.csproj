@@ -55,6 +55,12 @@
 		     read from content/pools below the program folder like on the desktop. The sprite sets themselves (esprites/, about 8.8 MB: the 2x guests and swimwear) are NOT embedded: they would cost every browser user about 6.5 MB Brotli even with the
 		     extension off. They are published as static files below pools-sprites/ (see below) and fetched in the background while the extension is on; the game keeps a file only when the manifest pins it (Browser delivery in docs/POOLS.md). -->
 		<EmbeddedResource Include="../../content/pools/**/*" Exclude="../../content/pools/esprites/**/*" LogicalName="content/pools/%(RecursiveDir)%(Filename)%(Extension)" />
+		<!-- The umbrellas extension's own content (docs/UMBRELLAS.md): the four brolly shops, the umbrella sprite set (29 KB, so it is embedded rather than fetched like the pools' sprites) and the hand anchor tables, read from content/umbrellas
+		     below the program folder like on the desktop. -->
+		<EmbeddedResource Include="../../content/umbrellas/**/*" LogicalName="content/umbrellas/%(RecursiveDir)%(Filename)%(Extension)" />
+		<!-- The winter extension's own content (docs/WINTER.md): the eight winter shops, the warm item sprite set (23 KB) and the anchor tables (the 2x kids' 108 KB and the original sets' head-only 19 KB), read from content/winter below the program
+		     folder like on the desktop. 1,322,442 bytes, about 406 KB deflated per file; downloaded also with the extension off. -->
+		<EmbeddedResource Include="../../content/winter/**/*" LogicalName="content/winter/%(RecursiveDir)%(Filename)%(Extension)" />
 	</ItemGroup>
 
 	<!-- The pools sprite sets as static files of the site (wwwroot/pools-sprites/..., the same origin as the page). The page fetches them after the start (wwwroot/opentpw-pool-sprites.js). -->

@@ -5,16 +5,16 @@ using SVector3 = System.Numerics.Vector3;
 
 namespace OpenTPW;
 
-/// <summary>What <see cref="ParkPresence"/> uses of the online session: the login, the chat connection and the room's players and places.</summary>
-public interface IPresenceSession
+/// <summary>What <see cref="ParkPresence"/> uses of the online session: the login, the chat connection, the room's players and places, and the chat overlay's state.</summary>
+public interface IPresenceSession : IChatPanelSource
 {
 	bool IsLoggedIn { get; }
-	/// <summary>The logged-in player's name.</summary>
-	string? PlayerName { get; }
 	/// <summary>The open chat connection (its identity tells a reconnection apart), or null.</summary>
 	object? Connection { get; }
 	/// <summary>A connection is being opened or requests are on their way (<see cref="OnlineSession.ChatBusy"/>).</summary>
 	bool ChatBusy { get; }
+	/// <summary>A chat connection is being opened (the first one or a reconnection, <see cref="OnlineSession.ChatConnecting"/>).</summary>
+	bool ChatConnecting { get; }
 	string CurrentRoom { get; }
 	/// <summary>The room the session is in or on its way to (<see cref="OnlineSession.WantedRoom"/>).</summary>
 	string WantedRoom { get; }
@@ -23,15 +23,13 @@ public interface IPresenceSession
 	/// <summary>The server's protocol version, or null before it is known (<see cref="OnlineSession.FetchServerInfo"/>).</summary>
 	int? ServerProtocol { get; }
 	IReadOnlyDictionary<string, (float X, float Y)> RoomPositions { get; }
-	IReadOnlyList<string> RoomPlayers { get; }
-	/// <summary>The chat lines, oldest first.</summary>
-	IReadOnlyList<string> ChatLines { get; }
+	/// <summary>How often each player's figure jumped (<see cref="OnlineSession.RoomJumps"/>).</summary>
+	IReadOnlyDictionary<string, int> RoomJumps { get; }
 	void ConnectChat();
 	void CloseChat();
 	void FetchServerInfo();
 	void JoinRoom( string room );
-	void MoveTo( float x, float y );
-	void SendChatLine( string line );
+	void MoveTo( float x, float y, ChatMoveMode mode = ChatMoveMode.Walk );
 }
 
 /// <summary>
@@ -42,7 +40,7 @@ public interface IPresenceSession
 /// time, whatever the park's speed or pause: the others keep walking while the park stands.
 /// </summary>
 // [EXT:online-visit-presence] the visit joins the park's room of OpenTPW's chat server and draws its players (ParkPresenceState)
-public sealed class ParkPresence : IVisitPresence, IDisposable
+public sealed class ParkPresence : IVisitPresence, IChatPanelSource, IDisposable
 {
 	/// <summary>The server protocol that relays movement in park rooms and answers each room's first movement (OpenTPW.Server ProtocolVersion 4).</summary>
 	public const int MovementProtocol = 4;
@@ -68,8 +66,11 @@ public sealed class ParkPresence : IVisitPresence, IDisposable
 
 	private readonly IPresenceSession session;
 	private readonly Func<double> clock;
-	/// <summary>The session had no chat connection when the visit began: leaving the park closes the one the visit opened.</summary>
-	private readonly bool opensConnection;
+	/// <summary>
+	/// The visit opened the chat connection: the session had none, open or opening, when the visit began, or the visit opened it later (after the online
+	/// screens' attempt failed). Leaving the park closes it again.
+	/// </summary>
+	private bool opensConnection;
 	private object? announcedOn;
 	private bool wasInRoom;
 	private double nextConnect;
@@ -87,7 +88,8 @@ public sealed class ParkPresence : IVisitPresence, IDisposable
 		ParkId = parkId;
 		Room = ChatProtocol.ParkRoom( parkId );
 		State = new ParkPresenceState( ground, playerName, start );
-		opensConnection = session.Connection == null;
+		// a connection the online screens are still opening is theirs: leaving the park keeps it
+		opensConnection = session.Connection == null && !session.ChatConnecting;
 		session.JoinRoom( Room );
 		session.FetchServerInfo();
 	}
@@ -109,13 +111,25 @@ public sealed class ParkPresence : IVisitPresence, IDisposable
 			|| level.OriginalPark?.Heightfield is not { } field || level.Guests?.Grid.Cells is not { } cells || global::Global.Render == null )
 			return null;
 		var stopwatch = Stopwatch.StartNew();
-		var presence = new ParkPresence( session, parkId, name, new PresenceGround( cells ), StartOf( level.Guests.Settings, cells ), () => stopwatch.Elapsed.TotalSeconds );
+		var presence = new ParkPresence( session, parkId, name, new PresenceGround( cells ), StartOf( level.Guests.Settings, cells ), () => stopwatch.Elapsed.TotalSeconds )
+		{
+			Ride = () => level.RideView is { } view ? new PresenceRide( ExitOf( view.Ride ) ) : null,
+		};
 		presence.visuals = new Visuals( presence, level, field );
 		Log.Trace( $"Online presence: visiting park {parkId} as {name}, room {presence.Room}." );
 		return presence;
 	}
 
 	public string ParkId { get; }
+	/// <summary>The ride the player rides now (the level's ride view), or null: their figure is hidden meanwhile and comes out at its exit (<see cref="ParkPresenceState.SetRiding"/>).</summary>
+	internal Func<PresenceRide?>? Ride { get; set; }
+
+	/// <summary>A ride the player rides, as the presence needs it: where its exit lets them out (cells, 0.5 = a cell's centre), when it has one.</summary>
+	internal readonly record struct PresenceRide( (float X, float Y)? Exit );
+
+	/// <summary>The centre of the path cell in front of <paramref name="ride"/>'s exit, where guests leave it; null for a ride without visitor cells.</summary>
+	internal static (float X, float Y)? ExitOf( OriginalObject ride ) =>
+		ride.Visitors is { HasCells: true } visitors ? (visitors.ExitCell.X + 0.5f, visitors.ExitCell.Y + 0.5f) : null;
 	/// <summary>The park's chat room, which every visitor of the park joins.</summary>
 	public string Room { get; }
 	public ParkPresenceState State { get; }
@@ -128,6 +142,26 @@ public sealed class ParkPresence : IVisitPresence, IDisposable
 	/// <summary>The server refused the park's room (the park was unpublished): the visit stops asking for it.</summary>
 	public bool Refused => session.RefusedRoom == Room;
 	public IReadOnlyList<string> ChatLines => session.ChatLines;
+	/// <summary>The park room's chat for the chat overlay: the session's, sending only while the visit is in the room.</summary>
+	public IChatPanelSource Chat => this;
+	string? IChatPanelSource.PlayerName => session.PlayerName;
+	bool IChatPanelSource.ChatOpen => CanChat;
+	IReadOnlyList<string> IChatPanelSource.RoomPlayers => InRoom ? session.RoomPlayers : Array.Empty<string>();
+	IReadOnlyList<(string Name, bool Online)> IChatPanelSource.Buddies => session.Buddies;
+	IReadOnlyCollection<string> IChatPanelSource.Ignored => session.Ignored;
+	bool IChatPanelSource.Earmuffs => session.Earmuffs;
+	bool IChatPanelSource.CanVote => CanChat && session.CanVote;
+	void IChatPanelSource.SendChatLine( string line ) => Say( line );
+	void IChatPanelSource.SendCommand( ChatCommand command, string argument )
+	{
+		if ( CanChat )
+			session.SendCommand( command, argument );
+	}
+	void IChatPanelSource.AskBuddies()
+	{
+		if ( CanChat )
+			session.AskBuddies();
+	}
 	/// <summary>Sparkle effects started so far (0 without drawing).</summary>
 	public int Sparkles => visuals?.SparklesStarted ?? 0;
 
@@ -147,6 +181,20 @@ public sealed class ParkPresence : IVisitPresence, IDisposable
 			State.Click( cellX, cellY, clock() );
 	}
 
+	/// <summary>
+	/// A name popup's goto: the player's figure appears at the other player's place when they are in the park (the server's goto keeps the player in
+	/// the park's room).
+	/// </summary>
+	// [EXT:online-chat-goto] the figure teleports to the player it went to; the original server's answer to a goto (command 0x13) is not read
+	public void GoTo( string name )
+	{
+		if ( disposed || !Walks )
+			return;
+		var other = State.Others.FirstOrDefault( avatar => avatar.Name.Equals( name, StringComparison.OrdinalIgnoreCase ) );
+		if ( other != null )
+			State.TeleportTo( other.X, other.Y );
+	}
+
 	/// <summary>Says a line in the park's room (or runs a chat command), as the chat overlay's entry does.</summary>
 	public void Say( string line )
 	{
@@ -159,7 +207,7 @@ public sealed class ParkPresence : IVisitPresence, IDisposable
 	/// movement, as no figure is drawn then.
 	/// </summary>
 	public IEnumerable<VisitPresenceName> Names => visuals == null || !ServerWalks ? Array.Empty<VisitPresenceName>()
-		: State.All.Select( avatar => new VisitPresenceName( avatar.Name, avatar.Own, visuals.Feet( avatar ) ) );
+		: State.Shown.Select( avatar => new VisitPresenceName( avatar.Name, avatar.Own, visuals.Feet( avatar ) ) );
 
 	/// <summary>Keeps the connection and the room, walks the player's figure, sends its place, follows the others and draws them; every frame.</summary>
 	public void Update( float delta )
@@ -168,16 +216,18 @@ public sealed class ParkPresence : IVisitPresence, IDisposable
 			return;
 		var now = clock();
 		KeepConnected( now );
+		var ride = Ride?.Invoke();
+		State.SetRiding( ride != null, ride?.Exit );
 		var inRoom = InRoom && ServerWalks;
 		var announce = inRoom && (!wasInRoom || !ReferenceEquals( session.Connection, announcedOn ));
 		if ( State.Advance( delta, inRoom, announce ) is { } place )
 		{
-			session.MoveTo( place.X, place.Y );
+			session.MoveTo( place.X, place.Y, State.SentMode );
 			announcedOn = session.Connection;
 		}
 		wasInRoom = inRoom;
 		if ( inRoom )
-			State.Sync( session.RoomPositions, session.RoomPlayers, delta );
+			State.Sync( session.RoomPositions, session.RoomPlayers, delta, session.RoomJumps );
 		else
 			State.Sync( EmptyPositions, Array.Empty<string>(), delta );
 		visuals?.Update( delta, ServerWalks );
@@ -193,6 +243,7 @@ public sealed class ParkPresence : IVisitPresence, IDisposable
 	{
 		if ( !session.IsLoggedIn )
 			return;
+		// a version not yet known is asked again; a failed read of the open connection is retried by the session
 		if ( session.ServerProtocol == null && now >= nextServerInfo )
 		{
 			session.FetchServerInfo();
@@ -202,7 +253,11 @@ public sealed class ParkPresence : IVisitPresence, IDisposable
 		{
 			if ( !session.ChatBusy && now >= nextConnect )
 			{
-				try { session.ConnectChat(); }
+				try
+				{
+					session.ConnectChat();
+					opensConnection = true;
+				}
 				catch ( InvalidOperationException ) { }
 				nextConnect = now + connectWait;
 				connectWait = Math.Min( connectWait * 2, MaximumConnectWait );
@@ -280,7 +335,7 @@ public sealed class ParkPresence : IVisitPresence, IDisposable
 			figures.Clear();
 			if ( !shown )
 				return;
-			foreach ( var avatar in State.All )
+			foreach ( var avatar in State.Shown )
 			{
 				var (x, y) = OnTerrain( avatar );
 				figures.Add( new SpriteFigure( x, y, avatar.HeadingX, avatar.HeadingY, avatar.DistanceWalked, avatar.Moving, avatar.Look ) );
@@ -317,7 +372,7 @@ public sealed class ParkPresence : IVisitPresence, IDisposable
 			if ( !(level.SimulationTimeScale > 0f) || level.HidesInterface || !ReferenceEquals( Level.Current, level ) || ParticleRendererModule.LiveEmitters() > SparkleEmitterBudget )
 				return;
 			var target = (Camera.Mode as ParkCameraMode)?.Target;
-			foreach ( var avatar in State.All.OrderBy( avatar => !avatar.Own ).ThenBy( avatar => target is { } point ? DistanceSquared( Feet( avatar ), point ) : 0f ).Take( MaximumSparkles ) )
+			foreach ( var avatar in State.Shown.OrderBy( avatar => !avatar.Own ).ThenBy( avatar => target is { } point ? DistanceSquared( Feet( avatar ), point ) : 0f ).Take( MaximumSparkles ) )
 				if ( ParticleRendererModule.StartEmitter( avatar.Own ? (int)ParLib.P_EFFECT_Avatar : (int)ParLib.P_EFFECT_OtherAvatar, Feet( avatar ) ) != null )
 					SparklesStarted++;
 		}

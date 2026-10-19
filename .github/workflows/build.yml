@@ -106,6 +106,7 @@ jobs:
           python -m unittest discover -s tools -p "test_ride_static_contract.py" -v
           python -m unittest discover -s tools -p "test_happiness_gauge_contract.py" -v
           python -m unittest discover -s tools -p "test_native_statistics_history_contract.py" -v
+          python -m unittest discover -s tools -p "test_tpi_statistics_history_contract.py" -v
           python -I -B tools/ppc-analysis/run_evidence_checks.py
       - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9
         with:

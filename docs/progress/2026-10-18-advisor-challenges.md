@@ -10,7 +10,7 @@
   system posts 344 in place of 270; 272 is the win of the last part of a chain. The inventory (`content/data/advisor-producers.toml`) and `docs/reverse/ADVISOR-SCAN.md` carry the corrected formulas and
   the schema's group order (a group's name record follows its keys).
 - **New state, all read-only for the park.** The advisor keeps the last five arrival group sizes (`AdvisorArrivalRing`, fed by the new `GuestSimulation.ArrivalGroupStarted` event and saved in its snapshot;
-  an original save's ring is not parsed, so it starts empty), `IParkGuestStatistics.GuestsAtGate` counts the guests waiting at the booths (`GuestSimulation.GuestsWaitingAtBooths`),
+  an original save's ring is not parsed, so it starts as five groups of unknown size once the park has had admissions; see the review follow-up of October 19), `IParkGuestStatistics.GuestsAtGate` counts the guests waiting at the booths (`GuestSimulation.GuestsWaitingAtBooths`),
   `EconomyParkState` reads the park value through the net worth's cache without writing it, the player's ledger answers the advisor through `PlayerTicketLedger.AdvisorView` (the park's own tickets counted in,
   so the order of the ledger's own update does not matter) and `ParkObjectives` tells which offer was the first and which tickets the last check won. The advisor's own state (the arrival ring, its snapshot field) stays outside the world hash; the price statistics' booth ring, which the advisor only reads, is economy state.
 - **Tests.** `AdvisorScanChallengesTests`: every callback below, at and above its thresholds, a whole scan pass through the real queue, the statistics over a real `ParkEconomy` and guest simulation, the key rule,

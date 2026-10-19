@@ -243,7 +243,7 @@ scheduler's clock does (`CoasterRide.MotionClockLagSeconds`, the steps since the
 catches up exactly as the original does. What stays OpenTPW's own (`[EXT:coaster-fixed-step]`) is the frame: the original runs one
 controller tick per rendered frame with that frame's milliseconds, OpenTPW one per 60 Hz simulation tick of 1/60 s. While the
 game clock stands still, the original still runs a zero-time motion tick and the station step on every frame (`0x435a30` is
-gated only by the application's activation), which caps the speeds and decays the slow trains (×0.95 below 2.0); OpenTPW's paused
+gated only by the application's activation test at `0x54F8E0`), which caps the speeds and decays the slow trains (×0.95 below 2.0); OpenTPW's paused
 park runs no tick. Both depend on the rendered frames, which no reproducible simulation can read.
 
 **The speed setter's gate.** The script's speed word reaches the controller through `0x43b2b0` (`COAST 8` at `0x554ab4` and the slice

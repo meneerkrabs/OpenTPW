@@ -535,7 +535,7 @@ internal sealed class M3GateRun
 		foreach ( var entry in candidates )
 		{
 			var queueCells = role == "attraction" && entry.HasQueue ? QueueCellsFor( entry ) : 0;
-			var site = FindSite( entry, queueCells );
+			var site = FindSite( entry, queueCells, role == "shop" ? options.ShopRotation : null );
 			if ( site == null )
 				continue;
 			var (clickX, clickY, rotation, route) = site.Value;
@@ -609,7 +609,7 @@ internal sealed class M3GateRun
 	/// from it to a cell beside a path, where guests join; the exit with the shortest snap wins, then the front
 	/// nearest a path.
 	/// </summary>
-	private (int ClickX, int ClickY, int Rotation, List<(int X, int Y)>? Route)? FindSite( ObjectCatalogEntry entry, int queueCells )
+	private (int ClickX, int ClickY, int Rotation, List<(int X, int Y)>? Route)? FindSite( ObjectCatalogEntry entry, int queueCells, int? onlyRotation = null )
 	{
 		if ( spine.Count < 2 )
 			return null;
@@ -621,7 +621,7 @@ internal sealed class M3GateRun
 		var bestScore = (int.MaxValue, int.MaxValue);
 		var queueSites = new List<(int Snap, int Distance, int ClickX, int ClickY, int Rotation, (int X, int Y) Front, (int DX, int DY) Back, HashSet<(int X, int Y)> Footprint)>();
 		var goalDistance = queueCells > 0 ? QueueGoalDistances() : null;
-		foreach ( var rotation in entry.Category == ObjectCategory.Shop && options.ShopRotation is int only ? new[] { only } : new[] { 0, 90, 180, 270 } )
+		foreach ( var rotation in onlyRotation is int only ? new[] { only } : new[] { 0, 90, 180, 270 } )
 		{
 			for ( var clickY = minY; clickY <= maxY; clickY++ )
 			{

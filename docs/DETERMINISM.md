@@ -509,7 +509,7 @@ instead of refused, in two cases only (MODS.md, [Loading a park with other exten
 continues under the active set; a **content** extension the park uses that is off now (`ParkResumeMods.UsedOnlyExtensionIds`: pools, umbrellas, winter, cheats) is switched on for the run
 (`[EXT:extensions-apply-at-load]`) and in `mods.json`. The confirmed switch rewrites the loaded snapshot for the switched set (`ParkExtensionSwitch.Apply`): its `Mods` become the records a park saved
 now would hold, the smarter guests' section starts fresh (the park seed, no birth ids yet) when that extension comes on, and loses the extension's own state (stalls, throughputs, meals, complaints;
-the guest identity script mods share stays) when it goes off. The rewritten snapshot then passes the **unchanged strict validation**. A rule's per-guest day marks (`RainMoodDay`, `ColdMoodDay`,
+the guest identity script mods share stays) when it goes off or continues in another version (whose rules wrote that state with their own meaning). The rewritten snapshot then passes the **unchanged strict validation**. A rule's per-guest day marks (`RainMoodDay`, `ColdMoodDay`,
 `WarmUntilDay`) and the weather it shaped stay in the guest and weather state as they were; every build reads them with the rule on or off.
 
 **A switched park is a new run from the switch point.** It is not a replay of the saved run: the rule set that drives it from that tick on is another, so its state hashes from then on are not comparable

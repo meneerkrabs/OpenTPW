@@ -26,16 +26,11 @@ colors, ordering and marker-before-line behavior. Park information retains its i
 series coordinates, series order, rating history and last-value presentation. The backdrop changes
 neither model histories nor persistence or RNG logic.
 
-Synthetic regression tests were added for the bounded implementation. The local environment has no
-dotnet SDK, so the added C# tests and solution build have not run locally. All 202 Python tests
-passed, including ten new source-integration/synthetic-arithmetic guards; the generated documentation
-had no source-link warnings and all links/assets/anchors across 188 HTML pages resolved. Actual
-Draw-path/lifecycle/state regressions remain unqualified until the C# tests execute. No rendered host check or original-runtime comparison
+Synthetic regression tests cover the bounded implementation (C# and ten Python source-integration and synthetic-arithmetic guards); they ran in CI and in the post-merge review (full with-data suite 8788 passed). No rendered host check or original-runtime comparison
 has run for this change. Static evidence and independently authored synthetic arithmetic checks
 establish the backdrop contract, not complete native runtime or pixel equivalence.
 
 UI-060 remains open for the retained two-canvas-unit pixel adapter and original display-mode
 calibration, financial sample-to-month correspondence and stretching of available months, and font,
-palette, raster and composited-output fidelity. Exact-head CI, independent review and rendered
-host validation remain necessary. This bounded implementation continues the existing [PR #483](https://github.com/meneerkrabs/OpenTPW/pull/483); its October 18 plan-only progress fragment remains unchanged. The [proposal](../proposals/ui-060-match-graph-pixel-metrics.md)
+palette, raster and composited-output fidelity. A rendered host check remains open. This is [PR #483](https://github.com/meneerkrabs/OpenTPW/pull/483). The [proposal](../proposals/ui-060-match-graph-pixel-metrics.md)
 records the updated implementation and remaining qualification.

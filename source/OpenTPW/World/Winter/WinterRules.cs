@@ -71,6 +71,15 @@ public static class WinterRules
 		_ => WinterSeason.None
 	};
 
+	/// <summary>The month the always winter option makes every month for the winter shops' season terms: December, the month whose weather row the option's rolls use (<see cref="ParkWeather"/>).</summary>
+	public const int AlwaysWinterMonth = 12;
+
+	/// <summary>
+	/// The month the winter shops' season terms read: the calendar <paramref name="month"/>, or <see cref="AlwaysWinterMonth"/> while the always winter option is on, so the kiosk and the stall sell at their winter demand all year.
+	/// </summary>
+	// [EXT:winter-always] user-approved 2026-10-19 ("Winterweer hele jaar"): the shops' season terms are winter's all year; their weather terms still follow the weather
+	public static int DemandMonthOf( int month, bool alwaysWinter ) => alwaysWinter ? AlwaysWinterMonth : month;
+
 	/// <summary>
 	/// The weather as the winter shops read it: snow is snow whether or not lightning flashes, then lightning is a storm, then rain. It differs from <see cref="UmbrellaRules.WeatherStateOf"/> only for snow with lightning (the Halloween
 	/// park, whose snow band is its lightning band), which the umbrellas and the rain mood read as a storm and the winter shops as the snowfall it is.

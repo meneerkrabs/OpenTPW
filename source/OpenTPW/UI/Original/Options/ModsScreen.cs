@@ -56,6 +56,7 @@ public static class ModsScreen
 		[OfficialExtensions.Winter.Id] = (OpenTpwText.ExtensionWinterName, OpenTpwText.ExtensionWinterDescription),
 		[OfficialExtensions.WinterWeather.Id] = (OpenTpwText.ExtensionWinterWeatherName, OpenTpwText.ExtensionWinterWeatherDescription),
 		[OfficialExtensions.WinterCold.Id] = (OpenTpwText.ExtensionWinterColdName, OpenTpwText.ExtensionWinterColdDescription),
+		[OfficialExtensions.WinterAlways.Id] = (OpenTpwText.ExtensionWinterAlwaysName, OpenTpwText.ExtensionWinterAlwaysDescription),
 		[OfficialExtensions.RestoredAdvice.Id] = (OpenTpwText.ExtensionRestoredAdviceName, OpenTpwText.ExtensionRestoredAdviceDescription),
 		[OfficialExtensions.Evening.Id] = (OpenTpwText.ExtensionEveningName, OpenTpwText.ExtensionEveningDescription),
 		[OfficialExtensions.WinterSnow.Id] = (OpenTpwText.ExtensionWinterSnowName, OpenTpwText.ExtensionWinterSnowDescription),

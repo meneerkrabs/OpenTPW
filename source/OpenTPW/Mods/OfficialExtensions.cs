@@ -135,6 +135,15 @@ public static class OfficialExtensions
 	public static IOpenTpwExtension WinterCold { get; } = new OpenTpwExtension( "opentpw.winter-cold", "Cold mood", new ModVersion( 1, 0, 0 ), DefaultEnabled: false, AffectsSimulation: true );
 
 	/// <summary>
+	/// Always winter (docs/WINTER.md, "Always winter"): every weather roll of the year uses December's row of the season roll, and its rain and thunderstorms become snow as in a wintry December, in the jungle, fantasy and
+	/// Halloween parks (space has no rain or snow band, so its weather is left alone); the winter kiosk and the glühwein stall sell at their winter demand all year. It implies Wintry Decembers, with no double effect when both are on.
+	/// It changes the simulation, so a save always records it while it is on (it is not in <c>ParkResumeMods.UsedOnlyExtensionIds</c>), and its version is the rule identity. Off by default, because it is an option, and not in a
+	/// Theme Park Inc run, which has no such weather.
+	/// </summary>
+	// [EXT:winter-always] OpenTPW's own option; user-approved 2026-10-19 ("Winterweer hele jaar"); Theme Park World's seasons change the weather through the year
+	public static IOpenTpwExtension WinterAlways { get; } = new OpenTpwExtension( "opentpw.winter-always", "Always winter", new ModVersion( 1, 0, 0 ), DefaultEnabled: false, AffectsSimulation: true );
+
+	/// <summary>
 	/// The settling snow extension (docs/WINTER.md, phase W1): snow that settles on the park's ground, roofs and objects while it snows and melts afterwards, with the paths turning to slush. Presentation only:
 	/// <c>AffectsSimulation</c> is false, so it is not recorded in park saves and changes no hash (a save keeps the cover as an optional unhashed field). On by default; it shows wherever the weather snows (the Halloween world).
 	/// </summary>
@@ -151,7 +160,7 @@ public static class OfficialExtensions
 	public static IOpenTpwExtension Cheats { get; } = new OpenTpwExtension( "opentpw.cheats", "Cheats", new ModVersion( 1, 0, 0 ), DefaultEnabled: false, AffectsSimulation: true );
 
 	/// <summary>All official extensions, in declaration order.</summary>
-	public static IReadOnlyList<IOpenTpwExtension> All { get; } = new[] { Online, CrossEditionObjects, SmarterGuests, GuestInsights, Pools, PoolGuestArt, Umbrellas, RainMood, Winter, WinterWeather, WinterCold, RestoredAdvice, Evening, WinterSnow, Cheats };
+	public static IReadOnlyList<IOpenTpwExtension> All { get; } = new[] { Online, CrossEditionObjects, SmarterGuests, GuestInsights, Pools, PoolGuestArt, Umbrellas, RainMood, Winter, WinterWeather, WinterCold, WinterAlways, RestoredAdvice, Evening, WinterSnow, Cheats };
 
 	public static IOpenTpwExtension? Find( string id ) => All.FirstOrDefault( extension => extension.Id == id );
 }

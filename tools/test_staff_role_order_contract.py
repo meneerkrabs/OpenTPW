@@ -102,7 +102,7 @@ class StaffRoleOrderContract(unittest.TestCase):
                          "JsonSerializer.SerializeToNode", "AttachThings(", "HaveEverTrained", "Happiness", "TrainingBudget"):
             self.assertIn(required, owner_tests)
         for required in ("UiButton", ".Clicked!()", "StaffState.PickedUp", "CloseLocator()", "nextEmployee",
-                         "previousEmployee", "camera.Target", "RandomState", "WorldStateHash.Compute"):
+                         "previousEmployee", "camera.Target", "economy.World.State", "WorldStateHash.Compute"):
             self.assertIn(required, hud_tests)
 
 

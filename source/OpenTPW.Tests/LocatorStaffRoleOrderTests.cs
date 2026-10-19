@@ -81,7 +81,7 @@ public class LocatorStaffRoleOrderTests
 		var roster = economy.Staff.Members.Select( member => member.Id ).ToArray();
 		var pool = JsonSerializer.Serialize( economy.Staff.Things!.CaptureSnapshot() );
 		var save = JsonSerializer.Serialize( ParkSaveFile.Capture( economy ) );
-		var random = economy.RandomState;
+		var random = economy.World.State;
 		var hash = WorldStateHash.Compute( new WorldStateSources { Economy = economy } );
 		foreach ( var expected in new[] { staff[1], staff[2], staff[0], staff[1] } )
 		{
@@ -99,7 +99,7 @@ public class LocatorStaffRoleOrderTests
 		CollectionAssert.AreEqual( roster, economy.Staff.Members.Select( member => member.Id ).ToArray() );
 		Assert.AreEqual( pool, JsonSerializer.Serialize( economy.Staff.Things.CaptureSnapshot() ) );
 		Assert.AreEqual( save, JsonSerializer.Serialize( ParkSaveFile.Capture( economy ) ) );
-		Assert.AreEqual( random, economy.RandomState );
+		Assert.AreEqual( random, economy.World.State );
 		Assert.AreEqual( hash, WorldStateHash.Compute( new WorldStateSources { Economy = economy } ) );
 	}
 

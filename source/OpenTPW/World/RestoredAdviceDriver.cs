@@ -20,8 +20,6 @@ internal sealed class RestoredAdviceDriver
 	// the kind of the arrival vehicle last seen at work (null: none yet) and whether the park has been observed; not saved
 	private int? lastVehicleKind;
 	private bool vehicleObserved;
-	// the follow-up challenges met in a row; not saved
-	private int followups;
 
 	/// <param name="controller">The advisor's controller the messages are posted to.</param>
 	/// <param name="gameTick">The park turn the queue's history is stamped with.</param>
@@ -50,7 +48,6 @@ internal sealed class RestoredAdviceDriver
 		pollCursor = 0;
 		lastVehicleKind = null;
 		vehicleObserved = false;
-		followups = 0;
 	}
 
 	/// <summary>Posts a help message (the descriptor's help score), when the extension restores it and is on.</summary>
@@ -73,7 +70,7 @@ internal sealed class RestoredAdviceDriver
 	private static void Trace( int message, string source, AdvisorQueueAdmission? admission ) =>
 		Log.Trace( $"Advisor restored advice for {source}: message {message} {(admission is { } result ? $"{result.Eligibility}{(result.Stored ? $" in slot {result.Slot}" : result.Acknowledged ? ", queue full" : "")}" : "not posted (no score, descriptor or game mode)")}." );
 
-	/// <summary>The park events the extension answers: tickets and awards, upgrades, challenges.</summary>
+	/// <summary>The park events the extension answers: tickets and awards, upgrades.</summary>
 	public void OnParkEvent( ParkEvent item, ParkEconomy economy )
 	{
 		ArgumentNullException.ThrowIfNull( economy );
@@ -95,15 +92,7 @@ internal sealed class RestoredAdviceDriver
 			case ParkEventKind.ItemResearched when item.InstanceId == 1 && item.Amount > 0 && !economy.Staff.OfType( StaffType.Mechanic ).Any():
 				Post( 132, $"the upgrade {item.Detail} researched without a mechanic" );
 				break;
-			// [EXT:restored-advice-challenges] a met challenge with a follow-up is the double-or-nothing offer (the follow-up is current already when the event arrives, ParkObjectives.Update); the second in a row is 320
-			case ParkEventKind.ChallengeCompleted when item.Amount == 0 && economy.Objectives.Current is { Accepted: false }:
-				followups++;
-				Post( followups == 1 ? 319 : 320, "a challenge met with a follow-up offered" );
-				break;
-			case ParkEventKind.ChallengeCompleted:
-				followups = 0;
-				break;
-			// 344 (the first special challenge on offer) is the original's own now: the challenge offer posts it in place of 270 (AutomaticAdvisor.Challenges), so the extension no longer restores it
+			// 344 (the first special challenge on offer) and 319/320 (a met challenge with a follow-up, the double-or-nothing offer) are the original's own now: the challenge offer posts 270 (344 for the first) and the win 272 (AutomaticAdvisor.Challenges), so the extension restores none of them
 		}
 	}
 

@@ -761,11 +761,84 @@ public class AdvisorScanChallengesTests
 		Assert.AreEqual( 1 + 5 / 3, view.Keys );
 		CollectionAssert.AreEqual( new[] { 1, 3 }, view.ThemeKeyCosts.ToArray() );
 		Assert.AreEqual( 3, ledger.EarnedTickets, "the ledger itself recorded nothing" );
-		var earlier = view.Without( new[] { GoldenTicketKind.CamerasEverywhere, GoldenTicketKind.PeopleInPark } );
-		Assert.AreEqual( (3, 3), (earlier.Earned, earlier.EarnedWithoutSecret) );
 		var own = AdvisorPlayerTickets.ForPark( new[] { GoldenTicketKind.Visitors, GoldenTicketKind.CoasterHeight, GoldenTicketKind.CamerasEverywhere } );
 		Assert.AreEqual( (3, 2), (own.Earned, own.EarnedWithoutSecret) );
 		Assert.AreEqual( 1, AdvisorPlayerTickets.ForPark( Array.Empty<GoldenTicketKind>() ).Keys, "the player starts with one key" );
+	}
+
+	private sealed class Crowd : IParkGuestStatistics
+	{
+		public int PeopleInPark => 300;
+		public float AverageHappiness => 0;
+		public int CountHappierThan( int happiness ) => 0;
+		public int KidsWithBalloonsPercent => 0;
+		public int KidsWithCostumesPercent => 0;
+	}
+
+	[TestMethod]
+	public void ALaterWinOfTheBatchThatTheLedgerHoldsAlreadyStillCountsForTheEarlierWin()
+	{
+		(ParkEconomy Park, AutomaticAdvisor Advisor, GoldenTicketKind First, GoldenTicketKind Second) Batch()
+		{
+			var park = EconomyTestData.Park();
+			var (_, advisor) = Attached( park );
+			var counters = new ParkCounters();
+			counters.Add( ParkCounters.Admissions, 100_000 );
+			var won = park.Objectives.CheckGoldenTickets( counters, new Crowd(), park.Research, 0, new long[7], parkSeconds: 0 );
+			Assert.AreEqual( 2, won.Count, "one check wins two tickets" );
+			return (park, advisor, park.Objectives.LastWonTickets[0], park.Objectives.LastWonTickets[1]);
+		}
+		// the ledger already holds the later win (a replayed theme): the player has two tickets when the first is told, so there is no first-ticket line
+		var (_, replayed, first, second) = Batch();
+		var ledger = new PlayerTicketLedger();
+		ledger.RecordEarned( "jungle", second );
+		replayed.PlayerTickets = held => ledger.AdvisorView( "jungle", held, new[] { 1, 3 } );
+		replayed.OnParkEvent( Won( first ) );
+		CollectionAssert.DoesNotContain( Pending( replayed ).ToArray(), AdvisorTicketAdvice.FirstTicketMessage, "the ledger's own ticket is not subtracted again" );
+		CollectionAssert.DoesNotContain( Pending( replayed ).ToArray(), AdvisorTicketAdvice.CluesMessage );
+		// without it the player's first ticket is the first of the batch
+		var (_, fresh, firstFresh, _) = Batch();
+		fresh.PlayerTickets = held => new PlayerTicketLedger().AdvisorView( "jungle", held, new[] { 1, 3 } );
+		fresh.OnParkEvent( Won( firstFresh ) );
+		CollectionAssert.IsSubsetOf( new[] { AdvisorTicketAdvice.FirstTicketMessage, AdvisorTicketAdvice.CluesMessage }, Pending( fresh ).ToArray() );
+		// and a park without a ledger counts the same way
+		var (_, own, firstOwn, _) = Batch();
+		own.OnParkEvent( Won( firstOwn ) );
+		CollectionAssert.IsSubsetOf( new[] { AdvisorTicketAdvice.FirstTicketMessage, AdvisorTicketAdvice.CluesMessage }, Pending( own ).ToArray() );
+	}
+
+	[TestMethod]
+	public void AnEstablishedParkWithoutARecordedArrivalRingTakesTheRingAsFullSoTheFirstGroupLineStaysSilent()
+	{
+		var ring = new AdvisorArrivalRing();
+		ring.AssumeFilled();
+		CollectionAssert.AreEqual( new[] { 0, 0, 0, 0, 0 }, ring.Waves.ToArray() );
+		ring.Restore( new[] { 7, 9 } );
+		ring.AssumeFilled();
+		CollectionAssert.AreEqual( new[] { 0, 0, 0, 7, 9 }, ring.Waves.ToArray(), "the known sizes stay the newest" );
+		ring.Push( 11 );
+		CollectionAssert.AreEqual( new[] { 0, 0, 7, 9, 11 }, ring.Waves.ToArray() );
+
+		// a park with admissions: the advisor's ring reads five groups after an older save, and 281 (exactly one group) is not scored
+		var established = EconomyTestData.Park();
+		established.Counters.Add( ParkCounters.Admissions, 12 );
+		var (_, loaded) = Attached( established );
+		loaded.RestoreSnapshot( loaded.CaptureSnapshot() with { ArrivalWaves = null } );
+		Assert.AreEqual( AdvisorArrivalRing.Capacity, loaded.ArrivalWaves.Count );
+		var money = new EconomyMoneyState( established );
+		var posted = new List<int>();
+		for ( var step = 0; step < 155; step++ )
+			if ( loaded.Controller.ScanOnce( money, 100, 0, true, new EconomyParkState( established ) { ArrivalWaves = loaded.ArrivalWaves } ).Posted is { } advice )
+				posted.Add( advice.MessageId );
+		CollectionAssert.DoesNotContain( posted, 281, "the first-group explanation fires only while the ring holds exactly one group" );
+		// the snapshot keeps it, and a snapshot that has a ring (even a short one) is taken as it is
+		Assert.AreEqual( AdvisorArrivalRing.Capacity, loaded.CaptureSnapshot().ArrivalWaves!.Count );
+		loaded.RestoreSnapshot( loaded.CaptureSnapshot() with { ArrivalWaves = new[] { 100 } } );
+		CollectionAssert.AreEqual( new[] { 100 }, loaded.ArrivalWaves.ToArray() );
+		// a park without admissions keeps its empty ring
+		var (_, fresh) = Attached( EconomyTestData.Park() );
+		fresh.RestoreSnapshot( fresh.CaptureSnapshot() with { ArrivalWaves = null } );
+		Assert.AreEqual( 0, fresh.ArrivalWaves.Count );
 	}
 
 	private static ParkEvent Won( GoldenTicketKind kind ) => new( 0, ParkEventKind.GoldenTicketWon, 0, 0, (long)kind, kind.ToString() );

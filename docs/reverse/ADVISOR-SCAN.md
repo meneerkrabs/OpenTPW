@@ -83,7 +83,7 @@ state of that moment (no history is kept except what the helpers read).
 not ported scores 0, like the stub `0x5D60C0`. `AdvisorController.ScanOnce` adds step 4: the score must be above `MinScoreForConsideration`, then the record
 (message, the callback's score) goes through `AdvisorScoreQueue.Enqueue`, which repeats the eligibility check as `0x59A940` does. The cursor is part of
 `AdvisorControllerSnapshot` (a snapshot without one restores it at 0; an original save import starts at 0: no save word for it was found). The advisor is presentation state
-outside the simulation hash, so the scan moves no determinism pin. `AutomaticAdvisor.ScanPark` calls the scan once per park turn: `0x516380` increments the turn word and walks the thing list only while the world state `+0x1DA738` is not 4, and the advisor's case (`0x50B3F1`-`0x50B437`) calls `0x59A550` unless the game type is 1, so turns that pass while paused or lost are never scanned (ADVISOR-017). Ported callbacks: the money batch below; the other 127 computed callbacks score 0 until their batch lands.
+outside the simulation hash, so the scan moves no determinism pin. `AutomaticAdvisor.ScanPark` calls the scan once per park turn: `0x516380` increments the turn word and walks the thing list only while the world state `+0x1DA738` is not 4, and the advisor's case (`0x50B3F1`-`0x50B437`) calls `0x59A550` unless the game type is 1, so turns that pass while paused or lost are never scanned (ADVISOR-017). Ported callbacks: the money batch below; the other 9 computed callbacks (the `blocked` scan rows, which need an input OpenTPW does not have) and the 21 constant-zero stubs score 0.
 
 Callback conventions: the world is `[0x80239C]` (also `[[0x7CF6EC]]`). `0x519510` returns the **park thing** (handle at world `+0x1DA720`,
 pool `0x7CFB90`, stride `0x14`); the park thing holds the statistics the helpers read (visitor counter `+0x21C08`, visitor ring
@@ -218,7 +218,7 @@ Event posts: **66** is raised by the wear step (`ParkEconomy.Wear`, `ParkEventKi
 `+0x250` and `+0x578` (`RideCondemned.Score`, added to `EventScoreKeys`).
 
 Tests: `AdvisorScanParkTests` (each callback at its thresholds over hand-built states, the real queue through a whole scan pass, the statistics over a real `ParkEconomy`, the guest bridge, the ride
-events) and `AdvisorProducerInventoryTests` (every ported callback is "wired"). 117 scanned callbacks remained unported then (21 constant-zero stubs, 96 computed); the queues, prices and research batch ported 31 of the 96, so, with the 38 staff callbacks, 27 computed ones remain.
+events) and `AdvisorProducerInventoryTests` (every ported callback is "wired"). 117 scanned callbacks remained unported then (21 constant-zero stubs, 96 computed); the queues, prices and research batch ported 31 of the 96, so, with the 38 staff callbacks and the 18 of the challenges batch, 9 computed ones remain (and the 21 constant-zero stubs: 30 scanned messages in all, 9 `blocked` and 21 `scan-zero` rows).
 
 ## Queues, prices and research callbacks
 
@@ -542,7 +542,9 @@ counted with and without 291.
 
 - wired (42): 184, 188-189, 191-193, 195, 197-201, 203, 205-209, 212-214, 284, 286-287, 289, 292-295, 297-305, 309, 337, 345-346
 - posted in the original, no window here (3): 285, 307-308 (285 All Staff window, 308 address book, 307 postcard)
-- posted by nothing in `tp.exe` (37): 186-187, 190, 194, 196, 202, 204, 210-211, 266, 283, 288, 290-291, 296, 306, 322, 324-336, 338-344
+- posted by no window or tool in `tp.exe` (37 descriptors; 344 is the exception, see below): 186-187, 190, 194, 196, 202, 204, 210-211, 266, 283, 288, 290-291, 296, 306, 322, 324-336, 338-344
+
+Of these, **344** is posted after all: the challenge system's first offer (`0x4D2C50`, the nonzero argument of `0x4D2A70`) posts it in place of 270, as an event (`AutomaticAdvisor.Challenges`). Its inventory row keeps the help descriptor's `unused` kind and `none` status (no call of `0x486B00` or `0x59B590` names it), so the counts here stay those of the rows; the other 36 are posted by nothing.
 
 ## Other
 
@@ -577,7 +579,7 @@ Whether the spoken clip says the same words is not verifiable without the audio.
 
 ## Restored advice (the `opentpw.restored-advice` extension)
 
-Of the 105 messages tp.exe v2.0 never says (the status "none" rows), the official extension `opentpw.restored-advice` (version 1.0.0, **on by default**, listed on the Extensions and mods screen) restores **45**. Ten of the first 55 stood down (the ticket-win lines 99, 164, 165, 218, 219, 223, 224, 228, 229 and the first-challenge hint 344) because the original's own ticket advice (215-227) and first-offer line (344) are now ported. The extension gives them a trigger and posts
+Of the 105 messages tp.exe v2.0 never says (the status "none" rows), the official extension `opentpw.restored-advice` (version 1.0.0, **on by default**, listed on the Extensions and mods screen) restores **43**. Twelve of the first 55 stood down (the ticket-win lines 99, 164, 165, 218, 219, 223, 224, 228, 229, the first-challenge hint 344 and the double-or-nothing lines 319 and 320) because the original's own ticket advice (215-227), first-offer line (344) and challenge offer and win lines (270, 272) are now ported; a restored line never tells an event the original already tells. The extension gives them a trigger and posts
 them through the advisor's own queue. The producer map keeps the original's status for them (the rows stay `none`, `scan-zero` or `unused`); each restored row carries an extra `restored = "<topic>"` field in `content/data/advisor-producers.toml`, and
 `RestoredAdvice.Entries` (`source/OpenTPW/World/RestoredAdvice.cs`) is the one list of them, kept equal to the inventory by `AdvisorProducerInventoryTests`. Every trigger is labelled `[EXT:restored-advice-<topic>]` at its site. Messages are
 referred to by id only: the captions, the `Advisor.sam` values and the speech transcripts are game content and are not in the repository.
@@ -597,18 +599,17 @@ save with a restored message pending or said loads with the extension off, and a
 **Repeat rules (no nagging).** The descriptor group's repeat interval (120 groups of four turns for group 0, about two minutes) is not enough for a condition that stays true, so the extension adds its own, `RestoredAdviceEntry.RepeatGroups`, read from the advisor's own history (which a save already carries, so nothing new is saved and a save loads the same with the extension on or off): the congratulations (151-154, 160) and the arrivals (137-139, one per vehicle kind, told when the kind changes from the one last seen, not at every group) are said **once per park**; the persistent lines (24, 25, 58, 59, 65, 83, 84, 173, 265, 277, 318, 347, 348) wait **5400 groups** (about 1.5 real hours at normal speed); the stranded riders (349, 350) and the upgrade lines (130-132) wait 900 groups. The
 restored own scores are low (30 to 50, the two security lines capped at 60) so the originals (50 to 110, help 1000) keep priority; keys the original callbacks name keep their values (65, 265 and 349 still repeat only after their interval). `AdvisorRestoredRatesTests` plays an hour (14516 turns at 248 ms) of a park whose conditions all hold: **before 144 restored lines against 24 original ones, after 4 against 24**; a park with no guard or camera heard 25 **24 times an hour before and once after**, the original's 102 unchanged at 24.
 
-**Scores.** The message's own key where its descriptor callback is a getter of one (the unused rows 84, 130-132, 137-139, 143, 230-233, 318-320 and the stub rows whose siblings name the key: 24/25 `StaffGuardCoverage`, 65 `RidesNoUpgrades`, 265 `RideExitBlocked`, 349/350 the
+**Scores.** The message's own key where its descriptor callback is a getter of one (the unused rows 84, 130-132, 137-139, 143, 230-233, 318 and the stub rows whose siblings name the key: 24/25 `StaffGuardCoverage`, 65 `RidesNoUpgrades`, 265 `RideExitBlocked`, 349/350 the
 stranded-people and condemned keys); else the extension's own constant, documented where it is declared (`RestoredAdvice.QueueScore`, `FameScore`, ... `[EXT:restored-advice-<topic>]`). The restored keys are optional: a settings file without one leaves its message silent. The shipped file has them all (checked by `EveryRestoredMessageHasItsKeysAndItsGroupInTheShippedAdvisorSettings`).
 
 ### What is restored
 
 | Group | Messages | Trigger |
 | --- | --- | --- |
-| Restorable with existing triggers (36) | 58, 59 | an open ride's queue holds 30 guests or more (59: three such rides, or half of the open rides, at least two; 59's speech sample is a silent stub, its caption plays); only the stronger line of the pair is posted |
+| Restorable with existing triggers (34) | 58, 59 | an open ride's queue holds 30 guests or more (59: three such rides, or half of the open rides, at least two; 59's speech sample is a silent stub, its caption plays); only the stronger line of the pair is posted |
 | | 65 | after `RidesNoUpgrades` months: a researched upgrade is on offer and none has ever been bought |
 | | 83, 84 | after 82 has been said, still no toilet and over twice `MorePeopleThanThisNeeding` guests with a toilet need above `NeedingMoreThan`; toilets exist but more than `MorePeopleThanThisNeeding` needy guests are 24 or more cells from the nearest |
 | | 230-233 | the park earns a global ticket nobody held (coaster height, go-kart excitement, water length, big park): the award line |
-| | 319, 320 | a challenge is met and a follow-up is offered (double or nothing); the second in a row |
 | | 130, 131, 132 | an upgrade is bought with no mechanic hired, or while the mechanics strike; an upgrade is researched with no mechanic hired |
 | | 137, 138, 139 | the bus, the seaplane or the Ferry starts an arrival group (`GuestSimulation.ArrivalVehicle` changing) |
 | | 151, 152, 153, 154 | the park's best coaster height, go-kart excitement or water length record is 75 percent of its golden ticket's threshold (152: the park holds the coaster height ticket) |

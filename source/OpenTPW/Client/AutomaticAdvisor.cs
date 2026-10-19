@@ -594,8 +594,10 @@ internal sealed partial class AutomaticAdvisor : IDisposable
 		// a snapshot from before the stamps were kept leaves the ones derived at attach
 		objectStampTurn = snapshot.ObjectStampTurn ?? objectStampTurn;
 		hireStampTurn = snapshot.HireStampTurn ?? hireStampTurn;
-		// a snapshot from before the arrival groups were kept leaves the record empty
+		// a snapshot from before the arrival groups were kept has no record: the ring is empty, or full when the park has had admissions
 		arrivalRing.Restore( snapshot.ArrivalWaves ?? Array.Empty<int>() );
+		if ( snapshot.ArrivalWaves == null )
+			AssumeEstablishedArrivalRing();
 		// The rebase, not an offset on the source: the destination's own elapsed time (construction, pause
 		// screens) must not shift the saved reservations.
 		clock.RestoreMilliseconds( snapshot.AdvisorClockMilliseconds );

@@ -61,6 +61,18 @@ internal sealed class AdvisorArrivalRing
 			Push( size );
 	}
 
+	/// <summary>
+	/// Takes the ring as full while its sizes are unknown: a park that had admissions before this record was kept (an original save, whose park words are not parsed, or an OpenTPW save from before the ring was saved)
+	/// has had its five groups, as the original's saved ring is full (the filled flag, <c>+0x216F8</c>). The missing entries read as groups of 0, which the hype (124) and big busload (140) lines never score,
+	/// so only the count the first-group line (281) tests changes; the real sizes replace them as groups arrive.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004CF42A arrival ring push] the filled flag (+0x216F8) is set once the index wraps, and the count the callbacks read is the capacity from then on
+	public void AssumeFilled()
+	{
+		while ( sizes.Count < Capacity )
+			sizes.Insert( 0, 0 );
+	}
+
 	public void Clear() => sizes.Clear();
 }
 
@@ -84,13 +96,6 @@ internal sealed record AdvisorPlayerTickets( int Earned, int EarnedWithoutSecret
 
 	/// <summary>The secret tickets (the camera ticket and the all-land one), which the sum of <c>0x005AF4A0</c> leaves out.</summary>
 	public static bool IsSecret( GoldenTicketKind kind ) => kind is GoldenTicketKind.CamerasEverywhere or GoldenTicketKind.AllLandOwned;
-
-	/// <summary>The sums as they stood before the tickets of <paramref name="later"/> were counted: the original announces a check's wins one by one, each over the tickets won so far.</summary>
-	public AdvisorPlayerTickets Without( IEnumerable<GoldenTicketKind> later )
-	{
-		var kinds = later.ToList();
-		return this with { Earned = Earned - kinds.Count, EarnedWithoutSecret = EarnedWithoutSecret - kinds.Count( kind => !IsSecret( kind ) ) };
-	}
 }
 
 /// <summary>

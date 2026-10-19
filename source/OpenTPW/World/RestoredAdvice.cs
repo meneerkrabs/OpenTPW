@@ -37,7 +37,7 @@ internal sealed class RestoredAdviceSettings
 		"StaffSetGuardArea.MonthsIntoGameForConsideration", "StaffSetGuardArea.AtLeastThisMany", "StaffGuardCoverage.Score", "StaffGuardCoverage.ScorePerNonCoveredPercent",
 		"RidesNoUpgrades.MonthsIntoGameForConsideration", "RidesNoUpgrades.Score", "RideExitBlocked.Score", "RideCondemned.Score",
 		"FeaturesNoToilets.Score", "FeaturesNoToilets.NeedingMoreThan", "FeaturesNoToilets.MorePeopleThanThisNeeding", "FeaturesFarToToilets.Score",
-		"GoldTicketNearToXProfit.Score", "GeneralWonGoldenTicket.Score", "AwardGiven.Score", "Challenge.Score",
+		"GoldTicketNearToXProfit.Score", "GeneralWonGoldenTicket.Score", "AwardGiven.Score",
 		"UpgradeHireMechanic.Score", "UpgradeStikingMechanics.Score", "NewUpgradeNoMechanic.Score",
 		"BusArrived.Score", "PlaneArrived.Score", "BoatArrived.Score",
 	};
@@ -176,8 +176,6 @@ internal static class RestoredAdvice
 		Event( 231, "awards", "AwardGiven.Score", 0, "the park earns the go-kart excitement award" ),
 		Event( 232, "awards", "AwardGiven.Score", 0, "the park earns the water ride length award" ),
 		Event( 233, "awards", "AwardGiven.Score", 0, "the park earns the big park award" ),
-		Event( 319, "challenges", "Challenge.Score", 0, "a challenge is met and it carries a follow-up: the prize can be doubled (double or nothing)" ),
-		Event( 320, "challenges", "Challenge.Score", 0, "a second follow-up challenge in a row is met" ),
 		Event( 130, "upgrades", "UpgradeHireMechanic.Score", 0, "an upgrade is bought and no mechanic is hired", ModerateRepeatGroups ),
 		Event( 131, "upgrades", "UpgradeStikingMechanics.Score", 0, "an upgrade is bought while the mechanics are on strike", ModerateRepeatGroups ),
 		Event( 132, "upgrades", "NewUpgradeNoMechanic.Score", 0, "an upgrade is researched and no mechanic is hired", ModerateRepeatGroups ),

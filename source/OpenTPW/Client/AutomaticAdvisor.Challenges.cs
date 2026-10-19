@@ -22,9 +22,20 @@ internal sealed partial class AutomaticAdvisor
 	private void ChallengesAttached( GuestSimulation? simulation )
 	{
 		arrivalRing.Clear();
+		AssumeEstablishedArrivalRing();
 		wonLinePending = false;
 		if ( simulation != null )
 			simulation.ArrivalGroupStarted += OnArrivalGroupStarted;
+	}
+
+	/// <summary>
+	/// A park with admissions has had its arrival groups, but the record of their sizes is the advisor's own and an original save or an older OpenTPW save has none: the ring is taken as full (<see cref="AdvisorArrivalRing.AssumeFilled"/>),
+	/// so the first-group explanation (281) does not fire once after loading an established park. A park without admissions keeps its empty ring.
+	/// </summary>
+	private void AssumeEstablishedArrivalRing()
+	{
+		if ( CurrentEconomy?.Counters[ParkCounters.Admissions] > 0 )
+			arrivalRing.AssumeFilled();
 	}
 
 	private void ChallengesDetached( GuestSimulation? simulation )
@@ -90,11 +101,11 @@ internal sealed partial class AutomaticAdvisor
 	private AdvisorPlayerTickets TicketsAfter( ParkEconomy economy, GoldenTicketKind kind )
 	{
 		var held = economy.Objectives.GoldenTickets;
-		var player = PlayerTickets?.Invoke( held ) ?? AdvisorPlayerTickets.ForPark( held );
-		// the check's later wins are in the park's set already, where the original has not counted them yet
+		// the check's later wins are in the park's set already, where the original has not counted them yet: they leave the park's set before the ledger adds it in, so a later win the ledger holds already (a replayed theme) still counts
 		var batch = economy.Objectives.LastWonTickets;
 		var position = batch.ToList().IndexOf( kind );
-		return position < 0 ? player : player.Without( batch.Skip( position + 1 ).Where( later => held.Contains( later ) ) );
+		var counted = position < 0 ? held : held.Except( batch.Skip( position + 1 ) ).ToList();
+		return PlayerTickets?.Invoke( counted ) ?? AdvisorPlayerTickets.ForPark( counted );
 	}
 
 	/// <summary>A golden ticket was won: the line of its kind for the outcome of the key rule, with the ticket as the response, then the first-ticket lines.</summary>

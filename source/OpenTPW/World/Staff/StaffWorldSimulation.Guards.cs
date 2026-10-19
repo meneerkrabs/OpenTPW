@@ -45,6 +45,7 @@ public sealed partial class StaffWorldSimulation
 				if ( Walk( member, maxSpeed, maxForce ) == WalkResult.Walking )
 					return;
 				// [BIN:TPW-EXE:0x004D6A50 escort] on arrival (or a broken walk) the guest is set down on the guard's cell (0x004FEB50), +0x188 = 0, and the guard routes to the park entrance (0x004D8690, the turn's bit 0): state 19, else 0
+				member.BodySprite?.RequestTemplate( 24 );
 				SetDown( economy, member );
 				member.Navigation!.Mask = 0;
 				SetJob( economy, member, RouteToGate( member, GateCell.Entrance, turn ) ? StaffJob.ReturningFromEscort : StaffJob.Idle, turn );
@@ -160,6 +161,7 @@ public sealed partial class StaffWorldSimulation
 			return;
 		}
 		member.SpeedBonus = 0;
+		member.BodySprite?.RequestTemplate( 22 );
 		Sound( member, CatchEvent );
 		Guests.Hold( member.TargetGuestId );
 		if ( RouteToGate( member, GateCell.TicketBooth, turn ) )

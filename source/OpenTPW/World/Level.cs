@@ -327,6 +327,7 @@ public partial class Level : IDisposable
 				yield return progress;
 		}
 		if ( resume != null ) RestoreResumeSimulation( resume );
+		InitializeStaffSprites();
 		using ( LoadProfile.Measure( "level-hud" ) )
 			SetupHud( onlineFolders );
 		resumeState = null;
@@ -1145,7 +1146,14 @@ public partial class Level : IDisposable
 	{
 		// a load that fails leaves the economy, and so the staff tool and its pending flag, as they were
 		var replacedStaff = Park?.Economy.Staff.Members.Select( member => member.ThingId ).Where( id => id != 0 ).ToList() ?? new List<int>();
-		Streams.LoadPark( path );
+		Streams.LoadPark( path, candidate =>
+		{
+			// Staff ids must also fit the live world, not just the save. Validate/allocate against an exact detached
+			// pool before the streams commit the candidate economy: failure must preserve owners, tools and RNG links.
+			var detached = new ThingPool();
+			detached.RestoreSnapshot( Things.CaptureSnapshot() );
+			candidate.Staff.AttachThings( detached );
+		} );
 		// the loaded economy's staff take their things (a member the save names keeps its slot); the replaced economy's staff are destroyed at the turn's end
 		if ( Park != null )
 		{
@@ -1155,6 +1163,7 @@ public partial class Level : IDisposable
 				Things.QueueDestroy( id );
 		}
 		StaffPlacement?.Abandon();
+		ReplaceStaffSpriteSession();
 		UpgradeBalloons?.Clear();
 		// the patrol tool's employee id belongs to the replaced economy
 		PatrolTool?.Cancel();
@@ -1190,6 +1199,7 @@ public partial class Level : IDisposable
 
 	public void Dispose()
 	{
+		StaffSprites?.Dispose();
 		Guests?.ClearBodySprites();
 		rideBodyPoses = null;
 		ExitRideView();

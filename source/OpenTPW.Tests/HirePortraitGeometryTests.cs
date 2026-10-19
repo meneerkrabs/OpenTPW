@@ -80,6 +80,7 @@ public class HirePortraitGeometryTests
 		public readonly StaffRenderer Renderer;
 		public readonly GuestSpriteAtlas[] Atlases;
 		public readonly StaffSpriteSet Sprites;
+		public readonly StaffSpritePresentation Presentation;
 		public List<StaffCandidate> Candidates => (List<StaffCandidate>)Economy.Staff.Candidates;
 		public List<Texture> Textures => Get<List<Texture>>( Renderer, "textures" );
 		public UiSpriteFigure Figure => (UiSpriteFigure)Hud.Stack.Top!.Find( "portraitFigure" )!;
@@ -100,8 +101,13 @@ public class HirePortraitGeometryTests
 			Atlases = Enumerable.Range( 0, 10 ).Select( index => Atlas( index, directions, a, b ) ).ToArray();
 			Sprites = (StaffSpriteSet)Activator.CreateInstance( typeof( StaffSpriteSet ), BindingFlags.Instance | BindingFlags.NonPublic, null,
 				new object[] { Atlases, Enumerable.Range( 0, 5 ).Select( role => (role * 2, 2) ).ToArray() }, null )!;
+			var catalog = new StaffSpriteMetadataCatalog( Sprites );
+			Presentation = new StaffSpritePresentation( catalog, () => Economy.Staff.Members );
+			Presentation.AttachRoster( Economy.Staff );
+			Set( Level, "<StaffSprites>k__BackingField", Presentation );
 			Renderer = new StaffRenderer( () => Economy.Staff.Members, new ModelHeightfield( 10, 10, 10, 10, 0, 0, Array.Empty<uint>(), new float[121], new uint[100] ),
-				StaffSpriteSet.Empty, new StaffPlacement( () => null, () => null, (_, _) => false ) );
+				StaffSpriteSet.Empty, new StaffPlacement( () => null, () => null, (_, _) => false ), catalog,
+				member => member.BodySprite?.DrawRecord, () => Presentation.Session );
 			Set( Renderer, "sprites", Sprites ); Textures.AddRange( Atlases.Select( _ => TextureSentinel() ) );
 			Set( Level, "<StaffRenderer>k__BackingField", Renderer ); Hud.OpenStaffWindow();
 		}
@@ -209,7 +215,7 @@ public class HirePortraitGeometryTests
 		Time.Now = 0.8f; rig.Select( StaffType.Handyman, 0 ); figure.Frame();
 		Time.Now = 1f; hud.ShowEmployedStaff( true );
 		hud.SelectStaff( hud.StaffItems.ToList().FindIndex( member => member.Variant == 0 ) );
-		Assert.IsNull( rig.Renderer.EmployeeFrame( hud.SelectedStaff ), "the employed extension does not need a live world publication" );
+		Assert.IsNull( hud.SelectedStaff!.BodySprite!.DrawRecord, "the hire window's employed tab does not need a placed body source" );
 		Assert.AreEqual( rig.Expected( StaffType.Handyman, 0, 3 ), figure.Frame()!.Value, "same role/variant keeps the hire loop across tabs" );
 		AssertDraw( figure, 1920, 1080, 128, 128, true );
 		Time.Now = 1.1f; hud.ShowEmployedStaff( false ); rig.Select( StaffType.Handyman, 0 );
@@ -220,6 +226,25 @@ public class HirePortraitGeometryTests
 		rig.Select( StaffType.Handyman, 0 );
 		Assert.AreEqual( rig.Expected( StaffType.Handyman, 0, 6 ), figure.Frame()!.Value, "same-key reopen retains existing elapsed time, a qualified native lifecycle difference" );
 		Assert.AreEqual( 0.8f, Get<float>( hud, "portraitStart" ) );
+		Assert.AreEqual( save, ParkSaveFile.Serialize( rig.Economy ) ); Assert.AreEqual( random, rig.Economy.World.State );
+	}
+
+	[TestMethod]
+	public void HireLoopRemainsSeparateFromTheSourceAbsentEmployeeWindow()
+	{
+		var rig = new Rig(); rig.Select( StaffType.Handyman, 0 );
+		var hireFigure = rig.Figure; Time.Now = 2; Assert.IsNotNull( hireFigure.Frame() );
+		var save = ParkSaveFile.Serialize( rig.Economy ); var random = rig.Economy.World.State;
+		rig.Hud.ShowEmployedStaff( true );
+		rig.Hud.SelectStaff( rig.Hud.StaffItems.ToList().FindIndex( member => member.Variant == 0 ) );
+		Assert.IsNotNull( hireFigure.Frame(), "the employed tab still uses the independent hire loop" );
+		Assert.IsTrue( rig.Hud.OpenSelectedEmployee() );
+		Assert.AreEqual( EmployeePortraitState.OpenUnbound, rig.Hud.EmployeePortrait!.State );
+		var employeeFigure = (UiSpriteFigure)rig.Hud.Stack.Top!.Find( "portraitFigure" )!;
+		Time.Now = 12; Assert.IsNull( employeeFigure.Frame(), "the employee window must not substitute the hire loop" );
+		var context = Context( 1280, 720 ); employeeFigure.Draw( context, false, false );
+		Assert.AreEqual( 0, context.Batch.Draws.Count );
+		Assert.AreEqual( 0, rig.Presentation.Registry.Count, "neither callback creates a source or clone" );
 		Assert.AreEqual( save, ParkSaveFile.Serialize( rig.Economy ) ); Assert.AreEqual( random, rig.Economy.World.State );
 	}
 

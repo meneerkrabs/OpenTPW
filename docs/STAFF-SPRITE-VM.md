@@ -1,10 +1,11 @@
 # Bounded staff sprite VM core
 
 UI-092 remains open. `StaffSpriteVm`, `StaffSpriteVmState`, and `StaffSpriteCloneCopy`
-provide an independently testable, GPU-free implementation seam. Gameplay, the
-staff renderer, employee windows, the sprite scheduler and save formats do not
-consume this core yet. In particular, this change does not replace the current
-employee portrait's world-publication/fallback behavior.
+provide an independently testable, GPU-free implementation seam. The bounded
+[source and employee owners](STAFF-SPRITE-OWNERS.md) now connect it to gameplay
+events, the level scheduler, world staff drawing and employee windows. The
+employee hire-walk/world-publication fallback has been removed. Save formats
+still omit VM history; owners reconstruct fresh instead of inventing continuity.
 
 ## State and copy contract
 
@@ -34,7 +35,7 @@ It preserves all other fields, including inactive stack/cache words, source-
 independent due/interval, scratch, run state, restart/last PC and depths. Copy
 operations do not infer lifecycle, validate resources or normalize control state.
 Callers must provide the correct live source and distinct owned clone; identity,
-generation and registration checks belong to the later owner integration.
+generation and registration checks belong to the connected owner integration.
 
 ## Programs and instructions
 
@@ -49,8 +50,8 @@ main range starts at intro; a positive hold adds hold+1 zero-frame yields. Progr
 1's inclusive comparison yields frame count as well as the preceding frames.
 Programs 2 and 3 repeatedly yield frame 2. The VM preserves these raw results;
 it does not clamp them into plausible atlas frames. Resource/range validation is
-still required by a future renderer. No claim is made that all four performance
-programs are used by shipped staff assets.
+provided by the connected strict frame resolver. No claim is made that all four
+performance programs are used by shipped staff assets.
 
 The required operations are SET, ADD, raw COPY, SLOT, FRAME, FRAME-register, JMP,
 IF register greater than literal, ENDIF, DO and WHILE register not-equal/less-or-
@@ -75,7 +76,7 @@ clone histories. Host/native cadence equivalence is not claimed.
 FRAME writes the frame register, sets output-valid to frame != -1, and yields.
 The output word is not a rendered-frame publication. Run state 3 does not execute
 instructions but still rebases due. END sets state 4 and clears output; a later
-due opportunity reports `RemovalDue` to the future registry owner without removing
+due opportunity reports `RemovalDue` to the registry owner without removing
 or recreating anything itself. Template replacement does not resume state 3 or 4.
 
 Template replacement changes only current/restart PC, stack pointer and the three
@@ -111,9 +112,11 @@ existing output; it is reported separately from a frame yield.
 
 SET flags is ordinary executable behavior. A clone can lose its portrait flags
 while executing without source refresh; Tick never silently reapplies the screen
-mask. Future rendering must respect the actual screen/world route. Draw-cache
-words are preserved by copying but not recomputed by this GPU-free core; native
-frame-resource/cache work and draw eligibility remain integration work.
+mask. Connected rendering respects the actual screen/world route; world-routed
+employee clones currently return `WorldRouteNotImplemented` and emit no HUD quad.
+Draw-cache words are preserved by copying but not recomputed by this GPU-free
+core. Strict host frame eligibility is integrated; native resource/cache and
+raster equivalence remain open.
 
 ## Verification and remaining work
 
@@ -123,8 +126,9 @@ graphs, actual loop PCs/scratch/depths, cross-program copied-PC/retained-stack
 hybrids, catch/release continuations, flags loss, template/output transitions,
 state 3/4, signed wrap/equality/zero interval, instruction caps and malformed
 boundaries. `test_staff_sprite_vm_contract.py` guards the exact copy allowlist,
-bounded timing and the deliberate absence of gameplay integration. Existing CI
-runs both the guard and the C# test project.
+bounded timing and the explicit source/window integration boundaries. Existing
+CI runs both the guard and the C# test project; final-head execution is still
+required for this owner slice.
 
 Local structural guards and repository checks are recorded in the progress note.
 The local environment has no .NET SDK: compilation and C# execution were not run
@@ -132,8 +136,10 @@ locally and still require exact-head CI. Structural guards do not substitute for
 those tests. No original software was executed/emulated, and no GPU or native
 render comparison was performed.
 
-Remaining UI-092 work includes reviewed source/window ownership and lifecycle,
-scheduler enrollment and ordering, pending source requests, persistence and
-migration, resource/cache/flag-aware rendering, source loss/return and rename
-window flows, and accepted behavior/render evidence. Nothing in this core derives
-missing PC/stack history from `SpritePlayer.Steps` or elapsed animation time.
+The [owner acceptance map](STAFF-SPRITE-OWNER-ACCEPTANCE.md) separates authored
+CPU coverage from actual Level/HUD/draw routes and pending exact-head execution.
+Remaining UI-092 work includes native full-event/modal ordering, saved history,
+clone-world rendering, unsupported transforms/resources, native control depth
+and raster equivalence, and lawful host visual/performance smoke evidence.
+Nothing in this core derives missing PC/stack history from `SpritePlayer.Steps`
+or elapsed animation time.

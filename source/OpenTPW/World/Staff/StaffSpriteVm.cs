@@ -8,14 +8,14 @@ public readonly record struct StaffSpriteTickResult( StaffSpriteTickStatus Statu
 
 /// <summary>
 /// Bounded staff control semantics. Tick accepts one signed clock sample and never decides scheduler ordering.
-/// This independently testable core is not yet consumed by gameplay, world rendering, windows or saves.
+/// The CPU source and employee owners use this core; rendering consumes detached records, and saves omit its history.
 /// </summary>
 public static class StaffSpriteVm
 {
 	public const int InstructionLimit = 50;
 
 	/// <summary>
-	/// Fresh control/clock state. Resource metadata and pose are supplied separately by the future source owner.
+	/// Fresh control/clock state. Resource metadata and pose are supplied separately by the source owner.
 	/// Zeroed unused stack, scratch, last-PC and cache words are a host safety choice, not native allocation-byte parity.
 	/// </summary>
 	public static StaffSpriteVmState Create( StaffSpriteProgram program, int now )

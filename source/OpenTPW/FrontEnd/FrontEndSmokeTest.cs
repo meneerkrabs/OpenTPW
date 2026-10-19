@@ -29,6 +29,7 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 {
 	private const int MaximumFrames = 3000;
 	private readonly GameFlow flow;
+	private readonly bool staffOwnerOnly;
 	private readonly BaseFileSystem originalSaveFileSystem;
 	private readonly OnlineFolders? originalOnlineFolders;
 	private ParkVisitInfo? readOnlyVisit;
@@ -73,9 +74,10 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 	private RideVisitorBridge? prototypeVisitors;
 	private PrototypeRide? reviewedPrototype;
 
-	public FrontEndSmokeTest( GameFlow flow )
+	public FrontEndSmokeTest( GameFlow flow, bool staffOwnerOnly = false )
 	{
 		this.flow = flow;
+		this.staffOwnerOnly = staffOwnerOnly;
 		flow.PersistSettings = false;
 		originalSaveFileSystem = SaveFileSystem;
 		Directory.CreateDirectory( temporaryDirectory );
@@ -257,6 +259,7 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 
 	private void Plan()
 	{
+		if ( staffOwnerOnly ) { PlanStaffOwnerOnly(); return; }
 		// the online extension is read once at startup (docs/MODS.md)
 		var online = FeatureGates.Online;
 		Wait( "lobby settles", 30 );
@@ -708,6 +711,7 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			flow.Hud!.OpenStaffWindow();
 		} );
 		Wait( "staff window reopens", 3 );
+		PlanStaffOwners();
 		// The All Visitors window (UI-907..910): visitors seeded through the guest simulation's own
 		// spawn, the window opened through the staff window's shipped b_svisit button, then driven with
 		// the wheel, the sort header, a row click and Enter.
@@ -1686,14 +1690,17 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 
 	public void Update()
 	{
+		RequireStaffResourceObservation();
 		++frame;
-		Require( frame - speechFrames - loadFrames < MaximumFrames, $"finish within {MaximumFrames} frames (stuck at '{(steps.Count > 0 ? steps.Peek().Name : "end")}')" );
+		if ( staffSmokeActive ) Require( ++staffSmokeFrames <= MaximumStaffSmokeFrames, $"staff owner smoke finishes within {MaximumStaffSmokeFrames} normal outer frames" );
+		Require( frame - speechFrames - loadFrames - staffSmokeFrames < MaximumFrames, $"finish within {MaximumFrames} frames (stuck at '{(steps.Count > 0 ? steps.Peek().Name : "end")}')" );
 		while ( steps.Count > 0 && steps.Peek().Step() )
 		{
 			steps.Dequeue();
 			if ( flow.InjectedInput != null )
 				break;
 		}
+		RequireStaffResourceObservation();
 	}
 
 	/// <summary>
@@ -1966,6 +1973,7 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 	public void Dispose()
 	{
 		global::Global.Render.PostUpdate -= Update;
+		RestoreStaffSmoke();
 		SaveFileSystem = originalSaveFileSystem;
 		flow.OnlineFolders = originalOnlineFolders;
 		try { Directory.Delete( temporaryDirectory, true ); }

@@ -39,9 +39,9 @@ public static class StaffSpriteRules
 
 	/// <summary>
 	/// Steps per second of a sprite that keeps the interval it was created with, 62 ms (the dangling cursor sprite and the hire window's figure). A walking member's interval comes from
-	/// <see cref="SpritePlayer"/>.
+	/// the CPU source owner; this rate remains the legacy elapsed-time helper for hire and carry.
 	/// </summary>
-	// [APPROX:GUEST-016] the 'moving' test (a position change within the last 0.6 s, 1.3 s for members the world moves a cell per second), the smoothing of the drawn position and the step length OpenTPW takes from the displacement between two position changes stand in for tp.exe's: the walk step 0x4FA2A0 takes the length of the person's own step of the turn (evidence needed: how the drawn position follows the movement position, the sub-turn position 0x004F9F00 gives the sprite each frame)
+	// [APPROX:GUEST-016] active source owners use actual WALK displacement for intervals; host outer-frame smoothing still stands in for the native sub-turn position publication 0x004F9F00. This elapsed-time constant is retained for hire/carry and legacy clip helpers, not placed-source timing.
 	public const float FramesPerSecond = 1000f / SpritePlayer.DefaultInterval;
 
 	/// <summary>The slot an entertainer performs when the bank lists no performance (every shipped entertainer bank lists slot 4).</summary>
@@ -100,11 +100,11 @@ public static class StaffSpriteRules
 	}
 
 	/// <summary>
-	/// The clip of a placed member (null: not drawn). Resting members have no sprite (state 3) and a carried one is the dangling sprite instead.
+	/// Retained legacy clip-selection helper (null: not drawn), not the active placed-source owner. Resting members have no sprite (state 3) and a carried one is the dangling sprite instead.
 	/// <paramref name="moving"/> is whether the member is being moved now; <paramref name="performances"/> (the bank's performance entries,
 	/// <see cref="SpriteAnimationFile.Performances"/>) give an entertainer's performance.
 	/// </summary>
-	// [APPROX:GUEST-015] tp.exe (0x4D46D0) queues script 13 + (r mod (n − 1)) from a second world draw r, or 13 when n is 1, n being the bank's present performance entries (0x541FA0); scripts 13..16 of the table 0x75A418 hold the entry indices 0..3, so a full bank never plays its fourth entry, and 0x475B80 runs the entry's program on its slot (StaffScripts.PerformanceFrame plays program 0 with the entry's intro and hold). Every shipped entertainer bank has exactly one entry, so the draw never matters; for a bank of several entries (none shipped) OpenTPW picks by the member's id instead of the draw
+	// [APPROX:GUEST-015] tp.exe (0x4D46D0) queues script 13 + (r mod (n − 1)) from a second world draw r, or 13 when n is 1, n being the bank's present performance entries (0x541FA0); scripts 13..16 of the table 0x75A418 hold the entry indices 0..3, so a full bank never plays its fourth entry, and 0x475B80 runs the entry's program on its slot (StaffScripts.PerformanceFrame plays program 0 with the entry's intro and hold). The active source owner consumes the existing role-handler choice draw. This retained legacy helper instead picks by member id for several entries; it does not drive placed staff or employee clones
 	public static StaffClip? SelectClip( StaffMember member, bool moving, IReadOnlyList<SpritePerformance>? performances = null, int performanceCount = 0 )
 	{
 		// a resting member is inside the Staff Room (0x5054d0 state 3 removes the model); a carried one is the dangling sprite instead
@@ -199,30 +199,90 @@ public sealed class StaffSpriteSet
 	/// <summary>The decoded banks; their atlas index is the texture slot the renderer binds.</summary>
 	public IReadOnlyList<GuestSpriteAtlas> Atlases { get; }
 
+	/// <summary>Frozen bank declarations, including identified banks that could not be read.</summary>
+	internal IReadOnlyList<StaffSpriteBankMetadata> MetadataBanks { get; }
+
 	private StaffSpriteSet( IReadOnlyList<GuestSpriteAtlas> atlases, (int First, int Count)[] ranges )
+		: this( atlases, ranges, null ) { }
+
+	private StaffSpriteSet( IReadOnlyList<GuestSpriteAtlas> atlases, (int First, int Count)[] ranges,
+		IReadOnlyList<StaffSpriteBankMetadata>? metadata )
 	{
-		Atlases = atlases;
-		this.ranges = ranges;
+		Atlases = Array.AsReadOnly( atlases.ToArray() );
+		this.ranges = ((int, int)[])ranges.Clone();
+		MetadataBanks = metadata ?? Array.AsReadOnly( Enum.GetValues<StaffType>()
+			.SelectMany( type => Enumerable.Range( 0, ranges[(int)type].Count ).Select( variant =>
+			{
+				var index = ranges[(int)type].First + variant;
+				return StaffSpriteBankMetadata.FromAtlas( StaffSpriteMetadataCatalog.KindOf( type ), (uint)variant, index,
+					atlases[index].Name, atlases[index] );
+			} ) ).ToArray() );
 	}
 
 	public static StaffSpriteSet Empty { get; } = new( Array.Empty<GuestSpriteAtlas>(), new (int, int)[RoleCount] );
 
-	/// <summary>Loads the banks of every role for a level; a role whose folder is missing from the game data has none.</summary>
-	public static StaffSpriteSet Load( string level )
+	/// <summary>Loads CPU metadata independently of any original-park or renderer eligibility gate.</summary>
+	public static StaffSpriteSet Load( string level ) => FileSystem == null ? Empty
+		: Load( level, directory => FileSystem.GetFiles( directory ), path => FileSystem.OpenRead( path ) );
+
+	/// <summary>The staff-only expected-resource-failure boundary. The shared guest and hire rules remain unchanged.</summary>
+	internal static StaffSpriteSet Load( string level, Func<string, IEnumerable<string>> listFiles, Func<string, Stream> openRead )
 	{
 		var atlases = new List<GuestSpriteAtlas>();
+		var metadata = new List<StaffSpriteBankMetadata>();
 		var ranges = new (int First, int Count)[RoleCount];
 		foreach ( var type in new[] { StaffType.Handyman, StaffType.Mechanic, StaffType.Guard, StaffType.Researcher, StaffType.Entertainer } )
 		{
 			if ( StaffSpriteRules.Banks( type, level ) is not { } set )
 				continue;
-			// [BIN:TPW-EXE:0x0046C730 staff tool enter] the hire and carry tools' sprite is script 0x15 (0x0074ED98, slot 6 frames 0-3 looping) of the role's sprite type (0x00475A10: mechanics 6, handymen 5, entertainers 4, guards 7, researchers 8; table 0x00763F88) with the candidate's variant (+0x11): the person's own bank
-			var banks = GuestSpriteAtlas.LoadSets( set.Folder, $"staff-{type.ToString().ToLowerInvariant()}" );
-			ranges[(int)type] = (atlases.Count, banks.Count);
-			atlases.AddRange( banks );
+			string[] files;
+			try
+			{
+				files = listFiles( set.Folder ).Select( file => Path.GetFileName( file ) ).ToArray();
+			}
+			catch ( Exception exception ) when ( ExpectedMetadataFailure( exception ) )
+			{
+				continue;
+			}
+			var first = atlases.Count;
+			uint variant = 0;
+			foreach ( var esp in files.Where( file => file.EndsWith( ".ESP", StringComparison.OrdinalIgnoreCase ) ).OrderBy( file => file, StringComparer.OrdinalIgnoreCase ) )
+			{
+				var stem = Path.GetFileNameWithoutExtension( esp );
+				var identity = $"{set.Folder}/{stem}";
+				var kind = StaffSpriteMetadataCatalog.KindOf( type );
+				try
+				{
+					SpriteAnimationFile animations;
+					using ( var stream = openRead( $"{set.Folder}/{esp}" ) )
+						animations = new SpriteAnimationFile( stream );
+					var bank = files.FirstOrDefault( file => string.Equals( file, stem + animations.BankExtension, StringComparison.OrdinalIgnoreCase ) );
+					if ( bank == null )
+					{
+						metadata.Add( StaffSpriteBankMetadata.Unavailable( kind, variant, identity ) );
+						continue;
+					}
+					using var bankStream = openRead( $"{set.Folder}/{bank}" );
+					var atlas = new GuestSpriteAtlas( stem, new SpriteBankFile( bankStream ), animations, $"staff-{type.ToString().ToLowerInvariant()}" );
+					metadata.Add( StaffSpriteBankMetadata.FromAtlas( kind, variant, atlases.Count, identity, atlas ) );
+					atlases.Add( atlas );
+				}
+				catch ( Exception exception ) when ( ExpectedMetadataFailure( exception ) )
+				{
+					metadata.Add( StaffSpriteBankMetadata.Unavailable( kind, variant, identity ) );
+				}
+				finally
+				{
+					// An identified failed bank keeps its ordinal. It cannot redirect a source to its neighbour's art.
+					variant++;
+				}
+			}
+			ranges[(int)type] = (first, atlases.Count - first);
 		}
-		return new StaffSpriteSet( atlases, ranges );
+		return new StaffSpriteSet( atlases, ranges, Array.AsReadOnly( metadata.ToArray() ) );
 	}
+
+	private static bool ExpectedMetadataFailure( Exception exception ) => exception is IOException or UnauthorizedAccessException or InvalidDataException;
 
 	/// <summary>The atlas index drawing a person of a role and variant, -1 when the role has no bank.</summary>
 	public int AtlasFor( StaffType type, int variantKey )

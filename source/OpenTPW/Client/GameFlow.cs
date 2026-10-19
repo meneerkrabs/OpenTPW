@@ -611,6 +611,7 @@ internal sealed partial class GameFlow : IDisposable
 			// The park being left waits too while the next one is built.
 			Level.SimulationTimeScale = parkBuild != null ? 0 : Hud.SimulationTimeScale;
 			Level.Update();
+			Level.PresentStaffSprites( Hud.RefreshEmployeePortrait, Time.Delta );
 			presence?.Update( Time.Delta );
 			Advisor?.Update( Hud.Paused, parkPaused: Level.SimulationTimeScale <= 0 );
 			UpdateAutosave( Level, Hud );

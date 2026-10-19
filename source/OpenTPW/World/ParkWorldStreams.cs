@@ -50,11 +50,14 @@ public sealed record ParkWorldStreams( WorldSeed Seed, ParkEconomyRuntime? Park,
 	}
 
 	/// <summary>Loads an OpenTPW park save: the economy and, when the save has them, the random streams. Guests and object scripts keep running (the legacy economy-only save, [EXT:legacy-economy-save]). The loaded economy holds its own generator object; guests and scripts are attached to it.</summary>
-	public void LoadPark( string path )
+	public void LoadPark( string path ) => LoadPark( path, validate: null );
+
+	/// <summary>The caller may reject the detached economy before any live economy, guest/script RNG link or sound seed changes.</summary>
+	internal void LoadPark( string path, Action<ParkEconomy>? validate )
 	{
 		if ( Park == null )
 			throw new InvalidOperationException( "Only original levels have a park economy to load." );
-		var world = Park.Load( path );
+		var world = Park.Load( path, validate );
 		// the loaded economy has its own generator object: the guests and the scripts draw from it from now on, one stream as before the load
 		Guests?.AttachWorld( Park.Economy.World );
 		Scripts.AttachWorld( Park.Economy.World );

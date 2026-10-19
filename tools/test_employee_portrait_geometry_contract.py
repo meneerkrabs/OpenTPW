@@ -45,12 +45,10 @@ class EmployeePortraitGeometryContract(unittest.TestCase):
         self.assertNotIn("VisitorInfoRules.PortraitFeet", self.hud)
 
     def test_source_policy_clock_and_shared_draw_remain_independent(self):
-        callback = body(self.hud, "private UiSpriteFrame? EmployeePortraitFrame()")
-        ordered = ["employeePortraitKey = key", "employeePortraitStart = Time.Now", "EmployeeFrame( selected )",
-                   "return live", "PortraitFrame( chosen.Type, chosen.Variant, Time.Now - employeePortraitStart )"]
-        offsets = [callback.index(token) for token in ordered]
-        self.assertEqual(sorted(offsets), offsets)
-        for token in ("Geometry", "PrepareWorld", ".Tick(", ".Restart(", "Random"):
+        callback = self.hud.split("private UiSpriteFrame? EmployeePortraitFrame() =>", 1)[1].split(";", 1)[0]
+        self.assertIn("employeePortrait?.DrawRecord", callback)
+        self.assertIn("EmployeeFrame( record )", callback)
+        for token in ("Time.", "PortraitFrame( chosen", "Geometry", "PrepareWorld", ".Tick(", ".Restart(", "Random"):
             self.assertNotIn(token, callback)
         for path in ("source/OpenTPW/Hud/ParkHud.Staff.cs", "source/OpenTPW/Hud/ParkHud.VisitorInfoWindow.cs",
                      "source/OpenTPW/UI/Original/UiSpriteFigure.cs", "source/OpenTPW/World/Staff/StaffRenderer.cs"):
@@ -78,15 +76,15 @@ class EmployeePortraitGeometryContract(unittest.TestCase):
                       "Hud.OpenStaffWindow()", "visitorHud.OpenVisitorInfoWindow( guest )", "new UiSpriteFigure",
                       "(employee, 526, 476, 2.4f)", "(hire, 626, 362, 2.4f)", "(visitor, 598, 450, 3.6f)", "(generic, 518, 478, 3.2f)",
                       "Assert.IsNull( portrait.Inner )", "20, 30, 7, 15, 21, 17", "385, 279, 650, 544, 525, 476",
-                      "StaffSpriteRules.Sweep", "step > 0", "StaffState.Resting", '"employeePortraitStart"',
-                      "ParkSaveFile.Serialize", "observed.Economy.World.State", '"StepLength", 5432f',
-                      "control.State()", 'Get<long>( Player, "due" )', "Get<Vertex[]>( control.Renderer", "StaffSpriteSet.Empty"):
+                      "StaffSpriteProgram.Sweep", "StaffState.Resting", "Portrait.CloneTicket",
+                      "ParkSaveFile.Serialize", "observed.Economy.World.State", "Presentation.Schedule()",
+                      "control.State()", "Body.ReadSourceState()", "Get<Vertex[]>( control.Renderer", "StaffSpriteSet.Empty"):
             self.assertIn(token, self.tests)
 
     def test_residual_stays_registered_and_ci_runs_contract_and_full_cpu_suite(self):
         register = read("source/OpenTPW/UI/Original/UiApproximations.cs")
         self.assertIn('("UI-092",', register)
-        for token in ("independent clone", "source-loss", "depth/occlusion", "viewport/raster"):
+        for token in ("source/clone ownership", "full-event/modal", "clone-world", "depth/raster"):
             self.assertIn(token, self.hud)
         workflow = read(".github/workflows/build.yml")
         self.assertIn('python -m unittest discover -s tools -p "test_employee_portrait_geometry_contract.py" -v', workflow)

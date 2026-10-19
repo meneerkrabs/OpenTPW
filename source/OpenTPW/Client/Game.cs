@@ -310,7 +310,10 @@ internal static class Game
 		using var flow = new GameFlow { OnlineFolders = onlineFolders, AutomaticAdvisorEnabled = !args.Contains( "--no-advisor" ) && !args.Contains( "--advisor-say" ) && !args.Contains( "--advisor-response" ) };
 		var capturePath = GetOption( args, "--capture-world", "a .png file for the world-only screenshot" );
 		var smoke = args.Contains( "--smoke-test" );
+		var staffOwnerSmoke = args.Contains( "--staff-owner-smoke" );
 		var parkResumePhase = GetOption( args, "--park-resume-smoke", "'capture' or 'restore'" );
+		if ( staffOwnerSmoke && parkResumePhase != null )
+			throw new ArgumentException( "--staff-owner-smoke cannot be combined with --park-resume-smoke." );
 		if ( parkResumePhase != null )
 		{
 			var parkResumeFile = GetOption( args, "--park-resume-file", "the own-format world save path" );
@@ -321,6 +324,8 @@ internal static class Game
 			return;
 		}
 		var startsFrontEnd = visit == null && originalLevelIndex < 0 && !args.Contains( "--advisor-say" ) && !args.Contains( "--advisor-response" ) && !args.Contains( "--sandbox" ) && (!smoke || args.Contains( "--front-end" ));
+		if ( staffOwnerSmoke && (!smoke || !startsFrontEnd || GameEditions.IsThemeParkInc) )
+			throw new ArgumentException( "--staff-owner-smoke requires --front-end --smoke-test with Theme Park World data." );
 		// [EXT:tpi-viewer] the experimental Theme Park Inc slice's own native smoke test: injected HUD input
 		// drives the real user flow (docs/THEME-PARK-INC.md); it needs the slice, not a Theme Park World park.
 		var sliceSmoke = args.Contains( "--tpi-smoke-test" );
@@ -905,7 +910,7 @@ internal static class Game
 		{
 			if ( autorun != null )
 			{
-				RunAutorun( flow, autorun, smoke, startIntro );
+				RunAutorun( flow, autorun, smoke, startIntro, staffOwnerSmoke );
 				return;
 			}
 			if ( startIntro != null )
@@ -924,7 +929,7 @@ internal static class Game
 			flow.ShowFrontEnd();
 			if ( smoke )
 			{
-				using var frontEndSmokeTest = new FrontEndSmokeTest( flow );
+				using var frontEndSmokeTest = new FrontEndSmokeTest( flow, staffOwnerSmoke );
 				Render.PostUpdate += frontEndSmokeTest.Update;
 				Render.Run();
 				frontEndSmokeTest.VerifyCompleted();
@@ -1035,7 +1040,7 @@ internal static class Game
 		return intro;
 	}
 
-	private static void RunAutorun( GameFlow flow, AutorunScreen autorun, bool smoke, Func<IDisposable>? startIntro )
+	private static void RunAutorun( GameFlow flow, AutorunScreen autorun, bool smoke, Func<IDisposable>? startIntro, bool staffOwnerSmoke )
 	{
 		using var screen = autorun;
 		IDisposable? intro = null;
@@ -1072,7 +1077,7 @@ internal static class Game
 			flow.ShowFrontEnd();
 			if ( smoke )
 			{
-				frontEndSmokeTest = new FrontEndSmokeTest( flow );
+				frontEndSmokeTest = new FrontEndSmokeTest( flow, staffOwnerSmoke );
 				Render.PostUpdate += frontEndSmokeTest.Update;
 			}
 		};

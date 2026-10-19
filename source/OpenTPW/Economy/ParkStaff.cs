@@ -90,6 +90,9 @@ public sealed class StaffMember
 	public float? CellY { get; set; }
 	/// <summary>Fraction of the host's next one-cell movement interval, persisted across loads.</summary>
 	public double TravelSeconds { get; set; }
+	/// <summary>Runtime-only staff source owner; excluded from gameplay saves and hashes.</summary>
+	[System.Text.Json.Serialization.JsonIgnore]
+	public StaffBodySprite? BodySprite { get; internal set; }
 	public bool IsAvailable => BusyTicks == 0 && State is not (StaffState.OnStrike or StaffState.PickedUp or StaffState.Resting);
 
 	// A handyman, entertainer or guard in a world (IStaffWorld): the original's state machine and walk (docs/reverse/WANDER-plan.md §4; tp.exe offsets in brackets).
@@ -185,6 +188,11 @@ public sealed partial class ParkStaff
 	private readonly long[] trainingBudget = new long[BalanceSettings.StaffTypeCount];
 
 	public ParkStaff( BalanceSettings settings ) => this.settings = settings;
+
+	/// <summary>A newly inserted identity, before its final world position is available.</summary>
+	public event Action<StaffMember>? MemberAdded;
+	/// <summary>A successful roster replacement invalidates its prior presentation session.</summary>
+	public event Action? MembersReplacing;
 
 	private ThingPool? things;
 
@@ -433,6 +441,7 @@ public sealed partial class ParkStaff
 		var member = new StaffMember { Id = candidate.Id, ThingId = thingId, Type = candidate.Type, NameIndex = candidate.NameIndex, Grade = candidate.Grade, HiredTick = tick, Variant = candidate.Variant };
 		members.Add( member );
 		roleOrder![(int)member.Type].Insert( 0, member.Id );
+		MemberAdded?.Invoke( member );
 		return member;
 	}
 
@@ -441,6 +450,7 @@ public sealed partial class ParkStaff
 		var member = members.FirstOrDefault( item => item.Id == staffId ) ?? throw new InvalidOperationException( $"No employee {staffId}." );
 		MaterializeRoleOrder();
 		members.Remove( member );
+		member.BodySprite?.Invalidate();
 		roleOrder![(int)member.Type].Remove( member.Id );
 		// [BIN:TPW-EXE:0x00505790 staff removal] a dismissed member's thing is destroyed through the destroy request (0x0050B780 → 0x00516310): its slot is freed at the turn's end
 		if ( things != null && member.ThingId != 0 )
@@ -487,23 +497,49 @@ public sealed partial class ParkStaff
 
 	internal void Restore( IEnumerable<StaffMember> restoredMembers, IEnumerable<StaffCandidate> restoredCandidates, IReadOnlyList<long> budgets, int nextId, long nextPoolUpdate )
 	{
-		PendingPlacementId = 0;
+		// A failed candidate must leave the live roster, thing pool and source/clone identities untouched.
+		var replacement = restoredMembers.ToList();
+		var replacementCandidates = restoredCandidates.ToList();
+		var replacementBudgets = Enumerable.Range( 0, trainingBudget.Length ).Select( index => index < budgets.Count ? budgets[index] : 0 ).ToArray();
+		var previous = members.ToArray();
+		ThingPoolSnapshot? replacementThings = null;
+		var adopted = new List<(StaffMember Member, int ThingId)>();
 		if ( things != null )
-			foreach ( var old in members )
-				if ( old.ThingId != 0 )
-					things.Release( old.ThingId );
+		{
+			var candidateThings = new ThingPool();
+			candidateThings.RestoreSnapshot( things.CaptureSnapshot() );
+			foreach ( var old in previous )
+				if ( old.ThingId != 0 ) candidateThings.Release( old.ThingId );
+			var seen = new HashSet<int>();
+			foreach ( var member in replacement )
+			{
+				var id = member.ThingId;
+				var model = ThingModelOf( member.Type );
+				if ( id == 0 ) id = candidateThings.Allocate( model );
+				else if ( candidateThings.IsUsed( id ) ? candidateThings.ModelOf( id ) != model : !candidateThings.Occupy( id, model ) )
+					throw new InvalidDataException( $"Staff member {member.Id}'s thing id {id} is not a free {model} slot of the thing pool." );
+				if ( id != 0 && !seen.Add( id ) )
+					throw new InvalidDataException( $"Staff thing id {id} belongs to two members." );
+				adopted.Add( (member, id) );
+			}
+			replacementThings = candidateThings.CaptureSnapshot();
+		}
+
+		if ( replacementThings != null ) things!.RestoreSnapshot( replacementThings );
+		foreach ( var (member, thingId) in adopted ) member.ThingId = thingId;
+		PendingPlacementId = 0;
 		members.Clear();
-		members.AddRange( restoredMembers );
+		members.AddRange( replacement );
 		// Legacy saves resolve against the current pool only when read; attachment never replaces an explicit order.
 		roleOrder = null;
-		if ( things != null )
-			AttachThings( things );
 		candidates.Clear();
-		candidates.AddRange( restoredCandidates );
-		for ( var index = 0; index < trainingBudget.Length; index++ )
-			trainingBudget[index] = index < budgets.Count ? budgets[index] : 0;
+		candidates.AddRange( replacementCandidates );
+		Array.Copy( replacementBudgets, trainingBudget, trainingBudget.Length );
 		NextId = nextId;
 		NextPoolUpdateTick = nextPoolUpdate;
+		MembersReplacing?.Invoke();
+		foreach ( var old in previous ) old.BodySprite?.Invalidate();
+		foreach ( var member in members ) MemberAdded?.Invoke( member );
 	}
 
 	internal int AllocateId() => NextId++;
@@ -528,6 +564,7 @@ public sealed partial class ParkStaff
 		MaterializeRoleOrder();
 		members.Add( member );
 		roleOrder![(int)member.Type].Insert( 0, member.Id );
+		MemberAdded?.Invoke( member );
 		return member;
 	}
 

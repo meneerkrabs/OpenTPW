@@ -11,7 +11,7 @@ namespace OpenTPW.Hud;
 // [BIN:TPW-EXE:0x004b6080 employee window] the opener stores the member, builds table 0x756f48 through 0x48cea0 (handler 0x4b5cb0, frames 0x511 and 0x512) and
 // posts help 0xc0; 0x48cea0 first closes the window that is open (0x485b40), so the All Staff list (0x496088, its row message 0x400) gives way to it
 // [BIN:TPW-EXE:0x00486920 thing info] a click on a staff thing (types 4-8) opens this window too; OpenTPW opens it from the staff list (no staff click in the park)
-// [APPROX:UI-092] the employee portrait reads the current world output at yaw zero, with the existing hire loop when unavailable; this is not the original independent clone (0x486530 / 0x486610). Clone timing/state/flag semantics, source-loss lifecycle, native depth/occlusion and viewport/raster parity remain open; employee-only nominal geometry is 2.4 with authored feet (526,476).
+// [APPROX:UI-092] Shared CPU source/clone ownership uses immediate host full events and post-simulation partial-to-heading order. Native full-event/modal ordering, exceptional transforms, clone-world output and depth/raster parity remain open.
 public sealed partial class ParkHud
 {
 	private static LayoutTable EmployeeTable => OriginalLayoutTables.EmployeeWindow;
@@ -21,13 +21,20 @@ public sealed partial class ParkHud
 
 	private UiScreen? employeeScreen;
 	private int employeeId;
+	private StaffMember? employeeIdentity;
+	private int employeeThingId;
+	private StaffSpritePresentation? employeeSession;
+	private EmployeePortraitOwner? employeePortrait;
+	internal EmployeePortraitOwner? EmployeePortrait => employeePortrait;
 	private bool employeeArrows;
 	private float employeeStatsAge;
 	private EmployeeStats employeeStats;
 
 	public bool EmployeeWindowOpen => employeeScreen != null && Stack.Screens.Contains( employeeScreen );
 	/// <summary>The employee the window shows (tp.exe's selected staff 0x7c2658), null when it is closed or the member left.</summary>
-	public StaffMember? Employee => EmployeeWindowOpen ? StaffMembers.FirstOrDefault( member => member.Id == employeeId ) : null;
+	public StaffMember? Employee => EmployeeWindowOpen && employeeIdentity is { } selected && selected.Id == employeeId
+		&& selected.ThingId == employeeThingId && StaffMembers.Contains( selected ) && ReferenceEquals( employeeSession, level.StaffSprites )
+		&& employeeSession?.IsDisposed != true ? selected : null;
 	/// <summary>Whether the cycle arrows show (more than one employee when the window opened).</summary>
 	public bool EmployeeArrowsVisible => employeeArrows;
 	/// <summary>The stats frame as last refreshed.</summary>
@@ -38,20 +45,74 @@ public sealed partial class ParkHud
 	/// <summary>Opens the window on <paramref name="member"/>; the staff window gives way to it.</summary>
 	public bool OpenEmployeeWindow( StaffMember member )
 	{
-		if ( StaffMembers.All( item => item.Id != member.Id ) )
-			return false;
-		CloseStaffWindow();
+		if ( !StaffMembers.Contains( member ) ) return false;
 		if ( EmployeeWindowOpen )
-			CloseEmployeeWindow();
-		employeeId = member.Id;
-		// [BIN:TPW-EXE:0x004b5a60 employee window init] the staff count of mask 1 (every staff thing, 0x48ca00) below 2 hides the arrows 0x50d and 0x50f; the title 0x520 takes the name
+			return ReferenceEquals( Employee, member ) || SelectEmployee( member );
+		CloseStaffWindow();
+		CaptureEmployee( member );
+		// [BIN:TPW-EXE:0x004b5a60 employee window init] only initial construction chooses the arrow visibility.
 		employeeArrows = StaffMembers.Count >= 2;
-		RefreshEmployeeStats();
 		employeeScreen ??= CreateEmployeeScreen();
 		Stack.Push( employeeScreen );
+		FullRefreshEmployee();
 		employeeScreen.Focus( employeeScreen.Find( "exit" ) );
 		PostPatrolAreaHelp( member );
 		return true;
+	}
+
+	private void CaptureEmployee( StaffMember member )
+	{
+		employeeIdentity = member;
+		employeeId = member.Id;
+		employeeThingId = member.ThingId;
+		employeeSession = level.StaffSprites;
+	}
+
+	/// <summary>A different selection is an immediate full event; selecting the same object is idempotent.</summary>
+	public bool SelectEmployee( StaffMember member )
+	{
+		if ( !EmployeeWindowOpen || !StaffMembers.Contains( member ) ) return false;
+		if ( ReferenceEquals( Employee, member ) ) return true;
+		CaptureEmployee( member );
+		FullRefreshEmployee();
+		PostPatrolAreaHelp( member );
+		return true;
+	}
+
+	private void FullRefreshEmployee()
+	{
+		RefreshEmployeeStats();
+		if ( Employee is not { } member ) return;
+		if ( employeeSession == null ) { employeePortrait?.Dispose(); employeePortrait = null; return; }
+		if ( employeePortrait == null || employeePortraitSession != employeeSession )
+		{
+			employeePortrait?.Dispose();
+			employeePortrait = new EmployeePortraitOwner( employeeSession );
+			employeePortraitSession = employeeSession;
+		}
+		var control = EmployeeTable.Control( 0x511 );
+		var feet = EmployeePortraitGeometry.Feet( control.Inner ?? control.Rect );
+		// [APPROX:UI-092] Host depth slot 1 (including the native +1), because UiScreen has no recovered control-depth word.
+		employeePortrait.FullRefresh( member, (feet.X - 1024f) / 1024f, (768f - feet.Y) / 768f, 1f - 1f / 40f );
+	}
+	private StaffSpritePresentation? employeePortraitSession;
+
+	/// <summary>Called once by the outer-frame coordinator, even with a rename child on top. Never schedules a VM.</summary>
+	internal void RefreshEmployeePortrait()
+	{
+		if ( !EmployeeWindowOpen ) return;
+		if ( Employee == null ) { CloseEmployeeWindow(); return; }
+		employeePortrait?.PartialRefresh();
+	}
+
+	private void EmployeeScreenRemoved()
+	{
+		CloseEmployeeRenameDialog();
+		employeePortrait?.Dispose();
+		employeePortrait = null;
+		employeePortraitSession = null;
+		employeeIdentity = null;
+		employeeSession = null;
 	}
 
 	public void CloseEmployeeWindow()
@@ -77,7 +138,7 @@ public sealed partial class ParkHud
 	{
 		employeeStatsAge = 0;
 		var economy = Status.EconomySource as ParkEconomy;
-		var member = StaffMembers.FirstOrDefault( item => item.Id == employeeId );
+		var member = employeeIdentity is { } selected && StaffMembers.Contains( selected ) && selected.ThingId == employeeThingId ? selected : null;
 		employeeStats = member == null ? default : EmployeeWindowRules.Stats( member, economy?.Tick ?? 0, economy?.Staff.MonthlyWage( member ) ?? 0 );
 	}
 
@@ -91,10 +152,7 @@ public sealed partial class ParkHud
 		var next = EmployeeWindowRules.Cycle( StaffMembers, member.Id, forward, (Status.EconomySource as ParkEconomy)?.Staff.Things );
 		if ( next == null || next.Id == member.Id )
 			return false;
-		employeeId = next.Id;
-		RefreshEmployeeStats();
-		PostPatrolAreaHelp( next );
-		return true;
+		return SelectEmployee( next );
 	}
 
 	/// <summary>Whether the pick-up button is enabled (tp.exe <c>CanBePickedUp</c> 0x505bd0, read on every message 0x1e).</summary>
@@ -206,28 +264,14 @@ public sealed partial class ParkHud
 		return true;
 	}
 
-	private (StaffType Type, int Variant)? employeePortraitKey;
-	private float employeePortraitStart;
-
-	/// <summary>The employee's published world frame at yaw zero, otherwise the existing role/variant hire-loop fallback.</summary>
-	private UiSpriteFrame? EmployeePortraitFrame()
-	{
-		(StaffType Type, int Variant)? key = Employee is { } member ? (member.Type, StaffSpriteRules.KeyOf( member )) : null;
-		if ( key != employeePortraitKey )
-		{
-			employeePortraitKey = key;
-			employeePortraitStart = Time.Now;
-		}
-		// Keep the old fallback clock/key updated even while a live output is available.
-		if ( Employee is { } selected && level.StaffRenderer?.EmployeeFrame( selected ) is { } live )
-			return live;
-		return key is { } chosen ? level.StaffRenderer?.PortraitFrame( chosen.Type, chosen.Variant, Time.Now - employeePortraitStart ) : null;
-	}
+	/// <summary>Pure clone observation and current resource acquisition; no hire fallback, world draw prerequisite or clock mutation.</summary>
+	private UiSpriteFrame? EmployeePortraitFrame() => Employee != null && employeePortrait?.DrawRecord is { } record
+		? level.StaffRenderer?.EmployeeFrame( record ) : null;
 
 	private UiScreen CreateEmployeeScreen()
 	{
 		var screen = new EmployeeScreen( this );
-		screen.Removed = CloseEmployeeRenameDialog;
+		screen.Removed = EmployeeScreenRemoved;
 		var table = EmployeeTable;
 		screen.Add( new UiModelImage { Id = "window", Model = table.Root.Model!, Bounds = table.Root.Rect, Anchor = UiAnchor.Center } );
 		var portrait = table.Control( 0x511 );
@@ -236,7 +280,7 @@ public sealed partial class ParkHud
 		var stats = table.Control( 0x512 );
 		screen.Add( new UiModelImage { Id = "portraitFrame", Model = portrait.Model!, Bounds = portrait.Rect, Anchor = UiAnchor.Center } );
 		screen.Add( new UiModelImage { Id = "statsFrame", Model = stats.Model!, Bounds = stats.Rect, Anchor = UiAnchor.Center } );
-		// [BIN:TPW-EXE:0x4b5330 employee figure] 0x486530 clones the employee's live sprite at scale 8.0, with draw depth control +0xE0 + 1; the host observes its current world output, with the existing hire-loop fallback (UI-092).
+		// [BIN:TPW-EXE:0x4b5330 employee figure] 0x486530 clones the employee's live sprite at scale 8.0, with draw depth control +0xE0 + 1; the CPU owner preserves the independent clone, and the callback observes its current immutable output.
 		screen.Add( new UiSpriteFigure { Id = "portraitFigure", Frame = EmployeePortraitFrame, Bounds = inner, Anchor = UiAnchor.Center,
 			FeetInCanvas = EmployeePortraitGeometry.Feet( inner ), CanvasUnitsPerPixel = EmployeePortraitGeometry.CanvasUnitsPerPixel } );
 		var title = table.Control( 0x520 );

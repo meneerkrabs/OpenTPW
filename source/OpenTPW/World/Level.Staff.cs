@@ -13,6 +13,11 @@ public partial class Level
 	private void SetupStaff()
 	{
 		if ( Park == null || Guests == null ) return;
+		StaffSpriteSet sprites;
+		using ( LoadProfile.Measure( "staff-sprites" ) )
+			sprites = StaffSpriteSet.Load( LevelName );
+		StaffSprites = new StaffSpritePresentation( new StaffSpriteMetadataCatalog( sprites ), () => Park.Economy.Staff.Members, Park.Economy.Tick, ready: false );
+		StaffSprites.AttachRoster( Park.Economy.Staff );
 		var lane = Guests.Settings.ArrivalLaneA ?? Guests.Settings.ArrivalLaneB;
 		StaffWorld = new StaffWorldSimulation( Guests.Grid, () => Park.Economy.Staff.Members, StaffJobAccess,
 			lane is { Length: > 0 } ? lane[^1] : null );
@@ -43,10 +48,8 @@ public partial class Level
 		PatrolTool = new PatrolAreaTool( () => Park?.Economy );
 		if ( OriginalPark != null )
 		{
-			StaffSpriteSet sprites;
-			using ( LoadProfile.Measure( "staff-sprites" ) )
-				sprites = StaffSpriteSet.Load( LevelName );
-			StaffRenderer = new StaffRenderer( () => Park.Economy.Staff.Members, OriginalPark.Heightfield, sprites, StaffPlacement );
+			StaffRenderer = new StaffRenderer( () => Park.Economy.Staff.Members, OriginalPark.Heightfield, sprites, StaffPlacement,
+				StaffSprites.Catalog, member => member.BodySprite?.DrawRecord, () => StaffSprites?.Session ?? 0 );
 		}
 	}
 

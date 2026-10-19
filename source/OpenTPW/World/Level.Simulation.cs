@@ -17,7 +17,10 @@ public partial class Level
 			var lost = Park?.Economy.IsBankrupt == true;
 			Guests?.SetBodySpriteHostRunning( substep.Running );
 			if ( substep.Running )
+			{
 				Guests?.SetBodySpriteClock( GuestSimulation.BodySpriteSampleAtTick( (Park?.Economy.Tick ?? simulationClock.TickCount) + 1 ) );
+				StaffSprites?.SetHostTick( (Park?.Economy.Tick ?? simulationClock.TickCount) + 1 );
+			}
 			// A park whose guests take their ids from the level's thing pool runs its turns as the original does (0x00516380): the tick that starts a turn runs the substep's ride scripts, then the sweep over the
 			// pool newest first, the gate retry, the turn's destroys and the arrival update. Without a park or its guests in the pool, in a lost park or where the economy and the guests count turns apart (a paused
 			// economy) the turn is not swept: the things update in the order of the ticks between turns, and the destroys are freed at the end of each tick.
@@ -38,7 +41,10 @@ public partial class Level
 				Objects.Simulate( deltaTime, substep, PlacedRide );
 				// The non-pooled host keeps its existing guest-before-object order; only pooled turn sweeps provide native scheduler-before-guest ordering.
 				if ( substep.TourDue )
+				{
 					Guests?.ScheduleBodySprites();
+					StaffSprites?.Schedule();
+				}
 				Park?.FixedTick();
 				if ( !lost )
 					AdvanceWeather();
@@ -91,7 +97,10 @@ public partial class Level
 				item.Visitors.DefersAdmission = false;
 		}
 		if ( substep.TourDue )
+		{
 			Guests!.ScheduleBodySprites();
+			StaffSprites?.Schedule();
+		}
 		Park!.Economy.ThingSweep = new LevelThingSweep( this );
 		try
 		{

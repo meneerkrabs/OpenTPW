@@ -32,13 +32,16 @@ public sealed partial class GuestSimulation
 	internal bool WinterKioskReturnEnabled { get; set; } = true;
 
 	/// <summary>
-	/// The score of <paramref name="attraction"/> for <paramref name="guest"/>: the policy's score, then the host's winter terms (<see cref="HostScore"/>). For a winter kiosk and a guest whose slots are not full, the guest's own
-	/// views do not count a winter kiosk as recently used (<see cref="WinterKioskReturn"/>).
+	/// The score of <paramref name="attraction"/> for <paramref name="guest"/>: the policy's score, then the host's winter terms (<see cref="HostScore"/>). For a winter kiosk and a guest whose slots are not full and who could pay
+	/// the kiosk's price now, the guest's own views do not count a winter kiosk as recently used (<see cref="WinterKioskReturn"/>).
 	/// </summary>
-	// [EXT:winter-kiosk-return] user-approved 2026-10-19 ("Laten terugkomen"): a guest who still lacks an item does not find the kiosk "used recently" (the same-type-as-last rule that scores it 0, the used-history division by 5, 4, 3 and 2)
+	// [EXT:winter-kiosk-return] user-approved 2026-10-19 ("Laten terugkomen"): a guest who still lacks an item does not find the kiosk "used recently" (the same-type-as-last rule that scores it 0, the used-history division by 5, 4, 3 and 2);
+	// a guest the stand-point price test would turn away (its willingness or its money below the price) keeps the game's history rules, so it is not drawn back to be refused again and again. The test is the pure
+	// QueueJoinRules.TooExpensive: a score records no price statistic (TooExpensive( Guest, ... ) at the stand point stays the only place that does)
 	internal uint WinterScoreOf( in DecisionContext context, Guest guest, in GuestView view, IRideVisitorBridge attraction, in AttractionView candidate )
 	{
-		if ( WinterKioskReturnEnabled && attraction.IsWinterKiosk && !WinterRules.SlotsFull( guest.WarmItems ) )
+		if ( WinterKioskReturnEnabled && attraction.IsWinterKiosk && !WinterRules.SlotsFull( guest.WarmItems )
+			&& !QueueJoinRules.TooExpensive( PriceTermsOf( attraction ), guest.Happiness, guest.Thirst, guest.Hunger, guest.Nausea, guest.Money ) )
 		{
 			var (returnView, returnCandidate) = WinterKioskReturn( guest, view, candidate );
 			return HostScore( guest, attraction, decisions.ScoreAttraction( context, returnView, returnCandidate ) );

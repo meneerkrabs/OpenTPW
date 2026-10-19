@@ -11,7 +11,7 @@ namespace OpenTPW.Hud;
 // [BIN:TPW-EXE:0x004b6080 employee window] the opener stores the member, builds table 0x756f48 through 0x48cea0 (handler 0x4b5cb0, frames 0x511 and 0x512) and
 // posts help 0xc0; 0x48cea0 first closes the window that is open (0x485b40), so the All Staff list (0x496088, its row message 0x400) gives way to it
 // [BIN:TPW-EXE:0x00486920 thing info] a click on a staff thing (types 4-8) opens this window too; OpenTPW opens it from the staff list (no staff click in the park)
-// [APPROX:UI-092] the employee portrait reads the current world output at yaw zero, with the existing hire loop when unavailable; this is not the original independent clone (0x486530 / 0x486610). Clone timing/state/flag semantics, source-loss lifecycle, native depth/occlusion and visual parity remain open (UI-082 owns pixel sizing).
+// [APPROX:UI-092] the employee portrait reads the current world output at yaw zero, with the existing hire loop when unavailable; this is not the original independent clone (0x486530 / 0x486610). Clone timing/state/flag semantics, source-loss lifecycle, native depth/occlusion and viewport/raster parity remain open; employee-only nominal geometry is 2.4 with authored feet (526,476).
 public sealed partial class ParkHud
 {
 	private static LayoutTable EmployeeTable => OriginalLayoutTables.EmployeeWindow;
@@ -231,11 +231,14 @@ public sealed partial class ParkHud
 		var table = EmployeeTable;
 		screen.Add( new UiModelImage { Id = "window", Model = table.Root.Model!, Bounds = table.Root.Rect, Anchor = UiAnchor.Center } );
 		var portrait = table.Control( 0x511 );
+		// [BIN:TPW-EXE:0x65beb4 type-1 inner initialization;0x65d4f6 inner getter] no explicit inner override: inherit the outer rectangle.
+		var inner = portrait.Inner ?? portrait.Rect;
 		var stats = table.Control( 0x512 );
 		screen.Add( new UiModelImage { Id = "portraitFrame", Model = portrait.Model!, Bounds = portrait.Rect, Anchor = UiAnchor.Center } );
 		screen.Add( new UiModelImage { Id = "statsFrame", Model = stats.Model!, Bounds = stats.Rect, Anchor = UiAnchor.Center } );
 		// [BIN:TPW-EXE:0x4b5330 employee figure] 0x486530 clones the employee's live sprite at scale 8.0, with draw depth control +0xE0 + 1; the host observes its current world output, with the existing hire-loop fallback (UI-092).
-		screen.Add( new UiSpriteFigure { Id = "portraitFigure", Frame = EmployeePortraitFrame, Bounds = portrait.Rect, Anchor = UiAnchor.Center } );
+		screen.Add( new UiSpriteFigure { Id = "portraitFigure", Frame = EmployeePortraitFrame, Bounds = inner, Anchor = UiAnchor.Center,
+			FeetInCanvas = EmployeePortraitGeometry.Feet( inner ), CanvasUnitsPerPixel = EmployeePortraitGeometry.CanvasUnitsPerPixel } );
 		var title = table.Control( 0x520 );
 		screen.Add( new UiLabel { Id = "title", Clicked = OpenEmployeeRenameDialog, Text = () => Employee is { } member ? StaffName( member ) : "", Help = strings.Help( title.Help ), Font = fonts => fonts.Title,
 			Color = UiColors.Title, Align = UiAlign.Center, Fit = true, Bounds = title.Rect, Anchor = UiAnchor.Center } );

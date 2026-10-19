@@ -73,11 +73,15 @@ class HirePortraitGeometryContract(unittest.TestCase):
         employee = read("source/OpenTPW/Hud/ParkHud.EmployeeWindow.cs")
         self.assertNotIn("HirePortraitGeometry", employee)
         widget = employee.split('Id = "portraitFigure"', 1)[1].split("} );", 1)[0]
-        self.assertNotIn("CanvasUnitsPerPixel", widget)
-        self.assertNotIn("FeetInCanvas", widget)
+        self.assertIn("CanvasUnitsPerPixel = EmployeePortraitGeometry.CanvasUnitsPerPixel", widget)
+        self.assertIn("FeetInCanvas = EmployeePortraitGeometry.Feet( inner )", widget)
+        self.assertIn("var inner = portrait.Inner ?? portrait.Rect", employee)
+        self.assertNotIn("VisitorInfoRules.PortraitFeet", employee)
+        self.assertNotIn("EmployeePortraitGeometry", self.hud)
         visitor = read("source/OpenTPW/Hud/ParkHud.VisitorInfoWindow.cs")
         self.assertIn("FeetInCanvas = VisitorInfoRules.PortraitFeet( inner ), CanvasUnitsPerPixel = 3.6f", visitor)
         self.assertNotIn("HirePortraitGeometry", visitor)
+        self.assertNotIn("EmployeePortraitGeometry", visitor)
 
     def test_residuals_tests_and_full_ci_stay_explicit(self):
         self.assertIn('("UI-082",', read("source/OpenTPW/UI/Original/UiApproximations.cs"))

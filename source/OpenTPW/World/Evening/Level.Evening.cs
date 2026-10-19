@@ -69,6 +69,12 @@ public partial class Level
 	private EveningClock? eveningClock;
 	private EveningLook? eveningLook;
 	private EveningLampSource? eveningLamps;
+	// [EXT:evening-torches-flicker] the torches' flames and the play-time clock their flicker follows (it runs at every pace, the fixed looks too, and stands still while the park is paused)
+	private EveningFlames? eveningFlames;
+	private double eveningFlameSeconds;
+
+	/// <summary>[EXT:evening-torches-flicker] The play time the torches' flicker follows, in seconds since the park started with the extension on (presentation only, never saved).</summary>
+	internal double EveningFlameSeconds => eveningFlameSeconds;
 
 	/// <summary>The look of the park now; full daylight (everything as the original draws it) unless the evening extension is on and it is not day. Null-safe for a level built without its constructor.</summary>
 	internal EveningLook Look => eveningLook ?? EveningLook.Day;
@@ -98,22 +104,30 @@ public partial class Level
 			return;
 		}
 		eveningClock ??= new EveningClock();
-		eveningClock.Advance( playing ? Math.Min( Math.Max( frameSeconds, 0.0 ), EveningMaximumFrameSeconds ) : 0.0, pace );
+		var step = playing ? Math.Min( Math.Max( frameSeconds, 0.0 ), EveningMaximumFrameSeconds ) : 0.0;
+		eveningClock.Advance( step, pace );
+		eveningFlameSeconds += step;
 		var look = eveningClock.Look( pace );
 		eveningLook = look.IsDay ? null : look;
 		if ( SunLight != null )
 			SunLight.Color = look.SunColour;
 		if ( eveningLamps == null && Objects != null && PointLights != null )
 		{
-			eveningLamps = new EveningLampSource( EveningLampTable.Shipped, () => Objects?.Objects ?? Array.Empty<OriginalObject>(), () => Look.LampLevel, () => Objects?.Version ?? 0 );
+			eveningLamps = new EveningLampSource( EveningLampTable.Shipped, () => Objects?.Objects ?? Array.Empty<OriginalObject>(), () => Look.LampLevel, () => Objects?.Version ?? 0, () => eveningFlameSeconds );
 			PointLights.Add( eveningLamps );
 		}
+		if ( eveningFlames == null && Objects != null )
+			eveningFlames = new EveningFlames( EveningLampTable.Shipped, () => Objects?.Objects ?? Array.Empty<OriginalObject>(), () => Objects?.Version ?? 0 );
+		eveningFlames?.Animate( eveningFlameSeconds, Look.LampLevel );
 	}
 
 	private void ResetEvening()
 	{
 		eveningClock = null;
 		eveningLook = null;
+		// the flames go back to the model's pose (not frozen, not hidden), as if the extension's look had never run
+		eveningFlames?.Clear();
+		eveningFlames = null;
 		if ( eveningLamps != null )
 			PointLights?.Remove( eveningLamps );
 		eveningLamps = null;

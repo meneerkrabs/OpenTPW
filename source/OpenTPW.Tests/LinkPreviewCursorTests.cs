@@ -81,7 +81,7 @@ public class LinkPreviewCursorTests
 		tool.Hover( (3, 4) );
 		Assert.IsFalse( Link( tool ) );
 		tool.Hover( (4, 4) );
-		tool.End();
+		tool.Cancel();
 		Assert.IsFalse( Link( tool ) );
 		tool.Enter( builder, (2, 4) );
 		tool.Hover( (4, 4) );
@@ -140,7 +140,7 @@ public class LinkPreviewCursorTests
 		typeof( ParkHud ).GetField( "pointerOverUi", hidden )!.SetValue( hud, true );
 		Assert.AreEqual( Input.CursorTypes.Normal, Select() );
 		typeof( ParkHud ).GetField( "pointerOverUi", hidden )!.SetValue( hud, false );
-		level.CellTool.End();
+		level.CellTool.Cancel();
 		Assert.AreEqual( OriginalPointers.TypeOf( OriginalPointers.ForTool( 0 ) ?? 2 ), Select() );
 		var queueGrid = new GuestPathGrid( 16, 16 );
 		queueGrid.SetPath( 2, 2, true );

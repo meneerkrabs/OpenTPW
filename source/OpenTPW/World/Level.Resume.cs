@@ -183,7 +183,7 @@ public partial class Level
 		simulationClock.RestoreSnapshot( snapshot.Clock );
 		if ( snapshot.Weather != null )
 		{
-			Weather = new ParkWeather( Park.Economy.Settings.Standard, Seed.WeatherStream, Guests.Grid.CountX, Guests.Grid.CountY, FeatureGates.WinterWeather );
+			Weather = new ParkWeather( Park.Economy.Settings.Standard, Seed.WeatherStream, Guests.Grid.CountX, Guests.Grid.CountY, FeatureGates.WinterWeather, FeatureGates.WinterAlways );
 			Weather.RestoreSnapshot( snapshot.Weather );
 			// [EXT:winter-snow-save] a resumed park keeps its snow (ignored while the extension is off)
 			resumedSnowCover = snapshot.SnowCover;

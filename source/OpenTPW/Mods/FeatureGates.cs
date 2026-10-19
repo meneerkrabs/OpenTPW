@@ -57,6 +57,12 @@ public static class FeatureGates
 	/// </summary>
 	public static bool WinterCold => OpenTpwExtensions.IsEnabled( OfficialExtensions.WinterCold ) && !GameEditions.IsThemeParkInc;
 
+	/// <summary>
+	/// [EXT:winter-always] The <c>opentpw.winter-always</c> option is on for this run: every weather roll uses December's season row and its rain and thunderstorms are snow, and the winter shops sell at their winter demand all year
+	/// (docs/WINTER.md, "Always winter"). Off by default, and not in a Theme Park Inc run, which has no Theme Park World weather.
+	/// </summary>
+	public static bool WinterAlways => OpenTpwExtensions.IsEnabled( OfficialExtensions.WinterAlways ) && !GameEditions.IsThemeParkInc;
+
 	/// <summary>The <c>opentpw.pools-guest-art</c> extension is on: the land guests use the pools extension's 2x kid and head sets (docs/POOLS.md), when the pools extension is on too.</summary>
 	public static bool PoolGuestArt => OpenTpwExtensions.IsEnabled( OfficialExtensions.PoolGuestArt );
 

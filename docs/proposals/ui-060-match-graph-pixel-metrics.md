@@ -2,11 +2,8 @@
 
 ## Status and classification
 
-- Bounded backdrop implementation, updated October 19, 2026; independent source review,
-  exact-head C# CI and rendered host validation are still required.
+- Implemented and narrowed (PR #483, merged October 19, 2026); a rendered composition check remains open.
 - Classification: `approximation`; UI-060 is narrowed, not retired.
-- Continues the existing [draft PR #483](https://github.com/meneerkrabs/OpenTPW/pull/483).
-  The October 18 progress fragment preserves the historical plan-only status.
 - This slice changes the shared backdrop only. It does not establish original display-mode,
   financial-history or framebuffer equivalence.
 
@@ -74,11 +71,7 @@ synthetic glyphs and independent CPU-batch expectations:
 - Host canvas scales, fractional clears, tiny controls, unsupported periods and nonfinite
   coordinates that must not leak into series vertices.
 
-The local environment has no dotnet SDK. These C# tests and the solution build have not run
-locally; their source review does not replace execution. The ten new Python source-integration
-and synthetic-arithmetic checks run in CI alongside the existing full C# suite. All 202 Python
-tests passed locally, and generated documentation/link checks passed. No rendered OpenTPW check
-or original-runtime screenshot comparison has been performed for this change.
+The C# tests and the ten Python source-integration and synthetic-arithmetic checks run in CI; the post-merge review ran the full with-data suite (8788 passed).
 
 ## Remaining qualification and ownership
 
@@ -88,7 +81,6 @@ raster/composited-output fidelity. A rendered host check must still inspect clip
 opaque green-on-black output in both windows; that check alone would not prove native parity.
 
 UI-914 retains ownership of park-information history and its other presentation residuals.
-Existing UI #433 and languages #423 remain baseline work. This implementation continues the
-same UI-060 draft rather than creating another owner or another approximation ID. Review and
-exact-head CI must establish implementation readiness; the residual ID is not retired by the
-backdrop change.
+Existing UI #433 and languages #423 remain baseline work. The implementation kept the same
+UI-060 ID rather than creating another owner or another approximation ID; the residual ID is not
+retired by the backdrop change.

@@ -196,11 +196,13 @@ fragment {
         }
 
         // [EXT:evening] at dusk and night (the tinted ambient is set only then) a soft shoulder keeps a near-white surface lit by a lamp, such as the ticket booths' panels, from burning out to flat white;
-        // the colour is untouched up to a brightest channel of 0.4, above it only 25 % of the excess is kept, scaling all three channels so the lamp's warm hue stays (day and extension-off draws skip this: the tint is all zero)
+        // the colour is untouched up to a brightest channel of 0.4, above it only 25 % of the excess is kept, scaling all three channels so the lamp's warm hue stays (day and extension-off draws skip this: the tint is all zero).
+        // It fades in with the falling ambient (none at the first dusk frame, whole at full night: the ambient left goes from 1 to 0.35), so a lit surface never jumps between two frames
         if ( vAmbientTint.x + vAmbientTint.y + vAmbientTint.z > 0.0 )
         {
             float peak = max( vOutColor.x, max( vOutColor.y, vOutColor.z ) );
-            vOutColor *= peak > 0.4 ? ( 0.4 + ( peak - 0.4 ) * 0.25 ) / peak : 1.0;
+            vec3 vShouldered = vOutColor * ( peak > 0.4 ? ( 0.4 + ( peak - 0.4 ) * 0.25 ) / peak : 1.0 );
+            vOutColor = mix( vOutColor, vShouldered, clamp( ( 1.0 - g_oUbo.g_flAmbientLevel ) / 0.65, 0.0, 1.0 ) );
         }
 
         // Handle opaque alpha testing

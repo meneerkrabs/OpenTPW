@@ -22,7 +22,7 @@ These are the user's answers to the plan's open questions; they were given on **
   line, only a short on-screen note. `[EXT:cheats-ticket-provenance]`
 - **The rest as the plan recommends:** weather choices clear, rain, thunderstorm and snow, through a forecast with zero warning (`[EXT:cheats-weather]`); arrival group sizes bus up
   to 35, plane 36-60, boat 61 or more (`[EXT:cheats-arrival]`); vehicle ceilings 32 for bumper cars and karts, 64 for boats and 40 for tours, coasters later (`[EXT:cheats-ride-vehicles]`);
-  an export to the original save format writes `CHTS = 01 01` for a cheated park and refuses rides above the original limits (`[EXT:cheats-export]`).
+  an export to the original save format writes `CHTS = 01 01` (the shipped seed's value) for a cheated park and refuses rides above the original limits (`[EXT:cheats-export]`).
 
 ## The original's cheat system
 
@@ -41,14 +41,22 @@ These are the user's answers to the plan's open questions; they were given on **
 
 ### The cheat object `0xFB3520`
 
-- A function-local static of 12 bytes. Its constructor `0x4053B0` clears `+0x9`, `+0xA` and `+0xB`; it runs once, from the first of its users (the rename handler and the key paths).
-- `+0xA` is the **cheat mode**. `0x4053C0(on)` writes it; when on, it builds a `CMsgCheatMode` (vtable `0x6FD6C8`, built by `0x40F6D0` with the payload byte at `+8`; type `0x15` from
-  `0x405530`) and posts it through the message centre (`0x788D3C`, `0x40FB10`). Which things listen to type `0x15` is a runtime subscription and was not found statically; nothing in
-  OpenTPW posts it.
+- A static of 12 bytes behind **three separate first-use guards**: `0xFB3519` bit 1 (the save writer `0x416C61` and the loader `0x415C21`), `0xFB34C4` bit 1 (the rename handler `0x4995D5`)
+  and `0xFB34C8` bit 1 (the two key paths `0x4888D2`, `0x488961`). The first use of each guard in a process runs the constructor `0x4053B0` again on the same object, which clears `+0x9`,
+  `+0xA` and `+0xB`. So in the original the mode can be lost once per run: the first key message that reaches the cheat check clears a mode that a load or the rename had just set (the
+  first Alt cheat after a first rename then finds the mode off), and a first rename after loading clears the loaded `+0xB`, so the next save writes `01 00`. This is an artefact of the
+  process's history, not park state; OpenTPW keeps the mode with the park and does not reproduce it (a port decision of K2).
+- `+0xA` is the **cheat mode**. `0x4053C0(on)` writes it; when on, it builds a message object (vtable `0x6FD6C8`, built by `0x40F6D0` with the payload byte at `+8`; type `0x15` from
+  `0x405530`; `CMsgCheatMode` in the Mac build's class list, docs/reverse/AREAS.md) and posts it through the message centre (`0x788D3C`, `0x40FB10`). Which things listen to type
+  `0x15` is a runtime subscription and was not found statically; nothing in OpenTPW posts it.
 - `0x405560` returns `+0xA`; its only callers are the two key paths below (`0x488902`, `0x488991`).
-- `+0xB` is saved and loaded but no `tp.exe` code writes it (byte scan of every `0xFB3520` reference). The eleven Nexus corpus saves carry `CHTS = 01 01`
-  (`SavePayloadLayoutTests`), so another build may have set it; its meaning is unknown. `+0x9` is only cleared.
-- Nothing ever calls `0x4053C0(0)`: renaming the park to another name leaves the mode on. Only loading a save or a level replaces it.
+- `+0xB` is saved and loaded, but apart from the constructor (which clears it) and the loader no `tp.exe` code writes it (byte scan of every `0xFB3520` reference); its meaning is
+  unknown. `+0x9` is only cleared.
+- **The jungle's shipped `Easymode.TPWI` carries `CHTS = 01 01`** (`SavePayloadLayoutTests`): it was saved with the cheat mode on. The eleven Nexus corpus saves carry `00 00`. If a park
+  started from the shipped seed loads it through the payload reader `0x415270`, the original starts that park in cheat mode (and, if the server reads the byte, could not publish it).
+  OpenTPW does not mark a park started from the shipped seed (a port decision of K2).
+- Nothing ever calls `0x4053C0(0)` (its only caller is the rename handler, `0x49960A`): renaming the park to another name leaves the mode on. Only loading a save or a level, or the
+  constructor's re-runs above, replaces it.
 
 ### The save chunk `[BIN:TPW-EXE:0x4055D0, 0x405570]`
 
@@ -68,8 +76,9 @@ These are the user's answers to the plan's open questions; they were given on **
   `0x40C990` takes the first entry whose key **and** mask are equal (`0x40C9C7`, `0x40C9D3`): **Alt alone**, not with Shift or Ctrl.
 - The key handler (the engine's key messages `0x1000A` and `0x1000B`, the jump table at `0x4889D0`) tries the camera (`0x787C14`), game (`0x787A60`) and shortcuts (`0x78721C`)
   contexts in that order and only then, if `0x405560` is true, the cheat context: `0x48890F` dispatches a `0x1000A` message through `0x40C900` (handler `+0x10`, none in the cheat
-  table) and `0x48899A` a `0x1000B` message through `0x40C990` (handler `+0xC`). Which of the two is the key press was not traced; OpenTPW fires a cheat on the press. The cheat keys
-  are not rebindable.
+  table) and `0x48899A` a `0x1000B` message through `0x40C990` (handler `+0xC`). `0x40C900` sets the entry's pressed flag (`+6 = 1`, `0x40C974`) and `0x40C990` clears it (`0x40CA04`), so
+  `0x1000A` is the key press and `0x1000B` the release: **a cheat fires when its key is released**, with Alt still held (the mask is read at that moment). The cheat keys are not
+  rebindable.
 
 ### The twelve cheats (table `0x7484D0`)
 
@@ -92,8 +101,8 @@ These are the user's answers to the plan's open questions; they were given on **
   is **silent**.
 - `0x5AF810(kind)` returns 0 when the park already holds the ticket; otherwise it sets the park's byte and returns 1, or 2/3 when the new total makes a golden key (the key rule
   `AdvisorScanChallenges` documents).
-- `0x5AF940(kind, 100)`: when no park holds the global ticket, this park takes it with record 100; when this park holds it, nothing happens (0); when another park holds it with a
-  record below 100, the ticket moves here (4).
+- `0x5AF940(kind, 100)`: when no park holds the global ticket, this park takes it with record 100 and the result is 1, or 2/3 with a key, as for `0x5AF810`; when this park holds it,
+  nothing happens (0); when another park holds it with a record below 100, the ticket moves here (4); a holder with a record of 100 or more keeps it (0).
 - The two secret tickets (CamerasEverywhere, AllLandOwned, `0x5AFB00`) have no cheat. No handler checks the game mode or `CanEarnTickets`.
 
 ### Publishing

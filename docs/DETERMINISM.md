@@ -320,6 +320,9 @@ Still outside these runs, and so not proven identical:
 - the work `Level.Update` does by wall time outside the fixed tick (`SceneClock`, `RefreshPools`, `UpdateEvening`, `UpdateSnow`);
 - the per-frame staff calls of `Level.Update` outside the tick: `StaffWorld.Synchronize` (the tick repeats it before it moves anyone) and
   `StaffPlacement.Reconcile`, which returns a picked-up member that no local tool carries to idle;
+- `FlatRideBounceRiders.Prepare` (`Level.AdvanceSimulation`, via `PrepareRideBodyPoses`), which runs once per frame after that frame's ticks and
+  changes the guests' ride-body state, so its result depends on how ticks are batched into frames;
+- the `Update()` of every entity (`Entity.All`), which runs after the simulation each frame;
 - a NaN that reaches hashed state, whose sign and payload differ between x86, ARM and WebAssembly.
 
 The co-op hash check covers the unhashed state only once it reaches hashed state.

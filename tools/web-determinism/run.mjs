@@ -5,7 +5,7 @@
 // compiles the tests into it (the published page never carries them):
 //
 //   dotnet publish source/OpenTPW.Web/OpenTPW.Web.csproj -c Release -p:RunAOTCompilation=true -p:OpenTpwDeterminismPins=true -o out/web-pins
-//   node tools/web-determinism/run.mjs out/web-pins/wwwroot [--classes A,B] [--report report.json] [--chrome path] [--measure]
+//   node tools/web-determinism/run.mjs out/web-pins/wwwroot [--classes A,B] [--report report.json] [--chrome path] [--measure] [--max-inconclusive N]
 //
 // Without --classes it runs the pin classes below. It prints one line per test and a summary; it exits 1 when a test fails (a pin the
 // browser does not reproduce) unless --measure is given, which only reports. No game data is used.
@@ -31,19 +31,20 @@ export const SKIPPED = new Map([
 ]);
 
 function parseArguments(argv) {
-	const options = { webRoot: null, classes: PIN_CLASSES, report: null, chrome: process.env.CHROME ?? null, measure: false, timeoutMs: 30 * 60000 };
+	const options = { webRoot: null, classes: PIN_CLASSES, report: null, chrome: process.env.CHROME ?? null, measure: false, timeoutMs: 30 * 60000, maxInconclusive: 7 };
 	for (let index = 0; index < argv.length; index++) {
 		const argument = argv[index];
 		if (argument === '--classes') options.classes = argv[++index].split(',').map(name => name.trim()).filter(Boolean);
 		else if (argument === '--report') options.report = argv[++index];
 		else if (argument === '--chrome') options.chrome = argv[++index];
 		else if (argument === '--measure') options.measure = true;
+		else if (argument === '--max-inconclusive') options.maxInconclusive = Number(argv[++index]);
 		else if (argument === '--timeout-minutes') options.timeoutMs = Number(argv[++index]) * 60000;
 		else if (!options.webRoot) options.webRoot = argument;
 		else throw new Error(`Unknown argument ${argument}`);
 	}
 	if (!options.webRoot)
-		throw new Error('Usage: node tools/web-determinism/run.mjs <published wwwroot> [--classes A,B] [--report file] [--chrome path] [--measure]');
+		throw new Error('Usage: node tools/web-determinism/run.mjs <published wwwroot> [--classes A,B] [--report file] [--chrome path] [--measure] [--max-inconclusive N]');
 	return options;
 }
 
@@ -137,7 +138,10 @@ async function main() {
 	console.log(`\n${report.summary.passed} passed, ${report.summary.failed} failed, ${report.summary.inconclusive} inconclusive, ${report.summary.skipped} skipped, ${report.summary.platformLibraryDiffers} platform-library comparisons differ (informative)`);
 	if (options.report)
 		await fs.writeFile(options.report, JSON.stringify(report, null, 2) + '\n');
-	if (report.summary.failed > 0 && !options.measure)
+	// The asset-free classes leave exactly 7 tests inconclusive (they need game data); more means a pin silently stopped running.
+	if (report.summary.inconclusive > options.maxInconclusive)
+		console.log(`${report.summary.inconclusive} inconclusive tests, more than the ${options.maxInconclusive} that need game data (--max-inconclusive)`);
+	if ((report.summary.failed > 0 || report.summary.inconclusive > options.maxInconclusive) && !options.measure)
 		process.exitCode = 1;
 }
 

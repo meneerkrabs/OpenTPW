@@ -19,7 +19,9 @@ export function compareTheme(left, right) {
 	for (const part of ['fixedRun', 'fixedRunWithStaff', 'weather'])
 		if (left[part] !== right[part])
 			differences.push({ part, left: left[part], right: right[part] });
-	if (left.m4 && right.m4 && (left.m4.digest !== right.m4.digest || left.m4.count !== right.m4.count)) {
+	if (Boolean(left.m4) !== Boolean(right.m4))
+		differences.push({ part: 'm4', left: left.m4 ? `${left.m4.digest} (${left.m4.count})` : 'missing', right: right.m4 ? `${right.m4.digest} (${right.m4.count})` : 'missing' });
+	else if (left.m4 && right.m4 && (left.m4.digest !== right.m4.digest || left.m4.count !== right.m4.count)) {
 		const a = left.m4.hashes ?? [], b = right.m4.hashes ?? [];
 		const index = a.findIndex((entry, i) => !b[i] || entry[0] !== b[i][0] || entry[1] !== b[i][1]);
 		differences.push({ part: 'm4', left: `${left.m4.digest} (${left.m4.count})`, right: `${right.m4.digest} (${right.m4.count})`,
@@ -46,6 +48,11 @@ async function main() {
 		console.log(`${theme}: ${differences.length === 0 ? 'identical' : differences.map(item => `${item.part} ${item.left} != ${item.right}${item.firstDifference ? ` (first: ${JSON.stringify(item.firstDifference)})` : ''}`).join('; ')}`);
 		different += differences.length;
 	}
+	for (const theme of right.keys())
+		if (!left.has(theme)) {
+			console.log(`${theme}: missing on the left`);
+			different++;
+		}
 	process.exitCode = different ? 1 : 0;
 }
 

@@ -134,17 +134,40 @@ public class SavedSoundVolumesTests
 	}
 
 	[TestMethod]
-	public void ADirtyWordOfZeroPushesNothing()
+	public void ADirtyWordOfZeroStillPlaysTheSavesValues()
 	{
+		// park entry ends with 0x51E6F0(0), which sets the dirty word after the load (0x54F3AE), so the saved word does not matter
 		using var mixer = new AudioMixer( null );
 		var options = new GameOptions();
-		var line = GameAudio.ApplySavedSound( Block( Settings( 50, 10, 10, 10, 0, 0, 0, dirty: 0 ) ), options );
-		StringAssert.Contains( line, "dirty word is 0" );
+		var line = GameAudio.ApplySavedSound( Block( Settings( 50, 10, 20, 30, 1, 1, 1, dirty: 0 ) ), options );
+		StringAssert.Contains( line, "master 50, effects 10 on, music 20 on, speech 30 on" );
 		GameAudio.ApplyOptions( mixer, options );
-		Assert.AreEqual( 0.6f, mixer.GetChannelGain( AudioChannel.Music ), 1e-6f );
-		Assert.AreEqual( 1f, mixer.MasterGain );
+		Assert.AreEqual( 0.2f, mixer.GetChannelGain( AudioChannel.Music ), 1e-6f );
+		Assert.AreEqual( 0.5f, mixer.MasterGain, 1e-6f );
+		GameAudio.ResetSavedSound();
 		StringAssert.Contains( GameAudio.ApplySavedSound( Block( new byte[83] ), options ), "no 84-byte settings" );
 		Assert.IsNull( GameAudio.SavedVolumes );
+	}
+
+	[TestMethod]
+	public void AChannelTheSaveSwitchedOffStaysSilentUntilOk()
+	{
+		// the slider and the toggle call only the volume setter (0x4A2E90); only the applier 0x423DD0 sets the on-flags
+		using var mixer = new AudioMixer( null );
+		var options = new GameOptions();
+		GameAudio.ApplySavedSound( Block( Settings( 100, 40, 20, 90, 1, 0, 1 ) ), options );
+		options.MusicVolume = 30;
+		GameAudio.ApplyOptions( mixer, options );
+		Assert.AreEqual( 0f, mixer.GetChannelGain( AudioChannel.Music ), "the saved music on-flag still keeps music off" );
+		options.MusicOn = false;
+		GameAudio.ApplyOptions( mixer, options );
+		options.MusicOn = true;
+		GameAudio.ApplyOptions( mixer, options );
+		Assert.AreEqual( 0f, mixer.GetChannelGain( AudioChannel.Music ), "a toggle does not set the on-flag either" );
+		Assert.AreEqual( 0.4f, mixer.GetChannelGain( AudioChannel.Effects ), 1e-6f );
+		GameAudio.EndSavedVolumes();
+		GameAudio.ApplyOptions( mixer, options );
+		Assert.AreEqual( 0.3f, mixer.GetChannelGain( AudioChannel.Music ), 1e-6f, "OK applies the option's on-flag and volume" );
 	}
 
 	[TestMethod]

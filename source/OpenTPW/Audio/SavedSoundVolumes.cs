@@ -6,7 +6,7 @@ namespace OpenTPW;
 /// <c>opentpw-options.json</c>) are never changed: the original keeps the profile's options in their own struct (<c>0x78D8E8</c>), which the save loader does not
 /// touch, and writes the profile file only from that struct (docs/AUDIO.md, "Volumes of a loaded original save").
 /// </summary>
-// [BIN:TPW-EXE:0x51C400 sound loader] the loader copies the saved 84 bytes into the sound-service globals 0x803AA0, the volumes' shadows included; the tick 0x51BD70 pushes all seven mixer values (master +0x18, effects +0x1C, music +0x20, speech +0x24, the on-flags +0x38/+0x3C/+0x40) while the saved dirty word +0x28 is non-zero
+// [BIN:TPW-EXE:0x51C400 sound loader] the loader copies the saved 84 bytes into the sound-service globals 0x803AA0, the volumes' shadows included; the tick 0x51BD70 pushes all seven mixer values (master +0x18, effects +0x1C, music +0x20, speech +0x24, the on-flags +0x38/+0x3C/+0x40) while the dirty word +0x28 is non-zero, and park entry sets it after the load (0x54F3AE)
 // [BIN:TPW-EXE:0x423DD0 options applier] only the applier pushes the profile's volumes (0x78D8E8..0x78D8FC) to the shadows again; its callers are the options screen's OK (0x4237F0 from 0x4A2BF0), the profile file read and write (0x423E90, 0x4242C0; written at park exit, state 12 of 0x54E360 through 0x5C8650) and the defaults (0x423690), so a loaded save's volumes hold until one of those or a slider or toggle of that channel (0x4A2BF0 messages 0x800/0x801 call one setter)
 public sealed class SavedSoundVolumes
 {
@@ -34,22 +34,24 @@ public sealed class SavedSoundVolumes
 	public bool Holding => channels.Any( channel => channel != null );
 
 	/// <summary>
-	/// The saved mixer values of <paramref name="sound"/>, taken against the player's current <paramref name="options"/>; null when the block holds no 84-byte settings or
-	/// its dirty word is 0 (the tick then pushes nothing, so the mixer keeps the options).
+	/// The saved mixer values of <paramref name="sound"/>, taken against the player's current <paramref name="options"/>; null when the block holds no 84-byte settings.
+	/// The saved dirty word does not matter: park entry sets it again after the load, so the next tick always pushes the copied shadows.
 	/// </summary>
-	// [BIN:TPW-EXE:0x51BD70 dirty word] the tick pushes the shadows only while 0x803AC8 (+0x28) is non-zero, then clears it
+	// [BIN:TPW-EXE:0x54F3AE dirty after load] state 9 of 0x54E360 ends, after the load 0x5ACCF0 -> 0x414D40, with 0x51E6F0(0), which writes the dirty word 0x803AC8 = 1; the tick 0x51BD70 of state 10 then pushes all seven shadows (a restart reloads restart.INTS, written right after that call, whose dirty word is 1 in all three corpus files)
 	public static SavedSoundVolumes? FromSave( SaveSoundData? sound, GameOptions options )
 	{
-		if ( sound?.SettingsView is not { } settings || settings.Dirty == 0 )
+		if ( sound?.SettingsView is not { } settings )
 			return null;
 		return new SavedSoundVolumes( settings, options );
 	}
 
 	/// <summary>
 	/// The gain <paramref name="channel"/> plays at while its saved value holds, or null once the player's option for it (volume or on-flag) differs from the one
-	/// the save was applied over: from then on the options drive that channel, as a slider or toggle's setter replaces one shadow in the original.
+	/// the save was applied over: from then on the options drive that channel, as a slider or toggle's setter replaces the volume shadow in the original. A channel the
+	/// save switched off stays silent until OK or leaving the park: the slider and the toggle only set the volume, never the on-flag.
 	/// </summary>
 	// [BIN:TPW-EXE:0x4A2BF0 slider setters] message 0x801 of the effects, music and speech sliders calls only that channel's volume setter (0x51BBA0, 0x51BB80, 0x51BBC0), so the other channels keep the saved shadows
+	// [BIN:TPW-EXE:0x4A2E90 volume rows] a slider value (message 0x800) and a toggle (0x4A3480: the profile's on byte, then 0x4A2E90) store the profile value and call the volume setter with it, or with 0 while the profile's on byte is clear; the on-flag setters 0x51BC00/0x51BBE0/0x51BC20 are called only by the applier 0x423DD0, so a saved on-flag of 0 keeps the mixer group off (0x6B9900) until then
 	public float? Gain( AudioChannel channel, GameOptions options )
 	{
 		ref var held = ref channels[(int)channel];
@@ -63,6 +65,8 @@ public sealed class SavedSoundVolumes
 		};
 		if ( volume != held.OptionVolume || on != held.OptionOn )
 		{
+			if ( !held.On )
+				return 0;
 			held = null;
 			return null;
 		}

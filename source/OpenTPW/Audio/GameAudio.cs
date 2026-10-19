@@ -1177,14 +1177,12 @@ public static class GameAudio
 	/// Plays a park started from an original save (Level.OriginalSaveSound) at the volumes its Sound block holds, as tp.exe does after a load, without touching the player's options;
 	/// returns the import report's line.
 	/// </summary>
-	// [BIN:TPW-EXE:0x51C400 sound loader] the payload loader 0x415270 calls the Sound block loader at 0x415BA2; the copied shadows reach the mixer on the next tick 0x51BD70 (with the saved dirty word), and the post-load pass 0x415140 does not call the options applier 0x423DD0
+	// [BIN:TPW-EXE:0x51C400 sound loader] the payload loader 0x415270 calls the Sound block loader at 0x415BA2; the copied shadows reach the mixer on the next tick 0x51BD70 (park entry sets the dirty word after the load, 0x54F3AE), and the post-load pass 0x415140 does not call the options applier 0x423DD0
 	public static string ApplySavedSound( SaveSoundData? sound, GameOptions options )
 	{
 		SavedVolumes = SavedSoundVolumes.FromSave( sound, options );
 		if ( SavedVolumes == null )
-			return sound?.SettingsView == null
-				? $"Sound block: no 84-byte settings (length {sound?.Settings.Length.ToString() ?? "unreadable"}); the options' volumes play."
-				: "Sound block: its dirty word is 0, so the original pushes nothing and the options' volumes play.";
+			return $"Sound block: no 84-byte settings (length {sound?.Settings.Length.ToString() ?? "unreadable"}); the options' volumes play.";
 		MasterVolume = SavedVolumes.MasterVolume;
 		return $"Sound block: the save's volumes play until the options take over (OK on the options screen, a changed slider or toggle, or leaving the park): {SavedVolumes.Describe()}"
 			+ (SavedVolumes.MatchesOptions( options ) ? "; equal to the options, so nothing changes audibly." : "; the options file is not changed.");

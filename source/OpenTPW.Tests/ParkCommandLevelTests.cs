@@ -98,7 +98,7 @@ public class ParkCommandLevelTests
 		var before = level.ComputeStateHash();
 		Assert.IsFalse( level.Commands.Issue( new PlaceObjectCommand( "data:/levels/jungle/rides/none", 2, 2, 0 ) ).Accepted );
 		Assert.IsFalse( level.Commands.Issue( level.BuildCommand( park.One.Entry, 14, 14, 0 ) ).Accepted, "the cell is taken" );
-		Assert.IsFalse( level.Commands.Issue( level.BuildCommand( park.One.Entry, 25, 25, 0 ) with { Moving = true } ).Accepted, "nothing carried any more" );
+		Assert.IsFalse( level.Commands.Apply( level.BuildCommand( park.One.Entry, 25, 25, 0 ) with { Moving = true, Player = 2 } ).Accepted, "player 2 carries nothing" );
 		Assert.IsFalse( level.Commands.Issue( new RemoveAttractionCommand( park.Two.Runtime.AttractionId ) ).Accepted );
 		Assert.IsFalse( level.Commands.Issue( new PlaceObjectCommand( ParkCommandCodec.EntryKey( park.One.Entry ), 2, 2, 45 ) ).Accepted, "out of range" );
 		Assert.AreEqual( before, level.ComputeStateHash() );

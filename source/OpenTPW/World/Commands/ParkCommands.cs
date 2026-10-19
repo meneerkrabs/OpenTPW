@@ -27,7 +27,7 @@ public readonly record struct ParkCommandLogEntry( long Tick, ParkCommand Comman
 /// [EXT:online-coop-commands] The park's one funnel for edits (docs/COOP.md): every HUD window and tool hands its edit to <see cref="Apply"/> as a <see cref="ParkCommand"/>.
 /// A command applies before simulation tick <see cref="NextTick"/>, the tick the next frame runs first: in single player it runs at once, between two ticks as every edit did
 /// before the command layer, so no single-player run changes. <see cref="Schedule"/> holds a command for a later tick (a replayed log now, the lockstep frames of a session
-/// later); <see cref="ApplyDue"/> runs the held commands at the start of their tick. Every applied command, accepted or not, is logged with its tick, so the log of a session
+/// later); <see cref="ApplyDue"/> runs the held commands at the start of their tick. Every well-formed command, accepted or not, is logged with its tick, so the log of a session
 /// replays to the same world (<see cref="ParkCommandReplay"/>).
 /// </summary>
 public sealed class ParkCommands
@@ -80,13 +80,16 @@ public sealed class ParkCommands
 
 	/// <summary>
 	/// Applies <paramref name="command"/> now, before <see cref="NextTick"/>: checks it is well formed, that the park takes edits and that the player may issue it, then runs it.
-	/// A rejected command changes nothing. A command issued while another runs (a tool callback inside an edit) runs as part of the outer one and is not logged on its own.
+	/// A rejected command changes nothing; it is logged unless it is malformed. A command issued while another runs (a tool callback inside an edit) runs as part of the outer one and is not logged on its own.
 	/// </summary>
 	public ParkCommandResult Apply( ParkCommand command )
 	{
 		ArgumentNullException.ThrowIfNull( command );
 		if ( depth > 0 )
 			return Run( command );
+		// a malformed command never reaches the park and has no byte form to log: it is refused before the log
+		if ( !command.IsWellFormed )
+			return ParkCommandResult.Rejected( $"The {command.Kind} command has fields out of range." );
 		var tick = nextTick();
 		var result = Run( command );
 		Record( new ParkCommandLogEntry( tick, command ), result );

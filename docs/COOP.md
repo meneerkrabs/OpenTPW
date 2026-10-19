@@ -76,7 +76,8 @@ the issuing player's session slot (`Player`, 0 = the local player and host).
 - **Refusals.** A command whose fields are out of range, any command in a read-only visit (economy
   commands included, closing the gap the visit's `ParkEconomy` had), and a command the player's
   rights refuse are rejected before they touch the park. A refusal changes nothing and is logged
-  like an accepted command, so a replay refuses it the same way.
+  like an accepted command, so a replay refuses it the same way; only a malformed command, which
+  has no byte form, is left out of the log.
 - **Rights.** `[EXT:online-coop-permissions]` `IParkCommandRights.Allows(player, kind)` is the hook for
   the host's per-player rights (decision Q7). Only the hook exists; single player has none.
 - **Nested edits.** A command whose execution issues another (a tool callback) runs that one as part

@@ -32,12 +32,17 @@ internal sealed partial class GameFlow
 		if ( restart || pendingExtensions is not { } next )
 			return Resume();
 		var before = OpenTpwExtensions.Active;
+		var live = Level;
 		ApplyPendingExtensions();
 		try { return Resume(); }
-		catch
+		catch ( Exception error )
 		{
-			ModStartup.ApplyExtensions( before, Log.Trace );
-			pendingExtensions = next;
+			// only while the park that was running is still the live one: a park that replaced it runs with the extensions it was built with
+			if ( ReferenceEquals( Level, live ) )
+			{
+				SwitchBack( before, error );
+				pendingExtensions = next;
+			}
 			throw;
 		}
 	}

@@ -207,6 +207,11 @@ repository; nothing in it comes from Theme Park World or Theme Park Inc, and no 
   lands on them with no extra work). The kiosk has a hat rack on the back wall with bobble hats on pegs, a mitten garland under the roof's front and folded scarves on the counter; the stall has a copper pot on a stove, mugs, a lit sign and a chimney.
   Themed textures as the pool cabins and the brolly shop: bamboo and thatch (jungle), dark mossy timber with purple shingles and a pumpkin on the ridge (hallow), riveted metal with cyan strips (space), pastel candy (fantasy).
   The walls, counter, posts and every hanging prop keep at least 1 unit from the footprint edge at a walker's height (the pools lesson, `[EXT:pools-model-inset]`); the roof reaches 1.0 from it. Backface culling is on for every material.
+  The roof is a closed prism, so each slope's tiles have the trim underside 0.55 below them. Until October 19, 2026 the buy window's preview (`PreviewIcon`, a painter-sorted CPU projection with no depth buffer, `[EXT:preview-icon-cpu-projection]`)
+  drew back faces too, and an underside triangle whose centroid sorted nearer than its tile triangle covered it: every slope showed one triangle of tiles and one of trim stripes, split along the quad's diagonal (the user's capture of the fantasy
+  kiosk). The park view was never affected (its object renderer depth tests and culls back faces) and the content was right; the preview now culls back faces as the park does, which fixed the same fault on the stall, the brolly shop,
+  the pool objects and many original previews (a survey of the committed and the original preview models found back faces over front faces in all of them: about 29 % of the front-face centroids on the winter shops, 6 % on the brolly
+  shops, up to 13 % on the pool cabins). Nothing in `content/winter` changed. Captures before and after, in the buy window and the park, are in the notes folder (`winter-captures/texture-bug`).
 - The **`.sam`** (`tools/winter/kiosk.sam`, built from the keys of the original balloon shop; `tools/winter/gluehwein.sam`, from the original drinks shops): the kiosk has `AppearanceEffect` 4, `ShopType` 1 (a gift shop's kind; not 5, which
   would count as costumes), price 25, cost of goods 10, `HappinessEffect` 15, `LitterEffect` 5, thirst, hunger and vomit 0, `ISIndoors` 0, capacity 5, upgrade 1000, `RunningCost` 30, demand `WeatherModifier.SnowPercentage` 200 and
   `SeasonModifier.WinterPercentage` 150, spring and autumn 60 and summer 20 (it sells all year). The stall has `ShopType` 4 and `SpecialIngredient` 3, price 30, cost of goods 15, `ThirstEffect` 30, `HungerEffect` 5, **`VomitEffect` 5**, `HappinessEffect` 15, `LitterEffect` 40,
@@ -227,7 +232,7 @@ repository; nothing in it comes from Theme Park World or Theme Park Inc, and no 
 
 `WinterContentTests` load the committed files through the game's own pipelines (the object catalog with a content root made by the test, the sprite readers, the ride script VM) and check the ids and that no other content range overlaps, the `.sam`
 keys, the models, textures, footprint and wall gaps, the scripts, the sprite banks (slots, directions, frames, 256 ppu, hotspots inside the frames), the anchor table (every set, slot, frame and direction, agreement with the umbrellas' table, hands and
-head inside the shipped kid frames) (the wiring of the content is checked by `WinterWiringTests`).
+head inside the shipped kid frames), and that the buy window's preview shows roof tiles over the whole roof at every turn (no underside over a tile) (the wiring of the content is checked by `WinterWiringTests`).
 
 ## Simulation (phase W3)
 

@@ -9,13 +9,16 @@ namespace OpenTPW.Hud;
 /// Build-menu icon from an object's original preview model (<c>P&lt;name&gt;.MD2</c>, see
 /// <c>Info.PreviewAnimType</c>/<c>PreviewAnimNum</c> in Rides.sam). The original shows these previews
 /// turning in the menu (tp.exe 0x486410 → 0x4689f0, updated by 0x468e50); OpenTPW projects the model orthographically on the CPU
-/// with painter-sorted triangles, which is an approximation of the original 3D draw.
+/// with painter-sorted triangles, which is an approximation of the original 3D draw. Back faces are culled, as the park's object
+/// renderer culls them (<c>Material</c>: <c>FaceCullMode.Back</c> for every object mesh): without a depth buffer a painter sort of a
+/// closed shape lets a back face drawn later cover the front face over it, which split the winter kiosk's roof slopes along their
+/// diagonals into roof tiles and the slopes' undersides.
 /// </summary>
-// [EXT:preview-icon-cpu-projection] the icon is drawn by an orthographic CPU projection with painter sorting, the model centred in its frame, not through the engine's scene renderer; matching the original's 3D draw would tie the HUD to the world renderer
+// [EXT:preview-icon-cpu-projection] the icon is drawn by an orthographic CPU projection with painter sorting and back faces culled, the model centred in its frame, not through the engine's scene renderer; matching the original's 3D draw would tie the HUD to the world renderer
 // [APPROX:UI-026] the original draws the preview object through its 3D object pipeline (a ride object whose world matrix 0x468e50 rebuilds each frame with the x column scaled by 0.75 and the depth column by 0.1; its camera is not read) and starts its animation 5 (0x4732a0)
 public sealed class PreviewIcon
 {
-	private readonly List<(NVector3 A, NVector3 B, NVector3 C, NVector2 UvA, NVector2 UvB, NVector2 UvC, UiTexture? Texture)> triangles = new();
+	private readonly List<(NVector3 A, NVector3 B, NVector3 C, NVector2 UvA, NVector2 UvB, NVector2 UvC, UiTexture? Texture, string MaterialName)> triangles = new();
 	private readonly NVector3 center;
 	private readonly float radius;
 	private readonly NVector3 minimum, maximum;
@@ -52,7 +55,7 @@ public sealed class PreviewIcon
 						?? (resolveTexture( material.Name ) is { } path ? UiTexture.Image( path ) : null);
 					resolved[materialIndex] = true;
 				}
-				triangles.Add( (points[a], points[b], points[c], Uv( mesh, a ), Uv( mesh, b ), Uv( mesh, c ), textures[materialIndex]) );
+				triangles.Add( (points[a], points[b], points[c], Uv( mesh, a ), Uv( mesh, b ), Uv( mesh, c ), textures[materialIndex], mesh.Materials[materialIndex].Name) );
 			}
 		}
 		if ( triangles.Count == 0 )
@@ -98,26 +101,45 @@ public sealed class PreviewIcon
 
 	private void Draw( UiBatch batch, UiRect rect, float yaw, float tilt, float scale )
 	{
+		foreach ( var triangle in Arrange( rect, yaw, tilt, scale ) )
+		{
+			var source = triangles[triangle.Index];
+			var texture = source.Texture ?? UiTexture.Solid;
+			var color = Veldrid.RgbaByte.White;
+			batch.AddTriangle( texture, new UiVertex( triangle.A, source.UvA, color ), new UiVertex( triangle.B, source.UvB, color ), new UiVertex( triangle.C, source.UvC, color ) );
+		}
+	}
+
+	/// <summary>
+	/// One triangle as the preview draws it: its index in the model's triangle list, its material, its corners in canvas units (y down), its depth (larger is nearer)
+	/// and its outward normal in model space (Y up, not normalized).
+	/// </summary>
+	internal readonly record struct ArrangedTriangle( int Index, string MaterialName, NVector2 A, NVector2 B, NVector2 C, float Depth, NVector3 ModelNormal );
+
+	/// <summary>The triangles the buy window's preview draws, back to front, at <paramref name="yaw"/> in the frame <paramref name="rect"/>.</summary>
+	internal IReadOnlyList<ArrangedTriangle> ArrangeBuyPreview( UiRect rect, float yaw ) => Arrange( rect, yaw, BuyTilt, BuyScale( rect.Width, rect.Height, minimum, maximum ) );
+
+	/// <summary>Turns, tilts and projects the model, drops the back faces and sorts the rest back to front.</summary>
+	private List<ArrangedTriangle> Arrange( UiRect rect, float yaw, float tilt, float scale )
+	{
 		var rotation = NMatrix4x4.CreateTranslation( -center ) * NMatrix4x4.CreateRotationY( yaw ) * NMatrix4x4.CreateRotationX( tilt );
 		var middle = rect.Center;
-		NVector2 Project( NVector3 point, out float depth )
+		NVector2 Project( NVector3 turned ) => new( middle.X + turned.X * scale, middle.Y - turned.Y * scale );
+		var arranged = new List<ArrangedTriangle>( triangles.Count );
+		for ( var index = 0; index < triangles.Count; index++ )
 		{
-			var turned = NVector3.Transform( point, rotation );
-			depth = turned.Z;
-			return new NVector2( middle.X + turned.X * scale, middle.Y - turned.Y * scale );
+			var triangle = triangles[index];
+			var a = NVector3.Transform( triangle.A, rotation );
+			var b = NVector3.Transform( triangle.B, rotation );
+			var c = NVector3.Transform( triangle.C, rotation );
+			// The model's outward normal is (B - A) x (C - A) (ModelFile.CalculateNormals: 297,540 of 301,629 original corner normals agree with it); the
+			// viewer looks down -Z (the sort draws larger Z last, i.e. nearer), so a face whose normal has no +Z part is a back face, which the park culls.
+			if ( NVector3.Cross( b - a, c - a ).Z <= 0 )
+				continue;
+			arranged.Add( new ArrangedTriangle( index, triangle.MaterialName, Project( a ), Project( b ), Project( c ), (a.Z + b.Z + c.Z) / 3,
+				NVector3.Cross( triangle.B - triangle.A, triangle.C - triangle.A ) ) );
 		}
-		var projected = triangles.Select( triangle =>
-		{
-			var a = Project( triangle.A, out var depthA );
-			var b = Project( triangle.B, out var depthB );
-			var c = Project( triangle.C, out var depthC );
-			return (Depth: (depthA + depthB + depthC) / 3, a, b, c, triangle);
-		} ).OrderBy( entry => entry.Depth );
-		foreach ( var (_, a, b, c, triangle) in projected )
-		{
-			var texture = triangle.Texture ?? UiTexture.Solid;
-			var color = Veldrid.RgbaByte.White;
-			batch.AddTriangle( texture, new UiVertex( a, triangle.UvA, color ), new UiVertex( b, triangle.UvB, color ), new UiVertex( c, triangle.UvC, color ) );
-		}
+		arranged.Sort( ( left, right ) => left.Depth != right.Depth ? left.Depth.CompareTo( right.Depth ) : left.Index.CompareTo( right.Index ) );
+		return arranged;
 	}
 }

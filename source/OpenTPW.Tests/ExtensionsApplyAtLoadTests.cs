@@ -252,6 +252,71 @@ public class ExtensionsApplyAtLoadTests
 	}
 
 	[TestMethod]
+	public void AChoiceTakenBackInTheSameParkLeavesNothingWaiting()
+	{
+		var flow = Flow( (Level)RuntimeHelpers.GetUninitializedObject( typeof( Level ) ) );
+		flow.ApplyExtensionChoices( new Dictionary<string, bool> { [OfficialExtensions.RainMood.Id] = true } );
+		Assert.AreNotSame( OpenTpwExtensions.Active, flow.NextExtensions );
+		Assert.AreEqual( ExtensionChoiceTiming.AfterThisPark, flow.ApplyExtensionChoices( new Dictionary<string, bool> { [OfficialExtensions.RainMood.Id] = false } ) );
+		Assert.AreSame( OpenTpwExtensions.Active, flow.NextExtensions, "the running set is what the next park gets: nothing is applied when the park is left" );
+	}
+
+	[TestMethod]
+	public void AnotherParkStartedFromInsideAParkIsBuiltInOneGoWithTheWaitingChoiceAndAFailureKeepsItWaiting()
+	{
+		var flow = Flow( (Level)RuntimeHelpers.GetUninitializedObject( typeof( Level ) ) );
+		var before = OpenTpwExtensions.Active;
+		flow.ApplyExtensionChoices( new Dictionary<string, bool> { [OfficialExtensions.WinterCold.Id] = true } );
+		var switched = new List<bool>();
+		void Seen( ModSet set ) => switched.Add( set.IsEnabled( OfficialExtensions.WinterCold.Id ) );
+		ModStartup.ExtensionsSwitched += Seen;
+		try
+		{
+			var start = typeof( GameFlow ).GetMethods( Private ).Single( method => method.Name == "StartLevel" && method.GetParameters().Any( parameter => parameter.Name == "beforeEnter" ) );
+			// over frames was asked for, but with a choice waiting while a park runs the park is built in one go: the choice is applied right before the build, and the build fails here (no game data)
+			var error = Assert.ThrowsException<TargetInvocationException>( () => start.Invoke( flow, new object?[] { "jungle", true, false, true, null, ParkStartKind.FullSimulation, null, (Action<Level>)(_ => { }) } ) );
+			Assert.IsTrue( error.InnerException is IOException or InvalidDataException or ArgumentException or InvalidOperationException, error.InnerException?.ToString() );
+			CollectionAssert.AreEqual( new[] { true, false }, switched.ToArray(), "applied for the build, then switched back while the old park is still live" );
+			Assert.AreSame( before, OpenTpwExtensions.Active );
+			Assert.IsTrue( flow.NextExtensions.IsEnabled( OfficialExtensions.WinterCold.Id ), "the choice waits again" );
+		}
+		finally { ModStartup.ExtensionsSwitched -= Seen; }
+	}
+
+	[TestMethod]
+	public void RevivingARefusedModOrChangingACommandLineChoiceNeedsTheNextStart()
+	{
+		var flow = Flow();
+		var directory = Path.Combine( root, "mods-src", "community.needs-cross" );
+		Directory.CreateDirectory( directory );
+		File.WriteAllText( Path.Combine( directory, ModManifest.FileName ),
+			"""{ "schema": 1, "id": "community.needs-cross", "name": "Needs cross", "version": "1.0.0", "category": "community", "dependencies": [{ "id": "opentpw.cross-edition-objects" }] }""" );
+		var discovered = ModDiscovery.Discover( new[] { directory }, Array.Empty<string>(), null, null );
+		var refused = ModSet.Resolve( discovered, new ModSettings { Enabled = new Dictionary<string, bool> { ["community.needs-cross"] = true } }, null, GameEdition.ThemeParkWorld, OfficialExtensions.All );
+		Assert.IsTrue( refused.Refused.Any( refusal => refusal.Id == "community.needs-cross" && refusal.Kind == ModRefusalKind.Dependency ) );
+		var discoveredProperty = typeof( ModStartup ).GetProperty( "Discovered", BindingFlags.Static | BindingFlags.Public )!;
+		var enabledProperty = typeof( ModStartup ).GetProperty( "EnabledForRun", BindingFlags.Static | BindingFlags.NonPublic )!;
+		var previousDiscovered = discoveredProperty.GetValue( null );
+		var previousEnabled = enabledProperty.GetValue( null );
+		try
+		{
+			discoveredProperty.SetValue( null, discovered );
+			OpenTpwExtensions.Activate( refused );
+			Assert.AreEqual( ExtensionChoiceTiming.NextStart, flow.ApplyExtensionChoices( new Dictionary<string, bool> { [OfficialExtensions.CrossEditionObjects.Id] = true } ),
+				"the mod would stay refused until a start: no 'no restart' notice" );
+			Assert.AreSame( refused, OpenTpwExtensions.Active );
+			Assert.AreEqual( ExtensionChoiceTiming.NextPark, flow.ApplyExtensionChoices( new Dictionary<string, bool> { [OfficialExtensions.RainMood.Id] = true } ), "another extension still applies at once" );
+			enabledProperty.SetValue( null, new[] { OfficialExtensions.Evening.Id } );
+			Assert.AreEqual( ExtensionChoiceTiming.NextStart, flow.ApplyExtensionChoices( new Dictionary<string, bool> { [OfficialExtensions.Evening.Id] = false } ), "--enable-mod wins for the run" );
+		}
+		finally
+		{
+			discoveredProperty.SetValue( null, previousDiscovered );
+			enabledProperty.SetValue( null, previousEnabled );
+		}
+	}
+
+	[TestMethod]
 	public void TheOnlineExtensionTheCommandLineAndAModsDependencyNeedTheNextStart()
 	{
 		var flow = Flow();

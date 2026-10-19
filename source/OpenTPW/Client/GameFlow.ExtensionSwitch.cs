@@ -26,12 +26,16 @@ internal sealed partial class GameFlow
 	/// <summary>
 	/// [EXT:extensions-apply-at-load] user-approved 2026-10-19 ("Ook ontbrekende extensie aanzetten"): official extensions switched on the Extensions and mods screen (id to on; <c>mods.json</c> is already written) apply
 	/// without a restart where they can: at once while no park runs (the next park built reads them), else when the running park is left or another park is loaded, never while a park simulates. The online
-	/// extension (<see cref="RestartOnlyExtensionIds"/>), an extension switched with <c>--disable-extension</c> for the run, and switching off an extension an enabled community mod needs, still apply at the next start.
+	/// extension (<see cref="RestartOnlyExtensionIds"/>), an extension switched with <c>--disable-extension</c> or <c>--enable-mod</c> for the run, switching off an extension an enabled community mod needs, and switching on
+	/// one that a refused community mod needs, still apply at the next start.
 	/// </summary>
 	internal ExtensionChoiceTiming ApplyExtensionChoices( IReadOnlyDictionary<string, bool> changes )
 	{
 		ArgumentNullException.ThrowIfNull( changes );
-		if ( changes.Keys.Any( RestartOnlyExtensionIds.Contains ) || changes.Keys.Any( id => ModStartup.DisabledForRun.Contains( id, StringComparer.Ordinal ) ) )
+		if ( changes.Keys.Any( RestartOnlyExtensionIds.Contains ) || changes.Keys.Any( id => ModStartup.DisabledForRun.Contains( id, StringComparer.Ordinal ) || ModStartup.EnabledForRun.Contains( id, StringComparer.Ordinal ) ) )
+			return ExtensionChoiceTiming.NextStart;
+		// a community mod refused because an extension it needs was off is resolved again only at a start: switching that extension on revives it then
+		if ( changes.Any( change => change.Value && RevivesRefusedMod( change.Key ) ) )
 			return ExtensionChoiceTiming.NextStart;
 		ModSet next;
 		try { next = ModStartup.SwitchExtensions( NextExtensions, changes ); }
@@ -47,10 +51,16 @@ internal sealed partial class GameFlow
 			Log.Trace( $"Extensions switched without a restart: {Describe( changes )}." );
 			return ExtensionChoiceTiming.NextPark;
 		}
-		pendingExtensions = ReferenceEquals( next, OpenTpwExtensions.Active ) ? null : next;
+		// a choice taken back in the same park leaves nothing waiting (the switched set equals the running one: same extensions, same order)
+		pendingExtensions = next.Order.SequenceEqual( OpenTpwExtensions.Active.Order, StringComparer.Ordinal ) ? null : next;
 		Log.Trace( $"Extensions switched for after this park: {Describe( changes )}." );
 		return ExtensionChoiceTiming.AfterThisPark;
 	}
+
+	/// <summary>Whether switching <paramref name="extensionId"/> on would revive a community mod of this run that was refused because it needs that extension (its manifest names it).</summary>
+	private bool RevivesRefusedMod( string extensionId ) =>
+		NextExtensions.Refused.Any( refusal => refusal.Kind == ModRefusalKind.Dependency
+			&& ModStartup.Discovered.Any( mod => mod.Id == refusal.Id && mod.Manifest?.Dependencies.Any( dependency => dependency.Id == extensionId ) == true ) );
 
 	private static string Describe( IReadOnlyDictionary<string, bool> changes ) =>
 		string.Join( ", ", changes.OrderBy( pair => pair.Key, StringComparer.Ordinal ).Select( pair => pair.Key + (pair.Value ? " on" : " off") ) );

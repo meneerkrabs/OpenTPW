@@ -34,14 +34,14 @@ public sealed class ModsServices
 	/// </summary>
 	public bool Browser { get; init; } = OperatingSystem.IsBrowser();
 	/// <summary>
-	/// Inspects a folder away from the game's threads (a helper process by default, like the Game files screen). The browser inspects its copy
-	/// in this process, at once.
-	/// </summary>
-	/// <summary>
 	/// [EXT:extensions-apply-at-load] Applies the official extensions the player switched (id to on) without a restart where it can and says when they take effect (the game's flow,
 	/// <c>GameFlow.ApplyExtensionChoices</c>). Null (the default, and while a community mod or an input changed too) leaves every change to the next start.
 	/// </summary>
 	public Func<IReadOnlyDictionary<string, bool>, ExtensionChoiceTiming>? ApplyExtensions { get; init; }
+	/// <summary>
+	/// Inspects a folder away from the game's threads (a helper process by default, like the Game files screen). The browser inspects its copy
+	/// in this process, at once.
+	/// </summary>
 	internal Func<string, CancellationToken, Task<InstallationDiscoveryResult>> Inspect { get; init; } = OperatingSystem.IsBrowser()
 		? ( path, _ ) => Task.FromResult( new InstallationDiscoveryResult( new[] { GameInstallation.Inspect( path ) }, false, null ) )
 		: ( path, cancellation ) => InstallationDiscovery.InspectAsync( path, cancellation: cancellation );

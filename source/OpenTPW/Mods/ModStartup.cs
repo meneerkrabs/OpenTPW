@@ -30,6 +30,9 @@ public static class ModStartup
 	/// <summary>The ids switched off for this run with <c>--disable-extension</c>: a load never switches one of them on (<see cref="SwitchExtensions"/>).</summary>
 	internal static IReadOnlyList<string> DisabledForRun { get; private set; } = Array.Empty<string>();
 
+	/// <summary>[EXT:extensions-apply-at-load] The ids switched on for this run with <c>--enable-mod</c>: the Extensions and mods screen leaves a change to one of them to the next start (the command line wins for the run).</summary>
+	internal static IReadOnlyList<string> EnabledForRun { get; private set; } = Array.Empty<string>();
+
 	/// <summary>
 	/// [EXT:extensions-apply-at-load] Raised after official extensions were switched without a new start (<see cref="ApplyExtensions"/>), with the set now active: the browser host fetches the pools extension's sprite sets
 	/// when that extension came on (docs/POOLS.md, "Content", the browser's sprite sets).
@@ -110,8 +113,8 @@ public static class ModStartup
 		var discovered = ModDiscovery.Discover( Values( args, ModDirOption, "a mod folder containing " + ModManifest.FileName ),
 			ModDiscovery.SplitEnvironment( modDirsEnvironment ),
 			smokeTest ? null : configDirectory, programDirectory );
-		settings = WithCommandLine( settings, discovered, Values( args, EnableModOption, "an extension or mod id such as opentpw.cross-edition-objects" ),
-			Values( args, ModInputOption, "<mod id>:<input id>=<folder>" ) );
+		var enabledIds = Values( args, EnableModOption, "an extension or mod id such as opentpw.cross-edition-objects" );
+		settings = WithCommandLine( settings, discovered, enabledIds, Values( args, ModInputOption, "<mod id>:<input id>=<folder>" ) );
 		var disabledIds = Values( args, DisableExtensionOption, "an extension or mod id such as opentpw.online" );
 		// [EXT:script-mods] --safe-mode or a marker of an unfinished start switches the script mods off for this run; otherwise the marker is
 		// written now, before any script is read or compiled (the manifests are known, docs/SCRIPT-MODS.md)
@@ -129,6 +132,7 @@ public static class ModStartup
 		Discovered = discovered;
 		Choices = settings;
 		DisabledForRun = disabledIds;
+		EnabledForRun = enabledIds;
 		// [EXT:mods] the mods' overrides, strings and objects become visible to the game (docs/MODS.md)
 		ModContentRoots.Activate( set, trace );
 		return set;
@@ -179,6 +183,7 @@ public static class ModStartup
 		Discovered = discovered;
 		Choices = settings;
 		DisabledForRun = Array.Empty<string>();
+		EnabledForRun = Array.Empty<string>();
 		BrowserModInputs.LockInUse( set );
 		// [EXT:mods] the mods' objects become visible to the game (docs/MODS.md); files-based overrides work the same way
 		ModContentRoots.Activate( set, trace );

@@ -174,4 +174,77 @@ public class SignWidthRoundingCharacterizationTests
 		Assert.IsTrue( Extent( fittedAt90, 90 ) < percentCanvasWidth );
 		Assert.IsTrue( Extent( fittedAt90 + 3, 90 ) >= percentCanvasWidth );
 	}
+
+	[TestMethod]
+	public void EmptyLineWithPositiveCanvasPreservesTheRequestedLogFontWidth()
+	{
+		var font = FontWithAverageCharWidth( 600, (601, 'A') );
+
+		// Empty text places no glyph, so extent 0 sits below any positive canvas at both requested widths.
+		Assert.AreEqual( 0f, SignTextLayout.Measure( font, "", 100 ).Width, Tolerance );
+		Assert.AreEqual( 58, SignTextLayout.FitLogFontWidth( font, "", 100, 58, 512 ) );
+		Assert.AreEqual( 0, SignTextLayout.FitLogFontWidth( font, "", 100, 0, 512 ) );
+	}
+
+	[TestMethod]
+	public void AlreadyFittingWidthIsPreservedWhileAnOverflowingRequestSearches()
+	{
+		var font = FontWithAverageCharWidth( 600, (601, 'A') );
+		var text = new string( 'A', 8 ); // 8 x 601 / 600 = 8.013333 px per LOGFONT width at 100 percent.
+		float Extent( int width ) => SignTextLayout.Measure( font, text, 100, SignTextLayout.LogFontHorizontalScale( font, 100, width ) ).Width;
+
+		// Extent( 58 ) = 464.7733 < 512, so the requested 58 is returned without a search.
+		Assert.IsTrue( Extent( 58 ) < 512f );
+		Assert.AreEqual( 58, SignTextLayout.FitLogFontWidth( font, text, 100, 58, 512 ) );
+
+		// Extent( 100 ) = 801.3333 >= 512, so the search runs; Extent( 63 ) = 504.84 < 512 <= Extent( 64 ) = 512.8533.
+		Assert.IsTrue( Extent( 100 ) >= 512f );
+		Assert.IsTrue( Extent( 63 ) < 512f );
+		Assert.IsTrue( Extent( 64 ) >= 512f );
+		Assert.AreEqual( 63, SignTextLayout.FitLogFontWidth( font, text, 100, 100, 512 ) );
+	}
+
+	[TestMethod]
+	public void LogFontWidthZeroSearchesFromEmHeightWithOs2AverageCharWidth()
+	{
+		var name = new string( 'A', 32 );
+		float Extent( TrueTypeFont font, int width, float em ) =>
+			SignTextLayout.Measure( font, name, em, SignTextLayout.LogFontHorizontalScale( font, em, width ) ).Width;
+
+		// Width 0 keeps the design aspect (32 x 601 x 144/1000 = 2769.408 >= 512); em 144 is the search upper bound.
+		var font600 = FontWithAverageCharWidth( 600, (601, 'A') );
+		Assert.AreEqual( 1f, SignTextLayout.LogFontHorizontalScale( font600, 144, 0 ), Tolerance );
+		Assert.IsTrue( Extent( font600, 0, 144 ) >= 512f );
+		var fitted = SignTextLayout.FitLogFontWidth( font600, name, 144, 0, 512 );
+		Assert.AreEqual( 15, fitted );
+		Assert.IsTrue( Extent( font600, fitted, 144 ) < 512f );
+		Assert.IsTrue( Extent( font600, fitted + 3, 144 ) >= 512f, "Extent( 18 ) = 576.96" );
+
+		// em 100 caps the search at 100; Extent( 100 ) = 1602.6667 < 1603 still, and the source-comment stop rule returns 99.
+		var font1200 = FontWithAverageCharWidth( 1200, (601, 'A') );
+		Assert.IsTrue( Extent( font1200, 0, 100 ) >= 1603f );
+		Assert.IsTrue( Extent( font1200, 100, 100 ) < 1603f );
+		Assert.IsTrue( Extent( font1200, 101, 100 ) >= 1603f );
+		Assert.AreEqual( 99, SignTextLayout.FitLogFontWidth( font1200, name, 100, 0, 1603 ) );
+	}
+
+	[TestMethod]
+	public void WidthOneReturnsTheLoopSentinelWhenNothingFits()
+	{
+		var name = new string( 'A', 32 );
+
+		// No OS/2: AverageCharWidth 0 keeps scale 1 at every width, so Extent( w ) = 32 x 601 x 0.1 = 1923.2 and width 1 fails.
+		var plain = Font( (601, 'A') );
+		Assert.AreEqual( 0, plain.AverageCharWidth );
+		Assert.AreEqual( 1f, SignTextLayout.LogFontHorizontalScale( plain, 100, 1 ), Tolerance );
+		Assert.IsTrue( SignTextLayout.Measure( plain, name, 100, SignTextLayout.LogFontHorizontalScale( plain, 100, 1 ) ).Width >= 512f );
+		Assert.AreEqual( 1, SignTextLayout.FitLogFontWidth( plain, name, 100, 58, 512 ) );
+
+		// OS/2: canvas 20 is below Extent( 1 ) = 32.0533, so the search still cannot fit.
+		var os2 = FontWithAverageCharWidth( 600, (601, 'A') );
+		float Extent( int width ) => SignTextLayout.Measure( os2, name, 100, SignTextLayout.LogFontHorizontalScale( os2, 100, width ) ).Width;
+		Assert.IsTrue( Extent( 0 ) >= 20f );
+		Assert.IsTrue( Extent( 1 ) >= 20f );
+		Assert.AreEqual( 1, SignTextLayout.FitLogFontWidth( os2, name, 100, 58, 20 ) );
+	}
 }

@@ -78,7 +78,7 @@ public sealed partial class OriginalEconomyImport
 		Verify( economy.Settings, save.Economy, evidence );
 		ImportBank( economy, save.Economy.BankAccount, evidence );
 		if ( save.ResearchLab is { } lab )
-			ImportResearch( economy, lab, save.World.ObjectControls, evidence );
+			ImportResearch( economy, lab, save.World.ObjectControls, CheatModeOn( economy, save, shippedSeed ), evidence );
 		economy.Research.RestoreRecentItems( save.RecentResearch );
 		if ( save.RecentResearch != null )
 			evidence.Add( "Park analyser: four recent-research rings imported, including scratch and inactive slots." );
@@ -104,6 +104,10 @@ public sealed partial class OriginalEconomyImport
 
 	/// <summary>The cheat mode of the save's <c>CHTS</c> chunk (docs/CHEATS.md): byte 0 on marks the park as cheated, with or without the cheats extension; a Theme Park Inc park keeps it unapplied.</summary>
 	// [BIN:TPW-EXE:0x405570 cheat load] the CHTS chunk's two bytes go to +0xA (the cheat mode, tested whole by 0x405560) and +0xB of the cheat object 0xFB3520; loading a save replaces the mode, so a park saved with it on is a cheated park
+	/// <summary>Whether <see cref="ImportCheatMode"/> turns the cheat mode on: a Theme Park World player's save (not the shipped seed) whose <c>CHTS</c> byte 0 is nonzero.</summary>
+	private static bool CheatModeOn( ParkEconomy economy, OriginalParkImport save, bool shippedSeed ) =>
+		!shippedSeed && !economy.Rules.ThemeParkInc && save.RuntimeBlocks is { Cheats: { Length: > 0 } cheats } && cheats[0] != 0;
+
 	private static void ImportCheatMode( ParkEconomy economy, OriginalParkImport save, bool shippedSeed, List<string> evidence )
 	{
 		if ( save.RuntimeBlocks is not { Cheats: { Length: > 0 } cheats } )
@@ -717,7 +721,7 @@ public sealed partial class OriginalEconomyImport
 	/// </summary>
 	// [BIN:TPW-EXE:0x502dc0 research lab serializer] 256 projects (0x504210), five category records (0x504760) in ResearchCategory order, then mNumProjects, mWorkLoad, mMostExpensiveProject, mLabActive; used projects are the first mNumProjects
 	// [BIN:TPW-EXE:0x504630 research points] points are added to mResearchDone while it is below mCost; reaching the cost marks the object researched (its object-table record +0x10) and notifies
-	private static void ImportResearch( ParkEconomy economy, SaveResearchLab lab, SaveObjectControls? controls, List<string> evidence )
+	private static void ImportResearch( ParkEconomy economy, SaveResearchLab lab, SaveObjectControls? controls, bool cheatMode, List<string> evidence )
 	{
 		var research = economy.Research;
 		var used = Math.Clamp( BitConverter.ToInt32( lab.Tail, 0 ), 0, SaveResearchLab.ProjectRecords );
@@ -770,8 +774,9 @@ public sealed partial class OriginalEconomyImport
 		else
 			evidence.Add( $"[APPROX:SAVE-007] Research highest open groups {string.Join( "/", savedGroups )} are outside 0 to {ParkResearch.MaximumOpenGroup}: the groups the researched projects give ({string.Join( "/", recomputedGroups )}) are kept." );
 		evidence.Add( $"Research imported: {used} projects, {progress.Count} started, {completed.Count - initial} researched by the lab, effort {string.Join( "/", effort )}, work load {lab.WorkLoad}, current {(current.Count == 0 ? "none" : string.Join( ", ", current ))}." );
-		// [BIN:TPW-EXE:0x4D3AA0 object controls] the control manager's table (150 records of 32 bytes, the used ones first) is the first part of the World after its variables; a record's researched byte (+0x10) is written only by the lab's init 0x5031A0 (1 for an object without a research cost, so it starts researched) and by the research step 0x504630 when a project reaches its cost (1, with the upgrade level in +0x14), so the flags follow from the lab's projects and the objects' costs and are checked against OpenTPW's research here
+		// [BIN:TPW-EXE:0x4D3AA0 object controls] the control manager's table (150 records of 32 bytes, the used ones first) is the first part of the World after its variables; a record's researched byte (+0x10) is written by the lab's init 0x5031A0 (1 for an object without a research cost, so it starts researched), by the research step 0x504630 when a project reaches its cost (1, with the upgrade level in +0x14) and by the research cheat 0x503FF0 (1 for every research item's object, the project left unfinished), so the flags follow from the lab's projects and the objects' costs and are checked against OpenTPW's research here; in a save with the cheat mode on an object marked researched whose project is unfinished is the research cheat's (docs/CHEATS.md)
 		var disagreements = new List<string>();
+		var cheatAvailable = new List<int>();
 		var checkedControls = 0;
 		if ( controls != null )
 		{
@@ -780,9 +785,16 @@ public sealed partial class OriginalEconomyImport
 				if ( !research.HasItem( control.Id, 0 ) )
 					continue;
 				checkedControls++;
-				if ( research.Completed.Contains( (control.Id, 0) ) != control.Researched )
+				if ( research.Completed.Contains( (control.Id, 0) ) == control.Researched )
+					continue;
+				// [BIN:TPW-EXE:0x503FF0 research cheat] a cheated park's object that is buildable without its finished project
+				if ( cheatMode && control.Researched )
+					cheatAvailable.Add( control.Id );
+				else
 					disagreements.Add( $"{control.Id} (saved {(control.Researched ? "researched" : "not researched")})" );
 			}
+			if ( cheatAvailable.Count > 0 )
+				evidence.Add( $"Research cheat: {research.MakeAvailableByCheat( cheatAvailable )} objects the cheated save marks researched without a finished project are available to build ({string.Join( ", ", cheatAvailable )})." );
 			evidence.Add( $"Research object controls: {controls.Controls.Count} records, {controls.Controls.Count( control => control.Researched )} researched, {checkedControls} research items checked against OpenTPW's research, {(disagreements.Count == 0 ? "none" : string.Join( ", ", disagreements ))} disagree." );
 		}
 		// [APPROX:SAVE-007] a lab project of an object this install's level archives do not define (a modified save) and a saved current project OpenTPW's picker would not offer now (its group closed, its add-on target not researched) are dropped — evidence needed: a save that holds either (the 11 corpus labs hold neither: every project is a level object, in the original's scan order, ECON-017, and every saved current project is offered)

@@ -163,6 +163,15 @@ public class CheatsOriginalTests
 			Frame( Key.Number1 );
 			Frame();
 			Assert.AreEqual( 1, economy.Cheats.Pending.Count, "1 released without Alt is no cheat" );
+			// a quick release: the key and Alt let go in the same frame still fire (the original reads the mask at the key's own release message)
+			Frame( Key.AltLeft, Key.Keypad5 );
+			Assert.IsFalse( ParkCameraMode.KeypadScroll, "Alt alone held: the keypad does not scroll (Alt+Num4 and Alt+Num6 are ticket cheats)" );
+			Frame();
+			Assert.AreEqual( new CheatAction( CheatKind.Ticket, (int)GoldenTicketKind.RecentVisitors ), economy.Cheats.Pending.Last() );
+			Assert.AreEqual( 2, economy.Cheats.Pending.Count );
+			Frame( Key.Keypad4 );
+			Assert.IsTrue( ParkCameraMode.KeypadScroll, "without Alt the keypad scrolls" );
+			Frame();
 		}
 		finally
 		{
@@ -300,6 +309,37 @@ public class CheatsOriginalTests
 	}
 
 	[TestMethod]
+	public void ThePlayersProgressOwnerRecordsTheTicketCheatsAndFlushesTheFile()
+	{
+		var root = Directory.CreateTempSubdirectory( "opentpw-cheat-owner-" ).FullName;
+		try
+		{
+			var path = Path.Combine( root, PlayerTicketFile.FileName );
+			PlayerTicketFile.Save( path, new PlayerTicketLedger().Capture() );
+			var runtime = ParkEconomyRuntime.ForResume( Park(), ParkStartKind.FullSimulation );
+			using var owner = new PlayerProgressRuntimeOwner( path, "jungle", PlayerTicketFile.ReadIfPresent( path )!, runtime, () => true, message => Assert.Fail( message ) );
+			// another park of the player's holds the water ticket with a weaker record, so the cheat's record 100 moves it here
+			Assert.AreEqual( GlobalTicketOutcome.Awarded, owner.Ledger.RecordGlobal( "hallow", GoldenTicketKind.WaterLength, 50 ) );
+			var economy = runtime.Economy;
+			Assert.IsTrue( economy.QueueCheat( new CheatAction( CheatKind.Mode ) ) );
+			foreach ( var kind in new[] { GoldenTicketKind.Visitors, GoldenTicketKind.BigPark, GoldenTicketKind.WaterLength } )
+				Assert.IsTrue( economy.QueueCheat( new CheatAction( CheatKind.Ticket, (int)kind ) ) );
+			NextTurn( economy );
+			Assert.IsFalse( owner.Dirty, "the owner flushed the cheat tickets" );
+			var file = PlayerTicketFile.LoadIfPresent( path )!;
+			Assert.IsTrue( file.IsCheated( "jungle", GoldenTicketKind.Visitors ), "a local cheat ticket is earned and marked" );
+			Assert.IsTrue( file.IsCheated( "jungle", GoldenTicketKind.BigPark ), "a global ticket the cheat awarded is earned and marked" );
+			Assert.IsFalse( file.IsCheated( "jungle", GoldenTicketKind.WaterLength ), "a moved global was earned honestly before: its provenance stays" );
+			Assert.AreEqual( "jungle", file.HolderOf( GoldenTicketKind.WaterLength )?.Theme, "the moved global's holder is the cheated park" );
+			Assert.AreEqual( ParkCheats.TicketRecord, file.HolderOf( GoldenTicketKind.WaterLength )?.Record );
+		}
+		finally
+		{
+			Directory.Delete( root, true );
+		}
+	}
+
+	[TestMethod]
 	public void TheHudNotesEveryCheatThatChangedSomethingInTheLanguageOfTheTable()
 	{
 		var strings = new UiStringTable( "English", new string[1], new[] { "" }, new string[1], new string[1] );
@@ -332,10 +372,14 @@ public class CheatsOriginalTests
 			var template = OriginalSavePayload.Read( payload );
 			CollectionAssert.AreEqual( new byte[] { 1, 1 }, template.Cheat, "the shipped seed was saved with the cheat mode on" );
 			var map = new MapFile( new MemoryStream( OriginalParkImportTests.ReadArchiveMember( "levels/jungle/terrain.wad", "base.map" ) ) );
-			ParkEconomy Import( byte[] cheat, out OriginalEconomyImport import, bool shippedSeed = false )
+			ParkEconomy Import( byte[] cheat, out OriginalEconomyImport import, bool shippedSeed = false, int researchedByCheat = 0 )
 			{
 				var copy = OriginalSavePayload.Read( template.Write() );
 				copy.Cheat = cheat;
+				// the research cheat's footprint: the object control's researched byte +0x10 set while the project is unfinished (0x503FF0)
+				for ( var index = 0; researchedByCheat != 0 && index < copy.World.Controls.Count; index++ )
+					if ( BitConverter.ToInt32( copy.World.Controls.Records, index * SaveObjectControl.Bytes ) == researchedByCheat )
+						copy.World.Controls.Records[index * SaveObjectControl.Bytes + 0x10] = 1;
 				var economy = new ParkEconomy( BalanceSettings.Load( "jungle", true ), EconomyObjectCatalog.Load( "jungle", true ), ParkGameMode.FullSimulation, 1 );
 				import = OriginalEconomyImport.Apply( economy, OriginalParkImport.Import( copy.Write(), map ), shippedSeed );
 				return economy;
@@ -360,6 +404,18 @@ public class CheatsOriginalTests
 			CollectionAssert.AreEqual( new byte[] { 0, 0 }, OriginalParkExport.Export( cheatedTemplate, ParkSaveFile.Capture( clean ), out var evidence ).Cheat );
 			StringAssert.Contains( string.Join( "\n", evidence ), "Cheat chunk: 0000 (no cheats)" );
 			CollectionAssert.AreEqual( new byte[] { 1, 1 }, OriginalParkExport.Export( template, ParkSaveFile.Capture( cheated ), out _ ).Cheat );
+			// Alt+R in the original's save: in a cheated park an object marked researched without its finished project is the research cheat's, and the export writes the mark back
+			var item = clean.Research.Items.First( candidate => candidate.Level == 0 && !clean.Research.IsAvailable( candidate.InfoId ) ).InfoId;
+			var researched = Import( new byte[] { 1, 1 }, out var researchedImport, researchedByCheat: item );
+			Assert.IsTrue( researched.Research.IsAvailable( item ) && researched.Research.CheatAvailable.Contains( item ) );
+			Assert.IsFalse( researched.Research.Completed.Contains( (item, 0) ), "nothing is researched" );
+			StringAssert.Contains( string.Join( "\n", researchedImport.Evidence ), $"Research cheat: 1 objects the cheated save marks researched without a finished project are available to build ({item})" );
+			var honestFlag = Import( new byte[] { 0, 0 }, out var honestImport, researchedByCheat: item );
+			Assert.IsFalse( honestFlag.Research.IsAvailable( item ), "without the cheat mode the flag is a disagreement, as before" );
+			StringAssert.Contains( string.Join( "\n", honestImport.Evidence ), $"{item} (saved researched)" );
+			var exported = OriginalParkExport.Export( template, ParkSaveFile.Capture( researched ), out _, new OriginalParkExportOptions( Research: researched.Research ) );
+			var record = Enumerable.Range( 0, (int)exported.World.Controls.Count ).Single( index => BitConverter.ToInt32( exported.World.Controls.Records, index * SaveObjectControl.Bytes ) == item );
+			Assert.AreEqual( 1, exported.World.Controls.Records[record * SaveObjectControl.Bytes + 0x10], "the export marks the cheat's object researched" );
 		}
 		finally
 		{

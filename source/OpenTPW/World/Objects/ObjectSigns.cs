@@ -108,9 +108,11 @@ public static class ObjectSigns
 			if ( cache.TryGetValue( key, out var cached ) )
 				return cached;
 			ObjectSignImages? images = null;
+			var archiveWithoutSign = false;
 			try
 			{
 				var sign = SignTextRenderer.LoadSignFile( entry.ArchivePath, entry.FileSystem );
+				archiveWithoutSign = sign == null && entry.FileSystem.GetFiles( entry.ArchivePath ).Any();
 				if ( sign != null )
 				{
 					var composed = SignTextRenderer.Shared.ComposeSign( sign, new[] { line1, line2 }, default );
@@ -119,12 +121,35 @@ public static class ObjectSigns
 					images = new ObjectSignImages( line1, line2, composed.Left, composed.Right, composed.TextPixelCount, composed.Diagnostics );
 				}
 			}
-			catch ( Exception exception ) when ( exception is IOException or InvalidDataException or NotSupportedException or ArgumentException )
+			catch ( Exception exception ) when ( exception is IOException or InvalidDataException or NotSupportedException or ArgumentException or KeyNotFoundException or UnauthorizedAccessException )
 			{
 				Log?.Warning( $"Sign of {entry.ArchiveName} unavailable: {exception.Message}" );
 			}
-			cache[key] = images;
+			// A missing result stays uncached unless the archive is there without a sign: a failure, or an archive whose files have not arrived yet (the browser copies a theme's files when a park starts), must not leave the placeholder for the rest of the session
+			if ( images != null || archiveWithoutSign )
+				cache[key] = images;
 			return images;
 		}
+	}
+}
+
+/// <summary>
+/// Which texture an object's <c>sign1</c>/<c>sign2</c> material slots show: the park name for the gate, the object's own sign for a placed
+/// object, and for a fixed item whose sign cannot be drawn a plain brown board, never the shipped magenta "SIGN1 SIGN2" placeholder.
+/// </summary>
+// [EXT:fixed-sign-fallback] a fixed item (the park gate above all) that has no runtime sign shows a plain brown board instead of the shipped placeholder; an OpenTPW rendering choice, the original always draws the sign
+internal readonly record struct SignSlotPlan( ObjectSignImages? Images, bool UsesFallback )
+{
+	public static readonly SignSlotPlan None = new( null, false );
+
+	/// <param name="gateImages">The park name's sign of the object's level (null while it is missing or failed).</param>
+	/// <param name="typeSign">The object type's own sign, asked only for a placed (not fixed) object.</param>
+	public static SignSlotPlan For( bool isFixedItem, string archiveName, ObjectSignImages? gateImages, Func<ObjectSignImages?> typeSign )
+	{
+		if ( !isFixedItem )
+			return typeSign() is { } own ? new( own, false ) : None;
+		if ( archiveName.Equals( "gates", StringComparison.OrdinalIgnoreCase ) && gateImages != null )
+			return new( gateImages, false );
+		return new( null, true );
 	}
 }

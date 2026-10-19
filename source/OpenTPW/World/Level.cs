@@ -82,9 +82,10 @@ public partial class Level : IDisposable
 		if ( OriginalPark != null )
 		{
 			try { GateSign = OriginalGateSign.TryCreate( OriginalPark, Global, savedName, reloaded: savedName != null ); }
-			catch ( Exception exception ) when ( exception is IOException or InvalidDataException or KeyNotFoundException )
+			// the sign is decoration: whatever stops it (a font or board that cannot be read in this file system, an unsupported platform call) must not stop the park, and the gate then shows its plain board (SignSlotPlan)
+			catch ( Exception exception ) when ( exception is not (OutOfMemoryException or StackOverflowException or ThreadAbortException) )
 			{
-				Log.Warning( $"Gate sign: {exception.Message}" );
+				Log.Warning( $"Gate sign: {exception.GetType().Name}: {exception.Message}" );
 			}
 		}
 		ParkName = savedName ?? GateSign?.Lines;

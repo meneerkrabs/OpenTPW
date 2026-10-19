@@ -304,7 +304,7 @@ Other OpenTPW state that is **not in the hash**:
 | `FixedStepClock` pending time (`PendingSeconds`) | frame timing, below one tick; the substep scheduler is DET-I2 |
 | Sound chooser seed | presentation, see above |
 | `ParkSaveFile.Data.AnalyserCaches` (the analyser's cached readings) | saved for an exact continuation, but a reading aid that no simulation step reads; removed from the economy digest |
-| `ParkSaveFile.Data.StatisticsHistory` (the monthly rings of `ParkStatisticsHistory`) | only the park information window's graph reads them, no simulation step does; removed from the economy digest |
+| `ParkSaveFile.Data.StatisticsHistory` (the monthly rings, including independent rating, of `ParkStatisticsHistory`) | only the park information window's graph reads them, no simulation step does; removed from the economy digest |
 | `ParkSaveFile.ResearchData.RecentItems` (TPW buy-list stars) | only the buy list reads the four rings; just this nested presentation property is removed from the economy digest. Completed projects, progress, effort and every other research field stay hashed. Raw ring state remains saved; no schema or canonical pin changes |
 | `ParkSaveFile.StaffData.RoleOrder` (locator role sequences) | presentation-only member-ID order for the five staff radios; only this nested staff property is removed from the economy digest. Members, training budgets, `HaveEverTrained`, strikes and every other staff/gameplay field stay hashed. The roster and global ThingPool order are not changed; no schema or canonical pin change is required |
 

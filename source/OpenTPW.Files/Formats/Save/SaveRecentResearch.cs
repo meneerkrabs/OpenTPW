@@ -12,7 +12,7 @@ public sealed record RecentResearchRing(
 	[property: JsonRequired] IReadOnlyList<int> Values );
 
 /// <summary>
-/// The four TPW recent-research rings only. The rest of the analyser remains opaque. These offsets describe the serialized body,
+/// The four TPW recent-research rings only. Statistics have a separate reader in SaveParkStatistics. These offsets describe the serialized body,
 /// not the runtime memory layout; Theme Park Inc has a different analyser format and is not handled here.
 /// </summary>
 public static class SaveRecentResearch

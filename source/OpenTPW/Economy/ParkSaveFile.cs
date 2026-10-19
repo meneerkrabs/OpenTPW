@@ -101,7 +101,7 @@ public static class ParkSaveFile
 		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 		public List<PriceStatisticData>? PriceStatistics { get; init; }
 		/// <summary>
-		/// The monthly statistics the park information window graphs (<see cref="ParkStatisticsHistory"/>); absent in older saves and while nothing is recorded: the graph then starts empty.
+		/// The monthly statistics the park information window graphs (<see cref="ParkStatisticsHistory"/>); absent in older saves and empty new parks. Legacy saves seed only rating from their existing ledger.
 		/// A reading aid like <see cref="AnalyserCaches"/>: nothing in the simulation reads it, so it stays out of the run hash.
 		/// </summary>
 		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
@@ -767,7 +767,7 @@ public static class ParkSaveFile
 			MechanicCursor = park.MechanicCursor,
 			PriceStatistics = park.PriceStatistics.Capture() is { Count: > 0 } rings
 				? rings.Select( ring => new PriceStatisticData { Category = ring.Category, Head = ring.Head, Full = ring.Full, Values = ring.Values } ).ToList() : null,
-			StatisticsHistory = park.StatisticsHistory.IsEmpty ? null : park.StatisticsHistory.Capture(),
+			StatisticsHistory = park.StatisticsHistory.IsEmpty && park.Ledger.History.Count == 0 ? null : park.StatisticsHistory.Capture(),
 			World = world == null ? null : new WorldData { Seed = world.Seed, SoundSeed = world.SoundSeed }
 		};
 	}
@@ -1095,7 +1095,9 @@ public static class ParkSaveFile
 		park.Counters.Restore( data.Counters );
 		park.MechanicCursor = data.MechanicCursor;
 		if ( data.StatisticsHistory is { } history )
-			park.StatisticsHistory.Restore( history );
+			park.StatisticsHistory.Restore( history, park.Ledger.History.Select( month => month.ParkRating ) );
+		else
+			park.StatisticsHistory.RestoreLegacyRating( park.Ledger.History.Select( month => month.ParkRating ) );
 		if ( data.PriceStatistics is { } statistics )
 			park.PriceStatistics.Restore( statistics.Select( ring => new PriceStatisticRing( ring.Category, ring.Head, ring.Full, ring.Values ) ).ToList() );
 		return park;

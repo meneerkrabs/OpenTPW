@@ -124,6 +124,7 @@ public class OriginalGuestImportTests
 		Assert.AreEqual( GuestState.GoingToTicketBooth, Of( 30 ).State );
 		Assert.AreEqual( (GuestState.WaitingAtBooth, true, 250), (Of( 31 ).State, Of( 31 ).Paid, Of( 31 ).BoothWait), "state 3 keeps mPaidAdmission and the wait +0x200" );
 		Assert.AreEqual( (GuestState.EnteringPark, GuestState.AtTicketBooth, GuestState.CrossingRoadHome), (Of( 32 ).State, Of( 33 ).State, Of( 34 ).State) );
+		Assert.AreEqual( 0, Of( 34 ).Navigation.Mask, "state 19 keeps the saved nav_mode 0 (0x0050D150): a guest whose first gate route succeeded with mask 0 (0x004FEC90) crosses home with it" );
 		Assert.AreEqual( (GuestState.WaitingAtBooth, false), (Of( 38 ).State, Of( 38 ).Paid), "an unpaid guest of state 3 goes back to the booth or home on the next update" );
 		Assert.IsTrue( simulation.Guests.All( guest => guest.Lane == null && guest.OnGrid ) );
 		Assert.AreEqual( 7, simulation.Guests.Count, "the deciding guest 37 off the paths is imported where it stands (0x004FB530)" );

@@ -149,7 +149,9 @@ public sealed partial class GuestSimulation
 			// [BIN:TPW-EXE:0x0050D150 nav_mode] the walk mask +0xB4 (person +0x188) is saved in the navigation state: the constructor 0x0050FFE0 zeroes it and the reader, called at 0x004F925E with ECX = person + 0xD4, loads it as saved
 			var navMode = person.NavigationState.NavMode;
 			navigation.Mask = navMode is >= 0 and <= 2 ? navMode : 0;
-			// OpenTPW's walk keeps the masks the edge test 0x004D8750 tells apart (0, 1, 2); another saved value is reported like an out-of-range meter
+			// [BIN:TPW-EXE:0x004FEC90 walk mask writers] tp.exe writes only 0 and 1 to person +0x188: the set-down 0x004FEBAB, the leave search 0x004FEF04/0x004FEF13 (EAX is the failed route's 0), the
+			// state-3 and booth sends home 0x004FF970/0x004FFA04, 0x004D6977/0x004D6ACB, 0x004F7C0F, the recall 0x00500AB9 and the staff 0x0050571B/0x00506A89; the walk's +0xB4 is written only by the
+			// constructor 0x0051009F (0) and the reader 0x0050D150, so another saved value comes from a corrupt save and is reported like an out-of-range meter
 			if ( navigation.Mask != navMode )
 				adjusted.Add( $"{what} walk mask {navMode} imported as 0" );
 			// [BIN:TPW-EXE:0x004FA5F0 stranded mark on load] mStrandedTime (+0x198, read at 0x004F92F0) is compared with the route counter 0x007CDB98, which is not saved and restarts with the process: the load's re-route clears a mark above the counter, so a fresh load imports it as 0
@@ -253,7 +255,7 @@ public sealed partial class GuestSimulation
 	}
 
 	/// <summary>A guest on its way in or out of the park, in the state it was saved in: the arrival walk's states 0 to 5, state 18 off the paths and the gate's states 19 and 21 stand on the cell map as they did.</summary>
-	// [BIN:TPW-EXE:0x004FB530 arrival states] mState (+0x220) is kept as it was saved, with the walk's accurate destination (+0x18, +0x1A, routed again as the loader does, 0x004FA5F0) in the walking states 0, 2, 5 and 18, mPaidAdmission (+0x204) and the wait mParkOpeningWaitingTime (+0x200) in states 3 and 4; the walk mask +0x188 is the saved nav_mode (1 for a guest on its way home, set by 0x004FF9D0 and 0x004FF7F0)
+	// [BIN:TPW-EXE:0x004FB530 arrival states] mState (+0x220) is kept as it was saved, with the walk's accurate destination (+0x18, +0x1A, routed again as the loader does, 0x004FA5F0) in the walking states 0, 2, 5 and 18, mPaidAdmission (+0x204) and the wait mParkOpeningWaitingTime (+0x200) in states 3 and 4; the walk mask +0x188 is the saved nav_mode in every state, 19 and 21 included (1 for a guest sent home by 0x004FF9D0 or 0x004FF7F0, 0 for one whose first gate route in 0x004FEC90 succeeded with mask 0)
 	private void ImportOnMap( Guest guest, SaveGuest save, (int X, int Y) cell, (int X, int Y) destination, List<string> adjusted )
 	{
 		guest.OnGrid = true;
@@ -301,11 +303,9 @@ public sealed partial class GuestSimulation
 				break;
 			case 19:
 				guest.State = GuestState.CrossingRoadHome;
-				guest.Navigation.Mask = 1;
 				break;
 			default:
 				guest.State = GuestState.WaitingToGoHome;
-				guest.Navigation.Mask = 1;
 				guest.StateTimer = WaitForBusSeconds;
 				break;
 		}

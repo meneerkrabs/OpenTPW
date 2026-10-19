@@ -71,6 +71,8 @@ public sealed class ParticleRenderer : Entity
 		{
 			// one atlas texture shared by the three materials; a failure leaves no half-built entity or assets behind
 			atlasTexture = new Texture( atlas.Pixels, atlas.Width, atlas.Height );
+			// uploaded: this renderer reads only the frame positions from now on
+			atlas.ReleasePixels();
 			alphaMaterial = Prepare( atlasTexture, MaterialFlags.DisableDepthWrite | MaterialFlags.DoubleSided );
 			additiveMaterial = Prepare( atlasTexture, MaterialFlags.DisableDepthWrite | MaterialFlags.DoubleSided | MaterialFlags.AdditiveBlend );
 			oneOneMaterial = Prepare( atlasTexture, MaterialFlags.DisableDepthWrite | MaterialFlags.DoubleSided | MaterialFlags.OneOneBlend );

@@ -99,7 +99,12 @@ public sealed class OriginalTerrain : Entity
 			parts.Remove( old );
 			old.Delete();
 			if ( old.Model is { } model && models.Remove( model ) )
+			{
 				ScheduleDispose( model );
+				// a queue model's material is its own (made again with every rebuild), a path batch's is shared through pathMaterials and kept for the next one
+				if ( !pathMaterials.ContainsValue( model.Material ) )
+					model.Material.ReleaseOwnedResources();
+			}
 		}
 		pathParts.Clear();
 		RefreshHoles();
@@ -605,6 +610,12 @@ public sealed class OriginalTerrain : Entity
 		parts.Clear();
 		foreach ( var model in models )
 			ScheduleDispose( model );
+		// The materials are the terrain's own (each part made one, the path layer shares one per texture set, the heightfield keeps its own across hole changes) and carry a shader copy, a
+		// pipeline and a uniform buffer each: they leave with the entity, as an object's do (OriginalObject).
+		foreach ( var material in models.Select( model => model.Material ).Concat( pathMaterials.Values ).Concat( heightfieldMaterial != null ? new[] { heightfieldMaterial } : [] ).Distinct() )
+			material.ReleaseOwnedResources();
+		pathMaterials.Clear();
+		heightfieldMaterial = null;
 		models.Clear();
 	}
 }

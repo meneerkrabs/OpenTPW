@@ -24,7 +24,7 @@ public class SavedResearchGroupTests
 	public void OwnSaveRestoresHigherGroupsBeforeValidatingTheSelectedProject()
 	{
 		var park = HigherGroupPark();
-		Assert.AreEqual( 0, park.Research.HighestOpenGroup( ResearchCategory.Feature ) );
+		Assert.AreEqual( 1, park.Research.HighestOpenGroup( ResearchCategory.Feature ), "the synthetic group-1 threshold is zero; group 2 still requires 80 percent completion" );
 		Assert.IsFalse( park.Research.TrySelect( ResearchCategory.Feature, 1410, 0 ) );
 		var groups = Enum.GetValues<ResearchCategory>().Select( park.Research.HighestOpenGroup ).ToArray();
 		groups[(int)ResearchCategory.Feature] = 3;

@@ -7,7 +7,7 @@
 - Historical baseline: the first plan-only draft was written against `5ccddcab` (2026-10-18). That plan is superseded by the findings below and is retained only under "Historical context".
 - Authored by this task: this proposal and `source/OpenTPW.Tests/SignWidthRoundingCharacterizationTests.cs`. No production source is changed.
 - All fixtures are synthetic and use the existing `TrueTypeFontTests.FontBuilder`; no private font, game asset or original executable was read.
-- The tests below were authored but not executed: this environment has no .NET SDK. They require independent review and exact-head CI before any publication.
+- No local SDK is available. The first published version ran in cross-platform CI and exposed a fragile expected fit width at the exact 512 px boundary (expected 17, observed 18). The revised percent-fit case uses a 513 px canvas and awaits a fresh exact-head CI run; no passing result is claimed for this revision.
 
 ## Current findings (source-verified)
 
@@ -27,7 +27,7 @@ Both the explicit `horizontalScale` argument and the value returned by `LogFontH
 `TrueTypeFontTests.FontBuilder` writes `head`, `hhea`, `maxp`, `hmtx`, `loca`, `glyf`, `cmap`, optional `name` and optional `kern`, but no `OS/2` table. Such a font therefore has `AverageCharWidth == 0`, so `LogFontHorizontalScale` is neutral for it. That is characterized directly, and the new test file adds a minimal 78-byte OS/2 table in a test-only wrapper so the existing average-width path can be exercised with synthetic metrics. The base glyph metrics still come from `FontBuilder`.
 
 ### Long synthetic names
-A 32-character synthetic name with every glyph 601 units wide, em 144, upem 1000, and synthetic `xAvgCharWidth = 600` measures 2769.408 px at 100 percent. At 90 percent the 86.544 px advance truncates to 77 px per character, for 2464 px, a loss that accumulates over the name. `FitLogFontWidth(..., logFontWidth: 58, canvasWidth: 512)` narrows the name to width 15 at 100 percent because average-width scaling makes the extent depend on `lfWidth`; at 90 percent the same search selects width 17.
+A 32-character synthetic name with every glyph 601 units wide, em 144, upem 1000, and synthetic `xAvgCharWidth = 600` measures 2769.408 px at 100 percent. At 90 percent the 86.544 px advance truncates to 77 px per character, for 2464 px, a loss that accumulates over the name. `FitLogFontWidth(..., logFontWidth: 58, canvasWidth: 512)` narrows the name to width 15 at 100 percent because average-width scaling makes the extent depend on `lfWidth`; at 90 percent a 513 px canvas selects width 18. The one-pixel margin avoids treating float reconstruction of 32 truncated 16 px advances as an exact 512 px comparison.
 
 ## Source sites
 - `source/OpenTPW.Files/Formats/Font/SignTextLayout.cs:43-49` — `ScaledAdvance`: 100 percent returns the fractional advance unchanged; other values truncate the scaled pixel advance.
@@ -40,13 +40,13 @@ A 32-character synthetic name with every glyph 601 units wide, em 144, upem 1000
 - `source/OpenTPW.Tests/SignWidthPercentTests.cs:18-30` — existing per-character percent truncation examples.
 - `source/OpenTPW.Tests/SignWidthRoundingCharacterizationTests.cs` — new characterization fixtures described below.
 
-## Characterization test contract (authored, not executed)
+## Characterization test contract (revised, exact-head CI pending)
 - `HundredPercentKeepsFractionalAdvancesAndHorizontalScaleStaysContinuous`: 601/603-unit advances retain 60.1/120.4 px at 100 percent, including after `horizontalScale = 1.5`.
 - `PercentTruncatesEachCharacterAdvanceNotTheLineTotal`: 612-unit glyphs at 50 percent yield 30 + 30 = 60 px, not the 61 px obtained by truncating the 122.4 px total.
 - `PercentTruncationHappensAfterHorizontalScaleAndLosesFractions`: 601/603 units at scale 1.5 and 90 percent yield 81 + 81 = 162 px, distinct from 90 percent of 180.6 px.
 - `LogFontWidthScaleIsContinuousWhilePercentQuantizes`: with synthetic xAvgCharWidth 600, `lfWidth = 90` at em 100 gives scale 1.5; 100 percent keeps 90.15 px, while 90 percent truncates to 81 px; non-positive widths and width 0 give scale 1.
 - `SyntheticFontWithoutOs2HasNoLogFontWidthScale`: a plain `FontBuilder` font has `AverageCharWidth == 0` and `LogFontHorizontalScale == 1`, so LOGFONT width is neutral.
-- `LongSyntheticNameCharacterizesPercentAndLogFontWidthFits`: a 32-character synthetic name pins the fractional extent, the accumulated percent loss, and the fitted widths 15 (100 percent) and 17 (90 percent), including the existing "fitting width + 3" invariant.
+- `LongSyntheticNameCharacterizesPercentAndLogFontWidthFits`: a 32-character synthetic name pins the fractional extent, the accumulated percent loss, and the fitted widths 15 (100 percent, 512 px canvas) and 18 (90 percent, 513 px canvas), including the existing "fitting width + 3" invariant.
 
 These fixtures call only the managed `TrueTypeFont` and `SignTextLayout` APIs. They make no comparison with native output and no parity claim.
 
@@ -87,5 +87,5 @@ Its acceptance list (long names just below/at/above canvas width, width 0, narro
 
 ## Completion boundary
 - This deliverable is documentation plus tests only; no gameplay or runtime source file is changed.
-- The tests were not executed and no pass claim is made; they await independent review and exact-head CI.
+- The first CI run found the corrected fit-boundary expectation described above; this revision awaits fresh exact-head CI and no pass claim is made.
 - No approximation is retired, no runtime or gameplay behavior is claimed complete, and native GDI rounding remains unverified.

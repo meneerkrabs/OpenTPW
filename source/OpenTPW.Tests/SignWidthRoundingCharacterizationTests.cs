@@ -165,10 +165,13 @@ public class SignWidthRoundingCharacterizationTests
 		Assert.IsTrue( Extent( fitted, 100 ) < 512 );
 		Assert.IsTrue( Extent( fitted + 3, 100 ) >= 512 );
 
-		var fittedAt90 = SignTextLayout.FitLogFontWidth( font, name, 144, 58, 512, widthPercent: 90 );
-		Assert.AreEqual( 17, fittedAt90, "the percent lets a wider LOGFONT width fit" );
+		// Use a one-pixel margin: 32 truncated 16-pixel advances total 512,
+		// but conversion through font units may reconstruct just below that boundary.
+		const int percentCanvasWidth = 513;
+		var fittedAt90 = SignTextLayout.FitLogFontWidth( font, name, 144, 58, percentCanvasWidth, widthPercent: 90 );
+		Assert.AreEqual( 18, fittedAt90, "the percent lets a wider LOGFONT width fit" );
 		Assert.IsTrue( fittedAt90 > fitted );
-		Assert.IsTrue( Extent( fittedAt90, 90 ) < 512 );
-		Assert.IsTrue( Extent( fittedAt90 + 3, 90 ) >= 512 );
+		Assert.IsTrue( Extent( fittedAt90, 90 ) < percentCanvasWidth );
+		Assert.IsTrue( Extent( fittedAt90 + 3, 90 ) >= percentCanvasWidth );
 	}
 }

@@ -588,6 +588,19 @@ Two pins cover the jungle's weather turn by turn over its first 400 days under s
 
 The guests' side of the option has a pin of its own, because the two weather pins hash only the weather: `DeterminismTests.UmbrellasAndRainMoodUnderTheJungleWeatherAcrossDecemberArePinnedWithWintryDecembersOffAndOn` runs the synthetic park with a brolly shop and the rain mood on, driven by the jungle's real `ParkWeather` (seed 21) from park day 320 over 35 days across the first December: `JungleDecemberOffFixedRunHash` = `0xF4A00471E60B9535` (option off: rain, then a thunderstorm in December) and `JungleDecemberWintryFixedRunHash` = `0x296DA4DA6A8BE323` (option on: rain, then snow). `EveryExistingPinIsUnchangedWithTheWinterExtensionAndTheWinterWeatherOnOrOffAndNoWinterShop` builds that weather with the option's real gate and also covers `RainMoodWithUmbrellasFixedRunHash`. The forecast follows the option (`ParkWeather.ForecastBands`) and takes no draw.
 
+## Cheats
+
+A park's cheats ([CHEATS.md](CHEATS.md), `ParkCheats`) live in the park economy: the original's cheat mode (`CHTS` byte 0), the record of every applied cheat (turn, kind, argument; at most 4,096 entries, older ones dropped and
+counted) and the actions waiting for the next turn. Every cheat the player asks for, through the original's secret park name and Alt keys or the extension's window, is **queued and applied at the start of the next park turn**
+(`ParkEconomy.AdvanceTurn`, before the turn's thing sweep with its weather and arrival updates), in a fixed order of kinds (`CheatKind`), and **takes no draw from any random stream** (`[EXT:cheats-turn-boundary]`). So a run with the same
+cheats at the same turns is the same run; the record in the save names those turns. OpenTPW has no input log for other player actions, and the record does not replay itself.
+
+The record is part of the park save (`ParkSaveFile.Data.Cheats`) only when the park has cheated or has a cheat waiting; otherwise it is left out, so **a park that never cheated keeps its save bytes and its hash** whether the
+`opentpw.cheats` extension is on or off. Because the economy digest of the canonical hash is that save's text, the record joins the hash exactly when it is present; `WorldStateHash.SchemaVersion` did not move.
+`CheatsTests.EveryExistingPinAndTheSaveBytesAreUnchangedWithTheExtensionOnOrOff` runs the fixed run (`FixedRunHash`) with the extension off and on and gets the same hash and the same save bytes. A world save records
+`opentpw.cheats` only once the park has used one of the extension's own cheats (`ParkCheats.UsesExtension`, `ParkResumeMods.UsedOnlyExtensionIds`); a park cheated through the original's cheat mode alone does not record it
+and loads with the extension off.
+
 ## Tests
 
 `DeterminismTests` (no game data needed):

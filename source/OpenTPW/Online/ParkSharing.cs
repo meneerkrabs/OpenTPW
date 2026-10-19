@@ -54,6 +54,9 @@ public static class ParkSharing
 		if ( ModsRefusal( level ) is { } refusal )
 			throw new InvalidOperationException( refusal );
 		var snapshot = ParkSnapshotBuilder.FromLevel( level );
+		// [EXT:cheats-publish] a cheated park is exported and published like any other (the original refused it, UITEXT 417); its package only says so
+		if ( level.Park?.Economy.Cheats.Cheated == true )
+			snapshot = snapshot with { Flags = snapshot.Flags.Append( OpenTPW.Online.Packages.CompatibilityFlags.Cheated ).ToArray() };
 		MapFile? map = level.OriginalPark?.Map;
 		Func<float, float, (int X, int Y)?>? rideCell = level.OriginalPark == null ? null : ( x, y ) =>
 			OriginalParkPlacement.TryGetCell( level.OriginalPark.Heightfield, x, y, out var cx, out var cy ) ? (cx, cy) : null;

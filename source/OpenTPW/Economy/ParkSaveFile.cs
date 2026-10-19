@@ -109,6 +109,46 @@ public static class ParkSaveFile
 		/// <summary>World seed and the guest, script and sound streams (absent in saves written before world seeds: those streams are not restored).</summary>
 		// [EXT:legacy-economy-save] this legacy economy-only park save (Level.SavePark/LoadPark, used by DeterminismTests) persists the economy and every random stream, not guests, queues or object script state, and a load keeps the running guests and scripts; the player's save (GameFlow.SaveCurrentPark -> ParkResumeSaveFile) already stores the guests with their queue bookkeeping, the script world and each object runtime, the advisor, the coasters and the tracks
 		public WorldData? World { get; init; }
+		/// <summary>
+		/// The park's cheats (<see cref="ParkCheats"/>, docs/CHEATS.md): the original's cheat mode (<c>CHTS</c> byte 0), the record of the applied cheats and the actions waiting for the next turn.
+		/// Absent for a park that never cheated, so its save keeps the bytes of a park from before cheats existed; it joins the run hash (the economy digest) only when present.
+		/// </summary>
+		// [EXT:cheats-save] OpenTPW keeps the original's mode byte plus its own record of every cheat and its turn; the original saves only the two CHTS bytes (0x4055D0)
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public CheatsData? Cheats { get; init; }
+	}
+
+	/// <summary>A park's cheats as saved (<see cref="ParkCheats"/>).</summary>
+	public sealed class CheatsData
+	{
+		/// <summary>The cheat mode (the original's <c>+0xA</c>): on once the park has cheated.</summary>
+		public required bool Mode { get; init; }
+		/// <summary>[EXT:cheats-save] The park has used one of the extension's own cheats; absent while it has not.</summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingDefault )]
+		public bool Extension { get; init; }
+		/// <summary>The applied cheats, oldest first.</summary>
+		public required List<CheatLogData> Log { get; init; }
+		/// <summary>How many of the oldest entries were dropped to keep the log bounded; absent while none was.</summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingDefault )]
+		public long DroppedLog { get; init; }
+		/// <summary>The actions waiting for the next park turn; absent while none is.</summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public List<CheatActionData>? Pending { get; init; }
+	}
+
+	/// <summary>One applied cheat: the park turn, the kind and the argument.</summary>
+	public sealed class CheatLogData
+	{
+		public required long Turn { get; init; }
+		public required CheatKind Kind { get; init; }
+		public required int Argument { get; init; }
+	}
+
+	/// <summary>One queued cheat action.</summary>
+	public sealed class CheatActionData
+	{
+		public required CheatKind Kind { get; init; }
+		public required int Argument { get; init; }
 	}
 
 	/// <summary><see cref="WorldRandomState"/> as saved; the world generator itself is <see cref="Data.WorldGenerator"/>.</summary>
@@ -768,7 +808,9 @@ public static class ParkSaveFile
 			PriceStatistics = park.PriceStatistics.Capture() is { Count: > 0 } rings
 				? rings.Select( ring => new PriceStatisticData { Category = ring.Category, Head = ring.Head, Full = ring.Full, Values = ring.Values } ).ToList() : null,
 			StatisticsHistory = park.StatisticsHistory.IsEmpty && park.Ledger.History.Count == 0 ? null : park.StatisticsHistory.Capture(),
-			World = world == null ? null : new WorldData { Seed = world.Seed, SoundSeed = world.SoundSeed }
+			World = world == null ? null : new WorldData { Seed = world.Seed, SoundSeed = world.SoundSeed },
+			// [EXT:cheats-save] null for a park that never cheated, so its save and its hash keep their bytes
+			Cheats = park.Cheats.Capture()
 		};
 	}
 
@@ -964,6 +1006,8 @@ public static class ParkSaveFile
 				Require( blocks != null && blocks.All( entry => entry != null && entry.Block is >= 0 and < ParkLitter.BlockCount && entry.Count is >= 0 and <= ParkLitter.BlockSize * ParkLitter.BlockSize && entry.Stamp >= 0 )
 					&& blocks.Select( entry => entry.Block ).Distinct().Count() == blocks.Count, "analyser block caches" );
 		}
+		if ( data.Cheats is { } cheats )
+			Require( ParkCheats.Problem( cheats, ParkCalendar.Turn( data.Tick ) ) is null, ParkCheats.Problem( cheats, ParkCalendar.Turn( data.Tick ) ) ?? "cheats" );
 		foreach ( var loan in data.Loans )
 			Require( loan.MonthsRemaining > 0 && loan.MonthsRemaining <= loan.Months && loan.MonthlyRepayment >= 0 && (loan.RemainingBalance is null or >= 0) && data.TakenLoanOffers.Contains( loan.OfferIndex ), $"loan {loan.OfferIndex}" );
 	}
@@ -1100,6 +1144,7 @@ public static class ParkSaveFile
 			park.StatisticsHistory.RestoreLegacyRating( park.Ledger.History.Select( month => month.ParkRating ) );
 		if ( data.PriceStatistics is { } statistics )
 			park.PriceStatistics.Restore( statistics.Select( ring => new PriceStatisticRing( ring.Category, ring.Head, ring.Full, ring.Values ) ).ToList() );
+		park.Cheats.Restore( data.Cheats );
 		return park;
 	}
 

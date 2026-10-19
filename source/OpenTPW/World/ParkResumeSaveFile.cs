@@ -328,6 +328,10 @@ internal static class ParkResumeSaveFile
 		if ( snapshot.Guests?.Guests?.Any( guest => guest != null && (guest.WarmItems != 0 || guest.WarmUntilDay != 0) ) == true
 			&& snapshot.Mods?.Any( mod => mod?.Id == OfficialExtensions.Winter.Id ) != true )
 			Require( false, $"a guest has a warm item but the save does not record {OfficialExtensions.Winter.Id}" );
+		// [EXT:cheats-save] a park that used one of the cheats extension's own cheats (or has one waiting) records the extension (a park cheated only through the original's cheats does not), so a save cannot hide them from the mod check
+		if ( snapshot.Economy?.Cheats is { } cheats && (cheats.Extension || cheats.Pending?.Any( action => action != null && ParkCheats.IsExtensionKind( action.Kind ) ) == true)
+			&& snapshot.Mods?.Any( mod => mod?.Id == OfficialExtensions.Cheats.Id ) != true )
+			Require( false, $"the park used the extension's cheats but the save does not record {OfficialExtensions.Cheats.Id}" );
 		// [EXT:smarter-guests] the extension's section: present exactly when the extension is recorded, with ids that fit the guests the save holds
 		if ( SmarterGuestsSave.ShapeProblem( snapshot.SmarterGuests, snapshot.Guests?.Guests?.Select( guest => guest.Id ), snapshot.Mods, snapshot.ScriptMods != null, snapshot.Guests?.Attractions?.Select( attraction => attraction.AttractionId ) ) is { } smarterProblem )
 			Require( false, smarterProblem );

@@ -1,7 +1,8 @@
 # Cheats: the original cheat mode and `opentpw.cheats`
 
-October 19, 2026. Status: **phase K0** (this trace, the ride capacity data and the decisions). Nothing is built yet: the original cheat mode comes in K2, the
-extension's window in K3 and the ride vehicle limit in K4. The plan is `OpenTPW-notes/plans/cheats-plan.md`.
+October 19, 2026. Status: **phases K0** (this trace, the ride capacity data and the decisions) and **K1** (the park's cheat record, the turn-boundary queue, the save, the
+extension's recording and the cheated mark; [below](#the-parks-cheat-record-k1)). No cheat can be used yet: the original cheat mode comes in K2, the extension's window in K3 and the ride
+vehicle limit in K4. The plan is `OpenTPW-notes/plans/cheats-plan.md`.
 
 The request (user, 2026-10-19): a cheats extension with (1) a button that makes visitors arrive by bus, plane or boat, (2) a way to change the weather, (3) a way to raise the
 cars-per-ride limit and (4) a button that awards a golden ticket. Evidence: a static trace of the decrypted Windows `tp.exe` v2.0 (SHA-256 `5472f97b...`), through the shared REA
@@ -142,11 +143,31 @@ Consequences for the vehicle limit (K4):
   Star Tours) through it; the ceiling of 40 cars needs `CarSlots` 40 and either a capacity above 255 or a car override. K4 decides which.
 - Coaster trains are derived from the release rate and are out of scope (K5).
 
+## The park's cheat record (K1)
+
+- **Where it lives.** `ParkCheats` (`source/OpenTPW/Economy/ParkCheats.cs`) is part of the park economy (`ParkEconomy.Cheats`): the cheat mode (`[BIN:TPW-EXE:0x4053C0]`, the original's `+0xA`), a
+  record of every applied cheat (park turn, kind, argument; at most 4,096 entries, the oldest dropped and counted), the actions waiting for the next turn (at most 16) and a sticky flag for the
+  extension's own cheats.
+- **The turn boundary** `[EXT:cheats-turn-boundary]`. Every cheat is queued (`ParkEconomy.QueueCheat`) and applied at the start of the next park turn, before the turn's thing sweep (its
+  weather and arrival updates), in the order of `CheatKind`, with no random draw. Applying any cheat turns the mode on; nothing turns it off (the original never calls `0x4053C0(0)`). A
+  Theme Park Inc economy refuses cheats: only Theme Park World's are traced. The mode's message of type `0x15` is not posted.
+- **The save** `[EXT:cheats-save]`. `ParkSaveFile.Data.Cheats` holds the record only for a park that has cheated or has a cheat waiting, so every other park saves (and hashes) as before; it is
+  validated on load (known kinds and arguments, turns in order and not after the park turn, a mode that is on when cheats were applied). See [DETERMINISM.md](DETERMINISM.md#cheats).
+- **The extension's recording.** `opentpw.cheats` is a used-only extension: a world save records it once the park has used one of its own cheats (or has one waiting), and such a save needs it to
+  load. A park cheated through the original's cheat mode alone does not record it and loads with the extension off, because the user's decision makes that mode independent of the extension.
+  Until K3 the extension is registered but not selectable, and no kind of its own exists.
+- **The cheated mark** `[EXT:cheats-publish]`. The load and continue menus write "(cheated)" after a cheated park's name (in all eleven UI languages), and a cheated park's shared package
+  carries the flag `cheated`, which a visit lists with the package's other flags. Exporting, publishing and ranking are not refused: `ParkSharing.ModsRefusal` does not count the cheats
+  extension (it is used-only and the sharing code does not report it in use) and the server's acceptance is unchanged; the flag is informational and well-formed for every client and server
+  version (any flag matching the package's pattern is accepted).
+- **The original-format export** writes the park's own `CHTS` bytes from K2 on, when the import reads them: until then an exported park keeps the template's bytes, as before.
+
 ## Phases
 
 - **K0** (this document): the trace, the capacity data, COMPAT-007 and SAVE-010 narrowed.
-- **K1**: the extension (off), the park's cheat record in the save, the used-only and sticky recording, the turn-boundary queue, the cheated mark shown, the TPWS export's own `CHTS`.
-- **K2**: the original cheat mode: the secret name in `Level.RenamePark`, the cheat key context, Alt+R, Alt+1, the ten tickets, the import of `CHTS`.
+- **K1** (built): the extension (off, not yet selectable), the park's cheat record in the save, the used-only and sticky recording, the turn-boundary queue, the cheated mark shown.
+- **K2**: the original cheat mode: the secret name in `Level.RenamePark`, the cheat key context, Alt+R, Alt+1, the ten tickets, the import of `CHTS` and the original-format export's own `CHTS`
+  (moved from K1: the export round trip of the corpus saves needs the import).
 - **K3**: the cheats window (Alt+C): arrival vehicles, weather, the ticket dropdown; `CheatsFixedRunHash`.
 - **K4**: the ride vehicle limit for bump rides and tours; captures.
 - **K5** (optional, not planned): coaster trains.

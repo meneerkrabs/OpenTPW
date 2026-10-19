@@ -49,6 +49,7 @@ public sealed class BumpController
 	public BumpController( BumperTemplate template, Func<uint> worldRandom, BumpWorld? world = null )
 	{
 		Template = template ?? throw new ArgumentNullException( nameof( template ) );
+		VehicleLimit = template.MaxVehicles;
 		this.worldRandom = worldRandom ?? throw new ArgumentNullException( nameof( worldRandom ) );
 		this.world = world;
 		// the controller ticks in its module from its creation (a ride's runtime adds it to the park's module, a test's controller to its own world)
@@ -69,6 +70,27 @@ public sealed class BumpController
 	public bool HasTrack => !Template.IsBumper;
 
 	public BumperTemplate Template { get; }
+
+	/// <summary>
+	/// [EXT:cheats-ride-vehicles] How many vehicles the controller launches: the template's <see cref="BumperTemplate.MaxVehicles"/>, or the raised limit of the cheats window's ride vehicle cheat
+	/// (bumper cars and karts, <see cref="RaisedVehicleLimit"/>; the water rides' 64 boats are already the module's own limit). docs/CHEATS.md.
+	/// </summary>
+	public int VehicleLimit { get; private set; }
+
+	/// <summary>[EXT:cheats-ride-vehicles] The vehicle limit of a bumper or kart ride the cheat raised (the user's ceiling, 32).</summary>
+	public const int RaisedVehicleLimit = 32;
+
+	/// <summary>Whether the cheat can raise this controller's vehicle limit: bumper cars and karts, not the water rides (their boats are already limited only by the module's 64).</summary>
+	public bool CanRaiseVehicleLimit => Template.IsBumper || Template.IsKart;
+
+	/// <summary>[EXT:cheats-ride-vehicles] Raises the vehicle limit to <see cref="RaisedVehicleLimit"/>; false for a water ride or one already raised.</summary>
+	internal bool RaiseVehicleLimit()
+	{
+		if ( !CanRaiseVehicleLimit || VehicleLimit >= RaisedVehicleLimit )
+			return false;
+		VehicleLimit = RaisedVehicleLimit;
+		return true;
+	}
 	/// <summary>The attraction id of the ride this controller belongs to (set by the runtime; −1 for a controller of its own): the riders' heads draw for it.</summary>
 	public int AttractionId { get; set; } = -1;
 	public int Type => Template.Type;
@@ -624,7 +646,8 @@ public sealed class BumpController
 	// [BIN:TPW-EXE:0x00549DB0 create vehicle] needs a running count below the type's maximum and 64, and a nonzero phase; the boat starts at the station reference with the controller's laps, takes the pending guests and is launched (0x0054A040)
 	public bool Launch()
 	{
-		if ( VehicleCount >= Template.MaxVehicles || VehicleCount >= MaximumVehicles || Phase == PhaseClosed )
+		// [EXT:cheats-ride-vehicles] the template's limit, or the cheat's raised one
+		if ( VehicleCount >= VehicleLimit || VehicleCount >= MaximumVehicles || Phase == PhaseClosed )
 			return false;
 		// [BIN:TPW-EXE:0x0054A040 relaunch kart] the original accepts BUMP 4 in phase 3 but its relaunch gives such a kart no movement flags, so it would stand on the station for ever (no shipped script creates a kart after the start)
 		// [EXT:late-kart-guard] a kart is refused while the race is over, where the original creates a kart that never moves and keeps the controller's count above 0 (its race never resets: a deadlock no shipped script reaches); OpenTPW does not reproduce the frozen kart
@@ -1831,6 +1854,9 @@ public sealed class BumpController
 		hash.Add( Leaving.Count );
 		foreach ( var guest in Leaving )
 			hash.Add( guest );
+		// [EXT:cheats-ride-vehicles] a raised limit joins the hash; every other controller keeps its pins
+		if ( VehicleLimit != Template.MaxVehicles )
+			hash.Add( VehicleLimit );
 		hash.Add( vehicles.Count );
 		foreach ( var vehicle in vehicles )
 		{
@@ -1898,6 +1924,9 @@ public sealed class BumpController
 		}
 		if ( !double.IsFinite( data.TickRemainder ) || data.TickRemainder < 0 || data.TickRemainder >= MaximumSavedRemainder )
 			throw new InvalidDataException( "A saved controller's tick remainder is outside one tick." );
+		if ( data.VehicleLimit is { } limit && (!CanRaiseVehicleLimit || limit != RaisedVehicleLimit) )
+			throw new InvalidDataException( $"A saved controller of type {Type} has the vehicle limit {limit}, which only a raised bumper or kart ride ({RaisedVehicleLimit}) has." );
+		VehicleLimit = data.VehicleLimit ?? Template.MaxVehicles;
 		Laps = data.Laps;
 		SetPerformance( data.Performance );
 		Phase = data.Phase;

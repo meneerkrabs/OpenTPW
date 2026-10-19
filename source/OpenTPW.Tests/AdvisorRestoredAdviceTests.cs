@@ -189,7 +189,7 @@ public class AdvisorRestoredAdviceTests
 		return posted;
 	}
 
-	private static RestoredAdviceDriver Driver( AdvisorController controller, int gameType = 0, bool tutorial = true, Func<int?>? keys = null ) => new( controller, () => 100u, () => gameType, () => tutorial, keys );
+	private static RestoredAdviceDriver Driver( AdvisorController controller, int gameType = 0, bool tutorial = true ) => new( controller, () => 100u, () => gameType, () => tutorial );
 
 	// ------------------------------------------------------------------ the extension
 
@@ -428,7 +428,6 @@ public class AdvisorRestoredAdviceTests
 		driver.OnParkEvent( Event( ParkEventKind.ChallengeOffered ), economy );
 		driver.ObserveVehicle( -1 );
 		driver.ObserveVehicle( ArrivalVehicleKind.Bus );
-		driver.Help( RestoredAdvice.FirstChallengeHelp, "test" );
 		driver.OnlineScreen( RestoredAdvice.PublishHelp );
 		driver.Attached( popUpHelp: false );
 		Assert.AreEqual( 0, Pending( events ).Count );
@@ -538,117 +537,69 @@ public class AdvisorRestoredAdviceTests
 		public int KidsWithCostumesPercent => 0;
 	}
 
-	/// <summary>A driver whose player-wide keys are the starting key and a third of the tickets won (the ledger's rule).</summary>
-	private static (RestoredAdviceDriver Driver, Action<GoldenTicketKind> Win) TicketDriver( ParkEconomy economy, AdvisorController controller, Func<int?>? keys = null )
+	// the ticket wins and the first challenge offer are the original's own advice (215-227, 344: AutomaticAdvisor.Challenges), so the extension stands down for them and only adds the global tickets' award lines
+
+	private static readonly int[] StoodDownTicketLines = { 99, 164, 165, 218, 219, 223, 224, 228, 229 };
+
+	private static AutomaticAdvisor AttachedAdvisor( ParkEconomy economy )
 	{
-		keys ??= () => PlayerProgress.StartingKeys + economy.Objectives.GoldenTickets.Count / PlayerProgress.TicketsPerKey;
-		var driver = Driver( controller, keys: keys );
-		driver.ResolveTickets();
-		return (driver, kind =>
+		var advisor = new AutomaticAdvisor( Controller(), () => 0 );
+		advisor.AttachEconomy( economy );
+		return advisor;
+	}
+
+	private static IReadOnlyList<int> PendingOf( AutomaticAdvisor advisor ) =>
+		advisor.Controller.CaptureSnapshot().Queue.Slots.Where( slot => slot != null ).Select( slot => slot!.MessageId ).ToArray();
+
+	[TestMethod]
+	public void ATicketWinSaysTheOriginalsAdviceOnceAndNoRestoredTicketLineWhetherTheExtensionIsOnOrOff()
+	{
+		foreach ( var on in new[] { true, false } )
 		{
-			Win( economy, kind );
-			driver.OnParkEvent( Event( ParkEventKind.GoldenTicketWon, (long)kind ), economy );
-			driver.ResolveTickets();
-		});
+			using var scope = on ? null : OpenTpwExtensions.Use( Off() );
+			Assert.AreEqual( on, RestoredAdvice.Enabled );
+			var economy = EconomyTestData.Park();
+			var advisor = AttachedAdvisor( economy );
+			Win( economy, GoldenTicketKind.Visitors );
+			advisor.OnParkEvent( Event( ParkEventKind.GoldenTicketWon, (long)GoldenTicketKind.Visitors ) );
+			var extension = Driver( advisor.Controller );
+			extension.OnParkEvent( Event( ParkEventKind.GoldenTicketWon, (long)GoldenTicketKind.Visitors ), economy );
+			var pending = PendingOf( advisor );
+			Assert.AreEqual( 1, pending.Count( message => message == 215 ), $"the original's local ticket line, once (extension {(on ? "on" : "off")})" );
+			Assert.IsFalse( pending.Intersect( StoodDownTicketLines ).Any(), "no restored ticket line" );
+			Win( economy, GoldenTicketKind.CoasterHeight );
+			advisor.OnParkEvent( Event( ParkEventKind.GoldenTicketWon, (long)GoldenTicketKind.CoasterHeight ) );
+			extension.OnParkEvent( Event( ParkEventKind.GoldenTicketWon, (long)GoldenTicketKind.CoasterHeight ), economy );
+			pending = PendingOf( advisor );
+			Assert.AreEqual( 1, pending.Count( message => message == 220 ), "the original's global ticket line" );
+			Assert.IsFalse( pending.Intersect( StoodDownTicketLines ).Any() );
+			Assert.AreEqual( on, pending.Contains( 230 ), "the award line is the extension's alone" );
+		}
 	}
 
 	[TestMethod]
-	public void GoldenTicketsSayTheirOwnLinesByTheKeyTheyEarn()
+	public void TheExtensionKeepsOnlyTheAwardsOfTheTicketLines()
 	{
-		var economy = EconomyTestData.Park();
-		var controller = Controller();
-		var (_, won) = TicketDriver( economy, controller );
-		// the first and second tickets earn no key: the plain line
-		won( GoldenTicketKind.Visitors );
-		CollectionAssert.AreEqual( new[] { 99 }, Pending( controller ).ToArray() );
-		won( GoldenTicketKind.PeopleInPark );
-		Assert.AreEqual( 2, Pending( controller ).Count( message => message == 99 ), "99 allows more than one pending copy" );
-		// the third earns the second key: the criterion line of its kind, with the response that carries its caption (the ticket's index)
-		won( GoldenTicketKind.Happiness );
-		Assert.IsTrue( Pending( controller ).Contains( 218 ) );
-		Assert.AreEqual( (int)GoldenTicketKind.Happiness, PendingOf( controller, 218 ).ResponseVariantOverride );
-		Assert.AreEqual( 9100, PendingOf( controller, 218 ).Score, "GeneralWonGoldenTicket.Score" );
-		// the global tickets say the award line too, and 223 (the response is the kind's place among the four)
-		won( GoldenTicketKind.ProfitYear );
-		won( GoldenTicketKind.CoasterHeight );
-		Assert.IsTrue( Pending( controller ).Contains( 230 ), "the coaster height award" );
-		won( GoldenTicketKind.GokartExcitement );
-		Assert.IsTrue( Pending( controller ).Contains( 231 ) );
-		Assert.AreEqual( 6, economy.Objectives.GoldenTickets.Count );
-		Assert.IsTrue( Pending( controller ).Contains( 165 ), "the sixth ticket earns the third key, which opens Wonderland" );
-	}
-
-	[TestMethod]
-	public void TheKeysAreThePlayersLedgersNotTheParksTickets()
-	{
-		// a player whose ledger already holds tickets from other parks: this park's first ticket earns the key
-		var economy = EconomyTestData.Park();
-		var ledgerKeys = 1;
-		var controller = Controller();
-		var (driver, _) = TicketDriver( economy, controller, () => ledgerKeys );
-		Win( economy, GoldenTicketKind.Visitors );
-		driver.OnParkEvent( Event( ParkEventKind.GoldenTicketWon, (long)GoldenTicketKind.Visitors ), economy );
-		ledgerKeys = 2;
-		driver.ResolveTickets();
-		CollectionAssert.AreEqual( new[] { 218 }, Pending( controller ).ToArray(), "the ledger's key count went up: the key line, though the park holds one ticket" );
-		// a ticket that moves no key says the plain line, whatever the park's own count is
-		Win( economy, GoldenTicketKind.PeopleInPark );
-		driver.OnParkEvent( Event( ParkEventKind.GoldenTicketWon, (long)GoldenTicketKind.PeopleInPark ), economy );
-		driver.ResolveTickets();
-		CollectionAssert.AreEquivalent( new[] { 218, 99 }, Pending( controller ).ToArray() );
-		// the key that opens Space Zone, from the ledger
-		ledgerKeys = 4;
-		Win( economy, GoldenTicketKind.Happiness );
-		driver.ResolveTickets();
-		driver.OnParkEvent( Event( ParkEventKind.GoldenTicketWon, (long)GoldenTicketKind.Happiness ), economy );
-		ledgerKeys = 5;
-		driver.ResolveTickets();
-		Assert.IsTrue( Pending( controller ).Contains( 164 ) );
-		// without a ledger no key is claimed
-		var bare = Controller();
-		var noLedger = Driver( bare );
-		noLedger.OnParkEvent( Event( ParkEventKind.GoldenTicketWon, (long)GoldenTicketKind.Visitors ), economy );
-		noLedger.ResolveTickets();
-		CollectionAssert.AreEqual( new[] { 99 }, Pending( bare ).ToArray() );
-	}
-
-	[TestMethod]
-	public void TheTwinLinesAndTheUnlockAndAwardMessages()
-	{
-		Assert.AreEqual( 218, RestoredAdvice.TicketMessage( GoldenTicketKind.Visitors )!.Value.Message );
-		Assert.AreEqual( 219, RestoredAdvice.TicketMessage( GoldenTicketKind.Visitors )!.Value.Twin );
-		Assert.AreEqual( AdvisorDescriptorTable.Rows[218].FirstResponseId, AdvisorDescriptorTable.Rows[219].FirstResponseId );
-		Assert.AreEqual( (223, 224, 0), RestoredAdvice.TicketMessage( GoldenTicketKind.CoasterHeight ) );
-		Assert.AreEqual( (223, 224, 3), RestoredAdvice.TicketMessage( GoldenTicketKind.BigPark ) );
-		Assert.AreEqual( (228, 229, 0), RestoredAdvice.TicketMessage( GoldenTicketKind.CamerasEverywhere ) );
-		Assert.AreEqual( 165, RestoredAdvice.UnlockMessage( 3 ) );
-		Assert.AreEqual( 164, RestoredAdvice.UnlockMessage( 5 ) );
-		Assert.IsNull( RestoredAdvice.UnlockMessage( 4 ) );
+		CollectionAssert.AreEquivalent( new[] { 230, 231, 232, 233 }, RestoredAdvice.Entries.Where( entry => entry.Topic is "awards" ).Select( entry => entry.MessageId ).ToArray() );
+		Assert.IsFalse( RestoredAdvice.Entries.Any( entry => StoodDownTicketLines.Contains( entry.MessageId ) || entry.MessageId is 344 or 319 or 320 ), "those lines are the original's now" );
 		Assert.AreEqual( 233, RestoredAdvice.AwardMessage( GoldenTicketKind.BigPark ) );
 		Assert.IsNull( RestoredAdvice.AwardMessage( GoldenTicketKind.Visitors ) );
+		Assert.IsNull( AdvisorTicketAdvice.For( GoldenTicketKind.AllLandOwned, 1 ), "the one ticket the original never awards or advises is never won here either" );
 	}
 
 	[TestMethod]
-	public void TheSecondKeyLineUsesTheTwinOnceTheFirstHasBeenSaid()
+	public void AFirstChallengeOfferSays344OnceWhetherTheExtensionIsOnOrOff()
 	{
-		var economy = EconomyTestData.Park();
-		var controller = Controller();
-		var (driver, won) = TicketDriver( economy, controller );
-		won( GoldenTicketKind.Visitors );
-		won( GoldenTicketKind.PeopleInPark );
-		won( GoldenTicketKind.Happiness );
-		Assert.IsTrue( Pending( controller ).Contains( 218 ) );
-		controller.Queue.Restore( new AdvisorPendingAdvice?[AdvisorScoreQueue.Capacity], new Dictionary<int, AdvisorMessageHistory> { [218] = new AdvisorMessageHistory( 50, 0, true, 0 ) } );
-		// another key (the sixth ticket would open Wonderland, so the twin is tested with a ledger that jumps to 2 again)
-		var keys = 2;
-		var twin = Driver( controller, keys: () => keys );
-		twin.ResolveTickets();
-		keys = 3 - 1;
-		twin.OnParkEvent( Event( ParkEventKind.GoldenTicketWon, (long)GoldenTicketKind.Happiness ), economy );
-		keys = 4;
-		twin.ResolveTickets();
-		Assert.IsTrue( Pending( controller ).Contains( 219 ), "218 has been said: the twin says it again" );
-		Assert.IsNotNull( driver );
+		foreach ( var on in new[] { true, false } )
+		{
+			using var scope = on ? null : OpenTpwExtensions.Use( Off() );
+			var economy = EconomyTestData.Park();
+			economy.OpenPark();
+			var advisor = AttachedAdvisor( economy );
+			economy.UpdateChallenges( 540 * ParkCalendar.SecondsPerDay / ParkCalendar.SecondsPerTurn + 1 );
+			Assert.IsNotNull( economy.Objectives.Current );
+			CollectionAssert.AreEqual( new[] { 344 }, PendingOf( advisor ).ToArray(), $"the first offer says 344 and nothing else, once (extension {(on ? "on" : "off")})" );
+		}
 	}
 
 	[TestMethod]
@@ -697,31 +648,53 @@ public class AdvisorRestoredAdviceTests
 	}
 
 	[TestMethod]
-	public void ChallengesMetWithAFollowUpOfferTheDoubleLines()
+	public void TheRestoredExtensionStandsDownForTheChallengeFollowUpTheOriginalAdvisesItself()
 	{
+		// 319 and 320 (double or nothing) told the event the original's own advice tells (270 offered, 272 won): the extension no longer restores them
+		Assert.IsFalse( RestoredAdvice.IsRestored( 319 ) );
+		Assert.IsFalse( RestoredAdvice.IsRestored( 320 ) );
 		var economy = EconomyTestData.Park();
 		var controller = Controller();
 		var driver = Driver( controller );
-		// no follow-up current: a plain win says nothing
-		driver.OnParkEvent( Event( ParkEventKind.ChallengeCompleted, 500, 0, 3 ), economy );
-		Assert.AreEqual( 0, Pending( controller ).Count );
-		// the challenge system's follow-up is current when its completion event arrives
 		var current = typeof( ParkObjectives ).GetProperty( nameof( ParkObjectives.Current ) )!;
-		Assert.IsNotNull( current );
-		var setter = current.GetSetMethod( nonPublic: true );
-		Assert.IsNotNull( setter, "the test needs the objectives' current challenge" );
-		setter!.Invoke( economy.Objectives, new object?[] { new ActiveChallenge( 7, 1, false, 0, 0, 0 ) } );
+		current.GetSetMethod( nonPublic: true )!.Invoke( economy.Objectives, new object?[] { new ActiveChallenge( 7, 1, false, 0, 0, 0 ) } );
 		driver.OnParkEvent( Event( ParkEventKind.ChallengeCompleted, 0, 0, 7 ), economy );
-		CollectionAssert.AreEqual( new[] { 319 }, Pending( controller ).ToArray() );
-		controller.Queue.Restore( new AdvisorPendingAdvice?[AdvisorScoreQueue.Capacity], new Dictionary<int, AdvisorMessageHistory>() );
 		driver.OnParkEvent( Event( ParkEventKind.ChallengeCompleted, 0, 0, 8 ), economy );
-		CollectionAssert.AreEqual( new[] { 320 }, Pending( controller ).ToArray(), "the second follow-up in a row" );
-		Assert.AreEqual( 130, PendingOf( controller, 320 ).Score );
-		// a final win starts the count over
-		driver.OnParkEvent( Event( ParkEventKind.ChallengeCompleted, 500, 0, 9 ), economy );
-		controller.Queue.Restore( new AdvisorPendingAdvice?[AdvisorScoreQueue.Capacity], new Dictionary<int, AdvisorMessageHistory>() );
-		driver.OnParkEvent( Event( ParkEventKind.ChallengeCompleted, 0, 0, 7 ), economy );
-		CollectionAssert.AreEqual( new[] { 319 }, Pending( controller ).ToArray() );
+		Assert.AreEqual( 0, Pending( controller ).Count, "a met challenge with a follow-up posts nothing from the extension" );
+	}
+
+	private const long ChallengeDay = ParkCalendar.SecondsPerDay;
+	private const long ChallengeStart = 540 * ChallengeDay;
+
+	private static long ChallengeTurn( long seconds )
+	{
+		var turn = seconds / ParkCalendar.SecondsPerTurn + 1;
+		while ( (turn & 3) == 0 )
+			turn++;
+		return turn;
+	}
+
+	[TestMethod]
+	public void AMetChallengeIsToldOnceWithTheExtensionOnThroughTheRealAdvisor()
+	{
+		Assert.IsTrue( RestoredAdvice.Enabled, "the extension is on by default" );
+		foreach ( var nextFollowup in new[] { 0, 13 } )
+		{
+			var settings = EconomyTestData.Settings( 500000 );
+			settings.AdoptChallenges( new[] { new ChallengeDefinition( 0, 11, 12, 10, 1000, 0, 1100, 0, 700, false, true ), new ChallengeDefinition( 0, 12, nextFollowup, 10, 1000, 0, 1100, 0, 700, false, true ) } );
+			var economy = new ParkEconomy( settings, EconomyTestData.Catalog(), ParkGameMode.FullSimulation, 7 );
+			economy.Objectives.Update( ChallengeStart, 1, _ => 0 ).ToList();
+			economy.Objectives.AcceptAt( ChallengeStart, 0 );
+			var advisor = new AutomaticAdvisor( Controller(), () => 0L );
+			advisor.AttachLevel( Live( economy ) );
+			economy.Counters.Add( ParkCounters.Admissions, 1000 );
+			economy.UpdateChallenges( ChallengeTurn( ChallengeStart + ChallengeDay ) );
+			Assert.IsTrue( economy.Objectives.Current is { Accepted: false }, "the follow-up is offered" );
+			var told = Pending( advisor.Controller ).Where( message => message != 0 ).ToArray();
+			CollectionAssert.AreEqual( nextFollowup == 0 ? new[] { 270, 272 } : new[] { 270 }, told, "the original's lines only, one announcement per event" );
+			CollectionAssert.DoesNotContain( told, 319 );
+			CollectionAssert.DoesNotContain( told, 320 );
+		}
 	}
 
 	[TestMethod]
@@ -760,11 +733,11 @@ public class AdvisorRestoredAdviceTests
 	public void TheQueuesAdmissionRulesApplyToRestoredAdvice()
 	{
 		var controller = Controller();
-		// the descriptor's duplicate limit (message 58 allows one pending copy, 99 up to 255)
+		// the descriptor's duplicate limit (message 58 allows one pending copy, 230 up to 255)
 		Assert.IsTrue( controller.AdviseRestored( 58, 100, 0, true )!.Value.Stored );
 		Assert.AreEqual( AdvisorEligibility.DuplicateLimit, controller.AdviseRestored( 58, 100, 0, true )!.Value.Eligibility );
-		Assert.IsTrue( controller.AdviseRestored( 99, 100, 0, true )!.Value.Stored );
-		Assert.IsTrue( controller.AdviseRestored( 99, 100, 0, true )!.Value.Stored );
+		Assert.IsTrue( controller.AdviseRestored( 230, 100, 0, true )!.Value.Stored );
+		Assert.IsTrue( controller.AdviseRestored( 230, 100, 0, true )!.Value.Stored );
 		// the game-mode selector: 130 is for the full simulation only
 		Assert.IsNull( controller.AdviseRestored( 130, 100, 2, true ), "not said in Instant Action" );
 		Assert.IsTrue( controller.AdviseRestored( 130, 100, 0, true )!.Value.Stored );
@@ -777,10 +750,11 @@ public class AdvisorRestoredAdviceTests
 		Assert.IsNull( repeat.AdviseRestored( 160, 105, 0, true ), "the extension's own rule: the congratulation is said once per park" );
 		Assert.IsNull( repeat.AdviseRestored( 160, 100_000, 0, true ), "however long after" );
 		// the original group rule still holds for a message with the extension's default (message 58: group 0, 120 groups of four turns, long repeat on top)
-		var group = Controller();
-		Assert.IsTrue( group.AdviseRestored( 99, 100, 0, true )!.Value.Stored );
+		// (the award lines carry no repeat rule of their own, so only their descriptor's group interval applies: group 2, given an interval here)
+		var group = Controller( Sam.Replace( "MessageGroups[2].MinTimeSameMessage\t\t0", "MessageGroups[2].MinTimeSameMessage\t\t30" ) );
+		Assert.IsTrue( group.AdviseRestored( 230, 100, 0, true )!.Value.Stored );
 		group.Update( () => 1000u, () => 100u, response => 1000u );
-		Assert.AreEqual( AdvisorEligibility.RepeatDelay, group.AdviseRestored( 99, 105, 0, true )!.Value.Eligibility, "the descriptor's group interval applies to an event line" );
+		Assert.AreEqual( AdvisorEligibility.RepeatDelay, group.AdviseRestored( 230, 105, 0, true )!.Value.Eligibility, "the descriptor's group interval applies to an event line" );
 		// a long repeat (message 173) lets the line come back after its interval, and not before
 		var longRepeat = Controller();
 		Assert.IsTrue( longRepeat.AdviseRestored( 173, 100, 0, true )!.Value.Stored );
@@ -807,17 +781,17 @@ public class AdvisorRestoredAdviceTests
 	public void RestoredResponsesCarryTheirCaptionsLikeEveryOtherAdvice()
 	{
 		// the captions of the captioned rows the extension restores come from the shipped caption table: entries of TAG_SYSTEM.str by id
-		var captioned = new[] { 58, 59, 99, 130, 137, 138, 139, 151, 152, 153, 154, 160, 218, 223, 228 };
+		var captioned = new[] { 58, 59, 130, 137, 138, 139, 151, 152, 153, 154, 160 };
 		foreach ( var message in captioned )
 		{
 			var row = AdvisorDescriptorTable.Rows[message];
 			Assert.IsTrue( Enumerable.Range( row.FirstResponseId, row.ResponseCount ).Any( response => AdvisorCaptionTable.For( response ) != null ), $"message {message} has a caption on at least one response" );
 		}
-		// a ticket's response variant is the criterion's own caption
-		var first = AdvisorDescriptorTable.Rows[218].FirstResponseId;
+		// the original's ticket lines carry the ticket's own caption as the response variant
+		var first = AdvisorDescriptorTable.Rows[215].FirstResponseId;
 		var captions = Enumerable.Range( 0, 6 ).Select( variant => AdvisorCaptionTable.For( first + variant )?.TextEntry ).ToArray();
 		CollectionAssert.AreEqual( new int?[] { 180, 181, 182, 183, 184, 185 }, captions, "the six local tickets, in the order of GoldenTicketKind" );
-		var global = AdvisorDescriptorTable.Rows[223].FirstResponseId;
+		var global = AdvisorDescriptorTable.Rows[220].FirstResponseId;
 		CollectionAssert.AreEqual( new int?[] { 186, 187, 188, 189 }, Enumerable.Range( 0, 4 ).Select( variant => AdvisorCaptionTable.For( global + variant )?.TextEntry ).ToArray() );
 	}
 
@@ -1136,7 +1110,7 @@ public class AdvisorRestoredAdviceTests
 	{
 		var controller = Controller();
 		Assert.IsTrue( controller.AdviseRestored( 58, 100, 0, true )!.Value.Stored );
-		Assert.IsTrue( controller.AdviseRestored( 218, 100, 0, true, 3 )!.Value.Stored );
+		Assert.IsTrue( controller.AdviseRestored( 230, 100, 0, true )!.Value.Stored );
 		var played = new List<int>();
 		controller.Update( () => 1000u, () => 100u, response => { played.Add( response ); return 1000u; } );
 		var snapshot = controller.CaptureSnapshot();

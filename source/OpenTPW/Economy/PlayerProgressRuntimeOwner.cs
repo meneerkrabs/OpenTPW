@@ -48,6 +48,15 @@ internal sealed class PlayerProgressRuntimeOwner : IDisposable
 
 	private void OnEvent( ParkEvent item )
 	{
+		// [EXT:cheats-ticket-provenance] a ticket cheat (silent: no GoldenTicketWon) earns the ticket like a win and records that a cheat awarded it; a global one was earned through the authority already
+		if ( Eligible && item.Kind == ParkEventKind.CheatApplied && item.InfoId == (int)CheatKind.Ticket && item.Amount is >= 0 and <= int.MaxValue
+			&& Enum.IsDefined( (GoldenTicketKind)item.Amount ) && runtime.Economy.Objectives.GoldenTickets.Contains( (GoldenTicketKind)item.Amount )
+			&& item.Detail is nameof( GlobalTicketOutcome.Awarded ) or nameof( GlobalTicketOutcome.Moved ) )
+		{
+			if ( Ledger.RecordCheated( theme, (GoldenTicketKind)item.Amount, item.Detail == nameof( GlobalTicketOutcome.Awarded ) ) ) Dirty = true;
+			if ( Dirty ) TryFlush();
+			return;
+		}
 		if ( !Eligible || item.Kind is not (ParkEventKind.GoldenTicketWon or ParkEventKind.GlobalTicketMoved) || item.Amount < 0 || item.Amount > int.MaxValue ) return;
 		var kind = (GoldenTicketKind)item.Amount;
 		if ( !Enum.IsDefined( kind ) || !runtime.Economy.Objectives.GoldenTickets.Contains( kind ) ) return;

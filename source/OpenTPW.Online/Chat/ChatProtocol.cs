@@ -38,7 +38,7 @@ public static class ChatProtocol
 	public static int? SatelliteIndexOf( string? room ) =>
 		room != null && int.TryParse( room.Length > SatelliteRoomPrefix.Length ? room[SatelliteRoomPrefix.Length..] : null,
 			System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var index )
-		&& index >= 1 && index <= SatelliteRoomCount ? index : null;
+		&& index >= 1 && index <= SatelliteRoomCount && room == SatelliteRoom( index ) ? index : null;
 
 	public static bool IsValidRoom( string? room ) => room == LobbyRoom
 		|| room != null && room.StartsWith( ParkRoomPrefix, StringComparison.Ordinal ) && room.Length is > 5 and <= 69 && room[5..].All( char.IsAsciiLetterOrDigit )

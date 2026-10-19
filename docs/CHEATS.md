@@ -242,6 +242,38 @@ headless economy refuses them), and once one applied the world save records `ope
 nothing, so a park cheated only through them loads with the extension off. All of them go through the turn-boundary queue and take no draw; the pinned run with a scripted sequence is
 `CheatsExtensionTests.CheatsFixedRunHash` ([DETERMINISM.md](DETERMINISM.md#cheats)).
 
+## The ride vehicle limit (K4)
+
+`[EXT:cheats-ride-vehicles]`. The cheats window's last two rows pick one of the park's rides (bumper cars, karts or a tour; two of a kind are numbered) and raise its vehicle limit. The
+cheat (`CheatKind.RideVehicles`, argument the ride's attraction id) applies at the next park turn like every cheat, takes no draw, and is the extension's own: once applied, the world save
+records `opentpw.cheats`. The ride keeps the raised limit until it is removed; it cannot be lowered again (the capacity slider can still be moved down).
+
+- **The ceilings** (the user's decision): bumper cars and karts **32**, tours **40** cars. The water rides are not offered: their capacity is the riders per boat and the number of boats is
+  already limited only by the module's 64 (`BumpController.MaximumVehicles`).
+- **The capacity that fills them.** The capacity maximum (`OriginalObjectRuntime.MaximumCapacity`) grows by the same factor as the vehicles: a bumper ride 8 → 32, a kart ride 8 → 32 and
+  CryptKarts 16 → 64 (two riders a kart), a tour 27 → 360 and Star Tours 24 → 320 (ceil(capacity / 9), / 8 for Star Tours, gives 40 cars). The ride window's capacity slider and the
+  capacity setter use it; for a raised ride the setter takes a value past the original's byte (`ClampCapacity`; `0x4dd7f0` keeps the low byte), since 40 tour cars need a capacity of 360.
+  The capacity itself does not change when the limit is raised: the player moves the slider.
+- **The controllers.** A raised bump controller launches up to 32 cars or karts (`BumpController.VehicleLimit`, in place of the template's `MaxVehicles` at the launch, `0x549DB0`); the
+  module's shared pool of 256 vehicles still refuses a launch when it is full. A raised tour controller has 40 car slots instead of 20 (`TourController.RaisedCarSlots`); a tour ride raised
+  before its script created the controller gets them at the creation. The real scripts follow: the jungle bumper script launches 32 cars at capacity 32, and all four tour scripts ask for
+  and fly 40 cars at the raised maximum (tests with the game data).
+- **Karts past the grid.** The kart grid keeps its eight slots (`TrackSections.KartStationBuoys` with the template's count). A kart numbered past eight finds no grid buoy when it is launched
+  in the loading phase, so it waits at the station reference where it was created and races from there when the race starts; 32 karts on the test loop all come home and every racer is
+  handed back.
+- **What does not follow the raised maximum.** The economy's wear reads the riders against the type's own `UsageInfo.MaxCapacity` (clamped in `ParkEconomy`), so a raised ride's wear is that
+  of a full ride; the ride window's reliability gauge, which predicts that wear, reads a raised capacity above the type's maximum as that maximum.
+- **Saves.** The runtime snapshot writes `VehiclesRaised` only for a raised ride, the bump controller its `VehicleLimit` and the tour controller its `CarSlots` only when raised, so every other
+  save keeps its bytes; the load checks that the three agree (a live raised bumper or kart ride must carry its controller with the raised limit) and that a raised ride's capacity is
+  within its raised maximum. The raised limit and the tour's extra slots join the hash only
+  for a raised ride.
+- **The original-format export** refuses a park with a raised ride whose capacity is above its type's original maximum (`OriginalParkExportOptions.RidesAboveOriginalLimits`,
+  `[EXT:cheats-export]`, the user's decision "refuses rides above the original limits"): the original keeps a ride's capacity in a byte and clamps it to its type's maximum. A raised ride
+  still within the original's maximum is no obstacle. The export reads only the economy snapshot, which holds no rides, so its caller passes the level's count
+  (`Level.RidesAboveOriginalLimits`); OpenTPW has no in-game caller of the export yet (the tests and tools call it).
+- **Pin.** `CheatsRideVehicleTests.CheatsBumperRaisedRunHash` pins the jungle bumper controller raised to 32 cars, loaded with 32 guests and run through a 30-second session
+  ([DETERMINISM.md](DETERMINISM.md#cheats)).
+
 ## Phases
 
 - **K0** (this document): the trace, the capacity data, COMPAT-007 and SAVE-010 narrowed.
@@ -249,5 +281,5 @@ nothing, so a park cheated only through them loads with the extension off. All o
 - **K2** (built): the original cheat mode: the secret name in `Level.RenamePark`, the cheat key context, Alt+R, Alt+1, the ten tickets, the import of `CHTS` and the original-format export's own `CHTS`
   (moved from K1: the export round trip of the corpus saves needs the import).
 - **K3** (built): the extension becomes selectable; the cheats window (Alt+C): the cheat mode, arrivals by vehicle, the weather, a chosen ticket, money and research; `CheatsFixedRunHash`.
-- **K4**: the ride vehicle limit for bump rides and tours; captures.
+- **K4** (built): the ride vehicle limit for bumper cars, karts and tours (32, 32 and 40), its window rows, saves, export refusal and pin; captures.
 - **K5** (optional, not planned): coaster trains.

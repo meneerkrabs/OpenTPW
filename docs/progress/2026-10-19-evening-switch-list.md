@@ -1,0 +1,3 @@
+## The torches' evening extension joins the load-switch list (October 19, 2026)
+
+Main went red after #665 and #668 merged one after the other, although each PR was green on its own. #665 made `opentpw.evening` a used-only extension: a save records it only while the park holds a torch. #668 pinned the set of used-only content extensions that a load may offer to switch on. The pin in `SaveExtensionSwitchTests.TheRuleOnlyAndContentExtensionsAreTheVerifiedOnes` now lists `opentpw.evening` alongside pools, umbrellas, winter and cheats. Only the test changed, with no change to code, saves or hashes.

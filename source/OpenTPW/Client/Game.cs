@@ -914,6 +914,22 @@ internal static class Game
 						case "infoseries": hud.SetParkInfoSeries( (OpenTPW.Hud.ParkInfoSeries)0x1f, false ); hud.SetParkInfoSeries( (OpenTPW.Hud.ParkInfoSeries)int.Parse( argument ), true ); break;
 						case "infoperiod": hud.SetParkInfoPeriod( int.Parse( argument ) ); break;
 						case "buy": hud.OpenBuyWindow(); break;
+						// [EXT:debug-evening] the buy window on one of its tabs (rides, sideshows, shops, features), optionally with one row selected and scrolled into view ("buytab:features:Tiki Torch"), for captures such as the torches in the features
+						case "buytab":
+						{
+							var (tab, row) = argument.Split( ':', 2 ) is [var tabName, var rowName] ? (tabName, rowName) : (argument, null);
+							hud.OpenBuyWindow();
+							hud.SelectCategory( Enum.Parse<OpenTPW.Hud.BuildCategory>( tab, true ) );
+							var rowIndex = row == null ? -1 : hud.BuyItems.ToList().FindIndex( item => hud.ListName( item ) == row );
+							if ( rowIndex >= 0 )
+							{
+								hud.SelectBuyItem( rowIndex );
+								hud.SetBuyFirstRow( rowIndex - 4 );
+							}
+							else if ( row != null )
+								Log.Warning( $"--debug-hud: no row {row} in the buy window's {tab}." );
+							break;
+						}
 						case "msg": hud.PostGameMessage( argument ); break;
 						case "openmsg": hud.OpenPendingMessage( 0 ); break;
 						case "msgaction": hud.PostGameMessage( "A message with two actions", argument.Split( '+' ).Select( kind => new OpenTPW.Hud.GameMessageAction( Enum.Parse<OpenTPW.Hud.GameMessageKind>( kind, true ), () => { } ) ).ToArray() ); break;

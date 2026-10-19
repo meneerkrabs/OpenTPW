@@ -165,7 +165,7 @@ the light) and give one light on the `flame` node's centre, radius 40 model unit
 
 **Browser.** `OpenTPW.Web.csproj` embeds `content/evening` (347,862 bytes) and its `RequireExtensionContent` target fails the build without `content/evening/objects.json`; the server image copies the folder (`source/OpenTPW.Server/Dockerfile`).
 
-**Captures** (Debug builds): `--debug-torches N` places N of the theme's torches through the level's own placement on the free cells nearest the camera target (`--capture-camera`'s when given), a cell apart; with `--evening-pace dusk|night` and `--capture-world`. `[EXT:debug-evening]`
+**Captures** (Debug builds): `--debug-torches N` places N of the theme's torches through the level's own placement on the free cells nearest the camera target (`--capture-camera`'s when given), a cell apart; with `--evening-pace dusk|night` and `--capture-world`; `--capture-interface --debug-hud "buytab:features:Tiki Torch"` shows the buy window's Features tab with that row selected. `[EXT:debug-evening]`
 
 **Labels.**
 

@@ -285,13 +285,15 @@ The browser perf tool (`tools/web-perf`) and the postcard smoke start Chrome wit
 
 Automated runs are also offscreen (`[EXT:offscreen-automated-runs]`, extended on 2026-10-19 at the user's request that smoke tests and
 agent runs use a virtual screen instead of their display). The same modes that are silent, so the smokes, every `--capture-*`, `--perf-*`
-and `--debug-*` option, `--offscreen`, `--headless`, the gates and the guest reports, create the window hidden, never show
+and `--debug-*` option, `--offscreen`, `--headless`, the gates, the guest reports and `--validate-assets`, create the window hidden, never show
 it and render into an offscreen framebuffer (a colour texture of the size the window would have had; the logical size and
 `OPENTPW_TEST_PIXEL_SCALE` apply as usual) instead of the swapchain, paced at 60 frames per second (`--no-vsync` unpaces it). macOS has no
 Xvfb; this hidden window with its framebuffer is the virtual screen. No window appears, no focus is taken, and a locked screen does
 not matter. `--offscreen` or `OPENTPW_OFFSCREEN=1` does the same for any run; `--visible` (or `--no-offscreen`, or `OPENTPW_OFFSCREEN=0`) keeps the
 visible window. Sound and window are separate choices: `--audible` brings the sound back but keeps the run offscreen, and `--visible`
-shows the window but keeps it silent. The interactive modes stay visible: a plain start, `--front-end`, `--sandbox`,
+shows the window but keeps an automated run silent. To look at a `--debug-*` helper on screen (such as `--debug-light`), pass `--visible`: without a
+`--capture-*` such a run does not end by itself, and offscreen it would run unseen until closed. An offscreen run without usable game data stops with
+an error instead of opening the setup window. The interactive modes stay visible: a plain start, `--front-end`, `--sandbox`,
 `--load-original-level`, `--visit-park`, `--setup` and `--play-movie` (which is offscreen only as the movie smoke, `--play-movie <name> --smoke-test`).
 
 What changes offscreen, and what does not:
@@ -337,7 +339,7 @@ bash scripts/run.sh --game-path '/path/to/Theme Park World' --fullscreen --upsca
 | `--ui-scale auto\|N` | Integer scale of the BF4 text UI (auto: 2 from 2560x1440, 3 at 4K; on HiDPI/Retina at least the pixel density, so 2 on Retina). |
 | `--no-vsync` | Presents frames as fast as they are made instead of at the display's refresh rate; for performance measurements. |
 | `--frame-stats` | Logs frames per second, average/p99/max frame time, CPU use, allocation rate and garbage collections every 5 seconds, and where a frame goes: the update (and inside it the simulation), the world drawing, the interface overlay, submit and present, the GPU wait and the whole `Renderer.Update` call. |
-| `--perf-run <frames>` | For performance runs ([ENGINE-PERFORMANCE.md](ENGINE-PERFORMANCE.md)): once the original level is up it hides the developer panels as a front-end park does, opens the park door, runs the simulation at `--perf-speed 1\|2\|4` (default 4) with a guest arriving every `--perf-arrivals N` turns, and closes the window after that many frames; `--perf-zoom <value>` holds the park camera at that zoom value (40 to 300 with the wide zoom range, 70 to 130 without). Combine it with `--load-original-level`, `--offscreen`, `--frame-stats` and, for CPU-bound frames, `--no-vsync`. |
+| `--perf-run <frames>` | For performance runs ([ENGINE-PERFORMANCE.md](ENGINE-PERFORMANCE.md)): once the original level is up it hides the developer panels as a front-end park does, opens the park door, runs the simulation at `--perf-speed 1\|2\|4` (default 4) with a guest arriving every `--perf-arrivals N` turns, and closes the window after that many frames; `--perf-zoom <value>` holds the park camera at that zoom value (40 to 300 with the wide zoom range, 70 to 130 without). Combine it with `--load-original-level`, `--frame-stats` and, for CPU-bound frames, `--no-vsync`; it is offscreen by default (`--visible` for the presented path, whose numbers are not comparable to the baselines). |
 | `--save-display-settings` | Also stores these values as the user's display settings. |
 | `--export-ps2 <ps2 DATA dir> <out dir>` | Lists the PS2 version's archives and exports its textures as PNG for viewing (PS2.md). |
 | `--debug-light x,y,height,radius[,red,green,blue]` | Smoke-only: once the original level is up, adds one fixed point light at x, y, height relative to the park camera's target (engine units, a cell is 2) with a radius in engine units (20 is the original engine's default of 100 model units) and an optional colour of three 0..1 channels; for captures and a look at what a light does ([LIGHTS.md](LIGHTS.md)). |

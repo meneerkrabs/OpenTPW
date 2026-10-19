@@ -982,7 +982,6 @@ internal static class Game
 			Render.Run();
 	}
 
-	/// <summary>The CD launcher screen for the game's language, or null when it is disabled or the CD's Autorun files are absent.</summary>
 	/// <summary>
 	/// The automated modes that [EXT:silent-automated-runs] and [EXT:offscreen-automated-runs] share, so the two rules cannot drift apart: smokes
 	/// (<c>--smoke-test</c>, <c>--tpi-smoke-test</c>, <c>--park-resume-smoke</c>, <c>--smoke-presence</c>), captures (<c>--capture-*</c>), perf runs
@@ -1033,6 +1032,7 @@ internal static class Game
 	/// <summary>The opt-out of <see cref="IsOffscreenRun"/>: <c>--no-offscreen</c> or <c>--visible</c>.</summary>
 	private static bool WantsVisibleWindow( string[] args ) => args.Contains( "--no-offscreen" ) || args.Contains( "--visible" );
 
+	/// <summary>The CD launcher screen for the game's language, or null when it is disabled or the CD's Autorun files are absent.</summary>
 	private static AutorunScreen? CreateAutorun( string[] args, SetupSettings settings, string dataDirectory )
 	{
 		var cd = GetOption( args, "--cd-data", "the original CD's folder" ) ?? Environment.GetEnvironmentVariable( "OPENTPW_CD_DATA" );
@@ -1169,6 +1169,9 @@ internal static class Game
 					return args;
 				}
 			}
+			// [EXT:offscreen-automated-runs] an offscreen run cannot show the setup window (it would open visibly and wait for input): it stops instead
+			if ( Window.OffscreenRequested )
+				throw new DirectoryNotFoundException( "The saved Theme Park Inc folder or world is no longer available, and an offscreen run cannot open setup. Use --game-path or OPENTPW_GAME_PATH." );
 			Log?.Warning( "The saved Theme Park Inc folder or world is no longer available; opening setup." );
 			return RunStarter( args, saved, setupPath, null, runWizard );
 		}
@@ -1201,7 +1204,8 @@ internal static class Game
 		}
 		if ( resolved == null )
 		{
-			if ( !GamePathResolution.IsInteractive( args ) || DesktopSetupSelection.HasHeadlessGate( args ) )
+			// [EXT:offscreen-automated-runs] nor does an offscreen run open the setup window (it would appear and wait for input)
+			if ( !GamePathResolution.IsInteractive( args ) || DesktopSetupSelection.HasHeadlessGate( args ) || Window.OffscreenRequested )
 				throw new DirectoryNotFoundException( "Theme Park World data not found. Use --game-path or OPENTPW_GAME_PATH, or start OpenTPW without arguments to choose the folder in the setup window." );
 			return RunStarter( args, saved, setupPath, discovery, runWizard );
 		}

@@ -293,6 +293,8 @@ public enum OpenTpwText
 	EveningAlwaysDay,
 	EveningAlwaysDusk,
 	EveningAlwaysNight,
+	/// <summary>[EXT:cheats-publish] The load menu's mark of a cheated park, after its name.</summary>
+	CheatedPark,
 }
 
 public static class SupplementaryStrings
@@ -761,6 +763,7 @@ public static class SupplementaryStrings
 		[OpenTpwText.EveningAlwaysDay] = new[] { "Always day", "Altid dag", "Altijd dag", "Toujours jour", "Immer Tag", "항상 낮", "Zawsze dzień", "Siempre de día", "Alltid dag", "Sempre giorno", "תמיד יום" },
 		[OpenTpwText.EveningAlwaysDusk] = new[] { "Always dusk", "Altid skumring", "Altijd schemer", "Toujours crépuscule", "Immer Dämmerung", "항상 해질녘", "Zawsze zmierzch", "Siempre atardecer", "Alltid skymning", "Sempre crepuscolo", "תמיד שקיעה" },
 		[OpenTpwText.EveningAlwaysNight] = new[] { "Always night", "Altid nat", "Altijd nacht", "Toujours nuit", "Immer Nacht", "항상 밤", "Zawsze noc", "Siempre de noche", "Alltid natt", "Sempre notte", "תמיד לילה" },
+		[OpenTpwText.CheatedPark] = new[] { "cheated", "snydt", "vals gespeeld", "avec triche", "mit Cheats", "치트 사용", "z kodami", "con trucos", "fuskad", "con trucchi", "עם צ'יטים" },
 	};
 
 	public static IReadOnlyList<string> SupportedLanguages => Languages;

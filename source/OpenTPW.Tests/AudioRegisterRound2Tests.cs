@@ -371,18 +371,18 @@ public class AudioRegisterRound2Tests
 	// ---- AUDIO-012 ----
 
 	[TestMethod]
-	public void EveryActivatedFrontEndControlPlaysTheClick()
+	public void ButtonsAndUnqualifiedListControlsKeepTheirDefaultClickPolicy()
 	{
-		// [BIN:TPW-EXE:0x485780] a global hook sees every control's message 0x100 before the control's own procedure
+		// [BIN:TPW-EXE:0x485780] button message 0x100 clicks. Generic row controls retain their default host policy; concrete Load/Find/Other rows are covered by ListOwnerAudioTests (AUDIO-041).
 		Use( "Ui", Category( (GameAudio.ClickEvent, 0, 4) ) );
 		new UiButton { Bounds = new UiRect( 0, 0, 10, 10 ) }.Activate();
 		Assert.AreEqual( 1, mixer.Voices.Count, "a button" );
 		new UiListItem { Bounds = new UiRect( 0, 0, 10, 10 ) }.Activate();
-		Assert.AreEqual( 2, mixer.Voices.Count, "a list line (the load screen)" );
+		Assert.AreEqual( 2, mixer.Voices.Count, "a generic list line, not the concrete Load screen" );
 		var rows = new UiScrollList { Bounds = new UiRect( 0, 0, 100, 100 ), Rows = () => new List<string> { "a", "b" }, RowActivated = _ => { } };
 		rows.Select( 1 );
 		rows.Activate();
-		Assert.AreEqual( 3, mixer.Voices.Count, "a selected row of a list" );
+		Assert.AreEqual( 3, mixer.Voices.Count, "an unqualified selected row keeps its default policy" );
 		var silent = new UiScrollList { Bounds = new UiRect( 0, 0, 100, 100 ), Rows = () => new List<string> { "a" } };
 		silent.Select( 0 );
 		silent.Activate();
@@ -390,7 +390,7 @@ public class AudioRegisterRound2Tests
 		var refusing = new UiScrollList { Bounds = new UiRect( 0, 0, 100, 100 ), Rows = () => new List<string> { "a" }, ClicksOnActivate = false, RowActivated = _ => { } };
 		refusing.Select( 0 );
 		refusing.Activate();
-		Assert.AreEqual( 3, mixer.Voices.Count, "an owner that clicks itself after accepting the activation is not clicked for" );
+		Assert.AreEqual( 3, mixer.Voices.Count, "an owner can opt out of the generic click" );
 		new UiButton { Bounds = new UiRect( 0, 0, 10, 10 ), Enabled = false }.Activate();
 		Assert.AreEqual( 3, mixer.Voices.Count, "a disabled control sends no message" );
 		Assert.IsTrue( mixer.Voices.All( voice => voice.Position == null ), "flat" );

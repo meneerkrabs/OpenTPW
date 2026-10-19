@@ -118,6 +118,26 @@ public class ParkInfoWindowTests
 		Assert.IsTrue( new ParkStatisticsHistory().IsEmpty );
 		Assert.IsFalse( new ParkStatisticsData { Arrivals = data.Arrivals, Happiness = data.Happiness, Stay = data.Stay, People = data.People }.IsValid, "a missing ring is rejected" );
 		Assert.IsFalse( new ParkStatisticsData { ArrivalsThisMonth = 0, Arrivals = new RingData { Slots = new() { 1 }, Head = 0, Wrapped = false }, Happiness = data.Happiness, Stay = data.Stay, People = data.People, RecentStays = data.RecentStays }.IsValid, "a wrong size" );
+
+		// a ring that has gone round keeps its head and wrapped flag, so save -> load -> save writes the loaded data again
+		for ( var guest = 0; guest < 60; guest++ )
+			history.RecordStay( guest );
+		Assert.AreEqual( (10, true), (history.RecentStays.Head, history.RecentStays.Wrapped), "61 stays (the first one above and 60 more) into the 50-entry ring" );
+		var wrappedJson = JsonSerializer.Serialize( history.Capture() );
+		var wrapped = new ParkStatisticsHistory();
+		wrapped.Restore( JsonSerializer.Deserialize<ParkStatisticsData>( wrappedJson )! );
+		Assert.AreEqual( (10, true), (wrapped.RecentStays.Head, wrapped.RecentStays.Wrapped) );
+		Assert.AreEqual( wrappedJson, JsonSerializer.Serialize( wrapped.Capture() ) );
+		CollectionAssert.AreEqual( Enumerable.Range( 10, 50 ).Select( stay => (double)stay ).ToArray(), wrapped.RecentStays.Oldest().ToArray() );
+
+		// a ring saved with its entries replayed in order (head at the last slot, flag clear) still loads with the same entries
+		var replayed = new RingData { Slots = Enumerable.Range( 10, 50 ).Select( stay => (double)stay ).ToList(), Head = 49, Wrapped = false };
+		var old = new ParkStatisticsData { Arrivals = data.Arrivals, Happiness = data.Happiness, Stay = data.Stay, People = data.People, RecentStays = replayed };
+		Assert.IsTrue( old.IsValid );
+		var loaded = new ParkStatisticsHistory();
+		loaded.Restore( old );
+		CollectionAssert.AreEqual( wrapped.RecentStays.Oldest().ToArray(), loaded.RecentStays.Oldest().ToArray() );
+		Assert.AreEqual( wrapped.RecentStays.SumNewest( 50 ), loaded.RecentStays.SumNewest( 50 ) );
 	}
 
 	[TestMethod]
@@ -194,7 +214,7 @@ public class ParkInfoWindowTests
 		hud.SetParkInfoPeriod( 2 );
 		hud.SetParkInfoPeriod( 7 );
 		Assert.AreEqual( 2, hud.ParkInfoPeriod );
-		// the choice stays while the window is closed and opened again
+		// the choice stays while the window is closed and opened again within the park
 		hud.CloseParkInfoWindow();
 		hud.OpenParkInfoWindow();
 		Assert.AreEqual( (ParkInfoSeries.Arrivals, 2), (hud.ParkInfoSelectedSeries, hud.ParkInfoPeriod) );

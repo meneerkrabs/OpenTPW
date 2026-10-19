@@ -1,48 +1,85 @@
-# UI-003: Trace UI child transforms
+# UI-003: Selected-mesh fitting and remaining transform parity
 
-## Status and classification
-- Plan-only draft proposal; no implementation, tests-run claim, retirement or merge.
-- Classification: `approximation`.
-- Baseline: `meneerkrabs/OpenTPW` main `5ccddcab` (2026-10-18).
-- One ID per proposal; shared dependencies are coordination edges, not duplicated ownership.
+## Status and bounded implementation
 
-## Source-verified residual
-UiModel strips translation from non-root nodes before multiplying root.Transform.
+The earlier proposal treated stripped child translation as the main possible gap.
+New static analysis establishes selected-mesh endpoint fitting as a separate,
+bounded correction. This implementation preserves that fit metadata and uses it
+for `DrawFrame` and inverse shape picking. UI-003 remains open; it is not a claim
+of complete native UI fidelity. UI-004 depth, ordering and texture grouping are
+unchanged.
 
-## Source sites
-- `source/OpenTPW/UI/Original/UiModel.cs:68` — APPROX annotation and adjacent implementation inspected.
+## Static evidence and its limits
 
-## Implementation cross-check
-- `source/OpenTPW/UI/Original/UiModel.cs:69`: `var transform = node.Index == root.Index ? root.Transform : WithoutTranslation( node.Transform ) * root.Transform;`
-- Existing behavior described above was checked against implementation, not only the register summary.
-- The presence of an APPROX marker alone is not evidence of an absent feature.
+- The native selected-state handler copies the selected mesh's two stored bounds,
+  composes its matrix through its parents, transforms those two endpoints and
+  orders X and Y (`0x476fd3..0x47708f`). It does not compute an eight-corner AABB
+  or use the model-header bounds.
+- The fit builder maps that box into the control rectangle (`0x476c50`). For
+  zero control angle, a common XY translation of vertices and endpoints cancels.
+  The hierarchical draw also composes node matrices (`0x57a530`). Replacing
+  translation stripping alone is therefore not an established visible fix.
+- The available UI corpus has 278 simple first-child-chain models. Static
+  algebraic replay over 1,185 frames found at most approximately 3.4e-7 of a
+  destination dimension from full composition versus the current shortcut when
+  both are fitted by their own tight vertex bounds.
+- Stored-endpoint fitting versus tight vertex fitting differs by more than
+  1e-5 in 125 frames across 13 models. Excluding `s_X1`, the maximum is about
+  0.001015 of a destination dimension, often around one tenth of a pixel at a
+  100-pixel destination. Live callers include `b_on`, lobby arrow buttons,
+  `!slider` and research fluid. `s_X1` has substantial padding, but no current
+  production instantiation was found; its large difference is not a demonstrated
+  currently displayed defect.
+- The available data archive was not freshly matched to the examined executable
+  release. These are native-rule replays, not captured original-PC pixels or
+  bit-exact floating-point/rasterization validation. Original software was not
+  executed, and no original assets or disassembly are included here.
 
-## Evidence needed
-- Original UI model node traversal and transform multiplication order.
-- Available private Data contains assets, not an original executable; no new binary trace was obtained in this audit.
-- Existing address annotations are provenance leads, not a claim that this audit independently verified instructions.
-- Any original captures/assets remain private; fixtures should be synthetic or references/hashes, not redistributed game media.
+## Implementation contract
 
-## Bounded investigation and implementation plan
-1. Confirm current ownership and rebase the proposal against the latest main before runtime changes.
-2. Construct multi-node fixtures and trace button/arm draw submission; replace stripped translations only where the reference establishes a hierarchy transform.
-3. Turn each verified behavioral distinction into a small deterministic regression fixture before editing runtime paths.
-4. Keep unknown behavior explicitly unresolved; an evidence-only outcome is valid if no mismatch is established.
-5. Submit any later implementation with exact evidence, changed scope and test output for review.
+- `UiModelFrame.FitBounds` is optional. The existing six-argument constructor and
+  geometric `MinX/MinY/MaxX/MaxY`, `Width/Height/Center` keep their meaning.
+- `UiModel.Flatten` transforms exactly the selected mesh's two stored endpoints
+  with the same existing transform and Y flip as its vertices, then orders axes.
+  This intentionally retains the current root-pose shortcut. The bounds and
+  vertices must not be placed in different coordinate spaces.
+- Drawing and inverse shape picking share a fit resolver. Missing, nonfinite,
+  overflowed or nonpositive fit extents fall back to usable geometric bounds;
+  unusable fallback geometry produces no draw or shape hit. This is an explicit
+  host fallback, not native malformed-input behavior. No small-width epsilon is
+  introduced.
+- Signed destination dimensions still reflect drawing. Shape picking retains
+  its existing rejection of nonpositive destination dimensions. Fitting does
+  not add clipping around the destination rectangle.
+- Authored layout queries and direct-origin/scale `UiBatch.AddModelFrame` remain
+  geometric. State order, root fallback, hierarchy transforms and UI-004 remain
+  unchanged.
 
-## Acceptance tests to author and run later
-- Root-only model; translated child; nested rotation/translation; each button state; arm alignment at multiple scales.
-- Run the nearest existing unit suite plus targeted integration/visual checks for changed behavior.
-- Compare baseline and candidate with identical inputs; label screenshots by platform, display settings and state.
-- Report unsupported/corpus-external cases separately; synthetic consistency alone is not original-fidelity proof.
+## Synthetic verification
 
-## Ownership and overlap
-- Consult: UI-004 and UI model renderer owner; merged #433 is baseline.
-- Do not overwrite another worker's runtime edits or duplicate an existing active implementation PR.
-- Merged UI #433 and languages #423 are baseline work, not open implementation dependencies.
-- Evening #439 is an extension and is not proof of original lighting or behavior.
+`UiModelFitTests` builds synthetic meshes and checks actual CPU draw vertices and
+`UiModelImage.CoversPoint`, without game fixtures or a GPU:
 
-## Completion boundary
-- This deliverable is a documentation proposal only; no gameplay source files are changed by this PR.
-- Runtime work remains blocked on the evidence/ownership decisions listed above where applicable.
-- No approximation is retired by creating this plan; no PR is claimed implemented or ready to merge.
+- Padded nonzero-origin fitting, triangle interior/edges and unoccupied padding.
+- Unchanged geometric metadata, authored rectangles and direct-origin submission.
+- Translation cancellation, reflected endpoints and signed destinations.
+- A sheared transform that distinguishes two-endpoint fitting from an
+  eight-corner box and retains geometry outside the control rectangle.
+- Legacy manual frames, invalid optional/source bounds and unusable geometry.
+- Three selected meshes with different stored fit bounds, repeated selection
+  transitions, retained root-pose placement and existing out-of-range fallback.
+
+Local .NET was unavailable when these tests were prepared. Repository/Python
+checks and independent algebraic assertions are distinct from compiling or
+executing the C# suite. Exact-head CI and source review are required before
+publication is considered validated; no rendered/native pixel comparison is
+claimed.
+
+## Remaining work
+
+General ancestor scale/rotation composition, control-angle handling, linked
+first-child state traversal (including empty/dummy states), native out-of-range
+behavior and rendered comparisons remain open. Any later hierarchy change must
+preserve geometric layout consumers or explicitly migrate them. UI-004's depth
+and render-order uncertainty must be investigated separately, not inferred from
+this fit correction.

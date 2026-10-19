@@ -289,7 +289,7 @@ public class RseFollowupAudioTests
 			AudioMixer.Current = mixer;
 			GameAudio.ReverbMap = SndReverbMap.Read( MapBytes( (true, 1), (true, 1) ) );
 			GameAudio.SelectReverb( 0 );
-			Assert.IsFalse( mixer.Reverb.Active, "[APPROX:AUDIO-039] the default preset 0 is not mixed" );
+			Assert.IsFalse( mixer.Reverb.Active, "[EXT:audio-reverb] the default preset 0 is not mixed" );
 			GameAudio.SelectReverb( 1 );
 			Assert.IsTrue( mixer.Reverb.Active );
 			GameAudio.SelectReverb( 0 );

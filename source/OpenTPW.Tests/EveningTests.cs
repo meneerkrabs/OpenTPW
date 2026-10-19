@@ -15,7 +15,7 @@ namespace OpenTPW.Tests;
 
 /// <summary>
 /// [EXT:evening] The evening and night extension (docs/EVENING.md): the time-of-day curves, the play-time clock, the options value and its file, the lamp table, the lamps' resolution against
-/// a model, the uniform and shader layout, the extension's registration and the guarantee that none of it touches the simulation. No GPU; the tests that need the game's data are
+/// a model, the uniform and shader layout, the extension's registration and the guarantee that the cycle touches no simulation (the torches are tested in EveningTorchTests). No GPU; the tests that need the game's data are
 /// inconclusive without OPENTPW_GAME_PATH, and everything else runs on the repository's own files.
 /// </summary>
 [TestClass]

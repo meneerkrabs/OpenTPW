@@ -142,7 +142,7 @@ public sealed partial class ParkHud
 		}
 		var rows = UpgradeListRows();
 		if ( upgradeSelected < 0 || upgradeSelected >= rows.Count || rows[upgradeSelected].Row is not { } row || upgradeOwner is not { IsDeleted: false } owner
-			|| !IsUpgradeListTarget( owner ) || FinanceEconomy is not { } economy || level.GetEconomyInstance( owner ) is not int instance )
+			|| !IsUpgradeListTarget( owner ) || FinanceEconomy is not { } economy || level.GetEconomyInstance( owner ) == null )
 			return;
 		switch ( row.Kind )
 		{
@@ -153,10 +153,10 @@ public sealed partial class ParkHud
 				break;
 			case RideUpgradeRowKind.Level:
 				// the level is asked for only while the balance is above its price; the economy refuses otherwise and the list closes either way
-				economy.TryBuyUpgrade( instance );
+				level.Commands.Issue( new BuyUpgradeCommand( owner.Runtime.AttractionId ) );
 				break;
 			case RideUpgradeRowKind.CancelLevel:
-				economy.TryCancelUpgrade( instance );
+				level.Commands.Issue( new CancelUpgradeCommand( owner.Runtime.AttractionId ) );
 				break;
 		}
 		CloseRideUpgrade();

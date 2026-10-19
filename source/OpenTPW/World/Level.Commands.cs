@@ -84,6 +84,7 @@ public partial class Level
 		EditQueueCommand edit => ExecuteEditQueue( edit ),
 		PlacePrototypeCommand prototype => Outcome( PlaceRide( new Vector3( prototype.X, prototype.Y, prototype.Z ) ) ),
 		RemovePrototypeCommand => ExecuteRemovePrototype(),
+		ParkSettingCommand setting => setting.Execute( this ),
 		_ => ParkCommandResult.Rejected( $"The park does not take {command.Kind} commands." )
 	};
 

@@ -778,10 +778,11 @@ public class OriginalUiTests
 		Assert.IsTrue( status.HasEconomy );
 		Assert.AreEqual( first.Balance, status.Money );
 		Assert.AreEqual( first.Date, status.Date );
-		status.Speed = GameSpeed.Paused;
-		Assert.AreEqual( GameSpeed.Paused, first.Speed );
+		// the speed is the economy's; a status bound to a level sets it through the level's commands (ParkSettingCommandTests)
+		first.Speed = GameSpeed.Paused;
+		Assert.AreEqual( GameSpeed.Paused, status.Speed );
 		Assert.AreEqual( 0f, status.TimeScale );
-		status.Speed = GameSpeed.Fastest;
+		first.Speed = GameSpeed.Fastest;
 		Assert.AreEqual( 4f, status.TimeScale, "the speed is the clock scale of the whole simulation: rides and guests run at it too" );
 		first.AdvanceDays( 31 );
 		Assert.AreEqual( first.Date, status.Date );

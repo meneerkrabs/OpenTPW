@@ -80,7 +80,7 @@ public static class ParkCommandCodec
 			ParkCommandKind.EditQueue => new EditQueueCommand( reader.Int(), reader.Int() ),
 			ParkCommandKind.PlacePrototype => new PlacePrototypeCommand( reader.Float(), reader.Float(), reader.Float() ),
 			ParkCommandKind.RemovePrototype => new RemovePrototypeCommand(),
-			_ => throw new InvalidDataException( $"Unknown park command kind {(int)kind}." )
+			_ => ParkSettingCommand.Read( kind, reader ) ?? throw new InvalidDataException( $"Unknown park command kind {(int)kind}." )
 		};
 		if ( !reader.AtEnd )
 			throw new InvalidDataException( $"A {kind} command has {reader.Remaining} bytes after its fields." );

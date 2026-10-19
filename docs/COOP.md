@@ -83,6 +83,37 @@ the issuing player's session slot (`Player`, 0 = the local player and host).
 - **Nested edits.** A command whose execution issues another (a tool callback) runs that one as part
   of itself; only the outer command is logged.
 
+### Settings
+
+The HUD windows' settings are commands too (`ParkSettingCommand`, `ParkSettingCommands.cs`, kinds 30
+to 52, C1 part 2): the park door, the entrance fee, attractions open and closed (the reopening guard
+is asked first, as the open buttons ask it), the ride window's speed, capacity and duration, a shop's
+or sideshow's price, a winnable sideshow's prize and chance of losing, a shop's quality and
+ingredient, a staff role's training budget, the research lab's effort, workload and current
+projects, taking and paying off loans, ride upgrades and their cancellation, maintenance calls, the
+answer to a challenge, renaming and dismissing staff, patrol areas (the patrol tool's second click and
+the employee window's clear button), the park's name, the game speed and the cheats (the secret park
+name's mode, the Alt keys and the cheats window).
+
+- An object's setting names it by its attraction id, as the object commands do; the executor finds
+  its economy object through the level.
+- Each command checks what its edit would refuse (an attraction of another kind, a loan already taken
+  or not on offer, no challenge waiting, an employee who is gone) and then makes the park's own call,
+  so a refused setting changes nothing and is logged like any refusal.
+- The fields keep to the windows' ranges: prices 0 to 500, a prize's cost 0 to 10,000, chances,
+  efforts, workloads and ingredients 0 to 100, a quality byte, a signed 16-bit ride speed, one step
+  of a research project. A name must be valid UTF-16 whose UTF-8 fits the codec's 512-byte string,
+  so it decodes to the same text; anything else is malformed and never logged.
+- The game speed: a park's is part of its state, so the speed buttons and keys and the HUD's status
+  (`EconomyParkStatus`, bound to its level) set it through a command. A visited park has no economy
+  and keeps its speed in the HUD, as before.
+- Hiring is not a setting: an applicant is hired when the Place tool puts the employee down, so it is
+  converted with the staff placement.
+
+`ParkSettingCommandTests` checks every setting on a level without game data, the refusals, the
+malformed fields and a visit; `ParkSettingCommandLevelTests` checks the attraction settings on placed
+rides and replays a recorded session of settings on a twin park with the same hash after every tick.
+
 ### Serialization
 
 `ParkCommandCodec` writes a command as an envelope (format version 1, the kind's tag, the player) and
@@ -122,13 +153,16 @@ guarded list.
 | Objects | place (the build tool, the Move tool, track add-ons), the remove tool, remove at a cell, sell from the object and attraction windows, the Move tool's pick-up, the bulldozer (area clear: one command per cleared cell) | converted |
 | Paths and queues | path and queue lines, undo inside the tool, path and queue cell removal, Backspace over a cell, the queue edit click | converted |
 | Developer prototype | place and remove the Totem | converted |
-| Economy | park open and close, ride open and close, the ride window's settings, entrance fee, prices and shop settings, loans, hire and fire, training budget, research, challenges, maintenance, ride upgrades, park and staff rename, cheats, speed | part 2 |
-| Tools | land, pools and waves, slides and pool attractions, kart and water tracks, coasters, staff placement and patrol areas | part 3 |
+| Settings | park open and close, ride open and close, the ride window's settings, entrance fee, prices, prizes and shop settings, loans, dismissal, training budget, research, challenges, maintenance, ride upgrades, park and staff rename, patrol areas, cheats, speed | converted |
+| Tools | land, pools and waves, slides and pool attractions, kart and water tracks, coasters, staff hiring and placement | part 3 |
 
 ## Known limits of C1
 
-- Wall-time updates outside the tick (`RefreshPools`, the evening, snow, the scene clock) and the body
-  pose preparation after a frame's ticks are not part of a replay; C1b audits them. A replay runs one
+- Wall-time updates outside the tick (`RefreshPools`, the evening, snow, the scene clock), the body
+  pose preparation after a frame's ticks (`FlatRideBounceRiders.Prepare`, which changes the riders'
+  ride-body state), the staff placement and staff world updates at the start of a frame
+  (`StaffPlacement.Reconcile`, `StaffWorld.Synchronize`) and the entities' updates after the
+  simulation are not part of a replay; C1b audits them. A replay runs one
   tick per frame, the game several, so a recording made in play must be checked against its
   checkpoints, which the log carries.
 - A remote player's command will run the same presentation (the action message, sounds) as a local

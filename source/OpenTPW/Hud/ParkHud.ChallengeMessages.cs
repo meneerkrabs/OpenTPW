@@ -132,12 +132,10 @@ public sealed partial class ParkHud
 	/// <summary>Answers the waiting offer, if any (the original's accept and decline do nothing without one), and closes the message panel.</summary>
 	internal bool AnswerChallenge( ParkEconomy? economy, bool accept )
 	{
-		if ( economy?.Objectives.Current is not { Accepted: false } || level != null && RejectReadOnlyAction() )
+		if ( economy?.Objectives.Current is not { Accepted: false } || level == null || RejectReadOnlyAction() )
 			return false;
-		if ( accept )
-			economy.AcceptChallenge();
-		else
-			economy.DeclineChallenge();
+		if ( !level.Commands.Issue( new AnswerChallengeCommand( accept ) ).Accepted )
+			return false;
 		CloseMessagePanel();
 		return true;
 	}

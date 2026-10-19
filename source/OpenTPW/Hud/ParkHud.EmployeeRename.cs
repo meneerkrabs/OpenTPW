@@ -40,7 +40,7 @@ public sealed partial class ParkHud
 			// Host safety: a stale callback, replaced roster or read-only visit cannot write through the captured target.
 			if ( Stack.Top != screen || !ReferenceEquals( employeeRenameScreen, screen ) ) return;
 			if ( level.IsReadOnlyVisit || !TargetExists() ) { Cancel(); return; }
-			if ( !economy.Staff.Rename( member, field.Text ) ) return;
+			if ( !level.Commands.Issue( new RenameStaffCommand( member.Id, field.Text ) ).Accepted ) return;
 			RefreshEmployeeStats();
 			Cancel();
 		}

@@ -33,13 +33,8 @@ public sealed partial class ParkHud
 		Stack.Push( staffCostsScreen );
 	}
 
-	/// <summary>Applies an admission-price action only to an editable park economy.</summary>
-	public static bool TrySetEntryPrice( ParkEconomy? economy, bool readOnly, int price )
-	{
-		if ( readOnly || economy == null || price < 0 ) return false;
-		economy.SetEntranceFee( price );
-		return true;
-	}
+	/// <summary>Sets the admission price through the park's commands (<see cref="SetEntranceFeeCommand"/>): refused for a read-only visit, a park without an economy or a negative price.</summary>
+	public static bool TrySetEntryPrice( Level level, int price ) => level.Commands.Issue( new SetEntranceFeeCommand( price ) ).Accepted;
 
 	/// <summary>
 	/// Moves the park's door: open when closed, closed when open. The economy's open/close events command the
@@ -51,21 +46,14 @@ public sealed partial class ParkHud
 		if ( RejectReadOnlyAction() || FinanceEconomy is not { } economy )
 			return;
 		var opens = !economy.IsParkOpen;
-		if ( opens )
-			economy.OpenPark();
-		else
-			economy.ClosePark();
+		level.Commands.Issue( new SetParkOpenCommand( opens ) );
 		// [BIN:TPW-EXE:0x00519EF0 park door routine] every press posts the advisor's game event 3 (open) or 4 (close), also when the park was already in that state or a bankrupt park refuses to open
 		host?.ParkDoorPressed?.Invoke( opens );
 	}
 
-	/// <summary>Changes the model's monthly training allocation without charging money early.</summary>
-	public static bool TrySetStaffTrainingBudget( ParkEconomy? economy, bool readOnly, StaffType role, long budget )
-	{
-		if ( readOnly || economy == null || !Enum.IsDefined( role ) || budget < 0 ) return false;
-		economy.SetTrainingBudget( role, budget );
-		return true;
-	}
+	/// <summary>Changes the model's monthly training allocation without charging money early (<see cref="SetTrainingBudgetCommand"/>).</summary>
+	public static bool TrySetStaffTrainingBudget( Level level, StaffType role, long budget ) =>
+		level.Commands.Issue( new SetTrainingBudgetCommand( role, budget ) ).Accepted;
 
 	/// <summary>
 	/// The training-budget window (the T key) on the original table: the w_park frame (208,30)-(1840,1007), the mini balance at the left, one f_train row
@@ -118,7 +106,7 @@ public sealed partial class ParkHud
 			{
 				var step = delta;
 				var button = screen.Add( new UiButton { Id = $"budget{role}" + (step < 0 ? "Decrease" : "Increase"), Model = node.Model, Help = strings.Help( row.Help ),
-					Clicked = () => { var current = FinanceEconomy?.Staff.GetTrainingBudget( role ) ?? 0; var next = StepTrainingBudget( current, step ); if ( next != current ) TrySetStaffTrainingBudget( FinanceEconomy, level.IsReadOnlyVisit, role, next ); },
+					Clicked = () => { var current = FinanceEconomy?.Staff.GetTrainingBudget( role ) ?? 0; var next = StepTrainingBudget( current, step ); if ( next != current ) TrySetStaffTrainingBudget( level, role, next ); },
 					Bounds = node.Rect, Anchor = UiAnchor.Center } );
 				adjustmentButtons.Add( (button, () => step < 0 ? (FinanceEconomy?.Staff.GetTrainingBudget( role ) ?? 0) > 0 : true) );
 			}
@@ -208,7 +196,7 @@ public sealed partial class ParkHud
 			adjustmentButtons.Add( (parkNameButton, () => level.ParkName != null) );
 			Label( "priceLabel", () => strings[UIStrings.TicketPrice], Rect( 370, 300, 1000, 380 ) );
 			Adjustment( "price", 300, () => FinanceEconomy?.EntranceFee ?? 0,
-				value => TrySetEntryPrice( FinanceEconomy, level.IsReadOnlyVisit, (int)value ) );
+				value => TrySetEntryPrice( level, (int)value ) );
 			// The door: whether the park is open to visitors at all. The original's entryprice screen builds it
 			// as b_door at (1350,678)-(1555,847) with help row 194, shown down for a closed park; its handler calls
 			// the door routine with the switch's new state. [EXT:maexah/OpenTPW ParkEntryPriceScreen.cs (PC 0x00498d33, 0x00498fc3)]
@@ -236,7 +224,7 @@ public sealed partial class ParkHud
 				var y = 370 + (int)role * 95;
 				Label( $"role{role}", () => StaffRole( type ), Rect( 370, y, 1000, y + 75 ) );
 				Adjustment( $"budget{role}", y, () => FinanceEconomy?.Staff.GetTrainingBudget( type ) ?? 0,
-					value => TrySetStaffTrainingBudget( FinanceEconomy, level.IsReadOnlyVisit, type, value ) );
+					value => TrySetStaffTrainingBudget( level, type, value ) );
 			}
 		}
 		void Close() { if ( Stack.Top == screen ) Stack.Pop(); }
@@ -278,7 +266,7 @@ public sealed partial class ParkHud
 		void Apply()
 		{
 			// A refused name (a read-only visit, or lines a save could not hold) keeps the dialog open.
-			if ( Stack.Top != screen || !level.RenamePark( first.Text, second.Text ) ) return;
+			if ( Stack.Top != screen || !level.Commands.Issue( new RenameParkCommand( first.Text, second.Text ) ).Accepted ) return;
 			Cancel();
 		}
 		first.Submitted = () => screen.Focus( second );

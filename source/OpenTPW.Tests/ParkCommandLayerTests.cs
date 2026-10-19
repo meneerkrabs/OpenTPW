@@ -40,6 +40,24 @@ public class ParkCommandLayerTests
 		new( "Level.BacktrackAt", Call( "BacktrackAt" ), nameof( BacktrackCommand ) ),
 		new( "ParkPathBuilder writes", @"\bPaths\??\.(BuildSegment|TryLayLine|Remove|RemoveFixed|RemoveOnce|Undo|Commit)\s*\(", nameof( LayLineCommand ) ),
 		new( "QueuePaths writes", @"\bQueuePaths\.(TryExtend|RemoveFrom|DetachFromPath|Connect)\s*\(", nameof( EditQueueCommand ) ),
+		// the park's settings (C1 part 2)
+		new( "ParkEconomy.OpenPark / ClosePark", @"\.(OpenPark|ClosePark)\s*\(", nameof( SetParkOpenCommand ) ),
+		new( "ParkEconomy.SetEntranceFee", Call( "SetEntranceFee" ), nameof( SetEntranceFeeCommand ) ),
+		new( "ParkEconomy.SetPrices / SetShopSettings", @"\.(SetPrices|SetShopSettings)\s*\(", nameof( SetPriceCommand ) ),
+		new( "ParkEconomy.TakeLoan / TryRepayLoan", @"\.(TakeLoan|TryRepayLoan)\s*\(", nameof( TakeLoanCommand ) ),
+		new( "ParkEconomy.Fire", @"\.Fire\s*\(", nameof( FireStaffCommand ) ),
+		new( "ParkEconomy.SetTrainingBudget", Call( "SetTrainingBudget" ), nameof( SetTrainingBudgetCommand ) ),
+		new( "Research effort, order, workload", @"\.(SetResearchEffort|MoveCurrent|SetWorkload)\s*\(", nameof( SetResearchEffortCommand ) ),
+		new( "Challenges", @"\.(AcceptChallenge|DeclineChallenge)\s*\(", nameof( AnswerChallengeCommand ) ),
+		new( "ParkEconomy.RequestMaintenance", Call( "RequestMaintenance" ), nameof( RequestMaintenanceCommand ) ),
+		new( "Ride upgrades", @"\.(TryBuyUpgrade|TryCancelUpgrade)\s*\(", nameof( BuyUpgradeCommand ) ),
+		new( "Level.RenamePark", Call( "RenamePark" ), nameof( RenameParkCommand ) ),
+		new( "Cheats", Call( "QueueCheat" ), nameof( QueueCheatCommand ) ),
+		new( "Ride open and close", @"\b(item|ride)\??\.(Open|Close)\(\s*\)", nameof( SetAttractionOpenCommand ) ),
+		new( "Ride window settings", Call( "ApplyRideWindow" ), nameof( SetRideSettingsCommand ) ),
+		new( "Staff rename", @"\bStaff\.Rename\s*\(", nameof( RenameStaffCommand ) ),
+		new( "Patrol areas", @"\.(SetPatrolArea|ClearPatrolArea)\s*\(", nameof( SetPatrolAreaCommand ) ),
+		new( "Game speed", @"\beconomy\.Speed\s*=[^=]", nameof( SetGameSpeedCommand ) ),
 	};
 
 	/// <summary>
@@ -48,25 +66,9 @@ public class ParkCommandLayerTests
 	/// </summary>
 	internal static readonly (Mutator Mutator, string Phase)[] Remaining =
 	{
-		(new( "ParkEconomy.OpenPark / ClosePark", @"\.(OpenPark|ClosePark)\s*\(", "SetParkOpen" ), "C1 part 2 (economy)"),
-		(new( "ParkEconomy.SetEntranceFee", Call( "SetEntranceFee" ), "SetEntranceFee" ), "C1 part 2 (economy)"),
-		(new( "ParkEconomy.SetPrices / SetShopSettings", @"\.(SetPrices|SetShopSettings)\s*\(", "SetPrices" ), "C1 part 2 (economy)"),
-		(new( "ParkEconomy.TakeLoan / TryRepayLoan", @"\.(TakeLoan|TryRepayLoan)\s*\(", "TakeLoan" ), "C1 part 2 (economy)"),
-		(new( "ParkEconomy.Hire / Fire", @"\.(Hire|Fire)\s*\(", "HireStaff" ), "C1 part 2 (economy)"),
-		(new( "ParkEconomy.SetTrainingBudget", Call( "SetTrainingBudget" ), "SetTrainingBudget" ), "C1 part 2 (economy)"),
-		(new( "Research effort, order, workload", @"\.(SetResearchEffort|MoveCurrent|SetWorkload)\s*\(", "SetResearch" ), "C1 part 2 (economy)"),
-		(new( "Challenges", @"\.(AcceptChallenge|DeclineChallenge)\s*\(", "AnswerChallenge" ), "C1 part 2 (economy)"),
-		(new( "ParkEconomy.RequestMaintenance", Call( "RequestMaintenance" ), "RequestMaintenance" ), "C1 part 2 (economy)"),
-		(new( "Ride upgrades", @"\.(TryBuyUpgrade|TryCancelUpgrade)\s*\(", "BuyUpgrade" ), "C1 part 2 (economy)"),
-		(new( "Level.RenamePark", Call( "RenamePark" ), "RenamePark" ), "C1 part 2 (economy)"),
-		(new( "Cheats", Call( "QueueCheat" ), "QueueCheat" ), "C1 part 2 (economy)"),
-		(new( "Ride open and close", @"\b(item|ride)\??\.(Open|Close)\(\s*\)", "SetRideOpen" ), "C1 part 2 (economy)"),
-		(new( "Ride window settings", Call( "ApplyRideWindow" ), "SetRideSettings" ), "C1 part 2 (economy)"),
-		(new( "Staff rename", @"\bStaff\.Rename\s*\(", "RenameStaff" ), "C1 part 2 (economy)"),
-		(new( "Game speed", @"\beconomy\.Speed\s*=[^=]", "SetSpeed" ), "C1 part 2 (economy)"),
+		(new( "ParkEconomy.Hire and the staff placement", @"\.(Hire|EndPlacement)\s*\(|\bPendingPlacementId\s*=[^=]", "PlaceStaff" ), "C1 part 3 (tools)"),
 		(new( "Land", @"\.(ChargeLand|TryBuyCells|SetLand)\s*\(", "BuyLand" ), "C1 part 3 (tools)"),
 		(new( "Pools", @"\.(SetPoolWaves|CyclePoolWaves|PaintCells|EraseCells|Paint|Erase)\s*\(", "PaintPool" ), "C1 part 3 (tools)"),
-		(new( "Staff placement and patrol areas", @"\.(EndPlacement|SetPatrolArea)\s*\(|\bPendingPlacementId\s*=[^=]", "PlaceStaff" ), "C1 part 3 (tools)"),
 		(new( "Coasters", Call( "CoasterClick" ), "CoasterClick" ), "C1 part 3 (tools)"),
 	};
 

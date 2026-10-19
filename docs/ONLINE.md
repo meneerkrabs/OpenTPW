@@ -38,7 +38,7 @@ contents follow the original online screens mapped from the Mac binary in
 | Park details | The original details dialog (Mac table `data:0x51150`): eight label rows, description, enter-park and the owner's un-publish | `w_big` |
 | Other Parks | The city's outside-the-top-10 chart (Mac table `data:0x5137e`, "Other Parks In …", UITEXT 446) | `w_big`, `list_findprks` |
 | Publish Park | Publish Park form (Mac table `data:0x514de`); OpenTPW adds the website opt-in (off by default) | `w_med` |
-| Send Postcard | tp.exe's postcard window (table `0x7540d8`, `0x4a8c00`/`0x4a7d70`): photo frame, message, title and recipients fields with their prompts (shown while a field is empty) and lengths (the title at most the card format's 64 characters), clear, tick (unedited title and message take the defaults UITEXT 215/216; no recipient shows 213) and X; the preview and address book are disabled (UI-042); recipients are player names split at `;`, `,` and newlines, not spaces (`[EXT:postcard-player-names]`) | `window4`, `!frame`, `b_clear`, `b_okay`, `b_exit` |
+| Send Postcard | tp.exe's postcard window (table `0x7540d8`, `0x4a8c00`/`0x4a7d70`): photo frame, message, title and recipients fields with their prompts (shown while a field is empty) and lengths (the title at most the card format's 64 characters), clear, tick (unedited title and message take the defaults UITEXT 215/216; no recipient shows 213) and X; the preview and address book are disabled (UI-042); recipients are player names and e-mail addresses split at `;`, `,` and newlines, not spaces (`[EXT:postcard-player-names]`) | `window4`, `!frame`, `b_clear`, `b_okay`, `b_exit` |
 | Unsent Postcards | Unsent Postcards (outbox) screen in its original composition (Mac table `data:0x508bc`): Title/Date/Send/Delete columns and the mark buttons | `list_outbox`, `b_sendall` |
 | Inbox | (OpenTPW) | `list_outbox` |
 | Chat | The original chat overlay (tp.exe table `0x758ae8`): chat frame, people list with its two tabs and slider, postcard, vote and earmuffs buttons, message list with its slider, text entry, and the name popups (tables `0x758cd8`, `0x758e18`) — over the chat park view | `chat` (`f_chat`), `b_speeps`, `b_sbuddi`, `b_chtpcard`, `b_vote`, `b_muff`, `!f_plain`, `b_bmark`, `b_gopeep`, `b_ignore`, `b_unbuddi`, `b_peeploc`, `b_page` |
@@ -184,6 +184,59 @@ passwords and session tokens are not persisted. The `parks`, `visited`, and
 Malformed local postcards are reported. A conflicting or damaged existing inbox file
 is retained and prevents deletion of that incoming postcard from the server.
 
+
+### Postcard recipients and delivery
+
+[EXT:postcard-player-names] The recipient field accepts a mixture such as
+`Bob Smith; friend@example.test, Alice`. Semicolons, commas and newlines separate
+recipients; spaces stay inside player names. Tokens containing `@` must be plain
+ASCII mailbox addresses (no display names, comments or quoted local parts); all
+other tokens use the existing player-name rules. The shared package/client/server
+validator rejects malformed or duplicate recipients and caps a card at ten. The
+composer uses the original localized UITEXT 213 refusal and preserves the draft.
+
+Composition is still offline: the tick saves to Outbox. **Send All** requires login.
+Player names go to that server's Inbox; addresses go through its already configured
+`IEmailSender` / Resend transport, using `EmailFrom` and `EmailReplyTo`. The e-mail
+contains the title, sender's player name and message, plus `postcard.png` when the
+card has an image. It does not disclose the sender's recovery address. Each inbox
+copy lists only its own recipient, and each e-mail has a single recipient.
+Unknown players are reported as player recipients, not unknown e-mail recipients.
+A server without mail configuration continues player delivery and reports that
+addresses cannot be delivered. No client-side SMTP or new mail credentials are used.
+
+Partial responses list only confirmed recipients. Send All records that subset in
+Sent and atomically rewrites the Outbox card with the unconfirmed recipients, so a
+failed address, unknown player or full inbox is not silently discarded. A failed
+request leaves its local card in Outbox. Successful delivery here means an inbox
+write or mail-provider acceptance, not a guarantee that an external mailbox received
+or displayed the message. Old clients can still send fully successful player cards;
+partial-result handling requires this client version.
+
+The server persists hashed account/content/recipient receipts separately from inbox
+files, and uses deterministic inbox delivery ids. Retrying the same immutable card
+also after a restart or local recipient-list reduction does not resend a confirmed
+recipient within the 30-day receipt lifetime. Reusing a client-chosen card id with
+different content is a different delivery. Confirmed receipts expire after 30 days;
+this is bounded deduplication, not a permanent exactly-once guarantee.
+
+For e-mail, the same hashed key is sent as Resend's `Idempotency-Key` header
+([provider contract](https://resend.com/docs/dashboard/emails/idempotency-keys)).
+Because that provider retains keys for 24 hours, an unconfirmed attempt may be
+retried for at most 23 hours. Afterward the server reports an uncertain result and
+requires the player to check with the recipient before composing a new card.
+Uncertain tombstones do not expire automatically, and are capped at 256 per sender;
+further new e-mails then require operator attention. A process or storage failure
+between the provider's acceptance and the local receipt write is explicitly
+uncertain, never reported as guaranteed exactly-once delivery.
+
+The existing upload/address rate limiter remains. `PostcardRecipientsPerHour`
+(default 20) additionally limits recipient delivery attempts per authenticated
+account, and `PostcardEmailsPerAddressPerHour` (default 3) limits attempts to the
+same address across accounts. Failed mail attempts count; confirmed retries do not.
+These one-hour attempt counters survive restart. Their persisted records and the
+receipt ledger contain hashes and timestamps, not raw e-mail addresses or messages.
+
 Export/import works without an account or a server. The Online panel inspects a local
 `.tpwpark` and reports required content and layout warnings. Downloading a shared park
 saves it locally and inspects it. To open it as a read-only visit, restart the game:
@@ -299,7 +352,7 @@ figure in the park (`ParkPresence`):
   through a reconnection, and gives way to the HUD when the server refuses the park. The HUD shows
   the room's lines in the corner chat box.
 - **Walking**: in the chat mode a left click anywhere in the park's opening (not on the overlay's
-  panels) walks the player's figure there, as the original's chat mode panel does (help 401,
+  panels, nor on a rideable ride: see Riding) walks the player's figure there, as the original's chat mode panel does (help 401,
   "Left-click to walk to this point"); in the HUD a click on the ground that hits no object does,
   and objects keep their click (a ride's window, the ride view). A double click teleports (manual
   p. 68). The walk goes from cell centre to cell
@@ -310,8 +363,16 @@ figure in the park (`ParkPresence`):
 - **Places**: the figure's place goes to the server as a fraction of the park's map (the chat
   protocol's `move`), at most every 0.12 s while it walks, on arrival, and every ten seconds while
   it stands; the server relays it to the room. The other figures follow the relayed places and
-  jump when a place is more than three cells away (a teleport, or a player in the overhead chat
-  view, whose square maps onto the same fractions).
+  jump when a place is more than three cells away (a player in the overhead chat view, whose
+  square maps onto the same fractions), or when the movement was a teleport.
+- **Riding**: in the chat mode a rideable ride under the pointer shows its name with "Left-click
+  to ride" (UIHELPTEXT 580) and a click rides it (tp.exe 0x4BD7F4 → 0x4E15B0, the ride window's
+  Ride it!), as the HUD's Ride it! does. While the player rides, their figure is hidden for the
+  park's other visitors, and when the ride ends it appears at the ride's exit (where the ride has
+  visitor cells; else where it stood): the original's `BOSS_CHAT_MOVE` modes 2 (hide) and 3 (unhide
+  and teleport). The ride view's screen covers the chat overlay until the ride ends, as the
+  original hid both chat windows (0x4BD090), and its own exits leave it (Escape, the eject button,
+  C, E and, with RMB cancel, a right click).
 - **Leaving** the park leaves its room, so the others see the parting; a chat connection that
   the visit opened is closed again, so the Online World's lines do not follow the player into
   their own park. A park that was unpublished meanwhile is refused by the server; its visit then
@@ -319,23 +380,34 @@ figure in the park (`ParkPresence`):
 
 Walking runs on real time, whatever the visited park's speed or pause. Figures need a server that
 answers each room's first movement with where everyone stands (protocol version 4,
-docs/SERVER.md); with an older server the visit chats but shows no figures. A park file opened
+docs/SERVER.md); with an older server the visit chats but shows no figures. Hiding a riding
+player needs protocol version 5, whose movements carry their mode; on a version 4 server, and
+for a player whose game is older, the riding player's figure stands where it was until the ride
+ends. A reconnect reads the version again before a hide goes out, and holds the hide until that
+read finishes, so neither an older game nor a current one is shown the rider in the meantime. A
+failed read is tried again, with a growing wait that levels off, for as long as the connection
+stays open. Leaving the room discards any coalesced movement that has not entered the send
+queue, including a held hide, so another park on the same connection starts with its own visible
+position. A park file opened
 from disk (Import file, `--visit-park`) has no room and no figures.
 `--visit-park <file> --smoke-test --smoke-presence` runs the native visit check with three scripted
 players round the entrance: the visit starts in the chat mode, their figures, names and sparkles are
 drawn, a click walks the player's figure and its places are sent, Enter focuses the entry and says a
 line, Tab leaves it, a right click on a name opens its popup and the ignore button sends its
-command, F4 switches to the HUD and back, and a buddy's popup has its six buttons
-(`artifacts/native-smoke-online-visit-presence.png`, `native-smoke-online-visit-chat-popup.png`).
+command, F4 switches to the HUD and back, a buddy's popup has its six buttons, and a click on a
+ride in the chat mode rides it with the player's figure hidden and brings it back at the ride's
+exit (`artifacts/native-smoke-online-visit-presence.png`, `native-smoke-online-visit-chat-popup.png`).
 
 | EXT label | OpenTPW decision | Known original evidence (not reproduced) |
 | --- | --- | --- |
-| `online-visit-presence` | The visit joins the park's room and the server relays fractions of the park, sent several times a second while a figure walks; a far jump is shown as a teleport. | The original's `BOSS_CHAT_MOVE` carried a cell position (8.8 words) and a mode: 0 walk to it (every client walked the online person there itself, 0x4F7DE0), 1 teleport (0x4F7E20), 2 hide, 3 unhide and teleport (tp.exe 0x4E7265 in 0x4E6E80). Hiding while riding is not sent. |
+| `online-visit-presence` | The visit joins the park's room and the server relays fractions of the park, sent several times a second while a figure walks; a far jump is shown as a teleport, and from protocol 5 each movement says whether it walks, teleports, hides or shows the figure again. | The original's `BOSS_CHAT_MOVE` carried a cell position (8.8 words) and a mode: 0 walk to it (every client walked the online person there itself, 0x4F7DE0), 1 teleport (0x4F7E20), 2 hide, 3 unhide and teleport (tp.exe 0x4E7265 in 0x4E6E80). |
+| `online-ride-hiding` | A player who rides is hidden for the room from boarding to the ride's end, and then shown at the ride's exit (or where they stood); any later movement shows a hidden figure again, so a lost "unhide" heals. The server sends the mode only to games that send one, and a hidden player's place to nobody who reads no mode. A hide waits until the version of the open connection is known, and a failed version read is tried again until it is. | The original hid the own person locally on entering any first-person view and sent mode 2 for a ride (0x4BD090 → 0x4EA3F0); a ride entered from the first-person walk ended at its exit cell with mode 3 (0x42A1D0, 0x4EA410), but the return to the overview from a ride boarded there sent only a teleport (mode 1, 0x4BD260 → 0x4EA2D0), which leaves the person hidden for the others: only mode 3 rebuilds its model, while modes 0 and 1 move a hidden person unseen. |
 | `online-avatar-look` | A figure wears the guests' kid set chosen by an FNV-1a hash of the lower-case name, the same for every client. | The online person's own model (`MODEL_ONLINE_PERSON`) is not decoded. |
 | `online-avatar-walk` | The player's figure walks 1.2 cells a second, about a quick guest's pace. | The online person's walk step (0x4FA2A0 on its route) is not read. |
 | `online-avatar-route` | The cells a figure may cross: land, paths, queues, object entrances and exits and fixed walkways inside the park. | The route map the original passes to its route search (person +0xB4 → 0x511420) is not read. |
 | `online-avatar-start` | A figure appears between the park entrance's two cells. | The original's first place of an online person is not read (mode 3 unhides it at a relayed place). |
-| `online-avatar-click` | In the chat mode a click anywhere in the park walks the figure, in the HUD a ground click that hits no object; the ground's help is UIHELPTEXT 401 in both, and not while the chat entry takes the keys (the help box would cover it). | The chat mode panel's handler (0x4BD4A0) walks on a park click with help 401; over a rideable ride it shows help 580 with the ride's name, and a click on it runs 0x4E15B0 (not read); neither is reproduced. |
+| `online-avatar-click` | In the chat mode a click anywhere in the park but on a rideable ride walks the figure, in the HUD a ground click that hits no object; the ground's help is UIHELPTEXT 401 in both, and not while the chat entry takes the keys (the help box would cover it). | The chat mode panel's handler (0x4BD4A0) walks on a park click with help 401. |
+| `online-chat-ride-click` | In the chat mode a ride whose ride view opens (a camera seat or a running coaster) shows UIHELPTEXT 580 with its name and a click rides it. A feature's choosable bit is not tracked: a feature rides when its view opens. | Over a thing of type 3 that is no add-on (AddOn.UpgradesId 0) and of interface type 0, or 3 with the thing's choosable bit (+0x32 bit 0x10), the panel shows help 580 and a click runs the ride window's Ride it! (0x4BD7F4 → 0x4E15B0). |
 | `online-avatar-labels` | Names over the figures, the player's own in yellow, drawn under the HUD's windows. | The decoded online code draws no names over persons; the chat overlay's people list names them. |
 | `online-avatar-sparkle-cap` | At most six figures sparkle in a turn (the player's own first, then the nearest), and none while more than 80 of the particle pool's 120 emitters are live. | The original sparkles every online person every turn; its server capped a park's attendance ("Capping the number of people in online park"). |
 | `online-visit-chat-mode` | F4's other side is the visit's read-only HUD (its windows, the camera and the ride view), and Enter over the park returns to the chat mode with the entry focused. The camera's edge scroll works over the overlay's panels along the screen's left and bottom edges. | The original's F4 switched between the overlay and a bare full-screen panel over the park (0x7CC8C0, 0x65DD7B); its chat mode has no HUD. Whether its edge scroll worked over the overlay is not read. |

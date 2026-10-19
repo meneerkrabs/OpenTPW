@@ -175,6 +175,8 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	public bool IsChangingRoom { get; set; }
 	/// <summary><c>UsageInfo.RequiresTeleport</c> (type record +0x100): a guest boarding or leaving beams (particle 19); set when the runtime creates the bridge.</summary>
 	public bool RequiresTeleport { get; set; }
+	/// <summary>UsageInfo.RideHandlesSprite (type +0x104), inherited from the object settings.</summary>
+	public bool RideHandlesSprite { get; set; }
 	/// <summary>[EXT:pools-swim] Set by the runtime when it stops (demolition) before it releases the guests, so a changing room's guests do not start a swim; not saved (a stopped runtime restores stopped).</summary>
 	public bool IsStopped { get; set; }
 	/// <summary>[EXT:pools-swim] The cells beyond the back of a changing room; set when the level registers it (geometry only: whether one is a pool cell is read when a guest swims).</summary>

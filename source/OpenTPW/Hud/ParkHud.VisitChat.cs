@@ -30,6 +30,21 @@ public sealed partial class ParkHud
 	/// <summary>The other players of a read-only visit, while there are any.</summary>
 	private IVisitPresence? VisitPresence => level.IsReadOnlyVisit ? host?.Presence?.Invoke() : null;
 
+	/// <summary>
+	/// The ride a click in the chat mode rides (tp.exe 0x4BD7F4): a placed object that is no track add-on (AddOn.UpgradesId 0), of the rides' or the features'
+	/// interface type (Info.WhichUIType 0 or 3), whose ride view opens (<see cref="RideCameraMode.CanRide"/>); null for anything else, where the click walks.
+	/// </summary>
+	// [BIN:TPW-EXE:0x4BD7F4 chat mode ride] over a thing of type 3 whose definition has AddOn.UpgradesId (+0x284) 0 and Info.WhichUIType (+0x4ac) 0, or 3 with the thing's choosable bit (+0x32 bit 0x10), the chat mode panel shows help 580 with the ride's name, and a click runs the ride window's Ride it! (0x4E15B0)
+	// [EXT:online-chat-ride-click] the ride view opens only for a ride with a camera seat or a running coaster (RideCameraMode.CanRide), and a feature's choosable bit is not tracked: a feature rides when its view opens
+	internal static OriginalObject? ChatModeRide( OriginalObject? thing )
+	{
+		if ( thing is not { IsDeleted: false } || thing.Entry.Settings.GetInt( "AddOn.UpgradesId" ) != 0 )
+			return null;
+		// -1 is a missing key (GetInt's own fallback is 0, which is a ride): only the rides' and the features' interface types ride
+		var type = thing.Entry.Settings.GetInt( "Info.WhichUIType", -1 );
+		return type is 0 or 3 && RideCameraMode.CanRide( thing ) ? thing : null;
+	}
+
 	/// <summary>F4: switches between the chat mode and the HUD (with nothing open over them).</summary>
 	internal void ToggleChatMode()
 	{

@@ -464,7 +464,8 @@ the same seed as well.
 
 ## Mods
 
-Extensions and mods (MODS.md) are resolved once at startup and never change during a run. With no files-based mods
+Extensions and mods (MODS.md) are resolved at startup, and nothing changes while a park simulates: the files-based mods stay as resolved for the whole run, and an official extension
+switched on at a park load ([below](#switched-parks)) takes effect only for the park that load builds. With no files-based mods
 and the default extensions nothing in the simulation changes: the online extension `opentpw.online` touches no
 simulation state, and `DeterminismTests.TogglingOnlyTheOnlineExtensionKeepsThePinnedDigests` runs the pinned fixed
 run (`FixedRunHash`) and the guest-pathing run with it on and off and gets the same digests. The M4 gate and the
@@ -499,6 +500,24 @@ only while one is on, so the off-path hash and `SchemaVersion` (21) do not chang
 park of another version is refused. A script's `rng` is a stateless hash of (park seed, mod id, hook, guest birth id, park turn, draw ordinal), so it never moves the `WorldRng` stream. Two pins hold the interpreter and the wiring
 on every platform: `DeterminismTests.ScriptModsFixedRunHash` (the shipped example mod) and `ScriptModsAllHooksFixedRunHash` (all four hooks, state and `rng`); a resumed park continues equal to the uninterrupted one
 (`ScriptModsSaveTests.AResumedParkWithScriptModsContinuesLikeTheUninterruptedOne`).
+
+### Switched parks
+
+`[EXT:save-extension-switch]` (user-approved 2026-10-19, "Ook ontbrekende extensie aanzetten"): a player who loads an own park save whose official extensions differ from the active ones is asked
+instead of refused, in two cases only (MODS.md, [Loading a park with other extensions](MODS.md#loading-a-park-with-other-extensions)): a **rule-only** extension (`ParkExtensionSwitch.RuleOnlyExtensionIds`:
+`opentpw.rain-mood`, `opentpw.winter-weather`, `opentpw.winter-cold`, `opentpw.winter-always`, `opentpw.smarter-guests`) that is on now and was not then, off now and was then, or of another version,
+continues under the active set; a **content** extension the park uses that is off now (`ParkResumeMods.UsedOnlyExtensionIds`: pools, umbrellas, winter, cheats) is switched on for the run
+(`[EXT:extensions-apply-at-load]`) and in `mods.json`. The confirmed switch rewrites the loaded snapshot for the switched set (`ParkExtensionSwitch.Apply`): its `Mods` become the records a park saved
+now would hold, the smarter guests' section starts fresh (the park seed, no birth ids yet) when that extension comes on, and loses the extension's own state (stalls, throughputs, meals, complaints;
+the guest identity script mods share stays) when it goes off. The rewritten snapshot then passes the **unchanged strict validation**. A rule's per-guest day marks (`RainMoodDay`, `ColdMoodDay`,
+`WarmUntilDay`) and the weather it shaped stay in the guest and weather state as they were; every build reads them with the rule on or off.
+
+**A switched park is a new run from the switch point.** It is not a replay of the saved run: the rule set that drives it from that tick on is another, so its state hashes from then on are not comparable
+with a run that kept the old set, and its next save records the set it now runs under. Nothing about it is pinned; a park whose sets agree takes the strict path, so every existing pin, save byte and resume
+test is unchanged (a switch is only ever made from the interactive load dialog; `ResumePark` without a confirmed switch, `--park-resume-smoke`, the tests, the online server and co-op, community
+mods of another version or content, the cross-edition objects extension and the original-format export stay strict). A content extension switched on reproduces the save exactly, because the park
+already used it: `OPENTPW_SMOKE_SWITCH=pools` on the restore phase of the native park-resume smoke loads the pools variant's save with the extension switched off and back on through the dialog's path
+and compares every continuation tick with the capture phase (`SaveExtensionSwitchTests` covers the planning, the rewrite, the dialog and the revert of a failed load headless).
 
 A run with a mod that brings Theme Park Inc rides is as deterministic as any other: the M3 gate with such a ride as its attraction gives the same guest and state hashes in two runs
 (`TpiRidesEndToEndTests`, over the install named by `OPENTPW_TPI_PATH`), and the extension is recorded in the save, so a park saved with it loads only with it.

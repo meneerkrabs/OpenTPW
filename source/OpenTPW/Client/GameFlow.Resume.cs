@@ -21,7 +21,11 @@ internal sealed partial class GameFlow
 
 	/// <summary>Preflights and builds an isolated candidate before retiring the live park or lobby.</summary>
 	/// <param name="restart">The reload of the restart snapshot itself (Restart Park), which keeps that snapshot instead of taking a new one.</param>
-	internal Level ResumePark( ParkResumeSnapshot snapshot, bool restart = false )
+	/// <param name="extensionSwitch">[EXT:save-extension-switch] The extension switch the player confirmed for this load (<see cref="ResumeSwitched"/>); null loads strictly, as every replay and check does.</param>
+	internal Level ResumePark( ParkResumeSnapshot snapshot, bool restart = false, ParkExtensionSwitch? extensionSwitch = null ) =>
+		extensionSwitch == null ? ResumeStrict( snapshot, restart ) : ResumeSwitched( snapshot, restart, extensionSwitch );
+
+	private Level ResumeStrict( ParkResumeSnapshot snapshot, bool restart )
 	{
 		RequireProgressSaved();
 		if ( GameEditions.IsThemeParkInc ) throw new NotSupportedException( "Theme Park Inc park saves are not supported." );

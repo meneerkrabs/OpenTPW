@@ -63,6 +63,13 @@ public static class ModsScreen
 		[OfficialExtensions.Cheats.Id] = (OpenTpwText.ExtensionCheatsName, OpenTpwText.ExtensionCheatsDescription),
 	};
 
+	/// <summary>
+	/// An extension's name in the interface language where the screen has one ([EXT:save-extension-switch] and the pools extension's, for the load dialog), else the name the registry gives.
+	/// </summary>
+	internal static string ExtensionName( UiStringTable strings, IOpenTpwExtension extension ) =>
+		ExtensionTexts.TryGetValue( extension.Id, out var texts ) ? strings.Extra( texts.Name )
+		: extension.Id == OfficialExtensions.Pools.Id ? strings.Extra( OpenTpwText.ExtensionPoolsName ) : extension.Name;
+
 	public static UiScreen Create( UiScreenStack stack, UiStringTable strings, ModsServices? services = null )
 	{
 		services ??= new ModsServices();

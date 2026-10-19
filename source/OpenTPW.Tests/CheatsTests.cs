@@ -162,6 +162,7 @@ public class CheatsTests
 		Refused( "\"Argument\": 0", "\"Argument\": 7", "an argument the kind does not take" );
 		Refused( "\"Mode\": true", "\"Mode\": false", "applied cheats with the mode off" );
 		Refused( "\"Log\": [", "\"Pending\": [], \"Log\": [", "an empty pending list (none is left out)" );
+		Refused( "\"Log\": [", "\"DroppedLog\": 3, \"Log\": [", "entries dropped from a log that is not full" );
 		Assert.IsTrue( ParkSaveFile.Deserialize( Encoding.UTF8.GetBytes( good ) ).Cheats!.Mode );
 	}
 
@@ -263,5 +264,11 @@ public class CheatsTests
 			new OpenTPW.Online.Packages.GameInfo( "test", "English" ), null );
 		var read = OpenTPW.Online.Packages.ParkPackage.Read( package.ToBytes() );
 		CollectionAssert.Contains( read.Manifest.Flags.ToArray(), "cheated" );
+		// the export marks a cheated park's snapshot and leaves any other alone; nothing refuses it (ParkSharing.ModsRefusal does not count the cheats extension)
+		var plain = snapshot with { Flags = new[] { OpenTPW.Online.Packages.CompatibilityFlags.ReadOnlyVisit } };
+		Assert.AreSame( plain, ParkSharing.MarkCheated( plain, false ) );
+		CollectionAssert.AreEqual( new[] { "read-only-visit", "cheated" }, ParkSharing.MarkCheated( plain, true ).Flags.ToArray() );
+		using ( OpenTpwExtensions.Use( On() ) )
+			Assert.IsNull( ParkSharing.ModsRefusal(), "the cheats extension on: still nothing to refuse" );
 	}
 }

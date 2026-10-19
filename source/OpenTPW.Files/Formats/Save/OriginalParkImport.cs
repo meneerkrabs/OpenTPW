@@ -127,6 +127,8 @@ public sealed class OriginalParkImport
 	public IReadOnlyList<RecentResearchRing>? RecentResearch { get; private init; }
 	/// <summary>The referenced TPW or TPI analyser's validated monthly histories and host continuation inputs; null without an analyser.</summary>
 	public NativeParkStatistics? Statistics { get; private init; }
+	/// <summary>The referenced TPW analyser's ring of the last arrival group sizes, the oldest first (at most five); null without an analyser and for Theme Park Inc.</summary>
+	public IReadOnlyList<int>? ArrivalGroups { get; private init; }
 	/// <summary>
 	/// The advisor clock the save carries: the second word of the clock block that follows the MESS delimiter (writer 0x402E00 after the
 	/// snapshot 0x402E60, which stores the scaled clock at +0x4C and the advisor clock at +0x74; reader 0x402E30 behind the marker check 0x41555A).
@@ -311,6 +313,7 @@ public sealed class OriginalParkImport
 			?? throw new InvalidDataException( "The save names no existing park analyser thing." );
 		var recentResearch = analyser is { } researchThing ? SaveRecentResearch.Read( span, researchThing ) : null;
 		var statistics = analyser is { } statisticsThing ? SaveParkStatistics.Read( span, statisticsThing ) : null;
+		var arrivalGroups = analyser is { } arrivalThing ? SaveArrivalRing.Read( span, arrivalThing ) : null;
 		var staff = world.Things.Where( thing => thing.Model is >= SaveThingModel.Mechanic and <= SaveThingModel.Researcher ).ToList()
 			.Select( thing => SaveStaff.Read( payload.Span, thing ) ).ToList();
 		var guests = world.OfModel( SaveThingModel.Guest ).ToList().Select( thing => SaveGuest.Read( payload.Span, thing ) ).ToList();
@@ -338,6 +341,7 @@ public sealed class OriginalParkImport
 			SavedAdvisorClockMilliseconds = savedClock,
 			RecentResearch = recentResearch,
 			Statistics = statistics,
+			ArrivalGroups = arrivalGroups,
 		};
 	}
 

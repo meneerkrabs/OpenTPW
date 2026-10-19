@@ -240,7 +240,7 @@ public class EmployeeLivePortraitTests
 	{
 		using var rig = new Rig(); rig.Start(); var oldBody = rig.Body;
 		rig.Economy.Staff.Fire( rig.Member.Id ); Assert.IsNull( rig.Hud.Employee ); Assert.IsNull( rig.Frame() ); Assert.IsNull( oldBody.DrawRecord );
-		var replacement = new StaffMember { Id = rig.Member.Id, ThingId = rig.Member.ThingId, Type = rig.Member.Type, Variant = 0, CellX = 4, CellY = 4 };
+		var replacement = new StaffMember { Id = rig.Member.Id, ThingId = rig.Member.ThingId, Type = rig.Member.Type, Variant = 0, NameIndex = rig.Member.NameIndex, Grade = rig.Member.Grade, CellX = 4, CellY = 4 };
 		((List<StaffMember>)rig.Economy.Staff.Members).Add( replacement ); rig.Presentation.Attach( replacement ).CreateSource();
 		Assert.IsNull( rig.Hud.Employee ); Assert.IsNull( rig.Frame() ); Assert.AreEqual( 0u, replacement.BodySprite!.ReadSourceState()!.OutputValid );
 	}

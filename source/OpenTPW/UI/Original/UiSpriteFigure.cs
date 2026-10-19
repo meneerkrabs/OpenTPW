@@ -12,9 +12,8 @@ public readonly record struct UiSpriteFrame( Veldrid.Texture Texture, int AtlasW
 
 /// <summary>
 /// A sprite figure standing in a control's rectangle: its feet at the rectangle's horizontal centre, a quarter of the rectangle's height above its
-/// bottom edge, each sprite pixel <see cref="CanvasUnitsPerPixel"/> canvas units wide.
+/// bottom edge by default, or at an explicit authored hotspot. Each sprite pixel spans <see cref="CanvasUnitsPerPixel"/> canvas units.
 /// </summary>
-// [BIN:TPW-EXE:0x0049BA00 hire figure position] x = ((right − left) / 2 − 0x3F8 + left) / 1024 and y = ((bottom − top) / 4 − bottom + 0x300) / 768 of the control's canvas rectangle: its centre, a quarter of its height above the bottom
 public sealed class UiSpriteFigure : UiElement
 {
 	/// <summary>The frame to draw now; null draws nothing.</summary>

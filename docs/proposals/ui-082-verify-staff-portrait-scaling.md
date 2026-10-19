@@ -3,8 +3,7 @@
 ## Implemented boundary
 
 This proposal now implements a bounded geometry correction. UI-082 remains an open
-approximation; this is not full native portrait fidelity. The initial October 18 plan-only
-progress entry is retained unchanged as history.
+approximation; this is not full native portrait fidelity.
 
 Only the hire window's figure opts into `HirePortraitGeometry`:
 

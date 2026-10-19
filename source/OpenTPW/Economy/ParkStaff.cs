@@ -64,7 +64,7 @@ public sealed class StaffMember
 	/// The member's own name, stored inline in an original save (the staff suffix's <c>mName[i]</c>, +0x1A0, which the employee panels show); null
 	/// for a member hired in OpenTPW, whose name is <see cref="NameIndex"/> in the role's name table.
 	/// </summary>
-	public string? Name { get; init; }
+	public string? Name { get; internal set; }
 	/// <summary>The longest inline name an original save holds (33 UTF-16 units including the terminator).</summary>
 	public const int MaximumNameLength = 32;
 	public required int Grade { get; set; }
@@ -235,6 +235,22 @@ public sealed class ParkStaff
 
 	/// <summary>The five roles' strike levels, flags and last-considered turns (the staff manager's per-role records, ECON-014).</summary>
 	public StaffStrikeBoard Strikes { get; } = new();
+
+	/// <summary>Renames this exact current member without changing its name-table index, variant or simulation state.</summary>
+	// [BIN:TPW-EXE:0x506830 staff name] the inline field accepts up to 32 UTF-16 units, including an explicit blank name.
+	public bool Rename( StaffMember member, string name )
+	{
+		if ( !members.Contains( member ) || name == null || name.Length > StaffMember.MaximumNameLength ) return false;
+		for ( var index = 0; index < name.Length; index++ )
+		{
+			if ( char.IsControl( name[index] ) ) return false;
+			if ( !char.IsSurrogate( name[index] ) ) continue;
+			if ( !char.IsSurrogatePair( name, index ) ) return false;
+			index++;
+		}
+		member.Name = name;
+		return true;
+	}
 
 	public IReadOnlyList<StaffMember> Members => members;
 	public IReadOnlyList<StaffCandidate> Candidates => candidates;
@@ -501,7 +517,7 @@ public sealed class ParkStaff
 	/// <summary>Adds an employee taken from an original save (not hired from the pool).</summary>
 	internal StaffMember AddImported( StaffType type, int grade, int trainingPoints, float happiness, StaffState state, long hiredTick, float energy = StaffVitals.Maximum, string? name = null, int thingId = 0 )
 	{
-		var member = new StaffMember { Id = AllocateId(), ThingId = thingId, Type = type, NameIndex = 0, Name = string.IsNullOrEmpty( name ) ? null : name, Grade = grade, TrainingPoints = trainingPoints, Happiness = happiness, Energy = energy, State = state, HiredTick = hiredTick };
+		var member = new StaffMember { Id = AllocateId(), ThingId = thingId, Type = type, NameIndex = 0, Name = name, Grade = grade, TrainingPoints = trainingPoints, Happiness = happiness, Energy = energy, State = state, HiredTick = hiredTick };
 		members.Add( member );
 		AdoptThing( member );
 		return member;

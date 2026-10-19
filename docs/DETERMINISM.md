@@ -305,9 +305,12 @@ Other OpenTPW state that is **not in the hash**:
 | Sound chooser seed | presentation, see above |
 | `ParkSaveFile.Data.AnalyserCaches` (the analyser's cached readings) | saved for an exact continuation, but a reading aid that no simulation step reads; removed from the economy digest |
 | `ParkSaveFile.Data.StatisticsHistory` (the monthly rings of `ParkStatisticsHistory`) | only the park information window's graph reads them, no simulation step does; removed from the economy digest |
+| `ParkSaveFile.ResearchData.RecentItems` (TPW buy-list stars) | only the buy list reads the four rings; just this nested presentation property is removed from the economy digest. Completed projects, progress, effort and every other research field stay hashed. Raw ring state remains saved; no schema or canonical pin changes |
 
-A change to any of these does not change the hash. Adding one means bumping
-`SchemaVersion` and re-pinning the fixed-run hash.
+A change to any of these excluded fields does not change the hash. Adding an
+excluded presentation-only field does not require a schema or pin change. Bringing
+one of these fields into the canonical hash requires bumping `SchemaVersion` and
+re-pinning the fixed-run hash.
 
 ### Weather timing (October 14)
 

@@ -46,9 +46,10 @@ internal static class ParkResumeMods
 	/// [EXT:pools-extension] The extensions a save records only while the park actually uses them: <c>opentpw.pools</c>, recorded when the park has pool cells or a changing room, and
 	/// [EXT:umbrellas-save] <c>opentpw.umbrellas</c>, recorded when the park has a brolly shop or a guest with an umbrella, and [EXT:winter-save] <c>opentpw.winter</c>, recorded when the park has a winter kiosk or a glühwein stall or a guest
 	/// with a warm item, and [EXT:cheats-save] <c>opentpw.cheats</c>, recorded once the park has used one of the extension's own cheats (<see cref="ParkCheats.UsesExtension"/>; a park cheated only through the original's cheats
-	/// does not record it). A park that does not use one saves byte-identically whether it is on or off, and loads whether it is on or off (docs/POOLS.md, docs/UMBRELLAS.md, docs/WINTER.md, docs/CHEATS.md, docs/MODS.md).
+	/// does not record it), and [EXT:evening-torches-save] <c>opentpw.evening</c>, recorded when the park holds a torch. A park that does not use one saves byte-identically whether it is on or off, and loads whether it is on or off
+	/// (docs/POOLS.md, docs/UMBRELLAS.md, docs/WINTER.md, docs/CHEATS.md, docs/EVENING.md, docs/MODS.md).
 	/// </summary>
-	public static IReadOnlySet<string> UsedOnlyExtensionIds { get; } = new HashSet<string>( StringComparer.Ordinal ) { OfficialExtensions.Pools.Id, OfficialExtensions.Umbrellas.Id, OfficialExtensions.Winter.Id, OfficialExtensions.Cheats.Id };
+	public static IReadOnlySet<string> UsedOnlyExtensionIds { get; } = new HashSet<string>( StringComparer.Ordinal ) { OfficialExtensions.Pools.Id, OfficialExtensions.Umbrellas.Id, OfficialExtensions.Winter.Id, OfficialExtensions.Cheats.Id, OfficialExtensions.Evening.Id };
 
 	/// <summary>
 	/// The simulation-changing mods of <paramref name="active"/> that a save or an export counts: all of them, except that <c>opentpw.rain-mood</c>, <c>opentpw.winter-weather</c>, <c>opentpw.winter-cold</c> and <c>opentpw.winter-always</c> are left out in a Theme Park Inc run, where their
@@ -78,7 +79,8 @@ internal static class ParkResumeMods
 	/// the park holds a winter kiosk or a glühwein stall or a guest with a warm item (<see cref="WinterInUse"/>).
 	/// </summary>
 	/// <param name="cheats">[EXT:cheats-save] The park has used one of the cheats extension's own cheats or has one waiting (<see cref="ParkCheats.UsesExtension"/>).</param>
-	public static IReadOnlySet<string> InUse( ParkCellMap? cells, bool poolsObjects = false, bool umbrellas = false, bool winter = false, bool cheats = false )
+	/// <param name="evening">[EXT:evening-torches-save] The park holds a torch (<see cref="EveningInUse"/>).</param>
+	public static IReadOnlySet<string> InUse( ParkCellMap? cells, bool poolsObjects = false, bool umbrellas = false, bool winter = false, bool cheats = false, bool evening = false )
 	{
 		var used = new HashSet<string>( StringComparer.Ordinal );
 		if ( poolsObjects || (cells != null && cells.CountOf( ParkCellType.PoolWater ) > 0) )
@@ -89,6 +91,8 @@ internal static class ParkResumeMods
 			used.Add( OfficialExtensions.Winter.Id );
 		if ( cheats )
 			used.Add( OfficialExtensions.Cheats.Id );
+		if ( evening )
+			used.Add( OfficialExtensions.Evening.Id );
 		return used;
 	}
 
@@ -107,8 +111,14 @@ internal static class ParkResumeMods
 		placed.Any( IsWinterObject ) || guests?.Guests.Any( guest => guest.HoldsWinter ) == true;
 
 	/// <summary>
-	/// [EXT:pools-extension] The asset manifest as a save holds it: the catalog lists every object of a used-only extension (<c>mod:opentpw.pools:</c>, <c>mod:opentpw.umbrellas:</c> and <c>mod:opentpw.winter:</c> keys) whenever the extension is on, but a save holds, and a load requires,
-	/// only the keys of the extension objects the park has PLACED (<paramref name="placedPoolsObjects"/>: the changing rooms, brolly shops, winter kiosks and glühwein stalls; none for a park of pool cells only). A park without any is the same bytes with the
+	/// [EXT:evening-torches-save] user-approved 2026-10-19 (used-only, like the umbrellas): whether a park uses the evening extension's simulation side, which is only its torches (<paramref name="placed"/>, the entries of its objects;
+	/// a torch changes no guest, so there is no guest state to look at). A park without a torch is the same bytes with the extension on or off.
+	/// </summary>
+	public static bool EveningInUse( IEnumerable<ObjectCatalogEntry> placed ) => placed.Any( IsEveningObject );
+
+	/// <summary>
+	/// [EXT:pools-extension] The asset manifest as a save holds it: the catalog lists every object of a used-only extension (<c>mod:opentpw.pools:</c>, <c>mod:opentpw.umbrellas:</c>, <c>mod:opentpw.winter:</c> and <c>mod:opentpw.evening:</c> keys) whenever the extension is on, but a save holds, and a load requires,
+	/// only the keys of the extension objects the park has PLACED (<paramref name="placedPoolsObjects"/>: the changing rooms, brolly shops, winter kiosks, glühwein stalls and torches; none for a park of pool cells only). A park without any is the same bytes with the
 	/// extension on or off and loads with it on or off; an extension object that is not placed is ignored in both directions, so adding objects to the extension (more changing rooms, extras, slides) never
 	/// invalidates an older save. A placed object keeps the exact-hash check: changing its files changes the saves that place it.
 	/// </summary>
@@ -116,10 +126,10 @@ internal static class ParkResumeMods
 	{
 		ArgumentNullException.ThrowIfNull( assets );
 		ArgumentNullException.ThrowIfNull( placedPoolsObjects );
-		var prefixes = new[] { ContentRoot.Mod( OfficialExtensions.Pools.Id ).KeyPrefix, ContentRoot.Mod( OfficialExtensions.Umbrellas.Id ).KeyPrefix, ContentRoot.Mod( OfficialExtensions.Winter.Id ).KeyPrefix };
+		var prefixes = new[] { ContentRoot.Mod( OfficialExtensions.Pools.Id ).KeyPrefix, ContentRoot.Mod( OfficialExtensions.Umbrellas.Id ).KeyPrefix, ContentRoot.Mod( OfficialExtensions.Winter.Id ).KeyPrefix, ContentRoot.Mod( OfficialExtensions.Evening.Id ).KeyPrefix };
 		if ( !assets.Keys.Any( key => prefixes.Any( prefix => key.StartsWith( prefix, StringComparison.Ordinal ) ) ) )
 			return assets;
-		var placed = placedPoolsObjects.Where( entry => IsPoolsObject( entry ) || IsUmbrellasObject( entry ) || IsWinterObject( entry ) ).Select( entry => entry.Root.KeyPrefix + entry.ArchivePath.TrimEnd( '/' ) + "/" ).Distinct( StringComparer.Ordinal ).ToArray();
+		var placed = placedPoolsObjects.Where( entry => IsPoolsObject( entry ) || IsUmbrellasObject( entry ) || IsWinterObject( entry ) || IsEveningObject( entry ) ).Select( entry => entry.Root.KeyPrefix + entry.ArchivePath.TrimEnd( '/' ) + "/" ).Distinct( StringComparer.Ordinal ).ToArray();
 		return assets.Where( pair => !prefixes.Any( prefix => pair.Key.StartsWith( prefix, StringComparison.Ordinal ) ) || placed.Any( archive => pair.Key.StartsWith( archive, StringComparison.Ordinal ) ) )
 			.ToDictionary( pair => pair.Key, pair => pair.Value, StringComparer.Ordinal );
 	}
@@ -132,6 +142,9 @@ internal static class ParkResumeMods
 
 	/// <summary>[EXT:winter-save] Whether a placed object is one of the winter extension's own (a winter kiosk or a glühwein stall).</summary>
 	public static bool IsWinterObject( ObjectCatalogEntry entry ) => entry.ModId == OfficialExtensions.Winter.Id;
+
+	/// <summary>[EXT:evening-torches-save] Whether a placed object is one of the evening extension's own (a torch).</summary>
+	public static bool IsEveningObject( ObjectCatalogEntry entry ) => entry.ModId == OfficialExtensions.Evening.Id;
 
 	/// <summary>
 	/// The recorded mods' own consistency, with no active set: a bounded count, valid and distinct ids, versions and

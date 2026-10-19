@@ -365,7 +365,7 @@ line per kind of switch, in the eleven interface languages:
   state starts fresh when the extension comes on, is dropped when it goes off (the guest identity script mods share is kept) and starts fresh in another version (the guests keep their identity
   and traits). A switchable save is not listed as "requires mod" in the load list and the Continue entries; the load asks instead.
 - **Content extensions the park uses** that are off now: "This park uses Pools, which is off. Turn Pools on and load the park?". The tick's tooltip is "Turn Pools on and load". These are the extensions a
-  save records only while the park uses them (`ParkResumeMods.UsedOnlyExtensionIds`): `opentpw.pools`, `opentpw.umbrellas`, `opentpw.winter` and `opentpw.cheats`. Confirming switches the extension on for
+  save records only while the park uses them (`ParkResumeMods.UsedOnlyExtensionIds`): `opentpw.pools`, `opentpw.umbrellas`, `opentpw.winter`, `opentpw.cheats` and `opentpw.evening` (a park with a torch). Confirming switches the extension on for
   this run at once (`[EXT:extensions-apply-at-load]`: the feature gates and the extension's objects in the theme catalogs; everything else that depends on an extension is read when a park is built) and
   writes it to `mods.json` like the Extensions and mods screen, keeping every other choice there; in the browser the page then fetches the pools sprite sets it skipped at the start. A load that fails
   switches the extension back and writes nothing.

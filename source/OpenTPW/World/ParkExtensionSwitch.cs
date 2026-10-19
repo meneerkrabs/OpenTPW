@@ -7,7 +7,7 @@ namespace OpenTPW;
 /// <list type="bullet">
 /// <item><b>rule-only extensions</b> (<see cref="RuleOnlyExtensionIds"/>), in either direction: the park continues under the active set, so a rule that is on now starts at the load
 /// (<see cref="ContinueWith"/>), one that is off now stops (<see cref="ContinueWithout"/>), and one of another version continues in this build's version (<see cref="ContinueNewVersion"/>);</item>
-/// <item><b>content extensions the save uses</b> that are off now (<see cref="TurnOn"/>: the pools, umbrellas, winter and cheats extensions, <see cref="ParkResumeMods.UsedOnlyExtensionIds"/>): they are switched on for
+/// <item><b>content extensions the save uses</b> that are off now (<see cref="TurnOn"/>: the pools, umbrellas, winter, cheats and evening extensions (the last for a park with a torch), <see cref="ParkResumeMods.UsedOnlyExtensionIds"/>): they are switched on for
 /// this run and in <c>mods.json</c>, and the park loads with them.</item>
 /// </list>
 /// Everything else stays strict (<see cref="Refusals"/>, the texts of <see cref="ParkResumeMods.Unmet"/>): a community mod that is missing or has another version or content, an extension switched off on the command line,

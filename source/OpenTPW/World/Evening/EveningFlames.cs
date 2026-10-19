@@ -131,6 +131,26 @@ public sealed class EveningFlames
 		}
 	}
 
+	/// <summary>Test seam: receives each flame whose override is taken away (<see cref="Clear"/>) instead of the object.</summary>
+	internal Action<OriginalObject, int>? ClearOverride { get; set; }
+
+	/// <summary>Gives every cached flame back its model pose (drawn as the animator says, not hidden), for when the evening look is switched off, and empties the cache.</summary>
+	public void Clear()
+	{
+		for ( var index = 0; index < flames.Count; index++ )
+		{
+			var (item, node, _) = flames[index];
+			if ( ClearOverride != null )
+				ClearOverride( item, node );
+			else
+				item.ClearPresentationNodeTransform( node );
+		}
+		flames.Clear();
+		cachedList = null;
+		cachedVersion = int.MinValue;
+		cachedCount = -1;
+	}
+
 	/// <summary>Moves every flame to its pose at <paramref name="seconds"/> of the presentation clock, at the size of <paramref name="lampLevel"/> (hidden at 0, by day).</summary>
 	public void Animate( double seconds, float lampLevel )
 	{

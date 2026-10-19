@@ -308,6 +308,11 @@ public class EveningTorchTests
 		Assert.IsTrue( ParkResumeSaveFile.Serialize( loaded ).SequenceEqual( bytes ), "byte-stable" );
 		ParkResumeMods.Require( loaded.Mods, on );
 		StringAssert.Contains( Assert.ThrowsException<InvalidDataException>( () => ParkResumeMods.Require( loaded.Mods, off ) ).Message, "needs opentpw.evening 1.1.0" );
+		// the load offers to switch the extension on for a park with a torch, as for the other content extensions, and then needs nothing more
+		var plan = ParkExtensionSwitch.Plan( loaded.Mods, off );
+		Assert.IsTrue( plan.CanSwitch );
+		CollectionAssert.AreEqual( new[] { ModId }, plan.TurnOn.Select( extension => extension.Id ).ToArray() );
+		Assert.IsNull( ParkExtensionSwitch.RequiresText( loaded.Mods, off ), "not listed as needing a mod" );
 		// a save made without a torch loads with the extension on or off (a used-only extension that is not recorded is fine)
 		ParkResumeMods.Require( null, on );
 		ParkResumeMods.Require( null, off );
@@ -469,6 +474,15 @@ public class EveningTorchTests
 		flames.Animate( 2.0, 1f );
 		Assert.AreEqual( 0, flames.Count, "a removed torch leaves the cache" );
 		Assert.AreEqual( 0, applied.Count );
+		// switching the look off gives the remaining flames their model pose back
+		var cleared = new List<OriginalObject>();
+		flames.ClearOverride = ( item, node ) => cleared.Add( item );
+		torches.Add( b );
+		version++;
+		flames.Animate( 2.5, 1f );
+		flames.Clear();
+		CollectionAssert.AreEqual( new[] { b }, cleared );
+		Assert.AreEqual( 0, flames.Count );
 	}
 
 	// ---- The browser -------------------------------------------------------------------------------------------------------

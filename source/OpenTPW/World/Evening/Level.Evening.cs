@@ -125,6 +125,8 @@ public partial class Level
 	{
 		eveningClock = null;
 		eveningLook = null;
+		// the flames go back to the model's pose (not frozen, not hidden), as if the extension's look had never run
+		eveningFlames?.Clear();
 		eveningFlames = null;
 		if ( eveningLamps != null )
 			PointLights?.Remove( eveningLamps );

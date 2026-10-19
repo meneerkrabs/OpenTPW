@@ -163,11 +163,11 @@ light on the jungle and fantasy lawns, where Halloween's grey ground showed a cl
 - The flame (`EveningFlames`): each frame, every placed object whose row names a flame node has that node's part drawn with `TorchFlicker.FlameMatrix`, in the node's own frame about its origin (the flame's base): its height 1 plus or minus 0.14 times `2 f - 1`, its width
   half that the other way, and a slow lean of at most 0.06 radians (about 3.4 degrees) at 0.9 and 1.3 Hz, all scaled about the base by the lamp level (`TorchFlicker.FlameAt`): **by day the flame is hidden** (the torch shows an empty cup), it grows as the lamps come on at
   dusk and burns at full size at night, as the torch's light does (chosen on October 19, 2026 over a flame drawn all day, after the first captures showed the self-lit flame a dull brown by day). The transform and the hiding are set on the drawn parts only
-  (`OriginalObject.SetPresentationNodeTransform`): the animator's node transforms, which the lamps, the snow cover and the simulation read, do not change. The torches are cached and rebuilt only when the placed set changes, as the lamp source does.
+  (`OriginalObject.SetPresentationNodeTransform`): the animator's node transforms, which the lamps, the snow cover and the simulation read, do not change. The torches are cached and rebuilt only when the placed set changes, as the lamp source does. When the cycle stops (the extension or the browser harness's look switched off) the flames get their model pose back.
 
 **Browser.** `OpenTPW.Web.csproj` embeds `content/evening` (347,862 bytes) and its `RequireExtensionContent` target fails the build without `content/evening/objects.json`; the server image copies the folder (`source/OpenTPW.Server/Dockerfile`).
 
-**Captures** (Debug builds): `--debug-torches N` places N of the theme's torches through the level's own placement on the free cells nearest the camera target (`--capture-camera`'s when given), a cell apart; with `--evening-pace dusk|night` and `--capture-world`; `--capture-interface --debug-hud "buytab:features:Tiki Torch"` shows the buy window's Features tab with that row selected. `[EXT:debug-evening]`
+**Captures** (Debug builds): `--debug-torches N` places N of the theme's torches through the level's own placement on the free cells nearest the camera target (`--capture-camera`'s when given), three cells apart; with `--evening-pace dusk|night` and `--capture-world`; `--capture-interface --debug-hud "buytab:features:Tiki Torch"` shows the buy window's Features tab with that row selected. `[EXT:debug-evening]`
 
 **Labels.**
 

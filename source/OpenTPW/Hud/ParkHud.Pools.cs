@@ -3,9 +3,9 @@ using OpenTPW.UI.Original;
 namespace OpenTPW.Hud;
 
 /// <summary>
-/// The HUD side of the pool tool of the <c>opentpw.pools</c> extension (docs/POOLS.md). The original HUD has no pool entry, so the extension adds two rows to the end of
+/// The HUD side of the pool tool of the <c>opentpw.pools</c> extension (docs/POOLS.md). The original HUD has no pool entry, so the extension adds pool, slide, river and bridge rows to
 /// the buy window's Miscellaneous list (beside Buy Land and Clear Land) while it is on: "Pool water" arms the paint mode and "Remove pool water" the erase mode. Press and drag in the
-/// park to paint or erase; right click or Escape leaves.
+/// park to paint or erase; bridges use a single click. Right click or Escape leaves.
 /// </summary>
 // [EXT:pools-ui] OpenTPW's own rows and texts; the original game has no pools
 public sealed partial class ParkHud
@@ -21,13 +21,21 @@ public sealed partial class ParkHud
 	/// <summary>[EXT:pools-river] The Miscellaneous list's lazy river row (row id -20): paints pool water with the river option.</summary>
 	public static readonly BuildItem PoolRiverRow = new( "pool:river", -20, BuildCategory.Features, 0, ParkEconomy.PoolCellCost, null, Array.Empty<string>() );
 
-	/// <summary>Whether <paramref name="item"/> is one of the pool rows.</summary>
-	public static bool IsPoolRow( BuildItem item ) => item.InfoId is -3 or -4 or -5 or -20 && item.Entry == null && item.Category == BuildCategory.Features;
+	public static readonly BuildItem PoolBridgeEastRow = new( "pool:bridge-east", -21, BuildCategory.Features, 0, PoolBridgeWorld.Price, null, Array.Empty<string>() );
+	public static readonly BuildItem PoolBridgeSouthRow = new( "pool:bridge-south", -22, BuildCategory.Features, 0, PoolBridgeWorld.Price, null, Array.Empty<string>() );
+	public static readonly BuildItem PoolBridgeEraseRow = new( "pool:bridge-erase", -23, BuildCategory.Features, 0, 0, null, Array.Empty<string>() );
 
-	private string PoolRowName( BuildItem item ) => strings.Extra( item.InfoId == PoolPaintRow.InfoId ? OpenTpwText.PoolRowPaint : item.InfoId == PoolRiverRow.InfoId ? OpenTpwText.PoolRowRiver
+	private static bool IsPoolBridgeRow( BuildItem item ) => item.InfoId is -21 or -22 or -23;
+
+	/// <summary>Whether <paramref name="item"/> is one of the pool rows.</summary>
+	public static bool IsPoolRow( BuildItem item ) => item.InfoId is -3 or -4 or -5 or -20 or -21 or -22 or -23 && item.Entry == null && item.Category == BuildCategory.Features;
+
+	private string PoolRowName( BuildItem item ) => strings.Extra( item.InfoId == PoolBridgeEastRow.InfoId ? OpenTpwText.PoolBridgeEast
+		: item.InfoId == PoolBridgeSouthRow.InfoId ? OpenTpwText.PoolBridgeSouth : item.InfoId == PoolBridgeEraseRow.InfoId ? OpenTpwText.PoolBridgeErase
+		: item.InfoId == PoolPaintRow.InfoId ? OpenTpwText.PoolRowPaint : item.InfoId == PoolRiverRow.InfoId ? OpenTpwText.PoolRowRiver
 		: item.InfoId == PoolSlideRow.InfoId ? OpenTpwText.PoolRowSlide : OpenTpwText.PoolRowErase );
 
-	private long PoolRowPrice( BuildItem item ) => item.InfoId == PoolSlideRow.InfoId ? (level.Park?.Economy.CellCost( CellPurchase.SlidePiece ) ?? 0)
+	private long PoolRowPrice( BuildItem item ) => IsPoolBridgeRow( item ) ? (item.InfoId == PoolBridgeEraseRow.InfoId ? 0 : PoolBridgeWorld.Price) : item.InfoId == PoolSlideRow.InfoId ? (level.Park?.Economy.CellCost( CellPurchase.SlidePiece ) ?? 0)
 		: item.InfoId != PoolEraseRow.InfoId ? (level.Park?.Economy.CellCost( CellPurchase.Pool ) ?? 0) : 0;
 
 	private bool IsPoolRowAvailable() => FeatureGates.Pools && !level.IsReadOnlyVisit && level.PoolTool != null;
@@ -60,7 +68,7 @@ public sealed partial class ParkHud
 			}
 			return;
 		}
-		var erase = item.InfoId == PoolEraseRow.InfoId;
+		var erase = item.InfoId == PoolEraseRow.InfoId || item.InfoId == PoolBridgeEraseRow.InfoId;
 		if ( !tool.IsActive )
 		{
 			level.EndBuildTools();
@@ -68,10 +76,11 @@ public sealed partial class ParkHud
 			LeaveBuildTool();
 		}
 		var river = item.InfoId == PoolRiverRow.InfoId;
-		if ( !tool.Begin( erase, river ) )
+		var bridge = IsPoolBridgeRow( item );
+		if ( !(bridge ? tool.BeginBridge( item.InfoId == PoolBridgeEastRow.InfoId ? 1 : 2, erase ) : tool.Begin( erase, river )) )
 			return;
 		CloseBuyWindow();
-		PostMessage( strings.Extra( erase ? OpenTpwText.PoolEraseHint : river ? OpenTpwText.PoolRiverHint : OpenTpwText.PoolPaintHint ) );
+		PostMessage( strings.Extra( bridge ? (erase ? OpenTpwText.PoolBridgeEraseHelp : OpenTpwText.PoolBridgeHelp) : erase ? OpenTpwText.PoolEraseHint : river ? OpenTpwText.PoolRiverHint : OpenTpwText.PoolPaintHint ) );
 	}
 
 	/// <summary>
@@ -100,7 +109,7 @@ public sealed partial class ParkHud
 			return false;
 		}
 		tool.Hover( cursorX, cursorY );
-		context.HoverHelp = strings.Extra( tool.IsSlide ? OpenTpwText.PoolSlideHelp : tool.IsErasing ? OpenTpwText.PoolEraseHelp : tool.IsRiver ? OpenTpwText.PoolRiverHelp : OpenTpwText.PoolPaintHelp );
+		context.HoverHelp = strings.Extra( tool.IsBridge ? (tool.IsErasing ? OpenTpwText.PoolBridgeEraseHelp : OpenTpwText.PoolBridgeHelp) : tool.IsSlide ? OpenTpwText.PoolSlideHelp : tool.IsErasing ? OpenTpwText.PoolEraseHelp : tool.IsRiver ? OpenTpwText.PoolRiverHelp : OpenTpwText.PoolPaintHelp );
 		if ( input.LeftPressed )
 		{
 			refusalClick.Press();
@@ -128,6 +137,19 @@ public sealed partial class ParkHud
 		if ( tool.LastRefusal is not { } refusal )
 			return;
 		refusalClick.Refused( refusal.Cell.X, refusal.Cell.Y );
+		if ( tool.LastBridgeRefusal is { } bridgeRefusal )
+		{
+			PostMessage( strings.Extra( bridgeRefusal switch
+			{
+				PoolBridgeResult.NotEnoughMoney => OpenTpwText.NotEnoughMoney,
+				PoolBridgeResult.NotOverPool => OpenTpwText.PoolBridgeNeedsWater,
+				PoolBridgeResult.NotBridge => OpenTpwText.PoolBridgeNotBridge,
+				PoolBridgeResult.Standing => OpenTpwText.PoolBridgeStanding,
+				PoolBridgeResult.TooSteep => OpenTpwText.PoolTooSteep,
+				_ => OpenTpwText.CannotBuildHere
+			} ) );
+			return;
+		}
 		PostMessage( strings.Extra( refusal.Reason switch
 		{
 			PoolBuildResult.SlideRefused => tool.LastSlideRefusal switch
@@ -152,16 +174,113 @@ public sealed partial class ParkHud
 		} ) );
 	}
 
+	private UiButton? waveSettingsButton;
+
 	/// <summary>
-	/// [EXT:pools-waves] A click on a wave machine steps its pool's wave settings through the presets (<see cref="PoolWaveSettings.Presets"/>) and says what they are now. This is the interim control:
-	/// RCT3 keeps the settings in the changing room's window, and OpenTPW's object windows are traced controls of the original game (docs/UI.md) that have no row for them yet.
+	/// [EXT:pools-waves] The object window's "Wave settings" button, shown while a wave machine is selected: it opens the machine's settings window (<see cref="OpenWaveSettings"/>). The original's object
+	/// windows have no row for an OpenTPW object's settings, so the button takes the row of the shop window's settings controls, which a wave machine does not show (ParkHud.ObjectSettings.cs); a second click on the selected machine opens it too.
 	/// </summary>
-	private void StepPoolWaves( OriginalObject item )
+	private void AddWaveSettingsButton()
 	{
-		if ( level.CyclePoolWaves( item ) is not { } waves )
-			return;
-		PostMessage( waves.On
-			? $"{strings.Extra( OpenTpwText.PoolWavesOn )}: {strings.Extra( OpenTpwText.PoolWavesHeight )} {waves.Height}, {strings.Extra( OpenTpwText.PoolWavesInterval )} {waves.Interval + 1}"
-			: strings.Extra( OpenTpwText.PoolWavesOff ) );
+		waveSettingsButton = hud.Add( new UiButton
+		{
+			Id = "waveSettings", Text = () => strings.Extra( OpenTpwText.PoolWavesSettings ), Font = fonts => fonts.Label,
+			Clicked = () => { if ( selectedObject is { } item ) OpenWaveSettings( item ); },
+			Anchor = UiAnchor.Center,
+			Visible = false, Enabled = false
+		} );
+		infoElements.Add( waveSettingsButton );
 	}
+
+	private bool IsWaveMachine( OriginalObject? item ) => item is { IsDeleted: false } && FeatureGates.Pools && PoolAttractions.KindOf( item.Entry ) == PoolAttractionKind.WaveMachine
+		&& level.Objects.Objects.Contains( item ) && level.PoolWavesOf( item ) is not null;
+
+	/// <summary>
+	/// The settings window may change a machine: not in a read-only visit, not in the chat mode (which has no object window), not while another window covers the park, a tool is armed, the camera
+	/// rides or text is typed (as the shop price editor, <see cref="PriceViewAllowed"/>); paused is fine.
+	/// </summary>
+	private bool WaveSettingsAllowed => !level.IsReadOnlyVisit && !ChatMode && Stack.Screens.Count == 1 && !Input.TextEntryActive && PriceViewAllowed;
+
+	private void UpdateWaveSettingsButton()
+	{
+		if ( waveSettingsButton == null )
+			return;
+		// hidden in a visit like the object window's other settings controls; a mod's wave machine in the shop or sideshow category keeps that window's own controls in this row
+		waveSettingsButton.Visible = InfoArmOpen && !level.IsReadOnlyVisit && IsWaveMachine( selectedObject )
+			&& selectedObject!.Entry.WhichUIType is not ((int)BuildCategory.Shops or (int)BuildCategory.Sideshows);
+		waveSettingsButton.Enabled = waveSettingsButton.Visible && WaveSettingsAllowed;
+	}
+
+	/// <summary>
+	/// [EXT:pools-waves] The wave machine's settings window: waves on or off, the height (low, medium, high: <see cref="PoolWaveSettings.Height"/> 1 to 3) and the rest between two runs (short, normal,
+	/// long: <see cref="PoolWaveSettings.Interval"/> 0 to 2, <see cref="PoolWaves.RestTurns"/>). The choices edit the window's own copy; the tick writes them to the machine (<see cref="Level.SetPoolWaves"/>),
+	/// the cross, Escape or a right click leave it as it was. The window is OpenTPW's own (<see cref="UiDialogs.CenteredWindow"/>), titled with the machine's name; RCT3 keeps these settings in the changing room's window.
+	/// </summary>
+	internal void OpenWaveSettings( OriginalObject item )
+	{
+		if ( !WaveSettingsAllowed || !IsWaveMachine( item ) || level.PoolWavesOf( item ) is not { } current )
+			return;
+		var chosen = current;
+		var screen = new ShopPriceScreen( "waveSettings" );
+		var window = UiDialogs.CenteredWindow( 1400, 1050 );
+		UiDialogs.AddWindow( screen, window, "w_dialog", () => EntryName( item.Entry ) );
+		// the frame's right side is thicker than its left, so the content centres a little left of the window's middle, where the title is
+		const float Toggle = 350, Gap = 25, Height = 71;
+		var middle = window.X + window.Width * 0.48f;
+		void Choice( string id, int column, int columns, float y, OpenTpwText text, Func<bool> selected, Action pick )
+		{
+			var left = middle - (columns * Toggle + (columns - 1) * Gap) / 2 + column * (Toggle + Gap);
+			screen.Add( new UiButton { Id = id, Model = "b_ltoggle", Text = () => strings.Extra( text ), Font = fonts => fonts.Label, ClickSound = GameAudio.SelectClickEvent,
+				Selected = selected, Clicked = pick, Bounds = new UiRect( left, y, Toggle, Height ), Anchor = UiAnchor.Center } );
+		}
+		void Heading( string id, float y, OpenTpwText text ) =>
+			screen.Add( new UiLabel { Id = id, Text = () => strings.Extra( text ), Font = fonts => fonts.Label, Align = UiAlign.Center,
+				Bounds = new UiRect( middle - 500, y, 1000, 80 ), Anchor = UiAnchor.Center } );
+		Choice( "wavesOn", 0, 2, window.Y + 180, OpenTpwText.PoolWavesOn, () => chosen.On, () => chosen = chosen with { On = true } );
+		Choice( "wavesOff", 1, 2, window.Y + 180, OpenTpwText.PoolWavesOff, () => !chosen.On, () => chosen = chosen with { On = false } );
+		Heading( "heightLabel", window.Y + 300, OpenTpwText.PoolWavesHeight );
+		var heights = new[] { OpenTpwText.PoolWavesLow, OpenTpwText.PoolWavesMedium, OpenTpwText.PoolWavesHigh };
+		for ( var index = 0; index < heights.Length; index++ )
+		{
+			var height = index + 1;
+			Choice( $"height{height}", index, heights.Length, window.Y + 390, heights[index], () => chosen.Height == height, () => chosen = chosen with { Height = height } );
+		}
+		Heading( "intervalLabel", window.Y + 520, OpenTpwText.PoolWavesInterval );
+		var intervals = new[] { OpenTpwText.PoolWavesShort, OpenTpwText.PoolWavesNormal, OpenTpwText.PoolWavesLong };
+		for ( var index = 0; index < intervals.Length; index++ )
+		{
+			var interval = index;
+			Choice( $"interval{interval}", index, intervals.Length, window.Y + 610, intervals[index], () => chosen.Interval == interval, () => chosen = chosen with { Interval = interval } );
+		}
+		void Close() { if ( Stack.Top == screen ) Stack.Pop(); }
+		void Apply()
+		{
+			if ( Stack.Top != screen )
+				return;
+			// the machine may have gone while the window was open (a visit's owner cannot reach it; a demolition clears the selection)
+			// an unchanged choice writes nothing, so a machine still running the default keeps its cell as it was
+			if ( IsWaveMachine( item ) && level.PoolWavesOf( item ) != chosen )
+				level.SetPoolWaves( item, chosen );
+			Close();
+		}
+		screen.Add( new UiButton { Id = "apply", Model = "b_okay", Clicked = Apply,
+			Bounds = new UiRect( window.X + 180, window.Bottom - 180, 200, 100 ), Anchor = UiAnchor.Center } );
+		screen.Add( new UiButton { Id = "cancel", Model = "b_exit", Help = strings.Help( 2 ), Clicked = Close,
+			Bounds = new UiRect( window.Right - 400, window.Bottom - 180, 200, 100 ), Anchor = UiAnchor.Center } );
+		screen.Back = Close;
+		Stack.Push( screen );
+	}
+
+#if DEBUG
+	/// <summary>[EXT:debug-hud] Smoke-only: selects the first placed wave machine and, unless only <paramref name="select"/>, opens its settings window, for interface captures. False when the park has none.</summary>
+	internal bool DebugWaveSettings( bool select )
+	{
+		if ( level.Objects.Objects.FirstOrDefault( IsWaveMachine ) is not { } machine )
+			return false;
+		SelectObject( machine );
+		if ( !select )
+			OpenWaveSettings( machine );
+		return true;
+	}
+#endif
 }

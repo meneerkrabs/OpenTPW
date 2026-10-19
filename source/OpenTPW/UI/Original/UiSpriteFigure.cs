@@ -12,16 +12,18 @@ public readonly record struct UiSpriteFrame( Veldrid.Texture Texture, int AtlasW
 
 /// <summary>
 /// A sprite figure standing in a control's rectangle: its feet at the rectangle's horizontal centre, a quarter of the rectangle's height above its
-/// bottom edge, each sprite pixel <see cref="CanvasUnitsPerPixel"/> canvas units wide.
+/// bottom edge by default, or at an explicit authored hotspot. Each sprite pixel spans <see cref="CanvasUnitsPerPixel"/> canvas units.
 /// </summary>
-// [BIN:TPW-EXE:0x0049BA00 hire figure position] x = ((right − left) / 2 − 0x3F8 + left) / 1024 and y = ((bottom − top) / 4 − bottom + 0x300) / 768 of the control's canvas rectangle: its centre, a quarter of its height above the bottom
 public sealed class UiSpriteFigure : UiElement
 {
 	/// <summary>The frame to draw now; null draws nothing.</summary>
-	public Func<UiSpriteFrame?> Frame { get; init; } = () => null;
+	public Func<UiSpriteFrame?> Frame { get; set; } = () => null;
 
 	/// <summary>Canvas units per sprite pixel (the canvas is 2048 units wide).</summary>
 	public float CanvasUnitsPerPixel { get; init; } = 3.2f;
+
+	/// <summary>Optional authored-canvas hotspot, mapped before scaling. Null preserves the shared rectangle-relative placement.</summary>
+	public NVector2? FeetInCanvas { get; init; }
 
 	/// <summary>Where the figure's feet stand in <paramref name="rect"/>, in the rectangle's own units.</summary>
 	public static NVector2 Feet( UiRect rect ) => new( rect.X + rect.Width / 2, rect.Bottom - rect.Height / 4 );
@@ -45,7 +47,8 @@ public sealed class UiSpriteFigure : UiElement
 		if ( Frame() is not { } frame || Bounds.Width <= 0 )
 			return;
 		var rect = ScreenRect( context.Canvas );
-		var (quad, uv0, uv1) = Layout( frame, Feet( rect ), CanvasUnitsPerPixel * rect.Width / Bounds.Width );
+		var feet = FeetInCanvas is { } authored ? context.Canvas.Map( authored, Anchor ) : Feet( rect );
+		var (quad, uv0, uv1) = Layout( frame, feet, CanvasUnitsPerPixel * rect.Width / Bounds.Width );
 		context.Batch.AddQuad( UiTexture.Of( frame.Texture ), quad, uv0, uv1, RgbaByte.White );
 	}
 }

@@ -258,7 +258,7 @@ internal static class AdvisorSequences
 			{
 				// [BIN:TPW-EXE:0x00599880 advisor update] when the advisor clock reaches the timer (0x599991) the update starts the particle effect 0x521E60 (87, 90000, 0, 7000), plays sound 0xC6 (0x51BFC0) and calls 0x4B9340 (Advisor.Update)
 				// [BIN:TPW-EXE:0x004B9340 lobby key panel refresh] it returns at once unless the lobby's key panel window exists (0x7CC4B4, created by 0x4B8CA0 from the lobby 0x5E19B8 and cleared by its window procedure 0x4B8B70): in the park it does nothing; the park HUD's key counter is refreshed by the HUD's own message 0x1E handler (0x4A0FB0, ParkStatus.GoldenKeys)
-				// [APPROX:ADVISOR-025] OpenTPW has no island lobby key panel, so the refresh the timer gives it there (0x4B9340: show or hide 0x1E0EA-0x1E0F1 by the key count 0x5AF680 of the player ledger 0xF7C58C, "%d x" into 0x1E0EE, particle 0x61 when the count drops) is not made; the screen-space effects are drawn in the world pass under the HUD and the advisor image — evidence needed: whether the lobby says sequences 28 and 29, the player ledger (UI-051) and the order of the particle pass against the HUD and the advisor
+				// [APPROX:ADVISOR-025] The lobby samples the saved Full Simulation key counter when created, but has no advisor-timer refresh or EA/EB affordability panel. Native 0x4B9340 shows EC for positive keys outside Instant Action, formats "%d x" into EE, and owns effect 0x61 while the selected record threshold is met (not on a count drop); see docs/reverse/LOBBY-KEY-PANEL.md. Lobby sequences 28/29 reachability and particle-pass ordering remain unproven.
 				timer = sum + entry.TimerMilliseconds;
 				continue;
 			}

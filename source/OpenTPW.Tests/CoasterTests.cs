@@ -492,21 +492,73 @@ public class CoasterTests
 	}
 
 	[TestMethod]
+	public void ACircuitClosedThroughAFailingLinkOpensAgainForTheTool()
+	{
+		// an older OpenTPW closed a fresh circuit without checking the closing link: such a track can never complete
+		var (builder, _) = NewCoaster();
+		foreach ( var (dx, dy) in Circuit.Take( 4 ) )
+			builder.Place( Depart.X + dx, Depart.Y + dy );
+		Assert.IsTrue( builder.Close(), "the old close step" );
+		Assert.AreEqual( CoasterPlaceResult.TooFar, builder.Track.CheckClosure() );
+		Assert.IsTrue( builder.Track.Nodes[^1].Flags.HasFlag( CoasterNodeFlags.Invalid ), "its last pylon is marked" );
+		Assert.AreEqual( CoasterPlaceResult.InvalidNodes, builder.Complete() );
+		// the tool's entry opens it again, keeping every pylon, and building goes on from the last one
+		Assert.IsTrue( builder.OpenFailingClosure() );
+		Assert.IsFalse( builder.Track.IsClosed );
+		Assert.AreEqual( First + 4, builder.Track.Nodes.Count );
+		Assert.IsFalse( builder.Track.HasInvalidNodes, "an open chain does not check the closing link" );
+		Assert.IsFalse( builder.OpenFailingClosure(), "once" );
+		foreach ( var (dx, dy) in Circuit.Skip( 4 ) )
+			Assert.AreEqual( CoasterPlaceResult.Ok, builder.Place( Depart.X + dx, Depart.Y + dy ) );
+		Assert.AreEqual( CoasterPlaceResult.Ok, CloseAndComplete( builder ) );
+		Assert.IsTrue( builder.Track.IsRunnable );
+		// a circuit closed through a passing link stays closed
+		var (valid, _) = NewCoaster();
+		BuildCircuit( valid );
+		Assert.AreEqual( CoasterPlaceResult.Ok, valid.CloseCircuit() );
+		Assert.IsFalse( valid.OpenFailingClosure() );
+		Assert.IsTrue( valid.Track.IsClosed );
+	}
+
+	[TestMethod]
+	public void TheClosingTargetShowsWhatItsClickAnswers()
+	{
+		var (builder, _) = NewCoaster();
+		BuildCircuit( builder );
+		var panel = new CoasterToolPanel( builder );
+		panel.Hover( Return.X, Return.Y );
+		Assert.IsTrue( panel.Cursor!.Value.Closing );
+		Assert.AreEqual( CoasterPlaceResult.Ok, panel.Cursor.Value.Result );
+		// a pylon marked invalid elsewhere refuses the closing click, and the closing target says so before the click
+		builder.Track.Nodes[First + 1].Flags |= CoasterNodeFlags.Invalid;
+		panel.Hover( Return.X, Return.Y );
+		Assert.AreEqual( CoasterPlaceResult.InvalidNodes, panel.Cursor!.Value.Result );
+		Assert.AreEqual( CoasterPlaceResult.InvalidNodes, builder.Place( Return.X, Return.Y ) );
+		Assert.IsFalse( builder.Track.IsClosed );
+	}
+
+	[TestMethod]
 	public void ClosingThenCompletingAppendsTheStationEndNodes()
 	{
 		var (builder, _) = NewCoaster();
 		foreach ( var (dx, dy) in Circuit.Take( 4 ) )
 			builder.Place( Depart.X + dx, Depart.Y + dy );
 		Assert.AreEqual( CoasterPlaceResult.NotClosed, builder.Complete() );
-		Assert.AreEqual( CoasterPlaceResult.Ok, builder.Place( Return.X, Return.Y ), "the click closes, no node is added" );
+		// a closing link that fails the validator leaves the circuit open, and no node is added or marked
+		Assert.AreEqual( CoasterPlaceResult.TooFar, builder.Place( Return.X, Return.Y ), "(16,28) → (17,20) is 8.06 cells" );
+		Assert.IsFalse( builder.Track.IsClosed );
 		Assert.AreEqual( First + 4, builder.Track.Nodes.Count );
-		Assert.AreEqual( CoasterPlaceResult.TooFar, builder.Track.CheckClosure(), "(16,28) → (17,20) is 8.06 cells" );
-		Assert.IsTrue( builder.Track.Nodes[^1].Flags.HasFlag( CoasterNodeFlags.Invalid ) );
-		Assert.AreEqual( CoasterPlaceResult.InvalidNodes, builder.Complete() );
+		Assert.IsFalse( builder.Track.HasInvalidNodes );
+		Assert.AreEqual( CoasterPlaceResult.NotClosed, builder.Complete() );
+		// a closing link that passes closes the circuit: no node is added, the chain takes no new pylon, and deleting a pylon opens it again
+		foreach ( var (dx, dy) in Circuit.Skip( 4 ) )
+			builder.Place( Depart.X + dx, Depart.Y + dy );
+		Assert.AreEqual( CoasterPlaceResult.Ok, builder.Place( Return.X, Return.Y ), "the click closes, no node is added" );
+		Assert.IsTrue( builder.Track.IsClosed );
+		Assert.AreEqual( First + Circuit.Length, builder.Track.Nodes.Count );
 		Assert.AreEqual( CoasterPlaceResult.NotEditable, builder.Check( 12, 24 ), "a closed chain takes no new pylon" );
 		Assert.IsTrue( builder.RemoveLast() && !builder.Track.IsClosed, "deleting a pylon opens the circuit" );
-		foreach ( var (dx, dy) in Circuit.Skip( 3 ) )
-			builder.Place( Depart.X + dx, Depart.Y + dy );
+		builder.Place( Depart.X + Circuit[^1].X, Depart.Y + Circuit[^1].Y );
 		Assert.AreEqual( CoasterPlaceResult.Ok, CloseAndComplete( builder ) );
 		Assert.IsTrue( builder.Track.IsRunnable );
 		var ends = builder.Track.Nodes.Where( node => node.IsStationEnd ).ToArray();
@@ -809,9 +861,43 @@ public class CoasterTests
 		var train = ride.Trains[0];
 		// A placed train starts at the mean rated speed under its cars (0x43cc8a); this test starts one from rest.
 		train.Speed = 0;
+		// The controller's first motion tick takes no time (0x43ce85): the train at rest stays at rest.
+		ride.Advance( Tick );
+		Assert.AreEqual( 0f, train.Speed, "the first motion tick takes no time" );
 		ride.Advance( Tick );
 		var minimum = ride.Definition.MinSpeed * ride.PowerFactor;
 		Assert.IsTrue( train.Speed > 0 && train.Speed < minimum / 2, $"first frame: speed {train.Speed}, M {minimum}" );
+	}
+
+	/// <summary>
+	/// The first motion tick of a newly built controller takes no time (<c>0x43ce85</c>: the clock word is set on the tick that finds bit 0x10 clear): every train makes
+	/// one partial hop of no length, so it stays where the rating pass laid it out, while its speed is capped, decays ×0.95 below 2.0 and stops below 0.01. The next tick
+	/// moves the trains by its whole step.
+	/// </summary>
+	[TestMethod]
+	public void TheFirstMotionTickOfANewlyBuiltCoasterTakesNoTime()
+	{
+		var (builder, _) = NewCoaster();
+		BuildCircuit( builder );
+		Assert.AreEqual( CoasterPlaceResult.Ok, CloseAndComplete( builder ) );
+		var ride = builder.Ride;
+		Assert.IsFalse( ride.MotionClockStarted, "a new controller's motion tick has not run" );
+		Assert.IsTrue( ride.Trains.Count >= 2, $"the circuit places several trains ({ride.Trains.Count})" );
+		ride.Trains[0].Speed = 1.5f;
+		ride.Trains[1].Speed = 0.005f;
+		var expected = ride.Trains.Select( train =>
+		{
+			var speed = MathF.Min( train.Speed, ride.SpeedCap );
+			if ( speed < CoasterRide.DecayBelow )
+				speed *= CoasterRide.Decay;
+			return (train.Position % ride.Samples.Count, speed < CoasterRide.StopBelow ? 0f : speed);
+		} ).ToList();
+		ride.Advance( Tick );
+		Assert.IsTrue( ride.MotionClockStarted );
+		CollectionAssert.AreEqual( expected, ride.Trains.Select( train => (train.Position, train.Speed) ).ToList(), "no train moved; the speeds were capped and decayed" );
+		var before = ride.Trains[0].Position;
+		ride.Advance( Tick );
+		Assert.AreNotEqual( before, ride.Trains[0].Position, "the second tick moves the train" );
 	}
 
 	[TestMethod]

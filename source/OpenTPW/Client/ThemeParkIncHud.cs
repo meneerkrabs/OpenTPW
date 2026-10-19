@@ -466,7 +466,7 @@ public sealed class ThemeParkIncHud
 		if ( !tool.IsActive )
 		{
 			// Backspace over a path or queue cell with no tool on: the backtrack sound, then that cell is removed (GameAudio.BacktrackEvent; a queue is [EXT:queue-backtrack]).
-			if ( inPark && input.Backspaces > 0 && level.BacktrackAt( cursorX, cursorY ) )
+			if ( inPark && input.Backspaces > 0 && level.Commands.Issue( new BacktrackCommand( cursorX, cursorY ) ).Accepted )
 				return true;
 			if ( !inPark || !input.LeftPressed || level.Objects.FindAt( cursorX, cursorY ) != null )
 				return false;
@@ -537,9 +537,10 @@ public sealed class ThemeParkIncHud
 		else if ( inPark && level.BuildEntry is { } entry && cursorX >= 0 )
 		{
 			// the footprint's own terrain and occupancy check decides the colour (the purchase is checked when the click places it)
-			var allowed = level.CheckObject( entry, cursorX, cursorY, level.BuildRotation ) == OriginalPlacementResult.Allowed;
+			var placementResult = level.CheckObject( entry, cursorX, cursorY, level.BuildRotation );
+			var allowed = placementResult == OriginalPlacementResult.Allowed;
 			var anchor = Level.GetCentredAnchor( entry, cursorX, cursorY, level.BuildRotation );
-			var footprint = BlueprintGhosts.Footprint( entry.Shape, anchor.X, anchor.Y, level.BuildRotation, allowed );
+			var footprint = level.ObjectBlueprint( entry, anchor.X, anchor.Y, level.BuildRotation, placementResult, allowed );
 			cells.AddRange( footprint.Cells );
 			directions = footprint.Directions;
 		}

@@ -13,6 +13,8 @@ namespace OpenTPW;
 /// </summary>
 public sealed class StaffRenderer : Entity
 {
+	/// <summary>[EXT:pools-bridges] Optional elevated walking height, in engine units.</summary>
+	public Func<float, float, float?>? FeetHeight { get; init; }
 	private const int VerticesPerSprite = 12;
 	/// <summary>A park turn in seconds (the simulation's 248 ms).</summary>
 	private const float ParkTurnSeconds = 0.248f;
@@ -32,7 +34,13 @@ public sealed class StaffRenderer : Entity
 		public SpritePlayer Player = null!;
 		/// <summary>The length of the member's latest step in the walk step's 16.16 units per park turn, until a clip has taken the interval it asks for; 0 when none is waiting.</summary>
 		public float StepLength;
+		public PublishedFrame? Published;
 	}
+
+	// Value-only output of this renderer's successful world preparation. Never retain a GPU handle in a member view.
+	private readonly record struct PublishedFrame( Level Owner, long WorldPass, long RendererPass, long Assets,
+		StaffMember Member, int ThingId, int Atlas, int Slot, int Step, float HeadingX, float HeadingY );
+	private readonly record struct Selection( int Atlas, int Frame, bool Mirror, StaffClip Clip, int Slot, int Step );
 
 	private readonly Func<IReadOnlyList<StaffMember>> members;
 	private readonly ModelHeightfield field;
@@ -46,6 +54,8 @@ public sealed class StaffRenderer : Entity
 	private Vertex[] vertices = Array.Empty<Vertex>();
 	private int frames;
 	private bool deleted;
+	private long rendererPass;
+	private long assetGeneration;
 
 	public bool Visible { get; set; } = true;
 	/// <summary>Members drawn in the last frame (the dangling sprite excluded).</summary>
@@ -92,8 +102,7 @@ public sealed class StaffRenderer : Entity
 		{
 			if ( keys != null && !keys.Contains( TexturePack.RelativeFileName( sprites.Atlases[index].PackKey ) ) )
 				continue;
-			old.Add( textures[index] );
-			textures[index] = GuestRenderer.LoadAtlas( sprites.Atlases[index] );
+			old.Add( ReplaceAtlas( index, GuestRenderer.LoadAtlas( sprites.Atlases[index] ) ) );
 		}
 		if ( old.Count == 0 )
 			return;
@@ -111,6 +120,47 @@ public sealed class StaffRenderer : Entity
 				texture.NativeTexture.Dispose();
 			}
 		} );
+	}
+
+	private Texture ReplaceAtlas( int index, Texture replacement )
+	{
+		var old = textures[index];
+		// Invalidate before replacing even one slot; a partial reload must not reuse old publications.
+		assetGeneration++;
+		textures[index] = replacement;
+		return old;
+	}
+
+	private bool CanRender => Visible && material != null && !deleted;
+	// Keep the existing world exclusion (CellX only). Track separately requires both coordinates.
+	private bool CanPlaceMember( StaffMember member ) => !ReferenceEquals( member, placement.Carried ) && member.CellX != null;
+	private bool HasAtlas( int index ) => index >= 0 && index < textures.Count && index < sprites.Atlases.Count
+		&& textures[index].NativeTexture is { IsDisposed: false };
+
+	/// <summary>
+	/// The selected employee's latest world output at literal camera yaw zero. Pure observation: no player, movement,
+	/// clip or simulation updates. Unavailable output leaves the employee window on its existing qualified hire-loop fallback (UI-092).
+	/// </summary>
+	internal UI.Original.UiSpriteFrame? EmployeeFrame( StaffMember member )
+	{
+		if ( !CanRender || Level == null || !ReferenceEquals( Level, Level.Current ) || !ReferenceEquals( Level.StaffRenderer, this )
+			|| !Entity.All.Contains( this ) || !CanPlaceMember( member ) || !StaffSpriteRules.HasBodySprite( member )
+			|| !views.TryGetValue( member, out var view ) || view.Published is not { } output
+			|| !ReferenceEquals( output.Owner, Level ) || !ReferenceEquals( output.Member, member ) || output.ThingId != member.ThingId
+			|| output.WorldPass != Level.RenderPass || output.RendererPass != rendererPass || output.Assets != assetGeneration
+			|| output.Atlas != sprites.AtlasFor( member.Type, StaffSpriteRules.KeyOf( member ) ) || !HasAtlas( output.Atlas ) )
+			return null;
+		var list = members();
+		var found = false;
+		for ( var index = 0; index < list.Count && !found; index++ )
+			found = ReferenceEquals( list[index], member );
+		if ( !found )
+			return null;
+		var atlas = sprites.Atlases[output.Atlas];
+		var (direction, mirror) = GuestSpriteAtlas.SelectOriginalDirection( output.HeadingX, output.HeadingY, 0f, atlas.DirectionsOf( output.Slot ) );
+		var frame = atlas.Frames[atlas.GetFrame( output.Slot, direction, output.Step % atlas.FramesPerDirection( output.Slot ) )];
+		return new UI.Original.UiSpriteFrame( textures[output.Atlas].NativeTexture, atlas.Width, atlas.Height, frame.X, frame.Y, frame.Width, frame.Height,
+			frame.OriginX, frame.OriginY, mirror, frame.ScaleX, frame.ScaleY );
 	}
 
 	/// <summary>Where the member was last drawn, in cells (the thought bubbles hang above it); false before its first frame.</summary>
@@ -143,13 +193,14 @@ public sealed class StaffRenderer : Entity
 	{
 		if ( !views.TryGetValue( member, out var view ) )
 			return null;
-		return Select( member, view, Time.Now, cameraRight, cameraForward );
+		return Select( member, view, Time.Now, cameraRight, cameraForward ) is { } chosen
+			? (chosen.Atlas, chosen.Frame, chosen.Mirror, chosen.Clip) : null;
 	}
 
-	private (int Atlas, int Frame, bool Mirror, StaffClip Clip)? Select( StaffMember member, MemberView view, float now, SVector3 cameraRight, SVector3 cameraForward )
+	private Selection? Select( StaffMember member, MemberView view, float now, SVector3 cameraRight, SVector3 cameraForward )
 	{
 		var atlasIndex = sprites.AtlasFor( member.Type, StaffSpriteRules.KeyOf( member ) );
-		if ( atlasIndex < 0 || atlasIndex >= textures.Count )
+		if ( !HasAtlas( atlasIndex ) )
 			return null;
 		var atlas = sprites.Atlases[atlasIndex];
 		// the world-driven roles steer continuously; mechanics are moved one cell per second, so their steps are further apart
@@ -170,7 +221,7 @@ public sealed class StaffRenderer : Entity
 		}
 		var (slot, step) = StaffSpriteRules.ResolveSteps( clip, view.Player.Steps, atlas.Animations.Animations );
 		var (frame, mirror) = FrameFor( atlas, slot, step, view.HeadingX, view.HeadingY, cameraRight, cameraForward );
-		return (atlasIndex, frame, mirror, clip);
+		return new Selection( atlasIndex, frame, mirror, clip, slot, step );
 	}
 
 	private static (int Frame, bool Mirror) FrameFor( GuestSpriteAtlas atlas, int slot, int step, float headingX, float headingY, SVector3 cameraRight, SVector3 cameraForward )
@@ -224,14 +275,16 @@ public sealed class StaffRenderer : Entity
 	internal static (float X, float Y)? DanglePoint( StaffPlacement placement ) =>
 		placement.Cursor ?? (placement.HoverCell is { } cell ? (cell.X + 0.5f, cell.Y + 0.5f) : null);
 
-	protected override void OnRender()
+	/// <summary>The CPU portion of the actual world pass, including selection and quad preparation; never called by UI readers.</summary>
+	internal int PrepareWorld()
 	{
+		rendererPass++;
 		DrawnStaff = 0;
 		DrewDangling = false;
 		DangleAt = null;
 		DangleFrameSize = null;
-		if ( !Visible || material == null || deleted )
-			return;
+		if ( !CanRender )
+			return 0;
 		var list = members();
 		var view = Camera.ViewMatrix;
 		var right = new SVector3( view.M11, view.M21, view.M31 );
@@ -249,15 +302,19 @@ public sealed class StaffRenderer : Entity
 			var member = list[index];
 			if ( !views.TryGetValue( member, out var memberView ) )
 				views[member] = memberView = new MemberView { Player = new SpritePlayer( nowMs ) };
-			if ( ReferenceEquals( member, placement.Carried ) || member.CellX == null )
+			if ( !CanPlaceMember( member ) )
 				continue;
 			Track( member, memberView, now, Time.Delta );
 			memberView.Player.Tick( nowMs );
 			if ( Select( member, memberView, now, right, forward ) is not { } chosen )
 				continue;
 			// a member's sprite is pickable, so the original pulls it towards the camera like a visitor's (SpriteScale.PulledDepthShare)
-			var (feet, share) = GuestRenderer.PullTowardsEye( GuestRenderer.CellToEngine( field, memberView.X, memberView.Y ), eye, forward );
+			var position = GuestRenderer.CellToEngine( field, memberView.X, memberView.Y );
+			if ( FeetHeight?.Invoke( memberView.X, memberView.Y ) is { } height ) position.Z = height;
+			var (feet, share) = GuestRenderer.PullTowardsEye( position, eye, forward );
 			AddSprite( ref count, chosen.Atlas, chosen.Frame, chosen.Mirror, feet, right * share, up * share, forward );
+			memberView.Published = new PublishedFrame( Level, Level?.RenderPass ?? 0, rendererPass, assetGeneration,
+				member, member.ThingId, chosen.Atlas, chosen.Slot, chosen.Step, memberView.HeadingX, memberView.HeadingY );
 			DrawnStaff++;
 		}
 		if ( ++frames % 256 == 0 && views.Count > list.Count )
@@ -277,6 +334,12 @@ public sealed class StaffRenderer : Entity
 			DangleAt = (danglingX, danglingY);
 			DangleFrameSize = (atlas.Frames[frameIndex].Width, atlas.Frames[frameIndex].Height);
 		}
+		return count;
+	}
+
+	protected override void OnRender()
+	{
+		var count = PrepareWorld();
 		if ( count == 0 )
 			return;
 
@@ -291,14 +354,14 @@ public sealed class StaffRenderer : Entity
 		}
 		var commandList = global::Global.Render.CommandList;
 		commandList.UpdateBuffer( vertexBuffer, 0, ref vertices[0], (uint)count * stride );
-		material.Set( "ObjectUniformBuffer", new ObjectUniformBuffer
+		material!.Set( "ObjectUniformBuffer", new ObjectUniformBuffer
 		{
 			g_mModel = System.Numerics.Matrix4x4.Identity,
 			g_mView = Camera.ViewMatrix,
 			g_mProj = Camera.ProjMatrix,
 			g_vCameraPos = Camera.Position,
 			g_flTime = Time.Now
-		}.WithFog() );
+		}.WithFog().WithSpriteTint( Level?.Look ?? EveningLook.Day ) );
 		commandList.SetVertexBuffer( 0, vertexBuffer );
 		commandList.SetPipeline( material.Pipeline );
 		var resourceSets = material.GetResourceSets();

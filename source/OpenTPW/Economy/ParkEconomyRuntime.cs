@@ -149,8 +149,8 @@ public sealed class ParkEconomyRuntime
 
 	/// <summary>
 	/// Creates the money economy of a Theme Park Inc <paramref name="park"/> (<see cref="EconomyRules.ThemeParkIncMoney"/>): Theme Park Inc's own settings and
-	/// object catalogue, no shipped-save import (its prebuilt save's economy is not traced), no staff, research or challenges. The prebuilt save's objects
-	/// register uncharged, like an imported park's.
+	/// object catalogue, no native economy/clock import, no staff, research or challenges. Saved analyser history is retained across this fresh host start;
+	/// its partial arrivals and recent stays contribute to the first new host month, not the remainder of the saved native month. Objects register uncharged.
 	/// </summary>
 	public static ParkEconomyRuntime ForThemeParkIncLevel( OriginalPark park, WorldSeed? seed = null )
 	{
@@ -159,6 +159,10 @@ public sealed class ParkEconomyRuntime
 		var settings = BalanceSettings.LoadThemeParkInc( park.LevelName );
 		var catalog = EconomyObjectCatalog.Load( park.LevelName, easy: false );
 		var economy = new ParkEconomy( settings, catalog, ParkGameMode.FullSimulation, (seed ?? WorldSeed.Default).EconomyStream, EconomyRules.ThemeParkIncMoney );
+		// [EXT:tpi-history-fresh-start] retain the saved numeric history and live inputs while this money-only path keeps its fresh clock/calendar and finance; the first host close crosses that boundary
+		// [EXT:tpi-history-five-series] the traced native TPI graph (0x5630B0) selects arrivals/people/rating; the shared host five-series state also retains separately proven happiness/stay measurements; this path adds no graph to the text-only TPI HUD
+		if ( park.Save?.Statistics is { } statistics )
+			economy.StatisticsHistory.RestoreOriginal( statistics );
 		Log.Trace( $"Park economy: Theme Park Inc money rules; {park.LevelName} balance from {string.Join( ", ", settings.Standard.Sources )}; "
 			+ $"cash ${economy.Balance}, entrance fee ${economy.EntranceFee}, {economy.Catalog.Objects.Count} catalogue objects, no staff, research or challenges." );
 		return new ParkEconomyRuntime( economy, import: null )

@@ -95,7 +95,7 @@ this order (`Level.AdvanceSimulation`, `ParkObjects.Simulate`, `SimulationSubste
    pass when its TURBO byte (opcode 51) is nonzero; a script's WAIT therefore wakes on the first slice after its time;
    after its slice (run or skipped) the pass walks the script's object records: a kept sound with a key is moved to its node only when
    `(script id xor pass counter) & 7 == 0` again (`0x551A1F`, built: `OriginalObjectRuntime.FollowHeldSounds`, once per pass), while a kept particle effect moves in every pass, which OpenTPW runs on every 60 Hz tick (DET-013);
-5. on even substeps the tour cars (`0x55ABF0`, `0x54F5D7`) and the effects update `0x475360`, which OpenTPW runs per 60 Hz tick (DET-013);
+5. on even substeps the tour cars (`0x55ABF0`, `0x54F5D7`) and the sprite scheduler `0x475360`. Visitor body players now use these opportunities with an explicit fixed-60Hz host sample (see [Visitor sprites](VISITOR-SPRITES.md)); staff retains its renderer-driven adapter. Other effects remain DET-013;
 6. on every eighth substep (`0x54F668`) the park turn (the order below).
 
 The 60 Hz tick (`EXT:fixed-60hz-clock`) derives its substep from the park's own tick count: substep *n* ends in the first tick whose
@@ -304,10 +304,29 @@ Other OpenTPW state that is **not in the hash**:
 | `FixedStepClock` pending time (`PendingSeconds`) | frame timing, below one tick; the substep scheduler is DET-I2 |
 | Sound chooser seed | presentation, see above |
 | `ParkSaveFile.Data.AnalyserCaches` (the analyser's cached readings) | saved for an exact continuation, but a reading aid that no simulation step reads; removed from the economy digest |
-| `ParkSaveFile.Data.StatisticsHistory` (the monthly rings of `ParkStatisticsHistory`) | only the park information window's graph reads them, no simulation step does; removed from the economy digest |
+| `ParkSaveFile.Data.StatisticsHistory` (the monthly rings, including independent rating, of `ParkStatisticsHistory`) | only the park information window's graph reads them, no simulation step does; removed from the economy digest |
+| `ParkSaveFile.ResearchData.RecentItems` (TPW buy-list stars) | only the buy list reads the four rings; just this nested presentation property is removed from the economy digest. Completed projects, progress, effort and every other research field stay hashed. Raw ring state remains saved; no schema or canonical pin changes |
+| `ParkSaveFile.StaffData.RoleOrder` (locator role sequences) | presentation-only member-ID order for the five staff radios; only this nested staff property is removed from the economy digest. Members, training budgets, `HaveEverTrained`, strikes and every other staff/gameplay field stay hashed. The roster and global ThingPool order are not changed; no schema or canonical pin change is required |
 
-A change to any of these does not change the hash. Adding one means bumping
-`SchemaVersion` and re-pinning the fixed-run hash.
+A change to any of these excluded fields does not change the hash. Adding an
+excluded presentation-only field does not require a schema or pin change. Bringing
+one of these fields into the canonical hash requires bumping `SchemaVersion` and
+re-pinning the fixed-run hash.
+
+### Staff locator role order (October 19)
+
+The own save records five independent role-ID sequences in `StaffData.RoleOrder`. This presentation owner
+is separate from member iteration and the global ThingPool used chain; neither gameplay traversal is
+reordered to emulate locator order. Valid original role chains are preserved independently, while malformed
+original chains and older own saves use explicitly documented [compatibility policies](PARK-SAVES.md#staff-locator-order-and-compatibility).
+Role-order reads and captures consume no randomness and do not materialize a legacy fallback. A hire/fire
+materializes that fallback before its intentional prepend/splice, without introducing a new random draw.
+
+Canonical JSON removes only `StaffData.RoleOrder`, not the `Staff` object or another staff field. Changing
+only locator order must leave the hash identical; changing gameplay data, including `HaveEverTrained`, must
+still affect it. `StaffRoleOrderTests` and `LocatorStaffRoleOrderTests` exercise this boundary and read/capture
+immutability. Their C# execution awaits exact-head CI because no local dotnet SDK is available;
+`tools/test_staff_role_order_contract.py` is a source-integration guard, not a substitute for those runs.
 
 ### Weather timing (October 14)
 
@@ -530,6 +549,8 @@ and **one world draw per purchase** for the umbrella's colour (taken only at a b
 
 Review fixes of the same phase did not move `UmbrellasFixedRunHash` (still `0xE912E7E5D5B6E612`): the balloon gate is now per park (a holder count the simulation keeps, no scan), and the purchase mirrors the state-3-then-4 sprite test of `TPI-EXE:0x612ea9`, a branch the run never reaches because entering the shop closes a drawn umbrella first.
 
+The owner then chose Theme Park Inc's kid score of 75 % for the shipped shops (it had been OpenTPW's 100). `SyntheticPark`'s `brollyKidScore` defaults to that 75 so the synthetic brolly shop mirrors the `.sam` data. Recomputed on purpose: `UmbrellasFixedRunHash` stays `0xE912E7E5D5B6E612` (it was `0xE912E7E5D5B6E612` at 100). The pinned run gives nobody a balloon, and the U5 week showed that 75 % and 100 % sell the same then, so the decisions, the sales and the colour draws do not move.
+
 ## Rain mood
 
 The `opentpw.rain-mood` extension ([UMBRELLAS.md](UMBRELLAS.md#the-rain-mood-rule-phase-u4), `[EXT:rain-mood-once-per-day]`) is off by default. The level hands the rule to the guest simulation only while the extension is on (`GuestSimulation.RainMood`, null otherwise), so with it off nothing runs, no draw is taken
@@ -540,6 +561,8 @@ Two new pins cover the rule, on the same fixed synthetic run and the weather of 
 `DeterminismTests.RainMoodWithUmbrellasFixedRunHash` = `0xADEE2FA6AFC2ACE3` (the brolly shop of the umbrellas pin and the rule both on; 104 guests changed). A park saved mid-rain and resumed into a fresh instance continues with the same hash (`RainMoodTests.AParkSavedMidRainContinuesIdenticallyAfterAResume`).
 
 Review fix of the umbrella modifier: in Theme Park Inc only a guest who is already open (state 4) when the rule starts gets it (`TPI-EXE:0x611334`), not one whose umbrella the same step opens (1 to 4 at `0x6111E3`, a due 3 through `0x402d8d`). That moved `RainMoodWithUmbrellasFixedRunHash` from `0xF599E7E8B09C0FB7` to `0xADEE2FA6AFC2ACE3` (104 guests changed, as before); `RainMoodFixedRunHash` (no shop, so no umbrella) and every other pin stand. The optional `Guest.RainMoodAgeStartTurn` (the load turn of an imported guest without a time in the park, `[EXT:rain-mood-imported-age]`) joins the canonical hash and the guests' own digest only when set, which only an import with the extension on does, so no pin is affected.
+
+The kid-score change above was recomputed for the shop run of this section too: `RainMoodWithUmbrellasFixedRunHash` stays `0xADEE2FA6AFC2ACE3` (it was `0xADEE2FA6AFC2ACE3` at a kid score of 100). `RainMoodFixedRunHash` stays `0x3697B9094432D152`; that run has no brolly shop, so the kid score is not read.
 
 ## Winter cold
 
@@ -773,4 +796,11 @@ Sign text antialias model (October 17): the glyph coverage of sign text is now t
 
 ## Umbrellas tuning
 
-The tuning of the umbrellas (phase U5, [UMBRELLAS.md](UMBRELLAS.md#tuning-phase-u5)) moves **no pin**: the canopy size, the pull cap, the renderer's per-frame work and the measurement aids are presentation or test code that reads the simulation and writes nothing into it; the kid score stays at Theme Park Inc's 75 % in the shops' `.sam` data, and the headless harness (`UmbrellasTuningMeasureTests`, the synthetic park with a `brollyKidScore` argument that defaults to the 100 % of the shipped data) is not pinned. `UmbrellasFixedRunHash`, `RainMoodFixedRunHash`, `RainMoodWithUmbrellasFixedRunHash` (at the value the rain mood section above gives after its review fix, which is that branch's change, not this one's) and every older pin stand as the stacked branches have them. If the user chooses 100 % over 75 %, the kid score in the four `Brolly.sam` files is simulation data and the umbrellas pins that go through a shop would move: they would be recomputed and recorded here.
+The canopy size, the pull cap, the renderer's per-frame work and the measurement aids of the umbrellas tuning (phase U5, [UMBRELLAS.md](UMBRELLAS.md#tuning-phase-u5)) are presentation or test code that reads the simulation and writes nothing into it, so they move no pin. The owner chose Theme Park Inc's kid score of 75 % over the 100 % OpenTPW had shipped. That value is now `GenerationModifier.KidScorePercentage` in the four `Brolly.sam` files and `tools/umbrellas/brolly.sam`, and `SyntheticPark`'s `brollyKidScore` defaults to 75 so a synthetic brolly shop mirrors the shipped data (the headless harness, `UmbrellasTuningMeasureTests`, still passes 75 and 100 explicitly and is not pinned). The shop pins were recomputed on purpose and held, because those runs give nobody a balloon and the measured week sells the same at 75 % and at 100 % then:
+
+| Pin | At kid score 100 | At kid score 75 |
+| --- | --- | --- |
+| `UmbrellasFixedRunHash` | `0xE912E7E5D5B6E612` | `0xE912E7E5D5B6E612` |
+| `RainMoodWithUmbrellasFixedRunHash` | `0xADEE2FA6AFC2ACE3` | `0xADEE2FA6AFC2ACE3` |
+
+`RainMoodFixedRunHash` (`0x3697B9094432D152`) and every pin with no brolly shop are unchanged: the kid score is read only for a brolly shop.

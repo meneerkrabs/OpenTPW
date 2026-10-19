@@ -327,6 +327,7 @@ UI-045 docs/PROGRESS.md
 UI-046 docs/progress/2026-10-18-round8-ui-windows.md
 UI-048 docs/PROGRESS.md
 UI-049 docs/PROGRESS.md
+UI-050 docs/UI.md
 UI-061 docs/UI.md
 UI-062 docs/PROGRESS.md
 UI-063 docs/progress/2026-10-16-interface-round-c.md

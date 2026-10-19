@@ -29,6 +29,7 @@ public sealed partial class GuestSimulation
 		if ( guests.Count != 0 )
 			throw new InvalidOperationException( "Original guests are imported into an empty guest simulation only." );
 		var evidence = new List<string>();
+		BodySpriteClockMilliseconds = BodySpriteSampleAtTick( ParkCalendar.TickOfTurn( parkTurn ) );
 		// [BIN:TPW-EXE:0x00516C80 world variables] mNumberOfVisitorsToDate (+0x1DA714) is the park's visitor count, which 0x0051AAF0 counts up for each guest that walks into the park
 		VisitorCount = (int)Math.Min( visitorsToDate, int.MaxValue );
 		var adjusted = new List<string>();
@@ -165,6 +166,7 @@ public sealed partial class GuestSimulation
 			(guest.StepFromX, guest.StepFromY, guest.StepFromDistance, guest.StepTick) = (guest.X, guest.Y, guest.DistanceWalked, TickCount);
 			UpdatePresentation( guest );
 			Occupy( guest );
+			ReconstructBodySprite( guest, BodySpriteClockMilliseconds );
 			states.Add( $"{guest.Id}:{save.State}→{(int)guest.State}" );
 		}
 		evidence.Add( $"Guests imported: {guests.Count} of {saved.Count} ({(states.Count == 0 ? "none" : string.Join( ", ", states ))}, saved state → state)." );

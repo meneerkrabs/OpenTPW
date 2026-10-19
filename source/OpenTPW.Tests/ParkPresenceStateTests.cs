@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using OpenTPW.Online.Chat;
 
 namespace OpenTPW.Tests;
 
@@ -196,6 +197,83 @@ public class ParkPresenceStateTests
 		Assert.AreEqual( (0.205f, 0.105f), state.ToWire( state.Own.X, state.Own.Y ), "the last place sent is the end of the walk" );
 		state.TeleportTo( 50f, 50f );
 		Assert.AreEqual( (0.5f, 0.5f), state.Advance( 0.001f, true, false )!.Value, "a teleport goes out at once" );
+	}
+
+	[TestMethod]
+	public void ARidingPlayersFigureIsHiddenWhereItStoodAndAppearsThereAgain()
+	{
+		var state = new ParkPresenceState( new Ground( 100, 100 ), "Ann", (10.5f, 10.5f) );
+		Assert.IsNotNull( state.Advance( 0.016f, true, false ) );
+		Assert.AreEqual( ChatMoveMode.Walk, state.SentMode );
+		state.WalkTo( 20.5f, 10.5f );
+		state.Advance( 1f, true, false );
+		var stood = (state.Own.X, state.Own.Y);
+		// boarding a ride gives up the walk and hides the figure where it stood, at once
+		state.SetRiding( true );
+		Assert.IsFalse( state.Walking );
+		Assert.AreEqual( state.ToWire( stood.X, stood.Y ), state.Advance( 0.016f, true, false )!.Value );
+		Assert.AreEqual( ChatMoveMode.Hide, state.SentMode );
+		CollectionAssert.DoesNotContain( state.Shown.ToList(), state.Own, "the own figure is not drawn while riding" );
+		// clicks do not move it meanwhile, and its keyframes and a new connection's announcement keep it hidden
+		Assert.IsFalse( state.Click( 30f, 30f, 5.0 ) );
+		state.TeleportTo( 40f, 40f );
+		Assert.IsNull( state.Advance( 1f, true, false ) );
+		Assert.AreEqual( stood, (state.Own.X, state.Own.Y) );
+		Assert.IsNotNull( state.Advance( ParkPresenceState.KeyframeSeconds, true, false ) );
+		Assert.AreEqual( ChatMoveMode.Hide, state.SentMode );
+		Assert.IsNotNull( state.Advance( 0.016f, true, true ) );
+		Assert.AreEqual( ChatMoveMode.Hide, state.SentMode );
+		// the ride's end shows it where it stood, once; then it walks as before
+		state.SetRiding( false );
+		Assert.AreEqual( state.ToWire( stood.X, stood.Y ), state.Advance( 0.016f, true, false )!.Value );
+		Assert.AreEqual( ChatMoveMode.Unhide, state.SentMode );
+		CollectionAssert.Contains( state.Shown.ToList(), state.Own );
+		state.WalkTo( 20.5f, 20.5f );
+		Assert.IsNotNull( state.Advance( 0.5f, true, false ) );
+		Assert.AreEqual( ChatMoveMode.Walk, state.SentMode );
+		// a teleport says so
+		state.TeleportTo( 50f, 50f );
+		Assert.IsNotNull( state.Advance( 0.001f, true, false ) );
+		Assert.AreEqual( ChatMoveMode.Teleport, state.SentMode );
+		// a ride with an exit lets the figure out there
+		state.SetRiding( true, (70.5f, 30.5f) );
+		Assert.IsNotNull( state.Advance( 0.016f, true, false ) );
+		Assert.AreEqual( (50f, 50f), (state.Own.X, state.Own.Y), "hidden where it stood" );
+		state.SetRiding( false );
+		Assert.AreEqual( state.ToWire( 70.5f, 30.5f ), state.Advance( 0.016f, true, false )!.Value );
+		Assert.AreEqual( ChatMoveMode.Unhide, state.SentMode );
+		Assert.AreEqual( (70.5f, 30.5f), (state.Own.X, state.Own.Y) );
+	}
+
+	[TestMethod]
+	public void AFigureWhoseMovementJumpedIsAtItsPlaceAtOnce()
+	{
+		var state = new ParkPresenceState( new Ground( 100, 100 ), "Ann", (1, 1) );
+		var positions = new Dictionary<string, (float X, float Y)>( StringComparer.OrdinalIgnoreCase ) { ["Bob"] = (0.5f, 0.5f) };
+		var jumps = new Dictionary<string, int>( StringComparer.OrdinalIgnoreCase );
+		var players = new[] { "Ann", "Bob" };
+		state.Sync( positions, players, 0.016f, jumps );
+		var bob = state.Others.Single();
+		// a short step is walked to catch up with...
+		positions["Bob"] = (0.52f, 0.5f);
+		state.Sync( positions, players, 0.016f, jumps );
+		Assert.IsTrue( bob.X < 51f, $"walked toward the place ({bob.X})" );
+		// ...unless the movement was a teleport, also within the teleport distance
+		positions["Bob"] = (0.525f, 0.5f);
+		jumps["Bob"] = 1;
+		Assert.IsTrue( 52.5f - bob.X < ParkPresenceState.TeleportDistance );
+		state.Sync( positions, players, 0.016f, jumps );
+		Assert.AreEqual( 52.5f, bob.X, 1e-3f, "at the place at once" );
+		Assert.AreEqual( 50f, bob.Y, 1e-3f );
+		// a player who rides has no place: the figure goes, and comes back at its place when the ride ends
+		positions.Remove( "Bob" );
+		state.Sync( positions, players, 0.016f, jumps );
+		Assert.AreEqual( 0, state.Others.Count );
+		positions["Bob"] = (0.3f, 0.3f);
+		jumps["Bob"] = 2;
+		state.Sync( positions, players, 0.016f, jumps );
+		Assert.AreEqual( 30f, state.Others.Single().X, 1e-3f );
+		Assert.AreEqual( 30f, state.Others.Single().Y, 1e-3f );
 	}
 
 	[TestMethod]

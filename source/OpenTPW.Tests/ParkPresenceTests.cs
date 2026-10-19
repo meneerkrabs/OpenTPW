@@ -33,18 +33,25 @@ public class ParkPresenceTests
 		public int Closes;
 		public Dictionary<string, (float X, float Y)> Positions { get; } = new( StringComparer.OrdinalIgnoreCase );
 		public IReadOnlyDictionary<string, (float X, float Y)> RoomPositions => Positions;
+		public Dictionary<string, int> Jumps { get; } = new( StringComparer.OrdinalIgnoreCase );
+		public IReadOnlyDictionary<string, int> RoomJumps => Jumps;
 		public List<string> Players { get; } = new();
 		public IReadOnlyList<string> RoomPlayers => Players;
 		public IReadOnlyList<string> ChatLines => Lines;
 		public int Connects;
 		public readonly List<string> Joins = new();
 		public readonly List<(float X, float Y)> Moves = new();
+		public readonly List<ChatMoveMode> MoveModes = new();
 		public readonly List<string> Lines = new();
 		public void ConnectChat() => Connects++;
 		public void CloseChat() { Closes++; Connection = null; CurrentRoom = ChatProtocol.LobbyRoom; Requested = null; }
 		public void FetchServerInfo() => ServerInfoRequests++;
 		public void JoinRoom( string room ) { Joins.Add( room ); Requested = room; }
-		public void MoveTo( float x, float y ) => Moves.Add( (x, y) );
+		public void MoveTo( float x, float y, ChatMoveMode mode = ChatMoveMode.Walk )
+		{
+			Moves.Add( (x, y) );
+			MoveModes.Add( mode );
+		}
 		public void SendChatLine( string line ) => Lines.Add( line );
 		public bool ChatOpen => Connection != null;
 		public IReadOnlyList<(string Name, bool Online)> Buddies { get; set; } = Array.Empty<(string, bool)>();
@@ -131,6 +138,31 @@ public class ParkPresenceTests
 		presence.Click( 30.5f, 5.5f );
 		for ( var frame = 0; frame < 30; frame++ ) { advance(); presence.Update( 0.1f ); }
 		Assert.IsTrue( session.Moves.Count > 10, $"walking sends places ({session.Moves.Count})" );
+	}
+
+	[TestMethod]
+	public void RidingARideHidesTheFigureFromTheRoomUntilTheRideEnds()
+	{
+		var (presence, session, advance) = Create();
+		var riding = false;
+		presence.Ride = () => riding ? new ParkPresence.PresenceRide( (30.5f, 5.5f) ) : null;
+		session.Enter( new object() );
+		advance(); presence.Update( 0.1f );
+		CollectionAssert.AreEqual( new[] { ChatMoveMode.Walk }, session.MoveModes, "the arrival" );
+		riding = true;
+		advance(); presence.Update( 0.1f );
+		Assert.AreEqual( ChatMoveMode.Hide, session.MoveModes[^1], "boarding hides the figure at once" );
+		Assert.AreEqual( session.Moves[0], session.Moves[^1], "where it stood" );
+		Assert.IsFalse( presence.State.Shown.Contains( presence.State.Own ) );
+		presence.Click( 30.5f, 5.5f );
+		for ( var frame = 0; frame < 20; frame++ ) { advance(); presence.Update( 0.1f ); }
+		Assert.AreEqual( 2, session.Moves.Count, "a click does not walk the hidden figure" );
+		riding = false;
+		advance(); presence.Update( 0.1f );
+		Assert.AreEqual( ChatMoveMode.Unhide, session.MoveModes[^1], "the ride's end shows it again" );
+		Assert.AreEqual( (0.305f, 0.11f), session.Moves[^1], "at the ride's exit" );
+		Assert.AreEqual( (30.5f, 5.5f), (presence.State.Own.X, presence.State.Own.Y) );
+		Assert.IsTrue( presence.State.Shown.Contains( presence.State.Own ) );
 	}
 
 	[TestMethod]

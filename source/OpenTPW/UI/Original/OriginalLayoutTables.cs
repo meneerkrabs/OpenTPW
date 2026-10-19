@@ -401,6 +401,18 @@ public static class OriginalLayoutTables
 		} ),
 	} );
 
+	/// <summary>[BIN:TPW-EXE:0x7572e8] layout table EmployeeRenameDialog.</summary>
+	public static readonly LayoutTable EmployeeRenameDialog = new( "EmployeeRenameDialog", 0x7572E8, new LayoutNode[]
+	{
+		new( 1, 0x1u, 0x5DA9u, 500, 233, 1516, 830, -1, -1, "wdialogw", null, null, new LayoutNode[]
+		{
+			new( 1, 0x1u, 0x5DAAu, 655, 285, 1315, 365, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+			new( 5, 0x1u, 0x5DABu, 619, 486, 1342, 569, -1, -1, "!frame", null, new[] { 642, 503, 1328, 548 }, System.Array.Empty<LayoutNode>() ),
+			new( 2, 0x1u, 0xFFFFFFFFu, 1376, 524, 1460, 608, -1, -1, "b_okay", null, null, System.Array.Empty<LayoutNode>() ),
+			new( 2, 0x1u, 0xFFFFFFFEu, 1387, 613, 1470, 696, -1, -1, "b_exit", null, null, System.Array.Empty<LayoutNode>() ),
+		} ),
+	} );
+
 	/// <summary>[BIN:TPW-EXE:0x7575e0] layout table VisitorInfoWindow.</summary>
 	public static readonly LayoutTable VisitorInfoWindow = new( "VisitorInfoWindow", 0x7575E0, new LayoutNode[]
 	{

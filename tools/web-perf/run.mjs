@@ -37,7 +37,7 @@ const SELECTIONS = [['Rides', 'Belly Bounce'], ['Shops', 'Balloon Shop'], ['Shop
 function parseArguments(argv) {
 	const options = {
 		web: null, game: null, label: 'unlabelled', out: null, chrome: process.env.CHROME ?? DEFAULT_CHROME, headed: false,
-		scenarios: ['start', 'lobby', 'jungle', 'buy', 'digest'], window: 30, memoryMinutes: 10, music: false, width: 1280, height: 900, runs: 1, frameCap: 0, keep: 'off', zoom: null, shot: null, crowd: 400, evening: null,
+		scenarios: ['start', 'lobby', 'jungle', 'buy', 'digest'], window: 30, memoryMinutes: 10, music: false, width: 1280, height: 900, runs: 1, frameCap: 0, keep: 'off', zoom: null, shot: null, crowd: 400, evening: null, eveningLamps: 0,
 	};
 	for (let index = 2; index < argv.length; index++) {
 		const [flag, inline] = argv[index].split(/=(.*)/s);
@@ -61,6 +61,7 @@ function parseArguments(argv) {
 			case '--crowd': options.crowd = Number(value()); break;
 			case '--shot': options.shot = value(); break;
 			case '--evening': options.evening = value(); break;
+			case '--evening-lamps': options.eveningLamps = Math.max(0, Number(value()) || 0); break;
 			case '--help': case '-h': console.log(usage()); process.exit(0);
 			default: throw new Error(`Unknown option ${flag}\n${usage()}`);
 		}
@@ -85,6 +86,7 @@ function usage() {
   --shot <file>           umbrellas: where the screenshot goes
   --zoom <value>          jungle: after the steady window, hold the park camera at this zoom value (40..300 with the wide zoom option) and measure a second window
   --evening <mode>        jungle: after the steady window, hold the evening look (night, dusk, day) or switch the extension off, and measure a second window
+  --evening-lamps <n>     with --evening: add n extra lamp lights around the camera target (the browser twin of the desktop's --debug-evening-lamps) for the second window
   --keep <mode>           keep the game files in the browser on the first visit: lazy, all or off (default off)
   --frame-cap <fps>       the display settings' frame cap (0 off, 30, 60; default 0)
   --runs <n>              repeat the whole session n times, each in a fresh profile, and report the medians (default 1)
@@ -267,8 +269,14 @@ const scenarios = {
 			const accepted = await page.eval(`opentpwPerf.program.PerfEvening(${JSON.stringify(options.evening)})`);
 			if (!accepted)
 				throw new Error(`--evening expects night, dusk, day, off or on, not ${options.evening}`);
+			let lamps = null;
+			if (options.eveningLamps > 0) {
+				lamps = await page.eval(`opentpwPerf.program.PerfEveningLamps(${options.eveningLamps})`);
+				if (lamps !== options.eveningLamps)
+					throw new Error(`--evening-lamps: the park did not take ${options.eveningLamps} lamps (got ${lamps})`);
+			}
 			await sleep(2000);
-			result.evening = { mode: options.evening, ...await page.steady(options.window * 1000) };
+			result.evening = { mode: options.evening, ...(lamps != null ? { extraLamps: lamps } : {}), ...await page.steady(options.window * 1000) };
 		}
 		if (options.zoom == null)
 			return result;

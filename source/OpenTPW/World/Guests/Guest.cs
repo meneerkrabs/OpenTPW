@@ -98,6 +98,13 @@ public sealed class Guest
 	/// <summary>Index into the .sam PeepTypes and the kid sprite set.</summary>
 	public int Type { get; }
 	public GuestState State { get; internal set; }
+	/// <summary>Persistent body presentation. Ordinary walker rendering still uses DrawDistanceWalked.</summary>
+	public VisitorSpriteState BodySprite { get; } = new();
+	/// <summary>The live body's copied category at creation, independent of subsequent costume purchases.</summary>
+	public bool BodySpriteInCostume { get; internal set; }
+	/// <summary>True when old/imported history had to be reconstructed at load, or after an unsupported extension lifecycle.</summary>
+	public bool BodySpriteHistoryReconstructed { get; internal set; }
+
 	/// <summary>Simulation position in cells (<see cref="Navigation"/>, 16.16), updated once per park turn.</summary>
 	public float X => Navigation.X / (float)Fixed16.One;
 	public float Y => Navigation.Y / (float)Fixed16.One;

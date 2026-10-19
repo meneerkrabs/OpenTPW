@@ -136,6 +136,19 @@ internal sealed class PlayerTicketLedger
 		return new PlayerTicketLedger( snapshot with { Earned = unique.ToArray(), Holders = restoredHolders.Values.ToArray() } );
 	}
 
+	/// <summary>
+	/// The player's tickets as the advisor's win advice counts them: the ledger's earned identities and the park's own tickets, each once, so the count does not depend on whether the ledger has recorded the
+	/// win that raised the advice yet. Nothing is recorded.
+	/// </summary>
+	internal AdvisorPlayerTickets AdvisorView( string theme, IEnumerable<GoldenTicketKind> parkTickets, IReadOnlyList<int> themeKeyCosts )
+	{
+		var all = new HashSet<EarnedTicketIdentity>( earned );
+		foreach ( var kind in parkTickets )
+			all.Add( Identity( theme, kind ) );
+		var secret = all.Count( item => AdvisorPlayerTickets.IsSecret( item.Kind ) );
+		return new AdvisorPlayerTickets( all.Count, all.Count - secret, ExtraKeys, themeKeyCosts );
+	}
+
 	private static bool IsGlobal( GoldenTicketKind kind ) => kind is >= GoldenTicketKind.CoasterHeight and <= GoldenTicketKind.BigPark;
 
 	private static bool IsLocal( GoldenTicketKind kind ) => kind is GoldenTicketKind.Visitors or GoldenTicketKind.PeopleInPark

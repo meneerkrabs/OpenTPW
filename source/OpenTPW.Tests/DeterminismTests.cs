@@ -36,7 +36,7 @@ public class DeterminismTests
 		private readonly List<(RideVisitorBridge Bridge, RideVM Script)> winter = new();
 		private readonly List<RideVM> dice = new();
 
-		public SyntheticPark( WorldSeed seed, IGuestObserver? observer = null, Action<ParkCellMap>? prepareCells = null, bool changingRoom = false, Action<GuestSimulation>? prepareGuests = null, IGuestDecisions? decisions = null, bool brollyShop = false, int brollyKidScore = 100, bool winterShops = false )
+		public SyntheticPark( WorldSeed seed, IGuestObserver? observer = null, Action<ParkCellMap>? prepareCells = null, bool changingRoom = false, Action<GuestSimulation>? prepareGuests = null, IGuestDecisions? decisions = null, bool brollyShop = false, int brollyKidScore = 75, bool winterShops = false )
 		{
 			Seed = seed;
 			Economy = EconomyTestData.Park( seed: seed.EconomyStream );
@@ -81,7 +81,8 @@ public class DeterminismTests
 				GuestTests.LayStandCell( Guests.Grid, room );
 			}
 			// [EXT:umbrellas-extension] a brolly shop near the top end of the path column (10, 1), paid through the economy like the drinks shop, and a weather that rains for forty seconds and clears for forty, again and again:
-			// guests buy umbrellas in the rain, keep them through rides closed and let them go when it clears (docs/UMBRELLAS.md, docs/DETERMINISM.md)
+			// guests buy umbrellas in the rain, keep them through rides closed and let them go when it clears (docs/UMBRELLAS.md, docs/DETERMINISM.md). brollyKidScore defaults to the shipped
+			// GenerationModifier.KidScorePercentage, 75, Theme Park Inc's value per the owner's decision, so a run that does not pass one mirrors the shops' .sam data.
 			if ( brollyShop )
 			{
 				brolly = new RideVisitorBridge( Scripts.AllocateAttractionId(), "Brolly Shop", RideVisitorKind.Shop, 1, 60, 30, GuestNeeds.None )
@@ -443,6 +444,7 @@ public class DeterminismTests
 	internal static (ulong Hash, int Buyers, HashSet<int> States, int Admissions) RunFixedParkWithABrollyShopInTheRain()
 	{
 		var park = new SyntheticPark( WorldSeed.Default, brollyShop: true );
+		Assert.AreEqual( 75, park.Brolly!.UmbrellaTerms!.Value.KidScorePercentage, "the synthetic brolly shop mirrors the shipped KidScorePercentage" );
 		var buyers = new HashSet<int>();
 		var states = new HashSet<int>();
 		for ( var chunk = 0; chunk < PinnedRunTicks / 60; chunk++ )

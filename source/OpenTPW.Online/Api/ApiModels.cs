@@ -122,7 +122,8 @@ public sealed record PostcardSummary( string Id, string From, string Title, Date
 
 public sealed record PostcardInbox( IReadOnlyList<PostcardSummary> Postcards );
 
-public sealed record PostcardSent( string Id, IReadOnlyList<string> DeliveredTo );
+public sealed record PostcardSent( string Id, IReadOnlyList<string> DeliveredTo,
+	[property: System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )] string? Error = null );
 
 public sealed record ReportRequest( string Kind, string Target, string Reason );
 

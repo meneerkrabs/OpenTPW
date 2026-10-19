@@ -1,50 +1,94 @@
 # UI-060: Match graph pixel metrics
 
 ## Status and classification
-- Plan-only draft proposal; no implementation, tests-run claim, retirement or merge.
-- Classification: `approximation`.
-- Baseline: `meneerkrabs/OpenTPW` main `5ccddcab` (2026-10-18).
-- One ID per proposal; shared dependencies are coordination edges, not duplicated ownership.
 
-## Source-verified residual
-Finance and information graphs scale pixels as two canvas units; grid-line color/placement remains host-specific despite implemented series/masks/ranges.
+- Bounded backdrop implementation, updated October 19, 2026; independent source review,
+  exact-head C# CI and rendered host validation are still required.
+- Classification: `approximation`; UI-060 is narrowed, not retired.
+- Continues the existing [draft PR #483](https://github.com/meneerkrabs/OpenTPW/pull/483).
+  The October 18 progress fragment preserves the historical plan-only status.
+- This slice changes the shared backdrop only. It does not establish original display-mode,
+  financial-history or framebuffer equivalence.
 
-## Source sites
-- `source/OpenTPW/Hud/ParkHud.FinanceWindow.cs:192` — APPROX annotation and adjacent implementation inspected.
-- `source/OpenTPW/Hud/ParkHud.InfoGraph.cs:114` — APPROX annotation and adjacent implementation inspected.
+## Verified backdrop contract
 
-## Implementation cross-check
-- `source/OpenTPW/Hud/ParkHud.FinanceWindow.cs:193`: `var pixel = Math.Max( 1, context.Canvas.Scale * 2 );`
-- `source/OpenTPW/Hud/ParkHud.InfoGraph.cs:115`: `var pixel = Math.Max( 1f, context.Canvas.Scale * 2f );`
-- Existing behavior described above was checked against implementation, not only the register summary.
-- The presence of an APPROX marker alone is not evidence of an absent feature.
+Static inspection of the shared native setup and drawing helpers supersedes the old proposal's
+three-interior-line assumption. Setup `0x4806a0` supplies geometry and colors; grid routine
+`0x47fcd0` draws ten horizontal divisions and twelve labeled vertical spans.
 
-## Evidence needed
-- Display-mode-to-canvas pixel mapping and original grid draw 0x4806a0 outputs.
-- Available private Data contains assets, not an original executable; no new binary trace was obtained in this audit.
-- Existing address annotations are provenance leads, not a claim that this audit independently verified instructions.
-- Any original captures/assets remain private; fixtures should be synthetic or references/hashes, not redistributed game media.
+- Opaque black background; grid RGB (0,100,0); axes and step labels RGB (0,200,0).
+- Bitmap plot left/top are 4; right/bottom are bitmap width/height minus 20 (`0x47fb50`).
+- Periods 12/36/144 advance the horizontal coordinate at every sample, labeling every
+  first/third/twelfth step. The labels are sample numbers, not calendar month names.
+- Coordinates use stored single-precision accumulation and truncate when emitted. Replacing
+  accumulation with index multiplication, or forcing the final endpoint, can move a line.
+- Horizontal/vertical primitives take pixel counts. Grid spans use the stored right/bottom
+  values; axes use those counts plus one. They intentionally extend beyond the plot rectangle.
+- A nonnegative minimum puts the horizontal axis at bottom + 1. A negative minimum in a
+  zero-inclusive scale puts it at bottom + trunc(height × minimum / range), without the extra
+  pixel (`0x47fc50`). Flat zero-valued series retain their separate baseline at bottom.
+- Draw order is full clear, plot fill, vertical spans with their labels, horizontal spans, axes,
+  then the existing series. Empty histories and deselected series retain the backdrop.
 
-## Bounded investigation and implementation plan
-1. Confirm current ownership and rebase the proposal against the latest main before runtime changes.
-2. Extract shared graph raster metrics with verified coordinate conversion; preserve established data and series logic.
-3. Turn each verified behavioral distinction into a small deterministic regression fixture before editing runtime paths.
-4. Keep unknown behavior explicitly unresolved; an evidence-only outcome is valid if no mismatch is established.
-5. Submit any later implementation with exact evidence, changed scope and test output for review.
+Completed research comprised 106 static and synthetic assertions. The original executable was
+not run or emulated for this slice. Derived behavior and synthetic fixtures are publishable;
+original executable material and private investigation artifacts are not included.
 
-## Acceptance tests to author and run later
-- 1/3/12-year samples; flat/negative/mixed ranges; hollow endpoint marks; three interior lines; multiple resolutions.
-- Run the nearest existing unit suite plus targeted integration/visual checks for changed behavior.
-- Compare baseline and candidate with identical inputs; label screenshots by platform, display settings and state.
-- Report unsupported/corpus-external cases separately; synthetic consistency alone is not original-fidelity proof.
+## Implementation and preserved behavior
 
-## Ownership and overlap
-- Consult: UI-914 and graph/text rendering owners.
-- Do not overwrite another worker's runtime edits or duplicate an existing active implementation PR.
-- Merged UI #433 and languages #423 are baseline work, not open implementation dependencies.
-- Evening #439 is an extension and is not proof of original lighting or behavior.
+`source/OpenTPW/UI/Original/GraphBackdrop.cs` contains immutable bitmap geometry and the shared
+host draw adapter. Both `ParkHud.FinanceWindow.cs` and `ParkHud.InfoGraph.cs` consume it. The
+canonical `UiApproximations.cs` entry and the UI documentation describe the same remaining scope.
 
-## Completion boundary
-- This deliverable is a documentation proposal only; no gameplay source files are changed by this PR.
-- Runtime work remains blocked on the evidence/ownership decisions listed above where applicable.
-- No approximation is retired by creating this plan; no PR is claimed implemented or ready to merge.
+Finance retains all eight value mappings and colors, selected-series masks, zero-inclusive
+extrema, default bank balance, period/month selection, fractional series normalization,
+sampling and marker-before-line ordering. It maps its drawing area to the shared plot but does
+not snap series points onto integer backdrop coordinates. Park information retains Column/Row,
+ring selection, ScaleMaximum, SeriesPoints, series order, sample marks, dedicated rating and
+last-value text. No simulation or persistence code changes.
+
+Host safety adaptations are explicit:
+
+- Signed 128-bit multiplication and range subtraction preserve long-valued finance scales;
+  original signed-32-bit overflow is not reproduced.
+- Tiny rectangles and unsupported sample periods clear the background without a plot.
+- Nonfinite frames, including overflowing right/bottom sums, emit nothing. The adapter tells
+  callers not to emit series after a rejected frame or background-only fallback.
+- The existing max(1, Canvas.Scale × 2) pixel policy is retained. The clear covers a fractional
+  host-frame remainder; Small-font label placement remains the existing host text adapter.
+- Wholly negative ranges cannot arise from current zero-inclusive scale selection. Their
+  bottom-axis fallback is a host guard, not an additional native arithmetic claim.
+
+## Tests and current evidence limits
+
+Added 69 C# test cases cover the pure bitmap contract and the actual graph controls using
+synthetic glyphs and independent CPU-batch expectations:
+
+- Every rectangle, glyph, text record, color and draw-order run for both graphs and all periods.
+- Empty/no-economy/deselected states, one live point, zero/positive/negative/mixed financial
+  values and long extrema, all eight mappings, paired/cash-flow toggles and history windows.
+- Preserved fractional finance series and mark ordering; park-information points, series
+  order, dedicated rating and last-value labels.
+- Repeated Clear/Draw, real period/toggle/close/back/reopen actions, unchanged histories,
+  save JSON, world RNG state and run hash.
+- Host canvas scales, fractional clears, tiny controls, unsupported periods and nonfinite
+  coordinates that must not leak into series vertices.
+
+The local environment has no dotnet SDK. These C# tests and the solution build have not run
+locally; their source review does not replace execution. The ten new Python source-integration
+and synthetic-arithmetic checks run in CI alongside the existing full C# suite. All 202 Python
+tests passed locally, and generated documentation/link checks passed. No rendered OpenTPW check
+or original-runtime screenshot comparison has been performed for this change.
+
+## Remaining qualification and ownership
+
+UI-060 remains open for original display-mode/host pixel calibration, financial sample-to-month
+correspondence and stretching of available months, font and palette handling, and actual
+raster/composited-output fidelity. A rendered host check must still inspect clipping/overlap and
+opaque green-on-black output in both windows; that check alone would not prove native parity.
+
+UI-914 retains ownership of park-information history and its other presentation residuals.
+Existing UI #433 and languages #423 remain baseline work. This implementation continues the
+same UI-060 draft rather than creating another owner or another approximation ID. Review and
+exact-head CI must establish implementation readiness; the residual ID is not retired by the
+backdrop change.

@@ -30,6 +30,7 @@ node tools/web-perf/run.mjs --web out/web/wwwroot --game "/path/to/Theme Park Wo
 | `memory` | wasm memory, managed heap and JS heap every 10 s over `--memory-minutes` |
 | `switch` | memory across park changes (Jungle, the lobby, the next island's park, the lobby, Jungle again), each point after a full collection: wasm, live managed memory, live parks, entities, live textures by source, archive and sound bytes, and in the lobby the static fields that hold the most |
 | `revisit` | with `--keep lazy` or `--keep all`: the same profile reopened without the served folder; Play, the lobby, then Jungle from the kept files (fails if it asks for the folder) |
+| `umbrellaCost` | (after `jungle`) the frame cost of a staged crowd (`--crowd`, default 400 extra guests) in rain, a steady window without and one with an open umbrella over every guest, at the Home and the farthest zoom (`Program.PerfUmbrellaCrowd`, loopback `?perf=1` only; docs/UMBRELLAS.md "Tuning") |
 | `digest` | deterministic work that must give the same result in every build, timed: every texture of the theme decoded and hashed, and the fixed park run of the original-data determinism test (seed 2026, 3000 ticks at the fastest speed; economy and guests) reduced to its world state hash. It blocks the page while it runs, so it comes last |
 
 `tools/web-perf/compare.mjs --a <reports> --b <reports>` prints the medians of two builds side by
@@ -501,6 +502,10 @@ park camera held at that zoom value (hook `PerfZoom`); the control run with `--z
 | Second window, zoom 300 | 12.7 % | 59.97 | 2.6 ms | 20.2 ms | 0 |
 | First steady window, zoom 110 (control run) | 17.3 % | 59.94 | 3.2 ms | 34.2 ms | 0 |
 | Second window, zoom 110 (control) | 11.4 % | 59.99 | 2.4 ms | 19.4 ms | 0 |
+
+`tools/web-perf/run.mjs --scenarios jungle,umbrellas --zoom 80 --shot umbrellas.png` is a capture aid for the umbrellas extension (docs/UMBRELLAS.md): after the Jungle start it calls the harness hook `PerfUmbrellas`, which gives every guest an open umbrella and keeps the camera on the first visible guest, waits until the renderer draws one (a new park has no guests for a while) and saves a screenshot. It is the browser twin of the desktop's Debug-build `--debug-umbrellas`, not a measurement; the guests' fields are written directly, so nothing from such a run may be saved.
+
+`tools/web-perf/run.mjs --scenarios jungle,winter --zoom 70 --shot winter.png` is the same capture aid for the winter extension (docs/WINTER.md): the harness hook `PerfWinter` dresses every guest in warm items (a head item by the guest's id, mittens on three guests in four), keeps the camera on the first visible guest, waits until the renderer draws an item and saves a screenshot after ten more seconds, so the followed guest has left the entrance. Not a measurement; nothing from such a run may be saved.
 
 The browser holds 60 fps at zoom 300 with no long task: against the same second window at zoom 110 the main thread is busy 1.3 points more (12.7 % against 11.4 %) and the 95th percentile frame
 is 0.2 ms longer. The Jungle park has few guests, so this is the empty-park case; a crowded park was not measured in the browser.

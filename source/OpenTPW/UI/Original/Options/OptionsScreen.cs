@@ -84,6 +84,15 @@ public static class OptionsScreen
 		_ => OpenTpwText.UpscaleNative
 	} );
 
+	/// <summary>[EXT:evening] The value text of the day cycle row: the cycle length in minutes of play, or the fixed look.</summary>
+	public static string EveningLabel( UiStringTable strings, EveningPace pace ) => pace switch
+	{
+		EveningPace.AlwaysDay => strings.Extra( OpenTpwText.EveningAlwaysDay ),
+		EveningPace.AlwaysDusk => strings.Extra( OpenTpwText.EveningAlwaysDusk ),
+		EveningPace.AlwaysNight => strings.Extra( OpenTpwText.EveningAlwaysNight ),
+		_ => string.Format( System.Globalization.CultureInfo.InvariantCulture, strings.Extra( OpenTpwText.EveningMinutes ), (int)( pace.CycleSeconds() / 60.0 ) )
+	};
+
 	/// <summary>Name shown for a known texture choice; custom pack names are shown as they are.</summary>
 	public static string TexturePackLabel( UiStringTable strings, string pack ) => pack.ToLowerInvariant() switch
 	{
@@ -296,8 +305,9 @@ public static class OptionsScreen
 			() => Math.Max( 0, steps.ToList().IndexOf( state.Preset ) ),
 			index => state.Preset = steps[index], steps.Count > 1, () => steps.Select( preset => strings[UIStrings.GraphicsQuality] + QualityLabel( strings, preset ) ).Append( strings[UIStrings.GraphicsQuality] + QualityLabel( strings, state.Preset ) ) );
 		SliderRow( "audio", "f_optpanel3", 638, 57, 1289, 787, 691, 735, 677, 748, 646, 782, 679, 747,
-			() => strings[UIStrings.AudioQuality] + Percent( GameOptions.MaximumVolume ),
-			() => GameOptions.MaximumVolume + 1, () => GameOptions.MaximumVolume, _ => { }, false );
+			() => strings[UIStrings.AudioQuality] + Percent( GameAudio.ResolveSoundQuality( options ) ),
+			() => GameOptions.MaximumVolume + 1, () => GameAudio.ResolveSoundQuality( options ), value => options.SoundQuality = value, true,
+			() => new[] { strings[UIStrings.AudioQuality] + Percent( GameOptions.MaximumVolume ) } );
 
 		// Volume rows (f_optpanel2) with a mute toggle (b_on).
 		void VolumeRow( string id, UIStrings text, float panelTop, float panelBottom, float toggleTop, float toggleBottom, float trackTop, float trackBottom,
@@ -531,6 +541,11 @@ public static class OptionsScreen
 			() => new[] { UIStrings.On, UIStrings.Off }.Select( value => Prefix( OpenTpwText.AutosaveOption ) + strings[value] ),
 			_ => services.Options.Autosave = !services.Options.Autosave, strings.Extra( OpenTpwText.AutosaveHelp ) );
 
+		// [EXT:evening] the day cycle of the evening and night extension (docs/EVENING.md): 10, 20 or 40 minutes of play for a full day and night, or always day, dusk or night. Presentation only, used while the extension is on.
+		Row( "evening", () => Prefix( OpenTpwText.EveningOption ) + " " + EveningLabel( strings, services.Options.Evening ),
+			() => EveningPaces.Cycle.Select( pace => Prefix( OpenTpwText.EveningOption ) + " " + EveningLabel( strings, pace ) ),
+			direction => services.Options.Evening = CycleWrap( EveningPaces.Cycle, EveningPaces.Validated( services.Options.Evening ), direction ), strings.Extra( OpenTpwText.EveningHelp ) );
+
 		// Effective size and fallback reason as small dark text in the free area below the rows.
 		screen.Add( new UiLabel
 		{
@@ -550,7 +565,8 @@ public static class OptionsScreen
 			Shadow = false,
 			Wrap = true,
 			// Below the fifth row of the right column (y 791..940, the last with the graphics rows and the wide zoom and autosave rows), above the buttons at y 1330.
-			Bounds = Rect( 57, 975, 1964, 1275 ),
+			// about two thirds of the page wide (1300 of 2048) so the sixth row of the right column (the day cycle, y 947..1096) is clear of it
+			Bounds = Rect( 57, 975, 1300, 1275 ),
 			Anchor = UiAnchor.Center
 		} );
 

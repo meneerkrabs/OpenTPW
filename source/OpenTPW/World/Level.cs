@@ -170,6 +170,10 @@ public partial class Level : IDisposable
 	public RideHeadRenderer? CostumeHeadRenderer { get; private set; }
 	/// <summary>Draws the guests' balloons.</summary>
 	public BalloonRenderer? BalloonRenderer { get; private set; }
+	/// <summary>[EXT:umbrellas-draw] The guests' open umbrellas (<see cref="UmbrellaRenderer"/>); null without the extension, its content or guests.</summary>
+	public UmbrellaRenderer? UmbrellaRenderer { get; private set; }
+	/// <summary>[EXT:winter-draw] The warm items the guests wear (<see cref="WarmItemRenderer"/>); null without the extension, its content or guests.</summary>
+	public WarmItemRenderer? WarmItemRenderer { get; private set; }
 	/// <summary>Draws the guests' and the staff's thought bubbles.</summary>
 	public ThoughtRenderer? ThoughtRenderer { get; private set; }
 	/// <summary>The litter sprites lying on the park's cells (null without a park economy).</summary>
@@ -482,6 +486,17 @@ public partial class Level : IDisposable
 			ConnectObjectsToGuests();
 			if ( Guests != null )
 				Guests.WeatherDropsFalling = () => Weather is { CurrentDrops: > 0 };
+			// [EXT:umbrellas-weather-map] rain without lightning is Theme Park Inc's rain, lightning a storm, snow snow (the flags of the park's weather, not its drops: the umbrella rules ask what the weather is, not how hard it falls)
+			if ( Guests != null )
+				Guests.UmbrellaWeatherState = () => Weather is { } weather ? UmbrellaRules.WeatherStateOf( weather.Rain, weather.Lightning, weather.Snow ) : UmbrellaRules.WeatherNone;
+			// [EXT:winter-season-terms] the winter shops read the park's calendar month (the economy's clock, which the weather steps on too) and their own weather signal, which reads snow as snow even with lightning (Halloween's snow band is its lightning band)
+			if ( Guests != null )
+				Guests.WinterWeatherState = () => Weather is { } weather ? WinterRules.WeatherStateOf( weather.Rain, weather.Lightning, weather.Snow ) : UmbrellaRules.WeatherNone;
+			if ( Guests != null )
+				Guests.WinterMonth = () => Park?.Economy is { } economy ? ParkCalendar.DateTimeAt( economy.Tick ).Month : 0;
+			// [EXT:rain-mood-extension] the rain mood rule is on while the extension is: the guests read the same weather state as the umbrella rules
+			if ( Guests != null )
+				Guests.RainMood = RainMoodFor( FeatureGates.RainMood );
 			using var connectProfile = LoadProfile.Measure( "staff-gate-economy" );
 			ConnectObjectsToEconomy();
 			if ( Park != null )
@@ -558,11 +573,11 @@ public partial class Level : IDisposable
 		var costumes = GuestSpriteAtlas.LoadCostumes( park.LevelName );
 		var costumeHeads = GuestSpriteAtlas.LoadCostumeHeads( park.LevelName );
 		// [EXT:pools-swim] swimmers are drawn by the pools' own renderer with the swim sprites (RefreshPools), whatever they wear
-		GuestRenderer = new GuestRenderer( Guests, park.Heightfield, sprites ) { Draws = guest => (!(guest.IsSwimming || guest.InPoolActivity) || SwimmerRenderer == null) && (costumes.Count == 0 || !guest.InCostume) };
+		GuestRenderer = new GuestRenderer( Guests, park.Heightfield, sprites ) { Draws = guest => (!(guest.IsSwimming || guest.InPoolActivity) || SwimmerRenderer == null) && (costumes.Count == 0 || !guest.InCostume), DrawsRideBody = guest => costumes.Count == 0 || !guest.BodySpriteInCostume };
 		if ( costumes.Count > 0 )
-			CostumeRenderer = new GuestRenderer( Guests, park.Heightfield, costumes ) { Draws = guest => guest.InCostume && (!(guest.IsSwimming || guest.InPoolActivity) || SwimmerRenderer == null) };
+			CostumeRenderer = new GuestRenderer( Guests, park.Heightfield, costumes ) { Draws = guest => guest.InCostume && (!(guest.IsSwimming || guest.InPoolActivity) || SwimmerRenderer == null), DrawsRideBody = guest => guest.BodySpriteInCostume };
 		// the riders of the bounce rides are drawn as bodies on the ride (tp.exe 0x00557AB0, BounceRiders), by the set of the guest's own kind
-		var bounceRiders = new FlatRideBounceRiders( Objects );
+		var bounceRiders = rideBodyPoses = new FlatRideBounceRiders( Objects );
 		GuestRenderer.BounceRiders = bounceRiders;
 		if ( CostumeRenderer != null )
 			CostumeRenderer.BounceRiders = bounceRiders;
@@ -578,9 +593,18 @@ public partial class Level : IDisposable
 			AddCoasterHeads( CostumeHeadRenderer );
 		}
 		BalloonRenderer = new BalloonRenderer( Guests, park.Heightfield, GuestSpriteAtlas.LoadBalloons() );
+		// [EXT:umbrellas-draw] the open umbrellas, drawn with the umbrellas extension's own sprites at the guests' hands (the kids' renderer, then the costumes'); parks without the extension or its content have none
+		UmbrellaRenderer = null;
+		if ( UmbrellaSprites.Load() is { Count: > 0 } umbrellaSets && UmbrellaContent.Directory is { } umbrellaFolder )
+			UmbrellaRenderer = new UmbrellaRenderer( Guests, park.Heightfield, umbrellaSets, new[] { GuestRenderer, CostumeRenderer }.OfType<GuestRenderer>().ToArray(), UmbrellaAnchors.Load( umbrellaFolder ) );
+		// [EXT:winter-draw] the warm items (hat, earmuffs, mittens) at the guests' heads and hands; parks without the extension or its content have none
+		WarmItemRenderer = null;
+		if ( WinterSprites.Load() is { Count: > 0 } winterSets && WinterContent.Directory is { } winterFolder )
+			WarmItemRenderer = new WarmItemRenderer( Guests, winterSets, new[] { GuestRenderer, CostumeRenderer }.OfType<GuestRenderer>().ToArray(), WinterAnchorTable.Load( winterFolder ) );
 		ThoughtRenderer = new ThoughtRenderer( Guests, park.Heightfield, GuestSpriteAtlas.LoadThoughts(),
 			() => Park?.Economy.Staff.Members ?? (IReadOnlyList<StaffMember>)Array.Empty<StaffMember>(),
-			member => member.State != StaffState.PickedUp && StaffRenderer != null && StaffRenderer.TryGetDrawCell( member, out var x, out var y ) ? (x, y) : null );
+			member => member.State != StaffState.PickedUp && StaffRenderer != null && StaffRenderer.TryGetDrawCell( member, out var x, out var y ) ? (x, y) : null )
+		{ UmbrellaShown = UmbrellaRenderer == null ? null : UmbrellaRenderer.ShowsBubble };
 		Log.Trace( $"Guests: {grid.WalkableCount} walkable path cells, {gameKidCount} original kid sprite sets{(poolGuestSprites != null ? $" (replaced by the pools extension's {sprites.Count} 2x sets)" : "")}, {costumes.Count} costume sets, {Guests.Settings.Types.Count} .sam peep types." );
 	}
 
@@ -591,6 +615,9 @@ public partial class Level : IDisposable
 	/// turn 0, a visit's first group would come at turn 604, about 150 s in, with no guest before it to ride rides such as the Belly Bounce, which bounces only with riders aboard.
 	/// </summary>
 	// [EXT:online-visit-arrivals] the original's visit loaded the owner's uploaded save, a running park (docs/reverse/ONLINE-VISIT.md); a package carries the layout without the guests and the arrival timer, so a visit's arrivals start as those of an own park started from the save the visit is built on
+	/// <summary>[EXT:rain-mood-extension] The rain mood settings the level hands its guests: the shipped rows while the extension's gate is on, none (the default: the rule never runs) otherwise.</summary>
+	internal static RainMoodSettings? RainMoodFor( bool gateOn ) => gateOn ? RainMoodSettings.Default : null;
+
 	internal static Func<long>? VisitArrivalClock( GuestSimulation guests, long? savedTurn ) => savedTurn is { } start ? () => start + guests.ParkTurn : null;
 
 	/// <summary>The Buy Land tool (tp.exe mouse mode 0x39); null for a level without land (no Hoardings.sam, Theme Park Inc, a visit).</summary>
@@ -648,6 +675,8 @@ public partial class Level : IDisposable
 				Gate?.DoorMoved( item.Kind == ParkEventKind.ParkClosed );
 			else if ( item.Kind == ParkEventKind.Bankrupt )
 				Gate?.ParkLost();
+			else if ( item.Kind == ParkEventKind.ResearchAllDone )
+				StartResearchFinale();
 			else if ( item.Kind == ParkEventKind.RideScriptVariable && Enum.IsDefined( (RideVariables)item.InfoId ) )
 				AttractionRuntimeOf( item.InstanceId )?.SetVariable( ((RideVariables)item.InfoId).ToString(), (int)item.Amount );
 			else if ( item.Kind == ParkEventKind.RideRepaired )
@@ -694,6 +723,7 @@ public partial class Level : IDisposable
 	/// <summary>The park door over the current economy; rebuilt by <see cref="LoadPark"/>, which replaces the economy.</summary>
 	private void BuildParkGate()
 	{
+		BindResearchFinale();
 		Gate = ParkGate.ForLevel( Park!.Economy, Objects, Guests, () => Park.Economy.Staff.Members, () => PlacedRide?.Runtime, EconomyStateOf );
 		// A park that starts open commands its gate open once at setup, the way the original's gate lookup
 		// writes the command from mParkClosed (Mac 0x104500 writes the gate handle and the closed flag together);
@@ -783,7 +813,7 @@ public partial class Level : IDisposable
 		if ( AttractionRuntimeOf( instance ) is not { } runtime )
 			return;
 		var coaster = runtime.Coaster != null;
-		if ( RideRepair.OpensAfterRepair( coaster ? RideOpening.CoasterTrackType : 0, !coaster || runtime.Coaster!.IsOperational ) )
+		if ( RideRepair.OpensAfterRepair( coaster ? RideOpening.CoasterTrackType : 0, !coaster || runtime.Coaster!.AcceptsGuests ) )
 			runtime.Open();
 		else
 			runtime.Close();
@@ -914,6 +944,8 @@ public partial class Level : IDisposable
 			Input.Mouse.Position, new Vector2( Screen.Size.X, Screen.Size.Y ), Input.ModifierMaskDown );
 		RefreshRenderedCells();
 		RefreshPools();
+		UpdateEvening();
+		UpdateSnow();
 		SceneClock.Advance( Time.Delta * SimulationTimeScale );
 		var simulationStart = FrameStats.Begin();
 		AdvanceSimulation( Time.Delta * SimulationTimeScale );
@@ -1129,6 +1161,8 @@ public partial class Level : IDisposable
 
 	public void Dispose()
 	{
+		Guests?.ClearBodySprites();
+		rideBodyPoses = null;
 		ExitRideView();
 		ExitFreeWalk();
 		onlinePanel?.Dispose();
@@ -1142,8 +1176,12 @@ public partial class Level : IDisposable
 		TextOverlay?.Dispose();
 	}
 
+	/// <summary>Invalidates per-world-pass observations even when an entity is absent from the render list.</summary>
+	internal long RenderPass { get; private set; }
+
 	public void Render()
 	{
+		RenderPass++;
 		// [EXT:point-lights] the lights of the objects that have any, for every draw of this frame
 		PointLights?.Gather( Camera.ViewMatrix * Camera.ProjMatrix );
 		foreach ( var entity in Entity.All.ToArray() )

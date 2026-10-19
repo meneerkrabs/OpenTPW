@@ -320,6 +320,14 @@ internal static class ParkResumeSaveFile
 		if ( snapshot.Layout?.Cells?.Cells?.Any( cell => cell?.Type == ParkCellTypes.PoolWater ) == true
 			&& snapshot.Mods?.Any( mod => mod?.Id == OfficialExtensions.Pools.Id ) != true )
 			Require( false, $"the layout has pool cells but the save does not record {OfficialExtensions.Pools.Id}" );
+		// [EXT:umbrellas-save] a park with a guest who has an umbrella records the umbrellas extension (a park without one does not), so a save cannot hide the umbrella state from the mod check
+		if ( snapshot.Guests?.Guests?.Any( guest => guest != null && guest.UmbrellaState != 0 ) == true
+			&& snapshot.Mods?.Any( mod => mod?.Id == OfficialExtensions.Umbrellas.Id ) != true )
+			Require( false, $"a guest has an umbrella but the save does not record {OfficialExtensions.Umbrellas.Id}" );
+		// [EXT:winter-save] a park with a guest who has a warm item records the winter extension (a park without one does not), so a save cannot hide the items from the mod check
+		if ( snapshot.Guests?.Guests?.Any( guest => guest != null && (guest.WarmItems != 0 || guest.WarmUntilDay != 0) ) == true
+			&& snapshot.Mods?.Any( mod => mod?.Id == OfficialExtensions.Winter.Id ) != true )
+			Require( false, $"a guest has a warm item but the save does not record {OfficialExtensions.Winter.Id}" );
 		// [EXT:smarter-guests] the extension's section: present exactly when the extension is recorded, with ids that fit the guests the save holds
 		if ( SmarterGuestsSave.ShapeProblem( snapshot.SmarterGuests, snapshot.Guests?.Guests?.Select( guest => guest.Id ), snapshot.Mods, snapshot.ScriptMods != null, snapshot.Guests?.Attractions?.Select( attraction => attraction.AttractionId ) ) is { } smarterProblem )
 			Require( false, smarterProblem );
@@ -553,6 +561,8 @@ internal static class ParkResumeSaveFile
 					"the weather holds a negative lightning clock" );
 			}
 		}
+		if ( snapshot.SnowCover is { } snowCover )
+			Require( SnowCover.IsValidSavedCover( snowCover ), $"the snow cover {snowCover} is not a number above 0 and at most 1" );
 		if ( snapshot.Gate is { } gate )
 			Require( gate.LastObservedTurn >= 0, $"the park gate's last observed turn {gate.LastObservedTurn} is negative" );
 		if ( snapshot.ParkName is { } parkName )

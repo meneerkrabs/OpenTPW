@@ -469,7 +469,11 @@ with 1, 2, 124, 140, 156, 157 and 185 and 282 of the other batches), by what rea
   (`0x4CF5B0`, the log "Bus about to arrive with %d people") into it as the group starts (`0x4CF42A`; capacity 5 at `+0x216F4`, index `+0x216F0`, filled flag `+0x216F8`). `0x59F220` (124, hype fades:
   the park is younger than `HypeNewpark.MaxMonths`, at least two groups, the newest smaller than the one before by more than `DroppedPercent`), `0x59F440` (140, a big busload) and `0x5A0780` (281,
   exactly one group has come) read it. OpenTPW keeps it as the advisor's own record (`AdvisorArrivalRing`, fed by `GuestSimulation.ArrivalGroupStarted`, saved in the advisor snapshot), like the
-  object and hire stamps; an original save's ring is not parsed, so a loaded park starts with an empty one.
+  object and hire stamps; an original save's ring is not parsed, so an original-save import starts with an empty one. Own-format saves preserve the signed entries: above the guest limit,
+  `0x4CF6A6` (online 500) / `0x4CF704` (offline 1500) subtracts the counted guests without a floor, and `0x4CF451` stores that signed remainder unchanged. The hype callback compares signed
+  (`0x59F31C`) and divides signed (`0x59F32A`); a negative newest group after a positive group can give a drop above 100 percent. It must not be clamped to zero. Own-format advisor validation
+  accepts these signed values while keeping the five-entry bound, controller and speech checks. Older own-format snapshots without `ArrivalWaves` clear the ring. This is a static trace and
+  a save/resume validation correction; no original-runtime parity or new approximation closure is claimed.
 - **`0x4CA740` counts ticket items built**, not research: the types with a golden ticket cost that were built at least once, as a percent. 278-280 are three bands of it (above the group's threshold and not
   above the next group's; the last has no upper bound) while the park is open. 274-276 compare the guests in the park x 100 / `GoldenTicketLocal.PeopleInPark` (the runtime word `0x785794`; 0 gives no
   line), cut to 100, with the thresholds of A, B and C (all three can hold at once).

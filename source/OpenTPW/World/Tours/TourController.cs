@@ -805,6 +805,7 @@ public sealed class TourController
 		if ( ApproachMode == 0 )
 		{
 			// aim at the station along the line from the car
+			// [EXT:deterministic-math] the x87's fpatan in IEEE double by DetMath, the same bits on every runtime, not in x87 extended precision (docs/DETERMINISM.md, "Browser and native")
 			car.ApproachHeading = (int)(DetMath.Atan2( StationZ - car.Z, StationX - car.X ) * 652.0);
 			car.State = TourCar.StateApproach;
 			car.TargetX = StationX - TourMath.Div1024( TourWorld.Cos( car.ApproachHeading ) * ApproachRadius );
@@ -1004,6 +1005,7 @@ public sealed class TourController
 	private void Steer( TourCar car )
 	{
 		// the bearing to the target in 4096ths of a turn (the original multiplies the arc tangent by −652, a hair under 4096 / 2π, and subtracts)
+		// [EXT:deterministic-math] the x87's fpatan in IEEE double by DetMath, the same bits on every runtime, not in x87 extended precision (docs/DETERMINISM.md, "Browser and native")
 		var bearing = (int)(DetMath.Atan2( car.TargetZ - car.Z, car.TargetX - car.X ) * -652.0);
 		var error = (-car.Heading - bearing) & 0xFFF;
 		if ( error > 0x7FF )

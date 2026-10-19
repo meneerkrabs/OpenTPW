@@ -13,6 +13,7 @@ public static class SideshowWin
 	/// <summary>The truncated happiness gain of a won play: <c>trunc(step × log2(prize / price))</c> the way the x87 and <c>__ftol</c> give it.</summary>
 	public static int HappinessGain( int prize, int price, int mediumStep )
 	{
+		// [EXT:deterministic-math] the x87's fyl2x in IEEE double by DetMath, the same bits on every runtime, not in x87 extended precision (docs/DETERMINISM.md, "Browser and native")
 		var logarithm = price == 0 ? (prize > 0 ? double.PositiveInfinity : double.NaN) : DetMath.Log2( (double)prize / price );
 		return Ftol( logarithm * (mediumStep & 0xFF) );
 	}

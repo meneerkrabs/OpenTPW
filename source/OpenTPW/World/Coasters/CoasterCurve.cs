@@ -221,6 +221,7 @@ public sealed class HermiteCoasterCurve : ICoasterCurve
 	// [BIN:STP-PPC:0x10041E24 sample yaw and pitch] yaw = atan2(T.x, T.z) of the derivative; T rotated by −yaw with the sine table; pitch = atan2(−T.y', T.z')
 	public static (float Yaw, float Pitch) Orientation( SVector3 tangent )
 	{
+		// [EXT:deterministic-math] fpatan in IEEE double by DetMath, the same bits on every runtime, not in x87 extended precision (docs/DETERMINISM.md, "Browser and native")
 		var yaw = DetMathF.Atan2( tangent.X, tangent.Z );
 		var z = MathF.FusedMultiplyAdd( tangent.X, CoasterTrig.Sin( yaw ), tangent.Z * CoasterTrig.Cos( yaw ) );
 		return (yaw, DetMathF.Atan2( -tangent.Y, z ));
@@ -282,6 +283,7 @@ public sealed class HermiteCoasterCurve : ICoasterCurve
 		var difference = secondPoint - firstPoint;
 		difference = CoasterTrack.TurnY( difference, -yaw );
 		difference = CoasterTrack.TurnX( difference, -pitch );
+		// [EXT:deterministic-math] fpatan in IEEE double by DetMath, the same bits on every runtime, not in x87 extended precision (docs/DETERMINISM.md, "Browser and native")
 		return DetMath.Atan2( -difference.X, difference.Y );
 	}
 

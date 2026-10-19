@@ -23,6 +23,7 @@ namespace OpenTPW;
 /// Permission to use, copy, modify, and distribute this software is freely granted, provided that this notice is preserved.
 /// (musl's adaptation: Copyright © 2005-2020 Rich Felker, et al., MIT licence.)
 /// </remarks>
+// [EXT:deterministic-math] simulation code evaluates the elementary functions here, in IEEE double with a fixed order of operations, so every runtime computes the same bits; tp.exe evaluates them on the x87 in extended precision (fsin, fpatan, fyl2x) or calls its C runtime (pow, acos). User decision, 2026-10-19: "Als EXT: deterministic-math". The start-up tables built with it equal the original's and keep their binary-evidence labels.
 public static class DetMath
 {
 	// ---- bit access -------------------------------------------------------------------------------------------------------

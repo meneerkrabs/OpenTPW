@@ -53,6 +53,7 @@ public static class HeadingAngle
 	public static (float X, float Y) Facing( int dx, int dy )
 	{
 		var radians = Of( -dx, dy ) * (2 * Math.PI / Turn);
+		// [EXT:deterministic-math] the sine and cosine of the quantised angle in IEEE double by DetMath, the same bits on every runtime, not in x87 extended precision (docs/DETERMINISM.md, "Browser and native")
 		return ((float)-DetMath.Sin( radians ), (float)-DetMath.Cos( radians ));
 	}
 }

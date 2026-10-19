@@ -307,6 +307,7 @@ public sealed class CoasterRating
 			x = cosBank * x - sinBank * y;
 			y = cosBank * y + oldX * sinBank;
 			// fpatan hands its result on unrounded; the store at 0x43c918 only copies it
+			// [EXT:deterministic-math] the x87's fpatan in IEEE double by DetMath, the same bits on every runtime, not in x87 extended precision (docs/DETERMINISM.md, "Browser and native")
 			var target = DetMath.Atan2( -x, y );
 			var turned = (float)((double)(float)(target - previous) + ThreePi);
 			var difference = (float)(turned % TwoPiDouble - MathF.PI);

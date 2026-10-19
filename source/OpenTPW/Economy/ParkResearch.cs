@@ -30,6 +30,7 @@ public sealed class ParkResearch
 	private readonly int[] effort;
 	private readonly Dictionary<ResearchCategory, ResearchItem> selected = new();
 	private readonly HashSet<(int InfoId, int Level)> itemKeys = new();
+	private readonly SortedSet<int> cheatAvailable = new();
 	private readonly Dictionary<ResearchCategory, List<ResearchItem>> byCategory = new();
 	private readonly Dictionary<(ResearchCategory Category, int Group), (int Count, int Done)> groupStats = new();
 	private readonly int[] highestGroup = new int[Enum.GetValues<ResearchCategory>().Length];
@@ -248,7 +249,46 @@ public sealed class ParkResearch
 	public IReadOnlyCollection<(int InfoId, int Level)> Completed => completed;
 	public IReadOnlyList<int> Effort => effort;
 
-	public bool IsAvailable( int infoId, int level = 0 ) => completed.Contains( (infoId, level) ) || !itemKeys.Contains( (infoId, level) );
+	public bool IsAvailable( int infoId, int level = 0 ) => completed.Contains( (infoId, level) ) || !itemKeys.Contains( (infoId, level) ) || level == 0 && cheatAvailable.Contains( infoId );
+
+	/// <summary>The objects the research cheat made available without researching them (<see cref="MakeEveryItemAvailable"/>), by Info.Id; empty in a park that never used it.</summary>
+	public IReadOnlyCollection<int> CheatAvailable => cheatAvailable;
+
+	/// <summary>
+	/// The research cheat (Alt+R): every research item's object becomes available to build, without completing its research. The items stay in the lab with their progress, the groups do
+	/// not open and <see cref="IsAllResearched"/> does not change, so the AllResearchedAndBuilt ticket reads the same as before. Returns how many objects became available.
+	/// </summary>
+	// [BIN:TPW-EXE:0x503FF0 research cheat] for each of the manager's items (+0x145C of them, 0x14 bytes each, walked from the last) the object control of the item's id (+0xC, 0x4D3D10) gets its available byte (+0x10) set; an upgrade level's item names its ride, whose control is the ride's own, so the levels themselves stay researched only; the AllResearchedAndBuilt ticket (0x4CA6B0) reads the items left (0x503B30) and the built counts, not the available byte
+	internal int MakeEveryItemAvailable()
+	{
+		var before = cheatAvailable.Count;
+		foreach ( var item in items )
+			if ( !IsAvailable( item.InfoId ) )
+				cheatAvailable.Add( item.InfoId );
+		return cheatAvailable.Count - before;
+	}
+
+	/// <summary>Makes <paramref name="infoIds"/> available as the research cheat does (an original save's research cheat, <see cref="OriginalEconomyImport"/>); ids that are no research item's object, or already available, are skipped. Returns how many became available.</summary>
+	internal int MakeAvailableByCheat( IEnumerable<int> infoIds )
+	{
+		var before = cheatAvailable.Count;
+		foreach ( var infoId in infoIds )
+			if ( items.Any( item => item.InfoId == infoId ) && !IsAvailable( infoId ) )
+				cheatAvailable.Add( infoId );
+		return cheatAvailable.Count - before;
+	}
+
+	/// <summary>Restores <see cref="CheatAvailable"/>; every id must be a research item's object.</summary>
+	internal void RestoreCheatAvailable( IEnumerable<int>? infoIds )
+	{
+		cheatAvailable.Clear();
+		foreach ( var infoId in infoIds ?? Array.Empty<int>() )
+		{
+			if ( !items.Any( item => item.InfoId == infoId ) )
+				throw new InvalidDataException( $"Saved research made object {infoId} available by cheat, but it is no research item." );
+			cheatAvailable.Add( infoId );
+		}
+	}
 
 	public void SetEffort( ResearchCategory category, int value ) => effort[(int)category] = Math.Clamp( value, 0, 100 );
 

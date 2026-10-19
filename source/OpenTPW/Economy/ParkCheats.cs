@@ -8,6 +8,15 @@ public enum CheatKind
 {
 	/// <summary>[BIN:TPW-EXE:0x4053C0] Cheat mode on: the secret park name of the rename dialog (<c>0x4993E0</c>). The argument is unused (0).</summary>
 	Mode = 0,
+	/// <summary>[BIN:TPW-EXE:0x40C450] Alt+1: the bank credits <see cref="ParkCheats.MoneyAmount"/> as a prize (<c>0x4D0190(10000)</c>). The argument is unused (0).</summary>
+	Money = 1,
+	/// <summary>[BIN:TPW-EXE:0x40C430] Alt+R: every research item's object becomes available to build (<c>0x503FF0</c>); research itself is not touched. The argument is unused (0).</summary>
+	Research = 2,
+	/// <summary>
+	/// [BIN:TPW-EXE:0x40C6C0] Alt+G and Alt+Num1..9: a golden ticket, silently. The argument is the <see cref="GoldenTicketKind"/> (0..9: the six local tickets through <c>0x5AF810</c>, the four global
+	/// ones with record 100 through <c>0x5AF940</c>); the two secret tickets have no cheat.
+	/// </summary>
+	Ticket = 3,
 }
 
 /// <summary>One cheat action as the player asked for it: its kind and its argument (for example a ticket kind).</summary>
@@ -26,9 +35,15 @@ public readonly record struct CheatLogEntry( long Turn, CheatKind Kind, int Argu
 /// </para>
 /// </summary>
 // [BIN:TPW-EXE:0x4053C0 cheat mode] the mode byte +0xA is set by 0x4053C0(1) and never cleared (no call of 0x4053C0(0) exists); 0x4053C0 also posts a message of type 0x15 (0x40FB10), whose listeners are not traced and which OpenTPW does not post
+// [EXT:cheats-park-mode] the original's cheat object sits behind three first-use guards (0xFB3519 save and load, 0xFB34C4 rename, 0xFB34C8 key paths), and each guard's first use in a process re-runs its constructor 0x4053B0, clearing the mode once per run (the first key that reaches the cheat check after a load or a first rename); that depends on the process's history, not on the park, so OpenTPW keeps the mode with the park and does not reproduce it
 // [EXT:cheats-turn-boundary] the original applies a cheat inside the key handler or the rename dialog, between two frames; OpenTPW queues it and applies it at the next park turn, so it lands at the same simulation point in every run and the record names that turn
 public sealed class ParkCheats
 {
+	/// <summary>The money cheat's credit (<c>push 0x2710</c> at <c>0x40C456</c>).</summary>
+	public const int MoneyAmount = 10000;
+	/// <summary>The record a global ticket cheat claims (<c>push 0x64</c> at <c>0x40C780..0x40C7E0</c>): it takes the ticket from a park that holds it with a lower record.</summary>
+	public const int TicketRecord = 100;
+
 	/// <summary>The most entries the record keeps; older entries are dropped (and counted in <see cref="DroppedLog"/>) beyond it.</summary>
 	public const int MaximumLog = 4096;
 	/// <summary>The most actions that may wait for the next park turn; <see cref="Queue"/> refuses more.</summary>
@@ -72,14 +87,15 @@ public sealed class ParkCheats
 	/// <summary>Whether <paramref name="kind"/> is one of the extension's own cheats (<c>[EXT:cheats-*]</c>) rather than one the original game has.</summary>
 	public static bool IsExtensionKind( CheatKind kind ) => kind switch
 	{
-		CheatKind.Mode => false,
+		CheatKind.Mode or CheatKind.Money or CheatKind.Research or CheatKind.Ticket => false,
 		_ => true
 	};
 
 	/// <summary>Whether <paramref name="action"/>'s argument is one its kind accepts.</summary>
 	public static bool IsValid( CheatAction action ) => action.Kind switch
 	{
-		CheatKind.Mode => action.Argument == 0,
+		CheatKind.Mode or CheatKind.Money or CheatKind.Research => action.Argument == 0,
+		CheatKind.Ticket => action.Argument is >= (int)GoldenTicketKind.Visitors and <= (int)GoldenTicketKind.BigPark,
 		_ => false
 	};
 
@@ -110,12 +126,7 @@ public sealed class ParkCheats
 			Mode = true;
 			if ( IsExtensionKind( action.Kind ) )
 				Extension = true;
-			switch ( action.Kind )
-			{
-				case CheatKind.Mode:
-					// [BIN:TPW-EXE:0x4053C0 cheat mode] the mode byte only; the message of type 0x15 is not posted
-					break;
-			}
+			var outcome = economy.ApplyCheat( action );
 			var entry = new CheatLogEntry( turn, action.Kind, action.Argument );
 			log.Add( entry );
 			if ( log.Count > MaximumLog )
@@ -124,7 +135,19 @@ public sealed class ParkCheats
 				DroppedLog++;
 			}
 			Applied?.Invoke( entry );
+			economy.RaiseCheatApplied( action, outcome );
 		}
+	}
+
+	/// <summary>
+	/// An original save's cheat mode (the <c>CHTS</c> chunk's first byte, <see cref="OriginalEconomyImport"/>): a park saved while the mode was on is marked, with an empty record, as loading the
+	/// save sets the original's mode. Off leaves the record as it is.
+	/// </summary>
+	// [BIN:TPW-EXE:0x405570 cheat load] the loader reads the mode byte +0xA and the byte +0xB straight from the chunk; 0x405560 tests +0xA as a whole byte, so any nonzero value is on
+	internal void ImportMode( bool on )
+	{
+		if ( on )
+			Mode = true;
 	}
 
 	/// <summary>The record as the park save holds it, or null for a park that never cheated (<see cref="IsEmpty"/>), whose save leaves it out.</summary>
@@ -181,4 +204,39 @@ public sealed class ParkCheats
 			return "the cheat record is empty (a park that never cheated has none)";
 		return null;
 	}
+}
+
+/// <summary>
+/// The original's secret park name (docs/CHEATS.md): renaming the park in the ticket price window to "Kevin the" / "Cosmic Cow" turns the cheat mode on. The two lines are compared, case-sensitively, in the
+/// obfuscated form the executable stores, after the same transform the rename dialog's OK handler applies to its edit buffers.
+/// </summary>
+// [BIN:TPW-EXE:0x4993E0 secret park name] after storing the lines (0x4E2950/0x4E2A50) and copying them to the player record (0x5B0940/0x5B0970), the handler XORs each UTF-16 unit of both 14-character buffers (0x7C2668, 0x7C2688) with its index, re-reading wcslen (0x67ACD0) after every unit, and compares them with wcscmp (0x67C290) against [0x751A34] = "Kdtjj%rom" and [0x751A38] = "Cnqnmf&Dg~"; both equal calls 0x4053C0(1) on 0xFB3520
+public static class SecretParkName
+{
+	/// <summary>The stored form of line 1 (<c>0x751A54</c>), "Kevin the" after the transform.</summary>
+	public const string Line1Stored = "Kdtjj%rom";
+	/// <summary>The stored form of line 2 (<c>0x751A3C</c>), "Cosmic Cow" after the transform.</summary>
+	public const string Line2Stored = "Cnqnmf&Dg~";
+
+	/// <summary>
+	/// The handler's transform of one buffer: unit <c>i</c> becomes <c>unit ^ i</c> while <c>i</c> is below the string's length, which is read again after every unit, so a unit that becomes 0 ends
+	/// the string there.
+	/// </summary>
+	public static string Transform( string line )
+	{
+		ArgumentNullException.ThrowIfNull( line );
+		var units = line.ToCharArray();
+		int Length()
+		{
+			var end = Array.IndexOf( units, '\0' );
+			return end < 0 ? units.Length : end;
+		}
+		for ( var index = 0; index < Length(); index++ )
+			units[index] = (char)(units[index] ^ index);
+		return new string( units, 0, Length() );
+	}
+
+	/// <summary>Whether the two sign lines are the secret name (exact, case-sensitive).</summary>
+	public static bool Matches( string line1, string line2 ) =>
+		string.Equals( Transform( line1 ), Line1Stored, StringComparison.Ordinal ) && string.Equals( Transform( line2 ), Line2Stored, StringComparison.Ordinal );
 }

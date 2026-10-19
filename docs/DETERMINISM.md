@@ -625,6 +625,11 @@ The record is part of the park save (`ParkSaveFile.Data.Cheats`) only when the p
 `opentpw.cheats` only once the park has used one of the extension's own cheats (`ParkCheats.UsesExtension`, `ParkResumeMods.UsedOnlyExtensionIds`); a park cheated through the original's cheat mode alone does not record it
 and loads with the extension off.
 
+The original's cheats (K2) change only economy state: Alt+1 credits through the ledger, Alt+R adds the objects to `Research.CheatAvailable` (saved, and hashed through the economy digest only
+once the list has an entry), and the ticket cheats add to the park's ticket set (and the player's ledger, which is outside the hash). None of them draws. Importing an original save applies
+its `CHTS` byte 0, but a park started from the jungle's shipped `Easymode.TPWI` (which carries `01 01`) is not marked (`[EXT:cheats-shipped-seed]`), so every Instant Action and
+reference start keeps its save bytes and its pins.
+
 ## Tests
 
 `DeterminismTests` (no game data needed):

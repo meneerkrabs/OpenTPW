@@ -379,9 +379,8 @@ internal sealed partial class GameFlow : IDisposable
 		if ( original )
 			using ( LoadProfile.Measure( "enter-park-audio" ) )
 				GameAudio.EnterPark( levelName, level.Seed.SoundStream );
-		// [BIN:TPW-EXE:0x51C400 sound loader] a park loaded from a player's original save plays at the save's volumes until the options take over (docs/AUDIO.md, "Volumes of a loaded original save"); the player's options are not changed
-		// [APPROX:SAVE-016] only a player's own save applies its Sound block: a park started from the level's shipped Easymode.TPWI (Instant Action, the reference start) keeps the options' volumes, although the original's park entry 0x5ACCF0 loads the newest save in the park's folder through 0x414D40, which for an Instant Action player is the copied Easymode park — evidence needed: that this copy is the file 0x5ACCF0 picks at the first entry, then a user decision whether a shipped seed's defaults may replace the player's volumes for the visit
-		if ( original && visit == null && level.PlayerSaveSound is { } savedSound )
+		// [BIN:TPW-EXE:0x51C400 sound loader] a park started from an original save (a player's own or the shipped Easymode seed, Level.OriginalSaveSound) plays at the save's volumes until the options take over (docs/AUDIO.md, "Volumes of a loaded original save"); the player's options are not changed
+		if ( original && visit == null && level.OriginalSaveSound is { } savedSound )
 		{
 			var line = GameAudio.ApplySavedSound( savedSound, GameOptions.Current );
 			level.Park?.Import?.Report( line );

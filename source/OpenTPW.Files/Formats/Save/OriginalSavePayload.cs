@@ -178,10 +178,11 @@ public sealed class SaveSoundSettings
 	{
 		if ( settings.Length != Bytes )
 			return null;
-		uint Word( int offset ) => BinaryPrimitives.ReadUInt32LittleEndian( settings.Slice( offset, 4 ) );
-		var tail = new uint[4];
-		for ( var index = 0; index < tail.Length; index++ )
-			tail[index] = BinaryPrimitives.ReadUInt32LittleEndian( settings.Slice( 0x44 + index * 4, 4 ) );
+		var words = new uint[Bytes / 4];
+		for ( var index = 0; index < words.Length; index++ )
+			words[index] = BinaryPrimitives.ReadUInt32LittleEndian( settings.Slice( index * 4, 4 ) );
+		uint Word( int offset ) => words[offset / 4];
+		var tail = words[(0x44 / 4)..];
 		return new SaveSoundSettings
 		{
 			MusicHandle = Word( 0x00 ),
@@ -196,8 +197,8 @@ public sealed class SaveSoundSettings
 			SpeechVolume = (int)Word( 0x24 ),
 			Dirty = Word( 0x28 ),
 			SpeechPlaying = Word( 0x2C ),
-			MusicDuck = BinaryPrimitives.ReadUInt16LittleEndian( settings.Slice( 0x30, 2 ) ),
-			ListenerFreeze = BinaryPrimitives.ReadUInt16LittleEndian( settings.Slice( 0x32, 2 ) ),
+			MusicDuck = (ushort)Word( 0x30 ),
+			ListenerFreeze = (ushort)(Word( 0x30 ) >> 16),
 			Unused34 = Word( 0x34 ),
 			EffectsOn = Word( 0x38 ),
 			MusicOn = Word( 0x3C ),

@@ -1174,7 +1174,7 @@ public static class GameAudio
 	public static int MasterVolume { get; private set; } = GameOptions.MaximumVolume;
 
 	/// <summary>
-	/// Plays a park loaded from a player's original save at the volumes its Sound block holds, as tp.exe does after a load, without touching the player's options;
+	/// Plays a park started from an original save (Level.OriginalSaveSound) at the volumes its Sound block holds, as tp.exe does after a load, without touching the player's options;
 	/// returns the import report's line.
 	/// </summary>
 	// [BIN:TPW-EXE:0x51C400 sound loader] the payload loader 0x415270 calls the Sound block loader at 0x415BA2; the copied shadows reach the mixer on the next tick 0x51BD70 (with the saved dirty word), and the post-load pass 0x415140 does not call the options applier 0x423DD0

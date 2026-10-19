@@ -20,9 +20,9 @@ public partial class Level
 	/// </summary>
 	public static bool PerfEvening( string mode )
 	{
-		var enabled = mode != "off";
-		OpenTpwExtensions.Activate( ModSet.Resolve( Array.Empty<DiscoveredMod>(),
-			new ModSettings { Enabled = new Dictionary<string, bool> { [OfficialExtensions.Evening.Id] = enabled } }, null, GameEdition.ThemeParkWorld, OfficialExtensions.All ) );
+		// only the evening extension is switched: the other extensions and the mods of the session stay as they are
+		if ( mode is "night" or "dusk" or "day" or "on" or "off" )
+			OpenTpwExtensions.Activate( OpenTpwExtensions.Active.WithPresentationExtension( OfficialExtensions.Evening, mode != "off" ) );
 		switch ( mode )
 		{
 			case "night": EveningPaceOverride = EveningPace.AlwaysNight; return true;

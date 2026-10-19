@@ -20,6 +20,10 @@ public class WinterColdTests
 	private static readonly WinterColdSettings Settings = WinterColdSettings.Default;
 	private const int Snow = UmbrellaRules.WeatherSnow;
 
+	private static SamSettings HalloweenBands() => new( new[] { SamDocument.Parse(
+		"WeatherEffects.QualityForSnowLow\t0\nWeatherEffects.QualityForSnowHigh\t25\nWeatherEffects.QualityForRainLow\t15\nWeatherEffects.QualityForRainHigh\t45\n" +
+		"WeatherEffects.QualityForLightningLow\t0\nWeatherEffects.QualityForLightningHigh\t25\nWeatherEffects.MaxRaindrops\t600\nWeather.DaysOfWarning\t4\nWeather.DaysBetweenChanges\t7\nWeather.SpeedOfChange\t20\n", "test" ) } );
+
 	private sealed class Rig
 	{
 		public readonly GuestPathGrid Grid = new( 16, 16 );
@@ -40,6 +44,18 @@ public class WinterColdTests
 				Simulation.WinterCold = Settings;
 			if ( rainMood )
 				Simulation.RainMood = RainMoodSettings.Default;
+		}
+
+		/// <summary>Real Halloween snow: a <see cref="ParkWeather"/> of the Halloween bands rolled to quality 10, where it snows and flashes lightning at once. The umbrellas' map (and so the rain mood) reads a storm, the winter signal reads snow.</summary>
+		public void HalloweenSnow()
+		{
+			var weather = new ParkWeather( HalloweenBands(), 4, 10, 10 );
+			weather.ApplyQuality( 10 );
+			Assert.IsTrue( weather.Snow && weather.Lightning, "Halloween snow comes with lightning" );
+			Simulation.UmbrellaWeatherState = () => UmbrellaRules.WeatherStateOf( weather.Rain, weather.Lightning, weather.Snow );
+			Simulation.WinterWeatherState = () => WinterRules.WeatherStateOf( weather.Rain, weather.Lightning, weather.Snow );
+			Assert.AreEqual( UmbrellaRules.WeatherStorm, Simulation.UmbrellaWeatherState() );
+			Assert.AreEqual( Snow, Simulation.WinterWeatherState() );
 		}
 
 		public void RunTurns( long turns )
@@ -120,8 +136,13 @@ public class WinterColdTests
 	{
 		var rain = RainMoodSettings.Default;
 		Assert.AreEqual( (71f, 39f, 41f), RainMoodRules.Apply( 70, 40, 40, Snow, false, rain ), "alone: snow +1" );
-		Assert.AreEqual( (70f, 39f, 41f), RainMoodRules.Apply( 70, 40, 40, Snow, false, rain, coldReplacesSnowHappiness: true ), "replaced: happiness 0, thirst -1 and hunger +1 stay" );
-		Assert.AreEqual( (69f, 40f, 40f), RainMoodRules.Apply( 70, 40, 40, UmbrellaRules.WeatherRain, false, rain, coldReplacesSnowHappiness: true ), "rain and storm are untouched" );
+		Assert.AreEqual( (70f, 39f, 41f), RainMoodRules.Apply( 70, 40, 40, Snow, false, rain, coldReplacesHappiness: true ), "replaced: happiness 0, thirst -1 and hunger +1 stay" );
+		Assert.AreEqual( (69f, 40f, 40f), RainMoodRules.Apply( 70, 40, 40, UmbrellaRules.WeatherRain, false, rain ), "rain is untouched" );
+		Assert.AreEqual( (69f, 40f, 40f), RainMoodRules.Apply( 70, 40, 40, UmbrellaRules.WeatherStorm, false, rain ), "a storm alone is untouched" );
+		// [EXT:winter-cold-replaces-snow-cheer] "Kou vervangt storm-humeur": the caller says the winter signal reads snow although the map reads a storm (Halloween); the storm row's happiness -1 is left out, its thirst and hunger (0) stay
+		Assert.AreEqual( (70f, 40f, 40f), RainMoodRules.Apply( 70, 40, 40, UmbrellaRules.WeatherStorm, false, rain, coldReplacesHappiness: true ), "Halloween snow: the storm's -1 is replaced too" );
+		var storm = rain with { Kid = rain.Kid with { Thirst = rain.Kid.Thirst with { Storm = -3f }, Hunger = rain.Kid.Hunger with { Storm = 2f } } };
+		Assert.AreEqual( (70f, 37f, 42f), RainMoodRules.Apply( 70, 40, 40, UmbrellaRules.WeatherStorm, false, storm, coldReplacesHappiness: true ), "the storm row's thirst and hunger effects stay" );
 	}
 
 	// ---- In the simulation ------------------------------------------------------------------------------------------
@@ -242,6 +263,49 @@ public class WinterColdTests
 	}
 
 	[TestMethod]
+	public void InHalloweenSnowColdReplacesTheStormMoodAndTheStormsThirstAndHungerStay()
+	{
+		// [EXT:winter-cold-replaces-snow-cheer] "Kou vervangt storm-humeur": real Halloween ParkWeather snow (snow and lightning at once). With cold on only the cold rule's happiness counts: -2 undressed, 0 dressed; the storm row's thirst and hunger stay
+		var storm = RainMoodSettings.Default with { Kid = RainMoodSettings.Default.Kid with { Thirst = RainMoodSettings.Default.Kid.Thirst with { Storm = -3f }, Hunger = RainMoodSettings.Default.Kid.Hunger with { Storm = 2f } } };
+		Guest Run( bool cold, bool rainMood, int items = 0 )
+		{
+			var rig = new Rig( cold, rainMood );
+			if ( rainMood )
+				rig.Simulation.RainMood = storm;
+			var guest = Aged( rig, 0.1, items );
+			rig.HalloweenSnow();
+			rig.RunTurns( 16 );
+			return guest;
+		}
+		var baseline = Run( false, false );
+		var stormMood = Run( false, true );
+		Assert.AreEqual( baseline.Happiness - 1f, stormMood.Happiness, 1e-4, "rain mood alone: Halloween's snow is a storm, -1" );
+		Assert.AreEqual( baseline.Thirst - 3f, stormMood.Thirst, 1e-4 );
+		Assert.AreEqual( baseline.Hunger + 2f, stormMood.Hunger, 1e-4 );
+		var undressed = Run( true, true );
+		Assert.AreEqual( baseline.Happiness - 2f, undressed.Happiness, 1e-4, "cold + rain mood, undressed: -2 (the cold rule only, not -3)" );
+		Assert.AreEqual( baseline.Happiness, Run( true, true, WinterRules.Hat | WinterRules.Mittens ).Happiness, 1e-4, "cold + rain mood, dressed: 0 (not the storm's -1)" );
+		Assert.AreEqual( baseline.Thirst - 3f, undressed.Thirst, 1e-4, "the storm row's thirst still applies" );
+		Assert.AreEqual( baseline.Hunger + 2f, undressed.Hunger, 1e-4, "the storm row's hunger still applies" );
+		Assert.AreEqual( Run( true, false ).Happiness, undressed.Happiness, 1e-4, "the rain mood adds nothing to happiness there" );
+	}
+
+	[TestMethod]
+	public void WithColdOffHalloweenSnowStaysTheRainMoodsStorm()
+	{
+		// the decision is scoped to cold being on: off, the rain mood reads the storm exactly as before, whatever the winter signal says
+		var rig = new Rig( cold: false, rainMood: true );
+		var guest = Aged( rig, 0.1 );
+		rig.HalloweenSnow();
+		var plain = new Rig( false );
+		var control = Aged( plain, 0.1 );
+		plain.HalloweenSnow();
+		rig.RunTurns( 16 );
+		plain.RunTurns( 16 );
+		Assert.AreEqual( control.Happiness - 1f, guest.Happiness, 1e-4 );
+	}
+
+	[TestMethod]
 	public void ColdAndTheRainMoodKeepTheirOwnDayMarks()
 	{
 		var rig = new Rig( true, rainMood: true );
@@ -309,45 +373,54 @@ public class WinterColdTests
 
 	/// <summary>
 	/// A headless kid over a snowy week (7 game days, 162 park turns of snow) with 0, 1, 2 and 3 protections, with the cold rule alone and with the rain mood on too: the happiness lost to the rules, the needs step's own
-	/// change taken out. The numbers of docs/WINTER.md come from this test; it fails if they drift.
+	/// change taken out. The numbers of docs/WINTER.md come from this test; it fails if they drift. Two skies: synthetic snow (the umbrellas' map and the winter signal both say snow) and real Halloween <see cref="ParkWeather"/> snow
+	/// (snow with lightning: the map says storm, the winter signal says snow).
 	/// </summary>
 	[TestMethod]
 	public void ASnowyWeekCostsAKidWhatTheDocumentationSays()
 	{
 		var turns = (long)Math.Round( 7 * ParkCalendar.SecondsPerDay / (double)ParkCalendar.SecondsPerTurn );
-		var table = new List<string>();
 		var cases = new (string Name, int Items, bool Warmed)[]
 		{
 			("none", 0, false), ("head item", WinterRules.Hat, false), ("head item + mittens", WinterRules.Hat | WinterRules.Mittens, false), ("head item + mittens + glühwein", WinterRules.Hat | WinterRules.Mittens, true)
 		};
-		var cold = new List<float>();
-		var both = new List<float>();
-		var rainOnly = new List<float>();
-		foreach ( var (name, items, warmed) in cases )
+		foreach ( var halloween in new[] { false, true } )
 		{
-			float Week( bool coldOn, bool rainMoodOn )
+			var table = new List<string>();
+			var cold = new List<float>();
+			var both = new List<float>();
+			var rainOnly = new List<float>();
+			foreach ( var (name, items, warmed) in cases )
 			{
-				var rig = new Rig( coldOn, rainMoodOn, seed: 3 );
-				var guest = Aged( rig, 0, items );
-				guest.TimeInParkSeconds = 0;
-				guest.Happiness = 90;
-				if ( warmed )
-					guest.WarmUntilDay = 1000;
-				rig.Weather = Snow;
-				rig.RunTurns( turns );
-				return guest.Happiness;
+				float Week( bool coldOn, bool rainMoodOn )
+				{
+					var rig = new Rig( coldOn, rainMoodOn, seed: 3 );
+					var guest = Aged( rig, 0, items );
+					guest.TimeInParkSeconds = 0;
+					guest.Happiness = 90;
+					if ( warmed )
+						guest.WarmUntilDay = 1000;
+					if ( halloween )
+						rig.HalloweenSnow();
+					else
+						rig.Weather = Snow;
+					rig.RunTurns( turns );
+					return guest.Happiness;
+				}
+				var plain = Week( false, false );
+				cold.Add( Week( true, false ) - plain );
+				both.Add( Week( true, true ) - plain );
+				rainOnly.Add( Week( false, true ) - plain );
+				table.Add( $"{(halloween ? "Halloween" : "synthetic")} {name}: cold {cold[^1]:0.#}, cold + rain mood {both[^1]:0.#}, rain mood alone {rainOnly[^1]:0.#}" );
 			}
-			var plain = Week( false, false );
-			cold.Add( Week( true, false ) - plain );
-			both.Add( Week( true, true ) - plain );
-			rainOnly.Add( Week( false, true ) - plain );
-			table.Add( $"{name}: cold {cold[^1]:0.#}, cold + rain mood {both[^1]:0.#}, rain mood alone {rainOnly[^1]:0.#}" );
+			Console.WriteLine( string.Join( "\n", table ) );
+			// a snowy week holds two applications (days 0 and 4 of the visit): -4, -2, 0, 0 for the cold rule
+			CollectionAssert.AreEqual( new[] { -4f, -2f, 0f, 0f }, cold.Select( value => MathF.Round( value, 2 ) ).ToArray(), string.Join( "; ", table ) );
+			CollectionAssert.AreEqual( cold.Select( value => MathF.Round( value, 2 ) ).ToArray(), both.Select( value => MathF.Round( value, 2 ) ).ToArray(), "with the rain mood on too its happiness in snow is replaced (snow +1, Halloween's storm -1), so the rain mood adds nothing to happiness" );
+			// the rain mood alone: synthetic snow cheers +1 per application, Halloween's snow is a storm and costs -1 per application, dressed or not
+			var expected = halloween ? -2f : 2f;
+			CollectionAssert.AreEqual( new[] { expected, expected, expected, expected }, rainOnly.Select( value => MathF.Round( value, 2 ) ).ToArray(), string.Join( "; ", table ) );
 		}
-		Console.WriteLine( string.Join( "\n", table ) );
-		// a snowy week holds two applications (days 0 and 4 of the visit): -4, -2, 0, 0 for the cold rule
-		CollectionAssert.AreEqual( new[] { -4f, -2f, 0f, 0f }, cold.Select( value => MathF.Round( value, 2 ) ).ToArray(), string.Join( "; ", table ) );
-		CollectionAssert.AreEqual( cold.Select( value => MathF.Round( value, 2 ) ).ToArray(), both.Select( value => MathF.Round( value, 2 ) ).ToArray(), "with the rain mood on too the snow +1 is replaced, so the rain mood adds nothing to happiness in snow" );
-		CollectionAssert.AreEqual( new[] { 2f, 2f, 2f, 2f }, rainOnly.Select( value => MathF.Round( value, 2 ) ).ToArray(), "the rain mood alone cheers every kid +1 per application, dressed or not" );
 	}
 
 	// ---- Saves, resume, registration --------------------------------------------------------------------------------

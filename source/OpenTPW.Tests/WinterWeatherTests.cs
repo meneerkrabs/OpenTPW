@@ -89,6 +89,56 @@ public class WinterWeatherTests
 		Assert.AreEqual( (-1f, 1f), (deltas.Of( UmbrellaRules.WeatherStorm ), deltas.Of( UmbrellaRules.WeatherSnow )), "and the rain mood's happiness row is -1 in a storm and +1 in snow" );
 	}
 
+	[TestMethod]
+	public void AHalloweenSnowfallIsSnowForTheWinterShopsAndAStormForTheUmbrellasAndTheRainMood()
+	{
+		// Halloween's snow band (0..25) is its lightning band, so every snowfall there has lightning too
+		var hallow = new ParkWeather( Hallow(), 4, 10, 10, wintryDecembers: true );
+		hallow.ApplyQuality( 10, wintryDecember: true );
+		Assert.IsTrue( hallow.Snow && hallow.Lightning, "a Halloween snowfall flashes lightning" );
+		Assert.AreEqual( UmbrellaRules.WeatherStorm, UmbrellaRules.WeatherStateOf( hallow.Rain, hallow.Lightning, hallow.Snow ), "the umbrellas and the rain mood keep reading a storm (no existing pin moves)" );
+		Assert.AreEqual( UmbrellaRules.WeatherSnow, WinterRules.WeatherStateOf( hallow.Rain, hallow.Lightning, hallow.Snow ), "the winter shops read the snow, so the kiosk's 200 and the stall's 250 apply" );
+		// and the wintry December's snow (no lightning) is the same signal in both maps
+		var jungle = new ParkWeather( ParkWeatherSnapshotTests.Jungle(), 3, 10, 10, wintryDecembers: true );
+		jungle.ApplyQuality( 5, wintryDecember: true );
+		Assert.AreEqual( UmbrellaRules.WeatherStateOf( jungle.Rain, jungle.Lightning, jungle.Snow ), WinterRules.WeatherStateOf( jungle.Rain, jungle.Lightning, jungle.Snow ) );
+	}
+
+	// ---- The forecast ----------------------------------------------------------------------------------------------
+
+	/// <summary>A started jungle weather at <paramref name="day"/> (0-based from the calendar's epoch) with a forecast of <paramref name="quality"/> posted at once.</summary>
+	private static ParkWeather ForecastAt( SamSettings settings, bool wintry, int day, int quality )
+	{
+		var weather = new ParkWeather( settings, 21, 10, 10, wintry );
+		weather.AdvanceTo( ParkCalendar.TickOfTurn( (long)day * ParkCalendar.SecondsPerDay / ParkCalendar.SecondsPerTurn ) );
+		weather.DebugPostForecast( quality );
+		return weather;
+	}
+
+	[TestMethod]
+	public void TheForecastOfAWintryDecemberRollSaysSnowAndTheApplyAgrees()
+	{
+		var thunderstorms = new WeatherQualityBands( false, true, true );
+		var snow = new WeatherQualityBands( true, false, false );
+		var wintry = ForecastAt( ParkWeatherSnapshotTests.Jungle(), true, FirstDecemberDay + 3, 5 );
+		Assert.AreEqual( snow, wintry.ForecastBands, "the option is on and the roll is in December: the forecast does not say thunderstorms" );
+		Assert.AreEqual( thunderstorms, wintry.BandsOf( 5 ), "the plain bands are what the converter reads before the option" );
+		Assert.AreEqual( snow, ForecastAt( ParkWeatherSnapshotTests.Jungle(), true, FirstDecemberDay + 3, 30 ).ForecastBands, "plain rain (no lightning) becomes snow as well" );
+		Assert.AreEqual( default( WeatherQualityBands ), ForecastAt( ParkWeatherSnapshotTests.Jungle(), true, FirstDecemberDay + 3, 78 ).ForecastBands, "a dry quality stays dry" );
+		Assert.AreEqual( thunderstorms, ForecastAt( ParkWeatherSnapshotTests.Jungle(), false, FirstDecemberDay + 3, 5 ).ForecastBands, "the option off: the original's thunderstorms" );
+		Assert.AreEqual( thunderstorms, ForecastAt( ParkWeatherSnapshotTests.Jungle(), true, FirstDecemberDay - 20, 5 ).ForecastBands, "a November roll: thunderstorms" );
+		Assert.AreEqual( default( WeatherQualityBands ), new ParkWeather( ParkWeatherSnapshotTests.Jungle(), 21, 10, 10, true ).ForecastBands, "no forecast pending: no bands" );
+		// the park whose own snow band holds qualities is untouched by the option
+		var hallow = ForecastAt( Hallow(), true, FirstDecemberDay + 3, 20 );
+		Assert.AreEqual( hallow.BandsOf( 20 ), hallow.ForecastBands );
+		// what the forecast announced is what the converter then makes of it
+		var applied = ForecastAt( ParkWeatherSnapshotTests.Jungle(), true, FirstDecemberDay + 3, 5 );
+		var announced = applied.ForecastBands;
+		for ( var turn = (long)(FirstDecemberDay + 3) * ParkCalendar.SecondsPerDay / ParkCalendar.SecondsPerTurn + 1; applied.Forecast != null; turn++ )
+			applied.AdvanceTo( ParkCalendar.TickOfTurn( turn ) );
+		Assert.AreEqual( announced, new WeatherQualityBands( applied.Snow, applied.Rain, applied.Lightning ), "the snow it announced is the snow that fell" );
+	}
+
 	// ---- The calendar ----------------------------------------------------------------------------------------------
 
 	/// <summary>One weather run: the state of every park turn over <paramref name="days"/> days (quality, flags, drops) hashed in order, and the days (0-based, from 2000-01-01) on which it snowed.</summary>

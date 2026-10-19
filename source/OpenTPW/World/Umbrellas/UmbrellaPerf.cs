@@ -2,7 +2,7 @@ namespace OpenTPW;
 
 /// <summary>
 /// [EXT:umbrellas-tuning] A measurement aid for the browser performance harness (tools/web-perf scenario <c>umbrellaCost</c>, docs/BROWSER-PERFORMANCE.md): fills the park with extra guests, applies a weather quality and gives every guest
-/// an open umbrella (or none), so the frame cost of many umbrellas can be measured. The harness calls it through <c>Program.PerfUmbrellaCrowd</c> (scenario <c>umbrellaCost</c>), which the page reaches only on a loopback address with <c>?perf=1</c>; nothing in the game
+/// an open umbrella (or none), so the frame cost of many umbrellas can be measured. The harness calls it through <c>Program.PerfUmbrellaCrowd</c> (scenario <c>umbrellaCost</c>), which the page reaches only on a loopback address with <c>?perf=1</c>, and the native Debug flag <c>--debug-umbrellas-crowd</c> calls it too; nothing else in the game
 /// calls it. Like the other smoke hooks it writes the guests' fields directly: the park it leaves is not a real run and is never saved.
 /// </summary>
 public static class UmbrellaPerf

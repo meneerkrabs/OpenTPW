@@ -140,6 +140,24 @@ public static partial class Program
 		return true;
 	}
 
+	private static Action? snowHook;
+
+	/// <summary>
+	/// [EXT:debug-snow-cover] The browser twin of the desktop's <c>--debug-snow-cover</c> (docs/WINTER.md): holds the settled snow cover of the park at <paramref name="cover"/> (0..1) every frame, so a capture shows the snow in
+	/// the browser build without a snowing sky. Presentation only. Returns false outside a park or while the winter-snow extension is off (no cover exists).
+	/// </summary>
+	[JSExport]
+	public static bool PerfSnow( double cover )
+	{
+		if ( flow?.Level?.Snow == null || renderer == null )
+			return false;
+		if ( snowHook != null )
+			renderer.PostUpdate -= snowHook;
+		snowHook = () => flow?.Level?.Snow?.Set( cover );
+		renderer.PostUpdate += snowHook;
+		return true;
+	}
+
 	/// <summary>How many umbrellas the renderer drew in the last frame, or -1 without one.</summary>
 	[JSExport]
 	public static int PerfDrawnUmbrellas() => flow?.Level?.UmbrellaRenderer?.DrawnUmbrellas ?? -1;

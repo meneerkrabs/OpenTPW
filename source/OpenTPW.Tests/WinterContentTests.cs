@@ -138,7 +138,7 @@ public class WinterContentTests
 			Assert.AreEqual( (25, 10, 15, 5), (kiosk.Economy.PricePerUse, kiosk.Economy.CostOfGoods, s.GetInt( "UsageInfo.HappinessEffect" ), s.GetInt( "UsageInfo.LitterEffect" )) );
 			Assert.AreEqual( (0, 0, 0), (s.GetInt( "UsageInfo.ThirstEffect" ), s.GetInt( "UsageInfo.HungerEffect" ), s.GetInt( "UsageInfo.VomitEffect" )) );
 			Assert.AreEqual( (5, 1000), (kiosk.InitialCapacity, kiosk.BuildCost) );
-			Assert.AreEqual( (200, 100, 0), (s.GetInt( "WeatherModifier.SnowPercentage" ), s.GetInt( "SeasonModifier.WinterPercentage" ), s.GetInt( "SeasonModifier.SummerPercentage" )), "sells in snow and in winter months only" );
+			Assert.AreEqual( (200, 150, 60, 20, 60), (s.GetInt( "WeatherModifier.SnowPercentage" ), s.GetInt( "SeasonModifier.WinterPercentage" ), s.GetInt( "SeasonModifier.SpringPercentage" ), s.GetInt( "SeasonModifier.SummerPercentage" ), s.GetInt( "SeasonModifier.AutumnPercentage" )), "sells all year: demand follows the season (winter 150, summer 20) and the snow (200)" );
 
 			var stall = ObjectCatalog.Load( Themes[index] ).Get( IdOf( index, 1 ) );
 			s = stall.Settings;
@@ -420,10 +420,10 @@ public class WinterContentTests
 	// ---- The wiring ------------------------------------------------------------------------------------------------
 
 	[TestMethod]
-	public void TheContentIsListedOnlyThroughTheWinterExtensionsOwnRootAndTheSnowExtensionIsNotRegisteredYet()
+	public void TheContentIsListedOnlyThroughTheWinterExtensionsOwnRoot()
 	{
-		CollectionAssert.AreEqual( new[] { "opentpw.winter", "opentpw.winter-weather", "opentpw.winter-cold" }, OfficialExtensions.All.Where( extension => extension.Id.StartsWith( "opentpw.winter", StringComparison.Ordinal ) ).Select( extension => extension.Id ).ToArray(),
-			"W3 registers the winter extension and the wintry Decembers option, W5 the cold rule; the snow cover (W1) comes with its own phase" );
+		CollectionAssert.AreEquivalent( new[] { "opentpw.winter", "opentpw.winter-weather", "opentpw.winter-snow", "opentpw.winter-cold" }, OfficialExtensions.All.Where( extension => extension.Id.StartsWith( "opentpw.winter", StringComparison.Ordinal ) ).Select( extension => extension.Id ).ToArray(),
+			"W3 registers the winter extension and the wintry Decembers option beside the settling snow (W1); W5 registers the cold rule" );
 		WinterContent.DirectoryOverride = Folder;
 		try
 		{

@@ -110,7 +110,7 @@ public static class OfficialExtensions
 	public static IOpenTpwExtension Evening { get; } = new OpenTpwExtension( "opentpw.evening", "Evening and night", new ModVersion( 1, 0, 0 ), DefaultEnabled: true, AffectsSimulation: false, PlayerSelectable: true );
 
 	/// <summary>
-	/// The winter extension (docs/WINTER.md): a winter kiosk and a glühwein stall per Theme Park World theme. The kiosk sells a warm item (a hat or earmuffs first, then mittens) only in snow or from December to February; the stall
+	/// The winter extension (docs/WINTER.md): a winter kiosk and a glühwein stall per Theme Park World theme. The kiosk sells a warm item (a hat or earmuffs first, then mittens) all year, its demand following the season and the snow; the stall
 	/// is a drinks shop that does not make guests drunk and sells best in snow and in the winter months. On by default (a player can switch it off) and not in a Theme Park Inc run; it changes the simulation, but a park save records the
 	/// extension only while the park has one of its shops or a guest with a warm item, so any other park saves byte-identically whether the extension is on or off (<c>ParkResumeMods.UsedOnlyExtensionIds</c>). This is phase W3, the simulation;
 	/// the drawing of the items (W4) and the cold rule (W5) come later, and the version is the rule identity: every behaviour-changing release bumps it.
@@ -119,7 +119,7 @@ public static class OfficialExtensions
 	public static IOpenTpwExtension Winter { get; } = new OpenTpwExtension( "opentpw.winter", "Winter", new ModVersion( 1, 0, 0 ), DefaultEnabled: true, AffectsSimulation: true );
 
 	/// <summary>
-	/// Wintry Decembers (docs/WINTER.md, "Wintry Decembers"): the thunderstorms of a December weather roll become snow in the jungle and fantasy parks (the Halloween park already snows; space has no precipitation). Snow instead of rain and
+	/// Wintry Decembers (docs/WINTER.md, "Wintry Decembers"): the rain and thunderstorms of a December weather roll become snow in the jungle and fantasy parks (the Halloween park already snows; space has no precipitation). Snow instead of rain and
 	/// lightning is what the umbrella rules and the rain mood read, so it changes every park of those themes: a save always records the extension while it is on (it is not in <c>ParkResumeMods.UsedOnlyExtensionIds</c>), and its version is the rule
 	/// identity. Off by default, because it is an option and not a repair (the original's Decembers are storms), and not in a Theme Park Inc run, which has no such weather.
 	/// </summary>
@@ -134,8 +134,15 @@ public static class OfficialExtensions
 	// [EXT:winter-cold] OpenTPW's own rule; Theme Park World has no cold and Theme Park Inc's snow cheers kids
 	public static IOpenTpwExtension WinterCold { get; } = new OpenTpwExtension( "opentpw.winter-cold", "Cold mood", new ModVersion( 1, 0, 0 ), DefaultEnabled: false, AffectsSimulation: true );
 
+	/// <summary>
+	/// The settling snow extension (docs/WINTER.md, phase W1): snow that settles on the park's ground, roofs and objects while it snows and melts afterwards, with the paths turning to slush. Presentation only:
+	/// <c>AffectsSimulation</c> is false, so it is not recorded in park saves and changes no hash (a save keeps the cover as an optional unhashed field). On by default; it shows wherever the weather snows (the Halloween world).
+	/// </summary>
+	// [EXT:winter-snow] OpenTPW's own extension; the original game has no ground snow
+	public static IOpenTpwExtension WinterSnow { get; } = new OpenTpwExtension( "opentpw.winter-snow", "Settling snow", new ModVersion( 1, 0, 0 ), DefaultEnabled: true, AffectsSimulation: false, PlayerSelectable: true );
+
 	/// <summary>All official extensions, in declaration order.</summary>
-	public static IReadOnlyList<IOpenTpwExtension> All { get; } = new[] { Online, CrossEditionObjects, SmarterGuests, GuestInsights, Pools, PoolGuestArt, Umbrellas, RainMood, Winter, WinterWeather, WinterCold, RestoredAdvice, Evening };
+	public static IReadOnlyList<IOpenTpwExtension> All { get; } = new[] { Online, CrossEditionObjects, SmarterGuests, GuestInsights, Pools, PoolGuestArt, Umbrellas, RainMood, Winter, WinterWeather, WinterCold, RestoredAdvice, Evening, WinterSnow };
 
 	public static IOpenTpwExtension? Find( string id ) => All.FirstOrDefault( extension => extension.Id == id );
 }

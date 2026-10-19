@@ -39,7 +39,7 @@ public enum WinterSeason
 }
 
 /// <summary>
-/// The winter extension's rules as pure functions (docs/WINTER.md): the kiosk's gate and the head item first, then mittens, the item colours and the percentages of both shops' scores. None of it is Theme Park World's behaviour
+/// The winter extension's rules as pure functions (docs/WINTER.md): the kiosk's one rule (a full guest scores 0) and the head item first, then mittens, the item colours and the percentages of both shops' scores. None of it is Theme Park World's behaviour
 /// (it has neither the shops nor the items), so every rule here is labelled <c>[EXT:winter-*]</c>; the guest simulation applies them (<see cref="GuestSimulation"/>). Nothing here draws from any random stream.
 /// </summary>
 public static class WinterRules
@@ -71,8 +71,13 @@ public static class WinterRules
 		_ => WinterSeason.None
 	};
 
-	/// <summary>Whether <paramref name="month"/> (1 to 12) is December, January or February.</summary>
-	public static bool IsWinterMonth( int month ) => SeasonOf( month ) == WinterSeason.Winter;
+	/// <summary>
+	/// The weather as the winter shops read it: snow is snow whether or not lightning flashes, then lightning is a storm, then rain. It differs from <see cref="UmbrellaRules.WeatherStateOf"/> only for snow with lightning (the Halloween
+	/// park, whose snow band is its lightning band), which the umbrellas and the rain mood read as a storm and the winter shops as the snowfall it is.
+	/// </summary>
+	// [EXT:winter-season-terms] the shops' own weather signal; the umbrellas' and the rain mood's map ([EXT:umbrellas-weather-map]) stays as it is
+	public static int WeatherStateOf( bool rain, bool lightning, bool snow ) =>
+		snow ? UmbrellaRules.WeatherSnow : lightning ? UmbrellaRules.WeatherStorm : rain ? UmbrellaRules.WeatherRain : UmbrellaRules.WeatherNone;
 
 	// ---- The score -------------------------------------------------------------------------------------------------
 
@@ -80,11 +85,11 @@ public static class WinterRules
 	public static bool SlotsFull( int items ) => (items & HeadItems) != 0 && (items & Mittens) != 0;
 
 	/// <summary>
-	/// Whether the winter kiosk scores 0 for a guest: both of its slots are full, or it neither snows nor is it December, January or February.
+	/// Whether the winter kiosk scores 0 for a guest: both of its slots are full, so it has nothing left to buy. This is the kiosk's only gate: it is no season or weather gate, the kiosk sells all year and its demand follows the
+	/// <see cref="WinterShopTerms"/> (<see cref="ApplyTerms"/>).
 	/// </summary>
-	// [EXT:winter-kiosk-gate] the kiosk sells only in snow or from December to February (the umbrella gate's twin); a guest whose slots are full has nothing left to buy
-	public static bool KioskScoresZero( int items, int weather, int month ) =>
-		SlotsFull( items ) || (weather != UmbrellaRules.WeatherSnow && !IsWinterMonth( month ));
+	// [EXT:winter-kiosk] a guest whose slots are full has nothing left to buy; the earlier snow-or-December-to-February gate is retired: the user decided on 2026-10-18/19 that the kiosk sells all year and its demand follows the season ("Het hele jaar, vraag via seizoen")
+	public static bool KioskScoresZero( int items ) => SlotsFull( items );
 
 	/// <summary>
 	/// The score after a winter shop's percentages: times the weather's percentage of the current weather when that is nonzero, then times the season's percentage of the calendar month when that is nonzero

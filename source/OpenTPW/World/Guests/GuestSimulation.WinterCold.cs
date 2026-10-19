@@ -5,7 +5,7 @@ public sealed partial class GuestSimulation
 {
 	/// <summary>
 	/// [EXT:winter-cold] The cold rule's settings while the <c>opentpw.winter-cold</c> extension is on; null (the default) leaves every guest's happiness to the other rules. The level sets it when it builds the park
-	/// (<see cref="FeatureGates.WinterCold"/>); the weather comes from <see cref="UmbrellaWeatherState"/>.
+	/// (<see cref="FeatureGates.WinterCold"/>); the weather comes from the winter shops' own signal (<see cref="WinterWeatherState"/>, falling back to <see cref="UmbrellaWeatherState"/>).
 	/// </summary>
 	public WinterColdSettings? WinterCold { get; set; }
 
@@ -16,10 +16,11 @@ public sealed partial class GuestSimulation
 	/// The cold step of one guest on its own update (every fourth park turn, after the rain mood step): in snow, on the first update of a qualifying day, the guest's happiness changes by the cold delta
 	/// (<see cref="WinterColdRules.Apply"/>), softened by its head item, its mittens and a recent glühwein. Every guest is touched, queued or riding ones too, as the rain mood is.
 	/// </summary>
+	// [EXT:winter-season-terms] the cold reads the winter shops' weather (WinterRules.WeatherStateOf): snow is snow even with lightning, which is every Halloween snowfall, so the rule applies where the snow is
 	// [EXT:winter-cold] same phase, same age and day gate as the rain mood (RainMoodAgeTurnsOf, UmbrellaRules.DayGateOpen), its own once-per-day mark (ColdMoodDay) so it runs with or without the rain mood
 	private void UpdateWinterCold( Guest guest, WinterColdSettings settings )
 	{
-		var weather = UmbrellaWeatherState?.Invoke() ?? UmbrellaRules.WeatherNone;
+		var weather = (WinterWeatherState ?? UmbrellaWeatherState)?.Invoke() ?? UmbrellaRules.WeatherNone;
 		var age = RainMoodAgeTurnsOf( guest );
 		if ( !WinterColdRules.Applies( age, weather, guest.ColdMoodDay ) )
 			return;

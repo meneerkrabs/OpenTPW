@@ -142,6 +142,31 @@ public class WinterColdTests
 	}
 
 	[TestMethod]
+	public void HalloweenSnowWithLightningIsSnowForTheColdRuleButAStormForTheUmbrellasMap()
+	{
+		// Halloween's snow band is its lightning band: the umbrellas' map reads a storm there, the winter shops' signal reads the snow, and the cold rule follows the shops
+		Assert.AreEqual( UmbrellaRules.WeatherStorm, UmbrellaRules.WeatherStateOf( rain: false, lightning: true, snow: true ) );
+		Assert.AreEqual( Snow, WinterRules.WeatherStateOf( rain: false, lightning: true, snow: true ) );
+		var cold = new Rig( cold: true );
+		cold.Simulation.UmbrellaWeatherState = () => UmbrellaRules.WeatherStorm;
+		cold.Simulation.WinterWeatherState = () => Snow;
+		var without = new Rig( false );
+		without.Simulation.UmbrellaWeatherState = () => UmbrellaRules.WeatherStorm;
+		var coldGuest = Aged( cold, 0.1 );
+		var plainGuest = Aged( without, 0.1 );
+		cold.RunTurns( 16 );
+		without.RunTurns( 16 );
+		Assert.AreEqual( plainGuest.Happiness - 2f, coldGuest.Happiness, 1e-4, "an undressed guest cools in Halloween snow although the umbrella map says storm" );
+		Assert.AreEqual( 1L, coldGuest.ColdMoodDay );
+		var elsewhere = new Rig( cold: true );
+		elsewhere.Simulation.UmbrellaWeatherState = () => UmbrellaRules.WeatherStorm;
+		elsewhere.Simulation.WinterWeatherState = () => UmbrellaRules.WeatherStorm;
+		var stormGuest = Aged( elsewhere, 0.1 );
+		elsewhere.RunTurns( 16 );
+		Assert.AreEqual( 0L, stormGuest.ColdMoodDay, "a real storm is not cold" );
+	}
+
+	[TestMethod]
 	public void AGuestInRainOrWithoutWeatherIsLeftAlone()
 	{
 		foreach ( var weather in new[] { UmbrellaRules.WeatherNone, UmbrellaRules.WeatherRain, UmbrellaRules.WeatherStorm } )

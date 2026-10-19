@@ -96,11 +96,11 @@ public class DeterminismTests
 				payments.Link( brolly.AttractionId, boughtBrolly!.Id );
 				Guests.UmbrellaWeatherState = () => Guests.TickCount is >= 1200 and < 4800 or >= 8400 and < 12000 ? UmbrellaRules.WeatherRain : UmbrellaRules.WeatherNone;
 			}
-			// [EXT:winter-extension] a winter kiosk at (10, 1) and a glühwein stall at (10, 8) on the path column, paid through the economy like the drinks shop, and a snowfall in two spells with a December that turns into May half way
+			// [EXT:winter-extension] a winter kiosk at (10, 1) and a glühwein stall at (10, 8) on the path column, paid through the economy like the drinks shop, and a snowfall in two spells with a May that turns into December half way
 			// (docs/WINTER.md, docs/DETERMINISM.md, "Winter"): guests buy a head item and then mittens, and drinks that are warm
 			if ( winterShops )
 			{
-				var kioskTerms = new WinterShopTerms( 0, 0, 200, 100, 0, 0, 0 );
+				var kioskTerms = new WinterShopTerms( 0, 0, 200, 150, 60, 20, 60 );
 				var stallTerms = new WinterShopTerms( 130, 130, 250, 150, 60, 20, 60 );
 				foreach ( var (name, cell, appearance, terms, ingredient) in new[] { ("Winter Kiosk", (10, 1), WinterRules.KioskAppearanceEffect, kioskTerms, 0), ("Gluehwein Stall", (10, 8), 0, stallTerms, 3) } )
 				{
@@ -116,7 +116,7 @@ public class DeterminismTests
 					winter.Add( (bridge, script) );
 				}
 				Guests.UmbrellaWeatherState = () => Guests.TickCount is >= 1200 and < 4800 or >= 8400 and < 12000 ? UmbrellaRules.WeatherSnow : UmbrellaRules.WeatherNone;
-				Guests.WinterMonth = () => Guests.TickCount < 6000 ? 12 : 5;
+				Guests.WinterMonth = () => Guests.TickCount < 6000 ? 5 : 12;
 			}
 			// [EXT:pools-attractions] a fixture that registers pool activities of its own (the water attractions pin)
 			prepareGuests?.Invoke( Guests );
@@ -475,8 +475,8 @@ public class DeterminismTests
 
 	/// <summary>
 	/// [EXT:winter-extension] The fixed run on the cross park with a winter kiosk at (10, 1) and a glühwein stall at (10, 8) on its path column, a snowfall from the 20th to the 80th second and from the 140th to the 200th and a calendar
-	/// that is December for the first 100 seconds and May after it (docs/WINTER.md, docs/DETERMINISM.md, "Winter"): guests buy a hat or earmuffs and then mittens in the snow and in December, the kiosk is shut in the clear May, and the stall
-	/// sells to every guest through its percentages. Returns the hash, the guests who bought an item, the item combinations seen (at one-second chunks), the guests with a complete outfit and the guests admitted.
+	/// that is May for the first 100 seconds and December after it (docs/WINTER.md, docs/DETERMINISM.md, "Winter"): guests buy a hat or earmuffs and then mittens, the kiosk sells all year at the season's percentage (summer-like 60 in May, 150 in December, 200 in
+	/// the snow) and the stall through its own percentages. Returns the hash, the guests who bought an item, the item combinations seen (every tick, since a guest who buys its mittens late may leave within a second), the guests with a complete outfit and the guests admitted.
 	/// </summary>
 	internal static (ulong Hash, int Buyers, HashSet<int> Items, int Dressed, int Admissions, int[] Sales) RunFixedParkWithWinterShopsInTheSnow()
 	{
@@ -492,9 +492,10 @@ public class DeterminismTests
 		var buyers = new HashSet<int>();
 		var items = new HashSet<int>();
 		var dressed = new HashSet<int>();
-		for ( var chunk = 0; chunk < PinnedRunTicks / 60; chunk++ )
+		// sampled every tick: a guest who buys its mittens late may leave the park within a second
+		for ( var tick = 0; tick < PinnedRunTicks; tick++ )
 		{
-			park.Run( 60 );
+			park.Run( 1 );
 			foreach ( var guest in park.Guests.Guests.Where( guest => guest.WarmItems != 0 ) )
 			{
 				buyers.Add( guest.Id );
@@ -507,7 +508,7 @@ public class DeterminismTests
 	}
 
 	/// <summary>[EXT:winter-extension] The pinned hash of <see cref="RunFixedParkWithWinterShopsInTheSnow"/> (docs/DETERMINISM.md, "Winter").</summary>
-	internal const ulong WinterFixedRunHash = 0x8F7023321586F670UL;
+	internal const ulong WinterFixedRunHash = 0xD4E2340C99394B73UL;
 
 	[TestMethod]
 	public void FixedRunWithWinterShopsInTheSnowIsTheSameInEveryProcessAndGuestsWearTheirPurchases()
@@ -520,6 +521,69 @@ public class DeterminismTests
 		Assert.AreEqual( hash, RunFixedParkWithWinterShopsInTheSnow().Hash, "repeatable in the process" );
 		Assert.AreNotEqual( FixedRunHash, hash, "the shops, the weather and the purchases change the run" );
 		Assert.AreEqual( WinterFixedRunHash, hash, $"0x{hash:X16} ({buyers} buyers, {dressed} fully dressed, {admissions} admitted, kiosk {sales[0]} and stall {sales[1]} sales)" );
+	}
+
+	/// <summary>The park day the December run starts on: day 320 is mid-November (December starts on day 335), so the run's 35 days cross the first December's rolls and their snow.</summary>
+	private const int DecemberRunStartDay = 320;
+
+	/// <summary>
+	/// [EXT:winter-weather] The fixed run on the cross park with a brolly shop and the rain mood rule on, driven by the jungle's real weather instead of a hand-made schedule: a <see cref="ParkWeather"/> (seed 21, the jungle's shipped bands) is stepped from the park's
+	/// day 320 (mid-November) over the run's 35 days, so it crosses the first December, with <paramref name="wintryDecembers"/> (the gate of the Wintry Decembers option) off or on. Off, December's rain bands are the original's thunderstorms and rain; on,
+	/// they are snow, which the umbrella rules and the rain mood read as snow (docs/DETERMINISM.md, "Wintry Decembers"). Returns the hash, the guests who bought an umbrella, the guests the rain mood changed and the weather state of every park turn, for the test to look at.
+	/// </summary>
+	internal static (ulong Hash, int Buyers, int Affected, string States) RunFixedParkWithABrollyShopAndRainMoodInTheJungleWeatherAcrossDecember( bool wintryDecembers )
+	{
+		var weather = new ParkWeather( ParkWeatherSnapshotTests.Jungle(), 21, 10, 10, wintryDecembers );
+		var startTurn = (long)DecemberRunStartDay * ParkCalendar.SecondsPerDay / ParkCalendar.SecondsPerTurn;
+		// the park's clock starts at the epoch: the weather steps from there to the start day (as Level steps it with the economy's tick), then follows the run
+		weather.AdvanceTo( ParkCalendar.TickOfTurn( 0 ) );
+		weather.AdvanceTo( ParkCalendar.TickOfTurn( startTurn ) );
+		var states = new System.Text.StringBuilder();
+		var park = new SyntheticPark( WorldSeed.Default, brollyShop: true, prepareGuests: guests =>
+		{
+			guests.RainMood = RainMoodSettings.Default;
+			guests.UmbrellaWeatherState = () =>
+			{
+				weather.AdvanceTo( ParkCalendar.TickOfTurn( startTurn + ParkCalendar.Turn( guests.TickCount ) ) );
+				return UmbrellaRules.WeatherStateOf( weather.Rain, weather.Lightning, weather.Snow );
+			};
+		} );
+		var buyers = new HashSet<int>();
+		var affected = new HashSet<int>();
+		for ( var chunk = 0; chunk < PinnedRunTicks / 60; chunk++ )
+		{
+			park.Run( 60 );
+			states.Append( UmbrellaRules.WeatherStateOf( weather.Rain, weather.Lightning, weather.Snow ) );
+			foreach ( var guest in park.Guests.Guests )
+			{
+				if ( guest.UmbrellaState != 0 )
+					buyers.Add( guest.Id );
+				if ( guest.RainMoodDay != 0 )
+					affected.Add( guest.Id );
+			}
+		}
+		return (park.Hash, buyers.Count, affected.Count, states.ToString());
+	}
+
+	/// <summary>[EXT:winter-weather] The pinned hash of <see cref="RunFixedParkWithABrollyShopAndRainMoodInTheJungleWeatherAcrossDecember"/> with the option off: the original's weather across December (docs/DETERMINISM.md, "Wintry Decembers").</summary>
+	internal const ulong JungleDecemberOffFixedRunHash = 0xF4A00471E60B9535UL;
+
+	/// <summary>[EXT:winter-weather] The pinned hash of the same run with the option on: December's rain bands are snow for the umbrellas and the rain mood (docs/DETERMINISM.md, "Wintry Decembers").</summary>
+	internal const ulong JungleDecemberWintryFixedRunHash = 0x296DA4DA6A8BE323UL;
+
+	[TestMethod]
+	public void UmbrellasAndRainMoodUnderTheJungleWeatherAcrossDecemberArePinnedWithWintryDecembersOffAndOn()
+	{
+		var off = RunFixedParkWithABrollyShopAndRainMoodInTheJungleWeatherAcrossDecember( false );
+		var on = RunFixedParkWithABrollyShopAndRainMoodInTheJungleWeatherAcrossDecember( true );
+		Assert.AreEqual( off.Hash, RunFixedParkWithABrollyShopAndRainMoodInTheJungleWeatherAcrossDecember( false ).Hash, "repeatable in the process" );
+		Assert.IsFalse( off.States.Contains( (char)('0' + UmbrellaRules.WeatherSnow) ), "the original's jungle never snows: " + off.States );
+		Assert.IsTrue( on.States.Contains( (char)('0' + UmbrellaRules.WeatherSnow) ), "with the option on December snows: " + on.States );
+		Assert.IsTrue( off.States.Contains( (char)('0' + UmbrellaRules.WeatherRain) ) || off.States.Contains( (char)('0' + UmbrellaRules.WeatherStorm) ), "and it rains before it: " + off.States );
+		Assert.AreNotEqual( off.Hash, on.Hash, "the guests meet a different sky, so the run differs" );
+		Assert.IsTrue( off.Buyers >= 1 && off.Affected >= 1, $"off: {off.Buyers} buyers, {off.Affected} affected by the rain mood" );
+		Assert.AreEqual( JungleDecemberOffFixedRunHash, off.Hash, $"off: 0x{off.Hash:X16} ({off.Buyers} buyers, {off.Affected} affected; {off.States})" );
+		Assert.AreEqual( JungleDecemberWintryFixedRunHash, on.Hash, $"on: 0x{on.Hash:X16} ({on.Buyers} buyers, {on.Affected} affected; {on.States})" );
 	}
 
 	[TestMethod]
@@ -535,6 +599,10 @@ public class DeterminismTests
 				Assert.AreEqual( PoolsChangingRoomFixedRunHash, RunFixedParkWithPoolsAndAChangingRoom().Hash, $"the changing room run, winter {winter}, wintry Decembers {weather}" );
 				Assert.AreEqual( UmbrellasFixedRunHash, RunFixedParkWithABrollyShopInTheRain().Hash, $"the umbrellas run, winter {winter}, wintry Decembers {weather}" );
 				Assert.AreEqual( RainMoodFixedRunHash, RunFixedParkInTheRainWithRainMood( brollyShop: false ).Hash, $"the rain mood run, winter {winter}, wintry Decembers {weather}" );
+				Assert.AreEqual( RainMoodWithUmbrellasFixedRunHash, RunFixedParkInTheRainWithRainMood( brollyShop: true ).Hash, $"the rain mood run with umbrellas, winter {winter}, wintry Decembers {weather}" );
+				// the guests under real jungle weather across a December, the weather built with the option's gate as Level builds it: the option off is the original's weather, on is the wintry one
+				var december = RunFixedParkWithABrollyShopAndRainMoodInTheJungleWeatherAcrossDecember( FeatureGates.WinterWeather );
+				Assert.AreEqual( weather ? JungleDecemberWintryFixedRunHash : JungleDecemberOffFixedRunHash, december.Hash, $"umbrellas and rain mood across a December, winter {winter}, wintry Decembers {weather}" );
 			}
 	}
 
@@ -636,7 +704,7 @@ public class DeterminismTests
 	internal const ulong WinterColdFixedRunHash = 0x9E74A906AB249401UL;
 
 	/// <summary>[EXT:winter-cold] The pinned hash of <see cref="RunFixedParkInTheSnowWithCold"/> with the cold rule, the rain mood, the brolly shop and the winter shops all on (docs/DETERMINISM.md, "Winter cold").</summary>
-	internal const ulong WinterColdEverythingFixedRunHash = 0x7589B229530055D6UL;
+	internal const ulong WinterColdEverythingFixedRunHash = 0xCCEA2E164DF6888AUL;
 
 	[TestMethod]
 	public void FixedRunInTheSnowWithColdIsTheSameInEveryProcessAndMovesTheRun()

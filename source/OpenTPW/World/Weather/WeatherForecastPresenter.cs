@@ -50,7 +50,7 @@ public sealed class WeatherForecastPresenter : Entity
 	protected override void OnUpdate()
 	{
 		var quality = weather.Forecast;
-		var bands = quality is { } value ? weather.BandsOf( value ) : default;
+		var bands = weather.ForecastBands;
 		// Simulation-scaled time: a paused park (scale 0) freezes the transient line mid-display.
 		var scale = Level.SimulationTimeScale;
 		var delta = Math.Clamp( Time.Delta, 0f, MaximumStepSeconds ) * (float.IsFinite( scale ) && scale > 0f ? scale : 0f);

@@ -906,7 +906,7 @@ public static class ParkSaveFile
 			Require( member.ThingId is >= 0 and <= ThingPool.Capacity && (member.ThingId == 0 || staffThingIds.Add( member.ThingId )), $"staff {member.Id} thing id {member.ThingId}" );
 			Require( Enum.IsDefined( member.Type ) && member.Grade is >= 0 and < BalanceSettings.GradeCount && member.TrainingPoints is >= 0 and < ParkStaff.TrainingPointsPerGrade && member.Variant is null or >= 0, $"staff {member.Id}" );
 			Require( member.Happiness is >= 0f and <= StaffVitals.Maximum && member.Energy is >= 0f and <= StaffVitals.Maximum, $"staff {member.Id} vitals" );
-			Require( member.Name is null || (member.Name.Length is > 0 and <= StaffMember.MaximumNameLength && !member.Name.Contains( '\0' )), $"staff {member.Id} name" );
+			Require( member.Name is null || (member.Name.Length <= StaffMember.MaximumNameLength && !member.Name.Contains( '\0' )), $"staff {member.Id} name" );
 			Require( member.ResumeDestination is null || member.ResumeDestination is [>= 0 and < ParkLitter.MapSize * 256, >= 0 and < ParkLitter.MapSize * 256], $"staff {member.Id} resume destination" );
 			Require( member.ResumeClaimTurn is not { } resumeTurn || resumeTurn >= 0 && resumeTurn <= ParkCalendar.Turn( data.Tick ), $"staff {member.Id} resume claim turn" );
 			Require( (member.BusyTurns is null) != (member.BusyTicks is null) && (member.BusyTurns ?? member.BusyTicks!.Value) >= 0 && (member.AssignedInstanceId == 0 || ids.Contains( member.AssignedInstanceId )), $"staff {member.Id} job" );

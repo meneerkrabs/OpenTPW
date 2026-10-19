@@ -323,6 +323,11 @@ public sealed class UiLabelGroup
 
 public sealed class UiLabel : UiElement
 {
+	/// <summary>Optional title action, preserving label art and text layout; ordinary labels remain inert.</summary>
+	public Action? Clicked { get; set; }
+	public override bool Focusable => Visible && Enabled && Clicked != null;
+	public override void Activate() { if ( Visible && Enabled ) Clicked?.Invoke(); }
+
 	public Func<string> Text { get; set; } = () => "";
 	public Func<UiFonts, FontAtlas> Font { get; set; } = fonts => fonts.Label;
 	public RgbaByte Color { get; set; } = UiColors.Text;

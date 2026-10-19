@@ -11,6 +11,9 @@ public sealed class UiTextField : UiElement
 {
 	public string Text { get; set; } = "";
 	public int MaximumLength { get; set; } = 64;
+	/// <summary>Whether the initial text is selected for replacement by the next edit.</summary>
+	public bool AllSelected { get; private set; }
+	public void SelectAll() => AllSelected = true;
 	public bool Password { get; set; }
 	/// <summary>Left inset of the typed text in authored units; the original login fields carry their labels inside (data:0x505f4).</summary>
 	public float TextInset { get; set; }
@@ -39,6 +42,13 @@ public sealed class UiTextField : UiElement
 	public void Type( string typed, int backspaces )
 	{
 		var text = Text;
+		if ( AllSelected && (backspaces > 0 || MaximumLength >= 1 && typed.Any( c => !char.IsControl( c ) && !char.IsSurrogate( c ) )
+			|| MaximumLength >= 2 && Enumerable.Range( 0, Math.Max( 0, typed.Length - 1 ) ).Any( i => char.IsSurrogatePair( typed, i ) )) )
+		{
+			text = "";
+			AllSelected = false;
+			backspaces = 0;
+		}
 		for ( var index = 0; index < backspaces && text.Length > 0; index++ )
 			text = text.Length >= 2 && char.IsLowSurrogate( text[^1] ) && char.IsHighSurrogate( text[^2] ) ? text[..^2] : text[..^1];
 		for ( var at = 0; at < typed.Length; at++ )
@@ -79,7 +89,11 @@ public sealed class UiTextField : UiElement
 			shown += "_";
 		var scale = rect.Height / Bounds.Height;
 		var inset = MathF.Max( rect.Height * 0.25f, TextInset * scale );
-		context.DrawText( Font( context.Fonts ), shown, new UiRect( rect.X + inset, rect.Y, rect.Width - inset - rect.Height * 0.25f, rect.Height ), Enabled && !prompt ? UiColors.Value : UiColors.Disabled );
+		var textRect = new UiRect( rect.X + inset, rect.Y, rect.Width - inset - rect.Height * 0.25f, rect.Height );
+		// The selection wash/caret use the host text-field style, not original hilight-art pixel parity.
+		if ( focused && AllSelected && Text.Length > 0 )
+			context.Batch.AddRectangle( textRect, new RgbaByte( 60, 90, 200, 170 ) );
+		context.DrawText( Font( context.Fonts ), shown, textRect, Enabled && !prompt ? UiColors.Value : UiColors.Disabled );
 	}
 }
 

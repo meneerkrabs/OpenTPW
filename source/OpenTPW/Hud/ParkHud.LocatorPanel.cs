@@ -238,6 +238,7 @@ public sealed partial class ParkHud
 	{
 		CloseOpenWindowsForLocator();
 		Locator.Open( mode, role, actorId );
+		locatorCameraTarget = null;
 		// [BIN:TPW-EXE:0x004b4099 locator help] 0x4b3f60 ends by posting help 0x11f (287) through 0x486b00 when the chosen role is 6 (a visitor) and 0xc6 (198) for every other role or none, whether or not an actor was given
 		host?.HelpPosted?.Invoke( Locator.Role == LocatorModel.VisitorRole ? AdvisorToolHelp.VisitorLocator : AdvisorToolHelp.StaffLocator );
 		if ( Locator.Following )
@@ -316,7 +317,9 @@ public sealed partial class ParkHud
 	{
 		if ( Locator.Mode != LocatorMode.None && (InfoArmOpen || OpenedMessage != null || CameraPanelOpen || IsRiding) )
 			CloseLocator();
-		if ( Locator.ActorId != 0 && !TryLocatorActorPosition( out _ ) )
+		// Staff identity survives temporarily unavailable coordinates. Keep the existing visitor position-loss policy.
+		if ( Locator.ActorId != 0 && (Locator.Role == LocatorModel.VisitorRole
+			? !TryLocatorActorPosition( out _ ) : !StaffMembers.Any( member => member.Id == Locator.ActorId )) )
 			Locator.LoseActor();
 		if ( Locator.Following )
 		{

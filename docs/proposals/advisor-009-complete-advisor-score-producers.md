@@ -1,5 +1,9 @@
 # ADVISOR-009: Complete advisor score producers
 
+## Current scope (2026-10-19)
+
+The text below is the retained 2026-10-18 proposal snapshot. Its “current residual” counts and plan-only/draft wording describe that historical baseline, not the current implementation. The current [advisor inventory](../reverse/ADVISOR-SCAN.md) has nine evidence-gated scan callbacks and three evidence-gated help routes remaining. This PR's bounded correction classifies the existing first-challenge-offer message 344 as event/wired and updates the inventory regression and documentation; it does not implement the remaining routes or retire ADVISOR-009.
+
 ## Status and classification
 - Classification: approximation.
 - Plan-only local proposal: no runtime implementation, annotation retirement, publication or merge performed.
@@ -36,3 +40,4 @@ Decode inputs, score formulas and producer reachability; distinguish 21 constant
 - Stop at a reviewable design/evidence package; this draft authorizes no tag removal or parity claim.
 - Do not publish original media or private game data in fixtures, screenshots, or commits.
 - A future implementation needs its own reviewed evidence and acceptance results; do not treat this proposal as merge-ready.
+

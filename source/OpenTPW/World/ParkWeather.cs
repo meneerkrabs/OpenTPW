@@ -150,8 +150,26 @@ public sealed class ParkWeather
 	internal WeatherQualityBands ForecastBandsOf( int quality, long applyAtSeconds )
 	{
 		var bands = BandsOf( quality );
-		return bands.Rain && IsWintryRoll( applyAtSeconds ) && settings.SnowBandIsEmpty ? new WeatherQualityBands( true, false, false ) : bands;
+		return bands.Rain && IsWintryRoll( applyAtSeconds ) && settings.SnowBandIsEmpty ? new WeatherQualityBands( true, false, false ) : AsWinterSnow( bands );
 	}
+
+	/// <summary>
+	/// The current weather's bands as the forecast presentation shows them: the applied flags, except that with the always winter option on snow with lightning and no rain (Halloween, whose snow band is its lightning band) reads as plain
+	/// snow, as <see cref="ForecastBandsOf"/> reads its forecast.
+	/// </summary>
+	internal WeatherQualityBands CurrentBands => AsWinterSnow( new WeatherQualityBands( Snow, Rain, Lightning ) );
+
+	/// <summary>
+	/// [EXT:winter-always] Snow with lightning and no rain reads as plain snow while the always winter option is on, so a Halloween park's winter does not announce thunderstorms all year. The winter shops read that weather as snow too
+	/// (<see cref="Winter.WinterRules.WeatherStateOf"/>); the umbrellas and the rain mood keep reading it as a storm. Off, the bands are returned unchanged (main's presentation, December included).
+	/// </summary>
+	// [EXT:winter-always] presentation only: the flags, the rolls and the pinned runs are untouched
+	private WeatherQualityBands AsWinterSnow( WeatherQualityBands bands ) =>
+		alwaysWinter && bands is { Snow: true, Lightning: true, Rain: false } ? new WeatherQualityBands( true, false, false ) : bands;
+
+	/// <summary>Whether the always winter option can hold a park with these weather keys on December's row: whether it can snow from that row (see <see cref="HoldsWinterRow"/>). Space cannot.</summary>
+	// [EXT:winter-always] the winter shops' all-year demand follows the same test, so space parks keep their month-by-month demand
+	public static bool CanSnowFromTheWinterRow( SamSettings standard ) => WeatherSettings.From( standard ).CanSnowFromTheWinterRow;
 
 	/// <summary>
 	/// Whether the roll of the forecast applying at <paramref name="applyAtSeconds"/> is wintry: always while the always winter option is on ([EXT:winter-always]), otherwise when the wintry Decembers option is on and the roll was made in

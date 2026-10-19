@@ -193,6 +193,37 @@ public class WinterAlwaysTests
 		Assert.AreEqual( announced, new WeatherQualityBands( applied.Snow, applied.Rain, applied.Lightning ), "the snow it announced is the snow that fell" );
 	}
 
+	[TestMethod]
+	public void AHalloweenWinterSaysSnowNotThunderstorms()
+	{
+		var snow = new WeatherQualityBands( true, false, false );
+		var snowWithLightning = new WeatherQualityBands( true, false, true );
+		ParkWeather At( bool alwaysWinter, int quality )
+		{
+			var weather = new ParkWeather( WinterWeatherTests.Hallow(), 21, 10, 10, alwaysWinter: alwaysWinter );
+			weather.AdvanceTo( ParkCalendar.TickOfTurn( TurnOfDay( JuneDay ) ) );
+			weather.DebugPostForecast( quality );
+			return weather;
+		}
+		Assert.AreEqual( snowWithLightning, At( false, 5 ).ForecastBands, "option off: Halloween's own bands, read as thunderstorms" );
+		Assert.AreEqual( OpenTpwText.WeatherThunderstorms, WeatherForecastState.KindKey( At( false, 5 ).ForecastBands ) );
+		var applied = At( true, 5 );
+		Assert.AreEqual( snow, applied.ForecastBands, "option on: the forecast says snow" );
+		Assert.AreEqual( OpenTpwText.WeatherSnow, WeatherForecastState.KindKey( applied.ForecastBands ) );
+		for ( var turn = TurnOfDay( JuneDay ) + 1; applied.Forecast != null; turn++ )
+			applied.AdvanceTo( ParkCalendar.TickOfTurn( turn ) );
+		Assert.IsTrue( applied.Snow && applied.Lightning, "the applied weather keeps its flags: snow with lightning" );
+		Assert.AreEqual( snow, applied.CurrentBands, "the current weather reads as snow as well" );
+	}
+
+	[TestMethod]
+	public void SpaceKeepsItsMonthByMonthWinterShopDemand()
+	{
+		Assert.IsTrue( ParkWeather.CanSnowFromTheWinterRow( ParkWeatherSnapshotTests.Jungle() ), "jungle" );
+		Assert.IsTrue( ParkWeather.CanSnowFromTheWinterRow( WinterWeatherTests.Hallow() ), "Halloween" );
+		Assert.IsFalse( ParkWeather.CanSnowFromTheWinterRow( WinterWeatherTests.Space() ), "space: the shops keep their month's demand" );
+	}
+
 	// ---- Resume ----------------------------------------------------------------------------------------------------
 
 	[TestMethod]

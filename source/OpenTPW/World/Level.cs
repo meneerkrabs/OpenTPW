@@ -494,9 +494,9 @@ public partial class Level : IDisposable
 				Guests.WinterWeatherState = () => Weather is { } weather ? WinterRules.WeatherStateOf( weather.Rain, weather.Lightning, weather.Snow ) : UmbrellaRules.WeatherNone;
 			if ( Guests != null )
 				Guests.WinterMonth = () => Park?.Economy is { } economy ? ParkCalendar.DateTimeAt( economy.Tick ).Month : 0;
-			// [EXT:winter-always] with the always winter option on the winter shops sell at their winter demand all year
+			// [EXT:winter-always] with the always winter option on the winter shops sell at their winter demand all year, in the parks the option holds on December's row (not space, whose seasons it leaves alone)
 			if ( Guests != null )
-				Guests.WinterAlways = FeatureGates.WinterAlways;
+				Guests.WinterAlways = FeatureGates.WinterAlways && Park?.Economy?.Settings?.Standard is { } standard && ParkWeather.CanSnowFromTheWinterRow( standard );
 			// [EXT:rain-mood-extension] the rain mood rule is on while the extension is: the guests read the same weather state as the umbrella rules
 			if ( Guests != null )
 				Guests.RainMood = RainMoodFor( FeatureGates.RainMood );

@@ -32,10 +32,10 @@ public enum ParkCommandKind : byte
 	PlacePrototype = 20,
 	/// <summary>Removes the developer prototype ride (<see cref="RemovePrototypeCommand"/>).</summary>
 	RemovePrototype = 21,
-	/// <summary>The winning screen's exit: removes the Instant Action research finale (<see cref="DismissFinaleCommand"/>).</summary>
-	DismissFinale = 60,
 	/// <summary>Opens or closes the developer prototype ride (<see cref="SetPrototypeRunningCommand"/>).</summary>
-	SetPrototypeRunning = 61,
+	SetPrototypeRunning = 22,
+	/// <summary>The winning screen's exit: removes the Instant Action research finale (<see cref="DismissFinaleCommand"/>).</summary>
+	DismissFinale = 23,
 }
 
 /// <summary>

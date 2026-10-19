@@ -528,7 +528,7 @@ internal sealed partial class ParkResumeSmokeTest : IDisposable
 			"the sold shop's payment and economy links are removed" );
 		// Place a new object after the sale: the allocator still works and the new object binds.
 		var feature = level.Objects.Catalog.Buildable.First( entry => entry.Category == ObjectCategory.Feature
-			&& economy.Research.IsAvailable( entry.InfoId ) && economy.Balance >= entry.BuildCost && entry.ModId != OpenTPW.Mods.OfficialExtensions.Pools.Id );
+			&& economy.Research.IsAvailable( entry.InfoId ) && economy.Balance >= entry.BuildCost && entry.ModId != OpenTPW.Mods.OfficialExtensions.Pools.Id && entry.ModId != OpenTPW.Mods.OfficialExtensions.Evening.Id );
 		var featureSite = FindSite( feature, 0, near: FirstWalkable() );
 		var placed = level.PlaceObject( feature, featureSite.X, featureSite.Y, 0 );
 		Require( placed != null && level.GetEconomyInstance( placed! ) != null, "a new object placed after the sale binds to the economy" );

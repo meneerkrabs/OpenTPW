@@ -168,6 +168,27 @@ public class SdtEntryTests
 		CollectionAssert.AreEqual( expectedFile.Data, actualFile.Data );
 	}
 
+	private static void AssertSameBank( SdtArchive expected, SdtArchive actual )
+	{
+		Assert.AreEqual( expected.soundFiles.Count, actual.soundFiles.Count );
+		CollectionAssert.AreEqual( expected.SkippedEntries, actual.SkippedEntries );
+		for ( var index = 0; index < expected.soundFiles.Count; index++ )
+		{
+			var expectedFile = expected.soundFiles[index];
+			var actualFile = actual.soundFiles[index];
+			Assert.AreEqual( expectedFile.Header, actualFile.Header );
+			Assert.AreEqual( expectedFile.Name, actualFile.Name );
+			Assert.AreEqual( expectedFile.SampleRate, actualFile.SampleRate );
+			Assert.AreEqual( expectedFile.Channels, actualFile.Channels );
+			Assert.AreEqual( expectedFile.BitsPerSample, actualFile.BitsPerSample );
+			Assert.AreEqual( expectedFile.SoundType, actualFile.SoundType );
+			Assert.AreEqual( expectedFile.RawSampleField, actualFile.RawSampleField );
+			CollectionAssert.AreEqual( expectedFile.SoundData, actualFile.SoundData );
+			CollectionAssert.AreEqual( expectedFile.FrameData, actualFile.FrameData );
+			CollectionAssert.AreEqual( expectedFile.Data, actualFile.Data );
+		}
+	}
+
 	private sealed class FragmentedSeekableStream : Stream
 	{
 		private readonly MemoryStream inner;
@@ -245,12 +266,113 @@ public class SdtEntryTests
 		}
 	}
 
+	private sealed class TruncatedSeekableStream : Stream
+	{
+		private readonly MemoryStream inner;
+		private readonly long reportedLength;
+
+		public bool IsDisposed { get; private set; }
+
+		public TruncatedSeekableStream( byte[] bytes, long reportedLength )
+		{
+			inner = new MemoryStream( bytes, false );
+			this.reportedLength = reportedLength;
+		}
+
+		public override bool CanRead => !IsDisposed;
+		public override bool CanSeek => !IsDisposed;
+		public override bool CanWrite => false;
+		public override long Length => reportedLength;
+		public override long Position
+		{
+			get => inner.Position;
+			set => inner.Position = value;
+		}
+
+		public override int Read( byte[] buffer, int offset, int count ) => inner.Read( buffer, offset, count );
+		public override int Read( Span<byte> buffer ) => inner.Read( buffer );
+		public override long Seek( long offset, SeekOrigin origin ) => inner.Seek( offset, origin );
+		public override void Flush() { }
+		public override void SetLength( long value ) => throw new NotSupportedException();
+		public override void Write( byte[] buffer, int offset, int count ) => throw new NotSupportedException();
+
+		protected override void Dispose( bool disposing )
+		{
+			IsDisposed = true;
+			if ( disposing )
+				inner.Dispose();
+			base.Dispose( disposing );
+		}
+	}
+
 	[TestMethod]
 	public void DisposeReleasesTheArchive()
 	{
 		var archive = new SdtArchive( new MemoryStream( CreateBank( ("a.mp2", 22050, 36, 0, new byte[] { 0 }) ) ) );
 		archive.Dispose();
 		Assert.ThrowsException<ObjectDisposedException>( () => archive.GetData( 0, 4 ) );
+	}
+
+	[TestMethod]
+	public void FragmentedSeekableBankEqualsTheCompleteBank()
+	{
+		var bank = CreateBank(
+			("first.mp2", 44100, 37, 0x12345, new byte[] { 0xFF, 0xF5, 0x62, 0xC0, 1, 2, 3, 0 }),
+			("second.mp", 22050, 36, 7, new byte[] { 1 }));
+
+		using var expected = new SdtArchive( new MemoryStream( bank ) );
+		using var actual = new SdtArchive( new FragmentedSeekableStream( bank, 3 ) );
+		Assert.AreEqual( 2, expected.soundFiles.Count );
+
+		AssertSameBank( expected, actual );
+	}
+
+	[TestMethod]
+	public void BankAtCurrentPositionIsReadFromThatPositionAndDisposesTheSource()
+	{
+		var bank = CreateBank( ("beep.mp2", 44100, 37, 0x12345, new byte[] { 0xFF, 0xF5, 0x62, 0xC0, 1, 2, 3, 0 }) );
+		var prefixed = new byte[bank.Length + 5];
+		prefixed.AsSpan( 0, 5 ).Fill( 0xAA );
+		bank.CopyTo( prefixed, 5 );
+
+		var source = new MemoryStream( prefixed ) { Position = 5 };
+		using var expected = new SdtArchive( new MemoryStream( bank ) );
+		using var actual = new SdtArchive( source );
+
+		AssertSameBank( expected, actual );
+		Assert.ThrowsException<ObjectDisposedException>( () => source.Position = 0 );
+	}
+
+	[TestMethod]
+	public void PrematureEndOfStreamThrowsAndDisposesTheSource()
+	{
+		var bank = CreateBank( ("beep.mp2", 44100, 37, 0x12345, new byte[] { 0xFF, 0xF5, 0x62, 0xC0, 1, 2, 3, 0 }) );
+		var source = new TruncatedSeekableStream( bank[..^1], bank.Length );
+
+		Assert.ThrowsException<EndOfStreamException>( () => new SdtArchive( source ) );
+		Assert.IsTrue( source.IsDisposed );
+	}
+
+	[TestMethod]
+	public void PathAndStreamConstructorsProduceTheSameBank()
+	{
+		var bank = CreateBank(
+			("first.mp2", 44100, 37, 0x12345, new byte[] { 0xFF, 0xF5, 0x62, 0xC0, 1, 2, 3, 0 }),
+			("second.mp", 22050, 36, 7, new byte[] { 1 }));
+		var root = Directory.CreateTempSubdirectory( "opentpw-sdt-bank-" ).FullName;
+		try
+		{
+			var path = Path.Combine( root, "bank.sdt" );
+			File.WriteAllBytes( path, bank );
+			using var fromPath = new SdtArchive( path );
+			using var fromStream = new SdtArchive( new MemoryStream( bank ) );
+			Assert.AreEqual( 2, fromStream.soundFiles.Count );
+			AssertSameBank( fromStream, fromPath );
+		}
+		finally
+		{
+			Directory.Delete( root, true );
+		}
 	}
 
 	/// <summary>Locates the installed game data through OPENTPW_GAME_PATH; inconclusive when unset.</summary>

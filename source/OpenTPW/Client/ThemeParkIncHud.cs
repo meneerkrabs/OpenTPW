@@ -180,6 +180,8 @@ public sealed class ThemeParkIncHud
 			RowHeight = 52,
 			Visible = false,
 			RowActivated = index => ArmBuild( catalog.GetItems( category )[index].Entry! ),
+			// [EXT:tpi-text-hud] the text HUD's build list clicks like its buttons; no original Theme Park Inc list is claimed (Theme Park World's list rows are silent, UiScrollList.Activate)
+			ClicksOnActivate = true,
 			Bounds = new UiRect( 244, 380, 1560, 1000 ),
 			Anchor = UiAnchor.TopLeft
 		} );

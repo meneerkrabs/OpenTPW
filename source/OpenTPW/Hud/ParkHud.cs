@@ -424,6 +424,7 @@ public sealed partial class ParkHud
 			GameAudio.PlayUi( GameAudio.ErrorEvent );
 			return;
 		}
+		// [BIN:TPW-EXE:0x4ac7f6 buy row refusal] on the PC the buy list's row activation (0x400, 0x4ac4f9) plays the error 0x1D (0x486ae0) when the money is below the price (0x4ac6c7) or a golden-ticket row cannot be paid (0x4ac5b0), and starts no tool; the row itself adds no click
 		if ( Status.HasEconomy && (Status.PriceOf( item ) ?? item.Cost) > Status.Money )
 		{
 			PostMessage( strings.Help( 152 ) );

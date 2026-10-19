@@ -577,7 +577,7 @@ public sealed class UiButton : UiElement
 	{
 		if ( !Enabled || Inert )
 			return;
-		// [BIN:TPW-EXE:0x485780 UI message hook] installed once by the UI init 0x489ca0 (via 0x6590ea, stored at 0xfaa5fc) and called for every control message by the dispatcher 0x658d9f and the queue pump 0x658e42 (the call at 0x658eb2) before the control's own procedure. Message 0x100 plays cat_ui 0x1F, or 0xBD when the receiver's style word +0x48 has bit 0x10 (the choice at 0x4857cb). The button class 0x668f9c is the only sender of 0x100 for a mouse release over a button: it posts to the button's parent ([+0x60]) at 0x6691eb through the queue 0x658ccc, on a release over the button that was pressed. Window procedures also send 0x100 to their own window (0x48d83b, 0x49973e, 0x49ec53, 0x4a6df5 (via the dispatcher 0x658d9f), 0x4b640a, 0x4b9f06, 0x4bb020 and 0x4bfc29; ids -1, -2 and 0xe059, some on 0x802 or 0x804), and the hook clicks for those too by that window's own style; whether OpenTPW's keyboard paths match those clicks is not read. A release after auto-repeat has started (hold state +0x15a is 2, 0x668eff) returns false and posts no 0x100, so the sound is skipped then too.
+		// [BIN:TPW-EXE:0x485780 UI message hook] installed once by the UI init 0x489ca0 (via 0x6590ea, stored at 0xfaa5fc) and called for every control message by the dispatcher 0x658d9f and the queue pump 0x658e42 (the call at 0x658eb2) before the control's own procedure. Message 0x100 plays cat_ui 0x1F, or 0xBD when the receiver's style word +0x48 has bit 0x10 (the choice at 0x4857cb). The button class 0x668f9c is the only sender of 0x100 for a mouse release over a button: it posts to the button's parent ([+0x60]) at 0x6691eb through the queue 0x658ccc, on a release over the button that was pressed. Window procedures also send 0x100 to their own window (0x48d83b, 0x49973e, 0x49ec53, 0x4a6df5 (via the dispatcher 0x658d9f), 0x4b640a, 0x4b9f06, 0x4bb020 and 0x4bfc29; ids -1, -2 and 0xe059, on 0x802 or 0x804), and the hook clicks for those too by that window's own style (style 1 in all eight: 0x1F); OpenTPW's dialogs route Enter to their tick's Activate there (docs/AUDIO.md, "List owners"). A release after auto-repeat has started (hold state +0x15a is 2, 0x668eff) returns false and posts no 0x100, so the sound is skipped then too.
 		if ( HoldState != 2 )
 			GameAudio.PlayUi( ClickSound );
 		Clicked?.Invoke();
@@ -848,24 +848,3 @@ public sealed class UiOptionRow : UiElement
 	}
 }
 
-/// <summary>A selectable line in a list (load screen).</summary>
-public sealed class UiListItem : UiElement
-{
-	public Func<string> Text { get; set; } = () => "";
-	public Action? Clicked { get; set; }
-	public override bool Focusable => Visible && Enabled;
-	// [BIN:TPW-EXE:0x485780 UI message hook] the hook sees every control's activation, so the front end's list lines click like its buttons
-	public override void Activate()
-	{
-		GameAudio.PlayUi( GameAudio.ClickEvent );
-		Clicked?.Invoke();
-	}
-
-	public override void Draw( UiContext context, bool focused, bool pressed )
-	{
-		var rect = ScreenRect( context.Canvas );
-		if ( focused )
-			context.Batch.AddRectangle( rect, new RgbaByte( 60, 90, 200, 160 ) );
-		context.DrawText( context.Fonts.Label, Text(), new UiRect( rect.X + rect.Height * 0.3f, rect.Y, rect.Width, rect.Height ), focused ? UiColors.Highlight : UiColors.Text );
-	}
-}

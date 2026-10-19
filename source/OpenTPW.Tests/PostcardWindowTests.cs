@@ -91,6 +91,27 @@ public class PostcardWindowTests
 		CollectionAssert.AreEqual( new[] { "a", "b", "c d", "e" }, OnlineScreens.PostcardRecipients( "a;b, c d\ne ;" ) );
 
 	[TestMethod]
+	public void MixedRecipientsSaveOfflineAndInvalidAddressesUseTheOriginalLocalizedRefusal() => WithScreens( ( screens, session, stack ) =>
+	{
+		screens.ShowSendPostcard();
+		var screen = stack.Top!;
+		var to = (UiTextField)screen.Find( "to" )!;
+		to.Text = "Bob Smith; invalid@";
+		((UiTextField)screen.Find( "message" )!).Text = "Keep my message";
+		((UiButton)screen.Find( "ok" )!).Clicked!();
+		Assert.AreEqual( "postcardRecipients", stack.Top!.Name );
+		Assert.AreEqual( OnlineStrings.Ui( OnlineStrings.InvalidEmailAddresses, "Invalid email addresses in the send to field" ), ((UiLabel)stack.Top.Find( "message" )!).Text() );
+		Assert.AreEqual( 0, session.Folders.List( session.Folders.Outbox ).Count );
+		stack.Pop();
+		Assert.AreSame( screen, stack.Top );
+		Assert.AreEqual( "Keep my message", ((UiTextField)screen.Find( "message" )!).Text );
+		to.Text = "Bob Smith; card@example.test";
+		((UiButton)screen.Find( "ok" )!).Clicked!();
+		Assert.AreEqual( "hud", stack.Top!.Name );
+		CollectionAssert.AreEqual( new[] { "Bob Smith", "card@example.test" }, session.Folders.List( session.Folders.Outbox ).Single().Card!.Manifest.To.ToArray() );
+	} );
+
+	[TestMethod]
 	public void UnsupportedPlatformOperationPreservesTheDraftAndAllowsClosing() => WithScreens( ( screens, session, stack ) =>
 	{
 		screens.ShowSendPostcard();

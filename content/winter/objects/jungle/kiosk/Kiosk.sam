@@ -1,0 +1,66 @@
+#
+#	OpenTPW winter extension: the winter kiosk (modelled on the keys of the original balloon shop, a shop). It sells a head item (a bobble hat or earmuffs) and then mittens.
+#	Every number marked "OpenTPW's own value" is a choice of this extension (docs/WINTER.md, [EXT:winter-kiosk]). Nothing is read from Theme Park World's or Theme Park Inc's data.
+#
+Info.Id			64010		placeholder: objects.json replaces it with the object's own id
+Info.Name		"Winter Kiosk"
+Info.IsChoosable	1
+Info.HasQueue		0		a shop: guests walk to it and buy, no queue
+Info.WhichUIType	1		a shop (the build menu's Shops tab)
+
+# A 2 x 2 market hut. The entrance '2' (where the customer stands, facing the counter) is the lower left cell.
+Info.Shape
+---
+**
+2*
+---
+
+# The construction fence for 2 x 2 cells: the four corner pieces
+Info.Hoarding
+---
+F7
+LJ
+---
+
+# 1 = a gift shop's kind (not 5, which the challenges and the costume statistics would count as costumes; OpenTPW's own value)
+UsageInfo.ShopType			1
+UsageInfo.InitCostOfGoods		10		OpenTPW's own value
+UsageInfo.InitPricePerUse		25		OpenTPW's own value (decision of October 18, 2026)
+UsageInfo.EntryCellStandPosX	0.5
+UsageInfo.EntryCellStandPosY	0.5
+UsageInfo.ExitCellAppearPosX	0.5
+UsageInfo.ExitCellAppearPosY	0.5
+UsageInfo.RideHandlesSprite	1		the shop's script hides the customer while serving (as the balloon shop)
+UsageInfo.MinCapacity		0		always zero for shops
+UsageInfo.MaxCapacity		0		always zero for shops
+
+# Not indoors, so the original's indoor-in-rain bonus does not stack on the kiosk's own demand percentages below
+UsageInfo.ISIndoors			0
+
+UsageInfo.ThirstEffect		0
+UsageInfo.HungerEffect		0
+UsageInfo.VomitEffect		0
+UsageInfo.HappinessEffect		15		OpenTPW's own value
+UsageInfo.LitterEffect		5		OpenTPW's own value
+
+# 4 = the guest gets a warm item: a head item first (hat or earmuffs), then mittens (1 balloon, 2 costume and 3 umbrella are the other values in use; 4 is this extension's)
+UsageInfo.AppearanceEffect		4
+
+# Demand, percent of the attraction score (read by the winter extension for its own objects only; the original does not read these keys).
+# The weather keys are Theme Park Inc's names, the season keys are this extension's own ([EXT:winter-season-terms]); months Dec-Feb, Mar-May, Jun-Aug, Sep-Nov.
+# The kiosk sells all year and its demand follows the season and the snow (the user's decision of 2026-10-18/19, "Het hele jaar, vraag via seizoen"); only a guest with both slots full scores 0.
+WeatherModifier.SnowPercentage		200		OpenTPW's own value
+WeatherModifier.RainPercentage		0
+WeatherModifier.StormPercentage		0
+SeasonModifier.WinterPercentage	150
+SeasonModifier.SpringPercentage	60
+SeasonModifier.SummerPercentage	20
+SeasonModifier.AutumnPercentage	60
+
+Research.Group		0		available from the start, no research
+Info.PreviewAnimNum		0
+
+Upgrades[0].InitCapacity		5		OpenTPW's own value
+Upgrades[0].CostOfUpgrade		1000		OpenTPW's own value
+Upgrades[0].CostOfResearch		0		An object without research cost starts researched
+Upgrades[0].RunningCost		30		OpenTPW's own value (a Theme Park Inc key; the original does not read it)

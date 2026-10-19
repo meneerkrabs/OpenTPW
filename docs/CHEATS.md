@@ -1,0 +1,152 @@
+# Cheats: the original cheat mode and `opentpw.cheats`
+
+October 19, 2026. Status: **phase K0** (this trace, the ride capacity data and the decisions). Nothing is built yet: the original cheat mode comes in K2, the
+extension's window in K3 and the ride vehicle limit in K4. The plan is `OpenTPW-notes/plans/cheats-plan.md`.
+
+The request (user, 2026-10-19): a cheats extension with (1) a button that makes visitors arrive by bus, plane or boat, (2) a way to change the weather, (3) a way to raise the
+cars-per-ride limit and (4) a button that awards a golden ticket. Evidence: a static trace of the decrypted Windows `tp.exe` v2.0 (SHA-256 `5472f97b...`), through the shared REA
+session and byte-exact disassembly; the original game was not run. Labels: `[BIN:TPW-EXE:0x...]` for ports of the original, `[EXT:cheats-*]` for OpenTPW's additions, which the user
+approved on 2026-10-19 (below).
+
+## Decisions (user, 2026-10-19)
+
+These are the user's answers to the plan's open questions; they were given on **2026-10-19** and are the approval of every `[EXT:cheats-*]` label of this feature.
+
+- **The original cheat mode always works**, as in the original game, whether the extension is on or off: the secret park name "Kevin the" / "Cosmic Cow" and the twelve Alt keys.
+  It is a faithful port (`[BIN]`), not part of the extension.
+- **The cheats window** (Alt+C: arrivals, weather, vehicle limit, a chosen golden ticket) exists only with `opentpw.cheats` on. The extension is **off by default** and works only
+  in Theme Park World parks (not in a Theme Park Inc run, a read-only visit or an online co-op or presence session). `[EXT:cheats-extension]`, `[EXT:cheats-window]`
+- **Cheated parks** are marked permanently after the first cheat (the original's save byte) and shown as cheated, but **publishing and ranking stay allowed**: OpenTPW's server does
+  not refuse a cheated park and the mark is informational. This departs from the original's refusal (UITEXT 417, below). `[EXT:cheats-publish]`
+- **Golden tickets from cheats** count toward golden keys and theme unlocks, as in the original. The player progress file records that they came from a cheat. They play no advisor
+  line, only a short on-screen note. `[EXT:cheats-ticket-provenance]`
+- **The rest as the plan recommends:** weather choices clear, rain, thunderstorm and snow, through a forecast with zero warning (`[EXT:cheats-weather]`); arrival group sizes bus up
+  to 35, plane 36-60, boat 61 or more (`[EXT:cheats-arrival]`); vehicle ceilings 32 for bumper cars and karts, 64 for boats and 40 for tours, coasters later (`[EXT:cheats-ride-vehicles]`);
+  an export to the original save format writes `CHTS = 01 01` for a cheated park and refuses rides above the original limits (`[EXT:cheats-export]`).
+
+## The original's cheat system
+
+**Summary.** `tp.exe` has a real cheat mode. Renaming the park (the gate sign) to a secret name turns it on; while it is on, twelve Alt key combinations work: research everything,
++10,000 cash and the ten non-secret golden tickets. The mode is one byte in the park save (`CHTS`). There is no weather, arrival or ride vehicle cheat in the original.
+
+### Entry: the secret park name `[BIN:TPW-EXE:0x4993E0]`
+
+- The ticket-price window's park-name control opens the rename dialog `0x4990F0` (two edit fields of 14 characters, filled from the gate's sign lines). Its OK handler `0x4993E0`
+  (message `0x100`, control `-1`) stores the lines on the gate (`0x4E2950`/`0x4E2A50`), redraws it (`0x4682B0`) and copies them to the player record (`0x409410`, then `0x5B0940`/`0x5B0970`).
+- It then XORs each UTF-16 unit of the two input buffers (`0x7C2668`, `0x7C2688`) in place with its index (`0x499546..0x4995A4`, the length re-read with `wcslen` `0x67ACD0` on every
+  step) and compares the results with `wcscmp` (`0x67C290`, case-sensitive) against the strings the pointers `0x751A34` and `0x751A38` hold: `Kdtjj%rom` (`0x751A54`) and `Cnqnmf&Dg~`
+  (`0x751A3C`). Decoded with the same XOR: **line 1 "Kevin the", line 2 "Cosmic Cow"**. Both must match (`0x4995B1`, `0x4995C9`).
+- On a match it calls `0x4053C0(1)` on the cheat object `0xFB3520` (`0x49960A`), after constructing it on first use (`0x4053B0`, guard bit 1 of `0xFB34C4`). The sign keeps the
+  new name: the lines were stored before the compare.
+
+### The cheat object `0xFB3520`
+
+- A function-local static of 12 bytes. Its constructor `0x4053B0` clears `+0x9`, `+0xA` and `+0xB`; it runs once, from the first of its users (the rename handler and the key paths).
+- `+0xA` is the **cheat mode**. `0x4053C0(on)` writes it; when on, it builds a `CMsgCheatMode` (vtable `0x6FD6C8`, built by `0x40F6D0` with the payload byte at `+8`; type `0x15` from
+  `0x405530`) and posts it through the message centre (`0x788D3C`, `0x40FB10`). Which things listen to type `0x15` is a runtime subscription and was not found statically; nothing in
+  OpenTPW posts it.
+- `0x405560` returns `+0xA`; its only callers are the two key paths below (`0x488902`, `0x488991`).
+- `+0xB` is saved and loaded but no `tp.exe` code writes it (byte scan of every `0xFB3520` reference). The eleven Nexus corpus saves carry `CHTS = 01 01`
+  (`SavePayloadLayoutTests`), so another build may have set it; its meaning is unknown. `+0x9` is only cleared.
+- Nothing ever calls `0x4053C0(0)`: renaming the park to another name leaves the mode on. Only loading a save or a level replaces it.
+
+### The save chunk `[BIN:TPW-EXE:0x4055D0, 0x405570]`
+
+- Two bytes, `+0xA` then `+0xB`, written by `0x4055D0` (through the stream writer `0x5F5E50`) at `0x416C98` in the payload writer `0x4164C0`, and read by `0x405570` (`0x5F5E20`) at
+  `0x415C56` in the payload reader `0x415270`. The chunk follows the Sound block and is closed by the tag `STHC` (the repo's `CHTS`). Log strings: "Cheat: saved %d bytes" (`0x74BF68`),
+  "Cheat: loaded %d bytes" (`0x749C28`), "Cheat system failed to save"/"to load" (`0x74BF80`/`0x749C40`) and "The SAD_CHEAT module did not load the same number of bytes that it saved"
+  (`0x749BDC`).
+- So **cheat mode belongs to the park save**: saving writes the current mode, loading a save or a level sets it from the file, and a park saved while the mode was on carries the mark.
+- OpenTPW reads the two bytes (`OriginalSavePayload.Cheat`, `SaveRuntimeBlocks.Cheats`) and reports them without applying them (`APPROX:SAVE-010`); `OriginalParkExport` keeps the
+  template level's two bytes.
+
+### Input: the "cheat" key context `[BIN:TPW-EXE:0x40CB80]`
+
+- `0x40CB80` builds the key contexts; the one named "cheat" is the object `0x78733C`, whose table `0x7484D0` holds 12 entries of 0x14 bytes: `+0` index, `+2` virtual key,
+  `+4` modifier mask, `+6` pressed flag, `+0xC` and `+0x10` two handlers. Every cheat entry has a handler at `+0xC` only.
+- The modifier mask comes from `0x46B420` (`GetKeyState` of VK 0x10/0x11/0x12): Shift = 0x03, Ctrl = 0x0C, Alt = 0x30. Every cheat entry has mask 0x30, and the dispatcher
+  `0x40C990` takes the first entry whose key **and** mask are equal (`0x40C9C7`, `0x40C9D3`): **Alt alone**, not with Shift or Ctrl.
+- The key handler (the engine's key messages `0x1000A` and `0x1000B`, the jump table at `0x4889D0`) tries the camera (`0x787C14`), game (`0x787A60`) and shortcuts (`0x78721C`)
+  contexts in that order and only then, if `0x405560` is true, the cheat context: `0x48890F` dispatches a `0x1000A` message through `0x40C900` (handler `+0x10`, none in the cheat
+  table) and `0x48899A` a `0x1000B` message through `0x40C990` (handler `+0xC`). Which of the two is the key press was not traced; OpenTPW fires a cheat on the press. The cheat keys
+  are not rebindable.
+
+### The twelve cheats (table `0x7484D0`)
+
+| Keys | VK | Handler | Effect |
+|---|---|---|---|
+| Alt+R | 0x52 | `0x40C430` | The research manager (`0x519550`) runs `0x503FF0`: for every item of its list (count `+0x145C`, 0x14-byte entries, id at `+0xC`, walked from the last) the object control (`0x4D3D10`) gets its available byte `+0x10` = 1: **every research item becomes buildable**. Research progress is not touched. |
+| Alt+1 | 0x31 | `0x40C450` | The bank (`0x5195D0`) credit `0x4D0190(10000)`: **+10,000** to the balance (`+0xC`), the current income slot (park `+0x1FC90`) and the year's profit (`+0x124`), the path a challenge prize takes. |
+| Alt+G | 0x47 | `0x40C6C0` | `0x5AF810(0)`: the **Visitors** golden ticket. |
+| Alt+Num1 | 0x61 | `0x40C6E0` | `0x5AF810(1)`: **PeopleInPark**. |
+| Alt+Num2 | 0x62 | `0x40C700` | `0x5AF810(2)`: **Happiness**. |
+| Alt+Num3 | 0x63 | `0x40C720` | `0x5AF810(3)`: **AllResearchedAndBuilt**. |
+| Alt+Num4 | 0x64 | `0x40C740` | `0x5AF810(4)`: **ProfitYear**. |
+| Alt+Num5 | 0x65 | `0x40C760` | `0x5AF810(5)`: **RecentVisitors**. |
+| Alt+Num6 | 0x66 | `0x40C780` | `0x5AF940(0, 100)`: the global **CoasterHeight** with record 100. |
+| Alt+Num7 | 0x67 | `0x40C7A0` | `0x5AF940(1, 100)`: global **GokartExcitement**. |
+| Alt+Num8 | 0x68 | `0x40C7C0` | `0x5AF940(2, 100)`: global **WaterLength**. |
+| Alt+Num9 | 0x69 | `0x40C7E0` | `0x5AF940(3, 100)`: global **BigPark**. |
+
+- The ticket handlers call the player ledger (`0x409410`) directly and skip the rest of the normal award path `0x4D4BC0`: no advisor message, no first-ticket lines, no log. The award
+  is **silent**.
+- `0x5AF810(kind)` returns 0 when the park already holds the ticket; otherwise it sets the park's byte and returns 1, or 2/3 when the new total makes a golden key (the key rule
+  `AdvisorScanChallenges` documents).
+- `0x5AF940(kind, 100)`: when no park holds the global ticket, this park takes it with record 100; when this park holds it, nothing happens (0); when another park holds it with a
+  record below 100, the ticket moves here (4).
+- The two secret tickets (CamerasEverywhere, AllLandOwned, `0x5AFB00`) have no cheat. No handler checks the game mode or `CanEarnTickets`.
+
+### Publishing
+
+UITEXT 417 (English): "PARK NOT PUBLISHED!! This park has been built using cheats, and therefore cannot be published!". The upload path `0x5B7CD0` sends no cheat byte of its own
+(its `+0x370` byte is Instant Action) and the client refuses only on the child lock, so the refusal is most likely the server's, read from the uploaded save's `CHTS` byte. OpenTPW
+does not port the refusal (user decision above).
+
+## Where the requested cheats hook in
+
+- **Arrivals.** One group at a time: `GuestSimulation.UpdateArrivals` starts a group when `(turn >> 2) - (start >> 2) > ArrivalTimeBetween`, sizes it with `ArrivalGroupSize` and picks
+  the vehicle by size (up to 35 the bus, up to 60 the plane, otherwise the ferry, `[BIN:TPW-EXE:0x4CF3E0]`).
+- **Arrival vehicles per theme** (checked in the data, K0): every theme has a `features/bus`, `features/seaplane` and `features/ferry` archive. The second vehicle's archive is
+  `seaplane` in all four themes; its `Info.Name` is "Seaplane" in the jungle and "Plane" in Halloween, fantasy and space. Ids: jungle 1600/1602/1604, Halloween 2600/2602/2604, fantasy
+  4600/4602/4604, space 3600/3602/3604.
+- **Weather.** `ParkWeather` rolls a quality every `DaysBetweenChanges` days and applies it `DaysOfWarning` days later; a forecast with zero warning goes through the normal converter
+  and banner.
+- **Golden tickets.** `ParkObjectives.CheckGoldenTickets` and `ParkEconomy`'s `GoldenTicketWon` / `GlobalTicketMoved` events, which the player ledger follows.
+
+## Ride vehicles: the shipped capacities (K0)
+
+The player's lever is the ride's **capacity** (`UsageInfo.MinCapacity..MaxCapacity`, the ride window's slider, clamped by the setter `[BIN:TPW-EXE:0x4dd7f0]`). What the capacity
+means differs per family; read from every theme's `.sam` files and ride scripts:
+
+| Ride | Theme | Info.Id | Capacity | Script rule | Vehicles at the maximum | Engine limit |
+|---|---|---|---|---|---|---|
+| The Hot Pot | jungle | 1140 | 1..8 | `VAR_CARS` follows `VAR_CAPACITY` (one rider a car) | 8 cars | template −1: 8 |
+| Pumpkin Castle | Halloween | 2140 | 1..8 | same | 8 | template −6: 8 |
+| Bumper Bugs | fantasy | 4140 | 1..8 | same | 8 | template −11: 8 |
+| Uforia | space | 3140 | 1..8 | same | 8 | template −14: 8 |
+| Dino Karts | jungle | 1150 | 1..8 | one kart per boarding rider | 8 karts | template −4: 8 |
+| CryptKarts | Halloween | 2150 | 1..16 | one kart per **two** riders (`VAR_PERCARCOUNT`) | 8 karts | template −7: 8 |
+| Bumble Buggies | fantasy | 4150 | 1..8 | one kart per rider | 8 | template −10: 8 |
+| Space Racers | space | 3150 | 1..8 | one kart per rider | 8 | template −9: 8 |
+| Splish Splash | jungle | 1160 | 1..5 | capacity = riders per boat (`VAR_BOATCOUNT`); a boat leaves when full or after ten seconds | as many as riders come | template −5: 64 boats |
+| Ooze Crooz, Taptastic Rapids, The Blobulator | Halloween, fantasy, space | 2160, 4160, 3160 | 1..5 | same | same | 64 |
+| Jurassic Tours, Flightmare Tours, Tweety Tours | jungle, Halloween, fantasy | 1170, 2170, 4170 | 1..27 | `TOUR 5` with ceil(capacity / 9) cars | 3 cars | `TourController.CarSlots` 20 |
+| Star Tours | space | 3170 | 1..24 | ceil(capacity / 8) cars | 3 cars | 20 |
+
+Consequences for the vehicle limit (K4):
+- Bumper cars and karts are the clear case: the capacity is the car (or rider) count, and the template's `MaxVehicles` (8) caps it twice. The ceiling 32 needs a per-ride capacity
+  override and an effective `MaxVehicles`.
+- **Boats are not limited by the capacity.** It is the riders per boat; the number of boats is limited only by the template's 64 (`BumpController.MaximumVehicles`), which is the
+  agreed ceiling already. A boat cheat has nothing to raise.
+- **Tours**: the capacity is riders; cars are ceil(capacity / 9) (/ 8 for Star Tours). The capacity is a byte (`ClampCapacity` keeps 8 bits), so a tour reaches at most 29 cars (32 for
+  Star Tours) through it; the ceiling of 40 cars needs `CarSlots` 40 and either a capacity above 255 or a car override. K4 decides which.
+- Coaster trains are derived from the release rate and are out of scope (K5).
+
+## Phases
+
+- **K0** (this document): the trace, the capacity data, COMPAT-007 and SAVE-010 narrowed.
+- **K1**: the extension (off), the park's cheat record in the save, the used-only and sticky recording, the turn-boundary queue, the cheated mark shown, the TPWS export's own `CHTS`.
+- **K2**: the original cheat mode: the secret name in `Level.RenamePark`, the cheat key context, Alt+R, Alt+1, the ten tickets, the import of `CHTS`.
+- **K3**: the cheats window (Alt+C): arrival vehicles, weather, the ticket dropdown; `CheatsFixedRunHash`.
+- **K4**: the ride vehicle limit for bump rides and tours; captures.
+- **K5** (optional, not planned): coaster trains.

@@ -836,7 +836,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		count = Math.Max( count, Settings.ArrivalMinPeople );
 		var limit = OnlineVisit ? OnlineArrivalParkLimit : ArrivalParkLimit;
 		if ( (uint)(guests.Count + count) > (uint)limit )   // compared unsigned (jbe at 0x004CF690 and 0x004CF6EE)
-			// [BIN:TPW-EXE:0x004CF6E5 no floor] the cut group is the limit minus the counted guests with no clamp (sub esi,ebx at 0x004CF704), negative above the limit; every reader treats it as 0: the stop's signed test (jle 0x004CF56B: no guest, timer restart, active byte cleared), the vehicle size (jg 0x004CF48F: a bus), the boarding gate 0x0051A760 (cmp 0xA, jge at 0x0051A844) and the advisor score 0x0059F220 over the group history (a drop from the previous group above a threshold, the same for any threshold under 100)
+			// [BIN:TPW-EXE:0x004CF6E5 no floor] the cut group is the limit minus the counted guests with no clamp (sub esi,ebx at 0x004CF704), negative above the limit; the stop's signed test emits no guest (jle 0x004CF56B: timer restart, active byte cleared), the vehicle size selects a bus (jg 0x004CF48F), and the boarding gate 0x0051A760 takes its below-10 branch (cmp 0xA, jge at 0x0051A844). The arrival ring stores the signed value unchanged (0x004CF451); the advisor's hype callback compares and divides signed (0x0059F31C/0x0059F32A), so a negative newest group can give a drop above 100 percent
 			count = limit - guests.Count;
 		return count;
 	}

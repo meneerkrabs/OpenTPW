@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
@@ -249,6 +251,18 @@ public class AdvisorScanChallengesTests
 			park.Waves.AddRange( waves );
 			Assert.AreEqual( 0, Score( 124, park, months: 1 ), $"{waves[0]} then {waves[1]} is no drop (or the previous is 0)" );
 		}
+	}
+
+	[TestMethod]
+	public void HypeNewParkKeepsTheSignedDropInsteadOfClampingTheNewestGroup()
+	{
+		var balance = Balance( Sam.Replace( "DroppedPercent\t40", "DroppedPercent\t150" ) );
+		var park = new FakePark { Waves = { 100, -100 } };
+		var scan = new AdvisorScan( AdvisorDescriptorTable.Rows, AdvisorScanCallbacks.Implemented );
+		int Hype() => scan.ScoreOf( AdvisorDescriptorTable.Rows[124], new AdvisorScanContext( balance, new FakeMoney { ParkMonths = 1 }, park ), 0 );
+		Assert.AreEqual( 41, Hype(), "the signed drop is 200 percent, above the synthetic threshold 150" );
+		park.Waves[1] = 0;
+		Assert.AreEqual( 0, Hype(), "clamping the newest group would give 100 percent and lose this advice" );
 	}
 
 	[TestMethod]
@@ -607,8 +621,8 @@ public class AdvisorScanChallengesTests
 		for ( var size = 4; size <= 7; size++ )
 			ring.Push( size * 10 );
 		CollectionAssert.AreEqual( new[] { 30, 40, 50, 60, 70 }, ring.Waves.ToArray(), "the sixth push overwrites the oldest" );
-		ring.Restore( new[] { 1, 2, 3, 4, 5, 6, 7 } );
-		CollectionAssert.AreEqual( new[] { 3, 4, 5, 6, 7 }, ring.Waves.ToArray() );
+		ring.Restore( new[] { 1, 2, -3, 4, -5, 6, -7 } );
+		CollectionAssert.AreEqual( new[] { -3, 4, -5, 6, -7 }, ring.Waves.ToArray(), "signed sizes are preserved through restore and eviction" );
 		ring.Clear();
 		Assert.AreEqual( 0, ring.Waves.Count );
 	}
@@ -648,22 +662,58 @@ public class AdvisorScanChallengesTests
 	}
 
 	[TestMethod]
-	public void TheSnapshotKeepsTheArrivalGroups()
+	public void TheSnapshotKeepsSignedArrivalGroupsThroughJsonAndContinuesTheRing()
 	{
 		var (_, advisor) = Attached();
-		advisor.OnArrivalGroupStarted( 40 );
-		advisor.OnArrivalGroupStarted( 25 );
+		foreach ( var size in new[] { 40, 25, -1, 0, -100 } )
+			advisor.OnArrivalGroupStarted( size );
 		var snapshot = advisor.CaptureSnapshot();
-		CollectionAssert.AreEqual( new[] { 40, 25 }, snapshot.ArrivalWaves!.ToArray() );
-		var restored = new AutomaticAdvisor( new AdvisorController( Balance() ), () => 0 );
-		restored.RestoreSnapshot( snapshot );
-		CollectionAssert.AreEqual( new[] { 40, 25 }, restored.ArrivalWaves.ToArray() );
-		var older = new AutomaticAdvisor( new AdvisorController( Balance() ), () => 0 );
-		older.OnArrivalGroupStarted( 7 );
-		older.RestoreSnapshot( snapshot with { ArrivalWaves = null } );
-		Assert.AreEqual( 0, older.ArrivalWaves.Count, "a snapshot from before the groups were kept leaves the record empty" );
-		Assert.ThrowsException<InvalidDataException>( () => restored.ValidateSnapshot( snapshot with { ArrivalWaves = new[] { 1, 2, 3, 4, 5, 6 } } ) );
-		Assert.ThrowsException<InvalidDataException>( () => restored.ValidateSnapshot( snapshot with { ArrivalWaves = new[] { -1 } } ) );
+		advisor.ValidateSnapshot( snapshot );
+		var envelope = ParkResumeSaveFileTests.Envelope() with { Advisor = snapshot };
+		var bytes = ParkResumeSaveFile.Serialize( envelope );
+		var saved = ParkResumeSaveFile.Deserialize( bytes ).Advisor!;
+		CollectionAssert.AreEqual( new[] { 40, 25, -1, 0, -100 }, saved.ArrivalWaves!.ToArray() );
+		using var restored = new AutomaticAdvisor( new AdvisorController( Balance() ), () => 0 );
+		restored.RestoreSnapshot( saved );
+		CollectionAssert.AreEqual( snapshot.ArrivalWaves!.ToArray(), restored.ArrivalWaves.ToArray() );
+		foreach ( var size in new[] { -2, 80, -3 } )
+		{
+			advisor.OnArrivalGroupStarted( size );
+			restored.OnArrivalGroupStarted( size );
+			CollectionAssert.AreEqual( advisor.ArrivalWaves.ToArray(), restored.ArrivalWaves.ToArray(), "the resumed ring evicts the same oldest entry" );
+		}
+		CollectionAssert.AreEqual( new[] { 0, -100, -2, 80, -3 }, restored.ArrivalWaves.ToArray() );
+
+		var legacy = JsonNode.Parse( bytes )!;
+		Assert.IsTrue( legacy["Advisor"]!.AsObject().Remove( "ArrivalWaves" ) );
+		var older = ParkResumeSaveFile.Deserialize( Encoding.UTF8.GetBytes( legacy.ToJsonString() ) ).Advisor!;
+		Assert.IsNull( older.ArrivalWaves );
+		restored.RestoreSnapshot( older );
+		Assert.AreEqual( 0, restored.ArrivalWaves.Count, "a legacy JSON save without the field clears an already populated ring" );
+	}
+
+	[TestMethod]
+	public void InvalidArrivalHistorySpeechAndControllerSnapshotsLeaveTheAdvisorUnchanged()
+	{
+		using var advisor = new AutomaticAdvisor( new AdvisorController( Balance() ), () => 700 );
+		advisor.Controller.HandleGameEvent( AdvisorGameEvent.LevelStarted, liveGameTick: 20, gameType: 0, tutorialEnabled: true );
+		advisor.OnArrivalGroupStarted( -7 );
+		var before = JsonSerializer.Serialize( advisor.CaptureSnapshot() );
+		using var source = new AutomaticAdvisor( new AdvisorController( Balance() ), () => 9000 );
+		source.OnArrivalGroupStarted( -10 );
+		var snapshot = source.CaptureSnapshot() with { ObjectStampTurn = 55, HireStampTurn = 66 };
+		foreach ( var invalid in new[]
+		{
+			snapshot with { ArrivalWaves = new[] { -1, 2, 3, 4, 5, 6 } },
+			snapshot with { SpeechWasActive = true },
+			snapshot with { Controller = snapshot.Controller with { Queue = snapshot.Controller.Queue with { Slots = Array.Empty<AdvisorPendingAdviceSnapshot?>() } } }
+		} )
+		{
+			Assert.ThrowsException<InvalidDataException>( () => advisor.ValidateSnapshot( invalid ) );
+			Assert.AreEqual( before, JsonSerializer.Serialize( advisor.CaptureSnapshot() ), "validation is read-only" );
+			Assert.ThrowsException<InvalidDataException>( () => advisor.RestoreSnapshot( invalid ) );
+			Assert.AreEqual( before, JsonSerializer.Serialize( advisor.CaptureSnapshot() ), "a rejected restore preserves the ring, clock, stamps and queued advice" );
+		}
 	}
 
 	// ------------------------------------------------------------------ the key rule and the ticket lines

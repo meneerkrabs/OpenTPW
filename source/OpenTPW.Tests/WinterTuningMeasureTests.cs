@@ -22,12 +22,38 @@ public class WinterTuningMeasureTests
 
 	private static readonly ulong[] Seeds = { 1, 2, 3 };
 
-	internal sealed record Sales( int Seed, int Month, int Weather, int Days, int Admitted, int Kiosk, int Stall, int Dressed, int Holding );
+	internal sealed record Sales( int Seed, int Month, int Weather, int Days, int Admitted, int Kiosk, int Stall, int Dressed, int Holding, int KioskRefused = 0, int StallRefused = 0 );
 
-	/// <summary>The shops of the cross park for <paramref name="days"/> park days in a fixed month and a fixed weather state (<see cref="UmbrellaRules.WeatherNone"/>, Rain or Snow).</summary>
-	internal static Sales MeasureSales( ulong seedValue, int month, int weather, int days, int? kioskSummer = null, int? kioskSpring = null, bool kioskReturn = true )
+	/// <summary>The words the price test reads of a winter shop (<see cref="PriceTerms"/>): its price, cost of goods and effects, and the per-type word <c>UsageInfo.RipOffOK</c>.</summary>
+	internal sealed record ShopPrice( int Price, int InitCostOfGoods, int ThirstEffect, int HungerEffect, int VomitEffect, int HappinessEffect, int RipOffOk );
+
+	/// <summary>
+	/// <c>UsageInfo.RipOffOK</c> of every theme's <c>shops/Shops.sam</c>, the category default each shop inherits, the winter shops included (their own .sam does not set it; <see cref="ObjectCatalog"/> layers it under them, and
+	/// <c>WinterPriceMeasureTests</c> checks the merged entry against the game's data). Without it the willingness to pay is about half, and the kiosk's price 25 would be above it for every guest.
+	/// </summary>
+	internal const int ShopsSamRipOffOk = 100;
+
+	/// <summary>The shipped price terms of a winter shop (<c>kiosk</c> or <c>gluehwein</c>): the extension's own .sam under <c>content/winter</c>, with <see cref="ShopsSamRipOffOk"/> where the .sam leaves the key to the category.</summary>
+	internal static ShopPrice ShippedPrice( string shop )
 	{
-		var park = new DeterminismTests.SyntheticPark( new WorldSeed( seedValue ), winterShops: true, prepareGuests: guests =>
+		var path = Path.Combine( WinterContentTests.Folder, "objects", "jungle", shop, shop == "kiosk" ? "Kiosk.sam" : "Gluehwein.sam" );
+		var s = new ObjectSettings( new[] { new ObjectSettingsFile( File.ReadAllText( path ), path ) } );
+		return new ShopPrice( s.GetInt( "UsageInfo.InitPricePerUse" ), s.GetInt( "UsageInfo.InitCostOfGoods" ), s.GetInt( "UsageInfo.ThirstEffect" ), s.GetInt( "UsageInfo.HungerEffect" ), s.GetInt( "UsageInfo.VomitEffect" ),
+			s.GetInt( "UsageInfo.HappinessEffect" ), s.Has( "UsageInfo.RipOffOK" ) ? s.GetInt( "UsageInfo.RipOffOK" ) : ShopsSamRipOffOk );
+	}
+
+	/// <summary>The kiosk's and the stall's shipped price terms, in the fixture's order.</summary>
+	internal static IReadOnlyList<ShopPrice> ShippedPrices() => new[] { ShippedPrice( "kiosk" ), ShippedPrice( "gluehwein" ) };
+
+	/// <summary>
+	/// The shops of the cross park for <paramref name="days"/> park days in a fixed month and a fixed weather state (<see cref="UmbrellaRules.WeatherNone"/>, Rain or Snow). The winter shops carry their shipped price terms
+	/// (<see cref="ShippedPrices"/>, or <paramref name="prices"/> for a what-if), so a guest whose willingness or purse is below the price is refused at the counter as in the game; <paramref name="freeVisits"/> runs them without price terms
+	/// (the price test reads a price of 0 and the shops have no effects: the measurements before the price terms were added, docs/WINTER.md, "Price").
+	/// </summary>
+	internal static Sales MeasureSales( ulong seedValue, int month, int weather, int days, int? kioskSummer = null, int? kioskSpring = null, bool kioskReturn = true, IReadOnlyList<ShopPrice>? prices = null, bool freeVisits = false )
+	{
+		var refusals = new RefusalCounter();
+		var park = new DeterminismTests.SyntheticPark( new WorldSeed( seedValue ), refusals, winterShops: true, winterPrices: freeVisits ? null : prices ?? ShippedPrices(), prepareGuests: guests =>
 		{
 			guests.WinterMonth = () => month;
 			guests.UmbrellaWeatherState = () => weather;
@@ -61,7 +87,30 @@ public class WinterTuningMeasureTests
 					dressed.Add( guest.Id );
 			}
 		}
-		return new Sales( (int)seedValue, month, weather, days, (int)park.Guests.Admissions, sales[0], sales[1], dressed.Count, holding.Count );
+		return new Sales( (int)seedValue, month, weather, days, (int)park.Guests.Admissions, sales[0], sales[1], dressed.Count, holding.Count,
+			refusals.Price.GetValueOrDefault( shopIds[0] ), refusals.Price.GetValueOrDefault( shopIds[1] ) );
+	}
+
+	/// <summary>Counts the price refusals at the stand point per attraction (a passive observer: it changes nothing).</summary>
+	internal sealed class RefusalCounter : IGuestObserver
+	{
+		public Dictionary<int, int> Price { get; } = new();
+		public void Admitted( Guest guest, int fee ) { }
+		public void Spent( Guest guest, int amount, int attractionId ) { }
+		public void QueueRejected( Guest guest, IRideVisitorBridge attraction, QueueEndReason reason ) { }
+		public void QueueJoined( Guest guest, IRideVisitorBridge attraction ) { }
+		public void QueueBoarded( Guest guest, IRideVisitorBridge attraction, long waitTurns ) { }
+		public void QueueEnded( Guest guest, int attractionId, QueueEndReason reason, long waitTurns )
+		{
+			if ( reason == QueueEndReason.Price )
+				Price[attractionId] = Price.GetValueOrDefault( attractionId ) + 1;
+		}
+		public void Decided( Guest guest, bool chose ) { }
+		public void Leaving( Guest guest, DepartureCause cause ) { }
+		public void Departed( Guest guest ) { }
+		public void Recalled( Guest guest ) { }
+		public void Restored( GuestSimulation simulation ) { }
+		public void Ticked( GuestSimulation simulation, float deltaSeconds ) { }
 	}
 
 	internal sealed record Cold( int Seed, bool ColdOn, bool Shops, bool RainMood, int Guests, double SnowHappiness, double DressedHappiness, double BareHappiness, int Snowy, int Affected, int HoldingWinter, int Kiosk, int Stall );
@@ -76,7 +125,7 @@ public class WinterTuningMeasureTests
 		weather.AdvanceTo( ParkCalendar.TickOfTurn( 0 ) );
 		weather.AdvanceTo( ParkCalendar.TickOfTurn( startTurn ) );
 		var snowy = 0;
-		var park = new DeterminismTests.SyntheticPark( new WorldSeed( seedValue ), winterShops: shops, prepareGuests: guests =>
+		var park = new DeterminismTests.SyntheticPark( new WorldSeed( seedValue ), winterShops: shops, winterPrices: shops ? ShippedPrices() : null, prepareGuests: guests =>
 		{
 			if ( coldOn )
 				guests.WinterCold = WinterColdSettings.Default;
@@ -146,7 +195,7 @@ public class WinterTuningMeasureTests
 	public void TheShopsSellAllYearAndMoreInSnowAndTheNumbersAreReproducible()
 	{
 		var report = new StringBuilder();
-		report.AppendLine( "Sales over 17 park days (sum of seeds 1 to 3): month, weather, admitted, kiosk sales, stall sales, guests with an item, guests with a complete outfit (head item and mittens)" );
+		report.AppendLine( "Sales over 17 park days (sum of seeds 1 to 3), shipped prices: month, weather, admitted, kiosk sales, stall sales, guests with an item, guests with a complete outfit (head item and mittens), price refusals" );
 		var sums = new Dictionary<(int Month, int Weather), (int Admitted, int Kiosk, int Stall, int Holding, int Dressed)>();
 		foreach ( var month in new[] { 1, 4, 7, 10 } )
 			foreach ( var weather in new[] { UmbrellaRules.WeatherNone, UmbrellaRules.WeatherRain, UmbrellaRules.WeatherSnow } )
@@ -154,7 +203,7 @@ public class WinterTuningMeasureTests
 				var runs = Seeds.Select( seed => MeasureSales( seed, month, weather, 17 ) ).ToList();
 				var sum = (runs.Sum( run => run.Admitted ), runs.Sum( run => run.Kiosk ), runs.Sum( run => run.Stall ), runs.Sum( run => run.Holding ), runs.Sum( run => run.Dressed ));
 				sums[(month, weather)] = sum;
-				report.AppendLine( FormattableString.Invariant( $"month {month,2} weather {weather}: admitted {sum.Item1,4}, kiosk {sum.Item2,4}, stall {sum.Item3,4}, with an item {sum.Item4,4}, dressed {sum.Item5,4}" ) );
+				report.AppendLine( FormattableString.Invariant( $"month {month,2} weather {weather}: admitted {sum.Item1,4}, kiosk {sum.Item2,4}, stall {sum.Item3,4}, with an item {sum.Item4,4}, dressed {sum.Item5,4}, price refusals kiosk {runs.Sum( run => run.KioskRefused ),3} stall {runs.Sum( run => run.StallRefused ),3}" ) );
 			}
 		Write( report.ToString() );
 		Assert.AreEqual( MeasureSales( 1, 12, UmbrellaRules.WeatherSnow, 5 ), MeasureSales( 1, 12, UmbrellaRules.WeatherSnow, 5 ), "repeatable" );
@@ -163,6 +212,40 @@ public class WinterTuningMeasureTests
 		Assert.IsTrue( sums[(1, UmbrellaRules.WeatherNone)].Kiosk > sums[(7, UmbrellaRules.WeatherNone)].Kiosk, "more kiosk sales in a clear January than in a clear July" );
 		// the stall's snow percentage (250) and winter months (150) beat summer (20)
 		Assert.IsTrue( sums[(1, UmbrellaRules.WeatherSnow)].Stall > sums[(7, UmbrellaRules.WeatherNone)].Stall, "more glühwein in a snowy January than in a clear July" );
+	}
+
+	[TestMethod]
+	public void TheShippedPricesPassForNearlyEveryGuestAndWithoutTheCategoryWordTheKioskWouldSellNothing()
+	{
+		// [EXT:winter-tuning] the price test (tp.exe 0x004FDE50) with the shops' shipped terms: the willingness rises with happiness, and Shops.sam's RipOffOK 100 doubles it
+		var kiosk = ShippedPrice( "kiosk" );
+		var stall = ShippedPrice( "gluehwein" );
+		static PriceTerms Terms( ShopPrice price, int ripOffOk ) => new( price.Price, price.InitCostOfGoods, 100, false, price.InitCostOfGoods, price.ThirstEffect, price.HungerEffect, price.VomitEffect, price.HappinessEffect, ripOffOk );
+		var report = new StringBuilder();
+		report.AppendLine( FormattableString.Invariant( $"Willingness to pay at thirst, hunger and illness 0, by happiness (kiosk price {kiosk.Price}, stall price {stall.Price}): RipOffOK {ShopsSamRipOffOk} (shipped) / RipOffOK 0" ) );
+		foreach ( var happiness in new[] { 0, 5, 10, 25, 50, 75, 100 } )
+			report.AppendLine( FormattableString.Invariant( $"happiness {happiness,3}: kiosk {QueueJoinRules.WillingnessToPay( Terms( kiosk, ShopsSamRipOffOk ), happiness, 0, 0, 0 ),3} / {QueueJoinRules.WillingnessToPay( Terms( kiosk, 0 ), happiness, 0, 0, 0 ),3}, stall {QueueJoinRules.WillingnessToPay( Terms( stall, ShopsSamRipOffOk ), happiness, 0, 0, 0 ),3} / {QueueJoinRules.WillingnessToPay( Terms( stall, 0 ), happiness, 0, 0, 0 ),3}" ) );
+		Assert.AreEqual( ShopsSamRipOffOk, kiosk.RipOffOk, "the kiosk's .sam leaves RipOffOK to the category" );
+		for ( var happiness = 0; happiness <= 100; happiness++ )
+		{
+			Assert.AreEqual( happiness < 5, QueueJoinRules.TooExpensive( Terms( kiosk, ShopsSamRipOffOk ), happiness, 0, 0, 0, 1000 ), $"the kiosk at happiness {happiness}: refused only below 5" );
+			Assert.IsFalse( QueueJoinRules.TooExpensive( Terms( stall, ShopsSamRipOffOk ), happiness, 0, 0, 0, 1000 ), $"the stall at happiness {happiness}: never refused on willingness" );
+			Assert.IsTrue( QueueJoinRules.TooExpensive( Terms( kiosk, 0 ), happiness, 0, 0, 0, 1000 ), $"without the category word the kiosk's willingness (at most 22) is below its price at happiness {happiness}" );
+		}
+		// a snowy January in the cross park: the shipped prices against free visits and against the terms without the category word (the reviewer's 0 sales)
+		var bare = new[] { kiosk with { RipOffOk = 0 }, stall with { RipOffOk = 0 } };
+		var priced = Seeds.Select( seed => MeasureSales( seed, 1, UmbrellaRules.WeatherSnow, 17 ) ).ToList();
+		var free = Seeds.Select( seed => MeasureSales( seed, 1, UmbrellaRules.WeatherSnow, 17, freeVisits: true ) ).ToList();
+		var noWord = Seeds.Select( seed => MeasureSales( seed, 1, UmbrellaRules.WeatherSnow, 17, prices: bare ) ).ToList();
+		report.AppendLine( "Snowy January over 17 park days, seeds 1 to 3: admitted, kiosk sales / price refusals, stall sales / price refusals, guests with an item" );
+		foreach ( var (name, runs) in new[] { ("shipped prices", priced), ("free visits", free), ("RipOffOK 0", noWord) } )
+			report.AppendLine( FormattableString.Invariant( $"{name}: admitted {runs.Sum( run => run.Admitted ),4}, kiosk {runs.Sum( run => run.Kiosk ),4} / {runs.Sum( run => run.KioskRefused ),4}, stall {runs.Sum( run => run.Stall ),4} / {runs.Sum( run => run.StallRefused ),4}, with an item {runs.Sum( run => run.Holding ),4}" ) );
+		Write( report.ToString() );
+		Assert.IsTrue( priced.Sum( run => run.Kiosk ) > 0 && priced.Sum( run => run.Stall ) > 0, "both shops sell at their shipped prices" );
+		Assert.IsTrue( priced.Sum( run => run.KioskRefused ) * 10 <= priced.Sum( run => run.Kiosk ), "at most one price refusal in ten kiosk sales" );
+		Assert.IsTrue( priced.Sum( run => run.StallRefused ) * 10 <= priced.Sum( run => run.Stall ), "at most one price refusal in ten stall sales" );
+		Assert.AreEqual( 0, free.Sum( run => run.KioskRefused + run.StallRefused ), "a free visit is never refused" );
+		Assert.AreEqual( 0, noWord.Sum( run => run.Kiosk ), "without the category word nobody pays the kiosk's 25" );
 	}
 
 	[TestMethod]
@@ -195,7 +278,8 @@ public class WinterTuningMeasureTests
 		Assert.AreEqual( 0, before.Sum( run => run.Dressed ), "the game's history rules: nobody came back for the second item" );
 		Assert.IsTrue( after.Sum( run => run.Dressed ) > 0, "now full outfits occur" );
 		Assert.IsTrue( after.Sum( run => run.Dressed ) * 20 >= after.Sum( run => run.Admitted ), "at least one guest in twenty is fully dressed" );
-		Assert.IsTrue( after.Sum( run => run.Kiosk ) > before.Sum( run => run.Kiosk ), "the kiosk sells the second items" );
+		// a sale beyond a guest's first is a second item: the guests who come back take kiosk turns first-time buyers would have had, so the total can stay level while the second items rise
+		Assert.IsTrue( after.Sum( run => run.Kiosk - run.Holding ) > before.Sum( run => run.Kiosk - run.Holding ), "the kiosk sells the second items" );
 		Assert.IsTrue( after.Sum( run => run.Dressed ) <= after.Sum( run => run.Holding ), "a complete outfit is an item" );
 	}
 

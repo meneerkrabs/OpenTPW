@@ -36,7 +36,8 @@ public class DeterminismTests
 		private readonly List<(RideVisitorBridge Bridge, RideVM Script)> winter = new();
 		private readonly List<RideVM> dice = new();
 
-		public SyntheticPark( WorldSeed seed, IGuestObserver? observer = null, Action<ParkCellMap>? prepareCells = null, bool changingRoom = false, Action<GuestSimulation>? prepareGuests = null, IGuestDecisions? decisions = null, bool brollyShop = false, int brollyKidScore = 75, bool winterShops = false )
+		public SyntheticPark( WorldSeed seed, IGuestObserver? observer = null, Action<ParkCellMap>? prepareCells = null, bool changingRoom = false, Action<GuestSimulation>? prepareGuests = null, IGuestDecisions? decisions = null, bool brollyShop = false, int brollyKidScore = 75, bool winterShops = false,
+			IReadOnlyList<WinterTuningMeasureTests.ShopPrice>? winterPrices = null )
 		{
 			Seed = seed;
 			Economy = EconomyTestData.Park( seed: seed.EconomyStream );
@@ -102,6 +103,7 @@ public class DeterminismTests
 			{
 				var kioskTerms = new WinterShopTerms( 0, 0, 200, 150, 60, 20, 60 );
 				var stallTerms = new WinterShopTerms( 130, 130, 250, 150, 60, 20, 60 );
+				var shopIndex = 0;
 				foreach ( var (name, cell, appearance, terms, ingredient) in new[] { ("Winter Kiosk", (10, 1), WinterRules.KioskAppearanceEffect, kioskTerms, 0), ("Gluehwein Stall", (10, 8), 0, stallTerms, 3) } )
 				{
 					var bridge = new RideVisitorBridge( Scripts.AllocateAttractionId(), name, RideVisitorKind.Shop, 1, 60, 30, ingredient == 0 ? GuestNeeds.None : GuestNeeds.Thirst )
@@ -113,6 +115,16 @@ public class DeterminismTests
 					Guests.Register( bridge );
 					Assert.AreEqual( ParkEconomy.PurchaseResult.Ok, Economy.TryBuild( 1203, out var boughtWinter ) );
 					payments.Link( bridge.AttractionId, boughtWinter!.Id );
+					// [EXT:winter-tuning] the measurement's price terms (docs/WINTER.md, "Price"): the shop's shipped .sam words the price test reads, and the economy's live price mirrored over the bridge as the level does;
+					// without them (the pins) the shops are free visits that no guest refuses
+					if ( winterPrices?[shopIndex] is { } price )
+					{
+						Economy.SetPrices( boughtWinter.Id, price.Price, price.InitCostOfGoods );
+						bridge.Sideshow = new SideshowTerms( price.InitCostOfGoods, price.Price, 0 );
+						(bridge.InitCostOfGoods, bridge.ThirstEffect, bridge.HungerEffect, bridge.VomitEffect, bridge.HappinessEffect, bridge.RipOffOk) =
+							(price.InitCostOfGoods, price.ThirstEffect, price.HungerEffect, price.VomitEffect, price.HappinessEffect, price.RipOffOk);
+					}
+					shopIndex++;
 					winter.Add( (bridge, script) );
 				}
 				Guests.UmbrellaWeatherState = () => Guests.TickCount is >= 1200 and < 4800 or >= 8400 and < 12000 ? UmbrellaRules.WeatherSnow : UmbrellaRules.WeatherNone;

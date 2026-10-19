@@ -395,7 +395,7 @@ internal sealed partial class GameFlow : IDisposable
 		IHudParkStatus status = level.Park != null ? EconomyParkStatus.ForLevel( level, PlayerKeys ) : new NoEconomyStatus();
 		using ( LoadProfile.Measure( "park-hud" ) )
 			Hud = CreateParkHud( level, status );
-		// [EXT:online-visit-presence] a visit of a downloaded park joins its chat room and draws its players while logged in
+		// [EXT:online-visit-presence] a visit with a chat room (a downloaded park's, a chat satellite's) joins it and draws its players while logged in
 		if ( visit != null && FeatureGates.Online )
 			presence = ParkPresence.TryCreate( onlineSession, level );
 		// [EXT:online-visit] read-only visits of shared parks get no advisor (the original has no visits)
@@ -1119,9 +1119,30 @@ internal sealed partial class GameFlow : IDisposable
 		Session = Online,
 		Level = () => Level,
 		Visit = visit => QueueProgressLevel( visit.Level, () => StartLevel( visit.Level, original: !visit.IsSandbox, developerPanels: false, visit: visit, overFrames: true ) ),
+		VisitLevel = ( level, prepare ) => QueueProgressLevel( level, () =>
+		{
+			if ( PrepareLevelVisit( prepare ) is { } visit )
+				StartLevel( level, original: true, developerPanels: false, visit: visit, overFrames: true );
+		} ),
 		Globe = () => Globe,
 		Advise = message => Advisor?.OnOnlineScreenOpened( message ),
 	} );
+
+	/// <summary>A chat park's visit, built once its level's files are there; null after a failure, which is shown over the screen it came from.</summary>
+	private ParkVisitInfo? PrepareLevelVisit( Func<ParkVisitInfo> prepare )
+	{
+		try
+		{
+			return prepare();
+		}
+		catch ( Exception error ) when ( error is IOException or InvalidDataException or UnauthorizedAccessException or ArgumentException or InvalidOperationException )
+		{
+			Log.Warning( $"Chat park visit failed: {error.Message}" );
+			var stack = Hud?.Stack ?? Menu?.Stack;
+			stack?.Push( UiDialogs.Message( "visitFailed", () => error.Message, (() => Strings.Extra( OpenTpwText.Back ), () => stack.Pop()) ) );
+			return null;
+		}
+	}
 
 	public void Dispose()
 	{

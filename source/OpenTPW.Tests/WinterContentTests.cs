@@ -54,7 +54,7 @@ public class WinterContentTests
 	}
 
 	private static string? folder;
-	private static string Folder => folder ??= RepositoryFolder();
+	internal static string Folder => folder ??= RepositoryFolder();
 
 	private static string RepositoryFolder()
 	{

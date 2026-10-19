@@ -599,6 +599,8 @@ pins and the fixed run did not move: the kiosk's terms are read for the extensio
 
 No pin of a park without a winter kiosk moved, and nothing else changed: `WinterColdFixedRunHash` (no shop), the weather pins, the umbrellas, rain mood, changing-room and fixed-run pins and the December guest pins all stand (the "every existing pin is unchanged" tests pass with only these three constants edited). The rule takes no draw from any stream: a guest with a free slot is scored from views without the kiosk in its used history, and a guest with full slots still scores the kiosk 0.
 
+**No re-pin, 2026-10-19 (the kiosk's price, [WINTER.md](WINTER.md#price-extwinter-tuning)).** The return rule now also requires that the guest could pay the kiosk's price (`QueueJoinRules.TooExpensive`, the pure test), and the measurement harness can give the winter shops their shipped price terms (`SyntheticPark`'s `winterPrices`). No pin moved: the pins' winter shops keep no price terms (no `winterPrices`: the price test reads a price of 0 and never refuses), so the new condition is always true there, and no `.sam` changed.
+
 ## Wintry Decembers
 
 The `opentpw.winter-weather` option ([WINTER.md](WINTER.md#simulation-phase-w3), `[EXT:winter-weather]`) is off by default; the level hands it to `ParkWeather` when it builds the weather. The weather is outside the canonical hash ("Weather timing"), but what the guests read from it is not: the umbrella rules, the rain mood and the winter shops see snow instead of a

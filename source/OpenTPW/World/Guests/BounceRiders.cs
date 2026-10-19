@@ -38,7 +38,7 @@ public static class BounceRiders
 
 	/// <summary>The sine table of the original's builder: entry i is the sine of i / 4096 turns, rounded to a float.</summary>
 	// [BIN:TPW-EXE:0x004708D0 sine table] mask n - 1 (0x7B0960), index scale n x 1 / (2 pi) as a float (0x7B095C, constants 0x006FEB9C and 0x006FEBA0), entry i = fsin(i / n x 2 pi) stored as a float from 0x7B0968
-	private static readonly float[] Sine = Enumerable.Range( 0, SineTableSize ).Select( index => (float)Math.Sin( (float)index / SineTableSize * 6.2831854820251465 ) ).ToArray();
+	private static readonly float[] Sine = Enumerable.Range( 0, SineTableSize ).Select( index => (float)DetMath.Sin( (float)index / SineTableSize * 6.2831854820251465 ) ).ToArray();
 
 	/// <summary>Entry <paramref name="index"/> of the sine table (test seam).</summary>
 	internal static float SineAt( int index ) => Sine[index];

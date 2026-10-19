@@ -262,6 +262,12 @@ internal static class Game
 			Environment.ExitCode = M4Gate.RunCommand( args );
 			return;
 		}
+		// Headless cross-runtime determinism digest (docs/DETERMINISM.md, "Browser and native"): no window, renderer or audio.
+		if ( args.Contains( "--determinism-digest" ) )
+		{
+			Environment.ExitCode = CrossRuntimeDigest.RunCommand( args );
+			return;
+		}
 
 		// [EXT:extension-online-gate] with opentpw.online disabled the online command-line tools refuse and no online folder is set up
 		FeatureGates.RefuseOnlineCommandLine( args );
@@ -1098,7 +1104,7 @@ internal static class Game
 	private static readonly string[] AutomatedFlags =
 	{
 		"--smoke-test", "--tpi-smoke-test", "--park-resume-smoke", "--smoke-presence", "--perf-run", "--perf-hash-tick",
-		"--offscreen", "--headless", "--m3-gate", "--m4-gate", "--guest-report", "--guest-compare", "--validate-assets",
+		"--offscreen", "--headless", "--m3-gate", "--m4-gate", "--determinism-digest", "--guest-report", "--guest-compare", "--validate-assets",
 	};
 
 	/// <summary>

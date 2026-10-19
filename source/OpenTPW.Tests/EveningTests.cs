@@ -22,6 +22,48 @@ namespace OpenTPW.Tests;
 [DoNotParallelize]
 public class EveningTests
 {
+	[TestMethod]
+	public void ThePerfHookSwitchesOnlyTheEveningExtensionAndKeepsTheRestOfTheSession()
+	{
+		// a session with non-default choices: smarter guests on, restored advice off
+		var session = ModSet.Resolve( Array.Empty<DiscoveredMod>(), new ModSettings { Enabled = new Dictionary<string, bool>
+		{
+			[OfficialExtensions.SmarterGuests.Id] = true, [OfficialExtensions.RestoredAdvice.Id] = false,
+		} }, null, GameEdition.ThemeParkWorld, OfficialExtensions.All );
+		var saved = Level.EveningPaceOverride;
+		try
+		{
+			using ( OpenTpwExtensions.Use( session ) )
+			{
+				Assert.IsTrue( Level.PerfEvening( "off" ) );
+				Assert.IsFalse( FeatureGates.Evening );
+				foreach ( var extension in OfficialExtensions.All.Where( extension => extension != OfficialExtensions.Evening ) )
+					Assert.AreEqual( session.IsEnabled( extension.Id ), OpenTpwExtensions.IsEnabled( extension ), $"{extension.Id} is untouched" );
+				CollectionAssert.AreEqual( session.Order.Where( id => id != OfficialExtensions.Evening.Id ).ToArray(), OpenTpwExtensions.Active.Order.ToArray() );
+				Assert.IsTrue( Level.PerfEvening( "night" ) );
+				Assert.IsTrue( FeatureGates.Evening );
+				Assert.AreEqual( EveningPace.AlwaysNight, Level.EveningPaceOverride );
+				CollectionAssert.AreEquivalent( session.Order.ToArray(), OpenTpwExtensions.Active.Order.ToArray(), "back on: the same set" );
+				CollectionAssert.AreEqual( session.SimulationMods.ToArray(), OpenTpwExtensions.Active.SimulationMods.ToArray(), "the simulation set never changes" );
+				var before = OpenTpwExtensions.Active;
+				Assert.IsFalse( Level.PerfEvening( "noon" ), "an unknown mode is refused" );
+				Assert.AreSame( before, OpenTpwExtensions.Active, "and changes nothing" );
+			}
+		}
+		finally
+		{
+			Level.EveningPaceOverride = saved;
+		}
+	}
+
+	[TestMethod]
+	public void OnlyAPresentationExtensionCanBeSwitchedForARun()
+	{
+		var set = ModSet.Defaults( OfficialExtensions.All );
+		Assert.ThrowsException<ArgumentException>( () => set.WithPresentationExtension( OfficialExtensions.SmarterGuests, true ) );
+		Assert.AreSame( set, set.WithPresentationExtension( OfficialExtensions.Evening, set.IsEnabled( OfficialExtensions.Evening.Id ) ), "no change, the same set" );
+	}
+
 	internal static ModSet Set( bool evening ) => ModSet.Resolve( Array.Empty<DiscoveredMod>(),
 		new ModSettings { Enabled = new Dictionary<string, bool> { [OfficialExtensions.Evening.Id] = evening } }, null, GameEdition.ThemeParkWorld, OfficialExtensions.All );
 

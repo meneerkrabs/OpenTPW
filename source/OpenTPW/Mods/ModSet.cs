@@ -130,6 +130,31 @@ public sealed class ModSet
 	public bool IsEnabled( string id ) => enabled.Contains( id );
 
 	/// <summary>
+	/// This set with one presentation extension (one that does not change the simulation) switched on or off, for a run-scoped toggle such as the browser harness's evening hook: every other extension and mod,
+	/// the load order of the rest and the refusals stay as they are. Switched on, the extension takes its place after the last enabled extension, before the files-based mods.
+	/// </summary>
+	internal ModSet WithPresentationExtension( IOpenTpwExtension extension, bool on )
+	{
+		ArgumentNullException.ThrowIfNull( extension );
+		if ( extension.AffectsSimulation )
+			throw new ArgumentException( $"{extension.Id} changes the simulation; only a presentation extension can be switched for a run.", nameof( extension ) );
+		var index = Extensions.ToList().FindIndex( item => item.Extension.Id == extension.Id );
+		if ( index < 0 )
+			throw new ArgumentException( $"{extension.Id} is not an extension of this set.", nameof( extension ) );
+		if ( IsEnabled( extension.Id ) == on )
+			return this;
+		var extensions = Extensions.ToList();
+		extensions[index] = extensions[index] with { Enabled = on };
+		var order = Order.Where( id => id != extension.Id ).ToList();
+		if ( on )
+		{
+			var extensionIds = new HashSet<string>( Extensions.Select( item => item.Extension.Id ), StringComparer.Ordinal );
+			order.Insert( order.FindLastIndex( extensionIds.Contains ) + 1, extension.Id );
+		}
+		return new ModSet( extensions, Mods, order, Refused );
+	}
+
+	/// <summary>
 	/// Whether a mod changes the park simulation, judged from its manifest and files: it adds objects
 	/// (<c>content.objects</c>), or it overrides a file that is not plainly presentation media (textures, sounds, text
 	/// and fonts: <see cref="IsPresentationFile"/>), or it has scripts with a hook that can change the simulation (every v1 hook can). Unknown file types count as simulation, the safe side: such a

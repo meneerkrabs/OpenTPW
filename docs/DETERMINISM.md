@@ -324,7 +324,7 @@ materializes that fallback before its intentional prepend/splice, without introd
 
 Canonical JSON removes only `StaffData.RoleOrder`, not the `Staff` object or another staff field. Changing
 only locator order must leave the hash identical; changing gameplay data, including `HaveEverTrained`, must
-still affect it. `StaffRoleOrderTests` and `LocatorStaffRoleOrderTests` exercise this boundary and read/capture
+still affect it (`StaffRoleOrderTests` pins that with `HaveEverTrained` as the example). `HaveEverTrained` is read only by the advisor's train-your-staff line and no simulation step reads it, so it could leave the hash like `StatisticsHistory` did; it stays in on purpose, because the role-order contract above and its test name it as hashed gameplay data and no pin sets a training budget, so dropping it later is a deliberate, separate change that moves no pin. `StaffRoleOrderTests` and `LocatorStaffRoleOrderTests` exercise this boundary and read/capture
 immutability. Their C# execution awaits exact-head CI because no local dotnet SDK is available;
 `tools/test_staff_role_order_contract.py` is a source-integration guard, not a substitute for those runs.
 

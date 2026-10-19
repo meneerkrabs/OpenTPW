@@ -581,7 +581,7 @@ public class AdvisorRestoredAdviceTests
 	public void TheExtensionKeepsOnlyTheAwardsOfTheTicketLines()
 	{
 		CollectionAssert.AreEquivalent( new[] { 230, 231, 232, 233 }, RestoredAdvice.Entries.Where( entry => entry.Topic is "awards" ).Select( entry => entry.MessageId ).ToArray() );
-		Assert.IsFalse( RestoredAdvice.Entries.Any( entry => StoodDownTicketLines.Contains( entry.MessageId ) || entry.MessageId == 344 ), "those lines are the original's now" );
+		Assert.IsFalse( RestoredAdvice.Entries.Any( entry => StoodDownTicketLines.Contains( entry.MessageId ) || entry.MessageId is 344 or 319 or 320 ), "those lines are the original's now" );
 		Assert.AreEqual( 233, RestoredAdvice.AwardMessage( GoldenTicketKind.BigPark ) );
 		Assert.IsNull( RestoredAdvice.AwardMessage( GoldenTicketKind.Visitors ) );
 		Assert.IsNull( AdvisorTicketAdvice.For( GoldenTicketKind.AllLandOwned, 1 ), "the one ticket the original never awards or advises is never won here either" );
@@ -648,31 +648,53 @@ public class AdvisorRestoredAdviceTests
 	}
 
 	[TestMethod]
-	public void ChallengesMetWithAFollowUpOfferTheDoubleLines()
+	public void TheRestoredExtensionStandsDownForTheChallengeFollowUpTheOriginalAdvisesItself()
 	{
+		// 319 and 320 (double or nothing) told the event the original's own advice tells (270 offered, 272 won): the extension no longer restores them
+		Assert.IsFalse( RestoredAdvice.IsRestored( 319 ) );
+		Assert.IsFalse( RestoredAdvice.IsRestored( 320 ) );
 		var economy = EconomyTestData.Park();
 		var controller = Controller();
 		var driver = Driver( controller );
-		// no follow-up current: a plain win says nothing
-		driver.OnParkEvent( Event( ParkEventKind.ChallengeCompleted, 500, 0, 3 ), economy );
-		Assert.AreEqual( 0, Pending( controller ).Count );
-		// the challenge system's follow-up is current when its completion event arrives
 		var current = typeof( ParkObjectives ).GetProperty( nameof( ParkObjectives.Current ) )!;
-		Assert.IsNotNull( current );
-		var setter = current.GetSetMethod( nonPublic: true );
-		Assert.IsNotNull( setter, "the test needs the objectives' current challenge" );
-		setter!.Invoke( economy.Objectives, new object?[] { new ActiveChallenge( 7, 1, false, 0, 0, 0 ) } );
+		current.GetSetMethod( nonPublic: true )!.Invoke( economy.Objectives, new object?[] { new ActiveChallenge( 7, 1, false, 0, 0, 0 ) } );
 		driver.OnParkEvent( Event( ParkEventKind.ChallengeCompleted, 0, 0, 7 ), economy );
-		CollectionAssert.AreEqual( new[] { 319 }, Pending( controller ).ToArray() );
-		controller.Queue.Restore( new AdvisorPendingAdvice?[AdvisorScoreQueue.Capacity], new Dictionary<int, AdvisorMessageHistory>() );
 		driver.OnParkEvent( Event( ParkEventKind.ChallengeCompleted, 0, 0, 8 ), economy );
-		CollectionAssert.AreEqual( new[] { 320 }, Pending( controller ).ToArray(), "the second follow-up in a row" );
-		Assert.AreEqual( 130, PendingOf( controller, 320 ).Score );
-		// a final win starts the count over
-		driver.OnParkEvent( Event( ParkEventKind.ChallengeCompleted, 500, 0, 9 ), economy );
-		controller.Queue.Restore( new AdvisorPendingAdvice?[AdvisorScoreQueue.Capacity], new Dictionary<int, AdvisorMessageHistory>() );
-		driver.OnParkEvent( Event( ParkEventKind.ChallengeCompleted, 0, 0, 7 ), economy );
-		CollectionAssert.AreEqual( new[] { 319 }, Pending( controller ).ToArray() );
+		Assert.AreEqual( 0, Pending( controller ).Count, "a met challenge with a follow-up posts nothing from the extension" );
+	}
+
+	private const long ChallengeDay = ParkCalendar.SecondsPerDay;
+	private const long ChallengeStart = 540 * ChallengeDay;
+
+	private static long ChallengeTurn( long seconds )
+	{
+		var turn = seconds / ParkCalendar.SecondsPerTurn + 1;
+		while ( (turn & 3) == 0 )
+			turn++;
+		return turn;
+	}
+
+	[TestMethod]
+	public void AMetChallengeIsToldOnceWithTheExtensionOnThroughTheRealAdvisor()
+	{
+		Assert.IsTrue( RestoredAdvice.Enabled, "the extension is on by default" );
+		foreach ( var nextFollowup in new[] { 0, 13 } )
+		{
+			var settings = EconomyTestData.Settings( 500000 );
+			settings.AdoptChallenges( new[] { new ChallengeDefinition( 0, 11, 12, 10, 1000, 0, 1100, 0, 700, false, true ), new ChallengeDefinition( 0, 12, nextFollowup, 10, 1000, 0, 1100, 0, 700, false, true ) } );
+			var economy = new ParkEconomy( settings, EconomyTestData.Catalog(), ParkGameMode.FullSimulation, 7 );
+			economy.Objectives.Update( ChallengeStart, 1, _ => 0 ).ToList();
+			economy.Objectives.AcceptAt( ChallengeStart, 0 );
+			var advisor = new AutomaticAdvisor( Controller(), () => 0L );
+			advisor.AttachLevel( Live( economy ) );
+			economy.Counters.Add( ParkCounters.Admissions, 1000 );
+			economy.UpdateChallenges( ChallengeTurn( ChallengeStart + ChallengeDay ) );
+			Assert.IsTrue( economy.Objectives.Current is { Accepted: false }, "the follow-up is offered" );
+			var told = Pending( advisor.Controller ).Where( message => message != 0 ).ToArray();
+			CollectionAssert.AreEqual( nextFollowup == 0 ? new[] { 270, 272 } : new[] { 270 }, told, "the original's lines only, one announcement per event" );
+			CollectionAssert.DoesNotContain( told, 319 );
+			CollectionAssert.DoesNotContain( told, 320 );
+		}
 	}
 
 	[TestMethod]
@@ -728,10 +750,11 @@ public class AdvisorRestoredAdviceTests
 		Assert.IsNull( repeat.AdviseRestored( 160, 105, 0, true ), "the extension's own rule: the congratulation is said once per park" );
 		Assert.IsNull( repeat.AdviseRestored( 160, 100_000, 0, true ), "however long after" );
 		// the original group rule still holds for a message with the extension's default (message 58: group 0, 120 groups of four turns, long repeat on top)
-		var group = Controller();
-		Assert.IsTrue( group.AdviseRestored( 319, 100, 0, true )!.Value.Stored );
+		// (the award lines carry no repeat rule of their own, so only their descriptor's group interval applies: group 2, given an interval here)
+		var group = Controller( Sam.Replace( "MessageGroups[2].MinTimeSameMessage\t\t0", "MessageGroups[2].MinTimeSameMessage\t\t30" ) );
+		Assert.IsTrue( group.AdviseRestored( 230, 100, 0, true )!.Value.Stored );
 		group.Update( () => 1000u, () => 100u, response => 1000u );
-		Assert.AreEqual( AdvisorEligibility.RepeatDelay, group.AdviseRestored( 319, 105, 0, true )!.Value.Eligibility, "the descriptor's group interval applies to an event line" );
+		Assert.AreEqual( AdvisorEligibility.RepeatDelay, group.AdviseRestored( 230, 105, 0, true )!.Value.Eligibility, "the descriptor's group interval applies to an event line" );
 		// a long repeat (message 173) lets the line come back after its interval, and not before
 		var longRepeat = Controller();
 		Assert.IsTrue( longRepeat.AdviseRestored( 173, 100, 0, true )!.Value.Stored );

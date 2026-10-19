@@ -28,6 +28,47 @@ public sealed partial class GuestSimulation
 	/// <summary>Test hook: whether the park uses the winter extension by the guest simulation's own count, a winter shop or a guest wearing a warm item or still warmed by a glühwein. The game's save rule is <see cref="ParkResumeMods.WinterInUse"/>, which reads the placed objects.</summary>
 	internal bool UsesWinter => winterShops > 0 || Guests.Any( guest => guest.HoldsWinter );
 
+	/// <summary>Test hook: whether a winter kiosk stops counting as recently used for a guest with a free slot (<see cref="WinterKioskReturn"/>); true always, a test sets it false to measure the game's own history rules as they were.</summary>
+	internal bool WinterKioskReturnEnabled { get; set; } = true;
+
+	/// <summary>
+	/// The score of <paramref name="attraction"/> for <paramref name="guest"/>: the policy's score, then the host's winter terms (<see cref="HostScore"/>). For a winter kiosk and a guest whose slots are not full, the guest's own
+	/// views do not count a winter kiosk as recently used (<see cref="WinterKioskReturn"/>).
+	/// </summary>
+	// [EXT:winter-kiosk-return] user-approved 2026-10-19 ("Laten terugkomen"): a guest who still lacks an item does not find the kiosk "used recently" (the same-type-as-last rule that scores it 0, the used-history division by 5, 4, 3 and 2)
+	internal uint WinterScoreOf( in DecisionContext context, Guest guest, in GuestView view, IRideVisitorBridge attraction, in AttractionView candidate )
+	{
+		if ( WinterKioskReturnEnabled && attraction.IsWinterKiosk && !WinterRules.SlotsFull( guest.WarmItems ) )
+		{
+			var (returnView, returnCandidate) = WinterKioskReturn( guest, view, candidate );
+			return HostScore( guest, attraction, decisions.ScoreAttraction( context, returnView, returnCandidate ) );
+		}
+		return HostScore( guest, attraction, decisions.ScoreAttraction( context, view, candidate ) );
+	}
+
+	/// <summary>
+	/// The views of a guest who lacks a winter item as they score the winter kiosk: every winter kiosk in the used history counts as an empty slot (so it neither divides the score nor is "the last thing used"), and the
+	/// candidate is not of the type of the last thing used when that was a winter kiosk. The temporary history (a refusal at a queue that was too long or too exciting) and every other attraction's score are untouched.
+	/// </summary>
+	private (GuestView View, AttractionView Candidate) WinterKioskReturn( Guest guest, in GuestView view, in AttractionView candidate )
+	{
+		var returnView = view;
+		var returnCandidate = candidate;
+		int[]? used = null;
+		for ( var slot = 0; slot < guest.UsedHistory.Length; slot++ )
+		{
+			if ( guest.UsedHistory[slot] == 0 || FindAttraction( guest.UsedHistory[slot] ) is not { IsWinterKiosk: true } )
+				continue;
+			used ??= (int[])guest.UsedHistory.Clone();
+			used[slot] = 0;
+			if ( slot == 0 )
+				returnCandidate = returnCandidate with { SameTypeAsLastUsed = false };
+		}
+		if ( used != null )
+			returnView = view with { UsedHistory = used };
+		return (returnView, returnCandidate);
+	}
+
 	/// <summary>Sets a guest's warm items the way a test needs them.</summary>
 	internal void SetWarmItemsForTest( Guest guest, int items ) => guest.WarmItems = items;
 

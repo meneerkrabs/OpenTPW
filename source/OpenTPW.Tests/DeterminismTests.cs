@@ -508,7 +508,7 @@ public class DeterminismTests
 	}
 
 	/// <summary>[EXT:winter-extension] The pinned hash of <see cref="RunFixedParkWithWinterShopsInTheSnow"/> (docs/DETERMINISM.md, "Winter").</summary>
-	internal const ulong WinterFixedRunHash = 0xD4E2340C99394B73UL;
+	internal const ulong WinterFixedRunHash = 0xA66540FF8C2AC6DEUL;
 
 	[TestMethod]
 	public void FixedRunWithWinterShopsInTheSnowIsTheSameInEveryProcessAndGuestsWearTheirPurchases()
@@ -670,7 +670,7 @@ public class DeterminismTests
 	}
 
 	/// <summary>[EXT:winter-always] The pinned hash of <see cref="RunFixedParkWithShopsAndRainMoodInTheJungleWeatherFromMay"/> with the Always winter option on (docs/DETERMINISM.md, "Always winter").</summary>
-	internal const ulong WinterAlwaysFixedRunHash = 0xAD0FF92A6B42F187UL;
+	internal const ulong WinterAlwaysFixedRunHash = 0x5F767F69EF5CBF07UL;
 
 	[TestMethod]
 	public void ShopsAndRainMoodUnderTheJungleWeatherFromMayArePinnedWithAlwaysWinterOn()
@@ -816,7 +816,7 @@ public class DeterminismTests
 	internal const ulong WinterColdFixedRunHash = 0x9E74A906AB249401UL;
 
 	/// <summary>[EXT:winter-cold] The pinned hash of <see cref="RunFixedParkInTheSnowWithCold"/> with the cold rule, the rain mood, the brolly shop and the winter shops all on (docs/DETERMINISM.md, "Winter cold").</summary>
-	internal const ulong WinterColdEverythingFixedRunHash = 0xCCEA2E164DF6888AUL;
+	internal const ulong WinterColdEverythingFixedRunHash = 0x45FCB3FC30C601FCUL;
 
 	[TestMethod]
 	public void FixedRunInTheSnowWithColdIsTheSameInEveryProcessAndMovesTheRun()

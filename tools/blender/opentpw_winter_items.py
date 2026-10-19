@@ -190,8 +190,8 @@ def build_mitten(slot, side):
 	c = MITTEN_COLOURS[slot]
 	m_body = material("mit_body", c["body"], 0.9)
 	tilt = math.radians(-14 * side)                         # the arm hangs abducted: the mitten's lower end points outwards
-	# a rounded tip, the palm (widest at 0.32 of the length from the tip), then the wrist; flattened front to back like a hand
-	body = [(0.0, -0.36), (0.10, -0.34), (0.18, -0.27), (0.215, -0.14), (0.22, 0.0), (0.20, 0.12), (0.17, 0.19)]
+	# a rounded tip, the palm (widest at 0.32 of the length from the tip, radius 0.24 so it covers the hand in every frame), then the wrist; flattened front to back like a hand
+	body = [(0.0, -0.36), (0.10, -0.34), (0.19, -0.27), (0.235, -0.14), (0.24, 0.0), (0.22, 0.12), (0.17, 0.19)]
 	mitten = lathe("mitten", body, [m_body], sides=SIDES)
 	mitten.scale = (1.0, 0.82, 1.0)
 	# the knit cuff: a ribbed band (rings alternate between two radii), the same wool as the body

@@ -2305,7 +2305,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	{
 		if ( attraction.JoinCell == null )
 			return 0;
-		return HostScore( guest, attraction, decisions.ScoreAttraction( ContextNow(), ViewOf( guest ), ViewOf( attraction, guest ) ) );
+		return WinterScoreOf( ContextNow(), guest, ViewOf( guest ), attraction, ViewOf( attraction, guest ) );
 	}
 
 	/// <summary>
@@ -2338,7 +2338,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			if ( attraction.JoinCell == null )
 				continue;
 			var candidate = ViewOf( attraction, guest );
-			var score = HostScore( guest, attraction, decisions.ScoreAttraction( context, view, candidate ) );
+			var score = WinterScoreOf( context, guest, view, attraction, candidate );
 			// [EXT:smarter-guests-value] a candidate the price rule turned away that the guest could otherwise have chosen: if nothing is chosen, the decision was emptied by price
 			if ( decisions.UsesValueForMoney && score < AttractionScore.CandidateFloor && attraction.IsOpen && !attraction.IsBrokenDown
 				&& attraction.QueueLength < RideVisitorBridge.PositionsPerCell * attraction.QueueSizeInCells && decisions.PriceTurnedAway( context, view, candidate ) )
@@ -2545,7 +2545,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 						continue;
 					// [EXT:smarter-guests-planning] a candidate in the window stands on the guest's way: a policy that plans is told so (the window's rule is the original's definition of "near the route")
 					var candidateView = ViewOf( candidate, guest );
-					var score = HostScore( guest, candidate, decisions.ScoreAttraction( context, view, decisions.UsesPlanning ? candidateView with { OnTheWay = true } : candidateView ) );
+					var score = WinterScoreOf( context, guest, view, candidate, decisions.UsesPlanning ? candidateView with { OnTheWay = true } : candidateView );
 					if ( decisions.BeatsInMinorDecision( context, view, score, bestScore ) )
 						(best, bestScore) = (candidate, score);
 				}
@@ -2555,7 +2555,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		if ( best != null && decisions.UsesSpreading )
 		{
 			var targetView = ViewOf( target, guest );
-			keeps = !decisions.SwitchesTarget( context, view, targetView, HostScore( guest, target, decisions.ScoreAttraction( context, view, targetView ) ), ViewOf( best, guest ), bestScore );
+			keeps = !decisions.SwitchesTarget( context, view, targetView, WinterScoreOf( context, guest, view, target, targetView ), ViewOf( best, guest ), bestScore );
 			if ( keeps )
 				TargetsKept++;
 			else

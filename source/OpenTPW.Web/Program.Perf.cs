@@ -140,15 +140,32 @@ public static partial class Program
 		return true;
 	}
 
+	/// <summary>
+	/// [EXT:debug-umbrellas] Stops <see cref="PerfUmbrellas"/> holding every umbrella open and holding the camera (the umbrellas stay as they are until the simulation or <see cref="PerfUmbrellaCrowd"/> changes them): the winterCost
+	/// scenario holds them open for its measured windows and lets go of them before its screenshot.
+	/// </summary>
+	[JSExport]
+	public static void PerfUmbrellasOff()
+	{
+		if ( umbrellaHook != null && renderer != null )
+			renderer.PostUpdate -= umbrellaHook;
+		umbrellaHook = null;
+	}
+
+	/// <summary>Whether it rains in the park now (the weather's rain flag), so a measured window can say whether it ran in rain.</summary>
+	[JSExport]
+	public static bool PerfRaining() => flow?.Level?.Weather?.Rain == true;
+
 	private static Action? winterHook;
 
 	/// <summary>
 	/// [EXT:debug-winter] The browser twin of the desktop's Debug-build <c>--debug-winter</c> (a capture aid for tools/web-perf, scenario <c>winter</c>): dresses every guest in a head item (by its id) and mittens (all but every fourth guest) every frame,
-	/// and when <paramref name="zoom"/> is above zero holds the park camera on the lowest-numbered visible guest at that zoom value and <paramref name="yaw"/> (degrees). The guests' item field is written directly, so a run that calls this is not the
+	/// and when <paramref name="zoom"/> is above zero holds the park camera on a visible guest at that zoom value and <paramref name="yaw"/> (degrees): the lowest-numbered one, or the one <paramref name="follow"/> places further up the order, counted from the
+	/// highest-numbered guest down when it is negative (a staged crowd starts under the entrance canopy, and its later guests are those furthest down the road). The guests' item field is written directly, so a run that calls this is not the
 	/// park's own simulation and nothing may be saved from it. Returns false outside a park or when the winter extension has no renderer.
 	/// </summary>
 	[JSExport]
-	public static bool PerfWinter( double zoom, double yaw )
+	public static bool PerfWinter( double zoom, double yaw, int follow )
 	{
 		if ( flow?.Level is not { WarmItemRenderer: not null } || renderer == null )
 			return false;
@@ -159,7 +176,7 @@ public static partial class Program
 			if ( flow?.Level is not { Guests: { } simulation } level )
 				return;
 			if ( zoom > 0 && Camera.Mode is ParkCameraMode camera && level.OriginalPark is { } park )
-				if ( simulation.Guests.Where( candidate => candidate.IsVisible && float.IsFinite( candidate.DrawX ) ).OrderBy( candidate => candidate.Id ).FirstOrDefault() is { } followed )
+				if ( simulation.Guests.Where( candidate => candidate.IsVisible && float.IsFinite( candidate.DrawX ) ).OrderBy( candidate => follow < 0 ? -candidate.Id : candidate.Id ).Skip( Math.Abs( follow ) ).FirstOrDefault() is { } followed )
 				{
 					var spot = GuestRenderer.CellToEngine( park.Heightfield, followed.DrawX, followed.DrawY );
 					camera.SetPose( new System.Numerics.Vector3( spot.X, spot.Y, 0 ), (float)zoom, (float)yaw );

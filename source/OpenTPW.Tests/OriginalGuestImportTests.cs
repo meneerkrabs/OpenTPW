@@ -179,6 +179,23 @@ public class OriginalGuestImportTests
 	}
 
 	/// <summary>
+	/// Synthetic: a deciding park guest standing on a queue cell (type 3) that is not part of the path network. The load keeps it where it stands, as on grass (<c>0x004FB530</c>), and reports
+	/// the cell type: it is imported, not dropped.
+	/// </summary>
+	[TestMethod]
+	public void AParkGuestStandingOnAQueueCellIsImportedWhereItStands()
+	{
+		var simulation = Simulation();
+		simulation.Grid.SetQueue( 3, 2, -1 );
+		var saved = Decode( new SaveTestPayloads.GuestFields { Position = (At( 3 ), At( 2 )), Destination = (At( 8 ), At( 5 )), State = 6 }, 42 );
+		var report = simulation.ImportOriginal( new[] { saved }, 755, _ => 0, _ => 0 );
+		var guest = simulation.Guests.Single();
+		Assert.AreEqual( (GuestState.DoingNothing, 3, 2), (guest.State, guest.CellX, guest.CellY), "imported on the queue cell where it stands" );
+		Assert.IsTrue( report.Any( line => line.Contains( "guest 42 state 6 imported off the paths at (3, 2) (cell type 3)", StringComparison.Ordinal ) ), string.Join( "\n", report ) );
+		Assert.IsFalse( report.Any( line => line.StartsWith( "[APPROX:SAVE-002] Guests not imported:", StringComparison.Ordinal ) ) );
+	}
+
+	/// <summary>
 	/// Synthetic: a park guest of each state 6–10 standing on grass at (3, 2), three cells above the path y = 5. tp.exe's load leaves it there (<c>0x004FB530</c>) and routes a
 	/// walking state again to its accurate destination (<c>0x004F9407</c>), which draws nothing; its own state handlers bring it back onto a path in its first updates.
 	/// </summary>

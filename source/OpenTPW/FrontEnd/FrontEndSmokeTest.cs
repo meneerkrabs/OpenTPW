@@ -106,6 +106,21 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 	private Asset[] firstParkGuestAssets = Array.Empty<Asset>();
 	private Asset[] secondParkGuestAssets = Array.Empty<Asset>();
 
+	/// <summary>
+	/// The lobby's four sign models (Jun_isle, Hal_isle, Fan_gate, Spa_gate) have composed their theme gate's lines within the frames waited, and every one of their
+	/// sign slots is bound to that runtime sign: not the plain board, never the shipped "SIGN1 SIGN2" art.
+	/// </summary>
+	private static void RequireLobbySigns( LobbyScene lobby )
+	{
+		Require( lobby.PendingSignCount == 0, $"the lobby has composed its signs ({lobby.PendingSignCount} pending)" );
+		Require( lobby.SignModels.Count == 4, $"the lobby has its four sign models ({string.Join( ", ", lobby.SignModels )})" );
+		foreach ( var model in lobby.SignModels )
+		{
+			var sources = lobby.SignSlotSources( model );
+			Require( sources.Count > 0 && sources.All( source => source == SignSlotSource.RuntimeSign ), $"{model}'s sign slots show its runtime sign ({string.Join( ", ", sources )})" );
+		}
+	}
+
 	private static bool RendererAssetsReleased( IEnumerable<Asset> assets ) => assets.All( asset => !Asset.All.Contains( asset ) && asset switch
 	{
 		Texture texture => texture.NativeTexture.IsDisposed && AtlasViewReleased( texture ),
@@ -275,6 +290,7 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			Require( flow.Lobby!.FlyingMeshes is { } flyers && flyers.Groups.Count == 3 && flyers.Groups.Sum( group => group.Instances.Count ) == 70,
 				"the lobby flies its 70 bats and butterflies" );
 			Require( flow.Lobby.IslandClips.All( clip => clip is 1 or 2 ), "every island model plays its M1 or M2 clip" );
+			RequireLobbySigns( flow.Lobby );
 			var capture = CaptureFrame( "frontend.png" );
 			// [BIN:TPW-EXE:0x757f60 lobby panel] the lobby has no title and no menu column: the panel, its four buttons and the island name; Escape opens the menu
 			Require( flow.Menu!.Main.Find( "logo" ) == null && flow.Menu.Main.Find( "title" ) == null && flow.Menu.Main.Find( "quit" ) == null, "the lobby has no logo, title or menu column" );
@@ -1387,6 +1403,7 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 		Do( "back in lobby", () =>
 		{
 			Require( flow.Level == null && flow.Menu != null && flow.Lobby != null, "Exit To Lobby returns to the front end" );
+			RequireLobbySigns( flow.Lobby! );
 			Require( RendererAssetsReleased( firstParkHeadAssets ), "exit releases every head atlas, material and shader from the first park" );
 			Require( RendererAssetsReleased( firstParkGuestAssets ), "exit releases every guest atlas, material and shader from the first park" );
 			Log.Trace( "Guest lifecycle: first park exit released all ten owned guest assets." );

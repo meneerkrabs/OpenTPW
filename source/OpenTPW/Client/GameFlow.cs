@@ -379,6 +379,13 @@ internal sealed partial class GameFlow : IDisposable
 		if ( original )
 			using ( LoadProfile.Measure( "enter-park-audio" ) )
 				GameAudio.EnterPark( levelName, level.Seed.SoundStream );
+		// [BIN:TPW-EXE:0x51C400 sound loader] a park started from an original save (a player's own or the shipped Easymode seed, Level.OriginalSaveSound) plays at the save's volumes until the options take over (docs/AUDIO.md, "Volumes of a loaded original save"); the player's options are not changed
+		if ( original && visit == null && level.OriginalSaveSound is { } savedSound )
+		{
+			var line = GameAudio.ApplySavedSound( savedSound, GameOptions.Current );
+			level.Park?.Import?.Report( line );
+			Log.Trace( line );
+		}
 		StartKind = level.Park?.Start.Kind;
 		AttachGuestSounds( level );
 		// [EXT:tpi-viewer] the edition capability policy runs the experimental Theme Park Inc slice: the shared world,
@@ -880,6 +887,7 @@ internal sealed partial class GameFlow : IDisposable
 			for ( var frames = lobbyFrames.Advance( Time.Delta ); frames > 0; frames-- )
 				Lobby.StepFrame( ReferenceFrameClock.FrameSeconds );
 			Lobby.Animate( Time.Delta );
+			Lobby.StepSigns( Menu?.Selected, paused: false );
 			lobbyEffects.StepGlobe( Time.Delta );
 			return;
 		}
@@ -892,6 +900,7 @@ internal sealed partial class GameFlow : IDisposable
 				for ( var frames = lobbyFrames.Advance( Time.Delta ); frames > 0; frames-- )
 					city.StepFrame( ReferenceFrameClock.FrameSeconds );
 				city.Animate( Time.Delta );
+				city.StepSigns( null, paused: false );
 			}
 			return;
 		}
@@ -916,6 +925,8 @@ internal sealed partial class GameFlow : IDisposable
 				GameAudio.PlayLobbyOneShot( oneShot );
 		}
 		Lobby.Animate( Time.Delta );
+		// one lobby sign per frame from the second frame on, the selected island's first; none during the zoom into a park, whose island keeps its board then
+		Lobby.StepSigns( Menu?.Selected, paused: LobbyEntering );
 	}
 
 	/// <summary>The lobby's reference frames (60 Hz) for the frame-driven effects and flyers.</summary>

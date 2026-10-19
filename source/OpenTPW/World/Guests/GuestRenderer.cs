@@ -416,6 +416,17 @@ public sealed class GuestRenderer : Entity
 		return true;
 	}
 
+	// The body player proves only scale-one provenance, never the renderer's selected frame or phase.
+	// Legacy/imported reconstructed histories deliberately remain on the rectangle, potentially for their lifetime.
+	private bool OrdinaryCircleSource( Guest guest, int atlasIndex, GuestAtlasFrame frame ) =>
+		OrdinaryRenderer && Level.OriginalPark != null && OrdinaryGuest( guest ) && guest.Type < simulation.Settings.Types.Count
+		&& material?.Pipeline is { IsDisposed: false } && HasAtlas( atlasIndex ) && ValidFrame( atlases[atlasIndex], frame )
+		&& !guest.BodySpriteHistoryReconstructed && guest.BodySpriteInCostume == guest.InCostume
+		&& guest.BodySprite.Player is { Output: { } output } player
+		&& VisitorSpritePlayer.IsSupported( player.ActiveTemplate ) && VisitorSpritePlayer.IsSupported( player.CurrentProgram )
+		&& VisitorSpritePlayer.IsValidOutput( output )
+		&& (guest.BodySprite.PendingTemplate is not { } pending || VisitorSpritePlayer.IsSupported( pending ));
+
 	/// <summary>Picks the current visible in-park sprite without touching render resources or simulation state.</summary>
 	internal Guest? PickVisitor(SVector2 mouse, SVector2 viewport, System.Numerics.Matrix4x4 view, System.Numerics.Matrix4x4 projection) =>
 		PickVisitor(mouse, viewport, view, projection, out _);
@@ -428,6 +439,7 @@ public sealed class GuestRenderer : Entity
 			return null;
 		var right = new SVector3(view.M11, view.M21, view.M31);
 		var forward = -new SVector3(view.M13, view.M23, view.M33);
+		var canonicalView = Hud.VisitorCirclePicker.IsCanonicalView( view, projection, viewport );
 		Guest? picked = null;
 		var best = float.PositiveInfinity;
 		foreach (var guest in simulation.Guests)
@@ -438,7 +450,15 @@ public sealed class GuestRenderer : Entity
 			var (atlasIndex, frameIndex, mirror, slot, direction, rotation, _) = SelectSpriteAndSlot(guest, right, forward, new SVector3(view.M12, view.M22, view.M32));
 			var frame = atlases[atlasIndex].Frames[frameIndex];
 			var feet = (FeetChooser?.Invoke( guest ) ?? CellToEngine(field, guest.DrawX, guest.DrawY)) + new SVector3(view.M12, view.M22, view.M32) * AnchorLift(atlasIndex, slot, direction) - forward * (DepthPullChooser?.Invoke(guest) ?? 0f);
-			if (!Hud.GuestWorldPicker.TryHit(feet, frame, mirror, view, projection, viewport, mouse, out var hit, rotation))
+			float hit;
+			// Eligibility and hit outcome are separate: a supported circle MISS must never retry the rectangle.
+			if (canonicalView && OrdinaryCircleSource(guest, atlasIndex, frame)
+				&& Hud.VisitorCirclePicker.TryCreate(feet, frame, mirror, view, projection, viewport, mouse, out var circle, out var pointer, out hit))
+			{
+				if (!circle.Contains(pointer.X, pointer.Y))
+					continue;
+			}
+			else if (!Hud.GuestWorldPicker.TryHit(feet, frame, mirror, view, projection, viewport, mouse, out hit, rotation))
 				continue;
 			if (hit < best || (hit == best && (picked == null || guest.Id < picked.Id)))
 			{

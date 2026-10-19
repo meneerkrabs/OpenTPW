@@ -465,7 +465,7 @@ the same seed as well.
 ## Mods
 
 Extensions and mods (MODS.md) are resolved at startup, and nothing changes while a park simulates: the files-based mods stay as resolved for the whole run, and an official extension
-switched on at a park load ([below](#switched-parks)) takes effect only for the park that load builds. With no files-based mods
+switched afterwards (the Extensions and mods screen, or a park load, [below](#switched-parks); `[EXT:extensions-apply-at-load]`) takes effect only for the next park built, never for a running one. With no files-based mods
 and the default extensions nothing in the simulation changes: the online extension `opentpw.online` touches no
 simulation state, and `DeterminismTests.TogglingOnlyTheOnlineExtensionKeepsThePinnedDigests` runs the pinned fixed
 run (`FixedRunHash`) and the guest-pathing run with it on and off and gets the same digests. The M4 gate and the

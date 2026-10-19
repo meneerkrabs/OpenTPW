@@ -178,7 +178,7 @@ website, a work in progress from the original project.
 ## Extensions and mods
 
 OpenTPW has two kinds of add-ons, both switched on and off on **Options > OpenTPW > Extensions and mods**
-(changes apply at the next start; [extensions and mods](https://opentpw.io/docs/MODS.html)):
+(official extensions apply to the next park you start or load, community mods at the next start; [extensions and mods](https://opentpw.io/docs/MODS.html)):
 
 - **Official extensions** are OpenTPW features that live in this repository and can be switched off. They are
   OpenTPW's own, not original behaviour, and are labelled `[EXT]` in the code. Online play, the restored advisor lines and pools are on by default.

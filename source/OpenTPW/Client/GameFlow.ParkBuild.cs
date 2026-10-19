@@ -50,6 +50,9 @@ internal sealed partial class GameFlow
 		ParkStartKind start = ParkStartKind.OriginalSaveReference, Action<Level>? ready = null, Action<Level>? beforeEnter = null )
 	{
 		RequireProgressSaved();
+		// [EXT:extensions-apply-at-load] from the lobby (no park simulates) a new park is built with the extension choices waiting; a park still running keeps its set until it is left
+		if ( Level == null )
+			ApplyPendingExtensions();
 		// A language chosen just before the park applies before it is built, as the tear-down of a park built in one go applies it;
 		// one whose files are still coming waits for that tear-down. (Only a language chosen inside the park being left can still be
 		// pending here; the front end applies its choice at once. That park's screens keep their strings for its last frames, and a

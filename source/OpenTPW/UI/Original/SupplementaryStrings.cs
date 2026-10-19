@@ -391,6 +391,10 @@ public enum OpenTpwText
 	ExtensionPoolsName,
 	/// <summary>[EXT:save-extension-switch] The load dialog's question that switches content extensions on and loads ({0}: their names).</summary>
 	ExtensionSwitchTurnOnQuestion,
+	/// <summary>[EXT:extensions-apply-at-load] The Extensions and mods screen's notice when only extensions changed and no park runs: they apply to the next park, no restart.</summary>
+	ModsSavedNextPark,
+	/// <summary>[EXT:extensions-apply-at-load] The same notice while a park runs: the changes apply when the player leaves it or loads another park.</summary>
+	ModsSavedAfterThisPark,
 }
 
 public static class SupplementaryStrings
@@ -941,6 +945,28 @@ public static class SupplementaryStrings
 		[OpenTpwText.ExtensionSwitchTurnOnQuestion] = new[] { "Turn {0} on and load the park?", "Slå {0} til og indlæs parken?", "{0} aanzetten en het park laden?", "Activer {0} et charger le parc ?",
 			"{0} einschalten und den Park laden?", "{0}을(를) 켜고 공원을 불러오시겠습니까?", "Włączyć {0} i wczytać park?", "¿Activar {0} y cargar el parque?", "Slå på {0} och läsa in parken?",
 			"Attivare {0} e caricare il parco?", "להפעיל את {0} ולטעון את הפארק?" },
+		[OpenTpwText.ModsSavedNextPark] = new[] { "Extensions saved\n\nThe changes apply to the next park you start or load. No restart is needed.",
+			"Udvidelser gemt\n\nÆndringerne gælder for den næste park, du starter eller indlæser. Du behøver ikke genstarte.",
+			"Extensies opgeslagen\n\nDe wijzigingen gelden voor het volgende park dat je start of laadt. Opnieuw starten is niet nodig.",
+			"Extensions enregistrées\n\nLes changements s'appliquent au prochain parc que vous lancez ou chargez. Inutile de redémarrer.",
+			"Erweiterungen gespeichert\n\nDie Änderungen gelten für den nächsten Park, den Sie starten oder laden. Ein Neustart ist nicht nötig.",
+			"확장을 저장했습니다\n\n변경 사항은 다음에 시작하거나 불러오는 공원부터 적용됩니다. 다시 시작할 필요는 없습니다.",
+			"Rozszerzenia zapisane\n\nZmiany obowiązują od następnego parku, który uruchomisz lub wczytasz. Ponowne uruchomienie nie jest potrzebne.",
+			"Extensiones guardadas\n\nLos cambios se aplican al próximo parque que inicies o cargues. No hace falta reiniciar.",
+			"Tillägg sparade\n\nÄndringarna gäller nästa park du startar eller läser in. Du behöver inte starta om.",
+			"Estensioni salvate\n\nLe modifiche valgono dal prossimo parco che avvii o carichi. Non serve riavviare.",
+			"ההרחבות נשמרו\n\nהשינויים יחולו על הפארק הבא שתתחיל או תטען. אין צורך להפעיל מחדש." },
+		[OpenTpwText.ModsSavedAfterThisPark] = new[] { "Extensions saved\n\nThe changes apply when you leave this park or load another one. No restart is needed.",
+			"Udvidelser gemt\n\nÆndringerne gælder, når du forlader denne park eller indlæser en anden. Du behøver ikke genstarte.",
+			"Extensies opgeslagen\n\nDe wijzigingen gelden zodra je dit park verlaat of een ander laadt. Opnieuw starten is niet nodig.",
+			"Extensions enregistrées\n\nLes changements s'appliquent quand vous quittez ce parc ou en chargez un autre. Inutile de redémarrer.",
+			"Erweiterungen gespeichert\n\nDie Änderungen gelten, sobald Sie diesen Park verlassen oder einen anderen laden. Ein Neustart ist nicht nötig.",
+			"확장을 저장했습니다\n\n변경 사항은 이 공원을 떠나거나 다른 공원을 불러올 때 적용됩니다. 다시 시작할 필요는 없습니다.",
+			"Rozszerzenia zapisane\n\nZmiany zaczną obowiązywać, gdy opuścisz ten park lub wczytasz inny. Ponowne uruchomienie nie jest potrzebne.",
+			"Extensiones guardadas\n\nLos cambios se aplican cuando salgas de este parque o cargues otro. No hace falta reiniciar.",
+			"Tillägg sparade\n\nÄndringarna gäller när du lämnar den här parken eller läser in en annan. Du behöver inte starta om.",
+			"Estensioni salvate\n\nLe modifiche valgono quando lasci questo parco o ne carichi un altro. Non serve riavviare.",
+			"ההרחבות נשמרו\n\nהשינויים יחולו כשתצא מהפארק הזה או תטען פארק אחר. אין צורך להפעיל מחדש." },
 		[OpenTpwText.ExtensionPoolsName] = new[] { "Pools", "Svømmebassiner", "Zwembaden", "Piscines", "Schwimmbecken", "수영장", "Baseny", "Piscinas", "Pooler", "Piscine", "בריכות" },
 	};
 

@@ -98,7 +98,7 @@ or full gameplay and does not download proprietary game files.
 | `--mod-dir <folder>` | Adds one mod folder (with its `opentpw-mod.json`) ahead of the installed mods; repeatable. |
 | `OPENTPW_MOD_DIRS` | Mod folders separated by the platform's path separator (`:` or `;`), after `--mod-dir`. |
 
-The choices themselves live in `<config>/mods.json`; see [MODS.md](MODS.md). Changes apply at the next start.
+The choices themselves live in `<config>/mods.json`; see [MODS.md](MODS.md). Official extensions switched in the game apply to the next park started or loaded; mods and edits to the file apply at the next start ([When a change applies](MODS.md#when-a-change-applies)).
 
 `OPENTPW_TPI_PATH=/path/to/Theme\ Park\ Inc bash scripts/smoke-tpi-rides.sh '/path/to/Theme Park World'` runs the native smokes with the shipped Theme Park Inc rides mod (`opentpw.tpi-rides`)
 ([MODS.md](MODS.md#the-shipped-theme-park-inc-rides-mod)); it needs a window, so not while the screen is locked.

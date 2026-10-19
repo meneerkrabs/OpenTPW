@@ -2,6 +2,17 @@ using OpenTPW.Mods;
 
 namespace OpenTPW.UI.Original;
 
+/// <summary>[EXT:extensions-apply-at-load] When extension choices made on the Extensions and mods screen take effect.</summary>
+public enum ExtensionChoiceTiming
+{
+	/// <summary>No park is running: the choices are active now and the next park started or loaded uses them.</summary>
+	NextPark,
+	/// <summary>A park is running: the choices take effect when the player leaves it or loads another park.</summary>
+	AfterThisPark,
+	/// <summary>The choices need a new start (or a page reload in the browser).</summary>
+	NextStart,
+}
+
 /// <summary>What the Extensions and mods screen reads and does outside itself; every member has the game's real default.</summary>
 public sealed class ModsServices
 {
@@ -26,6 +37,11 @@ public sealed class ModsServices
 	/// Inspects a folder away from the game's threads (a helper process by default, like the Game files screen). The browser inspects its copy
 	/// in this process, at once.
 	/// </summary>
+	/// <summary>
+	/// [EXT:extensions-apply-at-load] Applies the official extensions the player switched (id to on) without a restart where it can and says when they take effect (the game's flow,
+	/// <c>GameFlow.ApplyExtensionChoices</c>). Null (the default, and while a community mod or an input changed too) leaves every change to the next start.
+	/// </summary>
+	public Func<IReadOnlyDictionary<string, bool>, ExtensionChoiceTiming>? ApplyExtensions { get; init; }
 	internal Func<string, CancellationToken, Task<InstallationDiscoveryResult>> Inspect { get; init; } = OperatingSystem.IsBrowser()
 		? ( path, _ ) => Task.FromResult( new InstallationDiscoveryResult( new[] { GameInstallation.Inspect( path ) }, false, null ) )
 		: ( path, cancellation ) => InstallationDiscovery.InspectAsync( path, cancellation: cancellation );
@@ -38,7 +54,8 @@ public sealed class ModsServices
 /// pane (author, content digest, needs, folder, why a mod is refused) and, for a mod that needs an original game folder,
 /// the folder chooser of the Game files screen with the check of that folder (<see cref="ModInputCheck"/>, which uses
 /// <see cref="GameEditions.Detect"/> and <see cref="GameEditions.HasKnownStandardSam"/>). The statuses come from resolving the real
-/// <see cref="ModSet"/> with the pending choices. OK writes <c>mods.json</c> and says the changes apply after a restart; Cancel
+/// <see cref="ModSet"/> with the pending choices. OK writes <c>mods.json</c>; [EXT:extensions-apply-at-load] official extensions switched on or off apply at the next park start or load without
+/// a restart (<see cref="ModsServices.ApplyExtensions"/>), and the screen says so; a change to a community mod or its input, and the cases the flow cannot switch live, apply after a restart, and the screen says that. Cancel
 /// and Escape discard them. In the browser build the community list holds the mods shipped with the page, and a mod input is
 /// the page's copy of the player's own game files (<see cref="BrowserModInputs"/>), chosen with the page's folder dialog.
 /// </summary>
@@ -359,11 +376,12 @@ public static class ModsScreen
 			Bounds = Rect( 57, 1335, 1700, 1440 ), Anchor = UiAnchor.Center } );
 
 		// The same effective choices (an extension without an entry has its default) need no write and no restart.
-		bool Differs()
+		bool Differs() => ExtensionChanges().Count > 0 || CommunityDiffers();
+		// [EXT:extensions-apply-at-load] the official extensions this screen switched (against mods.json as it was), which may apply without a restart
+		Dictionary<string, bool> ExtensionChanges() => services.Extensions.Where( extension => saved.IsEnabled( extension.Id, extension.DefaultEnabled ) != pending.IsEnabled( extension.Id, extension.DefaultEnabled ) )
+			.ToDictionary( extension => extension.Id, extension => pending.IsEnabled( extension.Id, extension.DefaultEnabled ), StringComparer.Ordinal );
+		bool CommunityDiffers()
 		{
-			foreach ( var extension in services.Extensions )
-				if ( saved.IsEnabled( extension.Id, extension.DefaultEnabled ) != pending.IsEnabled( extension.Id, extension.DefaultEnabled ) )
-					return true;
 			foreach ( var mod in discovered.Where( mod => mod.IsValid ) )
 			{
 				if ( saved.IsEnabled( mod.Id, false ) != pending.IsEnabled( mod.Id, false ) )
@@ -387,8 +405,17 @@ public static class ModsScreen
 					status = exception.Message;
 					return;
 				}
+				// [EXT:extensions-apply-at-load] extensions alone apply without a restart where the flow can switch them; a community mod or an input needs the next start for everything
+				var changes = ExtensionChanges();
+				var timing = services.ApplyExtensions != null && changes.Count > 0 && !CommunityDiffers() ? services.ApplyExtensions( changes ) : ExtensionChoiceTiming.NextStart;
+				var notice = timing switch
+				{
+					ExtensionChoiceTiming.NextPark => OpenTpwText.ModsSavedNextPark,
+					ExtensionChoiceTiming.AfterThisPark => OpenTpwText.ModsSavedAfterThisPark,
+					_ => OpenTpwText.ModsSaved,
+				};
 				stack.Pop();
-				stack.Push( UiDialogs.Message( "modsSaved", () => strings.Extra( OpenTpwText.ModsSaved ), (() => strings.Extra( OpenTpwText.Back ), stack.Pop) ) );
+				stack.Push( UiDialogs.Message( "modsSaved", () => strings.Extra( notice ), (() => strings.Extra( OpenTpwText.Back ), stack.Pop) ) );
 				return;
 			}
 			stack.Pop();

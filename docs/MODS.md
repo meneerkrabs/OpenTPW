@@ -37,8 +37,8 @@ In code the system is called `OpenTPW.Mods` / "extensions"; `OpenTPW.ModKit` is 
   [The shipped Theme Park Inc rides mod](#the-shipped-theme-park-inc-rides-mod); to write your own, see
   [Making a Theme Park Inc rides mod](#making-a-theme-park-inc-rides-mod)).
 
-Changes to `mods.json` apply at the next start, except an official extension that a park load switches on ([Loading a park with other extensions](#loading-a-park-with-other-extensions)), which applies
-at once for that park; nothing is swapped while a park simulates.
+Official extensions switched on or off apply at the next park start or load, without a restart; community mods, their inputs and a few extensions need the next start (see
+[When a change applies](#when-a-change-applies)). Nothing is swapped while a park simulates.
 
 ## Defaults of the official extensions
 
@@ -97,8 +97,10 @@ folder structure) must find the edition the input asks for; the result is shown 
 Standard.sam)", "This folder holds Theme Park World data, not Theme Park Inc", "No game data folder found here"). A folder of
 the wrong edition is not saved. Saved folders go to `inputs` in `mods.json`.
 
-**OK** writes `mods.json` (only when a choice changed) and shows a restart notice; **Cancel** and Escape discard the edits.
-Nothing is applied while the game runs. The screen's own texts are in the eleven interface languages (`OpenTpwText`, `SupplementaryStrings`). The name and description of five extensions (smarter guests, guest insights, pool guest art, restored advice, evening and night) are translated too; the other extensions (online, cross-edition objects, pools) and every mod show the name and description from their code or manifest, which are English. In the
+**OK** writes `mods.json` (only when a choice changed) and says when the choices apply; **Cancel** and Escape discard the edits. When only official extensions changed, they apply without a
+restart (`[EXT:extensions-apply-at-load]`): from the lobby at once, so the next park you start or load uses them ("The changes apply to the next park you start or load. No restart is needed."), and inside a
+park when you leave it or load another park ("The changes apply when you leave this park or load another one."). A change to a community mod or its input, and the cases in
+[When a change applies](#when-a-change-applies), show the restart notice instead. The screen's own texts are in the eleven interface languages (`OpenTpwText`, `SupplementaryStrings`). The name and description of five extensions (smarter guests, guest insights, pool guest art, restored advice, evening and night) are translated too; the other extensions (online, cross-edition objects, pools) and every mod show the name and description from their code or manifest, which are English. In the
 browser build the community list holds the mods shipped with the page, and an input is the copy of your own game files that the
 page keeps in the browser: **Change...** opens the browser's folder dialog (a typed path or **Remove** would mean nothing there), and
 the copy is replaced only before a mod reads it (see [Mods in the browser](WEB.md#mods-in-the-browser)).
@@ -327,6 +329,27 @@ Continue entries keep it and add "(requires mod <id> <version>)". Exporting a pa
 while such a mod is active, because packages record no mods yet. One extension is recorded **only while the park uses it**: `opentpw.pools` (listed in `ParkResumeMods.UsedOnlyExtensionIds`), so a park
 without pool cells saves, loads and exports identically with it on or off ([POOLS.md](POOLS.md)). The asset manifest keys archives of a mod `mod:<id>:/…`
 (`data:` and `bonus:` for the game data and the bonus content). Details: [DETERMINISM.md](DETERMINISM.md) "Mods".
+
+## When a change applies
+
+`[EXT:extensions-apply-at-load]` (user-approved 2026-10-19, "Ook ontbrekende extensie aanzetten"). The run's extensions and mods are resolved at startup. An official extension switched on or off afterwards
+(on the Extensions and mods screen, or by the load dialog below) becomes active **without a restart**, at a moment when no park simulates: at once in the lobby, else when the running park is left or
+another park is loaded (a Restart Park reloads the same park and keeps its set). `ModStartup.ApplyExtensions` makes the switched set active: the feature gates read it at once, the official
+extensions' objects (pools, umbrellas, winter) are listed in the theme catalogs again (`ModContentRoots.Activate`; the catalog cache is keyed by those roots), and everything else that depends on an
+extension reads the set when a park is built: the guest simulation's rules and decision policy, the weather, the pools tool, slides and HUD rows, the guest sprites (`PoolGuestSprites`, the umbrella
+and warm-item renderers), the evening lamps and the snow. In the browser the page fetches the pools sprite sets when the extension comes on after the start. The set's order is the one a new start with
+the same choices resolves (`ModSet.WithExtensions`), so a park saved after a switch loads after the next start.
+
+These still apply at the **next start** (in the browser, after a page reload), and the screen says so:
+
+- **Community mods**: switching one on or off, or changing its input folder. A data mod overlays the original game's files, string tables and object catalogs, and its files are read and hashed at
+  startup; assets, strings and catalogs already loaded from the old overlay would stay in use, so a live change could mix the two. Script mods are read and compiled at startup, behind the safe-mode
+  marker ([SCRIPT-MODS.md](SCRIPT-MODS.md)).
+- **The online extension** (`opentpw.online`): its online folders and command-line tools are set up at startup and the lobby's Go Online button is built with the front end.
+- **An extension switched for the run on the command line** (`--disable-extension`, `--enable-mod`): the command line wins for that run.
+- **Switching off an extension an enabled community mod needs**, and a community mod that was refused because an extension it needs was off: the mods are resolved again only at a start.
+
+A change that combines an extension with any of these applies wholly at the next start.
 
 ## Loading a park with other extensions
 

@@ -1,0 +1,3 @@
+## Correct the FADEOBJ decay evidence (October 18, 2026)
+
+Further static inspection of the sample-parameter handler disproves the earlier fixed-60-percent interpretation: the base fade update repeatedly multiplies effective integer volume by 60 / 100 and marks stop at zero. Corrected source annotations, the AUDIO-040 register and related documentation. SoundQuality range and updater ownership are better understood, but cadence, sentence dispatch, pending-play/group behavior and retail persisted default remain evidence gates. Runtime stop fallback is unchanged; no ID is retired and no original runtime or full-binary claim is made.

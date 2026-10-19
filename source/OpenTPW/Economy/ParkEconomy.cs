@@ -50,8 +50,10 @@ public sealed class ParkEconomy : IParkEconomy
 		World = new WorldRng( WorldRng.StateFromSeed( seed ) );
 		Ledger = new ParkLedger( settings.InitialCash );
 		Staff = new ParkStaff( settings );
-		Research = new ParkResearch( settings, catalog ) { OwnsTicketItem = infoId => ticketItems.Contains( infoId ) };
+		Research = new ParkResearch( settings, catalog, trackRecentItems: !Rules.ThemeParkInc ) { OwnsTicketItem = infoId => ticketItems.Contains( infoId ) };
 		Objectives = new ParkObjectives( settings, catalog );
+		Counters.Added += ( key, amount ) => Objectives.AccumulateCounter( key, amount, id => objects.GetValueOrDefault( id )?.InfoId ?? 0 );
+		Counters.Restored += () => Objectives.RestoreLegacyRawValue( MeasureChallenge, id => objects.GetValueOrDefault( id )?.InfoId ?? 0 );
 		EntranceFee = settings.InitialAdmissionFee;
 		Litter.Environment.Effects = RegionEffect.Load( settings.Standard );
 		Litter.World = () => World;
@@ -101,7 +103,7 @@ public sealed class ParkEconomy : IParkEconomy
 	public bool IsBankrupt { get; private set; }
 	/// <summary>
 	/// Whether a winning sequence is showing (tp.exe <c>0x00516C00</c>: the word <c>0x7CF4F4</c>, the thing the research completion's
-	/// <c>StartWinningSequence</c> 0x00516B00 creates); the bank's handler does not make such a park bankrupt. OpenTPW has no winning sequence, so null answers no.
+	/// <c>StartWinningSequence</c> 0x00516B00 creates); the bank's handler does not make such a park bankrupt. The TPW Instant Action host binds this to its live End object; null answers no.
 	/// </summary>
 	public Func<bool>? WinningSequenceActive { get; set; }
 	/// <summary>Whole 30-day months since the park went into the red, as the last month end counted them (0 in the black).</summary>
@@ -1166,7 +1168,7 @@ public sealed class ParkEconomy : IParkEconomy
 	{
 		if ( !Features.Challenges )
 			return;
-		foreach ( var (kind, index, amount, detail) in Objectives.Update( turn * ParkCalendar.SecondsPerTurn, turn, MeasureChallenge, IsParkOpen, BestObjectOf ).ToList() )
+		foreach ( var (kind, index, amount, detail) in Objectives.Update( turn * ParkCalendar.SecondsPerTurn, turn, MeasureChallenge, IsParkOpen, BestObjectOf, () => guestStatistics.GuestCensus ).ToList() )
 		{
 			if ( kind == ParkEventKind.ChallengeCompleted )
 				Post( LedgerCategory.OtherIncome, amount );
@@ -1336,7 +1338,7 @@ public sealed class ParkEconomy : IParkEconomy
 	// [BIN:TPW-EXE:0x004D0370 bank month] the routine compares the months in the red only with 5 (above it posts type 2 at 0x004D0557): it gives no warnings before
 	// [BIN:TPW-EXE:0x0054F8BB lost park sound] the main loop's sound update sends the music parameter and the crowd count as 0 while the world state is 4 (0x0054F86D, 0x0054F8BD), which GameAudio does for a bankrupt park
 	// [BIN:TPW-EXE:0x0059B620 advisor caption] the advice 106 the bank's message brings says the responses 274 and 275, whose tag 128 shows TAG_SYSTEM entry 127 ("the banks have closed your park") in the message tube (AutomaticAdvisor.PostCaption); the money warnings are the captions of the advice messages 102 to 105 (entries 123 to 126)
-	// [APPROX:ECON-030] the lost park follows the bank's handler and the world update (the thing loop stops, the arrival target 0x004CF5B0 is 0 and the music and crowd are silent in state 4), and the advisor plays its advice 106 for every bank message (game event 2, AutomaticAdvisor) with its caption, but OpenTPW has not the panel tp.exe builds in state 4 (0x005168F0 → 0x00481B50 → 0x0048AC40 closes the current tool, hides the HUD windows and builds the panel window 0x7472, with 0x004815E0 → 0x0048ADB0 and the state-4 branch of 0x0048C150 with UITEXT group 3, id 0x16), the money warnings (advice messages 102 to 105, whose scores compute the months in the red) have no producer (ADVISOR-009), and tp.exe's interface tests world state 4 only at 0x004815F0, 0x0048C27A, 0x004A2925 (a function not read) and 0x004A2AC9 (the pause and play buttons are left alone), none of them a purchase, hiring or opening test found, so OpenTPW's refusal of those in state 4 is not shown to be the original's — evidence needed: the panel window 0x7472 (its layout and the handler 0x0048A740 of its tick button) and the function around 0x004A2925
+	// [APPROX:ECON-030] the lost park follows the bank handler, thing-loop stop, zero arrival target and silent music/crowd; AutomaticAdvisor already produces money advice 102-105 through AdvisorScan (102 needs a loan available; 103-105 use the months in red with none) and captions advice 106 on each bank message. The pause menu now selects the online/visit branch first, then the five loss entries (0x48C150: UITEXT 3 is Load, command 22), preserving the existing callbacks. The initial loss gate camera and root 0x7472 (0x5168F0 -> 0x481B50 -> 0x48AC40), its dismissal into the hidden-HUD overlay (0x4A29D0), and loaded-loss restoration without that camera (0x4815E0 -> 0x48ADB0) remain unported. Handler 0x48A740 has Escape and delayed right-release exits, no explicit tick-button action; layout 0x74FB20 has an unresolved drawing-resource binding and is not proved empty. The overlay state-4 key branch 0x4A2925 permits Escape to the menu, and 0x4A2AC9 skips pause/play work; neither establishes purchase, hiring or opening refusals, so OpenTPW's direct economic guards remain unproved — evidence needed: loss-layout drawing resource and banner lifetime, property-table animation, gate camera/seat and root ownership, load/restore and default input dispatch, plus a separate audit of direct economic guards
 	private void HandleBankruptcyMessage()
 	{
 		if ( IsBankrupt || WinningSequenceActive?.Invoke() == true )
@@ -2518,10 +2520,10 @@ public sealed class ParkEconomy : IParkEconomy
 			var baseline = ParkObjectives.IsCountSinceAcceptance( definition.Type ) ? MeasureChallenge( definition ) - value : ParkObjectives.IsDailyAverage( definition.Type ) ? value : 0;
 			var endSeconds = deadlineSeconds ?? deadlineDay * ParkCalendar.SecondsPerDay;
 			var start = (endSeconds - definition.TargetTime * ParkCalendar.SecondsPerDay) / ParkCalendar.SecondsPerDay;
-			current = new ActiveChallenge( running, start, true, start, endSeconds / ParkCalendar.SecondsPerDay, baseline, endSeconds );
+			current = new ActiveChallenge( running, start, true, start, endSeconds / ParkCalendar.SecondsPerDay, baseline, endSeconds, unchecked( (int)value ) );
 		}
 		else if ( offeredIndex is int offered && Settings.Challenges.ContainsKey( offered ) )
-			current = new ActiveChallenge( offered, ParkCalendar.DayIndex( Tick ), false, 0, 0, 0 );
+			current = new ActiveChallenge( offered, ParkCalendar.DayIndex( Tick ), false, 0, 0, 0, RawValue: unchecked( (int)value ) );
 		Objectives.Restore( nextOfferDay, nextListPosition, current, declines, finished, Objectives.GoldenTickets, switchedOn, actualThing, carriedThings, nextOfferSeconds );
 	}
 

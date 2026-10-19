@@ -49,7 +49,7 @@ public static partial class Program
 		RejectDuplicate( "ﬃab", "ffiab" );
 		Check( true, "compatibility-duplicates-rejected" );
 
-		var recipients = new[] { "Ｂｏｂ", "ﬃab", "Søren", "Straße", "Strasse" };
+		var recipients = new[] { "Ｂｏｂ", "ﬃab", "Søren", "Straße", "Strasse", "card+browser@example.test" };
 		var original = Postcard.Create( "Sender", recipients, "Browser postcard", "First line\r\nSecond line", "English" );
 		var restored = Postcard.Read( original.ToBytes() );
 		Check( restored.Id == original.Id && restored.Manifest.To.SequenceEqual( recipients )
@@ -85,10 +85,10 @@ public static partial class Program
 			}
 			int Stored() => folders.List( folders.Outbox ).Count;
 
-			var draft = Compose( "Alice; Bob Smith" );
+			var draft = Compose( "Alice; Bob Smith, card@example.test" );
 			Click( draft, "ok" );
 			var saved = folders.List( folders.Outbox ).Single().Card!;
-			Check( stack.Top?.Name == "smokeHud" && saved.Manifest.To.SequenceEqual( new[] { "Alice", "Bob Smith" } )
+			Check( stack.Top?.Name == "smokeHud" && saved.Manifest.To.SequenceEqual( new[] { "Alice", "Bob Smith", "card@example.test" } )
 				&& saved.Manifest.Title == "Postcard from Theme Park World" && saved.Manifest.Text == "Greetings from Theme Park World!",
 				"send-handler-defaults-and-outbox" );
 
@@ -100,7 +100,7 @@ public static partial class Program
 
 			draft = Compose( "Ｂｏｂ; Bob", "Keep this draft", "Keep this message" );
 			Click( draft, "ok" );
-			Check( stack.Top?.Name == "postcardFailed" && Stored() == 2 && !draft.IsRemoved
+			Check( stack.Top?.Name == "postcardRecipients" && Stored() == 2 && !draft.IsRemoved
 				&& Field( draft, "to" ).Text == "Ｂｏｂ; Bob" && Field( draft, "title" ).Text == "Keep this draft"
 				&& Field( draft, "message" ).Text == "Keep this message", "duplicate-send-preserves-draft" );
 			Click( stack.Top!, "choice0" );

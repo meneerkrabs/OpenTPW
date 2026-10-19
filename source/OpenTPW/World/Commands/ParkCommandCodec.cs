@@ -80,6 +80,8 @@ public static class ParkCommandCodec
 			ParkCommandKind.EditQueue => new EditQueueCommand( reader.Int(), reader.Int() ),
 			ParkCommandKind.PlacePrototype => new PlacePrototypeCommand( reader.Float(), reader.Float(), reader.Float() ),
 			ParkCommandKind.RemovePrototype => new RemovePrototypeCommand(),
+			ParkCommandKind.DismissFinale => new DismissFinaleCommand(),
+			ParkCommandKind.SetPrototypeRunning => new SetPrototypeRunningCommand( reader.Bool() ),
 			_ => throw new InvalidDataException( $"Unknown park command kind {(int)kind}." )
 		};
 		if ( !reader.AtEnd )

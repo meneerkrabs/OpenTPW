@@ -71,7 +71,7 @@ class StaffSpriteVmContract(unittest.TestCase):
 
     def test_core_remains_gpu_free_and_only_explicit_cpu_owners_use_mutable_state(self):
         allowed = {"StaffSpriteVm.cs", "StaffSpriteVmState.cs", "StaffSpritePrograms.cs", "StaffSpriteRegistry.cs",
-                   "StaffBodySprite.cs", "StaffSpriteDrawRecord.cs", "EmployeePortraitOwner.cs"}
+                   "StaffBodySprite.cs", "StaffSpriteDrawRecord.cs", "EmployeePortraitOwner.cs", "FrontEndSmokeTest.StaffOwners.cs"}
         for path in (ROOT / "source/OpenTPW").rglob("*.cs"):
             if path.name in allowed:
                 continue
@@ -81,6 +81,11 @@ class StaffSpriteVmContract(unittest.TestCase):
             for forbidden in ("StaffRenderer", "SpritePlayer.Steps", "Level.Current", "Texture", "DateTime", "Stopwatch", "ReadAllBytes", "DllImport"):
                 self.assertNotIn(forbidden, text)
         registry = (STAFF / "StaffSpriteRegistry.cs").read_text()
+        smoke = (ROOT / "source/OpenTPW/FrontEnd/FrontEndSmokeTest.StaffOwners.cs").read_text()
+        # The GPU smoke accepts detached copies only to serialize all 70 words; it cannot drive or mutate the VM.
+        self.assertIn("StaffWords( StaffSpriteVmState? state )", smoke)
+        self.assertNotRegex(smoke, r"\bStaffSprite(?:Vm|CloneCopy)\s*\.")
+        self.assertNotRegex(smoke, r"\bstate\s*(?:\.[A-Za-z]+|\[[^\]]+\])\s*=(?!=)")
         self.assertIn("StaffSpriteVm.Tick( entry.State, now, programs )", registry)
         self.assertIn("StaffSpriteTickStatus.RemovalDue", registry)
         self.assertIn("generations[slot] == ulong.MaxValue", registry)

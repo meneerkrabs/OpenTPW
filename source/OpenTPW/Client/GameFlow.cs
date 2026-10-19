@@ -273,7 +273,8 @@ internal sealed partial class GameFlow : IDisposable
 			{
 				var saved = ParkResumeSaveFile.Load( path );
 				// [EXT:mods] a save made with mods that are not all active stays listed and says which it needs
-				entries.Add( new ParkLoadEntry( saved.Theme, -1, false, path, saved.DisplayName, SavedAt( path ), ParkResumeMods.MissingText( saved.Mods, Mods.OpenTpwExtensions.Active ) ) );
+				// [EXT:cheats-publish] and says when the park is marked as cheated
+				entries.Add( new ParkLoadEntry( saved.Theme, -1, false, path, saved.DisplayName, SavedAt( path ), ParkResumeMods.MissingText( saved.Mods, Mods.OpenTpwExtensions.Active ), saved.Economy.Cheats?.Mode == true ) );
 			}
 			catch ( Exception error ) when ( error is IOException or InvalidDataException or UnauthorizedAccessException or System.Text.Json.JsonException or ArgumentException )
 			{

@@ -93,7 +93,12 @@ public enum ParkEventKind
 	/// </summary>
 	RideEnteredBrokenState,
 	/// <summary>The player cancelled the upgrade a ride waited for (the upgrade list's "Cancel level" row, tp.exe 0x004E0050(0)): the ride opens. <see cref="ParkEvent.InstanceId"/> the ride.</summary>
-	UpgradeCancelled
+	UpgradeCancelled,
+	/// <summary>
+	/// A cheat was applied at the turn boundary (<see cref="ParkCheats"/>, docs/CHEATS.md): <see cref="ParkEvent.InfoId"/> the <see cref="CheatKind"/>, <see cref="ParkEvent.Amount"/> its argument (a ticket's
+	/// <see cref="GoldenTicketKind"/>), <see cref="ParkEvent.Detail"/> its outcome (a ticket's <see cref="GlobalTicketOutcome"/>). Unlike <see cref="GoldenTicketWon"/> the advisor says nothing: the original's ticket cheats are silent.
+	/// </summary>
+	CheatApplied
 }
 
 /// <summary>

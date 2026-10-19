@@ -57,7 +57,7 @@ SLOTS = {
 }
 HAT_COLOURS = {0: dict(body=(RED, RED), cuff=WOOL, bobble=WOOL), 1: dict(body=(BLUE, BLUE), cuff=WOOL, bobble=WOOL), 2: dict(body=(GREEN, CREAM), cuff=RED, bobble=RED)}
 MUFF_COLOURS = {3: dict(band=GREY, cup=RED, pad=WOOL), 4: dict(band=NAVY, cup=PALE, pad=WOOL)}
-MITTEN_COLOURS = {5: dict(body=RED, cuff=WOOL), 6: dict(body=BLUE, cuff=WOOL), 7: dict(body=GREEN, cuff=CREAM)}
+MITTEN_COLOURS = {5: dict(body=RED), 6: dict(body=BLUE), 7: dict(body=GREEN)}
 
 
 def parse():
@@ -185,14 +185,24 @@ def build_earmuffs(slot):
 
 
 def build_mitten(slot, side):
-	"""One mitten (side +1 the kid's right hand, -1 the left) as the hand hangs at the kid's side; the hotspot is the rig's hand end point (the world origin), 0.04 below the hand's centre."""
+	"""One mitten (side +1 the kid's right hand, -1 the left) as the hand hangs at the kid's side; the hotspot is the rig's hand end point (the world origin), 0.04 below the hand's centre.
+	A short, elongated knitted mitten that continues the forearm line (a rounded tip at the bottom, a slightly narrower wrist above), a thumb bump on the inner side and a ribbed cuff in the same wool tone."""
 	c = MITTEN_COLOURS[slot]
-	m_body, m_cuff = material("mit_body", c["body"], 0.9), material("mit_cuff", c["cuff"], 0.95)
+	m_body = material("mit_body", c["body"], 0.9)
 	tilt = math.radians(-14 * side)                         # the arm hangs abducted: the mitten's lower end points outwards
-	parts = [ellipsoid("mitten", (0.0, 0.0, 0.05), (0.31, 0.25, 0.35), m_body, u=14, v=9),
-		ellipsoid("thumb", (-0.24 * side, 0.10, 0.07), (0.12, 0.12, 0.19), m_body, rot=(0.0, math.radians(-25 * side), 0.0), u=10, v=7),
-		lathe("cuff", [(0.24, 0.24), (0.275, 0.29), (0.275, 0.42), (0.24, 0.45)], [m_cuff])]
-	for p in parts:
+	# a rounded tip, the palm (widest at 0.32 of the length from the tip), then the wrist; flattened front to back like a hand
+	body = [(0.0, -0.36), (0.10, -0.34), (0.18, -0.27), (0.215, -0.14), (0.22, 0.0), (0.20, 0.12), (0.17, 0.19)]
+	mitten = lathe("mitten", body, [m_body], sides=SIDES)
+	mitten.scale = (1.0, 0.82, 1.0)
+	# the knit cuff: a ribbed band (rings alternate between two radii), the same wool as the body
+	cuff = [(0.17, 0.18)]
+	for i in range(4):
+		cuff += [(0.21, 0.21 + 0.055 * i), (0.19, 0.237 + 0.055 * i)]
+	cuff += [(0.21, 0.21 + 0.055 * 4), (0.12, 0.21 + 0.055 * 4 + 0.015), (0.0, 0.21 + 0.055 * 4 + 0.02)]       # closed on top: the forearm's sprite is drawn under it
+	cuff_obj = lathe("cuff", cuff, [m_body], sides=SIDES)
+	cuff_obj.scale = (1.0, 0.82, 1.0)
+	thumb = ellipsoid("thumb", (-0.21 * side, 0.12, -0.04), (0.09, 0.10, 0.18), m_body, rot=(math.radians(-8), math.radians(-38 * side), 0.0), u=10, v=7)
+	for p in (mitten, cuff_obj, thumb):
 		p.rotation_euler = (0.0, tilt, 0.0)
 	bpy.context.view_layer.update()
 

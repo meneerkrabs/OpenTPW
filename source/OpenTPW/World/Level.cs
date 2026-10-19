@@ -109,7 +109,7 @@ public partial class Level : IDisposable
 	/// Renames the park (the ticket price window's rename dialog): stores the two lines and redraws the gate sign. False for
 	/// a read-only visit, a level without a park name, or lines a save could not hold (<see cref="ParkNameLines.IsValid"/>).
 	/// </summary>
-	// [APPROX:COMPAT-007] the rename stores the lines and redraws the gate (0x4993E0), but the handler's other effects are not built: the setters 0x4E2950/0x4E2A50 also copy the lines to the online park record (0x409410, 0x5B0940/0x5B0970: wide characters into +0x34 and +0x76 of the 0x50-byte record DAT_00F7C58C with its dirty byte +0xB8, unless the GameType word is 1), and the secret name ("Kevin the" / "Cosmic Cow", the XOR-by-index forms at 0x751A54/0x751A3C through the pointers 0x751A34/0x751A38, found by the compare 0x67C290) calls 0x4053C0(1) on the object 0xFB3520, which stores the cheat mode (+0xA, saved and loaded by 0x4055D0/0x405570 inside 0x4164C0/0x415270, the CHTS chunk), opens the "cheat" key context 0x78733C (twelve Alt keys, table 0x7484D0, docs/CHEATS.md) at 0x488902/0x488991 and posts a message of type 0x15 (0x40FB10); gate lines of a user-supplied original save are not imported (the attraction record carries them, SaveAttraction.NameLine1/2, and the shipped Easymode save holds the default row) — evidence needed: what the listeners of message type 0x15 do (runtime subscriptions of the message centre 0x788D3C)
+	// [APPROX:COMPAT-007] the rename stores the lines and redraws the gate (0x4993E0), but the handler's other effects are not built: the setters 0x4E2950/0x4E2A50 also copy the lines to the online park record (0x409410, 0x5B0940/0x5B0970: wide characters into +0x34 and +0x76 of the 0x50-byte record DAT_00F7C58C with its dirty byte +0xB8, unless the GameType word is 1), and the secret name's 0x4053C0(1) (built below: the cheat mode, docs/CHEATS.md) also posts a message of type 0x15 (0x40FB10), which is not; gate lines of a user-supplied original save are not imported (the attraction record carries them, SaveAttraction.NameLine1/2, and the shipped Easymode save holds the default row) — evidence needed: what the listeners of message type 0x15 do (runtime subscriptions of the message centre 0x788D3C)
 	public bool RenamePark( string line1, string line2 )
 	{
 		if ( IsReadOnlyVisit || ParkName == null || line1 == null || line2 == null )
@@ -119,6 +119,9 @@ public partial class Level : IDisposable
 			return false;
 		ParkName = lines;
 		GateSign?.Rename( lines );
+		// [BIN:TPW-EXE:0x4993E0 secret park name] "Kevin the" / "Cosmic Cow" turns the cheat mode on (0x4053C0(1)) after the lines are stored, so the sign keeps the name; it works with or without the cheats extension (the user's decision, docs/CHEATS.md), and at the next park turn ([EXT:cheats-turn-boundary])
+		if ( SecretParkName.Matches( line1, line2 ) )
+			Park?.Economy.QueueCheat( new CheatAction( CheatKind.Mode ) );
 		return true;
 	}
 	private bool wasMouseDown;
@@ -672,6 +675,18 @@ public partial class Level : IDisposable
 	internal static bool IsInHoveredNeighbourhood( (int X, int Y) hovered, (int X, int Y) thing ) =>
 		Math.Abs( thing.X - hovered.X ) <= 1 && Math.Abs( thing.Y - hovered.Y ) <= 1;
 
+	private List<ParkEvent>? cheatNotes;
+
+	/// <summary>The cheats applied since the last call (docs/CHEATS.md), for the HUD's short on-screen note; emptied by the call.</summary>
+	internal IReadOnlyList<ParkEvent> TakeCheatNotes()
+	{
+		if ( cheatNotes is not { Count: > 0 } )
+			return Array.Empty<ParkEvent>();
+		var notes = cheatNotes.ToArray();
+		cheatNotes.Clear();
+		return notes;
+	}
+
 	/// <summary>
 	/// Wires the park door (docs/GATES.md): the economy's open/close events command the entrance gate's script
 	/// and close or open the attractions, and the gate's deferred-close retry runs with the economy tick.
@@ -694,6 +709,8 @@ public partial class Level : IDisposable
 				AttractionRuntimeOf( item.InstanceId )?.SetVariable( ((RideVariables)item.InfoId).ToString(), (int)item.Amount );
 			else if ( item.Kind == ParkEventKind.RideRepaired )
 				OpenAfterRepair( item.InstanceId );
+			else if ( item.Kind == ParkEventKind.CheatApplied && (cheatNotes ??= new()).Count < 64 )
+				cheatNotes.Add( item );
 			else if ( item.Kind is ParkEventKind.UpgradeBought or ParkEventKind.MaintenanceRequested )
 				CloseForUpgrade( item.InstanceId );
 			else if ( item.Kind == ParkEventKind.MaintenanceCancelled )

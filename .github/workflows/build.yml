@@ -108,6 +108,7 @@ jobs:
           python -m unittest discover -s tools -p "test_staff_sprite_vm_contract.py" -v
           python -m unittest discover -s tools -p "test_staff_motion_math_contract.py" -v
           python -m unittest discover -s tools -p "test_staff_sprite_owner_contract.py" -v
+          python -m unittest discover -s tools -p "test_staff_sprite_owner_gpu_smoke_contract.py" -v
           python -m unittest discover -s tools -p "test_map_repair_contract.py" -v
           python -m unittest discover -s tools -p "test_ride_static_contract.py" -v
           python -m unittest discover -s tools -p "test_happiness_gauge_contract.py" -v

@@ -3,7 +3,8 @@
 This maps all 65 mandatory owner vectors to authored C# tests. Optional snapshot
 vectors SS01–SS09 are excluded: this slice has no staff-history snapshot format.
 See [architecture and qualifications](STAFF-SPRITE-OWNERS.md) and the
-[core VM contract](STAFF-SPRITE-VM.md).
+[core VM contract](STAFF-SPRITE-VM.md). The bounded host-run procedure is in the
+[staff owner GPU smoke guide](STAFF-SPRITE-OWNER-GPU-SMOKE.md).
 
 ## Reading the map
 

@@ -89,7 +89,8 @@ public sealed partial class ParkHud
 	{
 		if ( !IsRiding )
 			return;
-		var control = Input.IsFrameKeyDown( Key.ControlLeft ) || Input.IsFrameKeyDown( Key.ControlRight );
+		// Alt+C is no C press either ([BIN:TPW-EXE:0x40C900] exact modifier match): it is the cheats window's key
+		var control = Input.IsFrameKeyDown( Key.ControlLeft ) || Input.IsFrameKeyDown( Key.ControlRight ) || (Input.ModifierMaskDown & 0x30) != 0;
 		// The C key is the camcorder's shortcut (key table action 0x10, tp.exe 0x488a00); E also leaves, as it enters ([EXT:ride-view-key]).
 		if ( shortcutsAllowed && ((!control && Input.Pressed( InputButton.CamcorderMode )) || Input.Pressed( InputButton.RideView )) )
 		{

@@ -318,32 +318,37 @@ and `--debug-guest-looks` (balloons, costumes, thought bubbles, litter). What th
   Reading: **snow costs nothing measurable** (+0.3 ms, inside the run-to-run spread: the W6 single run measured -0.3 ms the other way, and one 15 s window is noisier than any snow cost). The W6 "dressed" step added the umbrellas and the items together (+3.6 ms; +3.2 ms in this run); the scenario now has a step between them, so the items' own share is measured: about **+1.7 ms for roughly 760 items** (p50 +1.9), and the umbrellas +1.3 ms (p50 +1.1). That agrees with the umbrellas' own tuning ([UMBRELLAS.md](UMBRELLAS.md#tuning-phase-u5): about +1.5 ms for 400 umbrellas, so about +2.1 ms of the W6 +3.6 ms is the items). Every window stayed at 59.5 to 60 fps. One long frame of 60 to 140 ms appears at each step (the staging itself). The first W6 numbers (3.7 / 3.4 / 7.3 / 6.6 ms) came from a single run per step.
   Screenshots: `browser-jungle-snow-dressed-crowd.png` (W6) shows the crowd under the entrance canopy, which hides most of the hats; `browser-jungle-snow-dressed-crowd-open.png` is the retake from the harness on a freshly staged crowd away from roofs (settled snow, hats, earmuffs and mittens, no umbrellas, the camera on a guest in the open chosen by `--follow`).
 
-**Simulation measurements** (headless `WinterTuningMeasureTests`, the determinism fixture's cross park with a kiosk at (10, 1), a stall at (10, 8) and the drinks shop, seeds 1 to 3, 17 park days each; `OPENTPW_WINTER_MEASURE=<file>` writes the tables):
+**Simulation measurements** (headless `WinterTuningMeasureTests`, the determinism fixture's cross park with a kiosk at (10, 1), a stall at (10, 8) and the drinks shop, seeds 1 to 3, 17 park days each; `OPENTPW_WINTER_MEASURE=<file>` writes the tables). Since October 19, 2026 the kiosk and the stall carry their **shipped price terms** (price, cost of goods, effects and the per-type word, [below](#price-extwinter-tuning)), so a guest whose willingness or purse is below the price is refused at the counter as in the game; the earlier numbers ran them without price terms ("free visits" below: the price test read a price of 0, so nobody was refused, and the shops had no effects; the economy still charged its own price):
 
-| Month (weather) | Admitted | Kiosk sales | Stall sales | Guests with an item |
-| --- | --- | --- | --- | --- |
-| January (clear / rain / snow) | 144 / 143 / 144 | 61 / 48 / 48 | 64 / 71 / 71 | 48 / 38 / 35 |
-| April (clear / rain / snow) | 144 / 147 / 143 | 26 / 24 / 47 | 61 / 62 / 71 | 18 / 17 / 36 |
-| July (clear / rain / snow) | 144 / 144 / 144 | 0 / 0 / 8 | 48 / 48 / 61 | 0 / 0 / 5 |
+| Month (weather) | Admitted | Kiosk sales | Stall sales | Guests with an item | Complete outfits |
+| --- | --- | --- | --- | --- | --- |
+| January (clear / rain / snow) | 146 / 145 / 144 | 53 / 40 / 46 | 62 / 69 / 70 | 41 / 32 / 36 | 11 / 7 / 9 |
+| April (clear / rain / snow) | 146 / 144 / 147 | 26 / 24 / 45 | 59 / 63 / 69 | 16 / 19 / 35 | 7 / 5 / 7 |
+| July (clear / rain / snow) | 145 / 145 / 144 | 0 / 0 / 4 | 43 / 43 / 59 | 0 / 0 / 4 | 0 / 0 / 0 |
 
-The table shows the numbers with the kiosk's return rule ([below](#returning-for-the-second-item-extwinter-kiosk-return)); October gives the same numbers as April. Before that rule, the W6 measurement read January 146 / 145 / 146 admitted, kiosk 58 / 46 / 44, stall 64 / 70 / 70, an item 56 / 45 / 42, April and October kiosk 25 / 18 / 45, stall 59 / 62 / 71, an item 23 / 17 / 45, July kiosk 0 / 0 / 4, stall 48 / 48 / 60, an item 0 / 0 / 3.
+No price refusal occurs in any row (the kiosk's 25 and the stall's 30 are within every guest's willingness here). The table shows the numbers with the kiosk's return rule ([below](#returning-for-the-second-item-extwinter-kiosk-return)); October gives the same numbers as April. The free-visit
+measurement of the return rule (#663) read January 144 / 143 / 144 admitted, kiosk 61 / 48 / 48, stall 64 / 71 / 71, an item 48 / 38 / 35; April 144 / 147 / 143, kiosk 26 / 24 / 47, stall 61 / 62 / 71, an item 18 / 17 / 36; July 144 / 144 / 144, kiosk 0 / 0 / 8, stall 48 / 48 / 61, an item 0 / 0 / 5.
+The differences come from the shops' own effects and the economy's price now being in the fixture (the kiosk's and the stall's happiness effect 15, the stall's thirst effect 30, a purse charged 25 or 30), not from refusals. Before the return rule, the W6 measurement read January 146 / 145 / 146 admitted, kiosk 58 / 46 / 44, stall 64 / 70 / 70, an item 56 / 45 / 42,
+April and October kiosk 25 / 18 / 45, stall 59 / 62 / 71, an item 23 / 17 / 45, July kiosk 0 / 0 / 4, stall 48 / 48 / 60, an item 0 / 0 / 3 (free visits too).
 
-- **The kiosk sells next to nothing in summer.** At the shipped summer percentage of 20 the kiosk sold 0 times in 17 clear July days (3 seeds, 432 guests). What-if by summer percentage (with the return rule): 20 % and 35 % give 0, 50 % gives 6, 75 % gives 44, 100 % gives 62 sales (of about 144 guests per seed set; before the rule 0, 0, 6, 41 and 58). Spring and autumn at 60 % give 26 sales
-  (18 % of guests), winter 150 % 61. "Sells all year" (the user's decision) therefore holds only from spring to winter in this park; **decision (user, October 19, 2026, asked directly: "20% laten"): the summer percentage stays at 20**, so a clear summer kiosk sells (almost) nothing by design; the what-if numbers above are kept as a record (a value of 50 would have given about 4 % of guests an item). No data or pin change.
-- **Snow does not lift the kiosk in the winter months here.** In January the snow percentage (200 x 150) makes the stall (250 x 150) outscore the kiosk, so snowy-day guests choose the stall and fewer buy an item (35 against 48 guests with an item, 48 sales against 61); in April the snow lifts the kiosk from 26 to 47. Fine as a
+- **The kiosk sells next to nothing in summer.** At the shipped summer percentage of 20 the kiosk sold 0 times in 17 clear July days (3 seeds, 435 guests). What-if by summer percentage (shipped prices, with the return rule): 20 % and 35 % give 0, 50 % gives 9, 75 % gives 41, 100 % gives 63 sales (of about 145 guests per seed set; free visits gave 0, 0, 6, 44 and 62, and before the rule 0, 0, 6, 41 and 58). Spring and autumn at 60 % give 26 sales
+  (18 % of guests), winter 150 % 53. "Sells all year" (the user's decision) therefore holds only from spring to winter in this park; **decision (user, October 19, 2026, asked directly: "20% laten"): the summer percentage stays at 20**, so a clear summer kiosk sells (almost) nothing by design; the what-if numbers above are kept as a record (a value of 50 would have given about 5 % of guests an item). No data or pin change.
+- **Snow does not lift the kiosk in the winter months here.** In January the snow percentage (200 x 150) makes the stall (250 x 150) outscore the kiosk, so snowy-day guests choose the stall and fewer buy an item (36 against 41 guests with an item, 46 sales against 53); in April the snow lifts the kiosk from 26 to 45. Fine as a
   competition outcome, not a bug; to keep the kiosk the winter favourite the stall's snow value would have to drop below the kiosk's (a data choice, reported only).
-- **Share dressed.** Of the admitted guests (three seeds together, 17 park days, with the return rule): 33 % hold an item in a clear January (48 of 144), 24 % in a snowy one (35 of 144), 25 % in a snowy April (36 of 143), 0 % in a clear July, and a complete outfit (head item and mittens) is worn by 6.9 % in a clear January (10 of 144), 9.0 % in a snowy one (13 of 144, 37 % of those with an item), 6.3 % in a snowy April (9 of 143) and 1.4 % in a snowy July (2 of 144). Before the return rule the W6 measurement found 38 % / 29 % / 31 % holding an item (56 of 146, 42 of 146, 45 of 144) and **no complete outfit at all** in any condition (0 of about 1,740 guests): a guest visited the kiosk once. The rule is what completes outfits; the fixed run's 10 of 51 buyers are fully dressed. Fewer guests hold an item now (35 against 42 in a snowy January) because a returning guest takes a kiosk turn that a first-time buyer would have had. Over the Halloween park's real snowy week
-  (seed 21 weather from day 328, 20 days) with the shops: 18 to 20 of 64 guests hold an item without the cold rule and 30 to 33 of 64 hold an item or a warming glühwein with it; the kiosk sells 24 to 27 times and the stall 27 to 28 times to 64 guests.
-- **Cold rule over that snowy week** (mean happiness of the guest samples taken during snow, three seeds, measured on the code with #630's "cold replaces the rain mood's storm happiness in Halloween snow"): no shops, rule off (the rain mood's storm step) 48.6; rule on 47.9 (**-0.7**, every one of the 62 to 63 guests affected once). With shops (and the return rule): rule off 57.9 (dressed guests 69.0, bare guests 53.4), rule on 57.4 (dressed
-  69.1, bare 52.7); the dressed guests' lead comes mostly from the shop's own happiness effect, the rule itself costs a bare guest 0.7 and a dressed one nothing (the test `TheColdRuleCostsUndressedGuestsHappinessOverASnowyHallowWeekAndDressedGuestsLessOrNothing` asserts both). Before the return rule the shop means read 58.5 / 68.3 / 53.1 off and 58.0 / 68.2 / 52.4 on. With the rule on the rain mood's switch changes nothing (the rule replaces it in snow), so the rain-mood-off means are the same. The shift is small because the rule applies once per qualifying day and a guest's visit spans one or two.
+- **Share dressed.** Of the admitted guests (three seeds together, 17 park days, shipped prices, with the return rule): 28 % hold an item in a clear January (41 of 146), 25 % in a snowy one (36 of 144), 24 % in a snowy April (35 of 147), 0 % in a clear July, and a complete outfit (head item and mittens) is worn by 7.5 % in a clear January (11 of 146),
+  6.3 % in a snowy one (9 of 144, 25 % of those with an item), 4.8 % in a snowy April (7 of 147) and nobody in a snowy July (0 of 144). Before the return rule the W6 measurement found 38 % / 29 % / 31 % holding an item (56 of 146, 42 of 146, 45 of 144) and **no complete outfit at all** in any condition (0 of about 1,740 guests): a guest visited the kiosk once.
+  The rule is what completes outfits; the fixed run's 10 of 51 buyers are fully dressed. Fewer guests hold an item now (36 against 45 in a snowy January with the rule off, at the same 46 sales) because a returning guest takes a kiosk turn that a first-time buyer would have had.
+  Over the Halloween park's real snowy week (seed 21 weather from day 328, 20 days) with the shops: 16 to 20 of 63 or 64 guests hold an item without the cold rule and 31 to 34 of 63 or 64 hold an item or a warming glühwein with it; the kiosk sells 21 to 24 times and the stall 25 to 27 times.
+- **Cold rule over that snowy week** (mean happiness of the guest samples taken during snow, three seeds, measured on the code with #630's "cold replaces the rain mood's storm happiness in Halloween snow"): no shops, rule off (the rain mood's storm step) 48.6; rule on 47.9 (**-0.7**, every one of the 62 to 63 guests affected once). With shops (shipped prices, the return rule): rule off 68.3 (dressed guests 93.0, bare guests 59.9), rule on 67.8 (dressed
+  93.1, bare 59.2); the dressed guests' lead comes from the shops' own `UsageInfo.HappinessEffect` (15 each, which the free-visit fixture left at 0: it read 57.9 / 69.0 / 53.4 off and 57.4 / 69.1 / 52.7 on), the rule itself costs a bare guest 0.7 and a dressed one nothing (the test `TheColdRuleCostsUndressedGuestsHappinessOverASnowyHallowWeekAndDressedGuestsLessOrNothing` asserts both). Before the return rule the shop means read 58.5 / 68.3 / 53.1 off and 58.0 / 68.2 / 52.4 on. With the rule on the rain mood's switch changes nothing (the rule replaces it in snow), so the rain-mood-off means are the same. The shift is small because the rule applies once per qualifying day and a guest's visit spans one or two.
   Recommendation: leave -2 as decided; if the user wants the cold to matter more, the lever is the per-application number, not the dressing bonuses.
-- **Glühwein uptake.** The stall sold 64 times to 146 admitted guests in 17 clear January days and 70 in rain or snow (the drinks shop shares the rest), 48 in a clear July (summer 20 %) and 60 in a snowy July; in the Halloween snowy week 27 to 28 sales to 64 guests.
+- **Glühwein uptake.** The stall sold 62 times to 146 admitted guests in 17 clear January days and 69 to 70 in rain or snow (the drinks shop shares the rest), 43 in a clear July (summer 20 %) and 59 in a snowy July; in the Halloween snowy week 25 to 27 sales to 63 or 64 guests. No guest was refused its price.
 
 **Not changed, reported.** (1) Kiosk summer percentage: decided by the user, stays 20 (above). (2) Sheltered-ground masking (above). (3) Pool-deck snow and hats on rider heads (not started). (4) The worst-angle mitten frame was not isolated. (5) Roofs of the shops blend with the snow at the farthest zoom.
 
 | Label | What |
 | --- | --- |
-| `[EXT:winter-tuning]` | the headless measurement tests (`WinterTuningMeasureTests`, nothing pinned) and the browser harness scenario `winterCost`; a measurement aid, not a user feature |
+| `[EXT:winter-tuning]` | the headless measurement tests (`WinterTuningMeasureTests`, nothing pinned), the real-park price measurement (`WinterPriceMeasureTests`, with game data) and the browser harness scenario `winterCost`; a measurement aid, not a user feature |
 
 ## Returning for the second item (`[EXT:winter-kiosk-return]`)
 
@@ -364,9 +369,55 @@ The cause is the pair: right after a purchase the kiosk is the thing the guest u
 
 **The rule.** `GuestSimulation.WinterScoreOf`: for a winter kiosk and a guest whose `WarmItems` are not full, the views the policy scores from have every winter kiosk in the used history blanked, and the candidate is not "the same type as the last used" when that was a winter kiosk. A guest with both slots full still scores the kiosk 0 (`WinterRules.KioskScoresZero`). Other attractions, the umbrellas and the balloon rules keep the game's history rules (`WinterKioskReturnTests.EveryOtherAttractionKeepsItsHistoryRules`). The rule draws from no stream and the policy interface is untouched (the host builds different views, as it builds the percentages).
 
-**Result** (`WinterTuningMeasureTests.InASnowyJanuaryGuestsNowCompleteTheirOutfitBecauseTheKioskDoesNotCountAsRecentlyUsed`, snowy January, 17 park days, seeds 1 to 3): complete outfits **0 of 146 admitted guests before, 13 of 144 after** (9.0 %, 37 % of the guests with an item); kiosk sales 44 to 48; guests with an item 42 to 35. The test asserts that full outfits now occur, at least 1 guest in 20. Other months: clear January 10 of 144, snowy April 9 of 143, a clear and a rainy April 8 and 5. The cost: a returning guest takes a kiosk turn a first-time buyer would have had, so fewer guests hold an item at all.
+**A guest who cannot pay keeps the game's rules** (October 19, 2026, from the review of #663): the exemption also requires that the stand-point price test would let the guest through now, `!QueueJoinRules.TooExpensive( PriceTermsOf( kiosk ), happiness, thirst, hunger, illness, money )`.
+Without it a guest whose purse (or willingness) is below the kiosk's price kept scoring the kiosk as new, walked back and was refused again (the review counted three to five extra refusals in a visit), each refusal costing two medium happiness drops. The test is the pure static one, which records no price statistic (the stand-point `TooExpensive( Guest, ... )`
+stays the only place that does). `WinterKioskReturnTests.AGuestWhoCannotPayTheKioskKeepsTheGamesHistoryRules` covers a purse below, at and above the price and an unwilling guest. In the measured parks no guest is below the price, so every number on this page is the same with and without it, and no pin moves (the pins' shops are free visits).
+
+**Result** (`WinterTuningMeasureTests.InASnowyJanuaryGuestsNowCompleteTheirOutfitBecauseTheKioskDoesNotCountAsRecentlyUsed`, snowy January, 17 park days, seeds 1 to 3): complete outfits **0 of 146 admitted guests before, 13 of 144 after** (9.0 %, 37 % of the guests with an item); kiosk sales 44 to 48; guests with an item 42 to 35. The test asserts that full outfits now occur, at least 1 guest in 20. Other months: clear January 10 of 144, snowy April 9 of 143, a clear and a rainy April 8 and 5. The cost: a returning guest takes a kiosk turn a first-time buyer would have had, so fewer guests hold an item at all. These are the free-visit numbers of #663, as is the cause table above; with the shipped price terms
+([below](#price-extwinter-tuning)) the same test reads 0 of 143 before and 9 of 144 after (6.3 %, 25 % of the guests with an item), kiosk sales 46 both times (the second items rise from 1 to 10 of them) and guests with an item 45 to 36.
 
 **Pins moved** (cause in [DETERMINISM.md](DETERMINISM.md#winter)): `WinterFixedRunHash`, `WinterAlwaysFixedRunHash` and `WinterColdEverythingFixedRunHash`; every pin without a winter kiosk is unchanged (`DeterminismTests.EveryExistingPinIsUnchangedWithTheWinterExtensionAndTheWinterWeatherOnOrOffAndNoWinterShop` and the other "every existing pin" tests pass with only those three constants changed).
+
+## Price (`[EXT:winter-tuning]`)
+
+October 19, 2026, from the review of #663. **Report:** the shipped kiosk (`UsageInfo.InitCostOfGoods` 10, `HappinessEffect` 15, price 25) would never sell, because `QueueJoinRules.WillingnessToPay` peaks at about 22 for those terms; a stress run with them gave 0 kiosk sales, every guest refused on
+price, and the W6 and #663 measurement harness ran the shops as free visits, so its numbers never met the price test.
+
+**Not reproduced in a real park.** The price test (tp.exe `0x004FDE50`) also multiplies by the per-type word, `UsageInfo.RipOffOK` + 100 over 100. The extension's .sam files do not set that key, and the catalog layers every object of a category over the category's
+own file (`ObjectCatalog`: `shops/Shops.sam` under every shop, the extension's included), which sets `UsageInfo.RipOffOK 100` in all four themes. So the real kiosk's willingness is about twice the report's: at thirst, hunger and illness 0
+
+| Happiness | 0 | 5 | 10 | 25 | 50 | 75 | 100 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Kiosk (price 25), RipOffOK 100 as shipped | 24 | 25 | 26 | 30 | 33 | 38 | 44 |
+| Kiosk without the word (the report's terms) | 12 | 12 | 13 | 15 | 16 | 19 | 22 |
+| Stall (price 30), RipOffOK 100 as shipped | 38 | 39 | 41 | 45 | 54 | 59 | 68 |
+| Stall without the word | 19 | 19 | 20 | 22 | 27 | 29 | 34 |
+
+The kiosk turns away only a guest below happiness 5 (who is about to leave anyway), the stall nobody. The report's 22 is the row without the word, which is what a bridge gets when nothing supplies `RipOffOK` (a no-data fixture or a catalog without the game's `Shops.sam`); the extension is
+Theme Park World only, where the word is always there.
+
+**Measured** (`WinterPriceMeasureTests`, with `OPENTPW_GAME_PATH`): the level gate's park of each theme, built from the original level, its balance files and its guests' own starting money and moods, with the shipped kiosk and stall placed beside the gate's own shop by the HUD build flow's rules
+(`M3GateOptions.ExtraObjects`), 17 park days, seeds 1 to 3 summed, sales / price refusals:
+
+| Park, month (weather) | Admitted | Gate's shop (Drinks Shop, 30) | Winter kiosk (25) | Glühwein stall (30) |
+| --- | --- | --- | --- | --- |
+| Jungle, January (snow) | 96 | 22 / 0 | 31 / 0 | 18 / 0 |
+| Jungle, January (clear) | 96 | 38 / 0 | 31 / 0 | 11 / 0 |
+| Jungle, April (clear) | 92 | 45 / 0 | 8 / 0 | 0 / 0 |
+| Halloween, January (snow) | 36 | 10 / 0 | 18 / 0 | 15 / 0 |
+| Space, January (snow) | 94 | 36 / 0 | 26 / 0 | 23 / 0 |
+| Fantasy, January (snow) | 95 | 36 / 0 | 31 / 0 | 16 / 0 |
+
+Every guest who reached either winter counter paid, as at the game's own drinks shop at its default price. The test also checks that each theme's merged kiosk and stall carry exactly the terms the headless harness uses, RipOffOK 100 included, and that the game's `Shops.sam` holds 100.
+In the cross park (`WinterTuningMeasureTests.TheShippedPricesPassForNearlyEveryGuestAndWithoutTheCategoryWordTheKioskWouldSellNothing`, snowy January, seeds 1 to 3) the shipped prices sell 46 kiosk items and 70 glühwein with no refusal (free visits: 48 and 71); the same terms
+with RipOffOK 0 reproduce the report: **0 kiosk sales, 62 refusals**, and 29 glühwein with 55 refusals.
+
+**Decision: no price or effect change.** The share of buyers who pay is already the game's own shops' (all of them), so the kiosk keeps price 25, cost of goods 10 and happiness effect 15, and the stall 30, 15 and 15. The .sam files are not touched either, not even to state `RipOffOK 100`
+explicitly: the value is the same, and changing the files' bytes would change the asset digest a save checks for a placed shop, so a park saved by an earlier release with a kiosk would refuse to load for no gain in behaviour.
+
+**So it cannot silently regress.** The headless harness now runs the shops with their shipped terms (`WinterTuningMeasureTests.ShippedPrices`: price, cost of goods and effects read from `content/winter/objects/jungle/<shop>/*.sam`, the word from `ShopsSamRipOffOk`, through
+`DeterminismTests.SyntheticPark`'s `winterPrices`, which also sets the economy's live price); the determinism pins keep their free-visit shops, so no pin moves. The cross-park test asserts that the kiosk turns away only guests below happiness 5, the stall nobody, at most one refusal per ten sales,
+and that without the word nobody pays; the with-data test fails if a theme's merged terms stop matching the harness or a theme's winter shops start being refused.
 
 ## Approval of the labels
 

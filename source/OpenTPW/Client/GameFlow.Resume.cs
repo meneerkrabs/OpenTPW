@@ -1,4 +1,5 @@
 using OpenTPW.Hud;
+using OpenTPW.Mods;
 
 namespace OpenTPW;
 
@@ -21,7 +22,32 @@ internal sealed partial class GameFlow
 
 	/// <summary>Preflights and builds an isolated candidate before retiring the live park or lobby.</summary>
 	/// <param name="restart">The reload of the restart snapshot itself (Restart Park), which keeps that snapshot instead of taking a new one.</param>
-	internal Level ResumePark( ParkResumeSnapshot snapshot, bool restart = false )
+	/// <param name="extensionSwitch">[EXT:save-extension-switch] The extension switch the player confirmed for this load (<see cref="ResumeSwitched"/>); null loads strictly, as every replay and check does.</param>
+	internal Level ResumePark( ParkResumeSnapshot snapshot, bool restart = false, ParkExtensionSwitch? extensionSwitch = null )
+	{
+		// a Theme Park Inc run refuses before a switch or a waiting extension choice is applied
+		if ( GameEditions.IsThemeParkInc ) throw new NotSupportedException( "Theme Park Inc park saves are not supported." );
+		Level Resume() => extensionSwitch == null ? ResumeStrict( snapshot, restart ) : ResumeSwitched( snapshot, restart, extensionSwitch );
+		// [EXT:extensions-apply-at-load] extension choices made in the park being left apply to the park this load builds (a restart reloads the same park and keeps its set); a failed load keeps them waiting
+		if ( restart || pendingExtensions is not { } next )
+			return Resume();
+		var before = OpenTpwExtensions.Active;
+		var live = Level;
+		ApplyPendingExtensions();
+		try { return Resume(); }
+		catch ( Exception error )
+		{
+			// only while the park that was running is still the live one: a park that replaced it runs with the extensions it was built with
+			if ( ReferenceEquals( Level, live ) )
+			{
+				SwitchBack( before, error );
+				pendingExtensions = next;
+			}
+			throw;
+		}
+	}
+
+	private Level ResumeStrict( ParkResumeSnapshot snapshot, bool restart )
 	{
 		RequireProgressSaved();
 		if ( GameEditions.IsThemeParkInc ) throw new NotSupportedException( "Theme Park Inc park saves are not supported." );

@@ -49,7 +49,7 @@ internal sealed class VisitPresenceSmoke
 		var session = new Session();
 		if ( level.Guests?.Grid.Cells is not { } cells )
 			return null;
-		var smoke = ParkPresence.CreateFor( session, level, ParkId ) is { } presence ? new VisitPresenceSmoke( level, presence, cells, session ) : null;
+		var smoke = ParkPresence.CreateFor( session, level, ChatProtocol.ParkRoom( ParkId ) ) is { } presence ? new VisitPresenceSmoke( level, presence, cells, session ) : null;
 		if ( smoke != null )
 			attach( smoke.presence );
 		return smoke;

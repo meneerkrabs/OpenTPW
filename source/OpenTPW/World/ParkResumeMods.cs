@@ -10,6 +10,26 @@ namespace OpenTPW;
 // [EXT:mods] OpenTPW's own mod system; the original game had no mods
 internal sealed record ParkModRecord( string Id, string Version, string ContentSha256 );
 
+/// <summary>What keeps a recorded or active mod from agreeing with a save (<see cref="ParkResumeMods.UnmetItems"/>).</summary>
+internal enum UnmetKind
+{
+	/// <summary>The save records the mod and it is not enabled.</summary>
+	Missing,
+	/// <summary>The mod is enabled but not recorded in this run (a mod now judged presentation-only, or an extension this edition does not record).</summary>
+	NotRecordable,
+	/// <summary>The mod is enabled in another version than the save's.</summary>
+	OtherVersion,
+	/// <summary>The mod is enabled with other content than the save's.</summary>
+	OtherContent,
+	/// <summary>The mod is enabled and changes the simulation, but the save does not record it.</summary>
+	Extra,
+	/// <summary>Everything agrees but the order of the mods.</summary>
+	Order,
+}
+
+/// <summary>One reason of <see cref="ParkResumeMods.Unmet"/>: the mod it names (null for the order), its kind, its text and the save's record of the mod (null when the save has none).</summary>
+internal sealed record UnmetMod( string? Id, UnmetKind Kind, string Reason, ParkModRecord? Record );
+
 /// <summary>
 /// Recording and checking the mods of a park save (docs/MODS.md, docs/DETERMINISM.md). Only extensions and mods that
 /// change the simulation are recorded, so a park saved without any (the default) has no <c>Mods</c> field and its save
@@ -170,33 +190,39 @@ internal static class ParkResumeMods
 	/// <c>needs community.tpi-rides 1.0.0</c>, or empty when the mods agree. Recorded mods that are not active, in another
 	/// version or with other content are named first, then active simulation-changing mods the save does not record.
 	/// </summary>
-	public static IReadOnlyList<string> Unmet( IReadOnlyList<ParkModRecord>? saved, ModSet active )
+	public static IReadOnlyList<string> Unmet( IReadOnlyList<ParkModRecord>? saved, ModSet active ) => UnmetItems( saved, active ).Select( item => item.Reason ).ToArray();
+
+	/// <summary>
+	/// <see cref="Unmet"/> with the kind of each reason and the mod it names, so a load can tell an extension switch it may offer
+	/// (<see cref="ParkExtensionSwitch"/>) from a requirement that stays strict. The reasons and their order are <see cref="Unmet"/>'s.
+	/// </summary>
+	internal static IReadOnlyList<UnmetMod> UnmetItems( IReadOnlyList<ParkModRecord>? saved, ModSet active )
 	{
 		ArgumentNullException.ThrowIfNull( active );
-		var reasons = new List<string>();
+		var reasons = new List<UnmetMod>();
 		var current = RecordableMods( active ).ToDictionary( mod => mod.Id, StringComparer.Ordinal );
 		var recordedIds = new HashSet<string>( StringComparer.Ordinal );
 		foreach ( var record in saved ?? Array.Empty<ParkModRecord>() )
 		{
 			recordedIds.Add( record.Id );
 			if ( !active.IsEnabled( record.Id ) )
-				reasons.Add( $"needs {record.Id} {record.Version}"
-					+ (active.Refused.Any( refusal => refusal.Id == record.Id && refusal.Kind == ModRefusalKind.SafeMode ) ? ", which is off in safe mode (script mods are off for this run; start again without --safe-mode)" : "" ) );
+				reasons.Add( new( record.Id, UnmetKind.Missing, $"needs {record.Id} {record.Version}"
+					+ (active.Refused.Any( refusal => refusal.Id == record.Id && refusal.Kind == ModRefusalKind.SafeMode ) ? ", which is off in safe mode (script mods are off for this run; start again without --safe-mode)" : "" ), record ) );
 			else if ( !current.TryGetValue( record.Id, out var mod ) )
-				// enabled, but now judged presentation-only: its files changed
-				reasons.Add( $"needs {record.Id} {record.Version} with the content it was saved with" );
+				// enabled, but now judged presentation-only: its files changed (or, for an extension, it is not recordable in this edition)
+				reasons.Add( new( record.Id, UnmetKind.NotRecordable, $"needs {record.Id} {record.Version} with the content it was saved with", record ) );
 			else if ( mod.Version.ToString() != record.Version )
-				reasons.Add( $"needs {record.Id} {record.Version}, not {mod.Version}" );
+				reasons.Add( new( record.Id, UnmetKind.OtherVersion, $"needs {record.Id} {record.Version}, not {mod.Version}", record ) );
 			else if ( mod.ContentSha256 != record.ContentSha256 )
-				reasons.Add( $"needs {record.Id} {record.Version} with the content it was saved with (its files changed)" );
+				reasons.Add( new( record.Id, UnmetKind.OtherContent, $"needs {record.Id} {record.Version} with the content it was saved with (its files changed)", record ) );
 		}
 		// a used-only extension that is on but not recorded is fine: the save has no use of it (a save that does use it must record it: ParkResumeSaveFile.ValidateShape refuses pool cells without the record)
 		foreach ( var mod in RecordableMods( active ) )
 			if ( !recordedIds.Contains( mod.Id ) && !UsedOnlyExtensionIds.Contains( mod.Id ) )
-				reasons.Add( $"was saved without {mod.Id} {mod.Version}, which changes the simulation; turn it off to load this park" );
+				reasons.Add( new( mod.Id, UnmetKind.Extra, $"was saved without {mod.Id} {mod.Version}, which changes the simulation; turn it off to load this park", null ) );
 		var expectedOrder = RecordableMods( active ).Where( mod => !UsedOnlyExtensionIds.Contains( mod.Id ) || recordedIds.Contains( mod.Id ) ).Select( mod => mod.Id );
 		if ( reasons.Count == 0 && saved != null && !saved.Select( record => record.Id ).SequenceEqual( expectedOrder, StringComparer.Ordinal ) )
-			reasons.Add( $"needs its mods in the order {string.Join( ", ", saved.Select( record => record.Id ) )}" );
+			reasons.Add( new( null, UnmetKind.Order, $"needs its mods in the order {string.Join( ", ", saved.Select( record => record.Id ) )}", null ) );
 		return reasons;
 	}
 

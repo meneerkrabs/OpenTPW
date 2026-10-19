@@ -451,7 +451,8 @@ public class ModsScreenTests
 	public void TheOptionsPageOffersTheScreenBesideGameFiles()
 	{
 		var source = File.ReadAllText( Path.Combine( RepositoryRoot(), "source", "OpenTPW", "UI", "Original", "Options", "OptionsScreen.cs" ) );
-		StringAssert.Contains( source, "ModsScreen.Create( stack, strings )" );
+		// [EXT:extensions-apply-at-load] the screen gets the flow's way to apply extension choices without a restart
+		Assert.IsTrue( source.Contains( "ModsScreen.Create( stack, strings, new ModsServices { ApplyExtensions = services.ApplyExtensions } )", StringComparison.Ordinal ), "the options page opens the screen with the flow's services" );
 		StringAssert.Contains( source, "OpenTpwText.ModsPage" );
 	}
 

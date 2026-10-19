@@ -12,11 +12,20 @@ public sealed record ParkVisitInfo(
 {
 	public string Level => Payload.Level;
 	public bool IsSandbox => Payload.Source == MinimalParkPayload.SourceSandbox;
-	/// <summary>
-	/// The server's id of the published park this visit was downloaded from, whose chat room the visit joins (<see cref="ParkPresence"/>); null for a
-	/// park file opened from disk.
-	/// </summary>
+	/// <summary>The server's id of the published park this visit was downloaded from; null for a park file opened from disk or a chat park built locally.</summary>
 	public string? OnlineParkId { get; init; }
+
+	/// <summary>
+	/// The chat room the visit joins (<see cref="ParkPresence"/>): a chat satellite's standing room for the visit of its park, else the room of the
+	/// published park the visit was downloaded from; null for a park file opened from disk.
+	/// </summary>
+	public string? ChatRoom
+	{
+		get => chatRoom ?? (OnlineParkId is { } id ? OpenTPW.Online.Chat.ChatProtocol.ParkRoom( id ) : null);
+		init => chatRoom = value;
+	}
+
+	private readonly string? chatRoom;
 }
 
 /// <summary>File-based sharing: export the current park to <c>.tpwpark</c> and prepare visits.</summary>
@@ -114,6 +123,23 @@ public static class ParkSharing
 		}
 		return new ParkVisitInfo( package, payload, missing, warnings, matches );
 	}
+
+	/// <summary>
+	/// A visit of an original level's starting park, as a chat satellite whose server names no published park enters it: the level's built layout packed
+	/// as a park (as the offline export packs it, <see cref="ParkSnapshotBuilder.FromOriginalLevel"/>) under the chat park's name and description.
+	/// </summary>
+	/// <exception cref="InvalidDataException">The level is no theme this installation has.</exception>
+	public static ParkVisitInfo PrepareLevelVisit( string level, string parkName, string description, string author )
+	{
+		// the level comes from the server: only a theme's own level directory is read
+		if ( !IsThemeLevel( level ) || !FileSystem.DirectoryExists( $"/levels/{level}" ) )
+			throw new InvalidDataException( $"This park needs the '{level}' level, which this installation does not have." );
+		var park = OriginalPark.Load( level );
+		return PrepareVisit( CreatePackage( ParkSnapshotBuilder.FromOriginalLevel( park ), parkName, description, author, park.Map ) );
+	}
+
+	/// <summary>Whether <paramref name="level"/> names one of the themes' levels, the only levels a chat park's visit builds.</summary>
+	public static bool IsThemeLevel( string level ) => ObjectCatalog.Themes.Contains( level, StringComparer.Ordinal );
 
 	public static string Describe( ParkVisitInfo visit )
 	{

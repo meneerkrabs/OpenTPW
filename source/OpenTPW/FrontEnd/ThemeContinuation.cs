@@ -20,7 +20,8 @@ internal static class ThemeContinuation
 			var saved = ParkResumeSaveFile.Load( path );
 			if ( !saved.Theme.Equals( Theme( theme ), StringComparison.OrdinalIgnoreCase ) ) return null;
 			// [EXT:mods] the entry stays offered and names the mods it needs when they are not all active
-			var requires = ParkResumeMods.MissingText( saved.Mods, Mods.OpenTpwExtensions.Active );
+			// [EXT:save-extension-switch] differences the load can switch are asked about, not listed as needs
+			var requires = ParkExtensionSwitch.RequiresText( saved.Mods, Mods.OpenTpwExtensions.Active );
 			return new( new ParkLoadEntry( saved.Theme, -1, false, path, saved.DisplayName, Requires: requires, Cheated: saved.Economy.Cheats?.Mode == true ), saved.StartKind, saved.Economy.Mode, saved.Economy.Easy, requires );
 		}
 		catch ( Exception error ) when ( error is IOException or InvalidDataException or UnauthorizedAccessException or System.Text.Json.JsonException or ArgumentException )

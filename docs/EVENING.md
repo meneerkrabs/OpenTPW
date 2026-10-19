@@ -18,7 +18,7 @@ while the park holds a torch**, like the pools, umbrellas and winter extensions:
 
 ## Using it
 
-- The extension is on by default. Switch it off in **Options > OpenTPW > Extensions and mods** ("Evening and night"; the change applies at the next start, [MODS.md](MODS.md)) or for one run with `--disable-extension opentpw.evening`.
+- The extension is on by default. Switch it off in **Options > OpenTPW > Extensions and mods** ("Evening and night"; the change applies to the next park you start or load, [MODS.md](MODS.md#when-a-change-applies)) or for one run with `--disable-extension opentpw.evening`.
 - Pick the pace on **Options > OpenTPW > Day cycle**: **10, 20 or 40 minutes** for one full day and night (20 is the default), or **always day**, **always dusk** or **always night**. The row's help text says it only matters while the
   extension is on. Its name, description and values are translated in all eleven interface languages like the other OpenTPW rows.
 - Always day is the original's look exactly (the extension then changes nothing and the lamps stay off).

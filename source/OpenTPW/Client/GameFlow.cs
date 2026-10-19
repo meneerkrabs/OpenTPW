@@ -168,6 +168,8 @@ internal sealed partial class GameFlow : IDisposable
 	public void ShowFrontEnd( string? selectLevel = null )
 	{
 		TearDown();
+		// [EXT:extensions-apply-at-load] extension choices made in the park just left are active in the lobby and for the next park
+		ApplyPendingExtensions();
 		enterHold = false;
 		lobbyDefinition ??= LobbyDefinition.Load();
 		Lobby = new LobbyScene( lobbyDefinition, generator: lobbyEffects.Draw, flyerPercent: LobbyObjectsPercent );
@@ -179,7 +181,7 @@ internal sealed partial class GameFlow : IDisposable
 		createdMenu = new FrontEndMenu( Strings, lobbyDefinition.Islands, new FrontEndActions
 		{
 			StartPark = ( island, mode ) => RequestParkStart( island.Level, mode, createdMenu ),
-			Load = entry => QueueProgressLevel( entry.Level, () => LoadPark( entry, overFrames: true ) ),
+			Load = entry => ConfirmExtensions( entry.OwnSavePath, change => QueueProgressLevel( entry.Level, () => LoadPark( entry with { Switch = change }, overFrames: true ) ) ),
 			ContinueEntry = FindContinueEntry,
 			AutomaticEntry = FindAutomaticContinueEntry,
 			ContinueAutomatic = entry => RequestAutomaticContinue( createdMenu!, entry ),
@@ -196,6 +198,8 @@ internal sealed partial class GameFlow : IDisposable
 			},
 			LoadEntries = FindLoadEntries,
 			GoOnline = WhenOnline( ShowOnline ),
+			// [EXT:save-extension-switch] an own save whose extensions differ asks before it loads
+			ConfirmExtensions = ConfirmExtensions,
 		} );
 		Menu = createdMenu;
 		Menu.SelectIsland( 0 );
@@ -236,6 +240,8 @@ internal sealed partial class GameFlow : IDisposable
 		Languages = GameLanguage.Choosable(),
 		// A choice still waiting for the park to be left is what the row shows, so it can also be taken back.
 		CurrentLanguage = pendingLanguage ?? GameLanguage.Current.Name,
+		// [EXT:extensions-apply-at-load] extensions switched on the Extensions and mods screen apply at the next park start or load
+		ApplyExtensions = ApplyExtensionChoices,
 		ApplyLanguage = language =>
 		{
 			pendingLanguage = string.Equals( language, GameLanguage.Current.Name, StringComparison.OrdinalIgnoreCase ) ? null : language;
@@ -272,9 +278,9 @@ internal sealed partial class GameFlow : IDisposable
 			try
 			{
 				var saved = ParkResumeSaveFile.Load( path );
-				// [EXT:mods] a save made with mods that are not all active stays listed and says which it needs
+				// [EXT:mods] a save made with mods that are not all active stays listed and says which it needs ([EXT:save-extension-switch] unless the load can switch them: it asks then)
 				// [EXT:cheats-publish] and says when the park is marked as cheated
-				entries.Add( new ParkLoadEntry( saved.Theme, -1, false, path, saved.DisplayName, SavedAt( path ), ParkResumeMods.MissingText( saved.Mods, Mods.OpenTpwExtensions.Active ), saved.Economy.Cheats?.Mode == true ) );
+				entries.Add( new ParkLoadEntry( saved.Theme, -1, false, path, saved.DisplayName, SavedAt( path ), ParkExtensionSwitch.RequiresText( saved.Mods, NextExtensions ), saved.Economy.Cheats?.Mode == true ) );
 			}
 			catch ( Exception error ) when ( error is IOException or InvalidDataException or UnauthorizedAccessException or System.Text.Json.JsonException or ArgumentException )
 			{
@@ -313,7 +319,7 @@ internal sealed partial class GameFlow : IDisposable
 	{
 		if ( entry.OwnSavePath != null )
 		{
-			try { ResumePark( ParkResumeSaveFile.Load( entry.OwnSavePath ) ); }
+			try { ResumePark( ParkResumeSaveFile.Load( entry.OwnSavePath ), extensionSwitch: entry.Switch ); }
 			catch ( Exception error ) when ( error is IOException or InvalidDataException or UnauthorizedAccessException or System.Text.Json.JsonException
 				or ArgumentException or InvalidOperationException or NotSupportedException )
 			{
@@ -341,6 +347,8 @@ internal sealed partial class GameFlow : IDisposable
 		using var profile = LoadProfile.Measure( "start-level" );
 		using ( LoadProfile.Measure( "tear-down" ) )
 			TearDown();
+		// [EXT:extensions-apply-at-load] the new park is built with the extension choices made in the park just left
+		ApplyPendingExtensions();
 		Level level;
 		using ( LoadProfile.Measure( "level" ) )
 			level = new Level( levelName, loadOriginalLevel: original, visit: visit, onlineFolders: OnlineFolders, start: start, playerSave: playerSave ) { ShowDeveloperPanels = developerPanels };
@@ -395,7 +403,7 @@ internal sealed partial class GameFlow : IDisposable
 		IHudParkStatus status = level.Park != null ? EconomyParkStatus.ForLevel( level, PlayerKeys ) : new NoEconomyStatus();
 		using ( LoadProfile.Measure( "park-hud" ) )
 			Hud = CreateParkHud( level, status );
-		// [EXT:online-visit-presence] a visit of a downloaded park joins its chat room and draws its players while logged in
+		// [EXT:online-visit-presence] a visit with a chat room (a downloaded park's, a chat satellite's) joins it and draws its players while logged in
 		if ( visit != null && FeatureGates.Online )
 			presence = ParkPresence.TryCreate( onlineSession, level );
 		// [EXT:online-visit] read-only visits of shared parks get no advisor (the original has no visits)
@@ -441,7 +449,7 @@ internal sealed partial class GameFlow : IDisposable
 		SavePark = SaveCurrentPark,
 		OpenPostcard = WhenOnline( ShowPostcard ),
 		CreateOptions = CreateOptions,
-		CreateLoad = stack => FrontEndMenu.CreateLoadScreen( stack, Strings, FindLoadEntries(), entry => QueueProgressLevel( entry.Level, () => LoadPark( entry, overFrames: true ) ) ),
+		CreateLoad = stack => FrontEndMenu.CreateLoadScreen( stack, Strings, FindLoadEntries(), entry => ConfirmExtensions( entry.OwnSavePath, change => QueueProgressLevel( entry.Level, () => LoadPark( entry with { Switch = change }, overFrames: true ) ) ) ),
 		GoOnline = WhenOnline( ShowOnline ),
 		// Restart Park reloads the restart snapshot in every original park but the read-only visit (the original's pause menu 0x48C150 lists the entry for every game type except the online visit)
 		RestartPark = RestartEligible( level ) ? () => RestartCurrentPark( level ) : null,
@@ -1119,9 +1127,30 @@ internal sealed partial class GameFlow : IDisposable
 		Session = Online,
 		Level = () => Level,
 		Visit = visit => QueueProgressLevel( visit.Level, () => StartLevel( visit.Level, original: !visit.IsSandbox, developerPanels: false, visit: visit, overFrames: true ) ),
+		VisitLevel = ( level, prepare ) => QueueProgressLevel( level, () =>
+		{
+			if ( PrepareLevelVisit( prepare ) is { } visit )
+				StartLevel( level, original: true, developerPanels: false, visit: visit, overFrames: true );
+		} ),
 		Globe = () => Globe,
 		Advise = message => Advisor?.OnOnlineScreenOpened( message ),
 	} );
+
+	/// <summary>A chat park's visit, built once its level's files are there; null after a failure, which is shown over the screen it came from.</summary>
+	private ParkVisitInfo? PrepareLevelVisit( Func<ParkVisitInfo> prepare )
+	{
+		try
+		{
+			return prepare();
+		}
+		catch ( Exception error ) when ( error is IOException or InvalidDataException or UnauthorizedAccessException or ArgumentException or InvalidOperationException )
+		{
+			Log.Warning( $"Chat park visit failed: {error.Message}" );
+			var stack = Hud?.Stack ?? Menu?.Stack;
+			stack?.Push( UiDialogs.Message( "visitFailed", () => error.Message, (() => Strings.Extra( OpenTpwText.Back ), () => stack.Pop()) ) );
+			return null;
+		}
+	}
 
 	public void Dispose()
 	{

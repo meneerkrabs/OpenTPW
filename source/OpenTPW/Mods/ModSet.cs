@@ -159,6 +159,44 @@ public sealed class ModSet
 	}
 
 	/// <summary>
+	/// [EXT:extensions-apply-at-load] This set with official extensions switched on or off (<paramref name="changes"/>, id to on), for a change that applies at the next park load instead of the next start
+	/// (docs/MODS.md, "When a change applies"): the files-based mods, their content and the refusals stay exactly as they are, and the enabled extensions take the order <see cref="Resolve"/> gives them
+	/// (before every files-based mod, by <paramref name="playerOrder"/> and then by ordinal id), so a later start with the same choices resolves the same order. An extension no player can switch on, or
+	/// switching off an extension an enabled mod needs, is refused (<see cref="InvalidOperationException"/>): those changes need a new start, where the mods are resolved again.
+	/// </summary>
+	internal ModSet WithExtensions( IReadOnlyDictionary<string, bool> changes, IReadOnlyList<string> playerOrder )
+	{
+		ArgumentNullException.ThrowIfNull( changes );
+		ArgumentNullException.ThrowIfNull( playerOrder );
+		var extensions = Extensions.ToList();
+		var changed = false;
+		foreach ( var (id, on) in changes.OrderBy( pair => pair.Key, StringComparer.Ordinal ) )
+		{
+			var index = extensions.FindIndex( item => item.Extension.Id == id );
+			if ( index < 0 )
+				throw new ArgumentException( $"{id} is not an extension of this set.", nameof( changes ) );
+			if ( extensions[index].Enabled == on )
+				continue;
+			if ( on && !extensions[index].Extension.PlayerSelectable )
+				throw new InvalidOperationException( $"{id} cannot be switched on yet." );
+			if ( !on && Mods.FirstOrDefault( mod => mod.Manifest.Dependencies.Any( dependency => dependency.Id == id ) ) is { } dependant )
+				throw new InvalidOperationException( $"{dependant.Id} needs {id}; switching it off needs a new start." );
+			extensions[index] = extensions[index] with { Enabled = on };
+			changed = true;
+		}
+		if ( !changed )
+			return this;
+		var position = new Dictionary<string, int>( StringComparer.Ordinal );
+		for ( var index = 0; index < playerOrder.Count; index++ )
+			position.TryAdd( playerOrder[index], index );
+		var extensionIds = new HashSet<string>( extensions.Select( item => item.Extension.Id ), StringComparer.Ordinal );
+		var order = extensions.Where( item => item.Enabled ).Select( item => item.Extension.Id )
+			.OrderBy( id => position.TryGetValue( id, out var index ) ? index : int.MaxValue ).ThenBy( id => id, StringComparer.Ordinal )
+			.Concat( Order.Where( id => !extensionIds.Contains( id ) ) ).ToList();
+		return new ModSet( extensions, Mods, order, Refused );
+	}
+
+	/// <summary>
 	/// Whether a mod changes the park simulation, judged from its manifest and files: it adds objects
 	/// (<c>content.objects</c>), or it overrides a file that is not plainly presentation media (textures, sounds, text
 	/// and fonts: <see cref="IsPresentationFile"/>), or it has scripts with a hook that can change the simulation (every v1 hook can). Unknown file types count as simulation, the safe side: such a

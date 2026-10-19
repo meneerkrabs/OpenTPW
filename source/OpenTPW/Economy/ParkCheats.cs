@@ -19,6 +19,11 @@ public enum CheatKind
 	Ticket = 3,
 	/// <summary>[EXT:cheats-weather] The weather now, as a forecast with no warning: the argument is the <see cref="CheatWeather"/>.</summary>
 	Weather = 4,
+	/// <summary>
+	/// [EXT:cheats-ride-vehicles] A ride's vehicle limit raised: 32 bumper cars or karts, 40 tour cars. The argument is the ride's attraction id; the ride keeps the raised limit, and its
+	/// capacity maximum grows to fill it.
+	/// </summary>
+	RideVehicles = 5,
 	/// <summary>[EXT:cheats-arrival] A group of visitors arrives now by the vehicle the argument names (<see cref="ArrivalVehicleKind"/>: bus, seaplane or Ferry), sized for it.</summary>
 	Arrival = 6,
 }
@@ -42,6 +47,10 @@ public interface IParkCheatHost
 	bool TryStartArrival( int vehicleKind );
 	/// <summary>[EXT:cheats-weather] Makes the weather <paramref name="weather"/> now (at park tick <paramref name="tick"/>); false while the park's weather has not taken its first step.</summary>
 	bool TryApplyWeather( CheatWeather weather, long tick );
+	/// <summary>[EXT:cheats-ride-vehicles] Whether the ride <paramref name="attractionId"/> is placed, live and of a kind whose vehicle limit the cheat raises, and not raised yet.</summary>
+	bool CanRaiseRideVehicles( int attractionId );
+	/// <summary>[EXT:cheats-ride-vehicles] Raises the ride's vehicle limit now; false when the ride is gone or cannot be raised (the cheat is then recorded as asked, with no effect).</summary>
+	bool TryRaiseRideVehicles( int attractionId );
 }
 
 /// <summary>One cheat action as the player asked for it: its kind and its argument (for example a ticket kind).</summary>
@@ -126,6 +135,7 @@ public sealed class ParkCheats
 		CheatKind.Ticket => action.Argument is >= (int)GoldenTicketKind.Visitors and <= (int)GoldenTicketKind.BigPark,
 		CheatKind.Weather => Enum.IsDefined( (CheatWeather)action.Argument ),
 		CheatKind.Arrival => action.Argument is ArrivalVehicleKind.Bus or ArrivalVehicleKind.Seaplane or ArrivalVehicleKind.Ferry,
+		CheatKind.RideVehicles => action.Argument > 0,
 		_ => false
 	};
 
@@ -135,7 +145,7 @@ public sealed class ParkCheats
 	/// </summary>
 	internal bool Queue( CheatAction action )
 	{
-		if ( !IsValid( action ) || pending.Count >= MaximumPending || action.Kind == CheatKind.Arrival && ArrivalPending )
+		if ( !IsValid( action ) || pending.Count >= MaximumPending || action.Kind == CheatKind.Arrival && ArrivalPending || action.Kind == CheatKind.RideVehicles && pending.Contains( action ) )
 			return false;
 		pending.Add( action );
 		return true;

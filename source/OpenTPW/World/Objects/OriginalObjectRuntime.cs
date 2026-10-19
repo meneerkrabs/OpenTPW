@@ -427,6 +427,7 @@ public sealed partial class OriginalObjectRuntime
 			RideSpeed = speedWord,
 			RideCapacity = capacityWord,
 			RideDuration = durationWord,
+			VehiclesRaised = VehiclesRaised ? true : null,
 			Lights = Lights?.Capture()
 		};
 	}
@@ -484,6 +485,9 @@ public sealed partial class OriginalObjectRuntime
 		// holds none (the teardown above cleared it), whatever an older or edited save says.
 		if ( !snapshot.Stopped )
 			effects.RestoreScreams( snapshot.ScriptHoldsScream ?? snapshot.HeldScream, snapshot.HeldScreamBand, snapshot.HeldScreamLevel, snapshot.HeldScreamSpeed, snapshot.OwnedScreamCount );
+		RestoreVehiclesRaised( snapshot.VehiclesRaised == true );
+		if ( snapshot.RideCapacity > (VehiclesRaised ? MaximumCapacity : byte.MaxValue) )
+			throw new InvalidDataException( $"'{Entry.ArchivePath}': the saved capacity {snapshot.RideCapacity} is above the ride's maximum {(VehiclesRaised ? MaximumCapacity : byte.MaxValue)}." );
 		RestoreSettingWords( snapshot.RideSpeed, snapshot.RideCapacity, snapshot.RideDuration );
 		// [EXT:object-lights] the lights' on/off and colour; a number this model no longer has is reported, a model without lights ignores the list
 		if ( snapshot.Lights is { } savedLights )

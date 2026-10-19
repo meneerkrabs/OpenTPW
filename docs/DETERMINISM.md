@@ -627,6 +627,11 @@ arrival factor, and money at turn 100, research at 200, the Visitors ticket at 3
 turn 462) and rain at 500 (the plan's bump-ride vehicle limit at turn 600 is K4's; this park has no bump ride). `AParkSavedMidSequenceContinuesIdentically` saves and loads the economy
 before the boat (with it queued), at turn 405 (the bus waiting across the save) and after the bus, and gets the same hash each time.
 
+The ride vehicle cheat (K4) raises a ride's limit at a turn boundary with no draw. A raised bump controller's limit and a raised tour controller's 40 slots join the hash only for a raised
+ride, and the runtime snapshot, the track and the tour parts write the raised state only then, so every other park keeps its pins and save bytes. A pin covers the scenario:
+`CheatsRideVehicleTests.CheatsBumperRaisedRunHash` = `0xDF2C86E99A8FB3C0`, the jungle bumper controller (template -1, world generator of seed 99) raised to 32 cars, loaded with 32 guests,
+run through a 30-second session and 600 more ticks.
+
 ## Tests
 
 `DeterminismTests` (no game data needed):

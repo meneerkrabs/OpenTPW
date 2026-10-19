@@ -363,6 +363,10 @@ public enum OpenTpwText
 	CheatsWaiting,
 	CheatArrivalNote,
 	CheatWeatherNote,
+	CheatRideLabel,
+	CheatRideNone,
+	CheatRaiseVehicles,
+	CheatVehiclesRaised,
 	/// <summary>[EXT:cheats-extension] The cheats extension's name on the Extensions and mods screen.</summary>
 	ExtensionCheatsName,
 	/// <summary>[EXT:cheats-extension] The cheats extension's description on the Extensions and mods screen.</summary>
@@ -870,6 +874,10 @@ public static class SupplementaryStrings
 		[OpenTpwText.CheatsWaiting] = new[] { "Cheats waiting: {0}", "Snyd i kø: {0}", "Wachtend: {0}", "En attente : {0}", "Wartend: {0}", "대기 중: {0}", "Oczekujące: {0}", "En espera: {0}", "Väntande: {0}", "In attesa: {0}", "ממתינים: {0}" },
 		[OpenTpwText.CheatArrivalNote] = new[] { "Cheat: visitors on their way", "Snyd: gæster på vej", "Valsspelen: bezoekers onderweg", "Triche : visiteurs en route", "Cheat: Besucher unterwegs", "치트: 방문객이 오는 중", "Kod: goście w drodze", "Truco: visitantes en camino", "Fusk: besökare på väg", "Trucco: visitatori in arrivo", "צ'יט: מבקרים בדרך" },
 		[OpenTpwText.CheatWeatherNote] = new[] { "Cheat: the weather changes", "Snyd: vejret skifter", "Valsspelen: het weer verandert", "Triche : la météo change", "Cheat: das Wetter ändert sich", "치트: 날씨가 바뀜", "Kod: pogoda się zmienia", "Truco: cambia el tiempo", "Fusk: vädret ändras", "Trucco: il meteo cambia", "צ'יט: מזג האוויר משתנה" },
+		[OpenTpwText.CheatRideLabel] = new[] { "Ride:", "Forlystelse:", "Attractie:", "Attraction :", "Fahrgeschäft:", "놀이기구:", "Atrakcja:", "Atracción:", "Attraktion:", "Attrazione:", "מתקן:" },
+		[OpenTpwText.CheatRideNone] = new[] { " none", " ingen", " geen", " aucune", " keins", " 없음", " brak", " ninguna", " ingen", " nessuna", " אין" },
+		[OpenTpwText.CheatRaiseVehicles] = new[] { "Raise vehicles to {0}", "Hæv vogne til {0}", "Voertuigen naar {0}", "Véhicules à {0}", "Fahrzeuge auf {0}", "탈것 {0}대로", "Pojazdy do {0}", "Vehículos a {0}", "Höj fordon till {0}", "Veicoli a {0}", "העלה כלים ל-{0}" },
+		[OpenTpwText.CheatVehiclesRaised] = new[] { "Vehicles raised to {0}", "Vogne hævet til {0}", "Voertuigen nu {0}", "Véhicules portés à {0}", "Fahrzeuge jetzt {0}", "탈것 {0}대로 늘림", "Pojazdy: {0}", "Vehículos subidos a {0}", "Fordon höjda till {0}", "Veicoli portati a {0}", "הכלים הועלו ל-{0}" },
 		[OpenTpwText.ExtensionCheatsName] = new[] { "Cheats", "Snyd", "Valsspelen", "Triche", "Schummeln", "치트", "Kody", "Trucos", "Fusk", "Trucchi", "צ'יטים" },
 		[OpenTpwText.ExtensionCheatsDescription] = new[] {
 			"The cheats window (Alt+C in a park): send visitors by bus, plane or boat, change the weather, award a chosen golden ticket, add money and make everything buildable. A park that uses a cheat is marked as cheated for good; it can still be published. The original's own cheats (the secret park name and the Alt keys) work without it.",

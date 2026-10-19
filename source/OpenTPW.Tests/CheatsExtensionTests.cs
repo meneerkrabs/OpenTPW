@@ -20,6 +20,8 @@ public class CheatsExtensionTests
 	{
 		public bool TryStartArrival( int vehicleKind ) => guests.TryStartCheatArrival( vehicleKind );
 		public bool TryApplyWeather( CheatWeather kind, long tick ) => weather?.ApplyCheat( kind, tick ) == true;
+		public bool CanRaiseRideVehicles( int attractionId ) => false;
+		public bool TryRaiseRideVehicles( int attractionId ) => false;
 	}
 
 	private static long NextTurn( ParkEconomy park )
@@ -282,6 +284,10 @@ public class CheatsExtensionTests
 				["ticket"] = OpenTPW.Hud.ParkHud.CheatTickets.Select( kind => Text( OpenTPW.UI.Original.OpenTpwText.CheatAwardTicket ) + OpenTPW.Hud.ParkHud.CheatKeyHint( new CheatAction( CheatKind.Ticket, (int)kind ) ) ).ToArray(),
 				["money"] = new[] { Text( OpenTPW.UI.Original.OpenTpwText.CheatAddMoney ) + OpenTPW.Hud.ParkHud.CheatKeyHint( new CheatAction( CheatKind.Money ) ) },
 				["research"] = new[] { Text( OpenTPW.UI.Original.OpenTpwText.CheatBuildEverything ) + OpenTPW.Hud.ParkHud.CheatKeyHint( new CheatAction( CheatKind.Research ) ) },
+				// the ride row's own label (the ride's name comes from the language's object names)
+				["ride"] = new[] { Text( OpenTPW.UI.Original.OpenTpwText.CheatRideLabel ) + Text( OpenTPW.UI.Original.OpenTpwText.CheatRideNone ) },
+				["rideVehicles"] = new[] { OpenTPW.UI.Original.OpenTpwText.CheatRaiseVehicles, OpenTPW.UI.Original.OpenTpwText.CheatVehiclesRaised }
+					.SelectMany( key => new[] { BumpController.RaisedVehicleLimit, TourController.RaisedCarSlots }.Select( count => string.Format( Text( key ), count ) ) ).ToArray(),
 			};
 			var fonts = new OpenTPW.UI.Original.UiFonts( file => new FontAtlas( language.LoadFont( file ) ) );
 			// the window at the reference size, a 1080p and a 1440p screen, and a Retina laptop window (density 2), each at its automatic interface scale

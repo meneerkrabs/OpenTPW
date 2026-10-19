@@ -45,7 +45,8 @@ public sealed partial class ParkHud
 		var settings = item.Entry.Settings;
 		var speed = window?.Ride.Speed ?? parameters.Speed;
 		var capacity = window?.Ride.Capacity ?? parameters.Capacity;
-		return UiGauge.OfPercent( RideWindowGauges.Reliability( settings.GetInt( "UsageInfo.MaxSpeed" ), settings.GetInt( "UsageInfo.MaxCapacity" ),
+		// [EXT:cheats-ride-vehicles] a raised ride's capacity is read against its raised maximum
+		return UiGauge.OfPercent( RideWindowGauges.Reliability( settings.GetInt( "UsageInfo.MaxSpeed" ), item.Runtime.MaximumCapacity,
 			upgrade.GetInt( "RedLineSpeed" ), upgrade.GetInt( "RedLineCapacity" ), upgrade.GetInt( "WearRate" ), speed, capacity, item.Runtime.GetVariable( RideVariables.VAR_ONRIDE ) ) );
 	}
 

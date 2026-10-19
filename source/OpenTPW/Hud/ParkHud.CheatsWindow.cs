@@ -20,6 +20,8 @@ public sealed partial class ParkHud
 	private int cheatVehicle = ArrivalVehicleKind.Bus;
 	private CheatWeather cheatWeather = CheatWeather.Clear;
 	private GoldenTicketKind cheatTicket = GoldenTicketKind.Visitors;
+	// [EXT:cheats-ride-vehicles] the ride the window's vehicle row acts on, by attraction id (0: none chosen yet)
+	private int cheatRide;
 	private bool cheatsWindowKeyDown;
 
 	/// <summary>Whether the cheats window may open: the extension is on and this is a Theme Park World park of the player's own, not a visit.</summary>
@@ -50,6 +52,31 @@ public sealed partial class ParkHud
 	};
 
 	internal static OpenTpwText TicketText( GoldenTicketKind kind ) => OpenTpwText.CheatTicketVisitors + ((int)kind - (int)GoldenTicketKind.Visitors);
+
+	/// <summary>[EXT:cheats-ride-vehicles] The ride the vehicle row shows: the one chosen, or the park's first such ride.</summary>
+	private OriginalObject? CheatRide()
+	{
+		var rides = level.CheatRides;
+		return rides.FirstOrDefault( ride => ride.Runtime.AttractionId == cheatRide ) ?? rides.FirstOrDefault();
+	}
+
+	/// <summary>Moves the vehicle row's ride <paramref name="direction"/> steps through the park's rides, wrapping.</summary>
+	private void StepCheatRide( int direction )
+	{
+		var rides = level.CheatRides;
+		if ( rides.Count == 0 )
+			return;
+		var index = CheatRide() is { } current ? rides.ToList().IndexOf( current ) : 0;
+		cheatRide = rides[((index + direction) % rides.Count + rides.Count) % rides.Count].Runtime.AttractionId;
+	}
+
+	/// <summary>The ride's name, numbered when the park has more than one of the same kind ("Jurassic Tours 2").</summary>
+	private string CheatRideName( OriginalObject ride )
+	{
+		var same = level.CheatRides.Where( other => other.Entry.InfoId == ride.Entry.InfoId ).ToList();
+		var name = ride.Entry.DisplayName ?? ride.Entry.ArchiveName;
+		return same.Count > 1 ? $"{name} {same.IndexOf( ride ) + 1}" : name;
+	}
 
 	/// <summary>Alt+C opens or closes the cheats window (on the key's press, Alt alone).</summary>
 	private void HandleCheatsWindowKey( bool allowed )
@@ -83,7 +110,7 @@ public sealed partial class ParkHud
 		var rowIndex = 0;
 		void Row( string id, Func<string> text, Action clicked, Func<bool> enabled, Action<int>? adjusted = null )
 		{
-			// seven rows on the left, the rest on the right, at the OpenTPW page's panel size and pitch
+			// seven rows on the left, the rest (four) on the right, at the OpenTPW page's panel size and pitch
 			var column = rowIndex < 7 ? 0 : 1;
 			var left = column == 0 ? 57f : 1331f;
 			var top = 167f + (column == 0 ? rowIndex : rowIndex - 7) * 156f;
@@ -113,6 +140,16 @@ public sealed partial class ParkHud
 			() => Queue( new CheatAction( CheatKind.Money ) ), Allowed );
 		Row( "research", () => Extra( OpenTpwText.CheatBuildEverything ) + CheatKeyHint( new CheatAction( CheatKind.Research ) ),
 			() => Queue( new CheatAction( CheatKind.Research ) ), Allowed );
+		// [EXT:cheats-ride-vehicles] a ride of the park (bumper cars, karts or a tour) and its vehicle limit
+		OriginalObject? Ride() => CheatRide();
+		Row( "ride", () => Extra( OpenTpwText.CheatRideLabel ) + (Ride() is { } ride ? " " + CheatRideName( ride ) : Extra( OpenTpwText.CheatRideNone )),
+			() => StepCheatRide( 1 ), () => level.CheatRides.Count > 1, StepCheatRide );
+		Row( "rideVehicles", () => Ride() is { } ride
+				? string.Format( Extra( ride.Runtime.VehiclesRaised ? OpenTpwText.CheatVehiclesRaised : OpenTpwText.CheatRaiseVehicles ), ride.Runtime.RaisedVehicleCount )
+				: string.Format( Extra( OpenTpwText.CheatRaiseVehicles ), BumpController.RaisedVehicleLimit ),
+			() => { if ( Ride() is { } ride ) Queue( new CheatAction( CheatKind.RideVehicles, ride.Runtime.AttractionId ) ); },
+			() => Allowed() && Ride() is { Runtime: { CanRaiseVehicles: true, VehiclesRaised: false } } ride
+				&& Economy()?.Cheats.Pending.Contains( new CheatAction( CheatKind.RideVehicles, ride.Runtime.AttractionId ) ) == false );
 		// the park's state below the right column: marked or not, and what waits for the next turn
 		screen.Add( new UiLabel
 		{
@@ -129,7 +166,7 @@ public sealed partial class ParkHud
 			Color = UiColors.OptionText,
 			Shadow = false,
 			Wrap = true,
-			Bounds = OptionsScreen.PageBuilder.Rect( 1331, 167 + 2 * 156 + 20, 1964, 1300 ),
+			Bounds = OptionsScreen.PageBuilder.Rect( 1331, 167 + 4 * 156 + 20, 1964, 1300 ),
 			Anchor = UiAnchor.Center
 		} );
 		screen.Add( new UiModelImage { Id = "buttonsPanel", Model = "!f_plain", Bounds = OptionsScreen.PageBuilder.Rect( 1835, 1321, 1947, 1443 ), Anchor = UiAnchor.Center } );

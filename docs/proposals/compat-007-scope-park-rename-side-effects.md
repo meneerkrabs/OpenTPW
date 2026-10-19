@@ -7,7 +7,7 @@
 - One ID per proposal; shared dependencies are coordination edges, not duplicated ownership.
 
 ## Source-verified residual
-RenamePark updates ParkName and redraws GateSign only; original online-record updates, secret-name event effects and original-save name import are not implemented here.
+The historical proposal overstated the missing behavior. Current host rename, pending secret-name action, imported player-save gate lines and resume name persistence are implemented. Original online-record/event 0x15 side effects and exact original import equivalence remain separately evidence-gated.
 
 ## Source sites
 - `source/OpenTPW/World/Level.cs:112` — APPROX annotation and adjacent implementation inspected.
@@ -31,7 +31,7 @@ RenamePark updates ParkName and redraws GateSign only; original online-record up
 5. Submit any later implementation with exact evidence, changed scope and test output for review.
 
 ## Acceptance tests to author and run later
-- Rename redraw; invalid input; read-only visit rejection; non-default original-save import; secret-name event once-only semantics after evidence exists.
+- Review the existing rename/next-turn, gate-name and resume fixtures first. Add only demonstrated coverage gaps, including original event 0x15 once-only semantics and original-save corpus equivalence after the required evidence exists; do not duplicate the existing host secret-name test.
 - Run the nearest existing unit suite plus targeted integration/visual checks for changed behavior.
 - Compare baseline and candidate with identical inputs; label screenshots by platform, display settings and state.
 - Report unsupported/corpus-external cases separately; synthetic consistency alone is not original-fidelity proof.
@@ -46,3 +46,8 @@ RenamePark updates ParkName and redraws GateSign only; original online-record up
 - This deliverable is a documentation proposal only; no gameplay source files are changed by this PR.
 - Runtime work remains blocked on the evidence/ownership decisions listed above where applicable.
 - No approximation is retired by creating this plan; no PR is claimed implemented or ready to merge.
+
+## Current-source reconciliation (2026-10-19)
+At public main `fd8ff52eec12354fba02f23d23c5a217b2515a3b`, `SetupParkName` reads `SavedGateName`, while `RenamePark` updates the gate and queues the host cheat action. `CheatsOriginalTests.RenamingTheParkToTheSecretNameTurnsTheCheatModeOnAtTheNextTurnAndTheSignKeepsTheName` already exercises the real rename, pending action and next-turn behavior. Host resume stores the name; these are not missing features or reasons to duplicate a secret-name fixture.
+
+The online publication title is separately editable: the name field initially reads `My park`, and `ExportLevel` receives that field's text. This is not proof of automatic rename propagation or a defect by itself. Remaining work must specify original online-record/event 0x15 effects and original-save import equivalence, rather than reimplement the current host paths. Historical baseline and source sites remain provenance. This reconciliation introduces no runtime changes, new native verification, test-execution claim or whole-ID closure.

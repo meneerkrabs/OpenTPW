@@ -27,6 +27,7 @@ ARRIVAL-004 docs/progress/2026-10-15-arrival-and-save-rules-settled-against-tp-e
 ARRIVAL-005 docs/GUESTS.md
 ARRIVAL-007 docs/progress/2026-10-15-arrival-and-save-rules-settled-against-tp-exe.md
 AUDIO-002 docs/AUDIO.md
+AUDIO-004 docs/AUDIO.md
 AUDIO-008 docs/AUDIO.md
 AUDIO-009 docs/AUDIO.md
 AUDIO-011 docs/AUDIO.md
@@ -326,6 +327,7 @@ UI-045 docs/PROGRESS.md
 UI-046 docs/progress/2026-10-18-round8-ui-windows.md
 UI-048 docs/PROGRESS.md
 UI-049 docs/PROGRESS.md
+UI-050 docs/UI.md
 UI-061 docs/UI.md
 UI-062 docs/PROGRESS.md
 UI-063 docs/progress/2026-10-16-interface-round-c.md

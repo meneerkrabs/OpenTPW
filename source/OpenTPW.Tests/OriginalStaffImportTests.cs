@@ -196,6 +196,17 @@ public class OriginalStaffImportTests
 		Refused( Edited( node => node["ResumeDestination"] = new System.Text.Json.Nodes.JsonArray( 40000, 1 ) ) );
 	}
 
+	[DataTestMethod]
+	[DataRow( "" )]
+	[DataRow( "   " )]
+	public void ExplicitBlankOrWhitespaceOriginalNamesSurviveImportAndResume( string name )
+	{
+		var (economy, _) = Import( (40, SaveThingModel.Mechanic, SaveTestPayloads.Staff( SaveThingModel.Mechanic, name: name )) );
+		Assert.AreEqual( name, economy.Staff.Members.Single( member => member.Type == StaffType.Mechanic ).Name );
+		var restored = ParkSaveFile.Restore( ParkSaveFile.Deserialize( Encoding.UTF8.GetBytes( ParkSaveFile.Serialize( economy ) ) ), economy.Settings, economy.Catalog );
+		Assert.AreEqual( name, restored.Staff.Members.Single( member => member.Type == StaffType.Mechanic ).Name );
+	}
+
 	/// <summary>A world with a path along y = 5 and a ride at (12, 6) whose access is (12, 5).</summary>
 	private sealed class World
 	{

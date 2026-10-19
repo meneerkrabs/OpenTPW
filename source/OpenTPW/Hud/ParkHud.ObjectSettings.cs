@@ -368,6 +368,13 @@ public sealed partial class ParkHud
 			shopPriceButton.Anchor = UiAnchor.Center;
 			shopPriceButton.Help = HelpOf( price.Help );
 		}
+		// [EXT:pools-waves] a wave machine (a Features object, shown in the shop table) has none of these controls; its "Wave settings" button takes their row, from the quality slider's left (0xc06b) to the price box's right (0xc085)
+		if ( waveSettingsButton != null && Control( table, 0xC06B ) is { } quality && Control( table, 0xC085 ) is { } box )
+		{
+			var row = quality.Rect.Y + quality.Rect.Height / 2;
+			waveSettingsButton.Bounds = UiRect.FromCenter( new NVector2( (quality.Rect.X + box.Rect.Right) / 2, row ), 760, 100 );
+			waveSettingsButton.Anchor = UiAnchor.Center;
+		}
 	}
 
 	/// <summary>The type-9 child gauge of a ride slider that marks its red line.</summary>

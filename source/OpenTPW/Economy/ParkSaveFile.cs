@@ -259,10 +259,16 @@ public static class ParkSaveFile
 	public sealed class StaffData
 	{
 		public required List<StaffMemberData> Members { get; init; }
+		/// <summary>Locator order in StaffType order, containing roster IDs (not thing IDs). Absent/null: legacy pool/reverse-roster reconstruction.</summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public int[][]? RoleOrder { get; init; }
 		public required List<StaffCandidate> Candidates { get; init; }
 		public required List<long> TrainingBudgets { get; init; }
 		public required int NextId { get; init; }
 		public required long NextPoolUpdateTick { get; init; }
+		/// <summary>The staff HQ's mHaveEverTrained flag (the advisor's train-your-staff line reads it); absent while no budget has ever been set above 0 and in older saves, which derive it from the budgets.</summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public bool? HaveEverTrained { get; init; }
 		/// <summary>The strike levels (ECON-014); absent in saves written before strikes and while no role has ever been considered.</summary>
 		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 		public StrikeData? Strikes { get; init; }
@@ -546,6 +552,9 @@ public static class ParkSaveFile
 
 	public sealed class ResearchData
 	{
+		/// <summary>TPW presentation rings in WhichUIType order, retaining physical slots and scratch words. Older saves have no history.</summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public List<RecentResearchRing>? RecentItems { get; init; }
 		public required List<int[]> Completed { get; init; }
 		public required List<long[]> Progress { get; init; }
 		public required List<int> Effort { get; init; }
@@ -719,14 +728,17 @@ public static class ParkSaveFile
 					CellY = member.CellY,
 					TravelSeconds = member.TravelSeconds
 				} ).ToList(),
+				RoleOrder = park.Staff.CaptureRoleOrder(),
 				Candidates = park.Staff.Candidates.ToList(),
 				TrainingBudgets = Enum.GetValues<StaffType>().Select( park.Staff.GetTrainingBudget ).ToList(),
 				NextId = park.Staff.NextId,
 				NextPoolUpdateTick = park.Staff.NextPoolUpdateTick,
+				HaveEverTrained = park.Staff.HaveEverTrained ? true : null,
 				Strikes = CaptureStrikes( park.Staff.Strikes )
 			},
 			Research = new ResearchData
 			{
+				RecentItems = park.Research.RecentItems.ToList(),
 				Completed = park.Research.Completed.OrderBy( key => key.InfoId ).ThenBy( key => key.Level ).Select( key => new[] { key.InfoId, key.Level } ).ToList(),
 				Progress = park.Research.ProgressEntries.OrderBy( entry => entry.Key.InfoId ).ThenBy( entry => entry.Key.Level ).Select( entry => new[] { entry.Key.InfoId, entry.Key.Level, entry.Points } ).ToList(),
 				Effort = park.Research.Effort.ToList(),
@@ -890,6 +902,7 @@ public static class ParkSaveFile
 			Require( item.WalkAways >= 0 && item.WalkAwaysToday >= 0 && item.WalkAwaysToday <= item.WalkAways
 				&& (item.WalkAwayDays is null || item.WalkAwayDays.Length <= ParkEconomy.WalkAwayHistoryDays && item.WalkAwayDays.All( day => day >= 0 )), $"object {item.Id} walk-aways" );
 		}
+		ParkStaff.ValidateRoleOrder( data.Staff.RoleOrder, data.Staff.Members.Select( member => (member.Id, member.Type) ).ToArray() );
 		var staffIds = new HashSet<int>();
 		var staffThingIds = new HashSet<int>();
 		foreach ( var member in data.Staff.Members )
@@ -898,7 +911,7 @@ public static class ParkSaveFile
 			Require( member.ThingId is >= 0 and <= ThingPool.Capacity && (member.ThingId == 0 || staffThingIds.Add( member.ThingId )), $"staff {member.Id} thing id {member.ThingId}" );
 			Require( Enum.IsDefined( member.Type ) && member.Grade is >= 0 and < BalanceSettings.GradeCount && member.TrainingPoints is >= 0 and < ParkStaff.TrainingPointsPerGrade && member.Variant is null or >= 0, $"staff {member.Id}" );
 			Require( member.Happiness is >= 0f and <= StaffVitals.Maximum && member.Energy is >= 0f and <= StaffVitals.Maximum, $"staff {member.Id} vitals" );
-			Require( member.Name is null || (member.Name.Length is > 0 and <= StaffMember.MaximumNameLength && !member.Name.Contains( '\0' )), $"staff {member.Id} name" );
+			Require( member.Name is null || (member.Name.Length <= StaffMember.MaximumNameLength && !member.Name.Contains( '\0' )), $"staff {member.Id} name" );
 			Require( member.ResumeDestination is null || member.ResumeDestination is [>= 0 and < ParkLitter.MapSize * 256, >= 0 and < ParkLitter.MapSize * 256], $"staff {member.Id} resume destination" );
 			Require( member.ResumeClaimTurn is not { } resumeTurn || resumeTurn >= 0 && resumeTurn <= ParkCalendar.Turn( data.Tick ), $"staff {member.Id} resume claim turn" );
 			Require( (member.BusyTurns is null) != (member.BusyTicks is null) && (member.BusyTurns ?? member.BusyTicks!.Value) >= 0 && (member.AssignedInstanceId == 0 || ids.Contains( member.AssignedInstanceId )), $"staff {member.Id} job" );
@@ -934,6 +947,8 @@ public static class ParkSaveFile
 			Require( strikes.Levels.Count == StaffStrikeBoard.Roles && strikes.Active.Count == StaffStrikeBoard.Roles && strikes.LastConsidered.Count == StaffStrikeBoard.Roles
 				&& strikes.Levels.All( level => level is >= 0 and <= 4 ), "staff strikes" );
 		Require( data.Objectives.AdoptedChallenges == null || data.Objectives.AdoptedChallenges.All( entry => entry.Length == 11 && entry[0] >= 0 && entry[9] is 0 or 1 && entry[10] is 0 or 1 ) && data.Objectives.AdoptedChallenges.Select( entry => entry[0] ).Distinct().Count() == data.Objectives.AdoptedChallenges.Count, "adopted challenge slots" );
+		if ( data.Research.RecentItems is { } recentItems )
+			SaveRecentResearch.Validate( recentItems );
 		Require( (data.Research.HighestGroups == null || data.Research.HighestGroups.Count == Enum.GetValues<ResearchCategory>().Length && data.Research.HighestGroups.All( group => group is >= 0 and <= ParkResearch.MaximumOpenGroup )) && (data.Research.Workload == null || data.Research.Workload is >= 0 and <= 100) && (data.Research.Current == null || data.Research.Current.All( entry => entry.Length == 3 && Enum.IsDefined( (ResearchCategory)entry[0] ) )) && data.Research.Effort.Count == 5 && data.Research.Completed.All( key => key.Length == 2 ) && (data.Research.UpgradeOrder?.All( key => key is { Length: 2 } ) ?? true) && data.Research.Progress.All( entry => entry.Length == 3 && entry[2] >= 0 ), "research" );
 		Require( data.MechanicCursor >= 0, "mechanic cursor" );
 		Require( data.PriceStatistics is null || data.PriceStatistics.All( ring => ring?.Values is not null )
@@ -1056,6 +1071,8 @@ public static class ParkSaveFile
 			CellY = member.CellY,
 			TravelSeconds = member.TravelSeconds
 		} ), data.Staff.Candidates, data.Staff.TrainingBudgets, data.Staff.NextId, data.Staff.NextPoolUpdateTick );
+		park.Staff.RestoreRoleOrder( data.Staff.RoleOrder );
+		park.Staff.RestoreHaveEverTrained( data.Staff.HaveEverTrained ?? data.Staff.TrainingBudgets.Any( budget => budget > 0 ) );
 		foreach ( var saved in data.Staff.Members.Where( member => member.WorldState != null ) )
 			saved.WorldState!.Apply( park.Staff.Members.Single( member => member.Id == saved.Id ) );
 		park.ApplyStaffEffects();
@@ -1067,6 +1084,7 @@ public static class ParkSaveFile
 		park.Research.Restore( data.Research.Completed.Select( key => (key[0], key[1]) ),
 			data.Research.Progress.Select( entry => (((int)entry[0], (int)entry[1]), entry[2]) ), data.Research.Effort,
 			data.Research.Current?.Select( entry => ((ResearchCategory)entry[0], entry[1], entry[2]) ), data.Research.UpgradeOrder?.Select( key => (key[0], key[1]) ).ToList() );
+		park.Research.RestoreRecentItems( data.Research.RecentItems );
 		if ( data.Research.HighestGroups is { } highestGroups )
 			park.Research.RestoreHighestGroups( highestGroups );
 		if ( data.Research.Workload is int workload )

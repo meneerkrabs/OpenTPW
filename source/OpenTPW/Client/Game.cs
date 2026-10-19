@@ -486,6 +486,23 @@ internal static class Game
 				Log.Trace( $"--debug-weather: quality {debugQuality} applied (snow {weather.Snow}, rain {weather.Rain}, lightning {weather.Lightning}, target {weather.TargetDrops} drops)." );
 			}
 		}
+		// [EXT:debug-snow-cover] smoke-only: sets the settled snow cover (0..1) of the park as soon as it exists, so captures can show full cover (or its melt, with the weather dry) without waiting for
+		// the weather's turns; the extension must be on (it is by default). Presentation only: the cover is in no hash and no mod record.
+		var debugSnowCover = GetOption( args, "--debug-snow-cover", "a snow cover 0..1 for smoke captures" );
+		if ( debugSnowCover != null )
+		{
+			if ( !double.TryParse( debugSnowCover, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var debugCover ) || debugCover is < 0 or > 1 )
+				throw new ArgumentException( "--debug-snow-cover expects a cover from 0 to 1." );
+			Render.PostUpdate += ApplyDebugSnowCover;
+			void ApplyDebugSnowCover()
+			{
+				if ( flow.Level?.Snow is not { } snow )
+					return;
+				Render.PostUpdate -= ApplyDebugSnowCover;
+				snow.Set( debugCover );
+				Log.Trace( $"--debug-snow-cover: cover {debugCover} set." );
+			}
+		}
 		// [EXT:debug-umbrellas] smoke-only (Debug builds): gives every guest an open umbrella (colour from its id, so all three show) and keeps it open, so a capture shows the umbrellas without a brolly shop,
 		// a rain spell (use it with --debug-weather) or a lucky guest. It writes the guests' umbrella fields directly (a debug aid: the simulation of such a run is not the park's own, nothing is saved from it).
 		// --debug-umbrellas-follow zoom,yaw holds the park camera on the lowest-numbered guest in view at that zoom value and yaw (degrees) for a close look at one umbrella.

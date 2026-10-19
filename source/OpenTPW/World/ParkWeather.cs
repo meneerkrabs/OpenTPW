@@ -388,7 +388,14 @@ public sealed class ParkWeather
 		}
 		Ramp();
 		Bolts();
+		TurnStepped?.Invoke( this );
 	}
+
+	/// <summary>
+	/// Raised at the end of every weather step (one park turn), after the drops and bolts moved. A presentation host (the snow cover, <see cref="SnowCover"/>) follows the weather's own turn
+	/// sequence through it; nothing in the simulation subscribes, and it is not part of snapshots.
+	/// </summary>
+	internal event Action<ParkWeather>? TurnStepped;
 
 	/// <summary>The season's roll (<c>sub_1037d4</c>): exceptional weather with the season's chance, otherwise the season's average and tolerance.</summary>
 	internal int Roll( long tick )

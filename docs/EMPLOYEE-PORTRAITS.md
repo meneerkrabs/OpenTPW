@@ -60,7 +60,7 @@ without its source, and script writes can overwrite its screen-space flags. Neit
 visible animation nor a frozen portrait after source loss follows from that fact alone.
 Missing-source creation epochs, source return, full-refresh clone replacement, complete VM/flag
 history, native depth/occlusion and rendered-pixel equivalence remain open under UI-092.
-UI-082 still owns pixel sizing. The existing render-driven staff animation timing qualifications
+UI-082 is the hire window only; the employee window's size is UI-092: OpenTPW draws its figure at 3.2 where scale 8.0 through `0x486530` gives a nominal 2.4 (the visitor's 12.0 gives 3.6 through the same path). The existing render-driven staff animation timing qualifications
 also remain in force.
 
 ## Verification

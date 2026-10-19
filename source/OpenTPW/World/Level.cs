@@ -939,6 +939,7 @@ public partial class Level : IDisposable
 		RefreshRenderedCells();
 		RefreshPools();
 		UpdateEvening();
+		UpdateSnow();
 		SceneClock.Advance( Time.Delta * SimulationTimeScale );
 		var simulationStart = FrameStats.Begin();
 		AdvanceSimulation( Time.Delta * SimulationTimeScale );

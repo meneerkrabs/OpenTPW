@@ -73,6 +73,11 @@ public static class FeatureGates
 	/// </summary>
 	public static bool Evening => OpenTpwExtensions.IsEnabled( OfficialExtensions.Evening );
 
+	/// <summary>
+	/// [EXT:winter-snow] The <c>opentpw.winter-snow</c> extension is on for this run (on by default): snow settles on the park's ground, roofs and objects while it snows and melts afterwards (docs/WINTER.md). Presentation only.
+	/// </summary>
+	public static bool WinterSnow => OpenTpwExtensions.IsEnabled( OfficialExtensions.WinterSnow ) && !GameEditions.IsThemeParkInc;
+
 	/// <summary>Exporting, importing, visiting and postcards: the edition supports sharing and the online extension is on.</summary>
 	public static bool Sharing => GameEditions.Capabilities.Sharing && Online;
 

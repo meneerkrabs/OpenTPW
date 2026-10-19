@@ -62,11 +62,11 @@ internal sealed class AdvisorArrivalRing
 	}
 
 	/// <summary>
-	/// Takes the ring as full while its sizes are unknown: a park that had admissions before this record was kept (an original save, whose park words are not parsed, or an OpenTPW save from before the ring was saved)
-	/// has had its five groups, as the original's saved ring is full (the filled flag, <c>+0x216F8</c>). The missing entries read as groups of 0, which the hype (124) and big busload (140) lines never score,
-	/// so only the count the first-group line (281) tests changes; the real sizes replace them as groups arrive.
+	/// A stand-in for a ring that was never recorded, not a port of the original's filled flag (<c>+0x216F8</c>): an OpenTPW save from before the ring was saved has no sizes, and a park with admissions has had arrival groups,
+	/// so the ring is taken as full. The missing entries read as groups of 0, which the hype (124) and big busload (140) lines never score, so only the count the first-group line (281) tests changes; the real sizes replace
+	/// them as groups arrive. A legacy park saved after one to four groups loses the 281 the original would still say. Parks from original saves read their saved ring instead (<see cref="SaveArrivalRing"/>).
 	/// </summary>
-	// [BIN:TPW-EXE:0x004CF42A arrival ring push] the filled flag (+0x216F8) is set once the index wraps, and the count the callbacks read is the capacity from then on
+	// [APPROX:ADVISOR-028] the ring of a legacy OpenTPW save is unknown: full when the park has had admissions, where tp.exe's saved ring holds the real sizes (0x4CE660)
 	public void AssumeFilled()
 	{
 		while ( sizes.Count < Capacity )

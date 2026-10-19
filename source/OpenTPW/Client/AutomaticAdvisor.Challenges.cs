@@ -29,8 +29,8 @@ internal sealed partial class AutomaticAdvisor
 	}
 
 	/// <summary>
-	/// A park with admissions has had its arrival groups, but the record of their sizes is the advisor's own and an original save or an older OpenTPW save has none: the ring is taken as full (<see cref="AdvisorArrivalRing.AssumeFilled"/>),
-	/// so the first-group explanation (281) does not fire once after loading an established park. A park without admissions keeps its empty ring.
+	/// The stand-in for an unrecorded ring (<see cref="AdvisorArrivalRing.AssumeFilled"/>, ADVISOR-028): an older OpenTPW save has no record of the arrival group sizes, so a park with admissions takes the ring as full and the first-group
+	/// explanation (281) does not fire once after loading an established park. A park without admissions keeps its empty ring. A park from an original save reads the saved ring instead (<see cref="SaveArrivalRing"/>).
 	/// </summary>
 	private void AssumeEstablishedArrivalRing()
 	{

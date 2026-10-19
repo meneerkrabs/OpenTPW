@@ -66,15 +66,26 @@ passes 56 tests with zero skips. Original visual fidelity remains unverified.
   (229.3, 1181.2)), so the code moves them; their final places are unknown.
 - Child nodes are **alternative state frames**, not parts: buttons have six
   meshes named e.g. `b_buy, disable, hilite, heldown, hidown, down`, each child
-  translated about one button width (+98…+178) along x from its parent. Composing
-  the matrices would march the states off screen; using a child matrix alone puts
-  it near the origin in the wrong plane. The header bounds of UI files equal the
-  box of every node's stored matrix applied alone (b_buy: x 82.2 = 141.4 − 59.2
-  from `hidown`, y 0 from the unrotated children), which is the "uncomposed"
-  match recorded in MD2-MODELS.md; it describes how the exporter computed bounds,
-  not where states are drawn. OpenTPW draws a state frame with the child's own
-  rotation/scale and the root pose, so all states coincide with the root mesh.
-  This is consistent with all 278 models; it is inferred, not seen in code.
+  translated about one button width along x from its parent. The native selected
+  mesh path composes its matrix through every ancestor, transforms that mesh's
+  two stored bound endpoints, orders X/Y, then fits the result to the control.
+  A common XY translation of vertices and endpoints cancels during this fitting;
+  composition alone does not make the states march off screen. Header bounds
+  describe exporter geometry and are not the selected control's fit bounds.
+- `UiModelFrame.FitBounds` keeps those selected-mesh endpoints separate from the
+  tight corner AABB. `DrawFrame` fits by this box and `UiModelImage.CoversPoint`
+  inverts the same mapping. The geometric `MinX/MinY/MaxX/MaxY`, size, center,
+  authored layout queries and direct-origin `AddModelFrame` submission stay as
+  before. Missing or invalid fit metadata falls back to valid geometric bounds;
+  when neither is usable, drawing and shape picking produce nothing. This is
+  host robustness, not an inferred native malformed-input rule.
+- UI-003 remains open: OpenTPW still flattens state vertices and endpoints using
+  the existing root-pose shortcut. This bounded change does not implement full
+  ancestor composition, control rotation, linked state traversal or native
+  out-of-range selection. Available-corpus replay found no material normalized
+  XY discrepancy from the transform shortcut alone; it does not establish
+  general hierarchy parity. See the [selected-mesh fitting scope](proposals/ui-003-trace-ui-child-transforms.md)
+  for static evidence, corpus limits and synthetic regression coverage.
 - Frame order and textures: frames 0–2 (normal, disabled, highlight) use the
   plain art, 3–5 (pressed states) the `…d` art (`b_door`: open door normally,
   closed door when down). `panel.MD2` stores four arm variants
@@ -786,7 +797,7 @@ language rows and their supplementary strings) `// [EXT:…]`. Paths are relativ
 
 | Id | Site(s) | Current value / rule | Evidence needed |
 | --- | --- | --- | --- |
-| UI-003 | `UI/Original/UiModel.cs:60` | button/arm state frames drawn at the root node pose; child translations ignored; the control's model setter 0x65d070 (model at +0x98, model vtable +0xc with 0x57, then +0x14) is found, the node walk that submits the triangles is not | the node walk of the PC UI model draw (the selected state mesh -> local matrix -> ancestor composition), or a capture of a button whose state child is offset |
+| UI-003 | `UI/Original/UiModel.cs` | selected-mesh endpoint fitting is retained, but state geometry still uses the root-pose shortcut; full ancestor composition, general state traversal and control rotation remain unimplemented | corpus-external hierarchy/rotation validation and rendered comparison |
 | UI-004 | `UI/Original/UiModel.cs:124` | UI model triangles drawn back to front by Z, grouped per texture; the original's display object divides its depth buffer into a UI range in front of a linear and a log range (the dump 0x5833c0 prints [+0x48] begin, [+0x4c] ui end / linear begin, [+0x50] linear end / log begin, [+0x54] log end; the buffer itself is enabled or not, strings 0x768988 and 0x768958), which suggests depth-tested rather than sorted UI parts, not shown for the UI model draw; the device init 0x573080 sets ZENABLE 1, ZFUNC LESSEQUAL (4) and ZWRITEENABLE 1 when the display object's flag +0x88 bit 0x10 is set and ZENABLE and ZWRITEENABLE 0 otherwise, so a UI part is depth-tested when the buffer is on, but the UI draw's own state and order are not found | the UI model draw call (which per-draw depth state and which order it submits) and the writer of the four range floats +0x48..+0x54 |
 | UI-006 | `UI/Original/UiText.cs:102` | text colours: window titles and the lobby island name yellow, the object windows' labels and values white, the pause menu's lines cyan (white while focused), green values elsewhere, grey disabled, shadow and backdrop colours (the video's 720p chroma is good to about +-15 per channel); the original gives each text control an RGBA colour (0x65c5d5 → renderer +0x48, kept as ARGB at +0x78, 0x48fd07) and renders its glyphs white (0x48fa96) unless the control keeps the font's own colours (+0xdd); the values traced are the options labels' (0,0,0,255) (0x4a441e, UI-037), the buy list rows' (255,255,255,255) (0x4ad340), the pause menu lines' (0,175,190,255) (0x48b2b9) and the shared title colour (234,239,102,255) (0x492d20, fifteen window builders), with the lobby island name's second line (252,232,7,255) (0x4b8604) and a list row control that turns (140,0,60) on message 0x403 with a negative argument (0x4a0710); the other 0x65c5d5 calls (134 sites in all; by an instruction scan: about 36 with white (255,255,255,255), 31 with black (0,0,0,255) such as the runs 0x49ada6-0x49b385 and 0x4a53a2-0x4a5d26, 7 with red (255,0,0,255) at 0x49ff69, 0x4a002f, 0x4a6273 and 0x4b2e93-0x4b31f7, 5 with (224,86,86,255) at 0x4aa82d-0x4aac70, and about 45 that pass the colour from registers or tables) are not yet assigned to screens | which screen each remaining 0x65c5d5 call colours (values, disabled states, costs) and the backdrop colours |
 | UI-007 | `UI/Original/UiWidgets.cs:96` | one-pixel (×UI scale) drop shadow under UI text; the original's control text renderer (0x48f830) lays each string out and draws it once (one 0x6ae0f0 call into the control's bitmap), so its controls have no drop shadow; the whole glyph layout and draw library has one draw entry, 0x6ae0f0, whose only caller is the text box routine 0x492750 (three callers, each calling it once: the label and list text of 0x4a84c0 through 0x492c40, 0x480810 through 0x47fcd0 and 0x480460, 0x480570 through 0x47fe90; 0x6ae1c0 is the measure entry used by 0x4929f0), no offset or second pass exists there, and the BF4 glyphs carry only 0-15 coverage samples (docs/BF4-FONTS.md), so no shadow is baked into the font art; the control's attribute byte +0xdb is only ever written (the constructors 0x48f703, 0x48fe3d, 0x490091 and the attribute setter 0x48fcab; no read form of it exists in tp.exe's code by a byte scan), so it is no shadow flag; the capture's apparent shadow is not explained, and the vtable-reached control renderer 0x48f830 and the sprite blit of its bitmap (0x48f410) are not shown to add one; the control draws into its own bitmap in the display mode's pixel format (0x4925d0 copies the 32-byte mode record at 0x8bd558, bit depth and channel masks, into the surface description; 0x48fb64 clears the bitmap to zero first), through the blended one-colour glyph blitters: the 5-5-5 one (0x6b0760) blends each channel as dst + ((src - dst) * coverage) / 15 in signed 5-bit arithmetic and keeps the destination's alpha bit, so white text on the cleared bitmap yields grey levels with alpha bit 0 and the coverage reaches the screen only through the sprite draw's state | the sprite draw of a text control's bitmap (0x48f410 → 0x588c20 is only the release of the control's sprite quads, and the text control's vtable 0x6ff350 has no draw slot of its own (slot 2 is a bare return), so the control's sprite quads are drawn by the engine's sprite pass, where no reader of the colour at +0x78 was found) and whether a capture's shadow is a render-state effect (UI-037) |

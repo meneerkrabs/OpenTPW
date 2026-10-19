@@ -26,6 +26,14 @@ public sealed class PoolTool
 
 	/// <summary>[EXT:pools-slides] The slides the tool lays in its slide mode; set by the level.</summary>
 	public PoolSlideWorld? Slides { get; set; }
+	/// <summary>The buildable pool bridges; set by the level.</summary>
+	public PoolBridgeWorld? Bridges { get; set; }
+	private bool bridgeMode;
+	private int bridgeDirection;
+	/// <summary>Bridge mode uses one click per bridge and never paints water.</summary>
+	public bool IsBridge => IsActive && bridgeMode;
+	public PoolBridgeResult? HoverBridgeResult { get; private set; }
+	public PoolBridgeResult? LastBridgeRefusal { get; private set; }
 	/// <summary>True in the slide mode (<see cref="BeginSlide"/>): presses lay the pieces of the tower's slide, one cell at a time.</summary>
 	public bool IsSlide => IsActive && slideTower != null;
 	/// <summary>The anchor of the tower whose slide the tool lays.</summary>
@@ -64,7 +72,14 @@ public sealed class PoolTool
 	{
 		if ( !FeatureGates.Pools )
 			return false;
+		Release();
 		IsActive = true;
+		bridgeMode = false;
+		HoverCell = null;
+		HoverResult = null;
+		HoverSlideResult = null;
+		HoverBridgeResult = null;
+		LastBridgeRefusal = null;
 		IsErasing = erase;
 		slideTower = null;
 		SlideCompleted = false;
@@ -77,6 +92,20 @@ public sealed class PoolTool
 		return true;
 	}
 
+	/// <summary>Starts single-click placement or removal. The anchor is the first land approach cell; directions follow GuestPathGrid.</summary>
+	public bool BeginBridge( int direction, bool erase = false )
+	{
+		if ( Bridges == null || direction < 0 || direction > 3 || !FeatureGates.Pools )
+			return false;
+		if ( !Begin( erase ) )
+			return false;
+		bridgeMode = true;
+		bridgeDirection = direction;
+		HoverCell = null;
+		HoverResult = null;
+		return true;
+	}
+
 	/// <summary>
 	/// [EXT:pools-slides] Turns the tool on in the slide mode for the slide of the tower anchored at (<paramref name="towerX"/>, <paramref name="towerY"/>): each cell pressed or dragged over becomes the next
 	/// piece of the track (the first one a start cell of the tower, a pool cell ending it with the splash piece). False when the extension is off, the park has no slides or the slide is complete.
@@ -85,7 +114,14 @@ public sealed class PoolTool
 	{
 		if ( !FeatureGates.Pools || Slides == null || Slides.TowerAt( towerX, towerY ) == null || Slides.Find( PoolSlide.KeyOf( towerX, towerY ) ) is { IsComplete: true } )
 			return false;
+		Release();
 		IsActive = true;
+		bridgeMode = false;
+		HoverCell = null;
+		HoverResult = null;
+		HoverSlideResult = null;
+		HoverBridgeResult = null;
+		LastBridgeRefusal = null;
 		IsErasing = false;
 		slideTower = (towerX, towerY);
 		SlideCompleted = false;
@@ -103,6 +139,13 @@ public sealed class PoolTool
 		if ( !IsActive )
 			return;
 		HoverCell = (x, y);
+		if ( bridgeMode )
+		{
+			var result = IsErasing ? Bridges!.CheckRemove( x, y ) : Bridges!.Check( x, y, bridgeDirection );
+			HoverBridgeResult = result == PoolBridgeResult.Ok ? null : result;
+			HoverResult = Map( result );
+			return;
+		}
 		if ( slideTower is { } tower && Slides != null )
 		{
 			var slide = Slides.Check( tower.X, tower.Y, x, y );
@@ -126,6 +169,7 @@ public sealed class PoolTool
 		Release();
 		HoverCell = null;
 		HoverResult = null;
+		HoverBridgeResult = null;
 	}
 
 	/// <summary>The press: starts a stroke on the cell and writes it.</summary>
@@ -141,13 +185,14 @@ public sealed class PoolTool
 		pendingMoney = 0;
 		LastRefusal = null;
 		LastSlideRefusal = null;
+		LastBridgeRefusal = null;
 		return Write( x, y );
 	}
 
 	/// <summary>The pointer reached another cell during a stroke: every cell between the last one and it is written.</summary>
 	public void Drag( int x, int y )
 	{
-		if ( !IsActive || last is not { } from || from == (x, y) )
+		if ( !IsActive || bridgeMode || last is not { } from || from == (x, y) )
 			return;
 		foreach ( var cell in PoolBuilder.DragLine( from, (x, y) ).Skip( 1 ) )
 		{
@@ -188,7 +233,7 @@ public sealed class PoolTool
 		pendingMarked.Clear();
 		pendingMoney = 0;
 		// [EXT:pools-slides] the pieces of a slide are taken back by Backspace in the slide mode, not by the pool strokes' undo (which would erase the pool cells of the track)
-		if ( slideTower != null )
+		if ( slideTower != null || bridgeMode )
 		{
 			LastStroke = stroke;
 			return stroke;
@@ -206,6 +251,9 @@ public sealed class PoolTool
 	/// </summary>
 	public bool Undo()
 	{
+		// Bridge removals require current occupancy checks. Use the removal row; never undo a bridge as a pool-water stroke.
+		if ( bridgeMode )
+			return false;
 		// [EXT:pools-slides] in the slide mode Backspace takes back the last piece
 		if ( slideTower is { } tower )
 		{
@@ -237,6 +285,9 @@ public sealed class PoolTool
 			return;
 		Release();
 		IsActive = false;
+		bridgeMode = false;
+		HoverBridgeResult = null;
+		LastBridgeRefusal = null;
 		IsErasing = false;
 		slideTower = null;
 		IsRiver = false;
@@ -256,8 +307,34 @@ public sealed class PoolTool
 		_ => PoolBuildResult.SlideRefused
 	};
 
+	private static PoolBuildResult Map( PoolBridgeResult result ) => result switch
+	{
+		PoolBridgeResult.Ok => PoolBuildResult.Ok,
+		PoolBridgeResult.ExtensionOff => PoolBuildResult.ExtensionOff,
+		PoolBridgeResult.OutsideTerrain => PoolBuildResult.OutsideTerrain,
+		PoolBridgeResult.NotOwned => PoolBuildResult.NotOwned,
+		PoolBridgeResult.Occupied => PoolBuildResult.Occupied,
+		PoolBridgeResult.TooSteep => PoolBuildResult.TooSteep,
+		PoolBridgeResult.Standing => PoolBuildResult.Standing,
+		PoolBridgeResult.NotEnoughMoney => PoolBuildResult.NotEnoughMoney,
+		_ => PoolBuildResult.Terrain
+	};
+
 	private PoolBuildResult Write( int x, int y )
 	{
+		if ( bridgeMode )
+		{
+			var bridge = IsErasing ? Bridges!.RemoveAt( x, y ) : Bridges!.TryAdd( x, y, bridgeDirection );
+			var mapped = Map( bridge );
+			if ( bridge == PoolBridgeResult.Ok )
+				pending.Add( (x, y) );
+			else
+			{
+				LastRefusal ??= ((x, y), mapped);
+				LastBridgeRefusal ??= bridge;
+			}
+			return mapped;
+		}
 		if ( slideTower is { } tower && Slides != null )
 		{
 			if ( Slides.Find( PoolSlide.KeyOf( tower.X, tower.Y ) ) is { IsComplete: true } )

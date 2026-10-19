@@ -163,6 +163,8 @@ public sealed class OriginalParkImport
 	public SaveRideSystemBlock? RideSystem { get; }
 	/// <summary>The clock, vanilla-time, game-system, cheat, advisor-scoring, camera and UI-count blocks of a Theme Park World save, read for the import report; null for Theme Park Inc.</summary>
 	public SaveRuntimeBlocks? RuntimeBlocks { get; private init; }
+	/// <summary>The Sound block (loader tp.exe 0x51C400), or null for the Theme Park Inc viewer and for a block that does not read as the original writer's.</summary>
+	public SaveSoundData? Sound { get; private init; }
 	/// <summary>The RSSE block's script records, read in full (null for the Theme Park Inc viewer).</summary>
 	public SaveRsseBlock? Rsse { get; private init; }
 	/// <summary>The Particles block (loader tp.exe 0x51F7A0): the pool's globals, emitters and effectors (null for the Theme Park Inc viewer).</summary>
@@ -335,6 +337,7 @@ public sealed class OriginalParkImport
 			attractions, SaveEconomyRecords.Parse( span, world ), staff.AsReadOnly(), guests.AsReadOnly(), hq, advisor, lab, coasters, rideSystem )
 		{
 			RuntimeBlocks = SaveRuntimeBlocks.Read( span, layout ),
+			Sound = OriginalSavePayload.TryReadSound( span, layout ),
 			Rsse = SaveRsseBlock.Read( span, layout ),
 			Particles = SaveParticlesBlock.Parse( span, layout ),
 			Scripts = SaveScriptsBlock.Parse( span, layout ),

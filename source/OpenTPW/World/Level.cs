@@ -196,6 +196,9 @@ public partial class Level : IDisposable
 	/// </summary>
 	public ParkVisitInfo? Visit { get; }
 	public bool IsReadOnlyVisit => Visit != null;
+
+	/// <summary>The Sound block of the player's own original save the park was started from (<c>--original-save</c>, the TPWS import); null for every other start.</summary>
+	public SaveSoundData? PlayerSaveSound => playerSavePayload != null && !IsReadOnlyVisit && incLayout == null ? OriginalPark?.Save?.Sound : null;
 	/// <summary>True while this level runs the experimental Theme Park Inc slice: only the money economy (no staff, research or challenges), no HUD or advisor of the reference game.</summary>
 	public bool IsThemeParkIncSlice => GameEditions.IsThemeParkInc && OriginalPark != null;
 	/// <summary>The version 2 layout a visit applies instead of the shipped level import; null for version 1 packages and own parks.</summary>

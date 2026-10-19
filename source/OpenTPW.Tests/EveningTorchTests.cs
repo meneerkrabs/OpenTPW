@@ -308,6 +308,11 @@ public class EveningTorchTests
 		Assert.IsTrue( ParkResumeSaveFile.Serialize( loaded ).SequenceEqual( bytes ), "byte-stable" );
 		ParkResumeMods.Require( loaded.Mods, on );
 		StringAssert.Contains( Assert.ThrowsException<InvalidDataException>( () => ParkResumeMods.Require( loaded.Mods, off ) ).Message, "needs opentpw.evening 1.1.0" );
+		// the load offers to switch the extension on for a park with a torch, as for the other content extensions, and then needs nothing more
+		var plan = ParkExtensionSwitch.Plan( loaded.Mods, off );
+		Assert.IsTrue( plan.CanSwitch );
+		CollectionAssert.AreEqual( new[] { ModId }, plan.TurnOn.Select( extension => extension.Id ).ToArray() );
+		Assert.IsNull( ParkExtensionSwitch.RequiresText( loaded.Mods, off ), "not listed as needing a mod" );
 		// a save made without a torch loads with the extension on or off (a used-only extension that is not recorded is fine)
 		ParkResumeMods.Require( null, on );
 		ParkResumeMods.Require( null, off );
@@ -344,6 +349,140 @@ public class EveningTorchTests
 		Assert.IsTrue( colours[0].X > colours[0].Z && colours[1].X > colours[1].Z, "jungle and Halloween: a warm flame" );
 		Assert.IsNotNull( EveningLampTable.Parse( "{ \"schema\": 1, \"lamps\": [ { \"match\": { \"mod\": \"opentpw.evening\" }, \"lights\": [ { \"node\": \"flame\", \"colour\": [1, 1, 1], \"radius\": 40 } ] } ] }" ).Rules.Single().Mod );
 		Assert.ThrowsException<InvalidDataException>( () => EveningLampTable.Parse( "{ \"schema\": 1, \"lamps\": [ { \"match\": { \"mod\": \"\" }, \"lights\": [ { \"node\": \"flame\", \"colour\": [1, 1, 1], \"radius\": 40 } ] } ] }" ), "an empty mod id" );
+	}
+
+	// ---- The flicker and the flame -----------------------------------------------------------------------------------------
+
+	[TestMethod]
+	public void TheFlickerIsDeterministicBoundedSmoothAndDiffersBetweenNeighbouringTorches()
+	{
+		var seed = TorchFlicker.SeedOf( 12, 7 );
+		Assert.AreEqual( seed, TorchFlicker.SeedOf( 12, 7 ), "the same cell, the same seed" );
+		Assert.AreNotEqual( seed, TorchFlicker.SeedOf( 13, 7 ) );
+		var (low, high, sum, steps) = (1f, 0f, 0.0, 0);
+		var previous = TorchFlicker.At( 0, seed );
+		for ( var frame = 1; frame <= 60 * 120; frame++ )
+		{
+			var time = frame / 60.0;
+			var value = TorchFlicker.At( time, seed );
+			Assert.AreEqual( value, TorchFlicker.At( time, seed ), "a pure function of the time and the seed" );
+			Assert.IsTrue( value is >= 0f and <= 1f );
+			Assert.IsTrue( MathF.Abs( value - previous ) < 0.105f, $"gentle: no jump between two frames at {time:F2} s ({previous:F3} to {value:F3})" );
+			(low, high, sum, steps, previous) = (MathF.Min( low, value ), MathF.Max( high, value ), sum + value, steps + 1, value);
+		}
+		Assert.IsTrue( low < 0.2f && high > 0.8f, $"it does flicker: {low:F2} to {high:F2}" );
+		Assert.AreEqual( 0.5, sum / steps, 0.05, "half on average" );
+		// two torches side by side do not pulse together
+		var neighbour = TorchFlicker.SeedOf( 14, 7 );
+		var together = Enumerable.Range( 0, 600 ).Count( frame => MathF.Abs( TorchFlicker.At( frame / 60.0, seed ) - TorchFlicker.At( frame / 60.0, neighbour ) ) < 0.05f );
+		Assert.IsTrue( together < 300, $"{together} of 600 frames alike" );
+	}
+
+	[TestMethod]
+	public void TheFlameStretchesAndLeansAboutItsBaseWithinItsBounds()
+	{
+		var seed = TorchFlicker.SeedOf( 3, 4 );
+		for ( var frame = 0; frame < 600; frame++ )
+		{
+			var matrix = TorchFlicker.FlameMatrix( frame / 60.0, seed );
+			Assert.AreEqual( System.Numerics.Vector3.Zero, System.Numerics.Vector3.Transform( System.Numerics.Vector3.Zero, matrix ), "the base stays put" );
+			var tip = System.Numerics.Vector3.Transform( new System.Numerics.Vector3( 0, 1, 0 ), matrix );
+			Assert.IsTrue( tip.Length() is > 1f - TorchFlicker.FlameStretch - 0.001f and < 1f + TorchFlicker.FlameStretch + 0.001f, $"the height stays within the stretch: {tip.Length():F3}" );
+			Assert.IsTrue( tip.Y > 0.8f && MathF.Abs( tip.X ) < 0.1f && MathF.Abs( tip.Z ) < 0.1f, $"a small lean: {tip}" );
+		}
+		Assert.AreNotEqual( TorchFlicker.FlameMatrix( 1.0, seed ), TorchFlicker.FlameMatrix( 1.25, seed ), "it moves" );
+		// by day (the lamp level at the lamps' threshold or below) there is no flame; it grows with the lamp level about its base and is whole at night
+		Assert.IsNull( TorchFlicker.FlameAt( 1.0, seed, 0f ) );
+		Assert.IsNull( TorchFlicker.FlameAt( 1.0, seed, TorchFlicker.FlameLevelThreshold ) );
+		Assert.AreEqual( TorchFlicker.FlameMatrix( 1.0, seed ), TorchFlicker.FlameAt( 1.0, seed, 1f ) );
+		var dusk = TorchFlicker.FlameAt( 1.0, seed, 0.3f )!.Value;
+		Assert.AreEqual( System.Numerics.Vector3.Zero, System.Numerics.Vector3.Transform( System.Numerics.Vector3.Zero, dusk ), "it grows from its base" );
+		Assert.AreEqual( 0.3f * System.Numerics.Vector3.Transform( System.Numerics.Vector3.UnitY, TorchFlicker.FlameMatrix( 1.0, seed ) ).Length(), System.Numerics.Vector3.Transform( System.Numerics.Vector3.UnitY, dusk ).Length(), 1e-5f );
+	}
+
+	[TestMethod]
+	public void OnlyTheTorchRowsFlickerAndNameAFlameAndBadValuesAreRefused()
+	{
+		var table = EveningLampTable.Parse( File.ReadAllText( Path.Combine( Repository, EveningLampTable.RelativePath ) ) );
+		var torches = table.Rules.Where( rule => rule.Mod == ModId ).ToArray();
+		Assert.AreEqual( 4, torches.Length );
+		Assert.IsTrue( torches.All( rule => rule.Flame == "flame" && rule.Lights.All( light => light.Flicker == 0.25f ) ), "a quarter: a gentle flicker" );
+		Assert.IsTrue( table.Rules.Except( torches ).All( rule => rule.Flame == null && rule.Lights.All( light => light.Flicker == 0f ) ), "the other lamps stay steady" );
+		string Table( string row ) => "{ \"schema\": 1, \"lamps\": [ { \"match\": { \"mod\": \"x\" }, " + row + " } ] }";
+		var good = EveningLampTable.Parse( Table( "\"flame\": \"f\", \"lights\": [ { \"node\": \"f\", \"colour\": [1, 1, 1], \"radius\": 40, \"flicker\": 0.5 } ]" ) );
+		Assert.AreEqual( ("f", 0.5f), (good.Rules[0].Flame, good.Rules[0].Lights[0].Flicker) );
+		foreach ( var bad in new[] { "\"flicker\": 0.6", "\"flicker\": -0.1", "\"flicker\": \"lots\"" } )
+			Assert.ThrowsException<InvalidDataException>( () => EveningLampTable.Parse( Table( "\"lights\": [ { \"node\": \"f\", \"colour\": [1, 1, 1], \"radius\": 40, " + bad + " } ]" ) ), bad );
+		foreach ( var bad in new[] { "\"flame\": \"\"", "\"flame\": 3" } )
+			Assert.ThrowsException<InvalidDataException>( () => EveningLampTable.Parse( Table( bad + ", \"lights\": [ { \"node\": \"f\", \"colour\": [1, 1, 1], \"radius\": 40 } ]" ) ), bad );
+		// the resolved lamp carries the flicker
+		var entry = ObjectCatalog.Load( "space" ).Get( 63902 );
+		var lamp = EveningLampResolver.Resolve( ObjectAssets.LoadModel( entry.FileSystem, entry.ModelPath ), table.Find( entry )! ).Single();
+		Assert.AreEqual( 0.25f, lamp.Flicker );
+	}
+
+	[TestMethod]
+	public void EachTorchsFlameIsDrawnAsItsOwnPartSoTheExtensionCanMoveAndHideIt()
+	{
+		for ( var index = 0; index < Themes.Length; index++ )
+		{
+			var entry = ObjectCatalog.Load( Themes[index] ).Get( 63900 + index );
+			var model = ObjectAssets.LoadModel( entry.FileSystem, entry.ModelPath );
+			var flame = model.Nodes.Single( node => node.Name == "flame" ).Index;
+			Assert.IsTrue( ObjectRenderParts.FindAnimatedNodes( entry, model )[flame], $"{Themes[index]}: the flame node is kept apart" );
+			var parts = ObjectRenderParts.Build( entry, model );
+			Assert.AreEqual( 1, parts.Count( part => part.NodeIndex == flame ), $"{Themes[index]}: one part draws the flame alone" );
+			Assert.IsTrue( parts.Any( part => part.NodeIndex == -1 ), "the body is baked as any static model" );
+		}
+		// an original object's static nodes stay baked: only a row that names a flame keeps a node apart
+		var totem = ObjectCatalog.Load( "jungle" ).Entries.First( item => item.ModId == null );
+		Assert.IsNull( EveningLampTable.Shipped.Find( totem )?.Flame );
+	}
+
+	[TestMethod]
+	public void TheFlamesFollowPlacementAndRemovalMoveEveryFrameAndOnlyBurnWhileTheLampsAreOn()
+	{
+		static OriginalObject Stub() => (OriginalObject)System.Runtime.CompilerServices.RuntimeHelpers.GetUninitializedObject( typeof( OriginalObject ) );
+		var placed = new List<OriginalObject>();
+		var version = 0;
+		var torches = new HashSet<OriginalObject>();
+		var applied = new List<(OriginalObject Item, int Node, System.Numerics.Matrix4x4? Local)>();
+		var flames = new EveningFlames( new EveningLampTable( Array.Empty<EveningLampRule>() ), () => placed, () => version )
+		{
+			NodeOverride = item => torches.Contains( item ) ? 1 : -1,
+			ApplyOverride = ( item, node, local ) => applied.Add( (item, node, local) )
+		};
+		flames.Animate( 0, 1f );
+		Assert.AreEqual( 0, flames.Count );
+		var (a, b) = (Stub(), Stub());
+		torches.Add( a );
+		placed.AddRange( new[] { a, b } );
+		version++;
+		flames.Animate( 1.0, 1f );
+		Assert.AreEqual( 1, flames.Count, "only the object whose row names a flame" );
+		Assert.AreEqual( (a, 1), (applied.Single().Item, applied.Single().Node) );
+		Assert.AreEqual( TorchFlicker.FlameMatrix( 1.0, TorchFlicker.SeedOf( 0, 0 ) ), applied.Single().Local, "at night the full flame of its cell's seed at that time" );
+		flames.Animate( 1.5, 1f );
+		Assert.AreNotEqual( applied[0].Local, applied[1].Local, "a frame later it has moved" );
+		flames.Animate( 2.0, 0f );
+		Assert.IsNull( applied[^1].Local, "by day the flame is hidden: an empty cup" );
+		flames.Animate( 2.0, 0.5f );
+		Assert.AreEqual( System.Numerics.Matrix4x4.CreateScale( 0.5f ) * TorchFlicker.FlameMatrix( 2.0, TorchFlicker.SeedOf( 0, 0 ) ), applied[^1].Local, "at dusk it grows with the lamp level" );
+		placed.Remove( a );
+		version++;
+		applied.Clear();
+		flames.Animate( 2.0, 1f );
+		Assert.AreEqual( 0, flames.Count, "a removed torch leaves the cache" );
+		Assert.AreEqual( 0, applied.Count );
+		// switching the look off gives the remaining flames their model pose back
+		var cleared = new List<OriginalObject>();
+		flames.ClearOverride = ( item, node ) => cleared.Add( item );
+		torches.Add( b );
+		version++;
+		flames.Animate( 2.5, 1f );
+		flames.Clear();
+		CollectionAssert.AreEqual( new[] { b }, cleared );
+		Assert.AreEqual( 0, flames.Count );
 	}
 
 	// ---- The browser -------------------------------------------------------------------------------------------------------

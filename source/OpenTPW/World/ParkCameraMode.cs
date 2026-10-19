@@ -97,6 +97,13 @@ public class ParkCameraMode : CameraMode
 		UpdateTransform();
 	}
 
+	/// <summary>
+	/// Whether the keypad's scroll keys scroll now: not while Alt alone is held, where Alt+Num4 and Alt+Num6 are the ProfitYear and CoasterHeight cheats (docs/CHEATS.md).
+	/// </summary>
+	// [BIN:TPW-EXE:0x40C900 context key match] a key event matches a context entry only on the exact key and modifier mask; the camera context's table 0x748158 holds VK_NUMPAD4 (entry 15) and VK_NUMPAD6 (entry 22) with
+	// mask 0, so with Alt held the press reaches the cheat context instead and the camera does not scroll (other modifiers are left as OpenTPW had them)
+	internal static bool KeypadScroll => Input.ModifierMaskDown != Input.ModifierMask( false, false, true );
+
 	public override void Update()
 	{
 		var io = ImGuiNET.ImGui.GetIO();
@@ -109,7 +116,7 @@ public class ParkCameraMode : CameraMode
 			TextEntry = io.WantTextInput || (Input.TextEntryActive && !TextEntryKeepsPointer), Modal = ModalOpen,
 			EdgeScrollOverUi = EdgeScrollOverUi && !io.WantCaptureMouse,
 			RightButton = Input.Mouse.Right, MiddleButton = Input.Mouse.Middle, Wheel = Input.Mouse.Wheel,
-			Forward = Input.Forward, Right = Input.Right + (Input.Down( InputButton.ScrollRight ) ? 1 : 0) - (Input.Down( InputButton.ScrollLeft ) ? 1 : 0),
+			Forward = Input.Forward, Right = Input.Right + (KeypadScroll && Input.Down( InputButton.ScrollRight ) ? 1 : 0) - (KeypadScroll && Input.Down( InputButton.ScrollLeft ) ? 1 : 0),
 			RotateLeft = Input.Down( InputButton.RotateLeft ), RotateRight = Input.Down( InputButton.RotateRight ),
 			RotateLeftPressed = Input.Pressed( InputButton.RotateLeft ), RotateRightPressed = Input.Pressed( InputButton.RotateRight ),
 			Zoom = (Input.Down( InputButton.ZoomIn ) ? 1 : 0) - (Input.Down( InputButton.ZoomOut ) ? 1 : 0),

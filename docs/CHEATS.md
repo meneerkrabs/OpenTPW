@@ -169,7 +169,7 @@ Consequences for the vehicle limit (K4):
   carries the flag `cheated`, which a visit lists with the package's other flags. Exporting, publishing and ranking are not refused: `ParkSharing.ModsRefusal` does not count the cheats
   extension (it is used-only and the sharing code does not report it in use) and the server's acceptance is unchanged; the flag is informational and well-formed for every client and server
   version (any flag matching the package's pattern is accepted).
-- **The original-format export** writes the park's own `CHTS` bytes from K2 on, when the import reads them: until then an exported park keeps the template's bytes, as before.
+- **The original-format export** writes the park's own `CHTS` bytes since K2, which also reads them on import (in K1 an exported park kept the template's bytes).
 
 ## The original cheat mode (K2)
 
@@ -183,16 +183,23 @@ extension record, so such a park loads with the extension off.
   consulted after the HUD's shortcuts and only while the park's cheat mode is on, and a cheat **fires when its key is released** with Alt alone held (`0x40C990` runs the `+0xC` handler
   on the release message), once per release. The plain shortcuts no longer fire with Alt held (the dispatcher's exact mask match), so Alt+R and Alt+G do not open the research and entry
   price windows. A keyboard without a keypad has no Alt+Num keys; the extension's window (K3) offers every ticket.
+  - `[EXT:cheats-key-release]`: OpenTPW samples the keys once a frame, so a frame that sees the key and Alt released together cannot tell which went first; it takes the previous frame's
+    mask, so a quick release with Alt still fires.
+  - With Alt alone held the keypad's 4 and 6 do not scroll the camera: the dispatcher matches a context entry on the exact key and mask (`[BIN:TPW-EXE:0x40C900]`), and the camera
+    context's table `0x748158` holds VK_NUMPAD4 and VK_NUMPAD6 with mask 0, so Alt+Num4 and Alt+Num6 reach only the cheat context.
 - **Alt+R** `[BIN:TPW-EXE:0x503FF0]`: every research item's object becomes available to build (`ParkResearch.MakeEveryItemAvailable`, kept in the save as `Research.CheatAvailable`).
   Nothing is researched: the lab keeps its items and progress, no group opens, `IsAllResearched` and the AllResearchedAndBuilt ticket (`0x4CA6B0` reads the items left and the built
   counts) do not change, and an upgrade level stays a research project (its item names the ride's own object control).
 - **Alt+1** `[BIN:TPW-EXE:0x4D0190]`: +10,000 through the prize credit: the balance, money in and the year's profit (so it counts toward the profit ticket).
 - **Alt+G, Alt+Num1..9** `[BIN:TPW-EXE:0x5AF810, 0x5AF940]`: the six local tickets join the park's set, the four global ones go through the player's holder rule with record 100. The award
   is silent: `ParkEventKind.CheatApplied`, never `GoldenTicketWon`, so the advisor says nothing. No game mode or `CanEarnTickets` check, as in the original (an Instant Action park gets
-  the ticket in its own set; the player's ledger takes Full Simulation parks only, as for any ticket). The HUD writes one short note per applied cheat (a ticket the park already held
+  the ticket in its own set; the player's ledger takes Full Simulation parks whose rules can earn tickets only, as for any ticket). The HUD writes one short note per applied cheat (a ticket the park already held
   writes none). The player's progress file records that a cheat awarded the ticket ([PLAYER-TICKET-LEDGER.md](PLAYER-TICKET-LEDGER.md#tickets-a-cheat-awarded-docscheatsmd)).
 - **The `CHTS` chunk** `[BIN:TPW-EXE:0x405570, 0x4055D0]`. Importing a player's original save applies byte 0: nonzero marks the park as cheated (mode on, empty record); byte 1 is reported
   and not kept (SAVE-010). The export writes the park's own chunk, `01 01` for a cheated park and `00 00` otherwise (`[EXT:cheats-export]`), whatever the template holds.
+- **Alt+R in an original save** `[BIN:TPW-EXE:0x503FF0]`. The cheat writes the object controls' researched byte `+0x10` for every research item's object and leaves the projects as they
+  are. Importing a cheated save (byte 0 nonzero) therefore takes an object marked researched whose project is unfinished as the cheat's (`Research.CheatAvailable`); in a clean save such a
+  flag stays a disagreement (SAVE-007). The research export writes `+0x10` for the objects the cheat made available.
 - **Port decisions.**
   - `[EXT:cheats-shipped-seed]`: the jungle's shipped `Easymode.TPWI` carries `01 01`. A park started from it (an Instant Action jungle park, the reference path) is **not** marked: in the
     original it would start in cheat mode, but here a player who never cheated keeps an unmarked park whose save and hash are as before.

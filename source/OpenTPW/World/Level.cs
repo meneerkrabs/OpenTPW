@@ -671,10 +671,6 @@ public partial class Level : IDisposable
 	internal static bool IsInHoveredNeighbourhood( (int X, int Y) hovered, (int X, int Y) thing ) =>
 		Math.Abs( thing.X - hovered.X ) <= 1 && Math.Abs( thing.Y - hovered.Y ) <= 1;
 
-	/// <summary>
-	/// Wires the park door (docs/GATES.md): the economy's open/close events command the entrance gate's script
-	/// and close or open the attractions, and the gate's deferred-close retry runs with the economy tick.
-	/// </summary>
 	private List<ParkEvent>? cheatNotes;
 
 	/// <summary>The cheats applied since the last call (docs/CHEATS.md), for the HUD's short on-screen note; emptied by the call.</summary>
@@ -687,6 +683,10 @@ public partial class Level : IDisposable
 		return notes;
 	}
 
+	/// <summary>
+	/// Wires the park door (docs/GATES.md): the economy's open/close events command the entrance gate's script
+	/// and close or open the attractions, and the gate's deferred-close retry runs with the economy tick.
+	/// </summary>
 	private void SetupParkGate()
 	{
 		if ( Park == null )

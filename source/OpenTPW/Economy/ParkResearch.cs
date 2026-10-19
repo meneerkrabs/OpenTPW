@@ -268,6 +268,16 @@ public sealed class ParkResearch
 		return cheatAvailable.Count - before;
 	}
 
+	/// <summary>Makes <paramref name="infoIds"/> available as the research cheat does (an original save's research cheat, <see cref="OriginalEconomyImport"/>); ids that are no research item's object, or already available, are skipped. Returns how many became available.</summary>
+	internal int MakeAvailableByCheat( IEnumerable<int> infoIds )
+	{
+		var before = cheatAvailable.Count;
+		foreach ( var infoId in infoIds )
+			if ( items.Any( item => item.InfoId == infoId ) && !IsAvailable( infoId ) )
+				cheatAvailable.Add( infoId );
+		return cheatAvailable.Count - before;
+	}
+
 	/// <summary>Restores <see cref="CheatAvailable"/>; every id must be a research item's object.</summary>
 	internal void RestoreCheatAvailable( IEnumerable<int>? infoIds )
 	{

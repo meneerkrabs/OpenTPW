@@ -31,6 +31,7 @@ public sealed partial class ParkHud
 	internal const int CheatModifierMask = 0x30;
 
 	private HashSet<Key>? cheatKeysDown;
+	private int cheatModifierMaskBefore;
 
 	/// <summary>
 	/// The cheats the keys released this frame ask for: the table's keys among <paramref name="released"/> while the modifier mask is exactly Alt at the release, in table order; none in a park without the
@@ -49,9 +50,14 @@ public sealed partial class ParkHud
 		var released = previous.Where( key => !down.Contains( key ) ).ToArray();
 		previous.Clear();
 		previous.UnionWith( down );
+		// [EXT:cheats-key-release] the original reads the mask when the key's release message arrives, while Alt is usually still held; a frame that sees the key and Alt released together
+		// cannot tell their order, so it takes the previous frame's mask (a quick release with Alt still counts)
+		var mask = Input.ModifierMaskDown;
+		var maskAtRelease = mask == 0 ? cheatModifierMaskBefore : mask;
+		cheatModifierMaskBefore = mask;
 		if ( !allowed || level is not { IsReadOnlyVisit: false } || FinanceEconomy is not { } economy )
 			return;
-		foreach ( var action in CheatKeyActions( economy.Cheats.Mode, Input.ModifierMaskDown, released ) )
+		foreach ( var action in CheatKeyActions( economy.Cheats.Mode, maskAtRelease, released ) )
 			economy.QueueCheat( action );
 	}
 

@@ -139,10 +139,10 @@ public static class OriginalParkExport
 	}
 
 	/// <summary>
-	/// The <c>CHTS</c> chunk from the park's own cheat mode, not the template's (a template taken from a cheated save must not mark a clean park): <c>01 01</c> for a cheated park, the value of the
-	/// eleven corpus saves, and <c>00 00</c> otherwise.
+	/// The <c>CHTS</c> chunk from the park's own cheat mode, not the template's (a template taken from a cheated save must not mark a clean park): <c>01 01</c> for a cheated park, the value the
+	/// shipped seed <c>Easymode.TPWI</c> carries (the eleven corpus saves carry <c>00 00</c>), and <c>00 00</c> otherwise.
 	/// </summary>
-	// [BIN:TPW-EXE:0x4055D0 cheat save] the chunk is the mode byte +0xA and the byte +0xB; [EXT:cheats-export] OpenTPW writes 01 01 for a cheated park (the corpus value; no tp.exe code writes +0xB, so its meaning for another build is unknown) and 00 00 for any other
+	// [BIN:TPW-EXE:0x4055D0 cheat save] the chunk is the mode byte +0xA and the byte +0xB; [EXT:cheats-export] OpenTPW writes 01 01 for a cheated park (the shipped seed's value; no tp.exe code writes +0xB, so its meaning for another build is unknown) and 00 00 for any other
 	private static void ExportCheats( OriginalSavePayload result, ParkSaveFile.Data park, List<string> lines )
 	{
 		var cheated = park.Cheats?.Mode == true;

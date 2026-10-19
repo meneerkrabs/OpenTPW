@@ -24,7 +24,8 @@ That tab is the documented `[EXT:staff-employee-view]` host extension. The origi
 hire selector reads applicants; this is not evidence for a native employed tab.
 
 The generic figure default stays 3.2 with rectangle-relative feet. The separate
-employee window stays on its existing 3.2/live-world-or-hire-loop-fallback behavior;
+employee window now uses its own UI-092 nominal 2.4 geometry and feet `(526,476)`,
+with its existing live-world-or-hire-loop-fallback behavior unchanged;
 the visitor window keeps 3.6 and its own inner rectangle and feet `(598,450)`.
 
 ## Evidence and derivation

@@ -14,6 +14,25 @@ namespace OpenTPW.Tests;
 [TestClass, DoNotParallelize]
 public class EmployeeWindowControlsTests
 {
+	private bool previousTextEntryActive;
+	private Logger previousLog = null!;
+
+	[TestInitialize]
+	public void Setup()
+	{
+		previousTextEntryActive = Input.TextEntryActive;
+		previousLog = Log;
+		// Direct UiScreen updates bypass GameFlow's per-frame reset of text capture.
+		Input.TextEntryActive = false;
+	}
+
+	[TestCleanup]
+	public void Cleanup()
+	{
+		Input.TextEntryActive = previousTextEntryActive;
+		Log = previousLog;
+	}
+
 	private static void Set( object owner, string field, object? value ) => owner.GetType().GetField( field, BindingFlags.Instance | BindingFlags.NonPublic )!.SetValue( owner, value );
 	private static Level LevelOf( ParkHud hud ) => (Level)typeof( ParkHud ).GetField( "level", BindingFlags.Instance | BindingFlags.NonPublic )!.GetValue( hud )!;
 	private static UiContext Context() => new( OriginalUiTests.FakeStrings(), null!, new UiModels( name => throw new FileNotFoundException( name ) ) ) { Canvas = new UiCanvas( 2048, 1536 ) };
@@ -33,6 +52,31 @@ public class EmployeeWindowControlsTests
 		return hud.Stack.Top;
 	}
 	private static StaffMember Member( int id, int thing, StaffType type = StaffType.Handyman ) => new() { Id = id, ThingId = thing, Type = type, NameIndex = 0, Grade = 1 };
+
+	[DataTestMethod]
+	[DataRow( false )]
+	[DataRow( true )]
+	public void FixtureCleanupRestoresTextCaptureWithARenameDialogStillOpen( bool initiallyCaptured )
+	{
+		var before = Input.TextEntryActive;
+		try
+		{
+			Input.TextEntryActive = initiallyCaptured;
+			var nested = new EmployeeWindowControlsTests();
+			nested.Setup();
+			try
+			{
+				Assert.IsFalse( Input.TextEntryActive, "each direct-screen test starts without inherited text capture" );
+				var (hud, _, _) = Fixture();
+				Rename( hud ).Update( Context(), UiInput.Type( "Typing" ) );
+				Assert.IsTrue( Input.TextEntryActive, "UiScreen publishes capture while its rename field owns the keys" );
+				Assert.AreEqual( "employeeRename", hud.Stack.Top!.Name );
+			}
+			finally { nested.Cleanup(); }
+			Assert.AreEqual( initiallyCaptured, Input.TextEntryActive, "cleanup restores rather than unconditionally clearing the caller's state" );
+		}
+		finally { Input.TextEntryActive = before; }
+	}
 
 	[TestMethod]
 	public void ArrowsUseNonmonotonicPoolOrderAndResumeWithoutReorderingTheRoster()

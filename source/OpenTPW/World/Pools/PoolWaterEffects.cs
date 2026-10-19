@@ -4,12 +4,12 @@ namespace OpenTPW;
 
 /// <summary>
 /// The effects of a pool on the free swimmers in it (docs/POOLS.md, "Wave machine" and "Splash cannon and water jets"), run by the swim session once per park turn for every swimmer
-/// (<see cref="IPoolAmbient"/>): the waves pay a small happiness bonus once per wave period while they run, and the spray of a water jet pays a smaller one every few turns to a swimmer inside it.
+/// (<see cref="IPoolAmbient"/>): the waves pay a small happiness bonus once per wave period while they run and push the swimmers along while a crest passes (<see cref="IPoolCurrent"/>), and the spray of a water jet pays a smaller one every few turns to a swimmer inside it.
 /// Both are functions of the park turn and the swimmer's cell: no random draw, no new state, no new save field (the happiness the swimmer gained is saved with the guest).
 /// It is registered as the activity <c>ambient.water</c>, which offers nothing; the registry is only how the host finds it.
 /// </summary>
 // [EXT:pools-waves] [EXT:pools-attractions] OpenTPW's own pool effects; the original game has no pools
-public sealed class PoolWaterEffects : IPoolActivity, IPoolAmbient
+public sealed class PoolWaterEffects : IPoolActivity, IPoolAmbient, IPoolCurrent
 {
 	public const string ActivityId = "ambient.water";
 	private static readonly ConditionalWeakTable<PoolSwimRegion, WaveCache> caches = new();
@@ -54,6 +54,12 @@ public sealed class PoolWaterEffects : IPoolActivity, IPoolAmbient
 		return cache.Settings;
 	}
 
+	/// <summary>[EXT:pools-waves] The push of the waves of the swimmer's pool on this turn (<see cref="PoolWaves.Push"/>, at the swimmer's point, where the drawn crest is), or none when the pool has no waves.</summary>
+	public (int X, int Y) Current( GuestSimulation simulation, Guest guest, PoolSwimRegion region ) =>
+		WavesOf( sites, simulation.Grid.Cells, region ) is { } waves
+			? PoolWaves.Push( waves, simulation.ParkTurn, guest.Navigation.X, guest.Navigation.Y )
+			: (0, 0);
+
 	public void Ambient( GuestSimulation simulation, Guest guest, PoolSwimRegion region )
 	{
 		var turn = simulation.ParkTurn;
@@ -86,6 +92,13 @@ public sealed class PoolWaterEffects : IPoolActivity, IPoolAmbient
 			return 0f;
 		return PoolWaves.SmoothBob( waves, SmoothTurn( simulation ), guest.DrawX, guest.DrawY );
 	}
+
+	/// <summary>
+	/// The surface's rise on the waves of <paramref name="region"/> under a guest's drawn point, in engine units, whatever the guest is doing (the water level an activity draws its swimmer at rides the same
+	/// swell as the surface). Zero when the pool has no waves or they rest. Presentation only.
+	/// </summary>
+	public static float SurfaceRise( GuestSimulation simulation, Guest guest, PoolSwimRegion? region, PoolAttractionSites? sites ) =>
+		region != null && WavesOf( sites, simulation.Grid.Cells, region ) is { } waves ? PoolWaves.SmoothBob( waves, SmoothTurn( simulation ), guest.DrawX, guest.DrawY ) : 0f;
 
 	private sealed class TurnClock
 	{

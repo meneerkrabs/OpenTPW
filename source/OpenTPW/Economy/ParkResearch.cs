@@ -21,6 +21,8 @@ public sealed class ParkResearch
 {
 	public const int PointScale = 1000;
 	private readonly BalanceSettings settings;
+	private readonly bool trackRecentItems;
+	private RecentResearchRing[] recentItems = SaveRecentResearch.Empty();
 	private readonly IEconomyObjectCatalog catalog;
 	private readonly List<ResearchItem> items;
 	private readonly HashSet<(int InfoId, int Level)> completed = new();
@@ -36,10 +38,43 @@ public sealed class ParkResearch
 	/// <summary>Research is added every this many park turns.</summary>
 	public const int TurnsPerResearch = 20;
 
-	public ParkResearch( BalanceSettings settings, IEconomyObjectCatalog catalog )
+	/// <summary>TPW presentation history in WhichUIType order, copied so callers cannot change the live rings.</summary>
+	public IReadOnlyList<RecentResearchRing> RecentItems => SaveRecentResearch.Copy( recentItems );
+
+	/// <summary>Active slots only: inactive physical words survive saves but never confer recent status.</summary>
+	public bool IsRecentlyResearched( int whichUIType, int infoId )
+	{
+		if ( !trackRecentItems || whichUIType is < 0 or >= SaveRecentResearch.RingCount )
+			return false;
+		var ring = recentItems[whichUIType];
+		var count = ring.Wrapped != 0 ? SaveRecentResearch.Capacity : ring.Head + 1;
+		for ( var index = 0; index < count; index++ )
+			if ( ring.Values[(ring.Head - index + SaveRecentResearch.Capacity) % SaveRecentResearch.Capacity] == infoId )
+				return true;
+		return false;
+	}
+
+	internal void RestoreRecentItems( IReadOnlyList<RecentResearchRing>? rings ) => recentItems = rings == null ? SaveRecentResearch.Empty() : SaveRecentResearch.Copy( rings );
+
+	// The TPW research-completion event appends the object's id to its WhichUIType ring. Level projects and add-ons are events too;
+	// free unlock propagation emits no such event. Theme Park Inc's event policy has not been established.
+	private void RecordRecentItem( ResearchItem item )
+	{
+		if ( !trackRecentItems || item.Cost <= 0 || !catalog.TryGet( item.InfoId, out var info ) || info.WhichUIType is < 0 or >= SaveRecentResearch.RingCount
+			|| item.InfoId is < 0 or > ushort.MaxValue )
+			return;
+		var ring = recentItems[info.WhichUIType];
+		var head = (ring.Head + 1) % SaveRecentResearch.Capacity;
+		var values = ring.Values.ToArray();
+		values[head] = item.InfoId;
+		recentItems[info.WhichUIType] = ring with { Head = head, Wrapped = ring.Wrapped != 0 || head == 0 && ring.Head >= 0 ? 1 : 0, Values = values };
+	}
+
+	public ParkResearch( BalanceSettings settings, IEconomyObjectCatalog catalog, bool trackRecentItems = true )
 	{
 		this.settings = settings;
 		this.catalog = catalog;
+		this.trackRecentItems = trackRecentItems;
 		effort = settings.ResearchEffort.ToArray();
 		Workload = Math.Clamp( settings.ResearchStartingWorkLoad, 0, 100 );
 		items = new List<ResearchItem>();
@@ -378,6 +413,7 @@ public sealed class ParkResearch
 				MarkCompleted( item );
 				done.Add( item );
 				finished.Add( item );
+				RecordRecentItem( item );
 			}
 			else
 				progress[key] = value;
@@ -472,6 +508,7 @@ public sealed class ParkResearch
 	internal void Restore( IEnumerable<(int InfoId, int Level)> restoredCompleted, IEnumerable<((int InfoId, int Level) Key, long Points)> restoredProgress, IReadOnlyList<int> restoredEffort, IEnumerable<(ResearchCategory Category, int InfoId, int Level)>? restoredCurrent = null,
 		IReadOnlyList<(int InfoId, int Level)>? upgradeOrder = null )
 	{
+		RestoreRecentItems( null );
 		selected.Clear();
 		completed.Clear();
 		foreach ( var key in restoredCompleted )

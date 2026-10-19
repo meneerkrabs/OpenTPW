@@ -64,7 +64,7 @@ public sealed class StaffMember
 	/// The member's own name, stored inline in an original save (the staff suffix's <c>mName[i]</c>, +0x1A0, which the employee panels show); null
 	/// for a member hired in OpenTPW, whose name is <see cref="NameIndex"/> in the role's name table.
 	/// </summary>
-	public string? Name { get; init; }
+	public string? Name { get; internal set; }
 	/// <summary>The longest inline name an original save holds (33 UTF-16 units including the terminator).</summary>
 	public const int MaximumNameLength = 32;
 	public required int Grade { get; set; }
@@ -236,6 +236,22 @@ public sealed class ParkStaff
 	/// <summary>The five roles' strike levels, flags and last-considered turns (the staff manager's per-role records, ECON-014).</summary>
 	public StaffStrikeBoard Strikes { get; } = new();
 
+	/// <summary>Renames this exact current member without changing its name-table index, variant or simulation state.</summary>
+	// [BIN:TPW-EXE:0x506830 staff name] the inline field accepts up to 32 UTF-16 units, including an explicit blank name.
+	public bool Rename( StaffMember member, string name )
+	{
+		if ( !members.Contains( member ) || name == null || name.Length > StaffMember.MaximumNameLength ) return false;
+		for ( var index = 0; index < name.Length; index++ )
+		{
+			if ( char.IsControl( name[index] ) ) return false;
+			if ( !char.IsSurrogate( name[index] ) ) continue;
+			if ( !char.IsSurrogatePair( name, index ) ) return false;
+			index++;
+		}
+		member.Name = name;
+		return true;
+	}
+
 	public IReadOnlyList<StaffMember> Members => members;
 	public IReadOnlyList<StaffCandidate> Candidates => candidates;
 	public int NextId { get; private set; } = 1;
@@ -280,7 +296,22 @@ public sealed class ParkStaff
 
 	public long GetTrainingBudget( StaffType type ) => trainingBudget[(int)type];
 
-	public void SetTrainingBudget( StaffType type, long monthlyBudget ) => trainingBudget[(int)type] = Math.Max( 0, monthlyBudget );
+	/// <summary>
+	/// Whether any training budget has ever been set above 0 (the staff HQ's <c>mHaveEverTrained</c>, the byte at <c>+0x20</c> of the thing <c>0x519450</c> returns). It stays set once set: setting a budget back to 0 leaves it,
+	/// and only the advisor's "train your staff" line reads it (<c>0x59FB10</c>).
+	/// </summary>
+	public bool HaveEverTrained { get; private set; }
+
+	// [BIN:TPW-EXE:0x004B25D0 training budget window] the window stores the budget (a negative one as 0) and sets the HQ's byte +0x20 to 1 only when the value is above 0
+	public void SetTrainingBudget( StaffType type, long monthlyBudget )
+	{
+		trainingBudget[(int)type] = Math.Max( 0, monthlyBudget );
+		if ( monthlyBudget > 0 )
+			HaveEverTrained = true;
+	}
+
+	/// <summary>Restores the flag of a loaded park: from the original save's staff HQ (<c>mHaveEverTrained</c>) or from an OpenTPW save.</summary>
+	internal void RestoreHaveEverTrained( bool haveEverTrained ) => HaveEverTrained = haveEverTrained;
 
 	/// <summary>Skill shown for an employee: 20 × (grade + training percentage / 100), truncated, in single precision as in the original (0x100F41DC).</summary>
 	public static int StaffSkill( StaffMember member ) => (int)(20f * (float)(member.Grade + member.TrainingPoints / 100.0));
@@ -486,7 +517,7 @@ public sealed class ParkStaff
 	/// <summary>Adds an employee taken from an original save (not hired from the pool).</summary>
 	internal StaffMember AddImported( StaffType type, int grade, int trainingPoints, float happiness, StaffState state, long hiredTick, float energy = StaffVitals.Maximum, string? name = null, int thingId = 0 )
 	{
-		var member = new StaffMember { Id = AllocateId(), ThingId = thingId, Type = type, NameIndex = 0, Name = string.IsNullOrEmpty( name ) ? null : name, Grade = grade, TrainingPoints = trainingPoints, Happiness = happiness, Energy = energy, State = state, HiredTick = hiredTick };
+		var member = new StaffMember { Id = AllocateId(), ThingId = thingId, Type = type, NameIndex = 0, Name = name, Grade = grade, TrainingPoints = trainingPoints, Happiness = happiness, Energy = energy, State = state, HiredTick = hiredTick };
 		members.Add( member );
 		AdoptThing( member );
 		return member;

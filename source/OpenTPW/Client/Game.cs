@@ -671,6 +671,35 @@ internal static class Game
 				Log.Trace( FormattableString.Invariant( $"--debug-light: a point light at {light.Position.X:0.##},{light.Position.Y:0.##},{light.Position.Z:0.##}, radius {light.Radius:0.##}, colour {colour.X:0.##},{colour.Y:0.##},{colour.Z:0.##}." ) );
 			}
 		}
+		// [EXT:debug-evening] smoke-only (Debug builds): --debug-torches N places N of the theme's torches (the evening extension's own, docs/EVENING.md "Torches") through the level's own placement, which charges them,
+		// on the free cells nearest the camera target (--capture-camera's when given) with a cell between them, so a capture shows the torches, their flames and their light
+		if ( GetOption( args, "--debug-torches", "the number of torches to place" ) is { } torchText && int.TryParse( torchText, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var torchCount ) && torchCount > 0 )
+		{
+			var torchCamera = GetOption( args, "--capture-camera", "x,y,height,yaw" )?.Split( ',' ).Select( value => float.Parse( value, System.Globalization.CultureInfo.InvariantCulture ) ).ToArray();
+			var torchFrames = 0;
+			Render.PostUpdate += PlaceDebugTorches;
+			void PlaceDebugTorches()
+			{
+				if ( flow.Level is not { OriginalPark: not null } level || Camera.Mode is not ParkCameraMode park || ++torchFrames < 5 )
+					return;
+				Render.PostUpdate -= PlaceDebugTorches;
+				var entry = level.Objects.Catalog.Entries.FirstOrDefault( ParkResumeMods.IsEveningObject );
+				var searchX = torchCamera is { Length: >= 2 } ? torchCamera[0] : park.Target.X;
+				var searchY = torchCamera is { Length: >= 2 } ? torchCamera[1] : park.Target.Y;
+				if ( entry == null || !level.TryGetGridCell( searchX, searchY, out var cellX, out var cellY ) )
+				{
+					Log.Warning( "--debug-torches: the opentpw.evening extension is off (it is on by default), this is a Theme Park Inc run, or the camera target is off the grid." );
+					return;
+				}
+				var placedTorches = new List<string>();
+				for ( var radius = 0; radius < 12 && placedTorches.Count < torchCount; radius += 2 )
+					for ( var dx = -radius; dx <= radius && placedTorches.Count < torchCount; dx += 2 )
+						for ( var dy = -radius; dy <= radius && placedTorches.Count < torchCount; dy += 2 )
+							if ( Math.Max( Math.Abs( dx ), Math.Abs( dy ) ) == radius && level.CheckObject( entry, cellX + dx, cellY + dy, 0 ) == OriginalPlacementResult.Allowed && level.PlaceObject( entry, cellX + dx, cellY + dy, 0 ) is { } torch )
+								placedTorches.Add( FormattableString.Invariant( $"{torch.Placement.X},{torch.Placement.Y} (engine {torch.Placement.ModelToEngine.M41:0.#},{torch.Placement.ModelToEngine.M42:0.#})" ) );
+				Log.Trace( $"--debug-torches: placed {placedTorches.Count} of {torchCount} {entry.DisplayName}: {string.Join( "; ", placedTorches )}." );
+			}
+		}
 		// [EXT:debug-pool] smoke-only: once the original level is up and the opentpw.pools extension is on, paints pool cells through the pool tool's own builder
 		// (Level.PoolBuilder.PaintCells, charged as the tool does) at the first place near the camera target (--capture-camera's when given) where every cell of the shape can be painted, so a
 		// capture shows the water and the edges (docs/POOLS.md). The shape is rectangles "x,y,w,h" relative to that place, separated by ';' (default a 6 x 4 basin

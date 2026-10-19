@@ -24,7 +24,7 @@ In code the system is called `OpenTPW.Mods` / "extensions"; `OpenTPW.ModKit` is 
 
 - manifests are parsed and validated, mod folders are discovered, `mods.json` is read and the run's set of extensions
   and mods is resolved once at startup;
-- the official extensions are `opentpw.online`, `opentpw.cross-edition-objects`, `opentpw.smarter-guests`, `opentpw.guest-insights` and `opentpw.restored-advice` (below), `opentpw.winter` (on by default, recorded in a save only while the park has a winter kiosk, a glühwein stall or a guest with a warm item; [WINTER.md](WINTER.md)), `opentpw.winter-weather` (off by default, recorded in every save while on: December's rain and thunderstorms are snow in the jungle and fantasy parks; [WINTER.md](WINTER.md#simulation-phase-w3)), `opentpw.winter-always` (off by default, recorded in every save while on: every month rolls December's weather and its rain and thunderstorms are snow, and the winter shops sell at their winter demand all year; [WINTER.md](WINTER.md#always-winter-extwinter-always)), `opentpw.evening` (presentation only, on by default: a day and night cycle with lamps that light at dusk; [EVENING.md](EVENING.md)), `opentpw.winter-snow` (presentation only, on by default, not in a Theme Park Inc run: snow settles on the ground, roofs and objects while it snows; [WINTER.md](WINTER.md)), `opentpw.pools-guest-art` (presentation only, on by default: with the pools extension on, land guests use OpenTPW's own 2x kids, off shows the original guests; [POOLS.md](POOLS.md)), `opentpw.rain-mood`, off by default (not in a Theme Park Inc run; [UMBRELLAS.md](UMBRELLAS.md#the-rain-mood-rule-phase-u4): guests lose or gain happiness, thirst and hunger in rain, storm and snow once per qualifying day, and an open umbrella softens the loss; recorded in every save while it is on), `opentpw.umbrellas`, on by default (not in a Theme Park Inc run; [UMBRELLAS.md](UMBRELLAS.md): the brolly shops and the umbrella rules, recorded in a save only while the park has a shop or an umbrella), and `opentpw.pools`, on by default (not in a Theme Park Inc run), in which the player paints
+- the official extensions are `opentpw.online`, `opentpw.cross-edition-objects`, `opentpw.smarter-guests`, `opentpw.guest-insights` and `opentpw.restored-advice` (below), `opentpw.winter` (on by default, recorded in a save only while the park has a winter kiosk, a glühwein stall or a guest with a warm item; [WINTER.md](WINTER.md)), `opentpw.winter-weather` (off by default, recorded in every save while on: December's rain and thunderstorms are snow in the jungle and fantasy parks; [WINTER.md](WINTER.md#simulation-phase-w3)), `opentpw.winter-always` (off by default, recorded in every save while on: every month rolls December's weather and its rain and thunderstorms are snow, and the winter shops sell at their winter demand all year; [WINTER.md](WINTER.md#always-winter-extwinter-always)), `opentpw.evening` (on by default: a day and night cycle with lamps that light at dusk, presentation only, and a buildable torch per theme; recorded in a save only while the park has a torch; [EVENING.md](EVENING.md)), `opentpw.winter-snow` (presentation only, on by default, not in a Theme Park Inc run: snow settles on the ground, roofs and objects while it snows; [WINTER.md](WINTER.md)), `opentpw.pools-guest-art` (presentation only, on by default: with the pools extension on, land guests use OpenTPW's own 2x kids, off shows the original guests; [POOLS.md](POOLS.md)), `opentpw.rain-mood`, off by default (not in a Theme Park Inc run; [UMBRELLAS.md](UMBRELLAS.md#the-rain-mood-rule-phase-u4): guests lose or gain happiness, thirst and hunger in rain, storm and snow once per qualifying day, and an open umbrella softens the loss; recorded in every save while it is on), `opentpw.umbrellas`, on by default (not in a Theme Park Inc run; [UMBRELLAS.md](UMBRELLAS.md): the brolly shops and the umbrella rules, recorded in a save only while the park has a shop or an umbrella), and `opentpw.pools`, on by default (not in a Theme Park Inc run), in which the player paints
   pool water cells (see [POOLS.md](POOLS.md)); a park save records `opentpw.pools` only when the park has pool cells;
 - park saves record the mods that change the simulation and refuse a mismatched set (below);
 - the **Extensions and mods screen** (below) edits `mods.json`;
@@ -52,7 +52,7 @@ Changes to `mods.json` apply at the next start; nothing is swapped while the gam
 | `opentpw.winter-weather` | no | yes | yes (recorded in every save while it is on) | [Wintry Decembers](WINTER.md#simulation-phase-w3): a December weather roll in the jungle and fantasy parks is snow instead of a thunderstorm; what umbrellas and the rain mood read changes with it; not in a Theme Park Inc run |
 | `opentpw.winter-always` | no | yes | yes (recorded in every save while it is on) | [Always winter](WINTER.md#always-winter-extwinter-always): every month rolls December's weather and its rain and thunderstorms are snow (jungle, fantasy; Halloween snows by its own band; space is left alone), and the winter kiosk and the glühwein stall sell at their winter demand all year; implies Wintry Decembers; not in a Theme Park Inc run |
 | `opentpw.restored-advice` | yes | yes | no | advisor lines in the shipped data that the original never plays |
-| `opentpw.evening` | **yes** | yes | no | [Evening and night](EVENING.md): a day and night cycle on play time with lamps that light at dusk; presentation only |
+| `opentpw.evening` | **yes** | yes | yes (recorded in a save only while the park has a torch) | [Evening and night](EVENING.md): a day and night cycle on play time with lamps that light at dusk (presentation only), and a [torch](EVENING.md#torches) per theme in the Features tab |
 | `opentpw.winter-snow` | **yes** | yes | no | [Settling snow](WINTER.md#settling-snow-extwinter-snow): snow settles on ground, roofs and objects while it snows and melts afterwards, paths turn to slush; presentation only; not in a Theme Park Inc run |
 | `opentpw.guest-insights` | no | yes | no | refusal counters in the park information window |
 | `opentpw.cross-edition-objects` | no | yes | yes | engine support for mods that bring Theme Park Inc attractions into Theme Park World |
@@ -323,8 +323,8 @@ these (`Mods`: id, version, content digest) and nothing else, so a park saved wi
 its bytes. Loading it needs the same mods, versions and content, in the same order; presentation-only mods and the online
 extension may differ. A save that needs a mod you do not have refuses with `needs <id> <version>`; the load list and the
 Continue entries keep it and add "(requires mod <id> <version>)". Exporting a park to a `.tpwpark` package is refused
-while such a mod is active, because packages record no mods yet. One extension is recorded **only while the park uses it**: `opentpw.pools` (listed in `ParkResumeMods.UsedOnlyExtensionIds`), so a park
-without pool cells saves, loads and exports identically with it on or off ([POOLS.md](POOLS.md)). The asset manifest keys archives of a mod `mod:<id>:/…`
+while such a mod is active, because packages record no mods yet. Some extensions are recorded **only while the park uses them** (`ParkResumeMods.UsedOnlyExtensionIds`): `opentpw.pools` (pool cells or a changing room), `opentpw.umbrellas`, `opentpw.winter`, `opentpw.cheats` and `opentpw.evening` (a torch), so a park
+that uses none of them saves, loads and exports identically with them on or off ([POOLS.md](POOLS.md), [EVENING.md](EVENING.md#torches)). The asset manifest keys archives of a mod `mod:<id>:/…`
 (`data:` and `bonus:` for the game data and the bonus content). Details: [DETERMINISM.md](DETERMINISM.md) "Mods".
 
 ## Smarter guests and guest insights (`opentpw.smarter-guests`, `opentpw.guest-insights`)
@@ -417,6 +417,17 @@ What the extension provides in the engine:
   manifest has no second field. (The content roots first allowed 10000 to 1000000000 and at most 1000 ids; every range that
   ended below 65536 stays valid.) Nothing in OpenTPW's saves or tables assumes ids below 5000: its tables are keyed by
   the Info.Id as an integer, and the only fixed ids are the original ones.
+
+  **The ranges OpenTPW's own content holds** (a community mod picks a range outside them):
+
+  | Ids | Holder |
+  | --- | --- |
+  | 40000 to 40499 | the Theme Park Inc rides mod (`opentpw.tpi-rides`) |
+  | 63900 to 63999 | the evening extension's torches ([EVENING.md](EVENING.md#torches)) |
+  | 64000 to 64009 | the example lamp mod (`opentpw.example.lamp-lights`) |
+  | 64010 to 64499 | the winter extension's shops ([WINTER.md](WINTER.md)) |
+  | 64500 to 64999 | the umbrellas extension's brolly shops ([UMBRELLAS.md](UMBRELLAS.md)) |
+  | 65000 to 65535 | the pools extension's objects ([POOLS.md](POOLS.md)) |
 - **Sound banks per content root.** A Theme Park Inc ride script's `EVENT` ids belong to Theme Park Inc's own sound
   catalogues (its global `cat_rides` holds 114 events against Theme Park World's 25), so an object from a registered root
   (`ContentSoundRoots.Register`) looks its events up in that root: global categories in the root's `global/sound`, level

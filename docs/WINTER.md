@@ -11,6 +11,7 @@ Labels: `[EXT:winter-*]` for our additions, `[BIN:TPW-EXE:0x...]` / `[BIN:TPI-EX
 
 - Glühwein, not hot chocolate: a warm drink with **no drunk effects** (Theme Park World has no intoxication state and none is added).
 - **Wintry Decembers** are an option (its own toggle) that turns December's thunderstorms into snow in jungle and fantasy. It changes the weather that umbrellas and the rain mood read, so it gets its own pin.
+- **Drawing** `[EXT:winter-draw]` (user, October 19, 2026, "Alle drie akkoord"): the items are pulled 1 % towards the camera so an umbrella falls over the hat; mittens turn with the forearm; hats and earmuffs are drawn on costumed guests too. `[EXT:debug-winter]` is a capture and test hook only.
 - **Cold** is a separate option, `opentpw.winter-cold`, default off: in snow -2 happiness per qualifying day, +1 back each for a head item, mittens and a recent glühwein, capped at 0; with it on it replaces the rain mood's snow +1.
 - Defaults: settling snow **on** (presentation only), winter kiosks **on** (recorded in a save only for parks that use them), cold **off**. Paths under snow look like **slush** (greyish and wet), so they stay readable.
 - Coordinator defaults for the remaining open questions (the user can still change them): kiosk **25** and glühwein **30**, both available from the start (no research item); **one kiosk** that gives a head item first, then mittens;
@@ -185,8 +186,8 @@ about a guest is read but `WarmItems` (`ShownItems` drops an undefined value) an
 
 | Label | What |
 | --- | --- |
-| `[EXT:winter-draw]` | the drawing: the renderer, the placement from the tables, the 1 % pull, the forearm turn of a mitten, hats and earmuffs on costumed guests; awaiting the user (our own values) |
-| `[EXT:debug-winter]` | (debug-only test hook) `--debug-winter` and the browser harness hook `PerfWinter` |
+| `[EXT:winter-draw]` | the drawing: the renderer, the placement from the tables, the 1 % pull, the forearm turn of a mitten, hats and earmuffs on costumed guests; approved by the user on October 19, 2026 ("Alle drie akkoord") |
+| `[EXT:debug-winter]` | a capture and test hook, not a user feature (Debug builds only): `--debug-winter` and the browser harness hook `PerfWinter` |
 
 ## Approval of the labels
 
@@ -198,7 +199,7 @@ Status of every `[EXT:winter-*]` label against the user's decisions of October 1
 | `[EXT:winter-content]` | the extension's own shipped content (`content/winter`) and the pipeline that builds it | approved | the winter kiosks and the glühwein stall the user asked for |
 | `[EXT:winter-snow]`, `[EXT:winter-snow-cover]`, `[EXT:winter-snow-surfaces]` | settling snow (W1) | approved | "settling snow ... on (presentation only)" |
 | `[EXT:winter-snow-paths]` | paths under snow look like slush | approved | "Paths under snow look like **slush** (greyish and wet)" |
-| `[EXT:winter-snow-save]` | the optional, unhashed saved cover | awaiting | coordinator default ("the snow cover is saved as an optional unhashed field") |
+| `[EXT:winter-snow-save]` | the optional, unhashed saved cover | approved | the user answered "Alles akkoord" on October 18, 2026 |
 | `[EXT:winter-extension]`, `[EXT:winter-items]`, `[EXT:winter-kiosk]` | the winter kiosk, the warm items (hat, earmuffs, mittens) and the extension that carries them (W3, W4) | approved | "winter kiosks **on** (recorded in a save only for parks that use them)"; the request for a kiosk "that sells hats, mittens and earmuffs" |
 | `[EXT:winter-item-colour]` | item colour as a hash of guest id and item | approved | the user answered "Alles akkoord" on October 18, 2026 |
 | `[EXT:winter-kiosk-gate]` | the kiosk sells only in snow or December to February | approved | the user answered "Alles akkoord" on October 18, 2026 |
@@ -210,8 +211,8 @@ Status of every `[EXT:winter-*]` label against the user's decisions of October 1
 | `[EXT:winter-cold]` | the cold mood rule (W5) | approved | "Cold is a separate option, `opentpw.winter-cold`, default off" with the stated -2 / +1 numbers |
 | `[EXT:winter-weather]` | the wintry Decembers option | approved | "**Wintry Decembers** are an option (its own toggle)" |
 | `[EXT:winter-anchors]` | the schema 2 head and hand anchors, and the measured head-only anchors of the original sets (numbers only; mittens stay invisible there) | approved | the data the approved hats, earmuffs and mittens attach to; "committing measured numbers is allowed, never pixels" and "mittens are invisible on the original sets" (2026-10-18) |
-| `[EXT:winter-draw]` | how the items are drawn: the 1 % camera pull, the mitten's forearm turn, items on costumed guests | awaiting | our own values (phase W4) |
+| `[EXT:winter-draw]` | how the items are drawn: the 1 % camera pull, the mitten's forearm turn, items on costumed guests | approved | the user's answer on October 19, 2026 to all three: "Alle drie akkoord" (the 1 % pull so an umbrella falls over the hat; mittens turning with the forearm; hats and earmuffs on costumed guests too) |
 | `[EXT:pools-model-inset]` | the walls' gap from the footprint edge (the pools' rule) | existing | not a winter label |
 | `[BIN:TPW-EXE:0x...]` | the Theme Park World `tp.exe` address a finding was traced to (this page) | n/a | evidence |
 
-Still awaiting the user: the coordinator default `winter-snow-save` (W1) and the id range 64010..64499 (the example lamp mod holds 64000..64009).
+Nothing awaits the user for the drawing: `winter-snow-save` and the id range 64010..64499 (the example lamp mod holds 64000..64009) were approved with "Alles akkoord" on October 18, 2026, and `winter-draw` on October 19, 2026.

@@ -339,7 +339,7 @@ public static class GameAudio
 	/// <summary>The reverb preset the sound service holds (the original's 0x803AB4); -1 until the first <see cref="SelectReverb"/>.</summary>
 	public static int ReverbPreset { get; private set; } = -1;
 
-	/// <summary>The presets of <c>SndReverb.map</c>, when the host loaded the file from the game folder (it is not part of the mounted data); the mixer's ReverbUnit follows the held preset (AUDIO-039).</summary>
+	/// <summary>The presets of <c>SndReverb.map</c>, when the host loaded the file from the game folder (it is not part of the mounted data); the mixer's ReverbUnit follows the held preset (the audio-reverb extension).</summary>
 	public static SndReverbMap? ReverbMap { get; set; }
 
 	/// <summary>The record of the held preset, when the map has one (the original refuses a preset the map lacks).</summary>
@@ -352,7 +352,7 @@ public static class GameAudio
 	/// Holds a reverb preset (tp.exe <c>0x51C8D0</c>): a preset other than the held one is sent to the reverb device, the same one again is not.
 	/// </summary>
 	// [BIN:TPW-EXE:0x51C8D0 reverb preset] when the sound service is up and the preset differs from the held one (0x803AB4, -1 at start, 0 once the service started with sound on) the held one is replaced and the preset sent as a mixer command (0x700B30 → 0x6C6000, which fetches the SndReverb.map record and refuses an absent one)
-	// [APPROX:AUDIO-039] the held preset's record drives ReverbUnit, an OpenTPW network on the positioned effects: the original hands the record to the audio device's EAX 2.0 listener property set or to a COM object behind QMixer.dll (which holds no reverb DSP), neither of which OpenTPW reproduces
+	// [EXT:audio-reverb] the held preset's record drives ReverbUnit, OpenTPW's own network on the positioned effects by design: the original hands the record to the audio device's EAX 2.0 listener property set or to a COM object behind QMixer.dll (which holds no reverb DSP), whose sound lives in the device or driver
 	public static void SelectReverb( int preset )
 	{
 		if ( preset == ReverbPreset )
@@ -365,7 +365,7 @@ public static class GameAudio
 	/// <summary>
 	/// Hands the held preset's record to the mixer's reverb (none for a preset the map lacks, or without a map).
 	/// </summary>
-	// [APPROX:AUDIO-039] preset 0 (the default everywhere outside a ridden ride that sets a level) stays dry: its record asks for the device's full room level, which this stand-in would put on every positioned sound of the park; only the ride presets (1-14) are mixed
+	// [EXT:audio-reverb] preset 0 (the default everywhere outside a ridden ride that sets a level) stays dry: its record asks for the device's full room level, which this stand-in would put on every positioned sound of the park; only the ride presets (1-14) are mixed
 	private static void ApplyReverb() => AudioMixer.Current?.Reverb.Set( ReverbPreset > 0 ? ReverbSettings.FromRecord( ReverbRecord ) : null );
 
 	/// <summary>

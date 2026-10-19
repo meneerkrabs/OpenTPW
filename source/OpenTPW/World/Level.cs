@@ -109,7 +109,7 @@ public partial class Level : IDisposable
 	/// Renames the park (the ticket price window's rename dialog): stores the two lines and redraws the gate sign. False for
 	/// a read-only visit, a level without a park name, or lines a save could not hold (<see cref="ParkNameLines.IsValid"/>).
 	/// </summary>
-	// [APPROX:COMPAT-007] the rename stores the lines and redraws the gate (0x4993E0), but the handler's other effects are not built: the setters 0x4E2950/0x4E2A50 also copy the lines to the online park record (0x409410, 0x5B0940/0x5B0970: wide characters into +0x34 and +0x76 of the 0x50-byte record DAT_00F7C58C with its dirty byte +0xB8, unless the GameType word is 1), and the secret name ("Kevin the" / "Cosmic Cow", the XOR-by-index forms at 0x751A34/0x751A38, found by the compare 0x67C290) calls 0x4053C0(1) on the object 0xFB3520, which stores a flag (+10, saved and loaded by 0x4164C0/0x415270, read at 0x488902/0x488991) and dispatches event type 0x15 (0x40FB10); gate lines of a user-supplied original save are not imported (the attraction record carries them, SaveAttraction.NameLine1/2, and the shipped Easymode save holds the default row) — evidence needed: what the listeners of event 0x15 and the object 0x78733C that the flag forwards to do
+	// [APPROX:COMPAT-007] the rename stores the lines and redraws the gate (0x4993E0), but the handler's other effects are not built: the setters 0x4E2950/0x4E2A50 also copy the lines to the online park record (0x409410, 0x5B0940/0x5B0970: wide characters into +0x34 and +0x76 of the 0x50-byte record DAT_00F7C58C with its dirty byte +0xB8, unless the GameType word is 1), and the secret name ("Kevin the" / "Cosmic Cow", the XOR-by-index forms at 0x751A54/0x751A3C through the pointers 0x751A34/0x751A38, found by the compare 0x67C290) calls 0x4053C0(1) on the object 0xFB3520, which stores the cheat mode (+0xA, saved and loaded by 0x4055D0/0x405570 inside 0x4164C0/0x415270, the CHTS chunk), opens the "cheat" key context 0x78733C (twelve Alt keys, table 0x7484D0, docs/CHEATS.md) at 0x488902/0x488991 and posts a message of type 0x15 (0x40FB10); gate lines of a user-supplied original save are not imported (the attraction record carries them, SaveAttraction.NameLine1/2, and the shipped Easymode save holds the default row) — evidence needed: what the listeners of message type 0x15 do (runtime subscriptions of the message centre 0x788D3C)
 	public bool RenamePark( string line1, string line2 )
 	{
 		if ( IsReadOnlyVisit || ParkName == null || line1 == null || line2 == null )
@@ -494,6 +494,9 @@ public partial class Level : IDisposable
 				Guests.WinterWeatherState = () => Weather is { } weather ? WinterRules.WeatherStateOf( weather.Rain, weather.Lightning, weather.Snow ) : UmbrellaRules.WeatherNone;
 			if ( Guests != null )
 				Guests.WinterMonth = () => Park?.Economy is { } economy ? ParkCalendar.DateTimeAt( economy.Tick ).Month : 0;
+			// [EXT:winter-always] with the always winter option on the winter shops sell at their winter demand all year, in the parks the option holds on December's row (not space, whose seasons it leaves alone)
+			if ( Guests != null )
+				Guests.WinterAlways = FeatureGates.WinterAlways && Park?.Economy?.Settings?.Standard is { } standard && ParkWeather.CanSnowFromTheWinterRow( standard );
 			// [EXT:rain-mood-extension] the rain mood rule is on while the extension is: the guests read the same weather state as the umbrella rules
 			if ( Guests != null )
 				Guests.RainMood = RainMoodFor( FeatureGates.RainMood );

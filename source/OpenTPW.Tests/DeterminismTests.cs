@@ -531,9 +531,9 @@ public class DeterminismTests
 	/// day 320 (mid-November) over the run's 35 days, so it crosses the first December, with <paramref name="wintryDecembers"/> (the gate of the Wintry Decembers option) off or on. Off, December's rain bands are the original's thunderstorms and rain; on,
 	/// they are snow, which the umbrella rules and the rain mood read as snow (docs/DETERMINISM.md, "Wintry Decembers"). Returns the hash, the guests who bought an umbrella, the guests the rain mood changed and the weather state of every park turn, for the test to look at.
 	/// </summary>
-	internal static (ulong Hash, int Buyers, int Affected, string States) RunFixedParkWithABrollyShopAndRainMoodInTheJungleWeatherAcrossDecember( bool wintryDecembers )
+	internal static (ulong Hash, int Buyers, int Affected, string States) RunFixedParkWithABrollyShopAndRainMoodInTheJungleWeatherAcrossDecember( bool wintryDecembers, bool alwaysWinter = false )
 	{
-		var weather = new ParkWeather( ParkWeatherSnapshotTests.Jungle(), 21, 10, 10, wintryDecembers );
+		var weather = new ParkWeather( ParkWeatherSnapshotTests.Jungle(), 21, 10, 10, wintryDecembers, alwaysWinter );
 		var startTurn = (long)DecemberRunStartDay * ParkCalendar.SecondsPerDay / ParkCalendar.SecondsPerTurn;
 		// the park's clock starts at the epoch: the weather steps from there to the start day (as Level steps it with the economy's tick), then follows the run
 		weather.AdvanceTo( ParkCalendar.TickOfTurn( 0 ) );
@@ -604,6 +604,118 @@ public class DeterminismTests
 				var december = RunFixedParkWithABrollyShopAndRainMoodInTheJungleWeatherAcrossDecember( FeatureGates.WinterWeather );
 				Assert.AreEqual( weather ? JungleDecemberWintryFixedRunHash : JungleDecemberOffFixedRunHash, december.Hash, $"umbrellas and rain mood across a December, winter {winter}, wintry Decembers {weather}" );
 			}
+	}
+
+	/// <summary>The park day the always winter run starts on: day 121 is the first of May (the calendar starts on 2000-01-01, a leap year).</summary>
+	private const int AlwaysWinterRunStartDay = 121;
+
+	/// <summary>Weather turns per park turn of the always winter run: the run's 42 days of park turns walk the weather over 168 days, from May to mid-October.</summary>
+	private const int AlwaysWinterRunTurnScale = 4;
+
+	/// <summary>
+	/// [EXT:winter-always] The fixed run on the cross park with a brolly shop, the winter shops (a kiosk and a glühwein stall) and the rain mood rule on, driven by the jungle's real weather (seed 21, the shipped bands) from the first of May
+	/// over 168 days, four weather turns to each park turn, so the guests meet May to mid-October: the months that never snow in the original. The winter shops read the weather's own calendar month, and with
+	/// <paramref name="alwaysWinter"/> (the gate of the Always winter option) the weather rolls December's row all year and its rain bands are snow, and the shops sell at their winter demand (docs/DETERMINISM.md, "Always winter").
+	/// Returns the hash, the guests who bought an umbrella, the guests who bought a warm item, the guests the rain mood changed, the weather state of every second and the months the run crossed.
+	/// </summary>
+	internal static (ulong Hash, int Buyers, int Dressed, int Affected, string States, SortedSet<int> Months) RunFixedParkWithShopsAndRainMoodInTheJungleWeatherFromMay( bool alwaysWinter, bool wintryDecembers = false )
+	{
+		var weather = new ParkWeather( ParkWeatherSnapshotTests.Jungle(), 21, 10, 10, wintryDecembers, alwaysWinter );
+		var startTurn = (long)AlwaysWinterRunStartDay * ParkCalendar.SecondsPerDay / ParkCalendar.SecondsPerTurn;
+		weather.AdvanceTo( ParkCalendar.TickOfTurn( 0 ) );
+		weather.AdvanceTo( ParkCalendar.TickOfTurn( startTurn ) );
+		var months = new SortedSet<int>();
+		var park = new SyntheticPark( WorldSeed.Default, brollyShop: true, winterShops: true, prepareGuests: guests =>
+		{
+			long Sync()
+			{
+				var turn = startTurn + ParkCalendar.Turn( guests.TickCount ) * AlwaysWinterRunTurnScale;
+				weather.AdvanceTo( ParkCalendar.TickOfTurn( turn ) );
+				return turn;
+			}
+			guests.RainMood = RainMoodSettings.Default;
+			guests.WinterAlways = alwaysWinter;
+			guests.UmbrellaWeatherState = () =>
+			{
+				Sync();
+				return UmbrellaRules.WeatherStateOf( weather.Rain, weather.Lightning, weather.Snow );
+			};
+			guests.WinterWeatherState = () =>
+			{
+				Sync();
+				return WinterRules.WeatherStateOf( weather.Rain, weather.Lightning, weather.Snow );
+			};
+			guests.WinterMonth = () => ParkCalendar.ToDate( ParkCalendar.TickOfTurn( Sync() ) ).Month;
+		} );
+		var states = new System.Text.StringBuilder();
+		var buyers = new HashSet<int>();
+		var dressed = new HashSet<int>();
+		var affected = new HashSet<int>();
+		for ( var chunk = 0; chunk < PinnedRunTicks / 60; chunk++ )
+		{
+			park.Run( 60 );
+			states.Append( UmbrellaRules.WeatherStateOf( weather.Rain, weather.Lightning, weather.Snow ) );
+			months.Add( park.Guests.WinterMonth!() );
+			foreach ( var guest in park.Guests.Guests )
+			{
+				if ( guest.UmbrellaState != 0 )
+					buyers.Add( guest.Id );
+				if ( guest.WarmItems != 0 )
+					dressed.Add( guest.Id );
+				if ( guest.RainMoodDay != 0 )
+					affected.Add( guest.Id );
+			}
+		}
+		return (park.Hash, buyers.Count, dressed.Count, affected.Count, states.ToString(), months);
+	}
+
+	/// <summary>[EXT:winter-always] The pinned hash of <see cref="RunFixedParkWithShopsAndRainMoodInTheJungleWeatherFromMay"/> with the Always winter option on (docs/DETERMINISM.md, "Always winter").</summary>
+	internal const ulong WinterAlwaysFixedRunHash = 0xAD0FF92A6B42F187UL;
+
+	[TestMethod]
+	public void ShopsAndRainMoodUnderTheJungleWeatherFromMayArePinnedWithAlwaysWinterOn()
+	{
+		var off = RunFixedParkWithShopsAndRainMoodInTheJungleWeatherFromMay( false );
+		var on = RunFixedParkWithShopsAndRainMoodInTheJungleWeatherFromMay( true );
+		var snow = (char)('0' + UmbrellaRules.WeatherSnow);
+		CollectionAssert.IsSubsetOf( new[] { 5, 6, 7, 8, 9 }, on.Months.ToArray(), "the run crosses May to September: " + string.Join( ",", on.Months ) );
+		Assert.IsFalse( off.States.Contains( snow ), "the original's jungle never snows: " + off.States );
+		Assert.IsTrue( on.States.Count( state => state == snow ) * 2 > on.States.Length, "with the option on it snows most of the time, in the summer too: " + on.States );
+		Assert.IsFalse( on.States.Contains( (char)('0' + UmbrellaRules.WeatherRain) ) || on.States.Contains( (char)('0' + UmbrellaRules.WeatherStorm) ), "and every rain band is snow: " + on.States );
+		Assert.AreEqual( on.Hash, RunFixedParkWithShopsAndRainMoodInTheJungleWeatherFromMay( true ).Hash, "repeatable in the process" );
+		Assert.AreEqual( on.Hash, RunFixedParkWithShopsAndRainMoodInTheJungleWeatherFromMay( true, wintryDecembers: true ).Hash, "the option implies the wintry Decembers: both on is the same run" );
+		Assert.AreNotEqual( off.Hash, on.Hash, "the guests meet a different sky and the shops a winter demand, so the run differs" );
+		Assert.IsTrue( on.Buyers >= 1 && on.Dressed >= 1 && on.Affected >= 1, $"on: {on.Buyers} umbrella buyers, {on.Dressed} warm item buyers, {on.Affected} affected by the rain mood" );
+		Assert.AreEqual( WinterAlwaysFixedRunHash, on.Hash, $"on: 0x{on.Hash:X16} ({on.Buyers} umbrella buyers, {on.Dressed} warm item buyers, {on.Affected} affected; off 0x{off.Hash:X16}; {on.States})" );
+	}
+
+	[TestMethod]
+	public void EveryExistingPinIsUnchangedWithTheAlwaysWinterOptionOff()
+	{
+		foreach ( var enabled in new[] { false, true } )
+		{
+			using var scope = OpenTPW.Mods.OpenTpwExtensions.Use( OpenTPW.Mods.ModSet.Resolve( Array.Empty<OpenTPW.Mods.DiscoveredMod>(),
+				new OpenTPW.Mods.ModSettings { Enabled = new Dictionary<string, bool> { [OpenTPW.Mods.OfficialExtensions.WinterAlways.Id] = enabled } }, null, GameEdition.ThemeParkWorld, OpenTPW.Mods.OfficialExtensions.All ) );
+			Assert.AreEqual( enabled, FeatureGates.WinterAlways );
+			// the synthetic parks set their weather by hand, so the switch alone changes none of these pins
+			Assert.AreEqual( FixedRunHash, RunFixedPark(), $"the fixed run, always winter {enabled}" );
+			Assert.AreEqual( UmbrellasFixedRunHash, RunFixedParkWithABrollyShopInTheRain().Hash, $"the umbrellas run, always winter {enabled}" );
+			Assert.AreEqual( RainMoodWithUmbrellasFixedRunHash, RunFixedParkInTheRainWithRainMood( brollyShop: true ).Hash, $"the rain mood run with umbrellas, always winter {enabled}" );
+			Assert.AreEqual( WinterFixedRunHash, RunFixedParkWithWinterShopsInTheSnow().Hash, $"the winter run, always winter {enabled}" );
+			// the guests under the real jungle weather, built with the option's gate as Level builds it: off is every existing pin of that run
+			var december = RunFixedParkWithABrollyShopAndRainMoodInTheJungleWeatherAcrossDecember( false, FeatureGates.WinterAlways );
+			var wintry = RunFixedParkWithABrollyShopAndRainMoodInTheJungleWeatherAcrossDecember( true, FeatureGates.WinterAlways );
+			if ( enabled )
+			{
+				Assert.AreNotEqual( JungleDecemberOffFixedRunHash, december.Hash, "on: November and December are wintry" );
+				Assert.AreEqual( december.Hash, wintry.Hash, "on, the wintry Decembers add nothing: no double effect" );
+			}
+			else
+			{
+				Assert.AreEqual( JungleDecemberOffFixedRunHash, december.Hash, "off: the original's weather" );
+				Assert.AreEqual( JungleDecemberWintryFixedRunHash, wintry.Hash, "off: the wintry Decembers alone, unchanged" );
+			}
+		}
 	}
 
 	/// <summary>

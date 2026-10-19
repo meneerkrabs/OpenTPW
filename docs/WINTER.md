@@ -1,7 +1,7 @@
 # Winter (`opentpw.winter`, planned)
 
-October 18, 2026. Status: **phases W0 (the research below and the decisions), W1 ([Settling snow](#settling-snow-extwinter-snow), `opentpw.winter-snow`, built), W2 (our own art and data pipeline, [Content](#content-extwinter-content)), W3 (the simulation, [Simulation](#simulation-phase-w3)), W4 (the drawing, [Drawing](#drawing-phase-w4)) and W5 (the cold mood, [Cold mood](#cold-mood-extwinter-cold-phase-w5)) are done.**
-The settling snow (W1) is visible; the winter kiosk and the glühwein stall are in the Theme Park World catalogs and guests buy from them; the items are drawn on the guests (W4); the cold rule (W5) is written, off by default.
+October 18, 2026. Status: **phases W0 (the research below and the decisions), W1 ([Settling snow](#settling-snow-extwinter-snow), `opentpw.winter-snow`, built), W2 (our own art and data pipeline, [Content](#content-extwinter-content)), W3 (the simulation, [Simulation](#simulation-phase-w3)), W4 (the drawing, [Drawing](#drawing-phase-w4)), W5 (the cold mood, [Cold mood](#cold-mood-extwinter-cold-phase-w5)) and W6 (the tuning from captures, [Tuning](#tuning-phase-w6)) are done, and the [Always winter](#always-winter-extwinter-always) option is built.**
+The settling snow (W1) is visible; the winter kiosk and the glühwein stall are in the Theme Park World catalogs and guests buy from them; the items are drawn on the guests (W4); the cold rule (W5) is written, off by default; Always winter (October 19, 2026) is written, off by default.
 
 The request (user, 2026-10-18): three features of our own (`[EXT:winter-*]`), with no original art, script or number table copied: (1) snow that settles on the ground, roofs and objects during snowfall and
 melts afterwards; (2) a winter kiosk that sells hats, mittens and earmuffs, worn visibly by the guests; (3) a glühwein stall (the user's choice over hot chocolate; a warm drink with no drunk effects).
@@ -13,6 +13,10 @@ Labels: `[EXT:winter-*]` for our additions, `[BIN:TPW-EXE:0x...]` / `[BIN:TPI-EX
 - **Wintry Decembers** are an option (its own toggle) that turns December's rain and thunderstorms into snow in jungle and fantasy. It changes the weather that umbrellas and the rain mood read, so it gets its own pin.
 - **Drawing** `[EXT:winter-draw]` (user, October 19, 2026, "Alle drie akkoord"): the items are pulled 1 % towards the camera so an umbrella falls over the hat; mittens turn with the forearm; hats and earmuffs are drawn on costumed guests too. `[EXT:debug-winter]` is a capture and test hook only.
 - **Cold** is a separate option, `opentpw.winter-cold`, default off: in snow -2 happiness per qualifying day, +1 back each for a head item, mittens and a recent glühwein, capped at 0; with it on it replaces the rain mood's snow +1 (the user, October 19, 2026: only the happiness +1; the thirst and hunger snow effects stay as TPI's `[EXT:winter-cold-replaces-snow-cheer]`). In Halloween, where every snowfall has lightning and the rain mood reads a storm, the same holds for the storm row: with cold on and the winter signal saying snow, the rain mood's happiness of that day is left out whichever row it would use ("Kou vervangt storm-humeur", the user, October 19, 2026), thirst and hunger stay. A glühwein warms for the rest of its day plus the next game day, `WarmEffectDays` 1 (the user, October 19, 2026: "Rest van de dag + de volgende dag" `[EXT:winter-cold-warm-window]`).
+- **Kiosk summer demand stays 20 %** (user, October 19, 2026, asked directly after the W6 measurement that a clear July sells 0: "20% laten"). The shipped season terms are final; no data or pin change.
+- **Always winter** `[EXT:winter-always]` (user, October 19, 2026, the variant "Winterweer hele jaar"): an option of its own, `opentpw.winter-always`, off by default. Every month rolls its weather from the winter row of the season roll, with wintry snow in place of rain and thunderstorms (the wintry Decembers' conversion, all year);
+  the winter kiosk and the glühwein stall sell at their winter demand all year; the snow cover settles as usual whenever it snows. It changes the simulation, so a save records it like the other simulation options, and it has its own pins. The coordinator's reading, confirmed on the same day: "the winter row" is December's
+  row (row 4, the one the wintry Decembers convert; January and February's row 0 averages 75 and would almost never snow), space's weather is left alone, and the row sits with the other winter options on the Extensions and mods screen. Details in [Always winter](#always-winter-extwinter-always).
 - Defaults: settling snow **on** (presentation only), winter kiosks **on** (recorded in a save only for parks that use them), cold **off**. Paths under snow look like **slush** (greyish and wet), so they stay readable.
 - Coordinator defaults for the remaining open questions (the user can still change them): kiosk **25** and glühwein **30**, both available from the start (no research item); **one kiosk** that gives a head item first, then mittens;
   the snow cover is saved as an optional unhashed field; the "Spices" slider keeps Ice's mechanics so sales count as drinks; mittens stay invisible on the original (1x) guest sprite sets. (The coordinator's default "the kiosk sells only in snow or in December to February" was replaced by the user's own decision below.)
@@ -79,6 +83,7 @@ All labels below are ours; nothing here is built yet except the content.
 - **Cold mood** (`opentpw.winter-cold`, off by default). Once per qualifying day per guest, in snow only: happiness += -2, +1 for a head item, +1 for mittens, +1 while warmed, capped at 0. With `opentpw.rain-mood` also on, the cold rule
   replaces the rain mood's happiness in snow (the user's decisions: snow's +1, and in Halloween, where the rain mood reads a storm, the storm's -1), so an undressed kid nets -2 a qualifying day and a dressed one 0, in Halloween too.
 - **Wintry Decembers** `[EXT:winter-weather]` (an option): December's rain-band rolls in jungle and fantasy (rain and thunderstorms) give snow instead; its own pins.
+- **Always winter** `[EXT:winter-always]` (an option): every month rolls December's row and every roll is wintry (it implies the wintry Decembers, with no double effect), space keeps its own weather, and the winter shops' season terms read winter all year; its own pins ([Always winter](#always-winter-extwinter-always)).
 - **Saves and determinism.** Snow cover: no hash part, no draw from any stream, no mod-set record. Winter: optional guest fields `WarmItems` and `WarmUntilDay` written and hashed only when set, so older JSON and every park without the extension
   stay byte-equal; off, or on without shops and items, every pin is unchanged. New pins arrive with W3 and W5.
 - **Demand keys** (read for the extension's own objects only; unknown to tp.exe, harmless in the data): Theme Park Inc's `WeatherModifier.Snow/Rain/StormPercentage`, our own `SeasonModifier.Winter/Spring/Summer/AutumnPercentage`
@@ -94,7 +99,7 @@ All labels below are ours; nothing here is built yet except the content.
 | W3 | simulation behind `opentpw.winter`: catalog root, `AppearanceEffect` 4, the kiosk's rule and terms, the stall's terms, saves, the used-only rule, pins, and the wintry Decembers option | done ([below](#simulation-phase-w3)) |
 | W4 | drawing: the warm-item renderer (`WarmItemRenderer`, sharing the umbrellas' `TryMount` and pull code), head anchors of the original kid and costume sets, browser delivery, captures | done |
 | W5 | `opentpw.winter-cold` with its measurement and pins | done (see [Cold mood](#cold-mood-extwinter-cold-phase-w5)) |
-| W6 | tuning from captures; optional hats on riders' heads, pool-deck snow, sheltered-ground masking | planned |
+| W6 | tuning from captures and headless measurements; no model, anchor or shader value needed a change; optional hats on riders' heads, pool-deck snow and sheltered-ground masking stay open | done (see [Tuning](#tuning-phase-w6)) |
 
 ## Settling snow (`[EXT:winter-snow]`)
 
@@ -162,6 +167,30 @@ weather snows (under the shipped weather only the Halloween world, see above); `
 - **Saves and determinism.** `ColdMoodDay` is an optional guest field written, validated (never negative) and hashed only once set; `WarmUntilDay` and the items are W3's. Rule off: every pin stands (`DeterminismTests.EveryExistingPinIsUnchangedWhateverTheColdSwitch...`). New pins:
   `WinterColdFixedRunHash` and `WinterColdEverythingFixedRunHash` ([DETERMINISM.md](DETERMINISM.md#winter-cold)). A park saved mid-snow resumes with the same hash (`WinterColdTests.AParkSavedMidSnowContinuesIdenticallyAfterAResume`).
 - **Options row.** "Cold mood" with its description in all eleven interface languages, between the wintry Decembers and the restored advice.
+
+## Always winter (`[EXT:winter-always]`)
+
+October 19, 2026. `opentpw.winter-always` 1.0.0 is an option, **off by default**, that changes the simulation: always recorded in a save while it is on (not used-only), not offered in a Theme Park Inc run (`FeatureGates.WinterAlways`). The user chose the variant "Winterweer hele jaar"
+(winter weather all year). Code: `ParkWeather` (the roll, the conversion and the forecast), `WinterRules.DemandMonthOf` and `GuestSimulation.WinterAlways` (the shops), `Level` (the wiring from the gate).
+
+- **The roll.** tp.exe's roll (`0x512e10`) takes its season row from the date's month / 3 (`0x4f8770`, wMonth 1 to 12): rows 0 to 3 from the Seasons table at `0x7854c4` (12-byte rows) and December one row past it, whose average is the table's count slot at `0x7854f4` (4), its tolerance
+  `DaysOfWarning` (4) and its chance `DaysBetweenChanges` (7 %; see [Research findings](#research-findings)). With the option on, `ParkWeather.Roll` holds the season index at December's in every month, so every roll is 1..7 in 93 % of cases and an exceptional 1..99 otherwise. The draws are the same in
+  number and kind as any December roll's. `[EXT:winter-always]`
+- **The conversion.** Every roll is a wintry one (`ParkWeather.IsWintryRoll`), so a quality in the rain band (plain rain and thunderstorms) of a park whose own snow band is empty is **snow without lightning**, with the storm's drops, exactly as in a wintry December. Jungle and fantasy snow almost
+  all year: the jungle under seed 21 snows on 378 of its first 400 days and never rains. The Halloween park's normal rolls (1..7) all land in its own snow band (0..25), which is also its lightning band, so it snows with lightning, as its Decembers do, almost all year; its converter is untouched, so the exceptional rolls (about 7 %) still give it the odd spell of plain rain (26..45) or of rain or snow on the tie-break (15..25), as in any December. **Space** has neither a rain nor a snow band, so December's row
+  would only give it dry lightning all year: the option leaves space's rolls on its own seasons (`CanSnowFromTheWinterRow`), and its weather is the same with the option on or off.
+- **With the wintry Decembers.** Always winter implies them: the wintry flag is `alwaysWinter || (wintryDecembers && December)` and the row is December's anyway, so both options on give the same weather as Always winter alone (`WinterAlwaysTests`: the jungle and Halloween over 400 days; `DeterminismTests`: the guests). With
+  Always winter off, the wintry Decembers and every pin of theirs are unchanged.
+- **The forecast** reads the same wintry flag (`ParkWeather.ForecastBands`), so a June forecast of a rain-band quality says snow, and the snow it announced is the snow that falls. It takes no draw. In Halloween, snow with lightning and no rain reads as plain snow, in the forecast and in the current-weather
+  banner (`ParkWeather.CurrentBands`), so its winter does not announce thunderstorms all year; the weather's flags are unchanged (the lightning still flashes), the winter shops read that weather as snow already, and the umbrellas and the rain mood keep reading it as a storm. With the option off the banner is main's.
+- **The shops.** The level sets `GuestSimulation.WinterAlways` from the gate in a park the option holds on December's row (`ParkWeather.CanSnowFromTheWinterRow`: jungle, fantasy and Halloween); the winter shops' season terms then read December (`WinterRules.DemandMonthOf`), so the kiosk and the stall sell at
+  their winter 150 % all year there. Space is left alone here as in its weather: its kiosk and stall keep their month-by-month demand. The weather terms
+  still follow the weather, and the `.sam` data are unchanged.
+- **Snow cover, cold and rain mood.** Unchanged rules: the cover settles whenever it snows and melts in between, the cold mood and the rain mood see snow far more often.
+- **Saves and determinism.** The option is recorded in the save's mod list while it is on, so a save made with it is refused with it off and the other way round (as the wintry Decembers); a park saved with it off records nothing for it, so older saves load unchanged. The weather snapshot gains nothing: the
+  row and the wintry flag follow from the option. Off, every pin stands (`DeterminismTests.EveryExistingPinIsUnchangedWithTheAlwaysWinterOptionOff`). New pins: `WinterAlwaysTests.JungleSeed21AlwaysWinterHash` (the weather) and `DeterminismTests.WinterAlwaysFixedRunHash` (the guests),
+  [DETERMINISM.md](DETERMINISM.md#always-winter).
+- **Options row.** "Always winter" with its description in all eleven interface languages on the Extensions and mods screen, after the cold mood (stored in `mods.json` with the other extensions: missing means off, Cancel discards, a change applies at the next start).
 
 ## Content (`[EXT:winter-content]`)
 
@@ -259,6 +288,50 @@ about a guest is read but `WarmItems` (`ShownItems` drops an undefined value) an
 | `[EXT:winter-draw]` | the drawing: the renderer, the placement from the tables, the 1 % pull, the forearm turn of a mitten, hats and earmuffs on costumed guests; approved by the user on October 19, 2026 ("Alle drie akkoord") |
 | `[EXT:debug-winter]` | a capture and test hook, not a user feature (Debug builds only): `--debug-winter` and the browser harness hook `PerfWinter` |
 
+## Tuning (phase W6)
+
+October 19, 2026. The full scene was captured with W0 to W5 running together and measured headless. The result is mostly "leave it": no model scale, item anchor, draw order or shader value was changed, no `.sam` number was changed and no pin moved.
+Captures (the shipped Debug hooks plus a local, uncommitted hook that places the kiosk and the stall beside the entrance plaza and crowds guests round them; the game's own pixels, so they stay out of the repository) cover the Halloween park in forced snow
+(`--debug-weather 8 --debug-snow-cover 1`) and the jungle with wintry Decembers and a forced snow spell, in day, dusk and night (`opentpw.evening`), at zoom 40 and 130, with pool guest art on and off, with `--debug-winter` dressing, umbrellas on a third of the guests,
+and `--debug-guest-looks` (balloons, costumes, thought bubbles, litter). What the captures showed:
+
+- **Kiosk and stall in the world.** Scale and ground contact are right at both zooms; the pitched roofs carry snow like any object and read as huts (ridge, wall and counter edges stay visible); the stall's counter, pot and mugs read at zoom 40, and the garland of the kiosk
+  as small coloured blocks. Walls and counters stay in their theme colours under snow. At the farthest zoom the roofs and the ground are both white and the huts are read from their edges and shadows only; judged acceptable, a lower factor for the shop objects would be
+  the lever (a one-line `SnowSurface`) if the user wants more contrast. Ground under a roof is white like the rest (no occlusion data): inside the stall it reads as a snow-covered floor, so **sheltered-ground masking is not done** (a per-cell mask would need the terrain
+  batches rebuilt on every placement, not cheap); it stays an open optional item.
+- **Items.** Hats sit on the head tops and earmuffs at the head centres of both guest art sets (pool art and the original 1x sets), colours show, a hat falls under an umbrella and behind a balloon's string as designed (1 % pull against the umbrellas' 10 %); mittens follow the hands on
+  the 2x sets and are absent on the original sets as decided. The mitten forearm turn showed no visible fault at the angles that appeared in walking captures; a worst-angle frame was not isolated, so it stays as W4 left it. Costumed staff (the dinosaur, the scientist) wear nothing, as before.
+- **Snow look.** At full cover no green grass specks show through in the jungle (the #628 fix holds) or in Halloween; vertical hoardings and cliffs stay bare by design; paths and the entrance plaza read as slush. At night the snow is a deep blue-violet (the evening's ambient
+  tint on the white), the items and guests dim together, the huts keep their silhouettes.
+- **Browser** (`tools/web-perf/run.mjs --scenarios jungle,winterCost`, new, published interpreter build, Chrome 155 headless, Apple M5 through ANGLE/Metal, 1280 x 900, Jungle, 15 s windows, 400 extra guests): the bare crowd costs 3.7 ms a frame on average (p50 3.2, p95 6.8); with the settled snow held at 1
+  3.4 ms (p50 3.2, p95 5.0): **snow costs nothing measurable**; with an open umbrella over every guest (395 drawn) and every guest dressed (about 830 items drawn) 7.3 ms (p50 6.8, p95 9.8, 46 % main-thread busy, still 59.5 fps), and at the farthest zoom 6.6 ms. So the dressed crowd adds about 3.6 ms
+  for 400 guests (umbrellas and items together). One long frame of 100 to 170 ms appears at each step (the staging itself). Screenshot `browser-jungle-snow-dressed-crowd.png` in the notes folder.
+
+**Simulation measurements** (headless `WinterTuningMeasureTests`, the determinism fixture's cross park with a kiosk at (10, 1), a stall at (10, 8) and the drinks shop, seeds 1 to 3, 17 park days each; `OPENTPW_WINTER_MEASURE=<file>` writes the tables):
+
+| Month (weather) | Admitted | Kiosk sales | Stall sales | Guests with an item |
+| --- | --- | --- | --- | --- |
+| January (clear / rain / snow) | 146 / 145 / 146 | 58 / 46 / 44 | 64 / 70 / 70 | 56 / 45 / 42 |
+| April and October (clear / rain / snow) | 144 / 147 / 144 | 25 / 18 / 45 | 59 / 62 / 71 | 23 / 17 / 45 |
+| July (clear / rain / snow) | 144 / 144 / 144 | 0 / 0 / 4 | 48 / 48 / 60 | 0 / 0 / 3 |
+
+- **The kiosk sells next to nothing in summer.** At the shipped summer percentage of 20 the kiosk sold 0 times in 17 clear July days (3 seeds, 432 guests). What-if by summer percentage: 20 % and 35 % give 0, 50 % gives 6, 75 % gives 41, 100 % gives 58 sales (of about 144 guests per seed set). Spring and autumn at 60 % give 25 sales
+  (17 % of guests), winter 150 % 58. "Sells all year" (the user's decision) therefore holds only from spring to winter in this park; **decision (user, October 19, 2026, asked directly: "20% laten"): the summer percentage stays at 20**, so a clear summer kiosk sells (almost) nothing by design; the what-if numbers above are kept as a record (a value of 50 would have given about 4 % of guests an item). No data or pin change.
+- **Snow does not lift the kiosk in the winter months here.** In January the snow percentage (200 x 150) makes the stall (250 x 150) outscore the kiosk, so snowy-day guests choose the stall and fewer buy an item (44 against 58); in April the snow lifts the kiosk from 25 to 45. Fine as a
+  competition outcome, not a bug; to keep the kiosk the winter favourite the stall's snow value would have to drop below the kiosk's (a data choice, reported only).
+- **Share dressed.** With an item (of the admitted guests, three seeds together): 38 % in a clear January (56 of 146), 29 % in a snowy one (42 of 146), 31 % in a snowy April (45 of 144), 0 % in a clear July; a complete outfit (head item and mittens) is rare in 17 days (a guest visits the kiosk once, as the fixed run's 6 of 53 buyers). Over the Halloween park's real snowy week
+  (seed 21 weather from day 328, 20 days) with the shops: 22 to 23 of 64 guests hold an item without the cold rule and 33 of 64 hold an item or a warming glühwein with it; the kiosk sells 24 to 25 times and the stall 27 to 28 times to 64 guests.
+- **Cold rule over that snowy week** (mean happiness of the guest samples taken during snow, three seeds, measured on the code with #630's "cold replaces the rain mood's storm happiness in Halloween snow"): no shops, rule off (the rain mood's storm step) 48.6; rule on 47.9 (**-0.7**, every one of the 62 to 63 guests affected once). With shops: rule off 58.5 (dressed guests 68.3, bare guests 53.1), rule on 58.0 (dressed
+  68.2, bare 52.4); the dressed guests' lead comes mostly from the shop's own happiness effect, the rule itself costs a bare guest 0.7 and a dressed one about 0.1. With the rule on the rain mood's switch changes nothing (the rule replaces it in snow), so the rain-mood-off means are the same. The shift is small because the rule applies once per qualifying day and a guest's visit spans one or two.
+  Recommendation: leave -2 as decided; if the user wants the cold to matter more, the lever is the per-application number, not the dressing bonuses.
+- **Glühwein uptake.** The stall sold 64 times to 146 admitted guests in 17 clear January days and 70 in rain or snow (the drinks shop shares the rest), 48 in a clear July (summer 20 %) and 60 in a snowy July; in the Halloween snowy week 27 to 28 sales to 64 guests.
+
+**Not changed, reported.** (1) Kiosk summer percentage: decided by the user, stays 20 (above). (2) Sheltered-ground masking (above). (3) Pool-deck snow and hats on rider heads (not started). (4) The worst-angle mitten frame was not isolated. (5) Roofs of the shops blend with the snow at the farthest zoom.
+
+| Label | What |
+| --- | --- |
+| `[EXT:winter-tuning]` | the headless measurement tests (`WinterTuningMeasureTests`, nothing pinned) and the browser harness scenario `winterCost`; a measurement aid, not a user feature |
+
 ## Approval of the labels
 
 Status of every `[EXT:winter-*]` label against the user's decisions of October 18, 2026 (see "Decisions" above). **Approved** means the label implements something the user decided or asked for, quoted in the last column; `winter-item-colour`, `winter-spice-label`, `winter-season-terms`, `winter-snow-save` and the id range 64010..64499 were approved by the user's answer "Alles akkoord" (October 18, 2026). The one exception is the kiosk's gate, which the user decided differently on 2026-10-18/19.
@@ -280,10 +353,11 @@ Status of every `[EXT:winter-*]` label against the user's decisions of October 1
 | `[EXT:winter-save]` | the used-only record of `opentpw.winter` and the optional guest fields `WarmItems` and `WarmUntilDay` | approved | "winter kiosks **on** (recorded in a save only for parks that use them)"; the optional guest fields implement exactly that rule |
 | `[EXT:winter-cold]` | the cold mood rule (W5) | approved | "Cold is a separate option, `opentpw.winter-cold`, default off" with the stated -2 / +1 numbers |
 | `[EXT:winter-cold-replaces-snow-cheer]` | with the cold rule on and the winter signal saying snow, the rain mood's happiness of that day is left out, whichever row it would use (snow's +1, or Halloween's storm -1 where the snowfall has lightning); its thirst and hunger effects stay as Theme Park Inc's; with cold off nothing changes | approved | "with it on it replaces rain mood's snow +1"; the user's answers on October 19, 2026: "Alleen de humeur-+1" (what it replaces) and, for the Halloween stacking, "Kou vervangt storm-humeur" |
+| `[EXT:winter-always]` | always winter: December's season row and wintry snow in every month (space untouched), the winter shops' winter demand all year, an option, off by default | approved | the user's choice on October 19, 2026 of the variant "Winterweer hele jaar"; the December row, space untouched and the Extensions and mods row are the coordinator's reading, confirmed the same day |
 | `[EXT:winter-cold-warm-window]` | a glühwein warms for the rest of its day plus the next game day (`WarmEffectDays` 1) | approved | the user's answer on October 19, 2026: "Rest van de dag + de volgende dag" |
 | `[EXT:winter-anchors]` | the schema 2 head and hand anchors, and the measured head-only anchors of the original sets (numbers only; mittens stay invisible there) | approved | the data the approved hats, earmuffs and mittens attach to; "committing measured numbers is allowed, never pixels" and "mittens are invisible on the original sets" (2026-10-18) |
 | `[EXT:winter-draw]` | how the items are drawn: the 1 % camera pull, the mitten's forearm turn, items on costumed guests | approved | the user's answer on October 19, 2026 to all three: "Alle drie akkoord" (the 1 % pull so an umbrella falls over the hat; mittens turning with the forearm; hats and earmuffs on costumed guests too) |
 | `[EXT:pools-model-inset]` | the walls' gap from the footprint edge (the pools' rule) | existing | not a winter label |
 | `[BIN:TPW-EXE:0x...]` | the Theme Park World `tp.exe` address a finding was traced to (this page) | n/a | evidence |
 
-Nothing awaits the user: `winter-snow-save` (W1) and the id range 64010..64499 (the example lamp mod holds 64000..64009) were approved with "Alles akkoord" on October 18, 2026; `winter-draw` and the two cold questions were answered on October 19, 2026.
+Nothing awaits the user: `winter-snow-save` (W1) and the id range 64010..64499 (the example lamp mod holds 64000..64009) were approved with "Alles akkoord" on October 18, 2026; `winter-draw`, the two cold questions and `winter-always` were answered on October 19, 2026.

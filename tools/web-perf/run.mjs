@@ -88,7 +88,7 @@ function usage() {
   --size <w>x<h>          window size (default 1280x900)
   --crowd <n>             umbrellaCost, winterCost: extra guests staged in the Jungle park (default 400)
   --shot <file>           umbrellas, snow, winter, winterCost: where the screenshot goes
-  --follow <n>            winter, winterCost: the screenshot follows the n-th visible guest by id, counted from the newest when negative (winter default 0, the lowest; winterCost default -250, a guest of a fresh crowd standing in the open and not under the entrance roofs)
+  --follow <n>            winter, winterCost: the screenshot follows the visible guest after skipping |n| of them by id, counted from the newest when negative (winter default 0, the lowest; winterCost default -250, a guest of a fresh crowd standing in the open and not under the entrance roofs)
   --cover <0..1>          snow: the settled snow cover to hold (default 1)
   --zoom <value>          jungle: after the steady window, hold the park camera at this zoom value (40..300 with the wide zoom option) and measure a second window
   --evening <mode>        jungle: after the steady window, hold the evening look (night, dusk, day) or switch the extension off, and measure a second window

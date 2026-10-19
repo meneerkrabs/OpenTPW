@@ -509,6 +509,21 @@ internal static class Game
 		var followText = GetOption( args, "--debug-umbrellas-follow", "zoom,yaw for the camera that follows the first guest" )?.Split( ',' ).Select( value => float.Parse( value, System.Globalization.CultureInfo.InvariantCulture ) ).ToArray();
 		if ( args.Contains( "--debug-umbrellas" ) )
 			Render.PostUpdate += GiveEveryGuestAnUmbrella;
+		// [EXT:debug-umbrellas] --debug-umbrellas-crowd N (with --debug-umbrellas, a measurement aid like the browser harness's PerfUmbrellaCrowd): once, when the park's guests exist, adds N guests on the walkable path cells
+		// (UmbrellaPerf.Stage, one each and round again), so the frame cost of a crowd of umbrellas can be measured with --perf-run.
+		if ( GetOption( args, "--debug-umbrellas-crowd", "a number of extra guests" ) is { } crowdText )
+		{
+			var crowd = int.TryParse( crowdText, out var parsedCrowd ) && parsedCrowd > 0 ? parsedCrowd : throw new ArgumentException( "--debug-umbrellas-crowd expects a positive number of guests." );
+			var crowdStaged = false;
+			Render.PostUpdate += () =>
+			{
+				if ( crowdStaged || flow.Level?.Guests is not { } crowdGuests )
+					return;
+				crowdStaged = true;
+				var staged = UmbrellaPerf.Stage( crowdGuests, null, crowd, 0, args.Contains( "--debug-umbrellas" ) );
+				Log.Trace( $"--debug-umbrellas-crowd: {staged.Spawned} guests added, {staged.Guests} in the park, {staged.Umbrellas} with an open umbrella." );
+			};
+		}
 		void GiveEveryGuestAnUmbrella()
 		{
 			if ( flow.Level?.Guests is not { } umbrellaGuests )

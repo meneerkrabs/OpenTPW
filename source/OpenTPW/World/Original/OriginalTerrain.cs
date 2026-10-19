@@ -458,7 +458,8 @@ public sealed class OriginalTerrain : Entity
 					Normal = normal.LengthSquared() > 0 ? System.Numerics.Vector3.Normalize( new System.Numerics.Vector3( normal.X, normal.Z, normal.Y ) ) : System.Numerics.Vector3.UnitZ,
 					TexCoords = mesh.TexCoords[index],
 					TexIndex = slotOfMaterial[materialIndex],
-					MatFlags = TextureSlotAddressing.VertexFlags( mesh.Materials[materialIndex].Flags )
+					// [EXT:winter-snow-paths] the entrance plaza and its kerbs (grd_pav, grd_ctr, grd_krb) are walking surfaces: slush under snow, like the path layer
+					MatFlags = TextureSlotAddressing.VertexFlags( mesh.Materials[materialIndex].Flags ) | ( TextureSlotAddressing.IsPathLikeTexture( mesh.Materials[materialIndex].Name ) ? TextureSlotAddressing.SlushFlag : 0u )
 				} );
 			}
 			foreach ( var index in mesh.Indices )

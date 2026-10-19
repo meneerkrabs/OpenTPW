@@ -29,6 +29,7 @@ vertex {
         vec3 vNormal;
         vec3 vPosition;
         vec3 vWorldPosition;
+        vec3 vLocalPosition; // [EXT:winter-snow] the model-space position: the snow noise of a moving part stays on the part
     } vs_out;
 
     layout(location = 5) out flat int outTexIndex;
@@ -39,6 +40,7 @@ vertex {
         vs_out.vTexCoords.y = 1.0 - vs_out.vTexCoords.y;
         vs_out.vNormal = normal;
         vs_out.vPosition = vec3(g_oUbo.g_mModel * vec4(position, 1.0));
+        vs_out.vLocalPosition = position;
 
         vec4 pos = g_oUbo.g_mModel * vec4(position, 1.0);
         vs_out.vWorldPosition = vec3(g_oUbo.g_mView * pos);
@@ -55,6 +57,7 @@ fragment {
         vec3 vNormal;
         vec3 vPosition;
         vec3 vWorldPosition;
+        vec3 vLocalPosition; // [EXT:winter-snow] the model-space position: the snow noise of a moving part stays on the part
     } vs_out;
 
     layout(location = 5) in flat int texIndex;
@@ -107,6 +110,7 @@ fragment {
     const uint FLAG_GOURAUD_SHADED = 32;
         
     // TextureSlotAddressing.ClampFlag: an original MD2 slot without flag 0x10/0x20, which tp.exe clamps instead of wrapping.
+    const uint FLAG_SLUSH = 0x40000000u; // [EXT:winter-snow] OpenTPW's vertex flag for a path-like material (TextureSlotAddressing.SlushFlag)
     const uint FLAG_CLAMP = 0x80000000u;
 
     // CLAMP on the wrapping sampler: the coordinates stay half a texel of the coarsest mip the footprint can select
@@ -145,27 +149,35 @@ fragment {
     // [EXT:winter-snow] Settling snow (docs/WINTER.md): procedural noise on up-facing surfaces, no texture and no binding. g_flSnowCover is the park's cover times the draw's surface factor (the CPU
     // writes 0 for everything that takes no snow, and then none of this runs, so the picture is the original's). Two octaves of value noise on the world position make the snow start in patches and
     // melt back into them; the slope term keeps walls and cliffs bare (up is the world's Z axis). A negative value is slush: a wet, greyish brown at a lower ceiling (paths).
+    // sin-free hash (Dave Hoskins, hash12): the sin( dot ) hash bands on ANGLE/D3D and mobile GPUs at world positions of 1e5. The lattice cell is wrapped (period 2048) so the argument stays small and exact.
     float snowHash( vec2 p )
     {
-      return fract( sin( dot( p, vec2( 127.1, 311.7 ) ) ) * 43758.5453 );
+      vec3 p3 = fract( vec3( p.xyx ) * 0.1031 );
+      p3 += dot( p3, p3.yzx + 33.33 );
+      return fract( ( p3.x + p3.y ) * p3.z );
     }
 
     float snowNoise( vec2 p )
     {
-      vec2 i = floor( p );
+      vec2 i = mod( floor( p ), 2048.0 );
       vec2 f = fract( p );
       f = f * f * ( 3.0 - 2.0 * f );
       return mix( mix( snowHash( i ), snowHash( i + vec2( 1.0, 0.0 ) ), f.x ), mix( snowHash( i + vec2( 0.0, 1.0 ) ), snowHash( i + vec2( 1.0, 1.0 ) ), f.x ), f.y );
     }
 
-    vec3 snowBlend( vec3 albedo, vec3 normal, vec3 positionWs, float cover, float lightLevel )
+    // g_flSnowCover above 1.5 means the part moves (a ride's node): 2 is added to its cover and the noise is taken in model space, so the patches turn with the part instead of crawling over it.
+    // A corner whose material is path-like (FLAG_SLUSH, set by the object loader from the texture name: the entrance plaza, path slabs of objects) takes slush like the path layer does.
+    vec3 snowBlend( vec3 albedo, vec3 normal, vec3 positionWs, vec3 positionLocal, float cover, float lightLevel, bool pathLike )
     {
-      bool slush = cover < 0.0;
+      bool local = cover > 1.5;
+      if ( local )
+        cover -= 2.0;
+      bool slush = cover < 0.0 || pathLike;
       // a slush draw's surface factor is at most 0.35: normalise it so its patches fill in like the snow's do
-      float amount = slush ? min( -cover / 0.35, 1.0 ) : min( cover, 1.0 );
+      float amount = cover < 0.0 ? min( -cover / 0.35, 1.0 ) : min( cover, 1.0 );
       float up = normalize( mat3( g_oUbo.g_mModel ) * normal ).z;
       float slope = smoothstep( 0.55, 0.85, up );
-      vec2 q = positionWs.xy * 0.9;
+      vec2 q = ( local ? positionLocal.xy : positionWs.xy ) * 0.9;
       float n = snowNoise( q ) * 0.65 + snowNoise( q * 2.7 + vec2( 7.3, 3.1 ) ) * 0.35;
       float m = smoothstep( n - 0.08, n + 0.08, amount * slope * 1.15 );
       float luma = dot( albedo, vec3( 0.299, 0.587, 0.114 ) );
@@ -228,7 +240,7 @@ fragment {
         // [EXT:winter-snow] snow and slush on the albedo, after the light is known (so a lit white lands near 0.9 instead of burning out, and the evening's dark ambient still darkens it) and before
         // the evening tint and the fog act on the result (g_flSnowCover 0 skips it)
         if ( g_oUbo.g_flSnowCover != 0.0 && ( outMatFlags & FLAG_TRANSPARENT ) == 0u )
-            vTextureSample.xyz = snowBlend( vTextureSample.xyz, N, vs_out.vPosition, g_oUbo.g_flSnowCover, max( dot( vShading, vec3( 0.333 ) ), 1.0 ) );
+            vTextureSample.xyz = snowBlend( vTextureSample.xyz, N, vs_out.vPosition, vs_out.vLocalPosition, g_oUbo.g_flSnowCover, max( dot( vShading, vec3( 0.333 ) ), 1.0 ), ( outMatFlags & FLAG_SLUSH ) != 0u );
 
         vec3 vOutColor;
 

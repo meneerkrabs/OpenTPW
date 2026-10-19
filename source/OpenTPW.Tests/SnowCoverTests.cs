@@ -315,6 +315,39 @@ public class SnowCoverTests
 	}
 
 	[TestMethod]
+	public void TheSnowHashHasNoSinAndTheNoiseCellsWrapSoLargeWorldPositionsDoNotBand()
+	{
+		var text = ShaderText( "test.shader" );
+		var start = text.IndexOf( "float snowHash", StringComparison.Ordinal );
+		var end = text.IndexOf( "vec3 snowBlend", StringComparison.Ordinal );
+		Assert.IsTrue( start > 0 && end > start );
+		var body = text[start..end];
+		Assert.IsFalse( body.Contains( "sin(", StringComparison.Ordinal ) || body.Contains( "sin (", StringComparison.Ordinal ), "a sin( dot ) hash bands on ANGLE/D3D and mobile GPUs at world positions around 1e5" );
+		StringAssert.Contains( body, "mod( floor( p ), 2048.0 )" );
+	}
+
+	[TestMethod]
+	public void PathLikeMaterialsAndMovingPartsSelectSlushAndModelSpaceNoise()
+	{
+		foreach ( var name in new[] { "js_path", "ss_PATH", "grd_pav4", "GRD_PAV1", "grd_ctr1", "grd_krb1" } )
+			Assert.IsTrue( TextureSlotAddressing.IsPathLikeTexture( name ), name );
+		foreach ( var name in new[] { "hpa_ctr", "hrk_bas1", "jgr_bas1", "grd_top1", "gte_wal1", null } )
+			Assert.IsFalse( TextureSlotAddressing.IsPathLikeTexture( name ), name ?? "null" );
+		Assert.AreEqual( 0u, TextureSlotAddressing.SlushFlag & ( TextureSlotAddressing.ClampFlag | 0xFFu ), "the flag shares no bit with the original slot flags or the clamp flag" );
+		StringAssert.Contains( ShaderText( "test.shader" ), "const uint FLAG_SLUSH = 0x40000000u;" );
+		var entity = (ModelEntity)RuntimeHelpers.GetUninitializedObject( typeof( ModelEntity ) );
+		var uniform = typeof( ModelEntity ).GetMethod( "SnowUniformFor", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic )!;
+		Assert.AreEqual( 0f, (float)uniform.Invoke( entity, new object[] { 0.6f } )!, "no surface factor: no snow" );
+		entity.SnowSurface = SnowCover.GroundSurface;
+		Assert.AreEqual( 0.6f, (float)uniform.Invoke( entity, new object[] { 0.6f } )!, 1e-6f );
+		entity.SnowNoiseInModelSpace = true;
+		Assert.AreEqual( 2.6f, (float)uniform.Invoke( entity, new object[] { 0.6f } )!, 1e-6f, "a moving part adds 2 so the shader takes its noise in model space" );
+		Assert.AreEqual( 0f, (float)uniform.Invoke( entity, new object[] { 0f } )!, "no cover stays exactly 0, whatever the noise space" );
+		entity.SnowSurface = SnowCover.PathSurface;
+		Assert.AreEqual( -0.21f, (float)uniform.Invoke( entity, new object[] { 0.6f } )!, 1e-6f, "slush never moves to model space" );
+	}
+
+	[TestMethod]
 	public void TheWebShaderIsRegeneratedForTheCover()
 	{
 		var json = File.ReadAllText( Path.Combine( RepositoryRoot(), "content", "shaders", "web", "test.json" ) );

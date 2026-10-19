@@ -46,6 +46,18 @@ public partial class ModelEntity : Entity
 	/// </summary>
 	public float SnowSurface { get; set; }
 
+	/// <summary>
+	/// [EXT:winter-snow-surfaces] The snow noise follows the model's own coordinates instead of the world's: for parts on an animated node of a ride or object, so the patches turn and move with the part
+	/// (world-space noise would crawl over a rotating part). Written as 2 added to a positive cover; test.shader reads a cover above 1.5 as "model space".
+	/// </summary>
+	public bool SnowNoiseInModelSpace { get; set; }
+
+	private float SnowUniformFor( float cover )
+	{
+		var value = SnowSurface != 0f ? cover * SnowSurface : 0f;
+		return value > 0f && SnowNoiseInModelSpace ? value + 2f : value;
+	}
+
 	protected override void OnRender()
 	{
 		if ( Model == null || Hidden )
@@ -80,7 +92,7 @@ public partial class ModelEntity : Entity
 			_padding4 = FollowsTimeOfDay ? ( Level?.Look.AmbientColourUniform.Y ?? 0f ) : 0f,
 			_padding5 = FollowsTimeOfDay ? ( Level?.Look.AmbientColourUniform.Z ?? 0f ) : 0f,
 			// [EXT:winter-snow-surfaces] test.shader's g_flSnowCover: the park's cover times this entity's surface factor (0 with no snow, which is what the padding always was)
-			_padding6 = SnowSurface != 0f ? ( Level?.SnowUniform ?? 0f ) * SnowSurface : 0f,
+			_padding6 = SnowUniformFor( Level?.SnowUniform ?? 0f ),
 		}.WithFog();
 
 		SetObjectUniforms( uniformBuffer, model );

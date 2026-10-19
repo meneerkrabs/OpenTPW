@@ -9,7 +9,7 @@ public sealed partial class GuestSimulation
 {
 	/// <summary>
 	/// Whether the import restores a guest in this saved state (guest <c>+0x220</c>, the <c>KIDSTATES</c> index): the arrival and departure states
-	/// 0–5, 18, 19 and 21, and the park states 6–10. The queue states 11–14, a guest leaving a ride (15), using an attraction (16) and one held by a
+	/// 0–5, 18, 19 and 21, and the park states 6–10 (on a path or off the paths). The queue states 11–14, a guest leaving a ride (15), using an attraction (16) and one held by a
 	/// guard (17) are not restored.
 	/// </summary>
 	public static bool ImportsOriginalState( uint state ) => state is <= 10 or 18 or 19 or 21;
@@ -35,6 +35,8 @@ public sealed partial class GuestSimulation
 		var adjusted = new List<string>();
 		var dropped = new List<string>();
 		var states = new List<string>();
+		var recovery = new List<string>();
+		var stranded = new List<string>();
 		long Relative( uint stamp ) => Math.Max( 0, stamp - parkTurn );
 		foreach ( var save in saved.OrderBy( item => item.Id ) )
 		{
@@ -60,13 +62,11 @@ public sealed partial class GuestSimulation
 				ReleaseDroppedThing( save.Id );
 				continue;
 			}
+			// [BIN:TPW-EXE:0x004FB530 off-path guest] the load reads the position and mState straight in and nothing moves a park guest standing off the paths (a path deleted
+			// under it, an object built over it, a wander across grass): it stays where it stands and its own state handlers recover it, the wander's off-path search 0x004F9490 included
 			var inPark = save.State is >= 6 and <= 10 || save.State == 18 && Grid.IsWalkable( cell.X, cell.Y );
-			if ( inPark && !Grid.IsWalkable( cell.X, cell.Y ) )
-			{
-				dropped.Add( $"{what} (state {save.State} off the paths at ({cell.X}, {cell.Y}))" );
-				ReleaseDroppedThing( save.Id );
-				continue;
-			}
+			if ( inPark && save.State != 18 && !Grid.IsWalkable( cell.X, cell.Y ) )
+				recovery.Add( $"guest {save.Id} state {save.State} imported off the paths at ({cell.X}, {cell.Y}) (cell type {Grid.Cells.RawTypeAt( cell.X, cell.Y )}); it recovers through its state handler (0x004F9490 off-path search)" );
 			if ( !inPark && !HasArrivalLane )
 			{
 				dropped.Add( $"{what} (state {save.State}, no arrival lane)" );
@@ -146,6 +146,16 @@ public sealed partial class GuestSimulation
 			var navigation = guest.Navigation;
 			(navigation.X, navigation.Y) = (position.X << 8, position.Y << 8);
 			navigation.SetDestination( navigation.X, navigation.Y, [] );
+			// [BIN:TPW-EXE:0x0050D150 nav_mode] the walk mask +0xB4 (person +0x188) is saved in the navigation state: the constructor 0x0050FFE0 zeroes it and the reader, called at 0x004F925E with ECX = person + 0xD4, loads it as saved
+			var navMode = person.NavigationState.NavMode;
+			navigation.Mask = navMode is >= 0 and <= 2 ? navMode : 0;
+			// OpenTPW's walk keeps the masks the edge test 0x004D8750 tells apart (0, 1, 2); another saved value is reported like an out-of-range meter
+			if ( navigation.Mask != navMode )
+				adjusted.Add( $"{what} walk mask {navMode} imported as 0" );
+			// [BIN:TPW-EXE:0x004FA5F0 stranded mark on load] mStrandedTime (+0x198, read at 0x004F92F0) is compared with the route counter 0x007CDB98, which is not saved and restarts with the process: the load's re-route clears a mark above the counter, so a fresh load imports it as 0
+			guest.StrandedMark = 0;
+			if ( person.StrandedTime != 0 )
+				stranded.Add( $"guest {save.Id} saved stranded mark {person.StrandedTime} cleared as a fresh load clears it" );
 			// [EXT:smarter-guests] an imported guest of a running extension gets its id at once; before the first tick the extension's first tick gives it
 			if ( SmarterGuests is { Bootstrapped: true } smarter )
 				guest.BirthId = smarter.AllocateBirthId();
@@ -153,7 +163,7 @@ public sealed partial class GuestSimulation
 			byId.Add( guest.Id, guest );
 			if ( inPark )
 			{
-				ImportInPark( guest, save, cell, destination, attraction, bin, adjusted );
+				ImportInPark( guest, save, cell, destination, attraction, bin, adjusted, recovery );
 				// [BIN:TPW-EXE:0x4FD950 time in park] mArrivalDate (+0x1D4) is the world's game tick at the stamp and the hours the visitor lists show are (tick − stamp) >> 2 turns (the roster's cell); the saved stamp gives the elapsed park turns, a stamp after the save's own turn is not a date
 				if ( save.ArrivalDate <= parkTurn )
 					guest.TimeInParkSeconds = ((parkTurn - save.ArrivalDate) * ParkCalendar.TurnMilliseconds + 0.5) / 1000.0; // half a millisecond keeps the roster's floor(seconds × 1000 / 248) at the exact turn count
@@ -172,18 +182,25 @@ public sealed partial class GuestSimulation
 		evidence.Add( $"Guests imported: {guests.Count} of {saved.Count} ({(states.Count == 0 ? "none" : string.Join( ", ", states ))}, saved state → state)." );
 		foreach ( var line in adjusted )
 			evidence.Add( $"Guest value adjusted on import: {line}." );
-		// [APPROX:SAVE-002] a saved guest in a queue or boarding (states 11–14), leaving a ride (15), using an attraction (16) or held by a guard (17) is not imported, nor is a park guest off the paths (a guard chasing one gives the chase up); an imported guest in an activity (state 8) decides again at once, one at the booth (4) that was not yet weighed waits OpenTPW's booth time (ARRIVAL-006), a turn stamp before the save's turn counts from the import, and the admission flag (mBeenAdmitted, set by OnAdmittance 0x5012B0 and cleared by the dismissal 0x5012F0, which also clears the queue links), the 32-slot event ring (AddEvent 0x50C100) and the queue links (mQNext, mQPrev) are not imported — evidence needed: an OpenTPW queue and rider restore for original guests
+		foreach ( var line in recovery.Concat( stranded ) )
+			evidence.Add( $"[BIN:TPW-EXE:0x004F8B10] {line}." );
+		// [APPROX:SAVE-002] a saved guest in a queue or boarding (states 11–14), leaving a ride (15), using an attraction (16) or held by a guard (17) is not imported; an imported guest in an activity (state 8) decides again at once, one at the booth (4) that was not yet weighed waits OpenTPW's booth time (ARRIVAL-006), a turn stamp before the save's turn counts from the import, and the admission flag (mBeenAdmitted, set by OnAdmittance 0x5012B0 and cleared by the dismissal 0x5012F0, which also clears the queue links), the 32-slot event ring (AddEvent 0x50C100) and the queue links (mQNext, mQPrev) are not imported — evidence needed: an OpenTPW queue and rider restore for original guests
 		if ( dropped.Count > 0 )
 			evidence.Add( $"[APPROX:SAVE-002] Guests not imported: {string.Join( ", ", dropped )}." );
 		evidence.Add( $"[APPROX:SAVE-002] Guest values not imported: queue links {string.Join( "/", saved.Select( item => $"{item.QPrev}-{item.QNext}@{item.QueuePos}" ) )}, saved states {string.Join( "/", saved.Select( item => item.SavedState ) )}." );
 		return evidence;
 	}
 
-	/// <summary>A guest in the park: decide (6, 8), wander on (7), walk on to its bin (9) or its ride (10), or leave (18).</summary>
-	private void ImportInPark( Guest guest, SaveGuest save, (int X, int Y) cell, (int X, int Y) destination, Func<int, int> attraction, Func<int, int> bin, List<string> adjusted )
+	/// <summary>
+	/// A guest in the park: decide (6, 8), wander on (7), walk on to its bin (9) or its ride (10), or leave (18). It stands where it was saved, on a path or off the paths,
+	/// and a walking state is routed again to its accurate destination with the original's walk set-up, which draws nothing.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004F9407 load re-route] the person loader calls 0x004FA5F0 with the accurate destination (+0x18, +0x1A): SetDest 0x00510100 → the walk set-up 0x0050F8E0, whose search starts from any cell (the edge test 0x004D8750 opens every step out of a cell that is neither path nor queue); a failed search leaves the walk finished with mCantReachDest set and only logs "Couldn't renav to my accurate dest!!", so the first walk step answers 2 (0x004FA2A0) and the state handler recovers (7: a draw and the wander, 9: the litter drop, 10: "stuck on the way")
+	private void ImportInPark( Guest guest, SaveGuest save, (int X, int Y) cell, (int X, int Y) destination, Func<int, int> attraction, Func<int, int> bin, List<string> adjusted, List<string> recovery )
 	{
 		guest.OnGrid = true;
 		guest.Lane = null;
+		guest.Navigation.OffGrid = false;
 		(guest.CellX, guest.CellY) = cell;
 		guest.TimeInParkSeconds = null;
 		void WalkOn()
@@ -191,9 +208,10 @@ public sealed partial class GuestSimulation
 			var target = (destination.X >> 8, destination.Y >> 8);
 			if ( !Grid.InBounds( target.Item1, target.Item2 ) )
 				return;
+			// the route cells are the M3 gate's bookkeeping (empty from a start off the paths); the walk is the original set-up's search
 			var route = Grid.FindPath( cell.X, cell.Y, target.Item1, target.Item2 );
-			if ( route.Count > 0 )
-				SetDestination( guest, GuestNavigation.BytePoint( target, destination.X & 0xFF, destination.Y & 0xFF ), route );
+			if ( !SetDestination( guest, GuestNavigation.BytePoint( target, destination.X & 0xFF, destination.Y & 0xFF ), route ) )
+				recovery.Add( $"guest {guest.Id} could not renav to its accurate destination ({target.Item1}, {target.Item2}); it recovers on its first update (0x004F9407)" );
 		}
 		switch ( save.State )
 		{
@@ -207,9 +225,10 @@ public sealed partial class GuestSimulation
 				WalkOn();
 				break;
 			case 10 when attraction( save.MajorDest ) is var ride and not 0:
-				// state 10 asks for its route to the ride's back cell on its next update (the original's saved destination is not decoded)
+				// the walk to the saved accurate destination, as the loader routes every person (0x004F9407); arrived on another cell than the queue's back cell, state 10 asks for the back cell again (0x004FFBC0)
 				guest.State = GuestState.GoingToRide;
 				guest.AttractionId = ride;
+				WalkOn();
 				break;
 			case 18:
 				guest.State = GuestState.LeavingPark;
@@ -234,7 +253,7 @@ public sealed partial class GuestSimulation
 	}
 
 	/// <summary>A guest on its way in or out of the park, in the state it was saved in: the arrival walk's states 0 to 5, state 18 off the paths and the gate's states 19 and 21 stand on the cell map as they did.</summary>
-	// [BIN:TPW-EXE:0x004FB530 arrival states] mState (+0x220) is kept as it was saved, with the walk's accurate destination (+0x18, +0x1A, routed again as the loader does, 0x004FA5F0) in the walking states 0, 2, 5 and 18, mPaidAdmission (+0x204) and the wait mParkOpeningWaitingTime (+0x200) in states 3 and 4; the walk mask +0x188 is 1 for a guest on its way home
+	// [BIN:TPW-EXE:0x004FB530 arrival states] mState (+0x220) is kept as it was saved, with the walk's accurate destination (+0x18, +0x1A, routed again as the loader does, 0x004FA5F0) in the walking states 0, 2, 5 and 18, mPaidAdmission (+0x204) and the wait mParkOpeningWaitingTime (+0x200) in states 3 and 4; the walk mask +0x188 is the saved nav_mode (1 for a guest on its way home, set by 0x004FF9D0 and 0x004FF7F0)
 	private void ImportOnMap( Guest guest, SaveGuest save, (int X, int Y) cell, (int X, int Y) destination, List<string> adjusted )
 	{
 		guest.OnGrid = true;
@@ -278,7 +297,6 @@ public sealed partial class GuestSimulation
 				break;
 			case 18:
 				guest.State = GuestState.LeavingPark;
-				guest.Navigation.Mask = 1;
 				WalkOn();
 				break;
 			case 19:

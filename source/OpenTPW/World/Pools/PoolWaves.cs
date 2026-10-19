@@ -61,22 +61,24 @@ public readonly record struct PoolWaveSettings( bool On, int Height, int Interva
 	/// The settings the waves of a pool region run with: those of its wave machine with the lowest object id whose settings are on (the machines of one pool do not add up), or null when the region has no
 	/// wave machine or none of them is on. A pool without a machine has no waves, whatever bits its cells hold. Allocation-free.
 	/// </summary>
-	public static PoolWaveSettings? ActiveIn( PoolAttractionSites sites, ParkCellMap cells, PoolSwimRegion region )
+	public static PoolWaveSettings? ActiveIn( PoolAttractionSites sites, ParkCellMap cells, PoolSwimRegion region ) =>
+		ActiveMachineIn( sites, cells, region ) is { } machine ? At( cells, machine.Access ) : null;
+
+	/// <summary>The wave machine whose settings the waves of <paramref name="region"/> run with (<see cref="ActiveIn"/>: the one with the lowest object id whose settings are on), or null.</summary>
+	public static PoolAttractionSite? ActiveMachineIn( PoolAttractionSites sites, ParkCellMap cells, PoolSwimRegion region )
 	{
 		ArgumentNullException.ThrowIfNull( sites );
 		var all = sites.All;
 		PoolAttractionSite? best = null;
-		PoolWaveSettings? found = null;
 		for ( var i = 0; i < all.Count; i++ )
 		{
 			var site = all[i];
 			if ( site.Kind != PoolAttractionKind.WaveMachine || !region.Contains( site.Access.X, site.Access.Y ) || (best != null && site.ObjectId > best.ObjectId) )
 				continue;
-			var settings = At( cells, site.Access );
-			if ( settings.On )
-				(best, found) = (site, settings);
+			if ( At( cells, site.Access ).On )
+				best = site;
 		}
-		return found;
+		return best;
 	}
 }
 

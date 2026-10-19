@@ -71,7 +71,7 @@ public static class ParkInfoGraph
 
 	/// <summary>The plot's rectangle in the bitmap: 4 pixels from the left and top, 20 from the right and bottom.</summary>
 	// [BIN:TPW-EXE:0x4806A0 graph setup] 0x47FB50(4, 4, width - 20, height - 20) sets the plot's left, top, right and bottom (width and height of the control's rectangle at the display mode's pixel size)
-	public static (int Left, int Top, int Right, int Bottom) Plot( int widthPixels, int heightPixels ) => (4, 4, widthPixels - 20, heightPixels - 20);
+	public static (int Left, int Top, int Right, int Bottom) Plot( int widthPixels, int heightPixels ) => GraphBackdrop.PlotBounds( widthPixels, heightPixels );
 
 	/// <summary>The row of a value: the bottom less (value x height / maximum), cut to the plot, the bottom for a flat range.</summary>
 	// [BIN:TPW-EXE:0x47FE90 graph drawer] y = bottom - ((value - minimum) * height) / (maximum - minimum) in integers, bottom for an empty range, then cut to top..bottom
@@ -89,14 +89,7 @@ public static class ParkInfoGraph
 
 	/// <summary>The vertical gridlines: the sample steps that get a line and the number written under it (every step for a year, every third for 3 years, every twelfth for 12).</summary>
 	// [BIN:TPW-EXE:0x47FCD0 graph grid] a line and its label (the step number, from 1) at the end of every step whose count passes 0, 2 or 11 (12, 36 and 144 samples); the horizontal lines are the ten divisions of the height
-	public static IEnumerable<int> GridSteps( int samples )
-	{
-		var every = samples switch { 12 => 1, 36 => 3, 144 => 12, _ => 0 };
-		if ( every == 0 )
-			yield break;
-		for ( var step = every; step <= samples; step += every )
-			yield return step;
-	}
+	public static IEnumerable<int> GridSteps( int samples ) => GraphBackdrop.GridSteps( samples );
 }
 
 public sealed partial class ParkHud
@@ -104,51 +97,18 @@ public sealed partial class ParkHud
 	/// <summary>The graph control: the black plot, its green axes and dark green grid, and the selected series.</summary>
 	private sealed class ParkInfoGraphElement( ParkHud owner ) : UiElement
 	{
-		private static readonly RgbaByte Black = new( 0, 0, 0, 255 );
-		private static readonly RgbaByte Grid = new( 0, 100, 0, 255 );
-		private static readonly RgbaByte Axis = new( 0, 200, 0, 255 );
-
 		public override void Draw( UiContext context, bool focused, bool pressed )
 		{
 			var rect = ScreenRect( context.Canvas );
-			// [APPROX:UI-060] one bitmap pixel is two canvas units (the 1024 x 768 mode), as the finance graph takes it
-			var pixel = Math.Max( 1f, context.Canvas.Scale * 2f );
-			var widthPixels = (int)(rect.Width / pixel);
-			var heightPixels = (int)(rect.Height / pixel);
-			var plot = ParkInfoGraph.Plot( widthPixels, heightPixels );
-			float X( float column ) => rect.X + column * pixel;
-			float Y( float row ) => rect.Y + row * pixel;
-			void Fill( float left, float top, float right, float bottom, RgbaByte colour ) =>
-				context.Batch.AddRectangle( new UiRect( X( left ), Y( top ), (right - left) * pixel, (bottom - top) * pixel ), colour );
-
-			// [BIN:TPW-EXE:0x480810 graph draw] the bitmap is cleared to black, then the plot (0x47FC00), the grid with its labels (0x47FCD0) and the axes (0x47FC50) are drawn, then the series
-			Fill( 0, 0, widthPixels, heightPixels, Black );
-			Fill( plot.Left, plot.Top, plot.Right, plot.Bottom, Black );
+			var pixel = GraphBackdropRenderer.Pixel( context.Canvas );
 			var samples = ParkStatisticsHistory.PeriodSamples( owner.parkInfoPeriod );
-			var font = context.Fonts.Small;
-			if ( samples > 0 )
-			{
-				foreach ( var step in ParkInfoGraph.GridSteps( samples ) )
-				{
-					var column = ParkInfoGraph.Column( step, samples, plot );
-					Fill( column, plot.Top, column + 1, plot.Bottom + 1, Grid );
-					context.DrawText( font, step.ToString( System.Globalization.CultureInfo.InvariantCulture ), new UiRect( X( column ), Y( plot.Bottom + 4 ), 40 * pixel, 12 * pixel ), Axis, UiAlign.Left, false, false );
-				}
-				var rows = 10;
-				var step10 = (float)(plot.Bottom - plot.Top) / rows;
-				for ( var division = 1; division <= rows; division++ )
-				{
-					var row = (int)(plot.Bottom - division * step10 + 1);
-					Fill( plot.Left, row, plot.Right + 1, row + 1, Grid );
-				}
-			}
-			// the axes: along the bottom (the scale's zero) and up the left edge
-			Fill( plot.Left - 1, plot.Bottom + 1, plot.Right + 1, plot.Bottom + 2, Axis );
-			Fill( plot.Left - 1, plot.Top - 1, plot.Left, plot.Bottom + 2, Axis );
-
+			var backdrop = new GraphBackdrop( (int)(rect.Width / pixel), (int)(rect.Height / pixel), samples );
+			var canDrawSeries = GraphBackdropRenderer.Draw( context, rect, pixel, backdrop );
+			var plot = backdrop.Plot;
 			var economy = owner.Status.EconomySource as ParkEconomy;
-			if ( economy == null || samples == 0 )
+			if ( economy == null || !canDrawSeries )
 				return;
+			var font = context.Fonts.Small;
 			HistoryRing Ring( ParkInfoSeries series ) => ParkInfoGraph.Ring( series, economy.StatisticsHistory );
 			var maximum = ParkInfoGraph.ScaleMaximum( owner.parkInfoSeries, owner.parkInfoPeriod, Ring );
 			foreach ( var series in ParkInfoGraph.DrawOrder )

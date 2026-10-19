@@ -58,13 +58,13 @@ public static class RainMoodRules
 
 	/// <summary>
 	/// The guest's meters after the rule: the row's deltas for <paramref name="weather"/>, an open umbrella (<paramref name="umbrellaOpen"/>, state 4 only) adding <see cref="RainMoodSettings.UmbrellaModifier"/> to a negative
-	/// happiness delta, each meter clamped to 0..100 as a float.
+	/// happiness delta, each meter clamped to 0..100 as a float. With <paramref name="coldReplacesHappiness"/> (<c>opentpw.winter-cold</c> is on and the winter signal says snow) the happiness delta of the row used is left out, whichever row that is (snow's +1, or Halloween's storm -1 when the snowfall flashes lightning): the cold rule replaces it, thirst and hunger stay.
 	/// </summary>
 	// [BIN:TPI-EXE:0x611050 weather deltas] happiness delta below 0 with the umbrella state 4: UmbrellaModifier (fild of 0xA01B5C) is added to it; then each meter is the clamped sum meter + delta (happiness +0x1BC, hunger +0x1CC, thirst +0x1C8)
-	public static (float Happiness, float Thirst, float Hunger) Apply( float happiness, float thirst, float hunger, int weather, bool umbrellaOpen, RainMoodSettings settings )
+	public static (float Happiness, float Thirst, float Hunger) Apply( float happiness, float thirst, float hunger, int weather, bool umbrellaOpen, RainMoodSettings settings, bool coldReplacesHappiness = false )
 	{
 		var row = settings.Kid;
-		var happinessDelta = row.Happiness.Of( weather );
+		var happinessDelta = coldReplacesHappiness ? 0f : row.Happiness.Of( weather );
 		if ( umbrellaOpen && happinessDelta < 0f )
 			happinessDelta += settings.UmbrellaModifier;
 		return (MeterMath.Add( happiness, happinessDelta ), MeterMath.Add( thirst, row.Thirst.Of( weather ) ), MeterMath.Add( hunger, row.Hunger.Of( weather ) ));

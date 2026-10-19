@@ -180,7 +180,8 @@ public sealed class ParkCheats
 	{
 		if ( data.Log == null )
 			return "the cheat record has no log";
-		if ( data.Log.Count > MaximumLog || data.DroppedLog < 0 )
+		// entries are dropped only from a full log, so a record that dropped any holds the most it may
+		if ( data.Log.Count > MaximumLog || data.DroppedLog < 0 || data.DroppedLog > 0 && data.Log.Count != MaximumLog )
 			return $"the cheat record holds {data.Log.Count} entries and {data.DroppedLog} dropped ones";
 		if ( data.Pending != null && (data.Pending.Count is 0 or > MaximumPending || data.Pending.Any( action => action == null || !Enum.IsDefined( action.Kind ) || !IsValid( new CheatAction( action.Kind, action.Argument ) ) )) )
 			return "the cheat record's pending actions are empty, too many or not valid";

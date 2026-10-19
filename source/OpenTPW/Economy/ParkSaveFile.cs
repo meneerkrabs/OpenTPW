@@ -1012,8 +1012,8 @@ public static class ParkSaveFile
 				Require( blocks != null && blocks.All( entry => entry != null && entry.Block is >= 0 and < ParkLitter.BlockCount && entry.Count is >= 0 and <= ParkLitter.BlockSize * ParkLitter.BlockSize && entry.Stamp >= 0 )
 					&& blocks.Select( entry => entry.Block ).Distinct().Count() == blocks.Count, "analyser block caches" );
 		}
-		if ( data.Cheats is { } cheats )
-			Require( ParkCheats.Problem( cheats, ParkCalendar.Turn( data.Tick ) ) is null, ParkCheats.Problem( cheats, ParkCalendar.Turn( data.Tick ) ) ?? "cheats" );
+		if ( data.Cheats is { } cheats && ParkCheats.Problem( cheats, ParkCalendar.Turn( data.Tick ) ) is { } cheatsProblem )
+			Require( false, cheatsProblem );
 		foreach ( var loan in data.Loans )
 			Require( loan.MonthsRemaining > 0 && loan.MonthsRemaining <= loan.Months && loan.MonthlyRepayment >= 0 && (loan.RemainingBalance is null or >= 0) && data.TakenLoanOffers.Contains( loan.OfferIndex ), $"loan {loan.OfferIndex}" );
 	}

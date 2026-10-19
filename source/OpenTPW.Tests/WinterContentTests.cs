@@ -420,10 +420,10 @@ public class WinterContentTests
 	// ---- The wiring ------------------------------------------------------------------------------------------------
 
 	[TestMethod]
-	public void TheContentIsListedOnlyThroughTheWinterExtensionsOwnRootAndTheColdExtensionIsNotRegisteredYet()
+	public void TheContentIsListedOnlyThroughTheWinterExtensionsOwnRoot()
 	{
-		CollectionAssert.AreEquivalent( new[] { "opentpw.winter", "opentpw.winter-weather", "opentpw.winter-snow" }, OfficialExtensions.All.Where( extension => extension.Id.StartsWith( "opentpw.winter", StringComparison.Ordinal ) ).Select( extension => extension.Id ).ToArray(),
-			"W3 registers the winter extension and the wintry Decembers option beside the settling snow (W1); the cold rule (W5) comes with its own phase" );
+		CollectionAssert.AreEquivalent( new[] { "opentpw.winter", "opentpw.winter-weather", "opentpw.winter-snow", "opentpw.winter-cold" }, OfficialExtensions.All.Where( extension => extension.Id.StartsWith( "opentpw.winter", StringComparison.Ordinal ) ).Select( extension => extension.Id ).ToArray(),
+			"W3 registers the winter extension and the wintry Decembers option beside the settling snow (W1); W5 registers the cold rule" );
 		WinterContent.DirectoryOverride = Folder;
 		try
 		{

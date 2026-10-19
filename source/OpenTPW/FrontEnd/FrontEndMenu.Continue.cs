@@ -17,7 +17,7 @@ public sealed partial class FrontEndMenu
 			GameAudio.PlayEnterPark();
 	}
 
-	/// <summary>Distinct own manual/automatic continuation, or the existing new-park mode choice.</summary>
+	/// <summary>Distinct own manual/automatic continuation, or the existing new-park mode choice. [EXT:save-extension-switch] An own save whose extensions differ asks first (<see cref="FrontEndActions.ConfirmExtensions"/>).</summary>
 	// [EXT:theme-continue] the theme entry offers distinct own-save actions (Continue saved, Continue automatic or [EXT:periodic-autosave] autosave, New): host UI with no original rule to match; no native profile or autosave flow is reproduced
 	private void ShowThemeStart()
 	{
@@ -30,8 +30,8 @@ public sealed partial class FrontEndMenu
 		void Activate( Action action ) { if ( Current() && choice!.TryActivate( Stack ) ) action(); }
 		string Mode( ParkGameMode mode ) => strings[mode == ParkGameMode.InstantAction ? UIStrings.InstantAction : UIStrings.FullSimulation];
 		var entries = new List<(Func<string>, Action)>();
-		if ( saved != null ) entries.Add( (() => strings.Extra( OpenTpwText.ContinueSavedPark ) + ": " + (saved.Park.DisplayName ?? SelectedName) + " (" + Mode( saved.Mode ) + ")" + CheatedSuffix( strings, saved.Park.Cheated ) + RequiresSuffix( strings, saved.Requires ), () => Activate( () => { PlayEnterPark( saved.Mode == ParkGameMode.InstantAction ); actions.ContinuePark!( saved ); } )) );
-		if ( automatic != null ) entries.Add( (() => strings.Extra( automatic.Kind == AutomaticSlotKind.Autosave ? OpenTpwText.ContinueAutosavePark : OpenTpwText.ContinueAutomaticPark ) + ": " + automatic.DisplayName + " (" + Mode( automatic.Mode ) + ")" + CheatedSuffix( strings, automatic.Cheated ) + RequiresSuffix( strings, automatic.Requires ), () => Activate( () => { PlayEnterPark( automatic.Mode == ParkGameMode.InstantAction ); actions.ContinueAutomatic!( automatic ); } )) );
+		if ( saved != null ) entries.Add( (() => strings.Extra( OpenTpwText.ContinueSavedPark ) + ": " + (saved.Park.DisplayName ?? SelectedName) + " (" + Mode( saved.Mode ) + ")" + CheatedSuffix( strings, saved.Park.Cheated ) + RequiresSuffix( strings, saved.Requires ), () => Activate( () => actions.ConfirmExtensions( saved.Park.OwnSavePath, change => { if ( !Current() ) return; PlayEnterPark( saved.Mode == ParkGameMode.InstantAction ); actions.ContinuePark!( change == null ? saved : saved with { Park = saved.Park with { Switch = change } } ); } ) )) );
+		if ( automatic != null ) entries.Add( (() => strings.Extra( automatic.Kind == AutomaticSlotKind.Autosave ? OpenTpwText.ContinueAutosavePark : OpenTpwText.ContinueAutomaticPark ) + ": " + automatic.DisplayName + " (" + Mode( automatic.Mode ) + ")" + CheatedSuffix( strings, automatic.Cheated ) + RequiresSuffix( strings, automatic.Requires ), () => Activate( () => actions.ConfirmExtensions( automatic.Path, change => { if ( !Current() ) return; PlayEnterPark( automatic.Mode == ParkGameMode.InstantAction ); actions.ContinueAutomatic!( change == null ? automatic : automatic with { Switch = change } ); } ) )) );
 		entries.Add( (() => strings.Extra( OpenTpwText.NewPark ), () => Activate( () => { Stack.Pop(); ShowGameMode(); } )) );
 		entries.Add( (() => strings.Extra( OpenTpwText.Back ), () => { if ( Current() ) Stack.Pop(); }) );
 		// [BIN:TPW-EXE:0x753f50 name dialog] the theme name is the caption in the table's title box (655,285)-(1315,365); the choices stack as full-width text buttons on the rows of the table's two toggles (764,405)-(1206,476) and (764,498)-(1206,569), 93 units apart, widened to the window since this dialog has no tick or X

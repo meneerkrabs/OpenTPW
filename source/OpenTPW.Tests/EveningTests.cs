@@ -15,7 +15,7 @@ namespace OpenTPW.Tests;
 
 /// <summary>
 /// [EXT:evening] The evening and night extension (docs/EVENING.md): the time-of-day curves, the play-time clock, the options value and its file, the lamp table, the lamps' resolution against
-/// a model, the uniform and shader layout, the extension's registration and the guarantee that none of it touches the simulation. No GPU; the tests that need the game's data are
+/// a model, the uniform and shader layout, the extension's registration and the guarantee that the cycle touches no simulation (the torches are tested in EveningTorchTests). No GPU; the tests that need the game's data are
 /// inconclusive without OPENTPW_GAME_PATH, and everything else runs on the repository's own files.
 /// </summary>
 [TestClass]
@@ -23,7 +23,7 @@ namespace OpenTPW.Tests;
 public class EveningTests
 {
 	[TestMethod]
-	public void ThePerfHookSwitchesOnlyTheEveningExtensionAndKeepsTheRestOfTheSession()
+	public void ThePerfHookTurnsTheLookOffForTheRunAndNeverChangesTheSessionsModSet()
 	{
 		// a session with non-default choices: smarter guests on, restored advice off
 		var session = ModSet.Resolve( Array.Empty<DiscoveredMod>(), new ModSettings { Enabled = new Dictionary<string, bool>
@@ -35,43 +35,46 @@ public class EveningTests
 		{
 			using ( OpenTpwExtensions.Use( session ) )
 			{
+				Assert.IsTrue( Level.EveningOn, "on by default" );
 				Assert.IsTrue( Level.PerfEvening( "off" ) );
-				Assert.IsFalse( FeatureGates.Evening );
-				foreach ( var extension in OfficialExtensions.All.Where( extension => extension != OfficialExtensions.Evening ) )
-					Assert.AreEqual( session.IsEnabled( extension.Id ), OpenTpwExtensions.IsEnabled( extension ), $"{extension.Id} is untouched" );
-				CollectionAssert.AreEqual( session.Order.Where( id => id != OfficialExtensions.Evening.Id ).ToArray(), OpenTpwExtensions.Active.Order.ToArray() );
-				Assert.AreSame( session.Mods, OpenTpwExtensions.Active.Mods, "the session's mods are kept" );
-				Assert.AreSame( session.Refused, OpenTpwExtensions.Active.Refused, "and its refusals" );
-				Assert.AreEqual( session.Digest, OpenTpwExtensions.Active.Digest );
+				Assert.IsFalse( Level.EveningOn, "the cycle and the lamps are skipped" );
+				Assert.IsTrue( FeatureGates.Evening, "but the extension stays on: it changes the simulation (its torches), so the run's set never changes" );
+				Assert.AreSame( session, OpenTpwExtensions.Active, "the session's set, its mods, refusals and order, untouched" );
 				Assert.IsNull( Level.EveningPaceOverride, "off clears the held look" );
 				Assert.IsTrue( Level.PerfEvening( "night" ) );
-				Assert.IsTrue( FeatureGates.Evening );
+				Assert.IsTrue( Level.EveningOn );
 				Assert.AreEqual( EveningPace.AlwaysNight, Level.EveningPaceOverride );
-				CollectionAssert.AreEqual( session.Order.ToArray(), OpenTpwExtensions.Active.Order.ToArray(), "back on: the same set, in Resolve's order" );
-				CollectionAssert.AreEqual( session.SimulationMods.ToArray(), OpenTpwExtensions.Active.SimulationMods.ToArray(), "the simulation set never changes" );
-				var before = OpenTpwExtensions.Active;
+				Assert.IsTrue( Level.PerfEvening( "off" ) && Level.PerfEvening( "on" ) );
+				Assert.IsTrue( Level.EveningOn );
+				Assert.IsNull( Level.EveningPaceOverride, "on clears the held look too" );
+				Assert.AreSame( session, OpenTpwExtensions.Active );
 				Assert.IsFalse( Level.PerfEvening( "noon" ), "an unknown mode is refused" );
-				Assert.AreSame( before, OpenTpwExtensions.Active, "and changes nothing" );
+				Assert.IsTrue( Level.EveningOn, "and changes nothing" );
 			}
+			using ( OpenTpwExtensions.Use( Set( false ) ) )
+				Assert.IsFalse( Level.EveningOn, "the extension off: nothing to show" );
 		}
 		finally
 		{
 			Level.EveningPaceOverride = saved;
+			Level.EveningLookOff = false;
 		}
 	}
 
 	[TestMethod]
-	public void OnlyAPresentationExtensionCanBeSwitchedForARun()
+	public void OnlyAPresentationExtensionCanBeSwitchedForARunAndTheEveningExtensionNoLongerIsOne()
 	{
 		var set = ModSet.Defaults( OfficialExtensions.All );
+		var advice = OfficialExtensions.RestoredAdvice;
 		Assert.ThrowsException<ArgumentException>( () => set.WithPresentationExtension( OfficialExtensions.SmarterGuests, true ) );
-		Assert.AreSame( set, set.WithPresentationExtension( OfficialExtensions.Evening, set.IsEnabled( OfficialExtensions.Evening.Id ) ), "no change, the same set" );
+		Assert.ThrowsException<ArgumentException>( () => set.WithPresentationExtension( OfficialExtensions.Evening, false ), "the torches make the evening extension a simulation extension (used only while a park holds one)" );
+		Assert.AreSame( set, set.WithPresentationExtension( advice, set.IsEnabled( advice.Id ) ), "no change, the same set" );
 		Assert.ThrowsException<ArgumentException>( () => set.WithPresentationExtension( new OpenTpwExtension( "test.unknown", "Unknown", new ModVersion( 1, 0, 0 ), false, false ), true ), "not an extension of this set" );
-		var off = set.WithPresentationExtension( OfficialExtensions.Evening, false );
-		Assert.IsFalse( off.IsEnabled( OfficialExtensions.Evening.Id ) );
-		Assert.IsFalse( off.Extensions.Single( item => item.Extension == OfficialExtensions.Evening ).Enabled, "the resolved extension row follows" );
+		var off = set.WithPresentationExtension( advice, false );
+		Assert.IsFalse( off.IsEnabled( advice.Id ) );
+		Assert.IsFalse( off.Extensions.Single( item => item.Extension == advice ).Enabled, "the resolved extension row follows" );
 		CollectionAssert.AreEqual( set.SimulationMods.ToArray(), off.SimulationMods.ToArray() );
-		CollectionAssert.AreEqual( set.Order.ToArray(), off.WithPresentationExtension( OfficialExtensions.Evening, true ).Order.ToArray(), "on again takes Resolve's place" );
+		CollectionAssert.AreEqual( set.Order.ToArray(), off.WithPresentationExtension( advice, true ).Order.ToArray(), "on again takes Resolve's place" );
 	}
 
 	internal static ModSet Set( bool evening ) => ModSet.Resolve( Array.Empty<DiscoveredMod>(),
@@ -395,9 +398,10 @@ public class EveningTests
 		var evening = OfficialExtensions.Evening;
 		Assert.AreEqual( "opentpw.evening", evening.Id );
 		Assert.IsTrue( evening.DefaultEnabled, "on by default: the user decided on 2026-10-18 after the tuning captures" );
-		Assert.IsFalse( evening.AffectsSimulation );
+		Assert.IsTrue( evening.AffectsSimulation, "its torches are objects with a price (user-approved 2026-10-19, part of the evening extension)" );
+		Assert.IsTrue( ParkResumeMods.UsedOnlyExtensionIds.Contains( evening.Id ), "but a save records it only while the park holds a torch" );
 		Assert.IsTrue( evening.PlayerSelectable );
-		Assert.AreEqual( new ModVersion( 1, 0, 0 ), evening.Version );
+		Assert.AreEqual( new ModVersion( 1, 1, 0 ), evening.Version, "1.1.0: the first version a save can record (the torches)" );
 		Assert.AreSame( evening, OfficialExtensions.Find( "opentpw.evening" ) );
 		CollectionAssert.Contains( OfficialExtensions.All.ToArray(), evening );
 		Assert.IsTrue( ModSet.Defaults( OfficialExtensions.All ).IsEnabled( evening.Id ) );
@@ -409,12 +413,18 @@ public class EveningTests
 	}
 
 	[TestMethod]
-	public void TheExtensionIsNeverRecordedInParkSavesWhetherOnOrOff()
+	public void TheExtensionIsRecordedInAParkSaveOnlyWhileTheParkHoldsATorch()
 	{
-		Assert.IsNull( ParkResumeMods.Capture( Set( true ) ), "presentation only: a save records no mod for it" );
+		Assert.IsNull( ParkResumeMods.Capture( Set( true ) ), "a park without a torch records no mod for it, as before the torches" );
+		Assert.IsNull( ParkResumeMods.Capture( Set( true ), ParkResumeMods.InUse( null ) ) );
 		Assert.IsNull( ParkResumeMods.Capture( Set( false ) ) );
+		var record = ParkResumeMods.Capture( Set( true ), ParkResumeMods.InUse( null, evening: true ) )!.Single();
+		Assert.AreEqual( (OfficialExtensions.Evening.Id, "1.1.0", ModSet.NoFilesSha256), (record.Id, record.Version, record.ContentSha256) );
+		Assert.IsNull( ParkResumeMods.Capture( Set( false ), ParkResumeMods.InUse( null, evening: true ) ), "an extension that is off records nothing" );
 		ParkResumeMods.Require( null, Set( true ) );
 		ParkResumeMods.Require( null, Set( false ) );
+		ParkResumeMods.Require( new[] { record }, Set( true ) );
+		StringAssert.Contains( Assert.ThrowsException<InvalidDataException>( () => ParkResumeMods.Require( new[] { record }, Set( false ) ) ).Message, "needs opentpw.evening 1.1.0" );
 	}
 
 	[TestMethod]
@@ -439,7 +449,7 @@ public class EveningTests
 		} );
 		stack.Push( screen );
 		var rows = ((UiScrollList)screen.Find( "extensions" )!).Rows();
-		CollectionAssert.Contains( rows.ToArray(), Text( OpenTpwText.ExtensionEveningName ) + "  1.0.0" );
+		CollectionAssert.Contains( rows.ToArray(), Text( OpenTpwText.ExtensionEveningName ) + "  1.1.0" );
 		stack.Clear();
 	}
 
@@ -758,7 +768,8 @@ public class EveningTests
 			var table = Shipped();
 			var catalogs = ObjectCatalog.Themes.Select( theme => ObjectCatalog.Load( theme ) ).ToList();
 			var checkedLights = 0;
-			foreach ( var rule in table.Rules.Where( candidate => candidate.PoolsExtra == null ) )
+			// the pools extension's rows and the evening extension's own torches (EveningTorchTests) are not original objects
+			foreach ( var rule in table.Rules.Where( candidate => candidate.PoolsExtra == null && candidate.Mod == null ) )
 			{
 				var matches = catalogs.SelectMany( catalog => catalog.Entries ).Where( rule.Matches ).ToList();
 				Assert.IsTrue( matches.Count > 0, $"a row for {rule.Theme}/{rule.Category}/{rule.Archive} matches an original object" );

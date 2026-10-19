@@ -51,7 +51,7 @@ public sealed class ParkLayout
 				}
 				ImGui.SameLine();
 				if ( ImGui.Button( "Remove ride" ) )
-					level.RemoveRide();
+					level.Commands.Issue( new RemovePrototypeCommand() );
 			}
 			buildPanel.Draw();
 			ImGui.Separator();

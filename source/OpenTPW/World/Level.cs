@@ -986,31 +986,6 @@ public partial class Level : IDisposable
 			Camera.Update();
 	}
 
-	internal enum WorldClickAction { None, PlacePrototype, UseTool }
-
-	/// <summary>World input stays suspended in ride and walking views, including tools armed through the HUD.</summary>
-	internal static WorldClickAction WorldClick( bool riding, bool leftDown, bool previousLeftDown, bool mouseCaptured, bool placing ) =>
-		riding || !leftDown || previousLeftDown || mouseCaptured ? WorldClickAction.None
-			: placing ? WorldClickAction.PlacePrototype : WorldClickAction.UseTool;
-
-	/// <param name="modifierMask">The modifier mask held at the click (<see cref="Input.ModifierMask"/>: Shift 3, Ctrl 0xc, Alt 0x30); exactly Ctrl keeps the build tool armed after a placement.</param>
-	internal void UpdateWorldInput( bool leftDown, bool mouseCaptured, Vector2 mousePosition, Vector2 viewportSize, int modifierMask = 0 )
-	{
-		clickModifierMask = modifierMask;
-		switch ( WorldClick( RideView != null || FreeWalk != null, leftDown, wasMouseDown, mouseCaptured, IsPlacing ) )
-		{
-			case WorldClickAction.PlacePrototype:
-				if ( TryGetPlacementPosition( mousePosition, viewportSize, out var position ) )
-					PlaceRide( position );
-				break;
-			case WorldClickAction.UseTool:
-				HandleObjectClick( mousePosition, viewportSize );
-				break;
-		}
-		// Track the button in both cameras: a held click must not build when the player leaves a ride.
-		wasMouseDown = leftDown;
-	}
-
 	public bool PlaceRide( Vector3 position )
 	{
 		if ( IsReadOnlyVisit )

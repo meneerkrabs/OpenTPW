@@ -45,6 +45,17 @@ public class SaveGuestBodyTests
 		Assert.IsFalse( Decode( new SaveTestPayloads.GuestFields() ).InQueueChain, "a fresh guest has no links and no queue position" );
 	}
 
+	/// <summary>In state 14 the queue-position byte is the sideshow-win flag the state's entry drew (0x501EF8 → 0x4E2670); elsewhere it is a position.</summary>
+	[TestMethod]
+	public void TheQueuePositionByteIsTheSideshowOutcomeInState14()
+	{
+		Assert.AreEqual( true, Decode( new SaveTestPayloads.GuestFields { QueuePos = 1, State = 14, MajorDest = 15 } ).SideshowWon );
+		Assert.AreEqual( false, Decode( new SaveTestPayloads.GuestFields { QueuePos = 0, State = 14, MajorDest = 15 } ).SideshowWon );
+		var standing = Decode( new SaveTestPayloads.GuestFields { QueuePos = 1, State = 11, MajorDest = 15 } );
+		Assert.IsNull( standing.SideshowWon, "in state 11 the byte is the queue position" );
+		Assert.AreEqual( (byte)1, standing.QueuePos );
+	}
+
 	/// <summary>The event ring (thought object +4, 32 slots of type and value words; AddEvent 0x50C100 writes slot head and advances with &amp; 0x1F).</summary>
 	[TestMethod]
 	public void TheEventRingDecodesIntoTypedSlotsNewestFirst()

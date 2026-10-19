@@ -68,6 +68,45 @@ internal sealed class SignRelief
 	// [BIN:TPW-EXE:0x005EB8A0 relief pixel] n = (dx, dy, 1) with dx = (int * p0) * 0.003921568859368563f; the scale is 1 / sqrt((dx² + dy²) - -1.0) stored as a float and multiplied back into dx and dy (each stored as a float), nz the stored scale; diffuse dot = (nx*lx + ny*ly) + nz*lz and specular dot = (nx*hX + ny*hY) + nz*hZ, each stored as a float; the strip bytes become floats byte * 0.003921568859368563f; the base vector is float(unit * p2), a diffuse dot above 0 adds float(float(dot * p3) * unit) as float(sum), a specular dot above 0 adds float(pow(dot, p5) * p4) the same way; each channel is float(sum * 255f) clamped by 0x5EBE50 (NaN takes the lower bound) and truncated by _ftol
 	public (byte R, byte G, byte B) Shade( int differenceX, int differenceY, byte strip1, byte strip2, byte strip3 )
 	{
+		// the normal's terms depend on the two differences only and the base terms on one strip byte each: a sign's pixels repeat a few of them,
+		// so each is computed once per effect (the same operations in the same order; at another precision control nothing is reused)
+		var reuse = X87Precision.Bits == precision;
+		if ( !reuse || !normals.TryGetValue( (differenceX, differenceY), out var normal ) )
+		{
+			normal = Normal( differenceX, differenceY );
+			if ( reuse )
+				normals[(differenceX, differenceY)] = normal;
+		}
+		var (unit0, sum0) = Unit( strip1, reuse );
+		var (unit1, sum1) = Unit( strip2, reuse );
+		var (unit2, sum2) = Unit( strip3, reuse );
+		if ( normal.DiffuseDot.IsPositive )
+		{
+			var diffuse = normal.DiffuseDot * diffuseCoefficient;
+			sum0 = ((diffuse * unit0).AsFloat() + sum0).AsFloat();
+			sum1 = ((diffuse * unit1).AsFloat() + sum1).AsFloat();
+			sum2 = ((diffuse * unit2).AsFloat() + sum2).AsFloat();
+		}
+		if ( normal.SpecularDot.IsPositive )
+		{
+			var specular = normal.Specular;
+			sum0 = (specular + sum0).AsFloat();
+			sum1 = (specular + sum1).AsFloat();
+			sum2 = (specular + sum2).AsFloat();
+		}
+		return (Channel( sum0 ), Channel( sum1 ), Channel( sum2 ));
+	}
+
+	private readonly int precision = X87Precision.Bits;
+	private readonly Dictionary<(int X, int Y), NormalTerms> normals = new();
+	private readonly (Ext Unit, Ext Base)[] units = new (Ext, Ext)[256];
+	private readonly bool[] unitKnown = new bool[256];
+
+	/// <summary>The terms of a pixel that come from its normal: the diffuse and specular dots and the specular addition (when the specular dot is above 0).</summary>
+	private readonly record struct NormalTerms( Ext DiffuseDot, Ext SpecularDot, Ext Specular );
+
+	private NormalTerms Normal( int differenceX, int differenceY )
+	{
 		var dx = Ext.FromInt( differenceX ) * normalScale * Inverse255;
 		var dy = Ext.FromInt( differenceY ) * normalScale * Inverse255;
 		var scale = (Ext.One / Ext.Sqrt( (dx * dx + dy * dy) + Ext.One )).AsFloat();
@@ -76,27 +115,23 @@ internal sealed class SignRelief
 		var nz = scale;
 		var diffuseDot = ((nx * lx + ny * ly) + nz * lz).AsFloat();
 		var specularDot = ((nx * halfX + ny * halfY) + nz * halfZ).AsFloat();
-		var unit0 = (Ext.FromInt( strip1 ) * Inverse255).AsFloat();
-		var unit1 = (Ext.FromInt( strip2 ) * Inverse255).AsFloat();
-		var unit2 = (Ext.FromInt( strip3 ) * Inverse255).AsFloat();
-		var sum0 = (unit0 * baseCoefficient).AsFloat();
-		var sum1 = (unit1 * baseCoefficient).AsFloat();
-		var sum2 = (unit2 * baseCoefficient).AsFloat();
-		if ( diffuseDot.IsPositive )
+		var specular = specularDot.IsPositive ? (Ext.Pow( specularDot, exponent ) * whiteCoefficient).AsFloat() : Ext.Zero;
+		return new NormalTerms( diffuseDot, specularDot, specular );
+	}
+
+	/// <summary>A strip byte as a unit value (byte * 1/255, stored as a float) and its base term (unit * p2, stored as a float).</summary>
+	private (Ext Unit, Ext Base) Unit( byte strip, bool reuse )
+	{
+		if ( reuse && unitKnown[strip] )
+			return units[strip];
+		var unit = (Ext.FromInt( strip ) * Inverse255).AsFloat();
+		var terms = (unit, (unit * baseCoefficient).AsFloat());
+		if ( reuse )
 		{
-			var diffuse = diffuseDot * diffuseCoefficient;
-			sum0 = ((diffuse * unit0).AsFloat() + sum0).AsFloat();
-			sum1 = ((diffuse * unit1).AsFloat() + sum1).AsFloat();
-			sum2 = ((diffuse * unit2).AsFloat() + sum2).AsFloat();
+			units[strip] = terms;
+			unitKnown[strip] = true;
 		}
-		if ( specularDot.IsPositive )
-		{
-			var specular = (Ext.Pow( specularDot, exponent ) * whiteCoefficient).AsFloat();
-			sum0 = (specular + sum0).AsFloat();
-			sum1 = (specular + sum1).AsFloat();
-			sum2 = (specular + sum2).AsFloat();
-		}
-		return (Channel( sum0 ), Channel( sum1 ), Channel( sum2 ));
+		return terms;
 	}
 
 	private static byte Channel( Ext sum )

@@ -91,9 +91,9 @@ public static class SignEffectShape
 	/// <c>exp(-0.5 (dx² + dy²) / sigma²) / (2 pi sigma²)</c> divided by the sum of all taps; row-major.
 	/// </summary>
 	// [BIN:TPW-EXE:0x005EB3E0 shape kernel] n = 3 - _ftol(sigma * -2.5) (0x702F38); tap (a, b) = 2^(log2(e) * ((a - c)² + (b - c)²) * -0.5 / sigma²) / (sigma² * 6.2831853) stored as double, then every tap divided by their sum; c = (n - 1) / 2
-	public static double[] Kernel( float sigma, out int size ) => Array.ConvertAll( KernelTaps( sigma, out size ), tap => tap.ToDouble() );
+	public static double[] Kernel( float sigma, out int size ) => Array.ConvertAll( KernelTaps( sigma, out size ).Taps, tap => tap.ToDouble() );
 
-	private static Ext[] KernelTaps( float sigma, out int size )
+	private static ScaledTaps KernelTaps( float sigma, out int size )
 	{
 		var s = (double)sigma;
 		if ( !double.IsFinite( s ) || Math.Abs( s ) > MaximumSigma )
@@ -102,15 +102,25 @@ public static class SignEffectShape
 		if ( size <= 0 )
 		{
 			size = 0;
-			return Array.Empty<Ext>();
+			return new ScaledTaps( Array.Empty<Ext>() );
 		}
 		var centre = (size - 1) / 2;
 		var distances = new int[size * size];
 		for ( var a = 0; a < size; a++ )
 		for ( var b = 0; b < size; b++ )
 			distances[a * size + b] = (a - centre) * (a - centre) + (b - centre) * (b - centre);
-		return Ext.GaussianTaps( sigma, distances );
+		// the taps depend on the sigma and the precision only: made once per pair
+		var key = (BitConverter.SingleToInt32Bits( sigma ), X87Precision.Bits);
+		lock ( kernelCache )
+			if ( kernelCache.TryGetValue( key, out var cached ) )
+				return cached;
+		var taps = new ScaledTaps( Ext.GaussianTaps( sigma, distances ) );
+		lock ( kernelCache )
+			kernelCache[key] = taps;
+		return taps;
 	}
+
+	private static readonly Dictionary<(int Sigma, int Precision), ScaledTaps> kernelCache = new();
 
 	/// <summary>
 	/// Blurs <paramref name="shape"/> in place where <paramref name="coverage"/> is not 0, from the shape as it was before the
@@ -137,7 +147,13 @@ public static class SignEffectShape
 				// rows after the current one are live: they differ from the original only on the last row, where the clamp lands on the row being written
 				var source = ky > 0 ? shape : original;
 				for ( var kx = -centre; kx <= rowsBelow; kx++ )
-					sum += Ext.FromInt( source[row * width + Math.Clamp( x + kx, 0, width - 1 )] ) * kernel[tap++];
+				{
+					// a zero byte adds a zero product, which leaves a sum that is already rounded as it was
+					var value = source[row * width + Math.Clamp( x + kx, 0, width - 1 )];
+					if ( value != 0 )
+						sum += kernel.For( value )[tap];
+					tap++;
+				}
 			}
 			shape[y * width + x] = unchecked( (byte)sum.Truncate() );
 		}

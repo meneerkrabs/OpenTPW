@@ -67,7 +67,8 @@ internal sealed partial class GameFlow
 				using ( LoadProfile.Measure( "restart-capture" ) )
 					snapshot = RestartCaptureOverride != null ? RestartCaptureOverride( level ) :
 						level.CaptureResumeSnapshot( Advisor?.IsAttached == true ? Advisor : null, level.LevelName, verifiedAssets );
-				restartWrite = new RestartSnapshotWrite( RestartSnapshotPath( level ), snapshot );
+				using ( LoadProfile.Measure( "restart-begin" ) )
+					restartWrite = new RestartSnapshotWrite( RestartSnapshotPath( level ), snapshot );
 				if ( !overFrames ) FlushRestartSnapshot();
 			}
 			Log.Trace( $"Restart snapshot of the {level.LevelName} park captured in {System.Diagnostics.Stopwatch.GetElapsedTime( started ).TotalMilliseconds:0} ms." );

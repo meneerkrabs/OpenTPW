@@ -528,7 +528,8 @@ public partial class Renderer : IDisplaySettings
 		// Render level to MSAA buffer
 		CommandList.PushDebugGroup( "Main Render" );
 		var renderStart = FrameStats.Begin();
-		OnRender?.Invoke();
+		using ( FrameMarks.Measure( "draw.world" ) )
+			OnRender?.Invoke();
 		FrameStats.EndRender( renderStart );
 		CommandList.PopDebugGroup();
 
@@ -549,8 +550,11 @@ public partial class Renderer : IDisplaySettings
 
 		var fence = frameFences[SlotOf( FrameNumber )];
 		var submitStart = FrameStats.Begin();
-		Device.SubmitCommands( CommandList, fence );
-		Target.Present();
+		using ( FrameMarks.Measure( "draw.submit" ) )
+		{
+			Device.SubmitCommands( CommandList, fence );
+			Target.Present();
+		}
 		FrameStats.EndSubmit( submitStart );
 		FrameStats?.FrameEnded();
 		AdvanceFrame();
@@ -579,7 +583,8 @@ public partial class Renderer : IDisplaySettings
 		CommandList.Draw( 3, 1, 0, 0 );
 		OverlayFramebuffer = target;
 		var overlayStart = FrameStats.Begin();
-		OnOverlayRender?.Invoke();
+		using ( FrameMarks.Measure( "draw.overlay" ) )
+			OnOverlayRender?.Invoke();
 		FrameStats.EndOverlay( overlayStart );
 		CommandList.PopDebugGroup();
 	}
@@ -635,21 +640,28 @@ public partial class Renderer : IDisplaySettings
 
 		try
 		{
-			PreRender();
-			PreUpdate?.Invoke();
+			using ( FrameMarks.Measure( "frame.pre" ) )
+			{
+				PreRender();
+				PreUpdate?.Invoke();
+			}
 			var updateStart = FrameStats.Begin();
-			OnUpdate?.Invoke();
+			using ( FrameMarks.Measure( "frame.update" ) )
+				OnUpdate?.Invoke();
 			FrameStats.EndUpdate( updateStart );
-			PostRender();
+			using ( FrameMarks.Measure( "frame.draw" ) )
+				PostRender();
 		}
 		finally
 		{
 			// A failing update/draw must not send subsequent uploads to an abandoned frame.
 			IsFrameRecording = false;
 		}
-		PostUpdate?.Invoke();
-
-		ProcessDeletionQueue();
+		using ( FrameMarks.Measure( "frame.post" ) )
+		{
+			PostUpdate?.Invoke();
+			ProcessDeletionQueue();
+		}
 		return true;
 	}
 

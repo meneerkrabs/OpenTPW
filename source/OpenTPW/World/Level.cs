@@ -993,16 +993,22 @@ public partial class Level : IDisposable
 		}
 		UpdateWorldInput( Input.Mouse.Left, UiCapturesMouse || ImGuiNET.ImGui.GetIO().WantCaptureMouse,
 			Input.Mouse.Position, new Vector2( Screen.Size.X, Screen.Size.Y ), Input.ModifierMaskDown );
-		RefreshRenderedCells();
-		RefreshPools();
-		UpdateEvening();
-		UpdateSnow();
+		using ( FrameMarks.Measure( "level.cells" ) )
+			RefreshRenderedCells();
+		using ( FrameMarks.Measure( "level.pools" ) )
+			RefreshPools();
+		using ( FrameMarks.Measure( "level.evening" ) )
+			UpdateEvening();
+		using ( FrameMarks.Measure( "level.snow" ) )
+			UpdateSnow();
 		SceneClock.Advance( Time.Delta * SimulationTimeScale );
 		var simulationStart = FrameStats.Begin();
-		AdvanceSimulation( Time.Delta * SimulationTimeScale );
+		using ( FrameMarks.Measure( "level.simulation" ) )
+			AdvanceSimulation( Time.Delta * SimulationTimeScale );
 		FrameStats.EndSimulation( simulationStart );
-		foreach ( var entity in Entity.All.ToArray() )
-			entity.Update();
+		using ( FrameMarks.Measure( "level.entities" ) )
+			foreach ( var entity in Entity.All.ToArray() )
+				entity.Update();
 		// Riding follows the frame just simulated; park-camera input is consumed only by the earlier update.
 		if ( RideView != null && ReferenceEquals( Camera.Mode, RideView ) )
 			Camera.Update();

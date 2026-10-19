@@ -615,7 +615,8 @@ internal sealed partial class GameFlow : IDisposable
 
 		if ( Level != null && Hud != null )
 		{
-			Level.UiCapturesMouse = Hud.Update( Context, input ) || parkBuild != null;
+			using ( FrameMarks.Measure( "park.hud" ) )
+				Level.UiCapturesMouse = Hud.Update( Context, input ) || parkBuild != null;
 			// The camera reads the keyboard itself: while the next park is built it stays where it is, as under a modal window.
 			if ( parkBuild != null && Camera.Mode is ParkCameraMode parkCamera )
 				parkCamera.ModalOpen = true;
@@ -625,13 +626,19 @@ internal sealed partial class GameFlow : IDisposable
 			// The pause menu, the map window and a texture-pack download stop the park; the speed setting is kept (ParkHud.TimeScaleFor).
 			// The park being left waits too while the next one is built.
 			Level.SimulationTimeScale = parkBuild != null ? 0 : Hud.SimulationTimeScale;
-			Level.Update();
+			using ( FrameMarks.Measure( "park.level" ) )
+				Level.Update();
 			presence?.Update( Time.Delta );
-			Advisor?.Update( Hud.Paused, parkPaused: Level.SimulationTimeScale <= 0 );
-			UpdateAutosave( Level, Hud );
+			using ( FrameMarks.Measure( "park.advisor" ) )
+				Advisor?.Update( Hud.Paused, parkPaused: Level.SimulationTimeScale <= 0 );
+			using ( FrameMarks.Measure( "park.autosave" ) )
+				UpdateAutosave( Level, Hud );
 			var parkLost = Level.Park?.Economy.IsBankrupt == true;
-			GameAudio.Update( Level.Guests?.GetStatistics().InPark, parkLost );
-			ReverbSelector.Update( Level.RideView?.Ride );
+			using ( FrameMarks.Measure( "park.audio" ) )
+			{
+				GameAudio.Update( Level.Guests?.GetStatistics().InPark, parkLost );
+				ReverbSelector.Update( Level.RideView?.Ride );
+			}
 			// The game timer the steps follow stands still while the park is paused, as the advisor's clock does.
 			var crowdLevel = Level;
 			GameAudio.UpdateCrowd( Hud.Paused ? 0 : Time.Delta * 1000.0, () => GuestsNearCamera( crowdLevel ), parkLost );

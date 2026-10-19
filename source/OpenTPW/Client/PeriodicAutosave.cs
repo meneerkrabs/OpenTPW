@@ -52,6 +52,8 @@ internal sealed class PeriodicAutosave
 	private Exception? writeError;
 	private SlicedJsonSerializer? slicing;
 	private string? slicingPath;
+	/// <summary>Makes the next play-time count find the autosave due (the browser harness measures its capture in a real frame).</summary>
+	internal void MakeDue() => wait = 0;
 	/// <summary>The time one frame spends serializing.</summary>
 	internal TimeSpan SliceBudget { get; set; } = TimeSpan.FromMilliseconds( 2 );
 	/// <summary>Frames the last serialization took.</summary>

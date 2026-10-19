@@ -31,9 +31,11 @@ internal sealed class RestartSnapshotWrite
 		this.persist = persist ?? ParkResumeSaveFile.SaveBytes;
 		this.cooperative = cooperative ?? OperatingSystem.IsBrowser();
 		this.background = background ?? (work => Task.Run( work ));
-		serializer = ParkResumeSaveFile.BeginSlicedSerialize( snapshot );
+		using ( LoadProfile.Measure( "restart-json-begin" ) )
+			serializer = ParkResumeSaveFile.BeginSlicedSerialize( snapshot );
 		// Use the existing flushed temporary-file/rename protocol for the marker too.
-		this.persist( MarkerPath( path ), Encoding.UTF8.GetBytes( "\"pending\"" ) );
+		using ( LoadProfile.Measure( "restart-marker" ) )
+			this.persist( MarkerPath( path ), Encoding.UTF8.GetBytes( "\"pending\"" ) );
 	}
 
 	/// <summary>One soft-budget slice; an unlimited budget also waits for an already-started desktop write (restart/shutdown).</summary>

@@ -306,6 +306,7 @@ public static partial class Program
 	{
 		if ( renderer == null )
 			return false;
+		FrameMarks.BeginFrame();
 		return renderer.Frame();
 	}
 }

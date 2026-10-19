@@ -30,25 +30,42 @@ public partial class Level
 			// [BIN:TPW-EXE:0x0051643B lost park turn] a lost park (world state 4) still runs the turn: its counter, the gate retry, the destroys and the world tail with the arrival update (0x4D7B20); only the thing walk is skipped
 			var sweeping = guestsTurn && economyTurn;
 			if ( sweeping )
+			{
+				using var sweepMark = FrameMarks.Measure( "sim.sweptTurn" );
 				SimulateSweptTurn( deltaTime, substep );
+			}
 			else
 			{
 				if ( !lost )
+				{
+					using var guestsMark = FrameMarks.Measure( "sim.guests" );
 					Guests?.Tick( deltaTime );
-				Objects.Simulate( deltaTime, substep, PlacedRide );
+				}
+				using ( FrameMarks.Measure( "sim.objects" ) )
+					Objects.Simulate( deltaTime, substep, PlacedRide );
 				// The non-pooled host keeps its existing guest-before-object order; only pooled turn sweeps provide native scheduler-before-guest ordering.
 				if ( substep.TourDue )
 					Guests?.ScheduleBodySprites();
-				Park?.FixedTick();
+				using ( FrameMarks.Measure( "sim.economy" ) )
+					Park?.FixedTick();
 				if ( !lost )
+				{
+					using var weatherMark = FrameMarks.Measure( "sim.weather" );
 					AdvanceWeather();
+				}
 				// The deferred gate-close retry follows the thing sweep (Mac 0x10536c).
 				Gate?.Tick();
 			}
 			if ( !lost )
+			{
+				using var staffMark = FrameMarks.Measure( "sim.staff" );
 				StaffWorld?.Tick( deltaTime );
-			UpdateTrackRendering( deltaTime );
-			UpdateTourRendering( deltaTime );
+			}
+			using ( FrameMarks.Measure( "sim.rendering" ) )
+			{
+				UpdateTrackRendering( deltaTime );
+				UpdateTourRendering( deltaTime );
+			}
 			// [BIN:TPW-EXE:0x00516641 turn's end] the park turn ends by freeing the things that asked for their destruction, last request first (0x00516310, 0x00516200); a swept turn has done it already, and a park whose
 			// things share the level's pool frees them only at a turn: the substeps between turns leave the requests waiting
 			if ( !sweeping && (!pooled || guestsTurn || economyTurn) )

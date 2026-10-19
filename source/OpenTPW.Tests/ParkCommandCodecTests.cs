@@ -29,6 +29,7 @@ public class ParkCommandCodecTests
 		(new EditQueueCommand( 3, 3 ), "020f000606"),
 		(new PlacePrototypeCommand( 1.5f, -2.25f, 0f ), "0214000000c03f000010c000000000"),
 		(new RemovePrototypeCommand(), "021500"),
+		(new SetPrototypeRunningCommand( true ), "02160001"),
 		// the park's settings (C1 part 2)
 		(new SetParkOpenCommand( true ), "021e0001"),
 		(new SetEntranceFeeCommand( 35 ) { Player = 1 }, "021f0246"),
@@ -115,7 +116,7 @@ public class ParkCommandCodecTests
 		{
 			"020000", // kind 0
 			"02ff00", // kind 255
-			"02160000", // a kind no command has
+			"02170000", // a kind no command has
 			"02028000", // a padded player varint
 			"020201", // a negative player
 			"0202000608" + "", // valid, the control
@@ -192,6 +193,7 @@ public class ParkCommandCodecTests
 		}
 		Assert.ThrowsException<InvalidDataException>( () => new ParkCommandReader( new byte[] { 0x80, 0x00 } ).Long() );
 		Assert.ThrowsException<InvalidDataException>( () => new ParkCommandReader( Enumerable.Repeat( (byte)0xff, 11 ).ToArray() ).Long() );
+		Assert.ThrowsException<InvalidDataException>( () => new ParkCommandReader( Enumerable.Repeat( (byte)0xff, 9 ).Append( (byte)0x03 ).ToArray() ).Long(), "a tenth byte with bits past 64" );
 		Assert.ThrowsException<InvalidDataException>( () => new ParkCommandReader( new byte[] { 0x80, 0x80, 0x80, 0x80, 0x10 } ).Int(), "a value past 32 bits" );
 	}
 

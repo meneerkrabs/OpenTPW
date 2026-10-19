@@ -944,7 +944,7 @@ internal static class Game
 			}
 		}
 		// [EXT:debug-hud] smoke-only (Debug builds): once the park's HUD is up, runs a list of interface actions for captures (--capture-interface):
-		// staff and buy open those windows, msg:<text> posts a message, msgaction:<kind>+<kind> posts one with action buttons, pause and confirm open those menus, select:<n> selects the n-th placed object, waves opens the first wave machine's settings window (waves:select only selects it), help:<text> forces the popup help line, models:<a+b+c> draws ui.wad models.
+		// staff and buy open those windows, buyitem:<info id>[,<yaw degrees>] opens the buy window on that object type's row (and holds its preview at that turn), msg:<text> posts a message, msgaction:<kind>+<kind> posts one with action buttons, pause and confirm open those menus, select:<n> selects the n-th placed object, waves opens the first wave machine's settings window (waves:select only selects it), help:<text> forces the popup help line, models:<a+b+c> draws ui.wad models.
 		var debugHud = GetOption( args, "--debug-hud", "a '|' separated action list for interface captures" );
 		if ( debugHud != null )
 		{
@@ -965,6 +965,12 @@ internal static class Game
 						case "infoseries": hud.SetParkInfoSeries( (OpenTPW.Hud.ParkInfoSeries)0x1f, false ); hud.SetParkInfoSeries( (OpenTPW.Hud.ParkInfoSeries)int.Parse( argument ), true ); break;
 						case "infoperiod": hud.SetParkInfoPeriod( int.Parse( argument ) ); break;
 						case "buy": hud.OpenBuyWindow(); break;
+						case "buyitem":
+							var buyParts = argument.Split( ',' );
+							float? buyYaw = buyParts.Length > 1 ? float.Parse( buyParts[1], System.Globalization.CultureInfo.InvariantCulture ) : null;
+							if ( !hud.DebugBuyItem( int.Parse( buyParts[0], System.Globalization.CultureInfo.InvariantCulture ), buyYaw ) )
+								Log.Warning( $"--debug-hud: no buy row for object type {buyParts[0]}." );
+							break;
 						// [EXT:debug-evening] the buy window on one of its tabs (rides, sideshows, shops, features), optionally with one row selected and scrolled into view ("buytab:features:Tiki Torch"), for captures such as the torches in the features
 						case "buytab":
 						{

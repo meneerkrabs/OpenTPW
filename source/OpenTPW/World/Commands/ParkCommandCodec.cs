@@ -204,6 +204,9 @@ public sealed class ParkCommandReader
 			if ( shift > 63 )
 				throw new InvalidDataException( "A varint is longer than 64 bits." );
 			var next = Byte();
+			// the tenth byte holds only bit 63: anything above it would be shifted out, a second byte form of the same value
+			if ( shift == 63 && next > 1 )
+				throw new InvalidDataException( "A varint is longer than 64 bits." );
 			zigzag |= (ulong)(next & 0x7F) << shift;
 			if ( (next & 0x80) == 0 )
 			{

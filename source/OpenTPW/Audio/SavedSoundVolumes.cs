@@ -50,7 +50,7 @@ public sealed class SavedSoundVolumes
 	/// the save was applied over: from then on the options drive that channel, as a slider or toggle's setter replaces the volume shadow in the original. A channel the
 	/// save switched off stays silent until OK or leaving the park: the slider and the toggle only set the volume, never the on-flag.
 	/// </summary>
-	// [BIN:TPW-EXE:0x4A2BF0 slider setters] message 0x801 of the effects, music and speech sliders calls only that channel's volume setter (0x51BBA0, 0x51BB80, 0x51BBC0), so the other channels keep the saved shadows
+	// [BIN:TPW-EXE:0x4A2BF0 slider setters] the sliders' messages 0x800 and 0x801 call only that channel's volume setter (0x51BBA0, 0x51BB80, 0x51BBC0), so the other channels keep the saved shadows; the 0x801 handler skips the setter while the channel's option on byte is clear (0x4A2D6B, 0x4A2DAF, 0x4A2DF3)
 	// [BIN:TPW-EXE:0x4A2E90 volume rows] a slider value (message 0x800) and a toggle (0x4A3480: the profile's on byte, then 0x4A2E90) store the profile value and call the volume setter with it, or with 0 while the profile's on byte is clear; the on-flag setters 0x51BC00/0x51BBE0/0x51BC20 are called only by the applier 0x423DD0, so a saved on-flag of 0 keeps the mixer group off (0x6B9900) until then
 	public float? Gain( AudioChannel channel, GameOptions options )
 	{

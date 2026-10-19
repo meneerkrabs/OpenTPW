@@ -31,7 +31,7 @@ public sealed record ParkCommandLogFile( string Theme, ulong Seed, long StartTic
 		writer.UInt64( StartHash );
 		var commands = 0;
 		var checkpoints = 0;
-		// commands and checkpoints merged by tick; a command before tick N comes before the checkpoint after N ticks
+		// commands and checkpoints merged by tick; the checkpoint after N ticks is taken before a command logged at N (which applies before tick N runs), so it comes first
 		while ( commands < Entries.Count || checkpoints < Checkpoints.Count )
 		{
 			if ( checkpoints >= Checkpoints.Count || (commands < Entries.Count && Entries[commands].Tick < Checkpoints[checkpoints].Ticks) )

@@ -259,7 +259,7 @@ arrival timer's start turn and group flag instead of its countdown, version 11 t
 | `thing_table_digest` | guests in id order (every field the tick reads, including navigation and timers), including each guest's walk speed and steering state and its queue fields, the queue edge detectors, then attractions with queue cells, the queue list, admission state and counters, riders, limbo and bounce lists (each bounce slot with its deadline and start) | yes (order is id order, not the original's newest first) |
 | (cell map) | `ParkCellMap` of the guest grid: every non-empty cell in row order with its type, flags, placement counter, links and queue link (paths built by the path tool included) | yes (extra, after the thing table) |
 | `script_table_digest` | the script world's scheduler clock, then every live script in id order: id, name, parent, state, PC, flags, call stack, variables, clock origin, clock, wake time, timers, WAIT4ANIM deadline, LOOPANIM and TRIGWAITANIM tokens, instruction and slice counts, seed and RNG call count; for a root object script also its animator channels (AnimID, variant, loop, speed, start, ended, tick, deferred clip) and clock | yes |
-| (coasters) | `RideScriptWorld.Coasters`: the coaster generator, then every coaster in creation order: station ends, closed and complete flags, nodes (cell, height, t, pylon kind, stack index, station end, flags, bank, loop rotate, the exact position of the middle station node), controller state (initialised, the state 1/2/4/8, ride mode, speed setting, seats, speed cap, the lead car coordinate a reopened track keeps for the next train placement, net track money, time, braking start, station window, self-intersection count), samples (flags, height, roll, speed), rating, winch sections, trains (position, speed, train flags, boarding span, the riders of the lap and the guests seated at the station per car), the admission ring and the riders waiting to leave | yes (extra, after the script digest) |
+| (coasters) | `RideScriptWorld.Coasters`: the coaster generator, then every coaster in creation order: station ends, closed and complete flags, nodes (cell, height, t, pylon kind, stack index, station end, flags, bank, loop rotate, the exact position of the middle station node), controller state (initialised, the state 1/2/4/8, ride mode, speed setting, seats, speed cap, the lead car coordinate a reopened track keeps for the next train placement, net track money, time, whether the motion tick has run, braking start, station window, self-intersection count), samples (flags, height, roll, speed), rating, winch sections, trains (position, speed, train flags, boarding span, the riders of the lap and the guests seated at the station per car), the admission ring and the riders waiting to leave | yes (extra, after the script digest) |
 | (tracks) | the track layer after the cell map (every track cell: type, mask, link, flags, piece, parent, rotation, overlap, segment) and `RideScriptWorld.Bumpers`: the cosmetic LCG, then every controller (type, laps, performance, phase, state, validity, tick count and clock, station, sections, waiting and leaving guests, every boat's slot, flags, position, velocity, heading, spin, target buoy, laps and rider count) — both only while a track or controller exists, so every park without one keeps its earlier digests and the schema stays 14 (TRACKS.md); bumper cars add the chase target and the drawn heading and yaw to their boats' fields (the same conditional extension: only while a controller exists, no schema bump, as for the water and kart fields); boats draw their aiming jitter from the script stream (`RideScriptWorld.NextWorldDraw`, DET-013) | yes (extra, after the coasters) |
 | `economy_digest` | the park save's economy part as canonical JSON (sorted keys) | yes |
 | `input_log_cursor` | no input log | **missing** |
@@ -899,3 +899,36 @@ The canopy size, the pull cap, the renderer's per-frame work and the measurement
 | `RainMoodWithUmbrellasFixedRunHash` | `0xADEE2FA6AFC2ACE3` | `0xADEE2FA6AFC2ACE3` |
 
 `RainMoodFixedRunHash` (`0x3697B9094432D152`) and every pin with no brolly shop are unchanged: the kid score is read only for a brolly shop.
+
+## Original coaster import
+
+The original coaster import (October 19, `OriginalCoasterImport`, docs/TPWS-PAYLOAD.md "The import") moves no pin and
+adds none. Every original save in the corpus holds an empty Coasters block, so no park takes the new path. The import
+draws nothing from `World.Random` or the coaster generator (`CoasterWorld.Random`). It rates the track at the
+constructor's speed setting and keeps the saved trains. The first frame after the load then runs the controller's first
+motion tick, which takes no time. After the station script's first slice, the slice tail passes the script's speed word
+(`0x5517D7` → `0x43B2B0`, `OriginalObjectEffects.AfterSlice`), which re-rates the track and lays the trains out again when
+it differs from 60.
+
+The PR first pinned a fixed run of an imported synthetic coaster (`ImportedCoasterPin`, `0x0B6F305C6589A229`). That pin
+held on macOS arm64 only: the Linux and Windows x64 runners compute `0x43373F0B3F89E03C` for the same run. The coaster's
+curve, rating and collision pass call libm functions (`Atan2`, `Sin`, `Cos`, `Acos`), whose results are not bit-equal
+across platforms, so a coaster's content is not a cross-platform digest. That is why the earlier coaster rounds below
+assert relations and pin no coaster content. The pin was removed; `AnImportedSyntheticCoasterRunsDeterministically` now
+asserts that the run repeats and that it ends where the built coaster ends after the same first frame and speed word.
+
+The same review ported the controller's first motion tick (`CoasterRide.MotionClockStarted`, controller flag `0x10`):
+tp.exe's motion tick `0x43CE20` takes the animation clock's time since its last run as the frame time, and the tick that
+finds flag `0x10` clear sets the flag and that clock word first, so it takes no time (`0x43CE85`). That is the first tick
+of every new or loaded controller. Every train makes one partial hop of no length: it stays where it stands, while its
+speed is capped, decays by 0.95 below 2.0 and stops below 0.01. Before, OpenTPW's first tick moved the trains by a whole
+step. The coaster hash content therefore changes twice: it holds the flag, and a coaster's trains run one step behind from
+their first tick on (any park with a running coaster hashes differently). No pinned golden or resume hash in the suite
+depends on a coaster's content, so no pin moved; `CoasterTests.ADepartureFromRestDoesNotReachTheMinimumSpeedInOneFrame`
+now measures the second tick. The park-resume save carries the flag (optional; a save from before it counts the flag set
+on a track that runs), so a resumed coaster continues as the one that kept running.
+
+The speed setter now runs after every slice of a station's root script that holds its coaster, as the original's loop
+does. For a coaster OpenTPW built, the speed word equals the setting after `COAST 8`, so nothing changes until an upgrade
+changes the script's speed word (RIDES-033); then the coaster takes the new speed after the script's next slice, as in
+the original, where OpenTPW before kept the old one. No pinned run upgrades a coaster.

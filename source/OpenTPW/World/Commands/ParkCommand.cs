@@ -32,6 +32,8 @@ public enum ParkCommandKind : byte
 	PlacePrototype = 20,
 	/// <summary>Removes the developer prototype ride (<see cref="RemovePrototypeCommand"/>).</summary>
 	RemovePrototype = 21,
+	/// <summary>Starts or stops the developer prototype ride (<see cref="SetPrototypeRunningCommand"/>).</summary>
+	SetPrototypeRunning = 22,
 	// the park's settings (C1 part 2, ParkSettingCommands.cs)
 	/// <summary>Opens or closes the park's door (<see cref="SetParkOpenCommand"/>).</summary>
 	SetParkOpen = 30,

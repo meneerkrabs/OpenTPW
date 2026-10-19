@@ -78,6 +78,7 @@ public abstract record ParkSettingCommand : ParkCommand
 		ParkCommandKind.RenamePark => new RenameParkCommand( reader.String(), reader.String() ),
 		ParkCommandKind.SetGameSpeed => new SetGameSpeedCommand( (GameSpeed)reader.Int() ),
 		ParkCommandKind.QueueCheat => new QueueCheatCommand( (CheatKind)reader.Int(), reader.Int() ),
+		ParkCommandKind.SetPrototypeRunning => new SetPrototypeRunningCommand( reader.Bool() ),
 		_ => null
 	};
 }
@@ -554,5 +555,23 @@ public sealed record QueueCheatCommand( CheatKind Cheat, int Argument = 0 ) : Pa
 		if ( level.Park?.Economy is not { } economy )
 			return NoEconomy;
 		return economy.QueueCheat( new CheatAction( Cheat, Argument ) ) ? ParkCommandResult.Ok() : ParkCommandResult.Rejected( $"The park cannot take the {Cheat} cheat now." );
+	}
+}
+
+/// <summary>[EXT:developer-prototype] Starts or stops the developer prototype ride (the developer panel's open and close button); its own seam, without the reopening guard, as before.</summary>
+public sealed record SetPrototypeRunningCommand( bool Running ) : ParkSettingCommand
+{
+	public override ParkCommandKind Kind => ParkCommandKind.SetPrototypeRunning;
+	internal override void WriteFields( ParkCommandWriter writer ) => writer.Bool( Running );
+
+	internal override ParkCommandResult Execute( Level level )
+	{
+		if ( level.PlacedRide is not { IsDeleted: false } ride )
+			return ParkCommandResult.Rejected( "No prototype ride is placed." );
+		if ( Running )
+			ride.Start();
+		else
+			ride.Stop();
+		return ParkCommandResult.Ok();
 	}
 }

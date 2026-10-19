@@ -55,6 +55,10 @@ public partial class Level : IDisposable
 	/// <summary>Park name on the gate sign of an imported original level (TrueType sign text demo).</summary>
 	public OriginalGateSign? GateSign { get; private set; }
 
+	/// <summary>The info id of the level's park gate (<c>global.sam</c> <c>ParkName.GateObjectId</c>), or null when the level names none; known whether or not its sign could be drawn.</summary>
+	// [DATA:levels/<level>/global.sam:ParkName.GateObjectId]
+	public int? GateInfoId => int.TryParse( Global?["ParkName.GateObjectId"], out var id ) ? id : null;
+
 	/// <summary>The park's name: the gate's two sign lines (saved with the park), or null for a level without a gate sign.</summary>
 	public ParkNameLines? ParkName { get; private set; }
 
@@ -73,6 +77,14 @@ public partial class Level : IDisposable
 	}
 
 	/// <summary>
+	/// The failures that leave a park without its gate sign (the gate then shows its plain board) instead of stopping it: data that cannot be read or decoded in this
+	/// file system. A disposed object or a null argument is a bug and is not hidden, although its type derives from one of these.
+	/// </summary>
+	internal static bool IsGateSignFailure( Exception exception ) =>
+		exception is not (ObjectDisposedException or ArgumentNullException)
+		&& exception is IOException or InvalidDataException or KeyNotFoundException or ArgumentException or NotSupportedException or InvalidOperationException or UnauthorizedAccessException;
+
+	/// <summary>
 	/// The park name and the gate sign of an original level: a resumed park keeps its saved lines, which the sign draws as the
 	/// original's rebuild after loading does (0x468500); a new park takes the gate's default lines.
 	/// </summary>
@@ -82,9 +94,10 @@ public partial class Level : IDisposable
 		if ( OriginalPark != null )
 		{
 			try { GateSign = OriginalGateSign.TryCreate( OriginalPark, Global, savedName, reloaded: savedName != null ); }
-			catch ( Exception exception ) when ( exception is IOException or InvalidDataException or KeyNotFoundException )
+			// the sign is decoration: a font or board that cannot be read in this file system must not stop the park, and the gate then shows its plain board (SignSlotPlan)
+			catch ( Exception exception ) when ( IsGateSignFailure( exception ) )
 			{
-				Log.Warning( $"Gate sign: {exception.Message}" );
+				Log.Warning( $"Gate sign: {exception.GetType().Name}: {exception.Message}" );
 			}
 		}
 		ParkName = savedName ?? GateSign?.Lines;
@@ -531,6 +544,7 @@ public partial class Level : IDisposable
 			ImportOriginalGuests();
 			ImportOriginalRideSettings();
 			ImportOriginalScripts();
+			ImportOriginalCoasters();
 			StartPlacedParticles();
 			ImportOriginalParticles();
 			if ( resumeState == null && !GameEditions.IsThemeParkInc && OriginalPark.Save != null && visitLayout == null )

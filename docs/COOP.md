@@ -152,9 +152,9 @@ guarded list.
 | --- | --- | --- |
 | Objects | place (the build tool, the Move tool, track add-ons), the remove tool, remove at a cell, sell from the object and attraction windows, the Move tool's pick-up, the bulldozer (area clear: one command per cleared cell) | converted |
 | Paths and queues | path and queue lines, undo inside the tool, path and queue cell removal, Backspace over a cell, the queue edit click | converted |
-| Developer prototype | place and remove the Totem | converted |
+| Developer prototype | place and remove the Totem, its start and stop | converted |
 | Settings | park open and close, ride open and close, the ride window's settings, entrance fee, prices, prizes and shop settings, loans, dismissal, training budget, research, challenges, maintenance, ride upgrades, park and staff rename, patrol areas, cheats, speed | converted |
-| Tools | land, pools and waves, slides and pool attractions, kart and water tracks, coasters, staff hiring and placement | part 3 |
+| Tools | land, pools and waves, slides and pool attractions, pool bridges, kart and water tracks, coasters and the coaster panel's edits, staff hiring and placement | part 3 |
 
 ## Known limits of C1
 

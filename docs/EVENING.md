@@ -174,7 +174,7 @@ configuration) larger than any of these differences and is not used. Per-draw co
 ### The lamp cache and the browser (N2)
 
 The lamp source used to walk every placed object on every night frame and look each one up in a table of resolved lamps. It now keeps a list of the lamp-bearing objects and rebuilds it only when the park's object set changes (`ParkObjects.Version` counts placements and
-removals; a host without a counter is caught by the list length), so a night frame touches only the objects that carry lamps, in the same order as before, and allocates nothing. `EveningTests` cover that the cache follows placement and removal, resolves each object once per
+removals; a host without a counter is caught only when the list's length changes, so the level passes the counter; by day the cache is dropped, so it never keeps removed objects alive), so a night frame touches only the objects that carry lamps, in the same order as before, and allocates nothing. `EveningTests` cover that the cache follows placement and removal, resolves each object once per
 rebuild and allocates nothing while the set is unchanged. (An `OriginalObject` needs a graphics device, so those tests use stub objects and a resolver seam; the lights themselves are unchanged code, and the with-data runs below show the same number of lights in view before and after.)
 
 Cost of the lamp source per night frame, measured with a temporary stopwatch around `AppendPointLights` (not committed) in the jungle park, Release, `--evening-pace night`, six runs of 3000 frames per cell on a machine with a load average of 20 to 40 (so read the ratios, not the

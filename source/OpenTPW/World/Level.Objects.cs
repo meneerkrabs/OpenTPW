@@ -552,10 +552,11 @@ public partial class Level
 			RotatedSlots = PoolSwimSlots.Rotated,
 			DepthPulledSlots = PoolSwimSlots.FeetAnchored.Contains,
 			SlotChooser = guest => guest.InPoolActivity
-				? (guests.PoolActivityOf( guest )?.SpriteSlot( guest ) ?? PoolSwimSlots.TreadWater, (int)(guests.TimeSeconds * 6) + guest.Id)
+				? ActivitySlot( guests.PoolActivityOf( guest )?.SpriteSlot( guest ) ?? PoolSwimSlots.TreadWater, guests.TimeSeconds, guest.Id )
 				: (PoolSwimming.SpriteSlot( guest.SwimStroke ), (int)(guests.TimeSeconds * (guest.SwimStroke == 2 ? 3 : 6)) + guest.Id),
 			// [EXT:pools-slides] a rider lying in a flume is drawn pulled towards the camera by the trough's depth, so the curved bed does not cut its lower body (presentation only)
-			DepthPullChooser = guest => PoolSlideActivity.DepthPull( guests, guest ),
+			// [EXT:pools-extras] and a guest lying on a lounger, so the lounger's raised head end and the front of its seat do not hide it (presentation only)
+			DepthPullChooser = guest => PoolSlideActivity.DepthPull( guests, guest ) + LoungerActivity.DepthPull( guests, guest ),
 			FeetChooser = guest =>
 			{
 				var feet = GuestRenderer.CellToEngine( park.Heightfield, guest.DrawX, guest.DrawY );
@@ -573,6 +574,9 @@ public partial class Level
 			}
 		};
 	}
+
+	/// <summary>[EXT:pools-render] A pool activity's slot and its animation step (<see cref="PoolSwimSlots.ActivityStep"/>); presentation only.</summary>
+	private static (int Slot, int Step) ActivitySlot( int slot, double seconds, int guestId ) => (slot, PoolSwimSlots.ActivityStep( slot, seconds, guestId ));
 
 	/// <summary>The path tiles' texture rolls (presentation; <see cref="PathTileVariants"/>).</summary>
 	public PathTileVariants PathVariants { get; } = new();

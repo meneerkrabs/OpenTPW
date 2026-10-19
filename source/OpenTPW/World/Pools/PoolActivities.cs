@@ -180,6 +180,19 @@ public static class PoolSwimSlots
 	/// land (<see cref="GuestRenderer.DepthPulledSlots"/>), so their feet show as the kids' do. The water-line and torso slots keep their depth, so a swimmer is not drawn over a pool's near wall.
 	/// </summary>
 	public static readonly IReadOnlySet<int> FeetAnchored = new HashSet<int> { Stand, Walk, Shower };
+
+	/// <summary>
+	/// [EXT:pools-render] Seconds each frame of the lying slot is held. Its two frames are two resting poses (the arms at the sides, the hands behind the head; tools/blender/opentpw_pool_poses.py,
+	/// <c>lying</c>), not the steps of a cycle: played at the activities' six frames a second the guest flapped its arms the whole lie.
+	/// </summary>
+	public const double LyingPoseSeconds = 7.0;
+
+	/// <summary>
+	/// [EXT:pools-render] The animation step the swimmers' renderer draws for a guest in a pool activity at <paramref name="seconds"/> of simulation time (presentation only): six frames a second, offset
+	/// by the guest's id; the lying slot changes its pose only every <see cref="LyingPoseSeconds"/> (offset per guest, so two guests on one lounger do not change together).
+	/// </summary>
+	public static int ActivityStep( int slot, double seconds, int guestId ) =>
+		slot == Lying ? (int)(seconds / LyingPoseSeconds + guestId * 0.37) : (int)(seconds * 6) + guestId;
 }
 
 /// <summary>The activities a park's swim sessions offer (<see cref="GuestSimulation.PoolActivities"/>); Level registers these while the pools extension is on.</summary>

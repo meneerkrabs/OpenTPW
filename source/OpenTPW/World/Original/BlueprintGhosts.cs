@@ -55,8 +55,9 @@ public static class BlueprintGhosts
 	/// direction, and the outside cell of the entrance <c>m_enter</c> and of the exit <c>m_exit</c> carry their arrows.
 	/// </summary>
 	// [BIN:TPW-EXE:0x0052967E footprint front row] the placement 0x528A70 in ghost mode stamps each cell of the stamping loop with SetCell(0x104, 0) (0x52969C) and the cells of row 0 (outer loop counter 0, shape cell row v = 0) with SetCell(0x104, 6 = m_front, build direction byte) (0x529688); the entrance and exit cells take the same path (the exit's ghost branch 0x529313 jumps to 0x529688)
-	// [BIN:TPW-EXE:0x0052989A entrance outside cell] with the queue option (0x52FAB0 true, default) the entrance's outside cell gets SetCell(0x104, 3 = m_enter, opposite of the rotated entrance direction) and the exit's outside cell SetCell(0x118, 4 = m_exit, opposite of the rotated exit direction) (0x529B1C); the exit marker is only laid after an entrance (0x529722, 0x5299D2)
-	// [APPROX:BLUEPRINT-003] the original validates each cell (and each outside cell) on its own and a refused cell turns red; OpenTPW has one verdict for the whole placement, so a refused placement is all red without arrows, and the footprint cells of types 1 ('@'), 11 ('+'), 16 ('#') and 23 (track ends), which the original stamps through their own branches, are drawn blue
+	// [BIN:TPW-EXE:0x0052989A entrance outside cell] with the queue option (0x52FAB0 true, default) the entrance's outside cell gets SetCell(0x104, 3 = m_enter, opposite of the rotated entrance direction) and the exit's outside cell SetCell(0x118, 4 = m_exit, opposite of the rotated exit direction) (0x529B1C); the entrance-side bounds check and stamp precede the exit-side work (0x529744, 0x5299E2); either access-presence flag enters this sequence (0x529711..0x529722), so absent/multiple access points need separate treatment
+	// [BIN:TPW-EXE:0x0052390E object hover preflight] the hover calls placement 0x528A70 with commit=0/check=1, sets force-red 0x81B604 when it returns 0 (0x52391A), then calls it with commit=0/check=0 (0x5239EE); SetCell reads that flag before its per-cell validator (0x53319A), so a refused ordinary footprint is all red, including a NoModify refusal that does not set the validator's sticky flag
+	// [APPROX:BLUEPRINT-003] this context-free fallback omits refused outside access markers; the grid-aware overload below supplies the proven ordinary paired-access case only. Other access selection/bounds cases and special footprint symbols '@', 'Q', '+', '#' and track ends keep simplified markers (docs/reverse/BLUEPRINT.md).
 	public static (List<(int X, int Y, BlueprintMarker Marker)> Cells, Dictionary<(int X, int Y), byte> Directions) Footprint(
 		ObjectShape shape, int anchorX, int anchorY, int rotation, bool allowed )
 	{
@@ -86,5 +87,40 @@ public static class BlueprintGhosts
 			directions[(points[exit].OutsideX, points[exit].OutsideY)] = Opposite( Rotate( build, access[exit].Direction ) );
 		}
 		return (cells, directions);
+	}
+
+	/// <summary>
+	/// The ordinary queued object's preview with the host grid and placement result available. A known placement refusal also
+	/// marks the outside access cells red for a supported, in-bounds footprint with exactly one entrance and one exit.
+	/// The caller's colour decision stays separate: a money-only or other global refusal keeps the legacy footprint-only fallback.
+	/// </summary>
+	// [BIN:TPW-EXE:0x00529744 refused access bounds] after the footprint ghost, a failed entrance-side bounds check returns before both outside stamps; a failed exit-side check (0x5299E2) returns after the entrance stamp. With the queue option on, the ghost stamps 0x104/3 at 0x52989A and 0x118/4 at 0x529B1C, both forced red by 0x81B604 after a failed preflight. The host grid's dimensions replace the original 128-cell bound (0x4D8300).
+	// [APPROX:BLUEPRINT-003] only ordinary type-4/9/10 footprints with one entrance and one exit use this refused-access branch; special symbols, missing/multiple access points, partially off-grid footprints, no-queue mode and unproven refusal reasons retain the existing fallback rather than guess their stamping rules
+	public static (List<(int X, int Y, BlueprintMarker Marker)> Cells, Dictionary<(int X, int Y), byte> Directions) Footprint(
+		ObjectShape shape, int anchorX, int anchorY, int rotation, bool allowed, IParkGrid grid, bool hasQueue,
+		OriginalPlacementResult placementResult )
+	{
+		var preview = Footprint( shape, anchorX, anchorY, rotation, allowed );
+		if ( allowed || !hasQueue || placementResult is not (OriginalPlacementResult.Path or OriginalPlacementResult.Occupied
+			or OriginalPlacementResult.NotOwned or OriginalPlacementResult.AccessBlocked or OriginalPlacementResult.OutsideTerrain) )
+			return preview;
+		if ( shape.Cells.Any( cell => cell.CellType is not (ObjectShapeSymbols.TypeFree or ObjectShapeSymbols.TypeOccupied
+			or ObjectShapeSymbols.TypeEntrance or ObjectShapeSymbols.TypeExit) ) )
+			return preview;
+		var points = ObjectFootprint.GetAccessPoints( shape, anchorX, anchorY, rotation ).ToArray();
+		if ( points.Count( point => point.Kind == ObjectCellKind.Entrance ) != 1 || points.Count( point => point.Kind == ObjectCellKind.Exit ) != 1 )
+			return preview;
+		bool InBounds( int x, int y ) => x >= 0 && y >= 0 && x < grid.Width && y < grid.Height;
+		var bounds = ObjectFootprint.GetBounds( shape, anchorX, anchorY, rotation );
+		if ( !InBounds( bounds.MinX, bounds.MinY ) || !InBounds( bounds.MaxX, bounds.MaxY ) )
+			return preview;
+		var entrance = points.Single( point => point.Kind == ObjectCellKind.Entrance );
+		if ( !InBounds( entrance.OutsideX, entrance.OutsideY ) )
+			return preview;
+		preview.Cells.Add( (entrance.OutsideX, entrance.OutsideY, BlueprintMarker.Refused) );
+		var exit = points.Single( point => point.Kind == ObjectCellKind.Exit );
+		if ( InBounds( exit.OutsideX, exit.OutsideY ) )
+			preview.Cells.Add( (exit.OutsideX, exit.OutsideY, BlueprintMarker.Refused) );
+		return preview;
 	}
 }

@@ -566,7 +566,10 @@ public partial class Level
 				// [EXT:pools-activities] an activity may raise or set the drawn height (a board, a slide, a ladder between the water and the deck); presentation only
 				var region = guests.SwimRoomOf( guest ) is { } room ? guests.SwimRegionOf( room ) : null;
 				var water = region != null && PoolRenderer?.WaterLevelAt( region.Access.X, region.Access.Y ) is { } surface ? surface : height;
-				return new System.Numerics.Vector3( feet.X, feet.Y, guests.PoolFeetHeight( guest, new PoolFeetHeights( height, water, feet.Z ) ) );
+				// [EXT:pools-waves] the water level rides the swell the surface is drawn with, so a swimmer in an activity floats on it too (the deck and a slide's track do not move)
+				var rise = PoolWaterEffects.SurfaceRise( guests, guest, region, PoolSites );
+				var inWater = guests.Grid.Cells.RawTypeAt( guest.CellX, guest.CellY ) == ParkCellTypes.PoolWater;
+				return new System.Numerics.Vector3( feet.X, feet.Y, guests.PoolFeetHeight( guest, new PoolFeetHeights( inWater ? height + rise : height, water + rise, feet.Z ) ) );
 			}
 		};
 	}
@@ -1334,6 +1337,15 @@ public partial class Level
 		var anchor = GetCentredAnchor( entry, x, y, rotation );
 		return Objects.Check( entry, anchor.X, anchor.Y, rotation, out plan );
 	}
+
+	/// <summary>
+	/// Pure object-preview presentation shared by both HUDs, using their already-computed placement and colour decisions.
+	/// Add-on mode keeps its legacy fallback; this neither revalidates placement nor checks or spends money.
+	/// </summary>
+	public (List<(int X, int Y, BlueprintMarker Marker)> Cells, Dictionary<(int X, int Y), byte> Directions) ObjectBlueprint(
+		ObjectCatalogEntry entry, int anchorX, int anchorY, int rotation, OriginalPlacementResult placementResult, bool allowed ) =>
+		BlueprintGhosts.Footprint( entry.Shape, anchorX, anchorY, rotation, allowed, Objects.Grid,
+			entry.HasQueue && !entry.IsTool && BuildAddOnRide == null && !TrackAddOns.IsAddOn( entry ), placementResult );
 
 	/// <summary><see cref="CheckObject(ObjectCatalogEntry, int, int, int)"/> for a site that demolishes nothing and clears no path (<see cref="ParkObjects.CheckFree"/>).</summary>
 	public OriginalPlacementResult CheckFreeObject( ObjectCatalogEntry entry, int x, int y, int rotation )

@@ -55,8 +55,13 @@ export async function listFiles(root) {
  */
 export async function startServer(webRoot, gameRoot, upstream = null) {
 	const log = [], marks = [];
+	// The upstream is the local OpenTPW.Server only: an http origin on a loopback address, fixed when the harness starts.
+	const upstreamOrigin = upstream == null ? null : loopbackOrigin(upstream);
 	const forward = (request, response, url) => {
-		const target = new URL(request.url, upstream);
+		// Only the path and query of the request reach the upstream; an absolute-form request target (http://other/...) cannot pick another host.
+		const target = new URL(url.pathname + url.search, upstreamOrigin);
+		if (target.origin !== upstreamOrigin)
+			return response.writeHead(400).end();
 		const entry = { path: url.pathname, method: request.method, conditional: Boolean(request.headers['if-none-match'] || request.headers['if-modified-since']), acceptEncoding: request.headers['accept-encoding'] ?? '', bytes: 0 };
 		log.push(entry);
 		const outgoing = httpRequest(target, { method: request.method, headers: { ...request.headers, host: target.host } }, incoming => {
@@ -106,6 +111,15 @@ export async function startServer(webRoot, gameRoot, upstream = null) {
 	});
 	await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
 	return { server, log, marks, origin: `http://127.0.0.1:${server.address().port}`, close: () => new Promise(resolve => server.close(resolve)) };
+}
+
+/** The origin of `value` if it is an http URL on a loopback address (127.0.0.0/8, ::1 or localhost); throws otherwise. */
+export function loopbackOrigin(value) {
+	const url = new URL(value);
+	const host = url.hostname.replace(/^\[|\]$/g, '');
+	if (url.protocol !== 'http:' || !(host === 'localhost' || host === '::1' || /^127(\.\d{1,3}){3}$/.test(host)))
+		throw new Error(`--upstream must be an http URL on a loopback address, not ${value}`);
+	return url.origin;
 }
 
 /** A minimal DevTools Protocol client over one browser WebSocket, with flattened page sessions. */

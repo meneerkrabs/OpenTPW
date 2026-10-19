@@ -108,6 +108,9 @@ internal static class AdvisorTables
 	/// <summary>The messages a global golden ticket moving to this park says (0xEA-0xED: coaster height, go-kart excitement, water length, big park); they belong to group 2.</summary>
 	public static readonly IReadOnlyList<int> AwardMovedMessages = new[] { 234, 235, 236, 237 };
 
+	/// <summary>Whether a posted message's group controls are read only when the settings file has them (the global ticket moves' and the ticket wins' group 2): a reduced file then leaves the message without a descriptor instead of failing.</summary>
+	public static bool GroupIsOptional( int messageId ) => AwardMovedMessages.Contains( messageId ) || AdvisorChallengeMessages.TicketWonMessages.Contains( messageId );
+
 	/// <summary>The advice of a condemned ride (0x102, from the ride's message type 8).</summary>
 	public const int RideCondemnedMessage = 258;
 
@@ -147,6 +150,8 @@ internal static class AdvisorTables
 		// [BIN:TPW-EXE:0x004D5270 global ticket moved] the four rows 0xEA-0xED share the callback 0x59E8B0, the word at +0x324 of the Advisor.sam object, AwardMoved.Score, which sits just before HelpMessage.Score at +0x328; AutomaticAdvisor.GlobalTicketMovedMessage posts them as a global ticket moves to this park
 		foreach ( var message in AwardMovedMessages )
 			rows.Add( (message, AwardMovedScoreKey, null) );
+		// the golden ticket wins, the first-ticket lines and the challenge offers, wins and losses (AdvisorChallengeMessages)
+		rows.AddRange( AdvisorChallengeMessages.EventScoreKeys );
 		return rows;
 	}
 
@@ -188,7 +193,7 @@ internal static class AdvisorTables
 		(243, "FoodPoorSatisfaction.ScorePerPoint", null), (244, "ShopsPoorSatisfaction.ScorePerPoint", null), (245, "RestaurantPoorSatisfaction.ScorePerPoint", null), (246, "DrinksPoorSatisfaction.ScorePerPoint", null), (247, "SideshowsPoorSatisfaction.ScorePerPoint", null),
 		(248, "FoodGreatValue.ScorePerPoint", null), (249, "ShopsGreatValue.ScorePerPoint", null), (250, "RestaurantGreatValue.ScorePerPoint", null), (251, "DrinksGreatValue.ScorePerPoint", null), (252, "SideshowsGreatValue.ScorePerPoint", null),
 		(253, "FoodGreatSatisfaction.ScorePerPoint", null), (254, "ShopsGreatSatisfaction.ScorePerPoint", null), (255, "RestaurantGreatSatisfaction.ScorePerPoint", null), (256, "DrinksGreatSatisfaction.ScorePerPoint", null), (257, "SideshowsGreatSatisfaction.ScorePerPoint", null),
-	}.Concat( AdvisorStaffCallbacks.ScoreKeys ).ToArray();
+	}.Concat( AdvisorStaffCallbacks.ScoreKeys ).Concat( AdvisorChallengeMessages.ScanScoreKeys ).ToArray();
 
 	private static IReadOnlyList<AdvisorMessageDefinition>? events;
 
@@ -286,7 +291,7 @@ internal sealed class AdvisorBalance
 		var groups = new Dictionary<int, (uint, bool, uint)>();
 		// the global-ticket messages' group is read when the file has it, like the unproduced messages' (the shipped file has it)
 		var scanned = AdvisorTables.ScanMessages.Select( message => message.MessageId ).ToHashSet();
-		foreach ( var group in AdvisorTables.AllMessages.Where( message => !AdvisorTables.AwardMovedMessages.Contains( message.MessageId ) && !scanned.Contains( message.MessageId ) ).Select( message => (int)message.Group ).Distinct() )
+		foreach ( var group in AdvisorTables.AllMessages.Where( message => !AdvisorTables.GroupIsOptional( message.MessageId ) && !scanned.Contains( message.MessageId ) ).Select( message => (int)message.Group ).Distinct() )
 		{
 			// [BIN:STP-PPC:0x10016F4C advisor balance] MessageGroups[g] fields at +36/+40/+44 + 12g
 			var prefix = $"MessageGroups[{group}].";
@@ -295,7 +300,7 @@ internal sealed class AdvisorBalance
 		}
 		// The groups only the unproduced messages use are read when the file has them (the shipped one has groups 0 to 5 and 9); without a group's controls
 		// the messages of that group have no descriptor.
-		foreach ( var group in AdvisorTables.UnproducedMessages.Concat( AdvisorTables.ScanMessages ).Concat( AdvisorTables.EventMessages.Where( message => AdvisorTables.AwardMovedMessages.Contains( message.MessageId ) ) ).Select( message => (int)message.Group ).Distinct().Where( group => !groups.ContainsKey( group ) ) )
+		foreach ( var group in AdvisorTables.UnproducedMessages.Concat( AdvisorTables.ScanMessages ).Concat( AdvisorTables.EventMessages.Where( message => AdvisorTables.GroupIsOptional( message.MessageId ) ) ).Select( message => (int)message.Group ).Distinct().Where( group => !groups.ContainsKey( group ) ) )
 		{
 			var prefix = $"MessageGroups[{group}].";
 			const int missing = int.MinValue;
@@ -398,7 +403,7 @@ internal sealed class AdvisorController
 	/// the queue's admission rules (tutorial option, once-only, slaps, duplicates, repeat interval) and to the descriptor's game-mode
 	/// selector. Returns null for a message the controller has no descriptor for, or one the game mode excludes.
 	/// </summary>
-	public AdvisorQueueAdmission? Advise( int messageId, uint liveGameTick, int gameType, bool tutorialEnabled )
+	public AdvisorQueueAdmission? Advise( int messageId, uint liveGameTick, int gameType, bool tutorialEnabled, int variant = -1 )
 	{
 		var definition = AdvisorTables.AllMessages.FirstOrDefault( message => message.MessageId == messageId );
 		if ( definition.ScoreKey != null && !Queue.HasDescriptor( messageId ) )
@@ -408,7 +413,7 @@ internal sealed class AdvisorController
 		}
 		if ( definition.ScoreKey == null || !AdvisorTables.GameModeAccepts( definition.GameMode, gameType ) )
 			return null;
-		return Queue.Enqueue( new AdvisorPendingAdvice( messageId, Balance.ScoreOf( messageId ) ), liveGameTick, tutorialEnabled );
+		return Queue.Enqueue( new AdvisorPendingAdvice( messageId, Balance.ScoreOf( messageId ), variant ), liveGameTick, tutorialEnabled );
 	}
 
 	/// <summary>

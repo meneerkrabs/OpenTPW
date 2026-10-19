@@ -233,13 +233,13 @@ public sealed class UiContext
 		return (layout.InkLeft, Math.Min( layout.InkTop, letters.Top ), layout.InkRight + extra, Math.Max( layout.InkBottom, letters.Bottom ) + extra);
 	}
 
-	/// <summary>Draws a model frame stretched so its bounds fill <paramref name="rect"/>.</summary>
+	/// <summary>Draws a model frame stretched so its selected-mesh fit bounds fill <paramref name="rect"/>.</summary>
 	public void DrawFrame( UiModelFrame frame, UiRect rect, RgbaByte? tint = null )
 	{
-		if ( frame.Width <= 0 || frame.Height <= 0 )
+		if ( !frame.TryGetFitBounds( out var fit ) )
 			return;
-		var scaleX = rect.Width / frame.Width;
-		var scaleY = rect.Height / frame.Height;
+		var scaleX = rect.Width / fit.Width;
+		var scaleY = rect.Height / fit.Height;
 		var color = tint ?? RgbaByte.White;
 		foreach ( var part in frame.Parts )
 		{
@@ -247,7 +247,7 @@ public sealed class UiContext
 			UiVertex Convert( int index )
 			{
 				var vertex = part.Vertices[index];
-				return new UiVertex( new NVector2( rect.X + (vertex.Position.X - frame.MinX) * scaleX, rect.Y + (vertex.Position.Y - frame.MinY) * scaleY ), vertex.TexCoords, color );
+				return new UiVertex( new NVector2( rect.X + (vertex.Position.X - fit.X) * scaleX, rect.Y + (vertex.Position.Y - fit.Y) * scaleY ), vertex.TexCoords, color );
 			}
 			for ( var index = 0; index + 2 < part.Indices.Count; index += 3 )
 				Batch.AddTriangle( texture, Convert( part.Indices[index] ), Convert( part.Indices[index + 1] ), Convert( part.Indices[index + 2] ) );
@@ -391,10 +391,10 @@ public sealed class UiModelImage : UiElement
 		if ( !CoversShape )
 			return base.CoversPoint( canvas, point );
 		var rect = ScreenRect( canvas );
-		if ( drawnShape is not { Width: > 0, Height: > 0 } shape || rect.Width <= 0 || rect.Height <= 0 )
+		if ( drawnShape is not { } shape || !shape.TryGetFitBounds( out var fit ) || rect.Width <= 0 || rect.Height <= 0 )
 			return false;
 		// the point in the model's own units, as DrawFrame maps the frame onto the box
-		var at = new NVector2( shape.MinX + (point.X - rect.X) * shape.Width / rect.Width, shape.MinY + (point.Y - rect.Y) * shape.Height / rect.Height );
+		var at = new NVector2( fit.X + (point.X - rect.X) * fit.Width / rect.Width, fit.Y + (point.Y - rect.Y) * fit.Height / rect.Height );
 		foreach ( var part in shape.Parts )
 		{
 			for ( var index = 0; index + 2 < part.Indices.Count; index += 3 )

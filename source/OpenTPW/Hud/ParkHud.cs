@@ -91,6 +91,7 @@ public sealed partial class ParkHud
 	public ParkHud( Level level, UiStringTable strings, IHudParkStatus status, IBuildCatalog catalog, HudHost host )
 	{
 		this.level = level;
+		rideStatic = new EyeModeStaticTransition( EyeCameraActive );
 		this.strings = strings;
 		this.host = host;
 		Status = status;
@@ -695,11 +696,12 @@ public sealed partial class ParkHud
 		if ( UpdateResearchFinale( context, input, mouseCaptured, keyboardCaptured, textCaptured ) )
 		{
 			// The full-screen owner consumes input, not the unscaled UI timer/delayed-release pumps.
+			rideStatic.SkipFrame(); // no camera observation or timestamp refresh while the finale owns this update
 			FinishChallengeMessageFrame();
 			return true;
 		}
 		var ridingAtStart = IsRiding;
-		SyncRideScreen( context.Delta );
+		SyncRideScreen();
 		HandleChatModeKey();
 		SyncChatMode();
 		var walkingAtStart = CamcorderArmed || level.FreeWalk != null;
@@ -911,7 +913,8 @@ public sealed partial class ParkHud
 		}
 		UpdateCursor( input, overUi || consumed, mouseCaptured == true );
 		Status.Update( context.Delta );
-		SyncRideScreen( 0 );
+		SyncRideScreen();
+		PrepareRideStatic( context ); // observe the final camera once, after this frame's callbacks and shortcuts
 		FinishChallengeMessageFrame();
 		return overUi || consumed || toolClick;
 	}

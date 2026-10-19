@@ -154,7 +154,7 @@ public sealed partial class GuestSimulation
 			// constructor 0x0051009F (0) and the reader 0x0050D150, so another saved value comes from a corrupt save and is reported like an out-of-range meter
 			if ( navigation.Mask != navMode )
 				adjusted.Add( $"{what} walk mask {navMode} imported as 0" );
-			// [BIN:TPW-EXE:0x004FA5F0 stranded mark on load] mStrandedTime (+0x198, read at 0x004F92F0) is compared with the route counter 0x007CDB98, which is not saved and restarts with the process: the load's re-route clears a mark above the counter, so a fresh load imports it as 0
+			// [BIN:TPW-EXE:0x004FA5F0 stranded mark on load] mStrandedTime (+0x198, read at 0x004F92F0) is compared with the route counter 0x007CDB98, which is not saved and restarts with the process (0x004D8C50 is its only reader and writer): the load's re-route clears a mark above the counter, so a fresh load imports it as 0; only a mark below the loading process's count of route requests (one set in the saving session's first requests) would be kept
 			guest.StrandedMark = 0;
 			if ( person.StrandedTime != 0 )
 				stranded.Add( $"guest {save.Id} saved stranded mark {person.StrandedTime} cleared as a fresh load clears it" );

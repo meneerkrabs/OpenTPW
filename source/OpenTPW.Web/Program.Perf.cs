@@ -363,13 +363,65 @@ public static partial class Program
 		return result.ToJsonString();
 	}
 
+	/// <summary>
+	/// The GPU bytes (RGBA8 with its mip chain) of the distinct textures in <see cref="Asset.All"/>, grouped like <see cref="PerfTextureGroups"/>, as JSON
+	/// <c>{ group: { count, megabytes } }</c>, largest first; the harness's memory scenarios read it.
+	/// </summary>
+	[JSExport]
+	public static string PerfTextureBytes()
+	{
+		var result = new JsonObject();
+		var seen = new HashSet<Veldrid.Texture>();
+		var groups = Asset.All.OfType<Texture>().Where( texture => texture.NativeTexture != null && seen.Add( texture.NativeTexture ) ).GroupBy( texture => string.IsNullOrEmpty( texture.Path ) ? "(no path)"
+			: string.Join( '/', texture.Path.Replace( '\\', '/' ).Split( '/', StringSplitOptions.RemoveEmptyEntries ).Take( 2 ) ) )
+			.Select( group => (group.Key, Count: group.Count(), Bytes: group.Sum( texture => (long)texture.Width * texture.Height * 4 * 4 / 3 ) ) ).OrderByDescending( group => group.Bytes );
+		foreach ( var group in groups )
+			result[group.Key] = new JsonObject { ["count"] = group.Count, ["megabytes"] = Math.Round( group.Bytes / 1048576d, 2 ) };
+		// the largest single textures with their size and where they came from (Origin needs PerfTrackTextureOrigins)
+		var largest = new JsonArray();
+		foreach ( var texture in Asset.All.OfType<Texture>().Where( texture => texture.NativeTexture != null ).DistinctBy( texture => texture.NativeTexture ).OrderByDescending( texture => (long)texture.Width * texture.Height ).Take( 12 ) )
+			largest.Add( $"{texture.Width}x{texture.Height} {(string.IsNullOrEmpty( texture.Path ) ? texture.Origin ?? "(no path)" : texture.Path)}" );
+		result["(largest)"] = largest;
+		return result.ToJsonString();
+	}
+
 	/// <summary>The static fields holding the most array bytes (<see cref="PerfReachability.BytesByStaticRoot"/>), as JSON.</summary>
 	[JSExport]
 	public static string PerfMemoryRoots()
 	{
 		var result = new JsonObject();
-		foreach ( var (root, bytes) in PerfReachability.BytesByStaticRoot() )
-			result[root] = root.StartsWith( "(objects" ) ? bytes : Math.Round( bytes / 1048576d, 1 );
+		try
+		{
+			foreach ( var (root, bytes) in PerfReachability.BytesByStaticRoot() )
+				result[root] = root.StartsWith( "(objects" ) ? bytes : Math.Round( bytes / 1048576d, 1 );
+		}
+		catch ( Exception exception )
+		{
+			// a diagnostic: say what went wrong rather than lose the other counters of the step
+			result["(error)"] = exception.ToString();
+		}
+		return result.ToJsonString();
+	}
+
+	/// <summary>The array bytes behind the assets in <see cref="Asset.All"/> by type (<see cref="PerfReachability.BytesByAssetType"/>), as JSON <c>{ type: { count, megabytes } }</c>.</summary>
+	[JSExport]
+	public static string PerfAssetBytes()
+	{
+		var result = new JsonObject();
+		try
+		{
+			foreach ( var (type, count, bytes) in PerfReachability.BytesByAssetType() )
+				result[type] = new JsonObject { ["count"] = count, ["megabytes"] = Math.Round( bytes / 1048576d, 2 ) };
+		}
+		catch ( Exception exception )
+		{
+			result["(error)"] = exception.ToString();
+		}
+		// the shaders by file: every material compiles its own copy, so a count that grows from park to park names the shader of what is not released
+		var shaders = new JsonObject();
+		foreach ( var group in Asset.All.OfType<Shader>().GroupBy( shader => System.IO.Path.GetFileName( shader.Path ) ).OrderByDescending( group => group.Count() ) )
+			shaders[group.Key] = group.Count();
+		result["(shaders by file)"] = shaders;
 		return result.ToJsonString();
 	}
 
@@ -410,8 +462,12 @@ public static partial class Program
 			["archiveBytes"] = archives,
 			["archiveMemberBytes"] = members,
 			["decodedSampleBytes"] = GameAudio.DecodedSampleBytes,
+			["gpuTextureBytes"] = Veldrid.Texture.LiveGpuBytes,
+			["gpuTextures"] = Veldrid.Texture.LiveGpuTextures,
 			["managedBytes"] = GC.GetTotalMemory( false ),
 			["heapBytes"] = info.HeapSizeBytes,
+			["committedBytes"] = info.TotalCommittedBytes,
+			["fragmentedBytes"] = info.FragmentedBytes,
 			["allocatedBytes"] = GC.GetTotalAllocatedBytes(),
 			["gen0"] = GC.CollectionCount( 0 ),
 			["gen1"] = GC.CollectionCount( 1 ),
@@ -439,31 +495,56 @@ internal static class PerfReachability
 		{
 			if ( !seen.Add( value ) )
 				continue;
-			long bytes = 0;
-			var queue = new Queue<object>();
-			queue.Enqueue( value );
-			while ( queue.Count > 0 && seen.Count < maximumObjects )
-			{
-				var current = queue.Dequeue();
-				if ( current is string text )
-				{
-					bytes += text.Length * 2L;
-					continue;
-				}
-				// Arrays of numbers count their bytes; arrays of structs (a dictionary's entries) are followed into their fields.
-				if ( current is Array array && array.GetType().GetElementType() is { IsPrimitive: true } element )
-				{
-					bytes += (long)array.Length * System.Runtime.InteropServices.Marshal.SizeOf( element );
-					continue;
-				}
-				foreach ( var child in Children( current, maximumObjects - seen.Count ) )
-					if ( seen.Count < maximumObjects && seen.Add( child ) )
-						queue.Enqueue( child );
-			}
-			totals.Add( (root, bytes) );
+			totals.Add( (root, ArrayBytesFrom( value, seen, maximumObjects )) );
 		}
 		totals.Add( ($"(objects visited{(seen.Count >= maximumObjects ? ", cut off" : "")})", seen.Count) );
 		return totals.OrderByDescending( entry => entry.Bytes ).Take( top ).ToList();
+	}
+
+	/// <summary>
+	/// Bytes of the arrays of numbers (and strings) reachable from <paramref name="value"/>, counting only objects not yet in <paramref name="seen"/> (which it fills), so a
+	/// caller walking several roots counts every object once.
+	/// </summary>
+	private static long ArrayBytesFrom( object value, HashSet<object> seen, int maximumObjects )
+	{
+		long bytes = 0;
+		var queue = new Queue<object>();
+		queue.Enqueue( value );
+		while ( queue.Count > 0 && seen.Count < maximumObjects )
+		{
+			var current = queue.Dequeue();
+			if ( current is string text )
+			{
+				bytes += text.Length * 2L;
+				continue;
+			}
+			// Arrays of numbers count their bytes; arrays of structs (a dictionary's entries) are followed into their fields.
+			if ( current is Array array && array.GetType().GetElementType() is { IsPrimitive: true } element )
+			{
+				bytes += (long)array.Length * System.Runtime.InteropServices.Marshal.SizeOf( element );
+				continue;
+			}
+			foreach ( var child in Children( current, maximumObjects - seen.Count ) )
+				if ( seen.Count < maximumObjects && seen.Add( child ) )
+					queue.Enqueue( child );
+		}
+		return bytes;
+	}
+
+	/// <summary>The array bytes behind the assets in <see cref="Asset.All"/>, by the asset's type (textures, materials, models, shaders), largest first.</summary>
+	public static List<(string Type, int Count, long Bytes)> BytesByAssetType( int maximumObjects = 30_000_000 )
+	{
+		var seen = new HashSet<object>( ReferenceEqualityComparer.Instance );
+		var totals = new List<(string Type, int Count, long Bytes)>();
+		foreach ( var group in Asset.All.ToList().GroupBy( asset => asset.GetType().Name ) )
+		{
+			long bytes = 0;
+			foreach ( var asset in group )
+				if ( seen.Add( asset ) )
+					bytes += ArrayBytesFrom( asset, seen, maximumObjects );
+			totals.Add( (group.Key, group.Count(), bytes) );
+		}
+		return totals.OrderByDescending( entry => entry.Bytes ).ToList();
 	}
 
 	private static IEnumerable<(string Root, object Value)> StaticRoots()

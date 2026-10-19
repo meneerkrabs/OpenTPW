@@ -80,6 +80,12 @@
 		<Content Include="../../content/pools/esprites/**/*" Link="wwwroot/pools-sprites/%(RecursiveDir)%(Filename)%(Extension)" />
 	</ItemGroup>
 
+	<!-- The publish step stores a Brotli and a gzip copy of the files it knows to be compressible (js, css, json, wasm, dat, ...); the 8.2 MB of sprite files (.TPC, about 36 % smaller with Brotli) are not on its list, so they
+	     went out as they were. The server sends the copy the browser accepts (OpenTPW.Server/WebClient.cs). The 350-byte .ESP files stay as they are. -->
+	<PropertyGroup>
+		<CompressionIncludePatterns>$(CompressionIncludePatterns);**/*.TPC;**/*.tpc</CompressionIncludePatterns>
+	</PropertyGroup>
+
 	<!-- The file system creates archive handlers by reflection; keep the game whole when trimming. -->
 	<ItemGroup>
 		<TrimmerRootAssembly Include="OpenTPW.Web" />

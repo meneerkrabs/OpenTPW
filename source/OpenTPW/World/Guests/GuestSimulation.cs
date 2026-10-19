@@ -738,6 +738,34 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			DispatchArrivalVehicle( 0 );
 	}
 
+	/// <summary>[EXT:cheats-arrival] The group sizes each vehicle stands for, by <see cref="ArrivalVehicleKind"/>: the bus up to 35, the seaplane 36 to 60, the Ferry 61 or more (the dispatch's own bands, 0x004CF48C/0x004CF49A).</summary>
+	public static (int Low, int High) CheatArrivalBand( int vehicleKind ) => vehicleKind switch
+	{
+		ArrivalVehicleKind.Bus => (1, 35),
+		ArrivalVehicleKind.Seaplane => (36, 60),
+		ArrivalVehicleKind.Ferry => (61, int.MaxValue),
+		_ => throw new ArgumentOutOfRangeException( nameof( vehicleKind ), vehicleKind, "Not an arrival vehicle." )
+	};
+
+	/// <summary>
+	/// [EXT:cheats-arrival] The arrival cheat: a group starts now and comes by <paramref name="vehicleKind"/>. Its size is the next natural group's (no draw) moved into the vehicle's band
+	/// (<see cref="CheatArrivalBand"/>), then cut by the park limit as every group is; a lost park's group is empty. The group is delivered like a natural one: the advisor's ring sees its size, the
+	/// vehicle stops and one guest steps off per turn, and the turn that finds it empty restarts the arrival timer, so the next natural group comes a full interval later. False, and nothing
+	/// changes, while a group is being delivered or a vehicle is at work.
+	/// </summary>
+	public bool TryStartCheatArrival( int vehicleKind )
+	{
+		var (low, high) = CheatArrivalBand( vehicleKind );
+		if ( !ArrivalsEnabled || deliveringArrivals || arrivalVehicle >= 0 )
+			return false;
+		pendingArrivals = ArrivalsHalted?.Invoke() == true ? 0 : CutToParkLimit( Math.Clamp( UncutArrivalGroupSize(), low, high ) );
+		ArrivalGroupStarted?.Invoke( pendingArrivals );
+		deliveringArrivals = true;
+		// the vehicle of the cheat's choice, not the one the size would call (sizes 1, 2 and 3 of the dispatch are the bus, the seaplane and the Ferry)
+		DispatchArrivalVehicle( vehicleKind + 1 );
+		return true;
+	}
+
 	/// <summary>Puts <paramref name="kind"/> at work without a dispatch (tests).</summary>
 	internal void RestoreArrivalVehicleForTest( int kind ) => arrivalVehicle = kind;
 
@@ -820,6 +848,12 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	{
 		if ( ArrivalsHalted?.Invoke() == true )
 			return 0;
+		return CutToParkLimit( UncutArrivalGroupSize() );
+	}
+
+	/// <summary>The next group's size before the park limit's cut (<see cref="ArrivalGroupSize"/>): the weather factor, the park's points and the minimum.</summary>
+	private int UncutArrivalGroupSize()
+	{
 		var perVisitor = Settings.ArrivalPointsPerVisitor < 2 ? 1 : Settings.ArrivalPointsPerVisitor;
 		int count;
 		if ( Settings.ArrivalWeatherPercentages is { } percentages )
@@ -837,7 +871,12 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			var factor = WeatherDropsFalling?.Invoke() == true ? 0.8f : 1.2f;
 			count = (int)(factor * (float)((ParkPoints?.Invoke() ?? 0) + Settings.ArrivalNewParkBonus)) / perVisitor;
 		}
-		count = Math.Max( count, Settings.ArrivalMinPeople );
+		return Math.Max( count, Settings.ArrivalMinPeople );
+	}
+
+	/// <summary>A group of <paramref name="count"/> cut so the counted guests plus the group stay within the park limit (<see cref="ArrivalParkLimit"/>, <see cref="OnlineArrivalParkLimit"/> for an online visit).</summary>
+	private int CutToParkLimit( int count )
+	{
 		var limit = OnlineVisit ? OnlineArrivalParkLimit : ArrivalParkLimit;
 		if ( (uint)(guests.Count + count) > (uint)limit )   // compared unsigned (jbe at 0x004CF690 and 0x004CF6EE)
 			// [BIN:TPW-EXE:0x004CF6E5 no floor] the cut group is the limit minus the counted guests with no clamp (sub esi,ebx at 0x004CF704), negative above the limit; the stop's signed test emits no guest (jle 0x004CF56B: timer restart, active byte cleared), the vehicle size selects a bus (jg 0x004CF48F), and the boarding gate 0x0051A760 takes its below-10 branch (cmp 0xA, jge at 0x0051A844). The arrival ring stores the signed value unchanged (0x004CF451); the advisor's hype callback compares and divides signed (0x0059F31C/0x0059F32A), so a negative newest group can give a drop above 100 percent

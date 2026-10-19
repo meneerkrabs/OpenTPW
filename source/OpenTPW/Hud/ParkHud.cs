@@ -821,6 +821,7 @@ public sealed partial class ParkHud
 		HandleScreenShortcuts( shortcutsAllowed && !camcorderOwnsInput );
 		// the original's cheat keys, consulted after the shortcuts (docs/CHEATS.md), and the short note of every cheat the park applied
 		HandleCheatKeys( shortcutsAllowed && !camcorderOwnsInput && !IsRiding );
+		HandleCheatsWindowKey( shortcutsAllowed && !camcorderOwnsInput && !IsRiding );
 		PostCheatNotes();
 		if ( TryOpenPostcard( shortcutsAllowed && !overUi && !consumed && !mouseCaptured.Value && input.Text.Length == 0 && !ridingAtStart ) )
 		{

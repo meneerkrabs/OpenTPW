@@ -35,13 +35,13 @@ public class CheatsTests
 	// ---- The extension ------------------------------------------------------------------------------
 
 	[TestMethod]
-	public void TheExtensionIsRegisteredOffSimulatingAndNotYetSelectable()
+	public void TheExtensionIsRegisteredOffSimulatingAndSelectable()
 	{
 		var cheats = OfficialExtensions.Cheats;
 		Assert.AreEqual( "opentpw.cheats", cheats.Id );
 		Assert.IsFalse( cheats.DefaultEnabled );
 		Assert.IsTrue( cheats.AffectsSimulation );
-		Assert.IsFalse( cheats.PlayerSelectable, "selectable once its first cheat ships (K3)" );
+		Assert.IsTrue( cheats.PlayerSelectable, "selectable since K3 shipped its window" );
 		Assert.AreSame( cheats, OfficialExtensions.Find( "opentpw.cheats" ) );
 		Assert.IsFalse( ModSet.Defaults( OfficialExtensions.All ).IsEnabled( cheats.Id ) );
 		Assert.IsTrue( ParkResumeMods.UsedOnlyExtensionIds.Contains( cheats.Id ) );

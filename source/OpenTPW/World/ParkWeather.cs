@@ -167,6 +167,33 @@ public sealed class ParkWeather
 		applyAt = lastTurn * ParkCalendar.SecondsPerTurn + settings.DaysOfWarning * ParkCalendar.SecondsPerDay;
 	}
 
+	/// <summary>
+	/// [EXT:cheats-weather] The weather cheat: a forecast with no warning, applied at once at park tick <paramref name="tick"/> with the bookkeeping of <see cref="Step"/>'s apply (the pending forecast is
+	/// replaced, the change is now, and the next roll comes <c>DaysBetweenChanges - DaysOfWarning</c> days later). The kind is set explicitly in every theme, snow too, with no tie-break draw; the drops
+	/// ramp toward the target at the usual <c>SpeedOfChange</c> a turn and lightning strikes on its own clock. False while the weather has not taken its first step.
+	/// </summary>
+	// [EXT:cheats-weather] the original's converter (0x512f00) derives the kind from a rolled quality and the park's bands (snow only in Halloween); the cheat sets the kind and a fixed quality and drop target instead: clear 100 and none, rain half the drops, a thunderstorm three quarters with lightning, snow half
+	internal bool ApplyCheat( CheatWeather kind, long tick )
+	{
+		if ( !started || !Enum.IsDefined( kind ) )
+			return false;
+		pendingQuality = null;
+		lastChanged = ParkCalendar.Seconds( tick );
+		nextRollAt = lastChanged + Math.Max( 0, settings.DaysBetweenChanges - settings.DaysOfWarning ) * ParkCalendar.SecondsPerDay;
+		(Quality, Snow, Rain, Lightning, TargetDrops) = kind switch
+		{
+			CheatWeather.Clear => (100, false, false, false, 0),
+			CheatWeather.Rain => (CheatQuality( settings.RainLow, settings.RainHigh, 30 ), false, true, false, settings.MaxRaindrops / 2),
+			CheatWeather.Thunderstorm => (CheatQuality( settings.LightningLow, settings.LightningHigh, 10 ), false, true, true, settings.MaxRaindrops * 3 / 4),
+			_ => (CheatQuality( settings.SnowLow, settings.SnowHigh, 20 ), true, false, false, settings.MaxRaindrops / 2),
+		};
+		return true;
+	}
+
+	/// <summary>The middle of a band's qualities, or <paramref name="fallback"/> for a band that holds none (jungle snow); always 1..100.</summary>
+	private static int CheatQuality( int low, int high, int fallback ) =>
+		high < low || high < 1 || low > 100 ? fallback : Math.Clamp( (Math.Max( low, 1 ) + Math.Min( high, 100 )) / 2, 1, 100 );
+
 	/// <summary>Takes the bolt tops whose thunder has come due since the last call (the frame plays them).</summary>
 	public IReadOnlyList<Vector3> TakeThunder()
 	{

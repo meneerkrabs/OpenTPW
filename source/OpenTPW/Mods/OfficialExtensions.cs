@@ -136,10 +136,10 @@ public static class OfficialExtensions
 	/// The cheats extension (docs/CHEATS.md): the cheats window (Alt+C) with OpenTPW's own cheats: visitors arriving by a chosen vehicle, the weather, a ride's vehicle limit and a chosen golden ticket. Off by default and only in
 	/// Theme Park World parks (not in a Theme Park Inc run, a read-only visit or an online session). The original game's own cheat mode (the secret park name and the Alt keys) is not part of it and works without it. A park save records the
 	/// extension only once the park has used one of its own cheats, and such a park needs it to load (<c>ParkResumeMods.UsedOnlyExtensionIds</c>); every other park, cheated through the original's cheats or not, saves the same bytes
-	/// whether it is on or off. Not selectable until its first cheat ships (phase K3), so no save gets locked to a version that does nothing.
+	/// whether it is on or off. Selectable from phase K3, the window and its first cheats.
 	/// </summary>
 	// [EXT:cheats-extension] OpenTPW's own cheats; the original game has the cheat mode only (docs/CHEATS.md)
-	public static IOpenTpwExtension Cheats { get; } = new OpenTpwExtension( "opentpw.cheats", "Cheats", new ModVersion( 1, 0, 0 ), DefaultEnabled: false, AffectsSimulation: true, PlayerSelectable: false );
+	public static IOpenTpwExtension Cheats { get; } = new OpenTpwExtension( "opentpw.cheats", "Cheats", new ModVersion( 1, 0, 0 ), DefaultEnabled: false, AffectsSimulation: true );
 
 	/// <summary>All official extensions, in declaration order.</summary>
 	public static IReadOnlyList<IOpenTpwExtension> All { get; } = new[] { Online, CrossEditionObjects, SmarterGuests, GuestInsights, Pools, PoolGuestArt, Umbrellas, RainMood, Winter, WinterWeather, RestoredAdvice, Evening, WinterSnow, Cheats };

@@ -17,6 +17,31 @@ public enum CheatKind
 	/// ones with record 100 through <c>0x5AF940</c>); the two secret tickets have no cheat.
 	/// </summary>
 	Ticket = 3,
+	/// <summary>[EXT:cheats-weather] The weather now, as a forecast with no warning: the argument is the <see cref="CheatWeather"/>.</summary>
+	Weather = 4,
+	/// <summary>[EXT:cheats-arrival] A group of visitors arrives now by the vehicle the argument names (<see cref="ArrivalVehicleKind"/>: bus, seaplane or Ferry), sized for it.</summary>
+	Arrival = 6,
+}
+
+/// <summary>[EXT:cheats-weather] The weathers the cheats window offers in every theme (snow too: it is a cheat).</summary>
+public enum CheatWeather
+{
+	Clear = 0,
+	Rain = 1,
+	Thunderstorm = 2,
+	Snow = 3,
+}
+
+/// <summary>
+/// What the park's cheats need from the level that the economy does not hold: the arrivals and the weather (<see cref="ParkEconomy.CheatHost"/>). Each call is made at the start of a park turn
+/// and takes no random draw; false means "not now", and the cheat waits for the next turn.
+/// </summary>
+public interface IParkCheatHost
+{
+	/// <summary>[EXT:cheats-arrival] Starts a group brought by <paramref name="vehicleKind"/> now; false while a group is being delivered or a vehicle is at work.</summary>
+	bool TryStartArrival( int vehicleKind );
+	/// <summary>[EXT:cheats-weather] Makes the weather <paramref name="weather"/> now (at park tick <paramref name="tick"/>); false while the park's weather has not taken its first step.</summary>
+	bool TryApplyWeather( CheatWeather weather, long tick );
 }
 
 /// <summary>One cheat action as the player asked for it: its kind and its argument (for example a ticket kind).</summary>
@@ -91,11 +116,16 @@ public sealed class ParkCheats
 		_ => true
 	};
 
+	/// <summary>[EXT:cheats-arrival] Whether an arrival cheat is waiting: at most one may (a second request is refused until the first group has come).</summary>
+	public bool ArrivalPending => pending.Any( action => action.Kind == CheatKind.Arrival );
+
 	/// <summary>Whether <paramref name="action"/>'s argument is one its kind accepts.</summary>
 	public static bool IsValid( CheatAction action ) => action.Kind switch
 	{
 		CheatKind.Mode or CheatKind.Money or CheatKind.Research => action.Argument == 0,
 		CheatKind.Ticket => action.Argument is >= (int)GoldenTicketKind.Visitors and <= (int)GoldenTicketKind.BigPark,
+		CheatKind.Weather => Enum.IsDefined( (CheatWeather)action.Argument ),
+		CheatKind.Arrival => action.Argument is ArrivalVehicleKind.Bus or ArrivalVehicleKind.Seaplane or ArrivalVehicleKind.Ferry,
 		_ => false
 	};
 
@@ -105,7 +135,7 @@ public sealed class ParkCheats
 	/// </summary>
 	internal bool Queue( CheatAction action )
 	{
-		if ( !IsValid( action ) || pending.Count >= MaximumPending )
+		if ( !IsValid( action ) || pending.Count >= MaximumPending || action.Kind == CheatKind.Arrival && ArrivalPending )
 			return false;
 		pending.Add( action );
 		return true;
@@ -113,7 +143,7 @@ public sealed class ParkCheats
 
 	/// <summary>
 	/// Applies the queued actions at the start of park turn <paramref name="turn"/>, in the order of <see cref="CheatKind"/> (the queue order within one kind): each marks the park, does
-	/// what its kind does and joins the record.
+	/// what its kind does and joins the record. An action the park cannot take now (an arrival while a vehicle is at work) stays queued for the next turn, unrecorded.
 	/// </summary>
 	internal void ApplyPending( ParkEconomy economy, long turn )
 	{
@@ -123,10 +153,14 @@ public sealed class ParkCheats
 		pending.Clear();
 		foreach ( var action in batch )
 		{
+			if ( economy.ApplyCheat( action ) is not { } outcome )
+			{
+				pending.Add( action );
+				continue;
+			}
 			Mode = true;
 			if ( IsExtensionKind( action.Kind ) )
 				Extension = true;
-			var outcome = economy.ApplyCheat( action );
 			var entry = new CheatLogEntry( turn, action.Kind, action.Argument );
 			log.Add( entry );
 			if ( log.Count > MaximumLog )

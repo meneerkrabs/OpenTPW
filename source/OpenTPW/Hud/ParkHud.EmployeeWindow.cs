@@ -11,7 +11,7 @@ namespace OpenTPW.Hud;
 // [BIN:TPW-EXE:0x004b6080 employee window] the opener stores the member, builds table 0x756f48 through 0x48cea0 (handler 0x4b5cb0, frames 0x511 and 0x512) and
 // posts help 0xc0; 0x48cea0 first closes the window that is open (0x485b40), so the All Staff list (0x496088, its row message 0x400) gives way to it
 // [BIN:TPW-EXE:0x00486920 thing info] a click on a staff thing (types 4-8) opens this window too; OpenTPW opens it from the staff list (no staff click in the park)
-// [APPROX:UI-092] the employee portrait still uses the hire-window loop instead of copying the selected member's live sprite (0x486530 / 0x486610); control +0xE0 is draw depth, not animation phase. Live-source integration, independent-clone timing/state/flag semantics, native depth/occlusion and visual parity remain open (UI-082 owns pixel sizing).
+// [APPROX:UI-092] the employee portrait reads the current world output at yaw zero, with the existing hire loop when unavailable; this is not the original independent clone (0x486530 / 0x486610). Clone timing/state/flag semantics, source-loss lifecycle, native depth/occlusion and visual parity remain open (UI-082 owns pixel sizing).
 public sealed partial class ParkHud
 {
 	private static LayoutTable EmployeeTable => OriginalLayoutTables.EmployeeWindow;
@@ -209,7 +209,7 @@ public sealed partial class ParkHud
 	private (StaffType Type, int Variant)? employeePortraitKey;
 	private float employeePortraitStart;
 
-	/// <summary>The figure in the employee window's portrait frame: the employee's role and variant walking on the spot, restarting when another employee is shown.</summary>
+	/// <summary>The employee's published world frame at yaw zero, otherwise the existing role/variant hire-loop fallback.</summary>
 	private UiSpriteFrame? EmployeePortraitFrame()
 	{
 		(StaffType Type, int Variant)? key = Employee is { } member ? (member.Type, StaffSpriteRules.KeyOf( member )) : null;
@@ -218,6 +218,9 @@ public sealed partial class ParkHud
 			employeePortraitKey = key;
 			employeePortraitStart = Time.Now;
 		}
+		// Keep the old fallback clock/key updated even while a live output is available.
+		if ( Employee is { } selected && level.StaffRenderer?.EmployeeFrame( selected ) is { } live )
+			return live;
 		return key is { } chosen ? level.StaffRenderer?.PortraitFrame( chosen.Type, chosen.Variant, Time.Now - employeePortraitStart ) : null;
 	}
 
@@ -231,7 +234,7 @@ public sealed partial class ParkHud
 		var stats = table.Control( 0x512 );
 		screen.Add( new UiModelImage { Id = "portraitFrame", Model = portrait.Model!, Bounds = portrait.Rect, Anchor = UiAnchor.Center } );
 		screen.Add( new UiModelImage { Id = "statsFrame", Model = stats.Model!, Bounds = stats.Rect, Anchor = UiAnchor.Center } );
-		// [BIN:TPW-EXE:0x4b5330 employee figure] 0x486530 clones the employee's live sprite at scale 8.0, with draw depth control +0xE0 + 1; the host still uses the hire loop (UI-092).
+		// [BIN:TPW-EXE:0x4b5330 employee figure] 0x486530 clones the employee's live sprite at scale 8.0, with draw depth control +0xE0 + 1; the host observes its current world output, with the existing hire-loop fallback (UI-092).
 		screen.Add( new UiSpriteFigure { Id = "portraitFigure", Frame = EmployeePortraitFrame, Bounds = portrait.Rect, Anchor = UiAnchor.Center } );
 		var title = table.Control( 0x520 );
 		screen.Add( new UiLabel { Id = "title", Clicked = OpenEmployeeRenameDialog, Text = () => Employee is { } member ? StaffName( member ) : "", Help = strings.Help( title.Help ), Font = fonts => fonts.Title,

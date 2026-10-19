@@ -101,7 +101,7 @@ public static class ParkSaveFile
 		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 		public List<PriceStatisticData>? PriceStatistics { get; init; }
 		/// <summary>
-		/// The monthly statistics the park information window graphs (<see cref="ParkStatisticsHistory"/>); absent in older saves and while nothing is recorded: the graph then starts empty.
+		/// The monthly statistics the park information window graphs (<see cref="ParkStatisticsHistory"/>); absent in older saves and empty new parks. Legacy saves seed only rating from their existing ledger.
 		/// A reading aid like <see cref="AnalyserCaches"/>: nothing in the simulation reads it, so it stays out of the run hash.
 		/// </summary>
 		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
@@ -259,6 +259,9 @@ public static class ParkSaveFile
 	public sealed class StaffData
 	{
 		public required List<StaffMemberData> Members { get; init; }
+		/// <summary>Locator order in StaffType order, containing roster IDs (not thing IDs). Absent/null: legacy pool/reverse-roster reconstruction.</summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public int[][]? RoleOrder { get; init; }
 		public required List<StaffCandidate> Candidates { get; init; }
 		public required List<long> TrainingBudgets { get; init; }
 		public required int NextId { get; init; }
@@ -725,6 +728,7 @@ public static class ParkSaveFile
 					CellY = member.CellY,
 					TravelSeconds = member.TravelSeconds
 				} ).ToList(),
+				RoleOrder = park.Staff.CaptureRoleOrder(),
 				Candidates = park.Staff.Candidates.ToList(),
 				TrainingBudgets = Enum.GetValues<StaffType>().Select( park.Staff.GetTrainingBudget ).ToList(),
 				NextId = park.Staff.NextId,
@@ -763,7 +767,7 @@ public static class ParkSaveFile
 			MechanicCursor = park.MechanicCursor,
 			PriceStatistics = park.PriceStatistics.Capture() is { Count: > 0 } rings
 				? rings.Select( ring => new PriceStatisticData { Category = ring.Category, Head = ring.Head, Full = ring.Full, Values = ring.Values } ).ToList() : null,
-			StatisticsHistory = park.StatisticsHistory.IsEmpty ? null : park.StatisticsHistory.Capture(),
+			StatisticsHistory = park.StatisticsHistory.IsEmpty && park.Ledger.History.Count == 0 ? null : park.StatisticsHistory.Capture(),
 			World = world == null ? null : new WorldData { Seed = world.Seed, SoundSeed = world.SoundSeed }
 		};
 	}
@@ -898,6 +902,7 @@ public static class ParkSaveFile
 			Require( item.WalkAways >= 0 && item.WalkAwaysToday >= 0 && item.WalkAwaysToday <= item.WalkAways
 				&& (item.WalkAwayDays is null || item.WalkAwayDays.Length <= ParkEconomy.WalkAwayHistoryDays && item.WalkAwayDays.All( day => day >= 0 )), $"object {item.Id} walk-aways" );
 		}
+		ParkStaff.ValidateRoleOrder( data.Staff.RoleOrder, data.Staff.Members.Select( member => (member.Id, member.Type) ).ToArray() );
 		var staffIds = new HashSet<int>();
 		var staffThingIds = new HashSet<int>();
 		foreach ( var member in data.Staff.Members )
@@ -1066,6 +1071,7 @@ public static class ParkSaveFile
 			CellY = member.CellY,
 			TravelSeconds = member.TravelSeconds
 		} ), data.Staff.Candidates, data.Staff.TrainingBudgets, data.Staff.NextId, data.Staff.NextPoolUpdateTick );
+		park.Staff.RestoreRoleOrder( data.Staff.RoleOrder );
 		park.Staff.RestoreHaveEverTrained( data.Staff.HaveEverTrained ?? data.Staff.TrainingBudgets.Any( budget => budget > 0 ) );
 		foreach ( var saved in data.Staff.Members.Where( member => member.WorldState != null ) )
 			saved.WorldState!.Apply( park.Staff.Members.Single( member => member.Id == saved.Id ) );
@@ -1089,7 +1095,9 @@ public static class ParkSaveFile
 		park.Counters.Restore( data.Counters );
 		park.MechanicCursor = data.MechanicCursor;
 		if ( data.StatisticsHistory is { } history )
-			park.StatisticsHistory.Restore( history );
+			park.StatisticsHistory.Restore( history, park.Ledger.History.Select( month => month.ParkRating ) );
+		else
+			park.StatisticsHistory.RestoreLegacyRating( park.Ledger.History.Select( month => month.ParkRating ) );
 		if ( data.PriceStatistics is { } statistics )
 			park.PriceStatistics.Restore( statistics.Select( ring => new PriceStatisticRing( ring.Category, ring.Head, ring.Full, ring.Values ) ).ToList() );
 		return park;

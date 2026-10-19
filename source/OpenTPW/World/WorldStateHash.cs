@@ -117,6 +117,9 @@ public static class WorldStateHash
 				// The buy-list stars are presentation only. Completion, progress, effort and every other research field remain hashed.
 				if ( root[nameof( ParkSaveFile.Data.Research )] is JsonObject research )
 					research.Remove( nameof( ParkSaveFile.ResearchData.RecentItems ) );
+				// Role order feeds only the locator radios. Roster order, training, candidates and all staff gameplay state remain hashed.
+				if ( root[nameof( ParkSaveFile.Data.Staff )] is JsonObject staff )
+					staff.Remove( nameof( ParkSaveFile.StaffData.RoleOrder ) );
 				// Challenge RawValue feeds only the localized progress caption; scoring continues to use Baseline and the live measures.
 				if ( root[nameof( ParkSaveFile.Data.Objectives )] is JsonObject objectives && objectives[nameof( ParkSaveFile.ObjectivesData.Current )] is JsonObject challenge )
 					challenge.Remove( nameof( ActiveChallenge.RawValue ) );

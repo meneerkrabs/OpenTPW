@@ -173,7 +173,7 @@ public sealed record StaffCandidate( int Id, StaffType Type, int NameIndex, int 
 /// <c>CostPerQualityLevel</c> are never read, ORACLE.md F28), training spends a per-role monthly budget at the month's end
 /// (divided over every employee of the role, ORACLE F17), and 100 training points raise one grade.
 /// </summary>
-public sealed class ParkStaff
+public sealed partial class ParkStaff
 {
 	// [DATA:Language/English/*_NAMES.str:entry count 35]
 	public const int NameTableSize = 35; // every *_NAMES.str table of the English data has 35 entries
@@ -428,16 +428,20 @@ public sealed class ParkStaff
 		var thingId = things?.Allocate( ThingModelOf( candidate.Type ) ) ?? 0;
 		if ( things != null && thingId == 0 )
 			throw new InvalidOperationException( $"The thing pool is full ({ThingPool.Capacity} things); no staff member can be placed." );
+		MaterializeRoleOrder();
 		candidates.Remove( candidate );
 		var member = new StaffMember { Id = candidate.Id, ThingId = thingId, Type = candidate.Type, NameIndex = candidate.NameIndex, Grade = candidate.Grade, HiredTick = tick, Variant = candidate.Variant };
 		members.Add( member );
+		roleOrder![(int)member.Type].Insert( 0, member.Id );
 		return member;
 	}
 
 	public StaffMember Fire( int staffId )
 	{
 		var member = members.FirstOrDefault( item => item.Id == staffId ) ?? throw new InvalidOperationException( $"No employee {staffId}." );
+		MaterializeRoleOrder();
 		members.Remove( member );
+		roleOrder![(int)member.Type].Remove( member.Id );
 		// [BIN:TPW-EXE:0x00505790 staff removal] a dismissed member's thing is destroyed through the destroy request (0x0050B780 → 0x00516310): its slot is freed at the turn's end
 		if ( things != null && member.ThingId != 0 )
 			things.QueueDestroy( member.ThingId );
@@ -490,6 +494,8 @@ public sealed class ParkStaff
 					things.Release( old.ThingId );
 		members.Clear();
 		members.AddRange( restoredMembers );
+		// Legacy saves resolve against the current pool only when read; attachment never replaces an explicit order.
+		roleOrder = null;
 		if ( things != null )
 			AttachThings( things );
 		candidates.Clear();
@@ -518,8 +524,10 @@ public sealed class ParkStaff
 	internal StaffMember AddImported( StaffType type, int grade, int trainingPoints, float happiness, StaffState state, long hiredTick, float energy = StaffVitals.Maximum, string? name = null, int thingId = 0 )
 	{
 		var member = new StaffMember { Id = AllocateId(), ThingId = thingId, Type = type, NameIndex = 0, Name = name, Grade = grade, TrainingPoints = trainingPoints, Happiness = happiness, Energy = energy, State = state, HiredTick = hiredTick };
-		members.Add( member );
 		AdoptThing( member );
+		MaterializeRoleOrder();
+		members.Add( member );
+		roleOrder![(int)member.Type].Insert( 0, member.Id );
 		return member;
 	}
 

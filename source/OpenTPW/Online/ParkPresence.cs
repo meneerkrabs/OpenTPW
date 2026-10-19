@@ -243,6 +243,7 @@ public sealed class ParkPresence : IVisitPresence, IChatPanelSource, IDisposable
 	{
 		if ( !session.IsLoggedIn )
 			return;
+		// a version not yet known is asked again; a failed read of the open connection is retried by the session
 		if ( session.ServerProtocol == null && now >= nextServerInfo )
 		{
 			session.FetchServerInfo();

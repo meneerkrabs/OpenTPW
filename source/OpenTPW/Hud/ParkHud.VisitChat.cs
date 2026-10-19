@@ -40,8 +40,9 @@ public sealed partial class ParkHud
 	{
 		if ( thing is not { IsDeleted: false } || thing.Entry.Settings.GetInt( "AddOn.UpgradesId" ) != 0 )
 			return null;
+		// -1 is a missing key (GetInt's own fallback is 0, which is a ride): only the rides' and the features' interface types ride
 		var type = thing.Entry.Settings.GetInt( "Info.WhichUIType", -1 );
-		return type is -1 or 0 or 3 && RideCameraMode.CanRide( thing ) ? thing : null;
+		return type is 0 or 3 && RideCameraMode.CanRide( thing ) ? thing : null;
 	}
 
 	/// <summary>F4: switches between the chat mode and the HUD (with nothing open over them).</summary>

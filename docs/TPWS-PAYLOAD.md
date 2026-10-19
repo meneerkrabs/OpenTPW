@@ -173,8 +173,9 @@ ID), `SaveStaffHq` (9), `SaveAdvisorController` (11: eight 21-byte pending
 records, three raw words, 351 history entries, the current record),
 `SaveResearchLab` (14, records raw), `SaveBank` (16), `SaveChallengeSystem`
 (19) and `SaveGuest` (1, `SaveGuests.cs`). The mechanic HQ (10), tag system (12),
-park analyser (13), weather (15) and UI receiver (17) are walked by width and not
-decoded.
+weather (15) and UI receiver (17) are walked by width and not decoded. The park
+analyser (13) has bounded recent-research and statistics readers described below;
+its remaining state stays opaque.
 
 ### Person and staff (`SavePerson`, `SaveStaff`)
 
@@ -730,6 +731,12 @@ new park's lab is built, not carried, and reads back to the byte in all four (`O
 The eleven private saves come back through import and export with the same fields (the played saves' finished projects hold their cost where the save kept the overshoot).
 
 **Recent research (`SaveRecentResearch`).** The world-referenced TPW park analyser (model 13) carries four capacity-three rings at body bytes 62,492 through 62,559. Each 17-byte record holds head i32, capacity i32, wrapped u8, scratch u16 and three physical u16 slots. Import checks the referenced model and bounds, retains scratch and inactive values, and replaces runtime history without creating completion events. With explicit `OriginalParkExportOptions.Research`, export writes only this 68-byte range, even for empty history; without it, the template history is preserved. All other analyser bytes remain untouched. The host rejects malformed ring counts, capacities, head/wrapped combinations and unsigned-short values before applying state; this bounded validation is a defensive host policy, stronger than the original loader. These offsets and the paid-completion policy are TPW-specific, not a Theme Park Inc interpretation. Synthetic regression tests cover typed references, byte-preserving round trips and malformed input; they do not claim original execution or pixel parity.
+
+**Statistics (`SaveParkStatistics`).** The World-referenced TPW analyser imports five independent 144-slot monthly rings, its live arrivals accumulator and the 50-slot recent-stay ring. Relative to the body (including the eight-byte thing base), the monthly records start at 62,590 and occupy 589 bytes each: signed head, capacity, wrapped byte, scratch word and 144 physical words. The graph selects ordinals 9 (people), 12 (arrivals), 13 (binary32 happiness), 14 (whole-day stay) and 15 (rating); recent stays start at 72,014. The serializer (`0x4C5D70` / `0x4CDF00`), graph dispatch (`0x4A4750`) and month producer (`0x4C7720`) establish these meanings, independently of equal record sizes.
+
+The reader requires the complete 73,536-byte fixed body, checks all four short-ring and sixteen monthly capacities, and validates each selected ring's head and wrapped byte. Only active happiness words are reinterpreted as floats and required to be finite; signed integer samples are preserved, including negatives and outliers. Inactive words are retained in the immutable native carrier but normalized to zero in host statistics. Negative live arrivals are rejected by host continuation policy. A malformed selected ring or continuation input rejects the entire bundle before economy application; there is no partial graph recovery. No timestamps, old bank transactions, financial months or simulation caches are invented.
+
+Rating has its own host ring. Month close samples it once for both statistics and the financial ledger. Legacy host saves lacking rating seed it once from their existing ledger; a present empty ring remains empty. The whole statistics section stays excluded from the simulation hash. Native statistics export is unchanged: original export keeps the template's statistics bytes, and host JSON is not a byte-identical analyser round trip. Theme Park Inc uses the separate `SaveThemeParkIncStatistics` named-field decoder and independently traced ordinals, with the [fresh-host-start boundary](THEME-PARK-INC.md#historical-statistics-and-the-host-start-boundary) kept explicit; no TPW offset or ordinal mapping is reused. The shipped one-month TPW fixture is an import witness; wrapped and continuation coverage is synthetic, not a claim of a real long-running save or original execution. UI-914 remains open for its other residuals.
 
 **Things of a new park (`SaveNewParkThings`).** The park analyser (73,536 bytes: the grid words, 1,024 cell records whose extents the setup `0x4C7A90` fills, the history rings and extreme trackers at the
 constructor `0x4C58C0`'s values, in the order of the serializer `0x4C5D70`), the advisor controller (`0x599E70`; its first pending record, message 0 at score 100,000, is in all four restart saves and its posting site is

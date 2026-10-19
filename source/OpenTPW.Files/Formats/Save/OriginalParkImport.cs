@@ -127,7 +127,7 @@ public sealed class OriginalParkImport
 	public IReadOnlyList<RecentResearchRing>? RecentResearch { get; private init; }
 	/// <summary>The referenced TPW or TPI analyser's validated monthly histories and host continuation inputs; null without an analyser.</summary>
 	public NativeParkStatistics? Statistics { get; private init; }
-	/// <summary>The referenced TPW analyser's ring of the last arrival group sizes, the oldest first (at most five); null without an analyser and for Theme Park Inc.</summary>
+	/// <summary>The referenced TPW or TPI analyser's signed arrival group sizes, oldest first (at most five); null without an analyser, an empty list for a known empty ring.</summary>
 	public IReadOnlyList<int>? ArrivalGroups { get; private init; }
 	/// <summary>
 	/// The advisor clock the save carries: the second word of the clock block that follows the MESS delimiter (writer 0x402E00 after the
@@ -362,6 +362,7 @@ public sealed class OriginalParkImport
 		var layout = SavePayloadLayout.ParseThemeParkInc( payload.Span );
 		var tpiWorld = ThemeParkIncSaveWorld.Parse( payload, layout, map.CellCountX, map.CellCountY );
 		var statistics = SaveThemeParkIncStatistics.Read( tpiWorld );
+		var arrivalGroups = SaveThemeParkIncArrivalRing.Read( tpiWorld );
 		var cells = tpiWorld.Cells;
 		var paths = new List<(int X, int Y)>();
 		for ( var y = 0; y < map.CellCountY; y++ )
@@ -422,6 +423,7 @@ public sealed class OriginalParkImport
 		{
 			ThemeParkIncWorld = tpiWorld,
 			Statistics = statistics,
+			ArrivalGroups = arrivalGroups,
 			ThemeParkIncObjects = joined.AsReadOnly(),
 			UnrecordedThemeParkIncAttractions = unrecorded.AsReadOnly(),
 		};

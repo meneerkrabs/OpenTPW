@@ -173,7 +173,7 @@ public class ModsInBrowserTests
 		Assert.IsTrue( ModStartup.Discovered.Any( mod => mod.Id == TpiRidesFixture.Id && mod.IsValid && mod.Source == ModSource.Program ) );
 		Assert.IsFalse( set.IsEnabled( OfficialExtensions.CrossEditionObjects.Id ) );
 		// pools is on by default, so its own content root (the changing rooms, embedded in the browser build) is the only root
-		Assert.IsTrue( ObjectCatalog.ContentRoots.All( contentRoot => contentRoot.ModId == OfficialExtensions.Pools.Id || contentRoot.ModId == OfficialExtensions.Umbrellas.Id || contentRoot.ModId == OfficialExtensions.Winter.Id ) );
+		Assert.IsTrue( ObjectCatalog.ContentRoots.All( contentRoot => contentRoot.ModId == OfficialExtensions.Pools.Id || contentRoot.ModId == OfficialExtensions.Umbrellas.Id || contentRoot.ModId == OfficialExtensions.Winter.Id || contentRoot.ModId == OfficialExtensions.Evening.Id ) );
 		Assert.IsTrue( set.IsEnabled( OfficialExtensions.Pools.Id ), "pools is on in the browser with no saved choice" );
 		Assert.IsTrue( ObjectCatalog.ContentRoots.Sum( contentRoot => contentRoot.Objects.Count ) >= 4, "the pools objects (changing rooms and extras) are in the catalogs" );
 	}
@@ -202,7 +202,7 @@ public class ModsInBrowserTests
 		Assert.IsTrue( BrowserModInputs.IsLocked, "an active mod reads the tree: it cannot be replaced while the game runs" );
 		Assert.ThrowsException<InvalidOperationException>( () => BrowserModInputs.Begin( "theme-park-inc" ) );
 		Assert.ThrowsException<InvalidOperationException>( () => BrowserModInputs.AddFile( "theme-park-inc", "Data/x", new byte[] { 1 } ) );
-		Assert.AreEqual( 183, ObjectCatalog.ContentRoots.Where( contentRoot => contentRoot.ModId != OfficialExtensions.Pools.Id && contentRoot.ModId != OfficialExtensions.Umbrellas.Id && contentRoot.ModId != OfficialExtensions.Winter.Id ).Sum( contentRoot => contentRoot.Objects.Count ), "the shipped objects reach the catalogs" );
+		Assert.AreEqual( 183, ObjectCatalog.ContentRoots.Where( contentRoot => contentRoot.ModId != OfficialExtensions.Pools.Id && contentRoot.ModId != OfficialExtensions.Umbrellas.Id && contentRoot.ModId != OfficialExtensions.Winter.Id && contentRoot.ModId != OfficialExtensions.Evening.Id ).Sum( contentRoot => contentRoot.Objects.Count ), "the shipped objects reach the catalogs" );
 	}
 
 	// ---- The Extensions and mods screen --------------------------------------------------------------

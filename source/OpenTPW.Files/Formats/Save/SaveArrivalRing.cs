@@ -4,7 +4,8 @@ namespace OpenTPW;
 
 /// <summary>
 /// The park's ring of the last arrival group sizes as the TPW analyser saves it: the five-word ring at park <c>+0x216D8</c>, serialized after the recent-stays ring by the analyser serializer
-/// (<c>0x4C5D70</c>, ring serializer <c>0x4CE660</c>): current entry, entry count, wrapped byte, scratch word and the five words.
+/// (<c>0x4C5D70</c>, ring serializer <c>0x4CE660</c>): current entry, entry count, wrapped byte, scratch word and the five words. Its offset follows the analyser prefix that
+/// <c>SaveParkStatistics.Read</c> validates, so call that first (as <c>OriginalParkImport</c> does); this reader checks only its own fields and bounds.
 /// </summary>
 public static class SaveArrivalRing
 {

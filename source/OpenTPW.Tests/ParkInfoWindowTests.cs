@@ -65,13 +65,13 @@ public class ParkInfoWindowTests
 			history.RecordArrival();
 		history.RecordStay( 2 );
 		history.RecordStay( 5 );
-		history.CloseMonth( 61.5f, 40 );
+		history.CloseMonth( 61.5f, 40, 23 );
 		Assert.AreEqual( 0, history.ArrivalsThisMonth );
 		Assert.IsTrue( history.Arrivals.TryGet( 0, out var arrivals ) && arrivals == 7 );
 		Assert.IsTrue( history.People.TryGet( 0, out var people ) && people == 40 );
 		Assert.IsTrue( history.Happiness.TryGet( 0, out var happiness ) && happiness == 61.5 );
 		Assert.IsTrue( history.Stay.TryGet( 0, out var stay ) && stay == 3, "(2 + 5) / 2 truncated" );
-		history.CloseMonth( 0, 0 );
+		history.CloseMonth( 0, 0, 0 );
 		Assert.IsTrue( history.Arrivals.TryGet( 0, out arrivals ) && arrivals == 0 );
 	}
 
@@ -79,7 +79,7 @@ public class ParkInfoWindowTests
 	public void WithoutAnyStayTheMeanStayIsZeroAndAGuestsStayIsWholeFourTurnStepsAsDays()
 	{
 		var history = new ParkStatisticsHistory();
-		history.CloseMonth( 0, 0 );
+		history.CloseMonth( 0, 0, 0 );
 		Assert.IsTrue( history.Stay.TryGet( 0, out var stay ) && stay == 0 );
 		Assert.AreEqual( 0, ParkStatisticsHistory.StayDays( 22 ) );
 		// 23 four-turn steps of 3750 s are 345000 s = 3 days and a bit; 92 turns are 23 steps
@@ -95,7 +95,7 @@ public class ParkInfoWindowTests
 			history.RecordStay( 100 );
 		for ( var guest = 0; guest < 50; guest++ )
 			history.RecordStay( 2 );
-		history.CloseMonth( 0, 0 );
+		history.CloseMonth( 0, 0, 0 );
 		Assert.IsTrue( history.Stay.TryGet( 0, out var stay ) && stay == 2 );
 	}
 
@@ -105,7 +105,7 @@ public class ParkInfoWindowTests
 		var history = new ParkStatisticsHistory();
 		history.RecordArrival();
 		history.RecordStay( 4 );
-		history.CloseMonth( 55.25f, 12 );
+		history.CloseMonth( 55.25f, 12, 18 );
 		history.RecordArrival();
 		var json = JsonSerializer.Serialize( history.Capture() );
 		var data = JsonSerializer.Deserialize<ParkStatisticsData>( json )!;
@@ -118,6 +118,26 @@ public class ParkInfoWindowTests
 		Assert.IsTrue( new ParkStatisticsHistory().IsEmpty );
 		Assert.IsFalse( new ParkStatisticsData { Arrivals = data.Arrivals, Happiness = data.Happiness, Stay = data.Stay, People = data.People }.IsValid, "a missing ring is rejected" );
 		Assert.IsFalse( new ParkStatisticsData { ArrivalsThisMonth = 0, Arrivals = new RingData { Slots = new() { 1 }, Head = 0, Wrapped = false }, Happiness = data.Happiness, Stay = data.Stay, People = data.People, RecentStays = data.RecentStays }.IsValid, "a wrong size" );
+
+		// a ring that has gone round keeps its head and wrapped flag, so save -> load -> save writes the loaded data again
+		for ( var guest = 0; guest < 60; guest++ )
+			history.RecordStay( guest );
+		Assert.AreEqual( (10, true), (history.RecentStays.Head, history.RecentStays.Wrapped), "61 stays (the first one above and 60 more) into the 50-entry ring" );
+		var wrappedJson = JsonSerializer.Serialize( history.Capture() );
+		var wrapped = new ParkStatisticsHistory();
+		wrapped.Restore( JsonSerializer.Deserialize<ParkStatisticsData>( wrappedJson )! );
+		Assert.AreEqual( (10, true), (wrapped.RecentStays.Head, wrapped.RecentStays.Wrapped) );
+		Assert.AreEqual( wrappedJson, JsonSerializer.Serialize( wrapped.Capture() ) );
+		CollectionAssert.AreEqual( Enumerable.Range( 10, 50 ).Select( stay => (double)stay ).ToArray(), wrapped.RecentStays.Oldest().ToArray() );
+
+		// a ring saved with its entries replayed in order (head at the last slot, flag clear) still loads with the same entries
+		var replayed = new RingData { Slots = Enumerable.Range( 10, 50 ).Select( stay => (double)stay ).ToList(), Head = 49, Wrapped = false };
+		var old = new ParkStatisticsData { Arrivals = data.Arrivals, Happiness = data.Happiness, Stay = data.Stay, People = data.People, RecentStays = replayed };
+		Assert.IsTrue( old.IsValid );
+		var loaded = new ParkStatisticsHistory();
+		loaded.Restore( old );
+		CollectionAssert.AreEqual( wrapped.RecentStays.Oldest().ToArray(), loaded.RecentStays.Oldest().ToArray() );
+		Assert.AreEqual( wrapped.RecentStays.SumNewest( 50 ), loaded.RecentStays.SumNewest( 50 ) );
 	}
 
 	[TestMethod]
@@ -194,7 +214,7 @@ public class ParkInfoWindowTests
 		hud.SetParkInfoPeriod( 2 );
 		hud.SetParkInfoPeriod( 7 );
 		Assert.AreEqual( 2, hud.ParkInfoPeriod );
-		// the choice stays while the window is closed and opened again
+		// the choice stays while the window is closed and opened again within the park
 		hud.CloseParkInfoWindow();
 		hud.OpenParkInfoWindow();
 		Assert.AreEqual( (ParkInfoSeries.Arrivals, 2), (hud.ParkInfoSelectedSeries, hud.ParkInfoPeriod) );

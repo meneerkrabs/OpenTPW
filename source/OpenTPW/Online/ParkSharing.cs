@@ -38,12 +38,18 @@ public static class ParkSharing
 	// [EXT:mods] OpenTPW's own mod system; the original game had no mods
 	public static string? ModsRefusal( Level? level = null )
 	{
-		// [EXT:pools-save] opentpw.pools counts only while the park has pool cells or a changing room, as a save records it (ParkResumeMods.Capture)
-		var inUse = ParkResumeMods.InUse( level?.Guests?.Grid.Cells, level?.Objects?.Objects.Any( item => !item.IsDeleted && ParkResumeMods.IsPoolsObject( item.Entry ) ) == true );
-		var mods = OpenTPW.Mods.OpenTpwExtensions.Active.SimulationMods.Where( mod => !ParkResumeMods.UsedOnlyExtensionIds.Contains( mod.Id ) || inUse.Contains( mod.Id ) ).ToArray();
+		// [EXT:pools-save] opentpw.pools counts only while the park has pool cells or a changing room, as a save records it (ParkResumeMods.Capture); [EXT:umbrellas-save] opentpw.umbrellas likewise while it has a brolly shop or an umbrella
+		var placed = level?.Objects?.Objects.Where( item => !item.IsDeleted ).Select( item => item.Entry ).ToArray() ?? Array.Empty<ObjectCatalogEntry>();
+		var inUse = ParkResumeMods.InUse( level?.Guests?.Grid.Cells, placed.Any( ParkResumeMods.IsPoolsObject ), ParkResumeMods.UmbrellasInUse( placed, level?.Guests ), ParkResumeMods.WinterInUse( placed, level?.Guests ) );
+		var mods = ParkResumeMods.RecordableMods( OpenTPW.Mods.OpenTpwExtensions.Active ).Where( mod => !ParkResumeMods.UsedOnlyExtensionIds.Contains( mod.Id ) || inUse.Contains( mod.Id ) ).ToArray();
 		return mods.Length == 0 ? null
 			: $"This park records mods ({string.Join( ", ", mods.Select( mod => $"{mod.Id} {mod.Version}" ) )}) and cannot be exported yet; turn them off to share a park without mods.";
 	}
+
+	/// <summary>The snapshot of a cheated park carries the flag <c>cheated</c>; any other is returned as it is.</summary>
+	// [EXT:cheats-publish] a cheated park is exported and published like any other (the original refused it, UITEXT 417); its package only says so
+	internal static ParkSnapshot MarkCheated( ParkSnapshot snapshot, bool cheated ) =>
+		cheated ? snapshot with { Flags = snapshot.Flags.Append( OpenTPW.Online.Packages.CompatibilityFlags.Cheated ).ToArray() } : snapshot;
 
 	/// <summary>Exports the live level (used by the in-game panel).</summary>
 	public static ParkPackage ExportLevel( Level level, string parkName, string author, string description = "" )
@@ -53,6 +59,7 @@ public static class ParkSharing
 		if ( ModsRefusal( level ) is { } refusal )
 			throw new InvalidOperationException( refusal );
 		var snapshot = ParkSnapshotBuilder.FromLevel( level );
+		snapshot = MarkCheated( snapshot, level.Park?.Economy.Cheats.Cheated == true );
 		MapFile? map = level.OriginalPark?.Map;
 		Func<float, float, (int X, int Y)?>? rideCell = level.OriginalPark == null ? null : ( x, y ) =>
 			OriginalParkPlacement.TryGetCell( level.OriginalPark.Heightfield, x, y, out var cx, out var cy ) ? (cx, cy) : null;

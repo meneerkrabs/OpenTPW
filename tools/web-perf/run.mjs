@@ -6,6 +6,8 @@
 //   lobby   a steady window in the lobby
 //   jungle  the cold start of Full Simulation Jungle (the construction frame), then a steady window in the park
 //   buy     the first buy-menu open and four first selections (the 12 October table)
+//   winterCost    the frame cost of a crowd with snow, then umbrellas and warm items added (after jungle)
+//   umbrellaCost  the frame cost of a crowd in rain with and without an open umbrella over every guest, at the Home and the farthest zoom (after jungle)
 //   memory  memory samples over a longer park session
 //   switch  memory across park changes: Jungle, the lobby, the next island's park, the lobby, Jungle again
 //   revisit a second visit in the same profile without the served folder: Play starts from the files kept in the browser
@@ -36,7 +38,7 @@ const SELECTIONS = [['Rides', 'Belly Bounce'], ['Shops', 'Balloon Shop'], ['Shop
 function parseArguments(argv) {
 	const options = {
 		web: null, game: null, label: 'unlabelled', out: null, chrome: process.env.CHROME ?? DEFAULT_CHROME, headed: false,
-		scenarios: ['start', 'lobby', 'jungle', 'buy', 'digest'], window: 30, memoryMinutes: 10, music: false, width: 1280, height: 900, runs: 1, frameCap: 0, keep: 'off', zoom: null,
+		scenarios: ['start', 'lobby', 'jungle', 'buy', 'digest'], window: 30, memoryMinutes: 10, music: false, width: 1280, height: 900, runs: 1, frameCap: 0, keep: 'off', zoom: null, shot: null, crowd: 400, cover: 1, evening: null, eveningLamps: 0,
 	};
 	for (let index = 2; index < argv.length; index++) {
 		const [flag, inline] = argv[index].split(/=(.*)/s);
@@ -57,6 +59,11 @@ function parseArguments(argv) {
 			case '--frame-cap': options.frameCap = Number(value()); break;
 			case '--keep': options.keep = value(); break;
 			case '--zoom': options.zoom = Number(value()); break;
+			case '--crowd': options.crowd = Number(value()); break;
+			case '--shot': options.shot = value(); break;
+			case '--cover': options.cover = Math.min(1, Math.max(0, Number(value()))); break;
+			case '--evening': options.evening = value(); break;
+			case '--evening-lamps': options.eveningLamps = Math.max(0, Number(value()) || 0); break;
 			case '--help': case '-h': console.log(usage()); process.exit(0);
 			default: throw new Error(`Unknown option ${flag}\n${usage()}`);
 		}
@@ -72,12 +79,17 @@ function usage() {
 	return `Usage: node tools/web-perf/run.mjs --web <published wwwroot> --game <Theme Park World folder> [options]
   --label <name>          build label in the report (interpreter, aot, ...)
   --out <file.json>       report path (default reports/web-perf/<date>-<label>.json)
-  --scenarios <list>      comma list of start,lobby,jungle,buy,memory,switch,revisit,digest (default start,lobby,jungle,buy,digest)
+  --scenarios <list>      comma list of start,lobby,jungle,buy,umbrellas,snow,winter,winterCost,umbrellaCost,memory,switch,revisit,digest (default start,lobby,jungle,buy,digest)
   --window <seconds>      steady window length (default 30)
   --memory-minutes <n>    memory scenario length (default 10)
   --music                 keep music and speech on (default: muted, effects on, as on 11 October)
   --size <w>x<h>          window size (default 1280x900)
+  --crowd <n>             umbrellaCost, winterCost: extra guests staged in the Jungle park (default 400)
+  --shot <file>           umbrellas, snow, winter, winterCost: where the screenshot goes
+  --cover <0..1>          snow: the settled snow cover to hold (default 1)
   --zoom <value>          jungle: after the steady window, hold the park camera at this zoom value (40..300 with the wide zoom option) and measure a second window
+  --evening <mode>        jungle: after the steady window, hold the evening look (night, dusk, day) or switch the extension off, and measure a second window
+  --evening-lamps <n>     with --evening: add n extra lamp lights around the camera target (the browser twin of the desktop's --debug-evening-lamps) for the second window
   --keep <mode>           keep the game files in the browser on the first visit: lazy, all or off (default off)
   --frame-cap <fps>       the display settings' frame cap (0 off, 30, 60; default 0)
   --runs <n>              repeat the whole session n times, each in a fresh profile, and report the medians (default 1)
@@ -254,13 +266,161 @@ const scenarios = {
 		cold.profile = JSON.parse(await page.eval('opentpwPerf.program.PerfLoadProfile()'));
 		await page.eval('opentpwPerf.program.PerfProfile(false)');
 		const steady = await page.steady(options.window * 1000);
+		const result = { cold, steady };
+		// [evening] the same park with the evening extension held at night, dusk or day, or switched off (night, dusk, day, off), measured in a second window
+		if (options.evening != null) {
+			const accepted = await page.eval(`opentpwPerf.program.PerfEvening(${JSON.stringify(options.evening)})`);
+			if (!accepted)
+				throw new Error(`--evening expects night, dusk, day, off or on, not ${options.evening}`);
+			let lamps = null;
+			if (options.eveningLamps > 0) {
+				lamps = await page.eval(`opentpwPerf.program.PerfEveningLamps(${options.eveningLamps})`);
+				if (lamps !== options.eveningLamps)
+					throw new Error(`--evening-lamps: the park did not take ${options.eveningLamps} lamps (got ${lamps})`);
+			}
+			await sleep(2000);
+			result.evening = { mode: options.evening, ...(lamps != null ? { extraLamps: lamps } : {}), ...await page.steady(options.window * 1000) };
+		}
+		// the zoom window measures the park as it was: undo the evening hold and the extra lamps first
+		if (options.evening != null && options.zoom != null) {
+			if (options.eveningLamps > 0)
+				await page.eval('opentpwPerf.program.PerfEveningLamps(0)');
+			await page.eval('opentpwPerf.program.PerfEvening("on")');
+		}
 		if (options.zoom == null)
-			return { cold, steady };
+			return result;
 		// [wide zoom] the same park with the camera held at another zoom value (tp.exe's own range is 70..130; the option widens it to 40..300)
 		const reached = await page.eval(`opentpwPerf.program.PerfZoom(${options.zoom})`);
 		await sleep(2000);
 		const zoomed = { zoom: options.zoom, reached, ...await page.steady(options.window * 1000) };
-		return { cold, steady, zoomed };
+		return { ...result, zoomed };
+	},
+
+	/**
+	 * [EXT:umbrellas-tuning] Frame cost of umbrellas: in the Jungle park with a crowd (--crowd extra guests, default 400) in rain, a steady window with no umbrella and one with an open umbrella over every guest, the umbrellas the
+	 * last frame drew, and the same two windows at the wide zoom's far end (zoom 300). The park is staged by Program.PerfUmbrellaCrowd (UmbrellaPerf) and is not a real run afterwards.
+	 */
+	async umbrellaCost(page, options) {
+		const state = await page.state();
+		if (!state.hud || state.level !== 'jungle')
+			throw new Error('The umbrellaCost scenario needs the Jungle park: run it after jungle');
+		const crowd = options.crowd;
+		// the crowd is staged once (the first call); later calls only switch the umbrellas, so both windows have the same guests
+		let extra = crowd;
+		const stage = async umbrellas => {
+			const staged = JSON.parse(await page.eval(`opentpwPerf.program.PerfUmbrellaCrowd(${extra}, 30, ${umbrellas})`));
+			extra = 0;
+			return staged;
+		};
+		const result = { crowd };
+		for (const zoom of [null, 300]) {
+			const key = zoom == null ? 'home' : `zoom${zoom}`;
+			if (zoom != null)
+				result[`${key}Reached`] = await page.eval(`opentpwPerf.program.PerfZoom(${zoom})`);
+			result[`${key}Plain`] = { staged: await stage(false), ...await page.steady(options.window * 1000) };
+			result[`${key}Umbrellas`] = { staged: await stage(true) };
+			await sleep(2000);
+			Object.assign(result[`${key}Umbrellas`], await page.steady(options.window * 1000));
+			result[`${key}Umbrellas`].drawn = await page.eval('opentpwPerf.program.PerfUmbrellaCrowdDrawn()');
+		}
+		return result;
+	},
+
+	/**
+	 * [EXT:winter-tuning] After jungle: the frame cost of a staged crowd (--crowd, default 400 extra guests) with the winter look added step by step, at the Home zoom: a steady window with the crowd bare and no snow, with the settled snow
+	 * cover held at 1 (--cover), then with an open umbrella over every guest and every guest dressed in warm items (hat or earmuffs by id, mittens on three in four, as the winter scenario), and last the same at the farthest zoom.
+	 * A screenshot of the fully dressed crowd, the camera on the first visible guest at --zoom (default 70), is saved (--shot, default opentpw-winter-cost.png in the temp dir). Not a real run afterwards: the guests' fields are written directly.
+	 */
+	async winterCost(page, options) {
+		const state = await page.state();
+		if (!state.hud || state.level !== 'jungle')
+			throw new Error('The winterCost scenario needs the Jungle park: run it after jungle');
+		const result = { crowd: options.crowd, cover: options.cover };
+		result.staged = JSON.parse(await page.eval(`opentpwPerf.program.PerfUmbrellaCrowd(${options.crowd}, 30, false)`));
+		if (!(await page.eval('opentpwPerf.program.PerfSnow(0)')))
+			throw new Error('The park has no snow cover (the opentpw.winter-snow extension is off, or the park has no weather yet)');
+		await sleep(2000);
+		result.bare = await page.steady(options.window * 1000);
+		await page.eval(`opentpwPerf.program.PerfSnow(${options.cover})`);
+		await sleep(4000);
+		result.snow = await page.steady(options.window * 1000);
+		result.dressedStaged = JSON.parse(await page.eval('opentpwPerf.program.PerfUmbrellaCrowd(0, 30, true)'));
+		if (!(await page.eval('opentpwPerf.program.PerfWinter(0, 0)')))
+			throw new Error('The park has no warm item renderer (the opentpw.winter extension is off)');
+		await sleep(4000);
+		result.dressed = await page.steady(options.window * 1000);
+		result.dressed.drawnItems = await page.eval('opentpwPerf.program.PerfDrawnWinterItems()');
+		result.dressed.drawnUmbrellas = await page.eval('opentpwPerf.program.PerfDrawnUmbrellas()');
+		// the shot follows the first visible guest (the crowd stands in the entrance area), then the camera is released for the far window
+		await page.call('PerfWinter', options.zoom ?? 70, 35);
+		await sleep(4000);
+		const shot = await page.send('Page.captureScreenshot', { format: 'png' });
+		const file = options.shot ?? path.join(os.tmpdir(), 'opentpw-winter-cost.png');
+		await fs.writeFile(file, Buffer.from(shot.data, 'base64'));
+		result.screenshot = file;
+		await page.call('PerfWinter', 0, 0);
+		result.farReached = await page.eval('opentpwPerf.program.PerfZoom(300)');
+		await sleep(2000);
+		result.dressedFar = await page.steady(options.window * 1000);
+		result.dressedFar.drawnItems = await page.eval('opentpwPerf.program.PerfDrawnWinterItems()');
+		return result;
+	},
+
+	/** [EXT:debug-umbrellas] After jungle: every guest gets an open umbrella, the camera follows the first one, and a screenshot is saved (--shot, default opentpw-umbrellas.png in the temp dir). */
+	async umbrellas(page, options) {
+		if (!(await page.state()).hud)
+			throw new Error('The umbrellas scenario needs a park: run it after jungle');
+		const zoom = options.zoom ?? 80;
+		await page.call('PerfUmbrellas', zoom, 35);
+		// A new park has no guests until the gate has been open for a while: wait until an umbrella is drawn (at most three minutes).
+		let drawn = 0;
+		for (let waited = 0; waited < 180000 && drawn < 1; waited += 1000) {
+			await sleep(1000);
+			drawn = await page.eval('opentpwPerf.program.PerfDrawnUmbrellas()');
+		}
+		await sleep(2000);
+		drawn = await page.eval('opentpwPerf.program.PerfDrawnUmbrellas()');
+		const shot = await page.send('Page.captureScreenshot', { format: 'png' });
+		const file = options.shot ?? path.join(os.tmpdir(), 'opentpw-umbrellas.png');
+		await fs.writeFile(file, Buffer.from(shot.data, 'base64'));
+		return { zoom, drawnUmbrellas: drawn, screenshot: file };
+	},
+
+	/** [EXT:debug-winter] After jungle: every guest gets warm items, the camera follows the first one, and a screenshot is saved (--shot, default opentpw-winter.png in the temp dir). */
+	async winter(page, options) {
+		if (!(await page.state()).hud)
+			throw new Error('The winter scenario needs a park: run it after jungle');
+		const zoom = options.zoom ?? 80;
+		await page.call('PerfWinter', zoom, 35);
+		// A new park has no guests until the gate has been open for a while: wait until an item is drawn (at most three minutes).
+		let drawn = 0;
+		for (let waited = 0; waited < 180000 && drawn < 1; waited += 1000) {
+			await sleep(1000);
+			drawn = await page.eval('opentpwPerf.program.PerfDrawnWinterItems()');
+		}
+		// let the followed guest walk clear of the entrance before the shot
+		await sleep(10000);
+		drawn = await page.eval('opentpwPerf.program.PerfDrawnWinterItems()');
+		const shot = await page.send('Page.captureScreenshot', { format: 'png' });
+		const file = options.shot ?? path.join(os.tmpdir(), 'opentpw-winter.png');
+		await fs.writeFile(file, Buffer.from(shot.data, 'base64'));
+		return { zoom, drawnWinterItems: drawn, screenshot: file };
+	},
+
+	/** [EXT:debug-snow-cover] After jungle: holds the park's settled snow cover (--cover, default 1) and saves a screenshot (--shot, default opentpw-snow.png in the temp dir): the browser build's check that test.shader's snow compiles and draws. */
+	async snow(page, options) {
+		if (!(await page.state()).hud)
+			throw new Error('The snow scenario needs a park: run it after jungle');
+		const held = await page.eval(`opentpwPerf.program.PerfSnow(${options.cover})`);
+		if (!held)
+			throw new Error('The park has no snow cover (the opentpw.winter-snow extension is off, or the park has no weather yet)');
+		if (options.zoom != null)
+			await page.eval(`opentpwPerf.program.PerfZoom(${options.zoom})`);
+		await sleep(4000);
+		const shot = await page.send('Page.captureScreenshot', { format: 'png' });
+		const file = options.shot ?? path.join(os.tmpdir(), 'opentpw-snow.png');
+		await fs.writeFile(file, Buffer.from(shot.data, 'base64'));
+		return { cover: options.cover, screenshot: file };
 	},
 
 	async buy(page) {

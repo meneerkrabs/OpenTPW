@@ -366,6 +366,9 @@ internal static class Game
 			float? perfZoom = null;
 			if ( GetOption( args, "--perf-zoom", "the park camera's zoom value" ) is { } zoomText )
 				perfZoom = float.TryParse( zoomText, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var parsedZoom ) && float.IsFinite( parsedZoom ) ? parsedZoom : throw new ArgumentException( "--perf-zoom expects a zoom value, for example 300." );
+			// [EXT:perf-run] --perf-hash-tick <tick> logs the park's world state hash (Level.ComputeStateHash) at the frame whose park tick is exactly that one, so two runs (the evening extension on and off, say)
+			// can be compared on a real level with its placed objects; use --perf-speed 1 so no frame steps over the tick
+			long? perfHashTick = GetOption( args, "--perf-hash-tick", "a park tick" ) is { } hashTickText && long.TryParse( hashTickText, out var parsedHashTick ) && parsedHashTick > 0 ? parsedHashTick : null;
 			int perfWarmup = 0, perfDone = 0;
 			var perfOpened = false;
 			Render.PostUpdate += () =>
@@ -387,11 +390,45 @@ internal static class Game
 					if ( perfArrivals is { } arrivals && perfLevel.Guests != null )
 						perfLevel.Guests.Settings.ArrivalTimeBetween = arrivals;
 				}
+				if ( perfHashTick is { } hashTick && perfPark.Economy.Tick == hashTick )
+				{
+					perfHashTick = null;
+					Log.Trace( $"--perf-run: world state hash {perfLevel.ComputeStateHash():x16} at park tick {hashTick}, {perfLevel.PointLights.Count} point lights in view." );
+				}
 				if ( ++perfDone % 600 == 0 )
-					Log.Trace( $"--perf-run: frame {perfDone}: {perfLevel.Guests?.Guests.Count} guests, park tick {perfPark.Economy.Tick}, {(perfPark.Economy.IsParkOpen ? "open" : "closed")}, {perfPark.Economy.Counters[ParkCounters.Admissions]} admissions, balance ${perfPark.Economy.Balance}." );
+					Log.Trace( $"--perf-run: frame {perfDone}: {perfLevel.Guests?.Guests.Count} guests, park tick {perfPark.Economy.Tick}, {(perfPark.Economy.IsParkOpen ? "open" : "closed")}, {perfPark.Economy.Counters[ParkCounters.Admissions]} admissions, balance ${perfPark.Economy.Balance}, {perfLevel.PointLights.Count} point lights in view." );
 				if ( perfDone >= perfFrames )
 					Render.Window.SdlWindow.Close();
 			};
+		}
+		// [EXT:debug-evening] smoke and performance runs (docs/EVENING.md; also in Release builds, unlike most debug options): --evening-pace <minutes10|minutes20|minutes40|day|dusk|night> sets the evening extension's day cycle for this run only (a run-scoped override in Level, never written to the options, so never saved), and
+		// --debug-evening-lamps <n> adds n lamp-like lights (the pool lamp's colour and radius) on a grid around the park camera's target that follow the evening look's lamp level, so a performance run
+		// has many lamps to carry. Both need the extension on (--enable-mod opentpw.evening).
+		if ( GetOption( args, "--evening-pace", "minutes10, minutes20, minutes40, day, dusk or night" ) is { } paceText )
+			Level.EveningPaceOverride = paceText.ToLowerInvariant() switch
+			{
+				"day" or "alwaysday" => EveningPace.AlwaysDay,
+				"dusk" or "alwaysdusk" => EveningPace.AlwaysDusk,
+				"night" or "alwaysnight" => EveningPace.AlwaysNight,
+				var other when Enum.TryParse<EveningPace>( other, ignoreCase: true, out var parsedPace ) && Enum.IsDefined( parsedPace ) && !int.TryParse( other, out _ ) => parsedPace,
+				_ => throw new ArgumentException( "--evening-pace expects minutes10, minutes20, minutes40, day, dusk or night." )
+			};
+		var debugEveningLamps = GetOption( args, "--debug-evening-lamps", "a number of lamp lights" );
+		if ( debugEveningLamps != null )
+		{
+			var lampCount = int.TryParse( debugEveningLamps, out var parsedLamps ) && parsedLamps is > 0 and <= 4096 ? parsedLamps : throw new ArgumentException( "--debug-evening-lamps expects a number from 1 to 4096." );
+			var lampFrames = 0;
+			Render.PostUpdate += AddDebugEveningLamps;
+			void AddDebugEveningLamps()
+			{
+				if ( flow.Level is not { OriginalPark: not null } level || Camera.Mode is not ParkCameraMode park || ++lampFrames < 5 )
+					return;
+				Render.PostUpdate -= AddDebugEveningLamps;
+				var columns = (int)MathF.Ceiling( MathF.Sqrt( lampCount ) );
+				var spacing = 40f / columns;
+				level.SetDebugEveningLamps( lampCount, new System.Numerics.Vector3( park.Target.X, park.Target.Y, park.Target.Z ) );
+				Log.Trace( $"--debug-evening-lamps: {lampCount} lamp lights on a {columns} x {columns} grid, {spacing:0.##} engine units apart, around the camera target." );
+			}
 		}
 #if DEBUG
 		// [EXT:debug-water-track] smoke-only (Debug builds; --debug-kart-track places the go-kart ride instead): once the original level is up, places a track ride with a closed circuit near the
@@ -447,6 +484,96 @@ internal static class Game
 				Render.PostUpdate -= ApplyDebugWeather;
 				weather.ApplyQuality( debugQuality );
 				Log.Trace( $"--debug-weather: quality {debugQuality} applied (snow {weather.Snow}, rain {weather.Rain}, lightning {weather.Lightning}, target {weather.TargetDrops} drops)." );
+			}
+		}
+		// [EXT:debug-snow-cover] smoke-only: sets the settled snow cover (0..1) of the park as soon as it exists, so captures can show full cover (or its melt, with the weather dry) without waiting for
+		// the weather's turns; the extension must be on (it is by default). Presentation only: the cover is in no hash and no mod record.
+		var debugSnowCover = GetOption( args, "--debug-snow-cover", "a snow cover 0..1 for smoke captures" );
+		if ( debugSnowCover != null )
+		{
+			if ( !double.TryParse( debugSnowCover, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var debugCover ) || debugCover is < 0 or > 1 )
+				throw new ArgumentException( "--debug-snow-cover expects a cover from 0 to 1." );
+			Render.PostUpdate += ApplyDebugSnowCover;
+			void ApplyDebugSnowCover()
+			{
+				if ( flow.Level?.Snow is not { } snow )
+					return;
+				Render.PostUpdate -= ApplyDebugSnowCover;
+				snow.Set( debugCover );
+				Log.Trace( $"--debug-snow-cover: cover {debugCover} set." );
+			}
+		}
+		// [EXT:debug-umbrellas] smoke-only (Debug builds): gives every guest an open umbrella (colour from its id, so all three show) and keeps it open, so a capture shows the umbrellas without a brolly shop,
+		// a rain spell (use it with --debug-weather) or a lucky guest. It writes the guests' umbrella fields directly (a debug aid: the simulation of such a run is not the park's own, nothing is saved from it).
+		// --debug-umbrellas-follow zoom,yaw holds the park camera on the lowest-numbered guest in view at that zoom value and yaw (degrees) for a close look at one umbrella.
+		var followText = GetOption( args, "--debug-umbrellas-follow", "zoom,yaw for the camera that follows the first guest" )?.Split( ',' ).Select( value => float.Parse( value, System.Globalization.CultureInfo.InvariantCulture ) ).ToArray();
+		if ( args.Contains( "--debug-umbrellas" ) )
+			Render.PostUpdate += GiveEveryGuestAnUmbrella;
+		// [EXT:debug-umbrellas] --debug-umbrellas-crowd N (with --debug-umbrellas, a measurement aid like the browser harness's PerfUmbrellaCrowd): once, when the park's guests exist, adds N guests on the walkable path cells
+		// (UmbrellaPerf.Stage, one each and round again), so the frame cost of a crowd of umbrellas can be measured with --perf-run.
+		if ( GetOption( args, "--debug-umbrellas-crowd", "a number of extra guests" ) is { } crowdText )
+		{
+			var crowd = int.TryParse( crowdText, out var parsedCrowd ) && parsedCrowd > 0 ? parsedCrowd : throw new ArgumentException( "--debug-umbrellas-crowd expects a positive number of guests." );
+			var crowdStaged = false;
+			Render.PostUpdate += () =>
+			{
+				if ( crowdStaged || flow.Level?.Guests is not { } crowdGuests )
+					return;
+				crowdStaged = true;
+				var staged = UmbrellaPerf.Stage( crowdGuests, null, crowd, 0, args.Contains( "--debug-umbrellas" ) );
+				Log.Trace( $"--debug-umbrellas-crowd: {staged.Spawned} guests added, {staged.Guests} in the park, {staged.Umbrellas} with an open umbrella." );
+			};
+		}
+		void GiveEveryGuestAnUmbrella()
+		{
+			if ( flow.Level?.Guests is not { } umbrellaGuests )
+				return;
+			if ( followText is [var followZoom, var followYaw] && Camera.Mode is ParkCameraMode followCamera && flow.Level.OriginalPark is { } followPark )
+				if ( umbrellaGuests.Guests.Where( candidate => candidate.IsVisible && float.IsFinite( candidate.DrawX ) ).OrderBy( candidate => candidate.Id ).FirstOrDefault() is { } followed )
+				{
+					var spot = GuestRenderer.CellToEngine( followPark.Heightfield, followed.DrawX, followed.DrawY );
+					followCamera.SetPose( new System.Numerics.Vector3( spot.X, spot.Y, 0 ), followZoom, followYaw );
+				}
+			foreach ( var umbrellaGuest in umbrellaGuests.Guests )
+			{
+				if ( umbrellaGuest.UmbrellaState == UmbrellaRules.StateOpen )
+					continue;
+				umbrellaGuest.UmbrellaState = UmbrellaRules.StateOpen;
+				umbrellaGuest.UmbrellaType = umbrellaGuest.Id % UmbrellaRules.Colours;
+				umbrellaGuest.UmbrellaDueTurn = 0;
+			}
+		}
+		// [EXT:debug-winter] smoke-only (Debug builds): dresses every guest in warm items. --debug-winter alone gives a head item by the guest's id (HeadItemOf) and mittens on all but every fourth guest, so a capture shows hats, earmuffs,
+		// mittens and the head item alone; --debug-winter hat|earmuffs|head|mittens|all|costume forces one look (costume: every second guest in costume) (all: the guest's own head item and mittens). With --debug-umbrellas-follow zoom,yaw it holds the park camera on the lowest-numbered guest
+		// in view, as --debug-umbrellas does (when both are given the umbrellas' hook moves the camera). It writes the guests' item field directly (a debug aid: the simulation of such a run is not the park's own, nothing is saved from it).
+		var winterIndex = Array.IndexOf( args, "--debug-winter" );
+		var winterLook = winterIndex >= 0 && winterIndex + 1 < args.Length && !args[winterIndex + 1].StartsWith( "--", StringComparison.Ordinal ) ? args[winterIndex + 1] : "";
+		if ( winterIndex >= 0 )
+			Render.PostUpdate += DressEveryGuestWarm;
+		void DressEveryGuestWarm()
+		{
+			if ( flow.Level?.Guests is not { } winterGuests )
+				return;
+			if ( !args.Contains( "--debug-umbrellas" ) && followText is [var winterZoom, var winterYaw] && Camera.Mode is ParkCameraMode winterCamera && flow.Level.OriginalPark is { } winterPark )
+				if ( winterGuests.Guests.Where( candidate => candidate.IsVisible && float.IsFinite( candidate.DrawX ) ).OrderBy( candidate => candidate.Id ).FirstOrDefault() is { } followed )
+				{
+					var spot = GuestRenderer.CellToEngine( winterPark.Heightfield, followed.DrawX, followed.DrawY );
+					winterCamera.SetPose( new System.Numerics.Vector3( spot.X, spot.Y, 0 ), winterZoom, winterYaw );
+				}
+			foreach ( var winterGuest in winterGuests.Guests )
+			{
+				if ( winterLook == "costume" )
+					winterGuest.InCostume = winterGuest.Id % 2 == 0;
+				winterGuest.WarmItems = winterLook switch
+				{
+					"hat" => WinterRules.Hat | WinterRules.Mittens,
+					"earmuffs" => WinterRules.Earmuffs | WinterRules.Mittens,
+					"head" => WinterRules.HeadItemOf( winterGuest.Id ),
+					"mittens" => WinterRules.Mittens,
+					"all" => WinterRules.HeadItemOf( winterGuest.Id ) | WinterRules.Mittens,
+					"costume" => WinterRules.HeadItemOf( winterGuest.Id ) | WinterRules.Mittens,
+					_ => WinterRules.HeadItemOf( winterGuest.Id ) | (winterGuest.Id % 4 == 3 ? 0 : WinterRules.Mittens)
+				};
 			}
 		}
 		// [EXT:debug-particle] smoke-only: once the original level is up, starts template effects (ids, comma separated) at an engine position
@@ -535,7 +662,11 @@ internal static class Game
 					return;
 				Render.PostUpdate -= AddDebugLight;
 				var colour = lightValues.Length == 7 ? new System.Numerics.Vector3( lightValues[4], lightValues[5], lightValues[6] ) : System.Numerics.Vector3.One;
-				var light = new PointLight( new System.Numerics.Vector3( park.Target.X + lightValues[0], park.Target.Y + lightValues[1], park.Target.Z + lightValues[2] ), colour, lightValues[3] );
+				// with --capture-camera the held camera's ground target is the origin (the live camera may still be elsewhere when the light is added), as for --debug-pool
+				var lightCamera = GetOption( args, "--capture-camera", "x,y,height,yaw" )?.Split( ',' ).Select( value => float.Parse( value, System.Globalization.CultureInfo.InvariantCulture ) ).ToArray();
+				var lightX = lightCamera is { Length: >= 2 } ? lightCamera[0] : park.Target.X;
+				var lightY = lightCamera is { Length: >= 2 } ? lightCamera[1] : park.Target.Y;
+				var light = new PointLight( new System.Numerics.Vector3( lightX + lightValues[0], lightY + lightValues[1], park.Target.Z + lightValues[2] ), colour, lightValues[3] );
 				level.PointLights.Add( new FixedPointLightSource( light ) );
 				Log.Trace( FormattableString.Invariant( $"--debug-light: a point light at {light.Position.X:0.##},{light.Position.Y:0.##},{light.Position.Z:0.##}, radius {light.Radius:0.##}, colour {colour.X:0.##},{colour.Y:0.##},{colour.Z:0.##}." ) );
 			}
@@ -733,7 +864,7 @@ internal static class Game
 			}
 		}
 		// [EXT:debug-hud] smoke-only (Debug builds): once the park's HUD is up, runs a list of interface actions for captures (--capture-interface):
-		// staff and buy open those windows, msg:<text> posts a message, msgaction:<kind>+<kind> posts one with action buttons, pause and confirm open those menus, select:<n> selects the n-th placed object, help:<text> forces the popup help line, models:<a+b+c> draws ui.wad models.
+		// staff and buy open those windows, msg:<text> posts a message, msgaction:<kind>+<kind> posts one with action buttons, pause and confirm open those menus, select:<n> selects the n-th placed object, waves opens the first wave machine's settings window (waves:select only selects it), help:<text> forces the popup help line, models:<a+b+c> draws ui.wad models.
 		var debugHud = GetOption( args, "--debug-hud", "a '|' separated action list for interface captures" );
 		if ( debugHud != null )
 		{
@@ -759,6 +890,7 @@ internal static class Game
 						case "msgaction": hud.PostGameMessage( "A message with two actions", argument.Split( '+' ).Select( kind => new OpenTPW.Hud.GameMessageAction( Enum.Parse<OpenTPW.Hud.GameMessageKind>( kind, true ), () => { } ) ).ToArray() ); break;
 						case "pause": hud.OpenPauseMenu(); break;
 						case "confirm": hud.Stack.Push( OpenTPW.UI.Original.UiDialogs.Message( "debugConfirm", () => "QUIT GAME\n\nAre you sure you want to quit the game ?", (() => "Yes", () => { }), (() => "No", () => { }) ) ); break;
+						case "waves": if ( !hud.DebugWaveSettings( argument == "select" ) ) Log.Warning( "--debug-hud: no wave machine to open." ); break;
 						case "select": if ( flow.Level.Objects.Objects.Skip( int.Parse( argument ) ).FirstOrDefault() is { } selected ) hud.SelectObject( selected ); break;
 						case "help": hud.DebugHelp( argument ); break;
 						case "ride": hud.DebugRide( argument ); break;
@@ -827,7 +959,7 @@ internal static class Game
 		{
 			// --smoke-presence adds scripted online players round the park entrance (VisitPresenceSmoke)
 			using var visitSmokeTest = new VisitSmokeTest( level, flow.Hud, input => flow.InjectedInput = input,
-				args.Contains( "--smoke-presence" ) ? visited => VisitPresenceSmoke.Attach( visited, flow.AttachPresence ) : null );
+				args.Contains( "--smoke-presence" ) ? visited => VisitPresenceSmoke.Attach( visited, flow.AttachPresence ) : null, flow.Context );
 			Render.PostUpdate += visitSmokeTest.Update;
 			Render.Run();
 			visitSmokeTest.VerifyCompleted();
@@ -1198,7 +1330,7 @@ internal static class Game
 		// [EXT:debug-pool] --debug-extras: one of each pool extra beside the pool (the shower needs the room first)
 		if ( extras )
 			foreach ( var extra in level.BuildPoolExtrasBeside( pool ) )
-				Log.Trace( $"--debug-extras: built the {extra.Entry.DisplayName} at {extra.Placement.X},{extra.Placement.Y} rotation {extra.Placement.Rotation}." );
+				Log.Trace( FormattableString.Invariant( $"--debug-extras: built the {extra.Entry.DisplayName} at {extra.Placement.X},{extra.Placement.Y} rotation {extra.Placement.Rotation}, engine {extra.Placement.ModelToEngine.M41:0.#},{extra.Placement.ModelToEngine.M42:0.#}." ) );
 		var started = level.Guests.DebugStartSwimmers( placed.Visitors, swimmers );
 		if ( extras )
 		{

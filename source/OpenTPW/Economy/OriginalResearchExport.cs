@@ -86,7 +86,8 @@ public static class OriginalResearchExport
 				continue;
 			var level = research.ResearchedLevel( id );
 			var before = record.ToArray();
-			record[ControlResearchedOffset] = level.HasValue ? (byte)1 : (byte)0;
+			// [BIN:TPW-EXE:0x503FF0 research cheat] an object the research cheat made available is marked researched, its project left as it is
+			record[ControlResearchedOffset] = level.HasValue || research.CheatAvailable.Contains( id ) ? (byte)1 : (byte)0;
 			if ( level.HasValue )
 				BinaryPrimitives.WriteUInt32LittleEndian( record[ControlLevelOffset..], (uint)level.Value );
 			if ( !record.SequenceEqual( before ) )

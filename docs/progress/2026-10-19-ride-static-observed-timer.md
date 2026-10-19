@@ -1,0 +1,5 @@
+## Ride-camera static uses the observed 300 ms timer (October 19, 2026)
+
+UI-094 is narrowed: the static timer now follows the traced 300 ms Boolean eye-mode edges and keeps the current static frame when its elapsed wall interval exhausts the countdown. The HUD prepares the transition once after input; repeated drawing only reads it. Entering/leaving terrain inspection is included, while switching between walking and a ride does not restart static.
+
+The single monotonic host sample, HUD eligibility/initialization and free-walk mapping are explicit adaptations. The existing noise image algorithm and layering are unchanged; native noise sequence coupling, the invisible ride window and other UI-094 residuals remain separate in the [updated proposal](../proposals/ui-094-verify-ride-view-residual-timing.md). Added synthetic lifecycle and actual HUD/CPU-draw regressions; local Python checks do not replace the pending C# CI execution or real-data visual validation. No approximation is retired.

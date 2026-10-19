@@ -96,6 +96,9 @@ internal sealed partial class GameFlow
 			try
 			{
 				GameAudio.EnterPark( snapshot.Theme, snapshot.SoundSeed );
+				// [BIN:TPW-EXE:0x550B30 restart save] Restart Park plays at the sound values the park started with again (GameFlow.restartSound)
+				if ( restart && restartSound is { } startSound )
+					Log.Trace( GameAudio.ApplySavedSound( startSound, GameOptions.Current ) );
 				GameAudio.Events?.Reseed( snapshot.SoundSeed );
 				// the restored scream handles had no chain in the candidate: they scream again now that the park's audio runs
 				candidate.ResumeHeldScreams();

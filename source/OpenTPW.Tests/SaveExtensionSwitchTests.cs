@@ -51,7 +51,7 @@ public class SaveExtensionSwitchTests
 	{
 		CollectionAssert.AreEquivalent( new[] { "opentpw.rain-mood", "opentpw.winter-weather", "opentpw.winter-cold", "opentpw.winter-always", "opentpw.smarter-guests" },
 			ParkExtensionSwitch.RuleOnlyExtensionIds.ToArray(), "the rule-only extensions: no content, no state a park needs them for" );
-		CollectionAssert.AreEquivalent( new[] { "opentpw.pools", "opentpw.umbrellas", "opentpw.winter", "opentpw.cheats" }, ParkResumeMods.UsedOnlyExtensionIds.ToArray(), "the content extensions a load may switch on" );
+		CollectionAssert.AreEquivalent( new[] { "opentpw.pools", "opentpw.umbrellas", "opentpw.winter", "opentpw.cheats", "opentpw.evening" }, ParkResumeMods.UsedOnlyExtensionIds.ToArray(), "the content extensions a load may switch on" );
 		Assert.IsFalse( ParkExtensionSwitch.RuleOnlyExtensionIds.Overlaps( ParkResumeMods.UsedOnlyExtensionIds ) );
 		foreach ( var extension in RuleOnly.Concat( Content ) )
 			Assert.IsTrue( extension.AffectsSimulation && extension.PlayerSelectable, $"{extension.Id} is recorded in saves and a player can switch it" );

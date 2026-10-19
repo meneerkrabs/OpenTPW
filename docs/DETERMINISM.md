@@ -598,6 +598,19 @@ Two pins cover the jungle's weather turn by turn over its first 400 days under s
 
 The guests' side of the option has a pin of its own, because the two weather pins hash only the weather: `DeterminismTests.UmbrellasAndRainMoodUnderTheJungleWeatherAcrossDecemberArePinnedWithWintryDecembersOffAndOn` runs the synthetic park with a brolly shop and the rain mood on, driven by the jungle's real `ParkWeather` (seed 21) from park day 320 over 35 days across the first December: `JungleDecemberOffFixedRunHash` = `0xF4A00471E60B9535` (option off: rain, then a thunderstorm in December) and `JungleDecemberWintryFixedRunHash` = `0x296DA4DA6A8BE323` (option on: rain, then snow). `EveryExistingPinIsUnchangedWithTheWinterExtensionAndTheWinterWeatherOnOrOffAndNoWinterShop` builds that weather with the option's real gate and also covers `RainMoodWithUmbrellasFixedRunHash`. The forecast follows the option (`ParkWeather.ForecastBands`) and takes no draw.
 
+## Always winter
+
+The `opentpw.winter-always` option ([WINTER.md](WINTER.md#always-winter-extwinter-always), `[EXT:winter-always]`) is off by default; the level hands it to `ParkWeather` when it builds the weather and to the guests (`GuestSimulation.WinterAlways`). With it on, every roll uses December's season row in a park that can snow from it
+(jungle, fantasy and Halloween; space keeps its own seasons) and every roll is wintry, so the rain band is snow without lightning all year; the winter shops' season terms read December. The roll's draws are the same in number and kind (only the row changes), the conversion draws nothing, and with no lightning in the
+jungle the lightning clock takes no draws at all, so the weather stream is another one from the first roll. Nothing new is saved in the weather snapshot (the row and the wintry flag follow from the option), and a resume mid-snow in July continues exactly (`WinterAlwaysTests.AnAlwaysWinterWeatherSavedMidSnowInJulyContinuesIdenticallyAfterAResume`).
+The option implies the wintry Decembers: both on is the same weather and the same guest run as Always winter alone. With it off **every existing pin stands**: the weather pins `JungleSeed21OffHash` and `JungleSeed21WintryHash` (`WinterAlwaysTests.TheJungleWeatherOfAFixedSeedIsPinnedWithTheOptionOn`), the December guest pins built with the option's real gate,
+and the fixed, umbrellas, rain mood and winter runs (`DeterminismTests.EveryExistingPinIsUnchangedWithTheAlwaysWinterOptionOff`). The option is always recorded in a save while it is on.
+
+Two new pins. The weather: `WinterAlwaysTests.JungleSeed21AlwaysWinterHash` = `0x71A3DF8635ACF9B9`, the jungle's first 400 days under seed 21 with the option on (378 snowy days, the first on day 4; no rainy day). The guests: `DeterminismTests.WinterAlwaysFixedRunHash` = `0xAD0FF92A6B42F187`
+(`ShopsAndRainMoodUnderTheJungleWeatherFromMayArePinnedWithAlwaysWinterOn`), the synthetic park with a brolly shop, the winter shops (a kiosk and a glühwein stall) and the rain mood on, driven by the jungle's real `ParkWeather` (seed 21) from the first of May over 168 days, four weather turns to each park turn, so the
+guests meet May to mid-October, with the shops reading the weather's own calendar month: snow in 230 of its 240 samples (one dry spell), 55 umbrella buyers, 47 warm item buyers and 127 guests changed by the rain mood. The same run with the option off (no pin) never snows and differs. The cold rule is off in this run, so the
+cold mood's replacement of the rain mood's snow and storm happiness (Winter cold) does not enter it.
+
 ## Tests
 
 `DeterminismTests` (no game data needed):

@@ -13,7 +13,7 @@ public class LinkPreviewCursorTests
 	{
 		public int Width => 16;
 		public int Height => 16;
-		public Vector2 Origin => default;
+		public System.Numerics.Vector2 Origin => default;
 		public OriginalPlacementResult CheckTerrain( int x, int y ) => OriginalPlacementResult.Allowed;
 		public float GetCellHeight( int x, int y ) => 0;
 	}

@@ -111,6 +111,41 @@ public class VisitorSpriteIntegrationTests
 		}
 	}
 
+	/// <summary>
+	/// A shop whose UsageInfo.RideHandlesSprite keeps the body (the Burger Shop and every other shipped shop that sets it) serves its customer in view: through the whole use the guest stands still in its stand
+	/// cell with the body it boarded with (tp.exe 0x0050212B: kept, stand template, +0x28 = 1; 0x004FA087 then leaves it where it is), and the script's let-off puts it back among the walking guests.
+	/// </summary>
+	[TestMethod]
+	public void AShopThatKeepsTheBodyServesItsCustomerInViewAtTheStandPoint()
+	{
+		var rig = new QueueTests.Rig( satisfies: GuestNeeds.Hunger, capacity: 1, takesGuests: true, kind: RideVisitorKind.Shop );
+		rig.Ride.RideHandlesSprite = true;
+		var guest = rig.Send();
+		for ( var tick = 0; tick < 120 * 60 && guest.State != GuestState.Using; tick++ )
+			rig.Step();
+		Assert.AreEqual( GuestState.Using, guest.State, "the shop took the guest" );
+		var body = guest.BodySprite.Player;
+		Assert.IsNotNull( body, "the body is kept" );
+		var stand = GuestSimulation.StandCellOf( rig.Ride );
+		var (x, y) = (guest.X, guest.Y);
+		Assert.AreEqual( stand, guest.Navigation.Cell, "the customer stands in the entrance cell, at the stand point it walked to" );
+		var servedTicks = 0;
+		while ( guest.State == GuestState.Using && servedTicks < 10 * 60 )
+		{
+			Assert.IsTrue( rig.Simulation.StandsAtCounter( guest ), $"in view after {servedTicks} ticks" );
+			Assert.IsFalse( guest.IsVisible, "still a rider for every other renderer (balloon, thought, pick)" );
+			Assert.AreEqual( (x, y), (guest.X, guest.Y), "the body does not move while it is served" );
+			Assert.AreSame( body, guest.BodySprite.Player );
+			rig.Step();
+			servedTicks++;
+		}
+		Assert.AreEqual( GuestState.ExitingRide, guest.State, "the let-off released the guest" );
+		Assert.IsTrue( servedTicks is >= 60 and <= 70, $"the script's WAIT 1000 serves the guest about a second ({servedTicks} ticks)" );
+		Assert.IsFalse( rig.Simulation.StandsAtCounter( guest ) );
+		Assert.IsTrue( guest.IsVisible );
+		Assert.AreSame( body, guest.BodySprite.Player, "the released guest walks on with the same body" );
+	}
+
 	[TestMethod]
 	public void BounceHeightTimeAndBrokenRequestsDoNotReplacePreviouslyEmittedOutput()
 	{

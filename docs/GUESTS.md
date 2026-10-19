@@ -326,7 +326,8 @@ network reachable from EntranceA.
 **States** (`KIDSTATES` indices): bus stop → crossing (0, 1) → ticket booth (2, 4:
 the booth weighs the fee against the park, see [The ticket booth](#the-ticket-booth); 3: paid, waiting at the booth for the gate) → entering (5) → walking around (7)
 → going to a ride (10) → walking to a queue position (12) ⇄ standing in the queue
-(11) → called: walking to the stand point (13) → waiting to board (14) → using (16, hidden)
+(11) → called: walking to the stand point (13) → waiting to board (14) → using (16, hidden;
+a shop customer whose body the shop keeps stays in view, see [Shop customers](#shop-customers))
 → exiting a ride (15) → … → leaving the park (18) → crossing (19) → waiting to go
 home (21) → removed.
 
@@ -976,6 +977,28 @@ of 128 pixels in clip space, and the projection builder 0x578BE0 runs a 90 degre
 A kid's set is the original's own draw at its creation, the world generator reseeded with its thing id and the first draw shifted right by 2 modulo the 8 sets (`GuestAppearance.KidSet`), not its peep type;
 a walking kid steps its 8-frame walk 20 times a cell (0x4FA2A0: the interval is 62 ms over twice the speed).
 Not drawn: shadows, riders' bodies on a ride (their heads are drawn, see below).
+
+### Shop customers
+
+A guest a shop is serving (state 16) stays in view when the shop's `UsageInfo.RideHandlesSprite` is 1: in the
+jungle the Burger, Fries, Drinks, Ice Cream, Steak, Gift and Balloon shops set it, and the Costume Shop keeps the
+Shops.sam default of 0. tp.exe's state-16 entry tests the thing flag `+0x32` bit `0x20`, which the object
+constructor sets from that key (`0x4DB41C`): clear deletes the guest's body (`0x4D4170` at `0x502147`), set keeps it,
+queues the stand template and sets `+0x28` = 1 (`0x50212B`..`0x50213D`). The guest update places the body at the
+guest's position only while `+0x28` is 0 (`0x4FA087`), and the state-15 entry clears it (`0x501F79`). No shipped
+shop script moves or hides the body, so the customer stands at the stand point it walked to, in the stand pose,
+until the script lets it off: the Jungle Burger Shop's script (`burger.RSE`) takes the guest from `VAR_LETMEON`,
+waits 1000 ms and writes it to `VAR_LETMEOFF`. OpenTPW draws such a customer standing there
+(`GuestSimulation.StandsAtCounter`, kids or costume renderer by its kept body's appearance); its balloon, thought
+bubble, pick and portrait stay off, as for any rider. A shop with `RideHandlesSprite` 0, a ride and a pools
+changing room still hide the guest. Before October 19, 2026 every served customer was hidden, so guests at the Burger
+Shop seemed to vanish into the hut.
+
+Then tp.exe's ExitRide (`0x5014E0`) puts the guest at `UsageInfo.ExitCellAppearPos` inside the exit cell (the
+entrance cell for a shop without an exit, `0x4DEDF0(1)`) and walks it to the cell beyond in state 15; OpenTPW sets
+it down on that cell beyond and lets it stand there for a second (`[APPROX:GUEST-023]`). `ShopVisitAssetTests`
+runs the shipped Burger Shop in all four rotations: every customer is let off about a second after the shop takes
+it and no guest is lost.
 
 **Depth.** The quad is camera-facing, so all of it lies at the depth of the hotspot, and seen from above the ground just in front of the
 feet is nearer the camera than the hotspot: it hides whatever hangs below the hotspot. In the `.TPC` the soles of a standing kid end 3 to 5

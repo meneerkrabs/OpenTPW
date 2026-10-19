@@ -174,6 +174,29 @@ public class VisitorLivePortraitTests
 			}
 	}
 
+	/// <summary>
+	/// A customer of a shop whose UsageInfo.RideHandlesSprite kept its body (tp.exe 0x0050212B, 0x004FA087) is drawn standing where it stands while the shop serves it; a shop that deletes the body, a ride
+	/// that keeps it without a pose and a pools changing room draw nothing.
+	/// </summary>
+	[TestMethod]
+	public void AServedShopCustomerWhoseBodyTheShopKeepsIsDrawnStanding()
+	{
+		foreach ( var (kind, keeps, changingRoom, drawn) in new[] { (RideVisitorKind.Shop, true, false, 1), (RideVisitorKind.Shop, false, false, 0), (RideVisitorKind.Ride, true, false, 0), (RideVisitorKind.Shop, true, true, 0) } )
+		{
+			var guest = Visitor();
+			var rig = new Rig( guest );
+			var shop = new RideVisitorBridge( 7, "Burger Shop", kind, 1, 0, 0 ) { EntranceCell = (4, 4), ExitCell = (4, 4), RideHandlesSprite = keeps, IsChangingRoom = changingRoom };
+			rig.Simulation.Register( shop );
+			guest.State = GuestState.Using;
+			guest.AttractionId = shop.AttractionId;
+			if ( keeps )
+				guest.BodySprite.CreatePlayer( VisitorSpriteTemplate.Stand, 0 );
+			Assert.AreEqual( drawn == 1, rig.Simulation.StandsAtCounter( guest ), $"{kind}, keeps {keeps}, changing room {changingRoom}" );
+			rig.Prepare( 2.25 );
+			Assert.AreEqual( drawn, rig.Renderer.DrawnGuests, $"{kind}, keeps {keeps}, changing room {changingRoom}" );
+		}
+	}
+
 	[TestMethod]
 	public void SelectionAloneAndMissingFirstOutputNeverPublishButTheFirstPreparedQuadIsImmediatelyReadable()
 	{

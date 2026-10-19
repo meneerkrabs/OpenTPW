@@ -513,7 +513,9 @@ public sealed class GuestRenderer : Entity
 		{
 			// a guest on a bounce ride is hidden like any rider, and drawn from the ride's own pose (a stale slot of another attraction never draws it)
 			BounceRiderPose? rider = bounceRiders.Count > 0 && bounceRiders.TryGetValue( guest.Id, out var pose ) && RideHeadRenderer.CanDraw( guest, pose.AttractionId ) ? pose : null;
-			if ( !guest.IsVisible && rider == null || rider is { Visible: false } || !AcceptsBodyConsumer( guest, rider?.UsesSpriteState == true ) )
+			// a shop's customer stays in view at the counter while it is served (GuestSimulation.StandsAtCounter), drawn by the renderer of its kept body's appearance
+			var atCounter = rider == null && !guest.IsVisible && simulation.StandsAtCounter( guest );
+			if ( !guest.IsVisible && rider == null && !atCounter || rider is { Visible: false } || !AcceptsBodyConsumer( guest, rider?.UsesSpriteState == true || atCounter ) )
 				continue;
 			var (atlasIndex, frameIndex, mirror, slot, direction, rotation, step) = SelectSpriteAndSlot( guest, right, forward, up, rider );
 			var atlas = atlases[atlasIndex];

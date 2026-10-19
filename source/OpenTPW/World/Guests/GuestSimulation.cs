@@ -3244,6 +3244,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		if ( Find( guestId ) is not { } guest )
 			return;
 		// [EXT:pools-swim] a guest released from a changing room with a pool beside it swims; any other release walks on
+		// [APPROX:GUEST-023] the released guest is set down on the walkable cell beyond the exit and stands there for ExitRideSeconds; tp.exe's ExitRide 0x005014E0 puts it at UsageInfo.ExitCellAppearPos inside the exit cell (+0x38, 0x004DEDF0(1)) and walks it to the cell beyond (0x004FA530) in state 15 until it arrives
 		if ( !BeginSwim( guest, ride ) )
 		{
 			ReturnToPath( guest, ride.ExitCell );

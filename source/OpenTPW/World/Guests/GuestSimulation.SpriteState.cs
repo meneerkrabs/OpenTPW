@@ -78,6 +78,7 @@ public sealed partial class GuestSimulation
 		return Math.Clamp( interval, 0, SpritePlayer.LongestInterval );
 	}
 
+	// [BIN:TPW-EXE:0x0050212B state 16 body] the entry tests the thing flag +0x32 bit 0x20 (set from UsageInfo.RideHandlesSprite, type +0x104, by the constructor at 0x004DB41C): clear deletes the body (0x004D4170 on +0xC), set keeps it, queues template 3 (stand, 0x004217F0) and sets +0x28 = 1
 	private static void BoardBodySprite( Guest guest, IRideVisitorBridge ride )
 	{
 		if ( ride.RideHandlesSprite )
@@ -85,6 +86,16 @@ public sealed partial class GuestSimulation
 		else
 			guest.BodySprite.DeletePlayer();
 	}
+
+	/// <summary>
+	/// A customer a shop keeps in view while it is served: a guest using (state 16) a shop whose <c>UsageInfo.RideHandlesSprite</c> kept its body stands at the stand point it walked to, in the stand
+	/// pose, until the script lets it off (the burger shop's script holds it for 1 s). Every shipped shop script leaves the body alone, so nothing else moves or hides it. A changing room's guests
+	/// stay out of view ([EXT:pools-swim]); riders keep the ride's own poses or stay hidden.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004FA087 held body] the guest update places its body at its own position (0x00475480) only while +0x28 is 0; state 16 with a kept body has set it to 1 (0x00502136) and the state-15 entry clears it (0x00501F79), so the body stays drawn where it stood when the shop took it
+	public bool StandsAtCounter( Guest guest ) =>
+		guest.State == GuestState.Using && guest.BodySprite.Player != null && !guest.InSwimSession
+		&& FindAttraction( guest.AttractionId ) is { RideHandlesSprite: true, Kind: RideVisitorKind.Shop, IsChangingRoom: false };
 
 	/// <summary>State 15 follows the use effects: a retained body keeps its copied appearance, while a new one uses the person's updated category.</summary>
 	private void ReleaseBodySprite( Guest guest )

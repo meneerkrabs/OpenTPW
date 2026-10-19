@@ -11,7 +11,7 @@ namespace OpenTPW;
 /// <c>__rem_pio2_large.c</c>, <c>sin.c</c>, <c>cos.c</c>, <c>atan.c</c>, <c>atan2.c</c>, <c>acos.c</c>, <c>pow_small.c</c> =
 /// FreeBSD <c>e_pow.c</c>, <c>log2_small.c</c> = FreeBSD <c>e_log2.c</c>). Their error is below one unit in the last place; they
 /// are not correctly rounded, so a result can differ from another library's in the last bit, but it is the same on every runtime.
-/// The single-precision overloads evaluate in double and round once to single.
+/// <see cref="DetMathF"/> has the single-precision versions.
 /// </para>
 /// <para>
 /// Results that are NaN are returned as <see cref="double.NaN"/>: a NaN's sign and payload made by arithmetic differ between
@@ -96,7 +96,8 @@ public static class DetMath
 		return w + (((1.0 - w) - hz) + (z * r - x * y));
 	}
 
-	private const double ToInt = 1.5 / double.Epsilon * 0 + 6755399441055744.0; // 1.5 / DBL_EPSILON = 0x1.8p52
+	/// <summary>1.5 / DBL_EPSILON = 0x1.8p52: adding and subtracting it rounds a double below 2⁵¹ to an integer (C#'s double.Epsilon is the smallest subnormal, not DBL_EPSILON).</summary>
+	private const double ToInt = 6755399441055744.0;
 	private const double PiOver4 = 7.85398163397448278999e-01; // 0x1.921fb54442d18p-1
 	private const double InvPiOver2 = 6.36619772367581382433e-01, PiOver2_1 = 1.57079632673412561417e+00, PiOver2_1t = 6.07710050650619224932e-11,
 		PiOver2_2 = 6.07710050630396597660e-11, PiOver2_2t = 2.02226624879595063154e-21, PiOver2_3 = 2.02226624871116645580e-21,
@@ -973,21 +974,27 @@ public static class DetMath
 			z = WithHigh( z, (uint)j );
 		return s * z;
 	}
+}
 
-	// ---- single precision -------------------------------------------------------------------------------------------------
+/// <summary>
+/// The single-precision counterparts of <see cref="DetMath"/> for code that used <see cref="MathF"/>: each evaluates the double routine and
+/// rounds once to single, so they are as deterministic as <see cref="DetMath"/> and agree with a correctly rounded single result except
+/// in the rare cases where the double result lies within its last unit of a single rounding boundary.
+/// </summary>
+public static class DetMathF
+{
+	/// <summary>sin x.</summary>
+	public static float Sin( float x ) => (float)DetMath.Sin( x );
 
-	/// <summary>sin x evaluated in double and rounded once to single.</summary>
-	public static float Sin( float x ) => (float)Sin( (double)x );
+	/// <summary>cos x.</summary>
+	public static float Cos( float x ) => (float)DetMath.Cos( x );
 
-	/// <summary>cos x evaluated in double and rounded once to single.</summary>
-	public static float Cos( float x ) => (float)Cos( (double)x );
-
-	/// <summary>(sin x, cos x) evaluated in double and rounded once to single.</summary>
+	/// <summary>(sin x, cos x).</summary>
 	public static (float Sin, float Cos) SinCos( float x ) => (Sin( x ), Cos( x ));
 
-	/// <summary>atan2(y, x) evaluated in double and rounded once to single.</summary>
-	public static float Atan2( float y, float x ) => (float)Atan2( (double)y, (double)x );
+	/// <summary>atan2(y, x).</summary>
+	public static float Atan2( float y, float x ) => (float)DetMath.Atan2( y, x );
 
-	/// <summary>acos x evaluated in double and rounded once to single.</summary>
-	public static float Acos( float x ) => (float)Acos( (double)x );
+	/// <summary>acos x.</summary>
+	public static float Acos( float x ) => (float)DetMath.Acos( x );
 }

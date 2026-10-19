@@ -91,6 +91,8 @@
 	<ItemGroup Condition="'$(OpenTpwDeterminismPins)' == 'true'">
 		<Compile Include="../OpenTPW.Tests/**/*.cs" Exclude="../OpenTPW.Tests/obj/**;../OpenTPW.Tests/bin/**;@(DeterminismPinsExcludedTests)" Link="Tests/%(RecursiveDir)%(Filename)%(Extension)" />
 		<PackageReference Include="MSTest.TestFramework" Version="2.2.7" />
+		<!-- the shipped example script mod, which the pinned script-mod run switches on (DeterminismTests.ScriptModsFixedRunHash) -->
+		<EmbeddedResource Include="../../content/mods/opentpw.example.*/**/*" LogicalName="content/mods/%(RecursiveDir)%(Filename)%(Extension)" />
 	</ItemGroup>
 	<ItemGroup Condition="'$(OpenTpwDeterminismPins)' != 'true'">
 		<Compile Remove="Program.DeterminismPins.cs" />

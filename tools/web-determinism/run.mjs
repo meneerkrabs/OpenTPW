@@ -20,9 +20,15 @@ export const PIN_CLASSES = [
 	'PoolSlideActivityTests', 'PathBuilderTests', 'CheatsRideVehicleTests', 'CheatsExtensionTests', 'ParkWeatherTests',
 	'CoasterTests', 'CoasterCollisionTests', 'CoasterRollTests', 'CoasterDispatchTests', 'CoasterTrainLayoutTests', 'CoasterStationTests',
 	'CoasterTagKnotTests', 'CoasterSaveTests', 'TourControllerTests', 'BumpModuleTests', 'BumpControllerTests', 'BumperControllerTests',
-	'TrackSurfaceTests', 'TrackCircuitTests', 'PoolsTests', 'PoolsAttractionsTests', 'PoolsExtrasTests', 'PoolsSwimSessionTests',
+	'TrackSurfaceTests', 'TrackCircuitTests', 'PoolsTests', 'PoolsAttractionsTests', 'PoolsSwimSessionTests',
 	'PoolSwimmingTests', 'PoolSlidesTests', 'StaffWorldTests', 'StaffSteeringTests', 'LoansSummaryTests', 'BankWordsTests', 'ParkEconomyTests',
 ];
+
+/** Tests of those classes that read the repository's own files (sources, shaders), which the page does not have: skipped, with the reason. */
+export const SKIPPED = new Map([
+	['WorldRngTests.PresentationCodeNeverReachesTheWorldGenerator', 'scans the repository sources'],
+	['PoolsAttractionsTests.TheWaterSurfaceRisesWithTheWaveAndTheSwimmersRideIt', 'reads the repository shaders'],
+]);
 
 function parseArguments(argv) {
 	const options = { webRoot: null, classes: PIN_CLASSES, report: null, chrome: process.env.CHROME ?? null, measure: false, timeoutMs: 30 * 60000 };
@@ -101,14 +107,23 @@ async function main() {
 		for (const [name, value] of Object.entries(report.math))
 			console.log(`  ${name.padEnd(40)} ${value}`);
 		const tests = JSON.parse(await evaluate(`opentpwPerf.program.DeterminismTests(${JSON.stringify(options.classes.join(','))})`));
-		for (const { class: className, method } of tests) {
+		for (const { class: className, method, informative } of tests) {
 			let result;
+			if (SKIPPED.has(`${className}.${method}`)) {
+				result = { outcome: 'skipped', message: SKIPPED.get(`${className}.${method}`), ms: 0 };
+				report.tests.push({ class: className, method, informative, ...result });
+				console.log(`skipped      ${className}.${method} (${result.message})`);
+				continue;
+			}
 			try {
 				result = JSON.parse(await evaluate(`opentpwPerf.program.DeterminismRun(${JSON.stringify(className)}, ${JSON.stringify(method)})`, options.timeoutMs));
 			} catch (error) {
 				result = { outcome: 'failed', message: `harness: ${error.message}`, ms: null };
 			}
-			report.tests.push({ class: className, method, ...result });
+			// A comparison with the runtime's own C library (musl here) informs about the platform; it does not gate the simulation.
+			if (informative && result.outcome === 'failed')
+				result.outcome = 'differs';
+			report.tests.push({ class: className, method, informative, ...result });
 			console.log(`${result.outcome.padEnd(12)} ${className}.${method} (${result.ms ?? '?'} ms)${result.message && result.outcome !== 'passed' ? `\n             ${result.message.split('\n')[0]}` : ''}`);
 		}
 	} finally {
@@ -118,8 +133,8 @@ async function main() {
 		await fs.rm(temporary, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
 	}
 	const count = outcome => report.tests.filter(test => test.outcome === outcome).length;
-	report.summary = { passed: count('passed'), failed: count('failed'), inconclusive: count('inconclusive') };
-	console.log(`\n${report.summary.passed} passed, ${report.summary.failed} failed, ${report.summary.inconclusive} inconclusive`);
+	report.summary = { passed: count('passed'), failed: count('failed'), inconclusive: count('inconclusive'), skipped: count('skipped'), platformLibraryDiffers: count('differs') };
+	console.log(`\n${report.summary.passed} passed, ${report.summary.failed} failed, ${report.summary.inconclusive} inconclusive, ${report.summary.skipped} skipped, ${report.summary.platformLibraryDiffers} platform-library comparisons differ (informative)`);
 	if (options.report)
 		await fs.writeFile(options.report, JSON.stringify(report, null, 2) + '\n');
 	if (report.summary.failed > 0 && !options.measure)

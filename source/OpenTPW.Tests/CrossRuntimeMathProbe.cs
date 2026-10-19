@@ -95,10 +95,10 @@ public static class CrossRuntimeMathProbe
 			("DetMath.Acos", D( unit.Select( DetMath.Acos ) )),
 			("DetMath.Pow", D( powPairs.Select( pair => DetMath.Pow( pair.First, pair.Second ) ) )),
 			("DetMath.Log2", D( positives.Select( DetMath.Log2 ) )),
-			("DetMath.SinF", F( Single( angles ).Select( DetMath.Sin ) )),
-			("DetMath.CosF", F( Single( angles ).Select( DetMath.Cos ) )),
-			("DetMath.Atan2F", F( pairs.Select( pair => DetMath.Atan2( (float)pair.First, (float)pair.Second ) ) )),
-			("DetMath.AcosF", F( Single( unit ).Select( DetMath.Acos ) )),
+			("DetMath.SinF", F( Single( angles ).Select( DetMathF.Sin ) )),
+			("DetMath.CosF", F( Single( angles ).Select( DetMathF.Cos ) )),
+			("DetMath.Atan2F", F( pairs.Select( pair => DetMathF.Atan2( (float)pair.First, (float)pair.Second ) ) )),
+			("DetMath.AcosF", F( Single( unit ).Select( DetMathF.Acos ) )),
 		};
 	}
 

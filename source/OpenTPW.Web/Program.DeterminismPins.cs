@@ -15,8 +15,9 @@ namespace OpenTPW;
 public static partial class Program
 {
 	private static readonly HashSet<Type> initializedTestClasses = new();
+	private static bool determinismContentWritten;
 
-	/// <summary>The test methods of the classes named (comma-separated, short names in OpenTPW.Tests), as JSON [{ class, method }].</summary>
+	/// <summary>The test methods of the classes named (comma-separated, short names in OpenTPW.Tests), as JSON [{ class, method, informative }].</summary>
 	[JSExport]
 	public static string DeterminismTests( string classNames )
 	{
@@ -26,7 +27,12 @@ public static partial class Program
 			var type = TestClass( name );
 			foreach ( var method in type.GetMethods( BindingFlags.Public | BindingFlags.Instance ).Where( method => method.GetCustomAttribute<TestMethodAttribute>() != null
 				&& method.GetCustomAttribute<IgnoreAttribute>() == null && method.GetParameters().Length == 0 ).OrderBy( method => method.MetadataToken ) )
-				result.Add( new JsonObject { ["class"] = name, ["method"] = method.Name } );
+				result.Add( new JsonObject
+				{
+					["class"] = name, ["method"] = method.Name,
+					// a comparison with the runtime's own C library (DetMathTests.PlatformLibrary) informs, it does not gate
+					["informative"] = method.GetCustomAttributes<TestCategoryAttribute>().Any( category => category.TestCategories.Contains( OpenTPW.Tests.DetMathTests.PlatformLibrary ) ),
+				} );
 		}
 		return result.ToJsonString();
 	}
@@ -37,6 +43,12 @@ public static partial class Program
 	{
 		var type = TestClass( className );
 		var method = type.GetMethod( methodName, BindingFlags.Public | BindingFlags.Instance ) ?? throw new ArgumentException( $"{className}.{methodName} is not a test." );
+		// the page's content files (the shipped data mods, the official extensions' objects) where the tests find them next to the program, as a game start writes them
+		if ( !determinismContentWritten )
+		{
+			WriteContent();
+			determinismContentWritten = true;
+		}
 		var watch = Stopwatch.StartNew();
 		string outcome;
 		string? message = null;

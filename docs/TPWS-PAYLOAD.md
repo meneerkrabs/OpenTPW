@@ -120,8 +120,8 @@ the TrackRides block, `KOLC`'s word is VanillaTime, `RYLF` holds RSSE, `SAOC`'s
   and the sub-chunk sizes must add up to it), FlyingRides `0x55e020` (`'FLY_'`, an on word, a counted slot table, ten
   words and one block per nonzero slot), RSSE `0x5597a0` (`'RSSE'`, a counted header, five words, a record count and size,
   then per record its struct, eight counted buffers, the folder string and an `'OBJ '` list; see "RSSE block" below), Camera 40 (`0x42cec0`), Advisor `0x599d00`
-  (`'ADV_'`, two counted buffers), Sound `0x51c400` (the settings, and with sound on a chunk the loader skips by its
-  length word), Cheat 2 (`0x405570`), AdvisorScoring 4 (`0x59c860`) and UI `0x481680` (`u32 count`, count x `0x21c`).
+  (`'ADV_'`, two counted buffers), Sound `0x51c400` (two flags, the counted 84-byte settings and, when sound was initialised, three
+  listener floats and the sound library's voice list behind its length word; see "Sound block"), Cheat 2 (`0x405570`), AdvisorScoring 4 (`0x59c860`) and UI `0x481680` (`u32 count`, count x `0x21c`).
   The Jungle Easymode save's seventeen widths all agree with these readers. An empty Coasters block is exactly its
   16-byte count and globals. The World block is the loader's own readers
   (`SaveBlockWidths.TryMeasureWorld`: the 64 variable bytes, the control manager 4,806, the macro AI 670 + 28 + 18, 0x4000
@@ -770,6 +770,56 @@ consistently (see below), but its coaster type is a stand-in.
   (the station nodes 0x12 and the end node 0x13) and writes S2's collision list as the
   auxiliary block instead. Consumers still join sections to objects by cell.
 
+## Sound block (`SaveSoundData`, `SaveSoundSettings`)
+
+Writer `0x51C350` (called at `0x416C02`, after the advisor block), loader `0x51C400` (called at `0x415BA2`, which logs "Sound: loaded %d bytes" and
+then checks the `SOUN` tag). Neither is QMixer code: QMIXER.dll exports no state functions and tp.exe imports none.
+
+| Field | Meaning |
+| --- | --- |
+| `u32` | sound initialised (`0x802BD4`, set by the init `0x51B660`) |
+| `u32` | sound enabled (`0x802BC8`; a running game writes `0x400`); the loader writes it straight back |
+| `u32` length, bytes | the 84 bytes (`0x54`) of the sound-service globals at `0x803AA0` (`SaveSoundSettings`, below) |
+| 3 x `f32` | only when initialised: the listener position, which the loader reads and discards |
+| `u32` length, bytes | the sound library's voice list (writer `0x6B6C30`, reader `0x6B6DA0`): a registry record, the handle counter and every live voice by handle; the loader stops every voice and rebuilds these |
+
+The 21 words of the settings (`SaveSoundSettings`, `SaveSoundData.SettingsView`; null unless the length is 84):
+
+| Offset | Name | Meaning |
+| --- | --- | --- |
+| +0x00 | `MusicHandle` | park music voice handle (`cat_music` event 2, park entry `0x51E730`) |
+| +0x04 | `CrowdHandle` | crowd sentence handle (`cat_kids` 0x5B, `0x51E7B0`) |
+| +0x08 | `CrowdAllowed` | 1 after the init; no other writer |
+| +0x0C | `RainHandle` | level rain voice handle (`cat_ambient` 0x21, `0x51E830`) |
+| +0x10 | `CrowdLevel` | crowd level 0..100 |
+| +0x14 | `ReverbPreset` | held `SndReverb.map` preset; the loader sends it again |
+| +0x18 | `MasterVolume` | master percent (setter `0x51BB60`, only called at start-up with 100) |
+| +0x1C | `EffectsVolume` | effects percent (setter `0x51BBA0`) |
+| +0x20 | `MusicVolume` | music percent (setter `0x51BB80`) |
+| +0x24 | `SpeechVolume` | speech percent (setter `0x51BBC0`) |
+| +0x28 | `Dirty` | the tick `0x51BD70` pushes all seven mixer values while it is non-zero, then clears it; park entry sets it after the load (`0x54F3AE`) |
+| +0x2C | `SpeechPlaying` | the advisor speaks (`0x51E6F0`); a duck condition |
+| +0x30 | `MusicDuck` (u16) | DIPMUSIC request (`0x51E710`); non-zero sends music as 0 |
+| +0x32 | `ListenerFreeze` (u16) | listener updates skipped (`0x51C1C0`); the post-load pass `0x415140` clears it |
+| +0x34 | `Unused34` | no reader or writer found |
+| +0x38 | `EffectsOn` | effects on (setter `0x51BC00`) |
+| +0x3C | `MusicOn` | music on (setter `0x51BBE0`) |
+| +0x40 | `SpeechOn` | speech on (setter `0x51BC20`) |
+| +0x44..+0x50 | `Tail` | four words without references |
+
+All twelve corpus files (the eleven private saves and the shipped Easymode) hold the defaults: master 100, effects 75, music 60, speech 75, every
+channel on, dirty 1, no duck.
+
+**Import.** A park started from an original save (a player's own, `--original-save`, or the level's shipped Easymode seed, which the original's park
+entry `0x5ACCF0` loads as the Instant Action player's copy) plays at the save's master, effects, music and speech volumes and
+on-flags (`GameAudio.ApplySavedSound`, `SavedSoundVolumes`), as the original's next sound tick does with the copied shadows; the player's options
+and `opentpw-options.json` are not changed, because the original's profile options (`0x78D8E8`) are a separate struct that the load does not touch
+and that the profile file is written from (`0x423E90`). The saved values end where the original's end (docs/AUDIO.md, "Volumes of a loaded original
+save"); Restart Park applies the start's values again, as the original's `restart.INTS` reload does. Everything else in the block is the original
+engine's own state (`[EXT:original-engine-state-dumps]`): crowd, rain and reverb are recomputed within frames by OpenTPW as by the original, the
+duck follows the saved DIPMUSIC script byte, the original itself discards the listener floats and clears the freeze, and the voice handles and
+voice list name voices of tp.exe's sound library. The writer copies the block verbatim from the template (byte-exact round trip).
+
 ## Money (bank thing, model 16)
 
 The bank thing named by `mBankAccount` holds, after its 8-byte base, seven bank
@@ -813,7 +863,7 @@ open flag, and the advisor's pending advice and history of bound messages. The s
 Still read and not imported, each reported with its SAVE approximation: those dropped guests (SAVE-002), a research project of an object the archives lack or a current project the picker would not offer (SAVE-007), the hiring
 pool's candidates saved on the pointer (SAVE-004), the advisor presentation block, the world state, the arrival variables and bytes, the calendar session start, the advisor
 controller's presentation words (its current record is the last tutorial advice when an automatic advisor attaches) and the weather, park analyser apart from its recent-research rings,
-tag system, mechanic HQ and UI receiver things (SAVE-010). The Scripts block's sprite scripts, the saved guests' and litter's animations, are decoded and not applied (SAVE-013): guests and staff animate from their state and litter from the cell. The Particles pool is restored, minus the emitter and effector fields SAVE-013 drops. The RSSE block's script ids, list order, next id, pass counter and run state are applied (`SavedScriptImport`, `RideVM.ImportSavedRunState`: the program counter, stack, variables, limbo table, waits and timers on the saved game clock); the records' object lists, node, bounce and walk tables, and the animations playing on their objects, are not restored. A script with a saved child or sound child keeps its fresh state; saved child records are left for their parent to recreate. The Sound block, the message-centre lists and the Track and Flying ride chunks are not restored (`[EXT:original-engine-state-dumps]`). Staff
+tag system, mechanic HQ and UI receiver things (SAVE-010). The Scripts block's sprite scripts, the saved guests' and litter's animations, are decoded and not applied (SAVE-013): guests and staff animate from their state and litter from the cell. The Particles pool is restored, minus the emitter and effector fields SAVE-013 drops. The RSSE block's script ids, list order, next id, pass counter and run state are applied (`SavedScriptImport`, `RideVM.ImportSavedRunState`: the program counter, stack, variables, limbo table, waits and timers on the saved game clock); the records' object lists, node, bounce and walk tables, and the animations playing on their objects, are not restored. A script with a saved child or sound child keeps its fresh state; saved child records are left for their parent to recreate. Of the Sound block a park started from an original save applies its volumes and on-flags for the session (see "Sound block"); the rest of it, the message-centre lists and the Track and Flying ride chunks are not restored (`[EXT:original-engine-state-dumps]`). Staff
 values outside OpenTPW's ranges (happiness outside the traced 0–100, a 100 %
 training percentage, a state without a STAFFSTATES entry, a hire time outside
 the calendar or inside a park turn, which is rounded down to the turn) are adjusted and each adjustment is reported; an attraction whose
@@ -847,7 +897,7 @@ Typed: the action recording, the World variables, staff pool, calendar, arrivals
 29 lists, the clock, vanilla-time and game-system words, the flying-rides slot array and bodies, the RSSE header, padding words, records, buffers and `'OBJ '` lists, the camera words, the coasters'
 counts, the advisor and sound framing and the cheat, advisor-scoring and UI words. Kept as raw runs, because the original copies them as one dump or no OpenTPW reader decodes their fields: the
 control manager's 150 records, each map cell's records, every thing body except the bank (`SaveBank.ToBody` is the bank serializer `0x4CF920`), the RideSystem frame, the track-rides chunk, the coaster
-chunks, the particle tables, the RSSE structs and the sound chunk.
+chunks, the particle tables, the RSSE structs and the sound library's voice list.
 
 **Round trip.** `OriginalSaveWriterCorpusTests` reads each of the eleven saves (seven named parks and autosaves, four `restart.INTS`) and the shipped Easymode into the models, writes them again and
 compares the payload and the whole container: identical bytes in all twelve (Easymode's 18,288 uninitialised `0xCD` bytes included, because they sit in raw runs). Synthetic tests

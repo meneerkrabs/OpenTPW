@@ -258,12 +258,15 @@ public sealed partial class GuestSimulation
 				cells[count++] = trail[index];
 		var goalCell = trail[^1];
 		{
-			var links = Grid.Cells.LinksAt( goalCell.X, goalCell.Y );
+			var links = Grid.LinksAt( goalCell.X, goalCell.Y );
 			for ( var direction = 0; direction < 4; direction++ )
 			{
 				var (dx, dy) = GuestPathGrid.Directions[direction];
 				var next = (X: goalCell.X + dx, Y: goalCell.Y + dy);
 				if ( (links & GuestPathGrid.LinkValue( direction )) == 0 || next == start || !Grid.IsWalkable( next.X, next.Y ) || cells[..count].Contains( next ) )
+					continue;
+				if ( Grid.Cells.PoolBridges is { } bridges && (bridges.Covers( goalCell.X, goalCell.Y ) || bridges.Covers( next.X, next.Y ))
+					&& !bridges.Connects( goalCell.X, goalCell.Y, direction ) )
 					continue;
 				cells[count++] = next;
 			}

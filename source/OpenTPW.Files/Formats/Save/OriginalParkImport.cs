@@ -163,6 +163,8 @@ public sealed class OriginalParkImport
 	public SaveRideSystemBlock? RideSystem { get; }
 	/// <summary>The clock, vanilla-time, game-system, cheat, advisor-scoring, camera and UI-count blocks of a Theme Park World save, read for the import report; null for Theme Park Inc.</summary>
 	public SaveRuntimeBlocks? RuntimeBlocks { get; private init; }
+	/// <summary>The Sound block (loader tp.exe 0x51C400), or null for the Theme Park Inc viewer and for a block that does not read as the original writer's.</summary>
+	public SaveSoundData? Sound { get; private init; }
 	/// <summary>The RSSE block's script records, read in full (null for the Theme Park Inc viewer).</summary>
 	public SaveRsseBlock? Rsse { get; private init; }
 	/// <summary>The Particles block (loader tp.exe 0x51F7A0): the pool's globals, emitters and effectors (null for the Theme Park Inc viewer).</summary>
@@ -176,7 +178,7 @@ public sealed class OriginalParkImport
 	/// <summary>Guard before constructing runtime objects from an original TPW park. Structural inspection remains
 	/// available, but nonempty original controllers cannot safely be resumed until station joins and train data are decoded.
 	/// Theme Park Inc has a separate viewer/import contract and is not inferred through this guard.</summary>
-	// [APPROX:SAVE-920] a park whose Coasters block lists a coaster is refused: the block is decoded (headers, sections, trains and cars) but no runtime coaster is rebuilt from it, where tp.exe's loader 0x437B60 restores each controller, its track nodes and links, its trains and cars — evidence needed: a Theme Park World save with a built coaster and the restore of a CoasterRide from the decoded block
+	// [APPROX:SAVE-920] a park whose Coasters block lists a coaster is refused: the block is decoded (headers, sections, trains and cars) but no runtime coaster is rebuilt from it, where tp.exe's loader 0x437B60 binds each block to the empty controller the RideSystem loader made for its station (by the station mesh id, controller +0x10; none matching crashes the original at 0x437CD5) and restores its station nodes, slot, pylon nodes with their collision lists, end node, cut, trains and cars — evidence needed: a Theme Park World save with a built coaster and the restore of a CoasterRide from the decoded block
 	public void RequireSupportedCoasterRuntime()
 	{
 		if ( CoasterBlock is { Count: > 0 } )
@@ -335,6 +337,7 @@ public sealed class OriginalParkImport
 			attractions, SaveEconomyRecords.Parse( span, world ), staff.AsReadOnly(), guests.AsReadOnly(), hq, advisor, lab, coasters, rideSystem )
 		{
 			RuntimeBlocks = SaveRuntimeBlocks.Read( span, layout ),
+			Sound = OriginalSavePayload.TryReadSound( span, layout ),
 			Rsse = SaveRsseBlock.Read( span, layout ),
 			Particles = SaveParticlesBlock.Parse( span, layout ),
 			Scripts = SaveScriptsBlock.Parse( span, layout ),

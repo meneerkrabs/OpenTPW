@@ -336,7 +336,7 @@ public partial class Level
 	/// </summary>
 	internal void ConfigureObjectHooks()
 	{
-		Objects.IsReserved = ( x, y ) => IsReservedByPrototype( x, y ) || Guests?.Grid.Cells.RawTypeAt( x, y ) is { } type && ReservesCell( type ) || (Guests != null && PoolSlides?.ReservesLand( x, y, Guests.Grid.Cells ) == true);
+		Objects.IsReserved = ( x, y ) => PoolBridges?.Reserves( x, y ) == true || IsReservedByPrototype( x, y ) || Guests?.Grid.Cells.RawTypeAt( x, y ) is { } type && ReservesCell( type ) || (Guests != null && PoolSlides?.ReservesLand( x, y, Guests.Grid.Cells ) == true);
 		Objects.IsUnowned = ( x, y ) => Guests?.Grid.Cells is { } cells && cells.InBounds( x, y ) && cells.FlagsAt( x, y ).HasFlag( ParkCellFlags.Unowned );
 		Objects.PathAt = ( x, y ) => Guests?.Grid.Cells is { } cells ? ObjectPathAt( cells, x, y ) : null;
 		Objects.ClearPath = ( x, y ) => Paths?.Remove( x, y );
@@ -427,6 +427,7 @@ public partial class Level
 	/// </summary>
 	internal PoolBuildResult? PoolEraseBlock( int x, int y )
 	{
+		if ( PoolBridges?.Covers( x, y ) == true ) return PoolBuildResult.Occupied;
 		if ( Guests?.IsSwimmerIn( x, y ) == true )
 			return PoolBuildResult.Swimmers;
 		foreach ( var item in Objects.Objects )
@@ -646,6 +647,7 @@ public partial class Level
 			PoolBuilder.Painted += PreloadSwimSprites;
 		}
 		SetupPoolSlides();
+		SetupPoolBridges();
 		// [EXT:online-coop-commands] the bulldozer's drag clears each object and path cell through a command of its own
 		AreaClearTool = IsReadOnlyVisit ? null : new AreaClearTool( ( x, y ) => Commands.Issue( new RemoveObjectAtCommand( x, y ) ).Accepted, () => Guests?.Grid.Cells,
 			( x, y ) => Commands.Issue( new RemovePathCellCommand( x, y ) ) is { Value: CellBuildResult result } ? result : CellBuildResult.NotPath, TypesFootprints ? null : ( x, y ) => Objects.FindAt( x, y ) );
@@ -653,7 +655,7 @@ public partial class Level
 
 	// Objects, fixed items (the gate and entrance included) and the sandbox Totem block paths like their original cell types do; an object of a lower
 	// overwrite priority than the path's gives way instead (ParkPathBuilder.ObjectGivesWay).
-	private bool IsPathBlocked( int x, int y ) => Objects.FindAt( x, y ) != null || IsReservedByPrototype( x, y ) || (Guests != null && PoolSlides?.ReservesLand( x, y, Guests.Grid.Cells ) == true);
+	private bool IsPathBlocked( int x, int y ) => PoolBridges?.Reserves( x, y ) == true || Objects.FindAt( x, y ) != null || IsReservedByPrototype( x, y ) || (Guests != null && PoolSlides?.ReservesLand( x, y, Guests.Grid.Cells ) == true);
 
 	/// <summary>How the cell map holds a path for the object build rule: none, a plain path (cleared by the placement) or a NoModify one (refused).</summary>
 	internal static ObjectPathCell? ObjectPathAt( ParkCellMap cells, int x, int y )
@@ -867,6 +869,7 @@ public partial class Level
 	{
 		if ( IsReadOnlyVisit || Paths == null )
 			return CellBuildResult.NotPath;
+		if ( PoolBridges?.Reserves( x, y ) == true ) return CellBuildResult.Occupied;
 		// [EXT:removable-access-cells] the path cell the placement laid outside an entrance or exit (flag 0x20) can be removed, where tp.exe's cell clear keeps a NoModify cell that has neighbours (the forced clear 0x5367A0(0, 0) refuses it with "Removing path cell with no neighbours but NOMODIFY set" otherwise); the map start's initial path stays fixed
 		var access = IsAccessCell( x, y );
 		var result = access ? Paths.RemoveFixed( x, y ) : Paths.Remove( x, y );

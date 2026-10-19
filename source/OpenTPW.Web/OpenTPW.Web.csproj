@@ -87,6 +87,8 @@
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/MpegPartialTailReviewTests.cs" />
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/GlbBuilder.cs" />
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/GltfModelConverterTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/WebClientTransportTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/BrowserPinsExclusionTests.cs" />
 	</ItemGroup>
 	<ItemGroup Condition="'$(OpenTpwDeterminismPins)' == 'true'">
 		<Compile Include="../OpenTPW.Tests/**/*.cs" Exclude="../OpenTPW.Tests/obj/**;../OpenTPW.Tests/bin/**;@(DeterminismPinsExcludedTests)" Link="Tests/%(RecursiveDir)%(Filename)%(Extension)" />

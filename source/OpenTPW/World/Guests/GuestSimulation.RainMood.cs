@@ -15,6 +15,7 @@ public sealed partial class GuestSimulation
 	/// generation row's deltas and an umbrella that was already open when the step began softens a happiness loss (<see cref="RainMoodRules.Apply"/>). Every guest is touched, queued or riding ones too.
 	/// </summary>
 	// [BIN:TPI-EXE:0x611050 weather rule] called from the guest update 0x619B50 for every guest, wherever it is; the day gate, the weather word +0x70 and the clamped sums are the original's
+	// [EXT:winter-cold-replaces-snow-cheer] with opentpw.winter-cold on, snow's happiness column is left to the cold rule (user decision 2026-10-18: it replaces the +1); thirst and hunger stay
 	// [EXT:rain-mood-once-per-day] once per qualifying day instead of on every update of it: the original writes its day (+0x2E8) and never reads it, so the rule hits on every update of those days (about six a game day)
 	// [BIN:TPI-EXE:0x611334 modifier] the umbrella modifier (0x6111BE to 0x6111D3) belongs to the state the guest has when the rule starts (the switch's case 4), so umbrellaWasOpen is read before the umbrella step turns 1 into 4 or a due 3 into 4
 	private void UpdateRainMood( Guest guest, RainMoodSettings settings, bool umbrellaWasOpen )
@@ -23,7 +24,7 @@ public sealed partial class GuestSimulation
 		var age = RainMoodAgeTurnsOf( guest );
 		if ( !RainMoodRules.Applies( age, weather, guest.RainMoodDay ) )
 			return;
-		(guest.Happiness, guest.Thirst, guest.Hunger) = RainMoodRules.Apply( guest.Happiness, guest.Thirst, guest.Hunger, weather, umbrellaWasOpen, settings );
+		(guest.Happiness, guest.Thirst, guest.Hunger) = RainMoodRules.Apply( guest.Happiness, guest.Thirst, guest.Hunger, weather, umbrellaWasOpen, settings, coldReplacesSnowHappiness: WinterCold != null );
 		guest.RainMoodDay = RainMoodRules.DayOf( age ) + 1;
 	}
 

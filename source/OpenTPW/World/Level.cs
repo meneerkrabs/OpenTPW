@@ -497,6 +497,12 @@ public partial class Level : IDisposable
 			// [EXT:rain-mood-extension] the rain mood rule is on while the extension is: the guests read the same weather state as the umbrella rules
 			if ( Guests != null )
 				Guests.RainMood = RainMoodFor( FeatureGates.RainMood );
+			// [EXT:winter-cold] the cold rule is on while its extension is: the same weather state, and the park's calendar day for a glühwein's warmth window
+			if ( Guests != null )
+			{
+				Guests.WinterCold = WinterColdFor( FeatureGates.WinterCold );
+				Guests.WinterDay = () => Park?.Economy is { } economy ? ParkCalendar.DayIndex( economy.Tick ) : 0;
+			}
 			using var connectProfile = LoadProfile.Measure( "staff-gate-economy" );
 			ConnectObjectsToEconomy();
 			if ( Park != null )
@@ -617,6 +623,9 @@ public partial class Level : IDisposable
 	// [EXT:online-visit-arrivals] the original's visit loaded the owner's uploaded save, a running park (docs/reverse/ONLINE-VISIT.md); a package carries the layout without the guests and the arrival timer, so a visit's arrivals start as those of an own park started from the save the visit is built on
 	/// <summary>[EXT:rain-mood-extension] The rain mood settings the level hands its guests: the shipped rows while the extension's gate is on, none (the default: the rule never runs) otherwise.</summary>
 	internal static RainMoodSettings? RainMoodFor( bool gateOn ) => gateOn ? RainMoodSettings.Default : null;
+
+	/// <summary>[EXT:winter-cold] The cold rule's settings for a run: the shipped numbers while the <c>opentpw.winter-cold</c> gate is on, otherwise none (the rule never runs).</summary>
+	internal static WinterColdSettings? WinterColdFor( bool gateOn ) => gateOn ? WinterColdSettings.Default : null;
 
 	internal static Func<long>? VisitArrivalClock( GuestSimulation guests, long? savedTurn ) => savedTurn is { } start ? () => start + guests.ParkTurn : null;
 

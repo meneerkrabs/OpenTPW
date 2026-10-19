@@ -183,6 +183,8 @@ internal sealed partial class ParkResumeSmokeTest : IDisposable
 				case Stage.PostLoad: VerifyPostLoad(); break;
 				case Stage.Done: break;
 			}
+			// The harness owns the outer frame: one eligible copy/publication after its whole simulation batch, including zero-step stages.
+			level?.PresentStaffSprites( () => flow.Hud?.RefreshEmployeePortrait(), Time.Delta );
 		}
 		catch ( Exception error )
 		{

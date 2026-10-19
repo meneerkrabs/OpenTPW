@@ -1,5 +1,4 @@
 using System;
-using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -85,25 +84,46 @@ public class EmployeePortraitGeometryTests
 		public readonly StaffRenderer Renderer;
 		public readonly GuestSpriteAtlas Atlas;
 		public readonly StaffSpriteSet Sprites;
+		public readonly StaffSpritePresentation Presentation;
 		public List<Texture> Textures => Get<List<Texture>>( Renderer, "textures" );
-		public object View => ((IDictionary)Field( Renderer, "views" ).GetValue( Renderer )!)[Member]!;
-		public SpritePlayer Player => Get<SpritePlayer>( View, "Player" );
-		public Rig( int directions = 5, int a = 128, int b = 128 )
+		public StaffBodySprite Body => Member.BodySprite!;
+		public EmployeePortraitOwner Portrait => Hud.EmployeePortrait!;
+		public Rig( int directions = 5, int a = 128, int b = 128, bool createSource = true )
 		{
 			((List<StaffMember>)Economy.Staff.Members).Add( Member );
 			Hud = StaffWindowTests.Hud( Economy ); Level = Get<Level>( Hud, "level" ); OpenTPW.Level.Current = Level;
 			Atlas = EmployeePortraitGeometryTests.Atlas( directions, a, b );
 			Sprites = (StaffSpriteSet)Activator.CreateInstance( typeof( StaffSpriteSet ), BindingFlags.Instance | BindingFlags.NonPublic, null,
 				new object[] { new[] { Atlas }, Enumerable.Repeat( (0, 1), 5 ).ToArray() }, null )!;
+			var catalog = new StaffSpriteMetadataCatalog( Sprites );
+			Presentation = new StaffSpritePresentation( catalog, () => Economy.Staff.Members );
+			Presentation.AttachRoster( Economy.Staff );
+			Set( Level, "<StaffSprites>k__BackingField", Presentation );
+			if ( createSource )
+			{
+				Body.CreateSource(); Body.RequestTemplate( 17 ); Body.ApplyPending();
+			}
 			Renderer = new StaffRenderer( () => Economy.Staff.Members, new ModelHeightfield( 10, 10, 10, 10, 0, 0, Array.Empty<uint>(), new float[121], new uint[100] ),
-				StaffSpriteSet.Empty, new StaffPlacement( () => null, () => null, (_, _) => false ) );
+				StaffSpriteSet.Empty, new StaffPlacement( () => null, () => null, (_, _) => false ), catalog,
+				member => member.BodySprite?.DrawRecord, () => Presentation.Session );
 			Set( Renderer, "sprites", Sprites ); Set( Renderer, "material", Empty<Material<ObjectUniformBuffer>>() );
 			Textures.Add( TextureSentinel() ); Set( Level, "<StaffRenderer>k__BackingField", Renderer );
 			Assert.IsTrue( Hud.OpenEmployeeWindow( Member ) );
 		}
-		public int Prepare( float now )
+		public void AimSweep( int heading )
 		{
-			OpenTPW.Level.Current = Level; Time.Delta = 0.07f; Time.Now = now;
+			Body.Moving( 0, 0, heading * 26214, 0, fast: false, escort: false );
+			Body.RequestTemplate( 17 ); Body.RequestInterval( 62 ); Body.ApplyPending();
+		}
+		public void ScheduleAndPresent( long tick )
+		{
+			OpenTPW.Level.Current = Level; Time.Delta = 0.07f; Time.Now = tick / 60f;
+			Presentation.SetHostTick( tick ); Presentation.Schedule();
+			Presentation.Present( Hud.RefreshEmployeePortrait, Time.Delta );
+		}
+		public int Prepare( long tick )
+		{
+			ScheduleAndPresent( tick );
 			return Renderer.PrepareWorld();
 		}
 		public UiSpriteFrame Expected( int slot, int step, int direction, bool mirror )
@@ -114,9 +134,12 @@ public class EmployeePortraitGeometryTests
 		}
 		public string State()
 		{
-			var state = View.GetType().GetFields().Where( field => field.Name is not ("Player" or "Published") )
-				.Select( field => $"{field.Name}={field.GetValue( View )}" );
-			return string.Join( ";", state ) + $";steps={Player.Steps};interval={Player.Interval};due={Get<long>( Player, "due" )};member={JsonSerializer.Serialize( Member )}";
+			return JsonSerializer.Serialize( new
+			{
+				Source = Body.ReadSourceState(), Clone = Portrait.ReadCloneState(), Body.PersonAngle,
+				Body.PendingTemplate, Body.PendingInterval, Presentation.LastSample, Presentation.Registry.Count,
+				Portrait.State, Portrait.Epoch, Member
+			} );
 		}
 	}
 
@@ -161,54 +184,59 @@ public class EmployeePortraitGeometryTests
 	[DataRow( 1000, 1000 )]
 	[DataRow( 801, 601 )]
 	[DataRow( 64, 48 )]
-	public void ActualCallbackDrawsLiveNonWalkPhaseAndExistingFallbackAtEmployeeGeometry( int width, int height )
+	public void ActualCallbackDrawsIndependentNonWalkCloneBeforeWorldDrawAndAfterSourceLoss( int width, int height )
 	{
 		foreach ( var directions in new[] { 5, 8 } )
 			foreach ( var heading in new[] { -1, 1 } )
 				foreach ( var (a, b) in new[] { (128, 128), (256, 64) } )
 				{
 					var rig = new Rig( directions, a, b ); var figure = Figure( rig.Hud );
-					Time.Now = 10; Assert.IsNull( rig.Renderer.EmployeeFrame( rig.Member ) );
-					Assert.AreEqual( rig.Expected( 1, 0, directions == 5 ? 3 : 5, directions == 5 ), figure.Frame()!.Value );
-					AssertDraw( figure, width, height, a, b, 526, 476, 2.4f );
-					foreach ( var now in new[] { 10f, 10.07f, 10.14f, 10.21f } )
+					Time.Now = 10; Assert.IsNull( rig.Renderer.EmployeeFrame( rig.Portrait.DrawRecord! ) );
+					AssertEmptyDraw( figure, width, height );
+					rig.AimSweep( heading );
+					foreach ( var tick in new[] { 4, 8, 12, 16 } )
 					{
-						if ( now > 10 ) rig.Member.CellX += heading * 0.1f;
-						Assert.AreEqual( 12, rig.Prepare( now ) );
+						rig.Member.CellX += heading * 0.1f;
+						rig.ScheduleAndPresent( tick );
 					}
-					Assert.IsTrue( rig.Player.Steps > 0 );
-					var (slot, step) = StaffSpriteRules.ResolveSteps( StaffSpriteRules.Sweep, rig.Player.Steps, rig.Atlas.Animations.Animations );
-					Assert.AreEqual( 4, slot ); Assert.IsTrue( step > 0, "exercise a nonzero live non-walk phase" );
-					Assert.AreEqual( (StaffSpriteRules.Sweep.Script << 8) | 4, Get<int>( rig.View, "ClipKey" ) );
+					var clone = rig.Portrait.ReadCloneState()!;
+					Assert.AreEqual( StaffSpriteProgram.Sweep, clone.CurrentPc.Program );
+					Assert.AreEqual( 4u, clone[StaffSpriteRegister.Slot] );
+					Assert.AreEqual( 1u, clone[StaffSpriteRegister.Frame], "four scheduler opportunities reach a nonzero work frame" );
 					var mirror = heading < 0 && directions == 5; var direction = heading < 0 && directions == 8 ? 6 : 2;
-					Assert.AreEqual( rig.Expected( slot, step, direction, mirror ), figure.Frame()!.Value );
+					Assert.AreEqual( rig.Expected( 4, 1, direction, mirror ), figure.Frame()!.Value );
 					AssertDraw( figure, width, height, a, b, 526, 476, 2.4f );
-					Assert.AreEqual( 10f, Get<float>( rig.Hud, "employeePortraitStart" ) );
-					rig.Member.State = StaffState.Resting; rig.Prepare( 10.4f );
-					Assert.IsNull( rig.Renderer.EmployeeFrame( rig.Member ) );
-					Assert.AreEqual( rig.Expected( 1, 6, directions == 5 ? 3 : 5, directions == 5 ), figure.Frame()!.Value,
-						"source loss keeps the established fallback phase instead of freezing or restarting" );
+					Assert.AreEqual( 12, rig.Renderer.PrepareWorld(), "the first world draw observes the already-published source" );
+					var ticket = rig.Portrait.CloneTicket;
+					rig.Body.DeleteSource(); rig.Member.State = StaffState.Resting; rig.Member.Job = StaffJob.Resting;
+					rig.ScheduleAndPresent( 20 );
+					Assert.IsNull( rig.Body.DrawRecord ); Assert.AreEqual( ticket, rig.Portrait.CloneTicket );
+					Assert.AreEqual( rig.Expected( 4, 2, direction, mirror ), figure.Frame()!.Value,
+						"the existing screen-routed work clone advances independently after source loss" );
 					AssertDraw( figure, width, height, a, b, 526, 476, 2.4f );
-					Assert.AreEqual( 10f, Get<float>( rig.Hud, "employeePortraitStart" ) );
+					foreach ( var tick in new[] { 24, 28, 32, 36 } ) rig.ScheduleAndPresent( tick );
+					Assert.AreEqual( ticket, rig.Portrait.CloneTicket );
+					Assert.AreEqual( StaffSpriteDiagnostic.WorldRouteNotImplemented, rig.Renderer.ResolveRecord( rig.Portrait.DrawRecord! ).Diagnostic );
+					AssertEmptyDraw( figure, width, height );
 				}
 	}
 
 	[TestMethod]
-	public void RepeatedActualCallbackReadsAndDrawsLeaveEconomyRngPlayerMovementAndNextWorldOutputUnchanged()
+	public void RepeatedActualCallbackReadsAndDrawsLeaveEconomyRngSourceCloneAndNextWorldOutputUnchanged()
 	{
 		var observed = new Rig(); var figure = Figure( observed.Hud ); var control = new Rig();
-		foreach ( var now in new[] { 0f, 0.07f, 0.14f } )
+		observed.AimSweep( -1 ); control.AimSweep( -1 );
+		foreach ( var tick in new[] { 4, 8, 12 } )
 		{
-			if ( now > 0 ) { observed.Member.CellX -= 0.1f; control.Member.CellX -= 0.1f; }
-			observed.Prepare( now ); control.Prepare( now );
+			observed.Member.CellX -= 0.1f; control.Member.CellX -= 0.1f;
+			observed.Prepare( tick ); control.Prepare( tick );
 		}
 		observed.Member.CellY += 0.25f; control.Member.CellY += 0.25f;
-		Set( observed.View, "StepLength", 5432f ); Set( control.View, "StepLength", 5432f );
 		Level.Current = observed.Level; var before = observed.State();
 		var save = ParkSaveFile.Serialize( observed.Economy ); var random = observed.Economy.World.State;
 		var controlSave = ParkSaveFile.Serialize( control.Economy ); var controlRandom = control.Economy.World.State;
 		var frame = figure.Frame(); Assert.IsNotNull( frame );
-		Assert.AreEqual( observed.Renderer.EmployeeFrame( observed.Member ), frame );
+		Assert.AreEqual( observed.Renderer.EmployeeFrame( observed.Portrait.DrawRecord! ), frame );
 		for ( var index = 0; index < 100; index++ )
 		{
 			Assert.AreEqual( frame, figure.Frame() ); AssertDraw( figure, 801, 601, 128, 128, 526, 476, 2.4f );
@@ -216,7 +244,7 @@ public class EmployeePortraitGeometryTests
 		Assert.AreEqual( before, observed.State() ); Assert.AreEqual( control.State(), observed.State() );
 		Assert.AreEqual( save, ParkSaveFile.Serialize( observed.Economy ) ); Assert.AreEqual( random, observed.Economy.World.State );
 		Assert.AreEqual( controlSave, ParkSaveFile.Serialize( control.Economy ) ); Assert.AreEqual( controlRandom, control.Economy.World.State );
-		observed.Prepare( 0.21f ); control.Prepare( 0.21f );
+		observed.Prepare( 16 ); control.Prepare( 16 );
 		Assert.AreEqual( control.State(), observed.State() );
 		CollectionAssert.AreEqual( Get<Vertex[]>( control.Renderer, "vertices" ).Take( 12 ).ToArray(),
 			Get<Vertex[]>( observed.Renderer, "vertices" ).Take( 12 ).ToArray(), "the next actual world quad is identical to the no-read control" );
@@ -260,20 +288,45 @@ public class EmployeePortraitGeometryTests
 	}
 
 	[TestMethod]
-	public void MissingRendererBankAndTextureKeepExistingNullDrawAndFallbackClock()
+	public void MissingRendererBankAndTextureKeepNullDrawWithoutChangingSourceOrCloneHistory()
 	{
-		var rig = new Rig(); var figure = Figure( rig.Hud ); Time.Now = 5; Assert.IsNotNull( figure.Frame() );
+		var rig = new Rig(); var figure = Figure( rig.Hud ); rig.AimSweep( -1 );
+		foreach ( var tick in new[] { 4, 8, 12 } ) rig.ScheduleAndPresent( tick );
+		Assert.AreEqual( rig.Expected( 4, 1, 2, true ), figure.Frame()!.Value );
+		var before = rig.State(); var ticket = rig.Portrait.CloneTicket;
 		void EmptyDraw()
 		{
-			Assert.IsNull( figure.Frame() ); var context = Context( 1280, 720 ); figure.Draw( context, false, false );
-			Assert.AreEqual( 0, context.Batch.Draws.Count ); Assert.AreEqual( 5f, Get<float>( rig.Hud, "employeePortraitStart" ) );
+			AssertEmptyDraw( figure, 1280, 720 ); Assert.AreEqual( before, rig.State() ); Assert.AreEqual( ticket, rig.Portrait.CloneTicket );
 		}
 		Time.Now = 5.2f; Set( rig.Level, "<StaffRenderer>k__BackingField", null ); EmptyDraw();
 		Set( rig.Level, "<StaffRenderer>k__BackingField", rig.Renderer );
 		Set( rig.Renderer, "sprites", StaffSpriteSet.Empty ); EmptyDraw(); Set( rig.Renderer, "sprites", rig.Sprites );
 		var texture = rig.Textures.Single(); rig.Textures.Clear(); EmptyDraw(); rig.Textures.Add( texture );
-		Time.Now = 5.4f; Assert.AreEqual( rig.Expected( 1, 6, 3, true ), figure.Frame()!.Value );
+		Time.Now = 5.4f; Assert.AreEqual( rig.Expected( 4, 1, 2, true ), figure.Frame()!.Value );
 		AssertDraw( figure, 1280, 720, 128, 128, 526, 476, 2.4f );
+		Assert.AreEqual( before, rig.State() );
+	}
+
+	[TestMethod]
+	public void SourceAbsentOpeningStaysBlankUntilAnExplicitFullRefresh()
+	{
+		var rig = new Rig( createSource: false ); var figure = Figure( rig.Hud );
+		Assert.AreEqual( EmployeePortraitState.OpenUnbound, rig.Portrait.State );
+		Time.Now = 100; AssertEmptyDraw( figure, 1280, 720 );
+		rig.Body.CreateSource(); rig.Body.RequestTemplate( 17 ); rig.Body.ApplyPending();
+		rig.ScheduleAndPresent( 4 ); rig.ScheduleAndPresent( 8 ); rig.ScheduleAndPresent( 12 );
+		Assert.IsNotNull( rig.Body.DrawRecord ); Assert.IsNull( rig.Portrait.CloneTicket );
+		AssertEmptyDraw( figure, 1280, 720 );
+		rig.Hud.CloseEmployeeWindow(); Assert.IsTrue( rig.Hud.OpenEmployeeWindow( rig.Member ) );
+		Assert.AreEqual( EmployeePortraitState.OpenBound, rig.Portrait.State );
+		Assert.AreEqual( rig.Expected( 4, 1, 0, false ), Figure( rig.Hud ).Frame()!.Value );
+		AssertDraw( Figure( rig.Hud ), 1280, 720, 128, 128, 526, 476, 2.4f );
+	}
+
+	private static void AssertEmptyDraw( UiSpriteFigure figure, int width, int height )
+	{
+		Assert.IsNull( figure.Frame() ); var context = Context( width, height ); figure.Draw( context, false, false );
+		Assert.AreEqual( 0, context.Batch.Draws.Count );
 	}
 
 	private static void AssertDraw( UiSpriteFigure figure, int width, int height, int a, int b, int x, int y, float pixel )

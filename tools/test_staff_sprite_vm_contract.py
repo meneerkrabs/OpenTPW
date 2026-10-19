@@ -1,4 +1,4 @@
-"""Structural guardrails for the unintegrated UI-092 VM core; these do not execute the C# tests."""
+"""Structural guardrails for the isolated UI-092 VM and its explicit owner boundary; these do not execute the C# tests."""
 from pathlib import Path
 import re
 import unittest
@@ -69,15 +69,21 @@ class StaffSpriteVmContract(unittest.TestCase):
         self.assertNotIn("PortraitFlags", self.vm)
         self.assertNotIn("0x50000", self.vm)
 
-    def test_core_is_not_connected_to_gameplay_rendering_or_persistence(self):
+    def test_core_remains_gpu_free_and_only_explicit_cpu_owners_use_mutable_state(self):
+        allowed = {"StaffSpriteVm.cs", "StaffSpriteVmState.cs", "StaffSpritePrograms.cs", "StaffSpriteRegistry.cs",
+                   "StaffBodySprite.cs", "StaffSpriteDrawRecord.cs", "EmployeePortraitOwner.cs"}
         for path in (ROOT / "source/OpenTPW").rglob("*.cs"):
-            if path.name in ("StaffSpriteVm.cs", "StaffSpriteVmState.cs", "StaffSpritePrograms.cs"):
+            if path.name in allowed:
                 continue
             text = path.read_text(encoding="utf-8-sig")
             self.assertNotRegex(text, r"\b(?:StaffSpriteVm|StaffSpriteCloneCopy|StaffSpriteVmState)\b", str(path))
         for text in (self.vm, self.state, self.programs):
             for forbidden in ("StaffRenderer", "SpritePlayer.Steps", "Level.Current", "Texture", "DateTime", "Stopwatch", "ReadAllBytes", "DllImport"):
                 self.assertNotIn(forbidden, text)
+        registry = (STAFF / "StaffSpriteRegistry.cs").read_text()
+        self.assertIn("StaffSpriteVm.Tick( entry.State, now, programs )", registry)
+        self.assertIn("StaffSpriteTickStatus.RemovalDue", registry)
+        self.assertIn("generations[slot] == ulong.MaxValue", registry)
 
     def test_catalog_keeps_independent_oracles_and_named_cross_program_return_addresses(self):
         self.assertNotIn("StaffScripts.Get(", self.programs)

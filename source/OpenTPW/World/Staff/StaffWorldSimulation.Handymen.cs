@@ -36,7 +36,7 @@ public sealed partial class StaffWorldSimulation
 	public IGuardGuests? Guests { get; set; }
 
 	// [BIN:TPW-EXE:0x004D73C0 handyman update] once per park turn after the pre-update 0x004D7060 (the speed 0x004FA870 and, while idle, a litter scan every IdleDuration turns): 0 idle until the turn passes +0x200 + IdleDuration[grade] (0x00785330 + 16 × grade); 1 patrol: one walk step, the walk drain while walking (0x005066A0), the job search on arrival or stuck; 8 to litter (0x004D7580); 9 sweep (0x004D76A0); 10 to a toilet (0x004D7790); 11 clean until the turn passes +0x214 + WorkDuration[grade] (0x004DFD80, 0x004DF390); every other state runs the generic staff handler
-	// [APPROX:ECON-022] all staff in a level walk and work as the original's state machines (WANDER-plan §4, StaffWorldSimulation) on the guests' walk (the route search, the steering step 0x004FA2A0 → 0x0050F3B0 with avoid_walls, follow_path and separation, the walk mask +0x188), with the shared walks to a rest area and to the strike area; a striker walks out along arrival lane A (OpenTPW's path grid ends at the park entrance) and is not sent after a prankster until he is back on the paths; separation meets a cell's guests in OpenTPW's cell lists and then the staff on it in member order, where the original walks the cell's head-inserted thing list (0x0050B6A0); the stranded stamp the wander sets (+0x198, 0x004FA670) and SetDest's quick failure while the cells around stay unchanged (0x004FA770) are not kept, as for the guests; the toilet, rest-area and ride searches take the objects newest first by OpenTPW's object id, which is the original's head-inserted list (game +0x1DA746, 0x00519D80) for objects placed in the park, where a park loaded from an original save has the chain the save keeps (each attraction's mNext +0xC and the head word), which the import does not follow; a toilet's, bin's or rest area's access cell is its join or entrance cell or first path neighbour; an entertainer's performance has no animation (the original draws one, 0x004D46D0) and the guests do not turn to watch; a picked-up entertainer's or guard's row stays on the cell he was lifted from; a guard carries a caught guest to the park entrance when the ticket booth is no path cell, where the original routes only to the booth gate cell, twice (0x004D6790 → 0x004D8610), and otherwise sets the guest down (0x004FEB50) — evidence needed: the +0x36 access-cell writer, the guests' reaction to a performance and the animation counts (0x00541FA0 and the fix animations)
+	// [APPROX:ECON-022] all staff in a level walk and work as the original's state machines (WANDER-plan §4, StaffWorldSimulation) on the guests' walk (the route search, the steering step 0x004FA2A0 → 0x0050F3B0 with avoid_walls, follow_path and separation, the walk mask +0x188), with the shared walks to a rest area and to the strike area; a striker walks out along arrival lane A (OpenTPW's path grid ends at the park entrance) and is not sent after a prankster until he is back on the paths; separation meets a cell's guests in OpenTPW's cell lists and then the staff on it in member order, where the original walks the cell's head-inserted thing list (0x0050B6A0); the stranded stamp the wander sets (+0x198, 0x004FA670) and SetDest's quick failure while the cells around stay unchanged (0x004FA770) are not kept, as for the guests; the toilet, rest-area and ride searches take the objects newest first by OpenTPW's object id, which is the original's head-inserted list (game +0x1DA746, 0x00519D80) for objects placed in the park, where a park loaded from an original save has the chain the save keeps (each attraction's mNext +0xC and the head word), which the import does not follow; a toilet's, bin's or rest area's access cell is its join or entrance cell or first path neighbour; the guests do not turn to watch an entertainer's performance; a picked-up entertainer's or guard's row stays on the cell he was lifted from; a guard carries a caught guest to the park entrance when the ticket booth is no path cell, where the original routes only to the booth gate cell, twice (0x004D6790 → 0x004D8610), and otherwise sets the guest down (0x004FEB50) — evidence needed: the +0x36 access-cell writer, the guests' reaction to a performance and the animation counts (0x00541FA0 and the fix animations)
 	// [BIN:TPW-EXE:0x0050B360 staff update] each staff thing in list order: the type's pre-update, then its state handler (4 mechanic 0x00505490 / 0x004DA490, 5 handyman 0x004D7060 / 0x004D73C0, 6 entertainer 0x004D4660 / 0x004D4810, 7 guard 0x004D6360 / 0x004D6410, 8 researcher 0x00502960 / 0x005029F0)
 	public void UpdateStaff( ParkEconomy economy, long turn )
 	{
@@ -67,7 +67,11 @@ public sealed partial class StaffWorldSimulation
 		if ( !economy.DrivenByWorld( member ) )
 			return;
 		var placed = member.Navigation == null;
-		if ( !Place( member ) )
+		var positioned = Place( member );
+		// [BIN:TPW-EXE:0x004FA91F staff sprite pre-update] template first, interval second;
+		// consume even while carried/source-absent, before this handler produces its next requests.
+		member.BodySprite?.ApplyPending();
+		if ( !positioned )
 			return;
 		// the entertainers' and guards' pre-update moves their RegionFX row with them (the constructor puts it on the first cell)
 		economy.MoveStaffEffect( member, Cell( member ) );
@@ -83,13 +87,16 @@ public sealed partial class StaffWorldSimulation
 					SetDown( economy, member );
 					member.TargetGuestId = 0;
 				}
+				member.BodySprite?.DeleteSource();
 				member.Job = StaffJob.PickedUp;
 				return;
 			// a strike or rest the economy started without a walk (an older save): the member strikes or rests where he stands
 			case StaffState.OnStrike when member.Job is not (StaffJob.ToStrike or StaffJob.Striking):
+				member.BodySprite?.EnterStrike();
 				member.Job = StaffJob.Striking;
 				break;
 			case StaffState.Resting when member.Job is not (StaffJob.ToRestArea or StaffJob.Resting):
+				member.BodySprite?.DeleteSource();
 				member.Job = StaffJob.Resting;
 				break;
 		}
@@ -107,6 +114,7 @@ public sealed partial class StaffWorldSimulation
 		else if ( member.Job == StaffJob.PickedUp )
 		{
 			// set down by the player (0x00505EA0 sets state 0): the type's search runs in the same update
+			member.BodySprite?.CreateSource();
 			SetJob( economy, member, StaffJob.Idle, turn );
 			SearchByType( economy, member, turn );
 		}
@@ -199,13 +207,17 @@ public sealed partial class StaffWorldSimulation
 	private bool Place( StaffMember member )
 	{
 		if ( member.Navigation != null )
+		{
+			member.BodySprite?.EnsureInitialized();
 			return true;
+		}
 		if ( member.CellX is not { } x || member.CellY is not { } y )
 			return false;
 		var navigation = new GuestNavigation { X = (int)(x * Fixed16.One), Y = (int)(y * Fixed16.One) };
 		navigation.SetDestination( navigation.X, navigation.Y, [] );
 		member.Navigation = navigation;
 		member.BaseSpeed = member.Grade < 3 ? GuestSpeed.BaseSpeeds[0] : GuestSpeed.BaseSpeeds[2];
+		member.BodySprite?.EnsureInitialized();
 		return true;
 	}
 
@@ -281,6 +293,8 @@ public sealed partial class StaffWorldSimulation
 				if ( unchecked( (uint)turn ) <= unchecked( (uint)(work + member.JobStamp) ) )
 					return;
 				economy.FinishToiletClean( member );
+				// The cleaning exit requests Stand before the Idle setter requests it again.
+				member.BodySprite?.RequestTemplate( 3 );
 				SetJob( economy, member, StaffJob.Idle, turn );
 				return;
 		}
@@ -497,19 +511,28 @@ public sealed partial class StaffWorldSimulation
 	private WalkResult Walk( StaffMember member, int maxSpeed, int maxForce )
 	{
 		var navigation = member.Navigation!;
+		var beforeX = navigation.X;
+		var beforeY = navigation.Y;
+		WalkResult Moving()
+		{
+			// [BIN:TPW-EXE:0x004FA365 staff fast walk] only guards use Run; the bonus is an unsigned word above zero.
+			var fast = member.Type == StaffType.Guard && unchecked( (ushort)member.SpeedBonus ) > 0;
+			member.BodySprite?.Moving( beforeX, beforeY, navigation.X, navigation.Y, fast, member.Type == StaffType.Guard && member.Job == StaffJob.Escorting );
+			return WalkResult.Walking;
+		}
 		if ( navigation.Original )
 		{
 			switch ( navigation.Step( maxSpeed, maxForce, grid.Cells, static ( _, _ ) => false, StaffSeparation ) )
 			{
 				case OpenTPW.WalkResult.Walking:
-					return WalkResult.Walking;
+					return Moving();
 				case OpenTPW.WalkResult.Stuck:
 					return WalkResult.Stuck;
 			}
 			if ( member.OffGridLeg.Count > 0 )
 			{
 				NextLeg( member );
-				return WalkResult.Walking;
+				return Moving();
 			}
 			return WalkResult.Arrived;
 		}
@@ -528,12 +551,12 @@ public sealed partial class StaffWorldSimulation
 				}
 			}
 			if ( !navigation.Step( maxSpeed, maxForce, navigation.OffGrid ? static ( _, _ ) => true : navigation.IsOnWalk ) )
-				return WalkResult.Walking;
+				return Moving();
 		}
 		if ( member.OffGridLeg.Count > 0 )
 		{
 			NextLeg( member );
-			return WalkResult.Walking;
+			return Moving();
 		}
 		// back on a path cell, the member walks the grid again
 		if ( navigation.OffGrid && grid.IsWalkable( navigation.Cell.X, navigation.Cell.Y ) )
@@ -582,6 +605,20 @@ public sealed partial class StaffWorldSimulation
 			case StaffJob.Resting or StaffJob.PickedUp:
 				member.BubbleThought = 0;
 				break;
+		}
+		// Requests are setter events, including repeated assignments of the same job.
+		// [BIN:TPW-EXE:0x005054D0 staff / 0x004D7330 handyman / 0x004DA370 mechanic / 0x00502C20 researcher]
+		switch ( job )
+		{
+			case StaffJob.Idle: member.BodySprite?.RequestTemplate( 3 ); break;
+			case StaffJob.Patrol or StaffJob.ToStrike or StaffJob.ToLitter or StaffJob.ToToilet or StaffJob.ToRide:
+				member.BodySprite?.RequestTemplate( 9 ); break;
+			case StaffJob.ToRestArea: member.BodySprite?.RequestTemplate( 1 ); break;
+			case StaffJob.Sweeping or StaffJob.Cleaning: member.BodySprite?.RequestTemplate( 17 ); break;
+			case StaffJob.Repairing: member.BodySprite?.RequestTemplate( 18 ); break;
+			case StaffJob.Researching: member.BodySprite?.RequestTemplate( 10 ); break;
+			case StaffJob.Striking: member.BodySprite?.EnterStrike(); break;
+			case StaffJob.Resting or StaffJob.PickedUp: member.BodySprite?.DeleteSource(); break;
 		}
 		member.Job = job;
 		member.State = ParkStaff.DisplayState( (uint)job );

@@ -1861,6 +1861,7 @@ public sealed class ParkEconomy : IParkEconomy
 				member.RideId = 0;
 				if ( member.Job is StaffJob.ToRide or StaffJob.Repairing )
 				{
+					member.BodySprite?.RequestTemplate( 3 );
 					member.Job = StaffJob.Idle;
 					member.IdleStamp = 0;
 					member.State = StaffState.Idle;
@@ -1872,6 +1873,9 @@ public sealed class ParkEconomy : IParkEconomy
 				member.RestAreaId = 0;
 				if ( member.Job is StaffJob.ToRestArea or StaffJob.Resting )
 				{
+					if ( member.Job == StaffJob.Resting )
+						member.BodySprite?.CreateSource();
+					member.BodySprite?.RequestTemplate( 3 );
 					member.Job = StaffJob.Idle;
 					member.IdleStamp = 0;
 					member.State = StaffState.Idle;
@@ -1882,6 +1886,7 @@ public sealed class ParkEconomy : IParkEconomy
 				member.ToiletId = 0;
 				if ( member.Job is StaffJob.ToToilet or StaffJob.Cleaning )
 				{
+					member.BodySprite?.RequestTemplate( 3 );
 					member.Job = StaffJob.Idle;
 					member.IdleStamp = 0;
 					member.SpeedBonus = 0;

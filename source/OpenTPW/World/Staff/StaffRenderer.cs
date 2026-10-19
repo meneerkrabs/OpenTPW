@@ -1,4 +1,3 @@
-using System.Runtime.InteropServices;
 using Veldrid;
 using SVector2 = System.Numerics.Vector2;
 using SVector3 = System.Numerics.Vector3;
@@ -9,36 +8,16 @@ namespace OpenTPW;
 /// Draws every placed staff member as a camera-facing quad of its original sprite (<c>esprites.wad</c>, tp.exe body sprite 0x4d4140), the way
 /// <see cref="GuestRenderer"/> draws the kids: one draw call, one dynamic vertex buffer, the same sprite shader and atlas loading, the hotspot on the terrain.
 /// A member in the player's hand is not drawn; the tool's dangling sprite (slot 6, frames 0-3 looping) hangs at the pointer's ground point instead.
-/// Nothing is allocated per frame once the members have been seen.
+/// Animation and pose are immutable observations of the CPU owner, never inferred or advanced by drawing.
 /// </summary>
 public sealed class StaffRenderer : Entity
 {
 	private const int VerticesPerSprite = 12;
-	/// <summary>A park turn in seconds (the simulation's 248 ms).</summary>
-	private const float ParkTurnSeconds = 0.248f;
 	/// <summary>Height of the dangling sprite above the mouse's world point, in original units.</summary>
 	// [BIN:TPW-EXE:0x0046C480 tool frame] every frame the tool's sprite is placed at the mouse's world point (0x0045D610 returns 0x007A1C90) 5 units up, with heading 4 (0x00475480 stores x, y + 5, z at +0x88..+0x90 and the heading byte at +0xC0)
 	public const float DangleLift = 5f;
 	/// <summary>The heading sector of the tools' dangling person (tp.exe 0x0046C480); the sprite pass adds the camera's yaw sector (0x00542010), so the person turns with the camera.</summary>
 	public const int DangleHeading = 4;
-
-	private sealed class MemberView
-	{
-		public float X, Y, LastX, LastY;
-		public float HeadingX, HeadingY = 1;
-		public float MovedAt = float.NegativeInfinity;
-		public int ClipKey = -1;
-		public bool Initialised;
-		public SpritePlayer Player = null!;
-		/// <summary>The length of the member's latest step in the walk step's 16.16 units per park turn, until a clip has taken the interval it asks for; 0 when none is waiting.</summary>
-		public float StepLength;
-		public PublishedFrame? Published;
-	}
-
-	// Value-only output of this renderer's successful world preparation. Never retain a GPU handle in a member view.
-	private readonly record struct PublishedFrame( Level Owner, long WorldPass, long RendererPass, long Assets,
-		StaffMember Member, int ThingId, int Atlas, int Slot, int Step, float HeadingX, float HeadingY );
-	private readonly record struct Selection( int Atlas, int Frame, bool Mirror, StaffClip Clip, int Slot, int Step );
 
 	private readonly Func<IReadOnlyList<StaffMember>> members;
 	private readonly ModelHeightfield field;
@@ -46,14 +25,12 @@ public sealed class StaffRenderer : Entity
 	private readonly StaffPlacement placement;
 	private readonly Material<ObjectUniformBuffer>? material;
 	private readonly List<Texture> textures = new();
-	private readonly Dictionary<StaffMember, MemberView> views = new( ReferenceEqualityComparer.Instance );
-	private readonly List<StaffMember> stale = new();
+	private readonly StaffSpriteMetadataCatalog catalog;
+	private readonly Func<StaffMember, StaffSpriteDrawRecord?>? sourceRecord;
+	private readonly Func<long>? session;
 	private DeviceBuffer? vertexBuffer;
 	private Vertex[] vertices = Array.Empty<Vertex>();
-	private int frames;
 	private bool deleted;
-	private long rendererPass;
-	private long assetGeneration;
 
 	public bool Visible { get; set; } = true;
 	/// <summary>Members drawn in the last frame (the dangling sprite excluded).</summary>
@@ -68,12 +45,15 @@ public sealed class StaffRenderer : Entity
 	/// <summary>The atlas textures, material and independently owned shader used by native lifecycle checks.</summary>
 	internal IReadOnlyList<Asset> OwnedAssets => textures.Cast<Asset>().Concat( material == null ? Array.Empty<Asset>() : new Asset[] { material, material.Shader } ).ToArray();
 
-	public StaffRenderer( Func<IReadOnlyList<StaffMember>> members, ModelHeightfield field, StaffSpriteSet sprites, StaffPlacement placement )
+	public StaffRenderer( Func<IReadOnlyList<StaffMember>> members, ModelHeightfield field, StaffSpriteSet sprites, StaffPlacement placement,
+		StaffSpriteMetadataCatalog? catalog = null, Func<StaffMember, StaffSpriteDrawRecord?>? sourceRecord = null, Func<long>? session = null )
 	{
 		this.members = members;
 		this.field = field;
 		this.sprites = sprites;
 		this.placement = placement;
+		this.catalog = catalog ?? new StaffSpriteMetadataCatalog( sprites );
+		this.sourceRecord = sourceRecord; this.session = session;
 		Name = "Staff";
 		if ( sprites.Atlases.Count == 0 )
 			return;
@@ -98,7 +78,8 @@ public sealed class StaffRenderer : Entity
 		var old = new List<Texture>();
 		for ( var index = 0; index < textures.Count; index++ )
 		{
-			if ( keys != null && !keys.Contains( TexturePack.RelativeFileName( sprites.Atlases[index].PackKey ) ) )
+			if ( !catalog.Banks.Any( bank => bank.Atlas == index && bank.Matches( sprites.Atlases[index] ) )
+				|| (keys != null && !keys.Contains( TexturePack.RelativeFileName( sprites.Atlases[index].PackKey ) )) )
 				continue;
 			old.Add( ReplaceAtlas( index, GuestRenderer.LoadAtlas( sprites.Atlases[index] ) ) );
 		}
@@ -123,49 +104,48 @@ public sealed class StaffRenderer : Entity
 	private Texture ReplaceAtlas( int index, Texture replacement )
 	{
 		var old = textures[index];
-		// Invalidate before replacing even one slot; a partial reload must not reuse old publications.
-		assetGeneration++;
+		// Draw readers resolve the current handle every time; no VM or window history changes here.
 		textures[index] = replacement;
 		return old;
 	}
 
 	private bool CanRender => Visible && material != null && !deleted;
-	// Keep the existing world exclusion (CellX only). Track separately requires both coordinates.
-	private bool CanPlaceMember( StaffMember member ) => !ReferenceEquals( member, placement.Carried ) && member.CellX != null;
 	private bool HasAtlas( int index ) => index >= 0 && index < textures.Count && index < sprites.Atlases.Count
 		&& textures[index].NativeTexture is { IsDisposed: false };
 
-	/// <summary>
-	/// The selected employee's latest world output at literal camera yaw zero. Pure observation: no player, movement,
-	/// clip or simulation updates. Unavailable output leaves the employee window on its existing qualified hire-loop fallback (UI-092).
-	/// </summary>
-	internal UI.Original.UiSpriteFrame? EmployeeFrame( StaffMember member )
+	/// <summary>Resource validation is read-only and independent of world rendering visibility or repaint frequency.</summary>
+	internal StaffSpriteFrameResolution ResolveRecord( StaffSpriteDrawRecord record, float cameraYaw = 0 )
 	{
-		if ( !CanRender || Level == null || !ReferenceEquals( Level, Level.Current ) || !ReferenceEquals( Level.StaffRenderer, this )
-			|| !Entity.All.Contains( this ) || !CanPlaceMember( member ) || !StaffSpriteRules.HasBodySprite( member )
-			|| !views.TryGetValue( member, out var view ) || view.Published is not { } output
-			|| !ReferenceEquals( output.Owner, Level ) || !ReferenceEquals( output.Member, member ) || output.ThingId != member.ThingId
-			|| output.WorldPass != Level.RenderPass || output.RendererPass != rendererPass || output.Assets != assetGeneration
-			|| output.Atlas != sprites.AtlasFor( member.Type, StaffSpriteRules.KeyOf( member ) ) || !HasAtlas( output.Atlas ) )
-			return null;
-		var list = members();
-		var found = false;
-		for ( var index = 0; index < list.Count && !found; index++ )
-			found = ReferenceEquals( list[index], member );
-		if ( !found )
-			return null;
-		var atlas = sprites.Atlases[output.Atlas];
-		var (direction, mirror) = GuestSpriteAtlas.SelectOriginalDirection( output.HeadingX, output.HeadingY, 0f, atlas.DirectionsOf( output.Slot ) );
-		var frame = atlas.Frames[atlas.GetFrame( output.Slot, direction, output.Step % atlas.FramesPerDirection( output.Slot ) )];
-		return new UI.Original.UiSpriteFrame( textures[output.Atlas].NativeTexture, atlas.Width, atlas.Height, frame.X, frame.Y, frame.Width, frame.Height,
-			frame.OriginX, frame.OriginY, mirror, frame.ScaleX, frame.ScaleY );
+		if ( deleted || Level == null || !ReferenceEquals( Level, Level.Current ) || !ReferenceEquals( Level.StaffRenderer, this )
+			|| !Entity.All.Contains( this ) || (session != null && record.Session != session()) )
+			return new( StaffSpriteDiagnostic.StaleIdentity, record.Route );
+		var resolved = catalog.ResolveFrame( record, cameraYaw );
+		if ( !resolved.CanDraw )
+			return resolved;
+		if ( resolved.Atlas < 0 || resolved.Atlas >= sprites.Atlases.Count
+			|| !catalog.Resolve( record.Kind, record.Variant ).Matches( sprites.Atlases[resolved.Atlas] ) )
+			return new( StaffSpriteDiagnostic.ResourceMismatch, record.Route );
+		return HasAtlas( resolved.Atlas ) ? resolved : new( StaffSpriteDiagnostic.TextureUnavailable, record.Route );
 	}
 
-	/// <summary>Where the member was last drawn, in cells (the thought bubbles hang above it); false before its first frame.</summary>
+	/// <summary>The independent employee clone's screen output at literal camera yaw zero. No world-publication fallback.</summary>
+	internal UI.Original.UiSpriteFrame? EmployeeFrame( StaffSpriteDrawRecord record )
+	{
+		var result = ResolveRecord( record );
+		if ( !record.EmployeeClone || result.Route != StaffSpriteRoute.Screen || !result.CanDraw )
+			return null;
+		var atlas = sprites.Atlases[result.Atlas];
+		var frame = result.Frame;
+		return new UI.Original.UiSpriteFrame( textures[result.Atlas].NativeTexture, atlas.Width, atlas.Height,
+			frame.X, frame.Y, frame.Width, frame.Height, frame.OriginX, frame.OriginY, result.Mirror, frame.ScaleX, frame.ScaleY );
+	}
+
+	/// <summary>The source's published cell position for thought bubbles; querying it does not advance presentation.</summary>
 	internal bool TryGetDrawCell( StaffMember member, out float x, out float y )
 	{
-		(x, y) = views.TryGetValue( member, out var view ) && view.Initialised ? (view.X, view.Y) : (0f, 0f);
-		return view is { Initialised: true };
+		var record = sourceRecord?.Invoke( member );
+		(x, y) = record == null ? (0f, 0f) : (record.PositionX, record.PositionY);
+		return record != null && float.IsFinite( x ) && float.IsFinite( y );
 	}
 
 	/// <summary>
@@ -186,89 +166,6 @@ public sealed class StaffRenderer : Entity
 			frame.OriginX, frame.OriginY, mirror, frame.ScaleX, frame.ScaleY );
 	}
 
-	/// <summary>The atlas, slot and frame a member is drawn with: for the lifecycle checks and tests; null when the member is not drawn.</summary>
-	internal (int Atlas, int Frame, bool Mirror, StaffClip Clip)? Describe( StaffMember member, SVector3 cameraRight, SVector3 cameraForward )
-	{
-		if ( !views.TryGetValue( member, out var view ) )
-			return null;
-		return Select( member, view, Time.Now, cameraRight, cameraForward ) is { } chosen
-			? (chosen.Atlas, chosen.Frame, chosen.Mirror, chosen.Clip) : null;
-	}
-
-	private Selection? Select( StaffMember member, MemberView view, float now, SVector3 cameraRight, SVector3 cameraForward )
-	{
-		var atlasIndex = sprites.AtlasFor( member.Type, StaffSpriteRules.KeyOf( member ) );
-		if ( !HasAtlas( atlasIndex ) )
-			return null;
-		var atlas = sprites.Atlases[atlasIndex];
-		// the world-driven roles steer continuously; mechanics are moved one cell per second, so their steps are further apart
-		var moving = now - view.MovedAt < (member.Type == StaffType.Mechanic ? 1.3f : 0.6f);
-		if ( StaffSpriteRules.SelectClip( member, moving, atlas.Animations.Performances, atlas.Animations.PerformanceCount ) is not { } clip )
-			return null;
-		var key = clip.Script << 8 | clip.Slot;
-		if ( view.ClipKey != key )
-		{
-			view.ClipKey = key;
-			view.Player.Restart();
-		}
-		if ( view.StepLength > 0f )
-		{
-			// [BIN:TPW-EXE:0x004FA2A0 walk step] the interval a step of that length asks for takes effect with the clip playing (the run clip does not double the speed); a clip that is not a walk keeps the interval the last step left
-			view.Player.SetInterval( SpritePlayer.IntervalFor( view.StepLength, clip == StaffSpriteRules.Run ) );
-			view.StepLength = 0f;
-		}
-		var (slot, step) = StaffSpriteRules.ResolveSteps( clip, view.Player.Steps, atlas.Animations.Animations );
-		var (frame, mirror) = FrameFor( atlas, slot, step, view.HeadingX, view.HeadingY, cameraRight, cameraForward );
-		return new Selection( atlasIndex, frame, mirror, clip, slot, step );
-	}
-
-	private static (int Frame, bool Mirror) FrameFor( GuestSpriteAtlas atlas, int slot, int step, float headingX, float headingY, SVector3 cameraRight, SVector3 cameraForward )
-	{
-		// [BIN:TPW-EXE:0x00542010 direction] staff go through the same sprite pass as the guests: the heading sector plus the camera's yaw sector picks the direction; no pitch is read (GuestSpriteAtlas.SelectOriginalDirection)
-		var yaw = GuestSpriteAtlas.CameraYaw( cameraRight, cameraForward, Camera.Mode is ParkCameraMode );
-		var (direction, mirror) = GuestSpriteAtlas.SelectOriginalDirection( headingX, headingY, yaw, atlas.DirectionsOf( slot ) );
-		return (atlas.GetFrame( slot, direction, step % atlas.FramesPerDirection( slot ) ), mirror);
-	}
-
-	/// <summary>Follows the member's position: smooths the drawn position, tracks the heading and when it last moved.</summary>
-	private static void Track( StaffMember member, MemberView view, float now, float delta )
-	{
-		if ( member.CellX is not { } x || member.CellY is not { } y )
-			return;
-		if ( !view.Initialised )
-		{
-			(view.X, view.Y, view.LastX, view.LastY, view.Initialised) = (x, y, x, y, true);
-			return;
-		}
-		var dx = x - view.LastX;
-		var dy = y - view.LastY;
-		var step = MathF.Sqrt( dx * dx + dy * dy );
-		if ( step > 1e-4f )
-		{
-			view.HeadingX = dx / step;
-			view.HeadingY = dy / step;
-			// the step of one park turn: the displacement over the time since the previous change, scaled to a turn (the world moves most roles once a turn, mechanics once a second)
-			var elapsed = now - view.MovedAt;
-			var turns = float.IsFinite( elapsed ) ? Math.Clamp( elapsed, 0.05f, 2f ) / ParkTurnSeconds : 1f;
-			view.StepLength = step / turns * Fixed16.One;
-			view.MovedAt = now;
-			(view.LastX, view.LastY) = (x, y);
-		}
-		// a drop or a placement jumps; a walk is followed smoothly between the world's steps
-		var gap = MathF.Sqrt( (x - view.X) * (x - view.X) + (y - view.Y) * (y - view.Y) );
-		if ( gap > 2f || step > 1.5f )
-		{
-			(view.X, view.Y) = (x, y);
-			view.MovedAt = float.NegativeInfinity;
-		}
-		else
-		{
-			var blend = MathF.Min( 1f, MathF.Max( 0f, delta ) * 10f );
-			view.X += (x - view.X) * blend;
-			view.Y += (y - view.Y) * blend;
-		}
-	}
-
 	/// <summary>Where the tool's sprite hangs this frame in cell units: the exact pointer ground point, else the hovered cell's centre; null when neither is known.</summary>
 	internal static (float X, float Y)? DanglePoint( StaffPlacement placement ) =>
 		placement.Cursor ?? (placement.HoverCell is { } cell ? (cell.X + 0.5f, cell.Y + 0.5f) : null);
@@ -276,7 +173,6 @@ public sealed class StaffRenderer : Entity
 	/// <summary>The CPU portion of the actual world pass, including selection and quad preparation; never called by UI readers.</summary>
 	internal int PrepareWorld()
 	{
-		rendererPass++;
 		DrawnStaff = 0;
 		DrewDangling = false;
 		DangleAt = null;
@@ -293,28 +189,23 @@ public sealed class StaffRenderer : Entity
 		if ( vertices.Length < needed )
 			vertices = new Vertex[Math.Max( needed, 16 * VerticesPerSprite ) * 2];
 		var now = Time.Now;
-		var nowMs = (long)(now * 1000f);
 		var count = 0;
+		var yaw = GuestSpriteAtlas.CameraYaw( right, forward, Camera.Mode is ParkCameraMode );
 		for ( var index = 0; index < list.Count; index++ )
 		{
 			var member = list[index];
-			if ( !views.TryGetValue( member, out var memberView ) )
-				views[member] = memberView = new MemberView { Player = new SpritePlayer( nowMs ) };
-			if ( !CanPlaceMember( member ) )
+			if ( sourceRecord?.Invoke( member ) is not { } record || record.EmployeeClone || record.Route != StaffSpriteRoute.World )
 				continue;
-			Track( member, memberView, now, Time.Delta );
-			memberView.Player.Tick( nowMs );
-			if ( Select( member, memberView, now, right, forward ) is not { } chosen )
+			var chosen = ResolveRecord( record, yaw );
+			if ( !chosen.CanDraw )
 				continue;
-			// a member's sprite is pickable, so the original pulls it towards the camera like a visitor's (SpriteScale.PulledDepthShare)
-			var (feet, share) = GuestRenderer.PullTowardsEye( GuestRenderer.CellToEngine( field, memberView.X, memberView.Y ), eye, forward );
-			AddSprite( ref count, chosen.Atlas, chosen.Frame, chosen.Mirror, feet, right * share, up * share, forward );
-			memberView.Published = new PublishedFrame( Level, Level?.RenderPass ?? 0, rendererPass, assetGeneration,
-				member, member.ThingId, chosen.Atlas, chosen.Slot, chosen.Step, memberView.HeadingX, memberView.HeadingY );
+			var feet = GuestRenderer.CellToEngine( field, record.PositionX, record.PositionY, record.PositionZ );
+			var share = 1f;
+			if ( (record.Flags & 0x200) != 0 )
+				(feet, share) = GuestRenderer.PullTowardsEye( feet, eye, forward );
+			AddSprite( ref count, chosen.Atlas, chosen.FrameIndex, chosen.Mirror, feet, right * share, up * share, forward );
 			DrawnStaff++;
 		}
-		if ( ++frames % 256 == 0 && views.Count > list.Count )
-			Prune( list );
 		if ( DanglePoint( placement ) is var (danglingX, danglingY) && placement.ToolType is { } toolType
 			&& sprites.AtlasFor( toolType, placement.ToolVariantKey ) is var atlasIndex and >= 0 && atlasIndex < textures.Count )
 		{
@@ -386,23 +277,6 @@ public sealed class StaffRenderer : Entity
 		vertices[count++] = topRight; vertices[count++] = bottomRight; vertices[count++] = bottomLeft;
 		vertices[count++] = topLeft; vertices[count++] = bottomLeft; vertices[count++] = topRight;
 		vertices[count++] = topRight; vertices[count++] = bottomLeft; vertices[count++] = bottomRight;
-	}
-
-	/// <summary>Forgets the views of members that left the list (dismissed, or the park was replaced by a load).</summary>
-	private void Prune( IReadOnlyList<StaffMember> list )
-	{
-		stale.Clear();
-		foreach ( var member in views.Keys )
-		{
-			var found = false;
-			for ( var index = 0; index < list.Count && !found; index++ )
-				found = ReferenceEquals( list[index], member );
-			if ( !found )
-				stale.Add( member );
-		}
-		foreach ( var member in stale )
-			views.Remove( member );
-		stale.Clear();
 	}
 
 	protected override void OnDelete()

@@ -33,12 +33,16 @@ public sealed partial class StaffWorldSimulation : IMechanicJobWorld, IStaffWorl
 	{
 		var spawn = gate is { } entry && grid.IsWalkable( entry.X, entry.Y ) ? gate : FirstPath();
 		foreach ( var member in members() )
+		{
 			// a member in the player's hand without a position waits for the drop; the gate spawn is for the others (staff placement, docs/STAFF-PLACEMENT.md)
 			if ( member.CellX == null && member.CellY == null && member.State != StaffState.PickedUp && spawn is { } cell )
 			{
 				member.CellX = cell.X + 0.5f;
 				member.CellY = cell.Y + 0.5f;
 			}
+			// First attachment only; a lost/resting source requires its explicit return event.
+			member.BodySprite?.EnsureInitialized();
+		}
 	}
 
 	private (int X, int Y)? FirstPath()
@@ -82,7 +86,7 @@ public sealed partial class StaffWorldSimulation : IMechanicJobWorld, IStaffWorl
 				reachable && (x, y) != target, reachable );
 		} ).ToArray();
 
-	/// <summary>Called only by the fixed simulation clock, using its already speed-scaled delta.</summary>
+	/// <summary>Legacy one-cell compatibility movement, without source animation events; live staff use the role walk.</summary>
 	public void Tick( float seconds )
 	{
 		if ( !float.IsFinite( seconds ) || seconds < 0 ) throw new ArgumentOutOfRangeException( nameof( seconds ) );

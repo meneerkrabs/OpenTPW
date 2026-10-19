@@ -225,7 +225,10 @@ public sealed class ParkEconomyRuntime
 	/// cannot change under the running start.
 	/// </summary>
 	/// <returns>The saved world streams for the caller to restore, or null when the save has none.</returns>
-	public WorldRandomState? Load( string path )
+	public WorldRandomState? Load( string path ) => Load( path, validate: null );
+
+	/// <summary>Validates a detached candidate before changing the live economy or its event subscriptions.</summary>
+	internal WorldRandomState? Load( string path, Action<ParkEconomy>? validate )
 	{
 		var (loaded, world) = ParkSaveFile.LoadState( path, ( theme, easy ) =>
 		{
@@ -235,6 +238,7 @@ public sealed class ParkEconomyRuntime
 		} );
 		if ( loaded.Mode != Economy.Mode )
 			throw new InvalidDataException( $"The park save is a {loaded.Mode} park, not the running {Economy.Mode} park." );
+		validate?.Invoke( loaded );
 		Economy.EventRaised -= LogEvent;
 		Economy.EventRaised -= ForwardEvent;
 		Economy.Objectives.PresentationPosted -= ForwardChallengePresentation;

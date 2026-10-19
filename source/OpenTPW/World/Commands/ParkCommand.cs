@@ -81,6 +81,8 @@ public enum ParkCommandKind : byte
 	SetGameSpeed = 51,
 	/// <summary>Queues a cheat for the next park turn (<see cref="QueueCheatCommand"/>).</summary>
 	QueueCheat = 52,
+	/// <summary>The loans dialog's list build: every offer's credit test is stored (<see cref="RefreshLoanOffersCommand"/>).</summary>
+	RefreshLoanOffers = 53,
 }
 
 /// <summary>

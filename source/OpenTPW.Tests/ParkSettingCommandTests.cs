@@ -1,20 +1,29 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using OpenTPW.Hud;
 
 namespace OpenTPW.Tests;
 
 /// <summary>
-/// [EXT:online-coop-commands] The park's setting commands (docs/COOP.md, "Settings") on a level with only the pieces the tick and the economy touch: each changes what it
-/// names, a refusal changes nothing and is logged, a malformed one never reaches the log, and a visit refuses every one.
+/// [EXT:online-coop-commands] The park's setting commands (docs/COOP.md, "Settings") on a level with only the pieces the tick and the economy touch: the economy settings change
+/// what they name, a refusal changes nothing and is logged, a malformed one never reaches the log, a visit refuses every one, and a log of settings replays tick for tick.
 /// </summary>
 [TestClass]
 public class ParkSettingCommandTests
 {
+	/// <summary>A setting whose park call throws, as a hostile peer's or a damaged log's command could make one throw.</summary>
+	private sealed record ThrowingSettingCommand : ParkSettingCommand
+	{
+		public override ParkCommandKind Kind => ParkCommandKind.SetEntranceFee;
+		internal override void WriteFields( ParkCommandWriter writer ) => writer.Int( 0 );
+		internal override ParkCommandResult Execute( Level level ) => throw new InvalidOperationException( "a rule the command missed" );
+	}
+
 	[TestMethod]
-	public void EachSettingChangesWhatItNames()
+	public void EachEconomySettingChangesWhatItNames()
 	{
 		var economy = EconomyTestData.Park();
 		var level = CommandTestLevel.Create( economy );
@@ -32,12 +41,21 @@ public class ParkSettingCommandTests
 		Accept( new SetResearchWorkloadCommand( 40 ) );
 		Assert.AreEqual( 40, economy.Research.Workload );
 		Accept( new SetResearchEffortCommand( ResearchCategory.Shop, 20 ) );
-		var loan = level.Commands.Issue( new TakeLoanCommand( 1 ) );
+		Assert.AreEqual( 20, economy.Research.Effort[(int)ResearchCategory.Shop] );
+		// the loans: the dialog's list build stores the credit tests (a full map's land makes a net worth of 32,768: offer 2's 18,000 passes, ParkEconomyTests), a take
+		// names the amount the confirmation showed, a repayment the balance
+		economy.Litter.Cells = new ParkCellMap( 128, 128 );
+		Assert.IsFalse( level.Commands.Issue( new TakeLoanCommand( 2, 18000 ) ).Accepted, "no offer is on the list before the dialog builds it" );
+		Accept( new RefreshLoanOffersCommand() );
+		Assert.IsFalse( level.Commands.Issue( new TakeLoanCommand( 2, 17999 ) ).Accepted, "another amount than the offer's" );
+		var loan = level.Commands.Issue( new TakeLoanCommand( 2, 18000 ) );
 		Assert.IsTrue( loan.Accepted );
-		Assert.AreEqual( 1, loan.As<LoanAccount>()!.OfferIndex );
-		Assert.IsFalse( level.Commands.Issue( new TakeLoanCommand( 1 ) ).Accepted, "an offer is taken once" );
-		Accept( new RepayLoanCommand( 1 ) );
-		Assert.IsFalse( economy.Loans.Any( item => item.OfferIndex == 1 ) );
+		Assert.AreEqual( 2, loan.As<LoanAccount>()!.OfferIndex );
+		Assert.IsFalse( level.Commands.Issue( new TakeLoanCommand( 2, 18000 ) ).Accepted, "an offer is taken once" );
+		var balance = economy.Loans.Single().RemainingBalance;
+		Assert.IsFalse( level.Commands.Issue( new RepayLoanCommand( 2, balance + 1 ) ).Accepted, "a stale balance" );
+		Accept( new RepayLoanCommand( 2, balance ) );
+		Assert.IsFalse( economy.Loans.Any() );
 		Accept( new RenameStaffCommand( mechanic.Id, "Ann" ) );
 		Assert.AreEqual( "Ann", mechanic.Name );
 		Accept( new SetPatrolAreaCommand( guard.Id, 20, 4, 12, 9 ) );
@@ -48,8 +66,39 @@ public class ParkSettingCommandTests
 		Assert.IsFalse( economy.Staff.Members.Any( member => member.Id == guard.Id ) );
 		Accept( new SetGameSpeedCommand( GameSpeed.Fast ) );
 		Assert.AreEqual( GameSpeed.Fast, economy.Speed );
+		Assert.IsFalse( level.Commands.Issue( new QueueCheatCommand( CheatKind.Money ) ).Accepted, "no cheat before the cheat mode" );
 		Accept( new QueueCheatCommand( CheatKind.Mode ) );
-		CollectionAssert.AreEqual( new[] { new CheatAction( CheatKind.Mode ) }, economy.Cheats.Pending.ToArray(), "a cheat waits for the next turn" );
+		Accept( new QueueCheatCommand( CheatKind.Money ) );
+		CollectionAssert.AreEqual( new[] { new CheatAction( CheatKind.Mode ), new CheatAction( CheatKind.Money ) }, economy.Cheats.Pending.ToArray(), "the cheats wait for the next turn" );
+	}
+
+	[TestMethod]
+	public void AChallengeAnswerAnswersOnlyTheOfferItNames()
+	{
+		var economy = EconomyTestData.Park();
+		economy.OpenPark();
+		economy.AdvanceDays( 541 );
+		var level = CommandTestLevel.Create( economy );
+		var offer = economy.Objectives.Current!;
+		Assert.IsFalse( offer.Accepted );
+		Assert.IsFalse( level.Commands.Issue( new AnswerChallengeCommand( offer.DefinitionIndex, offer.OfferedDay + 1, true ) ).Accepted, "an earlier or later offer" );
+		Assert.IsFalse( level.Commands.Issue( new AnswerChallengeCommand( offer.DefinitionIndex + 1, offer.OfferedDay, true ) ).Accepted );
+		Assert.IsFalse( economy.Objectives.Current!.Accepted );
+		Assert.IsTrue( level.Commands.Issue( new AnswerChallengeCommand( offer.DefinitionIndex, offer.OfferedDay, true ) ).Accepted );
+		Assert.IsTrue( economy.Objectives.Current!.Accepted );
+		Assert.IsFalse( level.Commands.Issue( new AnswerChallengeCommand( offer.DefinitionIndex, offer.OfferedDay, false ) ).Accepted, "an answered offer takes no second answer" );
+	}
+
+	[TestMethod]
+	public void TheParksNameChangesThroughItsCommand()
+	{
+		var level = CommandTestLevel.Create( EconomyTestData.Park() );
+		Assert.IsFalse( level.Commands.Issue( new RenameParkCommand( "New", "Name" ) ).Accepted, "a level without a name keeps none" );
+		typeof( Level ).GetField( "<ParkName>k__BackingField", BindingFlags.Instance | BindingFlags.NonPublic )!.SetValue( level, new ParkNameLines( "Old", "Park" ) );
+		Assert.IsTrue( level.Commands.Issue( new RenameParkCommand( "New", "Name" ) ).Accepted );
+		Assert.AreEqual( new ParkNameLines( "New", "Name" ), level.ParkName );
+		Assert.IsFalse( level.Commands.Issue( new RenameParkCommand( "Line\u0007", "Name" ) ).Accepted, "a line a save could not hold" );
+		Assert.AreEqual( new ParkNameLines( "New", "Name" ), level.ParkName );
 	}
 
 	[TestMethod]
@@ -66,18 +115,20 @@ public class ParkSettingCommandTests
 			new SetPriceCommand( 999, 10 ),
 			new SetGamePrizeCommand( 999, 10, 10, 10 ),
 			new SetShopSettingsCommand( 999, 50, 50 ),
-			new TakeLoanCommand( 9 ),
-			new RepayLoanCommand( 0 ),
+			new TakeLoanCommand( 9, 100 ),
+			new RepayLoanCommand( 0, 100 ),
 			new BuyUpgradeCommand( 999 ),
 			new CancelUpgradeCommand( 999 ),
 			new RequestMaintenanceCommand( 999, true ),
-			new AnswerChallengeCommand( true ),
+			new AnswerChallengeCommand( 0, 0, true ),
 			new RenameStaffCommand( 999, "Ann" ),
 			new RenameStaffCommand( mechanic.Id, "A\u0007B" ),
 			new FireStaffCommand( 999 ),
 			new SetPatrolAreaCommand( 999, 1, 1, 2, 2 ),
 			new SetPatrolAreaCommand( mechanic.Id, 1, 1, 2, ParkLitter.MapSize ),
-			new RenameParkCommand( "A", "B" )
+			new RenameParkCommand( "A", "B" ),
+			new SetPrototypeRunningCommand( true ),
+			new QueueCheatCommand( CheatKind.Research )
 		};
 		foreach ( var command in refused )
 		{
@@ -90,6 +141,20 @@ public class ParkSettingCommandTests
 	}
 
 	[TestMethod]
+	public void AParkWithoutStaffAndAParkCallThatThrowsRejectTheCommandInsteadOfThrowing()
+	{
+		var economy = new ParkEconomy( EconomyTestData.Settings(), EconomyTestData.Catalog(), ParkGameMode.FullSimulation, 7, EconomyRules.ThemeParkIncMoney );
+		var level = CommandTestLevel.Create( economy );
+		var hash = CommandTestLevel.Hash( level );
+		Assert.IsFalse( level.Commands.Issue( new SetTrainingBudgetCommand( StaffType.Mechanic, 100 ) ).Accepted, "Theme Park Inc's money slice has no staff" );
+		var thrown = level.Commands.Issue( new ThrowingSettingCommand() );
+		Assert.IsFalse( thrown.Accepted );
+		StringAssert.Contains( thrown.Reason, "a rule the command missed" );
+		Assert.AreEqual( 2, level.Commands.Log.Count );
+		Assert.AreEqual( hash, CommandTestLevel.Hash( level ) );
+	}
+
+	[TestMethod]
 	public void AMalformedSettingNeverReachesTheParkOrTheLog()
 	{
 		var economy = EconomyTestData.Park();
@@ -99,7 +164,7 @@ public class ParkSettingCommandTests
 		{
 			new SetEntranceFeeCommand( -1 ),
 			new SetPriceCommand( 1, ParkHud.MaximumPrice + 1 ),
-			new SetTrainingBudgetCommand( StaffType.Guard, -10 ),
+			new SetTrainingBudgetCommand( StaffType.Guard, ParkHud.TrainingBudgetMaximum + 1 ),
 			new MoveResearchCommand( ResearchCategory.Ride, 5 ),
 			// text that would not decode to itself: a lone surrogate, and more bytes than a command string holds
 			new RenameStaffCommand( 1, "A\ud800" ),
@@ -155,8 +220,8 @@ public class ParkSettingCommandTests
 		Assert.AreEqual( GameSpeed.Paused, economy.Speed );
 		Assert.AreEqual( new ParkCommandLogEntry( 0, new SetGameSpeedCommand( GameSpeed.Paused ) ), level.Commands.Log.Single() );
 		var unbound = new EconomyParkStatus( () => economy );
-		unbound.Speed = GameSpeed.Fastest;
-		Assert.AreEqual( GameSpeed.Paused, economy.Speed, "a status bound to no level changes nothing" );
+		Assert.ThrowsException<InvalidOperationException>( () => unbound.Speed = GameSpeed.Fastest, "a status bound to no level cannot set the speed" );
+		Assert.AreEqual( GameSpeed.Paused, economy.Speed );
 	}
 
 	[TestMethod]
@@ -168,12 +233,14 @@ public class ParkSettingCommandTests
 			[0] = new ParkCommand[] { new SetEntranceFeeCommand( 12 ), new SetParkOpenCommand( true ) },
 			[90] = new ParkCommand[] { new SetResearchWorkloadCommand( 70 ), new SetTrainingBudgetCommand( StaffType.Handyman, 300 ) },
 			// the repayment of an offer never taken is refused, and replays refused
-			[400] = new ParkCommand[] { new TakeLoanCommand( 2 ), new RepayLoanCommand( 1 ) },
+			[400] = new ParkCommand[] { new RefreshLoanOffersCommand(), new TakeLoanCommand( 2, 18000 ), new RepayLoanCommand( 1, 100 ) },
 			[600] = new ParkCommand[] { new SetGameSpeedCommand( GameSpeed.Fast ), new QueueCheatCommand( CheatKind.Mode ) },
 			[900] = new ParkCommand[] { new SetEntranceFeeCommand( 40 ), new SetGameSpeedCommand( GameSpeed.Normal ), new QueueCheatCommand( CheatKind.Money ) }
 		};
-		var recorded = CommandTestLevel.Create( EconomyTestData.Park() );
-		var twin = CommandTestLevel.Create( EconomyTestData.Park() );
+		// a full map's land gives the parks the net worth a loan's credit test needs (ParkEconomyTests)
+		static ParkEconomy Park() { var park = EconomyTestData.Park(); park.Litter.Cells = new ParkCellMap( 128, 128 ); return park; }
+		var recorded = CommandTestLevel.Create( Park() );
+		var twin = CommandTestLevel.Create( Park() );
 		Assert.AreEqual( CommandTestLevel.Hash( recorded ), CommandTestLevel.Hash( twin ) );
 		var hashes = new List<ulong>();
 		while ( recorded.Commands.NextTick < Ticks )
@@ -184,7 +251,8 @@ public class ParkSettingCommandTests
 			recorded.AdvanceSimulation( FixedStepClock.TickDuration );
 			hashes.Add( CommandTestLevel.Hash( recorded ) );
 		}
-		Assert.AreEqual( 11, recorded.Commands.Log.Count );
+		Assert.AreEqual( script.Values.Sum( commands => commands.Length ), recorded.Commands.Log.Count );
+		Assert.IsTrue( recorded.Park!.Economy.Loans.Any(), "the loan was taken" );
 		// the log survives its bytes
 		var log = ParkCommandLogFile.Deserialize( new ParkCommandLogFile( "jungle", 0, 0, 0, recorded.Commands.Log, Array.Empty<ParkCommandHashCheckpoint>() ).Serialize() ).Entries;
 		var replayed = new List<ulong>();
@@ -194,7 +262,7 @@ public class ParkSettingCommandTests
 		Assert.AreEqual( 40, twin.Park!.Economy.EntranceFee );
 		Assert.IsTrue( twin.Park.Economy.Cheats.Mode, "the cheat mode came at its turn" );
 		// and the commands mattered: the same park without them parts from the recorded one
-		var plain = CommandTestLevel.Create( EconomyTestData.Park() );
+		var plain = CommandTestLevel.Create( Park() );
 		for ( var tick = 0; tick < Ticks; tick++ )
 			plain.AdvanceSimulation( FixedStepClock.TickDuration );
 		Assert.AreNotEqual( hashes[^1], CommandTestLevel.Hash( plain ) );

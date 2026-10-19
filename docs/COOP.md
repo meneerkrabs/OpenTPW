@@ -85,34 +85,52 @@ the issuing player's session slot (`Player`, 0 = the local player and host).
 
 ### Settings
 
-The HUD windows' settings are commands too (`ParkSettingCommand`, `ParkSettingCommands.cs`, kinds 30
-to 52, C1 part 2): the park door, the entrance fee, attractions open and closed (the reopening guard
-is asked first, as the open buttons ask it), the ride window's speed, capacity and duration, a shop's
-or sideshow's price, a winnable sideshow's prize and chance of losing, a shop's quality and
+The HUD windows' settings are commands too (`ParkSettingCommand`, `ParkSettingCommands.cs`, kinds 22
+and 30 to 53, C1 part 2): the park door, the entrance fee, attractions open and closed (the reopening
+guard is asked first, as the open buttons ask it), the ride window's speed, capacity and duration, a
+shop's or sideshow's price, a winnable sideshow's prize and chance of losing, a shop's quality and
 ingredient, a staff role's training budget, the research lab's effort, workload and current
-projects, taking and paying off loans, ride upgrades and their cancellation, maintenance calls, the
-answer to a challenge, renaming and dismissing staff, patrol areas (the patrol tool's second click and
-the employee window's clear button), the park's name, the game speed and the cheats (the secret park
-name's mode, the Alt keys and the cheats window).
+projects, the loans dialog's list build, taking and paying off loans, ride upgrades and their
+cancellation, maintenance calls, the answer to a challenge, renaming and dismissing staff, patrol
+areas (the patrol tool's second click and the employee window's clear button), the park's name, the
+game speed, the cheats (the secret park name's mode, the Alt keys and the cheats window) and the
+developer prototype's start and stop.
 
 - An object's setting names it by its attraction id, as the object commands do; the executor finds
   its economy object through the level.
-- Each command checks what its edit would refuse (an attraction of another kind, a loan already taken
-  or not on offer, no challenge waiting, an employee who is gone) and then makes the park's own call,
-  so a refused setting changes nothing and is logged like any refusal.
+- Each command keeps the rules of the control that issues it, so a peer or a log cannot do what the
+  window would not: a prize only for a winnable sideshow, a maintenance call only for a placed ride or
+  toilet and, for a new call, a hired employee of the role who is not on strike (UIHELPTEXT 574, 575),
+  the other cheats only once the cheat mode is on or waits for its turn, a loan only from the
+  Available tab. It checks what its edit would refuse and then makes the park's own call, so a
+  refused setting changes nothing and is logged like any refusal. A park call that throws anyway
+  rejects the command (`ParkSettingCommand.Run`), the same way on every peer.
+- An answer names what the player saw, so one that applies a few ticks later (a session's frame)
+  cannot act on something else: a challenge answer names its offer (definition and offer day), a loan
+  the amount the confirmation showed, a repayment the remaining balance.
+- The loans dialog's list build (it opens, a tab is chosen) stores every offer's credit test, which
+  the park saves and the world hash reads, so it is a command (`RefreshLoanOffersCommand`) like any
+  edit.
 - The fields keep to the windows' ranges: prices 0 to 500, a prize's cost 0 to 10,000, chances,
-  efforts, workloads and ingredients 0 to 100, a quality byte, a signed 16-bit ride speed, one step
-  of a research project. A name must be valid UTF-16 whose UTF-8 fits the codec's 512-byte string,
-  so it decodes to the same text; anything else is malformed and never logged.
+  efforts, workloads and ingredients 0 to 100, a quality byte, a signed 16-bit ride speed, a training
+  budget up to the training window's 10,000, one step of a research project. A name must be valid
+  UTF-16 whose UTF-8 fits the codec's 512-byte string, so it decodes to the same text; anything else
+  is malformed and never logged.
 - The game speed: a park's is part of its state, so the speed buttons and keys and the HUD's status
   (`EconomyParkStatus`, bound to its level) set it through a command. A visited park has no economy
   and keeps its speed in the HUD, as before.
+- The developer panel's open-all and close-all issue one attraction command per attraction, so they
+  now ask the reopening guard and leave non-attractions alone; its prototype button has its own
+  command (`SetPrototypeRunningCommand`), which opens without the guard, as before.
 - Hiring is not a setting: an applicant is hired when the Place tool puts the employee down, so it is
   converted with the staff placement.
 
-`ParkSettingCommandTests` checks every setting on a level without game data, the refusals, the
-malformed fields and a visit; `ParkSettingCommandLevelTests` checks the attraction settings on placed
-rides and replays a recorded session of settings on a twin park with the same hash after every tick.
+`ParkSettingCommandTests` checks the economy settings, the loans, a challenge answer, the park's name,
+the refusals, a throwing park call, the malformed fields and a visit on a level without game data, and
+replays a log of settings; `ParkSettingCommandLevelTests` checks the attraction settings, the
+maintenance rules and an upgrade on placed rides, and replays a recorded session of settings on a twin
+park with the same hash after every tick. Shop and sideshow prices and prizes are exercised through
+their windows (`ShopPriceIngressTests`).
 
 ### Serialization
 
@@ -168,3 +186,13 @@ guarded list.
 - A remote player's command will run the same presentation (the action message, sounds) as a local
   one; C3 separates the issuer's feedback from everyone's.
 - The in-memory log keeps the newest 65,536 commands; a recording keeps all.
+- A log replays only with the extensions it was recorded with, as a save loads only with its
+  simulation-changing extensions: the extensions' systems read the process's extension switches, and
+  so do the cheats of the cheats extension (the weather, the arrivals, the ride vehicles). The log
+  does not record the switches yet; a session's version gate (C2) checks them.
+- The reopening guard an attraction command asks reads whether the coaster tool is editing that
+  coaster (`CoasterRide.BeingEdited`), tool state the coaster commands of part 3 make shared.
+- The developer and smoke options (`--perf-*`, `--debug-*`) set their parks up directly; a recording
+  made with them does not replay.
+- The developer prototype can be opened by two kinds (32 with the reopening guard, 22 without); the
+  host's rights (C3) must name both.

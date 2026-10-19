@@ -53,11 +53,19 @@ public class ParkCommandLayerTests
 		new( "Ride upgrades", @"\.(TryBuyUpgrade|TryCancelUpgrade)\s*\(", nameof( BuyUpgradeCommand ) ),
 		new( "Level.RenamePark", Call( "RenamePark" ), nameof( RenameParkCommand ) ),
 		new( "Cheats", Call( "QueueCheat" ), nameof( QueueCheatCommand ) ),
-		new( "Ride open and close", @"\b(item|ride)\??\.(Open|Close)\(\s*\)", nameof( SetAttractionOpenCommand ) ),
+		// any receiver but the HUD's own panels (the locator, the camera slide) and a layout builder's track
+		new( "Ride open and close", @"(\)|\b(?!(Locator|CameraSlide|Track)\b)\w+)\??\.(Open|Close)\(\s*\)", nameof( SetAttractionOpenCommand ) ),
+		new( "ParkEconomy.SetObjectOpen", Call( "SetObjectOpen" ), nameof( SetAttractionOpenCommand ) ),
 		new( "Ride window settings", Call( "ApplyRideWindow" ), nameof( SetRideSettingsCommand ) ),
-		new( "Staff rename", @"\bStaff\.Rename\s*\(", nameof( RenameStaffCommand ) ),
+		new( "Ride setters", @"\.(SetSpeed|SetCapacity|SetDuration)\s*\(", nameof( SetRideSettingsCommand ) ),
+		new( "Staff rename", @"\.Rename\s*\(", nameof( RenameStaffCommand ) ),
 		new( "Patrol areas", @"\.(SetPatrolArea|ClearPatrolArea)\s*\(", nameof( SetPatrolAreaCommand ) ),
-		new( "Game speed", @"\beconomy\.Speed\s*=[^=]", nameof( SetGameSpeedCommand ) ),
+		// any speed but the HUD status's own (a park without an economy keeps its speed there)
+		new( "Game speed", @"(\)|\b(?!Status\b)\w+)\??\.Speed\s*=[^=]", nameof( SetGameSpeedCommand ) ),
+		new( "Research lab (direct)", @"\.SetEffort\s*\(", nameof( SetResearchEffortCommand ) ),
+		new( "Challenge slots", @"\.(AcceptAt|DeclineAt)\s*\(", nameof( AnswerChallengeCommand ) ),
+		new( "Cheat queue (direct)", @"\bCheats\??\.Queue\s*\(", nameof( QueueCheatCommand ) ),
+		new( "Loan list build", Call( "RefreshLoanOffers" ), nameof( RefreshLoanOffersCommand ) ),
 		new( "Developer prototype run", @"\bPlacedRide\??\.(Start|Stop)\s*\(", nameof( SetPrototypeRunningCommand ) ),
 	};
 
@@ -67,7 +75,7 @@ public class ParkCommandLayerTests
 	/// </summary>
 	internal static readonly (Mutator Mutator, string Phase)[] Remaining =
 	{
-		(new( "ParkEconomy.Hire and the staff placement", @"\.(Hire|EndPlacement)\s*\(|\bPendingPlacementId\s*=[^=]", "PlaceStaff" ), "C1 part 3 (tools)"),
+		(new( "ParkEconomy.Hire and the staff placement", @"\.(Hire|EndPlacement)\s*\(|\b(PendingPlacementId|PatrolArea)\s*=[^=]", "PlaceStaff" ), "C1 part 3 (tools)"),
 		(new( "Land", @"\.(ChargeLand|TryBuyCells|SetLand)\s*\(", "BuyLand" ), "C1 part 3 (tools)"),
 		(new( "Pools", @"\.(SetPoolWaves|CyclePoolWaves|PaintCells|EraseCells|Paint|Erase)\s*\(", "PaintPool" ), "C1 part 3 (tools)"),
 		(new( "Coasters", Call( "CoasterClick" ), "CoasterClick" ), "C1 part 3 (tools)"),

@@ -46,6 +46,9 @@ public class ParkSettingCommandLevelTests
 		typeof( Level ).GetField( "<CellTool>k__BackingField", BindingFlags.Instance | BindingFlags.NonPublic )!.SetValue( world.Level, new CellBuildTool() );
 		typeof( Level ).GetField( "<PathVariants>k__BackingField", BindingFlags.Instance | BindingFlags.NonPublic )!.SetValue( world.Level, new PathTileVariants() );
 		world.Economy.Ledger.Post( LedgerCategory.OtherIncome, 1_000_000 );
+		// a mechanic, whom a maintenance call needs (both twins hire the same applicant), and a full map's land, whose net worth a loan's credit test needs
+		EconomyTestData.HireBest( world.Economy, StaffType.Mechanic );
+		world.Economy.Litter.Cells ??= new ParkCellMap( 128, 128 );
 		return new Park( world.Level, world.Economy, world.One, world.Two, world.State );
 	}
 
@@ -88,6 +91,40 @@ public class ParkSettingCommandLevelTests
 	}
 
 	[TestMethod]
+	public void AMaintenanceCallNeedsAnEmployeeWhoIsNotOnStrike()
+	{
+		var park = NewPark();
+		var level = park.Level;
+		var one = park.One.Runtime.AttractionId;
+		park.Economy.Fire( park.Economy.Staff.OfType( StaffType.Mechanic ).Single().Id );
+		Assert.IsFalse( level.Commands.Issue( new RequestMaintenanceCommand( one, true ) ).Accepted, "no mechanic is hired (UIHELPTEXT 574)" );
+		Assert.IsFalse( park.State.MaintenanceRequested );
+		Assert.IsFalse( level.Commands.Issue( new RequestMaintenanceCommand( 9999, true ) ).Accepted );
+	}
+
+	[TestMethod]
+	public void AnUpgradeIsBoughtAndCancelledThroughItsCommands()
+	{
+		var park = NewPark();
+		var level = park.Level;
+		var one = park.One.Runtime.AttractionId;
+		Assert.IsFalse( level.Commands.Issue( new BuyUpgradeCommand( one ) ).Accepted, "the next level is not researched yet" );
+		// as UpgradeCatalogueDefaultsTests researches the next level: a researcher, nothing on the rides' own research
+		EconomyTestData.HireBest( park.Economy, StaffType.Researcher );
+		park.Economy.SetResearchEffort( ResearchCategory.Ride, 0 );
+		for ( var day = 0; day < 100 && !park.Economy.Research.IsAvailable( 1100, 1 ); day++ )
+			park.Economy.AdvanceDays( 1 );
+		Assert.IsTrue( park.Economy.Research.IsAvailable( 1100, 1 ) );
+		var bought = level.Commands.Issue( new BuyUpgradeCommand( one ) );
+		Assert.IsTrue( bought.Accepted, bought.Reason );
+		Assert.AreEqual( 1, park.State.PendingLevel );
+		Assert.IsFalse( park.One.IsOpen, "the bought upgrade closes the ride for the mechanic" );
+		Assert.IsTrue( park.Two.IsOpen );
+		Assert.IsTrue( level.Commands.Issue( new CancelUpgradeCommand( one ) ).Accepted );
+		Assert.AreEqual( 0, park.State.PendingLevel );
+	}
+
+	[TestMethod]
 	public void ARecordedSettingsSessionReplaysOnATwinParkWithTheSameHashAfterEveryTick()
 	{
 		var recorded = NewPark();
@@ -98,10 +135,14 @@ public class ParkSettingCommandLevelTests
 		var one = recorded.One.Runtime.AttractionId;
 		var two = recorded.Two.Runtime.AttractionId;
 		var hashes = new List<ulong>();
+		var issued = 0;
 		void Issue( params ParkCommand[] commands )
 		{
 			foreach ( var command in commands )
+			{
 				level.Commands.Issue( command );
+				issued++;
+			}
 		}
 		Run( level, 20, hashes );
 		Issue( new SetParkOpenCommand( true ), new SetEntranceFeeCommand( 25 ) );
@@ -112,15 +153,17 @@ public class ParkSettingCommandLevelTests
 		Run( level, 30, hashes );
 		Issue( new SetTrainingBudgetCommand( StaffType.Mechanic, 200 ), new SetResearchWorkloadCommand( 60 ), new SetResearchEffortCommand( ResearchCategory.Ride, 40 ) );
 		Run( level, 20, hashes );
-		Issue( new TakeLoanCommand( 0 ), new SetGameSpeedCommand( GameSpeed.Fastest ) );
+		Issue( new RefreshLoanOffersCommand(), new TakeLoanCommand( 2, 18000 ), new SetGameSpeedCommand( GameSpeed.Fastest ) );
+		Assert.IsTrue( recorded.Economy.Loans.Any(), "the loan was taken" );
 		Run( level, 40, hashes );
-		// refusals log too: an upgrade the park has not researched, a price on a ride, a challenge nobody offered, a gone loan
-		Issue( new BuyUpgradeCommand( one ), new SetPriceCommand( two, 5 ), new AnswerChallengeCommand( true ), new RepayLoanCommand( 2 ) );
+		// refusals log too: an upgrade the park has not researched, a price on a ride, a challenge nobody offered, a loan never taken
+		Issue( new BuyUpgradeCommand( one ), new SetPriceCommand( two, 5 ), new AnswerChallengeCommand( 0, 0, true ), new RepayLoanCommand( 1, 100 ) );
 		Run( level, 20, hashes );
-		Issue( new RepayLoanCommand( 0 ), new SetGameSpeedCommand( GameSpeed.Normal ), new RequestMaintenanceCommand( two, false ) );
+		Issue( new RepayLoanCommand( 2, recorded.Economy.Loans.Single().RemainingBalance ), new SetGameSpeedCommand( GameSpeed.Normal ), new RequestMaintenanceCommand( two, false ) );
+		Assert.IsFalse( recorded.Economy.Loans.Any(), "the loan was paid off" );
 		Run( level, 60, hashes );
 		Assert.AreNotEqual( start, hashes[^1], "the session changed the park" );
-		Assert.AreEqual( 18, level.Commands.Log.Count );
+		Assert.AreEqual( issued, level.Commands.Log.Count );
 		var replayed = new List<ulong>();
 		ParkCommandReplay.Run( twin.Level.Commands, level.Commands.Log, () => twin.Level.Commands.NextTick,
 			() => twin.Level.AdvanceSimulation( FixedStepClock.TickDuration ), level.Commands.NextTick, _ => replayed.Add( twin.Level.ComputeStateHash() ) );

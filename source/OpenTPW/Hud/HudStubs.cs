@@ -77,11 +77,12 @@ public sealed class EconomyParkStatus : IHudParkStatus
 	public long Money => Economy?.Balance ?? 0;
 	public ParkDate Date => Economy?.Date ?? default;
 
-	/// <summary>The park's speed; setting it issues a <see cref="SetGameSpeedCommand"/> through the bound level (<see cref="ForLevel"/>), and a status bound to no level changes nothing.</summary>
+	/// <summary>The park's speed; setting it issues a <see cref="SetGameSpeedCommand"/> through the bound level (<see cref="ForLevel"/>). A status bound to no level cannot set it.</summary>
 	public GameSpeed Speed
 	{
 		get => Economy?.Speed ?? GameSpeed.Normal;
-		set => level?.Commands.Issue( new SetGameSpeedCommand( value ) );
+		set => (level ?? throw new InvalidOperationException( "An economy status without its level cannot set the speed: bind it with ForLevel." ))
+			.Commands.Issue( new SetGameSpeedCommand( value ) );
 	}
 
 	// The level scales the elapsed time of its whole fixed clock (guests, rides, scripts, economy) by this factor; the economy itself runs one tick per fixed tick.

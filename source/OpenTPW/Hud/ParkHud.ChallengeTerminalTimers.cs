@@ -93,7 +93,10 @@ public sealed partial class ParkHud
 	{
 		// a park's speed is part of its state and goes through its commands; a park without an economy keeps its speed in the HUD's status
 		if ( level?.Park != null )
-			level.Commands.Issue( new SetGameSpeedCommand( speed ) );
+		{
+			if ( !level.Commands.Issue( new SetGameSpeedCommand( speed ) ).Accepted )
+				return;
+		}
 		else
 			Status.Speed = speed;
 		challengeUserPaused = speed == GameSpeed.Paused;

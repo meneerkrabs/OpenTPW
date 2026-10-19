@@ -15,6 +15,22 @@ public abstract record ParkSettingCommand : ParkCommand
 	/// <summary>Runs the command on <paramref name="level"/>: accepted, or rejected without a change.</summary>
 	internal abstract ParkCommandResult Execute( Level level );
 
+	/// <summary>
+	/// Runs <paramref name="command"/> for <see cref="Level.ExecuteCommand"/>. A park call that throws (a rule the command's own checks missed, for example a hostile peer's or a
+	/// damaged log's command) rejects the command rather than end the game loop; the throw is the same on every peer, so they stay together.
+	/// </summary>
+	internal static ParkCommandResult Run( Level level, ParkSettingCommand command )
+	{
+		try
+		{
+			return command.Execute( level );
+		}
+		catch ( Exception error ) when ( error is InvalidOperationException or ArgumentException or KeyNotFoundException )
+		{
+			return ParkCommandResult.Rejected( $"The park refused the {command.Kind} command: {error.Message}" );
+		}
+	}
+
 	/// <summary>The rejection of a setting in a park that runs no economy.</summary>
 	private protected static ParkCommandResult NoEconomy => ParkCommandResult.Rejected( "The park runs no economy." );
 
@@ -39,16 +55,18 @@ public abstract record ParkSettingCommand : ParkCommand
 		}
 	}
 
-	/// <summary>The economy object of the placed attraction <paramref name="attraction"/> (<see cref="Level.ResolveCommandObject"/>) when it is of <paramref name="kinds"/>.</summary>
-	private protected static bool TryEconomyObject( Level level, int attraction, out ParkEconomy economy, out ParkObjectState state, params ParkObjectKind[] kinds )
+	/// <summary>The placed attraction <paramref name="attraction"/> (<see cref="Level.ResolveCommandObject"/>) and its economy object, when that is of <paramref name="kinds"/>.</summary>
+	private protected static bool TryEconomyObject( Level level, int attraction, out ParkEconomy economy, out OriginalObject item, out ParkObjectState state, params ParkObjectKind[] kinds )
 	{
 		economy = null!;
+		item = null!;
 		state = null!;
-		if ( level.Park?.Economy is not { } park || level.ResolveCommandObject( attraction ) is not { } item || level.GetEconomyInstance( item ) is not int instance
-			|| !park.TryGetObject( instance, out var found ) || (kinds.Length > 0 && !kinds.Contains( found.Kind )) )
+		if ( level.Park?.Economy is not { } park || level.ResolveCommandObject( attraction ) is not { } found || level.GetEconomyInstance( found ) is not int instance
+			|| !park.TryGetObject( instance, out var foundState ) || (kinds.Length > 0 && !kinds.Contains( foundState.Kind )) )
 			return false;
 		economy = park;
-		state = found;
+		item = found;
+		state = foundState;
 		return true;
 	}
 
@@ -66,12 +84,12 @@ public abstract record ParkSettingCommand : ParkCommand
 		ParkCommandKind.SetResearchEffort => new SetResearchEffortCommand( (ResearchCategory)reader.Int(), reader.Int() ),
 		ParkCommandKind.SetResearchWorkload => new SetResearchWorkloadCommand( reader.Int() ),
 		ParkCommandKind.MoveResearch => new MoveResearchCommand( (ResearchCategory)reader.Int(), reader.Int() ),
-		ParkCommandKind.TakeLoan => new TakeLoanCommand( reader.Int() ),
-		ParkCommandKind.RepayLoan => new RepayLoanCommand( reader.Int() ),
+		ParkCommandKind.TakeLoan => new TakeLoanCommand( reader.Int(), reader.Long() ),
+		ParkCommandKind.RepayLoan => new RepayLoanCommand( reader.Int(), reader.Long() ),
 		ParkCommandKind.BuyUpgrade => new BuyUpgradeCommand( reader.Int() ),
 		ParkCommandKind.CancelUpgrade => new CancelUpgradeCommand( reader.Int() ),
 		ParkCommandKind.RequestMaintenance => new RequestMaintenanceCommand( reader.Int(), reader.Bool() ),
-		ParkCommandKind.AnswerChallenge => new AnswerChallengeCommand( reader.Bool() ),
+		ParkCommandKind.AnswerChallenge => new AnswerChallengeCommand( reader.Int(), reader.Long(), reader.Bool() ),
 		ParkCommandKind.RenameStaff => new RenameStaffCommand( reader.Int(), reader.String() ),
 		ParkCommandKind.FireStaff => new FireStaffCommand( reader.Int() ),
 		ParkCommandKind.SetPatrolArea => new SetPatrolAreaCommand( reader.Int(), reader.Int(), reader.Int(), reader.Int(), reader.Int(), reader.Bool() ),
@@ -79,6 +97,7 @@ public abstract record ParkSettingCommand : ParkCommand
 		ParkCommandKind.SetGameSpeed => new SetGameSpeedCommand( (GameSpeed)reader.Int() ),
 		ParkCommandKind.QueueCheat => new QueueCheatCommand( (CheatKind)reader.Int(), reader.Int() ),
 		ParkCommandKind.SetPrototypeRunning => new SetPrototypeRunningCommand( reader.Bool() ),
+		ParkCommandKind.RefreshLoanOffers => new RefreshLoanOffersCommand(),
 		_ => null
 	};
 }
@@ -189,7 +208,7 @@ public sealed record SetPriceCommand( int Attraction, int Price ) : ParkSettingC
 
 	internal override ParkCommandResult Execute( Level level )
 	{
-		if ( !TryEconomyObject( level, Attraction, out var economy, out var state, ParkObjectKind.Shop, ParkObjectKind.Sideshow ) )
+		if ( !TryEconomyObject( level, Attraction, out var economy, out _, out var state, ParkObjectKind.Shop, ParkObjectKind.Sideshow ) )
 			return NoAttraction( Attraction );
 		economy.SetPrices( state.Id, Price );
 		return ParkCommandResult.Ok();
@@ -212,7 +231,9 @@ public sealed record SetGamePrizeCommand( int Attraction, int Price, int CostOfG
 
 	internal override ParkCommandResult Execute( Level level )
 	{
-		if ( !TryEconomyObject( level, Attraction, out var economy, out var state, ParkObjectKind.Sideshow ) )
+		// a non-winnable sideshow's window has only the price (UsageInfo.NonWinnableSideshow, ParkHud.ObjectSettings)
+		if ( !TryEconomyObject( level, Attraction, out var economy, out var item, out var state, ParkObjectKind.Sideshow )
+			|| item.Entry.Settings.GetInt( "UsageInfo.NonWinnableSideshow" ) != 0 )
 			return NoAttraction( Attraction );
 		economy.SetPrices( state.Id, Price, CostOfGoods, ChanceOfLosing );
 		return ParkCommandResult.Ok();
@@ -234,18 +255,21 @@ public sealed record SetShopSettingsCommand( int Attraction, int QualityOfGoods,
 
 	internal override ParkCommandResult Execute( Level level )
 	{
-		if ( !TryEconomyObject( level, Attraction, out var economy, out var state, ParkObjectKind.Shop ) )
+		if ( !TryEconomyObject( level, Attraction, out var economy, out _, out var state, ParkObjectKind.Shop ) )
 			return NoAttraction( Attraction );
 		economy.SetShopSettings( state.Id, QualityOfGoods, IngredientAmount );
 		return ParkCommandResult.Ok();
 	}
 }
 
-/// <summary>A staff role's monthly training budget (the training window); the money is spent by the monthly training, not now.</summary>
+/// <summary>
+/// A staff role's monthly training budget, 0 to the training window's <see cref="ParkHud.TrainingBudgetMaximum"/>; the money is spent by the monthly training, not now. A park
+/// without staff (Theme Park Inc's) takes none.
+/// </summary>
 public sealed record SetTrainingBudgetCommand( StaffType Role, long Budget ) : ParkSettingCommand
 {
 	public override ParkCommandKind Kind => ParkCommandKind.SetTrainingBudget;
-	internal override bool IsWellFormed => Enum.IsDefined( Role ) && Budget >= 0;
+	internal override bool IsWellFormed => Enum.IsDefined( Role ) && Budget is >= 0 and <= ParkHud.TrainingBudgetMaximum;
 
 	internal override void WriteFields( ParkCommandWriter writer )
 	{
@@ -257,6 +281,8 @@ public sealed record SetTrainingBudgetCommand( StaffType Role, long Budget ) : P
 	{
 		if ( level.Park?.Economy is not { } economy )
 			return NoEconomy;
+		if ( !economy.Rules.Staff )
+			return ParkCommandResult.Rejected( "The park runs no staff." );
 		economy.SetTrainingBudget( Role, Budget );
 		return ParkCommandResult.Ok();
 	}
@@ -319,12 +345,20 @@ public sealed record MoveResearchCommand( ResearchCategory Category, int Directi
 	}
 }
 
-/// <summary>Takes the loan of offer <paramref name="Offer"/> (the loans window); the accepted result's value is the new <see cref="LoanAccount"/>.</summary>
-public sealed record TakeLoanCommand( int Offer ) : ParkSettingCommand
+/// <summary>
+/// Takes the loan of offer <paramref name="Offer"/> for the <paramref name="Amount"/> the loans window's confirmation named: the offer must still be on the Available tab
+/// (not bought, and passed at the last list build) with that amount. The accepted result's value is the new <see cref="LoanAccount"/>.
+/// </summary>
+public sealed record TakeLoanCommand( int Offer, long Amount ) : ParkSettingCommand
 {
 	public override ParkCommandKind Kind => ParkCommandKind.TakeLoan;
-	internal override bool IsWellFormed => Offer >= 0;
-	internal override void WriteFields( ParkCommandWriter writer ) => writer.Int( Offer );
+	internal override bool IsWellFormed => Offer >= 0 && Amount >= 0;
+
+	internal override void WriteFields( ParkCommandWriter writer )
+	{
+		writer.Int( Offer );
+		writer.Long( Amount );
+	}
 
 	internal override ParkCommandResult Execute( Level level )
 	{
@@ -332,26 +366,52 @@ public sealed record TakeLoanCommand( int Offer ) : ParkSettingCommand
 			return NoEconomy;
 		if ( economy.IsBankrupt )
 			return ParkCommandResult.Rejected( "A bankrupt park cannot borrow." );
-		if ( !economy.Features.Loans || economy.Settings.Loans.All( item => item.Index != Offer ) || economy.Loans.Any( loan => loan.OfferIndex == Offer ) )
+		if ( economy.AvailableLoans.FirstOrDefault( offer => offer.Index == Offer ) is not { } available || available.Amount != Amount )
 			return ParkCommandResult.Rejected( $"Loan offer {Offer} is not available." );
 		return ParkCommandResult.Ok( economy.TakeLoan( Offer ) );
 	}
 }
 
-/// <summary>Pays off the outstanding loan of offer <paramref name="Offer"/> early; rejected without the loan or without the money (UITEXT 182).</summary>
-public sealed record RepayLoanCommand( int Offer ) : ParkSettingCommand
+/// <summary>
+/// Pays off the outstanding loan of offer <paramref name="Offer"/> early, for the remaining balance (<paramref name="Amount"/>) the confirmation named; rejected without that
+/// loan at that balance, or without the money (UITEXT 182).
+/// </summary>
+public sealed record RepayLoanCommand( int Offer, long Amount ) : ParkSettingCommand
 {
 	public override ParkCommandKind Kind => ParkCommandKind.RepayLoan;
-	internal override bool IsWellFormed => Offer >= 0;
-	internal override void WriteFields( ParkCommandWriter writer ) => writer.Int( Offer );
+	internal override bool IsWellFormed => Offer >= 0 && Amount >= 0;
+
+	internal override void WriteFields( ParkCommandWriter writer )
+	{
+		writer.Int( Offer );
+		writer.Long( Amount );
+	}
 
 	internal override ParkCommandResult Execute( Level level )
 	{
 		if ( level.Park?.Economy is not { } economy )
 			return NoEconomy;
-		if ( economy.Loans.All( loan => loan.OfferIndex != Offer ) )
-			return ParkCommandResult.Rejected( $"Loan {Offer} is not outstanding." );
+		if ( economy.Loans.FirstOrDefault( loan => loan.OfferIndex == Offer ) is not { } loan || loan.RemainingBalance != Amount )
+			return ParkCommandResult.Rejected( $"Loan {Offer} is not outstanding at that balance." );
 		return economy.TryRepayLoan( Offer ) ? ParkCommandResult.Ok() : ParkCommandResult.Rejected( "The park cannot afford to pay off the loan." );
+	}
+}
+
+/// <summary>
+/// The loans dialog builds its list (it opens, or a tab is chosen): every offer's credit test runs and is stored (<see cref="ParkEconomy.RefreshLoanOffers"/>), saved and hashed
+/// park state, so it is a command like any edit.
+/// </summary>
+public sealed record RefreshLoanOffersCommand : ParkSettingCommand
+{
+	public override ParkCommandKind Kind => ParkCommandKind.RefreshLoanOffers;
+	internal override void WriteFields( ParkCommandWriter writer ) { }
+
+	internal override ParkCommandResult Execute( Level level )
+	{
+		if ( level.Park?.Economy is not { } economy )
+			return NoEconomy;
+		economy.RefreshLoanOffers();
+		return ParkCommandResult.Ok();
 	}
 }
 
@@ -364,7 +424,7 @@ public sealed record BuyUpgradeCommand( int Attraction ) : ParkSettingCommand
 
 	internal override ParkCommandResult Execute( Level level )
 	{
-		if ( !TryEconomyObject( level, Attraction, out var economy, out var state ) )
+		if ( !TryEconomyObject( level, Attraction, out var economy, out _, out var state ) )
 			return NoAttraction( Attraction );
 		var result = economy.TryBuyUpgrade( state.Id );
 		return result == ParkEconomy.PurchaseResult.Ok ? ParkCommandResult.Ok( result ) : new ParkCommandResult( false, $"The upgrade is refused: {result}.", result );
@@ -380,13 +440,16 @@ public sealed record CancelUpgradeCommand( int Attraction ) : ParkSettingCommand
 
 	internal override ParkCommandResult Execute( Level level )
 	{
-		if ( !TryEconomyObject( level, Attraction, out var economy, out var state ) )
+		if ( !TryEconomyObject( level, Attraction, out var economy, out _, out var state ) )
 			return NoAttraction( Attraction );
 		return economy.TryCancelUpgrade( state.Id ) ? ParkCommandResult.Ok() : ParkCommandResult.Rejected( "The ride waits for no upgrade." );
 	}
 }
 
-/// <summary>Calls a mechanic (or a toilet's handyman) to the attraction <paramref name="Attraction"/>, or cancels the call (its window's call button).</summary>
+/// <summary>
+/// Calls a mechanic to the ride <paramref name="Attraction"/> (a handyman to a toilet), or cancels the call: its window's call button, whose rules it keeps. Only a placed ride or
+/// toilet (not the developer prototype) takes a call, and a new call needs a hired employee of the role who is not on strike (UIHELPTEXT 574, 575).
+/// </summary>
 public sealed record RequestMaintenanceCommand( int Attraction, bool On ) : ParkSettingCommand
 {
 	public override ParkCommandKind Kind => ParkCommandKind.RequestMaintenance;
@@ -400,24 +463,40 @@ public sealed record RequestMaintenanceCommand( int Attraction, bool On ) : Park
 
 	internal override ParkCommandResult Execute( Level level )
 	{
-		if ( !TryEconomyObject( level, Attraction, out var economy, out var state ) )
+		if ( !TryEconomyObject( level, Attraction, out var economy, out var item, out var state ) || item is PrototypeRide
+			|| !economy.Catalog.TryGet( state.InfoId, out var info ) || (state.Kind != ParkObjectKind.Ride && !info.ProvidesRelief) )
 			return NoAttraction( Attraction );
+		var role = info.ProvidesRelief ? StaffType.Handyman : StaffType.Mechanic;
+		if ( On && !state.MaintenanceRequested && !economy.Staff.OfType( role ).Any() )
+			return ParkCommandResult.Rejected( $"The park has no {role} to call." );
+		if ( On && !state.MaintenanceRequested && economy.Staff.Strikes.IsActive( role ) )
+			return ParkCommandResult.Rejected( $"The {role}s are on strike." );
 		return economy.RequestMaintenance( state.Id, On ) ? ParkCommandResult.Ok() : NoAttraction( Attraction );
 	}
 }
 
-/// <summary>Accepts or declines the challenge on offer; rejected while no offer waits for an answer (the original's accept and decline then do nothing).</summary>
-public sealed record AnswerChallengeCommand( bool Accept ) : ParkSettingCommand
+/// <summary>
+/// Accepts or declines the challenge offered on day <paramref name="OfferedDay"/> from definition <paramref name="Definition"/>: the offer the message showed. Rejected while
+/// that offer does not wait for an answer (the original's accept and decline then do nothing), so an answer that arrives late never answers a newer offer.
+/// </summary>
+public sealed record AnswerChallengeCommand( int Definition, long OfferedDay, bool Accept ) : ParkSettingCommand
 {
 	public override ParkCommandKind Kind => ParkCommandKind.AnswerChallenge;
-	internal override void WriteFields( ParkCommandWriter writer ) => writer.Bool( Accept );
+	internal override bool IsWellFormed => Definition >= 0;
+
+	internal override void WriteFields( ParkCommandWriter writer )
+	{
+		writer.Int( Definition );
+		writer.Long( OfferedDay );
+		writer.Bool( Accept );
+	}
 
 	internal override ParkCommandResult Execute( Level level )
 	{
 		if ( level.Park?.Economy is not { } economy )
 			return NoEconomy;
-		if ( economy.Objectives.Current is not { Accepted: false } )
-			return ParkCommandResult.Rejected( "No challenge is on offer." );
+		if ( economy.Objectives.Current is not { Accepted: false } offer || offer.DefinitionIndex != Definition || offer.OfferedDay != OfferedDay )
+			return ParkCommandResult.Rejected( "That challenge is not on offer." );
 		if ( Accept )
 			economy.AcceptChallenge();
 		else
@@ -554,6 +633,9 @@ public sealed record QueueCheatCommand( CheatKind Cheat, int Argument = 0 ) : Pa
 	{
 		if ( level.Park?.Economy is not { } economy )
 			return NoEconomy;
+		// the other cheats act once the cheat mode is on or waits for the next turn (the cheats window's rule; the Alt keys need it on)
+		if ( Cheat != CheatKind.Mode && !economy.Cheats.Mode && economy.Cheats.Pending.All( action => action.Kind != CheatKind.Mode ) )
+			return ParkCommandResult.Rejected( "The cheat mode is off." );
 		return economy.QueueCheat( new CheatAction( Cheat, Argument ) ) ? ParkCommandResult.Ok() : ParkCommandResult.Rejected( $"The park cannot take the {Cheat} cheat now." );
 	}
 }

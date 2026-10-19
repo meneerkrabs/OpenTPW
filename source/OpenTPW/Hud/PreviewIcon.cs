@@ -9,12 +9,13 @@ namespace OpenTPW.Hud;
 /// Build-menu icon from an object's original preview model (<c>P&lt;name&gt;.MD2</c>, see
 /// <c>Info.PreviewAnimType</c>/<c>PreviewAnimNum</c> in Rides.sam). The original shows these previews
 /// turning in the menu (tp.exe 0x486410 → 0x4689f0, updated by 0x468e50); OpenTPW projects the model orthographically on the CPU
-/// with painter-sorted triangles, which is an approximation of the original 3D draw. Back faces are culled, as the park's object
-/// renderer culls them (<c>Material</c>: <c>FaceCullMode.Back</c> for every object mesh): without a depth buffer a painter sort of a
-/// closed shape lets a back face drawn later cover the front face over it, which split the winter kiosk's roof slopes along their
-/// diagonals into roof tiles and the slopes' undersides.
+/// with painter-sorted triangles, which is an approximation of the original 3D draw. The original draws both faces of every triangle
+/// (its only Direct3D cull-mode write is D3DCULL_NONE, 0x566957) and depth tests them; without a depth buffer, the back faces (turned
+/// away from the viewer) are drawn first and the front faces over them, so a back face never covers the front face over it (a plain
+/// depth sort let the slopes' undersides split the winter kiosk's roof along its diagonals) and a single-sided face seen from behind,
+/// such as the ground plates of the space go-karts and water ride previews, is still drawn.
 /// </summary>
-// [EXT:preview-icon-cpu-projection] the icon is drawn by an orthographic CPU projection with painter sorting and back faces culled, the model centred in its frame, not through the engine's scene renderer; matching the original's 3D draw would tie the HUD to the world renderer
+// [EXT:preview-icon-cpu-projection] the icon is drawn by an orthographic CPU projection with painter sorting (back faces first, then front faces, each back to front), the model centred in its frame, not through the engine's scene renderer; matching the original's 3D draw would tie the HUD to the world renderer
 // [APPROX:UI-026] the original draws the preview object through its 3D object pipeline (a ride object whose world matrix 0x468e50 rebuilds each frame with the x column scaled by 0.75 and the depth column by 0.1; its camera is not read) and starts its animation 5 (0x4732a0)
 public sealed class PreviewIcon
 {
@@ -111,15 +112,15 @@ public sealed class PreviewIcon
 	}
 
 	/// <summary>
-	/// One triangle as the preview draws it: its index in the model's triangle list, its material, its corners in canvas units (y down), its depth (larger is nearer)
-	/// and its outward normal in model space (Y up, not normalized).
+	/// One triangle as the preview draws it: its index in the model's triangle list, its material, its corners in canvas units (y down), its depth (larger is nearer),
+	/// its outward normal in model space (Y up, not normalized) and whether it faces the viewer.
 	/// </summary>
-	internal readonly record struct ArrangedTriangle( int Index, string MaterialName, NVector2 A, NVector2 B, NVector2 C, float Depth, NVector3 ModelNormal );
+	internal readonly record struct ArrangedTriangle( int Index, string MaterialName, NVector2 A, NVector2 B, NVector2 C, float Depth, NVector3 ModelNormal, bool FacesViewer );
 
-	/// <summary>The triangles the buy window's preview draws, back to front, at <paramref name="yaw"/> in the frame <paramref name="rect"/>.</summary>
+	/// <summary>The triangles the buy window's preview draws, in drawing order (back faces, then front faces, each back to front), at <paramref name="yaw"/> in the frame <paramref name="rect"/>.</summary>
 	internal IReadOnlyList<ArrangedTriangle> ArrangeBuyPreview( UiRect rect, float yaw ) => Arrange( rect, yaw, BuyTilt, BuyScale( rect.Width, rect.Height, minimum, maximum ) );
 
-	/// <summary>Turns, tilts and projects the model, drops the back faces and sorts the rest back to front.</summary>
+	/// <summary>Turns, tilts and projects the model and orders the triangles: the back faces back to front, then the front faces back to front.</summary>
 	private List<ArrangedTriangle> Arrange( UiRect rect, float yaw, float tilt, float scale )
 	{
 		var rotation = NMatrix4x4.CreateTranslation( -center ) * NMatrix4x4.CreateRotationY( yaw ) * NMatrix4x4.CreateRotationX( tilt );
@@ -133,13 +134,13 @@ public sealed class PreviewIcon
 			var b = NVector3.Transform( triangle.B, rotation );
 			var c = NVector3.Transform( triangle.C, rotation );
 			// The model's outward normal is (B - A) x (C - A) (ModelFile.CalculateNormals: 297,540 of 301,629 original corner normals agree with it); the
-			// viewer looks down -Z (the sort draws larger Z last, i.e. nearer), so a face whose normal has no +Z part is a back face, which the park culls.
-			if ( NVector3.Cross( b - a, c - a ).Z <= 0 )
-				continue;
+			// viewer looks down -Z (the sort draws larger Z last, i.e. nearer), so a face whose normal has a +Z part faces the viewer. On a closed shape every
+			// back face lies behind the front faces that cover it, so drawing the back faces first stands in for the original's depth test.
 			arranged.Add( new ArrangedTriangle( index, triangle.MaterialName, Project( a ), Project( b ), Project( c ), (a.Z + b.Z + c.Z) / 3,
-				NVector3.Cross( triangle.B - triangle.A, triangle.C - triangle.A ) ) );
+				NVector3.Cross( triangle.B - triangle.A, triangle.C - triangle.A ), NVector3.Cross( b - a, c - a ).Z > 0 ) );
 		}
-		arranged.Sort( ( left, right ) => left.Depth != right.Depth ? left.Depth.CompareTo( right.Depth ) : left.Index.CompareTo( right.Index ) );
+		arranged.Sort( ( left, right ) => left.FacesViewer != right.FacesViewer ? left.FacesViewer.CompareTo( right.FacesViewer )
+			: left.Depth != right.Depth ? left.Depth.CompareTo( right.Depth ) : left.Index.CompareTo( right.Index ) );
 		return arranged;
 	}
 }

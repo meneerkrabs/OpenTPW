@@ -221,8 +221,8 @@ public class WinterContentTests
 	[TestMethod]
 	public void EveryWinterShopsBuyPreviewShowsTheRoofTilesOverTheWholeRoofAtEveryTurn()
 	{
-		// The buy window's preview is painter sorted without a depth buffer. When it drew back faces too, the undersides of the roof slopes (trim, 0.55 below the
-		// tiles) won over one triangle of each slope quad, so the slopes showed half tiles and half trim stripes, split along their diagonals.
+		// The buy window's preview is painter sorted without a depth buffer. When it sorted back faces with the front faces, the undersides of the roof slopes (trim,
+		// 0.55 below the tiles) won over one triangle of each slope quad, so the slopes showed half tiles and half trim stripes, split along their diagonals.
 		var frame = new OpenTPW.UI.Original.UiRect( 437, 202, 360, 363 );
 		for ( var index = 0; index < Themes.Length; index++ )
 		{
@@ -237,6 +237,7 @@ public class WinterContentTests
 					var yaw = step * MathF.PI / 8;
 					var drawn = icon.ArrangeBuyPreview( frame, yaw );
 					var roof = drawn.Where( triangle => triangle.MaterialName.EndsWith( "_roof", StringComparison.Ordinal ) && triangle.ModelNormal.Y > 0 ).ToArray();
+					Assert.IsTrue( roof.All( triangle => triangle.FacesViewer ), $"{label} at {step} x 22.5 degrees: the tile triangles face the viewer" );
 					// both slopes are less steep than the 45 degree tilt, so every tile triangle faces the viewer at every turn
 					Assert.AreEqual( 4, roof.Length, $"{label} at {step} x 22.5 degrees: the four tile triangles of the two slopes are drawn" );
 					foreach ( var tile in roof )

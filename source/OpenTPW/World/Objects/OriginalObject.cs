@@ -402,36 +402,43 @@ public class OriginalObject : Entity, IPointLightSource
 		foreach ( var (entity, node) in parts )
 		{
 			if ( hidden && node >= 0 )
-				entity.Hidden = animator.IsNodeHidden( node );
+				entity.Hidden = animator.IsNodeHidden( node ) || PresentationHidden( node );
 			var transform = node < 0 ? placement : ObjectPlacement.SwapAxes( PresentationPose( node, nodes[node] ) ) * placement;
 			entity.TransformOverride = transform;
 			entity.Position = new Vector3( transform.M41, transform.M42, transform.M43 );
 		}
 	}
 
-	// [EXT:evening-torches-flicker] presentation-only local transforms of model nodes (the evening torches' flames, EveningFlames): applied on the drawn parts only, never to the animator, the runtime, the lights or a save
-	private Dictionary<int, Matrix4x4>? presentationNodes;
+	// [EXT:evening-torches-flicker] presentation-only local transforms of model nodes (the evening torches' flames, EveningFlames), null for a node drawn hidden: applied on the drawn parts only, never to the animator, the runtime,
+	// the lights or a save
+	private Dictionary<int, Matrix4x4?>? presentationNodes;
 
-	private Matrix4x4 PresentationPose( int node, Matrix4x4 pose ) => presentationNodes != null && presentationNodes.TryGetValue( node, out var local ) ? local * pose : pose;
+	private Matrix4x4 PresentationPose( int node, Matrix4x4 pose ) => presentationNodes != null && presentationNodes.TryGetValue( node, out var local ) && local is { } matrix ? matrix * pose : pose;
+
+	private bool PresentationHidden( int node ) => presentationNodes != null && presentationNodes.TryGetValue( node, out var local ) && local == null;
 
 	/// <summary>
-	/// [EXT:evening-torches-flicker] Draws the parts of model node <paramref name="node"/> with <paramref name="local"/> applied in the node's own frame before its pose (a flame scaled about its base). Presentation only: the
-	/// animator's node transforms, which the lamps, the snow and the simulation read, are unchanged.
+	/// [EXT:evening-torches-flicker] Draws the parts of model node <paramref name="node"/> with <paramref name="local"/> applied in the node's own frame before its pose (a flame scaled about its base), or hides them when it is null
+	/// (a flame by day). Presentation only: the animator's node transforms and hidden nodes, which the lamps, the snow and the simulation read, are unchanged.
 	/// </summary>
-	internal void SetPresentationNodeTransform( int node, Matrix4x4 local )
+	internal void SetPresentationNodeTransform( int node, Matrix4x4? local )
 	{
 		if ( deleted || node < 0 )
 			return;
-		var nodes = Runtime.Animator.NodeTransforms;
+		var animator = Runtime.Animator;
+		var nodes = animator.NodeTransforms;
 		if ( node >= nodes.Count )
 			return;
-		( presentationNodes ??= new Dictionary<int, Matrix4x4>() )[node] = local;
+		( presentationNodes ??= new Dictionary<int, Matrix4x4?>() )[node] = local;
 		var placement = Placement.ModelToEngine;
 		foreach ( var (entity, index) in parts )
 		{
 			if ( index != node )
 				continue;
-			var transform = ObjectPlacement.SwapAxes( local * nodes[node] ) * placement;
+			entity.Hidden = local == null || animator.IsNodeHidden( node );
+			if ( local is not { } matrix )
+				continue;
+			var transform = ObjectPlacement.SwapAxes( matrix * nodes[node] ) * placement;
 			entity.TransformOverride = transform;
 			entity.Position = new Vector3( transform.M41, transform.M42, transform.M43 );
 		}

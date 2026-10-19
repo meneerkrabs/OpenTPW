@@ -672,7 +672,7 @@ internal static class Game
 			}
 		}
 		// [EXT:debug-evening] smoke-only (Debug builds): --debug-torches N places N of the theme's torches (the evening extension's own, docs/EVENING.md "Torches") through the level's own placement, which charges them,
-		// on the free cells nearest the camera target (--capture-camera's when given) with a cell between them, so a capture shows the torches, their flames and their light
+		// on the free cells nearest the camera target (--capture-camera's when given) with three cells between them, so a capture shows the torches, their flames and each one's light
 		if ( GetOption( args, "--debug-torches", "the number of torches to place" ) is { } torchText && int.TryParse( torchText, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var torchCount ) && torchCount > 0 )
 		{
 			var torchCamera = GetOption( args, "--capture-camera", "x,y,height,yaw" )?.Split( ',' ).Select( value => float.Parse( value, System.Globalization.CultureInfo.InvariantCulture ) ).ToArray();
@@ -692,9 +692,10 @@ internal static class Game
 					return;
 				}
 				var placedTorches = new List<string>();
-				for ( var radius = 0; radius < 12 && placedTorches.Count < torchCount; radius += 2 )
-					for ( var dx = -radius; dx <= radius && placedTorches.Count < torchCount; dx += 2 )
-						for ( var dy = -radius; dy <= radius && placedTorches.Count < torchCount; dy += 2 )
+				// three cells between neighbours, so each torch's pool of light shows on its own
+				for ( var radius = 0; radius < 24 && placedTorches.Count < torchCount; radius += 4 )
+					for ( var dx = -radius; dx <= radius && placedTorches.Count < torchCount; dx += 4 )
+						for ( var dy = -radius; dy <= radius && placedTorches.Count < torchCount; dy += 4 )
 							if ( Math.Max( Math.Abs( dx ), Math.Abs( dy ) ) == radius && level.CheckObject( entry, cellX + dx, cellY + dy, 0 ) == OriginalPlacementResult.Allowed && level.PlaceObject( entry, cellX + dx, cellY + dy, 0 ) is { } torch )
 								placedTorches.Add( FormattableString.Invariant( $"{torch.Placement.X},{torch.Placement.Y} (engine {torch.Placement.ModelToEngine.M41:0.#},{torch.Placement.ModelToEngine.M42:0.#})" ) );
 				Log.Trace( $"--debug-torches: placed {placedTorches.Count} of {torchCount} {entry.DisplayName}: {string.Join( "; ", placedTorches )}." );

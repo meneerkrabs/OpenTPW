@@ -144,13 +144,14 @@ The user asked on October 19, 2026 for a torch in all four themes, available by 
 - `objects.json`: four torches, ids **63900** (jungle), **63901** (hallow), **63902** (space) and **63903** (fantasy) inside the extension's own range **63900 to 63999** (below the example lamp mod's 64000..64009 and the winter extension's 64010..64499; the table of
   OpenTPW's ranges is in [MODS.md](MODS.md)), category `features`, names in all eleven interface languages (Tiki Torch, Pumpkin Torch, Plasma Torch, Candy Torch in English).
 - `objects/<theme>/torch/`: the MD2 model, five or six 64 x 64 TGA textures (`tt_` prefix), `Torch.sam` and `Torch.RSE` (a one-cell feature; the script waits in a loop). The model has two nodes: **`torch`** (a footing, the pole and the head, lit like any object) and
-  **`flame`** (a rounded teardrop of eight sides with a self-lit gradient, so it shows in its own colours by day and glows at night). The flame node's origin is the flame's base. The torch is about 15 model units tall (a guest is about 10).
+  **`flame`** (a rounded teardrop of eight sides with a self-lit gradient material). The flame node's origin is the flame's base; the extension hides it by day and grows it with the lamp level ([below](#torches)), so a torch shows an empty cup by day and burns from dusk. The torch is about 15 model units tall (a guest is about 10).
 - Built by `tools/blender/opentpw_torches.py` (geometry and generated textures, reusing the changing room's texture generators and builder) and the content kit's `object` command with `tools/evening/torch.sam` and `tools/evening/torch.rse`.
 - `EveningContent` lists the folder as a content root of the id `opentpw.evening` while the extension is on and not in a Theme Park Inc run (its parks have other themes), so the asset keys are `mod:opentpw.evening:/objects/<theme>/torch/...`. The catalog cache key names the root
   (as for the pools, umbrellas and winter roots), so a catalog loaded with the extension on is not reused with it off.
 
 **Lamps.** Four rows of `content/data/evening-lights.json` match `{ "mod": "opentpw.evening", "theme": <theme>, "archive": "torch" }` (the new match key `mod` compares the id of the content root that lists the object, so an original or a mod's object named `torch` never gets
-the light) and give one light on the `flame` node's centre, radius 40 model units: warm orange (1.0, 0.62, 0.28) in the jungle, (1.0, 0.55, 0.18) in Halloween, blue (0.35, 0.62, 1.0) in space and pink (1.0, 0.45, 0.78) in fantasy.
+the light) and give one light on the `flame` node: warm orange (1.0, 0.55, 0.18), radius 40, at the flame's centre in Halloween; blue (0.35, 0.62, 1.0), radius 40, in space; and, because green grass reflects little red or blue (the first captures showed hardly any pool of
+light on the jungle and fantasy lawns, where Halloween's grey ground showed a clear one), a stronger light 4 model units below the flame's centre, radius 44, in the jungle (warm, 1.9, 0.88, 0.24) and in fantasy (pink, 2.1, 0.55, 1.6).
 
 **The flicker and the flame** (`[EXT:evening-torches-flicker]`, user-approved 2026-10-19: "Alleen licht en sfeer", a deterministic flicker preferred). Both are presentation only: nothing reads or writes the simulation, a save or a state hash.
 
@@ -160,7 +161,8 @@ the light) and give one light on the `flame` node's centre, radius 40 model unit
 - The clock is the extension's own play time (`Level.EveningFlameSeconds`): the frame time while the park runs, a quarter of a second at most per frame, standing still while the park is paused, at every pace including the fixed looks; it is not saved (a resumed park starts it again).
 - A flickering light's colour is the table's colour times the lamp level times `1 - flicker (1 - f)`: a torch's light dips by up to a quarter, in step with its flame.
 - The flame (`EveningFlames`): each frame, every placed object whose row names a flame node has that node's part drawn with `TorchFlicker.FlameMatrix`, in the node's own frame about its origin (the flame's base): its height 1 plus or minus 0.14 times `2 f - 1`, its width
-  half that the other way, and a slow lean of at most 0.06 radians (about 3.4 degrees) at 0.9 and 1.3 Hz. It runs by day too (a torch burns all day; only its light waits for dusk). The transform is set on the drawn parts only
+  half that the other way, and a slow lean of at most 0.06 radians (about 3.4 degrees) at 0.9 and 1.3 Hz, all scaled about the base by the lamp level (`TorchFlicker.FlameAt`): **by day the flame is hidden** (the torch shows an empty cup), it grows as the lamps come on at
+  dusk and burns at full size at night, as the torch's light does (chosen on October 19, 2026 over a flame drawn all day, after the first captures showed the self-lit flame a dull brown by day). The transform and the hiding are set on the drawn parts only
   (`OriginalObject.SetPresentationNodeTransform`): the animator's node transforms, which the lamps, the snow cover and the simulation read, do not change. The torches are cached and rebuilt only when the placed set changes, as the lamp source does.
 
 **Browser.** `OpenTPW.Web.csproj` embeds `content/evening` (347,862 bytes) and its `RequireExtensionContent` target fails the build without `content/evening/objects.json`; the server image copies the folder (`source/OpenTPW.Server/Dockerfile`).

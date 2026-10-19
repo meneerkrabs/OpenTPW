@@ -52,11 +52,22 @@ public static class TorchFlicker
 		var leanZ = (float)( FlameSway * Math.Sin( 1.3 * t + Phase( seed, 5 ) ) );
 		return Matrix4x4.CreateScale( width, height, width ) * Matrix4x4.CreateRotationZ( leanX ) * Matrix4x4.CreateRotationX( leanZ );
 	}
+
+	/// <summary>The lamp level below which a flame is not drawn (the lamps' own threshold): by day the torch shows an empty cup.</summary>
+	public const float FlameLevelThreshold = 0.002f;
+
+	/// <summary>
+	/// The flame's local transform at <paramref name="seconds"/> scaled about its base by <paramref name="lampLevel"/> (it grows as the lamps come on at dusk), or null while the lamp level is below <see cref="FlameLevelThreshold"/> (hidden by day,
+	/// as the torch's light is off).
+	/// </summary>
+	public static Matrix4x4? FlameAt( double seconds, int seed, float lampLevel ) =>
+		lampLevel > FlameLevelThreshold ? Matrix4x4.CreateScale( Math.Min( lampLevel, 1f ) ) * FlameMatrix( seconds, seed ) : null;
 }
 
 /// <summary>
-/// The torches' flames: every placed object whose lamp table row names a flame node (<see cref="EveningLampRule.Flame"/>) gets that node's part drawn with <see cref="TorchFlicker.FlameMatrix"/> each frame, by day and at night (a torch burns all
-/// day; only its light waits for dusk). The objects are cached and rebuilt only when the placed set changes, as the lamp source does. Presentation only: the override lives on the drawn parts, not in the animator or the runtime.
+/// The torches' flames: every placed object whose lamp table row names a flame node (<see cref="EveningLampRule.Flame"/>) gets that node's part drawn with <see cref="TorchFlicker.FlameMatrix"/> each frame, scaled about its base by the
+/// lamp level, so the flame is hidden by day (an empty cup), grows as the lamps come on at dusk and burns at full size at night, as the torch's light does. The objects are cached and rebuilt only when the placed set changes, as the lamp source
+/// does. Presentation only: the override lives on the drawn parts, not in the animator or the runtime.
 /// </summary>
 public sealed class EveningFlames
 {
@@ -79,8 +90,8 @@ public sealed class EveningFlames
 	/// <summary>Test seam: the flame node of an object without a catalog entry and model (an object needs a graphics device to be built); -1 for none.</summary>
 	internal Func<OriginalObject, int>? NodeOverride { get; set; }
 
-	/// <summary>Test seam: receives each flame's transform instead of the object (which needs a graphics device).</summary>
-	internal Action<OriginalObject, int, Matrix4x4>? ApplyOverride { get; set; }
+	/// <summary>Test seam: receives each flame's transform (null: hidden) instead of the object (which needs a graphics device).</summary>
+	internal Action<OriginalObject, int, Matrix4x4?>? ApplyOverride { get; set; }
 
 	/// <summary>The number of flames in the cache (for tests).</summary>
 	internal int Count => flames.Count;
@@ -120,14 +131,14 @@ public sealed class EveningFlames
 		}
 	}
 
-	/// <summary>Moves every flame to its pose at <paramref name="seconds"/> of the presentation clock.</summary>
-	public void Animate( double seconds )
+	/// <summary>Moves every flame to its pose at <paramref name="seconds"/> of the presentation clock, at the size of <paramref name="lampLevel"/> (hidden at 0, by day).</summary>
+	public void Animate( double seconds, float lampLevel )
 	{
 		Refresh();
 		for ( var index = 0; index < flames.Count; index++ )
 		{
 			var (item, node, seed) = flames[index];
-			var local = TorchFlicker.FlameMatrix( seconds, seed );
+			var local = TorchFlicker.FlameAt( seconds, seed, lampLevel );
 			if ( ApplyOverride != null )
 				ApplyOverride( item, node, local );
 			else

@@ -115,10 +115,10 @@
       "lights": [ { "node": "glow", "anchor": "centre", "offset": [0, 0, 1], "colour": [0.4, 1.0, 0.3], "radius": 30 } ]
     },
     {
-      "note": "The evening extension's own torches (content/evening): a warm flame light in the jungle (the bamboo tiki torch) and Halloween (the pumpkin torch); the flame node moves and the light flickers by a quarter (presentation only)",
+      "note": "The evening extension's own torches (content/evening): a warm flame light in the jungle (the bamboo tiki torch) and Halloween (the pumpkin torch); the flame node moves and the light flickers by a quarter (presentation only). Green grass reflects little red or blue, so the jungle's and fantasy's lights are stronger and sit a little lower, to show a pool of light on the lawn",
       "match": { "mod": "opentpw.evening", "theme": "jungle", "archive": "torch" },
       "flame": "flame",
-      "lights": [ { "node": "flame", "anchor": "centre", "offset": [0, 0, 0], "flicker": 0.25, "colour": [1.0, 0.62, 0.28], "radius": 40 } ]
+      "lights": [ { "node": "flame", "anchor": "centre", "offset": [0, 0, -4], "flicker": 0.25, "colour": [1.9, 0.88, 0.24], "radius": 44 } ]
     },
     {
       "match": { "mod": "opentpw.evening", "theme": "hallow", "archive": "torch" },
@@ -135,7 +135,7 @@
       "note": "The fantasy candy torch's pink flame",
       "match": { "mod": "opentpw.evening", "theme": "fantasy", "archive": "torch" },
       "flame": "flame",
-      "lights": [ { "node": "flame", "anchor": "centre", "offset": [0, 0, 0], "flicker": 0.25, "colour": [1.0, 0.45, 0.78], "radius": 40 } ]
+      "lights": [ { "node": "flame", "anchor": "centre", "offset": [0, 0, -4], "flicker": 0.25, "colour": [2.1, 0.55, 1.6], "radius": 44 } ]
     }
   ]
 }

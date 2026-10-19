@@ -118,7 +118,7 @@ public partial class Level
 		}
 		if ( eveningFlames == null && Objects != null )
 			eveningFlames = new EveningFlames( EveningLampTable.Shipped, () => Objects?.Objects ?? Array.Empty<OriginalObject>(), () => Objects?.Version ?? 0 );
-		eveningFlames?.Animate( eveningFlameSeconds );
+		eveningFlames?.Animate( eveningFlameSeconds, Look.LampLevel );
 	}
 
 	private void ResetEvening()

@@ -386,6 +386,13 @@ public class EveningTorchTests
 			Assert.IsTrue( tip.Y > 0.8f && MathF.Abs( tip.X ) < 0.1f && MathF.Abs( tip.Z ) < 0.1f, $"a small lean: {tip}" );
 		}
 		Assert.AreNotEqual( TorchFlicker.FlameMatrix( 1.0, seed ), TorchFlicker.FlameMatrix( 1.25, seed ), "it moves" );
+		// by day (the lamp level at the lamps' threshold or below) there is no flame; it grows with the lamp level about its base and is whole at night
+		Assert.IsNull( TorchFlicker.FlameAt( 1.0, seed, 0f ) );
+		Assert.IsNull( TorchFlicker.FlameAt( 1.0, seed, TorchFlicker.FlameLevelThreshold ) );
+		Assert.AreEqual( TorchFlicker.FlameMatrix( 1.0, seed ), TorchFlicker.FlameAt( 1.0, seed, 1f ) );
+		var dusk = TorchFlicker.FlameAt( 1.0, seed, 0.3f )!.Value;
+		Assert.AreEqual( System.Numerics.Vector3.Zero, System.Numerics.Vector3.Transform( System.Numerics.Vector3.Zero, dusk ), "it grows from its base" );
+		Assert.AreEqual( 0.3f * System.Numerics.Vector3.Transform( System.Numerics.Vector3.UnitY, TorchFlicker.FlameMatrix( 1.0, seed ) ).Length(), System.Numerics.Vector3.Transform( System.Numerics.Vector3.UnitY, dusk ).Length(), 1e-5f );
 	}
 
 	[TestMethod]
@@ -410,34 +417,56 @@ public class EveningTorchTests
 	}
 
 	[TestMethod]
-	public void TheFlamesFollowPlacementAndRemovalAndMoveEveryFrameWithoutTouchingAnythingElse()
+	public void EachTorchsFlameIsDrawnAsItsOwnPartSoTheExtensionCanMoveAndHideIt()
+	{
+		for ( var index = 0; index < Themes.Length; index++ )
+		{
+			var entry = ObjectCatalog.Load( Themes[index] ).Get( 63900 + index );
+			var model = ObjectAssets.LoadModel( entry.FileSystem, entry.ModelPath );
+			var flame = model.Nodes.Single( node => node.Name == "flame" ).Index;
+			Assert.IsTrue( ObjectRenderParts.FindAnimatedNodes( entry, model )[flame], $"{Themes[index]}: the flame node is kept apart" );
+			var parts = ObjectRenderParts.Build( entry, model );
+			Assert.AreEqual( 1, parts.Count( part => part.NodeIndex == flame ), $"{Themes[index]}: one part draws the flame alone" );
+			Assert.IsTrue( parts.Any( part => part.NodeIndex == -1 ), "the body is baked as any static model" );
+		}
+		// an original object's static nodes stay baked: only a row that names a flame keeps a node apart
+		var totem = ObjectCatalog.Load( "jungle" ).Entries.First( item => item.ModId == null );
+		Assert.IsNull( EveningLampTable.Shipped.Find( totem )?.Flame );
+	}
+
+	[TestMethod]
+	public void TheFlamesFollowPlacementAndRemovalMoveEveryFrameAndOnlyBurnWhileTheLampsAreOn()
 	{
 		static OriginalObject Stub() => (OriginalObject)System.Runtime.CompilerServices.RuntimeHelpers.GetUninitializedObject( typeof( OriginalObject ) );
 		var placed = new List<OriginalObject>();
 		var version = 0;
 		var torches = new HashSet<OriginalObject>();
-		var applied = new List<(OriginalObject Item, int Node, System.Numerics.Matrix4x4 Local)>();
+		var applied = new List<(OriginalObject Item, int Node, System.Numerics.Matrix4x4? Local)>();
 		var flames = new EveningFlames( new EveningLampTable( Array.Empty<EveningLampRule>() ), () => placed, () => version )
 		{
 			NodeOverride = item => torches.Contains( item ) ? 1 : -1,
 			ApplyOverride = ( item, node, local ) => applied.Add( (item, node, local) )
 		};
-		flames.Animate( 0 );
+		flames.Animate( 0, 1f );
 		Assert.AreEqual( 0, flames.Count );
 		var (a, b) = (Stub(), Stub());
 		torches.Add( a );
 		placed.AddRange( new[] { a, b } );
 		version++;
-		flames.Animate( 1.0 );
+		flames.Animate( 1.0, 1f );
 		Assert.AreEqual( 1, flames.Count, "only the object whose row names a flame" );
 		Assert.AreEqual( (a, 1), (applied.Single().Item, applied.Single().Node) );
-		Assert.AreEqual( TorchFlicker.FlameMatrix( 1.0, TorchFlicker.SeedOf( 0, 0 ) ), applied.Single().Local, "the flame of its cell's seed at that time" );
-		flames.Animate( 1.5 );
+		Assert.AreEqual( TorchFlicker.FlameMatrix( 1.0, TorchFlicker.SeedOf( 0, 0 ) ), applied.Single().Local, "at night the full flame of its cell's seed at that time" );
+		flames.Animate( 1.5, 1f );
 		Assert.AreNotEqual( applied[0].Local, applied[1].Local, "a frame later it has moved" );
+		flames.Animate( 2.0, 0f );
+		Assert.IsNull( applied[^1].Local, "by day the flame is hidden: an empty cup" );
+		flames.Animate( 2.0, 0.5f );
+		Assert.AreEqual( System.Numerics.Matrix4x4.CreateScale( 0.5f ) * TorchFlicker.FlameMatrix( 2.0, TorchFlicker.SeedOf( 0, 0 ) ), applied[^1].Local, "at dusk it grows with the lamp level" );
 		placed.Remove( a );
 		version++;
 		applied.Clear();
-		flames.Animate( 2.0 );
+		flames.Animate( 2.0, 1f );
 		Assert.AreEqual( 0, flames.Count, "a removed torch leaves the cache" );
 		Assert.AreEqual( 0, applied.Count );
 	}

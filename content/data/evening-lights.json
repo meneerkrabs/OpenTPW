@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "note": "The lamps of the evening and night extension (docs/EVENING.md): OpenTPW's own, not data of the original game. Each row names objects (theme, category, archive name, or the pools extension's Pools.Extra key) and the lights they get; a light follows a model node (anchor: pivot, centre or top of the node's mesh box) plus an offset in model units (ground in XY, up in Z; 1 model unit = 0.2 engine units, a cell is 10), has a colour (linear 0 to 4 per channel) and a radius in model units (full colour at the centre, nothing at the radius). Lights shine only as it gets dark.",
+  "note": "The lamps of the evening and night extension (docs/EVENING.md): OpenTPW's own, not data of the original game. Each row names objects (theme, category, archive name, the pools extension's Pools.Extra key, or the id of the extension whose content lists the object) and the lights they get; a light follows a model node (anchor: pivot, centre or top of the node's mesh box) plus an offset in model units (ground in XY, up in Z; 1 model unit = 0.2 engine units, a cell is 10), has a colour (linear 0 to 4 per channel) and a radius in model units (full colour at the centre, nothing at the radius). Lights shine only as it gets dark. A light may flicker (0 to 0.5, the share by which it dips) and a row may name a flame node the extension moves; both follow a play-time clock and are presentation only.",
   "lamps": [
     {
       "note": "Pools extension: the pool lamp (Pools.Extra 5), a warm light at the top of the lamp head",
@@ -113,6 +113,29 @@
     {
       "match": { "theme": "hallow", "category": "shop", "archive": "cauldron" },
       "lights": [ { "node": "glow", "anchor": "centre", "offset": [0, 0, 1], "colour": [0.4, 1.0, 0.3], "radius": 30 } ]
+    },
+    {
+      "note": "The evening extension's own torches (content/evening): a warm flame light in the jungle (the bamboo tiki torch) and Halloween (the pumpkin torch); the flame node moves and the light flickers by a quarter (presentation only). Green grass reflects little red or blue, so the jungle's and fantasy's lights are stronger and sit a little lower, to show a pool of light on the lawn",
+      "match": { "mod": "opentpw.evening", "theme": "jungle", "archive": "torch" },
+      "flame": "flame",
+      "lights": [ { "node": "flame", "anchor": "centre", "offset": [0, 0, -4], "flicker": 0.25, "colour": [1.9, 0.88, 0.24], "radius": 44 } ]
+    },
+    {
+      "match": { "mod": "opentpw.evening", "theme": "hallow", "archive": "torch" },
+      "flame": "flame",
+      "lights": [ { "node": "flame", "anchor": "centre", "offset": [0, 0, 0], "flicker": 0.25, "colour": [1.0, 0.55, 0.18], "radius": 40 } ]
+    },
+    {
+      "note": "The space torch's blue plasma flame",
+      "match": { "mod": "opentpw.evening", "theme": "space", "archive": "torch" },
+      "flame": "flame",
+      "lights": [ { "node": "flame", "anchor": "centre", "offset": [0, 0, 0], "flicker": 0.25, "colour": [0.35, 0.62, 1.0], "radius": 40 } ]
+    },
+    {
+      "note": "The fantasy candy torch's pink flame",
+      "match": { "mod": "opentpw.evening", "theme": "fantasy", "archive": "torch" },
+      "flame": "flame",
+      "lights": [ { "node": "flame", "anchor": "centre", "offset": [0, 0, -4], "flicker": 0.25, "colour": [2.1, 0.55, 1.6], "radius": 44 } ]
     }
   ]
 }

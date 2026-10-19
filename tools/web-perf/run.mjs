@@ -91,7 +91,7 @@ function usage() {
   --follow <n>            winter, winterCost: the screenshot follows the visible guest after skipping |n| of them by id, counted from the newest when negative (winter default 0, the lowest; winterCost default -250, a guest of a fresh crowd standing in the open and not under the entrance roofs)
   --cover <0..1>          snow: the settled snow cover to hold (default 1)
   --zoom <value>          jungle: after the steady window, hold the park camera at this zoom value (40..300 with the wide zoom option) and measure a second window
-  --evening <mode>        jungle: after the steady window, hold the evening look (night, dusk, day) or switch the extension off, and measure a second window
+  --evening <mode>        jungle: after the steady window, hold the evening look (night, dusk, day) or turn the cycle and its lamps off, and measure a second window
   --evening-lamps <n>     with --evening: add n extra lamp lights around the camera target (the browser twin of the desktop's --debug-evening-lamps) for the second window
   --keep <mode>           keep the game files in the browser on the first visit: lazy, all or off (default off)
   --frame-cap <fps>       the display settings' frame cap (0 off, 30, 60; default 0)
@@ -271,7 +271,7 @@ const scenarios = {
 		await page.eval('opentpwPerf.program.PerfProfile(false)');
 		const steady = await page.steady(options.window * 1000);
 		const result = { cold, steady };
-		// [evening] the same park with the evening extension held at night, dusk or day, or switched off (night, dusk, day, off), measured in a second window
+		// [evening] the same park with the evening look held at night, dusk or day, or the cycle and its lamps turned off (night, dusk, day, off), measured in a second window
 		if (options.evening != null) {
 			const accepted = await page.eval(`opentpwPerf.program.PerfEvening(${JSON.stringify(options.evening)})`);
 			if (!accepted)

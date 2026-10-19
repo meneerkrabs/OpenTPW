@@ -64,6 +64,38 @@ public class WinterKioskReturnTests
 	}
 
 	[TestMethod]
+	public void AGuestWhoCannotPayTheKioskKeepsTheGamesHistoryRules()
+	{
+		// the shipped kiosk's price terms (docs/WINTER.md, "Price"): price 25, cost of goods 10, happiness effect 15, RipOffOK 100
+		var (simulation, _, guest) = Park();
+		var kiosk = new RideVisitorBridge( 3, "Winter Kiosk", RideVisitorKind.Shop, 1, 60, 30, price: 25 )
+		{
+			AppearanceEffect = WinterRules.KioskAppearanceEffect, WinterTerms = KioskTerms, EntranceCell = (10, 9), ExitCell = (10, 9), InitCostOfGoods = 10, HappinessEffect = 15, RipOffOk = 100
+		};
+		simulation.Register( kiosk );
+		simulation.SetWarmItemsForTest( guest, WinterRules.Hat );
+		var fresh = simulation.ScoreAttraction( guest, kiosk );
+		Assert.IsTrue( fresh > 0 );
+		guest.UsedHistory[0] = kiosk.AttractionId;
+		guest.Money = 1000;
+		Assert.IsFalse( QueueJoinRules.TooExpensive( GuestSimulation.PriceTermsOf( kiosk ), guest.Happiness, guest.Thirst, guest.Hunger, guest.Nausea, guest.Money ) );
+		Assert.AreEqual( fresh, simulation.ScoreAttraction( guest, kiosk ), "a guest who can pay comes back for the mittens" );
+		guest.Money = 24;
+		Assert.AreEqual( 0u, simulation.ScoreAttraction( guest, kiosk ), "a guest whose purse is below the price keeps the game's rule: the kiosk it used last scores 0, so it is not drawn back to be refused" );
+		guest.UsedHistory[0] = 0;
+		guest.UsedHistory[2] = kiosk.AttractionId;
+		Assert.AreEqual( fresh / 3, simulation.ScoreAttraction( guest, kiosk ), "and the used-history division (slot 2 divides by 3)" );
+		guest.Money = 25;
+		Assert.AreEqual( fresh, simulation.ScoreAttraction( guest, kiosk ), "exactly the price is enough" );
+		// the willingness counts as the purse does: a guest at happiness 0 is willing to pay 24, below the price
+		guest.Money = 1000;
+		guest.Happiness = 0;
+		var unhappy = simulation.ScoreAttraction( guest, kiosk );
+		guest.UsedHistory[2] = 0;
+		Assert.AreEqual( simulation.ScoreAttraction( guest, kiosk ) / 3, unhappy, "an unwilling guest keeps the division too" );
+	}
+
+	[TestMethod]
 	public void EveryOtherAttractionKeepsItsHistoryRules()
 	{
 		var (simulation, kiosk, guest) = Park();

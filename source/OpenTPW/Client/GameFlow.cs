@@ -168,6 +168,8 @@ internal sealed partial class GameFlow : IDisposable
 	public void ShowFrontEnd( string? selectLevel = null )
 	{
 		TearDown();
+		// [EXT:extensions-apply-at-load] extension choices made in the park just left are active in the lobby and for the next park
+		ApplyPendingExtensions();
 		enterHold = false;
 		lobbyDefinition ??= LobbyDefinition.Load();
 		Lobby = new LobbyScene( lobbyDefinition, generator: lobbyEffects.Draw, flyerPercent: LobbyObjectsPercent );
@@ -238,6 +240,8 @@ internal sealed partial class GameFlow : IDisposable
 		Languages = GameLanguage.Choosable(),
 		// A choice still waiting for the park to be left is what the row shows, so it can also be taken back.
 		CurrentLanguage = pendingLanguage ?? GameLanguage.Current.Name,
+		// [EXT:extensions-apply-at-load] extensions switched on the Extensions and mods screen apply at the next park start or load
+		ApplyExtensions = ApplyExtensionChoices,
 		ApplyLanguage = language =>
 		{
 			pendingLanguage = string.Equals( language, GameLanguage.Current.Name, StringComparison.OrdinalIgnoreCase ) ? null : language;
@@ -276,7 +280,7 @@ internal sealed partial class GameFlow : IDisposable
 				var saved = ParkResumeSaveFile.Load( path );
 				// [EXT:mods] a save made with mods that are not all active stays listed and says which it needs ([EXT:save-extension-switch] unless the load can switch them: it asks then)
 				// [EXT:cheats-publish] and says when the park is marked as cheated
-				entries.Add( new ParkLoadEntry( saved.Theme, -1, false, path, saved.DisplayName, SavedAt( path ), ParkExtensionSwitch.RequiresText( saved.Mods, Mods.OpenTpwExtensions.Active ), saved.Economy.Cheats?.Mode == true ) );
+				entries.Add( new ParkLoadEntry( saved.Theme, -1, false, path, saved.DisplayName, SavedAt( path ), ParkExtensionSwitch.RequiresText( saved.Mods, NextExtensions ), saved.Economy.Cheats?.Mode == true ) );
 			}
 			catch ( Exception error ) when ( error is IOException or InvalidDataException or UnauthorizedAccessException or System.Text.Json.JsonException or ArgumentException )
 			{
@@ -343,6 +347,8 @@ internal sealed partial class GameFlow : IDisposable
 		using var profile = LoadProfile.Measure( "start-level" );
 		using ( LoadProfile.Measure( "tear-down" ) )
 			TearDown();
+		// [EXT:extensions-apply-at-load] the new park is built with the extension choices made in the park just left
+		ApplyPendingExtensions();
 		Level level;
 		using ( LoadProfile.Measure( "level" ) )
 			level = new Level( levelName, loadOriginalLevel: original, visit: visit, onlineFolders: OnlineFolders, start: start, playerSave: playerSave ) { ShowDeveloperPanels = developerPanels };

@@ -19,7 +19,7 @@ The pools extension adds swimming pools to Theme Park World. It is OpenTPW's own
 - **Swimming guests** with their own swimwear animations (stand, walk, ladder, dive, lying, shower, sliding, strokes, splash-down, spa, ring and rope swing, in sets for every guest type).
 - **The 2x kids** (`opentpw.pools-guest-art`, also on by default): while pools is on, guests on land in a Theme Park World park are drawn with OpenTPW's own higher-resolution kid and head sprites instead of the original ones. Costumes, parents and staff keep the original art.
 
-To turn it off: Options > OpenTPW > **Extensions and mods**, switch off *Pools* (and *Pool guest art* if you only want the original guests back), then restart. You can also edit `mods.json`
+To turn it off: Options > OpenTPW > **Extensions and mods**, switch off *Pools* (and *Pool guest art* if you only want the original guests back); the change applies to the next park you start or load, without a restart. You can also edit `mods.json`
 (`"opentpw.pools": false`, `"opentpw.pools-guest-art": false`) or start once with `--disable-extension opentpw.pools` or `--disable-extension opentpw.pools-guest-art`. A park without pool cells or a changing room saves
 exactly the same whether pools is on or off; the extension is not available in a Theme Park Inc run. The extension's own models, textures and sprites ship in `content/pools`
 ([content](#content-extpools-content)); nothing from Roller Coaster Tycoon 3 or from Theme Park World's art is used for it.

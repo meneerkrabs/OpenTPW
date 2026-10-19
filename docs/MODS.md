@@ -37,7 +37,8 @@ In code the system is called `OpenTPW.Mods` / "extensions"; `OpenTPW.ModKit` is 
   [The shipped Theme Park Inc rides mod](#the-shipped-theme-park-inc-rides-mod); to write your own, see
   [Making a Theme Park Inc rides mod](#making-a-theme-park-inc-rides-mod)).
 
-Changes to `mods.json` apply at the next start; nothing is swapped while the game runs.
+Changes to `mods.json` apply at the next start, except an official extension that a park load switches on ([Loading a park with other extensions](#loading-a-park-with-other-extensions)), which applies
+at once for that park; nothing is swapped while a park simulates.
 
 ## Defaults of the official extensions
 
@@ -326,6 +327,33 @@ Continue entries keep it and add "(requires mod <id> <version>)". Exporting a pa
 while such a mod is active, because packages record no mods yet. One extension is recorded **only while the park uses it**: `opentpw.pools` (listed in `ParkResumeMods.UsedOnlyExtensionIds`), so a park
 without pool cells saves, loads and exports identically with it on or off ([POOLS.md](POOLS.md)). The asset manifest keys archives of a mod `mod:<id>:/…`
 (`data:` and `bonus:` for the game data and the bonus content). Details: [DETERMINISM.md](DETERMINISM.md) "Mods".
+
+## Loading a park with other extensions
+
+`[EXT:save-extension-switch]` (user-approved 2026-10-19, "Ook ontbrekende extensie aanzetten"). Solo play is not blocked by rule options: when an own park save (the Load Park list, Continue, the
+automatic checkpoint or autosave) differs from the active official extensions in a way a player may switch, the load asks first instead of refusing. The question is the original confirm dialog with one
+line per kind of switch, in the eleven interface languages:
+
+- **Rule-only extensions**, in either direction: "This park was played without Rain mood. Continue with Rain mood?" or "This park was played with Cold mood. Continue without Cold mood?", and "This park
+  was played with another version of Smarter guests. Continue with this version?". The park loads under the active set, so its next save records the active set. Rule-only are the extensions that ship no
+  content and that a park does not need for its objects or state, verified one by one: `opentpw.rain-mood`, `opentpw.winter-weather`, `opentpw.winter-cold`, `opentpw.winter-always` and
+  `opentpw.smarter-guests` (`ParkExtensionSwitch.RuleOnlyExtensionIds`). The weather rules leave only per-guest day marks that every build reads with the rule on or off; the smarter guests' own saved
+  state starts fresh when the extension comes on, is dropped when it goes off (the guest identity script mods share is kept) and starts fresh in another version (the guests keep their identity
+  and traits). A switchable save is not listed as "requires mod" in the load list and the Continue entries; the load asks instead.
+- **Content extensions the park uses** that are off now: "This park uses Pools, which is off. Turn Pools on and load the park?". The tick's tooltip is "Turn Pools on and load". These are the extensions a
+  save records only while the park uses them (`ParkResumeMods.UsedOnlyExtensionIds`): `opentpw.pools`, `opentpw.umbrellas`, `opentpw.winter` and `opentpw.cheats`. Confirming switches the extension on for
+  this run at once (`[EXT:extensions-apply-at-load]`: the feature gates and the extension's objects in the theme catalogs; everything else that depends on an extension is read when a park is built) and
+  writes it to `mods.json` like the Extensions and mods screen, keeping every other choice there; in the browser the page then fetches the pools sprite sets it skipped at the start. A load that fails
+  switches the extension back and writes nothing.
+
+The X goes back without loading. One line says the park continues with the extensions that are on now: **a switched park is a new run from the switch point**, not a replay of the saved one
+([DETERMINISM.md](DETERMINISM.md#switched-parks)).
+
+Everything else stays strict, with the reasons above: a community mod that is missing or has another version or content, a script mod in safe mode, an extension switched off for the run with
+`--disable-extension`, a content extension in another version, the cross-edition objects extension (it changes which objects a park's catalog holds; it only matters with a community mod, which is
+strict anyway), the order of the mods, and any load that mixes one of those with a switch. A Theme Park Inc run never asks (it records none of these extensions and loads no own park saves). Replays and
+checks never switch: only the player's confirmation in the dialog does, so `--park-resume-smoke`, the tests, the online server and co-op, which compare the mod set, and the original-format export are
+unchanged.
 
 ## Smarter guests and guest insights (`opentpw.smarter-guests`, `opentpw.guest-insights`)
 

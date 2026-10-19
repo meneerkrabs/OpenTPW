@@ -179,7 +179,7 @@ internal sealed partial class GameFlow : IDisposable
 		createdMenu = new FrontEndMenu( Strings, lobbyDefinition.Islands, new FrontEndActions
 		{
 			StartPark = ( island, mode ) => RequestParkStart( island.Level, mode, createdMenu ),
-			Load = entry => QueueProgressLevel( entry.Level, () => LoadPark( entry, overFrames: true ) ),
+			Load = entry => ConfirmExtensions( entry.OwnSavePath, change => QueueProgressLevel( entry.Level, () => LoadPark( entry with { Switch = change }, overFrames: true ) ) ),
 			ContinueEntry = FindContinueEntry,
 			AutomaticEntry = FindAutomaticContinueEntry,
 			ContinueAutomatic = entry => RequestAutomaticContinue( createdMenu!, entry ),
@@ -196,6 +196,8 @@ internal sealed partial class GameFlow : IDisposable
 			},
 			LoadEntries = FindLoadEntries,
 			GoOnline = WhenOnline( ShowOnline ),
+			// [EXT:save-extension-switch] an own save whose extensions differ asks before it loads
+			ConfirmExtensions = ConfirmExtensions,
 		} );
 		Menu = createdMenu;
 		Menu.SelectIsland( 0 );
@@ -272,9 +274,9 @@ internal sealed partial class GameFlow : IDisposable
 			try
 			{
 				var saved = ParkResumeSaveFile.Load( path );
-				// [EXT:mods] a save made with mods that are not all active stays listed and says which it needs
+				// [EXT:mods] a save made with mods that are not all active stays listed and says which it needs ([EXT:save-extension-switch] unless the load can switch them: it asks then)
 				// [EXT:cheats-publish] and says when the park is marked as cheated
-				entries.Add( new ParkLoadEntry( saved.Theme, -1, false, path, saved.DisplayName, SavedAt( path ), ParkResumeMods.MissingText( saved.Mods, Mods.OpenTpwExtensions.Active ), saved.Economy.Cheats?.Mode == true ) );
+				entries.Add( new ParkLoadEntry( saved.Theme, -1, false, path, saved.DisplayName, SavedAt( path ), ParkExtensionSwitch.RequiresText( saved.Mods, Mods.OpenTpwExtensions.Active ), saved.Economy.Cheats?.Mode == true ) );
 			}
 			catch ( Exception error ) when ( error is IOException or InvalidDataException or UnauthorizedAccessException or System.Text.Json.JsonException or ArgumentException )
 			{
@@ -313,7 +315,7 @@ internal sealed partial class GameFlow : IDisposable
 	{
 		if ( entry.OwnSavePath != null )
 		{
-			try { ResumePark( ParkResumeSaveFile.Load( entry.OwnSavePath ) ); }
+			try { ResumePark( ParkResumeSaveFile.Load( entry.OwnSavePath ), extensionSwitch: entry.Switch ); }
 			catch ( Exception error ) when ( error is IOException or InvalidDataException or UnauthorizedAccessException or System.Text.Json.JsonException
 				or ArgumentException or InvalidOperationException or NotSupportedException )
 			{
@@ -441,7 +443,7 @@ internal sealed partial class GameFlow : IDisposable
 		SavePark = SaveCurrentPark,
 		OpenPostcard = WhenOnline( ShowPostcard ),
 		CreateOptions = CreateOptions,
-		CreateLoad = stack => FrontEndMenu.CreateLoadScreen( stack, Strings, FindLoadEntries(), entry => QueueProgressLevel( entry.Level, () => LoadPark( entry, overFrames: true ) ) ),
+		CreateLoad = stack => FrontEndMenu.CreateLoadScreen( stack, Strings, FindLoadEntries(), entry => ConfirmExtensions( entry.OwnSavePath, change => QueueProgressLevel( entry.Level, () => LoadPark( entry with { Switch = change }, overFrames: true ) ) ) ),
 		GoOnline = WhenOnline( ShowOnline ),
 		// Restart Park reloads the restart snapshot in every original park but the read-only visit (the original's pause menu 0x48C150 lists the entry for every game type except the online visit)
 		RestartPark = RestartEligible( level ) ? () => RestartCurrentPark( level ) : null,

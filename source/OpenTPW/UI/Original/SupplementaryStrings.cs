@@ -373,6 +373,24 @@ public enum OpenTpwText
 	ExtensionCheatsName,
 	/// <summary>[EXT:cheats-extension] The cheats extension's description on the Extensions and mods screen.</summary>
 	ExtensionCheatsDescription,
+	/// <summary>[EXT:save-extension-switch] The load dialog: the park was played without a rule extension that is on now ({0}: its names).</summary>
+	ExtensionSwitchPlayedWithout,
+	/// <summary>[EXT:save-extension-switch] The load dialog: the park was played with a rule extension that is off now ({0}: its names).</summary>
+	ExtensionSwitchPlayedWith,
+	/// <summary>[EXT:save-extension-switch] The load dialog: the park was played with another version of a rule extension ({0}: its names).</summary>
+	ExtensionSwitchOtherVersion,
+	/// <summary>[EXT:save-extension-switch] The load dialog: the park uses a content extension that is off now ({0}: its names).</summary>
+	ExtensionSwitchNeeds,
+	/// <summary>[EXT:save-extension-switch] The load dialog's closing line: the park continues with the extensions that are on now.</summary>
+	ExtensionSwitchNewRun,
+	/// <summary>[EXT:save-extension-switch] The load dialog's button that loads with the rule extensions switched.</summary>
+	ExtensionSwitchContinue,
+	/// <summary>[EXT:save-extension-switch] The load dialog's button that switches content extensions on and loads ({0}: their names).</summary>
+	ExtensionSwitchTurnOn,
+	/// <summary>[EXT:save-extension-switch] The pools extension's name in the load dialog.</summary>
+	ExtensionPoolsName,
+	/// <summary>[EXT:save-extension-switch] The load dialog's question that switches content extensions on and loads ({0}: their names).</summary>
+	ExtensionSwitchTurnOnQuestion,
 }
 
 public static class SupplementaryStrings
@@ -896,6 +914,34 @@ public static class SupplementaryStrings
 			"La finestra dei trucchi (Alt+C in un parco): manda visitatori in autobus, aereo o barca, cambia il meteo, assegna un biglietto d'oro a scelta, aggiungi denaro, rendi tutto costruibile e dai più veicoli a un'attrazione. Un parco che usa i trucchi resta segnato per sempre; si può comunque pubblicare. I trucchi del gioco originale (il nome segreto del parco e i tasti Alt) funzionano anche senza.",
 			"חלון הצ'יטים (Alt+C בפארק): שליחת מבקרים באוטובוס, במטוס או בסירה, שינוי מזג האוויר, הענקת כרטיס זהב לבחירה, הוספת כסף, אפשרות לבנות הכול ויותר כלים למתקן. פארק שמשתמש בצ'יטים מסומן לתמיד; עדיין אפשר לפרסם אותו. הצ'יטים של המשחק המקורי (שם הפארק הסודי ומקשי Alt) פועלים גם בלעדיו.",
 		},
+		[OpenTpwText.ExtensionSwitchPlayedWithout] = new[] { "This park was played without {0}. Continue with {0}?", "Denne park blev spillet uden {0}. Fortsæt med {0}?", "Dit park is gespeeld zonder {0}. Verder spelen met {0}?",
+			"Ce parc a été joué sans {0}. Continuer avec {0} ?", "Dieser Park wurde ohne {0} gespielt. Mit {0} weiterspielen?", "이 공원은 {0} 없이 플레이했습니다. {0}을(를) 켠 채로 계속하시겠습니까?",
+			"Ten park był grany bez {0}. Kontynuować z {0}?", "Este parque se jugó sin {0}. ¿Continuar con {0}?", "Den här parken spelades utan {0}. Fortsätta med {0}?",
+			"Questo parco è stato giocato senza {0}. Continuare con {0}?", "הפארק הזה שוחק בלי {0}. להמשיך עם {0}?" },
+		[OpenTpwText.ExtensionSwitchPlayedWith] = new[] { "This park was played with {0}. Continue without {0}?", "Denne park blev spillet med {0}. Fortsæt uden {0}?", "Dit park is gespeeld met {0}. Verder spelen zonder {0}?",
+			"Ce parc a été joué avec {0}. Continuer sans {0} ?", "Dieser Park wurde mit {0} gespielt. Ohne {0} weiterspielen?", "이 공원은 {0}을(를) 켜고 플레이했습니다. {0} 없이 계속하시겠습니까?",
+			"Ten park był grany z {0}. Kontynuować bez {0}?", "Este parque se jugó con {0}. ¿Continuar sin {0}?", "Den här parken spelades med {0}. Fortsätta utan {0}?",
+			"Questo parco è stato giocato con {0}. Continuare senza {0}?", "הפארק הזה שוחק עם {0}. להמשיך בלי {0}?" },
+		[OpenTpwText.ExtensionSwitchOtherVersion] = new[] { "This park was played with another version of {0}. Continue with this version?", "Denne park blev spillet med en anden version af {0}. Fortsæt med denne version?",
+			"Dit park is gespeeld met een andere versie van {0}. Verder spelen met deze versie?", "Ce parc a été joué avec une autre version de {0}. Continuer avec cette version ?",
+			"Dieser Park wurde mit einer anderen Version von {0} gespielt. Mit dieser Version weiterspielen?", "이 공원은 다른 버전의 {0}(으)로 플레이했습니다. 이 버전으로 계속하시겠습니까?",
+			"Ten park był grany z inną wersją {0}. Kontynuować z tą wersją?", "Este parque se jugó con otra versión de {0}. ¿Continuar con esta versión?",
+			"Den här parken spelades med en annan version av {0}. Fortsätta med den här versionen?", "Questo parco è stato giocato con un'altra versione di {0}. Continuare con questa versione?",
+			"הפארק הזה שוחק עם גרסה אחרת של {0}. להמשיך עם הגרסה הזו?" },
+		[OpenTpwText.ExtensionSwitchNeeds] = new[] { "This park uses {0}, which is off.", "Denne park bruger {0}, som er slået fra.", "Dit park gebruikt {0}, dat uit staat.", "Ce parc utilise {0}, qui est désactivé.",
+			"Dieser Park verwendet {0}, das ausgeschaltet ist.", "이 공원은 꺼져 있는 {0}을(를) 사용합니다.", "Ten park używa {0}, które jest wyłączone.", "Este parque usa {0}, que está desactivado.",
+			"Den här parken använder {0}, som är avstängt.", "Questo parco usa {0}, che è disattivato.", "הפארק הזה משתמש ב-{0}, שכבוי כעת." },
+		[OpenTpwText.ExtensionSwitchNewRun] = new[] { "From here on the park plays with the extensions that are on now.", "Herfra spilles parken med de udvidelser, der er slået til nu.",
+			"Vanaf hier speelt het park met de extensies die nu aan staan.", "À partir d'ici, le parc utilise les extensions activées maintenant.", "Ab hier läuft der Park mit den Erweiterungen, die jetzt eingeschaltet sind.",
+			"지금부터 공원은 현재 켜져 있는 확장으로 진행됩니다.", "Od teraz park działa z rozszerzeniami, które są teraz włączone.", "A partir de aquí el parque usa las extensiones activadas ahora.",
+			"Härifrån spelas parken med de tillägg som är påslagna nu.", "Da qui il parco usa le estensioni attive ora.", "מכאן הפארק משוחק עם ההרחבות שפועלות עכשיו." },
+		[OpenTpwText.ExtensionSwitchContinue] = new[] { "Continue", "Fortsæt", "Verder spelen", "Continuer", "Weiterspielen", "계속", "Kontynuuj", "Continuar", "Fortsätt", "Continua", "המשך" },
+		[OpenTpwText.ExtensionSwitchTurnOn] = new[] { "Turn {0} on and load", "Slå {0} til og indlæs", "Zet {0} aan en laad", "Activer {0} et charger", "{0} einschalten und laden", "{0} 켜고 불러오기",
+			"Włącz {0} i wczytaj", "Activar {0} y cargar", "Slå på {0} och läs in", "Attiva {0} e carica", "הפעל את {0} וטען" },
+		[OpenTpwText.ExtensionSwitchTurnOnQuestion] = new[] { "Turn {0} on and load the park?", "Slå {0} til og indlæs parken?", "{0} aanzetten en het park laden?", "Activer {0} et charger le parc ?",
+			"{0} einschalten und den Park laden?", "{0}을(를) 켜고 공원을 불러오시겠습니까?", "Włączyć {0} i wczytać park?", "¿Activar {0} y cargar el parque?", "Slå på {0} och läsa in parken?",
+			"Attivare {0} e caricare il parco?", "להפעיל את {0} ולטעון את הפארק?" },
+		[OpenTpwText.ExtensionPoolsName] = new[] { "Pools", "Svømmebassiner", "Zwembaden", "Piscines", "Schwimmbecken", "수영장", "Baseny", "Piscinas", "Pooler", "Piscine", "בריכות" },
 	};
 
 	public static IReadOnlyList<string> SupportedLanguages => Languages;

@@ -50,6 +50,7 @@ public class SdtArchive : IArchive
 	/// <summary>Reads the bank from the stream's current position to its length and disposes the stream.</summary>
 	public void ReadFromStream( Stream stream )
 	{
+		ArgumentNullException.ThrowIfNull( stream );
 		// Short reads are accumulated; a premature end must fail before parsing, not leave zero-filled entry bytes.
 		using ( stream )
 		{

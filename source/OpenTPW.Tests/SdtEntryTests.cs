@@ -314,6 +314,12 @@ public class SdtEntryTests
 	}
 
 	[TestMethod]
+	public void NullBankStreamKeepsItsArgumentExceptionContract()
+	{
+		Assert.ThrowsException<ArgumentNullException>( () => new SdtArchive( (Stream)null! ) );
+	}
+
+	[TestMethod]
 	public void FragmentedSeekableBankEqualsTheCompleteBank()
 	{
 		var bank = CreateBank(

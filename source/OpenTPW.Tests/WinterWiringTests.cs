@@ -143,6 +143,48 @@ public class WinterWiringTests
 	}
 
 	[TestMethod]
+	public void TheGoldenTicketForEverythingBuiltDoesNotAskForTheUsedOnlyExtensionsObjects()
+	{
+		// The original asks for every shipped buyable object; the objects of the used-only extensions (winter, umbrellas, pools) are catalogue entries of "research": false files, so a park that never places one wins the ticket the
+		// same with the extensions on or off ([EXT:mods], EconomyObjectInfo.NotResearched).
+		var content = Path.GetDirectoryName( Folder )!;
+		PoolContent.DirectoryOverride = Path.Combine( content, "pools" );
+		UmbrellaContent.DirectoryOverride = Path.Combine( content, "umbrellas" );
+		WinterContent.DirectoryOverride = Folder;
+		try
+		{
+			ParkEconomy Park( bool extensions )
+			{
+				var set = extensions ? ModSet.Defaults( OfficialExtensions.All ) : ModSet.Resolve( Array.Empty<DiscoveredMod>(),
+					new ModSettings { Enabled = new Dictionary<string, bool> { [ModId] = false, [OfficialExtensions.Umbrellas.Id] = false, [OfficialExtensions.Pools.Id] = false } }, null, GameEdition.ThemeParkWorld, OfficialExtensions.All );
+				using var roots = ModContentRoots.Use( set, FileSystem );
+				return new ParkEconomy( EconomyTestData.Settings(), EconomyObjectCatalog.Load( "jungle", false ), ParkGameMode.FullSimulation, 7 );
+			}
+			foreach ( var extensions in new[] { false, true } )
+			{
+				var park = Park( extensions );
+				var extra = park.Catalog.Objects.Where( info => info.InfoId >= 64000 ).ToArray();
+				Assert.AreEqual( extensions, extra.Any( info => info.InfoId is >= 64010 and <= 64499 ), "the winter shops are in the catalogue with the extension on only" );
+				Assert.AreEqual( extensions, extra.Any( info => info.InfoId is >= 64500 and <= 64999 ), "the brolly shop, with the umbrellas on only" );
+				Assert.AreEqual( extensions, extra.Any( info => info.InfoId >= 65000 ), "the pool objects, with the pools on only" );
+				Assert.IsTrue( extra.All( info => info.NotResearched ), "every extension object is available from the start and no research item" );
+				park.Research.Restore( park.Research.Items.Select( item => (item.InfoId, item.Level) ), Array.Empty<((int InfoId, int Level), long)>(), park.Research.Effort );
+				foreach ( var info in park.Catalog.Objects.Where( info => info.IsBuyable && !info.NotResearched ) )
+					park.Counters.Add( ParkCounters.Built( info.InfoId ), 1 );
+				Assert.IsTrue( park.Catalog.Objects.Any( info => info.IsBuyable && !info.NotResearched && info.InfoId < 64000 ), "the fixture holds an ordinary object" );
+				var won = park.Objectives.CheckGoldenTickets( park.Counters, park.GuestStatistics, park.Research, 0, Array.Empty<long>() );
+				CollectionAssert.Contains( won.ToList(), GoldenTicketKind.AllResearchedAndBuilt, $"every shipped object is built, extensions {(extensions ? "on" : "off")}: the winter shops, brollies and pool objects nobody built do not hold the ticket back" );
+			}
+		}
+		finally
+		{
+			PoolContent.DirectoryOverride = null;
+			UmbrellaContent.DirectoryOverride = null;
+			WinterContent.DirectoryOverride = null;
+		}
+	}
+
+	[TestMethod]
 	public void AThemeParkIncRunHasNoWinterShopEvenWithTheExtensionOn()
 	{
 		WinterContent.DirectoryOverride = Folder;
@@ -171,7 +213,7 @@ public class WinterWiringTests
 		var stall = catalog.Get( 64011 );
 		var kioskBridge = OriginalObjectRuntime.CreateVisitorBridge( kiosk, 7 );
 		Assert.IsTrue( ((IRideVisitorBridge)kioskBridge).IsWinterKiosk );
-		Assert.AreEqual( new WinterShopTerms( 0, 0, 200, 100, 0, 0, 0 ), kioskBridge.WinterTerms, "the kiosk's .sam: snow 200, winter 100" );
+		Assert.AreEqual( new WinterShopTerms( 0, 0, 200, 150, 60, 20, 60 ), kioskBridge.WinterTerms, "the kiosk's .sam: snow 200, winter 150, spring and autumn 60, summer 20 (it sells all year)" );
 		Assert.AreEqual( WinterRules.KioskAppearanceEffect, kioskBridge.AppearanceEffect );
 		var stallBridge = OriginalObjectRuntime.CreateVisitorBridge( stall, 8 );
 		Assert.IsFalse( ((IRideVisitorBridge)stallBridge).IsWinterKiosk );

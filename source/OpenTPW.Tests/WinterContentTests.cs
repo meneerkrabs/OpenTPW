@@ -138,7 +138,7 @@ public class WinterContentTests
 			Assert.AreEqual( (25, 10, 15, 5), (kiosk.Economy.PricePerUse, kiosk.Economy.CostOfGoods, s.GetInt( "UsageInfo.HappinessEffect" ), s.GetInt( "UsageInfo.LitterEffect" )) );
 			Assert.AreEqual( (0, 0, 0), (s.GetInt( "UsageInfo.ThirstEffect" ), s.GetInt( "UsageInfo.HungerEffect" ), s.GetInt( "UsageInfo.VomitEffect" )) );
 			Assert.AreEqual( (5, 1000), (kiosk.InitialCapacity, kiosk.BuildCost) );
-			Assert.AreEqual( (200, 100, 0), (s.GetInt( "WeatherModifier.SnowPercentage" ), s.GetInt( "SeasonModifier.WinterPercentage" ), s.GetInt( "SeasonModifier.SummerPercentage" )), "sells in snow and in winter months only" );
+			Assert.AreEqual( (200, 150, 60, 20, 60), (s.GetInt( "WeatherModifier.SnowPercentage" ), s.GetInt( "SeasonModifier.WinterPercentage" ), s.GetInt( "SeasonModifier.SpringPercentage" ), s.GetInt( "SeasonModifier.SummerPercentage" ), s.GetInt( "SeasonModifier.AutumnPercentage" )), "sells all year: demand follows the season (winter 150, summer 20) and the snow (200)" );
 
 			var stall = ObjectCatalog.Load( Themes[index] ).Get( IdOf( index, 1 ) );
 			s = stall.Settings;

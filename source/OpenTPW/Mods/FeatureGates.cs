@@ -46,7 +46,7 @@ public static class FeatureGates
 	public static bool Winter => OpenTpwExtensions.IsEnabled( OfficialExtensions.Winter ) && !GameEditions.IsThemeParkInc;
 
 	/// <summary>
-	/// [EXT:winter-weather] The <c>opentpw.winter-weather</c> option is on for this run: December's thunderstorms are snow in the jungle and fantasy parks (docs/WINTER.md, "Wintry Decembers"). Off by default, and not in a Theme Park Inc run,
+	/// [EXT:winter-weather] The <c>opentpw.winter-weather</c> option is on for this run: December's rain and thunderstorms are snow in the jungle and fantasy parks (docs/WINTER.md, "Wintry Decembers"). Off by default, and not in a Theme Park Inc run,
 	/// which has no Theme Park World weather.
 	/// </summary>
 	public static bool WinterWeather => OpenTpwExtensions.IsEnabled( OfficialExtensions.WinterWeather ) && !GameEditions.IsThemeParkInc;

@@ -487,7 +487,9 @@ public partial class Level : IDisposable
 			// [EXT:umbrellas-weather-map] rain without lightning is Theme Park Inc's rain, lightning a storm, snow snow (the flags of the park's weather, not its drops: the umbrella rules ask what the weather is, not how hard it falls)
 			if ( Guests != null )
 				Guests.UmbrellaWeatherState = () => Weather is { } weather ? UmbrellaRules.WeatherStateOf( weather.Rain, weather.Lightning, weather.Snow ) : UmbrellaRules.WeatherNone;
-			// [EXT:winter-kiosk-gate] the winter shops read the park's calendar month (the economy's clock, which the weather steps on too); the weather is the umbrellas' map above
+			// [EXT:winter-season-terms] the winter shops read the park's calendar month (the economy's clock, which the weather steps on too) and their own weather signal, which reads snow as snow even with lightning (Halloween's snow band is its lightning band)
+			if ( Guests != null )
+				Guests.WinterWeatherState = () => Weather is { } weather ? WinterRules.WeatherStateOf( weather.Rain, weather.Lightning, weather.Snow ) : UmbrellaRules.WeatherNone;
 			if ( Guests != null )
 				Guests.WinterMonth = () => Park?.Economy is { } economy ? ParkCalendar.DateTimeAt( economy.Tick ).Month : 0;
 			// [EXT:rain-mood-extension] the rain mood rule is on while the extension is: the guests read the same weather state as the umbrella rules

@@ -48,14 +48,14 @@ UsageInfo.AppearanceEffect		4
 
 # Demand, percent of the attraction score (read by the winter extension for its own objects only; the original does not read these keys).
 # The weather keys are Theme Park Inc's names, the season keys are this extension's own ([EXT:winter-season-terms]); months Dec-Feb, Mar-May, Jun-Aug, Sep-Nov.
-# The kiosk sells only while it snows or in December to February ([EXT:winter-kiosk-gate]), so the other seasons are 0.
+# The kiosk sells all year and its demand follows the season and the snow (the user's decision of 2026-10-18/19, "Het hele jaar, vraag via seizoen"); only a guest with both slots full scores 0.
 WeatherModifier.SnowPercentage		200		OpenTPW's own value
 WeatherModifier.RainPercentage		0
 WeatherModifier.StormPercentage		0
-SeasonModifier.WinterPercentage	100
-SeasonModifier.SpringPercentage	0
-SeasonModifier.SummerPercentage	0
-SeasonModifier.AutumnPercentage	0
+SeasonModifier.WinterPercentage	150
+SeasonModifier.SpringPercentage	60
+SeasonModifier.SummerPercentage	20
+SeasonModifier.AutumnPercentage	60
 
 Research.Group		0		available from the start, no research
 Info.PreviewAnimNum		0

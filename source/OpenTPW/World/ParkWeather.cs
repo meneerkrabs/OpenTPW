@@ -137,6 +137,24 @@ public sealed class ParkWeather
 		quality >= settings.LightningLow && quality <= settings.LightningHigh );
 
 	/// <summary>
+	/// The bands the pending forecast will apply as: <see cref="BandsOf"/> of <see cref="Forecast"/>, except that a forecast the wintry Decembers option will turn into snow (the roll was made in December, a rain band, and the park's own snow band is
+	/// empty: see <see cref="ApplyQuality"/>) reads as plain snow, so the forecast does not announce thunderstorms and then snow. Default bands while no forecast is pending.
+	/// </summary>
+	// [EXT:winter-weather] the forecast follows the option: it says what the converter will make of the quality
+	internal WeatherQualityBands ForecastBands => pendingQuality is { } quality ? ForecastBandsOf( quality, applyAt ) : default;
+
+	/// <summary>The bands a forecast of <paramref name="quality"/> applying at <paramref name="applyAtSeconds"/> will have (see <see cref="ForecastBands"/>).</summary>
+	internal WeatherQualityBands ForecastBandsOf( int quality, long applyAtSeconds )
+	{
+		var bands = BandsOf( quality );
+		return bands.Rain && IsWintryRoll( applyAtSeconds ) && settings.SnowBandIsEmpty ? new WeatherQualityBands( true, false, false ) : bands;
+	}
+
+	/// <summary>Whether the wintry Decembers option is on and the roll of the forecast applying at <paramref name="applyAtSeconds"/> was made in December (the roll is <c>DaysOfWarning</c> days before the apply, so no month needs saving).</summary>
+	private bool IsWintryRoll( long applyAtSeconds ) =>
+		wintryDecembers && ParkCalendar.Epoch.AddSeconds( applyAtSeconds - settings.DaysOfWarning * ParkCalendar.SecondsPerDay ).Month == 12;
+
+	/// <summary>
 	/// Smoke-only (<c>[EXT:debug-forecast]</c>): posts a forecast of <paramref name="quality"/> the warning
 	/// distance ahead, exactly as the natural roll would, so captures can show the forecast presentation. The
 	/// countdown, apply and the weather itself still come from the normal machinery.
@@ -359,7 +377,7 @@ public sealed class ParkWeather
 			pendingQuality = null;
 			lastChanged = now;
 			// [EXT:winter-weather] the roll that made the forecast was DaysOfWarning days before it applies (the forecast's apply time is the roll's time plus the warning), so its month needs nothing saved
-			ApplyQuality( next, wintryDecembers && ParkCalendar.Epoch.AddSeconds( applyAt - settings.DaysOfWarning * ParkCalendar.SecondsPerDay ).Month == 12 );
+			ApplyQuality( next, IsWintryRoll( applyAt ) );
 			nextRollAt = lastChanged + Math.Max( 0, settings.DaysBetweenChanges - settings.DaysOfWarning ) * ParkCalendar.SecondsPerDay;
 		}
 		// [BIN:TPW-EXE:0x51295c weather roll] with no forecast pending (also in the tick that just applied one) the roll is due at lastChanged + max(0, DaysBetweenChanges - DaysOfWarning) days

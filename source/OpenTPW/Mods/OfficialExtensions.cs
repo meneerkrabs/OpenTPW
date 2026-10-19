@@ -110,7 +110,7 @@ public static class OfficialExtensions
 	public static IOpenTpwExtension Evening { get; } = new OpenTpwExtension( "opentpw.evening", "Evening and night", new ModVersion( 1, 0, 0 ), DefaultEnabled: true, AffectsSimulation: false, PlayerSelectable: true );
 
 	/// <summary>
-	/// The winter extension (docs/WINTER.md): a winter kiosk and a glühwein stall per Theme Park World theme. The kiosk sells a warm item (a hat or earmuffs first, then mittens) only in snow or from December to February; the stall
+	/// The winter extension (docs/WINTER.md): a winter kiosk and a glühwein stall per Theme Park World theme. The kiosk sells a warm item (a hat or earmuffs first, then mittens) all year, its demand following the season and the snow; the stall
 	/// is a drinks shop that does not make guests drunk and sells best in snow and in the winter months. On by default (a player can switch it off) and not in a Theme Park Inc run; it changes the simulation, but a park save records the
 	/// extension only while the park has one of its shops or a guest with a warm item, so any other park saves byte-identically whether the extension is on or off (<c>ParkResumeMods.UsedOnlyExtensionIds</c>). This is phase W3, the simulation;
 	/// the drawing of the items (W4) and the cold rule (W5) come later, and the version is the rule identity: every behaviour-changing release bumps it.

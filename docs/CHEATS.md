@@ -158,7 +158,7 @@ Consequences for the vehicle limit (K4):
   record of every applied cheat (park turn, kind, argument; at most 4,096 entries, the oldest dropped and counted), the actions waiting for the next turn (at most 16) and a sticky flag for the
   extension's own cheats.
 - **The turn boundary** `[EXT:cheats-turn-boundary]`. Every cheat is queued (`ParkEconomy.QueueCheat`) and applied at the start of the next park turn, before the turn's thing sweep (its
-  weather and arrival updates), in the order of `CheatKind`, with no random draw. Applying any cheat turns the mode on; nothing turns it off (the original never calls `0x4053C0(0)`). A
+  weather and arrival updates; in a level whose turns are not swept, the tick's guests and objects run before the economy's turn), in the order of `CheatKind`, with no random draw. Applying any cheat turns the mode on; nothing turns it off (the original never calls `0x4053C0(0)`). A
   Theme Park Inc economy refuses cheats: only Theme Park World's are traced. The mode's message of type `0x15` is not posted.
 - **The save** `[EXT:cheats-save]`. `ParkSaveFile.Data.Cheats` holds the record only for a park that has cheated or has a cheat waiting, so every other park saves (and hashes) as before; it is
   validated on load (known kinds and arguments, turns in order and not after the park turn, a mode that is on when cheats were applied). See [DETERMINISM.md](DETERMINISM.md#cheats).

@@ -182,6 +182,11 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// <summary>True while no group arrives (a bankrupt park).</summary>
 	public Func<bool>? ArrivalsHalted { get; set; }
 	/// <summary>
+	/// [EXT:cheats-arrival] True while an arrival cheat waits for the vehicles to be free (<see cref="ParkCheats.ArrivalPending"/>): no natural group starts and no vehicle is called for
+	/// leaving guests, so the vehicle at work finishes and the cheat's group comes at a following turn. A vehicle already at work completes as usual.
+	/// </summary>
+	public Func<bool>? ArrivalHeldForCheat { get; set; }
+	/// <summary>
 	/// True while the park's weather has drops falling (<see cref="ParkWeather.CurrentDrops"/> above 0). The group size then uses 0.8
 	/// instead of 1.2. The original reads the signed 32-bit word at +48 of the weather thing (game +0x1DA724, saved as mWeather; the
 	/// weather object's mCurrentDrops, the drops the weather ramps toward its target) and uses 0.8 when it is positive. Null (no
@@ -661,7 +666,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		// A save loaded from an earlier turn replaces the clock: the timer starts unset again, as in a freshly started park.
 		if ( turn < arrivalTimerStart )
 			arrivalTimerStart = 0;
-		if ( !deliveringArrivals && (turn >> 2) - (arrivalTimerStart >> 2) > Settings.ArrivalTimeBetween )
+		var held = ArrivalHeldForCheat?.Invoke() == true;
+		if ( !deliveringArrivals && !held && (turn >> 2) - (arrivalTimerStart >> 2) > Settings.ArrivalTimeBetween )
 		{
 			pendingArrivals = ArrivalGroupSize();
 			ArrivalGroupStarted?.Invoke( pendingArrivals );
@@ -701,7 +707,9 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		var turn = ArrivalClock?.Invoke() ?? ParkTurn;
 		if ( turn < arrivalTimerStart )
 			arrivalTimerStart = 0;
-		if ( !deliveringArrivals && (turn >> 2) - (arrivalTimerStart >> 2) > Settings.ArrivalTimeBetween )
+		// [EXT:cheats-arrival] a waiting arrival cheat holds the natural group and the pick-ups below
+		var held = ArrivalHeldForCheat?.Invoke() == true;
+		if ( !deliveringArrivals && !held && (turn >> 2) - (arrivalTimerStart >> 2) > Settings.ArrivalTimeBetween )
 		{
 			pendingArrivals = ArrivalGroupSize();
 			ArrivalGroupStarted?.Invoke( pendingArrivals );
@@ -731,11 +739,40 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		if ( LeavingGuestWaits() )
 		{
 			var status = ReadArrivalVehicle();
-			if ( status is -1 or 0 || status == 2 && pendingArrivals == 0 )
+			// [EXT:cheats-arrival] a held arrival calls no vehicle, but one standing at the stop is still sent on with the leaving guests
+			if ( (status is -1 or 0) && !held || status == 2 && pendingArrivals == 0 )
 				DispatchArrivalVehicle( 0 );
 		}
 		else if ( ReadArrivalVehicle() == 4 )
 			DispatchArrivalVehicle( 0 );
+	}
+
+	/// <summary>[EXT:cheats-arrival] The group sizes each vehicle stands for, by <see cref="ArrivalVehicleKind"/>: the bus up to 35, the seaplane 36 to 60, the Ferry 61 or more (the dispatch's own bands, 0x004CF48C/0x004CF49A).</summary>
+	public static (int Low, int High) CheatArrivalBand( int vehicleKind ) => vehicleKind switch
+	{
+		ArrivalVehicleKind.Bus => (1, 35),
+		ArrivalVehicleKind.Seaplane => (36, 60),
+		ArrivalVehicleKind.Ferry => (61, int.MaxValue),
+		_ => throw new ArgumentOutOfRangeException( nameof( vehicleKind ), vehicleKind, "Not an arrival vehicle." )
+	};
+
+	/// <summary>
+	/// [EXT:cheats-arrival] The arrival cheat: a group starts now and comes by <paramref name="vehicleKind"/>. Its size is the next natural group's (no draw) moved into the vehicle's band
+	/// (<see cref="CheatArrivalBand"/>), then cut by the park limit as every group is; a lost park's group is empty. The group is delivered like a natural one: the advisor's ring sees its size, the
+	/// vehicle stops and one guest steps off per turn, and the turn that finds it empty restarts the arrival timer, so the next natural group comes a full interval later. False, and nothing
+	/// changes, while a group is being delivered or a vehicle is at work.
+	/// </summary>
+	public bool TryStartCheatArrival( int vehicleKind )
+	{
+		var (low, high) = CheatArrivalBand( vehicleKind );
+		if ( !ArrivalsEnabled || deliveringArrivals || arrivalVehicle >= 0 )
+			return false;
+		pendingArrivals = ArrivalsHalted?.Invoke() == true ? 0 : CutToParkLimit( Math.Clamp( UncutArrivalGroupSize(), low, high ) );
+		ArrivalGroupStarted?.Invoke( pendingArrivals );
+		deliveringArrivals = true;
+		// the vehicle of the cheat's choice, not the one the size would call (sizes 1, 2 and 3 of the dispatch are the bus, the seaplane and the Ferry)
+		DispatchArrivalVehicle( vehicleKind + 1 );
+		return true;
 	}
 
 	/// <summary>Puts <paramref name="kind"/> at work without a dispatch (tests).</summary>
@@ -820,6 +857,12 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	{
 		if ( ArrivalsHalted?.Invoke() == true )
 			return 0;
+		return CutToParkLimit( UncutArrivalGroupSize() );
+	}
+
+	/// <summary>The next group's size before the park limit's cut (<see cref="ArrivalGroupSize"/>): the weather factor, the park's points and the minimum.</summary>
+	private int UncutArrivalGroupSize()
+	{
 		var perVisitor = Settings.ArrivalPointsPerVisitor < 2 ? 1 : Settings.ArrivalPointsPerVisitor;
 		int count;
 		if ( Settings.ArrivalWeatherPercentages is { } percentages )
@@ -837,7 +880,12 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			var factor = WeatherDropsFalling?.Invoke() == true ? 0.8f : 1.2f;
 			count = (int)(factor * (float)((ParkPoints?.Invoke() ?? 0) + Settings.ArrivalNewParkBonus)) / perVisitor;
 		}
-		count = Math.Max( count, Settings.ArrivalMinPeople );
+		return Math.Max( count, Settings.ArrivalMinPeople );
+	}
+
+	/// <summary>A group of <paramref name="count"/> cut so the counted guests plus the group stay within the park limit (<see cref="ArrivalParkLimit"/>, <see cref="OnlineArrivalParkLimit"/> for an online visit).</summary>
+	private int CutToParkLimit( int count )
+	{
 		var limit = OnlineVisit ? OnlineArrivalParkLimit : ArrivalParkLimit;
 		if ( (uint)(guests.Count + count) > (uint)limit )   // compared unsigned (jbe at 0x004CF690 and 0x004CF6EE)
 			// [BIN:TPW-EXE:0x004CF6E5 no floor] the cut group is the limit minus the counted guests with no clamp (sub esi,ebx at 0x004CF704), negative above the limit; the stop's signed test emits no guest (jle 0x004CF56B: timer restart, active byte cleared), the vehicle size selects a bus (jg 0x004CF48F), and the boarding gate 0x0051A760 takes its below-10 branch (cmp 0xA, jge at 0x0051A844). The arrival ring stores the signed value unchanged (0x004CF451); the advisor's hype callback compares and divides signed (0x0059F31C/0x0059F32A), so a negative newest group can give a drop above 100 percent

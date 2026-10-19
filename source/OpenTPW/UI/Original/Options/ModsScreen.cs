@@ -60,6 +60,7 @@ public static class ModsScreen
 		[OfficialExtensions.RestoredAdvice.Id] = (OpenTpwText.ExtensionRestoredAdviceName, OpenTpwText.ExtensionRestoredAdviceDescription),
 		[OfficialExtensions.Evening.Id] = (OpenTpwText.ExtensionEveningName, OpenTpwText.ExtensionEveningDescription),
 		[OfficialExtensions.WinterSnow.Id] = (OpenTpwText.ExtensionWinterSnowName, OpenTpwText.ExtensionWinterSnowDescription),
+		[OfficialExtensions.Cheats.Id] = (OpenTpwText.ExtensionCheatsName, OpenTpwText.ExtensionCheatsDescription),
 	};
 
 	public static UiScreen Create( UiScreenStack stack, UiStringTable strings, ModsServices? services = null )

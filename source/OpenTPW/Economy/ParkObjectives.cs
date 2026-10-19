@@ -551,6 +551,34 @@ public sealed class ParkObjectives
 	/// <summary>The global tickets the last <see cref="CheckGoldenTickets"/> took over from another park.</summary>
 	public IReadOnlyList<GoldenTicketKind> LastMovedTickets => lastMovedTickets;
 
+	/// <summary>
+	/// A ticket cheat (Alt+G, Alt+Num1..9): a local ticket joins the park's set; a global one goes through the player-wide authority with record <see cref="ParkCheats.TicketRecord"/> (awarded when nobody
+	/// holds it, taken from a park that holds it with a lower record, nothing when this park holds it or the holder's record is as good). Returns <see cref="GlobalTicketOutcome.Awarded"/>,
+	/// <see cref="GlobalTicketOutcome.Moved"/> or <see cref="GlobalTicketOutcome.None"/>. Neither the game mode nor <c>CanEarnTickets</c> is checked, and <see cref="LastWonTickets"/> is not touched: the
+	/// award is silent.
+	/// </summary>
+	// [BIN:TPW-EXE:0x5AF810 local ticket award] 0 when the park's byte (+0x48 + type) is set, else it sets it and returns 1 (2 or 3 with a key); [BIN:TPW-EXE:0x5AF940 global ticket award] with the player-wide flag clear it sets the flag, the park's held byte and record (1, 2 or 3), with it set and this park holding it 0, else the first park holding it with a record below the new one loses it (4); no handler checks the game type or CanEarnTicketsInTheme
+	internal GlobalTicketOutcome AwardCheatTicket( GoldenTicketKind kind )
+	{
+		if ( kind is < GoldenTicketKind.Visitors or > GoldenTicketKind.BigPark )
+			throw new ArgumentOutOfRangeException( nameof( kind ), kind, "Only the ten non-secret tickets have a cheat." );
+		if ( kind < GoldenTicketKind.CoasterHeight )
+			return tickets.Add( kind ) ? GlobalTicketOutcome.Awarded : GlobalTicketOutcome.None;
+		switch ( GlobalTicketAuthority?.Invoke( kind, ParkCheats.TicketRecord ) ?? GlobalTicketOutcome.Unmanaged )
+		{
+			case GlobalTicketOutcome.Unmanaged:
+				return tickets.Add( kind ) ? GlobalTicketOutcome.Awarded : GlobalTicketOutcome.None;
+			case GlobalTicketOutcome.Awarded:
+				tickets.Add( kind );
+				return GlobalTicketOutcome.Awarded;
+			case GlobalTicketOutcome.Moved:
+				tickets.Add( kind );
+				return GlobalTicketOutcome.Moved;
+			default:
+				return GlobalTicketOutcome.None;
+		}
+	}
+
 	/// <summary>Golden ticket check (every 100 park turns in Full Simulation, <see cref="ParkEconomy.RunsGoldenTicketCheck"/>); returns newly won tickets. <paramref name="coveredCells"/> is the big park's cell count (<see cref="ParkEconomy.CoveredCells"/>); null without a cell map.</summary>
 	public IReadOnlyList<GoldenTicketKind> CheckGoldenTickets( ParkCounters counters, IParkGuestStatistics guests, ParkResearch research, long profitThisYear, IReadOnlyList<long> monthlyAdmissions, long droppedAdmissions = 0, long parkSeconds = long.MaxValue, long? coveredCells = null, int? securityCoveragePercent = null )
 	{

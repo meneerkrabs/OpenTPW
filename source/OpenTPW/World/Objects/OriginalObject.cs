@@ -57,7 +57,7 @@ public readonly record struct ObjectPlacement( int X, int Y, int Rotation, Syste
 /// A placed original ride, shop, sideshow, feature or fixed item: its original model hierarchy rendered
 /// with original textures, animated by its original RSE script (<see cref="OriginalObjectRuntime"/>).
 /// </summary>
-public class OriginalObject : Entity, IPointLightSource
+public class OriginalObject : Entity, IPointLightSource, IObjectPickShape
 {
 	/// <summary>The material's texture-array binding the object renderer uses (BuildModels).</summary>
 	private const string TextureArrayName = "Color";
@@ -231,6 +231,26 @@ public class OriginalObject : Entity, IPointLightSource
 
 	/// <summary>Engine-space matrix of a model node (e.g. a seat dummy) for other systems.</summary>
 	public Matrix4x4 GetNodeTransform( int node ) => ObjectPlacement.SwapAxes( NodeTransforms[node] ) * Placement.ModelToEngine;
+
+	/// <summary>The engine height range of the faces the object draws at its current pose (the cursor pick's height window, <see cref="ObjectRayPick"/>).</summary>
+	public bool TryGetPickHeightRange( out float bottom, out float top )
+	{
+		bottom = top = 0;
+		if ( deleted )
+			return false;
+		var animator = Runtime.Animator;
+		return ObjectPickModel.TryGetHeightRange( Runtime.Model, NodeTransforms, animator.IsNodeHidden, animator.GetVertexPositions, Placement.ModelToEngine, out bottom, out top );
+	}
+
+	/// <summary>The first face of the object's model at its current pose that the line meets, in the original's walk order (<see cref="ObjectPickModel"/>).</summary>
+	public bool TryHitPickLine( System.Numerics.Vector3 origin, System.Numerics.Vector3 direction, out System.Numerics.Vector3 hit )
+	{
+		hit = default;
+		if ( deleted )
+			return false;
+		var animator = Runtime.Animator;
+		return ObjectPickModel.TryHitLine( Runtime.Model, NodeTransforms, animator.IsNodeHidden, animator.GetVertexPositions, Placement.ModelToEngine, origin, direction, out hit );
+	}
 
 	/// <summary>
 	/// The launch pad of a tour ride in the tour module's units (300 per model unit): the world position of the model's pad node (a dummy of class 0x800 and

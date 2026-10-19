@@ -1175,14 +1175,45 @@ public partial class Level
 	internal bool TryGetGroundHit( System.Numerics.Vector2 mousePosition, System.Numerics.Vector2 viewportSize, System.Numerics.Matrix4x4 view, System.Numerics.Matrix4x4 projection, out Vector3 point )
 	{
 		point = default;
-		if ( OriginalPark is not { } park )
-			return ParkPlacement.TryGetGroundPoint( mousePosition, viewportSize, view, projection, out point );
-		if ( !ParkPlacement.TryGetMouseRay( mousePosition, viewportSize, view, projection, out var origin, out var direction )
-			|| !TerrainRayPick.TryPick( park.Heightfield, origin, direction, out var hit ) )
+		if ( !ParkPlacement.TryGetMouseRay( mousePosition, viewportSize, view, projection, out var origin, out var direction ) )
 			return false;
-		point = hit;
+		System.Numerics.Vector3? terrain = null;
+		if ( OriginalPark is not { } park )
+		{
+			if ( ParkPlacement.TryGetGroundPoint( mousePosition, viewportSize, view, projection, out var plane ) )
+				terrain = plane.GetSystemVector3();
+		}
+		else if ( TerrainRayPick.TryPick( park.Heightfield, origin, direction, out var hit ) )
+			terrain = hit;
+		// the object half of the pick: the first object model the ray meets from the camera takes the point when it is nearer than the terrain (ObjectRayPick)
+		// [EXT:build-cursor-ground-plane] the generic sandbox's Z = 0 plane stands in for the terrain hit there
+		if ( TryPickObject( origin, direction, view, terrain, out var objectHit ) )
+		{
+			point = objectHit;
+			return true;
+		}
+		if ( terrain is not { } ground )
+			return false;
+		point = ground;
 		return true;
 	}
+
+	/// <summary>The cursor point on an object's model (<see cref="ObjectRayPick"/>) when the ray from the camera meets one before the terrain point.</summary>
+	private bool TryPickObject( System.Numerics.Vector3 origin, System.Numerics.Vector3 direction, System.Numerics.Matrix4x4 view, System.Numerics.Vector3? terrain, out System.Numerics.Vector3 hit )
+	{
+		hit = default;
+		if ( Objects is not { } objects || objects.Objects.Count == 0 )
+			return false;
+		// the walk starts at the camera's eye (tp.exe 0x790aa0), the view's inverse translation; the near-plane point stands in when the view cannot be inverted
+		var eye = System.Numerics.Matrix4x4.Invert( view, out var inverse ) ? inverse.Translation : origin;
+		var grid = new ObjectRayPick.Grid( objects.Grid.Origin, ObjectPlacement.CellSize, objects.Grid.Width, objects.Grid.Height );
+		var shapeOf = PickShapeOf;
+		return ObjectRayPick.TryPick( eye, direction, terrain, grid,
+			( x, y ) => objects.FindAt( x, y ) is { IsDeleted: false } owner ? shapeOf?.Invoke( owner ) ?? owner : null, out hit, out _ );
+	}
+
+	/// <summary>The model the cursor pick tests for an object; null: the object's own (tests stand in a shape for an object without drawn geometry).</summary>
+	internal Func<OriginalObject, IObjectPickShape?>? PickShapeOf { get; set; }
 
 	/// <summary>
 	/// Screen position of cell (x, y)'s centre on the surface the cursor picks (the terrain's mean corner height on an original level, Z = 0 in the sandbox; for build ghosts).
@@ -1231,7 +1262,8 @@ public partial class Level
 	/// economy must allow the purchase (research, golden tickets, money; ParkEconomy.TryBuild) and charges
 	/// <c>Upgrades[0].CostOfUpgrade</c>; the generic sandbox has no economy and builds for free.
 	/// </summary>
-	// [APPROX:RIDES-021] the clicked cell is the ray's terrain hit only: the original's nearest hit also includes the model triangles of the objects in the cells the ray crosses (0x45cdc0 → 0x45d090), so a ride or tree under the cursor takes the cell — the model test 0x45d090 is read (it walks a node's face records, 8 bytes each: a normal index and three vertex indices, unless the node state has 0x10 or 0x8210, and recurses into the children unless 0x20; a hit is the plane hit inside the triangle by the 2 pi angle sum, accepted only when nearer than the terrain hit), but which object a cell yields (0x452ae0), the distance window and the object skip rule (0x473c30) are not
+	// [APPROX:RIDES-021] the clicked cell is the cell of the cursor ray's nearest hit, the terrain's or the first object model's (ObjectRayPick); the walk's height window, the track tiles'
+	// second-layer piece instances and the instances' sub-instances are approximated or left out (see the register)
 	public OriginalObject? PlaceObject( ObjectCatalogEntry entry, int x, int y, int rotation )
 	{
 		if ( IsReadOnlyVisit )

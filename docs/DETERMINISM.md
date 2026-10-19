@@ -306,11 +306,27 @@ Other OpenTPW state that is **not in the hash**:
 | `ParkSaveFile.Data.AnalyserCaches` (the analyser's cached readings) | saved for an exact continuation, but a reading aid that no simulation step reads; removed from the economy digest |
 | `ParkSaveFile.Data.StatisticsHistory` (the monthly rings of `ParkStatisticsHistory`) | only the park information window's graph reads them, no simulation step does; removed from the economy digest |
 | `ParkSaveFile.ResearchData.RecentItems` (TPW buy-list stars) | only the buy list reads the four rings; just this nested presentation property is removed from the economy digest. Completed projects, progress, effort and every other research field stay hashed. Raw ring state remains saved; no schema or canonical pin changes |
+| `ParkSaveFile.StaffData.RoleOrder` (locator role sequences) | presentation-only member-ID order for the five staff radios; only this nested staff property is removed from the economy digest. Members, training budgets, `HaveEverTrained`, strikes and every other staff/gameplay field stay hashed. The roster and global ThingPool order are not changed; no schema or canonical pin change is required |
 
 A change to any of these excluded fields does not change the hash. Adding an
 excluded presentation-only field does not require a schema or pin change. Bringing
 one of these fields into the canonical hash requires bumping `SchemaVersion` and
 re-pinning the fixed-run hash.
+
+### Staff locator role order (October 19)
+
+The own save records five independent role-ID sequences in `StaffData.RoleOrder`. This presentation owner
+is separate from member iteration and the global ThingPool used chain; neither gameplay traversal is
+reordered to emulate locator order. Valid original role chains are preserved independently, while malformed
+original chains and older own saves use explicitly documented [compatibility policies](PARK-SAVES.md#staff-locator-order-and-compatibility).
+Role-order reads and captures consume no randomness and do not materialize a legacy fallback. A hire/fire
+materializes that fallback before its intentional prepend/splice, without introducing a new random draw.
+
+Canonical JSON removes only `StaffData.RoleOrder`, not the `Staff` object or another staff field. Changing
+only locator order must leave the hash identical; changing gameplay data, including `HaveEverTrained`, must
+still affect it. `StaffRoleOrderTests` and `LocatorStaffRoleOrderTests` exercise this boundary and read/capture
+immutability. Their C# execution awaits exact-head CI because no local dotnet SDK is available;
+`tools/test_staff_role_order_contract.py` is a source-integration guard, not a substitute for those runs.
 
 ### Weather timing (October 14)
 

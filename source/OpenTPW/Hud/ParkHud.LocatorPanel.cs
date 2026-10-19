@@ -151,7 +151,7 @@ public sealed class LocatorModel
 /// name, the staff state icon or the visitor's thought). Ctrl+S and Ctrl+V open them; a radio locates its role's next actor and the camera follows it.
 /// </summary>
 // [EXT:visitor-info-window] the visitor info window that Ctrl+V tests ([0x7cc418], window object 0x7cc408) is not ported, by design: a left click on an All Visitors row or a visitor picked in the park stands in for opening it and it closes with the All Visitors window, where the original's stays open on its own
-// [APPROX:UI-091] staff locator radios still use finite world snapshots sorted by member id, not the independently saved role chains (+0x210); visitor radios use the live ThingPool chain with an explicit out-of-pool fixture fallback; visitor position failure still clears the selection; camera follow lacks the original per-frame smoothing (0x42b1c0), patrol rectangles (0x536100) and panel sliding remain unimplemented — evidence needed: a persisted staff-role order owner, patrol presentation and slide geometry
+// [APPROX:UI-091] staff locator radios preserve independent saved role chains (+0x210), with qualified original-malformation and legacy-save reconstruction; visitor radios use the live ThingPool chain with an explicit out-of-pool fixture fallback; visitor position failure still clears the selection; camera follow lacks the original per-frame smoothing (0x42b1c0), patrol rectangles (0x536100) and panel sliding remain unimplemented — evidence needed: patrol presentation and slide geometry; camera and real-data visual comparison
 public sealed partial class ParkHud
 {
 	private static LayoutTable LocatorTable => OriginalLayoutTables.LocatorPanels;
@@ -285,7 +285,7 @@ public sealed partial class ParkHud
 	/// <summary>The actor of <paramref name="role"/> after <paramref name="current"/> (0: the first), 0 when there is none after it.</summary>
 	private int NextLocatorActor( int role, int current ) => role == LocatorModel.VisitorRole
 		? LocatorOrder.NextVisitor( level.Guests?.Guests ?? Array.Empty<Guest>(), level.Guests?.Things, current )
-		: LocatorOrder.NextStaff( level.StaffWorld?.Snapshots ?? Array.Empty<StaffWorldSnapshot>(), LocatorModel.StaffTypeOf( role ), current );
+		: (Status.EconomySource as ParkEconomy)?.Staff.NextInRole( LocatorModel.StaffTypeOf( role ), current ) ?? 0;
 
 	private bool TryLocatorActorPosition( out Vector3 position )
 	{
@@ -393,11 +393,6 @@ public sealed partial class ParkHud
 /// <summary>The order the locator radios step through a role's actors.</summary>
 internal static class LocatorOrder
 {
-	/// <summary>The staff member of <paramref name="type"/> placed in the world after <paramref name="current"/> (0: the first), newest first; 0 when none follows.</summary>
-	public static int NextStaff( IEnumerable<StaffWorldSnapshot> snapshots, StaffType type, int current ) =>
-		snapshots.Where( actor => actor.Type == type && float.IsFinite( actor.CellX ) && float.IsFinite( actor.CellY ) ).OrderByDescending( actor => actor.Id )
-			.FirstOrDefault( actor => current == 0 || actor.Id < current ).Id;
-
 	/// <summary>The live visitor after <paramref name="current"/> (0: the first) in the pool's used-chain order; 0 at the tail or for a stale current.</summary>
 	// [BIN:TPW-EXE:0x00482757 visitor locator order] mask 64 walks the used head (0x516130) and older links (0x516160), accepting type 1 regardless of sprite visibility;
 	// a destroy request changes the type to 2 before queuing (0x50B906). The caller 0x4B3340 wraps by retrying with a null current.

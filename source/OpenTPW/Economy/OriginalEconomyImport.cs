@@ -19,7 +19,7 @@ namespace OpenTPW;
 /// saved advisor controller's pending advice and history are imported later by the automatic advisor, which adds its
 /// outcome through <see cref="Report"/>.
 /// </summary>
-public sealed class OriginalEconomyImport
+public sealed partial class OriginalEconomyImport
 {
 	/// <summary>The original's 100 ns time-stamp units per second (TbTimeStamp, as the calendar's FunnyTimeStart).</summary>
 	public const long TimeStampUnitsPerSecond = 10_000_000;
@@ -325,6 +325,7 @@ public sealed class OriginalEconomyImport
 		var adjusted = new List<string>();
 		var jobs = new List<string>();
 		var resumedClaims = new HashSet<int>();
+		var membersByThing = new Dictionary<int, StaffMember>();
 		// a guard chases a guest the guest import restores in the park (states 6–10, GuestSimulation.ImportsOriginalState)
 		var chaseable = save.Guests.Where( guest => guest.State is >= 6 and <= 10 ).Select( guest => guest.Id ).ToHashSet();
 		foreach ( var saved in save.Staff )
@@ -365,6 +366,7 @@ public sealed class OriginalEconomyImport
 				adjusted.Add( $"{saved.Model} thing {saved.Id} grade percentage {staff.GradePercentage} imported as {points} (OpenTPW promotes at {ParkStaff.TrainingPointsPerGrade})" );
 			var name = staff.Name.Length <= StaffMember.MaximumNameLength ? staff.Name : null;
 			var member = economy.Staff.AddImported( type, staff.Grade, points, happiness, StaffState.Idle, hired, energy, name, thingId: saved.Id );
+			membersByThing.Add( saved.Id, member );
 			// [DATA:SaveThingBase] exact base position is in 1/256-cell units, including the sub-cell offset.
 			member.CellX = saved.Base.X / 256f;
 			member.CellY = saved.Base.Y / 256f;
@@ -386,6 +388,7 @@ public sealed class OriginalEconomyImport
 			member.SmoothedSpeed = float.IsFinite( smoothed ) && smoothed >= 0 ? smoothed : 0;
 			imported++;
 		}
+		ImportStaffRoleOrder( economy.Staff, save, membersByThing, evidence );
 		evidence.Add( $"Imported {imported} staff ({string.Join( ", ", save.Staff.Select( item => $"{item.Model} grade {item.Staff.Grade}" ) )})." );
 		foreach ( var adjustment in adjusted )
 			evidence.Add( $"Staff value adjusted on import: {adjustment}." );

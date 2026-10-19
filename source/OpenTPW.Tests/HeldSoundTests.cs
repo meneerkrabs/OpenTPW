@@ -355,24 +355,24 @@ public class HeldSoundTests
 		Assert.IsNotNull( other );
 	}
 
-	[TestMethod]
-	public void LeaveParkAndSoundSwitchStopReleasedTails()
+	[DataTestMethod]
+	[DataRow( true )]
+	[DataRow( false )]
+	public void LeaveParkAndSoundSwitchStopReleasedTails( bool leave )
 	{
-		foreach ( var leave in new[] { true, false } )
+		// Each teardown gets its own initialized category: LeavePark forgets its decoded samples.
+		var placed = Placed();
+		var vm = Script( placed.Runtime, a => a.I( Opcode.ADDOBJ, 5, -1, 44, 500 ).I( Opcode.ENDSLICE ).I( Opcode.FADEOBJ, 500 ) );
+		var tail = placed.Runtime.HeldSounds.Single().Sound;
+		vm.Advance( FixedStepClock.TickDuration ); Assert.IsFalse( tail.IsFinished );
+		if ( leave ) GameAudio.LeavePark();
+		else
 		{
-			var placed = Placed();
-			var vm = Script( placed.Runtime, a => a.I( Opcode.ADDOBJ, 5, -1, 44, 500 ).I( Opcode.ENDSLICE ).I( Opcode.FADEOBJ, 500 ) );
-			var tail = placed.Runtime.HeldSounds.Single().Sound;
-			vm.Advance( FixedStepClock.TickDuration ); Assert.IsFalse( tail.IsFinished );
-			if ( leave ) GameAudio.LeavePark();
-			else
-			{
-				var wasEnabled = GameAudio.Enabled;
-				try { GameAudio.Enabled = false; } finally { GameAudio.Enabled = wasEnabled; }
-			}
-			Assert.IsTrue( tail.IsFinished );
-			Assert.AreEqual( 0, system.HeldSounds.Sounds.Count );
+			var wasEnabled = GameAudio.Enabled;
+			try { GameAudio.Enabled = false; } finally { GameAudio.Enabled = wasEnabled; }
 		}
+		Assert.IsTrue( tail.IsFinished );
+		Assert.AreEqual( 0, system.HeldSounds.Sounds.Count );
 	}
 
 	private void Pump( SoundSentence sentence )

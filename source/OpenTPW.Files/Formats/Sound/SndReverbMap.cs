@@ -23,11 +23,11 @@ public sealed class SndReverbMap
 	/// <summary>The entry count (32 in the shipped file).</summary>
 	public int Count => records.Length;
 
-	/// <summary>Whether <paramref name="level"/> names a present entry (the sound service refuses any other).</summary>
+	/// <summary>Whether <paramref name="level"/> names a physically present entry.</summary>
 	public bool Contains( int level ) => (uint)level < (uint)records.Length && records[level] != null;
 
-	/// <summary>The 13 raw dwords of a present entry; null for an absent or out-of-range one.</summary>
-	public IReadOnlyList<uint>? Record( int level ) => Contains( level ) ? records[level] : null;
+	/// <summary>The 13 raw dwords of a selectable preset; null for an absent or out-of-range level, or a first-word <c>0xFFFFFFFF</c> record.</summary>
+	public IReadOnlyList<uint>? Record( int level ) => Contains( level ) && records[level]![0] != uint.MaxValue ? records[level] : null;
 
 	/// <summary>The float view of one dword of a record (the file stores EAX-style floats and integers side by side).</summary>
 	public float Single( int level, int word ) => BitConverter.UInt32BitsToSingle( records[level]![word] );

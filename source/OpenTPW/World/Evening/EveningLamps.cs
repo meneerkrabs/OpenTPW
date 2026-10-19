@@ -23,13 +23,15 @@ public enum EveningAnchor
 public sealed record EveningLampLight( string Node, EveningAnchor Anchor, SVector3 Offset, SVector3 Colour, float RadiusModelUnits );
 
 /// <summary>
-/// A row of the lamp table: which objects it is for (a theme, a category, an archive name and/or the pools extension's <c>Pools.Extra</c> key; every field given must match) and the lights those objects get.
+/// A row of the lamp table: which objects it is for (a theme, a category, an archive name, the pools extension's <c>Pools.Extra</c> key and/or the id of the extension or mod whose content root lists the object; every field given must match)
+/// and the lights those objects get.
 /// </summary>
-public sealed record EveningLampRule( string? Theme, ObjectCategory? Category, string? Archive, int? PoolsExtra, IReadOnlyList<EveningLampLight> Lights )
+public sealed record EveningLampRule( string? Theme, ObjectCategory? Category, string? Archive, int? PoolsExtra, IReadOnlyList<EveningLampLight> Lights, string? Mod = null )
 {
 	/// <summary>Whether <paramref name="entry"/> is one of the objects of this row.</summary>
 	public bool Matches( ObjectCatalogEntry entry ) =>
-		( Theme == null || string.Equals( Theme, entry.Theme, StringComparison.OrdinalIgnoreCase ) )
+		( Mod == null || string.Equals( Mod, entry.ModId, StringComparison.Ordinal ) )
+		&& ( Theme == null || string.Equals( Theme, entry.Theme, StringComparison.OrdinalIgnoreCase ) )
 		&& ( Category == null || Category == entry.Category )
 		&& ( Archive == null || string.Equals( Archive, entry.ArchiveName, StringComparison.OrdinalIgnoreCase ) )
 		&& ( PoolsExtra == null || entry.Settings.GetInt( EveningLampTable.PoolsExtraKey ) == PoolsExtra );
@@ -111,7 +113,7 @@ public sealed class EveningLampTable
 		string Where( string detail ) => $"Lamp row {index}: {detail}";
 		if ( row.ValueKind != JsonValueKind.Object || !row.TryGetProperty( "match", out var match ) || match.ValueKind != JsonValueKind.Object )
 			throw new InvalidDataException( Where( "needs a \"match\" object." ) );
-		string? theme = null, archive = null;
+		string? theme = null, archive = null, mod = null;
 		ObjectCategory? category = null;
 		int? poolsExtra = null;
 		foreach ( var property in match.EnumerateObject() )
@@ -138,6 +140,12 @@ public sealed class EveningLampTable
 					if ( string.IsNullOrWhiteSpace( archive ) )
 						throw new InvalidDataException( Where( "an empty archive name." ) );
 					break;
+				case "mod":
+					// [EXT:evening-torches] the extension's own torches are matched by their content root's id, so an original or a mod's object of the same archive name never gets their light
+					mod = property.Value.GetString();
+					if ( string.IsNullOrWhiteSpace( mod ) )
+						throw new InvalidDataException( Where( "an empty mod id." ) );
+					break;
 				case "poolsExtra":
 					poolsExtra = property.Value.GetInt32();
 					if ( poolsExtra is < 1 or > 6 )
@@ -147,14 +155,14 @@ public sealed class EveningLampTable
 					throw new InvalidDataException( Where( $"unknown match key \"{property.Name}\"." ) );
 			}
 		}
-		if ( theme == null && category == null && archive == null && poolsExtra == null )
+		if ( theme == null && category == null && archive == null && poolsExtra == null && mod == null )
 			throw new InvalidDataException( Where( "an empty \"match\" would light every object." ) );
 		if ( !row.TryGetProperty( "lights", out var lights ) || lights.ValueKind != JsonValueKind.Array || lights.GetArrayLength() is 0 or > MaximumLightsPerRule )
 			throw new InvalidDataException( Where( $"\"lights\" holds 1 to {MaximumLightsPerRule} lights." ) );
 		var parsed = new List<EveningLampLight>();
 		foreach ( var light in lights.EnumerateArray() )
 			parsed.Add( ParseLight( light, Where ) );
-		return new EveningLampRule( theme, category, archive, poolsExtra, parsed );
+		return new EveningLampRule( theme, category, archive, poolsExtra, parsed, mod );
 	}
 
 	private static EveningLampLight ParseLight( JsonElement light, Func<string, string> where )

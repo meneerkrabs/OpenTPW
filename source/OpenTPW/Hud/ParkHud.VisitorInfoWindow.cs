@@ -12,7 +12,7 @@ namespace OpenTPW.Hud;
 // (handler 0x4b7720, frames 0x3722 and 0x3723; it first closes the window that is open, 0x485b40), plays the sound 0x81 and posts help 0x12e; the window's refresh 0x4b72a0 (vtable +0x14)
 // runs when it is built (0x4b7660) and on timer 0x80080 (4000 ms, armed on message 0x15), and closes the window when the selected thing [0x7c2658] is gone
 // [BIN:TPW-EXE:0x004879d0 visitor click] the park click in cursor mode 7 and the All Visitors list's row message 0x400 (0x49351e) both open it for the picked or the row's visitor
-// [APPROX:UI-910] the portrait frame (0x3722) shows nothing where the original plays a live figure of the visitor (0x4b6b90: 0x486530 with the frame's figure id + 2 at speed 8.0); the cycle arrows walk OpenTPW's visitors newest first, where the original walks the thing list's type-1 things (0x4824d0 mask 0x40) whose order is not proven the same
+// [APPROX:UI-910] the portrait frame (0x3722) stays empty where the original plays a live figure (0x4b6b90: 0x486530 with the frame's figure id + 2); its identity, scale and timing remain unverified. Arrows now share the locator's live type-1 used-chain projection in both directions (0x4824d0 / 0x482da0, mask 0x40), with an explicit host-only fallback for pool-free fixtures.
 public sealed partial class ParkHud
 {
 	private static LayoutTable VisitorInfoTable => OriginalLayoutTables.VisitorInfoWindow;
@@ -90,12 +90,12 @@ public sealed partial class ParkHud
 
 	/// <summary>The arrows: the next (older) or previous (newer) visitor, wrapping, and the window shows it.</summary>
 	// [BIN:TPW-EXE:0x004b7720 cycle buttons] 0x3721 (b_ardown, help 97) runs 0x48caf0 and 0x3720 (b_arup, help 98) 0x48cbe0 with the kind word -2 (mask 0x40: the thing list's type-1 things, 0x4824d0 and 0x482da0);
-	// a different visitor becomes the selected thing [0x7c2658] and the window refreshes (vtable +4)
+	// 0x483740 / 0x483770 wrap at the head / tail; the visitor pre-hook (vtable +0x3c, 0x5da3c0) is a no-op. Only a different visitor becomes the selected thing [0x7c2658] and refreshes (vtable +4).
 	public bool CycleVisitorInfo( bool forward )
 	{
 		if ( InfoVisitor is not { } guest )
 			return false;
-		var next = VisitorInfoRules.Cycle( (level.Guests?.Guests ?? Array.Empty<Guest>()).Where( item => item.State != GuestState.Gone ).Select( item => item.Id ), guest.Id, forward );
+		var next = VisitorInfoRules.Cycle( LocatorOrder.VisitorIds( level.Guests?.Guests ?? Array.Empty<Guest>(), level.Guests?.Things ), guest.Id, forward );
 		if ( next == null || next == guest.Id )
 			return false;
 		visitorInfoId = next.Value;
@@ -231,13 +231,14 @@ public static class VisitorInfoRules
 
 	/// <summary>
 	/// The visitor the arrows move to from <paramref name="currentId"/>: <paramref name="forward"/> the next older one, wrapping to the newest, else the next newer
-	/// one, wrapping to the oldest; <paramref name="ids"/> are in any order and sorted newest first (the thing list's order).
+	/// one, wrapping to the oldest; <paramref name="orderedIds"/> already follows the shared live visitor projection of the thing list.
+	/// An absent current uses the head / tail for host fixtures; the HUD separately rejects a missing or Gone selection.
 	/// </summary>
 	// [BIN:TPW-EXE:0x004824d0 next thing] mask 0x40 walks the thing list (a new thing goes to its head, 0x516270) from the visitor's next node to the first type-1 thing, and 0x483740 starts at the head when
 	// none follows; 0x482da0 walks the previous nodes and 0x483770 starts at the tail
-	public static int? Cycle( IEnumerable<int> ids, int currentId, bool forward )
+	public static int? Cycle( IEnumerable<int> orderedIds, int currentId, bool forward )
 	{
-		var list = ids.OrderByDescending( id => id ).ToArray();
+		var list = orderedIds.ToArray();
 		if ( list.Length == 0 )
 			return null;
 		var index = Array.IndexOf( list, currentId );

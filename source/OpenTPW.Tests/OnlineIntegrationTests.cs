@@ -6,6 +6,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 using OpenTPW.Online.Chat;
 using OpenTPW.Online.Client;
 using OpenTPW.Online.Packages;
+using OpenTPW.Server;
 
 namespace OpenTPW.Tests;
 
@@ -67,6 +68,9 @@ public class OnlineIntegrationTests
 
 			ann.SendChatLine( "/buddy Bob" );
 			await PumpUntilIdle( ann );
+			// the server's answer, not the sent line, shows it keeps Bob as Ann's buddy: each connection's lines are handled on their own, so Bob's join
+			// could otherwise come first
+			Assert.IsTrue( await Until( ann, () => ann.Buddies.Any( buddy => buddy.Name == "Bob" ) ), string.Join( " | ", ann.ChatLines ) );
 			bob.JoinRoom( ChatProtocol.SatelliteRoom( 2 ) );
 			await PumpUntilIdle( bob );
 			Assert.IsTrue( await Until( ann, () => ann.ChatLines.Any( line => line.Contains( "has entered" ) ) ),
@@ -136,7 +140,7 @@ public class OnlineIntegrationTests
 			var bobVisit = Visit( bob, park.Id, (20.5f, 10.5f) );
 			Assert.IsTrue( await Until( ann, annVisit, bob, bobVisit, () => annVisit.State.Others.Any( other => other.Name == "Bob" ) && bobVisit.State.Others.Any( other => other.Name == "Ann" ) ),
 				$"the visitors never saw each other: {ann.Status} / {bob.Status} / rooms {ann.CurrentRoom}, {bob.CurrentRoom}" );
-			Assert.AreEqual( ParkPresence.MovementProtocol, ann.ServerProtocol );
+			Assert.AreEqual( ServerProgram.ProtocolVersion, ann.ServerProtocol );
 			var annSeen = bobVisit.State.Others.Single( other => other.Name == "Ann" );
 			Assert.AreEqual( 10.5f, annSeen.X, 0.01f, "Bob sees Ann where she stands" );
 			// Ann walks; Bob's view of her follows
@@ -146,6 +150,15 @@ public class OnlineIntegrationTests
 			// a line said in the park reaches the other visitor
 			annVisit.Say( "hello park" );
 			Assert.IsTrue( await Until( ann, annVisit, bob, bobVisit, () => bob.ChatLines.Any( line => line.Contains( "hello park" ) ) ) );
+			// Ann rides a ride: her figure is gone from Bob's park until the ride ends, and is back at the ride's exit
+			var riding = true;
+			annVisit.Ride = () => riding ? new ParkPresence.PresenceRide( (25.5f, 12.5f) ) : null;
+			Assert.IsTrue( await Until( ann, annVisit, bob, bobVisit, () => bobVisit.State.Others.Count == 0 ), "Bob still sees the riding Ann" );
+			Assert.IsTrue( bob.RoomPlayers.Contains( "Ann" ), "she is still in the park" );
+			riding = false;
+			Assert.IsTrue( await Until( ann, annVisit, bob, bobVisit, () => bobVisit.State.Others.Any( other => other.Name == "Ann" ) ), "Ann never came back" );
+			var annBack = bobVisit.State.Others.Single( other => other.Name == "Ann" );
+			Assert.AreEqual( (25.5f, 12.5f), (MathF.Round( annBack.X, 2 ), MathF.Round( annBack.Y, 2 )), "at the ride's exit, at once" );
 			// Ann leaves: her visit closes the connection it opened, and she is gone from Bob's park
 			annVisit.Dispose();
 			Assert.IsNull( ann.Chat );
@@ -205,6 +218,177 @@ public class OnlineIntegrationTests
 	}
 
 	/// <summary>Pumps <paramref name="session"/> until <paramref name="condition"/> holds, or ten seconds pass.</summary>
+	[TestMethod]
+	public async Task AVisitsChatOverlayFollowsTheServersAnswers()
+	{
+		await using var server = await LoopbackServer.StartAsync( options => options.ChatBurst = 50 );
+		try
+		{
+			using var owner = await server.LoginAsync( "Owner" );
+			var park = await owner.UploadParkAsync( OnlineFormatTests.Package() );
+			var ann = new OnlineSession( Folders() );
+			var bob = new OnlineSession( Folders() );
+			ann.UseServer( server.Url.ToString(), "Ann" );
+			bob.UseServer( server.Url.ToString(), "Bob" );
+			ann.Register( "Ann", "correct horse" );
+			await PumpUntilIdle( ann );
+			bob.Register( "Bob", "correct horse" );
+			await PumpUntilIdle( bob );
+			var annVisit = Visit( ann, park.Id, (10.5f, 10.5f) );
+			var bobVisit = Visit( bob, park.Id, (20.5f, 10.5f) );
+			Assert.IsTrue( await Until( ann, annVisit, bob, bobVisit, () => annVisit.State.Others.Any( other => other.Name == "Bob" ) ) );
+			var chat = annVisit.Chat;
+			Assert.IsTrue( chat.ChatOpen );
+			CollectionAssert.AreEquivalent( new[] { "Ann", "Bob" }, ChatPanelModel.People( chat, buddies: false ).Select( person => person.Name ).ToArray() );
+			// the connection asked for the buddy list as it opened, keeping the answer (none) off the chat lines
+			Assert.IsFalse( ann.ChatLines.Contains( OnlineStrings.Get( OnlineLabel.NoBuddies ) ), string.Join( " | ", ann.ChatLines ) );
+			string BuddyLine( string name, bool online ) =>
+				ChatFormatter.Format( ChatEvent.ForNotice( online ? ChatNotice.YourBuddyOnline : ChatNotice.YourBuddyOffline, name ), OnlineStrings.ChatCommands, _ => "", OnlineStrings.Get );
+			// the earmuffs, the ignore list and the buddy list follow the server's answers
+			chat.SendCommand( ChatCommand.Earmuffs, "" );
+			Assert.IsTrue( await Until( ann, annVisit, bob, bobVisit, () => chat.Earmuffs ) );
+			chat.SendCommand( ChatCommand.Ignore, "Bob" );
+			Assert.IsTrue( await Until( ann, annVisit, bob, bobVisit, () => ChatPanelModel.Person( chat, "Bob" ).Flags == ChatPersonFlags.Ignored ) );
+			chat.SendCommand( ChatCommand.Ignore, "Bob" );
+			Assert.IsTrue( await Until( ann, annVisit, bob, bobVisit, () => chat.Ignored.Count == 0 ) );
+			chat.SendCommand( ChatCommand.Buddy, "Bob" );
+			Assert.IsTrue( await Until( ann, annVisit, bob, bobVisit, () => ChatPanelModel.Person( chat, "Bob" ).Flags == (ChatPersonFlags.Buddy | ChatPersonFlags.Online | ChatPersonFlags.InPark) ),
+				"a buddy in the park is green" );
+			// a new connection knows the buddy at once, without the buddy tab, and keeps the answer off the chat lines
+			annVisit.Dispose();
+			annVisit = Visit( ann, park.Id, (10.5f, 10.5f) );
+			chat = annVisit.Chat;
+			Assert.IsTrue( await Until( ann, annVisit, bob, bobVisit, () => ChatPanelModel.Person( chat, "Bob" ).Flags == (ChatPersonFlags.Buddy | ChatPersonFlags.Online | ChatPersonFlags.InPark) ),
+				"the buddy is green before the buddy tab was opened" );
+			Assert.IsFalse( ann.ChatLines.Contains( BuddyLine( "Bob", true ) ), string.Join( " | ", ann.ChatLines ) );
+			// the buddy tab asks afresh, quietly too; a typed /buddy lists them in the chat lines, also when the buddy tab opens right after it (no
+			// overlay ask within five seconds of the last one, which would keep the typed one's answer off the lines)
+			ann.BuddyAskIntervalMilliseconds = 0;
+			chat.AskBuddies();
+			Assert.IsTrue( await Until( ann, annVisit, bob, bobVisit, () => chat.Buddies.Any( buddy => buddy.Name == "Bob" && buddy.Online ) ) );
+			Assert.IsFalse( ann.ChatLines.Contains( BuddyLine( "Bob", true ) ) );
+			ann.BuddyAskIntervalMilliseconds = 5000;
+			chat.SendChatLine( "/buddy" );
+			chat.AskBuddies();
+			Assert.IsTrue( await Until( ann, annVisit, bob, bobVisit, () => ann.ChatLines.Contains( BuddyLine( "Bob", true ) ) ), string.Join( " | ", ann.ChatLines ) );
+			chat.SendCommand( ChatCommand.Buddy, "Bob" );
+			Assert.IsTrue( await Until( ann, annVisit, bob, bobVisit, () => chat.Buddies.Count == 0 ), "a removed buddy leaves the list" );
+			// the vote goes once per park
+			Assert.IsTrue( chat.CanVote );
+			chat.SendCommand( ChatCommand.Vote, "" );
+			Assert.IsTrue( await Until( ann, annVisit, bob, bobVisit, () => !chat.CanVote ) );
+			// a goto to a player in the park takes the figure to them
+			var bobSeen = annVisit.State.Others.Single( other => other.Name == "Bob" );
+			annVisit.GoTo( "Bob" );
+			Assert.AreEqual( (bobSeen.X, bobSeen.Y), (annVisit.State.Own.X, annVisit.State.Own.Y) );
+			// a new connection starts without the earmuffs and the ignore list, as the server's does
+			annVisit.Dispose();
+			Assert.IsFalse( ann.Earmuffs );
+			bobVisit.Dispose();
+			ann.Dispose();
+			bob.Dispose();
+		}
+		finally
+		{
+			server.DeleteData();
+		}
+	}
+
+	[TestMethod]
+	public async Task ADroppedBuddyAskKeepsTheBuddyList()
+	{
+		// the default burst of chat requests, which a run of lines uses up
+		await using var server = await LoopbackServer.StartAsync();
+		try
+		{
+			using var owner = await server.LoginAsync( "Owner" );
+			var park = await owner.UploadParkAsync( OnlineFormatTests.Package() );
+			var ann = new OnlineSession( Folders() );
+			var bob = new OnlineSession( Folders() );
+			ann.UseServer( server.Url.ToString(), "Ann" );
+			bob.UseServer( server.Url.ToString(), "Bob" );
+			ann.Register( "Ann", "correct horse" );
+			await PumpUntilIdle( ann );
+			bob.Register( "Bob", "correct horse" );
+			await PumpUntilIdle( bob );
+			var annVisit = Visit( ann, park.Id, (10.5f, 10.5f) );
+			var bobVisit = Visit( bob, park.Id, (20.5f, 10.5f) );
+			Assert.IsTrue( await Until( ann, annVisit, bob, bobVisit, () => annVisit.State.Others.Any( other => other.Name == "Bob" ) ) );
+			var chat = annVisit.Chat;
+			chat.SendCommand( ChatCommand.Buddy, "Bob" );
+			Assert.IsTrue( await Until( ann, annVisit, bob, bobVisit, () => ChatPanelModel.Person( chat, "Bob" ).Flags.HasFlag( ChatPersonFlags.Buddy ) ) );
+			// the lines use up the burst, so the server drops the ask after them: Bob stays a buddy, and his popup stays the buddy's
+			for ( var index = 0; index < 12; index++ )
+				chat.SendChatLine( $"line {index}" );
+			// the connection asked as it opened: let the ask out at once
+			ann.BuddyAskIntervalMilliseconds = 0;
+			chat.AskBuddies();
+			Assert.IsTrue( ChatPanelModel.Person( chat, "Bob" ).Flags.HasFlag( ChatPersonFlags.Buddy ), "the list stands while the ask is out" );
+			Assert.IsTrue( await Until( ann, annVisit, bob, bobVisit, () => ann.ChatLines.Contains( OnlineStrings.Get( OnlineLabel.RateLimited ) ) ), string.Join( " | ", ann.ChatLines ) );
+			for ( var round = 0; round < 10; round++ )
+			{
+				ann.Pump();
+				await Task.Delay( 20 );
+			}
+			Assert.IsTrue( ChatPanelModel.Person( chat, "Bob" ).Flags.HasFlag( ChatPersonFlags.Buddy ), "a dropped ask leaves the list as it was" );
+			annVisit.Dispose();
+			bobVisit.Dispose();
+			ann.Dispose();
+			bob.Dispose();
+		}
+		finally
+		{
+			server.DeleteData();
+		}
+	}
+
+	[TestMethod]
+	public async Task AVisitsVoteButtonKeepsTheServersRefusals()
+	{
+		// no votes left today: the day's limit refuses a vote for any park
+		await using var server = await LoopbackServer.StartAsync( options =>
+		{
+			options.ChatBurst = 50;
+			options.MaximumVotesPerDay = 0;
+		} );
+		try
+		{
+			using var owner = await server.LoginAsync( "Owner" );
+			var first = await owner.UploadParkAsync( OnlineFormatTests.Package() );
+			var second = await owner.UploadParkAsync( OnlineFormatTests.Package( "Second" ) );
+			var ann = new OnlineSession( Folders() );
+			var own = new OnlineSession( Folders() );
+			ann.UseServer( server.Url.ToString(), "Ann" );
+			own.UseServer( server.Url.ToString(), "Owner" );
+			ann.Register( "Ann", "correct horse" );
+			await PumpUntilIdle( ann );
+			own.Login( "Owner", "correct horse" );
+			await PumpUntilIdle( own );
+			var ownVisit = Visit( own, first.Id, (10.5f, 10.5f) );
+			var annVisit = Visit( ann, first.Id, (20.5f, 10.5f) );
+			Assert.IsTrue( await Until( ann, annVisit, own, ownVisit, () => ownVisit.Chat.CanVote && annVisit.Chat.CanVote ) );
+			// the owner's vote for their own park is refused, and the vote button stays off
+			ownVisit.Chat.SendCommand( ChatCommand.Vote, "" );
+			Assert.IsTrue( await Until( ann, annVisit, own, ownVisit, () => !ownVisit.Chat.CanVote ) );
+			Assert.IsTrue( own.ChatLines.Contains( OnlineStrings.ChatNotice( (int)ChatNotice.VoteFailed, null ) ), string.Join( " | ", own.ChatLines ) );
+			// Ann's vote meets the day's limit, which holds in every park
+			annVisit.Chat.SendCommand( ChatCommand.Vote, "" );
+			Assert.IsTrue( await Until( ann, annVisit, own, ownVisit, () => !annVisit.Chat.CanVote ) );
+			annVisit.Dispose();
+			annVisit = Visit( ann, second.Id, (20.5f, 10.5f) );
+			Assert.IsTrue( await Until( ann, annVisit, own, ownVisit, () => annVisit.CanChat ) );
+			Assert.IsFalse( annVisit.Chat.CanVote, "the day's limit holds in another park" );
+			annVisit.Dispose();
+			ownVisit.Dispose();
+			ann.Dispose();
+			own.Dispose();
+		}
+		finally
+		{
+			server.DeleteData();
+		}
+	}
+
 	private static async Task<bool> Until( OnlineSession session, Func<bool> condition )
 	{
 		var until = DateTime.UtcNow.AddSeconds( 10 );

@@ -107,7 +107,7 @@ What works today, with your own original game data:
   minutes into its own slot per theme (an OpenTPW extra that never touches your manual save, on by
   default under Options, OpenTPW): after a crash the theme menu offers "Continue autosave"
   ([periodic autosave](https://opentpw.io/docs/PARK-SAVES.html#periodic-autosave)).
-- **Advisor, music and movies:** the advisor speaks for the traced game events with lip sync, the
+- **Advisor, music and movies:** the advisor speaks with lip sync for 234 of the 246 messages the original game gives (money, rides, litter, guest mood, staff, research, golden tickets, window and tool help; the full list is in `content/data/advisor-producers.toml`), plus 45 restored lines, the
   park and the front-end lobby play their original music, rides, the crowd and the interface play
   their original sounds, and all nine movies play. Placed ambients, rain and thunder, ride screams,
   staff voices, build-tool feedback, coaster crashes and a software reverb are wired. Focused real-data tests verify decoded
@@ -128,7 +128,7 @@ What works today, with your own original game data:
 - **Optional textures:** fresh settings use **Original world textures**. You can build an optional
   world-texture pack from your own copy on the desktop and switch to it in the options without a restart
   ([texture packs](https://opentpw.io/docs/TEXTURE-PACKS.html)). OpenTPW distributes no texture pack.
-- **Extensions and mods:** OpenTPW's own additions (online play, swimming pools, restored advisor lines)
+- **Extensions and mods:** OpenTPW's own additions (online play, swimming pools, restored advisor lines, an evening and night cycle)
   are official extensions you can switch off, and data mods, sandboxed script mods and local texture
   packs change the game without code ([below](#extensions-and-mods)).
 - **Extras:** viewing and exporting the PlayStation 2 disc data (`--export-ps2`, [PS2](https://opentpw.io/docs/PS2.html)).
@@ -154,7 +154,7 @@ certifies other editions or original-runtime parity.
 |---|---|---|---|---|
 | Textures ([.WCT](https://opentpw.gu3.me/formats/wct.html)) | ✅ | Every texture of the selected game, with bounded inflation and the retail BILZ/LZSS quirks | Other editions are unverified | — |
 | Settings ([.SAM](https://opentpw.gu3.me/formats/sam.html)) | ✅ | The line grammar of every shipped `.sam` file, loose and in WADs: one-token or quoted values, `#`/`//` comments and `---` blocks; the generic reader agrees with the object reader on all of them | — | How the original uses many keys is approximate |
-| Sounds ([.SDT](https://opentpw.gu3.me/formats/sdt.html), .MP2) | ✅ | SDT containers, entry headers (type bits, bit depth, the playback length the game cuts each sound to) and sound catalogues; all audio: MPEG-1/2 Layer I and II in every observed mode (≤1 LSB against an independent decoder), CRC checks and de-emphasis | — (modes no shipped file uses (Layer III, MPEG-2.5, free format, MPEG-2 Layer II joint stereo, are refused) | The original's room reverb (OpenTPW has an approximation), the slap reactions and one list-click variant (`cat_ui` 0xBD) ([sound](https://opentpw.io/docs/AUDIO.html), [audio evidence](https://opentpw.io/docs/LIPS.html)) |
+| Sounds ([.SDT](https://opentpw.gu3.me/formats/sdt.html), .MP2) | ✅ | SDT containers, entry headers (type bits, bit depth, the playback length the game cuts each sound to) and sound catalogues; all audio: MPEG-1/2 Layer I and II in every observed mode (≤1 LSB against an independent decoder), CRC checks and de-emphasis | — (modes no shipped file uses (Layer III, MPEG-2.5, free format, MPEG-2 Layer II joint stereo, are refused) | The original's room reverb (OpenTPW has an approximation) a list-row click (OpenTPW plays `cat_ui` 0x1F on a row activation that the original may play silently, AUDIO-041) ([sound](https://opentpw.io/docs/AUDIO.html), [audio evidence](https://opentpw.io/docs/LIPS.html)) |
 | Strings ([.BFMU](https://opentpw.gu3.me/formats/bfmu.html), [.BFST](https://opentpw.gu3.me/formats/bfst.html), [.BFUM](https://opentpw.gu3.me/formats/bfum.html)) | ✅ | 21 string tables per language; single-byte and two-byte (Polish, Korean, Hebrew) character tables, round-trip tested and read in twelve languages and the fan Russian | Other codepages/editions are unverified ([languages](https://opentpw.io/docs/LANGUAGES.html)) | — |
 | Fonts ([.BF4](https://opentpw.gu3.me/formats/bf4.html)) | ✅ | All 33 fonts in six languages, and the Polish, Spanish, Korean (17,270-glyph), US English, Italian, Hebrew and fan Russian fonts (four-bit, RLE, monochrome) | — | Original text layout/appearance is unverified ([fonts](https://opentpw.io/docs/BF4-FONTS.html), [UI](https://opentpw.io/docs/UI.html)) |
 | Lip Sync ([.LIP](https://opentpw.gu3.me/formats/lips.html)) | ✅ | Mark lists, signed conversion, talking toggles; checked against all 639 English global clips (638 end inside their audio) | — | Advisor animation/pose and a pausing clock ([lip sync](https://opentpw.io/docs/LIPS.html), [binary trace](https://opentpw.io/docs/reverse/APPROX-TRACE.html)) |
@@ -188,10 +188,12 @@ OpenTPW has two kinds of add-ons, both switched on and off on **Options > OpenTP
   | `opentpw.online` | on | Online play ([online](https://opentpw.io/docs/ONLINE.html)); it makes no network request until you act. |
   | `opentpw.pools` | **on** | Swimming pools: paint pool water, build changing rooms, extras (ladders, diving boards, showers, loungers, lamps, underwater lights), water slide towers and water attractions (rope swing, water jets, wave machine, small and large spa), a lazy river, and guests who swim in their own swimwear animations. Not in a Theme Park Inc run ([pools](https://opentpw.io/docs/POOLS.html)). |
   | `opentpw.pools-guest-art` | on | With pools on, land guests are drawn with OpenTPW's own 2x kid and head sprites; switch it off for the original guests. Presentation only. |
+  | `opentpw.umbrellas` | **on** | A brolly shop in every theme and guests who buy an open umbrella in the rain, from a trace of Theme Park Inc's rules ([umbrellas](https://opentpw.io/docs/UMBRELLAS.html)). Simulation only for now: the umbrellas are not drawn yet. |
   | `opentpw.restored-advice` | on | Advisor lines that exist in the game's data but that the original program never plays. |
+  | `opentpw.evening` | **on** | A day and night cycle on play time (10, 20 or 40 minutes, or always day, dusk or night, set on the OpenTPW options page): the sky, ground and water darken and lamps, pool lights and a few ride lights switch on at dusk ([evening](https://opentpw.io/docs/EVENING.html)). Presentation only. |
   | `opentpw.guest-insights` | off | Counts why guests refuse rides and shops in the park information window. |
   | `opentpw.cross-edition-objects` | off | The engine support for a mod that brings Theme Park Inc attractions into Theme Park World (the shipped mod `opentpw.tpi-rides` is off too). |
-  | `opentpw.smarter-guests` | not selectable yet | Guests that decide better; it becomes selectable once its rules show a measurable effect. |
+  | `opentpw.smarter-guests` | off | Guests that decide better: dear shops, spread-out queues, patience, needs, cleaner and quieter paths, litter carried to a bin (RollerCoaster Tycoon-inspired ideas, no code). Changes the simulation, so a park saved with it needs it. |
 
 - **Community mods** are folders with an `opentpw-mod.json` manifest, off until you switch them on. A mod can replace
   game files (overrides), replace string tables (strings), add objects and carry scripts.

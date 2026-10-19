@@ -79,7 +79,8 @@ public sealed class UiChatParkView : UiElement, IUiDragTarget
 			// Nobody has moved yet: the room's title and how to walk.
 			context.DrawText( context.Fonts.Menu, OnlineStrings.Ui( OnlineStrings.PlayersAtThePark, "Players at the park" ),
 				new UiRect( rect.X, rect.Y + rect.Height * 0.4f, rect.Width, rect.Height * 0.1f ), UiColors.Text, UiAlign.Center );
-			context.DrawText( context.Fonts.Small, OnlineStrings.Get( OnlineLabel.WalkHint ),
+			// [BIN:TPW-EXE:0x4BD933 chat mode hover] the original's chat park says UIHELPTEXT 401, "Left-click to walk to this point"
+			context.DrawText( context.Fonts.Small, context.Strings.Help( 401 ),
 				new UiRect( rect.X, rect.Y + rect.Height * 0.52f, rect.Width, rect.Height * 0.1f ), UiColors.Text, UiAlign.Center );
 		}
 		var size = MathF.Max( 10f, rect.Width / 70f );

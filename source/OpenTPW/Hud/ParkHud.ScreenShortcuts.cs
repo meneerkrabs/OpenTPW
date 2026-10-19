@@ -212,13 +212,13 @@ public sealed partial class ParkHud
 				ToggleWindow( VisitorWindowOpen, OpenVisitorWindow, CloseVisitorWindow );
 				break;
 			case HudScreenShortcut.TimeFaster:
-				Status.Speed = SteppedSpeed( Status.Speed, 1 );
+				SetUserGameSpeed( SteppedSpeed( Status.Speed, 1 ) );
 				break;
 			case HudScreenShortcut.TimeSlower:
-				Status.Speed = SteppedSpeed( Status.Speed, -1 );
+				SetUserGameSpeed( SteppedSpeed( Status.Speed, -1 ) );
 				break;
 			case HudScreenShortcut.TimeNormal:
-				Status.Speed = GameSpeed.Normal;
+				SetUserGameSpeed( GameSpeed.Normal );
 				break;
 			case HudScreenShortcut.TurnBlueprintLeft:
 			case HudScreenShortcut.TurnBlueprintRight:

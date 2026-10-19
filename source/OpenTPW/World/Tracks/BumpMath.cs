@@ -19,7 +19,7 @@ public static class BumpMath
 	{
 		var table = new int[Turn];
 		for ( var index = 0; index < Turn; index++ )
-			table[index] = (int)(Math.Sin( index * 2 * 0.00613591796875 ) * 256.0);
+			table[index] = (int)(DetMath.Sin( index * 2 * 0.00613591796875 ) * 256.0);
 		return table;
 	}
 
@@ -30,13 +30,16 @@ public static class BumpMath
 	public static int Div1024( int value ) => (value + ((value >> 31) & 0x3FF)) >> 10;
 
 	/// <summary>The heading of the vector (<paramref name="dx"/>, <paramref name="dy"/>): 256 − atan2(dx, −dy) in 512ths of a turn, truncated.</summary>
-	public static int HeadingOf( int dx, int dy ) => (int)(256.0 - Math.Atan2( dx, -dy ) * InversePi * 256.0 );
+	// [EXT:deterministic-math] the x87's fpatan in IEEE double by DetMath, the same bits on every runtime, not in x87 extended precision (docs/DETERMINISM.md, "Browser and native")
+	public static int HeadingOf( int dx, int dy ) => (int)(256.0 - DetMath.Atan2( dx, -dy ) * InversePi * 256.0 );
 
 	/// <summary>The steering angle atan2(dx, −dy) in 512ths of a turn less 256, truncated: the negative of <see cref="HeadingOf"/>, as the steering code uses it.</summary>
-	public static int SteerAngle( int dx, int dy ) => (int)(Math.Atan2( dx, -dy ) * InversePi * 256.0 + -256.0);
+	// [EXT:deterministic-math] the x87's fpatan in IEEE double by DetMath, the same bits on every runtime, not in x87 extended precision (docs/DETERMINISM.md, "Browser and native")
+	public static int SteerAngle( int dx, int dy ) => (int)(DetMath.Atan2( dx, -dy ) * InversePi * 256.0 + -256.0);
 
 	/// <summary>−256 − atan2(dx, −dy) term of the radial angle in the wall reflection: <c>(−256) − ψ · (−256)</c>, truncated.</summary>
-	public static int ReflectAngle( int dx, int dy ) => (int)(-256.0 - Math.Atan2( dx, -dy ) * InversePi * -256.0 );
+	// [EXT:deterministic-math] the x87's fpatan in IEEE double by DetMath, the same bits on every runtime, not in x87 extended precision (docs/DETERMINISM.md, "Browser and native")
+	public static int ReflectAngle( int dx, int dy ) => (int)(-256.0 - DetMath.Atan2( dx, -dy ) * InversePi * -256.0 );
 
 	/// <summary>
 	/// The original's distance: halve both components until |dx| ≤ 0x8000 and |dy| ≤ 0x7FFF, take the integer square root of the sum of squares

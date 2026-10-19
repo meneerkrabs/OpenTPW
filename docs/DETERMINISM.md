@@ -190,9 +190,142 @@ checks that different files, other clock expressions, appended expressions and
 a weakened edition gate remain forbidden.
 
 `SourceGuardCatchesEachForbiddenForm` checks each form against sample lines,
-and each was also checked by inserting it into a scanned source file. Not
-forbidden: `Guid.NewGuid` (temp file names) and `Parallel` (unused). Client
-code (`GameFlow`, the M3 gate) is not scanned.
+and each was also checked by inserting it into a scanned source file. `Guid.NewGuid`
+and `Parallel` are banned by the second scan below. Client code (`GameFlow`, the M3
+gate) is not scanned.
+
+## Browser and native
+
+A co-op session (docs/ONLINE.md; the user chose lockstep with the host ordering commands, and browsers that join and host) needs the
+browser build and every desktop to compute the same simulation bits. This section is the gate (co-op phase C1b).
+
+### What can differ
+
+The CLR's `Math.Sin`, `Math.Atan2`, `Math.Pow` and their relatives, `MathF`'s, and the System.Numerics builders that use them (rotation
+matrices, quaternion slerp) call the C library of the runtime: MSVC's on Windows, glibc on Linux, Apple's libm on macOS, and
+emscripten's musl in the browser (Mono, AOT or interpreter). They are not correctly rounded, and they disagree in the last bit. Over
+the 20,000 fixed inputs per function of `CrossRuntimeMathProbe`, Apple's libm (macOS arm64) and the browser's musl (Chrome, Mono AOT)
+differ in:
+
+| Function | Inputs that differ |
+| --- | ---: |
+| `Math.Sin` / `Math.Cos` | 895 / 894 |
+| `Math.Atan` / `Math.Atan2` / `Math.Acos` | 715 / 3,483 / 3,439 |
+| `Math.Pow` / `Math.Log2` | 1,994 / 39 against FreeBSD's routines (musl uses Arm's table routines, which glibc shares) |
+| `MathF.Sin` / `MathF.Cos` / `MathF.Atan2` / `MathF.Acos` | 418 / 230 / 1,150 / 228 against the double result rounded once |
+
+Square root, fused multiply-add, the four arithmetic operations, rounding and conversions are exact in IEEE 754 and gave the same
+digests in both (pinned in `DetMathTests.CorrectlyRoundedPlatformFunctionsArePinned`).
+
+System.Numerics' `Vector2`/`Vector3`/`Vector4.Lerp`, `Transform` and `TransformNormal` and the `Matrix4x4` product are another possible
+source: .NET evaluates them with `MultiplyAddEstimate`, which fuses the multiply and the add where the processor has fused multiply-add.
+On macOS arm64 (.NET 11 RC2) `Vector3.Transform` equals `fma(z, m31, fma(y, m21, x * m11)) + m41` for every one of 200,000 random inputs
+and differs from the unfused sum for a quarter of them; a runtime that does not fuse rounds twice. `Dot`, `Cross`, `Length`, `Normalize`
+and `Distance` are not fused. Whether the browser fuses was not measured. The guard below does not ban these operations, and a source
+scan cannot find the matrix product. `CoasterPylonRig` composes its tag matrices with plain multiplies and adds for this reason
+("Coaster register round 2" below), but the coaster station frame (`CoasterStationLayout.FromModel`) still multiplies a dummy's
+rest-pose matrix by the placement with `Matrix4x4`'s operator. The with-data runs below, whose M4 scenario builds those stations, gave
+the same state hashes in the browser and on macOS arm64.
+
+### DetMath
+
+`DetMath` and `DetMathF` (`source/OpenTPW/Utils/DetMath.cs`) are C# ports of FreeBSD's msun as musl ships them: sin, cos
+(with the Cody-Waite and Payne-Hanek reductions), atan, atan2, acos, pow and log2, with a fixed order of IEEE double operations, so
+every runtime computes the same bits. The single-precision versions evaluate in double and round once. Over the probe, sin, cos,
+atan, atan2 and acos equal the browser's musl bit for bit, and every function is within one unit in the last place of Apple's libm
+(`DetMathIsWithinOneUlpOfThePlatformLibrary`). `DetMathTests.DetMathDigestsArePinned` pins their results; CI checks the pins on
+Windows, Linux and macOS, and the browser check checks them in WebAssembly.
+
+Simulation code calls DetMath for every elementary function. `[EXT:deterministic-math]` (user decision, 2026-10-19: "Als EXT:
+deterministic-math"): tp.exe evaluates them on the x87 in extended precision (`fsin`, `fpatan`, `fyl2x`) or through its C runtime
+(`pow`, `acos`). OpenTPW evaluated them before through the platform's double `Math`, and now through DetMath. That is the same
+double precision, now identical everywhere, and the change moved no pin. The x87 control-word questions of `COAST-032` and
+`ECON-059` are unchanged. The call sites:
+
+| Site | Function | Original |
+| --- | --- | --- |
+| `LoanMath.MonthlyRepayment` | pow | the instalment `0xcb7a8` |
+| `CoasterRating` swing | atan2 | fpatan `0x43c918` |
+| `HermiteCoasterCurve.Orientation`, `SecondRailAngle` | atan2 | `0x41e24` |
+| `CoasterTrack.TurnAngle`, `TurnAngleXZ`, loop knot axis, `TagRoll`, `PcOrientation`, `ApplyManualPose` | acos, sin, cos, atan2 | `0x36a50`, `0x31984`, `0x4324a0`, `0x43e590` |
+| `CoasterCollision` angle sum | acos | the crossing test |
+| `TourController` approach and steering | atan2 | the tour cars |
+| `BumpMath.HeadingOf`, `SteerAngle`, `ReflectAngle` | atan2 | the bump module |
+| `WalkerBodies.HeadingOf` | atan2 | fpatan `0x5570C2` |
+| `HeadingAngle.Facing` | sin, cos | the turn `0x4FEF25` |
+| `GuestSimulation` queue facing change | sin, cos | `0x4FFFF0` |
+| `SideshowWin.HappinessGain` | log2 | fyl2x `0x4FE835` |
+
+The start-up tables are built with DetMath too and equal the platform libraries' tables entry for entry
+(`DetMathTests.LookupTablesBuiltWithDetMathEqualThePlatformLibrarysTables`; pinned in `LookupTablesArePinned`). They keep their
+binary-evidence labels: the coaster and PC sine tables (`0xa3cc8`, `0x4708D0`), `OriginalSineTable`, the tour table, the bump
+table `0x5442E0`, the slide's quarter sine, the bounce riders' table and the heading arctangent table `0x6E71B4`, whose 257 words
+equal the executable's. Every loan offer's instalment is the same with DetMath as with the platform's `pow`
+(`LoanInstalmentsWithDetMathEqualThePlatformLibrarys`). `RideMotion` (the unused prototype ride) uses DetMath as well.
+
+Presentation keeps the platform functions: renderers, meshes, cameras, the sky and lobby, particles, the evening, the drawn boat and
+kart poses (`TrackSurface`), the drawn pool waves and feet heights, the coaster car bend and rig, and the coaster tool's camera yaw
+input. A difference there changes a pixel, not the park.
+
+### The guard
+
+`DeterminismTests.SimulationCodeUsesNoPlatformMathGuidsOrParallelism` scans every file below `VM`, `Scripting`, `Economy` and
+`World` (all folders). It forbids `Math.`, `MathF.`, `double.` and `float.` elementary functions (sin to atan2pi, exp, log, pow, cbrt,
+hypot, rootn), `Matrix4x4`/`Matrix3x2.CreateRotation*`, `CreateFromYawPitchRoll`, `CreateFromAxisAngle`, `Quaternion.Slerp`,
+`Guid.NewGuid`, `Parallel.` and `.AsParallel(`. Exempt are:
+
+- the presentation files and folders it lists (`PresentationMathFiles`);
+- a line marked `[DET:presentation]` with its reason;
+- the atomic writes' temporary file names (`Guid.NewGuid().ToString( "N" ) + ".tmp"`).
+
+`PlatformMathGuardCatchesEachForbiddenForm` checks the forms and the exemptions.
+
+### The browser check
+
+`tools/web-determinism/run.mjs` runs the asset-free tests that pin simulation results inside the browser build. They cover the
+economy, guests, pools, umbrellas, winter, the weather, rain mood, smarter guests, script mods, cheats, coasters, tours, bump rides,
+track rides, staff, loans and DetMath. The page is published with `-p:OpenTpwDeterminismPins=true`, which compiles the tests into the
+page's own assembly with the page's settings (the published page never sets it). The check runs the tests one by one in headless,
+muted Chrome, where each test asserts the constant the desktop test asserts.
+
+- Skipped: two tests that read the repository's own sources or shaders.
+- Informative only: the comparisons with the runtime's own C library (`TestCategory("PlatformLibrary")`).
+- Gate: the `Browser determinism` workflow runs the check on every pull request and on main, for Mono AOT (as published) and the
+  interpreter.
+
+The with-data twin is `CrossRuntimeDigest`: per theme it gives the browser digest's fixed park run (economy and guests), the same run
+with one employee of every role, two park years of the level's weather, and the M4 gate's scenario as its list of state hashes. The
+M4 scenario covers every supported ride, shop, sideshow and feature with its object scripts and guests, and the track rides'
+stations. Run it on the desktop with `--determinism-digest [--out native.json]` and in the browser with tools/web-perf's
+`determinism` scenario, then compare with `tools/web-determinism/compare-digest.mjs`.
+
+### Results (October 19, 2026; macOS arm64, Chrome 155 headless, .NET 11 RC2)
+
+| Run | Before DetMath | After DetMath |
+| --- | --- | --- |
+| Asset-free pins in the browser, Mono AOT (29 s of tests) | 631 passed, 0 failed (7 inconclusive for want of data, 2 skipped) | 632 passed, 0 failed (the new source scan is inconclusive without sources) |
+| Asset-free pins in the browser, interpreter | 631 passed, 0 failed | 632 passed, 0 failed |
+| With data, four themes, browser AOT against desktop: fixed run, with staff, weather, M4 (692, 692, 677, 659 state hashes) | identical | identical |
+| The same with data, browser interpreter against desktop | not run | identical |
+| Desktop pins (2,050 tests of the simulation classes) | pass | pass, no pin moved |
+
+The desktop digests are the same before and after: jungle `ECB0C5BC6BFC46B9`, hallow `4B56CE11D7E43D7A`, space `69BBE374CB405BD0`,
+fantasy `9DC0B98B9C6BB2E9` (fixed run); M4 `9689EA415EBCD10C`, `7E6304824ABCA32A`, `B272F3F44E867B4E`, `B50BBEAFFD13640E`. So the
+browser already computed the desktop's bits for everything these runs cover, although the libraries disagree in the last bit for
+thousands of inputs. DetMath removes that dependency, so a later change cannot start to depend on it.
+
+Still outside these runs, and so not proven identical:
+
+- the state that is not hashed (above: placed-object animator poses, the guest economy bridge map);
+- the work `Level.Update` does by wall time outside the fixed tick (`SceneClock`, `RefreshPools`, `UpdateEvening`, `UpdateSnow`);
+- the per-frame staff calls of `Level.Update` outside the tick: `StaffWorld.Synchronize` (the tick repeats it before it moves anyone) and
+  `StaffPlacement.Reconcile`, which returns a picked-up member that no local tool carries to idle;
+- `FlatRideBounceRiders.Prepare` (`Level.AdvanceSimulation`, via `PrepareRideBodyPoses`), which runs once per frame after that frame's ticks and
+  changes the guests' ride-body state, so its result depends on how ticks are batched into frames;
+- the `Update()` of every entity (`Entity.All`), which runs after the simulation each frame;
+- a NaN that reaches hashed state, whose sign and payload differ between x86, ARM and WebAssembly.
+
+The co-op hash check covers the unhashed state only once it reaches hashed state.
 
 ## Park save
 

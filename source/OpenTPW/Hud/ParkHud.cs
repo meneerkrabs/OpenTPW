@@ -603,7 +603,7 @@ public sealed partial class ParkHud
 	{
 		if ( Paused )
 			return;
-		// [BIN:TPW-EXE:0x48c830 pause menu] the in-park pause menu has no window and no title: its lines are, in order, Load, Save, Restart Park, Publish Park, Options, Resume Game, Exit To Lobby and Quit Game (UITEXT 3, 4, 10, 5, 6, 7, 12, 8)
+		// [BIN:TPW-EXE:0x48c830 pause menu] the ordinary in-park pause menu has no window and no title: its lines are, in order, Load, Save, Restart Park, Publish Park, Options, Resume Game, Exit To Lobby and Quit Game (UITEXT 3, 4, 10, 5, 6, 7, 12, 8)
 		// [DATA:video 27:42-27:47] large cyan text lines, white while focused, over the dimmed park: Laden, Opslaan, Park Herstarten, Park Publiceren, Opties, Spel Hervatten, Terug naar de Lobby, Spel Stoppen
 		// [EXT:pause-menu-go-online] the Go Online line (UITEXT 1) after Options is OpenTPW's: the original reaches the online world from the lobby's pause menu only
 		UiScreen? menu = null;
@@ -621,10 +621,14 @@ public sealed partial class ParkHud
 			(UIStrings.QuitGame, () => Stack.Push( UiDialogs.Message( "confirmQuit", () => strings[UIStrings.ConfirmQuit],
 				(() => strings.Value( UIStrings.Yes ), host.Quit), (() => strings.Value( UIStrings.No ), Stack.Pop) ) )),
 		};
-		// [BIN:STP-PPC:0x10197D90 online pause menu] the online game type's pause menu offers only Resume Game, Exit To Lobby
-		// and Quit Game; a read-only visit of a shared park uses it (no Save, Load, Options or Go Online).
+		// [BIN:TPW-EXE:0x48c150 pause menu selection] game type 1 (0x48c1e3) selects the three online entries before the
+		// world-state-4 test (0x48c27a). Otherwise a lost park gets Load, Restart, Resume, Exit To Lobby and Quit, in that order.
+		// The loss Load row uses UITEXT 3 and command 22, not text 22. Its 0x49efb0 argument is unused; the extra 0x5da3c0
+		// calls on loss Restart/Exit/Quit return immediately, so the existing callbacks and confirmations are shared (0x48b6a0).
 		if ( level.IsReadOnlyVisit )
 			entries.RemoveAll( entry => entry.Label is not (UIStrings.ResumeGame or UIStrings.ExitToLobby or UIStrings.QuitGame) );
+		else if ( level.Park?.Economy.IsBankrupt == true )
+			entries.RemoveAll( entry => entry.Label is not (UIStrings.Load or UIStrings.RestartPark or UIStrings.ResumeGame or UIStrings.ExitToLobby or UIStrings.QuitGame) );
 		if ( host.GoOnline == null )
 			entries.RemoveAll( entry => entry.Label == UIStrings.GoOnline );
 		var items = entries.Select( entry => (Id: entry.Label.ToString(), Text: (Func<string>)(() => strings[entry.Label]), entry.Clicked,
@@ -771,8 +775,9 @@ public sealed partial class ParkHud
 			textCaptured ??= io.WantTextInput;
 		}
 		// the ride view's own screen is not an overlay of the park: its exit keys stay live
+		var parkShortcuts = ParkShortcutsAllowed( paused, Stack.Screens.Count > (rideScreen != null ? 2 : 1), Input.TextEntryActive, keyboardCaptured.Value || textCaptured.Value );
 		// [BIN:TPW-EXE:0x4862A0 chat mode] the HUD's key groups go with the HUD: the chat mode has none of its windows or tools
-		var shortcutsAllowed = ParkShortcutsAllowed( paused, Stack.Screens.Count > (rideScreen != null ? 2 : 1), Input.TextEntryActive, keyboardCaptured.Value || textCaptured.Value ) && !ChatMode;
+		var shortcutsAllowed = parkShortcuts && !ChatMode;
 
 		var camcorderOwnsInput = UpdateCamcorder( input, new NVector2( context.Canvas.Width, context.Canvas.Height ),
 			!shortcutsAllowed || overUi || consumed || mouseCaptured.Value || input.Text.Length > 0 || ridingAtStart ) || walkingAtStart;
@@ -784,9 +789,10 @@ public sealed partial class ParkHud
 			BeginAreaClear();
 		if ( shortcutsAllowed && !IsRiding && Input.Pressed( InputButton.RideView ) && selectedObject is { IsDeleted: false } rideObject )
 			level.EnterRideView( rideObject );
-		// only a ride view that was already open at the start of the frame can be left by a key: the E that boarded it must not also leave it
+		// only a ride view that was already open at the start of the frame can be left by a key: the E that boarded it must not also leave it; a ride boarded
+		// from the chat mode, which stays under the ride view's screen, is left by the same keys and the right click (0x488A00)
 		if ( ridingAtStart )
-			UpdateRideExits( input, shortcutsAllowed, mouseCaptured.Value );
+			UpdateRideExits( input, parkShortcuts, mouseCaptured.Value );
 
 		// The park door's keyboard shortcuts, named by the door button's help rows (UIHELPTEXT 193/194: Ctrl-O/Ctrl-C).
 		// [DATA:UIHELPTEXT 193 "Left-click to open the park (Ctrl-O)", 194 "Left-click to close the park (Ctrl-C)"]
@@ -882,9 +888,11 @@ public sealed partial class ParkHud
 				if ( !ChatMode )
 					SelectObject( level.WindowTarget( clicked ) );
 				// [EXT:online-avatar-click] in a visit with other players a click on the ground walks the player's figure there (manual p. 68: "Left click to walk to destination"): in the
-				// chat mode wherever it lands, as the original's chat mode panel walks on a ground click (0x4BD4A0, help 401; a rideable ride's click is not reproduced), and in the HUD
-				// where it hits no object
-				if ( (clicked == null || ChatMode) && level.IsReadOnlyVisit && !input.NotClick && host?.Presence?.Invoke() is { Walks: true } presence
+				// chat mode wherever it lands but on a rideable ride, which it rides (ChatModeRide), as the original's chat mode panel does (0x4BD4A0, help 401), and in the HUD where it
+				// hits no object
+				if ( ChatMode && !input.NotClick && ChatModeRide( clicked ) is { } ride )
+					StartRide( ride );
+				else if ( (clicked == null || ChatMode) && level.IsReadOnlyVisit && !input.NotClick && host?.Presence?.Invoke() is { Walks: true } presence
 					&& level.TryGetGroundCell( input.Mouse, new NVector2( context.Canvas.Width, context.Canvas.Height ), out var groundX, out var groundY ) )
 					presence.Click( groundX, groundY );
 			}
@@ -996,7 +1004,10 @@ public sealed partial class ParkHud
 		// [BIN:TPW-EXE:0x4BD933 chat mode hover] the chat mode panel shows help 0x191 (401, "Left-click to walk to this point") over the park
 		if ( inPark && level.IsReadOnlyVisit )
 		{
-			if ( host?.Presence?.Invoke() is { Walks: true } && !Input.TextEntryActive && (ChatMode || level.Objects.FindAt( cursorX, cursorY ) == null) )
+			// [BIN:TPW-EXE:0x4BD7F4 chat mode ride help] over a rideable ride the chat mode panel shows help 0x244 (580, "<ride>: Left-click to ride") with the ride's name
+			if ( ChatMode && !Input.TextEntryActive && ChatModeRide( level.Objects.FindAt( cursorX, cursorY ) ) is { } ride )
+				context.HoverHelp = strings.HelpFormat( 580, EntryName( ride.Entry ) );
+			else if ( host?.Presence?.Invoke() is { Walks: true } && !Input.TextEntryActive && (ChatMode || level.Objects.FindAt( cursorX, cursorY ) == null) )
 				context.HoverHelp = strings.Help( 401 );
 		}
 		else if ( inPark && tool.HoverHelpId( level.Paths, cursorX, cursorY ) is int help )

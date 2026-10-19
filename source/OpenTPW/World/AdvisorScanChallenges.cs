@@ -414,7 +414,6 @@ internal sealed partial class EconomyParkState : IAdvisorChallengeState
 	}
 
 	// [BIN:TPW-EXE:0x004C94C0 visitors ever] the lifetime visitor counter (+0x21C08), raised per admission (0x004C7530)
-	public int VisitorsEver => unchecked( (int)economy.Counters[ParkCounters.Admissions] );
 
 	// [BIN:TPW-EXE:0x004D4BC0 ticket thresholds] the words 0x785790, 0x785794, 0x785798 and 0x78579C the local ticket check compares with are GoldenTicketLocal.Visitors, PeopleInPark, Happiness and AtLeastThisManyHappyPeople
 	public int VisitorsTarget => economy.Settings.GoldenTickets.Visitors;

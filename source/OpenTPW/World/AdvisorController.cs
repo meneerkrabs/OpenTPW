@@ -184,7 +184,16 @@ internal static class AdvisorTables
 		(88, "FeaturesDirtyToilets3.PointsPerFilthPct", null), (89, "FeaturesDirtyToilets4.PointsPerFilthPct", null),
 		(145, "CongratVisitorsHappy.Score", null), (158, "CongratBalloons.Score", null), (159, "CongratCostumes.Score", null),
 		(259, "RidesClosed.Score", null), (260, "ShopsClosed.Score", null), (261, "SideshowsClosed.Score", null), (262, "ToiletsClosed.Score", null),
-	}.Concat( AdvisorChallengeMessages.ScanScoreKeys ).ToArray();
+		// [BIN:TPW-EXE:0x0059CEA0 queues, prices and research callbacks] the researchers, research-more, upgrade, ticket price and shop value rows (AdvisorQueuesCallbacks); a computed score names the key of its multiplier
+		(15, "StaffHireResearchers1.PointsPerExtraPct", null), (16, "StaffHireResearchers2.Score", null), (17, "StaffHireResearchers3.Score", null),
+		(61, "RidesResearchMore.Score", null), (63, "RidesNoUpgrades.Score", null), (64, "RidesMoreUpgrades.Score", null),
+		(72, "ShopsResearchMore.Score", null), (76, "SideshowsResearchMore.Score", null), (80, "FeaturesResearchMore.Score", null),
+		(91, "PricingTicketTooExpensive.Score", null), (92, "PricingTicketTooCheap.Score", null),
+		(238, "FoodPoorValue.ScorePerPoint", null), (239, "ShopsPoorValue.ScorePerPoint", null), (240, "RestaurantPoorValue.ScorePerPoint", null), (241, "DrinksPoorValue.ScorePerPoint", null), (242, "SideshowsPoorValue.ScorePerPoint", null),
+		(243, "FoodPoorSatisfaction.ScorePerPoint", null), (244, "ShopsPoorSatisfaction.ScorePerPoint", null), (245, "RestaurantPoorSatisfaction.ScorePerPoint", null), (246, "DrinksPoorSatisfaction.ScorePerPoint", null), (247, "SideshowsPoorSatisfaction.ScorePerPoint", null),
+		(248, "FoodGreatValue.ScorePerPoint", null), (249, "ShopsGreatValue.ScorePerPoint", null), (250, "RestaurantGreatValue.ScorePerPoint", null), (251, "DrinksGreatValue.ScorePerPoint", null), (252, "SideshowsGreatValue.ScorePerPoint", null),
+		(253, "FoodGreatSatisfaction.ScorePerPoint", null), (254, "ShopsGreatSatisfaction.ScorePerPoint", null), (255, "RestaurantGreatSatisfaction.ScorePerPoint", null), (256, "DrinksGreatSatisfaction.ScorePerPoint", null), (257, "SideshowsGreatSatisfaction.ScorePerPoint", null),
+	}.Concat( AdvisorStaffCallbacks.ScoreKeys ).Concat( AdvisorChallengeMessages.ScanScoreKeys ).ToArray();
 
 	private static IReadOnlyList<AdvisorMessageDefinition>? events;
 

@@ -61,6 +61,19 @@ internal sealed class AdvisorArrivalRing
 			Push( size );
 	}
 
+	/// <summary>
+	/// A stand-in for a ring that was never recorded, not a port of the original's filled flag (<c>+0x216F8</c>): an OpenTPW save from before the ring was saved has no sizes, and a park with admissions has had arrival groups,
+	/// so the ring is taken as full with zero-size stand-ins. Neither the real group count nor its sizes can be reconstructed from admissions: exactly-one-group advice (281) can differ if the missing history held exactly one group,
+	/// and hype (124) or big-busload (140) scores can differ until real arrivals replace the relevant unknown values. At attachment, validated original-save rings replace this stand-in, including a known empty ring
+	/// (<see cref="SaveArrivalRing"/>, <see cref="SaveThemeParkIncArrivalRing"/>). The separate advisor snapshot restore policy still applies this fallback to null or explicitly empty histories when admissions exist.
+	/// </summary>
+	// [APPROX:ADVISOR-028] the ring of a legacy OpenTPW save is unknown: full when the park has had admissions, where tp.exe's saved ring holds the real sizes (0x4CE660)
+	public void AssumeFilled()
+	{
+		while ( sizes.Count < Capacity )
+			sizes.Insert( 0, 0 );
+	}
+
 	public void Clear() => sizes.Clear();
 }
 
@@ -84,13 +97,6 @@ internal sealed record AdvisorPlayerTickets( int Earned, int EarnedWithoutSecret
 
 	/// <summary>The secret tickets (the camera ticket and the all-land one), which the sum of <c>0x005AF4A0</c> leaves out.</summary>
 	public static bool IsSecret( GoldenTicketKind kind ) => kind is GoldenTicketKind.CamerasEverywhere or GoldenTicketKind.AllLandOwned;
-
-	/// <summary>The sums as they stood before the tickets of <paramref name="later"/> were counted: the original announces a check's wins one by one, each over the tickets won so far.</summary>
-	public AdvisorPlayerTickets Without( IEnumerable<GoldenTicketKind> later )
-	{
-		var kinds = later.ToList();
-		return this with { Earned = Earned - kinds.Count, EarnedWithoutSecret = EarnedWithoutSecret - kinds.Count( kind => !IsSecret( kind ) ) };
-	}
 }
 
 /// <summary>

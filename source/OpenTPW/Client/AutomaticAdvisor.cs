@@ -117,6 +117,11 @@ internal sealed partial class AutomaticAdvisor : IDisposable
 			import.Report( report );
 			Log.Trace( report );
 		}
+		// [BIN:TPW-EXE:0x4C5D70 analyser serializer] a park from an original save takes its saved arrival groups, including an authoritative empty ring, instead of the stand-in for an unrecorded one
+		// [EXT:tpi-arrival-readiness] manual attachment to the real TPI money runtime may use its source ring without fabricating an economy import. GameFlow still creates no advisor for TPI.
+		if ( started.OriginalPark?.Save is { ArrivalGroups: { } savedGroups } source
+			&& (started.Park?.Import is not null || started.Park?.Economy.Rules == EconomyRules.ThemeParkIncMoney && source.ThemeParkIncWorld is not null) )
+			arrivalRing.Restore( savedGroups );
 		// [BIN:TPW-EXE:0x00415270 clock load] behind the MESS marker check (0x41555A) the load reads the clock block (0x402E30): the scaled clock at +0x4C and the saved advisor clock, whose load sets the clock's offset so it reads the saved value from then on (0x402E80 -> 0x403160)
 		if ( started.Park?.Import is not null && started.OriginalPark?.Save?.SavedAdvisorClockMilliseconds is { } savedClock )
 			clock.RestoreMilliseconds( savedClock );
@@ -594,8 +599,10 @@ internal sealed partial class AutomaticAdvisor : IDisposable
 		// a snapshot from before the stamps were kept leaves the ones derived at attach
 		objectStampTurn = snapshot.ObjectStampTurn ?? objectStampTurn;
 		hireStampTurn = snapshot.HireStampTurn ?? hireStampTurn;
-		// a snapshot from before the arrival groups were kept leaves the record empty
+		// Existing host snapshot policy treats absent and explicitly empty records with admissions as unrecorded. Native empty data at AttachLevel is authoritative, but this later restore stage still applies that legacy heuristic.
 		arrivalRing.Restore( snapshot.ArrivalWaves ?? Array.Empty<int>() );
+		if ( snapshot.ArrivalWaves is null or { Count: 0 } )
+			AssumeEstablishedArrivalRing();
 		// The rebase, not an offset on the source: the destination's own elapsed time (construction, pause
 		// screens) must not shift the saved reservations.
 		clock.RestoreMilliseconds( snapshot.AdvisorClockMilliseconds );

@@ -111,3 +111,10 @@ geometry. Repeated actual reads/draws are compared with a no-read world control,
 RNG, player, pending movement and next world vertices. Actual hire, employee and visitor widgets,
 plus a generic default figure, have separate Draw controls so equal hire/employee scales cannot
 hide a wrong hotspot. The additional source guard is `tools/test_employee_portrait_geometry_contract.py`.
+
+## Independent VM core seam
+
+The [bounded staff sprite VM](STAFF-SPRITE-VM.md) now has clean semantic programs,
+complete control/register state and exact full/partial clone-copy operations with
+synthetic CPU tests. It is not consumed by this window or the staff renderer yet.
+UI-092 remains open; the existing callback and its qualifications above still apply.

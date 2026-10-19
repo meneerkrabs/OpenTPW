@@ -328,6 +328,9 @@ public sealed class TourRenderer : IDisposable
 
 	private static Texture LoadTexture( ObjectCatalogEntry entry, string name )
 	{
+		// the object's own sign (its name on the board) replaces the shipped sign1/sign2 placeholder, as on a placed object
+		if ( ObjectSigns.IsSignSlot( name ) && ObjectSigns.Get( entry )?.TextureFor( name ) is { } sign )
+			return sign;
 		var resolved = ObjectAssets.ResolveTexture( entry, name );
 		if ( resolved == null )
 			return Texture.Missing;

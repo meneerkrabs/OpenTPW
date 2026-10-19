@@ -95,6 +95,13 @@ public static class ObjectSigns
 	}
 
 	/// <summary>
+	/// Whether a result stays cached: a sign is, and so is a failure that repeats (unreadable data), or an archive that is there without a sign. A read that may succeed later does not
+	/// (an I/O error, or an archive with no files yet: the browser copies a theme's files when a park starts).
+	/// </summary>
+	internal static bool CanCache( Exception? failure, ObjectSignImages? images, bool archiveWithoutSign ) =>
+		images != null || (failure == null ? archiveWithoutSign : failure is not (IOException or UnauthorizedAccessException));
+
+	/// <summary>
 	/// The CPU-composed sign of an object (cached per archive and text), or null when the object has no <c>.sgn</c>. A sign
 	/// with two empty lines is composed too (its board alone). Drawing problems (missing glyphs or fonts) are logged once, not thrown.
 	/// </summary>
@@ -109,6 +116,7 @@ public static class ObjectSigns
 				return cached;
 			ObjectSignImages? images = null;
 			var archiveWithoutSign = false;
+			Exception? failure = null;
 			try
 			{
 				var sign = SignTextRenderer.LoadSignFile( entry.ArchivePath, entry.FileSystem );
@@ -123,10 +131,11 @@ public static class ObjectSigns
 			}
 			catch ( Exception exception ) when ( exception is IOException or InvalidDataException or NotSupportedException or ArgumentException or KeyNotFoundException or UnauthorizedAccessException )
 			{
+				failure = exception;
 				Log?.Warning( $"Sign of {entry.ArchiveName} unavailable: {exception.Message}" );
 			}
 			// A missing result stays uncached unless the archive is there without a sign: a failure, or an archive whose files have not arrived yet (the browser copies a theme's files when a park starts), must not leave the placeholder for the rest of the session
-			if ( images != null || archiveWithoutSign )
+			if ( CanCache( failure, images, archiveWithoutSign ) )
 				cache[key] = images;
 			return images;
 		}
@@ -134,22 +143,41 @@ public static class ObjectSigns
 }
 
 /// <summary>
-/// Which texture an object's <c>sign1</c>/<c>sign2</c> material slots show: the park name for the gate, the object's own sign for a placed
-/// object, and for a fixed item whose sign cannot be drawn a plain brown board, never the shipped magenta "SIGN1 SIGN2" placeholder.
+/// Which texture an object's <c>sign1</c>/<c>sign2</c> material slots show: the park name for the gate, the object's own sign for any other object
+/// that has one, and for a fixed item whose sign cannot be drawn (the gate above all) a plain brown board instead of the shipped magenta "SIGN1 SIGN2" placeholder.
 /// </summary>
 // [EXT:fixed-sign-fallback] a fixed item (the park gate above all) that has no runtime sign shows a plain brown board instead of the shipped placeholder; an OpenTPW rendering choice, the original always draws the sign
 internal readonly record struct SignSlotPlan( ObjectSignImages? Images, bool UsesFallback )
 {
 	public static readonly SignSlotPlan None = new( null, false );
 
-	/// <param name="gateImages">The park name's sign of the object's level (null while it is missing or failed).</param>
-	/// <param name="typeSign">The object type's own sign, asked only for a placed (not fixed) object.</param>
-	public static SignSlotPlan For( bool isFixedItem, string archiveName, ObjectSignImages? gateImages, Func<ObjectSignImages?> typeSign )
+	private static Texture? fallbackBoard;
+
+	/// <summary>The plain board of a gate that has no sign: one texture for every part and park, never released (like <see cref="Texture.Missing"/>).</summary>
+	public static Texture FallbackBoard => fallbackBoard ??= new Texture( [38, 28, 18, 255], 1, 1 );
+
+	/// <param name="entryArchivePath">The object's archive path (<see cref="ObjectCatalogEntry.ArchivePath"/>).</param>
+	/// <param name="gateArchivePath">The archive of the level's gate sign, or null when the level has none (it failed or is not built yet).</param>
+	/// <param name="gateImages">The park name's sign of the object's own level.</param>
+	/// <param name="typeSign">The object type's own sign, asked for every object but the gate.</param>
+	public static SignSlotPlan For( bool isFixedItem, string entryArchivePath, string? gateArchivePath, ObjectSignImages? gateImages, Func<ObjectSignImages?> typeSign )
 	{
-		if ( !isFixedItem )
-			return typeSign() is { } own ? new( own, false ) : None;
-		if ( archiveName.Equals( "gates", StringComparison.OrdinalIgnoreCase ) && gateImages != null )
-			return new( gateImages, false );
-		return new( null, true );
+		// With the level's sign the gate is the object of its archive; without it the fixed item named "gates" stands in
+		var isGate = gateArchivePath != null
+			? string.Equals( entryArchivePath.TrimEnd( '/' ), gateArchivePath.TrimEnd( '/' ), StringComparison.OrdinalIgnoreCase )
+			: isFixedItem && string.Equals( Path.GetFileName( entryArchivePath.TrimEnd( '/' ) ), "gates", StringComparison.OrdinalIgnoreCase );
+		if ( isGate )
+			return gateImages != null ? new( gateImages, false ) : new( null, true );
+		if ( typeSign() is { } own )
+			return new( own, false );
+		return isFixedItem ? new( null, true ) : None;
 	}
+
+	/// <summary>Where one material slot's texture comes from under this plan.</summary>
+	public SignSlotSource SourceOf( string textureName ) =>
+		!ObjectSigns.IsSignSlot( textureName ) ? SignSlotSource.Shipped
+		: Images != null ? SignSlotSource.RuntimeSign
+		: UsesFallback ? SignSlotSource.FallbackBoard : SignSlotSource.Shipped;
 }
+
+internal enum SignSlotSource { Shipped, RuntimeSign, FallbackBoard }

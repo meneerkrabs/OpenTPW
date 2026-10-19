@@ -288,11 +288,13 @@ public class OriginalObject : Entity, IPointLightSource
 			Array.Fill( slots, Texture.Missing );
 			// Runtime sign faces replace the shipped placeholders, including fixed gate faces.
 			var hasSignSlot = part.Textures.Any( ObjectSigns.IsSignSlot );
+			// the object's own level (the one being built, which is not yet Level.Current when a park is built over frames beside the live one)
+			var gateSign = (Level ?? Level.Current)?.GateSign;
 			var plan = hasSignSlot
-				? SignSlotPlan.For( Entry.IsFixedItem, Entry.ArchiveName, Level?.GateSign?.Images ?? Level.Current?.GateSign?.Images, () => ObjectSigns.Get( Entry ) )
+				? SignSlotPlan.For( Entry.IsFixedItem, Entry.ArchivePath, gateSign?.ArchivePath, gateSign?.Images, () => ObjectSigns.Get( Entry ) )
 				: SignSlotPlan.None;
 			var sign = plan.Images;
-			var fallbackBaseSign = plan.UsesFallback ? new Texture( [38, 28, 18, 255], 1, 1 ) : null;
+			var fallbackBaseSign = plan.UsesFallback ? SignSlotPlan.FallbackBoard : null;
 			if ( sign != null )
 				Sign = sign;
 			for ( var index = 0; index < part.Textures.Length; index++ )

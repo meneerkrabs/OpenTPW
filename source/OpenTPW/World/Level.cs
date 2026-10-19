@@ -76,14 +76,18 @@ public partial class Level : IDisposable
 	/// The park name and the gate sign of an original level: a resumed park keeps its saved lines, which the sign draws as the
 	/// original's rebuild after loading does (0x468500); a new park takes the gate's default lines.
 	/// </summary>
+	/// <summary>The failures that leave a park without its gate sign (the gate then shows its plain board) instead of stopping it.</summary>
+	internal static bool IsGateSignFailure( Exception exception ) =>
+		exception is IOException or InvalidDataException or KeyNotFoundException or ArgumentException or NotSupportedException or InvalidOperationException or UnauthorizedAccessException;
+
 	private void SetupParkName()
 	{
 		var savedName = resumeState?.ParkName is { } saved ? new ParkNameLines( saved.Line1, saved.Line2 ) : SavedGateName();
 		if ( OriginalPark != null )
 		{
 			try { GateSign = OriginalGateSign.TryCreate( OriginalPark, Global, savedName, reloaded: savedName != null ); }
-			// the sign is decoration: whatever stops it (a font or board that cannot be read in this file system, an unsupported platform call) must not stop the park, and the gate then shows its plain board (SignSlotPlan)
-			catch ( Exception exception ) when ( exception is not (OutOfMemoryException or StackOverflowException or ThreadAbortException) )
+			// the sign is decoration: a font or board that cannot be read in this file system must not stop the park, and the gate then shows its plain board (SignSlotPlan)
+			catch ( Exception exception ) when ( IsGateSignFailure( exception ) )
 			{
 				Log.Warning( $"Gate sign: {exception.GetType().Name}: {exception.Message}" );
 			}

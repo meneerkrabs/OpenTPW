@@ -361,7 +361,8 @@ line per kind of switch, in the eleven interface languages:
   was played with another version of Smarter guests. Continue with this version?". The park loads under the active set, so its next save records the active set. Rule-only are the extensions that ship no
   content and that a park does not need for its objects or state, verified one by one: `opentpw.rain-mood`, `opentpw.winter-weather`, `opentpw.winter-cold`, `opentpw.winter-always` and
   `opentpw.smarter-guests` (`ParkExtensionSwitch.RuleOnlyExtensionIds`). The weather rules leave only per-guest day marks that every build reads with the rule on or off; the smarter guests' own saved
-  state starts fresh when the extension comes on and is dropped when it goes off (the guest identity script mods share is kept).
+  state starts fresh when the extension comes on, is dropped when it goes off (the guest identity script mods share is kept) and starts fresh in another version (the guests keep their identity
+  and traits). A switchable save is not listed as "requires mod" in the load list and the Continue entries; the load asks instead.
 - **Content extensions the park uses** that are off now: "This park uses Pools, which is off. Turn Pools on and load the park?". The tick's tooltip is "Turn Pools on and load". These are the extensions a
   save records only while the park uses them (`ParkResumeMods.UsedOnlyExtensionIds`): `opentpw.pools`, `opentpw.umbrellas`, `opentpw.winter` and `opentpw.cheats`. Confirming switches the extension on for
   this run at once (`[EXT:extensions-apply-at-load]`: the feature gates and the extension's objects in the theme catalogs; everything else that depends on an extension is read when a park is built) and

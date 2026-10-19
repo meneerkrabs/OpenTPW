@@ -21,7 +21,7 @@ internal static partial class Page
 	public static partial void ChooseInput( string edition );
 
 	/// <summary>
-	/// [EXT:extensions-apply-at-load] Asks the page to fetch the pools extension's sprite sets now (docs/POOLS.md, "Browser delivery"): the extension was switched on after the start, at a park load or on the
+	/// [EXT:extensions-apply-at-load] Asks the page to fetch the pools extension's sprite sets now (docs/POOLS.md, "Content", the browser's sprite sets): the extension was switched on after the start, at a park load or on the
 	/// Extensions and mods screen. A fetch already running is followed by one more; files already stored are not fetched again.
 	/// </summary>
 	[JSImport( "requestPoolSprites", "opentpw-page" )]

@@ -90,6 +90,16 @@ internal sealed partial class GameFlow
 		stack.Push( ExtensionSwitchDialog.Create( stack, Strings, plan, () => proceed( plan ) ) );
 	}
 
+	/// <summary>Makes <paramref name="before"/> active again after a failed load; a failure of that itself is logged and never hides the load's own error.</summary>
+	private static void SwitchBack( ModSet before, Exception loadError )
+	{
+		try { ModStartup.ApplyExtensions( before, Log.Trace ); }
+		catch ( Exception error )
+		{
+			Log.Warning( $"The extensions could not be switched back after a failed load ({loadError.Message}): {error.Message}" );
+		}
+	}
+
 	private static string Describe( ParkExtensionSwitch plan )
 	{
 		static string Ids( IEnumerable<IOpenTpwExtension> extensions ) => string.Join( ", ", extensions.Select( extension => extension.Id ) );
@@ -116,15 +126,17 @@ internal sealed partial class GameFlow
 		var switched = !ReferenceEquals( after, before );
 		if ( switched )
 			ModStartup.ApplyExtensions( after, Log.Trace );
+		var live = Level;
 		Level level;
 		try
 		{
 			level = ResumeStrict( plan.Apply( snapshot, after ), restart );
 		}
-		catch
+		catch ( Exception error )
 		{
-			if ( switched )
-				ModStartup.ApplyExtensions( before, Log.Trace );
+			// switched back only while the park that was running is still the live one: once the switched park has replaced it (a failure after the swap), it runs with the extensions it was built with
+			if ( switched && ReferenceEquals( Level, live ) )
+				SwitchBack( before, error );
 			throw;
 		}
 		Log.Trace( $"Resumed {snapshot.Theme} park with switched extensions ({Describe( plan )}); it continues as a new run from here." );

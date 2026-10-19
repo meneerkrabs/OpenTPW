@@ -20,7 +20,7 @@ public sealed class ParkExtensionSwitch
 	/// <summary>
 	/// The official extensions that are rules only: they ship no content and a park does not need them to hold its objects or state. The rain mood, wintry Decembers, the cold mood and Always winter leave only
 	/// per-guest day marks (<c>RainMoodDay</c>, <c>ColdMoodDay</c>, <c>WarmUntilDay</c>) and the weather they shaped, which every build reads with the rule on or off; the smarter guests keep their own section
-	/// (<see cref="ParkResumeSnapshot.SmarterGuests"/>), which a switch starts fresh (on) or drops (off), keeping the guest identity script mods share.
+	/// (<see cref="ParkResumeSnapshot.SmarterGuests"/>), which a switch starts fresh (on), drops (off) or keeps only the guests' identity of (another version), keeping the guest identity script mods share.
 	/// </summary>
 	public static IReadOnlySet<string> RuleOnlyExtensionIds { get; } = new HashSet<string>( StringComparer.Ordinal )
 	{
@@ -121,6 +121,13 @@ public sealed class ParkExtensionSwitch
 		ParkResumeMods.UsedOnlyExtensionIds.Contains( extension.Id ) && extension.PlayerSelectable && !GameEditions.IsThemeParkInc && !disabledForRun.Contains( extension.Id )
 		&& record.Version == extension.Version.ToString() && record.ContentSha256 == ModSet.NoFilesSha256;
 
+	/// <summary>
+	/// The menu line of a save's needs (<see cref="ParkResumeMods.MissingText"/>), or null when it has none or when every difference can be switched at the load (the load then asks), so a park that only played with another
+	/// rule set is not listed as needing a mod.
+	/// </summary>
+	internal static string? RequiresText( IReadOnlyList<ParkModRecord>? saved, ModSet active ) =>
+		Plan( saved, active ) is { CanSwitch: true } ? null : ParkResumeMods.MissingText( saved, active );
+
 	/// <summary>The active set the switched park loads under: <paramref name="active"/> with <see cref="TurnOn"/> switched on (<see cref="ModStartup.SwitchExtensions"/>).</summary>
 	internal ModSet ActiveAfter( ModSet active ) =>
 		TurnOn.Count == 0 ? active : ModStartup.SwitchExtensions( active, TurnOn.ToDictionary( extension => extension.Id, _ => true ) );
@@ -137,7 +144,8 @@ public sealed class ParkExtensionSwitch
 
 	/// <summary>
 	/// The save as the switched park continues it under <paramref name="after"/> (<see cref="ActiveAfter"/>): its mod records are those of the switched set, and the smarter guests' section starts fresh when the
-	/// extension comes on (the park seed, no birth ids yet, as a park that starts with the extension has) or loses the extension's own state when it goes off (the guest identity script mods share stays).
+	/// extension comes on (the park seed, no birth ids yet, as a park that starts with the extension has), and loses the extension's own state when it goes off (the guest identity script mods share stays) or
+	/// continues in another version (the guests keep their identity and traits; the rules' stalls, throughputs, meals and complaints start fresh).
 	/// Everything else is the save's: the strict validation then checks the result like any other save.
 	/// </summary>
 	internal ParkResumeSnapshot Apply( ParkResumeSnapshot snapshot, ModSet after )
@@ -151,6 +159,9 @@ public sealed class ParkExtensionSwitch
 		var smarterId = OfficialExtensions.SmarterGuests.Id;
 		if ( ContinueWithout.Any( extension => extension.Id == smarterId ) && smarter != null )
 			smarter = snapshot.ScriptMods == null ? null : smarter with { Stalls = null, Throughputs = null, Meals = null, Complaints = null };
+		// another version's rules wrote that state with their own meaning: the extension's own state starts fresh in this version, the guests' identity (park seed, birth ids) and so their traits stay
+		if ( ContinueNewVersion.Any( item => item.Extension.Id == smarterId ) && smarter != null )
+			smarter = smarter with { Stalls = null, Throughputs = null, Meals = null, Complaints = null };
 		if ( ContinueWith.Any( extension => extension.Id == smarterId ) )
 			smarter ??= new SmarterGuestsSaveData { ParkSeed = snapshot.Seed, NextBirthId = SmarterGuestsState.FirstBirthId, Bootstrapped = false, Births = Array.Empty<SmarterGuestBirth>() };
 		return snapshot with { Mods = records.Count == 0 ? null : records, SmarterGuests = smarter };

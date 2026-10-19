@@ -177,24 +177,25 @@ public sealed partial class ParkHud
 		public override void Draw( UiContext context, bool focused, bool pressed )
 		{
 			var rect = ScreenRect( context.Canvas );
-			var plot = rect.Inflate( -Math.Max( 8, context.Canvas.Scale * 10 ) );
 			var months = owner.FinanceMonths();
 			var selected = owner.financeVisible.OrderBy( series => series ).ToArray();
-			if ( months.Count == 0 || selected.Length == 0 )
+			var hasSeries = months.Count > 0 && selected.Length > 0;
+			var values = hasSeries ? selected.Select( series => months.Select( month => FinanceValue( month, series ) ).ToArray() ).ToArray() : Array.Empty<long[]>();
+			var minimum = hasSeries ? Math.Min( 0L, values.Min( series => series.Min() ) ) : 0L;
+			var maximum = hasSeries ? Math.Max( 0L, values.Max( series => series.Max() ) ) : 0L;
+			var pixel = GraphBackdropRenderer.Pixel( context.Canvas );
+			var backdrop = new GraphBackdrop( (int)(rect.Width / pixel), (int)(rect.Height / pixel), owner.financeYears * ParkCalendar.MonthsPerYear, minimum, maximum );
+			var canDrawSeries = GraphBackdropRenderer.Draw( context, rect, pixel, backdrop );
+			if ( !hasSeries || !canDrawSeries )
 				return;
-			var values = selected.Select( series => months.Select( month => FinanceValue( month, series ) ).ToArray() ).ToArray();
-			var minimum = Math.Min( 0L, values.Min( series => series.Min() ) );
-			var maximum = Math.Max( 0L, values.Max( series => series.Max() ) );
+			var plot = GraphBackdropRenderer.ToScreen( backdrop.PlotFill, rect, pixel );
 			// [BIN:TPW-EXE:0x47fe90 graph drawer] a flat range (max == min) puts every point on the baseline without dividing; the scale always includes 0, so that is an all-zero series and the one-unit span below only keeps the arithmetic finite
 			if ( minimum == maximum )
 				maximum = minimum + 1;
 			// [BIN:TPW-EXE:0x47fb30 graph scale] the scale runs from min(0, the lowest selected sample of the period) to max(0, the highest) in ten divisions (0x49a7b0, 0x49a8f0); the bank balance alone is the default (0x751fa0 = 1)
 			// [BIN:TPW-EXE:0x47fe90 graph drawer] each series is drawn as one-pixel lines from sample to sample (the line primitive 0x5f97f0, not a thick stroke), and when the period has fewer than 0x90 samples (the 1 and 3 year views: 0x480460 passes 12, 36 or 144) each sample end gets a hollow 3 x 3 pixel mark of four such lines (0x47ffe0..0x480077)
 			// [APPROX:UI-060] the original draws into the control's bitmap at the display mode's pixel size; OpenTPW takes one pixel as 2 canvas units (the 1024 x 768 mode of the video) — evidence needed: the display mode the video ran in, and whether the 12 year view's 144 samples map one to one onto OpenTPW's months
-			var pixel = Math.Max( 1, context.Canvas.Scale * 2 );
 			var marks = owner.financeYears < 12;
-			for ( var line = 1; line < 4; line++ )
-				context.Batch.AddRectangle( new UiRect( plot.X, plot.Y + plot.Height * line / 4, plot.Width, Math.Max( 1, context.Canvas.Scale ) ), new RgbaByte( 75, 86, 125, 130 ) );
 			for ( var s = 0; s < selected.Length; s++ )
 			{
 				var color = FinanceColors[(int)selected[s]];

@@ -277,7 +277,7 @@ Plays `Data/Movies/<name>.tgq` with SDL2 audio (`--mute` disables it); a key
 press or click skips.
 
 Automated runs are silent: `--smoke-test`, `--tpi-smoke-test`, `--park-resume-smoke`, `--smoke-presence`, any `--capture-*` or
-`--perf-*` option, `--debug-sim-minutes`, `--offscreen` (or `OPENTPW_OFFSCREEN=1`), `--headless`, the gates and the guest reports open no audio
+`--perf-*` option, every `--debug-*` option (`--debug-sim-minutes`, `--debug-weather` and the other capture helpers), `--offscreen` (or `OPENTPW_OFFSCREEN=1`), `--headless`, the gates and the guest reports open no audio
 device (the game runs on its wall clock exactly as without a sound card), so tests and agents make no sound on a developer machine.
 Add `--smoke-audio` or `--audible` to hear one. `--silent` or `OPENTPW_SILENT=1` silences any run; a plain launch is never silenced.
 The browser perf tool (`tools/web-perf`) and the postcard smoke start Chrome with `--mute-audio`; pass `--audible` to `run.mjs` to listen.

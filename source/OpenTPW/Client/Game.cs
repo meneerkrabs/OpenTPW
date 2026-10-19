@@ -986,7 +986,7 @@ internal static class Game
 	/// <summary>
 	/// [EXT:silent-automated-runs] every automated run opens no audio device, so tests and agents on a developer machine make no sound:
 	/// smokes (<c>--smoke-test</c>, <c>--tpi-smoke-test</c>, <c>--park-resume-smoke</c>, <c>--smoke-presence</c>), captures (<c>--capture-*</c>), perf runs
-	/// (<c>--perf-*</c>), gates, guest reports, <c>--debug-sim-minutes</c>, <c>--offscreen</c> and <c>--headless</c>. <c>--smoke-audio</c> or <c>--audible</c>
+	/// (<c>--perf-*</c>), gates, guest reports, every <c>--debug-*</c> option (they exist for smoke captures and agent runs, none is a player option), <c>--offscreen</c> and <c>--headless</c>. <c>--smoke-audio</c> or <c>--audible</c>
 	/// opts back in to sound; <c>--silent</c> or <c>OPENTPW_SILENT=1</c> silences any run. A plain interactive launch is never silenced. The game logic
 	/// and its timing are unchanged.
 	/// </summary>
@@ -996,14 +996,14 @@ internal static class Game
 			return true;
 		if ( args.Contains( "--smoke-audio" ) || args.Contains( "--audible" ) )
 			return false;
-		return args.Any( arg => arg.StartsWith( "--capture-", StringComparison.Ordinal ) || arg.StartsWith( "--perf-", StringComparison.Ordinal ) )
+		return args.Any( arg => arg.StartsWith( "--capture-", StringComparison.Ordinal ) || arg.StartsWith( "--perf-", StringComparison.Ordinal ) || arg.StartsWith( "--debug-", StringComparison.Ordinal ) )
 			|| args.Intersect( AutomatedFlags ).Any()
 			|| (offscreenEnvironment == "1" && !args.Contains( "--no-offscreen" ));
 	}
 
 	private static readonly string[] AutomatedFlags =
 	{
-		"--smoke-test", "--tpi-smoke-test", "--park-resume-smoke", "--smoke-presence", "--perf-run", "--perf-hash-tick", "--debug-sim-minutes",
+		"--smoke-test", "--tpi-smoke-test", "--park-resume-smoke", "--smoke-presence", "--perf-run", "--perf-hash-tick",
 		"--offscreen", "--headless", "--m3-gate", "--m4-gate", "--guest-report", "--guest-compare", "--validate-assets",
 	};
 

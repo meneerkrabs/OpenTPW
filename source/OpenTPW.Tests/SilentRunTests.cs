@@ -26,6 +26,8 @@ public class SilentRunTests
 		Assert.IsTrue( Game.IsSilentRun( new[] { "--perf-run", "600" }, null ) );
 		Assert.IsTrue( Game.IsSilentRun( new[] { "--load-original-level", "jungle", "--debug-sim-minutes", "3" }, null ) );
 		Assert.IsFalse( Game.IsSilentRun( new[] { "--perf-run", "600", "--audible" }, null ) );
+		Assert.IsTrue( Game.IsSilentRun( new[] { "--load-original-level", "jungle", "--debug-weather", "100" }, null ), "a debug capture option without a capture" );
+		Assert.IsFalse( Game.IsSilentRun( new[] { "--load-original-level", "jungle", "--debug-weather", "100", "--audible" }, null ) );
 		Assert.IsTrue( Game.IsSilentRun( new[] { "--game-path", "x" }, null, "1" ) );
 		Assert.IsFalse( Game.IsSilentRun( new[] { "--game-path", "x", "--no-offscreen" }, null, "1" ) );
 		Assert.IsTrue( Game.IsSilentRun( new[] { "--smoke-test", "--audible" }, "1" ) );

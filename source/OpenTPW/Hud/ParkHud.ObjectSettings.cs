@@ -124,7 +124,7 @@ public sealed partial class ParkHud
 		if ( item.Entry.WhichUIType == (int)BuildCategory.Rides )
 		{
 			if ( item.Runtime.Script != null )
-				item.Runtime.ApplyRideWindow( pending.Ride );
+				level.Commands.Issue( new SetRideSettingsCommand( item.Runtime.AttractionId, pending.Ride.Speed, pending.Ride.Capacity, pending.Ride.Duration ) );
 			return;
 		}
 		if ( TryPriceTarget( item, out var economy, out var state ) )
@@ -133,15 +133,16 @@ public sealed partial class ParkHud
 
 	private void ApplyShopSettings( OriginalObject item, ParkEconomy economy, ParkObjectState state )
 	{
+		var edits = EditsOf( economy );
 		if ( state.Kind == ParkObjectKind.Shop )
 		{
-			economy.SetShopSettings( state.Id, (byte)(pending.QualityStep * 50), pending.Ingredient );
-			economy.SetPrices( state.Id, pending.Price );
+			edits.Issue( new SetShopSettingsCommand( state.Id, (byte)(pending.QualityStep * 50), pending.Ingredient ) );
+			edits.Issue( new SetPricesCommand( state.Id, pending.Price ) );
 		}
 		else if ( IsNonWinnable( item ) )
-			economy.SetPrices( state.Id, pending.Price );
+			edits.Issue( new SetPricesCommand( state.Id, pending.Price ) );
 		else
-			economy.SetPrices( state.Id, pending.Price, pending.Prize, 100 - (pending.WinChance & 0xFF) );
+			edits.Issue( new SetPricesCommand( state.Id, pending.Price, pending.Prize, 100 - (pending.WinChance & 0xFF) ) );
 	}
 
 	/// <summary>Applies the window's values to the object it showed when the window closes or shows another object, then loads the new one.</summary>

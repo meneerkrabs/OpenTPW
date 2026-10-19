@@ -7,7 +7,7 @@ online extension `opentpw.online`, labelled `[EXT:online-coop-*]` in the code. T
 phases (C1 to C7) and the comparison of the architectures is in the project notes
 (`plans/coop-plan.md`); this page records what is built and the decisions it rests on.
 
-Status: phase C1, the command layer, in progress. No session code exists yet; single player is
+Status: phase C1, the command layer, in progress (parts 1 and 2 of 3). No session code exists yet; single player is
 unchanged.
 
 ## User decisions
@@ -94,6 +94,16 @@ out-of-range fields. Kind tags are never reused or renumbered. The schema test
 (`ParkCommandCodecTests`) pins the bytes of one sample of every kind; a change of any of them needs a
 new format version.
 
+### The park's settings
+
+The HUD windows' settings are commands too (`ParkSettingsCommands.cs`, kinds 30 to 51). Economy objects are named by their
+economy instance id, attractions by their attraction id, staff by their id, applicants by their candidate id and loans by
+their offer index. `ParkEconomyCommands.Execute` runs them on the park's economy and checks first what the economy would
+throw for, so a refusal changes nothing. The HUD sends them through `ParkHud.EditsOf(economy)`: the level's funnel when the
+economy is its park's (always in a game), else a funnel over that economy alone (`ParkEconomyCommands.ForEconomy`, for a HUD
+shown over an economy without its level, as tests do), which is not part of the level's log. Cheats stay commands so that a
+session can refuse them (decision Q17), and the speed command is the one a session gives to its host alone (decision Q8).
+
 ### Recording and replay
 
 `ParkCommandRecorder` (`Level.StartCommandRecording`) records every applied command with its tick and
@@ -122,7 +132,7 @@ guarded list.
 | Objects | place (the build tool, the Move tool, track add-ons), the remove tool, remove at a cell, sell from the object and attraction windows, the Move tool's pick-up, the bulldozer (area clear: one command per cleared cell) | converted |
 | Paths and queues | path and queue lines, undo inside the tool, path and queue cell removal, Backspace over a cell, the queue edit click | converted |
 | Developer prototype | place and remove the Totem | converted |
-| Economy | park open and close, ride open and close, the ride window's settings, entrance fee, prices and shop settings, loans, hire and fire, training budget, research, challenges, maintenance, ride upgrades, park and staff rename, cheats, speed | part 2 |
+| Park settings | park open and close, ride open and close, the ride window's settings, entrance fee, prices and shop settings, loans, hire (without placement) and fire, training budget, research effort, project and workload, challenges, maintenance, ride upgrades, park and staff rename, cheats, game speed and pause | converted (part 2) |
 | Tools | land, pools and waves, slides and pool attractions, kart and water tracks, coasters, staff placement and patrol areas | part 3 |
 
 ## Known limits of C1

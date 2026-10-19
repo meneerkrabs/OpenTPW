@@ -153,10 +153,10 @@ public sealed partial class ParkHud
 				break;
 			case RideUpgradeRowKind.Level:
 				// the level is asked for only while the balance is above its price; the economy refuses otherwise and the list closes either way
-				economy.TryBuyUpgrade( instance );
+				EditsOf( economy ).Issue( new BuyUpgradeCommand( instance ) );
 				break;
 			case RideUpgradeRowKind.CancelLevel:
-				economy.TryCancelUpgrade( instance );
+				EditsOf( economy ).Issue( new CancelUpgradeCommand( instance ) );
 				break;
 		}
 		CloseRideUpgrade();

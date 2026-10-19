@@ -80,6 +80,28 @@ public static class ParkCommandCodec
 			ParkCommandKind.EditQueue => new EditQueueCommand( reader.Int(), reader.Int() ),
 			ParkCommandKind.PlacePrototype => new PlacePrototypeCommand( reader.Float(), reader.Float(), reader.Float() ),
 			ParkCommandKind.RemovePrototype => new RemovePrototypeCommand(),
+			ParkCommandKind.SetParkOpen => new SetParkOpenCommand( reader.Bool() ),
+			ParkCommandKind.SetEntranceFee => new SetEntranceFeeCommand( reader.Int() ),
+			ParkCommandKind.SetPrices => new SetPricesCommand( reader.Int(), reader.Int(), reader.OptionalInt(), reader.OptionalInt() ),
+			ParkCommandKind.SetShopSettings => new SetShopSettingsCommand( reader.Int(), reader.OptionalInt(), reader.OptionalInt() ),
+			ParkCommandKind.TakeLoan => new TakeLoanCommand( reader.Int() ),
+			ParkCommandKind.RepayLoan => new RepayLoanCommand( reader.Int() ),
+			ParkCommandKind.HireStaff => new HireStaffCommand( reader.Int() ),
+			ParkCommandKind.FireStaff => new FireStaffCommand( reader.Int() ),
+			ParkCommandKind.SetTrainingBudget => new SetTrainingBudgetCommand( (StaffType)reader.Byte(), reader.Long() ),
+			ParkCommandKind.SetResearchEffort => new SetResearchEffortCommand( (ResearchCategory)reader.Byte(), reader.Int() ),
+			ParkCommandKind.MoveResearch => new MoveResearchCommand( (ResearchCategory)reader.Byte(), reader.Int() ),
+			ParkCommandKind.SetResearchWorkload => new SetResearchWorkloadCommand( reader.Int() ),
+			ParkCommandKind.AnswerChallenge => new AnswerChallengeCommand( reader.Bool() ),
+			ParkCommandKind.RequestMaintenance => new RequestMaintenanceCommand( reader.Int(), reader.Bool() ),
+			ParkCommandKind.BuyUpgrade => new BuyUpgradeCommand( reader.Int() ),
+			ParkCommandKind.CancelUpgrade => new CancelUpgradeCommand( reader.Int() ),
+			ParkCommandKind.RenamePark => new RenameParkCommand( reader.String(), reader.String() ),
+			ParkCommandKind.RenameStaff => new RenameStaffCommand( reader.Int(), reader.String() ),
+			ParkCommandKind.QueueCheat => new QueueCheatCommand( (CheatKind)reader.Byte(), reader.Int() ),
+			ParkCommandKind.SetRideOpen => new SetRideOpenCommand( reader.Int(), reader.Bool() ),
+			ParkCommandKind.SetRideSettings => new SetRideSettingsCommand( reader.Int(), reader.Int(), reader.Int(), reader.Int() ),
+			ParkCommandKind.SetSpeed => new SetSpeedCommand( (GameSpeed)reader.Byte() ),
 			_ => throw new InvalidDataException( $"Unknown park command kind {(int)kind}." )
 		};
 		if ( !reader.AtEnd )
@@ -149,6 +171,14 @@ public sealed class ParkCommandWriter
 		stream.Write( value );
 	}
 
+	/// <summary>An optional integer: a presence byte (0 absent, 1 present), then the value when present.</summary>
+	public void OptionalInt( int? value )
+	{
+		Bool( value != null );
+		if ( value is { } present )
+			Int( present );
+	}
+
 	public void Cells( IReadOnlyList<(int X, int Y)> cells )
 	{
 		ArgumentNullException.ThrowIfNull( cells );
@@ -215,6 +245,8 @@ public sealed class ParkCommandReader
 		}
 		return (long)(zigzag >> 1) ^ -(long)(zigzag & 1);
 	}
+
+	public int? OptionalInt() => Bool() ? Int() : null;
 
 	public float Float() => BitConverter.Int32BitsToSingle( BinaryPrimitives.ReadInt32LittleEndian( Take( 4 ) ) );
 

@@ -134,10 +134,7 @@ public sealed partial class ParkHud
 	{
 		if ( economy?.Objectives.Current is not { Accepted: false } || level != null && RejectReadOnlyAction() )
 			return false;
-		if ( accept )
-			economy.AcceptChallenge();
-		else
-			economy.DeclineChallenge();
+		EditsOf( economy ).Issue( new AnswerChallengeCommand( accept ) );
 		CloseMessagePanel();
 		return true;
 	}

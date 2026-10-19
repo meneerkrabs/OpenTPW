@@ -91,7 +91,11 @@ public sealed partial class ParkHud
 	/// <summary>The explicit pause key and host speed controls, rather than an arbitrary zero simulation scale, own user suspension.</summary>
 	internal void SetUserGameSpeed( GameSpeed speed )
 	{
-		Status.Speed = speed;
+		// [EXT:online-coop-commands] a park's speed is a command (the pause included); a HUD without a park economy keeps its own
+		if ( Status.EconomySource is ParkEconomy economy )
+			EditsOf( economy ).Issue( new SetSpeedCommand( speed ) );
+		else
+			Status.Speed = speed;
 		challengeUserPaused = speed == GameSpeed.Paused;
 		SyncChallengeMessageSuspension();
 	}

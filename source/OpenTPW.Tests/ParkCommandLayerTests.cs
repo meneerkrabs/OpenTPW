@@ -40,6 +40,23 @@ public class ParkCommandLayerTests
 		new( "Level.BacktrackAt", Call( "BacktrackAt" ), nameof( BacktrackCommand ) ),
 		new( "ParkPathBuilder writes", @"\bPaths\??\.(BuildSegment|TryLayLine|Remove|RemoveFixed|RemoveOnce|Undo|Commit)\s*\(", nameof( LayLineCommand ) ),
 		new( "QueuePaths writes", @"\bQueuePaths\.(TryExtend|RemoveFrom|DetachFromPath|Connect)\s*\(", nameof( EditQueueCommand ) ),
+		// the park's settings
+		new( "ParkEconomy.OpenPark / ClosePark", @"\.(OpenPark|ClosePark)\s*\(", nameof( SetParkOpenCommand ) ),
+		new( "ParkEconomy.SetEntranceFee", Call( "SetEntranceFee" ), nameof( SetEntranceFeeCommand ) ),
+		new( "ParkEconomy.SetPrices / SetShopSettings", @"\.(SetPrices|SetShopSettings)\s*\(", nameof( SetPricesCommand ) ),
+		new( "ParkEconomy.TakeLoan / TryRepayLoan", @"\.(TakeLoan|TryRepayLoan)\s*\(", nameof( TakeLoanCommand ) ),
+		new( "ParkEconomy.Hire / Fire", @"\b(economy|current|Economy)\??\.(Hire|Fire)\s*\(", nameof( HireStaffCommand ) ),
+		new( "ParkEconomy.SetTrainingBudget", Call( "SetTrainingBudget" ), nameof( SetTrainingBudgetCommand ) ),
+		new( "Research effort, order, workload", @"\.(SetResearchEffort|MoveCurrent|SetWorkload|SetEffort)\s*\(", nameof( SetResearchEffortCommand ) ),
+		new( "Challenges", @"\.(AcceptChallenge|DeclineChallenge)\s*\(", nameof( AnswerChallengeCommand ) ),
+		new( "ParkEconomy.RequestMaintenance", Call( "RequestMaintenance" ), nameof( RequestMaintenanceCommand ) ),
+		new( "Ride upgrades", @"\.(TryBuyUpgrade|TryCancelUpgrade)\s*\(", nameof( BuyUpgradeCommand ) ),
+		new( "Level.RenamePark", Call( "RenamePark" ), nameof( RenameParkCommand ) ),
+		new( "Staff rename", @"\bStaff\.Rename\s*\(", nameof( RenameStaffCommand ) ),
+		new( "Cheats", Call( "QueueCheat" ), nameof( QueueCheatCommand ) ),
+		new( "Ride open and close", @"\b(item|ride|selectedObject|owner)\??\.(Open|Close)\(\s*\)", nameof( SetRideOpenCommand ) ),
+		new( "Ride window settings", Call( "ApplyRideWindow" ), nameof( SetRideSettingsCommand ) ),
+		new( "Game speed", @"\b(economy|Economy|park)\??\.Speed\s*=[^=]", nameof( SetSpeedCommand ) ),
 	};
 
 	/// <summary>
@@ -48,27 +65,12 @@ public class ParkCommandLayerTests
 	/// </summary>
 	internal static readonly (Mutator Mutator, string Phase)[] Remaining =
 	{
-		(new( "ParkEconomy.OpenPark / ClosePark", @"\.(OpenPark|ClosePark)\s*\(", "SetParkOpen" ), "C1 part 2 (economy)"),
-		(new( "ParkEconomy.SetEntranceFee", Call( "SetEntranceFee" ), "SetEntranceFee" ), "C1 part 2 (economy)"),
-		(new( "ParkEconomy.SetPrices / SetShopSettings", @"\.(SetPrices|SetShopSettings)\s*\(", "SetPrices" ), "C1 part 2 (economy)"),
-		(new( "ParkEconomy.TakeLoan / TryRepayLoan", @"\.(TakeLoan|TryRepayLoan)\s*\(", "TakeLoan" ), "C1 part 2 (economy)"),
-		(new( "ParkEconomy.Hire / Fire", @"\.(Hire|Fire)\s*\(", "HireStaff" ), "C1 part 2 (economy)"),
-		(new( "ParkEconomy.SetTrainingBudget", Call( "SetTrainingBudget" ), "SetTrainingBudget" ), "C1 part 2 (economy)"),
-		(new( "Research effort, order, workload", @"\.(SetResearchEffort|MoveCurrent|SetWorkload)\s*\(", "SetResearch" ), "C1 part 2 (economy)"),
-		(new( "Challenges", @"\.(AcceptChallenge|DeclineChallenge)\s*\(", "AnswerChallenge" ), "C1 part 2 (economy)"),
-		(new( "ParkEconomy.RequestMaintenance", Call( "RequestMaintenance" ), "RequestMaintenance" ), "C1 part 2 (economy)"),
-		(new( "Ride upgrades", @"\.(TryBuyUpgrade|TryCancelUpgrade)\s*\(", "BuyUpgrade" ), "C1 part 2 (economy)"),
-		(new( "Level.RenamePark", Call( "RenamePark" ), "RenamePark" ), "C1 part 2 (economy)"),
-		(new( "Cheats", Call( "QueueCheat" ), "QueueCheat" ), "C1 part 2 (economy)"),
-		(new( "Ride open and close", @"\b(item|ride)\??\.(Open|Close)\(\s*\)", "SetRideOpen" ), "C1 part 2 (economy)"),
-		(new( "Ride window settings", Call( "ApplyRideWindow" ), "SetRideSettings" ), "C1 part 2 (economy)"),
-		(new( "Staff rename", @"\bStaff\.Rename\s*\(", "RenameStaff" ), "C1 part 2 (economy)"),
-		(new( "Game speed", @"\beconomy\.Speed\s*=[^=]", "SetSpeed" ), "C1 part 2 (economy)"),
 		(new( "Land", @"\.(ChargeLand|TryBuyCells|SetLand)\s*\(", "BuyLand" ), "C1 part 3 (tools)"),
 		(new( "Pools", @"\.(SetPoolWaves|CyclePoolWaves|PaintCells|EraseCells|Paint|Erase)\s*\(", "PaintPool" ), "C1 part 3 (tools)"),
-		(new( "Staff placement and patrol areas", @"\.(EndPlacement|SetPatrolArea)\s*\(|\bPendingPlacementId\s*=[^=]", "PlaceStaff" ), "C1 part 3 (tools)"),
+		(new( "Staff placement and patrol areas", @"\.(EndPlacement|SetPatrolArea|ClearPatrolArea)\s*\(|\bPendingPlacementId\s*=[^=]|\bpark\.Hire\s*\(", "PlaceStaff" ), "C1 part 3 (tools)"),
 		(new( "Coasters", Call( "CoasterClick" ), "CoasterClick" ), "C1 part 3 (tools)"),
 	};
+
 
 	/// <summary>The starts of a bare call: a line start, an operator or bracket, or a keyword before an expression (a declaration has a type before the name instead).</summary>
 	private const string BareCall = @"(^|[=(,!&|:;{}]|\breturn|\belse|\?\?)\s*";

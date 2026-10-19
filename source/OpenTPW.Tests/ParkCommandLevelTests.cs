@@ -94,6 +94,30 @@ public class ParkCommandLevelTests
 		Assert.IsTrue( level.Commands.Issue( new RemoveAttractionCommand( park.Two.Runtime.AttractionId ) ).Accepted, "the sell button" );
 		Assert.IsTrue( level.Commands.Issue( new RemoveAtCommand( 20, 12 ) ).Accepted, "the remove tool" );
 		Run( level, 5, hashes );
+		// the park's settings: the door, the fee, a loan, an employee hired and dismissed, the lab, the rides' state, the speed and its pause
+		var economy = park.Economy;
+		Assert.IsTrue( level.Commands.Issue( new SetEntranceFeeCommand( 30 ) ).Accepted );
+		Assert.IsTrue( level.Commands.Issue( new SetParkOpenCommand( true ) ).Accepted );
+		Assert.IsTrue( economy.IsParkOpen );
+		if ( economy.Features.Loans && economy.AvailableLoans.FirstOrDefault() is { } offer )
+			Assert.IsTrue( level.Commands.Issue( new TakeLoanCommand( offer.Index ) ).Accepted );
+		var candidate = economy.Staff.Candidates.First( item => economy.Staff.CanHire( item.Type ) );
+		var hired = level.Commands.Issue( new HireStaffCommand( candidate.Id ) ).As<StaffMember>();
+		Assert.IsNotNull( hired );
+		Assert.IsTrue( level.Commands.Issue( new RenameStaffCommand( hired!.Id, "Ada" ) ).Accepted );
+		Run( level, 20, hashes );
+		Assert.IsTrue( level.Commands.Issue( new FireStaffCommand( hired.Id ) ).Accepted );
+		Assert.IsFalse( level.Commands.Issue( new FireStaffCommand( hired.Id ) ).Accepted, "dismissed already" );
+		if ( economy.Features.ResearchPanel )
+		{
+			Assert.IsTrue( level.Commands.Issue( new SetResearchEffortCommand( ResearchCategory.Ride, 70 ) ).Accepted );
+			Assert.IsTrue( level.Commands.Issue( new SetResearchWorkloadCommand( 40 ) ).Accepted );
+		}
+		Assert.IsTrue( level.Commands.Issue( new SetRideOpenCommand( park.One.Runtime.AttractionId, !park.One.IsOpen ) ).Accepted );
+		Assert.IsTrue( level.Commands.Issue( new SetSpeedCommand( GameSpeed.Paused ) ).Accepted );
+		Run( level, 10, hashes );
+		Assert.IsTrue( level.Commands.Issue( new SetSpeedCommand( GameSpeed.Normal ) ).Accepted );
+		Run( level, 10, hashes );
 		// refusals change nothing: an unknown entry, a placed object again on a taken cell, a move with nothing carried, a gone attraction
 		var before = level.ComputeStateHash();
 		Assert.IsFalse( level.Commands.Issue( new PlaceObjectCommand( "data:/levels/jungle/rides/none", 2, 2, 0 ) ).Accepted );
@@ -101,6 +125,12 @@ public class ParkCommandLevelTests
 		Assert.IsFalse( level.Commands.Apply( level.BuildCommand( park.One.Entry, 25, 25, 0 ) with { Moving = true, Player = 2 } ).Accepted, "player 2 carries nothing" );
 		Assert.IsFalse( level.Commands.Issue( new RemoveAttractionCommand( park.Two.Runtime.AttractionId ) ).Accepted );
 		Assert.IsFalse( level.Commands.Issue( new PlaceObjectCommand( ParkCommandCodec.EntryKey( park.One.Entry ), 2, 2, 45 ) ).Accepted, "out of range" );
+		Assert.IsFalse( level.Commands.Issue( new RepayLoanCommand( 99 ) ).Accepted, "no such loan" );
+		Assert.IsFalse( level.Commands.Issue( new HireStaffCommand( int.MaxValue ) ).Accepted, "no such applicant" );
+		Assert.IsFalse( level.Commands.Issue( new SetPricesCommand( 99999, 5 ) ).Accepted, "no such shop" );
+		Assert.IsFalse( level.Commands.Issue( new RequestMaintenanceCommand( 99999, true ) ).Accepted );
+		Assert.IsFalse( level.Commands.Issue( new SetRideOpenCommand( 99999, true ) ).Accepted );
+		Assert.IsFalse( level.Commands.Issue( new AnswerChallengeCommand( true ) ).Accepted, "no challenge waits" );
 		Assert.AreEqual( before, level.ComputeStateHash() );
 		Run( level, 60, hashes );
 		return hashes;
@@ -115,7 +145,7 @@ public class ParkCommandLevelTests
 		var start = recorded.Level.ComputeStateHash();
 		var hashes = BuildSession( recorded );
 		Assert.AreNotEqual( start, hashes[^1], "the session changed the park" );
-		Assert.IsTrue( recorded.Level.Commands.Log.Count >= 14, $"{recorded.Level.Commands.Log.Count} commands" );
+		Assert.IsTrue( recorded.Level.Commands.Log.Count >= 30, $"{recorded.Level.Commands.Log.Count} commands" );
 		var replayed = new List<ulong>();
 		ParkCommandReplay.Run( twin.Level.Commands, recorded.Level.Commands.Log, () => twin.Level.Commands.NextTick,
 			() => twin.Level.AdvanceSimulation( FixedStepClock.TickDuration ), recorded.Level.Commands.NextTick, _ => replayed.Add( twin.Level.ComputeStateHash() ) );
@@ -164,6 +194,10 @@ public class ParkCommandLevelTests
 			new PickUpObjectCommand( park.Two.Runtime.AttractionId ),
 			new LayLineCommand( CellToolMode.Path, -1, 5, 20, 12, 20 ),
 			new RemoveAtCommand( 1, 1 ),
+			new SetParkOpenCommand( true ),
+			new SetEntranceFeeCommand( 99 ),
+			new SetSpeedCommand( GameSpeed.Paused ),
+			new SetRideOpenCommand( park.One.Runtime.AttractionId, !park.One.IsOpen ),
 		} )
 			Assert.IsFalse( park.Level.Commands.Issue( command ).Accepted, command.Kind.ToString() );
 		Assert.IsFalse( park.Level.BeginMove( park.One ) );

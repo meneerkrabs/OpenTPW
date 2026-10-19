@@ -547,11 +547,8 @@ public sealed partial class ParkHud
 			return;
 		if ( selectedObject is not { IsDeleted: false } item || !item.Runtime.IsAttraction )
 			return;
-		// [BIN:STP-PPC:0x1007159C open button] the open buttons call the reopening guard 0xde654 first and open only when it allows (ORACLE.md F27, ECON-049)
-		if ( item.IsOpen )
-			item.Close();
-		else if ( level.Gate?.MayOpen( item.Runtime ) ?? true )
-			item.Open();
+		// [BIN:STP-PPC:0x1007159C open button] the open buttons call the reopening guard 0xde654 first and open only when it allows (ORACLE.md F27, ECON-049): the command's executor runs the guard
+		level.Commands.Issue( new SetRideOpenCommand( item.Runtime.AttractionId, !item.IsOpen ) );
 	}
 
 	private void DeleteRide()
@@ -805,13 +802,13 @@ public sealed partial class ParkHud
 			if ( Input.Pressed( InputButton.OpenPark ) )
 			{
 				if ( !doorEconomy.IsParkOpen )
-					doorEconomy.OpenPark();
+					EditsOf( doorEconomy ).Issue( new SetParkOpenCommand( true ) );
 				host?.ParkDoorPressed?.Invoke( true );
 			}
 			if ( Input.Pressed( InputButton.ClosePark ) )
 			{
 				if ( doorEconomy.IsParkOpen )
-					doorEconomy.ClosePark();
+					EditsOf( doorEconomy ).Issue( new SetParkOpenCommand( false ) );
 				host?.ParkDoorPressed?.Invoke( false );
 			}
 		}

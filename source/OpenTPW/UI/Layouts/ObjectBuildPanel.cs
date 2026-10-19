@@ -64,12 +64,13 @@ public sealed class ObjectBuildPanel
 				level.BuildEntry = null;
 		}
 		ImGui.SameLine();
+		// [EXT:online-coop-commands] each attraction opens or closes through a command (opening where the park's reopening guard allows)
 		if ( ImGui.Button( "Open all" ) )
-			foreach ( var item in objects.Objects )
-				item.Open();
+			foreach ( var item in objects.Objects.ToArray() )
+				level.Commands.Issue( new SetRideOpenCommand( item.Runtime.AttractionId, true ) );
 		ImGui.SameLine();
 		if ( ImGui.Button( "Close all" ) )
-			foreach ( var item in objects.Objects )
-				item.Close();
+			foreach ( var item in objects.Objects.ToArray() )
+				level.Commands.Issue( new SetRideOpenCommand( item.Runtime.AttractionId, false ) );
 	}
 }

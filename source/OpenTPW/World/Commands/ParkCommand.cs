@@ -32,6 +32,50 @@ public enum ParkCommandKind : byte
 	PlacePrototype = 20,
 	/// <summary>Removes the developer prototype ride (<see cref="RemovePrototypeCommand"/>).</summary>
 	RemovePrototype = 21,
+	/// <summary>Opens or closes the park's door (<see cref="SetParkOpenCommand"/>).</summary>
+	SetParkOpen = 30,
+	/// <summary>The park's admission price (<see cref="SetEntranceFeeCommand"/>).</summary>
+	SetEntranceFee = 31,
+	/// <summary>A shop's or sideshow's prices (<see cref="SetPricesCommand"/>).</summary>
+	SetPrices = 32,
+	/// <summary>A shop's quality of goods and special ingredient (<see cref="SetShopSettingsCommand"/>).</summary>
+	SetShopSettings = 33,
+	/// <summary>Takes a loan offer (<see cref="TakeLoanCommand"/>).</summary>
+	TakeLoan = 34,
+	/// <summary>Pays a loan off (<see cref="RepayLoanCommand"/>).</summary>
+	RepayLoan = 35,
+	/// <summary>Hires an applicant without placing them (<see cref="HireStaffCommand"/>).</summary>
+	HireStaff = 36,
+	/// <summary>Dismisses an employee (<see cref="FireStaffCommand"/>).</summary>
+	FireStaff = 37,
+	/// <summary>A staff role's monthly training budget (<see cref="SetTrainingBudgetCommand"/>).</summary>
+	SetTrainingBudget = 38,
+	/// <summary>A research category's effort (<see cref="SetResearchEffortCommand"/>).</summary>
+	SetResearchEffort = 39,
+	/// <summary>Steps a research category's current project (<see cref="MoveResearchCommand"/>).</summary>
+	MoveResearch = 40,
+	/// <summary>The research lab's workload (<see cref="SetResearchWorkloadCommand"/>).</summary>
+	SetResearchWorkload = 41,
+	/// <summary>Accepts or declines the waiting challenge (<see cref="AnswerChallengeCommand"/>).</summary>
+	AnswerChallenge = 42,
+	/// <summary>Calls or cancels maintenance of an object (<see cref="RequestMaintenanceCommand"/>).</summary>
+	RequestMaintenance = 43,
+	/// <summary>Buys a ride's next upgrade level (<see cref="BuyUpgradeCommand"/>).</summary>
+	BuyUpgrade = 44,
+	/// <summary>Cancels a ride's upgrade (<see cref="CancelUpgradeCommand"/>).</summary>
+	CancelUpgrade = 45,
+	/// <summary>Renames the park (<see cref="RenameParkCommand"/>).</summary>
+	RenamePark = 46,
+	/// <summary>Renames an employee (<see cref="RenameStaffCommand"/>).</summary>
+	RenameStaff = 47,
+	/// <summary>Asks for a cheat at the next park turn (<see cref="QueueCheatCommand"/>).</summary>
+	QueueCheat = 48,
+	/// <summary>Opens or closes one attraction (<see cref="SetRideOpenCommand"/>).</summary>
+	SetRideOpen = 49,
+	/// <summary>The ride window's speed, capacity and duration (<see cref="SetRideSettingsCommand"/>).</summary>
+	SetRideSettings = 50,
+	/// <summary>The game speed, the pause included (<see cref="SetSpeedCommand"/>).</summary>
+	SetSpeed = 51,
 }
 
 /// <summary>
@@ -56,6 +100,9 @@ public abstract record ParkCommand
 	/// <summary>Whether the cell is a coordinate pair a park map could hold (non-negative and below the codec's cell bound).</summary>
 	internal static bool IsCell( int x, int y ) => x is >= 0 and < ParkCommandCodec.MaximumCoordinate && y is >= 0 and < ParkCommandCodec.MaximumCoordinate;
 
+	/// <summary>Whether the text fits a command string (<see cref="ParkCommandCodec.MaximumString"/> UTF-8 bytes).</summary>
+	internal static bool IsText( string? text ) => text != null && System.Text.Encoding.UTF8.GetByteCount( text ) <= ParkCommandCodec.MaximumString;
+
 	/// <summary>Whether the rotation is one of the build tool's four angles.</summary>
 	internal static bool IsRotation( int rotation ) => rotation is 0 or 90 or 180 or 270;
 }
@@ -69,7 +116,7 @@ public abstract record ParkCommand
 public sealed record PlaceObjectCommand( string Entry, int X, int Y, int Rotation, bool Moving = false, int AddOnRide = -1 ) : ParkCommand
 {
 	public override ParkCommandKind Kind => ParkCommandKind.PlaceObject;
-	internal override bool IsWellFormed => Entry.Length > 0 && IsCell( X, Y ) && IsRotation( Rotation ) && AddOnRide >= -1;
+	internal override bool IsWellFormed => Entry.Length > 0 && IsText( Entry ) && IsCell( X, Y ) && IsRotation( Rotation ) && AddOnRide >= -1;
 	internal override void WriteFields( ParkCommandWriter writer )
 	{
 		writer.String( Entry );

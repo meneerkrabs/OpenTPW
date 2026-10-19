@@ -189,13 +189,13 @@ public sealed partial class ParkHud
 				{
 					if ( current.Loans.FirstOrDefault( loan => loan.OfferIndex == row.OfferIndex ) is not { } loan || loan.RemainingBalance != amount )
 						ShowLoanFailure( strings.Extra( OpenTpwText.NotAvailable ) );
-					else if ( !current.TryRepayLoan( row.OfferIndex ) )
+					else if ( !EditsOf( current ).Issue( new RepayLoanCommand( row.OfferIndex ) ).Accepted )
 						ShowLoanFailure( strings[UIStrings.InsufficientFunds] );
 				}
 				else if ( current.IsBankrupt || current.AvailableLoans.FirstOrDefault( offer => offer.Index == row.OfferIndex ) is not { } offer || offer.Amount != amount )
 					ShowLoanFailure( strings.Extra( OpenTpwText.NotAvailable ) );
 				else
-					current.TakeLoan( row.OfferIndex );
+					EditsOf( current ).Issue( new TakeLoanCommand( row.OfferIndex ) );
 				SelectLoan( 0 );
 			}),
 			(() => strings[UIStrings.No], () => Stack.Pop()) ) );

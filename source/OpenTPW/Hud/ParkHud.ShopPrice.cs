@@ -82,7 +82,7 @@ public sealed partial class ParkHud
 			if ( !InfoArmOpen || !PriceViewAllowed || !ReferenceEquals( selectedObject, owner ) || !TryPriceTarget( owner, out var current, out var target )
 				|| !ReferenceEquals( current, economy ) || !ReferenceEquals( target, state ) )
 			{ error = strings.Extra( OpenTpwText.NotAvailable ); return; }
-			current.SetPrices( target.Id, price );
+			EditsOf( current ).Issue( new SetPricesCommand( target.Id, price ) );
 			// the window's own price follows, so its apply on close keeps the typed price
 			PendingSettings.Price = price;
 			Cancel();

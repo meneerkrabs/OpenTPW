@@ -156,7 +156,7 @@ public sealed partial class ParkHud
 			CloseStaffWindow();
 		}
 		else
-			economy.Hire( candidate.Id );
+			EditsOf( economy ).Issue( new HireStaffCommand( candidate.Id ) );
 		selectedStaffId = 0;
 		EnsureStaffSelection();
 		return true;

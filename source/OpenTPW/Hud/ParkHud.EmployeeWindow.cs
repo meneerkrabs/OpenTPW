@@ -159,7 +159,7 @@ public sealed partial class ParkHud
 	{
 		if ( RejectReadOnlyAction() || Status.EconomySource is not ParkEconomy economy || economy.Staff.Members.All( item => item.Id != staffId ) )
 			return false;
-		economy.Fire( staffId );
+		EditsOf( economy ).Issue( new FireStaffCommand( staffId ) );
 		CloseEmployeeWindow();
 		return true;
 	}

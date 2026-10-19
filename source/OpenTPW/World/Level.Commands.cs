@@ -84,8 +84,40 @@ public partial class Level
 		EditQueueCommand edit => ExecuteEditQueue( edit ),
 		PlacePrototypeCommand prototype => Outcome( PlaceRide( new Vector3( prototype.X, prototype.Y, prototype.Z ) ) ),
 		RemovePrototypeCommand => ExecuteRemovePrototype(),
-		_ => ParkCommandResult.Rejected( $"The park does not take {command.Kind} commands." )
+		RenameParkCommand rename => Outcome( RenamePark( rename.Line1, rename.Line2 ) ),
+		SetRideOpenCommand open => ExecuteSetRideOpen( open ),
+		SetRideSettingsCommand settings => ExecuteSetRideSettings( settings ),
+		_ => Park?.Economy is { } economy && ParkEconomyCommands.Execute( economy, command ) is { } result
+			? result
+			: ParkCommandResult.Rejected( $"The park does not take {command.Kind} commands." )
 	};
+
+	private ParkCommandResult ExecuteSetRideOpen( SetRideOpenCommand open )
+	{
+		if ( ResolveCommandObject( open.Attraction ) is not { } item || !item.Runtime.IsAttraction )
+			return ParkCommandResult.Rejected( $"No attraction {open.Attraction}." );
+		if ( !open.Open )
+		{
+			if ( item.IsOpen )
+				item.Close();
+			return ParkCommandResult.Ok( false );
+		}
+		if ( item.IsOpen )
+			return ParkCommandResult.Ok( true );
+		// [BIN:STP-PPC:0x1007159C open button] the open buttons call the reopening guard 0xde654 first and open only when it allows (ORACLE.md F27, ECON-049)
+		if ( !(Gate?.MayOpen( item.Runtime ) ?? true) )
+			return ParkCommandResult.Rejected( $"{item.Entry.DisplayName} may not open now." );
+		item.Open();
+		return ParkCommandResult.Ok( true );
+	}
+
+	private ParkCommandResult ExecuteSetRideSettings( SetRideSettingsCommand settings )
+	{
+		if ( ResolveCommandObject( settings.Attraction ) is not { } item || item.Runtime.Script == null || item.Entry.WhichUIType != 0 /* Info.WhichUIType 0: a ride, the ride window */ )
+			return ParkCommandResult.Rejected( $"No ride {settings.Attraction} with settings." );
+		item.Runtime.ApplyRideWindow( new RideSettingWords( settings.Speed, settings.Capacity, settings.Duration ) );
+		return ParkCommandResult.Ok();
+	}
 
 	private ParkCommandResult Outcome( bool done, object? value = null ) =>
 		done ? ParkCommandResult.Ok( value ) : ParkCommandResult.Rejected( string.IsNullOrEmpty( LastActionMessage ) ? "Refused." : LastActionMessage );

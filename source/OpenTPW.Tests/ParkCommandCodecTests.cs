@@ -29,6 +29,28 @@ public class ParkCommandCodecTests
 		(new EditQueueCommand( 3, 3 ), "020f000606"),
 		(new PlacePrototypeCommand( 1.5f, -2.25f, 0f ), "0214000000c03f000010c000000000"),
 		(new RemovePrototypeCommand(), "021500"),
+		(new SetParkOpenCommand( true ), "021e0001"),
+		(new SetEntranceFeeCommand( 25 ), "021f0032"),
+		(new SetPricesCommand( 4, 3, 1, -5 ), "022000080601020109"),
+		(new SetShopSettingsCommand( 4, 150 ), "0221000801ac0200"),
+		(new TakeLoanCommand( 2 ), "02220004"),
+		(new RepayLoanCommand( 2 ), "02230004"),
+		(new HireStaffCommand( 11 ), "02240016"),
+		(new FireStaffCommand( 12 ) { Player = 1 }, "02250218"),
+		(new SetTrainingBudgetCommand( StaffType.Mechanic, 500 ), "02260001e807"),
+		(new SetResearchEffortCommand( ResearchCategory.Sideshow, 60 ), "0227000278"),
+		(new MoveResearchCommand( ResearchCategory.Ride, -1 ), "0228000001"),
+		(new SetResearchWorkloadCommand( 75 ), "0229009601"),
+		(new AnswerChallengeCommand( false ), "022a0000"),
+		(new RequestMaintenanceCommand( 9, true ), "022b001201"),
+		(new BuyUpgradeCommand( 9 ), "022c0012"),
+		(new CancelUpgradeCommand( 9 ), "022d0012"),
+		(new RenameParkCommand( "Kevin the", "Cosmic Cow" ), "022e00124b6576696e2074686514436f736d696320436f77"),
+		(new RenameStaffCommand( 3, "Ada" ), "022f000606416461"),
+		(new QueueCheatCommand( CheatKind.Ticket, 4 ), "0230000308"),
+		(new SetRideOpenCommand( 17, true ), "0231002201"),
+		(new SetRideSettingsCommand( 17, 100, 8, 30 ), "02320022c801103c"),
+		(new SetSpeedCommand( GameSpeed.Fastest ), "02330004"),
 	};
 
 	[TestMethod]
@@ -91,9 +113,11 @@ public class ParkCommandCodecTests
 		{
 			"020000", // kind 0
 			"02ff00", // kind 255
-			"02160000", // a kind no command has
+			"02340000", // a kind no command has
 			"02028000", // a padded player varint
 			"020201", // a negative player
+			"021e0002", // a boolean byte of 2
+			"02200008060200", // an optional's presence byte of 2
 			"0202000608" + "", // valid, the control
 		};
 		foreach ( var hex in bad[..^1] )
@@ -114,11 +138,25 @@ public class ParkCommandCodecTests
 			new UndoLineCommand( CellToolMode.Path, -1, 0, 0, new[] { (-1, 0) }, Array.Empty<(int X, int Y)>() ),
 			new PlacePrototypeCommand( float.NaN, 0, 0 ),
 			new PlacePrototypeCommand( 0, float.PositiveInfinity, 0 ),
+			new SetEntranceFeeCommand( -1 ),
+			new SetPricesCommand( 1, -1 ),
+			new SetTrainingBudgetCommand( (StaffType)9, 0 ),
+			new SetTrainingBudgetCommand( StaffType.Guard, -1 ),
+			new SetResearchEffortCommand( (ResearchCategory)7, 0 ),
+			new QueueCheatCommand( (CheatKind)99 ),
+			new SetSpeedCommand( (GameSpeed)3 ),
+			new RenameParkCommand( new string( 'x', ParkCommandCodec.MaximumString + 1 ), "" ),
+			new RenameStaffCommand( -1, "x" ),
+			new SetRideOpenCommand( -1, true ),
 		};
 		foreach ( var command in outOfRange )
 		{
 			Assert.IsFalse( command.IsWellFormed, command.ToString() );
-			Assert.ThrowsException<InvalidDataException>( () => ParkCommandCodec.Decode( ParkCommandCodec.Encode( command ) ), command.ToString() );
+			// a string longer than the bound has no byte form at all; every other out-of-range command encodes and is refused when read
+			if ( command is RenameParkCommand )
+				Assert.ThrowsException<ArgumentException>( () => ParkCommandCodec.Encode( command ) );
+			else
+				Assert.ThrowsException<InvalidDataException>( () => ParkCommandCodec.Decode( ParkCommandCodec.Encode( command ) ), command.ToString() );
 		}
 		// a string that is not UTF-8, and a cell list longer than the bound
 		Assert.ThrowsException<InvalidDataException>( () => ParkCommandCodec.Decode( Convert.FromHexString( "02010002c3280000000000" ) ) );

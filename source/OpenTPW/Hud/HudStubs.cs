@@ -81,8 +81,9 @@ public sealed class EconomyParkStatus : IHudParkStatus
 		get => Economy?.Speed ?? GameSpeed.Normal;
 		set
 		{
+			// [EXT:online-coop-commands] the HUD sets a park's speed through the park's command funnel (ParkHud.SetUserGameSpeed); a write through this adapter alone is a command of the economy's own funnel
 			if ( Economy is { } economy )
-				economy.Speed = value;
+				ParkEconomyCommands.ForEconomy( economy ).Issue( new SetSpeedCommand( value ) );
 		}
 	}
 

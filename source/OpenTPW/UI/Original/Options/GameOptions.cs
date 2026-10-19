@@ -36,6 +36,9 @@ public sealed class GameOptions
 	// [BIN:TPW-EXE:sound.sam DefaultVolume] defaults SFX 75, Music 60, Speech 75, Movie 100 (percent). The globals holding them are medium confidence.
 	// The movie volume is scaled by 1023 / 100 for the movie device and plays as DirectSound attenuation (see MovieVolumeCurve).
 	// [BIN:TPW-EXE:0x4a4490 volume sliders] the options volume sliders get SetRange(0,100) (0x66b47d: min 0, max 100), an integer value and line and page steps of 1 (slider constructor 0x66ad77/0x66adc9), so OpenTPW's 1 % steps over 0..100 are the original's granularity.
+	/// <summary>0..100 controls the recovered FADEOBJ effect only. Null/absent uses the loaded sound.sam default.
+	/// This host policy does not reconstruct an original saved preference or other quality-controlled hardware features.</summary>
+	public int? SoundQuality { get; set; }
 	public int SoundEffectsVolume { get; set; } = 75;
 	public int MusicVolume { get; set; } = 60;
 	public int SpeechVolume { get; set; } = 75;
@@ -65,6 +68,12 @@ public sealed class GameOptions
 	// [EXT:wide-zoom] the OpenTPW page's "Wide zoom" row; user-approved 2026-10-18
 	public bool WideZoom { get; set; } = true;
 
+	/// <summary>
+	/// [EXT:evening] How the evening and night extension's day cycle runs while that extension is on (docs/EVENING.md): a full day and night in 10, 20 or 40 minutes of play, or always day, dusk or night.
+	/// Presentation only. Files written before the option existed lack it and get the default; an unknown value is read as the default.
+	/// </summary>
+	public EveningPace Evening { get; set; } = EveningPaces.Default;
+
 	public static GameOptions Current { get; set; } = new();
 
 	/// <summary>Volume as a 0-1 gain.</summary>
@@ -85,6 +94,7 @@ public sealed class GameOptions
 	/// <summary>Overwrites every field with <paramref name="other"/>'s.</summary>
 	public void CopyFrom( GameOptions other )
 	{
+		SoundQuality = other.SoundQuality;
 		SoundEffectsVolume = other.SoundEffectsVolume;
 		MusicVolume = other.MusicVolume;
 		SpeechVolume = other.SpeechVolume;
@@ -102,6 +112,7 @@ public sealed class GameOptions
 		Scroll = other.Scroll;
 		WideZoom = other.WideZoom;
 		Autosave = other.Autosave;
+		Evening = other.Evening;
 	}
 
 	public static GameOptions Load( string path )
@@ -148,10 +159,12 @@ public sealed class GameOptions
 	public GameOptions Normalized()
 	{
 		VolumeFormat = PercentVolumeFormat;
+		if ( SoundQuality is { } quality ) SoundQuality = Math.Clamp( quality, 0, 100 );
 		SoundEffectsVolume = Math.Clamp( SoundEffectsVolume, 0, MaximumVolume );
 		MusicVolume = Math.Clamp( MusicVolume, 0, MaximumVolume );
 		SpeechVolume = Math.Clamp( SpeechVolume, 0, MaximumVolume );
 		MovieVolume = Math.Clamp( MovieVolume, 0, MaximumVolume );
+		Evening = EveningPaces.Validated( Evening );
 		return this;
 	}
 }

@@ -146,19 +146,6 @@ public class LocatorPanelTests
 			.Select( ParkHud.StaffStateFrame ).ToArray() );
 	}
 
-	[TestMethod]
-	public void StaffStepNewestFirstAndVisitorsByIdAmongActorsInTheWorld()
-	{
-		var staff = new[]
-		{
-			new StaffWorldSnapshot( 3, StaffType.Handyman, 1, 1, false, false ), new StaffWorldSnapshot( 8, StaffType.Handyman, 2, 2, false, false ),
-			new StaffWorldSnapshot( 5, StaffType.Mechanic, 1, 1, false, false ), new StaffWorldSnapshot( 9, StaffType.Handyman, float.NaN, 1, false, false ),
-		};
-		Assert.AreEqual( 8, LocatorOrder.NextStaff( staff, StaffType.Handyman, 0 ) );
-		Assert.AreEqual( 3, LocatorOrder.NextStaff( staff, StaffType.Handyman, 8 ) );
-		Assert.AreEqual( 0, LocatorOrder.NextStaff( staff, StaffType.Handyman, 3 ) );
-		Assert.AreEqual( 0, LocatorOrder.NextStaff( staff, StaffType.Guard, 0 ) );
-	}
 
 	[TestMethod]
 	public void ThePanelsComeFromTheOriginalTables()

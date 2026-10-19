@@ -124,7 +124,7 @@ public readonly record struct SaveCoasterSection(
 /// <item>header +0xA → <see cref="Controller16"/>, controller <c>+0x10</c>, the station's mesh instance id (<see cref="StationMeshInstanceId"/>), the key that
 /// binds the block to the live controller (0x437CBF);</item>
 /// <item>header +0xC → <see cref="Controller20"/>, controller <c>+0x14</c>, the coaster's slot in the table <c>0x790BD0</c> (<see cref="Slot"/>, the scripts'
-/// coaster handle): the only header word the loader hands to the slot allocator <c>0x468760</c>, as the preferred slot;</item>
+/// coaster handle): the only header word the loader hands to the slot allocator <c>0x468760</c>, which stores a slot other than -1 as given (no allocation or fallback);</item>
 /// <item>header +0xE/+0x10 → <see cref="Controller28"/>/<see cref="Controller32"/>, controller <c>+0x1C</c>/<c>+0x20</c>, the two values the placement
 /// routine <c>0x466F90</c> hands the constructor; not restored (the loader passes them to <c>0x436AC0</c>, which never reads them);</item>
 /// <item>header +0x12 → <see cref="PowerFactor"/>, controller <c>+0x2C</c> (0 or 1), restored;</item>
@@ -153,7 +153,7 @@ public sealed record SaveCoaster(
 	/// <summary>The station's mesh instance id (controller <c>+0x10</c>), the loader's bind key.</summary>
 	public ushort StationMeshInstanceId => Controller16;
 
-	/// <summary>The coaster's slot in the table <c>0x790BD0</c> (controller <c>+0x14</c>), restored as the slot allocator's preferred slot.</summary>
+	/// <summary>The coaster's slot in the table <c>0x790BD0</c> (controller <c>+0x14</c>), restored as given by the slot allocator <c>0x468760</c>.</summary>
 	public ushort Slot => Controller20;
 
 	/// <summary>The trains in service (controller <c>+0xF4</c>): the loop bound of the train passes (<c>0x435784</c>, <c>0x43BA35</c>, <c>0x43CD36</c>).</summary>

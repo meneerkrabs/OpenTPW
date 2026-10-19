@@ -581,7 +581,7 @@ The header fields as tp.exe's loader treats them (`SaveCoaster` names them):
 | +4 u32 | +8 | state word: low nibble 1/2/4/8, mode bits 0x10/0x20/0x40 (0x40 the breakdown, no power); the constructor's value is 0x11 | yes |
 | +8 u16 | +0xC | coaster type id (`TypeId`) | no, the constructor set it |
 | +0xA u16 | +0x10 | station mesh instance id (`StationMeshInstanceId`), the bind key | used to bind |
-| +0xC u16 | +0x14 | slot in the table `0x790BD0` (`Slot`, at most 255), the scripts' coaster handle | as the allocator's preferred slot |
+| +0xC u16 | +0x14 | slot in the table `0x790BD0` (`Slot`, at most 255), the scripts' coaster handle | as the saved slot, which the allocator assigns as given |
 | +0xE u16 | +0x1C | placement value 1 from `0x466F90` (SAVE-922) | no |
 | +0x10 u16 | +0x20 | placement value 2 from `0x466F90` (SAVE-922) | no |
 | +0x12 f32 | +0x2C | power factor 0 or 1 | yes |
@@ -610,8 +610,9 @@ load flag set it skips the slot, the trains, the seat split and the station node
    instruction dereferences it (`0x437CD5`): the original crashes rather than skipping the block**, so the station's
    attraction and its RideSystem mesh record must load first. On a match it allocates the train slots and car arrays
    (`0x436D10` with load flag 1, no car models), builds the three station nodes and the cursor node (`0x436AC0`, from
-   the station model's dummies), restores the slot (`0x468760` with the header's `+0xC` as the preferred slot; the
-   result goes to `ctl+0x14`, `0x4386B2`) and sets `ctl |= 0x4000` (`0x437CD8`);
+   the station model's dummies), restores the slot (`0x468760` with the header's `+0xC`: a slot other than -1 is stored as given, with no
+   allocation, fallback or change to the allocator's globals; the result goes to `ctl+0x14`, `0x4386B2`), sets `ctl |= 2`
+   (`0x4386BA`) and then `ctl |= 0x4000` (`0x437CD8`);
 3. reads the auxiliary block into station node S2's collision list (count `+0xB0`, eight slots `+0xB4..`);
 4. reads each section: wire 0x8 runs the loop-mode setup `0x442CD0`, then `0x435020` finds or creates the cell's
    stack descriptor in any coaster's stack list (the key is the cell index width·y + x), builds the node through
@@ -701,7 +702,7 @@ track, controller or train state is reconstructed. The separate TPI viewer is un
   Theme Park Inc coaster chunk is inferred anywhere in production code (the reader runs on it only in
   a labelled test).
 - Station nodes are never sections: the saver `0x437300` skips every node whose descriptor byte `+4` carries 0x10
-  (the station nodes 0x12, the pylon-less nodes and the end node 0x13) and writes S2's collision list as the
+  (the station nodes 0x12 and the end node 0x13) and writes S2's collision list as the
   auxiliary block instead. Consumers still join sections to objects by cell.
 
 ## Money (bank thing, model 16)

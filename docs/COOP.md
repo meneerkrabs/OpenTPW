@@ -118,11 +118,11 @@ guarded list.
 
 | Area | Commands | State |
 | --- | --- | --- |
-| Objects | place (the build tool, the Move tool, track add-ons), the remove tool, remove at a cell, sell from the object and attraction windows, the Move tool's pick-up | converted |
+| Objects | place (the build tool, the Move tool, track add-ons), the remove tool, remove at a cell, sell from the object and attraction windows, the Move tool's pick-up, the bulldozer (area clear: one command per cleared cell) | converted |
 | Paths and queues | path and queue lines, undo inside the tool, path and queue cell removal, Backspace over a cell, the queue edit click | converted |
 | Developer prototype | place and remove the Totem | converted |
-| Economy | park open and close, entrance fee, prices and shop settings, loans, hire and fire, training budget, research, challenges, maintenance, ride upgrades, rename, cheats, speed | part 2 |
-| Tools | land, area clear, pools and waves, slides and pool attractions, kart and water tracks, coasters, staff placement and patrol areas | part 3 |
+| Economy | park open and close, ride open and close, the ride window's settings, entrance fee, prices and shop settings, loans, hire and fire, training budget, research, challenges, maintenance, ride upgrades, park and staff rename, cheats, speed | part 2 |
+| Tools | land, pools and waves, slides and pool attractions, kart and water tracks, coasters, staff placement and patrol areas | part 3 |
 
 ## Known limits of C1
 

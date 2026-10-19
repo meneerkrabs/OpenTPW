@@ -78,7 +78,7 @@ public partial class Level
 			? ParkCommandResult.Ok( writer.Commit( (line.StartX, line.StartY), (line.EndX, line.EndY) ) )
 			: ParkCommandResult.Rejected( $"No {line.Mode} line can be laid here." ),
 		UndoLineCommand undo => ExecuteUndoLine( undo ),
-		RemovePathCellCommand remove => Outcome( RemovePathCell( remove.X, remove.Y ) is var result && result == CellBuildResult.Ok, result ),
+		RemovePathCellCommand remove => RemovePathCell( remove.X, remove.Y ) is var result && result == CellBuildResult.Ok ? ParkCommandResult.Ok( result ) : new ParkCommandResult( false, $"No path cell removed: {result}.", result ),
 		RemoveQueueCellCommand remove => RemoveQueueCell( remove.X, remove.Y ) is var count and > 0 ? ParkCommandResult.Ok( count ) : ParkCommandResult.Rejected( "No queue cell here." ),
 		BacktrackCommand backtrack => Outcome( BacktrackAt( backtrack.X, backtrack.Y ) ),
 		EditQueueCommand edit => ExecuteEditQueue( edit ),

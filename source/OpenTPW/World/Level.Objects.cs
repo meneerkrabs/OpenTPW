@@ -646,7 +646,9 @@ public partial class Level
 			PoolBuilder.Painted += PreloadSwimSprites;
 		}
 		SetupPoolSlides();
-		AreaClearTool = IsReadOnlyVisit ? null : new AreaClearTool( RemoveObjectAt, () => Guests?.Grid.Cells, RemovePathCell, TypesFootprints ? null : ( x, y ) => Objects.FindAt( x, y ) );
+		// [EXT:online-coop-commands] the bulldozer's drag clears each object and path cell through a command of its own
+		AreaClearTool = IsReadOnlyVisit ? null : new AreaClearTool( ( x, y ) => Commands.Issue( new RemoveObjectAtCommand( x, y ) ).Accepted, () => Guests?.Grid.Cells,
+			( x, y ) => Commands.Issue( new RemovePathCellCommand( x, y ) ) is { Value: CellBuildResult result } ? result : CellBuildResult.NotPath, TypesFootprints ? null : ( x, y ) => Objects.FindAt( x, y ) );
 	}
 
 	// Objects, fixed items (the gate and entrance included) and the sandbox Totem block paths like their original cell types do; an object of a lower

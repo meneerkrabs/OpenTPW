@@ -60,8 +60,13 @@ public class ParkCommandLayerTests
 		(new( "Ride upgrades", @"\.(TryBuyUpgrade|TryCancelUpgrade)\s*\(", "BuyUpgrade" ), "C1 part 2 (economy)"),
 		(new( "Level.RenamePark", Call( "RenamePark" ), "RenamePark" ), "C1 part 2 (economy)"),
 		(new( "Cheats", Call( "QueueCheat" ), "QueueCheat" ), "C1 part 2 (economy)"),
-		(new( "Land", @"\.(ChargeLand|TryBuyCells)\s*\(", "BuyLand" ), "C1 part 3 (tools)"),
-		(new( "Pools", @"\.(SetPoolWaves|CyclePoolWaves)\s*\(", "SetPoolWaves" ), "C1 part 3 (tools)"),
+		(new( "Ride open and close", @"\b(item|ride)\??\.(Open|Close)\(\s*\)", "SetRideOpen" ), "C1 part 2 (economy)"),
+		(new( "Ride window settings", Call( "ApplyRideWindow" ), "SetRideSettings" ), "C1 part 2 (economy)"),
+		(new( "Staff rename", @"\bStaff\.Rename\s*\(", "RenameStaff" ), "C1 part 2 (economy)"),
+		(new( "Game speed", @"\beconomy\.Speed\s*=[^=]", "SetSpeed" ), "C1 part 2 (economy)"),
+		(new( "Land", @"\.(ChargeLand|TryBuyCells|SetLand)\s*\(", "BuyLand" ), "C1 part 3 (tools)"),
+		(new( "Pools", @"\.(SetPoolWaves|CyclePoolWaves|PaintCells|EraseCells|Paint|Erase)\s*\(", "PaintPool" ), "C1 part 3 (tools)"),
+		(new( "Staff placement and patrol areas", @"\.(EndPlacement|SetPatrolArea)\s*\(|\bPendingPlacementId\s*=[^=]", "PlaceStaff" ), "C1 part 3 (tools)"),
 		(new( "Coasters", Call( "CoasterClick" ), "CoasterClick" ), "C1 part 3 (tools)"),
 	};
 

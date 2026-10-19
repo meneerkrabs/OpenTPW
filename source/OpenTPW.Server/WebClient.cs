@@ -68,6 +68,12 @@ public static partial class WebClient
 				var path = request.Path.Value ?? "/";
 				if ( path == "/" )
 					path = "/index.html";
+				// The compressed copies are chosen by the middleware below, by the request's Accept-Encoding; asking for one by its own name would send the bytes without their Content-Encoding.
+				if ( !path.StartsWith( "/api/", StringComparison.Ordinal ) && (path.EndsWith( ".br", StringComparison.Ordinal ) || path.EndsWith( ".gz", StringComparison.Ordinal )) && files.GetFileInfo( path ).Exists )
+				{
+					context.Response.StatusCode = StatusCodes.Status404NotFound;
+					return;
+				}
 				if ( !path.StartsWith( "/api/", StringComparison.Ordinal ) && types.TryGetContentType( path, out _ ) && files.GetFileInfo( path ).Exists )
 				{
 					context.Response.Headers.Vary = "Accept-Encoding";
@@ -103,7 +109,7 @@ public static partial class WebClient
 				// Fingerprinted runtime files never change, and neither does a pools sprite file asked for by its content hash (?v=, opentpw-pool-sprites.js: a changed
 				// file is a new address); the page and its scripts are revalidated (ETag, answered 304).
 				http.Response.Headers.CacheControl = (http.Request.Path.StartsWithSegments( "/_framework" ) && Fingerprinted().IsMatch( name ))
-					|| (http.Request.Path.StartsWithSegments( PoolSpriteFolder ) && ContentHash().IsMatch( http.Request.QueryString.Value?.TrimStart( '?' ) ?? "" ))
+					|| (http.Request.Path.StartsWithSegments( PoolSpriteFolder ) && MatchesContentHash( files, http.Request ))
 					? "public, max-age=31536000, immutable"
 					: "no-cache";
 				if ( name == "index.html" )
@@ -114,6 +120,33 @@ public static partial class WebClient
 				}
 			}
 		} );
+	}
+
+	private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (long Length, DateTime Modified, string Hash)> fileHashes = new();
+
+	/// <summary>
+	/// True when the request's <c>?v=</c> is the first 16 hex digits of the SHA-256 of the file's uncompressed bytes (not of a Brotli or gzip copy). Only then does the address name
+	/// this content, so only then may the response be cached for good: any other well-formed value (an old tab's, after a deploy) is revalidated. The hash is kept per file, length and modification time.
+	/// </summary>
+	private static bool MatchesContentHash( IFileProvider files, HttpRequest request )
+	{
+		var query = request.Query["v"].ToString();
+		if ( !ContentHash().IsMatch( "v=" + query ) )
+			return false;
+		var path = request.Path.Value ?? "";
+		if ( path.EndsWith( ".br", StringComparison.Ordinal ) || path.EndsWith( ".gz", StringComparison.Ordinal ) )
+			path = path[..^3];
+		var info = files.GetFileInfo( path );
+		if ( !info.Exists || info.PhysicalPath == null )
+			return false;
+		var key = info.PhysicalPath;
+		if ( !fileHashes.TryGetValue( key, out var known ) || known.Length != info.Length || known.Modified != info.LastModified.UtcDateTime )
+		{
+			using var stream = info.CreateReadStream();
+			known = (info.Length, info.LastModified.UtcDateTime, Convert.ToHexStringLower( System.Security.Cryptography.SHA256.HashData( stream ) ));
+			fileHashes[key] = known;
+		}
+		return known.Hash.StartsWith( query, StringComparison.Ordinal );
 	}
 
 	/// <summary>Content type of <c>name.ext.br</c> and <c>name.ext.gz</c> is that of <c>name.ext</c>.</summary>

@@ -1375,6 +1375,12 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			// Capture the current generations: lazy pack downloads may have replaced individual atlas textures.
 			firstParkHeadAssets = flow.Level!.RideHeadRenderer!.OwnedAssets.ToArray();
 			firstParkGuestAssets = flow.Level.GuestRenderer!.OwnedAssets.ToArray();
+			// rebuilding the path layer releases what it replaces: the same number of test.shader copies afterwards, however often it runs
+			var shadersBeforeRebuild = TestShaderCount();
+			flow.Level.OriginalTerrain!.RefreshPaths();
+			flow.Level.OriginalTerrain.RefreshPaths();
+			Require( TestShaderCount() == shadersBeforeRebuild, "rebuilding the terrain's path layer leaves no material of the replaced parts behind" );
+			Require( ParticleRenderer.For( flow.Level ) is not { AtlasPixelsReleased: false }, "the particle renderer dropped its CPU atlas pixels after the upload" );
 			Click( flow.Hud!.Stack.Top!, nameof( UIStrings.ExitToLobby ) );
 		} );
 		Wait( "lobby again", 20 );

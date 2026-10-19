@@ -86,7 +86,7 @@ public sealed class OriginalTerrain : Entity
 	public int PathCellCount { get; private set; }
 	private Dictionary<string, Texture>? heightfieldTextures;
 	private readonly List<ModelEntity> pathParts = new();
-	/// <summary>Path layer materials by texture set; reused when the layer is rebuilt, because materials are never disposed.</summary>
+	/// <summary>Path layer materials by texture set; kept when the layer is rebuilt, since a texture set that comes back is drawn by the same material; released with the terrain.</summary>
 	private readonly Dictionary<string, Material> pathMaterials = new();
 
 	/// <summary>Rebuilds the path layer so built and removed path cells show.</summary>

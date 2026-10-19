@@ -16,7 +16,9 @@ namespace OpenTPW.Tests;
 [TestClass]
 public class WebClientTransportTests
 {
-	private static readonly string Hash = "0123456789abcdef";
+	/// <summary>The first 16 hex digits of the SHA-256 of the sprite file's bytes (the uncompressed 2,000 zeros of <see cref="Publish"/>), what the page puts in <c>?v=</c>.</summary>
+	private static readonly string Hash = Convert.ToHexStringLower( System.Security.Cryptography.SHA256.HashData( new byte[2000] ) )[..16];
+	private const string OtherHash = "0123456789abcdef";
 
 	[TestMethod]
 	[DataRow( "gzip, deflate, br, zstd", true, true )]
@@ -118,8 +120,8 @@ public class WebClientTransportTests
 			// the address names the content, so a changed file is a new address and the copy may be kept for good
 			Assert.AreEqual( "public, max-age=31536000, immutable", sprite.Headers.CacheControl!.ToString() );
 
-			// without the hash (or with something else) the file is revalidated like the page's own scripts
-			foreach ( var path in new[] { "/pools-sprites/Swim/SPR_SU.TPC", "/pools-sprites/Swim/SPR_SU.TPC?v=short", "/pools-sprites/Swim/SPR_SU.TPC?x=0123456789abcdef" } )
+			// without the hash, with another file's or an old version's hash, or with something else, the file is revalidated like the page's own scripts
+			foreach ( var path in new[] { "/pools-sprites/Swim/SPR_SU.TPC", "/pools-sprites/Swim/SPR_SU.TPC?v=short", $"/pools-sprites/Swim/SPR_SU.TPC?x={Hash}", $"/pools-sprites/Swim/SPR_SU.TPC?v={OtherHash}" } )
 			{
 				using var revalidated = await GetAsync( http, path, "br" );
 				StringAssert.Contains( revalidated.Headers.CacheControl!.ToString(), "no-cache", path );
@@ -157,6 +159,55 @@ public class WebClientTransportTests
 			// the copies of different codings are different entities
 			using var gzip = await GetAsync( http, "/main.js", "gzip" );
 			Assert.AreNotEqual( etag, gzip.Headers.ETag?.ToString() );
+		}
+		finally
+		{
+			server.DeleteData();
+			Directory.Delete( web, true );
+		}
+	}
+
+	[TestMethod]
+	public async Task ACompressedCopyIsNotServedUnderItsOwnName()
+	{
+		var web = Publish();
+		await using var server = await LoopbackServer.StartAsync( options => options.WebClientDirectory = web );
+		try
+		{
+			using var http = new HttpClient( new HttpClientHandler { AutomaticDecompression = DecompressionMethods.None } ) { BaseAddress = server.Url };
+			foreach ( var path in new[] { "/main.js.gz", "/main.js.br", "/pools-sprites/Swim/SPR_SU.TPC.br" } )
+			{
+				using var response = await GetAsync( http, path, "gzip, br" );
+				Assert.AreEqual( HttpStatusCode.NotFound, response.StatusCode, path );
+			}
+		}
+		finally
+		{
+			server.DeleteData();
+			Directory.Delete( web, true );
+		}
+	}
+
+	[TestMethod]
+	public async Task HeadAnswersWithTheLengthAndEncodingOfTheChosenCopy()
+	{
+		var web = Publish();
+		await using var server = await LoopbackServer.StartAsync( options => options.WebClientDirectory = web );
+		try
+		{
+			using var http = new HttpClient( new HttpClientHandler { AutomaticDecompression = DecompressionMethods.None } ) { BaseAddress = server.Url };
+			foreach ( var (coding, length) in new[] { ("br", 3L), ("gzip", 4L) } )
+			{
+				using var request = new HttpRequestMessage( HttpMethod.Head, "/main.js" );
+				request.Headers.AcceptEncoding.ParseAdd( coding );
+				using var response = await http.SendAsync( request );
+				Assert.AreEqual( coding, response.Content.Headers.ContentEncoding.Single() );
+				Assert.AreEqual( length, response.Content.Headers.ContentLength );
+			}
+			using var plain = new HttpRequestMessage( HttpMethod.Head, "/main.js" );
+			using var plainResponse = await http.SendAsync( plain );
+			Assert.AreEqual( 0, plainResponse.Content.Headers.ContentEncoding.Count );
+			Assert.AreEqual( 8L, plainResponse.Content.Headers.ContentLength );
 		}
 		finally
 		{

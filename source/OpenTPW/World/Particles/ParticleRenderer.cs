@@ -28,6 +28,9 @@ public sealed class ParticleRenderer : Entity
 	private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<Level, ParticleRenderer> byLevel = new();
 
 	/// <summary>The renderer of a level, or null.</summary>
+	/// <summary>True once the atlas's CPU pixels were dropped after the GPU upload (smoke tests).</summary>
+	internal bool AtlasPixelsReleased => atlas.Pixels.Length == 0;
+
 	public static ParticleRenderer? For( Level level ) => level != null && byLevel.TryGetValue( level, out var renderer ) ? renderer : null;
 
 	private readonly ParticleSystem system;

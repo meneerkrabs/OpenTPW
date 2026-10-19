@@ -89,13 +89,14 @@ class VisitorInfoArrowContract(unittest.TestCase):
                 self.assertEqual(older[current], order[index + 1 if index < len(order) - 1 else 0])
                 self.assertEqual(newer[current], order[index - 1 if index > 0 else len(order) - 1])
 
-    def test_residual_stays_open_and_no_portrait_or_staff_code_is_replaced(self):
+    def test_residual_stays_open_with_bounded_ordinary_portrait_and_unchanged_arrow_fallback(self):
         annotation = self.hud.split("// [APPROX:UI-910]", 1)[1].splitlines()[0]
         self.assertIn("portrait frame", annotation)
-        self.assertIn("stays empty", annotation)
+        self.assertIn("sources stay empty", annotation)
         self.assertIn("host-only fallback", annotation)
         self.assertNotIn("speed 8.0", annotation)
-        self.assertNotIn("new UiSpriteFigure", self.hud)
+        self.assertIn("new UiSpriteFigure", self.hud)
+        self.assertIn("native clone VM timing", annotation)
         self.assertIn('("UI-910",', read("source/OpenTPW/UI/Original/UiApproximations.cs"))
 
     def test_ci_runs_source_guards_and_existing_full_csharp_suite(self):

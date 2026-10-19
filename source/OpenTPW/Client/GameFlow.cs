@@ -880,6 +880,7 @@ internal sealed partial class GameFlow : IDisposable
 			for ( var frames = lobbyFrames.Advance( Time.Delta ); frames > 0; frames-- )
 				Lobby.StepFrame( ReferenceFrameClock.FrameSeconds );
 			Lobby.Animate( Time.Delta );
+			Lobby.StepSigns( Menu?.Selected, paused: false );
 			lobbyEffects.StepGlobe( Time.Delta );
 			return;
 		}
@@ -892,6 +893,7 @@ internal sealed partial class GameFlow : IDisposable
 				for ( var frames = lobbyFrames.Advance( Time.Delta ); frames > 0; frames-- )
 					city.StepFrame( ReferenceFrameClock.FrameSeconds );
 				city.Animate( Time.Delta );
+				city.StepSigns( null, paused: false );
 			}
 			return;
 		}
@@ -916,6 +918,8 @@ internal sealed partial class GameFlow : IDisposable
 				GameAudio.PlayLobbyOneShot( oneShot );
 		}
 		Lobby.Animate( Time.Delta );
+		// one lobby sign per frame from the second frame on, the selected island's first; none during the zoom into a park, whose island keeps its board then
+		Lobby.StepSigns( Menu?.Selected, paused: LobbyEntering );
 	}
 
 	/// <summary>The lobby's reference frames (60 Hz) for the frame-driven effects and flyers.</summary>

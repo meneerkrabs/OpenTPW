@@ -172,8 +172,9 @@ screens, options), `FrontEnd/`, `Hud/`, `World/Lobby/LobbyScene.cs`,
   Signs (tp.exe `0x5E1A44`, `0x409B10`, `LobbySigns`): the four models with `sign1`/`sign2` faces
   (`Jun_isle`, `Hal_isle`, `Fan_gate`, `Spa_gate`) show their theme gate's default lines (the gate's
   OBJECT_NAMES row, not a saved park name) drawn with their own `<model>.sgn`; they are composed one per
-  frame after the lobby appears, show a plain board until then (or when one cannot be drawn), and are
-  kept for the session, so a later lobby binds them at once.
+  frame from the lobby's second frame on, the selected island's first and none during the zoom into a park,
+  show a plain board until then (or when one cannot be drawn), and are kept for the session, so a later
+  lobby binds them at once.
   Enter sequence (tp.exe `0x5e0490` states 1 and 2, `LobbyCameraMode.BeginEnter`): choosing a
   start in an island's menu hides the lobby UI, turns the camera to the island's angle + π at 0.05 × step a
   frame the short way round, plays the gate's `M1` clip, then zooms in (radius × (1 − 0.07 × step), height

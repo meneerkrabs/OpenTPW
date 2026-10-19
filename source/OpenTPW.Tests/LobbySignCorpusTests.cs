@@ -88,8 +88,8 @@ public class LobbySignCorpusTests
 		{
 			var model = new[] { island.IslandModel, island.GateModel }.Single( candidate => models.Contains( candidate, StringComparer.OrdinalIgnoreCase ) );
 			var sign = terrain.Single( file => string.Equals( Path.GetFileName( file ), model + ".sgn", StringComparison.OrdinalIgnoreCase ) );
-			var lines = ParkNameLines.Default( LobbySigns.GateInfoId( island.Level )!.Value, objectNames );
-			Assert.IsNotNull( lines, island.Level );
+			var lines = LobbySigns.Lines( island, objectNames );
+			Assert.AreEqual( ParkNameLines.Default( LobbySigns.GateInfoId( island.Level )!.Value, objectNames ), lines, $"{island.Level}: the gate's own row, as a new park's gate starts" );
 			var images = LobbySigns.Compose( $"/lobby/terrain/{Path.GetFileName( sign )}", lines );
 			Assert.IsNotNull( images, model );
 			Assert.AreEqual( lines.Line1, images.Line1 );

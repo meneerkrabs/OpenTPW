@@ -2,6 +2,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 
 namespace OpenTPW.Tests;
 
@@ -98,6 +99,17 @@ public class SignSlotPlanTests
 		Assert.AreEqual( 4601, LobbySigns.GateInfoId( "fantasy" ) );
 		Assert.AreEqual( 3601, LobbySigns.GateInfoId( "space" ) );
 		Assert.IsNull( LobbySigns.GateInfoId( "beach" ) );
+	}
+
+	[TestMethod]
+	public void ALobbyIslandShowsItsThemeGatesRowAsItIs()
+	{
+		// tp.exe 0x409B10 + 0x413020/0x4130B0: the jungle gate 1601's two OBJECT_NAMES texts (entries 85 and 86), passed as two lines and not split again
+		var names = Enumerable.Repeat( "", 400 ).ToArray();
+		names[85] = "LOST";
+		names[86] = "Kingdom";
+		var island = new OpenTPW.FrontEnd.LobbyIslandInfo( 0, "jungle", "data\\lobby\\terrain", "jun_isle", "jun_gate", "Jungle", 0, 35, (0, 0, 0), Array.Empty<string>(), false, 0 );
+		Assert.AreEqual( new ParkNameLines( "LOST", "Kingdom" ), LobbySigns.Lines( island, names ) );
 	}
 
 	[TestMethod]

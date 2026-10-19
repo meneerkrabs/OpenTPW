@@ -65,6 +65,12 @@ public sealed class OriginalGateSign : Entity
 				Log.Warning( $"Park name: {ObjectNames.FileName} unavailable ({exception.Message}); using the theme name." );
 			}
 		}
+		return ThemeNameLines( levelName );
+	}
+
+	/// <summary>The lines that stand in for a gate without its OBJECT_NAMES row: the theme name split at its middle space.</summary>
+	public static ParkNameLines ThemeNameLines( string levelName )
+	{
 		// [EXT:park-name-fallback] without the gate's OBJECT_NAMES row (Theme Park Inc, a gate id outside tp.exe's table, missing language files) the theme name stands in, split at its middle space; no original rule applies
 		var (line1, line2) = SignCanvas.SplitAtMiddleSpace( DefaultParkName( levelName ) );
 		var fallback = new ParkNameLines( BonusNames.Truncate( line1 ), BonusNames.Truncate( line2 ) );

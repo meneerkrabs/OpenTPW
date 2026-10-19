@@ -135,7 +135,17 @@ public abstract class OriginalModelScene : Entity
 		return texture;
 	}
 
-	private readonly List<(string Model, int Side, Material Material, int Index)> signSlots = new();
+	/// <summary>A sign slot of a named model: the material and array element it is bound to, and the texture bound there now.</summary>
+	private sealed class SignSlot( string model, int side, Material material, int index, Texture bound )
+	{
+		public string Model { get; } = model;
+		public int Side { get; } = side;
+		public Material Material { get; } = material;
+		public int Index { get; } = index;
+		public Texture Bound { get; set; } = bound;
+	}
+
+	private readonly List<SignSlot> signSlots = new();
 
 	/// <summary>
 	/// The runtime sign of the scene's model <paramref name="model"/> (its file name without extension), or null while it has none (not composed yet, or
@@ -157,12 +167,27 @@ public abstract class OriginalModelScene : Entity
 	/// <summary>Whether the scene has a model <paramref name="model"/> with sign slots.</summary>
 	protected bool HasSignSlots( string model ) => signSlots.Any( slot => string.Equals( slot.Model, model, StringComparison.OrdinalIgnoreCase ) );
 
+	/// <summary>The models of the scene with sign slots.</summary>
+	protected IReadOnlyList<string> SignSlotModels => signSlots.Select( slot => slot.Model ).Distinct( StringComparer.OrdinalIgnoreCase ).ToList();
+
+	/// <summary>Where each sign slot of <paramref name="model"/> takes its bound texture from: the model's runtime sign, the plain board, or (never expected) the shipped art.</summary>
+	private protected IReadOnlyList<SignSlotSource> SignSlotSourcesOf( string model ) => signSlots
+		.Where( slot => string.Equals( slot.Model, model, StringComparison.OrdinalIgnoreCase ) )
+		.Select( slot => ReferenceEquals( slot.Bound, SignSlotPlan.FallbackBoard ) ? SignSlotSource.FallbackBoard
+			: SignTexture( slot.Model, slot.Side ) is { } sign && ReferenceEquals( slot.Bound, sign ) ? SignSlotSource.RuntimeSign
+			: SignSlotSource.Shipped )
+		.ToList();
+
 	/// <summary>Binds the sign slots of <paramref name="model"/> to its sign as it is now (after it was composed).</summary>
 	protected void RebindSigns( string model )
 	{
-		foreach ( var (owner, side, material, index) in signSlots )
-			if ( string.Equals( owner, model, StringComparison.OrdinalIgnoreCase ) )
-				material.SetTextureArrayElement( "Color", index, SignSlotTexture( owner, side == 0 ? "sign1" : "sign2" ) );
+		foreach ( var slot in signSlots )
+		{
+			if ( !string.Equals( slot.Model, model, StringComparison.OrdinalIgnoreCase ) )
+				continue;
+			slot.Bound = SignSlotTexture( slot.Model, slot.Side == 0 ? "sign1" : "sign2" );
+			slot.Material.SetTextureArrayElement( "Color", slot.Index, slot.Bound );
+		}
 	}
 
 	/// <summary>
@@ -212,7 +237,7 @@ public abstract class OriginalModelScene : Entity
 					if ( name != null )
 						for ( var index = 0; index < textures.Length && index < slots.Length; index++ )
 							if ( ObjectSigns.SlotOf( textures[index] ) is >= 0 and var side )
-								scene.signSlots.Add( (name, side, material, index) );
+								scene.signSlots.Add( new SignSlot( name, side, material, index, slots[index] ) );
 					var model = new Model( vertices, indices, material, animatedMeshes );
 					scene.models.Add( model );
 					var entity = new ModelEntity { Model = model, Name = $"{scene.GetType().Name} part {scene.parts.Count}" };

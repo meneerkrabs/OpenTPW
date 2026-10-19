@@ -28,8 +28,30 @@ public static class LobbySigns
 		_ => null
 	};
 
-	/// <summary>The two lines a theme's lobby island shows: its gate's OBJECT_NAMES row, else the theme name (<see cref="OriginalGateSign.DefaultLines"/>).</summary>
-	public static ParkNameLines Lines( LobbyIslandInfo island ) => OriginalGateSign.DefaultLines( island.Level, GateInfoId( island.Level ) ?? -1 );
+	/// <summary>The OBJECT_NAMES texts in the current language, read once per lobby build for <see cref="Lines"/>; null when they cannot be read (or the edition is not Theme Park World).</summary>
+	public static IReadOnlyList<string>? LoadObjectNames()
+	{
+		if ( GameEditions.Current != GameEdition.ThemeParkWorld )
+			return null;
+		try
+		{
+			return GameLanguage.Current.LoadStrings( ObjectNames.FileName ).Entries;
+		}
+		catch ( Exception exception ) when ( exception is IOException or InvalidDataException or InvalidOperationException )
+		{
+			Log?.Warning( $"Lobby signs: {ObjectNames.FileName} unavailable ({exception.Message}); the theme names stand in." );
+			return null;
+		}
+	}
+
+	/// <summary>
+	/// The two lines a theme's lobby island shows: its gate's OBJECT_NAMES row in <paramref name="objectNames"/> (<see cref="ParkNameLines.Default"/>, the lines
+	/// <see cref="OriginalGateSign.DefaultLines"/> gives a new park's gate), else the theme name.
+	/// </summary>
+	public static ParkNameLines Lines( LobbyIslandInfo island, IReadOnlyList<string>? objectNames ) =>
+		GateInfoId( island.Level ) is { } gate && objectNames != null && ParkNameLines.Default( gate, objectNames ) is { } lines
+			? lines
+			: OriginalGateSign.ThemeNameLines( island.Level );
 
 	private static readonly Dictionary<string, ObjectSignImages?> cache = new( StringComparer.Ordinal );
 	private static readonly Dictionary<string, int> failedReads = new( StringComparer.Ordinal );

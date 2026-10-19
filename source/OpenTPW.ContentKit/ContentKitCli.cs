@@ -96,6 +96,10 @@ public static class ContentKitCli
 		  measure-anchors --data <game Data folder> --anchors <anchors.json> --pools <folder of the 2x kid sets> --out <file> [--force]
 		          A maintainers' tool of the umbrellas extension (docs/UMBRELLAS.md): reads the game's own kid and costume sprite sets and writes
 		          the guests' hand anchors as numbers only. Players never need it; its table is committed.
+
+		  measure-head-anchors --data <game Data folder> --anchors <winter anchors.json> --pools <folder of the 2x kid sets> --out <file> [--force]
+		          A maintainers' tool of the winter extension (docs/WINTER.md): the same for the guests' head (a hat's and earmuffs' attach points), every land slot the
+		          original sets share with the 2x redraws, as numbers only.
 		""";
 
 	public static int Run( string[] args, TextWriter output, TextWriter error )
@@ -118,6 +122,9 @@ public static class ContentKitCli
 					return 0;
 				case "sprites":
 					PrintResult( output, SpritesCommand.Run( options ) );
+					return 0;
+				case "measure-head-anchors":
+					PrintResult( output, MeasureHeadAnchorsCommand.Run( options ) );
 					return 0;
 				case "measure-anchors":
 					PrintResult( output, MeasureAnchorsCommand.Run( options ) );

@@ -295,7 +295,7 @@ public class EmployeePortraitGeometryTests
 			var (right, bottom) = corners[index];
 			AssertPoint( new N.Vector2( left + right * 20 * px, top + bottom * 40 * py ), draw.Vertices[index].Position );
 			AssertPoint( new N.Vector2( right == 0 ? u0 : u1, bottom == 0 ? v0 : v1 ), draw.Vertices[index].TexCoords );
-			Assert.AreEqual( RgbaByte.White, draw.Vertices[index].Color );
+			Assert.AreEqual( Veldrid.RgbaByte.White, draw.Vertices[index].Color );
 		}
 	}
 

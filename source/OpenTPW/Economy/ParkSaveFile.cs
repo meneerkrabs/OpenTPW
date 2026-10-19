@@ -259,6 +259,9 @@ public static class ParkSaveFile
 	public sealed class StaffData
 	{
 		public required List<StaffMemberData> Members { get; init; }
+		/// <summary>Locator order in StaffType order, containing roster IDs (not thing IDs). Absent/null: legacy pool/reverse-roster reconstruction.</summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public int[][]? RoleOrder { get; init; }
 		public required List<StaffCandidate> Candidates { get; init; }
 		public required List<long> TrainingBudgets { get; init; }
 		public required int NextId { get; init; }
@@ -725,6 +728,7 @@ public static class ParkSaveFile
 					CellY = member.CellY,
 					TravelSeconds = member.TravelSeconds
 				} ).ToList(),
+				RoleOrder = park.Staff.CaptureRoleOrder(),
 				Candidates = park.Staff.Candidates.ToList(),
 				TrainingBudgets = Enum.GetValues<StaffType>().Select( park.Staff.GetTrainingBudget ).ToList(),
 				NextId = park.Staff.NextId,
@@ -898,6 +902,7 @@ public static class ParkSaveFile
 			Require( item.WalkAways >= 0 && item.WalkAwaysToday >= 0 && item.WalkAwaysToday <= item.WalkAways
 				&& (item.WalkAwayDays is null || item.WalkAwayDays.Length <= ParkEconomy.WalkAwayHistoryDays && item.WalkAwayDays.All( day => day >= 0 )), $"object {item.Id} walk-aways" );
 		}
+		ParkStaff.ValidateRoleOrder( data.Staff.RoleOrder, data.Staff.Members.Select( member => (member.Id, member.Type) ).ToArray() );
 		var staffIds = new HashSet<int>();
 		var staffThingIds = new HashSet<int>();
 		foreach ( var member in data.Staff.Members )
@@ -1066,6 +1071,7 @@ public static class ParkSaveFile
 			CellY = member.CellY,
 			TravelSeconds = member.TravelSeconds
 		} ), data.Staff.Candidates, data.Staff.TrainingBudgets, data.Staff.NextId, data.Staff.NextPoolUpdateTick );
+		park.Staff.RestoreRoleOrder( data.Staff.RoleOrder );
 		park.Staff.RestoreHaveEverTrained( data.Staff.HaveEverTrained ?? data.Staff.TrainingBudgets.Any( budget => budget > 0 ) );
 		foreach ( var saved in data.Staff.Members.Where( member => member.WorldState != null ) )
 			saved.WorldState!.Apply( park.Staff.Members.Single( member => member.Id == saved.Id ) );

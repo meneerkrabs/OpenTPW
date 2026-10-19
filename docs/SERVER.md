@@ -238,12 +238,35 @@ distinct-visitor list stays separate for the "visited before" flag, and voting
 
 The globe's five chat satellites are the server's chat parks: standing chat rooms with live
 presence — everyone in one sees the others and their positions, which the server relays with a
-separate rate limit. `GET /api/v1/chat-parks` (public) lists them with their player counts. The
-operator renames them with `chatparks.json` in the data directory, an array of
-`{"id", "name"}` (ids 1-5, names at most 32 characters); it is re-read when the file changes and
-invalid entries fall back to the defaults. Parks published by players keep their own chat rooms
-(`park:<id>`) with the same behaviour; a visit of a published park joins its room and shows the
-other visitors walking (docs/ONLINE.md, "Players in a visited park").
+separate rate limit. `GET /api/v1/chat-parks` (public) lists them with their player counts.
+`GET /api/v1/chat-parks/scenes` (with a login, as a park summary needs one) lists what each
+satellite's park details show and the park its visit enters: its name, description and level, and
+the published park's summary while the satellite names one that is still published. A game visits
+that park, or else builds the starting park of the satellite's level from its own data; either way
+the visit walks in the satellite's room, which its count counts (docs/ONLINE.md, "Chat parks (the
+satellites)"). A server without the scenes route leaves games to show the room from above.
+
+The operator configures them with `chatparks.json` in the data directory, an array of
+`{"id", "name", "level", "parkId", "description"}`: ids 1-5, names at most 32 characters (a longer
+name is cut), `level` one of the original levels a game can build (`jungle`, `hallow`, `fantasy`,
+`space`; left out or any other, the satellite's default level), `parkId` a published park's id, and
+a `description` of at most 512 characters (left out, the park's own). The file is re-read when it
+changes; an entry without a valid id or name is left out, as is a malformed park id or description
+of an entry, and a file without any valid entry gives the defaults. A satellite's visit of a
+published park walks in the satellite's room, so it has no vote and is not counted at the park
+itself. The defaults put the five satellites in the four themes:
+
+| Satellite | Default name | Level |
+| --- | --- | --- |
+| 1 | The Meeting Place | `jungle` |
+| 2 | The Fairground | `fantasy` |
+| 3 | Coaster Corner | `hallow` |
+| 4 | The Lost Kingdom | `jungle` |
+| 5 | The Space Port | `space` |
+
+Parks published by players keep their own chat rooms (`park:<id>`) with the same behaviour; a
+visit of a published park joins its room and shows the other visitors walking (docs/ONLINE.md,
+"Players in a visited park").
 
 Movement is relayed only inside a park's room (the lobby's are dropped) and only to connections
 that have moved, so a client without a walking view never receives it. A player's first movement

@@ -395,6 +395,10 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 				("online-chat.png", screens => screens.ShowChat(), "chat",
 					// The original chat overlay (tp.exe table 0x758AE8) over the chat park view, which answers a click with a walk (UIHELPTEXT 401).
 					flow.Strings.Help( 401 )),
+				// A satellite's chat park in the park details' short variant (tp.exe 0x4C0AE0, a city with the flag +0x60): name, theme row, description, Enter.
+				("online-chat-park.png", screens => screens.ShowChatParkDetails( new Online.Api.ChatParkScene( 1, "The Meeting Place",
+					"The place to meet other players: walk around the park together and chat.", "jungle", null ) ), UI.OnlineScreens.ChatParkDetailsScreenName,
+					UI.OnlineScreens.ChatParkThemeRow( "jungle" )),
 				("online-import.png", screens => screens.ShowImport(), "import", null),
 				// A fixed example secret; the capture is checked by decoding its QR code (docs/ONLINE.md, "Two-step login").
 				("online-two-step.png", screens =>

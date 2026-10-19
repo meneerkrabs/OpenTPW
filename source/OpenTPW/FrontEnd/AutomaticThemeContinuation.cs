@@ -8,7 +8,11 @@ internal enum AutomaticSlotKind { Checkpoint, Autosave }
 /// <summary>Transient selection of a shape-checked automatic slot, not a persisted profile identity.</summary>
 internal sealed record AutomaticParkContinueEntry( BaseFileSystem Namespace, string Theme, string Path,
 	ParkStartKind StartKind, ParkGameMode Mode, bool Easy, string DisplayName, DateTimeOffset SavedUtc, string Digest, string? Requires = null,
-	AutomaticSlotKind Kind = AutomaticSlotKind.Checkpoint, bool Cheated = false );
+	AutomaticSlotKind Kind = AutomaticSlotKind.Checkpoint, bool Cheated = false )
+{
+	/// <summary>[EXT:save-extension-switch] The extension switch the player confirmed for this continuation; null continues strictly.</summary>
+	public ParkExtensionSwitch? Switch { get; init; }
+}
 
 internal static class AutomaticThemeContinuation
 {
@@ -44,7 +48,7 @@ internal static class AutomaticThemeContinuation
 			var snapshot = ParkResumeSaveFile.Load( path );
 			RequireSupported( snapshot, canonical );
 			return new( files, canonical, path, snapshot.StartKind, snapshot.Economy.Mode, snapshot.Economy.Easy,
-				snapshot.DisplayName, snapshot.SavedUtc, Digest( snapshot ), ParkResumeMods.MissingText( snapshot.Mods, Mods.OpenTpwExtensions.Active ), kind, snapshot.Economy.Cheats?.Mode == true );
+				snapshot.DisplayName, snapshot.SavedUtc, Digest( snapshot ), ParkExtensionSwitch.RequiresText( snapshot.Mods, Mods.OpenTpwExtensions.Active ), kind, snapshot.Economy.Cheats?.Mode == true );
 		}
 		catch ( Exception error ) when ( error is IOException or InvalidDataException or UnauthorizedAccessException or ArgumentException or NotSupportedException )
 		{

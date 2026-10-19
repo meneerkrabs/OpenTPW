@@ -10,6 +10,26 @@ namespace OpenTPW;
 // [EXT:mods] OpenTPW's own mod system; the original game had no mods
 internal sealed record ParkModRecord( string Id, string Version, string ContentSha256 );
 
+/// <summary>What keeps a recorded or active mod from agreeing with a save (<see cref="ParkResumeMods.UnmetItems"/>).</summary>
+internal enum UnmetKind
+{
+	/// <summary>The save records the mod and it is not enabled.</summary>
+	Missing,
+	/// <summary>The mod is enabled but not recorded in this run (a mod now judged presentation-only, or an extension this edition does not record).</summary>
+	NotRecordable,
+	/// <summary>The mod is enabled in another version than the save's.</summary>
+	OtherVersion,
+	/// <summary>The mod is enabled with other content than the save's.</summary>
+	OtherContent,
+	/// <summary>The mod is enabled and changes the simulation, but the save does not record it.</summary>
+	Extra,
+	/// <summary>Everything agrees but the order of the mods.</summary>
+	Order,
+}
+
+/// <summary>One reason of <see cref="ParkResumeMods.Unmet"/>: the mod it names (null for the order), its kind, its text and the save's record of the mod (null when the save has none).</summary>
+internal sealed record UnmetMod( string? Id, UnmetKind Kind, string Reason, ParkModRecord? Record );
+
 /// <summary>
 /// Recording and checking the mods of a park save (docs/MODS.md, docs/DETERMINISM.md). Only extensions and mods that
 /// change the simulation are recorded, so a park saved without any (the default) has no <c>Mods</c> field and its save
@@ -26,9 +46,10 @@ internal static class ParkResumeMods
 	/// [EXT:pools-extension] The extensions a save records only while the park actually uses them: <c>opentpw.pools</c>, recorded when the park has pool cells or a changing room, and
 	/// [EXT:umbrellas-save] <c>opentpw.umbrellas</c>, recorded when the park has a brolly shop or a guest with an umbrella, and [EXT:winter-save] <c>opentpw.winter</c>, recorded when the park has a winter kiosk or a glühwein stall or a guest
 	/// with a warm item, and [EXT:cheats-save] <c>opentpw.cheats</c>, recorded once the park has used one of the extension's own cheats (<see cref="ParkCheats.UsesExtension"/>; a park cheated only through the original's cheats
-	/// does not record it). A park that does not use one saves byte-identically whether it is on or off, and loads whether it is on or off (docs/POOLS.md, docs/UMBRELLAS.md, docs/WINTER.md, docs/CHEATS.md, docs/MODS.md).
+	/// does not record it), and [EXT:evening-torches-save] <c>opentpw.evening</c>, recorded when the park holds a torch. A park that does not use one saves byte-identically whether it is on or off, and loads whether it is on or off
+	/// (docs/POOLS.md, docs/UMBRELLAS.md, docs/WINTER.md, docs/CHEATS.md, docs/EVENING.md, docs/MODS.md).
 	/// </summary>
-	public static IReadOnlySet<string> UsedOnlyExtensionIds { get; } = new HashSet<string>( StringComparer.Ordinal ) { OfficialExtensions.Pools.Id, OfficialExtensions.Umbrellas.Id, OfficialExtensions.Winter.Id, OfficialExtensions.Cheats.Id };
+	public static IReadOnlySet<string> UsedOnlyExtensionIds { get; } = new HashSet<string>( StringComparer.Ordinal ) { OfficialExtensions.Pools.Id, OfficialExtensions.Umbrellas.Id, OfficialExtensions.Winter.Id, OfficialExtensions.Cheats.Id, OfficialExtensions.Evening.Id };
 
 	/// <summary>
 	/// The simulation-changing mods of <paramref name="active"/> that a save or an export counts: all of them, except that <c>opentpw.rain-mood</c>, <c>opentpw.winter-weather</c>, <c>opentpw.winter-cold</c> and <c>opentpw.winter-always</c> are left out in a Theme Park Inc run, where their
@@ -58,7 +79,8 @@ internal static class ParkResumeMods
 	/// the park holds a winter kiosk or a glühwein stall or a guest with a warm item (<see cref="WinterInUse"/>).
 	/// </summary>
 	/// <param name="cheats">[EXT:cheats-save] The park has used one of the cheats extension's own cheats or has one waiting (<see cref="ParkCheats.UsesExtension"/>).</param>
-	public static IReadOnlySet<string> InUse( ParkCellMap? cells, bool poolsObjects = false, bool umbrellas = false, bool winter = false, bool cheats = false )
+	/// <param name="evening">[EXT:evening-torches-save] The park holds a torch (<see cref="EveningInUse"/>).</param>
+	public static IReadOnlySet<string> InUse( ParkCellMap? cells, bool poolsObjects = false, bool umbrellas = false, bool winter = false, bool cheats = false, bool evening = false )
 	{
 		var used = new HashSet<string>( StringComparer.Ordinal );
 		if ( poolsObjects || (cells != null && cells.CountOf( ParkCellType.PoolWater ) > 0) )
@@ -69,6 +91,8 @@ internal static class ParkResumeMods
 			used.Add( OfficialExtensions.Winter.Id );
 		if ( cheats )
 			used.Add( OfficialExtensions.Cheats.Id );
+		if ( evening )
+			used.Add( OfficialExtensions.Evening.Id );
 		return used;
 	}
 
@@ -87,8 +111,14 @@ internal static class ParkResumeMods
 		placed.Any( IsWinterObject ) || guests?.Guests.Any( guest => guest.HoldsWinter ) == true;
 
 	/// <summary>
-	/// [EXT:pools-extension] The asset manifest as a save holds it: the catalog lists every object of a used-only extension (<c>mod:opentpw.pools:</c>, <c>mod:opentpw.umbrellas:</c> and <c>mod:opentpw.winter:</c> keys) whenever the extension is on, but a save holds, and a load requires,
-	/// only the keys of the extension objects the park has PLACED (<paramref name="placedPoolsObjects"/>: the changing rooms, brolly shops, winter kiosks and glühwein stalls; none for a park of pool cells only). A park without any is the same bytes with the
+	/// [EXT:evening-torches-save] user-approved 2026-10-19 (used-only, like the umbrellas): whether a park uses the evening extension's simulation side, which is only its torches (<paramref name="placed"/>, the entries of its objects;
+	/// a torch changes no guest, so there is no guest state to look at). A park without a torch is the same bytes with the extension on or off.
+	/// </summary>
+	public static bool EveningInUse( IEnumerable<ObjectCatalogEntry> placed ) => placed.Any( IsEveningObject );
+
+	/// <summary>
+	/// [EXT:pools-extension] The asset manifest as a save holds it: the catalog lists every object of a used-only extension (<c>mod:opentpw.pools:</c>, <c>mod:opentpw.umbrellas:</c>, <c>mod:opentpw.winter:</c> and <c>mod:opentpw.evening:</c> keys) whenever the extension is on, but a save holds, and a load requires,
+	/// only the keys of the extension objects the park has PLACED (<paramref name="placedPoolsObjects"/>: the changing rooms, brolly shops, winter kiosks, glühwein stalls and torches; none for a park of pool cells only). A park without any is the same bytes with the
 	/// extension on or off and loads with it on or off; an extension object that is not placed is ignored in both directions, so adding objects to the extension (more changing rooms, extras, slides) never
 	/// invalidates an older save. A placed object keeps the exact-hash check: changing its files changes the saves that place it.
 	/// </summary>
@@ -96,10 +126,10 @@ internal static class ParkResumeMods
 	{
 		ArgumentNullException.ThrowIfNull( assets );
 		ArgumentNullException.ThrowIfNull( placedPoolsObjects );
-		var prefixes = new[] { ContentRoot.Mod( OfficialExtensions.Pools.Id ).KeyPrefix, ContentRoot.Mod( OfficialExtensions.Umbrellas.Id ).KeyPrefix, ContentRoot.Mod( OfficialExtensions.Winter.Id ).KeyPrefix };
+		var prefixes = new[] { ContentRoot.Mod( OfficialExtensions.Pools.Id ).KeyPrefix, ContentRoot.Mod( OfficialExtensions.Umbrellas.Id ).KeyPrefix, ContentRoot.Mod( OfficialExtensions.Winter.Id ).KeyPrefix, ContentRoot.Mod( OfficialExtensions.Evening.Id ).KeyPrefix };
 		if ( !assets.Keys.Any( key => prefixes.Any( prefix => key.StartsWith( prefix, StringComparison.Ordinal ) ) ) )
 			return assets;
-		var placed = placedPoolsObjects.Where( entry => IsPoolsObject( entry ) || IsUmbrellasObject( entry ) || IsWinterObject( entry ) ).Select( entry => entry.Root.KeyPrefix + entry.ArchivePath.TrimEnd( '/' ) + "/" ).Distinct( StringComparer.Ordinal ).ToArray();
+		var placed = placedPoolsObjects.Where( entry => IsPoolsObject( entry ) || IsUmbrellasObject( entry ) || IsWinterObject( entry ) || IsEveningObject( entry ) ).Select( entry => entry.Root.KeyPrefix + entry.ArchivePath.TrimEnd( '/' ) + "/" ).Distinct( StringComparer.Ordinal ).ToArray();
 		return assets.Where( pair => !prefixes.Any( prefix => pair.Key.StartsWith( prefix, StringComparison.Ordinal ) ) || placed.Any( archive => pair.Key.StartsWith( archive, StringComparison.Ordinal ) ) )
 			.ToDictionary( pair => pair.Key, pair => pair.Value, StringComparer.Ordinal );
 	}
@@ -112,6 +142,9 @@ internal static class ParkResumeMods
 
 	/// <summary>[EXT:winter-save] Whether a placed object is one of the winter extension's own (a winter kiosk or a glühwein stall).</summary>
 	public static bool IsWinterObject( ObjectCatalogEntry entry ) => entry.ModId == OfficialExtensions.Winter.Id;
+
+	/// <summary>[EXT:evening-torches-save] Whether a placed object is one of the evening extension's own (a torch).</summary>
+	public static bool IsEveningObject( ObjectCatalogEntry entry ) => entry.ModId == OfficialExtensions.Evening.Id;
 
 	/// <summary>
 	/// The recorded mods' own consistency, with no active set: a bounded count, valid and distinct ids, versions and
@@ -157,33 +190,39 @@ internal static class ParkResumeMods
 	/// <c>needs community.tpi-rides 1.0.0</c>, or empty when the mods agree. Recorded mods that are not active, in another
 	/// version or with other content are named first, then active simulation-changing mods the save does not record.
 	/// </summary>
-	public static IReadOnlyList<string> Unmet( IReadOnlyList<ParkModRecord>? saved, ModSet active )
+	public static IReadOnlyList<string> Unmet( IReadOnlyList<ParkModRecord>? saved, ModSet active ) => UnmetItems( saved, active ).Select( item => item.Reason ).ToArray();
+
+	/// <summary>
+	/// <see cref="Unmet"/> with the kind of each reason and the mod it names, so a load can tell an extension switch it may offer
+	/// (<see cref="ParkExtensionSwitch"/>) from a requirement that stays strict. The reasons and their order are <see cref="Unmet"/>'s.
+	/// </summary>
+	internal static IReadOnlyList<UnmetMod> UnmetItems( IReadOnlyList<ParkModRecord>? saved, ModSet active )
 	{
 		ArgumentNullException.ThrowIfNull( active );
-		var reasons = new List<string>();
+		var reasons = new List<UnmetMod>();
 		var current = RecordableMods( active ).ToDictionary( mod => mod.Id, StringComparer.Ordinal );
 		var recordedIds = new HashSet<string>( StringComparer.Ordinal );
 		foreach ( var record in saved ?? Array.Empty<ParkModRecord>() )
 		{
 			recordedIds.Add( record.Id );
 			if ( !active.IsEnabled( record.Id ) )
-				reasons.Add( $"needs {record.Id} {record.Version}"
-					+ (active.Refused.Any( refusal => refusal.Id == record.Id && refusal.Kind == ModRefusalKind.SafeMode ) ? ", which is off in safe mode (script mods are off for this run; start again without --safe-mode)" : "" ) );
+				reasons.Add( new( record.Id, UnmetKind.Missing, $"needs {record.Id} {record.Version}"
+					+ (active.Refused.Any( refusal => refusal.Id == record.Id && refusal.Kind == ModRefusalKind.SafeMode ) ? ", which is off in safe mode (script mods are off for this run; start again without --safe-mode)" : "" ), record ) );
 			else if ( !current.TryGetValue( record.Id, out var mod ) )
-				// enabled, but now judged presentation-only: its files changed
-				reasons.Add( $"needs {record.Id} {record.Version} with the content it was saved with" );
+				// enabled, but now judged presentation-only: its files changed (or, for an extension, it is not recordable in this edition)
+				reasons.Add( new( record.Id, UnmetKind.NotRecordable, $"needs {record.Id} {record.Version} with the content it was saved with", record ) );
 			else if ( mod.Version.ToString() != record.Version )
-				reasons.Add( $"needs {record.Id} {record.Version}, not {mod.Version}" );
+				reasons.Add( new( record.Id, UnmetKind.OtherVersion, $"needs {record.Id} {record.Version}, not {mod.Version}", record ) );
 			else if ( mod.ContentSha256 != record.ContentSha256 )
-				reasons.Add( $"needs {record.Id} {record.Version} with the content it was saved with (its files changed)" );
+				reasons.Add( new( record.Id, UnmetKind.OtherContent, $"needs {record.Id} {record.Version} with the content it was saved with (its files changed)", record ) );
 		}
 		// a used-only extension that is on but not recorded is fine: the save has no use of it (a save that does use it must record it: ParkResumeSaveFile.ValidateShape refuses pool cells without the record)
 		foreach ( var mod in RecordableMods( active ) )
 			if ( !recordedIds.Contains( mod.Id ) && !UsedOnlyExtensionIds.Contains( mod.Id ) )
-				reasons.Add( $"was saved without {mod.Id} {mod.Version}, which changes the simulation; turn it off to load this park" );
+				reasons.Add( new( mod.Id, UnmetKind.Extra, $"was saved without {mod.Id} {mod.Version}, which changes the simulation; turn it off to load this park", null ) );
 		var expectedOrder = RecordableMods( active ).Where( mod => !UsedOnlyExtensionIds.Contains( mod.Id ) || recordedIds.Contains( mod.Id ) ).Select( mod => mod.Id );
 		if ( reasons.Count == 0 && saved != null && !saved.Select( record => record.Id ).SequenceEqual( expectedOrder, StringComparer.Ordinal ) )
-			reasons.Add( $"needs its mods in the order {string.Join( ", ", saved.Select( record => record.Id ) )}" );
+			reasons.Add( new( null, UnmetKind.Order, $"needs its mods in the order {string.Join( ", ", saved.Select( record => record.Id ) )}", null ) );
 		return reasons;
 	}
 

@@ -309,7 +309,7 @@ public static class CoasterCollision
 			return new[] { (float)(vx / length), (float)(vy / length), (float)(vz / length) };
 		}
 		var (u0, u1, u2, u3) = (Unit( p0 ), Unit( p1 ), Unit( p2 ), Unit( p3 ));
-		double Angle( float[] one, float[] other ) => Math.Acos( (double)one[0] * other[0] + (double)one[1] * other[1] + (double)one[2] * other[2] );
+		double Angle( float[] one, float[] other ) => DetMath.Acos( (double)one[0] * other[0] + (double)one[1] * other[1] + (double)one[2] * other[2] );
 		var sum = (float)Angle( u0, u1 );
 		sum = (float)(sum + Angle( u1, u2 ));
 		sum = (float)(sum + Angle( u2, u3 ));

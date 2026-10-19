@@ -1395,6 +1395,112 @@ public class DeterminismTests
 			Assert.IsFalse( IsApprovedCivilTimeProvider( "VM/RideScriptWorld.cs", line ), line );
 		}
 	}
+
+	/// <summary>
+	/// Forbidden in simulation code because their results depend on the runtime (docs/DETERMINISM.md, "Browser and native"): the elementary
+	/// functions of <see cref="Math"/>, <see cref="MathF"/> and the generic-math statics of double and float, which call the platform's C
+	/// library (use <see cref="DetMath"/> and <see cref="DetMathF"/>); the System.Numerics builders that call them (rotations, quaternion
+	/// slerp); <see cref="Guid.NewGuid"/>; and <c>Parallel</c> or PLINQ, whose order is not fixed. Square root, fused multiply-add, rounding
+	/// and the other correctly rounded operations are allowed: IEEE 754 fixes their results.
+	/// </summary>
+	internal static readonly Regex ForbiddenPlatformMathInSimulation = new(
+		@"\b(Math|MathF|double|float|Double|Single)\s*\.\s*(Sin|Cos|Tan|Asin|Acos|Atan|Atan2|Sinh|Cosh|Tanh|Asinh|Acosh|Atanh|SinCos|SinPi|CosPi|TanPi|SinCosPi|AsinPi|AcosPi|AtanPi|Atan2Pi|Exp|Exp2|Exp10|ExpM1|Exp2M1|Exp10M1|Log|Log2|Log10|LogP1|Log2P1|Log10P1|Pow|Cbrt|Hypot|RootN)\s*\("
+		+ @"|\bQuaternion\s*\.\s*(Slerp|CreateFromYawPitchRoll|CreateFromAxisAngle)\b|\bMatrix(4x4|3x2)\s*\.\s*(CreateRotation[XYZ]?|CreateFromYawPitchRoll|CreateFromAxisAngle)\b"
+		+ @"|\bGuid\s*\.\s*NewGuid\b|\bParallel\s*\.|\.\s*AsParallel\s*\(",
+		RegexOptions.CultureInvariant );
+
+	/// <summary>
+	/// Presentation inside the simulation folders: whole files and folders that only draw, animate the camera or build meshes and textures.
+	/// A single presentation line in a simulation file carries the marker <c>[DET:presentation]</c> with its reason instead.
+	/// </summary>
+	internal static readonly string[] PresentationMathFiles =
+	{
+		"World/Lobby/", "World/Particles/", "World/Evening/",
+		"World/Advisor.cs", "World/AdvisorRig.cs", "World/Camera.cs", "World/FreeWalkCameraMode.cs", "World/GlobeCameraMode.cs", "World/LobbyCameraMode.cs",
+		"World/ParkCameraMode.cs", "World/RideCameraMode.cs", "World/Sky.cs", "World/Sun.cs", "World/OriginalProjection.cs",
+		"World/Coasters/CoasterCarBend.cs", "World/Coasters/CoasterCarRig.cs", "World/Coasters/CoasterToolPanel.cs", "World/Coasters/CoasterTrackMesh.cs",
+		"World/Coasters/CoasterRenderer.cs", "World/Coasters/CoasterPreview.cs", "World/Coasters/CoasterPylonRig.cs",
+		"World/Guests/GuestRenderer.cs", "World/Guests/GuestSpriteAtlas.cs", "World/Guests/HeadPresentation.cs", "World/Guests/RideHeadRenderer.cs",
+		"World/Guests/SpriteScale.cs", "World/Guests/BalloonRenderer.cs", "World/Guests/ThoughtRenderer.cs",
+		"World/Original/BlueprintMarkers.cs", "World/Pools/PoolTextures.cs", "World/Pools/PoolMeshBuilder.cs", "World/Pools/PoolRenderer.cs",
+		"World/Pools/Slides/PoolSlideMesh.cs", "World/Tracks/TrackRenderer.cs", "World/Tours/TourRenderer.cs", "World/Staff/StaffRenderer.cs",
+		"World/Winter/SnowCover.cs", "World/Winter/WinterAnchors.cs", "World/Winter/WarmItemRenderer.cs", "World/Umbrellas/UmbrellaRenderer.cs",
+		"World/Weather/WeatherRenderer.cs",
+	};
+
+	private const string PresentationMarker = "[DET:presentation]";
+
+	/// <summary>A temporary file name for an atomic write (the save files): never part of the park's state.</summary>
+	private static readonly Regex TemporaryFileName = new( @"Guid\.NewGuid\(\)\.ToString\(\s*""N""\s*\)\s*\+\s*""\.tmp""", RegexOptions.CultureInvariant );
+
+	internal static bool IsPresentationMath( string relativePath, string line )
+	{
+		var path = relativePath.Replace( '\\', '/' );
+		return PresentationMathFiles.Any( entry => entry.EndsWith( '/' ) ? path.StartsWith( entry, StringComparison.Ordinal ) : path == entry )
+			|| line.Contains( PresentationMarker, StringComparison.Ordinal )
+			|| TemporaryFileName.IsMatch( line ) && !ForbiddenPlatformMathInSimulation.IsMatch( TemporaryFileName.Replace( line, "" ) );
+	}
+
+	/// <summary>
+	/// The simulation (the VM, the scripts, the economy and every World folder) uses no runtime-dependent mathematics, so the browser and every
+	/// desktop compute the same bits (docs/DETERMINISM.md, "Browser and native"); presentation files and marked lines are listed above.
+	/// </summary>
+	[TestMethod]
+	public void SimulationCodeUsesNoPlatformMathGuidsOrParallelism()
+	{
+		var root = new DirectoryInfo( AppContext.BaseDirectory );
+		while ( root != null && !File.Exists( Path.Combine( root.FullName, "docs", "DETERMINISM.md" ) ) )
+			root = root.Parent;
+		if ( root == null )
+			Assert.Inconclusive( "Repository sources are not next to the test binaries." );
+		var source = Path.Combine( root.FullName, "source", "OpenTPW" );
+		var files = new[] { "VM", "Scripting", "Economy", "World" }.SelectMany( folder => Directory.EnumerateFiles( Path.Combine( source, folder ), "*.cs", SearchOption.AllDirectories ) ).ToList();
+		Assert.IsTrue( files.Count > 300, $"{files.Count} files scanned" );
+		foreach ( var entry in PresentationMathFiles )
+			Assert.IsTrue( entry.EndsWith( '/' ) ? Directory.Exists( Path.Combine( source, entry ) ) : File.Exists( Path.Combine( source, entry ) ), $"{entry} is listed as presentation but does not exist" );
+		var hits = files.SelectMany( path => File.ReadLines( path ).Select( ( line, index ) => (path, line, index) ) )
+			.Where( item => ForbiddenPlatformMathInSimulation.IsMatch( StripComment( item.line ) ) && !IsPresentationMath( Path.GetRelativePath( source, item.path ), item.line ) )
+			.Select( item => $"{Path.GetRelativePath( root.FullName, item.path )}:{item.index + 1}: {item.line.Trim()}" ).ToList();
+		Assert.AreEqual( 0, hits.Count, "Use DetMath/DetMathF, or list presentation code:" + Environment.NewLine + string.Join( Environment.NewLine, hits ) );
+	}
+
+	/// <summary>The code of a line without a trailing // comment (a mention of Math.Sin in a comment is not a call).</summary>
+	private static string StripComment( string line )
+	{
+		var index = line.IndexOf( "//", StringComparison.Ordinal );
+		return index < 0 ? line : line[..index];
+	}
+
+	/// <summary>Each forbidden form is caught and the deterministic forms next to them are not (the guard's own mutation check).</summary>
+	[TestMethod]
+	public void PlatformMathGuardCatchesEachForbiddenForm()
+	{
+		var forbidden = new[]
+		{
+			"var s = Math.Sin( a );", "var c = MathF.Cos(a);", "var t = Math.Atan2( y, x );", "var a = MathF.Acos( d );", "var p = Math.Pow( b, e );",
+			"var l = Math.Log2( r );", "var e = Math.Exp( -k );", "var (s, c) = MathF.SinCos( a );", "var s = double.Sin( a );", "var s = float.Atan2( y, x );",
+			"var r = Math.Cbrt( v );", "var h = Math.Hypot( x, y );", "var m = Matrix4x4.CreateRotationY( a );", "var q = Quaternion.Slerp( a, b, t );",
+			"var q = Quaternion.CreateFromYawPitchRoll( y, p, r );", "var id = Guid.NewGuid();", "Parallel.For( 0, n, Step );", "var all = items.AsParallel().ToList();",
+			"var t = Math . Tan ( a );",
+		};
+		var allowed = new[]
+		{
+			"var s = DetMath.Sin( a );", "var c = DetMathF.Cos( a );", "var t = DetMath.Atan2( y, x );", "var r = Math.Sqrt( v );", "var r = MathF.Sqrt( v );",
+			"var f = MathF.FusedMultiplyAdd( a, b, c );", "var n = Math.Round( v );", "var a = Math.Abs( v );", "var m = Math.Max( a, b );", "var p = Math.PI;",
+			"var c = Math.Clamp( v, 0, 1 );", "var f = Math.Floor( v );", "var m = Matrix4x4.CreateTranslation( v );", "var s = Math.ScaleB( v, 3 );",
+		};
+		foreach ( var line in forbidden )
+			Assert.IsTrue( ForbiddenPlatformMathInSimulation.IsMatch( line ), line );
+		foreach ( var line in allowed )
+			Assert.IsFalse( ForbiddenPlatformMathInSimulation.IsMatch( line ), line );
+		Assert.IsTrue( IsPresentationMath( "World/Lobby/GlobeScene.cs", "var s = MathF.Sin( a );" ) );
+		Assert.IsTrue( IsPresentationMath( "World/Tracks/TrackSurface.cs", "var p = MathF.Atan2( a, b ); // [DET:presentation] the drawn pose" ) );
+		Assert.IsFalse( IsPresentationMath( "World/Tracks/TrackSurface.cs", "var p = MathF.Atan2( a, b );" ) );
+		Assert.IsFalse( IsPresentationMath( "World/Lobby.cs", "var s = MathF.Sin( a );" ), "a folder entry is not a file prefix" );
+		Assert.IsTrue( IsPresentationMath( "Economy/ParkSaveFile.cs", "var temporary = destination + \".\" + Guid.NewGuid().ToString( \"N\" ) + \".tmp\";" ) );
+		Assert.IsFalse( IsPresentationMath( "Economy/ParkSaveFile.cs", "var id = Guid.NewGuid();" ) );
+		Assert.IsFalse( IsPresentationMath( "Economy/ParkSaveFile.cs", "var name = Guid.NewGuid().ToString( \"N\" ) + \".tmp\" + Math.Sin( a );" ) );
+	}
 }
 
 /// <summary>Per-park attraction ids with the original objects; inconclusive without OPENTPW_GAME_PATH.</summary>

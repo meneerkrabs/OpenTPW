@@ -3053,7 +3053,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		if ( random.Next( 10 ) != 0 )
 			return;
 		var angle = (random.Next( FacingChangeRange ) - FacingChangeRange / 2) * MathF.Tau / 2048;
-		var (sin, cos) = MathF.SinCos( angle );
+		var (sin, cos) = DetMathF.SinCos( angle );
 		(guest.HeadingX, guest.HeadingY) = (guest.HeadingX * cos - guest.HeadingY * sin, guest.HeadingX * sin + guest.HeadingY * cos);
 	}
 

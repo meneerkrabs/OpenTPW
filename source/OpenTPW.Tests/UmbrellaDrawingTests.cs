@@ -58,7 +58,7 @@ public class UmbrellaDrawingTests
 			var units = UmbrellaRenderer.PullShare( DepthOf( zoom ) ) * DepthOf( zoom ) / ObjectPlacement.ModelScale;
 			Assert.AreEqual( UmbrellaRenderer.MaxPullUnits, units, 1e-3f, $"zoom {zoom}: the same pull in units at every zoom" );
 		}
-		Assert.IsTrue( UmbrellaRenderer.MaxPullUnits <= 3.5f, "less than the guest's own pull: a roof that hides the guest hides the umbrella" );
+		Assert.IsTrue( UmbrellaRenderer.MaxPullUnits <= 3.5f, "less than the guest's own pull: a roof that hides the guest mostly hides the umbrella" );
 		Assert.IsTrue( UmbrellaRenderer.MaxPullUnits > 0f && guestOwnPull < 1f );
 		Assert.IsTrue( UmbrellaRenderer.SizeScale is > 0.5f and <= 1f );
 	}

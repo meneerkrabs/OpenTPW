@@ -25,7 +25,7 @@ or number table of Theme Park Inc is copied: the sprites and models are drawn in
 ## What Theme Park Inc does (static trace)
 
 Confidence: high for the state machine, the gates, the multipliers, the settings addresses and the data; medium for the per-day count (the clock scale `+0x1C` is not read) and for who counts as "inside" (`+0x38`, `+0x3C`);
-low for the view condition and the season index. Not found statically: the producer of the log line "I got a nice umbrella from the ride".
+high for the track-cell test (UMB-002), low for the season index. Not found statically: the producer of the log line "I got a nice umbrella from the ride".
 
 **Settings.** Theme Park Inc's settings are one block of words in key-table order (rows of 60 bytes from `0x996468`; a struct adds no words, an array adds count x fields and then one count word; anchored on `MinPeople`
 `0xA02230` and checked on the guest constructor's reads of `PeepTypes`). The umbrella keys are `UmbrellaModifier` `0xA01B5C`, `WeatherModifierFrequency` `0xA01B60`, `SlowestWeatherChangeResponse` `0xA01B64`,
@@ -271,7 +271,7 @@ How often it would apply here: in 12 simulated park minutes of Jungle (a guest s
 
 ### Frame cost
 
-- **Native** (Debug build, Jungle, offscreen, 342 guests in the park, every one holding an open umbrella in rain; measured 2026-10-18, two rounds each, `Frame stats` of the run). The crowd is the park's 13 starting guests plus the 325 that `--debug-umbrellas-crowd 325` places once on the walkable path cells (`UmbrellaPerf.Stage`, the same staging as the browser harness), which is what the earlier figure's 343 guests came from; `--perf-arrivals` is not needed (`--perf-arrivals 1` alone only reaches 18 guests). The complete command, with `<zoom>` 110 (Home) or 300, and with and without `--disable-extension opentpw.umbrellas`:
+- **Native** (Debug build, Jungle, offscreen, 338 guests staged and 342 after the arrivals during the run, every one holding an open umbrella in rain; measured 2026-10-18, two rounds each, `Frame stats` of the run). The crowd is the park's 13 starting guests plus the 325 that `--debug-umbrellas-crowd 325` places once on the walkable path cells (`UmbrellaPerf.Stage`, the same staging as the browser harness), which is what the earlier figure's 343 guests came from; `--perf-arrivals` is not needed (`--perf-arrivals 1` alone only reaches 18 guests). The complete command, with `<zoom>` 110 (Home) or 300, and with and without `--disable-extension opentpw.umbrellas`:
 
   ```
   OPENTPW_GAME_PATH="<Theme Park World folder>" bash scripts/run.sh --load-original-level jungle --offscreen --silent --mute --no-advisor --no-vsync --frame-stats --perf-run 3000 --perf-zoom <zoom> --debug-weather 100 --debug-umbrellas --debug-umbrellas-crowd 325 [--disable-extension opentpw.umbrellas]

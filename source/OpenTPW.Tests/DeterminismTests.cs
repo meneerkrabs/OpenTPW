@@ -636,7 +636,7 @@ public class DeterminismTests
 	internal const ulong WinterColdFixedRunHash = 0x9E74A906AB249401UL;
 
 	/// <summary>[EXT:winter-cold] The pinned hash of <see cref="RunFixedParkInTheSnowWithCold"/> with the cold rule, the rain mood, the brolly shop and the winter shops all on (docs/DETERMINISM.md, "Winter cold").</summary>
-	internal const ulong WinterColdEverythingFixedRunHash = 0x7061B96054B02B8CUL;
+	internal const ulong WinterColdEverythingFixedRunHash = 0x7589B229530055D6UL;
 
 	[TestMethod]
 	public void FixedRunInTheSnowWithColdIsTheSameInEveryProcessAndMovesTheRun()

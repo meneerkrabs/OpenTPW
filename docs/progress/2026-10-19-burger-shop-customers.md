@@ -11,3 +11,5 @@ again on the path among the waiting guests. Customers of such shops are now draw
 remaining difference, that tp.exe walks the guest out of its exit cell from `UsageInfo.ExitCellAppearPos` where
 OpenTPW sets it down beyond the exit, is registered as `GUEST-023`. The M3 gate gained `ShopFilter` and
 `ShopRotation`. Presentation only: no hash or determinism pin changed.
+
+Review changes: the sideshows and toilets that set `RideHandlesSprite` 1 are registered as `GUEST-024` (tp.exe keeps their guests in view too; OpenTPW still hides them until their scripts are decoded), and a customer at a shop counter keeps its umbrella drawn.

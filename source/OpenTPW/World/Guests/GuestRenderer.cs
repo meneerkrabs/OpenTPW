@@ -404,7 +404,8 @@ public sealed class GuestRenderer : Entity
 	internal bool TryMount( Guest guest, SVector3 right, SVector3 up, SVector3 forward, SVector3 eye, out GuestMount mount )
 	{
 		mount = default;
-		if ( !Visible || deleted || atlases.Count == 0 || !guest.IsVisible || Draws?.Invoke( guest ) == false )
+		// a customer drawn at a shop's counter (StandsAtCounter) keeps what it holds, as its body stays in view
+		if ( !Visible || deleted || atlases.Count == 0 || !guest.IsVisible && !simulation.StandsAtCounter( guest ) || Draws?.Invoke( guest ) == false )
 			return false;
 		var (atlasIndex, frameIndex, mirror, slot, direction, _, step) = SelectSpriteAndSlot( guest, right, forward, up );
 		var atlas = atlases[atlasIndex];

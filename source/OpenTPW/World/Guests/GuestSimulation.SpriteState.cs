@@ -93,6 +93,7 @@ public sealed partial class GuestSimulation
 	/// stay out of view ([EXT:pools-swim]); riders keep the ride's own poses or stay hidden.
 	/// </summary>
 	// [BIN:TPW-EXE:0x004FA087 held body] the guest update places its body at its own position (0x00475480) only while +0x28 is 0; state 16 with a kept body has set it to 1 (0x00502136) and the state-15 entry clears it (0x00501F79), so the body stays drawn where it stood when the shop took it
+	// [APPROX:GUEST-024] shops only: sideshows and toilets with RideHandlesSprite 1 keep their guests hidden until their scripts' use of the kept body is decoded
 	public bool StandsAtCounter( Guest guest ) =>
 		guest.State == GuestState.Using && guest.BodySprite.Player != null && !guest.InSwimSession
 		&& FindAttraction( guest.AttractionId ) is { RideHandlesSprite: true, Kind: RideVisitorKind.Shop, IsChangingRoom: false };

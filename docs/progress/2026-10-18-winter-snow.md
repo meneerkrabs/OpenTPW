@@ -12,3 +12,4 @@ It is **presentation only** (`AffectsSimulation` false: no mod-set record, no ha
 - **Debug hooks**: `--debug-snow-cover <0..1>` (`[EXT:debug-snow-cover]`); `--debug-weather 8` already forces hallow snow.
 - Tests: `SnowCoverTests` (accumulate, melt, rain melt, clamps, pause and speed through the weather's turns, easing, save field and validation, the uniform slot at byte 268, shader declarations, web JSON, registration, the mods screen in every language, the economy hash).
 - Not covered (documented in [WINTER.md](../WINTER.md#settling-snow-extwinter-snow)): sprites, lakes, pools, the sky; ground under a roof whitens too. Wintry Decembers stays W3.
+- **Browser check (review)**: a Release publish of the web build compiles and links the new test.shader and draws the snow (`node tools/web-perf/run.mjs ... --scenarios jungle,snow --cover 1 --shot out.png`, backed by the `PerfSnow` hook, the browser twin of `--debug-snow-cover`).

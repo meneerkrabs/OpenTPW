@@ -195,6 +195,10 @@ public sealed partial class ParkHud
 
 	public int NumberOwned( BuildItem item ) => level.Objects.Objects.Count( owned => !owned.IsDeleted && owned.Entry.InfoId == item.InfoId );
 
+	/// <summary>TPW buy-list model frame: owned tick wins over the recent-research star; auxiliary tool rows have neither.</summary>
+	public int BuyItemState( BuildItem item ) => IsLandRow( item ) ? 0 : NumberOwned( item ) > 0 ? 1
+		: Status.EconomySource is ParkEconomy economy && economy.Research.IsRecentlyResearched( (int)item.Category, item.InfoId ) ? 2 : 0;
+
 	/// <summary>The buy window's working-life gauge: the value 100 of 1024 it gets when the window is built (tp.exe 0x4abae0) and keeps.</summary>
 	public const float RideWorkingLifeGauge = 100 / 1024f;
 
@@ -526,11 +530,11 @@ public sealed partial class ParkHud
 				}
 				context.DrawFittedText( context.Fonts.Label, owner.ListName( item ), Cell( 0 ), color, UiAlign.Left );
 				context.DrawFittedText( context.Fonts.Label, owner.PriceText( item ), Cell( 1 ), color, UiAlign.Right );
-				// [BIN:TPW-EXE:0x4ad340 row cell, 0x4aaf70 row state] the third column (1673,1724) is the model i_boxtick (frames: 0 the empty box, 1 the box with the tick, 2 the box with a star), drawn at the model's own 51 unit size; the row state is 1 when the park owns at least one of the item (0x4ca8c0), 0 otherwise
-				// [APPROX:UI-050] state 2 (the star: the item is one of the three most recent of its category, a per-category ring read by 0x4caa70 whose writer is not found) is not drawn; OpenTPW keeps no such ring
+				// The numeric third cell selects frame n directly: 0 empty, 1 owned tick, 2 recent-research star.
+				// Ownership masks history without clearing it. Keep the model's own 51-unit size.
 				var boxCell = Cell( 2 );
 				var box = TickBoxSize * canvas.Scale;
-				context.DrawModel( "i_boxtick", owner.NumberOwned( item ) > 0 ? 1 : 0, new UiRect( boxCell.X + (boxCell.Width - box) / 2, boxCell.Y + (boxCell.Height - box) / 2, box, box ) );
+				context.DrawModel( "i_boxtick", owner.BuyItemState( item ), new UiRect( boxCell.X + (boxCell.Width - box) / 2, boxCell.Y + (boxCell.Height - box) / 2, box, box ) );
 			}
 		}
 	}

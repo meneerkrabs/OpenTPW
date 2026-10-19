@@ -11,6 +11,8 @@ public class UiScreen
 {
 	private readonly List<UiElement> elements = new();
 	private UiElement? pressed;
+	private NVector2 pressPoint;
+	private bool capturedClick;
 	private NVector2 lastMouse = new( -1, -1 );
 	private bool seenMouse;
 
@@ -34,7 +36,17 @@ public class UiScreen
 	/// <summary>A full screen of its own (the online globe): the screens below are not drawn or dimmed.</summary>
 	public bool HidesBelow { get; init; }
 	/// <summary>True once a stack removed this screen; it then ignores the rest of the frame's input (a click that closed it must not also act as Back on whatever it opened).</summary>
-	public bool IsRemoved { get; internal set; }
+	public bool IsRemoved
+	{
+		get => isRemoved;
+		internal set
+		{
+			isRemoved = value;
+			// Retain the opt-in marker until release/new press, so cancelling capture cannot fall through to another widget.
+			if ( value ) CancelCapturedPress();
+		}
+	}
+	private bool isRemoved;
 
 	/// <summary>Whether the right click leaves a modal screen: the RMBCancelOn option (+0x39, default on) is set.</summary>
 	// [BIN:TPW-EXE:0x488aa1 RMBCancelOn] the original's screens (camcorder 0x488aa1, ride view 0x48a7ab, 0x48aadb) leave on a right click only when the option [0x78d911] is set; the option's other reader is the park view's mouse procedure 0x4881a0 (a quick right click cancels the tool and mode there)
@@ -58,8 +70,16 @@ public class UiScreen
 	public void Remove( UiElement element )
 	{
 		elements.Remove( element );
+		if ( pressed == element ) CancelCapturedPress();
 		if ( Focused == element )
 			Focused = null;
+	}
+
+	private void CancelCapturedPress()
+	{
+		if ( !capturedClick ) return;
+		(pressed as IUiCapturedClickTarget)?.CancelCapturedClick();
+		pressed = null;
 	}
 
 	public IEnumerable<UiElement> FocusableElements => elements.Where( element => element.Visible && element.Focusable );
@@ -85,6 +105,8 @@ public class UiScreen
 		Updating?.Invoke( context );
 		if ( IsRemoved )
 			return true;
+		if ( capturedClick && (pressed is { Enabled: false } or { Visible: false } || !input.LeftDown && !input.LeftPressed && !input.LeftReleased) )
+			CancelCapturedPress();
 		var canvas = context.Canvas;
 		var hit = HitTest( canvas, input.Mouse );
 		context.HoverHelp = hit?.CurrentHelp;
@@ -112,6 +134,8 @@ public class UiScreen
 		if ( input.LeftPressed )
 		{
 			pressed = hit;
+			capturedClick = pressed is IUiCapturedClickTarget;
+			pressPoint = input.Mouse;
 			if ( pressed is { Enabled: true } and IUiDragStart start && input.Mouse.X >= 0 )
 				start.DragStart( canvas, input.Mouse );
 			if ( hit is UiButton { Repeat: not null, Enabled: true } holdButton && input.Mouse.X >= 0 )
@@ -126,16 +150,26 @@ public class UiScreen
 			drag.DragTo( canvas, input.Mouse );
 		if ( input.LeftReleased )
 		{
-			if ( pressed is { Enabled: true } and IUiDragTarget ended && input.Mouse.X >= 0 )
+			if ( pressed is { Enabled: true } and IUiDragTarget ended && (input.Mouse.X >= 0 || capturedClick) )
 				ended.DragEnd( canvas, input.Mouse );
 			// [BIN:TPW-EXE:0x65f6d1 click rule] a release is a click only within 500 ms of its press and without the pointer straying more than 6 px (UiInputSource)
 			// a button whose hold began repeating gives no click when it is let go (0x668eff: the click needs the state not to be 2)
 			var repeating = pressed is UiButton { HoldState: 2 };
-			if ( hit != null && (pressed == null || pressed == hit) && !input.NotClick && !repeating )
+			// [BIN:TPW-EXE:0x658b84 captured release] release selects the original recipient; 0x65f971 rebuilds the qualified click from its saved press point.
+			// Opt-in only: other widgets retain their existing same-element release behavior and the shared UiInput NotClick qualification.
+			if ( capturedClick )
+			{
+				if ( !IsRemoved && pressed is { Enabled: true, Visible: true } and IUiCapturedClickTarget captured && elements.Contains( pressed ) && input.Mouse.X >= 0 && !input.NotClick && !repeating )
+					captured.ClickCaptured( canvas, pressPoint );
+				else
+					CancelCapturedPress();
+			}
+			else if ( hit != null && (pressed == null || pressed == hit) && !input.NotClick && !repeating )
 				Click( canvas, hit, input.Mouse );
 			if ( pressed is UiButton { Repeat: not null } released )
 				released.HoldState = 0;
 			pressed = null;
+			capturedClick = false;
 			if ( IsRemoved )
 				return true;
 		}

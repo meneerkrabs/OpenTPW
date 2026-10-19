@@ -25,6 +25,14 @@ public class EveningTests
 	internal static ModSet Set( bool evening ) => ModSet.Resolve( Array.Empty<DiscoveredMod>(),
 		new ModSettings { Enabled = new Dictionary<string, bool> { [OfficialExtensions.Evening.Id] = evening } }, null, GameEdition.ThemeParkWorld, OfficialExtensions.All );
 
+	private static string SourceRoot()
+	{
+		var directory = new DirectoryInfo( AppContext.BaseDirectory );
+		while ( directory != null && !File.Exists( Path.Combine( directory.FullName, "source", "OpenTPW", "World", "Pools", "PoolSpray.cs" ) ) )
+			directory = directory.Parent;
+		return directory?.FullName ?? throw new DirectoryNotFoundException( "source/OpenTPW" );
+	}
+
 	private static string RepositoryRoot()
 	{
 		var directory = new DirectoryInfo( AppContext.BaseDirectory );
@@ -450,6 +458,47 @@ public class EveningTests
 	}
 
 	[TestMethod]
+	public void DuskIsAClearlyWarmerAndDarkerEveningThanTheDay()
+	{
+		var dusk = EveningLook.At( 0.5f );
+		// the low sun is strongly orange: red well above green well above blue, so green ground turns olive and paths and bricks glow
+		Assert.IsTrue( dusk.SunColour.X > 1.5f * dusk.SunColour.Y && dusk.SunColour.Y > 1.5f * dusk.SunColour.Z, "an orange low sun" );
+		Assert.IsTrue( dusk.SunColour.X < 0.75f, "the dusk sun is dimmer than the day's white" );
+		var ambient = dusk.AmbientColourUniform;
+		Assert.IsTrue( ambient.X > ambient.Y && ambient.Y > ambient.Z, "a warm tinted ambient" );
+		Assert.IsTrue( ambient.X < 0.6f && ambient.Z < 0.4f, "well below the day's 1 in every channel" );
+		// the middle of the dusk is darker than its first half and brighter than night
+		Assert.IsTrue( EveningLook.At( 0.75f ).SunColour.X > dusk.SunColour.X && dusk.SunColour.X > EveningLook.At( 0f ).SunColour.X * 0.9f );
+		// night is exactly as approved: the moon and 0.35 of the ambient
+		var night = EveningLook.At( 0f );
+		Assert.AreEqual( new NVector3( 0.08f, 0.14f, 0.40f ), night.SunColour );
+		Assert.AreEqual( 0.35f, night.AmbientLevel, 1e-6f );
+	}
+
+	[TestMethod]
+	public void TheLitShaderHasASoftShoulderForLampLitWhiteSurfacesOnlyOutsideFullDay()
+	{
+		var text = ShaderText( "test.shader" );
+		StringAssert.Contains( text, "peak > 0.4 ?" );
+		// guarded by the tinted ambient, which is all zero at full day and with the extension off
+		var peak = text.IndexOf( "peak > 0.4 ?", StringComparison.Ordinal );
+		StringAssert.Contains( text.Substring( Math.Max( 0, peak - 300 ), 300 ), "vAmbientTint.x + vAmbientTint.y + vAmbientTint.z > 0.0 )", "the shoulder sits behind the dusk and night check" );
+	}
+
+	[TestMethod]
+	public void TheSplashAndSmokeParticlesTakeTheSpriteTint()
+	{
+		var night = EveningLook.At( 0f );
+		var tinted = new ObjectUniformBuffer().WithSpriteTint( night );
+		Assert.AreEqual( night.SpriteTint, tinted.g_vLightColor );
+		var day = new ObjectUniformBuffer().WithSpriteTint( EveningLook.Day );
+		Assert.AreEqual( NVector3.Zero, day.g_vLightColor, "full day leaves the block as it was" );
+		var root = SourceRoot();
+		StringAssert.Contains( File.ReadAllText( Path.Combine( root, "source", "OpenTPW", "World", "Pools", "PoolSpray.cs" ) ), "WithSpriteTint" );
+		StringAssert.Contains( File.ReadAllText( Path.Combine( root, "source", "OpenTPW", "World", "Particles", "ParticleRenderer.cs" ) ), "tinted: kind == 0" );
+	}
+
+	[TestMethod]
 	public void TheWebShadersAreRegeneratedForTheAmbientLevel()
 	{
 		foreach ( var name in new[] { "test", "pool-deck", "pool-basin", "sprite", "particle" } )
@@ -601,7 +650,8 @@ public class EveningTests
 				foreach ( var lamp in lamps )
 				{
 					// inside the object's 10 x 10 cell and not under the ground, in model units: where the light stands is a place the object occupies
-					Assert.IsTrue( lamp.Local.X is >= 0 and <= 10 && lamp.Local.Y is >= 0 and <= 15 && lamp.Local.Z is >= 0 and <= 14, $"{theme}/{name}: {lamp.Local}" );
+					// (the underwater light stands a little below the object's ground level on purpose: it is in the water, so it lights the basin and the water's edge and little of the dry ground)
+					Assert.IsTrue( lamp.Local.X is >= 0 and <= 10 && lamp.Local.Y is >= 0 and <= 25 && lamp.Local.Z >= ( extra == 6 ? -8f : 0f ) && lamp.Local.Z <= 14, $"{theme}/{name}: {lamp.Local}" );
 				}
 			}
 		}

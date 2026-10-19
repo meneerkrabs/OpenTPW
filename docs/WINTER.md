@@ -190,8 +190,8 @@ about a guest is read but `WarmItems` (`ShownItems` drops an undefined value) an
 
 ## Approval of the labels
 
-Status of every `[EXT:winter-*]` label against the user's decisions of October 18, 2026 (see "Decisions" above). **Approved** means the label implements something the user decided or asked for, quoted in the last column.
-**Awaiting** labels are the coordinator's defaults or details of ours that the user has not been asked about yet; they stay open until the user confirms or changes them (they do not block W3).
+Status of every `[EXT:winter-*]` label against the user's decisions of October 18, 2026 (see "Decisions" above). **Approved** means the label implements something the user decided or asked for, quoted in the last column; `winter-kiosk-gate`, `winter-item-colour`, `winter-spice-label` and `winter-season-terms` were approved by the user's answer "Alles akkoord".
+**Awaiting** labels are the coordinator's defaults that the user has not been asked about yet; they stay open until the user confirms or changes them (they do not block the phase).
 
 | Label | What | Status | Basis |
 | --- | --- | --- | --- |
@@ -200,13 +200,13 @@ Status of every `[EXT:winter-*]` label against the user's decisions of October 1
 | `[EXT:winter-snow-paths]` | paths under snow look like slush | approved | "Paths under snow look like **slush** (greyish and wet)" |
 | `[EXT:winter-snow-save]` | the optional, unhashed saved cover | awaiting | coordinator default ("the snow cover is saved as an optional unhashed field") |
 | `[EXT:winter-extension]`, `[EXT:winter-items]`, `[EXT:winter-kiosk]` | the winter kiosk, the warm items (hat, earmuffs, mittens) and the extension that carries them (W3, W4) | approved | "winter kiosks **on** (recorded in a save only for parks that use them)"; the request for a kiosk "that sells hats, mittens and earmuffs" |
-| `[EXT:winter-item-colour]` | item colour as a hash of guest id and item | awaiting | our detail |
-| `[EXT:winter-kiosk-gate]` | the kiosk sells only in snow or December to February | awaiting | coordinator default |
+| `[EXT:winter-item-colour]` | item colour as a hash of guest id and item | approved | the user answered "Alles akkoord" on October 18, 2026 |
+| `[EXT:winter-kiosk-gate]` | the kiosk sells only in snow or December to February | approved | the user answered "Alles akkoord" on October 18, 2026 |
 | `[EXT:winter-gluehwein]`, `[EXT:winter-gluehwein-no-drunk]` | the glühwein stall, a warm drink with no drunk effects | approved | "Glühwein, not hot chocolate: a warm drink with **no drunk effects**" |
-| `[EXT:winter-spice-label]` | the "Spices" slider keeps Ice's mechanics | awaiting | coordinator default |
-| `[EXT:winter-season-terms]` | our own `SeasonModifier.*` demand keys and the stall's demand numbers | awaiting | our detail (prices 25 and 30 are coordinator defaults too) |
-| `[EXT:winter-weather]` | wintry Decembers: December's storms are snow in jungle and fantasy (an option, off by default); implemented as snow without lightning, with the storm's drops | approved | "Wintry Decembers are an option (its own toggle) that turns December's thunderstorms into snow in jungle and fantasy"; the lightning-free snowfall and the weather-stream effect are the implementation's detail |
-| `[EXT:winter-save]` | the used-only record of `opentpw.winter` and the optional guest fields `WarmItems` and `WarmUntilDay` | awaiting | "winter kiosks **on** (recorded in a save only for parks that use them)" is the user's; the field layout is ours |
+| `[EXT:winter-spice-label]` | the "Spices" slider keeps Ice's mechanics | approved | the user answered "Alles akkoord" on October 18, 2026 |
+| `[EXT:winter-season-terms]` | our own `SeasonModifier.*` demand keys and the stall's demand numbers | approved | the user answered "Alles akkoord" on October 18, 2026 (the prices 25 and 30 are covered by it) |
+| `[EXT:winter-weather]` | wintry Decembers: December's storms are snow in jungle and fantasy (an option, off by default); implemented as snow without lightning, with the storm's drops | approved | "Wintry Decembers are an option (its own toggle) that turns December's thunderstorms into snow in jungle and fantasy"; that December storms become snow without lightning falls under this approved option. Consequence, stated plainly: the lightning clock stops during such a spell and takes no more draws, so the weather stream diverges from the original from the first wintry spell (the option is recorded in every save while on) |
+| `[EXT:winter-save]` | the used-only record of `opentpw.winter` and the optional guest fields `WarmItems` and `WarmUntilDay` | approved | "winter kiosks **on** (recorded in a save only for parks that use them)"; the optional guest fields implement exactly that rule |
 | `[EXT:winter-cold]` | the cold mood rule (W5) | approved | "Cold is a separate option, `opentpw.winter-cold`, default off" with the stated -2 / +1 numbers |
 | `[EXT:winter-weather]` | the wintry Decembers option | approved | "**Wintry Decembers** are an option (its own toggle)" |
 | `[EXT:winter-anchors]` | the schema 2 head and hand anchors, and the measured head-only anchors of the original sets (numbers only; mittens stay invisible there) | approved | the data the approved hats, earmuffs and mittens attach to; "committing measured numbers is allowed, never pixels" and "mittens are invisible on the original sets" (2026-10-18) |
@@ -214,4 +214,4 @@ Status of every `[EXT:winter-*]` label against the user's decisions of October 1
 | `[EXT:pools-model-inset]` | the walls' gap from the footprint edge (the pools' rule) | existing | not a winter label |
 | `[BIN:TPW-EXE:0x...]` | the Theme Park World `tp.exe` address a finding was traced to (this page) | n/a | evidence |
 
-Still awaiting the user: the three coordinator defaults above that touch behaviour (`winter-snow-save`, `winter-kiosk-gate`, `winter-spice-label`), the two details of ours (`winter-item-colour`, `winter-season-terms`) and the id range 64010..64499 (the example lamp mod holds 64000..64009).
+Still awaiting the user: the coordinator default `winter-snow-save` (W1) and the id range 64010..64499 (the example lamp mod holds 64000..64009).

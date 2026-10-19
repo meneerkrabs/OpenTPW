@@ -38,6 +38,11 @@ public sealed record GuestSnapshot
 	public required float StepFromY { get; init; }
 	public required float StepFromDistance { get; init; }
 	public required long StepTick { get; init; }
+	/// <summary>Optional persistent body history. Absent in older/original saves, which reconstruct a fresh body at load.</summary>
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
+	public VisitorSpriteStateSnapshot? BodySprite { get; init; }
+	public bool BodySpriteInCostume { get; init; }
+	public bool BodySpriteHistoryReconstructed { get; init; }
 
 	// Needs, money and thoughts.
 	public required float Hunger { get; init; }
@@ -443,6 +448,9 @@ public sealed record GuestSimulationSnapshot
 	public uint? WorldGenerator { get; init; }
 	public required long TickCount { get; init; }
 	public required double TimeSeconds { get; init; }
+	/// <summary>Presentation-only absolute int32 sample in the host fixed-clock epoch. Required when per-guest BodySprite history is present.</summary>
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
+	public int? BodySpriteClockMilliseconds { get; init; }
 	/// <summary>The id after the highest guest id (before the thing pool: the next guest id the counter handed out; with it the next id is the pool's, <see cref="Things"/>).</summary>
 	public required int NextGuestId { get; init; }
 	/// <summary>

@@ -18,10 +18,13 @@ public readonly record struct UiSpriteFrame( Veldrid.Texture Texture, int AtlasW
 public sealed class UiSpriteFigure : UiElement
 {
 	/// <summary>The frame to draw now; null draws nothing.</summary>
-	public Func<UiSpriteFrame?> Frame { get; init; } = () => null;
+	public Func<UiSpriteFrame?> Frame { get; set; } = () => null;
 
 	/// <summary>Canvas units per sprite pixel (the canvas is 2048 units wide).</summary>
 	public float CanvasUnitsPerPixel { get; init; } = 3.2f;
+
+	/// <summary>Optional authored-canvas hotspot, mapped before scaling. Null preserves the shared rectangle-relative placement.</summary>
+	public NVector2? FeetInCanvas { get; init; }
 
 	/// <summary>Where the figure's feet stand in <paramref name="rect"/>, in the rectangle's own units.</summary>
 	public static NVector2 Feet( UiRect rect ) => new( rect.X + rect.Width / 2, rect.Bottom - rect.Height / 4 );
@@ -45,7 +48,8 @@ public sealed class UiSpriteFigure : UiElement
 		if ( Frame() is not { } frame || Bounds.Width <= 0 )
 			return;
 		var rect = ScreenRect( context.Canvas );
-		var (quad, uv0, uv1) = Layout( frame, Feet( rect ), CanvasUnitsPerPixel * rect.Width / Bounds.Width );
+		var feet = FeetInCanvas is { } authored ? context.Canvas.Map( authored, Anchor ) : Feet( rect );
+		var (quad, uv0, uv1) = Layout( frame, feet, CanvasUnitsPerPixel * rect.Width / Bounds.Width );
 		context.Batch.AddQuad( UiTexture.Of( frame.Texture ), quad, uv0, uv1, RgbaByte.White );
 	}
 }

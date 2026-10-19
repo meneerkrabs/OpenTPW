@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using System.Runtime.CompilerServices;
 using Veldrid;
 using SVector2 = System.Numerics.Vector2;
 using SVector3 = System.Numerics.Vector3;
@@ -35,7 +36,7 @@ public sealed class GuestRenderer : Entity
 	/// Walk-cycle steps per cell walked: the walk step sets the sprite's interval to 62 ms over twice the speed (the walk script doubles it, the run does not), so a sprite steps
 	/// 248 / (62 / (2 v)) times in a turn it covers v / 2.5098 cells in: 20.08 a cell, a run 10.04. The 8 frames of the walk script therefore span 0.4 cell.
 	/// </summary>
-	// [BIN:TPW-EXE:0x004FA2A0 walk step] v = step length (16.16 per turn) x 3.829657e-05 (0x007006E8), doubled unless the guest runs (a smoothed speed word above 0, thing types 1 and 7); 0x004D41D0 sets the interval to trunc(62 / v) ms (0x007003A0), at most 250, applied by 0x004D4190; the sprite player 0x00475360 runs one script step per interval
+	// [BIN:TPW-EXE:0x004FA2A0 walk step] v = step length (16.16 per turn) x 3.829657e-05 (0x007006E8), doubled unless the guest runs (the unsigned purpose-speed word +0xC2 above 0, thing types 1 and 7); 0x004D41D0 sets the interval to trunc(62 / v) ms (0x007003A0), at most 250, applied by 0x004D4190; the sprite player 0x00475360 runs one script step per interval
 	public const float WalkFramesPerCell = 20.078f;
 	private const int VerticesPerGuest = 12;
 
@@ -47,10 +48,22 @@ public sealed class GuestRenderer : Entity
 	private DeviceBuffer? vertexBuffer;
 	private Vertex[] vertices = Array.Empty<Vertex>();
 	private bool deleted;
+	private long rendererPass;
+	private long assetGeneration;
+	// The last successful CPU world outputs only. Tokens retain no GPU texture or UI frame.
+	private readonly Dictionary<Guest, PublishedBody> publishedBodies = new( ReferenceEqualityComparer.Instance );
+	private readonly ConditionalWeakTable<Veldrid.Texture, object> resourceIdentities = new();
+	private readonly record struct PublishedBody( Level Owner, GuestSimulation Simulation, GuestRenderer Renderer,
+		Guest Guest, int Id, long WorldPass, long RendererPass, long Assets, GuestSpriteAtlas Atlas, int AtlasIndex,
+		object Resource, bool Costume, IBounceRiderSource? RideSource, int Slot, int Step, float HeadingX, float HeadingY );
 
 	public bool Visible { get; set; } = true;
 	/// <summary>Which guests this renderer draws (null: all): the kids' renderer leaves guests in costume to the costume renderer.</summary>
 	public Func<Guest, bool>? Draws { get; init; }
+	/// <summary>Consumer selection for stateful ride bodies, whose category was copied at player creation. Ordinary walking retains Draws.</summary>
+	public Func<Guest, bool>? DrawsRideBody { get; init; }
+
+	internal bool AcceptsBodyConsumer( Guest guest, bool statefulRideBody ) => (statefulRideBody ? DrawsRideBody ?? Draws : Draws)?.Invoke( guest ) != false;
 	/// <summary>[EXT:pools-swim] Chooses the animation slot and step of a guest instead of the walking, waiting and standing rules (the swimmers' renderer: the swim strokes); null for the kids and the costumes.</summary>
 	public Func<Guest, (int Slot, int Step)?>? SlotChooser { get; init; }
 	/// <summary>
@@ -166,8 +179,7 @@ public sealed class GuestRenderer : Entity
 		{
 			if ( keys != null && !keys.Contains( TexturePack.RelativeFileName( atlases[index].PackKey ) ) )
 				continue;
-			old.Add( textures[index] );
-			textures[index] = LoadAtlas( atlases[index] );
+			old.Add( ReplaceAtlas( index, LoadAtlas( atlases[index] ) ) );
 		}
 		if ( old.Count == 0 )
 			return;
@@ -185,6 +197,63 @@ public sealed class GuestRenderer : Entity
 				texture.NativeTexture.Dispose();
 			}
 		} );
+	}
+
+	private Texture ReplaceAtlas( int index, Texture replacement )
+	{
+		var old = textures[index];
+		// A partial reload invalidates every publication before its first resource is replaced.
+		assetGeneration++;
+		publishedBodies.Clear();
+		textures[index] = replacement;
+		return old;
+	}
+
+	private bool CanRender => Visible && material != null && !deleted;
+	private bool HasAtlas( int index ) => index >= 0 && index < atlases.Count && index < textures.Count
+		&& textures[index].NativeTexture is { IsDisposed: false };
+	// These are owned-state checks, never extension callbacks. Registered kids/costumes only; no ride or swim route.
+	private bool OrdinaryRenderer => Level != null && ReferenceEquals( Level, Level.Current )
+		&& ReferenceEquals( Level.Guests, simulation ) && Entity.All.Contains( this )
+		&& (ReferenceEquals( Level.GuestRenderer, this ) || ReferenceEquals( Level.CostumeRenderer, this ))
+		&& SlotChooser == null && FeetChooser == null && DepthPullChooser == null && DepthPulledSlots == null
+		&& RotatedSlots == null && BottomAnchoredSlots == null && !ExactDirections && !SwimSlotFallback;
+	private bool OrdinaryGuest( Guest guest ) =>
+		(ReferenceEquals( Level.CostumeRenderer, this ) ? guest.InCostume : !guest.InCostume || Level.CostumeRenderer == null)
+		&& guest.IsVisible && !guest.InSwimSession && guest.Id > 0 && guest.Type >= 0
+		&& float.IsFinite( guest.DrawX ) && float.IsFinite( guest.DrawY )
+		&& float.IsFinite( guest.HeadingX ) && float.IsFinite( guest.HeadingY ) && float.IsFinite( guest.DrawDistanceWalked )
+		&& guest.DrawDistanceWalked >= 0 && double.IsFinite( simulation.TimeSeconds );
+
+	private static bool ValidFrame( GuestSpriteAtlas atlas, GuestAtlasFrame frame ) => atlas.Width > 0 && atlas.Height > 0
+		&& frame.X >= 0 && frame.Y >= 0 && frame.Width > 0 && frame.Height > 0
+		&& (long)frame.X + frame.Width <= atlas.Width && (long)frame.Y + frame.Height <= atlas.Height;
+
+	/// <summary>
+	/// The selected ordinary visitor's successful current world body output, at literal camera yaw zero. Pure observation:
+	/// no chooser, pose collection, animation player, movement or RNG work. UI-910 retains native clone/lifecycle qualifications.
+	/// </summary>
+	internal UI.Original.UiSpriteFrame? VisitorFrame( Guest guest )
+	{
+		if ( !CanRender || !OrdinaryRenderer || !OrdinaryGuest( guest ) || !publishedBodies.TryGetValue( guest, out var output )
+			|| !ReferenceEquals( output.Owner, Level ) || !ReferenceEquals( output.Simulation, simulation ) || !ReferenceEquals( output.Renderer, this )
+			|| !ReferenceEquals( output.Guest, guest ) || output.Id != guest.Id || output.Costume != guest.InCostume
+			|| !ReferenceEquals( output.RideSource, BounceRiders ) || output.WorldPass != Level.RenderPass
+			|| output.RendererPass != rendererPass || output.Assets != assetGeneration || !HasAtlas( output.AtlasIndex )
+			|| !ReferenceEquals( output.Atlas, atlases[output.AtlasIndex] )
+			|| !resourceIdentities.TryGetValue( textures[output.AtlasIndex].NativeTexture, out var resource ) || !ReferenceEquals( resource, output.Resource )
+			|| !simulation.Guests.Any( item => ReferenceEquals( item, guest ) ) )
+			return null;
+		var atlas = output.Atlas;
+		if ( output.Slot < 0 || output.Slot >= atlas.Animations.Animations.Count || atlas.Frames.Length == 0
+			|| atlas.DirectionsOf( output.Slot ) <= 0 || output.Step < 0 || output.Step >= Math.Max( 1, atlas.FramesPerDirection( output.Slot ) ) )
+			return null;
+		var (direction, mirror) = GuestSpriteAtlas.SelectOriginalDirection( output.HeadingX, output.HeadingY, 0f, atlas.DirectionsOf( output.Slot ) );
+		var frame = atlas.Frames[atlas.GetFrame( output.Slot, direction, output.Step )];
+		if ( !ValidFrame( atlas, frame ) )
+			return null;
+		return new UI.Original.UiSpriteFrame( textures[output.AtlasIndex].NativeTexture, atlas.Width, atlas.Height,
+			frame.X, frame.Y, frame.Width, frame.Height, frame.OriginX, frame.OriginY, mirror, frame.ScaleX, frame.ScaleY );
 	}
 
 	/// <summary>
@@ -398,12 +467,15 @@ public sealed class GuestRenderer : Entity
 		return (atlasIndex, atlas.GetFrame( slot, direction, step ), mirror);
 	}
 
-	protected override void OnRender()
+	/// <summary>The actual world pass's CPU selection and quad preparation, shared with asset-free tests. UI never calls this.</summary>
+	internal int PrepareWorld()
 	{
+		rendererPass++;
+		publishedBodies.Clear();
 		DrawnGuests = 0;
 		DrawnFigures = 0;
-		if ( !Visible || material == null || deleted )
-			return;
+		if ( !CanRender || atlases.Count == 0 )
+			return 0;
 		var view = Camera.ViewMatrix;
 		var right = new SVector3( view.M11, view.M21, view.M31 );
 		var up = new SVector3( view.M12, view.M22, view.M32 );
@@ -416,13 +488,14 @@ public sealed class GuestRenderer : Entity
 		var count = 0;
 		bounceRiders.Clear();
 		BounceRiders?.Collect( bounceRiders );
+		var canPublish = OrdinaryRenderer;
 		foreach ( var guest in simulation.Guests )
 		{
 			// a guest on a bounce ride is hidden like any rider, and drawn from the ride's own pose (a stale slot of another attraction never draws it)
 			BounceRiderPose? rider = bounceRiders.Count > 0 && bounceRiders.TryGetValue( guest.Id, out var pose ) && RideHeadRenderer.CanDraw( guest, pose.AttractionId ) ? pose : null;
-			if ( !guest.IsVisible && rider == null || Draws?.Invoke( guest ) == false )
+			if ( !guest.IsVisible && rider == null || rider is { Visible: false } || !AcceptsBodyConsumer( guest, rider?.UsesSpriteState == true ) )
 				continue;
-			var (atlasIndex, frameIndex, mirror, slot, direction, rotation, _) = SelectSpriteAndSlot( guest, right, forward, up, rider );
+			var (atlasIndex, frameIndex, mirror, slot, direction, rotation, step) = SelectSpriteAndSlot( guest, right, forward, up, rider );
 			var atlas = atlases[atlasIndex];
 			var frame = atlas.Frames[frameIndex];
 			var feet = (rider?.Feet ?? FeetChooser?.Invoke( guest ) ?? CellToEngine( field, guest.DrawX, guest.DrawY )) + up * AnchorLift( atlasIndex, slot, direction ) - forward * (DepthPullChooser?.Invoke( guest ) ?? 0f);
@@ -430,6 +503,12 @@ public sealed class GuestRenderer : Entity
 			if ( DepthPulledSlots?.Invoke( slot ) != false )
 				(feet, share) = PullTowardsEye( feet, eye, forward );
 			AddQuad( ref count, atlas, atlasIndex, frame, mirror, feet, share, rotation, right, up, forward );
+			// Publication follows the successful world quad, never candidate selection, fake Figures or a ride pose.
+			if ( rider == null && canPublish && OrdinaryGuest( guest ) && HasAtlas( atlasIndex ) && ValidFrame( atlas, frame )
+				&& float.IsFinite( feet.X ) && float.IsFinite( feet.Y ) && float.IsFinite( feet.Z ) && float.IsFinite( share ) )
+				publishedBodies[guest] = new PublishedBody( Level, simulation, this, guest, guest.Id, Level.RenderPass, rendererPass,
+					assetGeneration, atlas, atlasIndex, resourceIdentities.GetValue( textures[atlasIndex].NativeTexture, _ => new object() ),
+					guest.InCostume, BounceRiders, slot, step, guest.HeadingX, guest.HeadingY );
 			DrawnGuests++;
 		}
 		if ( figures != null )
@@ -443,6 +522,12 @@ public sealed class GuestRenderer : Entity
 				AddQuad( ref count, atlas, atlasIndex, atlas.Frames[frameIndex], mirror, feet, share, 0f, right, up, forward );
 				DrawnFigures++;
 			}
+		return count;
+	}
+
+	protected override void OnRender()
+	{
+		var count = PrepareWorld();
 		if ( count == 0 )
 			return;
 
@@ -501,6 +586,8 @@ public sealed class GuestRenderer : Entity
 	protected override void OnDelete()
 	{
 		deleted = true;
+		assetGeneration++;
+		publishedBodies.Clear();
 		TexturePackSwitch.PackChanged -= ReloadAtlases;
 		var ownedTextures = textures.ToArray();
 		textures.Clear();

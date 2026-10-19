@@ -50,7 +50,7 @@ public sealed class ParkEconomy : IParkEconomy
 		World = new WorldRng( WorldRng.StateFromSeed( seed ) );
 		Ledger = new ParkLedger( settings.InitialCash );
 		Staff = new ParkStaff( settings );
-		Research = new ParkResearch( settings, catalog ) { OwnsTicketItem = infoId => ticketItems.Contains( infoId ) };
+		Research = new ParkResearch( settings, catalog, trackRecentItems: !Rules.ThemeParkInc ) { OwnsTicketItem = infoId => ticketItems.Contains( infoId ) };
 		Objectives = new ParkObjectives( settings, catalog );
 		Counters.Added += ( key, amount ) => Objectives.AccumulateCounter( key, amount, id => objects.GetValueOrDefault( id )?.InfoId ?? 0 );
 		Counters.Restored += () => Objectives.RestoreLegacyRawValue( MeasureChallenge, id => objects.GetValueOrDefault( id )?.InfoId ?? 0 );
@@ -1279,8 +1279,9 @@ public sealed class ParkEconomy : IParkEconomy
 		// [BIN:TPW-EXE:0x004C7720 month sample] the same handler reads the cached census with age 0 first (0x004C78C1); the month message goes to the things in id order (the listener tree walked by 0x0040FB10, dispatching through 0x0050B550) and the world constructor 0x005156A0 creates the staff manager (type 9) before the analyser (type 13), so the gate above has already read its count
 		var census = CachedGuestCensus( 0 );
 		// [BIN:TPW-EXE:0x004C7720 month sample] the same handler fills the statistics rings the park information window graphs: the arrivals, the guests in the park (this census), the mean happiness (0x4C7BB0) and the mean stay
-		StatisticsHistory.CloseMonth( guestStatistics.CensusHappiness, census );
-		var closed = Ledger.CloseMonth( nextMonthIndex, ParkRating, NetWorth( 0 ) );
+		var rating = ParkRating;
+		StatisticsHistory.CloseMonth( guestStatistics.CensusHappiness, census, rating );
+		var closed = Ledger.CloseMonth( nextMonthIndex, rating, NetWorth( 0 ) );
 		Raise( ParkEventKind.MonthEnded, closed.ClosingBalance, 0, 0, $"in ${closed.MoneyIn}, out ${closed.MoneyOut}" );
 		if ( nextMonthIndex % ParkCalendar.MonthsPerYear == 0 )
 		{
@@ -1338,7 +1339,7 @@ public sealed class ParkEconomy : IParkEconomy
 	// [BIN:TPW-EXE:0x004D0370 bank month] the routine compares the months in the red only with 5 (above it posts type 2 at 0x004D0557): it gives no warnings before
 	// [BIN:TPW-EXE:0x0054F8BB lost park sound] the main loop's sound update sends the music parameter and the crowd count as 0 while the world state is 4 (0x0054F86D, 0x0054F8BD), which GameAudio does for a bankrupt park
 	// [BIN:TPW-EXE:0x0059B620 advisor caption] the advice 106 the bank's message brings says the responses 274 and 275, whose tag 128 shows TAG_SYSTEM entry 127 ("the banks have closed your park") in the message tube (AutomaticAdvisor.PostCaption); the money warnings are the captions of the advice messages 102 to 105 (entries 123 to 126)
-	// [APPROX:ECON-030] the lost park follows the bank's handler and the world update (the thing loop stops, the arrival target 0x004CF5B0 is 0 and the music and crowd are silent in state 4), and the advisor plays its advice 106 for every bank message (game event 2, AutomaticAdvisor) with its caption, but OpenTPW has not the panel tp.exe builds in state 4 (0x005168F0 → 0x00481B50 → 0x0048AC40 closes the current tool, hides the HUD windows and builds the panel window 0x7472, with 0x004815E0 → 0x0048ADB0 and the state-4 branch of 0x0048C150 with UITEXT group 3, id 0x16), the money warnings (advice messages 102 to 105, whose scores compute the months in the red) have no producer (ADVISOR-009), and tp.exe's interface tests world state 4 only at 0x004815F0, 0x0048C27A, 0x004A2925 (a function not read) and 0x004A2AC9 (the pause and play buttons are left alone), none of them a purchase, hiring or opening test found, so OpenTPW's refusal of those in state 4 is not shown to be the original's — evidence needed: the panel window 0x7472 (its layout and the handler 0x0048A740 of its tick button) and the function around 0x004A2925
+	// [APPROX:ECON-030] the lost park follows the bank handler, thing-loop stop, zero arrival target and silent music/crowd; AutomaticAdvisor already produces money advice 102-105 through AdvisorScan (102 needs a loan available; 103-105 use the months in red with none) and captions advice 106 on each bank message. The pause menu now selects the online/visit branch first, then the five loss entries (0x48C150: UITEXT 3 is Load, command 22), preserving the existing callbacks. The initial loss gate camera and root 0x7472 (0x5168F0 -> 0x481B50 -> 0x48AC40), its dismissal into the hidden-HUD overlay (0x4A29D0), and loaded-loss restoration without that camera (0x4815E0 -> 0x48ADB0) remain unported. Handler 0x48A740 has Escape and delayed right-release exits, no explicit tick-button action; layout 0x74FB20 has an unresolved drawing-resource binding and is not proved empty. The overlay state-4 key branch 0x4A2925 permits Escape to the menu, and 0x4A2AC9 skips pause/play work; neither establishes purchase, hiring or opening refusals, so OpenTPW's direct economic guards remain unproved — evidence needed: loss-layout drawing resource and banner lifetime, property-table animation, gate camera/seat and root ownership, load/restore and default input dispatch, plus a separate audit of direct economic guards
 	private void HandleBankruptcyMessage()
 	{
 		if ( IsBankrupt || WinningSequenceActive?.Invoke() == true )

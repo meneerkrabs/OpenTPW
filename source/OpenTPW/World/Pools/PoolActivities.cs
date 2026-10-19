@@ -25,12 +25,13 @@ public interface IPoolAmbient
 }
 
 /// <summary>
-/// [EXT:pools-waves] A current of the water that carries a free swimmer (the waves of a wave machine): its push for this park turn, in 16.16 cells, which the swim step adds after the stroke where the water and
-/// the other bodies leave room (<see cref="PoolSwimming.Drift"/>). Integers only; a pool without one pushes nothing and hashes nothing new.
+/// [EXT:pools-waves] A current of the water that carries a body in it (the waves of a wave machine): its push for this park turn, in 16.16 cells, which the free swimmers' step adds after the stroke and the lazy
+/// river's floaters after their float step (along their lane) where the water and the other bodies leave room (<see cref="PoolSwimming.Drift"/>, <see cref="GuestSimulation.PoolCurrent"/>). Integers only; a pool
+/// without one pushes nothing and hashes nothing new.
 /// </summary>
 public interface IPoolCurrent
 {
-	/// <summary>The push on one free swimmer of the region this turn (zero for none).</summary>
+	/// <summary>The push on one body in the water of the region this turn (a free swimmer or a floater; zero for none).</summary>
 	(int X, int Y) Current( GuestSimulation simulation, Guest guest, PoolSwimRegion region );
 }
 

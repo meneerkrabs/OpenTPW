@@ -1,7 +1,7 @@
 # Winter (`opentpw.winter`, planned)
 
-October 18, 2026. Status: **phase W0 (the research below and the decisions) and phase W2 (our own art and data pipeline, [Content](#content-extwinter-content)) are done; the extensions themselves are not written yet.**
-Nothing of it is visible in a park: `content/winter` is shipped but no catalog, renderer or rule reads it (phases W1, W3, W4 and W5 below).
+October 18, 2026. Status: **phase W0 (the research below and the decisions), phase W2 (our own art and data pipeline, [Content](#content-extwinter-content)) and phase W3 (the simulation, [Simulation](#simulation-phase-w3)) are done.**
+The winter kiosk and the glühwein stall are in the Theme Park World catalogs and guests buy from them; the items are not drawn yet (W4), the snow cover (W1) and the cold rule (W5) are not written.
 
 The request (user, 2026-10-18): three features of our own (`[EXT:winter-*]`), with no original art, script or number table copied: (1) snow that settles on the ground, roofs and objects during snowfall and
 melts afterwards; (2) a winter kiosk that sells hats, mittens and earmuffs, worn visibly by the guests; (3) a glühwein stall (the user's choice over hot chocolate; a warm drink with no drunk effects).
@@ -11,10 +11,10 @@ Labels: `[EXT:winter-*]` for our additions, `[BIN:TPW-EXE:0x...]` / `[BIN:TPI-EX
 
 - Glühwein, not hot chocolate: a warm drink with **no drunk effects** (Theme Park World has no intoxication state and none is added).
 - **Wintry Decembers** are an option (its own toggle) that turns December's thunderstorms into snow in jungle and fantasy. It changes the weather that umbrellas and the rain mood read, so it gets its own pin.
-- **Cold** is a separate option, `opentpw.winter-cold`, default off: in snow -2 happiness per qualifying day, +1 back each for a head item, mittens and a recent glühwein, capped at 0; with it on it replaces the rain mood's snow +1.
+- **Cold** is a separate option, `opentpw.winter-cold`, default off: in snow -2 happiness per qualifying day, +1 back each for a head item, mittens and a recent glühwein, capped at 0; with it on it replaces the rain mood's snow +1 (the user, October 19, 2026: only the happiness +1; the thirst and hunger snow effects stay as TPI's `[EXT:winter-cold-replaces-snow-cheer]`). A glühwein warms for the rest of its day plus the next game day, `WarmEffectDays` 1 (the user, October 19, 2026: "Rest van de dag + de volgende dag" `[EXT:winter-cold-warm-window]`).
 - Defaults: settling snow **on** (presentation only), winter kiosks **on** (recorded in a save only for parks that use them), cold **off**. Paths under snow look like **slush** (greyish and wet), so they stay readable.
 - Coordinator defaults for the remaining open questions (the user can still change them): kiosk **25** and glühwein **30**, both available from the start (no research item); **one kiosk** that gives a head item first, then mittens;
-  the snow cover is saved as an optional unhashed field; the "Spices" slider keeps Ice's mechanics so sales count as drinks; mittens stay invisible on the original (1x) guest sprite sets; the kiosk sells only in snow or in December to February.
+  the snow cover is saved as an optional unhashed field (the user approved all of these with "Alles akkoord" on October 18, 2026, and the id range 64010..64499); the "Spices" slider keeps Ice's mechanics so sales count as drinks; mittens stay invisible on the original (1x) guest sprite sets; the kiosk sells only in snow or in December to February.
 
 ## Research findings
 
@@ -88,8 +88,8 @@ All labels below are ours; nothing here is built yet except the content.
 | --- | --- | --- |
 | W0 | this page: the findings and decisions | done |
 | W1 | `opentpw.winter-snow`: `SnowCover`, the uniform slot, test.shader and its web JSON, per-entity surface factor, path slush, the optional save field, tests, hallow captures (after `opentpw.evening` merges) | planned |
-| W2 | art and data pipeline: the eight shop models, the two `.sam`, the shop scripts, the item sprites, the anchors, `content/winter`, `tools/winter/build-content.sh`, content tests; nothing wired | done |
-| W3 | simulation behind `opentpw.winter`: catalog root, `AppearanceEffect` 4, the kiosk gate and terms, the stall's terms, saves, the used-only rule, pins | planned |
+| W2 | art and data pipeline: the eight shop models, the two `.sam`, the shop scripts, the item sprites, the anchors, `content/winter`, `tools/winter/build-content.sh`, content tests; nothing wired (until W3) | done |
+| W3 | simulation behind `opentpw.winter`: catalog root, `AppearanceEffect` 4, the kiosk gate and terms, the stall's terms, saves, the used-only rule, pins, and the wintry Decembers option | done ([below](#simulation-phase-w3)) |
 | W4 | drawing: the warm-item renderer (sharing the umbrellas' attachment code), original-set head anchors, costume exclusion, browser delivery, captures | planned |
 | W5 | `opentpw.winter-cold` with its measurement and pins | done (see [Cold mood](#cold-mood-extwinter-cold-phase-w5)) |
 | W6 | tuning from captures; optional hats on riders' heads, pool-deck snow, sheltered-ground masking | planned |
@@ -141,7 +141,7 @@ repository; nothing in it comes from Theme Park World or Theme Park Inc, and no 
   would count as costumes), price 25, cost of goods 10, `HappinessEffect` 15, `LitterEffect` 5, thirst, hunger and vomit 0, `ISIndoors` 0, capacity 5, upgrade 1000, `RunningCost` 30, demand `WeatherModifier.SnowPercentage` 200 and
   `SeasonModifier.WinterPercentage` 100 with the other seasons 0. The stall has `ShopType` 4 and `SpecialIngredient` 3, price 30, cost of goods 15, `ThirstEffect` 30, `HungerEffect` 5, **`VomitEffect` 5**, `HappinessEffect` 15, `LitterEffect` 40,
   capacity 1, upgrade 750, `WinterInfo.IngredientLabel` "Spices", `WinterInfo.WarmEffectDays` 1, and the demand percentages of the design above. The `WeatherModifier.*`, `SeasonModifier.*`, `WinterInfo.*` and `RunningCost` keys are
-  unknown to tp.exe; the winter extension will read them for its own objects only (W3).
+  unknown to tp.exe; the winter extension reads them for its own objects only (W3, [Simulation](#simulation-phase-w3)).
 - The **`.RSE`** (`tools/winter/kiosk.rse`, `gluehwein.rse`): the brolly shop's script (customers go in hidden, are served, come out) with the stall's longer serving time. No steam particle: none of the existing particle keys fits a pot.
 - `esprites/Winter/SPR_WI.ESP` + `.TPC` (28 KB in all): the **warm item sprites**, rendered by `tools/blender/opentpw_winter_items.py` with the pools kid camera (orthographic, 45 degrees, the same lights, grade and dark edge) at **2x
   (256 pixels per unit)**, five directions (the game mirrors them to eight), one 255-colour palette. Slots 0 to 2 bobble hats (red, blue, striped green and cream), 3 and 4 earmuffs (grey band with red cups, navy band with pale blue cups), 5 to 7
@@ -157,31 +157,64 @@ repository; nothing in it comes from Theme Park World or Theme Park Inc, and no 
 
 `WinterContentTests` load the committed files through the game's own pipelines (the object catalog with a content root made by the test, the sprite readers, the ride script VM) and check the ids and that no other content range overlaps, the `.sam`
 keys, the models, textures, footprint and wall gaps, the scripts, the sprite banks (slots, directions, frames, 256 ppu, hotspots inside the frames), the anchor table (every set, slot, frame and direction, agreement with the umbrellas' table, hands and
-head inside the shipped kid frames) and that nothing is wired into the game.
+head inside the shipped kid frames) (the wiring of the content is checked by `WinterWiringTests`).
+
+## Simulation (phase W3)
+
+October 18, 2026. `opentpw.winter` (1.0.0, simulation, **on by default**, used-only in saves, not in a Theme Park Inc run, `FeatureGates.Winter`) lists the eight shops of `content/winter` in the Theme Park World catalogs
+(`WinterContent.CatalogRoot` in `ModContentRoots.CatalogRoots`, the id in the `ObjectCatalog` cache key) and runs the rules below. `opentpw.winter-weather` (1.0.0, **off by default**, `FeatureGates.WinterWeather`) is the wintry Decembers option.
+Both have their names and descriptions in the eleven interface languages (the Extensions and mods screen). The kiosk and the stall are TPW-only: the extension's content is not offered in a Theme Park Inc run.
+
+- **The kiosk's gate and score** `[EXT:winter-kiosk-gate]`. The host score of a winter kiosk (`GuestSimulation.WinterHostScore`, for the extension's own objects only; the decision interface is untouched) is 0 for a guest whose two slots are full (a head item and mittens),
+  and 0 unless it snows or the park's calendar month is December, January or February (`WinterRules.KioskScoresZero`; the month comes from `GuestSimulation.WinterMonth`, read from the park's clock, and the weather from the umbrellas' shared map `[EXT:umbrellas-weather-map]`, where
+  thunder-snow reads as a storm); otherwise the game's score times the weather and season percentages below.
+- **The items** `[EXT:winter-items]`, `[EXT:winter-item-colour]`. `UsageInfo.AppearanceEffect` **4** is this extension's (1 balloon and 2 costume are tp.exe's, 3 is the umbrellas'). A purchase fills the head slot first, with a hat for two guests in three and earmuffs for the third, chosen by a hash of the
+  guest id, then the mittens; a third purchase gives nothing and a guest never has two head items. The colours are a hash of guest id and item (`WinterRules.ColourOf`, three for hats, two for earmuffs, three for mittens, the sprite slots of `SPR_WI`, `WinterRules.SpriteSlotOf`): **a purchase takes no draw from any
+  stream**. Nothing takes an item off: the guest keeps it until it leaves, whatever the weather. A costume does not remove the items (it only hides them, in W4).
+- **The glühwein stall** `[EXT:winter-gluehwein]`, `[EXT:winter-spice-label]`, `[EXT:winter-season-terms]`. A normal drinks shop: `ShopType 4`, `SpecialIngredient 3`, so the use routine, the drinks challenge and the drinks price statistics are the original's. Evidence, tp.exe: the sale counter `0x4e16b0` switches on the shop's
+  `ShopType` (jump table `0x4e18e4`, index `ShopType - 1`): type 4 goes to the ingredient switch (`0x4e1779`, table `0x4e18fc`, index `ingredient - 1`), whose third slot (`0x4e17f9`) adds 1 to counter 3, the drinks challenge; ShopType 1 (the kiosk's) adds to counter 5 through `0x4e1814`, not to the costume counter 7
+  (ShopType 5). The stall has no gate and no drunk effects (`[EXT:winter-gluehwein-no-drunk]`: `VomitEffect` 5, no new guest state). The score is the game's times the weather's percentage of its `.sam` (`WeatherModifier.Rain/Storm/SnowPercentage`) when that is nonzero, then the season's percentage when that is nonzero
+  (`SeasonModifier.Winter/Spring/Summer/AutumnPercentage`; December to February, March to May, June to August, September to November), each step truncated, in signed 32-bit arithmetic. A key a `.sam` leaves out is 0, which changes nothing. The kiosk uses the same terms after its gate (snow 200, winter 100, the other seasons 0).
+  The extension reads these keys for its own objects only: an object that merely says `AppearanceEffect 4` is no kiosk.
+- **Saves.** Optional guest fields `WarmItems` (bits 1 hat, 2 earmuffs, 4 mittens, at most one head item) and `WarmUntilDay` (the park calendar day a glühwein's warmth lasts until; W3 only carries it, the cold rule of W5 writes it), each written, validated and hashed only when set, so an older save, and every save of a park with no
+  winter state, has the same bytes. A park uses the extension (`ParkResumeMods.WinterInUse`) when it holds one of its shops or a guest with an item or warmth, and a save records `opentpw.winter` then (asset keys of the placed shops only, as the umbrellas); a save with an item and no record is refused. Off, or on in a park without shops
+  or items: every pin is unchanged (`DeterminismTests.EveryExistingPinIsUnchangedWithTheWinterExtensionAndTheWinterWeatherOnOrOffAndNoWinterShop`).
+- **Wintry Decembers** `[EXT:winter-weather]`. With the option on, the weather roll of a December (the roll, not the day it applies: it is made four days earlier, and the month is derived from the forecast's apply time, so nothing new is saved) that lands in the rain band of a park whose own snow band holds no quality (jungle and fantasy,
+  snow -1..-1) becomes **snow, without lightning**: `Snow` is set, `Rain` and `Lightning` are not, and the drops follow the rain band's intensity exactly as the storm's did, so the arrival factor (0.8 while drops fall) is the storm's. The converter draws nothing for it; the lightning clock's draws stop with the lightning, so the weather stream moves on
+  from the first wintry spell. The Halloween park already snows by its own band (its December rolls are untouched) and space has no rain band. Evidence, tp.exe: the converter `0x512f00` clamps the quality to 1..100 and compares it only with the three bands (`0x785504/08` snow, `0x78550c/10` rain, `0x785514/18` lightning; the lightning flag is stored at `+0x38`);
+  it takes no calendar input, so the month is the option's own addition. What it changes downstream is exactly the weather state the shared map gives: umbrellas and the rain mood (kid snow +1 happiness, thirst -1, hunger +1) read snow instead of a storm, and the winter shops see snow. The option always rides in a save while it is on (it changes
+  every park of those themes). It has its own pins (below).
+- **Pins.** `DeterminismTests.WinterFixedRunHash` = `0x8F7023321586F670`: the fixed run plus a winter kiosk at (10, 1) and a glühwein stall at (10, 8), snow from the 20th to the 80th second and from the 140th to the 200th, and a calendar that is December for 100 seconds and May after
+  (49 guests buy an item, the kiosk sells 50 times and the stall 70). `WinterWeatherTests.JungleSeed21OffHash` = `0x58F5D2429FDCADAA` and `JungleSeed21WintryHash` = `0x2DC4898B7594C4FA`: the jungle's weather turn by turn over its first 400 days under seed 21 with the option off (the original's weather) and on (29 snowy days, the first on day 343, none outside December's rolls).
+  Every pin that existed is unchanged.
+- **Tests.** `WinterSimulationTests` (the seasons, the gate table, the percentages, the purchase order, the colours, the score through the host, the purchase without a draw, the snapshot, the validator, the hash, a resume mid-snow), `WinterWiringTests` (the registration, the catalogs of the four themes with the extension on and off, a Theme Park Inc run, the bridges' terms, the drinks counters, the save rule),
+  `WinterWeatherTests` (the converter, December and other months, Halloween and space untouched, the 400-day runs, a resume mid-snow) and the determinism pins.
+- **Not here.** The drawing of the items (W4), the cold rule and the glühwein's warmth (W5), settling snow (W1). The kid's `RainMoodDay`, the umbrellas and the rain mood are untouched.
 
 ## Approval of the labels
 
-Status of every `[EXT:winter-*]` label against the user's decisions of October 18, 2026 (see "Decisions" above). **Approved** means the label implements something the user decided or asked for, quoted in the last column.
-**Awaiting** labels are the coordinator's defaults or details of ours that the user has not been asked about yet; they stay open until the user confirms or changes them (they do not block W3).
+Status of every `[EXT:winter-*]` label against the user's decisions of October 18, 2026 (see "Decisions" above). **Approved** means the label implements something the user decided or asked for, quoted in the last column; `winter-kiosk-gate`, `winter-item-colour`, `winter-spice-label` and `winter-season-terms` were approved by the user's answer "Alles akkoord".
+A label would be **awaiting** while it is a coordinator default the user has not been asked about; none is.
 
 | Label | What | Status | Basis |
 | --- | --- | --- | --- |
 | `[EXT:winter-content]` | the extension's own shipped content (`content/winter`) and the pipeline that builds it | approved | the winter kiosks and the glühwein stall the user asked for |
 | `[EXT:winter-snow]`, `[EXT:winter-snow-cover]`, `[EXT:winter-snow-surfaces]` | settling snow (W1) | approved | "settling snow ... on (presentation only)" |
 | `[EXT:winter-snow-paths]` | paths under snow look like slush | approved | "Paths under snow look like **slush** (greyish and wet)" |
-| `[EXT:winter-snow-save]` | the optional, unhashed saved cover | awaiting | coordinator default ("the snow cover is saved as an optional unhashed field") |
+| `[EXT:winter-snow-save]` | the optional, unhashed saved cover | approved | the user answered "Alles akkoord" on October 18, 2026 |
 | `[EXT:winter-extension]`, `[EXT:winter-items]`, `[EXT:winter-kiosk]` | the winter kiosk, the warm items (hat, earmuffs, mittens) and the extension that carries them (W3, W4) | approved | "winter kiosks **on** (recorded in a save only for parks that use them)"; the request for a kiosk "that sells hats, mittens and earmuffs" |
-| `[EXT:winter-item-colour]` | item colour as a hash of guest id and item | awaiting | our detail |
-| `[EXT:winter-kiosk-gate]` | the kiosk sells only in snow or December to February | awaiting | coordinator default |
+| `[EXT:winter-item-colour]` | item colour as a hash of guest id and item | approved | the user answered "Alles akkoord" on October 18, 2026 |
+| `[EXT:winter-kiosk-gate]` | the kiosk sells only in snow or December to February | approved | the user answered "Alles akkoord" on October 18, 2026 |
 | `[EXT:winter-gluehwein]`, `[EXT:winter-gluehwein-no-drunk]` | the glühwein stall, a warm drink with no drunk effects | approved | "Glühwein, not hot chocolate: a warm drink with **no drunk effects**" |
-| `[EXT:winter-spice-label]` | the "Spices" slider keeps Ice's mechanics | awaiting | coordinator default |
-| `[EXT:winter-season-terms]` | our own `SeasonModifier.*` demand keys and the stall's demand numbers | awaiting | our detail (prices 25 and 30 are coordinator defaults too) |
+| `[EXT:winter-spice-label]` | the "Spices" slider keeps Ice's mechanics | approved | the user answered "Alles akkoord" on October 18, 2026 |
+| `[EXT:winter-season-terms]` | our own `SeasonModifier.*` demand keys and the stall's demand numbers | approved | the user answered "Alles akkoord" on October 18, 2026 (the prices 25 and 30 are covered by it) |
+| `[EXT:winter-weather]` | wintry Decembers: December's storms are snow in jungle and fantasy (an option, off by default); implemented as snow without lightning, with the storm's drops | approved | "Wintry Decembers are an option (its own toggle) that turns December's thunderstorms into snow in jungle and fantasy"; that December storms become snow without lightning falls under this approved option. Consequence, stated plainly: the lightning clock stops during such a spell and takes no more draws, so the weather stream diverges from the original from the first wintry spell (the option is recorded in every save while on) |
+| `[EXT:winter-save]` | the used-only record of `opentpw.winter` and the optional guest fields `WarmItems` and `WarmUntilDay` | approved | "winter kiosks **on** (recorded in a save only for parks that use them)"; the optional guest fields implement exactly that rule |
 | `[EXT:winter-cold]` | the cold mood rule (W5) | approved | "Cold is a separate option, `opentpw.winter-cold`, default off" with the stated -2 / +1 numbers |
-| `[EXT:winter-cold-replaces-snow-cheer]` | with the cold rule on, the rain mood's snow happiness (+1) is left out; its thirst and hunger columns stay | approved | "with it on it replaces rain mood's snow +1" |
-| `[EXT:winter-cold-warm-window]` | a glühwein counts as "recent" for the rest of its day and the next game day (`WarmEffectDays` 1) | awaiting | the decision says "a recent glühwein" without a length; the window is the coordinator's reading of the plan's "one game day" |
-| `[EXT:winter-weather]` | the wintry Decembers option | approved | "**Wintry Decembers** are an option (its own toggle)" |
+| `[EXT:winter-cold-replaces-snow-cheer]` | with the cold rule on, only the happiness +1 of the rain mood's snow row is left out; its thirst and hunger snow effects stay as Theme Park Inc's | approved | "with it on it replaces rain mood's snow +1"; the user's answer on October 19, 2026 to the question what it replaces: "Alleen de humeur-+1" |
+| `[EXT:winter-cold-warm-window]` | a glühwein warms for the rest of its day plus the next game day (`WarmEffectDays` 1) | approved | the user's answer on October 19, 2026: "Rest van de dag + de volgende dag" |
 | `[EXT:winter-anchors]` | the schema 2 head and hand anchors | approved | the data the approved hats, earmuffs and mittens attach to |
 | `[EXT:pools-model-inset]` | the walls' gap from the footprint edge (the pools' rule) | existing | not a winter label |
 | `[BIN:TPW-EXE:0x...]` | the Theme Park World `tp.exe` address a finding was traced to (this page) | n/a | evidence |
 
-Still awaiting the user: the three coordinator defaults above that touch behaviour (`winter-snow-save`, `winter-kiosk-gate`, `winter-spice-label`), the two details of ours (`winter-item-colour`, `winter-season-terms`) and the id range 64010..64499 (the example lamp mod holds 64000..64009).
+Nothing awaits the user: `winter-snow-save` and the id range 64010..64499 (the example lamp mod holds 64000..64009) were approved with "Alles akkoord" on October 18, 2026, and the two cold questions were answered on October 19, 2026.

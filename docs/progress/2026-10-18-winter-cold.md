@@ -7,3 +7,4 @@ Phase W5 of the winter extension ([WINTER.md](../WINTER.md#cold-mood-extwinter-c
 - **Saves and determinism.** `ColdMoodDay` is optional, validated and hashed only once set. With the option off every pin is unchanged; two new pins cover it on, and on together with the rain mood, the brolly shop and the winter shops. A park saved mid-snow resumes with the same hash.
 - **Options row.** "Cold mood" with its description in all eleven interface languages.
 - **Tests.** `WinterColdTests` (20) and three determinism tests.
+- **User decisions (October 19, 2026).** `[EXT:winter-cold-warm-window]`: a glühwein warms for the rest of its day plus the next game day (`WarmEffectDays` 1), answered "Rest van de dag + de volgende dag". `[EXT:winter-cold-replaces-snow-cheer]`: with cold on, only the happiness +1 of the rain mood's snow row is dropped and the thirst and hunger snow effects stay as TPI's, answered "Alleen de humeur-+1". Both are recorded as approved in docs/WINTER.md.

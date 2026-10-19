@@ -50,7 +50,7 @@ public partial class Level
 		// [EXT:tpi-viewer] Theme Park Inc's weather is not traced (its states and keys differ from the Theme Park World weather this class ports), so a Theme Park Inc park has none
 		if ( Park == null || Guests == null || Park.Economy.Rules.ThemeParkInc )
 			return;
-		Weather ??= new ParkWeather( Park.Economy.Settings.Standard, Seed.WeatherStream, Guests.Grid.Cells.Width, Guests.Grid.Cells.Height );
+		Weather ??= new ParkWeather( Park.Economy.Settings.Standard, Seed.WeatherStream, Guests.Grid.Cells.Width, Guests.Grid.Cells.Height, FeatureGates.WinterWeather );
 		Weather.AdvanceTo( Park.Economy.Tick );
 	}
 

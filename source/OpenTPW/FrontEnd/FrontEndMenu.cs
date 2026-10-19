@@ -262,8 +262,8 @@ public sealed partial class FrontEndMenu
 			Enabled = parks.Length != 0,
 			Visible = parks.Length != 0,
 			ClicksOnActivate = false,
-			// [APPROX:AUDIO-041] the original load list posts 0x400, not 0x100, so the hook may play nothing; this click stays cat_ui 0x1F. Left open (UiScrollList).
-			RowActivated = index => { if ( screen.TryBeginActivation() ) { GameAudio.PlayUi( GameAudio.ClickEvent ); load( parks[index] ); } },
+			// [BIN:TPW-EXE:0x49e901 load row] owner 0x49e880 handles type-7 notification 0x400 by loading, without a button message 0x100 or a dedicated row sound. The separate EXT Load Park button keeps its own click.
+			RowActivated = index => { if ( screen.TryBeginActivation() ) load( parks[index] ); },
 			RowHeight = OpenTPW.Hud.ParkHud.BuyRowHeight,
 			Margin = 0,
 			Background = false,

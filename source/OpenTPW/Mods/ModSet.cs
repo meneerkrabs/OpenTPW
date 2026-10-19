@@ -130,6 +130,35 @@ public sealed class ModSet
 	public bool IsEnabled( string id ) => enabled.Contains( id );
 
 	/// <summary>
+	/// This set with one presentation extension (one that does not change the simulation) switched on or off, for a run-scoped toggle such as the browser harness's evening hook: every other extension and mod,
+	/// the load order of the rest and the refusals stay as they are. Switched on, the extension takes the place <see cref="Resolve"/> gives it with no player order (among the enabled extensions by ordinal id,
+	/// before the files-based mods). A mod that depends on the extension is not re-checked, so switching off an extension an enabled mod needs is refused.
+	/// </summary>
+	internal ModSet WithPresentationExtension( IOpenTpwExtension extension, bool on )
+	{
+		ArgumentNullException.ThrowIfNull( extension );
+		if ( extension.AffectsSimulation )
+			throw new ArgumentException( $"{extension.Id} changes the simulation; only a presentation extension can be switched for a run.", nameof( extension ) );
+		var extensions = Extensions.ToList();
+		var index = extensions.FindIndex( item => item.Extension.Id == extension.Id );
+		if ( index < 0 )
+			throw new ArgumentException( $"{extension.Id} is not an extension of this set.", nameof( extension ) );
+		if ( IsEnabled( extension.Id ) == on )
+			return this;
+		if ( !on && Mods.FirstOrDefault( mod => mod.Manifest.Dependencies.Any( dependency => dependency.Id == extension.Id ) ) is { } dependant )
+			throw new InvalidOperationException( $"{dependant.Id} needs {extension.Id}; it cannot be switched off for a run." );
+		extensions[index] = extensions[index] with { Enabled = on };
+		var order = Order.Where( id => id != extension.Id ).ToList();
+		if ( on )
+		{
+			var extensionIds = new HashSet<string>( extensions.Select( item => item.Extension.Id ), StringComparer.Ordinal );
+			var after = order.FindIndex( id => extensionIds.Contains( id ) && string.CompareOrdinal( id, extension.Id ) > 0 );
+			order.Insert( after >= 0 ? after : order.FindLastIndex( extensionIds.Contains ) + 1, extension.Id );
+		}
+		return new ModSet( extensions, Mods, order, Refused );
+	}
+
+	/// <summary>
 	/// Whether a mod changes the park simulation, judged from its manifest and files: it adds objects
 	/// (<c>content.objects</c>), or it overrides a file that is not plainly presentation media (textures, sounds, text
 	/// and fonts: <see cref="IsPresentationFile"/>), or it has scripts with a hook that can change the simulation (every v1 hook can). Unknown file types count as simulation, the safe side: such a

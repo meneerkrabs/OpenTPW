@@ -45,7 +45,11 @@ public sealed partial class ParkHud
 		var settings = item.Entry.Settings;
 		var speed = window?.Ride.Speed ?? parameters.Speed;
 		var capacity = window?.Ride.Capacity ?? parameters.Capacity;
-		return UiGauge.OfPercent( RideWindowGauges.Reliability( settings.GetInt( "UsageInfo.MaxSpeed" ), settings.GetInt( "UsageInfo.MaxCapacity" ),
+		// [EXT:cheats-ride-vehicles] a raised ride's capacity above the type's maximum reads as that maximum, as the economy's wear clamps its riders to it (ParkEconomy)
+		var maxCapacity = settings.GetInt( "UsageInfo.MaxCapacity" );
+		if ( item.Runtime.VehiclesRaised )
+			capacity = Math.Min( capacity, maxCapacity );
+		return UiGauge.OfPercent( RideWindowGauges.Reliability( settings.GetInt( "UsageInfo.MaxSpeed" ), maxCapacity,
 			upgrade.GetInt( "RedLineSpeed" ), upgrade.GetInt( "RedLineCapacity" ), upgrade.GetInt( "WearRate" ), speed, capacity, item.Runtime.GetVariable( RideVariables.VAR_ONRIDE ) ) );
 	}
 

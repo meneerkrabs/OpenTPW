@@ -25,6 +25,17 @@ public interface IPoolAmbient
 }
 
 /// <summary>
+/// [EXT:pools-waves] A current of the water that carries a body in it (the waves of a wave machine): its push for this park turn, in 16.16 cells, which the free swimmers' step adds after the stroke and the lazy
+/// river's floaters after their float step (along their lane) where the water and the other bodies leave room (<see cref="PoolSwimming.Drift"/>, <see cref="GuestSimulation.PoolCurrent"/>). Integers only; a pool
+/// without one pushes nothing and hashes nothing new.
+/// </summary>
+public interface IPoolCurrent
+{
+	/// <summary>The push on one body in the water of the region this turn (a free swimmer or a floater; zero for none).</summary>
+	(int X, int Y) Current( GuestSimulation simulation, Guest guest, PoolSwimRegion region );
+}
+
+/// <summary>
 /// One usable instance of an activity offered to a swimmer: the thing id (<c>OriginalObject.ThingId</c>) of the object that provides it, for every activity (0 for none, such as a river or a spot of water), and the cell
 /// where the swimmer leaves the water for it (or does it).
 /// </summary>
@@ -144,7 +155,7 @@ public static class PoolSwimSlots
 	public const int SplashDown = 11;
 	/// <summary>Sitting in the water, knees up, an arm on the rim (2 frames): the spa.</summary>
 	public const int SittingInWater = 12;
-	/// <summary>Floating in an inflatable ring, paddling (4 frames): the lazy river.</summary>
+	/// <summary>Floating in an inflatable ring, paddling (4 frames): the lazy river and the wave pool's ring floaters.</summary>
 	public const int FloatingInRing = 13;
 	/// <summary>Swinging on a rope with both hands overhead (4 frames).</summary>
 	public const int RopeSwing = 14;
@@ -190,6 +201,8 @@ public static class PoolActivityRegistry
 			yield return new RopeSwingActivity( attractions );
 			yield return new JetsActivity( attractions );
 			yield return new SpaActivity( attractions );
+			// [EXT:pools-waves] ring floaters in a wave pool, offered only while its waves run
+			yield return new WaveRingActivity( attractions );
 		}
 		yield return new RiverActivity();
 		yield return new PoolWaterEffects( attractions );

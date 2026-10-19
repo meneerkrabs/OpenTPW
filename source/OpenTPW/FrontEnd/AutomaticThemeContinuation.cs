@@ -48,7 +48,7 @@ internal static class AutomaticThemeContinuation
 			var snapshot = ParkResumeSaveFile.Load( path );
 			RequireSupported( snapshot, canonical );
 			return new( files, canonical, path, snapshot.StartKind, snapshot.Economy.Mode, snapshot.Economy.Easy,
-				snapshot.DisplayName, snapshot.SavedUtc, Digest( snapshot ), ParkResumeMods.MissingText( snapshot.Mods, Mods.OpenTpwExtensions.Active ), kind, snapshot.Economy.Cheats?.Mode == true );
+				snapshot.DisplayName, snapshot.SavedUtc, Digest( snapshot ), ParkExtensionSwitch.RequiresText( snapshot.Mods, Mods.OpenTpwExtensions.Active ), kind, snapshot.Economy.Cheats?.Mode == true );
 		}
 		catch ( Exception error ) when ( error is IOException or InvalidDataException or UnauthorizedAccessException or ArgumentException or NotSupportedException )
 		{

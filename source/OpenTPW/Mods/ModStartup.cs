@@ -32,7 +32,7 @@ public static class ModStartup
 
 	/// <summary>
 	/// [EXT:extensions-apply-at-load] Raised after official extensions were switched without a new start (<see cref="ApplyExtensions"/>), with the set now active: the browser host fetches the pools extension's sprite sets
-	/// when that extension came on (docs/POOLS.md, "Browser delivery").
+	/// when that extension came on (docs/POOLS.md, "Content", the browser's sprite sets).
 	/// </summary>
 	public static event Action<ModSet>? ExtensionsSwitched;
 

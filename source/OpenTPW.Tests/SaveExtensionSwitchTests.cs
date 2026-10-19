@@ -61,6 +61,17 @@ public class SaveExtensionSwitchTests
 	}
 
 	[TestMethod]
+	public void AParkTheLoadCanSwitchIsNotListedAsNeedingAMod()
+	{
+		var rain = new[] { Record( OfficialExtensions.RainMood ) };
+		Assert.IsNull( ParkExtensionSwitch.RequiresText( rain, Defaults ), "a rule the park played with is asked about at the load" );
+		Assert.IsNull( ParkExtensionSwitch.RequiresText( null, Defaults ) );
+		var community = new[] { new ParkModRecord( "community.tpi-rides", "1.0.0", new string( 'a', 64 ) ) };
+		Assert.AreEqual( "community.tpi-rides 1.0.0", ParkExtensionSwitch.RequiresText( community, Defaults ), "a strict need is listed as before" );
+		Assert.AreEqual( ParkResumeMods.MissingText( community.Concat( rain ).ToArray(), Defaults ), ParkExtensionSwitch.RequiresText( community.Concat( rain ).ToArray(), Defaults ) );
+	}
+
+	[TestMethod]
 	public void AgreeingSetsNeedNoSwitchAndTheStrictReasonsAreUnchanged()
 	{
 		Assert.IsNull( ParkExtensionSwitch.Plan( null, Defaults ) );
@@ -130,10 +141,16 @@ public class SaveExtensionSwitchTests
 		var plan = ParkExtensionSwitch.Plan( new[] { Record( OfficialExtensions.SmarterGuests, "1.5.0" ) }, active, Array.Empty<string>() )!;
 		Assert.IsTrue( plan.CanSwitch );
 		Assert.AreEqual( (OfficialExtensions.SmarterGuests, "1.5.0"), plan.ContinueNewVersion.Single() );
-		var switched = plan.Apply( ParkResumeSaveFileTests.Envelope( 300 ) with { Mods = new[] { Record( OfficialExtensions.SmarterGuests, "1.5.0" ) },
-			SmarterGuests = new SmarterGuestsSaveData { ParkSeed = 9, NextBirthId = 1, Bootstrapped = false, Births = Array.Empty<SmarterGuestBirth>() } }, active );
+		var envelope = ParkResumeSaveFileTests.Envelope( 300 );
+		var births = new[] { new SmarterGuestBirth( envelope.Guests.Guests[0].Id, 1 ) };
+		var switched = plan.Apply( envelope with { Mods = new[] { Record( OfficialExtensions.SmarterGuests, "1.5.0" ) },
+			SmarterGuests = new SmarterGuestsSaveData { ParkSeed = 9, NextBirthId = 2, Bootstrapped = false, Births = births, Meals = new[] { new MealTime( 1, 0 ) }, Complaints = new[] { new MealTime( 1, 0 ) } } }, active );
 		Assert.AreEqual( OfficialExtensions.SmarterGuests.Version.ToString(), switched.Mods!.Single().Version );
-		Assert.AreEqual( 9UL, switched.SmarterGuests!.ParkSeed, "the saved state of the older version is kept" );
+		Assert.AreEqual( 9UL, switched.SmarterGuests!.ParkSeed, "the guests keep their identity, so their traits" );
+		CollectionAssert.AreEqual( births, switched.SmarterGuests.Births.ToArray() );
+		Assert.IsNull( switched.SmarterGuests.Meals, "the older version's own state starts fresh in this version" );
+		Assert.IsNull( switched.SmarterGuests.Complaints );
+		ParkResumeSaveFile.ValidateShape( switched );
 	}
 
 	[TestMethod]

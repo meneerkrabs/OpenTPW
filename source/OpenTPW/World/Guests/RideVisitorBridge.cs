@@ -755,13 +755,16 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	private (int X, int Y)? FindJoinCell( GuestPathGrid grid )
 	{
 		var back = queueCells[^1];
+		if ( grid.Cells.PoolBridges?.Covers( back.X, back.Y ) == true )
+			return null;
 		if ( grid.IsWalkable( back.X, back.Y ) )
 			return back;
 		var links = grid.Cells.LinksAt( back.X, back.Y );
 		for ( var direction = 0; direction < 4; direction++ )
 		{
 			var (dx, dy) = GuestPathGrid.Directions[direction];
-			if ( (links & GuestPathGrid.LinkValue( direction )) != 0 && grid.IsWalkable( back.X + dx, back.Y + dy ) )
+			if ( (links & GuestPathGrid.LinkValue( direction )) != 0 && grid.IsWalkable( back.X + dx, back.Y + dy )
+				&& grid.Cells.PoolBridges?.Covers( back.X + dx, back.Y + dy ) != true )
 				return (back.X + dx, back.Y + dy);
 		}
 		return null;

@@ -138,7 +138,7 @@ public partial class Level
 	// [BIN:TPW-EXE:0x536320 cell predicates] 0x536310 type 1; 0x536320 types 3 and 9; 0x536340 type 9; 0x536350 type 10; 0x536360 types 7 and 0x1e; 0x536380 type 4: the cell type is the word at cell +8, the flags the word at +0xe
 	internal static bool IsCoasterAreaCell( ParkCellMap cells, int x, int y )
 	{
-		if ( !cells.InBounds( x, y ) )
+		if ( !cells.InBounds( x, y ) || cells.PoolBridges?.Reserves( x, y ) == true )
 			return false;
 		var type = cells.RawTypeAt( x, y );
 		var flags = cells.FlagsAt( x, y );

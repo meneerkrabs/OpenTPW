@@ -113,7 +113,7 @@ public sealed class VisitorSpritePlayer
 			throw new InvalidDataException( "Visitor sprite player snapshot is inconsistent." );
 	}
 
-	private static bool IsValidOutput( VisitorSpriteFrame frame ) => frame.Slot == 0 && frame.Frame == 0 || frame.Slot is 1 or 2 && frame.Frame is >= 0 and < 8 ||
+	internal static bool IsValidOutput( VisitorSpriteFrame frame ) => frame.Slot == 0 && frame.Frame == 0 || frame.Slot is 1 or 2 && frame.Frame is >= 0 and < 8 ||
 		frame.Slot == 14 && frame.Frame is 0 or 1 || frame.Slot is 4 or 6 or 11 or 12 && frame.Frame is >= 0 and < 4;
 	internal static bool IsSupported( VisitorSpriteTemplate template ) => (int)template is >= 1 and <= 8;
 	internal static void ValidateTemplate( VisitorSpriteTemplate template )

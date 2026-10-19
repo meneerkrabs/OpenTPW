@@ -362,18 +362,7 @@ public sealed partial class ParkHud
 		internal Func<int> Value { get; init; } = () => 0;
 		public override void Draw( UiContext context, bool focused, bool pressed ) => DrawGauge( context.Batch, ScreenRect( context.Canvas ), Value() );
 
-		// [BIN:TPW-EXE:0x477f4e vertical gauge] value / 1024 moves the shared boundary of two quads and their V coordinates (0x477cc0, 0x477d20).
-		// The decoded art's left half is filled, right half empty. After UiModel's V flip, each upright half is cropped at 1-q, never stretched into its region.
-		internal static void DrawGauge( UiBatch batch, UiRect bounds, int value )
-		{
-			var q = Math.Clamp( value, 0, UiGauge.FullValue ) / (float)UiGauge.FullValue;
-			var emptyHeight = bounds.Height * (1 - q);
-			var texture = UiTexture.Image( ArtPath );
-			batch.AddQuad( texture, new UiRect( bounds.X, bounds.Y, bounds.Width, emptyHeight ),
-				new NVector2( 0.5f, 0 ), new NVector2( 1, 1 - q ), RgbaByte.White );
-			batch.AddQuad( texture, new UiRect( bounds.X, bounds.Y + emptyHeight, bounds.Width, bounds.Height - emptyHeight ),
-				new NVector2( 0, 1 - q ), new NVector2( 0.5f, 1 ), RgbaByte.White );
-		}
+		internal static void DrawGauge( UiBatch batch, UiRect bounds, int value ) => UiVerticalGauge.Draw( batch, bounds, value, ArtPath );
 	}
 
 	internal sealed class ResearchWorkloadKnob : UiElement, IUiDragTarget, IUiDragStart, IUiCapturedClickTarget

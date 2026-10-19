@@ -413,6 +413,7 @@ public class ResearchWorkloadKnobTests
 
 	[DataTestMethod]
 	[DataRow( -1, 0f )] [DataRow( 0, 0f )] [DataRow( 256, 0.25f )] [DataRow( 512, 0.5f )]
+	[DataRow( 1, 1 / 1024f )] [DataRow( 511, 511 / 1024f )] [DataRow( 1023, 1023 / 1024f )]
 	[DataRow( 768, 0.75f )] [DataRow( 1024, 1f )] [DataRow( 2048, 1f )]
 	public void CapacityGaugeDrawsCroppedUprightTextureHalvesWithSharedBottomUpSplit( int value, float q )
 	{
@@ -421,6 +422,7 @@ public class ResearchWorkloadKnobTests
 		Assert.AreEqual( 1, batch.Draws.Count );
 		Assert.AreEqual( ParkHud.ResearchCapacityGauge.ArtPath, batch.Draws[0].Texture.ImagePath );
 		var vertices = batch.Draws[0].Vertices;
+		Assert.IsTrue( vertices.All( vertex => vertex.Color.Equals( Veldrid.RgbaByte.White ) ) );
 		Assert.AreEqual( q is 0 or 1 ? 6 : 12, vertices.Count );
 		var split = 683 - 445 * q;
 		if ( q < 1 ) CheckQuad( vertices.Take( 6 ).ToArray(), new UiRect( 354, 238, 68, split - 238 ), new NVector2( .5f, 0 ), new NVector2( 1, 1 - q ) );
@@ -447,6 +449,8 @@ public class ResearchWorkloadKnobTests
 		gauge.Draw( w.Context, false, false );
 		var first = w.Context.Batch.Draws.Single().Vertices.ToArray();
 		w.Click( 300, 300 );
+		w.Economy.SetResearchEffort( ResearchCategory.Ride, 15 );
+		w.Idle();
 		w.Context.Batch.Clear();
 		gauge.Draw( w.Context, false, false );
 		CollectionAssert.AreEqual( first, w.Context.Batch.Draws.Single().Vertices.ToArray() );

@@ -994,7 +994,7 @@ Which objects keep the body (the inherited key: `Shops.sam`, `Features.sam` and 
 of fantasy, hallow and space say 1, jungle's 0):
 
 - **Shops**: in the jungle the Burger, Fries, Drinks, Ice Cream, Steak, Gift and Balloon shops; the Costume Shop keeps 0.
-- **Sideshows**: every fantasy, hallow and space sideshow but the three Arcades and the Fortune Teller (which set 0);
+- **Sideshows**: every fantasy, hallow and space sideshow but the fantasy and space Arcades and the Fortune Teller (which set 0);
   in the jungle Laughing Hyenas, Jungle Spray, Giant Puzzle and Strength Bird.
 - **Toilets**: the fantasy Small and Super Toilets, the jungle and space Small Toilets.
 - **Rides**: the bounce rides and every ride whose script walks its riders (all of them run `WALKON` or `BOUNCE`).
@@ -1004,8 +1004,8 @@ What the scripts do with the kept body (decoded from the shipped `.RSE`): nothin
 the sideshows Laughing Hyenas, Jungle Spray, Aqua Spray and Martian Mooners (cheer, action 6), Strength Bird, Fruit
 Shy and Strength Skull (the short gesture, action 5), and the hallow Arcade, the Super Toilet and the Steak, Gift,
 Balloon and Cauldron shops (action 1, which deletes the body on board, `0x4F9ED0`, until the walk-off draws it again).
-The rest of the scripts read and write the guest only through `VAR_LETMEON`, `VAR_PEEPID`, `VAR_LETMEOFF`, `HUSH`/`HOP`
-and the limbo table, which are script state, and use `EVENT`, `ADDOBJ` and `TRIGANIM` on the object's own effects, sounds
+The rest of the scripts read and write the guest only through `VAR_LETMEON`, `VAR_PEEPID` and `VAR_LETMEOFF`
+(`TEST`/`COPY`; `HUSH`/`HOP` and the limbo table appear only in the walking scripts), which are script state, and use `EVENT`, `ADDOBJ` and `TRIGANIM` on the object's own effects, sounds
 and animations: the Small Toilets, the Giant Puzzles, the Strength Flower, the Ufo Blaster and the remaining shops leave
 the body standing where it stood, at the stand point it walked to. None of these objects sets `UsageInfo.RequiresTeleport`.
 

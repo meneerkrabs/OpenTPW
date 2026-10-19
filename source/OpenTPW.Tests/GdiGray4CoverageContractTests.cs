@@ -201,4 +201,46 @@ public class GdiGray4CoverageContractTests
 		CollectionAssert.AreEqual( new byte[] { 64 }, gray.Coverage );
 		CollectionAssert.AreNotEqual( gray.Coverage, linear.Coverage );
 	}
+
+	/// <summary>
+	/// Horizontal integer pen placement: the exact slanted triangle at penX = k (scale 1 makes
+	/// (x + k) * 1f exact for integer k, so the crossing arithmetic shifts bit-for-bit). The tight
+	/// bounding box shifts minX and maxX by k alike, so the dimensions stay 4 x 4, OriginX becomes
+	/// -k, and the coverage is the same 16-byte literal pinned at pen 0 above, asserted here
+	/// directly per shift. No claim about native GDI output.
+	/// </summary>
+	[DataTestMethod]
+	[DataRow( -3 )]
+	[DataRow( -1 )]
+	[DataRow( 1 )]
+	[DataRow( 3 )]
+	public void AHorizontalIntegerPenShiftKeepsTheTriangleLiteral( int k )
+	{
+		IReadOnlyList<IReadOnlyList<TrueTypePoint>> triangle = new IReadOnlyList<TrueTypePoint>[]
+		{
+			new[] { new TrueTypePoint( 0, 0, true ), new TrueTypePoint( 0, -4, true ), new TrueTypePoint( 4, -4, true ) }
+		};
+		var bitmap = TrueTypeRasterizer.Rasterize( new[] { (triangle, (float)k) }, 1f, 1f );
+		Assert.AreEqual( (4, 4, -k, 0), (bitmap.Width, bitmap.Height, bitmap.OriginX, bitmap.OriginY) );
+		CollectionAssert.AreEqual( new byte[] { 96, 0, 0, 0, 255, 96, 0, 0, 255, 255, 96, 0, 255, 255, 255, 96 }, bitmap.Coverage );
+	}
+
+	/// <summary>
+	/// Vertical integer placement: the pinned half-open span shape moved by +dy in pixel space via
+	/// its coordinate offsets. The tight bounding box tracks the row samples, so the dimensions stay
+	/// 1 x 3, OriginY becomes -dy, and the coverage is the same 3-byte literal pinned for [0.125,
+	/// 2.375) above (top-inclusive first row fully sampled, bottom row exactly one sample),
+	/// asserted here directly per shift. No claim about native GDI output.
+	/// </summary>
+	[DataTestMethod]
+	[DataRow( -3 )]
+	[DataRow( -1 )]
+	[DataRow( 1 )]
+	[DataRow( 3 )]
+	public void AVerticalIntegerShiftKeepsTheRowProfileLiteral( int dy )
+	{
+		var bitmap = Rasterize( Contours( Rectangle( 0, 0.125f + dy, 1, 2.375f + dy ) ) );
+		Assert.AreEqual( (1, 3, 0, -dy), (bitmap.Width, bitmap.Height, bitmap.OriginX, bitmap.OriginY) );
+		CollectionAssert.AreEqual( new byte[] { 255, 255, 64 }, bitmap.Coverage );
+	}
 }

@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace OpenTPW.Tests;
@@ -245,6 +246,78 @@ public class TrackJunctionClearTests
 				Assert.AreEqual( 0, after.Overlap, $"crossing link 0x{crossingLink:X2} counts down once" );
 			}
 		}
+	}
+
+	[TestMethod]
+	public void APreviewOfACutAcrossACrossingLeavesTheCellsSelectionAndRefundsUnchanged()
+	{
+		// Detached synthetic origins only: this characterizes preview observation, not a placed ride's runtime circuit.
+		var cases = new (byte CrossingLink, byte CutHeading)[]
+		{
+			(0x14, TrackHeading.PosX), (0x41, TrackHeading.NegX),
+			(0x50, TrackHeading.PosY), (0x05, TrackHeading.NegY)
+		};
+
+		foreach ( var family in new[] { TrackFamily.Kart, TrackFamily.Water } )
+		{
+			foreach ( var (crossingLink, cutHeading) in cases )
+			{
+				var rig = new Rig( family );
+				var crossing = (20, 20);
+				var first = (crossing.Item1 - TrackStation.TileCells * TrackHeading.Dx( cutHeading ), crossing.Item2 - TrackStation.TileCells * TrackHeading.Dy( cutHeading ));
+				var second = (crossing.Item1 + TrackStation.TileCells * TrackHeading.Dx( cutHeading ), crossing.Item2 + TrackStation.TileCells * TrackHeading.Dy( cutHeading ));
+				var crossingCell = rig.Put( crossing, MakeCell( 0x55, crossingLink, 1 ) );
+				crossingCell.Segment = 1;
+				rig.Tracks.Set( crossing.Item1, crossing.Item2, crossingCell );
+				foreach ( var (x, y, mask) in new[] { (18, 20, TrackHeading.PosX), (22, 20, TrackHeading.NegX), (20, 18, TrackHeading.PosY), (20, 22, TrackHeading.NegY) } )
+				{
+					var cell = rig.Put( (x, y), MakeCell( mask, mask, 0 ) );
+					cell.Segment = (short)((x, y) == first ? 0 : (x, y) == second ? 2 : 3);
+					rig.Tracks.Set( x, y, cell );
+				}
+
+				var writer = new TrackEditWriter( rig.Editor, family, _ => Assert.Fail( "a preview cuts nothing" ), () => Assert.Fail( "a preview refuses nothing" ) );
+				Assert.IsNull( writer.FirstPick );
+				Assert.IsTrue( writer.CanStart( first ) );
+				Assert.AreEqual( first, writer.FirstPick );
+
+				var before = Snapshot( rig.Tracks );
+				var count = rig.Tracks.Count;
+				var version = rig.Tracks.Version;
+				var cut = rig.Editor.Cut( first, second, commit: false );
+				var preview = writer.Preview( first, second );
+
+				Assert.IsFalse( cut.Failed );
+				CollectionAssert.AreEqual( new[] { first, crossing, second }, cut.Path.ToArray() );
+				Assert.AreEqual( 0, cut.Cleared.Count );
+				var expectedLine = new List<(int X, int Y)>();
+				foreach ( var (x, y) in new[] { first, crossing, second } )
+				{
+					expectedLine.Add( (x, y) );
+					expectedLine.Add( (x + 1, y) );
+					expectedLine.Add( (x, y + 1) );
+					expectedLine.Add( (x + 1, y + 1) );
+				}
+				CollectionAssert.AreEqual( expectedLine, preview.Line.ToArray() );
+				Assert.IsTrue( preview.Completed );
+				Assert.AreEqual( 0, preview.Built.Count );
+				Assert.AreEqual( first, writer.FirstPick );
+
+				CollectionAssert.AreEqual( before, Snapshot( rig.Tracks ), "a preview changes no cell word" );
+				Assert.AreEqual( count, rig.Tracks.Count );
+				Assert.AreEqual( version, rig.Tracks.Version );
+				Assert.AreEqual( 0, rig.Cleared.Count, "a preview refunds nothing" );
+			}
+		}
+	}
+
+	private static TrackCell[] Snapshot( TrackCellLayer tracks )
+	{
+		var cells = new TrackCell[tracks.Width * tracks.Height];
+		for ( var y = 0; y < tracks.Height; y++ )
+			for ( var x = 0; x < tracks.Width; x++ )
+				cells[tracks.IndexOf( x, y )] = tracks.Get( x, y );
+		return cells;
 	}
 
 	private static TrackCell MakeCell( byte mask, byte link, short overlap ) => new()

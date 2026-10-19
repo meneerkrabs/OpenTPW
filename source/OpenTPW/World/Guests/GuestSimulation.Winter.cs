@@ -11,6 +11,12 @@ public sealed partial class GuestSimulation
 	public Func<int>? WinterMonth { get; set; }
 
 	/// <summary>
+	/// [EXT:winter-always] Whether the always winter option is on: the winter shops' season terms read winter whatever the calendar month (<see cref="WinterRules.DemandMonthOf"/>). The level sets it from
+	/// <see cref="FeatureGates.WinterAlways"/>; off (the default) the month is <see cref="WinterMonth"/>'s.
+	/// </summary>
+	public bool WinterAlways { get; set; }
+
+	/// <summary>
 	/// [EXT:winter-season-terms] The weather as the winter shops read it (<see cref="WinterRules.WeatherStateOf"/>: 2 rain, 3 storm, 4 snow, anything else, or null, none). Unlike <see cref="UmbrellaWeatherState"/> it reads snow as snow
 	/// even while lightning flashes, so a Halloween snowfall (whose snow band is its lightning band) is snow for the shops. The umbrellas and the rain mood keep the shared map. Null falls back to <see cref="UmbrellaWeatherState"/>.
 	/// </summary>
@@ -34,7 +40,7 @@ public sealed partial class GuestSimulation
 	private uint WinterHostScore( Guest guest, IRideVisitorBridge attraction, uint score, in WinterShopTerms terms )
 	{
 		var weather = (WinterWeatherState ?? UmbrellaWeatherState)?.Invoke() ?? UmbrellaRules.WeatherNone;
-		var month = WinterMonth?.Invoke() ?? 0;
+		var month = WinterRules.DemandMonthOf( WinterMonth?.Invoke() ?? 0, WinterAlways );
 		if ( attraction.IsWinterKiosk && WinterRules.KioskScoresZero( guest.WarmItems ) )
 			return 0;
 		return WinterRules.ApplyTerms( score, weather, month, terms );

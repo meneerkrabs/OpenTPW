@@ -327,7 +327,7 @@ network reachable from EntranceA.
 the booth weighs the fee against the park, see [The ticket booth](#the-ticket-booth); 3: paid, waiting at the booth for the gate) → entering (5) → walking around (7)
 → going to a ride (10) → walking to a queue position (12) ⇄ standing in the queue
 (11) → called: walking to the stand point (13) → waiting to board (14) → using (16, hidden;
-a shop customer whose body the shop keeps stays in view, see [Shop customers](#shop-customers))
+a guest whose body the object keeps stays in view, see [Kept bodies](#kept-bodies))
 → exiting a ride (15) → … → leaving the park (18) → crossing (19) → waiting to go
 home (21) → removed.
 
@@ -978,21 +978,49 @@ A kid's set is the original's own draw at its creation, the world generator rese
 a walking kid steps its 8-frame walk 20 times a cell (0x4FA2A0: the interval is 62 ms over twice the speed).
 Not drawn: shadows, riders' bodies on a ride (their heads are drawn, see below).
 
-### Shop customers
+### Kept bodies
 
-A guest a shop is serving (state 16) stays in view when the shop's `UsageInfo.RideHandlesSprite` is 1: in the
-jungle the Burger, Fries, Drinks, Ice Cream, Steak, Gift and Balloon shops set it, and the Costume Shop keeps the
-Shops.sam default of 0. tp.exe's state-16 entry tests the thing flag `+0x32` bit `0x20`, which the object
-constructor sets from that key (`0x4DB41C`): clear deletes the guest's body (`0x4D4170` at `0x502147`), set keeps it,
-queues the stand template and sets `+0x28` = 1 (`0x50212B`..`0x50213D`). The guest update places the body at the
-guest's position only while `+0x28` is 0 (`0x4FA087`), and the state-15 entry clears it (`0x501F79`). No shipped
-shop script moves or hides the body, so the customer stands at the stand point it walked to, in the stand pose,
-until the script lets it off: the Jungle Burger Shop's script (`burger.RSE`) takes the guest from `VAR_LETMEON`,
-waits 1000 ms and writes it to `VAR_LETMEOFF`. OpenTPW draws such a customer standing there
-(`GuestSimulation.StandsAtCounter`, kids or costume renderer by its kept body's appearance); its balloon, thought
-bubble, pick and portrait stay off, as for any rider. A shop with `RideHandlesSprite` 0, a ride and a pools
-changing room still hide the guest, and so do the sideshows and toilets that set the key to 1, which tp.exe would keep in view too (its state-16 entry has no object-kind test; `[APPROX:GUEST-024]` until their scripts' use of the kept body is decoded). A customer at the counter keeps its umbrella in view with it. OpenTPW's own winter kiosk, glühwein stall and brolly shop set the key to 1 as well, so their customers stand at the counter too; the kiosk (capacity 5) and the brolly shop (capacity 10) can serve several at once, and those stand on the same stand point. Their `.sam` comments still say the script hides the customer: the shipped archives are pinned by the asset manifest of every park save that placed one, so the comment waits for a content change that has to touch them anyway. Before October 19, 2026 every served customer was hidden, so guests at the Burger
-Shop seemed to vanish into the hut.
+A guest an object is serving (state 16) stays in view when the object's `UsageInfo.RideHandlesSprite` is 1, whatever
+the object is. tp.exe's state-16 entry tests the thing flag `+0x32` bit `0x20`, which the object constructor sets from
+that key (`0x4DB41C`): clear deletes the guest's body (`0x4D4170` at `0x502147`), set keeps it, queues the stand
+template and sets `+0x28` = 1 (`0x50212B`..`0x50213D`). The test reads no object kind. The guest update places the
+body at the guest's position only while `+0x28` is 0 (`0x4FA087`); `+0x28` is `mSpriteUnderRideCtrl`, which the save
+writes and reads (`0x4F8B10`), the state-15 entry clears (`0x501F79`) and the removed object's message 10 clears
+(`0x4FB3DF`); no other guest code reads it. The sprite pass (`0x542010`) draws every sprite that has a frame at its
+stored position, whoever owns it, so the body stays drawn where it was last placed until the state-15 entry places it
+again.
+
+Which objects keep the body (the inherited key: `Shops.sam`, `Features.sam` and `Rides.sam` say 0, the `SideShow.sam`
+of fantasy, hallow and space say 1, jungle's 0):
+
+- **Shops**: in the jungle the Burger, Fries, Drinks, Ice Cream, Steak, Gift and Balloon shops; the Costume Shop keeps 0.
+- **Sideshows**: every fantasy, hallow and space sideshow but the three Arcades and the Fortune Teller (which set 0);
+  in the jungle Laughing Hyenas, Jungle Spray, Giant Puzzle and Strength Bird.
+- **Toilets**: the fantasy Small and Super Toilets, the jungle and space Small Toilets.
+- **Rides**: the bounce rides and every ride whose script walks its riders (all of them run `WALKON` or `BOUNCE`).
+
+What the scripts do with the kept body (decoded from the shipped `.RSE`): nothing but the walk table. `WALKON`,
+`WALKOFF` and `WALKGET` walk it between the model's nodes and pose it on board ([TOURS.md](TOURS.md#the-walking-body-tour-011)):
+the sideshows Laughing Hyenas, Jungle Spray, Aqua Spray and Martian Mooners (cheer, action 6), Strength Bird, Fruit
+Shy and Strength Skull (the short gesture, action 5), and the hallow Arcade, the Super Toilet and the Steak, Gift,
+Balloon and Cauldron shops (action 1, which deletes the body on board, `0x4F9ED0`, until the walk-off draws it again).
+The rest of the scripts read and write the guest only through `VAR_LETMEON`, `VAR_PEEPID`, `VAR_LETMEOFF`, `HUSH`/`HOP`
+and the limbo table, which are script state, and use `EVENT`, `ADDOBJ` and `TRIGANIM` on the object's own effects, sounds
+and animations: the Small Toilets, the Giant Puzzles, the Strength Flower, the Ufo Blaster and the remaining shops leave
+the body standing where it stood, at the stand point it walked to. None of these objects sets `UsageInfo.RequiresTeleport`.
+
+OpenTPW draws such a guest (`GuestSimulation.ShowsKeptBody`) from the ride poses when the walk table or a bounce
+table holds it, and once its entry is gone (`WALKGET`, `UNBOUNCE`, a node the model lacks) where the walk or the bounce
+left it, with the frames its body plays (`FlatRideBounceRiders.HoldKeptBodies`); otherwise standing where it stood,
+in the stand pose, by the kids or costume renderer of its kept body's appearance. A body the script deleted is not
+drawn. Its balloon, thought bubble, pick and portrait stay off, as for any rider; an umbrella or warm items it holds
+stay with a body that stands in place (not with one a ride pose draws). A pools changing room still hides the guest
+(`[EXT:pools-swim]`). OpenTPW's own winter kiosk, glühwein stall and brolly shop set the key to 1 as well, so their
+customers stand at the counter too; the kiosk (capacity 5) and the brolly shop (capacity 10) can serve several at
+once, and those stand on the same stand point. Their `.sam` comments still say the script hides the customer: the
+shipped archives are pinned by the asset manifest of every park save that placed one, so the comment waits for a
+content change that has to touch them anyway. Before October 19, 2026 every served guest was hidden, so guests at the
+Burger Shop seemed to vanish into the hut, and the toilets' and the puzzles' users vanished too.
 
 Then tp.exe's ExitRide (`0x5014E0`) puts the guest at `UsageInfo.ExitCellAppearPos` inside the exit cell (the
 entrance cell for a shop without an exit, `0x4DEDF0(1)`) and walks it to the cell beyond in state 15; OpenTPW sets

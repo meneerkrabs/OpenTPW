@@ -132,7 +132,7 @@ public class VisitorSpriteIntegrationTests
 		var servedTicks = 0;
 		while ( guest.State == GuestState.Using && servedTicks < 10 * 60 )
 		{
-			Assert.IsTrue( rig.Simulation.StandsAtCounter( guest ), $"in view after {servedTicks} ticks" );
+			Assert.IsTrue( rig.Simulation.ShowsKeptBody( guest ), $"in view after {servedTicks} ticks" );
 			Assert.IsFalse( guest.IsVisible, "still a rider for every other renderer (balloon, thought, pick)" );
 			Assert.AreEqual( (x, y), (guest.X, guest.Y), "the body does not move while it is served" );
 			Assert.AreSame( body, guest.BodySprite.Player );
@@ -141,7 +141,7 @@ public class VisitorSpriteIntegrationTests
 		}
 		Assert.AreEqual( GuestState.ExitingRide, guest.State, "the let-off released the guest" );
 		Assert.IsTrue( servedTicks is >= 60 and <= 70, $"the script's WAIT 1000 serves the guest about a second ({servedTicks} ticks)" );
-		Assert.IsFalse( rig.Simulation.StandsAtCounter( guest ) );
+		Assert.IsFalse( rig.Simulation.ShowsKeptBody( guest ) );
 		Assert.IsTrue( guest.IsVisible );
 		Assert.AreSame( body, guest.BodySprite.Player, "the released guest walks on with the same body" );
 	}
@@ -500,13 +500,16 @@ public class VisitorSpriteIntegrationTests
 		scene.Source.Collect( poses );
 		Assert.IsTrue( poses.ContainsKey( guest.Id ), "an unknown action makes no body call and leaves the prior BOUNCE pose" );
 		Assert.AreEqual( before, guest.BodySprite.CaptureSnapshot() );
+		var last = poses[guest.Id];
 		WalkTable( rig.Ride ).Clear();
 		typeof( ModelFile ).GetProperty( nameof( ModelFile.DummyAttributes ) )!.SetValue( scene.Runtime.Model, Array.Empty<ModelDummyAttribute>() );
 		scene.Source.Prepare( rig.Simulation );
 		poses.Clear();
 		scene.Source.Collect( poses );
-		Assert.AreEqual( 0, poses.Count );
-		Assert.AreEqual( before, guest.BodySprite.CaptureSnapshot() );
+		// tp.exe's bounce pass skips a slot whose node the model lacks (0x00557B26), so the kept body is not placed again and its sprite stays where it was last placed (0x00542010)
+		Assert.AreEqual( 1, poses.Count, "the kept body is held where the bounce last placed it" );
+		Assert.AreEqual( last.Feet, poses[guest.Id].Feet );
+		Assert.AreEqual( before, guest.BodySprite.CaptureSnapshot(), "holding makes no body request" );
 	}
 
 	[TestMethod]

@@ -65,7 +65,7 @@ public class ShopVisitAssetTests
 			{
 				if ( guest.State == GuestState.Using )
 				{
-					var inView = simulation.StandsAtCounter( guest );
+					var inView = simulation.ShowsKeptBody( guest );
 					using_[guest.Id] = using_.TryGetValue( guest.Id, out var open ) ? open with { InView = open.InView && inView } : (Now, guest.AttractionId, inView);
 				}
 				else if ( using_.Remove( guest.Id, out var ended ) )

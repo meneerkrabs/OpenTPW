@@ -88,15 +88,16 @@ public sealed partial class GuestSimulation
 	}
 
 	/// <summary>
-	/// A customer a shop keeps in view while it is served: a guest using (state 16) a shop whose <c>UsageInfo.RideHandlesSprite</c> kept its body stands at the stand point it walked to, in the stand
-	/// pose, until the script lets it off (the burger shop's script holds it for 1 s). Every shipped shop script leaves the body alone, so nothing else moves or hides it. A changing room's guests
-	/// stay out of view ([EXT:pools-swim]); riders keep the ride's own poses or stay hidden.
+	/// A guest whose body the object keeps in view while it uses it (state 16): every object whose <c>UsageInfo.RideHandlesSprite</c> is 1 kept the body at the entry, whatever its kind (shop, sideshow,
+	/// toilet or ride), and the body stays drawn until the state-15 entry places it again. Where the object's script walks or bounces it (WALKON, BOUNCE) the ride poses draw it
+	/// (<see cref="FlatRideBounceRiders"/>, which also holds a body where its walk or bounce left it); otherwise it stands where it stood when the object took it, in the stand pose. A body the
+	/// script's hidden walk actions deleted has no player and is not drawn. A changing room's guests stay out of view ([EXT:pools-swim]).
 	/// </summary>
-	// [BIN:TPW-EXE:0x004FA087 held body] the guest update places its body at its own position (0x00475480) only while +0x28 is 0; state 16 with a kept body has set it to 1 (0x00502136) and the state-15 entry clears it (0x00501F79), so the body stays drawn where it stood when the shop took it
-	// [APPROX:GUEST-024] shops only: sideshows and toilets with RideHandlesSprite 1 keep their guests hidden until their scripts' use of the kept body is decoded
-	public bool StandsAtCounter( Guest guest ) =>
+	// [BIN:TPW-EXE:0x0050212B state 16 body] the flag test has no object-kind test: any object whose type sets UsageInfo.RideHandlesSprite (+0x104, thing flag +0x32 bit 0x20 from the constructor 0x004DB41C) keeps the body and sets +0x28 = 1 (0x00502136)
+	// [BIN:TPW-EXE:0x004FA087 held body] the guest update places its body at its own position (0x00475480) only while +0x28 (mSpriteUnderRideCtrl, saved by 0x004F8B10) is 0; the state-15 entry clears it (0x00501F79) and the removed object's message 10 (0x004FB3DF); no other guest code reads it, and the sprite pass (0x00542010) draws every sprite with a frame at its stored position whatever its owner's state
+	public bool ShowsKeptBody( Guest guest ) =>
 		guest.State == GuestState.Using && guest.BodySprite.Player != null && !guest.InSwimSession
-		&& FindAttraction( guest.AttractionId ) is { RideHandlesSprite: true, Kind: RideVisitorKind.Shop, IsChangingRoom: false };
+		&& FindAttraction( guest.AttractionId ) is { RideHandlesSprite: true, IsChangingRoom: false };
 
 	/// <summary>State 15 follows the use effects: a retained body keeps its copied appearance, while a new one uses the person's updated category.</summary>
 	private void ReleaseBodySprite( Guest guest )

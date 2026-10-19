@@ -404,8 +404,8 @@ public sealed class GuestRenderer : Entity
 	internal bool TryMount( Guest guest, SVector3 right, SVector3 up, SVector3 forward, SVector3 eye, out GuestMount mount )
 	{
 		mount = default;
-		// a customer drawn at a shop's counter (StandsAtCounter) keeps what it holds, as its body stays in view
-		if ( !Visible || deleted || atlases.Count == 0 || !guest.IsVisible && !simulation.StandsAtCounter( guest ) || Draws?.Invoke( guest ) == false )
+		// a user whose kept body stands where it stood (GuestSimulation.ShowsKeptBody, no ride pose) keeps what it holds, as its body stays in view; a body the ride poses mounts nothing, as for any rider
+		if ( !Visible || deleted || atlases.Count == 0 || !guest.IsVisible && !StandsInPlace( guest ) || Draws?.Invoke( guest ) == false )
 			return false;
 		var (atlasIndex, frameIndex, mirror, slot, direction, _, step) = SelectSpriteAndSlot( guest, right, forward, up );
 		var atlas = atlases[atlasIndex];
@@ -416,6 +416,10 @@ public sealed class GuestRenderer : Entity
 		mount = new GuestMount( feet, share, atlas.Name, atlas.Frames[frameIndex], slot, direction, step, mirror );
 		return true;
 	}
+
+	/// <summary>A guest in state 16 whose kept body stands where it stood: no ride pose (walk, bounce or a held one) draws it.</summary>
+	private bool StandsInPlace( Guest guest ) => simulation.ShowsKeptBody( guest )
+		&& !(BounceRiders?.TryGetPose( guest.Id, out var pose ) == true && RideHeadRenderer.CanDraw( guest, pose.AttractionId ));
 
 	// The body player proves only scale-one provenance, never the renderer's selected frame or phase.
 	// Legacy/imported reconstructed histories deliberately remain on the rectangle, potentially for their lifetime.
@@ -514,9 +518,9 @@ public sealed class GuestRenderer : Entity
 		{
 			// a guest on a bounce ride is hidden like any rider, and drawn from the ride's own pose (a stale slot of another attraction never draws it)
 			BounceRiderPose? rider = bounceRiders.Count > 0 && bounceRiders.TryGetValue( guest.Id, out var pose ) && RideHeadRenderer.CanDraw( guest, pose.AttractionId ) ? pose : null;
-			// a shop's customer stays in view at the counter while it is served (GuestSimulation.StandsAtCounter), drawn by the renderer of its kept body's appearance
-			var atCounter = rider == null && !guest.IsVisible && simulation.StandsAtCounter( guest );
-			if ( !guest.IsVisible && rider == null && !atCounter || rider is { Visible: false } || !AcceptsBodyConsumer( guest, rider?.UsesSpriteState == true || atCounter ) )
+			// a kept body the object's script does not pose stays in view where it stood (GuestSimulation.ShowsKeptBody), drawn by the renderer of its kept body's appearance
+			var inPlace = rider == null && !guest.IsVisible && simulation.ShowsKeptBody( guest );
+			if ( !guest.IsVisible && rider == null && !inPlace || rider is { Visible: false } || !AcceptsBodyConsumer( guest, rider?.UsesSpriteState == true || inPlace ) )
 				continue;
 			var (atlasIndex, frameIndex, mirror, slot, direction, rotation, step) = SelectSpriteAndSlot( guest, right, forward, up, rider );
 			var atlas = atlases[atlasIndex];

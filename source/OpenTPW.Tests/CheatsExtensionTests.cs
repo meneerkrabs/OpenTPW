@@ -114,6 +114,21 @@ public class CheatsExtensionTests
 		Assert.IsTrue( park.Cheats.Mode && park.Cheats.Extension && park.Cheats.UsesExtension );
 	}
 
+	[TestMethod]
+	public void TheWeatherAndArrivalCheatsLeaveANoteAndASaveHoldsOneWaitingArrival()
+	{
+		var strings = new OpenTPW.UI.Original.UiStringTable( "English", new string[1], new[] { "" }, new string[1], new string[1] );
+		ParkEvent Applied( CheatKind kind ) => new( 0, ParkEventKind.CheatApplied, 0, (int)kind, 0, "" );
+		Assert.AreEqual( "Cheat: the weather changes", OpenTPW.Hud.ParkHud.CheatNote( strings, Applied( CheatKind.Weather ) ) );
+		Assert.AreEqual( "Cheat: visitors on their way", OpenTPW.Hud.ParkHud.CheatNote( strings, Applied( CheatKind.Arrival ) ) );
+		// the queue refuses a second waiting arrival, and the load refuses a save that holds two
+		ParkSaveFile.CheatActionData Arrival( int kind ) => new() { Kind = CheatKind.Arrival, Argument = kind };
+		var one = new ParkSaveFile.CheatsData { Mode = true, Extension = true, Log = new(), Pending = new() { Arrival( ArrivalVehicleKind.Bus ) } };
+		Assert.IsNull( ParkCheats.Problem( one, 10 ) );
+		var two = new ParkSaveFile.CheatsData { Mode = true, Extension = true, Log = new(), Pending = new() { Arrival( ArrivalVehicleKind.Bus ), Arrival( ArrivalVehicleKind.Ferry ) } };
+		Assert.IsNotNull( ParkCheats.Problem( two, 10 ) );
+	}
+
 	// ---- Weather -------------------------------------------------------------------------------------------
 
 	[TestMethod]
@@ -212,8 +227,13 @@ public class CheatsExtensionTests
 			Frame( Veldrid.Key.C );
 			Frame();
 			Assert.AreNotEqual( OpenTPW.Hud.ParkHud.CheatsWindowName, hud.Stack.Top?.Name, "C alone is no window key" );
+			// in a real park C arms the camcorder; Alt+C must not (the original matches the exact modifier mask, 0x40C900)
+			var level = (Level)hud.GetType().GetField( "level", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic )!.GetValue( hud )!;
+			typeof( Level ).GetField( "<OriginalPark>k__BackingField", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic )!
+				.SetValue( level, System.Runtime.CompilerServices.RuntimeHelpers.GetUninitializedObject( typeof( OriginalPark ) ) );
 			Frame( Veldrid.Key.AltLeft, Veldrid.Key.C );
 			Assert.AreEqual( OpenTPW.Hud.ParkHud.CheatsWindowName, hud.Stack.Top?.Name );
+			Assert.IsFalse( hud.CamcorderArmed, "Alt+C opens the cheats window and leaves the camcorder alone" );
 			hud.Stack.Pop();
 			Frame();
 			using ( OpenTpwExtensions.Use( ModSet.Defaults( OfficialExtensions.All ) ) )
@@ -232,11 +252,68 @@ public class CheatsExtensionTests
 		}
 	}
 
+	/// <summary>
+	/// Every label of the cheats window, with every choice it can show, fits its row at the page's size in every UI language, with the language's own fonts (the localisation pack
+	/// <c>OPENTPW_LANGUAGE_PACK</c> over <c>OPENTPW_GAME_PATH</c>); a label that only fits a smaller size would be drawn smaller than its neighbours.
+	/// </summary>
+	[TestMethod]
+	public void TheCheatsWindowsLabelsFitTheirRowsAtThePageSizeInEveryLanguage()
+	{
+		var pack = Environment.GetEnvironmentVariable( "OPENTPW_LANGUAGE_PACK" );
+		var game = Environment.GetEnvironmentVariable( "OPENTPW_GAME_PATH" );
+		var data = string.IsNullOrWhiteSpace( game ) ? null : GameLanguage.FindEntry( game, "Data", true );
+		if ( string.IsNullOrWhiteSpace( pack ) || !Directory.Exists( pack ) || data == null )
+			Assert.Inconclusive( "Set OPENTPW_LANGUAGE_PACK and OPENTPW_GAME_PATH for the languages' own fonts." );
+		var failures = new List<string>();
+		foreach ( var name in OpenTPW.UI.Original.SupplementaryStrings.SupportedLanguages )
+		{
+			var language = GameLanguage.Resolve( data!, name, pack );
+			var uiText = language.LoadStrings( "UITEXT.str" );
+			string Text( OpenTPW.UI.Original.OpenTpwText key ) => OpenTPW.UI.Original.SupplementaryStrings.Get( key, name );
+			// the window's rows (ParkHud.CreateCheatsWindow) with every text each can show
+			var rows = new Dictionary<string, string[]>
+			{
+				["cheatMode"] = new[] { UIStrings.On, UIStrings.Off }.Select( state => Text( OpenTPW.UI.Original.OpenTpwText.CheatModeLabel ) + uiText[(int)state] ).ToArray(),
+				["vehicle"] = new[] { ArrivalVehicleKind.Bus, ArrivalVehicleKind.Seaplane, ArrivalVehicleKind.Ferry }.Select( kind => Text( OpenTPW.UI.Original.OpenTpwText.CheatArrivalLabel ) + Text( OpenTPW.Hud.ParkHud.VehicleText( kind ) ) ).ToArray(),
+				["arrival"] = new[] { Text( OpenTPW.UI.Original.OpenTpwText.CheatSendVisitors ) },
+				["weatherKind"] = Enum.GetValues<CheatWeather>().Select( weather => Text( OpenTPW.UI.Original.OpenTpwText.CheatWeatherLabel ) + Text( OpenTPW.Hud.ParkHud.WeatherText( weather ) ) ).ToArray(),
+				["weather"] = new[] { Text( OpenTPW.UI.Original.OpenTpwText.CheatChangeWeather ) },
+				["ticketKind"] = OpenTPW.Hud.ParkHud.CheatTickets.Select( kind => Text( OpenTPW.UI.Original.OpenTpwText.CheatTicketLabel ) + Text( OpenTPW.Hud.ParkHud.TicketText( kind ) ) ).ToArray(),
+				["ticket"] = OpenTPW.Hud.ParkHud.CheatTickets.Select( kind => Text( OpenTPW.UI.Original.OpenTpwText.CheatAwardTicket ) + OpenTPW.Hud.ParkHud.CheatKeyHint( new CheatAction( CheatKind.Ticket, (int)kind ) ) ).ToArray(),
+				["money"] = new[] { Text( OpenTPW.UI.Original.OpenTpwText.CheatAddMoney ) + OpenTPW.Hud.ParkHud.CheatKeyHint( new CheatAction( CheatKind.Money ) ) },
+				["research"] = new[] { Text( OpenTPW.UI.Original.OpenTpwText.CheatBuildEverything ) + OpenTPW.Hud.ParkHud.CheatKeyHint( new CheatAction( CheatKind.Research ) ) },
+			};
+			var fonts = new OpenTPW.UI.Original.UiFonts( file => new FontAtlas( language.LoadFont( file ) ) );
+			// the window at the reference size, a 1080p and a 1440p screen, and a Retina laptop window (density 2), each at its automatic interface scale
+			foreach ( var (width, height, density) in new[] { (1280, 720, 1), (1920, 1080, 1), (2560, 1440, 1), (3024, 1686, 2) } )
+			{
+				var scale = UiScaling.Automatic( new Point2( width, height ), density );
+				var context = new OpenTPW.UI.Original.UiContext( OriginalUiTests.FakeStrings(), fonts, new OpenTPW.UI.Original.UiModels( model => throw new FileNotFoundException( model ) ) ) { Canvas = new OpenTPW.UI.Original.UiCanvas( width, height, scale, density ) };
+				var screen = new OpenTPW.UI.Original.UiScreen( "fit" );
+				var page = new OpenTPW.OptionsScreen.PageBuilder( screen );
+				// the window's label rectangle (a row at the left column's top)
+				var rect = OpenTPW.OptionsScreen.PageBuilder.Rect( 57 + 70, 167 + 50, 57 + 470, 167 + 95 );
+				page.Label( "reference", rect, () => "x" );
+				foreach ( var (id, texts) in rows )
+					page.Label( id, rect, () => texts[0], () => texts );
+				var group = page.Group;
+				// the fonts are compared by size: the smaller sizes of a family are loaded afresh for every choice
+				(int, int) Size( OpenTPW.UI.Original.UiLabel label ) => context.ChooseUniform( group, label ) is var (font, factor) ? (font.LineHeight, factor) : default;
+				var size = context.ChooseUniform( group, group.Members[0] );
+				foreach ( var label in group.Members.Skip( 1 ) )
+					if ( Size( label ) != Size( group.Members[0] ) )
+						failures.Add( $"{name} at {width}x{height}: {label.Id} '{label.Variants?.Invoke().OrderByDescending( text => context.Measure( size.Font, text ).Width ).First()}' ({label.Variants?.Invoke().Max( text => context.Measure( size.Font, text ).Width )} px of {label.ScreenRect( context.Canvas ).Width:0})" );
+			}
+		}
+		Assert.AreEqual( 0, failures.Count, string.Join( "\n", failures ) );
+	}
+
 	// ---- The pinned run -------------------------------------------------------------------------------------
 
 	/// <summary>
 	/// The turns of the scripted sequence of <see cref="CheatsFixedRunHash"/>: money at turn 100, research at 200, the Visitors ticket at 300, a boat at 400 and rain at 500 (the plan's
-	/// sequence; the bump ride's vehicle limit of the plan's turn 600 has no ride in this park, docs/DETERMINISM.md).
+	/// sequence; the bump ride's vehicle limit of the plan's turn 600 has no ride in this park, docs/DETERMINISM.md), and a bus asked for at turn 402, which waits while the boat's group
+	/// is delivered and comes at a later turn.
 	/// </summary>
 	private static readonly (long Turn, CheatAction Action)[] Sequence =
 	{
@@ -244,6 +321,7 @@ public class CheatsExtensionTests
 		(200, new CheatAction( CheatKind.Research )),
 		(300, new CheatAction( CheatKind.Ticket, (int)GoldenTicketKind.Visitors )),
 		(400, new CheatAction( CheatKind.Arrival, ArrivalVehicleKind.Ferry )),
+		(402, new CheatAction( CheatKind.Arrival, ArrivalVehicleKind.Bus )),
 		(500, new CheatAction( CheatKind.Weather, (int)CheatWeather.Rain )),
 	};
 
@@ -257,6 +335,8 @@ public class CheatsExtensionTests
 		using var scope = OpenTpwExtensions.Use( CheatsTests.On() );
 		var weather = new ParkWeather( ParkWeatherSnapshotTests.Jungle(), 21, 10, 10 );
 		var park = new DeterminismTests.SyntheticPark( WorldSeed.Default, prepareGuests: guests => guests.WeatherDropsFalling = () => weather.CurrentDrops > 0 );
+		// the runtime's wiring (ParkEconomyRuntime.AttachGuests): a waiting arrival cheat holds the natural groups; the economy a load brings in is read each time
+		park.Guests.ArrivalHeldForCheat = () => park.Economy.Cheats.ArrivalPending;
 		weather.AdvanceTo( park.Economy.Tick );
 		var queued = new HashSet<long>();
 		var path = saveAt == null ? null : Path.Combine( Path.GetTempPath(), $"opentpw-cheats-run-{Guid.NewGuid():N}.json" );
@@ -289,16 +369,18 @@ public class CheatsExtensionTests
 	/// [EXT:cheats-turn-boundary] The pinned hash of <see cref="RunFixedParkWithCheats"/> (docs/DETERMINISM.md, "Cheats"). A deliberate change of a cheat's effect, of the order of the kinds, of the
 	/// arrival band or of the weather cheat's values changes this value.
 	/// </summary>
-	internal const ulong CheatsFixedRunHash = 0x1020E490C9B2E247UL;
+	internal const ulong CheatsFixedRunHash = 0x5CBF8584199279ABUL;
 
 	[TestMethod]
 	public void CheatsFixedRunHashIsTheSameInEveryProcessAndEveryCheatOfTheSequenceApplied()
 	{
 		var (hash, park) = RunFixedParkWithCheats();
 		var log = park.Economy.Cheats.Log;
-		CollectionAssert.AreEqual( Sequence.Select( entry => entry.Action.Kind ).ToArray(), log.Select( entry => entry.Kind ).ToArray() );
-		Assert.IsTrue( log.Take( 3 ).Zip( Sequence.Take( 3 ) ).All( pair => pair.First.Turn == pair.Second.Turn ), "the original's cheats apply at their turns" );
-		Assert.IsTrue( log[3].Turn >= 400, "the boat came once no vehicle was at work" );
+		CollectionAssert.AreEquivalent( Sequence.Select( entry => entry.Action.Kind ).ToArray(), log.Select( entry => entry.Kind ).ToArray() );
+		Assert.IsTrue( log.Take( 4 ).Zip( Sequence.Take( 4 ) ).All( pair => pair.First.Turn == pair.Second.Turn && pair.First.Kind == pair.Second.Action.Kind ), "the original's cheats and the boat apply at their turns" );
+		var bus = log.Single( entry => entry is { Kind: CheatKind.Arrival, Argument: ArrivalVehicleKind.Bus } );
+		Assert.IsTrue( bus.Turn > 410, $"the bus waited for the boat's group (applied at turn {bus.Turn})" );
+		Assert.AreEqual( 500, log.Single( entry => entry.Kind == CheatKind.Weather ).Turn );
 		Assert.IsTrue( park.Economy.Objectives.GoldenTickets.Contains( GoldenTicketKind.Visitors ) );
 		Assert.AreEqual( hash, RunFixedParkWithCheats().Hash, "repeatable in the process" );
 		Assert.AreNotEqual( DeterminismTests.FixedRunHash, hash, "the cheats change the run" );
@@ -309,8 +391,11 @@ public class CheatsExtensionTests
 	public void AParkSavedMidSequenceContinuesIdentically()
 	{
 		var uninterrupted = RunFixedParkWithCheats().Hash;
-		// after turn 450: the boat applied, its group on its way or done, the rain still to come; and before the boat with it queued
-		foreach ( var saveAt in new[] { (int)ParkCalendar.TickOfTurn( 399 ) + 1, (int)ParkCalendar.TickOfTurn( 450 ) } )
+		// before the boat with it queued; at turn 405 with the bus waiting while the boat's group is delivered (a cheat deferred across the save); and after the bus, the rain still to come
+		var (_, park) = RunFixedParkWithCheats();
+		var bus = park.Economy.Cheats.Log.Single( entry => entry is { Kind: CheatKind.Arrival, Argument: ArrivalVehicleKind.Bus } ).Turn;
+		Assert.IsTrue( bus > 405 && bus < 500, $"the bus applies between the saves (turn {bus})" );
+		foreach ( var saveAt in new[] { (int)ParkCalendar.TickOfTurn( 399 ) + 1, (int)ParkCalendar.TickOfTurn( 405 ), (int)ParkCalendar.TickOfTurn( bus ) + 1 } )
 			Assert.AreEqual( uninterrupted, RunFixedParkWithCheats( saveAt ).Hash, $"saved at tick {saveAt}" );
 	}
 }

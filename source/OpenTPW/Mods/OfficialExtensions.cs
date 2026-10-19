@@ -142,7 +142,7 @@ public static class OfficialExtensions
 	public static IOpenTpwExtension WinterSnow { get; } = new OpenTpwExtension( "opentpw.winter-snow", "Settling snow", new ModVersion( 1, 0, 0 ), DefaultEnabled: true, AffectsSimulation: false, PlayerSelectable: true );
 
 	/// <summary>
-	/// The cheats extension (docs/CHEATS.md): the cheats window (Alt+C) with OpenTPW's own cheats: visitors arriving by a chosen vehicle, the weather, a ride's vehicle limit and a chosen golden ticket. Off by default and only in
+	/// The cheats extension (docs/CHEATS.md): the cheats window (Alt+C) with OpenTPW's own cheats: visitors arriving by a chosen vehicle, the weather and a chosen golden ticket. Off by default and only in
 	/// Theme Park World parks (not in a Theme Park Inc run, a read-only visit or an online session). The original game's own cheat mode (the secret park name and the Alt keys) is not part of it and works without it. A park save records the
 	/// extension only once the park has used one of its own cheats, and such a park needs it to load (<c>ParkResumeMods.UsedOnlyExtensionIds</c>); every other park, cheated through the original's cheats or not, saves the same bytes
 	/// whether it is on or off. Selectable from phase K3, the window and its first cheats.

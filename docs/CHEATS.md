@@ -233,6 +233,10 @@ buttons, the `b_okay` button) and every button queues a cheat for the next park 
 - **Money and research.** "Add 10,000" and "Build everything" queue the Alt+1 and Alt+R cheats (K2), with their keys beside them.
 - **Status.** Below the right column: whether the park is already marked as cheated or will be, and how many cheats wait for the next turn.
 
+Each applied weather and arrival cheat leaves a short note on the screen, like the original's cheats (K2). Alt+C is the window's key only: the camcorder's C and the ride view's C
+match no modifier, as the original's key contexts match the exact mask (`[BIN:TPW-EXE:0x40C900]`). Every label, with every choice it shows, fits its row at the page's size in all eleven
+languages (checked with the localisation pack's fonts).
+
 The weather and arrival cheats are the extension's own (`ParkCheats.IsExtensionKind`): they need the extension on and a level (`ParkEconomy.CheatHost`, the level as `IParkCheatHost`; a
 headless economy refuses them), and once one applied the world save records `opentpw.cheats` (K1). The money, research, ticket and mode buttons are the original's cheats and record
 nothing, so a park cheated only through them loads with the extension off. All of them go through the turn-boundary queue and take no draw; the pinned run with a scripted sequence is

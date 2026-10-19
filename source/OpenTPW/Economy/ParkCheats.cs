@@ -217,7 +217,8 @@ public sealed class ParkCheats
 		// entries are dropped only from a full log, so a record that dropped any holds the most it may
 		if ( data.Log.Count > MaximumLog || data.DroppedLog < 0 || data.DroppedLog > 0 && data.Log.Count != MaximumLog )
 			return $"the cheat record holds {data.Log.Count} entries and {data.DroppedLog} dropped ones";
-		if ( data.Pending != null && (data.Pending.Count is 0 or > MaximumPending || data.Pending.Any( action => action == null || !Enum.IsDefined( action.Kind ) || !IsValid( new CheatAction( action.Kind, action.Argument ) ) )) )
+		if ( data.Pending != null && (data.Pending.Count is 0 or > MaximumPending || data.Pending.Any( action => action == null || !Enum.IsDefined( action.Kind ) || !IsValid( new CheatAction( action.Kind, action.Argument ) ) )
+			|| data.Pending.Count( action => action.Kind == CheatKind.Arrival ) > 1) )
 			return "the cheat record's pending actions are empty, too many or not valid";
 		var previous = 0L;
 		foreach ( var entry in data.Log )

@@ -322,7 +322,10 @@ public sealed class ParkEconomy : IParkEconomy
 	// [EXT:cheats-window] the extension's own cheats (the weather, the arrivals) need the extension on and a level to act on
 	public bool QueueCheat( CheatAction action ) => !Rules.ThemeParkInc && (!ParkCheats.IsExtensionKind( action.Kind ) || FeatureGates.Cheats && CheatHost != null) && Cheats.Queue( action );
 
-	/// <summary>The level's side of the park's cheats (the arrivals and the weather, <see cref="IParkCheatHost"/>); null in a headless economy, which then refuses those cheats.</summary>
+	/// <summary>
+	/// The level's side of the park's cheats (the arrivals and the weather, <see cref="IParkCheatHost"/>); null in a headless economy, which then refuses those cheats. A saved park whose
+	/// arrival or weather cheat still waits keeps it waiting in a headless economy: only a level applies it.
+	/// </summary>
 	public IParkCheatHost? CheatHost { get; set; }
 
 	/// <summary>

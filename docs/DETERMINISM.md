@@ -622,9 +622,10 @@ natural group's size moved into the chosen vehicle's band (computed from the par
 quality and drop target explicitly and skips the converter's tie-break draw. A cheat the park cannot take at that turn (an arrival while a vehicle is at work) stays queued and is applied,
 and recorded, at a later turn boundary, so the turn in the record is the one it took effect; while an arrival waits, the arrival update starts no natural group and calls no vehicle for
 leaving guests (`GuestSimulation.ArrivalHeldForCheat`, read from the saved queue, so a resumed park holds the same turns). A pin covers a scripted sequence: `CheatsExtensionTests.CheatsFixedRunHash` =
-`0x1020E490C9B2E247`, the fixed synthetic run (the park, shop, scripts and 14,400 ticks of `FixedRunHash`) with the extension on, a jungle weather (seed 21) whose drops feed the guests'
-arrival factor, and money at turn 100, research at 200, the Visitors ticket at 300, a boat at 400 and rain at 500 (the plan's bump-ride vehicle limit at turn 600 is K4's; this park has no
-bump ride). `AParkSavedMidSequenceContinuesIdentically` saves and loads the economy before the boat (with it queued) and after it and gets the same hash.
+`0x5CBF8584199279AB`, the fixed synthetic run (the park, shop, scripts and 14,400 ticks of `FixedRunHash`) with the extension on, a jungle weather (seed 21) whose drops feed the guests'
+arrival factor, and money at turn 100, research at 200, the Visitors ticket at 300, a boat at 400, a bus asked for at 402 (it waits while the boat's group is delivered and applies at
+turn 462) and rain at 500 (the plan's bump-ride vehicle limit at turn 600 is K4's; this park has no bump ride). `AParkSavedMidSequenceContinuesIdentically` saves and loads the economy
+before the boat (with it queued), at turn 405 (the bus waiting across the save) and after the bus, and gets the same hash each time.
 
 ## Tests
 

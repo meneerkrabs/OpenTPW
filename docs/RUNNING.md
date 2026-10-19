@@ -276,9 +276,12 @@ bash scripts/run.sh --game-path '/path/to/Theme Park World' --play-movie bf --sm
 Plays `Data/Movies/<name>.tgq` with SDL2 audio (`--mute` disables it); a key
 press or click skips.
 
-Automated runs are silent: `--smoke-test`, any `--capture-*` option and `--park-resume-smoke` open no audio
-device (the game runs on its wall clock exactly as without a sound card), so smokes and captures make no sound on a
-developer machine. Add `--smoke-audio` to hear one. `--silent` or `OPENTPW_SILENT=1` silences any run.
+Automated runs are silent: `--smoke-test`, `--tpi-smoke-test`, `--park-resume-smoke`, `--smoke-presence`, any `--capture-*` or
+`--perf-*` option, `--debug-sim-minutes`, `--offscreen` (or `OPENTPW_OFFSCREEN=1`), `--headless`, the gates and the guest reports open no audio
+device (the game runs on its wall clock exactly as without a sound card), so tests and agents make no sound on a developer machine.
+Add `--smoke-audio` or `--audible` to hear one. `--silent` or `OPENTPW_SILENT=1` silences any run; a plain launch is never silenced.
+The browser perf tool (`tools/web-perf`) and the postcard smoke start Chrome with `--mute-audio`; pass `--audible` to `run.mjs` to listen.
+`--music` still measures decoding, since muting only silences the speakers.
 
 Automated runs are also offscreen: `--smoke-test`, `--tpi-smoke-test` and `--park-resume-smoke` create the window hidden, never show
 it and render into an offscreen framebuffer (a colour texture of the size the window would have had; the logical size and

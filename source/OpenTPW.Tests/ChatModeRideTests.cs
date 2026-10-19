@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -52,6 +53,26 @@ public class ChatModeRideTests
 		var deleted = Owner( BuildCategory.Rides );
 		deleted.Delete();
 		Assert.IsNull( ParkHud.ChatModeRide( deleted ) );
+	}
+
+	[TestMethod]
+	public void AMissingInterfaceTypeIsNotARide()
+	{
+		// GetInt's own fallback is 0, which would be a ride; a missing key is -1 and is not the rides' or the features' type
+		var ride = Rideable();
+		var values = (Dictionary<string, string>)ride.Entry.Settings.Values;
+		Assert.IsTrue( values.TryGetValue( "Info.WhichUIType", out var type ) );
+		values.Remove( "Info.WhichUIType" );
+		try
+		{
+			Assert.AreEqual( -1, ride.Entry.Settings.GetInt( "Info.WhichUIType", -1 ) );
+			Assert.IsTrue( RideCameraMode.CanRide( ride ), "the prototype's view still opens" );
+			Assert.IsNull( ParkHud.ChatModeRide( ride ), "a missing interface type is not ridden from the chat mode" );
+		}
+		finally
+		{
+			values["Info.WhichUIType"] = type;
+		}
 	}
 
 	[TestMethod]

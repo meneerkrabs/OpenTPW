@@ -1188,6 +1188,89 @@ public class OnlineServerTests
 	}
 
 	[TestMethod]
+	public async Task AHiddenRiderLeavingOrDisconnectingIsNotShown()
+	{
+		await using var server = await LoopbackServer.StartAsync( options => options.ChatBurst = 50 );
+		try
+		{
+			using var ownerClient = await server.LoginAsync( "Owner" );
+			var room = ChatProtocol.ParkRoom( (await ownerClient.UploadParkAsync( OnlineFormatTests.Package() )).Id );
+			var clients = new List<IDisposable>();
+			async Task<ChatConnection> Enter( string name )
+			{
+				var client = await server.LoginAsync( name );
+				clients.Add( client );
+				var chat = await client.ConnectChatAsync();
+				await NextAsync( chat, item => item.Kind == ChatEventKind.Room );
+				await chat.JoinAsync( room );
+				await NextAsync( chat, item => item.Kind == ChatEventKind.Room && item.Room == room );
+				return chat;
+			}
+			await using var ann = await Enter( "Ann" );
+			await using var bob = await Enter( "Bob" );
+			await using var carol = await Enter( "Carol" );
+			await bob.MoveAsync( 0.5f, 0.5f, ChatMoveMode.Walk );
+			await carol.MoveAsync( 0.6f, 0.4f );
+			await ann.MoveAsync( 0.2f, 0.3f, ChatMoveMode.Walk );
+			// once Ann knows where both stand (her first movement's answer, or their own movements), the server has handled their movements
+			var known = new HashSet<string>();
+			while ( known.Count < 2 )
+				known.Add( (await NextAsync( ann, item => item.Kind == ChatEventKind.Move )).From! );
+			// Bob's first place for Ann can be the modeless snapshot of that first movement (ReceivesMovement is set before ReceivesModes, and the
+			// snapshot carries no mode). A later place, matched by its coordinates, is the one that has to arrive as a hide.
+			await ann.MoveAsync( 0.25f, 0.35f, ChatMoveMode.Walk );
+			bool AnnAt( ChatEvent item, float x ) => item.Kind == ChatEventKind.Move && item.From == "Ann" && item.X == x;
+			Assert.AreEqual( ChatMoveMode.Walk, (await NextAsync( bob, item => AnnAt( item, 0.25f ) )).Mode );
+			Assert.IsNull( (await NextAsync( carol, item => AnnAt( item, 0.25f ) )).Mode, "an older client gets no mode" );
+
+			await ann.MoveAsync( 0.25f, 0.35f, ChatMoveMode.Hide );
+			var hidden = await NextAsync( bob, item => item.Kind == ChatEventKind.Move && item.From == "Ann" );
+			Assert.AreEqual( ChatMoveMode.Hide, hidden.Mode, hidden.ToString() );
+			await ann.SendAsync( ChatCommand.Say, "riding" );
+			Assert.AreEqual( ChatEventKind.Say, (await NextAsync( carol, item => item.From == "Ann" )).Kind, "no movement of Ann reached Carol before her line" );
+
+			// leaving the park while hidden updates the roster and does not place her back in view
+			await ann.JoinAsync( ChatProtocol.LobbyRoom );
+			var bobLeft = await UntilRoom( bob, room, names => !names.Contains( "Ann" ) );
+			var carolLeft = await UntilRoom( carol, room, names => !names.Contains( "Ann" ) );
+			Assert.IsFalse( bobLeft.Any( item => item.Kind == ChatEventKind.Move && item.From == "Ann" ), "leaving showed Ann to a client that reads modes" );
+			Assert.IsFalse( carolLeft.Any( item => item.Kind == ChatEventKind.Move && item.From == "Ann" ), "leaving showed Ann to an older client" );
+
+			await ann.JoinAsync( room );
+			await NextAsync( ann, item => item.Kind == ChatEventKind.Room && item.Room == room );
+			await NextAsync( bob, item => item.Kind == ChatEventKind.Room && item.Room == room && item.Args!.Contains( "Ann" ) );
+			await NextAsync( carol, item => item.Kind == ChatEventKind.Room && item.Room == room && item.Args!.Contains( "Ann" ) );
+			await ann.MoveAsync( 0.2f, 0.3f, ChatMoveMode.Hide );
+			Assert.AreEqual( ChatMoveMode.Hide, (await NextAsync( bob, item => item.Kind == ChatEventKind.Move && item.From == "Ann" )).Mode );
+
+			// disconnecting while hidden is the same: the roster drops her and no place follows
+			await ann.DisposeAsync();
+			var bobGone = await UntilRoom( bob, room, names => !names.Contains( "Ann" ) );
+			var carolGone = await UntilRoom( carol, room, names => !names.Contains( "Ann" ) );
+			Assert.IsFalse( bobGone.Any( item => item.Kind == ChatEventKind.Move && item.From == "Ann" ), "disconnecting showed Ann to a client that reads modes" );
+			Assert.IsFalse( carolGone.Any( item => item.Kind == ChatEventKind.Move && item.From == "Ann" ), "disconnecting showed Ann to an older client" );
+			clients.ForEach( client => client.Dispose() );
+		}
+		finally
+		{
+			server.DeleteData();
+		}
+	}
+
+	/// <summary>Events up to and including the room roster that matches <paramref name="roster"/>.</summary>
+	private static async Task<List<ChatEvent>> UntilRoom( ChatConnection chat, string room, Func<IReadOnlyList<string>, bool> roster )
+	{
+		var seen = new List<ChatEvent>();
+		while ( true )
+		{
+			var item = await NextAsync( chat );
+			seen.Add( item );
+			if ( item.Kind == ChatEventKind.Room && item.Room == room && item.Args is { } names && roster( names ) )
+				return seen;
+		}
+	}
+
+	[TestMethod]
 	public async Task ChatParksRelayMovementPresenceAndBuddyEntries()
 	{
 		await using var server = await LoopbackServer.StartAsync( options =>

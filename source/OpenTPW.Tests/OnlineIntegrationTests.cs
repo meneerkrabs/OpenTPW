@@ -667,6 +667,8 @@ public class OnlineIntegrationTests
 			// the hide stays queued while this connection's version is unknown, and the walk keeps that mode at the new place
 			ann.MoveTo( 0.25f, 0.75f, ChatMoveMode.Hide );
 			ann.MoveTo( 0.5f, 0.25f );
+			ann.JoinRoom( "invalid" ); // invalid rooms and the room already wanted must keep its waiting hide
+			ann.JoinRoom( room );
 			Assert.AreEqual( (0.5f, 0.25f), ann.RoomPositions["Ann"] );
 			var held = DateTime.UtcNow.AddMilliseconds( 300 );
 			while ( DateTime.UtcNow < held ) { ann.Pump(); await Task.Delay( 20 ); }
@@ -765,6 +767,211 @@ public class OnlineIntegrationTests
 			http.Dispose();
 			server.DeleteData();
 		}
+	}
+
+	[TestMethod]
+	public async Task AReconnectingRidersWaitingHideDoesNotFollowTheSharedConnectionToAChatPark()
+	{
+		await using var server = await LoopbackServer.StartAsync( options => options.ChatBurst = 50 );
+		var gate = new VersionGate();
+		var (ann, http) = GatedSession( server.Url, "Ann", gate );
+		using var cancel = new CancellationTokenSource();
+		var seen = new List<ChatEvent>();
+		try
+		{
+			using var owner = await server.LoginAsync( "Owner" );
+			var park = await owner.UploadParkAsync( OnlineFormatTests.Package() );
+			ann.Register( "Ann", "correct horse" );
+			await PumpUntilIdle( ann );
+			// The online screens own this connection, so leaving the visit must keep it open.
+			ann.ConnectChat();
+			await PumpUntil( ann, () => ann.Chat != null && ann.ProtocolCurrent );
+			using var visit = Visit( ann, park.Id, (10.5f, 10.5f) );
+			visit.Ride = () => new ParkPresence.PresenceRide( (40.5f, 20.5f) );
+			Assert.IsTrue( await Until( ann, () => visit.InRoom && ann.RoomPositions.ContainsKey( "Ann" ), visit ) );
+			await PumpUntilIdle( ann );
+
+			var previous = ann.Chat;
+			gate.HoldNext();
+			AbortChat( ann );
+			Assert.IsTrue( await Until( ann, () => ann.Chat != null && ann.Chat != previous && !ann.ProtocolCurrent
+				&& visit.InRoom && ann.RoomPositions.ContainsKey( "Ann" ), visit ), "the reconnect did not queue the rider's hide" );
+			var shared = ann.Chat;
+			visit.Dispose();
+			Assert.AreSame( shared, ann.Chat, "leaving a visit keeps the online screens' connection" );
+			Assert.AreEqual( ChatProtocol.LobbyRoom, ann.WantedRoom );
+
+			using var bobClient = await server.LoginAsync( "Bob" );
+			await using var bob = await bobClient.ConnectChatAsync();
+			var reading = Collect( bob, seen, cancel.Token );
+			var room = ChatProtocol.SatelliteRoom( 2 );
+			await bob.JoinAsync( room );
+			await bob.MoveAsync( 0.25f, 0.75f, ChatMoveMode.Walk );
+			await bob.SendAsync( ChatCommand.Say, "observer ready" );
+			await WaitUntil( () => HasLine( seen, "Bob", "observer ready" ) );
+			ann.JoinRoom( room );
+			await PumpUntil( ann, () => ann.CurrentRoom == room );
+			// The chat park announces once, then stays stationary; there is no visit keyframe to repair a leaked hide.
+			var view = new OpenTPW.UI.UiChatParkView( ann );
+			view.Walk( OpenTPW.UI.UiChatParkView.SendInterval );
+			Assert.IsTrue( await Until( ann, () => MovesOf( seen, "Ann" ).Count > 0 ), "the new room's walk inherited the old visit's waiting hide" );
+			Assert.IsFalse( ann.ProtocolCurrent, "the version response must still be held" );
+			gate.Release( 5 );
+			await PumpUntil( ann, () => ann.ProtocolCurrent );
+			await PumpUntilIdle( ann );
+			ann.SendChatLine( "still standing" );
+			await PumpUntil( ann, () => HasLine( seen, "Ann", "still standing" ) );
+			var moves = MovesOf( seen, "Ann" );
+			Assert.AreEqual( 1, moves.Count, "releasing the version must not send the previous room's hide" );
+			Assert.AreEqual( (room, (float?)0.5f, (float?)0.5f, (ChatMoveMode?)null), (moves[0].Room, moves[0].X, moves[0].Y, moves[0].Mode) );
+			Assert.AreSame( shared, ann.Chat );
+			cancel.Cancel();
+			await reading;
+		}
+		finally
+		{
+			cancel.Cancel();
+			gate.Release( 5 );
+			ann.Dispose();
+			http.Dispose();
+			server.DeleteData();
+		}
+	}
+
+	[DataTestMethod]
+	[DataRow( false )]
+	[DataRow( true )]
+	public async Task ACoalescedPlaceDoesNotFollowALaterJoin( bool announceWhileJoining )
+	{
+		await using var server = await LoopbackServer.StartAsync( options => options.ChatBurst = 50 );
+		var (ann, http) = GatedSession( server.Url, "Ann", new VersionGate() );
+		var release = new TaskCompletionSource<bool>( TaskCreationOptions.RunContinuationsAsynchronously );
+		using var cancel = new CancellationTokenSource();
+		var seen = new List<ChatEvent>();
+		var beforeJoin = new List<ChatEvent>();
+		try
+		{
+			ann.Register( "Ann", "correct horse" );
+			await PumpUntilIdle( ann );
+			ann.ConnectChat();
+			await PumpUntil( ann, () => ann.Chat != null && ann.ProtocolCurrent );
+			ann.JoinRoom( ChatProtocol.SatelliteRoom( 1 ) );
+			await PumpUntil( ann, () => ann.CurrentRoom == ChatProtocol.SatelliteRoom( 1 ) );
+			await PumpUntilIdle( ann );
+			using var bobClient = await server.LoginAsync( "Bob" );
+			await using var bob = await bobClient.ConnectChatAsync();
+			var reading = Collect( bob, seen, cancel.Token );
+			var room = ChatProtocol.SatelliteRoom( 2 );
+			await bob.JoinAsync( room );
+			await bob.MoveAsync( 0.5f, 0.5f, ChatMoveMode.Walk );
+			await bob.SendAsync( ChatCommand.Say, "observer ready" );
+			await WaitUntil( () => HasLine( seen, "Bob", "observer ready" ) );
+
+			using var daveClient = await server.LoginAsync( "Dave" );
+			await using var dave = await daveClient.ConnectChatAsync();
+			var beforeRead = Collect( dave, beforeJoin, cancel.Token );
+			await dave.JoinAsync( ChatProtocol.SatelliteRoom( 1 ) );
+			await dave.MoveAsync( 0.5f, 0.5f, ChatMoveMode.Walk );
+			await dave.SendAsync( ChatCommand.Say, "observer ready" );
+			await WaitUntil( () => HasLine( beforeJoin, "Dave", "observer ready" ) );
+
+			// Hold the send chain itself: A owns a slot, B is coalesced, and the join is queued after A.
+			var sends = typeof( OnlineSession ).GetField( "chatSends", BindingFlags.Instance | BindingFlags.NonPublic )!;
+			sends.SetValue( ann, release.Task );
+			ann.MoveTo( 0.2f, 0.3f );
+			ann.MoveTo( 0.3f, 0.4f, ChatMoveMode.Teleport );
+			ann.JoinRoom( room );
+			if ( announceWhileJoining )
+			{
+				// This belongs to the new room even before its roster confirms the join, and keeps its own mode.
+				ann.MoveTo( 0.7f, 0.8f );
+				ann.JoinRoom( room ); // retrying the same requested room must not discard its initial place
+			}
+			var joined = (Task)sends.GetValue( ann )!;
+			release.SetResult( true );
+			await joined.WaitAsync( TimeSpan.FromSeconds( 10 ) );
+			// A's callback posted FlushMove; run it only after the join was sent, deterministically exposing the old ordering bug.
+			ann.Pump();
+			await PumpUntilIdle( ann );
+			ann.SendChatLine( "after join" );
+			await PumpUntil( ann, () => HasLine( seen, "Ann", "after join" ) );
+			await WaitUntil( () => MovesOf( beforeJoin, "Ann" ).Count > 0 );
+			var original = MovesOf( beforeJoin, "Ann" ).Single();
+			Assert.AreEqual( (ChatProtocol.SatelliteRoom( 1 ), (float?)0.2f, (float?)0.3f), (original.Room, original.X, original.Y), "the frozen snapshot belongs before the join" );
+			var moves = MovesOf( seen, "Ann" );
+			Assert.AreEqual( announceWhileJoining ? 1 : 0, moves.Count, "a coalesced place from the previous room followed the join" );
+			if ( announceWhileJoining )
+				Assert.AreEqual( (room, (float?)0.7f, (float?)0.8f, (ChatMoveMode?)ChatMoveMode.Walk), (moves[0].Room, moves[0].X, moves[0].Y, moves[0].Mode) );
+			cancel.Cancel();
+			await Task.WhenAll( reading, beforeRead );
+		}
+		finally
+		{
+			release.TrySetResult( true );
+			cancel.Cancel();
+			ann.Dispose();
+			http.Dispose();
+			server.DeleteData();
+		}
+	}
+
+	[TestMethod]
+	public async Task ARefusedRoomsWaitingHideDoesNotApplyToTheRoomThatStayedOpen()
+	{
+		await using var server = await LoopbackServer.StartAsync( options => options.ChatBurst = 50 );
+		var gate = new VersionGate();
+		gate.HoldNext();
+		var (ann, http) = GatedSession( server.Url, "Ann", gate );
+		using var cancel = new CancellationTokenSource();
+		var seen = new List<ChatEvent>();
+		try
+		{
+			ann.Register( "Ann", "correct horse" );
+			await PumpUntilIdle( ann );
+			ann.ConnectChat();
+			await PumpUntil( ann, () => ann.Chat != null );
+			using var bobClient = await server.LoginAsync( "Bob" );
+			await using var bob = await bobClient.ConnectChatAsync();
+			var reading = Collect( bob, seen, cancel.Token );
+			var room = ChatProtocol.SatelliteRoom( 1 );
+			await bob.JoinAsync( room );
+			await bob.MoveAsync( 0.5f, 0.5f, ChatMoveMode.Walk );
+			await bob.SendAsync( ChatCommand.Say, "observer ready" );
+			await WaitUntil( () => HasLine( seen, "Bob", "observer ready" ) );
+			ann.JoinRoom( room );
+			await PumpUntil( ann, () => ann.CurrentRoom == room );
+			var refused = ChatProtocol.ParkRoom( "missing" );
+			ann.JoinRoom( refused );
+			ann.MoveTo( 0.2f, 0.3f, ChatMoveMode.Hide );
+			await PumpUntil( ann, () => ann.RefusedRoom == refused );
+			Assert.AreEqual( room, ann.WantedRoom );
+			Assert.IsFalse( ann.ProtocolCurrent );
+			gate.Release( 5 );
+			await PumpUntil( ann, () => ann.ProtocolCurrent );
+			await PumpUntilIdle( ann );
+			ann.SendChatLine( "still here" );
+			await PumpUntil( ann, () => HasLine( seen, "Ann", "still here" ) );
+			Assert.AreEqual( 0, MovesOf( seen, "Ann" ).Count, "the refused room's hide reached the original room" );
+			ann.MoveTo( 0.6f, 0.7f );
+			await PumpUntil( ann, () => MovesOf( seen, "Ann" ).Count > 0 );
+			Assert.AreEqual( ChatMoveMode.Walk, MovesOf( seen, "Ann" ).Single().Mode );
+			cancel.Cancel();
+			await reading;
+		}
+		finally
+		{
+			cancel.Cancel();
+			gate.Release( 5 );
+			ann.Dispose();
+			http.Dispose();
+			server.DeleteData();
+		}
+	}
+
+	private static bool HasLine( List<ChatEvent> seen, string name, string text )
+	{
+		lock ( seen )
+			return seen.Any( item => item.Kind == ChatEventKind.Say && item.From == name && item.Text == text );
 	}
 
 	[TestMethod]

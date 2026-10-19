@@ -256,7 +256,9 @@ Protocol version 5 adds a movement's mode, the original's `BOSS_CHAT_MOVE` modes
 appears at the place). A game sends it only to a server of version 5 or later, and only after it
 has read that version for the open connection: a hide is held back until the read finishes, so a
 reconnect cannot show the rider as a plain place, and a failed read is tried again with a growing
-wait for as long as the connection stays open. The server sends a mode only to connections that
+wait for as long as the connection stays open. A room change or refused join discards coalesced
+movement still waiting for that room; already queued sends retain their order before the join.
+The server sends a mode only to connections that
 sent one themselves, so neither older games nor older servers see a member they would refuse. A
 hidden player's movements reach no connection that reads no mode, the answer to a first movement
 leaves hidden players out, and the player's next movement of any other mode shows them again.

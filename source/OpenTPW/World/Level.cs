@@ -1164,8 +1164,12 @@ public partial class Level : IDisposable
 		TextOverlay?.Dispose();
 	}
 
+	/// <summary>Invalidates per-world-pass observations even when an entity is absent from the render list.</summary>
+	internal long RenderPass { get; private set; }
+
 	public void Render()
 	{
+		RenderPass++;
 		// [EXT:point-lights] the lights of the objects that have any, for every draw of this frame
 		PointLights?.Gather( Camera.ViewMatrix * Camera.ProjMatrix );
 		foreach ( var entity in Entity.All.ToArray() )

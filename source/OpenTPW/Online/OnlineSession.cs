@@ -807,6 +807,9 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 						&& Environment.TickCount64 - asked < JoinAnswerMilliseconds )
 					{
 						// The park's room was refused (it was unpublished): the player stays where they are.
+						// A place waiting for the refused room (for example a hide awaiting its version) is not this room's.
+						lock ( moveLock )
+							latestMove = null;
 						RefusedRoom = requestedRoom;
 						joinPending = false;
 						joinSentAt = null;
@@ -1014,6 +1017,10 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 			// already there, or on the way
 			if ( room == WantedRoom )
 				return;
+			// A coalesced place has no slot in the send chain yet: it must not follow this join into another room.
+			// Snapshots already in the chain precede the join and still belong to the room they were queued for.
+			lock ( moveLock )
+				latestMove = null;
 			requestedRoom = room;
 			joinPending = true;
 			SendJoin( chat, room );

@@ -50,7 +50,7 @@ public sealed class ParkEconomy : IParkEconomy
 		World = new WorldRng( WorldRng.StateFromSeed( seed ) );
 		Ledger = new ParkLedger( settings.InitialCash );
 		Staff = new ParkStaff( settings );
-		Research = new ParkResearch( settings, catalog ) { OwnsTicketItem = infoId => ticketItems.Contains( infoId ) };
+		Research = new ParkResearch( settings, catalog, trackRecentItems: !Rules.ThemeParkInc ) { OwnsTicketItem = infoId => ticketItems.Contains( infoId ) };
 		Objectives = new ParkObjectives( settings, catalog );
 		Counters.Added += ( key, amount ) => Objectives.AccumulateCounter( key, amount, id => objects.GetValueOrDefault( id )?.InfoId ?? 0 );
 		Counters.Restored += () => Objectives.RestoreLegacyRawValue( MeasureChallenge, id => objects.GetValueOrDefault( id )?.InfoId ?? 0 );
@@ -1279,8 +1279,9 @@ public sealed class ParkEconomy : IParkEconomy
 		// [BIN:TPW-EXE:0x004C7720 month sample] the same handler reads the cached census with age 0 first (0x004C78C1); the month message goes to the things in id order (the listener tree walked by 0x0040FB10, dispatching through 0x0050B550) and the world constructor 0x005156A0 creates the staff manager (type 9) before the analyser (type 13), so the gate above has already read its count
 		var census = CachedGuestCensus( 0 );
 		// [BIN:TPW-EXE:0x004C7720 month sample] the same handler fills the statistics rings the park information window graphs: the arrivals, the guests in the park (this census), the mean happiness (0x4C7BB0) and the mean stay
-		StatisticsHistory.CloseMonth( guestStatistics.CensusHappiness, census );
-		var closed = Ledger.CloseMonth( nextMonthIndex, ParkRating, NetWorth( 0 ) );
+		var rating = ParkRating;
+		StatisticsHistory.CloseMonth( guestStatistics.CensusHappiness, census, rating );
+		var closed = Ledger.CloseMonth( nextMonthIndex, rating, NetWorth( 0 ) );
 		Raise( ParkEventKind.MonthEnded, closed.ClosingBalance, 0, 0, $"in ${closed.MoneyIn}, out ${closed.MoneyOut}" );
 		if ( nextMonthIndex % ParkCalendar.MonthsPerYear == 0 )
 		{

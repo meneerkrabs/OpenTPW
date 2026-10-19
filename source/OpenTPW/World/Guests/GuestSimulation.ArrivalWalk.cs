@@ -49,6 +49,17 @@ public sealed partial class GuestSimulation
 	// [BIN:TPW-EXE:0x004D8610 ticket booth cell] side 0: (0x0078559C, 0x007855A0), else (0x007855A4, 0x007855A8), the cell id y × 128 + x + 1
 	private (int X, int Y)? BoothCell( int side ) => ArrivalLane( side ) is { } lane ? lane[3] : null;
 
+	/// <summary>The guests in state 3 (waiting at the booth) standing on the cell of either ticket booth, counted once per side as the original walks the two cells.</summary>
+	// [BIN:TPW-EXE:0x004C91C0 guests at the gate] for each of the two sides 0 and 1 it takes the booth cell (0x004D8610) and counts the things of type 1 on it whose state word (+0x220) is 3, adds both counts and caches the sum (park +0x1F0D4, stamp +0x1F0D0, never read back)
+	public int GuestsWaitingAtBooths()
+	{
+		var count = 0;
+		for ( var side = 0; side < 2; side++ )
+			if ( BoothCell( side ) is { } booth )
+				count += Guests.Count( guest => guest.State == GuestState.WaitingAtBooth && guest.Navigation.Cell == booth );
+		return count;
+	}
+
 	/// <summary>The entrance cell of a side (tp.exe <c>0x004D8690</c>: <c>FixedItemInfo.EntranceA</c> or <c>B</c>).</summary>
 	// [BIN:TPW-EXE:0x004D8690 entrance cell] side 0: (0x007855BC, 0x007855C0), else (0x007855C4, 0x007855C8)
 	private (int X, int Y)? ParkEntranceCell( int side ) => ArrivalLane( side ) is { } lane ? lane[4] : null;

@@ -386,7 +386,9 @@ for a player whose game is older, the riding player's figure stands where it was
 ends. A reconnect reads the version again before a hide goes out, and holds the hide until that
 read finishes, so neither an older game nor a current one is shown the rider in the meantime. A
 failed read is tried again, with a growing wait that levels off, for as long as the connection
-stays open. A park file opened
+stays open. Leaving the room discards any coalesced movement that has not entered the send
+queue, including a held hide, so another park on the same connection starts with its own visible
+position. A park file opened
 from disk (Import file, `--visit-park`) has no room and no figures.
 `--visit-park <file> --smoke-test --smoke-presence` runs the native visit check with three scripted
 players round the entrance: the visit starts in the chat mode, their figures, names and sparkles are

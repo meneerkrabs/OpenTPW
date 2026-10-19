@@ -97,6 +97,16 @@ jobs:
           python tools/progress.py --check
           python -m unittest discover -s tools -p "test_progress.py" -v
           python -m unittest discover -s tools -p "test_release_train.py" -v
+          python -m unittest discover -s tools -p "test_employee_live_portrait_contract.py" -v
+          python -m unittest discover -s tools -p "test_locator_visitor_contract.py" -v
+          python -m unittest discover -s tools -p "test_visitor_info_arrow_contract.py" -v
+          python -m unittest discover -s tools -p "test_visitor_live_portrait_contract.py" -v
+          python -m unittest discover -s tools -p "test_staff_role_order_contract.py" -v
+          python -m unittest discover -s tools -p "test_map_repair_contract.py" -v
+          python -m unittest discover -s tools -p "test_ride_static_contract.py" -v
+          python -m unittest discover -s tools -p "test_happiness_gauge_contract.py" -v
+          python -m unittest discover -s tools -p "test_native_statistics_history_contract.py" -v
+          python -m unittest discover -s tools -p "test_tpi_statistics_history_contract.py" -v
           python -I -B tools/ppc-analysis/run_evidence_checks.py
       - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9
         with:

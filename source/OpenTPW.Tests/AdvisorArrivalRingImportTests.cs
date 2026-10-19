@@ -68,7 +68,7 @@ public class AdvisorArrivalRingImportTests
 		var advisor = new AutomaticAdvisor( new AdvisorController( AdvisorSnapshotTests.Balance() ), () => 0 );
 		advisor.AttachEconomy( established );
 		advisor.RestoreSnapshot( advisor.CaptureSnapshot() with { ArrivalWaves = Array.Empty<int>() } );
-		Assert.AreEqual( AdvisorArrivalRing.Capacity, advisor.ArrivalWaves.Count, "empty with admissions cannot come from a run" );
+		Assert.AreEqual( AdvisorArrivalRing.Capacity, advisor.ArrivalWaves.Count, "The existing host snapshot policy treats explicit empty plus admissions as legacy." );
 		var fresh = new AutomaticAdvisor( new AdvisorController( AdvisorSnapshotTests.Balance() ), () => 0 );
 		fresh.AttachEconomy( EconomyTestData.Park() );
 		fresh.RestoreSnapshot( fresh.CaptureSnapshot() with { ArrivalWaves = Array.Empty<int>() } );

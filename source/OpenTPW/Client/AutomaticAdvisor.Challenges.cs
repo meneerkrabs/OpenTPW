@@ -30,7 +30,8 @@ internal sealed partial class AutomaticAdvisor
 
 	/// <summary>
 	/// The stand-in for an unrecorded ring (<see cref="AdvisorArrivalRing.AssumeFilled"/>, ADVISOR-028): an older OpenTPW save has no record of the arrival group sizes, so a park with admissions takes the ring as full and the first-group
-	/// explanation (281) does not fire once after loading an established park. A park without admissions keeps its empty ring. A park from an original save reads the saved ring instead (<see cref="SaveArrivalRing"/>).
+	/// explanation (281) does not fire once after loading an established park. Unknown sizes can also change hype/big-group advice. A park without admissions keeps its empty ring.
+	/// Original TPW imports and manually attached TPI money runtimes read their source rings afterward (<see cref="SaveArrivalRing"/>, <see cref="SaveThemeParkIncArrivalRing"/>); public TPI gameplay has no advisor.
 	/// </summary>
 	private void AssumeEstablishedArrivalRing()
 	{

@@ -64,7 +64,7 @@ public sealed class MoviePlayback : IDisposable
 	public double AudioDuration { get; }
 	public double Duration { get; }
 	public bool HasAudio => audio != null;
-	public MovieClockSource ClockSource => audio != null && !AudioDrained ? MovieClockSource.Audio : MovieClockSource.FixedStep;
+	public MovieClockSource ClockSource => audio != null && audioReader!.TotalFrames > 0 && !AudioDrained ? MovieClockSource.Audio : MovieClockSource.FixedStep;
 	/// <summary>Movie time in seconds.</summary>
 	public double Clock { get; private set; }
 	public int CurrentFrameIndex { get; private set; } = -1;
@@ -130,24 +130,41 @@ public sealed class MoviePlayback : IDisposable
 
 	private void AdvanceClock( double elapsedSeconds )
 	{
-		if ( audio != null && !AudioDrained )
+		if ( audio != null && audioReader!.TotalFrames > 0 )
 		{
 			// Devices take queued audio a buffer at a time, so the position moves in steps (1024 frames is ~46 ms,
 			// more than a video frame). Between steps the clock runs on elapsed time, at most one buffer ahead of
 			// the last position; it never runs backwards, so overshoot turns into a hold until audio catches up.
+			var drained = AudioDrained;
 			var played = audio.PlayedFrames;
-			if ( played != anchorFrames )
+			if ( !drained )
+			{
+				if ( played != anchorFrames )
+				{
+					anchorFrames = played;
+					anchorClock = played / (double)audio.SampleRate - audio.LatencySeconds;
+					sinceAnchor = 0;
+				}
+				else
+					sinceAnchor += elapsedSeconds;
+				Clock = Math.Max( Clock, anchorClock + Math.Min( sinceAnchor, Math.Max( audio.LatencySeconds, MinimumExtrapolationSeconds ) ) );
+				fixedClockOrigin = Clock;
+				fixedClock.Reset();
+				return;
+			}
+
+			// The final chunk may move the sink after the last audio-clock update. Use that position once before
+			// handing over, and do not charge this update's elapsed time as well. An unchanged position means it
+			// was already observed, so the fixed clock continues normally from the existing origin.
+			if ( played > 0 && played != anchorFrames )
 			{
 				anchorFrames = played;
 				anchorClock = played / (double)audio.SampleRate - audio.LatencySeconds;
-				sinceAnchor = 0;
+				Clock = Math.Max( Clock, anchorClock );
+				fixedClockOrigin = Clock;
+				fixedClock.Reset();
+				return;
 			}
-			else
-				sinceAnchor += elapsedSeconds;
-			Clock = Math.Max( Clock, anchorClock + Math.Min( sinceAnchor, Math.Max( audio.LatencySeconds, MinimumExtrapolationSeconds ) ) );
-			fixedClockOrigin = Clock;
-			fixedClock.Reset();
-			return;
 		}
 		fixedClock.Advance( elapsedSeconds, _ => { } );
 		Clock = fixedClockOrigin + fixedClock.TickCount * FixedStepClock.TickDuration;

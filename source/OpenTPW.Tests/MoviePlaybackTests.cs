@@ -95,6 +95,58 @@ public class MoviePlaybackTests
 		public void Dispose() => inner.Dispose();
 	}
 
+	/// <summary>Device whose reported position can advance by an exact final frame count, without buffer rounding.</summary>
+	private sealed class ExactPositionAudioOutput : IMovieAudioOutput
+	{
+		public ExactPositionAudioOutput( int sampleRate, double latencySeconds )
+		{
+			SampleRate = sampleRate;
+			LatencySeconds = latencySeconds;
+		}
+
+		public int SampleRate { get; }
+		public long PlayedFrames { get; private set; }
+		public long QueuedFrames { get; private set; }
+		public double LatencySeconds { get; }
+		public bool IsPlaying { get; private set; }
+
+		public void Queue( ReadOnlySpan<short> interleavedStereo )
+		{
+			if ( interleavedStereo.Length % 2 != 0 )
+				throw new ArgumentException( "Stereo PCM must contain whole frames.", nameof( interleavedStereo ) );
+			QueuedFrames += interleavedStereo.Length / 2;
+		}
+
+		public void Play() => IsPlaying = true;
+
+		public void Stop()
+		{
+			IsPlaying = false;
+			QueuedFrames = 0;
+		}
+
+		/// <summary>Takes an exact frame count, including a final partial device buffer.</summary>
+		public void Advance( long frames )
+		{
+			if ( frames < 0 || frames > QueuedFrames )
+				throw new ArgumentOutOfRangeException( nameof( frames ) );
+			QueuedFrames -= frames;
+			PlayedFrames += frames;
+		}
+
+		/// <summary>Reports a position independently of the queue for an observation-order control; not an SDL state guarantee.</summary>
+		public void ReportPlayedFrames( long frames )
+		{
+			if ( frames < PlayedFrames )
+				throw new ArgumentOutOfRangeException( nameof( frames ) );
+			PlayedFrames = frames;
+		}
+
+		public void DrainQueue() => QueuedFrames = 0;
+
+		public void Dispose() => Stop();
+	}
+
 	// ---- sync policy ----------------------------------------------------------------------------
 
 	[TestMethod]
@@ -204,6 +256,117 @@ public class MoviePlaybackTests
 		Assert.AreEqual( 2.0, playback.Duration, 1e-9 );
 		Assert.AreEqual( 60, playback.FramesDecoded + playback.FramesDropped );
 		Assert.IsTrue( playback.FramesDropped <= 1, playback.FramesDropped.ToString() );
+		Assert.AreEqual( MovieClockSource.FixedStep, playback.ClockSource );
+	}
+
+	[TestMethod]
+	public void FinalChunkWithZeroLatencyPositionsClockAndFrame()
+	{
+		var output = new ExactPositionAudioOutput( SampleRate, latencySeconds: 0 );
+		using var playback = new MoviePlayback( Movie( 30, 7 ), output );
+		playback.Update( 0 );
+		playback.Update( 0 ); // let the reader reach EOS; Clock stays at zero
+
+		output.Advance( 7L * BlockSamples );
+		Assert.AreEqual( 7L * BlockSamples, output.PlayedFrames );
+		Assert.AreEqual( 0L, output.QueuedFrames );
+
+		playback.Update( 0 );
+		Assert.AreEqual( playback.AudioDuration, playback.Clock, 1e-9 );
+		Assert.AreEqual( 6, playback.CurrentFrameIndex );
+		Assert.AreEqual( 5, playback.FramesDropped );
+		Assert.AreEqual( MovieClockSource.FixedStep, playback.ClockSource );
+	}
+
+	[TestMethod]
+	public void FinalChunkWithPositiveLatencyWaitsForRemainingLatency()
+	{
+		var latency = FixedStepClock.TickDuration * 4;
+		var output = new ExactPositionAudioOutput( SampleRate, latency );
+		using var playback = new MoviePlayback( Movie( 1, 7 ), output );
+		Assert.IsTrue( playback.AudioDuration > playback.VideoDuration );
+		playback.Update( 0 );
+		playback.Update( 0 );
+
+		output.Advance( 7L * BlockSamples );
+		playback.Update( 0 );
+		Assert.IsFalse( playback.IsFinished );
+		Assert.AreEqual( playback.AudioDuration - latency, playback.Clock, 1e-9 );
+
+		for ( var update = 0; update < 3; update++ )
+			playback.Update( FixedStepClock.TickDuration );
+		Assert.IsFalse( playback.IsFinished, "the remaining latency has not elapsed" );
+
+		playback.Update( FixedStepClock.TickDuration );
+		Assert.AreEqual( playback.AudioDuration, playback.Clock, 1e-9 );
+		// The strict duration comparison may need one more tick for floating-point rounding.
+		if ( !playback.IsFinished )
+			playback.Update( FixedStepClock.TickDuration );
+		Assert.IsTrue( playback.IsFinished );
+	}
+
+	[TestMethod]
+	public void FinalChunkDoesNotAddHandoffElapsed()
+	{
+		var latency = FixedStepClock.TickDuration;
+		var output = new ExactPositionAudioOutput( SampleRate, latency );
+		using var playback = new MoviePlayback( Movie( 30, 7 ), output );
+		playback.Update( 0 );
+		playback.Update( 0 );
+
+		output.Advance( 7L * BlockSamples );
+		playback.Update( FixedStepClock.TickDuration );
+		Assert.AreEqual( playback.AudioDuration - latency, playback.Clock, 1e-9 );
+
+		playback.Update( FixedStepClock.TickDuration );
+		Assert.AreEqual( playback.AudioDuration - latency + FixedStepClock.TickDuration, playback.Clock, 1e-9 );
+	}
+
+	[TestMethod]
+	public void AlreadyObservedFinalPositionDoesNotResetFixedOrigin()
+	{
+		var output = new ExactPositionAudioOutput( SampleRate, latencySeconds: 0 );
+		using var playback = new MoviePlayback( Movie( 30, 7 ), output );
+		playback.Update( 0 );
+		playback.Update( 0 );
+
+		output.ReportPlayedFrames( 7L * BlockSamples );
+		playback.Update( 0 );
+		Assert.AreEqual( playback.AudioDuration, playback.Clock, 1e-9 );
+		Assert.AreEqual( MovieClockSource.Audio, playback.ClockSource );
+
+		output.DrainQueue();
+		playback.Update( FixedStepClock.TickDuration );
+		Assert.AreEqual( playback.AudioDuration + FixedStepClock.TickDuration, playback.Clock, 1e-9 );
+		Assert.AreEqual( MovieClockSource.FixedStep, playback.ClockSource );
+	}
+
+	[TestMethod]
+	public void FinalChunkPreservesMonotonicOvershoot()
+	{
+		var output = new ExactPositionAudioOutput( SampleRate, latencySeconds: 0 );
+		using var playback = new MoviePlayback( Movie( 30, 1 ), output );
+		playback.Update( 0 );
+		playback.Update( 0 );
+
+		playback.Update( 0.05 );
+		var overshoot = playback.Clock;
+		Assert.IsTrue( overshoot > playback.AudioDuration );
+
+		output.Advance( 1L * BlockSamples );
+		playback.Update( 0 );
+		Assert.AreEqual( overshoot, playback.Clock, 1e-9 );
+		Assert.AreEqual( MovieClockSource.FixedStep, playback.ClockSource );
+	}
+
+	[TestMethod]
+	public void EmptySoundtrackWithSinkUsesFixedClock()
+	{
+		var output = new ExactPositionAudioOutput( SampleRate, latencySeconds: 0 );
+		using var playback = new MoviePlayback( Movie( 30, 0 ), output );
+		playback.Update( 0 );
+		playback.Update( FixedStepClock.TickDuration );
+		Assert.AreEqual( FixedStepClock.TickDuration, playback.Clock, 1e-9 );
 		Assert.AreEqual( MovieClockSource.FixedStep, playback.ClockSource );
 	}
 

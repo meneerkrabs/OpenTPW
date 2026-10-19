@@ -379,6 +379,13 @@ internal sealed partial class GameFlow : IDisposable
 		if ( original )
 			using ( LoadProfile.Measure( "enter-park-audio" ) )
 				GameAudio.EnterPark( levelName, level.Seed.SoundStream );
+		// [BIN:TPW-EXE:0x51C400 sound loader] a park started from an original save (a player's own or the shipped Easymode seed, Level.OriginalSaveSound) plays at the save's volumes until the options take over (docs/AUDIO.md, "Volumes of a loaded original save"); the player's options are not changed
+		if ( original && visit == null && level.OriginalSaveSound is { } savedSound )
+		{
+			var line = GameAudio.ApplySavedSound( savedSound, GameOptions.Current );
+			level.Park?.Import?.Report( line );
+			Log.Trace( line );
+		}
 		StartKind = level.Park?.Start.Kind;
 		AttachGuestSounds( level );
 		// [EXT:tpi-viewer] the edition capability policy runs the experimental Theme Park Inc slice: the shared world,

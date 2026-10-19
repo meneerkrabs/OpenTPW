@@ -209,6 +209,13 @@ public partial class Level : IDisposable
 	/// </summary>
 	public ParkVisitInfo? Visit { get; }
 	public bool IsReadOnlyVisit => Visit != null;
+
+	/// <summary>
+	/// The Sound block of the original save the park was started from: a player's own save (<c>--original-save</c>, the TPWS import) or the level's shipped
+	/// <c>Easymode.TPWI</c> (Instant Action, the reference start); null for a new Full Simulation park, a resumed OpenTPW park and a read-only visit.
+	/// </summary>
+	// [BIN:TPW-EXE:0x5ACCF0 park entry load] park entry (state 9 of 0x54E360) loads the newest file in the player's folder of the park through 0x414D40; an Instant Action player's folder holds the copy of the level's easymode.TPWI (0x5C8190 copies it when the player is created), so its Sound block plays as a loaded save's does
+	public SaveSoundData? OriginalSaveSound => !IsReadOnlyVisit && incLayout == null ? OriginalPark?.Save?.Sound : null;
 	/// <summary>True while this level runs the experimental Theme Park Inc slice: only the money economy (no staff, research or challenges), no HUD or advisor of the reference game.</summary>
 	public bool IsThemeParkIncSlice => GameEditions.IsThemeParkInc && OriginalPark != null;
 	/// <summary>The version 2 layout a visit applies instead of the shipped level import; null for version 1 packages and own parks.</summary>
@@ -598,9 +605,11 @@ public partial class Level : IDisposable
 		var costumes = GuestSpriteAtlas.LoadCostumes( park.LevelName );
 		var costumeHeads = GuestSpriteAtlas.LoadCostumeHeads( park.LevelName );
 		// [EXT:pools-swim] swimmers are drawn by the pools' own renderer with the swim sprites (RefreshPools), whatever they wear
-		GuestRenderer = new GuestRenderer( Guests, park.Heightfield, sprites ) { Draws = guest => (!(guest.IsSwimming || guest.InPoolActivity) || SwimmerRenderer == null) && (costumes.Count == 0 || !guest.InCostume), DrawsRideBody = guest => costumes.Count == 0 || !guest.BodySpriteInCostume };
+		// Reserve opaque bridge draw slots before every guest and staff sprite, including bridges built after swimmers appear.
+		PoolBridgeRenderer = new PoolBridgeRenderer( () => PoolBridges, Objects.Grid.Origin, PoolStyles.ForTheme( park.LevelName ) );
+		GuestRenderer = new GuestRenderer( Guests, park.Heightfield, sprites ) { FeetChooser = BridgeGuestFeet, Draws = guest => (!(guest.IsSwimming || guest.InPoolActivity) || SwimmerRenderer == null) && (costumes.Count == 0 || !guest.InCostume), DrawsRideBody = guest => costumes.Count == 0 || !guest.BodySpriteInCostume };
 		if ( costumes.Count > 0 )
-			CostumeRenderer = new GuestRenderer( Guests, park.Heightfield, costumes ) { Draws = guest => guest.InCostume && (!(guest.IsSwimming || guest.InPoolActivity) || SwimmerRenderer == null), DrawsRideBody = guest => guest.BodySpriteInCostume };
+			CostumeRenderer = new GuestRenderer( Guests, park.Heightfield, costumes ) { FeetChooser = BridgeGuestFeet, Draws = guest => guest.InCostume && (!(guest.IsSwimming || guest.InPoolActivity) || SwimmerRenderer == null), DrawsRideBody = guest => guest.BodySpriteInCostume };
 		// the riders of the bounce rides are drawn as bodies on the ride (tp.exe 0x00557AB0, BounceRiders), by the set of the guest's own kind
 		var bounceRiders = rideBodyPoses = new FlatRideBounceRiders( Objects );
 		GuestRenderer.BounceRiders = bounceRiders;

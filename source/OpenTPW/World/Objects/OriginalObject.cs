@@ -403,8 +403,64 @@ public class OriginalObject : Entity, IPointLightSource
 		foreach ( var (entity, node) in parts )
 		{
 			if ( hidden && node >= 0 )
-				entity.Hidden = animator.IsNodeHidden( node );
-			var transform = node < 0 ? placement : ObjectPlacement.SwapAxes( nodes[node] ) * placement;
+				entity.Hidden = animator.IsNodeHidden( node ) || PresentationHidden( node );
+			var transform = node < 0 ? placement : ObjectPlacement.SwapAxes( PresentationPose( node, nodes[node] ) ) * placement;
+			entity.TransformOverride = transform;
+			entity.Position = new Vector3( transform.M41, transform.M42, transform.M43 );
+		}
+	}
+
+	// [EXT:evening-torches-flicker] presentation-only local transforms of model nodes (the evening torches' flames, EveningFlames), null for a node drawn hidden: applied on the drawn parts only, never to the animator, the runtime,
+	// the lights or a save
+	private Dictionary<int, Matrix4x4?>? presentationNodes;
+
+	private Matrix4x4 PresentationPose( int node, Matrix4x4 pose ) => presentationNodes != null && presentationNodes.TryGetValue( node, out var local ) && local is { } matrix ? matrix * pose : pose;
+
+	private bool PresentationHidden( int node ) => presentationNodes != null && presentationNodes.TryGetValue( node, out var local ) && local == null;
+
+	/// <summary>
+	/// [EXT:evening-torches-flicker] Draws the parts of model node <paramref name="node"/> with <paramref name="local"/> applied in the node's own frame before its pose (a flame scaled about its base), or hides them when it is null
+	/// (a flame by day). Only the node's own parts are changed, not its children's (a flame node has none). Presentation only: the animator's node transforms and hidden nodes, which the lamps, the snow and the simulation read, are unchanged.
+	/// </summary>
+	/// <summary>[EXT:evening-torches-flicker] Takes away the presentation transform of <paramref name="node"/> (<see cref="SetPresentationNodeTransform"/>): its parts are drawn at the animator's pose again, hidden only when the animator hides them.</summary>
+	internal void ClearPresentationNodeTransform( int node )
+	{
+		if ( deleted || presentationNodes == null || !presentationNodes.Remove( node ) )
+			return;
+		var animator = Runtime.Animator;
+		var nodes = animator.NodeTransforms;
+		if ( node < 0 || node >= nodes.Count )
+			return;
+		var placement = Placement.ModelToEngine;
+		foreach ( var (entity, index) in parts )
+		{
+			if ( index != node )
+				continue;
+			entity.Hidden = animator.IsNodeHidden( node );
+			var transform = ObjectPlacement.SwapAxes( nodes[node] ) * placement;
+			entity.TransformOverride = transform;
+			entity.Position = new Vector3( transform.M41, transform.M42, transform.M43 );
+		}
+	}
+
+	internal void SetPresentationNodeTransform( int node, Matrix4x4? local )
+	{
+		if ( deleted || node < 0 )
+			return;
+		var animator = Runtime.Animator;
+		var nodes = animator.NodeTransforms;
+		if ( node >= nodes.Count )
+			return;
+		( presentationNodes ??= new Dictionary<int, Matrix4x4?>() )[node] = local;
+		var placement = Placement.ModelToEngine;
+		foreach ( var (entity, index) in parts )
+		{
+			if ( index != node )
+				continue;
+			entity.Hidden = local == null || animator.IsNodeHidden( node );
+			if ( local is not { } matrix )
+				continue;
+			var transform = ObjectPlacement.SwapAxes( matrix * nodes[node] ) * placement;
 			entity.TransformOverride = transform;
 			entity.Position = new Vector3( transform.M41, transform.M42, transform.M43 );
 		}

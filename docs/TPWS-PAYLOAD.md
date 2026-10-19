@@ -699,7 +699,9 @@ saved run state (`Level.ImportOriginalCoasters`, after `ImportOriginalScripts`).
    the two must be neighbours, as the cut `0x446740` leaves them, and their link bits 0x40000/0x80000 come only with the
    cut markers (closing the circuit, `0x442C70`, clears both).
 4. **Controller words.** The state (low nibble of `+4`), the ride mode (0x10, 0x40 the breakdown, 0x20), the power factor,
-   which must match the mode, and the seats per train are restored. The speed setting is not in the block and stays the
+   which must match the mode, and the seats per train are restored. A coaster that never ran is saved in state 1 with power 0:
+   the constructor's controller is zero-filled (`0x4368F0`) and only the first 1→2 transition (`0x43577D`) or a 0x40→0x10/0x20
+   step (`0x435931`, `0x43597F`) sets 1.0, so state 1 in mode 16 or 32 accepts power 0 as well as 1. The speed setting is not in the block and stays the
    constructor's 60.
 5. **Trains.** A runnable track is rated at that cap, and the trains in service (`+0x18`) keep their saved slots: the
    reference car's position (`+0x74`), the speed (`+0x78`) and the train flags 0x10..0x80. The first rebuild after a load

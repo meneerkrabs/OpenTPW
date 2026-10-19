@@ -145,7 +145,10 @@ internal static class OriginalCoasterImport
 		};
 		if ( (stateWord & ~0x7Fu) != 0 )
 			throw new InvalidDataException( $"{what} holds the state word 0x{stateWord:X} with bits beyond the state and the mode." );
-		if ( saved.PowerFactor != (breakdown == 1 ? 0f : 1f) )
+		// [BIN:TPW-EXE:0x4368F0 never-run power] the constructor's controller is zero-filled (GlobalAlloc 0x40) and its first 0x435730(ctl, 0x11) leaves +0x2C at 0: only the first 1->2 transition
+		// (0x43577D, mode 0x40 clear) or a 0x40->0x10/0x20 step (0x435931, 0x43597F) sets 1.0, so a coaster that never ran is saved in state 1, mode 16 or 32, with power 0 or 1
+		var neverRunPower = state == CoasterControllerState.Incomplete && breakdown != 1 && saved.PowerFactor == 0f;
+		if ( saved.PowerFactor != (breakdown == 1 ? 0f : 1f) && !neverRunPower )
 			throw new InvalidDataException( $"{what} holds the power factor {saved.PowerFactor} in ride mode {(stateWord & 0x70)}." );
 		// [BIN:TPW-EXE:0x43B330 coaster capacity] the seats per train (+0xF0) are what COAST 6 or the constructor stored: at least 1 and at most one train's and the fleet's head sockets
 		var seatBound = Math.Min( definition.HeadsPerTrain, definition.FleetHeads );

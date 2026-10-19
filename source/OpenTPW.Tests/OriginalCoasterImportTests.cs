@@ -265,6 +265,22 @@ public class OriginalCoasterImportTests
 	}
 
 	[TestMethod]
+	public void ACoasterThatNeverRanIsSavedWithoutPowerAndImports()
+	{
+		var definition = Definition();
+		var (builder, native) = Station( definition );
+		builder.Height = 30;
+		Assert.AreEqual( CoasterPlaceResult.Ok, builder.Place( 24, 20 ) );
+		builder.Place( 20, 20 );
+		// tp.exe's constructor zero-fills the controller and only the first 1->2 transition sets the power factor (0x4368F0, 0x435730), so a track never completed is saved with power 0
+		var saved = RoundTrip( native ) with { PowerFactor = 0f };
+		Assert.AreEqual( 0x11u, saved.Controller8 & 0x7Fu, "state 1, ride mode 16" );
+		var (imported, _) = Import( saved, definition );
+		Assert.AreEqual( CoasterControllerState.Incomplete, imported.State );
+		Assert.AreEqual( 1f, imported.PowerFactor, "OpenTPW derives the power from the mode; the first run sets 1.0 in the original too" );
+	}
+
+	[TestMethod]
 	public void ACircuitCutInTheMiddleImportsCutOpen()
 	{
 		var definition = Definition();

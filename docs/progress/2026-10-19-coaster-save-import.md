@@ -24,3 +24,5 @@ No real Theme Park World save with a coaster exists, so the import is verified a
 synthetic blocks. A test-only writer puts OpenTPW-built coasters into the original layout, and hand-made blocks cover
 the edge cases. The Theme Park Inc prebuilt coaster serves as a real-byte cross-check. No pin moved, and none was added: a
 coaster's content hashes differently on macOS arm64 and on x64 (libm), so the coaster tests assert relations.
+
+Review change: a coaster that never ran (state 1, mode 16 or 32, power 0, as tp.exe's zero-filled constructor saves it) imports instead of being refused.

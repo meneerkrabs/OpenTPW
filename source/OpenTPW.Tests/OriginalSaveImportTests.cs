@@ -198,8 +198,9 @@ public class OriginalSaveImportTests
 	{
 		string Line( string start ) => import.Evidence.Single( line => line.StartsWith( start, StringComparison.Ordinal ) );
 		var blocks = Line( "[APPROX:SAVE-010] Not imported:" );
-		foreach ( var model in new[] { "Weather", "ParkAnalyser", "TagSystem", "MechanicHq", "UIMsgReceiver" } )
+		foreach ( var model in new[] { "Weather", "TagSystem", "MechanicHq", "UIMsgReceiver" } )
 			StringAssert.Contains( blocks, $"{model} things (" );
+		StringAssert.Contains( blocks, "park analyser apart from its recent-research rings" );
 		var world = Line( "[APPROX:SAVE-010] World values not imported:" );
 		foreach ( var value in new[] { "world state ", "arrival vehicle sizes ", "current arrival vehicle thing ", "arrival bytes ", "calendar session start " } )
 			StringAssert.Contains( world, value );

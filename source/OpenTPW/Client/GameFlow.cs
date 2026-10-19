@@ -408,7 +408,7 @@ internal sealed partial class GameFlow : IDisposable
 			if ( Advisor != null )
 			{
 				Advisor.CaptionSink = Hud.PostAdvisorCaption;
-				Advisor.PlayerKeys = PlayerKeys;
+				Advisor.PlayerTickets = PlayerTickets;
 			}
 		}
 		if ( Advisor?.IsAttached != true && level.Park?.Import is { } import && level.OriginalPark?.Save?.Advisor is { } saved )
@@ -611,7 +611,7 @@ internal sealed partial class GameFlow : IDisposable
 			Level.SimulationTimeScale = parkBuild != null ? 0 : Hud.SimulationTimeScale;
 			Level.Update();
 			presence?.Update( Time.Delta );
-			Advisor?.Update( Hud.Paused );
+			Advisor?.Update( Hud.Paused, parkPaused: Level.SimulationTimeScale <= 0 );
 			UpdateAutosave( Level, Hud );
 			var parkLost = Level.Park?.Economy.IsBankrupt == true;
 			GameAudio.Update( Level.Guests?.GetStatistics().InPark, parkLost );
@@ -970,14 +970,15 @@ internal sealed partial class GameFlow : IDisposable
 		var framebuffer = global::Global.Render.MultisampledFramebuffer;
 		// The engine fog every fogged shader blends into: the level's fog colour in a park, the lobby's clear colour otherwise (RenderFog).
 		// [BIN:TPW-EXE:0x4080e0 fog colour] [0x8bd47c] is the one colour of the viewport clear, the sky's haze and the distant vertices
-		RenderFog.WorldColour = RenderFog.ColourOf( Level?.BackdropColour ?? RenderFog.LobbyColour );
+		// [EXT:evening] at dusk and night the evening extension darkens it (the level's WorldBackdropColour; the same colour at day)
+		RenderFog.WorldColour = RenderFog.ColourOf( Level?.WorldBackdropColour ?? RenderFog.LobbyColour );
 		if ( Level != null )
 		{
 			// The park's backdrop: the level's fog colour (what the original's viewport clear and the sky's haze blend with), then the sky over it.
 			// [BIN:TPW-EXE:0x4080e0 fog colour] the level load copies ThemeEngine.FogColour into the fog colour [0x8bd47c]; [BIN:TPW-EXE:0x5737aa clear] the viewport clear uses it when render flags & 0x4002000, else black
 			// [APPROX:UI-107] the clear is always the fog colour, since the park's render flags (0x4002000 bits of [0x8bcbc8]) are not traced; the sky is Level.DrawSky (World/Sky.cs)
 			backgroundBatch.Clear();
-			backgroundBatch.AddRectangle( new UiRect( 0, 0, framebuffer.Width, framebuffer.Height ), Level.BackdropColour );
+			backgroundBatch.AddRectangle( new UiRect( 0, 0, framebuffer.Width, framebuffer.Height ), Level.WorldBackdropColour );
 			backgroundRenderer.Draw( global::Global.Render.CommandList, backgroundBatch, framebuffer.Width, framebuffer.Height );
 			Level.DrawSky();
 			Level.Render();
@@ -1016,7 +1017,7 @@ internal sealed partial class GameFlow : IDisposable
 		Context.Canvas = CurrentCanvas();
 		Context.Batch.Clear();
 		// [BIN:STP-PPC:engine_shared 0x1D4B4 lightning flash] LightningFlash() sets a flag; the rain render then draws one full-screen white quad for exactly one frame and clears it (lobby only)
-		// [DATA:video 78:47-78:48] the capture shows the bolt with no full-screen flash: the top third's mean luminance stays at 143-149 over 4729.4-4730.8
+		// [DATA:video 78:47-78:48] the capture shows the bolt but no inverted frame (the top third's mean luminance stays at 143-149 over 4729.4-4730.8): a flash that lasts one frame at 60 Hz can fall between the capture's frames, so this does not contradict the inverted flash above
 		// [BIN:TPW-EXE:0x57ee30 flash flag] the flag is cleared once the quad is drawn: it lasts one frame
 		if ( Level == null && lobbyEffects.Flash )
 			lobbyEffects.Flash = false;
@@ -1071,12 +1072,19 @@ internal sealed partial class GameFlow : IDisposable
 			if ( onlineSession == null )
 			{
 				onlineSession = new OnlineSession( OnlineFolders ?? global::OpenTPW.OnlineFolders.FromEnvironment() );
-				chatOverlay = new UI.ChatOverlay( onlineSession ) { Hidden = () => presence != null };
+				// the chat park screen and a visit's chat mode show the room in the original chat overlay, also under a name popup or the postcard composer
+				// opened from it; elsewhere (a visit's HUD, F4) the corner box shows it
+				chatOverlay = new UI.ChatOverlay( onlineSession )
+				{
+					Hidden = () => (presence != null && Hud?.ChatMode == true) || ShowsChatScreen( Menu?.Stack ) || ShowsChatScreen( Hud?.Stack ),
+				};
 				global::Global.Render.OnOverlayRender += chatOverlay.Draw;
 			}
 			return onlineSession;
 		}
 	}
+
+	private static bool ShowsChatScreen( UiScreenStack? stack ) => stack?.Screens.Any( screen => screen.Name == UI.OnlineScreens.ChatScreenName ) == true;
 
 	/// <summary>The visit's online players (null: none).</summary>
 	internal ParkPresence? Presence => presence;

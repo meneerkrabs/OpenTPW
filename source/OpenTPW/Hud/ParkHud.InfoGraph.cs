@@ -25,7 +25,7 @@ public enum ParkInfoSeries
 public static class ParkInfoGraph
 {
 	/// <summary>The series mask the window starts with: the guests in the park (<c>0x753C48</c> = 8).</summary>
-	// [BIN:TPW-EXE:0x753C48 series mask] the mask is initialised to 8 (only the people-in-park toggle, 0x4A68BF) and kept by the window procedure across openings; the builder presses a toggle for each set bit (0x4A52A0)
+	// [BIN:TPW-EXE:0x753C48 series mask] the mask is initialised to 8 (only the people-in-park toggle, 0x4A68BF) and kept by the window procedure across openings (for the process; OpenTPW keeps it within a park, UI-914); the builder presses a toggle for each set bit (0x4A52A0)
 	public const ParkInfoSeries InitialSeries = ParkInfoSeries.People;
 
 	/// <summary>The period the window starts with: 1 year (<c>0x7CB39C</c> = 0).</summary>
@@ -46,14 +46,14 @@ public static class ParkInfoGraph
 	// [BIN:TPW-EXE:0x4A4750 series order] arrivals (bit 1), happiness (bit 2, the single ring 0x480570), stay (bit 4), people (bit 8) and rating (bit 0x10), each through 0x480460 with its colour record
 	public static readonly ParkInfoSeries[] DrawOrder = { ParkInfoSeries.Arrivals, ParkInfoSeries.Happiness, ParkInfoSeries.Stay, ParkInfoSeries.People, ParkInfoSeries.Rating };
 
-	/// <summary>The ring a series reads: the rating from the ledger's closed months, the others from the statistics history.</summary>
-	public static HistoryRing Ring( ParkInfoSeries series, ParkStatisticsHistory history, IEnumerable<int> ratingsOldestFirst ) => series switch
+	/// <summary>The dedicated statistics ring a series reads, including rating independently of financial history.</summary>
+	public static HistoryRing Ring( ParkInfoSeries series, ParkStatisticsHistory history ) => series switch
 	{
 		ParkInfoSeries.Arrivals => history.Arrivals,
 		ParkInfoSeries.Happiness => history.Happiness,
 		ParkInfoSeries.Stay => history.Stay,
 		ParkInfoSeries.People => history.People,
-		_ => HistoryRing.Of( ParkStatisticsHistory.MonthsKept, ratingsOldestFirst.Select( rating => (double)rating ) )
+		_ => history.Rating
 	};
 
 	/// <summary>The scale maximum of the selected series: the highest of their rings' maxima, never below 0 (the graph's scale runs 0 to this in ten divisions).</summary>
@@ -149,8 +149,7 @@ public sealed partial class ParkHud
 			var economy = owner.Status.EconomySource as ParkEconomy;
 			if ( economy == null || samples == 0 )
 				return;
-			var ratings = economy.Ledger.History.Select( month => month.ParkRating );
-			HistoryRing Ring( ParkInfoSeries series ) => ParkInfoGraph.Ring( series, economy.StatisticsHistory, ratings );
+			HistoryRing Ring( ParkInfoSeries series ) => ParkInfoGraph.Ring( series, economy.StatisticsHistory );
 			var maximum = ParkInfoGraph.ScaleMaximum( owner.parkInfoSeries, owner.parkInfoPeriod, Ring );
 			foreach ( var series in ParkInfoGraph.DrawOrder )
 			{

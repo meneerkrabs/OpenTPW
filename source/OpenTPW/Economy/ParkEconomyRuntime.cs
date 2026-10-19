@@ -14,10 +14,14 @@ public sealed class ParkEconomyRuntime
 		Import = import;
 		Economy.EventRaised += LogEvent;
 		Economy.EventRaised += ForwardEvent;
+		Economy.Objectives.PresentationPosted += ForwardChallengePresentation;
 	}
 
 	/// <summary>Events of the running economy, followed across <see cref="Load"/>.</summary>
 	public event Action<ParkEvent>? EventRaised;
+
+	/// <summary>Immutable challenge presentation messages, followed across economy replacement without changing gameplay events.</summary>
+	public event Action<ChallengePresentation>? ChallengePresentationPosted;
 
 	public ParkEconomy Economy { get; private set; }
 	public OriginalEconomyImport? Import { get; }
@@ -184,6 +188,8 @@ public sealed class ParkEconomyRuntime
 
 	private void ForwardEvent( ParkEvent item ) => EventRaised?.Invoke( item );
 
+	private void ForwardChallengePresentation( ChallengePresentation message ) => ChallengePresentationPosted?.Invoke( message );
+
 	private void LogEvent( ParkEvent item )
 	{
 		switch ( item.Kind )
@@ -227,9 +233,11 @@ public sealed class ParkEconomyRuntime
 			throw new InvalidDataException( $"The park save is a {loaded.Mode} park, not the running {Economy.Mode} park." );
 		Economy.EventRaised -= LogEvent;
 		Economy.EventRaised -= ForwardEvent;
+		Economy.Objectives.PresentationPosted -= ForwardChallengePresentation;
 		Economy = loaded;
 		Economy.EventRaised += LogEvent;
 		Economy.EventRaised += ForwardEvent;
+		Economy.Objectives.PresentationPosted += ForwardChallengePresentation;
 		if ( Guests != null )
 		{
 			Economy.GuestStatistics = Guests;

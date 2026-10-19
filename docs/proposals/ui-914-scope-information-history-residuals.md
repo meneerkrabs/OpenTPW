@@ -1,52 +1,30 @@
 # UI-914: Scope information history residuals
 
 ## Status and classification
-- Plan-only draft proposal; no implementation, tests-run claim, retirement or merge.
-- Classification: `missing_behavior`.
-- Baseline: `meneerkrabs/OpenTPW` main `5ccddcab` (2026-10-18).
-- One ID per proposal; shared dependencies are coordination edges, not duplicated ownership.
+- Bounded implementation: TPW native statistics histories and independent host rating persistence.
+- Classification: `missing_behavior`. UI-914 remains open; this is not retirement or full park-information fidelity.
+- Implementation baseline: main `dee52e34` (October 19, 2026). The original proposal progress fragment is preserved unchanged.
+- No original executable execution, redistributed game assets, private source material, or native statistics export changes.
 
-## Source-verified residual
-Original-save history rings are not imported; stay history derives simulated seconds; count alignment/icon re-show and census semantics remain unverified despite complete main window.
+## Implemented boundary
+`SaveParkStatistics` resolves through `OriginalParkImport`'s World-referenced model-13 analyser and reads five monthly histories, live arrivals and recent stays. Constructor, serializer, month producer and graph-consumer traces agree on the fixed TPW wire layout. The complete body and preceding capacities are checked before reading selected rings. Malformed selected metadata or active nonfinite happiness rejects the bundle before economy application. Signed values and each ring's independent physical head/wrapped state survive; inactive host slots become zero, while immutable parser records retain raw words.
 
-## Source sites
-- `source/OpenTPW/Economy/ParkStatisticsHistory.cs:95` — APPROX annotation and adjacent implementation inspected.
-- `source/OpenTPW/Hud/ParkHud.InfoWindow.cs:19` — APPROX annotation and adjacent implementation inspected.
-- `source/OpenTPW/Hud/ParkHud.InfoWindow.cs:213` — APPROX annotation and adjacent implementation inspected.
-- `source/OpenTPW/World/Guests/GuestSimulation.cs:1490` — APPROX annotation and adjacent implementation inspected.
+`ParkStatisticsHistory.Rating` is independent of the financial ledger. Import creates no bank months. Month close samples rating once and shares that value with the ledger. Host JSON captures the ring, including an explicitly empty rating when ledger history exists. Only absent legacy rating or an absent legacy statistics section seeds rating from existing ledger months, once at restoration. The graph's live draw consumes the independent ring, and statistics remain outside the simulation digest.
 
-## Implementation cross-check
-- `source/OpenTPW/Economy/ParkStatisticsHistory.cs:96`: `public sealed class ParkStatisticsHistory`
-- `source/OpenTPW/Hud/ParkHud.InfoWindow.cs:20`: `private bool[]? parkInfoIcons;`
-- Existing behavior described above was checked against implementation, not only the register summary.
-- The presence of an APPROX marker alone is not evidence of an absent feature.
+## Evidence and tests
+- Wire provenance: analyser constructor `0x4C58C0`, serializer `0x4C5D70`, word-ring serializer `0x4CDF00`, month producer `0x4C7720`, graph dispatch `0x4A4750`.
+- Fixed body 73,536 bytes; first monthly record at body offset 62,590; monthly stride 589; selected ordinals people 9, arrivals 12, happiness 13, stay 14 and rating 15; recent stays at 72,014.
+- Asset-free regression fixtures cover identities, offsets, truncation, prefix capacities, independent ring state, signed and floating interpretation, atomic refusal, continuation, immutable copies, legacy migration, graph drawing and ledger/RNG/hash controls.
+- An asset-gated shipped-save test checks one historical month: people 0, arrivals 13, happiness 0, stay 0 and rating 18; recent stays empty. No fixture bytes are committed.
+- Python source integration guards supplement the existing full C# CI suite; they do not replace C# execution. The implementation workspace has no .NET SDK, so local C# build/test execution is explicitly unverified pending CI.
 
-## Evidence needed
-- Original ring serialization and arrival stamp, icon message 0x80 handler, count alignment byte and ride/queue cell state.
-- Available private Data contains assets, not an original executable; no new binary trace was obtained in this audit.
-- Existing address annotations are provenance leads, not a claim that this audit independently verified instructions.
-- Any original captures/assets remain private; fixtures should be synthetic or references/hashes, not redistributed game media.
+## Still open
+- Theme Park Inc has different variable-count analyser records; none of these TPW ordinal meanings are transferred to it.
+- No real long-running/wrapped save corpus was available. Wrapped and continuation fixtures are synthetic checks against the traced contract.
+- The guest stay source, count alignment/icon re-show, census semantics, cross-park graph preferences and display-resolution behavior remain separate UI-914/UI-907/UI-060/GUEST-920 work. This slice changes no icon or count-cell evidence and does not edit `ParkHud.InfoWindow.cs`.
+- Native statistics export remains template preservation; normalized host JSON cannot claim byte-identical native analyser reproduction.
 
-## Bounded investigation and implementation plan
-1. Confirm current ownership and rebase the proposal against the latest main before runtime changes.
-2. Stage original-history import with save owner; keep guest time conversion separate; investigate UI-only questions without claiming the whole window missing.
-3. Turn each verified behavioral distinction into a small deterministic regression fixture before editing runtime paths.
-4. Keep unknown behavior explicitly unresolved; an evidence-only outcome is valid if no mismatch is established.
-5. Submit any later implementation with exact evidence, changed scope and test output for review.
-
-## Acceptance tests to author and run later
-- Known original ring values and wrap; empty save; stay turn boundaries; icon empty-to-nonempty/reopen; count alignment; riding/queued census.
-- Run the nearest existing unit suite plus targeted integration/visual checks for changed behavior.
-- Compare baseline and candidate with identical inputs; label screenshots by platform, display settings and state.
-- Report unsupported/corpus-external cases separately; synthetic consistency alone is not original-fidelity proof.
-
-## Ownership and overlap
-- Consult: SAVE-920..923, GUEST-920, UI-024, UI-060, UI-907 and guest/history owners.
-- Do not overwrite another worker's runtime edits or duplicate an existing active implementation PR.
-- Merged UI #433 and languages #423 are baseline work, not open implementation dependencies.
-- Evening #439 is an extension and is not proof of original lighting or behavior.
-
-## Completion boundary
-- This deliverable is a documentation proposal only; no gameplay source files are changed by this PR.
-- Runtime work remains blocked on the evidence/ownership decisions listed above where applicable.
-- No approximation is retired by creating this plan; no PR is claimed implemented or ready to merge.
+## Ownership and acceptance
+- Coordinate with save, guest/history and UI owners; preserve concurrent bridge, winter, RecentItems, RoleOrder and ArrivalWaves work.
+- Review codec and persistence independently, retain existing complete CI checks, and verify the actual published head before review/merge decisions.
+- A successful source guard or synthetic test is not original execution, pixel parity, or qualification of unsupported/corpus-external cases.

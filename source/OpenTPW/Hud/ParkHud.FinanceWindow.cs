@@ -123,6 +123,7 @@ public sealed partial class ParkHud
 			Color = UiColors.Title, Align = UiAlign.Center, Fit = true, Bounds = Rect( 789, 74, 1261, 153 ), Anchor = UiAnchor.Center } );
 		screen.Add( new FinanceGraph( this ) { Id = "graph", Bounds = Rect( 741, 291, 1638, 828 ), Anchor = UiAnchor.Center } );
 		// [DATA:Mac finance table 0x49ee4:74356-74358] three b_stoggle period buttons, 1 / 3 / 12 years.
+		// Finance table 0x751ca8 is not generated. These three are the year radio group (type 8, style 0x11), so they play 0xBD. The series toggles below are not that group and stay on 0x1F.
 		foreach ( var (years, label, bounds) in new[]
 		{
 			(1, UIStrings.Year1, Rect( 792, 211, 1050, 281 )),
@@ -131,7 +132,7 @@ public sealed partial class ParkHud
 		} )
 		{
 			var selectedYears = years;
-			screen.Add( new UiButton { Id = $"period{years}", Model = "b_stoggle", Text = () => strings[label],
+			screen.Add( new UiButton { Id = $"period{years}", Model = "b_stoggle", Text = () => strings[label], ClickSound = GameAudio.SelectClickEvent,
 				Font = fonts => fonts.Small, Selected = () => financeYears == selectedYears, Clicked = () => SetFinancePeriod( selectedYears ),
 				Bounds = bounds, Anchor = UiAnchor.Center } );
 		}

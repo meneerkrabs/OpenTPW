@@ -1,0 +1,7 @@
+## Visitor-info arrows follow the live thing chain (October 19, 2026)
+
+The visitor-info window's next and previous buttons now share the visitor locator's live ThingPool candidate projection, preserving the restored/reused slot order and wrapping in both directions. Numeric IDs are no longer treated as chronology. Riding, guard-held, queueing and hidden live guests stay eligible; rejected used slots and duplicate Gone claims cannot leak back through the explicit host-only pool-free fallback.
+
+Changed selections immediately refresh their title and stats; a singleton leaves the existing four-second refresh age intact. Missing/Gone current visitors still refuse navigation and close on the next UI update, with no locator-style stale-selection recovery. Locator/staff behavior is unchanged. The destruction-order comment now correctly places type 2 after enqueueing, before the request returns.
+
+Synthetic real-callback C# regressions cover order, reuse/restore, filters, lifecycle, refresh and snapshot/RNG/hash nonmutation; Python source guards are wired into CI. The local environment has no .NET SDK, so C# execution and visual fidelity are not claimed here and require exact-head CI/visual validation. [UI-910](../proposals/ui-910-add-visitor-portrait-compatibility-plan.md) remains open for the visitor portrait and independent residuals; the old portrait speed annotation is not assumed correct.

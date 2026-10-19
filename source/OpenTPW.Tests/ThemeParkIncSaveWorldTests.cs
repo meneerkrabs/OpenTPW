@@ -377,6 +377,7 @@ public class ThemeParkIncSaveWorldTests
 		var payload = Prebuilt();
 		var park = OriginalParkImport.ImportThemeParkInc( payload, map );
 		Assert.IsNotNull( park.ThemeParkIncWorld );
+		Assert.IsNull( park.Statistics, "TPW history ordinals are never inferred for the TPI analyser" );
 		Assert.AreEqual( 23, park.ThemeParkIncObjects.Count );
 		foreach ( var item in park.ThemeParkIncObjects )
 		{

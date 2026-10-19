@@ -173,8 +173,9 @@ ID), `SaveStaffHq` (9), `SaveAdvisorController` (11: eight 21-byte pending
 records, three raw words, 351 history entries, the current record),
 `SaveResearchLab` (14, records raw), `SaveBank` (16), `SaveChallengeSystem`
 (19) and `SaveGuest` (1, `SaveGuests.cs`). The mechanic HQ (10), tag system (12),
-park analyser (13), weather (15) and UI receiver (17) are walked by width and not
-decoded.
+weather (15) and UI receiver (17) are walked by width and not decoded. The park
+analyser (13) has bounded recent-research and statistics readers described below;
+its remaining state stays opaque.
 
 ### Person and staff (`SavePerson`, `SaveStaff`)
 
@@ -663,25 +664,16 @@ A park started from the save (Instant Action, or the reference start) then runs
 `OriginalEconomyImport.Apply` (docs/ECONOMY.md, "Original save import") and the
 automatic advisor takes the saved controller (docs/LIPS.md). `Import` also parses the
 Coasters block (`SaveCoasterBlock`; a block that breaks its traced contract refuses the save) and
-exposes it as `CoasterBlock`, with `ObjectsAt`/`AttractionsAt` cell joins for consumers; no coaster
-state is imported. Imported: park turn
-and date, bank balance, admission fee, annual profit and bought loans, each
-object's price, cost of goods, upgrade level, state of repair, life gauge and walk-away count
-(also for objects whose footprint is unverified), staff (type, grade, training percentage, happiness, state, hire time), the park
-open flag, and the advisor's pending advice and history of bound messages. Every
-value read but not imported is reported with its SAVE approximation (SAVE-002 to
-SAVE-010 in the fidelity register): guests, staff
-names/jobs/positions/energy/idle ticks/role suffixes, the hiring pool, the
-challenge system's timing, switch bytes, Value and ActualThing, each
-attraction's state, chance of winning, third gauge, totals, name lines,
-quality of goods, queue size, customer
-count, time stamp and mesh instance ID, research, unmapped bank
-words and the loan offers' Available flags, the staff HQ's training budgets,
-strike words, strike levels and trained byte, the world state,
-arrival variables and bytes, the calendar session start, the advisor
-controller's presentation words and current record, the weather, park analyser,
-tag system, mechanic HQ and UI receiver things. The raw dumps of the original's own engine structures (the Scripts, RSSE, Particles, Sound, message-centre, Track ride and Flying ride blocks) are
-not restored: OpenTPW's engines restart from the archives (`[EXT:original-engine-state-dumps]`, formerly part of SAVE-010); the exceptions are the Particles pool (restored, SAVE-013) and the RSSE block's script ids, list order, next id and pass counter (applied to the imported objects' scripts, `SavedScriptImport`; the scripts restart their programs). Staff
+exposes it as `CoasterBlock`, with `ObjectsAt`/`AttractionsAt` cell joins for consumers. A park whose block lists a coaster is refused
+(`RequireSupportedCoasterRuntime`, SAVE-920): the headers, sections, trains and cars are decoded and no runtime track, controller or train is rebuilt.
+Imported: park turn and date, the world generator state `mRandomSeed` (`World.Restore`, SAVE-001 retired), bank balance, admission fee, annual profit and bought loans, each
+object's price, cost of goods, upgrade level, state of repair, life gauge, walk-away count, operating state, chance of winning, quality of goods, customer
+count and time stamp (also for objects whose footprint is unverified), staff (type, grade, training percentage, happiness, energy, name, job, hire time, idle stamp and patrol), the hiring pool, the staff HQ's training budgets and strike levels, research (finished and started projects, each category's effort and current project, the work load and the highest open groups), the analyser's four recent-research rings, the challenges, the park
+open flag, and the advisor's pending advice and history of bound messages. The saved guests are restored by `GuestSimulation.ImportOriginal`: states 0–10, 18, 19 and 21 keep their thing id, type, cash, meters and destination and walk on; guests queueing or boarding (11–14), leaving a ride (15), using an attraction (16), held by a guard (17), walking to the arrival vehicle (20), or standing off the paths, are not imported (SAVE-002).
+Still read and not imported, each reported with its SAVE approximation: those dropped guests (SAVE-002), a research project of an object the archives lack or a current project the picker would not offer (SAVE-007), the hiring
+pool's candidates saved on the pointer (SAVE-004), the advisor presentation block, the world state, the arrival variables and bytes, the calendar session start, the advisor
+controller's presentation words (its current record is the last tutorial advice when an automatic advisor attaches) and the weather, park analyser apart from its recent-research rings,
+tag system, mechanic HQ and UI receiver things (SAVE-010). The Scripts block's sprite scripts, the saved guests' and litter's animations, are decoded and not applied (SAVE-013): guests and staff animate from their state and litter from the cell. The Particles pool is restored, minus the emitter and effector fields SAVE-013 drops. The RSSE block's script ids, list order, next id, pass counter and run state are applied (`SavedScriptImport`, `RideVM.ImportSavedRunState`: the program counter, stack, variables, limbo table, waits and timers on the saved game clock); the records' object lists, node, bounce and walk tables, and the animations playing on their objects, are not restored. A script with a saved child or sound child keeps its fresh state; saved child records are left for their parent to recreate. The Sound block, the message-centre lists and the Track and Flying ride chunks are not restored (`[EXT:original-engine-state-dumps]`). Staff
 values outside OpenTPW's ranges (happiness outside the traced 0–100, a 100 %
 training percentage, a state without a STAFFSTATES entry, a hire time outside
 the calendar or inside a park turn, which is rounded down to the turn) are adjusted and each adjustment is reported; an attraction whose
@@ -738,6 +730,14 @@ that `0x504090` and `0x504140` set with the researchers) and each researchable o
 new park's lab is built, not carried, and reads back to the byte in all four (`OriginalResearchExportTests`); only the shipped Easymode save lists a subset (24 of the 44), which a template of the same level keeps.
 The eleven private saves come back through import and export with the same fields (the played saves' finished projects hold their cost where the save kept the overshoot).
 
+**Recent research (`SaveRecentResearch`).** The world-referenced TPW park analyser (model 13) carries four capacity-three rings at body bytes 62,492 through 62,559. Each 17-byte record holds head i32, capacity i32, wrapped u8, scratch u16 and three physical u16 slots. Import checks the referenced model and bounds, retains scratch and inactive values, and replaces runtime history without creating completion events. With explicit `OriginalParkExportOptions.Research`, export writes only this 68-byte range, even for empty history; without it, the template history is preserved. All other analyser bytes remain untouched. The host rejects malformed ring counts, capacities, head/wrapped combinations and unsigned-short values before applying state; this bounded validation is a defensive host policy, stronger than the original loader. These offsets and the paid-completion policy are TPW-specific, not a Theme Park Inc interpretation. Synthetic regression tests cover typed references, byte-preserving round trips and malformed input; they do not claim original execution or pixel parity.
+
+**Statistics (`SaveParkStatistics`).** The World-referenced TPW analyser imports five independent 144-slot monthly rings, its live arrivals accumulator and the 50-slot recent-stay ring. Relative to the body (including the eight-byte thing base), the monthly records start at 62,590 and occupy 589 bytes each: signed head, capacity, wrapped byte, scratch word and 144 physical words. The graph selects ordinals 9 (people), 12 (arrivals), 13 (binary32 happiness), 14 (whole-day stay) and 15 (rating); recent stays start at 72,014. The serializer (`0x4C5D70` / `0x4CDF00`), graph dispatch (`0x4A4750`) and month producer (`0x4C7720`) establish these meanings, independently of equal record sizes.
+
+The reader requires the complete 73,536-byte fixed body, checks all four short-ring and sixteen monthly capacities, and validates each selected ring's head and wrapped byte. Only active happiness words are reinterpreted as floats and required to be finite; signed integer samples are preserved, including negatives and outliers. Inactive words are retained in the immutable native carrier but normalized to zero in host statistics. Negative live arrivals are rejected by host continuation policy. A malformed selected ring or continuation input rejects the entire bundle before economy application; there is no partial graph recovery. No timestamps, old bank transactions, financial months or simulation caches are invented.
+
+Rating has its own host ring. Month close samples it once for both statistics and the financial ledger. Legacy host saves lacking rating seed it once from their existing ledger; a present empty ring remains empty. The whole statistics section stays excluded from the simulation hash. Native statistics export is unchanged: original export keeps the template's statistics bytes, and host JSON is not a byte-identical analyser round trip. Theme Park Inc's variable-count analyser has no inferred ordinal mapping here. The shipped one-month TPW fixture is an import witness; wrapped and continuation coverage is synthetic, not a claim of a real long-running save or original execution. UI-914 remains open for its other residuals.
+
 **Things of a new park (`SaveNewParkThings`).** The park analyser (73,536 bytes: the grid words, 1,024 cell records whose extents the setup `0x4C7A90` fills, the history rings and extreme trackers at the
 constructor `0x4C58C0`'s values, in the order of the serializer `0x4C5D70`), the advisor controller (`0x599E70`; its first pending record, message 0 at score 100,000, is in all four restart saves and its posting site is
 not read), the tag system, the UI message receiver, the mechanic HQ and the staff HQ are generated, and equal the four restart saves' bodies byte for byte (`SaveNewParkThingsTests`).
@@ -753,7 +753,7 @@ constructors and the object models' node counts next.
 **Import of the script run state.** The Clock block's first word is the game clock the RSSE records' absolute deadlines count from (the Fantasy corpus seaplane is saved inside a `WAITANIM` 4,873 ms short of its
 deadline, `0x553783` and `0x553828` store the deadline at `+0xA0` and rewind the program counter): an imported park's script world starts its scheduler clock there and each matched script resumes at its saved
 program counter with its stack, variables, limbo table, waits and timers (`SavedScriptImport`, `RideVM.ImportSavedRunState`). The object lists, node, bounce and walk tables of the records, and the animations
-playing on their objects, are not restored.
+playing on their objects, are not restored. A script with a saved child or sound child keeps its fresh state; saved child records are left for their parent to recreate.
 
 ## Tests
 

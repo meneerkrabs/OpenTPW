@@ -9,7 +9,7 @@ internal static class Game
 	public static void Run( string[] args )
 	{
 		Log = new();
-		SdlMovieAudioOutput.Suppressed = IsSilentRun( args, Environment.GetEnvironmentVariable( "OPENTPW_SILENT" ) );
+		SdlMovieAudioOutput.Suppressed = IsSilentRun( args, Environment.GetEnvironmentVariable( "OPENTPW_SILENT" ), Environment.GetEnvironmentVariable( "OPENTPW_OFFSCREEN" ) );
 		Window.OffscreenRequested = IsOffscreenRun( args, Environment.GetEnvironmentVariable( "OPENTPW_OFFSCREEN" ) );
 		var tgqExportIndex = Array.IndexOf(args, "--export-tgq-png");
 		if (tgqExportIndex >= 0)
@@ -425,13 +425,8 @@ internal static class Game
 					return;
 				Render.PostUpdate -= AddDebugEveningLamps;
 				var columns = (int)MathF.Ceiling( MathF.Sqrt( lampCount ) );
-				// the grid is 40 engine units (20 cells) across whatever the count, so the lamps crowd into the view
 				var spacing = 40f / columns;
-				var centre = new System.Numerics.Vector3( park.Target.X, park.Target.Y, park.Target.Z );
-				var lamps = new List<PointLight>();
-				for ( var index = 0; index < lampCount; index++ )
-					lamps.Add( new PointLight( centre + new System.Numerics.Vector3( ( index % columns - columns / 2 ) * spacing, ( index / columns - columns / 2 ) * spacing, 2.2f ), new System.Numerics.Vector3( 1.0f, 0.84f, 0.55f ), PointLightMath.ModelUnitsToEngine( 55 ) ) );
-				level.PointLights.Add( new DebugEveningLampSource( lamps, () => level.Look.LampLevel ) );
+				level.SetDebugEveningLamps( lampCount, new System.Numerics.Vector3( park.Target.X, park.Target.Y, park.Target.Z ) );
 				Log.Trace( $"--debug-evening-lamps: {lampCount} lamp lights on a {columns} x {columns} grid, {spacing:0.##} engine units apart, around the camera target." );
 			}
 		}
@@ -491,12 +486,44 @@ internal static class Game
 				Log.Trace( $"--debug-weather: quality {debugQuality} applied (snow {weather.Snow}, rain {weather.Rain}, lightning {weather.Lightning}, target {weather.TargetDrops} drops)." );
 			}
 		}
+		// [EXT:debug-snow-cover] smoke-only: sets the settled snow cover (0..1) of the park as soon as it exists, so captures can show full cover (or its melt, with the weather dry) without waiting for
+		// the weather's turns; the extension must be on (it is by default). Presentation only: the cover is in no hash and no mod record.
+		var debugSnowCover = GetOption( args, "--debug-snow-cover", "a snow cover 0..1 for smoke captures" );
+		if ( debugSnowCover != null )
+		{
+			if ( !double.TryParse( debugSnowCover, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var debugCover ) || debugCover is < 0 or > 1 )
+				throw new ArgumentException( "--debug-snow-cover expects a cover from 0 to 1." );
+			Render.PostUpdate += ApplyDebugSnowCover;
+			void ApplyDebugSnowCover()
+			{
+				if ( flow.Level?.Snow is not { } snow )
+					return;
+				Render.PostUpdate -= ApplyDebugSnowCover;
+				snow.Set( debugCover );
+				Log.Trace( $"--debug-snow-cover: cover {debugCover} set." );
+			}
+		}
 		// [EXT:debug-umbrellas] smoke-only (Debug builds): gives every guest an open umbrella (colour from its id, so all three show) and keeps it open, so a capture shows the umbrellas without a brolly shop,
 		// a rain spell (use it with --debug-weather) or a lucky guest. It writes the guests' umbrella fields directly (a debug aid: the simulation of such a run is not the park's own, nothing is saved from it).
 		// --debug-umbrellas-follow zoom,yaw holds the park camera on the lowest-numbered guest in view at that zoom value and yaw (degrees) for a close look at one umbrella.
 		var followText = GetOption( args, "--debug-umbrellas-follow", "zoom,yaw for the camera that follows the first guest" )?.Split( ',' ).Select( value => float.Parse( value, System.Globalization.CultureInfo.InvariantCulture ) ).ToArray();
 		if ( args.Contains( "--debug-umbrellas" ) )
 			Render.PostUpdate += GiveEveryGuestAnUmbrella;
+		// [EXT:debug-umbrellas] --debug-umbrellas-crowd N (with --debug-umbrellas, a measurement aid like the browser harness's PerfUmbrellaCrowd): once, when the park's guests exist, adds N guests on the walkable path cells
+		// (UmbrellaPerf.Stage, one each and round again), so the frame cost of a crowd of umbrellas can be measured with --perf-run.
+		if ( GetOption( args, "--debug-umbrellas-crowd", "a number of extra guests" ) is { } crowdText )
+		{
+			var crowd = int.TryParse( crowdText, out var parsedCrowd ) && parsedCrowd > 0 ? parsedCrowd : throw new ArgumentException( "--debug-umbrellas-crowd expects a positive number of guests." );
+			var crowdStaged = false;
+			Render.PostUpdate += () =>
+			{
+				if ( crowdStaged || flow.Level?.Guests is not { } crowdGuests )
+					return;
+				crowdStaged = true;
+				var staged = UmbrellaPerf.Stage( crowdGuests, null, crowd, 0, args.Contains( "--debug-umbrellas" ) );
+				Log.Trace( $"--debug-umbrellas-crowd: {staged.Spawned} guests added, {staged.Guests} in the park, {staged.Umbrellas} with an open umbrella." );
+			};
+		}
 		void GiveEveryGuestAnUmbrella()
 		{
 			if ( flow.Level?.Guests is not { } umbrellaGuests )
@@ -514,6 +541,39 @@ internal static class Game
 				umbrellaGuest.UmbrellaState = UmbrellaRules.StateOpen;
 				umbrellaGuest.UmbrellaType = umbrellaGuest.Id % UmbrellaRules.Colours;
 				umbrellaGuest.UmbrellaDueTurn = 0;
+			}
+		}
+		// [EXT:debug-winter] smoke-only (Debug builds): dresses every guest in warm items. --debug-winter alone gives a head item by the guest's id (HeadItemOf) and mittens on all but every fourth guest, so a capture shows hats, earmuffs,
+		// mittens and the head item alone; --debug-winter hat|earmuffs|head|mittens|all|costume forces one look (costume: every second guest in costume) (all: the guest's own head item and mittens). With --debug-umbrellas-follow zoom,yaw it holds the park camera on the lowest-numbered guest
+		// in view, as --debug-umbrellas does (when both are given the umbrellas' hook moves the camera). It writes the guests' item field directly (a debug aid: the simulation of such a run is not the park's own, nothing is saved from it).
+		var winterIndex = Array.IndexOf( args, "--debug-winter" );
+		var winterLook = winterIndex >= 0 && winterIndex + 1 < args.Length && !args[winterIndex + 1].StartsWith( "--", StringComparison.Ordinal ) ? args[winterIndex + 1] : "";
+		if ( winterIndex >= 0 )
+			Render.PostUpdate += DressEveryGuestWarm;
+		void DressEveryGuestWarm()
+		{
+			if ( flow.Level?.Guests is not { } winterGuests )
+				return;
+			if ( !args.Contains( "--debug-umbrellas" ) && followText is [var winterZoom, var winterYaw] && Camera.Mode is ParkCameraMode winterCamera && flow.Level.OriginalPark is { } winterPark )
+				if ( winterGuests.Guests.Where( candidate => candidate.IsVisible && float.IsFinite( candidate.DrawX ) ).OrderBy( candidate => candidate.Id ).FirstOrDefault() is { } followed )
+				{
+					var spot = GuestRenderer.CellToEngine( winterPark.Heightfield, followed.DrawX, followed.DrawY );
+					winterCamera.SetPose( new System.Numerics.Vector3( spot.X, spot.Y, 0 ), winterZoom, winterYaw );
+				}
+			foreach ( var winterGuest in winterGuests.Guests )
+			{
+				if ( winterLook == "costume" )
+					winterGuest.InCostume = winterGuest.Id % 2 == 0;
+				winterGuest.WarmItems = winterLook switch
+				{
+					"hat" => WinterRules.Hat | WinterRules.Mittens,
+					"earmuffs" => WinterRules.Earmuffs | WinterRules.Mittens,
+					"head" => WinterRules.HeadItemOf( winterGuest.Id ),
+					"mittens" => WinterRules.Mittens,
+					"all" => WinterRules.HeadItemOf( winterGuest.Id ) | WinterRules.Mittens,
+					"costume" => WinterRules.HeadItemOf( winterGuest.Id ) | WinterRules.Mittens,
+					_ => WinterRules.HeadItemOf( winterGuest.Id ) | (winterGuest.Id % 4 == 3 ? 0 : WinterRules.Mittens)
+				};
 			}
 		}
 		// [EXT:debug-particle] smoke-only: once the original level is up, starts template effects (ids, comma separated) at an engine position
@@ -602,7 +662,11 @@ internal static class Game
 					return;
 				Render.PostUpdate -= AddDebugLight;
 				var colour = lightValues.Length == 7 ? new System.Numerics.Vector3( lightValues[4], lightValues[5], lightValues[6] ) : System.Numerics.Vector3.One;
-				var light = new PointLight( new System.Numerics.Vector3( park.Target.X + lightValues[0], park.Target.Y + lightValues[1], park.Target.Z + lightValues[2] ), colour, lightValues[3] );
+				// with --capture-camera the held camera's ground target is the origin (the live camera may still be elsewhere when the light is added), as for --debug-pool
+				var lightCamera = GetOption( args, "--capture-camera", "x,y,height,yaw" )?.Split( ',' ).Select( value => float.Parse( value, System.Globalization.CultureInfo.InvariantCulture ) ).ToArray();
+				var lightX = lightCamera is { Length: >= 2 } ? lightCamera[0] : park.Target.X;
+				var lightY = lightCamera is { Length: >= 2 } ? lightCamera[1] : park.Target.Y;
+				var light = new PointLight( new System.Numerics.Vector3( lightX + lightValues[0], lightY + lightValues[1], park.Target.Z + lightValues[2] ), colour, lightValues[3] );
 				level.PointLights.Add( new FixedPointLightSource( light ) );
 				Log.Trace( FormattableString.Invariant( $"--debug-light: a point light at {light.Position.X:0.##},{light.Position.Y:0.##},{light.Position.Z:0.##}, radius {light.Radius:0.##}, colour {colour.X:0.##},{colour.Y:0.##},{colour.Z:0.##}." ) );
 			}
@@ -939,13 +1003,28 @@ internal static class Game
 
 	/// <summary>The CD launcher screen for the game's language, or null when it is disabled or the CD's Autorun files are absent.</summary>
 	/// <summary>
-	/// [EXT:silent-automated-runs] smokes, captures and park-resume runs open no audio device unless --smoke-audio is given, so automated runs
-	/// on a developer machine make no sound; --silent or OPENTPW_SILENT=1 silences any run. The game logic and its timing are unchanged.
+	/// [EXT:silent-automated-runs] every automated run opens no audio device, so tests and agents on a developer machine make no sound:
+	/// smokes (<c>--smoke-test</c>, <c>--tpi-smoke-test</c>, <c>--park-resume-smoke</c>, <c>--smoke-presence</c>), captures (<c>--capture-*</c>), perf runs
+	/// (<c>--perf-*</c>), gates, guest reports, every <c>--debug-*</c> option (they exist for smoke captures and agent runs, none is a player option), <c>--offscreen</c> and <c>--headless</c>. <c>--smoke-audio</c> or <c>--audible</c>
+	/// opts back in to sound; <c>--silent</c> or <c>OPENTPW_SILENT=1</c> silences any run. A plain interactive launch is never silenced. The game logic
+	/// and its timing are unchanged.
 	/// </summary>
-	internal static bool IsSilentRun( string[] args, string? silentEnvironment ) =>
-		args.Contains( "--silent" ) || silentEnvironment == "1"
-		|| ((args.Contains( "--smoke-test" ) || args.Any( arg => arg.StartsWith( "--capture-", StringComparison.Ordinal ) ) || args.Contains( "--park-resume-smoke" ))
-			&& !args.Contains( "--smoke-audio" ));
+	internal static bool IsSilentRun( string[] args, string? silentEnvironment, string? offscreenEnvironment = null )
+	{
+		if ( args.Contains( "--silent" ) || silentEnvironment == "1" )
+			return true;
+		if ( args.Contains( "--smoke-audio" ) || args.Contains( "--audible" ) )
+			return false;
+		return args.Any( arg => arg.StartsWith( "--capture-", StringComparison.Ordinal ) || arg.StartsWith( "--perf-", StringComparison.Ordinal ) || arg.StartsWith( "--debug-", StringComparison.Ordinal ) )
+			|| args.Intersect( AutomatedFlags ).Any()
+			|| (offscreenEnvironment == "1" && !args.Contains( "--no-offscreen" ));
+	}
+
+	private static readonly string[] AutomatedFlags =
+	{
+		"--smoke-test", "--tpi-smoke-test", "--park-resume-smoke", "--smoke-presence", "--perf-run", "--perf-hash-tick",
+		"--offscreen", "--headless", "--m3-gate", "--m4-gate", "--guest-report", "--guest-compare", "--validate-assets",
+	};
 
 	/// <summary>
 	/// [EXT:offscreen-automated-runs] smokes (<c>--smoke-test</c>, <c>--tpi-smoke-test</c>, <c>--park-resume-smoke</c>) create their window hidden and render into
@@ -1285,7 +1364,7 @@ internal static class Game
 		// [EXT:debug-pool] --debug-extras: one of each pool extra beside the pool (the shower needs the room first)
 		if ( extras )
 			foreach ( var extra in level.BuildPoolExtrasBeside( pool ) )
-				Log.Trace( $"--debug-extras: built the {extra.Entry.DisplayName} at {extra.Placement.X},{extra.Placement.Y} rotation {extra.Placement.Rotation}." );
+				Log.Trace( FormattableString.Invariant( $"--debug-extras: built the {extra.Entry.DisplayName} at {extra.Placement.X},{extra.Placement.Y} rotation {extra.Placement.Rotation}, engine {extra.Placement.ModelToEngine.M41:0.#},{extra.Placement.ModelToEngine.M42:0.#}." ) );
 		var started = level.Guests.DebugStartSwimmers( placed.Visitors, swimmers );
 		if ( extras )
 		{

@@ -20,9 +20,9 @@ public partial class Level
 	/// </summary>
 	public static bool PerfEvening( string mode )
 	{
-		var enabled = mode != "off";
-		OpenTpwExtensions.Activate( ModSet.Resolve( Array.Empty<DiscoveredMod>(),
-			new ModSettings { Enabled = new Dictionary<string, bool> { [OfficialExtensions.Evening.Id] = enabled } }, null, GameEdition.ThemeParkWorld, OfficialExtensions.All ) );
+		// only the evening extension is switched: the other extensions and the mods of the session stay as they are
+		if ( mode is "night" or "dusk" or "day" or "on" or "off" )
+			OpenTpwExtensions.Activate( OpenTpwExtensions.Active.WithPresentationExtension( OfficialExtensions.Evening, mode != "off" ) );
 		switch ( mode )
 		{
 			case "night": EveningPaceOverride = EveningPace.AlwaysNight; return true;
@@ -32,6 +32,34 @@ public partial class Level
 			default: return false;
 		}
 	}
+
+	private DebugEveningLampSource? debugEveningLamps;
+
+	/// <summary>
+	/// [EXT:debug-evening] Replaces the debug lamp set with <paramref name="count"/> lamp lights (the pool lamp's colour and radius) on a square grid 40 engine units (20 cells) across around <paramref name="centre"/> that
+	/// follow the lamp level, so they crowd into the park camera's view (0 removes them). Shared by the native <c>--debug-evening-lamps</c> and the browser harness hook <c>PerfEveningLamps</c>. Returns the number of lamps.
+	/// </summary>
+	internal int SetDebugEveningLamps( int count, System.Numerics.Vector3 centre )
+	{
+		if ( debugEveningLamps != null )
+			PointLights?.Remove( debugEveningLamps );
+		debugEveningLamps = null;
+		if ( count <= 0 || PointLights == null )
+			return 0;
+		var columns = (int)MathF.Ceiling( MathF.Sqrt( count ) );
+		var spacing = 40f / columns;
+		var lamps = new List<PointLight>();
+		for ( var index = 0; index < count; index++ )
+			lamps.Add( new PointLight( centre + new System.Numerics.Vector3( ( index % columns - columns / 2 ) * spacing, ( index / columns - columns / 2 ) * spacing, 2.2f ), new System.Numerics.Vector3( 1.0f, 0.84f, 0.55f ), PointLightMath.ModelUnitsToEngine( 55 ) ) );
+		debugEveningLamps = new DebugEveningLampSource( lamps, () => Look.LampLevel );
+		PointLights.Add( debugEveningLamps );
+		return count;
+	}
+
+	/// <summary>[EXT:perf-run] Browser harness hook (<c>tools/web-perf</c>, <c>--evening-lamps</c>): the debug lamp grid around the park camera's target, as the native <c>--debug-evening-lamps</c>; 0 removes it; -1 outside a park.</summary>
+	public static int PerfEveningLamps( int count )
+		=> Current is { OriginalPark: not null } level && Camera.Mode is ParkCameraMode park
+			? level.SetDebugEveningLamps( count, new System.Numerics.Vector3( park.Target.X, park.Target.Y, park.Target.Z ) ) : -1;
 
 	private EveningClock? eveningClock;
 	private EveningLook? eveningLook;

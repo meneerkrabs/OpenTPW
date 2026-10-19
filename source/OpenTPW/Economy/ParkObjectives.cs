@@ -354,20 +354,23 @@ public sealed class ParkObjectives
 	// [BIN:TPW-EXE:0x4d1e90 challenge update] the idle system offers (0x4d2a70) on the first update at or after the next event time (+0x3d0), not at a day end
 	// [BIN:TPW-EXE:0x4d21fd challenge time warning] on a checked turn that neither passed nor ended the challenge, a slot with a TargetTime (+4) posts the message tag 0x17f with advice 0x10f when (days left × 100) / TargetTime (days left: the deadline +0x3d0 minus the park time, divided by 8.64e11; signed 32-bit division) is below the word 0x7857d0, the settings key Challenges.ShortTimeLeftWarningAt (the 60-byte descriptor records at 0x743c70 list DaysAfterCompletedChallenge, DaysAfterDeclinedChallenge, DaysUntilFirstChallenge, DeclinesToForfeit, ShortTimeLeftWarningAt in the order of the words 0x7857c0..0x7857d0)
 	// [BIN:TPW-EXE:0x59b060 challenge message receivers] a challenge message (category 25, vtable 0x006FD830) carries a text tag in +8 and an advice id in +0xc: the advisor queues the advice (0x59B540, 0x59B590, 0x59A940) unless it is 0x160, and the tag system (0x509BF0) shows the tag's text; the warning's advice 0x10f is message 271 of the advisor table (Challenge.Score, getter 0x5A0A30 = +0x62C), whose tag 0x17f has no text
-	// [APPROX:ECON-058] all 33 progress types now use saved raw state, keyed localized text and retained tagged rows; offers retain OpenTPW wording/buttons, and actual result transitions remove their replacement rows without original terminal text/insertion/lifetime or offer-expiry removal behavior — evidence needed: runtime visual validation and host timer/removal integration for the remaining offer/result lifecycle
+	// [APPROX:ECON-058] all 33 progress and terminal types use immutable localized payloads; terminal instances retain read rows and use unscaled expiry/delayed release with a named host suspension mapping; offers retain OpenTPW wording/buttons and repost, and original offer removal, focus/modal ownership, full native timer queue/wrap semantics and UI particles remain open — evidence needed: runtime visual validation and remaining lifecycle integration (docs/reverse/CHALLENGE-TERMINALS.md, PTCL-908)
 	public IEnumerable<(ParkEventKind Kind, int Index, long Amount, string Detail)> Update( long seconds, long turn, Func<ChallengeDefinition, long> measure, bool parkOpen = true, Func<ChallengeDefinition, int>? bestThing = null, Func<int>? guestCensus = null )
 	{
 		if ( Current == null )
 		{
 			// [BIN:TPW-EXE:0x4d1e90 challenge system start] while the switch (+0x3d8) is off, the system offers only with the park open (0x4c9050: the park-closed word 0x1da710 clear) and the park's age in days (0x4f8800 / 864e9) at DaysUntilFirstChallenge (0x7857c8), then sets the switch and offers at once; afterwards only the next event time (+0x3d0) counts
+			var switchedNow = false;
 			if ( !SwitchedOn )
 			{
 				if ( !parkOpen || seconds < NextOfferSeconds )
 					yield break;
 				SwitchedOn = true;
+				switchedNow = true;
 			}
 			if ( seconds >= NextOfferSeconds && settings.Challenges.Count > 0 && TryPickNext( out var index ) )
 			{
+				LastOfferSwitchedOn = switchedNow;
 				Current = new ActiveChallenge( index, seconds / ParkCalendar.SecondsPerDay, false, 0, 0, 0, RawValue: 0 );
 				Present( ChallengePresentationKind.Offer, settings.Challenges[index], Current, seconds );
 				yield return (ParkEventKind.ChallengeOffered, index, settings.Challenges[index].Prize, Describe( settings.Challenges[index] ));
@@ -416,6 +419,13 @@ public sealed class ParkObjectives
 			TimeShort?.Invoke( definition.Index );
 	}
 
+	/// <summary>
+	/// Whether the offer made last was the one that switched the challenge system on (the park's first offer): the original asks for it with the first-offer argument of 0x4D2A70, and the advisor then says its
+	/// first-challenge line (344) in place of the offer line (270). A follow-up offer is never the first.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004D1E90 challenge system start] the update that sets the switch (+0x3D8) calls the offer scan 0x4D2A70 with 1 (0x4D1F4B); every later offer, 0x4D2A70 with 0 (0x4D22F5-0x4D2302) or the follow-up offer 0x4D2B60, passes 0 to the message builder 0x4D2C50, which posts advice 0x158 (344) for a nonzero argument and 0x10E (270) for 0
+	internal bool LastOfferSwitchedOn { get; private set; }
+
 	/// <summary>The challenge system posted its short-time-left warning for the challenge with this definition index (the advisor's advice 271).</summary>
 	public event Action<int>? TimeShort;
 
@@ -461,6 +471,7 @@ public sealed class ParkObjectives
 		yield return (ParkEventKind.ChallengeCompleted, definition.Index, definition.FollowupType == 0 ? definition.Prize : 0, Describe( definition ));
 		if ( followup != null )
 		{
+			LastOfferSwitchedOn = false;
 			Current = new ActiveChallenge( followup.Index, seconds / ParkCalendar.SecondsPerDay, false, 0, 0, 0, RawValue: 0 );
 			Present( ChallengePresentationKind.Offer, followup, Current, seconds );
 			yield return (ParkEventKind.ChallengeOffered, followup.Index, followup.Prize, Describe( followup ));
@@ -532,9 +543,41 @@ public sealed class ParkObjectives
 	internal Func<GoldenTicketKind, long, GlobalTicketOutcome>? GlobalTicketAuthority { get; set; }
 
 	private IReadOnlyList<GoldenTicketKind> lastMovedTickets = Array.Empty<GoldenTicketKind>();
+	private IReadOnlyList<GoldenTicketKind> lastWonTickets = Array.Empty<GoldenTicketKind>();
+
+	/// <summary>The tickets the last <see cref="CheckGoldenTickets"/> won, in the order the original announces them (the advisor counts each win over the ones before it).</summary>
+	public IReadOnlyList<GoldenTicketKind> LastWonTickets => lastWonTickets;
 
 	/// <summary>The global tickets the last <see cref="CheckGoldenTickets"/> took over from another park.</summary>
 	public IReadOnlyList<GoldenTicketKind> LastMovedTickets => lastMovedTickets;
+
+	/// <summary>
+	/// A ticket cheat (Alt+G, Alt+Num1..9): a local ticket joins the park's set; a global one goes through the player-wide authority with record <see cref="ParkCheats.TicketRecord"/> (awarded when nobody
+	/// holds it, taken from a park that holds it with a lower record, nothing when this park holds it or the holder's record is as good). Returns <see cref="GlobalTicketOutcome.Awarded"/>,
+	/// <see cref="GlobalTicketOutcome.Moved"/> or <see cref="GlobalTicketOutcome.None"/>. Neither the game mode nor <c>CanEarnTickets</c> is checked, and <see cref="LastWonTickets"/> is not touched: the
+	/// award is silent.
+	/// </summary>
+	// [BIN:TPW-EXE:0x5AF810 local ticket award] 0 when the park's byte (+0x48 + type) is set, else it sets it and returns 1 (2 or 3 with a key); [BIN:TPW-EXE:0x5AF940 global ticket award] with the player-wide flag clear it sets the flag, the park's held byte and record (1, 2 or 3), with it set and this park holding it 0, else the first park holding it with a record below the new one loses it (4); no handler checks the game type or CanEarnTicketsInTheme
+	internal GlobalTicketOutcome AwardCheatTicket( GoldenTicketKind kind )
+	{
+		if ( kind is < GoldenTicketKind.Visitors or > GoldenTicketKind.BigPark )
+			throw new ArgumentOutOfRangeException( nameof( kind ), kind, "Only the ten non-secret tickets have a cheat." );
+		if ( kind < GoldenTicketKind.CoasterHeight )
+			return tickets.Add( kind ) ? GlobalTicketOutcome.Awarded : GlobalTicketOutcome.None;
+		switch ( GlobalTicketAuthority?.Invoke( kind, ParkCheats.TicketRecord ) ?? GlobalTicketOutcome.Unmanaged )
+		{
+			case GlobalTicketOutcome.Unmanaged:
+				return tickets.Add( kind ) ? GlobalTicketOutcome.Awarded : GlobalTicketOutcome.None;
+			case GlobalTicketOutcome.Awarded:
+				tickets.Add( kind );
+				return GlobalTicketOutcome.Awarded;
+			case GlobalTicketOutcome.Moved:
+				tickets.Add( kind );
+				return GlobalTicketOutcome.Moved;
+			default:
+				return GlobalTicketOutcome.None;
+		}
+	}
 
 	/// <summary>Golden ticket check (every 100 park turns in Full Simulation, <see cref="ParkEconomy.RunsGoldenTicketCheck"/>); returns newly won tickets. <paramref name="coveredCells"/> is the big park's cell count (<see cref="ParkEconomy.CoveredCells"/>); null without a cell map.</summary>
 	public IReadOnlyList<GoldenTicketKind> CheckGoldenTickets( ParkCounters counters, IParkGuestStatistics guests, ParkResearch research, long profitThisYear, IReadOnlyList<long> monthlyAdmissions, long droppedAdmissions = 0, long parkSeconds = long.MaxValue, long? coveredCells = null, int? securityCoveragePercent = null )
@@ -542,6 +585,7 @@ public sealed class ParkObjectives
 		var won = new List<GoldenTicketKind>();
 		var moved = new List<GoldenTicketKind>();
 		lastMovedTickets = moved;
+		lastWonTickets = won;
 		if ( !settings.CanEarnTickets )
 			return won;
 		var rules = settings.GoldenTickets;

@@ -89,6 +89,10 @@ public static partial class Program
 	[JSExport]
 	public static bool PerfEvening( string mode ) => Level.PerfEvening( mode );
 
+	/// <summary>Adds <paramref name="count"/> debug lamp lights around the park camera's target (the browser twin of <c>--debug-evening-lamps</c>); 0 removes them; -1 outside a park (see <c>Level.PerfEveningLamps</c>).</summary>
+	[JSExport]
+	public static int PerfEveningLamps( int count ) => Level.PerfEveningLamps( count );
+
 	/// <summary>Holds the park camera at a zoom value (the wide range reaches 40..300 with the option on) and returns the zoom it ended at; -1 outside a park.</summary>
 	[JSExport]
 	public static double PerfZoom( double zoom )
@@ -133,6 +137,76 @@ public static partial class Program
 			}
 		};
 		renderer.PostUpdate += umbrellaHook;
+		return true;
+	}
+
+	/// <summary>
+	/// [EXT:debug-umbrellas] Stops <see cref="PerfUmbrellas"/> holding every umbrella open and holding the camera (the umbrellas stay as they are until the simulation or <see cref="PerfUmbrellaCrowd"/> changes them): the winterCost
+	/// scenario holds them open for its measured windows and lets go of them before its screenshot.
+	/// </summary>
+	[JSExport]
+	public static void PerfUmbrellasOff()
+	{
+		if ( umbrellaHook != null && renderer != null )
+			renderer.PostUpdate -= umbrellaHook;
+		umbrellaHook = null;
+	}
+
+	/// <summary>Whether it rains in the park now (the weather's rain flag), so a measured window can say whether it ran in rain.</summary>
+	[JSExport]
+	public static bool PerfRaining() => flow?.Level?.Weather?.Rain == true;
+
+	private static Action? winterHook;
+
+	/// <summary>
+	/// [EXT:debug-winter] The browser twin of the desktop's Debug-build <c>--debug-winter</c> (a capture aid for tools/web-perf, scenario <c>winter</c>): dresses every guest in a head item (by its id) and mittens (all but every fourth guest) every frame,
+	/// and when <paramref name="zoom"/> is above zero holds the park camera on a visible guest at that zoom value and <paramref name="yaw"/> (degrees): the lowest-numbered one, or the one <paramref name="follow"/> places further up the order, counted from the
+	/// highest-numbered guest down when it is negative (a staged crowd starts under the entrance canopy, and its later guests are those furthest down the road). The guests' item field is written directly, so a run that calls this is not the
+	/// park's own simulation and nothing may be saved from it. Returns false outside a park or when the winter extension has no renderer.
+	/// </summary>
+	[JSExport]
+	public static bool PerfWinter( double zoom, double yaw, int follow )
+	{
+		if ( flow?.Level is not { WarmItemRenderer: not null } || renderer == null )
+			return false;
+		if ( winterHook != null )
+			renderer.PostUpdate -= winterHook;
+		winterHook = () =>
+		{
+			if ( flow?.Level is not { Guests: { } simulation } level )
+				return;
+			if ( zoom > 0 && Camera.Mode is ParkCameraMode camera && level.OriginalPark is { } park )
+				if ( simulation.Guests.Where( candidate => candidate.IsVisible && float.IsFinite( candidate.DrawX ) ).OrderBy( candidate => follow < 0 ? -candidate.Id : candidate.Id ).Skip( Math.Abs( follow ) ).FirstOrDefault() is { } followed )
+				{
+					var spot = GuestRenderer.CellToEngine( park.Heightfield, followed.DrawX, followed.DrawY );
+					camera.SetPose( new System.Numerics.Vector3( spot.X, spot.Y, 0 ), (float)zoom, (float)yaw );
+				}
+			foreach ( var guest in simulation.Guests )
+				guest.WarmItems = WinterRules.HeadItemOf( guest.Id ) | (guest.Id % 4 == 3 ? 0 : WinterRules.Mittens);
+		};
+		renderer.PostUpdate += winterHook;
+		return true;
+	}
+
+	/// <summary>How many warm items the renderer drew in the last frame, or -1 without one.</summary>
+	[JSExport]
+	public static int PerfDrawnWinterItems() => flow?.Level?.WarmItemRenderer?.DrawnItems ?? -1;
+
+	private static Action? snowHook;
+
+	/// <summary>
+	/// [EXT:debug-snow-cover] The browser twin of the desktop's <c>--debug-snow-cover</c> (docs/WINTER.md): holds the settled snow cover of the park at <paramref name="cover"/> (0..1) every frame, so a capture shows the snow in
+	/// the browser build without a snowing sky. Presentation only. Returns false outside a park or while the winter-snow extension is off (no cover exists).
+	/// </summary>
+	[JSExport]
+	public static bool PerfSnow( double cover )
+	{
+		if ( flow?.Level?.Snow == null || renderer == null )
+			return false;
+		if ( snowHook != null )
+			renderer.PostUpdate -= snowHook;
+		snowHook = () => flow?.Level?.Snow?.Set( cover );
+		renderer.PostUpdate += snowHook;
 		return true;
 	}
 

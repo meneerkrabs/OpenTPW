@@ -169,6 +169,15 @@ public interface IRideVisitorBridge
 
 	/// <summary>[EXT:umbrellas-extension] The attraction is a brolly shop: an object of the umbrellas extension whose use gives the guest an umbrella (<see cref="UmbrellaRules.ShopAppearanceEffect"/>).</summary>
 	bool IsUmbrellaShop => UmbrellaTerms != null && AppearanceEffect == UmbrellaRules.ShopAppearanceEffect;
+
+	/// <summary>
+	/// [EXT:winter-extension] The score multipliers of an object of the winter extension (a winter kiosk or a glühwein stall): its weather and season percentages, which the host score applies for these objects only; null for every
+	/// other object, whose score is the game's alone (docs/WINTER.md).
+	/// </summary>
+	WinterShopTerms? WinterTerms => null;
+
+	/// <summary>[EXT:winter-extension] The attraction is a winter kiosk: an object of the winter extension whose use gives the guest a warm item (<see cref="WinterRules.KioskAppearanceEffect"/>).</summary>
+	bool IsWinterKiosk => WinterTerms != null && AppearanceEffect == WinterRules.KioskAppearanceEffect;
 	/// <summary>The amount of the special ingredient (ride <c>+404</c> byte, 0..255); the ride build sets 50.</summary>
 	int IngredientAmount => GuestSpeed.DefaultIngredientAmount;
 	/// <summary>The shop's quality of goods (ride <c>+0x18C</c> byte); the ride build sets 50 (<see cref="GuestAppearance.BuiltQualityOfGoods"/>).</summary>
@@ -216,6 +225,8 @@ public interface IRideVisitorBridge
 	bool IsChangingRoom => false;
 	/// <summary>The object's <c>UsageInfo.RequiresTeleport</c>: its guests beam in and out at its entrance and exit (tp.exe 0x501db0 states 15 and 16).</summary>
 	bool RequiresTeleport => false;
+	/// <summary>UsageInfo.RideHandlesSprite: retain the visitor body at admission, otherwise delete it.</summary>
+	bool RideHandlesSprite => false;
 	/// <summary>
 	/// [EXT:pools-swim] The object has been stopped (demolished, or its script ended): the guests it releases then step out on its exit like those of any attraction, and no swim starts.
 	/// </summary>

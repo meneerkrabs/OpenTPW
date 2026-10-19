@@ -43,6 +43,16 @@ struct ObjectUniformBuffer
 	}
 
 	/// <summary>
+	/// [EXT:winter-snow-surfaces] The settled snow cover of this draw in test.shader (<c>g_flSnowCover</c>, the padding after the fog colour): 0 means none, which is what the zeroed padding always meant;
+	/// a negative value is slush. The pool shaders keep this slot for their glow and do not read it as snow.
+	/// </summary>
+	public float SnowCover
+	{
+		readonly get => _padding6;
+		set => _padding6 = value;
+	}
+
+	/// <summary>
 	/// [EXT:evening] The share of the original's 0.4 ambient light the lit shaders keep (<c>g_flAmbientLevel</c>, the padding after the sun position): 0 means unchanged, which is what the
 	/// zeroed padding always meant. The pool water's shader keeps this slot for its wave strength and does not read it as an ambient level.
 	/// </summary>

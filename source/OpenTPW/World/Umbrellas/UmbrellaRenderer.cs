@@ -7,8 +7,8 @@ namespace OpenTPW;
 /// <summary>
 /// Draws the guests' open umbrellas (docs/UMBRELLAS.md, "Drawing"): one camera-facing quad of the extension's own umbrella sprite (<c>content/umbrellas/esprites/Umbrellas/SPR_UM</c>: three colours, five directions mirrored to
 /// eight) for each guest whose umbrella is open or open until a close that is due (states 4 and 1, <see cref="Shows"/>), beside <see cref="BalloonRenderer"/>. The sprite's hotspot, the handle's tip, goes to the guest's
-/// hand: the point of the hand anchor table for the sprite set, slot, direction and step the guest is drawn with (<see cref="UmbrellaAnchors"/>), then the whole sprite is pulled <see cref="CameraPull"/> of the
-/// way to the camera, more than the guests' own depth pull, so it is drawn in front of the guest it covers. Presentation only: nothing here touches the simulation, no random stream is read, and a guest the
+/// hand: the point of the hand anchor table for the sprite set, slot, direction and step the guest is drawn with (<see cref="UmbrellaAnchors"/>), then the whole sprite is pulled towards the camera by
+/// <see cref="PullShare"/> (<c>min(0.1, 1.5 * ModelScale / depth)</c>), so it is drawn in front of the guest it covers. Presentation only: nothing here touches the simulation, no random stream is read, and a guest the
 /// guest renderers do not draw (a swimmer, a rider, one in an attraction) has no umbrella shown.
 /// </summary>
 // [BIN:TPI-EXE:0x60ae35 umbrella drawn] the per-frame guest placement 0x60AE00 takes the umbrella state (+0x238): 4 or 1 sets the flag that places the sprite and raises the thought bubble, every other state draws nothing (a closed umbrella, state 2, has no sprite)
@@ -125,7 +125,8 @@ public sealed class UmbrellaRenderer : Entity
 
 	/// <summary>
 	/// The umbrella's hotspot (the handle's tip), the scale of its quad and its colour slot for a guest drawn as <paramref name="mount"/>, in the engine. The hand's point from the anchor table (pixels of the guest's frame:
-	/// converted with the frame's own scale, x negated when the frame is mirrored) is added to the guest's pulled hotspot at that pull's share, then the whole is pulled <see cref="CameraPull"/> further;
+	/// converted with the frame's own scale, x negated when the frame is mirrored) is added to the guest's pulled hotspot at that pull's share, then the whole is pulled further by <see cref="PullShare"/>
+	/// (<c>min(0.1, 1.5 * ModelScale / depth)</c>);
 	/// a set without a table is held straight above the guest's position at <see cref="UmbrellaAnchors.FallbackLift"/>.
 	/// </summary>
 	internal (SVector3 Hotspot, float Scale) Place( Guest guest, in GuestMount mount, SVector3 right, SVector3 up, SVector3 forward, SVector3 eye, Func<Guest, SVector3>? feetChooser = null )
@@ -205,7 +206,7 @@ public sealed class UmbrellaRenderer : Entity
 			g_mProj = Camera.ProjMatrix,
 			g_vCameraPos = Camera.Position,
 			g_flTime = Time.Now
-		}.WithFog() );
+		}.WithFog().WithSpriteTint( Level?.Look ?? EveningLook.Day ) );
 		commandList.SetVertexBuffer( 0, vertexBuffer );
 		commandList.SetPipeline( material.Pipeline );
 		var resourceSets = material.GetResourceSets();

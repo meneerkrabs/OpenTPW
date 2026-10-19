@@ -109,7 +109,7 @@ public partial class Level : IDisposable
 	/// Renames the park (the ticket price window's rename dialog): stores the two lines and redraws the gate sign. False for
 	/// a read-only visit, a level without a park name, or lines a save could not hold (<see cref="ParkNameLines.IsValid"/>).
 	/// </summary>
-	// [APPROX:COMPAT-007] the rename stores the lines and redraws the gate (0x4993E0), but the handler's other effects are not built: the setters 0x4E2950/0x4E2A50 also copy the lines to the online park record (0x409410, 0x5B0940/0x5B0970: wide characters into +0x34 and +0x76 of the 0x50-byte record DAT_00F7C58C with its dirty byte +0xB8, unless the GameType word is 1), and the secret name ("Kevin the" / "Cosmic Cow", the XOR-by-index forms at 0x751A34/0x751A38, found by the compare 0x67C290) calls 0x4053C0(1) on the object 0xFB3520, which stores a flag (+10, saved and loaded by 0x4164C0/0x415270, read at 0x488902/0x488991) and dispatches event type 0x15 (0x40FB10); gate lines of a user-supplied original save are not imported (the attraction record carries them, SaveAttraction.NameLine1/2, and the shipped Easymode save holds the default row) — evidence needed: what the listeners of event 0x15 and the object 0x78733C that the flag forwards to do
+	// [APPROX:COMPAT-007] the rename stores the lines and redraws the gate (0x4993E0), but the handler's other effects are not built: the setters 0x4E2950/0x4E2A50 also copy the lines to the online park record (0x409410, 0x5B0940/0x5B0970: wide characters into +0x34 and +0x76 of the 0x50-byte record DAT_00F7C58C with its dirty byte +0xB8, unless the GameType word is 1), and the secret name's 0x4053C0(1) (built below: the cheat mode, docs/CHEATS.md) also posts a message of type 0x15 (0x40FB10), which is not; gate lines of a user-supplied original save are not imported (the attraction record carries them, SaveAttraction.NameLine1/2, and the shipped Easymode save holds the default row) — evidence needed: what the listeners of message type 0x15 do (runtime subscriptions of the message centre 0x788D3C)
 	public bool RenamePark( string line1, string line2 )
 	{
 		if ( IsReadOnlyVisit || ParkName == null || line1 == null || line2 == null )
@@ -119,6 +119,9 @@ public partial class Level : IDisposable
 			return false;
 		ParkName = lines;
 		GateSign?.Rename( lines );
+		// [BIN:TPW-EXE:0x4993E0 secret park name] "Kevin the" / "Cosmic Cow" turns the cheat mode on (0x4053C0(1)) after the lines are stored, so the sign keeps the name; it works with or without the cheats extension (the user's decision, docs/CHEATS.md), and at the next park turn ([EXT:cheats-turn-boundary])
+		if ( SecretParkName.Matches( line1, line2 ) )
+			Park?.Economy.QueueCheat( new CheatAction( CheatKind.Mode ) );
 		return true;
 	}
 	private bool wasMouseDown;
@@ -172,6 +175,8 @@ public partial class Level : IDisposable
 	public BalloonRenderer? BalloonRenderer { get; private set; }
 	/// <summary>[EXT:umbrellas-draw] The guests' open umbrellas (<see cref="UmbrellaRenderer"/>); null without the extension, its content or guests.</summary>
 	public UmbrellaRenderer? UmbrellaRenderer { get; private set; }
+	/// <summary>[EXT:winter-draw] The warm items the guests wear (<see cref="WarmItemRenderer"/>); null without the extension, its content or guests.</summary>
+	public WarmItemRenderer? WarmItemRenderer { get; private set; }
 	/// <summary>Draws the guests' and the staff's thought bubbles.</summary>
 	public ThoughtRenderer? ThoughtRenderer { get; private set; }
 	/// <summary>The litter sprites lying on the park's cells (null without a park economy).</summary>
@@ -487,9 +492,23 @@ public partial class Level : IDisposable
 			// [EXT:umbrellas-weather-map] rain without lightning is Theme Park Inc's rain, lightning a storm, snow snow (the flags of the park's weather, not its drops: the umbrella rules ask what the weather is, not how hard it falls)
 			if ( Guests != null )
 				Guests.UmbrellaWeatherState = () => Weather is { } weather ? UmbrellaRules.WeatherStateOf( weather.Rain, weather.Lightning, weather.Snow ) : UmbrellaRules.WeatherNone;
+			// [EXT:winter-season-terms] the winter shops read the park's calendar month (the economy's clock, which the weather steps on too) and their own weather signal, which reads snow as snow even with lightning (Halloween's snow band is its lightning band)
+			if ( Guests != null )
+				Guests.WinterWeatherState = () => Weather is { } weather ? WinterRules.WeatherStateOf( weather.Rain, weather.Lightning, weather.Snow ) : UmbrellaRules.WeatherNone;
+			if ( Guests != null )
+				Guests.WinterMonth = () => Park?.Economy is { } economy ? ParkCalendar.DateTimeAt( economy.Tick ).Month : 0;
+			// [EXT:winter-always] with the always winter option on the winter shops sell at their winter demand all year, in the parks the option holds on December's row (not space, whose seasons it leaves alone)
+			if ( Guests != null )
+				Guests.WinterAlways = FeatureGates.WinterAlways && Park?.Economy?.Settings?.Standard is { } standard && ParkWeather.CanSnowFromTheWinterRow( standard );
 			// [EXT:rain-mood-extension] the rain mood rule is on while the extension is: the guests read the same weather state as the umbrella rules
 			if ( Guests != null )
 				Guests.RainMood = RainMoodFor( FeatureGates.RainMood );
+			// [EXT:winter-cold] the cold rule is on while its extension is: the same weather state, and the park's calendar day for a glühwein's warmth window
+			if ( Guests != null )
+			{
+				Guests.WinterCold = WinterColdFor( FeatureGates.WinterCold );
+				Guests.WinterDay = () => Park?.Economy is { } economy ? ParkCalendar.DayIndex( economy.Tick ) : 0;
+			}
 			using var connectProfile = LoadProfile.Measure( "staff-gate-economy" );
 			ConnectObjectsToEconomy();
 			if ( Park != null )
@@ -568,11 +587,11 @@ public partial class Level : IDisposable
 		// [EXT:pools-swim] swimmers are drawn by the pools' own renderer with the swim sprites (RefreshPools), whatever they wear
 		// Reserve opaque bridge draw slots before every guest and staff sprite, including bridges built after swimmers appear.
 		PoolBridgeRenderer = new PoolBridgeRenderer( () => PoolBridges, Objects.Grid.Origin, PoolStyles.ForTheme( park.LevelName ) );
-		GuestRenderer = new GuestRenderer( Guests, park.Heightfield, sprites ) { FeetChooser = BridgeGuestFeet, Draws = guest => (!(guest.IsSwimming || guest.InPoolActivity) || SwimmerRenderer == null) && (costumes.Count == 0 || !guest.InCostume) };
+		GuestRenderer = new GuestRenderer( Guests, park.Heightfield, sprites ) { FeetChooser = BridgeGuestFeet, Draws = guest => (!(guest.IsSwimming || guest.InPoolActivity) || SwimmerRenderer == null) && (costumes.Count == 0 || !guest.InCostume), DrawsRideBody = guest => costumes.Count == 0 || !guest.BodySpriteInCostume };
 		if ( costumes.Count > 0 )
-			CostumeRenderer = new GuestRenderer( Guests, park.Heightfield, costumes ) { FeetChooser = BridgeGuestFeet, Draws = guest => guest.InCostume && (!(guest.IsSwimming || guest.InPoolActivity) || SwimmerRenderer == null) };
+			CostumeRenderer = new GuestRenderer( Guests, park.Heightfield, costumes ) { FeetChooser = BridgeGuestFeet, Draws = guest => guest.InCostume && (!(guest.IsSwimming || guest.InPoolActivity) || SwimmerRenderer == null), DrawsRideBody = guest => guest.BodySpriteInCostume };
 		// the riders of the bounce rides are drawn as bodies on the ride (tp.exe 0x00557AB0, BounceRiders), by the set of the guest's own kind
-		var bounceRiders = new FlatRideBounceRiders( Objects );
+		var bounceRiders = rideBodyPoses = new FlatRideBounceRiders( Objects );
 		GuestRenderer.BounceRiders = bounceRiders;
 		if ( CostumeRenderer != null )
 			CostumeRenderer.BounceRiders = bounceRiders;
@@ -592,6 +611,10 @@ public partial class Level : IDisposable
 		UmbrellaRenderer = null;
 		if ( UmbrellaSprites.Load() is { Count: > 0 } umbrellaSets && UmbrellaContent.Directory is { } umbrellaFolder )
 			UmbrellaRenderer = new UmbrellaRenderer( Guests, park.Heightfield, umbrellaSets, new[] { GuestRenderer, CostumeRenderer }.OfType<GuestRenderer>().ToArray(), UmbrellaAnchors.Load( umbrellaFolder ) );
+		// [EXT:winter-draw] the warm items (hat, earmuffs, mittens) at the guests' heads and hands; parks without the extension or its content have none
+		WarmItemRenderer = null;
+		if ( WinterSprites.Load() is { Count: > 0 } winterSets && WinterContent.Directory is { } winterFolder )
+			WarmItemRenderer = new WarmItemRenderer( Guests, winterSets, new[] { GuestRenderer, CostumeRenderer }.OfType<GuestRenderer>().ToArray(), WinterAnchorTable.Load( winterFolder ) );
 		ThoughtRenderer = new ThoughtRenderer( Guests, park.Heightfield, GuestSpriteAtlas.LoadThoughts(),
 			() => Park?.Economy.Staff.Members ?? (IReadOnlyList<StaffMember>)Array.Empty<StaffMember>(),
 			member => member.State != StaffState.PickedUp && StaffRenderer != null && StaffRenderer.TryGetDrawCell( member, out var x, out var y ) ? (x, y) : null )
@@ -608,6 +631,9 @@ public partial class Level : IDisposable
 	// [EXT:online-visit-arrivals] the original's visit loaded the owner's uploaded save, a running park (docs/reverse/ONLINE-VISIT.md); a package carries the layout without the guests and the arrival timer, so a visit's arrivals start as those of an own park started from the save the visit is built on
 	/// <summary>[EXT:rain-mood-extension] The rain mood settings the level hands its guests: the shipped rows while the extension's gate is on, none (the default: the rule never runs) otherwise.</summary>
 	internal static RainMoodSettings? RainMoodFor( bool gateOn ) => gateOn ? RainMoodSettings.Default : null;
+
+	/// <summary>[EXT:winter-cold] The cold rule's settings for a run: the shipped numbers while the <c>opentpw.winter-cold</c> gate is on, otherwise none (the rule never runs).</summary>
+	internal static WinterColdSettings? WinterColdFor( bool gateOn ) => gateOn ? WinterColdSettings.Default : null;
 
 	internal static Func<long>? VisitArrivalClock( GuestSimulation guests, long? savedTurn ) => savedTurn is { } start ? () => start + guests.ParkTurn : null;
 
@@ -650,6 +676,18 @@ public partial class Level : IDisposable
 	internal static bool IsInHoveredNeighbourhood( (int X, int Y) hovered, (int X, int Y) thing ) =>
 		Math.Abs( thing.X - hovered.X ) <= 1 && Math.Abs( thing.Y - hovered.Y ) <= 1;
 
+	private List<ParkEvent>? cheatNotes;
+
+	/// <summary>The cheats applied since the last call (docs/CHEATS.md), for the HUD's short on-screen note; emptied by the call.</summary>
+	internal IReadOnlyList<ParkEvent> TakeCheatNotes()
+	{
+		if ( cheatNotes is not { Count: > 0 } )
+			return Array.Empty<ParkEvent>();
+		var notes = cheatNotes.ToArray();
+		cheatNotes.Clear();
+		return notes;
+	}
+
 	/// <summary>
 	/// Wires the park door (docs/GATES.md): the economy's open/close events command the entrance gate's script
 	/// and close or open the attractions, and the gate's deferred-close retry runs with the economy tick.
@@ -672,6 +710,8 @@ public partial class Level : IDisposable
 				AttractionRuntimeOf( item.InstanceId )?.SetVariable( ((RideVariables)item.InfoId).ToString(), (int)item.Amount );
 			else if ( item.Kind == ParkEventKind.RideRepaired )
 				OpenAfterRepair( item.InstanceId );
+			else if ( item.Kind == ParkEventKind.CheatApplied && (cheatNotes ??= new()).Count < 64 )
+				cheatNotes.Add( item );
 			else if ( item.Kind is ParkEventKind.UpgradeBought or ParkEventKind.MaintenanceRequested )
 				CloseForUpgrade( item.InstanceId );
 			else if ( item.Kind == ParkEventKind.MaintenanceCancelled )
@@ -936,6 +976,7 @@ public partial class Level : IDisposable
 		RefreshRenderedCells();
 		RefreshPools();
 		UpdateEvening();
+		UpdateSnow();
 		SceneClock.Advance( Time.Delta * SimulationTimeScale );
 		var simulationStart = FrameStats.Begin();
 		AdvanceSimulation( Time.Delta * SimulationTimeScale );
@@ -1151,6 +1192,8 @@ public partial class Level : IDisposable
 
 	public void Dispose()
 	{
+		Guests?.ClearBodySprites();
+		rideBodyPoses = null;
 		ExitRideView();
 		ExitFreeWalk();
 		onlinePanel?.Dispose();
@@ -1164,8 +1207,12 @@ public partial class Level : IDisposable
 		TextOverlay?.Dispose();
 	}
 
+	/// <summary>Invalidates per-world-pass observations even when an entity is absent from the render list.</summary>
+	internal long RenderPass { get; private set; }
+
 	public void Render()
 	{
+		RenderPass++;
 		// [EXT:point-lights] the lights of the objects that have any, for every draw of this frame
 		PointLights?.Gather( Camera.ViewMatrix * Camera.ProjMatrix );
 		foreach ( var entity in Entity.All.ToArray() )

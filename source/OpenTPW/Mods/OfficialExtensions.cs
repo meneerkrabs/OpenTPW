@@ -109,8 +109,58 @@ public static class OfficialExtensions
 	// [EXT:evening] OpenTPW's own extension; the original game's parks are always in daylight
 	public static IOpenTpwExtension Evening { get; } = new OpenTpwExtension( "opentpw.evening", "Evening and night", new ModVersion( 1, 0, 0 ), DefaultEnabled: true, AffectsSimulation: false, PlayerSelectable: true );
 
+	/// <summary>
+	/// The winter extension (docs/WINTER.md): a winter kiosk and a glühwein stall per Theme Park World theme. The kiosk sells a warm item (a hat or earmuffs first, then mittens) all year, its demand following the season and the snow; the stall
+	/// is a drinks shop that does not make guests drunk and sells best in snow and in the winter months. On by default (a player can switch it off) and not in a Theme Park Inc run; it changes the simulation, but a park save records the
+	/// extension only while the park has one of its shops or a guest with a warm item, so any other park saves byte-identically whether the extension is on or off (<c>ParkResumeMods.UsedOnlyExtensionIds</c>). This is phase W3, the simulation;
+	/// the drawing of the items (W4) and the cold rule (W5) come later, and the version is the rule identity: every behaviour-changing release bumps it.
+	/// </summary>
+	// [EXT:winter-extension] OpenTPW's own extension; Theme Park World has neither these shops nor warm items
+	public static IOpenTpwExtension Winter { get; } = new OpenTpwExtension( "opentpw.winter", "Winter", new ModVersion( 1, 0, 0 ), DefaultEnabled: true, AffectsSimulation: true );
+
+	/// <summary>
+	/// Wintry Decembers (docs/WINTER.md, "Wintry Decembers"): the rain and thunderstorms of a December weather roll become snow in the jungle and fantasy parks (the Halloween park already snows; space has no precipitation). Snow instead of rain and
+	/// lightning is what the umbrella rules and the rain mood read, so it changes every park of those themes: a save always records the extension while it is on (it is not in <c>ParkResumeMods.UsedOnlyExtensionIds</c>), and its version is the rule
+	/// identity. Off by default, because it is an option and not a repair (the original's Decembers are storms), and not in a Theme Park Inc run, which has no such weather.
+	/// </summary>
+	// [EXT:winter-weather] OpenTPW's own option; Theme Park World's jungle and fantasy parks never snow (their snow band is -1..-1)
+	public static IOpenTpwExtension WinterWeather { get; } = new OpenTpwExtension( "opentpw.winter-weather", "Wintry Decembers", new ModVersion( 1, 0, 0 ), DefaultEnabled: false, AffectsSimulation: true );
+
+	/// <summary>
+	/// The cold rule (docs/WINTER.md, "Cold mood"): in snow a guest loses happiness once per qualifying day (the rain mood's gate), softened by a head item, mittens and a recent glühwein, never above 0. With it on it replaces the rain mood's
+	/// snow happiness (+1 in Theme Park Inc's kid row). It changes the simulation, so a save always records it while it is on and its version is the rule identity (the numbers are code defaults). Off by default, because it is an option,
+	/// and not in a Theme Park Inc run, which has no such weather.
+	/// </summary>
+	// [EXT:winter-cold] OpenTPW's own rule; Theme Park World has no cold and Theme Park Inc's snow cheers kids
+	public static IOpenTpwExtension WinterCold { get; } = new OpenTpwExtension( "opentpw.winter-cold", "Cold mood", new ModVersion( 1, 0, 0 ), DefaultEnabled: false, AffectsSimulation: true );
+
+	/// <summary>
+	/// Always winter (docs/WINTER.md, "Always winter"): every weather roll of the year uses December's row of the season roll, and its rain and thunderstorms become snow as in a wintry December, in the jungle, fantasy and
+	/// Halloween parks (space has no rain or snow band, so its weather is left alone); the winter kiosk and the glühwein stall sell at their winter demand all year. It implies Wintry Decembers, with no double effect when both are on.
+	/// It changes the simulation, so a save always records it while it is on (it is not in <c>ParkResumeMods.UsedOnlyExtensionIds</c>), and its version is the rule identity. Off by default, because it is an option, and not in a
+	/// Theme Park Inc run, which has no such weather.
+	/// </summary>
+	// [EXT:winter-always] OpenTPW's own option; user-approved 2026-10-19 ("Winterweer hele jaar"); Theme Park World's seasons change the weather through the year
+	public static IOpenTpwExtension WinterAlways { get; } = new OpenTpwExtension( "opentpw.winter-always", "Always winter", new ModVersion( 1, 0, 0 ), DefaultEnabled: false, AffectsSimulation: true );
+
+	/// <summary>
+	/// The settling snow extension (docs/WINTER.md, phase W1): snow that settles on the park's ground, roofs and objects while it snows and melts afterwards, with the paths turning to slush. Presentation only:
+	/// <c>AffectsSimulation</c> is false, so it is not recorded in park saves and changes no hash (a save keeps the cover as an optional unhashed field). On by default; it shows wherever the weather snows (the Halloween world).
+	/// </summary>
+	// [EXT:winter-snow] OpenTPW's own extension; the original game has no ground snow
+	public static IOpenTpwExtension WinterSnow { get; } = new OpenTpwExtension( "opentpw.winter-snow", "Settling snow", new ModVersion( 1, 0, 0 ), DefaultEnabled: true, AffectsSimulation: false, PlayerSelectable: true );
+
+	/// <summary>
+	/// The cheats extension (docs/CHEATS.md): the cheats window (Alt+C) with OpenTPW's own cheats: visitors arriving by a chosen vehicle, the weather, a chosen golden ticket and a ride's vehicle limit. Off by default and only in
+	/// Theme Park World parks (not in a Theme Park Inc run, a read-only visit or an online session). The original game's own cheat mode (the secret park name and the Alt keys) is not part of it and works without it. A park save records the
+	/// extension only once the park has used one of its own cheats, and such a park needs it to load (<c>ParkResumeMods.UsedOnlyExtensionIds</c>); every other park, cheated through the original's cheats or not, saves the same bytes
+	/// whether it is on or off. Selectable from phase K3, the window and its first cheats.
+	/// </summary>
+	// [EXT:cheats-extension] OpenTPW's own cheats; the original game has the cheat mode only (docs/CHEATS.md)
+	public static IOpenTpwExtension Cheats { get; } = new OpenTpwExtension( "opentpw.cheats", "Cheats", new ModVersion( 1, 0, 0 ), DefaultEnabled: false, AffectsSimulation: true );
+
 	/// <summary>All official extensions, in declaration order.</summary>
-	public static IReadOnlyList<IOpenTpwExtension> All { get; } = new[] { Online, CrossEditionObjects, SmarterGuests, GuestInsights, Pools, PoolGuestArt, Umbrellas, RainMood, RestoredAdvice, Evening };
+	public static IReadOnlyList<IOpenTpwExtension> All { get; } = new[] { Online, CrossEditionObjects, SmarterGuests, GuestInsights, Pools, PoolGuestArt, Umbrellas, RainMood, Winter, WinterWeather, WinterCold, WinterAlways, RestoredAdvice, Evening, WinterSnow, Cheats };
 
 	public static IOpenTpwExtension? Find( string id ) => All.FirstOrDefault( extension => extension.Id == id );
 }

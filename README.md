@@ -107,7 +107,7 @@ What works today, with your own original game data:
   minutes into its own slot per theme (an OpenTPW extra that never touches your manual save, on by
   default under Options, OpenTPW): after a crash the theme menu offers "Continue autosave"
   ([periodic autosave](https://opentpw.io/docs/PARK-SAVES.html#periodic-autosave)).
-- **Advisor, music and movies:** the advisor speaks for the traced game events with lip sync, the
+- **Advisor, music and movies:** the advisor speaks with lip sync for 234 of the 246 messages the original game gives (money, rides, litter, guest mood, staff, research, golden tickets, window and tool help; the full list is in `content/data/advisor-producers.toml`), plus 43 restored lines, the
   park and the front-end lobby play their original music, rides, the crowd and the interface play
   their original sounds, and all nine movies play. Placed ambients, rain and thunder, ride screams,
   staff voices, build-tool feedback, coaster crashes and a software reverb are wired. Focused real-data tests verify decoded
@@ -191,6 +191,7 @@ OpenTPW has two kinds of add-ons, both switched on and off on **Options > OpenTP
   | `opentpw.umbrellas` | **on** | A brolly shop in every theme and guests who buy an open umbrella in the rain, from a trace of Theme Park Inc's rules ([umbrellas](https://opentpw.io/docs/UMBRELLAS.html)). Simulation only for now: the umbrellas are not drawn yet. |
   | `opentpw.restored-advice` | on | Advisor lines that exist in the game's data but that the original program never plays. |
   | `opentpw.evening` | **on** | A day and night cycle on play time (10, 20 or 40 minutes, or always day, dusk or night, set on the OpenTPW options page): the sky, ground and water darken and lamps, pool lights and a few ride lights switch on at dusk ([evening](https://opentpw.io/docs/EVENING.html)). Presentation only. |
+  | `opentpw.winter-snow` | **on** | Snow settles on the ground, roofs and objects while it snows and melts afterwards, with the paths turning to slush ([winter](https://opentpw.io/docs/WINTER.html)). Presentation only. |
   | `opentpw.guest-insights` | off | Counts why guests refuse rides and shops in the park information window. |
   | `opentpw.cross-edition-objects` | off | The engine support for a mod that brings Theme Park Inc attractions into Theme Park World (the shipped mod `opentpw.tpi-rides` is off too). |
   | `opentpw.smarter-guests` | off | Guests that decide better: dear shops, spread-out queues, patience, needs, cleaner and quieter paths, litter carried to a bin (RollerCoaster Tycoon-inspired ideas, no code). Changes the simulation, so a park saved with it needs it. |

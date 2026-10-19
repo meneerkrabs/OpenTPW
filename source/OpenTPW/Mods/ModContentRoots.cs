@@ -114,6 +114,9 @@ public static class ModContentRoots
 		// [EXT:umbrellas-content] the umbrellas extension's own objects (the brolly shops) follow as a root of the id opentpw.umbrellas while the extension is on
 		if ( UmbrellaContent.CatalogRoot( set ) is { } umbrellas )
 			roots.Add( umbrellas );
+		// [EXT:winter-content] the winter extension's own objects (the winter kiosks and glühwein stalls) follow as a root of the id opentpw.winter while the extension is on
+		if ( WinterContent.CatalogRoot( set ) is { } winter )
+			roots.Add( winter );
 		return roots;
 	}
 

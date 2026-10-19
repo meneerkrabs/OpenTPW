@@ -157,6 +157,9 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 
 	/// <summary>[EXT:umbrellas-extension] The weather and generation percentages of a brolly shop, set only for the umbrellas extension's own objects (<see cref="IRideVisitorBridge.UmbrellaTerms"/>).</summary>
 	public UmbrellaShopTerms? UmbrellaTerms { get; set; }
+
+	/// <summary>[EXT:winter-extension] The weather and season percentages of a winter kiosk or a glühwein stall, set only for the winter extension's own objects (<see cref="IRideVisitorBridge.WinterTerms"/>).</summary>
+	public WinterShopTerms? WinterTerms { get; set; }
 	/// <summary>The ride's amount of the special ingredient (Mac <c>+404</c>, PC <c>+0x198</c> beside the price per use at <c>+0x194</c>; the serializer <c>0x004DB7D0</c> names it <c>mAmountOfSpecialIngredient</c>), 50 when the ride is built.</summary>
 	// [BIN:TPW-EXE:0x4b0aa0 ingredient amount] the amount is the economy record's (ParkObjectState.IngredientAmount): 50 when the ride is built (0x4db090 stores 0x32 at +0x198, 0x4db3b3), the shop window's 0..100 slider (range 0x4b06d2, shown for ingredients 1..4 by 0x4b0950) applied to the object (0x4b0aa0) or every object of the type (0x4b0ae0), saved with the park and imported as mAmountOfSpecialIngredient (0x4dcdc1); a Sugar visit adds trunc(6 x amount / 100) (0x4fe5f8)
 	// The level mirrors it from the object's economy record (ParkObjectState.IngredientAmount, saved) every tick; tests set it directly.
@@ -172,6 +175,8 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	public bool IsChangingRoom { get; set; }
 	/// <summary><c>UsageInfo.RequiresTeleport</c> (type record +0x100): a guest boarding or leaving beams (particle 19); set when the runtime creates the bridge.</summary>
 	public bool RequiresTeleport { get; set; }
+	/// <summary>UsageInfo.RideHandlesSprite (type +0x104), inherited from the object settings.</summary>
+	public bool RideHandlesSprite { get; set; }
 	/// <summary>[EXT:pools-swim] Set by the runtime when it stops (demolition) before it releases the guests, so a changing room's guests do not start a swim; not saved (a stopped runtime restores stopped).</summary>
 	public bool IsStopped { get; set; }
 	/// <summary>[EXT:pools-swim] The cells beyond the back of a changing room; set when the level registers it (geometry only: whether one is a pool cell is read when a guest swims).</summary>

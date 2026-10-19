@@ -22,8 +22,69 @@ namespace OpenTPW.Tests;
 [DoNotParallelize]
 public class EveningTests
 {
+	[TestMethod]
+	public void ThePerfHookSwitchesOnlyTheEveningExtensionAndKeepsTheRestOfTheSession()
+	{
+		// a session with non-default choices: smarter guests on, restored advice off
+		var session = ModSet.Resolve( Array.Empty<DiscoveredMod>(), new ModSettings { Enabled = new Dictionary<string, bool>
+		{
+			[OfficialExtensions.SmarterGuests.Id] = true, [OfficialExtensions.RestoredAdvice.Id] = false,
+		} }, null, GameEdition.ThemeParkWorld, OfficialExtensions.All );
+		var saved = Level.EveningPaceOverride;
+		try
+		{
+			using ( OpenTpwExtensions.Use( session ) )
+			{
+				Assert.IsTrue( Level.PerfEvening( "off" ) );
+				Assert.IsFalse( FeatureGates.Evening );
+				foreach ( var extension in OfficialExtensions.All.Where( extension => extension != OfficialExtensions.Evening ) )
+					Assert.AreEqual( session.IsEnabled( extension.Id ), OpenTpwExtensions.IsEnabled( extension ), $"{extension.Id} is untouched" );
+				CollectionAssert.AreEqual( session.Order.Where( id => id != OfficialExtensions.Evening.Id ).ToArray(), OpenTpwExtensions.Active.Order.ToArray() );
+				Assert.AreSame( session.Mods, OpenTpwExtensions.Active.Mods, "the session's mods are kept" );
+				Assert.AreSame( session.Refused, OpenTpwExtensions.Active.Refused, "and its refusals" );
+				Assert.AreEqual( session.Digest, OpenTpwExtensions.Active.Digest );
+				Assert.IsNull( Level.EveningPaceOverride, "off clears the held look" );
+				Assert.IsTrue( Level.PerfEvening( "night" ) );
+				Assert.IsTrue( FeatureGates.Evening );
+				Assert.AreEqual( EveningPace.AlwaysNight, Level.EveningPaceOverride );
+				CollectionAssert.AreEqual( session.Order.ToArray(), OpenTpwExtensions.Active.Order.ToArray(), "back on: the same set, in Resolve's order" );
+				CollectionAssert.AreEqual( session.SimulationMods.ToArray(), OpenTpwExtensions.Active.SimulationMods.ToArray(), "the simulation set never changes" );
+				var before = OpenTpwExtensions.Active;
+				Assert.IsFalse( Level.PerfEvening( "noon" ), "an unknown mode is refused" );
+				Assert.AreSame( before, OpenTpwExtensions.Active, "and changes nothing" );
+			}
+		}
+		finally
+		{
+			Level.EveningPaceOverride = saved;
+		}
+	}
+
+	[TestMethod]
+	public void OnlyAPresentationExtensionCanBeSwitchedForARun()
+	{
+		var set = ModSet.Defaults( OfficialExtensions.All );
+		Assert.ThrowsException<ArgumentException>( () => set.WithPresentationExtension( OfficialExtensions.SmarterGuests, true ) );
+		Assert.AreSame( set, set.WithPresentationExtension( OfficialExtensions.Evening, set.IsEnabled( OfficialExtensions.Evening.Id ) ), "no change, the same set" );
+		Assert.ThrowsException<ArgumentException>( () => set.WithPresentationExtension( new OpenTpwExtension( "test.unknown", "Unknown", new ModVersion( 1, 0, 0 ), false, false ), true ), "not an extension of this set" );
+		var off = set.WithPresentationExtension( OfficialExtensions.Evening, false );
+		Assert.IsFalse( off.IsEnabled( OfficialExtensions.Evening.Id ) );
+		Assert.IsFalse( off.Extensions.Single( item => item.Extension == OfficialExtensions.Evening ).Enabled, "the resolved extension row follows" );
+		CollectionAssert.AreEqual( set.SimulationMods.ToArray(), off.SimulationMods.ToArray() );
+		CollectionAssert.AreEqual( set.Order.ToArray(), off.WithPresentationExtension( OfficialExtensions.Evening, true ).Order.ToArray(), "on again takes Resolve's place" );
+	}
+
 	internal static ModSet Set( bool evening ) => ModSet.Resolve( Array.Empty<DiscoveredMod>(),
 		new ModSettings { Enabled = new Dictionary<string, bool> { [OfficialExtensions.Evening.Id] = evening } }, null, GameEdition.ThemeParkWorld, OfficialExtensions.All );
+
+	// the checkout's root (the source files are not copied to the test output, unlike content/, which RepositoryRoot finds in the output first)
+	private static string SourceRoot()
+	{
+		var directory = new DirectoryInfo( AppContext.BaseDirectory );
+		while ( directory != null && !File.Exists( Path.Combine( directory.FullName, "source", "OpenTPW", "World", "Pools", "PoolSpray.cs" ) ) )
+			directory = directory.Parent;
+		return directory?.FullName ?? throw new DirectoryNotFoundException( "source/OpenTPW" );
+	}
 
 	private static string RepositoryRoot()
 	{
@@ -450,6 +511,84 @@ public class EveningTests
 	}
 
 	[TestMethod]
+	public void DuskIsAClearlyWarmerAndDarkerEveningThanTheDay()
+	{
+		var dusk = EveningLook.At( 0.5f );
+		// the low sun is strongly orange: red well above green well above blue, so green ground turns olive and paths and bricks glow
+		Assert.IsTrue( dusk.SunColour.X > 1.5f * dusk.SunColour.Y && dusk.SunColour.Y > 1.5f * dusk.SunColour.Z, "an orange low sun" );
+		Assert.IsTrue( dusk.SunColour.X < 0.75f, "the dusk sun is dimmer than the day's white" );
+		var ambient = dusk.AmbientColourUniform;
+		Assert.IsTrue( ambient.X > ambient.Y && ambient.Y > ambient.Z, "a warm tinted ambient" );
+		Assert.IsTrue( ambient.X < 0.6f && ambient.Z < 0.4f, "well below the day's 1 in every channel" );
+		// the middle of the dusk is darker than its first half and brighter than night
+		Assert.IsTrue( EveningLook.At( 0.75f ).SunColour.X > dusk.SunColour.X && dusk.SunColour.X > EveningLook.At( 0f ).SunColour.X * 0.9f );
+		// night is exactly as approved: the moon and 0.35 of the ambient
+		var night = EveningLook.At( 0f );
+		Assert.AreEqual( new NVector3( 0.08f, 0.14f, 0.40f ), night.SunColour );
+		Assert.AreEqual( 0.35f, night.AmbientLevel, 1e-6f );
+	}
+
+	[TestMethod]
+	public void TheLitShaderHasASoftShoulderForLampLitWhiteSurfacesOnlyOutsideFullDay()
+	{
+		var text = ShaderText( "test.shader" );
+		StringAssert.Contains( text, "peak > 0.4 ?" );
+		// guarded by the tinted ambient, which is all zero at full day and with the extension off
+		var peak = text.IndexOf( "peak > 0.4 ?", StringComparison.Ordinal );
+		StringAssert.Contains( text.Substring( Math.Max( 0, peak - 300 ), 300 ), "vAmbientTint.x + vAmbientTint.y + vAmbientTint.z > 0.0 )", "the shoulder sits behind the dusk and night check" );
+	}
+
+	/// <summary>The shoulder of <c>test.shader</c> in C#: weighted by the ambient that has fallen away, so the first dusk frame looks like the last day frame.</summary>
+	private static NVector3 Shouldered( NVector3 colour, EveningLook look )
+	{
+		if ( look.AmbientColourUniform == NVector3.Zero )
+			return colour;
+		var peak = MaxOf( colour );
+		var shouldered = colour * ( peak > 0.4f ? ( 0.4f + ( peak - 0.4f ) * 0.25f ) / peak : 1f );
+		return NVector3.Lerp( colour, shouldered, Math.Clamp( ( 1f - look.AmbientUniform ) / 0.65f, 0f, 1f ) );
+	}
+
+	[TestMethod]
+	public void TheShoulderFadesInWithTheDuskSoALitSurfaceNeverJumps()
+	{
+		var text = ShaderText( "test.shader" );
+		StringAssert.Contains( text, "clamp( ( 1.0 - g_oUbo.g_flAmbientLevel ) / 0.65, 0.0, 1.0 )", "the shader weights the shoulder like this test" );
+		foreach ( var brightness in new[] { 0.5f, 0.8f, 1.0f } )
+		{
+			var lit = new NVector3( brightness );
+			var day = Shouldered( lit, EveningLook.At( 1f ) );
+			var firstDusk = Shouldered( lit, EveningLook.At( 0.99f ) );
+			Assert.AreEqual( brightness, day.X, 1e-6f, "full day is untouched" );
+			Assert.IsTrue( Math.Abs( firstDusk.X - day.X ) < 0.02f, $"{brightness}: {day.X} at day, {firstDusk.X} on the first dusk frame" );
+			// whole at full night: the ambient left is NightAmbient there
+			var night = Shouldered( lit, EveningLook.At( 0f ) );
+			var full = brightness > 0.4f ? 0.4f + ( brightness - 0.4f ) * 0.25f : brightness;
+			Assert.AreEqual( full, night.X, 1e-4f, $"{brightness}: the whole shoulder at night" );
+			// and never a step anywhere along the way
+			var previous = day.X;
+			for ( var step = 99; step >= 0; step-- )
+			{
+				var value = Shouldered( lit, EveningLook.At( step / 100f ) ).X;
+				Assert.IsTrue( Math.Abs( value - previous ) < 0.03f, $"{brightness}: {previous} to {value} at daylight {step / 100f}" );
+				previous = value;
+			}
+		}
+	}
+
+	[TestMethod]
+	public void TheSplashAndSmokeParticlesTakeTheSpriteTint()
+	{
+		var night = EveningLook.At( 0f );
+		var tinted = new ObjectUniformBuffer().WithSpriteTint( night );
+		Assert.AreEqual( night.SpriteTint, tinted.g_vLightColor );
+		var day = new ObjectUniformBuffer().WithSpriteTint( EveningLook.Day );
+		Assert.AreEqual( NVector3.Zero, day.g_vLightColor, "full day leaves the block as it was" );
+		var root = SourceRoot();
+		StringAssert.Contains( File.ReadAllText( Path.Combine( root, "source", "OpenTPW", "World", "Pools", "PoolSpray.cs" ) ), "WithSpriteTint" );
+		StringAssert.Contains( File.ReadAllText( Path.Combine( root, "source", "OpenTPW", "World", "Particles", "ParticleRenderer.cs" ) ), "tinted: kind == 0" );
+	}
+
+	[TestMethod]
 	public void TheWebShadersAreRegeneratedForTheAmbientLevel()
 	{
 		foreach ( var name in new[] { "test", "pool-deck", "pool-basin", "sprite", "particle" } )
@@ -601,7 +740,8 @@ public class EveningTests
 				foreach ( var lamp in lamps )
 				{
 					// inside the object's 10 x 10 cell and not under the ground, in model units: where the light stands is a place the object occupies
-					Assert.IsTrue( lamp.Local.X is >= 0 and <= 10 && lamp.Local.Y is >= 0 and <= 15 && lamp.Local.Z is >= 0 and <= 14, $"{theme}/{name}: {lamp.Local}" );
+					// (the underwater light stands a little below the object's ground level on purpose: it is in the water, so it lights the basin and the water's edge and little of the dry ground)
+					Assert.IsTrue( lamp.Local.X is >= 0 and <= 10 && lamp.Local.Y is >= 0 && lamp.Local.Y <= ( extra == 6 ? 25f : 10f ) && lamp.Local.Z >= ( extra == 6 ? -8f : 0f ) && lamp.Local.Z <= 14, $"{theme}/{name}: {lamp.Local}" );
 				}
 			}
 		}
@@ -701,6 +841,28 @@ public class EveningTests
 		version++;
 		source.Refresh();
 		Assert.AreEqual( 1, source.BearerCount, "a removed object leaves the cache" );
+
+		// a removal and a placement between two frames keep the length: only the counter catches it
+		var d = Stub();
+		bearing.Add( d );
+		placed.Remove( b );
+		placed.Insert( 0, d );
+		version++;
+		source.Refresh();
+		Assert.AreEqual( 2, source.BearerCount );
+		Assert.AreEqual( 2, placed.Count, "the swap kept the length" );
+
+		// by day the cache is dropped (it would keep removed objects alive) and rebuilt at the next night frame
+		var level = 1f;
+		var dayNight = new EveningLampSource( new EveningLampTable( Array.Empty<EveningLampRule>() ), () => placed, () => level, () => version ) { ResolverOverride = item => OneLamp };
+		dayNight.Refresh();
+		Assert.AreEqual( 2, dayNight.BearerCount );
+		level = 0f;
+		dayNight.AppendPointLights( new List<PointLight>() );
+		Assert.AreEqual( 0, dayNight.BearerCount, "dropped by day" );
+		level = 1f;
+		dayNight.Refresh();
+		Assert.AreEqual( 2, dayNight.BearerCount, "rebuilt at night" );
 
 		// a host without a change counter is caught by the list length
 		var plain = new EveningLampSource( new EveningLampTable( Array.Empty<EveningLampRule>() ), () => placed, () => 1f ) { ResolverOverride = item => OneLamp };

@@ -98,6 +98,13 @@ public sealed class Guest
 	/// <summary>Index into the .sam PeepTypes and the kid sprite set.</summary>
 	public int Type { get; }
 	public GuestState State { get; internal set; }
+	/// <summary>Persistent body presentation. Ordinary walker rendering still uses DrawDistanceWalked.</summary>
+	public VisitorSpriteState BodySprite { get; } = new();
+	/// <summary>The live body's copied category at creation, independent of subsequent costume purchases.</summary>
+	public bool BodySpriteInCostume { get; internal set; }
+	/// <summary>True when old/imported history had to be reconstructed at load, or after an unsupported extension lifecycle.</summary>
+	public bool BodySpriteHistoryReconstructed { get; internal set; }
+
 	/// <summary>Simulation position in cells (<see cref="Navigation"/>, 16.16), updated once per park turn.</summary>
 	public float X => Navigation.X / (float)Fixed16.One;
 	public float Y => Navigation.Y / (float)Fixed16.One;
@@ -193,6 +200,24 @@ public sealed class Guest
 	/// so the extension keeps its own to apply the rule once per qualifying day.
 	/// </summary>
 	public long RainMoodDay { get; internal set; }
+	/// <summary>[EXT:winter-cold] The game day plus one of the cold rule's last application to the guest (as <see cref="RainMoodDay"/>); written only once it has applied, so a save without <c>opentpw.winter-cold</c> has no such field.</summary>
+	public long ColdMoodDay { get; internal set; }
+	/// <summary>
+	/// [EXT:winter-items] The warm items the guest wears (the winter extension, docs/WINTER.md): bit 1 a hat, bit 2 earmuffs, bit 4 mittens (<see cref="WinterRules"/>); at most one head item. Only a purchase at a winter kiosk writes anything
+	/// but 0 into it, and nothing takes an item off: the guest keeps it until it leaves, whatever the weather. The colours are a function of the guest id and the item, so they are not kept.
+	/// </summary>
+	public int WarmItems { get; internal set; }
+	/// <summary>[EXT:winter-items] The guest's head item: <see cref="WinterRules.Hat"/>, <see cref="WinterRules.Earmuffs"/> or 0.</summary>
+	public int HeadItem => WarmItems & WinterRules.HeadItems;
+	/// <summary>[EXT:winter-items] Whether the guest wears mittens.</summary>
+	public bool HasMittens => (WarmItems & WinterRules.Mittens) != 0;
+	/// <summary>
+	/// [EXT:winter-gluehwein] The park calendar day (<see cref="ParkCalendar.DayIndex"/>) the guest's warmth from a glühwein lasts until, exclusive: the guest counts as warmed while the park's day index is below it; 0 while it never was.
+	/// Phase W3 only carries the field (saved, validated, hashed when set); the cold rule of phase W5 (<c>opentpw.winter-cold</c>) writes and reads it, and nothing in W3 does.
+	/// </summary>
+	public long WarmUntilDay { get; internal set; }
+	/// <summary>[EXT:winter-save] Whether the guest carries any state of the winter extension (a warm item, or warmth from a glühwein): the park then uses the extension, whatever its shops (<see cref="ParkResumeMods.WinterInUse"/>).</summary>
+	public bool HoldsWinter => WarmItems != 0 || WarmUntilDay != 0;
 	/// <summary>
 	/// [EXT:rain-mood-imported-age] The park turn an imported original guest without a known time in the park was loaded at, while the rain mood extension is on; its age for the rain mood's day gate counts from it. Null for every
 	/// other guest (they have their time in the park) and in every park without the extension.

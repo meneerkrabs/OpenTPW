@@ -91,7 +91,10 @@ public partial class Level
 		// [EXT:pools-save] the extension is recorded while the park has a pool cell or a changing room; its manifest keys are those of the objects the park placed (a changing room), not of its whole content.
 		// [EXT:umbrellas-save] opentpw.umbrellas likewise: recorded while the park has a brolly shop or a guest with an umbrella, with the keys of the placed shops only
 		var placedEntries = Objects.Objects.Where( item => !item.IsDeleted ).Select( item => item.Entry ).ToArray();
-		var extensionsInUse = ParkResumeMods.InUse( Guests.Grid.Cells, placedEntries.Any( ParkResumeMods.IsPoolsObject ), ParkResumeMods.UmbrellasInUse( placedEntries, Guests ) );
+		// [EXT:winter-save] opentpw.winter likewise: recorded while the park has a winter kiosk or a glühwein stall or a guest with a warm item
+		// [EXT:cheats-save] opentpw.cheats likewise: recorded once the park has used one of the extension's own cheats
+		var extensionsInUse = ParkResumeMods.InUse( Guests.Grid.Cells, placedEntries.Any( ParkResumeMods.IsPoolsObject ), ParkResumeMods.UmbrellasInUse( placedEntries, Guests ), ParkResumeMods.WinterInUse( placedEntries, Guests ),
+			Park.Economy.Cheats.UsesExtension );
 		var assets = ParkResumeMods.AssetsForUse( verifiedAssets ?? ParkResumeAssetManifest.Capture( Objects.Catalog, Park.Economy.Settings ), placedEntries );
 		var random = CaptureRandomState();
 		var snapshot = new ParkResumeSnapshot
@@ -117,6 +120,8 @@ public partial class Level
 			Weather = Weather?.CaptureSnapshot(),
 			Gate = Gate?.CaptureSnapshot(),
 			ParkName = ParkName is { } name ? new ParkNameSaveData( name.Line1, name.Line2 ) : null,
+			// [EXT:winter-snow-save] optional and unhashed: null (left out of the file) without snow
+			SnowCover = CaptureSnowCover(),
 			Staff = StaffWorld?.CaptureSnapshot(),
 			Advisor = advisor?.CaptureSnapshot( advisorMaySpeak ),
 			Coasters = CaptureCoastersSnapshot(),
@@ -179,8 +184,11 @@ public partial class Level
 		simulationClock.RestoreSnapshot( snapshot.Clock );
 		if ( snapshot.Weather != null )
 		{
-			Weather = new ParkWeather( Park.Economy.Settings.Standard, Seed.WeatherStream, Guests.Grid.CountX, Guests.Grid.CountY );
+			Weather = new ParkWeather( Park.Economy.Settings.Standard, Seed.WeatherStream, Guests.Grid.CountX, Guests.Grid.CountY, FeatureGates.WinterWeather, FeatureGates.WinterAlways );
 			Weather.RestoreSnapshot( snapshot.Weather );
+			// [EXT:winter-snow-save] a resumed park keeps its snow (ignored while the extension is off)
+			resumedSnowCover = snapshot.SnowCover;
+			AttachSnow();
 		}
 		// the particle pool's emitters and effectors (no particles), rebuilt by the renderer module when the host draws
 		if ( snapshot.Particles != null )

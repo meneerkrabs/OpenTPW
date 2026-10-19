@@ -11,8 +11,9 @@ namespace OpenTPW.Tests;
 
 /// <summary>
 /// The winter extension's shipped content (docs/WINTER.md, phase W2): <c>content/winter</c> holds the winter kiosk and the gluhwein stall of each theme, the warm item sprite set (hats, earmuffs, mittens) and
-/// the schema 2 anchors of the 2x kid sets (head and both hands for every land slot), made by <c>tools/winter/build-content.sh</c>. The content is not wired into the game yet (phase W3), so these tests load
-/// the committed files through the game's own pipelines (the object catalog, the sprite readers, the ride script VM) with a content root made here, without any original game data.
+/// the schema 2 anchors of the 2x kid sets (head and both hands for every land slot), made by <c>tools/winter/build-content.sh</c>. These tests load
+/// the committed files through the game's own pipelines (the object catalog, the sprite readers, the ride script VM) with a content root made here, without any original game data; the extension that lists them in the game
+/// (phase W3) is covered by <see cref="WinterSimulationTests"/> and <see cref="WinterWiringTests"/>.
 /// </summary>
 // [EXT:winter-content] OpenTPW's own shipped content; neither Theme Park World nor Theme Park Inc ships anything of it
 [TestClass]
@@ -53,7 +54,7 @@ public class WinterContentTests
 	}
 
 	private static string? folder;
-	private static string Folder => folder ??= RepositoryFolder();
+	internal static string Folder => folder ??= RepositoryFolder();
 
 	private static string RepositoryFolder()
 	{
@@ -137,7 +138,7 @@ public class WinterContentTests
 			Assert.AreEqual( (25, 10, 15, 5), (kiosk.Economy.PricePerUse, kiosk.Economy.CostOfGoods, s.GetInt( "UsageInfo.HappinessEffect" ), s.GetInt( "UsageInfo.LitterEffect" )) );
 			Assert.AreEqual( (0, 0, 0), (s.GetInt( "UsageInfo.ThirstEffect" ), s.GetInt( "UsageInfo.HungerEffect" ), s.GetInt( "UsageInfo.VomitEffect" )) );
 			Assert.AreEqual( (5, 1000), (kiosk.InitialCapacity, kiosk.BuildCost) );
-			Assert.AreEqual( (200, 100, 0), (s.GetInt( "WeatherModifier.SnowPercentage" ), s.GetInt( "SeasonModifier.WinterPercentage" ), s.GetInt( "SeasonModifier.SummerPercentage" )), "sells in snow and in winter months only" );
+			Assert.AreEqual( (200, 150, 60, 20, 60), (s.GetInt( "WeatherModifier.SnowPercentage" ), s.GetInt( "SeasonModifier.WinterPercentage" ), s.GetInt( "SeasonModifier.SpringPercentage" ), s.GetInt( "SeasonModifier.SummerPercentage" ), s.GetInt( "SeasonModifier.AutumnPercentage" )), "sells all year: demand follows the season (winter 150, summer 20) and the snow (200)" );
 
 			var stall = ObjectCatalog.Load( Themes[index] ).Get( IdOf( index, 1 ) );
 			s = stall.Settings;
@@ -416,18 +417,26 @@ public class WinterContentTests
 		}
 	}
 
-	// ---- The inert rule --------------------------------------------------------------------------------------------
+	// ---- The wiring ------------------------------------------------------------------------------------------------
 
 	[TestMethod]
-	public void NothingOfTheContentIsWiredIntoTheGameYet()
+	public void TheContentIsListedOnlyThroughTheWinterExtensionsOwnRoot()
 	{
-		Assert.IsFalse( OfficialExtensions.All.Any( extension => extension.Id.StartsWith( "opentpw.winter", StringComparison.Ordinal ) ), "the extensions themselves come with phases W1, W3 and W5; the content only sits in content/winter" );
-		// the production path: the catalog roots of a default run (every official extension at its default) and the catalogs built from them name no winter shop
-		var roots = ModContentRoots.CatalogRoots( ModSet.Defaults( OfficialExtensions.All ) );
-		Assert.IsFalse( roots.Any( root => root.Objects.Any( definition => definition.InfoId is >= FirstId and <= LastId ) ), "no catalog root of a default run lists a winter shop" );
-		using ( ModContentRoots.Use( ModSet.Defaults( OfficialExtensions.All ), null ) )
-			foreach ( var theme in Themes )
-				Assert.IsFalse( ObjectCatalog.Load( theme ).Entries.Any( entry => entry.InfoId is >= FirstId and <= LastId ), $"{theme}: no winter shop in the catalog of a default run" );
+		CollectionAssert.AreEquivalent( new[] { "opentpw.winter", "opentpw.winter-weather", "opentpw.winter-snow", "opentpw.winter-cold", "opentpw.winter-always" }, OfficialExtensions.All.Where( extension => extension.Id.StartsWith( "opentpw.winter", StringComparison.Ordinal ) ).Select( extension => extension.Id ).ToArray(),
+			"W3 registers the winter extension and the wintry Decembers option beside the settling snow (W1); W5 registers the cold rule; the always winter option joins them" );
+		WinterContent.DirectoryOverride = Folder;
+		try
+		{
+			var roots = ModContentRoots.CatalogRoots( ModSet.Defaults( OfficialExtensions.All ) );
+			Assert.AreEqual( 1, roots.Count( root => root.ModId == ModId ), "a default run lists the winter root once" );
+			Assert.AreEqual( 8, roots.Single( root => root.ModId == ModId ).Objects.Count( definition => definition.InfoId is >= FirstId and <= LastId ) );
+			var off = ModSet.Resolve( Array.Empty<DiscoveredMod>(), new ModSettings { Enabled = new Dictionary<string, bool> { [ModId] = false } }, null, GameEdition.ThemeParkWorld, OfficialExtensions.All );
+			Assert.IsFalse( ModContentRoots.CatalogRoots( off ).Any( root => root.ModId == ModId ), "switched off: no winter root" );
+		}
+		finally
+		{
+			WinterContent.DirectoryOverride = null;
+		}
 		ObjectCatalog.SetContentRoots( Array.Empty<CatalogContentRoot>() );
 		foreach ( var theme in Themes )
 			Assert.IsFalse( ObjectCatalog.Load( theme ).Entries.Any( entry => entry.InfoId is >= FirstId and <= LastId ), $"{theme}: no winter shop in a catalog without the test's own root" );

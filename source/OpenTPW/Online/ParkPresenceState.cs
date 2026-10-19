@@ -1,3 +1,5 @@
+using OpenTPW.Online.Chat;
+
 namespace OpenTPW;
 
 /// <summary>The ground a park's online figures walk: the park's cell grid and which cells a figure may cross.</summary>
@@ -38,6 +40,8 @@ public sealed class PresenceAvatar
 	public bool Moving { get; internal set; }
 	internal float SinceMoved = float.PositiveInfinity;
 	internal (float X, float Y) Target;
+	/// <summary>The jumps of the player's figure seen so far (<see cref="OnlineSession.RoomJumps"/>).</summary>
+	internal int Jumps;
 
 	/// <summary>Moves the figure by (<paramref name="dx"/>, <paramref name="dy"/>) cells, turning it to face the way it went.</summary>
 	internal void Step( float dx, float dy )
@@ -69,7 +73,8 @@ public sealed class PresenceAvatar
 // [BIN:TPW-EXE:0x50B453 online person tick] the person tick's case for thing type 0x12: in the online game type it calls 0x4F7C60 (the sparkle, 0x50B495) and 0x4F7C90 (the walk) once a world turn
 // [BIN:TPW-EXE:0x4E7265 BOSS_CHAT_MOVE] a relayed move finds the online person by name (0x4F7D70: the name at +0x19C), never the player's own, and its Z selects walk (0, 0x4F7DE0), teleport (1, 0x4F7E20), hide (2, 0x4F9ED0) or unhide and teleport (3)
 // [EXT:online-visit-presence] OpenTPW's server relays positions as fractions of the park (ChatProtocol "move"), sent several times a second while a figure walks, where the original sent the destination
-// and every client walked the figure there itself; a remote figure follows the relayed places, and one that jumps further than TeleportDistance is moved there at once as a teleport is; hiding while riding is not sent
+// and every client walked the figure there itself; a remote figure follows the relayed places, and one that jumps further than TeleportDistance, or whose movement was a teleport, is
+// moved there at once
 public sealed class ParkPresenceState
 {
 	/// <summary>The own figure's walking speed, cells per second.</summary>
@@ -114,11 +119,17 @@ public sealed class ParkPresenceState
 	private float sinceSent = float.PositiveInfinity;
 	private bool arrived;
 	private (double Time, float X, float Y)? lastClick;
+	/// <summary>How the next place goes out when it is not a plain walk: a teleport, the hiding as a ride starts, the appearance as it ends.</summary>
+	private ChatMoveMode? pendingMode;
+	/// <summary>Where the ride being ridden lets the figure out (cells), when it has an exit.</summary>
+	private (float X, float Y)? rideExit;
 
 	public ParkPresenceState( IPresenceGround ground, string playerName, (float X, float Y) start )
 	{
 		this.ground = ground;
 		Own = new PresenceAvatar( playerName, true, start.X, start.Y ) { Target = start };
+		// [BIN:TPW-EXE:0x4E5EF0 own person] the figure enters the park as a teleport: MovePlayer(…, 1)
+		pendingMode = ChatMoveMode.Teleport;
 	}
 
 	public PresenceAvatar Own { get; }
@@ -126,8 +137,40 @@ public sealed class ParkPresenceState
 	public IReadOnlyList<PresenceAvatar> Others => others;
 	/// <summary>Every figure: the player's own first.</summary>
 	public IEnumerable<PresenceAvatar> All => others.Prepend( Own );
+	/// <summary>The figures drawn: every figure but the player's own while they ride.</summary>
+	public IEnumerable<PresenceAvatar> Shown => Riding ? others : All;
 	/// <summary>Whether the own figure is on its way somewhere.</summary>
 	public bool Walking => route.Count > 0;
+	/// <summary>The player rides a ride (<see cref="SetRiding"/>): the own figure is hidden where it stood.</summary>
+	public bool Riding { get; private set; }
+	/// <summary>How the place <see cref="Advance"/> returned last moved the figure.</summary>
+	public ChatMoveMode SentMode { get; private set; }
+
+	/// <summary>
+	/// The player boards or leaves a ride: while they ride, the own figure is hidden where it stood and its walk is given up; when the ride ends it
+	/// appears at the ride's exit (<paramref name="exit"/>, given as the ride starts), or where it stood when the ride has none. Each change goes out at once
+	/// (<see cref="Advance"/>), and clicks do not move the figure meanwhile.
+	/// </summary>
+	// [BIN:TPW-EXE:0x4BD090 first-person entry] entering a ride's view hides the own person locally (0x4F9ED0) and sends BOSS_CHAT_MOVE mode 2; a ride entered from the walk ends at the ride's exit cell (0x42A1D0, the thing's +0x38), and the next tick sends mode 3 there (0x4EA410)
+	// [EXT:online-ride-hiding] every ride ends with the figure shown again at the ride's exit (Unhide): the original's return to the overview from a ride boarded there sends only a teleport (mode 1, 0x4BD260 → 0x4EA2D0), which leaves the hidden person hidden for the others
+	public void SetRiding( bool riding, (float X, float Y)? exit = null )
+	{
+		if ( riding == Riding )
+			return;
+		Riding = riding;
+		route.Clear();
+		lastClick = null;
+		if ( riding )
+			rideExit = exit;
+		else if ( rideExit is { } place )
+			(Own.X, Own.Y) = ClampToPark( place.X, place.Y );
+		if ( !riding )
+			rideExit = null;
+		Own.Target = (Own.X, Own.Y);
+		Own.SinceMoved = float.PositiveInfinity;
+		Own.Moving = false;
+		pendingMode = riding ? ChatMoveMode.Hide : ChatMoveMode.Unhide;
+	}
 
 	/// <summary>
 	/// The park position of a relayed place: both axes 0 to 1 across the park's MAP cells (the chat park view's square), so a player in the
@@ -147,6 +190,8 @@ public sealed class ParkPresenceState
 	/// <returns>True when the click teleported the figure.</returns>
 	public bool Click( float x, float y, double time )
 	{
+		if ( Riding )
+			return false;
 		var previous = lastClick;
 		lastClick = (time, x, y);
 		if ( previous is { } first && time - first.Time <= DoubleClickSeconds
@@ -168,6 +213,8 @@ public sealed class ParkPresenceState
 	// [EXT:online-avatar-route] the cells a figure may cross are OpenTPW's choice (ParkPresence.PresenceGround: land, paths, queues and entrances, not water, objects or the fence); the route map the original passes (+0xB4) is not read
 	public void WalkTo( float x, float y )
 	{
+		if ( Riding )
+			return;
 		var (goalX, goalY) = ClampToPark( x, y );
 		route.Clear();
 		arrived = false;
@@ -194,6 +241,8 @@ public sealed class ParkPresenceState
 	// [BIN:TPW-EXE:0x4F7E20 teleport] the person stops walking (+0x39C = 0), takes animation state 3 and is set at the point (0x4FA930)
 	public void TeleportTo( float x, float y )
 	{
+		if ( Riding )
+			return;
 		var (goalX, goalY) = ClampToPark( x, y );
 		route.Clear();
 		Own.X = goalX;
@@ -202,12 +251,14 @@ public sealed class ParkPresenceState
 		Own.SinceMoved = float.PositiveInfinity;
 		Own.Moving = false;
 		arrived = true;
+		pendingMode = ChatMoveMode.Teleport;
 	}
 
 	/// <summary>
 	/// Walks the own figure on for <paramref name="delta"/> seconds and returns the relayed place to send now, or null. A place goes out when
 	/// <paramref name="announce"/> asks (the first in a room on each connection: the server answers it with where the others stand and relays
-	/// movement only to players that have moved), when the figure arrives or teleports, and every <see cref="SendInterval"/> while it walks.
+	/// movement only to players that have moved), when the figure arrives or teleports, when a ride starts or ends, and every <see cref="SendInterval"/>
+	/// while it walks. <see cref="SentMode"/> tells how the place moved the figure: hidden while riding, a teleport or the appearance after a ride once.
 	/// </summary>
 	/// <param name="canSend">The session is in the park's room and connected; without it nothing is sent and pending places wait.</param>
 	public (float X, float Y)? Advance( float delta, bool canSend, bool announce )
@@ -237,12 +288,15 @@ public sealed class ParkPresenceState
 		if ( !canSend )
 			return null;
 		var moved = MathF.Abs( Own.X - lastSent.X ) + MathF.Abs( Own.Y - lastSent.Y );
-		var due = announce || !sentOnce
+		var due = announce || !sentOnce || pendingMode != null
 			|| (arrived && moved > 0f)
 			|| (sinceSent >= SendInterval && moved > SendThreshold)
 			|| sinceSent >= KeyframeSeconds;
 		if ( !due )
 			return null;
+		// a figure hidden while riding stays hidden in every place it sends, the announcement and the keyframes included
+		SentMode = Riding ? ChatMoveMode.Hide : pendingMode ?? ChatMoveMode.Walk;
+		pendingMode = null;
 		sentOnce = true;
 		sinceSent = 0f;
 		arrived = false;
@@ -256,7 +310,8 @@ public sealed class ParkPresenceState
 	/// </summary>
 	/// <param name="positions">Relayed places by player name (the session's room positions).</param>
 	/// <param name="players">The room's roster; a roster cut short with "+N" (a busy room) does not say who is absent, so it removes nobody.</param>
-	public void Sync( IReadOnlyDictionary<string, (float X, float Y)> positions, IReadOnlyCollection<string> players, float delta )
+	/// <param name="jumps">How often each figure jumped (the session's room jumps): a figure whose count changed is moved to its place at once.</param>
+	public void Sync( IReadOnlyDictionary<string, (float X, float Y)> positions, IReadOnlyCollection<string> players, float delta, IReadOnlyDictionary<string, int>? jumps = null )
 	{
 		present.Clear();
 		var complete = true;
@@ -273,21 +328,23 @@ public sealed class ParkPresenceState
 			if ( (complete && !present.Contains( name )) || IsHidden( name ) || name.Equals( Own.Name, StringComparison.OrdinalIgnoreCase ) )
 				continue;
 			var target = FromWire( wire );
+			var jumped = jumps != null && jumps.TryGetValue( name, out var count ) ? count : 0;
 			var avatar = others.Find( other => other.Name.Equals( name, StringComparison.OrdinalIgnoreCase ) );
 			if ( avatar == null )
 			{
-				others.Add( new PresenceAvatar( name, false, target.X, target.Y ) { Target = target } );
+				others.Add( new PresenceAvatar( name, false, target.X, target.Y ) { Target = target, Jumps = jumped } );
 				continue;
 			}
 			avatar.Target = target;
 			var dx = target.X - avatar.X;
 			var dy = target.Y - avatar.Y;
 			var distance = MathF.Sqrt( dx * dx + dy * dy );
-			if ( distance > TeleportDistance )
+			if ( distance > TeleportDistance || jumped != avatar.Jumps )
 			{
 				avatar.X = target.X;
 				avatar.Y = target.Y;
 				avatar.SinceMoved = float.PositiveInfinity;
+				avatar.Jumps = jumped;
 			}
 			else if ( distance > 0f )
 			{

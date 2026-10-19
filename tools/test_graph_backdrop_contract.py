@@ -168,7 +168,7 @@ class GraphBackdropContract(unittest.TestCase):
         self.assertIn("PopulatedControlsRejectNonfiniteCoordinatesAndNegativeSizesBeforeDrawingTheirSeries", draw_tests)
         self.assertIn("PopulatedControlsWithAnUnsupportedStoredPeriodDrawOnlyTheFullBackground", draw_tests)
         proposal = read("docs/proposals/ui-060-match-graph-pixel-metrics.md")
-        for token in ("ten horizontal", "twelve labeled", "have not run", "sample-to-month", "not retired"):
+        for token in ("ten horizontal", "twelve labeled", "run in CI", "sample-to-month", "not retired"):
             self.assertIn(token, proposal)
 
 

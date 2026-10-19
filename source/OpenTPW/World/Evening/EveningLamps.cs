@@ -19,14 +19,17 @@ public enum EveningAnchor
 	Top
 }
 
-/// <summary>One light of a lamp table row: the model node it follows, where on that node, an offset in model units (the node's frame with the ground in XY and up in Z), its colour and radius.</summary>
-public sealed record EveningLampLight( string Node, EveningAnchor Anchor, SVector3 Offset, SVector3 Colour, float RadiusModelUnits );
+/// <summary>
+/// One light of a lamp table row: the model node it follows, where on that node, an offset in model units (the node's frame with the ground in XY and up in Z), its colour and radius, and how much it flickers
+/// (0 = steady; up to <see cref="EveningLampTable.MaximumFlicker"/>: the colour dips by up to that share with <see cref="TorchFlicker.At"/>).
+/// </summary>
+public sealed record EveningLampLight( string Node, EveningAnchor Anchor, SVector3 Offset, SVector3 Colour, float RadiusModelUnits, float Flicker = 0f );
 
 /// <summary>
 /// A row of the lamp table: which objects it is for (a theme, a category, an archive name, the pools extension's <c>Pools.Extra</c> key and/or the id of the extension or mod whose content root lists the object; every field given must match)
-/// and the lights those objects get.
+/// and the lights those objects get. <paramref name="Flame"/> names a model node the extension animates as a flame (<see cref="EveningFlames"/>), or is null.
 /// </summary>
-public sealed record EveningLampRule( string? Theme, ObjectCategory? Category, string? Archive, int? PoolsExtra, IReadOnlyList<EveningLampLight> Lights, string? Mod = null )
+public sealed record EveningLampRule( string? Theme, ObjectCategory? Category, string? Archive, int? PoolsExtra, IReadOnlyList<EveningLampLight> Lights, string? Mod = null, string? Flame = null )
 {
 	/// <summary>Whether <paramref name="entry"/> is one of the objects of this row.</summary>
 	public bool Matches( ObjectCatalogEntry entry ) =>
@@ -50,6 +53,8 @@ public sealed class EveningLampTable
 	public const int MaximumLightsPerRule = 16;
 	/// <summary>The largest radius in model units (200 model units are 40 engine units, twenty cells).</summary>
 	public const float MaximumRadiusModelUnits = 200f;
+	/// <summary>[EXT:evening-torches-flicker] The largest flicker of a light: its colour never dips below half.</summary>
+	public const float MaximumFlicker = 0.5f;
 
 	private static EveningLampTable? shipped;
 	// weak: a park's catalog entries go away with the park, so nothing grows across parks
@@ -162,7 +167,15 @@ public sealed class EveningLampTable
 		var parsed = new List<EveningLampLight>();
 		foreach ( var light in lights.EnumerateArray() )
 			parsed.Add( ParseLight( light, Where ) );
-		return new EveningLampRule( theme, category, archive, poolsExtra, parsed, mod );
+		// [EXT:evening-torches-flicker] a node of the row's objects that the extension animates as a flame (presentation only)
+		string? flame = null;
+		if ( row.TryGetProperty( "flame", out var flameNode ) )
+		{
+			flame = flameNode.ValueKind == JsonValueKind.String ? flameNode.GetString() : null;
+			if ( string.IsNullOrWhiteSpace( flame ) )
+				throw new InvalidDataException( Where( "\"flame\" names a model node." ) );
+		}
+		return new EveningLampRule( theme, category, archive, poolsExtra, parsed, mod, flame );
 	}
 
 	private static EveningLampLight ParseLight( JsonElement light, Func<string, string> where )
@@ -174,6 +187,7 @@ public sealed class EveningLampTable
 		var offset = SVector3.Zero;
 		SVector3? colour = null;
 		float? radius = null;
+		var flicker = 0f;
 		foreach ( var property in light.EnumerateObject() )
 		{
 			switch ( property.Name )
@@ -199,6 +213,12 @@ public sealed class EveningLampTable
 				case "radius":
 					radius = property.Value.GetSingle();
 					break;
+				case "flicker":
+					// [EXT:evening-torches-flicker] the share by which the light dips as it flickers (presentation only)
+					flicker = property.Value.ValueKind == JsonValueKind.Number ? property.Value.GetSingle() : float.NaN;
+					if ( !float.IsFinite( flicker ) || flicker < 0 || flicker > MaximumFlicker )
+						throw new InvalidDataException( where( $"\"flicker\" is 0 to {MaximumFlicker.ToString( CultureInfo.InvariantCulture )}." ) );
+					break;
 				default:
 					throw new InvalidDataException( where( $"unknown light key \"{property.Name}\"." ) );
 			}
@@ -209,7 +229,7 @@ public sealed class EveningLampTable
 			throw new InvalidDataException( where( $"the colour of light \"{node}\" needs three channels from 0 to {PointLightMath.ColourBound.ToString( CultureInfo.InvariantCulture )}, not all 0." ) );
 		if ( radius is not { } size || !float.IsFinite( size ) || size < PointLightMath.MinimumRadiusModelUnits || size > MaximumRadiusModelUnits )
 			throw new InvalidDataException( where( $"the radius of light \"{node}\" is {PointLightMath.MinimumRadiusModelUnits.ToString( CultureInfo.InvariantCulture )} to {MaximumRadiusModelUnits.ToString( CultureInfo.InvariantCulture )} model units." ) );
-		return new EveningLampLight( node, anchor, offset, channels, size );
+		return new EveningLampLight( node, anchor, offset, channels, size, flicker );
 	}
 
 	private static SVector3 Triple( JsonElement value, string name, Func<string, string> where )
@@ -223,8 +243,8 @@ public sealed class EveningLampTable
 	}
 }
 
-/// <summary>One lamp of one model, resolved against its nodes: the node, the point in the node's frame (ground in XY, up in Z, model units), the colour and the radius.</summary>
-public readonly record struct ResolvedEveningLamp( int NodeIndex, SVector3 Local, SVector3 Colour, float RadiusModelUnits );
+/// <summary>One lamp of one model, resolved against its nodes: the node, the point in the node's frame (ground in XY, up in Z, model units), the colour, the radius and the flicker.</summary>
+public readonly record struct ResolvedEveningLamp( int NodeIndex, SVector3 Local, SVector3 Colour, float RadiusModelUnits, float Flicker = 0f );
 
 /// <summary>Resolves a lamp row against a model: finds each light's node by name and works out the point it stands at.</summary>
 public static class EveningLampResolver
@@ -244,7 +264,7 @@ public static class EveningLampResolver
 				missing?.Add( light.Node );
 				continue;
 			}
-			lamps.Add( new ResolvedEveningLamp( node.Index, AnchorPoint( model, node, light.Anchor ) + light.Offset, light.Colour, light.RadiusModelUnits ) );
+			lamps.Add( new ResolvedEveningLamp( node.Index, AnchorPoint( model, node, light.Anchor ) + light.Offset, light.Colour, light.RadiusModelUnits, light.Flicker ) );
 		}
 		return lamps;
 	}
@@ -274,9 +294,10 @@ public sealed class EveningLampSource : IPointLightSource
 	private readonly Func<IReadOnlyList<OriginalObject>> objects;
 	private readonly Func<float> lampLevel;
 	private readonly Func<int>? version;
+	private readonly Func<double>? seconds;
 	private readonly System.Runtime.CompilerServices.ConditionalWeakTable<ObjectCatalogEntry, IReadOnlyList<ResolvedEveningLamp>> resolved = new();
-	// the lamp-bearing objects of the placed set, rebuilt only when the set changes (not once per night frame)
-	private readonly List<(OriginalObject Item, IReadOnlyList<ResolvedEveningLamp> Lamps)> bearers = new();
+	// the lamp-bearing objects of the placed set, rebuilt only when the set changes (not once per night frame), each with its flicker seed
+	private readonly List<(OriginalObject Item, IReadOnlyList<ResolvedEveningLamp> Lamps, int Seed)> bearers = new();
 	private IReadOnlyList<OriginalObject>? cachedList;
 	private int cachedVersion = int.MinValue;
 	private int cachedCount = -1;
@@ -286,9 +307,11 @@ public sealed class EveningLampSource : IPointLightSource
 	/// <summary>The lights this source put into the last frame's list (for tests and the performance notes).</summary>
 	public int LastCount { get; private set; }
 
-	public EveningLampSource( EveningLampTable table, Func<IReadOnlyList<OriginalObject>> objects, Func<float> lampLevel, Func<int>? version = null )
+	/// <param name="seconds">[EXT:evening-torches-flicker] The presentation clock a flickering light follows (<see cref="TorchFlicker.At"/>); without it a flickering light is steady.</param>
+	public EveningLampSource( EveningLampTable table, Func<IReadOnlyList<OriginalObject>> objects, Func<float> lampLevel, Func<int>? version = null, Func<double>? seconds = null )
 	{
 		this.version = version;
+		this.seconds = seconds;
 		this.table = table;
 		this.objects = objects;
 		this.lampLevel = lampLevel;
@@ -347,7 +370,7 @@ public sealed class EveningLampSource : IPointLightSource
 			var item = placed[objectIndex];
 			var lamps = LampsOf( item );
 			if ( lamps.Count > 0 )
-				bearers.Add( (item, lamps) );
+				bearers.Add( (item, lamps, TorchFlicker.SeedOf( item.Placement.X, item.Placement.Y )) );
 		}
 	}
 
@@ -364,9 +387,10 @@ public sealed class EveningLampSource : IPointLightSource
 		}
 		var start = into.Count;
 		Refresh();
+		var now = seconds?.Invoke();
 		for ( var bearerIndex = 0; bearerIndex < bearers.Count; bearerIndex++ )
 		{
-			var (item, lamps) = bearers[bearerIndex];
+			var (item, lamps, seed) = bearers[bearerIndex];
 			var nodes = item.NodeTransforms;
 			for ( var lampIndex = 0; lampIndex < lamps.Count; lampIndex++ )
 			{
@@ -374,7 +398,9 @@ public sealed class EveningLampSource : IPointLightSource
 				if ( lamp.NodeIndex >= nodes.Count || item.Runtime.Animator.IsNodeHidden( lamp.NodeIndex ) )
 					continue;
 				var world = ObjectPlacement.SwapAxes( nodes[lamp.NodeIndex] ) * item.Placement.ModelToEngine;
-				into.Add( new PointLight( SVector3.Transform( lamp.Local, world ), lamp.Colour * level, PointLightMath.ModelUnitsToEngine( lamp.RadiusModelUnits ) ) );
+				// [EXT:evening-torches-flicker] a flickering light dips with the flame it stands on (the same seed and clock), presentation only
+				var strength = lamp.Flicker > 0f && now is { } time ? 1f - lamp.Flicker * ( 1f - TorchFlicker.At( time, seed ) ) : 1f;
+				into.Add( new PointLight( SVector3.Transform( lamp.Local, world ), lamp.Colour * ( level * strength ), PointLightMath.ModelUnitsToEngine( lamp.RadiusModelUnits ) ) );
 			}
 		}
 		LastCount = into.Count - start;

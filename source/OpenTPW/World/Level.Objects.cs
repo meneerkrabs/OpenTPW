@@ -1204,12 +1204,24 @@ public partial class Level
 		hit = default;
 		if ( Objects is not { } objects || objects.Objects.Count == 0 )
 			return false;
-		// the walk starts at the camera's eye (tp.exe 0x790aa0), the view's inverse translation; the near-plane point stands in when the view cannot be inverted
-		var eye = System.Numerics.Matrix4x4.Invert( view, out var inverse ) ? inverse.Translation : origin;
+		// the walk starts at the camera's eye (tp.exe 0x790aa0), the view's inverse translation
+		if ( !System.Numerics.Matrix4x4.Invert( view, out var inverse ) )
+			return false;
+		var eye = inverse.Translation;
 		var grid = new ObjectRayPick.Grid( objects.Grid.Origin, ObjectPlacement.CellSize, objects.Grid.Width, objects.Grid.Height );
-		var shapeOf = PickShapeOf;
-		return ObjectRayPick.TryPick( eye, direction, terrain, grid,
-			( x, y ) => objects.FindAt( x, y ) is { IsDeleted: false } owner ? shapeOf?.Invoke( owner ) ?? owner : null, out hit, out _ );
+		return ObjectRayPick.TryPick( eye, direction, terrain, grid, PickOwnerAt, out hit, out _ );
+	}
+
+	/// <summary>
+	/// The owner the cell lookup names for the cursor pick's walk (tp.exe 0x452ae0): none on a track tile's second-layer piece (its piece model is the instance
+	/// there), else the placed object on the cell when it has a height map, with the height the map gives it there.
+	/// </summary>
+	private ObjectRayPick.Owner? PickOwnerAt( int x, int y )
+	{
+		if ( TrackPieceGround( x, y ) != null || Objects.FindAt( x, y ) is not { IsDeleted: false } item || ObjectGround( item, x, y ) is not { } top )
+			return null;
+		var shape = PickShapeOf?.Invoke( item ) ?? item;
+		return new ObjectRayPick.Owner( shape, top * ObjectPlacement.ModelScale );
 	}
 
 	/// <summary>The model the cursor pick tests for an object; null: the object's own (tests stand in a shape for an object without drawn geometry).</summary>
@@ -1262,7 +1274,7 @@ public partial class Level
 	/// economy must allow the purchase (research, golden tickets, money; ParkEconomy.TryBuild) and charges
 	/// <c>Upgrades[0].CostOfUpgrade</c>; the generic sandbox has no economy and builds for free.
 	/// </summary>
-	// [APPROX:RIDES-021] the clicked cell is the cell of the cursor ray's nearest hit, the terrain's or the first object model's (ObjectRayPick); the walk's height window, the track tiles'
+	// RIDES-021 (tagged at ObjectRayPick): the clicked cell is the cell of the cursor ray's nearest hit, the terrain's or the first object model's (ObjectRayPick); the walk's height window, the track tiles'
 	// second-layer piece instances and the instances' sub-instances are approximated or left out (see the register)
 	public OriginalObject? PlaceObject( ObjectCatalogEntry entry, int x, int y, int rotation )
 	{

@@ -232,15 +232,8 @@ public class OriginalObject : Entity, IPointLightSource, IObjectPickShape
 	/// <summary>Engine-space matrix of a model node (e.g. a seat dummy) for other systems.</summary>
 	public Matrix4x4 GetNodeTransform( int node ) => ObjectPlacement.SwapAxes( NodeTransforms[node] ) * Placement.ModelToEngine;
 
-	/// <summary>The engine height range of the faces the object draws at its current pose (the cursor pick's height window, <see cref="ObjectRayPick"/>).</summary>
-	public bool TryGetPickHeightRange( out float bottom, out float top )
-	{
-		bottom = top = 0;
-		if ( deleted )
-			return false;
-		var animator = Runtime.Animator;
-		return ObjectPickModel.TryGetHeightRange( Runtime.Model, NodeTransforms, animator.IsNodeHidden, animator.GetVertexPositions, Placement.ModelToEngine, out bottom, out top );
-	}
+	/// <summary>The engine height of the model's bounding-box minimum (the cursor pick's window, <see cref="IObjectPickShape.PickBottom"/>).</summary>
+	public float PickBottom => Runtime.Model.BoundsMin.Y * ObjectPlacement.ModelScale;
 
 	/// <summary>The first face of the object's model at its current pose that the line meets, in the original's walk order (<see cref="ObjectPickModel"/>).</summary>
 	public bool TryHitPickLine( System.Numerics.Vector3 origin, System.Numerics.Vector3 direction, out System.Numerics.Vector3 hit )

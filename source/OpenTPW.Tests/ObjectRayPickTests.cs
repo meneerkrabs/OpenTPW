@@ -25,11 +25,10 @@ public class ObjectRayPickTests
 	{
 		public int Tests { get; private set; }
 
-		public bool TryGetPickHeightRange( out float bottom, out float top )
-		{
-			(bottom, top) = (min.Z, max.Z);
-			return true;
-		}
+		public float PickBottom => min.Z;
+
+		/// <summary>The owner as a cell names it: the box with its top as the cell's height.</summary>
+		public ObjectRayPick.Owner Owner => new( this, max.Z );
 
 		public bool TryHitPickLine( NVector3 origin, NVector3 direction, out NVector3 hit )
 		{
@@ -78,7 +77,7 @@ public class ObjectRayPickTests
 		return (eye, direction, ground);
 	}
 
-	private static Func<int, int, IObjectPickShape?> OwnerAt( IObjectPickShape shape, int x, int y ) => ( cx, cy ) => cx == x && cy == y ? shape : null;
+	private static Func<int, int, ObjectRayPick.Owner?> OwnerAt( Box shape, int x, int y ) => ( cx, cy ) => cx == x && cy == y ? shape.Owner : null;
 
 	[TestMethod]
 	public void ARayOverATallObjectsTopMeetsTheTerrainBehindItsFootprint()
@@ -139,7 +138,7 @@ public class ObjectRayPickTests
 		var (eye, direction, ground) = TopRay();
 		var low = new Box( new NVector3( 20.2f, 10.2f, 0 ), new NVector3( 21.8f, 11.8f, 1 ) );
 		var tower = Tower();
-		Assert.IsTrue( ObjectRayPick.TryPick( eye, direction, ground, Grid, ( x, y ) => (x, y) == (10, 5) ? low : (x, y) == (10, 10) ? tower : null, out _, out var owner ) );
+		Assert.IsTrue( ObjectRayPick.TryPick( eye, direction, ground, Grid, ( x, y ) => (x, y) == (10, 5) ? low.Owner : (x, y) == (10, 10) ? tower.Owner : null, out _, out var owner ) );
 		Assert.AreSame( tower, owner );
 		Assert.AreEqual( 0, low.Tests );
 	}
@@ -216,8 +215,6 @@ public class ObjectRayPickTests
 		var column = model.Nodes.Single( node => node.Name == "column" ).Index;
 		Assert.IsTrue( ObjectPickModel.TryHitLine( model, rest, node => node == slab, NoVertices, placement, eye, direction, out _ ), "a hidden slab still walks its child column" );
 		Assert.IsFalse( ObjectPickModel.TryHitLine( model, rest, node => node == column, NoVertices, placement, eye, direction, out _ ), "with the column hidden the line passes over the slab" );
-		Assert.IsTrue( ObjectPickModel.TryGetHeightRange( model, rest, _ => false, NoVertices, placement, out var bottom, out var top ) );
-		Assert.AreEqual( (0f, 20f), (bottom, top) );
 	}
 
 	[TestMethod]
@@ -241,7 +238,8 @@ public class ObjectRayPickTests
 		try
 		{
 			ObjectCatalog.BonusDataRoot = null;
-			int models = 0, meshes = 0, reordered = 0, hit = 0;
+			int models = 0, meshes = 0, reordered = 0, hit = 0, mapped = 0;
+			var heightMaps = new ObjectHeightMaps();
 			foreach ( var theme in ObjectCatalog.Themes )
 				foreach ( var entry in ObjectCatalog.Load( theme ).Entries.Where( candidate => !candidate.IsFixedItem ) )
 				{
@@ -258,6 +256,8 @@ public class ObjectRayPickTests
 							reordered++;
 						meshes++;
 					}
+					if ( heightMaps.MapOf( entry ) != null )
+						mapped++;
 					// a vertical line through the middle of each footprint cell at the rest pose: an object whose model is met by none is not pickable from above
 					var rest = ModelAnimationPlayer.ComputeRestTransforms( model );
 					var placement = new ObjectPlacement( 20, 20, 0, NVector2.Zero, 0 );
@@ -266,7 +266,7 @@ public class ObjectRayPickTests
 						new NVector3( (cell.X + 0.5f) * ObjectPlacement.CellSize, (cell.Y + 0.5f) * ObjectPlacement.CellSize, 100 ), new NVector3( 0, 0, -1 ), out _ ) ) )
 						hit++;
 				}
-			Console.WriteLine( $"object pick: {models} models, {meshes} meshes ({reordered} walked out of their stored face order), {hit} objects met from above" );
+			Console.WriteLine( $"object pick: {models} models, {meshes} meshes ({reordered} walked out of their stored face order), {mapped} with a height map, {hit} met from above" );
 			Assert.IsTrue( models >= 200 && reordered > 0 && hit >= models * 9 / 10, $"{hit} of {models}" );
 		}
 		finally
@@ -302,7 +302,29 @@ public class ObjectRayPickTests
 		System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian( model.AsSpan( 0x268 ), 0 ); System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian( model.AsSpan( 0x78 ), 0x264 );
 		foreach ( var offset in new[] { 0x38, 0x3a, 0x3c, 0x3e, 0x4a } ) System.Buffers.Binary.BinaryPrimitives.WriteUInt16LittleEndian( model.AsSpan( offset ), 0 );
 		File.WriteAllBytes( Path.Combine( root, "tower.MD2" ), model );
+		// the tower's height map beside its mesh: one cell whose maximum byte 255 is 100 model units (20 engine units) above its base
+		Directory.CreateDirectory( Path.Combine( root, "tower" ) );
+		File.WriteAllBytes( Path.Combine( root, "tower", "tower.hmp" ), HeightMap( 255 ) );
 		File.WriteAllBytes( Path.Combine( root, "script.RSE" ), new RideVMTests.Asm().I( Opcode.ENDSLICE ).Build( Enum.GetNames<RideVariables>() ) );
+	}
+
+	/// <summary>A one-cell height map (HmpFileTests' layout) with the cell's maximum byte.</summary>
+	private static byte[] HeightMap( byte maximum )
+	{
+		var data = new byte[48 + 25 + 2];
+		System.Buffers.Binary.BinaryPrimitives.WriteUInt16LittleEndian( data.AsSpan( 0 ), 3 );
+		System.Buffers.Binary.BinaryPrimitives.WriteUInt16LittleEndian( data.AsSpan( 2 ), 0xAB1E );
+		System.Buffers.Binary.BinaryPrimitives.WriteUInt16LittleEndian( data.AsSpan( 4 ), 5 );
+		System.Buffers.Binary.BinaryPrimitives.WriteUInt16LittleEndian( data.AsSpan( 6 ), 100 );
+		System.Buffers.Binary.BinaryPrimitives.WriteUInt16LittleEndian( data.AsSpan( 8 ), 1 );
+		System.Buffers.Binary.BinaryPrimitives.WriteUInt16LittleEndian( data.AsSpan( 10 ), 1 );
+		System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian( data.AsSpan( 12 ), 48 );
+		System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian( data.AsSpan( 16 ), 48 + 25 );
+		System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian( data.AsSpan( 20 ), 48 + 26 );
+		for ( var index = 0; index < 6; index++ )
+			System.Buffers.Binary.BinaryPrimitives.WriteSingleLittleEndian( data.AsSpan( 24 + index * 4 ), index < 3 ? 0 : 100f );
+		data[48 + 25] = maximum;
+		return data;
 	}
 
 	[TestCleanup]
@@ -322,6 +344,7 @@ public class ObjectRayPickTests
 		var objects = new ParkObjects( null!, new SandboxParkGrid() );
 		Set( level, "<Objects>k__BackingField", objects ); Set( level, "<Guests>k__BackingField", guests ); Set( level, "<CellTool>k__BackingField", new CellBuildTool() );
 		Set( level, "<LastActionMessage>k__BackingField", "" );
+		Set( level, "tourHeightMaps", new ObjectHeightMaps() );
 		Set( level, "<Paths>k__BackingField", new ParkPathBuilder( guests.Grid.Cells, guests.Grid, (ParkEconomy?)null, new SandboxParkGrid() ) );
 		var settings = new ObjectSettings( new[] { new ObjectSettingsFile( "Info.Id 1100\nInfo.Name tower\nInfo.IsChoosable 1\nInfo.WhichUIType 0\n", "tower.sam" ) } );
 		var entry = new ObjectCatalogEntry( "jungle", ObjectCategory.Ride, "/tower", settings, new ObjectShape( new[] { "*" } ), "/tower.MD2", null, "/script.RSE",
@@ -393,6 +416,16 @@ public class ObjectRayPickTests
 		Click( hud, context, mouse );
 		Assert.IsNull( hud.SelectedObject, "nothing is selected" );
 		Assert.IsTrue( level.CellTool.IsActive, "the path tool starts behind the ride" );
+	}
+
+	[TestMethod]
+	public void AnObjectWithoutAHeightMapIsNotTested()
+	{
+		// the cell lookup 0x452ae0 names no instance for an object without a height map, so the walk passes over it
+		File.Delete( Path.Combine( root, "tower", "tower.hmp" ) );
+		Park( out var level, out _ );
+		Assert.IsTrue( level.TryGetGridCell( Screen( TowerTop() ), Canvas, out _, out var y ) );
+		Assert.IsTrue( y > 16, "the terrain behind the tower" );
 	}
 
 	[TestMethod]

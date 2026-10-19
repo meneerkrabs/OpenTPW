@@ -15,7 +15,8 @@ namespace OpenTPW;
 // 0x45d0d6-0x45d116) and face by face (the 8-byte records at +0x70: the normal index & 0x7fff and three corners mapped through the corner table +0x94 to
 // positions, 0x45d11e-0x45d16c), then, unless the state has 0x20, its children from the first (+0xc) along the siblings (+8) until one hits
 // (0x45d4cf-0x45d504), a hidden node's children too; the first hit returns at once (0x45d511), so the hit is the first face in this order, not the nearest
-// [APPROX:RIDES-021] the node state bits 0x20 (which prunes the children) and 0x8000 are not modelled
+// RIDES-021 (tagged at ObjectRayPick): the node state bits 0x20 (which prunes the children) and 0x8000 are not modelled, and the faces' stored normals are used
+// where 0x45cdc0 first has 0x473c30 recompute those of vertex-passed nodes (0x473a40) for an instance flagged 0x60000
 // [EXT:pick-face-order] a mesh whose several materials all start at face 0 (OpenTPW's own built models, ModelBuilder, leave every start word at 0; no
 // shipped mesh does) or whose ranges run past its faces is walked in its stored face order, so all its faces can be hit
 public static class ObjectPickModel
@@ -110,40 +111,6 @@ public static class ObjectPickModel
 	/// </summary>
 	private static Matrix4x4 NodeToEngine( Matrix4x4 node, Matrix4x4 placement ) =>
 		node * new Matrix4x4( 1, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 1 ) * placement;
-
-	/// <summary>The drawn faces' engine height range of the model at the pose, or false when no node draws faces.</summary>
-	public static bool TryGetHeightRange( ModelFile model, IReadOnlyList<Matrix4x4> nodes, Func<int, bool> hidden, Func<int, IReadOnlyList<NVector3>?> vertexPositions,
-		Matrix4x4 placement, out float bottom, out float top )
-	{
-		bottom = float.PositiveInfinity;
-		top = float.NegativeInfinity;
-		var built = MeshesOf( model );
-		for ( var node = 0; node < model.Nodes.Count && node < nodes.Count; node++ )
-		{
-			var index = model.Nodes[node].MeshIndex;
-			if ( index < 0 || index >= built.Length || built[index] is not { } mesh || hidden( node ) )
-				continue;
-			var matrix = NodeToEngine( nodes[node], placement );
-			if ( vertexPositions( index ) is { } animated )
-			{
-				foreach ( var position in animated )
-				{
-					var z = NVector3.Transform( position, matrix ).Z;
-					bottom = MathF.Min( bottom, z );
-					top = MathF.Max( top, z );
-				}
-				continue;
-			}
-			for ( var corner = 0; corner < 8; corner++ )
-			{
-				var local = new NVector3( (corner & 1) == 0 ? mesh.BoundsMin.X : mesh.BoundsMax.X, (corner & 2) == 0 ? mesh.BoundsMin.Y : mesh.BoundsMax.Y, (corner & 4) == 0 ? mesh.BoundsMin.Z : mesh.BoundsMax.Z );
-				var z = NVector3.Transform( local, matrix ).Z;
-				bottom = MathF.Min( bottom, z );
-				top = MathF.Max( top, z );
-			}
-		}
-		return bottom <= top;
-	}
 
 	/// <summary>The first face of the model at the pose that the line meets inside it, in the original's node and face order, and the point.</summary>
 	public static bool TryHitLine( ModelFile model, IReadOnlyList<Matrix4x4> nodes, Func<int, bool> hidden, Func<int, IReadOnlyList<NVector3>?> vertexPositions,

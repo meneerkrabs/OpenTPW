@@ -10,8 +10,11 @@ namespace OpenTPW;
 /// </summary>
 public interface IObjectPickShape
 {
-	/// <summary>The lowest and highest engine height of the shape's drawn faces at its current pose; false when it draws none.</summary>
-	bool TryGetPickHeightRange( out float bottom, out float top );
+	/// <summary>
+	/// The engine height of the model's bounding-box minimum (MD2 header +0x84, its Y, × the engine scale): the walk's window tests it against the ray's highest
+	/// point over the pass, as an absolute height (0x45cfaf-0x45cfbd reads the model's own word, not adding the instance's height).
+	/// </summary>
+	float PickBottom { get; }
 
 	/// <summary>
 	/// The first face, in the model's node order, that the line through <paramref name="origin"/> along <paramref name="direction"/> (engine space, both directions)
@@ -36,24 +39,28 @@ public interface IObjectPickShape
 /// [BIN:TPW-EXE:0x45ccf7 nearest hit] the owner's hit point replaces the terrain point when the terrain was missed or the owner's point is nearer the camera
 /// (0x470940 distances, 0x45cd04-0x45cd35), and it is written to both outputs, the hover point 0x7a1c70 that 0x45d560 turns into the hover cell 0x7b05cc
 /// (the frame loop 0x54e2b0) and the mouse point 0x7a1c90 (0x45cd44-0x45cd7b)
-/// [APPROX:RIDES-021] the height window, the cell's object and its sub-instances: the original tests a cell's owner only when the ray's height over the
-/// pass reaches down to the cell's height from the cell lookup 0x452ae0 (the owner's height map) and up to the model's word +0x84 (0x45cf47-0x45cfbd); the
-/// port's window is the owner's drawn height range; 0x452ae0 also yields a track tile's second-layer piece instance before the owner, and an instance with
-/// sub-instances (0x447790, 0x4477d0) tests each of them, which the port does not model (a coaster's or a water ride's track is not hit)
+/// [BIN:TPW-EXE:0x45cdc0 cell owner test] the cell lookup 0x452ae0 names the cell's instance: the second-layer piece instance first (0x53bf30), else the
+/// instance (+0x20) of the class-3 thing that owns the cell (0x527e80), and only one with a height map (+0xcc): its height there is the map byte × 100/255
+/// plus the instance's height (ObjectHeightMaps.Height); without a map no instance is named and the cell is not tested (0x452ae0's out-pointer is cleared);
+/// the instance is tested when the ray's lowest height over the pass (the pass point's height less the share of the pass's drop to the cell's near edge
+/// along the larger axis, 0x45cee6-0x45cf8f) is at most that height and its highest at least the model's bounds minimum (0x45cf8f-0x45cfbd)
+/// [APPROX:RIDES-021] a cell whose second-layer piece instance answers (a kart or water ride's track tile) is not tested, as the original tests the piece's
+/// model there, which the port does not hold; an instance with the group flag 0x80000 tests its group's members instead (0x447790, 0x4477d0), which the port
+/// does not model; nor are the model walk's node state bits 0x20 and 0x8000 and the normal refresh 0x473c30 (ObjectPickModel)
 /// </remarks>
 public static class ObjectRayPick
 {
 	/// <summary>The grid the walk steps over: the engine position of cell (0, 0)'s corner, the cell size in engine units and the cell counts.</summary>
 	public readonly record struct Grid( NVector2 Origin, float CellSize, int Width, int Height );
 
-	/// <summary>The walk's bound: past this many passes it stops even with the height still above the floor (a ray along the ground).</summary>
-	private const int MaximumPasses = 4096;
+	/// <summary>The owner a cell names for the walk: its pick shape and the engine height the cell lookup gives it there (<c>0x452ae0</c>).</summary>
+	public readonly record struct Owner( IObjectPickShape Shape, float Top );
 
 	/// <summary>
 	/// The cursor point of the ray from the camera <paramref name="eye"/> along <paramref name="direction"/>: the owner's hit when the walk finds one that is
 	/// nearer than <paramref name="terrainHit"/> (or the terrain was missed), else false and <paramref name="hit"/> is unchanged.
 	/// </summary>
-	public static bool TryPick( NVector3 eye, NVector3 direction, NVector3? terrainHit, Grid grid, Func<int, int, IObjectPickShape?> ownerAt, out NVector3 hit, out IObjectPickShape? owner )
+	public static bool TryPick( NVector3 eye, NVector3 direction, NVector3? terrainHit, Grid grid, Func<int, int, Owner?> ownerAt, out NVector3 hit, out IObjectPickShape? owner )
 	{
 		hit = default;
 		owner = null;
@@ -70,7 +77,7 @@ public static class ObjectRayPick
 	}
 
 	/// <summary>The walk from the camera: the first tested owner whose model the line meets, and that point.</summary>
-	private static bool TryWalk( NVector3 eye, NVector3 direction, NVector3? terrainHit, Grid grid, Func<int, int, IObjectPickShape?> ownerAt, out IObjectPickShape? owner, out NVector3 point )
+	private static bool TryWalk( NVector3 eye, NVector3 direction, NVector3? terrainHit, Grid grid, Func<int, int, Owner?> ownerAt, out IObjectPickShape? owner, out NVector3 point )
 	{
 		owner = null;
 		point = default;
@@ -79,17 +86,38 @@ public static class ObjectRayPick
 		double u = (eye.X - grid.Origin.X) / size, v = (eye.Y - grid.Origin.Y) / size, height = eye.Z;
 		double du = direction.X / size, dv = direction.Y / size, dh = direction.Z;
 		var cache = new Dictionary<IObjectPickShape, (bool Hit, NVector3 Point)>( ReferenceEqualityComparer.Instance );
-		bool Test( double cu, double cv, double low, double high, out IObjectPickShape? found, out NVector3 at )
+		// the floor: the terrain hit's height less one pass's drop, 0 without a terrain hit (0x45c9ed-0x45ca08); the walk's only exit besides a hit is the height
+		// falling below it. A ray straight down divides by a zero ground direction (0x45c9a9, 0x45c9db), so with a terrain hit the floor is infinite and no cell is
+		// tested, as here; a ray that does not fall and misses the terrain would never leave the original's loop
+		// [EXT:cursor-walk-rising-ray] a ray with no fall over the ground that misses the terrain (straight down, level or rising) tests no object; the park camera never casts one
+		if ( !(Math.Abs( du ) > 0 || Math.Abs( dv ) > 0) )
+			return false;
+		var alongV = Math.Abs( du ) <= Math.Abs( dv );
+		var major = alongV ? dv : du;
+		var step = major > 0 ? 1.0 : -1.0;
+		var minorStep = (alongV ? du : dv) / major * step;
+		var drop = dh / major * step;
+		if ( !(drop < 0) )
+			return false;
+		var stop = terrainHit is { } terrain ? terrain.Z + drop : 0.0;
+		if ( !(stop <= height) )
+			return false;
+		bool Test( double cu, double cv, double passHeight, out IObjectPickShape? found, out NVector3 at )
 		{
 			found = null;
 			at = default;
 			var x = Math.Clamp( Truncate( cu ), 0, grid.Width - 1 );
 			var y = Math.Clamp( Truncate( cv ), 0, grid.Height - 1 );
-			if ( ownerAt( x, y ) is not { } shape || !shape.TryGetPickHeightRange( out var bottom, out var top ) )
+			if ( ownerAt( x, y ) is not { } named )
 				return false;
-			// the height window: the ray's height over the pass must reach the owner's drawn range
-			if ( low > top || high < bottom )
+			// the window: the ray over the pass, from the cell's edge behind the point along the larger axis to its edge ahead
+			var within = Fraction( alongV ? cv : cu );
+			var behind = step > 0 ? within : 1 - within;
+			var first = passHeight - behind * drop;
+			var last = (1 - behind) * drop + passHeight;
+			if ( Math.Min( first, last ) > named.Top || Math.Max( first, last ) < named.Shape.PickBottom )
 				return false;
+			var shape = named.Shape;
 			if ( !cache.TryGetValue( shape, out var result ) )
 			{
 				var hitLine = shape.TryHitPickLine( eye, direction, out var linePoint );
@@ -102,35 +130,9 @@ public static class ObjectRayPick
 			at = result.Point;
 			return true;
 		}
-		// a ray with no ground direction looks straight down: only the cell under the camera
-		// [EXT:vertical-cursor-ray] the original divides by the larger ground direction (0x45c9a9, 0x45c9db) and has no answer for a vertical ray; the park camera never looks straight down
-		if ( du == 0 && dv == 0 )
+		while ( true )
 		{
-			if ( dh >= 0 )
-				return false;
-			var floor = terrainHit?.Z ?? 0;
-			return Test( u, v, Math.Min( height, floor ), Math.Max( height, floor ), out owner, out point );
-		}
-		// the larger ground axis steps by one cell, the other and the height by the slope
-		var alongV = Math.Abs( du ) <= Math.Abs( dv );
-		var major = alongV ? dv : du;
-		var step = major > 0 ? 1.0 : -1.0;
-		var minorStep = (alongV ? du : dv) / major * step;
-		var drop = dh / major * step;
-		// the floor: the terrain hit's height less one pass's drop, 0 without a terrain hit
-		var stop = terrainHit is { } terrain ? terrain.Z + drop : 0.0;
-		if ( !(stop <= height) )
-			return false;
-		for ( var pass = 0; pass < MaximumPasses; pass++ )
-		{
-			// the pass covers the major cell of the point: the height window spans the ray over it
-			var majorCoordinate = alongV ? v : u;
-			var within = majorCoordinate - Math.Floor( majorCoordinate );
-			var forward = step > 0 ? 1 - within : within;
-			var backward = 1 - forward;
-			var low = Math.Min( height - backward * drop, height + forward * drop );
-			var high = Math.Max( height - backward * drop, height + forward * drop );
-			if ( Test( u, v, low, high, out owner, out point ) )
+			if ( Test( u, v, height, out owner, out point ) )
 				return true;
 			var (lastU, lastV, lastHeight) = (u, v, height);
 			if ( alongV )
@@ -152,19 +154,12 @@ public static class ObjectRayPick
 					? Fraction( lastMinor ) / (lastMinor - minor)
 					: 1 - Fraction( minor ) / (minor - lastMinor);
 				share *= 1.01;
-				var crossU = lastU * (1 - share) + share * u;
-				var crossV = lastV * (1 - share) + share * v;
-				var crossHeight = lastHeight * (1 - share) + share * height;
-				if ( Test( crossU, crossV, Math.Min( crossHeight, crossHeight - drop ), Math.Max( crossHeight, crossHeight - drop ), out owner, out point ) )
+				if ( Test( lastU * (1 - share) + share * u, lastV * (1 - share) + share * v, lastHeight * (1 - share) + share * height, out owner, out point ) )
 					return true;
 			}
 			if ( !(stop <= height) )
-				break;
-			// [EXT:cursor-walk-bound] past the grid and moving away on the larger axis, every further pass only repeats the clamped edge cells already tested; the original has no such bound
-			if ( alongV ? (step > 0 ? v > grid.Height + 1 : v < -1) : (step > 0 ? u > grid.Width + 1 : u < -1) )
-				break;
+				return false;
 		}
-		return false;
 	}
 
 	/// <summary>The fractional part of a coordinate, as the original's modf (0x67b280) gives it: the sign of the coordinate.</summary>

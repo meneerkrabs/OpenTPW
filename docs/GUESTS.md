@@ -991,7 +991,7 @@ until the script lets it off: the Jungle Burger Shop's script (`burger.RSE`) tak
 waits 1000 ms and writes it to `VAR_LETMEOFF`. OpenTPW draws such a customer standing there
 (`GuestSimulation.StandsAtCounter`, kids or costume renderer by its kept body's appearance); its balloon, thought
 bubble, pick and portrait stay off, as for any rider. A shop with `RideHandlesSprite` 0, a ride and a pools
-changing room still hide the guest. Before October 19, 2026 every served customer was hidden, so guests at the Burger
+changing room still hide the guest. OpenTPW's own winter kiosk, glühwein stall and brolly shop set the key to 1 as well, so their customers stand at the counter too; the kiosk (capacity 5) and the brolly shop (capacity 10) can serve several at once, and those stand on the same stand point. Their `.sam` comments still say the script hides the customer: the shipped archives are pinned by the asset manifest of every park save that placed one, so the comment waits for a content change that has to touch them anyway. Before October 19, 2026 every served customer was hidden, so guests at the Burger
 Shop seemed to vanish into the hut.
 
 Then tp.exe's ExitRide (`0x5014E0`) puts the guest at `UsageInfo.ExitCellAppearPos` inside the exit cell (the

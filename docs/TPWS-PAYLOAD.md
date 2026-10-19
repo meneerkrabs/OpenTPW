@@ -654,8 +654,7 @@ may pass each coaster's `SaveCoasterTrainLayout`, keyed by the header's controll
 `SaveCoasterTrain.ReadAll` decodes the train slots and cars exactly as the loader reads them, and
 a block of several coasters reads (`OriginalParkImport.Import` takes the type's counts from a
 callback and `OriginalPark` supplies them from the level's coaster `.sam`, finding the station as the
-saved attraction whose mesh instance equals the controller word); SAVE-920 is narrowed to the runtime
-restore, which is still refused. Without a layout only a single coaster's
+saved attraction whose mesh instance equals the controller word). Without a layout only a single coaster's
 train payload stays raw (the rest of the block) and a block with more coasters is refused, since the next
 header cannot be located. The section flag word follows the saver's
 and the loader's maps (`SaveCoasterSectionFlags`, `0x437615..0x4376e0`, `0x437ea6..0x437f58`): wire bits 0x1, 0x2, 0x4
@@ -672,10 +671,70 @@ split). `OriginalParkImport.Import` runs the reader on every save and exposes th
 and object `Info.Id` to attach attraction ids. Missing or ambiguous scene matches remain visible;
 header words and scene indices are never guessed as station ids. Only recognized scene kinds
 815/865 participate: kind 1018 pylons are not decoded by the existing scene parser.
-`ParkObjects.ImportOriginal` calls `RequireSupportedCoasterRuntime` before creating any objects:
-a nonempty original TPW controller is explicitly refused, even with no saved sections. Empty TPW
-parks continue through the existing importer. Structural inspection remains available; no runtime
-track, controller or train state is reconstructed. The separate TPI viewer is unchanged.
+`ParkObjects.ImportOriginal` calls `RequireSupportedCoasterRuntime` before creating any objects: it refuses a park
+only when a saved coaster's station mesh id names no single saved attraction thing, the case where tp.exe crashes
+(`0x437CD5`). The separate TPI viewer is unchanged.
+
+### The import (`OriginalCoasterImport`)
+
+A park started from an original save restores its coasters after the stations were placed and the scripts took their
+saved run state (`Level.ImportOriginalCoasters`, after `ImportOriginalScripts`). Per saved coaster, in block order:
+
+1. **Bind.** The block binds to the saved attraction thing whose mesh instance id is the header's `+0xA`, and through
+   its thing id to the placed station object. A station that is not placed as a coaster station refuses the park with
+   the reason, as does a placed station whose track holds anything but its three station nodes.
+2. **Nodes.** The station's three nodes are the placement's (the loader builds them from the station model with
+   `0x436AC0`). Section i becomes chain node 3 + i at its cell, with its stack ordinal, loft t (`0x444150`), height
+   h0 + t(h1 − h0) of its pylon control and yaw (`0x4441D0`). The loop mode starts on a section with wire 0x8 when the
+   coaster type has flag 2, which the type loader `0x42FAD0` sets when the LoopPylon control names a mesh; that node and
+   the next take the LoopPylon control, and a loop control (flag 0x4000) gives them the pair's node flags 0xE0 and 0x60
+   (`0x434060`). The bank setter `0x444270` gets (bank, incline), or (loop rotate, 0) for a section with wire 0x10, and
+   stores them as bank and incline on a node without flag 0x40, or as the loop rotate on a loop node. Wire 0x1, 0x2 and
+   0x4 become the manual yaw, incline and bank flags. The zero-bank mark of a stack's lower nodes is the knot pass's stack
+   pass here, as for a track the tool builds.
+3. **End node and cut.** A complete track (wire 0x1) gets its one pylon-less end node (type flag 0x20, always set). A cut
+   (wire 0x2) runs from the last section with wire 0x40, or S2, to the last section with wire 0x80, or the last node;
+   the two must be neighbours, as the cut `0x446740` leaves them, and their link bits 0x40000/0x80000 come only with the
+   cut markers (closing the circuit, `0x442C70`, clears both).
+4. **Controller words.** The state (low nibble of `+4`), the ride mode (0x10, 0x40 the breakdown, 0x20), the power factor,
+   which must match the mode, and the seats per train are restored. The speed setting is not in the block and stays the
+   constructor's 60.
+5. **Trains.** A runnable track is rated at that cap, and the trains in service (`+0x18`) keep their saved slots: the
+   reference car's position (`+0x74`), the speed (`+0x78`) and the train flags 0x10..0x80. The first rebuild after a load
+   does the same: the rating pass `0x43C450`, called only from the rebuild `0x43EB70`, skips the train count, the slot
+   set-up and the layout while the loader's flag 0x4000 is set. Each in-service slot must be set up (bit 0) and hold the
+   type's car count.
+6. **Script binding.** When the station's saved script holds this coaster's slot (script `+0xE0`, `COAST 8` stored it),
+   the coaster counts as created by its script, and the script loop's speed setter (`0x5516B0` → `0x43B2B0` →
+   `0x43C3D0`) applies the script's speed word (`+0xC0`) at its first pass. When the word differs from 60, the rebuild
+   that follows has 0x4000 clear, so the track is rated at the script's cap and the trains are laid out again from
+   train 0's last car (`0x43C1F0`). After a load the main loop restarts its substep clock (`0x415140` sets `0x879070`),
+   so the first frame runs its coaster update before any script pass, unless the clock advances a millisecond between
+   its two reads of the frame time.
+
+Checked but not imported (evidence lines in the import report):
+
+- the self-intersection count and the collision lists, including the auxiliary block, which the rebuild re-derives
+  (COAST-004);
+- the track flags (SAVE-921);
+- surplus set-up slots;
+- the riders on the trains. Each car's two guest lists and the train's rider count are dropped (SAVE-920), because the
+  guests riding or seated (states 15 and 16) are not imported (SAVE-002).
+
+Shapes the original's own editing never leaves are refused with the reason. Examples: a cut on an incomplete track, a
+state that does not fit the track, a word with bits beyond the state and the mode, a power factor that does not fit the
+mode, seats outside COAST 6's range, or an in-service slot that is not set up.
+
+**Verification status.** This mapping is verified against tp.exe's loader and against synthetic blocks only, **not
+against a real Theme Park World save with a coaster**: none of the local saves holds one. `OriginalCoasterImportTests`
+covers it. A test-only writer (`OriginalCoasterBlockWriter`) follows the decoded reader field for field. It writes
+coasters that OpenTPW built (a running circuit with a hand-rotated and a hand-tilted pylon, an unfinished chain with a
+loop pair and a stacked pylon, a cut in the middle and after S2, a breakdown) in the original layout. The production
+reader parses them and the import restores the same nodes, flags, circuit, state, samples, rating, collision lists,
+trains and seats. The imported coaster continues as the built one does and round-trips through OpenTPW's own save.
+Hand-made blocks cover the refusals and the loop-mode rule. A fixed run of an imported coaster is pinned
+(docs/DETERMINISM.md). The Theme Park Inc prebuilt block is a real-byte cross-check: it reads byte for byte and maps
+consistently (see below), but its coaster type is a stand-in.
 
 ### Evidence status
 
@@ -701,6 +760,12 @@ track, controller or train state is reconstructed. The separate TPI viewer is un
   a real-data cell association observation, but it is Theme Park Inc evidence: no Theme Park World proof, and no
   Theme Park Inc coaster chunk is inferred anywhere in production code (the reader runs on it only in
   a labelled test).
+  The decoded words are also consistent with tp.exe's loader. The one section is the start of a cut (wire 0x280:
+  0x80 with the link bit 0x200) after station node S2. The track is complete and cut open (wire 0x3) in state 1,
+  which is the cut's state. Three train slots are still set up (flags 0x1, cars hidden) on a track that does not run.
+  `ThemeParkIncSaveWorldTests.TheCoasterBlockReadsAndMapsAsTheTpwLoaderReadsIt` imports it onto a stand-in coaster
+  type with the block's 30 one-car slots: a complete track, cut after S2, with no trains. Theme Park Inc's own loader
+  is not traced, so this is a cross-check, not proof.
 - Station nodes are never sections: the saver `0x437300` skips every node whose descriptor byte `+4` carries 0x10
   (the station nodes 0x12 and the end node 0x13) and writes S2's collision list as the
   auxiliary block instead. Consumers still join sections to objects by cell.

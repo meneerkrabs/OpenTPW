@@ -888,3 +888,15 @@ The canopy size, the pull cap, the renderer's per-frame work and the measurement
 | `RainMoodWithUmbrellasFixedRunHash` | `0xADEE2FA6AFC2ACE3` | `0xADEE2FA6AFC2ACE3` |
 
 `RainMoodFixedRunHash` (`0x3697B9094432D152`) and every pin with no brolly shop are unchanged: the kid score is read only for a brolly shop.
+
+## Original coaster import
+
+The original coaster import (October 19, `OriginalCoasterImport`, docs/TPWS-PAYLOAD.md "The import") adds a new pin and
+moves none. Every original save in the corpus holds an empty Coasters block, so no park takes the new path. The import
+draws nothing from `World.Random` or the coaster generator (`CoasterWorld.Random`). It rates the track at the
+constructor's speed setting and keeps the saved trains. The station script's speed word then re-rates the track and lays
+the trains out again.
+
+| Pin | Value |
+| --- | --- |
+| `OriginalCoasterImportTests.ImportedCoasterPin` (a synthetic circuit written in the original layout, imported, bound to speed word 50 and run for 60 s) | `0x0B6F305C6589A229` |

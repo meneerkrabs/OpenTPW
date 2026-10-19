@@ -1283,6 +1283,69 @@ public sealed class CoasterRide
 			hash.Add( guest );
 	}
 
+	// ---- Original save import -------------------------------------------------------------------------
+
+	/// <summary>One saved train slot of an original Coasters block as the import restores it: the reference car's position (train <c>+0x74</c>), the speed (<c>+0x78</c>) and the flags (<c>+0</c>).</summary>
+	internal readonly record struct OriginalTrain( float Position, float Speed, CoasterTrainFlags Flags );
+
+	/// <summary>
+	/// Restores a coaster block of an original save into this fresh ride (<see cref="OriginalCoasterImport"/>): its station was placed, which built the three station
+	/// nodes, as the loader's station-node builder does. The track goes in as mapped, the controller words as saved, the speed setting stays the constructor's 60, and a
+	/// runnable track is rated at that cap while the saved trains keep their places, as the first rebuild after a load leaves them.
+	/// </summary>
+	// [BIN:TPW-EXE:0x437B60 coaster loader] the loader restores the state word, power factor, trains in service, seats and intersection count (0x438340..0x43837D) and every train slot's flags (|= 4), car count, position +0x74 and speed +0x78 (0x438386..), and sets controller flags 0x1001 (dirty) and 0x4000 (loaded); the speed setting +0x30 is not in the block and stays the constructor's 60 (0x4368F0 → 0x43C3D0 with its load argument); the admission and leaving rings are the constructor's fresh ones and the trains' boarding spans (+0x18/+0x1C) are not saved
+	// [BIN:TPW-EXE:0x43EB70 rebuild after load] the next frame's coaster update (0x435A30, run after the substep loop of 0x54E360) rebuilds every dirty controller: the knot pass, the winch clear 0x432B50, the sampler 0x440C10, the rating pass 0x43C450 and the self-intersection pass 0x439AB0, then it clears 0x4000 (0x43F01E); the rating pass is called only from here and, while 0x4000 is set, rates the track (0x43DF90) but skips the train count 0x43BA20, the slot set-up and the layout 0x43C1F0 (0x43CA6B), so the saved trains in service stay where they were, at their saved speeds
+	// [BIN:TPW-EXE:0x415140 load restarts the clock] the save loader 0x414D40 calls 0x415140 after the payload (0x415270), which sets 0x879070; the running case of the main loop 0x54E360 then restarts the substep clock 0x878C74 at the frame's own time, so the first frame after a load runs its substep loop (and the script pass 0x5516B0) only when the clock advanced a millisecond between those two reads, and its coaster update rebuilds at the constructor's speed setting before any script pass
+	internal void ImportOriginal( CoasterTrackSaveData track, CoasterControllerState state, int breakdownState, int seatsPerTrain, IReadOnlyList<OriginalTrain> savedTrains )
+	{
+		ArgumentNullException.ThrowIfNull( track );
+		ArgumentNullException.ThrowIfNull( savedTrains );
+		if ( !Enum.IsDefined( state ) )
+			throw new InvalidDataException( $"Coaster '{Name}' holds the controller state {(int)state}, which is not 1, 2, 4 or 8." );
+		Track.RestoreSnapshot( track );
+		ClearTrains();
+		leaving.Clear();
+		admission.Clear();
+		Initialised = false;
+		State = state;
+		BreakdownState = breakdownState;
+		SpeedSetting = DefaultSpeedSetting;
+		SpeedCap = SpeedCapFor( Definition, SpeedSetting );
+		SeatsPerTrain = BoundedCapacity( seatsPerTrain );
+		// [EXT:coaster-ledger] the money a track cost is OpenTPW's own ledger word (the original keeps none): an imported track was paid for in the saved park, so this session has charged nothing for it
+		PaidCost = 0;
+		TimeSeconds = 0;
+		LeadCarCoordinate = 0;
+		if ( !Track.IsRunnable )
+		{
+			RaiseTrackChanged();
+			return;
+		}
+		RateTrack();
+		foreach ( var saved in savedTrains )
+		{
+			var train = new CoasterTrain( trains.Count, Definition.CarCount, TimeSeconds );
+			RebuildSeats( train );
+			train.Position = saved.Position;
+			train.Speed = saved.Speed;
+			train.Flags = saved.Flags;
+			UpdateExtents( train );
+			trains.Add( train );
+		}
+		TrackChanged?.Invoke( this );
+	}
+
+	/// <summary>
+	/// The station script of an imported coaster holds its slot (script <c>+0xE0</c>, stored by <c>COAST 8</c>): the controller counts as created by its script, and the
+	/// script loop's speed setter applies the script's speed word at its first pass, which re-rates the track and lays the trains out again when it differs from 60.
+	/// </summary>
+	// [BIN:TPW-EXE:0x5516B0 script speed] every pass, a script whose +0xE0 holds a coaster slot calls 0x43B2B0(slot, the signed word +0xC0); 0x43B2B0 looks the controller up in 0x790BD0 and, when the word differs from the setting +0x30, calls 0x43C3D0, which stores the setting and the cap and marks the controller dirty (0x4346C0); the rebuild that follows has 0x4000 clear (the first rebuild after the load cleared it), so its rating pass counts the trains again and lays them out from train 0's last car (0x43C1F0), whose +0x40 the train step 0x43CE20 rewrote from the saved +0x74 (a first step after a load has a zero frame time: ctl+0x120 is set on the step that finds flag 0x10 clear)
+	internal void BindImportedScript( int speedBias )
+	{
+		Initialised = true;
+		ApplyScriptSpeed( speedBias );
+	}
+
 	// ---- Park-resume snapshot ----------------------------------------------------------------------------
 
 	/// <summary>

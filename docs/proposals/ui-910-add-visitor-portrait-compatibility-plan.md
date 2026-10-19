@@ -1,10 +1,10 @@
-# UI-910: Visitor-info arrow order and portrait residual
+# UI-910: Ordinary visitor live portrait and remaining clone fidelity
 
 ## Status and scope
 
-- Bounded implementation based on main `68cee0a7` (October 19, 2026); publication/CI pending, following the October 18 plan-only proposal.
-- The arrow-order mismatch is corrected; UI-910 stays open for the portrait and independent visual/lifecycle residuals.
-- Portrait frame `0x3722` is still empty. No portrait, gauge, camera, sound, keyboard, save-format or simulation behavior is added here.
+- The arrow-order correction remains in place. The next bounded implementation observes ordinary registered kid/costume world body output in portrait frame `0x3722`; publication and exact-head CI are pending.
+- UI-910 stays open for independent native sprite-clone timing, source-loss epochs and visual/lifecycle residuals. Ride, swimmer and specialized chooser sources are excluded.
+- Statistics cadence, arrows, gauge, camera, sound, keyboard, save format and simulation behavior are unchanged.
 
 ## Evidence and implementation
 
@@ -26,8 +26,26 @@ Private static research established 33 byte/call/table checks and 24 derived con
 
 The bounded Python source guards are wired into the full build workflow. The .NET SDK is unavailable in the local implementation environment, so no local C# compilation, unit-test execution, rendered screenshot or full application pass is claimed. Exact-head CI must run the complete C# suite, including visitor, locator, employee, pool and resume regressions. Python checks and aggregate evidence validation are reported separately in the implementation's review summary.
 
-## Portrait work still required
+## Bounded ordinary-body portrait
 
-Verify visitor figure identity/phase, rendering scale and timing before implementing the portrait, with UI-082, UI-092 and HEADS-004 ownership considered. The old speed-8.0 comment is not a verified portrait contract: the bounded inspection found a different raw float argument (12.0), but did not establish that parameter's complete rendering/timing semantics. No guessed speed correction or portrait implementation follows from it.
+Static analysis establishes that the original portrait clones the selected visitor's existing body source. The control's signed depth field plus two supplies UI depth, not a figure ID. The raw float 12.0 is primary scale, not playback speed. The visitor's full refresh creates/replaces the clone; UI live-copy messages refresh selected source fields, while the four-second timer refreshes statistics. The source clone is independently scheduled and has interpreter state the current host guest model cannot reproduce completely.
 
-Remaining portrait acceptance cases include every visitor type, moving/held/riding states, leave and reopen, cycling, and the unchanged four-second stats refresh. Use synthetic fixtures and private original comparisons; never redistribute original media. UI-910 is not retired by this change.
+`GuestRenderer.PrepareWorld` is the actual world's CPU selection/quad path. Existing consumer gates, pose collection, frame selection, quad order and GPU submission remain in their original order. Only a successful ordinary quad can publish a value-only slot/step/heading record. Ride poses and presentation-only `Figures` never publish visitor portraits. A publication records exact guest, simulation, level and renderer identity, world/renderer passes, asset generation, atlas identity and weak-key resource identity. Texture reload invalidates before replacing its first slot; deletion clears publications before queued disposal. Publications hold no GPU handle or UI frame.
+
+`VisitorFrame` is observational. It requires a current registered kids/costumes renderer, current simulation and exact roster member, ordinary source category, unchanged pass/generation/atlas/resource and a live texture. Extension slot/feet/depth/direction/rotation paths and all swim/ride bodies are excluded. It uses the captured animation slot/step and heading at literal yaw zero, including limited-direction mirroring. It never calls consumer/chooser delegates, pose collection, a sprite player, the simulation or shared RNG. No first publication or unavailable source means an empty portrait, with no frozen or invented clone. A new valid world publication can become visible in an already open window; that is the declared host policy.
+
+The HUD keeps its existing public ID-based info selection behavior. Its portrait independently captures an exact Guest, simulation and monotonically replaced selection-session token on open/changed arrows; close or any stack removal invalidates the token. Retained old callbacks cannot revive after close/reopen or cycling, even for the same Guest. A current numeric-ID replacement does not inherit the prior portrait selection. A lower window can draw under a modal without relying on its `Update` call. Singleton arrows preserve the statistics age and existing callback.
+
+## Nominal geometry
+
+The portrait frame model keeps the outer rectangle `(456,267)..(720,531)`. The sprite helper uses the control's explicit inner rectangle `(477,281)..(704,510)`. For signed integer coordinates, the visitor-specific feet are `left + ((right-left) >> 1) + 8`, `bottom - ((bottom-top) >> 2) - 3`: the odd 227 by 229 rectangle therefore yields `(598,450)`, not floating `(598.5,449.75)` or outer-based `(596,462)`. This arithmetic happens in original canvas units before host viewport scaling/anchor translation.
+
+The downstream screen-space path applies explicit scale `12 × 0.05`, with display aspect on X and frame pixels-per-unit A/B. Ideal 2048 by 1536 conversion gives the visitor-only nominal factor 3.6, multiplied by the existing `128/A` and `128/B` frame factors. Shared `UiSpriteFigure` defaults remain 3.2 and retain their original rectangle-relative feet. UI-082 is unchanged. The original viewport uses subpixel offsets/scales, and conditional rotations and depth have separate semantics, so this is not exact native framebuffer or raster parity.
+
+## Tests and remaining work
+
+`VisitorLivePortraitTests` uses synthetic sprite banks, managed lifetime sentinels, actual CPU world preparation and the actual HUD callback/Draw. Coverage includes PeepTypes and ID-derived variants, costumes, walk/wait/stand phases, yaw-zero direction/mirroring, identity/session reuse, hidden/riding/swimming/specialized sources, omitted renderer passes, replacement/reload/deletion, malformed data, observational snapshot/hash/RNG/body-state behavior, real arrows/close/reopen, unchanged statistics cadence and nominal geometry across viewports/non-128 A/B. These are CPU contracts, not GPU or original-media visual comparisons.
+
+The source-integration guards run alongside existing arrow, staff portrait, locator and full C# regression suites; normal CI scope is not weakened. The local implementation environment has no .NET SDK, so compilation and focused/full C# execution require exact-head CI. Private original-data visual comparison is still needed for visual claims; original software was not executed and no original media, private paths, hashes or disassembly are published.
+
+Full parity still requires an independently scheduled sprite-VM clone, its copied interpreter/control state and partial refresh semantics, emitted visibility/opacity/flags, exact source creation/loss/return epochs, and screen-space rotation/depth/viewport behavior. An ordinary world-output observer does not establish those properties. UI-910 is not retired.

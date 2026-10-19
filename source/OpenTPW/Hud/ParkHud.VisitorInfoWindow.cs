@@ -12,7 +12,7 @@ namespace OpenTPW.Hud;
 // (handler 0x4b7720, frames 0x3722 and 0x3723; it first closes the window that is open, 0x485b40), plays the sound 0x81 and posts help 0x12e; the window's refresh 0x4b72a0 (vtable +0x14)
 // runs when it is built (0x4b7660) and on timer 0x80080 (4000 ms, armed on message 0x15), and closes the window when the selected thing [0x7c2658] is gone
 // [BIN:TPW-EXE:0x004879d0 visitor click] the park click in cursor mode 7 and the All Visitors list's row message 0x400 (0x49351e) both open it for the picked or the row's visitor
-// [APPROX:UI-910] the portrait frame (0x3722) stays empty where the original plays a live figure (0x4b6b90: 0x486530 with the frame's figure id + 2); its identity, scale and timing remain unverified. Arrows now share the locator's live type-1 used-chain projection in both directions (0x4824d0 / 0x482da0, mask 0x40), with an explicit host-only fallback for pool-free fixtures.
+// [APPROX:UI-910] the portrait frame observes current ordinary kid/costume world output at yaw zero; unavailable, riding and specialized sources stay empty. Independent native clone VM timing, source-loss epochs, screen-space rotation/depth and exact viewport/raster fidelity remain open. Arrows share the live type-1 used-chain projection (0x4824d0 / 0x482da0, mask 0x40), with an explicit host-only fallback for pool-free fixtures.
 public sealed partial class ParkHud
 {
 	private static LayoutTable VisitorInfoTable => OriginalLayoutTables.VisitorInfoWindow;
@@ -24,6 +24,8 @@ public sealed partial class ParkHud
 	private float visitorInfoAge;
 	private VisitorInfoValues visitorInfoShown;
 	private int visitorInfoTitleNumber;
+	private long visitorPortraitSession;
+	private Guest? visitorPortraitGuest;
 
 	public bool VisitorInfoWindowOpen => visitorInfoScreen != null && Stack.Screens.Contains( visitorInfoScreen );
 	/// <summary>The visitor the window shows (tp.exe's selected thing 0x7c2658), null when it is closed or the visitor left.</summary>
@@ -44,6 +46,7 @@ public sealed partial class ParkHud
 		visitorInfoTitleNumber = guest.VisitorNumber;
 		RefreshVisitorInfo();
 		visitorInfoScreen ??= CreateVisitorInfoScreen();
+		BindVisitorPortrait( guest );
 		Stack.Push( visitorInfoScreen );
 		visitorInfoScreen.Focus( visitorInfoScreen.Find( "exit" ) );
 		// [BIN:TPW-EXE:0x004b79b0 open sound] 0x51bfc0(0, global 0x803a24, 0x81) as the window opens
@@ -53,6 +56,7 @@ public sealed partial class ParkHud
 
 	public void CloseVisitorInfoWindow()
 	{
+		ClearVisitorPortrait();
 		if ( visitorInfoScreen == null || !VisitorInfoWindowOpen )
 			return;
 		while ( Stack.Top != visitorInfoScreen && Stack.Screens.Count > 1 )
@@ -101,6 +105,7 @@ public sealed partial class ParkHud
 		visitorInfoId = next.Value;
 		visitorInfoTitleNumber = (level.Guests?.Guests ?? Array.Empty<Guest>()).FirstOrDefault( item => item.Id == next.Value )?.VisitorNumber ?? 0;
 		RefreshVisitorInfo();
+		BindVisitorPortrait( InfoVisitor );
 		return true;
 	}
 
@@ -127,14 +132,40 @@ public sealed partial class ParkHud
 			SelectVisitor( index );
 	}
 
+	private void ClearVisitorPortrait()
+	{
+		visitorPortraitSession++;
+		visitorPortraitGuest = null;
+		if ( visitorInfoScreen?.Find( "portraitFigure" ) is UiSpriteFigure figure )
+			figure.Frame = () => null;
+	}
+
+	private void BindVisitorPortrait( Guest? guest )
+	{
+		var session = ++visitorPortraitSession;
+		visitorPortraitGuest = guest;
+		var simulation = level.Guests;
+		if ( visitorInfoScreen?.Find( "portraitFigure" ) is not UiSpriteFigure figure )
+			return;
+		// A retained callback from a previous selection/open can never follow an ID replacement or a later session.
+		figure.Frame = () => guest != null && session == visitorPortraitSession && ReferenceEquals( guest, visitorPortraitGuest )
+			&& ReferenceEquals( level, Level.Current ) && ReferenceEquals( simulation, level.Guests ) && ReferenceEquals( guest, InfoVisitor )
+			? level.GuestRenderer?.VisitorFrame( guest ) ?? level.CostumeRenderer?.VisitorFrame( guest ) : null;
+	}
+
 	private UiScreen CreateVisitorInfoScreen()
 	{
-		var screen = new VisitorInfoScreen( this );
+		var screen = new VisitorInfoScreen( this ) { Removed = ClearVisitorPortrait };
 		var table = VisitorInfoTable;
 		screen.Add( new UiModelImage { Id = "window", Model = table.Root.Model!, Bounds = table.Root.Rect, Anchor = UiAnchor.Center } );
 		var portrait = table.Control( 0x3722 );
 		var stats = table.Control( 0x3723 );
 		screen.Add( new UiModelImage { Id = "portraitFrame", Model = portrait.Model!, Bounds = portrait.Rect, Anchor = UiAnchor.Center } );
+		// [BIN:TPW-EXE:0x004B6B90 portrait] source body +0x0c, UI depth +0xe0 + 2, primary scale 12 (not a figure id or animation speed).
+		// [BIN:TPW-EXE:0x00486530 position] uses the control's inner rectangle; integer shifts precede host canvas scaling.
+		var inner = portrait.Inner!.Value;
+		screen.Add( new UiSpriteFigure { Id = "portraitFigure", Bounds = inner, Anchor = UiAnchor.Center,
+			FeetInCanvas = VisitorInfoRules.PortraitFeet( inner ), CanvasUnitsPerPixel = 3.6f } );
 		screen.Add( new UiModelImage { Id = "statsFrame", Model = stats.Model!, Bounds = stats.Rect, Anchor = UiAnchor.Center } );
 		var title = table.Control( 0x3736 );
 		screen.Add( new UiLabel { Id = "title", Text = () => VisitorInfoTitle, Font = fonts => fonts.Title, Color = UiColors.Title, Align = UiAlign.Center, Fit = true,
@@ -225,6 +256,12 @@ public readonly record struct VisitorInfoValues( int Cash, long? Hours, int Ride
 /// <summary>The per-visitor window's rules (tp.exe 0x4b7660, 0x483740 / 0x483770).</summary>
 public static class VisitorInfoRules
 {
+	/// <summary>Visitor-only nominal canvas hotspot. The original signed integer shifts of the inner rectangle precede viewport scaling.</summary>
+	// [BIN:TPW-EXE:0x00486530 position] scale 12 gives trunc(12 * -0.25) = -3; inner (477,281)..(704,510) gives (598,450).
+	public static System.Numerics.Vector2 PortraitFeet( UiRect inner ) =>
+		new( (int)inner.X + (((int)inner.Right - (int)inner.X) >> 1) + 8,
+			(int)inner.Bottom - (((int)inner.Bottom - (int)inner.Y) >> 2) - 3 );
+
 	/// <summary>"Visitor #" with the number, "New Visitor" without one.</summary>
 	public static string Title( UiStringTable strings, int number ) => number == 0 ? strings[UIStrings.NewVisitor]
 		: strings.Format( UIStrings.VisitorCount, number.ToString( CultureInfo.InvariantCulture ) );

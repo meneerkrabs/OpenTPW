@@ -24,18 +24,15 @@ public class WinterTuningMeasureTests
 
 	internal sealed record Sales( int Seed, int Month, int Weather, int Days, int Admitted, int Kiosk, int Stall, int Dressed, int Holding );
 
-	private static SamSettings Hallow() => new( new[] { SamDocument.Parse(
-		"WeatherEffects.QualityForSnowLow\t0\nWeatherEffects.QualityForSnowHigh\t25\nWeatherEffects.QualityForRainLow\t15\nWeatherEffects.QualityForRainHigh\t45\n" +
-		"WeatherEffects.QualityForLightningLow\t0\nWeatherEffects.QualityForLightningHigh\t25\nWeatherEffects.MaxRaindrops\t600\nWeather.DaysOfWarning\t4\nWeather.DaysBetweenChanges\t7\nWeather.SpeedOfChange\t20\n", "test" ) } );
-
 	/// <summary>The shops of the cross park for <paramref name="days"/> park days in a fixed month and a fixed weather state (<see cref="UmbrellaRules.WeatherNone"/>, Rain or Snow).</summary>
-	internal static Sales MeasureSales( ulong seedValue, int month, int weather, int days, int? kioskSummer = null, int? kioskSpring = null )
+	internal static Sales MeasureSales( ulong seedValue, int month, int weather, int days, int? kioskSummer = null, int? kioskSpring = null, bool kioskReturn = true )
 	{
 		var park = new DeterminismTests.SyntheticPark( new WorldSeed( seedValue ), winterShops: true, prepareGuests: guests =>
 		{
 			guests.WinterMonth = () => month;
 			guests.UmbrellaWeatherState = () => weather;
 			guests.WinterWeatherState = () => weather;
+			guests.WinterKioskReturnEnabled = kioskReturn;
 		} );
 		// the fixture's kiosk mirrors the shipped terms (snow 200, winter 150, spring and autumn 60, summer 20); a what-if replaces the summer or spring percentage
 		if ( kioskSummer != null || kioskSpring != null )
@@ -67,14 +64,14 @@ public class WinterTuningMeasureTests
 		return new Sales( (int)seedValue, month, weather, days, (int)park.Guests.Admissions, sales[0], sales[1], dressed.Count, holding.Count );
 	}
 
-	internal sealed record Cold( int Seed, bool ColdOn, bool Shops, bool RainMood, int Guests, double SnowHappiness, double DressedHappiness, double BareHappiness, int Snowy, int Affected, int Dressed, int Kiosk, int Stall );
+	internal sealed record Cold( int Seed, bool ColdOn, bool Shops, bool RainMood, int Guests, double SnowHappiness, double DressedHappiness, double BareHappiness, int Snowy, int Affected, int HoldingWinter, int Kiosk, int Stall );
 
 	/// <summary>
 	/// A snowy week of the Halloween park: its real weather (seed 21, from day 328 so it crosses the first December rolls) drives the cross park for 20 days. Mean happiness of the guests sampled during snow turns, split by outfit.
 	/// </summary>
 	internal static Cold MeasureCold( ulong seedValue, bool coldOn, bool shops, bool rainMood )
 	{
-		var weather = new ParkWeather( Hallow(), 21, 10, 10 );
+		var weather = new ParkWeather( WinterWeatherTests.Hallow(), 21, 10, 10 );
 		var startTurn = 328L * ParkCalendar.SecondsPerDay / ParkCalendar.SecondsPerTurn;
 		weather.AdvanceTo( ParkCalendar.TickOfTurn( 0 ) );
 		weather.AdvanceTo( ParkCalendar.TickOfTurn( startTurn ) );
@@ -108,7 +105,7 @@ public class WinterTuningMeasureTests
 				shopSales[index]++;
 		};
 		var seen = new HashSet<int>();
-		var dressed = new HashSet<int>();
+		var holdingWinter = new HashSet<int>();
 		var affected = new HashSet<int>();
 		double snowSum = 0, dressedSum = 0, bareSum = 0;
 		long snowN = 0, dressedN = 0, bareN = 0;
@@ -125,7 +122,7 @@ public class WinterTuningMeasureTests
 				if ( guest.ColdMoodDay != 0 )
 					affected.Add( guest.Id );
 				if ( guest.HoldsWinter )
-					dressed.Add( guest.Id );
+					holdingWinter.Add( guest.Id );
 				if ( !isSnow )
 					continue;
 				snowSum += guest.Happiness;
@@ -142,7 +139,7 @@ public class WinterTuningMeasureTests
 				}
 			}
 		}
-		return new Cold( (int)seedValue, coldOn, shops, rainMood, seen.Count, snowN == 0 ? 0 : snowSum / snowN, dressedN == 0 ? 0 : dressedSum / dressedN, bareN == 0 ? 0 : bareSum / bareN, snowy, affected.Count, dressed.Count, shopSales[0], shopSales[1] );
+		return new Cold( (int)seedValue, coldOn, shops, rainMood, seen.Count, snowN == 0 ? 0 : snowSum / snowN, dressedN == 0 ? 0 : dressedSum / dressedN, bareN == 0 ? 0 : bareSum / bareN, snowy, affected.Count, holdingWinter.Count, shopSales[0], shopSales[1] );
 	}
 
 	[TestMethod]
@@ -185,22 +182,46 @@ public class WinterTuningMeasureTests
 	}
 
 	[TestMethod]
+	public void InASnowyJanuaryGuestsNowCompleteTheirOutfitBecauseTheKioskDoesNotCountAsRecentlyUsed()
+	{
+		// [EXT:winter-kiosk-return] user-approved 2026-10-19 ("Laten terugkomen"): the before is the game's own history rules (nobody bought a second item), the after is the shipped rule
+		var report = new StringBuilder();
+		report.AppendLine( "Snowy January over 17 park days, seeds 1 to 3: kiosk returns off (before) and on (after): admitted, kiosk sales, guests with an item, guests with a complete outfit" );
+		var before = Seeds.Select( seed => MeasureSales( seed, 1, UmbrellaRules.WeatherSnow, 17, kioskReturn: false ) ).ToList();
+		var after = Seeds.Select( seed => MeasureSales( seed, 1, UmbrellaRules.WeatherSnow, 17 ) ).ToList();
+		foreach ( var (name, runs) in new[] { ("before", before), ("after", after) } )
+			report.AppendLine( FormattableString.Invariant( $"{name}: admitted {runs.Sum( run => run.Admitted ),4}, kiosk {runs.Sum( run => run.Kiosk ),4}, with an item {runs.Sum( run => run.Holding ),4}, complete outfit {runs.Sum( run => run.Dressed ),4}" ) );
+		Write( report.ToString() );
+		Assert.AreEqual( 0, before.Sum( run => run.Dressed ), "the game's history rules: nobody came back for the second item" );
+		Assert.IsTrue( after.Sum( run => run.Dressed ) > 0, "now full outfits occur" );
+		Assert.IsTrue( after.Sum( run => run.Dressed ) * 20 >= after.Sum( run => run.Admitted ), "at least one guest in twenty is fully dressed" );
+		Assert.IsTrue( after.Sum( run => run.Kiosk ) > before.Sum( run => run.Kiosk ), "the kiosk sells the second items" );
+		Assert.IsTrue( after.Sum( run => run.Dressed ) <= after.Sum( run => run.Holding ), "a complete outfit is an item" );
+	}
+
+	[TestMethod]
 	public void TheColdRuleCostsUndressedGuestsHappinessOverASnowyHallowWeekAndDressedGuestsLessOrNothing()
 	{
 		var report = new StringBuilder();
-		report.AppendLine( "Halloween park, real weather from day 328, 20 days, seeds 1 to 3: setup, guests, snowy samples, mean happiness in snow (all / with item / without item), guests affected by the cold rule, guests dressed" );
+		report.AppendLine( "Halloween park, real weather from day 328, 20 days, seeds 1 to 3: setup, guests, snowy samples, mean happiness in snow (all / with item / without item), guests affected by the cold rule, guests holding any winter state (an item or a glühwein warmth)" );
 		var rows = new List<Cold>();
 		foreach (var (coldOn, shops, rainMood) in new[] { (false, false, true), (false, true, true), (true, false, true), (true, true, true), (true, true, false) } )
 			foreach ( var seed in Seeds )
 			{
 				var row = MeasureCold( seed, coldOn, shops, rainMood );
 				rows.Add( row );
-				report.AppendLine( FormattableString.Invariant( $"cold {(coldOn ? "on " : "off")} shops {(shops ? "yes" : "no ")} rainmood {(rainMood ? "on " : "off")} seed {seed}: guests {row.Guests,4}, snowy turns {row.Snowy,4}, kiosk {row.Kiosk,3} stall {row.Stall,3}, happiness {row.SnowHappiness,6:0.0} / {row.DressedHappiness,6:0.0} / {row.BareHappiness,6:0.0}, affected {row.Affected,4}, dressed {row.Dressed,4}" ) );
+				report.AppendLine( FormattableString.Invariant( $"cold {(coldOn ? "on " : "off")} shops {(shops ? "yes" : "no ")} rainmood {(rainMood ? "on " : "off")} seed {seed}: guests {row.Guests,4}, snowy turns {row.Snowy,4}, kiosk {row.Kiosk,3} stall {row.Stall,3}, happiness {row.SnowHappiness,6:0.0} / {row.DressedHappiness,6:0.0} / {row.BareHappiness,6:0.0}, affected {row.Affected,4}, holding winter {row.HoldingWinter,4}" ) );
 			}
 		Write( report.ToString() );
 		Assert.IsTrue( rows.All( row => row.Snowy > 0 ), "the Halloween week snows" );
 		double Mean( bool cold, bool shops ) => rows.Where( row => row.ColdOn == cold && row.Shops == shops && row.RainMood ).Average( row => row.SnowHappiness );
 		Assert.IsTrue( Mean( true, false ) < Mean( false, false ), "with nobody dressed the cold rule lowers the mood in snow against the rain mood's +1" );
+		// the cold rule's cost per outfit, over the shop parks: the guests with an item lose less than the guests without one (or nothing)
+		double Split( bool cold, Func<Cold, double> pick ) => rows.Where( row => row.ColdOn == cold && row.Shops && row.RainMood ).Average( pick );
+		var dressedCost = Split( false, row => row.DressedHappiness ) - Split( true, row => row.DressedHappiness );
+		var bareCost = Split( false, row => row.BareHappiness ) - Split( true, row => row.BareHappiness );
+		Assert.IsTrue( bareCost > 0, $"the cold rule costs the guests without an item happiness ({bareCost:0.00})" );
+		Assert.IsTrue( dressedCost < bareCost, $"and the guests with an item less ({dressedCost:0.00} against {bareCost:0.00})" );
 	}
 
 	private static void Write( string text )

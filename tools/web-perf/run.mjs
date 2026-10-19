@@ -280,6 +280,12 @@ const scenarios = {
 			await sleep(2000);
 			result.evening = { mode: options.evening, ...(lamps != null ? { extraLamps: lamps } : {}), ...await page.steady(options.window * 1000) };
 		}
+		// the zoom window measures the park as it was: undo the evening hold and the extra lamps first
+		if (options.evening != null && options.zoom != null) {
+			if (options.eveningLamps > 0)
+				await page.eval('opentpwPerf.program.PerfEveningLamps(0)');
+			await page.eval('opentpwPerf.program.PerfEvening("on")');
+		}
 		if (options.zoom == null)
 			return result;
 		// [wide zoom] the same park with the camera held at another zoom value (tp.exe's own range is 70..130; the option widens it to 40..300)

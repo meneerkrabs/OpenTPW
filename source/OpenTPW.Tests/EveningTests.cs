@@ -832,6 +832,28 @@ public class EveningTests
 		source.Refresh();
 		Assert.AreEqual( 1, source.BearerCount, "a removed object leaves the cache" );
 
+		// a removal and a placement between two frames keep the length: only the counter catches it
+		var d = Stub();
+		bearing.Add( d );
+		placed.Remove( b );
+		placed.Insert( 0, d );
+		version++;
+		source.Refresh();
+		Assert.AreEqual( 2, source.BearerCount );
+		Assert.AreEqual( 2, placed.Count, "the swap kept the length" );
+
+		// by day the cache is dropped (it would keep removed objects alive) and rebuilt at the next night frame
+		var level = 1f;
+		var dayNight = new EveningLampSource( new EveningLampTable( Array.Empty<EveningLampRule>() ), () => placed, () => level, () => version ) { ResolverOverride = item => OneLamp };
+		dayNight.Refresh();
+		Assert.AreEqual( 2, dayNight.BearerCount );
+		level = 0f;
+		dayNight.AppendPointLights( new List<PointLight>() );
+		Assert.AreEqual( 0, dayNight.BearerCount, "dropped by day" );
+		level = 1f;
+		dayNight.Refresh();
+		Assert.AreEqual( 2, dayNight.BearerCount, "rebuilt at night" );
+
 		// a host without a change counter is caught by the list length
 		var plain = new EveningLampSource( new EveningLampTable( Array.Empty<EveningLampRule>() ), () => placed, () => 1f ) { ResolverOverride = item => OneLamp };
 		plain.Refresh();

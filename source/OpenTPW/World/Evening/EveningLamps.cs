@@ -313,9 +313,17 @@ public sealed class EveningLampSource : IPointLightSource
 	internal int BearerCount => bearers.Count;
 
 	/// <summary>
-	/// Brings the cache of lamp-bearing objects up to date: it is rebuilt when the object list, the host's change counter or (without a counter) the list's length differs from last time.
+	/// Brings the cache of lamp-bearing objects up to date: it is rebuilt when the object list, the host's change counter or (without a counter) the list's length differs from last time. Without a counter a removal and a placement between two frames, which keep the length, go unseen: the level passes <see cref="ParkObjects.Version"/>.
 	/// The order of the placed list is kept, so the lights come out in the same order as a walk over every object.
 	/// </summary>
+	private void Forget()
+	{
+		bearers.Clear();
+		cachedList = null;
+		cachedVersion = int.MinValue;
+		cachedCount = -1;
+	}
+
 	internal void Refresh()
 	{
 		var placed = objects();
@@ -340,7 +348,12 @@ public sealed class EveningLampSource : IPointLightSource
 		LastCount = 0;
 		var level = lampLevel();
 		if ( !( level > 0.002f ) )
+		{
+			// by day the cache would keep removed objects (and a replaced placed list) alive: drop it, the next night frame rebuilds it
+			if ( cachedList != null )
+				Forget();
 			return;
+		}
 		var start = into.Count;
 		Refresh();
 		for ( var bearerIndex = 0; bearerIndex < bearers.Count; bearerIndex++ )

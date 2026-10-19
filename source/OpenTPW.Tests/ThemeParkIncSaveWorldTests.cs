@@ -377,7 +377,27 @@ public class ThemeParkIncSaveWorldTests
 		var payload = Prebuilt();
 		var park = OriginalParkImport.ImportThemeParkInc( payload, map );
 		Assert.IsNotNull( park.ThemeParkIncWorld );
-		Assert.IsNull( park.Statistics, "TPW history ordinals are never inferred for the TPI analyser" );
+		// [BIN:TPI-EXE:0x5AF220 monthly producer] the World-referenced analyser's history comes from the TPI serializer ordinals 14/17/18/19/20 and
+		// ring50 (SaveThemeParkIncStatistics), never from TPW's 9/12/13/14/15. The prebuilt's analyser has run no month: every selected ring is
+		// empty (head -1, not wrapped), its unread slots keep the 0xCDCDCDCD fill as raw words but read as zero, and the arrivals counter is ring
+		// 17's mTemp (0). TPI ring 12, TPW's arrivals ordinal, carries a nonzero 2625 here, so a TPW-ordinal read would show up as stray arrivals.
+		Assert.IsNotNull( park.Statistics, "the prebuilt names its TPI park analyser, whose monthly rings are imported" );
+		var analyser = park.ThemeParkIncWorld!.Find( park.ThemeParkIncWorld.Variables.ParkAnalyser )!.Value;
+		Assert.AreEqual( ThemeParkIncThingModel.ParkAnalyser, analyser.Model );
+		var analyserBody = new ThemeParkIncBody( analyser.Model, park.ThemeParkIncWorld.BodyOf( analyser ) );
+		var statistics = park.Statistics!;
+		foreach ( var (name, ring, capacity) in new[] { ("people", statistics.People, 144), ("arrivals", statistics.Arrivals, 144), ("happiness", statistics.Happiness, 144),
+			("stay", statistics.Stay, 144), ("rating", statistics.Rating, 144), ("recent stays", statistics.RecentStays, 50) } )
+		{
+			Assert.AreEqual( -1, ring.Head, name );
+			Assert.IsFalse( ring.Wrapped, name );
+			Assert.AreEqual( 0, ring.Temp, name );
+			Assert.AreEqual( capacity, ring.RawValues.Count, name );
+			Assert.IsTrue( ring.RawValues.All( word => word == unchecked( (int)0xCDCDCDCD ) ), $"{name} raw fill" );
+			Assert.IsTrue( ring.Values.All( value => value == 0 ), $"{name} unread values" );
+		}
+		Assert.AreEqual( analyserBody.U32( "mDayRings[17].mTemp" ), (uint)statistics.ArrivalsThisMonth );
+		Assert.AreEqual( 2625u, analyserBody.U32( "mDayRings[12].mTemp" ), "TPW's arrivals ordinal names a different, nonzero TPI ring" );
 		Assert.AreEqual( 23, park.ThemeParkIncObjects.Count );
 		foreach ( var item in park.ThemeParkIncObjects )
 		{

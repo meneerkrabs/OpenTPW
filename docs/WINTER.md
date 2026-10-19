@@ -1,6 +1,6 @@
 # Winter (`opentpw.winter`, planned)
 
-October 18, 2026. Status: **phases W0 (the research below and the decisions), W1 ([Settling snow](#settling-snow-extwinter-snow), `opentpw.winter-snow`, built), W2 (our own art and data pipeline, [Content](#content-extwinter-content)), W3 (the simulation, [Simulation](#simulation-phase-w3)) and W4 (the drawing, [Drawing](#drawing-phase-w4)) are done.**
+October 18, 2026. Status: **phases W0 (the research below and the decisions), W1 ([Settling snow](#settling-snow-extwinter-snow), `opentpw.winter-snow`, built), W2 (our own art and data pipeline, [Content](#content-extwinter-content)), W3 (the simulation, [Simulation](#simulation-phase-w3)) W4 (the drawing, [Drawing](#drawing-phase-w4)), W5 (the cold rule) and W6 (the tuning from captures, [Tuning](#tuning-phase-w6)) are done.**
 The settling snow (W1) is visible; the winter kiosk and the glühwein stall are in the Theme Park World catalogs and guests buy from them; the items are drawn on the guests (W4); the cold rule (W5) is not written.
 
 The request (user, 2026-10-18): three features of our own (`[EXT:winter-*]`), with no original art, script or number table copied: (1) snow that settles on the ground, roofs and objects during snowfall and
@@ -94,7 +94,7 @@ All labels below are ours; nothing here is built yet except the content.
 | W3 | simulation behind `opentpw.winter`: catalog root, `AppearanceEffect` 4, the kiosk's rule and terms, the stall's terms, saves, the used-only rule, pins, and the wintry Decembers option | done ([below](#simulation-phase-w3)) |
 | W4 | drawing: the warm-item renderer (`WarmItemRenderer`, sharing the umbrellas' `TryMount` and pull code), head anchors of the original kid and costume sets, browser delivery, captures | done |
 | W5 | `opentpw.winter-cold` with its measurement and pins | done (see [Cold mood](#cold-mood-extwinter-cold-phase-w5)) |
-| W6 | tuning from captures; optional hats on riders' heads, pool-deck snow, sheltered-ground masking | planned |
+| W6 | tuning from captures and headless measurements; no model, anchor or shader value needed a change; optional hats on riders' heads, pool-deck snow and sheltered-ground masking stay open | done (see [Tuning](#tuning-phase-w6)) |
 
 ## Settling snow (`[EXT:winter-snow]`)
 
@@ -247,6 +247,51 @@ about a guest is read but `WarmItems` (`ShownItems` drops an undefined value) an
 | --- | --- |
 | `[EXT:winter-draw]` | the drawing: the renderer, the placement from the tables, the 1 % pull, the forearm turn of a mitten, hats and earmuffs on costumed guests; approved by the user on October 19, 2026 ("Alle drie akkoord") |
 | `[EXT:debug-winter]` | a capture and test hook, not a user feature (Debug builds only): `--debug-winter` and the browser harness hook `PerfWinter` |
+
+## Tuning (phase W6)
+
+October 19, 2026. The full scene was captured with W0 to W5 running together and measured headless. The result is mostly "leave it": no model scale, item anchor, draw order or shader value was changed, no `.sam` number was changed and no pin moved.
+Captures (the shipped Debug hooks plus a local, uncommitted hook that places the kiosk and the stall beside the entrance plaza and crowds guests round them; the game's own pixels, so they stay out of the repository) cover the Halloween park in forced snow
+(`--debug-weather 8 --debug-snow-cover 1`) and the jungle with wintry Decembers and a forced snow spell, in day, dusk and night (`opentpw.evening`), at zoom 40 and 130, with pool guest art on and off, with `--debug-winter` dressing, umbrellas on a third of the guests,
+and `--debug-guest-looks` (balloons, costumes, thought bubbles, litter). What the captures showed:
+
+- **Kiosk and stall in the world.** Scale and ground contact are right at both zooms; the pitched roofs carry snow like any object and read as huts (ridge, wall and counter edges stay visible); the stall's counter, pot and mugs read at zoom 40, and the garland of the kiosk
+  as small coloured blocks. Walls and counters stay in their theme colours under snow. At the farthest zoom the roofs and the ground are both white and the huts are read from their edges and shadows only; judged acceptable, a lower factor for the shop objects would be
+  the lever (a one-line `SnowSurface`) if the user wants more contrast. Ground under a roof is white like the rest (no occlusion data): inside the stall it reads as a snow-covered floor, so **sheltered-ground masking is not done** (a per-cell mask would need the terrain
+  batches rebuilt on every placement, not cheap); it stays an open optional item.
+- **Items.** Hats sit on the head tops and earmuffs at the head centres of both guest art sets (pool art and the original 1x sets), colours show, a hat falls under an umbrella and behind a balloon's string as designed (1 % pull against the umbrellas' 10 %); mittens follow the hands on
+  the 2x sets and are absent on the original sets as decided. The mitten forearm turn showed no visible fault at the angles that appeared in walking captures; a worst-angle frame was not isolated, so it stays as W4 left it. Costumed staff (the dinosaur, the scientist) wear nothing, as before.
+- **Snow look.** At full cover no green grass specks show through in the jungle (the #628 fix holds) or in Halloween; vertical hoardings and cliffs stay bare by design; paths and the entrance plaza read as slush. At night the snow is a deep blue-violet (the evening's ambient
+  tint on the white), the items and guests dim together, the huts keep their silhouettes.
+- **Browser** (`tools/web-perf/run.mjs --scenarios jungle,winterCost`, new, published interpreter build, Chrome 155 headless, Apple M5 through ANGLE/Metal, 1280 x 900, Jungle, 15 s windows, 400 extra guests): the bare crowd costs 3.7 ms a frame on average (p50 3.2, p95 6.8); with the settled snow held at 1
+  3.4 ms (p50 3.2, p95 5.0): **snow costs nothing measurable**; with an open umbrella over every guest (395 drawn) and every guest dressed (about 830 items drawn) 7.3 ms (p50 6.8, p95 9.8, 46 % main-thread busy, still 59.5 fps), and at the farthest zoom 6.6 ms. So the dressed crowd adds about 3.6 ms
+  for 400 guests (umbrellas and items together). One long frame of 100 to 170 ms appears at each step (the staging itself). Screenshot `browser-jungle-snow-dressed-crowd.png` in the notes folder.
+
+**Simulation measurements** (headless `WinterTuningMeasureTests`, the determinism fixture's cross park with a kiosk at (10, 1), a stall at (10, 8) and the drinks shop, seeds 1 to 3, 17 park days each; `OPENTPW_WINTER_MEASURE=<file>` writes the tables):
+
+| Month (weather) | Admitted | Kiosk sales | Stall sales | Guests with an item |
+| --- | --- | --- | --- | --- |
+| January (clear / rain / snow) | 146 / 145 / 146 | 58 / 46 / 44 | 64 / 70 / 70 | 56 / 45 / 42 |
+| April and October (clear / rain / snow) | 144 / 147 / 144 | 25 / 18 / 45 | 59 / 62 / 71 | 23 / 17 / 45 |
+| July (clear / rain / snow) | 144 / 144 / 144 | 0 / 0 / 4 | 48 / 48 / 60 | 0 / 0 / 3 |
+
+- **The kiosk sells next to nothing in summer.** At the shipped summer percentage of 20 the kiosk sold 0 times in 17 clear July days (3 seeds, 432 guests). What-if by summer percentage: 20 % and 35 % give 0, 50 % gives 6, 75 % gives 41, 100 % gives 58 sales (of about 144 guests per seed set). Spring and autumn at 60 % give 25 sales
+  (17 % of guests), winter 150 % 58. "Sells all year" (the user's decision) therefore holds only from spring to winter in this park; **a summer percentage of 50 or more is recommended** (about 4 % of guests with a clear sky, still the lowest season). Not changed here: it is shop data that moves the
+  pins (`WinterFixedRunHash` and the guest-level winter pins), and the fixture has one competing drinks shop only; the user decides.
+- **Snow does not lift the kiosk in the winter months here.** In January the snow percentage (200 x 150) makes the stall (250 x 150) outscore the kiosk, so snowy-day guests choose the stall and fewer buy an item (44 against 58); in April the snow lifts the kiosk from 25 to 45. Fine as a
+  competition outcome, not a bug; to keep the kiosk the winter favourite the stall's snow value would have to drop below the kiosk's (a data choice, reported only).
+- **Share dressed.** With an item (of the admitted guests, three seeds together): 38 % in a clear January (56 of 146), 29 % in a snowy one (42 of 146), 31 % in a snowy April (45 of 144), 0 % in a clear July; a complete outfit (head item and mittens) is rare in 17 days (a guest visits the kiosk once, as the fixed run's 6 of 53 buyers). Over the Halloween park's real snowy week
+  (seed 21 weather from day 328, 20 days) with the shops: 22 to 23 of 64 guests hold an item without the cold rule and 33 of 64 hold an item or a warming glühwein with it; the kiosk sells 24 to 25 times and the stall 27 to 28 times to 64 guests.
+- **Cold rule over that snowy week** (mean happiness of the guest samples taken during snow, three seeds; rain mood on): no shops, rule off (the rain mood's kid snow +1) 48.6; rule on 47.1 (**-1.5**, every one of the 62 to 63 guests affected once). With shops: rule off 58.5 (dressed guests 68.3, bare guests 53.1), rule on 57.3 (dressed
+  67.5, bare 51.7); the dressed guests' lead comes mostly from the shop's own happiness effect, the rule itself costs a bare guest 1.4 and a dressed one 0.8. With the rule on and the rain mood off the means are 58.0 / 68.2 / 52.4. The shift is small because the rule applies once per qualifying day and a guest's visit spans one or two.
+  Recommendation: leave -2 as decided; if the user wants the cold to matter more, the lever is the per-application number, not the dressing bonuses.
+- **Glühwein uptake.** The stall sold 64 times to 146 admitted guests in 17 clear January days and 70 in rain or snow (the drinks shop shares the rest), 48 in a clear July (summer 20 %) and 60 in a snowy July; in the Halloween snowy week 27 to 28 sales to 64 guests.
+
+**Not changed, reported.** (1) Kiosk summer percentage (above). (2) Sheltered-ground masking (above). (3) Pool-deck snow and hats on rider heads (not started). (4) The worst-angle mitten frame was not isolated. (5) Roofs of the shops blend with the snow at the farthest zoom.
+
+| Label | What |
+| --- | --- |
+| `[EXT:winter-tuning]` | the headless measurement tests (`WinterTuningMeasureTests`, nothing pinned) and the browser harness scenario `winterCost`; a measurement aid, not a user feature |
 
 ## Approval of the labels
 

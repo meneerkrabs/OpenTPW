@@ -23,6 +23,7 @@ namespace OpenTPW;
 /// Permission to use, copy, modify, and distribute this software is freely granted, provided that this notice is preserved.
 /// (musl's adaptation: Copyright © 2005-2020 Rich Felker, et al., MIT licence.)
 /// </remarks>
+// [APPROX:DET-017] the x87's extended-precision fsin, fpatan and fyl2x and the C runtime's pow and acos are replaced by these double-precision routines, identical on every runtime
 public static class DetMath
 {
 	// ---- bit access -------------------------------------------------------------------------------------------------------

@@ -54,7 +54,7 @@ public static class PoolExtraSettings
 	/// <summary>
 	/// The engine units a guest lying on a lounger is drawn pulled towards the camera (presentation only, <see cref="LoungerActivity.DepthPull"/>): the camera-facing quad stands at the seat's middle, and
 	/// the lounger's own raised head end (up to 5.8 model units, 0.48 engine units above the cushion) and the front half of its seat, up to 0.68 engine units nearer the camera, hid the head and the
-	/// near side of the body. The screen position stays the same.
+	/// near side of the body. The pull is along the view direction, so the screen position moves only by the perspective's small share (as the flume riders').
 	/// </summary>
 	public const float LoungerDepthPull = 0.75f;
 	/// <summary>A lounger: 60 to 120 turns (15 to 30 seconds) lying, then 60 percent back into the water and the rest end the session.</summary>

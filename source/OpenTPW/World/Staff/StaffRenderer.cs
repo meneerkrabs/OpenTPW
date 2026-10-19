@@ -13,6 +13,8 @@ namespace OpenTPW;
 /// </summary>
 public sealed class StaffRenderer : Entity
 {
+	/// <summary>[EXT:pools-bridges] Optional elevated walking height, in engine units.</summary>
+	public Func<float, float, float?>? FeetHeight { get; init; }
 	private const int VerticesPerSprite = 12;
 	/// <summary>A park turn in seconds (the simulation's 248 ms).</summary>
 	private const float ParkTurnSeconds = 0.248f;
@@ -307,7 +309,9 @@ public sealed class StaffRenderer : Entity
 			if ( Select( member, memberView, now, right, forward ) is not { } chosen )
 				continue;
 			// a member's sprite is pickable, so the original pulls it towards the camera like a visitor's (SpriteScale.PulledDepthShare)
-			var (feet, share) = GuestRenderer.PullTowardsEye( GuestRenderer.CellToEngine( field, memberView.X, memberView.Y ), eye, forward );
+			var position = GuestRenderer.CellToEngine( field, memberView.X, memberView.Y );
+			if ( FeetHeight?.Invoke( memberView.X, memberView.Y ) is { } height ) position.Z = height;
+			var (feet, share) = GuestRenderer.PullTowardsEye( position, eye, forward );
 			AddSprite( ref count, chosen.Atlas, chosen.Frame, chosen.Mirror, feet, right * share, up * share, forward );
 			memberView.Published = new PublishedFrame( Level, Level?.RenderPass ?? 0, rendererPass, assetGeneration,
 				member, member.ThingId, chosen.Atlas, chosen.Slot, chosen.Step, memberView.HeadingX, memberView.HeadingY );

@@ -232,7 +232,7 @@ public class ModsScreenTests
 		var screen = ModsScreen.Create( stack, OriginalUiTests.FakeStrings(), Services() );
 		stack.Push( screen );
 		var rows = ((UiScrollList)screen.Find( "extensions" )!).Rows();
-		CollectionAssert.AreEqual( new[] { "OpenTPW online  1.0.0", "Cross-edition objects  1.0.0", Text( OpenTpwText.ExtensionSmarterGuestsName ) + "  1.6.0", Text( OpenTpwText.ExtensionGuestInsightsName ) + "  1.0.0", "Pools  1.0.0", Text( OpenTpwText.ExtensionPoolGuestArtName ) + "  1.0.0", Text( OpenTpwText.ExtensionUmbrellasName ) + "  1.0.0", Text( OpenTpwText.ExtensionRainMoodName ) + "  1.0.0", Text( OpenTpwText.ExtensionWinterName ) + "  1.0.0", Text( OpenTpwText.ExtensionWinterWeatherName ) + "  1.0.0", Text( OpenTpwText.ExtensionWinterColdName ) + "  1.0.0", Text( OpenTpwText.ExtensionWinterAlwaysName ) + "  1.0.0", Text( OpenTpwText.ExtensionRestoredAdviceName ) + "  1.0.0", Text( OpenTpwText.ExtensionEveningName ) + "  1.0.0", Text( OpenTpwText.ExtensionWinterSnowName ) + "  1.0.0", Text( OpenTpwText.ExtensionCheatsName ) + "  1.0.0" }, rows.ToArray() );
+		CollectionAssert.AreEqual( new[] { "OpenTPW online  1.0.0", "Cross-edition objects  1.0.0", Text( OpenTpwText.ExtensionSmarterGuestsName ) + "  1.6.0", Text( OpenTpwText.ExtensionGuestInsightsName ) + "  1.0.0", "Pools  1.0.0", Text( OpenTpwText.ExtensionPoolGuestArtName ) + "  1.0.0", Text( OpenTpwText.ExtensionUmbrellasName ) + "  1.0.0", Text( OpenTpwText.ExtensionRainMoodName ) + "  1.0.0", Text( OpenTpwText.ExtensionWinterName ) + "  1.0.0", Text( OpenTpwText.ExtensionWinterWeatherName ) + "  1.0.0", Text( OpenTpwText.ExtensionWinterColdName ) + "  1.0.0", Text( OpenTpwText.ExtensionWinterAlwaysName ) + "  1.0.0", Text( OpenTpwText.ExtensionRestoredAdviceName ) + "  1.0.0", Text( OpenTpwText.ExtensionEveningName ) + "  1.1.0", Text( OpenTpwText.ExtensionWinterSnowName ) + "  1.0.0", Text( OpenTpwText.ExtensionCheatsName ) + "  1.0.0" }, rows.ToArray() );
 		stack.Clear();
 	}
 
@@ -451,7 +451,8 @@ public class ModsScreenTests
 	public void TheOptionsPageOffersTheScreenBesideGameFiles()
 	{
 		var source = File.ReadAllText( Path.Combine( RepositoryRoot(), "source", "OpenTPW", "UI", "Original", "Options", "OptionsScreen.cs" ) );
-		StringAssert.Contains( source, "ModsScreen.Create( stack, strings )" );
+		// [EXT:extensions-apply-at-load] the screen gets the flow's way to apply extension choices without a restart
+		Assert.IsTrue( source.Contains( "ModsScreen.Create( stack, strings, new ModsServices { ApplyExtensions = services.ApplyExtensions } )", StringComparison.Ordinal ), "the options page opens the screen with the flow's services" );
 		StringAssert.Contains( source, "OpenTpwText.ModsPage" );
 	}
 

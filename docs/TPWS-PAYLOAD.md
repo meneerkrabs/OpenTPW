@@ -230,9 +230,11 @@ ride, shop, sideshow and win counts, `+0x1D4` arrival date, `+0x1D8` arrival ind
 `+0x214` balloon life, `+0x218`/`+0x21C` last position, `+0x220` state, `+0x224` saved state, `+0x228`/`+0x22A` queue next and previous. The constructor `0x4FAEC0` zeroes the links, flag, destinations and
 last position and stores the constant 6 into both state and saved state (6 in every saved guest).
 
-- `mBeenAdmitted` is 1 after `OnAdmittance` (`0x5012B0`, log "Person %d: OnAdmittance (I think I'm on object %d)"); the dismissal `0x5012F0` ("dismissed from queue on ride %d") logs event type 6 with the major
+- `mBeenAdmitted` is the called-forward flag: 1 after `OnAdmittance` (`0x5012B0`, from the ride's LetMeOn; log "Person %d: OnAdmittance (I think I'm on object %d)"), cleared when the guest notices it in its queue update `0x4FFFF0` (state 13); only a state-11 head at position 0 carries it, typically for one turn. The dismissal `0x5012F0` ("dismissed from queue on ride %d") logs event type 6 with the major
   destination, clears the links, the flag, the destination and the queue position, and returns the guest to state 6. `SaveGuest` refuses any other flag value.
-- `mQNext`/`mQPrev` are the thing ids of the neighbours in the attraction's queue (0 ends the chain; the unlink code `0x501971` rewrites both neighbours).
+- `mQNext`/`mQPrev` are the thing ids of the neighbours in the attraction's queue (0 ends the chain). The unlink `0x4DDD20` rewrites both neighbours (or the ride's head); the needs phase at `0x501971` clears only the guest's own links when its state is outside 11..14.
+- `mQueuePos` (+0x1F1) is the recorded queue position (0 = the front, written by `0x501160` before routing), except in state 14: the state-14 entry (`0x501EF8` → `0x4E2670`) stores the sideshow-win draw there, so the byte is the win flag (`SaveGuest.SideshowWon`), and the queue re-evaluation `0x501390` exempts state 14.
+- The happiness at queue join (guest +0x20C, a float) is not saved: the thing-list loader zeroes it right after the constructor (`0x51861C`).
 - `mSavedState` is the state to resume after a spot animation: `0x4FC800` copies the state into it, stamps `mTimeOfLastSpotAnim` (+0x208) with the world tick and enters state 8 through the state setter
   `0x501DB0`. All 52 call sites of that setter pass at most 0x15, so states are 0 to 21 (`SaveGuest.MaximumState`; the reader refuses more). The setter itself does not guard the range: it stores the state at `0x501DBF` before its `ja` at `0x501DC5`.
 - `mLastPosX`/`mLastPosY` are the balloon sprite's previous position: `0x4FE900` moves the balloon script (+0x210) from them to the new point and stores it (0 without a balloon).
@@ -301,7 +303,7 @@ and bus. Its body is 1,091 bytes while the history buffers hold 30 entries:
 | 4 + 2 | `MeshInstanceID` (110–125 in Easymode), `mFlags` |
 | 33 × (2 + 2) | `mNameA[i]`, `mNameB[i]` interleaved: the two UTF-16 sign lines ("Belly"/"Bounce", gates "LOST"/"Kingdom") |
 | 4 × 3 | `mRideScriptHandle`, `mTrackRideHandle`, `mState` (+0x19c: 0 working, 1 broken down, 2 upgrade requested, 3 not choosable, 4 condemned; SetState `0x4e0e60` closes the object for 1, 2 and 4) |
-| 24 | `mTopLeft`, `mEntryPos`, `mNext`, `mAssignedStaffMember` (+0x5e, the claiming staff thing), `mBackOfQueue` (u16), `mCanLoad` (u32, the open word +0x68), `mExitPos`, `mFirstInQ` (u16), `mIsTrackRideValid` (u32), `mUpgradeParent` (u16) |
+| 24 | `mTopLeft`, `mEntryPos`, `mNext`, `mAssignedStaffMember` (+0x5e, the claiming staff thing), `mBackOfQueue` (u16, the cell id y × 128 + x + 1 of the cached back-of-queue cell, 0 when not cached, `0x4DE130`; not a guest), `mCanLoad` (u32, the open word +0x68), `mExitPos`, `mFirstInQ` (u16, the head guest; there is no tail word), `mIsTrackRideValid` (u32), `mUpgradeParent` (u16) |
 | 6 history buffers | each `u32` `mCurrentEntry`, `u32` `mNumEntries`, `u8` `mWrappedAround`, `u32` `mTemp` (today's running value), then count × `u32`; `mNumCustomers` (+0x1a0) follows the second buffer and `mNumWalkAways` (+0x1a4) the third. The rings are, in order, the daily costs (+0xf8), takings (+0x70), customers (+0x1a8), walk-aways (+0x230), visits (+0x2b8) and the visits' averaged happiness change (+0x340); the day message 0xb rolls each into its ring (`0x4dd320`) |
 | 1 + 1 + 4 + 2 | `mOperatingCapacity`, `mOperatingDuration`, `mOperatingSpeed`, `mPersonBeingLoaded` |
 | 6 × 4 | `mCostOfGoods`, `mQualityOfGoods`, `mChanceOfWinning`, `mPricePerUse` (the loader clamps it to 0–500), `mAmountOfSpecialIngredient`, `mQueueSizeInCells` |
@@ -540,28 +542,29 @@ before `SAOC`. The reader is read-only; OpenTPW builds no coaster chunk (the wri
 
 ```
 u32 coaster count          (linked-list count)
-u32, u32, u32              three globals, meaning unqualified
+u32, u32, u32              the slot allocator's state: 0x790B04 used slots, 0x790B00 free holes,
+                           0x791CE0 next-slot cursor (0, 0, 1 in an empty park)
 per coaster:
   32-byte header:
-    +0  u32  remapped controller flags
-    +4  u32  controller+8
-    +8  u16  controller+12      +10 u16 controller+16
-    +12 u16  controller+20      +14 u16 controller+28    +16 u16 controller+32
+    +0  u32  remapped controller flags (+0x3C bits 0/1, +0 track flags 0x20..0x800)
+    +4  u32  controller+8       (state word)
+    +8  u16  controller+12      (type id)      +10 u16 controller+16 (station mesh instance id)
+    +12 u16  controller+20      (slot)         +14 u16 controller+28 +16 u16 controller+32
     +18 f32  controller+44      (the power factor, 0 or 1)
-    +22 u16  section count      (nodes excluding descriptor flag 0x10)
-    +24 u16  controller+244     +26 u16 controller+240
-    +28 u32  controller+320     (riders on board)
+    +22 u16  section count      (chain nodes excluding descriptor flag 0x10: no station or end node)
+    +24 u16  controller+244     (trains in service)   +26 u16 controller+240 (seats per train)
+    +28 u32  controller+320     (the self-intersection count, not riders)
   auxiliary block: u32 count, then count × u16 ordinals
-    (the loader reads it before any section record, into the expected third node's
-     +180 link slots; the saver writes it where its node walk meets ordinal 2)
+    (station node S2's collision list; the loader reads it before any section record,
+     the saver writes it where its chain walk meets the node with node+0 == 2)
   per section (the header's count times):
     +0  u32  remapped section+8 flags      +4 u32 section+112
     +8  u16  cell X       +10 u16 cell Y   (the descriptor's +12/+16 grid coordinates)
     +12 u8   cell-stack insertion ordinal
     +13 f32  section+232  (height parameter t)   +17 f32 section+216 (bank)
     +21/+25/+29 f32       section+220 (incline), +224 (yaw), +248 (loop rotation, loop nodes only)
-    +33 u8   link count   (narrowed from section+176), then that many u16 ordinals,
-                          each its own 2-byte read like the original
+    +33 u8   collision count (narrowed from section+176, at most 8), then that many u16
+                          collision ordinals, each its own 2-byte read like the original
   per train slot of the coaster type (type +0x2e8, uiMaxTrains):
     27-byte record: u32 train flags, u8 car count (+0xc), u32 +0x74 (the reference car's position, f32),
                     u32 +0x78 (speed, f32), u32 +0x38, u32 +0x64, u32 +0x68, u16 riders (+0x10)
@@ -570,9 +573,80 @@ per coaster:
       then count A u32 (riders on the lap) and count B u32 (guests seated at the station)
 ```
 
+The header fields as tp.exe's loader treats them (`SaveCoaster` names them):
+
+| Header | Controller | Meaning | Restored |
+| --- | --- | --- | --- |
+| +0 u32 | +0x3C b0/b1, +0 0x20..0x800 | wire 0x1 track complete, 0x2 circuit cut open, 0x4..0x100 the track flags (SAVE-921) | yes |
+| +4 u32 | +8 | state word: low nibble 1/2/4/8, mode bits 0x10/0x20/0x40 (0x40 the breakdown, no power); the constructor's value is 0x11 | yes |
+| +8 u16 | +0xC | coaster type id (`TypeId`) | no, the constructor set it |
+| +0xA u16 | +0x10 | station mesh instance id (`StationMeshInstanceId`), the bind key | used to bind |
+| +0xC u16 | +0x14 | slot in the table `0x790BD0` (`Slot`, at most 255), the scripts' coaster handle | as the saved slot, which the allocator assigns as given |
+| +0xE u16 | +0x1C | placement value 1 from `0x466F90` (SAVE-922) | no |
+| +0x10 u16 | +0x20 | placement value 2 from `0x466F90` (SAVE-922) | no |
+| +0x12 f32 | +0x2C | power factor 0 or 1 | yes |
+| +0x16 u16 | — | section count | — |
+| +0x18 u16 | +0xF4 | trains in service (`TrainsInService`; the loop bound of `0x435784`, `0x43BA35`, `0x43CD36`) | yes |
+| +0x1A u16 | +0xF0 | seats per train (`SeatsPerTrain`) | yes |
+| +0x1C u32 | +0x140 | self-intersection count (`IntersectionCount`; PC writers `0x439C40`, `0x43AD50`, docs/COASTERS.md) | yes |
+
+Of the controller words only `+20` (header `+0xC`) reaches the slot allocator `0x468760`; `+28` and `+32` go to the station-node
+builder `0x436AC0`, which never reads them (its only stack argument read is the fifth, at `0x436BFA`).
+
+### The loader `0x437B60`, end to end
+
+The loader binds saved blocks to coasters that already exist; it creates none. Before the Coasters block the World
+block restored the station's attraction thing, and the RideSystem loader `0x4647A0` recreated every saved mesh
+instance through `0x463060` (saved id plus 1, load flag 1). For a coaster type that calls the controller constructor
+`0x4368F0` with the type id, the station mesh id, the two placement values of `0x466F90`, the load flag and one more
+word. The constructor allocates the 0x14C-byte controller, pushes it on the list `0x790FE0` and stores the type id
+(`+0xC`), the type record (`+4`), the station mesh id (`+0x10`) and the placement values (`+0x1C`, `+0x20`); with the
+load flag set it skips the slot, the trains, the seat split and the station nodes. The loader then:
+
+1. reads the count and the three globals straight into the allocator's state (`0x790B04`, `0x790B00`, `0x791CE0`);
+   a count of 0 returns at once;
+2. per coaster sets the loading flag `0x790AFC = 1`, reads the header and walks `0x790FE0` until `ctl+0x10` equals
+   the header's station mesh id (`0x437CBF`). **When no controller matches, the pointer stays 0 and the next
+   instruction dereferences it (`0x437CD5`): the original crashes rather than skipping the block**, so the station's
+   attraction and its RideSystem mesh record must load first. On a match it allocates the train slots and car arrays
+   (`0x436D10` with load flag 1, no car models), builds the three station nodes and the cursor node (`0x436AC0`, from
+   the station model's dummies), restores the slot (`0x468760` with the header's `+0xC`: a slot other than -1 is stored as given, with no
+   allocation, fallback or change to the allocator's globals; the result goes to `ctl+0x14`, `0x4386B2`), sets `ctl |= 2`
+   (`0x4386BA`) and then `ctl |= 0x4000` (`0x437CD8`);
+3. reads the auxiliary block into station node S2's collision list (count `+0xB0`, eight slots `+0xB4..`);
+4. reads each section: wire 0x8 runs the loop-mode setup `0x442CD0`, then `0x435020` finds or creates the cell's
+   stack descriptor in any coaster's stack list (the key is the cell index width·y + x), builds the node through
+   `0x434060` (re-attaching the saved mesh instance) and appends it to the chain (`0x430CA0`); with the load flag
+   it skips the link search and the cost charge. The setters `0x444150`, `0x4441D0` and `0x444270` restore t, the
+   yaw and the bank and incline (or the loop rotation of a loop node); the wire bits become node flags
+   (`0x437EA6..0x437F58`; wire 0x40/0x80 also mark the cut candidates); the collision ordinals are stored raw;
+5. clears the loading flag and runs the stack pass: zero bank (node flag 0x100) on every stacked node but the top,
+   the pylon parts and the stack-part visibility `0x432DF0`;
+6. when the track is complete (wire 0x1), sets `ctl+0x3C |= 1`, builds the end node and sets the state through
+   `0x435730(ctl, 2)`;
+7. resolves every node's collision ordinals to node pointers with `0x43E520`, which walks the head (`ctl+0x54`)
+   that many times along `+0x64`: the ordinals are chain positions (S0 = 0, S1 = 1, S2 = 2, the pylons in saved
+   order, then the end node);
+8. restores the cut (wire 0x2: `ctl+0x60` the cut-end node, default S2, and `ctl+0x64` the cut-start node,
+   default the last node) and the track flags (`0x4380D4..0x438335`);
+9. restores the controller words (`0x438340..0x43837D`): header `+4` → `+8`, `+0x12` → `+0x2C`, `+0x18` → `+0xF4`,
+   `+0x1A` → `+0xF0`, `+0x1C` → `+0x140`; header `+8`, `+0xE` and `+0x10` are never written back;
+10. reads every one of the type's train slots (27 bytes, the loader ORs train flag 0x4) and each car of the train
+    (11 bytes), re-attaching the car model at the saved mesh id (`0x463AB0`, `0x4384CF`) and reading the two rider
+    lists when both buffers exist;
+11. re-splits the seats (`0x43BA90`), refreshes the tool state (`0x4426A0`), highlights the build end (`0x441840`)
+    and clears the current-coaster pointer `0x790FEC`.
+
+The loader runs no knot pass, sampler, validator or station step. It leaves the dirty flags `0x1001` and `0x4000`:
+the next rebuild (`0x43EB70`) re-derives the curve, the winch marks and the mesh and clears `0x4000`, and the rating
+pass (`0x43C450`) skips re-laying the trains while `0x4000` is set. The boarding span, the lead-car coordinate and
+the admission and leaving rings are not saved and are empty after a load.
+
 `SaveCoasterBlock.Parse` (payload + layout + map dimensions) bounds and validates what the traced
 contract states and refuses everything else: truncation inside the header, auxiliary block, section
-record or links (named per part); a coaster or auxiliary-link count above its bound; a non-finite
+record or collision ordinals (named per part); a coaster count above its bound or a collision count above the native
+list's eight slots (`SaveCoasterBlock.CollisionListSlots`; the loader stores the count unbounded, so a larger one
+would overrun the list); a non-finite
 power factor or section float; and a section cell outside the map. The train payload's extent depends
 on the coaster's type (the file carries neither the train slots, `uiMaxTrains`, nor the cars per
 train, `uiMaxCars`: the loader `0x437b60` reads them from the live type, `0x436d10`), so the caller
@@ -583,8 +657,7 @@ callback and `OriginalPark` supplies them from the level's coaster `.sam`, findi
 saved attraction whose mesh instance equals the controller word); SAVE-920 is narrowed to the runtime
 restore, which is still refused. Without a layout only a single coaster's
 train payload stays raw (the rest of the block) and a block with more coasters is refused, since the next
-header cannot be located. The controller word `+0x10` is the station's mesh instance id and `+8` the controller
-state word (low nibble: 1 incomplete, 2 built, 4 open, 8 closed). The section flag word follows the saver's
+header cannot be located. The section flag word follows the saver's
 and the loader's maps (`SaveCoasterSectionFlags`, `0x437615..0x4376e0`, `0x437ea6..0x437f58`): wire bits 0x1, 0x2, 0x4
 (manual yaw, incline, bank), the cut markers 0x40/0x80, the link marks 0x100/0x200 and the intersection marks
 0x400/0x800 are restored, while 0x8, 0x10 and 0x20 (the loop-pair, loop and zero-bank node flags) are
@@ -592,7 +665,7 @@ derived again by the node constructor (the loader runs the loop setup `0x442cd0`
 rotation float for 0x10). The section words are named: `section+112` is the node's mesh instance (re-attached
 through `0x463ab0`), `+216` bank, `+220` incline, `+224` yaw, `+232` the height parameter and `+248`
 the loop rotation (setters `0x444150`, `0x4441d0`, `0x444270`). The header's remaining track flags
-(SAVE-921), controller words (SAVE-922) and the train words `+0x38`, `+0x64`, `+0x68` and the car flag and
+(SAVE-921), the placement values `+28`/`+32` (SAVE-922) and the train words `+0x38`, `+0x64`, `+0x68` and the car flag and
 byte `+0x44` (SAVE-923) are kept raw. A block with count 0 is exactly its 16 bytes (`SavePayloadLayout` enforces this on the
 split). `OriginalParkImport.Import` runs the reader on every save and exposes the result as
 `CoasterBlock`, with `ObjectsAt`/`AttractionsAt` cell queries and `CoasterSections` joins that require both cell
@@ -620,15 +693,17 @@ track, controller or train state is reconstructed. The separate TPI viewer is un
   Theme Park World bytes.
 - **Theme Park Inc cross-check (sibling game, separate semantics):** the Theme Park Inc prebuilt
   save's Coasters block (1,226 bytes between the same delimiters) parses under this contract exactly:
-  count 1, globals 1, 0, 2; header power factor 1.0, one section, zero riders; one section record
-  with no links, cell (65, 67), stack ordinal 0, height parameter ≈ 0.0556, and a 1,140-byte train
+  count 1, globals 1, 0, 2 (slot 1 used, the cursor at 2); header wire flags 0x3, state word 0x11, type id 19,
+  station mesh 4, slot 1, placement values 69 and 65, power factor 1.0, one section, three trains in service,
+  two seats, no self-intersection, an empty auxiliary block; one section record with no collisions, cell (65, 67), stack ordinal 0, height parameter ≈ 0.0556, and a 1,140-byte train
   tail. Its park's RideSystem list places a 6×6 coaster station (Info.Id 1180) and 1×1 pylon records
   (Info.Id 1181, kind 1018) — the saved section's cell (65, 67) carries its own such record. The raw kind-1018 pylon header is pinned separately because the existing scene parser excludes it. That is
   a real-data cell association observation, but it is Theme Park Inc evidence: no Theme Park World proof, and no
   Theme Park Inc coaster chunk is inferred anywhere in production code (the reader runs on it only in
   a labelled test).
-- Which section is the station node is **not** qualified (the saver may exclude station nodes like
-  any descriptor-flag-0x10 node), so the reader makes no station claim; consumers join by cell.
+- Station nodes are never sections: the saver `0x437300` skips every node whose descriptor byte `+4` carries 0x10
+  (the station nodes 0x12 and the end node 0x13) and writes S2's collision list as the
+  auxiliary block instead. Consumers still join sections to objects by cell.
 
 ## Money (bank thing, model 16)
 
@@ -669,7 +744,7 @@ exposes it as `CoasterBlock`, with `ObjectsAt`/`AttractionsAt` cell joins for co
 Imported: park turn and date, the world generator state `mRandomSeed` (`World.Restore`, SAVE-001 retired), bank balance, admission fee, annual profit and bought loans, each
 object's price, cost of goods, upgrade level, state of repair, life gauge, walk-away count, operating state, chance of winning, quality of goods, customer
 count and time stamp (also for objects whose footprint is unverified), staff (type, grade, training percentage, happiness, energy, name, job, hire time, idle stamp and patrol), the hiring pool, the staff HQ's training budgets and strike levels, research (finished and started projects, each category's effort and current project, the work load and the highest open groups), the analyser's four recent-research rings, the challenges, the park
-open flag, and the advisor's pending advice and history of bound messages. The saved guests are restored by `GuestSimulation.ImportOriginal`: states 0–10, 18, 19 and 21 keep their thing id, type, cash, meters and destination and walk on; guests queueing or boarding (11–14), leaving a ride (15), using an attraction (16), held by a guard (17), walking to the arrival vehicle (20), or standing off the paths, are not imported (SAVE-002).
+open flag, and the advisor's pending advice and history of bound messages. The saved guests are restored by `GuestSimulation.ImportOriginal`: states 0–10, 18, 19 and 21 keep their thing id, type, cash, meters and destination and walk on; guests queueing or boarding (11–14), leaving a ride (15), using an attraction (16), held by a guard (17), or walking to the arrival vehicle (20) are not imported (SAVE-002); a park guest (states 6–10) standing off the paths is imported where it stands and recovers through its own state handlers, as tp.exe's load leaves it (`0x4F9407`, `0x4F9490`).
 Still read and not imported, each reported with its SAVE approximation: those dropped guests (SAVE-002), a research project of an object the archives lack or a current project the picker would not offer (SAVE-007), the hiring
 pool's candidates saved on the pointer (SAVE-004), the advisor presentation block, the world state, the arrival variables and bytes, the calendar session start, the advisor
 controller's presentation words (its current record is the last tutorial advice when an automatic advisor attaches) and the weather, park analyser apart from its recent-research rings,

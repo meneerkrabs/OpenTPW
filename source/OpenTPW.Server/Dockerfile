@@ -33,6 +33,7 @@ COPY content/mods/ content/mods/
 COPY content/pools/ content/pools/
 COPY content/umbrellas/ content/umbrellas/
 COPY content/winter/ content/winter/
+COPY content/evening/ content/evening/
 COPY source/ source/
 RUN dotnet publish source/OpenTPW.Web/OpenTPW.Web.csproj -c Release -p:RunAOTCompilation="$WEB_AOT" -o /web --nologo -p:SourceRevisionId="$BUILD_REVISION"
 

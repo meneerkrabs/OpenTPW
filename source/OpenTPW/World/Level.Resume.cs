@@ -93,8 +93,9 @@ public partial class Level
 		var placedEntries = Objects.Objects.Where( item => !item.IsDeleted ).Select( item => item.Entry ).ToArray();
 		// [EXT:winter-save] opentpw.winter likewise: recorded while the park has a winter kiosk or a glühwein stall or a guest with a warm item
 		// [EXT:cheats-save] opentpw.cheats likewise: recorded once the park has used one of the extension's own cheats
+		// [EXT:evening-torches-save] opentpw.evening likewise: recorded while the park holds a torch
 		var extensionsInUse = ParkResumeMods.InUse( Guests.Grid.Cells, placedEntries.Any( ParkResumeMods.IsPoolsObject ), ParkResumeMods.UmbrellasInUse( placedEntries, Guests ), ParkResumeMods.WinterInUse( placedEntries, Guests ),
-			Park.Economy.Cheats.UsesExtension );
+			Park.Economy.Cheats.UsesExtension, ParkResumeMods.EveningInUse( placedEntries ) );
 		var assets = ParkResumeMods.AssetsForUse( verifiedAssets ?? ParkResumeAssetManifest.Capture( Objects.Catalog, Park.Economy.Settings ), placedEntries );
 		var random = CaptureRandomState();
 		var snapshot = new ParkResumeSnapshot

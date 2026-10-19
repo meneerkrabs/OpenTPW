@@ -2,7 +2,7 @@ using System.Buffers.Binary;
 
 namespace OpenTPW;
 
-/// <summary>A validated TPW word ring in physical slot order. Raw words retain scratch/inactive data; values expose only active samples.</summary>
+/// <summary>A validated TPW or TPI word ring in physical slot order. Raw words retain scratch/inactive data; values expose only active samples.</summary>
 public sealed class NativeStatisticsRing
 {
 	internal NativeStatisticsRing( int head, bool wrapped, int temp, int[] words, double[] values )
@@ -23,7 +23,7 @@ public sealed class NativeStatisticsRing
 	public IReadOnlyList<double> Values { get; }
 }
 
-/// <summary>The five TPW monthly graph histories and their continuation inputs, decoded together before any runtime state changes.</summary>
+/// <summary>Five validated TPW or TPI monthly measurements and their host continuation inputs, decoded together before any runtime state changes.</summary>
 public sealed class NativeParkStatistics
 {
 	internal NativeParkStatistics( NativeStatisticsRing people, NativeStatisticsRing arrivals, NativeStatisticsRing happiness,

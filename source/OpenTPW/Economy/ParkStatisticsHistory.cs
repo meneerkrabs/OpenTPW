@@ -104,7 +104,7 @@ public sealed class HistoryRing
 /// The park analyser's monthly statistics that the park information window graphs: the guests dropped off by the bus, the mean happiness, the mean stay,
 /// the guests in the park and the park rating. Nothing here is read by the simulation.
 /// </summary>
-// [APPROX:UI-914] TPW statistics histories are imported; Theme Park Inc history meanings and real long-running wrapped-save corpus coverage remain unqualified. Other park-information presentation residuals remain at the HUD.
+// [APPROX:UI-914] TPW and independently traced TPI statistics are imported; TPI adapts partial inputs across a fresh host clock, not native saved-clock continuation. Real populated/wrapped-save corpus coverage and other park-information presentation residuals remain open.
 public sealed class ParkStatisticsHistory
 {
 	/// <summary>The entries of a monthly ring (0x90).</summary>
@@ -184,7 +184,7 @@ public sealed class ParkStatisticsHistory
 		RecentStays = recentStays;
 	}
 
-	/// <summary>Imports the validated TPW bundle without creating financial months or interpreting inactive native words as observations.</summary>
+	/// <summary>Imports a validated TPW or TPI bundle without creating financial months or interpreting inactive native words as observations.</summary>
 	public void RestoreOriginal( NativeParkStatistics statistics )
 	{
 		ArgumentNullException.ThrowIfNull( statistics );

@@ -211,7 +211,9 @@ public sealed class TrueTypeFont
 		var (offset, length) = GlyphRange( glyph );
 		if ( length == 0 )
 			return new TrueTypeGlyphMetrics( advances[glyph], leftSideBearings[glyph], 0, 0, 0, 0, 0 );
-		Require( offset, 10 );
+		// The 10-byte header must sit inside the glyph's own loca-derived slice, not merely inside
+		// the file: slices of 1..9 bytes would otherwise read the next glyph's or table's bytes.
+		RequireWithin( offset, 10, offset + length );
 		return new TrueTypeGlyphMetrics( advances[glyph], leftSideBearings[glyph], I16( offset + 2 ), I16( offset + 4 ), I16( offset + 6 ), I16( offset + 8 ), I16( offset ) );
 	}
 
@@ -247,8 +249,10 @@ public sealed class TrueTypeFont
 		var (offset, length) = GlyphRange( glyph );
 		if ( length == 0 )
 			return;
-		Require( offset, 10 );
 		var end = offset + length;
+		// The 10-byte header must sit inside the glyph's own loca-derived slice, not merely inside
+		// the file: slices of 1..9 bytes would otherwise read the next glyph's or table's bytes.
+		RequireWithin( offset, 10, end );
 		var contourCount = I16( offset );
 		if ( contourCount >= 0 )
 		{

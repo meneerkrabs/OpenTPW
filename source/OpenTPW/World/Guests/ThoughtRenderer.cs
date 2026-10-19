@@ -30,6 +30,11 @@ public sealed class ThoughtRenderer : Entity
 	private bool deleted;
 
 	public bool Visible { get; set; } = true;
+	/// <summary>
+	/// Whether a guest's umbrella is drawn (<see cref="UmbrellaRenderer.ShowsBubble"/> while the umbrella renderer exists and drew it in the last frame); its bubble hangs <see cref="UmbrellaRenderer.BubbleLift"/> units above it instead of <see cref="Lift"/>, over
+	/// the canopy. Null: no umbrellas, every bubble at <see cref="Lift"/>.
+	/// </summary>
+	public Func<Guest, bool>? UmbrellaShown { get; set; }
 	/// <summary>Bubbles drawn in the last frame.</summary>
 	public int DrawnBubbles { get; private set; }
 
@@ -109,11 +114,11 @@ public sealed class ThoughtRenderer : Entity
 		var count = 0;
 		foreach ( var guest in simulation.Guests )
 			if ( guest.BubbleThought != GuestThought.None && guest.IsVisible )
-				AddBubble( ref count, (int)guest.BubbleThought, guest.DrawX, guest.DrawY, right, up, forward );
+				AddBubble( ref count, (int)guest.BubbleThought, guest.DrawX, guest.DrawY, right, up, forward, UmbrellaRenderer.BubbleHeight( UmbrellaShown?.Invoke( guest ) == true ) );
 		if ( staff != null && staffCell != null )
 			foreach ( var member in staff() )
 				if ( member.BubbleThought != 0 && staffCell( member ) is { } cell )
-					AddBubble( ref count, member.BubbleThought, cell.X, cell.Y, right, up, forward );
+					AddBubble( ref count, member.BubbleThought, cell.X, cell.Y, right, up, forward, Lift );
 		if ( count == 0 )
 			return;
 
@@ -144,8 +149,8 @@ public sealed class ThoughtRenderer : Entity
 		commandList.Draw( (uint)count );
 	}
 
-	/// <summary>One camera-facing quad of the thought's slot with its hotspot <see cref="Lift"/> units above (<paramref name="x"/>, <paramref name="y"/>).</summary>
-	private void AddBubble( ref int count, int thought, float x, float y, SVector3 right, SVector3 up, SVector3 forward )
+	/// <summary>One camera-facing quad of the thought's slot with its hotspot <paramref name="lift"/> units above (<paramref name="x"/>, <paramref name="y"/>).</summary>
+	private void AddBubble( ref int count, int thought, float x, float y, SVector3 right, SVector3 up, SVector3 forward, float lift )
 	{
 		var slot = Slot( thought );
 		var bank = slot < FirstBankSlots ? 0 : 1;
@@ -155,7 +160,7 @@ public sealed class ThoughtRenderer : Entity
 		var frame = atlas.Frames[atlas.GetFrame( slot - bank * FirstBankSlots, 0, 0 )];
 		if ( count + VerticesPerSprite > vertices.Length )
 			Array.Resize( ref vertices, Math.Max( 64 * VerticesPerSprite, vertices.Length * 2 ) );
-		var anchor = GuestRenderer.CellToEngine( field, x, y, Lift );
+		var anchor = GuestRenderer.CellToEngine( field, x, y, lift );
 		var unit = GuestRenderer.UnitsPerPixel;
 		var (x0, x1, yTop, yBottom) = frame.Extents( false, unit );
 		var u0 = frame.X / (float)atlas.Width;

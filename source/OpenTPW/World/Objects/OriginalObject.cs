@@ -288,12 +288,13 @@ public class OriginalObject : Entity, IPointLightSource
 			Array.Fill( slots, Texture.Missing );
 			// Runtime sign faces replace the shipped placeholders, including fixed gate faces.
 			var hasSignSlot = part.Textures.Any( ObjectSigns.IsSignSlot );
-			var gateSign = hasSignSlot && Entry.IsFixedItem && Entry.ArchiveName.Equals( "gates", StringComparison.OrdinalIgnoreCase )
-				? Level.Current?.GateSign?.Images : null;
-			var sign = hasSignSlot ? gateSign ?? (!Entry.IsFixedItem ? ObjectSigns.Get( Entry ) : null) : null;
-			var fallbackBaseSign = gateSign == null && Entry.IsFixedItem && Entry.ArchiveName.Equals( "gates", StringComparison.OrdinalIgnoreCase )
-				&& hasSignSlot
-				? new Texture( [38, 28, 18, 255], 1, 1 ) : null;
+			// the object's own level: its gate and that gate's sign (made before the level's objects, SetupParkName then SetupObjects)
+			var level = Level ?? Level.Current;
+			var plan = hasSignSlot
+				? SignSlotPlan.For( Entry.IsFixedItem, Entry.InfoId, Entry.ArchivePath, level?.GateInfoId, level?.GateSign?.Images, () => ObjectSigns.Get( Entry ) )
+				: SignSlotPlan.None;
+			var sign = plan.Images;
+			var fallbackBaseSign = plan.UsesFallback ? SignSlotPlan.FallbackBoard : null;
 			if ( sign != null )
 				Sign = sign;
 			for ( var index = 0; index < part.Textures.Length; index++ )
@@ -321,7 +322,8 @@ public class OriginalObject : Entity, IPointLightSource
 			// version -1 makes the first update show the pose of a clip the script may already have started.
 			if ( dynamic )
 				vertexParts.Add( (model, part.MeshIndex, part.Vertices, -1) );
-			parts.Add( (new ModelEntity { Model = model, Name = $"{Entry.ArchiveName}:{part.Name}" }, part.NodeIndex) );
+			// [EXT:winter-snow-surfaces] objects (roofs, trees, rides) take snow on their up-facing surfaces; a part on an animated node (it can move or turn) keeps its snow noise in model space, so the patches do not crawl over it
+			parts.Add( (new ModelEntity { Model = model, Name = $"{Entry.ArchiveName}:{part.Name}", SnowSurface = SnowCover.GroundSurface, SnowNoiseInModelSpace = part.NodeIndex >= 0 }, part.NodeIndex) );
 		}
 		frameTextures.AddRange( frameSlots.Values.Where( frames => frames.Bindings.Count > 0 ) );
 	}
@@ -401,8 +403,64 @@ public class OriginalObject : Entity, IPointLightSource
 		foreach ( var (entity, node) in parts )
 		{
 			if ( hidden && node >= 0 )
-				entity.Hidden = animator.IsNodeHidden( node );
-			var transform = node < 0 ? placement : ObjectPlacement.SwapAxes( nodes[node] ) * placement;
+				entity.Hidden = animator.IsNodeHidden( node ) || PresentationHidden( node );
+			var transform = node < 0 ? placement : ObjectPlacement.SwapAxes( PresentationPose( node, nodes[node] ) ) * placement;
+			entity.TransformOverride = transform;
+			entity.Position = new Vector3( transform.M41, transform.M42, transform.M43 );
+		}
+	}
+
+	// [EXT:evening-torches-flicker] presentation-only local transforms of model nodes (the evening torches' flames, EveningFlames), null for a node drawn hidden: applied on the drawn parts only, never to the animator, the runtime,
+	// the lights or a save
+	private Dictionary<int, Matrix4x4?>? presentationNodes;
+
+	private Matrix4x4 PresentationPose( int node, Matrix4x4 pose ) => presentationNodes != null && presentationNodes.TryGetValue( node, out var local ) && local is { } matrix ? matrix * pose : pose;
+
+	private bool PresentationHidden( int node ) => presentationNodes != null && presentationNodes.TryGetValue( node, out var local ) && local == null;
+
+	/// <summary>
+	/// [EXT:evening-torches-flicker] Draws the parts of model node <paramref name="node"/> with <paramref name="local"/> applied in the node's own frame before its pose (a flame scaled about its base), or hides them when it is null
+	/// (a flame by day). Only the node's own parts are changed, not its children's (a flame node has none). Presentation only: the animator's node transforms and hidden nodes, which the lamps, the snow and the simulation read, are unchanged.
+	/// </summary>
+	/// <summary>[EXT:evening-torches-flicker] Takes away the presentation transform of <paramref name="node"/> (<see cref="SetPresentationNodeTransform"/>): its parts are drawn at the animator's pose again, hidden only when the animator hides them.</summary>
+	internal void ClearPresentationNodeTransform( int node )
+	{
+		if ( deleted || presentationNodes == null || !presentationNodes.Remove( node ) )
+			return;
+		var animator = Runtime.Animator;
+		var nodes = animator.NodeTransforms;
+		if ( node < 0 || node >= nodes.Count )
+			return;
+		var placement = Placement.ModelToEngine;
+		foreach ( var (entity, index) in parts )
+		{
+			if ( index != node )
+				continue;
+			entity.Hidden = animator.IsNodeHidden( node );
+			var transform = ObjectPlacement.SwapAxes( nodes[node] ) * placement;
+			entity.TransformOverride = transform;
+			entity.Position = new Vector3( transform.M41, transform.M42, transform.M43 );
+		}
+	}
+
+	internal void SetPresentationNodeTransform( int node, Matrix4x4? local )
+	{
+		if ( deleted || node < 0 )
+			return;
+		var animator = Runtime.Animator;
+		var nodes = animator.NodeTransforms;
+		if ( node >= nodes.Count )
+			return;
+		( presentationNodes ??= new Dictionary<int, Matrix4x4?>() )[node] = local;
+		var placement = Placement.ModelToEngine;
+		foreach ( var (entity, index) in parts )
+		{
+			if ( index != node )
+				continue;
+			entity.Hidden = local == null || animator.IsNodeHidden( node );
+			if ( local is not { } matrix )
+				continue;
+			var transform = ObjectPlacement.SwapAxes( matrix * nodes[node] ) * placement;
 			entity.TransformOverride = transform;
 			entity.Position = new Vector3( transform.M41, transform.M42, transform.M43 );
 		}

@@ -2,6 +2,7 @@
 #	OpenTPW umbrellas: the brolly shop (modelled on the keys of the original balloon shop, a shop)
 #	Every number marked "OpenTPW's own value" is a choice of this extension. The values that come from the Theme Park Inc brolly shops
 #	(price 30, goods 10 to 15, happiness 20, litter 10 to 20, rain and storm 200 %, snow 150 %, heat wave 5 %; docs/UMBRELLAS.md) are marked "as Theme Park Inc".
+#	The kid score is 75 %: it follows Theme Park Inc's value, per the owner's decision.
 #
 Info.Id			64500		placeholder: objects.json replaces it with the object's own id
 Info.Name		"Brolly Shop"
@@ -52,7 +53,7 @@ WeatherModifier.RainPercentage		200		as Theme Park Inc
 WeatherModifier.StormPercentage	200		as Theme Park Inc
 WeatherModifier.SnowPercentage		150		as Theme Park Inc
 WeatherModifier.HeatWavePercentage	5		as Theme Park Inc; Theme Park World has no heat wave
-GenerationModifier.KidScorePercentage	100		OpenTPW's own value (Theme Park Inc's is 75; every Theme Park World guest is a kid)
+GenerationModifier.KidScorePercentage	75		follows Theme Park Inc's value, per the owner's decision
 
 Research.Group		0		available from the start, no research
 Info.PreviewAnimNum		0

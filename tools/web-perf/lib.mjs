@@ -56,15 +56,14 @@ export async function listFiles(root) {
 export async function startServer(webRoot, gameRoot, upstream = null) {
 	const log = [], marks = [];
 	// The upstream is the local OpenTPW.Server only: an http origin on a loopback address, fixed when the harness starts.
-	const upstreamOrigin = upstream == null ? null : loopbackOrigin(upstream);
+	const upstreamUrl = upstream == null ? null : new URL(loopbackOrigin(upstream));
 	const forward = (request, response, url) => {
-		// Only the path and query of the request reach the upstream; an absolute-form request target (http://other/...) cannot pick another host.
-		const target = new URL(url.pathname + url.search, upstreamOrigin);
-		if (target.origin !== upstreamOrigin)
-			return response.writeHead(400).end();
+		// Host and port are the upstream's, fixed at start; only the request's path and query are passed on, so an absolute-form
+		// request target (http://other/...) cannot pick another host.
+		const target = { hostname: upstreamUrl.hostname.replace(/^\[|\]$/g, ''), port: upstreamUrl.port || 80, path: url.pathname + url.search, host: upstreamUrl.host };
 		const entry = { path: url.pathname, method: request.method, conditional: Boolean(request.headers['if-none-match'] || request.headers['if-modified-since']), acceptEncoding: request.headers['accept-encoding'] ?? '', bytes: 0 };
 		log.push(entry);
-		const outgoing = httpRequest(target, { method: request.method, headers: { ...request.headers, host: target.host } }, incoming => {
+		const outgoing = httpRequest({ hostname: target.hostname, port: target.port, path: target.path, method: request.method, headers: { ...request.headers, host: target.host } }, incoming => {
 			entry.status = incoming.statusCode;
 			entry.encoding = incoming.headers['content-encoding'] ?? null;
 			entry.cacheControl = incoming.headers['cache-control'] ?? null;

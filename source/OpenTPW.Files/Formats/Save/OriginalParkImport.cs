@@ -178,7 +178,7 @@ public sealed class OriginalParkImport
 	/// <summary>Guard before constructing runtime objects from an original TPW park. Structural inspection remains
 	/// available, but nonempty original controllers cannot safely be resumed until station joins and train data are decoded.
 	/// Theme Park Inc has a separate viewer/import contract and is not inferred through this guard.</summary>
-	// [APPROX:SAVE-920] a park whose Coasters block lists a coaster is refused: the block is decoded (headers, sections, trains and cars) but no runtime coaster is rebuilt from it, where tp.exe's loader 0x437B60 restores each controller, its track nodes and links, its trains and cars — evidence needed: a Theme Park World save with a built coaster and the restore of a CoasterRide from the decoded block
+	// [APPROX:SAVE-920] a park whose Coasters block lists a coaster is refused: the block is decoded (headers, sections, trains and cars) but no runtime coaster is rebuilt from it, where tp.exe's loader 0x437B60 binds each block to the empty controller the RideSystem loader made for its station (by the station mesh id, controller +0x10; none matching crashes the original at 0x437CD5) and restores its station nodes, slot, pylon nodes with their collision lists, end node, cut, trains and cars — evidence needed: a Theme Park World save with a built coaster and the restore of a CoasterRide from the decoded block
 	public void RequireSupportedCoasterRuntime()
 	{
 		if ( CoasterBlock is { Count: > 0 } )

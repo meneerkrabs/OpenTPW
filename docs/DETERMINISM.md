@@ -217,6 +217,16 @@ differ in:
 Square root, fused multiply-add, the four arithmetic operations, rounding and conversions are exact in IEEE 754 and gave the same
 digests in both (pinned in `DetMathTests.CorrectlyRoundedPlatformFunctionsArePinned`).
 
+System.Numerics' `Vector2`/`Vector3`/`Vector4.Lerp`, `Transform` and `TransformNormal` and the `Matrix4x4` product are another possible
+source: .NET evaluates them with `MultiplyAddEstimate`, which fuses the multiply and the add where the processor has fused multiply-add.
+On macOS arm64 (.NET 11 RC2) `Vector3.Transform` equals `fma(z, m31, fma(y, m21, x * m11)) + m41` for every one of 200,000 random inputs
+and differs from the unfused sum for a quarter of them; a runtime that does not fuse rounds twice. `Dot`, `Cross`, `Length`, `Normalize`
+and `Distance` are not fused. Whether the browser fuses was not measured. The guard below does not ban these operations, and a source
+scan cannot find the matrix product. `CoasterPylonRig` composes its tag matrices with plain multiplies and adds for this reason
+("Coaster register round 2" below), but the coaster station frame (`CoasterStationLayout.FromModel`) still multiplies a dummy's
+rest-pose matrix by the placement with `Matrix4x4`'s operator. The with-data runs below, whose M4 scenario builds those stations, gave
+the same state hashes in the browser and on macOS arm64.
+
 ### DetMath
 
 `DetMath` and `DetMathF` (`source/OpenTPW/Utils/DetMath.cs`) are C# ports of FreeBSD's msun as musl ships them: sin, cos
@@ -308,6 +318,8 @@ Still outside these runs, and so not proven identical:
 
 - the state that is not hashed (above: placed-object animator poses, the guest economy bridge map);
 - the work `Level.Update` does by wall time outside the fixed tick (`SceneClock`, `RefreshPools`, `UpdateEvening`, `UpdateSnow`);
+- the per-frame staff calls of `Level.Update` outside the tick: `StaffWorld.Synchronize` (the tick repeats it before it moves anyone) and
+  `StaffPlacement.Reconcile`, which returns a picked-up member that no local tool carries to idle;
 - a NaN that reaches hashed state, whose sign and payload differ between x86, ARM and WebAssembly.
 
 The co-op hash check covers the unhashed state only once it reaches hashed state.

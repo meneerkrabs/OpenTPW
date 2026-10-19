@@ -1419,7 +1419,7 @@ public class DeterminismTests
 		"World/Advisor.cs", "World/AdvisorRig.cs", "World/Camera.cs", "World/FreeWalkCameraMode.cs", "World/GlobeCameraMode.cs", "World/LobbyCameraMode.cs",
 		"World/ParkCameraMode.cs", "World/RideCameraMode.cs", "World/Sky.cs", "World/Sun.cs", "World/OriginalProjection.cs",
 		"World/Coasters/CoasterCarBend.cs", "World/Coasters/CoasterCarRig.cs", "World/Coasters/CoasterToolPanel.cs", "World/Coasters/CoasterTrackMesh.cs",
-		"World/Coasters/CoasterRenderer.cs", "World/Coasters/CoasterPreview.cs", "World/Coasters/CoasterPylonRig.cs",
+		"World/Coasters/CoasterRenderer.cs", "World/Coasters/CoasterPreview.cs",
 		"World/Guests/GuestRenderer.cs", "World/Guests/GuestSpriteAtlas.cs", "World/Guests/HeadPresentation.cs", "World/Guests/RideHeadRenderer.cs",
 		"World/Guests/SpriteScale.cs", "World/Guests/BalloonRenderer.cs", "World/Guests/ThoughtRenderer.cs",
 		"World/Original/BlueprintMarkers.cs", "World/Pools/PoolTextures.cs", "World/Pools/PoolMeshBuilder.cs", "World/Pools/PoolRenderer.cs",

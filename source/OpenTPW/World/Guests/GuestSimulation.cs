@@ -924,6 +924,9 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		// [EXT:rain-mood-extension] the mood rule follows the umbrella step on the same phase, for every guest in every state (Theme Park Inc's rule runs for all of them); off unless the extension sets the settings
 		if ( RainMood != null && NeedsUpdate.IsPhase( turn, guest.Id ) )
 			UpdateRainMood( guest, RainMood, umbrellaWasOpen );
+		// [EXT:winter-cold] the cold step right after the rain mood step, on the same phase gate
+		if ( WinterCold != null && NeedsUpdate.IsPhase( turn, guest.Id ) )
+			UpdateWinterCold( guest, WinterCold );
 		var cell = Litter?.Environment.At( guest.CellX, guest.CellY ) ?? default;
 		var result = NeedsUpdate.Apply( new GuestMeters( guest.Happiness, guest.Thirst, guest.Hunger, guest.Toilet, guest.Nausea ), guest.ExitLevel, turn, guest.Id,
 			cell.Happiness, cell.Illness, cell.Hunger );
@@ -3338,6 +3341,9 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		// [EXT:winter-items] the winter kiosk's AppearanceEffect 4: a head item first, then mittens, no draw (the shop's other effects are those of any shop)
 		if ( ride.IsWinterKiosk )
 			GiveWarmItem( guest );
+		// [EXT:winter-gluehwein] a glühwein stall (a winter shop that is not the kiosk, with the Ice ingredient): with the cold rule on, the guest counts as warmed for a while
+		else if ( WinterCold != null && ride.WinterTerms != null && ride.SpecialIngredient == IceIngredient )
+			WarmByGluehwein( guest );
 		if ( ride.ProvidesRelief )
 		{
 			// [BIN:TPW-EXE:0x004FE1E0 relief visit] for an object with the relief flag: the toilet wears by the guest's toilet meter as a byte (0x004E2440), the meter goes to 0, and an illness byte above 90 goes to 0 as well
@@ -3595,6 +3601,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			UmbrellaType = guest.UmbrellaType,
 			UmbrellaDueTurn = guest.UmbrellaDueTurn,
 			RainMoodDay = guest.RainMoodDay,
+			ColdMoodDay = guest.ColdMoodDay,
 			WarmItems = guest.WarmItems,
 			WarmUntilDay = guest.WarmUntilDay,
 			RainMoodAgeStartTurn = guest.RainMoodAgeStartTurn,
@@ -3880,6 +3887,9 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			// [EXT:rain-mood-once-per-day] the optional day of the rule's last application: never negative
 			if ( guest.RainMoodDay < 0 )
 				Error( $"Guest {guest.Id} rain mood day {guest.RainMoodDay} is negative." );
+			// [EXT:winter-cold] the optional day of the cold rule's last application: never negative
+			if ( guest.ColdMoodDay < 0 )
+				Error( $"Guest {guest.Id} cold mood day {guest.ColdMoodDay} is negative." );
 			// [EXT:rain-mood-imported-age] the optional load turn of an imported guest: never negative, and only for a guest without a time in the park
 			if ( guest.RainMoodAgeStartTurn is { } ageStart && (ageStart < 0 || guest.TimeInParkSeconds != null) )
 				Error( $"Guest {guest.Id} rain mood age start {ageStart} is negative or set for a guest with a known time in the park." );
@@ -4275,6 +4285,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		guest.UmbrellaType = snapshot.UmbrellaType;
 		guest.UmbrellaDueTurn = snapshot.UmbrellaDueTurn;
 		guest.RainMoodDay = snapshot.RainMoodDay;
+		guest.ColdMoodDay = snapshot.ColdMoodDay;
 		guest.WarmItems = snapshot.WarmItems;
 		guest.WarmUntilDay = snapshot.WarmUntilDay;
 		guest.RainMoodAgeStartTurn = snapshot.RainMoodAgeStartTurn;
@@ -4425,6 +4436,9 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			if ( guest.RainMoodDay != 0 )
 				hash.Add( 0x5241494EL + guest.RainMoodDay );
 			// [EXT:winter-save] the warm items join the digest only while a guest wears one (every park without one keeps its pins)
+			// [EXT:winter-cold] the day of the cold rule's last application joins the digest only once it has applied (every park without the extension keeps its pins)
+			if ( guest.ColdMoodDay != 0 )
+				hash.Add( 0x434F4C44L + guest.ColdMoodDay );
 			if ( guest.WarmItems != 0 )
 				hash.Add( 0x57494E54L + guest.WarmItems );
 			if ( guest.WarmUntilDay != 0 )
@@ -4543,6 +4557,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			if ( guest.RainMoodDay != 0 )
 				Add( 0x5241494EL + guest.RainMoodDay );
 			// [EXT:winter-save] only while a guest wears a warm item (every park without one keeps its pins)
+			if ( guest.ColdMoodDay != 0 )
+				Add( 0x434F4C44L + guest.ColdMoodDay );
 			if ( guest.WarmItems != 0 )
 				Add( 0x57494E54L + guest.WarmItems );
 			if ( guest.WarmUntilDay != 0 )

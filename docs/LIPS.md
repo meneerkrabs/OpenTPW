@@ -632,7 +632,7 @@ inspected.
 
 ### Restored advice (EXT, October 17, 2026)
 
-The official extension `opentpw.restored-advice` (on by default, `AffectsSimulation` false; [MODS.md](MODS.md)) says advisor messages that exist in the data but that tp.exe v2.0 never posts (the 105 "none" rows of [reverse/ADVISOR-SCAN.md](reverse/ADVISOR-SCAN.md)); it restores 45 of them (ten lines stood down because the original's own ticket advice, 215-227, and first-offer line, 344, are now ported), each trigger labelled
+The official extension `opentpw.restored-advice` (on by default, `AffectsSimulation` false; [MODS.md](MODS.md)) says advisor messages that exist in the data but that tp.exe v2.0 never posts (the 105 "none" rows of [reverse/ADVISOR-SCAN.md](reverse/ADVISOR-SCAN.md)); it restores 43 of them (twelve lines stood down because the original's own ticket advice, 215-227, first-offer line, 344, and challenge offer and win lines, 270 and 272, are now ported), each trigger labelled
 `[EXT:restored-advice-<topic>]`. It adds no data and no queue: a restored message is pending advice like any other, with its descriptor's group, its original response rows, its `Advisor.sam` score where its descriptor's callback names a key and
 otherwise a documented constant, and it goes through the same admission rules (tutorial option, once-only, repeat interval, pending-duplicate limit, game mode, `MinScoreForConsideration`). Three entry points, all gated on the extension at the moment they run:
 

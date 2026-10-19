@@ -71,6 +71,8 @@ public sealed partial class ParkHud
 		CheatKind.Mode => strings.Extra( OpenTpwText.CheatModeOn ),
 		CheatKind.Money => strings.Extra( OpenTpwText.CheatMoney ),
 		CheatKind.Research => strings.Extra( OpenTpwText.CheatResearch ),
+		CheatKind.Weather => strings.Extra( OpenTpwText.CheatWeatherNote ),
+		CheatKind.Arrival => strings.Extra( OpenTpwText.CheatArrivalNote ),
 		CheatKind.Ticket when applied.Detail is nameof( GlobalTicketOutcome.Awarded ) or nameof( GlobalTicketOutcome.Moved ) => strings.Extra( OpenTpwText.CheatTicket ),
 		_ => null
 	};

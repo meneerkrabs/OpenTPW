@@ -303,6 +303,72 @@ public enum OpenTpwText
 	CheatResearch,
 	/// <summary>The HUD's note of a golden ticket cheat (Alt+G, Alt+Num1..9).</summary>
 	CheatTicket,
+	/// <summary>[EXT:cheats-window] The cheats window's title.</summary>
+	CheatsTitle,
+	/// <summary>[EXT:cheats-window] The cheats window's cheat mode row, before On or Off.</summary>
+	CheatModeLabel,
+	/// <summary>[EXT:cheats-window] The cheats window's vehicle row, before the vehicle.</summary>
+	CheatArrivalLabel,
+	/// <summary>[EXT:cheats-window] The bus, after the vehicle row's label.</summary>
+	CheatBus,
+	/// <summary>[EXT:cheats-window] The seaplane, after the vehicle row's label.</summary>
+	CheatPlane,
+	/// <summary>[EXT:cheats-window] The ferry, after the vehicle row's label.</summary>
+	CheatBoat,
+	/// <summary>[EXT:cheats-window] The cheats window's arrival button row.</summary>
+	CheatSendVisitors,
+	/// <summary>[EXT:cheats-window] The cheats window's weather row, before the weather.</summary>
+	CheatWeatherLabel,
+	/// <summary>[EXT:cheats-window] Clear weather, after the weather row's label.</summary>
+	CheatClear,
+	/// <summary>[EXT:cheats-window] Rain, after the weather row's label.</summary>
+	CheatRain,
+	/// <summary>[EXT:cheats-window] A thunderstorm, after the weather row's label.</summary>
+	CheatThunderstorm,
+	/// <summary>[EXT:cheats-window] Snow, after the weather row's label.</summary>
+	CheatSnow,
+	/// <summary>[EXT:cheats-window] The cheats window's weather button row.</summary>
+	CheatChangeWeather,
+	/// <summary>[EXT:cheats-window] The cheats window's ticket row, before the ticket.</summary>
+	CheatTicketLabel,
+	/// <summary>[EXT:cheats-window] The Visitors ticket, after the ticket row's label.</summary>
+	CheatTicketVisitors,
+	/// <summary>[EXT:cheats-window] The PeopleInPark ticket.</summary>
+	CheatTicketPeopleInPark,
+	/// <summary>[EXT:cheats-window] The Happiness ticket.</summary>
+	CheatTicketHappiness,
+	/// <summary>[EXT:cheats-window] The AllResearchedAndBuilt ticket.</summary>
+	CheatTicketAllBuilt,
+	/// <summary>[EXT:cheats-window] The ProfitYear ticket.</summary>
+	CheatTicketProfitYear,
+	/// <summary>[EXT:cheats-window] The RecentVisitors ticket.</summary>
+	CheatTicketRecentVisitors,
+	/// <summary>[EXT:cheats-window] The CoasterHeight ticket.</summary>
+	CheatTicketCoasterHeight,
+	/// <summary>[EXT:cheats-window] The GokartExcitement ticket.</summary>
+	CheatTicketGokartExcitement,
+	/// <summary>[EXT:cheats-window] The WaterLength ticket.</summary>
+	CheatTicketWaterLength,
+	/// <summary>[EXT:cheats-window] The BigPark ticket.</summary>
+	CheatTicketBigPark,
+	/// <summary>[EXT:cheats-window] The cheats window's ticket button row.</summary>
+	CheatAwardTicket,
+	/// <summary>[EXT:cheats-window] The cheats window's money button row.</summary>
+	CheatAddMoney,
+	/// <summary>[EXT:cheats-window] The cheats window's research button row.</summary>
+	CheatBuildEverything,
+	/// <summary>[EXT:cheats-window] The cheats window's note for a cheated park.</summary>
+	CheatsMarkedNote,
+	/// <summary>[EXT:cheats-window] The cheats window's note before the cheat mode is on.</summary>
+	CheatsWillMarkNote,
+	/// <summary>[EXT:cheats-window] The cheats window's count of cheats waiting for the next park turn.</summary>
+	CheatsWaiting,
+	CheatArrivalNote,
+	CheatWeatherNote,
+	/// <summary>[EXT:cheats-extension] The cheats extension's name on the Extensions and mods screen.</summary>
+	ExtensionCheatsName,
+	/// <summary>[EXT:cheats-extension] The cheats extension's description on the Extensions and mods screen.</summary>
+	ExtensionCheatsDescription,
 }
 
 public static class SupplementaryStrings
@@ -776,6 +842,52 @@ public static class SupplementaryStrings
 		[OpenTpwText.CheatMoney] = new[] { "Cheat: 10,000 added", "Snyd: 10.000 tilføjet", "Valsspelen: 10.000 erbij", "Triche : 10 000 ajoutés", "Cheat: 10.000 gutgeschrieben", "치트: 10,000 추가", "Kod: dodano 10 000", "Truco: 10.000 añadidos", "Fusk: 10 000 tillagt", "Trucco: 10.000 aggiunti", "צ'יט: נוספו 10,000" },
 		[OpenTpwText.CheatResearch] = new[] { "Cheat: everything can be built", "Snyd: alt kan bygges", "Valsspelen: alles is te bouwen", "Triche : tout peut être construit", "Cheat: alles kann gebaut werden", "치트: 모든 것을 지을 수 있음", "Kod: wszystko można zbudować", "Truco: se puede construir todo", "Fusk: allt kan byggas", "Trucco: si può costruire tutto", "צ'יט: אפשר לבנות הכול" },
 		[OpenTpwText.CheatTicket] = new[] { "Cheat: golden ticket", "Snyd: gylden billet", "Valsspelen: gouden kaartje", "Triche : ticket d'or", "Cheat: goldenes Ticket", "치트: 황금 티켓", "Kod: złoty bilet", "Truco: billete dorado", "Fusk: gyllene biljett", "Trucco: biglietto d'oro", "צ'יט: כרטיס זהב" },
+		[OpenTpwText.CheatsTitle] = new[] { "Cheats", "Snyd", "Valsspelen", "Triche", "Schummeln", "치트", "Kody", "Trucos", "Fusk", "Trucchi", "צ'יטים" },
+		[OpenTpwText.CheatModeLabel] = new[] { "Cheat mode:", "Snydetilstand:", "Valsspeelmodus:", "Mode triche :", "Cheat-Modus:", "치트 모드:", "Tryb kodów:", "Modo trucos:", "Fuskläge:", "Modalità trucchi:", "מצב צ'יטים:" },
+		[OpenTpwText.CheatArrivalLabel] = new[] { "Visitors come by:", "Gæster kommer med:", "Bezoekers per:", "Visiteurs arrivent en :", "Besucher per:", "방문객 교통편:", "Goście przyjeżdżają:", "Visitantes llegan en:", "Besökare kommer med:", "Visitatori arrivano in:", "המבקרים מגיעים ב:" },
+		[OpenTpwText.CheatBus] = new[] { " bus", " bussen", " bus", " autobus", " Bus", " 버스", " autobusem", " autobús", " buss", " autobus", " אוטובוס" },
+		[OpenTpwText.CheatPlane] = new[] { " plane", " fly", " vliegtuig", " avion", " Flugzeug", " 비행기", " samolotem", " avión", " flyg", " aereo", " מטוס" },
+		[OpenTpwText.CheatBoat] = new[] { " boat", " båd", " boot", " bateau", " Schiff", " 배", " statkiem", " barco", " båt", " barca", " סירה" },
+		[OpenTpwText.CheatSendVisitors] = new[] { "Send the visitors", "Send gæsterne", "Stuur de bezoekers", "Envoyer les visiteurs", "Besucher schicken", "방문객 보내기", "Wyślij gości", "Enviar a los visitantes", "Skicka besökarna", "Invia i visitatori", "שלח את המבקרים" },
+		[OpenTpwText.CheatWeatherLabel] = new[] { "Weather:", "Vejr:", "Weer:", "Météo :", "Wetter:", "날씨:", "Pogoda:", "Tiempo:", "Väder:", "Meteo:", "מזג אוויר:" },
+		[OpenTpwText.CheatClear] = new[] { " clear", " klart", " helder", " dégagé", " klar", " 맑음", " bezchmurnie", " despejado", " uppehåll", " sereno", " בהיר" },
+		[OpenTpwText.CheatRain] = new[] { " rain", " regn", " regen", " pluie", " Regen", " 비", " deszcz", " lluvia", " regn", " pioggia", " גשם" },
+		[OpenTpwText.CheatThunderstorm] = new[] { " thunderstorm", " tordenvejr", " onweer", " orage", " Gewitter", " 뇌우", " burza", " tormenta", " åska", " temporale", " סופת רעמים" },
+		[OpenTpwText.CheatSnow] = new[] { " snow", " sne", " sneeuw", " neige", " Schnee", " 눈", " śnieg", " nieve", " snö", " neve", " שלג" },
+		[OpenTpwText.CheatChangeWeather] = new[] { "Change the weather", "Skift vejret", "Verander het weer", "Changer la météo", "Wetter ändern", "날씨 바꾸기", "Zmień pogodę", "Cambiar el tiempo", "Ändra vädret", "Cambia il meteo", "שנה את מזג האוויר" },
+		[OpenTpwText.CheatTicketLabel] = new[] { "Ticket:", "Billet:", "Kaartje:", "Ticket :", "Ticket:", "티켓:", "Bilet:", "Billete:", "Biljett:", "Biglietto:", "כרטיס:" },
+		[OpenTpwText.CheatTicketVisitors] = new[] { " visitors", " gæster", " bezoekers", " visiteurs", " Besucher", " 방문객 수", " goście", " visitantes", " besökare", " visitatori", " מבקרים" },
+		[OpenTpwText.CheatTicketPeopleInPark] = new[] { " full park", " fuld park", " vol park", " parc plein", " voller Park", " 꽉 찬 공원", " pełny park", " parque lleno", " fullsatt park", " parco pieno", " פארק מלא" },
+		[OpenTpwText.CheatTicketHappiness] = new[] { " happy visitors", " glade gæster", " blije bezoekers", " visiteurs heureux", " glückliche Besucher", " 행복한 방문객", " szczęśliwi goście", " visitantes felices", " glada besökare", " visitatori felici", " מבקרים מאושרים" },
+		[OpenTpwText.CheatTicketAllBuilt] = new[] { " all built", " alt bygget", " alles gebouwd", " tout construit", " alles gebaut", " 모두 건설", " wszystko zbudowane", " todo construido", " allt byggt", " tutto costruito", " הכול בנוי" },
+		[OpenTpwText.CheatTicketProfitYear] = new[] { " year's profit", " årets overskud", " jaarwinst", " bénéfice annuel", " Jahresgewinn", " 연간 수익", " roczny zysk", " beneficio anual", " årets vinst", " utile annuo", " רווח שנתי" },
+		[OpenTpwText.CheatTicketRecentVisitors] = new[] { " recent visitors", " nylige gæster", " recente bezoekers", " visiteurs récents", " neue Besucher", " 최근 방문객", " niedawni goście", " visitantes recientes", " senaste besökare", " visitatori recenti", " מבקרים אחרונים" },
+		[OpenTpwText.CheatTicketCoasterHeight] = new[] { " coaster height", " rutsjebanehøjde", " achtbaanhoogte", " hauteur grand huit", " Achterbahnhöhe", " 롤러코스터 높이", " wysokość kolejki", " altura montaña rusa", " berg-och-dalbanehöjd", " altezza ottovolante", " גובה רכבת הרים" },
+		[OpenTpwText.CheatTicketGokartExcitement] = new[] { " go-kart thrills", " gokart-spænding", " kartspanning", " frissons du karting", " Kart-Nervenkitzel", " 고카트 스릴", " emocje gokartów", " emoción de karts", " gokartspänning", " emozioni dei go-kart", " ריגוש קארטינג" },
+		[OpenTpwText.CheatTicketWaterLength] = new[] { " water ride length", " vandbanelængde", " lengte waterbaan", " longueur aquatique", " Wasserbahnlänge", " 수상 놀이기구 길이", " długość zjeżdżalni", " longitud acuática", " vattenbanelängd", " lunghezza acquatica", " אורך מתקן מים" },
+		[OpenTpwText.CheatTicketBigPark] = new[] { " big park", " stor park", " groot park", " grand parc", " großer Park", " 큰 공원", " duży park", " parque grande", " stor park", " parco grande", " פארק גדול" },
+		[OpenTpwText.CheatAwardTicket] = new[] { "Award the ticket", "Giv billetten", "Geef het kaartje", "Attribuer le ticket", "Ticket vergeben", "티켓 주기", "Przyznaj bilet", "Conceder el billete", "Ge biljetten", "Assegna il biglietto", "הענק את הכרטיס" },
+		[OpenTpwText.CheatAddMoney] = new[] { "Add 10,000", "Tilføj 10.000", "10.000 erbij", "Ajouter 10 000", "10.000 hinzufügen", "10,000 추가", "Dodaj 10 000", "Añadir 10.000", "Lägg till 10 000", "Aggiungi 10.000", "הוסף 10,000" },
+		[OpenTpwText.CheatBuildEverything] = new[] { "Build everything", "Byg alt", "Alles bouwen", "Tout construire", "Alles baubar machen", "모두 건설 가능하게", "Udostępnij wszystko", "Hacer todo construible", "Gör allt byggbart", "Rendi tutto costruibile", "אפשר לבנות הכול" },
+		[OpenTpwText.CheatsMarkedNote] = new[] { "This park is marked as cheated.", "Denne park er markeret som snydt.", "Dit park is gemarkeerd als vals gespeeld.", "Ce parc est marqué comme triché.", "Dieser Park ist als geschummelt markiert.", "이 공원은 치트 사용으로 표시되었습니다.", "Ten park jest oznaczony jako z kodami.", "Este parque está marcado con trucos.", "Den här parken är märkt som fuskad.", "Questo parco è segnato come truccato.", "פארק זה מסומן כפארק עם צ'יטים." },
+		[OpenTpwText.CheatsWillMarkNote] = new[] { "Turn cheat mode on to use the cheats; the park then stays marked as cheated.", "Slå snydetilstand til for at bruge snyd; parken forbliver så markeret som snydt.", "Zet de valsspeelmodus aan om vals te spelen; het park blijft daarna gemarkeerd.", "Activez le mode triche pour tricher ; le parc reste alors marqué comme triché.", "Schalte den Cheat-Modus ein, um zu schummeln; der Park bleibt dann als geschummelt markiert.", "치트를 쓰려면 치트 모드를 켜세요. 그 뒤로 공원은 치트 사용으로 표시됩니다.", "Włącz tryb kodów, aby ich używać; park pozostanie wtedy oznaczony.", "Activa el modo trucos para usarlos; el parque quedará marcado con trucos.", "Slå på fuskläget för att fuska; parken förblir sedan märkt som fuskad.", "Attiva la modalità trucchi per usarli; il parco resterà segnato come truccato.", "הפעל את מצב הצ'יטים כדי להשתמש בהם; הפארק יישאר מסומן כפארק עם צ'יטים." },
+		[OpenTpwText.CheatsWaiting] = new[] { "Cheats waiting: {0}", "Snyd i kø: {0}", "Wachtend: {0}", "En attente : {0}", "Wartend: {0}", "대기 중: {0}", "Oczekujące: {0}", "En espera: {0}", "Väntande: {0}", "In attesa: {0}", "ממתינים: {0}" },
+		[OpenTpwText.CheatArrivalNote] = new[] { "Cheat: visitors on their way", "Snyd: gæster på vej", "Valsspelen: bezoekers onderweg", "Triche : visiteurs en route", "Cheat: Besucher unterwegs", "치트: 방문객이 오는 중", "Kod: goście w drodze", "Truco: visitantes en camino", "Fusk: besökare på väg", "Trucco: visitatori in arrivo", "צ'יט: מבקרים בדרך" },
+		[OpenTpwText.CheatWeatherNote] = new[] { "Cheat: the weather changes", "Snyd: vejret skifter", "Valsspelen: het weer verandert", "Triche : la météo change", "Cheat: das Wetter ändert sich", "치트: 날씨가 바뀜", "Kod: pogoda się zmienia", "Truco: cambia el tiempo", "Fusk: vädret ändras", "Trucco: il meteo cambia", "צ'יט: מזג האוויר משתנה" },
+		[OpenTpwText.ExtensionCheatsName] = new[] { "Cheats", "Snyd", "Valsspelen", "Triche", "Schummeln", "치트", "Kody", "Trucos", "Fusk", "Trucchi", "צ'יטים" },
+		[OpenTpwText.ExtensionCheatsDescription] = new[] {
+			"The cheats window (Alt+C in a park): send visitors by bus, plane or boat, change the weather, award a chosen golden ticket, add money and make everything buildable. A park that uses a cheat is marked as cheated for good; it can still be published. The original's own cheats (the secret park name and the Alt keys) work without it.",
+			"Snydevinduet (Alt+C i en park): send gæster med bus, fly eller båd, skift vejret, giv en valgt gylden billet, tilføj penge og gør alt muligt at bygge. En park, der bruger snyd, markeres for altid som snydt; den kan stadig udgives. Originalens eget snyd (det hemmelige parknavn og Alt-tasterne) virker uden den.",
+			"Het valsspeelvenster (Alt+C in een park): stuur bezoekers met de bus, het vliegtuig of de boot, verander het weer, geef een gekozen gouden kaartje, voeg geld toe en maak alles bouwbaar. Een park waarin vals is gespeeld, blijft voorgoed gemarkeerd; het kan nog steeds gepubliceerd worden. De eigen cheats van het origineel (de geheime parknaam en de Alt-toetsen) werken ook zonder.",
+			"La fenêtre de triche (Alt+C dans un parc) : faire venir des visiteurs en bus, en avion ou en bateau, changer la météo, attribuer un ticket d'or choisi, ajouter de l'argent et rendre tout constructible. Un parc qui triche reste marqué pour toujours ; il peut toujours être publié. Les triches du jeu original (le nom de parc secret et les touches Alt) fonctionnent sans elle.",
+			"Das Schummelfenster (Alt+C in einem Park): Besucher per Bus, Flugzeug oder Schiff schicken, das Wetter ändern, ein gewähltes goldenes Ticket vergeben, Geld hinzufügen und alles baubar machen. Ein Park, in dem geschummelt wird, bleibt für immer markiert; er kann trotzdem veröffentlicht werden. Die eigenen Cheats des Originals (der geheime Parkname und die Alt-Tasten) funktionieren auch ohne sie.",
+			"치트 창(공원에서 Alt+C): 버스, 비행기, 배로 방문객 보내기, 날씨 바꾸기, 고른 황금 티켓 주기, 돈 추가, 모두 건설 가능하게 하기. 치트를 쓴 공원은 영구히 치트 사용으로 표시되지만 여전히 게시할 수 있습니다. 원작의 치트(비밀 공원 이름과 Alt 키)는 이것 없이도 작동합니다.",
+			"Okno kodów (Alt+C w parku): goście przyjeżdżają autobusem, samolotem lub statkiem, zmiana pogody, wybrany złoty bilet, dodatkowe pieniądze i wszystko do zbudowania. Park, w którym użyto kodów, zostaje oznaczony na zawsze; nadal można go opublikować. Własne kody oryginału (tajna nazwa parku i klawisze Alt) działają bez tego.",
+			"La ventana de trucos (Alt+C en un parque): enviar visitantes en autobús, avión o barco, cambiar el tiempo, conceder un billete dorado elegido, añadir dinero y hacer todo construible. Un parque que usa trucos queda marcado para siempre; aún se puede publicar. Los trucos del juego original (el nombre secreto del parque y las teclas Alt) funcionan sin ella.",
+			"Fuskfönstret (Alt+C i en park): skicka besökare med buss, flyg eller båt, ändra vädret, ge en vald gyllene biljett, lägg till pengar och gör allt byggbart. En park som fuskar förblir märkt för alltid; den kan ändå publiceras. Originalets eget fusk (det hemliga parknamnet och Alt-tangenterna) fungerar utan det.",
+			"La finestra dei trucchi (Alt+C in un parco): manda visitatori in autobus, aereo o barca, cambia il meteo, assegna un biglietto d'oro a scelta, aggiungi denaro e rendi tutto costruibile. Un parco che usa i trucchi resta segnato per sempre; si può comunque pubblicare. I trucchi del gioco originale (il nome segreto del parco e i tasti Alt) funzionano anche senza.",
+			"חלון הצ'יטים (Alt+C בפארק): שליחת מבקרים באוטובוס, במטוס או בסירה, שינוי מזג האוויר, הענקת כרטיס זהב לבחירה, הוספת כסף ואפשרות לבנות הכול. פארק שמשתמש בצ'יטים מסומן לתמיד; עדיין אפשר לפרסם אותו. הצ'יטים של המשחק המקורי (שם הפארק הסודי ומקשי Alt) פועלים גם בלעדיו.",
+		},
 	};
 
 	public static IReadOnlyList<string> SupportedLanguages => Languages;

@@ -319,10 +319,20 @@ public sealed class ParkEconomy : IParkEconomy
 	/// valid or the queue is full. The caller refuses read-only visits and online sessions.
 	/// </summary>
 	// [EXT:cheats-extension] Theme Park World parks only: the cheats are tp.exe's (docs/CHEATS.md); Theme Park Inc's executable was not searched for any
-	public bool QueueCheat( CheatAction action ) => !Rules.ThemeParkInc && Cheats.Queue( action );
+	// [EXT:cheats-window] the extension's own cheats (the weather, the arrivals) need the extension on and a level to act on
+	public bool QueueCheat( CheatAction action ) => !Rules.ThemeParkInc && (!ParkCheats.IsExtensionKind( action.Kind ) || FeatureGates.Cheats && CheatHost != null) && Cheats.Queue( action );
 
-	/// <summary>What one cheat does to the park (called by <see cref="ParkCheats.ApplyPending"/> at the turn boundary); returns its outcome for the record's event (empty when there is none to tell).</summary>
-	internal string ApplyCheat( CheatAction action )
+	/// <summary>
+	/// The level's side of the park's cheats (the arrivals and the weather, <see cref="IParkCheatHost"/>); null in a headless economy, which then refuses those cheats. A saved park whose
+	/// arrival or weather cheat still waits keeps it waiting in a headless economy: only a level applies it.
+	/// </summary>
+	public IParkCheatHost? CheatHost { get; set; }
+
+	/// <summary>
+	/// What one cheat does to the park (called by <see cref="ParkCheats.ApplyPending"/> at the turn boundary); returns its outcome for the record's event (empty when there is none to tell), or null when
+	/// the park cannot take it now and it waits for the next turn.
+	/// </summary>
+	internal string? ApplyCheat( CheatAction action )
 	{
 		switch ( action.Kind )
 		{
@@ -339,6 +349,12 @@ public sealed class ParkEconomy : IParkEconomy
 			case CheatKind.Ticket:
 				// [BIN:TPW-EXE:0x40C6C0 ticket cheats] the handlers call the player ledger directly (0x409410 → 0x5AF810 / 0x5AF940): no advisor message, no first-ticket lines, no log
 				return Objectives.AwardCheatTicket( (GoldenTicketKind)action.Argument ).ToString();
+			case CheatKind.Weather:
+				// [EXT:cheats-weather] a forecast with no warning: it replaces the pending one and applies now, with the kind set explicitly (no tie-break draw); the natural schedule goes on from it
+				return CheatHost?.TryApplyWeather( (CheatWeather)action.Argument, Tick ) == true ? "" : null;
+			case CheatKind.Arrival:
+				// [EXT:cheats-arrival] a group by the chosen vehicle, sized for it; it waits while a group or a vehicle is at work
+				return CheatHost?.TryStartArrival( action.Argument ) == true ? "" : null;
 			default:
 				throw new InvalidOperationException( $"The cheat {action.Kind} is not applied by the economy." );
 		}

@@ -49,6 +49,8 @@ public sealed class ParkEconomyRuntime
 		guests.ArrivalClock = () => Economy.Turn;
 		guests.ParkPoints = () => Economy.ParkPoints();
 		guests.ArrivalsHalted = () => Economy.IsBankrupt;
+		// [EXT:cheats-arrival] an arrival cheat waiting for the next free turn holds the natural groups and the pick-ups (docs/CHEATS.md)
+		guests.ArrivalHeldForCheat = () => Economy.Cheats.ArrivalPending;
 		Economy.GuestStatistics = Guests;
 		Economy.RideOperations = Guests;
 		AttachLitter( guests );

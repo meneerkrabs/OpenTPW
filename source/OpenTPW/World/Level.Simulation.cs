@@ -7,6 +7,7 @@ public partial class Level
 	/// <summary>The frame and restart smoke harness advance the same fixed-step simulation, then prepare one shared body pose phase.</summary>
 	internal void AdvanceSimulation( double elapsedSeconds )
 	{
+		AttachCheatHost();
 		simulationClock.Advance( elapsedSeconds, deltaTime =>
 		{
 			SyncObjectEconomy();

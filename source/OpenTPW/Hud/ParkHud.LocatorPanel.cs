@@ -395,7 +395,7 @@ internal static class LocatorOrder
 {
 	/// <summary>The live visitor after <paramref name="current"/> (0: the first) in the pool's used-chain order; 0 at the tail or for a stale current.</summary>
 	// [BIN:TPW-EXE:0x00482757 visitor locator order] mask 64 walks the used head (0x516130) and older links (0x516160), accepting type 1 regardless of sprite visibility;
-	// a destroy request changes the type to 2 before queuing (0x50B906). The caller 0x4B3340 wraps by retrying with a null current.
+	// a destroy request enqueues at 0x50B8FD, then changes the type to 2 at 0x50B906 before returning. The caller 0x4B3340 wraps by retrying with a null current.
 	public static int NextVisitor( IEnumerable<Guest> guests, ThingPool? things, int current )
 	{
 		var afterCurrent = current == 0;
@@ -408,7 +408,8 @@ internal static class LocatorOrder
 		return 0;
 	}
 
-	private static IEnumerable<int> VisitorIds( IEnumerable<Guest> guests, ThingPool? things )
+	/// <summary>The shared live visitor projection for locator radios and info-window arrows; pool-free fixtures have an explicit host-only fallback.</summary>
+	public static IEnumerable<int> VisitorIds( IEnumerable<Guest> guests, ThingPool? things )
 	{
 		// Unsupported fixtures can repeat IDs. The first roster claim wins, as in the HUD's position/name lookup;
 		// retain Gone claims here so a later duplicate cannot revive them through the compatibility fallback.

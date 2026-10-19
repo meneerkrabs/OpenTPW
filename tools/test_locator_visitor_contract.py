@@ -30,7 +30,7 @@ class LocatorVisitorContract(unittest.TestCase):
         self.assertIn("Locator.Press( role, NextLocatorActor )", self.hud)
 
     def test_valid_candidates_follow_pool_links_without_visibility_or_id_chronology(self):
-        candidates = body(self.order, "private static IEnumerable<int> VisitorIds(")
+        candidates = body(self.order, "public static IEnumerable<int> VisitorIds(")
         for required in ("things.UsedNewestFirst()", "slot.Model == SaveThingModel.Guest", "!things.IsQueued( slot.Id )",
                          "!things.IsHeld( slot.Id )", "byId.TryGetValue( slot.Id, out var guest )", "guest.State != GuestState.Gone"):
             self.assertIn(required, candidates)
@@ -44,7 +44,7 @@ class LocatorVisitorContract(unittest.TestCase):
         self.assertNotIn("id <", next_actor)
 
     def test_fallback_keeps_first_claim_and_never_reintroduces_rejected_used_slots(self):
-        candidates = body(self.order, "private static IEnumerable<int> VisitorIds(")
+        candidates = body(self.order, "public static IEnumerable<int> VisitorIds(")
         self.assertIn("guest.Id > 0", candidates)
         self.assertIn("byId.TryAdd( guest.Id, guest )", candidates)
         fallback = candidates.split("// Host compatibility only:")[1]
